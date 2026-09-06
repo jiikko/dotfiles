@@ -38,7 +38,10 @@ command -v jq >/dev/null 2>&1 || exit 0
 # (規範と同じ opt-in)
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 next_dir_found=0
-for next_dir in "$repo_root/issues/next" "$repo_root/issues/epic"/*/next; do
+# 🚨 入れ子の issue dir (`<root>/*/issues`) も見る (issue 276)。obaket は macOS/issues/ を
+# 正式に持っており、そこの next/ の claim がどの hook にも見えなかった。深さは 1 段に限る。
+for next_dir in "$repo_root/issues/next" "$repo_root/issues/epic"/*/next \
+  "$repo_root"/*/issues/next "$repo_root"/*/issues/epic/*/next; do
   if [ -d "$next_dir" ]; then
     next_dir_found=1
     break
@@ -51,10 +54,16 @@ done
 #   Go/素の mv した → ` D issues/x.md` + `?? issues/next/x.md`
 #   claim を外した  → ` D issues/next/x.md` + `?? issues/x.md`
 # いずれも **global または group 内の next/ を含む行**が出るので、それを拾えば 3 形とも捕まる。
-# pathspec は opt-in の 2 形と同じ集合に限定する。
+#
+# 🚨 pathspec で絞らないこと (issue 276)。`*/issues/next` のような入れ子ぶんを pathspec へ
+# 足すと、**そのパスが存在しない repo では git が pathspec エラーで空を返す**ので、
+# root 直下の claim まで丸ごと見えなくなる (実測: それで 4 ケースが無出力になった)。
+# 絞り込みは下の grep が担う。**アンカーを付けないこと** — porcelain は `?? issues/next/` の
+# ように空白が前に来るので `(^|/)` を足すと 1 件も拾わなくなる (これも実測で踏んだ)。
+# 無アンカーなら入れ子 (`macOS/issues/next/`) もそのまま拾える。
 claim_lines=$(
   cd "$repo_root" || exit 0
-  git status --porcelain -- issues/next issues/epic/*/next 2>/dev/null |
+  git status --porcelain 2>/dev/null |
     grep -E 'issues/next/|issues/epic/[^/]+/next/' || true
 )
 
@@ -63,8 +72,9 @@ claim_lines=$(
 unpushed_claims=$(
   cd "$repo_root" || exit 0
   git log --branches --not --remotes --format='%h %s' \
-    --name-only -- issues/next issues/epic/*/next 2>/dev/null |
-    grep -v '^issues/' | grep -v '^$' | head -10 || true
+    --name-only 2>/dev/null |
+    awk '/^[0-9a-f]+ /{h=$0; next} /issues\/next\/|issues\/epic\/[^\/]+\/next\//{if(h!=""){print h; h=""}}' |
+    head -10 || true
 )
 
 [ -n "$claim_lines" ] || [ -n "$unpushed_claims" ] || exit 0

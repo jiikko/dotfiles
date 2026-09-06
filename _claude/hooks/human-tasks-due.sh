@@ -53,8 +53,23 @@ overdue="" ; upcoming="" ; broken="" ; later=0 ; unread=0
 
 # 予約された固定 2 段だけを明示する。glob が未展開でも [ -e ] で飛ばす (epic が無い
 # repo で zsh/bash の設定差や set -u に巻き込まれて落ちないようにする)。
-for f in "$dir"/*.md "$dir"/pending/*.md "$dir"/next/*.md \
-  "$dir"/epic/*/*.md "$dir"/epic/*/next/*.md "$dir"/epic/*/pending/*.md; do
+#
+# 🚨 issue dir は複数ありうる (issue 276)。root 直下だけでなく `<root>/*/issues` も回す
+# (obaket の macOS/issues/)。dir は改行区切りなので IFS を切り替えて読む。
+nl=$'\n' # 🚨 $'\n' は二重引用符の外でないと展開されない
+issue_files=""
+while IFS= read -r idir; do
+  [ -n "$idir" ] || continue
+  for f in "$idir"/*.md "$idir"/pending/*.md "$idir"/next/*.md \
+    "$idir"/epic/*/*.md "$idir"/epic/*/next/*.md "$idir"/epic/*/pending/*.md; do
+    [ -e "$f" ] || continue
+    issue_files="${issue_files}${issue_files:+$nl}$f"
+  done
+done <<EOF_DIRS
+$ISSUE_HOOK_DIRS
+EOF_DIRS
+[ -n "$issue_files" ] || exit 0
+while IFS= read -r f; do
   [ -e "$f" ] || continue
   base=${f##*/}
   case "$base" in
@@ -64,8 +79,10 @@ for f in "$dir"/*.md "$dir"/pending/*.md "$dir"/next/*.md \
   # 保留は未完了件数には数えない (着手条件待ちなので「今やる」対象ではない) が、
   # 期限は同じ基準で追う。ラベルで区別する
   held=""
+  # 🚨 `$dir` を patterns に埋めないこと (issue 276)。issue dir は複数ありうるので
+  # 単一の `$dir` では他の dir の pending/ を取りこぼす。パス断片で判定する。
   case "$f" in
-    "$dir"/pending/* | "$dir"/epic/*/pending/*) held=" [保留]" ;;
+    */pending/*) held=" [保留]" ;;
   esac
   # カテゴリ判定は lib の共通実装に任せる (部分一致の誤検出を防ぐ。理由はそちらのコメント)
   is_human=0
@@ -112,7 +129,9 @@ for f in "$dir"/*.md "$dir"/pending/*.md "$dir"/next/*.md \
   else
     upcoming="${upcoming}  期限間近 ${due}  ${rel}${held}"$'\n'
   fi
-done
+done <<EOF_FILES
+$issue_files
+EOF_FILES
 
 # 報告するものが何も無ければ黙る
 [ -n "$overdue$upcoming$broken" ] || [ "$unread" -gt 0 ] || exit 0

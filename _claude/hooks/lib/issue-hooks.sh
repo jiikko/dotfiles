@@ -31,18 +31,27 @@ issue_hook_resolve_dir() {
   fi
   root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)
   [ -n "$root" ] || return 1
-  # issues/ と issue/ (単数) の両方を受ける
-  for cand in "$root/issues" "$root/issue"; do
-    if [ -d "$cand" ]; then
-      # 呼び出し側 (source した hook) が読む出力変数
-      # shellcheck disable=SC2034
-      ISSUE_HOOK_ROOT="$root"
-      # shellcheck disable=SC2034
-      ISSUE_HOOK_DIR="$cand"
-      return 0
-    fi
+  # issues/ と issue/ (単数) の両方、および**入れ子の 1 段** (`<root>/*/issues`) を受ける。
+  #
+  # 🚨 root 直下だけを見ないこと (issue 276)。obaket は `macOS/issues/` を正式に持っており
+  # (apps/obaket/.claude/rules/issue-placement.md)、そこに置かれた human の期限切れ /
+  # retro の未決着 / next/ の claim が **どの hook にも見えなかった**。
+  # 深さは 1 段に限る: 全走査にすると node_modules / .git / ビルド生成物まで舐める。
+  local nl=$'\n' # 🚨 $'\n' は**二重引用符の外**でないと ANSI-C 展開されない (リテラルになる)
+  ISSUE_HOOK_DIRS=""
+  for cand in "$root/issues" "$root/issue" "$root"/*/issues "$root"/*/issue; do
+    [ -d "$cand" ] || continue
+    ISSUE_HOOK_DIRS="${ISSUE_HOOK_DIRS}${ISSUE_HOOK_DIRS:+$nl}$cand"
   done
-  return 1
+  [ -n "$ISSUE_HOOK_DIRS" ] || return 1
+  # 呼び出し側 (source した hook) が読む出力変数
+  # shellcheck disable=SC2034
+  ISSUE_HOOK_ROOT="$root"
+  # ISSUE_HOOK_DIR は「最初の 1 つ」の後方互換。**新しい呼び出しは ISSUE_HOOK_DIRS を
+  # 使うこと** (root 直下しか無い repo では両者は同じ)。
+  # shellcheck disable=SC2034
+  ISSUE_HOOK_DIR=${ISSUE_HOOK_DIRS%%"$nl"*}
+  return 0
 }
 
 # issue_hook_category <basename>: `NNN-<カテゴリ>-<スラッグ>.md` のカテゴリを stdout に出す。

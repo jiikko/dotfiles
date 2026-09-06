@@ -169,6 +169,28 @@ noepic_out="$(printf '{"cwd":"%s"}' "$noepic" | "$HOOK" 2>/dev/null)"
 noepic_ctx="$(printf '%s' "$noepic_out" | jq -r '.hookSpecificOutput.additionalContext // ""')"
 check "epic 無しでも正常に走査する" '091-human-no-epic' "$noepic_ctx"
 
+# --- 入れ子の issue dir (`<root>/*/issues`) も走査する (issue 276) ---
+# obaket は macOS/issues/ を正式に持っており、そこの human の期限切れがどの hook にも
+# 見えなかった。🚨 走査を root 直下だけへ戻す変異で red になること。
+mkdir -p "$repo/macOS/issues"
+printf '# t\n\n起票日: 2026-08-01\n期限: 2026-08-02\n' >"$repo/macOS/issues/900-human-nested.md"
+check "入れ子 dir の期限切れ human を拾う" "期限切れ 2026-08-02.*macOS/issues/900-human-nested" "$(report env)"
+
+# 入れ子だけがある repo (root 直下に issues/ が無い) でも動く
+nested_only="$WORK/nested-only"
+mkdir -p "$nested_only/sub/issues"
+git -C "$nested_only" init -q .
+printf '# t\n\n起票日: 2026-08-01\n期限: 2026-08-02\n' >"$nested_only/sub/issues/901-human-only.md"
+nested_out="$(printf '{"cwd":"%s"}' "$nested_only" | "$HOOK" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext // ""')"
+check "root 直下に issues/ が無くても入れ子を拾う" "期限切れ 2026-08-02.*sub/issues/901-human-only" "$nested_out"
+
+# どちらも無い repo では今までどおり無音
+none="$WORK/none"
+mkdir -p "$none"
+git -C "$none" init -q .
+none_out="$(printf '{"cwd":"%s"}' "$none" | "$HOOK" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext // ""')"
+check "issue dir が無ければ黙る" "" "$none_out"
+
 if [ "$fails" -gt 0 ]; then
   echo "FAIL: human-tasks-due.sh のテストが $fails 件失敗"
   exit 1

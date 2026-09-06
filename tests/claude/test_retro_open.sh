@@ -280,6 +280,15 @@ mkissue "019-retro-clockdrift.md" "起票日: ${yday}"
 check "壁時計が進んでも暦日で数える" "1 日前 +issues/019-retro-clockdrift" \
   "$(report env "PATH=$clock:$PATH")"
 
+# --- 入れ子の issue dir (`<root>/*/issues`) も走査する (issue 276) ---
+# 🚨 走査を root 直下だけへ戻す変異で red になること。
+nested="$WORK/nested"
+mkdir -p "$nested/macOS/issues"
+git -C "$nested" init -q .
+printf '# t\n\n起票日: 2026-08-01\n' >"$nested/macOS/issues/902-retro-nested.md"
+nested_ctx="$(printf '{"cwd":"%s"}' "$nested" | "$HOOK" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext // ""')"
+check "入れ子 dir の未決着 retro を拾う" 'macOS/issues/902-retro-nested' "$nested_ctx"
+
 if [ "$fails" -gt 0 ]; then
   echo "FAIL: retro-open.sh ($fails 件)"; exit 1
 fi

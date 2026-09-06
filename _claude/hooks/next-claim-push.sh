@@ -36,7 +36,10 @@ command -v jq >/dev/null 2>&1 || exit 0
 # 運用を始めた回もこの時点では存在する = 正しく発火する。
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 next_dir_found=0
-for next_dir in "$repo_root/issues/next" "$repo_root/issues/epic"/*/next; do
+# 🚨 入れ子の issue dir (`<root>/*/issues`) も見る (issue 276)。obaket は macOS/issues/ を
+# 正式に持っており、そこの next/ の claim がどの hook にも見えなかった。深さは 1 段に限る。
+for next_dir in "$repo_root/issues/next" "$repo_root/issues/epic"/*/next \
+  "$repo_root"/*/issues/next "$repo_root"/*/issues/epic/*/next; do
   if [ -d "$next_dir" ]; then
     next_dir_found=1
     break

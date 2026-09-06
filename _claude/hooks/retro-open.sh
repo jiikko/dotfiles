@@ -67,8 +67,21 @@ dated="" ; odd="" ; count=0 ; held_count=0
 
 # 予約された固定 2 段だけを明示する。glob が未展開でも [ -e ] で飛ばす (epic が無い
 # repo で zsh/bash の設定差や set -u に巻き込まれて落ちないようにする)。
-for f in "$dir"/*.md "$dir"/pending/*.md "$dir"/next/*.md \
-  "$dir"/epic/*/*.md "$dir"/epic/*/next/*.md "$dir"/epic/*/pending/*.md; do
+# 🚨 issue dir は複数ありうる (issue 276)。root 直下だけでなく `<root>/*/issues` も回す。
+nl=$'\n' # $'\n' は二重引用符の外でないと展開されない
+retro_files=""
+while IFS= read -r idir; do
+  [ -n "$idir" ] || continue
+  for f in "$idir"/*.md "$idir"/pending/*.md "$idir"/next/*.md \
+    "$idir"/epic/*/*.md "$idir"/epic/*/next/*.md "$idir"/epic/*/pending/*.md; do
+    [ -e "$f" ] || continue
+    retro_files="${retro_files}${retro_files:+$nl}$f"
+  done
+done <<EOF_DIRS
+$ISSUE_HOOK_DIRS
+EOF_DIRS
+[ -n "$retro_files" ] || exit 0
+while IFS= read -r f; do
   [ -e "$f" ] || continue
   base=${f##*/}
   # カテゴリ判定は lib の共通実装に任せる (部分一致の誤検出を防ぐ。理由はそちらのコメント)
@@ -82,7 +95,8 @@ for f in "$dir"/*.md "$dir"/pending/*.md "$dir"/next/*.md \
   # 「保留は未完了件数に数えない」と同じ規律に揃える (同じ「N 件」が別の意味になるのを防ぐ)
   held=""
   case "$f" in
-    "$dir"/pending/* | "$dir"/epic/*/pending/*) held=" [保留]" ; held_count=$((held_count + 1)) ;;
+    # 🚨 `$dir` を patterns に埋めない (issue 276。複数 dir では取りこぼす)
+    */pending/*) held=" [保留]" ; held_count=$((held_count + 1)) ;;
   esac
   [ -n "$held" ] || count=$((count + 1))
 
@@ -123,7 +137,9 @@ for f in "$dir"/*.md "$dir"/pending/*.md "$dir"/next/*.md \
   else
     dated="${dated}$(printf '%d\t  %4d 日前     %s%s' "$age" "$age" "$rel" "$held")"$'\n'
   fi
-done
+done <<EOF_FILES
+$retro_files
+EOF_FILES
 
 # 未決着が無ければ黙る (毎セッションのノイズにしない)
 [ -n "$dated$odd" ] || exit 0

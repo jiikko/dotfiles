@@ -38,6 +38,12 @@ new_epic_repo() { # global next/ が無く、group 内 next/ だけがある →
     : > issues/epic/foo/186-x.md &&
     git add -A && git -c user.email=t@t -c user.name=t commit -qm init ) >/dev/null 2>&1
 }
+new_nested_repo() { # root 直下に issues/ が無く、macOS/issues/next/ だけがある → $REPO
+  REPO=$(mktemp -d "$TMP_ROOT/nested-repo.XXXXXX")
+  ( cd "$REPO" && git init -q . && mkdir -p macOS/issues/next macOS/issues/done &&
+    : > macOS/issues/186-x.md &&
+    git add -A && git -c user.email=t@t -c user.name=t commit -qm init ) >/dev/null 2>&1
+}
 run_hook() { ( cd "$REPO" && printf '{"prompt":"x"}' | "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null ) || true; }
 
 expect_fire() { # $1=説明
@@ -119,6 +125,12 @@ scope=$(mktemp -d "$TMP_ROOT/noopt.XXXXXX")
 out=$( cd "$scope" && printf '{"prompt":"x"}' | "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true )
 if [ -n "$out" ]; then echo "✗ issues/next/ を消した repo (opt-out) で発火した"; fail=$((fail+1));
 else echo "✓ issues/next/ が無い repo では発火しない (opt-out した repo を急かさない)"; ok=$((ok+1)); fi
+
+# 入れ子の issue dir (`<root>/*/issues/next/`) の claim も拾う (issue 276)。
+# 🚨 next_dir の探索を root 直下だけへ戻す変異で red になること。
+new_nested_repo
+( cd "$REPO" && ln -s ../186-x.md macOS/issues/next/186-x.md ) >/dev/null 2>&1
+expect_fire "入れ子 dir (macOS/issues/next/) の未コミット claim"
 
 echo "## 配線 (settings.json に載っているか)"
 if jq -e '[.hooks.UserPromptSubmit[].hooks[].command] | any(endswith("next-claim-unshared.sh"))' \
