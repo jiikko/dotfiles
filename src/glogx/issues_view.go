@@ -726,6 +726,19 @@ func (v *issuesView) rebindOpen(path string) {
 	moved, ambiguous := v.matchByBase(base)
 	switch {
 	case moved != nil:
+		// 🚨 basename 一致だけで本人と決めない (issue 277)。basename は「番号 + スラッグ」なので
+		// 番号の一意性 (tests/issues/test_issue_numbers_unique.sh) が守られている限り本人だが、
+		// それが壊れた repo や `issues/epic/<name>/` が増えた状況では**別 issue** でありうる。
+		// 症状は「読んでいた本文が静かに別の issue に差し替わる」で、利用者からは気づけない。
+		// 開いていた本文の見出しと突き合わせ、違うなら差し替えずに言う。
+		if v.open != nil && v.open.Title != "" {
+			_ = moved.LoadMeta() // 見出しは遅延読み。読めなければ突き合わせを諦める (下の条件が偽)
+			if moved.Title != "" && moved.Title != v.open.Title {
+				v.discardBody()
+				v.setNotice("同名の別 issue が見つかりました (本文は閉じます): "+base, false)
+				return
+			}
+		}
 		v.open = moved
 	case ambiguous:
 		// 実体はあるが本人を決められない。畳むのは「どこにも無い」ときだけなので現状維持

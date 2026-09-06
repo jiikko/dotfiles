@@ -2707,3 +2707,51 @@ func path2issue(dir, rel string) *issues.Issue {
 	parts := strings.SplitN(strings.TrimSuffix(base, ".md"), "-", 3)
 	return &issues.Issue{Path: filepath.Join(dir, rel), Dir: dir, Rel: rel, Number: parts[0], Category: parts[1], Slug: parts[2]}
 }
+
+// 同じ basename でも見出しが違うなら本人とみなさない (issue 277)。
+//
+// basename は「番号 + スラッグ」なので、番号の一意性が守られている限り basename 一致 = 本人。
+// それが壊れた repo や group が増えた状況では別 issue でありうり、そのとき症状は
+// 「読んでいた本文が静かに別の issue に差し替わる」= 利用者からは気づけない形になる。
+func TestIssuesRebindOpenRejectsDifferentTitle(t *testing.T) {
+	dir := t.TempDir()
+	other := filepath.Join(dir, "other")
+	if err := os.MkdirAll(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// 同じ basename・違う見出し
+	path := filepath.Join(other, "300-bug-same-name.md")
+	if err := os.WriteFile(path, []byte("# 300 bug: 別の issue\n\n本文\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	v := newTestIssuesView()
+	v.shown, v.loaded = true, true
+	v.open = &issues.Issue{Number: "300", Title: "300 bug: 元の issue", Path: filepath.Join(dir, "300-bug-same-name.md")}
+	replacement := &issues.Issue{Number: "300", Path: path}
+	v.all = []*issues.Issue{replacement}
+
+	v.rebindOpen(v.open.Path)
+
+	if v.open == replacement {
+		t.Error("見出しが違うのに繋ぎ直した (本文が静かに別 issue へ差し替わる。issue 277)")
+	}
+	if v.notice == "" {
+		t.Error("差し替えを断ったのに利用者へ何も言っていない")
+	}
+
+	// 陽性対照: 見出しが同じなら従来どおり繋ぎ直す (n や外部の移動を追う本来の機能)
+	same := filepath.Join(other, "301-bug-moved.md")
+	if err := os.WriteFile(same, []byte("# 301 bug: 移動した\n\n本文\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	movedIss := &issues.Issue{Number: "301", Path: same}
+	v2 := newTestIssuesView()
+	v2.shown, v2.loaded = true, true
+	v2.open = &issues.Issue{Number: "301", Title: "301 bug: 移動した", Path: filepath.Join(dir, "301-bug-moved.md")}
+	v2.all = []*issues.Issue{movedIss}
+	v2.rebindOpen(v2.open.Path)
+	if v2.open != movedIss {
+		t.Error("見出しが同じなら繋ぎ直すべき (移動を追う機能が死んでいる)")
+	}
+}
