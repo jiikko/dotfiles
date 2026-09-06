@@ -587,6 +587,9 @@ func strayIn(dir, group, number string) *issues.Issue {
 // 🚨 並び順を 2 通り回す。「最初に見つけた GroupKey の group を開く」誤実装は、無関係な group が
 // 対象より後ろに居ると正解と同じ group に当たって素通りする。production の並びは番号降順
 // (issues.sortIssues) なので、片方の並びだけで書くと守れているつもりで守れていない (4 周目)。
+//
+// 🚨 その変異を当てると **「無関係な group が先」のケースだけが red** になる (もう一方は
+// 構造上その誤実装を検出できない)。ケースを減らさないこと — 減らすと検出力が 0 になる。
 func TestIssuesViewAnchorOpensCollapsedGroupForMovedIssue(t *testing.T) {
 	dir := "/repo/issues"
 	for _, tc := range []struct {
