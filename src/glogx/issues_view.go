@@ -2664,6 +2664,11 @@ func unmarkDestLabel(targets []*issues.Issue) string {
 			hasGlobal = true
 		}
 	}
+	// 🚨 skip される対象 (既にその向きに居るもの。markNextKey の (Status==Next) != unmark) も
+	// ここでは数える。「group へ戻る」と言いながら実際に動くのが 0 件になりうる = 誤警告どまりで、
+	// 逆向き (issues 直下と言って group へ入る) は作れない (MoveToSubdir と同じ 1 本の条件で
+	// 決めているため。2026-09-06 の敵対的レビュー 4 周目 P3-5 で確認済み)。件数表示 (`N 件`) も
+	// 同じ集合を数えているので、ここだけ絞ると画面の中で数と宛先の母集合が食い違う
 	switch {
 	case hasGroup && hasGlobal:
 		return "元の group / issues 直下"
