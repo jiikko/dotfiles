@@ -795,18 +795,50 @@ func (f StatusFilter) Next() StatusFilter {
 	return f + 1
 }
 
-// showsIssue はその issue を表示するか。
+// showsIssue はその issue を表示するか。closedGroups は「子が全部 done の group」の GroupKey 集合。
 //
 // 🚨 epic group の子 (GroupEpic) は状態フィルタの対象外で、done / pending も既定で見える
 // (issue 291、2026-09-06)。epic は「まとまった仕事の器」なので、開いたときに中身が全部
 // 見えないと進捗 (何件中何件終わったか) が読めない。global 側で done を伏せる根拠 (実測で
 // done が全体の 8 割を占める repo があり open が埋もれる) は、子が数件〜十数件の epic 1 つには
 // 効かない。畳んだ親行は 1 行しか占めないので、一覧が done で埋まることもない。
-func (f StatusFilter) showsIssue(iss *Issue) bool {
-	if iss.GroupKind == GroupEpic {
+//
+// 🚨 ただし **終わった epic (子が全部 done) はこの例外から外す** (issue 294、2026-09-06)。
+// 例外の目的は「進行中の器の進捗を読ませる」ことなので、終わった器には効かせる理由が無い。
+// 外さないと、終わった epic が既定の一覧に残り続け、しかも親行の位置は子の最大番号で決まるので
+// **番号の大きい epic ほど先頭に居座る**。done な global issue と同じく `a` を進めたときだけ出す。
+func (f StatusFilter) showsIssue(iss *Issue, closedGroups map[string]bool) bool {
+	if iss.GroupKind == GroupEpic && !closedGroups[iss.GroupKey] {
 		return true
 	}
 	return f.shows(iss.Status)
+}
+
+// closedGroupKeys は「子が 1 件以上あり、その全部が done」の group の GroupKey 集合。
+//
+// 🚨 親 issue (group 名と同じ番号の issue) も 1 件として数える — 親が open なら epic は
+// 終わっていない。数えるのは GroupEpic の子だけで、予約外ディレクトリの迷子 (GroupUnknown) は
+// group の一員として畳まれないので数えない (数えると、迷子を 1 件置いただけで epic が
+// 永久に「終わっていない」ことになる)。
+func closedGroupKeys(list []*Issue) map[string]bool {
+	seen := make(map[string]bool, 4) // その group に子が居たか
+	open := make(map[string]bool, 4) // done 以外の子が居たか
+	for _, iss := range list {
+		if iss.GroupKind != GroupEpic || iss.GroupKey == "" {
+			continue
+		}
+		seen[iss.GroupKey] = true
+		if iss.Status != StatusDone {
+			open[iss.GroupKey] = true
+		}
+	}
+	out := make(map[string]bool, len(seen))
+	for key := range seen {
+		if !open[key] {
+			out[key] = true
+		}
+	}
+	return out
 }
 
 // shows はその状態を表示するか。
@@ -881,9 +913,12 @@ func Filter(issues []*Issue, tab string, filter StatusFilter) []*Issue {
 		// own に残すと、そのカテゴリの issue がどのタブにも出なくなる
 		delete(own, OtherTab)
 	}
+	// 「終わった epic」の判定は**絞り込む前の全件**から作る (タブで絞った後の集合から作ると、
+	// 別カテゴリの open な子が見えなくなり、進行中の epic を終わったものと誤判定する)
+	closed := closedGroupKeys(issues)
 	out := make([]*Issue, 0, len(issues))
 	for _, iss := range issues {
-		if !filter.showsIssue(iss) {
+		if !filter.showsIssue(iss, closed) {
 			continue
 		}
 		switch {

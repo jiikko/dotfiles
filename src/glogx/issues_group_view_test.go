@@ -780,3 +780,26 @@ func TestIssuesViewTabLineShowsBypassBadge(t *testing.T) {
 		t.Fatalf("a を進めた後のバッジが違う: %q", line)
 	}
 }
+
+// TestIssuesViewHidesClosedEpicFromListAndCounts は、終わった epic が一覧からも件数からも
+// 消えることを固定する (片方だけ消えると「All 3 なのに行が 1 本」になる。issue 294)。
+func TestIssuesViewHidesClosedEpicFromListAndCounts(t *testing.T) {
+	dir := "/repo/issues"
+	v := loadedView(
+		fakeIssue("100", "feat", "global", issues.StatusOpen),
+		fakeEpicIssue(dir, "zeta", "999", "done-a", issues.StatusDone),
+		fakeEpicIssue(dir, "zeta", "998", "done-b", issues.StatusDone),
+	)
+	out := strings.Join(v.listLines(renderOpts(10)), "\n")
+	if strings.Contains(out, "zeta") {
+		t.Fatalf("終わった epic が既定の一覧に残っている:\n%s", out)
+	}
+	if v.allCount != 1 {
+		t.Fatalf("件数に終わった epic の子が数えられている: allCount=%d", v.allCount)
+	}
+	v.handleKey("a", vp(10)) // +pending
+	v.handleKey("a", vp(10)) // +done
+	if out = strings.Join(v.listLines(renderOpts(10)), "\n"); !strings.Contains(out, "zeta (2 ✓2)") {
+		t.Fatalf("a を全開にしても終わった epic が出ない:\n%s", out)
+	}
+}

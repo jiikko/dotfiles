@@ -716,3 +716,66 @@ func TestVisibleBadgesMarksFilterBypass(t *testing.T) {
 		}
 	}
 }
+
+// TestFilterHidesClosedEpicUntilDoneIsShown は「終わった epic (子が全部 done) は既定の一覧から
+// 消え、`a` を進めたときだけ出る」ことを固定する (issue 294)。進行中の epic の子は done でも
+// 既定で見える (issue 291) ので、例外の射程が「終わっていない器」に限られることを見る。
+func TestFilterHidesClosedEpicUntilDoneIsShown(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "issues")
+	// 終わった epic (子 2 件とも done)。番号は他より大きい = 並び順でも先頭に来る位置
+	mkFiles(t, filepath.Join(dir, "epic", "closed-epic", "done"), "999-feat-a.md", "998-feat-b.md")
+	// 進行中の epic (done と open が混在)
+	mkFiles(t, filepath.Join(dir, "epic", "live"), "700-feat-open.md")
+	mkFiles(t, filepath.Join(dir, "epic", "live", "done"), "701-feat-done.md")
+	mkFiles(t, dir, "100-feat-global.md")
+	all, _ := Scan([]string{dir})
+
+	visible := func(f StatusFilter) map[string]bool {
+		out := make(map[string]bool)
+		for _, iss := range Filter(all, "", f) {
+			out[iss.Number] = true
+		}
+		return out
+	}
+	got := visible(FilterOpen)
+	for _, n := range []string{"999", "998"} {
+		if got[n] {
+			t.Errorf("終わった epic の子 %s が既定で見えている: %v", n, got)
+		}
+	}
+	for _, n := range []string{"700", "701", "100"} {
+		if !got[n] {
+			t.Errorf("%s が既定で見えていない (進行中の epic と global): %v", n, got)
+		}
+	}
+	if got := visible(FilterAll); !got["999"] || !got["998"] {
+		t.Errorf("a を全開にしても終わった epic が出ない: %v", got)
+	}
+}
+
+// TestClosedGroupKeysCountsParentAndIgnoresStrays は「終わった epic」の数え方を固定する。
+// 親 issue が open なら終わっていない / 予約外ディレクトリの迷子は数に入れない (迷子を 1 件
+// 置いただけで epic が永久に終わらなくなるのを避ける)。
+func TestClosedGroupKeysCountsParentAndIgnoresStrays(t *testing.T) {
+	key := "/repo/issues/epic/467"
+	child := func(number string, status Status, kind GroupKind) *Issue {
+		return &Issue{Number: number, Status: status, Group: "467", GroupKind: kind, GroupKey: key}
+	}
+	for _, tc := range []struct {
+		name string
+		list []*Issue
+		want bool
+	}{
+		{"全部 done", []*Issue{child("460", StatusDone, GroupEpic), child("459", StatusDone, GroupEpic)}, true},
+		{"親 issue が open", []*Issue{child("467", StatusOpen, GroupEpic), child("460", StatusDone, GroupEpic)}, false},
+		{"pending が残っている", []*Issue{child("460", StatusDone, GroupEpic), child("459", StatusPending, GroupEpic)}, false},
+		{"next が残っている", []*Issue{child("460", StatusDone, GroupEpic), child("459", StatusNext, GroupEpic)}, false},
+		{"迷子は数えない", []*Issue{child("460", StatusDone, GroupEpic), child("459", StatusUnknown, GroupUnknown)}, true},
+		{"子が 0 件", nil, false},
+	} {
+		if got := closedGroupKeys(tc.list)[key]; got != tc.want {
+			t.Errorf("%s: got %v want %v", tc.name, got, tc.want)
+		}
+	}
+}
