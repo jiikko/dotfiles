@@ -67,6 +67,15 @@ src/glogx/gitlog.go:283  args = append(args, "--not", "--remotes")   # HEAD 起�
 （生成部 32 / 37 / 43 / 120 行）。production が使う detached worktree を構造的に踏まないので、
 **式をどちら向きに変えても緑のまま**。
 
+## 🚨 検証するときハッシュで照合しない（rebase で偽陽性が出る）
+
+dotfiles-71 が本件を受けて自セッションの 22 commit を全数照合したところ、**取りこぼしはゼロ**
+だったが、途中で 4 件が「origin に無い」と出た。中身を見ると **rebase 前のハッシュ**だった
+（`9e18e81f` → `c45d1a02` 等。成果物はすべて `origin/master` に在った）。
+
+この repo は worktree 運用で `git rebase origin/master` を日常的に挟むので、
+**ハッシュでの照合は偽陽性を出す**。修正の検証では **subject と成果物でも照合する**こと。
+
 ## 受け入れ条件
 
 - [ ] 4 箇所すべてを同じ commit で直す（[`CLAUDE.md`](../CLAUDE.md) 「N 箇所すべてに対応したと書くなら
@@ -79,3 +88,11 @@ src/glogx/gitlog.go:283  args = append(args, "--not", "--remotes")   # HEAD 起�
 ## 関連
 
 - issue 310（`git-state-verify.sh` の他の 2 つの破れ。同じファイルを触るので順序を決めて着手する）
+
+## 実運用への影響（確認済み）
+
+dotfiles-71 は worktree で commit するたびに `(none — すべて push 済み)` の偽の全クリアを
+見ていたが、**push の判定に hook を使わず**、毎回 `git push` の出力
+（`d6695a72..f51a6bb8 HEAD -> master`）と本体側の `pull` / `merge --ff-only` の結果を
+読んでいたため実害は出ていない。**逆に言えば、hook の「未 push」欄は worktree では
+最初から読む価値が無かった**ことになる。
