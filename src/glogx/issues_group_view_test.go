@@ -575,7 +575,9 @@ func TestIssuesViewAnchorOpensCollapsedGroupForMovedIssue(t *testing.T) {
 	global := fakeIssue("900", "feat", "global", issues.StatusOpen)
 	child := fakeEpicIssue(dir, "cloud", "702", "moved-in", issues.StatusNext)
 	other := fakeEpicIssue(dir, "alpha", "701", "unrelated", issues.StatusOpen)
-	v := loadedView(global, child, other)
+	// 🚨 無関係な group を **rows の先に** 置く。後ろに置くと「最初に見つけた GroupKey を開く」
+	// 変異でも正解と同じ group に当たって素通りする (2026-09-06 に実測)
+	v := loadedView(global, other, child)
 
 	if v.groupExpanded(child.GroupKey) {
 		t.Fatalf("前提が違う: group が既に展開されている")
