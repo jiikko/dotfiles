@@ -166,14 +166,20 @@ func TestFrameAllocBudget(t *testing.T) {
 		// 全画面ビューア 4 枚のうち doctor と ratelimit は、予算の枠組み (047 / 051 / 062) より
 		// 後に足されたためどのゲートの視界にも入っていなかった (issue 275 / 270)。
 		// 上限は 2026-09-06 のローカル実測 (下の PROBE で採取) に回数 +4 / バイト +3%。
-		// 2026-09-06 実測 (darwin/arm64・GOMAXPROCS=14・**-race**・120x40):
-		// ratelimit-dash 1065 allocs / 239319 B、doctor-disk 1506 allocs / 135890 B。
-		// -race なしだと 1045 / 235515、1164 / 105472 なので、上限は重い方 (-race) 基準。
-		// 既存ケースと同じ余裕 (回数 +4 / バイト +3%)。
-		// 🚨 既存の最重量 (status-40 = 322 allocs / 44400 B) の 3〜5 倍あるので、
-		// 「他と同じ水準に収まっている」とは読まないこと。ここを下げるのが 275 / 270 の本題。
-		{"ratelimit-dash", budgetRatelimitModel, 1069, 246500},
-		{"doctor-disk", budgetDoctorModel, 1510, 140000},
+		// 2026-09-06 実測 (darwin/arm64・GOMAXPROCS=14・**-race**・120x40)。
+		// 上限は重い方 (-race) 基準で、既存と同じ余裕 (回数 +4 / バイト +3%)。
+		//
+		// ratelimit-dash: メモ化前 1065 allocs / 239319 B → **メモ化後 173 / 82055** (issue 275)。
+		// 上限は必ず**今の実測**へ締め直すこと — 締めずに残すと「6 倍悪化しても緑」になり、
+		// issue 269 と同じ「観測できない予算」を新設したことになる。
+		// doctor-disk: 🚨 **既存ケースの「+4」は使えない**。-race で 8 回測ると
+		// 1506〜1515 と 10 回ぶん揺れる (他のケースは (10/10) で完全一致すると
+		// このファイルの上のコメントが記録している)。+4 にすると実際に flake した
+		// (実測: 6 回中 1 回 1514 で赤)。観測レンジの上 (1515) に ~2% の余裕で 1550。
+		// 変異 (diskDetail を 2 回呼ぶ) は 1844 なのでこの幅でも捕まる。
+		// issue 270 の遅延化が入ったらここも締め直す。
+		{"ratelimit-dash", budgetRatelimitModel, 177, 84600},
+		{"doctor-disk", budgetDoctorModel, 1550, 140000},
 	}
 	for _, c := range cases {
 		m := c.build(t)

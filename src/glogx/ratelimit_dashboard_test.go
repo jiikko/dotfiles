@@ -355,3 +355,71 @@ func TestScreenBackgroundOnlyForDashboard(t *testing.T) {
 		t.Errorf("色なしなのに地色を敷いた: %q", got)
 	}
 }
+
+// 盤のメモ (issue 275) が「出力を変えない」ことを、メモ無しの結果との差分で固定する。
+//
+// 🚨 キャッシュの正しさは「速いか」ではなく「**同じ入力で同じ出力か**」でしか確かめられない。
+// 各ケースで dropCache() した結果 (= 素の描画) と、キャッシュを温めた結果を突き合わせる。
+func TestRatelimitDashCacheMatchesUncached(t *testing.T) {
+	base := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
+	snapA, snapB := rlTestSnap(), rlTestSnap()
+	cases := []struct {
+		name string
+		o    ratelimitRenderOpts
+	}{
+		{"基準", ratelimitRenderOpts{width: 120, page: 40, colored: false, snap: snapA, now: base}},
+		{"幅ちがい", ratelimitRenderOpts{width: 100, page: 40, colored: false, snap: snapA, now: base}},
+		{"高さちがい", ratelimitRenderOpts{width: 120, page: 30, colored: false, snap: snapA, now: base}},
+		{"色つき", ratelimitRenderOpts{width: 120, page: 40, colored: true, snap: snapA, now: base}},
+		{"秒がちがう", ratelimitRenderOpts{width: 120, page: 40, colored: false, snap: snapA, now: base.Add(time.Second)}},
+		{"snap がちがう", ratelimitRenderOpts{width: 120, page: 40, colored: false, snap: snapB, now: base}},
+	}
+	var d ratelimitDash
+	d.shown = true
+	for _, c := range cases {
+		d.dropCache()
+		want := d.lines(c.o) // メモ無し (直前に捨てた)
+		d.dropCache()
+		_ = d.lines(c.o)    // 温める
+		got := d.lines(c.o) // ここがキャッシュ経路
+		if !d.cacheOK {
+			t.Fatalf("%s: キャッシュが立っていない (この経路を測れていない)", c.name)
+		}
+		if len(got) != len(want) {
+			t.Fatalf("%s: 行数が違う %d != %d", c.name, len(got), len(want))
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("%s: %d 行目が違う\n  memo=%q\n  素  =%q", c.name, i, got[i], want[i])
+			}
+		}
+	}
+
+	// 鍵に入っている入力を 1 つ変えたら、必ずキャッシュを外して描き直す。
+	// 🚨 比較は**常に基準ケースとの差**で見る。直前のケースと比べる形にすると、
+	// 各ケースが 2 箇所ずつ違うせいで「鍵から 1 項目落とす」変異を素通しする
+	// (最初にそう書いて踏んだ: sec を鍵から外しても緑だった)。
+	for _, c := range cases[1:] {
+		d.dropCache()
+		_ = d.lines(cases[0].o) // 基準を焼く
+		baseKey := d.cacheKey
+		_ = d.lines(c.o)
+		if d.cacheKey == baseKey {
+			t.Errorf("%s: 基準と入力が違うのにキャッシュ鍵が同じ (描き直していない)", c.name)
+		}
+	}
+
+	// 返すのはコピー (呼び出し側が書き換えてもキャッシュが壊れない)。
+	// 🚨 書き換えるのは**キャッシュヒットの戻り値**にすること。ミス経路の戻り値は
+	// キャッシュの裏地ではないので、そちらを書き換えても何も検出できない (これも踏んだ)。
+	d.dropCache()
+	_ = d.lines(cases[0].o) // ミス (ここで焼く)
+	hit := d.lines(cases[0].o)
+	if !d.cacheOK {
+		t.Fatal("キャッシュが立っていない")
+	}
+	hit[0] = "PWNED"
+	if again := d.lines(cases[0].o); again[0] == "PWNED" {
+		t.Error("キャッシュの裏地を返している (呼び出し側の書き換えが次のフレームへ漏れる)")
+	}
+}

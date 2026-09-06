@@ -20,11 +20,38 @@ import (
 // ratelimitDash は全画面ダッシュボードの表示状態。
 type ratelimitDash struct {
 	shown bool
+	// 盤の描画結果のメモ (issue 275)。viewLines は毎 View で lines を呼び、
+	// usage.RenderDashboard はセル数 (幅 x 高) に比例して braille のスライスを確保し直すので、
+	// 12.5fps で回ると 1 フレーム 1065 allocs / 239KB (120x40 実測) がそのまま乗る。
+	// 12.5fps で回るのは rlDashLoading() ではなく **spinnerActive() の他の項**
+	// (len(awaitCI) > 0 = push 直後 / panelHasRunningJob() = CI 実行中) が真のとき。
+	cache    []string
+	cacheKey ratelimitCacheKey
+	cacheOK  bool
+}
+
+// ratelimitCacheKey は盤の出力を決める入力の全部。
+//
+// 🚨 now を**秒に丸めて**鍵にする (ユーザー選定 2026-09-06)。針とゲージは now の連続関数で
+// 描かれる設計 (usage/dial.go:cardPace の「1% 刻みに丸めると針がガタつく」) なので、丸めると
+// 針の更新粒度が 80ms → 1s になる。枠は時間単位で動くので目には分からない一方、
+// **これは見た目の挙動変更**であることを忘れないこと。
+//
+// spinner と err は鍵に入れない: 盤を描く分岐 (snap != nil) では両方とも使われず、
+// spinner は毎フレーム変わるので入れると必ずキャッシュを外す。
+type ratelimitCacheKey struct {
+	width, page int
+	colored     bool
+	snap        *usage.Snapshot // 取得のたびに丸ごと差し替わる (usage_overlay.go) のでポインタで足りる
+	sec         int64
 }
 
 func (d *ratelimitDash) visible() bool { return d.shown }
 func (d *ratelimitDash) toggle()       { d.shown = !d.shown }
-func (d *ratelimitDash) close()        { d.shown = false }
+func (d *ratelimitDash) close()        { d.shown = false; d.dropCache() }
+
+// dropCache は盤のメモを捨てる (Snapshot を握り続けない)。
+func (d *ratelimitDash) dropCache() { d.cache, d.cacheKey, d.cacheOK = nil, ratelimitCacheKey{}, false }
 
 // ratelimitRenderOpts はダッシュボードの描画情報 (窓の寸法 + 色 + 描くデータ)。
 type ratelimitRenderOpts struct {
@@ -43,14 +70,27 @@ func (d *ratelimitDash) lines(o ratelimitRenderOpts) []string {
 	body := max(o.page-len(head), 1)
 	switch {
 	case o.snap != nil:
+		key := ratelimitCacheKey{
+			width: o.width, page: o.page, colored: o.colored, snap: o.snap, sec: o.now.Unix(),
+		}
+		if d.cacheOK && d.cacheKey == key {
+			// 🚨 コピーを返す。呼び出し側 (finishWithGlobalChrome) が append する経路があると、
+			// キャッシュの裏地を書き換えて次のフレームが壊れる。40 行のコピーは
+			// 盤を組み直すコストに比べれば無視できる。
+			return append([]string(nil), d.cache...)
+		}
 		// 🚨 snap があっても描く枠が 0 件になりうる (RenderDashboard は nil を返す)。
 		// Claude 側は既定の枠ラベル ("5h" / "7d") でしか拾わないので、/usage の文言が
 		// 変わった環境では「パースは成功しているが描く枠が無い」が起こる。無言の白画面に
 		// せず理由を出す (全画面なので、ユーザーには壊れたようにしか見えない)。
+		var out []string
 		if rows := usage.RenderDashboard(o.snap, o.now, o.width, body, o.colored); rows != nil {
-			return padTo(append(head, rows...), o.page)
+			out = padTo(append(head, rows...), o.page)
+		} else {
+			out = padTo(append(head, centerLine("表示できる利用枠がありません", o.width)), o.page)
 		}
-		return padTo(append(head, centerLine("表示できる利用枠がありません", o.width)), o.page)
+		d.cache, d.cacheKey, d.cacheOK = append([]string(nil), out...), key, true
+		return out
 	case o.err != nil:
 		return padTo(append(head, centerLine("取得失敗", o.width)), o.page)
 	default:
