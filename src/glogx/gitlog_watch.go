@@ -141,9 +141,32 @@ func gitLogWatchDirs() []string {
 	return dirs
 }
 
-// gitLogWatchMaxDirs は見張るディレクトリ数の上限。kqueue (macOS) は 1 ディレクトリにつき fd を
-// 1 本使うので、ref を大量に持つ repo で fd を食い潰さないよう頭を止める。溢れた分はイベントが
-// 来ないだけで、1 分ポーリングが受け持つ (無音にはならない)。
+// gitLogWatchMaxDirs は見張る**ディレクトリ数**の上限。溢れた分はイベントが来ないだけで、
+// 1 分ポーリングが受け持つ (無音にはならない)。
+//
+// 🚨 **これは fd の上限ではない** (issue 271。以前ここに「kqueue は 1 ディレクトリにつき fd を
+// 1 本使うので fd を食い潰さないよう頭を止める」と書いてあったが、前提が不完全だった)。
+// kqueue 自体は「監視対象 1 つにつき fd 1 本」で正しいが、fsnotify の kqueue backend は
+// inotify を模すために `watchDirectoryFiles` (backend_kqueue.go) でディレクトリ直下の
+// **全エントリを個別に unix.Open して register する**。つまり `Add(dir)` のコストは
+// **1 + そのディレクトリ内のエントリ数**。
+//
+// 実測 (2026-09-05, fsnotify v1.10.1, darwin/arm64):
+//   - `refs/remotes/origin/` に loose ref 2000 本の合成 repo: 見張るディレクトリは
+//     **11 / 64 で上限に達していないのに fd は 4022 本**
+//   - この dotfiles repo: 13 / 64 ディレクトリで 49 本
+//
+// さらに fsnotify は Add 済み dir に**後から**生えたエントリにもイベント経路
+// (`readEvents` -> `dirChange` -> `sendCreateIfNew` -> `internalWatch`) で fd を開くので、
+// 起動時に数えるだけの予算では fd を bound できない (見張り開始 +24 -> fetch 相当の
+// 2000 ref 追加後 +4024 を実測)。
+//
+// 実効の fd 上限は `ulimit -n` ではなく `kern.maxfilesperproc` (この開発機で 245,760。
+// Go runtime が起動時に soft を hard へ上げるため shell の `ulimit -Sn` は効かない) なので、
+// **今すぐ枯渇する話ではない**。fd を本当に bound したくなったら、動的な会計 (増減の追跡) と
+// 超過時の Remove が要る。🚨 その際 `issues_watch.go` の `watchDirs` へ同じ打ち切りを
+// 当ててはいけない — あちらは watch 集合が**指紋の入力を兼ねている**ので、落とした
+// ディレクトリの新規 issue がイベントでもポーリングでも永久に見えなくなる。
 const gitLogWatchMaxDirs = 64
 
 // appendSubdirs は root とその配下のディレクトリを dirs へ足す (上限まで)。

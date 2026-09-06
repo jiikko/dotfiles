@@ -250,6 +250,24 @@ Go の syscall.Getrlimit(RLIMIT_NOFILE):
 2. **部分失敗が恒久的で回復しない**（上節）。こちらは fd が足りている限り顕在化しないが、
    一度当たると `r` で再起動するまで戻らない
 
+## 対応 (2026-09-06)
+
+**推奨対応 1 と 4 を実施** = `gitlog_watch.go:gitLogWatchMaxDirs` のコメントを実測に合わせて
+書き直し、`tui.go` の stale なバージョン参照 (`fsnotify v1.9.0` → pin は v1.10.1) も直した。
+「これは fd の上限ではない」「`Add(dir)` = 1 + entries」「イベント経路でも増える」
+「実効上限は `kern.maxfilesperproc`」「`issues` 側に同じ打ち切りを当ててはいけない理由」を
+`watchDirectoryFiles` / `dirChange` を名指しして記録した。
+
+**推奨対応 2（動的な会計 + 超過時の Remove）は入れていない。** 実効上限 245,760 に対して
+実測の最悪ケースが 4,022 なので、今すぐ枯渇する話ではなく、動的な fd 会計は
+それ自体が新しい失敗の入口になる（`adversarial-review-own-safeguards.md` 0-A）。
+**trigger**: `ulimit -n` の hard limit が低い環境で glogx を使う必要が出たとき、または
+「イベントが来ない」の報告が出たとき。
+
+**推奨対応 3（部分失敗の恒久化）も入れていない。** `Add` の戻りを見るだけでは足りず
+（2 回目以降 nil）、`WatchList()` との突き合わせか watcher の作り直しが要る。
+実害は fd が枯渇する環境でしか出ないので、2 と同じ trigger で再評価する。
+
 ## 推奨対応（初版の案は無効。書き直した）
 
 🚨 **初版の「`os.ReadDir` の件数を足し込んで打ち切る」は採らない。** 2 つの理由で機能しない:

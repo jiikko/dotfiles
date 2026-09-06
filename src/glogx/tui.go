@@ -2234,7 +2234,7 @@ func (m *browseModel) cancelAll() {
 	m.actModal.stop() // 走行中の push/pull git subprocess を中断 (stall 中の孤児化防止)
 	// issues viewer の fsnotify watcher を閉じる。通常終了ではプロセス終了が fd を回収するが、
 	// 再起動 (restartSelf の syscall.Exec) は fd テーブルを引き継ぐため明示的に閉じないと漏れる:
-	// fsnotify v1.9.0 の darwin backend は監視対象 fd に O_CLOEXEC を付ける一方、kqueue fd 本体
+	// fsnotify (go.mod の pin は v1.10.1) の darwin backend は監視対象 fd に O_CLOEXEC を付ける一方、kqueue fd 本体
 	// (backend_kqueue.go newKqueue) には CloseOnExec を呼ばず、viewer を開いたまま r で再起動する
 	// たびに kqueue fd が新プロセスへ 1 本ずつ継承され続ける。
 	m.issuesOv.stopWatch()
