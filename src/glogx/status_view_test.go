@@ -9,6 +9,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"termsafe/ctlprobe"
 )
 
 // --- ヘルパー ---
@@ -312,20 +314,11 @@ func TestStatusLoadErrorAfterLoadedKeepsLastGood(t *testing.T) {
 	}
 }
 
-// hasTerminalControl は「端末が制御として解釈しうる文字が残っているか」。
+// hasTerminalControl は termsafe/ctlprobe の薄い別名。
 //
-// 🚨 ESC と BEL だけを見る判定にしないこと: それだと 8bit の CSI (U+009B) / OSC (U+009D) を
-// 原理的に見逃し、「ESC と BEL だけ落とす」実装がテストを全部 green で通ってしまう
-// (敵対的レビュー 2026-08-05 が実際にこの盲点を突いた)。許可した文字だけが残っているか、の
-// allowlist 側で判定する。
-func hasTerminalControl(s string) bool {
-	for _, r := range s {
-		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
-			return true
-		}
-	}
-	return false
-}
+// 🚨 判定そのものをここへ書き戻さないこと (issue 285)。同じオラクルが 5 箇所に複製されており、
+// 無害化の定義を広げるとき 4 箇所を直し忘れても全パッケージ green のままになる。
+func hasTerminalControl(s string) bool { return ctlprobe.HasControl(s) }
 
 // ファイル名の端末制御シーケンスは画面へ出さない。POSIX のファイル名は / と NUL 以外の任意
 // バイトを許し、-z の git status はクォートせず生で返すので、第三者ブランチに ESC 入りの名前の

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"termsafe/ctlprobe"
 )
 
 // issue ファイルは第三者が PR で足せる = 完全に信頼できない入力。この 3 本は
@@ -18,20 +20,8 @@ const (
 	st8  = "\u009c" // 8bit ST (C1)
 )
 
-// hasTerminalControl は「端末が制御として解釈しうる文字が残っているか」。
-//
-// 🚨 ESC と BEL だけを見る判定にしないこと: それだと 8bit の CSI (U+009B) / OSC (U+009D) を
-// 原理的に見逃し、「ESC と BEL だけ落とす」実装がテストを全部 green で通ってしまう
-// (敵対的レビュー 2026-08-05 が実際にこの盲点を突いた)。許可した文字だけが残っているか、の
-// allowlist 側で判定する。
-func hasTerminalControl(s string) bool {
-	for _, r := range s {
-		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
-			return true
-		}
-	}
-	return false
-}
+// hasTerminalControl は termsafe/ctlprobe の薄い別名 (判定の正本はあちら。issue 285)。
+func hasTerminalControl(s string) bool { return ctlprobe.HasControl(s) }
 
 // 本文・H1 の端末制御シーケンスは表示に出る前に落ちる。
 // 落ちないと、issue 一覧を開いただけで端末のタイトル書き換え・画面消去・OSC52 による

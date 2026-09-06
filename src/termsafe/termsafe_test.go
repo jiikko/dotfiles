@@ -2,6 +2,7 @@ package termsafe
 
 import (
 	"strings"
+	"termsafe/ctlprobe"
 	"testing"
 )
 
@@ -171,14 +172,7 @@ func TestInvalidUTF8IsNormalizedConsistently(t *testing.T) {
 
 // hasControl は「端末が制御として解釈しうる文字が残っているか」(C0 / DEL / C1)。
 // ⚠️ ESC と BEL だけを見る判定にすると 8bit の C1 を原理的に見逃す。
-func hasControl(s string) bool {
-	for _, r := range s {
-		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
-			return true
-		}
-	}
-	return false
-}
+func hasControl(s string) bool { return ctlprobe.HasControl(s) }
 
 // PlainBlock は改行だけ残し、他は PlainLine と同じに落とす。
 // 🚨 「改行を残す」と「行構造を偽装させない」は両立しない。両立させる側 (1 件 1 行) の

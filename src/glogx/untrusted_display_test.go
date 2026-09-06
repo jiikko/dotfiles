@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"termsafe/ctlprobe"
 	"testing"
 	"time"
 
@@ -172,9 +173,7 @@ const (
 )
 
 // hasControlExceptNewline は「1 件が複数行の塊」用 (コピー文は改行が正常)。
-func hasControlExceptNewline(s string) bool {
-	return hasTerminalControl(strings.ReplaceAll(s, "\n", ""))
-}
+func hasControlExceptNewline(s string) bool { return ctlprobe.HasControlExceptNewline(s) }
 
 // doctorAllRows は detail (畳まれている行) まで含めた全 row。
 // 🚨 見えている行だけを見ると、Enter で開く中身 (Contents = ReadDir の名前) が検査から漏れる。

@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"doctor/runner"
+
+	"termsafe/ctlprobe"
 )
 
 // fakeRunner は launchctl / brew の fake。実際の出力形式を模す。渡された argv を記録するので、
@@ -519,10 +521,11 @@ func TestFormatSanitizesUntrustedText(t *testing.T) {
 		StatusErr:   "launchctl 失敗" + osc52,
 	})
 	for _, line := range strings.Split(out, "\n") {
-		for _, r := range line {
-			if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
-				t.Fatalf("stdout へ制御シーケンスが出た (%q): %q", r, line)
-			}
+		// 判定の正本は termsafe/ctlprobe (issue 285)。ここへ書き戻さないこと —
+		// 同じオラクルが 5 箇所に複製されていて、無害化の定義を広げるときに
+		// 直し忘れた側だけが旧い狭い判定で守り続ける形になっていた。
+		if ctlprobe.HasControl(line) {
+			t.Fatalf("stdout へ制御シーケンスが出た: %q", line)
 		}
 	}
 	if strings.Contains(out, "cHduZWQ=") {

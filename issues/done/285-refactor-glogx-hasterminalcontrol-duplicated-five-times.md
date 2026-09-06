@@ -28,6 +28,31 @@ glogx 内の 2 本は本体 7 行 + 6 行の 🚨 コメントまで含めてバ
 - `~/.claude/rules/mutation-verify-new-tests.md` の「同じ判定・同じ結論を 2 箇所で別実装して
   いないか」に真正面から該当する。しかも対象が**セキュリティ境界の判定基準**
 
+## 対応 (2026-09-06)
+
+**`src/termsafe/ctlprobe`（テスト専用の leaf パッケージ）へ 1 本化した。**
+`termsafe` は glogx と doctor の両方が `replace` で取り込んでいるので、4 module 全部から使える。
+
+- `glogx/status_view_test.go` / `glogx/issues/untrusted_test.go`：薄い別名へ
+- `glogx/untrusted_display_test.go` の `hasControlExceptNewline` も `ctlprobe` へ
+- `termsafe/termsafe_test.go` の `hasControl`：薄い別名へ
+- `doctor/disk/report_test.go` / `doctor/svc/scan_test.go`：**インラインのループ**だったので
+  `ctlprobe.HasControl(line)` の 1 行へ
+
+🚨 **`termsafe` の production から導出していない**（自己言及になる）。`ctlprobe` は
+「C0 / DEL / C1 のどれかが残っていたら真」を素朴に書いた**独立した言い換え**で、
+その旨を package doc に書いた。
+
+### 「touch 箇所 5 → 1」の実証
+
+共有オラクルを **1 箇所だけ**広げる変異（空白も制御扱いにする）を当てると、
+**glogx 18 本 + doctor 2 本**のテストが落ちた。5 コピーのままなら 1 パッケージにしか
+波及しなかった。
+
+オラクルが生きていることも確認: `termsafe` の sanitizer の C1 範囲を狭める変異で 1 本 red。
+（逆にオラクルを常に false にしても 0 本しか落ちないが、これは正常 — sanitizer が
+正しい間は検出すべきものが無い。）
+
 ## 🚨 直し方の制約
 
 - **共有先はテスト専用にすること。** `termsafe.isC1` を呼ぶ形に「単純化」すると、
