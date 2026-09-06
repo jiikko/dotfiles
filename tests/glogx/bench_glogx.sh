@@ -120,6 +120,11 @@ run_bench |
     # 計測失敗 (どちらか欠測 / 0) は 99999 の番兵で loud に落とす (0 にすると予算内に見える)。
     function emit_scale(name, small, big,   s, b) {
       s = ns[small]; b = ns[big]
+      # 🚨 「この run に含まれていない」と「測ったが壊れた」を分ける。
+      # 両方欠けている = そもそも走らせていない (部分実行・合成入力) ので黙る。
+      # checker 側の「予算にある metric が出力に無い」が loud に落とすので、本番の
+      # 取りこぼしはそちらで捕まる。片方だけ欠ける / 0 は計測失敗なので番兵で落とす。
+      if (s == "" && b == "") return
       if (s == "" || b == "" || s + 0 <= 0) {
         printf "metric=%s ms=99999\n", name
         printf "bench: %s の比を出せない (small=%s big=%s)\n", name, s, b > "/dev/stderr"
