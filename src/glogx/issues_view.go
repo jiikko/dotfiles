@@ -2684,14 +2684,22 @@ func (v *issuesView) markNextBox(width int, colored bool) []string {
 		// ここで sanitize する (制御文字入りのファイル名で確認モーダルを細工させない)
 		what = sanitizePlainLine(filepath.Base(v.markNext.targets[0].Rel))
 	}
-	title, line := " next の目印 ", what+" に next の目印を付けます"
+	title, lines := " next の目印 ", []string{what + " に next の目印を付けます"}
 	if v.markNext.unmark {
-		title, line = " next を外す ", what+" を next/ から "+unmarkDestLabel(v.markNext.targets)+" へ戻します"
+		// 🚨 宛先は独立した行にする。箱は 44 桁で頭打ち (centerBox) なので、1 行に繋ぐと
+		// 実在する長さのファイル名 (`292-feat-audit-forge-should-hand-each-agent-its-own-worktree.md`)
+		// で宛先が丸ごと切り落とされ、「ファイルを動かす前の唯一の確認画面」に何も出ない
+		// (2026-09-06 の敵対的レビュー 4 周目で実測。3 周目までのテストは短い名前の
+		// fixture を使っていたので、この truncation を検出できていなかった)
+		title = " next を外す "
+		lines = []string{
+			what + " を next/ から",
+			"→ " + unmarkDestLabel(v.markNext.targets) + " へ戻します",
+		}
 	}
-	return centerBox(title, []string{
-		line,
+	return centerBox(title, append(lines,
 		paint("(次にやる目印。ファイルを移動します。commit はしません)", ansiDim, colored),
 		"",
 		paint("y/Enter: 実行   その他: キャンセル", ansiDim, colored),
-	}, width, colored)
+	), width, colored)
 }

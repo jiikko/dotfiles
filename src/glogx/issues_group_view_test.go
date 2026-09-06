@@ -567,40 +567,86 @@ func TestIssuesViewGroupHeadRowShowsDoneCount(t *testing.T) {
 	}
 }
 
+// strayIn は group 内の予約外ディレクトリ (`epic/<name>/closed/`) に居る迷子。
+// GroupKind は Unknown だが GroupKey は持つ (移動の宛先はこれで決まる)。
+func strayIn(dir, group, number string) *issues.Issue {
+	base := number + "-feat-stray.md"
+	rel := filepath.Join(issues.EpicDirName, group, "closed", base)
+	return &issues.Issue{
+		Path: filepath.Join(dir, rel), Dir: dir, Rel: rel, Number: number,
+		Category: "feat", Slug: "stray", Status: issues.StatusUnknown,
+		Group: filepath.Join(group, "closed"), GroupKind: issues.GroupUnknown,
+		GroupKey: filepath.Join(dir, issues.EpicDirName, group),
+	}
+}
+
 // TestIssuesViewAnchorOpensCollapsedGroupForMovedIssue は、移動で group の中へ入った issue に
 // カーソルを置き直すとき、畳んだ親行を開いて対象を見せることを固定する
 // (2026-09-06 の敵対的レビュー 2 周目: 「移動しました」と言った直後に対象が画面から消えていた)。
+//
+// 🚨 並び順を 2 通り回す。「最初に見つけた GroupKey の group を開く」誤実装は、無関係な group が
+// 対象より後ろに居ると正解と同じ group に当たって素通りする。production の並びは番号降順
+// (issues.sortIssues) なので、片方の並びだけで書くと守れているつもりで守れていない (4 周目)。
 func TestIssuesViewAnchorOpensCollapsedGroupForMovedIssue(t *testing.T) {
 	dir := "/repo/issues"
-	global := fakeIssue("900", "feat", "global", issues.StatusOpen)
-	child := fakeEpicIssue(dir, "cloud", "702", "moved-in", issues.StatusNext)
-	other := fakeEpicIssue(dir, "alpha", "701", "unrelated", issues.StatusOpen)
-	// 🚨 無関係な group を **rows の先に** 置く。後ろに置くと「最初に見つけた GroupKey を開く」
-	// 変異でも正解と同じ group に当たって素通りする (2026-09-06 に実測)
-	v := loadedView(global, other, child)
+	for _, tc := range []struct {
+		name   string
+		before bool // 無関係な group を対象より前に置くか
+	}{
+		{"無関係な group が先", true},
+		{"無関係な group が後 (番号降順 = production の並び)", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			global := fakeIssue("900", "feat", "global", issues.StatusOpen)
+			child := fakeEpicIssue(dir, "cloud", "702", "moved-in", issues.StatusNext)
+			other := fakeEpicIssue(dir, "alpha", "701", "unrelated", issues.StatusOpen)
+			list := []*issues.Issue{global, other, child}
+			if !tc.before {
+				list = []*issues.Issue{global, child, other}
+			}
+			v := loadedView(list...)
+			if v.groupExpanded(child.GroupKey) {
+				t.Fatalf("前提が違う: group が既に展開されている")
+			}
 
-	if v.groupExpanded(child.GroupKey) {
-		t.Fatalf("前提が違う: group が既に展開されている")
+			v.anchorCursorInternal(child.Path)
+
+			if !v.groupExpanded(child.GroupKey) {
+				t.Fatalf("畳んだ group が開かれていない: %+v", v.expandedGroups)
+			}
+			if v.groupExpanded(other.GroupKey) {
+				t.Fatalf("無関係な group まで開いた: %+v", v.expandedGroups)
+			}
+			row, ok := v.currentDisplayRow()
+			if !ok || row.kind != displayRowIssue || row.issue != child {
+				t.Fatalf("カーソルが移動先の issue にない: ok=%v row=%+v", ok, row)
+			}
+		})
 	}
+}
+
+// TestIssuesViewAnchorIgnoresIssuesOutsideVisibleRows は、今の一覧に居ない issue のために
+// group を開かないことを固定する。走査先を v.rows から v.all へ広げると、Next タブで目印を
+// 外した直後 (対象が可視集合から外れる) に「見えない issue のために group が開き、その展開が
+// screen に保存されて再起動を跨ぐ」形になる (2026-09-06 の敵対的レビュー 4 周目の変異 M7)。
+func TestIssuesViewAnchorIgnoresIssuesOutsideVisibleRows(t *testing.T) {
+	dir := "/repo/issues"
+	child := fakeEpicIssue(dir, "cloud", "702", "done-child", issues.StatusDone)
+	v := loadedView(fakeIssue("900", "feat", "global", issues.StatusOpen), child)
+	v.setRows(nil) // 可視集合から外れた状態 (タブ切り替え・フィルタで起きる)
+	v.rebuildDisplayRows()
+
 	v.anchorCursorInternal(child.Path)
 
-	if !v.groupExpanded(child.GroupKey) {
-		t.Fatalf("畳んだ group が開かれていない: %+v", v.expandedGroups)
-	}
-	// 🚨 「対象の group **だけ**」を開くこと。fixture に group が 1 つしか無いと、
-	// path の照合を落とす変異 (最初に見つけた GroupKey を開く) が素通りする (敵対レビュー 3 周目)
-	if v.groupExpanded(other.GroupKey) {
-		t.Fatalf("無関係な group まで開いた: %+v", v.expandedGroups)
-	}
-	row, ok := v.currentDisplayRow()
-	if !ok || row.kind != displayRowIssue || row.issue != child {
-		t.Fatalf("カーソルが移動先の issue にない: ok=%v row=%+v", ok, row)
+	if v.groupExpanded(child.GroupKey) {
+		t.Fatalf("一覧に居ない issue のために group を開いた: %+v", v.expandedGroups)
 	}
 }
 
 // TestIssuesViewAnchorOverridesExplicitCollapse は、明示的に畳んだ (collapsedGroups) group でも
-// 移動先を見せるために開くことを固定する。この override を落とすと groupExpanded が false のまま
-// カーソルが対象に乗らない (敵対レビュー 3 周目 P3-3 の変異 M2)。
+// 移動先を見せるために開くこと、そしてその展開が **再スキャンを跨いで残る** ことを固定する。
+// 展開先を autoExpandedGroups にすると refresh のたびに捨てられ、次の再スキャンで畳み直される
+// (2026-09-06 の敵対的レビュー 3 周目 P3-3 / 4 周目 P3-4 の変異 M2)。
 func TestIssuesViewAnchorOverridesExplicitCollapse(t *testing.T) {
 	dir := "/repo/issues"
 	child := fakeEpicIssue(dir, "cloud", "702", "moved-in", issues.StatusNext)
@@ -619,6 +665,11 @@ func TestIssuesViewAnchorOverridesExplicitCollapse(t *testing.T) {
 	row, ok := v.currentDisplayRow()
 	if !ok || row.kind != displayRowIssue || row.issue != child {
 		t.Fatalf("カーソルが移動先の issue にない: ok=%v row=%+v", ok, row)
+	}
+
+	v.refresh() // 再スキャン相当 (autoExpandedGroups はここで捨てられる)
+	if !v.groupExpanded(child.GroupKey) {
+		t.Fatalf("refresh で group が畳み直された (展開先が autoExpandedGroups になっている)")
 	}
 }
 
@@ -676,6 +727,9 @@ func TestUnmarkDestLabelCoversMixedSelection(t *testing.T) {
 		{"混在 (group が先頭)", []*issues.Issue{child, global}, "元の group / issues 直下"},
 		{"混在 (global が先頭)", []*issues.Issue{global, child}, "元の group / issues 直下"},
 		{"0 件", nil, "issues 直下"},
+		// 予約外ディレクトリの迷子は GroupKind が Unknown でも group の中に居る
+		// (MoveToSubdir と同じ判定材料 = GroupKey で決める。GroupKind で判定すると素通りする)
+		{"迷子 (GroupUnknown + GroupKey)", []*issues.Issue{strayIn(dir, "cloud", "703")}, "group 直下"},
 	} {
 		if got := unmarkDestLabel(tc.targets); got != tc.want {
 			t.Errorf("%s: got %q want %q", tc.name, got, tc.want)
@@ -686,16 +740,17 @@ func TestUnmarkDestLabelCoversMixedSelection(t *testing.T) {
 	// 併せて助詞の前後に空白が入っていることも見る (「から」と地の文がくっついていた)
 	v := loadedView(global, child)
 	// 箱は幅を詰めるので、短い方 (group のみ) で全文を見る
-	short := fakeEpicIssue(dir, "c", "1", "x", issues.StatusNext) // 箱は幅を詰めるので短い名前で見る
-	v.markNext = issuesMarkConfirm{active: true, unmark: true, targets: []*issues.Issue{short}}
-	box := strings.Join(v.markNextBox(200, false), "\n")
-	// 箱は文面を幅で切るので、助詞の前後の空白だけ見る (「からgroup 直下へ」と詰まっていた)
-	if !strings.Contains(box, "next/ から group 直下 ") {
-		t.Fatalf("確認モーダルの文面が違う:\n%s", box)
+	// 🚨 箱は 44 桁で頭打ち (centerBox) なので、**実在する長さのファイル名**で見る。
+	// 短い fixture だけで見ていたため、宛先が丸ごと切り落とされているのを 3 周目まで
+	// 検出できていなかった (2026-09-06 の敵対的レビュー 4 周目)
+	long := fakeEpicIssue(dir, "cloud", "292", "audit-forge-should-hand-each-agent-its-own-worktree", issues.StatusNext)
+	v.markNext = issuesMarkConfirm{active: true, unmark: true, targets: []*issues.Issue{long}}
+	box := strings.Join(v.markNextBox(80, false), "\n")
+	if !strings.Contains(box, "group 直下 へ戻します") {
+		t.Fatalf("長い名前だと宛先が箱から切れる:\n%s", box)
 	}
-	// 混在は先頭の語だけ見る (長い文面は箱の幅で切られる)
-	v.markNext = issuesMarkConfirm{active: true, unmark: true, targets: []*issues.Issue{global, child}}
-	if box = strings.Join(v.markNextBox(200, false), "\n"); !strings.Contains(box, "next/ から 元の group") {
-		t.Fatalf("混在選択の文面が違う:\n%s", box)
+	v.markNext = issuesMarkConfirm{active: true, unmark: true, targets: []*issues.Issue{global, long}}
+	if box = strings.Join(v.markNextBox(80, false), "\n"); !strings.Contains(box, "元の group / issues 直下 へ戻します") {
+		t.Fatalf("混在選択で宛先が読めない:\n%s", box)
 	}
 }
