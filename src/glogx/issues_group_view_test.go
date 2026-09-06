@@ -566,3 +566,63 @@ func TestIssuesViewGroupHeadRowShowsDoneCount(t *testing.T) {
 		t.Fatalf("統合した親行に進捗が出ていない:\n%s", out)
 	}
 }
+
+// TestIssuesViewAnchorOpensCollapsedGroupForMovedIssue は、移動で group の中へ入った issue に
+// カーソルを置き直すとき、畳んだ親行を開いて対象を見せることを固定する
+// (2026-09-06 の敵対的レビュー 2 周目: 「移動しました」と言った直後に対象が画面から消えていた)。
+func TestIssuesViewAnchorOpensCollapsedGroupForMovedIssue(t *testing.T) {
+	dir := "/repo/issues"
+	global := fakeIssue("900", "feat", "global", issues.StatusOpen)
+	child := fakeEpicIssue(dir, "cloud", "702", "moved-in", issues.StatusNext)
+	v := loadedView(global, child)
+
+	if v.groupExpanded(child.GroupKey) {
+		t.Fatalf("前提が違う: group が既に展開されている")
+	}
+	v.anchorCursorInternal(child.Path)
+
+	if !v.groupExpanded(child.GroupKey) {
+		t.Fatalf("畳んだ group が開かれていない: %+v", v.expandedGroups)
+	}
+	row, ok := v.currentDisplayRow()
+	if !ok || row.kind != displayRowIssue || row.issue != child {
+		t.Fatalf("カーソルが移動先の issue にない: ok=%v row=%+v", ok, row)
+	}
+}
+
+// TestIssuesViewGroupProgressCountsOnlyVisibleChildren は親行の `(N ✓M)` が
+// 「今その一覧に並ぶ子」を数えることを固定する (spec 3 節。タブを切り替えると両方縮む)。
+func TestIssuesViewGroupProgressCountsOnlyVisibleChildren(t *testing.T) {
+	dir := "/repo/issues"
+	bugChild := func(number, slug string, status issues.Status) *issues.Issue {
+		base := number + "-bug-" + slug + ".md"
+		rel := filepath.Join(issues.EpicDirName, "alpha", base)
+		if sub := epicStatusDir(status); sub != "" {
+			rel = filepath.Join(issues.EpicDirName, "alpha", sub, base)
+		}
+		return &issues.Issue{
+			Path: filepath.Join(dir, rel), Dir: dir, Rel: rel, Number: number,
+			Category: "bug", Slug: slug, Status: status, Group: "alpha",
+			GroupKind: issues.GroupEpic, GroupKey: filepath.Join(dir, issues.EpicDirName, "alpha"),
+		}
+	}
+	v := loadedView(
+		fakeEpicIssue(dir, "alpha", "710", "feat-open", issues.StatusOpen),
+		fakeEpicIssue(dir, "alpha", "709", "feat-done", issues.StatusDone),
+		bugChild("708", "open", issues.StatusOpen),
+		bugChild("707", "done", issues.StatusDone),
+	)
+
+	if out := strings.Join(v.listLines(renderOpts(10)), "\n"); !strings.Contains(out, "▸ alpha (4 ✓2)") {
+		t.Fatalf("All タブで全子を数えていない:\n%s", out)
+	}
+	v.tabIdx = tabIndexOf(v.tabs, "bug")
+	if v.currentTab() != "bug" {
+		t.Fatalf("bug タブが無い: %+v", v.tabs)
+	}
+	v.refresh()
+	out := strings.Join(v.listLines(renderOpts(10)), "\n")
+	if !strings.Contains(out, "▸ alpha (2 ✓1)") {
+		t.Fatalf("タブ filter 後の集合を数えていない:\n%s", out)
+	}
+}

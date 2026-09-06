@@ -168,3 +168,31 @@ func TestMoveKeepsStrayGroupChildInsideEpic(t *testing.T) {
 		}
 	}
 }
+
+// TestMoveRejectsGroupIssueWithoutGroupKey は GroupKey を持たない group issue (Scan を通って
+// いない手組みの Issue) の移動を拒否することを固定する。通すと destDir が空になり、dest が
+// 相対パス (`next/NNN-x.md`) になって **glogx の CWD 配下**へ issue を rename する
+// (2026-09-06 の敵対的レビュー 2 周目: この guard を消しても全テストが緑だった)。
+func TestMoveRejectsGroupIssueWithoutGroupKey(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "issues")
+	rel := filepath.Join("epic", "cloud", "007-feat-handmade.md")
+	mkFiles(t, filepath.Join(dir, "epic", "cloud"), "007-feat-handmade.md")
+	iss := &Issue{
+		Path: filepath.Join(dir, rel), Dir: dir, Rel: rel,
+		Number: "007", Category: "feat", Status: StatusOpen,
+		Group: "cloud", GroupKind: GroupEpic, // GroupKey は空 (Scan を通っていない)
+	}
+	got, err := MoveToSubdir(iss, NextDirName)
+	if err == nil {
+		t.Fatalf("GroupKey の無い group issue の移動が通った: %q", got)
+	}
+	if _, statErr := os.Stat(iss.Path); statErr != nil {
+		t.Errorf("拒否したのに元ファイルが動いている: %v", statErr)
+	}
+	for _, sub := range []string{filepath.Join(dir, NextDirName), filepath.Join(dir, "epic", "cloud", NextDirName)} {
+		if entries, _ := os.ReadDir(sub); len(entries) != 0 {
+			t.Errorf("%s に何か作られた: %v", sub, entries)
+		}
+	}
+}

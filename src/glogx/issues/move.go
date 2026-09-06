@@ -56,7 +56,10 @@ func MoveToSubdir(iss *Issue, subdir string) (string, error) {
 		// issue ルート (iss.Dir) に落ちて **epic の外へ運び出される** (2026-09-06 の敵対レビューで実測。
 		// issue 291 で迷子を一覧に出すようにしたことで初めて到達可能になった経路)。
 		// GroupKey を持つ = group の中に居る、が唯一の判定材料。
-		if iss.GroupKind == GroupEpic && iss.GroupKey == "" {
+		// このブロックへ入る条件から、GroupKey が空なら必ず GroupEpic (手組みの Issue か、
+		// Scan を通っていないもの)。空のまま進むと destDir が "" になり、glogx の CWD 配下へ
+		// issue を rename する (相対パスの dest)。冗長な GroupKind の再確認は書かない
+		if iss.GroupKey == "" {
 			return "", errors.New("group issue に GroupKey が無い (Scan を通っていない Issue)")
 		}
 		destDir = iss.GroupKey

@@ -336,6 +336,9 @@ func scanEpicDir(dir, epic string) ([]*Issue, []string) {
 					continue
 				}
 				iss := newIssue(dir, filepath.Join(epic, e.Name(), f.Name(), child.Name()))
+				// 🚨 迷子 (下の else) にも GroupKey を付ける。MoveToSubdir は「GroupKey を持つ =
+				// group の中に居る」で宛先を決めるので、ここを消すと n が迷子を epic の外へ
+				// 運び出す (TestMoveKeepsStrayGroupChildInsideEpic が変異で赤くなる)
 				iss.GroupKey = groupKey
 				if known {
 					// 状態ディレクトリ (next / done / pending) の子は group の一員のまま。

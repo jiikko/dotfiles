@@ -623,12 +623,37 @@ func (v *issuesView) anchorCursorInternal(path string) {
 		return
 	}
 	v.ensureDisplayRows()
+	if v.cursorToPath(path) {
+		return
+	}
+	// 🚨 rows には居るのに displayRows に居ない = 畳んだ group の中に隠れている。その group を
+	// 開いて置き直す。移動で issue が group の中へ入る経路があり (予約外ディレクトリの迷子に n を
+	// 押すと `epic/<name>/next/` = group の子になる)、開かないと「移動しました」と言った直後に
+	// 対象が画面から消え、カーソルは親行に着地する (2026-09-06 の敵対的レビュー 2 周目)。
+	for _, iss := range v.rows {
+		if iss.Path != path || iss.GroupKey == "" {
+			continue
+		}
+		if v.expandedGroups == nil {
+			v.expandedGroups = make(map[string]bool)
+		}
+		v.expandedGroups[iss.GroupKey] = true
+		delete(v.collapsedGroups, iss.GroupKey)
+		v.rebuildDisplayRows()
+		v.cursorToPath(path)
+		return
+	}
+}
+
+// cursorToPath は displayRows の中で path の issue 行へカーソルを置く (見つからなければ false)。
+func (v *issuesView) cursorToPath(path string) bool {
 	for i, row := range v.displayRows {
 		if row.kind == displayRowIssue && row.issue.Path == path {
 			v.cursor = i
-			return
+			return true
 		}
 	}
+	return false
 }
 
 // pruneExpandedGroups は今の走査結果に無い GroupKey を展開状態から落とす。GroupKey は絶対
@@ -2628,7 +2653,20 @@ func (v *issuesView) markNextBox(width int, colored bool) []string {
 	}
 	title, line := " next の目印 ", what+" に next の目印を付けます"
 	if v.markNext.unmark {
-		title, line = " next を外す ", what+" を next/ から issues 直下へ戻します"
+		// 🚨 戻り先は issue の居場所で決まる。group issue は epic の外へ出さない (issues.MoveToSubdir)
+		// ので、文面を「issues 直下」に固定すると、ファイルを動かす前の唯一の確認画面が嘘をつく
+		// (2026-09-06 の敵対的レビュー 2 周目。文面自体は 2026-08-01 から嘘だった)
+		where := "issues 直下"
+		if len(v.markNext.targets) > 0 && v.markNext.targets[0].GroupKey != "" {
+			where = "group 直下"
+			for _, iss := range v.markNext.targets {
+				if iss.GroupKey == "" {
+					where = "元の group / issues 直下"
+					break
+				}
+			}
+		}
+		title, line = " next を外す ", what+" を next/ から"+where+"へ戻します"
 	}
 	return centerBox(title, []string{
 		line,
