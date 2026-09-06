@@ -41,7 +41,7 @@ done
 
 ## 🚨 group issue の契約変更で射程が広がる（2026-09-06 追記）
 
-issue [291](291-feat-glogx-epic-shows-done-children-by-default.md) で
+issue [291](done/291-feat-glogx-epic-shows-done-children-by-default.md) で
 **group issue の完了・保留先が global `issues/done/` から `issues/epic/<name>/done/`
 (と `pending/`) へ変わった**（`1a1a21fa`）。移動の起点も行き先も 1 段深くなるので、
 `../` の数がまた変わる:
@@ -60,12 +60,33 @@ issue [291](291-feat-glogx-epic-shows-done-children-by-default.md) で
 - **一括修正を `issues/done/` 決め打ちの sed で書かない**。深さは
   「そのファイルの位置から repo root までの段数」で決まるので、**位置から導出**する
   （でないと group issue を直すときにもう一度同じ作業が要る）
+- 🚨 **検査を「ディレクトリ名」で絞らない**。`done` / `pending` 決め打ちにすると、
+  予約外の綴り（`closed/` `completed/` …）の配下に置かれた md を取りこぼす。291 の実装は
+  そういう md を**迷子 `?` として一覧に出す**ように変えた（それまでは黙って消えていた）ので、
+  「予約外の綴りにも md は在りうる」が前提になった
 - 🚨 **再発防止の検査に `-maxdepth` を使わない**。`issues/epic/<name>/done/` は 4 段目なので、
   深さを決め打ちした検査は**新しい段を黙って対象外**にする
   （[`claude-md-maintenance.md`](../_claude/rules/claude-md-maintenance.md) の
   「ディレクトリ階層の契約を変えたら深さ前提の検査を grep する」がまさにこの形。
   実例として issue 番号一意の検査が旧深さのまま緑を出し続けたことが記録されている）。
   本 issue の「全数の数え方」に書いた `find issues -name '*.md'` は深さ非依存なのでそのまま使える
+
+## 追測（2026-09-06、291 の実装後）
+
+置き場所別に数え直した。**`done/` だけの問題ではない**:
+
+| 置き場所 | 切れリンク |
+|---|---|
+| `issues/done/` | 182 件 |
+| `issues/pending/` | **7 件** |
+| `issues/` 直下 | 1 件 |
+
+`pending/` にも同じ形（`../_claude/…` が 3 件、`done/NNN` が 1 件、兄弟 issue が 3 件）が出ている。
+**修正も検査も `done/` 決め打ちにしない**根拠がここにある。
+
+🚨 `issues/` 直下の 1 件は**この issue 自身**だった: 291 を参照していたが、その 291 が
+`done/` へ移されて切れた（他セッションの正常な作業）。**この issue を書いている最中に、
+この issue が言っている現象を踏んでいる**。頻度の証拠として残す。
 
 ## 提案
 
