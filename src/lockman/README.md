@@ -3,7 +3,7 @@
 ディレクトリ単位の排他を取る CLI。SMB 越しの複数マシンと、共有を公開しているホストの
 ローカル経路が**混在**しても同じ排他が効くことを狙う。
 
-**仕様の正本は [issues/091-feat-lockman-directory-lease-lock.md](../../issues/091-feat-lockman-directory-lease-lock.md)。**
+**仕様の正本は [issues/091-feat-lockman-directory-lease-lock.md](../../issues/done/091-feat-lockman-directory-lease-lock.md)。**
 ここには実装側の事情だけを書く。
 
 ## 現状

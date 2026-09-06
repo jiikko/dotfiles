@@ -7,7 +7,7 @@
 起票日: 2026-09-02
 重要度: P2
 関連: [`_claude/rules/claim-issue-in-next-and-push.md`](../../_claude/rules/claim-issue-in-next-and-push.md)
-(claim の規範) / [`_claude/hooks/next-claim-push.sh`](../_claude/hooks/next-claim-push.sh) (Claude 側の
+(claim の規範) / [`_claude/hooks/next-claim-push.sh`](../../_claude/hooks/next-claim-push.sh) (Claude 側の
 補助) / [docs/issues-viewer-spec.md](../../docs/issues-viewer-spec.md) の「`n` で目印を付ける」節 /
 issue 166 (予約の pane 表示。同じ「状態を見えるようにする」系)
 
