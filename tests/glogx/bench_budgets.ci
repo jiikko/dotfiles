@@ -27,6 +27,19 @@ status_view_2000 3 rel
 # issues_view_frame 0.022 / issues_view_2000 0.024 (件数比例なし)。status と同じ水準の粗い上限
 issues_view_frame 2 rel
 issues_view_2000 3 rel
+# 🚨 「件数を増やしたときの伸び率」を**同一 run 内の比** (x100) で見る (issue 269)。
+# 絶対時間の予算は runner の速度差・混雑に晒されるので粗くせざるを得ず、実測の 16〜125 倍まで
+# 緩んでいて **2.7 倍の退行 (issue 268) を素通しした**。比なら同じ run の 2 測定に同じ倍率が
+# 乗って打ち消えるので、rel も較正も要らずに締められる (tmux の agent_panel_tick_scale_x100
+# が前例で、あちらのコメントも「比なので runner の速度差・混雑が打ち消え、rel も不要」)。
+#
+# 実測 (2026-09-06, 268 の修正後): issues 98 / status 105。導入時 (062) の記録は
+# issues 109 / status 124 相当。退行時 (fc0f65ab) は **244〜274** だった。
+# 上限 150 はその間 — 「今の値の少し上」ではなく「**退行時の値では落ちる**」を満たす位置。
+# 🚨 締めるときは必ず「退行後の実測より下」に置くこと。退行後の値から係数を掛けると、
+# 退行そのものを予算に焼き込むことになる (issue 269 の初版がその形だった)。
+issues_view_scale_x100 150
+status_view_scale_x100 150
 cursor_move_view 5 rel
 view_diff 5 rel
 model_init_200 10 rel

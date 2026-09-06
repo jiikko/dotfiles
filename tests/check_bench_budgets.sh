@@ -144,7 +144,12 @@ for name in "${!value[@]}"; do
   [[ -z "$limit" ]] && continue
   eff="$limit"
   if [[ -n "${rel[$name]:-}" ]]; then
-    eff=$(awk -v l="$limit" -v s="$scale" 'BEGIN { printf "%.1f", l * s }')
+    # 🚨 `%.1f` にしないこと (issue 269)。実効上限が **0.1 ms 刻みに丸められる**ので、
+    # glogx のフレーム系 (0.027〜0.12 ms の帯) の予算を締めた瞬間に全部が量子化に落ちる:
+    # 0.15 -> 0.1 (宣言より 33% 厳しい) / 0.256 -> 0.3 (逆に緩む) / 0.04 -> 0.0
+    # (任意の正の値が超過 = 恒久赤)。確保 metric は eff="$limit" でこの行を通らないので、
+    # 「確保側だけ +3% まで締められた」のは怠慢ではなく**書式の制約**でもあった。
+    eff=$(awk -v l="$limit" -v s="$scale" 'BEGIN { printf "%.6g", l * s }')
   fi
   if awk -v v="${value[$name]}" -v l="$eff" 'BEGIN { exit !(v + 0 > l + 0) }'; then
     if [[ -n "${rel[$name]:-}" && "$skip_rel" == 1 ]]; then

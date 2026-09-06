@@ -83,6 +83,7 @@ run_bench |
       }
       printf "metric=%s ms=%.3f\n", name, $3 / 1000000
       printf "metric=%s_alloc_kb ms=%.3f\n", name, $5 / 1024
+      ns[name] = $3   # 比 metric (END で出す) 用に ns/op を覚える
     }
     # 較正器は「runner がどれだけ遅いか」を測る道具で、確保 (8 B/op) はゲートする意味が
     # 無いため時間だけ出す
@@ -110,4 +111,24 @@ run_bench |
     bench == "BenchmarkIssuesViewFrame"       { emit("issues_view_frame") }
     bench == "BenchmarkIssueScan"             { emit("issue_scan") }
     bench == "BenchmarkCalibrate"             { emit_time_only("glogx_calib") }
+
+    # 🚨 「件数を増やしたときの伸び率」を**同一 run 内の比**で出す (issue 269)。
+    # 絶対時間の予算は runner の速度差・混雑に晒されるので粗くせざるを得ず、実測の
+    # 16〜125 倍まで緩んでいて 2.7 倍の退行 (issue 268) を素通しした。比なら**同じ run の
+    # 2 測定に同じ倍率が乗って打ち消える**ので、rel も較正も要らずに締められる。
+    # tests/tmux/bench_tmux.sh の agent_panel_tick_scale_x100 が同じ形の前例。
+    # 計測失敗 (どちらか欠測 / 0) は 99999 の番兵で loud に落とす (0 にすると予算内に見える)。
+    function emit_scale(name, small, big,   s, b) {
+      s = ns[small]; b = ns[big]
+      if (s == "" || b == "" || s + 0 <= 0) {
+        printf "metric=%s ms=99999\n", name
+        printf "bench: %s の比を出せない (small=%s big=%s)\n", name, s, b > "/dev/stderr"
+        return
+      }
+      printf "metric=%s ms=%d\n", name, (b * 100) / s
+    }
+    END {
+      emit_scale("issues_view_scale_x100", "issues_view_frame", "issues_view_2000")
+      emit_scale("status_view_scale_x100", "status_view_frame", "status_view_2000")
+    }
   '

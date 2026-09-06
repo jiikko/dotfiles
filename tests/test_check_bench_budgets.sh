@@ -135,11 +135,29 @@ assert_msg "startup 400ms > budget 300ms" "エラー経路: 時間 metric は従
 "metric=startup ms=400"
 
 # 警告経路 (較正 > CALIB_MAX_SCALE=4 で rel の gating が警告に落ちる) でも単位が引かれる
-assert_msg "leak_alloc_kb 90KB > 50.0KB" "警告経路 (極端混雑): *_kb の超過も KB で出る" \
+assert_msg "leak_alloc_kb 90KB > 50KB" "警告経路 (極端混雑): *_kb の超過も KB で出る" \
 "calibrate tmux_rtt_x100 240
 tmux_rtt_x100 3000
 leak_alloc_kb 10 rel" \
 "metric=tmux_rtt_x100 ms=1200
 metric=leak_alloc_kb ms=90"
+
+# 🚨 rel の実効上限を 0.1 刻みに丸めないこと (issue 269)。glogx のフレーム系は
+# 0.027〜0.12 ms の帯にいるので、丸めると予算を締めた瞬間に全部が量子化に落ちる。
+# 較正スケール 1.0 (静穏 run) で、宣言した小数がそのまま実効上限になることを固定する。
+assert_msg "frame_ms 0.2ms > budget 0.15ms" "rel の実効上限が 0.1 刻みに丸められない (小数が生きる)" \
+"calibrate tmux_rtt_x100 240
+tmux_rtt_x100 240
+frame_ms 0.15 rel" \
+"metric=tmux_rtt_x100 ms=240
+metric=frame_ms ms=0.2"
+
+# 丸めがあると 0.04 -> 0.0 になり、予算内の値まで超過扱いになっていた
+assert_rc 0 "rel の小さな上限が 0 に潰れない" \
+"calibrate tmux_rtt_x100 240
+tmux_rtt_x100 240
+tiny_ms 0.04 rel" \
+"metric=tmux_rtt_x100 ms=240
+metric=tiny_ms ms=0.03"
 
 echo "[check-bench-budgets] $pass 件すべて pass"
