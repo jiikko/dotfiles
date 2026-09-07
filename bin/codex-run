@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+# codex-run — codex を 1 本だけ走らせる薄い前面。実体は bin/codex-fanout に委譲する。
+#
+# なぜ要るか: 1 本のために manifest TSV を書くのが重く、呼び出し側が「素の codex exec を
+# 直に叩く」へ逃げる。逃げた先で毎回同じ作法 (`command codex` / `</dev/null` / `--ephemeral -o` /
+# stdout の保存 / rc の保存 / モデルと effort の固定) を手で再現することになり、
+# **`codex exec review` が `-C` を受け付けない**ような差分を踏む (実測 2026-09-07 obaket 740:
+# 引数エラーで即終了したのに、包んだシェルの都合で成功に見えた)。
+# 作業ディレクトリは -C ではなく本スクリプトの -C オプション (cd) で受けるので、
+# その差分は呼び出し側から見えなくなる。
+#
+# 使い方:
+#   codex-run [-C dir] [-o outdir] [-l label] [-m model] [-e effort] [-t sec] <mode> <prompt-file>
+#     mode         ro | review   (それぞれ codex exec -s read-only / codex exec review)
+#                  workspace-write は扱わない (codex-fanout と同じ安全域。実装は codex-drive [2] の直接起動)
+#     prompt-file  プロンプトのファイル。- で stdin から読む
+#                  **selector (--uncommitted / --base / --commit) は扱わない** — codex exec review は
+#                  selector と PROMPT を併用できず (codex-review スキル手順 1)、本スクリプトは
+#                  PROMPT 側だけを担当する。selector を使うレビューは codex-review スキルの直接起動
+#     -C dir       このディレクトリへ cd してから起動する (worktree / 別 checkout のレビュー用)
+#     -o outdir    出力先 (既定: ./tmp/codex-run/<stamp>-<label>)。既存ディレクトリは codex-fanout が拒否する
+#     -l label     出力ファイル名に使うラベル (既定: mode 名)
+#     -m model     既定 gpt-5.6-luna
+#     -e effort    既定 max
+#     -t sec       1 本あたりの秒数上限 (既定は codex-fanout の CODEX_FANOUT_TIMEOUT)
+#
+# 出力 (outdir): <label>.out.md (最終応答) / <label>.log (stdout+stderr 全文) / runs.tsv (rc 台帳)
+#   review は本文が -o でなく stdout にだけ出ることがある (codex-review スキル手順 4) ので、
+#   out.md が空のときは log を読むよう案内する。
+#
+# exit code: codex-fanout の rc をそのまま返す (0 = 成功 / 1 = 失敗・引数エラー)。
+#   **rc 0 でも本文が空なら警告する** — 判定は exit code でなく成果物で行う
+#   (rules/verify-execution-not-just-exit-code.md)。
+set -u
+unset CDPATH
+
+die() { printf 'codex-run: %s\n' "$*" >&2; exit 1; }
+
+usage() {
+  awk 'NR >= 2 { if (!/^#/) exit; sub(/^# ?/, ""); print }' "$0"
+}
+
+work_dir=""; outdir=""; label=""; model="gpt-5.6-luna"; effort="max"; timeout_s=""
+while getopts ":C:o:l:m:e:t:h" opt; do
+  case "$opt" in
+    C) work_dir="$OPTARG" ;;
+    o) outdir="$OPTARG" ;;
+    l) label="$OPTARG" ;;
+    m) model="$OPTARG" ;;
+    e) effort="$OPTARG" ;;
+    t) timeout_s="$OPTARG" ;;
+    h) usage; exit 0 ;;
+    :) die "オプション -$OPTARG に値が必要" ;;
+    \?) die "不明なオプション -$OPTARG" ;;
+  esac
+done
+shift $((OPTIND - 1))
+
+[ "$#" -eq 2 ] || { usage >&2; die "引数は <mode> <prompt-file> の 2 つ"; }
+mode="$1"; prompt_src="$2"
+case "$mode" in
+  ro|review) ;;
+  write|workspace-write) die "workspace-write は扱わない (codex-drive [2] の直接起動を使う)" ;;
+  *) die "mode は ro | review のどちらか (指定: $mode)" ;;
+esac
+case "$timeout_s" in
+  "") ;;
+  *[!0123456789]*) die "-t は数字のみ (指定: $timeout_s)" ;;
+  *) [ "${#timeout_s}" -le 9 ] || die "-t の桁数が大きすぎる" ;;
+esac
+
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+driver="$script_dir/codex-fanout"
+[ -x "$driver" ] || die "codex-fanout が見つからない ($driver)"
+
+[ -n "$label" ] || label="$mode"
+case "$label" in *[!A-Za-z0-9_.-]*) die "-l は英数字と _ . - のみ (指定: $label)" ;; esac
+
+# プロンプトは codex-fanout に渡す前に実ファイルへ確定させる (stdin も受ける)。
+tmp_root="$(mktemp -d)" || die "mktemp に失敗"
+trap 'rm -rf "$tmp_root"' EXIT
+prompt_file="$tmp_root/prompt.md"
+if [ "$prompt_src" = "-" ]; then
+  cat > "$prompt_file" || die "stdin の読み取りに失敗"
+else
+  [ -f "$prompt_src" ] || die "プロンプトファイルが無い ($prompt_src)"
+  cp "$prompt_src" "$prompt_file" || die "プロンプトのコピーに失敗"
+fi
+[ -s "$prompt_file" ] || die "プロンプトが空"
+
+# outdir は cd する前の cwd を基準に絶対パス化する (-C の有無で解決先が変わらないように)。
+if [ -z "$outdir" ]; then
+  outdir="$PWD/tmp/codex-run/$(date +%Y%m%d-%H%M%S).$$-$label"
+else
+  case "$outdir" in /*) ;; *) outdir="$PWD/$outdir" ;; esac
+fi
+mkdir -p "$(dirname "$outdir")" || die "出力先の親ディレクトリを作れない"
+
+manifest="$tmp_root/manifest.tsv"
+if [ -n "$timeout_s" ]; then
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$label" "$mode" "$model" "$effort" "$prompt_file" "$timeout_s" > "$manifest"
+else
+  printf '%s\t%s\t%s\t%s\t%s\n' "$label" "$mode" "$model" "$effort" "$prompt_file" > "$manifest"
+fi
+
+if [ -n "$work_dir" ]; then
+  [ -d "$work_dir" ] || die "-C のディレクトリが無い ($work_dir)"
+  cd "$work_dir" || die "-C のディレクトリへ移動できない ($work_dir)"
+fi
+
+# errexit は使っていない (set -u のみ)。rc を握って最後に伝播させる。
+"$driver" -M "$manifest" "$outdir"
+rc=$?
+
+out="$outdir/$label.out.md"
+log="$outdir/$label.log"
+printf 'codex-run: rc=%d (mode=%s label=%s cwd=%s)\n' "$rc" "$mode" "$label" "$PWD"
+if [ -s "$out" ]; then
+  printf '  本文: %s (%s bytes)\n' "$out" "$(wc -c < "$out" | tr -d ' ')"
+else
+  printf '  🚨 本文が空: %s\n' "$out"
+  printf '     rc が 0 でも「走ったが何も出していない」= 未検証として扱うこと。\n'
+  [ "$mode" = "review" ] && printf '     review は本文が stdout にだけ出ることがある。ログ全文を読む。\n'
+fi
+[ -f "$log" ] && printf '  ログ: %s\n' "$log"
+exit "$rc"

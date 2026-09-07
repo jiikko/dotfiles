@@ -135,6 +135,18 @@ codex 往復より速いので Claude が直接やってよい (`subagent-model-
 dotfiles の `bin/codex-fanout` (PATH に載っている)。read-only / review の並列 fan-out + merger を
 driver 内で完結させ、Claude の Bash 往復を「起動 1 回 + digest 読み 1 回」にする。
 
+**1 本だけ起動するときは `bin/codex-run`** (codex-fanout の薄い前面。manifest を書かずに済む):
+
+```sh
+codex-run -C <worktree> -l adv-behavior review <prompt-file>
+```
+
+作業ディレクトリは **`-C` オプション (codex-run が cd する)** で渡す。`codex exec review` 自体は
+`-C` を受け付けないが、その差分は codex-run が吸収するので呼び出し側から見えない。
+`command codex` / `</dev/null` / `--ephemeral -o` / stdout の保存 / rc の保存 / モデルと effort の固定も
+codex-run 側で満たす。**rc が 0 でも本文が空なら警告を出す**ので、成果物での判定がそのまま乗る。
+`-o` を省くと `./tmp/codex-run/<stamp>-<label>/` に出る (cwd 基準。`-C` の影響を受けない)。
+
 **Go repo では codex の sandbox が `go build` / `go test` を走らせられない**ことがある (work dir / build cache を
 `$HOME` 配下に作れず `operation not permitted`、goenv の version 不在。SnapTrim #251 で read-only lens が
 ほぼ全本「テスト未実行・静的確認のみ」で返った)。Go を触るタスクでは **起動側で
@@ -186,6 +198,11 @@ Claude がやるのは:
 
 ### fallback: per-call 方式 (driver が使えない環境のみ)
 
+**「2 本だから driver は大げさ」で素の `codex exec` を手で組まない。** 2 本以下でも
+`codex-fanout -M` か `codex-run` を使う (集約規約が言う「2 本以下は merger 不要」は
+**digest を挟むかどうか**の話であって、起動を手組みしてよいという意味ではない)。
+手組みに逃げると下の作法を毎回自分で再現することになり、その一つでも落とすと空振りする。
+
 - **1 本 = 1 つの Bash 呼び出し (`run_in_background: true`)**。1 つのシェルに複数行並べると直列実行になる。
 - **シェル変数は Bash 呼び出しをまたいで保持されない**。`stamp="$(date ...)"` を先の呼び出しで作って後続で
   `$stamp` を参照すると**空文字に化ける** (worktree のパスに使っていると存在しないディレクトリを掴んで即死する)。
@@ -197,13 +214,6 @@ Claude がやるのは:
   特定させる**。並行セッションの rebase pull で hash は実行中にも動く (実測: obaket 635 で
   セッション中に 2 回改番。grep 特定にしていたためレビューは無傷だった)。
 - **出力は 1 本ごとに一意パス**。並列で同じパスに書かせない。
-- 🚨 **`codex exec review` は `-C` を受け付けない** (`error: unexpected argument '-C' found`)。
-  worktree や別 checkout をレビューさせるときは **cwd をその tree にして起動する**
-  (`cd <worktree> && command codex exec review ...`)。`-s read-only` / `-s workspace-write` の
-  `codex exec` は `-C` を取れるので、**同じ感覚で review にも付けて空振りする**
-  (実測 2026-09-07 obaket 740: 引数エラーで即終了したのに、起動を包んだシェルの都合で
-  成功に見え、`-o` の中身を読むまで気づかなかった)。判定は成果物で行う
-  ([`verify-execution-not-just-exit-code.md`](../../rules/verify-execution-not-just-exit-code.md))
 - **stdout/stderr も一意ファイルに保存してから末尾を見る**。`codex exec review` はレビュー本文を `-o` に書かず
   stdout にだけ出すことがある (正本: codex-review スキル「手順 4」)。`| tail -40` だけで受けると本文前半を捨てるため、
   **重要な反証を読み落としたまま「指摘なし」と誤判定する**。形は `... > "$log" 2>&1; tail -40 "$log"` にし、
