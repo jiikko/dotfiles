@@ -20,6 +20,8 @@ typeset -g  __AV1IFY_COLOR_TAGS=""
 typeset -gi __AV1IFY_COMPACT=0
 typeset -gi __AV1IFY_FORCE=0
 typeset -gi __AV1IFY_DELETE_ORIGIN=0
+# 1 なら仕上げの validate-mp4 (全フレームデコード) を skip する (--no-validate)。
+typeset -gi __AV1IFY_NO_VALIDATE=0
 # NG 発生時の理由文字列。__av1ify_one / __av1ify_postcheck が return 1 直前に設定し、
 # バッチループ (__av1ify_run_batch) が末尾の NG 一覧で使用する。
 typeset -g  __AV1IFY_LAST_NG_REASON=""
@@ -103,6 +105,12 @@ __av1ify_on_interrupt() {
 # 読み込み順: postcheck → encode（__av1ify_one が __av1ify_postcheck を呼ぶため）
 # shellcheck disable=SC1091
 source "${0:A:h}/_video_health.zsh"
+# validate-mp4 (全フレームデコード検証)。av1ify の postcheck は ffprobe の
+# メタデータ中心で「出力が全フレーム本当に再生できるか」を見ないため、
+# 仕上げに __validate_mp4_check を in-process で直呼びする (issue 005 Phase B)。
+# 先例: _av1ify_encode.zsh の __video_health_check 直呼び。
+# shellcheck disable=SC1091
+source "${0:A:h}/_validate_mp4.zsh"
 # shellcheck disable=SC1091
 source "${0:A:h}/_ansi_colors.zsh"
 # shellcheck disable=SC1091
@@ -709,6 +717,7 @@ av1ify() {
   local opt_compact=0
   local opt_force=0
   local opt_delete_origin=0
+  local opt_no_validate=0
   local opt_listfile=""
   local -a positional=()
   while (( $# > 0 )); do
@@ -730,6 +739,9 @@ av1ify() {
         ;;
       --no-delete-origin-if-success-and-no-ng)
         opt_delete_origin=0
+        ;;
+      --no-validate)
+        opt_no_validate=1
         ;;
       -r|--resolution)
         shift
@@ -819,6 +831,7 @@ av1ify() {
     __AV1IFY_COMPACT=$opt_compact
     __AV1IFY_FORCE=$opt_force
     __AV1IFY_DELETE_ORIGIN=$opt_delete_origin
+    __AV1IFY_NO_VALIDATE=$opt_no_validate
   else
     dry_run="${__AV1IFY_DRY_RUN:-$dry_run}"
   fi
@@ -1001,6 +1014,14 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
   --delete-origin-if-success-and-no-ng: 変換成功かつpostcheckでNG無しの場合、元ファイルを削除します。
       av1c (compactショートハンド) ではデフォルトで有効です。
       --no-delete-origin-if-success-and-no-ng で明示的に無効化できます。
+
+  --no-validate
+    仕上げの validate-mp4 (全フレームデコード検証) を skip します。
+    既定では、postcheck を通った出力に対して更に全フレームデコードを行い、
+    破損 / truncation / トリムで音声が消える形を検出します。重いので、
+    大量変換で時間を優先したいときに使います。
+    🚨 skip すると「postcheck は通ったが実際は再生できない」出力を検出できず、
+    かつ元ファイルが削除されます (--delete-origin-* 指定時)。
 
 依存関係:
   - ffmpeg: 動画のエンコードとデコードに使用します。

@@ -79,6 +79,28 @@ __av1ify_finalize() {
       _icon="📉"; (( _out_size > _src_size )) && _icon="📈"
       print -r -- "${_C_GREEN}   ${_icon} ${_src_h} → ${_out_h} (${_pct}%)${_C_OFF}"
     fi
+    # 仕上げの全フレームデコード検証 (issue 005 Phase B)。
+    #
+    # postcheck は ffprobe のメタデータ中心なので「出力が全フレーム本当に
+    # 再生できるか」を見ていない。ここで __validate_mp4_check を in-process で
+    # 直呼びし、decode-error / truncated / trim-drops-audio を捕まえる。
+    #
+    # 🚨 **元ファイルの削除より前**に置くこと。後ろに置くと、壊れた出力を
+    # 検出したときには元ファイルが既に消えていて復旧できない。
+    #
+    # 存在ガード (command -v) は不要 — _av1ify.zsh が _validate_mp4.zsh を
+    # source 済みなので関数は必ず居る (先例: __video_health_check の直呼び)。
+    if (( ! __AV1IFY_NO_VALIDATE )); then
+      print -r -- ">> 出力を検証中 (全フレームデコード): $final_out"
+      if ! __validate_mp4_check "$final_out"; then
+        local _ng_reason="$REPLY"
+        print -r -- "🚨 完了 (要確認: $_ng_reason): $final_out" >&2
+        print -r -- "   元ファイルは削除しません: $in" >&2
+        __AV1IFY_LAST_NG_REASON="$_ng_reason"
+        REPLY="$final_out"; return 1
+      fi
+    fi
+
     if (( __AV1IFY_DELETE_ORIGIN )) && [[ -f "$in" ]]; then
       # /usr/bin/trash は -- を end-of-options として扱わないため絶対パスで渡す
       local in_abs="${in:A}"

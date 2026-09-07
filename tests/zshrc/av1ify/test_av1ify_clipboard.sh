@@ -191,6 +191,9 @@ unset MOCK_PBPASTE_FAIL
 printf '\n## Test 10: Real gate is closed in this (non-interactive) context\n'
 unfunction __av1ify_clipboard_mode_available
 source "$ROOT_DIR/zshlib/_av1ify.zsh"   # 本番のゲートを復元する
+# 🚨 再 source は _validate_mp4.zsh も読み直すので mock が本物に戻る。
+# 入れ直さないと以降のテスト (Test 22 等) が実 ffmpeg 検証に落ちる。
+mock_validate_install
 unsetopt err_exit
 __av1ify_clipboard_mode_available; gate_rc=$?
 setopt err_exit

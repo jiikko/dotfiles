@@ -250,6 +250,55 @@ export PATH="$MOCK_BIN_DIR:$PATH"
 # av1ifyをロード
 source "$ROOT_DIR/zshlib/_av1ify.zsh"
 
+# validate-mp4 (issue 005 Phase B) の mock。
+#
+# 🚨 **source の後で上書きする**こと。__validate_mp4_check は外部バイナリでは
+# なく sourced な zsh 関数なので、MOCK_BIN_DIR の PATH mock では差し替わらない。
+# _av1ify.zsh が _validate_mp4.zsh を source した後にここで再定義する。
+#
+# MOCK_VALIDATE_NG に理由文字列を入れると NG を注入する (例: decode-error)。
+# 未設定なら常に OK。
+#
+# 🚨 呼ばれた回数は**ファイル**に記録する。テストは `output=$(av1ify ...)` の
+# 形で呼ぶので av1ify はサブシェルで走り、シェル変数への加算は親に返らない
+# (実測 2026-09-08: 変数で数えたら常に 0 になり「呼ばれていない」と誤判定した)。
+# 「skip されたこと」は回数 0 でしか確かめられない — 出力ファイルの有無では
+# skip と OK を区別できないため。
+MOCK_VALIDATE_LOG="$TEST_TMP/validate_calls.log"
+: > "$MOCK_VALIDATE_LOG"
+# 🚨 **関数として install する形にしてある**。`_av1ify.zsh` を再 source する
+# テスト (test_av1ify_clipboard.sh の Test 10 が本番のゲートを復元するために
+# やっている) は `_validate_mp4.zsh` も一緒に読み直すので、その時点で
+# **この mock が本物に戻る**。再 source した側は install を呼び直すこと。
+# (実測 2026-09-08: 呼び直しを忘れて Test 22 が「元ファイルが消えない」で落ちた)
+mock_validate_install() {
+  __validate_mp4_check() {
+    print -r -- "$1" >> "$MOCK_VALIDATE_LOG"
+    if [[ -n "${MOCK_VALIDATE_NG-}" ]]; then
+      REPLY="$MOCK_VALIDATE_NG"
+      return 1
+    fi
+    REPLY=""
+    return 0
+  }
+}
+mock_validate_install
+
+# validate の呼び出し回数を数える (ファイル経由なのでサブシェルを跨げる)
+mock_validate_calls() {
+  # 🚨 `grep -c` は 0 件のとき **exit 1** を返すので `|| print 0` を付けると
+  # "0\n0" の 2 行になり、(( )) が「bad math expression」で落ちる
+  # (実測 2026-09-08)。件数は wc で数える。
+  [[ -f "$MOCK_VALIDATE_LOG" ]] || { print -r -- 0; return; }
+  local n
+  n=$(wc -l < "$MOCK_VALIDATE_LOG")
+  print -r -- "${n// /}"
+}
+
+mock_validate_reset() {
+  : > "$MOCK_VALIDATE_LOG"
+}
+
 assert_file_exists() {
   local file="$1"
   local message="$2"
