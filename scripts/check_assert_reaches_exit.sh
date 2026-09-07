@@ -71,14 +71,23 @@ if [ "${#FILES[@]}" -eq 0 ]; then
   exit 1
 fi
 
-WORK="$(mktemp -d)"; export WORK
 # 🚨 プローブのコピーは**テストと同じディレクトリ**に置く (多くのテストが ${0:A:h} で helper を
-# source するため、別ディレクトリへコピーすると helper ごと見失う)。後始末は 1 本の EXIT trap に
-# 束ねる (trap は 1 つしか持てない)。
-cleanup() {
-  find "${targets[@]}" -type f -name '.probe-*' -delete 2>/dev/null
-  rm -rf "$WORK"
-}
+# source するため、別ディレクトリへコピーすると helper ごと見失う)。掃除の対象は
+# **検査するファイルが居るディレクトリ**にする (targets には単一ファイルも来るため、
+# targets をそのまま find に渡すと単一ファイル指定のとき何も掃除できない)。
+mapfile -t PROBE_DIRS < <(printf '%s\n' "${FILES[@]}" | xargs -n1 dirname | sort -u)
+clean_probes() { find "${PROBE_DIRS[@]}" -maxdepth 1 -type f -name '.probe-*' -delete 2>/dev/null; }
+
+# 🚨 起動時にも掃除する。EXIT trap は SIGKILL では走らないので、前回 kill -9 で止めた実行の
+# コピーが残っていることがある (実測 2026-09-08)。同じ checkout で 2 本同時に走らせることは
+# 想定しない (走らせると互いの残骸を消す)。
+# 🚨 起動時に呼ぶのは clean_probes だけ。EXIT 用の cleanup をそのまま呼ぶと $WORK を消して
+#    しまい、結果ファイルを作れないまま「報告 0 件」で落ちる (実測 2026-09-08。件数の突合
+#    ガードが loud に落としたので気づけた)。後始末は 1 本の EXIT trap に束ねる。
+clean_probes
+
+WORK="$(mktemp -d)"; export WORK
+cleanup() { clean_probes; rm -rf "$WORK"; }
 trap cleanup EXIT INT TERM
 
 # 「✗ へ必ず入るように条件を固定する」差し替え候補を列挙する。
