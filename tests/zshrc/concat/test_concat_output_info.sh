@@ -23,7 +23,7 @@ assert_equals() {
     printf '✓ %s\n' "$message"
     return 0
   else
-    printf '✗ %s (expected: %s, got: %s)\n' "$message" "$expected" "$actual"
+    bad '✗ %s (expected: %s, got: %s)\n' "$message" "$expected" "$actual"
     return 1
   fi
 }
@@ -68,7 +68,7 @@ expected_path="${TEST_DIR:A}/clip.mp4"
 if grep -qF "$expected_path" "$INFO_FILE"; then
   printf '✓ Info file contains absolute output path\n'
 else
-  printf '✗ Info file missing expected path: %s\n' "$expected_path"
+  bad '✗ Info file missing expected path: %s\n' "$expected_path"
 fi
 
 # NUL 終端されている (1 レコード = 1 NUL)
@@ -186,12 +186,12 @@ assert_equals "2" "$nul_count" "Info file has 2 NUL terminators (2 groups)"
 if grep -qF "${TEST_DIR:A}/clip.mp4" "$INFO_FILE"; then
   printf '✓ Info file contains group 1 path\n'
 else
-  printf '✗ Info file missing group 1 path\n'
+  bad '✗ Info file missing group 1 path\n'
 fi
 if grep -qF "${TEST_DIR:A}/scene.mp4" "$INFO_FILE"; then
   printf '✓ Info file contains group 2 path\n'
 else
-  printf '✗ Info file missing group 2 path\n'
+  bad '✗ Info file missing group 2 path\n'
 fi
 
 # 全グループ成功時のサマリに ", 0失敗" が出ない (旧 ${_fail:+...} は "0" も非空で常時表示されていた)
@@ -245,7 +245,7 @@ assert_exit_code "0" "$exit_code" "concat succeeds"
 if grep -qF "preexisting" "$INFO_FILE"; then
   printf '✓ Pre-existing content preserved (append mode)\n'
 else
-  printf '✗ Pre-existing content lost (file was truncated)\n'
+  bad '✗ Pre-existing content lost (file was truncated)\n'
 fi
 nul_count=$(count_nul_bytes "$INFO_FILE")
 assert_equals "2" "$nul_count" "Info file has 2 NUL terminators (1 preexisting + 1 new)"

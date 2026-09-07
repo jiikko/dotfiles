@@ -51,21 +51,21 @@ output=$(av1ify --dry-run -r 0 "$TEST_DIR/input.avi" 2>&1)
 exit_code=$?
 setopt err_exit
 assert_contains "$output" "無効な解像度" "Reports invalid resolution for 0"
-(( exit_code != 0 )) && printf '✓ Exit code is non-zero for -r 0 (%d)\n' "$exit_code" || printf '✗ Exit code should be non-zero for -r 0 (got %d)\n' "$exit_code"
+(( exit_code != 0 )) && printf '✓ Exit code is non-zero for -r 0 (%d)\n' "$exit_code" || bad '✗ Exit code should be non-zero for -r 0 (got %d)\n' "$exit_code"
 
 unsetopt err_exit
 output=$(av1ify --dry-run -r 10000 "$TEST_DIR/input.avi" 2>&1)
 exit_code=$?
 setopt err_exit
 assert_contains "$output" "無効な解像度" "Reports invalid resolution for 10000"
-(( exit_code != 0 )) && printf '✓ Exit code is non-zero for -r 10000 (%d)\n' "$exit_code" || printf '✗ Exit code should be non-zero for -r 10000 (got %d)\n' "$exit_code"
+(( exit_code != 0 )) && printf '✓ Exit code is non-zero for -r 10000 (%d)\n' "$exit_code" || bad '✗ Exit code should be non-zero for -r 10000 (got %d)\n' "$exit_code"
 
 unsetopt err_exit
 output=$(av1ify --dry-run -r abc "$TEST_DIR/input.avi" 2>&1)
 exit_code=$?
 setopt err_exit
 assert_contains "$output" "無効な解像度" "Reports invalid resolution for non-numeric"
-(( exit_code != 0 )) && printf '✓ Exit code is non-zero for -r abc (%d)\n' "$exit_code" || printf '✗ Exit code should be non-zero for -r abc (got %d)\n' "$exit_code"
+(( exit_code != 0 )) && printf '✓ Exit code is non-zero for -r abc (%d)\n' "$exit_code" || bad '✗ Exit code should be non-zero for -r abc (got %d)\n' "$exit_code"
 
 # Test 20: 無効なfpsのバリデーション (resolution と同じ fail-fast: 即エラー終了)
 # 旧仕様は「警告して fps なしで続行」だったが、タイポで全ファイルが意図しない
@@ -81,7 +81,7 @@ exit_code=$?
 setopt err_exit
 assert_contains "$output" "無効なfps指定" "Reports invalid FPS for 0"
 assert_not_contains "$output" "変換予定" "Does not proceed to plan when FPS is invalid"
-(( exit_code != 0 )) && printf '✓ Exit code is non-zero for --fps 0 (%d)\n' "$exit_code" || { printf '✗ Exit code should be non-zero for --fps 0 (got %d)\n' "$exit_code"; exit 1; }
+(( exit_code != 0 )) && printf '✓ Exit code is non-zero for --fps 0 (%d)\n' "$exit_code" || { bad '✗ Exit code should be non-zero for --fps 0 (got %d)\n' "$exit_code"; exit 1; }
 
 output=$(av1ify --dry-run --fps 300 "$TEST_DIR/input.avi" 2>&1 || true)
 assert_contains "$output" "無効なfps指定" "Reports invalid FPS for 300"
@@ -105,7 +105,7 @@ output=$(AV1_FPS=abc AV1_RESOLUTION=xyz AV1_DENOISE=bogus av1ify --help 2>&1)
 exit_code=$?
 setopt err_exit
 assert_contains "$output" "使い方" "Help text is shown despite invalid env vars"
-(( exit_code == 0 )) && printf '✓ --help exits 0 despite invalid env vars\n' || { printf '✗ --help should exit 0 (got %d)\n' "$exit_code"; exit 1; }
+(( exit_code == 0 )) && printf '✓ --help exits 0 despite invalid env vars\n' || { bad '✗ --help should exit 0 (got %d)\n' "$exit_code"; exit 1; }
 
 # Test 20c: 環境変数経由の無効値も処理対象があれば fail-fast (CLI と同じ root 検証を通る)
 printf '\n## Test 20c: Invalid AV1_FPS env var fails fast when targets exist\n'
@@ -119,14 +119,14 @@ exit_code=$?
 setopt err_exit
 assert_contains "$output" "無効なfps指定" "Reports invalid FPS from env var"
 assert_not_contains "$output" "変換予定" "Does not proceed to plan with invalid AV1_FPS"
-(( exit_code != 0 )) && printf '✓ Exit code is non-zero for AV1_FPS=abc (%d)\n' "$exit_code" || { printf '✗ Exit code should be non-zero for AV1_FPS=abc (got %d)\n' "$exit_code"; exit 1; }
+(( exit_code != 0 )) && printf '✓ Exit code is non-zero for AV1_FPS=abc (%d)\n' "$exit_code" || { bad '✗ Exit code should be non-zero for AV1_FPS=abc (got %d)\n' "$exit_code"; exit 1; }
 
 unsetopt err_exit
 output=$(AV1_DENOISE=bogus av1ify --dry-run "$TEST_DIR/input.avi" 2>&1)
 exit_code=$?
 setopt err_exit
 assert_contains "$output" "無効なdenoise指定" "Reports invalid denoise from env var"
-(( exit_code != 0 )) && printf '✓ Exit code is non-zero for AV1_DENOISE=bogus (%d)\n' "$exit_code" || { printf '✗ Exit code should be non-zero for AV1_DENOISE=bogus (got %d)\n' "$exit_code"; exit 1; }
+(( exit_code != 0 )) && printf '✓ Exit code is non-zero for AV1_DENOISE=bogus (%d)\n' "$exit_code" || { bad '✗ Exit code should be non-zero for AV1_DENOISE=bogus (got %d)\n' "$exit_code"; exit 1; }
 
 # Test 21: 有効な解像度のバリエーション
 printf '\n## Test 21: Valid resolution variations\n'
@@ -140,7 +140,7 @@ for res in 480p 720p 1080p 1440p 4k 540; do
   if [[ "$output" != *"無効な解像度"* ]]; then
     printf '✓ Resolution %s is valid\n' "$res"
   else
-    printf '✗ Resolution %s should be valid\n' "$res"
+    bad '✗ Resolution %s should be valid\n' "$res"
   fi
 done
 
@@ -156,7 +156,7 @@ for fps in 24 30 60 29.97 23.976; do
   if [[ "$output" != *"無効なfps"* ]]; then
     printf '✓ FPS %s is valid\n' "$fps"
   else
-    printf '✗ FPS %s should be valid\n' "$fps"
+    bad '✗ FPS %s should be valid\n' "$fps"
   fi
 done
 
@@ -321,7 +321,7 @@ exit_code=$?
 setopt err_exit
 assert_contains "$output" "無効なdenoise指定" "Reports invalid denoise value"
 assert_not_contains "$output" "変換予定" "Does not proceed to plan when denoise is invalid"
-(( exit_code != 0 )) && printf '✓ Exit code is non-zero for --denoise invalid (%d)\n' "$exit_code" || { printf '✗ Exit code should be non-zero for --denoise invalid (got %d)\n' "$exit_code"; exit 1; }
+(( exit_code != 0 )) && printf '✓ Exit code is non-zero for --denoise invalid (%d)\n' "$exit_code" || { bad '✗ Exit code should be non-zero for --denoise invalid (got %d)\n' "$exit_code"; exit 1; }
 
 # Test 37: --denoise オプションで実際にファイル処理
 printf '\n## Test 37: Denoise option creates output file with tag\n'
@@ -436,7 +436,7 @@ output=$(av1ify --unknown-option "$TEST_DIR/input.avi" 2>&1)
 exit_code=$?
 setopt err_exit
 assert_contains "$output" "不明なオプション" "Reports unknown option error"
-(( exit_code != 0 )) && printf '✓ Exit code is non-zero (%d)\n' "$exit_code" || printf '✗ Exit code should be non-zero (got %d)\n' "$exit_code"
+(( exit_code != 0 )) && printf '✓ Exit code is non-zero (%d)\n' "$exit_code" || bad '✗ Exit code should be non-zero (got %d)\n' "$exit_code"
 
 # Test 48: -x のような短い不明オプションでもエラー
 printf '\n## Test 48: Unknown short option causes error\n'
@@ -445,7 +445,7 @@ output=$(av1ify -x "$TEST_DIR/input.avi" 2>&1)
 exit_code=$?
 setopt err_exit
 assert_contains "$output" "不明なオプション" "Reports unknown short option error"
-(( exit_code != 0 )) && printf '✓ Exit code is non-zero (%d)\n' "$exit_code" || printf '✗ Exit code should be non-zero (got %d)\n' "$exit_code"
+(( exit_code != 0 )) && printf '✓ Exit code is non-zero (%d)\n' "$exit_code" || bad '✗ Exit code should be non-zero (got %d)\n' "$exit_code"
 
 # Test 49: -f は引き続き正常に動作する
 printf '\n## Test 49: -f option still works after unknown option guard\n'
@@ -747,10 +747,10 @@ for fs_type in afpfs nfs webdav cifs; do
     if [[ "$trash_log_contents" != *"input.avi"* ]]; then
       printf '✓ %s: rm path used, trash skipped\n' "$fs_type"
     else
-      printf '✗ %s: trash should not be invoked\n' "$fs_type"
+      bad '✗ %s: trash should not be invoked\n' "$fs_type"
     fi
   else
-    printf '✗ %s: expected rm fallback (output=%s)\n' "$fs_type" "$output"
+    bad '✗ %s: expected rm fallback (output=%s)\n' "$fs_type" "$output"
   fi
 done
 

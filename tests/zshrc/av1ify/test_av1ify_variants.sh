@@ -174,7 +174,7 @@ assert_contains "$output" "SKIP" "Variant skip fires"
 if [[ "$output" != *"ファイル取得中"* ]]; then
   printf '✓ No file fetch before variant skip\n'
 else
-  printf '✗ File fetch should not happen before variant skip\n'
+  bad '✗ File fetch should not happen before variant skip\n'
 fi
 
 # Test 93: 複合タグのバリアント検出（720p-aac96k）

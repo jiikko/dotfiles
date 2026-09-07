@@ -11,8 +11,25 @@ _HELPER_DIR="${0:A:h}"
 ROOT_DIR="$(cd "$_HELPER_DIR/../../.." && pwd)"
 TEST_TMP="$(mktemp -d)"
 
+# 🚨 アサーションの失敗は exit code に出す (issue 327 / 329)。
+# ランナー (Makefile の run_tests) は **rc しか見ない**ので、`✗` を printf するだけの分岐は
+# **失敗しても [ok] に集計される**。失敗は bad() で報告してカウントし、下の cleanup が
+# 終了時に非 0 へ格上げする (落ちた assert を全部出すため、最初の 1 件で止めない)。
+# 書式と引数は printf と同じ。そこで打ち切りたい「前提の崩れ」だけ bad の後に exit 1 を書く。
+typeset -gi FAIL_COUNT=0
+bad() { printf "$@"; FAIL_COUNT=$(( FAIL_COUNT + 1 )); }
+
+# 🚨 後始末と「失敗を rc へ格上げする」を 1 本の EXIT trap に束ねる (trap は 1 つしか持てない)。
+# zsh の EXIT trap 内の `exit 1` は終了ステータスを上書きできる (実測 2026-09-08)。
+# 本体が既に非 0 で終わっているときは `return $rc` でそれを保つ (格下げしない)。
 cleanup() {
+  local rc=$?
   rm -rf "$TEST_TMP"
+  if (( FAIL_COUNT > 0 )); then
+    printf '✗ 失敗 %d 件 (assert の失敗は exit code に出す。issue 327 / 329)\n' "$FAIL_COUNT" >&2
+    exit 1
+  fi
+  return $rc
 }
 trap cleanup EXIT
 

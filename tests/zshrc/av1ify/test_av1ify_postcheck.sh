@@ -34,7 +34,7 @@ setopt err_exit
 if [[ "$output" != *"再生時間ズレ"* ]]; then
   printf '✓ No duration warning within tolerance\n'
 else
-  printf '✗ Should not warn when duration difference is within tolerance\n'
+  bad '✗ Should not warn when duration difference is within tolerance\n'
 fi
 
 # Test 67: AV1IFY_DURATION_TOLERANCE で閾値をカスタマイズ
@@ -74,7 +74,7 @@ setopt err_exit
 if [[ "$output" != *"フレーム数不一致"* ]]; then
   printf '✓ No frame count warning when counts match\n'
 else
-  printf '✗ Should not warn when frame counts match\n'
+  bad '✗ Should not warn when frame counts match\n'
 fi
 
 # Test 69b: フレーム数差が閾値内（Δ≤24）なら警告なし
@@ -90,7 +90,7 @@ setopt err_exit
 if [[ "$output" != *"フレーム数不一致"* ]]; then
   printf '✓ No frame count warning when difference is within tolerance\n'
 else
-  printf '✗ Should not warn when frame count difference ≤ 24\n'
+  bad '✗ Should not warn when frame count difference ≤ 24\n'
 fi
 
 # Test 69c: AV1IFY_FRAME_TOLERANCE で閾値をカスタマイズ
@@ -119,7 +119,7 @@ setopt err_exit
 if [[ "$output" != *"フレーム数不一致"* ]]; then
   printf '✓ No frame count warning when diff is within relative tolerance\n'
 else
-  printf '✗ Should not warn when diff ≤ 0.5%% of source frames\n'
+  bad '✗ Should not warn when diff ≤ 0.5%% of source frames\n'
 fi
 
 # Test 69e: AV1IFY_FRAME_TOLERANCE_PCT で相対許容をカスタマイズ
@@ -147,7 +147,7 @@ setopt err_exit
 if [[ "$output" != *"フレーム数不一致"* ]]; then
   printf '✓ No frame count warning when fps changed\n'
 else
-  printf '✗ Should not check frame count when fps is changed\n'
+  bad '✗ Should not check frame count when fps is changed\n'
 fi
 
 # Test 71: 出力解像度不一致の検出
@@ -175,7 +175,7 @@ setopt err_exit
 if [[ "$output" != *"解像度不一致"* ]]; then
   printf '✓ No resolution warning when output matches expected\n'
 else
-  printf '✗ Should not warn when resolution matches\n'
+  bad '✗ Should not warn when resolution matches\n'
 fi
 
 # Test 73: 解像度指定なしでは解像度チェックをスキップ
@@ -191,7 +191,7 @@ setopt err_exit
 if [[ "$output" != *"解像度不一致"* ]]; then
   printf '✓ No resolution check when -r not specified\n'
 else
-  printf '✗ Should not check resolution when -r is not specified\n'
+  bad '✗ Should not check resolution when -r is not specified\n'
 fi
 
 # Test 74: 縦長出力の解像度チェック（短辺=widthで判定）
@@ -207,7 +207,7 @@ setopt err_exit
 if [[ "$output" != *"解像度不一致"* ]]; then
   printf '✓ Portrait resolution check uses short side correctly\n'
 else
-  printf '✗ Portrait resolution should use short side (width)\n'
+  bad '✗ Portrait resolution should use short side (width)\n'
 fi
 
 # Test 75: ファイルサイズ異常の検出
@@ -237,7 +237,7 @@ setopt err_exit
 if [[ "$output" != *"ファイルサイズ異常"* && "$output" != *"サイズ増加"* ]]; then
   printf '✓ No file size warning for normal ratio\n'
 else
-  printf '✗ Should not warn when file size ratio is normal\n'
+  bad '✗ Should not warn when file size ratio is normal\n'
 fi
 
 # Test 77: AV1IFY_MIN_SIZE_RATIO で閾値をカスタマイズ
@@ -279,7 +279,7 @@ setopt err_exit
 if [[ "$output" != *"サイズ増加"* ]]; then
   printf '✓ No size increase warning when output is smaller\n'
 else
-  printf '✗ Should not warn when output is smaller than source\n'
+  bad '✗ Should not warn when output is smaller than source\n'
 fi
 
 # Test 77d: サイズ増加時に増加率(%)が表示される
@@ -319,7 +319,7 @@ setopt err_exit
 if [[ "$output" != *"映像コーデック不一致"* ]]; then
   printf '✓ No codec warning when output is av1\n'
 else
-  printf '✗ Should not warn when output codec is av1\n'
+  bad '✗ Should not warn when output codec is av1\n'
 fi
 
 # Test 80: __av1ify_is_nonneg_num — 通常の非負小数を受理
@@ -333,7 +333,7 @@ for v in 0 0.5 1 1.5 10 .25 100.0; do
   if (( rc == 0 )) && [[ -z "$err" ]]; then
     printf '✓ "%s" is accepted (no stderr)\n' "$v"
   else
-    printf '✗ "%s" should be accepted (rc=%d, err=%q)\n' "$v" "$rc" "$err"
+    bad '✗ "%s" should be accepted (rc=%d, err=%q)\n' "$v" "$rc" "$err"
   fi
 done
 setopt err_exit
@@ -349,7 +349,7 @@ for v in +0 +0.5 +1 +1.5 +.25; do
   if (( rc == 0 )) && [[ -z "$err" ]]; then
     printf '✓ "%s" is accepted (no stderr)\n' "$v"
   else
-    printf '✗ "%s" should be accepted (rc=%d, err=%q)\n' "$v" "$rc" "$err"
+    bad '✗ "%s" should be accepted (rc=%d, err=%q)\n' "$v" "$rc" "$err"
   fi
 done
 setopt err_exit
@@ -363,7 +363,7 @@ for v in -1 -0.5 abc 1.2.3 '' '+' '.'; do
   if (( rc != 0 )) && [[ -z "$err" ]]; then
     printf '✓ "%s" is rejected (no stderr noise)\n' "$v"
   else
-    printf '✗ "%s" should be rejected silently (rc=%d, err=%q)\n' "$v" "$rc" "$err"
+    bad '✗ "%s" should be rejected silently (rc=%d, err=%q)\n' "$v" "$rc" "$err"
   fi
 done
 setopt err_exit
@@ -434,7 +434,7 @@ output=$(MOCK_OUTPUT_AUDIO_INDEX= __av1ify_postcheck "$TEST_DIR/video-enc.mp4" "
 rc=$?
 setopt err_exit
 assert_contains "$output" "音声ストリーム検出できず" "Reports noaudio when source is missing"
-(( rc != 0 )) && printf '✓ postcheck returns non-zero (rc=%d)\n' "$rc" || { printf '✗ postcheck should return non-zero\n'; exit 1; }
+(( rc != 0 )) && printf '✓ postcheck returns non-zero (rc=%d)\n' "$rc" || { bad '✗ postcheck should return non-zero\n'; exit 1; }
 assert_file_exists "$TEST_DIR/video-check_ng-noaudio-enc.mp4" "Output is renamed with noaudio tag"
 
 # Test 88: ソースの音声 probe (ffprobe) が失敗した場合も NG side に倒す (codex P2 回帰防止)
@@ -474,7 +474,7 @@ unset __saved_path
 setopt err_exit
 assert_contains "$output" "音声ストリーム検出できず" "Probe failure is not treated as silent source"
 assert_not_contains "$output" "noaudio 判定をスキップ" "Skip path is not taken on probe failure"
-(( rc != 0 )) && printf '✓ postcheck returns non-zero (rc=%d)\n' "$rc" || { printf '✗ postcheck should return non-zero\n'; exit 1; }
+(( rc != 0 )) && printf '✓ postcheck returns non-zero (rc=%d)\n' "$rc" || { bad '✗ postcheck should return non-zero\n'; exit 1; }
 
 # Test 89: mark_issue のリネーム先が既存でも無言上書きしない (連番で衝突回避)
 # 再実行で同名 check_ng が再生成されるケースで、前回の成果物を mv -f で潰さないこと
@@ -491,14 +491,14 @@ setopt err_exit
 if [[ "$marked" == "$TEST_DIR/input-check_ng2-enc.mp4" && -f "$marked" ]]; then
   printf '✓ Collision avoided with numbered note (%s)\n' "${marked:t}"
 else
-  printf '✗ Expected input-check_ng2-enc.mp4, got: %s\n' "$marked"; exit 1
+  bad '✗ Expected input-check_ng2-enc.mp4, got: %s\n' "$marked"; exit 1
 fi
 if [[ "$(cat "$TEST_DIR/input-check_ng-enc.mp4")" == "previous artifact" ]]; then
   printf '✓ Previous artifact preserved\n'
 else
-  printf '✗ Previous artifact was overwritten\n'; exit 1
+  bad '✗ Previous artifact was overwritten\n'; exit 1
 fi
-(( rc == 0 )) || { printf '✗ mark_issue should return 0\n'; exit 1; }
+(( rc == 0 )) || { bad '✗ mark_issue should return 0\n'; exit 1; }
 
 # Test 90: finalize は出力が生成されない (mv 失敗 = 割り込みで tmp が消された窓など) 場合、
 # 元ファイルを絶対に削除しない。無音ソースだと postcheck が欠落出力に対し「NG なし」で
@@ -516,6 +516,6 @@ setopt err_exit
 __AV1IFY_DELETE_ORIGIN=0
 assert_file_exists "$TEST_DIR/keep.mp4" "Source preserved when output not generated"
 assert_file_not_exists "$TEST_DIR/out.av1.mp4" "No bogus output left behind"
-(( rc == 1 )) || { printf '✗ finalize should return 1 (NG) on missing output\n'; exit 1; }
+(( rc == 1 )) || { bad '✗ finalize should return 1 (NG) on missing output\n'; exit 1; }
 
 printf '\n=== Postcheck Tests Completed ===\n'

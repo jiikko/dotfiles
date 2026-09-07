@@ -197,7 +197,7 @@ rc=$?
 if (( rc == 0 )) && [[ "$REPLY" == "42.5" ]]; then
   printf '✓ cheap path returns stream=duration value (REPLY=%s)\n' "$REPLY"
 else
-  printf '✗ cheap path failed (rc=%d, REPLY=%q)\n' "$rc" "$REPLY"
+  bad '✗ cheap path failed (rc=%d, REPLY=%q)\n' "$rc" "$REPLY"
 fi
 
 # ----------------------------------------------------------------------
@@ -215,7 +215,7 @@ rc=$?
 if (( rc == 0 )) && (( REPLY == 99.85 )); then
   printf '✓ fallback path returns packet PTS value (REPLY=%s)\n' "$REPLY"
 else
-  printf '✗ fallback path failed (rc=%d, REPLY=%q)\n' "$rc" "$REPLY"
+  bad '✗ fallback path failed (rc=%d, REPLY=%q)\n' "$rc" "$REPLY"
 fi
 
 # ----------------------------------------------------------------------
@@ -234,7 +234,7 @@ setopt err_exit
 if (( rc == 1 )) && [[ -z "$REPLY" ]]; then
   printf '✓ all-N/A returns failure with REPLY empty (rc=%d)\n' "$rc"
 else
-  printf '✗ Expected rc=1 and REPLY="", got rc=%d REPLY=%q\n' "$rc" "$REPLY"
+  bad '✗ Expected rc=1 and REPLY="", got rc=%d REPLY=%q\n' "$rc" "$REPLY"
 fi
 
 # ----------------------------------------------------------------------
@@ -321,7 +321,7 @@ rc=$?
 if (( rc == 0 )) && [[ "$REPLY" == "20.000000" ]]; then
   printf '✓ presentation end from reordered packets (REPLY=%s)\n' "$REPLY"
 else
-  printf '✗ Expected 20.000000, got rc=%d REPLY=%q\n' "$rc" "$REPLY"
+  bad '✗ Expected 20.000000, got rc=%d REPLY=%q\n' "$rc" "$REPLY"
   exit 1
 fi
 
@@ -339,7 +339,7 @@ rc=$?
 if (( rc == 0 )) && [[ "$REPLY" == "19.500000" ]]; then
   printf '✓ falls back to pts when duration_time is N/A (REPLY=%s)\n' "$REPLY"
 else
-  printf '✗ Expected 19.500000, got rc=%d REPLY=%q\n' "$rc" "$REPLY"
+  bad '✗ Expected 19.500000, got rc=%d REPLY=%q\n' "$rc" "$REPLY"
   exit 1
 fi
 

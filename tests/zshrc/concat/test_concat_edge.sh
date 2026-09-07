@@ -67,7 +67,7 @@ for ext in avi mov mkv webm flv wmv m4v mpg mpeg 3gp ts m2ts; do
   if [[ -f "$TEST_DIR/video.mp4" ]]; then
     printf '✓ Extension .%s is accepted\n' "$ext"
   else
-    printf '✗ Extension .%s failed\n' "$ext"
+    bad '✗ Extension .%s failed\n' "$ext"
   fi
 done
 
@@ -93,7 +93,7 @@ result_nfc=$(__concat_get_stem "/path/to/clip_${nfc_pu}.mp4")
 if [[ "$result_nfd" == "$result_nfc" ]]; then
   printf '✓ NFD and NFC inputs produce identical stems\n'
 else
-  printf '✗ NFD and NFC stems differ (nfd=%s, nfc=%s)\n' "$result_nfd" "$result_nfc"
+  bad '✗ NFD and NFC stems differ (nfd=%s, nfc=%s)\n' "$result_nfd" "$result_nfc"
   return 1
 fi
 assert_contains "$result_nfd" "clip_" "Stem contains expected prefix"
@@ -104,14 +104,14 @@ result=$(__concat_get_stem "/some/dir/video_001.mp4")
 if [[ "$result" == "video_001" ]]; then
   printf '✓ Extracts stem without extension\n'
 else
-  printf '✗ Expected video_001, got %s\n' "$result"
+  bad '✗ Expected video_001, got %s\n' "$result"
   return 1
 fi
 result=$(__concat_get_stem "noext")
 if [[ "$result" == "noext" ]]; then
   printf '✓ Handles file without extension\n'
 else
-  printf '✗ Expected noext, got %s\n' "$result"
+  bad '✗ Expected noext, got %s\n' "$result"
   return 1
 fi
 
@@ -140,21 +140,21 @@ __concat_extract_number "movie_X_#Ep1"
 if [[ "$REPLY" == "1::movie_X_#Ep" ]]; then
   printf '✓ _#Ep1 → num=1, prefix=movie_X_#Ep\n'
 else
-  printf '✗ Expected "1::movie_X_#Ep", got "%s"\n' "$REPLY"
+  bad '✗ Expected "1::movie_X_#Ep", got "%s"\n' "$REPLY"
   return 1
 fi
 __concat_extract_number "movie_X_#Sp2"
 if [[ "$REPLY" == "2::movie_X_#Sp" ]]; then
   printf '✓ _#Sp2 → num=2, prefix=movie_X_#Sp (異ワードは別グループ)\n'
 else
-  printf '✗ Expected "2::movie_X_#Sp", got "%s"\n' "$REPLY"
+  bad '✗ Expected "2::movie_X_#Sp", got "%s"\n' "$REPLY"
   return 1
 fi
 __concat_extract_number "movie_X_#Ep10"
 if [[ "$REPLY" == "10::movie_X_#Ep" ]]; then
   printf '✓ _#Ep10 → num=10 (multi-digit OK)\n'
 else
-  printf '✗ Expected "10::movie_X_#Ep", got "%s"\n' "$REPLY"
+  bad '✗ Expected "10::movie_X_#Ep", got "%s"\n' "$REPLY"
   return 1
 fi
 # 互換性チェック: 既存パターンが従来通り動くこと
@@ -163,7 +163,7 @@ __concat_extract_number "video_part1"
 if [[ "$REPLY" == "1::video_" ]]; then
   printf '✓ 互換: _partN は専用 branch で従来通り解釈される (prefix=video_)\n'
 else
-  printf '✗ Backward compat broken for _partN: got "%s"\n' "$REPLY"
+  bad '✗ Backward compat broken for _partN: got "%s"\n' "$REPLY"
   return 1
 fi
 # SceneN は alpha+num branch で prefix にワードごと取り込む
@@ -171,7 +171,7 @@ __concat_extract_number "video_Scene3"
 if [[ "$REPLY" == "3::video_Scene" ]]; then
   printf '✓ 互換: _SceneN は alpha+num branch で従来通り解釈される (prefix=video_Scene)\n'
 else
-  printf '✗ Backward compat broken for _SceneN: got "%s"\n' "$REPLY"
+  bad '✗ Backward compat broken for _SceneN: got "%s"\n' "$REPLY"
   return 1
 fi
 
@@ -200,7 +200,7 @@ for spec in "0.94:lt:0.95" "0.95:le:0.95" "1.06:gt:1.05" "1.05:ge:1.05" "9.5:le:
   if __concat_float "$a" "$op" "$b"; then
     printf '✓ %s %s %s is true\n' "$a" "$op" "$b"
   else
-    printf '✗ %s %s %s should be true\n' "$a" "$op" "$b"
+    bad '✗ %s %s %s should be true\n' "$a" "$op" "$b"
     _float_ok=0
   fi
 done
@@ -210,7 +210,7 @@ for spec in "0.95:lt:0.95" "0.96:le:0.95" "1.05:gt:1.05" "1.04:ge:1.05"; do
   if ! __concat_float "$a" "$op" "$b"; then
     printf '✓ %s %s %s is false\n' "$a" "$op" "$b"
   else
-    printf '✗ %s %s %s should be false\n' "$a" "$op" "$b"
+    bad '✗ %s %s %s should be false\n' "$a" "$op" "$b"
     _float_ok=0
   fi
 done
@@ -218,14 +218,14 @@ done
 if __concat_float "N/A" le 0; then
   printf '✓ non-numeric "N/A" coerces to 0 (le 0 is true)\n'
 else
-  printf '✗ non-numeric "N/A" should coerce to 0\n'
+  bad '✗ non-numeric "N/A" should coerce to 0\n'
   _float_ok=0
 fi
 # 不明な演算子は偽 (誤用をすり抜けさせない)
 if ! __concat_float 1 bogus 2; then
   printf '✓ unknown operator returns false\n'
 else
-  printf '✗ unknown operator should return false\n'
+  bad '✗ unknown operator should return false\n'
   _float_ok=0
 fi
 setopt err_exit

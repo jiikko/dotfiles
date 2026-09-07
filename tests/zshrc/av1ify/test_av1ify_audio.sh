@@ -285,7 +285,7 @@ for bad in "abc" "1,15" "0" "-1"; do
   if [[ "$rc" != "0" ]] && [[ "$output" == *"無効なAV1_AUDIO_REENCODE_MARGIN指定"* ]]; then
     printf '✓ Rejects invalid margin %s\n' "$bad"
   else
-    printf '✗ Did not reject invalid margin %s (rc=%s)\n' "$bad" "$rc"
+    bad '✗ Did not reject invalid margin %s (rc=%s)\n' "$bad" "$rc"
   fi
   assert_file_not_exists "$TEST_DIR/input-enc.mp4" "No output for invalid margin $bad"
   assert_file_not_exists "$TEST_DIR/input-aac96k-enc.mp4" "No aac output for invalid margin $bad"
@@ -317,7 +317,7 @@ attempts=$(grep -c . "$ARGS_LOG" 2>/dev/null || echo 0)
 if [[ "$attempts" == "1" ]]; then
   printf '✓ No second doomed ffmpeg attempt when AAC was already chosen (attempts=%s)\n' "$attempts"
 else
-  printf '✗ Expected exactly 1 ffmpeg attempt when AAC was chosen, got %s\n' "$attempts"
+  bad '✗ Expected exactly 1 ffmpeg attempt when AAC was chosen, got %s\n' "$attempts"
 fi
 
 # Test 78: copy を選んでいた場合は従来どおり AAC で再試行する (Test 77 の過剰適用防止)
@@ -337,7 +337,7 @@ attempts=$(grep -c . "$ARGS_LOG" 2>/dev/null || echo 0)
 if [[ "$attempts" == "2" ]]; then
   printf '✓ Retries exactly once with AAC after a copy failure (attempts=%s)\n' "$attempts"
 else
-  printf '✗ Expected exactly 2 ffmpeg attempts on the copy path, got %s\n' "$attempts"
+  bad '✗ Expected exactly 2 ffmpeg attempts on the copy path, got %s\n' "$attempts"
 fi
 
 printf '\n=== Audio Tests Completed ===\n'

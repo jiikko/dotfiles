@@ -195,7 +195,7 @@ setopt err_exit
 if [[ "$output" == *"ファイルパスが必要"* ]]; then
   printf '✓ Reports error when -f has no argument\n'
 else
-  printf '✗ Reports error when -f has no argument (output: %s)\n' "$output"
+  bad '✗ Reports error when -f has no argument (output: %s)\n' "$output"
 fi
 
 # Test 13: 成功時のサイズ削減サマリ表示 (元→出力, 削減率)

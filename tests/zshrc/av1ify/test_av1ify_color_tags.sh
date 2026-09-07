@@ -48,7 +48,7 @@ output=$(av1ify --dry-run --color-tags bogus "$TEST_DIR/input.avi" 2>&1)
 exit_code=$?
 setopt err_exit
 assert_contains "$output" "無効なcolor-tags指定" "Reports invalid color-tags value"
-(( exit_code != 0 )) && printf '✓ Exit code is non-zero for invalid --color-tags (%d)\n' "$exit_code" || printf '✗ Exit code should be non-zero (got %d)\n' "$exit_code"
+(( exit_code != 0 )) && printf '✓ Exit code is non-zero for invalid --color-tags (%d)\n' "$exit_code" || bad '✗ Exit code should be non-zero (got %d)\n' "$exit_code"
 
 # --- ここから先は「決定ロジック」ではなく「決定が実際に ffmpeg へ渡ること」を検証する。
 # ログ文字列だけを assert していると、-colorspace の配線を削除しても全部緑のままになる
@@ -145,7 +145,7 @@ attempts=$(grep -c . "$ARGS_LOG" 2>/dev/null || echo 0)
 if [[ "$attempts" == "1" ]]; then
   printf '✓ Does not burn a second doomed ffmpeg attempt (attempts=%s)\n' "$attempts"
 else
-  printf '✗ Expected exactly 1 ffmpeg attempt, got %s\n' "$attempts"
+  bad '✗ Expected exactly 1 ffmpeg attempt, got %s\n' "$attempts"
 fi
 
 # Test 12: 補正済みなのに失敗したケースは従来どおり音声リトライへ流す (Test 11 の過剰適用防止)
