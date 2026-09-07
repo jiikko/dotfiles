@@ -17,9 +17,14 @@
 #      (`if COND; then ✓ else ✗ fi` → `if false; then` / ✗ が then 側なら `if true; then`。
 #       `COND || bad '✗…'` なら左辺を false にする)。報告の形 (printf / bad / fail / assert_*) は
 #      ファイル自身のものをそのまま通るので、引数の数や書式を推測しなくてよい
-#   2. コピーを作ってその 1 行だけを差し替え、走らせて rc を見る
-#   3. 位置による違いを拾うため **最初と最後の候補**の 2 箇所を別々に試す
-#      (fail カウンタを末尾でしか見ないファイル / 途中だけ exit するファイルを分けるため)
+#   2. コピーを作ってその 1 行だけを差し替え、走らせて rc と**出力**を見る
+#   3. 🚨 **その分岐に本当に入ったかを出力で確かめる** — `✗` の数が素の実行より増えていなければ
+#      「到達しなかった」であって「rc に出ない」ではない。ここを見ないと偽陽性が出る
+#      (実測 2026-09-08 に 2 形: `if A; then … elif B; then … else ✗ fi` で elif だけ false に
+#      しても A が真なら else へ入らない / 1 行の `else echo '✗ …'; fi` は ✗ 行自身が else なので
+#      「then 側」と誤読して `if true` にしてしまう)。到達しなかった候補は次の候補へ回し、
+#      1 つも到達しなければ**判定不能**にする
+#   4. 位置による違いを拾うため **最初 / 中央 / 最後**の候補を順に試す (到達した候補で最大 3 回)
 #
 # 🚨 結果は 3 値。「判定不能」を合格にも不合格にも丸めない
 #    (_claude/rules/adversarial-review-own-safeguards.md 節 2):
@@ -94,6 +99,7 @@ trap cleanup EXIT INT TERM
 # 出力: "<✗ の行>\t<書き換える行>\t<書き換え後の内容>"
 probe_plan() {
   awk '
+    function indent_of(t,   x) { x = t; sub(/[^[:space:]].*$/, "", x); return x }
     { L[NR] = $0 }
     END {
       for (k = 1; k <= NR; k++) {
@@ -102,41 +108,67 @@ probe_plan() {
         s = line; sub(/^[[:space:]]*/, "", s)
         if (s ~ /^#/) continue
 
-        # 形 B: `COND || bad "✗…"` — 左辺を false にすれば必ず報告へ入る
-        if (match(line, /\|\|/) && index(substr(line, 1, RSTART), "✗") == 0) {
-          ind = line; sub(/[^[:space:]].*$/, "", ind)
-          printf "%d\t%d\t%sfalse %s\n", k, k, ind, substr(line, RSTART)
+        # 形 B-2: 行継続で `||` が次の行の先頭に来る形
+        #   cmd ... \
+        #     || { printf "✗ …"; exit 1; }
+        # 論理行の頭 (直前の行) を false に差し替える。2 行に収まるものだけ扱う
+        # (3 行以上だと途中の継続行が残って壊れる)。
+        if (s ~ /^\|\|/) {
+          if (k >= 2 && L[k-1] ~ /\\$/ && (k == 2 || L[k-2] !~ /\\$/)) {
+            printf "%d\t%d\t%sfalse \\\n", k, k-1, indent_of(L[k-1])
+          }
           continue
         }
 
-        # 形 A: if/elif の分岐の中。else 側なら false、then 側なら true で固定する
-        saw_else = 0; else_ind = ""
-        for (j = k - 1; j >= 1 && j >= k - 40; j--) {
+        # 形 B: `COND || bad "✗…"` が 1 行に収まっている — 左辺を false にすれば必ず報告へ入る
+        if (match(line, /\|\|/) && index(substr(line, 1, RSTART), "✗") == 0) {
+          printf "%d\t%d\t%sfalse %s\n", k, k, indent_of(line), substr(line, RSTART)
+          continue
+        }
+
+        # 形 A: if/elif/else の分岐の中。
+        # 🚨 ✗ 行そのものが `else …` のことがある (`else echo "✗ …"; fi`)。その場合は
+        # 「else 側に居る」ので、後ろ向きの走査を始める前に saw_else を立てておく
+        # (立てないと then 側と誤読して `if true` にしてしまう。実測 2026-09-08)。
+        saw_else = (s ~ /^else([[:space:]]|$)/)
+        else_ind = saw_else ? indent_of(line) : ""
+        depth = 0
+        for (j = k - 1; j >= 1 && j >= k - 60; j--) {
           t = L[j]; u = t; sub(/^[[:space:]]*/, "", u)
+          if (u ~ /^fi([[:space:]]|;|$)/ || u ~ /;[[:space:]]*fi[[:space:]]*$/) { depth++; continue }
+          if (depth > 0) {
+            if (u ~ /^if[[:space:]].*;[[:space:]]*then[[:space:]]*$/) depth--
+            continue
+          }
           if (u == "else" || u ~ /^else[[:space:]]/) {
-            if (!saw_else) { saw_else = 1; else_ind = t; sub(/[^[:space:]].*$/, "", else_ind) }
+            if (!saw_else) { saw_else = 1; else_ind = indent_of(t) }
             continue
           }
           if (u ~ /^(if|elif)[[:space:]].*;[[:space:]]*then[[:space:]]*$/) {
-            ind = t; sub(/[^[:space:]].*$/, "", ind)
+            ind = indent_of(t)
             kw = (u ~ /^elif/) ? "elif" : "if"
+            # 🚨 else 側に居るなら、この分岐だけでなく **連鎖の手前の条件も全部** false に
+            # しないと到達しない (`if A; then … elif B; then … else ✗ fi` で B だけ false に
+            # しても A が真なら else へ入らない。実測 2026-09-08 に偽陽性を 3 件出した)。
+            # ここでは 1 行だけ差し替える設計なので、連鎖の途中 (elif) だった場合は
+            # **その候補を諦める** (到達判定で「到達しなかった」として次の候補へ回る)。
+            if (saw_else && else_ind == ind && kw == "elif") break
             forced = (saw_else && else_ind == ind) ? "false" : "true"
             printf "%d\t%d\t%s%s %s; then\n", k, j, ind, kw, forced
             break
           }
-          # 別の分岐の閉じに当たったらこの ✗ の外側なので諦める
-          if (u == "fi") break
         }
       }
     }
   ' "$1"
 }
 
-# コピーを 1 回走らせて rc を返す (timeout つき)。
+# コピーを 1 回走らせて rc を返す (timeout つき)。出力は $2 のファイルへ落とす
+# (「その分岐に到達したか」を ✗ の数で確かめるため。rc だけでは判定できない)。
 run_probe() {
-  local probe="$1" rc pid killer
+  local probe="$1" out="$2" rc pid killer
   chmod +x "$probe"
-  "$probe" >/dev/null 2>&1 &
+  "$probe" > "$out" 2>&1 &
   pid=$!
   ( sleep "$PROBE_TIMEOUT"; kill -9 "$pid" 2>/dev/null ) & killer=$!
   wait "$pid"; rc=$?
@@ -144,16 +176,21 @@ run_probe() {
   return "$rc"
 }
 
+# ✗ の数 (取れなければ 0)。🚨 空文字を返さない — 返すと呼び出し側の [ -le ] が
+# 「integer expected」で非 0 になり、**到達していない候補を「到達した」と読む**
+# (実測 2026-09-08: xmarks を export し忘れたときにこの形で偽陽性が 3 件出た)。
+xmarks() { local n; n="$(grep -c '✗' "$1" 2>/dev/null)" || n=0; printf '%s' "${n:-0}"; }
+
 probe_one() {
   local f="$1"
-  local dir base probe plan first last rc tag
+  local dir base probe plan out base_out rc tag n
   dir="$(dirname "$f")"; base="$(basename "$f")"
   # 🚨 一時名を $$ だけで作らない。timeout で殺した worker が残骸を置いたまま pid が再利用されると、
   # 別のファイルのプローブを掴んで **もっともらしい「出ない」/「不明」** を作る (エラーにならないので
   # 出力の表からは見分けられない)。対象のパスから作った tag を混ぜて衝突しない名前にする。
   tag="$(printf '%s' "$f" | cksum | tr -d ' ')-$$-$RANDOM"
   probe="$dir/.probe-$tag-$base"
-  plan="$WORK/plan.$tag"
+  plan="$WORK/plan.$tag"; out="$WORK/out.$tag"; base_out="$WORK/base.$tag"
 
   probe_plan "$f" > "$plan" 2>/dev/null
   if [ ! -s "$plan" ]; then
@@ -165,34 +202,50 @@ probe_one() {
     rm -f "$plan"; return 0
   fi
 
-  # baseline: **コピーを素のまま**走らせる (自分のファイル名への依存・skip・既存の赤をここで弾く)
+  # baseline: **コピーを素のまま**走らせる (自分のファイル名への依存・skip・既存の赤をここで弾く)。
+  # 出力の ✗ の数も控える (正常な出力に ✗ を含むテストがあるので、増分で「到達した」を判定する)。
   cp "$f" "$probe"
-  if ! run_probe "$probe"; then
+  if ! run_probe "$probe" "$base_out"; then
     rc=$?
-    rm -f "$probe" "$plan"
+    rm -f "$probe" "$plan" "$base_out"
     printf '不明\t%s\tコピーの素の実行が rc=%s (skip / 環境依存 / 自分のファイル名への依存 / timeout)\n' "$f" "$rc"
     return 0
   fi
+  local base_x; base_x="$(xmarks "$base_out")"
 
-  first="$(head -1 "$plan")"; last="$(tail -1 "$plan")"
-  local verdict='OK' detail='' tried=0 entry
-  for entry in "$first" "$last"; do
+  # 候補は 最初 / 中央 / 最後 の順に試す (位置で違う仕掛けを持つファイルを分けるため)。
+  n="$(wc -l < "$plan" | tr -d ' ')"
+  local order=(1 $(( (n + 1) / 2 )) "$n") seen='' i entry
+  local verdict='' detail='' tried=0 reached=0
+  for i in "${order[@]}"; do
+    [ "$tried" -ge 3 ] && break
+    case " $seen " in *" $i "*) continue ;; esac
+    seen="$seen $i"
+    entry="$(sed -n "${i}p" "$plan")"
     [ -n "$entry" ] || continue
-    [ "$tried" -eq 1 ] && [ "$entry" = "$first" ] && continue
-    tried=$((tried + 1))
     local xline mline mtext
     xline="$(cut -f1 <<< "$entry")"; mline="$(cut -f2 <<< "$entry")"; mtext="$(cut -f3- <<< "$entry")"
     awk -v ln="$mline" -v txt="$mtext" 'NR == ln { print txt; next } { print }' "$f" > "$probe"
-    if run_probe "$probe"; then
+    rc=0; run_probe "$probe" "$out" || rc=$?
+    # 🚨 到達したかを出力で確かめる。✗ が増えていなければ、その分岐へ入らなかっただけで
+    # 「rc に出ない」の証拠にならない (偽陽性の唯一の入口)
+    if [ "$(xmarks "$out")" -le "$base_x" ]; then continue; fi
+    reached=$((reached + 1)); tried=$((tried + 1))
+    if [ "$rc" -eq 0 ]; then
       verdict='出ない'
       detail="${detail:+$detail / }${base}:${xline} の失敗が rc に出ない"
     fi
   done
-  rm -f "$probe" "$plan"
-  printf '%s\t%s\t%s\n' "$verdict" "$f" "${detail:-試した ${tried} 箇所すべてで rc が非 0}"
+
+  rm -f "$probe" "$plan" "$out" "$base_out"
+  if [ "$reached" -eq 0 ]; then
+    printf '不明\t%s\t候補 %s 件のいずれも ✗ を出させられなかった (分岐へ到達しない)\n' "$f" "$n"
+    return 0
+  fi
+  printf '%s\t%s\t%s\n' "${verdict:-OK}" "$f" "${detail:-到達した ${reached} 箇所すべてで rc が非 0}"
 }
 
-export -f probe_one probe_plan run_probe
+export -f probe_one probe_plan run_probe xmarks
 
 RESULTS="$WORK/results"
 printf '%s\n' "${FILES[@]}" | xargs -P "$JOBS" -I{} bash -c 'probe_one "$@"' _ {} > "$RESULTS"
