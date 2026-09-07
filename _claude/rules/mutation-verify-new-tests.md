@@ -272,6 +272,11 @@ pathspec commit に入る** (`git status` では自分の変更と区別がつ�
   **タブは変数に落として使う** (`tab="$(printf '\t')"`)。`\s` は両方が受ける。**ヘルパーへ
   パターンを渡す形だと `grep` の近くを grep しても見つからない**ので、掃くときは「正規表現に
   なる文字列」全部を見る。🚨 dotfiles は macOS 専用なのでこの項は**他 repo 向け**
+- **判定に使う外部コマンドが、テストで渡す入力の形を受けられるか**。上の項が方言なら、これは**入力の形**の版。
+  実測 2026-09-07: BSD awk は **`-v` の値に改行を受け付けない** (`awk: newline in string` で rc≠0)。
+  一覧のような複数行の値は `-v` でなく別入力 (process substitution / ファイル) で渡す。
+  **1 行の入力で書いた単体テストは通る**ので壊れるのは複数行を渡す本番経路だけで、しかも判定関数の rc≠0 は
+  「該当なし」と区別がつかない顔で出る (実在するものが「見つからない」と報告される)。macOS でも踏む
 - **fake / stub が外部コマンドの exit code を模しているか**。`err == nil` しか返さない fake は、
   実際には exit 1 を返すコマンドの契約を再現していない (関連:
   [`survey-receiver-guards-before-passing-new-values.md`](survey-receiver-guards-before-passing-new-values.md)

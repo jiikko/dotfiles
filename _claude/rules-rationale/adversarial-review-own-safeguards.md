@@ -262,3 +262,21 @@ Core の bug (issue 697) だった。
 round 1 の指摘 2 件をそれぞれ直した結果、`find … -name done -prune` の修正と「group 名に `done` を許す」修正が
 相互作用して group `done` を丸ごと prune する形になった。どちらの修正も単体では正しく、round 2 が両方を見て初めて出た。
 
+## §1 の「後始末の残骸は正常系でも出る」の起源 (2026-09-07, ThumbnailThumb 545)
+
+`bin/tt-check-claude-md-refs` (CLAUDE.md の参照が実在するかを検査する自作 gate) が、走るたびに
+一時ファイル (宣言索引) を孤児にした。**2 経路あり、合計 28 個**が残っていた:
+
+1. 索引の遅延生成が `$(type_scope_files ...)` の**subshell 内で初回に走った**。親プロセスは
+   索引のパスを知らないので、親の EXIT trap では消せない
+2. self-test の `trap cleanup_self_test EXIT` が、索引側の `trap cleanup_decl_index EXIT` を
+   **黙って上書き**した (EXIT trap は 1 本しか持てない)
+
+どちらも `ls "$TMPDIR"` を見るまで気づかなかった。表面上は
+「self-test OK (10 fixture) / files=6 refs=474 unresolved=0」という緑で、
+**異常系の実験 (§1 の表) を全部通しても残骸は観測されない** — 後始末は正常系の話なので。
+
+直した形: 後始末を 1 つの `on_exit` handler に束ね、索引の生成を親側の `load_decl_index` へ移し、
+`cleanup_decl_index` は `set -e` 下で 0 を返すようにした (rm の rc がそのまま出て
+handler が途中で死ぬのを避ける)。
+

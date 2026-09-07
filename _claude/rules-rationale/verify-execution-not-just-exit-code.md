@@ -186,3 +186,14 @@ Lint / Tests / Bench は緑だが `src/glogx` は起動していない。その�
 建てた commit `57e44221`、ログに `ok glogx 47.398s`)。
 
 この経験から `bin/ci-log` に「未検証 commit」の検出を足した (下記)。
+
+## pathspec の警告で `&&` 連鎖が切れ、「適用ゼロ」を 1 往復見逃した (2026-09-07, ThumbnailThumb 545)
+
+worktree の成果を本体へ取り出すため `git add -A -- . ':!tmp'` を打ったところ、gitignore された
+`tmp/` を pathspec で明示したことで警告が出て **rc≠0** になり、`&&` で繋いだ後段
+(`git diff --cached --binary` で patch を作る部分) が走らなかった。
+
+「applied」の行が出ていないのに次の手順へ進み、**旧状態のまま `make lint` を回して緑を報告しかけた**。
+`git status` を見て気づいた。exit code を見ていれば止まったが、見ていたのは
+「後段の出力が出たか」ではなく「コマンドを打ったか」だった (本ルールの「走った証拠で判定」がそのまま該当する)。
+

@@ -369,3 +369,19 @@ xcodegen 生成物も消えた。pin を戻して再実行し、報告を訂正�
 - 715: 同じ識別子 `records()` が GET handler と cancel polling の 2 箇所にあり、テストが通らない GET 側に変異を当てて
   「緑 = 何も言っていない」で 1 周無駄にした。同セッションで helper 直叩きのテストが配線外しの変異で緑のまま、という形も出た
   (直し方は helper を経路の必須段に組み込むことだったが、設計の選択であってルールにはしない)
+
+## 「判定に使う外部コマンドが入力の形を受けられるか」の起源 (2026-09-07, ThumbnailThumb 545)
+
+自作の参照検査 (`bin/tt-check-claude-md-refs`) が、型に属する member の実在を
+「その型を宣言しているファイルの一覧」に絞って awk で調べる設計だった。一覧を
+`awk -v files="$scope_files"` で渡したところ、**BSD awk は `-v` の値に改行を受け付けず**
+`awk: newline in string` で rc=2 を返した。
+
+呼び出し側はその rc を「該当なし」と同じ扱いにしていたので、**実在する member 2 件が
+`(symbol not found)` として報告された**。awk の単体確認は 1 行の入力で書いていたため通っており、
+複数行を渡す本番経路だけが壊れていた (dotfiles と違い ThumbnailThumb 側は macOS 専用ではないが、
+そもそも **BSD awk = macOS の既定**なので「他 platform の話」でもない)。
+
+直した形: 一覧は process substitution (`awk ... <(printf '%s\n' "$scope_files") "$DECL_INDEX"`) で
+第 1 入力として渡す。`-v` は 1 行に収まる値だけに使う。
+
