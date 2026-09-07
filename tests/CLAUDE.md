@@ -85,6 +85,31 @@ PATH 先頭に置く)、時間はモック内の `grep` 連打による **fork �
   `exit 0`」を落とす。部分 skip なら行内に `partial-skip: allow <理由>` を書く (issue 139)
 - `~/.claude` や `$HOME` の状態を見るテスト (tests/claude/test_dangling_symlinks.sh / test_claude_links_complete.sh) は CI では対象が無い。「対象 0 件 = skip」を明示して pass する設計で、CI で検査できていないことを隠さない
 
+## アサーションの失敗は exit code に出す
+
+- runner (`run_tests`) は **exit code しか見ない**。出力の `✗` は一切見ていないので、
+  `✗` を printf するだけの分岐は**失敗しても `[ok]` に集計される** (issue 327。issue 139 の
+  「丸ごと skip が `[ok]`」と同じクラスで、こちらは個別の assert)
+- 書き方は 2 つ。どちらでもよいが、**どちらかは必ず持つ**:
+  - **fail カウンタ**: 失敗を数える関数で報告し、末尾で `if (( FAIL_COUNT > 0 )); then exit 1; fi`。
+    落ちた assert を全部出せるので既定はこちら
+    (参照実装: `tests/scripts/test_run_make_targets_parallel.sh` /
+    `tests/zshrc/av1ify/test_av1ify_prefetch.sh`)
+  - **即 `exit 1`**: そこから先を検査しても意味がない「前提の崩れ」向け
+    (参照実装: `tests/bin/test_go_autobuild.sh` の `fail()`)
+  - `setopt err_exit` 下で「非 0 を返す関数」を裸で呼ぶ形も rc に出るが、
+    `if cond; then ✓ else ✗ fi` の中に置くと **if 自体が 0 を返すので出ない**
+- 🚨 **`✗` を grep して runner 側で落とす方向へは逃げない**。正常な出力に `✗` を含むテスト
+  (否定の説明・fixture の中身) を誤って落とすうえ、失敗の判定を出力の文言に預ける形になる
+- **棚卸し**: `make test-assert-reaches-exit`
+  (`scripts/check_assert_reaches_exit.sh`)。各ファイルへその**ファイル自身の失敗報告の形**を
+  注入して rc を見る。静的検査では母集合を確定できない (`cd "$X" || exit 1` が
+  「`exit 1` がある」に当たって当のファイルが漏れる) ので、判定は実験だけ。
+  結果は 3 値 (rc に出る / 出ない / **判定不能**) で、判定不能を合格に丸めない。
+  所要時間が長いので `make test` には入れていない。
+  🚨 **当面は赤いのが正常** (是正は 1 ファイルずつ)。赤 = 自分が壊した ではないので、
+  出力の一覧を issue 327 に記録した母集合と突き合わせる
+
 ## pipefail の罠 (落ちた理由が消える)
 
 - `set -euo pipefail` 下の `var=$(… | grep …)` は無マッチの時点で代入ごと死に、直後の FAIL メッセージへ到達しない。抽出は `|| true` で受けて、空を明示的に FAIL にする

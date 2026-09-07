@@ -12,6 +12,13 @@ unset CDPATH
 
 source "${0:A:h}/test_helper.sh"
 
+# 🚨 アサーションの失敗は exit code に出す (issue 327)。ランナー (Makefile の run_tests) は
+# rc しか見ないので、`✗` を printf するだけの分岐は **失敗しても [ok] に集計される**。
+# 失敗は bad() で報告してカウントし、末尾でまとめて非 0 を返す (最初の 1 件で止めず、
+# 落ちた assert を全部出すため)。書式と引数は printf と同じ。
+typeset -gi FAIL_COUNT=0
+bad() { printf "$@"; FAIL_COUNT=$(( FAIL_COUNT + 1 )); }
+
 printf '\n=== av1ify Prefetch Tests ===\n\n'
 
 # ----------------------------------------------------------------------
@@ -28,7 +35,7 @@ count=${#__AV1IFY_PREFETCH_PIDS[@]}
 if (( count == 1 )); then
   printf '✓ One PID tracked after prefetch (count=%d)\n' "$count"
 else
-  printf '✗ Expected 1 PID tracked, got %d\n' "$count"
+  bad '✗ Expected 1 PID tracked, got %d\n' "$count"
 fi
 # spawn された bg head -c 1 は即終了するが、テスト終了まで wait する必要は無い
 __av1ify_kill_prefetches
@@ -43,7 +50,7 @@ count=${#__AV1IFY_PREFETCH_PIDS[@]}
 if (( count == 0 )); then
   printf '✓ No PID tracked for missing file\n'
 else
-  printf '✗ Expected 0 PIDs, got %d\n' "$count"
+  bad '✗ Expected 0 PIDs, got %d\n' "$count"
 fi
 
 # ----------------------------------------------------------------------
@@ -56,7 +63,7 @@ count=${#__AV1IFY_PREFETCH_PIDS[@]}
 if (( count == 0 )); then
   printf '✓ No PID tracked for empty path\n'
 else
-  printf '✗ Expected 0 PIDs, got %d\n' "$count"
+  bad '✗ Expected 0 PIDs, got %d\n' "$count"
 fi
 
 # ----------------------------------------------------------------------
@@ -73,7 +80,7 @@ count=${#__AV1IFY_PREFETCH_PIDS[@]}
 if (( count == 0 )); then
   printf '✓ No PID tracked under dry-run\n'
 else
-  printf '✗ Expected 0 PIDs under dry-run, got %d\n' "$count"
+  bad '✗ Expected 0 PIDs under dry-run, got %d\n' "$count"
 fi
 __AV1IFY_DRY_RUN=0
 
@@ -94,7 +101,7 @@ after=${#__AV1IFY_PREFETCH_PIDS[@]}
 if (( before == 2 && after == 0 )); then
   printf '✓ kill_prefetches clears array (before=%d, after=%d)\n' "$before" "$after"
 else
-  printf '✗ Expected before=2, after=0; got before=%d, after=%d\n' "$before" "$after"
+  bad '✗ Expected before=2, after=0; got before=%d, after=%d\n' "$before" "$after"
 fi
 
 # ----------------------------------------------------------------------
@@ -111,7 +118,7 @@ __AV1IFY_PREFETCH_PIDS=("$dead_pid")
 if __av1ify_kill_prefetches; then
   printf '✓ kill_prefetches returns OK even when PID has exited\n'
 else
-  printf '✗ kill_prefetches failed on dead PID (would crash err_exit harness)\n'
+  bad '✗ kill_prefetches failed on dead PID (would crash err_exit harness)\n'
 fi
 
 # ----------------------------------------------------------------------
@@ -146,7 +153,7 @@ calls=$(wc -l < "$SPY_LOG" | tr -d ' ')
 if (( calls == 2 )); then
   printf '✓ prefetch called twice for 3-file batch\n'
 else
-  printf '✗ Expected 2 prefetch calls, got %d\n' "$calls"
+  bad '✗ Expected 2 prefetch calls, got %d\n' "$calls"
 fi
 
 line1=$(sed -n 1p "$SPY_LOG")
@@ -154,12 +161,12 @@ line2=$(sed -n 2p "$SPY_LOG")
 if [[ "$line1" == "$TEST_DIR/two.mkv" ]]; then
   printf '✓ 1st prefetch target = two.mkv\n'
 else
-  printf '✗ Expected 1st prefetch=%s, got=%s\n' "$TEST_DIR/two.mkv" "$line1"
+  bad '✗ Expected 1st prefetch=%s, got=%s\n' "$TEST_DIR/two.mkv" "$line1"
 fi
 if [[ "$line2" == "$TEST_DIR/three.wmv" ]]; then
   printf '✓ 2nd prefetch target = three.wmv\n'
 else
-  printf '✗ Expected 2nd prefetch=%s, got=%s\n' "$TEST_DIR/three.wmv" "$line2"
+  bad '✗ Expected 2nd prefetch=%s, got=%s\n' "$TEST_DIR/three.wmv" "$line2"
 fi
 
 # ----------------------------------------------------------------------
@@ -183,7 +190,7 @@ calls=$(wc -l < "$SPY_LOG" | tr -d ' ')
 if (( calls == 0 )); then
   printf '✓ no prefetch for single-file invocation\n'
 else
-  printf '✗ Expected 0 prefetch calls, got %d\n' "$calls"
+  bad '✗ Expected 0 prefetch calls, got %d\n' "$calls"
 fi
 
 # ----------------------------------------------------------------------
@@ -211,14 +218,14 @@ calls=$(wc -l < "$SPY_LOG" | tr -d ' ')
 if (( calls == 1 )); then
   printf '✓ -f mode prefetched once (next-of-first file)\n'
 else
-  printf '✗ Expected 1 prefetch call for -f, got %d\n' "$calls"
+  bad '✗ Expected 1 prefetch call for -f, got %d\n' "$calls"
 fi
 
 line1=$(sed -n 1p "$SPY_LOG")
 if [[ "$line1" == "$TEST_DIR/q.mkv" ]]; then
   printf '✓ -f mode prefetch target = q.mkv\n'
 else
-  printf '✗ Expected -f prefetch=%s, got=%s\n' "$TEST_DIR/q.mkv" "$line1"
+  bad '✗ Expected -f prefetch=%s, got=%s\n' "$TEST_DIR/q.mkv" "$line1"
 fi
 
 # ----------------------------------------------------------------------
@@ -232,13 +239,13 @@ mkdir -p "$TEST_DIR"
 if __av1ify_skip_by_name "$TEST_DIR/foo-enc.mp4"; then
   printf '✓ -enc.mp4 suffix → skip\n'
 else
-  printf '✗ -enc.mp4 suffix should be skipped\n'
+  bad '✗ -enc.mp4 suffix should be skipped\n'
 fi
 # encoded. パターン → SKIP
 if __av1ify_skip_by_name "$TEST_DIR/bar-encoded.mp4"; then
   printf '✓ encoded. suffix → skip\n'
 else
-  printf '✗ encoded. suffix should be skipped\n'
+  bad '✗ encoded. suffix should be skipped\n'
 fi
 # 既定出力が存在 → SKIP
 echo "v" > "$TEST_DIR/baz.avi"
@@ -246,7 +253,7 @@ echo "out" > "$TEST_DIR/baz-enc.mp4"
 if __av1ify_skip_by_name "$TEST_DIR/baz.avi"; then
   printf '✓ existing default output → skip\n'
 else
-  printf '✗ default output should trigger skip\n'
+  bad '✗ default output should trigger skip\n'
 fi
 # バリアント出力が存在 → SKIP
 echo "v" > "$TEST_DIR/qux.avi"
@@ -254,14 +261,14 @@ echo "out" > "$TEST_DIR/qux-720p-enc.mp4"
 if __av1ify_skip_by_name "$TEST_DIR/qux.avi"; then
   printf '✓ existing variant output → skip\n'
 else
-  printf '✗ variant output should trigger skip\n'
+  bad '✗ variant output should trigger skip\n'
 fi
 # 既存出力なし → 処理候補 (skip しない)
 echo "v" > "$TEST_DIR/fresh.avi"
 if ! __av1ify_skip_by_name "$TEST_DIR/fresh.avi"; then
   printf '✓ no existing output → not skipped (prefetch candidate)\n'
 else
-  printf '✗ fresh file should NOT be skipped\n'
+  bad '✗ fresh file should NOT be skipped\n'
 fi
 # 命名規則に合わないバリアントは SKIP しない (誤一致防止)
 echo "v" > "$TEST_DIR/weird.avi"
@@ -269,13 +276,13 @@ echo "out" > "$TEST_DIR/weird-junk-enc.mp4"
 if ! __av1ify_skip_by_name "$TEST_DIR/weird.avi"; then
   printf '✓ non-conforming variant tag → not skipped\n'
 else
-  printf '✗ non-conforming variant should NOT trigger skip\n'
+  bad '✗ non-conforming variant should NOT trigger skip\n'
 fi
 # 空文字 → SKIP (prefetch 不要)
 if __av1ify_skip_by_name ""; then
   printf '✓ empty input → skip\n'
 else
-  printf '✗ empty input should be treated as skip\n'
+  bad '✗ empty input should be treated as skip\n'
 fi
 
 # ----------------------------------------------------------------------
@@ -309,13 +316,13 @@ calls=$(wc -l < "$SPY_LOG" | tr -d ' ')
 if (( calls == 1 )); then
   printf '✓ prefetch called only for non-skippable next (count=1)\n'
 else
-  printf '✗ Expected 1 prefetch call, got %d\n' "$calls"
+  bad '✗ Expected 1 prefetch call, got %d\n' "$calls"
 fi
 line1=$(sed -n 1p "$SPY_LOG")
 if [[ "$line1" == "$TEST_DIR/c.avi" ]]; then
   printf '✓ prefetch target = c.avi (b.avi was correctly skipped)\n'
 else
-  printf '✗ Expected prefetch=%s, got=%s\n' "$TEST_DIR/c.avi" "$line1"
+  bad '✗ Expected prefetch=%s, got=%s\n' "$TEST_DIR/c.avi" "$line1"
 fi
 
 # ----------------------------------------------------------------------
@@ -344,7 +351,7 @@ calls=$(wc -l < "$SPY_LOG" | tr -d ' ')
 if (( calls == 0 )); then
   printf '✓ no prefetch when next is -enc.mp4\n'
 else
-  printf '✗ Expected 0 prefetch calls, got %d\n' "$calls"
+  bad '✗ Expected 0 prefetch calls, got %d\n' "$calls"
 fi
 
 # ----------------------------------------------------------------------
@@ -356,7 +363,7 @@ for s in foo-enc.mp4 path/to/bar-enc.mp4 baz-encoded.mp4 qux-encoded.mkv; do
   if __av1ify_input_is_encoded_form "$s"; then
     printf '✓ matches encoded form: %s\n' "$s"
   else
-    printf '✗ should match encoded form: %s\n' "$s"
+    bad '✗ should match encoded form: %s\n' "$s"
   fi
 done
 # 反例
@@ -364,7 +371,7 @@ for s in foo.avi bar.mp4 baz-encoder.txt enc.mp4-suffixed.avi; do
   if ! __av1ify_input_is_encoded_form "$s"; then
     printf '✓ not encoded form: %s\n' "$s"
   else
-    printf '✗ should NOT match encoded form: %s\n' "$s"
+    bad '✗ should NOT match encoded form: %s\n' "$s"
   fi
 done
 
@@ -380,20 +387,20 @@ if __av1ify_default_output_exists "$TEST_DIR/a.avi"; then
   if [[ "$REPLY" == "$TEST_DIR/a-enc.mp4" ]]; then
     printf '✓ existing default → return 0, REPLY=%s\n' "$REPLY"
   else
-    printf '✗ REPLY should be %s, got %s\n' "$TEST_DIR/a-enc.mp4" "$REPLY"
+    bad '✗ REPLY should be %s, got %s\n' "$TEST_DIR/a-enc.mp4" "$REPLY"
   fi
 else
-  printf '✗ should detect existing default output\n'
+  bad '✗ should detect existing default output\n'
 fi
 echo "in" > "$TEST_DIR/b.avi"
 if ! __av1ify_default_output_exists "$TEST_DIR/b.avi"; then
   if [[ -z "$REPLY" ]]; then
     printf '✓ no default output → return 1, REPLY=""\n'
   else
-    printf '✗ REPLY should be empty when not found, got %s\n' "$REPLY"
+    bad '✗ REPLY should be empty when not found, got %s\n' "$REPLY"
   fi
 else
-  printf '✗ should NOT detect output for b.avi\n'
+  bad '✗ should NOT detect output for b.avi\n'
 fi
 
 # ----------------------------------------------------------------------
@@ -405,7 +412,7 @@ for tag in 480p 720p 1080p 1440p 540p 16p 8640p 4k; do
   if __av1ify_is_valid_variant_tag "$tag"; then
     printf '✓ valid: %s\n' "$tag"
   else
-    printf '✗ should be valid: %s\n' "$tag"
+    bad '✗ should be valid: %s\n' "$tag"
   fi
 done
 # fps: NN[.N]fps
@@ -413,7 +420,7 @@ for tag in 24fps 30fps 60fps 23.976fps 29.97fps; do
   if __av1ify_is_valid_variant_tag "$tag"; then
     printf '✓ valid: %s\n' "$tag"
   else
-    printf '✗ should be valid: %s\n' "$tag"
+    bad '✗ should be valid: %s\n' "$tag"
   fi
 done
 # denoise: dnN
@@ -421,7 +428,7 @@ for tag in dn1 dn2 dn3; do
   if __av1ify_is_valid_variant_tag "$tag"; then
     printf '✓ valid: %s\n' "$tag"
   else
-    printf '✗ should be valid: %s\n' "$tag"
+    bad '✗ should be valid: %s\n' "$tag"
   fi
 done
 # aac bitrate: aacNNk
@@ -429,14 +436,14 @@ for tag in aac32k aac96k aac128k aac256k; do
   if __av1ify_is_valid_variant_tag "$tag"; then
     printf '✓ valid: %s\n' "$tag"
   else
-    printf '✗ should be valid: %s\n' "$tag"
+    bad '✗ should be valid: %s\n' "$tag"
   fi
 done
 # audio param error literal
 if __av1ify_is_valid_variant_tag "auderr"; then
   printf '✓ valid: auderr\n'
 else
-  printf '✗ should be valid: auderr\n'
+  bad '✗ should be valid: auderr\n'
 fi
 
 printf '\n## Test 15: __av1ify_is_valid_variant_tag negative cases\n'
@@ -445,7 +452,7 @@ for tag in junk foo "" 720 4 abc-def 30 fps aac aac96 dn p 4k.mp4 96kaac; do
   if ! __av1ify_is_valid_variant_tag "$tag"; then
     printf '✓ rejected: "%s"\n' "$tag"
   else
-    printf '✗ should be rejected: "%s"\n' "$tag"
+    bad '✗ should be rejected: "%s"\n' "$tag"
   fi
 done
 
@@ -473,7 +480,7 @@ verify_roundtrip() {
     if __av1ify_is_valid_variant_tag "$tag"; then
       printf '  ✓ %s\n' "$tag"
     else
-      printf '  ✗ builder produced tag rejected by validator: %s (in %s)\n' "$tag" "$out_name"
+      bad '  ✗ builder produced tag rejected by validator: %s (in %s)\n' "$tag" "$out_name"
       fail=1
     fi
   done
@@ -547,7 +554,7 @@ setopt err_exit
 if [[ "$out_self" == *"既に出力ファイル形式です"* ]]; then
   printf '✓ "既に出力ファイル形式" message for -enc.mp4 input\n'
 else
-  printf '✗ Expected "既に出力ファイル形式" message, got: %s\n' "$out_self"
+  bad '✗ Expected "既に出力ファイル形式" message, got: %s\n' "$out_self"
 fi
 
 # 17b: 既定出力が存在
@@ -559,7 +566,7 @@ setopt err_exit
 if [[ "$out_default" == *"SKIP 既存:"* ]] && [[ "$out_default" != *"別バリアント"* ]]; then
   printf '✓ "SKIP 既存:" message for existing default output\n'
 else
-  printf '✗ Expected "SKIP 既存:" message (not 別バリアント), got: %s\n' "$out_default"
+  bad '✗ Expected "SKIP 既存:" message (not 別バリアント), got: %s\n' "$out_default"
 fi
 
 # 17c: バリアント出力が存在
@@ -571,7 +578,7 @@ setopt err_exit
 if [[ "$out_variant" == *"別バリアント"* ]]; then
   printf '✓ "別バリアント" message for existing variant output\n'
 else
-  printf '✗ Expected "別バリアント" message, got: %s\n' "$out_variant"
+  bad '✗ Expected "別バリアント" message, got: %s\n' "$out_variant"
 fi
 
 # ----------------------------------------------------------------------
@@ -601,11 +608,10 @@ setopt err_exit
 
 # 起こした prefetch が全部死んでいること (上限つきポーリング)
 leaked=0
-# 🚨 このファイルの ✗ は exit code に出ない (ランナーは rc しか見ない = 失敗が CI から不可視)。
-#    実測 2026-09-07: 看取りを無効化する変異を当てると ✗ は出たが rc=0 のままだった。
-#    このケースだけは exit 1 で落とす (ファイル全体の是正は issue 327)。
+# 前提が崩れているときだけは即 exit する (prefetch が 1 つも起きていないなら、この後の
+# 「全部死んだか」は何も検査しないまま緑になる)。判定した結果の失敗は bad() で数える。
 if (( ${#SPAWNED_PIDS[@]} == 0 )); then
-  printf '✗ prefetch が 1 つも起きていない (前提が崩れている)\n'; exit 1
+  bad '✗ prefetch が 1 つも起きていない (前提が崩れている)\n'; exit 1
 fi
 for _pid in "${SPAWNED_PIDS[@]:-}"; do
   _i=0
@@ -617,7 +623,12 @@ done
 if (( leaked == 0 )); then
   printf '✓ 正常終了後に prefetch が 1 つも残っていない\n'
 else
-  printf '✗ 正常終了後に prefetch が %s 個残った (issue 306)\n' "$leaked"; exit 1
+  bad '✗ 正常終了後に prefetch が %s 個残った (issue 306)\n' "$leaked"
 fi
 
 printf '\n=== Prefetch Tests Completed ===\n'
+
+if (( FAIL_COUNT > 0 )); then
+  printf '✗ 失敗 %d 件 (このファイルは fail カウンタ方式。issue 327)\n' "$FAIL_COUNT"
+  exit 1
+fi

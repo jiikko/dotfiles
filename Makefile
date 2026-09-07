@@ -46,7 +46,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-parallel test-discovered-serial test-discovered-heavy test-discovered-rest test-discovered-rest-parallel test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-cd-rc test-trigger-log-writers test-skip-exit-code test-workflow-action-pins test-go-project-lanes test-go-lint test-go test-src test-fresh
+.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-parallel test-discovered-serial test-discovered-heavy test-discovered-rest test-discovered-rest-parallel test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-cd-rc test-trigger-log-writers test-skip-exit-code test-assert-reaches-exit test-workflow-action-pins test-go-project-lanes test-go-lint test-go test-src test-fresh
 
 # ./tmp のスクラッチを掃除する (既定は 30 日より古いトップレベルのエントリ)。
 #
@@ -317,6 +317,15 @@ test-workflow-action-pins:
 # 正本は scripts/check_skip_exit_code.sh (なぜ危険か・例外マーカーはそこに書いてある)。
 test-skip-exit-code:
 	@scripts/check_skip_exit_code.sh
+
+# 「✗ を出しても exit code に出ない」テストの棚卸し (issue 327)。正本は
+# scripts/check_assert_reaches_exit.sh (脅威モデルと「検出しないと決めたもの」はそこ)。
+# 🚨 test からは呼ばない (各テストを 3 回走らせるので所要時間が数倍になる。test-fresh と同じ扱いで
+#    棚卸しのときに自分で叩く)。判定は 3 値で、判定不能を合格に丸めない。
+# 🚨 **当面は赤いのが正常**。是正は 1 ファイルずつ進めるので、赤 = 自分が壊した ではない。
+#    残っている母集合は issues/done/327-* とその follow-up に記録してある。
+test-assert-reaches-exit:
+	@scripts/check_assert_reaches_exit.sh
 
 # 正本は scripts/check_trigger_log_writers.sh (なぜ危険か・例外マーカーはそこに書いてある)。
 test-trigger-log-writers:
