@@ -569,10 +569,6 @@ go_autobuild_exec() {
   local bin="$src_dir/$name"
   [[ -n "${GO_AUTOBUILD_SYNC-}" ]] && async=0
 
-  local fp
-  _go_autobuild_fingerprint "$src_dir"
-  fp=$REPLY
-
   if [[ ! -x "$bin" ]]; then
     # 走らせるものが無い初回だけは同期でビルドする (async にできない)
     _go_autobuild_build "$src_dir" "$name" 0 || { _go_autobuild_hold_if_tty; exit 1 }
@@ -589,8 +585,19 @@ go_autobuild_exec() {
     # 「.autobuild.failed が自バイナリより新しいか」で同じ結論に達せるため (glogx の
     # autobuildStaleBinary)。env で伝えるとこの分岐を通った瞬間しか伝わらず、TTL 超過での
     # 再挑戦・shim を経ない起動・別セッションの失敗を取りこぼす。
-  elif _go_autobuild_stale "$src_dir" "$bin" "$fp"; then
-    _go_autobuild_build "$src_dir" "$name" 0 || exit 1
+  else
+    # 🚨 指紋はこの分岐でしか読まれない。外側で取ると --async (既定の経路) と初回ビルドでも
+    # 毎起動 3.83ms 払い、そのまま捨てることになる (go_autobuild_spawn_if_stale と
+    # _go_autobuild_build はどちらも自分で取り直す。前者は判定の正本、後者は開始時点の鮮度)。
+    # ここに閉じ込めるのは節約だけが理由ではない: 外側に置くと「取れなかった空の指紋」が
+    # 全分岐に見える変数として残り、_go_autobuild_stale の縮退経路 (mtime の順序比較) を
+    # 意図せず呼ぶ改修の余地を作る。
+    local fp
+    _go_autobuild_fingerprint "$src_dir"
+    fp=$REPLY
+    if _go_autobuild_stale "$src_dir" "$bin" "$fp"; then
+      _go_autobuild_build "$src_dir" "$name" 0 || exit 1
+    fi
   fi
 
   exec "$bin" "$@"

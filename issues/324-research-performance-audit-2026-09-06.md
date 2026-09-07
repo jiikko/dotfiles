@@ -21,6 +21,7 @@ dead-code / broken-code は [issue 318](318-research-dead-code-and-broken-code-a
 ## この監査の収穫（実測が揃った 3 点）
 
 1. **`go_autobuild_exec` が指紋を 2 回計算**（3.83 ms/起動、変異検証済み）→ issue 319
+   （**2026-09-08 に解消**。`issues/done/319-*`。実測 min 4.225ms / 起動を 1 回ぶん削減）
 2. **doctor フレームが `doctorMaxMarkWidth()` を行ごとに再計算**。`sync.OnceValue` 化で
    **-19,948 B/frame**（フレーム確保バイトの 26%）→ issue 321
 3. **precmd コストの 99% は repo 自前ではなく第三者 hook 側**（zsh-autosuggestions / direnv）

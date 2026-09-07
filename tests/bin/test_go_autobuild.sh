@@ -942,6 +942,65 @@ set -e
 [[ ! -e "$ROOT/src/tool/tool" ]] || fail "go 不在なのにバイナリができている"
 ok "go 不在は brew / goenv の案内を出して exit 1 (stdin が端末でなければ待たない)"
 
+printf '\n## 起動ごとに指紋を 2 回取らない (issue 319)\n'
+# ビルド入力の走査 (glob + zstat) は 1 回 3.83ms かかり、**起動のたびに**払う。
+# 以前は go_autobuild_exec が分岐の手前で無条件に指紋を取っており、--async (既定の経路) と
+# 初回ビルドではその結果が一度も読まれないまま捨てられていた (go_autobuild_spawn_if_stale と
+# _go_autobuild_build がどちらも自分で取り直すため)。
+#
+# 🚨 数えるのは F (_go_autobuild_fingerprint) だけでなく I (_go_autobuild_inputs) も。
+# 重いのは I の glob なので、入力の走査を指紋の外へ持ち上げる改修では F は 1 のまま I だけ
+# 増える (F だけ数えると素通りする)。
+# 🚨 stale でない状態で測る。stale だと builder が裏で走り、その指紋計算が trace に混ざって
+# 非決定になる (この pin が数えたいのは exec 経路だけ)。
+traced_wrapper() {  # $1=root — bin/tool を「指紋 / 入力の呼び出し回数を記録する版」に差し替える
+  local root="$1"
+  cat > "$root/bin/tool" <<EOS
+#!/usr/bin/env zsh
+set -u
+source "\${0:A:h}/lib/go_autobuild.zsh"
+# 実体を退避してから数える版で覆う (REPLY / reply はグローバルなので呼び出し側へそのまま伝わる)
+functions -c _go_autobuild_fingerprint __fp_real
+functions -c _go_autobuild_inputs __in_real
+_go_autobuild_fingerprint() { print -n F >> "$root/fp-trace"; __fp_real "\$@" }
+_go_autobuild_inputs() { print -n I >> "$root/fp-trace"; __in_real "\$@" }
+go_autobuild_exec \${AUTOBUILD_ARGS:-} "\${0:A:h}/../src/tool" tool -- "\$@"
+EOS
+  chmod +x "$root/bin/tool"
+  : > "$root/fp-trace"
+}
+fp_trace() { cat "$1/fp-trace" 2>/dev/null; }
+
+ROOT="$(new_project fpcount)"
+run_tool "$ROOT" >/dev/null      # 初回の同期ビルドでバイナリを作る
+traced_wrapper "$ROOT"
+freeze "$ROOT"                   # stale でない = 何も spawn しない
+# 🚨 前提の pin: バイナリが実行可能でないと exec は「初回ビルド」の分岐へ落ち、下の 2 ケースは
+# async / 同期のどちらも通らないまま緑になる (実際に一度そうなった。freeze の touch は
+# 不在のファイルを非実行で作るので、初回ビルドを省くと気づけない)。
+[[ -x "$ROOT/src/tool/tool" ]] || fail "前提が崩れている: 計数用プロジェクトのバイナリが実行可能でない"
+: > "$ROOT/fp-trace"
+AUTOBUILD_ARGS=--async run_tool "$ROOT" >/dev/null
+[[ "$(fp_trace "$ROOT")" == "FI" ]] || \
+  fail "--async の起動で指紋を 1 回より多く取っている (期待 FI / 実測 $(fp_trace "$ROOT"))"
+ok "--async の起動でビルド入力を走査するのは 1 回だけ"
+
+: > "$ROOT/fp-trace"
+AUTOBUILD_ARGS=--async GO_AUTOBUILD_SYNC=1 run_tool "$ROOT" >/dev/null
+[[ "$(fp_trace "$ROOT")" == "FI" ]] || \
+  fail "同期経路の起動で指紋を 1 回より多く取っている (期待 FI / 実測 $(fp_trace "$ROOT"))"
+ok "同期経路の起動でもビルド入力を走査するのは 1 回だけ"
+
+# 初回 (バイナリ不在) は同期ビルドへ入る。_go_autobuild_build が開始時点で取り直すので、
+# 手前で取ってはいけないのは async と同じ。
+ROOT="$(new_project fpcountfirst)"
+traced_wrapper "$ROOT"
+[[ ! -e "$ROOT/src/tool/tool" ]] || fail "前提が崩れている: 初回ビルドのはずがバイナリが既にある"
+AUTOBUILD_ARGS=--async run_tool "$ROOT" >/dev/null
+[[ "$(fp_trace "$ROOT")" == "FI" ]] || \
+  fail "初回ビルドの起動で指紋を 1 回より多く取っている (期待 FI / 実測 $(fp_trace "$ROOT"))"
+ok "初回ビルド (バイナリ不在) でもビルド入力を走査するのは 1 回だけ"
+
 printf '\n## 作業ファイル / lock を残さない\n'
 # 🚨 「いずれ消える」で判定する。builder は非同期なので、バイナリが入った瞬間にはまだ lock の
 # 解放 (spawn subshell の EXIT trap) が済んでいないことがある。即時判定にすると spawn を使う
