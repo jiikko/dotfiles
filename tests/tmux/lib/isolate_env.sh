@@ -2,7 +2,8 @@
 # tmux テストの状態隔離。resurrect / debounce 保存の状態ファイルを実データ ($HOME/.cache 等) から
 # 隔離するため、HOME/XDG_DATA_HOME/TT_DEBOUNCE_STATE_DIR/TMPDIR を TMUX_TMPDIR 配下へ逃がす。
 # 呼び出し前に TMUX_TMPDIR (mktemp -d 済み) と ROOT_DIR (リポジトリルート) を用意し source すること。
-# test_tmux.sh / bench_tmux.sh / test_smooth_scroll.sh 共通 (以前は4行が各自にコピペされ、
+# test_tmux.sh / bench_tmux.sh / test_smooth_scroll.sh / test_mark_seen.sh 共通
+# (以前は4行が各自にコピペされ、
 # test_fork_scratch.sh だけ subset に乖離していた)。
 #
 # 🚨 TMPDIR を隔離するのは smooth-scroll の状態ファイル置き場のためだけではない。

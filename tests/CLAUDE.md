@@ -151,7 +151,9 @@ platform の差が消えた今も残るのが**「手元には在るが git に�
 ## tmux を触るテスト
 
 - 冒頭で `unset TMUX TMUX_PANE` し、`-L <一意名>` か `TMUX_TMPDIR` で socket を隔離する。`$TMUX` が生きていると `TMUX_TMPDIR` は無視されて本番サーバへ向く (2026-07-07 に `make test` が本番を kill した。tests/tmux/test_fork_scratch.sh 冒頭が正本)
-- `tests/tmux/lib/isolate_env.sh` は HOME / XDG / ロケールの隔離**のみ**で、socket は対象外
+- `tests/tmux/lib/isolate_env.sh` は HOME / XDG / **TMPDIR** / ロケールの隔離で、socket は対象外
+  (TMPDIR は issue 325 で足した。`make test` の runner も各テストへ使い捨ての TMPDIR を配るので、
+  これは「isolate_env を source する tmux テストが単体実行されたとき」の受け皿)
 - scripts/ の unit テストは stub 方式 (PATH 先頭に偽 tmux / gum / fzf を置いて呼び出しを記録。共有アサートは tests/tmux/lib/stub_assert_helper.sh)。実サーバが要るテストだけ Darwin skip
 - shim を PATH 先頭に置くときは実体を絶対パスで解決してから exec する (相対名は自分自身に解決して無音で無限再帰。`~/.claude/rules/path-shim-must-resolve-real-binary.md`)
 
