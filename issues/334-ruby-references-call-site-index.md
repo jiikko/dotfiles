@@ -113,3 +113,48 @@ pcall を外す / `<C-k>` の記録を外す / `<leader>K` を消す）。
 
 sidecar 化するなら、未実装なのは ①常駐と IPC ②保存のたびの差分更新
 ③定数・名前空間の解決 (今は名前一致のみで、ruby-lsp のメソッド一致と同じ粒度)。
+
+## 追補: 残りの最適化余地を実測した (2026-09-08)
+
+索引完了後のリクエスト別レイテンシ (ubiregi-server / 2 回目の値):
+
+```
+hover                   0.4 ms      completion            0.2 ms
+definition              0.4 ms      codeAction            0.5 ms
+documentSymbol          0.2 ms      documentHighlight     0.7 ms
+foldingRange            0.1 ms      formatting            9.7 ms
+semanticTokens/full     0.3 ms      workspace/symbol    190.9 ms
+references          11563.8 ms  ← ここだけ桁が違う
+```
+
+**references 以外は全部 1 ミリ秒未満**。触る価値がない。
+
+### 索引時間は gem 除外ではほぼ削れない (A-B 実測)
+
+大きい gem 10 個 (rubocop / brakeman / solargraph / yard / language_server-protocol /
+fog-aws / mongo / capybara / rr / newrelic_rpm) を `excludedGems` で外した:
+
+```
+baseline  索引 10.7 秒
+除外 10   索引  9.1 秒   ← -1.6 秒 (15%) だけ
+```
+
+15% のために gem へのジャンプを失うのは割に合わない (多くが開発グループ専用で既定の
+`initial_excluded_gems` に入っていたのが理由と思われる)。永続キャッシュも上流に無いので、
+現実的な緩和は「nvim の起動回数を減らす」だけ。
+
+### 残っている唯一の体感課題: 定数・クラスの `<C-k>`
+
+332 でメソッドは rg へ回したが、**定数は LSP 経路のまま = 11.5 秒**。判断材料は段階 1 の
+記録で集まる (`:DotfilesRefsStats` の「LSP N 回」が定数を引いた回数)。多ければ sidecar 化の
+価値があり、少なければ現状維持でよい。
+
+`vendor/bundle` を repo 外へ出せば、この経路も 11.5 秒 → 約 5 秒になる (references の
+再パース対象の 88% が vendor/bundle のため)。索引には効かない (既に除外済み)。
+
+### やらない方がいいと分かったもの
+
+- `enabledFeatures` で機能を減らす: 各リクエストが 1ms 未満なので効果ゼロ。索引は機能フラグと
+  無関係に全部作るので索引時間も減らない
+- `excludedPatterns` を増やす: 既定で `vendor/bundle` / `tmp` / `node_modules` / dotdir が
+  外れており、残りは 10 ファイル規模 (追補 1 の実測)
