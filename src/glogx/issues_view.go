@@ -1862,10 +1862,13 @@ func (v *issuesView) copyLines(lines []string, label string) {
 // copyGroupName は合成の group 親行の名称をコピーする (y)。
 //
 // 🚨 画面用に無害化した名前 (groupLine の sanitizePlainLine) ではなく **生の GroupName** を
-// クリップボードへ入れる。コピーの用途は `issues/epic/<name>/` を組む・grep することなので、
-// 表示のための書き換えを混ぜると「見えている名前」と「貼った名前」が食い違う
-// (~/.claude/rules/survey-receiver-guards-before-passing-new-values.md の doctor の実例と同型)。
-// 通知の方は setNotice が無害化するので、端末を壊す名前でも枠は壊れない。
+// クリップボードへ入れる。貼り先は実在するディレクトリ名でなければならない
+// (`issues/epic/<name>/` を組む・grep する) ので、書き換えると別物になるため
+// (termsafe.IsPlain の doc「同一性を持つ値は書き換えず落とす」と同じ理由)。
+//
+// 🚨 したがって制御文字を含む名前では **一覧の表示 (無害化) とクリップボード (生) が
+// 意図的に食い違う**。これを「表示が間違っている」と読んで groupLine を生表示へ直さないこと
+// (termsafe が防いでいる端末破壊の再導入になる)。通知側は setNotice が無害化するので枠は壊れない。
 func (v *issuesView) copyGroupName() {
 	row, ok := v.currentDisplayRow()
 	if !ok || row.kind != displayRowGroup {

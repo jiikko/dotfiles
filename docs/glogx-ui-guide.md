@@ -63,7 +63,7 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 | `Enter` | **TUI 内の開閉 toggle** | job パネル / 本文の引き出し / doctor の内訳。開くのも閉じるのも Enter |
 | `o` | ブラウザで開く | コミット / job / PR |
 | `e` (`v`) | エディタで開く | repo root / issue 本文 / job ログ |
-| `y` | コピー (素の値: URL / パス / group 名) | issues の group 親行では group 名 |
+| `y` | コピー (素の値: URL / パス / group 名) | issues の**合成の** group 親行だけ group 名 (親 issue のある行はパス) |
 | `Y` | コピー (整形した参照: Markdown / 番号+タイトル+パス) | |
 | `p` | PR または番号 | 一覧では PR を開く、issues では番号コピー (「PR / number」の頭文字) |
 | `d` | diff | コミット / status のファイル |

@@ -109,12 +109,14 @@ func TestIssuesViewGroupParentCopiesGroupName(t *testing.T) {
 	copied := stubClipboard(t)
 
 	// 🚨 番号と group 名を**違えて**作る: 一致させると groupHead (実体が issue の親行) になり、
-	// 今書いた分岐へ一度も入らないまま緑になる。前提は下の Fatal で固定する。
+	// 今書いた分岐へ一度も入らないまま緑になる。前提は下の Fatal で固定する
+	// (currentIsGroup の定義が kind == displayRowGroup なので、条件は 1 つで足りる)。
 	group := fakeEpicIssue("/repo/issues", "google-drive", "710", "drive", issues.StatusOpen)
 	v := loadedView(group)
-	if !v.currentIsGroup() || v.displayRows[v.cursor].kind != displayRowGroup {
+	if !v.currentIsGroup() {
 		t.Fatalf("前提: カーソルが合成の group 親行にない: %+v", v.displayRows)
 	}
+	before := v.cursor
 
 	v.handleKey("y", vp(10))
 	if *copied != "google-drive" {
@@ -122,6 +124,11 @@ func TestIssuesViewGroupParentCopiesGroupName(t *testing.T) {
 	}
 	if text, ok := v.takeNotice(); !ok || !strings.Contains(text, "group 名をコピーしました: google-drive") {
 		t.Fatalf("コピーの通知が想定と違う: %q", text)
+	}
+	// y は「コピーするだけ」: 親行の no-op 表 (ActionsAreNoopWithNotice) から y を外したぶん、
+	// カーソル・本文・n の確認モーダルが動かないことはここで見る。
+	if v.cursor != before || v.open != nil || v.markNext.active {
+		t.Fatalf("y が別の操作も起こした: cursor=%d open=%v mark=%v", v.cursor, v.open != nil, v.markNext.active)
 	}
 }
 
