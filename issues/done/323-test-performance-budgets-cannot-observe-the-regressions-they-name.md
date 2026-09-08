@@ -42,7 +42,7 @@
 ## 共通の構造
 
 どれも「予算は在るが、その予算が**何を検出できるか**を測っていない」形。
-[`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)
+[`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md)
 の「その機構を外したら観測結果は変わるか」に yes と答えられない。
 
 ## 推奨対応
@@ -51,7 +51,7 @@
    （上限だけでなく、**現在値と上限の比**をコメントに残す）
 2. ①: zsh の予算を実測レンジへ締め直す。分解能が足りないなら
    **計器自体を分解能の高いもの（precmd 1 サイクルの直接計測）へ変える**
-   — [`perf-claims-need-measurement.md`](../_claude/rules/perf-claims-need-measurement.md) の
+   — [`perf-claims-need-measurement.md`](../../_claude/rules/perf-claims-need-measurement.md) の
    「比・伸び率で測る」も検討する（runner 速度差が打ち消える）
 3. ②: doctor の残り 3 タブと削除パネルを予算に入れる
 4. ③④: **測定条件（`-race` の有無）を予算と同じ場所に固定する**。
@@ -110,7 +110,7 @@ commit `test(323): 性能予算を「名指しした退行が red になる」�
 `frame_alloc_test.go` のコメントが「**`make test` は -race 付きなのでそちらが本番のゲート**」と
 明記しており、非 -race 側の主張は `tests/glogx/bench_budgets.ci` の `*_alloc_kb` が別に持つ
 (「二重管理だが役割が違う」と同じコメントが説明している)。
-[`verify-design-intent-before-refactor.md`](../_claude/rules/verify-design-intent-before-refactor.md)
+[`verify-design-intent-before-refactor.md`](../../_claude/rules/verify-design-intent-before-refactor.md)
 の「ドキュメント / コメントに『意図的』と明記されていないか確認する」に該当するので、
 指摘は取り下げる。
 
@@ -137,7 +137,13 @@ fixture 側の変異も当てた: `tab` を無視して常に disk を描くよ�
 - [x] ③の現在値を**実測し直す**（213。上限も 213 で余裕 0 だった）
 - [x] 各予算に「現在値 / 上限 / 測定条件」が揃っている（全 10 ケースの表をヘッダに追加）
 - [x] 変異検証をケース名ごとの一覧で確認した記録が commit message にある
-- [ ] **残件**: ①の計器の分解能（ms 単位の改善を証明できる計器へ） / ②の削除パネルの予算
+- [x] 残る 2 件は**実需要 trigger 待ちとして凍結**（新規 issue は立てない）:
+  - **計器の分解能**: prompt_lag の run 間変動 38% に埋もれる ms 単位の改善を証明したくなったとき
+    （= 「precmd を N ms 速くした」と主張したくなったとき）に、precmd 1 サイクルの直接計測か
+    比・伸び率の計器へ変える。予算そのものは 1.6 倍級の退行を捕まえる役目を果たしている
+  - **削除パネルの予算**: doctor の削除パネル（`deletePanel` が全画面を差し替える経路）を
+    予算に載せるのは、そのパネルの描画に手を入れるときでよい。今回 4 タブを載せたことで
+    「doctor の主要経路がどのゲートの視界にも入っていない」状態は解消した
 
 ## 関連
 
