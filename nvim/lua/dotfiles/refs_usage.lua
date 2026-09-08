@@ -16,6 +16,9 @@ local M = {}
 -- (stdpath の評価を module ロード時にやらない)。
 M.path = nil
 M.fallback_window_ms = 30000
+-- ログの上限。超えたら古い半分を捨てる。段階 1 の判断が出たら :DotfilesRefsReset で消す前提だが、
+-- 忘れても際限なく溜まらないようにする (中身は「押した語」= 仕事の repo のクラス名・メソッド名)。
+M.max_bytes = 512 * 1024
 M.now = function()
   return vim.uv.now()
 end
@@ -33,11 +36,25 @@ local last_ripgrep = nil
 -- 記録は「あれば嬉しい」もので、失敗しても <C-k> を壊してはいけない。
 -- 書き込めない環境 (read-only な state ディレクトリ等) でも黙って諦める。
 --: (table) -> boolean
+-- 上限を超えていたら古い半分を捨てる。書き込みのたびに全行を読まないよう、判定は fs_stat の
+-- サイズだけで行う (超えたときだけ読み直す)。
+local function rotate_if_needed(path)
+  local st = vim.uv.fs_stat(path)
+  if not st or st.size <= M.max_bytes then return end
+  local lines = vim.fn.readfile(path)
+  local keep = {}
+  for i = math.floor(#lines / 2) + 1, #lines do
+    table.insert(keep, lines[i])
+  end
+  vim.fn.writefile(keep, path)
+end
+
 local function append(entry)
   local ok = pcall(function()
     local path = M.log_path()
     vim.fn.mkdir(vim.fs.dirname(path), "p")
     vim.fn.writefile({ vim.json.encode(entry) }, path, "a")
+    rotate_if_needed(path)
   end)
   return ok
 end
@@ -132,6 +149,12 @@ function M.setup()
   vim.api.nvim_create_user_command("DotfilesRefsStats", function()
     vim.notify(M.format_stats())
   end, { desc = "参照検索 (<C-k>) の使用実績 (issue 334 段階 1)" })
+  -- 段階 1 の判断が出たら消すためのもの。ログには押した語 (仕事の repo の識別子) が平文で残る
+  vim.api.nvim_create_user_command("DotfilesRefsReset", function()
+    local path = M.log_path()
+    local ok = pcall(vim.fn.delete, path)
+    vim.notify(ok and ("参照検索の記録を削除した: " .. path) or ("削除できなかった: " .. path))
+  end, { desc = "参照検索の使用実績ログを削除する (issue 334 段階 1)" })
 end
 
 return M

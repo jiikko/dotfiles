@@ -11,7 +11,9 @@
 --   4. **filetype を一緒に記録し、集計で層別する**。LSP 経路には Ruby 以外の全 filetype の
 --      <C-k> が入るので、ft を落とすと「LSP N 回 = 定数を引いた回数」(issue 334 の判断基準) が
 --      Go/TS の回数で水増しされ、しかも事後に分離できない (敵対レビュー P1-1)。
---   5. lsp.lua の <C-k> / <leader>K が実際に record を **ft つきで** 呼ぶ。関数だけ正しくても
+--   5. **ログが際限なく伸びない**。中身は「押した語」= 仕事の repo の識別子なので、
+--      上限を超えたら古い半分を捨てる (敵対レビュー P3-6)。
+--   6. lsp.lua の <C-k> / <leader>K が実際に record を **ft つきで** 呼ぶ。関数だけ正しくても
 --      呼ばれていなければ 0 件のまま「困っていない」と誤読する。
 local function fail(msg)
   io.stderr:write("FAIL: " .. msg .. "\n")
@@ -116,6 +118,29 @@ if not text:match("^Ruby:") then
   fail_cleanup(("format_stats が %q で始まる。Ruby の行を先に出すこと"):format(text:sub(1, 20)))
 end
 
+-- 5. ログのローテーション
+usage.path = tmp .. "/refs_usage_rotate.jsonl"
+usage.max_bytes = 2000
+for i = 1, 200 do
+  usage.record("ripgrep", ("word_%d"):format(i), "ruby")
+end
+local size = (vim.uv.fs_stat(usage.path) or {}).size or 0
+if size == 0 then
+  fail_cleanup("ローテーションの検査でログが空。前提が作れていない")
+end
+if size > usage.max_bytes * 2 then
+  fail_cleanup(("ログが %d バイト。上限 %d を大きく超えている (古い行を捨てていない)"):format(size, usage.max_bytes))
+end
+-- 捨てた後も集計は壊れない (新しい行は残っている)
+local rot = usage.stats()
+if rot.ripgrep == 0 then
+  fail_cleanup("ローテーション後に集計が 0 件。新しい行まで捨てている")
+end
+if rot.ripgrep >= 200 then
+  fail_cleanup(("ローテーション後も %d 件。古い行が捨てられていない"):format(rot.ripgrep))
+end
+usage.max_bytes = 512 * 1024
+
 -- 3. 書けない場所でも例外を投げない。
 -- 🚨 fixture は「なぜ書けないか」がコードから読める形にする。以前は /proc/... を使っていたが、
 -- macOS には /proc が無く、たまたま / が読み取り専用で失敗していただけだった (理由が偶然)。
@@ -163,4 +188,4 @@ if not src:find('require("dotfiles.refs_usage").setup()', 1, true) then
   fail("lsp.setup が refs_usage.setup を呼んでいない。:DotfilesRefsStats が生えない")
 end
 
-print("OK refs usage: 記録 / fallback の窓と語の一致 / filetype の層別 / 書き込み失敗の握り潰し / <C-k>・<leader>K の配線")
+print("OK refs usage: 記録 / fallback の窓と語の一致 / filetype の層別 / ログのローテーション / 書き込み失敗の握り潰し / <C-k>・<leader>K の配線")

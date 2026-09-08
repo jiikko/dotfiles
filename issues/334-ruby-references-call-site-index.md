@@ -209,3 +209,44 @@ client の root** を掴む。lspconfig の solargraph の filetypes は `{ "rub
   絞っている / 「行数」と「出現数」を並べている
 - P3-2: `vim.lsp.status` 直呼び禁止の pin が `lualine_x` の中しか見ていない
 - P3-6: JSONL にローテーションが無い (判断が出たらログごと削除する)
+
+## 追補: 敵対的レビューの P2 / P3 を直した (2026-09-08)
+
+commit `fix(334): statusline の掃除・再描画の抑止・ログの上限と、計測の土俵ずれを直す`。
+
+**P2-2 (statusline が固まる)**: nvim は client 終了時に in-flight の要求へ complete を投げず、
+索引の `$/progress` も end が来ない。掃除していなかったので「LSP: 参照を検索中…」や
+「indexing NN%」が永久に残った。→ `LspDetach` でその client の pending を消し、progress も落とす
+（別 client が索引中なら次の通知で戻る。`kind == "end"` と同じ扱い）。
+
+**P2-5 (再描画の駆動源が増えた)**: lualine の statusline は関数評価で、再描画のたびに
+`lualine_c` の `relative_path_from_git_root`（中で `vim.fs.root`）が走る。索引中の `$/progress` は
+高頻度なので、無条件 `redrawstatus` は「通知 1 本 = 全ウィンドウの再評価」になる。
+→ **表示が変わったときだけ**呼ぶ。あわせて「ラベルの無いメソッドで早期 return」の分岐を削除した
+（再描画の抑止が refresh 側に移り、この分岐は観測できない冗長物になったため）。
+
+**P3-2 (pin の射程)**: `vim.lsp.status` 直呼び禁止の検査が `lualine_x` の中しか見ておらず、
+`lualine_c` へ移す書き換えが素通りした。→ `_nviminit.lua` 全体（コメント行を除く）で禁止。
+🚨 素の部分一致だと**この禁止事項を説明した自分のコメントに当たる**ので、コメント行は除く。
+
+**P3-6 (ログが際限なく伸びる)**: 記録には「押した語」= 仕事の repo の識別子が平文で残る。
+→ 512 KB を超えたら古い半分を捨てる（判定は `fs_stat` のサイズだけで行い、超えたときだけ読む）。
+判断が出たら消せるよう `:DotfilesRefsReset` を足した。
+
+**P2-3 / P2-4 / P3-5 (計測が誤った数字を出す形)**: `measure.rb` が
+①rg の rc=2（エラー）を「0 件」に畳んでいた ②production の `telescope.grep_string` は
+ファイルタイプを絞らないのに計測側だけ `--type ruby` で絞っていた ③「行数」と「出現数」を
+並べていた。→ rc>=2 は raise、比較側の type 絞りを外す、`-F` を付ける、突合はユニーク行で行う。
+
+### 訂正: rg のゴミは過小評価だった
+
+| シンボル | 旧 (誤: `--type ruby`) | 新 (production と同条件) |
+|---|---|---|
+| `wrap_error` | rg 24 行 / ゴミ **0** | rg 59 行 / ゴミ **35 (59%)** |
+| `symbolize_keys` | rg 404 / ゴミ 1 | rg 445 / ゴミ 42 (9%) |
+| `perform` | rg 858 / ゴミ 79 (9%) | rg 927 / ゴミ 148 (16%) |
+| `account` | rg 22547 / ゴミ 20282 (90%) | rg 26662 / ゴミ 24397 (92%) |
+
+**判断への影響**: 「固有名なら rg でほぼ同じ」は誤りだった。`wrap_error` でも 59% がゴミ
+（`.erb` のビューや YAML に出る語を拾う）。sidecar 化の価値は当初の見立てより**高い**。
+ただし決めるのは段階 1 の実測（`:DotfilesRefsStats` の Ruby 行）であって、この表ではない。

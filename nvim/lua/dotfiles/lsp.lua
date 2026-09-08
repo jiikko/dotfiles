@@ -246,18 +246,40 @@ end
 --    1 回の再描画で 2 回呼ぶと 2 回目は必ず空になる。呼ぶのはこの autocmd の中だけにして、
 --    結果を保持する。statusline 側は M.progress_status() で保持した文字列を読むこと。
 local progress_text = ""
+-- 実際に statusline へ出している文字列。変わったときだけ再描画する (下記 refresh)
 
 -- 実行中の要求 (LspRequest)。索引と違い $/progress は飛ばないので、こちらは自分で組む。
 -- ruby-lsp の references は毎回ワークスペース全体を Prism で再パースするため、大きな Rails
 -- project では 10 秒級かかる (実測 2026-09-08 ubiregi-server: references 11.2s。うち parse が
 -- 7.0s で、その 88% が vendor/bundle の 18468 ファイル)。速くはできないので、せめて
 -- 「押したのに何も起きない」に見えないようにする。
-local pending_text = ""
+local pending = {} -- "client_id:request_id" -> ラベル
+local shown = ""   -- いま statusline に出ている文字列
+
+-- 索引 (progress) を優先する: 索引中はどのみち要求が返らないので、原因の方を出す。
+local function compute()
+  if progress_text ~= "" then return progress_text end
+  local label
+  for _, l in pairs(pending) do
+    label = label or l
+  end
+  return label and ("LSP: " .. label) or ""
+end
+
+-- 🚨 表示が変わったときだけ redrawstatus を呼ぶ。lualine の statusline は関数評価なので、
+--    再描画のたびに lualine_c の relative_path_from_git_root が走り、その中の vim.fs.root が
+--    上方向へ fs_stat を撃つ。索引中の $/progress は高頻度で飛ぶので、無条件に呼ぶと
+--    「通知 1 本 = 全ウィンドウの statusline 再評価」になる (敵対レビュー P2-5)。
+local function refresh()
+  local text = compute()
+  if text == shown then return end
+  shown = text
+  vim.cmd.redrawstatus()
+end
 
 -- statusline から読む。vim.lsp.status() を直接呼ばせないための入口。
--- 索引 (progress) を優先する: 索引中はどのみち要求が返らないので、原因の方を出す。
 function M.progress_status()
-  return progress_text ~= "" and progress_text or pending_text
+  return shown
 end
 
 -- <C-k> (参照一覧) の振り分け。Ruby の **メソッド / ローカル**だけ ripgrep へ回し、
@@ -537,28 +559,41 @@ function M.setup(capabilities)
     callback = function(args)
       local value = args.data and args.data.params and args.data.params.value
       progress_text = (value and value.kind == "end") and "" or vim.lsp.status()
-      vim.cmd.redrawstatus()
+      refresh()
     end,
   })
 
   -- 実行中の要求を出す。LspRequest は 1 要求につき pending → complete (または cancel) の
   -- 順で飛ぶ (doc/lsp.txt の LspRequest。payload は { client_id, request_id, request } で
   -- request = { type, bufnr, method })。id は client ごとなので鍵は client_id と両方で作る。
-  local pending = {}
   vim.api.nvim_create_autocmd("LspRequest", {
     group = pgrp,
     callback = function(args)
       local data = args.data
       local req = data and data.request
-      if not req or not M.request_labels[req.method] then return end
+      if not req then return end
       local key = tostring(data.client_id) .. ":" .. tostring(data.request_id)
+      -- ラベルの無いメソッド (documentHighlight 等) は nil になり、表示にも pending にも残らない。
+      -- 再描画の抑止は refresh() が持つ (表示が変わらないなら呼ばない)
       pending[key] = (req.type == "pending") and M.request_labels[req.method] or nil
-      local label
-      for _, l in pairs(pending) do
-        label = label or l
+      refresh()
+    end,
+  })
+
+  -- 🚨 client が死ぬと in-flight の要求は **complete が飛ばないまま**消える (nvim は client 終了時に
+  --    残った要求へ complete を投げない)。索引の $/progress も end が来ない。掃除しないと
+  --    「LSP: 参照を検索中…」や「indexing NN%」が永久に残る (敵対レビュー P2-2)。
+  --    progress_text も落とす: その進捗は今出ていった client のもので、別 client が索引中なら
+  --    次の通知で戻る (kind == "end" のときと同じ扱い)。
+  vim.api.nvim_create_autocmd("LspDetach", {
+    group = pgrp,
+    callback = function(args)
+      local prefix = tostring(args.data and args.data.client_id) .. ":"
+      for key in pairs(pending) do
+        if key:sub(1, #prefix) == prefix then pending[key] = nil end
       end
-      pending_text = label and ("LSP: " .. label) or ""
-      vim.cmd.redrawstatus()
+      progress_text = ""
+      refresh()
     end,
   })
 

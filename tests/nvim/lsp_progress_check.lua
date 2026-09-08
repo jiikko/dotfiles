@@ -12,7 +12,12 @@
 --      ruby-lsp の references は大きな Rails project で 10 秒級かかる (実測) ので、
 --      これが無いと「押したのに無反応」に見える。
 --   4. 索引 ($/progress) は実行中の要求より優先して出す。索引中はどのみち要求が返らないため。
---   5. 🚨 statusline 側 (_nviminit.lua の lualine) が vim.lsp.status() を **直接呼ばない**。
+--   5. **client が死んでも表示が残らない**。nvim は client 終了時に in-flight の要求へ
+--      complete を投げないので、掃除しないと「参照を検索中…」が永久に残る (敵対レビュー P2-2)。
+--   6. **表示が変わらないときは再描画しない**。lualine の statusline は関数評価で、再描画のたびに
+--      lualine_c の relative_path_from_git_root (中で vim.fs.root) が走る。索引中の $/progress は
+--      高頻度なので、無条件に redrawstatus を呼ぶと再描画が跳ねる (敵対レビュー P2-5)。
+--   7. 🚨 statusline 側 (_nviminit.lua の lualine) が vim.lsp.status() を **直接呼ばない**。
 --      vim.lsp.status() は client.progress (vim.ringbuf) を pop しながら読むので、1 回の再描画で
 --      2 回評価されると 2 回目は必ず空になる。実行時には「たまに消える」形でしか出ず、
 --      再現条件が描画回数に依存するため、静的に固定するのが唯一の現実的な検査になる。
@@ -101,10 +106,10 @@ if lsp.progress_status() ~= "" then
   fail(("cancel 後も %q が残っている。消すこと"):format(lsp.progress_status()))
 end
 
--- 対象外のメソッドは出さない。表示が空かどうかだけでは足りない: ラベル表に無いメソッドは
--- どのみち nil になるので、絞り込みを外しても表示は空のまま通ってしまう (実測で green だった)。
--- 実際に効いているのは「再描画を起こさないこと」なので、そちらを数える。
--- documentHighlight は CursorHold ごとに飛ぶため、ここで redrawstatus を呼ぶと常時再描画になる。
+-- 対象外のメソッドは出さない。表示が空かどうかだけでは足りない (ラベル表に無いメソッドは
+-- どのみち nil になるので、表示は空のまま通る)。効いているのは「再描画を起こさないこと」なので
+-- そちらを数える。documentHighlight は CursorHold ごとに飛ぶため、ここで redrawstatus を呼ぶと
+-- 常時再描画になる。
 local orig_cmd = vim.cmd
 local redraws = 0
 vim.cmd = setmetatable({}, {
@@ -138,7 +143,43 @@ if redraws == 0 then
   fail_cmd("references の pending で redrawstatus が呼ばれていない。表示が更新されない")
 end
 emit_req(5, "textDocument/references", "complete")
+
+-- 6. 同じ内容で通知が続いても再描画しない (索引中の $/progress は高頻度で飛ぶ)
+vim.lsp.status = function() return "Ruby LSP: indexing files: 5% completed" end
+emit("begin")
+redraws = 0
+emit("report")
+emit("report")
+if redraws ~= 0 then
+  fail_cmd(("同じ内容の通知で redrawstatus を %d 回呼んだ。表示が変わったときだけ呼ぶこと"):format(redraws))
+end
+vim.lsp.status = function() return "Ruby LSP: indexing files: 6% completed" end
+emit("report")
+if redraws ~= 1 then
+  fail_cmd(("内容が変わったのに redrawstatus が %d 回。1 回であること"):format(redraws))
+end
+emit("end")
 vim.cmd = orig_cmd
+
+-- 5. client が死んだら (LspDetach) 表示を掃除する
+vim.lsp.status = function() return "Ruby LSP: indexing files: 42% completed" end
+emit("begin")
+emit_req(9, "textDocument/references", "pending")
+if lsp.progress_status() == "" then
+  fail_restoring("前提が作れていない: 索引中 + 要求中で表示が空になっている")
+end
+vim.api.nvim_exec_autocmds("LspDetach", { data = { client_id = 1 } })
+if lsp.progress_status() ~= "" then
+  fail_restoring(("LspDetach の後も %q が残っている。client が死んだら掃除すること"):format(
+    lsp.progress_status()))
+end
+-- 別 client の要求は残す (巻き添えで消さない)
+emit_req(11, "textDocument/references", "pending")
+vim.api.nvim_exec_autocmds("LspDetach", { data = { client_id = 2 } })
+if lsp.progress_status() == "" then
+  fail_restoring("別 client (id=2) の detach で、生きている client の表示まで消した")
+end
+vim.api.nvim_exec_autocmds("LspDetach", { data = { client_id = 1 } })
 
 -- 4. 索引が実行中の要求より優先される
 vim.lsp.status = function() return "Ruby LSP: indexing files: 10% completed" end
@@ -163,8 +204,14 @@ end
 if not lualine_x:find("progress_status", 1, true) then
   fail("lualine_x が dotfiles.lsp の progress_status を参照していない。索引の進捗が出なくなる")
 end
-if lualine_x:find("vim.lsp.status", 1, true) then
-  fail("lualine_x が vim.lsp.status() を直接呼んでいる。ring buffer を pop するので描画のたびに取りこぼす")
+-- 🚨 射程は lualine_x の中だけでは足りない。lualine_c へ移す / ヘルパー関数に包む書き換えが
+-- 素通りするため、_nviminit.lua 全体で禁止する (statusline の評価経路のどこからも呼ばせない)。
+-- コメント行は除く: この禁止事項そのものをコメントで説明しているので、素の部分一致だと自分に当たる
+for i, line in ipairs(vim.fn.readfile(vim.env.DOTFILES_INIT or (vim.env.HOME .. "/dotfiles/_nviminit.lua"))) do
+  if not line:match("^%s*%-%-") and line:find("vim.lsp.status", 1, true) then
+    fail(("_nviminit.lua:%d が vim.lsp.status() を直接呼んでいる。ring buffer を pop するので描画のたびに取りこぼす: %s"):format(
+      i, vim.trim(line)))
+  end
 end
 
-print("OK lsp progress: 索引の begin/report/end・status() は 1 通知 1 回・実行中の要求の pending/complete/cancel・対象外メソッドの抑止・索引の優先・lualine の配線")
+print("OK lsp progress: 索引の begin/report/end・status() は 1 通知 1 回・実行中の要求・対象外メソッドの抑止・索引の優先・同内容では再描画しない・LspDetach の掃除・lualine の配線")

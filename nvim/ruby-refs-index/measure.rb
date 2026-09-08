@@ -71,6 +71,8 @@ module RefsIndex
       # rg と同じ範囲 (.gitignore 尊重) にそろえる。比較の土俵を合わせるため
       # 🚨 パスを明示する。rg はパス引数が無く stdin が tty でないと **stdin を読む**ので、
       #    Open3 越しだと 0 バイト検索になって黙って 0 件を返す (実測 2026-09-08)。
+      # ここは索引を作る対象なので --type ruby でよい (Prism で解析するのは .rb だけ)。
+      # 下の ripgrep_hits は production と土俵を合わせるため type を絞らない。
       out, status = Open3.capture2("rg", "--files", "--type", "ruby", ".", chdir: workspace)
       raise "rg --files に失敗した (rc=#{status.exitstatus})" unless status.success?
 
@@ -97,9 +99,18 @@ module RefsIndex
 
   #: (String, String) -> Array[[String, Integer]]
   def ripgrep_hits(workspace, name)
-    # パスの明示は上と同じ理由 (無いと stdin を読む)
-    out, status = Open3.capture2("rg", "-w", "--type", "ruby", "--json", name, ".", chdir: workspace)
-    return [] unless status.success?
+    # 🚨 production (telescope.grep_string) は **ファイルタイプを絞らない**。ここで --type ruby を
+    #    付けると .erb / .yml / .js を見ないぶん rg のヒットが減り、「rg のゴミ」を過小評価する。
+    # -F: 語をリテラルとして扱う。付けないと `valid?` の `?` などが正規表現として解釈され、
+    #    別の語に当たったり rc=2 で落ちたりする。production の <cword> は iskeyword の都合で
+    #    `?` / `!` を含まないので、-w の語境界とも食い違わない。
+    # パスの明示は上と同じ理由 (無いと stdin を読む)。
+    out, status = Open3.capture2("rg", "-w", "-F", "--json", name, ".", chdir: workspace)
+    # 🚨 rg の rc は 0=マッチあり / 1=マッチ無し / 2=エラー。success? だけで判定すると
+    #    **エラーが「ゴミ 0 件」に化けて、rg が完璧だという逆の結論が出る**。
+    rc = status.exitstatus
+    raise "rg に失敗した (rc=#{rc}, pattern=#{name.inspect})" if rc && rc >= 2
+    return [] if rc != 0
 
     out.lines.filter_map do |line|
       event = JSON.parse(line)
@@ -132,12 +143,14 @@ module RefsIndex
     puts format("③ クエリ    : %.6f 秒 (呼び出し %d + 宣言 %d)  ← ruby-lsp は 11.2 秒",
                 query_sec, (calls[name] || []).size, (defs[name] || []).size)
 
-    # ④ 精度差。rg のヒットのうち、AST 上は呼び出しでも宣言でもない行が「本当のゴミ」
-    rg = ripgrep_hits(workspace, name)
+    # ④ 精度差。rg のヒットのうち、AST 上は呼び出しでも宣言でもない行が「本当のゴミ」。
+    # 🚨 単位を揃える: rg は **行**、AST は **出現**を数えるので、そのまま並べると比較できない
+    #    (同じ行に 2 回出る呼び出しは AST では 2、rg では 1)。突合はユニーク行どうしで行う。
+    rg = ripgrep_hits(workspace, name).uniq
     ast_lines = hits.map { |path, line, _| [path, line] }.to_set
     rg_only = rg.reject { |pair| ast_lines.include?(pair) }
     ast_only = ast_lines.reject { |pair| rg.include?(pair) }
-    puts format("④ 精度      : rg %d 行 / AST %d 箇所", rg.size, hits.size)
+    puts format("④ 精度      : rg %d 行 / AST %d 行 (出現は %d)", rg.size, ast_lines.size, hits.size)
     puts format("   rg だけに出る行 (コメント・文字列・シンボル等の誤検出): %d", rg_only.size)
     puts format("   AST だけに出る箇所 (同一行に複数、など): %d", ast_only.size)
     rg_only.first(5).each { |path, line| puts "     - #{path.delete_prefix(workspace + '/')}:#{line}" }
