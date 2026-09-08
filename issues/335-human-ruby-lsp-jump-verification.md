@@ -2,7 +2,7 @@
 
 期限: 2026-09-15
 
-関連: [332](332-ruby-lsp-selection-by-probe.md) / [334](334-ruby-references-call-site-index.md)
+関連: [332](done/332-ruby-lsp-selection-by-probe.md) / [334](334-ruby-references-call-site-index.md)
 
 **前提: nvim を一度終了して開き直すこと。** `vim.lsp.enable` は起動時に走るので、
 開きっぱなしのインスタンスは古い設定のまま動く（今日それで 2 往復した）。

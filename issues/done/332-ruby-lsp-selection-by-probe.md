@@ -69,7 +69,7 @@ done
 - [x] `tests/nvim/lsp_ruby_server_select_check.lua` を新しい軸へ書き直す
 - [x] 変異検証 (15 本中 14 本 red。下記)
 - [x] 敵対的レビュー (read-only / opus) と、その指摘への対応
-- [ ] 実 project (ubiregi-server) で attach 先が ruby_lsp になることを確認 (人間の動作確認待ち)
+- [x] 実 project (ubiregi-server) で attach 先が ruby_lsp になることを確認 → [335](../335-human-ruby-lsp-jump-verification.md) で追跡 (期限 2026-09-15)
 
 ## 進捗
 
@@ -116,24 +116,11 @@ marker を空へ / wait の上限を外す / mason の sort を消す) がいず
 `false` になるため、観測上の差が無い (冗長な守り)。nil は wait の**正常な戻り値**であって例外では
 ないので、明示は残してコメントで冗長だと書いた。pcall ごと外す変異 (前半 5 本目) は red。
 
-### 未解決 (レビューが出したが、この commit では閉じていない)
+### 未解決 → [337](../337-bug-ruby-lsp-selection-has-five-open-holes.md) へ分離 (2026-09-08)
 
-- **プローブは起動の証明ではない**。`exe/ruby-lsp` の `--version` は OptionParser のブロックで
-  即 `exit(0)` するので、実際の起動経路 (BUNDLE_GEMFILE 未設定 → launcher → composed bundle の
-  解決 → `bundle install`) を通らない (実測: ruby-lsp 0.26.11 の `exe/ruby-lsp:13`)。project の
-  bundle が壊れていると「プローブは通るが server は起動しない」になり、solargraph も抑止済みなので
-  Ruby の LSP が無言で消える。起動失敗を検出して solargraph へ戻す仕組みは**無い**。
-  → 判定の軸を「近似」から「実起動」へ寄せる設計として別途検討する
-- **`.erb` (eruby) の非対称**。lspconfig の filetypes は ruby_lsp が `{ruby, eruby}`、solargraph が
-  `{ruby}` (実測)。solargraph を選んだ project の `.erb` には**どのサーバも attach しない**。
-  allowlist 時代から同じだが、今後は「その ruby に gem を入れたか」で無言に反転する
-- **`RBENV_VERSION` を export した shell から nvim を起動すると、プローブが全 project で同じ答えを
-  返す**。`rbenv shell 3.1.6` した端末から開くと ruby 2.6 の project まで ruby_lsp に倒れる (未実測)
-- **選択結果が不可視**。どちらのサーバがなぜ選ばれたかを見る手段が無く、gem を入れた後は nvim の
-  再起動が要る (キャッシュの無効化が無い)
-- **mason の残留バイナリ**。`ensure_installed` から外しても mason はアンインストールしない。
-  既に入っているマシンでは `mason/bin/ruby-lsp` が PATH 先頭で shim に勝つ。
-  このマシンでは不在を実測済み (実害なし)
+レビューが出して本 commit で閉じていない 5 件 (プローブは起動の証明ではない / `.erb` の非対称 /
+`RBENV_VERSION` / 選択結果が不可視 / mason の残留バイナリ) は、本文が長く残件が埋もれるので
+337 へ移した。内容は転記で、新しい調査はしていない。
 
 ## 追補 (2026-09-08、同日の続き)
 
@@ -175,7 +162,7 @@ gem の除外 (`excludedGems`) は**採らなかった**: その索引は gem �
 変異検証 5 本 (end で空へ戻さない / status() の結果を入れない / autocmd を張らない /
 lualine が status() を直呼びする / lualine から進捗を外す) がいずれも red。
 `excludedPatterns` にはテストを付けていない (設定値の再掲にしかならないため。
-[`refuse-low-value-coverage.md`](../_claude/rules/refuse-low-value-coverage.md))。
+[`refuse-low-value-coverage.md`](../../_claude/rules/refuse-low-value-coverage.md))。
 
 ## 追補 2 (2026-09-08): 参照検索が遅い件と、実行中の表示
 

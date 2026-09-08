@@ -2,7 +2,7 @@
 
 種別: research / perf
 起票: 2026-09-08
-前提: [332](332-ruby-lsp-selection-by-probe.md) の追補 3（`<C-k>` を Ruby のメソッドだけ ripgrep へ振り分けた）
+前提: [332](done/332-ruby-lsp-selection-by-probe.md) の追補 3（`<C-k>` を Ruby のメソッドだけ ripgrep へ振り分けた）
 
 ## 背景
 

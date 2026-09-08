@@ -1,1 +1,0 @@
-../333-retro-ruby-lsp-selection-2026-09-08.md

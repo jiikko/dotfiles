@@ -16,11 +16,11 @@ project と違う ruby で走り bundle の gem 解決が全滅) → サーバ�
 `attached=false clients=` を返し、**「LSP が attach していない」という誤った事実**を
 一度手元で確定させた。次の一手 (`--headless -c "lua dofile(...)"`) で覆った。
 
-- 既存の [`verify-interactive-prompt-with-pty-driver.md`](../_claude/rules/verify-interactive-prompt-with-pty-driver.md) が
+- 既存の [`verify-interactive-prompt-with-pty-driver.md`](../../_claude/rules/verify-interactive-prompt-with-pty-driver.md) が
   「対話の確認が失敗したら実装を疑う前にハーネスを疑う」を持っているが、**発動点が「対話プロンプト」に
   限定**されていて、今回の「headless で設定を読ませる検証」には掛からなかった
 - **切り出し先の提案**: 既存ルールへの追記。
-  [`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md) の
+  [`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md) の
   「隔離環境での成功は、本番での成功ではない」節に**裏返し**を 1 項足す
   ——「隔離環境での**失敗**も、本番の失敗ではない。自分が用意した実行環境が本番と同じ
   ものを読んでいるかを、赤を報告する前に 1 回確かめる」。新規ルールは立てない
@@ -31,7 +31,7 @@ project と違う ruby で走り bundle の gem 解決が全滅) → サーバ�
 6 分ポーリングで誤答のままだった run を根拠に「214 秒待っても必ず誤答」と報告したが、
 その後の別 run では既定の solargraph が正答を返した。ユーザーへ訂正した。
 
-- 既存の [`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md) に
+- 既存の [`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md) に
   「条件を変えずに同じ HEAD で 2 回回す (1 回目赤・2 回目緑なら環境でなく非決定性)」が**既にある**。
   読んでいたのに、切り分けではなく**症状の恒常性の主張**には当てはめなかった
 - **切り出し先の提案**: 却下 (ルールは既にある。増やしても同じ見落としを防げない)。
@@ -47,7 +47,7 @@ project と違う ruby で走り bundle の gem 解決が全滅) → サーバ�
 同型で、`vim.fs.root` を定数関数へ差し替えていたため **marker 配列そのものが無検査**だった
 (空配列にする変異まで緑)。marker の順序が load-bearing なのに。
 
-- **切り出し先の提案**: [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の
+- **切り出し先の提案**: [`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) の
   「よくある『守っていないテスト』の形」へ 1 項追記:
   **「スタブ / fake が引数を受け取っていないか。捨てていると、呼び出し側が渡す値
   (cwd・オプション・コマンド列) を変える変異が全部緑で通る。差し替えた依存が
@@ -86,9 +86,14 @@ gem では成立する**ことを実測 (`json-2.3.1`) して採用した。指�
 
 ## 残課題
 
-- [ ] 項目 1 の追記 (`verify-execution-not-just-exit-code.md` の「隔離環境」節に裏返しを 1 項)
-- [ ] 項目 3 の追記 (`mutation-verify-new-tests.md` の「守っていないテストの形」に
+すべて 2026-09-08 に処理した (commit `docs(333): retro の切り出しを実行する`)。
+
+- [x] 項目 1 の追記 (`verify-execution-not-just-exit-code.md` の「隔離環境」節に裏返しを 1 項)
+- [x] 項目 3 の追記 (`mutation-verify-new-tests.md` の「守っていないテストの形」に
       「スタブが引数を捨てる」「定数スタブで設定値が無検査になる」の 2 項)
-- [ ] 項目 2 / 4 の rationale への実例追記 (やらない判断も可)
-- [ ] issue 332 の未解決 4 件 (プローブは起動の証明でない / `.erb` の非対称 /
-      `RBENV_VERSION` / 選択結果が不可視) を、別 issue へ切るか 332 に残すかの判断
+- [x] 項目 2 / 4 の rationale への実例追記
+      → 項目 2 は `rules-rationale/verify-execution-not-just-exit-code.md` へ追記。
+      項目 4 は**却下**: 出典が `~/.claude/CLAUDE.md`「レビュー方針」で、そこには
+      rationale ファイルが無い (書く場所が無いものを新設してまで残す価値は無い)
+- [x] issue 332 の未解決 5 件を [337](../337-bug-ruby-lsp-selection-has-five-open-holes.md) へ分離
+      (4 件と書いていたが、mason の残留バイナリを数え落としていたので実際は 5 件)
