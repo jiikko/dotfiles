@@ -31,6 +31,7 @@ package disk
 // 検出しない (字句のゲートで全部塞ごうとすると迂回が無限に出る)。そこはレビューの責務。
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -293,46 +294,149 @@ func TestSandboxAllowRejectsPathsOutsideTempDir(t *testing.T) {
 	// 🚨 **sandboxAllow の本体を通す** (述語を直接叩くと「本体が判定を呼ばなくなった」を
 	// 検出できない。敵対レビュー 2026-09-04 の P1)
 	for _, p := range []string{home, "/", filepath.Join(home, "Documents")} {
-		if !sandboxAllowRejects(p) {
+		rejected, reason := sandboxAllowRejects(p)
+		switch {
+		case rejected:
+			// 期待どおり (理由が errNotInSandbox であることは sandboxAllowRejects が保証する)
+		case reason != nil:
+			t.Errorf("%s: サンドボックス外を理由に拒否していない (判定不能): %v", p, reason)
+		default:
 			t.Errorf("%s の登録を許した", p)
 		}
 	}
 	// 逆向き (登録してよい側) も見る: 判定が deny-all になっても気づけるように
-	if sandboxAllowRejects(t.TempDir()) {
-		t.Error("一時領域の登録を拒んだ")
+	rejected, reason := sandboxAllowRejects(t.TempDir())
+	switch {
+	case rejected:
+		t.Errorf("一時領域の登録を拒んだ: %v", reason)
+	case reason != nil:
+		t.Errorf("一時領域の登録で無関係な Fatal が出た (判定不能): %v", reason)
 	}
 }
 
-// sandboxAllowRejects は sandboxAllow **本体**へ root を渡し、拒否されたかを返す。
+// errNotInSandbox は「登録先が os.TempDir() の外」を表す sentinel。
+// 🚨 自己テストは**この sentinel で拒否理由を区別する**。文言比較にしないのは、
+// 文言を変えるとテストが壊れ / 文言が同じなら別の理由でも通るため (issue 314)。
+var errNotInSandbox = errors.New("サンドボックスの外")
+
+// sandboxAllowRejects は sandboxAllow **本体**へ root を渡し、結果を 3 値で返す。
 // Fatal を panic で拾うことで、本体の「判定 → Fatal」の配線ごと検査できる。
+//
+//	(true,  reason)     … errNotInSandbox を理由に拒否した (期待する拒否)
+//	(false, nil)        … 登録できた
+//	(false, reason!=nil)… **判定不能**。サンドボックス外とは別の理由で Fatal した
+//
+// 🚨 3 つ目を「拒否」に畳まないことが本体 (issue 314)。畳むと「引数が壊れていて落ちた」も
+// 合格になり、破壊的操作のガードが別の理由で壊れても緑になる。
 // 拒否されなかった場合は登録が残るので、その場で後始末する (スイートへ漏らさない)。
-func sandboxAllowRejects(root string) (rejected bool) {
+// cleanup の defer は recover の defer より**先に**積む (LIFO なので後に走る) —
+// panic 経路でも必ず走らせるため。
+func sandboxAllowRejects(root string) (rejected bool, reason error) {
+	return runSandboxAllow(func(rec *sandboxRecorder) { sandboxAllow(rec, root) })
+}
+
+// runSandboxAllow は sandboxAllowRejects の骨組み (panic の捕捉と後始末) だけを切り出した seam。
+// 🚨 これが無いと「拒否 (panic) 経路でも cleanup が走る」を自己テストで固定できない
+// (sandboxAllow は拒否時に何も登録しないので、本体経由では登録が残る状況を作れない)。
+func runSandboxAllow(f func(*sandboxRecorder)) (rejected bool, reason error) {
 	rec := &sandboxRecorder{}
 	defer func() {
-		if r := recover(); r != nil {
-			if _, ok := r.(sandboxFatalPanic); ok {
-				rejected = true
-				return
-			}
-			panic(r)
-		}
 		for _, f := range rec.cleanups {
 			f()
 		}
 	}()
-	sandboxAllow(rec, root)
-	return false
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		p, ok := r.(sandboxFatalPanic)
+		if !ok {
+			panic(r)
+		}
+		reason = p.err
+		rejected = errors.Is(p.err, errNotInSandbox)
+	}()
+	f(rec)
+	return false, nil
 }
 
-type sandboxFatalPanic struct{ msg string }
+// 拒否 (panic) 経路でも cleanup が走り、拒否理由が sentinel で区別されること。
+// 🚨 「登録が残ったまま panic する」経路は今は本体に無いが、理由の区別で分岐が増えた以上、
+// 開いたときに黙って漏れる (issue 314 ②)。
+func TestSandboxAllowRunnerClassifiesAndCleansUp(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		body         func(rec *sandboxRecorder)
+		wantRejected bool
+		wantReason   bool
+	}{
+		{
+			name: "サンドボックス外なら拒否",
+			body: func(rec *sandboxRecorder) {
+				rec.Cleanup(func() {})
+				rec.Fatal(fmt.Errorf("%w: 自己テスト", errNotInSandbox))
+			},
+			wantRejected: true, wantReason: true,
+		},
+		{
+			name: "無関係な Fatal は拒否に畳まない",
+			body: func(rec *sandboxRecorder) {
+				rec.Cleanup(func() {})
+				rec.Fatal("引数が壊れている")
+			},
+			wantRejected: false, wantReason: true,
+		},
+		{
+			name:         "Fatal しなければ登録できた扱い",
+			body:         func(rec *sandboxRecorder) { rec.Cleanup(func() {}) },
+			wantRejected: false, wantReason: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ran := 0
+			rejected, reason := runSandboxAllow(func(rec *sandboxRecorder) {
+				rec.Cleanup(func() { ran++ })
+				tc.body(rec)
+			})
+			if rejected != tc.wantRejected {
+				t.Errorf("rejected = %v (want %v), reason = %v", rejected, tc.wantRejected, reason)
+			}
+			if (reason != nil) != tc.wantReason {
+				t.Errorf("reason = %v (want non-nil: %v)", reason, tc.wantReason)
+			}
+			if ran != 1 {
+				t.Errorf("cleanup が走った回数 = %d (want 1)", ran)
+			}
+		})
+	}
+}
+
+// sandboxFatalPanic は Fatal の**理由**を運ぶ (文字列ではなく error を持つのが要点)。
+type sandboxFatalPanic struct{ err error }
 
 // sandboxRecorder は sandboxT の最小実装。Fatal は panic で止める
 // (実際の *testing.T も Fatal で以降を実行しないので、振る舞いを合わせる)。
 type sandboxRecorder struct{ cleanups []func() }
 
 func (r *sandboxRecorder) Helper()           {}
-func (r *sandboxRecorder) Fatal(args ...any) { panic(sandboxFatalPanic{fmt.Sprint(args...)}) }
+func (r *sandboxRecorder) Fatal(args ...any) { panic(sandboxFatalPanic{err: fatalReason(args)}) }
 func (r *sandboxRecorder) Cleanup(f func())  { r.cleanups = append(r.cleanups, f) }
+
+// fatalReason は Fatal の引数を error へ寄せる。error 1 個ならそのまま使い、
+// wrap 鎖 (errors.Is) を保つ。それ以外は文言から作る (= sentinel には一致しない)。
+//
+// 🚨 sandboxAllow から Fatal するときは **error を単独引数で**渡すこと。
+// `t.Fatal("登録できません:", err)` のように文脈を足すと wrap 鎖が畳まれて
+// errors.Is が外れ、正規の拒否が「判定不能」に落ちる (issue 314 が塞いだ穴の逆向き)。
+func fatalReason(args []any) error {
+	if len(args) == 1 {
+		if err, ok := args[0].(error); ok {
+			return err
+		}
+	}
+	return errors.New(fmt.Sprint(args...))
+}
 
 // sandboxAllowable は「この root を登録してよいか」の**唯一の判定**。
 // 🚨 sandboxAllow と自己テストが**同じ関数を通る**ことが要点。以前は自己テストが判定式を
@@ -342,7 +446,7 @@ func (r *sandboxRecorder) Cleanup(f func())  { r.cleanups = append(r.cleanups, f
 func sandboxAllowable(root string) error {
 	r := resolveForSandbox(root)
 	if r != sandboxTmpRoot && !strings.HasPrefix(r, sandboxTmpRoot+string(filepath.Separator)) {
-		return fmt.Errorf("サンドボックスに登録できるのは %s 配下だけです (実データを守るため): %s", sandboxTmpRoot, root)
+		return fmt.Errorf("%w: サンドボックスに登録できるのは %s 配下だけです (実データを守るため): %s", errNotInSandbox, sandboxTmpRoot, root)
 	}
 	return nil
 }
