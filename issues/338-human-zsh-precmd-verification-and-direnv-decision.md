@@ -16,8 +16,35 @@ widget テーブルが変わらないことは機械で確認済み（実 rc で
 - [ ] **補完の受理**（`Tab` で補完 → `→` / `End` で suggestion を受理できるか）
 - [ ] **`^C` / `^U` / `^W`** など編集系が普通に効くか
 
-🚨 いずれかが壊れていたら、`_zshrc` の `ZSH_AUTOSUGGEST_MANUAL_REBIND=1` の行を消せば元に戻る
-（1 行だけの変更）。壊れ方をこの issue に書き足してから戻すこと。
+### 🚨 ここが本命: 「最初の bind より後に生えた widget」
+
+敵対レビューの指摘で分かった **MANUAL_REBIND の trade-off**（実測 2026-09-08）:
+
+| | 後から `zle -N` した widget |
+|---|---|
+| MANUAL_REBIND なし | `_zsh_autosuggest_bound_1_my-late-widget` = **ラップされる** |
+| MANUAL_REBIND あり | `my-late-widget` = **されない** |
+
+この repo では `zstyle ':completion:*:default' menu select=1` により `zsh/complist` が
+**最初のメニュー補完時**（= 初回 precmd より後）に autoload され、`menu-select` widget が生える。
+つまり **`menu-select` が未ラップになる**。実害は未実証（`menu-select` は通常
+`expand-or-complete` 経由で内部的に入るため suggestion に影響しない可能性がある）。
+
+- [ ] **メニュー補完を実際に使う**（`Tab` を 2 回押して ←↓↑→ で候補を選び、`Esc` で抜ける）。
+      その前後で suggestion の表示・受理がおかしくならないか
+- [ ] 未ラップであることの確認（気になる場合）:
+
+```zsh
+exec zsh
+zle -l | grep -c autosuggest-orig            # (A) を記録
+# Tab を 2 回押してメニュー選択に入り、Esc で抜ける
+zle -l | grep menu-select                    # menu-select が生えている
+zle -l | grep -c autosuggest-orig            # (A) のまま = 未ラップ
+```
+
+🚨 いずれかが壊れていたら、`_zshrc` の `ZSH_AUTOSUGGEST_MANUAL_REBIND=1` の行を**消せば**元に戻る。
+**`=0` にしても戻らない**（プラグインは `${+VAR}` で**存在**だけを見るため）。
+壊れ方をこの issue に書き足してから戻すこと。
 
 ## ② 判断: `direnv` の hook を precmd から外すか
 

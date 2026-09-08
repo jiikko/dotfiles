@@ -704,17 +704,30 @@ if command -v brew > /dev/null 2>&1; then
   #    経路 (err_exit / ERR trap の下で source する道具) ができた瞬間に事故る。
   __dotfiles_hint() { if [[ -o interactive ]]; then print -ru2 -- "$1"; fi; }
 
-  # 🚨 MANUAL_REBIND は **source より前**に置く (autosuggestions が読み込み時に見る)。
+  # 🚨 **最初のプロンプトまでに設定されていること**。プラグインは初回 precmd の
+  # `_zsh_autosuggest_start` で `(( ${+ZSH_AUTOSUGGEST_MANUAL_REBIND} ))` = **存在**だけを見る
+  # (v0.7.0 の 838-850 行)。値は無関係で、`=0` でも無効化される — 戻すには行ごと消すか `unset`。
   # これが無いと `_zsh_autosuggest_bind_widgets` が **毎プロンプト** 421 widget を再バインドする。
   # 実測 2026-09-08 (実 rc・N=200・3 run): precmd 1 サイクル 9.49/9.69/9.64 ms → 3.28/3.38/3.38 ms
   # = **-6.3 ms (-65%)**。
   #
-  # 「初回 bind の後に別のプラグインが widget を触ると、その分が覆われないのでは」という懸念
-  # (zsh-syntax-highlighting は下で source され、リテラルの `zle -N` ではなくプログラム的に
-  # 全 widget をラップし直す) は**実験で否定した**: `for f in $precmd_functions; do $f; done` で
-  # プロンプト 1 回ぶんを再現して `zle -l` を比べると、MANUAL_REBIND の有無で
-  # **実 rc で 417 widget が完全一致 (diff 0)**。`zsh -f` の最小 rc でも 388 で一致。
-  # よって「source 後にもう一度 bind し直す」は不要 (issue 322 ①)。
+  # 🚨 **trade-off: 「最初の bind より後に生えた widget」は永久に未ラップになる。**
+  # 実測 2026-09-08 (`zsh -f` + 両プラグイン source → precmd #1 → `zle -N my-late-widget`
+  # → precmd #2 → `zle -l`):
+  #
+  #	MANUAL_REBIND なし  my-late-widget (_zsh_autosuggest_bound_1_my-late-widget)  ← ラップされる
+  #	MANUAL_REBIND あり  my-late-widget                                            ← されない
+  #
+  # 🚨 **この repo では `menu-select` が該当しうる**: 上の `zstyle ':completion:*:default'
+  # menu select=1` により `zsh/complist` が**最初のメニュー補完時**に autoload され、
+  # そこで `menu-select` widget が生える (= 初回 precmd より後)。実害は未実証で、
+  # **issue 338 の人手確認に項目として入れてある**。
+  #
+  # 🚨 **load 完了時点までに存在する widget は覆われる** (初回 bind は MANUAL_REBIND でも走る)。
+  # zsh-syntax-highlighting は下で source されるが load 時 1 回しか bind せず、初回 precmd は
+  # それより後なので順序は保たれる。実 rc で 417 widget が完全一致 (diff 0) を確認済み。
+  # ただし**その比較は precmd 1 回ぶんの観測で、上の trade-off は構造的に見えない**
+  # (初回 bind は両条件で走るため、必ず一致する時点だけを見ていた。敵対レビューの指摘)。
   #
   # 🚨 この 6.3 ms は `tests/zshrc/bench_zsh.sh` の prompt_lag では見えない (run 間変動が
   # 16〜22 ms あり分布に埋もれる。issue 323)。効果を語るときは上の直接計測を出すこと。
