@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+
+	"glogx/issues"
 )
 
 // filerCandidates は E で起動するファイラーの探索順 (先勝ち)。
@@ -21,11 +23,11 @@ var lookPathFn = exec.LookPath
 
 // repoRoot は repo root (rev-parse --show-toplevel)。取れないとき (裸 repo 等) は
 // カレントディレクトリのまま開く。
+// 🚨 失敗時に "." を返すのはここの事情 (nvim を「今いる場所」で開く。cwd を返すと
+// 意図がぼやける)。解決そのものは issues.ResolveRepoRoot が唯一の実装 (issue 320)。
 func repoRoot() string {
-	if root, err := runGitTimeout("rev-parse", "--show-toplevel"); err == nil {
-		if r := strings.TrimSpace(root); r != "" {
-			return r
-		}
+	if root, ok := issues.ResolveRepoRoot(currentDir()); ok {
+		return root
 	}
 	return "."
 }

@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"glogx/issues"
 )
 
 // repoRootOracle は repoRoot() と**別の手段**で repo root を出す独立オラクル
@@ -142,4 +144,49 @@ func TestRepoRootReturnsGitToplevelAndFallsBack(t *testing.T) {
 	if got := repoRoot(); got != "." {
 		t.Fatalf("repo 外のフォールバックが \".\" でない: %q", got)
 	}
+}
+
+// TestRepoRootFailureSemanticsAreCallerSpecific は「解決できなかったとき何を使うか」が
+// 呼び出し側ごとに違うことを固定する (issue 320)。
+//
+// 🚨 これは**わざと違う 3 値**で、揃えてはいけない:
+//
+//	repoRoot()                    → "."  (nvim を開く先。cwd だと意図がぼやける)
+//	loadWorktreeStatus の st.root → ""   (untracked プレビューが cwd 相対に落ちるだけ)
+//	issues.RepoRoot()             → cwd  (git 管理外でも issues/ を探せるように)
+//
+// 解決そのものは issues.ResolveRepoRoot の 1 実装に寄せた。分岐だけが呼び出し側に残る。
+// このテストが無いと、1 実装化のときに 3 値を「揃える」方向の変異が緑で通る。
+func TestRepoRootFailureSemanticsAreCallerSpecific(t *testing.T) {
+	outside := realPath(t, t.TempDir()) // git 管理外 (/var/folders 配下に .git は無い)
+	// 🚨 **ここを Skip にしないこと**。最初 `t.Skipf` で書いたところ、
+	// 「ResolveRepoRoot が失敗時に (cwd, true) を返す」変異でテスト全体が skip され、
+	// **緑のまま通った** (`_claude/rules/mutation-verify-new-tests.md`「前提が早期 return で
+	// 素通りしていないか」そのもの)。前提は Fatal で固定する。
+	if root, ok := issues.ResolveRepoRoot(outside); ok {
+		t.Fatalf("git 管理外の %s で ResolveRepoRoot が ok=true (root=%q) を返した。"+
+			"失敗を成功に化けさせている (または TempDir が git repo の中にある)", outside, root)
+	}
+
+	t.Run("issues.RepoRoot は cwd", func(t *testing.T) {
+		if got := issues.RepoRoot(outside); got != outside {
+			t.Errorf("issues.RepoRoot(%q) = %q, want %q (git 管理外でも issues/ を探せるように cwd)", outside, got, outside)
+		}
+	})
+
+	t.Run("repoRoot() は \".\"", func(t *testing.T) {
+		t.Chdir(outside)
+		if got := repoRoot(); got != "." {
+			t.Errorf("repoRoot() = %q, want %q (nvim を「今いる場所」で開く)", got, ".")
+		}
+	})
+
+	// 🚨 **`loadWorktreeStatus` の st.root はここでは検査していない**。理由を残す:
+	// 最初「解決部分だけを同じ形で呼ぶ」テストを書いたが、それは production を 1 行も通らない
+	// 自己言及だった (`st.root = issues.RepoRoot(currentDir())` に変える変異が緑で通った)。
+	// production を通す形にするには「`git status` は成功するが `rev-parse` だけ失敗する」状態が
+	// 要り、それは seam (runGitTimeout の差し替え) を新設しないと作れない。
+	// 発火条件が timeout / 一時障害に限られる差なので、seam を足す価値より
+	// **意図を worktree_status.go のコメントで固定する**方を採った
+	// (`_claude/rules/refuse-low-value-coverage.md` の「テスト困難 × 低価値」)。
 }

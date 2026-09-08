@@ -33,9 +33,23 @@ var skipDirs = map[string]bool{
 	"tmp": true, ".venv": true, ".next": true, "coverage": true, ".terraform": true,
 }
 
-// RepoRoot は探索の起点を返す。git repo の toplevel を優先し、取れなければ cwd をそのまま
-// 使う (git 管理外のディレクトリでも issues/ があれば見えるように)。
-func RepoRoot(cwd string) string {
+// ResolveRepoRoot は cwd を起点に git repo の toplevel を解決する。
+// **repo root の解決はここが唯一の実装** (issue 320)。
+//
+// 🚨 **失敗時の値を返さない。** ok=false のとき何を使うかは呼び出し側が決める。
+// 以前は同じ問いに対して失敗時のセマンティクスが **3 通り**に割れていた:
+//
+//	open_workspace.go:repoRoot   → "."   (nvim を開く先。cwd では意図が違う)
+//	worktree_status.go (インライン) → ""    (untracked プレビューが cwd 相対に落ちるだけ)
+//	issues/discover.go:RepoRoot  → cwd   (git 管理外でも issues/ を探せるように)
+//
+// どれも呼び出し側の事情として正しいので、**分岐を呼び出し側へ返す**形にした
+// (`_claude/rules/mutation-verify-new-tests.md`「同じ判定を 2 箇所で別実装していないか」)。
+//
+// 🚨 この関数が issues パッケージに在るのは歴史的な理由 (元の実装がここだった) で、
+// main からも呼ぶ。パッケージを 1 つ増やすより**実装が 1 つであること**を優先した
+// (main → issues の依存は tui.go / issues_view.go に既に在り、新しい依存ではない)。
+func ResolveRepoRoot(cwd string) (string, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), subproc.GitOpTimeout)
 	defer cancel()
 	// 🚨 subproc.CommandContext を使うこと (素の exec.CommandContext だと WaitDelay が抜ける)。
@@ -45,9 +59,18 @@ func RepoRoot(cwd string) string {
 	cmd.Dir = cwd
 	out, err := cmd.Output()
 	if err != nil {
-		return cwd
+		return "", false
 	}
 	if root := strings.TrimSpace(string(out)); root != "" {
+		return root, true
+	}
+	return "", false
+}
+
+// RepoRoot は探索の起点を返す。git repo の toplevel を優先し、取れなければ cwd をそのまま
+// 使う (git 管理外のディレクトリでも issues/ があれば見えるように)。
+func RepoRoot(cwd string) string {
+	if root, ok := ResolveRepoRoot(cwd); ok {
 		return root
 	}
 	return cwd

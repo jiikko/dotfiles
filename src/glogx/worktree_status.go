@@ -2,6 +2,8 @@ package main
 
 import (
 	"strings"
+
+	"glogx/issues"
 )
 
 // 作業ツリーの状態 (git status) の読み取りとセクション分類。status viewer (status_view.go) が
@@ -170,8 +172,13 @@ var loadWorktreeStatus = func() (worktreeStatus, error) {
 	st := parseWorktreeStatus(out)
 	// root は失敗しても致命ではない (untracked のプレビューだけが cwd 相対に落ちる) ので
 	// エラーを伝播させない。git 操作側は pathspec の :(top) で cwd 非依存になっている。
-	if root, rootErr := runGitTimeout("rev-parse", "--show-toplevel"); rootErr == nil {
-		st.root = strings.TrimSpace(root)
+	// 🚨 **解決できなかったら空のままにする (cwd で埋めない)**。空は「root が不明」の印で、
+	// untracked のプレビューが cwd 相対に落ちるだけで済む。cwd を入れると
+	// **間違った root を本物として扱う** (サブディレクトリで実行していれば別の場所を指す)。
+	// この違いが出るのは「`git status` は成功するが `rev-parse` だけ失敗する」ときだけなので
+	// テストでは固定できない (seam の新設が要る)。issue 320 の変異検証で green のまま通った項。
+	if root, ok := issues.ResolveRepoRoot(currentDir()); ok {
+		st.root = root
 	}
 	return st, nil
 }
