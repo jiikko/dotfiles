@@ -68,6 +68,24 @@ const (
 	// StatusNext は「次にやる」の目印 (next/ ディレクトリ。ユーザー要望 2026-08-01)。
 	// 🚨 末尾に足す: 値は永続化していないが、途中に入れると既存の並びが動く。
 	StatusNext
+	// StatusWaiting は「着手済みだが、こちらから起こせない事象を待っている」(waiting/
+	// ディレクトリ。ユーザー要望 2026-09-08)。pending と分けるのは**再開の主導権が誰にあるか**が
+	// 違うため: pending は自分の判断で `issues/` へ戻して着手する (凍結)、waiting は
+	// 事象が向こうから来るまで動かしようがない (再現待ち・観測待ち・外部イベント待ち)。
+	//
+	// 起源: obaket issue 742 (drop したファイルが読めない件)。段階 1 / 1b の実装と観測ログは
+	// 入れて push 済みで、残るのは「次に同じ失敗が出たときのログ 1 行」を待つことだけだった。
+	// 実装が入っている以上 pending (凍結) ではなく、かといって open に置くと「今やれること」の
+	// 一覧に作業待ちとして並び続ける。同じ状態の issue は起票時点で obaket に 3 件あった (742 / 543 / 546)。
+	//
+	// 🚨 docs/issues-viewer-spec.md §4 は `ongoing/` を作らない決定をしており、その理由の 1 つ
+	// 「1 ファイル 1 ディレクトリでは表せない (pending の 2 件は着手済み・一部完了・trigger 待ちを
+	// 同時に満たす)」は waiting にも当たる。それでも分けたのは、その 2 件がまさに waiting 側であり、
+	// pending の語義 (凍結) が実態と乖離していたため。ongoing (着手中) は今も作らない —
+	// あちらは滞在時間が分単位で記帳が定着しない、が理由で、waiting の滞在は無期限なので当たらない。
+	//
+	// 🚨 末尾に足す (上と同じ理由)。
+	StatusWaiting
 )
 
 // String は状態の表示名。
@@ -83,6 +101,8 @@ func (s Status) String() string {
 		return "other"
 	case StatusNext:
 		return "next"
+	case StatusWaiting:
+		return "waiting"
 	default:
 		return "other"
 	}
@@ -101,6 +121,10 @@ func (s Status) Badge() string {
 		return "?"
 	case StatusNext:
 		return "▶"
+	case StatusWaiting:
+		// ○ (open) と同じ Geometric Shapes ブロックから選ぶ (既存バッジと幅の扱いを揃える)。
+		// 中身が抜けた ○ = 「open だが今は動かせない」を表す。
+		return "◌"
 	default:
 		return "?"
 	}
@@ -113,6 +137,9 @@ func (s Status) Badge() string {
 var statusDirs = map[string]Status{
 	"done": StatusDone, "closed": StatusDone, "completed": StatusDone, "resolved": StatusDone,
 	"pending": StatusPending, "hold": StatusPending, "on-hold": StatusPending,
+	// waiting は綴りの揺れを受けない (pending の hold / on-hold と違い、新しく決めた語なので
+	// 別綴りが既存 repo に存在しない。増やすと同じ状態が 2 つの名前で並ぶ)。
+	"waiting": StatusWaiting,
 	// next は viewer 自身が作る「次にやる」の目印 (NextDirName)。他の状態語と違って repo 側の
 	// 運用でなく viewer の操作で付くので、綴りの揺れ (upcoming 等) は受けない
 	"next": StatusNext,
@@ -847,7 +874,11 @@ func closedGroupKeys(list []*Issue) map[string]bool {
 // 議論) の帰結: 状態でないサブグループをフィルタで伏せると「存在しない状態」を操作させてしまう。
 func (f StatusFilter) shows(s Status) bool {
 	switch s {
-	case StatusPending:
+	case StatusPending, StatusWaiting:
+		// waiting も pending と同じ段で出す。どちらも「今は動かせない」ので既定の一覧
+		// (今やれること) からは伏せる。段階を増やさないのは、巡回が 1 キーでヒント行が
+		// 1 行しかないため (StatusFilter の doc)。バッジは別 (⏸ と ◌) なので、段を広げれば
+		// 一覧でどちらなのかは読める。
 		return f >= FilterPending
 	case StatusDone:
 		return f >= FilterAll

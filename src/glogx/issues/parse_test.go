@@ -794,3 +794,82 @@ func TestClosedGroupKeysCountsParentAndIgnoresStrays(t *testing.T) {
 		}
 	}
 }
+
+// TestScanReadsWaitingFromDirectory は waiting/ がパスから状態へ写ることを Scan で確かめる。
+//
+// 🚨 共有 fixture (fixture) には足さない。あちらはタブの件数を固定している別テストが 2 本
+// 使っており、1 ファイル足すだけで bug / other の件数が動いて落ちる (実際に落とした)。
+func TestScanReadsWaitingFromDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "issues")
+	mkFiles(t, dir, "010-bug-open.md")
+	mkFiles(t, filepath.Join(dir, "waiting"), "011-bug-waiting-for-repro.md")
+	mkFiles(t, filepath.Join(dir, "pending"), "012-bug-frozen.md")
+
+	list, warns := Scan([]string{dir})
+	if len(warns) != 0 {
+		t.Fatalf("想定外の警告: %q", warns)
+	}
+	got := make(map[string]Status, len(list))
+	for _, iss := range list {
+		got[filepath.Base(iss.Rel)] = iss.Status
+	}
+	want := map[string]Status{
+		"010-bug-open.md":              StatusOpen,
+		"011-bug-waiting-for-repro.md": StatusWaiting,
+		"012-bug-frozen.md":            StatusPending,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("件数が違う: got %d want %d (%v)", len(got), len(want), got)
+	}
+	for name, st := range want {
+		if got[name] != st {
+			t.Fatalf("%s の状態: want %v got %v", name, st, got[name])
+		}
+	}
+}
+
+// TestWaitingIsSeparateFromPending は waiting/ が pending とは別の状態として扱われることを固定する。
+//
+// 🚨 「別の状態」の中身は 3 つある: (1) パスから写像される Status が違う (2) バッジが違う
+// (3) 既定の一覧では伏せ、`a` を 1 段進めると pending と一緒に見える。
+// (1) だけを見ると、statusDirs に足しただけで Badge / shows を配り忘れても green になる。
+func TestWaitingIsSeparateFromPending(t *testing.T) {
+	if StatusWaiting == StatusPending {
+		t.Fatal("waiting が pending と同じ値になっている (別の状態として扱えない)")
+	}
+	if got := StatusWaiting.String(); got != "waiting" {
+		t.Fatalf("String: want waiting got %q", got)
+	}
+	if StatusWaiting.Badge() == StatusPending.Badge() {
+		t.Fatalf("バッジが pending と同じ (%q): 一覧でどちらか読めない", StatusWaiting.Badge())
+	}
+	if StatusWaiting.Badge() == StatusOpen.Badge() {
+		t.Fatalf("バッジが open と同じ (%q)", StatusWaiting.Badge())
+	}
+
+	// 既定 (open のみ) では伏せる。open に混ぜると「今やれること」の一覧に作業待ちが並ぶ。
+	if FilterOpen.shows(StatusWaiting) {
+		t.Fatal("既定の段階で waiting を見せている")
+	}
+	// a を 1 段進めたら pending と一緒に見える (段階は増やさない契約)。
+	if !FilterPending.shows(StatusWaiting) {
+		t.Fatal("FilterPending で waiting が見えない")
+	}
+	if !FilterAll.shows(StatusWaiting) {
+		t.Fatal("FilterAll で waiting が見えない")
+	}
+}
+
+// TestWaitingIsNotAcceptedInsideEpicGroup は group 内の状態ディレクトリが next / done / pending の
+// 3 つに閉じたままであることを固定する (今回 waiting は global 限定で入れた)。
+//
+// 🚨 ok=false の配下は**走査対象外 = 一覧に出ない**ので、ここが黙って true になると
+// 「epic/<name>/waiting/ に置いた issue が消える」ではなく「消えなくなる」方向の変化になる。
+// 逆に、将来 group にも waiting を入れるときは EpicChildStatus だけでなく scanEpicDir /
+// hasEpicMarkdown / issuesWatchDirs の 3 経路を揃える必要がある
+// (TestEpicChildStatusReachedByAllThreeConsumers が守っている)。
+func TestWaitingIsNotAcceptedInsideEpicGroup(t *testing.T) {
+	if _, ok := EpicChildStatus("waiting"); ok {
+		t.Fatal("group 内で waiting を受けている: 3 経路 (走査・発見・監視) を揃えたか確認すること")
+	}
+}

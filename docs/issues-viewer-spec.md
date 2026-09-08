@@ -49,7 +49,8 @@ NNN-<カテゴリ>-<スラッグ>.md        例: 028-refactor-glogx-box-and-toas
 | `epic/<name>/next/` | **次にやる** (Epic group の子 issue の claim) | `▶` |
 | `epic/<name>/pending/` | 保留 (Epic group の子 issue) | `⏸` |
 | `epic/<name>/done/` | 完了 (Epic group の子 issue) | `✓` |
-| `pending/` `hold/` `on-hold/` | 保留 (着手条件・trigger 待ち) | `⏸` |
+| `pending/` `hold/` `on-hold/` | 保留 (着手条件・trigger 待ち。**自分の判断で戻して着手する**) | `⏸` |
+| `waiting/` | 待機 (**着手済み**だが、こちらから起こせない事象を待っている) | `◌` |
 | `done/` `closed/` `completed/` `resolved/` | 完了 | `✓` |
 | 上記以外のサブディレクトリ | **状態にしない** (サブグループ扱い) | `?` |
 
@@ -57,6 +58,11 @@ NNN-<カテゴリ>-<スラッグ>.md        例: 028-refactor-glogx-box-and-toas
 実在するため (`src/working/issues` はプロダクト名のディレクトリが 18 個、
 `DualNoteApp/macOS/issues/mid-long-term` は状態ではなく時間軸)。黙って状態にすると
 「存在しない状態」がタブに並ぶ。
+
+🚨 **`waiting/` は global (`issues/waiting/`) だけで、group 内 (`epic/<name>/waiting/`) は受けない**
+(2026-09-08 時点)。受けない名前の配下は**走査対象外 = 一覧に出ない**ので、group に waiting を
+置きたくなったら先に `EpicChildStatus` / `scanEpicDir` / `hasEpicMarkdown` / `issuesWatchDirs` の
+4 者を揃えること (`TestEpicChildStatusReachedByAllThreeConsumers` が 3 経路の一致を守っている)。
 
 group 内の状態ディレクトリは `next/` `done/` `pending/` の 3 つだけを予約する
 (`EpicChildStatus` が唯一の出典)。global 側と違って綴りの揺れ (`closed` / `completed` /
@@ -527,6 +533,30 @@ viewer は `status:` があれば表示し、**パスと食い違う場合は融
 - **採番コマンドの視界外になる**: `issues/README.md` の次番号確認はディレクトリを固定列挙して
   いるため、最大番号の issue が `ongoing/` に滞在すると番号が再利用される (実測)。
   もし `ongoing/` を作るなら**先に採番コマンドを全ディレクトリ走査へ直す**こと
+
+### `waiting/` は作った (2026-09-08) — ongoing との違い
+
+上の「`ongoing/` を作らない」は**取り消していない**。`waiting/` を別に作ったのは、
+反対理由が waiting には当たらないため:
+
+| `ongoing/` を作らない理由 | `waiting/` に当たるか |
+|---|---|
+| 記帳する時間が無い (作成→done が 4〜24 分) | **当たらない**。waiting の滞在は無期限 (obaket 742 は再現待ちで期限が引けない) |
+| 1 ファイル 1 ディレクトリでは表せない (pending の 2 件は「着手済み・一部完了・trigger 待ち」を同時に満たす) | **当たるが、それが理由で分けた**。その 2 件はまさに waiting 側で、`pending` の語義 (凍結) が実態と乖離していた |
+| 採番コマンドの視界外になる | **解消済み**。obaket の `bin/next-issue-number` は再帰走査で `waiting/` も数える (2026-09-08 実測) |
+
+pending と waiting を分ける軸は **再開の主導権が誰にあるか**:
+
+- **pending** = 凍結。自分の判断で `issues/` へ戻して着手する
+- **waiting** = 着手済み。事象が向こうから来るまで動かしようがない (再現待ち・観測待ち・外部イベント待ち)
+
+起源: obaket issue 742。段階 1 / 1b の実装と観測ログを入れて push 済みで、残るのは
+「次に同じ失敗が出たときのログ 1 行」を待つことだけだった。実装が入っている以上 pending では
+なく、open に置くと「今やれること」の一覧に作業待ちとして並び続ける。同種が obaket に 3 件
+(742 / 543 / 546) あり、一回限りの状況ではなかった。
+
+**ongoing (着手中) は今も作らない。** あちらは滞在が分単位で記帳が定着しないのが理由なので、
+waiting とは事情が違う。
 
 ### viewer がやらないこと
 

@@ -8,7 +8,7 @@
 issues/NNN-<カテゴリ>-<スラッグ>.md
 ```
 
-- **NNN**: 3 桁ゼロ埋めの連番。**issues/ 配下の全体**（直下・`next/`・`pending/`・`done/`・`epic/<name>/`・`epic/<name>/next/`）で最大番号 + 1 を採番する（番号は再利用しない）。状態ディレクトリや group へ移動してもファイル名は変えないため、コードコメント・commit message から「issue 012」で安定して参照できる
+- **NNN**: 3 桁ゼロ埋めの連番。**issues/ 配下の全体**（直下・`next/`・`pending/`・`waiting/`・`done/`・`epic/<name>/`・`epic/<name>/next/`）で最大番号 + 1 を採番する（番号は再利用しない）。状態ディレクトリや group へ移動してもファイル名は変えないため、コードコメント・commit message から「issue 012」で安定して参照できる
 - **カテゴリ**: 下表の prefix のいずれか
 - **スラッグ**: kebab-case の短い説明。日付を残したい場合は末尾に `-YYYY-MM-DD`
 
@@ -100,7 +100,14 @@ Claude が**実質的な作業をやり切った時点**（機能追加・バグ
   **複数マシンが同じ repo を触るので、着手するときはここへ移してその移動だけを即 push する**
   （push されていない claim は他マシンから見えず、二重着手を防げない）。完了したら `done/` へ。
   規範は [`_claude/rules/claim-issue-in-next-and-push.md`](../_claude/rules/claim-issue-in-next-and-push.md)
-- `issues/pending/` — 着手を保留している issue の置き場（着手条件・trigger を本文冒頭に書いておく）
+- `issues/pending/` — **凍結**した issue の置き場。着手条件・trigger を本文冒頭に書いておく。
+  再開の主導権は**自分**にある（条件が揃ったと判断したら `issues/` へ戻して着手する）
+- `issues/waiting/` — **着手済みだが、こちらから起こせない事象を待っている** issue の置き場（`◌`）。
+  pending との違いは**再開の主導権が誰にあるか**: waiting は事象が向こうから来るまで動かしようがない
+  （再現待ち・観測待ち・外部イベント待ち）。本文冒頭に**待っているもの**と、
+  **それが来たとき何が分かるか**を書く（「次に出るログの `step=` で打つべき修正が決まる」等）。
+  観測が来たら `issues/` へ戻して着手する。
+  🚨 **group 内 (`epic/<name>/waiting/`) は未対応**（置くと迷子 `?` になる。理由は viewer spec）
 - `issues/done/` — 完了した issue の移動先（ファイル名は変えずに移動）
 - `issues/epic/<name>/` — **親テーマ（epic）でまとめる group issue** の置き場。中の md は open として扱われ、
   glogx の issues viewer では `<name> (N)` の親行に折り畳まれる（`Enter` / `Space` で展開）。
@@ -114,7 +121,7 @@ Claude が**実質的な作業をやり切った時点**（機能追加・バグ
     持つ issue** だけ (`epic/<NNN>/NNN-*.md`。`issues_view.go` の `g.parent`)。`epic/<slug>/` に
     `NNN-epic-<slug>.md` を置く形も可だが、その親は viewer では子と同じ行に並ぶ。親 issue には目標・
     子 issue の表・完了条件を書き、README は索引に留めて親を指す。親の完了は「子が全て done」
-  - 予約するのは `next/` `done/` `pending/` の 3 つだけ。`closed/` のような綴りの揺れは状態にならず、中の md は迷子 `?` として一覧に出る（黙って消えはしない）
+  - 予約するのは `next/` `done/` `pending/` の 3 つだけ（**`waiting/` は group では未対応**）。`closed/` のような綴りの揺れは状態にならず、中の md は迷子 `?` として一覧に出る（黙って消えはしない）
   - 契約の一次情報は [`docs/issues-viewer-spec.md`](../docs/issues-viewer-spec.md) の「対象 / 状態ディレクトリ」節
 - `audit-log` — audit 実行の記録（TSV）。issue ではない。**issue ファイルをパスで参照しているため、既存ファイルを rename するとここの参照が切れる**
 - この `README.md` も issue ではない
