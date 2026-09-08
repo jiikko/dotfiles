@@ -58,6 +58,9 @@ __av1ify_finalize() {
   # 消すと今度はこちらが相手の作業中ファイルを壊す (同レビュー P1)。
   if ! __av1ify_lock_still_held; then
     print -ru2 -- "🚨 排他を失いました。出力の公開と元ファイルの削除は行いません: ${3:-$1}" >&2
+    # 割り込みハンドラが同じ共有名を消しにいかないよう、進行中マーカーを外す
+    # (引き継いだ側が書いている可能性がある)。
+    __AV1IFY_CURRENT_TMP=""
     REPLY="${3:-$1}"
     return 1
   fi
@@ -904,7 +907,7 @@ __av1ify_one() {
     fi
   else
     local ffmpeg_status=$?
-    [[ -e "$tmp" ]] && rm -f -- "$tmp"
+    __av1ify_rm_own_tmp "$tmp"
     if (( __AV1IFY_ABORT_REQUESTED || ffmpeg_status == 130 )); then
       __AV1IFY_CURRENT_TMP=""
       print -r -- "✋ 中断: $in"

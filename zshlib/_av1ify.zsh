@@ -90,8 +90,8 @@ __av1ify_on_interrupt() {
   __AV1IFY_ABORT_REQUESTED=1
   __av1ify_kill_prefetches
   local tmp="${__AV1IFY_CURRENT_TMP:-}"
-  if [[ -n "$tmp" && -e "$tmp" ]]; then
-    rm -f -- "$tmp"
+  # 共有名なので、保持していないなら消さない (__av1ify_rm_own_tmp が判定する)
+  if [[ -n "$tmp" && -e "$tmp" ]] && __av1ify_rm_own_tmp "$tmp"; then
     print -r -- "✋ 中断要求: 進行中の一時ファイルを削除しました ($tmp)"
   else
     print -r -- "✋ 中断要求: 残りの処理を停止します"

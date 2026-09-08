@@ -273,9 +273,22 @@ chmod +x "$MOCK_BIN_DIR/osascript"
 # 競合 (busy) と取得失敗は、この mock では再現しない (常に成功を返す)。
 cat > "$MOCK_BIN_DIR/lockman" <<'EOF'
 #!/usr/bin/env sh
-# 常に取得成功を返す。呼ばれたサブコマンドを記録できるようにしておく
-# (TEST_LOCKMAN_LOG があれば追記する)。
-if [ -n "${TEST_LOCKMAN_LOG-}" ]; then echo "$1" >> "$TEST_LOCKMAN_LOG"; fi
+# 取得は成功させるが、**呼び方が壊れていたら失敗する**。何でも 0 を返す mock だと、
+# サブコマンドの誤記やトークン引数の欠落が「成功」として通り、配線の退行を検出できない
+# (2026-09-08 の codex 敵対レビュー P2)。
+sub="$1"; shift
+if [ -n "${TEST_LOCKMAN_LOG-}" ]; then echo "$sub $*" >> "$TEST_LOCKMAN_LOG"; fi
+case "$sub" in
+  acquire|renew|release|check|status|with|break|cleanup) ;;
+  *) echo "mock lockman: unknown subcommand: $sub" >&2; exit 2 ;;
+esac
+# av1ify が使う 3 つは、対象ディレクトリと --token-file を必ず渡す契約。
+case "$sub" in
+  acquire|renew|release)
+    case "$1" in ""|-*) echo "mock lockman: $sub にディレクトリが渡っていない" >&2; exit 2 ;; esac
+    echo "$*" | grep -q -- "--token-file" || { echo "mock lockman: $sub に --token-file が無い" >&2; exit 2; }
+    ;;
+esac
 exit 0
 EOF
 chmod +x "$MOCK_BIN_DIR/lockman"
