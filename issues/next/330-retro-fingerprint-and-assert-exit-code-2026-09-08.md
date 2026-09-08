@@ -1,1 +1,0 @@
-../330-retro-fingerprint-and-assert-exit-code-2026-09-08.md

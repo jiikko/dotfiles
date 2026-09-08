@@ -19,7 +19,7 @@ async を一度も通っていなかった（`freeze` の `touch -t` は不在�
 「async が green のまま」を見たとき**に発覚した。
 
 - 切り出し先案: **既存ルールへの追記**
-  [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の
+  [`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) の
   「前提が『早期 return で素通りしていないか』を assert しているか」に、
   **「変異を 1 本しか当てないと、素通りしているケースは red の陰に隠れる」**の一行を足す
   （既存項は「fixture を作った直後に Fatal で固定する」までで、
@@ -32,7 +32,7 @@ zsh が**同一スコープの 2 度目の `local <name>` で変数の内容を 
 指紋が起動出力に混ざって既存テストが 6 件落ちた。`zsh -n` は通る。
 
 - 切り出し先案: **既存ルールへの追記**
-  [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の手順 1.6
+  [`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) の手順 1.6
   （変異の diff を目視する）に、**「構文が通っても、変異が出力・副作用を足していないか見る。
   red が出ても、それが変異の副作用由来なら検知力を何も証明していない」**を足す
 - 却下でもよい: 1.6 は既に「別の変異でも red は出る」と言っており、zsh 固有の実例は
@@ -47,7 +47,7 @@ zsh が**同一スコープの 2 度目の `local <name>` で変数の内容を 
 **先に母集合の sweep を回していたら誤った一覧を issue に残していた**。
 
 - 切り出し先案: **既存ルールへの追記**
-  [`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md)
+  [`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md)
   §4（その機構が CI で実際に走るか、同じ commit で確認する）に、
   **「新設した検査は、その検査が守るはずの修正を*直した直後の実物*に当てて、
   修正前 = 不合格 / 修正後 = 合格 の両方を見る」**を足す。
@@ -62,7 +62,7 @@ pid が再利用されると**別のファイルのプローブを掴む**。エ
 指摘を受けて `パスの cksum + $$ + $RANDOM` に直し、sweep をやり直した。
 
 - 切り出し先案: **既存ルールへの追記**
-  [`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md)
+  [`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md)
   §1 の一時ファイル注記（EXIT trap は 1 本 / `$(...)` の中の生成は親から見えない）に、
   **「並列で走る道具の一時名を `$$` だけで作らない。異常終了の残骸 + pid 再利用は
   *エラーではなく誤った判定結果*として出る」**を足す
@@ -72,7 +72,7 @@ pid が再利用されると**別のファイルのプローブを掴む**。エ
 `make test` / sweep の完了を待つのに、同じ条件の background waiter を**何本も重ねて張った**うえ、
 そのあいだにも手動でポーリングした。完了は 1 秒も早くならず、ユーザーからは
 「進行中です」の繰り返しに見える。
-[`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)
+[`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md)
 の「待つと決めたら待つ」がまさにこれを禁じている。
 
 - 切り出し先案: **却下（ルールは既にある）**。読んでいたのに守れていないので、
@@ -82,14 +82,26 @@ pid が再利用されると**別のファイルのプローブを掴む**。エ
 ### 6. `| tail` が rc を食う罠をまた踏んだ
 
 道具の検証中に `... | tail -20; echo rc=$?` で rc=0 と読み、実際は rc=1 だった。
-[`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)
+[`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md)
 が名指ししている形そのもの。
 
 - 切り出し先案: **却下（ルールは既にある）**
 
 ## 残課題
 
-- [ ] 項目 1〜4 の切り出し（既存ルールへの追記 3 本 + 却下 1 本）の可否をユーザーが判断する
+- [x] 項目 1〜6 の切り出しを 2026-09-08 に実行（commit `docs(330): retro の切り出しを実行する`）
+  - 項目 1 → `mutation-verify-new-tests.md` の「早期 return で素通り」項に
+    「素通りは変異 1 本では red の陰に隠れる。2 本目で分かる」を追記
+  - 項目 2 → 同ルール手順 1.6 に「構文が通っても変異が副作用を足していないか見る。
+    副作用由来の red は検知力を証明しない」を追記（**却下しなかった**: 1.6 の既存文は
+    「意図と違う箇所に当たった」形で、「変異自体が出力を足した」は別の失敗）
+  - 項目 3 → `adversarial-review-own-safeguards.md` §4 に「合格側も見る（偽陽性を持ったまま
+    sweep すると誤った一覧が issue に残る）」を追記
+  - 項目 4 → 同ルール §1 の一時ファイル注記に「並列の一時名を `$$` だけで作らない」を追記
+  - 項目 5 → `verify-execution-not-just-exit-code.md` の「待つと決めたら待つ」に
+    「同じ条件の待ちを 2 本以上重ねない」を 1 行追記（retro は却下寄りだったが、
+    既存文が禁じているのは**手動ポーリングの重ね**で、**waiter の多重張り**は書かれていなかった）
+  - 項目 6 → **却下**（`| tail` が rc を食う罠は既にルールが名指ししている）
 - [x] issue 329（327 の母集合の消化）→ **2026-09-08 に解消**（`issues/done/329-*`）。
       🚨 着手して分かったが、**330 のこの retro を書いた時点の母集合は誤り**だった:
       327 で作った検査の偽陽性を含んでおり、「出ない 18 件」の実数は **9 件**。
