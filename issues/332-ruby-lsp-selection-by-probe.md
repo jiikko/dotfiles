@@ -177,6 +177,63 @@ lualine が status() を直呼びする / lualine から進捗を外す) がい�
 `excludedPatterns` にはテストを付けていない (設定値の再掲にしかならないため。
 [`refuse-low-value-coverage.md`](../_claude/rules/refuse-low-value-coverage.md))。
 
+## 追補 2 (2026-09-08): 参照検索が遅い件と、実行中の表示
+
+commit `feat(332): 実行中の LSP 要求をステータスラインに出す`。
+
+**症状**: メソッドの定義行で `<C-k>` (参照一覧) を押すと、無反応のまま数十秒経ってから
+telescope が開く。
+
+**原因は telescope ではなくサーバ側** (実測 2026-09-08、ubiregi-server の
+`app/models/loaders/base_loader.rb:35 def wrap_error`):
+
+```
+索引完了まで        11.1 s
+references 1 回目   11303 ms  n=33
+references 2 回目   11153 ms  n=33   ← キャッシュされない
+```
+
+`ruby-lsp-0.26.11/lib/ruby_lsp/requests/references.rb:63` は**索引の除外設定を使わず**、
+生の `Dir.glob(File.join(workspace_path, "**/*.rb"))` で全ファイルを毎回 Prism で再パースする:
+
+| 対象 | 件数 | Prism パース実測 |
+|---|---|---|
+| `Dir.glob(**/*.rb)` 全体 | 21148 | 7.04 s |
+| うち `vendor/bundle` | 18468 | (差分 6.2 s = **88%**) |
+| `vendor/bundle` を除く | 2680 | 0.81 s |
+
+つまり参照検索のたびに gem 18468 ファイルを含めて舐め直している。
+**追補 1 で入れた `excludedPatterns` はここには効かない** (索引用の設定で、references は別経路)。
+
+**やったこと**: 速くはできないので、「押しても無反応」に見えないようにした。
+nvim 0.11 の `LspRequest` autocmd (`doc/lsp.txt:656`。payload は
+`{ client_id, request_id, request = { type, bufnr, method } }`) で pending / complete / cancel を
+受け、`M.request_labels` に載せた**ユーザーが明示的に起こす操作だけ**をステータスラインに出す。
+索引 (`$/progress`) が走っているときはそちらを優先する。
+
+🚨 `documentHighlight` / `semanticTokens` / `codeLens` は載せない。CursorHold や編集のたびに
+飛ぶので、出すと点滅するだけで情報にならない。この絞り込みは**表示の有無では検査できない**
+(ラベル表に無いメソッドはどのみち nil になるので、絞り込みを外しても表示は空のまま = 変異が
+green だった)。実際に効いているのは `redrawstatus` を呼ばないことなので、テストは
+**再描画の回数**で見ている。
+
+変異検証 5 本すべて red (対象メソッドの絞り込みを外す / complete で消さない / 索引より
+実行中の要求を優先する / references をラベル表から外す / autocmd を張らない)。
+
+**やらなかったこと (判断と根拠)**:
+
+- `vendor/bundle` を repo の外へ出す (`BUNDLE_PATH` を絶対パスへ) と参照検索は
+  11.2 s → 約 5 s になる見込み (実測の 6.2 s 削減)。ただし仕事の repo の `bundle install`
+  やり直しと、CI / スクリプトが `vendor/bundle` 前提でないかの確認が要るので**人の判断待ち**
+- ripgrep ベースの高速な代替 (`telescope.grep_string`) を別キーに割り当てる案は保留
+  (意味解析ではないので同名メソッドを拾う。要望が出たら足す)
+
+**索引 (`index_all`) は生の全走査ではない** — `configuration.indexable_uris` を使うので
+include/exclude が効き、`vendor/bundle` は除外される。代わりに bundle の gem を gemspec 経由で
+全部索引するので、そこが時間の主因。ディスクへの永続化は無い (`Marshal` の使用は
+`setup_bundler.rb` のエラー保存 1 箇所だけ) ため、**nvim を起動するたびに作り直す**。
+実測: 2 回目以降の索引は **9.6 秒** (初回のみ composed bundle の `bundle install` で数分)。
+
 ## 残タスク (スコープ外)
 
 - 他の Rails project (ubipay 3.1.2 / marshmallow 3.2.2 / filetree-meta-manager 3.2.2) は

@@ -247,10 +247,33 @@ end
 --    結果を保持する。statusline 側は M.progress_status() で保持した文字列を読むこと。
 local progress_text = ""
 
+-- 実行中の要求 (LspRequest)。索引と違い $/progress は飛ばないので、こちらは自分で組む。
+-- ruby-lsp の references は毎回ワークスペース全体を Prism で再パースするため、大きな Rails
+-- project では 10 秒級かかる (実測 2026-09-08 ubiregi-server: references 11.2s。うち parse が
+-- 7.0s で、その 88% が vendor/bundle の 18468 ファイル)。速くはできないので、せめて
+-- 「押したのに何も起きない」に見えないようにする。
+local pending_text = ""
+
 -- statusline から読む。vim.lsp.status() を直接呼ばせないための入口。
+-- 索引 (progress) を優先する: 索引中はどのみち要求が返らないので、原因の方を出す。
 function M.progress_status()
-  return progress_text
+  return progress_text ~= "" and progress_text or pending_text
 end
+
+-- 実行中を表示する要求。**ユーザーが明示的に起こす操作に限る**。
+-- CursorHold ごとに飛ぶ documentHighlight や、編集のたびに飛ぶ semanticTokens / codeLens を
+-- 入れると、ステータスラインが点滅するだけで情報にならない。
+M.request_labels = {
+  ["textDocument/definition"] = "定義を検索中…",
+  ["textDocument/references"] = "参照を検索中…",
+  ["textDocument/implementation"] = "実装を検索中…",
+  ["textDocument/typeDefinition"] = "型定義を検索中…",
+  ["textDocument/hover"] = "ホバー取得中…",
+  ["textDocument/rename"] = "リネーム中…",
+  ["textDocument/formatting"] = "整形中…",
+  ["textDocument/codeAction"] = "コードアクション取得中…",
+  ["workspace/symbol"] = "シンボルを検索中…",
+}
 
 -- documentHighlight 用の単一 augroup。バッファ毎に augroup を作ると空グループ名が
 -- 累積する (バッファ削除後も名前が残る) ため 1 グループに集約し、attach 毎に当該バッファの
@@ -420,6 +443,27 @@ function M.setup(capabilities)
     callback = function(args)
       local value = args.data and args.data.params and args.data.params.value
       progress_text = (value and value.kind == "end") and "" or vim.lsp.status()
+      vim.cmd.redrawstatus()
+    end,
+  })
+
+  -- 実行中の要求を出す。LspRequest は 1 要求につき pending → complete (または cancel) の
+  -- 順で飛ぶ (doc/lsp.txt の LspRequest。payload は { client_id, request_id, request } で
+  -- request = { type, bufnr, method })。id は client ごとなので鍵は client_id と両方で作る。
+  local pending = {}
+  vim.api.nvim_create_autocmd("LspRequest", {
+    group = pgrp,
+    callback = function(args)
+      local data = args.data
+      local req = data and data.request
+      if not req or not M.request_labels[req.method] then return end
+      local key = tostring(data.client_id) .. ":" .. tostring(data.request_id)
+      pending[key] = (req.type == "pending") and M.request_labels[req.method] or nil
+      local label
+      for _, l in pairs(pending) do
+        label = label or l
+      end
+      pending_text = label and ("LSP: " .. label) or ""
       vim.cmd.redrawstatus()
     end,
   })
