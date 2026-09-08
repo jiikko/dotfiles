@@ -25,6 +25,12 @@ glogx の画面のうち、**複数 repo をこの規約に寄せる** / **書�
 | [`glogx-ui-guide.md`](glogx-ui-guide.md) | glogx 全画面に共通する操作感とキー語彙 (vim 層 / emacs 別名層 / 動作層、開閉・破壊的操作・案内の規律、`J`/`K` 項目送り) | 新しいキーを足す / 画面を足す前に読む。個別キーの一覧は `src/glogx/README.md` |
 | [`status-viewer-spec.md`](status-viewer-spec.md) | glogx の status viewer (`s` キー) の stage / unstage | **write する画面**なので「何を絶対にしないか」が本体 |
 
+## 時点の調査記録 (実測。コードが動けば古くなる)
+
+| 文書 | 何を測ったか |
+|---|---|
+| [`../nvim/ruby-refs-index/README.md`](../nvim/ruby-refs-index/README.md) | ruby-lsp の参照検索がなぜ遅いか (索引に呼び出し側が無い) と、呼び出し側索引の実測 (構築 1 秒 / 37 MB / クエリ数 µs)。ripgrep との精度差も。issue 334 |
+
 ## 仕組みの説明 (作ったものの設計)
 
 | 文書 | 何の仕組みか |
