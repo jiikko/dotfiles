@@ -221,12 +221,27 @@ assert が*検知したと言えるか』を書く」そのもので、**同じ�
 
 ## 残課題（この retro を done にする条件 = 下が空になること）
 
-- [ ] A2 / B2 / C1 / C2 / C3 / D の切り出しを実行するかの判断（ユーザー待ち）
-- [ ] 着手対象として残っている 19 件のうち、次にどれをやるかの判断
+- [x] A2 / B2 / C1 / C2 / C3 / D の切り出しを 2026-09-08 に実行
+      （commit `docs(328): retro の切り出しを実行する`）
+  - A2 → `move-report-conclusions-to-issues.md`:「同一セッションで複数の監査を回すなら、
+    次を起こす前に却下理由を書く」（実測: 再提出が 2 件止まった）
+  - B2 → `_claude/skills/audit/SKILL.md`「監査の姿勢」:「件数を書くなら走査した母集合を
+    機械で数えて併記する。母集合を書けない件数は書かない」
+  - C1 → `mutation-verify-new-tests.md` の「守っていないテストの形」へ 3 項
+    （サブシェルへの kill は実体に届かない / 観測対象が生まれるのを待ってから撃つ /
+    zsh の `(( i++ ))` は古い値を返し `err_exit` 下で死ぬ）
+  - C2 → `rules-rationale/verify-execution-not-just-exit-code.md` へ実例 2 件
+  - C3 → `rules-rationale/commit-with-pathspec.md` へ実例 1 件（誤帰属）
+  - D → `adversarial-review-own-safeguards.md` §1.5 の発動条件を「N 段構え」から
+    **「検査・gate・予算を新設したとき（段数によらず）」**へ広げた。見出しごと書き換え
+  - D-3 → 同 rationale へ実例 1 件（手動棚卸し target には退行検出の主体が居ない）
+- [x] 着手対象として残っている 19 件の順序 → **2026-09-08 にユーザーが一括で指定**
+      （333 / 332 / 330 / 328 / 326 / 325 / 324 / 323 / 322 / 321 / 320 / 318 / 317 /
+      316 / 315 / 314 / 313 / 312 / 311 / 310 / 308 / 305 の順）
 
 ## 関連
 
-- 監査結果の記録: [308](308-research-resource-leaks-audit-2026-09-06.md) /
-  [318](318-research-dead-code-and-broken-code-audit-2026-09-06.md) /
-  [324](324-research-performance-audit-2026-09-06.md)
-- 人間の承認待ち: [304](304-human-approve-reaping-6-orphan-tmux-test-servers.md)
+- 監査結果の記録: [308](../308-research-resource-leaks-audit-2026-09-06.md) /
+  [318](../318-research-dead-code-and-broken-code-audit-2026-09-06.md) /
+  [324](../324-research-performance-audit-2026-09-06.md)
+- 人間の承認待ち: [304](../304-human-approve-reaping-6-orphan-tmux-test-servers.md)
