@@ -68,10 +68,10 @@ composed bundle** (ruby-lsp 自身を project の Gemfile に足した `Gemfile`
 | **編集中 (`didChange`)** | `@store.push_edits` のみ。**索引は触らない**。書きかけのメソッドは索引に載らない |
 | **保存・外部変更 (`didChangeWatchedFiles`)** | ファイル単位で差分更新。開いていれば `index.handle_change(uri, content)`、閉じていれば `index_single(uri, content)`、削除なら `index.delete(uri)` |
 
-**nvim 側の前提**: `workspace.didChangeWatchedFiles.dynamicRegistration` は nvim 0.11.5 で
-**macOS と Windows だけ true** (`protocol.lua:565`。Linux/BSD は backend が貧弱なので false)。
-この repo は macOS 専用なので差分更新は効く。Linux で使うなら「保存しても索引が古いまま」に
-なることを織り込む必要がある。
+**nvim 側の前提**: 差分更新は client がファイル監視を登録して初めて効く。nvim 0.11.5 は
+`workspace.didChangeWatchedFiles.dynamicRegistration` を **macOS では true** で広告する
+(`protocol.lua:565`)。この repo は macOS 専用なので (CLAUDE.md「対象プラットフォーム」/ issue 133)、
+差分更新は効く前提で書いてよい。
 
 **帰結**: nvim を起動するたびに 10 秒級の索引が走る。永続キャッシュが無い以上、
 現実的な緩和は「**nvim の起動回数を減らす**」だけ (gem 除外は効果 15% で割に合わない。4 節)。

@@ -74,8 +74,15 @@ if c.fallback ~= 1 then
     usage.fallback_window_ms + 1, c.fallback))
 end
 
--- 3. 書けない場所でも例外を投げない
-usage.path = "/proc/definitely-not-writable/refs_usage.jsonl"
+-- 3. 書けない場所でも例外を投げない。
+-- 🚨 fixture は「なぜ書けないか」がコードから読める形にする。以前は /proc/... を使っていたが、
+-- macOS には /proc が無く、たまたま / が読み取り専用で失敗していただけだった (理由が偶然)。
+-- この repo は macOS 専用 (CLAUDE.md「対象プラットフォーム」) なので、書き込み不可の
+-- ディレクトリを自分で作って使う。
+local ro = tmp .. "/readonly"
+vim.fn.mkdir(ro, "p")
+vim.fn.setfperm(ro, "r-xr-xr-x")
+usage.path = ro .. "/nested/refs_usage.jsonl"
 local ok, err = pcall(usage.record, "ripgrep", "x")
 if not ok then
   fail_cleanup(("書けない場所で record が例外を投げた: %s"):format(tostring(err)))
@@ -84,6 +91,7 @@ if err ~= false then
   fail_cleanup(("書けない場所で record が %s を返した。false であること"):format(tostring(err)))
 end
 
+vim.fn.setfperm(ro, "rwxr-xr-x") -- 権限を戻してから消す (でないと rf でも残る)
 vim.fn.delete(tmp, "rf")
 
 -- 4. lsp.lua の配線を静的に固定する (押して観測するには client と telescope が要るため)
