@@ -23,9 +23,17 @@
 #   - **変数・エイリアス経由** (`G=git; $G commit` / `alias g=git; g commit`)
 #   - **`sh -c "git commit"` / `eval "git commit"` のような入れ子**の引用の中
 #   - **`xargs git commit`** のように git が先頭に来ない起動
-#   - **引用の中に書いた「本物に見える」散文** (`echo "手順: …; git push"`)。引用の対応は
-#     見ているので**閉じた引用の中は発火しない**が、引用が閉じていない断片や、引用の外に
-#     区切り + 裸の `git push` を置いた文章は発火しうる
+#   - **引用の中に書いた「本物に見える」散文**。1 行に閉じた引用の中は発火しないが、
+#     **複数行にまたがる引用**・heredoc の本文・バッククォートの中は発火しうる (実測)
+#   - **`cd X && git commit`** と **`--git-dir` / `--work-tree`**: 行き先として拾わない
+#     (cwd を見る)。`-C` だけを行き先として扱う
+#   - **`-C` の値に空白や改元が入る形** (`git -C "/tmp/my repo" commit`): 単語分割で壊れるので
+#     行き先として拾わない。cwd のブロックは必ず出るので、増えないだけで嘘にはならない
+#
+# 🚨 **`-C` の値は「本文が指定できる」前提で扱う** (2 周目 P1-1)。heredoc やバッククォートの
+# 中に `git -C /path push` と書けば、それが行き先として積まれる。だから呼び出し側は
+# **cwd を常に報告し、`-C` は「追加のブロック」としてのみ足すこと**。行き先の集合で
+# cwd を置き換えると、**本文が「どの repo を検証するか」を乗っ取れる**。
 #   取りこぼしは「検証を注入しそこねる」だけだが、**過剰発火は誤った ground truth を注入する**。
 #   迷ったら発火しない側へ倒す。
 
@@ -71,7 +79,14 @@ git_cmd_invokes() {
   local segment tok rest sub found dir hit=1
   GIT_CMD_TARGET_DIRS=""
 
-  local ifs_bak="$IFS"
+  # 🚨 **安価な前置きフィルタ**。この関数は PostToolUse で**全 Bash 呼び出し**に対して走る。
+  # 下の分割器は文字単位ループなので長さに対して超線形で、実測 (bash 5.3.3) では
+  # git と無関係な 40 KB のコマンドで 4.2 秒かかっていた (敵対レビュー 2 周目 P2-4)。
+  case "$cmd" in *git*) ;; *) return 1 ;; esac
+
+  # IFS は「未設定」と「空」が別物。unset の呼び出し元へ空文字を書き戻すと単語分割が死ぬ。
+  local ifs_bak ifs_was_set=1
+  if [ -z "${IFS+x}" ]; then ifs_was_set=0; else ifs_bak="$IFS"; fi
   while IFS= read -r segment; do
     # 先頭の空白 → シェルのキーワード/前置きコマンド → 環境変数の前置き の順に落とす。
     # `for d in a b; do git -C "$d" push; done` の `do`、`{ git commit; }` の `{` (分割済み)、
@@ -131,6 +146,6 @@ git_cmd_invokes() {
       fi
     done
   done <<< "$(_git_cmd_split "$cmd")"
-  IFS="$ifs_bak"
+  if [ "$ifs_was_set" = 1 ]; then IFS="$ifs_bak"; else unset IFS; fi
   return "$hit"
 }

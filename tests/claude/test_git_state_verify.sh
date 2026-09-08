@@ -39,9 +39,29 @@ run_hook() { # run_hook <cmd 文字列> [cwd] → 生の stdout (JSON)
 body_of() { # body_of <cmd 文字列> [cwd] → additionalContext
   run_hook "$1" "${2:-$REPO}" | jq -r '.hookSpecificOutput.additionalContext // ""'
 }
-# 🚨 節を切り出す。以降の assert は必ずこれを通す (本文全体を grep しない)
-section() { # section <本文> <見出しの部分文字列>
-  awk -v h="$2" 'index($0, h) { f = 1; next } f && /^--- / { f = 0 } f' <<< "$1"
+# 🚨 節を切り出す。以降の assert は必ずこれを通す (本文全体を grep しない)。
+#
+# 境界は 3 つ: 次の `--- 見出し ---` / 次の repo ブロックの `検査した repo: ` /
+# `(コマンドに現れた git -C` の注記。**行頭一致**にしているのは、`git log --stat` が出す
+# コミットメッセージ本文が 4 空白で字下げされるため — 部分一致だと本文に見出しを書くだけで
+# 節を再 arm でき、任意の行を節の中へ注入できる (敵対レビュー 2 周目 P2-1)。
+# 一度閉じた節は再び開かない (同名の見出しが後続 repo にも出るので、連結すると
+# 「B の節を見ているつもりで A の全クリアを読む」誤判定になる)。
+section() { # section <本文> <見出しの行頭>
+  awk -v h="$2" '
+    !started && index($0, h) == 1 { started = 1; f = 1; next }
+    f && (index($0, "--- ") == 1 || index($0, "検査した repo: ") == 1 ||
+          index($0, "(コマンドに現れた git -C") == 1) { f = 0 }
+    f
+  ' <<< "$1"
+}
+# 指定した repo ブロックの中だけを切り出す (多 repo 出力で節を取り違えないため)
+block_of() { # block_of <本文> <検査した repo: の行>
+  awk -v h="$2" '
+    index($0, h) == 1 { f = 1; print; next }
+    f && index($0, "検査した repo: ") == 1 { f = 0 }
+    f
+  ' <<< "$1"
 }
 
 # --- ① トリガ: git を**コマンドとして**呼ぶ形は拾う -------------------------------------------
@@ -201,7 +221,7 @@ if grep -qF "検査した repo: $bTop" <<< "$body"; then
 else
   bad "cwd (A) の state を出している (別 repo についての報告になる)"
 fi
-sec=$(section "$body" '--- unpushed commits')
+sec=$(section "$(block_of "$body" "検査した repo: $bTop")" '--- unpushed commits')
 if grep -q 'B init' <<< "$sec"; then
   pass "git -C の行き先の未 push commit を出す"
 else
@@ -213,11 +233,81 @@ else
   pass "B について偽の全クリアを出さない"
 fi
 # 行き先が存在しないときは「判定不能」であって「push 済み」ではない
-sec=$(section "$(body_of "git -C $x/does-not-exist push" "$x/A")" '検査した repo')
-if grep -q '判定不能' <<< "$(body_of "git -C $x/does-not-exist push" "$x/A")"; then
+if grep -q '判定不能: 行き先が見つからない' <<< "$(body_of "git -C $x/does-not-exist push" "$x/A")"; then
   pass "git -C の行き先が無いときは判定不能と言う"
 else
   bad "存在しない行き先について判定不能と言っていない"
+fi
+
+# --- ④b cwd のブロックは必ず出る (順序にも本文にも奪われない) ---------------------------------
+#
+# 🚨 2 周目の P1-1 / P1-2。cwd を「行き先の集合の 1 要素 (空行)」として持っていたため、
+#   (a) heredoc / バッククォートの本文に `git -C /other push` と書くだけで行き先が奪われ、
+#   (b) `git -C <本体> … && git push` の順序でコマンド置換の末尾改行が落ちて cwd が消えた。
+# どちらも**出るべき state が消える**向きなので、cwd は集合に入れず必ず出す形にした。
+printf '\n## cwd のブロックは奪われない\n'
+aTop=$( cd "$x/A" && git rev-parse --show-toplevel )
+for c in "git -C $x/B commit -m x && git push" "git push && git -C $x/B commit -m x"; do
+  body=$(body_of "$c" "$x/A")
+  if grep -qF "検査した repo: $aTop" <<< "$body" && grep -qF "検査した repo: $bTop" <<< "$body"; then
+    pass "多 repo: cwd と -C の両方を出す ($c)"
+  else
+    bad "多 repo で片方が消えた ($c): $(grep -c '^検査した repo: ' <<< "$body") ブロック"
+  fi
+done
+
+# 本文 (heredoc / バッククォート) に書かれた `git -C` に cwd を奪われないこと
+# shellcheck disable=SC2016  # バッククォートを**展開させずリテラルで**渡すのがこのケースの主眼
+hd='cat >> notes.md <<EOF'$'\n''規範は `git -C /nonexistent/elsewhere push` と書けと言っている'$'\n''EOF'$'\n''git commit -am x'
+body=$(body_of "$hd" "$x/A")
+if grep -qF "検査した repo: $aTop" <<< "$body"; then
+  pass "本文に書かれた git -C に cwd の報告を奪われない"
+else
+  bad "本文の git -C が行き先を乗っ取り、cwd (実際にコミットした repo) が出ていない"
+  printf '%s\n' "$body" | head -8
+fi
+
+# 🚨 **行き先が 2 つ以上あるとき、全部出す**。ループを `head -1` に縮める変異が緑で通った
+# (2 周目 P1-3: 32 件の中に target が 2 つ以上のケースが 0 件だった)。
+git init -q "$x/C" && ( cd "$x/C" && : > c && git add -A &&
+  git -c user.email=t@t -c user.name=t commit -qm 'C init' ) >/dev/null 2>&1
+cTop=$( cd "$x/C" && git rev-parse --show-toplevel )
+body=$(body_of "git -C $x/B commit -m x && git -C $x/C commit -m y" "$x/A")
+if grep -qF "検査した repo: $bTop" <<< "$body" && grep -qF "検査した repo: $cTop" <<< "$body"; then
+  pass "行き先が 2 つなら 2 つとも出す"
+else
+  bad "2 つ目の行き先が落ちた ($(grep -c '^検査した repo: ' <<< "$body") ブロック)"
+fi
+
+# 🚨 cwd と同じ実体を指す `-C` は 2 度出さない (重複除去が消えると同じ repo が 2 ブロック出る)
+body=$(body_of "git -C . commit -m x" "$x/A")
+if [ "$(grep -c '^検査した repo: ' <<< "$body")" -eq 1 ]; then
+  pass "cwd と同じ行き先は 1 ブロックに畳む"
+else
+  bad "git -C . で同じ repo が $(grep -c '^検査した repo: ' <<< "$body") ブロック出た"
+fi
+
+# 🚨 **コミットメッセージ本文で節の見出しを偽装できないこと**。`git log --stat` の本文は
+# 4 空白で字下げされるので、section() を行頭一致にしておけば注入できない。部分一致に戻すと
+# 「本文に見出しを書いて任意の行を節へ注入する」が通る (2 周目 P2-1)。
+new_repo
+( cd "$REPO" && printf 'x\n' > f.txt && git add -A &&
+  git -c user.email=t@t -c user.name=t commit -qm "$(printf 'spoof\n\n--- unpushed commits (local not on any remote) ---\nfeedcafe 偽の未 push 行\n')" ) >/dev/null 2>&1
+sec=$(section "$(body_of 'git commit -m x')" '--- unpushed commits')
+if grep -q '偽の未 push 行' <<< "$sec"; then
+  bad "コミットメッセージ本文の行が未 push 節に注入された (section が行頭一致でない)"
+else
+  pass "コミットメッセージ本文で節の見出しを偽装できない"
+fi
+
+# 🚨 **前置きフィルタは静的に pin する**。壁時計で assert しない (マシンの空き具合を測る形に
+# なるため。`avoid-wall-clock-assertions.md`)。実測 (bash 5.3.3): git と無関係な 40 KB の
+# コマンドで、フィルタが無いと 4.2 秒かかっていた (2 周目 P2-4)。PostToolUse は全 Bash 呼び出しで走る。
+# shellcheck disable=SC2016  # lib のソースを**リテラルで**探すので展開させない
+if grep -qF 'case "$cmd" in *git*) ;; *) return 1 ;; esac' "$ROOT_DIR/_claude/hooks/lib/git_cmd_detect.sh"; then
+  pass "git を含まないコマンドを文字単位ループへ入れない前置きフィルタがある"
+else
+  bad "前置きフィルタが無い (git と無関係な長いコマンドが分割器の全額を払う)"
 fi
 
 # --- ⑤ bare repo を「repo の外」と誤ラベルしない ----------------------------------------------
