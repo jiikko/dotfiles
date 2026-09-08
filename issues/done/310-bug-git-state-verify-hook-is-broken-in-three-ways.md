@@ -165,3 +165,74 @@ grep -rl 'git-state-verify' tests/  →  0 件
 - **未検証**: `git_cmd_invokes` が「検出しない」と宣言した 4 形式（heredoc 本文 / 変数・alias 経由 /
   `sh -c` の入れ子 / `xargs git`）は、意図的に取りこぼす側へ倒しているのでテストを書いていない。
   射程を変えるなら lib ヘッダの脅威モデル節を同じ commit で直す
+
+## 敵対的レビュー 1 周目 (opus / read-only) と、その修正 — 2026-09-09
+
+「壊す手順を見つけろ。壊せなければ壊せなかったと明記しろ」で起動。**P1 が 2 件出た。
+どちらも自分で再現してから直した**（レビューの出力も無検閲では採らない）。
+
+### P1-1: 311 の主張を pin していると書いたテストが、退行を当てても緑だった
+
+`git log HEAD --branches --not --remotes` から `HEAD` を外す（= 311 が直した退行そのもの）を
+当てても **16/16 green**。assert が `grep -q 'unpushed in detached' <<< "$body"` と**本文全体**を
+見ており、`git log -1 --stat` が出す同じ subject にマッチしていた。未 push 節は
+`(none — すべて push 済み)` という**積極的な偽の全クリア**に戻っていたのに緑。
+
+→ 節を切り出す `section()` を入れ、**未 push 節に限って**判定する形へ。逆向きの
+「未 push があるのに『すべて push 済み』と言わない」も対に足した。
+
+### P1-2: 310 が「別 repo についての偽の全クリア」を**新しく作っていた**
+
+310 以前は `git -C <別 repo> commit` で発火しなかったので注入自体が無かった。トリガだけ
+広げた結果、hook は cwd の repo を見たまま「最後のコミット」と「すべて push 済み」を出す。
+実測（A は push 済み / B に未 push、cwd=A で `git -C B commit`）で、A の init commit と
+`(none — すべて push 済み)` が出た。
+
+→ `git_cmd_invokes` が `-C` の値を `GIT_CMD_TARGET_DIRS` に返し、hook が**触った repo ごとに
+1 ブロック**出す形へ。行き先が存在しなければ「判定不能」（`push 済み` に丸めない）。
+
+### P2: 射程の宣言と実装の食い違い（lib ヘッダの「検出しない形」が不完全）
+
+未申告の取りこぼし **5 形**（`{ git commit; }` / `do git -C … push` / `else git commit` /
+`out=$(git push)` / `time git push`）と、未申告の**過剰発火**（引用の中の散文を `;` / `&&` で
+割って独立コマンドと読む）。
+
+→ ① 分割を**引用を見る**形に作り替え（`_git_cmd_split`）② 先頭のシェルキーワード
+（`do then else elif time ! exec nohup env`）を落とす ③ `$(` ` ` ` ( ) { }` でも割る。
+5 形すべて発火し、散文 2 形は沈黙するようになった。
+
+### P3: 変異で緑のままだった主張 4 件 → すべて検査を足した
+
+`(以下略)` / untrusted ヘッダの**意味反転** / `suppressOutput` / 環境変数の前置き。
+bare repo を「git リポジトリの外」と誤ラベルする件も直した。
+
+🚨 **ヘッダの検査を「語の存在」から「文面」へ変えたら、1 回目は `grep -qF` に 3 行の
+パターンを渡した。grep は複数行パターンを行ごとの OR として扱う**ので、1 行目さえ合えば通り、
+**3 行目を反転させても緑のまま**だった。文字列比較（`[ "$got" = "$want" ]`）へ直して red を確認。
+
+🚨 **変異がテスト自身のバグを 1 件炙り出した**: `bad "「検査した repo: $real」が無い"` は
+bash が全角括弧まで変数名に取り込むため、`set -u` の下で**assert が失敗したときだけ**
+スクリプトが死に、集計行に到達しない（= 判定不能を「テストが落ちた」に見せる形）。`${real}` へ。
+
+### 変異検証（11 本、すべて red / baseline green）
+
+判定は 3 値。「変異が未適用」「構文エラー」は red にも green にも丸めず第 3 の結果として出した
+（実際 M4 は 1 回目のハーネスで未適用になり、python で当て直して red を確認した）。
+
+| 変異 | 落ちた assert |
+|---|---|
+| M1 `HEAD` を外す（311 の退行） | detached の未 push を見落とし / 偽の全クリア（2 件） |
+| M2 `検査した repo:` を消す | 出典が無い / `git -C` の報告先も落ちる（2 件） |
+| M3 untrusted ヘッダの意味を反転 | ヘッダの文面が違う |
+| M4 `(以下略)` を出さない | 60 ファイルでも切り詰めを黙る |
+| M5 `suppressOutput` を false | suppressOutput が true でない |
+| M6 環境変数の前置きを落とさない | `FOO=x git commit` が発火しない |
+| M7 `-C` の値を飛ばさない | `git -C …` 3 形が発火しない（計 7 件） |
+| M8 hook が `-C` を無視し cwd を見る | cwd の state を出している / 行き先の未 push が出ない |
+| M9 引用を見ずに区切る | 散文 2 形で過剰発火 |
+| M10 bare の fallback を消す | bare を「repo の外」と誤ラベル |
+| M11 先頭キーワードを落とさない | `do` / `else` / `time` の 3 形が発火しない |
+
+検査は **16 件 → 32 件**。`make test-lint` rc=0、`make test-dir DIR=tests/claude` の出力に
+`[run] tests/claude/test_git_state_verify.sh` が出ることを確認（同 target の失敗は既存の
+`test_dangling_symlinks.sh` 1 本のみで、これは環境側）。
