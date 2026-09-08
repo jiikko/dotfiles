@@ -21,42 +21,99 @@ local ts_js_inlay_hints = {
 }
 
 -- Ruby は project ごとに 1 サーバだけ attach する (ruby_lsp と solargraph を両方 attach すると
--- rubocop 由来の診断が二重に出る)。既定は従来どおり solargraph で、下の allowlist に挙げた
--- project root 配下でだけ ruby_lsp へ切り替える。全体を ruby_lsp に倒さないのは、既存 project が
--- solargraph 前提で運用されており一斉切替の影響を確認していないため。
--- 増やすときはここへ 1 行足す (ruby-lsp gem は使う ruby version ごとに `gem install ruby-lsp`
--- が要る。現状 rbenv 3.2.2 にのみ導入済み)。
--- allowlist の要素を比較可能な形に正規化する (~ 展開 + 末尾スラッシュ除去)。末尾スラッシュが
--- 残ると M.ruby_server_for の dir == root も dir .. "/" の前方一致も両方外れ、その project だけ
--- 無言で solargraph に落ちる (エラーも警告も出ない)。
-function M.normalize_project_root(path)
-  return (vim.fn.expand(path):gsub("/+$", ""))
+-- rubocop 由来の診断が二重に出る)。どちらを使うかは project root ごとに実測して決める:
+-- root に Gemfile があり、かつ **その project の ruby** で ruby-lsp が起動できるなら ruby_lsp、
+-- それ以外は solargraph (= 従来の挙動へ落ちる)。
+--
+-- 🚨 vim.fn.executable("ruby-lsp") では判定できない。rbenv の shim は「どれか 1 つの ruby に
+--    gem が入っていれば」存在するので、未導入の project でも常に 1 を返す (実測 2026-09-08)。
+--    起動できるかは、その project の cwd で実際に走らせる以外に確かめようがない。
+-- 🚨 ruby-lsp を mason で入れてはいけない。mason の ruby で走るため、solargraph が
+--    ubiregi-server で壊れていたのと同じ ABI ミスマッチ (project 3.1.6 / server 3.2.2 →
+--    GEM_PATH が存在しない vendor/bundle/ruby/3.2.0 を指し bundle の gem が全滅 → 索引が
+--    汚染されて自前コードの定義解決まで外す) を再生産する。加えて mason bin は PATH 先頭に
+--    入る (_nviminit.lua) ので、mason 版が入った瞬間に下のプローブごと mason 版へ倒れる。
+--    導入は rbenv 側で人が行う: RBENV_VERSION=<v> gem install ruby-lsp
+--    (required_ruby_version >= 3.0 なので 2.x の project は solargraph のまま)。
+-- 経緯と A-B は issues/332-ruby-lsp-selection-by-probe.md。
+
+-- 環境への問い合わせ。テストが差し替えられるよう M のフィールドに出す (root ごとに 1 回しか
+-- 呼ばれないので、production 側の複雑さはこの 2 関数に収まる)。
+function M.has_gemfile(dir)
+  return vim.uv.fs_stat(dir .. "/Gemfile") ~= nil
 end
 
--- 公開しているのはテストがここを真の出典として読めるようにするため (テスト側へ project パスを
--- 写すと、allowlist を増減したときにテストだけ古い前提のまま緑になる)。
-M.ruby_lsp_projects = vim.tbl_map(M.normalize_project_root, {
-  "~/src/the-rss-reader",
-})
+-- その project の ruby で ruby-lsp が起動できるか (実測 0.13s/root)。
+-- 🚨 rc / stdout の参照まで pcall の中に入れる。vim.system は spawn 失敗 (PATH に無い) で error を
+--    投げ、SystemObj:wait は timeout と割り込みで **nil を返す** (runtime の _system.lua)。外で
+--    res.code に触ると nil デリファレンスになり、それは root_dir の呼び出し元まで抜ける。
+--    nvim の lsp_enable_callback は root_dir を pcall せずサーバ名順に回すので、ここで投げると
+--    後ろに並ぶサーバ (solargraph 以下) がまとめて起動しなくなる。
+-- 🚨 wait の上限は指定値そのものではない。timeout すると SIGKILL を送って**同じ上限でもう一度**
+--    待つので最悪は 2 倍 (2s 指定 → 4s)。しかも fast_only なので待機中は再描画もメッセージも
+--    出ず、ハングと区別がつかない。実測 0.13s に対して 2s は十分な余裕がある。
+function M.ruby_lsp_runnable(dir)
+  local ok, runnable = pcall(function()
+    local res = vim.system({ "ruby-lsp", "--version" }, { cwd = dir, text = true }):wait(2000)
+    -- rc だけでは足りない: rbenv shim は未導入だと rc=127 + stderr "command not found" を返すが、
+    -- バージョン文字列は stdout にしか出ない。逆に出力だけでも足りない (異常終了しても途中まで
+    -- 出ることがある)。両方を見る (実測 2026-09-08)。
+    -- res ~= nil は pcall と冗長 (nil を触っても外の pcall が拾って false になる。変異で確認済み)。
+    -- 明示しているのは、nil が wait の**正常な戻り値**であって例外ではないため。
+    return res ~= nil and res.code == 0 and (res.stdout or ""):match("%d") ~= nil
+  end)
+  return (ok and runnable) and true or false
+end
+
+-- 🚨 この判定が証明するのは「その cwd で rbenv が選ぶ ruby に ruby-lsp gem が load できる」まで。
+--    exe/ruby-lsp の --version は OptionParser のブロックで即 exit(0) するので、実際の起動経路
+--    (BUNDLE_GEMFILE 未設定なら launcher → composed bundle の解決 → bundle install) を通らない
+--    (実測 2026-09-08: ruby-lsp 0.26.11 の exe/ruby-lsp:13)。project の bundle が壊れていると
+--    「プローブは通るが server は起動しない」状態になり、solargraph も抑止済みなので Ruby の
+--    LSP が無言で消える。起動失敗を検出して solargraph へ戻す仕組みは持っていない (issues/332)。
+
+-- root ごとの判定結果。プローブは同期実行なので、同じ root の 2 つ目以降のバッファでは走らせない。
+M.ruby_server_cache = {}
 
 -- project root を担当するサーバ名を返す。返り値が常に 1 つであることが ruby_lsp / solargraph の
 -- 排他の担保で、判定点をここ 1 か所に閉じている (root_dir 側に条件を 2 本書くと、片方の更新漏れが
 -- そのまま二重 attach = 診断の二重表示になる)。
 function M.ruby_server_for(dir)
-  for _, root in ipairs(M.ruby_lsp_projects) do
-    -- "/" 境界を要求する。素の前方一致だと ~/src/the-rss-reader-old のような兄弟が誤爆する
-    if dir == root or vim.startswith(dir, root .. "/") then return "ruby_lsp" end
-  end
-  return "solargraph"
+  local cached = M.ruby_server_cache[dir]
+  if cached then return cached end
+  local server = "solargraph"
+  if M.has_gemfile(dir) and M.ruby_lsp_runnable(dir) then server = "ruby_lsp" end
+  M.ruby_server_cache[dir] = server
+  return server
 end
 
 -- want が担当サーバのときだけ on_dir を呼ぶ (呼ばなければ attach しない)。root は lspconfig
--- 既定の root_markers と同じ { Gemfile, .git } で決める。
+-- 既定の root_markers と同じ { Gemfile, .git } で決めるが、**ruby_lsp を選ぶのは root が git repo
+-- の root そのものであるときだけ**。
+--
+-- 🚨 vim.fs.root は marker を順に、それぞれ上方向へ全探索する (runtime の fs.lua)。Gemfile が
+--    先頭なので「一番近い Gemfile」が勝ち、近い .git は見られない。gem は自分の Gemfile を
+--    同梱していることがあり (実測 2026-09-08: ubiregi-server の vendor/bundle 配下に 156 件、
+--    rbenv 3.1.6 の gems 配下に 152 件)、そのソースへ gd で飛ぶと **その gem のディレクトリが
+--    root** になる (実測: vendor/.../gems/json-2.3.1/lib/json.rb → root=json-2.3.1)。
+--    ruby-lsp は root へ composed bundle (.ruby-lsp/) を掘って bundle install を走らせるので、
+--    vendor ツリーや rbenv の gems ツリーへの書き込みとネットワークが発生する。
+--    solargraph は PATH のバイナリ 1 本で何も書かないので、repo の外はそちらに任せる。
+--    (monorepo のサブ project は repo root に丸められて solargraph のままになる。allowlist
+--     時代も全 project が solargraph だったので退行ではない)
 local function ruby_root_dir(want)
   return function(bufnr, on_dir)
     local name = vim.api.nvim_buf_get_name(bufnr)
-    local dir = vim.fs.root(name ~= "" and name or bufnr, { "Gemfile", ".git" })
-    if dir and M.ruby_server_for(dir) == want then on_dir(dir) end
+    local target = name ~= "" and name or bufnr
+    local ok, dir, server = pcall(function()
+      local d = vim.fs.root(target, { "Gemfile", ".git" })
+      if not d then return nil, nil end
+      if d ~= vim.fs.root(target, { ".git" }) then return d, "solargraph" end
+      return d, M.ruby_server_for(d)
+    end)
+    -- 判定が落ちたら従来の挙動 (solargraph) へ倒す。error を上へ抜かさないのは上記の理由。
+    if not ok then return end
+    if dir and server == want then on_dir(dir) end
   end
 end
 
@@ -129,14 +186,16 @@ M.servers = {
 --   - coc-html-css-support (HTML 内の CSS クラス名補完): ネイティブに直等価なし。html/cssls で部分カバー
 --   - <C-s> range-select (coc-range-select): treesitter incremental_selection 等で代替可 (未設定)
 --   - <C-f>/<C-b> の float スクロール: 0.11 は hover 窓を再フォーカスしてスクロールできるため未マップ
--- 注意: このテーブルの参照元は 2 箇所とも _nviminit.lua (enable_available と
--- mason-tool-installer の ensure_installed)。lsp.lua 内には参照が無い
+-- 値が false のサーバは mason で入れない (enable はする)。ruby_lsp がそれで、実体は rbenv 側の
+-- gem を PATH 経由で使う (理由は上の 🚨 を参照)。mason へ渡すのは M.mason_packages()。
+-- 注意: このテーブルの参照元は _nviminit.lua の enable_available (キー) と、
+-- mason-tool-installer の ensure_installed (M.mason_packages())。
 M.server_packages = {
   ts_ls = "typescript-language-server",
   eslint = "eslint-lsp",
   pyright = "pyright",
   gopls = "gopls",
-  ruby_lsp = "ruby-lsp",
+  ruby_lsp = false, -- mason では入れない (rbenv の gem を使う)
   solargraph = "solargraph",
   html = "html-lsp",
   cssls = "css-lsp",
@@ -148,6 +207,18 @@ M.server_packages = {
   sqlls = "sqlls",
   terraformls = "terraform-ls", -- vim-terraform 置換 (2026-07): 補完/診断/hover を terraform-ls に委譲
 }
+
+-- mason-tool-installer へ渡すパッケージ名。false のサーバ (mason 管理外) を落とす。
+-- フィルタをテーブルの隣に置くのは、_nviminit.lua 側で書くと「false を渡さない」規則が
+-- 参照側へ散り、サーバを足すときに片方だけ更新される形になるため。
+function M.mason_packages()
+  local pkgs = {}
+  for _, pkg in pairs(M.server_packages) do
+    if pkg then table.insert(pkgs, pkg) end
+  end
+  table.sort(pkgs) -- pairs の順は不定。ensure_installed の並びを安定させる
+  return pkgs
+end
 
 -- documentHighlight 用の単一 augroup。バッファ毎に augroup を作ると空グループ名が
 -- 累積する (バッファ削除後も名前が残る) ため 1 グループに集約し、attach 毎に当該バッファの

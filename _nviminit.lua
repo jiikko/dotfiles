@@ -374,8 +374,9 @@ require("lazy").setup({
           local cmd = vim.lsp.config[name] and vim.lsp.config[name].cmd
           -- cmd が関数のサーバ (ruby_lsp / ts_ls / eslint / html / cssls / jsonls / yamlls /
           -- tailwindcss) は実在判定できないため無条件に enable に含める。この場合バイナリ不在は
-          -- 通知されず :LspLog にだけ残る (ruby_lsp は lsp.lua の allowlist で attach 先 project を
-          -- 絞っているので、gem 未導入の ruby version の影響は当該 project 内に閉じる)。
+          -- 通知されず :LspLog にだけ残る (ruby_lsp は lsp.lua の root_dir が「git repo の root
+          -- かつ ruby-lsp が起動できる」project にだけ on_dir を呼ぶので、gem 未導入の ruby
+          -- version では attach 自体が起きない)。
           if type(cmd) ~= "table" or vim.fn.executable(cmd[1]) == 1 then
             table.insert(ready, name)
           end
@@ -399,9 +400,11 @@ require("lazy").setup({
       local lsp = require("dotfiles.lsp")
       require("mason-tool-installer").setup({
         -- goimports は vim-go 廃止に伴う Go 保存時整形 (conform formatters_by_ft.go) の実体。
+        -- mason_packages() は mason 管理外のサーバ (ruby_lsp) を落とす。ruby-lsp を mason で
+        -- 入れると mason の ruby で走り、project と ABI がズレて索引が壊れる (lsp.lua の 🚨)。
         ensure_installed = vim.list_extend(
           { "prettierd", "shfmt", "shellcheck", "goimports" },
-          vim.tbl_values(lsp.server_packages)
+          lsp.mason_packages()
         ),
       })
     end,

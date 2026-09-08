@@ -64,11 +64,76 @@ done
 
 ## todolist
 
-- [ ] `M.ruby_server_for` を Gemfile + 実起動プローブへ差し替え (allowlist を廃止)
-- [ ] `M.server_packages` から ruby_lsp の mason 導入を外す (enable は残す)
-- [ ] `tests/nvim/lsp_ruby_server_select_check.lua` を新しい軸へ書き直す
-- [ ] 変異検証 (プローブ失敗時に solargraph へ落ちるか / 二重 attach しないか)
-- [ ] 実 project (ubiregi-server) で attach 先が ruby_lsp になることを確認
+- [x] `M.ruby_server_for` を Gemfile + 実起動プローブへ差し替え (allowlist を廃止)
+- [x] `M.server_packages` から ruby_lsp の mason 導入を外す (enable は残す)
+- [x] `tests/nvim/lsp_ruby_server_select_check.lua` を新しい軸へ書き直す
+- [x] 変異検証 (15 本中 14 本 red。下記)
+- [x] 敵対的レビュー (read-only / opus) と、その指摘への対応
+- [ ] 実 project (ubiregi-server) で attach 先が ruby_lsp になることを確認 (人間の動作確認待ち)
+
+## 進捗
+
+commit `feat(332): Ruby の LSP サーバ選択を Gemfile + 実起動プローブへ移す`。
+
+### 敵対的レビューで出て、直したもの
+
+- **root が「一番近い Gemfile」になる (P1)**。`vim.fs.root` は marker を**順に**上方向へ全探索
+  するので、`{ "Gemfile", ".git" }` では近い `.git` より先に Gemfile が当たる。Gemfile を同梱した
+  gem のソースへ `gd` で飛ぶと **その gem のディレクトリが root** になる。
+  実測 2026-09-08: `vendor/.../gems/json-2.3.1/lib/json.rb` → root=`json-2.3.1`
+  (`.git` 先頭なら repo root)。Gemfile 同梱の gem は ubiregi-server の vendor 配下に **156 件**、
+  rbenv 3.1.6 の gems 配下に **152 件**。ruby-lsp は root へ composed bundle (`.ruby-lsp/`) を掘って
+  `bundle install` を走らせるので、vendor ツリー / rbenv の gems ツリーへの書き込みが起きていた。
+  → **ruby_lsp を選ぶのは root が git repo の root そのもののときだけ**に限定。
+  それ以外は solargraph (PATH のバイナリ 1 本。何も書かない) に任せる。
+  🚨 レビューの「activerecord へ飛ぶと gem が root」は外れ (activerecord は Gemfile を同梱して
+  いないので root は repo root)。発火するのは同梱している gem に限る。
+- **`res.code` が pcall の外だった (P2)**。`SystemObj:wait` は timeout / 割り込みで **nil を返す**
+  (runtime `_system.lua`)。nil デリファレンスは `root_dir` の呼び出し元へ抜け、nvim の
+  `lsp_enable_callback` は `root_dir` を pcall せずサーバ名順に回すため、**solargraph 以下が
+  まとめて起動しなくなる**。→ 参照を pcall の中へ入れ、`ruby_root_dir` 側も pcall で包んで
+  失敗時は従来の挙動 (solargraph) へ倒す。
+- **wait の上限は指定値の 2 倍** (timeout 後に SIGKILL を送って同じ上限でもう一度待つ)。
+  しかも `fast_only` なので待機中は再描画もされない。→ 5s → **2s** (実測 0.13s に対して十分)、
+  コメントに実際の上限を明記。
+- **テストのスタブが引数を捨てていた (P1)**。`vim.system` のスタブが `cmd` / `opts` を受け取って
+  いなかったため、「cwd を渡さない」「`--version` を落とす」変異が**スイート全体緑**で通った
+  (= この変更の唯一の前提に検査が無かった)。→ 引数を記録して assert。
+- **`vim.fs.root` を定数関数へ差し替えていたので marker が無検査だった (P1)**。marker の順序
+  そのものが load-bearing なのに、空配列にする変異まで緑だった。→ 実ファイルシステムの fixture
+  (repo / vendor 配下の gem / repo 外の gem ツリー) を作り、実物の `vim.fs.root` で検査する。
+- 到達不能だった `== nil` チェックの順序、`table.sort` の無検査、`-1` を焼いた件数比較、
+  `_nviminit.lua` の allowlist を指す stale コメント。
+
+### 変異検証 (15 本)
+
+前半 7 本 (Gemfile 判定を外す / rc だけ / stdout だけ / キャッシュを読まない / pcall を外す /
+mason フィルタを外す / ruby_lsp を mason 管理へ戻す) と、レビュー対応で足した 8 本
+(cwd を渡さない / `--version` を落とす / root ゲートを外す / marker 順を `.git` 先頭へ /
+marker を空へ / wait の上限を外す / mason の sort を消す) がいずれも狙った assert を red にする。
+
+**1 本だけ green**: 「`res ~= nil` を外す」。外側の pcall が nil デリファレンスを拾って同じ
+`false` になるため、観測上の差が無い (冗長な守り)。nil は wait の**正常な戻り値**であって例外では
+ないので、明示は残してコメントで冗長だと書いた。pcall ごと外す変異 (前半 5 本目) は red。
+
+### 未解決 (レビューが出したが、この commit では閉じていない)
+
+- **プローブは起動の証明ではない**。`exe/ruby-lsp` の `--version` は OptionParser のブロックで
+  即 `exit(0)` するので、実際の起動経路 (BUNDLE_GEMFILE 未設定 → launcher → composed bundle の
+  解決 → `bundle install`) を通らない (実測: ruby-lsp 0.26.11 の `exe/ruby-lsp:13`)。project の
+  bundle が壊れていると「プローブは通るが server は起動しない」になり、solargraph も抑止済みなので
+  Ruby の LSP が無言で消える。起動失敗を検出して solargraph へ戻す仕組みは**無い**。
+  → 判定の軸を「近似」から「実起動」へ寄せる設計として別途検討する
+- **`.erb` (eruby) の非対称**。lspconfig の filetypes は ruby_lsp が `{ruby, eruby}`、solargraph が
+  `{ruby}` (実測)。solargraph を選んだ project の `.erb` には**どのサーバも attach しない**。
+  allowlist 時代から同じだが、今後は「その ruby に gem を入れたか」で無言に反転する
+- **`RBENV_VERSION` を export した shell から nvim を起動すると、プローブが全 project で同じ答えを
+  返す**。`rbenv shell 3.1.6` した端末から開くと ruby 2.6 の project まで ruby_lsp に倒れる (未実測)
+- **選択結果が不可視**。どちらのサーバがなぜ選ばれたかを見る手段が無く、gem を入れた後は nvim の
+  再起動が要る (キャッシュの無効化が無い)
+- **mason の残留バイナリ**。`ensure_installed` から外しても mason はアンインストールしない。
+  既に入っているマシンでは `mason/bin/ruby-lsp` が PATH 先頭で shim に勝つ。
+  このマシンでは不在を実測済み (実害なし)
 
 ## 残タスク (スコープ外)
 
