@@ -108,13 +108,16 @@ v1 では pty スモークで実測した回帰 (`TestBrowseBatchedRunesKeyMsg`)
 4. tmux 上で実 TUI を起動し、最外周フレーム・usage オーバーレイ・`j/k/G/Enter/Esc/q`・Alt Screen 復帰を目視
 5. `PasteMsg` の扱いが変わっていないか (貼り付けがキー実行に戻っていないか)
 
-## 他の Go プロジェクトはまだ v1
+## 他の Go プロジェクト
 
-`src/parallel-each` は `github.com/charmbracelet/bubbletea v1.3.10` + `lipgloss v1.1.0` のまま (v1 系では最新)。
-glogx より移行コストが高い: `tea.KeyMsg` / `tea.KeyRunes` の参照が桁違いに多く、`key.Type`/`Runes` → `Code`/`Text`/`Mod` の書き換えに加えて
-**space が `" "` → `"space"` になる変化はコンパイルエラーにならない** (静かに壊れる)。上げるなら 1 モジュールずつ、キー操作の目視確認つきで。
+v1 に残っていた `src/parallel-each` は **2026-09-08 にこの repo から出た**
+(good-chrome-extensions の `src/parallel-each/` へ移動)。そちらは
+`github.com/charmbracelet/bubbletea v1.3.10` + `lipgloss v1.1.0` のままで、
+移行コストが高い理由も変わらない: `tea.KeyMsg` / `tea.KeyRunes` の参照が桁違いに多く、
+`key.Type`/`Runes` → `Code`/`Text`/`Mod` の書き換えに加えて
+**space が `" "` → `"space"` になる変化はコンパイルエラーにならない** (静かに壊れる)。
 
-なお charm 依存を持つ 3 モジュールが**それぞれ独立に版を持つ**ため、揃え忘れは構造的に起きる
+なお charm 依存を持つモジュールが**それぞれ独立に版を持つ**ため、揃え忘れは構造的に起きる
 (揃える仕組みは今はない)。🚨 **「同じ依存の版がずれている」ではない — モジュールパスから違う**。
 実測 (2026-09-03):
 
@@ -122,9 +125,8 @@ glogx より移行コストが高い: `tea.KeyMsg` / `tea.KeyRunes` の参照が
 |---|---|---|---|
 | glogx | `charm.land/bubbletea/v2` v2.0.8 | v0.11.7 | 無し (ultraviolet へ移行) |
 | schedkeys | `charm.land/bubbletea/v2` v2.0.9 | v0.11.8 | 無し (同上) |
-| parallel-each | `github.com/charmbracelet/bubbletea` v1.3.10 | v0.10.1 | v1.1.0 |
 
 v2 は `charm.land/bubbletea/v2`、v1 は `github.com/charmbracelet/bubbletea` で**別モジュール**なので、
-`go get -u` で片方を上げてももう片方は動かない。`lipgloss` に依存しているのは parallel-each だけ
-(v2 の 2 本は `ultraviolet` に移っている)。同じ v2 どうしの glogx と schedkeys も版がずれている
-(2.0.8 / 2.0.9)。
+`go get -u` で片方を上げてももう片方は動かない (この repo に残る 2 本はどちらも v2 で
+`ultraviolet` へ移行済み、`lipgloss` 依存は無い)。同じ v2 どうしの glogx と schedkeys も
+版がずれている (2.0.8 / 2.0.9)。

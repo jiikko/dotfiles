@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 # go_autobuild.zsh — bin/<tool> ラッパー共通の「ソースが変わっていれば再ビルド」機構。
-# bin/glogx, bin/parallel-each, bin/disassemble_excel が source する。
+# bin/glogx, bin/disassemble_excel が source する。
 #
 # 再ビルドするかは「ビルド入力の指紋」で決める (_go_autobuild_fingerprint / _go_autobuild_stale)。
 # 前回ビルドした指紋を .autobuild.built に残し、起動のたびに今の指紋と比べるだけ (実測 0.66ms)。

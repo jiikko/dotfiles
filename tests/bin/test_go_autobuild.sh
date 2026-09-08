@@ -661,7 +661,7 @@ printf '\n## あとから始まった新しいビルドが、先に終わった�
 # 🚨 install ガードは「順序」を見る必要がある。内容一致だけで見ると「あとから完走した方が
 # 無条件で降りる」になり、最新の入力でビルドした方が捨てられる。ここが効かないと、stale
 # トーストが案内する復旧手順 (GO_AUTOBUILD_SYNC=1) が先行 builder に負けて旧版のまま起動する。
-# 同期が既定の parallel-each / disassemble_excel では「旧版の結果を新コードの結果と誤認させない」
+# 同期が既定の disassemble_excel では「旧版の結果を新コードの結果と誤認させない」
 # という設計意図そのものを破る。
 ROOT="$(new_project order)"
 FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null

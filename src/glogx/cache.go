@@ -148,8 +148,9 @@ func pruneToLimit(statuses map[string]cacheEntry) {
 //
 // 掃除する道具を作るなら、writeAtomic 経由の全経路は **再帰の** `**/*.tmp.*` で当たる
 // (CI キャッシュは `<base>/github.com/<owner>/<name>.json` なので top level の glob には
-// 当たらない)。`doctor-history` の `.<乱数>.tmp` (src/doctor/disk/delete.go) と
-// parallel-each は命名が別なので、別の glob が要る。
+// 当たらない)。`doctor-history` の `.<乱数>.tmp` (src/doctor/disk/delete.go) は
+// 命名が別なので、別の glob が要る (parallel-each も別命名だったが、2026-09-08 に
+// この repo から出た)。
 //
 // 🚨 **閉じるのは error-return 経路だけ**。CreateTemp と Remove の間で SIGKILL / panic した
 // 残骸はこの実装でも残る (issue 219)。

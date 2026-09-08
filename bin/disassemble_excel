@@ -2,7 +2,9 @@
 # disassemble_excel — extract Excel (.xlsx/.xlsm) sheets, formulas and VBA macro
 # source into a directory of diffable text files. Go implementation at:
 #   ~/dotfiles/src/disassemble_excel/
-# 再ビルドは同期 (bin/parallel-each と同じ理由)。機構は bin/lib/go_autobuild.zsh。
+# 再ビルドは同期。出力を後段のパイプやエディタが読むので、旧版の結果を新コードの
+# 結果と誤認させないため (非同期だと初回起動が旧バイナリのまま走る)。
+# 機構は bin/lib/go_autobuild.zsh。
 
 set -u
 

@@ -120,3 +120,9 @@ URL として parse できない行の扱い、scheme / port 違いの統合) �
 - 同一ホストへの接続が待たされている間、他ホストの仕事を先に進める形にするか
   (= キューをホスト単位に分けるのか、1 本のキューから取り出す時にホストの空きを見るのか)
 
+## 2026-09-08: parallel-each はこの repo から出た
+
+`src/parallel-each/` と `bin/parallel-each` を削除し、good-chrome-extensions の
+`src/parallel-each/` へ移した (ユーザー指示)。**この issue の実装対象はこの repo に
+存在しない**ので、着手するなら向こうの repo で行う。ここに残してあるのは要求
+(ホスト単位のキュー) の記録としてで、dotfiles 側で着手することはもう無い。
