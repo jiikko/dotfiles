@@ -1147,7 +1147,9 @@ EOF
     # 各ファイルは av1ify() を通して単体処理ルートを再利用（直列実行）
     __av1ify_run_batch "${files[@]}"
   else
-    __av1ify_one "$target"
+    # 排他つきの入口を通す (__av1ify_one を直接呼ばない)。理由は
+    # _av1ify_encode.zsh の「対象ファイル単位の排他」節。
+    __av1ify_one_locked "$target"
   fi
 }
 
