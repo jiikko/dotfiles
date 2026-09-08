@@ -234,6 +234,52 @@ include/exclude が効き、`vendor/bundle` は除外される。代わりに bu
 `setup_bundler.rb` のエラー保存 1 箇所だけ) ため、**nvim を起動するたびに作り直す**。
 実測: 2 回目以降の索引は **9.6 秒** (初回のみ composed bundle の `bundle install` で数分)。
 
+## 追補 3 (2026-09-08): <C-k> を Ruby のメソッドだけ ripgrep へ回す
+
+commit `feat(332): <C-k> を Ruby のメソッドだけ ripgrep へ振り分ける`。
+
+**なぜ索引が効かないのか** (ソース確認):
+
+- `ruby_indexer` の `Entry` は `Class` / `Module` / `Constant` / `Member` (メソッド) /
+  `Accessor` / パラメータ…と**宣言だけ**。呼び出し側の逆引きテーブルが無い。
+  だから参照検索は索引から答えられず、全ファイルの AST を歩き直すしかない
+- さらにメソッドの一致条件は `reference_finder.rb:285` の
+  `node.name.to_s == @target.method_name` で **名前一致のみ**（レシーバの型解析なし）。
+  11 秒かけて得られる精度は単語一致の grep とほぼ同じ
+- **定数・クラスは別**: `collect_constant_references` が `index.resolve` で名前空間を解決する
+  ので、こちらは grep より正確
+
+**上流の状況**: [Shopify/ruby-lsp#3051](https://github.com/Shopify/ruby-lsp/issues/3051)
+「Find references in nvim takes about 35 seconds」(40,190 ファイル / v0.23.5) は
+**closed as not planned**。直る見込みが無いので client 側で回避する。
+
+**公式ドキュメントの確認** ([Editors | Ruby LSP](https://shopify.github.io/ruby-lsp/editors.html)):
+
+- **mason での導入は明確に非推奨**「Using Mason to manage your installation of the Ruby LSP may
+  cause errors」— 依存に C 拡張があり、Ruby ABI ごとに分ける必要があるため。
+  推奨は version manager で ruby version ごとに `gem install`。**本 issue の実装と一致**
+- nvim 0.11+ 向けの推奨形は `vim.lsp.config` / `vim.lsp.enable` (本 repo は既にその形)
+- `init_options` で渡せるのは `enabledFeatures` / `featuresConfiguration` / `indexing` /
+  `formatter` / `linters` / `experimentalFeaturesEnabled` / `addonSettings`。
+  **references を無効化する項目は無い** (enabledFeatures の一覧に references は載っていない)
+
+**やったこと**: `<C-k>` を対象で振り分ける。
+
+| カーソル下 | 経路 | 実測 |
+|---|---|---|
+| Ruby のメソッド / ローカル (小文字始まり) | ripgrep (`telescope.grep_string`, `-w`) | 0.104 s |
+| Ruby の定数 / クラス (大文字始まり) | LSP references (index.resolve が効く) | — |
+| Ruby 以外 (go / ts など) | LSP references (型解析つきで速い) | — |
+
+`vendor/bundle` は rg が `.gitignore` を尊重するので自動的に外れる (`~/.gitignore_global:14`)。
+rg 側の欠点はコメント・文字列・シンボル (`:wrap_error`) も拾うこと。
+
+変異検証 4 本すべて red (大文字始まりの判定 / filetype の絞り込み / 空語の判定 /
+`<C-k>` の配線)。🚨 当初は `::` を含む語も定数扱いする分岐を入れていたが、変異で外しても
+green だった。調べると Ruby バッファの `iskeyword` は `@,48-57,_,192-255` で `:` を含まず、
+**`<cword>` は `Loaders::BaseLoader` の上でも `BaseLoader` しか返さない** (実測)。
+到達しない死に分岐だったので削除した。
+
 ## 残タスク (スコープ外)
 
 - 他の Rails project (ubipay 3.1.2 / marshmallow 3.2.2 / filetree-meta-manager 3.2.2) は

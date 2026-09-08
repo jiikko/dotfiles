@@ -260,6 +260,36 @@ function M.progress_status()
   return progress_text ~= "" and progress_text or pending_text
 end
 
+-- <C-k> (参照一覧) の振り分け。Ruby の **メソッド / ローカル**だけ ripgrep へ回し、
+-- 定数・クラスと Ruby 以外は LSP の references を使う。
+--
+-- 🚨 ruby-lsp の references は索引を使わない。requests/references.rb:63 が索引の除外設定を
+--    無視した生の `Dir.glob(workspace/**/*.rb)` で全ファイルを毎回 Prism で再パースする。
+--    索引 (ruby_indexer の Entry) が持っているのは**宣言だけ**で、呼び出し側の逆引きが無いため。
+--    しかもメソッドの一致条件は reference_finder.rb:285 の
+--    `node.name.to_s == @target.method_name` で **名前一致だけ** (レシーバの型解析は無い) なので、
+--    11 秒かけて得られる精度は単語一致の grep とほぼ変わらない。
+--    実測 2026-09-08 (ubiregi-server, base_loader.rb の wrap_error):
+--      LSP references 11.2s (2 回とも。キャッシュ無し) / rg -w 0.104s = 約 100 倍
+--      Dir.glob の対象 21148 件のうち 18468 件 (88%) が vendor/bundle
+--    上流も既知 (Shopify/ruby-lsp#3051 "Find references in nvim takes about 35 seconds") で
+--    **closed as not planned**。直る見込みが無いので client 側で回避する。
+-- 定数・クラスを LSP に残すのは、collect_constant_references が index.resolve で名前空間を
+-- 解決しており、grep より正確なため (同名の定数を別 namespace から区別できる)。
+-- rg 側の欠点はコメント・文字列・シンボル (:wrap_error) も拾うこと。
+-- vendor/bundle は rg が .gitignore を尊重するので自動的に外れる (~/.gitignore_global:14)。
+M.ripgrep_reference_filetypes = { ruby = true, eruby = true }
+
+-- ripgrep へ回すべきカーソル下の語かを判定する。公開しているのはテストが真の出典として
+-- 読めるようにするため (判定を写すと、片方だけ変えたときにテストが古い前提で緑になる)。
+function M.use_ripgrep_references(filetype, word)
+  if not M.ripgrep_reference_filetypes[filetype] then return false end
+  if word == nil or word == "" then return false end
+  -- 大文字始まり = 定数 / クラス。`::` を含むものも定数参照なので LSP へ回す
+  if word:match("^%u") or word:find("::", 1, true) then return false end
+  return true
+end
+
 -- 実行中を表示する要求。**ユーザーが明示的に起こす操作に限る**。
 -- CursorHold ごとに飛ぶ documentHighlight や、編集のたびに飛ぶ semanticTokens / codeLens を
 -- 入れると、ステータスラインが点滅するだけで情報にならない。
@@ -318,7 +348,19 @@ local function on_attach(client, bufnr)
   -- ジャンプ (coc: gd=定義 / gD=実装 / <C-k>=参照)
   map("n", "gd", function() tb().lsp_definitions() end, "定義へジャンプ (LSP definitions)")
   map("n", "gD", function() tb().lsp_implementations() end, "interface の実装一覧へ (LSP implementations)")
-  map("n", "<C-k>", function() tb().lsp_references() end, "参照元一覧 (LSP references)")
+  map("n", "<C-k>", function()
+    local word = vim.fn.expand("<cword>")
+    if not M.use_ripgrep_references(vim.bo[bufnr].filetype, word) then
+      return tb().lsp_references()
+    end
+    -- 検索範囲は LSP の root に合わせる (nvim の cwd が project 外でも同じ結果になるように)
+    tb().grep_string({
+      search = word,
+      word_match = "-w",
+      cwd = client.root_dir or vim.fn.getcwd(),
+      prompt_title = ("参照 (ripgrep): %s"):format(word),
+    })
+  end, "参照元一覧 (Ruby のメソッドは ripgrep、定数と他言語は LSP)")
 
   -- <C-j>: interface 上なら実装へ、無ければ定義へフォールバック。
   -- coc 時代の <C-j> の意図 (実装優先 → 無ければ従来の定義ジャンプ) をネイティブで再現する。
