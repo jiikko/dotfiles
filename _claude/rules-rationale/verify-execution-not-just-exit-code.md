@@ -243,3 +243,33 @@ Ruby の LSP が効かない調査で、最初のプローブを `nvim -l script
 **その 2 行上と rule 自身のコメントを読まずに**「新設したものだけが外れている」と書いた
 (`verify-design-intent-before-refactor.md` の「ドキュメント / コメントに『意図的』と明記されて
 いないか確認する」)。放置すれば、次の人が `test-lint` に入れて lint が数十分になっていた。
+
+## 1 経路の観測を全経路に一般化した (2026-09-08, ThumbnailThumb 546/547)
+
+issue 546 は「dev build と App Store 版は**別 bundle** なので sandbox container が分かれ、flock が
+共有されない」と書いていた。これを反証しようとして次の 2 つを確認した:
+
+- `project.yml` の Debug / Release / MAS がすべて `PRODUCT_BUNDLE_IDENTIFIER: com.jiikko.thumbnailthumb`
+- `~/Library/Containers/com.jiikko.thumbnailthumb/.../savelocks/` に lock file が実在する
+
+ここから **「だから全経路が container を共有する。障害は消える」と結論**し、報告・issue・設計書に書いた。
+
+誤りだった。敵対レビューが実測で反証した: `Makefile` の `CODE_SIGNING_ALLOWED=NO` により
+`make dev` / `make test` の成果物は署名されず**非 sandbox** になり、`.cachesDirectory` が container ではなく
+`~/Library/Caches` に解決される。実測すると **`~/Library/Caches/.../savelocks/` に 4005 個、
+container 配下に 9 個**の lock file が**両方**実在した。経路を分けていたのは bundle id ではなく
+**sandbox の on/off** だった。
+
+失敗の形は「**X が存在する**」という観測を「**常に X になる**」の根拠に流用したこと。
+観測の存在範囲と主張の対象範囲を一致させていなかった。
+
+🚨 **この教訓から素朴に導かれる「反対側の経路が無いことを数えて確かめる」は採らなかった**
+(切り出し時の敵対レビューが反証した)。成果物の件数は「その経路が一度使われた」証拠にしかならず、
+**反対側に成果物が無いことは、その経路が存在しない証明にならない**。546 自身も
+「4005 / 9 という件数と mtime は実測だが、どちらをどのプロセスが書いたかの帰属は推論」と
+認めている。数で全経路を確認できるという規範を足すと、同じ誤りを別の形で固定することになる。
+
+なお一般則そのものは既に 4 箇所にある (`mutation-verify-new-tests.md` の等価変異判定 /
+`verify-design-intent-before-refactor.md` の効能主張 / `perf-claims-need-measurement.md` の測定経路 /
+本ルールの「対立仮説を棄却できるか」)。いずれも発動点がテスト・refactor・性能・観測設計に
+限定されていたため、「調査して不在・存在を反証し、それを報告する」経路をカバーしていなかった。
