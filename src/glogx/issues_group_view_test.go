@@ -88,7 +88,9 @@ func TestIssuesViewGroupParentActionsAreNoopWithNotice(t *testing.T) {
 	if !v.currentIsGroup() {
 		t.Fatal("前提: 初期カーソルが group 親行にない")
 	}
-	for _, key := range []string{"shift+down", "y", "p", "Y", "N", "o", "n"} {
+	// y はここに入れない: 親行の y は「group 名のコピー」という別の意味を持つ
+	// (TestIssuesViewGroupParentCopiesGroupName)。
+	for _, key := range []string{"shift+down", "p", "Y", "N", "o", "n"} {
 		before := v.cursor
 		v.handleKey(key, vp(10))
 		if v.cursor != before || v.open != nil || v.markNext.active {
@@ -98,6 +100,69 @@ func TestIssuesViewGroupParentActionsAreNoopWithNotice(t *testing.T) {
 			t.Fatalf("親行で %q が no-op notice を出していない", key)
 		}
 		v.notice = ""
+	}
+}
+
+// 合成の group 親行の y は group 名をコピーする (ユーザー要望 2026-09-08)。
+// no-op のままだと、epic のパスを組むときに画面の名前を目で読んで打ち直すことになる。
+func TestIssuesViewGroupParentCopiesGroupName(t *testing.T) {
+	copied := stubClipboard(t)
+
+	// 🚨 番号と group 名を**違えて**作る: 一致させると groupHead (実体が issue の親行) になり、
+	// 今書いた分岐へ一度も入らないまま緑になる。前提は下の Fatal で固定する。
+	group := fakeEpicIssue("/repo/issues", "google-drive", "710", "drive", issues.StatusOpen)
+	v := loadedView(group)
+	if !v.currentIsGroup() || v.displayRows[v.cursor].kind != displayRowGroup {
+		t.Fatalf("前提: カーソルが合成の group 親行にない: %+v", v.displayRows)
+	}
+
+	v.handleKey("y", vp(10))
+	if *copied != "google-drive" {
+		t.Fatalf("group 名がコピーされていない: %q", *copied)
+	}
+	if text, ok := v.takeNotice(); !ok || !strings.Contains(text, "group 名をコピーしました: google-drive") {
+		t.Fatalf("コピーの通知が想定と違う: %q", text)
+	}
+}
+
+// クリップボードへ入れるのは**生の** group 名で、画面用の無害化を混ぜない (貼り先は
+// `issues/epic/<name>/` のパスや grep なので、書き換えると別物になる)。通知の方は
+// setNotice が無害化するので、1 行の枠は壊れない。
+func TestIssuesViewGroupParentCopiesRawGroupNameButSanitizesNotice(t *testing.T) {
+	copied := stubClipboard(t)
+
+	name := "drive\tsync"
+	group := fakeEpicIssue("/repo/issues", name, "710", "drive", issues.StatusOpen)
+	v := loadedView(group)
+	if !v.currentIsGroup() {
+		t.Fatalf("前提: カーソルが合成の group 親行にない: %+v", v.displayRows)
+	}
+
+	v.handleKey("y", vp(10))
+	if *copied != name {
+		t.Fatalf("コピーに無害化が掛かった (貼り先で別物になる): %q", *copied)
+	}
+	text, _ := v.takeNotice()
+	if strings.ContainsAny(text, "\t\n") {
+		t.Fatalf("通知に制御文字が残った (1 行の枠が壊れる): %q", text)
+	}
+}
+
+// 統合した親 issue 行 (groupHead) の y は従来どおりパス。親行の判定を isGroupParent へ
+// 広げると、実体のある親 issue のパスコピーが group 名に化ける。
+func TestIssuesViewGroupHeadRowStillCopiesPath(t *testing.T) {
+	copied := stubClipboard(t)
+
+	parent := fakeEpicIssue("/repo/issues", "467", "467", "asset-library", issues.StatusOpen)
+	child := fakeEpicIssue("/repo/issues", "467", "468", "child", issues.StatusOpen)
+	v := loadedView(parent, child)
+	if v.currentIsGroup() || !v.displayRows[v.cursor].groupHead {
+		t.Fatalf("前提: カーソルが統合した親 issue 行にない: %+v", v.displayRows)
+	}
+
+	v.handleKey("y", vp(10))
+	if *copied != parent.Path {
+		t.Fatalf("統合した親行の y がパスをコピーしていない: %q", *copied)
 	}
 }
 

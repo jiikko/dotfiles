@@ -1529,7 +1529,15 @@ func (v *issuesView) numberFilterKey(key string, rows int) tea.Cmd {
 func (v *issuesView) actionKey(key string) (tea.Cmd, bool) {
 	if v.open == nil && v.currentIsGroup() {
 		switch key {
-		case "v", "e", "y", "p", "Y", "N":
+		case "y":
+			// 合成の親行に issue は無いが、**group 名という identity はある**ので y だけは
+			// 意味を持たせる (ユーザー要望 2026-09-08)。no-op のままだと、epic のパスを組む
+			// ときや grep するときに画面の名前を目で読んで打ち直すことになる。
+			// 統合した親 issue 行 (groupHead) はここへ来ない — あちらは実体が issue なので
+			// y は従来どおりパスをコピーする。
+			v.copyGroupName()
+			return nil, true
+		case "v", "e", "p", "Y", "N":
 			v.setNotice("親行では issue 操作はできません", false)
 			return nil, true
 		}
@@ -1849,6 +1857,21 @@ func (v *issuesView) copyLines(lines []string, label string) {
 		return
 	}
 	v.setNotice(strconv.Itoa(len(lines))+" 件の"+label+"をコピーしました: "+lines[0]+" ほか", true)
+}
+
+// copyGroupName は合成の group 親行の名称をコピーする (y)。
+//
+// 🚨 画面用に無害化した名前 (groupLine の sanitizePlainLine) ではなく **生の GroupName** を
+// クリップボードへ入れる。コピーの用途は `issues/epic/<name>/` を組む・grep することなので、
+// 表示のための書き換えを混ぜると「見えている名前」と「貼った名前」が食い違う
+// (~/.claude/rules/survey-receiver-guards-before-passing-new-values.md の doctor の実例と同型)。
+// 通知の方は setNotice が無害化するので、端末を壊す名前でも枠は壊れない。
+func (v *issuesView) copyGroupName() {
+	row, ok := v.currentDisplayRow()
+	if !ok || row.kind != displayRowGroup {
+		return
+	}
+	v.copyText(row.groupName, "group 名をコピーしました: ")
 }
 
 // copyNextNumber は次に採番すべき番号をコピーする (N)。走査済みの全ディレクトリから計算する
