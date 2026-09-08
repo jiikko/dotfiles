@@ -419,12 +419,26 @@ require("lazy").setup({
     version = "*", -- プリビルドバイナリを使う。main/build=cargo は cargo 非搭載機で起動時に死ぬ
     event = { "InsertEnter", "CmdlineEnter" },
     opts = {
-      keymap = { preset = "enter" }, -- <CR> で確定 (coc#pum#confirm の踏襲。未選択時は改行にフォールバック)
+      -- <CR> で確定 (coc#pum#confirm の踏襲)。preset "enter" の実体は
+      -- ['<CR>'] = { 'accept', 'fallback' }（blink/cmp/keymap/presets.lua:76）で、
+      -- **選択中の候補が無いときだけ** 改行へフォールバックする。
+      keymap = { preset = "enter" },
       appearance = { nerd_font_variant = "mono" },
       sources = { default = { "lsp", "path", "snippets", "buffer" } },
       signature = { enabled = true },
-      -- 候補選択で説明/型を自動表示 (blink 既定は auto_show=false)
-      completion = { documentation = { auto_show = true, auto_show_delay_ms = 500 } },
+      completion = {
+        -- 🚨 preselect を切る。blink の既定は `selection = { preselect = true, auto_insert = true }`
+        --    (config/completion/list.lua) で、**メニューが開いた瞬間に先頭候補が選択済み**になる。
+        --    そのため上の fallback には決して落ちず、`<CR>` が常に accept へ食われる。
+        --    Ruby は補完の trigger characters に `:` を含む (solargraph は [".", ":", "@"]) ので、
+        --    `key:` と打った直後の Enter が必ず候補確定になり、改行が入らない。
+        --    実測 2026-09-08 (pty で打鍵): `def baz<CR>` が候補 `bar` に置換され、改行も入らなかった。
+        --    preselect=false なら「明示的に選んだときだけ確定、それ以外は素の改行」になる。
+        --    候補の選択は <C-n>/<C-p>/<Up>/<Down>、確定はそのあとの <CR>。
+        list = { selection = { preselect = false } },
+        -- 候補選択で説明/型を自動表示 (blink 既定は auto_show=false)
+        documentation = { auto_show = true, auto_show_delay_ms = 500 },
+      },
       -- プリビルドバイナリが無い環境では Lua 実装へ自動フォールバック
       fuzzy = { implementation = "prefer_rust_with_warning" },
     },
