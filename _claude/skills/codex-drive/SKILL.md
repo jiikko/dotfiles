@@ -568,6 +568,10 @@ command codex exec -s workspace-write -C "$ROOT" -m gpt-5.6-luna -c model_reason
 - <触らない領域 / 既存方針 / 依存方針 / Linux ビルド維持 等>
 - 構造方針: <[R] の判定を貼る。長期運用なら「症状パッチ・特例分岐で凌がず前提を直す。ただし今使わない
   抽象・設定可能化は足さない」/ 最小変更なら「既存構造に追従し、構造改修を持ち込まない」>
+- production 型に **test 専用の状態・観測 API・barrier を足さない** (counter / waiter / 到達通知 /
+  停止用 seam)。interleaving を固定したいときはテスト側だけで観測できる形 (bounded yield + flag、
+  fake の注入、既存の internal 診断 counter) に留め、それでも固定できないなら「pin なし」として
+  要約に書く。判断基準は `_claude/rules/refuse-low-value-coverage.md` の「テスト困難 × 価値」表。
 - 確証が持てない点は決め打ちせず ⓥ コメントを残し保守的に実装する。
 終わったら、変更点・検証結果・未完部分を要約。
 EOF
@@ -709,6 +713,15 @@ git worktree list   # 消えたことを確認する
   指示外ファイルへの変更・半端な編集を弾く。**構造方針との乖離も弾く**: 長期運用判定のタスクに
   症状パッチ・特例 if 分岐・「このケースだけ救う」ワークアラウンドが入っていないか / 逆に最小変更判定の
   タスクに頼んでいない抽象化・機構の新設が入っていないか (どちらの方向の逸脱も差し戻す)。
+  🚨 **production に test 専用の状態が入っていないか**を毎回見る (名前に `ForTests` / `Diagnostics` /
+  `waitFor…` が付く stored property・actor・public/internal API、到達通知の counter、停止用 barrier)。
+  codex は「レビューで指摘された不変条件をテストで固定する」を最優先に解くので、production の
+  複雑性を上げる seam を躊躇なく足す。実測 (obaket 650 M1 fix3, 2026-09-05): 敵対レビューの
+  「テストが interleaving を強制していない」に対して production actor へ `duplicateEndCleanupCount` /
+  `duplicateEndWaiters` / `waitForDuplicateEndCleanup()` を追加してきた。次ラウンドで
+  「production に入った test 専用状態」として指摘され、fix4 でテスト側の bounded yield + flag へ置き換えた。
+  `_claude/rules/refuse-low-value-coverage.md` の「テストのために production へ seam を足して本番側の
+  複雑性を上げるなら、それはテスト困難の判定材料」と正面から衝突するので、差し戻す。
 - **大きい diff (目安 200 行超) は「変更マップ」をナビに 1 回で精読する**: codex (read-only・luna・max) に
   「ファイル × 変更意図 × リスク順の hunk ランキング + 各 hunk の機械的/判断の分類 (根拠つき)」を
   作らせ、Claude はマップの順に diff を 1 回だけ読む (行き来と再読を消す — 精読を安くするのであって

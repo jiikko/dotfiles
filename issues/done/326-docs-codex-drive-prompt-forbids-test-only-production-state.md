@@ -36,10 +36,16 @@ codex は「レビューで指摘された不変条件をテストで固定す�
 
 ## 受け入れ条件
 
-- [ ] SKILL.md の `[2]` プロンプト定型と `[3]` チェック項目に上記が入っている
-- [ ] `templates/` に定型があるなら (実装 brief の雛形) そちらにも入れる
-- [ ] 実例 (obaket 650 M1 fix3 → fix4) を `rules-rationale/` ではなく SKILL.md 内の実測根拠として 1 行残す
-  (SKILL.md は「実測根拠を意図的に残す」方針)
+- [x] SKILL.md の `[2]` プロンプト定型 (`## 制約`) と `[3]` の diff 精読チェックに上記が入っている
+      (commit `docs(326): codex-drive のプロンプトに「production に test 専用の状態を足さない」を入れる`)
+- [x] `templates/` — **該当なし**。中身は `merger.md` (並列出力の集約者) と
+      `review-lens-header.md` (レビュー lens 共通ヘッダ) の 2 本だけで、実装 brief の雛形は
+      SKILL.md 本文の `## 制約` にインラインで書かれている
+- [x] 実例 (obaket 650 M1 fix3 → fix4) を SKILL.md 内の実測根拠として残した (`[3]` 側)
+- [x] fix 系プロンプト — **`[2]` の定型を使い回す形**なので同じ追記でカバーされる
+      (SKILL.md「修正して `[2]` に戻ったときの再開地点」)。fix 専用のプロンプト定型は存在しない
+- [x] 姉妹 skill への横展開は不要と確認: `## 制約` の実装プロンプト定型を持つのは
+      codex-drive だけ (codex-lead は実装が Claude、forge は専門家エージェント)
 
 ## 関連
 
