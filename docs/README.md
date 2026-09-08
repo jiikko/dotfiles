@@ -12,6 +12,7 @@
 | 文書 | 何が書かれているか | 読む trigger |
 |---|---|---|
 | [`glogx-bubbletea-v2.md`](glogx-bubbletea-v2.md) | glogx が bubbletea v2 で動く前提、v2 の新機能を採らなかった判断、次に上げるとき測り直すもの。**他モジュールが v1 のままである理由**も | glogx の TUI を触る / bubbletea を上げる |
+| [`nvim-ruby-lsp.md`](nvim-ruby-lsp.md) | nvim の Ruby LSP。定義ジャンプが索引をどう引くか、索引がいつ作られどこに在るか (ディスクには無い)、参照検索だけ 11 秒かかる理由、2026-09-08 の高速化で何を書き何を書かなかったか | Ruby のサーバ選択・`<C-k>`・ステータスラインの進捗を触る / 「遅い」と言われた |
 | [`theme-colors.md`](theme-colors.md) | 色は「意味 (role) → 定数」で管理する。**使用箇所ではなく定数を触る**。色の意味マップ | tmux か nvim の色を変えたい |
 | [`tmux-plugins.md`](tmux-plugins.md) | セッション永続化 (resurrect + continuum)。イベント駆動の debounce 保存と、全保存経路を直列化する単一 lock | tmux の保存・復元経路を触る |
 

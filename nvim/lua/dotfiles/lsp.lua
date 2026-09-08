@@ -99,8 +99,8 @@ end
 --    ruby-lsp は root へ composed bundle (.ruby-lsp/) を掘って bundle install を走らせるので、
 --    vendor ツリーや rbenv の gems ツリーへの書き込みとネットワークが発生する。
 --    solargraph は PATH のバイナリ 1 本で何も書かないので、repo の外はそちらに任せる。
---    (monorepo のサブ project は repo root に丸められて solargraph のままになる。allowlist
---     時代も全 project が solargraph だったので退行ではない)
+--    (monorepo のサブ project は **その Gemfile のディレクトリが root のまま solargraph** になる。
+--     repo root へ丸めているのではない。allowlist 時代も全 project が solargraph だったので退行ではない)
 local function ruby_root_dir(want)
   return function(bufnr, on_dir)
     local name = vim.api.nvim_buf_get_name(bufnr)
@@ -285,8 +285,11 @@ M.ripgrep_reference_filetypes = { ruby = true, eruby = true }
 function M.use_ripgrep_references(filetype, word)
   if not M.ripgrep_reference_filetypes[filetype] then return false end
   if word == nil or word == "" then return false end
-  -- 大文字始まり = 定数 / クラス。`::` を含むものも定数参照なので LSP へ回す
-  if word:match("^%u") or word:find("::", 1, true) then return false end
+  -- 大文字始まり = 定数 / クラス。
+  -- `::` を含む形は判定しない: Ruby バッファの iskeyword は `@,48-57,_,192-255` で `:` を含まず、
+  -- <cword> は `Loaders::BaseLoader` の上でも `BaseLoader` しか返さない (実測 2026-09-08)。
+  -- 判定を足しても到達せず、変異で外しても緑のままだった (= 何も守らない分岐)。
+  if word:match("^%u") then return false end
   return true
 end
 
