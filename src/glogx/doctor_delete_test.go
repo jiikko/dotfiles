@@ -324,7 +324,11 @@ func TestDoctorDeleteRunsAndShowsResult(t *testing.T) {
 		t.Fatalf("結果が出ていない: %+v", v.del)
 	}
 	out := doctorPanelText(v, 30)
-	for _, want := range []string{"削除の結果", "🚨 未完了", "1 件が残っています", "解放しました: 4.0KB", "/tmp/h.json"} {
+	// 🚨 最後の警告行は **合計行だけを読んで「全部消えた」と読み違えるのを止める**もの
+	// (issue 316 で `DeleteReport.HasFailures` を配線した。それまで production 参照 0 件だった)。
+	// 合計行「解放しました: 4.0KB」と同じ画面に未完了があることを、両方 assert して固定する。
+	for _, want := range []string{"削除の結果", "🚨 未完了", "1 件が残っています", "解放しました: 4.0KB", "/tmp/h.json",
+		"🚨 消せなかった / 未完了の項目があります"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("結果に %q が無い:\n%s", want, out)
 		}

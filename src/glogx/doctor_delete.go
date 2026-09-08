@@ -1320,6 +1320,13 @@ func doctorDeleteResultLines(o doctorRenderOpts, rep disk.DeleteReport, log []st
 	} else {
 		tail = append(tail, " 解放された容量はありません")
 	}
+	// 🚨 **合計行だけを読んで「全部消えた」と読み違えるのを止める** (issue 316)。
+	// 各行には ❌ / 🚨 が出ているが、目に入りやすいのは末尾の合計行で、そこは成功分しか語らない。
+	// `HasFailures` はまさにこの読み違えを防ぐために作られた口 (delete.go の doc) なのに、
+	// production から一度も呼ばれていなかった (= 配線漏れ)。
+	if rep.HasFailures() {
+		tail = append(tail, " 🚨 消せなかった / 未完了の項目があります (上の ❌ / 🚨 の行)")
+	}
 	// 🚨 hint (doctor_view.go) と同じことを言う。「何かキー」と書くと y を含んでしまうが、
 	// y / Y は閉じずにコピーする (handleDeleteKey の result/err 分岐)
 	return blocks, append(tail, " y: 出力をコピー   他のキー: 閉じてもう一度スキャン")
