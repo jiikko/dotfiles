@@ -293,6 +293,41 @@ function M.use_ripgrep_references(filetype, word)
   return true
 end
 
+-- 参照検索の検索範囲。**on_attach が受け取った client をそのまま使わない**:
+-- キーマップは LspAttach のたびに貼り直されるので、後から attach した client の root を
+-- 掴んでしまう。実例: lspconfig の solargraph の filetypes は { "ruby" } で eruby を含まず、
+-- tailwindcss は { ... "erb", "eruby" ... } を含むため、.erb では **tailwind の root**
+-- (postcss.config.* / tailwind.config.* の場所) が入りうる (敵対レビュー P2-1)。
+-- Ruby のサーバを名前で選び、無ければ repo 境界へ落とす。
+--: (integer) -> string
+function M.ruby_root_for(bufnr)
+  for _, name in ipairs({ "ruby_lsp", "solargraph" }) do
+    local c = vim.lsp.get_clients({ bufnr = bufnr, name = name })[1]
+    local root = c and (c.root_dir or (c.config and c.config.root_dir))
+    if root then return root end
+  end
+  local file = vim.api.nvim_buf_get_name(bufnr)
+  return vim.fs.root(file ~= "" and file or bufnr, { ".git", "Gemfile" }) or vim.fn.getcwd()
+end
+
+-- <C-k> の行き先を **返り値で表明する**純関数。テストはこの返り値を見る。
+-- 🚨 分岐をマッピングの中に埋めない: 「文字列が在るか」の静的 pin では、rg と LSP を
+--    入れ替える / word_match を落とす / cwd を nvim の cwd に固定する、といった変異が
+--    すべて緑で通ってしまう (敵対レビュー P1-2)。
+--: (string, string, string) -> table
+function M.references_action(filetype, word, root)
+  if not M.use_ripgrep_references(filetype, word) then
+    return { route = "lsp" }
+  end
+  return {
+    route = "ripgrep",
+    search = word,
+    word_match = "-w", -- 部分一致にすると別メソッドを大量に拾う
+    cwd = root,
+    prompt_title = ("参照 (ripgrep): %s"):format(word),
+  }
+end
+
 -- 実行中を表示する要求。**ユーザーが明示的に起こす操作に限る**。
 -- CursorHold ごとに飛ぶ documentHighlight や、編集のたびに飛ぶ semanticTokens / codeLens を
 -- 入れると、ステータスラインが点滅するだけで情報にならない。
@@ -360,23 +395,21 @@ local function on_attach(client, bufnr)
   -- rg の結果で足りなかったときの逃げ道であり、同時に「困った回数」の観測点でもある
   -- (rg の直後に同じ語をこれで引き直すと fallback として記録される)。
   map("n", "<leader>K", function()
-    usage().record("lsp", vim.fn.expand("<cword>"))
+    usage().record("lsp", vim.fn.expand("<cword>"), vim.bo[bufnr].filetype)
     tb().lsp_references()
   end, "参照元一覧を LSP で引き直す (rg の結果で足りないとき)")
 
   map("n", "<C-k>", function()
+    local ft = vim.bo[bufnr].filetype
     local word = vim.fn.expand("<cword>")
-    if not M.use_ripgrep_references(vim.bo[bufnr].filetype, word) then
-      usage().record("lsp", word)
-      return tb().lsp_references()
-    end
-    usage().record("ripgrep", word)
-    -- 検索範囲は LSP の root に合わせる (nvim の cwd が project 外でも同じ結果になるように)
+    local action = M.references_action(ft, word, M.ruby_root_for(bufnr))
+    usage().record(action.route == "ripgrep" and "ripgrep" or "lsp", word, ft)
+    if action.route == "lsp" then return tb().lsp_references() end
     tb().grep_string({
-      search = word,
-      word_match = "-w",
-      cwd = client.root_dir or vim.fn.getcwd(),
-      prompt_title = ("参照 (ripgrep): %s"):format(word),
+      search = action.search,
+      word_match = action.word_match,
+      cwd = action.cwd,
+      prompt_title = action.prompt_title,
     })
   end, "参照元一覧 (Ruby のメソッドは ripgrep、定数と他言語は LSP)")
 

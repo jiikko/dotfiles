@@ -43,8 +43,12 @@ local function append(entry)
 end
 
 -- kind: "ripgrep" (rg 経路) / "lsp" (LSP 経路) / "fallback" (rg の直後に LSP で引き直した)
---: (string, string) -> boolean
-function M.record(kind, word)
+-- 🚨 filetype を必ず一緒に残す。issue 334 は「LSP 経路の回数 = 定数を引いた回数」で sidecar 化を
+--    判断すると決めているが、LSP 経路には **Ruby 以外の全 filetype の <C-k>** も入る
+--    (use_ripgrep_references が false を返すため)。ft を落とすと後から分離できず、判断が
+--    「Ruby の定数で困っている」とは無関係な数字の上に乗る (敵対レビュー P1-1)。
+--: (string, string, string?) -> boolean
+function M.record(kind, word, filetype)
   local now = M.now()
   if kind == "ripgrep" then
     last_ripgrep = { word = word, at = now }
@@ -54,33 +58,73 @@ function M.record(kind, word)
     kind = "fallback"
     last_ripgrep = nil
   end
-  return append({ kind = kind, word = word, at = os.date("%Y-%m-%dT%H:%M:%S") })
+  return append({
+    kind = kind,
+    word = word,
+    ft = (filetype ~= nil and filetype ~= "") and filetype or nil,
+    at = os.date("%Y-%m-%dT%H:%M:%S%z"), -- オフセット付き (マシンを跨いでも並べ替えられる)
+  })
 end
 
--- 集計。件数と、fallback 率 (= rg の結果で足りなかった割合) を返す。
+-- 集計。全体と、filetype 別 (判断に使うのは Ruby の行だけ) を返す。
+-- fallback 率の分母は rg を使った回数 (fallback は「rg を引いた後に引き直した」ものなので、
+-- rg の回数に対する割合が「rg で足りなかった率」になる)。
+local function new_bucket()
+  return { ripgrep = 0, lsp = 0, fallback = 0 }
+end
+
+local function with_rate(b)
+  b.fallback_rate = b.ripgrep > 0 and (b.fallback / b.ripgrep) or 0
+  return b
+end
+
 --: -> table
 function M.stats()
-  local counts = { ripgrep = 0, lsp = 0, fallback = 0 }
+  local total = new_bucket()
+  local by_ft = {}
+  local no_ft = 0 -- ft を記録していなかった頃の行 (層別に使えない)
   local ok, lines = pcall(vim.fn.readfile, M.log_path())
   if ok then
     for _, line in ipairs(lines) do
       local decoded, entry = pcall(vim.json.decode, line)
-      if decoded and type(entry) == "table" and counts[entry.kind] ~= nil then
-        counts[entry.kind] = counts[entry.kind] + 1
+      if decoded and type(entry) == "table" and total[entry.kind] ~= nil then
+        total[entry.kind] = total[entry.kind] + 1
+        if type(entry.ft) == "string" and entry.ft ~= "" then
+          by_ft[entry.ft] = by_ft[entry.ft] or new_bucket()
+          by_ft[entry.ft][entry.kind] = by_ft[entry.ft][entry.kind] + 1
+        else
+          no_ft = no_ft + 1
+        end
       end
     end
   end
-  -- 分母は rg を使った回数。fallback は「rg を引いた後に引き直した」ものなので、
-  -- rg の回数に対する割合が「rg で足りなかった率」になる
-  counts.fallback_rate = counts.ripgrep > 0 and (counts.fallback / counts.ripgrep) or 0
-  return counts
+  for _, b in pairs(by_ft) do with_rate(b) end
+  local out = with_rate(total)
+  out.by_ft = by_ft
+  out.no_ft = no_ft
+  return out
 end
 
 --: -> string
 function M.format_stats()
   local c = M.stats()
-  return ("参照検索: ripgrep %d 回 / LSP %d 回 / rg の直後に LSP へ引き直し %d 回 (%.1f%%)"):format(
-    c.ripgrep, c.lsp, c.fallback, c.fallback_rate * 100)
+  -- 判断に使うのは Ruby の行 (issue 334)。全体は参考値で、Ruby 以外の <C-k> も入っている
+  local ruby = c.by_ft.ruby or new_bucket()
+  local eruby = c.by_ft.eruby
+  if eruby then
+    for _, k in ipairs({ "ripgrep", "lsp", "fallback" }) do ruby[k] = ruby[k] + eruby[k] end
+  end
+  with_rate(ruby)
+  local lines = {
+    ("Ruby: ripgrep %d / LSP (定数など) %d / rg の直後に LSP へ引き直し %d (%.1f%%)  ← 判断に使う数字"):format(
+      ruby.ripgrep, ruby.lsp, ruby.fallback, ruby.fallback_rate * 100),
+    ("全体: ripgrep %d / LSP %d / 引き直し %d  (Ruby 以外の <C-k> も含む)"):format(
+      c.ripgrep, c.lsp, c.fallback),
+  }
+  if c.no_ft > 0 then
+    table.insert(lines, ("ft 未記録 %d 件 (層別に使えない古い行)"):format(c.no_ft))
+  end
+  return table.concat(lines, "\n")
 end
 
 --: -> void

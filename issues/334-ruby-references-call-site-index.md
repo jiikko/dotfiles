@@ -158,3 +158,54 @@ baseline  索引 10.7 秒
   無関係に全部作るので索引時間も減らない
 - `excludedPatterns` を増やす: 既定で `vendor/bundle` / `tmp` / `node_modules` / dotdir が
   外れており、残りは 10 ファイル規模 (追補 1 の実測)
+
+## 追補: 敵対的レビューの P1 2 件を直した (2026-09-08)
+
+commit `fix(334): 参照検索の記録に filetype を残し、<C-k> の行き先を純関数へ切り出す`。
+
+**P1-1: 記録の分母が「定数を引いた回数」になっていなかった。**
+`record` が `{kind, word, at}` しか残しておらず、`kind="lsp"` に **Ruby 以外の全 filetype の
+`<C-k>`** が混ざっていた (`use_ripgrep_references` が false を返す経路がそのまま
+`record("lsp", ...)` を呼ぶため)。本 issue は「`:DotfilesRefsStats` の LSP 回数 = 定数を
+引いた回数」で sidecar 化を判断すると決めているので、Go/TS も触る環境では判断が無関係な数字の
+上に乗っていた。しかも ft がログに無いので**事後に分離もできない**。
+
+→ `record(kind, word, ft)` にして entry へ `ft` を残し、`stats()` が `by_ft` で層別する。
+`format_stats()` は **Ruby の行を先に出す** (判断に使う数字がどれかを取り違えないため)。
+ft を持たない古い行は `no_ft` として別に数える。時刻も `%z` 付きに変えた。
+
+**P1-2: `<C-k>` の分岐を丸ごと反転させても全テストが緑だった。**
+配線の固定が「マッピングのブロックに文字列が存在するか」しか見ておらず、
+①rg と LSP の入れ替え ②`word_match = "-w"` の削除 ③`cwd` を nvim の cwd に固定、が
+すべて素通りしていた。
+
+→ 行き先を **`M.references_action(filetype, word, root)` の返り値で表明する**純関数へ切り出し、
+テーブル駆動で返り値そのものを assert する。静的 pin は「その関数を通っているか」の 1 点に縮めた。
+
+**あわせて P2-1 も直した** (切り出した当の行だったため): `cwd` を `on_attach` が受け取った
+`client` から取ると、キーマップが LspAttach ごとに貼り直される都合で**後から attach した
+client の root** を掴む。lspconfig の solargraph の filetypes は `{ "ruby" }` で eruby を
+含まず、tailwindcss は `erb` / `eruby` を含むので、`.erb` では tailwind の root が入りうる。
+→ `M.ruby_root_for(bufnr)` が Ruby のサーバを**名前で**選び、無ければ repo 境界へ落とす。
+
+### 変異検証 (7 本すべて red)
+
+| 変異 | 結果 |
+|---|---|
+| `references_action` の分岐を反転 | RED |
+| `word_match = "-w"` を落とす | RED |
+| `cwd` を nvim の cwd に固定 | RED |
+| `ruby_root_for` が client 名で絞らない | RED |
+| `record` が ft を捨てる | RED |
+| `stats` が層別しない | RED |
+| `<C-k>` が record に ft を渡さない | RED |
+
+上 4 本はレビュー前は**すべて緑で通っていた**もの。
+
+### 残り (未着手)
+
+- P2-2: client が終了すると statusline の「実行中」表示が永久に残る (`LspDetach` で掃除していない)
+- P2-3/P2-4/P3-5: `measure.rb` が rg の rc=2 を 0 件に畳む / production に無い `--type ruby` で
+  絞っている / 「行数」と「出現数」を並べている
+- P3-2: `vim.lsp.status` 直呼び禁止の pin が `lualine_x` の中しか見ていない
+- P3-6: JSONL にローテーションが無い (判断が出たらログごと削除する)
