@@ -136,9 +136,18 @@ __av1ify_lock_acquire() {
   lockman acquire "$dir" --ttl "$__AV1IFY_LOCK_TTL" --token-file "$tok" \
     --label "av1ify pid=$$ $in" >/dev/null
   local rc=$?
-  if (( rc != 0 )); then
+  if (( rc == 3 )); then
     rm -f -- "$tok"
-    return $rc   # 3 = 他が保持中、それ以外はエラー (lockman は判定不能も非 0 に倒す)
+    return 3     # 他が保持中。呼び出し側は SKIP する
+  fi
+  if (( rc != 0 )); then
+    # 取得そのものに失敗した (lockman のビルド失敗・壊れた lock・権限など)。
+    # 「排他を用意できない」なので不在と同じ扱いにする: 元ファイルを消す設定なら中止、
+    # 残す設定なら警告して続行。ここで一律 return 1 にすると、Go 未導入の環境で
+    # 通常の av1ify まで動かなくなる。
+    rm -f -- "$tok"
+    __av1ify_lock_unavailable "lockman acquire が失敗しました (rc=$rc)"
+    return $?
   fi
 
   __AV1IFY_LOCK_DIR="$dir"

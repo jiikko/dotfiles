@@ -261,6 +261,25 @@ exit 0
 EOF
 chmod +x "$MOCK_BIN_DIR/osascript"
 
+# lockman の mock。
+#
+# av1ify は「同じ動画ファイルへの二重実行」を lockman で防ぐ (zshlib/_av1ify_lock.zsh)。
+# 元ファイルを削除する設定 (av1c) では、排他を用意できないと**中止する**設計なので、
+# lockman が無い環境ではエンコード系のテストが軒並み落ちる。実際 CI (ubuntu) には
+# lockman が無く、2026-09-08 に clipboard / options / validate の 3 本が落ちた。
+#
+# 🚨 opt-out で排他を迂回させるのではなく mock を置くのは、**配線そのものを CI で
+# 通すため**。acquire → still_held → release の呼び出しが消えても気づける。
+# 競合 (busy) と取得失敗は、この mock では再現しない (常に成功を返す)。
+cat > "$MOCK_BIN_DIR/lockman" <<'EOF'
+#!/usr/bin/env sh
+# 常に取得成功を返す。呼ばれたサブコマンドを記録できるようにしておく
+# (TEST_LOCKMAN_LOG があれば追記する)。
+if [ -n "${TEST_LOCKMAN_LOG-}" ]; then echo "$1" >> "$TEST_LOCKMAN_LOG"; fi
+exit 0
+EOF
+chmod +x "$MOCK_BIN_DIR/lockman"
+
 # PATH設定
 export PATH="$MOCK_BIN_DIR:$PATH"
 
