@@ -126,7 +126,7 @@ clone + `git worktree add --detach` で claim を commit）を足し、**現行�
 
 ## 関連
 
-- issue 310（`git-state-verify.sh` の他の 2 つの破れ。同じファイルを触るので順序を決めて着手する）
+- issue 310（`git-state-verify.sh` の他の 2 つの破れ。同じファイルを触るので順序を決めて着手する）→ **2026-09-09 に done**。311 の後に着手し、トリガをトークン解析へ寄せて出典行と untrusted ヘッダを足した。本 issue が直した未 push 判定（`HEAD --branches --not --remotes`）は、310 が新設した `tests/claude/test_git_state_verify.sh` で **hook の入口から**も固定されている（detached worktree の未 push が出ること / remote 未設定を「判定不能」と出すこと）
 
 ## 実運用への影響（確認済み）
 
