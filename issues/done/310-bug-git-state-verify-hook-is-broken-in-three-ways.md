@@ -32,9 +32,9 @@
 
 🚨 **この repo の規範がまさにその形を要求している**:
 
-- [`commit-with-pathspec.md`](../_claude/rules/commit-with-pathspec.md):
+- [`commit-with-pathspec.md`](../../_claude/rules/commit-with-pathspec.md):
   「本体への操作は **`git -C <本体の絶対パス>`** で対象を明示」
-- [`worktree-per-session.md`](../.claude/rules/worktree-per-session.md):
+- [`worktree-per-session.md`](../../.claude/rules/worktree-per-session.md):
   「本体への pull / worktree remove は **`git -C ~/dotfiles`**」
 
 つまり**規範どおり書いた瞬間に検証装置が不在になる**。
@@ -119,7 +119,7 @@ grep -rl 'git-state-verify' tests/  →  0 件
 - [x] **変異検証**: `-C` 対応を外すと red / 「検査した repo」行を消すと red
 - [x] 注入本文に untrusted 引用ヘッダが付いていることを検査する
 - [x] 集約経路から実行され、**その検査の出力行が出る**ことを確認する
-      （[`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)）
+      （[`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md)）
 
 ## 関連
 
