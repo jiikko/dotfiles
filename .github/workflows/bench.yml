@@ -37,8 +37,15 @@ jobs:
   # - job 内の BENCH_RUNS=20 は意図的に直列。同一 runner 上で並列に走らせると計測同士が
   #   CPU を奪い合い、レイテンシ計測そのものを汚染する (ここを並列化してはいけない)
   # - shard 化 (例: 4 shard × 5 run + artifacts 集約 job) なら壁時計は縮むが、shard ごとの
-  #   setup 重複で runner-minutes は増え、artifact/集約の配管が要る。現状の最長 job
-  #   (tmux ~3.5 分) は非ブロッキング workflow の watch 遅延にしかならず、割に合わない
+  #   setup 重複で runner-minutes は増え、artifact/集約の配管が要る。最長 job (tmux) は
+  #   非ブロッキング workflow の watch 遅延にしかならず、割に合わない
+  #   🚨 見送り当時ここに書いた「tmux ~3.5 分」は **ubuntu 時代の値**で、現状と 2 倍以上ずれる。
+  #   macOS へ移した 0e522c76 (2026-08-29 / issue 133) 以降は **440〜513s (7.3〜8.5 分)**
+  #   (2026-09-08 実測 = 直近 success 7 run の bench-tmux job 所要。移行前の run は
+  #   ログ retention 外で再測不能なため、差が移行由来かは未実測)。
+  #   内訳 (run 34239286136): 1 run ~23.3s × BENCH_RUNS=20。うち select_window_x100 が
+  #   12.2s で、その 91% は after-select-window hook 4 本 (1 切替あたり tmux クライアント
+  #   ~19 fork × rtt 6.25ms)。縮めたいならここか shard 化で、BENCH_RUNS は flake 耐性の要
   # - 再評価の閾値: 最長 job が 10 分を超えたら shard 化を実装する
   bench-nvim:
     # 対象は macOS のみ (issue 133)。`macos-latest` にしないのは他 workflow と同じ理由。
