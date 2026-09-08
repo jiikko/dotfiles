@@ -100,6 +100,7 @@ __av1ify_on_interrupt() {
 
 # 分割構成:
 #   _av1ify_postcheck.zsh — __av1ify_mark_issue() + __av1ify_postcheck() (変換後チェック)
+#   _av1ify_lock.zsh      — __av1ify_lock_*() + __av1ify_one_locked() (対象ファイル単位の排他)
 #   _av1ify_encode.zsh    — __av1ify_one() + エンコード補助ヘルパー群
 #   _av1ify.zsh (本ファイル) — 状態変数, バナー, 割り込み処理, av1ify() エントリポイント
 # 読み込み順: postcheck → encode（__av1ify_one が __av1ify_postcheck を呼ぶため）
@@ -113,6 +114,8 @@ source "${0:A:h}/_video_health.zsh"
 source "${0:A:h}/_validate_mp4.zsh"
 # shellcheck disable=SC1091
 source "${0:A:h}/_ansi_colors.zsh"
+# shellcheck disable=SC1091
+source "${0:A:h}/_av1ify_lock.zsh"
 # shellcheck disable=SC1091
 source "${0:A:h}/_av1ify_postcheck.zsh"
 # shellcheck disable=SC1091
