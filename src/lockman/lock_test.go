@@ -216,6 +216,34 @@ func TestRenewDetectsLostLease(t *testing.T) {
 	}
 }
 
+// ★ 上の対照: 誰も引き継いでいなくても、TTL を超えていれば Renew は失敗する。
+//
+// 上のテストは「token が別人のものに変わった」ことしか見ておらず、token 照合だけの
+// 実装でも緑になる。期限切れのまま lock が残っている (= これから誰かが引き継げる)
+// 状態で Renew が通ってしまうと、readLock と O_TRUNC の隙間に引き継ぎが挟まったとき
+// 他者の lock を truncate して自分のメタで上書きする。
+func TestRenewRefusesExpiredLease(t *testing.T) {
+	l := newTestLocker(t)
+	ttl := 50 * time.Millisecond
+	m, err := l.Acquire(ttl, "")
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	time.Sleep(3 * ttl)
+	// 前提: 誰も引き継いでいない (lock は自分の token のまま残っている)。
+	// ここが崩れると token 照合だけで落ちてしまい、期限検査を何も守らなくなる。
+	got, _, err := l.readLock()
+	if err != nil {
+		t.Fatalf("readLock: %v", err)
+	}
+	if got == nil || got.Token != m.Token {
+		t.Fatalf("前提が崩れた: lock が自分のものでなくなっている (%+v)", got)
+	}
+	if err := l.Renew(m.Token); !errors.Is(err, errNotOwner) {
+		t.Fatalf("期限切れの lease を Renew で延長できた (err=%v)", err)
+	}
+}
+
 // Renew は保持を延ばす (延びないと TTL 内に必ず奪われる)。
 func TestRenewExtendsHold(t *testing.T) {
 	l := newTestLocker(t)

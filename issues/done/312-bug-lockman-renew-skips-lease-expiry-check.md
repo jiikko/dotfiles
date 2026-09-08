@@ -81,10 +81,52 @@ mode 定数の隣に**想定する敵**を明記する（協調するホスト�
 
 ## 受け入れ条件
 
-- [ ] `Renew` が期限切れで `errNotOwner` を返す
-- [ ] 回帰テスト: 既存 `TestRenewDetectsLostLease` の**対照**として
+- [x] `Renew` が期限切れで `errNotOwner` を返す
+- [x] 回帰テスト: 既存 `TestRenewDetectsLostLease` の**対照**として
       「TTL 超過後、誰も引き継いでいない状態の `Renew` が `errNotOwner` を返す」を足す
-- [ ] **変異検証**: 足した期限検査を外すと red
-- [ ] mode 定数の隣に脅威モデルが 1 行ある
-- [ ] `issues/done/091` の「renew は token 照合」の記述にも期限切れの扱いを 1 行足す
+- [x] **変異検証**: 足した期限検査を外すと red
+- [x] mode 定数の隣に脅威モデルが 1 行ある
+- [x] `issues/done/091` の「renew は token 照合」の記述にも期限切れの扱いを 1 行足す
       （次の実装者へ古い契約を渡さないため）
+
+## 進捗（2026-09-09）
+
+対応 commit: `fix(312): Renew に lease 期限検査を足し、mode 定数の脅威モデルを書く`
+
+### ① 期限検査
+
+`Renew` の token 照合の直後へ `serverNow` + `expired(now, mtime, holderTTL(m))` を足した。
+判定関数は `Release` と共有（新しい判定は書き起こしていない）。`readLock` の戻り値の
+mtime を捨てていた（`m, _, err :=`）のを受け取る形に変えた。
+
+書き込み後の検算 `now, err := l.serverNow()` は `now, err = ...`（再代入）になった。
+**追加の I/O は「要らない」ではなく「probe が 1 往復増える」**（issue 本文 52 行目の
+「追加の I/O も要らない」は mtime についてのみ正しい。`serverNow` は probe ファイルの
+create/stat/remove なので、Renew あたり 1 → 2 往復になる）。既定の renew 間隔は
+TTL/3 = 10 分なので許容した。
+
+### ② 脅威モデル
+
+`metaDirMode` / `lockFileMode` の隣に「想定する敵はいない = 協調するホスト・ユーザー
+のみ。非信頼の同一ホストユーザーは射程外」と、射程に入れる場合の要件
+（`O_NOFOLLOW` + fd ベースの `Fstat`）を書いた。**実装は足していない**
+（issue の②は脆弱性を主張しておらず、射程を決めるのは人間のため）。
+no-sticky は「他ユーザーが自分の lock を rename できること」を設計として要求して
+いるので、権限で敵を締め出す方向とはそもそも両立しない、という点も書いた。
+
+### 変異検証（受け入れ条件の 3 つ目）
+
+- baseline: `go test ./...` rc=0
+- 変異: `Renew` の期限検査ブロックを削除し、検算側の `now, err =` を `now, err :=` へ戻す
+  （= 修正前の `Renew` の形。期限検査だけを消すと `mtime` / `now` が未使用でビルド不能に
+  なるため、**ブロック単位で修正前へ戻す**のが唯一の妥当な変異）
+- `go build ./...` rc=0（変異がビルドできたことをテストと別に確認）
+- 変異後: `go test ./...` rc=1 — `TestRenewRefusesExpiredLease` のみが red
+  （`TestRenewDetectsLostLease` は green のまま = 予測どおり。あちらは token が
+  別人に変わることしか見ておらず、期限検査を何も守っていない）
+- revert 後: rc=0
+
+### 残タスク
+
+- なし（受け入れ条件はすべて満たした）。②の `O_NOFOLLOW` 化は**射程外**として
+  コメントに再評価の trigger だけ残した

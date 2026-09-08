@@ -27,6 +27,14 @@ const (
 	// 共有前提のモード。sticky を付けないこと: rename の可否は親ディレクトリの
 	// 権限で決まるため、+t が付くと他ユーザーの lock を graveyard へ退けられず、
 	// TTL が切れても永久に引き継げなくなる。
+	//
+	// 🚨 想定する敵: **いない**。この 0o777 + no-sticky が守るのは「協調する
+	// ホスト・ユーザーどうしが誤って同時に走ること」だけで、**非信頼の同一ホスト
+	// ユーザーは射程外**。no-sticky は「他ユーザーが自分の lock を rename できる」
+	// ことを設計として要求しているので、権限で敵を締め出す方向とは両立しない。
+	// 射程に入れるなら (lock を差し替える悪意あるローカルユーザーを想定するなら)
+	// このモードだけでは足りず、readLock / Renew を O_NOFOLLOW + fd ベースの
+	// Fstat へ作り替える必要がある。射程を広げるときに再評価する。
 	metaDirMode  = fs.FileMode(0o777)
 	lockFileMode = fs.FileMode(0o666)
 )
@@ -315,13 +323,25 @@ func (l *Locker) Release(token string) error {
 
 // Renew は保持を更新する。utimes は使わない (クライアントの時計が混入するため)。
 // 同じ内容を書き直してサーバに mtime を打刻させ、打刻したのが本当にサーバかを検算する。
+//
+// 期限切れの lease は延長せず errNotOwner を返す。token が一致していても、TTL を
+// 超えていればその lock は既に他者が引き継げる状態にあり、書き直すと
+// 「引き継いだ側の lock を truncate して自分のメタで上書きする」形になるため。
+// 判定は Release と同じ expired / holderTTL を使う (2 つ目の判定を作らない)。
 func (l *Locker) Renew(token string) error {
-	m, _, err := l.readLock()
+	m, mtime, err := l.readLock()
 	if err != nil {
 		return err
 	}
 	if m == nil || m.Token != token {
 		return errNotOwner
+	}
+	now, err := l.serverNow()
+	if err != nil {
+		return err
+	}
+	if expired(now, mtime, holderTTL(m)) {
+		return fmt.Errorf("%w: lease が切れている (走行中に引き継がれた可能性)", errNotOwner)
 	}
 	b, err := json.Marshal(m)
 	if err != nil {
@@ -343,7 +363,8 @@ func (l *Locker) Renew(token string) error {
 		return err
 	}
 	// 検算: 打刻がクライアント側だと時計ずれがそのまま TTL 判定へ入り込む。
-	now, err := l.serverNow()
+	// 上の期限検査で取った now は書き込み前の時刻なので、ここで取り直す。
+	now, err = l.serverNow()
 	if err != nil {
 		return err
 	}
