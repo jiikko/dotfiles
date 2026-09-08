@@ -348,11 +348,26 @@ local function on_attach(client, bufnr)
   -- ジャンプ (coc: gd=定義 / gD=実装 / <C-k>=参照)
   map("n", "gd", function() tb().lsp_definitions() end, "定義へジャンプ (LSP definitions)")
   map("n", "gD", function() tb().lsp_implementations() end, "interface の実装一覧へ (LSP implementations)")
+  -- 参照検索は rg 経路と LSP 経路の両方を記録する (issue 334 段階 1)。
+  -- 記録の失敗は握り潰される (refs_usage.append の pcall)。ここで参照を握らず都度 require
+  -- するのは、起動時に state ディレクトリへ触らないため。
+  local function usage() return require("dotfiles.refs_usage") end
+
+  -- <leader>K: rg 経路を迂回して LSP の references を引く。
+  -- rg の結果で足りなかったときの逃げ道であり、同時に「困った回数」の観測点でもある
+  -- (rg の直後に同じ語をこれで引き直すと fallback として記録される)。
+  map("n", "<leader>K", function()
+    usage().record("lsp", vim.fn.expand("<cword>"))
+    tb().lsp_references()
+  end, "参照元一覧を LSP で引き直す (rg の結果で足りないとき)")
+
   map("n", "<C-k>", function()
     local word = vim.fn.expand("<cword>")
     if not M.use_ripgrep_references(vim.bo[bufnr].filetype, word) then
+      usage().record("lsp", word)
       return tb().lsp_references()
     end
+    usage().record("ripgrep", word)
     -- 検索範囲は LSP の root に合わせる (nvim の cwd が project 外でも同じ結果になるように)
     tb().grep_string({
       search = word,
@@ -449,6 +464,7 @@ end
 --   効かないため、共通 capabilities を先に確定させておく必要がある。
 function M.setup(capabilities)
   setup_diagnostics()
+  require("dotfiles.refs_usage").setup()
 
   -- 全サーバ共通の capabilities (blink.cmp)。nil なら素の capability。
   vim.lsp.config("*", { capabilities = capabilities or vim.lsp.protocol.make_client_capabilities() })
