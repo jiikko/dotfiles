@@ -123,6 +123,25 @@ M.servers = {
   -- rubocop を検出) が担うので、solargraph と同じく <leader>F の lsp_format="fallback" で効く。
   ruby_lsp = {
     root_dir = ruby_root_dir("ruby_lsp"),
+    -- 索引から外すパス。ruby-lsp の server.rb (process_indexing_configuration) が
+    -- initializationOptions.indexing を camelCase → snake_case に直して
+    -- RubyIndexer::Configuration#apply_config へ渡す。
+    -- 既定で外れているものはここに書かない: vendor/bundle (Bundler.settings["path"] から自動生成)、
+    -- トップレベルの tmp / node_modules / sorbet、dotdir 全般 (include が Dir.glob("*") 起点なので
+    -- .claude/worktrees 等は最初から入らない)、`*_test.rb` / `*_spec.rb` / fixtures。
+    -- ここに書くのは **入れ子** と **BUNDLE_PATH を設定していない repo** のための保険で、
+    -- 実測 2026-09-08 (ubiregi-server): 既定で 18468/18478 件が既に外れており、
+    -- 追加で外れるのは 10 件 (vendor/embedded_gem)。索引時間の主因は project でなく gem 側。
+    init_options = {
+      indexing = {
+        excludedPatterns = {
+          "**/vendor/**/*.rb",
+          "**/node_modules/**/*.rb",
+          "**/tmp/**/*.rb",
+          "**/coverage/**/*.rb",
+        },
+      },
+    },
   },
   -- solargraph は PATH のバイナリを直接使う (useBundler=false)。project の Gemfile 側
   -- solargraph を bundle exec で使いたい場合のみ true にする (Gemfile に無い project では起動失敗)。
@@ -218,6 +237,19 @@ function M.mason_packages()
   end
   table.sort(pkgs) -- pairs の順は不定。ensure_installed の並びを安定させる
   return pkgs
+end
+
+-- 索引などの進捗 (LSP の $/progress)。ruby-lsp は大きな Rails project で数分かかることがあり、
+-- 表示が無いと「押しても無反応」に見える (実測 2026-09-08: ubiregi-server の初回索引で
+-- ruby-lsp が CPU 100% のまま 10 分以上、その間 gd の応答が返らなかった)。
+-- 🚨 vim.lsp.status() は client.progress (vim.ringbuf) を **pop しながら** 読むので、
+--    1 回の再描画で 2 回呼ぶと 2 回目は必ず空になる。呼ぶのはこの autocmd の中だけにして、
+--    結果を保持する。statusline 側は M.progress_status() で保持した文字列を読むこと。
+local progress_text = ""
+
+-- statusline から読む。vim.lsp.status() を直接呼ばせないための入口。
+function M.progress_status()
+  return progress_text
 end
 
 -- documentHighlight 用の単一 augroup。バッファ毎に augroup を作ると空グループ名が
@@ -378,6 +410,19 @@ function M.setup(capabilities)
     vim.lsp.inlay_hint.enable(not on, { bufnr = 0 })
     vim.notify("Inlay hints: " .. (on and "off" or "on"))
   end, { silent = true, desc = "Toggle inlay hints" })
+
+  -- 進捗をステータスラインへ出すために保持する。end が来たら空へ戻す
+  -- (複数サーバが同時に走っているときは、片方の end で一旦空になり、もう片方の次の
+  --  通知で戻る。頻度が高いので実用上は瞬きしない)。
+  local pgrp = vim.api.nvim_create_augroup("dotfiles_lsp_progress", { clear = true })
+  vim.api.nvim_create_autocmd("LspProgress", {
+    group = pgrp,
+    callback = function(args)
+      local value = args.data and args.data.params and args.data.params.value
+      progress_text = (value and value.kind == "end") and "" or vim.lsp.status()
+      vim.cmd.redrawstatus()
+    end,
+  })
 
   -- キーマップは attach したサーバ種別に依らずバッファへ張る
   local grp = vim.api.nvim_create_augroup("dotfiles_lsp_attach", { clear = true })

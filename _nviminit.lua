@@ -328,7 +328,13 @@ require("lazy").setup({
           lualine_a = { "mode" },
           lualine_b = { "diagnostics", "branch" },
           lualine_c = { { relative_path_from_git_root } },
-          lualine_x = { "encoding", "fileformat", "filetype" },
+          -- LSP の索引などの進捗 (dotfiles/lsp.lua が LspProgress で保持したもの)。
+          -- vim.lsp.status() をここで直接呼ばないこと: ring buffer を pop するので、
+          -- lualine が 1 描画で複数回評価すると 2 回目以降が空になる。
+          lualine_x = {
+            { function() return require("dotfiles.lsp").progress_status() end },
+            "encoding", "fileformat", "filetype",
+          },
           lualine_y = { "progress" },
           lualine_z = { "location" },
         },

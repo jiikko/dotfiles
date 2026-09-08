@@ -135,6 +135,48 @@ marker を空へ / wait の上限を外す / mason の sort を消す) がいず
   既に入っているマシンでは `mason/bin/ruby-lsp` が PATH 先頭で shim に勝つ。
   このマシンでは不在を実測済み (実害なし)
 
+## 追補 (2026-09-08、同日の続き)
+
+commit `feat(332): 索引の進捗をステータスラインへ出し、索引対象から入れ子の vendor 等を外す`。
+
+**索引中に何も出ないのを直した。** ruby-lsp は索引中に `$/progress`
+(`server.rb:330` の `begin_progress("indexing-progress", "Ruby LSP: indexing files")`) を送っており、
+nvim 0.11.5 は `window.workDoneProgress = true` を広告している (`protocol.lua:574`) ので通知は
+届いていたが、**表示する側が無かった** (dotfiles に `LspProgress` も `vim.lsp.status` も 0 件。
+`lualine_y = { "progress" }` はファイル内の位置 % で LSP とは無関係)。
+`LspProgress` で受けて保持し、lualine の `lualine_x` から読む形にした。
+
+🚨 `vim.lsp.status()` は `client.progress` (`vim.ringbuf(50)`) を **pop しながら**読む
+(`lsp.lua:774` / `client.lua:405` / `shared.lua:1177` の `__call = pop`)。1 回の再描画で 2 回
+評価すると 2 回目は必ず空になるので、呼ぶのは autocmd の中だけにし、statusline は保持した
+文字列を読む。この罠は実行時には「たまに消える」形でしか出ないため、テストで静的に固定した。
+
+**索引の除外は、このプロジェクトではほぼ効かないことが実測で分かった。**
+
+| トップレベル | .rb 件数 |
+|---|---|
+| vendor | 18478 (うち vendor/bundle 18468 / embedded_gem 10 / assets 0) |
+| app | 1159 |
+| test | 1124 |
+| db | 152 |
+
+`.bundle/config` に `BUNDLE_PATH: vendor/bundle` があるため、ruby-lsp は既定で
+`vendor/bundle/**/*.rb` を除外する (`configuration.rb:33-37` が `Bundler.settings["path"]` から
+自動生成)。`tmp` / `node_modules` / `sorbet` と dotdir (include が `Dir.glob("*")` 起点なので
+`.claude/worktrees` を含む) も既定で対象外。**追加で外れるのは 10 件**。
+索引時間の主因は project ではなく **gem 側**だった。
+それでも「BUNDLE_PATH を設定していない repo」と「入れ子の node_modules / vendor / tmp」には
+効くので、汎用パターンとして `init_options.indexing.excludedPatterns` に 4 本入れた。
+
+gem の除外 (`excludedGems`) は**採らなかった**: その索引は gem へジャンプするためだけのもの
+ではなく、`belongs_to` や ActiveRecord のメソッドの定義・hover・補完の出どころそのもので、
+全部外すと solargraph が返せなかった状態 (Rails の DSL が 0 件) に自分から戻ることになる。
+
+変異検証 5 本 (end で空へ戻さない / status() の結果を入れない / autocmd を張らない /
+lualine が status() を直呼びする / lualine から進捗を外す) がいずれも red。
+`excludedPatterns` にはテストを付けていない (設定値の再掲にしかならないため。
+[`refuse-low-value-coverage.md`](../_claude/rules/refuse-low-value-coverage.md))。
+
 ## 残タスク (スコープ外)
 
 - 他の Rails project (ubipay 3.1.2 / marshmallow 3.2.2 / filetree-meta-manager 3.2.2) は
