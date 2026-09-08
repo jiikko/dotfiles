@@ -80,6 +80,22 @@ expect_bell() { # expect_bell <arg> <json> <期待 0|1> <label>
   local got; got=$(bell_flag "$PANE")
   if [ "$got" = "$3" ]; then ok "$4 (bell=$got)"; else bad "$4: 期待 bell=$3 / 実際 bell=$got"; fi
 }
+# 同じペインで hook を順に打ち、最後の 1 本がベルを鳴らしたかを見る。
+# 🚨 window_bell_flag はクライアントが見るまで落ちないので、途中の hook が鳴らすと
+# 最後の 1 本の判定にならない。先行が 1 本でも鳴ったら「前提が崩れた」として落とす
+# (静かに合格させると、抑制が壊れていても緑のままになる)。
+expect_bell_seq() { # expect_bell_seq <期待 0|1> <label> <arg> <json> [<arg> <json> ...]
+  local want="$1" label="$2"; shift 2
+  PANE=$(fresh_pane)
+  [ "$(bell_flag "$PANE")" = 0 ] || { bad "$label: 新ペインの bell が既に立っている (ハーネス異常)"; return; }
+  while [ "$#" -gt 2 ]; do
+    run_hook "$PANE" "$1" "$2"; shift 2
+    [ "$(bell_flag "$PANE")" = 0 ] || { bad "$label: 先行 hook がベルを鳴らした (このケースの前提が崩れている)"; return; }
+  done
+  run_hook "$PANE" "$1" "$2"
+  local got; got=$(bell_flag "$PANE")
+  if [ "$got" = "$want" ]; then ok "$label (bell=$got)"; else bad "$label: 期待 bell=$want / 実際 bell=$got"; fi
+}
 expect_state_pane() { # expect_state_pane <pane> <期待> <label>
   local got; got=$(state "$1")
   if [ "$got" = "$2" ]; then ok "$3"; else bad "$3: 期待 '$2' / 実際 '$got'"; fi
@@ -112,10 +128,50 @@ expect_bell idle '{"hook_event_name":"Stop","background_tasks":[{"id":"a","statu
 
 printf 'Test 5: Notification (入力待ち) → 鳴る\n'
 expect_bell input '{"hook_event_name":"Notification","notification_type":"idle_prompt"}' 1 '入力待ちでベル'
+# 🚨 「人が答えないと前へ進まない」種別を 1 つずつ pin する。denylist を足すときに
+# ここへ紛れ込ませると、承認待ちが無音になって誰も気づけない
+for nt in permission_prompt elicitation_dialog elicitation_url_dialog agent_needs_input worker_permission_prompt quota_auto_resume_disabled; do
+  expect_bell input "{\"hook_event_name\":\"Notification\",\"notification_type\":\"$nt\"}" 1 "$nt はベルあり"
+done
 
 printf 'Test 6: Notification (入力不要な種別) → 鳴らない\n'
-expect_bell input '{"hook_event_name":"Notification","notification_type":"auth_success"}' 0 'auth_success はベルなし'
-expect_bell input '{"hook_event_name":"Notification","notification_type":"agent_completed"}' 0 'agent_completed はベルなし'
+# claude 2.1.263 のバイナリが持つ notification_type の enum (14 値) のうち、人が
+# 何もしなくてよい 7 値。🚨 かつて denylist にあった elicitation_complete /
+# elicitation_response は enum に無く何も除外していなかったので消した (実在するのは
+# Test 5 の elicitation_dialog / elicitation_url_dialog で、どちらも入力が要る)
+for nt in auth_success agent_completed push_notification computer_use_enter computer_use_exit quota_auto_resume_fired quota_auto_resume_stale; do
+  expect_bell input "{\"hook_event_name\":\"Notification\",\"notification_type\":\"$nt\"}" 0 "$nt はベルなし"
+done
+
+printf 'Test 6b: bg 待機中の Notification → 鳴らない (ベルマークも出さない)\n'
+# Notification hook の stdin には background_tasks が無い (claude 2.1.263 のスキーマ)
+# ので、Stop が書いた @claude_bg を input が読む。bg 完了を待って止まっているだけの
+# ときに入力待ちの催促で鳴らされても、人がやることは無い
+BG_JSON='{"hook_event_name":"Stop","background_tasks":[{"id":"a","status":"running"}]}'
+expect_bell_seq 0 'bg 待機中は idle_prompt でもベルなし' \
+  idle "$BG_JSON" \
+  input '{"hook_event_name":"Notification","notification_type":"idle_prompt"}'
+expect_state '⚙ working (bg:1)' '状態も 🔔 input にせず ⚙ working (bg:1) のまま'
+# 承認待ちも同じ (ユーザー指定: bg があるうちは鳴らさない)
+expect_bell_seq 0 'bg 待機中は permission_prompt でもベルなし' \
+  idle "$BG_JSON" \
+  input '{"hook_event_name":"Notification","notification_type":"permission_prompt"}'
+
+printf 'Test 6c: bg が終わって Claude が再開したら、また鳴る\n'
+# 🚨 @claude_bg を落とす経路が死ぬと「一度 bg を挟んだら以降ずっと無音」になる。
+# working (UserPromptSubmit / PostToolUse = Claude が動いている) が落とす契機
+expect_bell_seq 1 'working を挟めば bg フラグが落ちてベルが戻る' \
+  idle "$BG_JSON" \
+  working '{}' \
+  input '{"hook_event_name":"Notification","notification_type":"permission_prompt"}'
+# bg なしの Stop でも落ちる。🚨 この経路は bell_flag では判定できない (途中の
+# 「bg なし Stop」自身がベルを鳴らし、window_bell_flag はクライアントが見るまで
+# 落ちないので、最後の input が鳴らしたのか区別がつかない)。状態で見る
+CLR_PANE=$(fresh_pane)
+run_hook "$CLR_PANE" idle "$BG_JSON"
+run_hook "$CLR_PANE" idle '{"hook_event_name":"Stop","background_tasks":[]}'
+run_hook "$CLR_PANE" input '{"hook_event_name":"Notification","notification_type":"permission_prompt"}'
+expect_state_pane "$CLR_PANE" '🔔 input' 'bg なしの Stop でも bg フラグが落ちる'
 
 printf 'Test 7: 作業中 (working / start) → 鳴らない\n'
 expect_bell working '{}' 0 'working はベルなし'

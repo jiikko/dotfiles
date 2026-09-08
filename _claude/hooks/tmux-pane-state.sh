@@ -3,11 +3,14 @@
 #
 # 使い方: tmux-pane-state.sh working|input|idle|start|clear
 #   working : "⚙ working" を表示 (UserPromptSubmit / PostToolUse=承認後の自動復帰)
+#             + @claude_bg を落とす (Claude が動いている = bg 待機ではない)
 #   input   : "🔔 input" を表示   (Notification — permission 承認待ち・質問への回答待ち)
 #             + ペインが画面に見えていなければ macOS 通知 (音あり)
 #             + tmux ベル (window-status のシアン反転)
-#             ただし stdin (hook JSON) の notification_type が入力不要の種別
-#             (auth_success / agent_completed 等) のときは状態を変えない
+#             ただし次のどちらかなら状態を変えず通知もベルも出さない:
+#             (a) stdin (hook JSON) の notification_type が入力不要の種別
+#                 (auth_success / agent_completed 等)
+#             (b) @claude_bg が立っている = bg 待機中 (下記)
 #   idle    : "✓ idle" を表示     (Stop = 応答完了)
 #             + ペインが画面に見えていなければ macOS 通知 (音なし)
 #             + tmux ベル (bg タスクが残っているときは鳴らさない — 下記)
@@ -20,6 +23,16 @@
 #   start   : "✓ idle" を表示     (SessionStart — 起動直後なので通知しない)
 #   clear   : 状態を消す          (SessionEnd — Claude 終了後は通常シェルへ戻す)
 #
+# @claude_bg (pane option) = 「直近の Stop 時点で bg タスクが in-flight だった」
+# = Claude が bg の完了待ちで止まっている。input 分岐がこれを読んでベルを抑制する。
+# 🚨 Notification hook の stdin には background_tasks が無い (claude 2.1.263 の
+# バイナリ内スキーマ: Notification = 共通ベース + {message, title?, notification_type}。
+# background_tasks は Stop / SubagentStop 限定) ので、Stop が書いたものを input が
+# 読む形でしか bg の有無を渡せない。
+# 落とすのは working (UserPromptSubmit / PostToolUse) — Claude が動いているなら
+# 待機ではない。この意味づけにより「bg 完了 → Claude 再開 → permission 承認待ち」は
+# 再開時の PostToolUse が @claude_bg を落とすのでちゃんと鳴る。逆に「bg を起こした
+# のと同じターン内の承認待ち」も鳴る (bg があっても人が答えないと前へ進まないため)。
 # 状態は pane 単位のユーザーオプション @claude_state に書き込む。未設定なら
 # pane-border-format 側の #{?@claude_state,...,} が空に展開されるため、
 # Claude を起動していないペイン (通常シェル等) には一切影響しない。
@@ -50,6 +63,28 @@ command -v tmux >/dev/null 2>&1 || exit 0
 set_state() {
   tmux set -p -t "$TMUX_PANE" @claude_state "$1" 2>/dev/null
   tmux set -p -t "$TMUX_PANE" @claude_state_since "$(date +%s)" 2>/dev/null
+}
+
+# bg 待機フラグの書き / 読み。0 を渡すと消す (unset)。
+set_bg() {
+  if [ "${1:-0}" -gt 0 ] 2>/dev/null; then
+    tmux set -p -t "$TMUX_PANE" @claude_bg "$1" 2>/dev/null
+  else
+    tmux set -p -u -t "$TMUX_PANE" @claude_bg 2>/dev/null
+  fi
+}
+
+# 🚨 数字判定は範囲式 [0-9] でなく明示列挙で書く (ja_JP.UTF-8 では [0-9] が全角数字を
+# 通す。_claude/rules/shell-numeric-gate-explicit-digits.md)。桁数上限も併せて課す —
+# 19 桁以上は [ -gt ] が integer expected で常に偽になり、判定が無音で死ぬ。
+# 判定不能 (未設定・非数値・異常長) は「bg 待機ではない」= 鳴らす側へ倒す。input の
+# 危険な失敗方向は「入力待ちなのに気づけない」なので、ここは過検知側に落とす。
+bg_waiting() {
+  local n
+  n=$(tmux show -p -v -t "$TMUX_PANE" @claude_bg 2>/dev/null) || return 1
+  case "$n" in ''|*[!0123456789]*) return 1 ;; esac
+  [ "${#n}" -le 9 ] || return 1
+  [ "$n" -gt 0 ]
 }
 
 # そのペインのウィンドウが、どのクライアントでも前面でないとき真。
@@ -98,21 +133,42 @@ ring_bell() {
 }
 
 case "${1:-}" in
-  working) set_state "⚙ working" ;;
+  working) set_state "⚙ working"; set_bg 0 ;;
   input)
-    # Notification hook は入力待ち以外の種別 (auth_success / agent_completed /
-    # elicitation_complete 等) でも発火する。stdin JSON の notification_type
+    # Notification hook は入力待ち以外の種別 (auth_success / agent_completed 等) でも
+    # 発火する。stdin JSON の notification_type
     # (実測 2026-08-13: {"hook_event_name":"Notification","notification_type":"idle_prompt",...})
     # を見て「入力不要と分かっている種別」だけ状態を変えない (denylist)。
     # 未知の種別・jq 不在・フィールド不在は 🔔 input に倒す — このインジケータの
-    # 危険な失敗方向は「入力待ちなのに気づけない」なので、判定不能は過検知側に落とす
+    # 危険な失敗方向は「入力待ちなのに気づけない」なので、判定不能は過検知側に落とす。
+    #
+    # denylist の中身は claude 2.1.263 のバイナリが持つ notification_type の enum
+    # (14 値) と突き合わせて選んだ。鳴らす側に残すのは「人が答えないと前へ進まない」
+    # 6 値 = permission_prompt / idle_prompt / elicitation_dialog /
+    # elicitation_url_dialog / agent_needs_input / worker_permission_prompt と、
+    # 人の対処が要る quota_auto_resume_disabled。
+    # 🚨 かつて並んでいた elicitation_complete / elicitation_response は enum に無く、
+    # 何も除外していなかった (実在するのは elicitation_dialog / elicitation_url_dialog で、
+    # どちらも入力が要る = 鳴らす側)。新しい値を足すときは同じ enum を引き直すこと
+    # (バイナリの strings に `notification_type` の配列がそのまま出る)。
     ntype=""
     if command -v jq >/dev/null 2>&1 && [ ! -t 0 ]; then
       ntype=$(jq -r '.notification_type // ""' 2>/dev/null) || ntype=""
     fi
     case "$ntype" in
-      auth_success|elicitation_complete|elicitation_response|agent_completed) : ;;
-      *) set_state "🔔 input"; ring_bell; notify_if_hidden "🔔 入力待ち (承認 or 回答が必要)" "default" ;;
+      auth_success|agent_completed|push_notification|\
+      computer_use_enter|computer_use_exit|\
+      quota_auto_resume_fired|quota_auto_resume_stale) : ;;
+      *)
+        # bg 待機中 (Claude は bg タスクの完了を待って止まっている) は、入力待ちの
+        # 催促が来ても人がやることは無いので鳴らさず表示も変えない
+        # (@claude_state は "⚙ working (bg:N)" のまま = ベルマークを出さない)
+        if bg_waiting; then
+          :
+        else
+          set_state "🔔 input"; ring_bell; notify_if_hidden "🔔 入力待ち (承認 or 回答が必要)" "default"
+        fi
+        ;;
     esac
     ;;
   idle)
@@ -133,6 +189,7 @@ case "${1:-}" in
       pending=$(jq -r '[.background_tasks[]? | select(.status == "completed" or .status == "failed" or .status == "killed" | not)] | length' 2>/dev/null) || pending=0
       case "$pending" in ''|*[!0-9]*) pending=0 ;; esac
     fi
+    set_bg "$pending"
     if [ "$pending" -gt 0 ]; then
       set_state "⚙ working (bg:$pending)"
     else
@@ -141,9 +198,10 @@ case "${1:-}" in
       notify_if_hidden "✓ 応答完了"
     fi
     ;;
-  start)   set_state "✓ idle" ;;
+  start)   set_state "✓ idle"; set_bg 0 ;;
   clear)   tmux set -p -u -t "$TMUX_PANE" @claude_state 2>/dev/null
-           tmux set -p -u -t "$TMUX_PANE" @claude_state_since 2>/dev/null ;;
+           tmux set -p -u -t "$TMUX_PANE" @claude_state_since 2>/dev/null
+           set_bg 0 ;;
 esac
 
 # hook が状態を返さないよう常に成功で抜ける (Stop/UserPromptSubmit を block しない)
