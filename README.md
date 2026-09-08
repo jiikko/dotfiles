@@ -213,17 +213,23 @@ Claude Code を動かしているペインの境界に作業状態が出る。
 | 表示 | 色 | 意味 |
 |---|---|---|
 | `⚙ working` | 黄 | 応答処理中 |
+| `⚙ working (bg:N)` | 黄 | バックグラウンドタスク N 件の完了待ち (手は空いていない) |
 | `🔔 input` | 赤 | permission 承認待ち・質問への回答待ち (承認すると working に自動復帰) |
 | `✓ idle` | 緑 | 完了・次の指示待ち |
 
 さらに `🔔 input` / `✓ idle` への遷移時、**そのペインがどのクライアントでも前面に
 見えていない**なら macOS 通知センターに通知が飛ぶ (input は音あり、idle は音なし)。
+
+`⚙ working (bg:N)` の間は、ベルも通知も出ないし `🔔` にもならない。bg タスクの完了を
+待って止まっているだけで、人がやることが無いため (入力待ちの催促 `idle_prompt` が
+来ても抑える)。bg が片付いて Claude が動き出せばフラグは落ち、そのあとの承認待ちは
+従来どおり鳴る。
 複数 claude 並走時の手待ち検知が画面監視なしでできる。
 同じアイコンはステータスバーのウィンドウリストにも出るため、別ウィンドウの claude の
 状態も一覧できる。
 
 - Claude Code の hooks (`_claude/settings.json`) が `_claude/hooks/tmux-pane-state.sh` を呼び、
-  ペイン単位オプション `@claude_state` を出し入れする
+  ペイン単位オプション `@claude_state` (と bg 待機フラグ `@claude_bg`) を出し入れする
 - `_tmux.conf` の `pane-border-format` が `#{?@claude_state,...,}` で表示。未設定ペイン
   (通常シェル) には何も出ない。セッション終了 (SessionEnd) で自動クリア
 
