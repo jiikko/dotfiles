@@ -346,7 +346,6 @@ func TestIssuesViewUserCursorActionsCancelPendingMoveAnchors(t *testing.T) {
 		{name: "g", run: func(v *issuesView) { v.handleKey("g", vp(10)) }},
 		{name: "G", run: func(v *issuesView) { v.handleKey("G", vp(10)) }},
 		{name: "tab", run: func(v *issuesView) { v.handleKey("tab", vp(10)) }},
-		{name: "anchorCursor", run: func(v *issuesView) { v.anchorCursor(v.rows[0].Path) }},
 	}
 	for _, tc := range actions {
 		t.Run(tc.name, func(t *testing.T) {

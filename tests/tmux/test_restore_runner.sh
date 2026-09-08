@@ -25,6 +25,8 @@ echo "tmux $*" >> "$CALLS"
 case "$*" in
   *@resurrect-restore-script-path*) printf '%s\n' "${STUB_RESTORE:-}" ;;
   *"show -gqv @tt-restore-complete"*) printf '%s\n' "${STUB_COMPLETE:-}" ;;
+  *"show -gqv @resurrect-capture-pane-contents"*) printf '%s\n' "${STUB_CAPTURE:-}" ;;
+  *"show -gqv @resurrect-dir"*) printf '%s\n' "${STUB_RESURRECT_DIR:-}" ;;
 esac
 EOS
 chmod +x "$TMP_DIR/bin/tmux"
@@ -110,5 +112,73 @@ else
     || { printf '✗ restore-aborted reason=lock-failed が無い:\n'; cat "$LOG"; exit 1; }
   printf '✓ lock を取れない: 復元せず理由を記録\n'
 fi
+
+# --- (6) archive の完全性: capture-contents が on のときだけ記録する -----------------------
+#
+# 🚨 production (`tmux_restore_runner.sh`) は「壊れていても復元は続行するが記録は残す」契約。
+# upstream は archive 展開の失敗を検証せず rc=0 で完走するので、この記録が無いと
+# 「window は全部戻ったのに全 pane の scrollback が空」が完全に silent になる (実証 2026-07-30)。
+# **それまでこの経路にテストが 1 本も無かった** (issue 316: 判定式を guards.sh へ寄せる前提として
+# 「述語を false へ倒す変異で 2 スクリプトとも red」を確認しようとして発覚した)。
+RDIR="$TMP_DIR/resurrect"; mkdir -p "$RDIR"
+printf 'not a gzip' > "$RDIR/pane_contents.tar.gz"   # gzip -t が落ちる中身
+
+# 🚨 **不在を assert するケースでは「そこへ到達したこと」を先に固定する**。archive チェックの
+# 手前には早期 return が 4 本ある (既定サーバでない / 先任が実行中 / lock 失敗 / restore.sh 未解決)。
+# 到達を見ないと、どれかで抜けた run が「記録しなかった = 正しい」に化ける。
+assert_reached_archive_check() { # assert_reached_archive_check <ラベル>
+  grep -qE '	restore-manual-begin epoch=[0-9]+' "$LOG" \
+    || { printf '✗ %s: archive チェックへ到達していない (手前の早期 return で抜けた):\n' "$1"; cat "$LOG"; exit 1; }
+}
+
+reset_calls; : > "$LOG"
+TT_TRIGGER_LOG="$LOG" STUB_RESTORE="$TMP_DIR/bin/fake_restore.sh" STUB_COMPLETE=1 \
+  STUB_CAPTURE=on STUB_RESURRECT_DIR="$RDIR" \
+  run "$STUB_PATH" "$SCRIPT"
+assert_reached_archive_check "壊れた archive (on)"
+# 🚨 パスは固定文字列で照合する ($RDIR は mktemp -d 由来で `.` を含み、ERE だと任意 1 文字に化ける)
+grep -qF "	restore-archive-broken path=$RDIR/pane_contents.tar.gz epoch=" "$LOG" \
+  || { printf '✗ 壊れた archive を記録していない (capture-contents=on):\n'; cat "$LOG"; exit 1; }
+grep -qE '	restore-archive-broken .* epoch=[0-9]+' "$LOG" \
+  || { printf '✗ epoch が数字で入っていない:\n'; cat "$LOG"; exit 1; }
+printf '✓ archive 破損: capture-contents=on なら restore-archive-broken を記録\n'
+
+# 🚨 **健全な archive では鳴らない (positive control の裏)**。これが無いと
+# `&& ! gzip -t "$tt_archive"` を丸ごと外す変異が緑で通り、**毎回「壊れている」と記録する**
+# 狼少年になる (本物の破損がログに埋もれる)。
+reset_calls; : > "$LOG"
+printf 'ok' | gzip > "$RDIR/pane_contents.tar.gz"
+TT_TRIGGER_LOG="$LOG" STUB_RESTORE="$TMP_DIR/bin/fake_restore.sh" STUB_COMPLETE=1 \
+  STUB_CAPTURE=on STUB_RESURRECT_DIR="$RDIR" \
+  run "$STUB_PATH" "$SCRIPT"
+assert_reached_archive_check "健全な archive (on)"
+grep -q 'restore-archive-broken' "$LOG" \
+  && { printf '✗ 健全な archive なのに破損を記録した:\n'; cat "$LOG"; exit 1; }
+printf '✓ archive 健全: capture-contents=on でも記録しない\n'
+
+# 🚨 **archive が「無い」だけでは鳴らない**。これが無いと `[ -f "$tt_archive" ]` を外す変異が
+# 緑で通り、capture を on にした直後 (まだ保存していない) を「壊れている」と記録する。
+reset_calls; : > "$LOG"
+rm -f "$RDIR/pane_contents.tar.gz"
+TT_TRIGGER_LOG="$LOG" STUB_RESTORE="$TMP_DIR/bin/fake_restore.sh" STUB_COMPLETE=1 \
+  STUB_CAPTURE=on STUB_RESURRECT_DIR="$RDIR" \
+  run "$STUB_PATH" "$SCRIPT"
+assert_reached_archive_check "archive なし (on)"
+grep -q 'restore-archive-broken' "$LOG" \
+  && { printf '✗ archive が無いだけなのに破損を記録した:\n'; cat "$LOG"; exit 1; }
+printf '✓ archive なし: 破損としては記録しない\n'
+
+# 🚨 **述語が効いていることの固定 (negative control)**。off のときも記録すると、
+# 「pane 内容を保存していないのに『復元できない』と毎回言う」ノイズになる。
+# これが無いと `tt_capture_contents_on` を常に true へ倒す変異が緑で通る。
+reset_calls; : > "$LOG"
+printf 'not a gzip' > "$RDIR/pane_contents.tar.gz"   # 壊れた中身に戻す
+TT_TRIGGER_LOG="$LOG" STUB_RESTORE="$TMP_DIR/bin/fake_restore.sh" STUB_COMPLETE=1 \
+  STUB_CAPTURE=off STUB_RESURRECT_DIR="$RDIR" \
+  run "$STUB_PATH" "$SCRIPT"
+assert_reached_archive_check "壊れた archive (off)"
+grep -q 'restore-archive-broken' "$LOG" \
+  && { printf '✗ capture-contents=off なのに archive 破損を記録した:\n'; cat "$LOG"; exit 1; }
+printf '✓ archive 破損: capture-contents=off なら記録しない\n'
 
 printf '\nAll restore-runner tests passed successfully!\n'

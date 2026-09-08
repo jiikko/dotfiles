@@ -175,7 +175,6 @@ func parseCodexRateLimits(result []byte) ([]Window, error) {
 		}
 		win := Window{
 			Label:      codexLabel(w.WindowDurationMins),
-			Raw:        "codex",
 			Source:     SourceCodex,
 			Percent:    int(math.Round(w.UsedPercent)),
 			WindowMins: codexWindowMins(w.WindowDurationMins),

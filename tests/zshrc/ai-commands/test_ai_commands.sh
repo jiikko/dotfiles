@@ -25,16 +25,6 @@ run_zsh() {
   HOME="$TMP_HOME" ZDOTDIR="$TMP_ZDOTDIR" zsh -i -c "$cmd"
 }
 
-assert_function_exists() {
-  local func="$1"
-  local message="$2"
-  if run_zsh "type $func >/dev/null 2>&1"; then
-    printf '✓ %s\n' "$message"
-  else
-    printf '✗ %s\n' "$message"
-    exit 1
-  fi
-}
 
 assert_is_function() {
   local func="$1"

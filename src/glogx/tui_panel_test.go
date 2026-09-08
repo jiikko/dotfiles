@@ -45,7 +45,7 @@ func TestCIPollResultDoesNotDoubleSchedule(t *testing.T) {
 		t.Fatal("前提: チェーンが張れない")
 	}
 	// pending のままの結果が着地。チェーンは生きているので新しい timer は張らない
-	_, cmd := m.Update(ciPollResultMsg{targets: []string{sha}, batch: CIBatch{Statuses: map[string]CIState{sha: StatePending}}})
+	_, cmd := m.Update(ciPollResultMsg{batch: CIBatch{Statuses: map[string]CIState{sha: StatePending}}})
 	if cmd != nil {
 		t.Error("結果着地で二重に poll を張った (single-flight の契約)")
 	}
@@ -117,7 +117,7 @@ func TestBrowseCIPolling(t *testing.T) {
 	}
 	// 結果の到着: in-flight が解除され、job 縮小でカーソルがクランプされる
 	m.panelCursor = 0
-	m.Update(ciPollResultMsg{targets: []string{sha}, batch: CIBatch{
+	m.Update(ciPollResultMsg{batch: CIBatch{
 		Statuses: map[string]CIState{sha: StatePending},
 		Details:  map[string][]CheckDetail{sha: {}},
 	}})
@@ -1255,14 +1255,14 @@ func TestCIPollAwaitCapGivesUp(t *testing.T) {
 
 	// 打ち切りは周期 (ciPollMsg) で数える = ciPollInterval × ciAwaitMaxAttempts の時間予算。
 	// 結果着弾では数えない (一括取得が複数チャンクに割れた回で余分に進まないこと)。
-	m.Update(ciPollResultMsg{targets: []string{sha}, batch: none})
+	m.Update(ciPollResultMsg{batch: none})
 	if m.awaitAttempts != 0 {
 		t.Fatalf("結果着弾で試行回数が進んだ: %d", m.awaitAttempts)
 	}
 	for i := range ciAwaitMaxAttempts - 1 {
 		m.Update(ciPollMsg{gen: m.ciPollGen})
 		m.ciPollInFlight = false // 結果が着弾した相当 (CI はまだ現れない)
-		m.Update(ciPollResultMsg{targets: []string{sha}, batch: none})
+		m.Update(ciPollResultMsg{batch: none})
 		if !m.awaitCI[sha] {
 			t.Fatalf("%d 周期目で諦めた (上限は %d)", i+1, ciAwaitMaxAttempts)
 		}
@@ -1332,7 +1332,7 @@ func TestCIPollResultFromStaleGenerationDropped(t *testing.T) {
 	staleGen := m.ciPollGen
 	m.ciPollGen++ // reloadAfterPull 相当
 
-	m.Update(ciPollResultMsg{gen: staleGen, targets: []string{sha}, batch: CIBatch{
+	m.Update(ciPollResultMsg{gen: staleGen, batch: CIBatch{
 		Statuses: map[string]CIState{sha: StatePending}, // 古い観測
 	}})
 	if m.statuses[sha] != StateSuccess {

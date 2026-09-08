@@ -56,7 +56,13 @@ type appZoom struct {
 	off     bool // 演出しない (テスト・端末が小さすぎる場合)
 }
 
-// start は開く演出を始める (Init から)。
+// start は開く演出を始める。
+//
+// 🚨 **production からは呼ばれていない** (issue 316 で確認)。`tui.go` の Init が
+// `// m.zoom.start(timeNow())` とコメントアウトしており、「開く演出は入れない
+// (起動が appZoomDuration 待たされる方が体感を損ねる)」という判断がそこに書いてある。
+// **終了の演出 (startClose) は生きている**ので、この関数を消すと対の実装が片方だけになる。
+// 開く演出を戻すときはそのコメントアウトを外す。
 func (z *appZoom) start(now time.Time) {
 	if z.off {
 		return

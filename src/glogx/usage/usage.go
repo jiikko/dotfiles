@@ -26,8 +26,12 @@ import (
 
 // Window は 1 つの利用枠 (5h セッション / weekly) の残量とリセット時刻。
 type Window struct {
-	Label   string    // 表示用ラベル ("5h" / "7d" / "7d(Fable)" / "cx7d")
-	Raw     string    // /usage の元ラベル ("Current session" 等)
+	Label string // 表示用ラベル ("5h" / "7d" / "7d(Fable)" / "cx7d")
+	// 🚨 `/usage` の**元ラベル**を持つ `Raw` フィールドは消した (issue 316 / 317)。
+	// production の読み手が 0 の write-only で、しかも `usage_cache.go` の termsafe は
+	// `Label` しか通さないため、**サニタイズ対象外の untrusted 文字列が永続キャッシュに
+	// 載り続ける**形だった。既存キャッシュに `"Raw"` が残っていても、Go の JSON は
+	// 未知フィールドを無視するので読み込みは壊れない。
 	Percent int       // 使用率 0-100
 	ResetAt time.Time // 枠がリセットされる時刻 (ローカルタイム)
 	// Source は枠の出所 (SourceCodex = codex、空文字 = Claude Code)。omitempty により
@@ -155,7 +159,6 @@ func Parse(result string, now time.Time) (*Snapshot, error) {
 		}
 		snap.Windows = append(snap.Windows, Window{
 			Label:      labelFor(raw),
-			Raw:        raw,
 			Percent:    pct,
 			ResetAt:    reset,
 			WindowMins: windowMinsFor(raw),

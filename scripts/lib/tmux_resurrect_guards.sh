@@ -129,6 +129,19 @@ tt_lock_owner_alive() {
   tt_same_proc "$pid" "$start"
 }
 
+# pane 内容の保存 (@resurrect-capture-pane-contents) が on か。
+#
+# 🚨 **この判定式を各スクリプトへ書き写さない** (issue 316)。以前は同じ式が 3 箇所にあった:
+# `tmux_resurrect_save.sh` の定義 (呼び出し 0 の born dead) と、`tmux_snapshot_health.sh` /
+# `tmux_restore_runner.sh` のインライン 2 箇所。式が食い違うと片方だけが黙る。
+# 🚨 **利用者はこの 2 本だけ**。`tmux_resurrect_save.sh:tt_archive_finalize` の
+# `archive-broken norepair` は**この述語のゲート外**で、`[ -f "$tt_archive" ]` によって
+# 暗黙に絞っている (on → off へ切り替えた後に古い archive が残っていると save だけが鳴る)。
+# 「save.sh もこの述語で守られている」と読まないこと。
+tt_capture_contents_on() {
+  [ "$(tmux show -gqv @resurrect-capture-pane-contents 2>/dev/null)" = "on" ]
+}
+
 # resurrect の保存先 dir を解決する。vendor helpers.sh:1-7,99-103 と同手順（source 副作用を避け
 # 自己完結）。解決順 @resurrect-dir → ~/.tmux/resurrect → $XDG_DATA_HOME/tmux/resurrect。
 # helpers.sh の解決順を変えたらここも追従すること。

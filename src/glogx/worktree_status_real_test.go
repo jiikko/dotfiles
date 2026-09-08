@@ -118,11 +118,11 @@ func TestRealDiscardDoesNotTakeGlobNeighbors(t *testing.T) {
 	write(t, root, "axb.txt", "neighbor\n")
 	v := realStatusView(t)
 	cursorTo(t, v, "a?b.txt")
-	v.handleKey("X", statusViewport{width: 120, page: 20})
+	v.handleKey("X", statusViewport{page: 20})
 	if !v.discarding {
 		t.Fatal("X で確認が開いていない")
 	}
-	v.handleKey("y", statusViewport{width: 120, page: 20})
+	v.handleKey("y", statusViewport{page: 20})
 	if exists(root, "a?b.txt") {
 		t.Error("対象が消えていない")
 	}
@@ -163,7 +163,7 @@ func TestRealOpsFromSubdirectory(t *testing.T) {
 	}
 
 	// stage できること
-	v.handleKey(" ", statusViewport{width: 120, page: 20})
+	v.handleKey(" ", statusViewport{page: 20})
 	if notice, ok := v.takeNotice(); notice != "" && !ok {
 		t.Fatalf("stage が失敗した: %s", notice)
 	}
@@ -178,7 +178,7 @@ func TestRealOpsFromSubdirectory(t *testing.T) {
 	// unstage で戻せること
 	v.receive(statusLoadMsg{st: st, gen: v.gen})
 	cursorTo(t, v, "src/deep/a.go")
-	v.handleKey(" ", statusViewport{width: 120, page: 20})
+	v.handleKey(" ", statusViewport{page: 20})
 	st, err = loadWorktreeStatus()
 	if err != nil {
 		t.Fatal(err)
@@ -196,8 +196,8 @@ func TestRealDiscardUntrackedDirKeepsSiblings(t *testing.T) {
 	write(t, root, "keep.txt", "keep\n")
 	v := realStatusView(t)
 	cursorTo(t, v, "junk/")
-	v.handleKey("X", statusViewport{width: 120, page: 20})
-	v.handleKey("y", statusViewport{width: 120, page: 20})
+	v.handleKey("X", statusViewport{page: 20})
+	v.handleKey("y", statusViewport{page: 20})
 	if exists(root, "junk/x.txt") {
 		t.Error("ディレクトリが消えていない")
 	}
@@ -221,14 +221,14 @@ func TestRealDiscardAbortsWhenFileChangedDuringConfirm(t *testing.T) {
 	write(t, root, "a.txt", "two\n")
 	v := realStatusView(t)
 	cursorTo(t, v, "a.txt")
-	v.handleKey("X", statusViewport{width: 120, page: 20})
+	v.handleKey("X", statusViewport{page: 20})
 	// 確認中に別プロセスが stage した (XY が " M" → "M " へ変わる)
 	cmd := exec.Command("git", "add", "a.txt")
 	cmd.Dir = root
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git add: %v\n%s", err, out)
 	}
-	v.handleKey("y", statusViewport{width: 120, page: 20})
+	v.handleKey("y", statusViewport{page: 20})
 	body, err := os.ReadFile(filepath.Join(root, "a.txt"))
 	if err != nil {
 		t.Fatal(err)
@@ -249,13 +249,13 @@ func TestRealCleanRepoIsSafe(t *testing.T) {
 	if !v.st.clean() {
 		t.Fatalf("新品の repo が clean でない: %+v", v.st.rows)
 	}
-	v.handleKey("a", statusViewport{width: 120, page: 20})
+	v.handleKey("a", statusViewport{page: 20})
 	if notice, ok := v.takeNotice(); !ok || !strings.Contains(notice, "ありません") {
 		t.Errorf("notice = %q (ok=%v), want 「stage するものがありません」", notice, ok)
 	}
 	// 行が無い状態で各キーを叩いても panic しないこと
 	for _, key := range []string{" ", "X", "d", "j", "k", "tab", "g", "G", "r"} {
-		v.handleKey(key, statusViewport{width: 120, page: 20})
+		v.handleKey(key, statusViewport{page: 20})
 	}
 	if lines := v.lines(statusRenderOpts{width: 120, page: 10}); len(lines) != 10 {
 		t.Fatalf("行数 = %d, want 10", len(lines))
@@ -272,7 +272,7 @@ func TestRealFailedOpIsReportedAsFailure(t *testing.T) {
 	if err := os.Remove(filepath.Join(root, "gone.txt")); err != nil {
 		t.Fatal(err)
 	}
-	v.handleKey(" ", statusViewport{width: 120, page: 20}) // 消えたファイルを stage しようとする
+	v.handleKey(" ", statusViewport{page: 20}) // 消えたファイルを stage しようとする
 	notice, ok := v.takeNotice()
 	if notice == "" {
 		t.Fatal("失敗が黙って捨てられた (notice が空)")

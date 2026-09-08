@@ -165,12 +165,14 @@ type statusRenderOpts struct {
 	spinner string
 }
 
-// statusViewport は「今この窓は何桁 × 何行か」+ 色 (キー処理が取得を発行するのに必要)。
+// statusViewport は「今この窓は何行か」+ 色 (キー処理が取得を発行するのに必要)。
 //
 // 🚨 colored を含むのは issuesViewport と違う点。diff の色付けは取得時に 1 回だけ行い
 // (毎フレーム chroma を回さない)、取得を発行するのはキー処理なのでここに必要になる。
+// 🚨 **width は持たない** (issue 316)。桁数を使うのは描画側 (`lines(o statusRenderOpts)`) で、
+// キー処理は行数しか要らない。以前は `width` を詰めていたが読み手が 0 件で、doc の
+// 「何桁 × 何行か」だけが残っていた (`issuesViewport` の方は `vp.width` を読むので紛らわしい)。
 type statusViewport struct {
-	width   int
 	page    int
 	colored bool
 }

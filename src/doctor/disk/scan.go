@@ -84,7 +84,7 @@ func Scan(ctx context.Context, opt Options) Report {
 	if opt.BootTime == nil {
 		opt.BootTime = bootTime
 	}
-	g := &guards{opt: opt}
+	g := &guards{}
 	results := make([]Result, len(opt.Catalog))
 	sem := make(chan struct{}, opt.Concurrency)
 	var wg sync.WaitGroup
@@ -123,7 +123,6 @@ func Scan(ctx context.Context, opt Options) Report {
 
 // guards は複数エントリで共有する判定材料 (simctl / brew / boottime / Applications) を 1 回だけ取る。
 type guards struct {
-	opt  Options
 	once map[string]*sync.Once
 	mu   sync.Mutex
 

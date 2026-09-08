@@ -93,7 +93,7 @@ tt_trigger_log "restore-manual-begin epoch=$(date +%s)"
 # ある)、記録は残す。upstream は archive 展開の失敗を検証せず rc=0 で完走するため、これが無いと
 # 「window は全部戻ったのに全 pane の scrollback が空」が完全に silent になる (実証 2026-07-30)。
 tt_archive="$(tt_resurrect_dir)/pane_contents.tar.gz"
-if [ "$(tmux show -gqv @resurrect-capture-pane-contents 2>/dev/null)" = "on" ] \
+if tt_capture_contents_on \
    && [ -f "$tt_archive" ] && ! gzip -t "$tt_archive" 2>/dev/null; then
   tt_trigger_log "restore-archive-broken path=$tt_archive epoch=$(date +%s)"
 fi

@@ -56,7 +56,7 @@ func TestUsageCacheRoundTripAndTTL(t *testing.T) {
 	}
 	for i, w := range want.Windows {
 		g := got.Windows[i]
-		if g.Label != w.Label || g.Raw != w.Raw || g.Percent != w.Percent || !g.ResetAt.Equal(w.ResetAt) {
+		if g.Label != w.Label || g.Percent != w.Percent || !g.ResetAt.Equal(w.ResetAt) {
 			t.Errorf("枠 %d が往復で壊れた:\n got  %+v\n want %+v", i, g, w)
 		}
 	}

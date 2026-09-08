@@ -297,7 +297,7 @@ func (v *issuesView) screen(now time.Time) (issuesScreen, bool) {
 // applyScreen は復元予約を今のスキャン結果へ当てる。
 //
 // 消えた issue (rename / 状態ディレクトリへ移動) には黙って別物を当てない: カーソルは
-// anchorCursor が当たらなければ先頭のまま、本文はパスが見つからなければ一覧のままにする。
+// anchorCursorInternal が当たらなければ先頭のまま、本文はパスが見つからなければ一覧のままにする。
 func (v *issuesView) applyScreen(s issuesScreen) {
 	v.expandedGroups = copyExpandedGroups(s.Groups)
 	for _, iss := range v.all {
@@ -607,13 +607,6 @@ func tabIndexOf(tabs []issues.Tab, name string) int {
 		}
 	}
 	return 0
-}
-
-// anchorCursor は手動の再アンカー。ユーザーが明示的にカーソルを置いたら、直前の move の
-// 再アンカー予約を優先させない。
-func (v *issuesView) anchorCursor(path string) {
-	v.clearPendingMoveAnchors()
-	v.anchorCursorInternal(path)
 }
 
 // anchorCursorInternal は再スキャン後と復元時の内部再アンカー。ここでは pending move を残し、
@@ -1307,7 +1300,10 @@ func (v *issuesView) clearNumberFilter() {
 	v.numFilter.clear()
 	v.refresh()
 	// Esc は「1 段戻る」であってカーソル移動の意思表示ではないので、直前の move の再アンカー
-	// 予約 (pendingCursorPath) は捨てない (anchorCursor は捨てる側)。
+	// 予約 (pendingCursorPath) は捨てない。捨てるのは**カーソルを置く側**で、その責務は
+	// `setCursor` / `g`・`home` / `moveTab` が直接 `clearPendingMoveAnchors()` を呼ぶ形で
+	// 配線されている (issue 316 で `anchorCursor` wrapper を削除。鏡像の `anchorGroup` は
+	// production 到達可能なので残っている)。
 	switch {
 	case groupKey != "":
 		v.anchorGroupInternal(groupKey)

@@ -115,7 +115,7 @@ func stubGitOps(t *testing.T, err error) *gitOpCalls {
 	return calls
 }
 
-func testViewport() statusViewport { return statusViewport{width: 120, page: 20} }
+func testViewport() statusViewport { return statusViewport{page: 20} }
 
 func testStatusOpts(width, page int) statusRenderOpts {
 	return statusRenderOpts{width: width, page: page, spinner: "⠋"}
@@ -1366,7 +1366,7 @@ func TestStatusHintWordsMatchBehavior(t *testing.T) {
 func TestStatusRSwitchesToRatelimitDash(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go"))
 
-	v.handleKey("R", statusViewport{width: testPopupWidth, page: 20})
+	v.handleKey("R", statusViewport{page: 20})
 
 	if !v.takeWantRatelimit() {
 		t.Error("R でダッシュボードへの横断を要求しない")

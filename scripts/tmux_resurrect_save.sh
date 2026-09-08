@@ -214,11 +214,6 @@ tt_save_log_guard() {
 # 観測ログへの汎用 1 行追記 (書式は docs/tmux-plugins.md「観測ログの読み方」の表が読者側の正本)
 tt_save_log() { tt_trigger_log "$1"; }
 
-# pane 内容の保存が有効か
-tt_capture_contents_on() {
-  [ "$(tmux show -gqv @resurrect-capture-pane-contents 2>/dev/null)" = "on" ]
-}
-
 # archive が「gzip として最後まで読めるか」。
 # 🚨 サイズや mtime で判定しないこと: truncate された壊れた archive は mtime が新しく、
 # サイズも 0 でないことがある (実測: gzip stub が 200 byte 出して死んだケース)。

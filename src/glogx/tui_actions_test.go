@@ -338,7 +338,7 @@ func TestBrowsePushFlow(t *testing.T) {
 	if _, cmd := m.Update(ciPollMsg{gen: m.ciPollGen}); cmd == nil || !m.ciPollInFlight {
 		t.Fatal("ciPollMsg で再取得が始まらない")
 	}
-	m.Update(ciPollResultMsg{targets: []string{newSHA}, batch: CIBatch{Statuses: map[string]CIState{newSHA: StateNone}}})
+	m.Update(ciPollResultMsg{batch: CIBatch{Statuses: map[string]CIState{newSHA: StateNone}}})
 	if !m.awaitCI[newSHA] || m.ciPollInFlight {
 		t.Fatalf("ciPollResultMsg の後始末が効いていない: awaitCI=%v inFlight=%v", m.awaitCI, m.ciPollInFlight)
 	}

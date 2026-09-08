@@ -111,7 +111,7 @@ daemon_alive "$TT_WATCHDOG_DIR" "watchdog"
 #   archive でも mtime 判定は OK を返した)。中身を読んで last の pane 集合を包含しているかだけが
 #   唯一この破損を捕まえる検査。壊れていれば「window は復元されるのに全 pane の scrollback が
 #   空」という silent なデータ喪失が確定している状態。
-if [ "$(tmux show -gqv @resurrect-capture-pane-contents 2>/dev/null)" = "on" ]; then
+if tt_capture_contents_on; then
   if [ ! -f "$archive" ]; then
     problems+=("pane_contents.tar.gz が無い (capture-pane-contents on なのに pane 内容が復元できない)")
     lines+=("archive: なし")

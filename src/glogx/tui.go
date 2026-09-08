@@ -132,11 +132,13 @@ type ciPollMsg struct{ gen int }
 // fetching / detailsLoading を立てず表示を「取得中」に落とさないため (チラつき防止)。
 // gen は投げた時点の世代で、リロードを跨いで着弾した結果を捨てるために持つ
 // (ciResultMsg の epoch と同じ役目)。
+// 🚨 `targets` は持たない (issue 316)。一括取得 (`ciResultMsg`) は「レスポンスに現れなかった
+// target も loading 解除する」ために要るが、こちらは **fetching / detailsLoading を立てない**
+// ので解除する対象が無い。以前は詰めるだけ詰めて受け側が一度も読まなかった。
 type ciPollResultMsg struct {
-	gen     int
-	targets []string
-	batch   CIBatch
-	ghErr   *GHError
+	gen   int
+	batch CIBatch
+	ghErr *GHError
 }
 
 const (
@@ -1118,7 +1120,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ciPollInFlight = true
 		gen := m.ciPollGen
 		fetch := ciPollFetch(m.repo, targets, func(b CIBatch, e *GHError) tea.Msg {
-			return ciPollResultMsg{gen: gen, targets: targets, batch: b, ghErr: e}
+			return ciPollResultMsg{gen: gen, batch: b, ghErr: e}
 		})
 		return m, tea.Batch(fetch, next, m.maybeTick())
 	case ciPollResultMsg:
@@ -3346,7 +3348,7 @@ func (m *browseModel) statusOpts() statusRenderOpts {
 
 // viewport は描画情報から「窓の寸法 + 色」を取り出す (キー処理へ渡す形)。
 func (o statusRenderOpts) viewport() statusViewport {
-	return statusViewport{width: o.width, page: o.page, colored: o.colored}
+	return statusViewport{page: o.page, colored: o.colored}
 }
 
 // ratelimitOpts は全画面 ratelimit ダッシュボードの描画情報。データは usageOv の Snapshot を
