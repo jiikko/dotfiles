@@ -8,6 +8,7 @@
 - **stdout / stderr / exit code を最初から別々に採る** (`cmd >out 2>err; echo $?`)。
   `2>&1` や `| head` を通した結果を「実測事実」として設計に書かない。混ぜた観測では
   **どの stream が判定材料か**を確定できない
+- **rc は同じ行のコマンド置換で壊れる。先に変数へ退避してから使う**（実測日: 2026-09-08 / 出典: swift-smbee issue 092 / done/090）。
 - **1 つのログに混ぜた 2 stream の「順序」も判定材料にしない**。stdout (buffered) と stderr (unbuffered) は
   flush のタイミングが違うので、同じログ上の前後関係は実際の発生順を表さない (実例 obaket 645 M6c,
   2026-09-03: Swift Testing の `started` 行 (stdout) と NSLog マーカー (stderr) の順序から hang の位置を
