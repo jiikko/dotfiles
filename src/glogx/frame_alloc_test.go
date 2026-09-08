@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"doctor/disk"
+	"doctor/docker"
 	"doctor/svc"
 )
 
@@ -140,6 +141,44 @@ func FuzzReapplyAfterReset(f *testing.F) {
 // 🚨 回数と同じく、この上限は `RUNEWIDTH_EASTASIAN=1` の環境では落ちる (issue 054)。実測で
 // list が 135 回 30776 B → 322 回 41139 B になる (幅計算が変わり行の作り直しが増えるため)。
 // その環境で赤くなったら、退行ではなく env 前提の方を疑うこと。
+// 🚨 **上限だけでなく「現在値」も書く** (issue 323)。上限だけだと「どれだけ悪化したら red か」が
+// 読めず、余裕を使い切っていることに誰も気づけない。実際 issues-40 は上限 213 に対して
+// 現在値も 213 で、**余裕 0** のまま「回数の余裕は既存ケースと同じ +4」というコメントが残っていた。
+//
+// 2026-09-08 の実測 (darwin/arm64・GOMAXPROCS=14・**-race**・-count=3〜5・120x40):
+//
+//	ケース          現在値      上限   余裕    バイト現在値      上限
+//	list            132        138    +6     30976〜30980    31700
+//	list-ja         132        138    +6     31696           32500
+//	status-40       313〜314   322    +8     42869〜42873    44400
+//	diff-overlay    216        225    +9     48027〜48038    49100
+//	job-panel       160        162    +2     36644〜36653    37500
+//	issues-40       213        213    **0**  34136           34900
+//	usage-glance    173        180    +7     35832           36700
+//	toast-holding   179        186    +7     37072           38000
+//	ratelimit-dash  175        179    +4     82024〜82025    84900
+//	doctor-disk     598〜604   620    +16    83100〜83184    86000
+//
+// 🚨 **issues-40 の余裕 0 は据え置く**。記録時 209 → 現在 213 の +4 は、その間に入った
+// issues viewer の機能追加 (waiting/ 状態・group 親行の y・終わった epic の除外) によるもので、
+// **3 回とも 213 で完全一致 = 揺れない**。揺れないケースに余裕は要らず、緩めれば
+// 「+1 の退行が通る」だけになる。意図して増やす変更では**この表と上限を同じ commit で更新する**
+// (このファイルが元から要求している運用)。
+// 🚨 **job-panel の +2 も同じ理由で据え置く** (160 が 3/3 で一致)。
+//
+// 🚨 **「どれだけ悪化したら red になるか」を実測した** (issue 323 の受け入れ条件)。
+// doctor の `lines()` に「表示行ごとに 1 確保」を足す変異 (太る退行の最小の形) を当てた結果:
+//
+//	doctor-svc     445 → 468  (+23) → red   ✅
+//	doctor-brew    188 → 198  (+10) → red   ✅
+//	doctor-disk    604 → 616  (+12) → **素通り** (旧上限 620)
+//	doctor-docker  572 → 582  (+10) → **素通り** (旧上限 589)
+//
+// 「観測レンジ + ~3%」で置いた上限が、行数ぶんの退行をそのまま吸収していた
+// (issue 323 が名指しした「予算は在るが壊れても緑」の形)。**この変異が red になる水準**へ
+// 締め直した: doctor-disk 620 → 612 / doctor-docker 589 → 580。
+// 揺れ (レンジ 6 / 5) に対して余裕 8 を残しているので flake はしない。
+// 上限を動かすときは、この変異を当て直して red を確認すること。
 func TestFrameAllocBudget(t *testing.T) {
 	// diff overlay / job パネルを含める理由: これらは buildShadowPanelBox を通る経路で、
 	// 一覧と status だけでは **その経路がテストの視界に入らない**。実際「buildShadowPanelBox の
@@ -187,7 +226,17 @@ func TestFrameAllocBudget(t *testing.T) {
 		// 270 の遅延化 (畳まれた行の detail を組まない) で 1506 → 601 に落ちたので締め直した。
 		// 締めずに残すと「2.5 倍悪化しても緑」になる (issue 269 と同じ形)。
 		{"ratelimit-dash", budgetRatelimitModel, 179, 84900},
-		{"doctor-disk", budgetDoctorModel, 620, 86000},
+		{"doctor-disk", budgetDoctorModel, 612, 86000},
+		// doctor の残り 3 タブ (issue 323 ②)。それまで disk だけがゲートに載っていた。
+		// 2026-09-08 実測 (darwin/arm64・GOMAXPROCS=14・**-race**・-count=5・120x40):
+		//   doctor-svc    440 / 442 / 443 / 444 / 445   65409〜65516 B
+		//   doctor-brew   187 x3 / 188 x2               37525〜37552 B
+		//   doctor-docker 567 x2 / 571 / 572 x2         56092〜56161 B
+		// 🚨 doctor 系は disk と同じく -race で揺れる (レンジ 6 / 1 / 5)。既存ケースの「+4」では
+		// 足りないので、doctor-disk と同じく**観測レンジの上に ~3%** を採る。
+		{"doctor-svc", budgetDoctorSvcModel, 458, 67500},
+		{"doctor-brew", budgetDoctorBrewModel, 194, 38700},
+		{"doctor-docker", budgetDoctorDockerModel, 580, 57900},
 	}
 	for _, c := range cases {
 		m := c.build(t)
@@ -425,12 +474,16 @@ func budgetRatelimitModel(tb testing.TB) *browseModel {
 	return m
 }
 
-// budgetDoctorModel は全画面 doctor (disk タブ) のフレーム (issue 270)。
-// Items を持つエントリを並べる — 畳まれた行の detail / copyText / copyPath を毎フレーム
-// 作る形が入ると、ここが跳ねる。
-func budgetDoctorModel(tb testing.TB) *browseModel {
+// budgetDoctorModelFor は全画面 doctor の実フレーム (issue 270 / 323)。
+//
+// 🚨 **4 タブすべてに実データを積む。** 以前は disk タブだけを測っており、
+// 残り 3 タブ (svc / brew / docker) はどの予算の視界にも入っていなかった (issue 323 ②)。
+// 空の Report を渡したタブを測っても「ほとんど何も描かないフレーム」の値しか出ず、
+// そのタブの描画が太っても気づけない。件数は disk と揃えて 8 エントリ規模にしてある。
+func budgetDoctorModelFor(tb testing.TB, tab doctorTab) *browseModel {
 	m := benchBrowseSubjects(tb, 20, 120, 40, false)
-	m.doctorOv = doctorView{shown: true, expanded: map[string]bool{}}
+	m.doctorOv = doctorView{shown: true, expanded: map[string]bool{}, tab: tab}
+
 	res := make([]disk.Result, 0, 8)
 	for e := range 8 {
 		items := make([]disk.Item, 0, 4)
@@ -443,7 +496,52 @@ func budgetDoctorModel(tb testing.TB) *browseModel {
 		})
 	}
 	m.doctorOv.diskRep = &disk.Report{Results: res}
-	m.doctorOv.svcRep = &svc.Report{}
-	m.doctorOv.brew = &brewDoctorResult{Clean: true}
+
+	finds := make([]svc.Finding, 0, 8)
+	for i := range 8 {
+		finds = append(finds, svc.Finding{
+			Label:       fmt.Sprintf("com.example.agent%02d", i),
+			PlistPath:   fmt.Sprintf("/Library/LaunchAgents/com.example.agent%02d.plist", i),
+			Domain:      "gui/501",
+			Reasons:     []string{"実行ファイルが無い", "直近の終了コードが非 0"},
+			MissingExec: "/opt/example/bin/agent",
+			LastExit:    78,
+			HasLastExit: true,
+			RestartKeys: []string{"KeepAlive"},
+		})
+	}
+	m.doctorOv.svcRep = &svc.Report{Findings: finds, Scanned: 64}
+
+	warns := make([]string, 0, 8)
+	for i := range 8 {
+		warns = append(warns, fmt.Sprintf("Warning: unbrewed header files were found in /usr/local/include (%d)", i))
+	}
+	m.doctorOv.brew = &brewDoctorResult{Warnings: warns}
+
+	kinds := []docker.Kind{docker.KindContainers, docker.KindImages, docker.KindBuildCache, docker.KindVolumes}
+	groups := make([]docker.Group, 0, len(kinds))
+	for _, k := range kinds {
+		items := make([]docker.Item, 0, 4)
+		for i := range 4 {
+			items = append(items, docker.Item{
+				Name: fmt.Sprintf("%s-%02d", k, i), Detail: "Exited (0) 3 weeks ago",
+				Size: int64(1 << 20 * (i + 1)), SizeText: "1.2GB",
+				Age: time.Duration(i+1) * 24 * time.Hour, AgeKnown: true,
+				Command: fmt.Sprintf("docker rm %s-%02d", k, i),
+			})
+		}
+		groups = append(groups, docker.Group{
+			Kind: k, Label: string(k), Total: 4, TotalSize: 1 << 22, Reclaimable: 1 << 21,
+			Items: items, Size: 1 << 22, Command: fmt.Sprintf("docker %s prune -f", k),
+		})
+	}
+	m.doctorOv.docker = &docker.Report{Installed: true, Groups: groups, SystemPrune: "docker system prune -a -f", OldAfter: 14 * 24 * time.Hour}
+
 	return m
 }
+
+// タブごとの入口。名前を分けるのは、予算テーブルの行と失敗メッセージでどのタブか分かるようにするため。
+func budgetDoctorModel(tb testing.TB) *browseModel       { return budgetDoctorModelFor(tb, tabDisk) }
+func budgetDoctorSvcModel(tb testing.TB) *browseModel    { return budgetDoctorModelFor(tb, tabSvc) }
+func budgetDoctorBrewModel(tb testing.TB) *browseModel   { return budgetDoctorModelFor(tb, tabBrew) }
+func budgetDoctorDockerModel(tb testing.TB) *browseModel { return budgetDoctorModelFor(tb, tabDocker) }

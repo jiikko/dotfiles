@@ -1,14 +1,30 @@
 # zsh bench の CI 予算 (ms)。tests/check_bench_budgets.sh が読む。
 # 各 metric の意味と計測方式 (min-of-5) は tests/zshrc/bench_zsh.sh のヘッダが一次情報。
 #
-# 🚨 暫定値 (2026-07-16 導入時点で CI 実測が未取得): ローカル (M3 Max) 実測
-# min-of-5 = startup 62ms / first_command 120ms を基に、CI (ubuntu-slim) の想定倍率
-# (nvim startup の実績でローカル比 ~3〜4 倍) + ノイズ余裕を乗せた粗い上限。
-# 初回 CI run の Step Summary 実測が取れたら、nvim startup と同じ「現在速度」ゲート
-# (直近実測 min の +~20%) へ絞ること。絞るまでは桁級の回帰しか捕まえられない。
+# 2026-09-08 に CI 実測へ引き締めた (issue 323 ①)。それまでは 2026-07-16 導入時の**暫定値**
+# (startup 500 / first_command 1000 / prompt_lag 500) で、ローカル実測から「CI は 3〜4 倍」と
+# 推測した粗い上限だった。導入時のコメント自身が「初回 CI run の実測が取れたら絞ること。
+# 絞るまでは桁級の回帰しか捕まえられない」と書いていたが、絞られないまま 2 か月弱残っていた。
+#
+# CI 実測 (macOS runner・min-of-5・成功した直近 3 run: 34233371591 / 34236473851 / 34239286136):
+#
+#	metric          実測 (3 run)              worst   旧予算  新予算  倍率
+#	startup         30.2 / 33.5 / 34.1        34.1    500     55      worst の 1.61
+#	first_command   160.9 / 188.2 / 189.4     189.4   1000    300     worst の 1.58
+#	prompt_lag      16.1 / 17.1 / 22.3        22.3    500     35      worst の 1.57
+#
+# 余裕の取り方は nvim 側 (tests/nvim/bench_budgets.ci の startup) に揃えた:
+# **worst 観測 + 3 割弱**では 3 run しか分布が無く flake 圏内なので、そこからもう一段広げて
+# worst の ~1.6 倍にしている。3 run は少ないので、**flake したら広げる前にまず分布を取り直す**
+# (`gh run list --workflow=bench.yml` → `gh run view <id> --log | grep 'metric='`)。
+# 逆に run が溜まって安定が見えたら絞り直してよい。
+#
+# 🚨 **この計器では「数 ms の改善・退行」は依然として見えない** (issue 323 ① の本題)。
+# prompt_lag の run 間変動が 16.1〜22.3 ms = 38% あるので、例えば issue 322 ① の
+# 「precmd 12.00 → 5.31 ms」のような 6.7 ms 級の差は分布に埋もれる。予算はあくまで
+# **1.6 倍級の退行の検出器**で、ms 単位の改善の証明には使えない。それが要るなら
+# 計器を変える (precmd 1 サイクルの直接計測 / 比・伸び率で測る) 必要がある — 残件。
 # min-of-5 前提の値: bench 側のサンプル数 N を変えたら実測を取り直して再較正すること。
-startup 500
-first_command 1000
-# prompt_lag はローカル実測 min-of-5 = 37ms (遅い precmd 200ms を注入すると 253ms に跳ねることを
-# A/B で確認済み = precmd 回帰の検出器として機能する)。CI 実測が取れたら同様に絞る。
-prompt_lag 500
+startup 55
+first_command 300
+prompt_lag 35
