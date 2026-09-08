@@ -80,9 +80,13 @@ func loadUsageCache(path string, now time.Time) (*usage.Snapshot, bool) {
 	// 🚨 **表示に載る文字列は入口で 1 回 termsafe を通す** (src/glogx/CLAUDE.md の規律。issue 230)。
 	// このファイルは一般ユーザー権限で書き換えられる。live の取得経路は安全 (Claude は
 	// defaultOrder の完全一致でしか描かれず、codex の Label は分から組み立てる) だが、
-	// **codex 枠は Source で拾う**ので、キャッシュに書かれた Label がそのまま
-	// RenderLine / RenderTableGroups / RenderDashboard の 3 経路へ出る (敵対レビューが再現)。
-	// 出所ごとに書き分けると漏れるので、復元直後にここで閉じる
+	// **codex 枠は Source で拾う**ので、キャッシュに書かれた Label がそのまま表示へ出る。
+	// 出所ごとに書き分けると漏れるので、復元直後にここで閉じる。
+	//
+	// 🚨 **出口の数を数え上げないこと** (issue 317)。以前ここは
+	// 「RenderLine / RenderTableGroups / RenderDashboard の 3 経路」と列挙していたが、
+	// `RenderLine` は production 呼び出しが 0 件で、経路が増減するたびに嘘が再生産される形だった。
+	// 守るべき規律は「**表示に載る文字列は入口で 1 回通す**」であって、出口の員数ではない。
 	for i := range entry.Snapshot.Windows {
 		entry.Snapshot.Windows[i].Label = termsafe.PlainLine(entry.Snapshot.Windows[i].Label)
 	}

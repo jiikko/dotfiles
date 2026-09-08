@@ -142,18 +142,40 @@ func TestUsageCacheSanitizesCodexLabel(t *testing.T) {
 	if !ok {
 		t.Fatal("キャッシュを読めない (前提が違う)")
 	}
-	line := usage.RenderLine(got, now, false)
-	if hasTerminalControl(line) {
-		t.Errorf("RenderLine に制御シーケンスが残った: %q", line)
-	}
-	if strings.Contains(line, "PWNED") {
-		t.Errorf("OSC の中身が残った: %q", line)
-	}
-	header, rows := usage.RenderTable(got, now, false)
-	for _, l := range append(rows, header) {
-		if hasTerminalControl(l) {
-			t.Errorf("RenderTable に制御シーケンスが残った: %q", l)
+	// 🚨 **観測面は production 到達可能な 2 経路にする** (issue 317)。
+	// 以前は `RenderLine` / `RenderTable` を見ていたが、実測 (2026-09-06 / 2026-09-08 に再確認)
+	// で **どちらも production 呼び出し 0 件**だった。入口 (loadUsageCache) のサニタイズを
+	// 外す変異はそれでも red になる (どの出口から見ても汚染が見えるため。2026-09-08 実測) が、
+	// **live 経路そのものが Label を別の形で出すようになった退行**は到達不能な面からは見えない。
+	// 到達可能な面で観測しておけば、その両方が同じテストで閉じる。
+	//
+	//	RenderTableGroups … usage_overlay.go / usage/render.go 内部 (2 件)
+	//	RenderDashboard   … ratelimit_dashboard.go / tools/dial-preview (2 件)
+	assertNoTerminalControl := func(where string, lines ...string) {
+		t.Helper()
+		for _, l := range lines {
+			if hasTerminalControl(l) {
+				t.Errorf("%s に制御シーケンスが残った: %q", where, l)
+			}
+			if strings.Contains(l, "PWNED") {
+				t.Errorf("%s に OSC の中身が残った: %q", where, l)
+			}
 		}
+	}
+	header, groups := usage.RenderTableGroups(got, now, false)
+	rows := []string{header}
+	for _, g := range groups {
+		rows = append(rows, g...)
+	}
+	assertNoTerminalControl("RenderTableGroups", rows...)
+	assertNoTerminalControl("RenderDashboard", usage.RenderDashboard(got, now, 120, 40, false)...)
+
+	// 🚨 **観測面が汚染ラベルを実際に描いていることを固定する** (positive control)。
+	// これが無いと「Label をどこにも出さない描画」に変えた瞬間、無害化が外れても緑になる
+	// (issue 284 と同型)。サニタイズ後に残るのは制御文字を落とした "cx7d" の部分。
+	joined := strings.Join(rows, "\n")
+	if !strings.Contains(joined, "cx7d") {
+		t.Fatalf("RenderTableGroups が codex のラベルを描いていない。観測面が的を外している:\n%s", joined)
 	}
 }
 
