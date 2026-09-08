@@ -95,6 +95,16 @@ func dockerRunNote(k docker.Kind) string {
 
 // dockerMarkWidth は記号列の幅。🚨 **記号は語ごとに表示幅が違う** ("✅ 安全" と "⛔ 要確認") ので、
 // 揃えないと後ろのラベルが行ごとにずれる。disk 側の doctorMaxMarkWidth と同じ扱い。
+// 🚨 **ここはメモ化しない** (issue 321 ② を実測して却下、2026-09-08)。disk 側の
+// `doctorMaxMarkWidth` は `sync.OnceValue` にして -19,950 B/frame 減ったが、**こちらは効果 0**:
+//
+//	memo あり  569 / 570 / 571 allocs   56,134〜56,170 B
+//	memo なし  566 / 570 / 575 allocs   56,104〜56,174 B   ← 分布が重なる (-race・count=3)
+//
+// 差が出ない理由は確保の中身が違うから。disk 側の `disk.MarkVocabulary()` は呼ぶたびに
+// `[]Item` と `[]Result` を 6 件ぶん**構築する**ので、8 行 × それが効いていた。
+// こちらは `[]docker.Kind` (string 4 個) を作って `dispWidth` を回すだけで、しかも
+// 群の行ごと = 4 回/frame しかない。**効果の無い修正は入れない** (CLAUDE.md「不具合対応の原則」)。
 func dockerMarkWidth() int {
 	w := 0
 	for _, k := range []docker.Kind{docker.KindContainers, docker.KindImages, docker.KindBuildCache, docker.KindVolumes} {

@@ -668,6 +668,17 @@ func appIsLive(ctx context.Context, run runner.Runner, app string) (bool, error)
 //
 // 🚨 **比較は展開・正規化した絶対パスで行う**。`excludedRoots` はテンプレート (`~/...`) なので、
 // 文字列のまま比べると必ず外れる。HOME が空なら判定できない = error (fail-closed)。
+// 🚨 **正規化結果をキャッシュしない** (issue 321 ⑤ の据え置き判断、2026-09-08)。
+// path 1 本ごとに 10 root すべてを `EvalSymlinks` し直すのは確かに重いが、これは
+// **破壊的操作のガード**の一部で、`_claude/rules/sandbox-real-destructive-test-apis.md` の
+// 「実行の直前に取り直した値で判定する」に真っ向から当たる。キャッシュは
+// **検査と実行のあいだの TOCTOU の窓を広げる** (symlink を差し替えれば除外を外せる)。
+// 🚨 **経路は 1 本しかない**。この関数の非テスト呼び出しは `scan.go:sizePaths` だけで、
+// `delete.go` は一度も呼ばない — が、`planDelete` が**削除の直前に `Scan` を回し直す**
+// (`fresh := Scan(...)`) ので、**この関数がそのまま破壊的操作の直前判定になる**。
+// 「delete.go から呼ばれていない = 走査専用だからキャッシュして安全」と読まないこと (正反対)。
+// 速くしたいなら呼び出し元を識別する引数を足して「走査だけキャッシュ・削除は取り直す」形に
+// する必要がある。そこまでやる需要が出るまで据え置く。
 func excludedRootFor(env Env, p string) (string, error) {
 	target, err := canonicalPath(env, p)
 	if err != nil {

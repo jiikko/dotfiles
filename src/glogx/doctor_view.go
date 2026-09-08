@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -999,6 +1000,11 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 		results = v.diskRep.Results
 		partial = v.diskRep.Partial
 	}
+	// 🚨 **同一フレームで tabSummary も SumDeletable を呼ぶ (2 回) が、まとめない** (issue 321 ③)。
+	// SumDeletable は Result を舐めて int64 を足すだけで**確保を 1 バイトもしない**ので、
+	// フレーム確保への寄与は 0。まとめるなら `diskRep.Total` を使う形になるが、それは
+	// **Total の鮮度** (削除の後に Report を作り直したか) に依存する — 「消したのに減らない」は
+	// 実際に起きた形 (doctor_cache.go の注記)。得るものが無いのに壊れる余地だけ増える。
 	total := disk.SumDeletable(results)
 	summary := fmt.Sprintf("合計 %s 解放可能", disk.HumanSize(total))
 	switch {
@@ -1008,6 +1014,10 @@ func (v *doctorView) diskSection(o doctorRenderOpts) []doctorRow {
 		summary = "(中断: 部分結果) " + summary
 	}
 	rows := sectionHeader(o, "ディスク占有", summary)
+	// 🚨 **毎フレームのコピー + 整列はメモ化しない** (issue 321 ④)。確保は slice 1 本ぶんで、
+	// 321 ①② のメモ化が削った -19,950 B/frame に対して無視できる。メモ化すると
+	// 「results が変わったか」の判定を持つことになり、走査中 (1 件ずつ届く) と削除後に
+	// 無効化し忘れる経路が増える。
 	sorted := append([]disk.Result(nil), results...)
 	sort.SliceStable(sorted, func(a, b int) bool { return sorted[a].Size > sorted[b].Size })
 	shown := 0
@@ -1267,13 +1277,27 @@ const (
 
 // doctorMaxMarkWidth はリスク記号の最大表示幅。マークは固定語彙なので測れる
 // (可変長の理由をマーク列へ入れないのは issue 182 の対応)。
-func doctorMaxMarkWidth() int {
+//
+// 🚨 **語彙から導出する形を保つこと** (issue 238)。以前 5 語をハードコードしていて
+// `🔎 未検証` が抜けた事故があり、`disk.MarkVocabulary()` から導く形へ直した経緯がある。
+// メモ化は導出性を壊さない (初回に語彙を全部舐める) が、**定数へ焼き直すのは 238 の回帰**。
+//
+// メモ化の理由は「**プロセス不変の値を毎フレーム再計算しないため**」(issue 321)。
+// 語彙もその表示幅もプロセス内で変わらないのに、行ループから毎行呼ばれていた。
+// 実測 (darwin/arm64・-race・doctor-disk フレーム): 600 allocs / 83,122 B →
+// hoist 単独 577 / 65,641 → **memo 単独 579 / 63,174** (-19,948 B = **24%**)。
+// 🚨 効くのは呼び出し回数ではなく**中身**: `MarkVocabulary()` は呼ぶたびに `[]Item` と
+// `[]Result` を 6 件ぶん構築する。だから行ごとに呼ぶと効いた。同型に見える
+// `dockerMarkWidth` (string 4 個) は同じ手を当てても効果 0 だった (doctor_docker.go の注記)。
+// (x/ansi の init 順を避けるため、という理由づけは誤り — Go は import 先の init を
+// 先に完了させるので初期化順の心配は要らない)
+var doctorMaxMarkWidth = sync.OnceValue(func() int {
 	w := 0
 	for _, m := range disk.MarkVocabulary() {
 		w = max(w, dispWidth(m))
 	}
 	return w
-}
+})
 
 func doctorNewest(r disk.Result) time.Time {
 	var t time.Time

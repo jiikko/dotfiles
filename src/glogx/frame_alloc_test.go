@@ -157,7 +157,7 @@ func FuzzReapplyAfterReset(f *testing.F) {
 //	usage-glance    173        180    +7     35832           36700
 //	toast-holding   179        186    +7     37072           38000
 //	ratelimit-dash  175        179    +4     82024〜82025    84900
-//	doctor-disk     598〜604   620    +16    83100〜83184    86000
+//	doctor-disk     575〜583   591    +8     63152〜63249    65200  ← 321 の後
 //
 // 🚨 **issues-40 の余裕 0 は据え置く**。記録時 209 → 現在 213 の +4 は、その間に入った
 // issues viewer の機能追加 (waiting/ 状態・group 親行の y・終わった epic の除外) によるもので、
@@ -177,7 +177,17 @@ func FuzzReapplyAfterReset(f *testing.F) {
 // 「観測レンジ + ~3%」で置いた上限が、行数ぶんの退行をそのまま吸収していた
 // (issue 323 が名指しした「予算は在るが壊れても緑」の形)。**この変異が red になる水準**へ
 // 締め直した: doctor-disk 620 → 612 / doctor-docker 589 → 580。
-// 揺れ (レンジ 6 / 5) に対して余裕 8 を残しているので flake はしない。
+//
+// 🚨 その後 issue 321 (マーク幅のメモ化) で doctor-disk が 63,2xx B まで落ちたので
+// **612 → 591 へさらに下げた**。同じ変異を当て直した結果 (2026-09-08、321 の後):
+//
+//	doctor-svc    465 > 458 red / doctor-brew   198 > 194 red
+//	doctor-disk   596 > 591 red / doctor-docker 581 > 580 red
+//
+// 🚨 **doctor-docker は 581 vs 580 で差 1 しかない**。この fixture は 4 群 × 4 items = 20 行程度で
+// 行数が少なく、「行ごと 1 確保」の効きが +6〜10 にしかならないため。CI で flake したら
+// **上限を緩める前に fixture を大きくする** (行数を増やせば変異の効きが増え、余裕を広げても
+// 検出できる)。緩めるだけだとこの変異を素通りする側へ戻る。
 // 上限を動かすときは、この変異を当て直して red を確認すること。
 func TestFrameAllocBudget(t *testing.T) {
 	// diff overlay / job パネルを含める理由: これらは buildShadowPanelBox を通る経路で、
@@ -226,7 +236,11 @@ func TestFrameAllocBudget(t *testing.T) {
 		// 270 の遅延化 (畳まれた行の detail を組まない) で 1506 → 601 に落ちたので締め直した。
 		// 締めずに残すと「2.5 倍悪化しても緑」になる (issue 269 と同じ形)。
 		{"ratelimit-dash", budgetRatelimitModel, 179, 84900},
-		{"doctor-disk", budgetDoctorModel, 612, 86000},
+		// 🚨 issue 321 (doctorMaxMarkWidth のメモ化) の後に**下げた**上限。
+		// 2026-09-08 実測 (-race・count=3): 575 / 577 / 583 allocs、63152〜63249 B。
+		// メモ化前は 598〜604 / 83100〜83184 B だったので **-19,950 B (-24%)**。
+		// 緩いまま残すと「メモ化を revert しても緑」= 改善を守らない予算になる (issue 269 の形)。
+		{"doctor-disk", budgetDoctorModel, 591, 65200},
 		// doctor の残り 3 タブ (issue 323 ②)。それまで disk だけがゲートに載っていた。
 		// 2026-09-08 実測 (darwin/arm64・GOMAXPROCS=14・**-race**・-count=5・120x40):
 		//   doctor-svc    440 / 442 / 443 / 444 / 445   65409〜65516 B
