@@ -704,6 +704,21 @@ if command -v brew > /dev/null 2>&1; then
   #    経路 (err_exit / ERR trap の下で source する道具) ができた瞬間に事故る。
   __dotfiles_hint() { if [[ -o interactive ]]; then print -ru2 -- "$1"; fi; }
 
+  # 🚨 MANUAL_REBIND は **source より前**に置く (autosuggestions が読み込み時に見る)。
+  # これが無いと `_zsh_autosuggest_bind_widgets` が **毎プロンプト** 421 widget を再バインドする。
+  # 実測 2026-09-08 (実 rc・N=200・3 run): precmd 1 サイクル 9.49/9.69/9.64 ms → 3.28/3.38/3.38 ms
+  # = **-6.3 ms (-65%)**。
+  #
+  # 「初回 bind の後に別のプラグインが widget を触ると、その分が覆われないのでは」という懸念
+  # (zsh-syntax-highlighting は下で source され、リテラルの `zle -N` ではなくプログラム的に
+  # 全 widget をラップし直す) は**実験で否定した**: `for f in $precmd_functions; do $f; done` で
+  # プロンプト 1 回ぶんを再現して `zle -l` を比べると、MANUAL_REBIND の有無で
+  # **実 rc で 417 widget が完全一致 (diff 0)**。`zsh -f` の最小 rc でも 388 で一致。
+  # よって「source 後にもう一度 bind し直す」は不要 (issue 322 ①)。
+  #
+  # 🚨 この 6.3 ms は `tests/zshrc/bench_zsh.sh` の prompt_lag では見えない (run 間変動が
+  # 16〜22 ms あり分布に埋もれる。issue 323)。効果を語るときは上の直接計測を出すこと。
+  ZSH_AUTOSUGGEST_MANUAL_REBIND=1
   if [ -f "$brew_prefix/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ]; then
     source "$brew_prefix/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
   else

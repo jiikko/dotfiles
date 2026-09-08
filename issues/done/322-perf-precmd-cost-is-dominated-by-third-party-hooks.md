@@ -63,7 +63,7 @@ BASE 26.0 / 24.2 / 24.7 vs FIX 18.7 / 24.1 / 22.2 で**分布が重なり判定�
 **「precmd から外し、chpwd + シェル起動時 1 回だけにする」**方向のみ。
 
 🚨 **未実測・ユーザー判断待ちとして扱う。** 外す前に failure mode を列挙すること
-（[`list-masked-failure-modes-before-removing-guard.md`](../_claude/rules/list-masked-failure-modes-before-removing-guard.md)）:
+（[`list-masked-failure-modes-before-removing-guard.md`](../../_claude/rules/list-masked-failure-modes-before-removing-guard.md)）:
 
 - (a) `.envrc` の in-place 編集の即時反映
 - (b) 別端末で `direnv allow` した後の反映
@@ -79,13 +79,53 @@ direnv の内部表現に依存し、ツール側の更新で無言で壊れる�
 `eval "$(direnv hook zsh)"` と ssh-agent の鍵登録（`ssh-add -l`）。
 起動 1 回ぶんなので precmd ほどは効かないが、②と同じ commit で見直せる。
 
+## 対応 (2026-09-08)
+
+commit `perf(322): zsh-autosuggestions の毎プロンプト再バインドを止める`。
+
+### ①「1 行では足りないかも」の懸念は実験で否定された
+
+`for f in $precmd_functions; do $f; done` でプロンプト 1 回ぶんを再現してから `zle -l` を比べた
+（🚨 最初 rc の中で `zle -l` を見て「base でも 13 widget しか無い」と読みかけた。
+**bind は precmd で起きる**ので、precmd を走らせる前の観測は 3 条件とも同じ値になり、
+実験として成立していない）:
+
+| 条件 | `zsh -f` 最小 rc | 実 rc |
+|---|---|---|
+| 現状 | 388 | 417 |
+| `MANUAL_REBIND=1` だけ | 388（**diff 0**） | 417（**diff 0**） |
+| `MANUAL_REBIND=1` + source 後に 1 回 bind | 388（diff 0） | — |
+
+**初回の bind は MANUAL_REBIND でも走る**ので、後から source される zsh-syntax-highlighting の
+ラップも覆われる。よって**対応は 1 行**で、「source 後にもう一度 bind」は不要。
+
+### ① 効果 (直接計測。prompt_lag では見えない)
+
+実 rc・N=200・3 run で precmd 1 サイクル:
+
+| | 実測 |
+|---|---|
+| 現状 | 9.49 / 9.69 / 9.64 ms |
+| `MANUAL_REBIND=1` | 3.28 / 3.38 / 3.38 ms |
+
+**-6.3 ms (-65%)**。一次報告の 12.00 → 5.31 ms とは絶対値が違う（測定時の負荷差）が、
+削減幅は同じオーダー。🚨 **この差は `bench_zsh.sh` の prompt_lag では観測できない**
+（run 間変動が 16〜22 ms。issue 323 で予算は締めたが、分解能の問題は残っている）。
+効果を語るときはこの直接計測を出すこと、を `_zshrc` のコメントにも書いた。
+
+### ②③ は人の判断へ → [338](../338-human-zsh-precmd-verification-and-direnv-decision.md)
+
+direnv を precmd から外すと失われる挙動 4 つ（`.envrc` の即時編集反映 / 別端末の allow /
+後から作られたディレクトリ / watch 対象の別ファイル）を列挙した。**どれも `cd .` で戻る**が、
+`.envrc` を書きながら試す作業では (a) を頻繁に踏むので、トレードオフの判断は人に委ねる。
+①の動作確認（paste / `^R` / 補完受理）も同じ issue に置いた。
+
 ## 受け入れ条件
 
-- [ ] ①: `zsh -f` の隔離実験で widget テーブルを diff し、**1 行で足りるのか
-      「source 後に 1 回 bind」が要るのか**を確定させる（推測で入れない）
-- [ ] ①: 入れた後、**paste / `^R` / 補完受理**を人手で確認する（human issue に回してもよい）
-- [ ] ②③: 外すなら failure mode を列挙してからユーザーに判断を仰ぐ
-- [ ] 効果を報告するときは**測った経路と計器の分解能**を併記する（「prompt_lag が改善」とは書かない）
+- [x] ①: 隔離実験で widget テーブルを diff し、**1 行で足りる**ことを確定させた
+- [x] ①: 入れた後の人手確認 → [338](../338-human-zsh-precmd-verification-and-direnv-decision.md) へ
+- [x] ②③: failure mode を列挙して [338](../338-human-zsh-precmd-verification-and-direnv-decision.md) で判断を仰ぐ形にした
+- [x] 効果は**測った経路と計器の分解能**を併記した（「prompt_lag が改善」とは書いていない）
 
 ## 関連
 
