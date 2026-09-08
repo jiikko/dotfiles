@@ -100,6 +100,31 @@ new_epic_repo; ( cd "$REPO" && git mv issues/epic/foo/186-x.md issues/epic/foo/n
   git -c user.email=t@t -c user.name=t commit -qm claim )
 expect_fire "epic group の commit 済みだが未 push の claim"
 
+# 🚨 **detached worktree の claim** (issue 311)。この repo は `worktree-per-session.md` で
+# **detached worktree を規範として要求している**のに、fixture は全ケース通常ブランチだった。
+# `git log --branches --not --remotes` は detached HEAD の commit を **1 件も返さない**ので、
+# 規範どおり worktree で claim すると **「未 push は無い」という積極的な偽の全クリア**になる。
+# 生成部が通常ブランチしか作らないと、式をどちら向きに変えても緑のまま (構造的に踏まない)。
+new_detached_repo() { # bare remote + clone + detached worktree で claim → $REPO
+  local base bare
+  base=$(mktemp -d "$TMP_ROOT/det.XXXXXX")
+  bare="$base/remote.git"
+  ( git init -q --bare "$bare" &&
+    git init -q "$base/main" &&
+    cd "$base/main" && mkdir -p issues/next issues/done && : > issues/186-x.md &&
+    git add -A && git -c user.email=t@t -c user.name=t commit -qm init &&
+    git remote add origin "$bare" && git push -q origin HEAD:master &&
+    git worktree add -q --detach "$base/wt" HEAD &&
+    # 🚨 **空の issues/next/ は git に載らない**ので worktree にはチェックアウトされない
+    #    (このファイル冒頭の注記と同じ罠)。worktree 側で作り直す
+    mkdir -p "$base/wt/issues/next" ) >/dev/null 2>&1
+  REPO="$base/wt"
+}
+new_detached_repo
+( cd "$REPO" && git mv issues/186-x.md issues/next/ &&
+  git -c user.email=t@t -c user.name=t commit -qm claim ) >/dev/null 2>&1
+expect_fire "detached worktree で commit 済みだが未 push の claim (規範どおりの運用)"
+
 # push 済みなら黙る (claim が成立しているので急かす理由が無い)。
 # 🚨 偽の remote を作って本当に push する — 「remote が無い repo」では未 push か push 済みかを
 #    区別できず、この 2 ケースが同じ入力になってしまう

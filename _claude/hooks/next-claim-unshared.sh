@@ -78,14 +78,17 @@ claim_lines=$(
 )
 
 # commit 済みだが未 push の claim。**リモートに無い commit のうち global または group 内の next/ を触ったもの**を見る
-# (`--branches --not --remotes` は未 push の commit 全部。そこから claim を触るものだけ絞る)
+# (`HEAD --branches --not --remotes` は未 push の commit 全部。そこから claim を触るものだけ絞る)
+# 🚨 **HEAD を明示すること** (issue 311)。`--branches` だけだと detached HEAD の commit を
+# 1 件も返さず、worktree で claim した場合に無音になる。claim は通常ブランチでも worktree でも
+# 作るので両方を母集合にする (`--all` は stash と他 worktree まで拾うので採らない)
 unpushed_claims=$(
   cd "$repo_root" || exit 0
   # 🚨 commit ヘッダの目印に SOH (%x01) を置くこと (敵対的レビュー 2026-09-06)。
   # `%h %s` だけだと awk の `/^[0-9a-f]+ /` が**ファイル名と区別できず**、
   # `face detection.py` のような 16 進文字だけの語で始まる名前がヘッダとして採用され、
   # 「どの commit を push すればいいか」が消えていた (実測。親コミットは正しく出していた)。
-  git log --branches --not --remotes --format='%x01%h %s' \
+  git log HEAD --branches --not --remotes --format='%x01%h %s' \
     --name-only 2>/dev/null |
     awk -v soh=$'\001' -v pat="^(${next_alt})" '
       substr($0,1,1)==soh { h=substr($0,2); next }
@@ -109,7 +112,7 @@ state=$(
     printf -- '--- git status -sb (他の変更・未 push commit が混ざっていないか) ---\n'
     git -C "$repo_root" status -sb 2>/dev/null | head -20 || true
     printf -- '--- 未 push の commit (push すると一緒に飛ぶ) ---\n'
-    unpushed=$(git -C "$repo_root" log --branches --not --remotes --format='%h %s' 2>/dev/null | head -10)
+    unpushed=$(git -C "$repo_root" log HEAD --branches --not --remotes --format='%h %s' 2>/dev/null | head -10)
     if [ -n "$unpushed" ]; then printf '%s\n' "$unpushed"; else printf '(なし)\n'; fi
   } 2>/dev/null
 )

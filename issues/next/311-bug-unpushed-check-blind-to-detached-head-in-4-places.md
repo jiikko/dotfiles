@@ -1,1 +1,0 @@
-../311-bug-unpushed-check-blind-to-detached-head-in-4-places.md

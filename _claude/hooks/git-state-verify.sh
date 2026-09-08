@@ -32,11 +32,26 @@ state=$(
     printf -- '--- last commit (git log -1 --stat) ---\n'
     git log -1 --stat 2>&1 | head -40 || true
     printf -- '--- unpushed commits (local not on any remote) ---\n'
-    unpushed=$(git log --branches --not --remotes --oneline 2>/dev/null | head -20 || true)
-    if [ -n "$unpushed" ]; then
-      printf '%s\n' "$unpushed"
+    # 🚨 **HEAD を明示する** (issue 311)。`--branches` はローカルブランチの先端しか見ないので
+    # **detached HEAD の commit を 1 件も返さない**。この repo は worktree-per-session.md で
+    # detached worktree を規範として要求しているため、規範どおりに運用すると
+    # 「(none — すべて push 済み)」という**積極的な偽の全クリア**を注入していた。
+    # 正解実装は同じ repo にある (`src/glogx/gitlog.go` の `UnpushedSHAs` は `HEAD --not --remotes`)。
+    # `--all` は stash と他 worktree の commit まで拾うので採らない。
+    #
+    # 🚨 **判定不能を「push 済み」に丸めない**。remote 未設定なら「どこにも push していない」が
+    # 正しく、それを「すべて push 済み」と出すのは逆向きの嘘になる。
+    if ! git rev-parse --git-dir >/dev/null 2>&1; then
+      printf '(判定不能: git リポジトリではない)\n'
+    elif [ -z "$(git remote 2>/dev/null)" ]; then
+      printf '(判定不能: remote が設定されていない — push 先が無いので「push 済み」とは言えない)\n'
     else
-      printf '(none — すべて push 済み)\n'
+      unpushed=$(git log HEAD --branches --not --remotes --oneline 2>/dev/null | head -20 || true)
+      if [ -n "$unpushed" ]; then
+        printf '%s\n' "$unpushed"
+      else
+        printf '(none — すべて push 済み)\n'
+      fi
     fi
   } 2>&1
 )

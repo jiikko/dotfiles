@@ -56,6 +56,13 @@ git rev-list HEAD --not --remotes             →  18a17cfd69b2...
 沈黙ではなく **`(none — すべて push 済み)` という積極的な偽の全クリア**を注入する点が重い。
 同型が 4 箇所あるため**横断の修正は issue 311** に分けた。
 
+## ✅ ② は issue 311 で解消 (2026-09-09)
+
+`git-state-verify.sh:35` を含む 4 箇所すべてを `HEAD --branches --not --remotes` へ直し、
+**判定不能 (git repo でない / remote 未設定) を「push 済み」に丸めない**分岐も足した
+(この issue の②が要求していた分)。変異 (`HEAD` を外す) で red を確認済み。
+**①と③はこの issue に残る。**
+
 ## ③ 見ている repo が違ううえ、第三者のテキストを権威的ラベルで注入する
 
 state 収集は `git rev-parse` / `status` / `log` を**引数なし**で実行するので、

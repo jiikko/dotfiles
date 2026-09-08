@@ -89,7 +89,13 @@ state=$(
     printf -- '--- git status -sb (自分の他の変更が混ざっていないか) ---\n'
     git status -sb 2>/dev/null | head -20 || true
     printf -- '--- 未 push の commit ---\n'
-    unpushed=$(git log --branches --not --remotes --format='%h %s' 2>/dev/null | head -10)
+    # 🚨 HEAD を明示する (issue 311)。`--branches` はローカルブランチの先端しか見ないので
+    # **detached HEAD の commit を 1 件も返さない**。この repo は worktree-per-session.md で
+    # detached worktree を規範として要求しているため、規範どおりの運用で
+    # 「未 push は無い」という**積極的な偽の全クリア**になっていた。
+    # claim は通常ブランチでも worktree でも作るので両方を母集合にする
+    # (`--all` は stash と他 worktree まで拾うので採らない)。
+    unpushed=$(git log HEAD --branches --not --remotes --format='%h %s' 2>/dev/null | head -10)
     if [ -n "$unpushed" ]; then printf '%s\n' "$unpushed"; else printf '(なし)\n'; fi
   } 2>/dev/null
 )

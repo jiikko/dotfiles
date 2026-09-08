@@ -40,7 +40,7 @@ src/glogx/gitlog.go:283  args = append(args, "--not", "--remotes")   # HEAD 起�
 ```
 
 `UnpushedSHAs` は `rev-list HEAD --not --remotes` の形で、detached でも正しく数える。
-[`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) §0-B
+[`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) §0-B
 （その答えを既に出している経路があるなら近似を書かない）に照らすと、
 **hook 3 ファイルだけがそこから乖離している**。
 
@@ -76,14 +76,53 @@ dotfiles-71 が本件を受けて自セッションの 22 commit を全数照合
 この repo は worktree 運用で `git rebase origin/master` を日常的に挟むので、
 **ハッシュでの照合は偽陽性を出す**。修正の検証では **subject と成果物でも照合する**こと。
 
+## 対応 (2026-09-09)
+
+commit `fix(311): 未 push 判定を HEAD 起点にして detached worktree を見えるようにする`。
+
+### 直した箇所（機械で数えた）
+
+`grep -rn -- '--branches --not --remotes' _claude/ scripts/ bin/ zshlib/ src/ tests/` の結果は
+**5 件**（issue が言う「4 箇所 + コメント 1」と一致）。全部直した:
+
+| 場所 | 用途 | 採った式 |
+|---|---|---|
+| `next-claim-push.sh:92` | claim を commit した直後の push 促し | `HEAD --branches --not --remotes` |
+| `next-claim-unshared.sh:81` | （コメント） | 同上 + 理由 |
+| `next-claim-unshared.sh:88` | 未 push の claim 抽出 | `HEAD --branches --not --remotes` |
+| `next-claim-unshared.sh:112` | 同（別経路） | 同上 |
+| `git-state-verify.sh:35` | 「今 commit したものが push されたか」 | `HEAD --branches --not --remotes` |
+
+**`HEAD` と `--branches` の両方**を母集合にした。claim は通常ブランチでも worktree でも作るため
+（issue の「用途で分ける」に対する答え）。`--all` は **stash と他 worktree の commit も拾う**ので採らない。
+
+### 判定不能を成功に丸めない（`git-state-verify.sh`）
+
+remote が無い repo で `(none — すべて push 済み)` を出すのは**逆向きの嘘**（push 先が無いので
+「どこにも push していない」が正しい）。→ git repo でない / remote 未設定 を
+**それぞれ「判定不能」として出す**形にした。
+
+### テストを先に足して red を見た（受け入れ条件の順序）
+
+`tests/claude/test_next_claim_unshared.sh` に **detached worktree の fixture**（bare remote +
+clone + `git worktree add --detach` で claim を commit）を足し、**現行実装で red**
+（`✗ 発火すべきなのに無出力: detached worktree で commit 済みだが未 push の claim`）を確認してから直した。
+
+🚨 **fixture を作るとき「空の `issues/next/` は git に載らない」を踏んだ**。worktree の
+チェックアウトに `issues/next/` が存在せず `git mv` が `destination directory does not exist` で
+落ちた（このテストファイルの冒頭が同じ罠を注記していた）。worktree 側で `mkdir -p` する形に直した。
+
+### 変異検証
+
+`HEAD` を外して `--branches` だけへ戻す変異 → detached ケースが **red**
+（`✗ 発火すべきなのに無出力`）。修正後は 18 件すべて green、`test_next_claim_push.sh` も 31 件 green。
+
 ## 受け入れ条件
 
-- [ ] 4 箇所すべてを同じ commit で直す（[`CLAUDE.md`](../CLAUDE.md) 「N 箇所すべてに対応したと書くなら
-      N を機械で数えてから書く」に従い、`grep -c` の結果を commit message に書く）
-- [ ] **先に** `tests/claude/test_next_claim_unshared.sh` へ detached worktree の fixture を足し、
-      **現行実装で red を見る**（後から足すと「もう直っている」の確認にしかならない）
-- [ ] 判定不能を成功に丸めない（`git-state-verify.sh` 側）
-- [ ] **変異検証**: 式を `--branches` に戻すと detached ケースが red
+- [x] 4 箇所すべてを同じ commit で直した（`grep` の結果 5 件 = コード 4 + コメント 1 を上に記載）
+- [x] **先に** fixture を足して**現行実装で red を見た**
+- [x] 判定不能を成功に丸めない（`git-state-verify.sh` に「判定不能」の 2 分岐）
+- [x] **変異検証**: 式を `--branches` に戻すと detached ケースが red
 
 ## 関連
 
