@@ -390,3 +390,32 @@ xcodegen 生成物も消えた。pin を戻して再実行し、報告を訂正�
 ガード規則 g の 3 項の論理和で、**第 1 項だけを無効化する変異**を当てた。残り 2 項が拾ったため
 GREEN になり、**テストの穴だと誤読しかけた**。手順 1.6 に従って diff を読み、変異を 3 項すべてを
 無効化する形へ直したところ red になった。
+
+
+## 2026-09-08 obaket 732 — 2 者が独立に数えて完全一致したが、揃って外していた
+
+`TransferActivityCenter` の spawn 点を、別セッションの codex と Claude が**独立に**数えた。
+行番号集合は **21 件で完全一致**したので、独立検証が成立したと読んだ。
+
+実際は**どちらも `Task\s*\{` の形で走査**しており、
+`Task<(Value, Int64), Error> {` のように **generic 引数が `Task` と `{` の間に挟まる形**を
+揃って落としていた。落ちていたのは `TransferTracking.swift:199` — **download の body 全体を包む
+非構造化 Task** で、そこに executor preference を渡さないと**縦断実証の 1 本目が何も測らない**という、
+設計の土台にあたる箇所だった。
+
+一致は「同じ盲点を共有していた」証拠でもある、と分かったのは設計レビュー (敵対 lens) が
+指摘してからで、それまで 2 回の勘定・D1 の 4 案・D2 の詳細設計・D3 round 1 の全部が
+誤ったインベントリの上に建っていた。
+
+その後、**方法ごとに lens を分けて 4 通りで列挙し直した** (①正規表現を複数設計して union
+②縦断実証のテストから呼び出し連鎖を辿る ③`Task` 以外の「実行を別コンテキストへ移す API」を洗う
+④gate として機械化する設計)。結果は **手法ごとに件数が食い違った** (39 vs 28)。
+この食い違いが正しい状態で、**最初の「完全一致」の方が異常だった**。
+
+派生して分かったこと: ③の lens だけが「SE-0417 の executor preference では制御できない実行文脈」
+(continuation の resumer / URLSession・Network・AVFoundation の callback / `DispatchQueue` /
+`Thread` / `OperationQueue` / GRDB の database queue / SwiftUI の `.task`) を出した。
+`Task` を数える手法をいくら重ねてもこれは出てこない。**「何を数えるか」自体が盲点になりうる。**
+
+出典: obaket `issues/757-retro-732-design-and-inventory-2026-09-08.md` 項目 1 /
+`issues/epic/deterministic-test-time/732-*.md` の「🚨 訂正」節。
