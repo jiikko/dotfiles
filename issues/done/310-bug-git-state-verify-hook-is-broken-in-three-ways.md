@@ -114,13 +114,54 @@ grep -rl 'git-state-verify' tests/  →  0 件
 
 ## 受け入れ条件
 
-- [ ] `tests/claude/test_git_state_verify.sh` を新設し、上の 7 形式 + **陰性対照**
+- [x] `tests/claude/test_git_state_verify.sh` を新設し、上の 7 形式 + **陰性対照**
       （git を実行しない文字列）を固定する
-- [ ] **変異検証**: `-C` 対応を外すと red / 「検査した repo」行を消すと red
-- [ ] 注入本文に untrusted 引用ヘッダが付いていることを検査する
-- [ ] 集約経路から実行され、**その検査の出力行が出る**ことを確認する
+- [x] **変異検証**: `-C` 対応を外すと red / 「検査した repo」行を消すと red
+- [x] 注入本文に untrusted 引用ヘッダが付いていることを検査する
+- [x] 集約経路から実行され、**その検査の出力行が出る**ことを確認する
       （[`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)）
 
 ## 関連
 
 - issue 311（②の同型 4 箇所を横断で直す）
+
+## 進捗
+
+| 推奨対応 | 状態 | commit (subject) |
+|---|---|---|
+| 1. `検査した repo:` を冒頭に出す | 済 | fix(310): git-state-verify の発火判定をトークン解析へ寄せ、出典と untrusted ヘッダを足す |
+| 2. untrusted 引用のヘッダ | 済 | 同上 |
+| 3. トリガをトークン解析へ（lib へ切り出し） | 済 | 同上（`_claude/hooks/lib/git_cmd_detect.sh` を新設） |
+| 4. `head` の切り詰めに「（以下略）」 | 済 | 同上（`head_marked` ヘルパー） |
+| 5. 誤検出の範囲を doc に明記 | 済 | 同上（lib ヘッダの「検出しないと決めた形」節） |
+
+## 結果（実測）
+
+- **トリガの表を作り直した**（`git_cmd_invokes` を新実装で実行）: issue が NO-MATCH と
+  記録していた 4 形式（`git -C /tmp/r commit` / `git -C /Users/koji/dotfiles push` /
+  `git --no-pager -C /x push` / `git -c user.name=a commit`）が**すべて MATCH** に変わった。
+  既存の MATCH 3 形式は MATCH のまま。**陰性対照 5 件**（`echo "git commit したら git push する"` /
+  `grep -rn "git push" docs/` / `git status` / `git log` / `ls -la`）はすべて NO-MATCH
+- **`tests/claude/test_git_state_verify.sh`**: 検査 16 件 / ok=16 / fail=0
+- **集約経路**: `make test` の出力に `[ok] tests/claude/test_git_state_verify.sh` が出ることを確認
+  （exit code ではなくその行の存在で判定）
+- **変異検証 3 本、すべて red**:
+
+  | 変異 | 出た赤 |
+  |---|---|
+  | `-C` / `-c` を「値ごと飛ばす」分岐を削除 | `✗ 発火しない: git -C /tmp/r commit -m x` |
+  | `検査した repo:` の行を削除 | `✗ 「検査した repo: …」が無い` |
+  | untrusted ヘッダを削除 | `✗ untrusted 引用のヘッダが無い` |
+
+- **lint**: `make test-lint` rc=0。途中 2 件を自分で作り込んで直した
+  （① `printf … | grep -q` の 5 箇所が `check_pipefail_grep_q.sh` に落ちた
+  ② `tr '\n;|' '\n\n\n'` が SC2020。分割を sed へ寄せ、`||` を `|` より先に潰す順序をコメントで固定）
+
+## 残タスク
+
+- **スコープ外**: ②（未 push 判定の detached HEAD 盲点）の**横展開 4 箇所**は issue 311 が担当。
+  本 issue では hook の入口からの回帰テストとして 2 件（detached worktree の未 push / remote 未設定を
+  「判定不能」と出す）を固定するに留めた
+- **未検証**: `git_cmd_invokes` が「検出しない」と宣言した 4 形式（heredoc 本文 / 変数・alias 経由 /
+  `sh -c` の入れ子 / `xargs git`）は、意図的に取りこぼす側へ倒しているのでテストを書いていない。
+  射程を変えるなら lib ヘッダの脅威モデル節を同じ commit で直す
