@@ -175,12 +175,23 @@ test-runtime:
 #   壁をターゲット境界からファイル境界へ動かしただけになる — 実際 109 の 1 次修正は
 #   test-bats を救っただけで、`.sh` 側の隠れは残っていた (敵対的レビューが実証)。
 #   失敗は一時ファイルへ集め、最後にまとめて出す (`while` はパイプの subshell なので変数が返らない)。
+#
+# 🚨 **各テストは使い捨ての TMPDIR で走らせる** (issue 325 の層 1)。テストとその子プロセス
+# (テストが起動する repo のスクリプト) の `mktemp` は `${TMPDIR:-/tmp}` 配下へ落ちるので、
+# 隔離しないと実機の `/var/folders/.../T` へ撒き続ける。macOS のそこは**起動時にしか
+# 一掃されない** (`/etc/periodic/` が無い。実測 2026-09-06: uptime 64 日 / 7 日超のエントリ
+# 2,766 個 / `test_schedule_keys.sh` 由来だけで 14,147 個)。
+# **runner が作って runner が消す**形にしてあるので、テスト側の後始末漏れもここで回収される
+# (掃除機構の新設ではない — 発生源のディレクトリをそのまま捨てているだけ)。
+# テスト側で `export TMPDIR` しているものは従来どおりそちらが勝つ (二重に隔離されるだけで無害)。
 define run_tests
 tests=$$(find $(1) -type f -name 'test_*.sh' ! -name '*helper*' -print | sort); \
 [ -n "$$tests" ] || { echo "✗ $(1) 配下にテストが見つかりません (find 失敗 or 0 件)。本当に test_*.sh が無いディレクトリなら、テストを足すか scripts/test_changed.sh の写像の振り先を直す (issue 063 の同型)" >&2; exit 1; }; \
 fails=$$(mktemp); skips=$$(mktemp); \
 printf '%s\n' "$$tests" | while IFS= read -r t; do echo "[run] $$t"; \
-	if "$$t"; then :; else rc=$$?; if [ "$$rc" -eq 77 ]; then echo "$$t" >> "$$skips"; else echo "$$t" >> "$$fails"; fi; fi; done; \
+	td=$$(mktemp -d); \
+	if TMPDIR="$$td" "$$t"; then :; else rc=$$?; if [ "$$rc" -eq 77 ]; then echo "$$t" >> "$$skips"; else echo "$$t" >> "$$fails"; fi; fi; \
+	case "$$td" in /*) rm -rf "$$td" ;; esac; done; \
 $(call append_test_summary,$$fails,$$skips); \
 if [ -s "$$skips" ]; then { echo ""; echo "[skip] 丸ごと skip したテスト $$(wc -l < "$$skips" | tr -d ' ') 件 (失敗ではない。増えていたら理由を確かめる):"; sed 's/^/  /' "$$skips"; }; fi; \
 if [ -s "$$fails" ]; then { echo ""; echo "✗ 失敗したテスト:"; sed 's/^/  /' "$$fails"; } >&2; rm -f "$$fails" "$$skips"; exit 1; fi; \
@@ -214,7 +225,8 @@ tests=$$(find $(1) -type f -name 'test_*.sh' ! -name '*helper*' -print | sort); 
 [ -n "$$tests" ] || { echo "✗ $(1) 配下にテストが見つかりません (find 失敗 or 0 件)。本当に test_*.sh が無いディレクトリなら、テストを足すか scripts/test_changed.sh の写像の振り先を直す (issue 063 の同型)" >&2; exit 1; }; \
 fails=$$(mktemp); skips=$$(mktemp); ran=$$(mktemp); exp=$$(mktemp); miss=$$(mktemp); xrc=0; rc=0; \
 printf '%s\n' "$$tests" | FAILS="$$fails" SKIPS="$$skips" RAN="$$ran" xargs -P $(NPROC) -n 1 sh -c \
-	'out=$$(mktemp); "$$0" >"$$out" 2>&1; rc=$$?; echo "$$0" >> "$$RAN"; \
+	'out=$$(mktemp); td=$$(mktemp -d); TMPDIR="$$td" "$$0" >"$$out" 2>&1; rc=$$?; \
+	case "$$td" in /*) rm -rf "$$td" ;; esac; echo "$$0" >> "$$RAN"; \
 	if [ "$$rc" -eq 0 ]; then echo "[ok] $$0"; \
 	elif [ "$$rc" -eq 77 ]; then echo "[skip] $$0"; cat "$$out"; echo "$$0" >> "$$SKIPS"; \
 	else echo "[FAIL] $$0"; cat "$$out"; echo "$$0" >> "$$FAILS"; rm -f "$$out"; exit 1; fi; rm -f "$$out"' || xrc=$$?; \

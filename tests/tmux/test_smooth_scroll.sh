@@ -25,14 +25,10 @@ export TMUX_TMPDIR
 # かかると "File name too long" で起動できない)
 SOCKET_NAME="dss-$$"
 
-# resurrect / debounce 保存と smooth-scroll の状態ファイルを実データから隔離する
-# (test_tmux.sh と同じ HOME 隔離 + TMPDIR 隔離。scroll.sh の状態ファイルは
-#  ${TMPDIR:-/tmp}/tmux-smooth-scroll-<uid>/ に置かれるため TMPDIR ごと逃がす)
-# 状態隔離 (HOME/XDG/TT_DEBOUNCE) は lib へ集約 (test_tmux/bench と共通)。
+# resurrect / debounce 保存と smooth-scroll の状態ファイルを実データから隔離する。
+# scroll.sh の状態ファイルは ${TMPDIR:-/tmp}/tmux-smooth-scroll-<uid>/ に置かれるので TMPDIR ごと
+# 逃がす必要があるが、その隔離は lib 側 (HOME/XDG/TT_DEBOUNCE と一緒) へ集約した (issue 325)。
 source "$ROOT_DIR/tests/tmux/lib/isolate_env.sh"
-# smooth-scroll の状態ファイルは ${TMPDIR}/tmux-smooth-scroll-<uid>/ なので TMPDIR ごと隔離する (本テスト固有)。
-export TMPDIR="$TMUX_TMPDIR/tmp"
-mkdir -p "$TMPDIR"
 
 if ! command -v "$TMUX_BIN_PATH" >/dev/null 2>&1; then
   print -u2 "Error: tmux binary not found. Install tmux or set \$TMUX_BIN."

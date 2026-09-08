@@ -65,3 +65,27 @@ $TMPDIR/glogx-test-cache*  =  40 個（実測 2026-09-06）
 
 - issue 304（既存 6 本の tmux 孤児をどうするか。ユーザー判断待ち）
 - issue 299 / 308（同じ「trap だけに預けた後始末」ファミリーの shell 版）
+
+## 325 からの引き継ぎ（2026-09-08）
+
+issue 325（発生源の遮断）で層 1 を実装した結果、**TMPDIR 隔離では原理的に消せない残骸**が
+この issue の担当として残った。325 の実測を前提として使えるので転記する。
+
+🚨 **macOS の `mktemp` は TMPDIR 環境変数を見ない**（実測 2026-09-08。`mktemp -d` も
+`mktemp -t pfx` も `_CS_DARWIN_USER_TEMP_DIR` を使い、従うのは `mktemp "$TMPDIR/x.XXXXXX"` の
+ようにパスを自分で組む形だけ）。つまり **`Makefile` の runner が各テストへ配る使い捨て TMPDIR は、
+テスト自身の素の `mktemp -d` には効かない**。後始末はテスト側の trap の責任のまま。
+
+スイート 1 回で実機 `$TMPDIR` に残るのは **5 個**（14,147 個規模から減った）。
+うち 3 個は repo 由来ではない（`TemporaryDirectory.*` / 中身は `.keep-directory`。
+repo を grep して 0 件、8/25 から継続発生、今日だけで 45 個）。**この issue が拾うべきは残り 2 個**:
+
+- `tests/zshrc/av1ify/test_av1ify_clipboard.sh` — `tests/zshrc/av1ify/test_helper.sh:12` の
+  `TEST_TMP="$(mktemp -d)"` が残る。**`trap cleanup EXIT` があり、`cleanup` の先頭で
+  `rm -rf "$TEST_TMP"` しているのに残る**（単独実行でも再現。`rc=1` で終わるので
+  cleanup 自体は走っているように見える）。原因未特定 — ここが調査の起点
+  - 🚨 `test_av1ify_clipboard.sh:20` が `TEST_TMP="${TEST_TMP:A}"` で symlink 解決した値へ
+    書き換えている（`/var/...` → `/private/var/...`）。cleanup が見る値との関係を先に確かめる
+- tmux 系（中身が `home` / `tmux` の `tmp.*`）— `isolate_env.sh` の `HOME="$TMUX_TMPDIR/home"` を
+  含むので、`TMUX_TMPDIR=$(mktemp -d)` が消えずに残った形。①の socket 残骸と同じ「中断で trap が
+  走らない」系の可能性が高い

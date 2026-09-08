@@ -40,7 +40,7 @@
 
 ## 🚨 第一手は「掃除機構」ではない
 
-[`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) §0-A
+[`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) §0-A
 （作らずに済む構造を 1 度問う）に従うと、今回はその答えが実測で出ている。
 
 **14,147 個の出どころはテストだった**（実測: `tests/tmux/test_schedule_keys.sh` を 1 回走らせると
@@ -75,7 +75,7 @@
 `check_skip_exit_code.sh` / `check_trigger_log_writers.sh`）に並べる。
 
 🚨 字句 gate なので
-[`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) §8:
+[`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) §8:
 書く前に**脅威モデル**（うっかり書く典型形を止める / 意図的迂回は review の責務）と
 **「検出しないと決めた形」**をヘッダに書く。canary は本走査と同じ関数を通す。
 
@@ -101,7 +101,7 @@
 **先に作らないこと。** 発生源が層 1 で止まるなら、掃除機構は
 「破壊的操作を 1 本増やしただけで、ゴミは別経路から出続ける」という最悪の形になる。
 
-作ると決めた場合の必須条件（[`sandbox-real-destructive-test-apis.md`](../_claude/rules/sandbox-real-destructive-test-apis.md)）:
+作ると決めた場合の必須条件（[`sandbox-real-destructive-test-apis.md`](../../_claude/rules/sandbox-real-destructive-test-apis.md)）:
 
 - 対象を**自分の prefix の前方一致**に限定し、`TMPDIR` が想定の形かを**実行前に検査して外れたら失敗**させる（fail-closed）
 - `os.Lstat` で symlink を skip、`Uid == os.Getuid()` を確認
@@ -110,17 +110,88 @@
 - **判定は「消した件数」**。0 件を成功にしない
 - 参照実装: `scripts/with_fresh_worktree.sh:sweep_stale`（自分の prefix かつ pid が生きていないものだけ）
 
+## 🚨 前提の訂正: macOS の `mktemp` は `TMPDIR` 環境変数を見ない（実測 2026-09-08）
+
+この issue の層 1 は「スクリプトの `mktemp` は `${TMPDIR:-/tmp}` 配下へ落ちる」を前提にしていたが、
+**macOS ではその前提が形によって成り立たない**。`TMPDIR` を使い捨て dir に export した状態で実測:
+
+| 形 | `TMPDIR` に従うか |
+|---|---|
+| `mktemp -d`（引数なし） | ✗ 実機の `/var/folders/.../T` |
+| `mktemp`（引数なし） | ✗ 実機 |
+| `mktemp -d -t pfx` | ✗ 実機 |
+| `mktemp -t pfx` | ✗ 実機 |
+| `mktemp -d "$TMPDIR/x.XXXXXX"` | ✓ 隔離 dir |
+
+BSD の `mktemp` は `_CS_DARWIN_USER_TEMP_DIR` を使い、**`-t` を付けても環境変数を参照しない**。
+`TMPDIR` に従うのは**パスを自分で組み立てる形だけ**。
+
+これで層 1 の射程が確定した:
+
+- ✓ 効く: `scripts/tmux_schedule_keys.sh:116` の `SK_TMP_PREFIX="${TMPDIR:-/tmp}/schedkeys"` の形
+  （14,147 個の元凶。これは既に issue 298 の対応で塞がっている）
+- ✗ 効かない: テスト自身の `mktemp -d`（引数なし）。**後始末はテスト自身の trap の責任**で、
+  隔離では原理的に消せない → issue 305 の領域
+
+## 実測: スイート 1 回で実機 `$TMPDIR` に残るもの（2026-09-08）
+
+| | 件数 |
+|---|---|
+| 修正前（この issue の起票時点、schedkeys 未対応） | 61 個/回 + 累計 14,147 個 |
+| 本 issue の着手時点（298 対応後） | **8 個** |
+| 層 1 実装後 | **5 個** |
+
+残る 5 個の内訳:
+
+- **3 個は repo 由来ではない**: `TemporaryDirectory.*`（中身は `.keep-directory`）。
+  repo 全体を grep して 0 件で、8/25 から継続的に発生し**今日だけで 45 個**ある。
+  make test 中に増えたのは別プロセスとの同時発生。**この issue のスコープ外**
+- **2 個は「テスト自身の `mktemp -d`」の後始末漏れ**:
+  `tests/zshrc/av1ify/test_av1ify_clipboard.sh`（`test_helper.sh:12` の `TEST_TMP="$(mktemp -d)"`。
+  `trap cleanup EXIT` で `rm -rf` しているのに残る。単独実行でも再現）と tmux 系。
+  上表のとおり **TMPDIR 隔離では消せない形**なので issue 305 へ送る
+
 ## 受け入れ条件
 
-- [ ] `TMPDIR` の隔離が `tests/tmux/lib/isolate_env.sh` 本体に入り、`test_smooth_scroll.sh` の自前 export が消える
-- [ ] **テストスイートを 1 回通しても実機 `$TMPDIR` のエントリ数が増えない**
-      （判定は rc ではなく**前後の件数**。これが層 1 の合否そのもの）
-- [ ] 隔離していないテストを落とす検査が**集約経路から実行され、その出力行が出る**
-      （[`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)）
-- [ ] 共通ヘルパーに対する**変異検証**: 登録した掃除を外すと残留数が増えて red
-- [ ] 層 3 を作るかどうかを、層 1・2 を入れた後の**実測**に基づいて判断し、結論をこの issue に書き戻す
-      （作らないと決めたなら、その理由を該当コード直近のコメントにも残す
-      = [`pending-issue-rationale-in-code.md`](../_claude/rules/pending-issue-rationale-in-code.md)）
+- [x] `TMPDIR` の隔離が `tests/tmux/lib/isolate_env.sh` 本体に入り、`test_smooth_scroll.sh` の自前 export が消える
+- [x] **隔離を全テストに配る** — issue は「isolate_env を source していないテストにも配る」と
+      書いていたが、45 本を個別に触る代わりに**`Makefile` の runner 2 箇所**（`run_tests` /
+      `run_tests_parallel`）でテストごとに使い捨て `TMPDIR` を作って渡し、終わったら消す形にした。
+      1 箇所で全テストに効き、**テスト側の後始末漏れも runner が回収する**
+      （掃除機構の新設ではなく、自分が作ったディレクトリを捨てているだけ）
+- [ ] **テストスイートを 1 回通しても実機 `$TMPDIR` のエントリ数が増えない** — **未達（5 個）**。
+      内訳は上記のとおりで、**3 個は repo 外、2 個は TMPDIR 隔離では原理的に消せない形**。
+      層 1 でできることは尽きているので、残りは issue 305（テストの一時資源の後始末）へ送る
+- [x] 検査が**集約経路から実行され、その出力行が出る**
+      → `tests/scripts/test_runner_isolates_tmpdir.sh`。`tests/` 配下の `test_*.sh` は
+      `run_tests_parallel` が自動で拾うので配線は不要（`make test` のログに `[ok]` 行が出る）
+- [x] **変異検証 6 本**すべてで狙ったケースが red:
+      直列 runner の `TMPDIR` を外す / 同 `rm -rf` を外す / 並列 runner の `TMPDIR` を外す /
+      同 `rm -rf` を外す / `isolate_env.sh` の `export TMPDIR` を外す / `define` 名を変えて
+      抽出を壊す（= 抽出が空でも「違反 0 件」で緑にならないことの canary）
+- [x] **層 3（起動時掃除）は作らない**。理由: ①発生源側で 14,147 → 5 個まで落ちており、
+      残り 5 個のうち 3 個は repo 外なので**掃除機構を作っても自分のゴミは 2 個しか減らない**
+      ②その 2 個は「テストの trap が効いていない」バグで、掃除機構はそれを隠すだけ
+      ③実機 `$TMPDIR` を対象にした削除は「自分が作っていないものを消す」禁止事項に触れる。
+      この判断は `Makefile` の runner のコメントにも残した
+      （[`pending-issue-rationale-in-code.md`](../../_claude/rules/pending-issue-rationale-in-code.md)）
+- [x] **層 2（共通ヘルパー）は作らない**。runner が使い捨て `TMPDIR` を配る形にしたことで、
+      「各テストが自前の trap を正しく書く」への依存が減った。人がウィザードを使ったぶんの漏れ
+      （298 の本体）は既に `sk_mktemp` が登録制で解決済み。**新しいヘルパーを 1 本増やす価値より、
+      既存 78 本を書き換えるコストの方が大きい**（`_claude/rules/verify-design-intent-before-refactor.md`）
+
+## 静的 gate を作らなかった理由
+
+issue は「隔離していないテストを落とす検査」を求めていたが、**軸が構文にあると実害と相関しない**
+（[`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) §8）。
+母集合を数えた実測:
+
+- `mktemp -d` を使うテスト: **78 本**（うち隔離あり 6 本）
+- repo のスクリプトを起動しているテスト: **48 本**（うち隔離なし **45 本**）
+- それらが実際に実機へ残す残骸: **2 個**
+
+初日から 45 件の allowlist が必要になる gate は gate として機能しない。代わりに
+**runner 側の隔離（1 箇所）を pin する検査**にした。母集合が 2 つの `define` なので allowlist が要らない。
 
 ## やらないこと
 
