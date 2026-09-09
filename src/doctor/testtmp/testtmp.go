@@ -21,6 +21,7 @@
 package testtmp
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -112,14 +113,21 @@ func pidOf(name string) (int, bool) {
 
 // alive は pid のプロセスが生きているかを見る。**シグナルは送らない** (0 は存在確認)。
 // 判定できないときは「生きている」に倒す (消さない側が安全)。
+//
+// 🚨 **`os.FindProcess` + `Process.Signal` を使わない**。あちらは reap 済みの pid に対して
+// `os: process already finished` を返すことがあり、文言で判定すると**死んでいるものを
+// 「生きている」と読む** (実測 2026-09-09: この形で掃除が 1 件も動かず、テストが skip して
+// 変異検証まで汚染した)。`syscall.Kill` の errno を直接見れば曖昧さが無い。
+//   - ESRCH  … 存在しない = 死んでいる
+//   - EPERM  … 存在するが自分のものではない = 生きている (触らない)
+//   - その他 … 判定不能なので「生きている」に倒す
 func alive(pid int) bool {
-	p, err := os.FindProcess(pid)
-	if err != nil {
-		return true
-	}
-	err = p.Signal(syscall.Signal(0))
+	err := syscall.Kill(pid, 0)
 	if err == nil {
 		return true
 	}
-	return !strings.Contains(err.Error(), "no such process")
+	if errors.Is(err, syscall.ESRCH) {
+		return false
+	}
+	return true
 }
