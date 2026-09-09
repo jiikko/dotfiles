@@ -3,9 +3,9 @@
 起票日: 2026-09-09
 カテゴリ: bug
 優先度: 中（**壊れたときに黙る**形。エラーは出ず「なんか色が変」になるだけ）
-出典: [retro 342](done/342-retro-solargraph-spin-loop-and-ruby-lsp-migration-2026-08-31.md) の残課題 ①
+出典: [retro 342](342-retro-solargraph-spin-loop-and-ruby-lsp-migration-2026-08-31.md) の残課題 ①
 
-対象: [`_nviminit.lua`](../_nviminit.lua) の `dotfiles_truecolor_supported`（54 行付近）/ `~/.zshenv`
+対象: [`_nviminit.lua`](../../_nviminit.lua) の `dotfiles_truecolor_supported`（54 行付近）/ `~/.zshenv`
 
 ## 何が起きるか
 
@@ -122,5 +122,5 @@ retro 342 の「dotfiles へ `_zshenv` として取り込むか」は、その�
 
 ## 関連
 
-- [retro 342](done/342-retro-solargraph-spin-loop-and-ruby-lsp-migration-2026-08-31.md) — 出典
+- [retro 342](342-retro-solargraph-spin-loop-and-ruby-lsp-migration-2026-08-31.md) — 出典
 - `_nviminit.lua:38-52` — 判定の優先順とその理由

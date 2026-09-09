@@ -2,7 +2,7 @@
 
 種別: research / perf
 起票: 2026-09-08
-前提: [332](done/332-ruby-lsp-selection-by-probe.md) の追補 3（`<C-k>` を Ruby のメソッドだけ ripgrep へ振り分けた）
+前提: [332](332-ruby-lsp-selection-by-probe.md) の追補 3（`<C-k>` を Ruby のメソッドだけ ripgrep へ振り分けた）
 
 ## 背景
 
@@ -61,7 +61,7 @@ rg は速いが、AST を見ていないのでコメント・文字列・シン�
 - [x] 段階 2: ①構築時間 ②メモリ ③クエリ時間 ④精度差 の実測
 - [x] 本文の断定を追試し、違っていた数字を書き戻す（2026-09-09。末尾の追補）
 - [ ] 実測を受けての判断（sidecar 化 / rg のまま確定）← **人の判断待ち**
-      → [issue 344](344-human-decide-ruby-refs-sidecar-or-rg.md) へ切り出した（2026-09-09）。
+      → [issue 344](../344-human-decide-ruby-refs-sidecar-or-rg.md) へ切り出した（2026-09-09）。
       判定基準を数値で固定してあるので、データが溜まれば機械的に決まる
 
 ## 進捗: 段階 1 (commit `feat(334): 参照検索の使用実績を記録する`)
@@ -369,5 +369,24 @@ ft 未記録 11 件 (層別に使えない古い行)
 その後なので、**11 行は層別に使えない**。
 
 つまり判断材料は実質ゼロ。**この issue は「作った機構が使われるのを待つ」状態**なので、
-待ち方を [issue 344](344-human-decide-ruby-refs-sidecar-or-rg.md) に切り出し、
+待ち方を [issue 344](../344-human-decide-ruby-refs-sidecar-or-rg.md) に切り出し、
 判定基準（どの数字がいくつなら sidecar 化するか）を数値で固定した。
+
+## 決着 2026-09-10: 実装は完了。残る「人の判断」は issue 344 が持つので done へ送る
+
+todolist の未チェックは最後の 1 行（実測を受けての判断）だけで、それは 2026-09-09 に
+[issue 344](../344-human-decide-ruby-refs-sidecar-or-rg.md) へ切り出し済み（判定基準を数値で固定してある）。
+`issues/README.md` の「切り出し先が決まったら決着」に従い、この issue は done へ送る。
+
+**判断が出た後の実装（sidecar 化を選んだ場合の常駐・IPC・差分更新・定数解決）は新規 issue を
+立てる**。この issue に戻さない（本文が長く、段階 1/2 の実測記録が主体のため）。
+
+### 移動にあたって実測したもの
+
+- 参照元 4 本（`docs/nvim-ruby-lsp.md` / `nvim/ruby-refs-index/README.md` /
+  `issues/335-*` / `issues/344-*`）。うち **2 本は `issues/` の外**で、
+  `tests/issues/test_issue_links_valid.sh` の射程外 = 切れても CI は緑のまま
+- そのため移動には `scripts/issue_done.sh`（issue 347 で新設）を使った。
+  repo 全体を走査して参照を張り直し、「移動前のパスを指す参照が 0 件」を事後条件として確認する
+- 🚨 同じ経路で切れていた実例が既にあった: `docs/nvim-ruby-lsp.md:4` の `../issues/332-…md`
+  （332 を done へ送ったときの取りこぼし）。347 の対応で一緒に直した

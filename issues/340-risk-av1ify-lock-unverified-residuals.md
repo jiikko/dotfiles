@@ -125,3 +125,23 @@ kill する。列挙と kill の間に子が入れ替わる / 終了済み PID �
 
 🚨 **却下した 5 を消さずに残す**のが要点。消すと次の監査が同じ指摘を再生成する
 （[`move-report-conclusions-to-issues.md`](../_claude/rules/move-report-conclusions-to-issues.md)）。
+
+## 追記 2026-09-10: 理由を**コード側にも**残した（issue だけでは届かない）
+
+commit `docs(340): 保留・却下した指摘の理由をコード直近へ残す`。
+
+この issue は「同じ指摘が次の監査で再生成されるのを防ぐ」ために在るのに、
+**当該コードには 1 行も痕跡が無かった**（実測 2026-09-10: `grep -n '340' zshlib/_av1ify_lock.zsh
+src/lockman/lock.go` が 0 件）。次の監査が読むのはコードなので、issue 側だけでは届かない
+（[`pending-issue-rationale-in-code.md`](../_claude/rules/pending-issue-rationale-in-code.md)）。
+
+| 項目 | 書いた場所 | 内容 |
+|---|---|---|
+| 1 の残り（`readLock` と `OpenFile` の隙間） | `src/lockman/lock.go` の `Renew` 直前 | 窓が残ること / 0 にするコスト（renew ごとに rename）/ 再開の trigger / `__av1ify_lock_still_held` から見た rc=0 の意味 |
+| 2（`pgrep` と kill の競合・PID 再利用） | `zshlib/_av1ify_lock.zsh` の kill ループ内 | 再現できていないこと / 閉じるには親子間の生存通知が要ること / 取りこぼしは 10 分で消えること / 再開の trigger |
+| 5（却下） | `__av1ify_lock_dir_for` の検証 3 行の直前 | 🚨 **この 3 行を「pipefail があるから冗長」と読んで外さない**。担い手は pipefail ではなく出力の検証で、`shasum が rc=0 で短い出力`の形は pipefail では原理的に検出できない |
+
+項目 3（共有 tmp 名）と項目 4（マウントパス）は**既にコード側に理由が在った**
+（`__av1ify_rm_own_tmp` 冒頭 / ファイル冒頭の `AV1IFY_LOCK_ROOT` の節）ので追記していない。
+
+**この issue は引き続き open**。2 / 3 / 4 の trigger はどれも引かれていない。

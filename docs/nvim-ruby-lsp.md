@@ -2,7 +2,7 @@
 
 対象: `nvim/lua/dotfiles/lsp.lua` / `nvim/lua/dotfiles/refs_usage.lua` / `_nviminit.lua` の lualine。
 経緯と実測の全量は [`issues/332`](../issues/done/332-ruby-lsp-selection-by-probe.md) /
-[`issues/334`](../issues/334-ruby-references-call-site-index.md)。
+[`issues/334`](../issues/done/334-ruby-references-call-site-index.md)。
 ここに置くのは**触る前に知らないと壊す前提**と、**なぜその設計にしたか**。
 
 ## 1. 何が壊れていて、何が遅かったか

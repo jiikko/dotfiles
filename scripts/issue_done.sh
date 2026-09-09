@@ -55,6 +55,7 @@
 #
 # 検査対象ディレクトリは第 1 引数ではなく **ISSUES_DIR** で差し替える (テスト・変異検証用)。
 # ISSUES_DIR を repo 外の fixture へ向けると、その fixture の git repo に対して操作する。
+# shellcheck disable=SC2016 # awk のプログラムと canary の期待値は単一引用符のまま渡す (展開させない)
 set -euo pipefail
 unset CDPATH
 

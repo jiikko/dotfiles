@@ -75,7 +75,7 @@ env / cwd / 起動時刻**を読む。設定ファイルの内容とプロセス
 
 ## 残課題 — 2026-09-09 に実測で 5 件中 4 件を決着
 
-### ① `~/.zshenv` が dotfiles 管理外 → [issue 346](../346-bug-truecolor-flag-is-not-version-controlled-and-fails-silently.md) へ
+### ① `~/.zshenv` が dotfiles 管理外 → [issue 346](346-bug-truecolor-flag-is-not-version-controlled-and-fails-silently.md) へ
 
 **「フォールバックが拾うのでは」を実測して否定した**。tmux の中では `TERM_PROGRAM` が nil
 （`_nviminit.lua:40` のコメントどおり）なので判定 3 が発火せず、**判定 4 に落ちて「対応」と

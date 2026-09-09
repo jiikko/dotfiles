@@ -2,8 +2,9 @@
 
 起票日: 2026-09-09
 カテゴリ: human（人間しかできない判断。データが溜まるまで決められない）
-期限: 2026-10-09（**1 か月使ってから**。それより早く見ても行が溜まっていない）
-出典: [issue 334](334-ruby-references-call-site-index.md) の todolist 最後の 1 行
+期限: 2026-10-09
+（**1 か月使ってから**見る。それより早く見ても行が溜まっていない）
+出典: [issue 334](done/334-ruby-references-call-site-index.md) の todolist 最後の 1 行
 
 ## 何を決めてほしいか
 
@@ -45,5 +46,5 @@ ft 未記録 11 件 (層別に使えない古い行)
 
 ## 関連
 
-- [issue 334](334-ruby-references-call-site-index.md) — 実測の記録（索引の構築時間 / メモリ / クエリ時間 / 精度差）
+- [issue 334](done/334-ruby-references-call-site-index.md) — 実測の記録（索引の構築時間 / メモリ / クエリ時間 / 精度差）
 - `nvim/lua/dotfiles/refs_usage.lua` — 記録の実体

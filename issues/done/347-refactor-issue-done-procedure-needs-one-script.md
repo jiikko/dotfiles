@@ -3,7 +3,7 @@
 起票日: 2026-09-09
 カテゴリ: refactor
 優先度: 中（**落とすと CI が落ちる**。実測 1 回）
-出典: [retro 345](345-retro-issue-backlog-consumption-2026-09-09.md) の気づき 5
+出典: [retro 345](../345-retro-issue-backlog-consumption-2026-09-09.md) の気づき 5
 
 ## 何が起きているか
 
@@ -38,7 +38,7 @@ issue を `done/` へ移すには **3 つ**が要る:
   **失敗したら移動を戻す**（半端な状態で終わらせない）
 
 🚨 **入口のドキュメントを同じ変更で更新する**
-（[`new-tool-requires-entrypoint-docs.md`](../_claude/rules/new-tool-requires-entrypoint-docs.md)）:
+（[`new-tool-requires-entrypoint-docs.md`](../../_claude/rules/new-tool-requires-entrypoint-docs.md)）:
 `issue-sync` skill の手順、`claim-issue-in-next-and-push.md` の「完了したら目印を消してから
 done へ移す」、`issues/README.md`。**ヘッダコメントは入口に数えない**。
 
@@ -173,5 +173,5 @@ awk を no-op にする（canary が触る前に落とす）。
 
 ## 関連
 
-- [`claim-issue-in-next-and-push.md`](../_claude/rules/claim-issue-in-next-and-push.md) — ②の規範
-- [retro 345](345-retro-issue-backlog-consumption-2026-09-09.md) — 出典（実測 4 回の取りこぼし）
+- [`claim-issue-in-next-and-push.md`](../../_claude/rules/claim-issue-in-next-and-push.md) — ②の規範
+- [retro 345](../345-retro-issue-backlog-consumption-2026-09-09.md) — 出典（実測 4 回の取りこぼし）

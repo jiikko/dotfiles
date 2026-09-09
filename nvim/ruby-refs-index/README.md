@@ -1,6 +1,6 @@
 # ruby-refs-index — 呼び出し側索引の実測プロトタイプ
 
-issue [334](../../issues/334-ruby-references-call-site-index.md) の段階 2。
+issue [334](../../issues/done/334-ruby-references-call-site-index.md) の段階 2。
 **製品コードではなく、判断のための計測**。
 
 ## 何のために在るか
