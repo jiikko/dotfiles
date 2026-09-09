@@ -56,11 +56,25 @@ EOF
   cat > "$d/issues/epic/900/901-feat-e.md" <<'EOF'
 - [rule](../../../_claude/rules/x.md)
 EOF
+  # issues/ の外からの参照 (P1-2: ここを走査しないと黙って切れる)
+  mkdir -p "$d/docs"
+  cat > "$d/docs/g.md" <<'EOF'
+外から: [x](../issues/347-refactor-a.md)
+EOF
   ln -s ../347-refactor-a.md "$d/issues/next/347-refactor-a.md"
   ln -s ../901-feat-e.md "$d/issues/epic/900/next/901-feat-e.md"
   git -C "$d" init -q
   git -C "$d" add -A
   git -C "$d" -c user.email=t@t -c user.name=t commit -qm init
+}
+
+# claim symlink を **追跡外**にした fixture (glogx の `n` が作る通常の状態)。
+# git rm を無条件に打つと rc=128 で落ち、set -e で移動済みのまま死ぬ (P1-1)
+make_fixture_untracked_claim() {
+  local d="$1"
+  make_fixture "$d"
+  git -C "$d" rm -q --cached -- issues/next/347-refactor-a.md
+  git -C "$d" -c user.email=t@t -c user.name=t commit -qm untrack
 }
 
 # 変異を当てた script を置いた fake root を作る ($1=作業名 $2=sed 式。空なら無変異)
@@ -99,6 +113,7 @@ grep -qF '[fenced](../_claude/rules/x.md)' "$d/issues/done/347-refactor-a.md" ||
 grep -qF '](done/347-refactor-a.md)' "$d/issues/345-retro-c.md" || fail "④ 直下からの参照が張り直されていない"
 grep -qF '](347-refactor-a.md)' "$d/issues/done/310-d.md" || fail "④ done/ からの参照が張り直されていない"
 grep -qF '](../../../../_claude/rules/x.md)' "$d/issues/epic/900/done/901-feat-e.md" || fail "③ group の深さ (4 段) が違う"
+grep -qF '](../issues/done/347-refactor-a.md)' "$d/docs/g.md" || fail "④ issues/ の外 (docs/) からの参照が張り直されていない"
 
 "$ROOT_DIR/tests/issues/test_issue_links_valid.sh" "$d/issues" >/dev/null 2>&1 || fail "移動後にリンク検査が赤"
 "$ROOT_DIR/tests/issues/test_next_links_valid.sh" "$d/issues" >/dev/null 2>&1 || fail "移動後に next 検査が赤"
@@ -109,6 +124,28 @@ grep -qF '](../../../../_claude/rules/x.md)' "$d/issues/epic/900/done/901-feat-e
 d2="$work/missing"; mkdir -p "$d2"; make_fixture "$d2"
 if ISSUES_DIR="$d2/issues" "$SCRIPT" 999 >/dev/null 2>&1; then fail "実体の無い番号を受け付けた"; fi
 if ISSUES_DIR="$d2/issues" "$SCRIPT" 12 >/dev/null 2>&1; then fail "3 桁でない番号を受け付けた"; fi
+
+# 2.5 追跡外の claim symlink でも通る (glogx の `n` が作る通常の状態。P1-1)
+d25="$work/untracked"; mkdir -p "$d25"; make_fixture_untracked_claim "$d25"
+ISSUES_DIR="$d25/issues" "$SCRIPT" 347 > "$work/untracked.log" 2>&1 ||
+  { cat "$work/untracked.log" >&2; fail "追跡外の claim symlink で落ちた (git rm を無条件に打っている)"; }
+[ -f "$d25/issues/done/347-refactor-a.md" ] || fail "追跡外 claim: 移動できていない"
+[ ! -e "$d25/issues/next/347-refactor-a.md" ] || fail "追跡外 claim: symlink が残っている"
+
+# 2.6 epic は固定 2 段。予約外の深い置き場は着手しない (P2-3)
+d26="$work/deepepic"; mkdir -p "$d26/issues/epic/900/blocked"
+printf '# a\n' > "$d26/issues/epic/900/blocked/347-a.md"
+git -C "$d26" init -q; git -C "$d26" add -A
+git -C "$d26" -c user.email=t@t -c user.name=t commit -qm init
+if ISSUES_DIR="$d26/issues" "$SCRIPT" 347 >/dev/null 2>&1; then
+  fail "epic/<name>/<予約外>/ の issue を動かした (契約に無い深さの done/ ができる)"
+fi
+[ -f "$d26/issues/epic/900/blocked/347-a.md" ] || fail "拒否したのに動かしていた"
+
+# 2.7 `--help` は番号より先に効く (「347 を処理せず rc=0」= 成功に見える無操作を作らない)
+d27="$work/help"; mkdir -p "$d27"; make_fixture "$d27"
+ISSUES_DIR="$d27/issues" "$SCRIPT" 347 --help >/dev/null 2>&1 || fail "--help が rc≠0"
+[ -f "$d27/issues/347-refactor-a.md" ] || fail "--help なのに移動した"
 
 # ---------------------------------------------------------------------------
 # 3. 着手前に既に赤いなら何も動かさない (自分の変更のせいに見える赤を作らない)
@@ -142,6 +179,13 @@ check_mutant() {  # $1=名前 $2=sed 式 $3=赤くなるべき検査のキーワ
   dm="$work/mut-$name"; mkdir -p "$dm"; make_fixture "$dm"
   before="$(snapshot "$dm")"
   fake="$(make_fake_root "root-$name" "$expr")"
+  # 🚨 変異が当たっていることを先に確かめる。当たっていない変異の緑を「守られていない」と
+  # 読むと、効いている手順を作り替える方向に走る (mutation-verify-new-tests.md 手順 1.6)
+  if diff -q "$SCRIPT" "$fake/scripts/issue_done.sh" >/dev/null; then
+    fail "変異 [$name] が当たっていない (sed の当て先がずれた)"
+  fi
+  bash -n "$fake/scripts/issue_done.sh" 2>/dev/null ||
+    fail "変異 [$name] が構文エラー (red でも green でもない。当て直すこと)"
   if ISSUES_DIR="$dm/issues" "$fake/scripts/issue_done.sh" 347 > "$work/mut-$name.log" 2>&1; then
     fail "変異 [$name] が緑のまま通った (この手順は誰も守っていない)"
   fi
@@ -154,14 +198,22 @@ check_mutant() {  # $1=名前 $2=sed 式 $3=赤くなるべき検査のキーワ
 }
 
 # ② claim symlink の削除を外す → next の目印が dangling になる
-check_mutant no-unclaim 's|^\( *\)git "${GIT_DIR_ARG\[@\]}" rm -q --force -- "$claim"|\1:|' \
+check_mutant no-unclaim 's|^  if \[ -L "$claim" \]; then$|  if false; then|' \
   '目印の指す先が通常ファイルとして存在しない'
 # ③ 移した本文の張り直しを外す → 本文の上向きリンクが 1 段足りない
 check_mutant no-rebase-self 's|^\( *\)rebase_file "$dest" .*|\1:|' \
   'リンクが解決しない'
-# ④ 他 md からの参照の張り直しを外す → 参照元のリンクが切れる
+# ④ 他ファイルからの参照の張り直しを外す → 参照元のリンクが切れる
 check_mutant no-rebase-inbound 's|if rebase_file "$other" .*; then|if false; then|' \
   'リンクが解決しない'
+# ④ の走査を issues/ に狭める → issues/ の外 (docs/) の参照が切れるが、2 本のリンク検査は
+#    そこを見ないので **事後条件だけが**これを捕まえる (P1-2 のオラクル)
+check_mutant narrow-scan \
+  "s|done < <(scan_candidates \"\$base\")|done < <(find \"\$ISSUES_DIR\" -type f -name '*.md' -print \| sort)|" \
+  '移動前のパスを指したままの参照'
+# 判定より前で異常終了する → trap が rollback を回す (P1-1 / P1-3 の共通形)
+check_mutant abort-before-verdict 's|^  verdict=0$|  exit 3|' \
+  '判定の前に中断された'
 
 # ---------------------------------------------------------------------------
 # 5. 変異: 書き換えロジックそのものを壊すと canary が **触る前に** 落とす
@@ -176,4 +228,4 @@ grep -q '✗ canary' "$work/mut-canary.log" ||
   { cat "$work/mut-canary.log" >&2; fail "canary ではなく後段で落ちた (触る前に止まっていない)"; }
 [ "$before_c" = "$(snapshot "$dc")" ] || fail "canary で落ちたのに fixture が変わっている"
 
-printf '✓ issue_done.sh: 正常系 (global / group) / baseline 赤の拒否 / 変異 4 本 (claim 削除・本文の張り直し・参照の張り直し・canary) すべて red かつ rollback 済み\n'
+printf '✓ issue_done.sh: 正常系 (global / group / 追跡外 claim / epic の深い置き場を拒否 / --help) / baseline 赤の拒否 / 変異 6 本 (claim 削除・本文の張り直し・参照の張り直し・走査範囲・判定前の中断・canary) すべて red かつ rollback 済み\n'

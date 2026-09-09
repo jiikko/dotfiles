@@ -1,7 +1,7 @@
 # nvim での Ruby: 定義ジャンプの仕組みと、2026-09-08 の高速化
 
 対象: `nvim/lua/dotfiles/lsp.lua` / `nvim/lua/dotfiles/refs_usage.lua` / `_nviminit.lua` の lualine。
-経緯と実測の全量は [`issues/332`](../issues/332-ruby-lsp-selection-by-probe.md) /
+経緯と実測の全量は [`issues/332`](../issues/done/332-ruby-lsp-selection-by-probe.md) /
 [`issues/334`](../issues/334-ruby-references-call-site-index.md)。
 ここに置くのは**触る前に知らないと壊す前提**と、**なぜその設計にしたか**。
 

@@ -108,11 +108,68 @@ $ make test-dir DIR=tests/issues
 
 `shellcheck -S warning` は両ファイルとも rc=0 / 出力なし。
 
+## 進捗: 敵対的レビュー (opus / read-only) の P1 3 件・P2 1 件・P3 1 件を直した
+
+commit `fix(347): 敵対レビューの P1 3 件を塞ぐ (rollback の窓 / 走査範囲 / 追跡外の claim)`。
+指摘は**すべて自分で再現してから**採用した。
+
+### P1-1 追跡外の claim symlink で `git rm` が rc=128 → **rollback に届かず半端な状態**
+
+`set -euo pipefail` の下では `git rm` の失敗でその場で死に、rollback は「検査が赤いとき」の
+`else` 節にしかないので通らない。**再現した**（移動済み・dangling claim・rc=128・警告なし）。
+
+🚨 realism が高い: `src/glogx/issues/move.go:96` の `placeNextLink` は `os.Symlink` するだけで
+**`git add` しない**ので、glogx の `n` で付けた claim は**常に追跡外**。
+`_claude/hooks/next-claim-unshared.sh` はまさにその状態を毎プロンプト検出するために在る。
+→ 追跡の有無で `git mv` / `git rm` と `mv` / `rm` を切り替える。
+
+### P1-3 判定より前の中断（Ctrl+C）で、EXIT trap が**バックアップごと**消して復旧不能
+
+P1-1 と同じ「移動してから判定までの窓に rollback が届かない」形。
+→ `rollback` を関数へ括り出し、`in_flight` フラグ + `trap on_exit EXIT` / `INT` / `TERM` で
+**任意の異常終了から**同じ復元を回す。窓は 1 件あたり数秒（リンク検査 1.82 秒 + 0.14 秒）。
+
+### P1-2 `issues/` の外からの参照は張り直されず、**検査も見ないので rc=0 のまま壊れる**
+
+**既に実 repo で発現していた**: `docs/nvim-ruby-lsp.md:4` が `../issues/332-…md` を指したまま
+切れていた（332 は done へ移動済み）。次に踏むのは open な 334（参照元 2 本）。
+→ 手順 4 の走査を **repo 全体**へ広げ（母集合は `grep -rlF <ファイル名>`）、
+**「移動前のパスを指す参照が repo に 0 件」**を事後条件として自前で持つ
+（検査側の射程は issue 293 の判断どおり `issues/` に閉じたまま）。切れていた 1 件も直した。
+
+全数勘定（`issues/` の外から `issues/**.md` を指す md リンク 6 本）: 解決 3 / 未解決 3。
+未解決のうち 2 本（`_claude/agents/tt-api-expert.md` = 別プロジェクト向け /
+`issues/done/293` 本文の書式説明）は **issue 293 が既に「触らない」と決めている**ので対象外。
+
+### P2-3 `epic/<name>/<予約外>/` の issue が 1 段深い `done/` へ黙って入る
+
+`case` の `epic/*)` が `epic/900/blocked` にも一致していた。epic は固定 2 段（`issues/README.md`）
+なので、`epic/*/*)` を先に置いて**拒否**する（リンクは整合するので両検査とも緑になり、
+契約違反だけが残る形だった）。
+
+### P2-1/P2-2 canary を素通りする変異が 2 本 → canary を広げた
+
+`~~~` フェンス規則の削除 / 同一 base ガードの削除が canary を通っていた。
+canary に `~~~` ケースと「無関係な冗長パス（`./done/…`）を触らない」ケース、
+および report モードの固定を足した。
+
+### P3-3 `issue_done.sh 347 --help` が「347 を処理せず rc=0」だった
+
+`--help` を番号検証より先に見るようにした（成功に見える無操作を作らない）。
+
+### 変異検証 (6 本すべて red)
+
+claim 削除を外す / 本文の張り直しを外す / 参照の張り直しを外す /
+**走査を `issues/` に狭める（事後条件だけが捕まえる）** / **判定の前に異常終了する（trap が拾う）** /
+awk を no-op にする（canary が触る前に落とす）。
+**変異が当たったことを diff で確認**し、構文エラーを red と読まない guard も入れた
+（最初の版で「当たっていない変異の緑」を 1 度踏んだ）。
+
 ### 残タスク
 
 - **未検証**: この道具を実際の done 移動で使うのはこの issue 自身が最初になる（自己適用で検証する）
-- **スコープ外**: `issues/` の外（`docs/` / `_claude/` / commit message）から `issues/NNN-x.md` を
-  指す参照は張り直さない。リンク検査の射程外で、実測でも「移動で切れる」形は見つかっていない
+- **スコープ外**: `_claude/agents/tt-api-expert.md` の `](issues/README.md)`（別プロジェクト向け）と
+  commit message 内のパス（immutable）。issue 293 の判断を踏襲する
 
 ## 関連
 
