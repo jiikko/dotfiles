@@ -58,11 +58,16 @@ subjects=$(git -C "$root" log --format=%s "$base..HEAD" 2>/dev/null || true)
 # primary = 作業対象と明示された番号 (commit subject の `(NNN)` / next/ の claim)。構造と関連 issue まで見る。
 # path 由来 (issue ファイル自体を変更した番号) は「変更あり」が既に事実なので、関連 issue の列挙だけに使わない
 # (関連 issue に 1 行足しただけの番号を「作業対象」に格上げすると、その issue 自身に進捗を要求する誤報になる)。
+#
+# 🚨 **桁数を決め打たない** (issue 313 ②)。`[0-9]{3}` / `[0-9][0-9][0-9]` だと 1000 番以降を
+# **抽出集合から静かに落とす**。落ちても出力は「関わった issue なし」になるだけなので、
+# 到達した日に機構が無音で死ぬ。`issues/README.md` の採番規約は「3 桁ゼロ埋め」と書いているが、
+# それは**現在の桁数**であって上限の宣言ではない。
 primary=$( {
-  grep -oE '\(([0-9]{3}([,/ ]+[0-9]{3})*)\)' <<<"$subjects" | grep -oE '[0-9]{3}'
+  grep -oE '\(([0-9]{3,}([,/ ]+[0-9]{3,})*)\)' <<<"$subjects" | grep -oE '[0-9]{3,}'
   while IFS= read -r d; do
     [ -d "$d" ] || continue
-    find "$d" -path '*/next/*' -name '[0-9][0-9][0-9]-*.md' 2>/dev/null | sed -E 's#.*/([0-9]{3})-.*#\1#'
+    find "$d" -path '*/next/*' -name '[0-9][0-9][0-9]*-*.md' 2>/dev/null | sed -E 's#.*/([0-9]{3,})-.*#\1#'
   done <<<"$ISSUE_HOOK_DIRS"
 } | sort -u)
 [ -n "$primary" ] || exit 0

@@ -34,7 +34,9 @@ fi
 # ならないようにする。🚨 -maxdepth を置かない: 以前 `-maxdepth 2` だったため、
 # `issues/epic/<name>/NNN-*.md` (深さ 3) と `epic/<name>/next/` (深さ 4) が検査から漏れていた
 # (2026-09-05 に発見。epic 側と直下で同じ番号を取っても緑のままだった)。
-files=$(find "$issues_dir" -type f -name '[0-9][0-9][0-9]-*.md' -print | sort)
+# 🚨 **桁数も決め打たない** (issue 313 ②)。`[0-9][0-9][0-9]-*.md` は 1000 番以降を
+# 抽出集合から落とすので、到達した日に**重複が検出されなくなる** (深さを切らないのと同じ理由)。
+files=$(find "$issues_dir" -type f -name '[0-9][0-9][0-9]*-*.md' -print | sort)
 
 # 収集 0 件は成功にしない (tests/CLAUDE.md「0 件・skip・沈黙の扱い」)。
 # find の失敗・ディレクトリ改名・パターンの空振りは、どれも「重複なし」と同じ空出力になる。
