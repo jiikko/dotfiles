@@ -21,6 +21,17 @@
   所有権の証明としてどこまで使えるかは、この issue の結論に依存する
 - **再開の trigger**: 実 lock で「期限切れ後の renew が成功する」を再現できたとき。
   再現できたら `Renew` に期限検査と操作対象の同一性確認を足す
+- 🚨 **2026-09-09: [issue 312](done/312-bug-lockman-renew-skips-lease-expiry-check.md) で解消**。
+  再開の trigger は満たされた — `TestRenewRefusesExpiredLease`（TTL 50ms・3 倍待って誰も
+  引き継いでいない状態で `Renew`）で「期限切れ後の renew が成功する」を**実 lock で再現**し、
+  `Renew` の token 照合の直後へ `serverNow` + `expired(now, mtime, holderTTL(m))` を足した
+  （判定は `Release` と共有。新しい判定は書き起こしていない）。期限検査を外す変異で
+  そのテストだけが red になることも確認済み。
+  **`__av1ify_lock_still_held` への影響**: `renew` の rc=0 は「token 一致 **かつ** 期限内」を
+  意味するようになったので、所有権の証明として使ってよい。ただし `Renew` は probe が
+  1 往復増える（既定の renew 間隔は TTL/3 = 10 分なので許容と判断した）。
+  「照合後に他者へ引き継がれた lock の上書き」（`readLock` と `OpenFile` の隙間）は
+  窓が縮んだだけで 0 にはなっていない — **その部分はこの issue の残課題のまま**
 
 ## 2. `pgrep` と kill の間の競合 / PID 再利用
 
