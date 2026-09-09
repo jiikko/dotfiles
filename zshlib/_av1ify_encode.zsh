@@ -73,7 +73,10 @@ __av1ify_finalize() {
   # 出力の生成が確認できないとき、および中断要求時は、元ファイルを絶対に削除せず NG で抜ける。
   if [[ ! -f "$final_out" ]]; then
     print -r -- "❌ 出力が生成されませんでした (中断など)。元ファイルは保持します: $in" >&2
-    [[ -n "$tmp" && -e "$tmp" ]] && rm -f -- "$tmp"
+    __av1ify_rm_own_tmp "$tmp" || {
+      REPLY="$in"
+      return 1
+    }
     REPLY="$in"; return 1
   fi
   if (( __AV1IFY_ABORT_REQUESTED )); then
@@ -661,7 +664,11 @@ __av1ify_one() {
       print -r -- "[DRY-RUN] 残骸検出: $tmp（変更なし）"
     else
       print -r -- "🚨 残骸削除: $tmp"
-      rm -f -- "$tmp"
+      if ! __av1ify_rm_own_tmp "$tmp"; then
+        __AV1IFY_CURRENT_TMP=""
+        __AV1IFY_LAST_NG_REASON="共有一時ファイルを安全に削除できないため中止"
+        return 1
+      fi
     fi
   fi
 
@@ -907,7 +914,16 @@ __av1ify_one() {
     fi
   else
     local ffmpeg_status=$?
-    __av1ify_rm_own_tmp "$tmp"
+    if ! __av1ify_rm_own_tmp "$tmp"; then
+      __AV1IFY_CURRENT_TMP=""
+      if (( __AV1IFY_ABORT_REQUESTED || ffmpeg_status == 130 )); then
+        print -r -- "✋ 中断: $in"
+        return 130
+      fi
+      print -ru2 -- "❌ 共有一時ファイルを安全に削除できないため、再試行を中止します: $in"
+      __AV1IFY_LAST_NG_REASON="共有一時ファイルを安全に削除できないため中止"
+      return 1
+    fi
     if (( __AV1IFY_ABORT_REQUESTED || ffmpeg_status == 130 )); then
       __AV1IFY_CURRENT_TMP=""
       print -r -- "✋ 中断: $in"
@@ -955,7 +971,16 @@ __av1ify_one() {
         fi
       else
         local retry_status=$?
-        [[ -e "$tmp" ]] && rm -f -- "$tmp"
+        if ! __av1ify_rm_own_tmp "$tmp"; then
+          __AV1IFY_CURRENT_TMP=""
+          if (( __AV1IFY_ABORT_REQUESTED || retry_status == 130 )); then
+            print -r -- "✋ 中断: $in"
+            return 130
+          fi
+          print -ru2 -- "❌ 共有一時ファイルを安全に削除できないため処理を中止します: $in"
+          __AV1IFY_LAST_NG_REASON="共有一時ファイルを安全に削除できないため中止"
+          return 1
+        fi
         if (( __AV1IFY_ABORT_REQUESTED || retry_status == 130 )); then
           __AV1IFY_CURRENT_TMP=""
           print -r -- "✋ 中断: $in"

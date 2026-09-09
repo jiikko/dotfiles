@@ -90,7 +90,8 @@ __av1ify_on_interrupt() {
   __AV1IFY_ABORT_REQUESTED=1
   __av1ify_kill_prefetches
   local tmp="${__AV1IFY_CURRENT_TMP:-}"
-  # 共有名なので、保持していないなら消さない (__av1ify_rm_own_tmp が判定する)
+  # 共有名なので、held は保持確認、nolock は明示 opt-out のみ削除する。
+  # 未取得/解放済み状態なら、stale なマーカーがあっても消さない。
   if [[ -n "$tmp" && -e "$tmp" ]] && __av1ify_rm_own_tmp "$tmp"; then
     print -r -- "✋ 中断要求: 進行中の一時ファイルを削除しました ($tmp)"
   else

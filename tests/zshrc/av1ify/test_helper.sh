@@ -10,6 +10,10 @@ setopt err_exit no_unset pipe_fail
 _HELPER_DIR="${0:A:h}"
 ROOT_DIR="$(cd "$_HELPER_DIR/../../.." && pwd)"
 TEST_TMP="$(mktemp -d)"
+# lockman の共有状態もテスト単位で隔離する。実行環境によっては HOME が書込み不可で、
+# 既定の ~/.lockman を使うと排他取得前に全エンコードテストが失敗する。
+# 本番の AV1IFY_LOCK_ROOT は変更せず、このテスト専用値だけを子プロセスへ渡す。
+export AV1IFY_LOCK_ROOT="$TEST_TMP/lockman"
 
 # 🚨 アサーションの失敗は exit code に出す (issue 327 / 329)。
 # ランナー (Makefile の run_tests) は **rc しか見ない**ので、`✗` を printf するだけの分岐は
@@ -283,10 +287,58 @@ case "$sub" in
   *) echo "mock lockman: unknown subcommand: $sub" >&2; exit 2 ;;
 esac
 # av1ify が使う 3 つは、対象ディレクトリと --token-file を必ず渡す契約。
+# lockman はオプション先行・後置のどちらも受けるため、文字列 grep ではなく argv を
+# 要素単位で解析する。値の無い --token-file や未知のオプションは成功させない。
 case "$sub" in
   acquire|renew|release)
-    case "$1" in ""|-*) echo "mock lockman: $sub にディレクトリが渡っていない" >&2; exit 2 ;; esac
-    echo "$*" | grep -q -- "--token-file" || { echo "mock lockman: $sub に --token-file が無い" >&2; exit 2; }
+    lock_dir=""
+    token_file=""
+    token_file_seen=0
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --token-file)
+          if [ "$#" -lt 2 ] || [ -z "$2" ] || [ "${2#-}" != "$2" ]; then
+            echo "mock lockman: $sub の --token-file に値が無い" >&2
+            exit 2
+          fi
+          token_file="$2"
+          token_file_seen=1
+          shift 2
+          ;;
+        --ttl)
+          if [ "$sub" != acquire ] || [ "$#" -lt 2 ] || [ -z "$2" ] || [ "${2#-}" != "$2" ]; then
+            echo "mock lockman: $sub の --ttl 指定が不正" >&2
+            exit 2
+          fi
+          shift 2
+          ;;
+        --label)
+          if [ "$sub" != acquire ] || [ "$#" -lt 2 ] || [ -z "$2" ]; then
+            echo "mock lockman: $sub の --label 指定が不正" >&2
+            exit 2
+          fi
+          shift 2
+          ;;
+        --*)
+          echo "mock lockman: 未知のオプション: $1" >&2
+          exit 2
+          ;;
+        -*)
+          echo "mock lockman: 未知のオプション: $1" >&2
+          exit 2
+          ;;
+        *)
+          if [ -n "$lock_dir" ]; then
+            echo "mock lockman: $sub に余分な引数がある" >&2
+            exit 2
+          fi
+          lock_dir="$1"
+          shift
+          ;;
+      esac
+    done
+    [ -n "$lock_dir" ] || { echo "mock lockman: $sub にディレクトリが渡っていない" >&2; exit 2; }
+    [ "$token_file_seen" -eq 1 ] && [ -n "$token_file" ] || { echo "mock lockman: $sub に有効な --token-file が無い" >&2; exit 2; }
     ;;
 esac
 exit 0

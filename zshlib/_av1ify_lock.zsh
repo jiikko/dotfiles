@@ -53,6 +53,9 @@
 #
 # 🚨 acquire は __av1ify_one に**入る前**に取る。これで関数内の「残骸削除」も
 # ロックの下に入り、他プロセスの作業中ファイルを消す経路が構造的に消える。
+# held = lockman lease を保持中、nolock = 明示的な opt-out で排他なし、
+# 空文字 = 未取得または解放済み。共有 tmp の削除可否はこの状態を根拠にする。
+typeset -g __AV1IFY_LOCK_MODE=""
 typeset -g __AV1IFY_LOCK_DIR=""
 typeset -g __AV1IFY_LOCK_TOKENFILE=""
 typeset -g __AV1IFY_LOCK_RENEWER=""
@@ -77,7 +80,9 @@ __av1ify_lock_dir_for() {
   local in="$1"
   local tmpout="${in%.*}-enc.mp4.in_progress"
   local dir="${tmpout:h}" base="${tmpout:t}"
-  dir="${dir:A}"
+  # :P = physical path。symlink を解決してから `..` を処理するので、実際に出力を
+  # 開くときの親ディレクトリと一致する。入力ファイル自身には適用しない。
+  dir="${dir:P}"
   # ASCII 小文字化をロケールから切り離す (${base:l} は LC_ALL で結果が変わる)。
   # 🚨 失敗を握り潰さない。tr が落ちると空文字を hash して「同じディレクトリの
   # 別ファイルが同一キー」になる (同レビュー P1)。
@@ -116,11 +121,12 @@ __av1ify_lock_root() {
 # AV1IFY_ALLOW_NO_LOCK=1 を明示すること。黙って無防備になるより、明示的に選ばせる。
 # 戻り値: 0 = 排他なしで続行してよい / 1 = 中止
 __av1ify_lock_unavailable() {
-  local reason="$1"
-  if [[ -n "${AV1IFY_ALLOW_NO_LOCK:-}" ]]; then
+  local reason="$1" allow_value="${AV1IFY_ALLOW_NO_LOCK:-}"
+  if [[ "$allow_value" == 1 ]]; then
+    __AV1IFY_LOCK_MODE="nolock"
     if (( ! __AV1IFY_LOCK_WARNED )); then
       __AV1IFY_LOCK_WARNED=1
-      print -ru2 -- "${_C_YELLOW}⚠️ $reason。AV1IFY_ALLOW_NO_LOCK=1 が指定されているので排他なしで続行します${_C_OFF}"
+      print -ru2 -- "${_C_YELLOW}⚠️ $reason。AV1IFY_ALLOW_NO_LOCK=${allow_value} が指定されているので排他なしで続行します${_C_OFF}"
     fi
     return 0
   fi
@@ -132,6 +138,7 @@ __av1ify_lock_unavailable() {
 # 戻り値: 0 = 先へ進んでよい / 3 = 他が保持中 (呼び出し側は SKIP) / 1 = エラー
 __av1ify_lock_acquire() {
   local in="$1"
+  __AV1IFY_LOCK_MODE=""
   __AV1IFY_LOCK_DIR=""; __AV1IFY_LOCK_TOKENFILE=""; __AV1IFY_LOCK_RENEWER=""
 
   # dry-run は何も書かないので排他も要らない (ロックディレクトリも作らない)。
@@ -141,6 +148,15 @@ __av1ify_lock_acquire() {
     __av1ify_lock_unavailable "lockman が PATH にありません"
     return $?
   fi
+
+  # 更新用の所有者 PID は lease を取る前に確定させる。ここで失敗するなら取得を
+  # 始めないので、取得後の release 巻き戻しや、削除済み token で finalize が renew
+  # する経路を作らない。$$ には頼らず、サブシェル自身の PID を使う。
+  if ! zmodload -F zsh/system p:sysparams 2>/dev/null || [[ -z "${sysparams[pid]-}" ]]; then
+    __av1ify_lock_unavailable "zsh/system モジュールが読めず、更新の所有者を特定できません"
+    return $?
+  fi
+  local owner="${sysparams[pid]}"
 
   if ! __av1ify_lock_dir_for "$in"; then
     __av1ify_lock_unavailable "ロックキーを作れません (shasum 不在?)"
@@ -168,9 +184,8 @@ __av1ify_lock_acquire() {
   fi
   if (( rc != 0 )); then
     # 取得そのものに失敗した (lockman のビルド失敗・壊れた lock・権限など)。
-    # 「排他を用意できない」なので不在と同じ扱いにする: 元ファイルを消す設定なら中止、
-    # 残す設定なら警告して続行。ここで一律 return 1 にすると、Go 未導入の環境で
-    # 通常の av1ify まで動かなくなる。
+    # 「排他を用意できない」ので __av1ify_lock_unavailable に委ねる。既定は中止し、
+    # AV1IFY_ALLOW_NO_LOCK=1 を明示した場合だけ排他なしで続行する。
     rm -f -- "$tok"
     __av1ify_lock_unavailable "lockman acquire が失敗しました (rc=$rc)"
     return $?
@@ -178,6 +193,7 @@ __av1ify_lock_acquire() {
 
   __AV1IFY_LOCK_DIR="$dir"
   __AV1IFY_LOCK_TOKENFILE="$tok"
+  __AV1IFY_LOCK_MODE="held"
 
   # 自動更新。親が消えたら道連れで止める (孤児が lease を持ち続けると、
   # 次の実行が 30 分待たされる)。
@@ -192,15 +208,7 @@ __av1ify_lock_acquire() {
   # 対話シェルが生きている間ずっと更新し続ける孤児」ができ、後続が SKIP され続ける
   # (2026-09-08 の codex 敵対レビューが実測)。
   # 🚨 $$ へフォールバックしない。$$ はサブシェルでも外側を指すので、フォールバックすると
-  # 「処理が終わっても更新し続ける孤児」が復活する。nounset 下で未定義の添字を評価すると
-  # そこで終了してしまうため、モジュールの有無を先に確かめる (同レビュー P2)。
-  if ! zmodload -F zsh/system p:sysparams 2>/dev/null || [[ -z "${sysparams[pid]-}" ]]; then
-    lockman release "$dir" --token-file "$tok" >/dev/null 2>&1
-    rm -f -- "$tok"
-    __av1ify_lock_unavailable "zsh/system モジュールが読めず、更新の所有者を特定できません"
-    return $?
-  fi
-  local owner="${sysparams[pid]}"
+  # 「処理が終わっても更新し続ける孤児」が復活する。
   {
     local parent="$owner"
     while sleep "$__AV1IFY_LOCK_RENEW_SEC"; do
@@ -218,8 +226,18 @@ __av1ify_lock_acquire() {
 # まだ自分が保持しているか。renew の成否で見る (check は参考値で根拠にならない、と
 # lockman の usage が明記している)。
 __av1ify_lock_still_held() {
-  [[ -n "$__AV1IFY_LOCK_DIR" ]] || return 0   # 排他なしで走っている場合は判定しない
-  lockman renew "$__AV1IFY_LOCK_DIR" --token-file "$__AV1IFY_LOCK_TOKENFILE" >/dev/null 2>&1
+  case "${__AV1IFY_LOCK_MODE:-}" in
+    nolock)
+      return 0
+      ;;
+    held)
+      [[ -n "$__AV1IFY_LOCK_DIR" && -n "$__AV1IFY_LOCK_TOKENFILE" ]] || return 1
+      lockman renew "$__AV1IFY_LOCK_DIR" --token-file "$__AV1IFY_LOCK_TOKENFILE" >/dev/null 2>&1
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 __av1ify_lock_release() {
@@ -241,6 +259,7 @@ __av1ify_lock_release() {
     rm -f -- "$__AV1IFY_LOCK_TOKENFILE"
     __AV1IFY_LOCK_TOKENFILE=""
   fi
+  __AV1IFY_LOCK_MODE=""
 }
 
 # 共有名の一時出力 (<stem>-enc.mp4.in_progress) を消す唯一の入口。
@@ -248,15 +267,37 @@ __av1ify_lock_release() {
 # 🚨 この名前は入力から決まる**共有名**なので、lease を失った側が消すと、引き継いだ側の
 # 作業中ファイルを壊す。finalize の喪失分岐だけを直しても、ffmpeg 失敗経路と割り込み
 # ハンドラから同じ削除が復活していた (2026-09-08 の codex 敵対レビュー P1)。
-# 排他なしで走っている場合 (__AV1IFY_LOCK_DIR が空) は従来どおり消す。
+# 排他なしで走っている場合 (__AV1IFY_LOCK_MODE=nolock) だけ無条件に消す。
+# 未取得・解放済み (空文字) は、古いマーカーが残っていても消さない。
 __av1ify_rm_own_tmp() {
   local tmp="$1"
   [[ -n "$tmp" && -e "$tmp" ]] || return 0
-  if __av1ify_lock_still_held; then
-    rm -f -- "$tmp"
-    return 0
-  fi
-  print -ru2 -- "🚨 排他を失っているため一時ファイルを消しません (引き継いだ側が書いている可能性): $tmp"
+  case "${__AV1IFY_LOCK_MODE:-}" in
+    nolock)
+      local rm_rc
+      if rm -f -- "$tmp"; then
+        return 0
+      else
+        rm_rc=$?
+        return "$rm_rc"
+      fi
+      ;;
+    held)
+      if __av1ify_lock_still_held; then
+        local rm_rc
+        if rm -f -- "$tmp"; then
+          return 0
+        else
+          rm_rc=$?
+          return "$rm_rc"
+        fi
+      fi
+      print -ru2 -- "🚨 排他を失っているため一時ファイルを消しません (引き継いだ側が書いている可能性): $tmp"
+      ;;
+    *)
+      print -ru2 -- "🚨 排他を取得していないか、すでに解放済みのため一時ファイルを消しません: $tmp"
+      ;;
+  esac
   return 1
 }
 
@@ -280,6 +321,9 @@ __av1ify_one_locked() {
   {
     __av1ify_one "$in"
   } always {
+    # __av1ify_one の早期 return が残したマーカーを、解放後の別状態で解釈させない。
+    # 先に空にしてから lease と token を解放する。
+    __AV1IFY_CURRENT_TMP=""
     __av1ify_lock_release
   }
 }
