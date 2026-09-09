@@ -5,8 +5,8 @@
 出典: `/audit` performance / forge Minimum+（7 体・約 31 分）。
 🚨 **1 回目の実行はセッション上限で 4 体とも起動失敗**（`integrated: null`）し、上限リセット後に回し直した
 
-resource-leaks は [issue 308](308-research-resource-leaks-audit-2026-09-06.md)、
-dead-code / broken-code は [issue 318](done/318-research-dead-code-and-broken-code-audit-2026-09-06.md)。
+resource-leaks は [issue 308](../308-research-resource-leaks-audit-2026-09-06.md)、
+dead-code / broken-code は [issue 318](318-research-dead-code-and-broken-code-audit-2026-09-06.md)。
 
 ## 全数勘定
 
@@ -27,7 +27,9 @@ dead-code / broken-code は [issue 318](done/318-research-dead-code-and-broken-c
 | 派生 | 状態 |
 |---|---|
 | 319（指紋の二重計算） | ✅ 2026-09-08 解消（`issues/done/319-*`） |
-| 320 / 321 / 322 / 323 | 2026-09-08 時点で open（このセッションで順に着手中） |
+| 320 / 321 / 322 / 323 | ✅ 2026-09-08〜09 にすべて解消（`issues/done/`） |
+
+**2026-09-09: 派生 5 件がすべて done になったので、この記録 issue も `done/` へ送る。**
 
 ## この監査の収穫（実測が揃った 3 点）
 
@@ -67,11 +69,11 @@ dead-code / broken-code は [issue 318](done/318-research-dead-code-and-broken-c
 
 1. **direnv の per-prompt コストの代表値と計測条件** — 対話シェル内 4.14〜4.79 ms と
    standalone 5.14〜5.38 ms のどちらを代表値にするか。**測った経路がユーザーの実経路と同じか**の問題
-   （[`perf-claims-need-measurement.md`](../_claude/rules/perf-claims-need-measurement.md)）
+   （[`perf-claims-need-measurement.md`](../../_claude/rules/perf-claims-need-measurement.md)）
 2. **`disk/guard.go:excludedRootFor` を直すか据え置くか** — path 1 本ごとに 10 root を
    `EvalSymlinks` し直しているが、これは**破壊的操作のガード**の一部。
    正規化結果のキャッシュは **TOCTOU の窓を広げる**
-   （[`sandbox-real-destructive-test-apis.md`](../_claude/rules/sandbox-real-destructive-test-apis.md)
+   （[`sandbox-real-destructive-test-apis.md`](../../_claude/rules/sandbox-real-destructive-test-apis.md)
    の「実行の直前に取り直した値で判定する」）。走査（読み取り）と削除（破壊）で扱いを分ける案がある
 3. **`loadWorktreeStatus` の root キャッシュの置き場所** — パッケージ変数（`t.Chdir` を使う
    既存テスト 3 本と衝突 / `-race` で落ちる）か、view が持つか（issue 320 に転記済み）
@@ -87,14 +89,14 @@ dead-code / broken-code は [issue 318](done/318-research-dead-code-and-broken-c
 - **glogx のフレーム O(N²)**: 0 件
 
 🚨 **ただしこの 0 件宣言はクロスレビューで追認されていない**（監査自身が low 項として明記した）。
-[`CLAUDE.md`](../CLAUDE.md)「不在の主張は数え直す」に照らすと、
+[`CLAUDE.md`](../../CLAUDE.md)「不在の主張は数え直す」に照らすと、
 **次の performance 監査はこの 4 項目を最初に再確認するところから始めるべき**。
 
 ## 起票しなかったが記録に残すもの
 
 - **`bin/lib/go_autobuild.zsh` の pid 数値ゲートが同一ファイル内で非対称**:
   `_go_autobuild_take_lock`（281 行）にゲートが無く、509 行にはある。
-  [`shell-numeric-gate-explicit-digits.md`](../_claude/rules/shell-numeric-gate-explicit-digits.md)
+  [`shell-numeric-gate-explicit-digits.md`](../../_claude/rules/shell-numeric-gate-explicit-digits.md)
   の対象だが、入力源が `$$` なので発火条件を示せない。**触る機会があれば揃える**
 - **`scripts/` の同型 preamble 6 本**（`tmux_agent_panel.sh` / `tmux_fzf_pane_move.sh` /
   `tmux_agent_jump.sh` / `tmux_fzf_jump.sh` / `tmux_resurrect_debounced_save.sh` /
