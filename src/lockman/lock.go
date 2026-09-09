@@ -328,6 +328,16 @@ func (l *Locker) Release(token string) error {
 // 超えていればその lock は既に他者が引き継げる状態にあり、書き直すと
 // 「引き継いだ側の lock を truncate して自分のメタで上書きする」形になるため。
 // 判定は Release と同じ expired / holderTTL を使う (2 つ目の判定を作らない)。
+//
+// 🚨 **readLock と下の OpenFile のあいだの窓は 0 になっていない。直さないと決めた**
+// (issues/340-risk-av1ify-lock-unverified-residuals.md 項目 1 の残り)。
+// 期限検査 (issue 312) で「期限切れ lease の復活」は塞いだが、「照合した直後に他者へ
+// 引き継がれた lock を O_TRUNC で上書きする」経路は窓が縮んだだけで残る。
+// 0 にするには取得と同じ「存在しない名前への rename で勝者を 1 人に絞る」形を Renew にも
+// 持ち込む必要があり、renew のたびに rename が増える。
+// 再開の trigger: 実 lock を使った並行実験でこの上書きを再現できたとき。
+// 影響の範囲: av1ify は finalize の直前に renew の rc で保持を判定する
+// (__av1ify_lock_still_held)。rc=0 は「token 一致 かつ 期限内」までを意味する。
 func (l *Locker) Renew(token string) error {
 	m, mtime, err := l.readLock()
 	if err != nil {

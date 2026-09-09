@@ -86,6 +86,13 @@ __av1ify_lock_dir_for() {
   # ASCII 小文字化をロケールから切り離す (${base:l} は LC_ALL で結果が変わる)。
   # 🚨 失敗を握り潰さない。tr が落ちると空文字を hash して「同じディレクトリの
   # 別ファイルが同一キー」になる (同レビュー P1)。
+  #
+  # 🚨 **下の 3 つの検証 ([[ -n "$folded" ]] / 64 桁 / hex のみ) を「pipefail が
+  # あるから冗長」と読んで外さないこと。** 監査が一度「途中段の失敗検出は PIPE_FAIL 依存」と
+  # 指摘したが、**前提が誤りだった** (issues/340 項目 5 で却下)。実測 2026-09-09:
+  # `zsh -f` + `unsetopt pipefail` で PATH 先頭に失敗 shim を置くと、tr 失敗 / shasum 失敗 /
+  # **shasum が rc=0 で短い出力を返す**の 3 形すべてで rc=1 になる。3 形目は pipefail では
+  # 原理的に検出できない (途中段が成功しているため) ので、担い手はこの出力検証の側。
   local folded
   folded="$(LC_ALL=C printf '%s' "$base" | LC_ALL=C tr 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' 'abcdefghijklmnopqrstuvwxyz')" || return 1
   [[ -n "$folded" ]] || return 1
@@ -244,6 +251,14 @@ __av1ify_lock_release() {
   if [[ -n "$__AV1IFY_LOCK_RENEWER" ]]; then
     # 🚨 子 (sleep) を先に落とす。renewer 本体だけ kill すると sleep が親を失って
     # 残り、最大 renew 間隔ぶん生き続ける (実測 2026-09-08: ppid=1 の sleep が残った)。
+    #
+    # 🚨 **列挙と kill のあいだの競合 / PID 再利用は残っている。直さないと決めた**
+    # (issues/340-risk-av1ify-lock-unverified-residuals.md 項目 2)。
+    # pgrep で並べてから kill するまでに子が入れ替わる / 終了済み PID が再利用される形は
+    # コード上ありうるが、**再現できていない**。閉じるには親子間の生存通知 (パイプ等) が要り、
+    # shell の範囲では重い。取りこぼした sleep は最大 renew 間隔 (10 分) で自然に消え、
+    # stdio は /dev/null なので呼び出し元のパイプも掴まない。
+    # 再開の trigger: 孤児 renewer が lease を持ち続けて後続が SKIP され続ける事象を観測したとき。
     local _kid
     for _kid in ${(f)"$(pgrep -P "$__AV1IFY_LOCK_RENEWER" 2>/dev/null)"}; do
       [[ -n "$_kid" ]] && kill "$_kid" 2>/dev/null
