@@ -217,6 +217,21 @@ func withDeleteDefaults(opt DeleteOptions) DeleteOptions {
 }
 
 // DefaultHistoryDir は削除インベントリの既定の置き場。
+//
+// 🚨 **prune / TTL を置かないのは意図的** (issue 308 の未決着 4、2026-09-10 に決着)。
+// resource-leaks 監査 (2026-09-06) が「無限に増える」として prune の新設を提案したが、
+// 採らなかった理由:
+//
+//   - **production の読み手が 0 件**。ここは forensics 専用で、増えても誰の処理も遅くしない
+//   - **増加が年単位で KB**。実測 2026-09-10: **4 ファイル / 16K** (`~/.cache/glog` 全体で 84K)。
+//     2026-09-06 の実測と**同じ 4 ファイル**で、4 日間で 1 件も増えていない
+//   - **掃除は破壊的操作の新設**。同じ repo に同じ判断の正本がある
+//     (`scripts/tmux_schedule_keys.sh` 冒頭:「掃除機構を置かないのは意図的: 残骸は数バイト…
+//     掃除は破壊的操作の新設なので、**溜まった証拠が出てから作る**」)
+//
+// **再開の trigger**: このディレクトリが 3 桁 (数百ファイル) に届いたとき、または
+// 1 ファイルが MB 級になったとき。そのときは「消す」より先に「1 ファイルへ追記する形」を検討する
+// (ファイル数の増加が本体で、バイト数ではないため)。
 func DefaultHistoryDir() (string, error) {
 	base, err := cachedir.Base()
 	if err != nil {
