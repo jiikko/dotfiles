@@ -7,7 +7,7 @@
 各 7 体、dead-code 約 35 分 / broken-code 約 37 分）
 
 却下理由を残すための issue（残さないと次の audit が同じ指摘を再生成する）。
-resource-leaks の記録は [issue 308](308-research-resource-leaks-audit-2026-09-06.md)。
+resource-leaks の記録は [issue 308](../308-research-resource-leaks-audit-2026-09-06.md)。
 
 ## 全数勘定
 
@@ -39,7 +39,9 @@ resource-leaks の記録は [issue 308](308-research-resource-leaks-audit-2026-0
 2026-09-09: **313 も done**（手書き列挙 → 導出への反転。yamllint の対象 13 → 25 本、
 shellcheck の発見 112 → 115 本、issue 番号の 3 桁決め打ち 3 箇所を桁数非依存に）。
 
-残る派生は **315 のみ**。
+2026-09-09: **315 も done**（`staticcheck -checks=U1000 -tests=false` のゲートを新設。実測で U1000 は 2 件で、どちらも理由がコードに書かれた keep だったので allowlist へ）。
+
+**派生 8 件がすべて done になったので、この記録 issue も done へ送る。**
 
 ## main agent が実測で裏を取ったもの
 
@@ -64,7 +66,7 @@ dead-code の一次報告は **「唯一の実害は 1 件」**と書いてい�
 同種のヒットが **2 件実在**した（`parallel-each/runner.go:loadProcessedLines` /
 `schedkeys/editor.go:setValue`。`disassemble_excel` / `lockman` / `termsafe` は 0 件）。
 
-[`CLAUDE.md`](../CLAUDE.md)「issue の『不在の主張』は、着手前に数え直す」の実例。
+[`CLAUDE.md`](../../CLAUDE.md)「issue の『不在の主張』は、着手前に数え直す」の実例。
 **指摘の質は高かったが、結論の射程だけが誤っていた**。
 
 🚨 なおこの 2 件は**死蔵ではなく正当な test seam** なので、削除対象として扱わないこと（issue 315）。
@@ -90,14 +92,14 @@ issue 316 の冒頭に注意として転記済み。
 これらは動画ファイル名（ユーザー由来の任意文字列。空白・グロブ・改行を含みうる）を扱うコードで、
 **SC2086 系（未クォート展開）はこの層で最も効く検査**。`zsh -n` は置き換えにならない。
 `Makefile:7` が「同じ `.zsh` でも `zshlib/_av1ify.zsh` は sh 互換で shellcheck 側」と
-意図を明記しており、[`verify-design-intent-before-refactor.md`](../_claude/rules/verify-design-intent-before-refactor.md)
+意図を明記しており、[`verify-design-intent-before-refactor.md`](../../_claude/rules/verify-design-intent-before-refactor.md)
 の「意図的に選ばれた設計」に当たる。**ヘッダの射程を実装に合わせる案のみ採用**（issue 313 ③）。
 
 ### ② `case ... in *[!0-9]*)` の数値ゲートが全角数字を通す → **発火条件を示せない**
 
 実測: bash の `[[ =~ ^[0-9]+$ ]]` は全角数字を**弾く**（`LANG=ja_JP.UTF-8` / bash 3.2 と 5 の両方）。
 通すのは glob の `case` の方だけ。repo 内のヒットは**すべて「非数値を既定値へ倒す fallback」**で、
-[`shell-numeric-gate-explicit-digits.md`](../_claude/rules/shell-numeric-gate-explicit-digits.md) が
+[`shell-numeric-gate-explicit-digits.md`](../../_claude/rules/shell-numeric-gate-explicit-digits.md) が
 明示的に射程外としている形。唯一の reject ゲート `tmux_schedule_keys.sh:new_reservation` は
 `=~` を使っており安全。`tmux_resurrect_guards.sh` の入力源も
 `tmux display-message -p '#{pid}'` / `date +%s` / `stat` の出力だけで全角も 19 桁も流入しない。

@@ -242,6 +242,6 @@ assert が*検知したと言えるか』を書く」そのもので、**同じ�
 ## 関連
 
 - 監査結果の記録: [308](../308-research-resource-leaks-audit-2026-09-06.md) /
-  [318](../318-research-dead-code-and-broken-code-audit-2026-09-06.md) /
+  [318](318-research-dead-code-and-broken-code-audit-2026-09-06.md) /
   [324](../324-research-performance-audit-2026-09-06.md)
 - 人間の承認待ち: [304](../304-human-approve-reaping-6-orphan-tmux-test-servers.md)

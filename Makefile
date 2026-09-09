@@ -48,7 +48,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-parallel test-discovered-serial test-discovered-heavy test-discovered-rest test-discovered-rest-parallel test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-cd-rc test-trigger-log-writers test-skip-exit-code test-assert-reaches-exit test-workflow-action-pins test-go-project-lanes test-go-lint test-go test-src test-fresh
+.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-parallel test-discovered-serial test-discovered-heavy test-discovered-rest test-discovered-rest-parallel test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-cd-rc test-trigger-log-writers test-skip-exit-code test-assert-reaches-exit test-workflow-action-pins test-go-project-lanes test-unused-excluding-tests test-go-lint test-go test-src test-fresh
 
 # ./tmp のスクラッチを掃除する (既定は 30 日より古いトップレベルのエントリ)。
 #
@@ -565,6 +565,15 @@ if [ -n "$$failed" ]; then \
 fi
 endef
 
+# production から到達できないシンボル (テストだけが呼んでいる関数) を検出する。
+# golangci-lint の unused はテストも解析対象に含めるので、このクラスを構造的に見逃す (issue 315)。
+#
+# 🚨 **test-lint には入れない**。lint.yml は全 push で走るので、Go 解析を置くと非接触の push でも
+# 毎回 staticcheck が動く (2026-07-17 に Go を lint.yml から分離したのと同じ理由)。
+# CI では paths filter つきの .github/workflows/unused.yml が回す。
+test-unused-excluding-tests:
+	@scripts/check_unused_excluding_tests.sh
+
 test-go-lint:
 	@+$(call run_go_projects,lint)
 
@@ -576,5 +585,5 @@ test-go:
 # src/ を触った後のコミット前検証はこれ 1 発で CI (src_*.yml の lint / test 両 job) と揃う。
 # 🚨 ここも集約 (issue 130)。prerequisite に並べると lint の失敗で test が走らない
 test-src:
-	@+$(call run_all_targets,test-go-lint test-go)
+	@+$(call run_all_targets,test-go-lint test-unused-excluding-tests test-go)
 

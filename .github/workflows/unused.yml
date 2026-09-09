@@ -1,0 +1,63 @@
+---
+# production から到達できない Go シンボル (テストだけが呼んでいる関数) の検査 (issue 315)。
+#
+# なぜ独立した workflow か: 中身は Go の静的解析なので、全 push で走る lint.yml には置かない
+# (2026-07-17 に Go を lint.yml から分離したのと同じ理由)。かといって src_<project>.yml では
+# **モジュール横断の allowlist と全数勘定**が持てないので、paths filter つきの専用 caller にする。
+# 🚨 paths filter 付きの check を required check に登録しない (理由は _go-project.yml 参照)。
+name: unused (production 到達不能)
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/**'
+      - scripts/check_unused_excluding_tests.sh
+      - .github/workflows/unused.yml
+      - Makefile
+  pull_request:
+    paths:
+      - 'src/**'
+      - scripts/check_unused_excluding_tests.sh
+      - .github/workflows/unused.yml
+      - Makefile
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unused:
+    # 対象は macOS のみ (issue 133)。ラベルの移動で環境が変わらないよう 15 に固定する。
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: src/glogx/go.mod
+          cache: false
+
+      # 🚨 版を固定する。latest 追従だと上流が検査を追加した日に「手元は緑なのに CI だけ赤」が出る
+      # (shellcheck / actionlint の pin と同じ規律。lint.yml のコメント参照)。
+      # 🚨 手元の staticcheck を上げたらここも同じ版へ更新すること。
+      - name: Install staticcheck (pinned)
+        env:
+          STATICCHECK_VERSION: v0.7.0
+        run: |
+          go install "honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          # --version を出すだけでは pin の証拠にならないので値を突き合わせる
+          got=$("$(go env GOPATH)/bin/staticcheck" --version)
+          case "$got" in
+            *"(${STATICCHECK_VERSION})"*) ;;
+            *) echo "::error::staticcheck の版が pin と違う (取得=$got 期待=$STATICCHECK_VERSION)"; exit 1 ;;
+          esac
+
+      - name: production 到達不能なシンボルの検査
+        run: make test-unused-excluding-tests
