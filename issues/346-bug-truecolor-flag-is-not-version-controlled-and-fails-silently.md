@@ -60,9 +60,65 @@ retro 342 の「dotfiles へ `_zshenv` として取り込むか」は、その�
 
 ## 受け入れ条件
 
-- [ ] `~/.zshenv` に該当行が無い状態を作って、**気づける**ことを実測で示す
-- [ ] マシンごとに違う値であることが、仕組みの中に書かれている（`_zshenv.example` のコメント等）
-- [ ] **変異検証**: 検出をやめると red になる
+- [x] `~/.zshenv` に該当行が無い状態を作って、**気づける**ことを実測で示す
+- [x] マシンごとに違う値であることが、仕組みの中に書かれている（`_zshenv.example` のコメント等）
+- [x] **変異検証**: 検出をやめると red になる
+
+## 進捗: 対応案 2 + 3 を採った (commit `fix(346): SUPPORT_TRUECOLOR の設定漏れを起動時に検出する`)
+
+**採らなかった案と理由**: 案 1（`setup.sh` が警告）は「setup.sh を再実行したときしか出ない」ので、
+`.zshenv` を後から失った場合に気づけない。案 4（判定を「不明 → 非対応」へ反転）は
+新しい端末を壊す向きなので単独では採らない（本文の判断どおり）。
+
+- **案 2**: `_zshrc` に `_dotfiles_check_truecolor` を足した（`_dotfiles_check_claude_links` の隣。
+  状態ファイルを持たず fork ゼロ、対話シェルの起動ごとに評価する）。
+  検出は 2 つ: **未設定 / 空** と、**`_nviminit.lua` が解釈しない値**（`yes` 等）。
+  後者は「設定したのに効かない」形で、ファイルを見ているだけでは分からない
+- **案 3**: `_zshenv.example` を置いた（`setup.sh` の link 対象は明示リストなので**自動では張られない**
+  ＝ 人が `cp` して選ぶ、が保たれる）。「なぜ dotfiles が値を持てないか」「tmux 内で自動判定が
+  効かない理由」を本文に書いた
+
+### 「気づける」ことの実測 (pty で実際の対話 zsh を起動した A-B)
+
+`script(1)` の pty で `zsh -i`（`HOME` / `ZDOTDIR` は使い捨て、`dotfiles` は symlink）:
+
+| 条件 | 出力 |
+|---|---|
+| `SUPPORT_TRUECOLOR` 未設定 | `[dotfiles] SUPPORT_TRUECOLOR が未設定です。… 'cp ~/dotfiles/_zshenv.example ~/.zshenv' して true/false を選んでね。` |
+| `SUPPORT_TRUECOLOR=false` | 該当行 **0 件**（黙る） |
+
+関数単体ではなく**実シェルの起動経路**（`[[ -o interactive ]] && [[ -t 1 ]]` の内側）で出ることを見た。
+
+### 2 実装の食い違いを機械で止める
+
+受け付ける値は `_zshrc` と `_nviminit.lua` の**2 箇所**にある（片方だけ増やすと
+「設定したのに効かない」/「効いているのに警告」が黙って起きる）。
+`tests/zshrc/test_truecolor_flag_check.sh` が**両方から値集合を抽出して突き合わせる**
+（`0 1 false true`）。抽出が空なら失敗にする。
+
+### 変異検証 (5 本すべて red)
+
+| 変異 | 結果 |
+|---|---|
+| 呼び出し `_dotfiles_check_truecolor` を消す（定義だけ残す） | RED（配線の pin） |
+| 未設定の腕を黙らせる | RED |
+| 解釈されない値の腕を黙らせる | RED |
+| `_zshrc` だけ `yes` を受け付けるよう広げる | RED（lua との突き合わせ） |
+| `_zshenv.example` を消す | RED |
+
+🚨 最初の 2 本は sed の当て方が悪く**構文エラー**になっていた。`zsh -n` で「変異がビルド不能」を
+第 3 の結果として弾いてから当て直した（緑でも赤でもないものを red と読まない）。
+
+### 走った証拠
+
+`make test-dir DIR=tests/zshrc` rc=0。ログに
+`[run] tests/zshrc/test_truecolor_flag_check.sh` → `[test-truecolor-flag-check] すべて成功` が出ている
+（集約経路から実行されていることの確認）。
+
+### 残タスク
+
+- **このマシンは既に `~/.zshenv` に行があるので、警告は出ない**（実測: `SUPPORT_TRUECOLOR=false`）。
+  新しいマシンをセットアップしたときに初めて実運用で発火する
 
 ## 関連
 

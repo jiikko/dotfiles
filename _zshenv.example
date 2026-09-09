@@ -1,0 +1,31 @@
+# ~/.zshenv の雛形 — **このファイル自身は読まれない**。`cp _zshenv.example ~/.zshenv` して使う。
+#
+# なぜ dotfiles が ~/.zshenv を管理しないか:
+#   ここに書く値は**マシンごとに違う**（下の SUPPORT_TRUECOLOR は端末の能力そのもの）。
+#   `_zshenv` として commit して symlink を張ると、対応マシンでも非対応マシンの値が当たる。
+#   よって dotfiles が持てるのは「雛形と、判断の材料」までで、値を決めるのは人。
+#
+# 未設定のまま放置していないかは、対話シェルの起動時に _zshrc の
+# `_dotfiles_check_truecolor` が知らせる（issue 346）。
+
+# ---------------------------------------------------------------------------
+# SUPPORT_TRUECOLOR — nvim の colorscheme を決める（truecolor 対応端末かどうか）
+# ---------------------------------------------------------------------------
+# 対応 (true/1)  → gruvbox + termguicolors=on（24bit）
+# 非対応 (false/0) → retrobox + termguicolors=off（256 色。gruvbox は cterm 色を持たないため）
+#
+# 🚨 **自動判定に落とせない**。tmux の中では
+#   - `_tmux.conf` が `,tmux*:RGB` で RGB を無条件に広告する
+#   - `COLORTERM` は伝わらない
+#   - `TERM_PROGRAM` も渡ってこない（実測 2026-09-09: tmux 内の nvim では nil）
+# ため、env からの推定は効かず「不明 → 対応とみなす」に落ちる。つまり**この行が無いと、
+# 非対応端末でも gruvbox + termguicolors=on になり、色が潰れる**（エラーは出ない）。
+# 判定の優先順とその理由は `_nviminit.lua` の `dotfiles_truecolor_supported` 冒頭のコメント。
+#
+# どちらか一方のコメントを外す:
+#
+# macOS 標準の Terminal.app など 256 色どまりの端末:
+# export SUPPORT_TRUECOLOR=false
+#
+# iTerm2 / Ghostty / WezTerm など truecolor 対応の端末:
+# export SUPPORT_TRUECOLOR=true

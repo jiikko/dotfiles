@@ -877,5 +877,25 @@ if [[ -o interactive ]] && [[ -t 1 ]]; then
     print -r -- "[dotfiles] ~/.claude のリンクが ${#missing} 件不足しています (${missing[1,3]})。'sh ~/dotfiles/setup.sh' を実行してね。"
   }
   _dotfiles_check_claude_links
+
+  # truecolor フラグ (SUPPORT_TRUECOLOR) の設定漏れ検出。
+  # このフラグは nvim の colorscheme を決める (`_nviminit.lua` の dotfiles_truecolor_supported)。
+  # 🚨 未設定は「既定にフォールバックする」のではなく **誤判定に落ちる**: tmux 内では
+  # _tmux.conf が RGB を無条件広告し COLORTERM も TERM_PROGRAM も届かないので、自動判定は
+  # 「不明 → 対応とみなす」になり、**256 色端末でも gruvbox + termguicolors=on** になる。
+  # エラーは出ず「なんか色が変」になるだけなので、気づく経路がここしか無い (issue 346)。
+  # 値そのものはマシンの能力なので dotfiles では持てない (雛形は _zshenv.example)。
+  # 🚨 受け付ける値は _nviminit.lua と揃っていること。ずれると「設定したのに効かない」が
+  # 黙って起きる (tests/zshrc/test_truecolor_flag_check.sh が両者を突き合わせる)。
+  _dotfiles_check_truecolor() {
+    case "${SUPPORT_TRUECOLOR-}" in
+      true|false|0|1) return 0 ;;
+      "")
+        print -r -- "[dotfiles] SUPPORT_TRUECOLOR が未設定です。この端末が truecolor 対応かは人しか知らず、未設定だと tmux 内の nvim が誤判定します。'cp ~/dotfiles/_zshenv.example ~/.zshenv' して true/false を選んでね。" ;;
+      *)
+        print -r -- "[dotfiles] SUPPORT_TRUECOLOR='${SUPPORT_TRUECOLOR}' は _nviminit.lua が解釈しない値です (true/false/1/0 のいずれか)。このままだと未設定と同じく誤判定します。" ;;
+    esac
+  }
+  _dotfiles_check_truecolor
 fi
 # ---------------------------------------------------------------------------
