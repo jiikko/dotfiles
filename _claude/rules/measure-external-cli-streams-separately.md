@@ -66,4 +66,4 @@
   模しているか」はあちらの「守っていないテストの形」が正本
 - [`adversarial-review-own-safeguards.md`](adversarial-review-own-safeguards.md) — 異常系を実験で作る
   一般論の正本 (本ルールでは CLI の副作用隔離がその前提になる)
-- 起源の記録: `issues/100-retro-glogx-cli-health-2026-08-24.md`
+- 起源の記録: `issues/done/100-retro-glogx-cli-health-2026-08-24.md`

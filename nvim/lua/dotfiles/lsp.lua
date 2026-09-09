@@ -35,7 +35,7 @@ local ts_js_inlay_hints = {
 --    入る (_nviminit.lua) ので、mason 版が入った瞬間に下のプローブごと mason 版へ倒れる。
 --    導入は rbenv 側で人が行う: RBENV_VERSION=<v> gem install ruby-lsp
 --    (required_ruby_version >= 3.0 なので 2.x の project は solargraph のまま)。
--- 経緯と A-B は issues/332-ruby-lsp-selection-by-probe.md。
+-- 経緯と A-B は issues/done/332-ruby-lsp-selection-by-probe.md。
 
 -- 環境への問い合わせ。テストが差し替えられるよう M のフィールドに出す (root ごとに 1 回しか
 -- 呼ばれないので、production 側の複雑さはこの 2 関数に収まる)。

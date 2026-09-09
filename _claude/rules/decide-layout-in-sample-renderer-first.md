@@ -54,4 +54,4 @@
   サンプルで回すべき典型 (幅の計算では検出できず、出して見るしかない)
 - [`verify-design-intent-before-refactor.md`](verify-design-intent-before-refactor.md) —
   「実需要が確定するまで構造を凍結する」同思想 (あちらは構造、こちらは表示)
-- 起源の記録: `issues/098-retro-statusline-pace-calendar-grid-2026-08-23.md` の項目 7
+- 起源の記録: `issues/done/098-retro-statusline-pace-calendar-grid-2026-08-23.md` の項目 7
