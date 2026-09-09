@@ -15,6 +15,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"doctor/disk"
 	"glogx/issues"
+	"glogx/subproc"
 )
 
 // Bubble Tea による less 風の対話ブラウズ (カーソル移動 + CI job 表示)。
@@ -3079,6 +3080,11 @@ func (m *browseModel) openJobLogInEditor() tea.Cmd {
 	// (code - / nano - は不可)。実ファイルを開く経路の $EDITOR 対応は editorCommand の doc を参照。
 	cmd := exec.Command("nvim", "-R", "-c", "setlocal buftype=nofile noswapfile nomodifiable", "-")
 	cmd.Stdin = strings.NewReader(jobLogText(lines))
+	// 🚨 ここは注記で免除しない。Stdin が *os.File でない (strings.Reader) ため os/exec は
+	// os.Pipe と copy goroutine を作る (GOROOT os/exec/exec.go childStdin)。つまり他の前景実行と
+	// 違い「パイプが無いから安全」が成り立たず、nvim の孫が読み口を握ったまま nvim だけ終わると
+	// Wait が戻らない。ctx が無く kill する主体もいないので、上限は WaitDelay しかない。
+	cmd.WaitDelay = subproc.WaitDelay
 	return runEditorCmd(cmd)
 }
 

@@ -40,7 +40,10 @@ func repoRoot() string {
 // 任意のエディタで開きたくなったら、それは editorCommand ではなく隣の openFilerAtRoot
 // (filerCandidates) の系統。実ファイルを開く経路の $EDITOR 対応は editorCommand の doc を参照。
 func (m *browseModel) openEditorAtRoot() tea.Cmd {
-	cmd := exec.Command("nvim", ".")
+	// 前景の対話エディタで ctx が無い (tea.ExecProcess が端末を明け渡し、終了まで待つのが仕様)。
+	// stdin/stdout は端末を継承するので os/exec はパイプも copy goroutine も作らず、
+	// Wait が孫に握られる形が起きない。
+	cmd := exec.Command("nvim", ".") // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し
 	cmd.Dir = repoRoot()
 	return runEditorCmd(cmd)
 }
@@ -53,7 +56,8 @@ func (m *browseModel) openFilerAtRoot() tea.Cmd {
 		if err != nil {
 			continue
 		}
-		cmd := exec.Command(path)
+		// 免除の理由は上の openEditorAtRoot と同じ (前景の tea.ExecProcess・ctx 無し・パイプ無し)。
+		cmd := exec.Command(path) // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し
 		cmd.Dir = repoRoot()
 		return runEditorCmd(cmd)
 	}

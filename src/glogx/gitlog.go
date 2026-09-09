@@ -65,7 +65,9 @@ func colorArg(colored bool) string {
 // 起動時の同期経路用 (ハングしてもユーザーの Ctrl-C がプロセスごと落とせる)。
 // TUI 対話中に非同期発行される経路は runGitTimeout を使うこと (下記)。
 func runGit(args ...string) (string, error) {
-	return runGitCmd(exec.Command("git", args...))
+	// waitdelay-in: WaitDelay は runGitCmd が張る (ctx 有無の両経路が通るので 1 箇所に寄せてある)。
+	// 🚨 no-waitdelay ではない。ここで「不要」と書くと嘘になる。
+	return runGitCmd(exec.Command("git", args...)) // subproc: waitdelay-in runGitCmd
 }
 
 // gitOpTimeout は subproc.GitOpTimeout の別名 (値と理由の正本はそちら)。issues パッケージも

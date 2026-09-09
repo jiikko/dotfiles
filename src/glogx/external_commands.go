@@ -282,7 +282,9 @@ func parseTmuxPrefix(out string) string {
 var openInBrowser = func(url string) error {
 	switch runtime.GOOS {
 	case "darwin":
-		return exec.Command("open", url).Run() // open は即 detach するので timeout 不要
+		// open は URL を LaunchServices へ渡して即 detach する (ブラウザの終了を待たない) ので
+		// timeout も WaitDelay も要らない。Run() なので stdout/stderr は /dev/null 直結でパイプも無い。
+		return exec.Command("open", url).Run() // subproc: no-waitdelay — 即 detach・パイプ無し
 	default:
 		// xdg-open は環境によってブラウザプロセスへ直接 exec して終了まで戻らないことが
 		// ある (既知挙動)。tea.Cmd の goroutine で同期 Run するため時間で区切る (issue 029 P3)
@@ -370,13 +372,15 @@ const editorFallback = "nvim"
 func editorCommand(path string) *exec.Cmd {
 	editor := firstNonEmptyEnv("VISUAL", "EDITOR")
 	fields := strings.Fields(editor)
+	// 返した Cmd は runEditorCmd (tea.ExecProcess) が前景で起動する。ctx が無く、端末を継承する
+	// ので os/exec はパイプも copy goroutine も作らない (Wait が孫に握られる形が起きない)。
 	if len(fields) == 0 { // 未設定・空白だけなら fallback
-		return exec.Command(editorFallback, path)
+		return exec.Command(editorFallback, path) // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し
 	}
 	args := make([]string, 0, len(fields))
 	args = append(args, fields[1:]...) // EDITOR に含まれていた引数 (例: code -w)
 	args = append(args, path)
-	return exec.Command(fields[0], args...)
+	return exec.Command(fields[0], args...) // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し
 }
 
 // firstNonEmptyEnv は最初に空でない値を持つ環境変数の値を返す。

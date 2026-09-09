@@ -1,5 +1,11 @@
 // Package runner は外部コマンドの実行口。stdout / stderr / exit code を分けて返す (混ぜると
 // どの stream が判定材料か確定できない。simctl は rc=24 + stderr のみ、という形を実際に返す)。
+//
+// 🚨 **doctor module の外部プロセス起動はこの 1 箇所だけ**。他は Options.Run に Runner を
+// 注入して受け取るので、os/exec を import するのは非テストではこのファイルのみ。
+// glogx 側には同じ規律を機械で強制するゲート (src/glogx/waitdelay_discipline_test.go) が
+// あるが、doctor は**別 module** (doctor/go.mod) なのであちらの走査は原理的にここへ届かない。
+// 起動口を増やすなら、注入で済まないかを先に検討すること (issue 303)。
 package runner
 
 import (
