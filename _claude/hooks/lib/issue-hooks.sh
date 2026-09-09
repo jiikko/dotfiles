@@ -114,6 +114,23 @@ issue_hook_emit() {
   fi
 }
 
+# issue_progress_valid_session_id は session_id が**パス構成要素として安全**かを見る (issue 302 ②)。
+#
+# 🚨 この値は `$state_dir/$session_id.head` の**パスに入る**。`issue_progress_json_field` の
+# jq 経路は任意の文字列を返し、jq が無い環境の sed 経路は `"` `,` `}` しか落とさないので
+# **`/` と `..` を通す**。供給元が Claude Code なので実害の確度は低いが、
+# **①の TTL 掃除を入れると「書く場所」と「消す場所」が同時にずれる**ので、
+# 掃除と同じ変更で塞いでおく。
+#
+# 数字判定は明示列挙にしない (ここは英数とハイフンの allowlist なので範囲式の
+# ロケール問題は起きない。全角は `[!0-9A-Za-z-]` 側に落ちて弾かれる)。
+issue_progress_valid_session_id() {
+  case "${1:-}" in
+    ''|*[!0-9A-Za-z-]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
 # issue_progress_json_field <json> <key>: 文字列 / 真偽値のトップレベル値を取る。
 # jq が無い環境では sed で拾う (黙って空にしない: 空は「取れなかった」の意味で呼び出し側が exit 0 する)。
 issue_progress_json_field() {

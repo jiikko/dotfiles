@@ -28,6 +28,12 @@ git -C "$repo" add -A && git -C "$repo" commit -qm "init"
 hook() { # $1=hook $2=session $3=extra json fields (空可)
   printf '{"cwd":"%s","session_id":"%s"%s}' "$repo" "$2" "${3:-}" | "$1" 2>/dev/null || echo "__ERROR__"
 }
+# 🚨 stderr を見る版。上の hook() は 2>/dev/null で捨てるので、**掃除の件数のような
+# stderr 側の観測点は拾えない** (これで一度「掃除が動いていない」と誤診した)
+hook_err() { # $1=hook $2=session
+  # stdout は捨てて stderr だけを取る (順序に依存しない形で書く。SC2069)
+  { printf '{"cwd":"%s","session_id":"%s"}' "$repo" "$2" | "$1" >/dev/null; } 2>&1 || true
+}
 reason() { local out; out=$(hook "$CHECK" "$1" "${2:-}"); [ -n "$out" ] || return 0; printf '%s' "$out" | jq -r 'if .decision=="block" then .reason else "__NOBLOCK__" end'; }
 check() { local desc="$1" want="$2" got="$3"
   if [ -z "$want" ]; then [ -z "$got" ] && return 0; echo "NG: $desc — 無出力のはず:"; printf '%s\n' "$got"; fails=$((fails+1)); return; fi
@@ -147,4 +153,48 @@ check "worktree の変更を「触っていない」と言わない" "" \
   "$(grep -E '107-feat-t.md' <<<"$(reason s9)" || true)"
 git -C "$repo" worktree remove --force "$wt"
 
-[ "$fails" -eq 0 ] && echo "OK: issue-progress hooks" || { echo "FAIL: $fails"; exit 1; }
+# --- issue 302 ①: 期限切れの状態ファイルを掃除する ---------------------------------------------
+#
+# 🚨 判定は「**掃除が実際に消した件数**」で見る。0 件を成功にしない
+# (verify-execution-not-just-exit-code.md)。実測 2026-09-09: 導入 3 日で 174 ファイル溜まっていた。
+sweep_dir="$WORK/sweep"; mkdir -p "$sweep_dir"
+old_head="$sweep_dir/aaaa.head"; old_rep="$sweep_dir/bbbb.reported"
+new_head="$sweep_dir/cccc.head"; other="$sweep_dir/keep.txt"; sub="$sweep_dir/sub"
+: > "$old_head"; : > "$old_rep"; : > "$new_head"; : > "$other"; mkdir -p "$sub"; : > "$sub/deep.head"
+# 20 日前にする (find -mtime +14 が拾う)
+touch -t "$(date -v-20d +%Y%m%d%H%M 2>/dev/null || date -d '20 days ago' +%Y%m%d%H%M)" \
+  "$old_head" "$old_rep" "$other" "$sub/deep.head"
+sweep_out=$(CLAUDE_ISSUE_PROGRESS_DIR="$sweep_dir" hook_err "$START" s10)
+
+check "掃除した件数を報告する" "状態ファイルを 2 件掃除した" "$sweep_out"
+[ -f "$old_head" ] && { echo "NG: 古い .head が残っている"; fails=$((fails+1)); }
+[ -f "$old_rep" ]  && { echo "NG: 古い .reported が残っている"; fails=$((fails+1)); }
+# 🚨 **対象を拡張子で絞っていること**。state_dir は env で差し替えられる (テストが実際にやる) ので、
+# 広い削除にすると差し替え先の中身を巻き込む
+[ -f "$other" ] || { echo "NG: 対象外の keep.txt を消した (削除が拡張子で絞られていない)"; fails=$((fails+1)); }
+[ -f "$sub/deep.head" ] || { echo "NG: サブディレクトリまで潜って消した (-maxdepth 1 が効いていない)"; fails=$((fails+1)); }
+[ -f "$new_head" ] || { echo "NG: 新しい .head を消した"; fails=$((fails+1)); }
+
+# 掃除するものが無ければ黙る (毎回ノイズを出さない)
+check "掃除 0 件なら黙る" "" "$(CLAUDE_ISSUE_PROGRESS_DIR="$WORK/sweep2" hook_err "$START" s11)"
+
+# --- issue 302 ②: session_id をパス構成要素として検証する ---------------------------------------
+#
+# 🚨 jq が無い環境の sed 経路は `"` `,` `}` しか落とさず **`/` と `..` を通す**。
+# 書き先が `$state_dir/$session_id.head` なので、通すと状態ディレクトリの外へ書ける。
+esc_dir="$WORK/esc"; mkdir -p "$esc_dir"
+for bad in "../escaped" "a/b" "" "x;y"; do
+  CLAUDE_ISSUE_PROGRESS_DIR="$esc_dir" hook "$START" "$bad" >/dev/null 2>&1 || true
+done
+if [ -e "$WORK/escaped.head" ] || [ -n "$(find "$WORK" -maxdepth 1 -name '*.head' 2>/dev/null)" ]; then
+  echo "NG: 不正な session_id で状態ディレクトリの外へ書いた"; fails=$((fails+1))
+fi
+if [ -n "$(find "$esc_dir" -type f 2>/dev/null)" ]; then
+  echo "NG: 不正な session_id を通した ($(find "$esc_dir" -type f | tr '\n' ' '))"; fails=$((fails+1))
+fi
+# 正常な id は通ること (弾きすぎていないこと)
+CLAUDE_ISSUE_PROGRESS_DIR="$esc_dir" hook "$START" "7f7c4ee0-5da8-4891-b2fa-e4ecbd1886fa" >/dev/null 2>&1
+[ -f "$esc_dir/7f7c4ee0-5da8-4891-b2fa-e4ecbd1886fa.head" ] || {
+  echo "NG: 正常な session_id (UUID) を弾いた"; fails=$((fails+1)); }
+
+if [ "$fails" -eq 0 ]; then echo "OK: issue-progress hooks"; else echo "FAIL: $fails"; exit 1; fi

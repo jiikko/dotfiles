@@ -38,7 +38,8 @@ issue_hook_resolve_dir <<<"$input" || exit 0
 root="$ISSUE_HOOK_ROOT"
 
 session_id=$(issue_progress_json_field "$input" session_id)
-[ -n "$session_id" ] || exit 0
+# 書き先 (`$state_dir/$session_id.reported`) に入るので、パス構成要素として検証する (issue 302 ②)
+issue_progress_valid_session_id "$session_id" || exit 0
 state_dir="${CLAUDE_ISSUE_PROGRESS_DIR:-$HOME/.cache/claude-issue-progress}"
 state="$state_dir/$session_id.head"
 [ -f "$state" ] || exit 0

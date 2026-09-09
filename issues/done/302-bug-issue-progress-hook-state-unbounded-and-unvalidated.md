@@ -67,7 +67,7 @@ find "$state_dir" -maxdepth 1 -type f -mtime +7 -delete 2>/dev/null || true   # 
   `tests/claude/test_issue_progress_check.sh:19`）
 - SessionStart で**毎回無条件に走る**
 - **`2>/dev/null || true` が失敗も握り潰す**ので、壊れても観測できない
-  （[`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) 節 2）
+  （[`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) 節 2）
 
 → **fail-closed** にすること（既定パスと一致するか、hook 自身の marker を含むことを**実行前に**検査し、
 外れたら実行せず失敗させる）。
@@ -78,3 +78,58 @@ find "$state_dir" -maxdepth 1 -type f -mtime +7 -delete 2>/dev/null || true   # 
   判定は「消した件数」
 - 検証: `"session_id": "../x"` を含む JSON を流し、**state_dir の外にファイルが生まれないこと**を見る
   （exit code で判定しない）
+
+## 結果（2026-09-09）
+
+### 🚨 増加は予測どおりだった（実測で裏を取ってから着手した）
+
+| 時点 | ファイル数 |
+|---|---|
+| 起票日 2026-09-06（hook を入れた当日） | **1** |
+| 2026-09-09 | **174**（696K） |
+
+**3 日で 174**。issue が書いた「1 プロジェクトあたり 1 日約 100 セッション」の見積もりと整合する。
+バイト数は小さいが、効くのは inode / ディレクトリエントリの単調増加、という読みも変わらない。
+
+### ① TTL 掃除（SessionStart 側）
+
+`issue_progress_sweep` を新設。**保持は既定 14 日**（`CLAUDE_ISSUE_PROGRESS_TTL_DAYS` で上書き可、
+数字と桁数を検証）。推奨対応の「採ってはいけない実装」を全部避けた:
+
+| 却下されていた形 | 実装 |
+|---|---|
+| `-type f -delete` で広く消す | **`-name '*.head' -o -name '*.reported'` で必ず絞る**（state_dir は env で差し替わる） |
+| `2>/dev/null \|\| true` で握り潰す | **1 件ずつ rc を見て、消せなかった件数を stderr に出す** |
+| 件数を数えない | **掃除した件数を返し、0 でなければ stderr に出す**（0 件を成功の証拠にしない） |
+
+掃除の失敗で hook 自体は止めない（基準点の記録の方が主目的）。
+
+### ② session_id の検証
+
+`issue_progress_valid_session_id`（`[!0-9A-Za-z-]` の allowlist）を lib に置き、**両 hook** から呼ぶ。
+`.reported` を書く check 側も同じ検証を通る。
+
+### 🚨 テストのバグを 1 件踏んだ
+
+`hook()` ヘルパーが **`2>/dev/null` で stderr を捨てて**いたため、掃除の件数（stderr 側の観測点）を
+拾えず「掃除が動いていない」と一度誤診した。stderr を取る `hook_err()` を足して解決。
+**観測点を stderr に置いたなら、テストのヘルパーがそれを拾えるかを先に確かめる**、という形。
+
+### 変異検証（4 本、すべて red / baseline green）
+
+| 変異 | 落ちた assert |
+|---|---|
+| 掃除を消す（`swept=0`） | 掃除した件数を報告する / 古い `.head` が残っている |
+| 拡張子の絞りを外す | **対象外の `keep.txt` を消した** |
+| `-maxdepth 1` を外す | **サブディレクトリまで潜って消した** |
+| session_id の検証を外す | 不正な session_id で状態ディレクトリの外へ書いた |
+
+集約経路 `make test-dir DIR=tests/claude` に `[run] tests/claude/test_issue_progress_check.sh`。
+`make test-lint` rc=0。
+
+### 残タスク
+
+- **検出しないと決めた形**: `.head` / `.reported` 以外の拡張子で状態を持ち始めたら、
+  掃除の対象からも外れる（そのときは `issue_progress_sweep` の `-name` を同じ変更で足す）
+- **未実測**: 掃除が実環境で 174 件を実際に消すところ（テストは使い捨て dir で 2 件を消す形で固定）。
+  次のセッション開始時に stderr へ件数が出るので、そこで観測できる
