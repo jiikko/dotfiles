@@ -129,7 +129,12 @@ Claude が**実質的な作業をやり切った時点**（機能追加・バグ
 ## 運用ルール（詳細は `~/.claude/CLAUDE.md`「Issue管理」と `_claude/rules/`）
 
 - 対応が完了したら done へ移動する（global issue は `issues/done/`、group issue は
-  `issues/epic/<name>/done/`。issue 291）
+  `issues/epic/<name>/done/`。issue 291）。
+  🚨 **移動は `scripts/issue_done.sh <NNN>` で行う**（手でやらない）。①`done/` へ移動
+  ②`next/` の claim symlink を削除 ③本文の相対リンクを新しい深さへ張り直し
+  ④**他の issue からこの issue への参照**を張り直し、の 4 つを 1 コマンドで行い、
+  リンク検査（`tests/issues/test_issue_links_valid.sh` / `test_next_links_valid.sh`）が
+  落ちたら移動を戻す。手作業では実測で落とす（2026-09-09 に 12 件中 4 回。うち 1 回は CI が赤 = issue 313）
 - issue の新規作成・大幅改訂は commit 前に codex レビューへ通す（[`issue-creation-codex-review.md`](../_claude/rules/issue-creation-codex-review.md)）
 - issue の記述を鵜呑みにしない。着手前に実コードと git 履歴で検証する（既に修正済み・false positive を弾く）
 

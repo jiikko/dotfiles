@@ -51,6 +51,9 @@
 - 完了したら **目印 (symlink) を消してから** issue を done へ移す (global issue は `issues/done/`、group issue は `issues/epic/<name>/done/`)。
   symlink を残すと dangling になり CI (`test_next_links_valid.sh`) が落ちる。旧運用で `next/` に実ファイルとして
   居るものは従来どおり `next/` から `done/` へ移す
+  - 🚨 **手でやらない。`scripts/issue_done.sh <NNN>` に寄せる** (dotfiles の場合)。移動・目印の削除・
+    本文の相対リンクの張り直し・**他 issue からの参照の張り直し**の 4 つを 1 コマンドで行い、
+    リンク検査が落ちたら移動を戻す。手作業は実測で落とす (2026-09-09 に 12 件中 4 回。うち 1 回は CI が赤)
 - **`git pull --rebase` が衝突したら、claim を優先して片付ける**。claim の commit は
   「1 ファイルの rename だけ」なので衝突しても解決は自明 (相手が同じ issue を触っていたなら、
   それは**二重着手が起きている証拠**なので、続けずに相手の claim を尊重して別の issue へ回る)。

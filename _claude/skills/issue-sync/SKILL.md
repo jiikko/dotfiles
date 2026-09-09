@@ -147,9 +147,22 @@ AskUserQuestion で「これらの issue を `done/` へ移動しますか？」
 
 ユーザーが承認した場合:
 
-1. 対象 issue に `next/` の目印（symlink）があれば先に消す（`git rm <その issue の next/>/NNN-x.md`。残すと dangling になり
+1. **`scripts/issue_done.sh <NNN>` がある repo では、それを使う**（dotfiles にはある）。
+   移動 / claim symlink の削除 / 本文の相対リンクの張り直し / **他 issue からこの issue への参照の
+   張り直し** の 4 つを 1 コマンドで行い、リンク検査が落ちたら移動を戻す。
+   実測 2026-09-09（retro 345）: 手作業だと 12 件中 **4 回**取りこぼし、1 回は CI を赤くした。
+
+   ```sh
+   scripts/issue_done.sh 313 324      # 複数まとめて可。1 件ずつ検査して通ったものだけ確定する
+   ```
+
+   **無い repo では以下を手でやる**（4 つ目まで忘れないこと）:
+
+   対象 issue に `next/` の目印（symlink）があれば先に消す（`git rm <その issue の next/>/NNN-x.md`。残すと dangling になり
    `tests/issues/test_next_links_valid.sh` が落ちる。直下へ戻したときに偽の claim として復活する）。
    そのうえで issue ファイルを done へ移動する（`git mv`。ファイル名は変えない — 番号での参照が腐るため）。
+   移動後は **本文の相対リンクが 1 段ずれる**ので張り直し、**他の issue が `](NNN-x.md)` で
+   この issue を指していれば `](done/NNN-x.md)` へ直す**（どちらも切れるとリンク検査が赤くなる）。
    🚨 **宛先は issue の居場所で決まる**（2026-09-06 / issue 291。epic の外へ出さない）:
    - `issues/` 直下・`issues/next/`・`issues/pending/` → `issues/done/`
    - **`issues/epic/<name>/` とその `next/` `pending/`** → **`issues/epic/<name>/done/`**
