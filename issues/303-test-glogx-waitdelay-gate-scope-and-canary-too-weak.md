@@ -125,10 +125,19 @@ canary は `checked == 0` で落ちる形（:70）だが、`subproc/` と `tools
 | R4 | 新規ファイルで `exec.Command("gh",…).Output()` | **green** | RED | RED |
 | R5 | 新規ファイルで別名 import（`import xe "os/exec"` → `xe.Command(…)`） | **green** | **green** | RED |
 
+🚨 **この表の probe は「修正前のマッチャ」を埋め込んでいる**（probe A は旧実装の
+`strings.Contains(lines[j], "WaitDelay")` / `lookahead=8` をそのままコピーした）。
+したがって **R1 行の「A=green」は軸 A の性質ではなく、本 issue で直したコメント誤検出の影**である。
+修正後のマッチャの上では:
+
+- **軸 A は R1 を検出する**（A は同じ走査の検出パターンを広げるだけなので、M1 の RED をそのまま引き継ぐ）
+- **軸 B（本文どおり「import 境界の検査へ*移す*」）は R1 を検出しない**。B は `WaitDelay` を
+  一切読まないので、**B 単独に置き換えると本 issue で直した検出力を捨てることになる**
+
 読み取れること:
 
-- **R1 はどの軸でも緑**。「起票の動機になった退行（守りが静かに外れる）」は、A も B も守らない。
-  ここは軸の選択とは独立に手当てが要る（本 issue で実施済み）
+- **R1 は軸の選択で「守れる/守れない」が分かれる**。修正後の土台の上では A は R1 を維持し、
+  B への*置き換え*は R1 を失う（B を採るなら、字句ゲートを残して併用する形が要る）
 - **A と B は排他ではなく相補**。A だけだと R5（別名 import）が抜け、B だけだと R2 / R3
   （**既に allowlist に載っているファイルへの追記**）が抜ける。日常的に起きるのは後者なので、
   B 単独は「新しいファイルが増えるとき」しか効かない
@@ -168,6 +177,7 @@ canary は `checked == 0` で落ちる形（:70）だが、`subproc/` と `tools
 | M2: 上記コメントから `WaitDelay` の語だけ削除 | **green** | **green** ※修正前は RED（**反転が消えたことの証拠**） |
 | M3: `hasWaitDelayAssign` を旧実装（語の出現）へ戻す | canary が RED | **RED**。落ちたのは `TestWaitDelayOffendersCanary/コメントで_WaitDelay_に言及しているだけ` の **1 ケースのみ**（他 4 ケースは PASS = 狙った主張だけが落ちている）。このとき**本走査は green のまま**で、production だけではマッチャの退行を検出できないことも同時に確認できた |
 | M4: 走査パターンを `exec.CommandContextXX(` へ破壊 | seen floor が発火 | **RED**（本走査 + canary 全 5 ケース） |
+| M5: `gitlog.go:80` に `subproc: no-waitdelay` を足す（seen=2 のまま enforced だけ 0 へ） | enforced floor が発火 | **RED**。落ちたのは `waitdelay_discipline_test.go:134` の**enforced 用 `Fatalf`**（「WaitDelay を強制している箇所が 0 件しかない (下限 1)」）。seen floor でも offender 一覧でもないことを文言で確認した |
 
 `cd src/glogx && go test ./...` = 全 package ok（43.9 秒）。`gofmt -l` 差分なし。
 
@@ -179,7 +189,8 @@ canary は `checked == 0` で落ちる形（:70）だが、`subproc/` と `tools
   - **A のみ**: R3 / R4 を塞ぐ。R5（別名 import）は残る。既存 7 箇所への注記が要り、
     `tui.go:3080` の注記文言を「前景の対話エディタで ctx も無いから」と**正確に**書く必要がある
   - **B のみ**: R4 / R5 を塞ぐ。**R2 / R3（既存ファイルへの追記）が抜ける**ので、
-    日常的な退行に対しては A より弱い
+    日常的な退行に対しては A より弱い。さらに本文どおり字句ゲートから*移す*と、
+    **本 issue で直した R1 の検出力まで失う**（B は `WaitDelay` を読まないため）
   - **A + B**: 上表で唯一 R2〜R5 を全部塞ぐ。ただし字句ゲートを残すので
     [`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) §8 の
     「脅威モデルと『検出しない形』を先に書く」が必要
@@ -196,10 +207,11 @@ canary は `checked == 0` で落ちる形（:70）だが、`subproc/` と `tools
   「うっかり書く典型形を止める。意図的迂回は review の責務」と明記すれば、迂回指摘は
   「検出しないと決めた形」として記録に回せる
 - B 単独を推さないのは、母集合の質が実測で弱かったため（6 件中 2 件が `Cmd` を作らない
-  エラー型だけの importer）。「数えられる母集合」という B の主要な利点が、実データでは目減りする
+  エラー型だけの importer）。「数えられる母集合」という B の主要な利点が、実データでは目減りする。
+  加えて B への*置き換え*は R1 の検出力を捨てることになる（上の 🚨）
 
-なお **R1（守りが静かに外れる）はどの軸でも守れない**ので、軸の選択は本 issue が直した
-土台ほどには効かない。優先度は高くないと考える。
+判断の順序として、**「B へ移す」だけは単独で採らない方がよい**（本 issue で直した分が戻る）。
+A の追加は既存 7 箇所への注記コストがあるので、そこを払うかどうかが実質の争点になる。
 
 ## 関連
 
