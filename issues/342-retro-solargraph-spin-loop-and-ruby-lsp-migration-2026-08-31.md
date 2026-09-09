@@ -73,18 +73,54 @@ env / cwd / 起動時刻**を読む。設定ファイルの内容とプロセス
 
 ---
 
-## 残課題
+## 残課題 — 2026-09-09 に実測で 5 件中 4 件を決着
 
-- [ ] `~/.zshenv` が dotfiles 管理外 (実体ファイル)。`_nviminit.lua` のコメントは
-      「`~/.zshenv` に 1 行必要」と書いているのに、その 1 行が version 管理されていない。
-      新マシン / `.zshenv` 作り直しで同じ症状が再発する。dotfiles へ `_zshenv` として取り込むか
-- [ ] `mason-tool-installer.nvim` の `ensure_installed` が一度も実行されていない (別件バグ)。
-      `event = "VeryLazy"` のロードが `VimEnter` 後になり、プラグインが自分で登録する
-      `VimEnter` autocmd が永久に発火しない。`~/.local/share/nvim/mason` 自体が存在しない。
-      今は全サーバが PATH 上のバイナリで動いているため実害は出ていないが、宣言的導入は死んでいる。
-      issue 化するか
-- [ ] 上記が直った場合、mason 版 ruby-lsp / solargraph が `mason/bin` (PATH 先頭) から
-      rbenv 版を shadow しうる。mason は「project ごとの ruby version」を知らないため、
-      Ruby 系サーバは mason 管理から外すのが妥当か検討する
-- [ ] 1 と 2 の切り出し先 (新規ルール 2 本) をユーザーが採否判断する
-- [ ] dotfiles の `d757b7dc` / `41f9e39b` が未 push
+### ① `~/.zshenv` が dotfiles 管理外 → [issue 346](346-bug-truecolor-flag-is-not-version-controlled-and-fails-silently.md) へ
+
+**「フォールバックが拾うのでは」を実測して否定した**。tmux の中では `TERM_PROGRAM` が nil
+（`_nviminit.lua:40` のコメントどおり）なので判定 3 が発火せず、**判定 4 に落ちて「対応」と
+誤判定**する。つまり `.zshenv` の 1 行は**実際に効いている**（実測: `SUPPORT_TRUECOLOR=false` /
+`termguicolors=false` / `colorscheme=retrobox`）。
+
+🚨 ただし retro が書いた「dotfiles へ `_zshenv` として取り込むか」は**そのままでは採れない** —
+この値は**マシンごとに違う**（ファイル自身が「マシンごとに置く」と宣言している）。
+対応案 4 つを 346 に整理した。
+
+### ② `mason-tool-installer` の `ensure_installed` が動いていない → ✅ **解消済み**
+
+実測 2026-09-09: `~/.local/share/nvim/mason` は**存在し**、`mason/bin` に **15 本**入っている
+（`bash-language-server` / `gopls` / `pyright` / `solargraph` / `typescript-language-server` …）。
+retro が書いた「`~/.local/share/nvim/mason` 自体が存在しない」はもう成り立たない。
+
+### ③ mason 版が rbenv 版を shadow するか → ❌ **実測で成立しなかった**
+
+心配された経路は**開いていない**:
+
+```
+$ which -a solargraph
+/Users/koji/.rbenv/shims/solargraph      # ← mason/bin は出てこない
+
+$ nvim ... print(vim.fn.exepath('solargraph'), (vim.env.PATH):find('mason/bin'))
+exepath= /Users/koji/.rbenv/shims/solargraph
+mason on PATH= false                     # ← nvim の PATH にも入っていない
+```
+
+**シェルにも nvim にも `mason/bin` が入っていない**ので、mason 版 solargraph は
+lspconfig が明示的に呼ばない限り起動しない。加えて issue 337 で
+`ruby_lsp` の probe / server は `mason/bin` を PATH から**明示的に除外**するようになった
+（`M.ruby_env`）。`server_packages.ruby_lsp = false` で mason 管理からも外れている。
+
+→ **「Ruby 系サーバを mason 管理から外すか」の検討は不要**。solargraph が mason に居ても
+到達経路が無い。もし将来 `mason/bin` を PATH へ入れる変更が入ったら再評価する（それが trigger）。
+
+### ④ 気づき 1・2 の切り出し（新規ルール 2 本）→ **ユーザー判断待ち**（唯一の残タスク）
+
+### ⑤ `d757b7dc` / `41f9e39b` が未 push → ✅ **解消済み**
+
+実測: `git branch -r --contains` で両方とも `origin/master` に含まれている。
+
+## 残タスク
+
+- [ ] ④ 気づき 1（生きている暴走プロセスをダンプなしで kill した）と
+      気づき 2（「再現しない」を 2 回繰り返してから実プロセスの env を読んだ）の
+      切り出し先を決める ← **ユーザー判断待ち。この 1 件だけが残っている**
