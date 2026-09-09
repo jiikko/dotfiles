@@ -84,6 +84,11 @@ for d in a b; do git -C "$d" push; done
 if git diff --quiet; then :; else git commit -am wip; fi
 out=$(git push 2>&1)
 time git push origin HEAD:master
+GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519" git push origin HEAD:master
+GIT_COMMITTER_DATE="2026-01-01 00:00:00" git commit --amend --no-edit
+GIT_AUTHOR_NAME=a GIT_COMMITTER_DATE="x y" git commit -m z
+sudo git push
+>log git push
 CASES
 
 # --- 陰性対照: git を実行しない文字列では発火しない -------------------------------------------
@@ -300,14 +305,80 @@ else
   pass "コミットメッセージ本文で節の見出しを偽装できない"
 fi
 
-# 🚨 **前置きフィルタは静的に pin する**。壁時計で assert しない (マシンの空き具合を測る形に
-# なるため。`avoid-wall-clock-assertions.md`)。実測 (bash 5.3.3): git と無関係な 40 KB の
-# コマンドで、フィルタが無いと 4.2 秒かかっていた (2 周目 P2-4)。PostToolUse は全 Bash 呼び出しで走る。
-# shellcheck disable=SC2016  # lib のソースを**リテラルで**探すので展開させない
-if grep -qF 'case "$cmd" in *git*) ;; *) return 1 ;; esac' "$ROOT_DIR/_claude/hooks/lib/git_cmd_detect.sh"; then
-  pass "git を含まないコマンドを文字単位ループへ入れない前置きフィルタがある"
+# 🚨 **前置きフィルタは「実行経路に居るか」で見る**。壁時計では assert しない
+# (マシンの空き具合を測る形になる。`avoid-wall-clock-assertions.md`)。実測 (bash 5.3.3):
+# git と無関係な 40 KB のコマンドで、フィルタが無いと 4.2 秒かかっていた。PostToolUse は
+# 全 Bash 呼び出しで走る。
+#
+# 🚨 **静的 pin (grep でソースを探す) では足りない** (3 周目 P1-2)。`grep -F` は部分一致なので、
+# 行頭にコメント記号を足すだけで pin は緑のまま通り、**フィルタが実行経路に居ることは
+# 1 mm も守らない**。分割器を spy に差し替えて「呼ばれないこと」を見る。
+# 🚨 spy の記録は**ファイルへ**書く。`git_cmd_invokes` は `<<< "$(_git_cmd_split …)"` の
+# コマンド置換 = サブシェルで分割器を呼ぶので、変数のインクリメントは親に伝わらない
+# (最初この形で書き、フィルタをコメント化する変異が緑のまま通った)。
+spyfile=$(mktemp "$TMP_ROOT/spy.XXXXXX")
+(
+  # shellcheck source=_claude/hooks/lib/git_cmd_detect.sh
+  . "$ROOT_DIR/_claude/hooks/lib/git_cmd_detect.sh"
+  # shellcheck disable=SC2329  # git_cmd_invokes の中から間接的に呼ばれる spy
+  _git_cmd_split() { printf 'CALLED\n' >> "$spyfile"; printf '%s\n' "$1"; }
+  git_cmd_invokes "echo $(head -c 200 /dev/zero | tr '\0' 'a')" commit push
+) >/dev/null 2>&1 || true
+if [ ! -s "$spyfile" ]; then
+  pass "git を含まないコマンドは分割器へ入れない (前置きフィルタが実行経路に居る)"
 else
-  bad "前置きフィルタが無い (git と無関係な長いコマンドが分割器の全額を払う)"
+  bad "git と無関係なコマンドが文字単位の分割器へ入っている (40 KB で 4.2 秒かかる)"
+fi
+
+# 🚨 呼び出し元の IFS に判定を壊されないこと (3 周目 P3-2: 手書きの save/restore は
+# 何も守っていない死んだコードだった。`local IFS` で既定値に固定する形へ変えた)
+if ( # shellcheck source=_claude/hooks/lib/git_cmd_detect.sh
+     . "$ROOT_DIR/_claude/hooks/lib/git_cmd_detect.sh"
+     IFS=ZZ; git_cmd_invokes "git commit -m x" commit push ); then
+  pass "呼び出し元が IFS を変えていても判定が壊れない"
+else
+  bad "IFS=ZZ の呼び出し元で git commit を拾えない"
+fi
+
+# 🚨 追加ブロックの**注記文**を pin する (3 周目 P2-1)。この文面が消えると、本文から拾った
+# 偽の行き先が「hook が権威づけした repo」と同じ見た目になる — 「偽の -C はブロックが 1 つ
+# 増えるだけ」という緩和の根拠がこの注記なので、無保護だと緩和が静かに消える。
+body=$(body_of "git -C $x/B commit -m x" "$x/A")
+if grep -qF '引用の中のコマンド例から拾った可能性がある' <<< "$body"; then
+  pass "追加ブロックに「引用から拾った可能性がある」の注記が付く"
+else
+  bad "追加ブロックの注記が無い (偽の行き先が cwd と同じ見た目になる)"
+fi
+
+# 🚨 同じ repo のサブディレクトリを -C に渡しても 1 ブロック (3 周目 P3-4: 実体で比べていた)
+mkdir -p "$x/A/sub"
+body=$(body_of "git -C $x/A/sub commit -m x" "$x/A")
+if [ "$(grep -c '^検査した repo: ' <<< "$body")" -eq 1 ]; then
+  pass "同じ repo のサブディレクトリは 1 ブロックに畳む"
+else
+  bad "サブディレクトリで同じ repo が $(grep -c '^検査した repo: ' <<< "$body") ブロック出た"
+fi
+
+# 🚨 追加ブロックの件数に上限がある (3 周目 P3-5: 300 件で本文が 101 KB になり cwd が埋没した)
+many=""; for i in $(seq 12); do many+="git -C /nope/$i push && "; done; many+="git commit -m x"
+body=$(body_of "$many" "$x/A")
+if grep -qF '以下略: git -C の行き先が 6 件以上ある' <<< "$body"; then
+  pass "行き先が多いときは打ち切って (以下略) を出す"
+else
+  bad "行き先の件数に上限が無い ($(grep -c '^検査した repo: ' <<< "$body") ブロック出た)"
+fi
+
+# 🚨 cwd が解決できなくても「判定不能」を必ず出す (3 周目 P3-1: cwd 削除で fail-open だった)
+# 🚨 cwd を**実際に消してから** hook を走らせる (消さないと `pwd -P` が成功してしまい、
+# fail-open の変異を当てても緑のまま = 何も検査していない)
+gone=$(mktemp -d "$TMP_ROOT/gone.XXXXXX")
+body=$( cd "$gone" && rmdir "$gone" && printf '%s' "git -C /nope/x push" |
+        jq -R '{tool_input:{command:.}}' | "$HOOK" 2>/dev/null |
+        jq -r '.hookSpecificOutput.additionalContext // ""' )
+if grep -q '判定不能: 行き先が見つからない' <<< "$body"; then
+  pass "存在しない行き先は必ず判定不能として出る"
+else
+  bad "存在しない行き先が黙って落ちた (重複除去に食われた)"
 fi
 
 # --- ⑤ bare repo を「repo の外」と誤ラベルしない ----------------------------------------------

@@ -25,6 +25,8 @@
 #   - **`xargs git commit`** のように git が先頭に来ない起動
 #   - **引用の中に書いた「本物に見える」散文**。1 行に閉じた引用の中は発火しないが、
 #     **複数行にまたがる引用**・heredoc の本文・バッククォートの中は発火しうる (実測)
+#   - **`timeout 60 git push`** のように**引数を取る**ラッパー (`timeout` の秒数を git と
+#     読み違えないよう、値つきラッパーは剥がさない)。`sudo` / `nice` / `stdbuf` / `env` は剥がす
 #   - **`cd X && git commit`** と **`--git-dir` / `--work-tree`**: 行き先として拾わない
 #     (cwd を見る)。`-C` だけを行き先として扱う
 #   - **`-C` の値に空白や改元が入る形** (`git -C "/tmp/my repo" commit`): 単語分割で壊れるので
@@ -76,7 +78,7 @@ _git_cmd_split() { # _git_cmd_split <cmd>
 git_cmd_invokes() {
   local cmd="$1"; shift
   local -a wanted=("$@")
-  local segment tok rest sub found dir hit=1
+  local segment tok rest sub found dir hit=1 prev
   GIT_CMD_TARGET_DIRS=""
 
   # 🚨 **安価な前置きフィルタ**。この関数は PostToolUse で**全 Bash 呼び出し**に対して走る。
@@ -84,23 +86,38 @@ git_cmd_invokes() {
   # git と無関係な 40 KB のコマンドで 4.2 秒かかっていた (敵対レビュー 2 周目 P2-4)。
   case "$cmd" in *git*) ;; *) return 1 ;; esac
 
-  # IFS は「未設定」と「空」が別物。unset の呼び出し元へ空文字を書き戻すと単語分割が死ぬ。
-  local ifs_bak ifs_was_set=1
-  if [ -z "${IFS+x}" ]; then ifs_was_set=0; else ifs_bak="$IFS"; fi
+  # 🚨 **`local IFS` で既定値に固定する** (3 周目 P3-2)。この関数の `read` と `set --` は
+  # 呼び出し元の IFS で単語分割するので、`IFS=ZZ` の呼び出し元では判定が壊れる。
+  # 手で save/restore していたが、それは「関数が IFS を書き換える」前提の防御で、
+  # 実際には書き換えていなかった (= 何も守らない死んだコードだった)。`local` なら
+  # 復元は bash が保証し、依存の向きも正しくなる。
+  local IFS=$' \t\n' 
   while IFS= read -r segment; do
     # 先頭の空白 → シェルのキーワード/前置きコマンド → 環境変数の前置き の順に落とす。
     # `for d in a b; do git -C "$d" push; done` の `do`、`{ git commit; }` の `{` (分割済み)、
     # `time git push` の `time` を取りこぼしていた (敵対レビュー P2)。
     segment="${segment#"${segment%%[![:space:]]*}"}"
+    # 先頭に付く「git ではないが git を起動する前置き」を落とす。落とすたびに先頭空白を詰め、
+    # 何も落とせなくなったら終わる (prev で進捗を見て無限ループを防ぐ)。
     while :; do
-      read -r tok rest <<< "$segment"
-      case "$tok" in
-        do|then|else|elif|time|'!'|exec|nohup|env) segment="$rest" ;;
-        *) break ;;
-      esac
-    done
-    while [[ "$segment" =~ ^[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+(.*)$ ]]; do
-      segment="${BASH_REMATCH[1]}"
+      prev="$segment"
+      # 🚨 **環境変数の値はクォートされうる** (3 周目 P1-1)。`GIT_SSH_COMMAND="ssh -i ~/k" git push`
+      # のような、この repo でも普通に打つ形で **hook が 1 バイトも出さなくなっていた**。
+      # 値の中の空白を跨げない `[^[:space:]]*` だけでは足りない。
+      if [[ "$segment" =~ ^[A-Za-z_][A-Za-z0-9_]*=(\"[^\"]*\"|\'[^\']*\'|[^[:space:]]*)[[:space:]]+(.*)$ ]]; then
+        segment="${BASH_REMATCH[2]}"
+      else
+        read -r tok rest <<< "$segment"
+        case "$tok" in
+          # シェルのキーワード / 実行を包むだけのコマンド
+          do|then|else|elif|time|'!'|exec|nohup|env|sudo|stdbuf|nice|ionice) segment="$rest" ;;
+          # 先頭のリダイレクト (`>log git push` / `2>/dev/null git push`)
+          *'>'*|*'<'*) segment="$rest" ;;
+          *) break ;;
+        esac
+      fi
+      segment="${segment#"${segment%%[![:space:]]*}"}"
+      [ "$segment" != "$prev" ] || break
     done
     read -r tok rest <<< "$segment"
     [ "$tok" = "git" ] || [ "$tok" = "command" ] || continue
@@ -146,6 +163,5 @@ git_cmd_invokes() {
       fi
     done
   done <<< "$(_git_cmd_split "$cmd")"
-  if [ "$ifs_was_set" = 1 ]; then IFS="$ifs_bak"; else unset IFS; fi
   return "$hit"
 }
