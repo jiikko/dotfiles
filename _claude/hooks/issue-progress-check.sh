@@ -46,15 +46,28 @@ base_root=$(sed -n 1p "$state"); base=$(sed -n 2p "$state")
 [ "$base_root" = "$root" ] || exit 0
 git -C "$root" cat-file -e "$base^{commit}" 2>/dev/null || exit 0
 
+# 🚨 **worktree の commit も自分の作業として数える** (issue 339)。この repo は
+# `.claude/rules/worktree-per-session.md` が worktree を既定にしているので、本体へ push+pull
+# するまで `$root` からは「何も変わっていない」ように見え、**片付けた issue が毎ターン
+# 「1 度も変更されていない」と再掲される** (実測 2026-09-09 に 310/311/312/314 で 3 回)。
+# 他セッションの worktree の変更まで拾いうるが、向きは「指摘を出さない」側なので誤報より安全。
+worktrees() { git -C "$root" worktree list --porcelain 2>/dev/null | awk '/^worktree /{print $2}'; }
+
 # --- 変更集合 (root 相対パス、1 行 1 パス) ---
 changed=$( {
-  git -C "$root" diff --name-only "$base" HEAD 2>/dev/null
-  git -C "$root" status --porcelain --untracked-files=all 2>/dev/null | sed -E 's/^.{3}//; s/^.* -> //'
+  while IFS= read -r w; do
+    [ -d "$w" ] || continue
+    git -C "$w" diff --name-only "$base" HEAD 2>/dev/null
+    git -C "$w" status --porcelain --untracked-files=all 2>/dev/null | sed -E 's/^.{3}//; s/^.* -> //'
+  done < <(worktrees)
 } | sort -u)
 is_changed() { grep -qxF "$1" <<<"$changed"; }
 
 # --- 関わった issue 番号 ---
-subjects=$(git -C "$root" log --format=%s "$base..HEAD" 2>/dev/null || true)
+subjects=$( { while IFS= read -r w; do
+    [ -d "$w" ] || continue
+    git -C "$w" log --format=%s "$base..HEAD" 2>/dev/null
+  done < <(worktrees); } | sort -u)
 # primary = 作業対象と明示された番号 (commit subject の `(NNN)` / next/ の claim)。構造と関連 issue まで見る。
 # path 由来 (issue ファイル自体を変更した番号) は「変更あり」が既に事実なので、関連 issue の列挙だけに使わない
 # (関連 issue に 1 行足しただけの番号を「作業対象」に格上げすると、その issue 自身に進捗を要求する誤報になる)。
@@ -84,6 +97,23 @@ issue_file() {
 rel() { printf '%s' "${1#"$root"/}"; }
 count_done_boxes() { grep -cE '^\s*- \[x\]' 2>/dev/null || true; }
 count_headings() { grep -cE '^#+ .*(進捗|結果|残タスク|残課題|対応|todo|TODO)' 2>/dev/null || true; }
+# 🚨 **規約が要求する形も進捗として数える** (issue 339)。CLAUDE.md「Issue管理」は
+# 「done へ移す commit では、その番号を参照している open issue にも『NNN で解消 / 継続』を
+# 1 行追記する」と要求しているのに、判定が見出しと [x] しか見ていなかったため、
+# **規約どおり書いても「進捗が増えていない」と言われる**。要求と判定が食い違っていた。
+# 🚨 **新しい側の内容も worktree を見る** (issue 339)。`$root` のファイルは worktree の commit を
+# pull するまで古いままなので、本体だけを数えると「触ってはいるが進捗が増えていない」という
+# **別の誤検出**に化ける (「触っていない」を直しただけでは半分しか閉じない)。
+max_over_worktrees() { # max_over_worktrees <数える関数> <root 相対パス>
+  local fn="$1" rel="$2" best=0 v w
+  while IFS= read -r w; do
+    [ -f "$w/$rel" ] || continue
+    v=$("$fn" <"$w/$rel")
+    [ "${v:-0}" -gt "$best" ] && best="${v:-0}"
+  done < <(worktrees)
+  printf '%s' "$best"
+}
+count_crossrefs() { grep -cE '[0-9]{3,}[^0-9]{0,20}(で解消|で継続|で対応|が done|も done|は done)' 2>/dev/null || true; }
 
 findings=""
 add() { findings="${findings}${findings:+$'\n'}$1"; }
@@ -96,9 +126,11 @@ for n in $nums; do
   else
     old=$(git -C "$root" show "$base:$r" 2>/dev/null || true)
     if [ -n "$old" ]; then
-      ob=$(count_done_boxes <<<"$old"); nb=$(count_done_boxes <"$f")
-      oh=$(count_headings <<<"$old"); nh=$(count_headings <"$f")
-      if [ "${nb:-0}" -le "${ob:-0}" ] && [ "${nh:-0}" -le "${oh:-0}" ]; then
+      ob=$(count_done_boxes <<<"$old"); nb=$(max_over_worktrees count_done_boxes "$r")
+      oh=$(count_headings <<<"$old"); nh=$(max_over_worktrees count_headings "$r")
+      oc=$(count_crossrefs <<<"$old"); nc=$(max_over_worktrees count_crossrefs "$r")
+      if [ "${nb:-0}" -le "${ob:-0}" ] && [ "${nh:-0}" -le "${oh:-0}" ] &&
+         [ "${nc:-0}" -le "${oc:-0}" ]; then
         add "- $r: 変更はあるが、完了チェック ([x]) も進捗 / 結果 / 残タスクの見出しも増えていない"
       fi
     fi
@@ -120,10 +152,21 @@ done
 
 # 同じ指摘は 1 セッション 1 回 (block で Claude が対応した後の Stop で再指摘しない。
 # 指摘の集合が変わったら (別の issue に関わった等) 改めて出す)
-sig=$(printf '%s' "$findings" | cksum | cut -d' ' -f1)
+# 🚨 **dedup は「指摘の集合」ではなく「1 行ごと」** (issue 339)。集合の cksum で見ると
+# **commit を 1 つ積むたびに集合が変わる**ので、説明済みの N 件が丸ごと再掲される
+# (実測: obaket で 6 回、dotfiles で 3 回。実質的な新規は 1 回目の 2 件だけだった)。
+# 行ごとにすると「新しい 1 件が既知の 20 数件に埋もれる」も同時に消える。
 marker="$state_dir/$session_id.reported"
-[ -f "$marker" ] && grep -qxF "$sig" "$marker" && exit 0
-printf '%s\n' "$sig" >>"$marker"
+new_findings=""
+while IFS= read -r line; do
+  [ -n "$line" ] || continue
+  sig=$(printf '%s' "$line" | cksum | cut -d' ' -f1)
+  if [ -f "$marker" ] && grep -qxF "$sig" "$marker"; then continue; fi
+  printf '%s\n' "$sig" >>"$marker"
+  new_findings="${new_findings}${new_findings:+$'\n'}$line"
+done <<<"$findings"
+[ -n "$new_findings" ] || exit 0   # 新しい行が 1 つも無ければ黙る
+findings="$new_findings"
 
 reason="関わった issue の更新漏れの疑い (Stop hook issue-progress-check)。各行を確認し、必要なら todolist / 進捗 / 結果 / 残タスクを追記して commit する。更新不要ならその理由を 1 行で述べて終える:
 $findings"

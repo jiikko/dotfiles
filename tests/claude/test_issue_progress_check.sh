@@ -91,4 +91,58 @@ check "claim 中の 103 が未変更なら指摘" "issues/103-docs-z.md: この�
 other="$WORK/plain"; mkdir -p "$other"; git -C "$other" init -q .
 check "issues 無し repo で黙る" "" "$(printf '{"cwd":"%s","session_id":"s9"}' "$other" | "$CHECK" 2>/dev/null || true)"
 
+
+# --- issue 339: 説明済みの指摘を再掲しない / 新規は単独で出る -----------------------------------
+#
+# 🚨 dedup が「指摘の集合」の cksum だったため、**commit を 1 つ積むだけで集合が変わり**、
+# 説明済みの N 件が丸ごと再掲されていた (実測 2026-09-09: 同じリストが 3 回)。
+# 108 は「後から新しく関わる番号」用。s6 の基準点より前に作っておく (基準点の時点で在って
+# 未変更なら、subject に (108) を出した瞬間に**新しい 1 行**が増える)
+printf '# 108 later\n' >"$repo/issues/108-feat-s.md"
+git -C "$repo" add issues/108-feat-s.md && git -C "$repo" commit -qm "chore: 108 を起票"
+hook "$START" s6 >/dev/null
+echo x1 >"$repo/src/a.txt"; git -C "$repo" commit -qam "fix(101): 1 回目"
+first=$(reason s6)
+check "1 回目は 101 を指摘する" "101-feat-x.md: このセッションで 1 度も変更されていない" "$first"
+
+# commit を積んで集合を変える (旧実装はここで丸ごと再掲した)
+echo x2 >"$repo/src/a.txt"; git -C "$repo" commit -qam "fix(101): 2 回目"
+check "同じ指摘は再掲しない" "" "$(reason s6)"
+
+# 新しい番号に関わったら、その行**だけ**が出る (既知の行に埋もれない)。
+# 103 は init から在って未変更なので、subject に (103) を出せば新しい指摘が 1 行増える。
+echo x3 >"$repo/src/a.txt"; git -C "$repo" commit -qam "fix(108): 新しい番号"
+got=$(reason s6)
+check "新しい 108 の行が出る" "issues/108-feat-s.md: このセッションで 1 度も変更されていない" "$got"
+check "既知の 101 の行は混ざらない" "" "$(grep -E '101-feat-x' <<<"$got" || true)"
+
+# --- issue 339: 規約が要求する「NNN で解消」の 1 行を進捗として数える --------------------------
+#
+# 🚨 CLAUDE.md「Issue管理」は done へ移す commit で参照元の open issue にこの 1 行を要求するのに、
+# 判定が見出しと [x] しか見ていなかったため、**規約どおり書いても未対応と判定**されていた。
+hook "$START" s7 >/dev/null
+printf '# 105 ref\n\n残課題: 106 待ち\n' >"$repo/issues/105-bug-v.md"
+printf '# 106 target\n' >"$repo/issues/106-bug-u.md"
+git -C "$repo" add -A && git -C "$repo" commit -qm "chore: 105/106 を起票"
+hook "$START" s8 >/dev/null
+printf '# 105 ref\n\n残課題: 106 待ち\n\n2026-09-09: 106 で解消。\n' >"$repo/issues/105-bug-v.md"
+git -C "$repo" commit -qam "docs(105): 106 の完了を書き戻す"
+check "「NNN で解消」を進捗として数える" "" "$(grep -E '105-bug-v.md: 変更はあるが' <<<"$(reason s8)" || true)"
+
+# --- issue 339: worktree の commit を「触っていない」と誤検出しない ----------------------------
+#
+# 🚨 この repo は worktree を既定にしているので、本体へ push+pull するまで root からは
+# 「何も変わっていない」ように見え、片付けた issue が毎ターン再掲されていた。
+printf '# 107 wt\n\n- [ ] a\n' >"$repo/issues/107-feat-t.md"
+git -C "$repo" add issues/107-feat-t.md && git -C "$repo" commit -qm "chore: 107 を起票"
+wt="$WORK/wt"
+git -C "$repo" worktree add -q --detach "$wt" HEAD
+hook "$START" s9 >/dev/null
+printf '# 107 wt\n\n- [x] a\n\n## 進捗\n\nやった\n' >"$wt/issues/107-feat-t.md"
+git -C "$wt" commit -qam "fix(107): worktree で進捗を書く"
+# 🚨 「触っていない」も「進捗が増えていない」も出ないこと (worktree の commit を数えている)
+check "worktree の変更を「触っていない」と言わない" "" \
+  "$(grep -E '107-feat-t.md' <<<"$(reason s9)" || true)"
+git -C "$repo" worktree remove --force "$wt"
+
 [ "$fails" -eq 0 ] && echo "OK: issue-progress hooks" || { echo "FAIL: $fails"; exit 1; }

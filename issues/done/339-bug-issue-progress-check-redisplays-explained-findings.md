@@ -91,14 +91,63 @@ done <<<"$findings"
 
 ## 受け入れ条件
 
-- [ ] 一度出た finding 行は、同じセッションで再掲されない
-- [ ] **新しい finding 行は、既出の行に埋もれず単独で出る**
-- [ ] 既存の検出ロジック (触っていない / `[x]` も進捗見出しも増えていない / 参照元 open issue が未変更) は変えない
-- [ ] 変異検証: dedup を「集合」に戻す変異で、上の 1 番目が red になる
-- [ ] `tests/claude/test_issue_progress_check.sh` (実在) に、再掲しないこと・新規行が単独で出ることのケースを足す
+- [x] 一度出た finding 行は、同じセッションで再掲されない
+- [x] **新しい finding 行は、既出の行に埋もれず単独で出る**
+- [x] 既存の検出ロジック (触っていない / `[x]` も進捗見出しも増えていない / 参照元 open issue が未変更) は変えない
+- [x] 変異検証: dedup を「集合」に戻す変異で、上の 1 番目が red になる
+- [x] `tests/claude/test_issue_progress_check.sh` (実在) に、再掲しないこと・新規行が単独で出ることのケースを足す
 
 ## 関連
 
 - `_claude/hooks/issue-progress-check.sh` — 実装 (:116-120 が dedup)
 - `_claude/hooks/issue-progress-start.sh` — 開始 HEAD の記録
 - obaket `issues/757-retro-732-design-and-inventory-2026-09-08.md` — 起源の retro
+
+## 結果（2026-09-09）
+
+原因は 3 つあった（起票時の分析 1 つ + このセッションで足した 2 つ）。**3 つとも直した**。
+
+### ① dedup を「集合の cksum」から「1 行ごと」へ（起票時の対応案どおり）
+
+commit を 1 つ積むだけで集合が変わるので、説明済みの N 件が丸ごと再掲されていた。
+行ごとの署名にして、**未報告の行だけ**を出す。新しい 1 件が既知の 20 数件に埋もれる問題も同時に消えた。
+
+### ② worktree の commit を「自分の作業」として数える
+
+`worktree-per-session.md` がこの repo で worktree を既定にしているのに、hook は `$root` の
+HEAD しか見ていなかった。本体へ push+pull するまで「何も変わっていない」ように見える。
+`git worktree list` の各 worktree で `diff --name-only` / `status` / `log` を取る形にした。
+
+🚨 **これだけでは半分しか閉じない**。「触っていない」は消えたが、内容の比較
+（`[x]` と見出しの増減）が**本体のファイル**を読んでいたため、今度は
+「触ってはいるが進捗が増えていない」という**別の誤検出**に化けた。
+`max_over_worktrees` で全 worktree の版から最大値を取る形にして閉じた
+（テストが 1 本落ちて気づいた）。
+
+他セッションの worktree の変更まで拾いうるが、向きは「**指摘を出さない**」側なので誤報より安全。
+
+### ③ 規約が要求する「NNN で解消 / 継続」の 1 行を進捗として数える
+
+CLAUDE.md「Issue管理」は done へ移す commit で参照元の open issue にこの 1 行を要求するのに、
+判定が見出しと `[x]` しか見ていなかった。**規約どおり書いても未対応と判定される**
+食い違いだったので、`count_crossrefs` を足した。
+
+### 変異検証（4 本、すべて red / baseline green）
+
+| 変異 | 落ちた assert |
+|---|---|
+| dedup を集合の cksum へ戻す | 同じ指摘は再掲しない（2 件） |
+| worktree を見ない | 101 未変更を指摘 / 102 を列挙（= worktree 経由の検出が消える） |
+| cross-ref を数えない | 「NNN で解消」を進捗として数える |
+| 内容比較を本体だけに戻す | worktree の変更を「触っていない」と言わない |
+
+`make test-lint` rc=0。集約経路 `make test-dir DIR=tests/claude` に
+`[run] tests/claude/test_issue_progress_check.sh` が出ることを確認
+（同 target の失敗は既存の `test_dangling_symlinks.sh` 1 本のみで、これは環境側）。
+
+### 残タスク
+
+- **検出しないと決めた形**: 他セッションの worktree が同じ issue を更新した場合、こちらの
+  「更新漏れ」が抑止される。出さない側なので許容した（再評価の trigger: 更新漏れが
+  実際に素通りしたとき）
+- 起票時に「採らない」とした 2 案（`base` を進める / 報告回数の上限）はそのまま採っていない
