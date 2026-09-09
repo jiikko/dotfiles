@@ -121,11 +121,21 @@ M.ruby_server_cache = {}
 
 -- ruby_lsp のプロセスが落ちたとき、solargraph へ倒すべきか。倒すなら人へ見せる理由を返す。
 -- 純関数にしているのは on_exit が fast event context だから (ここで notify も autocmd も呼べない)。
--- 🚨 signal 15 (SIGTERM) を除くのは、:LspStop / nvim 終了 / :RubyLspReset が SIGTERM で止めるため。
---    倒すと「手で止めたら勝手に別サーバが起動する」になる。nvim 自身の終了通知も同じ条件で
---    signal 15 を除外している (runtime lsp.lua の on_client_exit)。
---: (integer, integer) -> string?
-function M.ruby_lsp_fallback_reason(code, signal)
+--
+-- 🚨 **「意図した停止か」を code / signal から推測しない。** `Client:stop()` は LSP の
+--    shutdown → exit を送るので、サーバは自分で終了する。実測 2026-09-09 (ruby-lsp 0.26.11):
+--    `:LspStop` 相当の停止で **exit=1 signal=0**。SIGTERM が飛ぶのは graceful shutdown が
+--    timeout して `rpc.terminate()` へ落ちたときだけ。つまり signal だけを見ると
+--    **`:LspStop` と `:RubyLspReset` が自分でフォールバックを焚く** (reset は cache を空にした
+--    直後に solargraph を書き戻され、「選び直す」コマンドがその root を固定してしまう)。
+--    判定には呼び出し側が渡す stopping (= Client._is_stopping) を使う。
+-- 🚨 `client:is_stopped()` は使えない。`rpc.is_closing() or _is_stopping` なので**どんな終了でも
+--    真**になる (実測 2026-09-09: クラッシュ側 `_is_stopping=false / is_stopped()=true`、
+--    意図した停止 `_is_stopping=true / is_stopped()=true`)。
+--    signal 15 のガードは残す (graceful が timeout して terminate された場合と、外から殺された場合)。
+--: (integer, integer, boolean?) -> string?
+function M.ruby_lsp_fallback_reason(code, signal, stopping)
+  if stopping then return nil end
   if signal == 15 then return nil end
   if code == 0 and signal == 0 then return nil end
   -- 78 は exe/ruby-lsp の SetupBundler::BundleNotLocked (Gemfile はあるが Gemfile.lock が無い)。
@@ -139,16 +149,23 @@ end
 -- `doautoall nvim.lsp.enable FileType` がそれで、判定 (root_dir) を全バッファで引き直す。
 -- 自前でバッファを走査して vim.lsp.start を呼ぶと、同じ判定の 2 実装目になる。
 --: (string?, integer, integer, table?) -> boolean
-function M.ruby_lsp_failed(root, code, signal, deps)
-  local reason = M.ruby_lsp_fallback_reason(code, signal)
+function M.ruby_lsp_failed(root, code, signal, deps, stopping)
+  local reason = M.ruby_lsp_fallback_reason(code, signal, stopping)
   if not reason then return false end
   if not root or M.ruby_server_cache[root] == "solargraph" then return false end
   M.ruby_server_cache[root] = "solargraph"
   deps = deps or {}
   local notify = deps.notify or vim.notify
   local reattach = deps.reattach or function() vim.cmd.doautoall("nvim.lsp.enable FileType") end
-  notify(("ruby-lsp が%s\n%s は solargraph に切り替えます (:RubyLspInfo で内訳 / :RubyLspReset で選び直し)")
-    :format(reason, root), vim.log.levels.WARN)
+  -- 🚨 「solargraph に切り替えます」と言う前に、solargraph が本当に起動しうるか見る。
+  --    _nviminit.lua の enable_available は table cmd のサーバをバイナリ実在で絞るので、
+  --    mason が未導入 / 導入中のあいだ solargraph は enable されていない。その窓で倒すと
+  --    「切り替えます」と言いながら何も起動せず、**嘘の説明つきで Ruby の LSP が消える**。
+  local fallback_ok = (deps.solargraph_enabled or vim.lsp.is_enabled)("solargraph")
+  notify(("ruby-lsp が%s\n%s は %s"):format(reason, root, fallback_ok
+      and "solargraph に切り替えます (:RubyLspInfo で内訳 / :RubyLspReset で選び直し)"
+      or "solargraph も使えません (:Mason で solargraph を入れるか、bundle を直して :RubyLspReset)"),
+    vim.log.levels.WARN)
   reattach()
   return true
 end
@@ -180,6 +197,28 @@ end
 --    (monorepo のサブ project は **その Gemfile のディレクトリが root のまま solargraph** になる。
 --     repo root へ丸めているのではない。allowlist 時代も全 project が solargraph だったので退行ではない)
 --
+-- root が gem のチェックアウトか。**「root が git repo の root か」だけでは gem を弾けない**。
+-- 🚨 bundler は `git:` 指定の gem を **clone** するので、チェックアウト先に `.git` が実在し、
+--    Gemfile も同梱している → `dir == git_root` が成立してゲートを通る。
+--    実測 2026-09-09: `~/.rbenv/versions/*/lib/ruby/gems/*/bundler/gems/*` と
+--    `~/src/ubiregi-server/vendor/bundle/ruby/*/bundler/gems/*` の **21/21 件**が
+--    `.git` と `Gemfile` を両方持つ。うち axlsx-d6a4a9cd21a2 は上位の .ruby-version (3.1.6) に
+--    解決されるためプローブも rc=0 で通り、ruby_lsp が gem ディレクトリを root に選んでいた。
+--    そこは Gemfile.lock が無いので ruby-lsp は exit 78 で死に、フォールバックの通知が
+--    **「vendor ツリーで bundle install しろ」という嘘**を出す。Gemfile.lock を持つ git gem なら
+--    今度は .ruby-lsp/ を掘って bundle install が走る (setup_bundler.rb の raise が mkpath より
+--    前にあるおかげで助かっているだけで、ゲートが止めているのではない)。
+-- パスに `gems` セグメントがあるものを外す。gem のツリーは rubygems も bundler も必ず
+-- `.../gems/<name>-<version>/` の形を通るので、この 1 条件で両方に効く。
+-- 誤って弾いた場合の劣化は solargraph (従来の挙動) で、壊れるより安い。
+--: (string) -> boolean
+function M.is_gem_checkout(dir)
+  for seg in vim.gsplit(dir or "", "/", { plain = true }) do
+    if seg == "gems" then return true end
+  end
+  return false
+end
+
 -- 判定の本体はここ 1 か所 (M.ruby_root_decision)。:RubyLspInfo も同じ関数を呼んで内訳を出す。
 -- 表示側が式を写すと、片方だけ変えたときに **「なぜそう選ばれたか」の説明だけが嘘になる** ため。
 --   opts.cache_only : キャッシュに無ければプローブせず「未判定」を返す (:RubyLspInfo が状態を
@@ -195,6 +234,11 @@ function M.ruby_root_decision(target, opts)
   end
   local git_root = vim.fs.root(target, { ".git" })
   local d = { root = dir, git_root = git_root }
+  if M.is_gem_checkout(dir) then
+    d.server = "solargraph"
+    d.reason = "root が gem のチェックアウト (パスに gems セグメントがある)"
+    return d
+  end
   if dir ~= git_root then
     d.server = "solargraph"
     d.reason = "root が git repo の root ではない (Gemfile 同梱の gem など)"
@@ -273,9 +317,13 @@ function M.ruby_reset(deps)
     return #vim.lsp.get_clients({ name = "ruby_lsp" }) + #vim.lsp.get_clients({ name = "solargraph" })
   end
   local names = { "ruby_lsp", "solargraph" }
-  M.ruby_server_cache = {}
   enable(names, false)
   local gone = wait(2000, function() return running() == 0 end, 50) and true or false
+  -- 🚨 キャッシュを捨てるのは**止め終わった後**。先に捨てると、停止で走る on_exit が
+  --    「空にしたばかりのキャッシュ」へ solargraph を書き戻し、選び直すコマンドがその root を
+  --    固定してしまう。stopping の判定 (M.ruby_lsp_fallback_reason) と二重の守りにする
+  --    — あちらが nvim の private フィールドに依存しているため、順序でも塞いでおく。
+  M.ruby_server_cache = {}
   enable(names, true)
   return gone
 end
@@ -311,7 +359,11 @@ M.servers = {
       -- root_dir は on_dir が渡した文字列そのもの (runtime client.lua が `root_dir =
       -- config.root_dir` で素通しする) なので、M.ruby_server_cache の鍵と一致する。
       local root = c and c.root_dir
-      vim.schedule(function() M.ruby_lsp_failed(root, code, signal) end)
+      -- 意図した停止 (:LspStop / :RubyLspReset / nvim 終了) かは Client._is_stopping で見る。
+      -- private だが、code / signal からは区別できない (上の 🚨)。nvim を上げたときに
+      -- 消えていないかは tests/nvim/lsp_ruby_server_select_check.lua が runtime を静的に pin する。
+      local stopping = (c and c._is_stopping) and true or false
+      vim.schedule(function() M.ruby_lsp_failed(root, code, signal, nil, stopping) end)
     end,
     -- 索引から外すパス。ruby-lsp の server.rb (process_indexing_configuration) が
     -- initializationOptions.indexing を camelCase → snake_case に直して

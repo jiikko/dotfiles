@@ -121,6 +121,14 @@ allowlist を廃止し、「root に Gemfile があり、かつ**その project 
   (実測: `vendor/.../gems/json-2.3.1/lib/json.rb` → root=`json-2.3.1`。同梱 gem は vendor に
   156 件 / rbenv 3.1.6 の gems に 152 件)。ruby-lsp はそこへ `.ruby-lsp/` を掘って
   `bundle install` を走らせるので、放置すると vendor ツリーに書き込みが発生していた
+- 🚨 **しかし「git repo の root か」だけでは gem を弾けない**。bundler は `git:` 指定の gem を
+  **clone** するので、チェックアウト先に `.git` が実在し Gemfile も同梱している → ゲートを通る。
+  実測 2026-09-09: rbenv と ubiregi-server の vendor を合わせて `bundler/gems/` 配下の
+  **21/21 件**が `.git` + `Gemfile` を両方持ち、`axlsx-d6a4a9cd21a2` は上位の `.ruby-version`
+  (3.1.6) に解決されるためプローブも rc=0 で通っていた。
+  → **パスに `gems` セグメントがある root は ruby_lsp から外す** (`M.is_gem_checkout`)。
+  gem のツリーは rubygems も bundler も必ず `.../gems/<name>-<version>/` を通るので 1 条件で足りる。
+  誤って弾いたときの劣化は solargraph (従来の挙動) なので、通すより安い
 - 🚨 **ruby-lsp を mason で入れてはいけない**。mason の ruby で走るため同じ ABI ミスマッチを
   再生産する。[公式ドキュメント](https://shopify.github.io/ruby-lsp/editors.html)も
   「C 拡張が Ruby ABI に依存するため」明確に非推奨としている。導入は

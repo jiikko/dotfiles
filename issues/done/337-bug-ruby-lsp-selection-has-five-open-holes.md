@@ -215,6 +215,119 @@ $ ruby-lsp </dev/null  → rc=78 stderr "Project contains a Gemfile, but no Gemf
 **この観測は機構の有無で結果が変わる** (外すと Ruby の LSP がゼロになる) ので、
 「倒れた」の証拠として数えてよい。fixture に `.ruby-lsp/` は作られなかった (副作用なし)。
 
+### 🚨 上の A-B は「失敗する経路」しか通っていない → 成功側も測った
+
+`exit 78` で落ちる fixture では、ruby-lsp は `bundle exec ruby-lsp` へ re-exec する**手前**で
+死ぬ。つまり **絞った PATH で `bundle` が引けるか**は上の run では確かめられていない
+(attach したのは solargraph で、そちらの `cmd` は table なので**素の PATH** を使う)。
+ここを測らないと、`M.ruby_env` の PATH フィルタが起動を壊していても
+「この project の ruby で ruby-lsp を起動できなかった」= もっともらしい診断に化けて、
+フォールバックが自分のバグを隠す。
+
+`Gemfile.lock` を足した fixture (`bundle lock` rc=0) で測り直した:
+
+```
+ENV RBENV_VERSION=[]                        ← 空文字が実サーバへ届いている
+ENV PATH に mason bin が残っているか: false  ← 除外が効いている
+PHASE1 選択=ruby_lsp
+PHASE2 attach=true clients=[ruby_lsp]        ← 絞った PATH で SetupBundler → bundle exec が通った
+PHASE3 選択(その後)=ruby_lsp                  ← 健全なサーバを誤って倒していない
+```
+
+fixture に `.ruby-lsp/` (composed bundle) が作られたので、re-exec 経路まで到達している。
+これで PATH の空エントリ落としを含めて `M.ruby_env` は**成功側でも**確認済み。
+
+### 倒す条件について明記しておくこと
+
+`ruby_lsp_fallback_reason` は **「長時間正常に動いた後のクラッシュ」でも倒す**。
+実測したのは起動失敗 (exit 78) だけで、こちらは意図した設計:
+落ちた以上そのサーバは使えておらず、solargraph の方がまだ答えを返す。
+副作用として **その root は `:RubyLspReset` するまで solargraph に固定される**。
+再評価の trigger: 「一度クラッシュしただけで ruby_lsp に戻らないのが不便」と感じたとき
+(そのときの解は「起動直後の失敗だけ倒す」= `on_init` 到達の有無で分けること)。
+
+## 敵対的レビュー (opus / read-only) と、その後の 2 周目 (2026-09-09)
+
+新設したのが「安全機構」(フォールバック / PATH フィルタ / ゲート) なので自己レビューで閉じず、
+観点を分けた敵対的レビューを最終ゲートに通した。**採用した指摘は自分で裏を取ってから直した。**
+
+### 自分の実験で先に見つけた P1: 意図した停止を code/signal から推測していた
+
+`client:stop()` は LSP の shutdown → exit を送るので、ruby-lsp は **exit=1 signal=0** で終わる
+(実測)。SIGTERM は graceful が timeout したときだけ。つまり `signal == 15` のガードは
+意図した停止を 1 件も捕まえていなかった。実害は `:LspStop` だけでなく **`:RubyLspReset` が
+自分でフォールバックを焚き、空にしたばかりのキャッシュへ solargraph を書き戻して
+その root を固定する** こと (「選び直す」コマンドの正反対)。
+→ `Client._is_stopping` を渡して判定。`is_stopped()` は使えない
+(`rpc.is_closing() or _is_stopping` なので**どんな終了でも true**。実測: クラッシュ側も true)。
+private フィールドなので **nvim runtime を静的に pin するテスト**を足した (更新で消えたら落ちる)。
+加えて `ruby_reset` のキャッシュ破棄を**停止完了後**へ移した (順序でも塞ぐ二重の守り)。
+
+### レビューが出した P1: root ゲートは git ソースの gem で破れる (裏取り済み)
+
+bundler は `git:` 指定の gem を **clone** するので、チェックアウト先に `.git` が実在する
+→ `root == git_root` が成立してゲートを通る。**自分で数え直した**: rbenv と ubiregi-server の
+vendor を合わせて `bundler/gems/` 配下 **21/21 件**が `.git` + `Gemfile` を両方持つ
+(レビューの「17 件」は rbenv 側だけの数で、project 側 4 件と合わせて一致)。
+`axlsx-d6a4a9cd21a2` は上位の `.ruby-version` (3.1.6) に解決されプローブ rc=0 → **ruby_lsp が
+gem ディレクトリを root に選んでいた**。そこは `Gemfile.lock` が無いので exit 78 で死に、
+**私が入れたばかりの通知が「vendor ツリーで bundle install しろ」という嘘を出す**。
+書き込みが起きていなかったのは `setup_bundler.rb` の `raise` が `mkpath` より前にあるからで、
+ゲートのおかげではない。
+→ `M.is_gem_checkout` (パスに `gems` セグメント) で外し、**`.git` を持つ gem の fixture**を足した
+(元の fixture は `.git` を置いていなかったので、この退行は構造的に見えなかった)。
+
+### レビューが出した P2 で採用したもの
+
+- **solargraph が enable されていない窓**(mason 未導入 / 導入中は table cmd の実在判定で落ちる)で
+  倒すと、「solargraph に切り替えます」と言いながら何も起動しない = 嘘の説明つきで LSP が消える。
+  → 倒す前に `vim.lsp.is_enabled("solargraph")` を見て、駄目なら正直に案内を変える
+- `M.ruby_env()` の**引数ゼロ形**(production の 3 呼び出しすべて)が無検査だった → 既定値の配線を検査
+- `ruby_reset` の待機述語が無検査 (`running()==0` を true にしても緑) → 述語そのものを pin
+- `doautoall` スタブが引数を捨てていた → `"nvim.lsp.enable FileType"` の文字列を assert
+- `_nviminit.lua` の grep 検査が**コメント行だけで満たされる** (vacuous) / 逆にコメントに
+  `mason/bin` と書くと偽陽性 → コメントを落としてからコードだけを見る
+
+### 採用しなかったもの
+
+- **`BUNDLE_GEMFILE` / `GEM_HOME` 等も同クラス**という指摘 (P2-7)。正しいが、`""` では
+  `ENV[...].nil?` を偽にできず `M.ruby_env` の位置では原理的に閉じられない。
+  レビュー自身が発火条件を「未確認」としており、この repo の zsh 設定はどれも export していない
+  (grep 済み)。**未確認リスクとして記録**し、`bundle exec nvim` / direnv の `layout ruby` で
+  Ruby の LSP がおかしくなったらここを疑う
+- P3-9 `kill -9` も倒す件 / P3-13 末尾スラッシュ付き mason bin / P3-14 未判定 root の表示が
+  `nil` — いずれも劣化先が solargraph か表示だけなので現状維持
+
+### レビューが「壊せなかった」と明記した観点
+
+env の吹き飛ばし (`_system.lua` が親環境へマージする) / `root_dir` の鍵ズレ (素通しで一致) /
+on_exit 時点の client 消失 (削除は後段の schedule) / フォールバックの無限ループ・二重 attach /
+`cmd` が関数のとき `cmd_env` が使われないという主張 / `.erb` の受け入れ。
+
+### 2 周目の変異検証 (レビュー対応で新設した分)
+
+指摘への修正は**新しい安全機構**なのでもう 1 周当てた。11 本中 **10 本 red**:
+
+| 変異 | 結果 |
+|---|---|
+| stopping の判定を落とす / `is_stopped()` に替える | red / red |
+| reset のキャッシュ破棄を停止より**前へ移動** | red |
+| gem チェックアウトのゲートを外す / `is_gem_checkout` を常に false | red / red |
+| `ruby_env` の `mason_bin` 既定値を潰す / `PATH` 既定値を潰す | red / red |
+| `doautoall` の group 指定を落とす | red |
+| reset の待機条件を常に真にする | red |
+| solargraph の enable 確認を外す | red |
+| `_nviminit` 検査のコメント除去をやめる | **green (受け入れ)** |
+
+🚨 最後の 1 本が green なのは、コメント除去を戻しても**今の repo では両側とも成立する**ため
+(緩めるだけの変異で、退行は作らない)。実質的な守りは「`mason_bin` 既定値を潰す」が red で担保している。
+
+🚨 途中で **2 本の変異を作り直した**。①`is_stopped()` 変異が stub にメソッドが無くて
+**TIMEOUT** (red でも green でもない第 3 の結果) になったので、stub に実物と同じ
+`is_stopped() = true` を持たせてから当て直した。②reset の順序の変異が「移動」でなく
+「挿入」になっており、後段のクリアが残るので **green** になっていた。どちらも
+「変異の diff を読む」まででしか気づけない形。
+
 ## 残タスク
 
 なし (5 件すべて判定済み: 4 件は修正、1 件 (`.erb`) は理由と再評価 trigger を付けて受け入れ)。

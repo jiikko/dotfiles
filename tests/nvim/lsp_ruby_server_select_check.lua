@@ -239,6 +239,13 @@ local in_vendor = mk("repo/vendor/bundle/ruby/3.1.0/gems/json-1.0/lib/json.rb")
 -- git repo の外にある gem ツリー (rbenv の gems 相当。実測 152 件が Gemfile 同梱)
 mk("loose/gems/foo-1.0/Gemfile")
 local outside = mk("loose/gems/foo-1.0/lib/foo.rb")
+-- 🚨 bundler の git ソース gem。**自分の .git を持つ** (bundler が clone するため) ので、
+--    「root が git repo の root か」だけのゲートは通ってしまう。実測 2026-09-09: rbenv と
+--    ubiregi-server の vendor を合わせて bundler/gems 配下の 21/21 件が .git と Gemfile を
+--    両方持つ。ここに .git を置いていなかったので、この退行は fixture から見えなかった。
+mk("repo/vendor/bundle/ruby/3.1.0/bundler/gems/axlsx-abc123/.git", true)
+mk("repo/vendor/bundle/ruby/3.1.0/bundler/gems/axlsx-abc123/Gemfile")
+local git_gem = mk("repo/vendor/bundle/ruby/3.1.0/bundler/gems/axlsx-abc123/lib/axlsx.rb")
 
 -- プローブは常に成功させる (ここで見たいのは root ゲートであって起動可否ではない)
 lsp.ruby_lsp_runnable = function() return true end
@@ -251,6 +258,9 @@ local fs_cases = {
     why = "vendor 配下の gem。root が repo root でないので ruby_lsp を選ばない" },
   { file = outside, want = "solargraph", root = tmp .. "/loose/gems/foo-1.0",
     why = "git repo の外の gem ツリー。.git が無いので ruby_lsp を選ばない" },
+  { file = git_gem, want = "solargraph",
+    root = tmp .. "/repo/vendor/bundle/ruby/3.1.0/bundler/gems/axlsx-abc123",
+    why = "bundler の git ソース gem。**自分の .git を持つ**ので git-root ゲートは通る。gems セグメントで弾くこと (通すと vendor ツリーに .ruby-lsp/ を掘り、bundle install が走る)" },
 }
 for _, c in ipairs(fs_cases) do
   local b = vim.api.nvim_create_buf(false, false)
@@ -294,14 +304,37 @@ for _, c in ipairs(env_cases) do
       c.path, vim.inspect(got.RBENV_VERSION)))
   end
 end
+-- 🚨 production の呼び出しは 3 箇所とも **引数ゼロ** (ruby_lsp_runnable / servers.ruby_lsp.cmd /
+--    ruby_info_lines)。上の env_cases は必ず 2 引数で呼ぶので、既定値の配線
+--    (`mason_bin or M.mason_bin()` / `path or vim.env.PATH`) が丸ごと無検査になる。
+--    `or ""` へ変異すると mason 除外が死ぬ / 子プロセスの PATH が空になるのに全部緑。
+local real_path = vim.env.PATH
+vim.env.PATH = mason_bin .. ":/usr/bin:/bin"
+local defaulted = lsp.ruby_env()
+vim.env.PATH = real_path
+if defaulted.PATH ~= "/usr/bin:/bin" then
+  fail(("引数ゼロの ruby_env().PATH = %q, want \"/usr/bin:/bin\" (既定値の配線が切れている: vim.env.PATH を読み、M.mason_bin() を除外すること)"):format(
+    tostring(defaulted.PATH)))
+end
+if defaulted.RBENV_VERSION ~= "" then
+  fail("引数ゼロの ruby_env() が RBENV_VERSION を空にしていない")
+end
+
 -- _nviminit.lua が mason bin を自前で組み立て直していないこと。組み立て直すと文字列が
 -- ズレたときに除外が無言で効かなくなる (2 ファイルに同じ判断が生える)。
-local init_src = table.concat(vim.fn.readfile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h:h") .. "/_nviminit.lua"), "\n")
-if init_src:find("mason/bin", 1, true) then
-  fail("_nviminit.lua が \"mason/bin\" を直接組み立てている。lsp.mason_bin() を使うこと (ruby_env の除外と文字列が一致しなくなる)")
+-- 🚨 コメント行は落としてから見る。落とさないと (a) 説明コメントの "lsp.mason_bin()" だけで
+--    後半の検査が満たされ (vacuous)、(b) どこかのコメントに "mason/bin" と書いた瞬間に
+--    前半が偽陽性で落ちる。検査したいのは**コード**であってコメントではない。
+local init_code = {}
+for _, line in ipairs(vim.fn.readfile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h") .. "/_nviminit.lua")) do
+  if not line:match("^%s*%-%-") then table.insert(init_code, line) end
 end
-if not init_src:find("mason_bin()", 1, true) then
-  fail("_nviminit.lua が lsp.mason_bin() を使っていない。PATH へ入れる文字列と除外する文字列の出典が分かれる")
+init_code = table.concat(init_code, "\n")
+if init_code:find("mason/bin", 1, true) then
+  fail("_nviminit.lua のコードが \"mason/bin\" を直接組み立てている。lsp.mason_bin() を使うこと (ruby_env の除外と文字列が一致しなくなる)")
+end
+if not init_code:find("mason_bin()", 1, true) then
+  fail("_nviminit.lua のコードが lsp.mason_bin() を呼んでいない。PATH へ入れる文字列と除外する文字列の出典が分かれる")
 end
 
 -- 8b. 実サーバの cmd も同じ env / cwd で起動する (プローブだけ直しても意味がない)
@@ -342,18 +375,32 @@ end
 -- 9. 起動に失敗したら solargraph へ倒す
 local reason_cases = {
   { code = 0, signal = 0, want = false, why = "正常終了" },
-  { code = 0, signal = 15, want = false, why = ":LspStop / nvim 終了の SIGTERM" },
+  { code = 0, signal = 15, want = false, why = "graceful が timeout して terminate された" },
   { code = 143, signal = 15, want = false, why = "SIGTERM で殺されたときの exit code" },
   { code = 78, signal = 0, want = true, why = "Gemfile.lock が無い (exe/ruby-lsp の BundleNotLocked)" },
   { code = 1, signal = 0, want = true, why = "その他の異常終了" },
   { code = 0, signal = 6, want = true, why = "SIGABRT" },
+  -- 🚨 これが本命。client:stop() 経由の停止では ruby-lsp は **exit=1 signal=0** で終わる
+  --    (実測 2026-09-09)。signal だけを見ていると :LspStop と :RubyLspReset が自分で
+  --    フォールバックを焚き、「選び直す」コマンドが root を solargraph に固定してしまう。
+  { code = 1, signal = 0, stopping = true, want = false, why = ":LspStop / :RubyLspReset / nvim 終了" },
+  { code = 78, signal = 0, stopping = true, want = false, why = "意図した停止は理由によらず倒さない" },
 }
 for _, c in ipairs(reason_cases) do
-  local got = lsp.ruby_lsp_fallback_reason(c.code, c.signal)
+  local got = lsp.ruby_lsp_fallback_reason(c.code, c.signal, c.stopping)
   if (got ~= nil) ~= c.want then
-    fail_restoring(("ruby_lsp_fallback_reason(%d, %d) = %s, 倒す=%s であること (%s)"):format(
-      c.code, c.signal, vim.inspect(got), tostring(c.want), c.why))
+    fail_restoring(("ruby_lsp_fallback_reason(%d, %d, stopping=%s) = %s, 倒す=%s であること (%s)"):format(
+      c.code, c.signal, tostring(c.stopping), vim.inspect(got), tostring(c.want), c.why))
   end
+end
+-- nvim の private フィールドに依存しているので、runtime 側が変わったらここで落とす。
+-- 落ちなくなると「意図した停止でも倒す」へ無言で戻る (テストが守る対象は挙動でなく前提)。
+local client_src = table.concat(vim.fn.readfile(vim.env.VIMRUNTIME .. "/lua/vim/lsp/client.lua"), "\n")
+if not client_src:find("self._is_stopping = true", 1, true) then
+  fail_restoring("nvim runtime の Client:stop が _is_stopping を立てなくなった。意図した停止の判定 (lsp.lua の on_exit) を見直すこと")
+end
+if not client_src:find("rpc.is_closing() or self._is_stopping", 1, true) then
+  fail_restoring("nvim runtime の is_stopped の実装が変わった。is_stopped() が使えるようになったなら private フィールド依存をやめられる (lsp.lua の 🚨 を再評価)")
 end
 if not (lsp.ruby_lsp_fallback_reason(78, 0) or ""):find("bundle install", 1, true) then
   fail_restoring("exit 78 の理由に bundle install の案内が無い。プローブが必ず素通りする形なので対処法まで出す")
@@ -369,7 +416,8 @@ lsp.ruby_lsp_runnable = function() fb_probes = fb_probes + 1 return true end
 if lsp.ruby_server_for(fb_root) ~= "ruby_lsp" then
   fail_restoring("前提が崩れている: 倒す前は ruby_lsp が選ばれているはず")
 end
-local notes, reattaches = {}, 0
+local notes, reattaches
+notes, reattaches = {}, 0
 local deps = {
   notify = function(msg) table.insert(notes, msg) end,
   reattach = function() reattaches = reattaches + 1 end,
@@ -396,6 +444,27 @@ end
 if reattaches ~= 1 then
   fail_restoring(("再 attach を %d 回呼んだ。1 回であること (呼ばないと開いているバッファは LSP 無しのまま)"):format(reattaches))
 end
+-- solargraph が enable されていない窓 (mason 未導入 / 導入中) では「切り替えます」と言わない。
+-- 言うと、何も起動しないのに嘘の説明がついて Ruby の LSP が消える
+lsp.ruby_server_cache = {}
+if lsp.ruby_server_for("/tmp/p-both") ~= "ruby_lsp" then fail_restoring("前提が崩れている (9c)") end
+local msg2 = {}
+lsp.ruby_lsp_failed("/tmp/p-both", 78, 0, {
+  notify = function(m) table.insert(msg2, m) end,
+  reattach = function() end,
+  solargraph_enabled = function() return false end,
+})
+if #msg2 ~= 1 or msg2[1]:find("solargraph に切り替えます", 1, true) then
+  fail_restoring(("solargraph が enable されていないのに「切り替えます」と言っている: %s"):format(vim.inspect(msg2)))
+end
+if not msg2[1]:find("solargraph も使えません", 1, true) then
+  fail_restoring(("solargraph 不在のときの案内が出ていない: %s"):format(vim.inspect(msg2)))
+end
+lsp.ruby_server_cache = {}
+if lsp.ruby_server_for(fb_root) ~= "ruby_lsp" then fail_restoring("前提が崩れている (9c-2)") end
+notes, reattaches = {}, 0
+lsp.ruby_lsp_failed(fb_root, 78, 0, deps)
+
 -- 2 回目は何もしない (別のバッファで同じ root の client が落ちても通知は増えない)
 if lsp.ruby_lsp_failed(fb_root, 78, 0, deps) ~= false or #notes ~= 1 or reattaches ~= 1 then
   fail_restoring("同じ root で 2 回倒している (通知と再 attach が積み上がる)")
@@ -407,12 +476,31 @@ if lsp.ruby_server_for(fb_root) ~= "ruby_lsp" then fail_restoring("前提が崩�
 if type(ruby_cfg.on_exit) ~= "function" then
   fail_restoring("servers.ruby_lsp.on_exit が無い。プローブは起動の証明ではないので、落ちたことを検出する経路が要る")
 end
-vim.lsp.get_client_by_id = function(id) return id == 7 and { root_dir = fb_root } or nil end
+local stub_client = { root_dir = fb_root, _is_stopping = false,
+  -- 🚨 実物の is_stopped() は on_exit の時点で **クラッシュでも true** (rpc.is_closing() を
+  --    見るため。実測 2026-09-09)。ここを true 固定にしておかないと、「_is_stopping の代わりに
+  --    is_stopped() を使う」変異が「メソッドが無い」エラーで落ち、判定の誤りを検出したことに
+  --    ならない (nil 呼び出しの赤とすり替わる)。
+  is_stopped = function() return true end }
+vim.lsp.get_client_by_id = function(id) return id == 7 and stub_client or nil end
 vim.schedule = function(fn) fn() end -- on_exit は fast event context。中身をここで走らせる
 local notified = 0
 vim.notify = function() notified = notified + 1 end
-local doautoall = 0
-vim.cmd = setmetatable({ doautoall = function() doautoall = doautoall + 1 end }, {})
+local doautoall, doautoall_arg = 0, nil
+-- 引数まで見る。"nvim.lsp.enable FileType" の **group 指定そのもの**が契約で、落とすと
+-- 全 FileType autocmd を全バッファで焚くことになる (回数だけ数えると変異が緑で通る)
+vim.cmd = setmetatable({ doautoall = function(a) doautoall = doautoall + 1; doautoall_arg = a end }, {})
+-- 意図した停止 (:LspStop / :RubyLspReset) では倒さない。ruby-lsp はこの経路でも
+-- exit=1 signal=0 を返すので、signal しか見ていないとここが緑にならない
+stub_client._is_stopping = true
+ruby_cfg.on_exit(1, 0, 7)
+if lsp.ruby_server_cache[fb_root] ~= "ruby_lsp" or notified ~= 0 or doautoall ~= 0 then
+  vim.lsp.get_client_by_id = orig.get_client_by_id; vim.schedule = orig.schedule
+  vim.notify = orig.notify; vim.cmd = orig.cmd
+  fail_restoring(("意図した停止 (_is_stopping=true) で倒している: cache=%s notify=%d doautoall=%d。:RubyLspReset が自分で root を solargraph に固定してしまう"):format(
+    vim.inspect(lsp.ruby_server_cache[fb_root]), notified, doautoall))
+end
+stub_client._is_stopping = false
 ruby_cfg.on_exit(78, 0, 7)
 vim.lsp.get_client_by_id = orig.get_client_by_id
 vim.schedule = orig.schedule
@@ -424,6 +512,10 @@ if lsp.ruby_server_cache[fb_root] ~= "solargraph" then
 end
 if notified ~= 1 or doautoall ~= 1 then
   fail_restoring(("on_exit の既定の副作用が notify=%d doautoall=%d。通知と再 attach を 1 回ずつ"):format(notified, doautoall))
+end
+if doautoall_arg ~= "nvim.lsp.enable FileType" then
+  fail_restoring(("doautoall の引数が %s。\"nvim.lsp.enable FileType\" であること (group を落とすと全 FileType autocmd を全バッファで焚く)"):format(
+    vim.inspect(doautoall_arg)))
 end
 
 -- 10. :RubyLspInfo の内訳は判定関数そのものを呼び、状態を書き換えない
@@ -461,9 +553,15 @@ vim.fs.root = orig.root
 -- 10b. :RubyLspReset は「止めてから」選び直す (can_start は root_dir を見ないので、
 --      止めずに選び直すと solargraph が残ったまま ruby_lsp が起動して二重 attach になる)
 lsp.ruby_server_cache = { ["/tmp/p-both"] = "ruby_lsp" }
-local calls, alive = {}, 2
+local calls, alive, alive2 = {}, 2, 2
 local reset_ok = lsp.ruby_reset({
-  enable = function(names, on) table.insert(calls, { names = names, on = on }) if on == false then alive = 0 end end,
+  enable = function(names, on)
+    table.insert(calls, { names = names, on = on })
+    -- 停止すると on_exit が走る。倒す判定が外れた場合にここで solargraph が書き戻される
+    -- (実際に起きた: ruby-lsp は client:stop() でも exit=1 signal=0 を返す)。
+    -- キャッシュを捨てるのが停止より**前**だと、この書き戻しが生き残って root が固定される。
+    if on == false then alive = 0; lsp.ruby_server_cache["/tmp/p-both"] = "solargraph" end
+  end,
   wait = function(_, cond) return cond() end,
   running = function() return alive end,
 })
@@ -480,6 +578,33 @@ for _, call in ipairs(calls) do
 end
 if reset_ok ~= true then
   fail_restoring("ruby_reset が停止を確認できていない (running が 0 になったのに false)")
+end
+-- 待機の述語そのものを pin する。上の 2 ケースは cond() の戻り値に依存しないので、
+-- `running() == 0` を true に置き換える変異が緑で通ってしまう (= 「消えるまで待つ」が無検査)。
+local probed = {}
+lsp.ruby_reset({
+  enable = function() end,
+  wait = function(ms, cond, interval)
+    probed.ms, probed.interval = ms, interval
+    probed.first = cond()            -- まだ 2 本生きている → false であること
+    alive2 = 0
+    probed.second = cond()           -- 消えた → true であること
+    return probed.second
+  end,
+  running = function() return alive2 end,
+})
+if probed.first ~= false or probed.second ~= true then
+  fail_restoring(("ruby_reset の待機条件が running()==0 を見ていない (生存中=%s / 消滅後=%s)"):format(
+    tostring(probed.first), tostring(probed.second)))
+end
+if type(probed.ms) ~= "number" or probed.ms <= 0 then
+  fail_restoring(("ruby_reset の待機に上限が無い (%s)。無制限に待つと :RubyLspReset が固まる"):format(vim.inspect(probed.ms)))
+end
+-- 既定の running クロージャ (ruby_lsp と solargraph を数える式) は注入で一度も走らない。
+-- 名前を片方落とす変異を捕まえるため、ここだけ実物を呼ぶ (headless では 0 本 = 0)。
+local default_running_ok = pcall(function() lsp.ruby_reset({ enable = function() end, wait = function(_, cond) return cond() end }) end)
+if not default_running_ok then
+  fail_restoring("ruby_reset の既定 running クロージャが動かない (get_clients の呼び方が壊れている)")
 end
 -- 止まらなかったら false を返す (呼び出し側が「開き直して」と案内するため)
 if lsp.ruby_reset({ enable = function() end, wait = function(_, cond) cond() return false end,
