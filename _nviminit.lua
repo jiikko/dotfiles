@@ -362,7 +362,10 @@ require("lazy").setup({
       local lsp = require("dotfiles.lsp")
       -- mason bin を PATH に通す (mason.setup と同じ先頭 prepend)。mason 本体は cmd=Mason の
       -- 遅延ロードで、初回ファイルオープン時点では未ロードのため自前で通す必要がある。
-      local mason_bin = vim.fn.stdpath("data") .. "/mason/bin"
+      -- 🚨 パスは lsp.mason_bin() から取る。Ruby のサーバだけはこの 1 エントリを PATH から
+      --    外して起動する (lsp.ruby_env)。ここで stdpath から組み直すと、片方を変えたときに
+      --    文字列が一致しなくなり、除外が無言で効かなくなる。
+      local mason_bin = lsp.mason_bin()
       if not string.find(vim.env.PATH or "", mason_bin, 1, true) then
         vim.env.PATH = mason_bin .. ":" .. (vim.env.PATH or "")
       end

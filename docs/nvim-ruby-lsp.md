@@ -126,6 +126,40 @@ allowlist を廃止し、「root に Gemfile があり、かつ**その project 
   「C 拡張が Ruby ABI に依存するため」明確に非推奨としている。導入は
   `RBENV_VERSION=<v> gem install ruby-lsp` (required_ruby_version >= 3.0)
 
+#### プローブと実サーバは同じ env で走らせる (`M.ruby_env`)
+
+**片方だけに渡すと「プローブは通るが server は別の ruby で走る」**= 上の (a) に戻る。
+渡しているのは 2 つだけ:
+
+| 何を | なぜ | 実測 (2026-09-09) |
+|---|---|---|
+| `RBENV_VERSION=""` | `rbenv shell 3.1.6` した端末から nvim を開くと、rbenv は project の `.ruby-version` より `RBENV_VERSION` を優先するので**全 project がその ruby で判定される** | `.ruby-version`=2.6.6 の dir で `ruby-lsp --version` が 素:rc=127 → `RBENV_VERSION=3.1.6`:**rc=0** → `RBENV_VERSION=""`:rc=127。rbenv 1.3.2 は空文字を未設定として扱う (`env RBENV_VERSION= rbenv version-name` → 2.6.6) |
+| PATH から mason bin を除外 | mason は `ensure_installed` から外してもアンインストールしない。残っていると `_nviminit.lua` が PATH 先頭へ入れる mason bin が rbenv shim に勝つ | このマシンには `mason/bin/ruby-lsp` は無い (16 本中に不在)。他マシン用の予防 |
+
+🚨 **`RBENV_VERSION` を unset はできない**。`vim.system` の env は `base_env()` への上書き
+(`_system.lua` の `setup_env` が `tbl_extend("force", …)`) なので、キーを消す手段が無い。空文字で代用する。
+
+🚨 **`cmd` が関数のとき nvim は `cmd_env` / `cmd_cwd` を使わない**。`client.lua` は
+`type(config.cmd) == 'function'` なら `config_cmd(dispatchers, config)` を呼ぶだけで、spawn params を
+渡すのは table の枝だけ。だから lspconfig と同形の関数 `cmd` を自分で持ち、
+`vim.lsp.rpc.start(…, { cwd = …, env = M.ruby_env() })` で渡している。
+**table 形式にはしない**: `_nviminit.lua` の `enable_available` が `executable(cmd[1])` の枝へ移り、
+Ruby では意味を持たない判定 (shim はどれか 1 つの ruby にあれば存在する) が挟まる。
+
+#### プローブは起動の証明ではないので、落ちたら倒す
+
+`--version` は `exe/ruby-lsp:13` の OptionParser ブロックで即 `exit(0)` するため、実際の起動経路
+(`BUNDLE_GEMFILE` 未設定 → `SetupBundler` → composed bundle → `bundle exec ruby-lsp`。同ファイル
+55-85 行) を通らない。**起動経路まで通すプローブは作れない**: そこを通る唯一のフラグ `--doctor` は
+composed bundle の `bundle install` を実際に走らせるので初回は分単位かかり、root へ `.ruby-lsp/` を
+書く。`BufReadPre` から同期で呼ぶ判定には使えない。
+
+→ 近似で選び、**外したら倒す**。`servers.ruby_lsp.on_exit` が異常終了 (正常終了と SIGTERM は除く)
+を見て、その root のキャッシュを `solargraph` へ書き換え、`doautoall nvim.lsp.enable FileType`
+(= `vim.lsp.enable` 自身が既存バッファへ効かせるのに使う経路) で選び直させる。
+`exit 78` は `Gemfile.lock` が無いときの `SetupBundler::BundleNotLocked` なので、名指しで
+`bundle install` を案内する。
+
 **② `<C-k>` を対象で振り分け** — 参照が速くなった本体。
 
 | カーソル下 | 経路 | 実測 |
@@ -166,6 +200,17 @@ tests/nvim/*                      674 行  ← 一番多い
 
 ## 7. 触るときの注意
 
+### 選択を見る / 選び直す
+
+| コマンド | 何をするか | いつ使うか |
+|---|---|---|
+| `:RubyLspInfo` | root / git root / Gemfile / 選ばれたサーバ / **理由** / attach 中の client / 渡している env を出す。**状態は書き換えない** (未判定ならプローブせず「未判定」と出す) | 「なぜ solargraph なのか」を知りたいとき |
+| `:RubyLspReset` | 判定キャッシュを捨て、Ruby のクライアントを**止めてから**選び直す | `gem install ruby-lsp` した後 / `bundle install` で bundle を直した後 |
+
+🚨 `:RubyLspReset` が「止めてから」なのは、nvim の `can_start` が **`root_dir` を評価しない**ため。
+キャッシュを消して attach し直すだけだと、既に付いている solargraph は「もう選ばれない」ことを
+検出できずに残り、新しく起動する ruby_lsp と二重 attach = rubocop の診断が二重に出る。
+
 - **`~/dotfiles` へ pull しても、開きっぱなしの nvim には効かない**。`vim.lsp.enable` は起動時に
   走るので、終了して開き直すまで古い設定のまま動く (この件で 2 往復した)
 - **索引中は要求が返らない**。「押しても無反応」に見えたら、まずステータスラインの
@@ -175,13 +220,16 @@ tests/nvim/*                      674 行  ← 一番多い
 - **gem 除外は効果 15%** (A-B 実測: 大きい gem 10 個を外して索引 10.7 秒 → 9.1 秒)。
   gem へのジャンプを失う対価に見合わない
 
-## 8. 未解決 / 判断待ち
+## 8. 未解決 / 意図的にそうしていること
 
 - **定数の `<C-k>` は 11.5 秒のまま**。`vendor/bundle` を repo 外へ出せば約 5 秒になる
   (参照の再パース対象の 88% がそれ)。sidecar 化するかは `:DotfilesRefsStats` の数字で決める
-- **プローブは起動の証明ではない**。`exe/ruby-lsp` の `--version` は OptionParser のブロックで
-  即 `exit(0)` するので、composed bundle の解決経路を通らない。project の bundle が壊れていると
-  「プローブは通るが server は起動しない」になり、solargraph も抑止済みなので LSP が無言で消える
-- **`.erb` は solargraph の filetypes に無い**ので、solargraph を選んだ project では
-  どのサーバも attach しない
-- **`RBENV_VERSION` を export した端末から起動すると**、プローブが全 project で同じ答えを返す
+- **`.erb` は solargraph の filetypes に無い**ので、solargraph を選んだ project では `.erb` に
+  どのサーバも attach しない。**受け入れている**: solargraph 0.60.2 に ERB のパーサは無く
+  (`lib/` で ERB を使っているのは自分のドキュメント HTML 生成 `page.rb` だけ)、`.erb` を Ruby として
+  渡すと先頭の `<` で構文エラーになる (実測 2026-09-09: `ruby -c` が rc=1 /
+  `syntax error, unexpected '<'`)。`filetypes` に `eruby` を足すと補完も定義ジャンプも増えないまま
+  ファイル全体に偽の診断が出る。
+  **再評価の trigger**: solargraph が ERB を受けるようになったとき / `.erb` で補完が要ると
+  言われたとき。後者の解は「その project の ruby へ `gem install ruby-lsp`」であって
+  eruby を solargraph へ渡すことではない (ruby_lsp の filetypes は `{ ruby, eruby }`)

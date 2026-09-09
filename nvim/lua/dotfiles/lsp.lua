@@ -43,6 +43,44 @@ function M.has_gemfile(dir)
   return vim.uv.fs_stat(dir .. "/Gemfile") ~= nil
 end
 
+-- mason が入れたバイナリの置き場。_nviminit.lua が PATH 先頭へ prepend し、M.ruby_env が
+-- Ruby のサーバ向けに**その 1 エントリだけ**を外す。両者の文字列が 1 文字でも違うと外れないので、
+-- 出典をここ 1 か所にする (参照側が stdpath から組み直すと、片方を変えたときに無言でズレる)。
+function M.mason_bin()
+  return vim.fn.stdpath("data") .. "/mason/bin"
+end
+
+-- プローブと実サーバの**両方**へ渡す環境。同じ関数を両方が使うことが不変条件で、片方だけに
+-- 渡すと「プローブは通るが server は別の ruby / 別のバイナリで走る」= 332 の病気に戻る。
+--
+-- 🚨 RBENV_VERSION="" : `rbenv shell 3.1.6` した端末から nvim を開くと、rbenv は project の
+--    .ruby-version より RBENV_VERSION を優先するため、**全 project がその ruby で判定される**。
+--    実測 2026-09-09 (.ruby-version=2.6.6 の dir で `ruby-lsp --version`):
+--      素                     → rc=127 (shim が「3.1.6 にはある」と言うだけ) → solargraph ✅
+--      RBENV_VERSION=3.1.6    → rc=0 / stdout "0.26.11"                      → ruby_lsp ❌
+--      RBENV_VERSION=""       → rc=127 (.ruby-version へ戻る)                → solargraph ✅
+--    rbenv は空文字を未設定として扱う (`[ -z "$RBENV_VERSION" ]`。rbenv 1.3.2 で
+--    `env RBENV_VERSION= rbenv version-name` → 2.6.6 を実測)。**unset はできない**:
+--    vim.system の env は base_env への上書き (_system.lua の setup_env が
+--    tbl_extend("force", base_env(), env)) なので、キーを消す手段が無い。
+-- 🚨 PATH から mason bin を外す : mason は ensure_installed から外してもアンインストールしない。
+--    既に mason/bin/ruby-lsp が入っているマシンでは、_nviminit.lua が PATH 先頭へ入れる mason bin が
+--    rbenv shim に勝ち、mason の ruby で走って ABI がズレる (332 の再生産)。**検出して警告する**の
+--    ではなく PATH から外すのは、警告は人が対処するまで壊れたままだが、外せば発生しないため。
+--    このマシンには mason/bin/ruby-lsp は無い (実測 2026-09-09。solargraph 等 16 本のみ)。
+--: (string?, string?) -> table<string,string>
+function M.ruby_env(path, mason_bin)
+  path = path or vim.env.PATH or ""
+  mason_bin = mason_bin or M.mason_bin()
+  local kept = {}
+  for entry in vim.gsplit(path, ":", { plain = true }) do
+    -- 空エントリ (":" の連続 / 先頭末尾の ":") は POSIX 上 cwd を意味する。project の cwd で
+    -- 走らせる判定なので、拾うと project 直下の実行ファイルに解決されうる。ここで落とす。
+    if entry ~= "" and entry ~= mason_bin then table.insert(kept, entry) end
+  end
+  return { RBENV_VERSION = "", PATH = table.concat(kept, ":") }
+end
+
 -- その project の ruby で ruby-lsp が起動できるか (実測 0.13s/root)。
 -- 🚨 rc / stdout の参照まで pcall の中に入れる。vim.system は spawn 失敗 (PATH に無い) で error を
 --    投げ、SystemObj:wait は timeout と割り込みで **nil を返す** (runtime の _system.lua)。外で
@@ -54,7 +92,10 @@ end
 --    出ず、ハングと区別がつかない。実測 0.13s に対して 2s は十分な余裕がある。
 function M.ruby_lsp_runnable(dir)
   local ok, runnable = pcall(function()
-    local res = vim.system({ "ruby-lsp", "--version" }, { cwd = dir, text = true }):wait(2000)
+    local res = vim.system(
+      { "ruby-lsp", "--version" },
+      { cwd = dir, text = true, env = M.ruby_env() }
+    ):wait(2000)
     -- rc だけでは足りない: rbenv shim は未導入だと rc=127 + stderr "command not found" を返すが、
     -- バージョン文字列は stdout にしか出ない。逆に出力だけでも足りない (異常終了しても途中まで
     -- 出ることがある)。両方を見る (実測 2026-09-08)。
@@ -67,13 +108,50 @@ end
 
 -- 🚨 この判定が証明するのは「その cwd で rbenv が選ぶ ruby に ruby-lsp gem が load できる」まで。
 --    exe/ruby-lsp の --version は OptionParser のブロックで即 exit(0) するので、実際の起動経路
---    (BUNDLE_GEMFILE 未設定なら launcher → composed bundle の解決 → bundle install) を通らない
---    (実測 2026-09-08: ruby-lsp 0.26.11 の exe/ruby-lsp:13)。project の bundle が壊れていると
---    「プローブは通るが server は起動しない」状態になり、solargraph も抑止済みなので Ruby の
---    LSP が無言で消える。起動失敗を検出して solargraph へ戻す仕組みは持っていない (issues/332)。
+--    (BUNDLE_GEMFILE 未設定 → SetupBundler → composed bundle → bundle exec ruby-lsp) を通らない
+--    (実測 2026-09-08 / 追試 2026-09-09: ruby-lsp 0.26.11 の exe/ruby-lsp:13 が exit(0)、
+--    起動経路は同ファイル 55-85 行の `if ENV["BUNDLE_GEMFILE"].nil?` ブロック)。
+--    **起動経路まで通すプローブは作らない**: そこを通る唯一のフラグは --doctor で、これは
+--    SetupBundler → composed bundle の bundle install を実際に走らせる。初回は分単位かかり、
+--    root へ .ruby-lsp/ を書く。BufReadPre から同期で呼ぶ判定には使えない。
+--    → 近似で選び、**外したら倒す** (下の M.ruby_lsp_failed)。
 
 -- root ごとの判定結果。プローブは同期実行なので、同じ root の 2 つ目以降のバッファでは走らせない。
 M.ruby_server_cache = {}
+
+-- ruby_lsp のプロセスが落ちたとき、solargraph へ倒すべきか。倒すなら人へ見せる理由を返す。
+-- 純関数にしているのは on_exit が fast event context だから (ここで notify も autocmd も呼べない)。
+-- 🚨 signal 15 (SIGTERM) を除くのは、:LspStop / nvim 終了 / :RubyLspReset が SIGTERM で止めるため。
+--    倒すと「手で止めたら勝手に別サーバが起動する」になる。nvim 自身の終了通知も同じ条件で
+--    signal 15 を除外している (runtime lsp.lua の on_client_exit)。
+--: (integer, integer) -> string?
+function M.ruby_lsp_fallback_reason(code, signal)
+  if signal == 15 then return nil end
+  if code == 0 and signal == 0 then return nil end
+  -- 78 は exe/ruby-lsp の SetupBundler::BundleNotLocked (Gemfile はあるが Gemfile.lock が無い)。
+  -- プローブが必ず素通りする形なので、名指しで対処方法を出す。
+  if code == 78 then return "Gemfile.lock がありません (bundle install が必要です)" end
+  return ("異常終了しました (exit=%d signal=%d)"):format(code, signal)
+end
+
+-- 倒す本体。root ごとに 1 回だけ効く (2 回目以降はキャッシュが既に solargraph なので何もしない)。
+-- 再 attach は nvim 自身の経路を借りる: vim.lsp.enable が「既存バッファへ効かせる」のに使っている
+-- `doautoall nvim.lsp.enable FileType` がそれで、判定 (root_dir) を全バッファで引き直す。
+-- 自前でバッファを走査して vim.lsp.start を呼ぶと、同じ判定の 2 実装目になる。
+--: (string?, integer, integer, table?) -> boolean
+function M.ruby_lsp_failed(root, code, signal, deps)
+  local reason = M.ruby_lsp_fallback_reason(code, signal)
+  if not reason then return false end
+  if not root or M.ruby_server_cache[root] == "solargraph" then return false end
+  M.ruby_server_cache[root] = "solargraph"
+  deps = deps or {}
+  local notify = deps.notify or vim.notify
+  local reattach = deps.reattach or function() vim.cmd.doautoall("nvim.lsp.enable FileType") end
+  notify(("ruby-lsp が%s\n%s は solargraph に切り替えます (:RubyLspInfo で内訳 / :RubyLspReset で選び直し)")
+    :format(reason, root), vim.log.levels.WARN)
+  reattach()
+  return true
+end
 
 -- project root を担当するサーバ名を返す。返り値が常に 1 つであることが ruby_lsp / solargraph の
 -- 排他の担保で、判定点をここ 1 か所に閉じている (root_dir 側に条件を 2 本書くと、片方の更新漏れが
@@ -101,20 +179,105 @@ end
 --    solargraph は PATH のバイナリ 1 本で何も書かないので、repo の外はそちらに任せる。
 --    (monorepo のサブ project は **その Gemfile のディレクトリが root のまま solargraph** になる。
 --     repo root へ丸めているのではない。allowlist 時代も全 project が solargraph だったので退行ではない)
+--
+-- 判定の本体はここ 1 か所 (M.ruby_root_decision)。:RubyLspInfo も同じ関数を呼んで内訳を出す。
+-- 表示側が式を写すと、片方だけ変えたときに **「なぜそう選ばれたか」の説明だけが嘘になる** ため。
+--   opts.cache_only : キャッシュに無ければプローブせず「未判定」を返す (:RubyLspInfo が状態を
+--                     書き換えないため。報告が観測対象を変えるのを避ける)
+--   opts.explain    : 表示用の内訳 (gemfile / reason) も詰める。BufReadPre から呼ぶ経路では
+--                     渡さない (fs_stat が 1 回増えるだけの用途なので hot path に足さない)
+--: (string|integer, table?) -> table
+function M.ruby_root_decision(target, opts)
+  opts = opts or {}
+  local dir = vim.fs.root(target, { "Gemfile", ".git" })
+  if not dir then
+    return { reason = "root が決まらない (上方向に Gemfile も .git も無い)" }
+  end
+  local git_root = vim.fs.root(target, { ".git" })
+  local d = { root = dir, git_root = git_root }
+  if dir ~= git_root then
+    d.server = "solargraph"
+    d.reason = "root が git repo の root ではない (Gemfile 同梱の gem など)"
+    return d
+  end
+  d.cached = M.ruby_server_cache[dir] ~= nil
+  if not d.cached and opts.cache_only then
+    d.reason = "未判定 (この root のバッファをまだ開いていない)"
+    return d
+  end
+  d.server = M.ruby_server_for(dir)
+  if opts.explain then
+    d.gemfile = M.has_gemfile(dir)
+    if d.server == "ruby_lsp" then
+      d.reason = "Gemfile があり、この project の ruby で ruby-lsp が起動できた"
+    elseif d.gemfile then
+      d.reason = "Gemfile はあるが、この project の ruby で ruby-lsp を起動できなかった"
+    else
+      d.reason = "root に Gemfile が無い"
+    end
+  end
+  return d
+end
+
 local function ruby_root_dir(want)
   return function(bufnr, on_dir)
     local name = vim.api.nvim_buf_get_name(bufnr)
     local target = name ~= "" and name or bufnr
-    local ok, dir, server = pcall(function()
-      local d = vim.fs.root(target, { "Gemfile", ".git" })
-      if not d then return nil, nil end
-      if d ~= vim.fs.root(target, { ".git" }) then return d, "solargraph" end
-      return d, M.ruby_server_for(d)
-    end)
+    local ok, d = pcall(M.ruby_root_decision, target)
     -- 判定が落ちたら従来の挙動 (solargraph) へ倒す。error を上へ抜かさないのは上記の理由。
     if not ok then return end
-    if dir and server == want then on_dir(dir) end
+    if d.root and d.server == want then on_dir(d.root) end
   end
+end
+
+-- :RubyLspInfo が出す行。**表示の組み立てだけ**を持ち、判定は M.ruby_root_decision に任せる
+-- (テストがこの返り値を読めるよう、print でなく行の配列を返す)。
+--: (integer) -> string[]
+function M.ruby_info_lines(bufnr)
+  local name = vim.api.nvim_buf_get_name(bufnr)
+  local d = M.ruby_root_decision(name ~= "" and name or bufnr, { explain = true, cache_only = true })
+  local attached = {}
+  for _, n in ipairs({ "ruby_lsp", "solargraph" }) do
+    for _, c in ipairs(vim.lsp.get_clients({ bufnr = bufnr, name = n })) do
+      table.insert(attached, ("%s (id=%d)"):format(c.name, c.id))
+    end
+  end
+  local env = M.ruby_env()
+  return {
+    "Ruby の LSP サーバ選択 (root ごとに 1 回判定してキャッシュ)",
+    "  root      : " .. tostring(d.root),
+    "  git root  : " .. tostring(d.git_root),
+    "  Gemfile   : " .. (d.gemfile == nil and "-" or (d.gemfile and "あり" or "なし")),
+    "  選択      : " .. tostring(d.server),
+    "  理由      : " .. tostring(d.reason),
+    "  キャッシュ: " .. (d.cached and "済み (:RubyLspReset で捨てる)" or "未"),
+    "  attach 中 : " .. (#attached > 0 and table.concat(attached, ", ") or "なし"),
+    "  RBENV_VERSION : " .. ("%q (project の .ruby-version を優先させるため空にする)"):format(env.RBENV_VERSION),
+    "  mason bin : PATH から除外済み (" .. M.mason_bin() .. ")",
+  }
+end
+
+-- gem を入れた / bundle を直した後に選び直す。
+-- 🚨 キャッシュを捨てて attach し直すだけでは足りない。nvim の can_start は **root_dir を評価
+--    しない** (runtime lsp.lua の can_start は filetypes と config の妥当性しか見ない) ので、
+--    既に attach 済みの solargraph は「もう選ばれない」ことを検出できずに残り、新しく起動する
+--    ruby_lsp と二重 attach = rubocop の診断が二重に出る。**先に止めてから**選び直す。
+--    止め方は :help lsp-restart の作法 (vim.lsp.enable(name, false) → true)。
+-- 🚨 止まるのを壁時計で待たない。「Ruby のクライアントが 0 になったか」を上限つきでポーリングする。
+--: (table?) -> boolean
+function M.ruby_reset(deps)
+  deps = deps or {}
+  local enable = deps.enable or vim.lsp.enable
+  local wait = deps.wait or vim.wait
+  local running = deps.running or function()
+    return #vim.lsp.get_clients({ name = "ruby_lsp" }) + #vim.lsp.get_clients({ name = "solargraph" })
+  end
+  local names = { "ruby_lsp", "solargraph" }
+  M.ruby_server_cache = {}
+  enable(names, false)
+  local gone = wait(2000, function() return running() == 0 end, 50) and true or false
+  enable(names, true)
+  return gone
 end
 
 M.servers = {
@@ -123,6 +286,33 @@ M.servers = {
   -- rubocop を検出) が担うので、solargraph と同じく <leader>F の lsp_format="fallback" で効く。
   ruby_lsp = {
     root_dir = ruby_root_dir("ruby_lsp"),
+    -- lspconfig の lsp/ruby_lsp.lua と同形 (cmd は関数のまま) だが、**env を渡すために上書きする**。
+    -- 🚨 cmd が関数のとき nvim は cmd_env / cmd_cwd を使わない。runtime client.lua は
+    --    `if type(config.cmd) == 'function' then self.rpc = config_cmd(dispatchers, config)` と
+    --    分岐し、spawn params (cwd / env / detached) を渡すのは table の枝だけ。関数の枝では
+    --    それらは関数側の責任になる。実測 2026-09-09 (nvim 0.11.5、偽 ruby-lsp に env を吐かせた):
+    --    この形で子プロセスに RBENV_VERSION="" と mason を除いた PATH が届き、cwd も root になる。
+    -- 🚨 cmd_cwd を先に見るのは lspconfig の reuse_client が config.cmd_cwd を書くため。落とすと
+    --    cwd が変わり → rbenv が読む .ruby-version が変わり → 走る ruby が無言で変わる。
+    -- 🚨 cmd を table 形式にしない。_nviminit.lua の enable_available は
+    --    `type(cmd) ~= "table" or executable(cmd[1]) == 1` で enable 対象を決めており、table に
+    --    すると「PATH に shim があるか」の判定に入る (shim はどれか 1 つの ruby にあれば存在する
+    --    ので、この判定は Ruby では意味を持たない)。
+    cmd = function(dispatchers, config)
+      return vim.lsp.rpc.start({ "ruby-lsp" }, dispatchers, {
+        cwd = config and (config.cmd_cwd or config.root_dir),
+        env = M.ruby_env(),
+      })
+    end,
+    -- プローブは起動の証明にならないので (上の 🚨)、落ちたら solargraph へ倒す。
+    -- ここは fast event context なので判断も通知も vim.schedule の中でやる。
+    on_exit = function(code, signal, client_id)
+      local c = vim.lsp.get_client_by_id(client_id)
+      -- root_dir は on_dir が渡した文字列そのもの (runtime client.lua が `root_dir =
+      -- config.root_dir` で素通しする) なので、M.ruby_server_cache の鍵と一致する。
+      local root = c and c.root_dir
+      vim.schedule(function() M.ruby_lsp_failed(root, code, signal) end)
+    end,
     -- 索引から外すパス。ruby-lsp の server.rb (process_indexing_configuration) が
     -- initializationOptions.indexing を camelCase → snake_case に直して
     -- RubyIndexer::Configuration#apply_config へ渡す。
@@ -153,6 +343,16 @@ M.servers = {
   --   solargraph を起動する。0.52 に cache サブコマンドは無く即死するが親は exit status を見ず、
   --   同じ gem を選び直して毎秒 spawn し続ける (CPU 60% と "Caching gem" 通知が出っぱなし)。
   --   回避はその project の bundle の solargraph を >= 0.54.2 に上げること。
+  -- 🚨 filetypes に eruby を足さない (lspconfig 既定は { "ruby" }、ruby_lsp は { "ruby", "eruby" })。
+  --   つまり solargraph を選んだ project の .erb には**どのサーバも attach しない**。
+  --   受け入れる判断であって見落としではない: solargraph に ERB のパーサは無く (0.60.2 の lib/ を
+  --   走査しても ERB を使っているのは自分のドキュメント HTML 生成 page.rb だけ)、.erb を Ruby として
+  --   渡すと先頭の `<` で構文エラーになる (実測 2026-09-09: `ruby -c` が rc=1 /
+  --   "syntax error, unexpected '<'")。足すと補完も定義ジャンプも増えないまま、ファイル全体に
+  --   偽の診断が出る。
+  --   再評価の trigger: solargraph が ERB を受けるようになったとき、または .erb で補完が要ると
+  --   言われたとき (そのときの解は「その project の ruby に ruby-lsp を入れる」= ruby_lsp を選ばせる
+  --   ことで、eruby を solargraph へ渡すことではない)。issues/337 の 2。
   solargraph = {
     settings = { solargraph = { useBundler = false, diagnostics = true, formatting = true } },
     root_dir = ruby_root_dir("solargraph"),
@@ -551,6 +751,19 @@ function M.setup(capabilities)
     vim.lsp.inlay_hint.enable(not on, { bufnr = 0 })
     vim.notify("Inlay hints: " .. (on and "off" or "on"))
   end, { silent = true, desc = "Toggle inlay hints" })
+
+  -- Ruby のサーバ選択は無言で決まり (root ごとに 1 回)、gem を入れても再起動まで反映されない。
+  -- 「どちらがなぜ選ばれたか」と「選び直す手段」を出す入口。docs/nvim-ruby-lsp.md に記載。
+  vim.api.nvim_create_user_command("RubyLspInfo", function()
+    vim.notify(table.concat(M.ruby_info_lines(vim.api.nvim_get_current_buf()), "\n"))
+  end, { desc = "Ruby の LSP サーバ選択の内訳 (root / 理由 / attach 中) を表示" })
+  vim.api.nvim_create_user_command("RubyLspReset", function()
+    local gone = M.ruby_reset()
+    vim.notify(gone
+      and "Ruby の LSP 選択キャッシュを破棄し、開いているバッファを判定し直しました"
+      or "既存の Ruby クライアントが 2 秒で止まりませんでした。二重 attach していたら :e で開き直してください",
+      gone and vim.log.levels.INFO or vim.log.levels.WARN)
+  end, { desc = "Ruby の LSP サーバ選択を捨てて選び直す (gem 導入後 / bundle 修復後)" })
 
   -- 進捗をステータスラインへ出すために保持する。end が来たら空へ戻す
   -- (複数サーバが同時に走っているときは、片方の end で一旦空になり、もう片方の次の

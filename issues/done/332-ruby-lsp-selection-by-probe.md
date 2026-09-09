@@ -116,7 +116,7 @@ marker を空へ / wait の上限を外す / mason の sort を消す) がいず
 `false` になるため、観測上の差が無い (冗長な守り)。nil は wait の**正常な戻り値**であって例外では
 ないので、明示は残してコメントで冗長だと書いた。pcall ごと外す変異 (前半 5 本目) は red。
 
-### 未解決 → [337](../337-bug-ruby-lsp-selection-has-five-open-holes.md) へ分離 (2026-09-08)
+### 未解決 → [337](337-bug-ruby-lsp-selection-has-five-open-holes.md) へ分離 (2026-09-08) → 337 で全件決着 (2026-09-09)
 
 レビューが出して本 commit で閉じていない 5 件 (プローブは起動の証明ではない / `.erb` の非対称 /
 `RBENV_VERSION` / 選択結果が不可視 / mason の残留バイナリ) は、本文が長く残件が埋もれるので

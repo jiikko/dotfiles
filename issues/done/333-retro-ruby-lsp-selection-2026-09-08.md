@@ -95,5 +95,6 @@ gem では成立する**ことを実測 (`json-2.3.1`) して採用した。指�
       → 項目 2 は `rules-rationale/verify-execution-not-just-exit-code.md` へ追記。
       項目 4 は**却下**: 出典が `~/.claude/CLAUDE.md`「レビュー方針」で、そこには
       rationale ファイルが無い (書く場所が無いものを新設してまで残す価値は無い)
-- [x] issue 332 の未解決 5 件を [337](../337-bug-ruby-lsp-selection-has-five-open-holes.md) へ分離
+- [x] issue 332 の未解決 5 件を [337](337-bug-ruby-lsp-selection-has-five-open-holes.md) へ分離
+      (2026-09-09 に 337 で全件決着: 4 件修正 / `.erb` は理由と再評価 trigger を付けて受け入れ)
       (4 件と書いていたが、mason の残留バイナリを数え落としていたので実際は 5 件)
