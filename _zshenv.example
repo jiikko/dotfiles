@@ -1,4 +1,7 @@
-# ~/.zshenv の雛形 — **このファイル自身は読まれない**。`cp _zshenv.example ~/.zshenv` して使う。
+# ~/.zshenv の雛形 — **このファイル自身は読まれない**。
+# 🚨 `~/.zshenv` が**既に在るなら cp しない**（中身を消す）。その場合は下の
+# `export SUPPORT_TRUECOLOR=…` の 1 行だけを追記する。無いときだけ
+# `cp ~/dotfiles/_zshenv.example ~/.zshenv` でよい。
 #
 # なぜ dotfiles が ~/.zshenv を管理しないか:
 #   ここに書く値は**マシンごとに違う**（下の SUPPORT_TRUECOLOR は端末の能力そのもの）。
@@ -21,6 +24,11 @@
 # ため、env からの推定は効かず「不明 → 対応とみなす」に落ちる。つまり**この行が無いと、
 # 非対応端末でも gruvbox + termguicolors=on になり、色が潰れる**（エラーは出ない）。
 # 判定の優先順とその理由は `_nviminit.lua` の `dotfiles_truecolor_supported` 冒頭のコメント。
+#
+# 🚨 **`export` を付けること**。付け忘れると nvim (子プロセス) へ届かず、
+# 「設定したのに効かない」形になる（実測 2026-09-10: export 無しだと
+# vim.env.SUPPORT_TRUECOLOR が nil）。_zshrc の `_dotfiles_check_truecolor` が
+# export の有無まで見て警告する。
 #
 # どちらか一方のコメントを外す:
 #

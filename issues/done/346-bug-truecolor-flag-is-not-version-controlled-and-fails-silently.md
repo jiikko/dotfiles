@@ -124,3 +124,58 @@ retro 342 の「dotfiles へ `_zshenv` として取り込むか」は、その�
 
 - [retro 342](342-retro-solargraph-spin-loop-and-ruby-lsp-migration-2026-08-31.md) — 出典
 - `_nviminit.lua:38-52` — 判定の優先順とその理由
+
+## 追記 2026-09-10: 敵対的レビューが P2 / P3 を 1 件ずつ出した — どちらも実害
+
+`adversarial-review-own-safeguards.md`（自分で作った検査は自己レビューで閉じない）に従い、
+別セッションの opus に read-only で攻めてもらった。**2 件とも自分で再現してから直した**。
+
+### P2 🚨 `export` を付け忘れた設定を「正しい設定」として黙って通していた
+
+ガードは `${SUPPORT_TRUECOLOR-}` の**値**しか見ていなかったが、`_nviminit.lua` が読むのは
+`vim.env` = **子プロセスの環境**。export の無いシェル変数は届かない。
+
+実測（`env -u SUPPORT_TRUECOLOR` で親の env を隔離）:
+
+| 書き方 | `${(t)…}` | 子プロセス | nvim の `vim.env` | 旧ガード |
+|---|---|---|---|---|
+| `SUPPORT_TRUECOLOR=false` | `scalar` | 届かない | **nil** | **黙る** ❌ |
+| `export SUPPORT_TRUECOLOR=false` | `scalar-export` | `false` | `false` | 黙る ✅ |
+
+つまり**この issue が塞ごうとした「無音で色が壊れる」形そのもの**が、検出対象の 2 つ目
+（「解釈しない値」）の隣に穴として残っていた。`_zshenv.example` は `export` 付きなので
+雛形どおり `cp` した人は踏まない。**踏むのは手で 1 行足した人**。
+
+→ 受理する腕で `[[ ${(t)SUPPORT_TRUECOLOR} == *export* ]]` まで見る。
+
+🚨 **レビュー側も最初この検証を親シェルの env で回して結論が逆になっていた**
+（このマシンは `SUPPORT_TRUECOLOR=false` が export 済み）。テストの `run_check` も
+`env -u SUPPORT_TRUECOLOR` で隔離する形に直した
+（[`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md)
+「A-B のケース間で状態を共有しない」）。
+
+### P3 警告文が **既存の `~/.zshenv` を上書きする手順**を案内していた
+
+`'cp ~/dotfiles/_zshenv.example ~/.zshenv' して…` と書いていたが、「未設定」警告が出る典型は
+**`~/.zshenv` は在るがこの 1 行だけ無い**ケース。そこで `cp` すると中身が消える。
+→ 「**無ければ** cp / **在れば** `export SUPPORT_TRUECOLOR=false` の 1 行を足す」に変更。
+`_zshenv.example` の冒頭にも同じ注意を書いた。
+
+### 値集合の抽出が「腕に処理を足した瞬間に壊れる」形だった
+
+テストは `\) return 0 ;;$` で case の腕ごと固定していたので、export 検査を足したら
+抽出が 0 件になった（`-z` ガードが拾って落ちた＝**設計どおり判定不能で止まった**）。
+**case のパターンだけ**を取る形へ直した（`""` と `*)` の腕は文字クラスに当たらず自然に外れる）。
+
+### 変異検証（7 本すべて red / baseline green）
+
+| 変異 | 結果 |
+|---|---|
+| export 検査を外す | RED（新規） |
+| 案内を無条件の `cp` に戻す | RED（新規） |
+| 未設定の腕を黙らせる / 解釈されない値の腕を黙らせる | RED |
+| `_zshrc` だけ `yes` を受け付ける | RED（lua との突き合わせ） |
+| 呼び出しを消す / `_zshenv.example` を消す | RED |
+
+`tests/zshrc/` の関連 4 本 緑。`zsh -i -c exit` ×10 の平均 **40 ms**（追加は fork ゼロの
+`case` 1 つなので起動コストへの影響なし）。

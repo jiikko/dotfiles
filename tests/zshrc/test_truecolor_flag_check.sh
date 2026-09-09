@@ -31,13 +31,21 @@ if [[ -z "$fn" ]]; then
   exit 1
 fi
 
-# $1 が "unset" なら未設定で、それ以外はその値を入れて実行する
+# $1 が "unset" なら未設定で、それ以外はその値を **export して** 実行する。
+# 🚨 親シェルの env を必ず落とす (env -u)。このマシンは SUPPORT_TRUECOLOR=false が export 済みで、
+# 隔離せずに測ると「export 無し」のケースが親の値を拾って結論が逆になる
+# (_claude/rules/mutation-verify-new-tests.md「A-B のケース間で状態を共有しない」)。
 run_check() {
   if [[ "$1" == unset ]]; then
-    zsh -f -c "unset SUPPORT_TRUECOLOR"$'\n'"$fn"$'\n''_dotfiles_check_truecolor'
+    env -u SUPPORT_TRUECOLOR zsh -f -c "$fn"$'\n''_dotfiles_check_truecolor'
   else
-    SUPPORT_TRUECOLOR="$1" zsh -f -c "$fn"$'\n''_dotfiles_check_truecolor'
+    env -u SUPPORT_TRUECOLOR SUPPORT_TRUECOLOR="$1" zsh -f -c "$fn"$'\n''_dotfiles_check_truecolor'
   fi
+}
+
+# export を **付けずに** シェル変数として設定した場合 (nvim へ届かない形)
+run_check_noexport() {
+  env -u SUPPORT_TRUECOLOR zsh -f -c "SUPPORT_TRUECOLOR=$1"$'\n'"$fn"$'\n''_dotfiles_check_truecolor'
 }
 
 # 1. 未設定 / 空 → 検出して雛形へ誘導する
@@ -71,6 +79,28 @@ for v in true false 1 0; do
   fi
 done
 
+# 3.5 🚨 export を付け忘れた設定は **nvim へ届かない**ので警告する
+#     (値だけ見ると「設定済み」に見えるが vim.env は nil。実測で確認した形)
+for v in true false 0 1; do
+  out=$(run_check_noexport "$v")
+  if [[ "$out" == *"export"* ]]; then
+    print "✓ export 無しの SUPPORT_TRUECOLOR=$v を検出する"
+  else
+    print -u2 "✗ export 無しの $v を「設定済み」として黙って通した: $out"
+    fails=$(( fails + 1 ))
+  fi
+done
+
+# 3.6 直し方の案内が **既存の ~/.zshenv を上書きする手順だけ**になっていない
+#     (「未設定」が出る典型は「.zshenv は在るがこの 1 行が無い」で、そこへ cp すると中身が消える)
+out=$(run_check unset)
+if [[ "$out" == *"export SUPPORT_TRUECOLOR"* && "$out" == *"在れば"* ]]; then
+  print "✓ 案内が「無ければ cp / 在れば 1 行追記」になっている (無条件の cp を勧めない)"
+else
+  print -u2 "✗ 案内が既存 ~/.zshenv を上書きする手順のみ: $out"
+  fails=$(( fails + 1 ))
+fi
+
 # 4. 受け付ける値の集合が _nviminit.lua と一致する
 #    lua 側: dotfiles_truecolor_supported の中の `flag == "..."` を全部拾う
 lua_values=$(awk '/^local function dotfiles_truecolor_supported\(\)/ { inside = 1 }
@@ -78,9 +108,11 @@ lua_values=$(awk '/^local function dotfiles_truecolor_supported\(\)/ { inside = 
                   inside && /^end$/ { exit }' "$ROOT_DIR/_nviminit.lua" |
              grep -oE 'flag == "[^"]*"' | sed 's/.*"\(.*\)"/\1/' | sort -u | tr '\n' ' ')
 #    zsh 側: case の「黙る」腕のパターン
-#    🚨 `)` の手前だけを取る。行末まで拾うと `return 0` が値に混ざる (最初にそう書いて落ちた)
-zsh_values=$(printf '%s\n' "$fn" | grep -E '^ *[a-z0-9|]+\) return 0 ;;$' |
-             sed 's/).*//; s/[^a-z0-9|]//g' | tr '|' '\n' | grep -v '^$' | sort -u | tr '\n' ' ')
+#    🚨 case の**パターンだけ**を取る。腕の中身まで含めて grep すると、腕に処理を足した
+#    瞬間に抽出が 0 件になる (最初は `\) return 0 ;;$` で固定していて、export 検査を
+#    足したときに壊れた)。`""` と `*)` の腕はこの文字クラスに当たらないので自然に外れる
+zsh_values=$(printf '%s\n' "$fn" | grep -oE '^ *[a-z0-9]+(\|[a-z0-9]+)*\)' |
+             sed 's/).*//; s/ //g' | tr '|' '\n' | grep -v '^$' | sort -u | tr '\n' ' ')
 if [[ -z "$lua_values" || -z "$zsh_values" ]]; then
   print -u2 "✗ 値の抽出に失敗した (lua='$lua_values' zsh='$zsh_values')。抽出が壊れている"
   fails=$(( fails + 1 ))

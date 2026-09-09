@@ -887,13 +887,24 @@ if [[ -o interactive ]] && [[ -t 1 ]]; then
   # 値そのものはマシンの能力なので dotfiles では持てない (雛形は _zshenv.example)。
   # 🚨 受け付ける値は _nviminit.lua と揃っていること。ずれると「設定したのに効かない」が
   # 黙って起きる (tests/zshrc/test_truecolor_flag_check.sh が両者を突き合わせる)。
+  # 🚨 直し方の案内で `cp` を無条件に勧めない。「未設定」が出る典型は
+  # **~/.zshenv は在るがこの 1 行だけ無い**ケースで、そこへ cp すると中身を消す。
   _dotfiles_check_truecolor() {
+    local how="~/.zshenv が**無ければ** 'cp ~/dotfiles/_zshenv.example ~/.zshenv'、**在れば** 'export SUPPORT_TRUECOLOR=false' (対応端末なら true) の 1 行を足してね。"
     case "${SUPPORT_TRUECOLOR-}" in
-      true|false|0|1) return 0 ;;
+      true|false|0|1)
+        # 🚨 値だけでなく **export されているか**まで見る。_nviminit.lua が読むのは
+        # vim.env = 子プロセスの環境なので、export の無いシェル変数は届かない。
+        # 実測 2026-09-10 (env -u で隔離): `SUPPORT_TRUECOLOR=false` (export 無し) だと
+        # nvim 側は vim.env.SUPPORT_TRUECOLOR == nil = 「不明 → 対応」の誤判定に落ちる。
+        # 値の検査だけだとこの形を「設定済み」として黙って通していた (敵対レビュー P2)。
+        [[ ${(t)SUPPORT_TRUECOLOR} == *export* ]] && return 0
+        print -r -- "[dotfiles] SUPPORT_TRUECOLOR=${SUPPORT_TRUECOLOR} は設定されていますが **export されていない**ので nvim へ届きません (vim.env が nil になり誤判定します)。行頭に export を付けてね。"
+        ;;
       "")
-        print -r -- "[dotfiles] SUPPORT_TRUECOLOR が未設定です。この端末が truecolor 対応かは人しか知らず、未設定だと tmux 内の nvim が誤判定します。'cp ~/dotfiles/_zshenv.example ~/.zshenv' して true/false を選んでね。" ;;
+        print -r -- "[dotfiles] SUPPORT_TRUECOLOR が未設定です。この端末が truecolor 対応かは人しか知らず、未設定だと tmux 内の nvim が誤判定します。${how}" ;;
       *)
-        print -r -- "[dotfiles] SUPPORT_TRUECOLOR='${SUPPORT_TRUECOLOR}' は _nviminit.lua が解釈しない値です (true/false/1/0 のいずれか)。このままだと未設定と同じく誤判定します。" ;;
+        print -r -- "[dotfiles] SUPPORT_TRUECOLOR='${SUPPORT_TRUECOLOR}' は _nviminit.lua が解釈しない値です (true/false/1/0 のいずれか)。このままだと未設定と同じく誤判定します。${how}" ;;
     esac
   }
   _dotfiles_check_truecolor
