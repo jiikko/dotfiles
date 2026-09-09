@@ -34,8 +34,13 @@ TMP_DIR="$(mktemp -d)"
 BIN="$TMP_DIR/bin"
 mkdir -p "$BIN"
 
+# 🚨 socket ファイルも消す (issue 305 ①)。`kill-server` は socket を残すので、
+# このテストは走るたびに `/tmp/tmux-$uid/ctrlv-test-<pid>` を 1 個ずつ積んでいた
+# (実測 2026-09-10: 既定の socket dir に溜まった 535 個のうち最大勢力)。
+# shellcheck source=tests/tmux/lib/kill_socket.sh
+. "$ROOT_DIR/tests/tmux/lib/kill_socket.sh"
 cleanup() {
-  tmux -L "$SOCK" kill-server 2>/dev/null
+  tt_tmux_kill_socket "$SOCK"
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT

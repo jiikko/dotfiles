@@ -46,7 +46,11 @@ fi
 SOCKET="pane-state-bell-$$"
 TMUX_OUTER_SOCK=${TMUX:-}; TMUX_OUTER_SOCK=${TMUX_OUTER_SOCK%%,*}   # 本番ソケット (tmux 外 = CI では空。set -u なので :- が要る)
 unset TMUX TMUX_PANE
-cleanup() { tmux -L "$SOCKET" kill-server 2>/dev/null || :; }
+# 🚨 socket ファイルも消す (issue 305 ①)。`kill-server` は socket を残すので、
+# このテストは走るたびに `pane-state-bell-<pid>` を 1 個ずつ積んでいた。
+# shellcheck source=tests/tmux/lib/kill_socket.sh
+. "$ROOT_DIR/tests/tmux/lib/kill_socket.sh"
+cleanup() { tt_tmux_kill_socket "$SOCKET"; }
 trap cleanup EXIT
 tmux -L "$SOCKET" -f /dev/null new-session -d -x 80 -y 24 'sleep 300'
 TMUX_SOCK=$(tmux -L "$SOCKET" display -p '#{socket_path}')
