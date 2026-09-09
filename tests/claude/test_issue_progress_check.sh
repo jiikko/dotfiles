@@ -125,9 +125,11 @@ printf '# 105 ref\n\n残課題: 106 待ち\n' >"$repo/issues/105-bug-v.md"
 printf '# 106 target\n' >"$repo/issues/106-bug-u.md"
 git -C "$repo" add -A && git -C "$repo" commit -qm "chore: 105/106 を起票"
 hook "$START" s8 >/dev/null
-printf '# 105 ref\n\n残課題: 106 待ち\n\n2026-09-09: 106 で解消。\n' >"$repo/issues/105-bug-v.md"
+# 🚨 **実際に書かれた文面**で試す。助詞つきの `NNN で解消` だけに限ると、
+# 「106 は ② … だけ解消」のような普通の書き方を拾えない (判定を足した当日に踏んだ)。
+printf '# 105 ref\n\n残課題: 106 待ち\n\n2026-09-09: **106 は ② Go の方だけ解消**（① は継続）。\n' >"$repo/issues/105-bug-v.md"
 git -C "$repo" commit -qam "docs(105): 106 の完了を書き戻す"
-check "「NNN で解消」を進捗として数える" "" "$(grep -E '105-bug-v.md: 変更はあるが' <<<"$(reason s8)" || true)"
+check "「NNN … 解消」を進捗として数える" "" "$(grep -E '105-bug-v.md: 変更はあるが' <<<"$(reason s8)" || true)"
 
 # --- issue 339: worktree の commit を「触っていない」と誤検出しない ----------------------------
 #

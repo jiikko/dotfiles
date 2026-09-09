@@ -113,7 +113,11 @@ max_over_worktrees() { # max_over_worktrees <数える関数> <root 相対パス
   done < <(worktrees)
   printf '%s' "$best"
 }
-count_crossrefs() { grep -cE '[0-9]{3,}[^0-9]{0,20}(で解消|で継続|で対応|が done|も done|は done)' 2>/dev/null || true; }
+# 🚨 **文面を決め打たない**。最初 `NNN で解消` のような助詞つきの形に限ったところ、
+# **自分が書いた「305 は ② … だけ解消」を拾えず**、規約どおり書いたのに未対応と判定された
+# (実測 2026-09-09。判定を足した当日に踏んだ)。番号の近く (30 文字以内) に決着を表す語が
+# あれば数える、まで緩める。多少の偽陽性より、**規約を守った人を叱る方**が害が大きい。
+count_crossrefs() { grep -cE '[0-9]{3,}[^0-9]{0,30}(解消|継続|完了|却下|done)' 2>/dev/null || true; }
 
 findings=""
 add() { findings="${findings}${findings:+$'\n'}$1"; }
