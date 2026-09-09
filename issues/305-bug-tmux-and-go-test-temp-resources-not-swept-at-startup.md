@@ -66,7 +66,99 @@ $TMPDIR/glogx-test-cache*  =  40 個（実測 2026-09-06）
 - issue 304（既存 6 本の tmux 孤児をどうするか。ユーザー判断待ち）
 - issue 299 / 308（同じ「trap だけに預けた後始末」ファミリーの shell 版）
 
-## 進捗 (2026-09-08) — 未着手。325 から材料を引き継いだだけ
+## 進捗 (2026-09-09) — ② Go テストの一時ディレクトリを実装。① tmux socket は残作業
+
+### 🚨 着手前に数え直した: ② の残骸は現時点で **0 件**
+
+`glogx-test-cache*` / `disk-delete-cache-*` / `glogx-issues-test-tmp*` はいずれも 0 件。
+issue 325 の runner 隔離（各スイートに使い捨て TMPDIR を配る）が効いて、`make test` 経由では
+残らなくなっていた。
+
+**それでも漏れる経路は実在する**ことを実測で確定させた（数字が 0 でも機構が要る根拠）:
+
+```
+$ go test -c -o /tmp/glogx.test ./ && /tmp/glogx.test -test.run Test & sleep 2; kill -9 $!
+$ find $TMPDIR -maxdepth 1 -name 'glogx-test-cache*' | wc -l
+1                      # ← SIGKILL は m.Run() から戻らないので末尾の RemoveAll に到達しない
+```
+
+### §0-A「作らずに済む構造はないか」— 掃除の母集合を自分の 1 dir に閉じた
+
+TMPDIR 全体を prefix で走査する形（issue の推奨 1 の素朴な読み方）は**採らなかった**。
+TMPDIR は env で差し替え可能でテストは日常的に差し替えるので、`TMPDIR=/tmp` で走らせた瞬間に
+「他人のものを prefix で拾う」形になる。代わりに:
+
+- 一時 dir は **`$TMPDIR/dotfiles-go-test/<prefix>.<pid>.<連番>`** に作る（`0o700`）
+- 掃除が見るのは **その親 dir の直下だけ**。そこは自分が作ったもの以外入らない
+- 「同じ dir 名を使い回して残骸を 1 件に抑える」案は**却下**。並行実行が同じ dir を共有して
+  cross-talk する（325 の runner 経由なら TMPDIR が別なので衝突しないが、`go test` 直叩きを
+  2 つ並べると衝突する）
+
+### 新設: `src/doctor/testtmp`
+
+`doctor` は `glogx` から replace で取り込まれているので、**新しいモジュールを足さずに 3 箇所から
+呼べる**（`glogx` / `glogx/issues` / `doctor/disk`）。テスト専用ヘルパーのために CI レーンつきの
+モジュールを 1 本増やすのは重いと判断した。
+
+安全側の作り:
+
+| 条件 | 実装 |
+|---|---|
+| root の**直下だけ**（再帰しない） | `os.ReadDir` 1 段 |
+| **symlink を辿らない** | `os.Lstat` + `ModeSymlink` を skip |
+| **自分の uid が所有** | `ownedByMe`（純関数へ切り出してテスト可能にした） |
+| pid が**自分でなく、生きていない** | `syscall.Kill(pid, 0)` の errno |
+| **プロセスは絶対に kill しない** | pid は「使用中か」の判定にのみ使う。消すのは dir だけ |
+| 判定不能は**消さない側** | uid が読めない / pid が読めない / errno が ESRCH 以外 |
+| 回収件数を返す | `Setup` の第 2 戻り値。呼び出し元が stderr へ報告（0 件を成功の証拠にしない） |
+
+### 自分で踏んだバグ 2 件（どちらも変異が炙り出した）
+
+1. **`alive()` が `os.FindProcess` + `Process.Signal` の文言判定だった**。reap 済みの pid に
+   `os: process already finished` が返り、**死んでいるものを「生きている」と読む**（= 掃除が
+   1 件も動かない）。`syscall.Kill` の errno（ESRCH / EPERM）へ変えた
+2. **テストヘルパーの `t.Skipf` が変異判定を汚染していた**。`alive()` を壊す変異を当てると
+   前提チェックが skip して緑になる。wait4 直後の pid 再利用は実質ゼロなので `t.Fatalf` へ
+
+### 変異検証（7 本、すべて red / baseline green・3 回連続）
+
+生死判定を無効化 / symlink を辿る / prefix 検証をやめる / swept を常に 0 / uid 検証を無効化 /
+errno を取り違える（ESRCH → EPERM）/ `Sys()` 判定不能を通す。
+ビルド不能になった変異は red / green に丸めず**第 3 の結果**として当て直した（実際 3 回起きた）。
+
+### E2E の証拠
+
+SIGKILL で `glogx-cache.87701.3279549249` が残った状態から `go test` を 1 回走らせると、
+`dotfiles-go-test/` が空になることを確認。
+
+### 既存の canary に 1 度落とされた
+
+`doctor/disk` の `TestDestructiveCallsGoThroughHook` が
+「`TestMain` が走査に入っていない（検査の対象が壊れている）」で赤くなった。一時 dir の後始末が
+`testtmp` の cleanup へ移り、**この file 内に破壊的呼び出しを持たなくなった**ため。
+「必ず見つかるはずの関数」の一覧から `TestMain` を外し、**理由と「走査自体は今も通る」ことを
+コメントに固定**した（破壊的呼び出しを足せば今も報告される）。
+
+## 残タスク — ① tmux 隔離 socket は未着手
+
+**このセッションでは ② だけを閉じた。** ① を分けたのは、性質が違うため:
+
+- ② が消すのは**ディレクトリ**だが、① が回収したいのは**孤児 tmux サーバ (プロセス)**。
+  dir を消してもサーバは残る（`tmux-probe-requires-socket-isolation.md` の既知の罠）
+- 消す = `tmux -L <name> kill-server` なので、**母集合を取り違えると本番のサーバを殺す**。
+  実際 2026-07-30 に本番サーバ誤殺の事故が起きている
+- 既存 6 本の処遇は **issue 304 でユーザー判断待ち**。判断が出る前に自動回収を入れると、
+  その 6 本を勝手に消すことになる
+
+着手するときに要るもの（issue の推奨 2・3・4 に対応）:
+
+- [ ] socket 名の prefix を repo 共通の識別子へ揃える（現状 `dfms-` / `rl` / `rs` / `t3-` /
+      `__readonly_review_test_` とバラバラで、**掃除の母集合を機械で書けない**）
+- [ ] 揃えた prefix を母集合に、`tests/tmux/lib/isolate_env.sh` へ起動時掃除を入れる
+- [ ] `_claude/rules/tmux-probe-requires-socket-isolation.md` に
+      「隔離した socket は起動時掃除で回収する」を 1 行足す
+- [ ] issue 304 の判断が出てから（勝手に既存 6 本を消さない）
+
 
 **この issue 自体はまだ着手していない。** issue 325（発生源の遮断）を片付けた副産物として、
 「TMPDIR 隔離では原理的に消せない残骸」がこの issue の担当として確定し、調査の起点まで

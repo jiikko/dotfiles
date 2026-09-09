@@ -641,7 +641,13 @@ func TestDestructiveCallsGoThroughHook(t *testing.T) {
 	}
 	// 0 件だけでなく、**要になる関数が走査に入っていること**を見る
 	// (表からキーが 1 つ落ちても他で checked > 0 になり、穴が緑に埋もれるため)
-	for _, want := range []string{"removeItem", "trashMove", "discard", "TestMain"} {
+	// 🚨 `TestMain` は 2026-09-09 (issue 305) にこの表から外した。一時 dir の後始末が
+	// `doctor/testtmp` の cleanup へ移り、**この file 内に破壊的呼び出しを持たなくなった**ため
+	// (走査自体は今も TestMain を通るので、破壊的呼び出しを足せばここで報告される。
+	// 外したのは「必ず見つかるはずの関数」の一覧からだけ)。
+	// testtmp 側の RemoveAll は doctor/testtmp のテストが守る (symlink を辿らない /
+	// 他人の uid を触らない / 生きている pid の dir を消さない)。
+	for _, want := range []string{"removeItem", "trashMove", "discard"} {
 		if !sawFunc[want] {
 			t.Errorf("%s が走査に入っていない (検査の対象が壊れている)", want)
 		}
