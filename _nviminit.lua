@@ -380,13 +380,15 @@ require("lazy").setup({
       local function enable_available()
         local ready = {}
         for name in pairs(lsp.server_packages) do
-          local cmd = vim.lsp.config[name] and vim.lsp.config[name].cmd
           -- cmd が関数のサーバ (ruby_lsp / ts_ls / eslint / html / cssls / jsonls / yamlls /
           -- tailwindcss) は実在判定できないため無条件に enable に含める。この場合バイナリ不在は
           -- 通知されず :LspLog にだけ残る (ruby_lsp は lsp.lua の root_dir が「git repo の root
           -- かつ ruby-lsp が起動できる」project にだけ on_dir を呼ぶので、gem 未導入の ruby
           -- version では attach 自体が起きない)。
-          if type(cmd) ~= "table" or vim.fn.executable(cmd[1]) == 1 then
+          -- 🚨 判定の実体は lsp.server_binary_available (issue 341)。lsp.lua の
+          -- ruby_lsp_failed も同じ述語でフォールバック先を見るので、ここに式を書き直さない
+          -- (2 実装になると片方だけ変わり、通知が黙って嘘になる)。
+          if lsp.server_binary_available(name) then
             table.insert(ready, name)
           end
         end

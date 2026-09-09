@@ -158,10 +158,17 @@ function M.ruby_lsp_failed(root, code, signal, deps, stopping)
   local notify = deps.notify or vim.notify
   local reattach = deps.reattach or function() vim.cmd.doautoall("nvim.lsp.enable FileType") end
   -- 🚨 「solargraph に切り替えます」と言う前に、solargraph が本当に起動しうるか見る。
-  --    _nviminit.lua の enable_available は table cmd のサーバをバイナリ実在で絞るので、
-  --    mason が未導入 / 導入中のあいだ solargraph は enable されていない。その窓で倒すと
-  --    「切り替えます」と言いながら何も起動せず、**嘘の説明つきで Ruby の LSP が消える**。
+  --    その窓で倒すと「切り替えます」と言いながら何も起動せず、**嘘の説明つきで
+  --    Ruby の LSP が消える**。
+  --
+  -- 🚨 **`is_enabled` だけに預けない** (issue 341)。`is_enabled` が「起動しうる」を意味するのは
+  --    `_nviminit.lua` の `enable_available` が **cmd が table のサーバをバイナリ実在で絞る**
+  --    副作用があるからで、`cmd` が関数のサーバ (ruby_lsp / ts_ls 等) では常に true になる。
+  --    フォールバック先を関数 cmd のサーバへ変えた日に**この通知が黙って嘘に戻る**ので、
+  --    判定を `enable_available` と同じ述語 (`M.server_binary_available`) と **and** で取る。
+  local binary_ok = deps.server_binary_available or M.server_binary_available
   local fallback_ok = (deps.solargraph_enabled or vim.lsp.is_enabled)("solargraph")
+    and binary_ok("solargraph", deps)
   notify(("ruby-lsp が%s\n%s は %s"):format(reason, root, fallback_ok
       and "solargraph に切り替えます (:RubyLspInfo で内訳 / :RubyLspReset で選び直し)"
       or "solargraph も使えません (:Mason で solargraph を入れるか、bundle を直して :RubyLspReset)"),
@@ -478,6 +485,25 @@ M.server_packages = {
   sqlls = "sqlls",
   terraformls = "terraform-ls", -- vim-terraform 置換 (2026-07): 補完/診断/hover を terraform-ls に委譲
 }
+
+-- server_binary_available は「そのサーバの実行ファイルが在るか」を返す。
+--
+-- 🚨 **`enable_available` (_nviminit.lua) と同じ述語をここへ寄せた** (issue 341)。
+-- 以前は判定が `_nviminit.lua` にだけ在り、`lsp.lua` は `vim.lsp.is_enabled` を
+-- 「起動しうるか」の proxy として読んでいた。proxy が成り立つのは
+-- **cmd が table のサーバに限る**ので、依存が 2 ファイルに跨ったまま暗黙になっていた。
+--
+-- 🚨 **cmd が関数のサーバは判定できないので true を返す** (ruby_lsp / ts_ls / eslint /
+-- html / cssls / jsonls / yamlls / tailwindcss)。呼び出し側はこれを「起動する」ではなく
+-- 「**起動しないとは言えない**」として扱うこと。
+function M.server_binary_available(name, deps)
+  deps = deps or {}
+  local configs = deps.lsp_config or vim.lsp.config
+  local executable = deps.executable or vim.fn.executable
+  local cmd = configs and configs[name] and configs[name].cmd
+  if type(cmd) ~= "table" then return true end
+  return executable(cmd[1]) == 1
+end
 
 -- mason-tool-installer へ渡すパッケージ名。false のサーバ (mason 管理外) を落とす。
 -- フィルタをテーブルの隣に置くのは、_nviminit.lua 側で書くと「false を渡さない」規則が

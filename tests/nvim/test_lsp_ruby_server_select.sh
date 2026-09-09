@@ -12,6 +12,10 @@ NVIM_BIN=${NVIM:-nvim}
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
 CONFIG_FILE="$ROOT_DIR/_nviminit.lua"
+# 🚨 静的 pin が **この checkout の** _nviminit.lua を読むように渡す。渡さないと
+# lua 側のフォールバック ($HOME/dotfiles) が効いて、worktree で走らせても**本番を検査する**
+# (= 隔離環境のつもりで本番を見る形。test_lsp_progress.sh が同じ理由で export している)。
+export DOTFILES_INIT="$CONFIG_FILE"
 
 if ! command -v "$NVIM_BIN" >/dev/null 2>&1; then
   print -u2 "Error: nvim binary not found. Install Neovim or set \$NVIM."

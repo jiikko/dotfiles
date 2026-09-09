@@ -5,7 +5,7 @@
 優先度: 低（今すぐ壊れてはいない。**壊れたときに黙る**形なので記録しておく）
 出典: issue 337 の作業中に見つけたぼやき。**起票前に実コードで裏を取り、主張を 1 つ訂正した**
 
-対象: [`_nviminit.lua`](../_nviminit.lua) の `enable_available` / [`nvim/lua/dotfiles/lsp.lua`](../nvim/lua/dotfiles/lsp.lua)
+対象: [`_nviminit.lua`](../../_nviminit.lua) の `enable_available` / [`nvim/lua/dotfiles/lsp.lua`](../../nvim/lua/dotfiles/lsp.lua)
 
 ## 何が非対称か
 
@@ -56,19 +56,68 @@ local fallback_ok = (deps.solargraph_enabled or vim.lsp.is_enabled)("solargraph"
    実行ファイルを取り出せるか試す（副作用の有無を先に確かめること）
 3. 何もしない。代わりに `lsp.lua:164` の直近へ
    「**`solargraph` の `cmd` が table であることに依存している**」と制約を書く
-   （[`pending-issue-rationale-in-code.md`](../_claude/rules/pending-issue-rationale-in-code.md)）
+   （[`pending-issue-rationale-in-code.md`](../../_claude/rules/pending-issue-rationale-in-code.md)）
 
 **まず 3 をやるのが安い**。1 は「複雑性が下がるか」を確かめてから
-（[`verify-design-intent-before-refactor.md`](../_claude/rules/verify-design-intent-before-refactor.md)）。
+（[`verify-design-intent-before-refactor.md`](../../_claude/rules/verify-design-intent-before-refactor.md)）。
 
 ## 受け入れ条件
 
-- [ ] `lsp.lua` の `fallback_ok` が依存している前提（`solargraph` の `cmd` が table）が、
+- [x] `lsp.lua` の `fallback_ok` が依存している前提（`solargraph` の `cmd` が table）が、
       コードかテストのどちらかに**機械で確認できる形**で固定されている
-- [ ] または、その前提に依存しない形へ寄せてある
-- [ ] **変異検証**: `solargraph` の定義を「`cmd` が関数」に変えると red になる
+- [x] または、その前提に依存しない形へ寄せてある
+- [x] **変異検証**: `solargraph` の定義を「`cmd` が関数」に変えると red になる
 
 ## 関連
 
 - issue 337（`fallback_ok` を入れた変更。この issue はその依存関係の側を見る）
 - issue 332 / 333（Ruby の LSP 選択の経緯）
+
+## 結果（2026-09-09）— 対応案 1（述語を共有）を採った
+
+対応案 3（コメントで制約を書く）が安いと本文に書いたが、**pin できないことが分かったので 1 にした**。
+
+### 🚨 pin は成立しなかった（実測）
+
+受け入れ条件は「`solargraph` の `cmd` が table であることを機械で確認する」だったが、
+テスト環境では **`vim.lsp.config.solargraph` が nil** だった:
+
+```
+$ nvim --headless -u _nviminit.lua "+lua vim.wait(300)" "+lua print(vim.lsp.config.solargraph)"
+solargraph cfg: nil        # lspconfig が遅延読み込みなので、この時点では未定義
+```
+
+前提を pin できないなら、**前提に依存しない形へ寄せる**しかない。
+
+### 述語を 1 か所へ寄せた
+
+`M.server_binary_available(name, deps)` を `lsp.lua` に新設し、
+`_nviminit.lua` の `enable_available` と `lsp.lua` の `fallback_ok` の**両方**が呼ぶ。
+`fallback_ok` は `is_enabled` **and** `server_binary_available` で取るので、
+`is_enabled` が意味を持たないサーバ（`cmd` が関数）に切り替えても嘘にならない。
+
+述語は「`cmd` が table でなければ **true**」を返す。呼び出し側はこれを「起動する」ではなく
+**「起動しないとは言えない」**として扱う、とヘッダに明記した。
+
+### 変異検証（6 本、すべて red / baseline green）
+
+| 変異 | 落ちた assert |
+|---|---|
+| `fallback_ok` を `is_enabled` だけに戻す | enable 済みでもバイナリ不在なら「使えません」と言うこと |
+| 関数 cmd を false 扱いにする | `server_binary_available`: 関数 cmd は判定できないので true |
+| 実在判定を常に true に | `server_binary_available`: table cmd + 不在 |
+| `_nviminit` が述語を使わない（式を書き直す） | 静的 pin |
+| `_nviminit` の呼び出しを**コメントアウト**する | 静的 pin（行頭固定なので回避できない） |
+
+`_nviminit.lua` 側だけ seam が無い（`enable_available` は lazy.nvim の config 内のローカル関数）ので
+静的 pin にしたが、**行頭に固定**した。部分一致だとコメントアウトを素通しする
+（issue 310 で実際に踏んだ形）。
+
+### 🚨 ついでに直した: 静的 pin が worktree でなく本番を読んでいた
+
+`lsp_ruby_server_select_check.lua` に静的 pin を足したところ、
+`vim.env.DOTFILES_INIT or ($HOME/dotfiles/_nviminit.lua)` のフォールバックが効いて、
+**worktree で走らせているのに `~/dotfiles` を検査して赤くなった**。
+runner（`test_lsp_ruby_server_select.sh`）から `DOTFILES_INIT` を export する形にした
+（`test_lsp_progress.sh` が同じ理由で既に export していた）。
+これは issue 334 の作業中にぼやかれていた形そのもの。

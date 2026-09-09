@@ -647,5 +647,57 @@ if not vim.tbl_contains(mason, "solargraph") then
   fail("mason_packages() に solargraph が無い。フィルタが落としすぎている")
 end
 
+-- --- issue 341: 「起動しうるか」の述語を 1 か所へ寄せた ------------------------------------
+--
+-- 🚨 以前は判定が _nviminit.lua にだけ在り、lsp.lua は vim.lsp.is_enabled を「起動しうるか」の
+-- proxy として読んでいた。proxy が成り立つのは **cmd が table のサーバに限る**ので、
+-- フォールバック先を関数 cmd のサーバへ変えた日に通知が黙って嘘に戻る形だった。
+local binary_cases = {
+  -- { 名前, cmd, executable の戻り, 期待 }
+  { "table cmd + 実在", { "solargraph" }, 1, true },
+  { "table cmd + 不在", { "solargraph" }, 0, false },
+  { "関数 cmd は判定できないので true", function() end, 0, true },
+  { "config が無いサーバも true", nil, 0, true },
+}
+for _, c in ipairs(binary_cases) do
+  local name, cmd, exe, want = c[1], c[2], c[3], c[4]
+  local got = lsp.server_binary_available("solargraph", {
+    lsp_config = cmd ~= nil and { solargraph = { cmd = cmd } } or {},
+    executable = function() return exe end,
+  })
+  if got ~= want then
+    fail(("server_binary_available: %s → %s (want %s)"):format(name, tostring(got), tostring(want)))
+  end
+end
+
+-- 🚨 **_nviminit.lua が同じ述語を呼んでいること**を静的に固定する。
+-- seam が無い (enable_available は lazy.nvim の config 内のローカル関数で、外から呼べない) ので
+-- ここだけはソースを読む。**行頭に固定**するのが要点 — 部分一致だとコメントアウトを素通しする
+-- (issue 310 で実際に踏んだ形)。
+local init_path = vim.env.DOTFILES_INIT or (vim.env.HOME .. "/dotfiles/_nviminit.lua")
+local init_src = table.concat(vim.fn.readfile(init_path), "\n")
+if not init_src:find("\n%s*if lsp%.server_binary_available%(name%) then") then
+  fail(("%s の enable_available が lsp.server_binary_available を呼んでいない " ..
+    "(判定が 2 実装に戻ると、片方だけ変わって通知が黙って嘘になる)"):format(init_path))
+end
+
+-- 🚨 **and で取っていること**。is_enabled だけを見る形へ戻すと、バイナリ不在でも
+-- 「solargraph に切り替えます」と言う (= 嘘の説明つきで Ruby の LSP が消える)。
+local notices = {}
+lsp.ruby_server_cache["/tmp/p341"] = "ruby_lsp"
+lsp.ruby_lsp_failed("/tmp/p341", 78, 0, {
+  notify = function(msg) table.insert(notices, msg) end,
+  reattach = function() end,
+  solargraph_enabled = function() return true end,   -- enable はされている
+  executable = function() return 0 end,              -- が、バイナリは不在
+  lsp_config = { solargraph = { cmd = { "solargraph" } } },
+}, false)
+if #notices ~= 1 then
+  fail(("通知が %d 件 (want 1)"):format(#notices))
+elseif not notices[1]:find("solargraph も使えません", 1, true) then
+  fail(("enable 済みでもバイナリ不在なら「使えません」と言うこと。実際: %s"):format(notices[1]))
+end
+lsp.ruby_server_cache["/tmp/p341"] = nil
+
 print(("OK ruby lsp server select: %d root で排他を確認 (Gemfile × 起動可否の 4 象限 / 起動判定 %d ケース / プローブの cmd・cwd・env・キャッシュ / 実 fs の root ゲート %d ケース / mason %d 件から ruby-lsp を除外 / env %d ケース + 実サーバ cmd の env・cwd / 異常終了の判定 %d ケース + 倒す副作用と on_exit 配線 / :RubyLspInfo の内訳と :RubyLspReset の停止順)"):format(
   checked, #system_cases, #fs_cases, #mason, #env_cases, #reason_cases))
