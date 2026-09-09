@@ -2,7 +2,7 @@
 
 起票日: 2026-09-10
 カテゴリ: bug
-優先度: 中（**`make test` が常に赤**なので、本物の失敗が埋もれる）
+優先度: 中（**手元の `make test` が常に赤**なので、本物の失敗が埋もれる。CI では素通しする）
 出典: 2026-09-10 のセッションで `make test` を回して踏んだ
 
 ## 何が起きるか
@@ -23,11 +23,22 @@ FAIL: dangling symlink /Users/koji/.config/nvim/init.vim-12-11-2024-17-12-59.pre
   `setup.sh:107` の `legacy_links` は `bashrc bash_profile screenrc` の 3 つしか見ておらず、
   `~/.config/nvim/*.pre-dein-vim` は掃除対象に入っていない（実測）
 
+## 🚨 これは**手元だけ**の赤で、CI では起きない（2026-09-10 の反証レビューで確定）
+
+- `.github/` に `setup.sh` の呼び出しは **0 件**（checkout するだけ）。CI の HOME には
+  dotfiles 由来の symlink が 1 本も無い
+- `tests/claude/test_dangling_symlinks.sh:11` 自身がそう書いている:
+  「dotfiles 未 symlink の環境 (CI 等) では対象リンクが 0 件になり素通しで pass する」
+
+つまり **この検査は CI では構造的に vacuous** で、守っているのは開発機の HOME だけ。
+「CI が赤い」ではないので緊急度はその分下がるが、下の理由で放置はしない。
+
 ## なぜ放置できないか
 
-`make test` が**この 1 件だけで常に rc≠0** になるので、「赤いのは既知のあれ」で読み飛ばす癖がつく。
+`make test` が**手元で常に rc≠0** になるので、「赤いのは既知のあれ」で読み飛ばす癖がつく。
 [`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)
 が禁じる「緑を見ずに判断する」の裏返しで、**恒常的な赤は本物の失敗を隠す**。
+しかも CI では素通しなので、**手元で読み飛ばした瞬間に誰も見ていない状態**になる。
 
 ## 対応案
 
