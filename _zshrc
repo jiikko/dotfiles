@@ -798,7 +798,7 @@ if [[ -o interactive ]] && [[ -t 1 ]]; then
     _dotfiles_check_files=()
   }
   _dotfiles_check_bg() {
-    local watched="$1" state="$2" f="$3" msg="$4" cur out
+    local watched="$1" state="$2" f="$3" msg="$4" owner="$5" cur out
     cur="$(shasum -a 256 "$watched" 2>/dev/null | awk '{print $1}')"
     if [ -n "$cur" ] && [ "$cur" != "$(cat "$state" 2>/dev/null)" ]; then
       out="$msg"
@@ -809,7 +809,18 @@ if [[ -o interactive ]] && [[ -t 1 ]]; then
     # 🚨 `> "$f"` と直接書かない。create と write は別操作なので、その隙間に precmd が拾うと
     # 空を読んで「同期済み」と解釈し、通知を 1 つ落とす。書き切ってから rename して公開する
     # (「result が在る = 完成している」を不変条件にする)。
-    print -r -- "$out" > "$f.partial" && command mv -f -- "$f.partial" "$f"
+    print -r -- "$out" > "$f.partial" || return
+    # 🚨 親シェルが既に終わっているなら公開せず捨てる。zshexit の後始末は「終了時点で在るもの」
+    # しか消せず、この bg は disown 済み (&!) で親より長生きしうるので、後から公開すると
+    # **誰も読まない残骸が確定する** (実測 2026-09-09: shasum が遅い環境を作って再現した。
+    # 固定名だった頃は次のシェルの rm が拾っていたが、pid 名にすると溜まる側に変わる)。
+    # kill は zsh の builtin なので fork しない。pid 再利用や EPERM を踏んでも被害は
+    # 「読まれないファイルを 1 つ置く」側にしか出ない (自分の .partial 以外は消さない)。
+    if kill -0 "$owner" 2>/dev/null; then
+      command mv -f -- "$f.partial" "$f"
+    else
+      command rm -f -- "$f.partial"
+    fi
   }
   # watch 1 件を登録する: $1=監視ファイル $2=state $3=結果ファイル名の接頭辞
   # $4=差分時メッセージ $5=state 未存在時メッセージ (空なら黙る。karabiner のように
@@ -830,7 +841,7 @@ if [[ -o interactive ]] && [[ -t 1 ]]; then
     add-zsh-hook precmd _dotfiles_check_notify  # 重複登録は add-zsh-hook が弾く
     add-zsh-hook zshexit _dotfiles_check_cleanup
     _dotfiles_check_files+=("$f")
-    _dotfiles_check_bg "$watched" "$state" "$f" "$msg" &!  # 重い照合は非同期 (起動を止めない)
+    _dotfiles_check_bg "$watched" "$state" "$f" "$msg" $$ &!  # 重い照合は非同期 (起動を止めない)
   }
   _dotfiles_check_watch "$HOME/dotfiles/setup.sh" \
     "${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/setup-sh.sha256" \

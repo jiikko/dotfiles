@@ -165,7 +165,46 @@ else
   bad "終了後に残骸が ${#leftover} 件残った: ${leftover[*]}"
 fi
 
-# --- 6. bg は最終パスへ直接書かない (書き切ってから rename) ------------------------------
+# --- 6. 親シェルが先に終わっていたら bg は公開しない ------------------------------------
+# zshexit が消せるのは「終了時点で在るもの」だけ。bg は disown 済み (&!) なので親より長生きしうる。
+# 🚨 ここの sleep はハーネスの「待ち」ではなく**窓を作る入力**: shasum を親の終了までブロックさせて
+#    「bg が親より遅れて書き終える」状況そのものを作っている。
+reset_cache
+mkdir -p "$TD/shim0"
+gate="$TD/shasum.gate"
+cat > "$TD/shim0/shasum" <<SHIM
+#!/bin/sh
+while [ ! -f "$gate" ]; do sleep 0.05; done
+echo "cafebabe  -"
+SHIM
+chmod +x "$TD/shim0/shasum"
+c_log="$TD/c.log"
+# 🚨 \$(...) で受けない: disown した bg が stdout を握ったままなので、コマンド置換が
+#    bg の完了まで待ってしまい「親が先に終わる」窓が作れない。
+HOME="$TD/home" PATH="$TD/shim0:$PATH" zsh -f -c "
+  typeset -ga _dotfiles_check_files=()
+  autoload -Uz add-zsh-hook
+  $FNS
+  _dotfiles_check_watch \"\$HOME/dotfiles/setup.sh\" \"\$XDG_STATE_HOME/dotfiles/setup-sh.sha256\" \\
+    setup 'MSG-setup' ''
+  print \"CPID=\$\$\"
+" > "$c_log" 2>&1
+c_pid=$(sed -n 's/^CPID=//p' "$c_log")
+if [[ -z "$c_pid" ]]; then
+  print -u2 "✗ [ハーネス失敗] 親シェルが CPID を出さない: $(cat "$c_log")"
+  exit 1
+fi
+: > "$gate"   # shasum を解放 = bg がここから書き始める (親はもう居ない)
+i=0; while [[ -e "$CACHE/setup-check.$c_pid.result.partial" ]] && (( i < 200 )); do sleep 0.05; (( ++i )); done
+sleep 0.3     # rename が起きるなら起き切るまで
+orphan=( "$CACHE"/*-check."$c_pid".result(N) "$CACHE"/*-check."$c_pid".result.partial(N) )
+if (( ${#orphan} == 0 )); then
+  ok "親が先に終わっていたら bg は公開せず捨てる (読み手のいない残骸を作らない)"
+else
+  bad "親の死後に ${#orphan} 件公開した: ${orphan[*]}"
+fi
+
+# --- 7. bg は最終パスへ直接書かない (書き切ってから rename) ------------------------------
 # mv を失敗させると、原子的公開なら最終パスは 1 度も生えない。直接 `> "$f"` する実装なら生える。
 reset_cache
 mkdir -p "$TD/shim"
@@ -178,7 +217,7 @@ target="$CACHE/atomic-check.$FOREIGN_PID.result"
 HOME="$TD/home" PATH="$TD/shim:$PATH" zsh -f -c "
   $FNS
   _dotfiles_check_bg \"\$HOME/dotfiles/setup.sh\" \"\$XDG_STATE_HOME/dotfiles/setup-sh.sha256\" \\
-    '$target' 'MSG-atomic'
+    '$target' 'MSG-atomic' \$\$
 " >/dev/null 2>&1 || true
 if [[ ! -e "$target" && -f "$target.partial" ]]; then
   ok "bg は .partial に書き切ってから rename する (公開は原子的)"
