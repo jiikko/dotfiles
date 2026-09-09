@@ -83,9 +83,8 @@ func sweep(root string) int {
 		if err != nil || fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
 			continue // symlink とファイルは触らない (辿ると root の外へ出る)
 		}
-		st, ok := fi.Sys().(*syscall.Stat_t)
-		if !ok || int(st.Uid) != os.Getuid() {
-			continue // 所有者が違うものは触らない
+		if !ownedByMe(fi) {
+			continue // 所有者が違う / 判定できないものは触らない
 		}
 		pid, ok := pidOf(e.Name())
 		if !ok || pid == me || alive(pid) {
@@ -96,6 +95,19 @@ func sweep(root string) int {
 		}
 	}
 	return n
+}
+
+// ownedByMe は自分の uid が所有しているかを見る。**判定できなければ false** (消さない側)。
+//
+// 🚨 純関数に切り出してあるのは**テストできる形にするため**。所有者が違う dir は root でないと
+// 作れないので、実ファイルで異常系を作れない (`refuse-low-value-coverage.md` の「困難×高価値は
+// テスタブルへ直してから書く」)。ここが崩れると、TMPDIR を共有する環境で他人の dir を消しうる。
+func ownedByMe(fi os.FileInfo) bool {
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return false
+	}
+	return int(st.Uid) == os.Getuid()
 }
 
 // pidOf は `<prefix>.<pid>.<suffix>` の pid を返す。形が違えば ok=false (= 消さない)。

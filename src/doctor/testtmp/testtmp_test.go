@@ -175,3 +175,31 @@ func itoa(n int) string {
 	}
 	return string(b)
 }
+
+// 所有者が違う dir は触らない。
+//
+// 🚨 実ファイルでは異常系を作れない (他人所有の dir は root でないと作れない) ので、
+// 判定を純関数へ切り出して fake の FileInfo を渡す。切り出す前は**この分岐を無効化する変異が
+// 緑のまま通った** (= 何も守っていなかった)。
+func TestOwnedByMe(t *testing.T) {
+	self := fakeInfo{sys: &syscall.Stat_t{Uid: uint32(os.Getuid())}}
+	other := fakeInfo{sys: &syscall.Stat_t{Uid: uint32(os.Getuid()) + 1}}
+	unknown := fakeInfo{sys: nil} // Sys() が Stat_t を返さない platform / fs
+
+	if !ownedByMe(self) {
+		t.Error("自分の uid を他人と判定した")
+	}
+	if ownedByMe(other) {
+		t.Error("他人の uid を自分と判定した (TMPDIR を共有する環境で他人の dir を消しうる)")
+	}
+	if ownedByMe(unknown) {
+		t.Error("判定できないものを自分と判定した (判定不能は消さない側へ倒す)")
+	}
+}
+
+type fakeInfo struct {
+	os.FileInfo
+	sys any
+}
+
+func (f fakeInfo) Sys() any { return f.sys }
