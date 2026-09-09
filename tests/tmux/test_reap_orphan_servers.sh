@@ -39,6 +39,7 @@ live_pid=""
 space_pid=""
 att_pid=""
 prot_pid=""
+PROT_DIR=""
 reap_log_probe_dir=""
 # reap は実プロセステーブルを pgrep で走査する設計のため、このテストの reap 実行は「自分が作った
 # 孤児」だけでなく、実環境に偶々存在する他の dead-socket 孤児も回収しうる（reap は生存 socket を
@@ -62,7 +63,11 @@ cleanup() {
   env TMUX_TMPDIR="$ORPHAN_DIR" "$TMUX_BIN_PATH" -L "$ORPHAN_SOCK" kill-server >/dev/null 2>&1 || true
   env TMUX_TMPDIR="$SPACE_DIR"  "$TMUX_BIN_PATH" -L "$SPACE_SOCK"  kill-server >/dev/null 2>&1 || true
   env TMUX_TMPDIR="$ATT_DIR"    "$TMUX_BIN_PATH" -L "$ATT_SOCK"    kill-server >/dev/null 2>&1 || true
-  rm -rf "$ORPHAN_DIR" "$LIVE_DIR" "$SPACE_BASE" "$ATT_DIR"
+  # 🚨 **後から作る一時 dir もここへ足す**。ケース E の PROT_DIR が漏れており、
+  # 正常終了した run が 1 個ずつ /private/tmp に置いていた (実測 39 個)。途中で fail した
+  # ときにしか漏れない reap_log_probe_dir と違い、**成功パスで毎回漏れる**形だった。
+  rm -rf "$ORPHAN_DIR" "$LIVE_DIR" "$SPACE_BASE" "$ATT_DIR" \
+    ${PROT_DIR:+"$PROT_DIR"} ${reap_log_probe_dir:+"$reap_log_probe_dir"}
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM

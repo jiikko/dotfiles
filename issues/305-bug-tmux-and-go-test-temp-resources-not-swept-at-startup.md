@@ -329,3 +329,63 @@ tmux 側が将来消すようになったら、この検査は何も守らなく
       これは `mktemp -d` の殻で、socket とは別の発生源（`TMUX_TMPDIR` を作るテスト側の trap）
 - [ ] 他に `-L` を使うテストが増えたら同じヘルパーを使う。現状 `LINT_DIRS` の外なので
       機械では強制していない（検査は既知の 2 本を pin するだけ）
+
+## 空の一時ディレクトリ 39 個も発生源を断った（2026-09-10）
+
+残タスクに残っていた `/private/tmp/reapp.*` の正体は **`test_reap_orphan_servers.sh` の
+cleanup 漏れ**だった。掃除機構は作っていない（§0-A）。
+
+### 内訳を数え直した
+
+```
+$ ls -d /private/tmp/reap* | sed -E 's|.*/(reap[a-z]*)\..*|\1|' | sort | uniq -c
+   1 reapl
+  39 reapp
+   1 reaps
+```
+
+`reapl` / `reaps` は cleanup の `rm -rf` に載っているので 1 個ずつしかない（= 中断で trap が
+走らなかった 1 run 分）。**39 個の `reapp` だけが桁違い**で、これはケース E の
+`PROT_DIR=$(mktemp -d /tmp/reapp.XXXXXX)`（`test_reap_orphan_servers.sh:258`）が
+`cleanup()` の `rm -rf` に**入っていなかった**ため。中断ではなく **正常終了のたびに 1 個**漏れる。
+
+`reap_log_probe_dir` も同型の穴を持っていた（成功パスでは inline の `rm -rf` で消えるが、
+その手前で `fail` すると trap に載っていないので残る）ので、まとめて cleanup へ寄せた。
+
+### 直した形
+
+```sh
+rm -rf "$ORPHAN_DIR" "$LIVE_DIR" "$SPACE_BASE" "$ATT_DIR" \
+  ${PROT_DIR:+"$PROT_DIR"} ${reap_log_probe_dir:+"$reap_log_probe_dir"}
+```
+
+### 検査を足した（`test_socket_cleanup.sh` の ⑥、7 件）
+
+`mktemp -d` した変数がすべて cleanup の **`rm -rf` の行**に載っていることを pin する。
+🚨 **cleanup 全体を見る形は false green になる** — `kill-server` の
+`TMUX_TMPDIR="$LIVE_DIR"` に当たってしまい、`rm -rf` から外しても緑になる。実装では
+`rm -rf` の行（継続行を含む）だけを抽出している。抽出が 0 件になったら緑にせず落とす canary つき。
+件数のハードコード（`検査 6 件`）も、検査を足すたびに腐るので `checks` カウンタへ変えた。
+
+### 実測（A-B）
+
+| | 実行前 | 実行後 |
+|---|---|---|
+| 修正後 | 41 個 | **41 個**（増えない） |
+| 変異（`PROT_DIR` を `rm -rf` から外す） | 41 個 | **42 個**（1 個ずつ漏れる） |
+
+`make test-lint` rc=0 / `test_reap_orphan_servers.sh` rc=0 / `test_socket_cleanup.sh` 13 件 fail=0。
+
+### 変異検証（3 本、すべて red / baseline green）
+
+| 変異 | 結果 |
+|---|---|
+| `PROT_DIR` を `rm -rf` から外す | ✗ `$PROT_DIR` が cleanup の rm -rf に無い |
+| `cleanup()` を `do_cleanup()` に改名（抽出を壊す） | ✗ canary が発火（検査 7 件で打ち切り） |
+| `LIVE_DIR` を `rm -rf` からだけ外す（`kill-server` 行には残す） | ✗ false green にならず red |
+
+### 残タスク
+
+- [ ] **既存の 41 個の殻**（`/private/tmp/reap*`。中身は空の `tmux-501/` のみ）は未削除。
+      発生源は断ったので今後は増えない。削除はユーザー承認待ち
+- [ ] SIGKILL で trap が走らない場合は今も残る（上節と同じ「検出しないと決めた形」）

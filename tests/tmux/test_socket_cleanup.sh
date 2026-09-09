@@ -12,6 +12,9 @@
 #   - **中断 (SIGKILL) で trap が走らない場合**。次の run が同じ名前を作らない限り残る
 #     (名前に `$$` が入るため)。回収は手動 (手順は issue 305 に実測つきで書いてある)
 #   - `TMUX_TMPDIR` を差し替えるテスト。そちらは dir ごと消えるのでこの検査の対象外
+#
+# ⑥ だけは socket ではなく **その dir 自体**を見る。「dir ごと消える」は上の除外の前提なので、
+# その前提が成り立っていること自体を固定する。
 set -uo pipefail
 unset CDPATH
 unset TMUX TMUX_PANE   # 🚨 $TMUX は TMUX_TMPDIR より優先される。残すと本番を向く
@@ -21,8 +24,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "$ROOT_DIR/tests/tmux/lib/kill_socket.sh"
 
 fails=0
-ok()  { printf '✓ %s\n' "$1"; }
-bad() { printf '✗ %s\n' "$1" >&2; fails=$((fails + 1)); }
+checks=0
+ok()  { checks=$((checks + 1)); printf '✓ %s\n' "$1"; }
+bad() { checks=$((checks + 1)); printf '✗ %s\n' "$1" >&2; fails=$((fails + 1)); }
 
 
 # --- ① 前提: kill-server だけでは socket が残る (この検査が守っている事実そのもの) ------------
@@ -82,6 +86,38 @@ for t in tests/tmux/test_ctrl_v_paste.sh tests/claude/test_tmux_pane_state_bell.
   fi
 done
 
-printf '\n検査 %d 件: fail=%d\n' 6 "$fails"
+# --- ⑥ mktemp -d した dir が cleanup の rm -rf に載っていること ---------------------------
+#
+# 🚨 test_reap_orphan_servers.sh は `-L` ではなく **TMUX_TMPDIR ごと隔離する**形なので、
+# 漏れるのは socket 1 個ではなく **dir** になる。実際にケース E の `PROT_DIR` が
+# cleanup の `rm -rf` から漏れており、**正常終了のたびに 1 個ずつ** `/tmp/reapp.*` を
+# 置いていた (実測 39 個)。止めるのは「dir を足して cleanup に足し忘れる」形だけ。
+REAP="$ROOT_DIR/tests/tmux/test_reap_orphan_servers.sh"
+# 🚨 **cleanup 全体でなく `rm -rf` の行だけを見る**。全体だと `kill-server` の
+# `TMUX_TMPDIR="$LIVE_DIR"` が当たってしまい、`rm -rf` から外しても緑になる (false green)。
+reap_cleanup=$(awk '
+  /^cleanup\(\) \{$/ { inside = 1; next }
+  inside && /^\}$/     { inside = 0 }
+  inside && cont        { print; cont = (/\\$/); next }
+  inside && /rm -rf/    { print; cont = (/\\$/) }
+' "$REAP")
+reap_vars=$(grep -oE '^[A-Za-z_][A-Za-z0-9_]*=\$\(mktemp -d' "$REAP" | sed 's/=\$(mktemp -d$//')
+# canary: 抽出が壊れて 0 件になると「違反なし」で緑になる
+reap_n=$(grep -c '[A-Za-z]' <<< "$reap_vars" || true)
+if [ -z "$reap_cleanup" ] || [ "$reap_n" -lt 5 ]; then
+  bad "test_reap_orphan_servers.sh の cleanup / mktemp -d を抽出できない (vars=${reap_n}。抽出が壊れると違反 0 件で緑になる)"
+else
+  ok "test_reap_orphan_servers.sh から cleanup と mktemp -d $reap_n 件を抽出できた"
+  while IFS= read -r v; do
+    [ -n "$v" ] || continue
+    if grep -qF -- "\$$v" <<< "$reap_cleanup"; then
+      ok "test_reap_orphan_servers.sh: \$$v は cleanup で消される"
+    else
+      bad "test_reap_orphan_servers.sh: \$$v が cleanup の rm -rf に無い (run のたびに /tmp へ 1 個ずつ残る)"
+    fi
+  done <<< "$reap_vars"
+fi
+
+printf '\n検査 %d 件: fail=%d\n' "$checks" "$fails"
 [ "$fails" -eq 0 ] || exit 1
 echo "OK tmux socket cleanup"
