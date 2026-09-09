@@ -179,3 +179,13 @@ retro 342 の「dotfiles へ `_zshenv` として取り込むか」は、その�
 
 `tests/zshrc/` の関連 4 本 緑。`zsh -i -c exit` ×10 の平均 **40 ms**（追加は fork ゼロの
 `case` 1 つなので起動コストへの影響なし）。
+
+### 🚨 3 周目が要る（§7）
+
+export 検査は**新しい判定ロジック**なので、`adversarial-review-own-safeguards.md` §7 の
+例外条件 (a) を満たさない。347 とまとめて 3 周目を依頼済み。
+**指摘が出たら本 issue を `issues/` へ戻す。**
+
+攻め口として渡したもの: `${(t)}` が `scalar-export` 以外の形を返すケース
+（`typeset -x` / `readonly` 併用 / 配列 / 未定義との境界）、
+`env -u` で隔離したテストが**逆に**本番の状態を再現しなくなっていないか。
