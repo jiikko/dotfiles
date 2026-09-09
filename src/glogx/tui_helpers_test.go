@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"doctor/disk"
 	"doctor/svc"
+	"doctor/testtmp"
 	"glogx/widthenv"
 )
 
@@ -78,9 +80,15 @@ func joinDoctorCleanup(t *testing.T) {
 // TestDispWidthAgreesUnderEastAsianEnv は termwidth パッケージ側にあり、そちらの TestMain が除外する)。
 func TestMain(m *testing.M) {
 	widthenv.ExitIfUnsupported()
-	dir, err := os.MkdirTemp("", "glogx-test-cache")
+	// 🚨 **後始末は下の RemoveAll だけに預けない** (issue 305)。`m.Run()` から戻らない終了
+	// (SIGKILL / -timeout の SIGQUIT / panic) では末尾に到達せず、残骸が永久に残る
+	// (実測 2026-09-06 に 40 件)。testtmp.Setup が**起動時に前回の残骸を回収する**。
+	dir, swept, cleanup, err := testtmp.Setup("glogx-cache")
 	if err != nil {
 		panic(err) // 隔離できないまま走らせると実ユーザーのキャッシュを触る (Setenv 失敗と同じ扱い)
+	}
+	if swept > 0 {
+		fmt.Fprintf(os.Stderr, "[testtmp] 前回の残骸を %d 件回収した\n", swept)
 	}
 	if err := os.Setenv("XDG_CACHE_HOME", dir); err != nil {
 		panic(err)
@@ -92,9 +100,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	code := m.Run() // 🚨 os.Exit は defer を走らせないので、片付けは Run の後に手で書く
-	if dir != "" {
-		_ = os.RemoveAll(dir)
-	}
+	cleanup()
 	os.Exit(code)
 }
 

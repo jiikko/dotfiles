@@ -41,6 +41,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"doctor/testtmp"
 )
 
 var (
@@ -184,10 +186,15 @@ func checkViolations() error {
 
 func TestMain(m *testing.M) {
 	sandboxTmpRoot = resolveForSandbox(os.TempDir())
-	cache, err := os.MkdirTemp("", "disk-delete-cache-")
+	// 後始末を下の RemoveAll だけに預けない (issue 305)。`m.Run()` から戻らない終了では
+	// 末尾に到達しないので、testtmp.Setup が起動時に前回の残骸を回収する。
+	cache, swept, cleanupCache, err := testtmp.Setup("disk-delete-cache")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ハーネスの一時ディレクトリを作れない:", err)
 		os.Exit(1)
+	}
+	if swept > 0 {
+		fmt.Fprintf(os.Stderr, "[testtmp] 前回の残骸を %d 件回収した\n", swept)
 	}
 	// HistoryDir 未指定のテストが実キャッシュに書かないよう、置き場ごと一時領域へ向ける
 	_ = os.Setenv("XDG_CACHE_HOME", cache)
@@ -199,7 +206,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "\n🚨 %v\n", err)
 		code = 1
 	}
-	_ = os.RemoveAll(cache) // destructive-op: allow ハーネス自身が作った一時ディレクトリ
+	cleanupCache() // destructive-op: allow ハーネス自身が作った一時ディレクトリ
 	os.Exit(code)
 }
 
