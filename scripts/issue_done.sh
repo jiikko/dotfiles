@@ -47,6 +47,13 @@
 # よって走査は repo 全体へ広げ、**「移動前のパスを指す参照が repo に 0 件」**を移動後の
 # 事後条件として自前で確かめる (検査側の射程は issue 293 の判断どおり issues/ に閉じたまま)。
 #
+# ## 2 周目の敵対レビュー (2026-09-10) で塞いだ 2 件
+#
+#   P1-1 relbase が repo root 直下のファイルで絶対パスを返し、そこからの参照だけが
+#        書き換えられないまま「stale 0 件」で緑になっていた
+#   P1-2 scan_candidates (母集合) に canary が無く、走査が空振りしても緑だった。
+#        オラクル側の awk にだけ canary があり、母集合の破損は誰も見ていなかった
+#
 # ## 変異検証で red を確認した箇所 (2026-09-10)
 #
 #   手順 2 を外す → test_next_links_valid.sh が red / 手順 3 を外す・手順 4 を外す →
@@ -256,8 +263,18 @@ canary() {
 # 追跡されているか (追跡外へ git mv / git rm を打つと rc=128 で落ちる)
 tracked() { git "${GIT_DIR_ARG[@]}" ls-files --error-unmatch -- "$1" >/dev/null 2>&1; }
 
-# repo 相対のディレクトリ名 (awk の old_base / new_base に渡す形)
-relbase() { local d; d="$(cd "$(dirname "$1")" && pwd -P)"; printf '%s' "${d#"$BASE_DIR/"}"; }
+# repo 相対のディレクトリ名 (awk の old_base / new_base に渡す形)。
+# 🚨 末尾スラッシュ付きの prefix で剥がさない。**そのファイルが repo root 直下**だと
+# d == BASE_DIR で `${d#"$BASE_DIR/"}` は一致せず、絶対パスがそのまま old_base に入る。
+# すると normalize が `Users/koji/dotfiles/issues/347-x.md` を作って moved_old と一致せず、
+# **書き換えも HIT 判定も起きないのに「stale 0 件」で緑**になる (2 周目の敵対レビュー P1-1。
+# 実測: repo root の README.md からの参照だけが張り直されず rc=0 だった)。
+relbase() {
+  local d
+  d="$(cd "$(dirname "$1")" && pwd -P)"
+  d="${d#"$BASE_DIR"}"
+  printf '%s' "${d#/}"
+}
 
 # 手順 4 / 事後条件の母集合: repo 全体から「そのファイル名を含むテキストファイル」
 scan_candidates() {
@@ -300,6 +317,10 @@ for n in "$@"; do
   esac
 done
 [ -d "$ISSUES_DIR" ] || { printf '✗ 対象ディレクトリが無い: %s\n' "$ISSUES_DIR" >&2; exit 1; }
+# 🚨 物理パスへ揃える。BASE_DIR は `pwd -P` で物理、find / scan_candidates の出力もここから
+# 派生するので、片方だけ論理パス (macOS の /var -> /private/var 等) だと
+# `$other != $dest` の比較や prefix 剥がしが静かに外れる
+ISSUES_DIR="$(cd "$ISSUES_DIR" && pwd -P)"
 
 canary || exit 1
 
@@ -413,6 +434,23 @@ for num in "$@"; do
   new_base="$ISSUES_REL${destdir#"$ISSUES_DIR"}"
   moved_old="$old_base/$base"
   moved_new="$new_base/$base"
+
+  # --- 母集合の canary: 走査が空振りしていないことを**触る前に**確かめる -------------------
+  # 🚨 `scan_candidates` が空を返すと、手順 4 も事後条件も「何もせず 0 件 = 緑」になる。
+  # awk (report モード) には canary があったが、**母集合の作り方には無かった** ので、
+  # P1-2 のために足したオラクルが P1-2 と同じ壊れ方をしていた (2 周目の敵対レビュー P1-2。
+  # scan_candidates を空にする変異が、参照が issues/ の外だけにある fixture で緑になった)。
+  # 既知の入力 = 動かす issue 自身の本文の 1 行。それで引いて自分が出なければ**判定不能**。
+  needle="$(grep -m1 -v '^[[:space:]]*$' "$src" 2>/dev/null || true)"
+  if [ -z "$needle" ]; then
+    printf '✗ issue %s の本文が空で走査の canary を張れない。手で移すこと\n' "$num" >&2
+    exit 1
+  fi
+  if ! scan_candidates "$needle" | grep -Fxq "$src"; then
+    printf '✗ 母集合の走査が壊れている (自分自身を見つけられない): %s\n' "$src" >&2
+    printf '  手順 4 と事後条件が空振りするので着手しない (何も動かしていない)\n' >&2
+    exit 1
+  fi
 
   # --- 手順 1: 移動 ------------------------------------------------------------------------
   # ここから判定を通るまでが「半端な状態になりうる窓」。trap もこのフラグを見る

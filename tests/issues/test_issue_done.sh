@@ -61,6 +61,11 @@ EOF
   cat > "$d/docs/g.md" <<'EOF'
 外から: [x](../issues/347-refactor-a.md)
 EOF
+  # 🚨 repo root 直下からの参照。relbase が BASE_DIR 自身で絶対パスを返していたため、
+  # ここだけ張り直されないのに「stale 0 件」で緑になっていた (2 周目の敵対レビュー P1-1)
+  cat > "$d/README.md" <<'EOF'
+root から: [x](issues/347-refactor-a.md)
+EOF
   ln -s ../347-refactor-a.md "$d/issues/next/347-refactor-a.md"
   ln -s ../901-feat-e.md "$d/issues/epic/900/next/901-feat-e.md"
   git -C "$d" init -q
@@ -114,6 +119,7 @@ grep -qF '](done/347-refactor-a.md)' "$d/issues/345-retro-c.md" || fail "④ 直
 grep -qF '](347-refactor-a.md)' "$d/issues/done/310-d.md" || fail "④ done/ からの参照が張り直されていない"
 grep -qF '](../../../../_claude/rules/x.md)' "$d/issues/epic/900/done/901-feat-e.md" || fail "③ group の深さ (4 段) が違う"
 grep -qF '](../issues/done/347-refactor-a.md)' "$d/docs/g.md" || fail "④ issues/ の外 (docs/) からの参照が張り直されていない"
+grep -qF '](issues/done/347-refactor-a.md)' "$d/README.md" || fail "④ repo root 直下 (README.md) からの参照が張り直されていない"
 
 "$ROOT_DIR/tests/issues/test_issue_links_valid.sh" "$d/issues" >/dev/null 2>&1 || fail "移動後にリンク検査が赤"
 "$ROOT_DIR/tests/issues/test_next_links_valid.sh" "$d/issues" >/dev/null 2>&1 || fail "移動後に next 検査が赤"
@@ -214,6 +220,11 @@ check_mutant narrow-scan \
 # 判定より前で異常終了する → trap が rollback を回す (P1-1 / P1-3 の共通形)
 check_mutant abort-before-verdict 's|^  verdict=0$|  exit 3|' \
   '判定の前に中断された'
+# 母集合の走査を空にする → **触る前に** canary が落とす。
+# 🚨 これが無いと、手順 4 も事後条件も「何もせず 0 件 = 緑」になる。オラクル側の awk にだけ
+# canary があり、母集合の破損は誰も見ていなかった (2 周目の敵対レビュー P1-2)
+check_mutant empty-scan 's|^  grep -rlF --binary-files=without-match .*|  return 0|' \
+  '母集合の走査が壊れている'
 
 # ---------------------------------------------------------------------------
 # 5. 変異: 書き換えロジックそのものを壊すと canary が **触る前に** 落とす
@@ -228,4 +239,4 @@ grep -q '✗ canary' "$work/mut-canary.log" ||
   { cat "$work/mut-canary.log" >&2; fail "canary ではなく後段で落ちた (触る前に止まっていない)"; }
 [ "$before_c" = "$(snapshot "$dc")" ] || fail "canary で落ちたのに fixture が変わっている"
 
-printf '✓ issue_done.sh: 正常系 (global / group / 追跡外 claim / epic の深い置き場を拒否 / --help) / baseline 赤の拒否 / 変異 6 本 (claim 削除・本文の張り直し・参照の張り直し・走査範囲・判定前の中断・canary) すべて red かつ rollback 済み\n'
+printf '✓ issue_done.sh: 正常系 (global / group / repo root からの参照 / 追跡外 claim / epic の深い置き場を拒否 / --help) / baseline 赤の拒否 / 変異 7 本 (claim 削除・本文の張り直し・参照の張り直し・走査範囲・判定前の中断・母集合の空振り・canary) すべて red かつ rollback 済み\n'

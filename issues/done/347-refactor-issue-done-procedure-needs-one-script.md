@@ -175,3 +175,59 @@ awk を no-op にする（canary が触る前に落とす）。
 
 - [`claim-issue-in-next-and-push.md`](../../_claude/rules/claim-issue-in-next-and-push.md) — ②の規範
 - [retro 345](../345-retro-issue-backlog-consumption-2026-09-09.md) — 出典（実測 4 回の取りこぼし）
+
+## 追記 2026-09-10: 2 周目の敵対的レビューで P1 を 2 件塞いだ
+
+`adversarial-review-own-safeguards.md` §7（**指摘を直した差分にもう 1 周回してから閉じる**）に従い、
+1 周目の P1 修正で新設した機構（trap による rollback / `tracked()` / repo 全体走査 / 事後条件）を
+攻め口として明示して 2 周目に出した。**どちらも自分で再現してから直した**。
+
+### P1-1 `relbase` が repo root 直下で絶対パスを返し、**事後条件の主張が偽**になっていた
+
+```sh
+d="$(cd "$(dirname "$1")" && pwd -P)"   # ファイルが repo root 直下なら d == BASE_DIR
+printf '%s' "${d#"$BASE_DIR/"}"         # 末尾スラッシュ付きは一致しない → 絶対パスのまま
+```
+
+`old_base` が `/Users/koji/dotfiles` になり、`normalize` が
+`Users/koji/dotfiles/issues/347-x.md` を作って `moved_old` と一致しない。
+**書き換えも HIT 判定も起きないのに「stale 0 件」で rc=0** になる。
+
+再現（fixture / 実測）: `README.md` に `](issues/347-x.md)` を置いて移動すると、
+`docs/g.md` と `issues/340-y.md` は張り直されるのに **`README.md` だけ残り、rc=0 ✓**。
+実 repo では root 直下の md に issue を指す markdown リンクが 0 件なので無害だったが、
+**「移動前のパスを指す参照が repo に 0 件」という事後条件が嘘をついていた**。
+
+→ `${d#"$BASE_DIR"}` で剥がしてから先頭の `/` を落とす。あわせて **`ISSUES_DIR` を
+`pwd -P` で物理パスへ揃えた**（macOS の `/var` → `/private/var` で、`find` 由来の論理パスと
+`scan_candidates` 由来の物理パスが食い違い、`$other != $dest` の比較が静かに外れていた）。
+
+### P1-2 母集合（`scan_candidates`）に canary が無く、走査が空振りしても緑だった
+
+awk（report モード）には canary を置いたが、**母集合の作り方には置いていなかった**。
+`scan_candidates` を空にする変異を当て、参照を `docs/` だけに置いた fixture（= `issues/` 内の
+リンク検査が捕まえられない位置）で **rc=0 ✓ のまま `docs/g.md` が切れた**。
+**P1-2 のために足したオラクルが、その P1-2 と同じ壊れ方をしていた。**
+
+→ 移動する前に「その issue 自身の本文の 1 行」で `scan_candidates` を引き、
+**自分が母集合に出ること**を確かめる。出なければ 0 件ではなく**判定不能**として着手しない。
+
+### レビューが攻めて壊せなかったもの
+
+SIGTERM を in_flight の窓へ確実に命中させる（判定を 6 秒遅らせた）→ **完全に復元** /
+複数番号で 2 件目が失敗 → 1 件目は確定・2 件目で exit 1（docstring どおりで仕様） /
+staged だが HEAD に無い issue → `tracked()` が正しく真 / 番号の部分一致（`47` と `347`）→ 誤爆なし /
+symlink ループと repo 外への symlink → `grep -r` は symlink を辿らないのでハングなし /
+baseline 赤・検査スクリプトが実行できない場合 → どちらも fail-closed。
+
+### 未確認リスク（再現手順を作れなかったので記録に留める）
+
+- trap 実行中の再シグナル（rollback 途中の 2 発目の INT）
+- `rollback` 自身が失敗する rc=2 経路（`cp` を失敗させる状況を作れていない）
+- 巨大バイナリ / 非 UTF-8 での `grep -rlF --binary-files=without-match` の挙動
+
+### 変異検証（7 本すべて red）
+
+claim 削除 / 本文の張り直し / 参照の張り直し / 走査範囲を `issues/` に狭める /
+判定の前に異常終了 / **母集合の走査を空にする（新規）** / awk を no-op（canary）。
+正常系にも **repo root 直下からの参照**を fixture に足した（P1-1 の回帰）。
