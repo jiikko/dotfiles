@@ -292,7 +292,9 @@ end
 --    `node.name.to_s == @target.method_name` で **名前一致だけ** (レシーバの型解析は無い) なので、
 --    11 秒かけて得られる精度は単語一致の grep とほぼ変わらない。
 --    実測 2026-09-08 (ubiregi-server, base_loader.rb の wrap_error):
---      LSP references 11.2s (2 回とも。キャッシュ無し) / rg -w 0.104s = 約 100 倍
+--      LSP references 11.2s (2 回とも。キャッシュ無し) / rg -w 0.17s = 約 65 倍
+--      🚨 rg の 0.17s は 2026-09-09 の追試値 (production と同条件 = ファイルタイプを絞らない)。
+--      当初書いた 0.104s は再現せず、`--type ruby` で絞った条件 (0.03s) の測り残しと思われる
 --      Dir.glob の対象 21148 件のうち 18468 件 (88%) が vendor/bundle
 --    上流も既知 (Shopify/ruby-lsp#3051 "Find references in nvim takes about 35 seconds") で
 --    **closed as not planned**。直る見込みが無いので client 側で回避する。

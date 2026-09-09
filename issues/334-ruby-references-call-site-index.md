@@ -12,6 +12,8 @@ Prism で再パースする（実測 11.2 秒 / ubiregi-server）。索引 (`rub
 [#3051](https://github.com/Shopify/ruby-lsp/issues/3051) を closed as not planned にしている。
 
 332 で `<C-k>` を「Ruby のメソッドは ripgrep（0.104 秒）／定数と他言語は LSP」に振り分けた。
+🚨 この 0.104 秒は 2026-09-09 の追試で**再現しなかった**（production 条件では 0.17 秒。
+末尾の追補 ③）。結論は変わらないが、数字を引用するときは追補の値を使うこと。
 rg は速いが、AST を見ていないのでコメント・文字列・シンボルを拾う。
 
 ## 決めたこと（2 段階）
@@ -57,7 +59,9 @@ rg は速いが、AST を見ていないのでコメント・文字列・シン�
 - [x] 段階 1: LSP 版へのフォールバック用マッピング（`<leader>K`。これが「困った」の観測点）
 - [x] 段階 2: 逆引き索引プロトタイプ（`nvim/ruby-refs-index/measure.rb`）
 - [x] 段階 2: ①構築時間 ②メモリ ③クエリ時間 ④精度差 の実測
+- [x] 本文の断定を追試し、違っていた数字を書き戻す（2026-09-09。末尾の追補）
 - [ ] 実測を受けての判断（sidecar 化 / rg のまま確定）← **人の判断待ち**
+      （`:DotfilesRefsStats` の Ruby 行が溜まるまで閉じられない。この 1 行だけが残タスク）
 
 ## 進捗: 段階 1 (commit `feat(334): 参照検索の使用実績を記録する`)
 
@@ -90,7 +94,8 @@ pcall を外す / `<C-k>` の記録を外す / `<leader>K` を消す）。
 | `perform` | 5 µs | 779 | 858 | 79 (9%) |
 | `account` | 7 µs | 2372 | 22547 | **20282 (90%)** |
 
-比較対象: ruby-lsp の references は同じプロジェクトで **11.2 秒**、rg は **0.104 秒**。
+比較対象: ruby-lsp の references は同じプロジェクトで **11.2 秒**、rg は **0.104 秒**
+（🚨 rg は追試で 0.17 秒。末尾の追補 ③）。
 
 ### 読み取れること
 
@@ -202,13 +207,21 @@ client の root** を掴む。lspconfig の solargraph の filetypes は `{ "rub
 
 上 4 本はレビュー前は**すべて緑で通っていた**もの。
 
-### 残り (未着手)
+### 残り (旧「未着手」— 2026-09-09 に全件解消を確認)
 
-- P2-2: client が終了すると statusline の「実行中」表示が永久に残る (`LspDetach` で掃除していない)
-- P2-3/P2-4/P3-5: `measure.rb` が rg の rc=2 を 0 件に畳む / production に無い `--type ruby` で
-  絞っている / 「行数」と「出現数」を並べている
-- P3-2: `vim.lsp.status` 直呼び禁止の pin が `lualine_x` の中しか見ていない
-- P3-6: JSONL にローテーションが無い (判断が出たらログごと削除する)
+**この節は 2026-09-09 時点で解消済み。** ここに並んでいた 4 件は、すぐ下の
+「追補: 敵対的レビューの P2 / P3 を直した」(commit `fix(334): statusline の掃除・…`) で
+全部直っている。実体を数え直した結果 (2026-09-09):
+
+| 旧「残り」 | 現況 | 実体 |
+|---|---|---|
+| P2-2 statusline が固まる | 解消 | `nvim/lua/dotfiles/lsp.lua:588,613` の `LspDetach` / 検査は `tests/nvim/lsp_progress_check.lua` の「5. client が死んだら」節 (別 client を巻き添えにしない対照つき) |
+| P2-3/P2-4/P3-5 `measure.rb` の土俵ずれ | 解消 | `measure.rb:112` が `rc >= 2` で raise / `:108` の比較側から `--type ruby` が外れ `-F` が付いた / `:149` が `.uniq` で突合 |
+| P3-2 pin の射程 | 解消 | `lsp_progress_check.lua:210` が `_nviminit.lua` を全行走査 (コメント行を除く) |
+| P3-6 ログのローテーション | 解消 | `refs_usage.lua:21` の `max_bytes` + `rotate_if_needed` / `:DotfilesRefsReset` |
+
+残っているのは **todolist 最後の 1 行 (人の判断) だけ**。判断には `:DotfilesRefsStats` の
+Ruby 行が要るので、実運用でログが溜まるまで閉じられない。
 
 ## 追補: 敵対的レビューの P2 / P3 を直した (2026-09-08)
 
@@ -250,3 +263,89 @@ commit `fix(334): statusline の掃除・再描画の抑止・ログの上限と
 **判断への影響**: 「固有名なら rg でほぼ同じ」は誤りだった。`wrap_error` でも 59% がゴミ
 （`.erb` のビューや YAML に出る語を拾う）。sidecar 化の価値は当初の見立てより**高い**。
 ただし決めるのは段階 1 の実測（`:DotfilesRefsStats` の Ruby 行）であって、この表ではない。
+
+## 追補: 本文の断定を追試した (2026-09-09)
+
+段階 1・段階 2 は実装済みだったので、実装ではなく **本文の断定を実コード・実環境に当てて
+追試**した。結果は 3 値（**一致** / **違った** / **未実測**）で書き分ける。
+
+### ① 「addon では references を差し替えられない」→ **一致**（実測）
+
+実体は `~/src/ubiregi-server/vendor/bundle/ruby/3.1.0/gems/ruby-lsp-0.26.11`
+（issue が名指しした版そのもの）。
+
+- `lib/ruby_lsp/addon.rb` の `create_*_listener` は **7 個ちょうど**
+  （`:245,250,255,259,264,269,274`）。references 用は無い
+- `lib/ruby_lsp/server.rb:799` が `Requests::References.new(...).perform` を直接呼ぶ（行番号まで一致）
+- 加えて `lib/ruby_lsp/requests/references.rb:63` が `Dir.glob(workspace/**/*.rb)` を回して
+  `:69` で `Prism.parse_lex_file` している。**索引を一切見ずに毎回パースし直す**のがコードで直接読める
+
+### ② 「references は 11.2 秒」→ **整合するが、LSP 経由は未実測**
+
+ruby-lsp を起動せず、`references.rb:63-72` の支配的コスト（glob + `Prism.parse_lex_file`）だけを
+同じ ruby 3.1.6 / prism 1.9.0 で再現して測った:
+
+```
+files=21290  vendor_bundle=18598 (87%)  glob=0.36-0.71s  parse_lex=7.98-9.40s  total=8.33-10.10s
+```
+
+`collect_references` の visitor と LSP の往復を足せば **11.2 秒は整合する**。
+ただし ruby-lsp を実起動しての 11.2 秒そのものは **未実測**。
+
+### ③ 「rg は 0.104 秒」→ **違った**（production 条件では 0.17 秒）
+
+production は `telescope.grep_string` = **ファイルタイプを絞らない**（`references_action` が
+渡すのは `-w` だけ）。同条件で 7 回ずつ測った（ubiregi-server / ripgrep 14.1.0）:
+
+| 条件 | wrap_error | account | 行数 (wrap_error) |
+|---|---|---|---|
+| production（絞りなし `-w -F`） | min 0.150 / median 0.17 秒 | min 0.150 / median 0.17 秒 | 59 |
+| `--type ruby`（旧・計測側だけの条件） | min 0.029 / median 0.031 秒 | min 0.034 秒 | 24 |
+
+**0.104 秒はどちらの条件でも出ない。** 行数の側は決定的で、`--type ruby` の 24 行は上の
+「訂正」表の**旧列**と一致し、絞りなしの 59 行は**新列**と一致する。つまり 0.104 秒は
+**土俵ずれを直したときに測り直されずに残った数字**である可能性が高い。
+
+判断への影響は無い: 0.17 秒でも LSP の 11.2 秒に対して **約 65 倍速い**ので、332 の
+振り分けの前提は変わらない。
+
+### ④ 「vendor/bundle を出せば 11.5 秒 → 約 5 秒」→ **否定できない**（内訳は一致、総和は未実測）
+
+同じ再現で vendor と app を分けて測った:
+
+```
+vendor/bundle        files=18598  bytes=97.8MB  parse_lex=7.078s
+app (vendor 以外)    files= 2692  bytes=14.1MB  parse_lex=1.016s
+```
+
+`lsp.lua:253` の注記「references 11.2s。うち parse が 7.0s で、その 88% が vendor/bundle の
+18468 ファイル」は、**vendor 側のパース 7.078 秒とぴたり一致**した（ファイル数 18468 → 18598 は
+その後の repo の増分）。パース費用は**バイト数にほぼ比例**している（app は全体の 12.6% の
+バイトで 12.6% の時間）。
+
+🚨 **一度ここで「1 秒台まで落ちる」と書きかけたが誤り**。落ちるのは**パースの内訳**であって
+リクエスト全体ではない。11.2 秒から vendor のパース 7.078 秒を引くと **約 4.1 秒**で、
+「約 5 秒」はむしろよく合う。
+
+ただし**上限と下限のどちらに寄るかは未実測**: `references.rb:71` の `collect_references` は
+パース結果ごとに走る visitor なので、これも vendor を外せば減る。減るぶんまで含めれば
+1.5 秒前後まで行きうるし、固定費が大きければ 4 秒台で止まる。**LSP を実起動して測るまで
+確定しない**（このセッションでは測っていない）。
+
+なお vendor/bundle の実測比は **87%**（本文の 88% はほぼ一致）。
+
+### ⑤ 未確認のまま残したもの
+
+- 上流 [#3051](https://github.com/Shopify/ruby-lsp/issues/3051) の「closed as not planned」:
+  **未確認**（ネットワークで確かめていない）
+- 段階 2 の構築時間・メモリ・クエリ時間（`measure.rb` の数字）: **再実行していない**。
+  ただし rg の行数 59 / 445 / 927 は今回の実測と**完全に一致**したので、訂正後の表の土俵は
+  合っている（`account` だけ 26662 に対し生の行数は 27488 = 同一行に複数回出るぶん）
+
+### 検査が走った証拠（`make test-nvim`、rc=0 / stderr 0 バイト）
+
+```
+[test-lsp-progress] OK lsp progress: …・LspDetach の掃除・lualine の配線
+[test-lsp-references-dispatch] OK lsp references dispatch: 判定 10 ケース / 行き先の返り値 5 ケース / root の選択 3 ケース / <C-k> の配線
+[test-refs-usage] OK refs usage: 記録 / fallback の窓と語の一致 / filetype の層別 / ログのローテーション / 書き込み失敗の握り潰し / <C-k>・<leader>K の配線
+```

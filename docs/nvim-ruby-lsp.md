@@ -130,7 +130,7 @@ allowlist を廃止し、「root に Gemfile があり、かつ**その project 
 
 | カーソル下 | 経路 | 実測 |
 |---|---|---|
-| Ruby のメソッド / ローカル (小文字始まり) | `telescope.grep_string -w` | 0.104 秒 |
+| Ruby のメソッド / ローカル (小文字始まり) | `telescope.grep_string -w` | 0.17 秒 |
 | Ruby の定数 / クラス (大文字始まり) | LSP references | 11.5 秒 |
 | Ruby 以外 (go / ts) | LSP references | 型解析つきで速い |
 
