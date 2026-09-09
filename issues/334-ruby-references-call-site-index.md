@@ -61,7 +61,8 @@ rg は速いが、AST を見ていないのでコメント・文字列・シン�
 - [x] 段階 2: ①構築時間 ②メモリ ③クエリ時間 ④精度差 の実測
 - [x] 本文の断定を追試し、違っていた数字を書き戻す（2026-09-09。末尾の追補）
 - [ ] 実測を受けての判断（sidecar 化 / rg のまま確定）← **人の判断待ち**
-      （`:DotfilesRefsStats` の Ruby 行が溜まるまで閉じられない。この 1 行だけが残タスク）
+      → [issue 344](344-human-decide-ruby-refs-sidecar-or-rg.md) へ切り出した（2026-09-09）。
+      判定基準を数値で固定してあるので、データが溜まれば機械的に決まる
 
 ## 進捗: 段階 1 (commit `feat(334): 参照検索の使用実績を記録する`)
 
@@ -349,3 +350,24 @@ app (vendor 以外)    files= 2692  bytes=14.1MB  parse_lex=1.016s
 [test-lsp-references-dispatch] OK lsp references dispatch: 判定 10 ケース / 行き先の返り値 5 ケース / root の選択 3 ケース / <C-k> の配線
 [test-refs-usage] OK refs usage: 記録 / fallback の窓と語の一致 / filetype の層別 / ログのローテーション / 書き込み失敗の握り潰し / <C-k>・<leader>K の配線
 ```
+
+## 追補: 判断できるデータがまだ無い (2026-09-09 実測)
+
+`:DotfilesRefsStats` が動くこと自体は確認した（`lsp.setup()` 経由で登録される。headless では
+lazy.nvim の config が走る前だと `E492` になるが、対話セッションでは登録される）。
+
+現在の中身:
+
+```
+Ruby: ripgrep 1 / LSP (定数など) 0 / rg の直後に LSP へ引き直し 0 (0.0%)  ← 判断に使う数字
+全体: ripgrep 11 / LSP 0 / 引き直し 1  (Ruby 以外の <C-k> も含む)
+ft 未記録 11 件 (層別に使えない古い行)
+```
+
+🚨 **12 行すべて 2026-09-08（実装した当日）のもので、実運用のデータではない**。
+`word` は全行 `wrap_error` = 動作確認に使った語。しかも `ft` を記録するようになったのは
+その後なので、**11 行は層別に使えない**。
+
+つまり判断材料は実質ゼロ。**この issue は「作った機構が使われるのを待つ」状態**なので、
+待ち方を [issue 344](344-human-decide-ruby-refs-sidecar-or-rg.md) に切り出し、
+判定基準（どの数字がいくつなら sidecar 化するか）を数値で固定した。
