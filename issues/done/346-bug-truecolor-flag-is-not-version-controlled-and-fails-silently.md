@@ -189,3 +189,17 @@ export 検査は**新しい判定ロジック**なので、`adversarial-review-o
 攻め口として渡したもの: `${(t)}` が `scalar-export` 以外の形を返すケース
 （`typeset -x` / `readonly` 併用 / 配列 / 未定義との境界）、
 `env -u` で隔離したテストが**逆に**本番の状態を再現しなくなっていないか。
+
+### 決着 2026-09-10: 3 周目で P1 / P2 / P3 とも 0 件。打ち切る
+
+`env -u` 隔離下で 9 通り攻めてもらい、**export 判定はどれも壊せなかった**:
+
+```
+export SUPPORT_TRUECOLOR=false        -> 黙る        SUPPORT_TRUECOLOR=false (export 無し) -> 警告 ✅
+typeset -gx …=true                    -> 黙る        export …= (空)                        -> 「未設定」警告
+declare -x …=0                        -> 黙る        export …=yes                          -> 「解釈しない値」警告
+typeset -rx …=false (readonly + export) -> 黙る      export した後 typeset +x で解除        -> 警告 ✅
+```
+
+**`typeset +x` で後から export を解除した形まで拾える**（`${(t)}` を見ているため。
+値だけ見る実装では取りこぼす）。指摘 0 件なので §7 の打ち切り条件を満たす。
