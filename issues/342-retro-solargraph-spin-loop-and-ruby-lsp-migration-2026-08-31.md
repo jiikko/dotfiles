@@ -1,4 +1,11 @@
-# 144 retro: solargraph の暴走調査と ruby-lsp 移行 (2026-08-31)
+# 342 retro: solargraph の暴走調査と ruby-lsp 移行 (2026-08-31)
+
+> 🚨 **2026-09-09 に 144 から 342 へ改番**。起票時、`issues/done/144-human-verify-glogx-ratelimit-dashboard.md`
+> が既に 144 を使っており、`tests/issues/test_issue_numbers_unique.sh` が CI で落ちた。
+> 参照数が少ない側 (この retro: tracked ファイル 0 / commit 1) を動かした
+> （done/144 は push 済み commit 3 本から参照されている）。
+> **採番したら即 push する**（`.claude/rules/worktree-per-session.md`）と、`done/` も含めて
+> 空きを確認する、の 2 つが守られていれば起きなかった。
 
 起票日: 2026-08-31 / 対象セッション: 2026-08-31 昼〜夜
 
