@@ -80,6 +80,7 @@ USAGE
 #   -v moved_old / -v moved_new : 今回動かす issue の repo 相対パス (空なら差し替えなし)
 # 出力は書き換え後の全文。1 本でも書き換えたら stderr へ "REWROTE" を出す (呼び出し側が数える)。
 # ---------------------------------------------------------------------------
+# shellcheck disable=SC2016  # awk のプログラム本文。$1 等はシェルに展開させない
 AWK_REBASE='
 function normalize(p,   n, i, a, st, top, out) {
   n = split(p, a, "/")
@@ -186,6 +187,8 @@ rebase_file() {
 # ---------------------------------------------------------------------------
 canary() {
   local got want
+  # shellcheck disable=SC2016  # canary の入力。バッククォート内の `](path.md)` を
+  #   リテラルで渡すのが主眼 (展開させると検査対象の形が変わる)
   got="$(printf '%s\n' \
     '上向き: [rule](../_claude/rules/x.md)' \
     '下向き: [old](done/312-x.md)' \
@@ -202,6 +205,7 @@ canary() {
     | awk -v old_base="issues" -v new_base="issues/done" \
           -v moved_old="issues/345-retro.md" -v moved_new="issues/done/345-retro.md" \
           "$AWK_REBASE" 2>/dev/null)"
+  # shellcheck disable=SC2016  # fixture の期待値。リテラルとして比較する
   want='上向き: [rule](../../_claude/rules/x.md)
 下向き: [old](312-x.md)
 当人へ: [self](345-retro.md)
