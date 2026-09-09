@@ -268,8 +268,9 @@ nvim だけ終わると `Wait` が戻らない。ctx が無く kill する主体
 判定は runner のサマリ行（`--- PASS: <名前>` / `--- FAIL: <名前>`）。
 各変異は**ビルド可否を別に確認**（`go test -run XXX_NO_SUCH_TEST` の rc）してから read/green を読み、
 **diff を目視**して意図した行だけが変わったことを確認した。ビルド不能は
-`<BUILD-FAIL>` という第 3 の結果に落とす設計にしたが、**全変異で BUILD OK** だった。
-ハーネスは `tmp/303-mutate.sh`（使い捨て）。
+`<BUILD-FAIL>` という第 3 の結果に落とす設計にした。**R7 の 1 回目が実際に `<BUILD-FAIL>` になり**
+（代入だけ消すと `subproc` が未使用 import になる）、当て直している。他は全部 BUILD OK。
+ハーネスは使い捨てスクリプトで回した（実行後に削除。変異の内容はこの表に全部書いてある）。
 
 | 退行 | 内容 | 段 A | 段 B |
 |---|---|---|---|
@@ -279,12 +280,20 @@ nvim だけ終わると `Wait` が戻らない。ctx が無く kill する主体
 | R4 | 新規ファイル・素の import・`exec.Command("gh",…).Output()` | **RED** | **RED** |
 | R5 | 新規ファイル・別名 import（`import xe "os/exec"` → `xe.Command(…)`） | green | **RED**（別名の腕） |
 | R6 | 新規ファイル・素の import・`CommandContext` + WaitDelay も張る | green | **RED**（allowlist の腕） |
+| R7 | **`tui.go` に今回足した実ガードを削除**（+ 未使用になる `subproc` の import も） | **RED**（offenders に `tui.go:3080` が名指しで出た） | green |
 
 - **目標だった「R1〜R5 が全部 RED」は達成**（どちらかの段が必ず RED になる）。
   R5 が段 A で green なのは設計どおりで、そこが段 B を足した理由
 - **R6 は本実装のために足した**。R4 は**両段が検出する**ので、R4 で段 B の allowlist 腕を
   観測しようとすると「段 B を壊しても段 A で RED になる」ため、腕が死んでいても生きて見える。
   R6（段 A が原理的に green になる形）だけが allowlist 腕を独立に観測できる
+- 🚨 **R7 も本実装のために足した**。`tui.go` に足した実ガードの**直上のコメント 4 行に
+  `WaitDelay` の語が散文で入っている**（「上限は WaitDelay しかない」）。これは
+  **本 issue の欠陥そのものと同じ配置**（実ガードの近傍に語だけがある）なので、
+  「コメント剥がしが効いていて語が代入と誤認されない」ことを推論で済ませず実測した。
+  結果は RED で、offender に `tui.go:3080` が名指しで出た（語は拾っていない）。
+  これで「`enforced` が 2 になり R1 型の検出が単一箇所に乗らなくなった」も裏が取れた
+  （R1 が `gitlog.go:80`、R7 が `tui.go:3080` を、それぞれ独立に守っていることの実測）
 
 ### 段ごとの変異（§1.5。A の段と B の段を別々に壊す）
 
@@ -308,6 +317,10 @@ nvim だけ終わると `Wait` が戻らない。ctx が無く kill する主体
 ## 検証
 
 - `cd src/glogx && go test ./...` = 全 package ok（42.9 秒）
+- **`cd src/glogx && make lint` rc=0（`0 issues.`）** — golangci-lint v2.5.0 の版固定。
+  CI の基準はこちらで、`make test-lint`（shell / yaml / workflow 系）ではない
+- **`cd src/doctor && make lint` rc=0（`0 issues.`）/ `make test` rc=0（`-race` で全 package ok）**
+  — `runner.go` の**パッケージ doc コメント**を触ったので、doctor 側も別 module として回した
 - `make test-lint` rc=0（`✓ Go プロジェクト 6 件すべてに lint/test target と CI レーン` まで出力を確認）
 - `gofmt -l`（`tools/` を除く）差分なし
 - 全変異の適用後に `git status --short` が空であることを確認（ハーネスの後始末が効いている）
