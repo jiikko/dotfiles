@@ -9,6 +9,12 @@ unset CDPATH
 # 「ゲートがスクリプト文脈で偽になるか」を一切 pin できず、後方互換の主張が空振りになる)。
 
 source "${0:A:h}/test_helper.sh"
+# 🚨 ロケールを UTF-8 に固定する。Test 45 が見る「NBSP / 全角空白でも分割する」は、
+# production 側 (`__av1ify_absolute_path_words`) が **`[[:space:]]` が UTF-8 ロケールで
+# NBSP に一致する**性質に依存している (C ロケールでは一致しない。実測 2026-09-09)。
+# LANG 未設定の環境ではこの 1 件だけが落ち、**手元だけ赤 / CI は緑**になる。
+# tests/lib/utf8_locale.sh のヘッダが言う「isolate_env を source しないテスト」の 3 例目。
+source "${0:A:h}/../../lib/utf8_locale.sh"
 
 # ファイル名の $(...) が実行される条件 (issue 089) を再現するため、対話シェルと同じく
 # prompt 展開を有効にした状態で走らせる。
