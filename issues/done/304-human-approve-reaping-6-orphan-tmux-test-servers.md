@@ -53,3 +53,50 @@
 ## 確認したら
 
 この issue を `issues/done/` へ移動してください（既読はファイルの位置で表す）。
+
+## 結果（2026-09-10）— ユーザー承認を得て 6 本すべて回収した
+
+「孤児サーバを消していいよ」の承認を受けて実行。**本番（pid 58159）と、その時点で開いていた
+scratch popup には触れていない**（実行後に `tmux ls` = 30 セッション、watchdog / periodic_save の
+稼働も確認）。
+
+### 🚨 issue の記述が 1 点ずれていた: socket は「既定の場所」に無い
+
+最初 `tmux -L <name> ls` で確認したところ 4 本が
+`error connecting to /private/tmp/tmux-501/<name> (No such file or directory)` を返し、
+**「socket が消えてプロセスだけ生存」＝ `tmux_reap_orphan_servers.sh` の対象**だと一度誤診した。
+
+実際は違った。**`TMUX_TMPDIR` が既定と違うだけで socket は生きていた**:
+
+| socket | 実パス |
+|---|---|
+| `rl5611` | `/private/tmp/reapl.nkCnAU/tmux-501/rl5611` |
+| `rs5611` | `/private/tmp/reaps.ZGmD3y/s p/tmux-501/rs5611`（**パスに空白**） |
+| `dfms-38188` | `/private/var/folders/.../tmp.m55Isdav1G/tmux-501/dfms-38188` |
+| `audit070` | `/Users/koji/dotfiles/tmp/audit070/sock`（**これだけ実体なし**） |
+
+`lsof -p <pid> -a -U -F n` で実パスを取り、`-L` ではなく **`-S <実パス>`** で捉え直した。
+`DRY_RUN=1 tmux_reap_orphan_servers.sh` が何も挙げなかったのはこのため
+（あちらは `[ -S "$path" ]` で生存を見るので、生きている socket を正しく保護していた）。
+
+### 実行手順（`tmux-probe-requires-socket-isolation.md` の規律どおり）
+
+1. `ps` で 6 本の生存を確認（read-only）
+2. **消す直前に**各 socket で `tmux -S <path> ls` を打ち、**本番のセッション名が出ないこと**を確認
+   （検査から実行までの窓を最小にする。エントリ単位で plan → exec）
+3. `tmux -S <path> kill-server` を 1 本ずつ（**bare `kill-server` は使わない**）
+4. socket が実在しない 1 本（pid 30820）だけは、**消す直前に `ps -o command=` で
+   コマンド行を照合してから** `kill -TERM`（pid 再利用を踏まないため）
+
+### 結果
+
+6 本とも消えた。`ps` に残る tmux は本番 1 本 + scratch popup のみ。
+
+## 🚨 併せて見つかった: 死んだ socket **ファイル**が 535 個
+
+`/private/tmp/tmux-501/` に **536 ファイル**あり、`lsof` でプロセスが開いているのは
+**`default`（本番）の 1 個だけ**。残り **535 個は死んだ socket ファイル**（最古 2026-07-05）。
+
+これは「孤児サーバ（プロセス）」とは別のクラスで、**プロセスを kill しないので危険度が低い**。
+issue 305 ① が言う「溜まった証拠」がまさにこれなので、そちらへ実測を記録した。
+**この issue の承認範囲はサーバ 6 本なので、ファイルの掃除は別途確認する。**
