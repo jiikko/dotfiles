@@ -149,8 +149,11 @@ func spawnAndReap(t *testing.T) int {
 	if _, err := syscall.Wait4(pid, &ws, 0, nil); err != nil {
 		t.Fatalf("wait: %v", err)
 	}
+	// 🚨 **ここを Skip にしない**。alive() が壊れる変異を当てると skip して緑になり、
+	// 変異判定を汚染する (実測 2026-09-09: errno を取り違える変異が緑で通った)。
+	// wait4 直後の pid が再利用される確率は実質ゼロなので、生きていたら実装の欠陥。
 	if alive(pid) {
-		t.Skipf("pid %d が回収後も生きていると判定された (pid 再利用?)", pid)
+		t.Fatalf("reap 済みの pid %d を「生きている」と判定した (alive の判定が壊れている)", pid)
 	}
 	return pid
 }
