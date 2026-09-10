@@ -193,5 +193,4 @@ temp な `HOME` は「壊さずに試す」ための道具であって、**そ�
 - [`subagent-model-tiering.md`](subagent-model-tiering.md) — 下位主体の完了申告ではなく成果物を検閲する
 - [`instrument-before-second-fix.md`](instrument-before-second-fix.md) — 修正が外れたときに
   観測を増やす。本ルールは「観測結果の読み方」側
-- obaket `issues/566-test-lint-gate-wiring-is-unverified.md` /
-  `issues/568-retro-not-executed-read-as-passed-2026-08-23.md` — 起源
+- obaket issue 566 / obaket issue 568 — 起源

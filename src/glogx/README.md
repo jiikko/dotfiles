@@ -440,7 +440,7 @@ go test -run '^$' -bench BenchmarkView -benchmem .
 
 ## 設計メモ
 
-- 設計の一次情報: dotfiles の `issues/done/015-feat-git-log-gha-status-wrapper.md`
+- 設計の一次情報: dotfiles の issue 015
 - コミット境界の解析は人間向け出力の正規表現ではなく、`--pretty=format:` への
   制御文字 (`%x1e` / `%x1f`) 埋め込みで行う。`--stat` / `-p` の本文を壊さない
 - 対話ブラウズ (カーソル + 展開) は元 issue の非目標だったが 2026-07-16 の

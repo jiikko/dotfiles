@@ -90,4 +90,4 @@ node tmp/probe-dex6.js   # atob 2 段目の入力を観測
 - [`claude-md-maintenance.md`](claude-md-maintenance.md) — 「ドキュメントは Why を保存する」
 - [`perf-claims-need-measurement.md`](perf-claims-need-measurement.md) — 「主張するなら実測値か
   『未実測 + trigger』を残す」。本ルールの追加節はそれを**issue を閉じるときの環境値**へ広げたもの
-- `issues/done/070-research-quality-audit-2026-08-20.md` の「反証・対応の結果」節 — 手作業で移した実例
+- issue 070 の「反証・対応の結果」節 — 手作業で移した実例

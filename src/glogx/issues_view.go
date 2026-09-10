@@ -2384,7 +2384,7 @@ func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
 	// 進捗は「あると便利」程度で、そのために全件の全文を読むのは釣り合わないと判断した。
 	// 詳細を開いたときは Body が全文を持っているので、そこでは追加の I/O なしに出せる
 	// (bodyHeadLines)。空いた幅はタイトルへ回る。
-	// 一次情報: issues/done/050-perf-glogx-issue-list-reads-full-body.md
+	// 一次情報: issue 050
 	// 溝 + "NNN " + バッジ + " " + カテゴリ + " " + タイトル
 	fixed := cursorGutterWidth + dispWidth(num) + 1 + dispWidth(badge) + 1 + dispWidth(cat) + 1
 	titleW := max(width-fixed, 4)

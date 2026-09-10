@@ -1,5 +1,5 @@
 // lockman — ディレクトリ単位の排他を取る CLI (SMB 越しの複数マシン + 公開ホストの
-// ローカル経路が混在する前提)。仕様の正本は issues/done/091-feat-lockman-directory-lease-lock.md。
+// ローカル経路が混在する前提)。仕様の正本は issue 091。
 //
 // 設計の要点 (崩すと排他が消える):
 //   - 勝敗は「存在すれば失敗する 1 回の原子操作」だけで決める。事前に存在チェックをしない
@@ -86,7 +86,7 @@ exit codes:
   - 再入不可。同じディレクトリを二重に acquire すると自分で自分を締め出す
   - 複数ディレクトリを取るときは絶対パスの辞書順で取る (デッドロック回避)
 
-仕様: issues/done/091-feat-lockman-directory-lease-lock.md
+仕様: issue 091
 `)
 }
 

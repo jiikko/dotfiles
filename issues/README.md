@@ -8,7 +8,7 @@
 issues/NNN-<カテゴリ>-<スラッグ>.md
 ```
 
-- **NNN**: 3 桁ゼロ埋めの連番。**issues/ 配下の全体**（直下・`next/`・`pending/`・`waiting/`・`done/`・`epic/<name>/`・`epic/<name>/next/`）で最大番号 + 1 を採番する（番号は再利用しない）。状態ディレクトリや group へ移動してもファイル名は変えないため、コードコメント・commit message から「issue 012」で安定して参照できる
+- **NNN**: 3 桁ゼロ埋めの連番。**issues/ 配下の全体**（直下・`next/`・`pending/`・`waiting/`・`done/`・`epic/<name>/`・`epic/<name>/next/`）で最大番号 + 1 を採番する（番号は再利用しない）。状態ディレクトリや group へ移動してもファイル名は変えないため、コードコメント・commit message から「issue 012」で安定して参照できる。**`issues/` の外（コード・`docs/`・`_claude/rules*`）からは必ずこの番号で参照し、`issues/done/012-….md` のような裸のパスを書かない**（`done/` へ移すとパスだけが切れ、`](…)` でないので `scripts/issue_done.sh` の張り直しも効かない）。パスで書きたいときは markdown リンク `[issue 012](../issues/done/012-….md)` にする（リンクなら張り直しの対象になる）
 - **カテゴリ**: 下表の prefix のいずれか
 - **スラッグ**: kebab-case の短い説明。日付を残したい場合は末尾に `-YYYY-MM-DD`
 

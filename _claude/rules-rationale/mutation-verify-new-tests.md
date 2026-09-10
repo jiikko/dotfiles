@@ -257,7 +257,7 @@ glogx の doctor は、同じ `Report` から CLI (`disk.Format` / `svc.Format`)
 - 「複数予約なら最早の時刻を出す」テストで、`*.job` の glob 順で早い方が**最後**に来る
   fixture を作っていた。「最後に見た job を採る」変異でも緑 → id の並びを入れ替えて 2 回見る形へ
 
-出典: `issues/done/189-*.md` / `issues/done/208-retro-*-2026-09-03.md` 項目 3。
+出典: issue 189 / issue 208 項目 3。
 
 ## 走査・突合系テストの射程 (2026-09-03、dotfiles)
 
@@ -272,7 +272,7 @@ canary も `len(ids) < 5` で、7 → 5 まで壊れても落ちない。
 却下**してしまった (抽出が何件を見ているかは数えなかった)。反証レビューが実測で崩した。
 直した形は「case 行の全リテラルを拾う + canary を 10 へ」で、grouped case の 2 個目に
 存在しない ID を混ぜる変異で red を確認 (`go vet` は通るのでビルド不能の偽陰性ではない)。
-出典: `issues/done/226-retro-glogx-audit-2026-09-03.md` 項目 1 / commit `36237473`。
+出典: issue 226 項目 1 / commit `36237473`。
 
 
 ## fixture で 2 値を同じにすると、取り違えの変異が緑で通る (2026-09-04)
@@ -328,8 +328,7 @@ if !strings.Contains(g.Command, "until=336h") { ... }
 
 ## 2026-09-05 ThumbnailThumb 539 / 542 — 「不在の主張」を 4 回間違え、ハーネスのバグを 3 件踏んだ
 
-出典: ThumbnailThumb `issues/done/540-retro-539-s0-s4-mutation-verification-2026-09-05.md` /
-`issues/done/543-retro-542-mirror-coverage-codex-drive-2026-09-05.md`。
+出典: ThumbnailThumb issue 540 / ThumbnailThumb issue 543。
 
 ### 「検査の不在を主張するときの裏取り」の実例
 
@@ -417,5 +416,5 @@ GREEN になり、**テストの穴だと誤読しかけた**。手順 1.6 に�
 `Thread` / `OperationQueue` / GRDB の database queue / SwiftUI の `.task`) を出した。
 `Task` を数える手法をいくら重ねてもこれは出てこない。**「何を数えるか」自体が盲点になりうる。**
 
-出典: obaket `issues/757-retro-732-design-and-inventory-2026-09-08.md` 項目 1 /
+出典: obaket issue 757 項目 1 /
 `issues/epic/deterministic-test-time/732-*.md` の「🚨 訂正」節。

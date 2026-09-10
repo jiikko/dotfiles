@@ -242,4 +242,4 @@ lint / grep / 正規表現で「書いてはいけない形」を止める gate 
   変異を全部 red にした後でも敵対レビューは「想定の外側」の P1 を出す (実測 8 回)
 - [`instrument-before-second-fix.md`](instrument-before-second-fix.md) — 推測でなく観測に寄せる同思想
 - [`path-shim-must-resolve-real-binary.md`](path-shim-must-resolve-real-binary.md) — 自作の計測装置そのものが暴走する形 (節 6 の計測が「見えない」に対して、こちらは計測が「壊す」)
-- 起源の記録: obaket `macOS/issues/done/457-test-profile-scope-pollutes-real-application-support.md` の「後日追記 2」
+- 起源の記録: obaket (macOS) issue 457 の「後日追記 2」

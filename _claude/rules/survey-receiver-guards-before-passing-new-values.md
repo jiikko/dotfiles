@@ -68,4 +68,4 @@
 
 - [`instrument-before-second-fix.md`](instrument-before-second-fix.md) — 仮説が外れた後の観測。本ルールは**外れる前**の予防 (受け側の観測を先にやる)
 - [`check-other-platform-reference.md`](check-other-platform-reference.md) — 「動いている側との構造比較」の同思想 (こちらは呼び出しの新旧比較)
-- 起源の詳細: obaket `issues/done/514-*.md` / `issues/done/518-*.md` の「敵対的レビュー」節
+- 起源の詳細: obaket issue 514 / obaket issue 518 の「敵対的レビュー」節

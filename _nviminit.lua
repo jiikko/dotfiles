@@ -219,7 +219,7 @@ require("lazy").setup({
     -- 明言されており、Nvim 0.12 では 0.12 の treesitter API 変更 (iter_matches のキャプチャが
     -- ノード配列になる) と非互換 → injection の directive 評価が
     -- "attempt to call method 'range' (a nil value)" で死ぬ (render-markdown の md 描画で実発生)。
-    -- 0.12 へ上げた時点が移行トリガーだった (issues/done/010-... の追記節に記録済み)。
+    -- 0.12 へ上げた時点が移行トリガーだった (issue 010 の追記節に記録済み)。
     -- main は完全な別プラグイン扱いで API 互換なし: configs.setup / ensure_installed /
     -- highlight モジュールは存在せず、install() と vim.treesitter.start() を自分で呼ぶ。
     -- branch を変えたら :Lazy update nvim-treesitter + :TSUpdate で parser を再同期すること
@@ -971,7 +971,7 @@ require("lazy").setup({
     -- 🚨 ft = { "markdown" } にしないこと: lazy.nvim は ft ゲートのプラグインをロードした後
     -- FileType を再発火し、その再実行がレガシー Vimscript syntax 一式 (markdown.vim →
     -- html.vim → css.vim, ~16ms) を treesitter highlight と二重にロードする実バグがあった
-    -- (issues/done/013-bug-nvim-markdown-legacy-syntax-double-load.md、A/B 実測で特定)。
+    -- (issue 013、A/B 実測で特定)。
     -- BufReadPre (FileType より前) でロードすれば再発火が起きず legacy source はゼロになる。
     -- 拡張子ゲートの限界: 変わり種拡張子 (.mkd 等) や modeline で ft=markdown になるファイル
     -- では render-markdown がロードされない (実運用は .md/.markdown のみで許容)。

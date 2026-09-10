@@ -49,7 +49,7 @@
 測っていれば、閉じる時点で「原因は terminal-features だった可能性が高い」と一段進んだ結論を
 書けた。実測は正しさを守るだけでなく、結論を進める。
 
-起源の記録: `issues/done/154-retro-glogx-viewer-crossnav-2026-09-01.md` の項目 3。
+起源の記録: issue 154 の項目 3。
 
 ## 2026-08-27 good-chrome-extensions — 役目を終えた probe の実行指示が issue に残っていた
 

@@ -146,7 +146,7 @@ AVFoundation 系の問題に当たったら、最低限以下を WebFetch で取
   を見落とす
 - `AVPlayer.currentTime` と「実表示 frame」は別物
 - Apple 公式 doc を引いていれば `itemTimeForDisplay` の意味は最初から分かった
-- 詳細は VLCMultiVideoPlayer プロジェクトの `issues/done/333-bug-click-seek-perceived-no-op.md`
+- 詳細は VLCMultiVideoPlayer プロジェクトの issue 333
 
 ## 関連プロジェクト / リソース
 

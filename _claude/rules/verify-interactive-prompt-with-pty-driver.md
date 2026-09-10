@@ -51,5 +51,5 @@
   (ハーネスの失敗が**赤**として出て、実装のバグに見える) を扱う
 - [`no-osascript-for-ui-verification.md`](no-osascript-for-ui-verification.md) —
   「精度の低い検証手段で探索ループに入らない」同思想 (あちらは UI、こちらは対話プロンプト)
-- 起源の記録: `issues/done/095-retro-av1ify-clipboard-input-2026-08-22.md` の項目 1 /
+- 起源の記録: issue 095 の項目 1 /
   実装側の注記: `tests/zshrc/av1ify/test_av1ify_clipboard.sh` の Test 21

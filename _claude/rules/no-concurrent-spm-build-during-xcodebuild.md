@@ -37,4 +37,4 @@
 
 - [`parallel-write-agents-need-worktree-isolation.md`](parallel-write-agents-need-worktree-isolation.md) — 同一 working tree を複数主体が使う問題の一般形 (こちらはビルドシステム版)
 - [`verify-execution-not-just-exit-code.md`](verify-execution-not-just-exit-code.md) — 「まだ走っている」と「壊れている」を混ぜない読み方
-- 起源の記録: obaket `issues/672-retro-upload-byte-source-651-2026-09-01.md` (項目 1/3)
+- 起源の記録: obaket issue 672 (項目 1/3)

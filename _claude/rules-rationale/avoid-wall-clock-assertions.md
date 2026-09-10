@@ -73,7 +73,7 @@ cancel は正しく効いていて、遅かったのは CI の負荷。
 同時刻 (load average ≈ 5) の `make test` で 10 本まとめて超過した。同じコードの単独再実行は 637 tests 全 green。
 待っていたのは「injected sleeper に要求が入った」「replay job が enqueue された」という**事象**で、時間を測る必要は無かった。
 同じセッションで入れた `waitUntilStopConsumedForTesting` (`.stop` 消費の瞬間に resume する continuation) はこの形の置き換え例。
-記録: obaket `issues/724-test-transfer-activity-center-tests-two-second-poll-timeouts.md`。
+記録: obaket issue 724。
 
 ## 窓を作る sleep が「順序」も担保していた実例 (2026-09-05, dotfiles issue 267 / commit `6467aeea`)
 

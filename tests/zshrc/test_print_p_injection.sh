@@ -6,7 +6,7 @@ unset CDPATH
 # なぜ: print -P は書式とデータを同じ文字列で受けるため、ファイル名を埋めると
 # 名前に含まれる $(...) が**実行される** (実測: pwned ファイルが作られる)。対策は
 # 色を先に ANSI へ解決し (zshlib/_ansi_colors.zsh)、データは print -r で出すこと。
-# 規範: issues/089-bug-print-p-executes-command-substitution-from-filenames.md
+# 規範: issue 089
 setopt err_exit no_unset pipe_fail extended_glob
 setopt prompt_subst   # 対話シェルの既定。この下でないと $(...) は実行されない
 

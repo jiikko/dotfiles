@@ -65,7 +65,7 @@ import (
 // CI 状態の ✓✗●⊘↑・枠線 ─│・切り詰めの …・スピナー ⠋ — が混ざる)。
 // そのため fast-path は下記 3 種を扱う: 印字可能 ASCII / SGR / 幅を表に持っている記号。
 // この形で slow-path の 97.6〜98.8% を拾い、ansi.StringWidth との幅の不一致は 0 件だった
-// (詳細は issues/done/046-perf-glogx-dispwidth-fastpath-dead.md)。
+// (詳細は issue 046)。
 func Of(s string) int {
 	if w, ok := fastDispWidth(s); ok {
 		return w

@@ -106,8 +106,8 @@ E2E の credential を実 Keychain に書かなくする変更 (in-memory 実装
 (参照の抽出 / 文字列リテラルの除外 / `local` の引き算)。さらに「この repo なら必ず居る関数
 (`concat` / `av1ify`) が列挙に入っているか」を確かめる canary を足し、2 の形を塞いだ。
 
-出典: `issues/done/203-test-lint-candidates-preventive.md` /
-`issues/done/208-retro-tmux-indicator-and-lint-checks-2026-09-03.md` 項目 2。
+出典: issue 203 /
+issue 208 項目 2。
 
 
 ## 確認を求める外部コマンドは、非対話だと「何もせず rc=0」で返る

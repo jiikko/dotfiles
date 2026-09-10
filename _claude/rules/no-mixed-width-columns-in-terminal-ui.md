@@ -39,4 +39,4 @@
 
 - [`decide-layout-in-sample-renderer-first.md`](decide-layout-in-sample-renderer-first.md) —
   こういう「出してみないと分からない」判断をサンプルで回し切るためのルール (姉妹)
-- 起源の記録: `issues/done/098-retro-statusline-pace-calendar-grid-2026-08-23.md` の項目 2
+- 起源の記録: issue 098 の項目 2
