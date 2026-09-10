@@ -36,7 +36,7 @@ FAIL: dangling symlink /Users/koji/.config/nvim/init.vim-12-11-2024-17-12-59.pre
 ## なぜ放置できないか
 
 `make test` が**手元で常に rc≠0** になるので、「赤いのは既知のあれ」で読み飛ばす癖がつく。
-[`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)
+[`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md)
 が禁じる「緑を見ずに判断する」の裏返しで、**恒常的な赤は本物の失敗を隠す**。
 しかも CI では素通しなので、**手元で読み飛ばした瞬間に誰も見ていない状態**になる。
 
@@ -49,7 +49,7 @@ FAIL: dangling symlink /Users/koji/.config/nvim/init.vim-12-11-2024-17-12-59.pre
    対象を「dotfiles を指していて、かつ dangling」に厳密に絞ること）
 3. 検査側で `.pre-dein-vim` を除外する ← **採らない**。指す先が消えている事実は変わらず、
    「検査の対象を減らして緑にする」は
-   [`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md)
+   [`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md)
    §2 の「沈黙 = 成功」を作る
 
 **1 → 2 の順が素直**（まず消して緑にし、再発防止を setup.sh へ入れる）。
