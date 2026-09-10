@@ -139,14 +139,15 @@ commit のときは「自分が編集したファイル」だけを思い浮か�
 
 ## 残課題
 
-- [ ] 気づき 5 の切り出し（`mutation-verify-new-tests.md` 手順 1.5 / 1.6 への 1 行追記）の可否
-      ← **ユーザーの判断待ち**。気づき 3 は rationale 側の実例候補、気づき 6 は既存節と重複で却下、
-      1 / 2 / 4 / 7 は既存ルールが規定済みで却下（残るのは 5 と 8 の 2 件）
-- [ ] 気づき 8 の (b) / (c) の選択（散文の issue パスをどう扱うか）← **ユーザーの判断待ち**
-- [ ] 気づき 10（`issues/README.md` の `human` 定義へ追記）← **ユーザーの判断待ち**
-- [ ] 気づき 11（`instrument-before-second-fix.md` へ追記）← **ユーザーの判断待ち**
-- [ ] [issue 349](done/349-bug-stale-nvim-backup-symlinks-fail-make-test.md)（`make test` が
-      環境由来で常に赤）は人の承認待ち
+- [x] 気づき 5 → `mutation-verify-new-tests.md` 手順 1.6 の末尾へ 1 段追記（guard をハーネス側へ置く）
+- [x] 気づき 8 → (c) を採用し [issue 350](350-docs-refer-issues-by-number-not-path-in-prose.md) を起票
+      （(b) は fixture と区別できないため却下。理由は 350 本文）
+- [x] 気づき 10 → `issues/README.md` の `human` 節へ 1 行追記
+- [x] 気づき 11 → `instrument-before-second-fix.md` の「実プロセスの env を読む」節へ 1 行追記
+- [x] 気づき 3 は rationale への実例追記不要と判断（既存ルールがそのまま機能した例。却下）
+- [x] [issue 349](done/349-bug-stale-nvim-backup-symlinks-fail-make-test.md) は承認を得て done 済み
+
+2026-09-11: ユーザー承認のうえ上記を実施。残課題が空になったので done へ送る。
 
 ## 追記 2026-09-10: 反証レビュー（read-only）を通した
 
