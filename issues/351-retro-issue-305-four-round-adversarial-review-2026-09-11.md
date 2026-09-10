@@ -178,8 +178,22 @@ UDS のセッションへ返信できるのは `to` を取るツールを持つ�
 
 ## 残課題
 
-- [ ] **4 周目の結果**。指摘が出たら 305 は done のまま **master へ fix-forward** する
-      （再 open はしない）。結論を変えるレベルなら改めて起票する
-- [ ] 気づき 1〜6 の切り出し（**ユーザーの判断待ち**）。🚨 書く前に `_claude/rules/` の diff を見て、
-      別セッションに先取りされていないか確認すること（今日 2 回起きた）
-- [ ] 気づき 7 は rationale への追記のみ
+（2026-09-11 に dotfiles-82 が全件処理。残課題なし）
+
+- [x] **4 周目の結果**。4 周目 `a77c4163` で指摘が出たので **305 は done のまま master へ
+      fix-forward** した（さらに 5 周目 `b644bd70` / 最終ゲート `61ccc88a` まで回った）。
+      再 open はしていない。6 周ぶんの実績は [issue 355](355-retro-tmux-production-kill-guard-2026-09-11.md) 側に記録がある
+- [x] 気づき 1〜6 の切り出し。**書く前に `e03b95a1..HEAD` の `_claude/rules*` の diff を取り、
+      7 件とも先取りされていないことを個別の grep で確認した**（その間の変更は 350 の
+      パス→番号置換と tmux ガードの 1 行だけ）
+  - 気づき 1 → `mutation-verify-new-tests.md`（変異を当てた**後**の問いとして、
+    「変異は production の機構を戻す形にする」節の直前へ）
+  - 気づき 2 → 同「よくある『守っていないテスト』の形」の自己言及の項の直後へ
+  - 気づき 3 → `adversarial-review-own-safeguards.md` §1（既存の「成功パスの後に残骸ゼロ」の
+    直前に、変異検証の後と A-B の母集合を複数数える話）
+  - 気づき 4 → 同 `mutation-verify-new-tests.md` の既存の A-B 隔離の項へ 1 句併合
+    （新規の箇条にしない。`env -u <名前>`）
+  - 気づき 5 → `claim-issue-in-next-and-push.md`（claim したら issue 本文の 1 行目にも書く）
+  - 気づき 6 → 同ルールの強制手段節（返信できないセッションがある）
+- [x] 気づき 7 は rationale への追記のみ → `rules-rationale/adversarial-review-own-safeguards.md`
+      に「実測 11〜12 回目」として 355 の 6 周ぶんと併せて 1 節

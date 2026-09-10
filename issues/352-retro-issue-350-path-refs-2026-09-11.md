@@ -67,6 +67,15 @@ commit: `docs(350): issues/ の外からの issue 参照を番号へ揃え、腐
 
 ## 残課題
 
-- [ ] 項目 1 を `verify-execution-not-just-exit-code.md` へ追記するか（ユーザー判断）
-- [ ] 項目 2 を `adversarial-review-own-safeguards.md` §1 の表へ追記するか（ユーザー判断）
-- [ ] 項目 4 の trigger をコード側コメントに残すか（ユーザー判断）
+（2026-09-11 に dotfiles-82 が全件処理。残課題なし）
+
+- [x] 項目 1 を `verify-execution-not-just-exit-code.md` へ追記 → canary 節へ 2 点
+      （**分類器の fallback ラベルは真の判定と見分けが付かない**ので発火しない枝自身に
+      カウンタを持たせる / **集計は bash で書く**。zsh の NOMATCH がループの 1 枝だけを毎回殺す）
+- [x] 項目 2 を `adversarial-review-own-safeguards.md` §1 の表へ追記 →
+      「**違反 0 件 / ヒット 0 件の正常系**」の行を足した（`grep | while read` の無マッチが
+      `set -e` 下で status 1 になり、後段に到達しないまま無言で死ぬ）
+- [x] 項目 4 の trigger をコード側コメントに残す →
+      `tests/issues/test_issue_path_refs_not_stale.sh` の下限判定の直前に、
+      **却下の理由**（下限を上げると fixture の正当な削除で赤くなる）と
+      **再評価の trigger**（候補件数が 90 を下回ったら見直す）を書いた
