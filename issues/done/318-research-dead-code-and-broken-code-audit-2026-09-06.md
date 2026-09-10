@@ -7,7 +7,7 @@
 各 7 体、dead-code 約 35 分 / broken-code 約 37 分）
 
 却下理由を残すための issue（残さないと次の audit が同じ指摘を再生成する）。
-resource-leaks の記録は [issue 308](../308-research-resource-leaks-audit-2026-09-06.md)。
+resource-leaks の記録は [issue 308](308-research-resource-leaks-audit-2026-09-06.md)。
 
 ## 全数勘定
 

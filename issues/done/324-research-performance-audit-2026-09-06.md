@@ -5,7 +5,7 @@
 出典: `/audit` performance / forge Minimum+（7 体・約 31 分）。
 🚨 **1 回目の実行はセッション上限で 4 体とも起動失敗**（`integrated: null`）し、上限リセット後に回し直した
 
-resource-leaks は [issue 308](../308-research-resource-leaks-audit-2026-09-06.md)、
+resource-leaks は [issue 308](308-research-resource-leaks-audit-2026-09-06.md)、
 dead-code / broken-code は [issue 318](318-research-dead-code-and-broken-code-audit-2026-09-06.md)。
 
 ## 全数勘定

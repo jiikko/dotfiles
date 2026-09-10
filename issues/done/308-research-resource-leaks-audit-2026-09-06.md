@@ -14,7 +14,7 @@
 
 この issue は**却下した指摘とその理由**を残すためのもの。残さないと次の audit が同じ指摘を
 再生成して、反証コストを丸ごと払い直すことになる
-（[`move-report-conclusions-to-issues.md`](../_claude/rules/move-report-conclusions-to-issues.md)）。
+（[`move-report-conclusions-to-issues.md`](../../_claude/rules/move-report-conclusions-to-issues.md)）。
 
 ## 全数勘定
 
@@ -87,7 +87,7 @@ refactor 後に成立していない」と主張したが、**私が裏を取っ
 - 監査は `loadLogData` の呼び出し元だけを数えて `LoadCommits` と取り違えていた
 
 done/146 は「追従だけを timeout で救う形は採らない」を理由つきで受容済みなので、
-[`verify-design-intent-before-refactor.md`](../_claude/rules/verify-design-intent-before-refactor.md)
+[`verify-design-intent-before-refactor.md`](../../_claude/rules/verify-design-intent-before-refactor.md)
 に従い**再提案しない**。ハング自体も再現できていない（未確認リスク）。
 
 **ただし 1 点だけ残る**: `gitlog.go` の doc は「TUI 対話中に非同期発行される経路は `runGitTimeout` を
@@ -107,7 +107,7 @@ concat が固まったという報告が出たら実測して窓を入れる）�
 `cli_health.go` の関数 doc が既に「`cancelAll` と結び付けないのは既存のバージョン検査・
 `usage.Fetch` が Background+timeout の契約で揃っているため。検査群全体を終了時 cancel へ揃える
 改修時に見直す」と**設計判断と再検討条件を明記**している
-（[`pending-issue-rationale-in-code.md`](../_claude/rules/pending-issue-rationale-in-code.md) の要求形を満たす）。
+（[`pending-issue-rationale-in-code.md`](../../_claude/rules/pending-issue-rationale-in-code.md) の要求形を満たす）。
 指摘者自身も実害を否定（Setpgid 無し + CLOEXEC パイプで子は次の出力で EPIPE）。
 露出は `cliHealthTimeout` の 5 秒上限で閉じる。
 
@@ -205,7 +205,7 @@ Go の func 型は構造的に代入可能なので、`disk` / `svc` / `docker` 
 
 - **修正案のうち 5 本が「新しい破壊的操作」の新設だった**（env 由来パスへの `rm -rf` /
   `find -delete` / pid ベースの掃除）。いずれも
-  [`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md)
+  [`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md)
   §0-A（作らずに済む構造はないか）を**1 件も問うていない**。
   schedkeys は実際「正常復帰パスに `rm -f` を 1 行足す」だけで 14,147 個の 100% が止まる
 - **severity の根拠がファイル件数に一元化**されていた。露出境界（mode / 所有者 / 置き場）や
