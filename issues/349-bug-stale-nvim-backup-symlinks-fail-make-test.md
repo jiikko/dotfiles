@@ -56,11 +56,62 @@ FAIL: dangling symlink /Users/koji/.config/nvim/init.vim-12-11-2024-17-12-59.pre
 
 ## 受け入れ条件
 
-- [ ] `make test` が `tests/claude/test_dangling_symlinks.sh` で落ちなくなる
-- [ ] 消す前に **4 本が本当に dangling で、dotfiles を指している**ことを 1 本ずつ確認した記録を残す
-- [ ] 2 を採るなら **変異検証**: 掃除を外すと検査が red になる／
-      **dotfiles を指さない symlink を消さない**ことを fixture で確かめる
+- [x] `make test` が `tests/claude/test_dangling_symlinks.sh` で落ちなくなる
+- [x] 消す前に **4 本が本当に dangling で、dotfiles を指している**ことを 1 本ずつ確認した記録を残す
+- [ ] ~~2 を採るなら変異検証~~ ← **対応案 1 のみを採ったので不要**（下記）
 
 ## 🚨 人の承認が要る
 
 HOME 配下のファイル削除なので、Claude は勝手に実行しない。承認が出るまでこの issue は open。
+
+## 決着 2026-09-10: 対応案 1（消す）だけを採った。**案 2（setup.sh へ掃除を足す）は採らない**
+
+ユーザー承認（「消してもいいよ」）を得て実施。
+
+### 消す前に 1 本ずつ確認したこと（エントリ単位で plan → exec → verify）
+
+**消す直前に条件を取り直して**から `rm` した（呼び出し元の申告値を根拠にしない）:
+
+| 確認 | 結果 |
+|---|---|
+| symlink であること | 4 本とも ✅ |
+| 指し先が `/Users/koji/dotfiles/_nvimconfig` であること | 4 本とも ✅（違えば SKIP する分岐を用意した） |
+| dangling であること（`[ -e ]` が偽） | 4 本とも ✅ |
+| 作成日 | 2023-11-18 / 2023-11-22 / 2024-12-11 ×2 = **9〜22 か月前** |
+
+### 「dein はもう使っていないか」を確かめた
+
+- **repo 全体で `dein` の参照は 0 件**（`pre-dein` という語を除く）
+- 現在のプラグインマネージャは **lazy.nvim**（`_nviminit.lua:1-3` が bootstrap している）
+- 指し先の `_nvimconfig` は `502cb237 remove _nvimconfig` で削除済み
+
+→ 4 本は **dein 時代の `init.vim` バックアップ**で、指し先も dein 自体も既に無い。情報量ゼロ。
+
+### 結果
+
+```
+pre-dein の残数: 0
+~/.config/nvim の symlink 総数: 2
+  init.lua       -> ~/dotfiles/_nviminit.lua   (OK)
+  lazy-lock.json -> ~/dotfiles/_lazy-lock.json (OK)
+tests/claude/test_dangling_symlinks.sh → OK: dotfiles 由来の dangling symlink なし
+```
+
+**正当な symlink 2 本は無傷**（消す条件を「dotfiles の `_nvimconfig` を指す」に絞ったため、
+そもそも候補に入らない）。
+
+### 🚨 案 2（`setup.sh` の legacy 掃除に足す）は採らない
+
+- **母集合が 4 本しか無く、しかも 2023–24 年の一度きりの移行の産物**。増える経路が無い
+  （dein はもう無い）。「発生源を断つ」対象そのものが存在しない
+- 他人の HOME を消す方向のコードを、**再発しないもののために**足すのは割に合わない
+  （`adversarial-review-own-safeguards.md` §0-A「掃除機構はそれ自体が新しい失敗の入口」）
+- **再開の trigger**: 同じ形（`dotfiles/` の実体を指す dangling symlink が HOME に増える）が
+  **もう一度**観測されたとき。そのときは母集合が 2 回以上あるので、機械化の価値が出る
+
+### 🚨 この検査は CI では vacuous なまま（変えていない）
+
+`.github/` に `setup.sh` の呼び出しは 0 件で、`test_dangling_symlinks.sh:11` 自身が
+「dotfiles 未 symlink の環境（CI 等）では対象リンクが 0 件になり素通しで pass する」と書いている。
+**守っているのは開発機の HOME だけ**という性質は今回の対応では変わらない。
+「手元でしか赤くならない検査は読み飛ばされて死ぬ」という懸念は残るので、記録しておく。
