@@ -140,7 +140,7 @@ commit のときは「自分が編集したファイル」だけを思い浮か�
 ## 残課題
 
 - [x] 気づき 5 → `mutation-verify-new-tests.md` 手順 1.6 の末尾へ 1 段追記（guard をハーネス側へ置く）
-- [x] 気づき 8 → (c) を採用し [issue 350](../350-docs-refer-issues-by-number-not-path-in-prose.md) を起票
+- [x] 気づき 8 → (c) を採用し [issue 350](350-docs-refer-issues-by-number-not-path-in-prose.md) を起票
       （(b) は fixture と区別できないため却下。理由は 350 本文）
 - [x] 気づき 10 → `issues/README.md` の `human` 節へ 1 行追記
 - [x] 気づき 11 → `instrument-before-second-fix.md` の「実プロセスの env を読む」節へ 1 行追記

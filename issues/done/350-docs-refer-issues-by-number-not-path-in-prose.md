@@ -2,7 +2,7 @@
 
 起票日: 2026-09-11
 対応日: 2026-09-11
-出典: [issue 348](done/348-retro-issue-done-tool-and-truecolor-guard-2026-09-10.md) 気づき 8
+出典: [issue 348](348-retro-issue-done-tool-and-truecolor-guard-2026-09-10.md) 気づき 8
 
 ## 問題
 
