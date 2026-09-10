@@ -84,8 +84,13 @@ check BLOCK "不在 TMUX_TMPDIR + -L default"          env -u TMUX TMUX_TMPDIR=/
 check BLOCK "-L default kill-server (TMUX unset)"    env -u TMUX bash "$shim_copy" -L default kill-server
 check BLOCK "-S /private/tmp/../default kill-server" env -u TMUX bash "$shim_copy" -S "/private/tmp/tmux-$uid/default" kill-server
 check BLOCK "-S /tmp/../default (symlink 正規化)"    env -u TMUX bash "$shim_copy" -S "/tmp/tmux-$uid/default" kill-server
-check BLOCK "-L default kill-session も block"       env -u TMUX bash "$shim_copy" -L default kill-session -t x
+check BLOCK "-L default kill-session も block (非対話)" env -u TMUX bash "$shim_copy" -L default kill-session -t x
 check BLOCK "bare kill-server (TMUX=本番)"           env TMUX="/private/tmp/tmux-$uid/default,1,0" bash "$shim_copy" kill-server
+# 🚨 P1: 大文字小文字違いの綴りも本番に届く (macOS FS は case-insensitive)。両防御を貫通していた。
+check BLOCK "-L DEFAULT (大文字) kill-server"        env -u TMUX bash "$shim_copy" -L DEFAULT kill-server
+check BLOCK "-L Default (混在) kill-server"          env -u TMUX bash "$shim_copy" -L Default kill-server
+check BLOCK "-S <...>/DEFAULT kill-server"           env -u TMUX bash "$shim_copy" -S "/private/tmp/tmux-$uid/DEFAULT" kill-server
+check BLOCK "-L DEFAULT kill-session (非対話)"       env -u TMUX bash "$shim_copy" -L DEFAULT kill-session -t x
 
 # protect ファイル経由の decoy が block されること (名前が default でなくても守れる)
 pf="$WORK/protect"; echo "/private/tmp/tmux-$uid/mydecoy" > "$pf"
@@ -122,7 +127,8 @@ else
   fi
 fi
 
-want_checks=15
+# 決定テストは常に 18 件走る (skip で満たされる余地を無くすため実 exec 抜きの下限にする)。
+want_checks=18
 [ "$checks" -ge "$want_checks" ] || bad "検査が $checks 件しか走っていない (${want_checks} 件以上のはず)"
 printf '\n検査 %d 件: fail=%d\n' "$checks" "$fails"
 [ "$fails" -eq 0 ] || exit 1

@@ -161,7 +161,8 @@ scan_segment() {
       # -L/-S の値トークン: basename が default なら本番直撃 (prot=1)。
       if [ "$pending" = 1 ]; then
         pending=0
-        case "${t##*/}" in default) [ "$in_global" = 1 ] && prot=1 ;; esac
+        # 🚨 macOS の FS は case-insensitive なので DEFAULT/Default も本番に届く。小文字化して照合する
+        case "$(printf '%s' "${t##*/}" | tr '[:upper:]' '[:lower:]')" in default) [ "$in_global" = 1 ] && prot=1 ;; esac
       fi
       continue
     fi
@@ -182,7 +183,7 @@ scan_segment() {
       -L* | -S*)
         [ "$in_global" = 1 ] && sock=1
         # 付属値形 (-Ldefault / -S/path/default) の basename が default なら本番直撃。
-        case "${t#-?}" in default | */default) [ "$in_global" = 1 ] && prot=1 ;; esac ;;
+        case "$(printf '%s' "${t#-?}" | tr '[:upper:]' '[:lower:]')" in default | */default) [ "$in_global" = 1 ] && prot=1 ;; esac ;;
       "$SEP_TOKEN" | ';') in_global=0 ;;
       -*) : ;;
       *)

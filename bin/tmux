@@ -14,13 +14,17 @@
 # **スクリプト内部の bare `tmux` 呼び出しも含めて**傍受できる唯一の層。
 #
 # ─── 脅威モデル ─────────────────────────────────────────────────────────────────
-# 止めるのは「エージェント / 非対話スクリプトが**うっかり**本番サーバを kill する」形だけ。
+# 止めるのは「エージェント / 非対話スクリプトが**うっかり**本番サーバを kill する」形。
+# 保護対象への操作を kind で分ける:
+#   - **kill-server (サーバごと全滅)**: TTY の有無に関わらず**無条件で拒否**する。
+#     エスケープは「実体を絶対パスで呼ぶ」1 本だけ (`/opt/homebrew/bin/tmux kill-server`)。
+#     🚨 対話 TTY を通さない理由 = TTY gate は pty がチェーンに入ると非対話でも開くため
+#     (script/expect/pty driver/tmux ペイン内。この repo は対話テストで pty driver 必須)。
+#     catastrophic な操作にはこの穴を負えないので、エスケープを絶対パス 1 本に絞った。
+#   - **kill-session (個別セッションの片付け = 日常操作)**: 対話 TTY のとき許可、非対話なら拒否。
+#     Claude の Bash ツールは TTY を持たない (実測 2026-09-11: [ -t 0/1/2 ] すべて非ゼロ)。
 # **意図的な回避は脅威に含めない** (対人の防御ではない)。以下は意図的に**検出しない**:
-#   - 実体を絶対パスで直接呼ぶ形 (`/opt/homebrew/bin/tmux ... kill-server`)。これが
-#     「本当に本番を消したい」ときの正規のエスケープ経路 (grep 可能・記憶しやすい)。
-#   - 対話シェル (stdin/stdout/stderr のいずれかが TTY) からの kill。ユーザー本人が端末で
-#     打ったものは「意図的」とみなして通す。Claude の Bash ツールは TTY を持たない
-#     (実測 2026-09-11: [ -t 0/1/2 ] すべて非ゼロ) ので、この gate は構造的に Claude を弾く。
+#   - 実体を絶対パスで直接呼ぶ形 (これが正規のエスケープ。grep 可能・記憶しやすい)。
 #   - `send-keys` / `run-shell` の中に書いた kill 文字列 (別レイヤーで実行される)。
 # 補助として _claude/hooks/deny-bare-tmux-kill.sh が `-L default` 直叩きを deny するが、
 # それは**直接打たれたコマンド**にしか効かない (script 内部は上記のとおり届かない)。
@@ -64,7 +68,7 @@ uid=$(id -u)
 # (b) -L <name> / -S <path> で socket が明示されているかを取る。
 # 値を取るグローバルオプション (-L -S -f -c -T) は値を 1 トークン読み飛ばす (want で次を待つ)。
 KILL_RE='^kill-s(er(v(er?)?)?|es(s(i(on?)?)?)?)$'
-is_kill=0 opt_L="" opt_S="" want="" seen_sub=0
+is_kill=0 kind=server opt_L="" opt_S="" want="" seen_sub=0
 for tok in "$@"; do
   if [ -n "$want" ]; then                     # 直前のオプションの値トークン
     case "$want" in L) opt_L="$tok" ;; S) opt_S="$tok" ;; esac  # discard は捨てる
@@ -78,7 +82,12 @@ for tok in "$@"; do
     -S*) opt_S="${tok#-S}" ;;
     -f|-c|-T) want=discard ;;                 # 値を持つが socket ではない (値を 1 つ捨てる)
     -*) : ;;                                   # その他のグローバルフラグ
-    *) seen_sub=1; [[ "$tok" =~ $KILL_RE ]] && is_kill=1 ;;
+    *) seen_sub=1
+       if [[ "$tok" =~ $KILL_RE ]]; then
+         is_kill=1
+         # kill-ser* = サーバごと全滅 / kill-ses* = 個別セッション。曖昧形は server 側 (厳しい方) に倒す。
+         case "$tok" in kill-ses*) kind=session ;; *) kind=server ;; esac
+       fi ;;
   esac
 done
 
@@ -119,6 +128,12 @@ if [ -z "$target" ]; then
   exit 3
 fi
 target_canon=$(canon_socket "$target")
+# 🚨 macOS の FS は case-insensitive (default と DEFAULT は同一ファイル = 同一サーバ。実測)。
+# canon_socket は dir を pwd -P で畳むが basename の大小は畳まれないので、比較を小文字化して行う。
+# これを怠ると `-L DEFAULT` / `-S <...>/DEFAULT` が本番に届くのに素通す (P1: 敵対レビューが
+# end-to-end で実測。2026-09-11 に綴り 1 文字で 2 度事故を起こした的と同型)。
+lc() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+target_lc=$(lc "$target_canon")
 
 # ── 保護対象集合を組む ─────────────────────────────────────────────────────────
 protected=""
@@ -138,7 +153,7 @@ fi
 is_protected=0
 while IFS= read -r p; do
   [ -n "$p" ] || continue
-  [ "$p" = "$target_canon" ] && { is_protected=1; break; }
+  [ "$(lc "$p")" = "$target_lc" ] && { is_protected=1; break; }   # 🚨 case-insensitive で照合
 done <<PROT
 $protected
 PROT
@@ -146,12 +161,22 @@ PROT
 # 保護対象でなければ素通し (隔離テストサーバ tt-cleanup-* / ctrlv-test-* 等はここを通る)。
 [ "$is_protected" = 1 ] || exec "$REAL" "$@"
 
-# ── 保護対象への kill。TTY (= 対話ユーザー) なら通す、非対話 (Claude/script) なら block ──
-if [ -t 0 ] || [ -t 1 ] || [ -t 2 ]; then
-  exec "$REAL" "$@"                           # ユーザー本人が端末で打った = 意図的
+# ── 保護対象への kill ──────────────────────────────────────────────────────────
+# kill-session (個別セッションの片付け = 日常操作) は対話 TTY のとき許可する。
+# kill-server (サーバごと全滅 = 2026-07-30/09-11 の catastrophic 形) は **TTY でも無条件で拒否**する。
+# 🚨 TTY gate は pty がチェーンに入ると非対話でも開く (P2: script/expect/pty driver/tmux ペイン内。
+# この repo は対話テストで pty driver を必須にしている)。最悪形 (kill-server) はその穴を負えないので、
+# エスケープを「実体を絶対パスで呼ぶ」1 本に絞る。
+if [ "$kind" = session ] && { [ -t 0 ] || [ -t 1 ] || [ -t 2 ]; }; then
+  exec "$REAL" "$@"                           # 対話ユーザーのセッション整理は通す
 fi
 
-printf 'tmux shim: 🚨 本番 tmux サーバ (%s) への %s を非対話シェルから拒否しました。\n' "$target_canon" "kill" >&2
-printf '  これは 2026-07-30 / 2026-09-11 の本番サーバ誤殺を防ぐためのガードです。\n' >&2
-printf '  本当に消す必要があるなら、対話シェルで実行するか、実体を絶対パスで: %s\n' "$REAL" >&2
+if [ "$kind" = server ]; then
+  printf 'tmux shim: 🚨 本番 tmux サーバ (%s) の kill-server を拒否しました。\n' "$target_canon" >&2
+  printf '  サーバごと全滅させる操作は、対話シェルでも通しません (2026-07-30 / 2026-09-11 の誤殺防止)。\n' >&2
+  printf '  本当に消すなら実体を絶対パスで: %s kill-server\n' "$REAL" >&2
+else
+  printf 'tmux shim: 🚨 本番 tmux サーバ (%s) への kill-session を非対話シェルから拒否しました。\n' "$target_canon" >&2
+  printf '  対話シェルで実行するか、実体を絶対パスで: %s\n' "$REAL" >&2
+fi
 exit 4

@@ -15,6 +15,7 @@
 | [`nvim-ruby-lsp.md`](nvim-ruby-lsp.md) | nvim の Ruby LSP。定義ジャンプが索引をどう引くか、索引がいつ作られどこに在るか (ディスクには無い)、参照検索だけ 11 秒かかる理由、2026-09-08 の高速化で何を書き何を書かなかったか | Ruby のサーバ選択・`<C-k>`・ステータスラインの進捗を触る / 「遅い」と言われた |
 | [`theme-colors.md`](theme-colors.md) | 色は「意味 (role) → 定数」で管理する。**使用箇所ではなく定数を触る**。色の意味マップ | tmux か nvim の色を変えたい |
 | [`tmux-plugins.md`](tmux-plugins.md) | セッション永続化 (resurrect + continuum)。イベント駆動の debounce 保存と、全保存経路を直列化する単一 lock | tmux の保存・復元経路を触る |
+| [`tmux-production-kill-guard.md`](tmux-production-kill-guard.md) | 本番 tmux サーバの誤殺を防ぐ二層ガード (`bin/tmux` shim + deny hook)。なぜ文字列 hook では止まらなかったか、保護対象の判定、kill-server/kill-session の別扱い、エスケープ、残存リスク | `bin/tmux` / `deny-bare-tmux-kill.sh` を触る / 本番 tmux が消えた |
 
 ## 仕様 (契約。実装より仕様が先)
 
