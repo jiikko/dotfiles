@@ -81,3 +81,40 @@ map <C-J> = 実装へ、無ければ定義へ (impl or definition)
 
 🚨 **これは 332（solargraph → ruby_lsp）の乗り換えで**入った可能性があるが、
 **solargraph 側の同条件は測っていない**（未実測）。判断の前に比較が要るなら言ってください。
+
+## 2026-09-10 (2): ステータスラインの幅は **機械では測れなかった**（未実測。OK ではない）
+
+「文字数が長くて他の要素（encoding / filetype / 位置）を押し出していないか」を機械化しようとしたが、
+**harness が状態を lualine の描画へ注入できなかった**ので断念した。**測れていないだけで、
+問題が無いことを確認したわけではない。**
+
+### やったこと
+
+headless nvim で `dotfiles.lsp.progress_status` を差し替え（lualine の component は
+`require("dotfiles.lsp").progress_status()` を毎回呼ぶので届くはず）、`redrawstatus` の後に
+`nvim_eval_statusline(vim.o.statusline, {maxwidth = cols})` を `cols = 80 / 120 / 200` で撮った。
+注入した文字列は 4 種（空 / `LSP: 参照を検索中…` / `Ruby LSP: indexing files: 7% completed` /
+`… 100% completed (21148/21148)`）。
+
+### 🚨 1 回目は「全ケースで押し出されていない」と読みかけた
+
+12 ケースすべてで encoding / filetype / location が残っていたので「問題なし」に見えた。
+しかし **canary（注入した文字列が実際に描画へ出ているか）を足すと、空以外の 9 ケースすべてで
+「出ていない」**と分かった。つまり **4 ケースは同じものを測っていた**だけで、
+「押し出されない」という結論は**注入が効いていないことの言い換え**だった。
+
+`verify-execution-not-just-exit-code.md`「有無で結果が変わらない観測を証拠に数えない」の実例。
+**canary を足さなければ、この issue に誤った「機械で確認済み」を書き込んでいた。**
+
+### 原因の見当（未確定）
+
+lualine は component の値をキャッシュ／自前のタイマーで更新しているらしく、
+`redrawstatus` → `nvim_eval_statusline` の経路では差し替えが反映されない。
+`require("lualine").statusline()` を直接呼ぶ等の別経路なら届く可能性はあるが、**未検証**。
+
+### この項目は人に残す
+
+`no-mixed-width-columns-in-terminal-ui.md` が言うとおり、幅の合計が合っていても
+**実端末での見え方は人が見るまで分からない**。上の失敗は「注入の経路」の問題なので、
+経路さえ通れば「押し出し」自体は機械で測れるはず。だが**今は測れていない**ので、
+そう明記して人へ戻す。
