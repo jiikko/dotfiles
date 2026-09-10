@@ -145,7 +145,7 @@ commit のときは「自分が編集したファイル」だけを思い浮か�
 - [ ] 気づき 8 の (b) / (c) の選択（散文の issue パスをどう扱うか）← **ユーザーの判断待ち**
 - [ ] 気づき 10（`issues/README.md` の `human` 定義へ追記）← **ユーザーの判断待ち**
 - [ ] 気づき 11（`instrument-before-second-fix.md` へ追記）← **ユーザーの判断待ち**
-- [ ] [issue 349](349-bug-stale-nvim-backup-symlinks-fail-make-test.md)（`make test` が
+- [ ] [issue 349](done/349-bug-stale-nvim-backup-symlinks-fail-make-test.md)（`make test` が
       環境由来で常に赤）は人の承認待ち
 
 ## 追記 2026-09-10: 反証レビュー（read-only）を通した
