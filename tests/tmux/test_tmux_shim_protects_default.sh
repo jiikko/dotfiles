@@ -91,6 +91,14 @@ check BLOCK "-L DEFAULT (大文字) kill-server"        env -u TMUX bash "$shim_
 check BLOCK "-L Default (混在) kill-server"          env -u TMUX bash "$shim_copy" -L Default kill-server
 check BLOCK "-S <...>/DEFAULT kill-server"           env -u TMUX bash "$shim_copy" -S "/private/tmp/tmux-$uid/DEFAULT" kill-server
 check BLOCK "-L DEFAULT kill-session (非対話)"       env -u TMUX bash "$shim_copy" -L DEFAULT kill-session -t x
+# 🚨 P1 (連鎖): tmux は `;` で複数コマンドを順に実行する。後続の kill を見落とさないこと。
+check BLOCK "連鎖: 非kill ; kill-server (TTY不要で本番直撃のクラス)" env -u TMUX bash "$shim_copy" -L default list-sessions ";" kill-server
+check BLOCK "連鎖: kill-session ; kill-server"       env -u TMUX bash "$shim_copy" -L default kill-session -t x ";" kill-server
+check BLOCK "連鎖: 先頭が読み取り \\; の後に kill-server" env -u TMUX bash "$shim_copy" -L default display -p x ";" kill-server
+check PASS  "連鎖でも隔離サーバなら素通し"           env -u TMUX bash "$shim_copy" -L tt-cleanup-x-1 list-sessions ";" kill-server
+# 🚨 P2 (-a): kill-session -a は指定 1 個以外を全滅 = catastrophic。server 扱いで無条件 block。
+check BLOCK "-a 全滅系: kill-session -a -t keep"     env -u TMUX bash "$shim_copy" -L default kill-session -a -t keep
+check BLOCK "-a 全滅系: kill-session -a"             env -u TMUX bash "$shim_copy" -L default kill-session -a
 
 # protect ファイル経由の decoy が block されること (名前が default でなくても守れる)
 pf="$WORK/protect"; echo "/private/tmp/tmux-$uid/mydecoy" > "$pf"
@@ -128,7 +136,7 @@ else
 fi
 
 # 決定テストは常に 18 件走る (skip で満たされる余地を無くすため実 exec 抜きの下限にする)。
-want_checks=18
+want_checks=24
 [ "$checks" -ge "$want_checks" ] || bad "検査が $checks 件しか走っていない (${want_checks} 件以上のはず)"
 printf '\n検査 %d 件: fail=%d\n' "$checks" "$fails"
 [ "$fails" -eq 0 ] || exit 1

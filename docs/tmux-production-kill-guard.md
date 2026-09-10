@@ -60,11 +60,13 @@ Claude が**直接打った** Bash コマンドを境界で検査し、ソケッ
 守れる (敵対レビューで実測):
 - 2026-09-11 の実際の経路 (subagent → `bash script.sh` → TTY 無し → `-L default` + 空 `TMUX_TMPDIR`) は拒否される。
 - `/tmp` ↔ `/private/tmp`、`..`、二重/末尾スラッシュ、**大文字小文字違いの綴り** (`-L DEFAULT`) はすべて正規化・小文字化で吸収して拒否。
-- 隔離テストサーバ (名前ベース) を誤って守ることはない (過剰 deny なし)。
+- **`;` / `\;` で連ねた複数コマンド** (`list-sessions \; kill-server` のように非 kill の後ろに kill を隠す形。TTY 不要) も、連鎖の全 subcommand を走査して拒否。
+- **`kill-session -a`** (指定 1 個以外を全滅 = catastrophic) は server 扱いに昇格して無条件拒否。
+- 隔離テストサーバ (名前ベース) を誤って守ることはない (過剰 deny なし。連鎖でも隔離サーバなら素通し)。
 
 守れない (既知・意図的にスコープ外):
 - **実体を絶対パスで呼ぶ形** — 正規のエスケープ。意図的回避は脅威に含めない。
-- **pty がチェーンに入った状態での kill-session** — `script`/`expect`/pty driver/tmux ペイン内では `[ -t ]` が TTY を返すため、kill-session の TTY ゲートが非対話でも開く。kill-server (catastrophic) はこの穴を負わないよう TTY を通さないが、kill-session (個別・非 catastrophic) は housekeeping 優先で許可を残している。
+- **pty がチェーンに入った状態での単一 kill-session** — `script`/`expect`/pty driver/tmux ペイン内では `[ -t ]` が TTY を返すため、kill-session の TTY ゲートが非対話でも開く。kill-server と `kill-session -a` (catastrophic) はこの穴を負わないよう TTY を通さない。残るのは**個別 1 セッションの kill-session** だけで (`-a` なし)、これは housekeeping 優先で許可を残している。1 セッションずつ消す形は非 catastrophic。
 - **REAL のハードコード** (`/opt/homebrew/bin/tmux`) — tmux が別位置に移ると全 tmux 呼び出しが失敗する。Homebrew の symlink は版更新をまたいで安定なので現実的リスクは低い。
 - **第二防御 (hook) の basename 判定** — hook は文字列検査なので、`-S <非本番dir>/default` のように basename が `default` の隔離 socket を過剰 deny しうる。第一防御 (shim) は full-path で正しく判定するので、実行時の最終判断は shim が持つ。
 

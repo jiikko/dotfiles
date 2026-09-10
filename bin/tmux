@@ -68,27 +68,50 @@ uid=$(id -u)
 # (b) -L <name> / -S <path> で socket が明示されているかを取る。
 # 値を取るグローバルオプション (-L -S -f -c -T) は値を 1 トークン読み飛ばす (want で次を待つ)。
 KILL_RE='^kill-s(er(v(er?)?)?|es(s(i(on?)?)?)?)$'
-is_kill=0 kind=server opt_L="" opt_S="" want="" seen_sub=0
+# 🚨 tmux は `;` / `\;` で複数コマンドを 1 呼び出しに連ねて**順に実行**する。最初の subcommand
+# だけを見ると `list-sessions \; kill-server` のように**後続の kill を見落として本番へ通す**
+# (敵対レビューが実測。最初が非 kill なら TTY すら不要で、2026-09-11 と同じ script 内部クラス)。
+# → 連鎖の**全 subcommand**を走査する。global socket option (-L/-S/-f/-c/-T) は最初の subcommand
+# より前にしか現れないので、そこだけで拾う。連鎖のどこかに kill があれば is_kill=1、
+# その中で最厳の kind (server > session) を採る。
+opt_L="" opt_S="" want="" seen_first_sub=0 expect_sub=1
+is_kill=0 kind="" cur_sub=""                  # kind: "" なし / session / server (server が最厳)
 for tok in "$@"; do
-  if [ -n "$want" ]; then                     # 直前のオプションの値トークン
+  if [ -n "$want" ]; then                     # 直前の global option の値トークン
     case "$want" in L) opt_L="$tok" ;; S) opt_S="$tok" ;; esac  # discard は捨てる
     want=""; continue
   fi
-  [ "$seen_sub" = 1 ] && continue             # subcommand 以降は見ない
-  case "$tok" in
-    -L) want=L ;;
-    -S) want=S ;;
-    -L*) opt_L="${tok#-L}" ;;
-    -S*) opt_S="${tok#-S}" ;;
-    -f|-c|-T) want=discard ;;                 # 値を持つが socket ではない (値を 1 つ捨てる)
-    -*) : ;;                                   # その他のグローバルフラグ
-    *) seen_sub=1
-       if [[ "$tok" =~ $KILL_RE ]]; then
-         is_kill=1
-         # kill-ser* = サーバごと全滅 / kill-ses* = 個別セッション。曖昧形は server 側 (厳しい方) に倒す。
-         case "$tok" in kill-ses*) kind=session ;; *) kind=server ;; esac
-       fi ;;
-  esac
+  if [ "$tok" = ";" ]; then expect_sub=1; cur_sub=""; continue; fi   # 次の subcommand へ
+  if [ "$expect_sub" = 1 ]; then
+    # subcommand の位置。最初の subcommand より前だけ global socket option を拾う。
+    case "$tok" in
+      -L) [ "$seen_first_sub" = 0 ] && want=L; continue ;;
+      -S) [ "$seen_first_sub" = 0 ] && want=S; continue ;;
+      -L*) [ "$seen_first_sub" = 0 ] && opt_L="${tok#-L}"; continue ;;
+      -S*) [ "$seen_first_sub" = 0 ] && opt_S="${tok#-S}"; continue ;;
+      -f|-c|-T) [ "$seen_first_sub" = 0 ] && want=discard; continue ;;
+      -*) continue ;;                         # その他のフラグ
+    esac
+    # 非オプション = subcommand 本体
+    expect_sub=0; seen_first_sub=1; cur_sub="$tok"
+    if [[ "$tok" =~ $KILL_RE ]]; then
+      is_kill=1
+      # kill-ser* = サーバごと全滅 / kill-ses* = 個別。曖昧形 (KILL_RE の最小は kill-ser/kill-ses)
+      # は position 7 で解けるので誤らない。既に server を見ていれば下げない。
+      case "$tok" in kill-ses*) [ "$kind" = server ] || kind=session ;; *) kind=server ;; esac
+    fi
+    continue
+  fi
+  # subcommand の引数。kill-session -a (指定 1 個以外を全滅 = catastrophic) を server へ昇格。
+  if [ "$is_kill" = 1 ] && [ "$kind" = session ]; then
+    case "$cur_sub" in
+      kill-ses*)
+        case "$tok" in
+          -t*) : ;;                           # -t/-target のクラスタ (値)。-a ではない
+          -*a*) kind=server ;;                # -a を含む短フラグクラスタ = 全滅系
+        esac ;;
+    esac
+  fi
 done
 
 # kill でないなら (kill-s を含むが subcommand は別、等) 素通し。
