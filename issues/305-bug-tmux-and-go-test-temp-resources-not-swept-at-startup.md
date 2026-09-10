@@ -1,5 +1,11 @@
 # bug: テストが起こした隔離 socket / 一時ディレクトリが「中断で残る」まま誰も回収しない
 
+> 🚨 **担当中: dotfiles-4b**（2026-09-10〜）。`issues/next/` に claim 済み。
+> `adversarial-review-own-safeguards.md` §7 の敵対レビューを 3 周まで回して P1 を都度修正しており、
+> **4 周目を残して作業中**です。横から done へ送らないでください。
+> 触っているファイル: `tests/tmux/test_socket_cleanup.sh` / `test_reap_orphan_servers.sh` /
+> `tests/tmux/lib/reap_mktemp.sh` / `tests/tmux/lib/kill_socket.sh`
+
 起票日: 2026-09-06
 カテゴリ: bug
 優先度: 中（残骸は実測で溜まっている。実害は衛生と TMPDIR の圧迫）

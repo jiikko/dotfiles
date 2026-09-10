@@ -1,5 +1,11 @@
 # research: resource-leaks 監査の記録（2026-09-06）— 全数勘定・却下理由・未決着
 
+> 🚨 **担当中: dotfiles-4b**（2026-09-10〜）。`issues/next/` に claim 済み。
+> `adversarial-review-own-safeguards.md` §7 の敵対レビューを 3 周まで回して P1 を都度修正しており、
+> **4 周目を残して作業中**です。横から done へ送らないでください。
+> 触っているファイル: `tests/tmux/test_socket_cleanup.sh` / `test_reap_orphan_servers.sh` /
+> `tests/tmux/lib/reap_mktemp.sh` / `tests/tmux/lib/kill_socket.sh`
+
 起票日: 2026-09-06
 カテゴリ: research
 出典: `/audit` resource-leaks / forge Minimum+（`go-architecture-designer` /
