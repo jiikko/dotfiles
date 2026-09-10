@@ -8,18 +8,20 @@
 
 obaket (`~/src/my-products/apps/obaket`) で glogx の issues view を開き:
 
-1. 親行「▸ google-drive (N)」「▸ obaketcloud (N)」が出て、展開 / 折り畳みが動く
-2. group 内の issue を `n` で group 内 `next/` へ移せる (global `issues/next/` に行かない)
-3. 親行で番号 filter を Esc したとき添字が残らない (round 3 で直した箇所)
+1. [x] 親行「▸ google-drive (N)」「▸ obaketcloud (N)」が出て、展開 / 折り畳みが動く ← **機械で確認済み**
+2. [x] group 内の issue を `n` で group 内 `next/` へ移せる (global `issues/next/` に行かない) ← **機械で確認済み**
+3. [x] 親行で番号 filter を Esc したとき添字が残らない (round 3 で直した箇所) ← **機械で確認済み**
 
 ### 2026-09-06 追記 (issue 291 の実装ぶん)
 
-4. group を展開すると、**`a` を押していない既定の状態でも** `epic/<name>/done/` の子が `✓` で、
+4. [x] group を展開すると、**`a` を押していない既定の状態でも** `epic/<name>/done/` の子が `✓` で、
    `epic/<name>/pending/` の子が `⏸` で見える (global の done/pending は従来どおり `a` を進めるまで見えない)
+   ← **機械で確認済み**
 5. 親行が `▸ <name> (5 ✓2)` の形になる (done が 0 件の group は従来の `(N)` のまま)。
-   **半角と全角が同じ桁に並んでいないか、実際の幅で目視する**
-6. `epic/<name>/closed/` のように予約外の綴りのディレクトリに md を置くと、迷子 `?` として
-   一覧に出る (消えない)
+   - [x] **書式**（`(5 ✓2)` という文字列になること）← 機械で確認済み
+   - [ ] 🚨 **半角と全角が同じ桁に並んでいないか、実際の幅で目視する** ← **ここだけ人が要る**
+6. [x] `epic/<name>/closed/` のように予約外の綴りのディレクトリに md を置くと、迷子 `?` として
+   一覧に出る (消えない) ← **機械で確認済み**
 
 ## 結果
 
@@ -56,3 +58,14 @@ obaket (`~/src/my-products/apps/obaket`) で glogx の issues view を開き:
       `no-mixed-width-columns-in-terminal-ui.md` に従って**空白で埋めず全角文字へ置き換える**
 
 項目 1 / 2 / 3 / 4 / 6 は上のテストが証拠なので、**目視の対象から外してよい**。
+
+## 残タスク 2026-09-10
+
+**目視が要るのは項目 5 の「幅」だけ**（1〜4・6 と 5 の書式は既存テストが覆っていることを、
+テスト名からの推測ではなく assert の中身を読み実走して確認済み。上の表）。
+チェックボックスに反映したので、**人はこの issue を開いて `[ ]` の 1 行だけ見ればよい**。
+
+この 1 行が閉じられない理由は
+[`no-mixed-width-columns-in-terminal-ui.md`](../_claude/rules/no-mixed-width-columns-in-terminal-ui.md)
+が明言している —「表示幅の合計が一致していても、半角 1 文字は全角 2 カラムのセルの左に寄る」ので
+**幅を数えるテストでは検出できず、人が見るまで分からない**。機械化の余地は無い。
