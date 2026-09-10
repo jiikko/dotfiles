@@ -17,6 +17,13 @@
   (動作確認待ち) に回そうとしたら、**その前に「隔離 `-L` サーバで測れないか」を一度問う**。
   実例 2026-08-27: 「conf を reload したら仕掛けた sleeper が死ぬか」を human に回しかけたが、
   隔離サーバで 1 分で実測できた (生存する)。人待ちは価値が腐るので、測れるものは先に潰す
+- 🚨 **`tmux kill-server` は socket ファイルを消さない**（実測 2026-09-10。SIGKILL でも同じ）。
+  隔離サーバを止めるだけでは**正常終了のたびに socket が 1 個ずつ残る**ので、後片付けは
+  「**kill する前に** `display -p '#{socket_path}'` で実パスを控え、kill 後にそのパスだけを
+  `rm`」まで含める（正本は `tests/tmux/lib/kill_socket.sh` の `tt_tmux_kill_socket`）。
+  `TMUX_TMPDIR` を使い捨て dir に倒して**dir ごと消す**形なら socket もその中なので追加の後始末は要らない
+- **残骸を走査して消す掃除機構は作らない**。消すのは**自分が控えたパスだけ**にする
+  （走査は母集合を取り違えた瞬間に本番の socket へ届く。`adversarial-review-own-safeguards.md` §0-A）
 - **そもそも tmux を新規に立てる必要があるか先に問う**。2026-07-30 の事故は、この問いを飛ばしたことが起点だった（測りたかったのは `bin/glogx` ラッパーと Go バイナリ直の差で、tmux を一切使わずに測れた）
 
 ## なぜ
@@ -36,7 +43,6 @@
 
 - ✓ 破壊的 tmux コマンドの前に `tmux -L <name> ls` で「本番が見えない」ことを実証する
 - ✓ probe の全サブコマンドに `unset TMUX TMUX_PANE` + ユニーク `-L`（または `-S`）を付ける
-- ✓ 後片付けは自分の socket を明示して打つ（`tmux -L <name> kill-server`）
 - ✓ 恒久テストは tests/tmux/ の既存方式に倣う（socket 隔離 = 冒頭の `unset TMUX TMUX_PANE` + `TMUX_TMPDIR`。`lib/isolate_env.sh` は HOME/XDG の隔離**のみ**で socket は対象外）
 - ✗ `TMUX_TMPDIR` のみに依存した「隔離したつもり」（`$TMUX` が生きていると素通り）
 - ✗ 成功出力を隔離の証拠として扱う

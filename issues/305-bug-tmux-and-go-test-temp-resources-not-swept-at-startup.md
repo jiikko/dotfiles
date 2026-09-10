@@ -689,3 +689,80 @@ canary の一時ファイル残骸 **0 件**。
 **「残骸が溜まっている」を報告する前に、その置き場が誰にいつ掃除されるかを確かめる。**
 `/private/tmp`（boot で一掃）/ `/private/var/folders`（dirhelper が定期掃除）/ `HOME`（誰も掃除しない）
 で扱いがまったく違う。今回はそれを確かめずに**削除の承認を求めていた**。
+
+## 締め (2026-09-11) — ① を全数勘定つきで閉じる
+
+前セッションが **95bddea8 を本文へ書かずに離脱した**ので、その記録・実測・全数勘定をここに置く。
+以降のセッションはこの節だけ読めばよい（上の各節の残タスクは末尾の決着表を見る）。
+
+### 95bddea8「検査自身の socket 漏れを塞ぎ、ヘルパーを lib へ出してアンカーを無くす」
+
+直前の節（「検証しているテスト自身が 48 個漏らしていた」）で **合意済みだった直し方が実装済み**。
+`tests/tmux/test_socket_cleanup.sh` はファイル全体を 1 本の `trap tt_cleanup_all EXIT INT TERM HUP` で
+覆い、socket は `tt_new_socket` が**名前を決めた瞬間に登録**する。**後始末に検査対象そのもの
+（`tt_tmux_kill_socket`）を使わない**ので、それを壊す変異を当てても後始末は壊れない。
+併せて 3 周目 P1-2（`}` の行末コメント 1 つで信頼窓が 6 → 51 行へ無警告で広がる）に対応して、
+ヘルパーを `tests/tmux/lib/reap_mktemp.sh` へ出し、**検査から awk も行範囲もアンカーも消した**。
+
+### A-B 実測（2026-09-11）— 3 母集合を同時に数えた
+
+🚨 前回の A-B が `/tmp/reap*` しか数えず **socket 97 個を構造的に見落とした**ので、今回は
+`tmux-501/`・`reap*`・`/private/tmp` 全体を同時に数えた（§6「その計測が構造的に見落とすもの」）。
+
+| | tmux-501/ | reap* | /private/tmp 全体 |
+|---|---|---|---|
+| 実行前 | 100 | 29 | 390 |
+| `make test-tmux` (rc=0) の後 | 100 | 29 | 390 |
+| + `test_tmux_pane_state_bell.sh` + `test_debounced_save.sh` (rc=0) の後 | **100** | **29** | **390** |
+
+直近 5 分に作られた socket は **0 件**。
+
+**中断経路（この issue の本来の failure mode）も測った**。socket が生まれた瞬間に `kill -TERM`
+を撃つ（生まれる前に撃つと「機構の有無で結果が変わらない観測」になる）:
+
+| | rc | この run が残した socket |
+|---|---|---|
+| 現行 | 1 / 143 | **0** |
+| 変異（`trap tt_cleanup_all …` の行を消す） | 143 | **1**（`before=99 → after=100`） |
+
+= この A-B には判別力がある（機構を外すと観測結果が変わる）。変異は当てる前に `bash -n` で
+構文を確認し、1 世代の `cp` から復元して `git diff` が空であることを見た。
+
+### `-L` を使う 13 箇所の全数勘定 — **追加の漏れ元は 0 件**
+
+残タスクに「他に `-L` を使うテストが増えたら同じヘルパーを使う」とあったので数え直した。
+**判定軸は「socket が共有 dir に落ちるか」**であって、ヘルパーを呼んでいるかではない:
+
+| 経路 | socket の落ち先 | 後始末 | 対象か |
+|---|---|---|---|
+| `tests/tmux/test_ctrl_v_paste.sh` / `tests/claude/test_tmux_pane_state_bell.sh` | **共有**（既定の socket dir） | `tt_tmux_kill_socket` | ✅ 対応済み（`b81fa2e0`） |
+| `tests/tmux/test_socket_cleanup.sh` | **共有**（`default` を消さないことを検査するので意図的） | 独立した `tt_cleanup_all` | ✅ 対応済み（`95bddea8`） |
+| `test_mark_seen.sh` / `test_fork_scratch.sh` / `test_tmux.sh` / `bench_tmux.sh` / `test_smooth_scroll.sh` | 使い捨て `TMUX_TMPDIR` の中 | `rm -rf "$TMUX_TMPDIR"` で **dir ごと** | ❌ 対象外（socket も一緒に消える） |
+| `tests/claude/test_deny_bare_tmux_kill.sh` | — | — | ❌ hook へ渡す**文字列**で、tmux を起こさない |
+| `tests/zshrc/tmux-session/test_debounced_save.sh` / `scripts/tmux_resurrect_debounced_save.sh` / `scripts/check_syntax.zsh` | — | — | ❌ socket パスは stub の照合値・構文検査の対象 |
+
+静的な読みだけでは閉じない（この issue の履歴は「正しく見えるのに走らない cleanup」ばかり）ので、
+上の A-B が経験的な裏取りになっている（5 本の `TMUX_TMPDIR` 隔離勢も含めて通しで走らせて増えなかった）。
+
+### 推奨対応 4 を規範化した（この issue から外へ出る唯一の一般知）
+
+`_claude/rules/tmux-probe-requires-socket-isolation.md` に 2 項足した。起票時の文面
+（「隔離した socket は**起動時掃除で回収する**」）は**採らない** — 設計が変わったため:
+
+- **`tmux kill-server` は socket ファイルを消さない**ので、kill する前に `#{socket_path}` を控え、
+  kill 後にそのパスだけを `rm` する（正本は `tests/tmux/lib/kill_socket.sh`）
+- **走査して消す掃除機構は作らない**（母集合を取り違えた瞬間に本番の socket へ届く）
+
+### 過去の残タスクの決着表（上の各節の `- [ ]` はこの表で置き換わる）
+
+| 節 | 残タスク | 決着 |
+|---|---|---|
+| 推奨対応 3 / ①の初期案 | socket 名の prefix を repo 共通へ揃える | **不要**（`lsof` で prefix に依存せず書けると判明。さらに掃除機構自体が不要になった） |
+| ① 再設計 | 起動時掃除（走査して消す）を `isolate_env.sh` へ | **不採用**（発生源を断つ側へ倒した。§0-A） |
+| 掃除の実行 | 535 / 41 / 48 個の残骸を消す承認 | **不要**（`/private/tmp` は起動時に一掃される。実測 2026-09-10） |
+| 3 周目 | `test_reap_orphan_servers.sh` が trap の**前**に `mktemp -d` する窓 | **解消済み**（現行は cleanup と trap が 50〜68 行、dir 作成は 72 行以降） |
+| 推奨対応 4 | rule への 1 行 | **完了**（上記。文面は起票時と変えた） |
+| ② | Go テストの一時 dir | **完了**（`src/doctor/testtmp`。変異 7 本 red） |
+| 全節 | SIGKILL で trap が走らない場合 | **検出しないと決めた形**（`test_socket_cleanup.sh` のヘッダに脅威モデルとして明記済み。`/private/tmp` は起動時に一掃されるので溜まり続けない） |
+
+残っている 100 / 29 個は**すべて修正前（〜2026-09-10 10:15）の残骸**で、次の再起動で消える。
