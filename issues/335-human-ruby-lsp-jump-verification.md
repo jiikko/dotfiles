@@ -106,15 +106,28 @@ headless nvim で `dotfiles.lsp.progress_status` を差し替え（lualine の c
 `verify-execution-not-just-exit-code.md`「有無で結果が変わらない観測を証拠に数えない」の実例。
 **canary を足さなければ、この issue に誤った「機械で確認済み」を書き込んでいた。**
 
-### 原因の見当（未確定）
+### 原因を観測で確定させた（2026-09-10。推測ではない）
 
-lualine は component の値をキャッシュ／自前のタイマーで更新しているらしく、
-`redrawstatus` → `nvim_eval_statusline` の経路では差し替えが反映されない。
-`require("lualine").statusline()` を直接呼ぶ等の別経路なら届く可能性はあるが、**未検証**。
+別経路（`require("lualine").statusline()` / `lualine.refresh()` + eval）も試したが**同じく届かない**。
+推測をやめて「何が load されているか」を観測したら理由が出た:
 
-### この項目は人に残す
+```
+lualine loaded: true          lazy: lualine.nvim は loaded
+vim.o.statusline = [%#lualine_transparent#]     ← ハイライト指定だけ。**中身が無い**
+dotfiles.lsp loaded: false
+```
 
-`no-mixed-width-columns-in-terminal-ui.md` が言うとおり、幅の合計が合っていても
-**実端末での見え方は人が見るまで分からない**。上の失敗は「注入の経路」の問題なので、
-経路さえ通れば「押し出し」自体は機械で測れるはず。だが**今は測れていない**ので、
-そう明記して人へ戻す。
+**headless では lualine が `vim.o.statusline` を埋めない。** つまり
+`nvim_eval_statusline(vim.o.statusline, …)` が評価していたのは **lualine ではなく既定の
+statusline** で、そこに出ていた `utf-8` / `%d+:%d+` は**既定の ruler の出力**だった。
+「押し出されていない」に見えたのは、そもそも lualine を測っていなかったから。
+
+→ **この経路では原理的に測れない。** 測るなら実 UI が要る（pty に nvim を attach して
+画面を読む）。それは `no-mixed-width-columns-in-terminal-ui.md` が「人が見るまで分からない」と
+言っている領域そのものなので、**この項目は人に残すのが正しい**（これ以上の機械化を試さないこと）。
+
+### この項目は人に残す（機械化の再挑戦は不要）
+
+3 経路試して 3 経路とも「lualine を測れていない」に帰着した。原因は harness の書き方ではなく
+**headless に lualine の statusline が存在しないこと**なので、同じ方向の工夫では届かない。
+次に誰かが試すときは、ここを読んで**やり直さないでほしい**。
