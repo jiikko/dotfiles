@@ -24,27 +24,15 @@ REAP="$ROOT_DIR/scripts/tmux_reap_orphan_servers.sh"
 
 UID_NUM=$(id -u)
 
-# 🚨 **一時 dir は必ずこのヘルパーで作る**。「作った dir を cleanup の rm -rf にも書く」を
-# 人の記憶に預けていたため、ケース E の PROT_DIR が抜けて**正常終了のたびに 1 個ずつ**
-# /tmp/reapp.* を残していた (実測 39 個)。作成と登録を 1 つにすれば、書き忘れが構造的に起きない
-# (掃除機構を足すのではなく、発生源を断つ側。adversarial-review-own-safeguards.md §0-A)。
-typeset -ga REAP_TMPDIRS=()
-# 🚨 **パスを stdout で返さない**。`X=$(reap_mktemp_d …)` はコマンド置換 = サブシェルなので、
-# 配列への登録が親シェルに届かず、**cleanup が 1 件も消さないまま緑**になる (最初そう書いた)。
-# 呼び出し元の変数へ typeset -g で直接入れる形にして、登録と代入を同じシェルで行う。
-reap_mktemp_d() {  # reap_mktemp_d <変数名> <テンプレート>
-  local d
-  d=$(mktemp -d "$2") || return 1
-  REAP_TMPDIRS+=("$d")
-  typeset -g "$1"="$d"
-}
-# unix socket のパス長上限 (macOS は sun_path 104 byte) を超えないよう、TMUX_TMPDIR は
-# /var/folders 配下の長い mktemp ではなく /tmp 直下の短い temp dir にし、socket 名も短くする。
-reap_mktemp_d ORPHAN_DIR /tmp/reapo.XXXXXX
-reap_mktemp_d LIVE_DIR /tmp/reapl.XXXXXX
-reap_mktemp_d SPACE_BASE /tmp/reaps.XXXXXX
-SPACE_DIR="$SPACE_BASE/s p"   # 空白入り TMUX_TMPDIR (ケース C 用)
-reap_mktemp_d ATT_DIR /tmp/reapa.XXXXXX
+# 一時 dir は必ず reap_mktemp_d で作る (作成と登録が 1 つ。書き忘れが構造的に起きない)。
+# 🚨 ヘルパーを lib へ出しているのは、検査側が「行範囲を切り出すアンカー」を持たずに済むため
+# (敵対レビュー 3 周目 P1-2)。理由は lib のヘッダに書いてある。
+# shellcheck source=tests/tmux/lib/reap_mktemp.sh
+. "$ROOT_DIR/tests/tmux/lib/reap_mktemp.sh"
+
+# socket 名と pid の入れ物を先に置く。🚨 **cleanup と trap を「dir を作る前」に据える**ため
+# (敵対レビュー 3 周目 P3)。旧版は trap が dir 作成の 40 行あとに在り、3 本目の
+# reap_mktemp_d が失敗すると先の 2 つが回収されないまま死んでいた (実測: 2 dir 残存)。
 ORPHAN_SOCK="ro$$"
 LIVE_SOCK="rl$$"
 SPACE_SOCK="rs$$"
@@ -55,13 +43,6 @@ space_pid=""
 att_pid=""
 prot_pid=""
 reap_log_probe_dir=""
-# reap は実プロセステーブルを pgrep で走査する設計のため、このテストの reap 実行は「自分が作った
-# 孤児」だけでなく、実環境に偶々存在する他の dead-socket 孤児も回収しうる（reap は生存 socket を
-# 持つプロセスには絶対触れないので副作用は常に良性=ゴミ掃除）。ただし reap のログ書き込みは
-# 実 ~/.cache を汚さないよう temp HOME に隔離する。
-export HOME="$ORPHAN_DIR/home"
-export TT_TRIGGER_LOG="$ORPHAN_DIR/trigger.log"
-mkdir -p "$HOME"
 
 fail() { print -u2 "[test-reap:zsh] FAIL: $1"; exit 1; }
 ok()   { print "[test-reap:zsh] ok: $1"; }
@@ -73,18 +54,33 @@ cleanup() {
   [[ -n "$space_pid" ]]  && kill -KILL "$space_pid"  2>/dev/null || true
   [[ -n "$att_pid" ]]    && kill -KILL "$att_pid"    2>/dev/null || true
   [[ -n "${prot_pid:-}" ]] && kill -KILL "$prot_pid" 2>/dev/null || true
-  env TMUX_TMPDIR="$LIVE_DIR"   "$TMUX_BIN_PATH" -L "$LIVE_SOCK"   kill-server >/dev/null 2>&1 || true
-  env TMUX_TMPDIR="$ORPHAN_DIR" "$TMUX_BIN_PATH" -L "$ORPHAN_SOCK" kill-server >/dev/null 2>&1 || true
-  env TMUX_TMPDIR="$SPACE_DIR"  "$TMUX_BIN_PATH" -L "$SPACE_SOCK"  kill-server >/dev/null 2>&1 || true
-  env TMUX_TMPDIR="$ATT_DIR"    "$TMUX_BIN_PATH" -L "$ATT_SOCK"    kill-server >/dev/null 2>&1 || true
-  # reap_mktemp_d が登録したものを全部消す。**ここに個別の dir 名を書かない**
+  # 🚨 dir 変数は `${VAR:-}` で読む。trap は**作成の途中でも走る**ので、まだ代入されて
+  # いない段階で set -u に殺されると、そこで cleanup 全体が止まる (回収されない)
+  env TMUX_TMPDIR="${LIVE_DIR:-}"   "$TMUX_BIN_PATH" -L "$LIVE_SOCK"   kill-server >/dev/null 2>&1 || true
+  env TMUX_TMPDIR="${ORPHAN_DIR:-}" "$TMUX_BIN_PATH" -L "$ORPHAN_SOCK" kill-server >/dev/null 2>&1 || true
+  env TMUX_TMPDIR="${SPACE_DIR:-}"  "$TMUX_BIN_PATH" -L "$SPACE_SOCK"  kill-server >/dev/null 2>&1 || true
+  env TMUX_TMPDIR="${ATT_DIR:-}"    "$TMUX_BIN_PATH" -L "$ATT_SOCK"    kill-server >/dev/null 2>&1 || true
+  # 登録されたものを全部消す。**ここに個別の dir 名を書かない**
   # (書く形に戻すと、また「作ったが書き忘れた dir」が生まれる)
-  # 🚨 `(( … )) && rm` にしない。空配列で rc=1 を返し、EXIT trap の最後の rc が
-  # スクリプトの終了コードに化ける (set -e 下の zsh)
-  if (( ${#REAP_TMPDIRS} )); then rm -rf "${REAP_TMPDIRS[@]}"; fi
+  reap_cleanup_tmpdirs
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
+
+# unix socket のパス長上限 (macOS は sun_path 104 byte) を超えないよう、TMUX_TMPDIR は
+# /var/folders 配下の長い mktemp ではなく /tmp 直下の短い temp dir にし、socket 名も短くする。
+reap_mktemp_d ORPHAN_DIR /tmp/reapo.XXXXXX
+reap_mktemp_d LIVE_DIR /tmp/reapl.XXXXXX
+reap_mktemp_d SPACE_BASE /tmp/reaps.XXXXXX
+SPACE_DIR="$SPACE_BASE/s p"   # 空白入り TMUX_TMPDIR (ケース C 用)
+reap_mktemp_d ATT_DIR /tmp/reapa.XXXXXX
+# reap は実プロセステーブルを pgrep で走査する設計のため、このテストの reap 実行は「自分が作った
+# 孤児」だけでなく、実環境に偶々存在する他の dead-socket 孤児も回収しうる（reap は生存 socket を
+# 持つプロセスには絶対触れないので副作用は常に良性=ゴミ掃除）。ただし reap のログ書き込みは
+# 実 ~/.cache を汚さないよう temp HOME に隔離する。
+export HOME="$ORPHAN_DIR/home"
+export TT_TRIGGER_LOG="$ORPHAN_DIR/trigger.log"
+mkdir -p "$HOME"
 
 command -v "$TMUX_BIN_PATH" >/dev/null 2>&1 || { print -u2 "tmux not found (set \$TMUX_BIN)"; exit 1; }
 [[ -x "$REAP" ]] || fail "reap script not found/executable: $REAP"
