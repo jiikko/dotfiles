@@ -23,13 +23,28 @@ ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
 REAP="$ROOT_DIR/scripts/tmux_reap_orphan_servers.sh"
 
 UID_NUM=$(id -u)
+
+# 🚨 **一時 dir は必ずこのヘルパーで作る**。「作った dir を cleanup の rm -rf にも書く」を
+# 人の記憶に預けていたため、ケース E の PROT_DIR が抜けて**正常終了のたびに 1 個ずつ**
+# /tmp/reapp.* を残していた (実測 39 個)。作成と登録を 1 つにすれば、書き忘れが構造的に起きない
+# (掃除機構を足すのではなく、発生源を断つ側。adversarial-review-own-safeguards.md §0-A)。
+typeset -ga REAP_TMPDIRS=()
+# 🚨 **パスを stdout で返さない**。`X=$(reap_mktemp_d …)` はコマンド置換 = サブシェルなので、
+# 配列への登録が親シェルに届かず、**cleanup が 1 件も消さないまま緑**になる (最初そう書いた)。
+# 呼び出し元の変数へ typeset -g で直接入れる形にして、登録と代入を同じシェルで行う。
+reap_mktemp_d() {  # reap_mktemp_d <変数名> <テンプレート>
+  local d
+  d=$(mktemp -d "$2") || return 1
+  REAP_TMPDIRS+=("$d")
+  typeset -g "$1"="$d"
+}
 # unix socket のパス長上限 (macOS は sun_path 104 byte) を超えないよう、TMUX_TMPDIR は
 # /var/folders 配下の長い mktemp ではなく /tmp 直下の短い temp dir にし、socket 名も短くする。
-ORPHAN_DIR=$(mktemp -d /tmp/reapo.XXXXXX)
-LIVE_DIR=$(mktemp -d /tmp/reapl.XXXXXX)
-SPACE_BASE=$(mktemp -d /tmp/reaps.XXXXXX)
+reap_mktemp_d ORPHAN_DIR /tmp/reapo.XXXXXX
+reap_mktemp_d LIVE_DIR /tmp/reapl.XXXXXX
+reap_mktemp_d SPACE_BASE /tmp/reaps.XXXXXX
 SPACE_DIR="$SPACE_BASE/s p"   # 空白入り TMUX_TMPDIR (ケース C 用)
-ATT_DIR=$(mktemp -d /tmp/reapa.XXXXXX)
+reap_mktemp_d ATT_DIR /tmp/reapa.XXXXXX
 ORPHAN_SOCK="ro$$"
 LIVE_SOCK="rl$$"
 SPACE_SOCK="rs$$"
@@ -39,7 +54,6 @@ live_pid=""
 space_pid=""
 att_pid=""
 prot_pid=""
-PROT_DIR=""
 reap_log_probe_dir=""
 # reap は実プロセステーブルを pgrep で走査する設計のため、このテストの reap 実行は「自分が作った
 # 孤児」だけでなく、実環境に偶々存在する他の dead-socket 孤児も回収しうる（reap は生存 socket を
@@ -63,11 +77,11 @@ cleanup() {
   env TMUX_TMPDIR="$ORPHAN_DIR" "$TMUX_BIN_PATH" -L "$ORPHAN_SOCK" kill-server >/dev/null 2>&1 || true
   env TMUX_TMPDIR="$SPACE_DIR"  "$TMUX_BIN_PATH" -L "$SPACE_SOCK"  kill-server >/dev/null 2>&1 || true
   env TMUX_TMPDIR="$ATT_DIR"    "$TMUX_BIN_PATH" -L "$ATT_SOCK"    kill-server >/dev/null 2>&1 || true
-  # 🚨 **後から作る一時 dir もここへ足す**。ケース E の PROT_DIR が漏れており、
-  # 正常終了した run が 1 個ずつ /private/tmp に置いていた (実測 39 個)。途中で fail した
-  # ときにしか漏れない reap_log_probe_dir と違い、**成功パスで毎回漏れる**形だった。
-  rm -rf "$ORPHAN_DIR" "$LIVE_DIR" "$SPACE_BASE" "$ATT_DIR" \
-    ${PROT_DIR:+"$PROT_DIR"} ${reap_log_probe_dir:+"$reap_log_probe_dir"}
+  # reap_mktemp_d が登録したものを全部消す。**ここに個別の dir 名を書かない**
+  # (書く形に戻すと、また「作ったが書き忘れた dir」が生まれる)
+  # 🚨 `(( … )) && rm` にしない。空配列で rc=1 を返し、EXIT trap の最後の rc が
+  # スクリプトの終了コードに化ける (set -e 下の zsh)
+  if (( ${#REAP_TMPDIRS} )); then rm -rf "${REAP_TMPDIRS[@]}"; fi
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
@@ -113,7 +127,7 @@ ok "F-2: 保護リストの seam は既定への追加 (置換ではない)"
 # R1/R2) tmux 起動可否に左右されず、reap 本体の観測 writer を実行する。pgrep/lsof の観測結果
 # だけをこのケース内で stub し、TERM 対象には現在生きていない PID を使う。writer 自体は
 # scripts/tmux_reap_orphan_servers.sh の実装をそのまま通るため、属性だけの静的検査にはしない。
-reap_log_probe_dir=$(mktemp -d /tmp/reaplog.XXXXXX)
+reap_mktemp_d reap_log_probe_dir /tmp/reaplog.XXXXXX
 reap_log_probe_home="$reap_log_probe_dir/home"
 reap_log_probe_bin="$reap_log_probe_dir/bin"
 reap_log_probe_seam="$reap_log_probe_dir/seam.log"
@@ -260,7 +274,7 @@ ok "D: socket 消滅でも attach 中のサーバは保護された"
 # なぜこの保護が必要か: 何かが default socket ファイルを削除し、その瞬間 client が全 detach
 # していると、reap は「socket 全消滅 + 接続なし」= 孤児と結論して生きている本番サーバを
 # TERM→KILL する (tmux は exit 時保存をしないため直前の保存以降が失われる)。
-PROT_DIR=$(mktemp -d /tmp/reapp.XXXXXX)
+reap_mktemp_d PROT_DIR /tmp/reapp.XXXXXX
 PROT_SOCK="rp$$"
 env TMUX_TMPDIR="$PROT_DIR" "$TMUX_BIN_PATH" -L "$PROT_SOCK" \
   new-session -d -s prot "tail -f /dev/null" >>"$start_log" 2>&1 \
