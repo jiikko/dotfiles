@@ -284,3 +284,32 @@ claim 削除 / 本文の張り直し / 参照の張り直し / 走査範囲を `
 **1 周目に「変異 4 本すべて red」で通した実装から、2 周で P1 が計 5 件出た**のが本件の要点。
 変異検証は「自分が想定した不変条件」しか試さないという `mutation-verify-new-tests.md` の
 注記どおりの結果になった。
+
+## 追記 2026-09-10: 母集合の canary が **CI の Lint を赤にした**（`| grep -Fxq`）
+
+`a9900fb4` で足した canary をパイプで書いていた:
+
+```sh
+if ! scan_candidates "$needle" | grep -Fxq "$src"; then
+```
+
+`scripts/check_pipefail_grep_q.sh`（issue 096 の検査）が落とし、**master の CI Lint が赤**になった
+（run 34421389852）。別セッションが気づいて知らせてくれた。
+
+### lint の警告以上の実害があった
+
+`grep -q` は**一致した時点で抜ける**ので、上流（`grep -rlF … | sort`）がまだ書いている最中なら
+**SIGPIPE で死んで rc≠0**。`set -euo pipefail` の下ではパイプライン全体が非 0 になり、
+`if !` が真に転んで **「母集合の走査が壊れている」で着手拒否**する。
+つまり**正常なのに issue を 1 件も閉じられなくなる**向きの偽陽性で、
+しかも fail-closed なので「安全側だから良い」とも言えない（道具が使えなくなる）。
+
+いまは `scan_candidates` が `… | sort || true` で終わっているため**たまたま握り潰されて**いた。
+**`|| true` 1 枚に依存**していた状態で、そこは lint も見ていない。
+
+→ `grep -Fxq "$src" <<< "$(scan_candidates "$needle")"` に寄せた（パイプを挟まないので
+SIGPIPE も pipefail も関係なくなる）。理由を行の直近にコメントで残した。
+`make test-lint` rc=0 / 変異 7 本すべて red のまま。
+
+🚨 **同じ日に別セッションも同じ lint に落ちている**（`awk … | grep -qE` のヘルパー pin）。
+`check_pipefail_grep_q.sh` は実際に仕事をしている検査。

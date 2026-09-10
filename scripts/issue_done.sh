@@ -463,7 +463,11 @@ for num in "$@"; do
     printf '✗ issue %s の本文が空で走査の canary を張れない。手で移すこと\n' "$num" >&2
     exit 1
   fi
-  if ! scan_candidates "$needle" | grep -Fxq "$src"; then
+  # 🚨 パイプで `grep -Fxq` へ渡さない。`-q` は一致した時点で抜けるので、上流がまだ書いている
+  # 最中なら SIGPIPE で死に、`set -o pipefail` の下ではパイプライン全体が非 0 になる。
+  # すると `if !` が真に転んで **正常なのに「母集合の走査が壊れている」で着手拒否**する
+  # (issue 096 / scripts/check_pipefail_grep_q.sh が落とす形)。判定は <<< に寄せる。
+  if ! grep -Fxq "$src" <<< "$(scan_candidates "$needle")"; then
     printf '✗ 母集合の走査が壊れている (自分自身を見つけられない): %s\n' "$src" >&2
     printf '  手順 4 と事後条件が空振りするので着手しない (何も動かしていない)\n' >&2
     exit 1
