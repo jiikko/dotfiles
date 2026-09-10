@@ -153,6 +153,45 @@ check "worktree の変更を「触っていない」と言わない" "" \
   "$(grep -E '107-feat-t.md' <<<"$(reason s9)" || true)"
 git -C "$repo" worktree remove --force "$wt"
 
+# 🚨 **肯定 assert (issue 353 で追加)**。上の否定 assert だけだと、「番号を 1 つも数えない」
+# 壊れ方 (primary が空 → hook が無音) でも緑になる。worktree の commit が**数えられている**
+# ことを、進捗を書かない issue が指摘されることで示す。
+printf '# 111 wt2\n\n- [ ] a\n' >"$repo/issues/111-feat-u.md"
+git -C "$repo" add issues/111-feat-u.md && git -C "$repo" commit -qm "chore: 111 を起票"
+wt2="$WORK/wt2"
+git -C "$repo" worktree add -q --detach "$wt2" HEAD
+hook "$START" s9b >/dev/null
+echo wt2 >"$wt2/src/a.txt"
+git -C "$wt2" commit -qam "fix(111): worktree で実装だけして issue を更新しない"
+check "worktree の commit を数えている (肯定)" \
+  "issues/111-feat-u.md: このセッションで 1 度も変更されていない" "$(reason s9b)"
+git -C "$repo" worktree remove --force "$wt2"
+
+# --- issue 353: 他セッションが作った commit を「自分の作業」に数えない ---------------------------
+#
+# 🚨 read-only の検証を **基準点より進んだ commit** 起点の worktree でやると、`$base..HEAD` に
+# 他セッションの commit が入る。それを数えると触ってもいない issue が差し戻される
+# (実測 2026-09-11 に 2 セッションが独立に踏んだ)。判定は worktree ごとの reflog で、
+# 「HEAD を移しただけ」のエントリ (worktree add / checkout / reset / merge / rebase の start) を除く。
+printf '# 112 other\n\n- [ ] a\n' >"$repo/issues/112-bug-v.md"
+git -C "$repo" add issues/112-bug-v.md && git -C "$repo" commit -qm "chore: 112 を起票"
+hook "$START" s9c >/dev/null            # ← ここが基準点。以降の commit は「他セッション」の想定
+# 🚨 fixture は**現実の経路**で組む: 他セッションは自分の worktree で commit し、済んだら
+# 片付けて去る。こちらはその先端で read-only の worktree を切るだけ (commit しない)。
+# `$repo` で直接 commit すると `$repo` の reflog に `commit:` が載り、hook からは
+# 「自分が作った」と区別が付かない (それは正しい挙動なので、この fixture では再現できない)。
+other="$WORK/wt-other"
+git -C "$repo" worktree add -q --detach "$other" HEAD
+echo other >"$other/src/a.txt"
+git -C "$other" commit -qam "fix(112): 別セッションが直した (私は触っていない)"
+othertip=$(git -C "$other" rev-parse HEAD)
+git -C "$repo" worktree remove --force "$other"       # 別セッションは片付けて去った
+wt3="$WORK/wt3"
+git -C "$repo" worktree add -q --detach "$wt3" "$othertip"   # 私は読むだけ。commit しない
+check "他セッションの commit を自分の作業に数えない" "" \
+  "$(grep -E '112-bug-v.md' <<<"$(reason s9c)" || true)"
+git -C "$repo" worktree remove --force "$wt3"
+
 # --- issue 302 ①: 期限切れの状態ファイルを掃除する ---------------------------------------------
 #
 # 🚨 判定は「**掃除が実際に消した件数**」で見る。0 件を成功にしない

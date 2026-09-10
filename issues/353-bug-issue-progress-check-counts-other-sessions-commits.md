@@ -100,20 +100,34 @@ commit が、こちらの作業として数えられている。**
 
 ## 受け入れ条件
 
-- [ ] 「自分の worktree か」を区別する材料を決める。候補: セッション開始時に
-      `worktree list` を控えて差分を取る / `$root` の HEAD から到達可能かで絞る（339 の形は
-      到達不能なので別途救う）/ **区別せず許容する**（`:19` の宣言を worktree にも広げ、
-      dedup に頼る。修正量ゼロで、実害は 1 セッション 1 行）
-- [ ] 上の最後の案（許容）を選ぶ場合は、`issue-progress-check.sh:18-19` のヘッダと
-      `issues/done/339-*.md` の「検出しないと決めた形」に**誤報方向**を書き足すだけで閉じる
-- [ ] コードを直す案を選ぶ場合、339 ② の元の問題（worktree で片付けた issue が毎ターン
-      再掲される）を再発させないことを確認する。🚨 **既存の 339 回帰テストでは検出できない**:
-      `tests/claude/test_issue_progress_check.sh:152-153` は `check "..." ""` の
-      **無出力を期待する否定 assert** なので、primary が空になる（= 何も指摘しない）修正でも緑になる。
-      **肯定 assert（自分の worktree の commit なら指摘が出る）を先に足す**
-- [ ] 変異検証の制約を 2 つ守る:
-      ① **session_id をケースごとに分ける**（`:164-173` が指摘を `$state_dir/$id.reported` に
-      署名として書き、2 回目は `:169` で黙る。同一 id で両側を回すと片方が抑制で緑になる。
-      既存テストは `s0`…`s10` と分けている）
-      ② **fixture の祖先関係を固定する**（他セッション worktree の HEAD が `$base` の
-      **子孫**であることが実 repro の条件。非子孫で組むと別ケースを再現する）
+- [x] 「自分の worktree か」を区別する材料を決める → **worktree ごとの reflog**を使う。
+      HEAD を**移しただけ**のエントリ (worktree add = メッセージ空 / `checkout:` / `reset:` /
+      `merge <x>:` / `rebase (start): checkout <x>`) を除き、残りを「この worktree で作られた
+      commit」とする。実測で語彙を確定させた (`git reflog show HEAD --format='%H%x09%gs'`)
+  - 🚨 **列挙するのは「移しただけ」の側**で、「作った」側ではない。未知の verb は「数える」に
+        倒れ**今までと同じ挙動**になる。作った側を列挙すると、未知の verb で自分の commit が
+        数えられなくなり、339 が直した「毎ターン再掲」へ静かに戻る
+  - 🚨 `rebase (start)` を除かないと、rebase 先 (= 他セッションの先端) が「自分の commit」になる
+- [x] 339 ② の元の問題を再発させないことを確認する。**先に肯定 assert を足した**
+      (`tests/claude/test_issue_progress_check.sh` の「worktree の commit を数えている (肯定)」)。
+      既存の否定 assert だけでは、primary が空になる壊れ方でも緑になるため
+- [x] 変異検証を 2 本、session_id を分けて実施:
+  - **M1** reflog フィルタを外す (353 以前の挙動へ戻す) → 新規の 353 テストだけが red
+  - **M2** `commit` を「移しただけ」側へ入れて created_here を空にする → 既存 6 本 +
+    **新設の肯定 assert** が red。🚨 このとき**既存の否定 assert は緑のまま**で、
+    「否定 assert では検出できない」を実証した
+  - どちらも当てる前に `diff -q` で変異が当たったこと、`bash -n` で構文が通ることを確認した
+- [x] fixture の祖先関係を固定する → 353 のテストは**現実の経路**で組んだ。他セッションが
+      自分の worktree で commit し、**片付けて去った**あと、こちらがその先端で read-only の
+      worktree を切る。`$repo` で直接 commit する fixture では再現しない (それは自分の commit と
+      区別が付かないのが正しい挙動)
+- [x] ヘッダの「検出しないもの」に誤報方向を書き足す。**残る射程**も明記した:
+      他セッションの worktree が**まだ存在していて**そこで commit された場合は数える
+      (`worktree list` から区別できない。1 セッション 1 回で黙るので実害は 1 行)
+
+## 実装中に踏んだ罠 (記録)
+
+hash の集合を `awk -v` で渡したところ、**BSD awk は `-v` の値に改行を受け付けず**
+(`awk: newline in string` で rc≠0) 出力が空になり、**番号が 1 つも出ない = hook が無音**に
+なった。既存テスト 6 本が落ちて気づいた。2 入力の `NR==FNR` で渡す形に直した。
+`mutation-verify-new-tests.md` が警告している形そのもの。
