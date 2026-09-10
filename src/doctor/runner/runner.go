@@ -6,6 +6,11 @@
 // glogx 側には同じ規律を機械で強制するゲート (src/glogx/waitdelay_discipline_test.go) が
 // あるが、doctor は**別 module** (doctor/go.mod) なのであちらの走査は原理的にここへ届かない。
 // 起動口を増やすなら、注入で済まないかを先に検討すること (issue 303)。
+//
+// Runner 型をここ (leaf) に置いて disk / svc / docker から import させているのは意図的。
+// 消費側に func 型を宣言すれば依存は切れるが、実行バックエンドが 1 つのうちは先回りしない。
+// 再評価の trigger: 2 つ目のバックエンド (record/replay / remote) が要るとき、または
+// disk / svc を doctor の外から使いたくなったとき。
 package runner
 
 import (

@@ -64,6 +64,7 @@ func colorArg(colored bool) string {
 // runGit は git を実行して stdout を返す。失敗時は *GitExitError。
 // 起動時の同期経路用 (ハングしてもユーザーの Ctrl-C がプロセスごと落とせる)。
 // TUI 対話中に非同期発行される経路は runGitTimeout を使うこと (下記)。
+// 例外は gitlog_watch.go の追従経路 (LoadCommits)。起動時と同じ関数を共有する理由は同ファイルの注記。
 func runGit(args ...string) (string, error) {
 	// waitdelay-in: WaitDelay は runGitCmd が張る (ctx 有無の両経路が通るので 1 箇所に寄せてある)。
 	// 🚨 no-waitdelay ではない。ここで「不要」と書くと嘘になる。
