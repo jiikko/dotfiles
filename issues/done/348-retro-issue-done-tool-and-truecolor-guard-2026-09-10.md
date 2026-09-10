@@ -48,7 +48,7 @@ done へ送ったときの取りこぼし）。2 本のリンク検査は `issue
 
 → 切り出し先: **`mutation-verify-new-tests.md` への追記は不要**（既存の「変異を当てて red を
 見る」がそのまま機能した例）。ただし
-[`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md)
+[`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md)
 §1.5 の「段ごとに変異を当てる」が**製品側のバグも出す**ことの実例として価値がある。**判断を仰ぎたい**
 
 ### 4. 🚨 敵対レビュー（opus）の P1 3 件は、変異 4 本を全部 red にした**後**に出た
@@ -90,7 +90,7 @@ pathspec に入れ忘れ、「334 を done へ動かすが inbound 参照は直�
 commit のときは「自分が編集したファイル」だけを思い浮かべていた。
 
 → 切り出し先: **却下**（2026-09-10 の反証レビューで確認）。
-[`commit-with-pathspec.md`](../_claude/rules/commit-with-pathspec.md) の
+[`commit-with-pathspec.md`](../../_claude/rules/commit-with-pathspec.md) の
 「pathspec で『生成物』を漏らすと壊れたコミットになる」節（`:36-43`）が既に
 **「自分が直接編集していない生成物を忘れやすい」「`git status` に残っていたらそれが漏れのサイン」**と
 書いており、道具が書き換えたファイルもその「生成物」に含まれる。新規の規範ではない
@@ -140,12 +140,12 @@ commit のときは「自分が編集したファイル」だけを思い浮か�
 ## 残課題
 
 - [x] 気づき 5 → `mutation-verify-new-tests.md` 手順 1.6 の末尾へ 1 段追記（guard をハーネス側へ置く）
-- [x] 気づき 8 → (c) を採用し [issue 350](350-docs-refer-issues-by-number-not-path-in-prose.md) を起票
+- [x] 気づき 8 → (c) を採用し [issue 350](../350-docs-refer-issues-by-number-not-path-in-prose.md) を起票
       （(b) は fixture と区別できないため却下。理由は 350 本文）
 - [x] 気づき 10 → `issues/README.md` の `human` 節へ 1 行追記
 - [x] 気づき 11 → `instrument-before-second-fix.md` の「実プロセスの env を読む」節へ 1 行追記
 - [x] 気づき 3 は rationale への実例追記不要と判断（既存ルールがそのまま機能した例。却下）
-- [x] [issue 349](done/349-bug-stale-nvim-backup-symlinks-fail-make-test.md) は承認を得て done 済み
+- [x] [issue 349](349-bug-stale-nvim-backup-symlinks-fail-make-test.md) は承認を得て done 済み
 
 2026-09-11: ユーザー承認のうえ上記を実施。残課題が空になったので done へ送る。
 
@@ -209,7 +209,7 @@ commit のときは「自分が編集したファイル」だけを思い浮か�
 **そのまま報告していたら「enum が縮んだ」という逆の結論**になっていた
 （nodenv 配下に 24.2.0 / 22.11.0 / 19.3.0 の 3 版が同居）。
 
-→ 切り出し先: **[`instrument-before-second-fix.md`](../_claude/rules/instrument-before-second-fix.md)
+→ 切り出し先: **[`instrument-before-second-fix.md`](../../_claude/rules/instrument-before-second-fix.md)
 への 1 行追記**（候補）。同ルールは既に「動いている実プロセスの env / 起動時刻を読む」を持つので、
 その隣に「**バイナリ・パッケージを直接測るときは、まず版を確かめる**（同居する古い install を
 掴むと結論が逆になる）」を足す形。**ユーザーの判断待ち**
