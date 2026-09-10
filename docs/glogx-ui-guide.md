@@ -45,8 +45,12 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 
 ### emacs 層 (別名だけ)
 
-- `Ctrl-N`/`Ctrl-P` = ↓/↑、`Ctrl-F` = → は**全ビューで同じ**。`Ctrl-F` は `tui.go` の入口で
-  `right` に正規化しているので、各画面は `right` だけ見ればよい
+- `Ctrl-N`/`Ctrl-P` = ↓/↑、`Ctrl-F` = → は**カーソルを持つ画面で同じ**。`Ctrl-F` は `tui.go` の
+  入口で `right` に正規化しているので、各画面は `right` だけ見ればよい
+  - 🚨 **doctor 画面 (`doctor_view.go`) だけは `Ctrl-N`/`Ctrl-P` を受けない**（移動は
+    `j`/`k`・`C-d`/`C-u`・`g`/`G` のみ）。`tui.go` の正規化コメントが対応範囲として挙げているのも
+    一覧 / パネル / 詳細 / diff の 4 つで、doctor は入っていない。足すなら他画面と同じ case を
+    `doctor_view.go` の移動キー処理へ入れる
 - 🚨 **`Ctrl-B` は ← の別名ではない**。本家 glog で push だった名残で未割当のまま。
   issues viewer だけタブ移動の左として受けている (ユーザー要望 2026-07-31) が、全画面へは
   広げない (一覧・パネル側の `left` に別の意味を与えないため)

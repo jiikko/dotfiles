@@ -11,8 +11,11 @@ glog 本体 (read-only) にこの画面は置かない。write 操作を glogx �
 ## 1. 何を読むか
 
 ```
-git status --porcelain -z          # v1 形式 (-z で NUL 区切り)
+git status --porcelain --branch -z   # v1 形式 (-z で NUL 区切り)
 ```
+
+`--branch` はヘッダー行 `## master...origin/master [ahead 1]` を出させるためのもの。
+これを `parseBranchHeader` が読んで、下のレイアウト例にある `master ↑1` の ahead/behind を作る。
 
 - **v1 (`--porcelain`) を使う。** v2 (`--porcelain=v2`) は 1 行に mode/oid/score まで載る
   代わりにフィールド数が状態で変わる。この画面が要るのは XY コードとパスだけなので、
@@ -67,6 +70,7 @@ git の XY は **X = index 側 / Y = 作業ツリー側**。この画面は 1 �
 | `a` | Unstaged + Untracked をまとめて Staged へ | `add --` (対象パスを列挙) |
 | `X` | **作業ツリーの変更を捨てる** (y/N 確認。4 節。Staged 行では受けない。🚨 一覧の `X` = codex update はこの画面では効かない — `C` = claude update は効く) | `restore` / `clean -fd` |
 | `Enter` `l` `→` `d` | そのファイルの diff を全画面 pager で開く | `diff` / `diff --cached` |
+| `J` `K` | **全画面 diff を開いたまま隣のファイルへ** (閉じて開き直さない。`glogx-ui-guide.md` §6 の項目送りと同じ語彙) | `diff` / `diff --cached` |
 | `r` | 手動で読み直す | `status` |
 | `p` | **pull --rebase** (y/N 確認。確認モーダルは viewer の上に重なる) | `pull --rebase` |
 | `b` | **push** (y/N 確認。一覧と同じキー) | `push` |

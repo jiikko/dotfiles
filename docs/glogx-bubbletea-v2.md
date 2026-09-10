@@ -87,17 +87,22 @@ v1 では pty スモークで実測した回帰 (`TestBrowseBatchedRunesKeyMsg`)
 | `tea.WithFPS` 等で自前 tick 置換 | 不可 | 80ms / 33ms の tick は再描画ではなく状態遷移 (`advanceScroll` / `advancePullAnim` / `toast.advance`) を進めている |
 | bubbles/v2 コンポーネント (viewport / list / help) | 採らない | パネル・diff・overlay は要望起点の独自挙動 (行を差し込まず重ねる等) が固定されており、置換は複雑性の移動にしかならない |
 
-## Go ツールチェーンは glogx だけ 1.26
+## Go ツールチェーンは 1.26 へ上げない（一度上げて戻した）
 
-`src/glogx/go.mod` の `go` ディレクティブは **1.26.0**（他の Go プロジェクトは 1.25.0 のまま。2026-07-25 にユーザー指定で glogx だけ上げた）。
-`GOTOOLCHAIN=auto` なら手元に 1.25 系しか入っていなくても 1.26 が自動ダウンロードされ、CI も `go-version-file: go.mod` なので追随する（workflow 側の変更は不要）。
+`src/glogx/go.mod` の `go` ディレクティブは **1.25.0**。`src/` の Go プロジェクト 6 本すべてが 1.25.0 で揃っている。
 
-1.26 で使えるようになったもののうち、glogx で使う価値があるのは:
+2026-07-25 に glogx だけ 1.26.0 へ上げたが、6 日後に戻した（`0bc7eb0b`）。**戻した理由は
+toolchain の自動取得への依存**: 手元 go が 1.25.4 の環境では `GOTOOLCHAIN=auto` が 1.26.0
+（約 90MB）を取りに行くため初回ビルドがネットワークに依存し、実際に別マシンで取得が失敗して
+失敗記録の backoff と噛み合いビルドが止まった。1.25.0 なら手元の go でそのままビルドされる。
+1.26 固有の機能は元々使っていない（上げた commit も依存更新の chore で、機能上の必要ではなかった）。
 
-- **goroutine リーク検出器** (`GOEXPERIMENT=goroutineleakprofile` + pprof の `goroutineleak`)。fetch goroutine と
-  `context` の cancel 取りこぼし（`usageRefreshInterval` のコメントにある overlap の懸念）を機械的に検証できる。まだ使っていない
-- **Green Tea GC が既定** (GC オーバーヘッド 10–40% 減)。ただし glogx は短命 + 1 フレーム 32KB 程度なので体感は期待しない
-- `go fix` の modernizers / `errors.AsType` / `testing` の `ArtifactDir`
+CI は `go-version-file: go.mod` なので go.mod の値に追随する（workflow 側の変更は不要）。
+
+**再評価の trigger**: 1.26 固有の機能が実際に要るようになったとき。候補として挙がっていたのは
+goroutine リーク検出器（`GOEXPERIMENT=goroutineleakprofile` + pprof の `goroutineleak`。fetch
+goroutine と `context` の cancel 取りこぼしを機械的に検証できる）。上げるなら「手元 go が
+1.26 未満の環境で初回ビルドがネットワークに依存する」を許容できるかを先に決める。
 
 ## 次に bubbletea を上げるときのチェックリスト
 
