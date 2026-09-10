@@ -462,3 +462,31 @@ rm -rf "$ORPHAN_DIR" "$LIVE_DIR" "$SPACE_BASE" "$ATT_DIR" \
       4 個まとめて漏れる。今回の変更とは無関係の既存の形なので触っていない
       （実測の `reapl` / `reaps` 各 1 個はこの窓か SIGKILL で説明が付く）
 - [ ] SIGKILL で trap が走らない場合は今も残る（「検出しないと決めた形」として明記済み）
+
+## 一般則の転記: fixture を `mktemp -d` で作ると「論理パス vs 物理パス」を必ず踏む
+
+dotfiles-a8 が issue 347 で踏んだ形（2026-09-10）。この issue の担当範囲ではないが、
+**一時 fixture を作るテスト全般に効く**ので転記する。
+
+macOS の `mktemp -d` は `/var/folders/…` を返し、`/var` は `/private/var` への symlink。
+そのため **同じディレクトリに 2 つの表記**ができる:
+
+| 取り方 | 結果 |
+|---|---|
+| 引数をそのまま使う / `pwd`（論理） | `/var/folders/…/T/x` |
+| `pwd -P` / `find` の出力 / `grep -r` の出力 | `/private/var/folders/…/T/x` |
+
+**パス同士を `=` / `!=` / prefix 剥がしで比べている箇所があると、静かに外れる**
+（347 では `[ "$other" != "$dest" ]` が常に真になり、移動した当人が二度処理されていた。
+別のガード 1 枚のおかげで無害だったが、そのガードに依存していた）。
+
+**この issue で触った tmux テスト側には該当が無いことを確認済み**（2026-09-10 実測）:
+
+- `test_socket_cleanup.sh` / `test_reap_orphan_servers.sh` / `lib/kill_socket.sh` に
+  **パス同士の比較は 0 件**
+- `ROOT_DIR` は `pwd`（論理）だが、**読み込みパスの組み立てにしか使っていない**
+- `kill_socket.sh` の socket パスは `rm -f` の**対象**であって比較対象ではなく、
+  `default` 除外も `${path##*/}`（basename）なので表記の差を受けない
+
+判定の目安: **一時 dir のパスを「消す対象」に使うだけなら安全、「同一性の判定」に使うなら
+`pwd -P` で片側へ揃える**。
