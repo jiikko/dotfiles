@@ -74,9 +74,29 @@ KILL_RE='^kill-s(er(v(er?)?)?|es(s(i(on?)?)?)?)$'
 # → 連鎖の**全 subcommand**を走査する。global socket option (-L/-S/-f/-c/-T) は最初の subcommand
 # より前にしか現れないので、そこだけで拾う。連鎖のどこかに kill があれば is_kill=1、
 # その中で最厳の kind (server > session) を採る。
+# 🚨 tmux は**内部空白の無い末尾 `;`** を終端として扱う (実測 decoy: `kill-server;` は kill を
+# 実行し DEAD、`kill-server ;` は実行せず ALIVE)。KILL_RE は `$` 終端なので `kill-server;` が
+# マッチせず素通していた (敵対レビューが decoy で catastrophic を実証)。→ 検出用に token を正規化し、
+# 空白の無い末尾 `;` を base と区切りトークンに割る。**exec は必ず原引数 "$@" で行う** (正規化した
+# 引数を tmux へ渡さない)。内部空白のある token / 中間の `;` は tmux が終端扱いしないのでそのまま。
+norm=()
+for tok in "$@"; do
+  case "$tok" in
+    *[[:space:]]*) norm+=("$tok"); continue ;;     # 内部空白 → tmux は終端にしない
+  esac
+  base="$tok"; had_semi=0
+  while [ "${base%;}" != "$base" ]; do base="${base%;}"; had_semi=1; done
+  if [ "$had_semi" = 1 ]; then
+    [ -n "$base" ] && norm+=("$base")
+    norm+=(";")                                    # 末尾 ; を区切りとして立てる
+  else
+    norm+=("$tok")
+  fi
+done
+
 opt_L="" opt_S="" want="" seen_first_sub=0 expect_sub=1
 is_kill=0 kind="" cur_sub=""                  # kind: "" なし / session / server (server が最厳)
-for tok in "$@"; do
+for tok in ${norm[@]+"${norm[@]}"}; do        # 🚨 正規化トークンで走査 (exec は原引数)
   if [ -n "$want" ]; then                     # 直前の global option の値トークン
     case "$want" in L) opt_L="$tok" ;; S) opt_S="$tok" ;; esac  # discard は捨てる
     want=""; continue

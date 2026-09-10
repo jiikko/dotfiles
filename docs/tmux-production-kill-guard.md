@@ -60,7 +60,7 @@ Claude が**直接打った** Bash コマンドを境界で検査し、ソケッ
 守れる (敵対レビューで実測):
 - 2026-09-11 の実際の経路 (subagent → `bash script.sh` → TTY 無し → `-L default` + 空 `TMUX_TMPDIR`) は拒否される。
 - `/tmp` ↔ `/private/tmp`、`..`、二重/末尾スラッシュ、**大文字小文字違いの綴り** (`-L DEFAULT`) はすべて正規化・小文字化で吸収して拒否。
-- **`;` / `\;` で連ねた複数コマンド** (`list-sessions \; kill-server` のように非 kill の後ろに kill を隠す形。TTY 不要) も、連鎖の全 subcommand を走査して拒否。
+- **`;` / `\;` で連ねた複数コマンド** (`list-sessions \; kill-server` のように非 kill の後ろに kill を隠す形。TTY 不要) も、連鎖の全 subcommand を走査して拒否。**内部空白の無い密着末尾 `;`** (`kill-server;` — tmux はこれを終端扱いして実行する。decoy 実測) も token を正規化して拒否。内部空白のある `kill-server ;` は tmux が実行しないので素通し (無害)。
 - **`kill-session -a`** (指定 1 個以外を全滅 = catastrophic) は server 扱いに昇格して無条件拒否。
 - 隔離テストサーバ (名前ベース) を誤って守ることはない (過剰 deny なし。連鎖でも隔離サーバなら素通し)。
 
