@@ -89,7 +89,7 @@ __av1ify_lock_dir_for() {
   #
   # 🚨 **下の 3 つの検証 ([[ -n "$folded" ]] / 64 桁 / hex のみ) を「pipefail が
   # あるから冗長」と読んで外さないこと。** 監査が一度「途中段の失敗検出は PIPE_FAIL 依存」と
-  # 指摘したが、**前提が誤りだった** (issues/340 項目 5 で却下)。実測 2026-09-09:
+  # 指摘したが、**前提が誤りだった** (issues/done/340-risk-av1ify-lock-unverified-residuals.md 項目 5 で却下)。実測 2026-09-09:
   # `zsh -f` + `unsetopt pipefail` で PATH 先頭に失敗 shim を置くと、tr 失敗 / shasum 失敗 /
   # **shasum が rc=0 で短い出力を返す**の 3 形すべてで rc=1 になる。3 形目は pipefail では
   # 原理的に検出できない (途中段が成功しているため) ので、担い手はこの出力検証の側。
@@ -253,7 +253,7 @@ __av1ify_lock_release() {
     # 残り、最大 renew 間隔ぶん生き続ける (実測 2026-09-08: ppid=1 の sleep が残った)。
     #
     # 🚨 **列挙と kill のあいだの競合 / PID 再利用は残っている。直さないと決めた**
-    # (issues/340-risk-av1ify-lock-unverified-residuals.md 項目 2)。
+    # (issues/done/340-risk-av1ify-lock-unverified-residuals.md 項目 2)。
     # pgrep で並べてから kill するまでに子が入れ替わる / 終了済み PID が再利用される形は
     # コード上ありうるが、**再現できていない**。閉じるには親子間の生存通知 (パイプ等) が要り、
     # shell の範囲では重い。取りこぼした sleep は最大 renew 間隔 (10 分) で自然に消え、

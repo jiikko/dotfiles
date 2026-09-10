@@ -330,7 +330,7 @@ func (l *Locker) Release(token string) error {
 // 判定は Release と同じ expired / holderTTL を使う (2 つ目の判定を作らない)。
 //
 // 🚨 **readLock と下の OpenFile のあいだの窓は 0 になっていない。直さないと決めた**
-// (issues/340-risk-av1ify-lock-unverified-residuals.md 項目 1 の残り)。
+// (issues/done/340-risk-av1ify-lock-unverified-residuals.md 項目 1 の残り)。
 // 期限検査 (issue 312) で「期限切れ lease の復活」は塞いだが、「照合した直後に他者へ
 // 引き継がれた lock を O_TRUNC で上書きする」経路は窓が縮んだだけで残る。
 // 0 にするには取得と同じ「存在しない名前への rename で勝者を 1 人に絞る」形を Renew にも
