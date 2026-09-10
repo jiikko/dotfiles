@@ -24,6 +24,7 @@ ZSH_SYNTAX_FILES := \
   bin/video_health \
   scripts/check_syntax.zsh \
   zshlib/_av1ify_lock.zsh \
+  zshlib/_codex.zsh \
   zshlib/_concat.zsh \
   zshlib/_concat_helpers.zsh \
   zshlib/_ensure_cli_with_brew.zsh \
