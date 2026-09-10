@@ -766,3 +766,53 @@ canary の一時ファイル残骸 **0 件**。
 | 全節 | SIGKILL で trap が走らない場合 | **検出しないと決めた形**（`test_socket_cleanup.sh` のヘッダに脅威モデルとして明記済み。`/private/tmp` は起動時に一掃されるので溜まり続けない） |
 
 残っている 100 / 29 個は**すべて修正前（〜2026-09-10 10:15）の残骸**で、次の再起動で消える。
+
+## 🚨 事故記録 (2026-09-11 00:28): この issue の修正が**本番 tmux サーバを kill した**
+
+`done/` へ送った後に発生。**自動復元が効いて 00:29 に 30 セッションが戻った**（`save=ok`）が、
+原因は 305 で私が新設した安全機構の穴だった。fix は `83296178` で master に入っている。
+
+```
+~/.cache/tt-restore-trigger.log:
+2026-09-11T00:28:18  kill-cmd cmd=kill-server pid=58159 sessions=30 save=ok
+  issuer=285:tmux -L default kill-server <- 164:bash tests/tmux/test_socket_cleanup.sh
+```
+
+### 3 つが重なった
+
+1. **`tt_tmux_kill_socket` の `default` 除外が `rm` の手前にしか無かった。**
+   `tmux -L "$name" kill-server` はその**前**を通る。私はこれを「二重の保険」とコメントに
+   書いていたが、**kill 経路は 1 mm も守っていなかった**
+2. **④ が隔離を `TMUX_TMPDIR` の差し替え 1 段に預けていた。** `mktemp -d` が失敗して
+   `guard_dir` が空になると、**tmux は TMUX_TMPDIR が空 / 不在 / 未設定のいずれでも
+   `/private/tmp/tmux-<uid>/` へフォールバックする**（3 形とも実測）
+3. **`set -u` はあるが `-e` が無い**ので mktemp 失敗で止まらなかった。発火させたのは
+   4 周目レビュー用のサブエージェントで、存在しない TMPDIR を渡していた。
+   `2>/dev/null` と `grep` が mktemp のエラーと ✗「default を消した」を両方捨て、無音だった
+
+### 直した形（`83296178`）
+
+- **名前による `default` 除外を関数の先頭（どの tmux コマンドより前）へ**
+- ④ の `mktemp` 失敗を **fail-closed** に
+- **回帰テスト ⓪**: PATH 先頭に「記録するだけの tmux shim」を置き、`TMUX_TMPDIR=""` の
+  最悪条件で `tt_tmux_kill_socket default` が**1 つもコマンドを発行しない**ことを固定。
+  tmux は 1 度も起動しない。vacuous でないことの対照も同じ shim で持つ
+
+### A-B（distinguishing であることを確認済み）
+
+| 版 | `default` への tmux 発行 |
+|---|---|
+| 現行（先頭ガードあり） | **0 件** |
+| 対照（`tt-probe-x`） | 2 件（harness が生きている） |
+| 変異（ガードを外す） | **`-L default kill-server`** |
+| 事故当時（`95bddea8`） | **`-L default kill-server`** |
+
+🚨 最初の A-B は「存在しない TMPDIR でテスト全体を回す」形にしたが、⓪ が先に落ちて ④ に
+到達せず**新旧で同じ結果**になった（有無で結果が変わらない観測）。ガードを直接呼ぶ形に
+組み替えて distinguishing にした。
+
+### この issue を done のままにする理由
+
+fix は master に入り、回帰テストも変異で red を確認した。**再 open すると「305 の残タスク」が
+復活したように読まれる**が、305 の ①② は決着済みで、これは**その修正が持ち込んだ別の欠陥**。
+経緯は retro [351](../351-retro-issue-305-four-round-adversarial-review-2026-09-11.md) が持つ。
