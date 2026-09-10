@@ -15,13 +15,8 @@
 # 「関わった issue」= 基準点以降の commit subject の `(NNN)` / 変更パスの `issues/.../NNN-` / next/ の claim。
 # 加えて、その番号を参照する open issue (残課題として指しているもの) が未変更なら列挙する。
 #
-# 検出しないもの (承知の上): 未 commit で番号も出していない作業 / 本文の記述が古いだけの漏れ。
-# 🚨 **他セッションの commit の扱い** (issue 353): 「その worktree で作られた commit」だけを
-# 数えるので、`git pull` / `merge` で混ざったものと、`origin/master` 起点で切った read-only な
-# worktree から見えるものは**数えない**。ただし **他セッションの worktree がまだ存在していて、
-# そこで commit された**場合は数える (`worktree list` から見えるため区別できない)。これは
-# 誤報になりうるが、**1 セッション 1 回で黙る**ので実害は 1 行。ここを塞ぐには「どの worktree が
-# 自分のものか」をセッション側が記録する必要があり、今は入れていない。
+# 検出しないもの (承知の上): 未 commit で番号も出していない作業 / 本文の記述が古いだけの漏れ /
+# `git pull` で混ざった他セッションの commit に付いた番号 (誤報になりうるが、1 セッション 1 回で黙る)。
 #
 # 入力: Stop の hook JSON (stdin: session_id / cwd / stop_hook_active)。
 # 出力: 指摘があれば {"decision":"block","reason":...} (Claude が続きを処理する)。同じ指摘は 1 セッション 1 回。
@@ -70,33 +65,9 @@ changed=$( {
 is_changed() { grep -qxF "$1" <<<"$changed"; }
 
 # --- 関わった issue 番号 ---
-# 🚨 **他セッションが作った commit を「自分の作業」に数えない** (issue 353)。worktree を
-# `origin/master` 起点で切ると `$base..HEAD` に他セッションの commit が入り、触ってもいない
-# issue が「進捗が書かれていない」と差し戻される (実測 2026-09-11 に 2 セッションが独立に踏んだ)。
-# 判定は **worktree ごとの reflog**: HEAD を別の commit へ**移しただけ**のエントリを除き、
-# 残りを「この worktree で作られた commit」とする。読むだけの worktree の reflog は
-# worktree add の 1 件 (メッセージが空) だけなので、そこからは 1 件も数えない。
-#
-# 🚨 **列挙するのは「移しただけ」の側**で、「作った」側ではない。未知の verb は「数える」に
-# 倒れ、**今までと同じ挙動** (誤報になっても 1 セッション 1 回で黙る) になる。逆に作った側を
-# 列挙すると、未知の verb で**自分の commit が数えられなくなり**、issue 339 が直した
-# 「worktree で片付けた issue が毎ターン再掲される」へ静かに戻る。
-# 実測した verb (git 2.x): worktree add = 空 / `checkout:` / `reset:` / `merge <x>:` /
-# `rebase (start): checkout <x>` は移すだけ。`commit:` / `commit (amend):` /
-# `rebase (pick):` は作る側。🚨 `rebase (start)` を除かないと、rebase 先 (= 他セッションの
-# 先端) がそのまま「自分の commit」になる。
-created_here() { # $1=worktree  -> この worktree で作られた commit の hash
-  git -C "$1" reflog show HEAD --format='%H%x09%gs' 2>/dev/null |
-    awk -F'\t' 'NF>1 && $2 != "" &&
-      $2 !~ /^(checkout|reset|merge|pull|clone|branch|switch|rebase \(start\))/ {print $1}'
-}
-# 🚨 hash の集合を `awk -v` で渡さない。**BSD awk は `-v` の値に改行を受け付けず**
-# (`awk: newline in string` で rc≠0)、出力が空になる = 番号が 1 つも出ない = hook が無音になる。
-# 実測 2026-09-11 にこの形で既存テスト 6 本を落とした。2 入力の `NR==FNR` で渡す。
 subjects=$( { while IFS= read -r w; do
     [ -d "$w" ] || continue
-    git -C "$w" log --format='%H %s' "$base..HEAD" 2>/dev/null |
-      awk 'NR==FNR{s[$1]=1;next} ($1 in s){ sub(/^[0-9a-f]+ /,""); print }' <(created_here "$w") -
+    git -C "$w" log --format=%s "$base..HEAD" 2>/dev/null
   done < <(worktrees); } | sort -u)
 # primary = 作業対象と明示された番号 (commit subject の `(NNN)` / next/ の claim)。構造と関連 issue まで見る。
 # path 由来 (issue ファイル自体を変更した番号) は「変更あり」が既に事実なので、関連 issue の列挙だけに使わない
