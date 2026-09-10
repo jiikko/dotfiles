@@ -2,8 +2,8 @@
 
 起票日: 2026-09-11
 出典: このセッション（dotfiles-82 / issue-sync）の点検で気づいた
-関連: [issue 344](344-human-decide-ruby-refs-sidecar-or-rg.md)（期限 2026-10-09 の判断待ち）/
-[issue 334](done/334-ruby-references-call-site-index.md)（記録機構の実装）
+関連: [issue 344](../344-human-decide-ruby-refs-sidecar-or-rg.md)（期限 2026-10-09 の判断待ち）/
+[issue 334](334-ruby-references-call-site-index.md)（記録機構の実装）
 
 ## 実測
 

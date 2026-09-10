@@ -65,8 +65,11 @@ issue 334 段階 1 の目的は「重い仕組みを作る前に数字で決め�
 仕事の repo で solargraph 0.55.1 と ruby-lsp 0.26.11 が rc=0 で起動する /
 `_tmux.conf:248` の `C-k` は prefix テーブルなので素の `<C-k>` は nvim に届く）。
 
-つまり残るのは「`<C-k>` が言語を問わず使われていない」だけ。上の条項はこれを踏まえたもの。
-詳細は [issue 354](354-bug-refs-usage-log-not-growing.md)。
+つまり残るのは「全 filetype の `<C-k>` と `<leader>K` がどちらも走っていない」だけ
+（`<leader>K` も記録するので、Ruby 以外で押していれば `kind:"lsp"` の行が増える）。
+🚨 ただし `<C-k>` は buffer-local なので **LSP が attach していないバッファでは存在しない**。
+記録の生死を確かめるときは `get_clients` と `:map <C-k>` を先に見る。上の条項はこれを踏まえたもの。
+詳細は [issue 354](done/354-bug-refs-usage-log-not-growing.md)。
 
 ## 2026-09-09 時点の状態（ここから増えた分が判断材料）
 
