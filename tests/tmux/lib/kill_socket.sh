@@ -31,6 +31,16 @@
 tt_tmux_kill_socket() { # tt_tmux_kill_socket <-L の名前>
   local name="$1" path=""
   [ -n "$name" ] || return 0
+  # 🚨🚨 **本番 (default) の除外は「どの tmux コマンドより前」に置く。**
+  # 2026-09-11 00:28、この関数が本番サーバ (30 セッション) を kill した。除外は `rm` の
+  # 手前にしか無く、`tmux -L "$name" kill-server` はその**前**を通っていた。
+  # 呼び出し側 (④) は `TMUX_TMPDIR` の差し替え 1 段で隔離していたが、その dir を作る
+  # `mktemp` が失敗して空になり、**tmux は TMUX_TMPDIR が空 / 不在だと
+  # /private/tmp/tmux-<uid>/ へフォールバックする** (実測: 空・不在・未設定の 3 形とも同じ)。
+  # 名前で弾けば、隔離が何段崩れても本番へは届かない。
+  # (`list-masked-failure-modes-before-removing-guard.md`: 「冗長」と書いた防御が
+  #  実際には kill 経路を 1 mm も守っていなかった)
+  case "$name" in default) return 0 ;; esac
   # 生きているうちに実パスを取る (TMUX_TMPDIR が差し替わっていても正しく追える)
   path=$(tmux -L "$name" display -p '#{socket_path}' 2>/dev/null || true)
   tmux -L "$name" kill-server 2>/dev/null || :
@@ -38,8 +48,8 @@ tt_tmux_kill_socket() { # tt_tmux_kill_socket <-L の名前>
     # 既に死んでいる: 既定の場所を組み立てる (TMUX_TMPDIR を尊重する)
     path="${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)/$name"
   fi
-  # 🚨 消してよいのは **socket で、かつ default でない**ものだけ。名前を組み立てた経路が
-  # 誤っても本番へ届かないようにする (走査はしていないので、これは二重の保険)。
+  # パス側でももう一度弾く (名前は default でなくても、組み立てたパスが本番を指す形を防ぐ)。
+  # 🚨 **こちらは二重の保険であって主防御ではない**。主防御は関数の先頭の名前チェック。
   case "${path##*/}" in default) return 0 ;; esac
   [ -S "$path" ] && rm -f -- "$path"
   return 0

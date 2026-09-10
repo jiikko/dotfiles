@@ -54,6 +54,7 @@ tt_new_socket() {  # tt_new_socket <変数名> <prefix> — 名前を決めた�
 }
 canary_src=""
 guard_dir=""
+shim_dir=""
 # 🚨 shellcheck は `printf -v "$1"` の間接代入を追えない (SC2154) ので、ここで宣言しておく。
 # 消すと lint_test_scripts.sh が「referenced but not assigned」で落ちる
 raw=""; s1=""; s2=""
@@ -61,6 +62,7 @@ tt_cleanup_all() {
   local s p uid; uid=$(id -u)
   [ -z "$canary_src" ] || rm -f -- "$canary_src"
   [ -z "$guard_dir" ] || rm -rf -- "$guard_dir"
+  [ -z "$shim_dir" ] || rm -rf -- "$shim_dir"
   for s in ${TT_SOCKETS+"${TT_SOCKETS[@]}"}; do
     [ "$s" = default ] && continue          # 🚨 本番は絶対に触らない
     tmux -L "$s" kill-server 2>/dev/null || :
@@ -71,6 +73,51 @@ tt_cleanup_all() {
 }
 trap tt_cleanup_all EXIT INT TERM HUP
 
+
+# --- ⓪ 🚨 default には tmux コマンドを 1 つも撃たない (本番 kill の回帰テスト) --------------
+#
+# 2026-09-11 00:28、このテストが**本番サーバ (30 セッション) を kill した**。
+#   tmux -L default kill-server  <-  bash tests/tmux/test_socket_cleanup.sh
+# 経路: ④ が `TMUX_TMPDIR="$guard_dir" tt_tmux_kill_socket default` を呼ぶ →
+# `guard_dir` を作る mktemp が失敗して**空**になる (存在しない TMPDIR を渡された) →
+# **tmux は TMUX_TMPDIR が空 / 不在だと /private/tmp/tmux-<uid>/ へフォールバックする** →
+# 本番へ kill-server。当時 `default` の除外は `rm` の手前にしか無く、`kill` は素通りだった。
+#
+# 🚨 この検査は **tmux を 1 度も起動しない**。PATH 先頭に「記録するだけの shim」を置き、
+# `tt_tmux_kill_socket default` が **1 つもコマンドを発行しない**ことを見る。
+# (shim は実体を exec しないので `path-shim-must-resolve-real-binary.md` の無限再帰は起きない)
+shim_dir=$(mktemp -d "${TMPDIR:-/tmp}/tt-shim.XXXXXX" 2>/dev/null) || shim_dir=""
+if [ -z "$shim_dir" ] || [ ! -d "$shim_dir" ]; then
+  bad "⓪ の shim dir を作れない (TMPDIR=${TMPDIR:-/tmp})。本番 kill の回帰検査が走らない"
+else
+  cat > "$shim_dir/tmux" <<SHIM
+#!/bin/sh
+printf '%s\n' "\$*" >> "$shim_dir/calls"
+exit 0
+SHIM
+  chmod +x "$shim_dir/tmux"
+  : > "$shim_dir/calls"
+  # 🚨 **TMUX_TMPDIR を空にした最悪条件**で呼ぶ (事故当時と同じ状態)
+  ( PATH="$shim_dir:$PATH"; TMUX_TMPDIR=""; tt_tmux_kill_socket default ) >/dev/null 2>&1 || :
+  shim_calls=$(grep -c . "$shim_dir/calls" 2>/dev/null || true)
+  [ -n "$shim_calls" ] || shim_calls=0
+  if [ "$shim_calls" -eq 0 ]; then
+    ok "🚨 default には tmux コマンドを 1 つも撃たない (TMUX_TMPDIR が空でも)"
+  else
+    bad "🚨 default に tmux コマンドを $shim_calls 回撃った (本番サーバを kill しうる): $(tr '\n' ';' < "$shim_dir/calls")"
+  fi
+  # 対照: default 以外なら撃つ (⓪ が「常に 0 件」を見ているだけの vacuous な検査でないこと)
+  : > "$shim_dir/calls"
+  ( PATH="$shim_dir:$PATH"; TMUX_TMPDIR="$shim_dir"; tt_tmux_kill_socket tt-shim-probe ) >/dev/null 2>&1 || :
+  other_calls=$(grep -c . "$shim_dir/calls" 2>/dev/null || true)
+  [ -n "$other_calls" ] || other_calls=0
+  if [ "$other_calls" -gt 0 ]; then
+    ok "対照: default 以外の名前なら tmux を呼ぶ (⓪ が vacuous でない)"
+  else
+    bad "対照が壊れている: 通常の名前でも tmux を 1 度も呼んでいない (⓪ は何も守っていない)"
+  fi
+  rm -rf -- "$shim_dir"; shim_dir=""
+fi
 
 # --- ⑥ 一時 dir が「作成と同時に登録される」形を保っていること -----------------------------
 #
@@ -203,7 +250,16 @@ else ok "サーバが既に死んでいても socket を回収する"; fi
 # 名前を組み立てる経路 (③) が誤っても本番へ届かないことを固定する。
 # 🚨 **テンプレートを明示する**。macOS の `mktemp -d` は引数なしだと `$TMPDIR` を無視して
 # Darwin のユーザ一時領域へ出るので、呼び出し側から隔離できない (3 周目 P3 の実測)
-guard_dir=$(mktemp -d "${TMPDIR:-/tmp}/tt-guard.XXXXXX"); mkdir -p "$guard_dir/tmux-$(id -u)"
+# 🚨 **mktemp の失敗で止まる**。`set -e` が無いので、失敗しても空文字のまま先へ進んでいた。
+# 空の TMUX_TMPDIR は本番へフォールバックするので、この 1 行が本番 kill の引き金になった
+# (2026-09-11 00:28。TMPDIR に存在しない dir を渡したサブエージェントの実行で発火)
+guard_dir=$(mktemp -d "${TMPDIR:-/tmp}/tt-guard.XXXXXX" 2>/dev/null) || guard_dir=""
+if [ -z "$guard_dir" ] || [ ! -d "$guard_dir" ]; then
+  bad "④ の隔離 dir を作れない (TMPDIR=${TMPDIR:-/tmp})。空の TMUX_TMPDIR は本番へ届くので検査を中止する"
+  printf '\n検査 %d 件: fail=%d\n' "$checks" "$fails" >&2
+  exit 1
+fi
+mkdir -p "$guard_dir/tmux-$(id -u)"
 guard="$guard_dir/tmux-$(id -u)/default"
 python3 -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1])' "$guard" 2>/dev/null || : > "$guard"
 TMUX_TMPDIR="$guard_dir" tt_tmux_kill_socket default
@@ -227,7 +283,7 @@ done
 # 🚨 件数を assert する (「1 件も走らないまま 0 件 fail=0 で緑」を塞ぐ)。
 # 🚨 **固定値を書かない**。旧版は dir の個数 (2 周目 P3-D) / ⑤ のファイル列の長さ (3 周目 P3) に
 # 結合しており、「対象を 1 つ減らす正しい変更」が閾値割れで red になった。可変部から導出する。
-want_checks=$(( 9 + ${#WIRED[@]} + 2 ))   # ⑥ が 8 (対象 2 件の可読性 + canary + 本走査 5) / ⑤ / ①〜④ のうち固定 4 のうち 2 は tmux 依存
+want_checks=$(( 11 + ${#WIRED[@]} + 2 ))   # ⑥ が 8 (対象 2 件の可読性 + canary + 本走査 5) / ⑤ / ①〜④ のうち固定 4 のうち 2 は tmux 依存
 [ "$checks" -ge "$want_checks" ] || bad "検査が $checks 件しか走っていない (${want_checks} 件以上のはず)"
 printf '\n検査 %d 件: fail=%d\n' "$checks" "$fails"
 [ "$fails" -eq 0 ] || exit 1
