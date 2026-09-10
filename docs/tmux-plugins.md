@@ -220,6 +220,25 @@ set -g @resurrect-hook-pre-restore-all  '... @tt-restore-in-progress=<開始epoc
 set -g @resurrect-hook-post-restore-all '... 所要秒を記録し @tt-restore-complete=1 を最後に立てる ...'
 ```
 
+### 5. 「静かに壊れている」を検出する層
+
+保存・復元は **失敗しても rc=0 で静かに終わる**。2026-07-30 の一次事実として、周期スナップショット
+保存が「設定されていただけで一度も動いていなかった」のに 17 日以上誰も気づかず、手動復元が
+29 セッション中 22 で途中死したのにも気づかなかった。以下はその再発を検出するための層で、
+どれも**人が起動しない**（自動で回り、異常時だけ声を出す）。
+
+| スクリプト | いつ走る | 何を見る | 出力先 |
+|---|---|---|---|
+| `scripts/tmux_snapshot_health.sh` | watchdog が `TT_HEALTH_CHECK_INTERVAL`（既定 300 秒）ごとに `--quiet` で呼ぶ | スナップショット機構そのものの健全性（保存が実際に走っているか、成果物が使えるか） | 観測ログ |
+| `scripts/tmux_verify_restore.sh` | `tmux_restore_runner.sh` が復元の完走後に呼ぶ | 保存ファイルに載っているセッションが**全部**復元されたかの突合。「完走した」と「全部復元された」は別で、rc=0 でも部分復元はありうる | 観測ログ + toast |
+| `scripts/tmux_reap_orphan_servers.sh` | `tt()`（`zshlib/_tmux_session.zsh`）が起動時に呼ぶ | socket ファイルが消えたのにプロセスだけ生きている孤児サーバ。放置すると continuum の Gate2（`^tmux` プロセス数で「他サーバ在り」を判定する）が誤判定し、**auto-restore を丸ごと skip する** | 回収（kill） |
+
+🚨 reap は**生存 socket を持つプロセス（実サーバ・接続中 client）には絶対に触れない**のが
+スクリプト側の不変条件。ここを緩めると本番サーバを殺す。
+
+深い検査（tar を展開して中身を見る類）は health の担当で、保存のたびには走らせない。
+保存 wrapper 側は軽い退行ガードだけを持つ（`scripts/tmux_resurrect_save.sh` のコメント参照）。
+
 ## ポータビリティ / 注意点
 
 - **bash 必須**: `bash` がない環境では動かない

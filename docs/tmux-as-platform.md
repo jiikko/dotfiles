@@ -390,9 +390,9 @@ set -g status-right "#{?client_prefix,#{p27:@keyguide},#{p27:@nothing}}"
 | ツール / 設定 | 起動・契機 | 使う tmux 機能 | 実装ファイル |
 | --- | --- | --- | --- |
 | 全 window fzf ジャンプ | `prefix + f` | display-popup -E / list-windows -a / capture-pane プレビュー / switch-client | `scripts/tmux_fzf_jump.sh` |
-| window 跨ぎ pane 移動 (get/give) | `prefix + g` / `G` | display-popup -E / join-pane / display -p で自 pane 固定 | `scripts/tmux_fzf_pane_move.sh` |
-| scratch フローティング端末 | `prefix + t`（トグル） | display-popup -b heavy -S/-s/-T / has-session / detach-client / nested attach | `_tmux.conf` bind t |
-| ペイン kill 確認 | `prefix + x`（現 pane）/ `q`（他全 pane） | display-popup + gum confirm / display-message -p で対象固定 / kill-pane | `_tmux.conf` bind x/q |
+| window 跨ぎ pane 移動 (give) | `prefix + G` | display-popup -E / join-pane / display -p で自 pane 固定 | `scripts/tmux_fzf_pane_move.sh` |
+| scratch フローティング端末 | `prefix + t` / `C-t`（トグル） | display-popup -b heavy -S/-s/-T / has-session / detach-client / nested attach | `scripts/tmux_scratch_popup.sh` |
+| kill 確認 (pane / 他全 pane / window) | `prefix + x` / `q` / `&` | display-popup + gum confirm / display-message -p で対象固定 / 枠色で危険度を出す | `scripts/tmux_kill_confirm.sh` |
 | history 解放確認 | `prefix + M-c` | display-popup + gum confirm / list-panes -a / clear-history | `_tmux.conf` bind M-c |
 | resurrect debounce 保存 | window/pane 構成変化フック | set-hook / run-shell -b / @flag ガード / mkdir lock | `scripts/tmux_resurrect_debounced_save.sh` |
 | 保存の直列化 wrapper | continuum/debounce/手動 C-s | 単一 lock / @resurrect-save-script-path 上書き | `scripts/tmux_resurrect_save.sh` |
@@ -407,6 +407,16 @@ set -g status-right "#{?client_prefix,#{p27:@keyguide},#{p27:@nothing}}"
 | キーガイド / 全キー一覧 | prefix 押下中の status-right / `prefix + ?` | `#{?client_prefix,...}` の条件 format（両分岐 `#{pN:}` で同幅）/ 各 bind の `-N` 注記 + `list-keys -N` | `_tmux.conf` status-right と各 `bind -N` |
 | 予約入力 (指定時刻に send-keys) | `prefix + m` / `prefix + Enter` / `prefix + C-m`（ウィザード / 予約一覧・取消） | display-popup + 自作 TUI (bubbletea v2) / run-shell -b で sleep / send-keys -l / display -p で自 pane 固定 / 取消の確認は gum confirm | `scripts/tmux_schedule_keys.sh` + `src/schedkeys/` |
 | エージェント常駐パネル (herdr 風) | `prefix + a`（トグル）+ window 切替追従 | floating pane (new-pane -X/-Y -d, 3.7+) / after-select-window hook で kill+create 追従 / @claude_state 集約 | `scripts/tmux_agent_panel.sh` |
+| エージェントの pane へジャンプ | `prefix + A` | display-popup -E + fzf / @claude_state で「注意が要る順」に並べる | `scripts/tmux_agent_jump.sh` |
+| 最後に作業した window へジャンプ | `prefix + u` | zsh の preexec/precmd が打つ `@last-touched` (epoch) の最大を選ぶ。放置フェードと同じ起点 | `scripts/tmux_jump_last_touched.sh` |
+| 画面から URL / パス / 単語を吸い出す (extrakto 型) | `prefix + y` / `C-y` | capture-pane + fzf / popup 内から `display -p` で対象 pane を解決 | `scripts/tmux_extract_popup.sh` |
+| git log TUI (glogx) の popup | `prefix + g` / `C-g`（prefix なし） | display-popup -E / if-shell で git repo 判定し、非 repo なら toast で知らせる | `bin/git-popup`（旧 `scripts/tmux_git_popup.sh`） |
+| フォーカスを奪わない通知 (toast) | 各種 hook / スクリプトから | floating pane (`new-pane -X/-Y -d`, 3.7+)。display-popup はモーダルなので使わない | `bin/tmux-toast`（[`tmux-toast.md`](tmux-toast.md)） |
+| 大量ペーストの迂回 | `C-v`（prefix なし・zsh のみ） | tmux 自身がクリップボードを読み、端末 → tmux のキー入力経路を通さない | `scripts/tmux_paste_clipboard.sh` |
+| 本番サーバの kill 防護 (shim) | PATH 先頭に置いた同名ラッパー。常時 | `default` と `~/.config/tmux-protected-sockets` 宛の `kill-server` / `kill-session` を**非対話シェルからのみ**拒否。対話 TTY と実体の絶対パス呼びは通す | `bin/tmux` |
+
+永続化 (resurrect / continuum / watchdog / 復元検証 / 各種ログ hook) のスクリプト群はこの表に載せていない。
+設計と全経路は [`tmux-plugins.md`](tmux-plugins.md) が正本。
 
 ---
 

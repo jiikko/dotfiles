@@ -9,6 +9,7 @@
 tmux-toast "ビルド完了 ✔"           # 2 秒表示 (デフォルト)
 tmux-toast -d 5 "デプロイ完了"       # 5 秒表示
 tmux-toast -f 16 -b 208 "警告っぽい色"  # 前景/背景を 256 色番号で指定
+tmux-toast -F "ペーストしました"      # ノイズ抑止ガードを外して必ず出す
 ```
 
 - tmux の中で実行することが前提 (`$TMUX` 必須。外で叩くとエラー)
@@ -20,6 +21,10 @@ tmux-toast -f 16 -b 208 "警告っぽい色"  # 前景/背景を 256 色番号�
 - **pane 分割時**: `_tmux.conf` の `after-split-window` hook が「🪟 pane を分割しました」を出す
 - **pane を閉じた時**: `pane-exited` hook が「🗑 pane を閉じました」を出す
   (C-d のプロセス終了でも kill-pane でも発火する)
+- **クリップボードのペースト時**: `C-v` の実体 (`scripts/tmux_paste_clipboard.sh`) が
+  結果を出す。押した本人への応答なので `-F` で間引きを外している
+- **git repo でない場所で `prefix + g` / `C-g`**: glogx の popup を開けないことを
+  `_tmux.conf` が toast で知らせる
 
 ## 仕組みと経緯
 
@@ -49,8 +54,12 @@ toast 用の `new-pane` 自体が `after-split-window` hook を**再発火する
 閉じ通知の hook が素朴だと「toast 終了 → 閉じ通知 → その終了 → …」の 2 秒周期永久ループに
 なる。tmux-toast は自分が作った toast pane の id を `@tmux_toast_pane` に記録しており、
 `-e <pane_id>` で渡された pane がそれと一致したら通知しない。**pane-exited から呼ぶ hook には
-必ず `-e '#{hook_pane}'` を付けること**。記録は直近 1 個だけなので、`-d` を長くして toast が
-複数同時に生きると古い方の終了を除外できない (稀にスプリアスな閉じ通知が出る。許容)。
+必ず `-e '#{hook_pane}'` を付けること**。
+
+記録は**直近 8 個**の追記 (`set-option -ag @tmux_toast_pane` / `TOAST_PANE_MEMORY=8`)。
+当初は直近 1 個だったが、`-F` のペースト通知を 2 連発すると記録が新しい方で潰れ、
+古い toast の終了がスプリアスな閉じ通知になった (実測 2026-09-05)。8 個を超えて同時に
+生きると同じ取りこぼしが起きる。
 
 ## テスト
 

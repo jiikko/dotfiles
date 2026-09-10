@@ -36,10 +36,10 @@ glogx の画面のうち、**複数 repo をこの規約に寄せる** / **書�
 
 | 文書 | 何の仕組みか |
 |---|---|
-| [`tmux-as-platform.md`](tmux-as-platform.md) | tmux を「小さなツールの土台」として使う。popup / menu / prompt / formats / hooks を UI と自動化の primitive として捉える見方。**この repo の tmux 系スクリプトの設計思想** |
+| [`tmux-as-platform.md`](tmux-as-platform.md) | tmux を「小さなツールの土台」として使う。popup / menu / prompt / formats / hooks を UI と自動化の primitive として捉える見方。**この repo の tmux 系スクリプトの設計思想**と、キー・実装ファイルの対応表（本番サーバの kill 防護 shim `bin/tmux` を含む） |
 | [`tmux-window-fade.md`](tmux-window-fade.md) | window list の放置フェード (最近作業した window ほど派手に光る) |
 | [`tmux-toast.md`](tmux-toast.md) | `bin/tmux-toast`。フォーカスを奪わない通知 (display-popup との違い) |
-| [`claude-fork-popup.md`](claude-fork-popup.md) | Claude の会話を `--fork-session` で枝分かれさせ、`C-t b` の popup で覗く |
+| [`claude-fork-popup.md`](claude-fork-popup.md) | Claude の会話を `--fork-session` で枝分かれさせ、`C-t b` の popup で覗く。**現在は休眠中**（bind はコメントアウト。使わないと決めた理由と復活手順つき） |
 | [`nvim-plugin-load-tracker.md`](nvim-plugin-load-tracker.md) | 使っていないプラグインを勘でなく数値で棚卸しする仕組み |
 
 ## 調査・棚卸し (時点の記録。鮮度に注意)
