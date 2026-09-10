@@ -50,12 +50,12 @@ $TMPDIR/glogx-test-cache*  =  40 個（実測 2026-09-06）
 4. `_claude/rules/tmux-probe-requires-socket-isolation.md` に
    「隔離した socket は**起動時掃除で回収する**」を 1 行足す（今は責務の所在で止まっている）
 5. **検証は「掃除が実際に消した件数」**で見て、0 件を成功にしない
-   （[`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)）
+   （[`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md)）
 
 ## 🚨 掃除は破壊的操作の新設なので、次の 3 つを同じ commit で
 
-（[`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) /
-[`sandbox-real-destructive-test-apis.md`](../_claude/rules/sandbox-real-destructive-test-apis.md)）
+（[`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) /
+[`sandbox-real-destructive-test-apis.md`](../../_claude/rules/sandbox-real-destructive-test-apis.md)）
 
 - **`os.Lstat` で symlink を skip**し、**`Uid == os.Getuid()`** を確認する。
   macOS の TMPDIR は per-user（`/var/folders/<...>/T`）なので現環境のリスクは低いが、
