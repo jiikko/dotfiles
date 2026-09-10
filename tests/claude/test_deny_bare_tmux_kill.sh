@@ -198,6 +198,15 @@ expect deny  "コメント内の -L で免除されない" 'tmux kill-server  # 
 expect deny  "kill トークンより後ろの -L では免除しない" 'tmux kill-session -t x; sort -S 1G /dev/null'
 
 # --- allow すべきもの (ソケット明示 / 無関係) -------------------------------------------
+# 🚨 -L default / -S <...>/default はソケット明示でも**本番サーバ**直撃なので deny
+# (2026-09-11 に別セッションが -L default kill-server で 30 セッション誤殺)。
+expect deny  "-L default (本番直撃)" 'tmux -L default kill-server'
+expect deny  "-Ldefault 付属値形" 'tmux -Ldefault kill-server'
+expect deny  "-S <...>/default 直撃" 'tmux -S /private/tmp/tmux-501/default kill-server'
+expect deny  "-f /dev/null -L default (隔離を装った本番直撃)" 'tmux -f /dev/null -L default kill-server'
+expect deny  "-L default kill-session" 'tmux -L default kill-session -t x'
+expect allow "-L default-test (default で終わらない名前は素通し)" 'tmux -L default-test kill-server'
+expect allow "-L mydefault (default で終わらない名前は素通し)" 'tmux -L mydefault kill-server'
 expect allow "-L 明示の kill-server" 'tmux -L lab kill-server'
 expect allow "-S 明示の kill-server" 'tmux -S /path/sock kill-server'
 expect allow "-L 明示の複合" 'tmux -L lab new-session -d && tmux -L lab kill-server'

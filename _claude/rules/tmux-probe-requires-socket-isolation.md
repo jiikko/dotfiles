@@ -32,7 +32,8 @@
 
 ## 強制手段（実装済みの部分）
 
-- **PreToolUse hook** が Bash ツールコマンド中の bare な `tmux kill-server` / `tmux kill-session` / `pkill tmux` を deny する（`-L`/`-S` でソケットを明示した形だけ通る）。実装: `_claude/hooks/deny-bare-tmux-kill.sh`（配線: `_claude/settings.json`）
+- 🚨 **bin/tmux shim (第一防御)** が、本番サーバ (`default` socket + `~/.config/tmux-protected-sockets` の各行) への `kill-server` / `kill-session` を**非対話シェル (TTY 無し = Claude / スクリプト) から拒否**する。`~/dotfiles/bin` が PATH 先頭 (homebrew より前) に居るので、**スクリプト内部の bare `tmux` 呼び出しも傍受できる唯一の層**（2026-09-11 の事故はテストスクリプト内部の `tmux -L default kill-server` で、文字列を見る hook では捕まえられなかった）。対話 TTY からの kill と実体を絶対パス (`/opt/homebrew/bin/tmux`) で直接呼ぶ形は「意図的」として通す（= 本番を本当に消したいときのエスケープ）。実装: `bin/tmux` / 回帰テスト: `tests/tmux/test_tmux_shim_protects_default.sh`
+- **PreToolUse hook (第二防御)** が Bash ツールコマンド中の bare な `tmux kill-server` / `tmux kill-session` / `pkill tmux`、および **`-L default` / `-S <...>/default` の本番直撃** を deny する（`-L <隔離名>` / `-S <隔離パス>` は通る）。Claude が**直接打った**コマンドにしか効かない（script 内部は上の shim が担う）。実装: `_claude/hooks/deny-bare-tmux-kill.sh`（配線: `_claude/settings.json`）
 - hook が強制するのは上記パターンだけ。**隔離の実証・依頼外の破壊的操作を足さない・`2>/dev/null` 禁止は hook では強制できない**ため、本 md が正本のまま残る（[`comment-no-restate-enforced.md`](comment-no-restate-enforced.md) の区分）
 - hook は Bash ツールのコマンド文字列を静的検査するため、**引用符に入っていない散文**に「tmux → kill-server/kill-session」の並びや「pkill と tmux の同居」があると偽陽性 deny になる。[`no-comment-line-starting-with-shellcheck.md`](no-comment-line-starting-with-shellcheck.md) と同族の罠
   - 実測 2026-08-21（issue 069 でトークン走査へ作り替えた後）: **引用符で囲んだ文字列**（`echo "tmux の kill-server を deny"` / `cases=("tmux kill-server" ...)`）と**コメント**（行頭 `#` / 行内 ` #`）は検査対象から外れて **通る**。deny になるのは引用符に入っていない散文だけ

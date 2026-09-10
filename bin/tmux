@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+#
+# bin/tmux — tmux ラッパー shim。本番 tmux サーバ (default) を **非対話シェルから
+# kill-server / kill-session で殺せない**ようにする。それ以外は素の tmux へ素通しする。
+#
+# ─── なぜ (実害の記録) ───────────────────────────────────────────────────────────
+# 2026-07-30 と 2026-09-11 に、Claude 起因で本番 tmux サーバ (default, 29〜30 セッション) が
+# 2 度 kill された。2 度目は **テストスクリプト内部**の `tmux -L default kill-server` で、
+# コマンド文字列に `tmux` も `kill-server` も現れなかったため、文字列を見る PreToolUse hook
+# (_claude/hooks/deny-bare-tmux-kill.sh) では原理的に捕まえられなかった。
+# 経路: 存在しない TMPDIR → mktemp -d 失敗 → guard_dir="" → TMUX_TMPDIR="" → tmux は空/不在の
+# TMUX_TMPDIR を /tmp へフォールバックする (実測) → 本番へ kill-server。
+# この shim は PATH 先頭 (~/dotfiles/bin は /opt/homebrew/bin より前) に居るので、
+# **スクリプト内部の bare `tmux` 呼び出しも含めて**傍受できる唯一の層。
+#
+# ─── 脅威モデル ─────────────────────────────────────────────────────────────────
+# 止めるのは「エージェント / 非対話スクリプトが**うっかり**本番サーバを kill する」形だけ。
+# **意図的な回避は脅威に含めない** (対人の防御ではない)。以下は意図的に**検出しない**:
+#   - 実体を絶対パスで直接呼ぶ形 (`/opt/homebrew/bin/tmux ... kill-server`)。これが
+#     「本当に本番を消したい」ときの正規のエスケープ経路 (grep 可能・記憶しやすい)。
+#   - 対話シェル (stdin/stdout/stderr のいずれかが TTY) からの kill。ユーザー本人が端末で
+#     打ったものは「意図的」とみなして通す。Claude の Bash ツールは TTY を持たない
+#     (実測 2026-09-11: [ -t 0/1/2 ] すべて非ゼロ) ので、この gate は構造的に Claude を弾く。
+#   - `send-keys` / `run-shell` の中に書いた kill 文字列 (別レイヤーで実行される)。
+# 補助として _claude/hooks/deny-bare-tmux-kill.sh が `-L default` 直叩きを deny するが、
+# それは**直接打たれたコマンド**にしか効かない (script 内部は上記のとおり届かない)。
+#
+# ─── 保護対象の定義 ─────────────────────────────────────────────────────────────
+#   1. default socket の正規パス ($TMUX_TMPDIR 解決 + /tmp フォールバック後、dir を pwd -P で
+#      正規化して basename=default を付けたもの。macOS では /tmp→/private/tmp)。
+#   2. ~/.config/tmux-protected-sockets の各行 (正規化済み socket パス。ユーザーが名前付き
+#      サーバを守りたいとき、または decoy テスト用に足す)。
+# $TMUX の socket を「保護対象」に足さない (入れ子の隔離サーバの中で本番扱いになる誤爆を招く)。
+# ただし target の**解決**には $TMUX を使う (bare kill が何を叩くか再現するため)。
+#
+# ─── 失敗時の向き (fail-closed) ─────────────────────────────────────────────────
+# kill の target socket が確定できないときは **exec せず block** する。
+# 「判定不能だから通す」は今回の事故の再生産なので選ばない。
+set -uo pipefail
+
+# ── 実体 tmux は絶対パスで固定する (PATH 探索は自分自身に解決して無限再帰する) ──
+# 🚨 command -v / PATH 探索を使わない。~/dotfiles/bin は PATH 先頭なので自分に当たる
+# (path-shim-must-resolve-real-binary.md)。Homebrew の symlink は版更新をまたいで安定。
+REAL=/opt/homebrew/bin/tmux
+# 自己参照の検出 (REAL がこの shim の配下を指したら即失敗。無限再帰は無音で回り続ける)。
+case "$REAL" in
+  */dotfiles/bin/tmux) printf 'tmux shim: REAL が自分自身を指している (%s)。中止。\n' "$REAL" >&2; exit 70 ;;
+esac
+[ -x "$REAL" ] || { printf 'tmux shim: 実体 tmux が見つからない/実行不可: %s\n' "$REAL" >&2; exit 127; }
+
+# ── fast path: kill 系トークンを含まない呼び出しは、解析も fork も一切せず即 exec ──
+# 🚨 ~/dotfiles/bin はユーザーの対話 PATH にも居て、precmd / statusline が tmux を高頻度に
+# 叩く。この行より前でサブシェルを 1 つも起こさないこと (計測は tests 側で pin)。
+# tmux は subcommand を前方一致で受けるので kill-server/kill-session は必ず "kill-s" を含む。
+case " $* " in
+  *' kill-s'*|*'kill-s'*) ;;   # kill かもしれない → 慎重な経路へ
+  *) exec "$REAL" "$@" ;;
+esac
+
+# ── ここから kill の可能性がある経路 (fork 可) ──────────────────────────────────
+uid=$(id -u)
+
+# tmux のグローバルオプションを 1 パスで歩いて (a) subcommand が kill-server/kill-session か
+# (b) -L <name> / -S <path> で socket が明示されているかを取る。
+# 値を取るグローバルオプション (-L -S -f -c -T) は値を 1 トークン読み飛ばす (want で次を待つ)。
+KILL_RE='^kill-s(er(v(er?)?)?|es(s(i(on?)?)?)?)$'
+is_kill=0 opt_L="" opt_S="" want="" seen_sub=0
+for tok in "$@"; do
+  if [ -n "$want" ]; then                     # 直前のオプションの値トークン
+    case "$want" in L) opt_L="$tok" ;; S) opt_S="$tok" ;; esac  # discard は捨てる
+    want=""; continue
+  fi
+  [ "$seen_sub" = 1 ] && continue             # subcommand 以降は見ない
+  case "$tok" in
+    -L) want=L ;;
+    -S) want=S ;;
+    -L*) opt_L="${tok#-L}" ;;
+    -S*) opt_S="${tok#-S}" ;;
+    -f|-c|-T) want=discard ;;                 # 値を持つが socket ではない (値を 1 つ捨てる)
+    -*) : ;;                                   # その他のグローバルフラグ
+    *) seen_sub=1; [[ "$tok" =~ $KILL_RE ]] && is_kill=1 ;;
+  esac
+done
+
+# kill でないなら (kill-s を含むが subcommand は別、等) 素通し。
+[ "$is_kill" = 1 ] || exec "$REAL" "$@"
+
+# ── target socket を tmux と同じ規則で解決する ─────────────────────────────────
+# TMUX_TMPDIR: set かつ非空かつ dir が実在 → それ。さもなくば /tmp (実測した tmux の挙動)。
+resolve_tmpdir() {
+  if [ -n "${TMUX_TMPDIR:-}" ] && [ -d "${TMUX_TMPDIR:-/nonexistent}" ]; then
+    printf '%s' "$TMUX_TMPDIR"
+  else
+    printf '%s' /tmp
+  fi
+}
+# dir を pwd -P で正規化し basename を付ける (存在しない socket 実体を realpath しない。
+# macOS の realpath は非存在パスで失敗する。dir は存在するので確実に正規化できる)。
+canon_socket() { # canon_socket <socketパス> → 正規化パス (dir が無ければ元のまま)
+  local p="$1" d b cd
+  d=$(dirname -- "$p"); b=$(basename -- "$p")
+  if cd=$(cd -- "$d" 2>/dev/null && pwd -P); then printf '%s/%s' "$cd" "$b"; else printf '%s' "$p"; fi
+}
+
+target=""
+if [ -n "$opt_S" ]; then
+  target="$opt_S"
+elif [ -n "$opt_L" ]; then
+  target="$(resolve_tmpdir)/tmux-$uid/$opt_L"
+elif [ -n "${TMUX:-}" ]; then
+  target="${TMUX%%,*}"                        # $TMUX の先頭フィールド = socket パス
+else
+  target="$(resolve_tmpdir)/tmux-$uid/default"
+fi
+
+# fail-closed: target が空 = 解決できなかった → block。
+if [ -z "$target" ]; then
+  printf 'tmux shim: kill の対象 socket を特定できなかったため中止 (fail-closed)。意図的なら実体を絶対パスで: %s\n' "$REAL" >&2
+  exit 3
+fi
+target_canon=$(canon_socket "$target")
+
+# ── 保護対象集合を組む ─────────────────────────────────────────────────────────
+protected=""
+# 1. default socket (TMUX_TMPDIR と /tmp フォールバックの両方を正規化して入れる)
+add_protected() { protected+="$1"$'\n'; }
+add_protected "$(canon_socket "$(resolve_tmpdir)/tmux-$uid/default")"
+add_protected "$(canon_socket "/tmp/tmux-$uid/default")"
+# 2. protect ファイルの各行
+PROTECT_FILE="${TMUX_PROTECT_FILE:-$HOME/.config/tmux-protected-sockets}"
+if [ -r "$PROTECT_FILE" ]; then
+  while IFS= read -r line; do
+    line="${line%%#*}"; line="${line#"${line%%[![:space:]]*}"}"; line="${line%"${line##*[![:space:]]}"}"
+    [ -n "$line" ] && add_protected "$(canon_socket "$line")"
+  done < "$PROTECT_FILE"
+fi
+
+is_protected=0
+while IFS= read -r p; do
+  [ -n "$p" ] || continue
+  [ "$p" = "$target_canon" ] && { is_protected=1; break; }
+done <<PROT
+$protected
+PROT
+
+# 保護対象でなければ素通し (隔離テストサーバ tt-cleanup-* / ctrlv-test-* 等はここを通る)。
+[ "$is_protected" = 1 ] || exec "$REAL" "$@"
+
+# ── 保護対象への kill。TTY (= 対話ユーザー) なら通す、非対話 (Claude/script) なら block ──
+if [ -t 0 ] || [ -t 1 ] || [ -t 2 ]; then
+  exec "$REAL" "$@"                           # ユーザー本人が端末で打った = 意図的
+fi
+
+printf 'tmux shim: 🚨 本番 tmux サーバ (%s) への %s を非対話シェルから拒否しました。\n' "$target_canon" "kill" >&2
+printf '  これは 2026-07-30 / 2026-09-11 の本番サーバ誤殺を防ぐためのガードです。\n' >&2
+printf '  本当に消す必要があるなら、対話シェルで実行するか、実体を絶対パスで: %s\n' "$REAL" >&2
+exit 4

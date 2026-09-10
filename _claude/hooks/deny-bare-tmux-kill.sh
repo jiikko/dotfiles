@@ -65,6 +65,11 @@ deny() {
 
 REASON_KILL="ソケット指定の無い tmux kill-server/kill-session は本番サーバを直撃します (\$TMUX が TMUX_TMPDIR に優先。2026-07-30 に 29 セッション誤殺の実害)。unset TMUX + ユニークな -L <name> (または -S <path>) を tmux の引数として付け、先に tmux -L <name> ls で隔離を実証してから実行してください。規範: _claude/rules/tmux-probe-requires-socket-isolation.md"
 REASON_PKILL="pkill/killall で tmux を狙うのは全サーバ無差別 kill です (本番サーバも死にます)。対象サーバの pid を特定して kill するか、tmux -L <name> kill-server を使ってください。規範: _claude/rules/tmux-probe-requires-socket-isolation.md"
+# 🚨 -L default / -S <...>/default はソケットを明示していても**本番サーバ**を直撃する
+# (2026-09-11 に別セッションが -L default kill-server で 30 セッション誤殺)。ソケット明示の
+# 免除から default だけを外す。恒久防御は bin/tmux shim (script 内部の kill も傍受) で、
+# こちらは Claude が**直接打った** default 直撃を Bash ツール境界で止める二層目。
+REASON_PROTECTED="tmux の default サーバ (本番。あなたが今 attach しているセッション群) への kill を拒否しました。default は 2026-07-30 / 2026-09-11 に 2 度 Claude 起因で誤殺されています。隔離した使い捨てサーバを消したいなら -L <ユニーク名> を使ってください。本当に本番を消す必要があるなら、その旨をユーザーに確認してください。規範: _claude/rules/tmux-probe-requires-socket-isolation.md"
 
 # tmux が受理する kill-server / kill-session の前方一致形 (曖昧でない範囲)。
 # `kill-s` / `kill-se` は両者で曖昧なため tmux 自身が拒否する = 検出不要。
@@ -145,33 +150,46 @@ unquote() {
 
 # セグメント (連結演算子で割った 1 コマンド) を走査。ソケット未指定の kill があれば 1 を返す。
 scan_segment() {
-  local seg="$1" t i n sock=0 in_tmux=0 in_global=0 skip_val=0
+  local seg="$1" t i n sock=0 in_tmux=0 in_global=0 skip_val=0 prot=0 pending=0
   local -a toks=()
   read -ra toks <<< "$seg"
   n=${#toks[@]}
   for ((i = 0; i < n; i++)); do
     t="${toks[i]}"
-    if [ "$skip_val" = 1 ]; then skip_val=0; continue; fi
+    if [ "$skip_val" = 1 ]; then
+      skip_val=0
+      # -L/-S の値トークン: basename が default なら本番直撃 (prot=1)。
+      if [ "$pending" = 1 ]; then
+        pending=0
+        case "${t##*/}" in default) [ "$in_global" = 1 ] && prot=1 ;; esac
+      fi
+      continue
+    fi
     # 先頭のバックスラッシュ (alias 回避の `\tmux`) を剥がしてから実行ファイルを照合する
     bare="$t"
     while [ "${bare#\\}" != "$bare" ]; do bare="${bare#\\}"; done
     case "$bare" in
-      tmux | */tmux) in_tmux=1; in_global=1; sock=0; continue ;;
+      tmux | */tmux) in_tmux=1; in_global=1; sock=0; prot=0; continue ;;
     esac
     [ "$in_tmux" = 1 ] || continue
     case "$t" in
-      -L | -S) [ "$in_global" = 1 ] && sock=1; skip_val=1 ;;
+      -L | -S) [ "$in_global" = 1 ] && sock=1; skip_val=1; pending=1 ;;
       # 値を取る他のグローバルオプション (-c/-f/-T) も値を 1 トークン消費する。消費しないと
       # 値がサブコマンドと誤認されてグローバル区間が閉じ、後続の -L が免除に数えられない。
       # `tmux -f /dev/null -L probe <kill>` = 規範 md が推奨する隔離の形を deny していた
       # (2026-08-21 に別セッションの red team が実証)。免除に数えるのは -L/-S だけ。
       -c | -f | -T) skip_val=1 ;;
-      -L* | -S*) [ "$in_global" = 1 ] && sock=1 ;;
+      -L* | -S*)
+        [ "$in_global" = 1 ] && sock=1
+        # 付属値形 (-Ldefault / -S/path/default) の basename が default なら本番直撃。
+        case "${t#-?}" in default | */default) [ "$in_global" = 1 ] && prot=1 ;; esac ;;
       "$SEP_TOKEN" | ';') in_global=0 ;;
       -*) : ;;
       *)
-        if [[ "$t" =~ ^${KILL_RE}$ ]] && [ "$sock" != 1 ]; then
-          return 1
+        if [[ "$t" =~ ^${KILL_RE}$ ]]; then
+          # ソケット未指定 → 本番直撃 (rc 1)。ソケット明示でも default 直撃 → rc 2。
+          [ "$sock" != 1 ] && return 1
+          [ "$prot" = 1 ] && return 2
         fi
         in_global=0
         ;;
@@ -217,10 +235,14 @@ while IFS= read -r seg; do
   # 「検査できなかったので素通り」より安全 (adversarial-review-own-safeguards.md の
   # 「検査できなかったときに緑を返さない」)。偽陽性は言い換えで回避できる (規範 md の強制手段節)。
   if [ "${#seg}" -gt "$MAX_UNQUOTE_BYTES" ]; then
-    scan_segment "$seg" || deny "$REASON_KILL"
+    scan_segment "$seg"; seg_rc=$?
   else
-    scan_segment "$(unquote "$seg")" || deny "$REASON_KILL"
+    scan_segment "$(unquote "$seg")"; seg_rc=$?
   fi
+  case "$seg_rc" in
+    1) deny "$REASON_KILL" ;;       # ソケット未指定の kill
+    2) deny "$REASON_PROTECTED" ;;  # ソケット明示でも default (本番) 直撃
+  esac
 done <<EOF
 $segments
 EOF
