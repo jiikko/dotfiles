@@ -96,11 +96,17 @@ check BLOCK "連鎖: 非kill ; kill-server (TTY不要で本番直撃のクラス
 check BLOCK "連鎖: kill-session ; kill-server"       env -u TMUX bash "$shim_copy" -L default kill-session -t x ";" kill-server
 check BLOCK "連鎖: 先頭が読み取り \\; の後に kill-server" env -u TMUX bash "$shim_copy" -L default display -p x ";" kill-server
 check PASS  "連鎖でも隔離サーバなら素通し"           env -u TMUX bash "$shim_copy" -L tt-cleanup-x-1 list-sessions ";" kill-server
-# 🚨 密着した末尾 ; (内部空白なし) を tmux は終端扱いして kill を実行する (decoy 実測)。塞ぐ。
+# 🚨 末尾 ; の区切り (tmux 真値表を decoy で実測して固定)。内部空白は無関係。
+#    非 kill の引数が '<何か> ;' で終わると区切りになり後続 kill が走る (round-4 の見逃し = P1)。
+check BLOCK "区切り: display -p 'a ;' kill-server (空白ありでも区切る)" env -u TMUX bash "$shim_copy" -L default display -p "a ;" kill-server
+check BLOCK "区切り: send-keys 'hello ;' kill-server" env -u TMUX bash "$shim_copy" -L default send-keys "hello ;" kill-server
 check BLOCK "密着末尾 ; : 'kill-server;'"            env -u TMUX bash "$shim_copy" -L default "kill-server;"
 check BLOCK "連鎖の末尾が密着 kill: … ; 'kill-server;'" env -u TMUX bash "$shim_copy" -L default list-sessions ";" "kill-server;"
-check PASS  "内部空白ありの末尾 ; は tmux が実行しない (素通しで可)" env -u TMUX bash "$shim_copy" -L default "kill-server ;"
-check PASS  "隔離サーバの密着 ; は素通し"            env -u TMUX bash "$shim_copy" -L tt-cleanup-x-1 "kill-server;"
+# 良性形 (tmux は実行しない = ALIVE)。KILL_RE が $ 終端なので剥がした後もマッチせず PASS。
+check PASS  "'kill-server ;' (剥がすと未知コマンド。tmux ALIVE)" env -u TMUX bash "$shim_copy" -L default "kill-server ;"
+check PASS  "'kill-server;;' (tmux は 1 個だけ剥がす → 未知コマンド)" env -u TMUX bash "$shim_copy" -L default "kill-server;;"
+check PASS  "'a;kill-server' (中間 ; は区切りでない)" env -u TMUX bash "$shim_copy" -L default "a;kill-server"
+check PASS  "隔離サーバの区切り形は素通し"          env -u TMUX bash "$shim_copy" -L tt-cleanup-x-1 display -p "a ;" kill-server
 # 🚨 P2 (-a): kill-session -a は指定 1 個以外を全滅 = catastrophic。server 扱いで無条件 block。
 check BLOCK "-a 全滅系: kill-session -a -t keep"     env -u TMUX bash "$shim_copy" -L default kill-session -a -t keep
 check BLOCK "-a 全滅系: kill-session -a"             env -u TMUX bash "$shim_copy" -L default kill-session -a
@@ -141,7 +147,7 @@ else
 fi
 
 # 決定テストは常に 18 件走る (skip で満たされる余地を無くすため実 exec 抜きの下限にする)。
-want_checks=28
+want_checks=32
 [ "$checks" -ge "$want_checks" ] || bad "検査が $checks 件しか走っていない (${want_checks} 件以上のはず)"
 printf '\n検査 %d 件: fail=%d\n' "$checks" "$fails"
 [ "$fails" -eq 0 ] || exit 1

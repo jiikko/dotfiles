@@ -25,7 +25,9 @@
 #     Claude の Bash ツールは TTY を持たない (実測 2026-09-11: [ -t 0/1/2 ] すべて非ゼロ)。
 # **意図的な回避は脅威に含めない** (対人の防御ではない)。以下は意図的に**検出しない**:
 #   - 実体を絶対パスで直接呼ぶ形 (これが正規のエスケープ。grep 可能・記憶しやすい)。
-#   - `send-keys` / `run-shell` の中に書いた kill 文字列 (別レイヤーで実行される)。
+#   - `send-keys` / `run-shell` / `if-shell` の中に書いた kill 文字列 (別レイヤーで実行される)。
+#   - `{ }` コマンドグループ / `command-alias` / `tmux -c <shell-command>` の中の kill
+#     (故意の tmux メタ構文。-c の値は want=discard で読み飛ばす。別レイヤーが実行する族)。
 # 補助として _claude/hooks/deny-bare-tmux-kill.sh が `-L default` 直叩きを deny するが、
 # それは**直接打たれたコマンド**にしか効かない (script 内部は上記のとおり届かない)。
 #
@@ -74,24 +76,26 @@ KILL_RE='^kill-s(er(v(er?)?)?|es(s(i(on?)?)?)?)$'
 # → 連鎖の**全 subcommand**を走査する。global socket option (-L/-S/-f/-c/-T) は最初の subcommand
 # より前にしか現れないので、そこだけで拾う。連鎖のどこかに kill があれば is_kill=1、
 # その中で最厳の kind (server > session) を採る。
-# 🚨 tmux は**内部空白の無い末尾 `;`** を終端として扱う (実測 decoy: `kill-server;` は kill を
-# 実行し DEAD、`kill-server ;` は実行せず ALIVE)。KILL_RE は `$` 終端なので `kill-server;` が
-# マッチせず素通していた (敵対レビューが decoy で catastrophic を実証)。→ 検出用に token を正規化し、
-# 空白の無い末尾 `;` を base と区切りトークンに割る。**exec は必ず原引数 "$@" で行う** (正規化した
-# 引数を tmux へ渡さない)。内部空白のある token / 中間の `;` は tmux が終端扱いしないのでそのまま。
+# 🚨 tmux の区切り規則 (decoy で実測した真値表):
+#   **末尾が `;` の argv 要素は「1 個だけ」`;` を剥がして区切りにする。内部空白は無関係。**
+#   残り (剥がした後) は**再トークン化されず**、直前のコマンドに付く (コマンド位置ならコマンド名)。
+#   - `kill-server;`   → 剥がして `kill-server` = kill 実行 (DEAD)
+#   - `display -p 'a ;' kill-server` → `'a ;'` が区切りになり後続の `kill-server` が実行 (DEAD)
+#   - `kill-server ;`  → 剥がすと `kill-server ` = 未知コマンド (ALIVE。良性)
+#   - `kill-server;;`  → 1 個だけ剥がすと `kill-server;` = 未知コマンド (ALIVE。良性)
+#   - `a;kill-server`  → 末尾が `;` でない = 区切りでない (ALIVE。良性)
+# KILL_RE は `$` 終端なので、良性形 (`kill-server ` / `kill-server;` / `a;kill-server`) は
+# 剥がした後もマッチせず自然に PASS する。**だから内部空白でスキップしてはいけない** — スキップ
+# すると `<非kill> '<arg> ;' kill-server` の区切りが立たず、後続 kill を arg 扱いで見逃す
+# (round-4 が実際にこの穴を作り、最終ゲートが decoy で catastrophic を実証した)。
+# → 末尾 `;` を **1 個だけ**剥がして区切りに立てる。空白の有無で分岐しない。
+# 🚨 **exec は必ず原引数 "$@" で行う** (正規化トークンは検出専用。tmux へは渡さない)。
 norm=()
 for tok in "$@"; do
   case "$tok" in
-    *[[:space:]]*) norm+=("$tok"); continue ;;     # 内部空白 → tmux は終端にしない
+    *";") base="${tok%;}"; [ -n "$base" ] && norm+=("$base"); norm+=(";") ;;   # 末尾 ; を 1 個剥がす
+    *) norm+=("$tok") ;;
   esac
-  base="$tok"; had_semi=0
-  while [ "${base%;}" != "$base" ]; do base="${base%;}"; had_semi=1; done
-  if [ "$had_semi" = 1 ]; then
-    [ -n "$base" ] && norm+=("$base")
-    norm+=(";")                                    # 末尾 ; を区切りとして立てる
-  else
-    norm+=("$tok")
-  fi
 done
 
 opt_L="" opt_S="" want="" seen_first_sub=0 expect_sub=1
