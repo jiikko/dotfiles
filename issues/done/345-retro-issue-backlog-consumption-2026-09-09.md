@@ -36,7 +36,7 @@
 → 切り出し先: **新規ルール候補**。既存の「応答・成果物の長さとスコープ」は長さの話で、
    **「宣言だけで終える」の発動点（ターンの最後に次の行動を書こうとした瞬間）**は別。
    ただし ~/.claude/rules/ の流入速度を考えると、
-   [`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)
+   [`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md)
    の「主張は証拠ではない」節への追記でも収まる。**判断を仰ぎたい**
 
 ### 2. 敵対レビューが 3 周とも P1 を出し、**2 周目の P1 は自分の 1 周目の修正が作った退行**だった
@@ -126,7 +126,7 @@ CLAUDE.md の「issue の記述を鵜呑みにしない」「不在の主張は�
       なので、rule ファイルを 1 本増やすより本文へ入れる方が読まれる
 - [x] 気づき 4 → **`mutation-verify-new-tests.md` へ 1 項追記**
       （`grep -F` に複数行パターンを渡すと**行ごとの OR** になり、2 行目以降を書き換える変異が緑）
-- [x] 気づき 5 → **[issue 347](done/347-refactor-issue-done-procedure-needs-one-script.md) を起票**
+- [x] 気づき 5 → **[issue 347](347-refactor-issue-done-procedure-needs-one-script.md) を起票**
       （`scripts/issue_done.sh` に 3 手順を寄せる。実測 4 回の取りこぼしを本文に入れた）
 - [x] **未検証**: 343 / 344 / 335 / 338 / 278 は人の確認・判断待ち（278 は期限 09-12 で間近）
       - 実測 2026-09-10: **304 は done へ移動済み**（別セッションが承認を得て孤児 tmux サーバ 6 本を

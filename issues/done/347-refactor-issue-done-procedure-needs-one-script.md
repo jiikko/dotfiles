@@ -3,7 +3,7 @@
 起票日: 2026-09-09
 カテゴリ: refactor
 優先度: 中（**落とすと CI が落ちる**。実測 1 回）
-出典: [retro 345](../345-retro-issue-backlog-consumption-2026-09-09.md) の気づき 5
+出典: [retro 345](345-retro-issue-backlog-consumption-2026-09-09.md) の気づき 5
 
 ## 何が起きているか
 
@@ -174,7 +174,7 @@ awk を no-op にする（canary が触る前に落とす）。
 ## 関連
 
 - [`claim-issue-in-next-and-push.md`](../../_claude/rules/claim-issue-in-next-and-push.md) — ②の規範
-- [retro 345](../345-retro-issue-backlog-consumption-2026-09-09.md) — 出典（実測 4 回の取りこぼし）
+- [retro 345](345-retro-issue-backlog-consumption-2026-09-09.md) — 出典（実測 4 回の取りこぼし）
 
 ## 追記 2026-09-10: 2 周目の敵対的レビューで P1 を 2 件塞いだ
 
