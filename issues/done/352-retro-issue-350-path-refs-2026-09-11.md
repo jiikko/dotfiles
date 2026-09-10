@@ -1,7 +1,7 @@
 # retro: issue 350（散文の issue 参照を番号へ）2026-09-11
 
 起票日: 2026-09-11
-対象: [issue 350](done/350-docs-refer-issues-by-number-not-path-in-prose.md)
+対象: [issue 350](350-docs-refer-issues-by-number-not-path-in-prose.md)
 commit: `docs(350): issues/ の外からの issue 参照を番号へ揃え、腐りを検査する` / `docs(350): 受け入れ条件が 3 つとも埋まったので done へ送る`
 
 ## 1. 分類スクリプトが無音で壊れ、その出力をユーザーへ報告した
@@ -16,7 +16,7 @@ commit: `docs(350): issues/ の外からの issue 参照を番号へ揃え、腐
 `[ -e ]` で判定した `OK` は生き残り、glob に依存した枝だけが死んだのに、出力は同じ顔をしていた。
 防ぐには**発火しない枝それ自身にカウンタを持たせる**（「MOVED 判定を N 回試行した」を出す）。
 
-- 切り出し先の提案: [`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)
+- 切り出し先の提案: [`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md)
   の「抽出・判定を書いたら canary を置く」節へ追記。発動点（抽出が空 → 緑）が同じで、
   新規ルールを立てる理由が無い
 - 併せて: **数字がユーザーへ届く前に、その数字を出した経路が全部走ったかを見る**。
@@ -28,7 +28,7 @@ commit: `docs(350): issues/ の外からの issue 参照を番号へ揃え、腐
 無マッチで status 1 を返し、`set -e` がそこで終了させていた（`grep` の後ろに printf が
 残っていたのに到達しない）。エラーメッセージは 1 行も出ないので、原因の特定に bash -x が要った。
 
-[`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) §1 の
+[`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) §1 の
 異常系の表（対象 0 件 / 依存コマンド失敗 / 権限なし / 並行）は**検査対象**の異常系を並べているが、
 今回落ちたのは「**検査対象が正常だったとき**」で、表のどれにも当たらない。
 
@@ -38,7 +38,7 @@ commit: `docs(350): issues/ の外からの issue 参照を番号へ揃え、腐
 ## 3. 変異 M3 が「ビルド不能」で返り、第 3 の結果として扱った
 
 スラッグ判定を外す変異を perl で当てたところ awk の式が壊れ、rc=2 で
-`awk: bailing out` になった。[`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md)
+`awk: bailing out` になった。[`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md)
 1.5 が言う「red でも green でもない第 3 の結果」そのもので、当て直したら期待どおり red
 （canary 3 件 / 本走査 102 件の偽陽性）になった。
 

@@ -1,7 +1,7 @@
 # tmux shim の「値取りグローバルオプション集合」の完全性を回帰チェックで固定する
 
 起票日: 2026-09-11
-出典: [issue 355](355-retro-tmux-production-kill-guard-2026-09-11.md) の残タスク（任意項目）。
+出典: [issue 355](done/355-retro-tmux-production-kill-guard-2026-09-11.md) の残タスク（任意項目）。
 最終ゲートの敵対的レビューが load-bearing 前提として挙げたもの
 関連: `docs/tmux-production-kill-guard.md` の「load-bearing な前提」節（前提の一次情報）
 

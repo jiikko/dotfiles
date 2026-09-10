@@ -815,4 +815,4 @@ canary の一時ファイル残骸 **0 件**。
 
 fix は master に入り、回帰テストも変異で red を確認した。**再 open すると「305 の残タスク」が
 復活したように読まれる**が、305 の ①② は決着済みで、これは**その修正が持ち込んだ別の欠陥**。
-経緯は retro [351](../351-retro-issue-305-four-round-adversarial-review-2026-09-11.md) が持つ。
+経緯は retro [351](351-retro-issue-305-four-round-adversarial-review-2026-09-11.md) が持つ。

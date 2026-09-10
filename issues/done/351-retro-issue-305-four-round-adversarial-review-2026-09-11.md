@@ -148,7 +148,7 @@ UDS のセッションへ返信できるのは `to` を取るツールを持つ�
 
 ### 8. 🚨🚨 **この作業が本番 tmux サーバ (30 セッション) を kill した** (2026-09-11 00:28)
 
-詳細は [305 の事故記録](done/305-bug-tmux-and-go-test-temp-resources-not-swept-at-startup.md)。fix は `83296178`。
+詳細は [305 の事故記録](305-bug-tmux-and-go-test-temp-resources-not-swept-at-startup.md)。fix は `83296178`。
 
 **気づき 3（自分の検証装置が検証対象と同じ残骸を作る）の最悪版**。あちらは 0 バイトの socket が
 97 件だったが、こちらは**本番を落とした**。共通しているのは「安全機構を書いた本人が、その機構の
