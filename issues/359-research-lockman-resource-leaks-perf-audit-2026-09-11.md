@@ -1,5 +1,7 @@
 # lockman の resource-leaks / performance 監査 (2026-09-11) — 記録と却下理由
 
+🚧 **claim: dotfiles-53 が着手中 (2026-09-11)**。358 と一体で扱う前提 (残タスクの決着のみ。done にはしない)。
+
 起票日: 2026-09-11
 カテゴリ: research
 監査タイプ: `resource-leaks` / `performance` (どちらも direct 実行)

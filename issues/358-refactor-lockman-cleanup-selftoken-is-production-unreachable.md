@@ -1,5 +1,8 @@
 # lockman Cleanup の selfToken ガードは production 到達不能で、配線しても守るものが無い
 
+🚧 **claim: dotfiles-53 が着手中 (2026-09-11)**。実装は未着手 (手順の提案をユーザーへ提出し承認待ち)。
+dotfiles-4b から「ユーザーに 358 を明示依頼された」と照会があり、担当は未確定。
+
 起票日: 2026-09-11
 カテゴリ: refactor / priority: low
 対象: `src/lockman/cleanup.go` の `Locker.Cleanup` / `main.go` の `dispatch`
