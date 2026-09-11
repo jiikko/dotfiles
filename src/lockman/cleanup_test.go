@@ -142,6 +142,12 @@ func TestSweepRefusesRetentionBelowFloor(t *testing.T) {
 	if res.Removed != 0 {
 		t.Fatalf("下限を割る保持期間で %d 件消した (期待 0)", res.Removed)
 	}
+	// Refused は打刻の抑止と production の stderr 出力の両方をゲートしているので、
+	// 「消さなかった」だけでなくフラグ自体を見る (これが無いと res.Refused = true を
+	// 消す変異が緑で通る。issue 358 の 2 周目で実測)。
+	if !res.Refused {
+		t.Fatal("下限違反なのに Refused が立っていない (打刻の抑止と警告が効かなくなる)")
+	}
 	if _, err := os.Stat(victim); err != nil {
 		t.Fatalf("下限を割る保持期間で残骸を消した: %v", err)
 	}
@@ -150,13 +156,54 @@ func TestSweepRefusesRetentionBelowFloor(t *testing.T) {
 	}
 }
 
-// 下限そのものは既定の I/O の上限より桁で長いこと。minRetention を下げる変異は
-// 上のテストからは見えない (下限を下げれば下限違反にならない) ので、ここで別に固定する。
-func TestMinRetentionIsFarAboveDefaultIOTimeout(t *testing.T) {
-	if minRetention < 10*defaultIOTimeout {
-		t.Fatalf("minRetention=%s が defaultIOTimeout=%s の 10 倍未満", minRetention, defaultIOTimeout)
+// ★ 下限の**絶対値**をリテラルで固定する。
+//
+// 🚨 ここをリテラルでなく定数どうしの比 (`minRetention >= 10 * defaultIOTimeout`) で
+// 書くと、**両方を一緒に下げれば緑のまま通る**。実測 (issue 358 の敵対レビュー 2 周目):
+// minRetention 10m→1m / scratchRetention 1h→2m / defaultIOTimeout 10s→6s の 3 点変異が
+// 3 回とも `ok lockman` だった。しかも比で書いた版の失敗メッセージは両方のオペランドと
+// 必要な比を名指しするので、**踏んだ人に「もう一方を下げれば緑になる」と教えてしまう**。
+//
+// リテラルなら、下げるにはこのテストを書き換えるしかなく、それは意図的な行為として
+// diff に出る。
+func TestMinRetentionFloorIsPinned(t *testing.T) {
+	const pinned = 10 * time.Minute
+	if minRetention < pinned {
+		t.Fatalf("minRetention=%s が固定値 %s を割っている。"+
+			"本当に下げる必要があるなら、走行中の acquire の残骸を消す確率が上がることを"+
+			"理解したうえで、この pinned も一緒に直すこと (比で逃げないこと)", minRetention, pinned)
 	}
 	if scratchRetention < minRetention {
 		t.Fatalf("scratchRetention=%s が下限 %s を割っている", scratchRetention, minRetention)
+	}
+	// 既定の I/O の上限との関係は「下限を見直す合図」として別に見る (これ単独は
+	// 上の pin の代わりにならない — 両方下げれば通るため)。
+	if minRetention < 10*defaultIOTimeout {
+		t.Fatalf("defaultIOTimeout=%s が上がったので minRetention=%s を見直すこと",
+			defaultIOTimeout, minRetention)
+	}
+}
+
+// ★ 拒否していないときは打刻する (レート制限が進む)。
+//
+// 🚨 対になる「拒否したときは打刻しない」は**テストにしない**。既定の定数では拒否が
+// 起きないので、書くと「production 到達不能な状態を自分で作って観測するテスト」に
+// なり、この issue (358) が削除したガードと同じ形になる。そちらは変異で確認した:
+// scratchRetention を下限未満にしたビルドで `lockman cleanup` を打っても
+// `.cleanup_at` が作られないことを実測 (issue 358 の「実施結果」)。
+func TestCleanupStampsWhenNotRefused(t *testing.T) {
+	l := newTestLocker(t)
+	if err := l.ensureDirs(); err != nil {
+		t.Fatalf("ensureDirs: %v", err)
+	}
+	stamp := filepath.Join(l.metaDir, cleanupStampName)
+	if _, err := os.Stat(stamp); !os.IsNotExist(err) {
+		t.Fatalf("前提が崩れている: 打刻が既にある (%v)", err)
+	}
+	if got := l.Cleanup(true); got.Refused {
+		t.Fatalf("既定の定数で拒否された (errors=%v)", got.Errors)
+	}
+	if _, err := os.Stat(stamp); err != nil {
+		t.Fatalf("拒否していないのに打刻されていない: %v", err)
 	}
 }

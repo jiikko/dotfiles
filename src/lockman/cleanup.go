@@ -31,8 +31,11 @@ const minRetention = 10 * time.Minute
 // CleanupResult は掃除の結果。失敗は致命にしないので、件数を持ち帰って
 // status --json / --verbose にだけ出す (黙って捨てない)。
 type CleanupResult struct {
-	Removed int      `json:"removed"`
-	Skipped bool     `json:"skipped"`
+	Removed int  `json:"removed"`
+	Skipped bool `json:"skipped"`
+	// Refused は下限違反で掃除を拒否したこと。設定の誤りなので、verbose でなくても
+	// stderr へ出し、打刻もしない (黙って 10 分止まるのを防ぐ)。
+	Refused bool     `json:"refused,omitempty"`
 	Errors  []string `json:"errors,omitempty"`
 }
 
@@ -58,14 +61,27 @@ func (l *Locker) Cleanup(force bool) CleanupResult {
 	l.sweepDir(tmpDirName, scratchRetention, now, &res)
 	l.sweepDir(probeDirName, scratchRetention, now, &res)
 	l.sweepDir(graveyardDirName, graveyardRetention, now, &res)
-	l.stampCleanup()
+	// 🚨 下限違反で拒否したときは打刻しない。打刻するとレート制限が進んで以後 10 分は
+	// skip され、「掃除が黙って止まっている」状態が見えなくなる (毎回エラーを出し直す
+	// ほうが、設定の誤りに気づける)。
+	if !res.Refused {
+		l.stampCleanup()
+	}
 	return res
 }
 
 // sweepDir は 1 ディレクトリぶんの掃除。retention が下限を割っていたら **何も消さずに**
-// エラーを積む (判定できない・危険なときは触らないほうが安全)。
+// 拒否する (判定できない・危険なときは触らないほうが安全)。
+//
+// 🚨 下限が見ているのは retention だけで、now は検査していない。now を未来へ振ると
+// 下限を割らずに新しい残骸を消せるが、production では now も `info.ModTime()` も
+// 同じ `serverNow()` = サーバ側の打刻なので、その入力を作る経路が無い
+// (2 周目の敵対レビューが指摘。到達可能性は未確認のまま、防御は足さない)。
+// `Renew` が `clockSkewTolerance` を持つのは打刻がクライアント側へ落ちる場合の検算で、
+// 掃除は正しさに関与しないため同じ検算は要らない。
 func (l *Locker) sweepDir(sub string, retention time.Duration, now time.Time, res *CleanupResult) {
 	if retention < minRetention {
+		res.Refused = true
 		res.Errors = append(res.Errors, fmt.Sprintf(
 			"%s の保持期間 %s が下限 %s を下回る: 走行中の acquire の残骸を消しうるので掃除しない",
 			sub, retention, minRetention))

@@ -209,7 +209,11 @@ func dispatch(cmd string, l *Locker, o *opts, child []string) int {
 	if cmd == "acquire" || cmd == "with" || cmd == "break" || cmd == "cleanup" {
 		defer func() {
 			res := l.Cleanup(cmd == "cleanup" || o.force)
-			if o.verbose {
+			// 拒否は設定の誤りなので verbose に関係なく出す。ここを verbose 任せに
+			// すると、掃除が止まっていること自体が観測できない。
+			if res.Refused {
+				warnf("cleanup: 拒否した: %v", res.Errors)
+			} else if o.verbose {
 				warnf("cleanup: removed=%d skipped=%v errors=%v", res.Removed, res.Skipped, res.Errors)
 			}
 		}()

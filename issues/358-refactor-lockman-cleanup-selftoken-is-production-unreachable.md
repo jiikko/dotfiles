@@ -155,6 +155,81 @@ M1 で出るエラー `constant -540000000000 overflows uint` が**どの定数�
 コンパイルが通らない。`mutation-verify-new-tests.md` の第 3 の結果 (red でも green でもない)
 として扱い、`fmt` の import ごと落とす形で当て直して red を確認した。
 
+### 2.5 敵対レビュー 2 周目 — 1 周目の**修正そのもの**が P1 で崩れた
+
+`adversarial-review-own-safeguards.md` §7 (指摘を直した差分にもう 1 周) の実施結果。
+**1 周目で新設したものが攻められ、P1 が 1 件出た。**
+
+#### P1: M7 を閉じるために足した検査が、元の軸 (定数の比) に戻っていた
+
+`TestMinRetentionIsFarAboveDefaultIOTimeout` は `minRetention >= 10 * defaultIOTimeout` を
+見ていた。これは**編集可能な 2 定数の比**なので、**両方下げれば緑のまま通る**。
+レビュワーの実測 (M7p: `minRetention` 10m→1m / `scratchRetention` 1h→2m /
+`defaultIOTimeout` 10s→6s) は 3 回とも `ok lockman`。実効の床が 10 分→1 分に落ちても
+テストが 1 本も落ちない。
+
+さらに悪いことに、**比で書いた版の失敗メッセージが迂回を教える**:
+`minRetention=1m0s が defaultIOTimeout=10s の 10 倍未満` は両方のオペランドと必要な比を
+名指しするので、踏んだ人に「もう一方を下げれば緑」と読ませる。1 周目が指摘した
+`constant ... overflows uint` が「どの定数が何に違反したか名乗らない」ことと**同じ構造**で、
+親切なぶん誘導力が強い。
+
+**直した形**: 下限の**絶対値をリテラルで pin** する (`TestMinRetentionFloorIsPinned`)。
+リテラルなら下げるにはテストを書き換えるしかなく、それは意図的な行為として diff に出る。
+`defaultIOTimeout` との関係は「下限を見直す合図」として別 assert に残したが、
+**それ単独は pin の代わりにならない**ことをテストのコメントに明記した。
+
+#### P2: fail-closed にしたのに production では完全に無音だった
+
+レビュワーの E2E: 下限を割ったビルドで `lockman cleanup` を打つと
+**rc=0 / stdout 0 バイト / stderr 0 バイト**、しかも `.cleanup_at` は打刻済み。
+`res.Errors` は `main.go` の `o.verbose` 分岐でしか出ず、`stampCleanup()` は sweep の後に
+無条件で走るので、**拒否したのにレート制限が進んで以後 10 分は skip** される。
+`verify-execution-not-just-exit-code.md`「沈黙 = 成功になっていないか」に直撃。
+1 周目版ではこれがコンパイルエラーだったので、**2 周目の版が無音化を持ち込んだ**形。
+
+**直した形** (どちらも `CleanupResult.Refused` を新設して実現):
+- 拒否したときは `stampCleanup()` を**打たない** (毎回エラーを出し直す)
+- 拒否は `o.verbose` に関係なく stderr へ出す
+
+E2E で再確認 (使い捨て sandbox、stdout / stderr / rc を分離):
+
+```
+rc=0
+stdout: []
+stderr: [lockman: cleanup: 拒否した: [tmp の保持期間 5m0s が下限 10m0s を下回る...]]
+掃除後: tmp/old.json と probe/old が残存 (graveyard/old のみ削除 = 下限を割っていない)
+.cleanup_at: No such file or directory   ← 打刻されていない
+```
+
+**rc は 0 のまま**にした。`dispatch` の戻り値は無名 `int` で defer から書き換えられず、
+この拒否は**壊れたビルドでしか起きない**ので、署名を変える価値より risk が大きい。
+stderr と非打刻で観測できるので沈黙ではない。
+
+#### 2 周目の変異検証 (3 本。うち 1 本が緑で、塞いだ)
+
+| 変異 | 結果 |
+|---|---|
+| **M7p** 3 定数を一緒に下げる | test rc=1 `TestMinRetentionFloorIsPinned` |
+| **M10** 打刻の条件を反転 (`!res.Refused` → `res.Refused`) | test rc=1 (`TestCleanupIsRateLimited` / `TestCleanupStampsWhenNotRefused` / `TestCleanupRunsOnlyForMutatingCommands` の 3 本) |
+| **M11** `res.Refused = true` を削除 | 🚨 **初回は緑** — `TestSweepRefusesRetentionBelowFloor` が「消さなかったこと」しか見ておらず、フラグ自体を見ていなかった。`Refused` は打刻の抑止と stderr 出力を**両方**ゲートしているのに無検査だった。assert を足して再実行し red を確認 |
+
+M11 は「観測している量が、壊れたときに動かない」形。**2 周目の修正を入れた直後に
+その修正自身へ変異を当てて初めて出た。**
+
+#### 却下した 2 周目の指摘
+
+- **`sweepDir` は `retention` しか見ておらず `now` が無検査 (P2)** — 指摘は構造的には正しく、
+  レビュワーは `now` を 2 時間先に振って「下限を割らずに新しい残骸を消す」を実測した。
+  ただし **production ではその入力を作る経路が無い**: `now` も `info.ModTime()` も同じ
+  `serverNow()` (サーバ側の打刻) 由来。レビュワー自身も到達可能性は未確認としている。
+  **推測に基づく防御コードは足さない**方針に従い、`sweepDir` のコメントに理由を残した
+  (`pending-issue-rationale-in-code.md`)。`Renew` の `clockSkewTolerance` は打刻が
+  クライアント側へ落ちる場合の検算で、掃除は正しさに関与しないため同じ検算は要らない
+- **テスト名が `defaultIOTimeout` を指すが実際の窓は `l.timeout` (P3)** — `cleanup.go` の
+  コメントで既に開示済み (`--io-timeout` に上限検証が無いこと)。テスト名は
+  `TestMinRetentionFloorIsPinned` に変えたので乖離は解消
+
 ### 3. ガードの撤去
 
 - `Cleanup(force bool, selfToken string)` → `Cleanup(force bool)`
@@ -217,6 +292,11 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
   別トークン という 3 点へ根拠を差し替えた（未着手）
 - 2026-09-11: 推奨対応 A を実施 (上の「実施結果」)。1 → 2・3 の順序を守り、下限検査を
   先に入れてから撤去した (第 1 版 = コンパイル時の定数検査、`ff8ed1c4`)
+- 2026-09-12: **敵対的レビュー 2 周目**。1 周目の修正で足した
+  `TestMinRetentionIsFarAboveDefaultIOTimeout` が定数の比で書かれており、3 定数を
+  一緒に下げると緑で通る (P1) / fail-closed が production で完全に無音 (P2) が出た。
+  下限をリテラルで pin し、`Refused` を新設して打刻抑止と stderr 出力を付けた。
+  変異 M11 が緑で通ったので `Refused` の assert も足した (上の「2.5」)
 - 2026-09-11: **敵対的レビュー 1 周目**。第 1 版の下限検査が 3 形 (M2 / M4 / M7) で
   緑のまま迂回されることを実測で示され、**軸を「定数の値」から「sweep に渡る値」へ移した**。
   併せて「失ったカバレッジ = なし」「元からテストは 1 本も無かった」という本文の主張、
@@ -224,10 +304,10 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
 
 ## 残タスク
 
-- **敵対的レビュー 2 周目が必要**。`adversarial-review-own-safeguards.md` §7
-  「指摘を直した差分にもう 1 周回してから閉じる」。1 周目の指摘で**新設した**もの
-  (`sweepDir` の切り出し・fail-closed の下限・`TestMinRetentionIsFarAboveDefaultIOTimeout`・
-  probe fixture) はまだ誰にも攻められていない
+- **敵対的レビュー 3 周目が必要**。§7 の打ち切り条件は「(a) 判定ロジックを新設せず
+  (b) 各修正を直接の実測で確認できた」だが、**2 周目の修正は (a) を満たさない**
+  (`CleanupResult.Refused` / 打刻の条件分岐 / production の警告分岐を新設した)。
+  3 周目は 2 周目の差分だけを対象にする
 - 決着済み: 下限はコンパイル時ではなく `sweepDir` の実行時に置いた (上の「実施結果」1)。
   コンパイル時にも**置けた**が、定数を縛る形は迂回されるため採らなかった
 
