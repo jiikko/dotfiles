@@ -208,7 +208,7 @@ func dispatch(cmd string, l *Locker, o *opts, child []string) int {
 	// 掃除は状態を変えるコマンドのときだけ。check / status はループから呼ばれるため走らせない。
 	if cmd == "acquire" || cmd == "with" || cmd == "break" || cmd == "cleanup" {
 		defer func() {
-			res := l.Cleanup(cmd == "cleanup" || o.force, "")
+			res := l.Cleanup(cmd == "cleanup" || o.force)
 			if o.verbose {
 				warnf("cleanup: removed=%d skipped=%v errors=%v", res.Removed, res.Skipped, res.Errors)
 			}

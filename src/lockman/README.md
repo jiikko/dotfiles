@@ -41,11 +41,17 @@ v1 で**あえて入れていない**もの:
 ## 対象環境
 
 macOS のみ (クライアント = smbfs、公開ホスト = macOS のファイル共有)。**Windows 非対応**、
-Linux / Samba も想定しない。ただし **CI は ubuntu で回る**ため、コード自体は linux でも
-ビルド・テストできる状態に保つこと。
+Linux / Samba も想定しない。**CI も macOS runner で回る** (issue 133 で ubuntu から移した)。
+「GNU / linux でも動くように」という理由だけで分岐を足さないこと (root の `CLAUDE.md`)。
 
 🚨 **CI が検証するのはローカル FS 上の挙動だけ**。SMB 由来の前提 (キャッシュ・打刻・
 ロック転送) は CI では一切検証されない。実機検証は `human` issue で人が行う。
+
+🚨 **ubuntu runner を失ったことで消えた検出力がある**。`lock.go` の `holderTTL` /
+`lock_test.go` の `TestShortTTLCannotStealLiveLock` が記録している不具合 (生死の判定に
+奪う側の `--ttl` を使うと他人の lease を早期に奪える) は、**macOS では速すぎて出ず、
+CI の Linux が「勝者が 4 人」で露見させた**。時間の差で顕在化する同型の退行は今の CI では
+捕まらない前提で、この付近を触るときは競合の窓を人為的に広げて確かめること。
 
 ## 開発
 

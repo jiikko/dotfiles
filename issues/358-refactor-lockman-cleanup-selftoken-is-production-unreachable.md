@@ -1,7 +1,6 @@
 # lockman Cleanup の selfToken ガードは production 到達不能で、配線しても守るものが無い
 
-🚧 **claim: dotfiles-53 が着手中 (2026-09-11)**。実装は未着手 (手順の提案をユーザーへ提出し承認待ち)。
-dotfiles-4b から「ユーザーに 358 を明示依頼された」と照会があり、担当は未確定。
+✅ **対応済み (2026-09-11 / dotfiles-53)**。推奨対応 A を実施。下の「実施結果」節。
 
 起票日: 2026-09-11
 カテゴリ: refactor / priority: low
@@ -109,21 +108,117 @@ red になることを確認する。
 
 ## todolist
 
-- [ ] `scratchRetention` の下限検査を追加し、値を縮める変異で red を確認
-- [ ] `Cleanup` の `selfToken` 引数とガード・コメントを削除
-- [ ] `TestCleanupKeepsOwnScratch` を削除し、消した中身を本 issue に貼る
-- [ ] `make -C src/lockman test` / `make -C src/lockman lint`
+- [x] `scratchRetention` の下限検査を追加し、値を縮める変異で red を確認
+- [x] `Cleanup` の `selfToken` 引数とガード・コメントを削除
+- [x] `TestCleanupKeepsOwnScratch` を削除し、消した中身を本 issue に貼る
+- [x] `make -C src/lockman test` / `make -C src/lockman lint`
+
+## 実施結果 (2026-09-11)
+
+### 1. 下限検査は**コンパイル時**に置いた (テストではない)
+
+359 の残タスクが「コンパイル時に置けるかは実装時に決める」と保留していた点の決着。
+`cleanup.go` に次を置いた:
+
+```go
+// minScratchRetention は scratchRetention の下限。tmp/probe の実寿命はミリ秒だが、
+// 保持期間は「I/O が返らないまま進行中の他者」を巻き込まないための余裕なので、
+// 1 回の I/O の上限 (defaultIOTimeout) より桁で長く取る。
+const minScratchRetention = 10 * time.Minute
+
+// 下限をコンパイル時に強制する。scratchRetention を下限より短くすると差が負になり、
+// uint への変換が「constant ... overflows uint」で落ちる。
+const _ = uint(scratchRetention - minScratchRetention)
+```
+
+配列長を使う形 (`var _ [scratchRetention - minScratchRetention]struct{}`) も試して
+両方が機能したが、`uint` 変換のほうが意図が読めるので採用した。
+
+**下限を `cleanupInterval` (レート制限) に相対させなかった理由**: 両者は無関係な量で、
+「掃除の頻度」を変えると「走行中の acquire を守る余裕」が連動して動くのは誤った結合になる。
+
+### 2. 変異検証 — red ではなく「ビルド不能」で検出される
+
+コンパイル時の検査なので、`mutation-verify-new-tests.md` の言う第 3 の結果
+(`<変異がビルド不能>`) が**この検査にとっての正しい検出の形**。判定は
+「その検査を**名指しする**エラーで落ちるか」で行った。
+
+| 実行 | `go build` rc | 出力 |
+|---|---|---|
+| baseline (`scratchRetention = time.Hour`) | 0 | — (`go test` も `ok lockman 1.874s`) |
+| 変異 (`scratchRetention = time.Minute`) | **1** | `./cleanup.go:24:16: constant -540000000000 overflows uint` |
+| **対照**: 同じ変異 + ガード行を削除 | **0** | — |
+
+3 行目が要点。`verify-execution-not-just-exit-code.md`「その機構を外したら観測結果は
+変わるか」に yes と答えられる = **検知していたのはこのガードである**ことが確定した
+(変異の diff は 1 行だけであることを `diff` で目視確認済み)。
+
+### 3. ガードの撤去
+
+- `Cleanup(force bool, selfToken string)` → `Cleanup(force bool)`
+- sweep 内の `selfToken` ガードとコメント「自分の残骸は消さない」を削除
+  (`comment-no-restate-enforced.md`: 成立していない不変条件を残さない)
+- 呼び出し側の更新: production 1 件 (`main.go:211`) + テスト 7 件
+- **勘定の裏取りは grep 以外でも取った**。`mutation-verify-new-tests.md`「2 者が
+  独立に数えても数え方が同じなら独立ではない」に当たるため、シグネチャを変えて
+  `go build ./...` / `go vet ./...` が通ること (= 引数 2 個の呼び出しが 1 件も
+  残っていないこと) をコンパイラに数えさせた。dotfiles-4b が独立に数えた結果
+  (production 1 + テスト 8、実トークンは 1 件) とも一致した
+
+### 4. 削除したテストの本体 (失ったカバレッジの記録)
+
+`refuse-low-value-coverage.md`「テストを削除するときは失ったカバレッジを issue に起こす」。
+
+```go
+func TestCleanupKeepsOwnScratch(t *testing.T) {
+	l := newTestLocker(t)
+	if err := l.ensureDirs(); err != nil {
+		t.Fatalf("ensureDirs: %v", err)
+	}
+	token := mustToken()
+	mine := filepath.Join(l.metaDir, tmpDirName, token+".json")
+	touchOld(t, mine, 2*time.Hour)
+	l.Cleanup(true, token)
+	if _, err := os.Stat(mine); err != nil {
+		t.Fatalf("自分の残骸を消した: %v", err)
+	}
+}
+```
+
+同時に直前のコメント「走行中の他者を巻き込まない: 自分の token の残骸には触らない。」も削除した。
+
+**削除の理由**: このテストは production から到達不能な引数 (`selfToken != ""`) を
+自分で作って観測しており、production の挙動を 1 mm も守っていなかった
+([315](done/315-test-unused-includes-tests-so-production-unreachable-code-stays-green.md) /
+[317](done/317-test-termsafe-regression-test-observes-production-unreachable-surfaces.md) と同型)。
+
+**失ったカバレッジ — 2 つに分けて書く**:
+
+| 区分 | 内容 | 検出可能性 |
+|---|---|---|
+| **削除で失った分** | なし。`selfToken != ""` の分岐は production から到達しないので、守っていた production の挙動はゼロ | — |
+| **元から穴だった分** (削除の責任ではない) | 「走行中の acquire の scratch を掃除が消さない」という**本来の不変条件**。これは元々 `scratchRetention` の値だけが守っており、テストは 1 本も無かった | **検出できることを実証済み** — 上の 1 で入れたコンパイル時の検査が、値を縮める変異を名指しで落とすことを実測した (上表) |
+
+つまりこの削除は保護を減らしていない。**元からあった単一障害点 (`scratchRetention` の値)
+に機械の検査を付けたぶん、正味では増えている**。
 
 ## 進捗
 
 - 2026-09-11: 起票。到達不能性を機械照合。反証レビューで起票時の根拠（寿命 vs retention）が
   崩れ、(i) probe の命名が独立乱数 / (ii) `os.Link` 後の tmp は不要 / (iii) 過去の試行は
   別トークン という 3 点へ根拠を差し替えた（未着手）
+- 2026-09-11: 推奨対応 A を実施 (上の「実施結果」)。1 → 2・3 の順序を守り、下限検査を
+  先に入れてから撤去した。`make -C src/lockman lint` = `0 issues.` (rc=0) /
+  `make -C src/lockman test` = `ok lockman 2.905s` (rc=0、stdout / stderr を分けて確認し
+  `✗` / `FAIL` はいずれも 0 件)
 
 ## 残タスク
 
-- 未検証: 下限検査をコンパイル時に置けるか（const の比較で落とすか、テストに置くか）は
-  実装時に決める
+- **敵対的レビュー未実施**。359 が「358 の実装差分には改めて敵対的レビューが要る」と
+  要求しており、かつ本変更は「自作の検査の新設」(`adversarial-review-own-safeguards.md`) と
+  「ガードの撤去」(`list-masked-failure-modes-before-removing-guard.md`) の**両方**に
+  該当する。commit 後に観点を分けた read-only レビューを 1 体 (opus 級) 通す
+- 決着済み: 下限検査はコンパイル時に置けた (上の「実施結果」1)
 
 ## 関連
 

@@ -6,14 +6,22 @@ import (
 	"time"
 )
 
-// 残骸の保持期間。閾値は「進行中の他者を巻き込まない」ための余裕であり、
-// **短くしないこと** (縮めるほど走行中の acquire を消す確率が上がる)。
+// 残骸の保持期間。閾値は「進行中の他者を巻き込まない」ための余裕。
 const (
 	scratchRetention   = time.Hour // tmp/ と probe/
 	graveyardRetention = 7 * 24 * time.Hour
 	cleanupInterval    = 10 * time.Minute // レート制限
 	cleanupStampName   = ".cleanup_at"
 )
+
+// minScratchRetention は scratchRetention の下限。tmp/probe の実寿命はミリ秒だが、
+// 保持期間は「I/O が返らないまま進行中の他者」を巻き込まないための余裕なので、
+// 1 回の I/O の上限 (defaultIOTimeout) より桁で長く取る。
+const minScratchRetention = 10 * time.Minute
+
+// 下限をコンパイル時に強制する。scratchRetention を下限より短くすると差が負になり、
+// uint への変換が「constant ... overflows uint」で落ちる。
+const _ = uint(scratchRetention - minScratchRetention)
 
 // CleanupResult は掃除の結果。失敗は致命にしないので、件数を持ち帰って
 // status --json / --verbose にだけ出す (黙って捨てない)。
@@ -29,7 +37,7 @@ type CleanupResult struct {
 // 経路で、それを掃除という別経路から持ち込むと、rename 引き継ぎで勝者を 1 人に絞った
 // 意味が消える。期限切れの回収は Acquire の引き継ぎだけが行う。
 // .lockman/ 自体も消さない (再作成の churn と rmdir の競合を避ける)。
-func (l *Locker) Cleanup(force bool, selfToken string) CleanupResult {
+func (l *Locker) Cleanup(force bool) CleanupResult {
 	var res CleanupResult
 	if !force && !l.cleanupDue() {
 		res.Skipped = true
@@ -53,10 +61,6 @@ func (l *Locker) Cleanup(force bool, selfToken string) CleanupResult {
 		}
 		for _, e := range entries {
 			if e.IsDir() {
-				continue
-			}
-			// 自分の残骸は消さない (自分の acquire が進行中かもしれない)。
-			if selfToken != "" && (e.Name() == selfToken || e.Name() == selfToken+".json") {
 				continue
 			}
 			info, err := e.Info()

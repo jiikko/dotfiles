@@ -29,7 +29,7 @@ func TestCleanupNeverRemovesLock(t *testing.T) {
 		t.Fatalf("Acquire: %v", err)
 	}
 	for range 3 {
-		l.Cleanup(true, "")
+		l.Cleanup(true)
 	}
 	got, _, err := l.readLock()
 	if err != nil || got == nil || got.Token != m.Token {
@@ -42,7 +42,7 @@ func TestCleanupNeverRemovesLock(t *testing.T) {
 		t.Fatalf("Acquire: %v", err)
 	}
 	time.Sleep(100 * time.Millisecond)
-	l2.Cleanup(true, "")
+	l2.Cleanup(true)
 	if _, err := os.Stat(l2.lockPath()); err != nil {
 		t.Fatalf("期限切れの lock を cleanup が消した: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestCleanupRemovesOldScratchOnly(t *testing.T) {
 	touchOld(t, oldGrave, 8*24*time.Hour)
 	touchOld(t, freshGrave, 24*time.Hour)
 
-	res := l.Cleanup(true, "")
+	res := l.Cleanup(true)
 	if res.Removed != 2 {
 		t.Fatalf("removed=%d (期待 2): errors=%v", res.Removed, res.Errors)
 	}
@@ -78,34 +78,19 @@ func TestCleanupRemovesOldScratchOnly(t *testing.T) {
 	}
 }
 
-// 走行中の他者を巻き込まない: 自分の token の残骸には触らない。
-func TestCleanupKeepsOwnScratch(t *testing.T) {
-	l := newTestLocker(t)
-	if err := l.ensureDirs(); err != nil {
-		t.Fatalf("ensureDirs: %v", err)
-	}
-	token := mustToken()
-	mine := filepath.Join(l.metaDir, tmpDirName, token+".json")
-	touchOld(t, mine, 2*time.Hour)
-	l.Cleanup(true, token)
-	if _, err := os.Stat(mine); err != nil {
-		t.Fatalf("自分の残骸を消した: %v", err)
-	}
-}
-
 // レート制限が効く (毎回 readdir すると SMB では重い)。
 func TestCleanupIsRateLimited(t *testing.T) {
 	l := newTestLocker(t)
 	if err := l.ensureDirs(); err != nil {
 		t.Fatalf("ensureDirs: %v", err)
 	}
-	if res := l.Cleanup(false, ""); res.Skipped {
+	if res := l.Cleanup(false); res.Skipped {
 		t.Fatal("初回は掃除するはず")
 	}
-	if res := l.Cleanup(false, ""); !res.Skipped {
+	if res := l.Cleanup(false); !res.Skipped {
 		t.Fatal("直後の 2 回目が skip されていない")
 	}
-	if res := l.Cleanup(true, ""); res.Skipped {
+	if res := l.Cleanup(true); res.Skipped {
 		t.Fatal("--force が skip された")
 	}
 }
@@ -123,7 +108,7 @@ func TestCleanupFailureDoesNotBreakAcquire(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(tmpDir, metaDirMode) })
 
-	res := l.Cleanup(true, "")
+	res := l.Cleanup(true)
 	if len(res.Errors) == 0 {
 		t.Log("この環境では削除が拒否されなかった (root 実行など)。以降の検査のみ行う")
 	}
