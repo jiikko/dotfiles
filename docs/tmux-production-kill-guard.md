@@ -74,13 +74,14 @@ Claude が**直接打った** Bash コマンドを境界で検査し、ソケッ
 - **第二防御 (hook) の basename 判定** — hook は文字列検査なので、`-S <非本番dir>/default` のように basename が `default` の隔離 socket を過剰 deny しうる。第一防御 (shim) は full-path で正しく判定するので、実行時の最終判断は shim が持つ。
 
 load-bearing な前提 (最終ゲートのレビューが指摘。破れると無音の under-block が開く):
-- 🚨 **値取りグローバルオプションの集合が `{-c -f -L -S -T}` で完全**であることが前提。shim はこの 5 個だけを「値を 1 つ読み飛ばす」対象にしている (`tmux` の usage 実測と一致)。**将来の tmux が値取りグローバルオプションを 1 つ足すと**、`tmux -X <値> kill-server` の `<値>` が subcommand 位置と誤認され、`;` を一切使わずに name-slot 経由で kill を見逃す。tmux を上げたら usage 行の値取りオプションを shim の集合と突き合わせ直す (回帰チェック化する価値がある)。
+- 🚨 **値取りグローバルオプションの集合が `{-c -f -L -S -T}` で完全**であることが前提。shim はこの 5 個だけを「値を 1 つ読み飛ばす」対象にしている (`tmux` の usage 実測と一致)。**将来の tmux が値取りグローバルオプションを 1 つ足すと**、`tmux -X <値> kill-server` の `<値>` が subcommand 位置と誤認され、`;` を一切使わずに name-slot 経由で kill を見逃す。この前提は `tests/tmux/test_tmux_shim_value_opts.sh` が守る (実 tmux の usage から値取りオプションを抽出し、shim の集合と突き合わせる。tmux を上げて集合が変わったらこのテストが落ちる)。
 - **区切り集合の等価性が前提**: shim は「末尾 1 文字が `;` の token ∪ 丁度 `;`」で区切る。これが tmux 3.7b の区切り集合と一致することを decoy 真値表で実測済み。tmux が区切り規則を変えたら測り直す。
 - protect ファイルの socket 名は `;` で終えない (shim が末尾 `;` を剥がして照合を外す。うっかり到達不可だが前提として)。
 
 ## 検証
 
 - `tests/tmux/test_tmux_shim_protects_default.sh` — shim の決定 (block/素通し) をスタブ差し替えコピーで、実 exec の load-bearing をデコイ隔離サーバで確認 (本番不触)。今日の正確な形と大文字綴りを含む。
+- `tests/tmux/test_tmux_shim_value_opts.sh` — 値取りグローバルオプション集合の完全性 (上記の load-bearing な前提) を実 tmux の usage と突き合わせる。抽出 0 件は失敗扱い。
 - `tests/claude/test_deny_bare_tmux_kill.sh` — hook の deny/allow を pin。
 - 設計と実装は Opus の敵対的レビュー (red team) を最終ゲートに通し、指摘 P1 (大文字綴りの貫通) / P2 (pty の TTY ゲート越え) を反映済み。
 
