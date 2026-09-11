@@ -15,6 +15,9 @@
 - **kill した xcodebuild run の直後の full run は判定に使わない**。残骸環境でテストが
   flake する (実測: kill 直後の run だけ drop 系 6 本 red、単独・再実行は green)。
   kill 後は 1 回捨て run を挟むか、単独 suite 再実行で切り分けてから判定する
+- **共有ビルドキャッシュ (DerivedData / .build / module cache) を消す前に、それを使っている他プロセスが無いか見る**
+  (`pgrep xcodebuild` 等)。stale cache の切り分けで消すのは正しい手だが、キャッシュは checkout や worktree を
+  跨いで共有されており、並行セッションのビルド・起動中の app の足元を消す
 - **スタックの検出**: background の xcodebuild が長い時は log の tail と mtime を見る。
   「`Reload Package` が最終行のまま mtime が数分止まっている」がこの競合のシグネチャ
 

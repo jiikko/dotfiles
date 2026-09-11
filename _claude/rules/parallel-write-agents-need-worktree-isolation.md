@@ -51,6 +51,11 @@ git worktree add --detach "$root/../wt-taskB" <base-commit>
 ```
 
 - 各エージェントに `-C <worktree>` で作業根を渡す
+- **新しい worktree で build / test する前に、gitignore された依存解決ファイル (lock / resolved / pin) を正本と揃える**。
+  worktree には生成されないので最初の build が依存を解決し直し、branch 参照は tip を拾う。`git status` に出ないため
+  「正本と別 revision で検証した」ことに気づけない (検証結果を書くときは依存の revision も正本と同じか見る)
+- **sandbox で走る実装者 (ネットワーク / cache 書き込みが無い) に検証を任せるなら、worktree の依存取得とプリビルドは
+  起動前に orchestrator が済ませる**。済ませないと「テスト未実行」のまま実装だけが返る
 - 統合は cherry-pick / patch で行い、**衝突は人間（main agent）が解決する**
 - 🚨 **worktree の成果は「commit してから」cherry-pick で戻す**。`cp` でファイルを上書きすると、
   **その間に他マシン / 他セッションが同じファイルへ入れた変更を黙って消す**
