@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -14,14 +15,18 @@ const (
 	cleanupStampName   = ".cleanup_at"
 )
 
-// minScratchRetention は scratchRetention の下限。tmp/probe の実寿命はミリ秒だが、
-// 保持期間は「I/O が返らないまま進行中の他者」を巻き込まないための余裕なので、
-// 1 回の I/O の上限 (defaultIOTimeout) より桁で長く取る。
-const minScratchRetention = 10 * time.Minute
-
-// 下限をコンパイル時に強制する。scratchRetention を下限より短くすると差が負になり、
-// uint への変換が「constant ... overflows uint」で落ちる。
-const _ = uint(scratchRetention - minScratchRetention)
+// minRetention は sweep に渡せる保持期間の下限。残骸の実寿命はミリ秒だが、保持期間は
+// 「I/O が返らないまま進行中の他者」を巻き込まないための余裕なので、既定の I/O の上限
+// (defaultIOTimeout) より桁で長く取る。
+//
+// 🚨 縛るのは定数ではなく **sweep に渡る値**。定数に対する検査 (「scratchRetention が
+// 10 分以上」) は、別の定数を作って sweep へ渡す / 下限も一緒に下げる、の 2 形で静かに
+// 迂回される (issue 358 の敵対レビューが両方を実測。どちらもビルドもテストも緑だった)。
+//
+// 🚨 `--io-timeout` には上限の検証が無いので、既定から大きく離れた値 (例: 5h) を渡すと
+// この余裕は成立しない。値の検証は issue 359 の「軽微だが実在する」節で 356 / 357 と
+// 一緒に直す。
+const minRetention = 10 * time.Minute
 
 // CleanupResult は掃除の結果。失敗は致命にしないので、件数を持ち帰って
 // status --json / --verbose にだけ出す (黙って捨てない)。
@@ -50,38 +55,47 @@ func (l *Locker) Cleanup(force bool) CleanupResult {
 		res.Errors = append(res.Errors, err.Error())
 		return res
 	}
-	sweep := func(sub string, retention time.Duration) {
-		dir := filepath.Join(l.metaDir, sub)
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			if !os.IsNotExist(err) {
-				res.Errors = append(res.Errors, err.Error())
-			}
-			return
-		}
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			info, err := e.Info()
-			if err != nil {
-				continue
-			}
-			if now.Sub(info.ModTime()) <= retention {
-				continue
-			}
-			if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
-				res.Errors = append(res.Errors, err.Error())
-				continue
-			}
-			res.Removed++
-		}
-	}
-	sweep(tmpDirName, scratchRetention)
-	sweep(probeDirName, scratchRetention)
-	sweep(graveyardDirName, graveyardRetention)
+	l.sweepDir(tmpDirName, scratchRetention, now, &res)
+	l.sweepDir(probeDirName, scratchRetention, now, &res)
+	l.sweepDir(graveyardDirName, graveyardRetention, now, &res)
 	l.stampCleanup()
 	return res
+}
+
+// sweepDir は 1 ディレクトリぶんの掃除。retention が下限を割っていたら **何も消さずに**
+// エラーを積む (判定できない・危険なときは触らないほうが安全)。
+func (l *Locker) sweepDir(sub string, retention time.Duration, now time.Time, res *CleanupResult) {
+	if retention < minRetention {
+		res.Errors = append(res.Errors, fmt.Sprintf(
+			"%s の保持期間 %s が下限 %s を下回る: 走行中の acquire の残骸を消しうるので掃除しない",
+			sub, retention, minRetention))
+		return
+	}
+	dir := filepath.Join(l.metaDir, sub)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			res.Errors = append(res.Errors, err.Error())
+		}
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if now.Sub(info.ModTime()) <= retention {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
+			res.Errors = append(res.Errors, err.Error())
+			continue
+		}
+		res.Removed++
+	}
 }
 
 // cleanupDue はレート制限。判定に必要なファイルが読めなければ「掃除しない」に倒す

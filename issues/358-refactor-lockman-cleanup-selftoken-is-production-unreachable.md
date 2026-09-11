@@ -115,43 +115,45 @@ red になることを確認する。
 
 ## 実施結果 (2026-09-11)
 
-### 1. 下限検査は**コンパイル時**に置いた (テストではない)
+### 1. 下限は「sweep に渡る値」を縛る (第 1 版のコンパイル時検査は敵対レビューで崩れた)
 
-359 の残タスクが「コンパイル時に置けるかは実装時に決める」と保留していた点の決着。
-`cleanup.go` に次を置いた:
+**第 1 版**は `const _ = uint(scratchRetention - minScratchRetention)` でコンパイル時に
+固定した。359 の残タスクが保留していた「コンパイル時に置けるか」は**置けた**が、
+**敵対レビューが 3 形の迂回を実測して崩した**。軸が「定数の値」にあったのが原因:
 
-```go
-// minScratchRetention は scratchRetention の下限。tmp/probe の実寿命はミリ秒だが、
-// 保持期間は「I/O が返らないまま進行中の他者」を巻き込まないための余裕なので、
-// 1 回の I/O の上限 (defaultIOTimeout) より桁で長く取る。
-const minScratchRetention = 10 * time.Minute
+| 変異 | 第 1 版 | 現行 |
+|---|---|---|
+| **M1** `scratchRetention` だけ 1 分 | build rc=1 (検知) | test rc=1 `tmp の保持期間 1m0s が下限 10m0s を下回る` |
+| **M2** probe だけ別の値 (1s) を `sweep` へ渡す | **緑で素通り** | test rc=1 (同上 + `removed=2 (期待 3)`) |
+| **M7** `scratchRetention` と下限を一緒に下げる | **緑で素通り** | test rc=1 `minRetention=1m0s が defaultIOTimeout=10s の 10 倍未満` |
+| **M4** probe の sweep 行を丸ごと削除 | **緑で素通り** | test rc=1 `removed=2 (期待 3)` |
+| **M9** 下限チェック自体を削除 | (第 1 版には該当なし) | test rc=1 `TestSweepRefusesRetentionBelowFloor` |
 
-// 下限をコンパイル時に強制する。scratchRetention を下限より短くすると差が負になり、
-// uint への変換が「constant ... overflows uint」で落ちる。
-const _ = uint(scratchRetention - minScratchRetention)
-```
+M1 で出るエラー `constant -540000000000 overflows uint` が**どの定数が何に違反したかを
+名乗らない**ため、踏んだ人の自然な反応が「下限も一緒に下げる」(= M7) になる、という指摘が
+特に効いた。M4 は「probe の sweep はテストが 1 本も見ていない」という**元からの穴**。
 
-配列長を使う形 (`var _ [scratchRetention - minScratchRetention]struct{}`) も試して
-両方が機能したが、`uint` 変換のほうが意図が読めるので採用した。
+**現行版** (`adversarial-review-own-safeguards.md` §8「構文でなく効果へ軸を移す」):
+
+- `sweep` のロジックを `(*Locker).sweepDir(sub, retention, now, *CleanupResult)` へ切り出し、
+  **retention が下限を割っていたら何も消さずにエラーを積んで返す** (fail-closed)。
+  これで「別の定数を作って渡す」も「呼び出し側で式にする」も、渡った値で捕まる
+- 下限そのものを下げる変異は下限チェックからは原理的に見えないので、
+  `TestMinRetentionIsFarAboveDefaultIOTimeout` で **`minRetention >= 10 × defaultIOTimeout`** を
+  別に固定した
+- `probe/` の fixture を `TestCleanupRemovesOldScratchOnly` に足した (M4 を殺す)
 
 **下限を `cleanupInterval` (レート制限) に相対させなかった理由**: 両者は無関係な量で、
 「掃除の頻度」を変えると「走行中の acquire を守る余裕」が連動して動くのは誤った結合になる。
 
-### 2. 変異検証 — red ではなく「ビルド不能」で検出される
+### 2. 変異検証の記録
 
-コンパイル時の検査なので、`mutation-verify-new-tests.md` の言う第 3 の結果
-(`<変異がビルド不能>`) が**この検査にとっての正しい検出の形**。判定は
-「その検査を**名指しする**エラーで落ちるか」で行った。
+上表のとおり 5 変異すべてが red。各変異は `diff` で 1 箇所だけが変わっていることを目視し、
+`go build` の成否をテスト実行と分けて見た。
 
-| 実行 | `go build` rc | 出力 |
-|---|---|---|
-| baseline (`scratchRetention = time.Hour`) | 0 | — (`go test` も `ok lockman 1.874s`) |
-| 変異 (`scratchRetention = time.Minute`) | **1** | `./cleanup.go:24:16: constant -540000000000 overflows uint` |
-| **対照**: 同じ変異 + ガード行を削除 | **0** | — |
-
-3 行目が要点。`verify-execution-not-just-exit-code.md`「その機構を外したら観測結果は
-変わるか」に yes と答えられる = **検知していたのはこのガードである**ことが確定した
-(変異の diff は 1 行だけであることを `diff` で目視確認済み)。
+🚨 **M9 の初回は「ビルド不能」だった** — 下限チェックを消すと `fmt` が未使用になり
+コンパイルが通らない。`mutation-verify-new-tests.md` の第 3 の結果 (red でも green でもない)
+として扱い、`fmt` の import ごと落とす形で当て直して red を確認した。
 
 ### 3. ガードの撤去
 
@@ -192,15 +194,21 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
 ([315](done/315-test-unused-includes-tests-so-production-unreachable-code-stays-green.md) /
 [317](done/317-test-termsafe-regression-test-observes-production-unreachable-surfaces.md) と同型)。
 
-**失ったカバレッジ — 2 つに分けて書く**:
+**失ったカバレッジ — 2 つに分けて書く** (🚨 起票直後に書いた第 1 版は**実測で崩れた**。
+敵対レビューの指摘を反映した版がこれ):
 
 | 区分 | 内容 | 検出可能性 |
 |---|---|---|
-| **削除で失った分** | なし。`selfToken != ""` の分岐は production から到達しないので、守っていた production の挙動はゼロ | — |
-| **元から穴だった分** (削除の責任ではない) | 「走行中の acquire の scratch を掃除が消さない」という**本来の不変条件**。これは元々 `scratchRetention` の値だけが守っており、テストは 1 本も無かった | **検出できることを実証済み** — 上の 1 で入れたコンパイル時の検査が、値を縮める変異を名指しで落とすことを実測した (上表) |
+| **削除で失った分** | production の挙動は**ゼロ** (`selfToken != ""` は到達不能)。ただし厳密には「**ガードが存在すること自体の pin**」を失った — 削除前はガードを消すと `TestCleanupKeepsOwnScratch` が red になった | 該当なし (守る対象が production に無いので、pin を失っても失うものが無い) |
+| **元から穴だった分** (削除の責任ではない) | 「走行中の acquire の scratch を掃除が消さない」という本来の不変条件 | **検出できることを実証済み** (上の変異表 M1 / M2 / M4 / M7 / M9) |
 
-つまりこの削除は保護を減らしていない。**元からあった単一障害点 (`scratchRetention` の値)
-に機械の検査を付けたぶん、正味では増えている**。
+🚨 **第 1 版は「元からテストは 1 本も無かった」と書いたが、これは誤り**。
+`TestCleanupRemovesOldScratchOnly` の fixture `touchOld(t, freshTmp, time.Minute)` が
+**tmp の保持期間を約 1 分に偶然 pin していた** (それより短くすると `freshTmp` が消えて
+`removed` が合わなくなる)。したがって今回動かした下限は **0 → 10 分ではなく約 1 分 → 10 分**。
+結論の向き (正味で増えている) は変わらないが、**増分は第 1 版の主張の 1/600 のスケール**。
+しかも「1 分」は宣言された下限ではなく fixture の副作用なので、`probe/` 側にはそれすら
+無かった (M4 が緑で通った理由)。
 
 ## 進捗
 
@@ -208,17 +216,33 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
   崩れ、(i) probe の命名が独立乱数 / (ii) `os.Link` 後の tmp は不要 / (iii) 過去の試行は
   別トークン という 3 点へ根拠を差し替えた（未着手）
 - 2026-09-11: 推奨対応 A を実施 (上の「実施結果」)。1 → 2・3 の順序を守り、下限検査を
-  先に入れてから撤去した。`make -C src/lockman lint` = `0 issues.` (rc=0) /
-  `make -C src/lockman test` = `ok lockman 2.905s` (rc=0、stdout / stderr を分けて確認し
-  `✗` / `FAIL` はいずれも 0 件)
+  先に入れてから撤去した (第 1 版 = コンパイル時の定数検査、`ff8ed1c4`)
+- 2026-09-11: **敵対的レビュー 1 周目**。第 1 版の下限検査が 3 形 (M2 / M4 / M7) で
+  緑のまま迂回されることを実測で示され、**軸を「定数の値」から「sweep に渡る値」へ移した**。
+  併せて「失ったカバレッジ = なし」「元からテストは 1 本も無かった」という本文の主張、
+  README が名指ししたテスト、const 群コメントの射程縮小の 4 件も崩れたので直した
 
 ## 残タスク
 
-- **敵対的レビュー未実施**。359 が「358 の実装差分には改めて敵対的レビューが要る」と
-  要求しており、かつ本変更は「自作の検査の新設」(`adversarial-review-own-safeguards.md`) と
-  「ガードの撤去」(`list-masked-failure-modes-before-removing-guard.md`) の**両方**に
-  該当する。commit 後に観点を分けた read-only レビューを 1 体 (opus 級) 通す
-- 決着済み: 下限検査はコンパイル時に置けた (上の「実施結果」1)
+- **敵対的レビュー 2 周目が必要**。`adversarial-review-own-safeguards.md` §7
+  「指摘を直した差分にもう 1 周回してから閉じる」。1 周目の指摘で**新設した**もの
+  (`sweepDir` の切り出し・fail-closed の下限・`TestMinRetentionIsFarAboveDefaultIOTimeout`・
+  probe fixture) はまだ誰にも攻められていない
+- 決着済み: 下限はコンパイル時ではなく `sweepDir` の実行時に置いた (上の「実施結果」1)。
+  コンパイル時にも**置けた**が、定数を縛る形は迂回されるため採らなかった
+
+## 却下した指摘 (敵対レビュー 1 周目。理由を残す — 次の監査が再生成しないため)
+
+- **`--io-timeout` に上限の検証が無く、5h を渡すと `minRetention` の根拠が崩れる (P3)** —
+  指摘自体は実在する (実測で `--io-timeout 5h` が rc=0 で受理される)。ただし**本 commit が
+  持ち込んだ穴ではなく**、`--on-lost` の無検証と同じ族なので
+  [359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) の「軽微だが実在する」節へ
+  移し、356 / 357 の実装時にまとめて直す。`cleanup.go` のコメントには「既定の I/O の上限」と
+  書き、成立条件が既定値に限ることを明記した
+- **`graveyardRetention` / `cleanupInterval` に同型の危険はないか (P3)** — `graveyardRetention` は
+  現行版では `sweepDir` を通るので下限に守られる。`cleanupInterval` は sweep に渡らないので
+  対象外だが、`TestCleanupIsRateLimited` が pin していることを実測で確認した
+  (`cleanupInterval = time.Nanosecond` で red)
 
 ## 関連
 

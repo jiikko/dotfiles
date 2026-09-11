@@ -47,11 +47,18 @@ Linux / Samba も想定しない。**CI も macOS runner で回る** (issue 133 
 🚨 **CI が検証するのはローカル FS 上の挙動だけ**。SMB 由来の前提 (キャッシュ・打刻・
 ロック転送) は CI では一切検証されない。実機検証は `human` issue で人が行う。
 
-🚨 **ubuntu runner を失ったことで消えた検出力がある**。`lock.go` の `holderTTL` /
-`lock_test.go` の `TestShortTTLCannotStealLiveLock` が記録している不具合 (生死の判定に
-奪う側の `--ttl` を使うと他人の lease を早期に奪える) は、**macOS では速すぎて出ず、
-CI の Linux が「勝者が 4 人」で露見させた**。時間の差で顕在化する同型の退行は今の CI では
-捕まらない前提で、この付近を触るときは競合の窓を人為的に広げて確かめること。
+🚨 **ubuntu runner を失ったことで消えた検出力がある**。`lock.go` の `holderTTL` の不具合
+(生死の判定に奪う側の `--ttl` を使うと他人の lease を早期に奪える) は、**macOS では
+速すぎて出ず、CI の Linux が「勝者が 4 人」で露見させた** (issue 093)。
+
+- **記録**は `lock_test.go` の `TestShortTTLCannotStealLiveLock` のコメントにあるが、
+  そのテスト自身は逐次 2 コールで競合の窓を持たない (回帰を固定する役)
+- **「勝者が 4 人」を出したのは** 16 goroutine で競わせる
+  `TestStaleTakeoverHasExactlyOneWinner` / `TestAcquireHasExactlyOneWinner` のほう
+
+時間の差で顕在化する同型の退行は今の CI では捕まらない前提で、この付近を触るときは
+**後者 2 本の TTL とワーカー数を上げて窓を人為的に広げて**確かめること (前者を広げても
+競合は起きない)。
 
 ## 開発
 
