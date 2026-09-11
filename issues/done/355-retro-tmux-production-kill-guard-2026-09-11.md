@@ -73,7 +73,7 @@ threat (4b が同じテストを再実行しうる) が active で、ユーザ�
       新設した**ことを、§7 の最も強い形（指摘への修正は新しい安全機構であり、同じクラスの穴を
       持ちうる）として記録。`rules/` 本文は §7 が既に規範を持つので追記していない
 - [x] （任意）値取りグローバルオプション集合 `{c,f,L,S,T}` の完全性チェック →
-      **[issue 360](../360-test-tmux-shim-value-taking-options-completeness.md) として起票**。
+      **[issue 360](360-test-tmux-shim-value-taking-options-completeness.md) として起票**。
       `bin/tmux` は変更せず、usage と shim の集合を突き合わせる検査を新設する形にした
       （dotfiles-6f と重複しないよう、起票はこちらが引き取ることを合意済み）
 - 上記以外の実装・検証・doc・本番有効化は完了済み

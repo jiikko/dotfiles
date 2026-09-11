@@ -1,7 +1,7 @@
 # tmux shim の「値取りグローバルオプション集合」の完全性を回帰チェックで固定する
 
 起票日: 2026-09-11
-出典: [issue 355](done/355-retro-tmux-production-kill-guard-2026-09-11.md) の残タスク（任意項目）。
+出典: [issue 355](355-retro-tmux-production-kill-guard-2026-09-11.md) の残タスク（任意項目）。
 最終ゲートの敵対的レビューが load-bearing 前提として挙げたもの
 関連: `docs/tmux-production-kill-guard.md` の「load-bearing な前提」節（前提の一次情報）
 
@@ -33,7 +33,7 @@
 - [x] `tmux` の usage から値取りグローバルオプションを抽出し、`bin/tmux` の読み飛ばし集合と
       比較する検査スクリプトを足す（`make test` の自動発見に乗る場所へ）
 - [x] **抽出が空でも緑にならないこと**を確認する。usage の書式が変わって 0 個抽出になったら
-      「一致」ではなく**失敗**にする（[`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)
+      「一致」ではなく**失敗**にする（[`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md)
       の「対象 0 件 / 抽出 0 件は失敗にする」）
 - [x] **canary を本走査と同じ関数に通す**。既知の入力（`-L` は値取り / `-2` は値を取らない）で
       既知の答えが出ることを本走査の前に固定する
