@@ -63,7 +63,11 @@ func (l *Locker) Cleanup(force bool) CleanupResult {
 	// され、「掃除が黙って止まっている」状態が見えなくなる (毎回出し直すほうが気づける)。
 	// 対象は下限違反だけでなく **実際に起きうる失敗**も — 権限ドリフトや stale mount で
 	// `ReadDir` が落ちる経路が本命 (下限違反は壊れたビルドでしか起きない)。
-	// 個別の `os.Remove` 失敗で再試行が早まるコストは、失敗した dir の readdir 1 回ぶん。
+	// 🚨 コストは「再試行が早まる」では済まない。失敗が持続するあいだレート制限が
+	// 丸ごと死に、acquire のたびに 3 dir をフル readdir する (実測 2026-09-12、
+	// ローカル APFS / graveyard 2000 件: 12.2 → 17.5 ms/acquire = +43%。SMB では未実測で、
+	// trigger は「SMB 共有で acquire が遅いという報告が出たとき同じ A-B を採る」)。
+	// それでも打刻するより安い: 打刻すると壊れていること自体が 10 分ごとにしか見えない。
 	if len(res.Errors) == 0 {
 		l.stampCleanup()
 	}
@@ -100,13 +104,25 @@ func (l *Locker) sweepDir(sub string, retention time.Duration, now time.Time, re
 		}
 		info, err := e.Info()
 		if err != nil {
+			// 「他者が先に消した」は掃除の目的が達成された状態なので良性。
+			// それ以外は記録する (下の os.Remove と扱いを揃える)。
+			if !os.IsNotExist(err) {
+				res.Errors = append(res.Errors, err.Error())
+			}
 			continue
 		}
 		if now.Sub(info.ModTime()) <= retention {
 			continue
 		}
 		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
-			res.Errors = append(res.Errors, err.Error())
+			// 🚨 ENOENT は良性。並行する acquire の掃除どうしは同じ残骸を取り合うので、
+			// 「他者が先に消した」は**正常系**に出る。ここを記録すると、レート制限が
+			// 死んで毎回フル sweep になり、利用者の端末に警告が出続ける
+			// (実測 2026-09-12: 同一 dir への同時 acquire 6 試行すべてで打刻が飛び、
+			//  stderr に 1.3〜3.5 KB。`_av1ify_lock.zsh` は stdout しか落としていない)。
+			if !os.IsNotExist(err) {
+				res.Errors = append(res.Errors, err.Error())
+			}
 			continue
 		}
 		res.Removed++

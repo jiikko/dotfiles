@@ -1,9 +1,12 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 // tokenPath は --token-file の置き場。テスト用の使い捨て。
@@ -147,4 +150,53 @@ func TestExitCodesDoNotCollide(t *testing.T) {
 			t.Errorf("%s = %d は子プロセスの終了コードと衝突しうる (> 120 にすること)", name, code)
 		}
 	}
+}
+
+// ★ 掃除の失敗は verbose でなくても stderr に出る。件数も一緒に出す。
+//
+// 🚨 この分岐は変異で丸ごと消しても、`o.verbose` に戻しても緑だった (issue 358 の
+// 敵対レビュー 4 周目が実測)。commit の見出しにしていた挙動が無検査だったので足す。
+func TestDispatchWarnsOnCleanupFailureWithoutVerbose(t *testing.T) {
+	l := newTestLocker(t)
+	if err := l.ensureDirs(); err != nil {
+		t.Fatalf("ensureDirs: %v", err)
+	}
+	tmpDir := filepath.Join(l.metaDir, tmpDirName)
+	touchOld(t, filepath.Join(tmpDir, "old.json"), 2*time.Hour)
+	if err := os.Chmod(tmpDir, 0o500); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(tmpDir, metaDirMode) })
+
+	got := captureStderr(t, func() { dispatch("cleanup", l, &opts{}, nil) })
+
+	if !strings.Contains(got, "permission denied") {
+		t.Fatalf("verbose 無しで掃除の失敗が stderr に出ない: %q", got)
+	}
+	// 件数も出ること (失敗時こそ「部分的に進んだか」を知りたい)。
+	if !strings.Contains(got, "removed=") {
+		t.Fatalf("件数が出ていない: %q", got)
+	}
+}
+
+// captureStderr は fn の実行中の os.Stderr を集める。warnf が直接 os.Stderr へ書くため。
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	orig := os.Stderr
+	os.Stderr = w
+	done := make(chan string, 1)
+	go func() {
+		b, _ := io.ReadAll(r)
+		done <- string(b)
+	}()
+	fn()
+	os.Stderr = orig
+	_ = w.Close()
+	out := <-done
+	_ = r.Close()
+	return out
 }

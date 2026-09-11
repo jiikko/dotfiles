@@ -181,28 +181,58 @@ func TestMinRetentionFloorIsPinned(t *testing.T) {
 // ★ 掃除が失敗したら打刻しない。打刻するとレート制限が進み、以後 10 分は skip されて
 // 「掃除が黙って止まっている」状態が観測できなくなる。
 //
-// 🚨 検査に使うのは下限違反ではなく **実際に起きうる失敗** (権限ドリフト)。下限違反は
-// 壊れたビルドでしか起きないので、それで検査すると production 到達不能な状態を自分で
-// 作って観測するテストになり、この issue (358) が削除したガードと同じ形になる。
-func TestCleanupDoesNotStampWhenSweepFails(t *testing.T) {
+// 🚨 前提が作れなかったら **Fatal で落とす** (Skip にしない)。Skip にすると
+// 「環境が失敗を作れなかった」と「production が失敗を記録しなくなった」が同じ緑に
+// 畳まれ、`os.Remove` のエラー記録を消す変異が rc=0 で素通りする (4 周目が実測。
+// CI は `-v` なしなので skip はログからも読めない)。
+// `adversarial-review-own-safeguards.md` §2「判定不能を緑に畳まない」。
+func TestCleanupDoesNotStampWhenRemoveFails(t *testing.T) {
 	l := newTestLocker(t)
 	if err := l.ensureDirs(); err != nil {
 		t.Fatalf("ensureDirs: %v", err)
 	}
 	tmpDir := filepath.Join(l.metaDir, tmpDirName)
 	touchOld(t, filepath.Join(tmpDir, "old.json"), 2*time.Hour)
-	if err := os.Chmod(tmpDir, 0o500); err != nil { // 削除できない権限にする
+	if err := os.Chmod(tmpDir, 0o500); err != nil { // 読めるが消せない
 		t.Fatalf("chmod: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(tmpDir, metaDirMode) })
 
 	res := l.Cleanup(true)
 	if len(res.Errors) == 0 {
-		t.Skip("この環境では削除が拒否されなかった (root 実行など)")
+		t.Fatal("前提が作れていない: 削除が拒否されなかった (root 実行なら、このテストは" +
+			"守りとして成立していないので環境を変えること)")
 	}
-	stamp := filepath.Join(l.metaDir, cleanupStampName)
-	if _, err := os.Stat(stamp); !os.IsNotExist(err) {
-		t.Fatalf("掃除が失敗したのに打刻された (以後 %s は skip される): %v", cleanupInterval, err)
+	assertNoStamp(t, l, res)
+}
+
+// ★ 上と別の枝: ReadDir 自体が失敗する場合 (`chmod 0000`)。
+// 実装では `os.Remove` の失敗とは違う分岐なので、片方のテストでは守れない
+// (4 周目が「ReadDir のエラー記録を消す変異が緑」で実測)。
+func TestCleanupDoesNotStampWhenReadDirFails(t *testing.T) {
+	l := newTestLocker(t)
+	if err := l.ensureDirs(); err != nil {
+		t.Fatalf("ensureDirs: %v", err)
+	}
+	tmpDir := filepath.Join(l.metaDir, tmpDirName)
+	if err := os.Chmod(tmpDir, 0o000); err != nil { // 読むこともできない
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(tmpDir, metaDirMode) })
+
+	res := l.Cleanup(true)
+	if len(res.Errors) == 0 {
+		t.Fatal("前提が作れていない: ReadDir が拒否されなかった (root 実行なら、この" +
+			"テストは守りとして成立していないので環境を変えること)")
+	}
+	assertNoStamp(t, l, res)
+}
+
+func assertNoStamp(t *testing.T, l *Locker, res CleanupResult) {
+	t.Helper()
+	if _, err := os.Stat(filepath.Join(l.metaDir, cleanupStampName)); !os.IsNotExist(err) {
+		t.Fatalf("掃除が失敗 (%v) したのに打刻された: 以後 %s は skip される (%v)",
+			res.Errors, cleanupInterval, err)
 	}
 }
 
