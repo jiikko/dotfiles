@@ -142,12 +142,6 @@ func TestSweepRefusesRetentionBelowFloor(t *testing.T) {
 	if res.Removed != 0 {
 		t.Fatalf("下限を割る保持期間で %d 件消した (期待 0)", res.Removed)
 	}
-	// Refused は打刻の抑止と production の stderr 出力の両方をゲートしているので、
-	// 「消さなかった」だけでなくフラグ自体を見る (これが無いと res.Refused = true を
-	// 消す変異が緑で通る。issue 358 の 2 周目で実測)。
-	if !res.Refused {
-		t.Fatal("下限違反なのに Refused が立っていない (打刻の抑止と警告が効かなくなる)")
-	}
 	if _, err := os.Stat(victim); err != nil {
 		t.Fatalf("下限を割る保持期間で残骸を消した: %v", err)
 	}
@@ -156,42 +150,65 @@ func TestSweepRefusesRetentionBelowFloor(t *testing.T) {
 	}
 }
 
-// ★ 下限の**絶対値**をリテラルで固定する。
+// ★ 下限を 2 通りで固定する。**どちらも本体で、片方は補助ではない** (3 周目の実測)。
 //
-// 🚨 ここをリテラルでなく定数どうしの比 (`minRetention >= 10 * defaultIOTimeout`) で
-// 書くと、**両方を一緒に下げれば緑のまま通る**。実測 (issue 358 の敵対レビュー 2 周目):
-// minRetention 10m→1m / scratchRetention 1h→2m / defaultIOTimeout 10s→6s の 3 点変異が
-// 3 回とも `ok lockman` だった。しかも比で書いた版の失敗メッセージは両方のオペランドと
-// 必要な比を名指しするので、**踏んだ人に「もう一方を下げれば緑になる」と教えてしまう**。
+//   - リテラルの `pinned`: 定数どうしの比だけで書くと、両方を一緒に下げれば緑で通る
+//     (2 周目の実測: minRetention 10m→1m / scratchRetention 1h→2m / defaultIOTimeout
+//     10s→6s の 3 点変異が 3 回とも `ok lockman`)
+//   - `defaultIOTimeout` との比: リテラルが**単独で**効くのは `minRetention` が
+//     [100s, 600s) にあるときだけで、**本当に危険な 100s 未満の帯を押さえているのは
+//     こちら** (3 周目の実測)
 //
-// リテラルなら、下げるにはこのテストを書き換えるしかなく、それは意図的な行為として
-// diff に出る。
+// 🚨 どちらも「壁」ではない。production の 3 定数とこのテストの `pinned` を合わせて
+// 4 行直せば通る (3 周目が実測)。上げているのは**敷居**であって不可能性ではなく、
+// 4 行の diff が「意図してやった」ことを示す、という設計。
 func TestMinRetentionFloorIsPinned(t *testing.T) {
 	const pinned = 10 * time.Minute
 	if minRetention < pinned {
-		t.Fatalf("minRetention=%s が固定値 %s を割っている。"+
-			"本当に下げる必要があるなら、走行中の acquire の残骸を消す確率が上がることを"+
-			"理解したうえで、この pinned も一緒に直すこと (比で逃げないこと)", minRetention, pinned)
+		t.Fatalf("minRetention=%s が固定値 %s を割っている: "+
+			"走行中の acquire の残骸を消す確率が上がる", minRetention, pinned)
 	}
 	if scratchRetention < minRetention {
 		t.Fatalf("scratchRetention=%s が下限 %s を割っている", scratchRetention, minRetention)
 	}
-	// 既定の I/O の上限との関係は「下限を見直す合図」として別に見る (これ単独は
-	// 上の pin の代わりにならない — 両方下げれば通るため)。
+	// 既定の I/O の上限との関係。上のリテラルと役割が違う (帯が違う) ので両方要る。
 	if minRetention < 10*defaultIOTimeout {
-		t.Fatalf("defaultIOTimeout=%s が上がったので minRetention=%s を見直すこと",
-			defaultIOTimeout, minRetention)
+		t.Fatalf("minRetention=%s が defaultIOTimeout=%s の 10 倍未満: "+
+			"走行中の I/O より短い保持期間になる", minRetention, defaultIOTimeout)
 	}
 }
 
-// ★ 拒否していないときは打刻する (レート制限が進む)。
+// ★ 掃除が失敗したら打刻しない。打刻するとレート制限が進み、以後 10 分は skip されて
+// 「掃除が黙って止まっている」状態が観測できなくなる。
 //
-// 🚨 対になる「拒否したときは打刻しない」は**テストにしない**。既定の定数では拒否が
-// 起きないので、書くと「production 到達不能な状態を自分で作って観測するテスト」に
-// なり、この issue (358) が削除したガードと同じ形になる。そちらは変異で確認した:
-// scratchRetention を下限未満にしたビルドで `lockman cleanup` を打っても
-// `.cleanup_at` が作られないことを実測 (issue 358 の「実施結果」)。
-func TestCleanupStampsWhenNotRefused(t *testing.T) {
+// 🚨 検査に使うのは下限違反ではなく **実際に起きうる失敗** (権限ドリフト)。下限違反は
+// 壊れたビルドでしか起きないので、それで検査すると production 到達不能な状態を自分で
+// 作って観測するテストになり、この issue (358) が削除したガードと同じ形になる。
+func TestCleanupDoesNotStampWhenSweepFails(t *testing.T) {
+	l := newTestLocker(t)
+	if err := l.ensureDirs(); err != nil {
+		t.Fatalf("ensureDirs: %v", err)
+	}
+	tmpDir := filepath.Join(l.metaDir, tmpDirName)
+	touchOld(t, filepath.Join(tmpDir, "old.json"), 2*time.Hour)
+	if err := os.Chmod(tmpDir, 0o500); err != nil { // 削除できない権限にする
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(tmpDir, metaDirMode) })
+
+	res := l.Cleanup(true)
+	if len(res.Errors) == 0 {
+		t.Skip("この環境では削除が拒否されなかった (root 実行など)")
+	}
+	stamp := filepath.Join(l.metaDir, cleanupStampName)
+	if _, err := os.Stat(stamp); !os.IsNotExist(err) {
+		t.Fatalf("掃除が失敗したのに打刻された (以後 %s は skip される): %v", cleanupInterval, err)
+	}
+}
+
+// ★ 逆向き: 失敗していないときは打刻する (レート制限が進む)。
+// これが無いと「常に打刻しない」変異が緑で通る。
+func TestCleanupStampsWhenClean(t *testing.T) {
 	l := newTestLocker(t)
 	if err := l.ensureDirs(); err != nil {
 		t.Fatalf("ensureDirs: %v", err)
@@ -200,10 +217,10 @@ func TestCleanupStampsWhenNotRefused(t *testing.T) {
 	if _, err := os.Stat(stamp); !os.IsNotExist(err) {
 		t.Fatalf("前提が崩れている: 打刻が既にある (%v)", err)
 	}
-	if got := l.Cleanup(true); got.Refused {
-		t.Fatalf("既定の定数で拒否された (errors=%v)", got.Errors)
+	if got := l.Cleanup(true); len(got.Errors) != 0 {
+		t.Fatalf("既定の定数で失敗した: %v", got.Errors)
 	}
 	if _, err := os.Stat(stamp); err != nil {
-		t.Fatalf("拒否していないのに打刻されていない: %v", err)
+		t.Fatalf("失敗していないのに打刻されていない: %v", err)
 	}
 }

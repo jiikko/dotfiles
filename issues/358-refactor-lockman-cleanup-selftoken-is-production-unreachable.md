@@ -230,6 +230,91 @@ M11 は「観測している量が、壊れたときに動かない」形。**2 
   コメントで既に開示済み (`--io-timeout` に上限検証が無いこと)。テスト名は
   `TestMinRetentionFloorIsPinned` に変えたので乖離は解消
 
+### 2.6 敵対レビュー 3 周目 — **2 周目の変異検証が偽物だった**
+
+#### P1: M10 は「production の機構を戻す」形の変異ではなかった
+
+2 周目は「M10 (`!res.Refused` → `res.Refused` の反転) が red」を、**「拒否時は打刻しない」が
+守られている証拠**として記録した。これは誤り。反転は**正常系を壊す**ので、既存の
+`TestCleanupIsRateLimited` / `TestCleanupRunsOnlyForMutatingCommands` が元から拾う。
+
+正しい変異は **M12 = 機構を戻す** (`if !res.Refused { stamp }` → 無条件 `stamp`)。実測:
+
+```
+M12: go build rc=0 / go test rc=0 / FAIL 0 件    ← 緑で素通り
+```
+
+`mutation-verify-new-tests.md`「変異は production の機構を戻す形にする」「その変異は
+実際に起こりうる退行の形か」に正面から抵触していた。2 周目で新設した
+`TestCleanupStampsWhenNotRefused` も検出力の増分がゼロ (既存 2 本と完全に重複)。
+
+🚨 **害は runtime のバグではなく、偽の検証記録**だった。commit message の表と
+`cleanup_test.go` のコメント「そちらは変異で確認した」が、次に読む人に
+「決着済み」と読ませる (`pending-issue-rationale-in-code.md` の逆作用)。
+
+#### P2: 観測性を「到達不能な枝」にだけ足していた
+
+2 周目は下限違反 (= 壊れたビルドでしか起きない) にだけ非打刻と警告を付けた。
+一方 **実際に起きる失敗**である `ReadDir` / `os.Remove` の権限エラーは `Refused` を
+立てないので、従来どおり**無音 + 打刻**のままだった。レビュワーの E2E:
+`rc=0 / stdout 0B / stderr 0B / .cleanup_at 打刻済み`。
+commit message の理由づけ「黙って 10 分止まるのを防ぐ」がこの枝に逐語で当てはまるのに、
+適用先が逆になっていた。
+
+#### 直した形 — `Refused` を廃し、ゲートを `len(res.Errors) == 0` にした
+
+P1 と P2 を同時に閉じ、しかも**機構が production から到達可能になる**ので
+テストで守れるようになった (2 周目版は到達不能だったので守れなかった):
+
+- `Cleanup` の末尾を `if len(res.Errors) == 0 { l.stampCleanup() }` にした。
+  下限違反だけでなく**権限ドリフト / stale mount** でも打刻しない
+- `main.go` は `if len(res.Errors) > 0 || o.verbose` で警告する。
+  **件数も一緒に出す** — 部分的に進んだのか何も進んでいないのかは失敗時こそ知りたい
+  (2 周目版は排他分岐で、拒否時に `removed` が消えていた。3 周目 P3-c)
+- `CleanupResult.Refused` と `json:"refused,omitempty"` を廃止
+  (出力経路が無く「出るように見えて出ない」タグだった。3 周目 P3-b)
+- テストを**到達可能な失敗** (chmod 0500 による権限エラー) で書き直した:
+  `TestCleanupDoesNotStampWhenSweepFails` / `TestCleanupStampsWhenClean`
+
+#### 3 周目の変異検証 (4 本。すべて red)
+
+| 変異 | 結果 |
+|---|---|
+| **M12** 機構を戻す (打刻を無条件に) | test rc=1 `TestCleanupDoesNotStampWhenSweepFails` ← 2 周目版では緑だった |
+| **M13** 逆向き (常に打刻しない) | test rc=1 (`TestCleanupIsRateLimited` / `TestCleanupStampsWhenClean` / `TestCleanupRunsOnlyForMutatingCommands`) |
+| **M14** 下限チェック自体を削除 | test rc=1 `TestSweepRefusesRetentionBelowFloor` |
+| **M7p** 3 定数を一緒に下げる | test rc=1 `TestMinRetentionFloorIsPinned` |
+
+E2E (使い捨て sandbox、正規ビルド、stdout / stderr / rc を分離):
+
+```
+1 回目 (tmp を chmod 0500):
+  rc=0  stdout: []
+  stderr: lockman: cleanup: removed=0 skipped=false errors=[remove .../tmp/old.json: permission denied]
+  .lockman/ の中身: graveyard probe tmp        ← .cleanup_at が無い (打刻していない)
+2 回目: 同じ警告が再び出る                      ← レート制限が進んでいない
+権限を戻した 3 回目:
+  rc=0  stderr: []   tmp/ は空   .cleanup_at あり
+```
+
+🚨 **この E2E は 1 回目に rc=126 を出して失敗した**。原因は実装ではなく
+**ハーネス** — 3 周目レビュワーが scratchpad に作った変異用ディレクトリと
+`go build -o` の出力先が同名で、ディレクトリを実行していた。
+`verify-interactive-prompt-with-pty-driver.md`「確認が失敗したら実装を疑う前に
+ハーネスを疑う」の適用例。
+
+#### 却下した 3 周目の指摘
+
+- **リテラル pin と比の assert、効いているのは比のほう (P3-a)** — 指摘は正しい
+  (リテラルが単独で効くのは `minRetention ∈ [100s, 600s)` だけで、危険な 100s 未満は
+  比が押さえている)。ただし**両方とも同じテスト関数の中で走る**ので検出力は落ちていない。
+  誤っていたのは「比は見直しの合図で、単独では pin にならない」という**コメントの側**なので、
+  実測どおり「どちらも本体で、帯が違う」へ書き直した。4 行 (production 3 + テスト 1) の
+  迂回が通ることも、隠さずコメントに書いた — 上げているのは敷居であって不可能性ではない
+- **`cleanup.go` の「status --json にだけ出す」が実装と乖離 (ぼやき)** — 実在する乖離
+  (`status` は `Cleanup` を呼ばない)。触っているコードなので同じ commit で直した
+  (`claude-md-maintenance.md`「触ったら直す」)
+
 ### 3. ガードの撤去
 
 - `Cleanup(force bool, selfToken string)` → `Cleanup(force bool)`
@@ -292,6 +377,11 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
   別トークン という 3 点へ根拠を差し替えた（未着手）
 - 2026-09-11: 推奨対応 A を実施 (上の「実施結果」)。1 → 2・3 の順序を守り、下限検査を
   先に入れてから撤去した (第 1 版 = コンパイル時の定数検査、`ff8ed1c4`)
+- 2026-09-12: **敵対的レビュー 3 周目**。2 周目の変異検証が偽物だった (M10 は正常系を
+  壊す変異で、既存テストが元から拾う範囲。機構を戻す M12 は緑で素通り) / 観測性を
+  到達不能な枝にだけ足していた、の 2 件が P1・P2 として出た。`Refused` を廃して
+  ゲートを `len(res.Errors) == 0` に広げ、**到達可能な失敗 (権限ドリフト) で**
+  テストを書き直した (上の「2.6」)
 - 2026-09-12: **敵対的レビュー 2 周目**。1 周目の修正で足した
   `TestMinRetentionIsFarAboveDefaultIOTimeout` が定数の比で書かれており、3 定数を
   一緒に下げると緑で通る (P1) / fail-closed が production で完全に無音 (P2) が出た。
@@ -304,10 +394,9 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
 
 ## 残タスク
 
-- **敵対的レビュー 3 周目が必要**。§7 の打ち切り条件は「(a) 判定ロジックを新設せず
-  (b) 各修正を直接の実測で確認できた」だが、**2 周目の修正は (a) を満たさない**
-  (`CleanupResult.Refused` / 打刻の条件分岐 / production の警告分岐を新設した)。
-  3 周目は 2 周目の差分だけを対象にする
+- **敵対的レビュー 4 周目が必要**。3 周目の修正も判定ロジックを触っている
+  (打刻のゲートを `!Refused` → `len(Errors) == 0` へ広げた) ので、§7 の打ち切り条件
+  (a) を満たさない。4 周目は 3 周目の差分だけを対象にする
 - 決着済み: 下限はコンパイル時ではなく `sweepDir` の実行時に置いた (上の「実施結果」1)。
   コンパイル時にも**置けた**が、定数を縛る形は迂回されるため採らなかった
 

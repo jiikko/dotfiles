@@ -28,14 +28,12 @@ const (
 // 一緒に直す。
 const minRetention = 10 * time.Minute
 
-// CleanupResult は掃除の結果。失敗は致命にしないので、件数を持ち帰って
-// status --json / --verbose にだけ出す (黙って捨てない)。
+// CleanupResult は掃除の結果。失敗は致命にしないので、件数とエラーを持ち帰る
+// (黙って捨てない)。Errors が非空なら `main.go` の dispatch が verbose でなくても
+// stderr へ出す。
 type CleanupResult struct {
-	Removed int  `json:"removed"`
-	Skipped bool `json:"skipped"`
-	// Refused は下限違反で掃除を拒否したこと。設定の誤りなので、verbose でなくても
-	// stderr へ出し、打刻もしない (黙って 10 分止まるのを防ぐ)。
-	Refused bool     `json:"refused,omitempty"`
+	Removed int      `json:"removed"`
+	Skipped bool     `json:"skipped"`
 	Errors  []string `json:"errors,omitempty"`
 }
 
@@ -61,10 +59,12 @@ func (l *Locker) Cleanup(force bool) CleanupResult {
 	l.sweepDir(tmpDirName, scratchRetention, now, &res)
 	l.sweepDir(probeDirName, scratchRetention, now, &res)
 	l.sweepDir(graveyardDirName, graveyardRetention, now, &res)
-	// 🚨 下限違反で拒否したときは打刻しない。打刻するとレート制限が進んで以後 10 分は
-	// skip され、「掃除が黙って止まっている」状態が見えなくなる (毎回エラーを出し直す
-	// ほうが、設定の誤りに気づける)。
-	if !res.Refused {
+	// 🚨 何か失敗していたら打刻しない。打刻するとレート制限が進んで以後 10 分は skip
+	// され、「掃除が黙って止まっている」状態が見えなくなる (毎回出し直すほうが気づける)。
+	// 対象は下限違反だけでなく **実際に起きうる失敗**も — 権限ドリフトや stale mount で
+	// `ReadDir` が落ちる経路が本命 (下限違反は壊れたビルドでしか起きない)。
+	// 個別の `os.Remove` 失敗で再試行が早まるコストは、失敗した dir の readdir 1 回ぶん。
+	if len(res.Errors) == 0 {
 		l.stampCleanup()
 	}
 	return res
@@ -81,7 +81,6 @@ func (l *Locker) Cleanup(force bool) CleanupResult {
 // 掃除は正しさに関与しないため同じ検算は要らない。
 func (l *Locker) sweepDir(sub string, retention time.Duration, now time.Time, res *CleanupResult) {
 	if retention < minRetention {
-		res.Refused = true
 		res.Errors = append(res.Errors, fmt.Sprintf(
 			"%s の保持期間 %s が下限 %s を下回る: 走行中の acquire の残骸を消しうるので掃除しない",
 			sub, retention, minRetention))
