@@ -822,7 +822,7 @@ func (f StatusFilter) Next() StatusFilter {
 	return f + 1
 }
 
-// showsIssue はその issue を表示するか。closedGroups は「子が全部 done の group」の GroupKey 集合。
+// showsIssue はその issue を表示するか。closedGroups は「open な子が 1 件も無い group」の GroupKey 集合。
 //
 // 🚨 epic group の子 (GroupEpic) は状態フィルタの対象外で、done / pending も既定で見える
 // (issue 291、2026-09-06)。epic は「まとまった仕事の器」なので、開いたときに中身が全部
@@ -830,7 +830,7 @@ func (f StatusFilter) Next() StatusFilter {
 // done が全体の 8 割を占める repo があり open が埋もれる) は、子が数件〜十数件の epic 1 つには
 // 効かない。畳んだ親行は 1 行しか占めないので、一覧が done で埋まることもない。
 //
-// 🚨 ただし **終わった epic (子が全部 done) はこの例外から外す** (issue 294、2026-09-06)。
+// 🚨 ただし **終わった epic (open な子が 1 件も無い) はこの例外から外す** (issue 294、2026-09-06)。
 // 例外の目的は「進行中の器の進捗を読ませる」ことなので、終わった器には効かせる理由が無い。
 // 外さないと、終わった epic が既定の一覧に残り続け、しかも親行の位置は子の最大番号で決まるので
 // **番号の大きい epic ほど先頭に居座る**。done な global issue と同じく `a` を進めたときだけ出す。
@@ -841,7 +841,14 @@ func (f StatusFilter) showsIssue(iss *Issue, closedGroups map[string]bool) bool 
 	return f.shows(iss.Status)
 }
 
-// closedGroupKeys は「子が 1 件以上あり、その全部が done」の group の GroupKey 集合。
+// closedGroupKeys は「子が 1 件以上あり、open な子が 1 件も無い」group の GroupKey 集合。
+//
+// 🚨 「open な子」の判定は既定の一覧 (FilterOpen) が見せるかどうかで決める。別の列挙を
+// 書かない — 同じ問い (今やれることとして出すか) の答えを 2 箇所で持つと必ず食い違う。
+// 従って done だけでなく pending / waiting の子も epic の完了を妨げない。どちらも
+// 「今は動かせない」ので既定の一覧には出ておらず、それを理由に親行だけ居座らせると
+// **番号の大きい epic ほど先頭に残る**という元の症状がそのまま戻る。子が pending から
+// group 直下 (open) へ戻れば、この判定も自動で open へ戻る。
 //
 // 🚨 親 issue (group 名と同じ番号の issue) も 1 件として数える — 親が open なら epic は
 // 終わっていない。数えるのは GroupEpic の子だけで、予約外ディレクトリの迷子 (GroupUnknown) は
@@ -849,13 +856,13 @@ func (f StatusFilter) showsIssue(iss *Issue, closedGroups map[string]bool) bool 
 // 永久に「終わっていない」ことになる)。
 func closedGroupKeys(list []*Issue) map[string]bool {
 	seen := make(map[string]bool, 4) // その group に子が居たか
-	open := make(map[string]bool, 4) // done 以外の子が居たか
+	open := make(map[string]bool, 4) // 既定の一覧に出る (= open な) 子が居たか
 	for _, iss := range list {
 		if iss.GroupKind != GroupEpic || iss.GroupKey == "" {
 			continue
 		}
 		seen[iss.GroupKey] = true
-		if iss.Status != StatusDone {
+		if FilterOpen.shows(iss.Status) {
 			open[iss.GroupKey] = true
 		}
 	}

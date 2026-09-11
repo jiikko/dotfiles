@@ -717,7 +717,7 @@ func TestVisibleBadgesMarksFilterBypass(t *testing.T) {
 	}
 }
 
-// TestFilterHidesClosedEpicUntilDoneIsShown は「終わった epic (子が全部 done) は既定の一覧から
+// TestFilterHidesClosedEpicUntilDoneIsShown は「終わった epic (open な子が無い) は既定の一覧から
 // 消え、`a` を進めたときだけ出る」ことを固定する (issue 294)。進行中の epic の子は done でも
 // 既定で見える (issue 291) ので、例外の射程が「終わっていない器」に限られることを見る。
 func TestFilterHidesClosedEpicUntilDoneIsShown(t *testing.T) {
@@ -784,7 +784,9 @@ func TestClosedGroupKeysCountsParentAndIgnoresStrays(t *testing.T) {
 	}{
 		{"全部 done", []*Issue{child("460", StatusDone, GroupEpic), child("459", StatusDone, GroupEpic)}, true},
 		{"親 issue が open", []*Issue{child("467", StatusOpen, GroupEpic), child("460", StatusDone, GroupEpic)}, false},
-		{"pending が残っている", []*Issue{child("460", StatusDone, GroupEpic), child("459", StatusPending, GroupEpic)}, false},
+		{"pending が残っていても完了", []*Issue{child("460", StatusDone, GroupEpic), child("459", StatusPending, GroupEpic)}, true},
+		{"waiting が残っていても完了", []*Issue{child("460", StatusDone, GroupEpic), child("459", StatusWaiting, GroupEpic)}, true},
+		{"子が pending だけ", []*Issue{child("459", StatusPending, GroupEpic)}, true},
 		{"next が残っている", []*Issue{child("460", StatusDone, GroupEpic), child("459", StatusNext, GroupEpic)}, false},
 		{"迷子は数えない", []*Issue{child("460", StatusDone, GroupEpic), child("459", StatusUnknown, GroupUnknown)}, true},
 		{"子が 0 件", nil, false},
