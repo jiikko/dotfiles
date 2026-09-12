@@ -1,9 +1,10 @@
 # 369 research: codex-drive の実行時間と Claude 側の作業負荷を、出力の質を落とさずに下げる
 
-- 起票: 2026-09-12
+- 起票: 2026-09-12 / 構成の見直し: 2026-09-13 (6 案の並列から「案 0 → 計測 → 3 段」の順序つきへ)
 - 種別: `research` (skill の運用改善。結論が出た項目から `~/.claude/skills/codex-drive/SKILL.md` へ反映する)
 - 出典: obaket の 3 epic (quicksearch-headless 747 / bandwidth-limit 650 / deterministic-test-time 736) を
   codex-drive で並行して回した 2026-09-03〜09-12 の実測と retro (obaket 725 / 763 / 765)
+- 前提: codex-drive は今後も継続して大きく使う (ユーザー確認 2026-09-13)。1 マイルストーンあたりの往復は毎回払うコスト
 - **対象外**: usage limit による停止 (避けようがないので考慮しない。ユーザー指示 2026-09-12)
 
 ## 観測 (obaket、2026-08-30 → 09-12 の 13 日間)
@@ -27,11 +28,56 @@
   - 敵対レビューの指摘に対し codex が **production に test 専用 seam** を足してくる (650 M1 fix3) → 差し戻しで 1 往復
 
 🚨 **どの工程に壁時計が何分かかったかは記録が無い**。`codex-fanout` の `runs.tsv` は label / rc / out / log の
-4 列で、所要時間を持たない。最適化の前にここを測る (`perf-claims-need-measurement.md`)。
+4 列で、所要時間を持たない (2026-09-13 に `bin/codex-fanout` の台帳生成部で再確認)。最適化の前にここを測る
+(`perf-claims-need-measurement.md`)。
 
-## 案 (効きそうな順。各案の「質を落とさない根拠」を併記。codex 反証レビュー 2026-09-12 を反映済み)
+## 原因の見立て (2026-09-13 追記)
 
-### 1. 計測を先に入れる (前提)
+上の時間食いのうち **型エラー往復 / 走らない変異ループ / sandbox 由来の偽赤 / 「xcodebuild を試みさせない」の縛り**は、
+すべて **codex の sandbox (`-s workspace-write`) が xcodebuild / SwiftPM / clang のキャッシュ書き込みを拒む** 1 点から
+派生している (SKILL.md の Error 74 の注記群が全部この派生)。旧版の案 2〜3 はその症状への対処で、原因を外す案が無かった。
+不具合対応の原則 (パッチワークより前提の是正) に従い、**原因側を案 0 として最上流に置く**。
+
+## 順序
+
+```
+案 0 (sandbox の制限を外す) ─┐
+                             ├─ 案 1 (計測) を先に入れ、案 0 の効果を 1 マイルストーンで測る
+段階 1 (計測不要の chore) ───┘
+段階 2 (内訳を見てから決める)
+段階 3 (skill から外して repo 側へ)
+```
+
+## 案 0: sandbox の制限を外す (原因の除去。旧版に無かった案)
+
+codex-cli 0.154.0 で確認したオプション (2026-09-13、`codex exec --help`):
+
+- `-s, --sandbox <read-only | workspace-write | danger-full-access>`
+- `--dangerously-bypass-approvals-and-sandbox` (approval も消えるので**使わない**)
+
+2 段で試す。**段階 a を先に**、駄目なら段階 b。
+
+- **a. sandbox は残し、キャッシュ先だけ書き込み許可に足す** — `-s workspace-write` のまま、DerivedData /
+  SwiftPM cache / clang module cache を writable root に加える。設定キーは `sandbox_workspace_write.writable_roots`
+  系と記憶しているが **正確なキー名は未確認**。xcodebuild は `/var/folders` やツールチェイン側にも書くので、
+  **それで通るかは 1 マイルストーンの実測で確定する** (通らない書き込み先を Error 74 のログから列挙して足す)
+- **b. `-s danger-full-access` で sandbox を切る** — 🚨 **codex が worktree の外 (他 checkout・ホーム) へ書けるようになる**。
+  skill は git 操作禁止をプロンプトで縛っているだけで、sandbox はそれを強制していない (SKILL.md 「workspace-write は
+  prompt の禁止を強制しない」)。爆発半径が「同じマシンの他 checkout とホーム」まで広がることを受け入れるかは
+  **ユーザーの判断待ち** (2026-09-13 時点で未回答)。許可が出るまで b は試さない
+
+どちらの段階でも**セットで要る指示**:
+
+- **worktree ごとに `-derivedDataPath` を分ける**。codex が worktree で xcodebuild を回し、同時に Claude が本体で
+  xcodebuild / `swift build` を回すと DerivedData と package graph が共有されて無限待ちになる
+  (`no-concurrent-spm-build-during-xcodebuild.md` がそのまま当たる。obaket で 7.5 時間停止の実例)
+- 効いたら SKILL.md の Error 74 系の注記 (「xcodebuild を試みさせない」「shared の swift build まで」「偽赤の再実行」) を
+  **条件つき** (sandbox を外せない repo 向け) に書き換える。全部消さない: 外せない repo は残る
+
+質を落とさない根拠: codex が自分で型検査・test を回せるようになるだけで、Claude の検閲 (`[3]` / `[3.8]` の当て直し) は
+変えない。減るのは「codex が実行できなかったものを Claude が代行する」往復。
+
+## 案 1: 計測を先に入れる (前提。案 0 の効果を言うための基準)
 
 - `codex-fanout` の `runs.tsv` に **開始時刻 / 所要秒** を足し、merger の行も台帳に載せる (今は merger は別起動で行が無い)。
   `codex-run` は fanout に委譲しているので同じ列が出る
@@ -39,71 +85,104 @@
   issue 更新は外)。マイルストーン単位で「開始・終了時刻 / codex 往復回数 / 型エラーによる差し戻し回数 / 敵対ラウンド数 /
   読んだ digest 行数」を checkpoint に 1 行で残し、run 合計と通しの壁時計を**別々に**書く (`perf-claims-need-measurement.md`)
 - 質を落とさない根拠: 記録するだけ
+- 案 0 とは独立に価値がある: rc しか無い台帳では「静かに遅くなった run」に気づけない
 
-### 2. 型エラー往復を減らす (最大の候補。763 項目 4)
+## 段階 1: 計測を待たずに入れる chore (質の判断を含まない)
 
-- 現行 skill は「codex に xcodebuild を試みさせない / xcodebuild は Claude が素の環境で実行」と決めている (SKILL.md の `[2]`)。
-  これは変えない。変えるのは 2 点:
-  - shared SPM を触るマイルストーンでは、実装プロンプトに **「返す前に `cd shared && swift build --build-tests` を通す」を固定文で入れる**
-    (sandbox で走るかは repo ごとに未確認 = 最初のマイルストーンで確かめてから固定する。SwiftLint plugin が同時に走るかも同様)
-  - macOS target を触るマイルストーンは **薄く切り**、codex が返した直後に Claude が `[3]` の型検査 (`make build` 相当) を
-    **レビュー fanout を起動する前に**回す。今はレビューと並走させて型エラーを後から知る形になりがち
+### 1-1. 走らない repo では `[3.8]` の実行ループを codex に回させない (旧案 3)
+
+- skill は既に「変異検証は codex の報告を数に入れず、Claude が `[3.8]` で必ず自分で当て直す」と書いている (SKILL.md 検証節)
+  のに、走らないと分かっている repo でも codex の実行ループを毎回回している。**skill の中で矛盾している**
+- **その repo で走らないことが 1 度分かったら以降は最初から Claude のハーネスで当てる** (変異 patch の生成だけ codex read-only に
+  作らせる)。obaket macOS は案 0 が効くまでこの条件に当たる
+- 減るのは走らない実行ループ 1 回 (max effort・15〜40 分)。Claude 側の作業は増える (明示的な例外として skill に書く)
+- 案 0 が効いた repo では不要になる (条件つきの記述にする)
+
+### 1-2. codex が返した直後に型検査、通してからレビュー fanout (旧案 2 の順序部分)
+
+- 現行 skill は「型 error は Claude の `make test` で 1 往復として織り込む」と既に書いている。新しいのは**順序だけ**:
+  `[3]` の型検査 (`make build` 相当) を **レビュー fanout を起動する前に**回す。今はレビューと並走させて型エラーを後から知る形になりがち
+- shared SPM を触るマイルストーンでは、実装プロンプトに「返す前に `cd shared && swift build --build-tests` を通す」を固定文で入れる
+  (sandbox で走るかは repo ごとに未確認 = 最初のマイルストーンで確かめてから固定する)
 - 質を落とさない根拠: 型エラーはどの往復でも最終的に直る。減るのは「型エラーを抱えたままレビューに出す」往復
 - 却下した形: 「macOS の配線は Claude が書く」— skill の役割分担 (Claude は重い実装を書かない) と衝突する
+- 案 0 が効けば codex 側で型が通るようになり、この項は「Claude 側の順序」だけが残る
 
-### 3. `[3.8]` の実行ループを、sandbox で test が走らない repo では codex に回させない
+### 1-3. luna max の出力の質が低いときは astra 系モデルへ切り替えてよい (ユーザー指示 2026-09-13)
 
-- skill は既に「sandbox で実行できなければ Claude が全件やり直す」fallback を持つ。**その repo で走らないことが 1 度分かったら
-  以降は最初から Claude のハーネスで当てる** (変異 patch の生成だけ codex read-only に作らせる)。obaket macOS はこの条件に当たる
-- 質を落とさない根拠: 判定はどちらでも Claude の実行結果。減るのは走らない実行ループ 1 回 (max effort・15〜40 分)。
-  Claude 側の作業は増える (明示的な例外として skill に書く)
+- 現行 skill は `gpt-5.6-luna` + `model_reasoning_effort="max"` 固定 (541 の実測で low は不可、と却下節にある)
+- **luna max で「動くが筋が通っていない」「捏造 API」「同じ型エラーを 2 往復しても直らない」等、出力の質が低いと Claude が
+  判定したマイルストーンでは、codex の astra 系モデル (`codex exec -m <astra のモデル ID>`) へ切り替えてよい**。
+  🚨 **正確なモデル ID は未確認** (skill / bin / config に「astra」の記述は 0 件。2026-09-13 grep)。反映時に
+  `codex` 側で実在を確かめてから SKILL.md に書く
+- 切り替えは**マイルストーン単位**で、checkpoint に「M<n> は astra へ切り替え。理由: …」を 1 行残す (前後比較の材料)
+- 質を落とさない根拠: 切り替えの判定は Claude の検閲結果 (`[3]` で弾いた回数) に基づく。上げる方向の切り替えなので
+  541 の「low で質が落ちる」とは向きが逆
 
-### 4. 敵対レビューの指摘の「小修正」を Claude が直接当てる範囲を、明示の判断つきで広げる
+## 段階 2: 1 マイルストーン測ってから決めるもの (判断基準の変更を含む)
+
+### 2-1. 敵対レビューの「小修正」を Claude が直接当てる範囲を広げる (旧案 4)
 
 - 現行例外は「確定的な 1〜2 行」。**「1 ファイル・20 行以内・設計判断を含まない (契約 / 不変条件 / 責務を変えない)」まで広げる**新規判断。
   行数は目安で、判定の軸は「設計判断の有無」。迷ったら codex に戻す
+- skill の役割分担 (Claude は重い実装を書かない) を少し崩す方向なので、**内訳で「修正指示の作文と往復」が太いと分かってから**触る
 - 「r2 は r1 で新設したものだけを攻める」は `adversarial-review-own-safeguards.md` §7 に既にある (新案ではない。運用で守る)
-- 質を落とさない根拠: 直した差分は §7 どおり r2 が攻める。減るのは codex への修正指示の作文と型エラー往復
+- 質を落とさない根拠: 直した差分は §7 どおり r2 が攻める
 
-### 5. checkpoint の「経緯」の量に上限を置く (必須項目は減らさない)
+### 2-2. checkpoint の「経緯」の量に上限を置く (旧案 5。必須項目は減らさない)
 
 - 650 は 1,917 行。issue/docs が 3 epic で +9.1k 行 (全差分の約 12%)。Claude のトークンで書いている
 - skill が checkpoint に必須とするもの (採用設計の要点 / M 表と commit hash / 手順 / 再開方法) と、ルールが要求する
   「全数勘定・却下した指摘と理由」は**減らさない**。上限を置くのは **「踏んだ罠」「経緯」「敵対レビューの原文引用」**の節で、
   各 M で 10 行以内にし、原文は tracked な `macOS/docs/` の設計 doc か digest の**要約**に置く (`tmp/` は消えるので参照先にしない)
+- 内訳で「issue 更新」が太いと分かってから触る
 - 質を落とさない根拠: 再開に要る情報と却下理由は全部残る。落ちるのは経緯の再説明
 
-### 6. codex が書くテストの規約を要件ファイルの固定文にする (間接コスト。obaket issue 781 の実例)
+## 段階 3: skill から外して repo 側へ送るもの
+
+### 3-1. codex が書くテストの規約 (旧案 6。obaket issue 781 の実例)
 
 - 同じ repo で 3 epic を並行させた結果、一方の epic が禁止した形 (実時間待ちの `pollUntil`) を他方の codex が量産した
   (TransferUploadBodyTests 0→53、QuickSearchSessionTests 0→28。gate の射程外)
-- 案: `[R]` の要件テンプレに **「unit test では時間・スケジューリングを注入し、`pollUntil` / `Task.sleep` を新規に書かない。
-  実時間そのものを検証する integration test は別に分けて明示する」**を固定文で入れる。fanout は共通 header を自動注入しないので、
-  manifest の prompt 部品として毎回連結する
-- 質を落とさない根拠: unit test の主張は変わらない。実時間が仕様のテストは分離して残す (注入で検証対象の意味が変わるのを避ける)
+- これは **obaket の `[R]` 要件テンプレに書く内容**で、skill の汎用文にすると他 repo で意味を持たない固定文が増える。
+  skill 側には「repo 固有のテスト規約は `[R]` テンプレの prompt 部品として毎回連結する (fanout は共通 header を自動注入しない)」
+  の 1 行だけ置き、文言 (「unit test では時間・スケジューリングを注入し、`pollUntil` / `Task.sleep` を新規に書かない。
+  実時間そのものを検証する integration test は別に分けて明示する」) は obaket 側へ
 
 ## 却下した案 (理由を残す。次に同じ案が再生成されないため)
 
 - **`[3.5]` と `[3.6]` を 1 回の fanout に畳む**: `[3.6]` は `[3.5]` の修正後の green を前提にし、同時実行は skill が禁止している。
   lens を 1 本に減らす形は「視点の多様性」に反する。修正後に `[3]` を飛ばす形は検閲省略。**採らない**
 - **production への test seam 禁止をプロンプトに足す**: 実装プロンプト・`[R]`・`[3]` の 3 箇所に既にある。新案ではない
-- **effort / モデルを下げる**: 541 の実測 (low で「動くが筋が通っていない」実装) があり、ユーザー決定で max 固定
+- **effort / モデルを下げる**: 541 の実測 (low で「動くが筋が通っていない」実装) があり、ユーザー決定で max 固定。
+  上げる方向 (1-3 の astra) は別
 - **敵対レビューのラウンド数を固定で 1 にする**: 763 / 765 で 2 周目が実害を拾っている
 - **lens 本数を減らす**: 「独立した視点」が質の源。減らすのは起動回数であって観点ではない
+- **`--dangerously-bypass-approvals-and-sandbox`**: sandbox だけでなく approval も消える。案 0 は `-s danger-full-access` で足りる
+- **「macOS の配線は Claude が書く」**: skill の役割分担と衝突 (1-2 に記載)
 
 ## 受け入れ条件
 
-- [ ] 案 1 (計測) を入れ、1 マイルストーン分の内訳 (run 合計と通しの壁時計を別々に) を取る
-- [ ] 内訳を見て案 2〜6 のうち効く順に SKILL.md へ反映する (反映した案ごとに前後の所要時間を checkpoint に残す)
+- [ ] 案 1 (計測) を `bin/codex-fanout` に入れる (開始時刻 / 所要秒 / merger 行)。計測だけで閉じられる
+- [ ] 段階 1 (1-1 / 1-2 / 1-3) を SKILL.md へ反映する。計測を待たない。1-3 は astra のモデル ID を実在確認してから
+- [ ] 案 0-a を obaket の 1 マイルストーンで試し、Error 74 が消えたか / 残った書き込み先を checkpoint に残す。
+      効いたら SKILL.md の Error 74 系注記を条件つきに書き換える
+- [ ] 案 0-b はユーザーの許可が出た場合だけ試す (未回答なら未着手のまま残してよい)
+- [ ] 案 1 の内訳を 1 マイルストーン分取り (run 合計と通しの壁時計を別々に)、段階 2 のうち太い工程に当たるものだけ反映する
+- [ ] 段階 3 は obaket 側の `[R]` テンプレへ移し、skill には 1 行だけ残す
 - [ ] 質の比較は件数の増減で判定しない。**同じ変異セット**での red / green / hang の結果表と、r1 の P1 の**内容**を前後で並べ、
       「前は拾えていた種類の指摘が消えていない」ことを Claude が読んで確認する
 
 ## 関連
 
 - `~/.claude/skills/codex-drive/SKILL.md` — 対象
+- `bin/codex-fanout` — 案 1 の対象 (台帳生成部)
 - obaket `issues/done/725-retro-722-724-codex-drive-2026-09-06.md` / `763-retro-quicksearch-headless-step2-2026-09-09.md` /
   `765-retro-quicksearch-headless-step3-2026-09-10.md` — 実測の出典
-- obaket issue 781 — 案 6 の具体例 (実時間待ちテストの量産)
+- obaket issue 781 — 3-1 の具体例 (実時間待ちテストの量産)
 - `_claude/rules/perf-claims-need-measurement.md` — 案 1 を先にやる根拠
-- codex 反証レビュー (2026-09-12、read-only 1 本): P1 4 件 (案 5 旧版の同時実行と lens 削減 / 案 2 旧版の xcodebuild と役割分担 /
-  案 7 旧版の再開情報の欠落 / 案 1 の測定範囲) と P2 5 件をすべて反映した。obaket 側の実測値は codex の参照範囲外で未反証 (出典は上記 retro)
+- `_claude/rules/no-concurrent-spm-build-during-xcodebuild.md` — 案 0 で codex に xcodebuild を回させるときの並行禁止
+- codex 反証レビュー (2026-09-12、read-only 1 本、旧版に対して): P1 4 件 (旧案 5 の同時実行と lens 削減 / 旧案 2 の xcodebuild と
+  役割分担 / 旧案 7 の再開情報の欠落 / 案 1 の測定範囲) と P2 5 件をすべて反映した。obaket 側の実測値は codex の参照範囲外で未反証
+- 🚨 2026-09-13 の追記 (案 0 / 1-3 / 段構成) は**外部反証を通していない**。案 0 のオプション実在は `codex exec --help` で
+  実測、効くかどうかは受け入れ条件の実測で確かめる (反証されていない仕様として扱う)
