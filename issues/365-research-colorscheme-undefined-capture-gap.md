@@ -82,9 +82,41 @@ generic な `@markup.heading.N` は手つかずで、上表のとおり vimdoc �
   なりやすいので、脅威モデル (「うっかり潰れるのを拾う。設計判断の同色は対象外」) を
   先に書いてから着手する
 
+## Tier1 の判断 (2026-09-12)
+
+### `markdown` の `[ ]` / `[x]` — **対応しない (現状維持)**
+
+見本を 2 案作って実物で見てもらった結果、**現状 (両方 `ctermfg=208`) のままでよい**との判断。
+
+- 案1: 未完了=橙 208 / 完了=緑 142 (未着手が目に飛び込む)
+- 案2: 未完了=灰 245 / 完了=緑 142 (完了だけが浮く)
+
+🚨 **これは「潰れていない」ではなく「潰れていることを承知で変えない」**。
+`[ ]` と `[x]` は render-markdown がアイコン (󰄱 / 󰱒) で描き分けるので、
+**色が同じでも区別は付く** — 色による冗長な符号化が無くても実用上困っていない、が理由。
+再評価の trigger: アイコンを出さない設定 (`checkbox.enabled = false`) にしたとき、
+または render-markdown を外したとき (そのときは色だけが手掛かりになる)。
+
+見本は `tmp/md-preview/cb1.lua` / `cb2.lua` にあったが `tmp/` は gitignore なので残らない。
+再現するなら `@markup.list.unchecked` / `@markup.list.checked` に色を当てるだけ
+(`RenderMarkdownUnchecked/Checked` はこの capture への link なので伝わる。実測で確認済み)。
+
+### `vimdoc` の見出し 4 階層 — 判断待ち
+
+実装するなら **generic な `@markup.heading.N` に当てる**こと。`.vimdoc` 付きでは
+**罫線 (`====`) に効かない** — vimdoc の query は罫線を `@markup.heading.1.delimiter` で
+拾い、nvim のフォールバックは末尾から 1 段ずつ落とす形
+(`…delimiter.vimdoc` → `…delimiter` → `@markup.heading.1`) なので `.vimdoc` は経路に無い。
+generic なら両方に効く (実測: H1.vimdoc / H1.delimiter がどちらも 142 → 208)。
+markdown はより具体的な `@markup.heading.N.markdown` が勝つので影響を受けない (実測済み)。
+
+副次効果: この形にすると「markdown を開くまで色が当たらない」制約も消える
+(現在は render-markdown の `config` の中で設定しているため)。
+
 ## 残タスク
 
-- [ ] Tier1 の 2 件について、見本で色を決めて適用するか判断する (未着手)
+- [x] `[ ]` / `[x]` は現状維持と決めた (理由は上記)
+- [ ] `vimdoc` の見出しを入れるか判断する (見本は実測済み・未適用)
 - [ ] 検出手段を常設するか判断する (上記 trigger 待ち。現時点では**やらない**)
 - [x] 反証レビューを通した (read-only サブエージェント 1 体 / codex は不使用)
 
