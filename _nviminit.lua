@@ -1000,9 +1000,13 @@ require("lazy").setup({
       -- (逆に H5Bg=Visual / H6Bg=CursorColumn だけ見え、深い見出しほど目立つ逆転になる)。
       -- 実測 2026-09-12 (nvim_get_hl)。colorscheme 側が定義を足したらここは不要になる。
       local hl = require("dotfiles.hl")
-      -- 文字色: 上位ほど暖色・強く、下位ほど寒色・低彩度 (色だけで階層を拾えるように)
-      local heading_fg = { pal.bright_orange, pal.bright_yellow, pal.bright_green,
-        pal.bright_aqua, pal.bright_blue, pal.light4 }
+      -- 文字色: 上位ほど暖色・強く、下位ほど寒色・低彩度 (色だけで階層を拾えるように)。
+      -- 🚨 H3 に「元の色」(bright_green = colorscheme が全階層へ与えていた色) を据えないこと。
+      -- 実測 2026-09-12: README.md は H1=3 / H2=5 / H3=12 で H3 が過半数のため、H3 を
+      -- 据え置くと画面内の見出しが 1 つも変わらないスクロール位置ができる
+      -- (185..257 行では 6 見出し中 4 つが H3 だった)。全階層が元の色と違う必要がある。
+      local heading_fg = { pal.bright_orange, pal.bright_yellow, pal.bright_aqua,
+        pal.bright_blue, pal.bright_purple, pal.light4 }
       -- 帯: 上位 3 つだけ (Normal bg は 234。濃さでも階層が出る)。H4 以降は色だけで帯なし
       local heading_bg = { pal.dark1, pal.dark0_soft, pal.dark0 }
       for i = 1, 6 do
