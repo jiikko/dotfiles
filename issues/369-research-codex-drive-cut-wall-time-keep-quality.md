@@ -58,9 +58,21 @@ codex-cli 0.154.0 で確認したオプション (2026-09-13、`codex exec --hel
 2 段で試す。**段階 a を先に**、駄目なら段階 b。
 
 - **a. sandbox は残し、キャッシュ先だけ書き込み許可に足す** — `-s workspace-write` のまま、DerivedData /
-  SwiftPM cache / clang module cache を writable root に加える。設定キーは `sandbox_workspace_write.writable_roots`
-  系と記憶しているが **正確なキー名は未確認**。xcodebuild は `/var/folders` やツールチェイン側にも書くので、
-  **それで通るかは 1 マイルストーンの実測で確定する** (通らない書き込み先を Error 74 のログから列挙して足す)
+  SwiftPM cache / clang module cache を writable root に加える。キー名は公式 config reference で確認済み
+  (2026-09-13。`[sandbox_workspace_write]` の `writable_roots: array<string>` = "Additional writable roots when
+  sandbox_mode = workspace-write")。CLI からは `-c` で渡す:
+
+  ```sh
+  codex exec -s workspace-write \
+    -c 'sandbox_workspace_write.writable_roots=["/Users/koji/Library/Developer/Xcode/DerivedData","/Users/koji/Library/Caches/org.swift.swiftpm","/Users/koji/Library/Caches/clang"]' \
+    ...
+  ```
+
+  🚨 **`~` 展開は reference に記載が無い**ので絶対パスで書く。同じ table に `network_access` /
+  `exclude_tmpdir_env_var` / `exclude_slash_tmp` もある (既定で `$TMPDIR` と `/tmp` は書ける)。
+  xcodebuild は `/var/folders` やツールチェイン側にも書くので、**それで通るかは 1 マイルストーンの実測で確定する**
+  (通らない書き込み先を Error 74 のログから列挙して足す)。VS Code 拡張が `writable_roots` を無視する既知 issue
+  (openai/codex #8029) があるが、CLI の `codex exec` は対象外
 - **b. `-s danger-full-access` で sandbox を切る** — 🚨 **codex が worktree の外 (他 checkout・ホーム) へ書けるようになる**。
   skill は git 操作禁止をプロンプトで縛っているだけで、sandbox はそれを強制していない (SKILL.md 「workspace-write は
   prompt の禁止を強制しない」)。爆発半径が「同じマシンの他 checkout とホーム」まで広がることを受け入れるかは
@@ -112,9 +124,14 @@ codex-cli 0.154.0 で確認したオプション (2026-09-13、`codex exec --hel
 
 - 現行 skill は `gpt-5.6-luna` + `model_reasoning_effort="max"` 固定 (541 の実測で low は不可、と却下節にある)
 - **luna max で「動くが筋が通っていない」「捏造 API」「同じ型エラーを 2 往復しても直らない」等、出力の質が低いと Claude が
-  判定したマイルストーンでは、codex の astra 系モデル (`codex exec -m <astra のモデル ID>`) へ切り替えてよい**。
-  🚨 **正確なモデル ID は未確認** (skill / bin / config に「astra」の記述は 0 件。2026-09-13 grep)。反映時に
-  `codex` 側で実在を確かめてから SKILL.md に書く
+  判定したマイルストーンでは、`gpt-6-astra` へ切り替えてよい** (`codex exec -m gpt-6-astra -c model_reasoning_effort="max"`)
+- モデル ID の出典 (2026-09-13 調査): OpenAI は 2026-09-03 に GPT-6 Astra を公開。ID は `gpt-6-astra`、codex-cli は
+  **0.153.1 以上**が要件 (手元は 0.154.0 で満たす)。reasoning effort は `low / medium / high / xhigh / max` の 5 段。
+  GPT-5.6 系は `gpt-5.6-sol` / `gpt-5.6-terra` / `gpt-5.6-luna` の 3 変種 (openai/codex #43398 に ID が列挙されている)
+- 🚨 **段階的 rollout (Trusted Access) なので、アカウントで使えるかは未確認**。`codex models` は TUI で非対話では出ない
+  (実測: `stdin is not a terminal`)。反映前に `codex exec -s read-only -m gpt-6-astra` の 1 行 probe で実在を確かめる
+- 🚨 capacity 死は luna と共通 (#43398: 2026-09-07 に astra / sol / terra / luna / 5.5 が同時に "at capacity"、mini だけ生存)。
+  切り替えは capacity の回避策にはならない (対象外の usage limit と同じ扱い)
 - 切り替えは**マイルストーン単位**で、checkpoint に「M<n> は astra へ切り替え。理由: …」を 1 行残す (前後比較の材料)
 - 質を落とさない根拠: 切り替えの判定は Claude の検閲結果 (`[3]` で弾いた回数) に基づく。上げる方向の切り替えなので
   541 の「low で質が落ちる」とは向きが逆
@@ -164,7 +181,7 @@ codex-cli 0.154.0 で確認したオプション (2026-09-13、`codex exec --hel
 ## 受け入れ条件
 
 - [ ] 案 1 (計測) を `bin/codex-fanout` に入れる (開始時刻 / 所要秒 / merger 行)。計測だけで閉じられる
-- [ ] 段階 1 (1-1 / 1-2 / 1-3) を SKILL.md へ反映する。計測を待たない。1-3 は astra のモデル ID を実在確認してから
+- [ ] 段階 1 (1-1 / 1-2 / 1-3) を SKILL.md へ反映する。計測を待たない。1-3 は `gpt-6-astra` がアカウントで使えることを 1 行 probe で確認してから
 - [ ] 案 0-a を obaket の 1 マイルストーンで試し、Error 74 が消えたか / 残った書き込み先を checkpoint に残す。
       効いたら SKILL.md の Error 74 系注記を条件つきに書き換える
 - [ ] 案 0-b はユーザーの許可が出た場合だけ試す (未回答なら未着手のまま残してよい)
@@ -184,5 +201,11 @@ codex-cli 0.154.0 で確認したオプション (2026-09-13、`codex exec --hel
 - `_claude/rules/no-concurrent-spm-build-during-xcodebuild.md` — 案 0 で codex に xcodebuild を回させるときの並行禁止
 - codex 反証レビュー (2026-09-12、read-only 1 本、旧版に対して): P1 4 件 (旧案 5 の同時実行と lens 削減 / 旧案 2 の xcodebuild と
   役割分担 / 旧案 7 の再開情報の欠落 / 案 1 の測定範囲) と P2 5 件をすべて反映した。obaket 側の実測値は codex の参照範囲外で未反証
+- 案 0 / 1-3 の出典 (2026-09-13 web 調査): [Codex config reference](https://learn.chatgpt.com/docs/config-file/config-reference)
+  (`sandbox_workspace_write.writable_roots` と `-c` 構文) / [Codex sandboxing](https://developers.openai.com/codex/concepts/sandboxing) /
+  [GPT-6 Astra の codex 設定記事](https://codex.danielvaughan.com/2026/09/03/gpt-6-astra-codex-cli-configuration-context-notes-safety/)
+  (ID・最低版・effort 5 段) / [openai/codex #43398](https://github.com/openai/codex/issues/43398) (モデル ID 一覧と capacity 死) /
+  [openai/codex #8029](https://github.com/openai/codex/issues/8029) (VS Code 拡張が writable_roots を無視する既知 issue)
 - 🚨 2026-09-13 の追記 (案 0 / 1-3 / 段構成) は**外部反証を通していない**。案 0 のオプション実在は `codex exec --help` で
-  実測、効くかどうかは受け入れ条件の実測で確かめる (反証されていない仕様として扱う)
+  実測、キー名と ID は上の一次資料で確認、効くかどうか・使えるかどうかは受け入れ条件の実測で確かめる
+  (反証されていない仕様として扱う)
