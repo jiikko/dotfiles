@@ -301,6 +301,52 @@ func TestCleanupDoesNotStampWhenServerNowFails(t *testing.T) {
 	assertNoStamp(t, l, res)
 }
 
+// ★ 打刻そのものが落ちる枝。sweep は成功しているので `res.Errors` は空のままになり、
+// **3 周目が作った「失敗したら打刻しない」ゲートからは構造的に見えなかった**
+// (5 周目の実測: .lockman を 0500 にすると tmp/ の中身は消せるが .cleanup_at は
+// 作れず、rc=0 / stderr 0B で毎回フル sweep する状態が無音で続く)。
+func TestCleanupReportsStampFailure(t *testing.T) {
+	l := newTestLocker(t)
+	if err := l.ensureDirs(); err != nil {
+		t.Fatalf("ensureDirs: %v", err)
+	}
+	touchOld(t, filepath.Join(l.metaDir, tmpDirName, "old.json"), 2*time.Hour)
+	if err := os.Chmod(l.metaDir, 0o500); err != nil { // 辿れるが作れない
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(l.metaDir, metaDirMode) })
+
+	res := l.Cleanup(true)
+	// 🚨 前提: sweep 自体は成功していること。ここが 0 だと「sweep が落ちたから
+	// エラーが在る」になり、打刻の失敗を 1 mm も検査していないテストになる。
+	if res.Removed != 1 {
+		t.Fatalf("前提が作れていない: sweep が成功していない (removed=%d errors=%v。"+
+			"root 実行ならこのテストは守りとして成立していない)", res.Removed, res.Errors)
+	}
+	if len(res.Errors) == 0 {
+		t.Fatal("打刻の失敗を握り潰した (掃除は成功しているのにレート制限が永久に進まない)")
+	}
+	assertNoStamp(t, l, res)
+}
+
+// ★ .lockman がまだ無い dir への cleanup は良性 (一度も使われていない = 掃除の
+// 目的が達成済み)。失敗に数えると正常系で警告が鳴る。
+//
+// 併せて **cleanup が .lockman を作らない**ことも pin する。「ensureDirs を呼べば
+// serverNow は落ちない」は採らなかった案で、掃除が掃除の対象を作る形になるため
+// (`pending-issue-rationale-in-code.md`: 却下した案の理由をコード側にも残す)。
+func TestCleanupOnNeverLockedDirIsQuiet(t *testing.T) {
+	l := newTestLocker(t) // ensureDirs を呼ばない
+
+	res := l.Cleanup(true)
+	if len(res.Errors) != 0 {
+		t.Fatalf(".lockman が無いだけで失敗に数えている: %v", res.Errors)
+	}
+	if _, err := os.Stat(l.metaDir); !os.IsNotExist(err) {
+		t.Fatalf("cleanup が .lockman を作った (掃除が掃除の対象を作らない): %v", err)
+	}
+}
+
 func assertNoStamp(t *testing.T, l *Locker, res CleanupResult) {
 	t.Helper()
 	if _, err := os.Stat(filepath.Join(l.metaDir, cleanupStampName)); !os.IsNotExist(err) {

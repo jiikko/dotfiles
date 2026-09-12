@@ -53,6 +53,20 @@ func (l *Locker) Cleanup(force bool) CleanupResult {
 	if err != nil {
 		// 時刻が取れないなら何もしない。掃除は正しさに関与しないので、
 		// 疑わしいときは触らないほうが安全。
+		//
+		// 🚨 ただし metaDir 自体がまだ無いのは**良性** — 一度も使われていない
+		// ディレクトリで、掃除の目的は既に達成されている。ここを失敗に数えると、
+		// 3 周目が作った「stderr の警告 = 掃除が止まっている」というシグナルが
+		// 正常系で鳴る (`cleanup` は ensureDirs を呼ばない唯一のサブコマンドなので、
+		// .lockman の無い dir に打つと毎回鳴っていた。5 周目の実測)。
+		//
+		// 良性の線は **metaDir の有無**で引く。metaDir は在るのに probe/ を作れない
+		// のは、ensureDirs が 4 つ同時に作る以上**異常**なので記録側へ倒す
+		// (良性側へ広げると tmp/ graveyard/ のゴミを黙って掃かずに帰ることになり、
+		// 3 周目が潰した「沈黙 = 成功」を作り直す)。
+		if _, statErr := os.Stat(l.metaDir); os.IsNotExist(statErr) {
+			return res
+		}
 		res.Errors = append(res.Errors, err.Error())
 		return res
 	}
@@ -67,9 +81,17 @@ func (l *Locker) Cleanup(force bool) CleanupResult {
 	// 丸ごと死に、acquire のたびに 3 dir をフル readdir する (実測 2026-09-12、
 	// ローカル APFS / graveyard 2000 件: 12.2 → 17.5 ms/acquire = +43%。SMB では未実測で、
 	// trigger は「SMB 共有で acquire が遅いという報告が出たとき同じ A-B を採る」)。
+	// 🚨 コストは readdir の時間だけではない。defer の Cleanup が長くなるほど、
+	// `timed()` が見捨てた goroutine が lock を置ききる窓も広がる
+	// (実測 2026-09-12: graveyard 200 件で漏れ 40/40。issue 362)。
 	// それでも打刻するより安い: 打刻すると壊れていること自体が 10 分ごとにしか見えない。
 	if len(res.Errors) == 0 {
-		l.stampCleanup()
+		// 🚨 打刻そのものの失敗も持ち帰る。握り潰すと、掃除は成功しているのに
+		// レート制限が永久に進まない状態が rc=0 / stderr 0B の完全な無音になる
+		// (5 周目の実測: .lockman が 0500 だと sweep は通り打刻だけ落ちる)。
+		if err := l.stampCleanup(); err != nil {
+			res.Errors = append(res.Errors, fmt.Sprintf("掃除は終わったが打刻できない: %v", err))
+		}
 	}
 	return res
 }
@@ -143,13 +165,16 @@ func (l *Locker) cleanupDue() bool {
 	return now.Sub(st.ModTime()) > cleanupInterval
 }
 
-func (l *Locker) stampCleanup() {
+func (l *Locker) stampCleanup() error {
 	path := filepath.Join(l.metaDir, cleanupStampName)
 	// mtime はサーバに打刻させる (utimes を使うとクライアントの時計が入る)。
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, lockFileMode)
 	if err != nil {
-		return
+		return err
 	}
-	_, _ = f.Write([]byte("lockman\n"))
-	f.Close()
+	if _, err := f.Write([]byte("lockman\n")); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }
