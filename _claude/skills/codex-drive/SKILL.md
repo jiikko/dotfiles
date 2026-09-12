@@ -1,6 +1,6 @@
 ---
 name: codex-drive
-version: 4.3.0
+version: 4.4.0
 description: codex を設計の壁打ちからメイン実装者まで主役にし (設計 read-only → 実装 codex exec -s danger-full-access)、Claude はオーケストレーション (要件確定・spec 多重読解・スコープ分割・設計/成果物の検閲・敵対的レビュー・ミューテーション検証・観測駆動デバッグ・commit/push・反復・要件照合) に徹するワークフロー。codex トークンは厚く消費し、Claude トークンは節約する (並列出力は codex 集約 digest 経由で検閲・長文は貼らずファイル参照で読ませる・機械ループは codex に回させる)。大きめの実装/移植/プロトコル実装で、余っている codex トークンを使い切りたい時に使う。「codex に書かせて」「codex メインで実装」「codex に作らせて」「codex-drive」「/codex-drive」で発火。typo・数行修正には使わない (それは Claude が直接やる)。
 ---
 
@@ -550,6 +550,8 @@ EOF
   **codex に xcodebuild を試みさせない**とプロンプトに書く (試みると Error 74 の往復で時間を溶かす。617 M3)。
   codex に渡せる構文確認は **`swiftc -parse` まで** (型検査は依存モジュールが要り sandbox で組めない)。**型 error は
   Claude の `make test` で 1 往復として織り込む** (542: memberwise init の引数順 1 件で `passed 0` の往復)。
+  shared SPM を触るマイルストーンでは、実装プロンプトに**「返す前に `cd shared && swift build --build-tests` を通す」を
+  固定文で入れる** (sandbox で走るかは repo ごとに最初のマイルストーンで確かめてから固定する。issue 369 1-2)。
   この環境では未実行の理由が sandbox 由来なので、`[3.8]` の実行ループも最初から Claude のハーネスで当てる
   (変異 patch の生成だけ codex read-only に作らせる。codex に回しても typecheck だけで「成功」と書く: 650 M1)
 - **sandbox の有無に関係なく `[2]` のプロンプトに書くこと / `[3]` で見ること**:
@@ -728,6 +730,10 @@ git worktree list   # 消えたことを確認する
 
 ### 3. 検証（Claude が必ず検閲）
 
+- 🚨 **順序: codex が返した直後にまず型検査 (`make build` 相当) を回し、通ってから `[3.5]` / `[3.6]` を起動する**。
+  レビュー fanout と並走させると型エラーを後から知り、「型エラーを抱えたままレビューに出した」往復が 1 回増える
+  (obaket 763 項目 4: マイルストーンごとに 2〜3 往復。issue 369 1-2)。型エラーはどの往復でも最終的に直るので、
+  先に潰しても質は変わらない — 減るのは往復だけ。macOS target を触るマイルストーンは薄く切り、この型検査を短くする
 - **自分の環境でプロジェクト標準の build/test を実行**して green を確認 (Swift プロジェクトなら `swift build` / `swift test`。
   codex 環境の sandbox 差で codex 報告が `--disable-sandbox` 等になっていても、Claude は素の環境で確認する)。
 - **codex のサマリは「主張」として読む**。「実装済み」「動作確認済み」と書かれた項目こそ最初に裏を取る対象にする
@@ -761,7 +767,7 @@ git worktree list   # 消えたことを確認する
 
 ### 3.5. codex 3並列レビュー（直交する3観点・発見型）
 
-`[3]` の build/test が **green になったマイルストーンごとに自動**で実行する。実装した codex とは別プロセスの
+`[3]` の build/test が **green になったマイルストーンごとに自動**で実行する (**green の前に起動しない** — `[3]` の順序の項)。実装した codex とは別プロセスの
 レビュアーとして、**直交する 3 観点を並列**で回す (v2.0.0 で既定 2→3。発見型の出力は要点列挙で
 検閲単価が低く、`[3.55]` の裏取り前処理も挟まるため 3 本でも律速にならない)。
 ここは「問題を探す」発見型パスで、この後に `[3.55]` (裏取り) → `[3.6]` (壊す) → `[3.7]` (固定) →
@@ -1024,8 +1030,12 @@ EOF
   **worktree に patch を持ち込んだら baseline commit を作ってから注入させる**。持ち込んだ直後の worktree でも
   patch は未コミットなので、codex の `git checkout -- .` 復元が seam ごと消してテストがコンパイル不能になる
   (obaket 696 項目 4)。
-- **codex に注入から実行ループまで回させる** (workspace-write・`-C <worktree>`・`gpt-5.6-luna`・max —
-  機械作業。トークン経済 3): 「このマイルストーンの実装に、**現実的なバグを 3〜5 個、1 個ずつ独立の
+- **codex に注入から実行ループまで回させる** (`-s danger-full-access`・`-C <worktree>`・`gpt-5.6-luna`・max —
+  機械作業。トークン経済 3)。🚨 **例外: sandbox を外せない環境で、その repo の `swift test` が sandbox で走らないと
+  1 度分かったら、以降のマイルストーンでは実行ループを codex に回さない**。変異 patch の生成だけ codex read-only に
+  作らせ、適用 → テスト実行 → 復元は最初から Claude のハーネスで当てる (obaket 650 M1: max effort で 15〜40 分の
+  ループが typecheck だけで「全成功」を返し、Claude が全部当て直した。回させた分は丸ごと無駄。issue 369 1-1。
+  Claude 側の作業は増えるが、判定はどちらでも Claude の実行結果なので質は変わらない)。プロンプト: 「このマイルストーンの実装に、**現実的なバグを 3〜5 個、1 個ずつ独立の
   patch として**作れ (境界の off-by-one・条件の反転・エラー処理の握りつぶし・early return の欠落など、
   レビューで見逃しやすい類)。各 patch は `git diff` 形式で別ファイルに保存し、**1 個ずつ適用 → テスト実行 →
   `git checkout -- .` で復元**を繰り返せ。テストファイルは触らない。出力は変異ごとの結果表:

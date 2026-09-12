@@ -187,7 +187,9 @@ codex-cli 0.154.0 で確認したオプション (2026-09-13、`codex exec --hel
 ## 受け入れ条件
 
 - [ ] 案 1 (計測) を `bin/codex-fanout` に入れる (開始時刻 / 所要秒 / merger 行)。計測だけで閉じられる
-- [ ] 段階 1 (1-1 / 1-2 / 1-3) を SKILL.md へ反映する。計測を待たない。1-3 は `gpt-6-astra` がアカウントで使えることを 1 行 probe で確認してから
+- [x] 段階 1 の 1-1 / 1-2 を SKILL.md 4.4.0 へ反映 (1-1: `[3.8]` 節の例外 + 外せない環境の段落 / 1-2: `[3]` 冒頭の順序の項 +
+      `[3.5]` の「green の前に起動しない」+ shared の固定文)。commit: 「docs(codex-drive): 1-1 / 1-2 を反映」
+- [ ] 1-3 (astra への切り替え) は `gpt-6-astra` がアカウントで使えることを 1 行 probe で確認してから SKILL.md へ
 - [x] 案 0-b をユーザーが承認 → SKILL.md 4.3.0 へ反映 (雛形 3 箇所 / Error 74 規律の条件化 / セットの 4 項目)。
       commit: 「feat(codex-drive): 実装 run の sandbox を既定で外す」
 - [ ] 案 0-b を obaket の次マイルストーンで実測し、checkpoint に残す: Error 74 の有無 / 型エラー往復数 (旧 2〜3) /
