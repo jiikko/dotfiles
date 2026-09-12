@@ -281,6 +281,13 @@ ubuntu から移した」と書いており、README だけが取り残されて
 
 ## 進捗
 
+- 2026-09-12: **`issues/next/` の claim を外した**（issue 自体は open のまま）。
+  claim は `eafada8a`（09-11 22:04「claim: issue 358 / 359 に着手」）で 358 と同時に付いたもので、
+  claim 主 dotfiles-53 は既に `ListAgents` に居ない。同じ commit で claim された 358 は
+  完了して `done/` へ移したので、**残っていたのは着手者のいない claim だけ**だった。
+  claim = 着手中の宣言なので、放置すると他マシンから「誰かがやっている」に見えて
+  二重着手の防止ではなく**着手の阻止**として働く（ユーザー判断で解除）。
+  **本 issue に着手する人は、改めて `next/` へ claim を置いてから始めること**
 - 2026-09-12: **358 の敵対レビュー 5 周目が、この監査が攻めていなかった範囲を 3 件出した**。
   掃除機構の内側は 358 で解消 (`sub` 軸の fail-closed / 打刻の失敗の伝播 / `serverNow` の
   良性判定)。外側は **[362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md)**
