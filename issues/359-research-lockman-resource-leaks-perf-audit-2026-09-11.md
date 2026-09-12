@@ -287,7 +287,9 @@ ubuntu から移した」と書いており、README だけが取り残されて
   (見捨てた goroutine が失敗報告後に lock を置く。35/450) /
   **[363](363-bug-lockman-with-signal-handler-installed-too-late.md)**
   (`signal.Notify` が遅く、中断で lock + 孤児。20/120) /
-  **[364](364-bug-lockman-with-release-failure-and-graveyard-retention.md)** (小粒 4 件) として起票。
+  **[364](364-bug-lockman-with-release-failure-and-graveyard-retention.md)** (小粒 4 件) /
+  **[366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md)**
+  (引き継ぎの勝者が低頻度で 2 人。原因未特定) として起票。
   下の「軽微だが実在する」の `--io-timeout` 無検証は 362 と同じ族なので、356 / 357 と
   まとめて直すときに 362 も見る
 - 2026-09-11: resource-leaks / performance の 2 タイプを直列で実行。生存 3 件を起票、

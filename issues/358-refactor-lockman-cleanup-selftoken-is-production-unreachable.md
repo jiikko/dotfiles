@@ -1,6 +1,8 @@
 # lockman Cleanup の selfToken ガードは production 到達不能で、配線しても守るものが無い
 
-✅ **対応済み (2026-09-11 / dotfiles-53)**。推奨対応 A を実施。下の「実施結果」節。
+✅ **完了 (2026-09-12 / dotfiles-c9)**。推奨対応 A を実施し、**敵対的レビュー 7 周**を通して決着。
+7 周目で初めて「直前の周が新設したものが 1 つも崩れない」状態になったので閉じた
+(判断の根拠は下の「打ち切り」節)。掃除機構の外に出た指摘は 362 / 363 / 364 / 366 へ切り出し済み。
 
 起票日: 2026-09-11
 カテゴリ: refactor / priority: low
@@ -476,6 +478,158 @@ ReadDir と Remove のあいだで他者が消す状態を、seam 無しで決�
   `stop-on-unexplained-test-failures` に従い**追わずに記録**し、出典の候補 (③が見つけた
   `TestRenewExtendsHold` のレイテンシ依存) と一緒に 364 へ置いた
 
+### 2.9 敵対レビュー 6 周目 — 5 周目の修正そのものを攻めた (§7)
+
+攻め口を **「5 周目の 3 commit が新設したものだけ」**に限定して opus 1 体。
+§7 の「2 周目は全文再走査でなくてよい。何を新設したかを列挙して攻め口として渡す」の実施。
+**3 件が出て、うち 1 件は 5 周目が持ち込んだ退行**だった。
+
+| # | 指摘 | 由来 |
+|---|---|---|
+| **F1 (P1)** | **打刻ファイルのモードを誰も戻していない**。`ensureDirs` は dir を 0777 へ chmod で戻すが `.cleanup_at` は umask に削られた 0644 のまま。`.cleanup_at` は**作成者以外が「書き込みで」開く唯一のファイル**なので、共有 (0777 no-sticky / SMB) では別ユーザーの打刻が**恒久** EACCES。5 周目 commit 2 がその失敗を可視化したので、**正常系で警告が鳴り続ける**形になっていた | **5 周目が持ち込んだ退行** (4 周目 P2-1 と同型の偽陽性を自分で作り直した) |
+| **F2 (P2)** | **allowlist は「名前」を見ていて「解決先」を見ていない**。`switch sub` が比べる 3 定数はパスを組み立てるのと同じ定数なので、定数側を動かすと名前は通ったまま射程が `.lockman` の外へ出る | 5 周目が新設したゲートの強制の非対称 |
+| **F3 (P2)** | 新設した良性判定の**「だけ」が pin されていなかった**。`os.IsNotExist(statErr)` を `statErr != nil` へ広げる変異が**全 39 ケース緑** | 5 周目が新設した機構の未検査面 |
+| F5 (P3) | `TestDispatchWarns…` にだけ root ガードが無い (他 5 本にはある) | 同 commit 内の不統一 |
+
+#### F1 の実測 (A-B)
+
+`.cleanup_at` を書けない状態にして `lockman with` を 3 回:
+
+| 版 | stderr | `.cleanup_at` の mtime |
+|---|---|---|
+| 6 周目より前 | 238B × 3 (毎回同じ警告) | **進まない** |
+| 現行 (chmod を足した) | **0B** × 3 | 進む |
+
+`acquire` 直後のモードも `-rw-r--r--` → `-rw-rw-rw-` になった。
+
+#### F2 の実測
+
+`tmpDirName` を `".."` にすると `lockman with` が **rc=0 / stdout 0B / stderr 0B** のまま
+**利用者のファイル (`config.yml` / `report.csv`) を消した**。
+このとき `TestSweepRefusesDirectoryOutsideScratch` は **PASS のまま**で、
+落ちた 3 本はいずれも chmod 対象がずれた「前提崩れ」= 射程を見ていない。
+
+**直し方にリテラル pin を選んだ理由**: 実行時ゲート (「`dir` は `metaDir` の直下か」) は
+allowlist がある以上 **production から到達不能**で、**この issue が撤去したのと同じ
+「守る対象の無いガード」**になる。CI で捕まえれば足りるので
+`TestScratchDirNamesAreDirectChildren` で 3 定数をリテラル pin した (理由はコード側にも記載)。
+
+#### F3 の要点 — commit message が自分のテストの射程を過大に書いていた
+
+5 周目の変異 N8「逆向き: 良性判定を広げる」が捕まえたのは**無条件に広げた形**だけ。
+`…WhenServerNowFails` は metaDir が 0777 で stat できるので、**述語だけの拡張**は
+errors が残って緑のまま通る。**3 周目 P1 で自分が指摘した「偽の検証記録」と同じ形**を
+5 周目でやっていた。metaDir を自己ループ symlink にして stat を ELOOP にする決定論
+テストで pin した (production 側の本命は stale mount / EACCES / EIO / ESTALE)。
+
+#### 6 周目の変異検証 (すべて build rc=0 / vet rc=0)
+
+| 変異 | 結果 |
+|---|---|
+| **F1m** 打刻のモードを戻さない (機構を戻す) | red `TestCleanupStampModeIsRestored` (単独) |
+| **F3m** 良性判定の述語を広げる | red `…DoesNotTreatUnreadableMetaDirAsBenign` (単独) |
+| **F2m** `tmpDirName = "."` / `".."` | red `ScratchDirNames…` + 前提崩れ 3〜5 本 |
+| **F2m** `tmpDirName = "cache"` (向け替え) | red `ScratchDirNames…` **単独** = 名前 pin の増分 |
+| **F5m** root ガードを外す | 🚨 **緑**。下記 |
+
+🚨 **F5m が緑なのは期待どおり**で、テストが弱いのではない。あのガードは**検出力を足すもの
+ではなく**、「前提が作れなかった」と「production が書式を変えた」を見分けるためのもので、
+差が出るのは root 実行のときだけ。既存 5 本の root ガードと同じ性質なので、
+**そう明記して残した** (緑を「守っている」と書くと、それ自体が偽の検証記録になる)。
+
+#### 却下した 6 周目の指摘
+
+- **`.lockman/tmp` を `.lockman` 自身へのディレクトリ symlink に差し替えると、allowlist を
+  満たしたまま生きている lock が消える** — **脅威モデルの「検出しないと決めた形」に該当**
+  (想定する敵はおらず、`.lockman` 配下に細工できる者は lock を直接消せる)。レビュワー自身も
+  「採用不要」としている。なお `tmp/` の中の**ファイル** symlink は無害 (`e.Info()` は lstat、
+  `os.Remove` は link だけを unlink する) ことも実測された
+- **`cleanupDue` の沈黙分岐** (stat 失敗 → `Skipped=true` で無音) — **元からの穴**で、かつ
+  所有者なら `ensureDirs` の chmod が自己修復し、非所有者なら acquire 自体が先に失敗するため、
+  無音のまま害が出る経路は作れなかった (レビュワーの実測)
+- **`lock` ファイルも 0644 で作られる** (ぼやき) — 現状は `O_TRUNC` で開くのが所有者の `Renew`
+  だけなので実害なし。**renew を他ユーザーへ広げる変更が来た瞬間に F1 と同型になる**ので、
+  そのときに `lockFileMode` で作る全ファイルへ chmod を当てる。今は入れない
+  (`pending-issue-rationale-in-code.md`: 採らなかった理由を残す)
+
+#### 壊せなかったもの (6 周目)
+
+- **allowlist を入力だけで通り抜ける形は無い** (Go の文字列等価は厳密。空文字・パス要素の
+  追加はすべて default 枝へ落ちる)
+- **A1「allowlist を広げる」変異を `TestSweepRefusesDirectoryOutsideScratch` が単独で拾う**
+  (新設テストは「削除」だけでなく「拡張」も検出する)
+- **`dispatch` に `release` を足す変異 → `…RunsOnlyForMutatingCommands` が red**
+  (4 コマンド化の「集合を pin する」主張は本物)
+- **警告の書式から `removed=` を落とす変異 → 正規表現 pin が red** (`skipped=` 以外の軸でも効く)
+- **3 つの permission テストは実際に別々の枝を踏んでいる** (0500 → `remove …` / 0000 → `open …` /
+  0400 → `lstat …` を production 経路の stderr で確認)
+- **8 並行実行で cleanup の警告は 0 件** (4 周目 P2-1 の再演は起きない)
+- **`serverNow` の良性判定で「掃除すべきゴミが在るのに黙って帰る」形は作れなかった**
+  (metaDir が ENOENT のときはゴミも到達不能)
+
+### 2.10 敵対レビュー 7 周目 — **新設分は壊せなかった**。ここで閉じる
+
+攻め口を **「6 周目の 1 commit の差分だけ」**に限定 (production の変更は `os.Chmod` 1 行、
+残りはテスト 3 本と 1 本へのガード追加)。**結論: この差分は壊せなかった。**
+
+| 変異 | 結果 |
+|---|---|
+| `os.Chmod(path, lockFileMode)` を削除 | red `TestCleanupStampModeIsRestored` **単独** |
+| `os.IsNotExist(statErr)` → `statErr != nil` | red `…DoesNotTreatUnreadableMetaDirAsBenign` **単独** |
+| `tmpDirName = "cache"` | red `TestScratchDirNamesAreDirectChildren` **単独** |
+| `os.Chmod(path, 0o644)` (定数は 0666 のまま) | red `…StampModeIsRestored` **単独** ← テストは vacuous でない |
+| `os.Chmod` → `f.Chmod` (drop-in) | 緑 (挙動が同じことの確認) |
+
+umask 非依存も実測 (000 / 022 / 077 で素の木は PASS、chmod 削除はどれでも red)。
+ELOOP fixture が**良性述語を実際に通っている**ことも probe で確認済み
+(`len(Errors)==1` で中身が serverNow の ELOOP)。
+
+#### 出た 2 件はどちらも元からの穴 / 文言の問題 (production は変えない)
+
+- **A2-1**: 6 周目が援用した「リテラル pin」の教義に、**当の定数 2 つが漏れていた**。
+  `lockFileMode = 0o600` / `metaDirMode = 0o700` はどちらも**全 42 ケース緑**
+  (自分でも再現)。縮むと `readLock` の `os.ReadFile` すら別ユーザーで失敗し、
+  共有プロトコルが無音で死ぬ → `TestSharedFileModesArePinned` を追加 (変異 2 本とも単独 red)
+- **A4-2**: 6 周目の却下理由「実行時ゲートは production から到達不能」が**広すぎた**。
+  当たるのは**パス文字列を見るゲート**だけで、**解決先を見るゲート**は到達可能。
+  素の production バイナリで実測 (自分でも再現): `.lockman/tmp` を外部 dir への symlink に
+  差し替えると `lockman cleanup` が **rc=0 / stdout 0B / stderr 0B** のまま
+  **`.lockman` の外の利用者ファイルを消す**。
+  採らない理由は**到達不能だからではなく脅威モデルの外だから**
+  (`.lockman` 配下に symlink を仕込める者は lock を直接消せる) と書き直し、
+  再評価の trigger (敵対的な共有で使う要求が出たとき) を添えた
+
+#### 却下した 7 周目の指摘
+
+- **打刻に回復経路が無い (P3)** — 打刻を書けないモードにすると同じ警告が鳴り続ける。
+  **元からの穴**で、6 周目の chmod はむしろ発生率を大きく縮めている。
+  非敵対の到達条件は「旧版 + `umask 0222`」。unlink して作り直す回復は入れない
+  (掃除が掃除の対象を作らない、という 5 周目の判断と同じ理由)
+- **`f.Chmod` (fchmod) にすべき (P3)** — open と chmod のあいだの再解決の窓は消えるが、
+  **fchmod でも symlink 先には届く** (open 自体が symlink を辿る) ことをレビュワーが実測。
+  利得は窓だけで、`ensureDirs` の `os.Chmod` と形が揃わなくなるので採らない
+- **形式チェックが冗長 (P3)** — リテラル pin がある限り単独の失敗原因になり得ない。
+  ただし production の枝と test の assert は経済が違う (テストの冗長な assert は
+  production の到達不能コードとは別物) ので、そのまま残す
+
+## 打ち切り (§8 の stopping rule に照らした判断。**ユーザー判断待ちにしない**)
+
+**7 周目で閉じる。** 本 issue の冒頭に書いた基準は
+「出た指摘が『今回の変更が持ち込んだ退行』ではなく『元からの穴 / production 到達不能』へ
+寄った時点で閉じる」で、**7 周目は初めてそれを満たした**:
+
+| 周 | 自分が直前の周で新設したものが崩れたか |
+|---|---|
+| 1〜4 周目 | すべて崩れた (P1 が毎回出た) |
+| 5 周目 | 崩れた (3 観点すべて) |
+| 6 周目 | **崩れた** (F1 は 5 周目が持ち込んだ退行) |
+| **7 周目** | **1 つも崩れなかった**。出た 2 件は元からの穴と文言 |
+
+7 周目の修正 (テスト 1 本 + コメント) は §7 の打ち切り例外 (a)(b) を満たす —
+**判定ロジックを新設しておらず** (production は 1 行も変えていない)、
+**各修正を直接の変異で確認した** (定数を縮める変異 2 本が単独 red)。
+別の環境条件も持ち込んでいない (定数の比較だけ)。よって 8 周目は要求しない。
+
 ### 3. ガードの撤去
 
 - `Cleanup(force bool, selfToken string)` → `Cleanup(force bool)`
@@ -533,11 +687,20 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
 
 ## 進捗
 
-- 2026-09-12: **敵対的レビュー 5 周目に着手**。§8 の stopping rule (脅威モデル /
-  検出しないと決めた形 / 打ち切りの判定) を**着手前に**本文へ固定した (上の節)。
-  攻め口は「4 周目が新設したもの」— `os.IsNotExist` フィルタ 2 箇所 / `t.Skip` → `t.Fatal` /
-  新設 2 テスト / `serverNow()` 失敗枝にフィルタが当たっていない非対称。
-  観点を ①壊す ②素通り ③並行・中断 に分けて opus を直列に回している (進行中)
+- 2026-09-12: **敵対的レビュー 7 周目 — 新設分を壊せず、ここで閉じた** (上の「2.10」「打ち切り」)。
+  出た 2 件は元からの穴 (モード定数 2 つが未 pin) と文言の問題 (却下理由の射程) で、
+  production は 1 行も変えていない
+- 2026-09-12: **敵対的レビュー 6 周目**。5 周目の修正そのものを攻めさせ、**5 周目が持ち込んだ
+  退行 (F1: 打刻ファイルのモードを戻していない → 共有で恒久 EACCES → 正常系で警告が鳴り続ける)**
+  を含む 3 件が出た。allowlist が名前しか見ていない件と良性判定の「だけ」が未 pin の件も直した (上の「2.9」)
+- 2026-09-12: **敵対的レビュー 5 周目**。§8 の stopping rule (脅威モデル / 検出しないと決めた形 /
+  打ち切りの判定) を**着手前に**固定してから、観点を ①壊す ②素通り ③並行・中断 に分けて
+  opus を直列に回した。掃除機構の内側は 3 commit で修正、外側は
+  [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
+  [363](363-bug-lockman-with-signal-handler-installed-too-late.md) /
+  [364](364-bug-lockman-with-release-failure-and-graveyard-retention.md) へ切り出し。
+  作業中に観測した「引き継ぎの勝者が 2 人」は
+  [366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) へ (上の「2.8」)
 - 2026-09-11: 起票。到達不能性を機械照合。反証レビューで起票時の根拠（寿命 vs retention）が
   崩れ、(i) probe の命名が独立乱数 / (ii) `os.Link` 後の tmp は不要 / (iii) 過去の試行は
   別トークン という 3 点へ根拠を差し替えた（未着手）
@@ -606,11 +769,19 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
 
 ## 残タスク
 
-- **敵対的レビュー 5 周目の要否がユーザー判断待ち**。4 周目の修正も判定ロジックを
-  触っている (`os.IsNotExist` フィルタの新設) ので §7 の打ち切り条件 (a) は満たさない。
-  一方で 1〜4 周目はいずれも P1 を出しており、止める根拠も無い。**費用の判断はユーザー**
-- **ENOENT フィルタの単体テストが無い** (上の M20)。seam 無しでは決定論的に作れない。
-  A-B 実験で検出可能性は実証済み
+**この issue に残っているものは無い** (下の 2 つは記録であって作業ではない)。
+
+- **`os.Remove` の ENOENT フィルタの単体テストは無いまま** (4 周目 M20)。ReadDir 側は
+  5 周目に決定論で書けた (`TestCleanupQuietWhenSubdirMissing`) が、`os.Remove` と `e.Info()` の
+  ENOENT は「ReadDir と Remove のあいだで他者が消す」状態を seam 無しで作れない。
+  **検出可能性: A-B 実験で実証済み** (単体テストは無い)。
+  再評価の trigger: `sweepDir` に seam を入れる変更が来たとき
+- 掃除機構の**外**で見つかった 5 件は別 issue へ:
+  [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) (high) /
+  [363](363-bug-lockman-with-signal-handler-installed-too-late.md) (high) /
+  [364](364-bug-lockman-with-release-failure-and-graveyard-retention.md) (low〜medium) /
+  [366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) (high・原因未特定)。
+  `with` の `--io-timeout` 素通りは [357](357-bug-lockman-with-bypasses-io-timeout.md) に既出
 - 決着済み: 下限はコンパイル時ではなく `sweepDir` の実行時に置いた (上の「実施結果」1)。
   コンパイル時にも**置けた**が、定数を縛る形は迂回されるため採らなかった
 
