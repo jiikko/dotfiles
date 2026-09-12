@@ -159,6 +159,10 @@ func TestSweepRefusesRetentionBelowFloor(t *testing.T) {
 //     [100s, 600s) にあるときだけで、**本当に危険な 100s 未満の帯を押さえているのは
 //     こちら** (3 周目の実測)
 //
+// 🚨 効く**軸**が違うことに注意 (5 周目の実測)。`minRetention` を下げる変異では
+// リテラル側が先に Fatal するので比の行は走らない。比が単独で効く唯一の軸は
+// **`defaultIOTimeout` を上げた**とき (2m にすると比の行だけが発火する)。
+//
 // 🚨 どちらも「壁」ではない。production の 3 定数とこのテストの `pinned` を合わせて
 // 4 行直せば通る (3 周目が実測)。上げているのは**敷居**であって不可能性ではなく、
 // 4 行の diff が「意図してやった」ことを示す、という設計。
@@ -228,6 +232,75 @@ func TestCleanupDoesNotStampWhenReadDirFails(t *testing.T) {
 	assertNoStamp(t, l, res)
 }
 
+// ★ 3 つ目の枝: ReadDir は通るが `e.Info()` (lstat) が落ちる場合。
+// dir を 0400 にすると「読めるが辿れない」ので readdir だけが成功する。
+// 4 周目がこの枝にも良性 ENOENT の基準を当てたのに、テストは 1 本も無かった
+// (5 周目の実測: エラー記録を落とす変異が緑で通った)。
+func TestCleanupDoesNotStampWhenInfoFails(t *testing.T) {
+	l := newTestLocker(t)
+	if err := l.ensureDirs(); err != nil {
+		t.Fatalf("ensureDirs: %v", err)
+	}
+	tmpDir := filepath.Join(l.metaDir, tmpDirName)
+	touchOld(t, filepath.Join(tmpDir, "old.json"), 2*time.Hour)
+	if err := os.Chmod(tmpDir, 0o400); err != nil { // 読めるが辿れない
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(tmpDir, metaDirMode) })
+
+	res := l.Cleanup(true)
+	if len(res.Errors) == 0 {
+		t.Fatal("前提が作れていない: e.Info() が拒否されなかった (root 実行なら、この" +
+			"テストは守りとして成立していないので環境を変えること)")
+	}
+	assertNoStamp(t, l, res)
+}
+
+// ★ 逆に「サブ dir がまるごと消えている」は良性 (掃除の目的が達成された状態)。
+// 失敗に数えると打刻が飛び、正常系で警告が鳴る (4 周目 P2-1 と同型)。
+//
+// 🚨 issue 358 の脅威モデル表は当初「ENOENT フィルタは seam が無いので決定論的に
+// 書けない」と書いていたが、**それが当てはまるのは `os.Remove` と `e.Info()` だけ**。
+// ReadDir 側は dir を消すだけで決定論的に作れる (5 周目の実測)。
+func TestCleanupQuietWhenSubdirMissing(t *testing.T) {
+	l := newTestLocker(t)
+	if err := l.ensureDirs(); err != nil {
+		t.Fatalf("ensureDirs: %v", err)
+	}
+	if err := os.RemoveAll(filepath.Join(l.metaDir, tmpDirName)); err != nil {
+		t.Fatalf("remove tmp dir: %v", err)
+	}
+
+	res := l.Cleanup(true)
+	if len(res.Errors) != 0 {
+		t.Fatalf("消えている dir を失敗に数えた: %v", res.Errors)
+	}
+	if _, err := os.Stat(filepath.Join(l.metaDir, cleanupStampName)); err != nil {
+		t.Fatalf("良性なのに打刻されていない: %v", err)
+	}
+}
+
+// ★ `serverNow()` が落ちる枝 (probe/ が在るのに書けない)。打刻せずエラーを持ち帰る。
+// この枝は `Cleanup` の冒頭にあり、3 つの sweep の枝とは別の分岐なので個別に要る。
+func TestCleanupDoesNotStampWhenServerNowFails(t *testing.T) {
+	l := newTestLocker(t)
+	if err := l.ensureDirs(); err != nil {
+		t.Fatalf("ensureDirs: %v", err)
+	}
+	probeDir := filepath.Join(l.metaDir, probeDirName)
+	if err := os.Chmod(probeDir, 0o500); err != nil { // 読めるが作れない
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(probeDir, metaDirMode) })
+
+	res := l.Cleanup(true)
+	if len(res.Errors) == 0 {
+		t.Fatal("前提が作れていない: probe を作れてしまった (root 実行なら、この" +
+			"テストは守りとして成立していないので環境を変えること)")
+	}
+	assertNoStamp(t, l, res)
+}
+
 func assertNoStamp(t *testing.T, l *Locker, res CleanupResult) {
 	t.Helper()
 	if _, err := os.Stat(filepath.Join(l.metaDir, cleanupStampName)); !os.IsNotExist(err) {
@@ -237,7 +310,13 @@ func assertNoStamp(t *testing.T, l *Locker, res CleanupResult) {
 }
 
 // ★ 逆向き: 失敗していないときは打刻する (レート制限が進む)。
-// これが無いと「常に打刻しない」変異が緑で通る。
+//
+// 🚨 かつてここには「これが無いと『常に打刻しない』変異が緑で通る」と書いてあったが、
+// **実測で偽だった** (5 周目)。その変異は `TestCleanupIsRateLimited` と
+// `TestCleanupRunsOnlyForMutatingCommands` が拾うので、本テストの検出力の増分は
+// 上記 11 変異に対してゼロ。それでも残すのは「掃除が成功したら打刻する」を
+// 名指しで読める場所が他に無いため (`mutation-verify-new-tests.md` が戒めるのは
+// **偽の検証記録**であって、増分ゼロのテストの存在そのものではない)。
 func TestCleanupStampsWhenClean(t *testing.T) {
 	l := newTestLocker(t)
 	if err := l.ensureDirs(); err != nil {

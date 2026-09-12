@@ -4,7 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
+	"regexp"
 	"testing"
 	"time"
 )
@@ -94,23 +94,60 @@ func TestWithRequiresCommand(t *testing.T) {
 
 // 掃除は状態を変えるコマンドのときだけ走らせる (check / status はループから呼ばれ、
 // SMB の readdir が重い)。掃除済みの目印が付くかどうかで観測する。
+// ★ 掃除が走るのは状態を変える 4 コマンドちょうど。
+//
+// 🚨 かつて正の側は `acquire` しか見ておらず、**`with` / `break` を配線から外す変異が
+// 緑で通った** (5 周目の実測)。テスト名は集合の契約を主張しているので、集合の全要素を
+// 正の側でも負の側でも pin する。
 func TestCleanupRunsOnlyForMutatingCommands(t *testing.T) {
+	// 正の側: 4 コマンドそれぞれで打刻が現れる。
+	for _, cmd := range []string{"acquire", "with", "break", "cleanup"} {
+		dir := t.TempDir()
+		// break / cleanup は .lockman が既にある状態が前提なので先に作る。
+		if cmd == "break" || cmd == "cleanup" {
+			if got := run([]string{"acquire", dir, "--token-file", tokenPath(t)}); got != exitOK {
+				t.Fatalf("準備の acquire: exit %d", got)
+			}
+		}
+		stamp := filepath.Join(dir, metaDirName, cleanupStampName)
+		_ = os.Remove(stamp)
+		if _, err := os.Stat(stamp); !os.IsNotExist(err) {
+			t.Fatalf("前提が作れていない: %s の前に打刻が残っている (%v)", cmd, err)
+		}
+
+		var args []string
+		switch cmd {
+		case "acquire":
+			args = []string{"acquire", dir, "--token-file", tokenPath(t)}
+		case "with":
+			args = []string{"with", dir, "--", "true"}
+		default:
+			args = []string{cmd, dir}
+		}
+		run(args)
+
+		if _, err := os.Stat(stamp); err != nil {
+			t.Fatalf("%s で掃除が走っていない: %v", cmd, err)
+		}
+	}
+
+	// 負の側: それ以外は走らせない。release / renew は状態を変えるが、掃除は
+	// acquire / with / break / cleanup の 4 つだけに配線されている (集合を pin する)。
 	dir := t.TempDir()
 	stamp := filepath.Join(dir, metaDirName, cleanupStampName)
-
 	if got := run([]string{"acquire", dir, "--token-file", tokenPath(t)}); got != exitOK {
-		t.Fatalf("acquire: exit %d", got)
-	}
-	if _, err := os.Stat(stamp); err != nil {
-		t.Fatalf("acquire で掃除が走っていない: %v", err)
+		t.Fatalf("準備の acquire: exit %d", got)
 	}
 	if err := os.Remove(stamp); err != nil {
 		t.Fatalf("remove stamp: %v", err)
 	}
-	for _, cmd := range []string{"check", "status"} {
-		run([]string{cmd, dir})
+	for _, args := range [][]string{
+		{"check", dir}, {"status", dir},
+		{"release", dir, "--token", "deadbeef"}, {"renew", dir, "--token", "deadbeef"},
+	} {
+		run(args)
 		if _, err := os.Stat(stamp); !os.IsNotExist(err) {
-			t.Fatalf("%s で掃除が走った (読み取り専用では走らせない)", cmd)
+			t.Fatalf("%s で掃除が走った (配線されていないはず)", args[0])
 		}
 	}
 }
@@ -170,12 +207,13 @@ func TestDispatchWarnsOnCleanupFailureWithoutVerbose(t *testing.T) {
 
 	got := captureStderr(t, func() { dispatch("cleanup", l, &opts{}, nil) })
 
-	if !strings.Contains(got, "permission denied") {
-		t.Fatalf("verbose 無しで掃除の失敗が stderr に出ない: %q", got)
-	}
-	// 件数も出ること (失敗時こそ「部分的に進んだか」を知りたい)。
-	if !strings.Contains(got, "removed=") {
-		t.Fatalf("件数が出ていない: %q", got)
+	// 🚨 部分一致で pin しない。`strings.Contains(got, "removed=")` だけだと
+	// **書式から `skipped=` を落とす変異が緑で通る** (5 周目の実測)。行の構造を
+	// 丸ごと固定する (可変なのはパスを含むエラー本文だけ)。
+	want := regexp.MustCompile(
+		`^lockman: cleanup: removed=\d+ skipped=(?:true|false) errors=\[.*permission denied.*\]\n$`)
+	if !want.MatchString(got) {
+		t.Fatalf("verbose 無しの警告が想定の書式で出ない:\n got=%q\nwant=%s", got, want)
 	}
 }
 
