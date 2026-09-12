@@ -1,7 +1,7 @@
 ---
 name: codex-drive
-version: 4.2.0
-description: codex を設計の壁打ちからメイン実装者まで主役にし (設計 read-only → 実装 codex exec -s workspace-write)、Claude はオーケストレーション (要件確定・spec 多重読解・スコープ分割・設計/成果物の検閲・敵対的レビュー・ミューテーション検証・観測駆動デバッグ・commit/push・反復・要件照合) に徹するワークフロー。codex トークンは厚く消費し、Claude トークンは節約する (並列出力は codex 集約 digest 経由で検閲・長文は貼らずファイル参照で読ませる・機械ループは codex に回させる)。大きめの実装/移植/プロトコル実装で、余っている codex トークンを使い切りたい時に使う。「codex に書かせて」「codex メインで実装」「codex に作らせて」「codex-drive」「/codex-drive」で発火。typo・数行修正には使わない (それは Claude が直接やる)。
+version: 4.3.0
+description: codex を設計の壁打ちからメイン実装者まで主役にし (設計 read-only → 実装 codex exec -s danger-full-access)、Claude はオーケストレーション (要件確定・spec 多重読解・スコープ分割・設計/成果物の検閲・敵対的レビュー・ミューテーション検証・観測駆動デバッグ・commit/push・反復・要件照合) に徹するワークフロー。codex トークンは厚く消費し、Claude トークンは節約する (並列出力は codex 集約 digest 経由で検閲・長文は貼らずファイル参照で読ませる・機械ループは codex に回させる)。大きめの実装/移植/プロトコル実装で、余っている codex トークンを使い切りたい時に使う。「codex に書かせて」「codex メインで実装」「codex に作らせて」「codex-drive」「/codex-drive」で発火。typo・数行修正には使わない (それは Claude が直接やる)。
 ---
 
 # Codex Drive（Claude が操縦、codex がメイン実装）
@@ -50,7 +50,7 @@ codex トークンを積極消費したいタスク向け。
 
 | 主体 | 担当 |
 |---|---|
-| **codex** (設計: `codex exec -s read-only` / 実装: `codex exec -s workspace-write`) | 設計アウトライン・詳細設計のドラフト (壁打ち)、実ファイルの作成/編集、自分でプロジェクト標準の build/test を回して反復、spec 準拠の実装 |
+| **codex** (設計: `codex exec -s read-only` / 実装: `codex exec -s danger-full-access`。外せない環境は `workspace-write`) | 設計アウトライン・詳細設計のドラフト (壁打ち)、実ファイルの作成/編集、自分でプロジェクト標準の build/test を回して反復、spec 準拠の実装 |
 | **Claude (main agent)** | タスクのスコープ分割 / codex への指示作文 / **設計・成果物の検閲 (設計レビューの 1 視点・build・test・diff 精読)** / **観測駆動デバッグ (実行・ログ・CI で事実を集め、次の指示に翻訳)** / commit & push / 次の一手の判断 |
 
 **Claude は重い実装を自分で書かない**。ただし **trivial な 1-2 行の確定的修正** (観測で原因が確定した typo・定数・オフセット) は
@@ -170,7 +170,7 @@ Monitor ツールで完了を待つ。**待つのは driver が必ず書く `run
 待機ループには deadline を置き、超えたら「判定不能」として報告する。プロセス不在かつ成果物無し = 死亡として扱う。
 15 分以内に収まる起動は従来どおり `run_in_background` でよい。
 **自分の run を止めるときは PID か `-o` の出力パスで特定する** (`kill <pid>` / `pkill -f '<自分の -o パス>'`)。
-`pkill -f 'codex exec -s workspace-write'` のような pattern kill は**同じマシンの別セッションの codex を巻き込む**
+`pkill -f 'codex exec -s danger-full-access'` のような pattern kill は**同じマシンの別セッションの codex を巻き込む**
 (2026-09-05 obaket: 別セッションの pattern kill で実装 run が途中で死んだ。編集は残っていたので突き合わせで復旧したが、
 kill された側からは「codex が壊れた」に見える)。
 **outdir / log / manifest は repo root からの絶対パスをリテラルで書く** (`$PWD` 禁止。Bash の cwd は呼び出し間で
@@ -311,7 +311,7 @@ codex-drive を回す前に、**そのタスクが codex 実装に向いてい�
 [D2]  設計詳細化       … 採用方針を codex が詳細設計に落とす (境界・データ構造・異常系・マイルストーン分割案)
 [D3]  設計多角レビュー  … codex 2並列 (1本は必ず敵対観点・read-only) + Claude 視点 → Claude 統合 → ユーザー承認ゲート
 [1]   スコープ確定     … 承認済み設計を基に Claude が「1 マイルストーン」を切り、受け入れ条件 (検証方法) を決める
-[2]   codex 実装       … codex exec -s workspace-write に指示。codex がファイルを書きプロジェクト標準の build/test まで回す
+[2]   codex 実装       … codex exec -s danger-full-access に指示 (外せない環境は workspace-write)。codex がファイルを書きプロジェクト標準の build/test まで回す
                         方針が割れうるマイルストーンは既定で [2p] 競作 (別 worktree・勝者採用・敗者剖検は codex)
 [3]   検証 (検閲)      … Claude が build/test を自分で実行 + diff 精読。根拠なき断定・spec 取り違え・指示逸脱を弾く
 [3.5] codex 3並列レビュー … マイルストーン green 直後。直交する 3 観点で codex を並列起動 (read-only・発見型)
@@ -508,7 +508,8 @@ EOF
   characterization (transcript / 期待値の固定) を最初の実装 commit より前に採取する**。
   移行 commit 後には「移行前」を動かす手段が消え、原理的に作れない
   (実測: obaket 651 — M2a 後に気づき characterization + 変異検証の代替で確定させた)。
-- そのうち **codex 内で完結する検証を、codex が自分の sandbox で回せるか確認する**。
+- **(sandbox を外せない環境向け)** そのうち **codex 内で完結する検証を、codex が自分の sandbox で回せるか確認する**。
+  既定の `-s danger-full-access` (下の節) では素のコマンドがそのまま回るので、この確認は要らない。
   **着手前に確かめるのは本流だけでよい**。`[2p]` の worktree と `[3.8]` の mutation worktree は
   cwd・cache path・依存取得先・fixture 位置が変わるので、**そのフェーズを実際に使うときに、
   そのフェーズの開始時点で**確認する (競作しないマイルストーンのために worktree を先に作らない)。
@@ -520,26 +521,47 @@ EOF
   `CLANG_MODULE_CACHE_PATH="$PWD/.build/mcache" swift test --disable-sandbox --cache-path .build/spm-cache`。
   GUI・実機・実サーバ・CI 認証など codex 内で完結しない検証は Phase 0/[5] に委譲し、代替経路と未検証範囲を着手前に固定する。
   (出典: `573-retro-codex-drive-541-2026-08-24.md`)
-- **macOS app (xcodebuild 系) の受け入れ条件は分担を最初に切る**: codex sandbox では `make lint` / `make build` /
-  `make test` (xcodebuild) が SwiftPM / clang cache の書込拒否で `Error 74` になり走らない (obaket 598, 2026-08-27)。
+- 🚨 **実装 run の sandbox は既定で外す: `-s danger-full-access`** (ユーザー決定 2026-09-13、dotfiles issue 369 案 0-b)。
+  `-s workspace-write` では `make lint` / `make build` / `make test` (xcodebuild) が SwiftPM / clang cache の書込拒否で
+  `Error 74` になり走らず (obaket 598, 2026-08-27)、**型エラー往復 2〜3 回 / マイルストーン (763)、走らない変異ループ
+  (650 M1)、sandbox 由来の偽赤 (613)、「xcodebuild を試みさせない」の縛り (617 M3) がすべてここから派生していた**。
+  外すと codex が自分でプロジェクト標準の build/test を回して反復できる。**sandbox が守っていたものはプロンプトと
+  Claude の検閲で守る** — セットで必ずやること:
+  - **worktree ごとに DerivedData を分ける**。codex が worktree で xcodebuild を回している間に Claude が本体で
+    xcodebuild / `swift build` を回すと、DerivedData と package graph が共有されて**エラーではなく無限待ち**になる
+    ([`no-concurrent-spm-build-during-xcodebuild.md`](../../rules/no-concurrent-spm-build-during-xcodebuild.md)、
+    7.5 時間停止の実例)。`[2]` のプロンプトに「xcodebuild は `-derivedDataPath ./.derived` を付ける」を書く (雛形は `<<'EOF'` で
+    クォートされているので `$ROOT` は展開されない。相対で書く)。`.derived/` は `.gitignore` か `.git/info/exclude` に
+    入れる (入れないと untracked が `[3]` のスナップショット比較に混ざる)。
+    Makefile が固定パスで付けられない repo では、**codex の run 中は Claude が本体で xcodebuild / swift build を回さない**
+  - **作業根の外へ書かない**をプロンプトに明記する (`-C` で渡した worktree / repo root の外は読むだけ)。
+    採用判定 `[3]` の前に **本体 checkout の `git status --short` が起動前スナップショットと同じ**こと、
+    worktree の `git log -1` が起動前と同じ hash であることを確認する (sandbox が無いので、はみ出しは検閲でしか見えない)
+  - **git 操作全般の禁止**は従来どおりプロンプトで (「git commit はしない」だけでは codex が `git pull --ff-only` を
+    試みる。ThumbnailThumb 542)。sandbox があった頃は失敗していたが、いまは**成功する**ので検閲の項目に格上げ
+  - 依頼していない破壊的操作 (rm -rf / 他 checkout の編集 / プロセス・tmux 操作) が要約と log に無いかを `[3]` で読む
+    (`bin/tmux` shim は非 TTY からの本番 kill を拒否するが、それ以外は無防備)
+  - 効いたかは計測で言う (issue 369 案 1)。obaket の次マイルストーンで Error 74 の有無・型エラー往復数・危険操作の有無を
+    checkpoint に残す
+- **sandbox を外せない環境 (danger-full-access を許可していないマシン / repo) では、旧規律で分担を最初に切る**:
   codex に任せるのは shared の `swift build` / `swift test` (上の cache フラグつき) まで、xcodebuild 系は **Claude が
   素の環境で回す**と `[2]` のプロンプトに書く。codex の全体 `swift test` が赤を報告しても sandbox 由来の偽赤が
-  ありうる (同日 2 回観測。素の環境では 0 failure) ので、赤も緑と同じく Claude の再実行で判定する
-  (出典: obaket `issues/613`)。
-  **codex に xcodebuild を試みさせない**とプロンプトに書く (試みると Error 74 の往復で時間を溶かす。obaket 617 M3)。
-  **`project.pbxproj` は触らない (xcodegen が `project.yml` から生成する) ともプロンプトに書く** — 書かないと codex が新規テストファイルを
-  pbxproj に手で登録する (obaket 686, 2026-09-01。再生成で上書きされるので実害は無いが diff がノイズになる)。
+  ありうる (613 で同日 2 回観測。素の環境では 0 failure) ので、赤も緑と同じく Claude の再実行で判定する。
+  **codex に xcodebuild を試みさせない**とプロンプトに書く (試みると Error 74 の往復で時間を溶かす。617 M3)。
   codex に渡せる構文確認は **`swiftc -parse` まで** (型検査は依存モジュールが要り sandbox で組めない)。**型 error は
-  Claude の `make test` で 1 往復として織り込む** (実測 ThumbnailThumb 542: memberwise init の引数順 1 件で `passed 0` の往復)。
-  「git commit はしない」だけでは codex が `git pull --ff-only` を試みる (同 542。sandbox で失敗したが指示外) ので、
-  プロンプトは **git 操作全般の禁止**にする (上の雛形の文言)。
+  Claude の `make test` で 1 往復として織り込む** (542: memberwise init の引数順 1 件で `passed 0` の往復)。
+  この環境では未実行の理由が sandbox 由来なので、`[3.8]` の実行ループも最初から Claude のハーネスで当てる
+  (変異 patch の生成だけ codex read-only に作らせる。codex に回しても typecheck だけで「成功」と書く: 650 M1)
+- **sandbox の有無に関係なく `[2]` のプロンプトに書くこと / `[3]` で見ること**:
+  **`project.pbxproj` は触らない (xcodegen が `project.yml` から生成する)** — 書かないと codex が新規テストファイルを
+  pbxproj に手で登録する (obaket 686, 2026-09-01。再生成で上書きされるので実害は無いが diff がノイズになる)。
   codex が書いた macOS target のテストは **Claude が baseline 緑 + 変異 red を xcodebuild で確認するまで未検証扱い**
-  (617 M5: codex 版の macOS テスト 2 本が baseline red / 変異検知が vacuous だった。`[3.8]` の gate は shared の filter
-  suite しか回さないので、macOS 側の変異は Claude が worktree で `xcodebuild -only-testing:<suite>` を当てる)。
+  (617 M5: codex 版の macOS テスト 2 本が baseline red / 変異検知が vacuous だった。macOS 側の変異は Claude が worktree で
+  `xcodebuild -only-testing:<suite>` を当てる)。
   codex が `Package.swift` (依存の追加) を触ったら要約に明示させる (617 M5: test target の依存追加が要約に無く diff で気づいた)。
   **codex の要約に「未実行」「実行できなかった」がある成果物は、採用判定 (`[3]`) より先に Claude がその検証を回す**
   (645 M6c, 2026-09-03: 「macOS 側 xcodebuild は未実行」と明記された IA cancel test を、同ラウンドの shared 緑に
-  引っ張られて後回しにし、hang の発見が 1 ラウンド遅れた。未実行の理由が sandbox 由来なら構造的に毎回 Claude 担当)
+  引っ張られて後回しにし、hang の発見が 1 ラウンド遅れた)
 - 触ってよい範囲・触らない範囲・既存方針 (設計 doc 等) を明示する。
 
 ### 2. codex に実装させる（write 権限）
@@ -553,10 +575,11 @@ EOF
 # (Storage/ を cwd に起動され macOS/bin を書けず「対応できませんでした」で 30 分ロス: obaket 696 項目 1)。
 ROOT="$(git rev-parse --show-toplevel)"
 last_message="$ROOT/tmp/<タスク>/impl.out.md"; log="$ROOT/tmp/<タスク>/impl.log"
-command codex exec -s workspace-write -C "$ROOT" -m gpt-5.6-luna -c model_reasoning_effort="max" \
+command codex exec -s danger-full-access -C "$ROOT" -m gpt-5.6-luna -c model_reasoning_effort="max" \
   --ephemeral -o "$last_message" </dev/null "$(cat <<'EOF'
-<タスク>。git 操作 (commit / pull / checkout / stash 等) はしない (人間が検証して commit する)。ファイルを書き、プロジェクト標準の build/test が green に
-なるまで自分で反復すること。Swift プロジェクトなら swift build / swift test を使う。
+<タスク>。git 操作 (commit / pull / checkout / stash 等) はしない (人間が検証して commit する)。作業根 (この repo root) の外には書かない。
+ファイルを書き、プロジェクト標準の build/test が green になるまで自分で反復すること。Swift プロジェクトなら swift build / swift test を使う。
+xcodebuild を回すときは -derivedDataPath ./.derived (repo root 直下) を付ける。
 
 ## ゴール / 受け入れ条件
 - <1 マイルストーンの完了条件と検証方法>
@@ -588,7 +611,8 @@ EOF
   effort は effort 表どおり全フェーズ `max` 固定。
 - `command codex` プレフィックス / `</dev/null` / `--ephemeral -o` は **codex-review スキルのルールが正本**（理由・実測根拠はそちら）。
   `-o` は実行ログ全体ではなく最終応答 (`--output-last-message`) の保存先。標準出力/標準エラーは必要に応じて呼び出し側で保存する。
-- **`--full-auto` は使わない**。実装は `-s workspace-write` を明示 (review の `-s read-only` とは別)。
+- **`--full-auto` は使わない**。実装は `-s danger-full-access` を明示 (ユーザー決定 2026-09-13、issue 369。理由と
+  セットで守る項目は「1. スコープ確定」の sandbox 節)。外せない環境では `-s workspace-write`。review の `-s read-only` とは別。
 - 大きいタスクは codex が時間内に終わらないことがある。プロンプトに「時間内に終わらなければ最小で動く形を優先し、
   残りは TODO で残す」と書く。
 - **codex の exit 0 を「実装した」の証拠にしない (空振りの検出)**。実装フェーズの codex は、方針を述べただけで
@@ -609,7 +633,7 @@ EOF
   (581 で実際に残らなかった。上の起動例が `./tmp/<タスク>/` を使うのはこのため)。一般則は
   [`verify-execution-not-just-exit-code.md`](../../rules/verify-execution-not-just-exit-code.md) の
   「非同期・background の完了も『成果物』で判定する」節。
-- **異常終了 (capacity 死・timeout・中断) も「全ロス」と決めつけない**。`-s workspace-write` の run は
+- **異常終了 (capacity 死・timeout・中断) も「全ロス」と決めつけない**。書き込み権限の run (`danger-full-access` / `workspace-write`) は
   死ぬ前に**編集が途中まで、ときには全部残っている**。実例 (2026-08-25 obaket 571): 632k tokens 消費後に
   「Selected model is at capacity」で死んだ run は、突き合わせたら**要求項目が全部完了していた**。
   再投げの前に `git status --short` と要求項目を突き合わせる (全ロス前提の再投げは**二重編集**を作る)。
@@ -636,7 +660,7 @@ EOF
 **起点は `HEAD`**。開始時点の未コミット変更が今回の実装の前提になっているなら、**競作を使わない**
 (または前提を先に commit してから競作する)。両候補は前提を見ずに実装するので、勝者を戻す段で初めて衝突する。
 
-**必ず別の git worktree で走らせる**。同一 working tree に 2 本の `-s workspace-write` を当てると互いの編集を
+**必ず別の git worktree で走らせる**。同一 working tree に 2 本の書き込み run を当てると互いの編集を
 上書きし合う。codex には `-C <worktree>` で作業根を渡す。
 
 ```bash
@@ -654,7 +678,7 @@ echo "A=$root/../wt-$stamp-a"; echo "B=$root/../wt-$stamp-b"   # ← この 2 �
 ```bash
 # --- 案a (Bash 呼び出し 2・run_in_background)。案b も同形で別呼び出し・別 worktree ---
 wt="/<控えた A の絶対パス>"; out="<scratchpad>/codex-drive.<literal-stamp>.implA.md"; log="$out.log"
-command codex exec -s workspace-write -C "$wt" -m gpt-5.6-luna \
+command codex exec -s danger-full-access -C "$wt" -m gpt-5.6-luna \
   -c model_reasoning_effort="max" --ephemeral -o "$out" </dev/null \
   "<[2] と同じプロンプト>" > "$log" 2>&1; tail -40 "$log"
 ```
@@ -892,7 +916,7 @@ command codex exec review -m gpt-5.6-luna -c model_reasoning_effort="max" \
 
 - **実装ファイルを触らせない**。プロンプトで「テストファイル以外は変更禁止」と明示する。実装を直したくなる
   発見があれば「テストを落とす形で示せ」と指示する (直すのは `[2]` の仕事)。
-  ただし **`-s workspace-write` は prompt の禁止を強制しないので、内容スナップショットで検出する**。
+  ただし **sandbox mode は prompt の禁止を強制しない (`danger-full-access` なら何も止めない) ので、内容スナップショットで検出する**。
   `[2]` の実装差分は未コミットのまま (`M path`) なので、**パス一覧の比較では実装への追加編集を検出できない**
   (前後とも `M path` のまま)。前後の**差分の中身**を比べる:
 
@@ -940,12 +964,12 @@ diff -u "<...>.pre.status" "<...>.post.status"             # ← 新規ファイ
   ミューテーションで別に確認する**。本数と検知力を同じ指標として扱わない。
 - effort は **`max`** (effort 表。全フェーズ固定)。「実装を落とす入力」を組み立てるのは構築作業で、
   effort を落とすと常に真になる assert や壊せないヘルパーが出やすい (実測)。
-  モデルは `gpt-5.6-luna`。書き込みが必要なので `-s workspace-write`。
+  モデルは `gpt-5.6-luna`。テストを自分で回させるので実装と同じ `-s danger-full-access` (外せない環境は `workspace-write`)。
 
 ```bash
 # 起動前スナップショット (上の pre.patch / pre.status) をこの呼び出しの冒頭で採る
 out="<scratchpad>/codex-drive.<literal-stamp>.harden.md"; log="$out.log"
-command codex exec -s workspace-write -m gpt-5.6-luna -c model_reasoning_effort="max" \
+command codex exec -s danger-full-access -m gpt-5.6-luna -c model_reasoning_effort="max" \
   --ephemeral -o "$out" </dev/null "$(cat <<'EOF'
 このマイルストーンの実装を「落とす」テストを書く。git 操作 (commit / pull / checkout / stash 等) はしない。
 

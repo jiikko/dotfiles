@@ -50,12 +50,17 @@
 
 ## 案 0: sandbox の制限を外す (原因の除去。旧版に無かった案)
 
+**決定 2026-09-13: 案 0-b (`-s danger-full-access`) を採用** (ユーザー承認)。SKILL.md 4.3.0 に反映済み
+(実装 / 競作 / `[3.7]` の雛形を `danger-full-access` に、旧 Error 74 規律は「外せない環境向け」として残置、
+セットで守る 4 項目 = DerivedData 分離 / 作業根の外へ書かない + 検閲 / git 禁止の検閲格上げ / 破壊的操作の log 読み)。
+案 0-a は**外せない環境向けの代替案**として残す (未実施)。
+
 codex-cli 0.154.0 で確認したオプション (2026-09-13、`codex exec --help`):
 
 - `-s, --sandbox <read-only | workspace-write | danger-full-access>`
 - `--dangerously-bypass-approvals-and-sandbox` (approval も消えるので**使わない**)
 
-2 段で試す。**段階 a を先に**、駄目なら段階 b。
+検討した 2 段 (a は不採用・代替案として残置、b を採用):
 
 - **a. sandbox は残し、キャッシュ先だけ書き込み許可に足す** — `-s workspace-write` のまま、DerivedData /
   SwiftPM cache / clang module cache を writable root に加える。キー名は公式 config reference で確認済み
@@ -75,8 +80,9 @@ codex-cli 0.154.0 で確認したオプション (2026-09-13、`codex exec --hel
   (openai/codex #8029) があるが、CLI の `codex exec` は対象外
 - **b. `-s danger-full-access` で sandbox を切る** — 🚨 **codex が worktree の外 (他 checkout・ホーム) へ書けるようになる**。
   skill は git 操作禁止をプロンプトで縛っているだけで、sandbox はそれを強制していない (SKILL.md 「workspace-write は
-  prompt の禁止を強制しない」)。爆発半径が「同じマシンの他 checkout とホーム」まで広がることを受け入れるかは
-  **ユーザーの判断待ち** (2026-09-13 時点で未回答)。許可が出るまで b は試さない
+  prompt の禁止を強制しない」)。爆発半径が「同じマシンの他 checkout とホーム」まで広がることを**ユーザーが受け入れた**
+  (2026-09-13)。守りは sandbox からプロンプト + Claude の検閲へ移る (本体 checkout の `git status` 不変 / worktree の
+  `git log -1` 不変 / 要約と log に破壊的操作が無いこと)
 
 どちらの段階でも**セットで要る指示**:
 
@@ -182,9 +188,12 @@ codex-cli 0.154.0 で確認したオプション (2026-09-13、`codex exec --hel
 
 - [ ] 案 1 (計測) を `bin/codex-fanout` に入れる (開始時刻 / 所要秒 / merger 行)。計測だけで閉じられる
 - [ ] 段階 1 (1-1 / 1-2 / 1-3) を SKILL.md へ反映する。計測を待たない。1-3 は `gpt-6-astra` がアカウントで使えることを 1 行 probe で確認してから
-- [ ] 案 0-a を obaket の 1 マイルストーンで試し、Error 74 が消えたか / 残った書き込み先を checkpoint に残す。
-      効いたら SKILL.md の Error 74 系注記を条件つきに書き換える
-- [ ] 案 0-b はユーザーの許可が出た場合だけ試す (未回答なら未着手のまま残してよい)
+- [x] 案 0-b をユーザーが承認 → SKILL.md 4.3.0 へ反映 (雛形 3 箇所 / Error 74 規律の条件化 / セットの 4 項目)。
+      commit: 「feat(codex-drive): 実装 run の sandbox を既定で外す」
+- [ ] 案 0-b を obaket の次マイルストーンで実測し、checkpoint に残す: Error 74 の有無 / 型エラー往復数 (旧 2〜3) /
+      codex が xcodebuild を自分で回せたか / 本体 checkout と worktree の git state がはみ出していないか / 要約・log に
+      依頼外の破壊的操作が無いか。**危険側の観測 (はみ出し・破壊的操作) が 1 件でも出たら 0-a へ戻す**
+- [ ] 案 0-a は 0-b で危険側の観測が出た場合の代替として残す (未実施)
 - [ ] 案 1 の内訳を 1 マイルストーン分取り (run 合計と通しの壁時計を別々に)、段階 2 のうち太い工程に当たるものだけ反映する
 - [ ] 段階 3 は obaket 側の `[R]` テンプレへ移し、skill には 1 行だけ残す
 - [ ] 質の比較は件数の増減で判定しない。**同じ変異セット**での red / green / hang の結果表と、r1 の P1 の**内容**を前後で並べ、
