@@ -243,6 +243,11 @@ goroutine 蓄積に上限を置くか、renew を専用の goroutine 1 本に固
 
 ## 攻めたが見つからなかった範囲 (次の監査の起点)
 
+🚨 **2026-09-12 追記**: 358 の敵対レビュー 5 周目が、ここに挙がっていない 3 経路で実害を
+実測した (362 / 363 / 364)。**この節は「攻めて見つからなかった」ではなく「攻めていなかった」
+範囲を含んでいた** — 特に `withTimeout` の goroutine 回収と `with` のシグナル導入順序。
+次の監査はこの節を「済み」として読まないこと。
+
 - **`Acquire` の勝敗判定**: `tryPlace` の `link(2)` → `O_CREAT|O_EXCL` fallback →
   write-then-verify (`readLock` で token 一致を確認) の 3 段は穴を見つけられなかった。
   `tryTakeover` の rename 引き継ぎも、`os.IsNotExist` を「作りにいってよい」へ倒す
@@ -276,6 +281,15 @@ ubuntu から移した」と書いており、README だけが取り残されて
 
 ## 進捗
 
+- 2026-09-12: **358 の敵対レビュー 5 周目が、この監査が攻めていなかった範囲を 3 件出した**。
+  掃除機構の内側は 358 で解消 (`sub` 軸の fail-closed / 打刻の失敗の伝播 / `serverNow` の
+  良性判定)。外側は **[362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md)**
+  (見捨てた goroutine が失敗報告後に lock を置く。35/450) /
+  **[363](363-bug-lockman-with-signal-handler-installed-too-late.md)**
+  (`signal.Notify` が遅く、中断で lock + 孤児。20/120) /
+  **[364](364-bug-lockman-with-release-failure-and-graveyard-retention.md)** (小粒 4 件) として起票。
+  下の「軽微だが実在する」の `--io-timeout` 無検証は 362 と同じ族なので、356 / 357 と
+  まとめて直すときに 362 も見る
 - 2026-09-11: resource-leaks / performance の 2 タイプを直列で実行。生存 3 件を起票、
   却下 5 件 + 却下を取り消した 1 件を本 issue に記録
 - 2026-09-11: 反証レビュー 1 周を通し、**自分の主張 6 件が崩れた**ので 356 / 357 / 358 を

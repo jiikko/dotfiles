@@ -70,6 +70,10 @@ commit の並びから推測して伝えてきたが、**これは誤り**（360
 
 ## 残課題
 
+- 2026-09-12 追記: 見送った先の **[issue 358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md)
+  は敵対レビュー 5 周目まで完了して決着した** (dotfiles-c9)。本 retro の残課題はこれとは独立で、
+  未解消のまま
+
 - [ ] 気づき 1: `claim-issue-in-next-and-push.md` への追記 + バナー欠落の検査を issue 化するか
       （ユーザー判断待ち）
 - 気づき 2: 却下（1 回目のため。2 回目が出たら `commit-with-pathspec.md` へ 1 行追記）

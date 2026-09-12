@@ -384,6 +384,98 @@ ReadDir と Remove のあいだで他者が消す状態を、seam 無しで決�
 書きかけて捨てた)。**検出可能性: 上の A-B 実験で実証済み (単体テストは無い)**。
 再評価の trigger: `sweepDir` に seam を入れる変更が来たとき、この経路のテストを足す。
 
+### 2.8 敵対レビュー 5 周目 — 観点を 3 つに分けて opus を直列に回した
+
+1〜4 周目は 1 本のレビューで回していたが、5 周目は `adversarial-review-own-safeguards.md` §5 に
+従って **①壊す ②素通り (false green) ③並行・中断** の 3 観点に分け、それぞれ opus を
+専用 worktree で 1 体ずつ直列に起動した。**分けた効果は出た** — 3 体が独立に
+`serverNow` の非対称を出した一方、①の `sub` 軸と②の偽の検証記録は片方にしか出ていない。
+
+#### 3 観点が出したものと行き先
+
+| # | 指摘 | 由来 | 行き先 |
+|---|---|---|---|
+| ①P1 | **`sweepDir` の `sub` 軸に守りが 1 つも無い**。`l.sweepDir("", …)` を 1 行足す変異 (M22) が **build rc=0 / test rc=0 / 全 33 ケース PASS** で素通りし、E2E は二重取得まで到達 | **元からの穴** (脅威モデル③の欠落) | 本 issue (commit 3) |
+| ①P1 / ②(なし) | **打刻そのものの失敗が `len(res.Errors)==0` ゲートから構造的に見えない**。`.lockman` 0500 で sweep は通り `.cleanup_at` だけ落ち、**rc=0 / stdout 0B / stderr 0B** | 3 周目が打刻を観測チャネルへ格上げした先の未検査枝 | 本 issue (commit 2) |
+| ①P2 / ②P2-A / ③P2-F | **`serverNow` の ENOENT だけ 4 周目の良性基準の外**。`.lockman` の無い dir への `cleanup` が毎回 287B の警告 | 可視化の半分は 3 周目 (`fbca17dc`) 由来 | 本 issue (commit 2) |
+| ②P2-B | `serverNow` 失敗枝は打刻ゲートも観測性も**テスト 0 件** | 元からの穴 | 本 issue (commit 1) |
+| ②P2-C | **`e.Info()` のエラー記録が完全に無検査** | **4 周目 (`7ca2533b`) が足した面** | 本 issue (commit 1) |
+| ②(表の訂正) | ReadDir 側の ENOENT は **dir を消すだけで決定論的に書ける** | 5 周目の脅威モデル表の誤り | 本 issue (commit 1 + 表を訂正) |
+| ②P3-D | `TestCleanupStampsWhenClean` のコメント「これが無いと『常に打刻しない』変異が緑で通る」が**実測で偽** | 偽の検証記録 (3 周目 P1 と同型) | 本 issue (commit 1) |
+| ②P3-E | `TestMinRetentionFloorIsPinned` の比 assert は `minRetention` 軸では**到達しない** (リテラル側が先に Fatal) | コメントの誤り | 本 issue (commit 1) |
+| ②P3-F | `TestCleanupRunsOnlyForMutatingCommands` の正の側が **4 コマンド中 acquire だけ** | 元からの穴 | 本 issue (commit 1) |
+| ②P3-G | `TestDispatchWarns…` が部分一致 pin (書式から `skipped=` を落とす変異が緑) | 元からの穴 | 本 issue (commit 1) |
+| ③P1-E | **`timed()` が見捨てた goroutine が「失敗」報告後に lock を置く** (35/450 = 7.8%、graveyard 200 件で 40/40) | 元からの穴 + 3・4 周目が増幅 | **[issue 362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md)** |
+| ③P1-C | **`signal.Notify` が `Acquire` / `cmd.Start()` の後** (20/120。うち 9 件は孤児の子つき。全件 0B の無音) | 元からの穴 | **[issue 363](363-bug-lockman-with-signal-handler-installed-too-late.md)** |
+| ③P2-D | `with` が `--io-timeout` を丸ごと無視し、詰まった `Renew` が select ループごと止める | 元からの穴 | **[357](357-bug-lockman-with-bypasses-io-timeout.md) に既出**。実測だけ転記 |
+| ③P2 / P3-A / P3-B / テスト | `with` が rc=0 で解放漏れ / graveyard の retention が mtime 由来 / reap 済み pgid への kill (未確認) / `TestRenewExtendsHold` の壁時計依存 | 元からの穴 | **[issue 364](364-bug-lockman-with-release-failure-and-graveyard-retention.md)** |
+
+#### 修正 (3 commit に割った。§7 の「次の周の攻め口」を小さく保つため)
+
+| commit | 内容 |
+|---|---|
+| 1 (`test:`) | production を触らない分。新設テスト 3 本 + P3-F の 4 コマンド化 + P3-G の正規表現 pin + P3-D/E の**偽のコメントの訂正** |
+| 2 (`fix:`) | `stampCleanup` を `error` 返しにして記録 / `serverNow` の良性判定を **metaDir 不在だけ**に絞る |
+| 3 (`fix:`) | `sweepDir` の `sub` allowlist (fail-closed。違反した `sub` と許可集合を名指しする) + `TestCleanupNeverRemovesLock` の fixture を `Chtimes` で実際に古くする |
+
+**`serverNow` の良性の線を「metaDir の有無」で引いた理由**: `.lockman` は在るのに `probe/` が
+無いのは `ensureDirs` が 4 つ同時に作る以上**異常**で、良性側へ広げると tmp/ graveyard/ の
+ゴミを黙って掃かずに帰る = 3 周目が潰した「沈黙 = 成功」の再生産になる。
+**`cleanup` にも `ensureDirs` を呼ばせる案は採らなかった** (掃除が掃除の対象を作る形になる)。
+`TestCleanupOnNeverLockedDirIsQuiet` が「`.lockman` を作らない」ことまで pin している。
+
+#### 5 周目の変異検証 (11 本。すべて build rc=0 / test rc=1)
+
+| 変異 | FAIL したケース |
+|---|---|
+| **N1** `e.Info()` のエラー記録を削除 | `…WhenInfoFails` (単独) |
+| **N2** ReadDir の ENOENT フィルタを外す | `…QuietWhenSubdirMissing` (単独) |
+| **N3** `serverNow` が失敗しても続行して打刻 | `…WhenServerNowFails` (単独) |
+| **N4** `with` を掃除の配線から外す | `…RunsOnlyForMutatingCommands` (単独) |
+| **N5** 警告から `skipped=` を落とす | `…DispatchWarns…` (単独) |
+| **N6** 打刻の失敗を握り潰す (機構を戻す) | `TestCleanupReportsStampFailure` (単独) |
+| **N7** 良性判定を消す (機構を戻す) | `TestCleanupOnNeverLockedDirIsQuiet` (単独) |
+| **N8** 逆向き: 良性判定を広げる | `…WhenServerNowFails` (単独) |
+| **N9** `sub` ゲートを戻す | `TestSweepRefusesDirectoryOutsideScratch` (単独) |
+| **N10** **M22 を再実行** | RateLimited / QuietWhenSubdirMissing / RunsOnly… / StampsWhenClean ← **5 周目以前は緑だった** |
+| **N11** ゲート撤去 + M22 の複合 | `TestCleanupNeverRemovesLock` + SweepRefuses… ← fixture 修正の独立した検出力 |
+
+ハーネス側に guard を置いた (`mutation-verify-new-tests.md` 1.5/1.6 の機械化):
+**①置換がちょうど 1 回一致すること ②`diff -q` で実際に変わったこと ③`go build` と `go vet` の rc を
+`go test` と分けて読むこと** を機械で確認してから red/green を判定している。
+
+#### E2E (正規ビルド / 使い捨て sandbox / stdout・stderr・rc を分離)
+
+| 入力 | rc | stdout | stderr | `.cleanup_at` |
+|---|---|---|---|---|
+| `.lockman` が無い dir | 0 | 0B | **0B** (以前 287B) | — (**`.lockman` を作らない**) |
+| `.lockman` は在るが `probe/` が無い | 0 | 0B | 287B | 無し |
+| `.lockman` 0500 (sweep は通る) | 0 | 0B | **240B** (以前 **0B**) `removed=1 … 掃除は終わったが打刻できない` | 無し |
+| 正常 | 0 | 0B | 0B | あり |
+
+#### 却下した指摘 / 壊せなかったもの (記録しないと次の監査が再生成する)
+
+- **②M2** (`probe` に `minRetention` を渡す) が緑 — **仕様どおり**。下限が契約であり、
+  下限ちょうどの値は通ってよい
+- **②M24** (`IsDir` の skip を外す) が緑 — production に掃除対象の dir が現れる経路が無い。
+  ただし「dir のエントリは永久に掃除されない」こと自体は①P3 が指摘しており、
+  `graveyard/<token>` は rename で dir のまま退避されうる → **[364](364-bug-lockman-with-release-failure-and-graveyard-retention.md) へ**
+- **③: rename の途中の状態は掃除から崩せなかった** — `os.Rename` は原子的で、`sweepDir` が
+  `graveyard/` を ReadDir するときエントリは必ず完全な状態。掃除は `lock` にも `.lockman` にも
+  触れないので「勝者 1 人」は掃除からは崩せない
+- **③: 4 周目が新設したもの (ENOENT フィルタ 2 箇所 / `t.Skip`→`t.Fatal` / 新設 2 テスト) は
+  崩せなかった**。さらに③は 4 周目の A-B を独立に採り直し、**より大きな効果量で追認した**
+  (現行 stderr 0B×5 / M20 で戻すと 19.3〜31.3KB×5、8 プロセス全部が ENOENT を出す)
+- **①: 走行中の `acquire` / `with` の scratch は、変異なしでは消させられなかった**
+  (probe / tmp の生存窓は同一関数内の数ミリ秒で、下限 10 分に対し 3 桁以上の余裕)
+- **②P3-D の射程**: 「`TestCleanupStampsWhenClean` / `…WhenRemoveFails` はどちらを消しても
+  11 変異が red のまま」= **その 11 変異に対して増分ゼロ**という主張であって、一般の無価値証明ではない。
+  どちらも残した (コメントで増分ゼロであることは明記した)
+- **③P3-B** (reap 済み pgid への kill) は**手元で再現できず** → 364 に「未確認リスク + trigger」として記録
+- ②が full suite 約 50 回のうち **2 回、単発の原因不明 FAIL** を観測 (統制下の再現 32 回では 0 件)。
+  `stop-on-unexplained-test-failures` に従い**追わずに記録**し、出典の候補 (③が見つけた
+  `TestRenewExtendsHold` のレイテンシ依存) と一緒に 364 へ置いた
+
 ### 3. ガードの撤去
 
 - `Cleanup(force bool, selfToken string)` → `Cleanup(force bool)`
@@ -481,9 +573,15 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
 
 - **誰の**: 将来 `src/lockman/` を触る実装者 (自分を含む)。悪意ある迂回は対象外
 - **どの失敗を**: ①掃除が**走行中の acquire の scratch を消す** (retention を縮める改変) /
-  ②掃除が**壊れているのに黙って止まる** (エラーを握り潰す改変・レート制限の誤進行)
+  ②掃除が**壊れているのに黙って止まる** (エラーを握り潰す改変・レート制限の誤進行) /
+  ③掃除が**lock 本体を消す** (掃除の対象ディレクトリを広げる改変)
 - **止め方**: ①は `sweepDir` の下限 (渡った値で fail-closed) + `minRetention` のリテラル pin /
-  ②は `len(res.Errors) == 0` を打刻のゲートにし、失敗を verbose 非依存で stderr へ出す
+  ②は `len(res.Errors) == 0` を打刻のゲートにし、失敗を verbose 非依存で stderr へ出す /
+  ③は `sweepDir` の `sub` allowlist (渡った値で fail-closed) + 古い lock を使う fixture
+
+🚨 **③は 5 周目に入る前の第 1 版で落ちていた** (2026-09-12 に追記)。落ちていた結果、
+`cleanup.go` の最も強い 🚨 を守っていたのは**コメントだけ**という状態が、5 周目の観点①に
+実測で突かれた (下の「2.8」)。**守る対象の列挙自体が、この種のレビューの最初の攻撃面**。
 
 ### 検出しないと決めた形 (指摘されても採用せず記録する)
 
@@ -492,7 +590,9 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
 | テスト (`TestMinRetentionFloorIsPinned`) ごと書き換えて下限を下げる | リテラル pin は敷居であって不可能性ではない。4 行 (production 3 + テスト 1) で通ることは 3 周目でコメントに開示済み | code review |
 | `--io-timeout` に極端な値 (5h) を渡して余裕の前提を崩す | 本 issue が持ち込んだ穴ではない。[359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) へ移送済み | issue 356 / 357 の実装時 |
 | `now` を未来へ振って下限を割らずに新しい残骸を消す | production に入力を作る経路が無い (`now` も `ModTime` も同じ `serverNow()`)。2 周目に却下済み | — |
-| ENOENT フィルタの単体回帰 | seam が無く決定論的に作れない。検出可能性は A-B 実験で実証済み (4 周目 M20) | `sweepDir` に seam を入れる変更が来たとき |
+| ENOENT フィルタの単体回帰のうち **`os.Remove` と `e.Info()` の分** | ReadDir と Remove のあいだで他者が消す状態を seam 無しで決定論的に作れない。検出可能性は A-B 実験で実証済み (4 周目 M20) | `sweepDir` に seam を入れる変更が来たとき |
+
+🚨 **この行は第 1 版では「ENOENT フィルタの単体回帰」と書いており、射程が広すぎた** (2026-09-12 に訂正)。**ReadDir 側はサブ dir を消すだけで決定論的に書ける**ことを 5 周目が実測し、`TestCleanupQuietWhenSubdirMissing` として実装した。「書けない理由」を実際より広く書くと、書ける守りを書かない理由になる。
 
 🚨 この表は**レビュワーの指摘を事前に封じるためのものではない**。該当すると思った形でも、
 実測の根拠があるなら出してもらい、採否はこちら (main agent) が決める。
