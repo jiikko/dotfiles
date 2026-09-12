@@ -452,9 +452,20 @@ func TestCleanupDoesNotTreatUnreadableMetaDirAsBenign(t *testing.T) {
 // stderr 0B のまま**利用者のファイルを消し**、それでも allowlist のテストは PASS だった
 // (落ちた 3 本はいずれも chmod 対象がずれた「前提崩れ」で、射程を見ていない)。
 //
-// 🚨 実行時ゲート (「dir は metaDir の直下か」) を足す形は**採らない**。allowlist が
-// ある以上その枝は production から到達不能で、**この issue (358) が撤去したのと同じ
-// 「守る対象の無いガード」**になる。CI で捕まえれば足りる。
+// 🚨 実行時ゲートを足す形は**採らない**。ただし理由を正確に書く (7 周目の訂正):
+//
+//   - **パス文字列を見るゲート** (「`filepath.Join` の結果が metaDir の直下か」) は、
+//     allowlist がある以上 production から**到達不能**。この issue (358) が撤去したのと
+//     同じ「守る対象の無いガード」になるので採らない。定数の退行は本テストが CI で捕まえる
+//   - **解決先を見るゲート** (`Lstat` / `EvalSymlinks`) は**到達可能**。7 周目が素の
+//     production バイナリで実測: `.lockman/tmp` を外部 dir への symlink に差し替えると
+//     `lockman cleanup` が rc=0 / stdout 0B / stderr 0B のまま**`.lockman` の外の
+//     利用者ファイルを消した** (`acquire` も symlink を辿って外部 dir を 0777 にした)。
+//     採らないのは到達不能だからではなく、**脅威モデルの外**だから — `.lockman` 配下に
+//     symlink を仕込める者は lock を直接消せるので、ゲートは敷居を上げない
+//     (issue 358 の「検出しないと決めた形」: 想定する敵はいない)。
+//     **再評価の trigger**: lockman を敵対的な共有 (第三者が `.lockman` に書ける場所) で
+//     使う要求が出たとき。そのときは EvalSymlinks ベースで閉じる
 func TestScratchDirNamesAreDirectChildren(t *testing.T) {
 	for _, sub := range []string{tmpDirName, probeDirName, graveyardDirName} {
 		if sub == "" || sub == "." || sub == ".." || filepath.Clean(sub) != sub ||
@@ -466,6 +477,27 @@ func TestScratchDirNamesAreDirectChildren(t *testing.T) {
 	if tmpDirName != "tmp" || probeDirName != "probe" || graveyardDirName != "graveyard" {
 		t.Fatalf("掃除対象の名前が変わった: %q / %q / %q (変えるなら意図した diff として残すこと)",
 			tmpDirName, probeDirName, graveyardDirName)
+	}
+}
+
+// ★ 共有のためのモード 2 つをリテラルで pin する。
+//
+// `TestCleanupStampModeIsRestored` は「chmod の対象と `lockFileMode` の**乖離**」は
+// 捕まえるが (0644 を渡す変異で red)、**定数そのものが整合したまま縮む**形は素通りする。
+// 7 周目の実測: `lockFileMode = 0o600` / `metaDirMode = 0o700` はどちらも**全 42 ケース緑**。
+//
+// 縮むと共有プロトコルが無音で死ぬ: 0600 だと `readLock` の `os.ReadFile` すら
+// 別ユーザーで失敗し、0700 だと tmp/probe/graveyard に触れなくなる。
+// `TestScratchDirNamesAreDirectChildren` と同じ「リテラル pin」の教義を、
+// この 2 定数にも当てる (当てていなかったのが元からの抜けだった)。
+func TestSharedFileModesArePinned(t *testing.T) {
+	if lockFileMode != 0o666 {
+		t.Fatalf("lockFileMode=%v (期待 0666): 縮めると別ユーザーが lock を読めない / "+
+			"打刻できない (変えるなら意図した diff として残すこと)", lockFileMode)
+	}
+	if metaDirMode != 0o777 {
+		t.Fatalf("metaDirMode=%v (期待 0777): 縮めると別ユーザーが残骸を掃除できない",
+			metaDirMode)
 	}
 }
 
