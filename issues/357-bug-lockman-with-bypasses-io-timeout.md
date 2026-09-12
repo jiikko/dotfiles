@@ -9,6 +9,11 @@
 
 ## 問題
 
+🚨 **[362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) は別物で、本 issue の修正では消えない** (2026-09-12 追記)。あちらは「**包んだ** I/O の goroutine が
+`withTimeout` に見捨てられた後も走り続け、失敗を報告した後に lock を置く」話。
+`Cleanup` を `timed` で包むと defer は短くなるが、goroutine が回収されない事実は変わらない。
+
+
 `--io-timeout`（既定 10s）は `main.go` の `timed()` = `withTimeout(l.timeout, fn)` だけが
 効かせている。**包まれていない I/O が 2 系統ある。**
 
