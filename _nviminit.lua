@@ -984,6 +984,10 @@ require("lazy").setup({
     -- 読むとき (ノーマルモード) だけインライン装飾が乗る。
     opts = {
       render_modes = { "n", "c" },
+      -- 見出しアイコンは差し込み ('#' を conceal) にして、全レベルで左端を揃える。
+      -- 既定の overlay は「'#' の数 + 1 - アイコン幅」ぶんの空白を前に詰めるため
+      -- (render/markdown/heading.lua の Render:marker)、深い見出しほど右にずれて見える。
+      heading = { position = "inline" },
     },
     config = function(_, opts)
       require("render-markdown").setup(opts)
