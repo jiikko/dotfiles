@@ -206,6 +206,12 @@ func TestDispatchWarnsOnCleanupFailureWithoutVerbose(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(tmpDir, metaDirMode) })
 
 	got := captureStderr(t, func() { dispatch("cleanup", l, &opts{}, nil) })
+	// 🚨 前提が作れていないと「production が書式を変えた」に見える赤になる
+	// (判定不能を赤に畳む形)。他 5 本と同じガードを置く。
+	if got == "" {
+		t.Fatal("前提が作れていない: 掃除が失敗しなかった (root 実行なら、この" +
+			"テストは守りとして成立していないので環境を変えること)")
+	}
 
 	// 🚨 部分一致で pin しない。`strings.Contains(got, "removed=")` だけだと
 	// **書式から `skipped=` を落とす変異が緑で通る** (5 周目の実測)。行の構造を

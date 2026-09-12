@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -382,6 +383,89 @@ func TestCleanupOnNeverLockedDirIsQuiet(t *testing.T) {
 	}
 	if _, err := os.Stat(l.metaDir); !os.IsNotExist(err) {
 		t.Fatalf("cleanup が .lockman を作った (掃除が掃除の対象を作らない): %v", err)
+	}
+}
+
+// ★ 打刻ファイルは umask に削られたモードを戻す。戻さないと、別ユーザーの打刻が
+// 恒久的に EACCES になり、3 周目が作った警告チャネルが**正常系で鳴り続ける**
+// (6 周目の実測)。umask に依存しない形で見るため、削られた状態を自分で作って
+// 2 回目の打刻で戻ることを確かめる。
+func TestCleanupStampModeIsRestored(t *testing.T) {
+	l := newTestLocker(t)
+	if err := l.ensureDirs(); err != nil {
+		t.Fatalf("ensureDirs: %v", err)
+	}
+	stamp := filepath.Join(l.metaDir, cleanupStampName)
+	if got := l.Cleanup(true); len(got.Errors) != 0 {
+		t.Fatalf("1 回目で失敗した: %v", got.Errors)
+	}
+	if err := os.Chmod(stamp, 0o600); err != nil { // umask に削られた状態を模す
+		t.Fatalf("chmod: %v", err)
+	}
+
+	if got := l.Cleanup(true); len(got.Errors) != 0 {
+		t.Fatalf("2 回目で失敗した: %v", got.Errors)
+	}
+
+	st, err := os.Stat(stamp)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if st.Mode().Perm() != lockFileMode.Perm() {
+		t.Fatalf("打刻のモードが %v のまま (期待 %v): 別ユーザーの打刻が恒久的に EACCES になる",
+			st.Mode().Perm(), lockFileMode.Perm())
+	}
+}
+
+// ★ 良性とするのは metaDir が **無い**ときだけ。stat が ENOENT 以外で失敗するのは
+// 「判定できない」であって良性ではない。
+//
+// 🚨 これが無いと、述語を `statErr != nil` へ広げる変異が**全ケース緑**で通る
+// (6 周目の実測)。`…WhenServerNowFails` は metaDir が stat できる状態なので、
+// 述語の拡張は素通りする — 「無条件に広げる」変異しか見ていなかった。
+// ELOOP は fixture の都合で、production 側の本命は stale mount / EACCES / EIO。
+func TestCleanupDoesNotTreatUnreadableMetaDirAsBenign(t *testing.T) {
+	dir := t.TempDir()
+	link := filepath.Join(dir, metaDirName)
+	if err := os.Symlink(link, link); err != nil { // 自分自身を指す = stat が ELOOP
+		t.Fatalf("symlink: %v", err)
+	}
+	l, err := NewLocker(dir, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewLocker: %v", err)
+	}
+	if _, err := os.Stat(l.metaDir); err == nil || os.IsNotExist(err) {
+		t.Fatalf("前提が作れていない: metaDir の stat が ENOENT 以外で失敗しない (%v)", err)
+	}
+
+	res := l.Cleanup(true)
+	if len(res.Errors) == 0 {
+		t.Fatal("判定不能 (ELOOP) を良性に畳んだ: 壊れていても黙って止まる")
+	}
+}
+
+// ★ 掃除対象の 3 定数をリテラルで pin する。
+//
+// `sweepDir` の allowlist は「渡った値」を 3 定数と比べるが、**パスを組み立てるのも
+// 同じ定数**なので、定数側を動かすと名前は通ったまま射程が .lockman の外へ出る。
+// 6 周目の実測: `tmpDirName` を ".." にすると `lockman with` が rc=0 / stdout 0B /
+// stderr 0B のまま**利用者のファイルを消し**、それでも allowlist のテストは PASS だった
+// (落ちた 3 本はいずれも chmod 対象がずれた「前提崩れ」で、射程を見ていない)。
+//
+// 🚨 実行時ゲート (「dir は metaDir の直下か」) を足す形は**採らない**。allowlist が
+// ある以上その枝は production から到達不能で、**この issue (358) が撤去したのと同じ
+// 「守る対象の無いガード」**になる。CI で捕まえれば足りる。
+func TestScratchDirNamesAreDirectChildren(t *testing.T) {
+	for _, sub := range []string{tmpDirName, probeDirName, graveyardDirName} {
+		if sub == "" || sub == "." || sub == ".." || filepath.Clean(sub) != sub ||
+			strings.ContainsRune(sub, filepath.Separator) {
+			t.Fatalf("掃除対象 %q が .lockman の直下の単一エントリでない", sub)
+		}
+	}
+	// 形式だけだと "cache" のような別 dir へ向け替えても通るので、名前も固定する。
+	if tmpDirName != "tmp" || probeDirName != "probe" || graveyardDirName != "graveyard" {
+		t.Fatalf("掃除対象の名前が変わった: %q / %q / %q (変えるなら意図した diff として残すこと)",
+			tmpDirName, probeDirName, graveyardDirName)
 	}
 }
 

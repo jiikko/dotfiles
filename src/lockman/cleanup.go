@@ -64,6 +64,15 @@ func (l *Locker) Cleanup(force bool) CleanupResult {
 		// のは、ensureDirs が 4 つ同時に作る以上**異常**なので記録側へ倒す
 		// (良性側へ広げると tmp/ graveyard/ のゴミを黙って掃かずに帰ることになり、
 		// 3 周目が潰した「沈黙 = 成功」を作り直す)。
+		//
+		// 🚨 ここと sweepDir で**良性の線が 2 本ある**のは意図的。`tmp/` の欠損は
+		// 「掃除の目的が達成済み」で先へ進めるが、`probe/` の欠損は**時刻が取れない**
+		// ので先へ進めない (掃除の可否そのものが判定不能)。
+		//
+		// 🚨 良性とするのは metaDir が **無い**ときだけで、`statErr != nil` へ広げない。
+		// stale mount / EACCES / ELOOP は「判定できない」であって良性ではなく、
+		// 広げると脅威モデル②「壊れているのに黙って止まる」を作り直す
+		// (6 周目の実測: 述語だけを広げる変異は全 39 ケース緑で通った)。
 		if _, statErr := os.Stat(l.metaDir); os.IsNotExist(statErr) {
 			return res
 		}
@@ -188,6 +197,14 @@ func (l *Locker) stampCleanup() error {
 	if err != nil {
 		return err
 	}
+	// 🚨 umask に削られたモードを戻す (`ensureDirs` が dir にやっているのと同じ手当て)。
+	// `.cleanup_at` は **作成者以外が「書き込みで」開く唯一のファイル**なので
+	// (lock の O_TRUNC は所有者だけ、tmp/probe/graveyard の削除は dir の権限で足りる)、
+	// 0644 のまま残すと別ユーザーの打刻が**恒久的に** EACCES になる。
+	// lock.go が想定する 0777 no-sticky の共有 (SMB) 構成では実際に起きる。
+	// 6 周目の実測: この 1 行が無いと `with` の 3 回とも同じ警告が出て mtime も進まない
+	// (= レート制限が死んだまま、3 周目が作った警告チャネルが正常系で鳴り続ける)。
+	_ = os.Chmod(path, lockFileMode)
 	if _, err := f.Write([]byte("lockman\n")); err != nil {
 		_ = f.Close()
 		return err
