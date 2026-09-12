@@ -342,6 +342,12 @@ codex-drive を回す前に、**そのタスクが codex 実装に向いてい�
 - **寿命・拡張予定を判定して明記する** (大原則「構造投資の水準」): 長期運用/拡張前提か、地味な機能で
   最小変更が正か。依頼文から読めなければここで質問に含める。既定は長期運用側に倒す。
 - ここでの受け入れ条件は**タスク全体**のもの。マイルストーン単位の検証方法は従来どおり `[1]` で決める。
+- **テストの待ち方を要件に固定する**: 「unit test は時間・スケジューリングを注入し、`pollUntil(timeout:)` /
+  `Task.sleep` / 固定 deadline の実時間待ちを新規に書かない (事象待ち + hang guard の `awaitOrFail`)。実時間そのものを
+  検証する integration test は別に分けて明示する」を受け入れ条件の 1 行として書く。書かないと codex は repo で最も
+  多い形 (実時間 polling) を真似る — 実測 2026-09-12 obaket 781: 3 epic を並行させた 13 日で `pollUntil` が
+  315 → 402 に増え、増えた 81 箇所は別 epic が lint で「新規には使わない」と書いた形そのものだった
+  (`~/dotfiles/_claude/rules/avoid-wall-clock-assertions.md`)
 - このリストが D1 の「要件 / 制約」の入力になり、`[7]` の検収基準になる。要件が途中で変わったらこのファイルを更新する。
 
 ### S. spec ダイジェスト抽出（spec/プロトコル系のみ・独立 2 本 + 相互照合）
@@ -602,6 +608,9 @@ xcodebuild を回すときは -derivedDataPath ./.derived (repo root 直下) を
   停止用 seam)。interleaving を固定したいときはテスト側だけで観測できる形 (bounded yield + flag、
   fake の注入、既存の internal 診断 counter) に留め、それでも固定できないなら「pin なし」として
   要約に書く。判断基準は `_claude/rules/refuse-low-value-coverage.md` の「テスト困難 × 価値」表。
+- テストに実時間待ちを新規に書かない (`pollUntil(timeout:)` / `Task.sleep` / `.sleep(for:)` / 固定 deadline)。
+  待つなら事象待ち (fake の waiter / `waitUntil*ForTesting`) + hang guard の `awaitOrFail`。実時間が検証対象そのもの
+  なら integration test として分け、理由コメントを直前行に置く。
 - 確証が持てない点は決め打ちせず ⓥ コメントを残し保守的に実装する。
 終わったら、変更点・検証結果・未完部分を要約。
 EOF
