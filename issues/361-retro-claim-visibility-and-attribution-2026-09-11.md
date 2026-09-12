@@ -70,6 +70,20 @@ commit の並びから推測して伝えてきたが、**これは誤り**（360
 
 ## 残課題
 
+- 2026-09-12 追記: **同じ形が再発し、1 往復で自己訂正された**（本 retro の主題の実例）。
+  dotfiles-48 が「`issues/next/` の 359 は dotfiles-c9 の claim」と第三者へ伝えたが、
+  根拠は「直前の連絡で 358/359 に触れていた」という**推測**で、git を見ていなかった。
+  実際の claim は `eafada8a`（09-11 22:04「claim: issue 358 / 359 に着手」）で、
+  claim 主は本 retro が記録している **dotfiles-53**（既に `ListAgents` に居ない）。
+  訂正側が示した根拠は 3 つとも機械で確認できるもの（commit が触ったファイル /
+  361 の一次情報の記載 / `ListAgents`）で、受け取った側も独立に裏を取って受け入れた。
+  → [`commit-with-pathspec.md`](../_claude/rules/commit-with-pathspec.md) の
+  「帰属に使えるのは **commit が触ったファイル**と、**本人に聞くこと**だけ」が
+  そのまま効いた事例。**規範は既にあり、落ちたのは運用**（本 retro の「ルールは在ったが
+  運用で落ちた」と同じ構造）。新規ルールは要らない
+- 2026-09-12 追記: 採番側の姉妹形（「事前の合意は採番の証明にならない」）は
+  [367](367-retro-adversarial-review-rounds-5-7-2026-09-12.md) に一本化した。
+  本 retro の残課題と**まとめて判断できる**
 - 2026-09-12 追記: 見送った先の **[issue 358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md)
   は敵対レビュー 5 周目まで完了して決着した** (dotfiles-c9)。本 retro の残課題はこれとは独立で、
   未解消のまま
