@@ -101,9 +101,16 @@ generic な `@markup.heading.N` は手つかずで、上表のとおり vimdoc �
 再現するなら `@markup.list.unchecked` / `@markup.list.checked` に色を当てるだけ
 (`RenderMarkdownUnchecked/Checked` はこの capture への link なので伝わる。実測で確認済み)。
 
-### `vimdoc` の見出し 4 階層 — 判断待ち
+### `vimdoc` の見出し 4 階層 — **対応しない (現状維持)**
 
-実装するなら **generic な `@markup.heading.N` に当てる**こと。`.vimdoc` 付きでは
+見本を実物の `:help options` で見てもらった結果、**4 階層とも緑 142 のままでよい**との判断。
+
+🚨 これも「潰れていない」ではなく**承知のうえで変えない**。`:help` は罫線 (`====` /
+`----`) とタグ (`*foo*`) が階層の手掛かりを別に持っており、色が同じでも構造は読める。
+再評価の trigger: `:help` を読む頻度が上がって階層を見失うようになったとき。
+
+実装する場合のメモ (実測済み。やり直さなくてよいように残す):
+**generic な `@markup.heading.N` に当てる**こと。`.vimdoc` 付きでは
 **罫線 (`====`) に効かない** — vimdoc の query は罫線を `@markup.heading.1.delimiter` で
 拾い、nvim のフォールバックは末尾から 1 段ずつ落とす形
 (`…delimiter.vimdoc` → `…delimiter` → `@markup.heading.1`) なので `.vimdoc` は経路に無い。
@@ -116,7 +123,12 @@ markdown はより具体的な `@markup.heading.N.markdown` が勝つので影�
 ## 残タスク
 
 - [x] `[ ]` / `[x]` は現状維持と決めた (理由は上記)
-- [ ] `vimdoc` の見出しを入れるか判断する (見本は実測済み・未適用)
+- [x] `vimdoc` の見出しも現状維持と決めた (理由は上記)
+- [x] 検出手段の常設はやらないと決めた (trigger は「検出手段」節に記載)
+
+**この issue で判断すべきことは全部決まったので done へ送る。** 実際に直したのは
+markdown の見出しだけ (commit 4887d531 / a8d41fa7 / fe56c180)。残る 2 件は
+「潰れていると分かったうえで変えない」判断で、どちらも再評価の trigger を書いてある。
 - [ ] 検出手段を常設するか判断する (上記 trigger 待ち。現時点では**やらない**)
 - [x] 反証レビューを通した (read-only サブエージェント 1 体 / codex は不使用)
 
