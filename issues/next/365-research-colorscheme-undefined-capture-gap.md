@@ -1,1 +1,0 @@
-../365-research-colorscheme-undefined-capture-gap.md
