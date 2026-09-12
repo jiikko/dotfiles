@@ -985,6 +985,35 @@ require("lazy").setup({
     opts = {
       render_modes = { "n", "c" },
     },
+    config = function(_, opts)
+      require("render-markdown").setup(opts)
+      -- 🚨 見出しの色は colorscheme が空けた穴を埋めるためにここで持つ。
+      -- gruvbox / retrobox はどちらも `@markup.heading.N.markdown` を定義せず
+      -- `@markup.heading` → `Title` に落ちるため、**H1〜H6 の文字色が全部同じ**になる。
+      -- さらに render-markdown の帯は Diff 系から取るが (colors.lua の H1Bg=DiffText 等)、
+      -- retrobox は DiffText/DiffAdd/DiffChange/DiffDelete が**全部 bg=#1c1c1c** =
+      -- Normal と同色なので、256色運用では H1〜H4 の帯が丸ごと消える
+      -- (逆に H5Bg=Visual / H6Bg=CursorColumn だけ見え、深い見出しほど目立つ逆転になる)。
+      -- 実測 2026-09-12 (nvim_get_hl)。colorscheme 側が定義を足したらここは不要になる。
+      local hl = require("dotfiles.hl")
+      -- 文字色: 上位ほど暖色・強く、下位ほど寒色・低彩度 (色だけで階層を拾えるように)
+      local heading_fg = { pal.bright_orange, pal.bright_yellow, pal.bright_green,
+        pal.bright_aqua, pal.bright_blue, pal.light4 }
+      -- 帯: 上位 3 つだけ (Normal bg は 234。濃さでも階層が出る)。H4 以降は色だけで帯なし
+      local heading_bg = { pal.dark1, pal.dark0_soft, pal.dark0 }
+      for i = 1, 6 do
+        local fg = heading_fg[i]
+        hl.set("@markup.heading." .. i .. ".markdown",
+          { fg = fg.hex, ctermfg = fg.cterm, bold = i <= 4 })
+        local bg = heading_bg[i]
+        -- RenderMarkdownHNBg は Diff 系への link (default=true) なので直接上書きする。
+        -- 帯なしの階層も空テーブルで明示的に潰す (link が残ると Normal と同色の帯が出る)。
+        -- hl.set を通すのは ColorScheme 再適用のため: :colorscheme は link ごと全クリアし、
+        -- render-markdown 側の reload は combine/bg_as_fg しか戻さない。
+        hl.set("RenderMarkdownH" .. i .. "Bg",
+          bg and { bg = bg.hex, ctermbg = bg.cterm } or {})
+      end
+    end,
     keys = {
       { "<leader>mm", "<cmd>RenderMarkdown toggle<cr>", desc = "Toggle render-markdown" },
     },

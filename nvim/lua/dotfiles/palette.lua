@@ -12,6 +12,7 @@
 local M = {
   dark0_hard    = { hex = "#1d2021", cterm = 234 },
   dark0         = { hex = "#282828", cterm = 235 },
+  dark0_soft    = { hex = "#32302f", cterm = 236 },
   dark1         = { hex = "#3c3836", cterm = 237 },
   dark2         = { hex = "#504945", cterm = 239 },
   dark3         = { hex = "#665c54", cterm = 245 },
@@ -20,6 +21,9 @@ local M = {
   bright_red    = { hex = "#fb4934", cterm = 203 },
   bright_orange = { hex = "#fe8019", cterm = 208 },
   bright_yellow = { hex = "#fabd2f", cterm = 214 },
+  bright_green  = { hex = "#b8bb26", cterm = 142 },
+  bright_aqua   = { hex = "#8ec07c", cterm = 108 },
+  bright_blue   = { hex = "#83a598", cterm = 109 },
   bright_purple = { hex = "#d3869b", cterm = 175 },
 }
 
