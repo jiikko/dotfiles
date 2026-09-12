@@ -3,7 +3,7 @@
 起票日: 2026-09-12
 カテゴリ: bug / priority: **high**
 対象: `src/lockman/with.go` の `runWith`
-出典: [issue 358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) の敵対レビュー 5 周目 (観点③「並行・中断」)
+出典: [issue 358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) の敵対レビュー 5 周目 (観点③「並行・中断」)
 反証レビュー: 未実施。**出典は opus 1 体による実測 A-B**（下の表）
 
 ## 問題

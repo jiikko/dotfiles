@@ -33,7 +33,7 @@
 |---|---|---|
 | [356](356-bug-lockman-with-releases-lock-while-grandchildren-run.md) | `with` が孫プロセスの走行中にロックを解放する (排他が破れる) | **再現済み** (孫の生存 + 解放後の保持者との交互書き込み) |
 | [357](357-bug-lockman-with-bypasses-io-timeout.md) | `with` だけ I/O タイムアウトの外。詰まると SIGTERM/INT/HUP が全部効かない | 機構は**機械照合済み**、挙動は FIFO ハーネスで**再現済み**、本番条件 (応答しないマウント) は**未再現** |
-| [358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) | `Cleanup` の `selfToken` ガードが production 到達不能かつ守る対象が存在しない | 機械照合済み |
+| [358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) | `Cleanup` の `selfToken` ガードが production 到達不能かつ守る対象が存在しない | 機械照合済み |
 
 🚨 **`lockman with` を実行している production コードは 0 件。**
 `grep -rn 'lockman with' --include='*.zsh' --include='*.sh' --include='Makefile' --include='*.go'`
@@ -298,7 +298,7 @@ ubuntu から移した」と書いており、README だけが取り残されて
   書き直し、却下 5 を取り消し、却下 4 に再開 trigger を足した (上記の節)
 - 2026-09-11: `make test` を worktree で通した (rc=0。stdout / stderr を分けて確認し
   `✗` / FAIL / 失敗ターゲットの集約行はいずれも 0 件。`ok lockman 3.170s`)
-- 2026-09-11: **[358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md)
+- 2026-09-11: **[358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md)
   を実装完了** (推奨対応 A)。359 の残タスクが保留していた「下限検査をコンパイル時に
   置けるか」は**置けた**ことが実測で決着 (358 の「実施結果」1・2)。敵対レビューは 358 側の
   残タスクへ引き継いだ
@@ -360,7 +360,7 @@ ubuntu から移した」と書いており、README だけが取り残されて
   「指摘を直したら直した差分にもう 1 周回す」を求めるが、監査時点の修正は**issue 本文の
   書き換えだけでコードを 1 行も変えていない**ため 2 周目は回していない。
   **358 は実装済みなので、その差分への敵対的レビューは
-  [358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) の残タスクへ移した。**
+  [358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) の残タスクへ移した。**
   356 / 357 の実装に入るときも同様に、その差分に対して改めて敵対的レビューが要る
 
 **この issue を done にできる条件**: 上の 1 件 (`--on-lost` の値検証) が 356 / 357 の実装で
@@ -368,6 +368,6 @@ ubuntu から移した」と書いており、README だけが取り残されて
 
 ## 関連
 
-- [issue 356](356-bug-lockman-with-releases-lock-while-grandchildren-run.md) / [issue 357](357-bug-lockman-with-bypasses-io-timeout.md) / [issue 358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) — 生存した発見
+- [issue 356](356-bug-lockman-with-releases-lock-while-grandchildren-run.md) / [issue 357](357-bug-lockman-with-bypasses-io-timeout.md) / [issue 358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) — 生存した発見
 - [issue 340](done/340-risk-av1ify-lock-unverified-residuals.md) — lockman / av1ify で「直さないと決めた」ものの記録 (今回の却下と重複していないことを照合済み)
 - [issue 318](done/318-research-dead-code-and-broken-code-audit-2026-09-06.md) / [issue 324](done/324-research-performance-audit-2026-09-06.md) — 同じ形の監査記録 issue の前例

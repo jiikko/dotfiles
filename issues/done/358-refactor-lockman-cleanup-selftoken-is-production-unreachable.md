@@ -7,7 +7,7 @@
 起票日: 2026-09-11
 カテゴリ: refactor / priority: low
 対象: `src/lockman/cleanup.go` の `Locker.Cleanup` / `main.go` の `dispatch`
-出典: resource-leaks 監査 2026-09-11（[issue 359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md)）
+出典: resource-leaks 監査 2026-09-11（[issue 359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md)）
 反証レビュー: 1 周実施。**起票時の根拠（「1 時間より古い自分の残骸は原理的に存在しない」）は
 崩れた**。結論（削除してよい）は別の根拠で生き残っている。下の「配線しても守るものが無い」節
 
@@ -32,8 +32,8 @@ if selfToken != "" && (e.Name() == selfToken || e.Name() == selfToken+".json") {
 
 つまり `selfToken != ""` の分岐は **production から到達不能**で、
 `TestCleanupKeepsOwnScratch` が唯一の実行者。
-[issue 315](done/315-test-unused-includes-tests-so-production-unreachable-code-stays-green.md) /
-[issue 317](done/317-test-termsafe-regression-test-observes-production-unreachable-surfaces.md)
+[issue 315](315-test-unused-includes-tests-so-production-unreachable-code-stays-green.md) /
+[issue 317](317-test-termsafe-regression-test-observes-production-unreachable-surfaces.md)
 と同型（テストが production 到達不能な面を観測して緑を維持している）。
 
 ## 配線しても守るものが無い（ここが要点。3 点で成立する）
@@ -407,10 +407,10 @@ ReadDir と Remove のあいだで他者が消す状態を、seam 無しで決�
 | ②P3-E | `TestMinRetentionFloorIsPinned` の比 assert は `minRetention` 軸では**到達しない** (リテラル側が先に Fatal) | コメントの誤り | 本 issue (commit 1) |
 | ②P3-F | `TestCleanupRunsOnlyForMutatingCommands` の正の側が **4 コマンド中 acquire だけ** | 元からの穴 | 本 issue (commit 1) |
 | ②P3-G | `TestDispatchWarns…` が部分一致 pin (書式から `skipped=` を落とす変異が緑) | 元からの穴 | 本 issue (commit 1) |
-| ③P1-E | **`timed()` が見捨てた goroutine が「失敗」報告後に lock を置く** (35/450 = 7.8%、graveyard 200 件で 40/40) | 元からの穴 + 3・4 周目が増幅 | **[issue 362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md)** |
-| ③P1-C | **`signal.Notify` が `Acquire` / `cmd.Start()` の後** (20/120。うち 9 件は孤児の子つき。全件 0B の無音) | 元からの穴 | **[issue 363](363-bug-lockman-with-signal-handler-installed-too-late.md)** |
-| ③P2-D | `with` が `--io-timeout` を丸ごと無視し、詰まった `Renew` が select ループごと止める | 元からの穴 | **[357](357-bug-lockman-with-bypasses-io-timeout.md) に既出**。実測だけ転記 |
-| ③P2 / P3-A / P3-B / テスト | `with` が rc=0 で解放漏れ / graveyard の retention が mtime 由来 / reap 済み pgid への kill (未確認) / `TestRenewExtendsHold` の壁時計依存 | 元からの穴 | **[issue 364](364-bug-lockman-with-release-failure-and-graveyard-retention.md)** |
+| ③P1-E | **`timed()` が見捨てた goroutine が「失敗」報告後に lock を置く** (35/450 = 7.8%、graveyard 200 件で 40/40) | 元からの穴 + 3・4 周目が増幅 | **[issue 362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md)** |
+| ③P1-C | **`signal.Notify` が `Acquire` / `cmd.Start()` の後** (20/120。うち 9 件は孤児の子つき。全件 0B の無音) | 元からの穴 | **[issue 363](../363-bug-lockman-with-signal-handler-installed-too-late.md)** |
+| ③P2-D | `with` が `--io-timeout` を丸ごと無視し、詰まった `Renew` が select ループごと止める | 元からの穴 | **[357](../357-bug-lockman-with-bypasses-io-timeout.md) に既出**。実測だけ転記 |
+| ③P2 / P3-A / P3-B / テスト | `with` が rc=0 で解放漏れ / graveyard の retention が mtime 由来 / reap 済み pgid への kill (未確認) / `TestRenewExtendsHold` の壁時計依存 | 元からの穴 | **[issue 364](../364-bug-lockman-with-release-failure-and-graveyard-retention.md)** |
 
 #### 修正 (3 commit に割った。§7 の「次の周の攻め口」を小さく保つため)
 
@@ -461,7 +461,7 @@ ReadDir と Remove のあいだで他者が消す状態を、seam 無しで決�
   下限ちょうどの値は通ってよい
 - **②M24** (`IsDir` の skip を外す) が緑 — production に掃除対象の dir が現れる経路が無い。
   ただし「dir のエントリは永久に掃除されない」こと自体は①P3 が指摘しており、
-  `graveyard/<token>` は rename で dir のまま退避されうる → **[364](364-bug-lockman-with-release-failure-and-graveyard-retention.md) へ**
+  `graveyard/<token>` は rename で dir のまま退避されうる → **[364](../364-bug-lockman-with-release-failure-and-graveyard-retention.md) へ**
 - **③: rename の途中の状態は掃除から崩せなかった** — `os.Rename` は原子的で、`sweepDir` が
   `graveyard/` を ReadDir するときエントリは必ず完全な状態。掃除は `lock` にも `.lockman` にも
   触れないので「勝者 1 人」は掃除からは崩せない
@@ -666,8 +666,8 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
 
 **削除の理由**: このテストは production から到達不能な引数 (`selfToken != ""`) を
 自分で作って観測しており、production の挙動を 1 mm も守っていなかった
-([315](done/315-test-unused-includes-tests-so-production-unreachable-code-stays-green.md) /
-[317](done/317-test-termsafe-regression-test-observes-production-unreachable-surfaces.md) と同型)。
+([315](315-test-unused-includes-tests-so-production-unreachable-code-stays-green.md) /
+[317](317-test-termsafe-regression-test-observes-production-unreachable-surfaces.md) と同型)。
 
 **失ったカバレッジ — 2 つに分けて書く** (🚨 起票直後に書いた第 1 版は**実測で崩れた**。
 敵対レビューの指摘を反映した版がこれ):
@@ -696,11 +696,11 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
 - 2026-09-12: **敵対的レビュー 5 周目**。§8 の stopping rule (脅威モデル / 検出しないと決めた形 /
   打ち切りの判定) を**着手前に**固定してから、観点を ①壊す ②素通り ③並行・中断 に分けて
   opus を直列に回した。掃除機構の内側は 3 commit で修正、外側は
-  [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
-  [363](363-bug-lockman-with-signal-handler-installed-too-late.md) /
-  [364](364-bug-lockman-with-release-failure-and-graveyard-retention.md) へ切り出し。
+  [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
+  [363](../363-bug-lockman-with-signal-handler-installed-too-late.md) /
+  [364](../364-bug-lockman-with-release-failure-and-graveyard-retention.md) へ切り出し。
   作業中に観測した「引き継ぎの勝者が 2 人」は
-  [366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) へ (上の「2.8」)
+  [366](../366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) へ (上の「2.8」)
 - 2026-09-11: 起票。到達不能性を機械照合。反証レビューで起票時の根拠（寿命 vs retention）が
   崩れ、(i) probe の命名が独立乱数 / (ii) `os.Link` 後の tmp は不要 / (iii) 過去の試行は
   別トークン という 3 点へ根拠を差し替えた（未着手）
@@ -751,7 +751,7 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
 | 形 | 理由 | 責務の所在 |
 |---|---|---|
 | テスト (`TestMinRetentionFloorIsPinned`) ごと書き換えて下限を下げる | リテラル pin は敷居であって不可能性ではない。4 行 (production 3 + テスト 1) で通ることは 3 周目でコメントに開示済み | code review |
-| `--io-timeout` に極端な値 (5h) を渡して余裕の前提を崩す | 本 issue が持ち込んだ穴ではない。[359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) へ移送済み | issue 356 / 357 の実装時 |
+| `--io-timeout` に極端な値 (5h) を渡して余裕の前提を崩す | 本 issue が持ち込んだ穴ではない。[359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) へ移送済み | issue 356 / 357 の実装時 |
 | `now` を未来へ振って下限を割らずに新しい残骸を消す | production に入力を作る経路が無い (`now` も `ModTime` も同じ `serverNow()`)。2 周目に却下済み | — |
 | ENOENT フィルタの単体回帰のうち **`os.Remove` と `e.Info()` の分** | ReadDir と Remove のあいだで他者が消す状態を seam 無しで決定論的に作れない。検出可能性は A-B 実験で実証済み (4 周目 M20) | `sweepDir` に seam を入れる変更が来たとき |
 
@@ -777,11 +777,11 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
   **検出可能性: A-B 実験で実証済み** (単体テストは無い)。
   再評価の trigger: `sweepDir` に seam を入れる変更が来たとき
 - 掃除機構の**外**で見つかった 5 件は別 issue へ:
-  [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) (high) /
-  [363](363-bug-lockman-with-signal-handler-installed-too-late.md) (high) /
-  [364](364-bug-lockman-with-release-failure-and-graveyard-retention.md) (low〜medium) /
-  [366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) (high・原因未特定)。
-  `with` の `--io-timeout` 素通りは [357](357-bug-lockman-with-bypasses-io-timeout.md) に既出
+  [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) (high) /
+  [363](../363-bug-lockman-with-signal-handler-installed-too-late.md) (high) /
+  [364](../364-bug-lockman-with-release-failure-and-graveyard-retention.md) (low〜medium) /
+  [366](../366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) (high・原因未特定)。
+  `with` の `--io-timeout` 素通りは [357](../357-bug-lockman-with-bypasses-io-timeout.md) に既出
 - 決着済み: 下限はコンパイル時ではなく `sweepDir` の実行時に置いた (上の「実施結果」1)。
   コンパイル時にも**置けた**が、定数を縛る形は迂回されるため採らなかった
 
@@ -790,7 +790,7 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
 - **`--io-timeout` に上限の検証が無く、5h を渡すと `minRetention` の根拠が崩れる (P3)** —
   指摘自体は実在する (実測で `--io-timeout 5h` が rc=0 で受理される)。ただし**本 commit が
   持ち込んだ穴ではなく**、`--on-lost` の無検証と同じ族なので
-  [359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) の「軽微だが実在する」節へ
+  [359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) の「軽微だが実在する」節へ
   移し、356 / 357 の実装時にまとめて直す。`cleanup.go` のコメントには「既定の I/O の上限」と
   書き、成立条件が既定値に限ることを明記した
 - **`graveyardRetention` / `cleanupInterval` に同型の危険はないか (P3)** — `graveyardRetention` は
@@ -800,5 +800,5 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
 
 ## 関連
 
-- [issue 315](done/315-test-unused-includes-tests-so-production-unreachable-code-stays-green.md) / [issue 317](done/317-test-termsafe-regression-test-observes-production-unreachable-surfaces.md) — 同型（production 到達不能な面をテストが観測）
-- [issue 359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) — この issue の出典（監査記録）
+- [issue 315](315-test-unused-includes-tests-so-production-unreachable-code-stays-green.md) / [issue 317](317-test-termsafe-regression-test-observes-production-unreachable-surfaces.md) — 同型（production 到達不能な面をテストが観測）
+- [issue 359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) — この issue の出典（監査記録）

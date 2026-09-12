@@ -3,7 +3,7 @@
 起票日: 2026-09-12
 カテゴリ: bug / priority: low〜medium
 対象: `src/lockman/with.go` / `lock.go` / `cleanup.go` / `lock_test.go`
-出典: [issue 358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) の敵対レビュー 5 周目
+出典: [issue 358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) の敵対レビュー 5 周目
 反証レビュー: 未実施。**出典は opus 3 体による実測**
 
 単独では issue を立てるほどでない 4 件をまとめる。**それぞれ独立に直せる**。

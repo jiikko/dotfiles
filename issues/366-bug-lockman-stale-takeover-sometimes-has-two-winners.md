@@ -3,7 +3,7 @@
 起票日: 2026-09-12
 カテゴリ: bug / priority: **high**（主張の重さによる。実害の有無は未確定）
 対象: `src/lockman/lock.go` の `tryTakeover` / `src/lockman/lock_test.go:88` の同テスト
-出典: [issue 358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) の敵対レビュー 5 周目 (観点②) と、7 周目の作業中に再観測
+出典: [issue 358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) の敵対レビュー 5 周目 (観点②) と、7 周目の作業中に再観測
 反証レビュー: 未実施
 
 ## 問題

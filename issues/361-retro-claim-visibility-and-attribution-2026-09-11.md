@@ -70,7 +70,7 @@ commit の並びから推測して伝えてきたが、**これは誤り**（360
 
 ## 残課題
 
-- 2026-09-12 追記: 見送った先の **[issue 358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md)
+- 2026-09-12 追記: 見送った先の **[issue 358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md)
   は敵対レビュー 5 周目まで完了して決着した** (dotfiles-c9)。本 retro の残課題はこれとは独立で、
   未解消のまま
 
@@ -82,4 +82,4 @@ commit の並びから推測して伝えてきたが、**これは誤り**（360
 ## 関連
 
 - [issue 360](done/360-test-tmux-shim-value-taking-options-completeness.md) — 同セッションでやり切った実作業
-- [issue 358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) / [issue 359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) — 着手を見送った先（dotfiles-53 が担当）
+- [issue 358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) / [issue 359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) — 着手を見送った先（dotfiles-53 が担当）
