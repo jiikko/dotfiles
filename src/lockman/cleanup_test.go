@@ -37,14 +37,52 @@ func TestCleanupNeverRemovesLock(t *testing.T) {
 	}
 
 	// 期限切れの lock も cleanup は消さない (回収は Acquire の引き継ぎだけが行う)。
+	//
+	// 🚨 lock を **retention より古くする**。かつては `Sleep(100ms)` で期限切れに
+	// していたが、それだと mtime が新しいままなので「.lockman 直下も掃く」変異に
+	// 対して**構造的に盲目**だった (5 周目の実測: その変異で全テストが緑のまま通った)。
+	// `Chtimes` なら壁時計も待たない (`avoid-wall-clock-assertions.md`)。
 	l2 := newTestLocker(t)
 	if _, err := l2.Acquire(30*time.Millisecond, "dead"); err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
-	time.Sleep(100 * time.Millisecond)
+	old := time.Now().Add(-2 * time.Hour) // scratchRetention (1h) より古い
+	if err := os.Chtimes(l2.lockPath(), old, old); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
 	l2.Cleanup(true)
 	if _, err := os.Stat(l2.lockPath()); err != nil {
 		t.Fatalf("期限切れの lock を cleanup が消した: %v", err)
+	}
+}
+
+// ★ 掃除してよいディレクトリの集合を、渡った値で fail-closed に縛る。
+// 下限 (retention) と同じ軸 — 定数を縛る形は「別の値を作って渡す」で迂回されるので、
+// sweepDir に**渡った** sub で判定する。
+func TestSweepRefusesDirectoryOutsideScratch(t *testing.T) {
+	l := newTestLocker(t)
+	m, err := l.Acquire(time.Hour, "live")
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	// lock を retention より古くする = ゲートが無ければ確実に消える状態。
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(l.lockPath(), old, old); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+
+	var res CleanupResult
+	l.sweepDir("", scratchRetention, time.Now(), &res) // .lockman 直下
+
+	if res.Removed != 0 {
+		t.Fatalf("対象外のディレクトリで %d 件消した (期待 0)", res.Removed)
+	}
+	if len(res.Errors) == 0 {
+		t.Fatal("対象外のディレクトリを黙って掃いた (エラーが 1 件も無い)")
+	}
+	got, _, err := l.readLock()
+	if err != nil || got == nil || got.Token != m.Token {
+		t.Fatalf("生きている lock が消された (got=%v err=%v)", got, err)
 	}
 }
 

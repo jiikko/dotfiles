@@ -106,6 +106,22 @@ func (l *Locker) Cleanup(force bool) CleanupResult {
 // `Renew` が `clockSkewTolerance` を持つのは打刻がクライアント側へ落ちる場合の検算で、
 // 掃除は正しさに関与しないため同じ検算は要らない。
 func (l *Locker) sweepDir(sub string, retention time.Duration, now time.Time, res *CleanupResult) {
+	// 🚨 掃除してよいのは残骸の 3 つのサブディレクトリだけ。**retention と同じく
+	// 「渡った値」で縛る** — ここが無いと `l.sweepDir("", scratchRetention, now, &res)`
+	// (「.lockman 直下に落ちた孤児も掃除したい」という自然な 1 行) で metaDir 直下が
+	// 対象になり、**生きている lock が消えて二重取得が成立する**。
+	// 5 周目の実測: その 1 行を足すと build も全 33 テストも緑のまま通り、E2E では
+	// A の lock が消えて renew が「not the lock owner」、直後に C が acquire に成功した。
+	// 上の 🚨 (lock 本体は絶対に対象にしない) を守っていたのはコメントだけだった。
+	switch sub {
+	case tmpDirName, probeDirName, graveyardDirName:
+	default:
+		res.Errors = append(res.Errors, fmt.Sprintf(
+			"掃除の対象外のディレクトリ %q が渡された: lock 本体を消しうるので掃除しない "+
+				"(掃除してよいのは %q / %q / %q だけ)",
+			sub, tmpDirName, probeDirName, graveyardDirName))
+		return
+	}
 	if retention < minRetention {
 		res.Errors = append(res.Errors, fmt.Sprintf(
 			"%s の保持期間 %s が下限 %s を下回る: 走行中の acquire の残骸を消しうるので掃除しない",
