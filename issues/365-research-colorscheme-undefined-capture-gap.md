@@ -21,7 +21,16 @@
 
 測り方: `queries/*/highlights.scm` から capture を集め、**ハイライタが実際に解決する名前**
 (`@capture.<lang>`) で `nvim_get_hl(link=false)` を引き、同じ族の兄弟が 1 種類の見た目に
-潰れているかを見る。母集合は `_nviminit.lua` の `ts.install(...)` が入れる 33 言語。
+潰れているかを見る。
+
+**母集合 = 33 言語**。内訳は `_nviminit.lua:249` の `ts.install(...)` が入れる **31 言語**
+(機械で数えた: `sed -n '249p' _nviminit.lua | grep -oE '"[a-z_]+"' | wc -l` → 31。
+同ファイル 246 行目付近のコメントも「31 個」と書いている) に、**nvim 同梱の
+`vimdoc` / `query` の 2 つ**を足したもの。
+🚨 `vimdoc` と `query` は `ts.install` に**含まれない** — Neovim 本体が
+`/opt/homebrew/Cellar/neovim/0.11.5/lib/nvim/parser/` に同梱しており
+(`c lua markdown markdown_inline query vim vimdoc` の 7 つ。うち 5 つは 31 言語側と重複)、
+下の Tier1 の `vimdoc` の所見はこの同梱ぶんから出ている。
 
 - 対象 33 言語 / 検査した族 **92**
 - **Tier1 (区別が存在理由なのに潰れている): 2 件**
@@ -77,7 +86,33 @@ generic な `@markup.heading.N` は手つかずで、上表のとおり vimdoc �
 
 - [ ] Tier1 の 2 件について、見本で色を決めて適用するか判断する (未着手)
 - [ ] 検出手段を常設するか判断する (上記 trigger 待ち。現時点では**やらない**)
-- [ ] 本 issue は反証レビュー未通過 → 通してから状態を更新する
+- [x] 反証レビューを通した (read-only サブエージェント 1 体 / codex は不使用)
+
+## 反証レビューの結果 (2026-09-12)
+
+**P1 (採用・訂正済み)**: 「母集合は `ts.install` が入れる 33 言語」は二重に誤り。
+`ts.install` は **31** 言語で、しかも Tier1 の片方である `vimdoc` は**そこに含まれない**
+(nvim 同梱)。当初の書き方では、記載した方法論から Tier1 の vimdoc の所見が出てこない。
+→ 上の「全数勘定」節で内訳を明示する形に訂正した。
+
+**独立に確認が取れたもの** (レビュワーは別の方法で測った。実際に `:help` を開き
+`vim.treesitter.highlighter.active` で treesitter が効いていることを確かめたうえで
+ハイライトを読む形。こちらの query 走査とは経路が違うので、独立した確認として数える):
+
+- Tier1 の 2 件はどちらも再現。`@markup.heading.1..4.vimdoc` が全部 `ctermfg=142 bold`、
+  `@markup.list.checked/unchecked.markdown` が両方 `ctermfg=208`
+- 「4887d531 の射程」(`.markdown` 付きだけ / markdown バッファを開いたときだけ) は
+  `_nviminit.lua:970-1024` で確認
+- `RenderMarkdownChecked/Unchecked` が capture への link であること
+  (`render-markdown/core/colors.lua:53-54`)
+- Tier2 の却下理由のうち「`@string` 本体とは既に別色」(lua で `@string`=142 / 下位種=203)
+- 参照している commit hash とファイルパスの実在
+
+🚨 **未検証のまま残るもの**: 「検査した族 92 / Tier2 42 件」の内訳は**こちらの 1 回の
+計測しか根拠が無い**。レビュワーは再現を試みたが、計測スクリプトが `./tmp` (gitignore) で
+既に無く、read-only の範囲では全言語の走査をやり直せなかった。**反証されたのではなく
+確認が取れていない**。Tier1 の 2 件は上記のとおり独立に確認済みなので、この issue の
+判断 (何を直すか / 検査を常設しないか) は Tier2 の正確な件数に依存しない
 
 ## 測定に使ったもの
 
