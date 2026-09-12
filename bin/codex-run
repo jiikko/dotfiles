@@ -24,7 +24,8 @@
 #     -e effort    既定 max
 #     -t sec       1 本あたりの秒数上限 (既定は codex-fanout の CODEX_FANOUT_TIMEOUT)
 #
-# 出力 (outdir): <label>.out.md (最終応答) / <label>.log (stdout+stderr 全文) / runs.tsv (rc 台帳)
+# 出力 (outdir): <label>.out.md (最終応答) / <label>.log (stdout+stderr 全文) /
+#                 runs.tsv (label / rc / started_at / elapsed_s / out / log の台帳。列の正本は codex-fanout のヘッダ)
 #   review は本文が -o でなく stdout にだけ出ることがある (codex-review スキル手順 4) ので、
 #   out.md が空のときは log を読むよう案内する。
 #

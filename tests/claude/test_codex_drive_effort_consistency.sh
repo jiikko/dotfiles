@@ -22,10 +22,11 @@
 #
 # codex-drive 以外の skill (codex-lead / codex-review) は意図的に別の effort を使うため対象外。
 #
-# 例外は無い (2026-08-26 に一度 sol-mid を 3 フェーズだけ許可したが、消費が重く同日中に廃止)。
-# 許可される値は driver の既定ただ 1 組で、SKILL.md に別のモデル / effort が現れたら落とす。
-# 例外を復活させるなら、SKILL.md だけでなくこの検査も同じ変更で直すこと
-# (前回はここが追随せず CI を赤にした)。
+# 例外は「上振れ先」1 つだけ (FALLBACK_MODEL)。luna max の質が低いマイルストーンを gpt-6-astra へ
+# 切り替えてよい (2026-09-13、dotfiles issue 369 1-3)。下げる方向の例外は無い (2026-08-26 に一度
+# sol-mid を 3 フェーズだけ許可したが、消費が重く同日中に廃止)。effort の例外も無い。
+# 許可される値は driver の既定 1 組 + FALLBACK_MODEL で、SKILL.md にそれ以外のモデル / effort が現れたら落とす。
+# 例外を変えるなら、SKILL.md だけでなくこの検査も同じ変更で直すこと (前回はここが追随せず CI を赤にした)。
 
 set -euo pipefail
 unset CDPATH  # CDPATH が export されていると `cd foo` が解決先を stdout に出し、
@@ -35,6 +36,7 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
 DRIVER="$ROOT_DIR/bin/codex-fanout"
 SKILL_MD="$ROOT_DIR/_claude/skills/codex-drive/SKILL.md"
+FALLBACK_MODEL="gpt-6-astra"  # 上振れ先。SKILL.md「モデルはマイルストーンの性質で振らない」の例外項と一致させる
 
 fail=0
 
@@ -86,11 +88,16 @@ while IFS= read -r e; do
 done <<< "$skill_efforts"
 
 while IFS= read -r m; do
-  if [ "$m" != "$def_model" ]; then
-    echo "FAIL: SKILL.md の起動例にモデル $m があるが、driver の既定は $def_model (どちらかが追随漏れ)" >&2
+  if [ "$m" != "$def_model" ] && [ "$m" != "$FALLBACK_MODEL" ]; then
+    echo "FAIL: SKILL.md の起動例にモデル $m があるが、許可は driver の既定 $def_model と上振れ先 $FALLBACK_MODEL だけ (どちらかが追随漏れ)" >&2
     fail=1
   fi
 done <<< "$skill_models"
+# 上振れ先が SKILL.md から消えたら、この検査の例外も消す (allowlist だけ残ると何も守らない)
+grep -q -- "-m $FALLBACK_MODEL" "$SKILL_MD" || {
+  echo "FAIL: SKILL.md に上振れ先 $FALLBACK_MODEL の記述が無い。例外を廃止したならこの検査の FALLBACK_MODEL も外すこと" >&2
+  fail=1
+}
 
 if [ "$fail" -ne 0 ]; then
   echo "" >&2

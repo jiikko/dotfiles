@@ -186,10 +186,15 @@ codex-cli 0.154.0 で確認したオプション (2026-09-13、`codex exec --hel
 
 ## 受け入れ条件
 
-- [ ] 案 1 (計測) を `bin/codex-fanout` に入れる (開始時刻 / 所要秒 / merger 行)。計測だけで閉じられる
+- [x] 案 1 (計測) を `bin/codex-fanout` に入れた (2026-09-13): `runs.tsv` を label / rc / **started_at / elapsed_s** / out / log の
+      6 列にし、merger を回したときは末尾に merger 行 (成否に関係なく) を追記。label `merger` は予約語として起動前に弾く
+      (merger.rc 等との衝突は元から在った潜在バグ)。bats に 3 つの assert (ヘッダ完全一致 / timeout 2 秒の run の
+      elapsed ≥ 2 / -M では merger 行なし) と予約語テストを追加。commit: 「feat(codex-fanout): runs.tsv に所要時間と merger 行」
 - [x] 段階 1 の 1-1 / 1-2 を SKILL.md 4.4.0 へ反映 (1-1: `[3.8]` 節の例外 + 外せない環境の段落 / 1-2: `[3]` 冒頭の順序の項 +
       `[3.5]` の「green の前に起動しない」+ shared の固定文)。commit: 「docs(codex-drive): 1-1 / 1-2 を反映」
-- [ ] 1-3 (astra への切り替え) は `gpt-6-astra` がアカウントで使えることを 1 行 probe で確認してから SKILL.md へ
+- [x] 1-3 (astra への切り替え): probe 実測 2026-09-13 `codex exec -s read-only -m gpt-6-astra` (effort low) → rc 0、
+      応答 "GPT-6"、3,800 tokens。アカウントで使える。SKILL.md 4.5.0 の「モデルは振らない」の例外項として反映、
+      effort 整合テストに FALLBACK_MODEL の allowlist を追加 (SKILL.md から消えたら検査も落ちる形)
 - [x] 案 0-b をユーザーが承認 → SKILL.md 4.3.0 へ反映 (雛形 3 箇所 / Error 74 規律の条件化 / セットの 4 項目)。
       commit: 「feat(codex-drive): 実装 run の sandbox を既定で外す」
 - [ ] 案 0-b を obaket の次マイルストーンで実測し、checkpoint に残す: Error 74 の有無 / 型エラー往復数 (旧 2〜3) /
@@ -197,7 +202,8 @@ codex-cli 0.154.0 で確認したオプション (2026-09-13、`codex exec --hel
       依頼外の破壊的操作が無いか。**危険側の観測 (はみ出し・破壊的操作) が 1 件でも出たら 0-a へ戻す**
 - [ ] 案 0-a は 0-b で危険側の観測が出た場合の代替として残す (未実施)
 - [ ] 案 1 の内訳を 1 マイルストーン分取り (run 合計と通しの壁時計を別々に)、段階 2 のうち太い工程に当たるものだけ反映する
-- [ ] 段階 3 は obaket 側の `[R]` テンプレへ移し、skill には 1 行だけ残す
+- [ ] 段階 3 は obaket 側の `[R]` テンプレへ移し、skill には 1 行だけ残す (**このマシンに obaket の checkout が無い**
+      (2026-09-13 `mdfind` / `~/src` 走査で 0 件) ので、obaket を持つマシンのセッションで行う)
 - [ ] 質の比較は件数の増減で判定しない。**同じ変異セット**での red / green / hang の結果表と、r1 の P1 の**内容**を前後で並べ、
       「前は拾えていた種類の指摘が消えていない」ことを Claude が読んで確認する
 

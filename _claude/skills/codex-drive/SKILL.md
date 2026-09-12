@@ -1,6 +1,6 @@
 ---
 name: codex-drive
-version: 4.4.0
+version: 4.5.0
 description: codex を設計の壁打ちからメイン実装者まで主役にし (設計 read-only → 実装 codex exec -s danger-full-access)、Claude はオーケストレーション (要件確定・spec 多重読解・スコープ分割・設計/成果物の検閲・敵対的レビュー・ミューテーション検証・観測駆動デバッグ・commit/push・反復・要件照合) に徹するワークフロー。codex トークンは厚く消費し、Claude トークンは節約する (並列出力は codex 集約 digest 経由で検閲・長文は貼らずファイル参照で読ませる・機械ループは codex に回させる)。大きめの実装/移植/プロトコル実装で、余っている codex トークンを使い切りたい時に使う。「codex に書かせて」「codex メインで実装」「codex に作らせて」「codex-drive」「/codex-drive」で発火。typo・数行修正には使わない (それは Claude が直接やる)。
 ---
 
@@ -611,6 +611,13 @@ EOF
 - **モデルはマイルストーンの性質で振らない** (大原則のモデル振り分け): 機械的移植・boilerplate でも、
   判断を含む実装・非自明な wire/protocol でも、一律 `gpt-5.6-luna`。
   effort は effort 表どおり全フェーズ `max` 固定。
+  - **唯一の例外は上振れ**: luna max の出力の質が低いと `[3]` の検閲で判定したマイルストーン
+    (「動くが筋が通っていない」/ 捏造 API / 同じ型エラーを 2 往復しても直らない、等) は、
+    **そのマイルストーンだけ `-m gpt-6-astra`** (effort は `max` のまま) へ切り替えてよい
+    (ユーザー指示 2026-09-13、dotfiles issue 369 1-3。probe 実測: codex-cli 0.154.0 で rc 0、応答 "GPT-6")。
+    切り替えは**マイルストーン単位**で、checkpoint に「M<n> は astra へ。理由: …」を 1 行残す (前後比較の材料)。
+    下げる方向 (541 の low) は依然禁止。capacity 死は luna と共通 (openai/codex #43398) なので回避策にはならない。
+    駄目だった質の判定材料は「`[3]` で差し戻した回数と種類」であって印象ではない
 - `command codex` プレフィックス / `</dev/null` / `--ephemeral -o` は **codex-review スキルのルールが正本**（理由・実測根拠はそちら）。
   `-o` は実行ログ全体ではなく最終応答 (`--output-last-message`) の保存先。標準出力/標準エラーは必要に応じて呼び出し側で保存する。
 - **`--full-auto` は使わない**。実装は `-s danger-full-access` を明示 (ユーザー決定 2026-09-13、issue 369。理由と

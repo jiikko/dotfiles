@@ -37,7 +37,11 @@
 #                   (本文が -o に出ないことがあるのは review 固有 — codex-review スキル手順 4)。
 #                   ro run は out.md だけ渡し、out が空のときに限り log を渡す
 #                   (ro の log は思考ストリーム込みで、merger 入力を倍加させるが情報は増えない)
-#   runs.tsv        label / exit code / out / log の台帳
+#   runs.tsv        label / rc / started_at / elapsed_s / out / log の台帳 (TSV・ヘッダ行つき)。
+#                   started_at はローカル時刻 (ISO 8601)、elapsed_s は起動から終了までの整数秒。
+#                   merger を回したときは末尾に label=merger の行を追記する (-o は digest.md)。
+#                   「どの工程に壁時計が何分かかったか」を run 単位で残す (dotfiles issue 369 案 1)。
+#                   run 合計は通しの壁時計ではない (Claude の digest 読み・build・修正は外)
 #   digest.md       merger の出力 (呼び出し側が読むのは原則これ 1 枚)
 #
 # exit code:
@@ -130,6 +134,8 @@ while IFS=$'\t' read -r label mode model effort part_list row_timeout || [ -n "$
   case "$mode" in ro | review) ;; *) die "manifest ${lineno} 行目: mode は ro|review (got: $mode)" ;; esac
   # label は出力ファイル名になるためパス区切り等を弾く
   case "$label" in *[!A-Za-z0-9._-]*) die "manifest ${lineno} 行目: label は英数と ._- のみ (got: $label)" ;; esac
+  # merger の成果物 (merger.rc / .pid / .log / .time / .prompt.md、runs.tsv の merger 行) と衝突する
+  [ "$label" != merger ] || die "manifest ${lineno} 行目: label 'merger' は予約済み (merger 自身の成果物と衝突する)"
   if [ -z "$row_timeout" ]; then
     row_timeout="$timeout_s"
   else
@@ -183,6 +189,10 @@ fi
 launch_with_watchdog() {
   local run_timeout="$1" rcfile="$2" pidfile="$3"
   shift 3
+  # 所要時間の台帳 (<label>.time = started_at<TAB>elapsed_s)。rc と同じ場所・同じ寿命
+  local timefile="${rcfile%.rc}.time" t0 started_at
+  t0="$(date +%s)"
+  started_at="$(date +%Y-%m-%dT%H:%M:%S%z)"
   perl -e 'setpgrp(0, 0); exec @ARGV or die "exec: $!"' -- "$@" &
   local cpid=$! # = setpgrp した process group の leader
   printf '%s\n' "$cpid" >"$pidfile" # 中断時の後始末 (on_interrupt) が読む
@@ -204,6 +214,7 @@ launch_with_watchdog() {
   local rc=$?
   kill "$wpid" 2>/dev/null
   rm -f "$pidfile" # 完走した run の pid を on_interrupt が再利用 pid に誤爆させない
+  printf '%s\t%s\n' "$started_at" "$(( $(date +%s) - t0 ))" >"$timefile"
   printf '%s\n' "$rc" >"$rcfile"
   return "$rc"
 }
@@ -230,15 +241,24 @@ done
 wait
 
 # --- 台帳 (runs.tsv) と成否の集計。rc ファイル欠損は「静かな成功」ではなく失敗 (127) に倒す ---
+# ledger_row <label> <rc> <out> <log>: <label>.time があれば時刻を、無ければ "-" を埋める
+# (time が無いのは launch_with_watchdog に到達しなかった run。rc 127 と同じく「測れていない」を残す)
+ledger_row() {
+  local started_at="-" elapsed="-"
+  if [ -f "$outdir/$1.time" ]; then
+    IFS=$'\t' read -r started_at elapsed <"$outdir/$1.time"
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$started_at" "$elapsed" "$3" "$4"
+}
 failed=()
 ok=()
 ok_idx=()
 {
-  printf 'label\trc\tout\tlog\n'
+  printf 'label\trc\tstarted_at\telapsed_s\tout\tlog\n'
   for i in "${!labels[@]}"; do
     label="${labels[$i]}"
     rc="$(cat "$outdir/$label.rc" 2>/dev/null || echo 127)"
-    printf '%s\t%s\t%s\t%s\n' "$label" "$rc" "$outdir/$label.out.md" "$outdir/$label.log"
+    ledger_row "$label" "$rc" "$outdir/$label.out.md" "$outdir/$label.log"
     if [ "$rc" -eq 0 ]; then
       ok+=("$label")
       ok_idx+=("$i")
@@ -279,11 +299,15 @@ if [ "$do_merge" -eq 1 ]; then
       printf -- '- %s\n' "${failed[@]}"
     fi
   } >"$merger_prompt"
-  if ! launch_with_watchdog "$timeout_s" "$outdir/merger.rc" "$outdir/merger.pid" \
+  launch_with_watchdog "$timeout_s" "$outdir/merger.rc" "$outdir/merger.pid" \
     codex exec -s read-only -m "${CODEX_FANOUT_MERGER_MODEL:-gpt-5.6-luna}" \
     -c model_reasoning_effort="${CODEX_FANOUT_MERGER_EFFORT:-max}" \
     --ephemeral -o "$outdir/digest.md" "$(cat "$merger_prompt")" \
-    </dev/null >"$outdir/merger.log" 2>&1; then
+    </dev/null >"$outdir/merger.log" 2>&1
+  merger_rc=$?
+  # 成否に関係なく台帳へ (失敗した merger の所要時間も「どこで時間を食ったか」の材料)
+  ledger_row merger "$merger_rc" "$outdir/digest.md" "$outdir/merger.log" >>"$outdir/runs.tsv"
+  if [ "$merger_rc" -ne 0 ]; then
     printf 'codex-fanout: merger が失敗 (log: %s)\n' "$outdir/merger.log" >&2
     exit 1
   fi

@@ -57,6 +57,15 @@ EOS
   [ -s "$WORK/out1/digest.md" ]
   grep -q "^a	0	" "$WORK/out1/runs.tsv"
   grep -q "^b	0	" "$WORK/out1/runs.tsv"
+  # 台帳の列 (issue 369 案 1): label / rc / started_at / elapsed_s / out / log。ヘッダは完全一致で固定する
+  [ "$(head -1 "$WORK/out1/runs.tsv")" = "$(printf 'label\trc\tstarted_at\telapsed_s\tout\tlog')" ]
+  # started_at は ISO 8601 (YYYY-MM-DDTHH:MM:SS+ZZZZ)、elapsed_s は整数。placeholder "-" ではない
+  awk -F'\t' '$1=="a"{print $3}' "$WORK/out1/runs.tsv" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{4}$'
+  awk -F'\t' '$1=="a"{print $4}' "$WORK/out1/runs.tsv" | grep -qE '^[0-9]+$'
+  # merger を回したときは merger 行が末尾に載る (-o は digest.md)
+  [ "$(tail -1 "$WORK/out1/runs.tsv" | cut -f1,2)" = "$(printf 'merger\t0')" ]
+  tail -1 "$WORK/out1/runs.tsv" | cut -f5 | grep -q "digest.md$"
+  awk -F'\t' '$1=="merger"{print $4}' "$WORK/out1/runs.tsv" | grep -qE '^[0-9]+$'
   # prompt part の連結 (tpl + brief) が効いている (stub は先頭 60 文字を out に写す)
   grep -q "template head" "$WORK/out1/a.out.md"
   # mode 列が正しいサブコマンドに写像される (ro → exec -s read-only / review → exec review)。
@@ -221,6 +230,9 @@ EOS
   [ "$status" -eq 1 ]
   # SIGTERM で殺された run は rc 非0 (143) で台帳に残る
   grep -q "^hang	143	" "$WORK/out6/runs.tsv"
+  # elapsed_s は実測: 2 秒で殺した run は 2 秒以上 (壊れて 0 や "-" になっていれば落ちる)
+  elapsed="$(awk -F'\t' '$1=="hang"{print $4}' "$WORK/out6/runs.tsv")"
+  [[ "$elapsed" =~ ^[0-9]+$ ]] && [ "$elapsed" -ge 2 ]
   # codex (stub) が立てた孫プロセスも死んでいる (process group kill)
   gpid="$(cat "$WORK/out6/hang.out.md.grandchild")"
   sleep 0.5
@@ -268,6 +280,17 @@ EOS
   [ "$status" -eq 0 ]
   [ ! -e "$WORK/out8/digest.md" ]
   [ -s "$WORK/out8/solo.out.md" ]
+  # merger を回していないので台帳にも merger 行は無い (行数 = ヘッダ + 1 run)
+  ! grep -q "^merger	" "$WORK/out8/runs.tsv"
+  [ "$(wc -l <"$WORK/out8/runs.tsv" | tr -d ' ')" -eq 2 ]
+}
+
+@test "label 'merger' は予約済みとして起動前に弾く (merger 自身の成果物・台帳行と衝突する)" {
+  printf 'merger\tro\tm1\thigh\t%s\n' "$WORK/brief_ok.md" >"$WORK/m.tsv"
+  run "$DRIVER" -M "$WORK/m.tsv" "$WORK/out_reserved"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"予約済み"* ]]
+  [ ! -e "$WORK/out_reserved/merger.rc" ]
 }
 
 # 既定の merger モデル / effort を pin する。回帰 (2026-08-20): 既定を書き換えても、manifest が
