@@ -680,6 +680,8 @@ EOF
 
 **必ず別の git worktree で走らせる**。同一 working tree に 2 本の書き込み run を当てると互いの編集を
 上書きし合う。codex には `-C <worktree>` で作業根を渡す。
+その repo に worktree を作るコマンドがあれば (例: my-products の `bin/wt create`。毎回新しい path + repo 直下の `.wt-setup` による
+下準備)、detached で足りる用途 (実装 1 本・変異検証) ではそれを使う。下の例は branch を付ける競作用の手組み。
 
 ```bash
 # --- 準備 (Bash 呼び出し 1)。パスは repo root からの絶対パスで確定し、出力された値を控える ---

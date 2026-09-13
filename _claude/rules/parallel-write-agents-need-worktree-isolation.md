@@ -50,6 +50,10 @@ git worktree add --detach "$root/../wt-taskA" <base-commit>
 git worktree add --detach "$root/../wt-taskB" <base-commit>
 ```
 
+- **その repo に worktree を作るコマンドがあれば、上の手組みでなくそちらを使う** (例: my-products の `bin/wt create`)。
+  上の `wt-taskA` のような固定名を別の作業で使い回すと、path から場所が決まるビルドキャッシュ (Xcode の DerivedData 等) が
+  前回の成果物を掴み、「足した直後の型が無い」のような偽の compile error になる (obaket issue 797)。手で作るなら毎回新しい名前にする
+
 - 各エージェントに `-C <worktree>` で作業根を渡す
 - **新しい worktree で build / test する前に、gitignore された依存解決ファイル (lock / resolved / pin) を正本と揃える**。
   worktree には生成されないので最初の build が依存を解決し直し、branch 参照は tip を拾う。`git status` に出ないため
