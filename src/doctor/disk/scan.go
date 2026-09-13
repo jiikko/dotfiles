@@ -116,7 +116,7 @@ func Scan(ctx context.Context, opt Options) Report {
 		}(i, e)
 	}
 	wg.Wait()
-	rep := Report{Results: results, ScannedAt: time.Now(), Partial: ctx.Err() != nil, Total: SumDeletable(results)}
+	rep := Report{ScannedAt: time.Now(), Partial: ctx.Err() != nil}.WithResults(results)
 	sort.SliceStable(rep.Results, func(a, b int) bool { return rep.Results[a].Size > rep.Results[b].Size })
 	return rep
 }

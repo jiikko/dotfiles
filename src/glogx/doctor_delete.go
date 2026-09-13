@@ -733,19 +733,15 @@ func (v *doctorView) selectedResults() []disk.Result {
 			continue
 		}
 		var items []disk.Item
-		var size int64
 		for _, it := range r.Items {
 			if v.selectedItems[diskItemKey(r.Entry.ID, it.Path)] {
 				items = append(items, it)
-				size += it.Size
 			}
 		}
 		if len(items) == 0 {
 			continue
 		}
-		part := r
-		part.Items, part.Size = items, size
-		out = append(out, part)
+		out = append(out, r.WithItems(items))
 	}
 	return out
 }

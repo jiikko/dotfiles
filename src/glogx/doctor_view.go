@@ -242,8 +242,7 @@ func (v *doctorView) start(force bool) tea.Cmd {
 		if sn, ok := loadDoctorSnapshot(timeNow()); ok {
 			rep := sn.Disk
 			// 実効カタログに無い ID は落とす (snapshot は書き換えられる。issue 178)
-			rep.Results = doctorSnapshotInCatalog(rep.Results, v.catalogLookup())
-			rep.Total = disk.SumDeletable(rep.Results)
+			rep = rep.WithResults(doctorSnapshotInCatalog(rep.Results, v.catalogLookup()))
 			v.diskRep = &rep
 			v.diskResults = rep.Results
 			svcRep := sn.Svc
@@ -336,9 +335,9 @@ func (v *doctorView) close() {
 	v.stop()
 	v.shown = false
 	if v.diskRep == nil && len(v.diskResults) > 0 {
-		rep := disk.Report{Results: append([]disk.Result(nil), v.diskResults...), ScannedAt: timeNow(), Partial: true}
-		sort.SliceStable(rep.Results, func(a, b int) bool { return rep.Results[a].Size > rep.Results[b].Size })
-		rep.Total = disk.SumDeletable(rep.Results)
+		results := append([]disk.Result(nil), v.diskResults...)
+		sort.SliceStable(results, func(a, b int) bool { return results[a].Size > results[b].Size })
+		rep := disk.Report{ScannedAt: timeNow(), Partial: true}.WithResults(results)
 		v.saveCache(rep)
 	}
 }

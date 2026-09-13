@@ -152,3 +152,53 @@ func TestFormatSanitizesUntrustedText(t *testing.T) {
 		t.Errorf("綺麗なパスまで落ちた: %q", out)
 	}
 }
+
+// WithItems は Items を絞ったら Size を引き直す。ただし **元の Items が空なら Size を保つ**
+// (Reused / FromSnapshot は Items を持たず Size だけを持つ。引き直すと行の合計が 0 になる)。
+//
+// この例外は 2026-09-04 の敵対レビューが SanitizeResultForDisplay で塞いだもので、以前は
+// 呼び出し側 3 箇所がそれぞれローカルに `if dropped > 0` で回避していた。契約として
+// Result 側に移したので、ここが唯一の出典になる。
+func TestWithItemsRecomputesSizeExceptWhenItemsWereEmpty(t *testing.T) {
+	full := Result{Items: []Item{{Path: "/a", Size: 10}, {Path: "/b", Size: 5}}, Size: 15}
+
+	if got := full.WithItems([]Item{{Path: "/a", Size: 10}}); got.Size != 10 {
+		t.Errorf("絞った後の Size = %d, want 10 (Items の和へ引き直していない)", got.Size)
+	}
+	if got := full.WithItems(nil); got.Size != 0 {
+		t.Errorf("全部落とした後の Size = %d, want 0", got.Size)
+	}
+	// 元が非空なら Items の和が唯一の出典 (申告された Size を信じない)
+	if got := full.WithItems([]Item{{Path: "/c", Size: 3}}); got.Size != 3 {
+		t.Errorf("差し替え後の Size = %d, want 3", got.Size)
+	}
+
+	reused := Result{Reused: true, Size: 4096} // Items を持たない (計測値だけ引き継いだ行)
+	if got := reused.WithItems(nil); got.Size != 4096 {
+		t.Errorf("Items を持たない Result の Size = %d, want 4096 (引き直すと行の合計が消える)", got.Size)
+	}
+	if got := reused.WithItems([]Item{}); got.Size != 4096 {
+		t.Errorf("空スライスでも同じ: Size = %d, want 4096", got.Size)
+	}
+}
+
+// WithResults は Total を引き直す。blocked / failed は「今消せる量」ではないので足さない
+// (SumDeletable の契約)。呼び出し側が Results だけ差し替えて Total を古いまま残す経路を
+// 作らないための唯一の入口。
+func TestWithResultsRecomputesTotal(t *testing.T) {
+	rep := Report{Total: 999, Partial: true}
+	got := rep.WithResults([]Result{
+		{Status: StatusOK, Size: 10},
+		{Status: StatusBlocked, Size: 100},
+		{Status: StatusFailed, Size: 1000},
+	})
+	if got.Total != 10 {
+		t.Errorf("Total = %d, want 10 (ok だけを足す)", got.Total)
+	}
+	if !got.Partial {
+		t.Error("Results 以外のフィールドを落としている (Partial が消えた)")
+	}
+	if got := rep.WithResults(nil); got.Total != 0 {
+		t.Errorf("空の Results で Total = %d, want 0 (古い合計が残っている)", got.Total)
+	}
+}

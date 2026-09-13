@@ -38,6 +38,13 @@ Reused / FromSnapshot は Size を保つ)。この 2 つの整合は
 手順 (脅威モデルと「検出しない形」を先に書く / canary は本走査と同じ関数を通す / 変異で red を見る) を
 通すこと。`issues_rows_setter_test.go` のヘッダがその作法の実例になっている。
 
+## 進捗
+
+- 2026-09-13 `refactor(disk): 導出フィールドの整合を Report.WithResults / Result.WithItems へ寄せる`
+  — 呼び出し側 8 箇所 (disk 3 / glogx 5) を所有者の API へ寄せ、glogx 側で導出フィールドを手で書く
+  箇所は 0 件になった。変異 3 本 (例外ガード除去 / Size 引き直し除去 / Total 引き直し除去) で red を確認。
+  **本 issue が言う「迂回の機械的な禁止」はこの commit には入っていない**
+
 ## 残タスク
 
 - [ ] 1 と 2 のどちらを採るか決める (未着手)

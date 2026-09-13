@@ -21,6 +21,41 @@ func HumanSize(n int64) string {
 	return ""
 }
 
+// WithResults は Results を差し替え、Total を引き直した Report を返す。
+//
+// 🚨 Total は Results の導出値 (ok の Size 合計) なので、**Results を差し替える経路は必ず
+// ここを通す**。呼び出し側で `rep.Results = xs; rep.Total = SumDeletable(xs)` と手で対にすると、
+// 片方だけ書く経路が増えたときに合計だけが古いまま残る (compile も通り、テストも
+// 「行は正しい」まま通るので silent に狂う)。
+func (rep Report) WithResults(rs []Result) Report {
+	rep.Results = rs
+	rep.Total = SumDeletable(rs)
+	return rep
+}
+
+// WithItems は Items を差し替えた Result を返す (Size を引き直す)。
+//
+// 🚨 引き直すのは**元の Items が非空だったときだけ**。Reused / FromSnapshot の Result は
+// Items を持たずに Size だけを持つことがあり、無条件に引き直すと行の合計が 0 になる
+// (SanitizeResultForDisplay が 2026-09-04 の敵対レビューで塞いだ穴)。この例外は Result の
+// 性質であって「Items を絞る側」の関心ではないので、呼び出し側に判断させずここへ閉じる。
+//
+// Size と Items が同時にしか増えないことは Scan が保証している (scanPaths /
+// scanSimRuntimes が `Items = append(...)` と `Size += ...` を対で行い、走査できなかった分は
+// Failures へ回して Size にも Items にも入れない)。
+func (r Result) WithItems(items []Item) Result {
+	if len(r.Items) == 0 {
+		r.Items = items
+		return r
+	}
+	var sum int64
+	for _, it := range items {
+		sum += it.Size
+	}
+	r.Items, r.Size = items, sum
+	return r
+}
+
 // Foldable は「候補 0 件なので一覧から畳んでよい行か」。CLI と TUI の唯一の出典。
 //
 // 🚨 **検出条件そのものが未実測のエントリ (Entry.Unverified) は畳まない** (issue 169 / 207)。

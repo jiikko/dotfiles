@@ -29,13 +29,11 @@ import (
 
 // SanitizeForDisplay は Report を表示・コピーに出してよい形にする (Total は引き直す)。
 func SanitizeForDisplay(rep Report) Report {
-	out := rep
-	out.Results = make([]Result, 0, len(rep.Results))
+	out := make([]Result, 0, len(rep.Results))
 	for _, r := range rep.Results {
-		out.Results = append(out.Results, SanitizeResultForDisplay(r))
+		out = append(out, SanitizeResultForDisplay(r))
 	}
-	out.Total = SumDeletable(out.Results)
-	return out
+	return rep.WithResults(out)
 }
 
 // SanitizeResultForDisplay は 1 エントリ分を無害化する。
@@ -62,15 +60,8 @@ func SanitizeResultForDisplay(r Result) Result {
 	}
 	// 🚨 落とした件数に関わらず kept を反映する。`if dropped > 0` の中だけで代入していたときは、
 	// **通常ケース (dropped == 0) で Ref の無害化が捨てられていた** (敵対レビュー 2026-09-04)。
-	// 合計の引き直しは落としたときだけ (Reused の Result は Items を持たないことがあり、
-	// 無条件に引き直すと 0 になる)
-	r.Items = kept
+	r = r.WithItems(kept)
 	if dropped > 0 {
-		var sum int64
-		for _, it := range kept {
-			sum += it.Size
-		}
-		r.Size = sum
 		r.Failures = append(r.Failures,
 			fmt.Sprintf("%d 件は名前に制御文字を含むため一覧から外しました (合計にも含めていません)", dropped))
 	}
