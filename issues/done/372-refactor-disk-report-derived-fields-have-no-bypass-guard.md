@@ -228,11 +228,12 @@ Reused / FromSnapshot は Size を保つ)。この 2 つの整合は
 
 - [x] 1 と 2 のどちらを採るか決める → **1 (ソース走査テスト)**。2 を落とした理由は上の実測
 - [x] 採った方を実装する
-- [ ] **未検証**: 「glogx だけを触った push で doctor の CI が起動し、**かつこの検査が
-      実際に走る**」ことの実 run 確認。paths filter とキャッシュ無効化を入れたところまでで、
-      実際の run では確かめていない (この commit は doctor と glogx の両方を触るので、
-      どちらの workflow も起動してしまい分離できない)。
-      🚨 **run が在ることを確認しても足りない** (キャッシュで `ok (cached)` を返す形が
-      あったため)。**trigger**: 次に glogx だけを触る commit が master へ載ったとき、
-      `bin/ci-log -a <run-id>` で `src/doctor` の run のログに
-      **`[derived-fields] … OK (キャッシュ無効で実行)` の行が出ているか**を見る
+- [x] **検証済み (2026-09-14)**: 「glogx だけを触った push で doctor の CI が起動し、**かつこの検査が
+      実際に走る**」ことを実 run で確認した。issue 371 (`src/glogx` の named type 化) の push が
+      ちょうど条件を満たした — `git diff --name-only 5d4f90ba..024ee68c` は
+      **`src/glogx/**` と `issues/` のみで `src/doctor/**` は 0 ファイル**。
+      - `src/doctor` workflow が起動した: run `34850264365` (headSha = `024ee68c`、conclusion success)
+      - **ログに証拠行が出た**: `2026-09-14T13:36:57Z [derived-fields] disk.Report/Result の
+        導出フィールドの迂回チェック OK (キャッシュ無効で実行)`
+      - run が在るだけでは足りない (キャッシュで `ok (cached)` を返す形があった) という
+        4 周目の指摘どおり、**ログの行まで見て**閉じた
