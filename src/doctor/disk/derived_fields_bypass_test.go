@@ -634,6 +634,22 @@ func canaryRebind(rep disk.Report) {
 
 func loadCache() cache { return cache{} }
 
+// 関数リテラルの引数が同名で別の型なら、外側の owner の束縛を持ち越さない
+// (誤検出してはいけない側。変異 M22 が緑で生存したので足した)
+func canaryArgRebind(rep disk.Report) {
+	inner := func(rep cache) { rep.Total = 0 } // 報告されてはいけない
+	inner(cache{})
+	_ = rep
+}
+
+// range の束縛も同じ (変異 M23 が緑で生存したので足した)
+func canaryRangeRebind(rep disk.Report, rows []cache) {
+	for _, rep := range rows {
+		rep.Total = 0 // 報告されてはいけない
+		_ = rep
+	}
+}
+
 // 以下は**報告されてはいけない**形
 func canaryNegative(c cache, eo disk.EntryOutcome, it disk.Item, rep disk.Report) bool {
 	c.Total = 0        // 別の型の Total
