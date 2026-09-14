@@ -1,5 +1,7 @@
 # 372 refactor: disk.Report/Result の導出フィールドを「所有者を迂回して」書く経路を機械で止めていない
 
+> 🚧 着手中: セッション dotfiles-d0 (2026-09-14 claim)
+
 - 起票: 2026-09-13
 - 種別: `refactor` (現状は全経路が正しい。次に足す人への防御)
 - 出典: audit の `encapsulation` (E2 不変条件の外部維持) で見つけた 2 件を
