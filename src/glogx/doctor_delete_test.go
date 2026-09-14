@@ -1441,7 +1441,9 @@ func TestDiskDetailInspectWithContentsStillHasSelectablePaths(t *testing.T) {
 		t.Fatalf("選べる対象パス行が %d 件 (期待 %d):\n%v", len(sel), len(r.Items), rowTexts(rows))
 	}
 	for _, it := range r.Items {
-		want := diskItemRowKey(diskItemKey(entryID(r.Entry.ID), it.Path))
+		// 🚨 期待値は **リテラル**で組む。diskItemRowKey で作ると生成側と同じ関数になり、
+		// prefix を変える退行を素通しする (敵対レビュー 2026-09-14 が実測で GREEN を確認)
+		want := rowKey("diskitem:" + r.Entry.ID + "\x00" + it.Path)
 		found := false
 		for _, k := range sel {
 			if k == want {

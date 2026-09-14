@@ -12,6 +12,10 @@ func TestParentRowKey(t *testing.T) {
 		want rowKey
 		ok   bool
 	}{
+		// 🚨 最初の 2 件は **リテラル**で書く。入力も期待値も構成子から作ると、prefix 文字列
+		// そのものを変える退行を素通しする (構成子と分解が揃って変わるため。敵対レビュー 2026-09-14)
+		{"disk の対象パス (綴りをリテラルで固定)", rowKey("diskitem:e00\x00/c/e00/x"), rowKey("disk:e00"), true},
+		{"docker の候補 (綴りをリテラルで固定)", rowKey("dockeritem:images:alpine"), rowKey("docker:images"), true},
 		{"disk の対象パスはエントリを親に持つ", diskItemRowKey(diskItemKey("e00", "/c/e00/x")), diskRowKey("e00"), true},
 		{"パスに : が入っていても壊れない", diskItemRowKey(diskItemKey("e01", "/c/a:b/x")), diskRowKey("e01"), true},
 		{"エントリ ID に : が入っていても壊れない", diskItemRowKey(diskItemKey("a:b", "/c/x")), diskRowKey("a:b"), true},

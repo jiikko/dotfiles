@@ -83,9 +83,15 @@ type rowKey string         // "disk:" / "diskitem:" / "brewact:i:j"
       - 🚨 **射程を凍結する**: 型が止めるのは *map の索引と代入の取り違え*まで。
         `v.expanded[rowKey("disk:"+string(id))]` のような**明示変換での迂回は止まらない**。
         そこは塞ぎに行かない (脅威モデルは `doctor_keys.go` の冒頭に書いた)
-- [x] `parentRowKey` にテストを追加 — 旧 `parentKeyOf` は**テストが 1 本も無かった**
-      (`collapseTargetAtCursor` / `collapsibleAtCursor` も直接のテスト無し)。
+- [x] `parentRowKey` にテストを追加 — **直接の**単体テストは無かった
+      (`collapseTargetAtCursor` / `collapsibleAtCursor` も同様)。
       disk / docker の両分解、分解できない形 (prefix だけ一致)、ID とパスに `:` が混ざる形を固定
+      - 🚨 **着手時の「テストが 1 本も無かった」は誤り**だった (敵対レビューが master 上で変異を当てて
+        訂正)。**経路上の 3 本が守っていた**: docker 分岐は `TestDoctorDockerEnterOnItemCollapsesGroup`、
+        disk 分岐は `TestDoctorEnterMovesCursorIntoItems` / `TestDoctorQCollapsesBeforeClosing`。
+        足したテストの価値は「分解の契約を直接固定したこと」であって「無防備を埋めたこと」ではない
+        (ただし `itemKey.belongsTo` の `\x00` 欠落だけは **master では全数走査しても 1 件も
+        赤くならない**真の穴で、`TestItemKeyEntryID` が実際に塞いだ)
 
 ## 結果 (実測)
 
@@ -109,6 +115,27 @@ type rowKey string         // "disk:" / "diskitem:" / "brewact:i:j"
   | disk の親を docker の構成子で組む | `disk_の対象パスはエントリを親に持つ` ほか 2 | ✓ |
   | `diskItemKey` の区切りを `:` にする | 両テスト | ✓ |
   - 🚨 変異 2 本は**ビルド不能** (変数が未使用になる) で第 3 の結果として扱い、当て直した
+
+## 敵対的レビューの結果 (2026-09-14 / read-only サブエージェント 1 体)
+
+主張 5 本のうち **4 本は壊せなかった** (挙動不変 / `parentKeyOf` ≡ `parentRowKey` は旧新を
+1 バイナリに入れた差分 fuzz 300 万入力で mismatch 0 / `belongsTo` と `isDocker` は逐語同一)。
+採用した指摘 2 件:
+
+| # | 指摘 | 対応 |
+|---|---|---|
+| P2-1 | `doctor_delete_test.go` の期待値を `diskItemRowKey(...)` で組んだため**生成側と同じ関数**になり、prefix を変える退行を素通しするようになっていた (レビューが master=RED / HEAD=GREEN を実測) | 期待値をリテラルへ戻した。同じ変異で RED に戻ることを確認 |
+| P2-2 | 「旧 `parentKeyOf` は無検査」という**不在の主張が誤り** | 上の項を訂正 |
+| P3-1 | `TestParentRowKey` は入力も期待値も構成子で組んでおり、**prefix 文字列そのもの**の退行を検出しない | 綴りをリテラルで固定するケースを 2 件追加。`"docker:"` → `"dockr:"` の変異が新ケースで RED になることを確認 |
+
+**未実証として残すもの**: `TestParentRowKey` の「親を持たない」5 ケース (エントリの行 / brew の手 /
+群そのもの / まとめて回収 / 空) は、当てた変異のいずれでも赤くならなかった。契約の記述としては
+正しいが**検出力は未実証**。これらを赤くする現実的な退行の形が見つからなかったため、
+テストを膨らませずに事実だけ残す。
+
+**ぼやき (レビュー由来)**: `selected` (エントリ全体の選択) と `inspected` (中身を開いた印) は
+集合としては別物だが、どちらも `entryID` 型なので型では分かれていない。今は
+`TestDoctorSelectRequiresInspectForConfirmRisk` が守っている (変異で確認済み)。
 
 ## 残タスク
 
