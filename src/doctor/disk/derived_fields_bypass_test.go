@@ -1,6 +1,7 @@
 package disk
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -40,7 +41,8 @@ import (
 //        検出しない — ローカルに組んだ `[]disk.Result` (実測 75 箇所。`out[i] = r` は
 //        正当な構築) と区別できず、広げると誤検出になる
 //     ③ **production の**複合リテラル `disk.Report{… Results: xs}` / `disk.Result{… Items: its}`。
-//        要素の型を省略した `[]disk.Result{{Items: its}}` も外側の型から降ろして見る。
+//        要素の型を省略した `[]disk.Result{{Items: its}}` / `[N]disk.Result{…}` /
+//        `map[K]disk.Result{…}` も外側の型から降ろして見る。
 //        キー無しリテラル (`disk.Report{rs, 0, …}`) は govet の composites が別に止める
 //   - **検出しない**: reflect / json.Unmarshal 経由 (保存した snapshot の復元は Results と Total を
 //     同時に埋めるので正しい) / 関数へ渡して中で書く形 (`copy(rep.Results, xs)` を含む) /
@@ -55,25 +57,30 @@ import (
 //   - **テストの複合リテラルは射程外**。fixture が Total / Size を埋めないのは
 //     「まだ計算していない」であって退行ではない (所有者パッケージ内の delete_test.go を
 //     射程外にしているのと同じ理由)。実測 2026-09-14 でテスト側 137 箇所 / production 1 箇所
-//   - フィールド名の表は名前だけで型を決めるので、**短い名前 (4 文字未満) は採らない**し、
+//   - フィールド名の表は名前だけで型を決めるので、絞る: **production からだけ集める**
+//     (テストの table のフィールド名まで採ると、テストを 1 つ改名しただけで
+//     この検査が「衝突」と誤診して赤くなる) / **短い名前 (4 文字未満) は採らない** /
 //     **名前が衝突したら落とす**。誤検出を出さない側へ倒しているぶん、
 //     採らなかった名前は**盲点**になる。黙って増減しないよう、下で
-//     (a) 実在する owner (`Disk` / `diskRep`) が表に居ること (b) 衝突で落ちた名前が 0 件
-//     (c) 短くて採らなかった名前が既知の一覧と一致すること、を assert する。
-//     🚨 **今の盲点は 3 つ** (`rep` / `r` / `sel`)。前 2 つは
-//     `doctorDiskEvent.{rep,r}` (走査 goroutine から model へ Report / Result を運ぶ
-//     production の口) なので、`msg.ev.rep.Results = …` は素通りする。
-//     採ると `h.r.Size = 0` のような無関係な型への書き込みを誤検出するため、盲点として引き受ける
-//   - **残っている誤検出リスク**: `owners` は関数単位で、ブロックスコープを見ない。
-//     別の型での**再宣言** (`var rep svc.Report`) と**型を追えない `:=`** は束縛を消すので
-//     実測では 0 件だが、`if`/`for` のブロック内だけの再束縛は追えない。
-//     スコープを厳密に追うには go/types が要るので、そこまではやらない
-//   - 🚨 **この射程は実装後に実物と突き合わせて 2 度直したもの**。初版は
-//     `disk.EntryOutcome.Items` と `doctorDiskCache.Total` を**誤検出する**形だった
-//     (→ 型で見分ける側へ直した)。2 周目の敵対的レビューで、
-//     「別名変数経由は検出しない」という**宣言が実装と逆**だったこと、②③が抜けていたこと、
-//     `r` / `sel` を表に採ったせいで**無関係なコードを落とす誤検出**を作れること、
-//     `var rep svc.Report` の再宣言を跨いで disk.Report と誤分類していたことが分かった
+//     (a) 実在する owner (`Disk` / `diskRep` / `diskResults`) が表に居ること
+//     (b) 衝突で落ちた名前が 0 件 (c) 短くて採らなかった名前が既知の一覧と一致すること、を assert する。
+//     🚨 **今の盲点は 2 つ** (`rep` / `r` = `doctorDiskEvent.{rep,r}`。走査 goroutine から
+//     model へ Report / Result を運ぶ production の口) なので、`msg.ev.rep.Results = …` は
+//     素通りする。採ると `h.r.Size = 0` のような無関係な型への書き込みを誤検出するため、
+//     盲点として引き受ける
+//   - **見逃す形 (スコープ)**: `owners` は関数単位で、ブロックスコープを見ない。
+//     `{ rep := len(xs) }` のようにブロック内で owner 名を `:=` でシャドウすると、
+//     **そのブロックを抜けた後の本物の書き込みまで見えなくなる**。
+//     引数 / `var` / 型を追えない `:=` / range の束縛は消すので誤検出側には倒れないが、
+//     この見逃しは残る (スコープを厳密に追うには go/types が要る)
+//   - 🚨 **この射程は実装後に実物と突き合わせて 3 度直したもの**。初版は
+//     `disk.EntryOutcome.Items` と `doctorDiskCache.Total` を**誤検出する**形だった。
+//     2 周目で「別名変数経由は検出しない」という**宣言が実装と逆**だったこと、②③が
+//     抜けていたこと、`r` / `sel` を表に採ったせいで**無関係なコードを落とす誤検出**を
+//     作れること、`var rep svc.Report` の再宣言を跨いで誤分類していたことが分かった。
+//     3 周目で **CI の paths を見る assert 自身が false green** だったこと
+//     (コメントアウトも `paths-ignore` への反転も緑)、引数と range の束縛に
+//     同じ誤検出が残っていたこと、`sel` (テスト由来) が無関係な改名で赤を出すことが分かった
 //
 // 🚨 **CI の配線**: この検査は doctor の `make test` で走るが、走査対象には glogx が含まれる。
 // そのため `.github/workflows/src_doctor.yml` の paths に `src/glogx/**` を足してある。
@@ -146,6 +153,18 @@ func (s diskScanner) typeKind(e ast.Expr) ownerKind {
 		}
 	}
 	return ownerNone
+}
+
+// elemIsResult は「要素 (map なら値) が disk.Result の複合型か」。
+// `[]disk.Result` / `[N]disk.Result` / `map[K]disk.Result` / それらのポインタ版を受ける。
+func (s diskScanner) elemIsResult(e ast.Expr) bool {
+	switch t := e.(type) {
+	case *ast.ArrayType:
+		return s.typeKind(t.Elt) == ownerResult
+	case *ast.MapType:
+		return s.typeKind(t.Value) == ownerResult
+	}
+	return false
 }
 
 // ownerFieldMinLen は owner としてフィールド名を採用する最短の長さ。
@@ -233,6 +252,43 @@ func (s diskScanner) rhsKind(e ast.Expr, owners map[string]ownerKind) ownerKind 
 	return s.kindOf(e, owners)
 }
 
+// workflowPaths は workflow の `on.<trigger>.paths` の要素を trigger ごとに返す。
+//
+// 🚨 YAML パーサは持ち込まず、インデントで読む (doctor は依存を増やさない方針)。
+// 代わりに **想定外の書き方は error にする** (paths-ignore / 未知のキー) — 「読めなかった」を
+// 緑にしないため。コメント行は捨てる (コメントアウトを「在る」と読まない)。
+func workflowPaths(text string) (map[string][]string, error) {
+	out := map[string][]string{}
+	trigger, inPaths := "", false
+	for _, raw := range strings.Split(text, "\n") {
+		line := strings.TrimRight(raw, " \t")
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		indent := len(line) - len(strings.TrimLeft(line, " "))
+		switch {
+		case indent == 0: // on: / jobs: など
+			trigger, inPaths = "", false
+		case indent == 2: // push: / pull_request: / workflow_dispatch:
+			trigger, inPaths = strings.TrimSuffix(trimmed, ":"), false
+		case indent == 4 && trigger != "":
+			key := strings.TrimSuffix(trimmed, ":")
+			if key == "paths-ignore" {
+				return nil, fmt.Errorf("%s に paths-ignore がある (paths とは意味が逆)", trigger)
+			}
+			inPaths = key == "paths"
+		case indent >= 6 && inPaths && strings.HasPrefix(trimmed, "- "):
+			v := strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
+			if i := strings.Index(v, " #"); i >= 0 { // 行末コメント
+				v = strings.TrimSpace(v[:i])
+			}
+			out[trigger] = append(out[trigger], strings.Trim(v, `'"`))
+		}
+	}
+	return out, nil
+}
+
 // derivedOf は「そのフィールド名が、どの owner の導出フィールドか」を返す。
 func derivedOf(field string) ownerKind {
 	switch field {
@@ -257,10 +313,15 @@ func (s diskScanner) scanFunc(fset *token.FileSet, path string, fn *ast.FuncDecl
 		}
 		for _, f := range fl.List {
 			k := s.typeKind(f.Type)
-			if k == ownerNone {
-				continue
-			}
 			for _, n := range f.Names {
+				// 🚨 disk 型でない引数は**束縛を消す**。消さないと、同じ関数の中で
+				// `func(r *disk.Result)` のリテラルを書いた後に `for _, r := range rows`
+				// (別の型) を回すだけで、`r.Size = 0` を違反と報告する
+				// (敵対レビュー 3 周目 P2-1 が実測。的になる同名フィールドは実在する)
+				if k == ownerNone {
+					delete(owners, n.Name)
+					continue
+				}
 				owners[n.Name] = k
 			}
 		}
@@ -311,6 +372,16 @@ func (s diskScanner) scanFunc(fset *token.FileSet, path string, fn *ast.FuncDecl
 		if fl, ok := n.(*ast.FuncLit); ok && fl.Type != nil {
 			addField(fl.Type.Params)
 		}
+		// 🚨 range の束縛は消す。`for _, r := range rep.Results` の `r` は**値のコピー**なので
+		// そこへ書いても不変条件は壊れない (違反ではない) 一方、別の型のスライスを同名で
+		// 回されると誤検出になる。どちらの向きにも倒れないよう、束縛を落とす
+		if rs, ok := n.(*ast.RangeStmt); ok {
+			for _, e := range []ast.Expr{rs.Key, rs.Value} {
+				if id, ok := e.(*ast.Ident); ok {
+					delete(owners, id.Name)
+				}
+			}
+		}
 		// 🚨 production の複合リテラルで導出フィールドを埋める形
 		// (`disk.Report{ScannedAt: …, Results: results}`)。Total が 0 のまま残る。
 		// **テストは射程外**: 所有者パッケージ内の delete_test.go と同じで、
@@ -330,20 +401,23 @@ func (s diskScanner) scanFunc(fset *token.FileSet, path string, fn *ast.FuncDecl
 					}
 				}
 			}
-			switch k := s.typeKind(cl.Type); k {
-			case ownerReport, ownerResult:
+			if k := s.typeKind(cl.Type); k == ownerReport || k == ownerResult {
 				keys(cl, k)
-			case ownerResultSlice:
-				// 🚨 `[]disk.Result{{Items: its}}` は**要素の型が省略される**ので
-				// `Type == nil` になり、要素だけ見ても disk.Result と分からない。
-				// 外側の型から降ろす (敵対レビュー 2 周目 P1-2。Size が 0 のまま残る
-				// もっとも自然な書き方だった)
+			}
+			// 🚨 `[]disk.Result{{Items: its}}` は**要素の型が省略される**ので `Type == nil` に
+			// なり、要素だけ見ても disk.Result と分からない。外側の型から降ろす
+			// (敵対レビュー 2 周目 P1-2。Size が 0 のまま残る最も自然な書き方だった)。
+			// slice / 固定長配列 / map の値も同じ (3 周目 P3-1)
+			if s.elemIsResult(cl.Type) {
 				for _, elt := range cl.Elts {
-					if inner, ok := elt.(*ast.CompositeLit); ok {
-						keys(inner, ownerResult)
+					inner := elt
+					if kv, ok := elt.(*ast.KeyValueExpr); ok { // map[...]disk.Result{"a": {…}}
+						inner = kv.Value
+					}
+					if lit, ok := inner.(*ast.CompositeLit); ok {
+						keys(lit, ownerResult)
 					}
 				}
-			case ownerNone:
 			}
 		}
 		// var rep disk.Report / var rs []disk.Result
@@ -681,6 +755,14 @@ func TestDerivedFieldsGoThroughOwner(t *testing.T) {
 		if parts := strings.Split(filepath.ToSlash(p.path), "/"); len(parts) > 3 {
 			modules[parts[2]] = true
 		}
+		// 🚨 **フィールド表は production からだけ集める**。テストの table 構造体の
+		// フィールド名 (`sel` / `want` / `got` …) まで表に入れると、テストを 1 つ改名した
+		// だけで doctor のこの検査が「衝突で落ちた」と赤くなる (敵対レビュー 3 周目 P2-3 が
+		// `sel` → `selected` の改名で実測)。テストが宣言した struct フィールド経由の
+		// 書き込みは見逃すが、誤検出とトリップワイヤの面をそのぶん減らす
+		if strings.HasSuffix(p.path, "_test.go") {
+			continue
+		}
 		diskScanner{diskName: name}.collectOwnerFields(p.file, fields, conflict, short)
 	}
 	var lost []string
@@ -718,31 +800,32 @@ func TestDerivedFieldsGoThroughOwner(t *testing.T) {
 		t.Fatalf("CI の配線を確認できない (%s): %v。移動・改名したなら、この検査の "+
 			"workflow 定数とヘッダも直すこと", workflow, err)
 	}
-	text := string(wf)
-	cut := strings.Index(text, "\n  pull_request:")
-	if cut < 0 {
-		t.Fatalf("%s の形が想定と違う (push: と pull_request: に分けられない)。"+
-			"paths の検査ができていないので、この検査を直すこと", workflow)
+	// 🚨 **部分文字列で見ない**。生テキストを `strings.Contains` で照合していた版は、
+	// **コメントアウト**した行も、`paths:` を `paths-ignore:` に反転 (意味が真逆) しても、
+	// paths を全撤去して説明コメントに文字列だけ残しても、**全部緑**だった
+	// (敵対レビュー 3 周目 P1-1 が 5 形で実測)。行を構造として読む。
+	triggers, perr := workflowPaths(string(wf))
+	if perr != nil {
+		t.Fatalf("%s を読めない: %v。yml の書き方を変えたなら、この検査も直すこと", workflow, perr)
 	}
-	halves := map[string]string{"push": text[:cut], "pull_request": text[cut:]}
-	for _, half := range halves {
-		if len(half) < 100 {
-			t.Fatalf("%s の分割が壊れている (片側 %d 文字)。paths を検査できていない", workflow, len(half))
-		}
-	}
-	// canary: 自分の module は必ず paths に居るはず (居なければ照合の仕方が壊れている)
-	for name, half := range halves {
-		if !strings.Contains(half, "'src/doctor/**'") {
-			t.Fatalf("%s の %s に 'src/doctor/**' が見つからない。paths の照合が壊れている",
+	for _, name := range []string{"push", "pull_request"} {
+		if len(triggers[name]) == 0 {
+			t.Fatalf("%s の %s に paths が 1 件も無い。paths を消した / paths-ignore へ変えたなら、"+
+				"この検査が守っている前提 (glogx の変更で doctor の CI が走る) が崩れている",
 				workflow, name)
+		}
+		// canary: 自分の module は必ず居るはず (居なければ抽出が壊れている)
+		if !slices.Contains(triggers[name], "src/doctor/**") {
+			t.Fatalf("%s の %s の paths から 'src/doctor/**' を抽出できない (抽出が壊れている): %v",
+				workflow, name, triggers[name])
 		}
 	}
 	for m := range modules {
-		for name, half := range halves {
-			if !strings.Contains(half, "'src/"+m+"/**'") {
+		for _, name := range []string{"push", "pull_request"} {
+			if !slices.Contains(triggers[name], "src/"+m+"/**") {
 				t.Fatalf("doctor/disk の consumer が src/%s に居るのに、%s の %s の paths に "+
-					"'src/%s/**' が無い。src/%s だけを触った push ではこの検査が 1 度も走らない",
-					m, workflow, name, m, m)
+					"'src/%s/**' が無い。src/%s だけを触った push ではこの検査が 1 度も走らない。"+
+					"抽出した paths: %v", m, workflow, name, m, m, triggers[name])
 			}
 		}
 	}
@@ -768,7 +851,7 @@ func TestDerivedFieldsGoThroughOwner(t *testing.T) {
 	//   rep: doctorDiskEvent.rep *disk.Report  (走査 goroutine から model へ運ぶ production の口)
 	//   r  : doctorDiskEvent.r   *disk.Result  (同上)
 	//   sel: glogx のテストの table 構造体 sel []disk.Result
-	knownShort := []string{"r", "rep", "sel"}
+	knownShort := []string{"r", "rep"}
 	gotShort := make([]string, 0, len(short))
 	for n := range short {
 		gotShort = append(gotShort, n)
@@ -782,7 +865,7 @@ func TestDerivedFieldsGoThroughOwner(t *testing.T) {
 
 	// 🚨 実在する owner が表に居ることを固定する。フィールド名が衝突すると表から落ちて
 	// **検査が黙って弱くなる**ので、そのときはここで落ちて気づける (issue 372)。
-	for name, want := range map[string]ownerKind{"Disk": ownerReport, "diskRep": ownerReport} {
+	for name, want := range map[string]ownerKind{"Disk": ownerReport, "diskRep": ownerReport, "diskResults": ownerResultSlice} {
 		if fields[name] != want {
 			names := make([]string, 0, len(fields))
 			for n := range fields {
