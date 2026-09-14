@@ -81,6 +81,70 @@ ft 未記録 11 件 (層別に使えない古い行)
 
 12 行すべて実装当日（2026-09-08）の動作確認によるもので、**実運用のデータは実質ゼロ**。
 
+## 2026-09-14 の実測 — 「レシーバを考慮できないのか」への回答
+
+ユーザーからの問い（`Loaders::StockEventLoader#load` の参照を引いたら同名の別レシーバが大量に出た）。
+**3 経路のうちレシーバを見るのは solargraph だけで、その solargraph は現実的な時間で返らない。**
+
+| 経路 | レシーバを見るか | 根拠 / 実測 |
+|---|---|---|
+| rg（現行の `<C-k>`） | **原理的に不可能** | テキスト検索。`word_match = "-w"` は語境界であって受け手ではない |
+| ruby-lsp 0.26.11（`<leader>K`） | **見ていない** | `reference_finder.rb:285` が `node.name.to_s == @target.method_name` の名前一致だけ。receiver を触るのは `Prism::SelfNode` かの判定（`:241` / `:248`）のみ |
+| solargraph 0.55.1 | **見ている** | `library.rb#references_from` が候補ごとに `definitions_at()` を引き直し `referenced&.path == pin.path` で篩う（定義パス一致 = 実質的な型解決） |
+
+🚨 **ubiregi-server で選ばれるのは ruby_lsp**。`M.ruby_server_for` の判定を再現した（Gemfile あり +
+`RBENV_VERSION= ruby-lsp --version` が rc=0 / stdout `0.26.11`）。つまり
+**`<leader>K` で引き直しても精度は上がらず、11 秒待つだけ**。
+
+### 精度の実測（ubiregi-server / `load` / 2682 ファイル）
+
+| 手段 | 件数 | 備考 |
+|---|---|---|
+| 現行 rg（Ruby 系に絞り + `-w`） | **243 行** | 最多は `@form.load(attributes)` 15 行（= 別クラス） |
+| `\.load\b`（レシーバ付きだけ） | 161 行 | 同クラス内の `load(x)` / `self.load` / `&.load` を落とす |
+| AST 索引 prototype（`measure.rb`） | **187 箇所**（呼び出し 168 + 宣言 19） | 落ちたのはコメント・文字列・シンボルだけ |
+
+🚨 **AST 索引でもレシーバは分からない**。`@form.load` と `@loader.load` は両方残る。
+prototype にレシーバ絞り込みを期待しないこと（「呼び出し元のレシーバ表記を索引に持つ」のは新規スコープ）。
+
+### 速度の実測（solargraph 0.55.1 / `references_from` を直接叩く）
+
+| 対象 | build | query | 結果 |
+|---|---|---|---|
+| `load`（rg 243 行） | 44.0s（source_maps 2682） | **40 分で打ち切り（rc=124）** | 返らず |
+| `wrap_error`（rg 59 行 / AST 24） | 34.9s（source_maps 2682） | **19 分で打ち切り（rc=124）** | 返らず |
+
+（同じ repo で ruby-lsp の references は 11.2 秒、rg は 0.17 秒）
+
+候補 1 件ごとに `api_map.clip` + `clip.define` を回す構造なので、候補が少ない `wrap_error` でも返らない。
+**精度は最も高いが、実用外**と読む。
+
+🚨 **測り方で 2 回外した**（後続が同じ穴に落ちないように残す）:
+
+1. `lib.map!` を呼ばないと `source_map_hash` が 1 ファイルしか持たず、`definitions_at` が
+   **197 回とも縮退**して「28 秒で 1 件（宣言だけ）」という偽の結果が出た。
+   LSP host は catalog 経路で全ソースを map するので、そこに合わせること
+2. `references_from` は 0.55.1 で**クラッシュする条件を持つ**。候補がコメント内に落ちると
+   `definitions_at` が nil を返し `library.rb:257` の `.first` が `NoMethodError`。
+   計測では nil を `[]` に畳む wrapper を噛ませた（畳んだ回数を stderr に出して握り潰さない）
+
+**未解消の confound**: 親（0.55.1）が `Process.spawn(workspace.command_path, 'cache', ...)` で
+gemspec を caching しようとするが、rbenv shim が 0.56.2 を解決して `Could not find command "cache"` で
+失敗し続ける。ただしこれは **Thread 内の spawn + wait** でメインのクエリをブロックしないため、
+上の時間の主因とは考えにくい。**gem cache が効いた状態での追試はしていない**。
+
+### 判定基準の表への当てはめ
+
+本件は表の最終行「引き直し X >= 10% だが LSP（定数）が少ない → sidecar より **rg のパターンを絞る**方が安い」に当たる。
+ただし `-w` は「部分一致にすると別メソッドを大量に拾う」という既存判断で選ばれているので、
+変えるなら `references_action` の純関数テスト + 変異検証が付く（安い改善ではない）。**未着手**。
+
+残タスク:
+
+- [ ] rg のパターンを絞るか、ノイズを受容するかの判断（ユーザー待ち）
+- [ ] `nvim/ruby-refs-index/README.md:49` の「production の `telescope.grep_string` はタイプを絞らない」が
+      e61fc71e（rg を Ruby 系に絞った変更）で古い。`measure.rb` の rg baseline も土俵がずれている（406 行 vs production 243 行）
+
 ## 関連
 
 - [issue 334](done/334-ruby-references-call-site-index.md) — 実測の記録（索引の構築時間 / メモリ / クエリ時間 / 精度差）
