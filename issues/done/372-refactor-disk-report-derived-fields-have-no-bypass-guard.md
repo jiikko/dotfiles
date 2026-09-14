@@ -1,7 +1,5 @@
 # 372 refactor: disk.Report/Result の導出フィールドを「所有者を迂回して」書く経路を機械で止めていない
 
-> 🚧 着手中: セッション dotfiles-d0 (2026-09-14 claim)
-
 - 起票: 2026-09-13
 - 種別: `refactor` (現状は全経路が正しい。次に足す人への防御)
 - 出典: audit の `encapsulation` (E2 不変条件の外部維持) で見つけた 2 件を
@@ -36,7 +34,7 @@ Reused / FromSnapshot は Size を保つ)。この 2 つの整合は
    互換のために出力時だけ埋める形になる。影響が大きい
 
 🚨 1 を採るなら、それ自体が「自作の検査」なので
-[`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) の
+[`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) の
 手順 (脅威モデルと「検出しない形」を先に書く / canary は本走査と同じ関数を通す / 変異で red を見る) を
 通すこと。`issues_rows_setter_test.go` のヘッダがその作法の実例になっている。
 
@@ -138,7 +136,7 @@ Reused / FromSnapshot は Size を保つ)。この 2 つの整合は
 
 - 2026-09-14 `test(disk,372): 敵対的レビュー 2 周目の指摘 6 件を塞ぐ` ほか
 
-  2 周目は「1 周目の指摘に対して**新設した機構**」を攻めさせた ([`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) §7)。
+  2 周目は「1 周目の指摘に対して**新設した機構**」を攻めさせた ([`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) §7)。
 
   | 指摘 | 中身 | 対応 |
   |---|---|---|
@@ -181,7 +179,7 @@ Reused / FromSnapshot は Size を保つ)。この 2 つの整合は
   **変異 5 本追加 (M20-M24)。うち M22 / M23 が緑で生存**したので、否定 canary
   (`canaryArgRebind` / `canaryRangeRebind`) を足して red を確認した。累計 24 本。
   🚨 この過程で **`git checkout` による復元で未コミットの修正を 3 回自分で消した**
-  ([`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の
+  ([`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) の
   「指摘を直したら変異の前に commit する」が名指ししている形)。retro 候補。
 
 - 2026-09-14 `fix(doctor,372): 導出フィールドの走査テストを go test のキャッシュから外す` ほか
@@ -220,7 +218,7 @@ Reused / FromSnapshot は Size を保つ)。この 2 つの整合は
   (`cp -R src .github`)。3 周目までに `git checkout` で未コミットの修正を 3 回消しており、
   コピーなら復元事故が構造的に起きない。
 
-  **レビューはここで打ち切る** ([`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) §8 の stopping rule)。
+  **レビューはここで打ち切る** ([`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) §8 の stopping rule)。
   yml リーダは構文ゲートで迂回が原理的に無限 (手書き anchor / フロー形式 /
   `branches-ignore` / `jobs.<id>.if: false` …) なので、**脅威モデルをヘッダへ凍結**した:
   止めるのは「うっかり paths を消す / コメントアウトする」典型形だけで、読めない書き方は
