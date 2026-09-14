@@ -20,6 +20,8 @@
 --      *.js の単純一致まで参照候補に並ぶ。絞り込みは実際に rg を走らせて確かめる: テスト側に
 --      同じ配列を書き写す形だと、タイプ名の綴り違いや --type-add の書式ミスが「リストが在る」
 --      で緑になる (rg は未知のタイプ名を rc=2 のエラーにするので、写しでは検出できない)。
+--      🚨 fixture は git repo 外の tempdir なので **.gitignore は効かない**。ここが守るのは
+--      タイプ絞りだけで、production 側の ignore 尊重 (vendor/bundle が外れる) は対象外。
 --   8. 絞り込みが **grep_string へ転送されている**。references_action が返すだけで
 --      マッピングが捨てていても、7 の検査は返り値を直接見るので緑のまま通る。
 local function fail(msg)
