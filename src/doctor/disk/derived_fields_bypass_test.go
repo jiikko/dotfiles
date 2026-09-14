@@ -83,9 +83,20 @@ import (
 //     (コメントアウトも `paths-ignore` への反転も緑)、引数と range の束縛に
 //     同じ誤検出が残っていたこと、`sel` (テスト由来) が無関係な改名で赤を出すことが分かった
 //
-// 🚨 **CI の配線**: この検査は doctor の `make test` で走るが、走査対象には glogx が含まれる。
-// そのため `.github/workflows/src_doctor.yml` の paths に `src/glogx/**` を足してある。
-// 外すと「glogx だけ変えた push」でこの検査が 1 度も走らない (false green)。
+// 🚨 **CI の配線** (ここが 2 段構え。どちらが欠けても検査は「在るのに走らない」):
+//  1. `.github/workflows/src_doctor.yml` の paths に `src/glogx/**` がある
+//     (無いと「glogx だけ変えた push」で workflow 自体が起動しない)
+//  2. `src/doctor/Makefile` の `test-derived-fields` が `-count=1` で回す
+//     (この検査は module の外を読むので **go test のキャッシュキーに入力が 1 つも入らない**。
+//     付けないと `ok (cached)` を返し続ける。しかも最も当たりやすいのは 1 が守りたい
+//     「glogx だけ変えた push」で、doctor のソースが変わらないため必ずキャッシュに当たる)
+//
+// 1 は下の workflowPaths が検査する。🚨 **その脅威モデルは「うっかり paths を消す /
+// コメントアウトする」典型形だけ**を止めること (§8 の stopping rule)。手書きの YAML anchor、
+// フロー形式、`branches` の絞り込み、`jobs.<id>.if: false` のような「CI を無効化する
+// 別の書き方」は原理的に無限にあるので**追わない** — 読めない書き方に出会ったら
+// 「読めなかった」と言って落ちる (在るとも無いとも言わない) までが射程で、
+// その先は review の責務。2 は Makefile 側のコメントが正本。
 //
 // scanDerivedWrites は 1 ファイル分の違反と「型を解決できた参照の数」を返す
 // (本走査と canary の共通経路)。

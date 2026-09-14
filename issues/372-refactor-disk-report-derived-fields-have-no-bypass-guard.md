@@ -184,12 +184,57 @@ Reused / FromSnapshot は Size を保つ)。この 2 つの整合は
   ([`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の
   「指摘を直したら変異の前に commit する」が名指ししている形)。retro 候補。
 
+- 2026-09-14 `fix(doctor,372): 導出フィールドの走査テストを go test のキャッシュから外す` ほか
+
+  **4 周目でブロッカーが出た。この検査は入れた時点では CI で何も守っていなかった。**
+
+  `derived_fields_bypass_test.go` は doctor module の**外** (src/glogx と
+  `.github/workflows/`) を読むが、cmd/go は testlog の open/stat のうち **module root の外を
+  再チェックしない** (`$GOROOT/src/cmd/go/internal/test/test.go` の "Do not recheck files
+  outside the module, GOPATH, or GOROOT root.")。つまり**キャッシュキーに入力が 1 つも入らない**。
+
+  自分で実測 (2026-09-14):
+
+  | 手順 | 結果 |
+  |---|---|
+  | warm 後に glogx へ本物の違反 (`disk.Report{Results: rs}`) を植える | — |
+  | `go test -race ./disk/` | **`ok (cached)` rc=0** ← 緑 |
+  | `go test -race -count=1 ./disk/` | **FAIL** ← 実際は検出できる |
+
+  🚨 **最も当たりやすいのは、この検査が守りたい状況そのもの**: 「glogx だけを触った push」は
+  doctor のソースを変えないので必ずキャッシュに当たる。`src_doctor.yml` の paths に
+  `src/glogx/**` を足した意味が消えていた (ゲートとキャッシュ穴が同じ trigger で発火する)。
+
+  対応: `src/doctor/Makefile` に `test-derived-fields` を足し、`-count=1` で回して
+  **PASS 行が出たこと**まで確認する (exit code だけを見ない)。A-B-C で検証:
+  A 正常系で証拠行が出る / B glogx に違反を植えると rc=2 (キャッシュが温まっていても) /
+  C テストを改名して `-run` が空振りしたら落ちる。
+
+  他に 4 周目で採用した指摘: `map[K]disk.Result` / `[N]disk.Result` の降ろしを**変異が生存**
+  していた (canary に配列・map・`[]disk.Report` の 3 形を追加) / `workflowPaths` が `on:` に
+  錨を打っておらず `jobs:` 下の `push:` を trigger と誤読していた / 「paths が消えた」と
+  「構造として読めなかった」でメッセージを分けた (混ぜると yamlfmt をかけただけの人が
+  1 往復する) / range の削除を `:=` のときだけにした。
+
+  **変異 4 本追加、累計 28 本すべて red**。この回から**変異は repo の外のコピーで**当てた
+  (`cp -R src .github`)。3 周目までに `git checkout` で未コミットの修正を 3 回消しており、
+  コピーなら復元事故が構造的に起きない。
+
+  **レビューはここで打ち切る** ([`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) §8 の stopping rule)。
+  yml リーダは構文ゲートで迂回が原理的に無限 (手書き anchor / フロー形式 /
+  `branches-ignore` / `jobs.<id>.if: false` …) なので、**脅威モデルをヘッダへ凍結**した:
+  止めるのは「うっかり paths を消す / コメントアウトする」典型形だけで、読めない書き方は
+  「読めなかった」と言って落ちるまでが射程。その先は review の責務。
+
 ## 残タスク
 
 - [x] 1 と 2 のどちらを採るか決める → **1 (ソース走査テスト)**。2 を落とした理由は上の実測
 - [x] 採った方を実装する
-- [ ] **未検証**: 「glogx だけを触った push で doctor の CI が起動する」ことの実 run 確認。
-      paths filter を静的に足したところまでで、実際の run では確かめていない
-      (この commit は doctor と glogx の両方を触るので、どちらの workflow も起動してしまい
-      分離できない)。**trigger**: 次に glogx だけを触る commit が master へ載ったとき、
-      `bin/ci-log -l` で `src/doctor` の run が出ているかを見る
+- [ ] **未検証**: 「glogx だけを触った push で doctor の CI が起動し、**かつこの検査が
+      実際に走る**」ことの実 run 確認。paths filter とキャッシュ無効化を入れたところまでで、
+      実際の run では確かめていない (この commit は doctor と glogx の両方を触るので、
+      どちらの workflow も起動してしまい分離できない)。
+      🚨 **run が在ることを確認しても足りない** (キャッシュで `ok (cached)` を返す形が
+      あったため)。**trigger**: 次に glogx だけを触る commit が master へ載ったとき、
+      `bin/ci-log -a <run-id>` で `src/doctor` の run のログに
+      **`[derived-fields] … OK (キャッシュ無効で実行)` の行が出ているか**を見る
