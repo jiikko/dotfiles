@@ -558,7 +558,14 @@ require("lazy").setup({
             -- 既定は insert の <esc> が「閉じる」でなく picker 内 normal へ移行するだけで
             -- 「閉じ方が分からない」状態になる。insert の <esc> を即クローズに割り当てる。
             -- (<C-c> でも閉じられるのは既定のまま)
-            i = { ["<esc>"] = actions.close },
+            -- <C-u>: 既定は preview_scrolling_up。false を渡すと telescope がマップを張らず、
+            -- 挿入モード既定の <C-u> (カーソル前を削除 = 入力クリア) が効く。
+            -- 上スクロールは未使用の <C-b> へ退避し、<C-d> の下スクロールと対で残す。
+            i = {
+              ["<esc>"] = actions.close,
+              ["<C-u>"] = false,
+              ["<C-b>"] = actions.preview_scrolling_up,
+            },
           },
         },
         extensions = {
