@@ -131,6 +131,14 @@ local function set_highlights()
   apply_match() -- 起動直後の最初のウィンドウは WinEnter が発火しないため直接適用
 end
 
+-- ディスク上の変更検出 (checktime) を打ってよい文脈か。
+-- 🚨 cmdwin (q: / q/) では mode() が "n" を返すので、モード判定だけでは素通りする。
+--    cmdwin の中で checktime を打つと E11 になり、CursorHold (updatetime 500ms) のたびに
+--    エラーが出続ける (2026-09-14 実測。q: を開いて放置すると止まらない)。
+function M.can_checktime()
+  return vim.fn.mode() ~= "c" and vim.fn.getcmdwintype() == ""
+end
+
 local function set_autocmds()
   local group = vim.api.nvim_create_augroup("dotfiles_basic_autocmds", { clear = true })
 
@@ -205,7 +213,7 @@ local function set_autocmds()
     group = group,
     pattern = "*",
     callback = function()
-      if vim.fn.mode() ~= "c" then
+      if M.can_checktime() then
         vim.cmd("checktime")
       end
     end,
