@@ -92,7 +92,13 @@ type rowKey string         // "disk:" / "diskitem:" / "brewact:i:j"
 - 型を入れた後の**コンパイルエラーは 4 件だけ**で、すべて map の初期化 (`map[string]bool{}`) だった。
   = **既存 21 箇所はすべて正しく使われていた**ことが機械で確定した (issue の「現時点で実際に
   取り違えている箇所は見つかっていない」を、grep でなくコンパイラで裏取りできた)
-- `go test ./...` rc=0 / `make lint` 0 issues (版固定の golangci-lint v2.5.0)
+- `go test ./...` rc=0 / `make lint` 0 issues (版固定の golangci-lint v2.5.0) /
+  repo root の `make test` rc=0 (`[derived-fields] … OK` も出ており、372 のガードも通っている)
+- **射程を実装と突き合わせた結果** (ヘッダに書いた「検出しない形」は着手前の意図なので測り直した):
+  - production に残る生の prefix 組み立ては **0 箇所** (`doctor_keys.go` の外にヒット無し)
+  - production の `rowKey(...)` 明示変換も **0 箇所**。行 key の名前空間はコンストラクタで閉じている
+  - 明示変換が残るのは `cmdKey(...)` 5 箇所 (コマンド文字列の境界。`copyPath` が二重の意味を
+    持つので意図的に見えるようにしている) と `entryID(e.ID)` 1 箇所 (`disk.DeleteReport` の境界)
 - 新規テストの変異検証 **5 本すべて RED** (repo 外のコピーで実施。各変異はビルド成功と diff を
   確認してから red/green を読んだ):
   | 変異 | 落ちた assert | 予測と一致 |
