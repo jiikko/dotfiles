@@ -133,6 +133,12 @@ type rowKey string         // "disk:" / "diskitem:" / "brewact:i:j"
 正しいが**検出力は未実証**。これらを赤くする現実的な退行の形が見つからなかったため、
 テストを膨らませずに事実だけ残す。
 
+**2 周目は回さずに閉じた** (`adversarial-review-own-safeguards.md` §7 の例外):
+指摘への修正は (a) 判定ロジックを新設しておらず (テストの期待値をリテラルへ戻したのと、
+ケースを 2 件足しただけ) (b) 各修正を直接の実測で確認した (`"diskitem:" → "diskitm:"` と
+`"docker:" → "dockr:"` の変異でそれぞれ RED になることを確認)。
+新しい環境条件 (大文字小文字 / ロケール / パスの表記) も持ち込んでいない。
+
 **ぼやき (レビュー由来)**: `selected` (エントリ全体の選択) と `inspected` (中身を開いた印) は
 集合としては別物だが、どちらも `entryID` 型なので型では分かれていない。今は
 `TestDoctorSelectRequiresInspectForConfirmRisk` が守っている (変異で確認済み)。
