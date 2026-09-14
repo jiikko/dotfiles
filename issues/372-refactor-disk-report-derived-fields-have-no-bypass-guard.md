@@ -163,6 +163,27 @@ Reused / FromSnapshot は Size を保つ)。この 2 つの整合は
   M16 (`case vs.Type != nil` を殺す) は**等価変異**だった (default のループが同じ削除をする) ので、
   冗長な枝を消して default へ寄せ、差し替えの M19 で red を確認した。累計 18 本。
 
+- 2026-09-14 `test(disk,372): 敵対的レビュー 3 周目の指摘 5 件を塞ぐ` ほか
+
+  | 指摘 | 中身 | 対応 |
+  |---|---|---|
+  | P1-1 | **yml を見る assert 自身が false green だった**。生テキストの部分一致なので、①コメントアウト ②`paths:` → `paths-ignore:` (意味が真逆) ③paths 全撤去 + 説明コメントに文字列だけ残す、が**すべて緑** | `workflowPaths` でインデントを読み、`on.<trigger>.paths` の要素だけを取る。コメント行は捨て、`paths-ignore` は error |
+  | P2-1 | 引数の束縛に長さフィルタも削除も無く、2 周目 P1-1 の誤検出が**変数側に残っていた** (`func(r *disk.Result)` の後に `for _, r := range rows` を回すだけで誤検出) | disk 型でない引数と range の束縛を消す |
+  | P2-3 | フィールド表にテストの table のフィールド名 (`sel`) まで入っており、**テストを 1 つ改名しただけで「衝突」と誤診して赤くなる** | production からだけ集める。盲点 3 → 2 (`rep` / `r`) |
+  | P3-1 | `map[K]disk.Result{…}` / `[N]disk.Result{…}` の要素リテラルが未検出 | `elemIsResult` で降ろす |
+  | P3-3 | owner 表の pin が `Disk` / `diskRep` だけ | `diskResults` を追加 |
+
+  **塞がず宣言し直したもの**: ブロック内で owner 名を `:=` でシャドウすると、その後の
+  本物の書き込みまで見逃す。レビューの実測では**束縛を一切消さない状態でも本走査は違反 0 件**
+  なので、今日の緑はこの見逃しに支えられていない。ヘッダの分類を「誤検出リスク」から
+  「見逃す形」へ直した (実測される向きが逆だった = §8 の宣言と射程のズレ)。
+
+  **変異 5 本追加 (M20-M24)。うち M22 / M23 が緑で生存**したので、否定 canary
+  (`canaryArgRebind` / `canaryRangeRebind`) を足して red を確認した。累計 24 本。
+  🚨 この過程で **`git checkout` による復元で未コミットの修正を 3 回自分で消した**
+  ([`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の
+  「指摘を直したら変異の前に commit する」が名指ししている形)。retro 候補。
+
 ## 残タスク
 
 - [x] 1 と 2 のどちらを採るか決める → **1 (ソース走査テスト)**。2 を落とした理由は上の実測
