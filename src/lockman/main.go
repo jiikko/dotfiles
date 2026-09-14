@@ -208,7 +208,7 @@ func dispatch(cmd string, l *Locker, o *opts, child []string) int {
 	// 掃除は状態を変えるコマンドのときだけ。check / status はループから呼ばれるため走らせない。
 	if cmd == "acquire" || cmd == "with" || cmd == "break" || cmd == "cleanup" {
 		defer func() {
-			res := l.Cleanup(cmd == "cleanup" || o.force)
+			res := l.CleanupTimed(cmd == "cleanup" || o.force)
 			// 失敗は verbose に関係なく出す。verbose 任せにすると、掃除が止まって
 			// いること自体が観測できない (掃除の失敗は打刻もしないので毎回出る)。
 			// 件数も一緒に出す: 部分的に進んでいるのか何も進んでいないのかは、
@@ -223,11 +223,11 @@ func dispatch(cmd string, l *Locker, o *opts, child []string) int {
 	case "acquire":
 		return cmdAcquire(l, o)
 	case "release":
-		return cmdTokenOp(l, o, l.Release)
+		return cmdTokenOp(l, o, l.ReleaseTimed)
 	case "renew":
-		return cmdTokenOp(l, o, l.Renew)
+		return cmdTokenOp(l, o, l.RenewTimed)
 	case "check":
-		st, err := timed(l, func() (*State, error) { return l.Inspect() })
+		st, err := l.InspectTimed()
 		if err != nil {
 			warnf("%v", err)
 			return exitBusy // 判定不能は busy 側へ倒す (空いているとは言わない)
@@ -240,7 +240,7 @@ func dispatch(cmd string, l *Locker, o *opts, child []string) int {
 		}
 		return exitOK
 	case "status":
-		st, err := timed(l, func() (*State, error) { return l.Inspect() })
+		st, err := l.InspectTimed()
 		if err != nil {
 			warnf("%v", err)
 			return exitError
@@ -257,7 +257,7 @@ func dispatch(cmd string, l *Locker, o *opts, child []string) int {
 	case "with":
 		return runWith(l, o.ttl, o.label, o.onLost != "warn", child)
 	case "break":
-		if _, err := timed(l, func() (*State, error) { return nil, l.Break() }); err != nil {
+		if err := l.BreakTimed(); err != nil {
 			warnf("%v", err)
 			return exitError
 		}
@@ -272,13 +272,13 @@ func cmdAcquire(l *Locker, o *opts) int {
 	deadline := time.Now().Add(o.wait)
 	backoff := time.Second
 	for {
-		meta, err := timed(l, func() (*Meta, error) { return l.Acquire(o.ttl, o.label) })
+		meta, err := l.AcquireTimed(o.ttl, o.label)
 		switch {
 		case err == nil:
 			if o.tokenFile != "" {
 				if werr := os.WriteFile(o.tokenFile, []byte(meta.Token+"\n"), 0o600); werr != nil {
 					// トークンを渡せないと解放できなくなる。取ったロックを戻してから失敗する。
-					_ = l.Release(meta.Token)
+					_ = l.ReleaseTimed(meta.Token)
 					warnf("トークンを書けない: %v", werr)
 					return exitError
 				}
@@ -314,7 +314,7 @@ func cmdTokenOp(l *Locker, o *opts, fn func(string) error) int {
 		warnf("%v", err)
 		return exitError
 	}
-	if _, err := timed(l, func() (*State, error) { return nil, fn(token) }); err != nil {
+	if err := fn(token); err != nil {
 		if errors.Is(err, errNotOwner) {
 			warnf("%v", err)
 			return exitNotOwner
@@ -323,11 +323,6 @@ func cmdTokenOp(l *Locker, o *opts, fn func(string) error) int {
 		return exitError
 	}
 	return exitOK
-}
-
-// timed は I/O が固まったときに沈黙しないための包み。
-func timed[T any](l *Locker, fn func() (T, error)) (T, error) {
-	return withTimeout(l.timeout, fn)
 }
 
 // failCode は with のときだけ番号空間を上位へ寄せる。

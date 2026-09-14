@@ -62,28 +62,3 @@ func writeFileSync(path string, b []byte) error {
 func warnf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "lockman: "+format+"\n", args...)
 }
-
-// withTimeout は fn を別 goroutine で走らせ、期限を超えたら timeout エラーを返す。
-//
-// smbfs はサーバ不達で長時間ブロックする。スクリプトの中で無言のまま固まるのが最悪なので、
-// 「固まった」を「空いている」と混同せず、判定不能として返せるようにする。
-// 🚨 固まった goroutine は回収できない (ブロック中の syscall は中断できない)。
-// プロセスの終了で解放される前提の使い捨て。
-func withTimeout[T any](d time.Duration, fn func() (T, error)) (T, error) {
-	type result struct {
-		val T
-		err error
-	}
-	ch := make(chan result, 1)
-	go func() {
-		v, err := fn()
-		ch <- result{v, err}
-	}()
-	select {
-	case r := <-ch:
-		return r.val, r.err
-	case <-time.After(d):
-		var zero T
-		return zero, fmt.Errorf("I/O が %v 以内に返らない (マウントが応答しない可能性): 判定不能", d)
-	}
-}
