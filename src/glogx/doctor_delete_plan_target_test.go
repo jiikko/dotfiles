@@ -145,7 +145,7 @@ func TestDeleteKeyYPassesOnlyPlannedTargetsToEngine(t *testing.T) {
 		Items: []disk.Item{{Path: filepath.Join(t.TempDir(), "other"), Size: 1 << 30}},
 	}
 	if v.diskRep != nil {
-		v.diskRep.Results = append(v.diskRep.Results, other)
+		*v.diskRep = v.diskRep.WithResults(append(v.diskRep.Results, other))
 	} else {
 		v.diskResults = append(v.diskResults, other)
 	}

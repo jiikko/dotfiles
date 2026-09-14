@@ -102,7 +102,7 @@ func TestEmitCountsSanitizerDropsAsUndiagnosed(t *testing.T) {
 		Status: disk.StatusOK, Size: 8192,
 		Items: []disk.Item{{Path: "/tmp/ev" + esc + "]52;c;cHduZWQ=" + bel + "il", Size: 8192}},
 	}}}
-	rep.Total = disk.SumDeletable(rep.Results)
+	rep = rep.WithResults(rep.Results)
 	// 無害化前は「候補あり」に見える (前提。この行が落ちたら fixture が的を外している)
 	if got := diskExitCode(rep); got != exitcode.Findings {
 		t.Fatalf("前提が作れていない: 無害化前の rc=%d (want %d)", got, exitcode.Findings)

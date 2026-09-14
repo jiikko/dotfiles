@@ -1269,7 +1269,7 @@ func TestDoctorSaveCacheWritesCompletedScanWithFailures(t *testing.T) {
 			Items: []disk.Item{{Path: "/small", Size: 1 << 30}}},
 		{Entry: disk.Entry{ID: "xcode-deriveddata", Label: "Heavy"}, Status: disk.StatusFailed, Reason: "permission denied"},
 	}}
-	chronic.Total = disk.SumDeletable(chronic.Results)
+	chronic = chronic.WithResults(chronic.Results)
 
 	// 何度繰り返しても凍結しない (完走している結果はその環境の現実)
 	v := doctorTestView(t)
@@ -1846,7 +1846,7 @@ func TestDoctorReuseSkipsZeroMeasuredAtNearEpoch(t *testing.T) {
 	// 通っているだけでないことを示す)
 	ok := zero
 	ok.MeasuredAt = now.Add(-10 * time.Minute)
-	sn.Disk.Results = []disk.Result{ok}
+	sn.Disk = sn.Disk.WithResults([]disk.Result{ok})
 	reuse := doctorReuseFrom(sn, true, now)
 	if reuse == nil {
 		t.Fatal("実在する MeasuredAt でも再利用関数を返さない")
@@ -1971,9 +1971,11 @@ func TestDoctorCopyTextCarriesVerifyCommands(t *testing.T) {
 
 	// Items が多くても上限で切る (コピー文が読めない長さにならない)
 	many := disk.Result{Entry: disk.Entry{ID: "finder-nsird"}, Status: disk.StatusOK}
+	manyItems := make([]disk.Item, 0, 20)
 	for i := range 20 {
-		many.Items = append(many.Items, disk.Item{Path: fmt.Sprintf("/tmp/x%d", i), Size: 1})
+		manyItems = append(manyItems, disk.Item{Path: fmt.Sprintf("/tmp/x%d", i), Size: 1})
 	}
+	many = many.WithItems(manyItems)
 	if n := strings.Count(diskCopyText(many, "⛔"), "ls -la "); n > maxVerifyCommands {
 		t.Errorf("裏取りコマンドが上限 %d を超えた: %d 本", maxVerifyCommands, n)
 	}
