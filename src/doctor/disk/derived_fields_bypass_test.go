@@ -354,16 +354,15 @@ func (s diskScanner) scanFunc(fset *token.FileSet, path string, fn *ast.FuncDecl
 				for _, name := range vs.Names {
 					owners[name.Name] = k
 				}
-			case vs.Type != nil:
-				// 🚨 `var rep svc.Report` — **別の型での再宣言**。前の束縛を消さないと、
-				// 同じ関数の別クロージャの `rep` を disk.Report と誤分類したまま残る。
-				// 実測 2026-09-14 (敵対レビュー 2 周目 P2-1): glogx の `start()` が
-				// まさにこの形で、`svc.Report` に `Total` という名前のフィールドが
-				// 足された瞬間に誤検出が出る状態だった (今日出ていないのは偶然)
-				for _, name := range vs.Names {
-					delete(owners, name.Name)
-				}
 			default:
+				// 🚨 `var rep svc.Report` — **別の型での再宣言では前の束縛を消す**。
+				// 消さないと、同じ関数の別クロージャの `rep` を disk.Report と誤分類したまま
+				// 残る。実測 2026-09-14 (敵対レビュー 2 周目 P2-1): glogx の `start()` が
+				// まさにこの形で、`svc.Report` に `Total` という名前のフィールドが
+				// 足された瞬間に誤検出が出る状態だった (今日出ていないのは偶然)。
+				// 🚨 型を明示した再宣言のために別の枝を書いたが、**このループが同じ削除をする**
+				// (値が無ければ rk は ownerNone、値があっても disk 型でなければ同じ) ので
+				// 変異 M16 が等価変異になった。枝を消してここへ寄せた
 				for i, name := range vs.Names {
 					rk := ownerNone
 					if i < len(vs.Values) {
