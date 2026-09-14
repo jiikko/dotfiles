@@ -100,6 +100,42 @@ Reused / FromSnapshot は Size を保つ)。この 2 つの整合は
   **下限を owner 表の assert より前へ移した**。M6 は閾値では捕まらなかったので、
   「表あり > 表なし」の比較に置き換えた (実測値が動いても腐らない)。
 
+- 2026-09-14 `test(disk,372): 敵対的レビュー 1 周目の指摘 7 件を塞ぐ`
+
+  read-only の敵対的レビュー (opus 1 体) が**実測つき**で指摘を出した。裏を取って採用したもの:
+
+  | 指摘 | 中身 | 対応 |
+  |---|---|---|
+  | P1-1 | `rhsKind` が `kindOf` の真部分集合で、`rep := *v.diskRep` / `p := &rep.Results[0]` / `rs := rep.Results` が全部すり抜ける | `rhsKind` を `kindOf` へ委譲して統合 |
+  | P1-2 | 複合リテラル `disk.Report{… Results: xs}` が丸ごと射程外。production の唯一の構築点から `.WithResults` を剥がしても検出できない | **production だけ**検出 (テストは射程外。実測: テスト 137 / production 1) |
+  | P1-3 | `rep.Results[i] = r` の要素差し替えが未検出。`= r.WithItems(xs)` と書けるので所有者 API を通しているように読める | `IndexExpr` の LHS を検出 |
+  | P1-4 | `rep` (`doctorDiskEvent.rep *disk.Report`) が `doctorSvcMsg.rep svc.Report` と名前衝突して**既に表から落ちていた** | 盲点として `knownLost` に固定 + ヘッダに明記 (型解決なしには塞げない) |
+  | P2-1 | `addField(fn.Recv)` が構造的に死んでいる (Go は他パッケージの型にメソッドを定義できない) | 削除 |
+  | P2-2 | ヘッダの「検出しない」が実装と**両方向**にずれていた (別名変数経由は実際は検出する / ②③が抜けていた) | 宣言を実装に合わせた |
+  | P2-3 | 走査根 (`src/`) と CI の paths (3 dir) が食い違う。将来 lockman 等が consumer になると素通り | consumer の module を assert |
+  | P2-4 | 所有者パッケージの除外が**一度も発火していなかった** (`../disk` と `../../doctor/disk` を比較) | root 基準へ修正 (走査 270 → 252 件) |
+
+  却下・記録に回したもの: P2-5 (関数内で `rep` を `disk.Report` と `svc.Report` に使い分けると
+  誤検出しうる) は今日 0 件で、スコープ追跡には go/types が要るので**既知の誤検出リスク**として
+  ヘッダに宣言。P3 の未検出形 (埋め込みフィールド / `new(T)` / 型スイッチ / `map[string]*disk.Report`
+  の要素 / パッケージレベルの `var f = func(...)` / `copy()`) は「検出しない形」へ追記。
+
+  canary を 12 → 22 件へ拡張し、**同じ canary を `_test.go` 名でも通して 20 件**
+  (複合リテラル 2 件だけが落ちる) を固定する合格側の canary を足した。
+
+  **変異をさらに 6 本追加し、累計 12 本すべてで red を確認** (全変異でビルド可):
+
+  | 変異 | 落ちた assert |
+  |---|---|
+  | M7 production の `.WithResults` を剥がして複合リテラルで埋める | 違反検出 |
+  | M8 `v.diskRep.Results[0] = disk.Result{}` を production に植える | 違反検出 |
+  | M9 `cp := *v.diskRep; cp.Results = nil` を production に植える | 違反検出 |
+  | M10 `knownLost` を空にする | `rep` が衝突で落ちた (盲点の宣言が消えた) |
+  | M11 `src/lockman` を consumer にする | CI の paths に `src/lockman/**` を足せ |
+  | M12 複合リテラルの検出を殺す | canary 20 件 (期待 22) |
+
+  **実測 (修正後)**: 走査 .go 252 件 / import 18 件 / 型解決できた参照 161 件 / 違反 0 件。
+
 ## 残タスク
 
 - [x] 1 と 2 のどちらを採るか決める → **1 (ソース走査テスト)**。2 を落とした理由は上の実測
