@@ -117,7 +117,13 @@ prototype にレシーバ絞り込みを期待しないこと（「呼び出し�
 （同じ repo で ruby-lsp の references は 11.2 秒、rg は 0.17 秒）
 
 候補 1 件ごとに `api_map.clip` + `clip.define` を回す構造なので、候補が少ない `wrap_error` でも返らない。
-**精度は最も高いが、実用外**と読む。
+
+🚨 **結論は「実用外」ではなく「この条件では返らない。キャッシュが効いた状態は未実測」**。
+下の confound のとおり gem の型情報が一切無い状態で `clip.define` を回しており、
+**測ったのは degraded な solargraph** であって production の solargraph とは限らない
+（`verify-execution-not-just-exit-code.md`「隔離環境での失敗も本番の失敗ではない」）。
+**再測の trigger**: solargraph 経路を本気で検討するときは、先に gemspec cache が
+成功する条件（親と `workspace.command_path` が解決する solargraph の版を一致させる）で測り直す。
 
 🚨 **測り方で 2 回外した**（後続が同じ穴に落ちないように残す）:
 
@@ -130,8 +136,10 @@ prototype にレシーバ絞り込みを期待しないこと（「呼び出し�
 
 **未解消の confound**: 親（0.55.1）が `Process.spawn(workspace.command_path, 'cache', ...)` で
 gemspec を caching しようとするが、rbenv shim が 0.56.2 を解決して `Could not find command "cache"` で
-失敗し続ける。ただしこれは **Thread 内の spawn + wait** でメインのクエリをブロックしないため、
-上の時間の主因とは考えにくい。**gem cache が効いた状態での追試はしていない**。
+失敗し続ける。spawn 自体は **Thread 内の spawn + wait** なのでメインのクエリをブロックしないが、
+**キャッシュが永久に完了しないため `cache_next_gemspec` が `sync_catalog` のたびに再突入し、
+かつ gem の pin が無いまま型推論が走る**。後者が上の時間にどれだけ効いているかは分かっていない。
+**gem cache が効いた状態での追試はしていない**。
 
 ### 判定基準の表への当てはめ
 
@@ -139,9 +147,13 @@ gemspec を caching しようとするが、rbenv shim が 0.56.2 を解決し�
 ただし `-w` は「部分一致にすると別メソッドを大量に拾う」という既存判断で選ばれているので、
 変えるなら `references_action` の純関数テスト + 変異検証が付く（安い改善ではない）。**未着手**。
 
+🚨 **solargraph 経路は「落ちた」ではなく「保留」**。上の速度は degraded な条件での測定なので、
+選択肢から外して判断を進めないこと。外すなら先に再測する。
+
 残タスク:
 
 - [ ] rg のパターンを絞るか、ノイズを受容するかの判断（ユーザー待ち）
+- [ ] solargraph の再測（gemspec cache が成功する条件で）。やるかどうかも含めて未定
 - [ ] `nvim/ruby-refs-index/README.md:49` の「production の `telescope.grep_string` はタイプを絞らない」が
       e61fc71e（rg を Ruby 系に絞った変更）で古い。`measure.rb` の rg baseline も土俵がずれている（406 行 vs production 243 行）
 
