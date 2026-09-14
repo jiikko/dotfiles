@@ -44,6 +44,10 @@ import (
 //     glogx の `doctorDiskCache.Total` を**誤検出する**形だった。どちらも実在するので、
 //     除外ではなく「型で見分ける」側へ直した (canary の否定例がその 2 つ)
 //
+// 🚨 **CI の配線**: この検査は doctor の `make test` で走るが、走査対象には glogx が含まれる。
+// そのため `.github/workflows/src_doctor.yml` の paths に `src/glogx/**` を足してある。
+// 外すと「glogx だけ変えた push」でこの検査が 1 度も走らない (false green)。
+//
 // scanDerivedWrites は 1 ファイル分の違反と「型を解決できた参照の数」を返す
 // (本走査と canary の共通経路)。
 //

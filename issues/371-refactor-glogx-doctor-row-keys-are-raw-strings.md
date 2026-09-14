@@ -63,3 +63,6 @@ type rowKey string         // "disk:" / "diskitem:" / "brewact:i:j"
 - [ ] named type の導入 (未着手。上記 3 型)
 - [ ] `rowKey` の生成・分解を 1 箇所へ寄せる (未着手)
 - [ ] 寄せた後、迂回 (生の string から直接組む形) を機械で止めるか判断する — 参照: issue 372
+      (**372 は継続**: 2026-09-14 に AST ソース走査テストで決着した。ruleguard は
+      golangci-lint 同梱版が跨モジュールの型を解決できず使えないことが実験で確定しているので、
+      ここで同じ検討を繰り返さないこと。前例は `src/doctor/disk/derived_fields_bypass_test.go`)

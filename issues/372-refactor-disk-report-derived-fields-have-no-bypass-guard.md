@@ -47,7 +47,65 @@ Reused / FromSnapshot は Size を保つ)。この 2 つの整合は
   箇所は 0 件になった。変異 3 本 (例外ガード除去 / Size 引き直し除去 / Total 引き直し除去) で red を確認。
   **本 issue が言う「迂回の機械的な禁止」はこの commit には入っていない**
 
+- 2026-09-14 `test(disk,372): 導出フィールドの迂回をソース走査で止める` — 選択肢 1 を実装。
+
+  **なぜ 1 か (2 と ruleguard を落とした理由)**
+
+  - 選択肢 2 (`Total()` / `Size()` をメソッド化) は、所有者パッケージ外の参照が
+    **Total 45 / Size 60 / Results 21 / Items 122 箇所** (実測 2026-09-14。`grep -rn '\.<name>\b'`
+    の doctor(disk 外) + glogx の合計)。JSON スキーマの互換も要るので見送った
+  - **ruleguard は使えなかった** (実験で確定。glogx は既に ruleguard が配線済みなので、
+    doctor 側に何も作らずに試せた):
+    - `m["x"].Type.Is("disk.Report")` も `("doctor/disk.Report")` も**跨モジュールの型を
+      解決できず**、マッチ 0 件 (ルールセットのロード自体は成功していた)
+    - ルールファイル `gorules/rules.go` に `_ "doctor/disk"` を import すると、
+      **ルールセットのロードが落ちる** (全ファイルに
+      `ruleguard: execution error: used Run() with an empty rule set` が出る)
+    - 同様に `m.File().Name.Matches(…)` と `Type.Underlying().Is("struct{...}")` も
+      ロードを落とす (go.mod の `dsl` ではなく golangci-lint 同梱の go-ruleguard が評価するため、
+      `go vet -tags ruleguard ./gorules` が通ってもロードできるとは限らない)
+    - 既存の `toastEncapsulation` が動いているのは**純粋に構文的** (`$_.toast.text`) だから
+
+  **入れたもの**
+
+  - `src/doctor/disk/derived_fields_bypass_test.go`: 所有者パッケージ (disk) の**外**かつ
+    `doctor/disk` を import しているファイルを AST で走査し、`<disk.Report>.Results / .Total` と
+    `<disk.Result>.Items / .Size` への代入 (複合代入・`++` を含む) を違反にする。
+    型は go/types に頼らず「struct フィールド宣言の表 + 関数内のローカル束縛」で近似する
+    (`sn.Disk.Results` / `v.diskRep.Results` のようなフィールド経由の owner を解くため)。
+    脅威モデルと「**検出しない形**」はファイル冒頭に書いた
+  - 実コードの迂回 **5 箇所**を `WithResults` / `WithItems` へ寄せた
+    (doctor 1: `cmd/diskdoctor/exit_test.go` / glogx 4: `doctor_view_test.go` x3 +
+    `doctor_delete_plan_target_test.go`)。**走査の結果と手作業の grep の全数勘定が一致**
+  - `.github/workflows/src_doctor.yml` の paths に `src/glogx/**` を追加。
+    🚨 **これが無いと「glogx だけ変えた push」で検査が 1 度も走らない** (下の M2 がその形)
+
+  **実測 (2026-09-14)**: 走査 .go 270 件 / `doctor/disk` を import 18 件 / 型を解決できた参照 117 件 / 違反 0 件。
+  誤検出しないことを確かめた実在の同名フィールド: `disk.EntryOutcome.Items` (glogx `doctor_delete.go`)、
+  `doctorDiskCache.Total` (glogx `doctor_cache.go`)、`docker` パッケージの `Group.Items` / `.Size`
+  (docker は `doctor/disk` を import しないので射程外)
+
+  **変異 6 本すべてで red を確認** (段ごとに 1 本。予測した assert と一致。全変異でビルド可を確認):
+
+  | 変異 | 落ちた assert |
+  |---|---|
+  | M1 `exit_test.go` の修正を旧実装へ戻す (テスト側の迂回) | 違反検出 (1 件) |
+  | M2 glogx の **production** に `v.diskRep.Results = nil` を植える | 違反検出 (1 件) |
+  | M3 判定 (`check`) を殺す | canary の検出が 0 件 (期待 12) |
+  | M4 owner と同名のフィールド (`Disk string`) を足して衝突させる | owner フィールド表に `Disk` が居ない |
+  | M5 走査根を `.` に壊す (空振り) | 走査した .go が 18 件 (下限 100) |
+  | M6 本走査へフィールド表を渡さない (配線外し) | 表あり = 表なし (表が判定に効いていない) |
+
+  M5 は最初「owner 表の assert」で落ちており (空振りすると表も空になるため誤った診断が出る)、
+  **下限を owner 表の assert より前へ移した**。M6 は閾値では捕まらなかったので、
+  「表あり > 表なし」の比較に置き換えた (実測値が動いても腐らない)。
+
 ## 残タスク
 
-- [ ] 1 と 2 のどちらを採るか決める (未着手)
-- [ ] 採った方を実装する (未着手)
+- [x] 1 と 2 のどちらを採るか決める → **1 (ソース走査テスト)**。2 を落とした理由は上の実測
+- [x] 採った方を実装する
+- [ ] **未検証**: 「glogx だけを触った push で doctor の CI が起動する」ことの実 run 確認。
+      paths filter を静的に足したところまでで、実際の run では確かめていない
+      (この commit は doctor と glogx の両方を触るので、どちらの workflow も起動してしまい
+      分離できない)。**trigger**: 次に glogx だけを触る commit が master へ載ったとき、
+      `bin/ci-log -l` で `src/doctor` の run が出ているかを見る
