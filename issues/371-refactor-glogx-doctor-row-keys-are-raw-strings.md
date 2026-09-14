@@ -21,10 +21,17 @@
 
 ## 散在の実数
 
-**非テストで 17 箇所**（`src/glogx/doctor_view.go` = 11 / `src/glogx/doctor_delete.go` = 6）。
+~~**非テストで 17 箇所**~~ → **数え直して 21 箇所** (2026-09-14 に着手時に再勘定)。
+コメント行を除いたコード実体で `src/glogx/doctor_view.go` = 12 / `src/glogx/doctor_delete.go` = 9。
 母集合は `src/glogx/*.go` の非テスト `.go` を
-`grep -nE '"disk:"|"diskitem:"|"brewact:|\\x00|diskItemKey'` で走査した全件。
+`grep -nE '"disk:"|"diskitem:"|"brewact:|\\x00|diskItemKey'` で走査した全件 (ヒット 29 行のうち
+コメント 4 行と、無関係な `\x00` の用途 4 行 = `worktree_status.go` の -z パース /
+`status_view.go` の行キー / `issues_watch.go` を除いた数)。
 内訳は「接頭辞を付けて作る」「`CutPrefix` / `Cut` で剥がす」「`HasPrefix` で種別を見る」の 3 形。
+
+🚨 **prefix の種類も表より多い。実際は 10 種**: `disk:` / `diskitem:` / `diskfail:` / `svc:` /
+`svcundiagnosed:` / `brew:i:summary` / `brewact:i:j` / `docker:` / `dockeritem:` / `dockerprune`
+(`doctor_docker.go` の 3 種が表から漏れていた)。名前空間は表のとおり 4 つで正しい。
 
 ## 発火条件と壊れ方
 
@@ -58,11 +65,45 @@ type rowKey string         // "disk:" / "diskitem:" / "brewact:i:j"
 - 生成・分解を 1 箇所 (`rowKey` のコンストラクタと `parse`) へ寄せ、`map[entryID]bool` などに変える
 - 影響は ~20 箇所。**挙動を変えないこと**が受け入れ条件なので、既存テストが全部緑のまま通ることで担保する
 
+## 進捗 (2026-09-14)
+
+- [x] named type の導入 — **3 型ではなく 4 型**にした。issue 自身の表が 4 つ目
+      (コマンド文字列 = `selectedActions` / `actionByCmd`) を挙げているのに修正方向から漏れていた。
+      ここは同じ `r` から `r.key` (行) と `r.copyPath` (コマンド) の 2 種を読む箇所があり、
+      **取り違えの発火条件としては最も近い**ので落とせない
+      → commit `refactor(glogx,371): doctor の行 key / エントリ ID / item key に名前付き型を入れる`
+        / `refactor(glogx,371): 4 つ目の名前空間 (コマンド文字列) に cmdKey を入れる`
+- [x] `rowKey` の生成・分解を 1 箇所へ寄せる — `src/glogx/doctor_keys.go` に 10 種のコンストラクタと
+      分解を集約。`parentKeyOf` は `parentRowKey` として同ファイルへ移動、`diskItemKey` と
+      `isDockerRowKey` も集約した
+- [x] **迂回を機械で止めるか判断する → 不要**。372 と状況が違う: あちらが AST 走査テストを
+      要したのは ruleguard が跨モジュールの型を解決できず**型で守る手段that自体が無かった**ため。
+      371 は `map[rowKey]bool` にした時点で **`go build` がガードになる** (別の名前空間のキーを
+      渡すと compile error)。2 本目の走査ガードは作らない
+      - 🚨 **射程を凍結する**: 型が止めるのは *map の索引と代入の取り違え*まで。
+        `v.expanded[rowKey("disk:"+string(id))]` のような**明示変換での迂回は止まらない**。
+        そこは塞ぎに行かない (脅威モデルは `doctor_keys.go` の冒頭に書いた)
+- [x] `parentRowKey` にテストを追加 — 旧 `parentKeyOf` は**テストが 1 本も無かった**
+      (`collapseTargetAtCursor` / `collapsibleAtCursor` も直接のテスト無し)。
+      disk / docker の両分解、分解できない形 (prefix だけ一致)、ID とパスに `:` が混ざる形を固定
+
+## 結果 (実測)
+
+- 型を入れた後の**コンパイルエラーは 4 件だけ**で、すべて map の初期化 (`map[string]bool{}`) だった。
+  = **既存 21 箇所はすべて正しく使われていた**ことが機械で確定した (issue の「現時点で実際に
+  取り違えている箇所は見つかっていない」を、grep でなくコンパイラで裏取りできた)
+- `go test ./...` rc=0 / `make lint` 0 issues (版固定の golangci-lint v2.5.0)
+- 新規テストの変異検証 **5 本すべて RED** (repo 外のコピーで実施。各変異はビルド成功と diff を
+  確認してから red/green を読んだ):
+  | 変異 | 落ちた assert | 予測と一致 |
+  |---|---|---|
+  | docker の群を切り出さず `rest` 全部を使う | `docker_の候補は群を親に持つ` ほか 3 | ✓ |
+  | `itemKey` の NUL 必須を落とす | `diskitem_で_\x00_が無い` のみ | ✓ |
+  | `belongsTo` の NUL を落として前方一致だけにする | `TestItemKeyEntryID` | ✓ |
+  | disk の親を docker の構成子で組む | `disk_の対象パスはエントリを親に持つ` ほか 2 | ✓ |
+  | `diskItemKey` の区切りを `:` にする | 両テスト | ✓ |
+  - 🚨 変異 2 本は**ビルド不能** (変数が未使用になる) で第 3 の結果として扱い、当て直した
+
 ## 残タスク
 
-- [ ] named type の導入 (未着手。上記 3 型)
-- [ ] `rowKey` の生成・分解を 1 箇所へ寄せる (未着手)
-- [ ] 寄せた後、迂回 (生の string から直接組む形) を機械で止めるか判断する — 参照: issue 372
-      (**372 は継続**: 2026-09-14 に AST ソース走査テストで決着した。ruleguard は
-      golangci-lint 同梱版が跨モジュールの型を解決できず使えないことが実験で確定しているので、
-      ここで同じ検討を繰り返さないこと。前例は `src/doctor/disk/derived_fields_bypass_test.go`)
+- (なし)
