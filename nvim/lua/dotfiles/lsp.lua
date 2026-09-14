@@ -582,6 +582,25 @@ end
 -- vendor/bundle は rg が .gitignore を尊重するので自動的に外れる (~/.gitignore_global:14)。
 M.ripgrep_reference_filetypes = { ruby = true, eruby = true }
 
+-- rg の検索対象を Ruby 系のファイルに絞る。絞らないと README.md / *.yml / *.js の単純一致まで
+-- 候補に出る (既定のタイプ無指定では `.md` に書かれたメソッド名が参照として並ぶ)。
+-- 🚨 telescope の grep_string は **type_filter も glob_pattern も見ない** (それらを読むのは
+--    live_grep 側。builtin/__files.lua の grep_string が見るのは additional_args /
+--    file_encoding / hidden / word_match だけ)。type_filter を渡しても無音で無視されるので、
+--    絞り込みは additional_args 経由でしか効かない。
+-- rg の ruby タイプは *.rb / *.rbw / *.gemspec / .irbrc / Gemfile / Rakefile / config.ru
+-- (rg 14.1.0 の --type-list)。lib/tasks/*.rake と *.jbuilder はそこに無いので足す。
+-- 🚨 拡張子の無い実行スクリプト (bin/* / exe/*) は type では拾えないので**落ちる**。
+--    rg に shebang で選ばせる手段が無いため。足りないときは <leader>K で LSP に引き直す。
+M.ripgrep_reference_args = {
+  "--type-add=ruby:*.rake",
+  "--type-add=ruby:*.jbuilder",
+  "--type=ruby",
+  "--type=erb",
+  "--type=haml",
+  "--type=slim",
+}
+
 -- ripgrep へ回すべきカーソル下の語かを判定する。公開しているのはテストが真の出典として
 -- 読めるようにするため (判定を写すと、片方だけ変えたときにテストが古い前提で緑になる)。
 function M.use_ripgrep_references(filetype, word)
@@ -626,6 +645,9 @@ function M.references_action(filetype, word, root)
     search = word,
     word_match = "-w", -- 部分一致にすると別メソッドを大量に拾う
     cwd = root,
+    -- 呼び出し側が持ち回るテーブルへ telescope が追記しうる (hidden / file_encoding を
+    -- 渡すと additional_args に push される) ので、共有せずコピーを渡す。
+    additional_args = vim.deepcopy(M.ripgrep_reference_args),
     prompt_title = ("参照 (ripgrep): %s"):format(word),
   }
 end
@@ -711,6 +733,7 @@ local function on_attach(client, bufnr)
       search = action.search,
       word_match = action.word_match,
       cwd = action.cwd,
+      additional_args = action.additional_args,
       prompt_title = action.prompt_title,
     })
   end, "参照元一覧 (Ruby のメソッドは ripgrep、定数と他言語は LSP)")

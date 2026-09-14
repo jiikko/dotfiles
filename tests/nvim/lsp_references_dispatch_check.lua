@@ -16,6 +16,12 @@
 --      後から attach した client (例: .erb の tailwindcss) の root を掴む (敵対レビュー P2-1)。
 --   6. <C-k> のマッピングがこの判定を実際に通る。判定関数だけ正しくても、マッピングから
 --      呼ばれていなければ 1 mm も効かない。
+--   7. **rg の検索対象が Ruby 系のファイルに絞られている**。絞らないと README.md / *.yml /
+--      *.js の単純一致まで参照候補に並ぶ。絞り込みは実際に rg を走らせて確かめる: テスト側に
+--      同じ配列を書き写す形だと、タイプ名の綴り違いや --type-add の書式ミスが「リストが在る」
+--      で緑になる (rg は未知のタイプ名を rc=2 のエラーにするので、写しでは検出できない)。
+--   8. 絞り込みが **grep_string へ転送されている**。references_action が返すだけで
+--      マッピングが捨てていても、7 の検査は返り値を直接見るので緑のまま通る。
 local function fail(msg)
   io.stderr:write("FAIL: " .. msg .. "\n")
   os.exit(1)
@@ -55,9 +61,11 @@ end
 local action_cases = {
   { ft = "ruby", word = "wrap_error", root = "/r", want = {
       route = "ripgrep", search = "wrap_error", word_match = "-w", cwd = "/r",
+      additional_args = lsp.ripgrep_reference_args,
       prompt_title = "参照 (ripgrep): wrap_error" }, why = "Ruby のメソッド" },
   { ft = "eruby", word = "render_row", root = "/r", want = {
       route = "ripgrep", search = "render_row", word_match = "-w", cwd = "/r",
+      additional_args = lsp.ripgrep_reference_args,
       prompt_title = "参照 (ripgrep): render_row" }, why = "eruby も同じ" },
   { ft = "ruby", word = "ApplicationRecord", root = "/r", want = { route = "lsp" },
     why = "定数は LSP (index.resolve が名前空間を解決する)" },
@@ -121,6 +129,83 @@ end
 if not ck:find("ruby_root_for", 1, true) then
   fail("<C-k> のマッピングが M.ruby_root_for を通っていない。検索範囲が別 client の root になる")
 end
+-- 🚨 絞り込みの転送。references_action が additional_args を返していても、マッピングが
+-- grep_string へ渡さなければ rg はタイプ無指定のまま走る (返り値テストは緑のまま通る)。
+if not ck:find("additional_args = action.additional_args", 1, true) then
+  fail("<C-k> のマッピングが action.additional_args を grep_string へ渡していない。rg の絞り込みが効かない")
+end
 
-print(("OK lsp references dispatch: 判定 %d ケース / 行き先の返り値 %d ケース / root の選択 3 ケース / <C-k> の配線"):format(
-  checked, #action_cases))
+-- 7. 絞り込みが **実際に rg で効く**か。fixture を作り、production と同じ引数 (返り値から
+-- 組み立てる) で走らせて、Ruby 系だけが拾われることを見る。
+local rg = vim.fn.exepath("rg")
+if rg == "" then
+  fail("rg が見つからない。telescope の grep_string は rg 必須なので、CI の依存 (Makefile の CI_COMMANDS_REST) を見ること")
+end
+
+local dir = vim.fn.tempname()
+-- 同じ語を同じ形で全ファイルへ置く。出る / 出ないを分けるのはタイプ指定だけ
+local fixtures = {
+  { "app/models/loader.rb",         "  wrap_error do",          true },
+  { "lib/tasks/import.rake",        "  wrap_error { }",         true },
+  { "app/views/show.json.jbuilder", "json.x wrap_error",        true },
+  { "app/views/show.html.erb",      "<%= wrap_error %>",        true },
+  { "app/views/show.html.haml",     "  = wrap_error",           true },
+  { "app/views/show.html.slim",     "  = wrap_error",           true },
+  { "Rakefile",                     "wrap_error",               true },
+  { "README.md",                    "`wrap_error` の使い方",    false },
+  { "config/locales/ja.yml",        "note: wrap_error",         false },
+  { "app/assets/app.js",            "// wrap_error",            false },
+  { "package.json",                 '{ "x": "wrap_error" }',    false },
+}
+local want_hits, want_n = {}, 0
+for _, f in ipairs(fixtures) do
+  local full = dir .. "/" .. f[1]
+  vim.fn.mkdir(vim.fs.dirname(full), "p")
+  vim.fn.writefile({ f[2] }, full)
+  if f[3] then
+    want_hits[f[1]] = true
+    want_n = want_n + 1
+  end
+end
+
+local action = lsp.references_action("ruby", "wrap_error", dir)
+local cmd = { rg, "--no-heading", "--line-number", "--color=never" }
+vim.list_extend(cmd, action.additional_args or {})
+cmd[#cmd + 1] = action.word_match
+-- 🚨 パス引数を省くと rg は stdin を読む (tty でないと 0 バイト検索になり、黙って 0 件を返す)
+vim.list_extend(cmd, { "--", action.search, "." })
+local shown = table.concat(cmd, " ")
+local res = vim.system(cmd, { cwd = action.cwd, text = true }):wait()
+-- rc: 0=マッチあり / 1=マッチ無し / 2=エラー。1 も 2 も「絞り込みが壊れている」
+if res.code ~= 0 then
+  fail(("rg が rc=%d。タイプ名の綴り / --type-add の書式を見ること [%s] %s"):format(
+    res.code, shown, ((res.stderr or "") .. (res.stdout or "")):gsub("%s+", " ")))
+end
+
+local got_hits, got_n = {}, 0
+for line in (res.stdout or ""):gmatch("[^\n]+") do
+  local file = line:match("^%./([^:]+):%d+:")
+  if not file then fail(("rg の出力を読めない: %q [%s]"):format(line, shown)) end
+  if not got_hits[file] then
+    got_hits[file] = true
+    got_n = got_n + 1
+  end
+end
+for rel in pairs(want_hits) do
+  if not got_hits[rel] then
+    fail(("rg が %s を拾わない。Ruby 系のファイルが検索対象から落ちている [%s]"):format(rel, shown))
+  end
+end
+for rel in pairs(got_hits) do
+  if not want_hits[rel] then
+    fail(("rg が %s を拾った。Ruby 以外のファイルが参照候補に混ざる [%s]"):format(rel, shown))
+  end
+end
+-- 🚨 fixture が縮むと「拾わないこと」の主張だけが残って緑になる。数を固定して気づけるようにする
+if want_n ~= 7 or got_n ~= 7 then
+  fail(("fixture の件数が想定と違う (want %d / got %d、期待 7)。fixture を減らすと検出力が落ちる"):format(want_n, got_n))
+end
+vim.fn.delete(dir, "rf")
+
+print(("OK lsp references dispatch: 判定 %d ケース / 行き先の返り値 %d ケース / root の選択 3 ケース / <C-k> の配線 / rg の絞り込み %d ファイル中 %d 件"):format(
+  checked, #action_cases, #fixtures, got_n))

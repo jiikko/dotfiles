@@ -55,6 +55,7 @@ runs:
           case "$c" in
             bats)     formula=bats-core ;;   # brew は bats-core という名前で配っている
             gtimeout) formula=coreutils ;;   # timeout(1) は macOS に無い。g 接頭辞で入る
+            rg)       formula=ripgrep ;;     # brew は ripgrep、コマンド名は rg
             *)        formula="$c" ;;
           esac
           echo "installing $c (brew formula: $formula)"

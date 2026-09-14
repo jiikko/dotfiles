@@ -131,3 +131,23 @@ statusline** で、そこに出ていた `utf-8` / `%d+:%d+` は**既定の rule
 3 経路試して 3 経路とも「lualine を測れていない」に帰着した。原因は harness の書き方ではなく
 **headless に lualine の statusline が存在しないこと**なので、同じ方向の工夫では届かない。
 次に誰かが試すときは、ここを読んで**やり直さないでほしい**。
+
+## 2026-09-14: `<C-k>` (rg) の検索対象を Ruby 系ファイルに絞った
+
+「rb 以外の md にも単純一致でジャンプ候補が出る」という指摘から。原因は `telescope.grep_string` を
+**タイプ無指定**で呼んでいたこと（`nvim/ruby-refs-index/README.md:48` が「production はタイプを
+絞らない」と書いていたとおりで、意図的な選択ではなく既定のまま）。`--type=ruby/erb/haml/slim` と
+`--type-add` で `*.rake` / `*.jbuilder` を足した（`nvim/lua/dotfiles/lsp.lua` の
+`M.ripgrep_reference_args`）。
+
+- 🚨 `grep_string` は `type_filter` / `glob_pattern` を見ない（読むのは `live_grep` 側）。
+  絞り込みは `additional_args` 経由でしか効かず、`type_filter` を渡すと無音で無視される
+- 拡張子の無い実行スクリプト（`bin/*` / `exe/*`）は type で拾えないので**落ちる**。
+  足りないときは `<leader>K` で LSP へ引き直す
+- **残る不正確さ**: 同じ Ruby ファイル内のコメント・文字列・シンボル（`:wrap_error`）と、
+  同名の別メソッド。README の実測でゴミは `wrap_error` 59% / `account` 92%。
+  根治は 334 の呼び出し側索引（sidecar）で、今回はその手前の混入だけを消した
+- 上の未確認項目「`<C-k>` の結果が実用に足るか」は、**この変更後の版**で見てほしい
+
+`gd`（定義ジャンプ）は `lsp_definitions` = LSP の応答だけなので md は構造的に出ない。
+`gd` の精度の話は上の 2026-09-10 節（名前一致で AR のメソッドが外れる）が正本で、今回とは別件。
