@@ -61,7 +61,7 @@ func TestDoctorDockerVolumesHaveNoBulkCommand(t *testing.T) {
 	v := doctorTestView(t)
 	runDoctorCmds(t, v, v.open())
 	v.tab = tabDocker
-	v.expanded = map[string]bool{"docker:volumes": true}
+	v.expanded = map[rowKey]bool{"docker:volumes": true}
 	out := doctorText(v, 40)
 	if strings.Contains(out, "docker volume prune -a\n") {
 		t.Errorf("まとめて消すコマンドを提示している:\n%s", out)
@@ -148,7 +148,7 @@ func TestDoctorDockerItemRowCopiesItsCommand(t *testing.T) {
 	v := doctorTestView(t)
 	runDoctorCmds(t, v, v.open())
 	v.tab = tabDocker
-	v.expanded = map[string]bool{"docker:volumes": true}
+	v.expanded = map[rowKey]bool{"docker:volumes": true}
 	_ = doctorText(v, 40)
 	var found *doctorRow
 	for i, row := range v.rows {
@@ -171,7 +171,7 @@ func rowKeys(rows []doctorRow) []string {
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
 		if r.key != "" {
-			out = append(out, r.key)
+			out = append(out, string(r.key))
 		}
 	}
 	return out
@@ -263,13 +263,13 @@ func TestDoctorSelectedRunCountIsPerTab(t *testing.T) {
 	v.handleKey("enter", 40) // 警告を開くと手の行が出る
 	_ = doctorText(v, 40)
 	for range 20 {
-		if strings.HasPrefix(v.cur.key, "brewact:") {
+		if strings.HasPrefix(string(v.cur.key), "brewact:") {
 			break
 		}
 		v.handleKey("j", 40)
 		_ = doctorText(v, 40)
 	}
-	if !strings.HasPrefix(v.cur.key, "brewact:") {
+	if !strings.HasPrefix(string(v.cur.key), "brewact:") {
 		t.Fatalf("brew の手の行へ行けない: %q", v.cur.key)
 	}
 	v.handleKey(" ", 40) // brew の手を 1 つ選ぶ
@@ -310,13 +310,13 @@ func TestDoctorDockerSelectionSurvivesCollapse(t *testing.T) {
 	v.handleKey("enter", 40) // 先頭の群を開く
 	_ = doctorText(v, 40)
 	for range 20 {
-		if strings.HasPrefix(v.cur.key, "dockeritem:") {
+		if strings.HasPrefix(string(v.cur.key), "dockeritem:") {
 			break
 		}
 		v.handleKey("j", 40)
 		_ = doctorText(v, 40)
 	}
-	if !strings.HasPrefix(v.cur.key, "dockeritem:") {
+	if !strings.HasPrefix(string(v.cur.key), "dockeritem:") {
 		t.Fatalf("候補の行へ行けない: %q", v.cur.key)
 	}
 	v.handleKey(" ", 40)
@@ -392,7 +392,7 @@ func TestDoctorDockerEnterOnItemCollapsesGroup(t *testing.T) {
 	v.handleKey("enter", 40)
 	_ = doctorText(v, 40)
 	for range 20 {
-		if strings.HasPrefix(v.cur.key, "dockeritem:") {
+		if strings.HasPrefix(string(v.cur.key), "dockeritem:") {
 			break
 		}
 		v.handleKey("j", 40)

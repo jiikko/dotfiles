@@ -154,7 +154,7 @@ func (v *doctorView) dockerSection(o doctorRenderOpts) []doctorRow {
 			text: "  " + v.dockerSelectMark(o, d.SystemPrune, true) + " " +
 				doctorColor(o.colored, ansiBold, d.SystemPrune),
 			selectable: true,
-			key:        "dockerprune",
+			key:        dockerPruneRowKey,
 			hasDetail:  true,
 			detail: textRows([]string{
 				doctorColor(o.colored, ansiYellow, "     🚨 "+d.SystemPruneNote),
@@ -201,7 +201,7 @@ func (v *doctorView) dockerGroupRow(o doctorRenderOpts, g docker.Group) doctorRo
 			// 🚨 1 件ずつ消したいときの導線。ボリュームには群のコマンドが無いので、
 			// ここが選べないと「1 件ずつ選んでください」と言うだけで手段が無い
 			row.selectable = true
-			row.key = "dockeritem:" + string(g.Kind) + ":" + it.Name
+			row.key = dockerItemRowKey(string(g.Kind), it.Name)
 			row.copyPath = it.Command
 			row.copyText = it.Name + " (" + it.SizeText + "):\n" + it.Command + "\n"
 		}
@@ -218,7 +218,7 @@ func (v *doctorView) dockerGroupRow(o doctorRenderOpts, g docker.Group) doctorRo
 			dockerMark(g.Kind) + padSpaces(max(0, dockerMarkWidth()-dispWidth(dockerMark(g.Kind)))) + " " + g.Label + "   " +
 			doctorColor(o.colored, ansiDim, summary),
 		selectable: true,
-		key:        "docker:" + string(g.Kind),
+		key:        dockerGroupRowKey(string(g.Kind)),
 		hasDetail:  len(detail) > 0,
 		detail:     detail,
 		// 🚨 群のコマンドが無い (ボリューム) 行でも y が無言にならないよう、
@@ -347,9 +347,4 @@ func dockerGroupCopyText(g docker.Group) string {
 		b.WriteString("\n")
 	}
 	return b.String()
-}
-
-// isDockerRowKey は Docker タブの行か (Space の分岐に使う)。
-func isDockerRowKey(key string) bool {
-	return strings.HasPrefix(key, "docker:") || strings.HasPrefix(key, "dockeritem:") || key == "dockerprune"
 }

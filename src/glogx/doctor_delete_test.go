@@ -586,7 +586,7 @@ func TestDeleteRefusedWhileScanning(t *testing.T) {
 	v.deleteFn, v.deleteOpts = f.fn, func() disk.DeleteOptions { return disk.DeleteOptions{} }
 	doctorFirstDiskEvent(t, v) // 1 件だけ届いた = 走査中
 	_ = v.lines(doctorTestOpts(30))
-	v.selected = map[string]bool{"thing": true}
+	v.selected = map[entryID]bool{"thing": true}
 	if act := v.handleKey("d", 20); act != doctorToast || !strings.Contains(v.pendingToast, "スキャンが終わるまで") {
 		t.Fatalf("act=%v toast=%q", act, v.pendingToast)
 	}
@@ -1019,18 +1019,18 @@ func multiItemView(t *testing.T, f *fakeDelete) *doctorView {
 // Enter で開くと、カーソルが**中の対象パス**へ移る (j を何度も押さずに消したいものへ行ける)。
 func TestDoctorEnterMovesCursorIntoItems(t *testing.T) {
 	v := multiItemView(t, nil)
-	if !strings.HasPrefix(v.rows[v.cur.index].key, "disk:") {
+	if !strings.HasPrefix(string(v.rows[v.cur.index].key), "disk:") {
 		t.Fatalf("前提: カーソルがエントリの行にない (%q)", v.rows[v.cur.index].key)
 	}
 	v.handleKey("enter", 20)
 	_ = v.lines(doctorTestOpts(40))
-	if !strings.HasPrefix(v.rows[v.cur.index].key, "diskitem:") {
+	if !strings.HasPrefix(string(v.rows[v.cur.index].key), "diskitem:") {
 		t.Fatalf("Enter で対象パスへ移らない: cursor=%q", v.rows[v.cur.index].key)
 	}
 	// Enter で入って Enter で出る (中に居たまま畳めないと戻れない)
 	v.handleKey("enter", 20)
 	_ = v.lines(doctorTestOpts(40))
-	if !strings.HasPrefix(v.rows[v.cur.index].key, "disk:") || v.expanded["disk:multi"] {
+	if !strings.HasPrefix(string(v.rows[v.cur.index].key), "disk:") || v.expanded["disk:multi"] {
 		t.Fatalf("対象パスの行の Enter で畳んで戻らない: cursor=%q expanded=%v",
 			v.rows[v.cur.index].key, v.expanded)
 	}
@@ -1049,7 +1049,7 @@ func TestDoctorSelectSingleDirectory(t *testing.T) {
 	if len(got) != 1 || len(got[0].Items) != 1 {
 		t.Fatalf("渡る対象 = %d エントリ / %d 件 (1 エントリ 1 件のはず)", len(got), len(got[0].Items))
 	}
-	if !strings.HasSuffix(picked, got[0].Items[0].Path) {
+	if !strings.HasSuffix(string(picked), got[0].Items[0].Path) {
 		t.Errorf("選んだのと違うパスが渡る: key=%q path=%q", picked, got[0].Items[0].Path)
 	}
 	if got[0].Size != got[0].Items[0].Size {
@@ -1365,7 +1365,7 @@ func TestDoctorStartClearsCarryOverState(t *testing.T) {
 	v.pendingToast, v.pendingCopy, v.enterDetail = "残り", "残り", "disk:thing"
 	v.cur.fellBack = true
 	v.pendingDeleteCmd = func() tea.Msg { return nil }
-	v.selected = map[string]bool{"thing": true}
+	v.selected = map[entryID]bool{"thing": true}
 	runDoctorCmds(t, v, v.rescan())
 	if v.pendingToast != "" || v.pendingCopy != "" || v.enterDetail != "" ||
 		v.cur.fellBack || v.pendingDeleteCmd != nil || len(v.selected) != 0 {
@@ -1431,7 +1431,7 @@ func TestDiskDetailInspectWithContentsStillHasSelectablePaths(t *testing.T) {
 	}
 	v := &doctorView{}
 	rows := v.diskDetail(doctorRenderOpts{width: 100, page: 30}, r)
-	var sel []string
+	var sel []rowKey
 	for _, row := range rows {
 		if row.selectable {
 			sel = append(sel, row.key)
@@ -1441,7 +1441,7 @@ func TestDiskDetailInspectWithContentsStillHasSelectablePaths(t *testing.T) {
 		t.Fatalf("選べる対象パス行が %d 件 (期待 %d):\n%v", len(sel), len(r.Items), rowTexts(rows))
 	}
 	for _, it := range r.Items {
-		want := "diskitem:" + diskItemKey(r.Entry.ID, it.Path)
+		want := diskItemRowKey(diskItemKey(entryID(r.Entry.ID), it.Path))
 		found := false
 		for _, k := range sel {
 			if k == want {
@@ -1910,7 +1910,7 @@ func TestDeletePanelKeepsAbortHintOnTinyPage(t *testing.T) {
 // 参考の実測 (合否には使わない): 6,400 Item で 108.8µs/呼び出し -> 3ns、実機規模 29 Item で
 // 0.60µs -> 3ns。hint は毎フレームここを通る。
 func TestDoctorSelectedResultsSkipsWalkWhenNothingSelected(t *testing.T) {
-	v := &doctorView{shown: true, expanded: map[string]bool{}}
+	v := &doctorView{shown: true, expanded: map[rowKey]bool{}}
 	res := make([]disk.Result, 0, 8)
 	for e := range 8 {
 		items := make([]disk.Item, 0, 200)
@@ -1936,7 +1936,7 @@ func TestDoctorSelectedResultsSkipsWalkWhenNothingSelected(t *testing.T) {
 	}
 
 	// 陽性対照: 選択があるときは走査して拾う (上の assert が「常に nil」ではないことの担保)
-	v.selectedItems = map[string]bool{diskItemKey("e00", "/c/e00/i00000"): true}
+	v.selectedItems = map[itemKey]bool{diskItemKey("e00", "/c/e00/i00000"): true}
 	got := v.selectedResults()
 	if len(got) != 1 || len(got[0].Items) != 1 {
 		t.Fatalf("選択が 1 件のとき selectedResults が %d 件 (走査が死んでいる)", len(got))

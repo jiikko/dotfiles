@@ -716,9 +716,9 @@ func TestDoctorLiveDockerScanIsSanitized(t *testing.T) {
 
 	v.tab = tabDocker
 	// 全群を開いて内訳まで描く (畳んだままだと候補の行が検査対象から外れる)
-	v.expanded = map[string]bool{}
+	v.expanded = map[rowKey]bool{}
 	for _, g := range v.docker.Groups {
-		v.expanded["docker:"+string(g.Kind)] = true
+		v.expanded[dockerGroupRowKey(string(g.Kind))] = true
 	}
 	for _, line := range strings.Split(doctorText(v, 60), "\n") {
 		if hasTerminalControl(line) {

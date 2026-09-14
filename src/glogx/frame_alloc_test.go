@@ -496,7 +496,7 @@ func budgetRatelimitModel(tb testing.TB) *browseModel {
 // そのタブの描画が太っても気づけない。件数は disk と揃えて 8 エントリ規模にしてある。
 func budgetDoctorModelFor(tb testing.TB, tab doctorTab) *browseModel {
 	m := benchBrowseSubjects(tb, 20, 120, 40, false)
-	m.doctorOv = doctorView{shown: true, expanded: map[string]bool{}, tab: tab}
+	m.doctorOv = doctorView{shown: true, expanded: map[rowKey]bool{}, tab: tab}
 
 	res := make([]disk.Result, 0, 8)
 	for e := range 8 {

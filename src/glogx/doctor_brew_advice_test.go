@@ -93,14 +93,14 @@ func TestBrewAdviceRejectsUnsafeNames(t *testing.T) {
 
 // 画面: 見出しが日本語になり、手の行が選べて y でコマンドがコピーできる。
 func TestBrewSectionShowsAdviceRows(t *testing.T) {
-	v := &doctorView{shown: true, tab: tabBrew, expanded: map[string]bool{}}
+	v := &doctorView{shown: true, tab: tabBrew, expanded: map[rowKey]bool{}}
 	v.brew = &brewDoctorResult{Warnings: []string{brewWarnUnlinked}}
 	o := doctorTestOpts(60)
 	o.width = 96
 	_ = v.lines(o)
-	var key string
+	var key rowKey
 	for _, r := range v.rows {
-		if strings.HasPrefix(r.key, "brew:") {
+		if strings.HasPrefix(string(r.key), "brew:") {
 			key = r.key
 			if !strings.Contains(r.text, "リンクされていない keg があります") {
 				t.Errorf("見出しが日本語になっていない: %q", r.text)
@@ -114,7 +114,7 @@ func TestBrewSectionShowsAdviceRows(t *testing.T) {
 	_ = v.lines(o)
 	var acts []doctorRow
 	for _, r := range v.rows {
-		if strings.HasPrefix(r.key, "brewact:") {
+		if strings.HasPrefix(string(r.key), "brewact:") {
 			acts = append(acts, r)
 		}
 	}
@@ -191,7 +191,7 @@ func TestBrewAdviceNameListIsIndentedAndContiguous(t *testing.T) {
 // 「印」で片方は「即実行」だと、身についた期待のまま副作用を起こす形になる。
 func TestBrewActionSelectRunAndReport(t *testing.T) {
 	var ran [][]string
-	v := &doctorView{shown: true, tab: tabBrew, expanded: map[string]bool{}}
+	v := &doctorView{shown: true, tab: tabBrew, expanded: map[rowKey]bool{}}
 	v.brewRun = func(_ context.Context, name string, args ...string) (string, string, int, error) {
 		ran = append(ran, append([]string{name}, args...))
 		if name == "brew" && len(args) > 0 && args[0] == "info" {
@@ -205,15 +205,15 @@ func TestBrewActionSelectRunAndReport(t *testing.T) {
 	_ = v.lines(o)
 
 	// 手の行まで降りて Space で選ぶ
-	var actKey string
+	var actKey rowKey
 	for _, r := range v.rows {
-		if strings.HasPrefix(r.key, "brew:") {
+		if strings.HasPrefix(string(r.key), "brew:") {
 			v.expanded[r.key] = true
 		}
 	}
 	_ = v.lines(o)
 	for _, r := range v.rows {
-		if strings.HasPrefix(r.key, "brewact:") {
+		if strings.HasPrefix(string(r.key), "brewact:") {
 			actKey = r.key
 			break
 		}
@@ -276,7 +276,7 @@ func TestBrewActionSelectRunAndReport(t *testing.T) {
 
 // x は何も選んでいないと実行しない (押し間違いで走らせない)。
 func TestBrewRunNeedsSelection(t *testing.T) {
-	v := &doctorView{shown: true, tab: tabBrew, expanded: map[string]bool{}}
+	v := &doctorView{shown: true, tab: tabBrew, expanded: map[rowKey]bool{}}
 	v.brew = &brewDoctorResult{Warnings: []string{brewWarnUnlinked}}
 	_ = v.lines(doctorTestOpts(40))
 	if act := v.handleKey("x", 40); act != doctorToast {
@@ -298,7 +298,7 @@ func TestBrewRunNeedsSelection(t *testing.T) {
 // 🚨 タブが違えば実行キーは効かない。**「印を付けた後にやること」をタブごとに 1 つに保つ**のが
 // タブ分割の目的なので、ディスクのタブで x を押しても brew は走らない (逆も同じ)。
 func TestExecuteKeysAreTabScoped(t *testing.T) {
-	v := &doctorView{shown: true, expanded: map[string]bool{}}
+	v := &doctorView{shown: true, expanded: map[rowKey]bool{}}
 	v.brew = &brewDoctorResult{Warnings: []string{brewWarnUnlinked}}
 	v.selectedActions = map[string]bool{"brew link node ruby": true}
 	_ = v.lines(doctorTestOpts(40))

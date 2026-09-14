@@ -14,7 +14,7 @@ func rows(spec ...string) []doctorRow {
 			out = append(out, doctorRow{text: "(見出し)"}) // 選べない行
 			continue
 		}
-		out = append(out, doctorRow{key: s, selectable: true, text: s})
+		out = append(out, doctorRow{key: rowKey(s), selectable: true, text: s})
 	}
 	return out
 }
@@ -82,7 +82,7 @@ func TestRowCursorRemembersAfterEveryMove(t *testing.T) {
 	c.move(rs, 0)
 	for _, want := range []string{"b", "c"} {
 		c.move(rs, +1)
-		if c.key != want {
+		if string(c.key) != want {
 			t.Fatalf("key = %q, want %q", c.key, want)
 		}
 	}

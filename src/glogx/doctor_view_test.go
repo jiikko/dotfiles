@@ -676,7 +676,7 @@ func TestDoctorReusesRecentSnapshot(t *testing.T) {
 
 // y はパス、Y は解説文をコピーする。中身は行の種類ごとに違う (ディスク = 対象パス、svc = plist、brew = 概要)。
 func TestDoctorCopyPathAndText(t *testing.T) {
-	v := &doctorView{shown: true, expanded: map[string]bool{}}
+	v := &doctorView{shown: true, expanded: map[rowKey]bool{}}
 	v.diskRep = &disk.Report{Results: []disk.Result{{Entry: disk.Entry{ID: "npm-cache", Label: "npm", Risk: disk.RiskSafe, Recover: "再取得", DeleteVia: "rm"},
 		Status: disk.StatusOK, Size: 2048, Items: []disk.Item{{Path: "/h/.npm/_cacache", Size: 2048}, {Path: "/h/.npm/other", Size: 0}}}}}
 	v.svcRep = &svc.Report{Findings: []svc.Finding{{Label: "com.x.y", PlistPath: "/L/com.x.y.plist", Domain: "gui/501",
@@ -732,7 +732,7 @@ func TestDoctorCopyThroughBrowseModel(t *testing.T) {
 	orig := copyToClipboard
 	copyToClipboard = func(s string) error { copied = s; return nil }
 	t.Cleanup(func() { copyToClipboard = orig })
-	m.doctorOv = doctorView{shown: true, expanded: map[string]bool{}}
+	m.doctorOv = doctorView{shown: true, expanded: map[rowKey]bool{}}
 	m.doctorOv.diskRep = &disk.Report{Results: []disk.Result{{Entry: disk.Entry{ID: "a", Label: "A", Risk: disk.RiskSafe, Recover: "r"},
 		Status: disk.StatusOK, Size: 1, Items: []disk.Item{{Path: "/p/a", Size: 1}}}}}
 	m.doctorOv.svcRep = &svc.Report{}
@@ -835,7 +835,7 @@ func TestDoctorSvcAnnotationsMatchCLI(t *testing.T) {
 	}
 
 	cli := svc.Format(rep)
-	v := &doctorView{shown: true, tab: tabSvc, expanded: map[string]bool{}, svcRep: &rep}
+	v := &doctorView{shown: true, tab: tabSvc, expanded: map[rowKey]bool{}, svcRep: &rep}
 	// 幅を広く取る: 注記が出ているかを見るテストなので、末尾切れ (truncateDisp) で落ちないようにする
 	// (狭い幅で注記が読めなくなる問題は issues/182 が別に扱う)
 	wide := doctorTestOpts(60)
@@ -1059,7 +1059,7 @@ func TestDoctorStartupToastThroughRealPath(t *testing.T) {
 // disk の Failures は親行の Y からしか取れず、svc の Undiagnosed は**どこからも取れなかった**
 // (幅 80 で理由が丸ごと消える。issues/180)。
 func TestDoctorUndiagnosedRowsAreSelectable(t *testing.T) {
-	v := &doctorView{shown: true, expanded: map[string]bool{}}
+	v := &doctorView{shown: true, expanded: map[rowKey]bool{}}
 	v.diskRep = &disk.Report{Results: []disk.Result{{
 		Entry:  disk.Entry{ID: "npm-cache", Label: "npm", Risk: disk.RiskSafe, Recover: "再取得", DeleteVia: "rm"},
 		Status: disk.StatusOK, Size: 2048, Items: []disk.Item{{Path: "/h/.npm/_cacache", Size: 2048}},
@@ -1862,7 +1862,7 @@ func TestDoctorReuseSkipsZeroMeasuredAtNearEpoch(t *testing.T) {
 // 状態 (リスク記号) と再利用の注記は末尾に置かない。
 func TestDoctorDiskRowKeepsStateAtNarrowWidth(t *testing.T) {
 	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.Local)
-	v := &doctorView{shown: true, expanded: map[string]bool{}}
+	v := &doctorView{shown: true, expanded: map[rowKey]bool{}}
 	v.diskRep = &disk.Report{Results: []disk.Result{
 		{Entry: disk.Entry{ID: "brew-orphan-state", Label: "アンインストール済み formula の状態",
 			Risk: disk.RiskConfirm, Recover: "DB データ等の本体", DeleteVia: "trash"},
@@ -2024,7 +2024,7 @@ func TestDoctorUnverifiedEntryMatchesCLI(t *testing.T) {
 	rep := disk.Report{Results: []disk.Result{unver, verified}}
 
 	cli := disk.Format(rep, disk.Env{}, time.Date(2026, 9, 3, 12, 0, 0, 0, time.Local))
-	v := &doctorView{shown: true, expanded: map[string]bool{}, diskRep: &rep, diskResults: rep.Results}
+	v := &doctorView{shown: true, expanded: map[rowKey]bool{}, diskRep: &rep, diskResults: rep.Results}
 	wide := doctorTestOpts(60)
 	wide.width = 240
 	ui := strings.Join(v.lines(wide), "\n")
@@ -2162,7 +2162,7 @@ func TestDoctorListHomeEndAreAliasesOfGG(t *testing.T) {
 // 🚨 doctor の描画テストは全部 width 100 固定で、182 が入れた縮退経路が一度も走っていなかった。
 // ここは狭い幅を掃いて、最長マーク「❓ 走査できず」(幅 13) が切れないことを固定する。
 func TestDoctorDiskRowFitsWidthIncludingGutter(t *testing.T) {
-	v := &doctorView{shown: true, expanded: map[string]bool{}}
+	v := &doctorView{shown: true, expanded: map[rowKey]bool{}}
 	v.diskRep = &disk.Report{Results: []disk.Result{
 		{Entry: disk.Entry{ID: "a", Label: "とても長いラベルのエントリ名前", Risk: disk.RiskSafe, DeleteVia: "rm"},
 			Status: disk.StatusFailed, Reason: "権限がありません"},
@@ -2282,7 +2282,7 @@ func TestDoctorCelebratesOnlyWhenTrulyClean(t *testing.T) {
 	}
 
 	t.Run("両方きれいなら祝う", func(t *testing.T) {
-		v := &doctorView{shown: true, expanded: map[string]bool{}}
+		v := &doctorView{shown: true, expanded: map[rowKey]bool{}}
 		v.svcRep, v.brew = &svc.Report{}, &brewDoctorResult{Clean: true}
 		out := render(v)
 		if strings.Count(out, "🎉") != 2 {
@@ -2290,7 +2290,7 @@ func TestDoctorCelebratesOnlyWhenTrulyClean(t *testing.T) {
 		}
 	})
 	t.Run("壊れた登録があれば祝わない", func(t *testing.T) {
-		v := &doctorView{shown: true, expanded: map[string]bool{}}
+		v := &doctorView{shown: true, expanded: map[rowKey]bool{}}
 		v.svcRep = &svc.Report{Findings: []svc.Finding{{Label: "com.x.y", PlistPath: "/L/com.x.y.plist", Domain: "gui/501"}}}
 		v.brew = &brewDoctorResult{Clean: true}
 		out := render(v)
@@ -2303,7 +2303,7 @@ func TestDoctorCelebratesOnlyWhenTrulyClean(t *testing.T) {
 	// 「そもそもその状態を作れるか」を検査しない = 局所の変異では壊せないテストになる
 	// (変異検証で実際に素通りした)
 	t.Run("診断できずなら祝わない", func(t *testing.T) {
-		v := &doctorView{shown: true, expanded: map[string]bool{}}
+		v := &doctorView{shown: true, expanded: map[rowKey]bool{}}
 		v.svcRep = &svc.Report{}
 		b := parseBrewDoctor("", "Error: brew is broken\n", 1) // 非 0 なのに警告なし = 診断できず
 		if b.Unavailable == "" {
@@ -2316,7 +2316,7 @@ func TestDoctorCelebratesOnlyWhenTrulyClean(t *testing.T) {
 		}
 	})
 	t.Run("警告があれば祝わない", func(t *testing.T) {
-		v := &doctorView{shown: true, expanded: map[string]bool{}}
+		v := &doctorView{shown: true, expanded: map[rowKey]bool{}}
 		v.svcRep = &svc.Report{}
 		b := parseBrewDoctor("", brewWarnDeprecated+"\n", 1)
 		if len(b.Warnings) == 0 {
@@ -2396,7 +2396,7 @@ func TestDoctorTabs(t *testing.T) {
 		v.handleKey("enter", 20) // ディスクの行を開いて中の対象パスへ移る
 		_ = v.lines(o)
 		diskKey := v.cur.key
-		if !strings.HasPrefix(diskKey, "diskitem:") {
+		if !strings.HasPrefix(string(diskKey), "diskitem:") {
 			t.Fatalf("前提が崩れている: ディスクのカーソルが対象パスに無い: %q", diskKey)
 		}
 		v.handleKey("tab", 20) // → サービス
@@ -2445,7 +2445,7 @@ func TestDoctorQCollapsesBeforeClosing(t *testing.T) {
 	_ = v.lines(doctorTestOpts(20))
 	v.jumpIntoDetail()
 	_ = v.lines(doctorTestOpts(20))
-	if got := v.rows[v.cur.index].key; !strings.HasPrefix(got, "diskitem:") {
+	if got := v.rows[v.cur.index].key; !strings.HasPrefix(string(got), "diskitem:") {
 		t.Fatalf("対象パスの行へ入れていない: %q", got)
 	}
 	if act := v.handleKey("q", 20); act == doctorClosed {
@@ -2517,7 +2517,7 @@ func TestDoctorEscClosesEvenWhenExpanded(t *testing.T) {
 // 🚨 判定は「展開できるか (hasDetail)」と「detail が実際に組まれているか」を**別々に**見る。
 // len(detail) だけで展開可否を決める形へ戻すと、畳まれた行が展開できなくなる。
 func TestDoctorCollapsedRowsDoNotBuildDetail(t *testing.T) {
-	v := &doctorView{shown: true, expanded: map[string]bool{}}
+	v := &doctorView{shown: true, expanded: map[rowKey]bool{}}
 	v.diskRep = &disk.Report{Results: []disk.Result{{
 		Entry:  disk.Entry{ID: "e0", Label: "E0", Risk: disk.RiskSafe, Recover: "r", DeleteVia: "rm"},
 		Status: disk.StatusOK, Size: 3,

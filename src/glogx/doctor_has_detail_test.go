@@ -15,7 +15,7 @@ import (
 // 下の 2 本目がその一致を突き合わせる。
 func TestBlockedDiskRowIsNotExpandable(t *testing.T) {
 	mk := func() *doctorView {
-		v := &doctorView{shown: true, expanded: map[string]bool{}}
+		v := &doctorView{shown: true, expanded: map[rowKey]bool{}}
 		v.diskRep = &disk.Report{Results: []disk.Result{{
 			Entry:  disk.Entry{ID: "blocked-x", Label: "blocked", Risk: disk.RiskConfirm, DeleteVia: "rm"},
 			Status: disk.StatusBlocked, Size: 4096, Reason: "今は対象外"}}}
@@ -73,7 +73,7 @@ func TestDiskHasDetailMatchesBuilder(t *testing.T) {
 		{"blocked/Inspect", disk.Result{Entry: disk.Entry{ID: "g", Inspect: true}, Status: disk.StatusBlocked}},
 		{"blocked/Contents あり", disk.Result{Entry: disk.Entry{ID: "h"}, Status: disk.StatusBlocked, Contents: []string{"x"}}},
 	}
-	v := &doctorView{expanded: map[string]bool{}}
+	v := &doctorView{expanded: map[rowKey]bool{}}
 	empties, nonEmpties := 0, 0
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

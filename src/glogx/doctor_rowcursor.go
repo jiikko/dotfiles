@@ -1,7 +1,5 @@
 package main
 
-import "strings"
-
 // rowCursor は「行の列の上でどこを選んでいるか」だけを知る状態機械。
 //
 // **disk / svc / brew を一切知らない**のが要点。doctorView に同居していたときは、
@@ -17,7 +15,7 @@ import "strings"
 //   - 動いた先の key を**必ず**覚える (覚えないと次の描画で古い key へ巻き戻り、G が効かない)
 type rowCursor struct {
 	index  int
-	key    string
+	key    rowKey
 	offset int
 	// fellBack は「描画中に選択行が消えて寄せた」印。表示は呼び出し側が 1 回だけ取り出す
 	// (描画から直接トーストを出せないため)。
@@ -109,9 +107,9 @@ func (c *rowCursor) move(rows []doctorRow, dir int) {
 }
 
 // jumpTo は prefix で始まる key を持つ最初の選べる行へ移る (見つからなければ何もしない)。
-func (c *rowCursor) jumpTo(rows []doctorRow, prefix string) bool {
+func (c *rowCursor) jumpTo(rows []doctorRow, prefix rowKey) bool {
 	for i, r := range rows {
-		if r.selectable && strings.HasPrefix(r.key, prefix) {
+		if r.selectable && r.key.hasPrefix(prefix) {
 			c.index, c.key = i, r.key
 			return true
 		}

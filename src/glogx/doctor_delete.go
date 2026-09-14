@@ -323,7 +323,7 @@ func (v *doctorView) selectedBrewActions() []doctorCmdAction {
 	out := make([]doctorCmdAction, 0, len(v.selectedActions))
 	seen := map[string]bool{}
 	for _, r := range v.rows {
-		if !strings.HasPrefix(r.key, "brewact:") || !v.selectedActions[r.copyPath] || seen[r.copyPath] {
+		if !r.key.isBrewAction() || !v.selectedActions[r.copyPath] || seen[r.copyPath] {
 			continue
 		}
 		seen[r.copyPath] = true
@@ -728,13 +728,13 @@ func (v *doctorView) selectedResults() []disk.Result {
 	}
 	out := make([]disk.Result, 0, len(v.selected)+len(v.selectedItems))
 	for _, r := range v.currentDiskResults() {
-		if v.selected[r.Entry.ID] {
+		if v.selected[resultEntryID(r)] {
 			out = append(out, r)
 			continue
 		}
 		var items []disk.Item
 		for _, it := range r.Items {
-			if v.selectedItems[diskItemKey(r.Entry.ID, it.Path)] {
+			if v.selectedItems[diskItemKey(resultEntryID(r), it.Path)] {
 				items = append(items, it)
 			}
 		}
@@ -770,7 +770,7 @@ func (v *doctorView) deletable(r disk.Result) (bool, string) {
 		return false, "前回の結果を表示しています (r で再スキャンしてから削除してください)"
 	case r.Reused:
 		return false, "前回の計測を再利用した行です (r で再スキャンしてから削除してください)"
-	case (r.Entry.Inspect || r.Entry.Risk == disk.RiskConfirm) && !v.inspected[r.Entry.ID]:
+	case (r.Entry.Inspect || r.Entry.Risk == disk.RiskConfirm) && !v.inspected[resultEntryID(r)]:
 		// ユーザーのファイルでありうる行は、中身を一度見るまで選べない (issue 148 の 3 章)。
 		// 🚨 Inspect だけを見ると、カタログが `RiskConfirm` に `Inspect` を付け忘れた瞬間に
 		// ゲートが消える (今の 5 件はたまたま両方立っている)。危険度そのものも条件にする
@@ -789,16 +789,16 @@ func (v *doctorView) toggleSelect() (string, bool) {
 		return "", false
 	}
 	key := v.rows[v.cur.index].key
-	if itemKey, ok := strings.CutPrefix(key, "diskitem:"); ok {
-		return v.toggleItem(itemKey)
+	if item, ok := key.diskItemKey(); ok {
+		return v.toggleItem(item)
 	}
-	if strings.HasPrefix(key, "brewact:") {
+	if key.isBrewAction() {
 		return v.toggleCmdAction()
 	}
-	if isDockerRowKey(key) {
+	if key.isDocker() {
 		return v.toggleDockerAction()
 	}
-	id, ok := strings.CutPrefix(key, "disk:")
+	id, ok := key.diskEntryID()
 	if !ok {
 		return "選べるのはディスクの行だけです", false
 	}
@@ -810,7 +810,7 @@ func (v *doctorView) toggleSelect() (string, bool) {
 		return why, false
 	}
 	if v.selected == nil {
-		v.selected = map[string]bool{}
+		v.selected = map[entryID]bool{}
 	}
 	v.selected[id] = !v.selected[id]
 	if !v.selected[id] {
@@ -842,8 +842,8 @@ func (v *doctorView) toggleCmdAction() (string, bool) {
 	return "", true
 }
 
-func (v *doctorView) toggleItem(itemKey string) (string, bool) {
-	id, _, ok := strings.Cut(itemKey, "\x00")
+func (v *doctorView) toggleItem(item itemKey) (string, bool) {
+	id, ok := item.entryID()
 	if !ok {
 		return "", false
 	}
@@ -855,22 +855,22 @@ func (v *doctorView) toggleItem(itemKey string) (string, bool) {
 		return why, false
 	}
 	if v.selectedItems == nil {
-		v.selectedItems = map[string]bool{}
+		v.selectedItems = map[itemKey]bool{}
 	}
-	v.selectedItems[itemKey] = !v.selectedItems[itemKey]
-	if !v.selectedItems[itemKey] {
-		delete(v.selectedItems, itemKey)
+	v.selectedItems[item] = !v.selectedItems[item]
+	if !v.selectedItems[item] {
+		delete(v.selectedItems, item)
 	}
 	// 個別に選んだら、エントリ全体の選択は畳む (「全部」と「一部」を同時に立てない)
-	if v.selectedItems[itemKey] {
+	if v.selectedItems[item] {
 		delete(v.selected, id)
 	}
 	return "", true
 }
 
-func (v *doctorView) findDiskResult(id string) (disk.Result, bool) {
+func (v *doctorView) findDiskResult(id entryID) (disk.Result, bool) {
 	for _, r := range v.currentDiskResults() {
-		if r.Entry.ID == id {
+		if resultEntryID(r) == id {
 			return r, true
 		}
 	}
@@ -878,18 +878,18 @@ func (v *doctorView) findDiskResult(id string) (disk.Result, bool) {
 }
 
 // hasSelectedItems はそのエントリの中で個別に選ばれたものがあるか (行頭の印に使う)。
-func (v *doctorView) hasSelectedItems(id string) bool {
+func (v *doctorView) hasSelectedItems(id entryID) bool {
 	for k := range v.selectedItems {
-		if strings.HasPrefix(k, id+"\x00") {
+		if k.belongsTo(id) {
 			return true
 		}
 	}
 	return false
 }
 
-func (v *doctorView) clearItemsOf(id string) {
+func (v *doctorView) clearItemsOf(id entryID) {
 	for k := range v.selectedItems {
-		if strings.HasPrefix(k, id+"\x00") {
+		if k.belongsTo(id) {
 			delete(v.selectedItems, k)
 		}
 	}
@@ -933,7 +933,7 @@ func (v *doctorView) snapshotRescan() (doctorAction, bool) {
 	// (この行を消したい) が存在しないので、全体の再スキャンは驚きにしかならない
 	if v.cur.index >= 0 && v.cur.index < len(v.rows) {
 		k := v.rows[v.cur.index].key
-		if !strings.HasPrefix(k, "disk:") && !strings.HasPrefix(k, "diskitem:") {
+		if !k.isDiskRelated() {
 			return doctorSwallow, false
 		}
 	}
@@ -1090,14 +1090,14 @@ func planHasWork(plan *disk.DeleteReport) bool {
 // 🚨 **確認画面と実行対象の唯一の出典** (issue 245)。以前は「消せるものが在るか」の判定
 // (planHasWork) と「何を消すか」の判定 (case "y" の selectedResults) が別ソースで、
 // **確認画面が何を約束しても実行が従わない**構造だった。述語をここに 1 つ置く。
-func plannedIDs(plan *disk.DeleteReport) map[string]bool {
+func plannedIDs(plan *disk.DeleteReport) map[entryID]bool {
 	if plan == nil {
 		return nil
 	}
-	ids := make(map[string]bool, len(plan.Entries))
+	ids := make(map[entryID]bool, len(plan.Entries))
 	for _, e := range plan.Entries {
 		if e.Outcome == disk.OutcomePlanned {
-			ids[e.ID] = true
+			ids[entryID(e.ID)] = true
 		}
 	}
 	return ids
@@ -1112,7 +1112,7 @@ func plannedTargets(plan *disk.DeleteReport, sel []disk.Result) []disk.Result {
 	}
 	out := make([]disk.Result, 0, len(sel))
 	for _, r := range sel {
-		if planned[r.Entry.ID] {
+		if planned[resultEntryID(r)] {
 			out = append(out, r)
 		}
 	}

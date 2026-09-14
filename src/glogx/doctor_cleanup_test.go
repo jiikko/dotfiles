@@ -404,7 +404,7 @@ func drainDoctorCleanup(t *testing.T) {
 // 大きい結果が後から届くと既存の行の上に入る。下に挿入する形では index が偶然一致して
 // 素通りする (issue 210 のテスト観点)。
 func TestCursorStaysOnSameRowWhenRowsGrowAbove(t *testing.T) {
-	v := &doctorView{expanded: map[string]bool{}, selected: map[string]bool{}, inspected: map[string]bool{}}
+	v := &doctorView{expanded: map[rowKey]bool{}, selected: map[entryID]bool{}, inspected: map[entryID]bool{}}
 	small := disk.Result{Entry: disk.Entry{ID: "small", Label: "小", Tier: 1}, Size: 100, Status: disk.StatusOK,
 		Items: []disk.Item{{Path: "/tmp/small", Size: 100}}}
 	mid := disk.Result{Entry: disk.Entry{ID: "mid", Label: "中", Tier: 1}, Size: 200, Status: disk.StatusOK,
@@ -500,7 +500,7 @@ func TestCursorFallbackIsToldThroughBrowseModel(t *testing.T) {
 // 古い key の行へ cursor を戻す。実測された症状: after G cursor=6 / cursorKey="disk:b" →
 // repaint で cursor=4 へ巻き戻る。
 func TestCursorEndKeySurvivesRepaint(t *testing.T) {
-	v := &doctorView{expanded: map[string]bool{}, selected: map[string]bool{}, inspected: map[string]bool{}}
+	v := &doctorView{expanded: map[rowKey]bool{}, selected: map[entryID]bool{}, inspected: map[entryID]bool{}}
 	mk := func(id string, size int64) disk.Result {
 		return disk.Result{Entry: disk.Entry{ID: id, Label: id, Tier: 1}, Size: size, Status: disk.StatusOK,
 			Items: []disk.Item{{Path: "/tmp/" + id, Size: size}}}
@@ -526,7 +526,7 @@ func TestCursorEndKeySurvivesRepaint(t *testing.T) {
 // 選べる行が 0 件のフレームを挟んでも key を捨てない (issue 210 の敵対レビュー P2)。
 // 捨てると index 保持へ退行する。
 func TestCursorKeySurvivesFrameWithoutSelectableRows(t *testing.T) {
-	v := &doctorView{expanded: map[string]bool{}, selected: map[string]bool{}, inspected: map[string]bool{}}
+	v := &doctorView{expanded: map[rowKey]bool{}, selected: map[entryID]bool{}, inspected: map[entryID]bool{}}
 	a := disk.Result{Entry: disk.Entry{ID: "a", Label: "A", Tier: 1}, Size: 300, Status: disk.StatusOK,
 		Items: []disk.Item{{Path: "/tmp/a", Size: 300}}}
 	b := disk.Result{Entry: disk.Entry{ID: "b", Label: "B", Tier: 1}, Size: 200, Status: disk.StatusOK,
