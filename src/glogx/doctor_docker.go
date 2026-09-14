@@ -234,7 +234,7 @@ func (v *doctorView) dockerSelectMark(o doctorRenderOpts, cmd string, runnable b
 	if cmd == "" || !runnable {
 		return " "
 	}
-	if v.selectedActions[cmd] {
+	if v.selectedActions[cmdKey(cmd)] {
 		return doctorColor(o.colored, ansiBold, "*")
 	}
 	return " "
@@ -252,12 +252,13 @@ func (v *doctorView) registerDockerAction(label, cmd, note string) {
 		return
 	}
 	if v.actionByCmd == nil {
-		v.actionByCmd = map[string]doctorCmdAction{}
+		v.actionByCmd = map[cmdKey]doctorCmdAction{}
 	}
-	if _, dup := v.actionByCmd[cmd]; !dup {
-		v.dockerOrder = append(v.dockerOrder, cmd)
+	k := cmdKey(cmd)
+	if _, dup := v.actionByCmd[k]; !dup {
+		v.dockerOrder = append(v.dockerOrder, k)
 	}
-	v.actionByCmd[cmd] = doctorCmdAction{Label: label, Cmd: cmd, Note: note}
+	v.actionByCmd[k] = doctorCmdAction{Label: label, Cmd: cmd, Note: note}
 }
 
 // selectedDockerActions は選ばれた手を**描画順**で返す (brew 側と同じ規律。map をそのまま
@@ -294,7 +295,7 @@ func (v *doctorView) toggleDockerAction() (string, bool) {
 	// 🚨 実行してよい手だけを選ばせる。**登録されていないコマンドは実行できない** —
 	// 実行不可の群 (ボリューム) の手は registerDockerAction を通っていないので、ここで落ちる
 	// (行の key から Kind を導き直すと、判定が 2 実装になる)
-	if _, ok := v.actionByCmd[cmd]; !ok {
+	if _, ok := v.actionByCmd[cmdKey(cmd)]; !ok {
 		return "この行はこの画面から実行しません (消すと戻らないので y でコマンドをコピーしてください)", false
 	}
 	return v.toggleCmdAction()

@@ -300,7 +300,7 @@ func TestBrewRunNeedsSelection(t *testing.T) {
 func TestExecuteKeysAreTabScoped(t *testing.T) {
 	v := &doctorView{shown: true, expanded: map[rowKey]bool{}}
 	v.brew = &brewDoctorResult{Warnings: []string{brewWarnUnlinked}}
-	v.selectedActions = map[string]bool{"brew link node ruby": true}
+	v.selectedActions = map[cmdKey]bool{"brew link node ruby": true}
 	_ = v.lines(doctorTestOpts(40))
 
 	v.tab = tabDisk

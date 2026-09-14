@@ -321,13 +321,14 @@ func (v *doctorView) selectedBrewActions() []doctorCmdAction {
 		return nil
 	}
 	out := make([]doctorCmdAction, 0, len(v.selectedActions))
-	seen := map[string]bool{}
+	seen := map[cmdKey]bool{}
 	for _, r := range v.rows {
-		if !r.key.isBrewAction() || !v.selectedActions[r.copyPath] || seen[r.copyPath] {
+		cmd := cmdKey(r.copyPath)
+		if !r.key.isBrewAction() || !v.selectedActions[cmd] || seen[cmd] {
 			continue
 		}
-		seen[r.copyPath] = true
-		act, ok := v.actionByCmd[r.copyPath]
+		seen[cmd] = true
+		act, ok := v.actionByCmd[cmd]
 		if !ok {
 			act = doctorCmdAction{Label: "(不明な手)", Cmd: r.copyPath}
 		}
@@ -827,12 +828,12 @@ func (v *doctorView) toggleSelect() (string, bool) {
 // toggleCmdAction は brew の手の選択を切り替える。**コマンド文字列**で覚える
 // (行の key は警告の並びに依存するので、再スキャンで別の手を指す)。
 func (v *doctorView) toggleCmdAction() (string, bool) {
-	cmd := v.rows[v.cur.index].copyPath
+	cmd := cmdKey(v.rows[v.cur.index].copyPath)
 	if cmd == "" {
 		return "この行には実行するコマンドがありません", false
 	}
 	if v.selectedActions == nil {
-		v.selectedActions = map[string]bool{}
+		v.selectedActions = map[cmdKey]bool{}
 	}
 	if v.selectedActions[cmd] {
 		delete(v.selectedActions, cmd)

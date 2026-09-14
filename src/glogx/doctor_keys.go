@@ -27,6 +27,12 @@ type itemKey string
 // 行の並びに依存しない値にすること — 再スキャンで並びが変わっても同じ行を指し続ける。
 type rowKey string
 
+// cmdKey は x で実行するコマンド文字列そのもの。brew と docker が選択の map を共有する。
+// 🚨 **行の key で持たない**: 再スキャンで警告や群の並びが変わると別の手を指す。
+// doctorRow.copyPath は「y でコピーする値」で、disk の行ではパス・手の行ではコマンドを
+// 指す二重の意味を持つので、cmdKey への変換は呼び出し側で明示する (境界を見えるようにする)。
+type cmdKey string
+
 // diskItemKey はエントリとパスから itemKey を組む。
 func diskItemKey(id entryID, path string) itemKey { return itemKey(string(id) + "\x00" + path) }
 

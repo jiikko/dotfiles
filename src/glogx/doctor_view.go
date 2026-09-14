@@ -96,12 +96,12 @@ type doctorView struct {
 	// selectedActions は brew の手の選択 (key = **コマンド文字列**)。
 	// 🚨 行の key ("brewact:i:j") で持たない: 再スキャンで警告の並びが変わると別の手を指す。
 	// コマンドそのものは「何を実行するか」の同一性そのものなので、ずれない
-	selectedActions map[string]bool
+	selectedActions map[cmdKey]bool
 	// actionByCmd は直近の描画で組んだ手の実体 (key = コマンド)。確認画面がラベルと
 	// 注記を引くため。行のテキストから復元しない (色と印が混ざっていて壊れやすい)
-	actionByCmd map[string]doctorCmdAction
+	actionByCmd map[cmdKey]doctorCmdAction
 	// dockerOrder は Docker タブの手を**描画順**で覚える (畳まれている行も含む)
-	dockerOrder      []string
+	dockerOrder      []cmdKey
 	inspected        map[entryID]bool
 	del              doctorDelete
 	pendingDeleteCmd tea.Cmd // handleKey が組んだ削除の Cmd (browseModel が取り出して返す)
@@ -229,7 +229,7 @@ func (v *doctorView) start(force bool) tea.Cmd {
 	// 🚨 コマンドの選択も捨てる。残すと、doctor を閉じて開き直したときに `*` が付いたまま
 	// 「x: 1 件を実行」で復帰する (ディスク側の選択は毎回消えるので非対称だった。
 	// 共有 map に prune 系が載った時点で意味が変わった。敵対レビュー 2 周目 P2-3)
-	v.selectedActions, v.actionByCmd, v.dockerOrder = map[string]bool{}, map[string]doctorCmdAction{}, nil
+	v.selectedActions, v.actionByCmd, v.dockerOrder = map[cmdKey]bool{}, map[cmdKey]doctorCmdAction{}, nil
 	// 🚨 世代をまたいで残る状態をここで**まとめて**捨てる。1 つでも残すと前の世代の行・文言・
 	// Cmd が次の画面に混ざる (pendingToast は実際に漏れて、次の再スキャンの理由として
 	// 再表示されていた。敵対レビュー 2026-09-03)
@@ -1376,11 +1376,11 @@ func (v *doctorView) brewSection(o doctorRenderOpts) []doctorRow {
 			}
 			for j, act := range adv.Actions {
 				if v.actionByCmd == nil {
-					v.actionByCmd = map[string]doctorCmdAction{}
+					v.actionByCmd = map[cmdKey]doctorCmdAction{}
 				}
-				v.actionByCmd[act.Cmd] = act
+				v.actionByCmd[cmdKey(act.Cmd)] = act
 				mark := "▸"
-				if v.selectedActions[act.Cmd] {
+				if v.selectedActions[cmdKey(act.Cmd)] {
 					mark = doctorColor(o.colored, ansiBold, "*")
 				}
 				detailRows = append(detailRows, doctorRow{text: ""},
