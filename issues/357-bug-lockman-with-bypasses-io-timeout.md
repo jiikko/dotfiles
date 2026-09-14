@@ -32,7 +32,7 @@
 ```go
 // main.go の dispatch — acquire / with / break / cleanup で必ず走る
 defer func() {
-    res := l.Cleanup(cmd == "cleanup" || o.force, "")   // ← timed() を通っていない
+    res := l.Cleanup(cmd == "cleanup" || o.force)   // ← timed() を通っていない
 ```
 
 `Cleanup` は `serverNow`（probe の `OpenFile` + `Stat` + `Remove`）と 3 回の `ReadDir` +
@@ -161,18 +161,75 @@ deferred `Cleanup` の箇所も数える設計にすること**。①だけを�
 
 ## todolist
 
-- [ ] `runWith` の 3 箇所 + `dispatch` の deferred `Cleanup` = 4 箇所をタイムアウトで包む
-- [ ] タイムアウトの返り値を 125 に揃える（091:418）
-- [ ] `Renew` の失敗を「lease 喪失（122）」と「判定不能（125）」に分ける
-- [ ] 091:496 の受け入れ条件テストを追加（**既存の包み 5 箇所も含めて**）
-- [ ] 変異検証: 包みを外す変異でそのテストの該当ケースが red になることを確認
+- [x] ~~4 箇所~~ **5 箇所**をタイムアウトで包む。数え直したら 1 つ多かった —
+      `cmdAcquire` の**ロールバック解放** (`main.go`: token-file を書けなかったときに
+      取ったロックを戻す `l.Release`) も素通りしていた
+- [x] タイムアウトの返り値を 125 に揃える（091:418）。**ただし解放と掃除は warn に留める** —
+      下の「決めたこと」参照
+- [x] `Renew` の失敗を「lease 喪失（122）」と「判定不能（125）」に分ける
+- [x] 091:496 の受け入れ条件テストを追加（**既存の包み 5 箇所も含めて**）
+- [x] 変異検証: 包みを外す変異でそのテストの該当ケースが red になることを確認（7 本 + 配線 2 本）
 - [ ] 実 SMB での再現（human issue。下の「残タスク」）
+
+## 決めたこと（実装で分岐した点）
+
+1. **包みを呼び出し側でなく `Locker` 側へ寄せた**。`timeout.go` を新設し、
+   **`l.timeout` を読んでよいのはこのファイルだけ**にした（`AcquireTimed` /
+   `RenewTimed` / `ReleaseTimed` / `InspectTimed` / `BreakTimed` / `CleanupTimed`）。
+   `main.go` の `timed()` は削除。**生の I/O を呼ぶ形が production に残らない**ので、
+   「呼び出し側が包むかどうかを選べる」という元の構造そのものが消える
+2. **解放（`Release`）と掃除（`Cleanup`）のタイムアウトは終了コードを上書きしない**。
+   091:418 の「超えたら 125」は取得・更新の経路に当てる規律とした。理由: 子の終了コードは
+   呼び出し側の API で、子が成功したのに 125 を返すと透過の契約が壊れる。固まった事実は
+   warn と `res.Errors` に出す（推奨対応 4 と同じ扱いを `Release` にも広げた）
+3. タイムアウトを `errIOTimeout` の sentinel にした。文面で判定する形をやめ、
+   `classifyRenewErr` が `errors.Is` で分類できるようにした
+4. **`lost` の sticky は残した**。一度 lease を失ったら後の tick が成功しても 122 のまま。
+   不変条件はその時点で破れているので、戻すほうが危険
+
+## 結果（実測）
+
+- **② は FIFO で再現できた**。issue 本文は「FIFO では作れない」と書いていたが、
+  それは sweep の `ReadDir` / `Remove` と `cleanupDue` の `Stat` しか見ていなかった。
+  **`stampCleanup` は `.cleanup_at` を write-only で open する**ので、そこを FIFO にすると
+  読み手が来るまで返らない。`TestIOTimeoutWrapsDeferredCleanup` が決定論的に落とせる
+- 変異検証（repo 外のコピーで実施。各変異はビルド成功を確認してから red/green を読んだ）:
+
+  | 変異 | 落ちたケース |
+  |---|---|
+  | `runWith` の Acquire の包みを外す | `TestIOTimeoutFallsOverForCheckAndWith`（20s の安全網で赤） |
+  | `runWith` の Renew の包みを外す | `…/I/O が詰まっただけなら 125` **だけ** |
+  | `Release` の包みを外す | `…/ReleaseTimed` + 上と同じ 1 ケース |
+  | `Cleanup` の包みを外す | `TestIOTimeoutWrapsDeferredCleanup` |
+  | 分類をやめて全部 lease 喪失に畳む（退行前の挙動） | 4 ケース |
+  | `errors.Is` を `==` に変える | `%w でラップされた errNotOwner は lease 喪失` |
+  | 判定不能を「空いている」に倒す（091:496 が禁じる形） | `TestIOTimeoutFallsOverForCheckAndWith` |
+  | （配線）`with.go` で生の `l.Renew` を呼ぶ | `TestRawLockerIOIsOnlyCalledFromTimeoutGo` |
+  | （配線）`BreakTimed` を消して生の `Break` に戻す | 同上（2 つの assert が両方発火） |
+
+- 🚨 変異 1 本は**ビルド不能**（他のテストが参照していた）で第 3 の結果として扱い、当て直した
+- `go test ./...` rc=0 / `go vet` OK
+
+## 包み忘れの再発を止める検査について
+
+issue の 🚨 が「①だけを数える検査は②を素通りさせる」と警告していたので、
+**「生の I/O メソッドを呼んでいる箇所」を数える形**にした（`timeout_wiring_test.go`）。
+`l.timeout` の読み出し数ではなく呼び出し側を見るので、①（`runWith`）と②（deferred
+`Cleanup`）の**どちらの形でも当たる**。脅威モデルと「検出しない形」（`withTimeout` 直呼び /
+関数値経由 / reflect）はテストのヘッダに凍結した。
+
+🚨 372 の AST 走査テストと違い、**この検査は同じ package の同じディレクトリを読む**ので
+`go test` のキャッシュ穴（module の外を読むと入力が記録されない）には当たらない。
 
 ## 進捗
 
 - 2026-09-11: 起票。①（`with` の 3 箇所）は機械照合 + FIFO ハーネスで再現済み。
   反証レビューで②（deferred `Cleanup`）が判明し、根拠を README から 091 の明文へ格上げ、
-  推奨対応 2 の終了コードを 122 → 125 に訂正（未着手）
+  推奨対応 2 の終了コードを 122 → 125 に訂正
+- 2026-09-15: 実装。`timeout.go` を新設して包みを `Locker` へ寄せ、素通りしていた **5 経路**
+  （数え直しで 4 → 5）を塞いだ。`renewOutcome` の 3 値化、`errIOTimeout` の sentinel 化、
+  091:496 の受け入れ条件テスト（着手時 0 件）を追加。変異 9 本で検出力を確認
+  → commit `fix(lockman,357): --io-timeout の包みを Locker 側へ寄せ、素通りしていた 5 経路を塞ぐ`
 
 ## 残タスク
 
@@ -180,8 +237,9 @@ deferred `Cleanup` の箇所も数える設計にすること**。①だけを�
   どこでブロックするか。**再開の trigger**: 実 SMB 共有で `with` 実行中にサーバを
   落として再現できたとき。README「実機で測っていない前提」の 4 項目と同じ扱いで、
   人が測る作業なので human issue に起こす価値がある
-- **未再現**: ②（deferred `Cleanup`）の詰まり。FIFO では作れないので、
-  `SIGSTOP` させたヘルパー FS か実 SMB が要る（091:496 が例示している手段）
+- ~~**未再現**: ②（deferred `Cleanup`）の詰まり~~ → **再現した**（2026-09-15）。
+  `.cleanup_at` を FIFO にすると `stampCleanup` の write-only open がブロックする。
+  「FIFO では作れない」は sweep しか見ていなかった誤り
 - スコープ外: `Renew` の `readLock` → `OpenFile` の隙間
   （[issue 340](done/340-risk-av1ify-lock-unverified-residuals.md) 項目 1 の残り）。
   あちらは「窓が残る」話で、こちらは「包みが無い」話。別物
