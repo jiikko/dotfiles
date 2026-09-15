@@ -65,7 +65,7 @@ defer が長くなるほど上の用量反応どおり漏れ率が上がる。
 
 ## 357 との違い
 
-[issue 357](357-bug-lockman-with-bypasses-io-timeout.md) は「**包まれていない** I/O が
+[issue 357](done/357-bug-lockman-with-bypasses-io-timeout.md) は「**包まれていない** I/O が
 ある」話。本 issue は「**包んだ** I/O の goroutine が、報告した後に勝つ」話で、
 357 を直しても消えない (357 の修正で `Cleanup` を `timed` に包むと defer は短くなるが、
 goroutine が回収されない事実は変わらない)。

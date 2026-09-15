@@ -150,7 +150,7 @@ CLAUDE.md「Issue管理」は done へ移す commit で参照元の open issue �
 - **検出しないと決めた形**: 他セッションの worktree が同じ issue を更新した場合、こちらの
   「更新漏れ」が抑止される。出さない側なので許容した（再評価の trigger: 更新漏れが
   実際に素通りしたとき）
-  - 🚨 **追記 (2026-09-15 / [issue 353](../353-bug-issue-progress-check-counts-other-sessions-commits.md))**:
+  - 🚨 **追記 (2026-09-15 / [issue 353](353-bug-issue-progress-check-counts-other-sessions-commits.md))**:
     ここに書いたのは**抑止方向だけ**で、**誤報方向**（他セッションの commit が
     こちらの「作業対象」として指摘される）は書いていなかった。そして実際に出たのは
     誤報方向で、しかも `:139`（`is_changed` が true のときだけ到達する行）= 
@@ -175,7 +175,7 @@ CLAUDE.md「Issue管理」は done へ移す commit で参照元の open issue �
 
 ## 追記 (2026-09-15) — 「検出しないと決めた形」に誤報方向が抜けていた
 
-[issue 353](../353-bug-issue-progress-check-counts-other-sessions-commits.md) の決着に伴う追記。
+[issue 353](353-bug-issue-progress-check-counts-other-sessions-commits.md) の決着に伴う追記。
 
 - [x] 「検出しないと決めた形」に**誤報方向**（他セッションの commit が
       こちらの「作業対象」として指摘される）を書き足した。元は**抑止方向だけ**で、

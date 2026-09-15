@@ -3,12 +3,12 @@
 起票日: 2026-09-11
 カテゴリ: bug / priority: **medium**（`with` の最初の利用者が現れたら high。理由は下の「重要度」節）
 対象: `src/lockman/with.go` の `runWith`
-出典: resource-leaks 監査 2026-09-11（[issue 359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md)）
+出典: resource-leaks 監査 2026-09-11（[issue 359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md)）
 反証レビュー: 1 周実施（指摘を反映済み。詳細は 359）
 
 ## 問題
 
-🚨 **[363](363-bug-lockman-with-signal-handler-installed-too-late.md) は trigger が違う** (2026-09-12 追記)。本 issue は**子が正常終了した経路**、あちらは
+🚨 **[363](../363-bug-lockman-with-signal-handler-installed-too-late.md) は trigger が違う** (2026-09-12 追記)。本 issue は**子が正常終了した経路**、あちらは
 **シグナルが `signal.Notify` の導入より早く届いた経路** (実測 20/120 で lock 残存、うち 9 件は孤児の子つき)。まとめて直すなら両方の経路を見る。
 
 
@@ -149,7 +149,7 @@ A tick 6
 - 🚨 **pgid の計算を誤って 0 にすると `kill(0, …)` は「呼び出し側のプロセスグループ」を
   撃つ**（テストでは `go test` 自身、本番では呼び出し元シェル）。`pgid > 1` を assert する
 - 案 A は `cmd.Wait()` で**リーダーを回収した後**にグループへ撃つので、その時点で pgid は
-  再利用可能になっている。[issue 340](done/340-risk-av1ify-lock-unverified-residuals.md)
+  再利用可能になっている。[issue 340](340-risk-av1ify-lock-unverified-residuals.md)
   項目 2（av1ify の pgrep → kill の PID 再利用。「直さないと決めた」）と同クラスなので、
   A を採るなら同じ扱い（記録 + 再開 trigger）で明記する
 
@@ -231,13 +231,13 @@ A を採らなかったのは、正常終了時にグループを薙ぐと**意�
   `sh -c "trap '' TERM; sleep 60"` を子にすると、昇格が無い版では `with` が返らない
 - 未検証: `setsid` した子孫まで回収する手段（プロセスグループでは届かない）。
   取りこぼしを許容するなら記録で閉じる
-- スコープ外: [issue 301](done/301-bug-parallel-runner-leaves-orphan-grandchildren-on-term.md)
+- スコープ外: [issue 301](301-bug-parallel-runner-leaves-orphan-grandchildren-on-term.md)
   （parallel runner の孫残留）自体の対処
 
 ## 関連
 
-- [issue 301](done/301-bug-parallel-runner-leaves-orphan-grandchildren-on-term.md) — 同族（孫の残留）
-- [issue 340](done/340-risk-av1ify-lock-unverified-residuals.md) 項目 2 — pgid 再利用（案 A が同クラスの risk を持ち込む）
+- [issue 301](301-bug-parallel-runner-leaves-orphan-grandchildren-on-term.md) — 同族（孫の残留）
+- [issue 340](340-risk-av1ify-lock-unverified-residuals.md) 項目 2 — pgid 再利用（案 A が同クラスの risk を持ち込む）
 - [issue 357](357-bug-lockman-with-bypasses-io-timeout.md) — 同じ `runWith` の別の欠陥
-- [issue 091](done/091-feat-lockman-directory-lease-lock.md) — 仕様の正本（:282 / :381 / :293）
-- [issue 359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) — この issue の出典（監査記録）
+- [issue 091](091-feat-lockman-directory-lease-lock.md) — 仕様の正本（:282 / :381 / :293）
+- [issue 359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) — この issue の出典（監査記録）

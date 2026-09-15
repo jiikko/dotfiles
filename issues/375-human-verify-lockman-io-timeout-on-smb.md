@@ -3,7 +3,7 @@
 - 起票: 2026-09-15
 - カテゴリ: human（人間しかできない作業。実 SMB 共有とサーバの停止操作が要る）
 - 期限: 2026-10-15
-- 出典: [issue 357](357-bug-lockman-with-bypasses-io-timeout.md) の残タスク
+- 出典: [issue 357](done/357-bug-lockman-with-bypasses-io-timeout.md) の残タスク
 
 ## なぜ人がやるのか
 
@@ -39,5 +39,5 @@ smbfs がそのどれで止まるか（あるいは ETIMEDOUT で即エラーに
 
 ## 関連
 
-- [issue 357](357-bug-lockman-with-bypasses-io-timeout.md) — 包みを入れた実装と FIFO ハーネス
+- [issue 357](done/357-bug-lockman-with-bypasses-io-timeout.md) — 包みを入れた実装と FIFO ハーネス
 - [issue 091](done/091-feat-lockman-directory-lease-lock.md) — 仕様の正本（:418 / :496）

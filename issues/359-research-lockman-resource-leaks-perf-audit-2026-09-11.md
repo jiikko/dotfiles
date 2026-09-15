@@ -33,8 +33,8 @@
 
 | issue | 内容 | 証拠の強さ |
 |---|---|---|
-| [356](356-bug-lockman-with-releases-lock-while-grandchildren-run.md) | `with` が孫プロセスの走行中にロックを解放する (排他が破れる) | **再現済み** (孫の生存 + 解放後の保持者との交互書き込み) |
-| [357](357-bug-lockman-with-bypasses-io-timeout.md) | `with` だけ I/O タイムアウトの外。詰まると SIGTERM/INT/HUP が全部効かない | 機構は**機械照合済み**、挙動は FIFO ハーネスで**再現済み**、本番条件 (応答しないマウント) は**未再現** |
+| [356](done/356-bug-lockman-with-releases-lock-while-grandchildren-run.md) | `with` が孫プロセスの走行中にロックを解放する (排他が破れる) | **再現済み** (孫の生存 + 解放後の保持者との交互書き込み) |
+| [357](done/357-bug-lockman-with-bypasses-io-timeout.md) | `with` だけ I/O タイムアウトの外。詰まると SIGTERM/INT/HUP が全部効かない | 機構は**機械照合済み**、挙動は FIFO ハーネスで**再現済み**、本番条件 (応答しないマウント) は**未再現** |
 | [358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) | `Cleanup` の `selfToken` ガードが production 到達不能かつ守る対象が存在しない | 機械照合済み |
 
 🚨 **`lockman with` を実行している production コードは 0 件。**
@@ -153,10 +153,10 @@ SMB 越しの実時間は**未実測**。
 
 `util.go` の `withTimeout` のコメントが「🚨 固まった goroutine は回収できない …
 プロセスの終了で解放される前提の使い捨て」と既に明記している。lockman は `with` 以外
-すべて短命プロセスで、`with` は `withTimeout` を通らない (→ [issue 357](357-bug-lockman-with-bypasses-io-timeout.md))。
+すべて短命プロセスで、`with` は `withTimeout` を通らない (→ [issue 357](done/357-bug-lockman-with-bypasses-io-timeout.md))。
 **goroutine が積む経路が存在しない**ので、指摘として成立しない。
 
-🚨 **ただし [issue 357](357-bug-lockman-with-bypasses-io-timeout.md) の推奨対応 1 は
+🚨 **ただし [issue 357](done/357-bug-lockman-with-bypasses-io-timeout.md) の推奨対応 1 は
 まさにその経路を作る。** `with` を `withTimeout` で包むと、`with` は唯一の長寿命モード
 (TTL 30 分なら 10 分ごとに renew) なので、応答しないマウントでは **tick ごとに
 1 goroutine + 1 ブロック中 syscall が積む**。`util.go` の「プロセスの終了で解放される
@@ -187,7 +187,7 @@ goroutine 蓄積に上限を置くか、renew を専用の goroutine 1 本に固
 - `--on-lost kill` は `syscall.Kill(-pgid, SIGTERM)` を撃つだけで、**SIGKILL への昇格も
   待ちも上限も無い**。TERM を trap / 無視する子 (`ffmpeg` を含め普通にある) は生き続ける
 - lease を失った時点で**他者が既に引き継いでいる**ので、その状態は
-  [issue 356](356-bug-lockman-with-releases-lock-while-grandchildren-run.md) と同一の
+  [issue 356](done/356-bug-lockman-with-releases-lock-while-grandchildren-run.md) と同一の
   二重書き手条件。`with` は子が終わるまで返らないので無期限に続く
 - [issue 091](done/091-feat-lockman-directory-lease-lock.md):282 は
   「`--on-lost=kill|warn` (既定 `kill`) で**子プロセスを止められる**ようにする」と
@@ -199,9 +199,9 @@ goroutine 蓄積に上限を置くか、renew を専用の goroutine 1 本に固
 - **この経路のテストは 0 件**。`exitWithLost` の出現は定数定義と `with.go` の return、
   `main_test.go` の `TestExitCodesDoNotCollide` (定数の重複検査だけ) のみ
 
-**行き先**: 「TERM だけでは止まらない」は [issue 356](356-bug-lockman-with-releases-lock-while-grandchildren-run.md)
+**行き先**: 「TERM だけでは止まらない」は [issue 356](done/356-bug-lockman-with-releases-lock-while-grandchildren-run.md)
 の経路 2 へ、「判定不能と lease 喪失の混同 / 終了コード」は
-[issue 357](357-bug-lockman-with-bypasses-io-timeout.md) の該当節へ移した。
+[issue 357](done/357-bug-lockman-with-bypasses-io-timeout.md) の該当節へ移した。
 
 ✅ **両方とも 2026-09-15 に解消**。356 は `--on-lost kill` を TERM → 猶予 5s → KILL へ
 昇格させ (昇格は 1 回だけ)、357 は `Renew` の失敗を `renewOutcome` の 3 値
@@ -254,9 +254,9 @@ goroutine 蓄積に上限を置くか、renew を専用の goroutine 1 本に固
 - **091 の受け入れ条件のうち 2 つが未達**:
   - 「`--io-timeout` で exit 1 になること。**「空いている」に倒れないこと**が本体」(091:496)
     → `grep -n 'io-timeout\|ioTimeout\|timed(\|withTimeout(' *_test.go` = **0 件**。
-    包んである 5 箇所も一度も検証されていない (→ [issue 357](357-bug-lockman-with-bypasses-io-timeout.md) の todolist に入れた)
+    包んである 5 箇所も一度も検証されていない (→ [issue 357](done/357-bug-lockman-with-bypasses-io-timeout.md) の todolist に入れた)
   - 「`with` の自動 renew が効いている (renew を止める変異を当てて赤になることを確認する)」
-    → `lost` 分岐 / ticker / `sigCh` を実行するテストが **0 件** (→ [issue 356](356-bug-lockman-with-releases-lock-while-grandchildren-run.md) の todolist に入れた)
+    → `lost` 分岐 / ticker / `sigCh` を実行するテストが **0 件** (→ [issue 356](done/356-bug-lockman-with-releases-lock-while-grandchildren-run.md) の todolist に入れた)
 
 ## 攻めたが見つからなかった範囲 (次の監査の起点)
 
@@ -397,6 +397,6 @@ ubuntu から移した」と書いており、README だけが取り残されて
 
 ## 関連
 
-- [issue 356](356-bug-lockman-with-releases-lock-while-grandchildren-run.md) / [issue 357](357-bug-lockman-with-bypasses-io-timeout.md) / [issue 358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) — 生存した発見
+- [issue 356](done/356-bug-lockman-with-releases-lock-while-grandchildren-run.md) / [issue 357](done/357-bug-lockman-with-bypasses-io-timeout.md) / [issue 358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) — 生存した発見
 - [issue 340](done/340-risk-av1ify-lock-unverified-residuals.md) — lockman / av1ify で「直さないと決めた」ものの記録 (今回の却下と重複していないことを照合済み)
 - [issue 318](done/318-research-dead-code-and-broken-code-audit-2026-09-06.md) / [issue 324](done/324-research-performance-audit-2026-09-06.md) — 同じ形の監査記録 issue の前例

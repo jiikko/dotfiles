@@ -3,13 +3,13 @@
 起票日: 2026-09-11
 カテゴリ: bug / priority: high
 対象: `src/lockman/with.go` の `runWith` / `src/lockman/main.go` の `dispatch`（deferred `Cleanup`）/ `timed`
-出典: resource-leaks 監査 2026-09-11（[issue 359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md)）
+出典: resource-leaks 監査 2026-09-11（[issue 359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md)）
 反証レビュー: 1 周実施。**起票時の「`with` だけが穴」は誤りで、`dispatch` の deferred `Cleanup` も
 包まれていないことが判明した**（下の表）。指摘を反映済み
 
 ## 問題
 
-🚨 **[362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) は別物で、本 issue の修正では消えない** (2026-09-12 追記)。あちらは「**包んだ** I/O の goroutine が
+🚨 **[362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) は別物で、本 issue の修正では消えない** (2026-09-12 追記)。あちらは「**包んだ** I/O の goroutine が
 `withTimeout` に見捨てられた後も走り続け、失敗を報告した後に lock を置く」話。
 `Cleanup` を `timed` で包むと defer は短くなるが、goroutine が回収されない事実は変わらない。
 
@@ -169,7 +169,7 @@ deferred `Cleanup` の箇所も数える設計にすること**。①だけを�
 - [x] `Renew` の失敗を「lease 喪失（122）」と「判定不能（125）」に分ける
 - [x] 091:496 の受け入れ条件テストを追加（**既存の包み 5 箇所も含めて**）
 - [x] 変異検証: 包みを外す変異でそのテストの該当ケースが red になることを確認（7 本 + 配線 2 本）
-- [x] 実 SMB での再現 → [issue 375](375-human-verify-lockman-io-timeout-on-smb.md) へ起票
+- [x] 実 SMB での再現 → [issue 375](../375-human-verify-lockman-io-timeout-on-smb.md) へ起票
 
 ## 決めたこと（実装で分岐した点）
 
@@ -234,21 +234,21 @@ issue の 🚨 が「①だけを数える検査は②を素通りさせる」�
 ## 残タスク
 
 - **未検証**: smbfs のサーバ不達が実際に `readLock` / `serverNow` / `OpenFile` の
-  どこでブロックするか → **[issue 375](375-human-verify-lockman-io-timeout-on-smb.md) に
+  どこでブロックするか → **[issue 375](../375-human-verify-lockman-io-timeout-on-smb.md) に
   human issue として起こした**（期限 2026-10-15）。手順と記録してほしい実測値はそちら
 - ~~**未再現**: ②（deferred `Cleanup`）の詰まり~~ → **再現した**（2026-09-15）。
   `.cleanup_at` を FIFO にすると `stampCleanup` の write-only open がブロックする。
   「FIFO では作れない」は sweep しか見ていなかった誤り
 - スコープ外: `Renew` の `readLock` → `OpenFile` の隙間
-  （[issue 340](done/340-risk-av1ify-lock-unverified-residuals.md) 項目 1 の残り）。
+  （[issue 340](340-risk-av1ify-lock-unverified-residuals.md) 項目 1 の残り）。
   あちらは「窓が残る」話で、こちらは「包みが無い」話。別物
 
 ## 関連
 
-- [issue 091](done/091-feat-lockman-directory-lease-lock.md) — 仕様の正本（:418 の io-timeout / :398-399 の終了コード表 / :496 の受け入れ条件）
+- [issue 091](091-feat-lockman-directory-lease-lock.md) — 仕様の正本（:418 の io-timeout / :398-399 の終了コード表 / :496 の受け入れ条件）
 - [issue 356](356-bug-lockman-with-releases-lock-while-grandchildren-run.md) — 同じ `runWith` の別の欠陥
-- [issue 340](done/340-risk-av1ify-lock-unverified-residuals.md) — `Renew` の残り窓（別物）
-- [issue 359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) — この issue の出典（監査記録）
+- [issue 340](340-risk-av1ify-lock-unverified-residuals.md) — `Renew` の残り窓（別物）
+- [issue 359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) — この issue の出典（監査記録）
 
 ## 敵対的レビュー (2026-09-15 / read-only サブエージェント 1 体)
 

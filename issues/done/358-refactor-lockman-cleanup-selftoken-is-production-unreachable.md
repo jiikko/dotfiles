@@ -409,7 +409,7 @@ ReadDir と Remove のあいだで他者が消す状態を、seam 無しで決�
 | ②P3-G | `TestDispatchWarns…` が部分一致 pin (書式から `skipped=` を落とす変異が緑) | 元からの穴 | 本 issue (commit 1) |
 | ③P1-E | **`timed()` が見捨てた goroutine が「失敗」報告後に lock を置く** (35/450 = 7.8%、graveyard 200 件で 40/40) | 元からの穴 + 3・4 周目が増幅 | **[issue 362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md)** |
 | ③P1-C | **`signal.Notify` が `Acquire` / `cmd.Start()` の後** (20/120。うち 9 件は孤児の子つき。全件 0B の無音) | 元からの穴 | **[issue 363](../363-bug-lockman-with-signal-handler-installed-too-late.md)** |
-| ③P2-D | `with` が `--io-timeout` を丸ごと無視し、詰まった `Renew` が select ループごと止める | 元からの穴 | **[357](../357-bug-lockman-with-bypasses-io-timeout.md) に既出**。実測だけ転記 |
+| ③P2-D | `with` が `--io-timeout` を丸ごと無視し、詰まった `Renew` が select ループごと止める | 元からの穴 | **[357](357-bug-lockman-with-bypasses-io-timeout.md) に既出**。実測だけ転記 |
 | ③P2 / P3-A / P3-B / テスト | `with` が rc=0 で解放漏れ / graveyard の retention が mtime 由来 / reap 済み pgid への kill (未確認) / `TestRenewExtendsHold` の壁時計依存 | 元からの穴 | **[issue 364](../364-bug-lockman-with-release-failure-and-graveyard-retention.md)** |
 
 #### 修正 (3 commit に割った。§7 の「次の周の攻め口」を小さく保つため)
@@ -781,7 +781,7 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
   [363](../363-bug-lockman-with-signal-handler-installed-too-late.md) (high) /
   [364](../364-bug-lockman-with-release-failure-and-graveyard-retention.md) (low〜medium) /
   [366](../366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) (high・原因未特定)。
-  `with` の `--io-timeout` 素通りは [357](../357-bug-lockman-with-bypasses-io-timeout.md) に既出
+  `with` の `--io-timeout` 素通りは [357](357-bug-lockman-with-bypasses-io-timeout.md) に既出
 - 決着済み: 下限はコンパイル時ではなく `sweepDir` の実行時に置いた (上の「実施結果」1)。
   コンパイル時にも**置けた**が、定数を縛る形は迂回されるため採らなかった
 

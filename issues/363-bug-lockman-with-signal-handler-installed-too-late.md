@@ -42,7 +42,7 @@
 
 ## 356 との違い
 
-[issue 356](356-bug-lockman-with-releases-lock-while-grandchildren-run.md) は
+[issue 356](done/356-bug-lockman-with-releases-lock-while-grandchildren-run.md) は
 **子が正常終了した経路**で「孫が残っているのに解放する」話。本 issue の trigger は
 **シグナルが早く届いた経路**で、356 を直しても消えない。
 

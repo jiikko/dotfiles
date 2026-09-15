@@ -2,7 +2,7 @@
 
 起票日: 2026-09-11
 出典: このセッション（dotfiles-82 / issue-sync）で実際に差し戻された
-関連: [issue 339](done/339-bug-issue-progress-check-redisplays-explained-findings.md) ② が worktree 列挙を入れた変更
+関連: [issue 339](339-bug-issue-progress-check-redisplays-explained-findings.md) ② が worktree 列挙を入れた変更
 
 ## 症状
 
@@ -174,7 +174,7 @@ reflog が壊れているのではなく、**「reflog は自分の commit を�
       pull だけでなく **worktree 経由**でも混ざること、向きが過少（抑止）と過剰（誤報）の
       2 つあること、直さないと決めた理由（reflog では区別できず、実装すると標準手順で
       hook が恒久的に無音になる）、再評価の trigger を書いた
-- [x] [issue 339](done/339-bug-issue-progress-check-redisplays-explained-findings.md) の
+- [x] [issue 339](339-bug-issue-progress-check-redisplays-explained-findings.md) の
       「検出しないと決めた形」にも誤報方向を追記した。339 は抑止方向しか書いておらず、
       しかも実際に出たのは **339 が「安全」と認定した `changed` 側**が作る誤報だった
 - [ ] ~~(B) を取るなら fixture を他の verb でも通す~~ → (A) を採ったので不要。
