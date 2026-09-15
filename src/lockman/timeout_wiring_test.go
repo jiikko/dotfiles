@@ -20,6 +20,12 @@ import (
 //   - `withTimeout` を直接呼んで期限を別の値にする
 //   - Locker のメソッドを関数値に代入してから呼ぶ (`f := l.Renew; f(tok)`)
 //   - reflect 経由の呼び出し
+//   - **`wrappedMethods` に無い新しいメソッド**を足して生の I/O を書く (allowlist 設計に
+//     内在する。敵対レビュー 2026-09-15 が `Steal` を足して素通りさせた)
+//   - **Locker のメソッド以外の I/O** (`os.Stat` / `os.ReadFile` を直接書く)。
+//     `NewLocker` の `os.Stat` と token-file の読み書きは 2026-09-15 に手で包んだが、
+//     ここは数えていない — 数えると production の全 `os.*` が対象になり、
+//     「包まなくてよい I/O」(ローカルの一時ファイル等) と区別できない
 //
 // 🚨 **①と②の両方を数える。** 「`l.timeout` の読み出し箇所が増えたか」だけを数える検査は、
 // deferred Cleanup のような**呼び出し側の包み忘れ**を素通りさせる (issue 357 の 🚨)。
@@ -61,16 +67,15 @@ func TestRawLockerIOIsOnlyCalledFromTimeoutGo(t *testing.T) {
 			if !ok || !wrapped[sel.Sel.Name] {
 				return true
 			}
-			// レシーバが Locker かは go/types 無しでは確定できないので、
-			// 変数名で近似する (この package で Locker を受ける変数は l / locker だけ)。
-			id, ok := sel.X.(*ast.Ident)
-			if !ok || (id.Name != "l" && id.Name != "locker") {
-				return true
-			}
+			// 🚨 レシーバが Locker かは go/types 無しでは確定できない。**変数名で近似しない** —
+			// 最初は `l` / `locker` に限っていたが、敵対レビューが `lk.Renew("tok")` で
+			// 素通りさせた (「うっかり書く典型形」そのものなので、宣言した脅威モデルに
+			// 正面から当たる)。名前を問わず拾う (この package で これらのメソッドを持つ型は
+			// Locker だけ)。
 			calls++
 			if name != "timeout.go" {
 				offenders = append(offenders,
-					fset.Position(call.Pos()).String()+": "+id.Name+"."+sel.Sel.Name)
+					fset.Position(call.Pos()).String()+": "+recvText(sel.X)+"."+sel.Sel.Name)
 			}
 			return true
 		})
@@ -89,6 +94,25 @@ func TestRawLockerIOIsOnlyCalledFromTimeoutGo(t *testing.T) {
 			strings.Join(offenders, "\n  "))
 	}
 
+	// 🚨 Locker のメソッド以外でも、**共有の上を触ることが分かっている** 3 経路だけは
+	// 名指しで pin する。挙動のテストは書けない (Stat がブロックするマウントを手元で
+	// 作れない) ので、配線を静的に固定する。ここを緩めると、敵対レビューが実測した
+	// 「`check --io-timeout 200ms` が 3.001s 固まる」が黙って戻る。
+	for file, want := range map[string][]string{
+		"lock.go": {"statDirTimed(abs, timeout)"},
+		"main.go": {"readFileTimed(o.tokenFile", "writeFileTimed(o.tokenFile"},
+	} {
+		b, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("%s: %v", file, err)
+		}
+		for _, w := range want {
+			if !strings.Contains(string(b), w) {
+				t.Errorf("%s に %q が無い (共有を触る I/O が --io-timeout の外に出ている)", file, w)
+			}
+		}
+	}
+
 	// 対応する 〜Timed が実在することも固定する (片方だけ足して満足しないため)
 	src, err := os.ReadFile(filepath.Join(".", "timeout.go"))
 	if err != nil {
@@ -99,4 +123,15 @@ func TestRawLockerIOIsOnlyCalledFromTimeoutGo(t *testing.T) {
 			t.Errorf("timeout.go に %sTimed が無い", m)
 		}
 	}
+}
+
+// recvText は診断用にレシーバの式を文字列化する (Ident 以外も出せるようにする)。
+func recvText(e ast.Expr) string {
+	switch t := e.(type) {
+	case *ast.Ident:
+		return t.Name
+	case *ast.SelectorExpr:
+		return recvText(t.X) + "." + t.Sel.Name
+	}
+	return "?"
 }

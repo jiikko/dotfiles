@@ -39,8 +39,12 @@ const (
 )
 
 const (
-	defaultTTL       = 30 * time.Minute
-	minTTL           = 30 * time.Second // SMB の属性キャッシュ遅延より十分大きくするための下限
+	defaultTTL = 30 * time.Minute
+	minTTL     = 30 * time.Second // SMB の属性キャッシュ遅延より十分大きくするための下限
+	// --io-timeout の下限 / 上限。下限は「詰まっていないマウントを詰まっていると
+	// 誤判定しない」ため、上限は「固まったときに人が待てる」ため (既定は 10s)。
+	minIOTimeout     = 100 * time.Millisecond
+	maxIOTimeout     = 5 * time.Minute
 	defaultIOTimeout = 10 * time.Second
 )
 
@@ -143,7 +147,7 @@ func (o *opts) resolveToken() (string, error) {
 	if o.tokenFile == "" {
 		return "", errors.New("--token または --token-file が要る")
 	}
-	b, err := os.ReadFile(o.tokenFile)
+	b, err := readFileTimed(o.tokenFile, o.ioTimeout)
 	if err != nil {
 		return "", err
 	}
@@ -184,6 +188,14 @@ func run(args []string) int {
 	if len(positional) < 1 {
 		warnf("対象ディレクトリを指定すること")
 		return exitError
+	}
+	// 🚨 --io-timeout の値検証。0 や負値は**全操作を即「判定不能」**にする (0 を「無制限」と
+	// 読む CLI が多いので、黙って受けると意図と逆に倒れる)。上限も要る: 大きすぎると
+	// cleanup.go の minRetention が前提にしている「--io-timeout は十分小さい」が崩れる。
+	// (issue 359 の残タスク / cleanup.go の注記が「356 / 357 と一緒に直す」と予告していた分)
+	if o.ioTimeout < minIOTimeout || o.ioTimeout > maxIOTimeout {
+		warnf("--io-timeout が範囲外 (%v)。%v 〜 %v で指定すること", o.ioTimeout, minIOTimeout, maxIOTimeout)
+		return failCode(cmd, exitError)
 	}
 	if o.ttl < minTTL {
 		// 短い TTL は SMB の属性キャッシュ遅延に埋もれ、生きている lock を stale と
@@ -276,7 +288,7 @@ func cmdAcquire(l *Locker, o *opts) int {
 		switch {
 		case err == nil:
 			if o.tokenFile != "" {
-				if werr := os.WriteFile(o.tokenFile, []byte(meta.Token+"\n"), 0o600); werr != nil {
+				if werr := writeFileTimed(o.tokenFile, []byte(meta.Token+"\n"), 0o600, o.ioTimeout); werr != nil {
 					// トークンを渡せないと解放できなくなる。取ったロックを戻してから失敗する。
 					_ = l.ReleaseTimed(meta.Token)
 					warnf("トークンを書けない: %v", werr)

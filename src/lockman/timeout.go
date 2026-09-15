@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
 	"time"
 )
 
@@ -64,6 +65,29 @@ func (l *Locker) ReleaseTimed(token string) error {
 	return err
 }
 
+// renewAsync は更新を **1 本だけ**起こし、結果の chan と期限の chan を返す。
+//
+// 🚨 `with` は lockman で唯一の長寿命モードなので、`RenewTimed` を毎 tick 呼ぶと
+// 応答しないマウントでは **tick ごとに 1 goroutine + 1 ブロック中 syscall が積む**
+// (`withTimeout` は見捨てた goroutine を回収できない)。だから `with` の更新だけは
+// 「詰まっている間は新しく起こさない」制御を呼び出し側に持たせる形にした。
+//
+// 🚨 **期限が来ても更新をやめてはいけない。** やめるとマウントが復旧しても lease が
+// 期限切れになり、他者が正当に引き継ぐ = 子が走ったまま二重実行になる
+// (敵対レビュー 2026-09-15 が A-B で実測。`ticker.Stop()` で止めた版は他マシンの
+// Acquire が成功し、止めない版は拒否された)。期限は**報告**のためだけに使う。
+func (l *Locker) renewAsync(token string) (<-chan error, <-chan time.Time) {
+	ch := make(chan error, 1)
+	go func() { ch <- l.Renew(token) }()
+	return ch, time.After(l.timeout)
+}
+
+// ioTimeoutErr は期限切れのエラー。文面は withTimeout と揃える。
+func (l *Locker) ioTimeoutErr() error {
+	return fmt.Errorf("%w: I/O が %v 以内に返らない (マウントが応答しない可能性): 判定不能",
+		errIOTimeout, l.timeout)
+}
+
 func (l *Locker) InspectTimed() (*State, error) {
 	return withTimeout(l.timeout, func() (*State, error) { return l.Inspect() })
 }
@@ -81,4 +105,22 @@ func (l *Locker) CleanupTimed(force bool) CleanupResult {
 		return CleanupResult{Errors: []string{err.Error()}}
 	}
 	return res
+}
+
+// statDirTimed は **Locker を作る前**の I/O を包む。対象ディレクトリは共有そのものなので、
+// ここが応答しないと `lockman check <share>` が無言で固まる (`--io-timeout` を渡していても)。
+// 🚨 敵対レビュー 2026-09-15 が実測: 3s ブロックするマウントで
+// `check --io-timeout 200ms` が exit=0 / 所要 3.001s だった。
+func statDirTimed(path string, d time.Duration) (os.FileInfo, error) {
+	return withTimeout(d, func() (os.FileInfo, error) { return os.Stat(path) })
+}
+
+// readFileTimed / writeFileTimed は token-file の I/O。共有上に置かれうるので包む。
+func readFileTimed(path string, d time.Duration) ([]byte, error) {
+	return withTimeout(d, func() ([]byte, error) { return os.ReadFile(path) })
+}
+
+func writeFileTimed(path string, b []byte, mode os.FileMode, d time.Duration) error {
+	_, err := withTimeout(d, func() (struct{}, error) { return struct{}{}, os.WriteFile(path, b, mode) })
+	return err
 }

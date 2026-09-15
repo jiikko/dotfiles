@@ -104,43 +104,60 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	var escalate sync.Once
 
 	outcome := renewOK
+	// 更新は **同時に 1 本まで**。詰まっている間は新しく起こさない (tick ごとに積むと
+	// 見捨てた goroutine が溜まる。issue 359 の項目 4)。
+	//
+	// 🚨 **詰まっても更新をやめない。** 以前ここで `ticker.Stop()` していたが、それは
+	// 一過性のヒカップを**本物の lease 喪失**に変える: 更新が二度と走らないので lease は
+	// 実際に期限切れになり、他マシンが正当に引き継ぐ — 子はまだ走っているので二重実行。
+	// 敵対レビュー 2026-09-15 が A-B で実測した (止めた版は他マシンの Acquire が成功、
+	// 止めない版は拒否)。しかも既定値 (ttl 30m / tick 10m) のほうが猶予が短い。
+	var renewCh <-chan error
+	var renewExpired <-chan time.Time // nil = 更新が走っていない
+	reportRenewErr := func(err error) {
+		if outcome == renewOK {
+			outcome = classifyRenewErr(err)
+		}
+		if outcome == renewLost {
+			warnf("lease を失った: %v", err)
+		} else {
+			warnf("lease を確認できない (判定不能): %v", err)
+		}
+		// fail-closed で子を止める。**次の tick を待たない** — TTL を超えれば他者が
+		// 引き継ぐので、待つほど二重実行に近づく。
+		//
+		// 🚨 **昇格は 1 回だけ**。tick ごとに撃ち直すと猶予が毎回振り出しに戻り、
+		// SIGKILL へ永久に到達しない (上限の無い再試行は上限が無いのと同じ)。
+		if onLostKill {
+			escalate.Do(func() { go escalateGroupKill(pgid, exited, onLostGracePeriod) })
+		}
+	}
+
 	for {
 		select {
 		case sig := <-sigCh:
 			// 受けたシグナルは子のプロセスグループへ転送する (自分だけ死なない)。
+			//
+			// 🚨 ここは**昇格しない**。撃ったのは人 (Ctrl-C / kill) で、`with` は子の
+			// 終了コードを透過する薄い包みなので、子が TERM を無視するなら素で実行した
+			// ときと同じ振る舞いにする。昇格するのは lease を失ったとき —
+			// **他者が既に引き継いでいて、止めないと二重実行になる**ときだけ。
 			_ = killGroup(pgid, sig.(syscall.Signal))
 		case <-ticker.C:
-			if err := l.RenewTimed(meta.Token); err != nil {
-				// 🚨 **「lease を失った」と「確認できない」を混ぜない。** Renew は
-				// errNotOwner 以外でも失敗する (I/O タイムアウト / probe の失敗 /
-				// clockSkewTolerance を超える打刻ずれ)。一過性の I/O ヒカップを 122 と
-				// 報告すると「走行中に引き継がれた」と読まれるが、実際には lease は
-				// 失われていない。091:398-399 ではそれは 125 (判定不能)。
-				if outcome == renewOK {
-					outcome = classifyRenewErr(err)
-				}
-				// 🚨 **一度失敗したら更新をやめる。** `with` は唯一の長寿命モードなので、
-				// 応答しないマウントでは `RenewTimed` が **tick ごとに 1 goroutine +
-				// 1 ブロック中 syscall を積む** (`withTimeout` は見捨てた goroutine を
-				// 回収できない。util.go の 🚨)。outcome は sticky で、ここから先の更新は
-				// 結論を変えないので、積む理由が無い (issue 359 の項目 4 が
-				// 「357 を実装したら上限を置くか決めろ」と trigger を残していた)。
-				// これで 1 回の with で見捨てる goroutine は**最大 1 本**に収まる。
-				ticker.Stop()
-				if outcome == renewLost {
-					warnf("lease を失った: %v", err)
-				} else {
-					warnf("lease を確認できない (判定不能): %v", err)
-				}
-				// どちらも fail-closed で子を止める。**次の tick を待たない** —
-				// TTL を超えれば他者が引き継ぐので、待つほど二重実行に近づく。
-				//
-				// 🚨 **昇格は 1 回だけ**。tick ごとに撃ち直すと猶予が毎回振り出しに戻り、
-				// SIGKILL へ永久に到達しない (上限の無い再試行は上限が無いのと同じ)。
-				if onLostKill {
-					escalate.Do(func() { go escalateGroupKill(pgid, exited, onLostGracePeriod) })
-				}
+			if renewCh != nil {
+				continue // 前回の更新がまだ返っていない。新しく積まない
 			}
+			renewCh, renewExpired = l.renewAsync(meta.Token)
+		case err := <-renewCh:
+			renewCh, renewExpired = nil, nil
+			if err != nil {
+				reportRenewErr(err)
+			}
+		case <-renewExpired:
+			// 期限切れ = 判定不能。**報告は 1 回だけ**にして renewCh は握ったままにする
+			// (新しい更新を積まない)。詰まった 1 本が返れば renewCh が降りて再開する。
+			renewExpired = nil
+			reportRenewErr(l.ioTimeoutErr())
 		case err := <-done:
 			switch outcome {
 			case renewLost:
@@ -187,6 +204,15 @@ var onLostGracePeriod = 5 * time.Second
 // 🚨 届く範囲はプロセスグループに残った子孫まで。**`setsid()` した子孫には届かない**
 // (runWith の Setpgid の注記を参照)。
 func escalateGroupKill(pgid int, exited <-chan struct{}, grace time.Duration) {
+	// 🚨 **撃つ前に「もう終わっている」かを見る。** `escalate.Do` から goroutine が実走する
+	// までの間に子が回収されていると、TERM は空いた pgid へ飛び、**再利用されていれば
+	// 無関係なプロセスグループに当たる** (issue 340 項目 2 と同クラス。敵対レビューが
+	// 「close(exited) を先にしたので塞いだ」は SIGKILL 側だけだと指摘した)。
+	select {
+	case <-exited:
+		return
+	default:
+	}
 	if err := killGroup(pgid, syscall.SIGTERM); err != nil {
 		warnf("%v", err)
 		return

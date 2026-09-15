@@ -74,7 +74,9 @@ func NewLocker(dir string, timeout time.Duration) (*Locker, error) {
 	if err != nil {
 		return nil, err
 	}
-	st, err := os.Stat(abs)
+	// 🚨 ここも --io-timeout で包む。対象ディレクトリは共有そのものなので、応答しない
+	// マウントではこの Stat が返らず、Locker ができる前に無言で固まる。
+	st, err := statDirTimed(abs, timeout)
 	if err != nil {
 		// 「対象が無い」と「使用中」は別物。busy に倒さない。
 		return nil, fmt.Errorf("対象ディレクトリを読めない: %w", err)

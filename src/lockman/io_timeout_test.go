@@ -217,3 +217,33 @@ func TestClassifyRenewErr(t *testing.T) {
 func wrapNotOwner() error {
 	return fmt.Errorf("%w: lease が切れている (走行中に引き継がれた可能性)", errNotOwner)
 }
+
+// --io-timeout の値検証。0 / 負値は**全操作を即「判定不能」**にするので受け付けない
+// (0 を「無制限」と読む CLI が多く、黙って受けると意図と逆に倒れる)。
+// 上限も要る: 大きすぎると cleanup の minRetention が前提にしている
+// 「--io-timeout は十分小さい」が崩れる。
+func TestIOTimeoutValueIsValidated(t *testing.T) {
+	dir := t.TempDir()
+	for _, c := range []struct {
+		arg  string
+		want int
+	}{
+		{"0", exitError},
+		{"-1s", exitError},
+		{"1ns", exitError}, // 下限未満。全部が判定不能になる
+		{"10h", exitError}, // 上限超え
+		{"200ms", exitOK},  // 受理される (下限ちょうど上)
+		{"5m", exitOK},     // 上限ちょうど
+	} {
+		t.Run(c.arg, func(t *testing.T) {
+			got := run([]string{"check", dir, "--io-timeout", c.arg})
+			if got != c.want {
+				t.Fatalf("check --io-timeout %s: exit %d (期待 %d)", c.arg, got, c.want)
+			}
+		})
+	}
+	// with は番号空間が違う (091:398-399)
+	if got := run([]string{"with", dir, "--io-timeout", "0", "--ttl", "30s", "--", "true"}); got != exitWithInvalid {
+		t.Errorf("with --io-timeout 0: exit %d (期待 %d)", got, exitWithInvalid)
+	}
+}

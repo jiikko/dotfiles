@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"os"
+	"path/filepath"
 	"runtime"
 	"syscall"
 	"testing"
@@ -59,12 +61,20 @@ func TestOnLostWarnDoesNotKillChild(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}()
-	// 子は自分で 400ms 後に終わる。kill されたら 128+15 / 128+9 になるので区別できる
+	// 🚨 **終了コードでは区別できない。** outcome が renewLost なら、子が殺されていても
+	// 122 が返る (childExitCode に到達しない)。敵対レビューが `if onLostKill` → `if true`
+	// の変異を当てて、このテストが**緑のまま通る**ことを実測した。
+	// 子が最後まで走ったことを**子自身に書かせて**観測する。
+	mark := filepath.Join(t.TempDir(), "done")
 	got := boundedInt(t, "runWith (--on-lost warn)", func() int {
-		return runWith(l, ttl, "", false, []string{"sh", "-c", "sleep 0.4"})
+		return runWith(l, ttl, "", false,
+			[]string{"sh", "-c", "sleep 0.5; : > " + mark})
 	})
 	if got != exitWithLost {
 		t.Fatalf("exit %d (期待 %d)", got, exitWithLost)
+	}
+	if _, err := os.Stat(mark); err != nil {
+		t.Fatalf("--on-lost warn なのに子が最後まで走っていない (印が無い): %v", err)
 	}
 }
 
@@ -127,5 +137,88 @@ func TestRenewDoesNotPileUpGoroutinesWhenBlocked(t *testing.T) {
 	// 見捨てるのは詰まった Renew 1 本だけ。余裕を見て 3 本までを許す
 	if leaked > 3 {
 		t.Fatalf("詰まった renew が %d 本の goroutine を積んだ (期待: 1 本。上限が効いていない)", leaked)
+	}
+}
+
+// 🚨 更新が**一過性**に詰まっただけなら、復旧後も lease を持ち続けること。
+//
+// 最初の失敗で更新をやめる実装 (`ticker.Stop()`) は、これを**本物の lease 喪失**に変える:
+// 更新が二度と走らないので lease は実際に期限切れになり、他マシンが正当に引き継ぐ —
+// 子はまだ走っているので二重実行になる。091 が「最も現実的な事故経路」と呼ぶ形そのもの。
+// 敵対レビュー 2026-09-15 が A-B で実測したのを、そのままテストに落とす。
+func TestLeaseSurvivesTransientRenewBlock(t *testing.T) {
+	l, err := NewLocker(t.TempDir(), testIOTimeout) // io-timeout = 200ms
+	if err != nil {
+		t.Fatalf("NewLocker: %v", err)
+	}
+	const ttl = 900 * time.Millisecond // tick = 300ms。更新が止まれば 900ms で lease が死ぬ
+	// 別マシン役。lease が切れていれば取得できてしまう
+	other, err := NewLocker(l.dir, testIOTimeout)
+	if err != nil {
+		t.Fatalf("NewLocker(other): %v", err)
+	}
+
+	stolen := make(chan error, 1)
+	go func() {
+		var orig []byte
+		for range 400 { // lock が置かれるのを待つ
+			if b, err := os.ReadFile(l.lockPath()); err == nil && len(b) > 0 {
+				orig = b
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if orig == nil {
+			stolen <- errors.New("lock が置かれなかった")
+			return
+		}
+		// ① 詰まらせる (FIFO を被せる。消してから作ると errNotOwner を拾う窓ができる)
+		fifo := l.lockPath() + ".fifo"
+		if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+			stolen <- err
+			return
+		}
+		if err := os.Rename(fifo, l.lockPath()); err != nil {
+			stolen <- err
+			return
+		}
+		// ② 詰まりを **最初の tick (300ms) + 期限 (200ms) より十分長く**保つ。
+		//    ここが短いと、更新が始まる前 / 期限が来る前に復旧してしまい、
+		//    「判定不能を 1 回報告した後も更新を続けるか」という検査したい状態に入らない
+		//    (最初に 400ms で書いて、退行を当てても緑のまま通った)
+		time.Sleep(900 * time.Millisecond)
+		// ③ 復旧させる。**順番が要る**: 先に FIFO を退かして本物を戻し、
+		//    その後で FIFO へ書いて詰まっている読み手を解放する。逆順だと、解放された
+		//    Renew が続けて打つ書き込み用 open がまた FIFO に当たって詰まる
+		if err := os.Rename(l.lockPath(), fifo); err != nil {
+			stolen <- err
+			return
+		}
+		real := l.lockPath() + ".real"
+		if err := os.WriteFile(real, orig, 0o600); err != nil {
+			stolen <- err
+			return
+		}
+		if err := os.Rename(real, l.lockPath()); err != nil {
+			stolen <- err
+			return
+		}
+		if f, err := os.OpenFile(fifo, os.O_WRONLY, 0); err == nil {
+			_, _ = f.Write(orig)
+			_ = f.Close()
+		}
+		_ = os.Remove(fifo)
+		// ④ lease が切れているはずの時刻を十分に過ぎてから、別マシンが奪えるか試す
+		time.Sleep(1500 * time.Millisecond)
+		_, aerr := other.Acquire(ttl, "other")
+		stolen <- aerr
+	}()
+
+	got := boundedInt(t, "runWith (一過性の詰まり)", func() int {
+		return runWith(l, ttl, "", false, []string{"sh", "-c", "sleep 3"}) // --on-lost warn
+	})
+	aerr := <-stolen
+	if !errors.Is(aerr, errBusy) {
+		t.Fatalf("別マシンが lease を奪えた (= 更新が止まっていた): err=%v / with の exit=%d", aerr, got)
 	}
 }

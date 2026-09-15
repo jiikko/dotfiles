@@ -249,3 +249,34 @@ issue の 🚨 が「①だけを数える検査は②を素通りさせる」�
 - [issue 356](356-bug-lockman-with-releases-lock-while-grandchildren-run.md) — 同じ `runWith` の別の欠陥
 - [issue 340](done/340-risk-av1ify-lock-unverified-residuals.md) — `Renew` の残り窓（別物）
 - [issue 359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) — この issue の出典（監査記録）
+
+## 敵対的レビュー (2026-09-15 / read-only サブエージェント 1 体)
+
+主張 5 本のうち **2 本が偽**だった。**指摘の中心は「私がレビュー中に足した修正」の中にあった**
+(goroutine 上限の commit)。採否:
+
+| # | 指摘 | 対応 |
+|---|---|---|
+| P1-1 | 🚨 **goroutine 上限として入れた `ticker.Stop()` が、一過性のヒカップを本物の lease 喪失に変えていた**。更新が二度と走らないので lease は実際に期限切れになり、他マシンが正当に引き継ぐ = 子が走ったまま二重実行。A/B 実測つき (止めた版は他マシンの Acquire が**成功**、止めない版は拒否)。しかも既定値 (ttl 30m / tick 10m) のほうが猶予が短い | **採用**。更新を止めるのをやめ、**同時 1 本に制限**する形へ作り替えた (`renewAsync`)。詰まっている間は積まないが、復旧すれば更新が再開する。期限は**報告**にだけ使う |
+| P1-2 | `TestOnLostWarnDoesNotKillChild` が何も守っていない。`if onLostKill` → `if true` の変異が**緑のまま通る** (outcome が renewLost なら、子が殺されていても 122 が返るので終了コードでは区別できない) | **採用**。子自身に印を書かせて観測する形に変えた |
+| P1-3 | **主張 1 は偽**。`--io-timeout` を素通りする production の I/O が 3 経路残っていた: `NewLocker` の `os.Stat` (**全サブコマンドが通る。対象は共有そのもの**) / `resolveToken` の `ReadFile` / `cmdAcquire` の `WriteFile`。実測: 3s ブロックするマウントで `check --io-timeout 200ms` が **exit=0 / 所要 3.001s** | **採用**。3 経路とも包んだ。挙動テストは書けない (Stat がブロックするマウントを作れない) ので**配線を静的に pin** した |
+| P2-1 | 配線ゲートの回避 3 形。うち `lk.Renew(...)` (レシーバ名が `l` / `locker` 以外) は**宣言した脅威モデルに正面から当たる**のに素通りした | **採用**。レシーバ名の近似をやめた。残り 2 形 (新メソッドの追加 / Locker メソッド以外の I/O) は「検出しない形」へ**追記**した (§8) |
+| P2-2 | 主張 3 は半分。昇格したのは lease 喪失の経路だけで、**シグナル経路 (Ctrl-C / kill) には昇格が無い** | **記録のみ**。ここは**意図的に昇格しない** — 撃ったのは人で、`with` は子の終了コードを透過する薄い包みなので、子が TERM を無視するなら素で実行したときと同じ振る舞いにする。昇格するのは「他者が既に引き継いでいて、止めないと二重実行になる」ときだけ。理由をコードに書いた |
+| P2-3 | `--io-timeout` の値検証が無い (0 / 負値 / 1ns / 10h が通る)。`cleanup.go` の注記が「356 / 357 で直す」と予告していた分 | **採用**。100ms 〜 5m の範囲検証を入れた (issue 359 の残タスクもこれで消える) |
+| P3-1 | `escalateGroupKill` が `exited` を見る**前**に SIGTERM を撃つ。「close(exited) を先にしたので塞いだ」は SIGKILL 側だけ | **採用**。撃つ前に non-blocking で `exited` を見る |
+
+**壊せなかった主張**: 終了コードの表 (091:398-399 と実バイナリで端から一致) / `killGroup` の
+ガード / 新しい並行性 (`-race -count=5` クリーン) / `CleanupTimed` の戻り値の誤読経路。
+
+### 修正後の変異検証 (レビュワーが素通りさせた形を当て直した)
+
+| 変異 | 結果 |
+|---|---|
+| 最初の失敗以降は更新しない (= `ticker.Stop()` 版) | `TestLeaseSurvivesTransientRenewBlock` **RED**、`TestRenewDoesNotPileUp…` は PASS のまま |
+| `if onLostKill` → `if true` | `TestOnLostWarnDoesNotKillChild` **RED** |
+| `NewLocker` の Stat の包みを外す | `TestRawLockerIO…` **RED** (配線 pin が発火) |
+
+🚨 **新テストの最初の版は、退行を当てても緑だった。** 詰まりの窓 (400ms) が
+「最初の tick (300ms) + 期限 (200ms)」より短く、検査したい状態に入る前に復旧していた。
+窓を 900ms へ広げて RED を確認した (`mutation-verify-new-tests.md` の
+「差が出ない状況しか作っていないか」そのもの)。
