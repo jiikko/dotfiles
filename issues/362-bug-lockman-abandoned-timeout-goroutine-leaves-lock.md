@@ -18,7 +18,7 @@ lock を置く**。
 
 ## 2026-09-16 追記: 見捨てられた goroutine が置いていくものが**もう 1 つ**増えた (366 より)
 
-[366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) で `tryTakeover` に
+[366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) で `tryTakeover` に
 「引き継ぎの調停の目印」(`tmp/<gen>.takeover`) を足した。見捨てられた goroutine は
 **lock だけでなくこの目印も置いていく**ので、この issue の射程が広がっている。
 

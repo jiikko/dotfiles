@@ -3,7 +3,7 @@
 起票日: 2026-09-16
 カテゴリ: bug / priority: **high**
 対象: `src/lockman/with.go` の select ループ (`renewCh` / `renewExpired`) と `on_lost_kill_test.go`
-出典: [issue 366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の敵対的レビュー (観点③ 並行・中断)
+出典: [issue 366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の敵対的レビュー (観点③ 並行・中断)
 反証レビュー: 未実施
 
 ## 問題

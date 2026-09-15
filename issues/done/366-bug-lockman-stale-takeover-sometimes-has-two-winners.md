@@ -3,7 +3,7 @@
 起票日: 2026-09-12
 カテゴリ: bug / priority: **high**（**実害を確定**。窓を広げると 10/10 で二重取得が再現した）
 対象: `src/lockman/lock.go` の `tryTakeover` / `src/lockman/lock_test.go:88` の同テスト
-出典: [issue 358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) の敵対レビュー 5 周目 (観点②) と、7 周目の作業中に再観測
+出典: [issue 358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) の敵対レビュー 5 周目 (観点②) と、7 周目の作業中に再観測
 反証レビュー: 敵対的レビュー実施 (2026-09-15。下の「敵対的レビュー」節)
 
 ## 問題
@@ -55,8 +55,8 @@ lockman の中核の不変条件を測るテストが、低頻度で `引き継�
   見て両方成功する経路があるか (1 人目が引き継いだ直後の新 lock を、2 人目が
   まだ古い state で見ている窓)
 - ハーネス由来なら、判定軸を壁時計から外す
-  ([`avoid-wall-clock-assertions.md`](../_claude/rules/avoid-wall-clock-assertions.md))。
-  [364](364-bug-lockman-with-release-failure-and-graveyard-retention.md) の 4 番
+  ([`avoid-wall-clock-assertions.md`](../../_claude/rules/avoid-wall-clock-assertions.md))。
+  [364](../364-bug-lockman-with-release-failure-and-graveyard-retention.md) の 4 番
   (`TestRenewExtendsHold` の壁時計依存) と同じ族の可能性がある
 
 ## 再現手順
@@ -103,7 +103,7 @@ graveyard: token=c820f076... label=dead     -> 死んだ lock (正当な退去)
 
 - **❌ ハーネス由来 / 壁時計依存**: 窓を広げると 10/10 で決定論的に再現し、graveyard に
   勝者の lock が入る。fixture の `ttl` や `time.Sleep` の長さとは無関係。
-  **[364](364-bug-lockman-with-release-failure-and-graveyard-retention.md) の 4 番
+  **[364](../364-bug-lockman-with-release-failure-and-graveyard-retention.md) の 4 番
   (`TestRenewExtendsHold` の壁時計依存) とは別族**なので、あちらの結論を流用しない
 - **❌ mtime 粒度 (serverNow の打刻)**: 粒度が粗いなら「期限切れの判定自体が揺れる」形に
   なるはずだが、実際は判定は正しく、判定**後**の rename が別の対象を掴んでいた
@@ -149,11 +149,11 @@ rename ではなく「inode を指定した削除」が要り、POSIX にその�
 
 回帰テストは **seam (`takeoverObservedHook`) で順序を決定論にして**書いた。素の競争は
 `-count=200` に 1 回しか落ちないので、統計テストは「負荷次第で緑になる assert」になる
-([`avoid-wall-clock-assertions.md`](../_claude/rules/avoid-wall-clock-assertions.md))。
+([`avoid-wall-clock-assertions.md`](../../_claude/rules/avoid-wall-clock-assertions.md))。
 assert は勝者の数だけでなく **graveyard に入ってよいのは死んだ lock だけ**まで見る。
 
 2 段構えなので、**段ごとに単独で red になる**ことを確認した
-([`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) §1.5)。
+([`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) §1.5)。
 変異はすべて「ビルドできたこと」を別に確認し、判定は rc ではなくテストごとの PASS/FAIL で行った。
 
 | 変異 | red になったテスト |
@@ -274,11 +274,11 @@ ms のまま `maxIOTimeout` で頭打ちにしてから変換する形へ直し�
 **P2-1 / P3-2**: 書き込み失敗の握り潰し / mark の EEXIST で譲る枝が無言。どちらも直した。
 
 **別 issue へ振り分け (3 件)**: `with.go` の renew ラッチが恒久的に更新を止める →
-[381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md) (新規) /
+[381](../381-bug-lockman-with-renew-latch-stops-renewal-forever.md) (新規) /
 `Renew` の上書きは自分の deferred Release が窓を開ける →
-[380](380-bug-lockman-renew-and-release-act-on-name-after-check.md) /
+[380](../380-bug-lockman-renew-and-release-act-on-name-after-check.md) /
 取得中の Ctrl-C が残す中間状態とシグナル転送の枝の非対称 →
-[363](363-bug-lockman-with-signal-handler-installed-too-late.md)。
+[363](../363-bug-lockman-with-signal-handler-installed-too-late.md)。
 
 ### 4 周目 (3 周目の差分限定) — 採用 6
 
@@ -342,7 +342,7 @@ O_EXCL」は偽**だと反証された。役が 2 人になった後は、2 人�
     POSIX に「inode を指定した削除」が無い
   - mark を取ってから打刻を戻すまでに死ぬと掃除まで塞ぐ (可用性と正しさの trade-off)
   - 役が 2 人になる生成器 4 つのうち、猶予超過は設計上の trade-off、parse 非決定性は
-    未確認リスク、見捨てられた goroutine は [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md)
+    未確認リスク、見捨てられた goroutine は [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md)
   - `f.Write` のエラー伝播は実行時の I/O 失敗が要るためテスト不能 (**未検証**と明記)
 - **次の監査に渡す検査可能な痕跡**: 「graveyard に、現に誰かが保持している token の lock が
   入っている」= 二重取得が起きた証拠
@@ -389,8 +389,8 @@ mark を取ってから打刻を戻すまでにプロセスが死ぬと、目印
 
 **「退ける役が 2 人」を「退ける役が 0 人、最長 ~1h10m」と交換している。** 排他の道具として
 正しさを優先した判断で、人の脱出口は `lockman break` (warnf が案内する)。
-根治は [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
-[363](363-bug-lockman-with-signal-handler-installed-too-late.md) の側で、両方が閉じれば
+根治は [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
+[363](../363-bug-lockman-with-signal-handler-installed-too-late.md) の側で、両方が閉じれば
 この回収機構は「取りこぼしの受け皿」へ格下げできる。
 
 ## 残タスク
@@ -400,8 +400,8 @@ mark を取ってから打刻を戻すまでにプロセスが死ぬと、目印
 - [x] ハーネス由来だった場合は判定軸を壁時計から外す → 該当なし (ただし回帰テストは
       seam で決定論にし、壁時計に依存させていない)
 - [x] 敵対的レビューを観点を分けて通す (①壊す / ②素通り / ③並行・中断 + 差分への 3 周。計 6 周)
-- [ ] `Renew` / `Release` の同型 → [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md)
-- [ ] `with` の renew ラッチが恒久的に更新を止める → [381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md)
+- [ ] `Renew` / `Release` の同型 → [380](../380-bug-lockman-renew-and-release-act-on-name-after-check.md)
+- [ ] `with` の renew ラッチが恒久的に更新を止める → [381](../381-bug-lockman-with-renew-latch-stops-renewal-forever.md)
 - [ ] この修正が新設した wedge (mark の取りこぼし) の根治 →
-      [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
-      [363](363-bug-lockman-with-signal-handler-installed-too-late.md) が閉じたら回収機構を再評価する
+      [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
+      [363](../363-bug-lockman-with-signal-handler-installed-too-late.md) が閉じたら回収機構を再評価する

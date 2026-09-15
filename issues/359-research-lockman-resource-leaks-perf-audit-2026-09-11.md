@@ -305,7 +305,7 @@ ubuntu から移した」と書いており、README だけが取り残されて
   claim = 着手中の宣言なので、放置すると他マシンから「誰かがやっている」に見えて
   二重着手の防止ではなく**着手の阻止**として働く（ユーザー判断で解除）。
   **本 issue に着手する人は、改めて `next/` へ claim を置いてから始めること**
-- 2026-09-16: **[366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) は解消**。
+- 2026-09-16: **[366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) は解消**。
   原因はハーネスではなく **production の race** で、`tryTakeover` の「期限切れと判定 →
   rename で退ける」が TOCTOU だった (2 人目が 1 人目の置いたばかりの lock を退けてから
   自分の lock を置く)。調停 (観測した世代から決まる名前を O_EXCL) + 破壊的操作の直前の
@@ -322,7 +322,7 @@ ubuntu から移した」と書いており、README だけが取り残されて
   **[363](363-bug-lockman-with-signal-handler-installed-too-late.md)**
   (`signal.Notify` が遅く、中断で lock + 孤児。20/120) /
   **[364](364-bug-lockman-with-release-failure-and-graveyard-retention.md)** (小粒 4 件) /
-  **[366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md)**
+  **[366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md)**
   (引き継ぎの勝者が低頻度で 2 人。原因未特定) として起票。
   下の「軽微だが実在する」の `--io-timeout` 無検証は 362 と同じ族なので、356 / 357 と
   まとめて直すときに 362 も見る

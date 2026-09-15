@@ -700,7 +700,7 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
   [363](../363-bug-lockman-with-signal-handler-installed-too-late.md) /
   [364](../364-bug-lockman-with-release-failure-and-graveyard-retention.md) へ切り出し。
   作業中に観測した「引き継ぎの勝者が 2 人」は
-  [366](../366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) へ (上の「2.8」)
+  [366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) へ (上の「2.8」)
 - 2026-09-11: 起票。到達不能性を機械照合。反証レビューで起票時の根拠（寿命 vs retention）が
   崩れ、(i) probe の命名が独立乱数 / (ii) `os.Link` 後の tmp は不要 / (iii) 過去の試行は
   別トークン という 3 点へ根拠を差し替えた（未着手）
@@ -780,7 +780,7 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
   [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) (high) /
   [363](../363-bug-lockman-with-signal-handler-installed-too-late.md) (high) /
   [364](../364-bug-lockman-with-release-failure-and-graveyard-retention.md) (low〜medium) /
-  [366](../366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) (high・原因未特定)。
+  [366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) (high・原因未特定)。
   `with` の `--io-timeout` 素通りは [357](357-bug-lockman-with-bypasses-io-timeout.md) に既出
 - 決着済み: 下限はコンパイル時ではなく `sweepDir` の実行時に置いた (上の「実施結果」1)。
   コンパイル時にも**置けた**が、定数を縛る形は迂回されるため採らなかった

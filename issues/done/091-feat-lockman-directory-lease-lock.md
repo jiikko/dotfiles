@@ -163,7 +163,7 @@ C のフォールバックでは「作られたが中身がまだ空」の瞬間
 「読んだ後に holder が renew した」窓を縮める。それでも残る窓は手順 2 の rename が
 1 人しか勝てないことで吸収される。
 
-> 🚨 **後日訂正 (2026-09-15 / [issue 366](../366-bug-lockman-stale-takeover-sometimes-has-two-winners.md))**:
+> 🚨 **後日訂正 (2026-09-15 / [issue 366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md))**:
 > 上の「手順 2 の rename は 1 人しか勝てない」は**偽**だった。rename が原子なのは操作で
 > あって、「手順 1 で期限切れと判定した**あの** lock を動かす」ことは保証しない (名前に
 > 対する操作なので、判定してから rename するまでに名前の指す先が入れ替わる)。実測: 判定と

@@ -1,1 +1,0 @@
-../366-bug-lockman-stale-takeover-sometimes-has-two-winners.md

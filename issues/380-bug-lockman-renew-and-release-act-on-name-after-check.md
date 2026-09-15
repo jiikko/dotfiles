@@ -3,7 +3,7 @@
 起票日: 2026-09-15
 カテゴリ: bug / priority: **high**
 対象: `src/lockman/lock.go` の `Renew` / `Release`
-出典: [issue 366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の横展開
+出典: [issue 366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の横展開
 反証レビュー: 未実施
 
 ## 問題
