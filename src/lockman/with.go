@@ -2,9 +2,11 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -59,8 +61,20 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	// 子を独立したプロセスグループに置き、まとめて止められるようにする
-	// (子が孫を作ったまま残るのを防ぐ)。
+	// 子を独立したプロセスグループに置き、**lease を失ったときに**まとめて止められるように
+	// する (この 1 点のためだけ。091:282 の `--on-lost=kill`)。
+	//
+	// 🚨 **「子が孫を作ったまま残るのを防ぐ」ではない** (issue 356 でコメントを訂正した)。
+	// グループへ撃つのは (a) シグナルを受けたとき (b) lease を失ったとき の 2 経路だけで、
+	// **子が正常終了した経路には無い**。`sh -c 'cmd & exit 0'` のように孫を置いて親だけ
+	// 終わる形では、孫が走ったままロックが解放される (実測: 解放後の孫と次の保持者が
+	// 同じ資源へ交互に書いた)。091 は孫の封じ込めを約束していないので、ここは
+	// **直さないと決めた** — 正常終了時にグループを薙ぐと、意図的に起こす background の子
+	// (`start-server &`) まで殺すことになり、opt-out の新設が要る。
+	//
+	// 🚨 さらに、**`setsid()` した子孫にはどの経路でも届かない** (Darwin 24.6.0 で実測:
+	// グループへ SIGTERM を撃つと非 setsid の孫は死ぬが、setsid した孫は新しい pgid へ
+	// 移っており生存する)。プロセスグループで回収できる範囲が上限。
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		warnf("実行できない: %v", err)
@@ -76,14 +90,21 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	defer ticker.Stop()
 
 	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	// exited は「子が回収された」を昇格ゴルーチンへ知らせるためだけの合図。
+	// done は select ループが 1 回だけ受け取る (受け手を 2 つにしない)。
+	exited := make(chan struct{})
+	go func() {
+		done <- cmd.Wait()
+		close(exited)
+	}()
+	var escalate sync.Once
 
 	outcome := renewOK
 	for {
 		select {
 		case sig := <-sigCh:
 			// 受けたシグナルは子のプロセスグループへ転送する (自分だけ死なない)。
-			_ = syscall.Kill(-pgid, sig.(syscall.Signal))
+			_ = killGroup(pgid, sig.(syscall.Signal))
 		case <-ticker.C:
 			if err := l.RenewTimed(meta.Token); err != nil {
 				// 🚨 **「lease を失った」と「確認できない」を混ぜない。** Renew は
@@ -101,8 +122,11 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 				}
 				// どちらも fail-closed で子を止める。**次の tick を待たない** —
 				// TTL を超えれば他者が引き継ぐので、待つほど二重実行に近づく。
+				//
+				// 🚨 **昇格は 1 回だけ**。tick ごとに撃ち直すと猶予が毎回振り出しに戻り、
+				// SIGKILL へ永久に到達しない (上限の無い再試行は上限が無いのと同じ)。
 				if onLostKill {
-					_ = syscall.Kill(-pgid, syscall.SIGTERM)
+					escalate.Do(func() { go escalateGroupKill(pgid, exited) })
 				}
 			}
 		case err := <-done:
@@ -132,4 +156,44 @@ func childExitCode(err error) int {
 	}
 	warnf("子プロセスの終了を取得できない: %v", err)
 	return exitWithInvalid
+}
+
+// onLostGracePeriod は SIGTERM を撃ってから SIGKILL へ昇格するまでの猶予。
+// 🚨 これは「待ち」ではなく**仕様値** — 子に後片付けの機会を与えるための窓で、
+// 縮めると trap を書いた子が片付け切れない。テストが差し替えるので var。
+var onLostGracePeriod = 5 * time.Second
+
+// escalateGroupKill は lease を失ったときに子のグループを**確実に**止める。
+//
+// 🚨 SIGTERM を 1 回撃つだけでは足りない。091:282 は「子プロセスを止められるようにする」と
+// 書いているが、TERM を trap / 無視するプログラム (ffmpeg を含め普通にある) だと子は生き続け、
+// `with` は子が終わるまで返らないので**他者が既に引き継いでいる状態が無期限に続く**
+// (issue 356 の経路 2)。
+//
+// 🚨 届く範囲はプロセスグループに残った子孫まで。**`setsid()` した子孫には届かない**
+// (runWith の Setpgid の注記を参照)。
+func escalateGroupKill(pgid int, exited <-chan struct{}) {
+	if err := killGroup(pgid, syscall.SIGTERM); err != nil {
+		warnf("%v", err)
+		return
+	}
+	select {
+	case <-exited:
+		return // 猶予の内に終わった
+	case <-time.After(onLostGracePeriod):
+	}
+	warnf("子が %v 以内に終わらないので強制終了する (lease は既に他者が持っている)", onLostGracePeriod)
+	_ = killGroup(pgid, syscall.SIGKILL)
+}
+
+// killGroup はプロセスグループへシグナルを送る。
+//
+// 🚨 **pgid が 0 や 1 なら撃たない。** `kill(0, sig)` は「呼び出し側のプロセスグループ」を
+// 撃つので、pgid の計算を誤ると本番では呼び出し元シェルを、テストでは `go test` 自身を
+// 殺す。撃つ前に弾く (issue 356 の実装時の注意)。
+func killGroup(pgid int, sig syscall.Signal) error {
+	if pgid <= 1 {
+		return fmt.Errorf("プロセスグループ %d には撃たない (自分のグループを撃つ危険)", pgid)
+	}
+	return syscall.Kill(-pgid, sig)
 }
