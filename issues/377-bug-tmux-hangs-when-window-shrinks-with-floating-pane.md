@@ -1,11 +1,16 @@
-# floating pane がある状態で window が縮むと tmux サーバが CPU 100% でハングする
+# floating pane が残っていると、window の縮小**または**小さい client の attach で tmux サーバが CPU 100% でハングする
 
 種別: bug / priority: high (操作不能になる。復旧は `kill -9` のみ)
 起票: 2026-09-15 / 対象: tmux 3.7b (Homebrew, 2026-07-04 install)
 
 ## 症状
 
-画面サイズ変更・AirPlay・外部ディスプレイ抜き差しで client が縮むと、tmux サーバが
+**引き金は 2 つあり、どちらか一方で起きる**:
+
+1. 画面サイズ変更・AirPlay・外部ディスプレイ抜き差しで client が縮む
+2. **リサイズせず、小さいターミナルから attach するだけ** (下の 🚨 節。こちらは当初見落としていた)
+
+いずれの場合も tmux サーバが
 **CPU 100% で無応答**になる。`tmux ls` / `display-message` / `send-keys` すら返らない。
 `kill-server` も届かないので復旧は `kill -9` しかない。
 
@@ -179,6 +184,11 @@ window_pane_read_callback → input_parse → input_csi_dispatch
 ## 残タスク
 
 - [ ] 対応案の選択 (ユーザー判断)
+- [ ] **実測ハーネス側の穴**: `verify*.py` の `case()` は後始末で `kill -9 <server pid>` を撃つだけで
+      **死んだことを確認していない**。実際にケース 24 のハングしたサーバが生き残り、**23 分間 CPU 100% で
+      回り続けていた** (手で `kill -9` して回収。2026-09-15)。再実行する人は同じ残骸を作るので、
+      teardown を「kill → `ps -p` で不在を確認 → socket 削除」に直すこと
+      (`verify-execution-not-just-exit-code.md`「判定は成果物で」の teardown 版)
 - [ ] 横の閾値 (+2〜+5 の間) は未特定。左寄せ / 既定 OFF を採るなら不要
 - [ ] **未検証**: ①縦だけ縮む場合 (`pane_left` は client 内 / `pane_top` が client 高を超える) は未実測
       ②左寄せ構成で拡大⇄縮小を 10 往復させたときの累積耐性 ③`brew install --HEAD tmux` に PR #5582 が
