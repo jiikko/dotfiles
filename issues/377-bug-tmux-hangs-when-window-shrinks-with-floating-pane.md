@@ -193,6 +193,18 @@ window_pane_read_callback → input_parse → input_csi_dispatch
 - [ ] **反映は未完**: 動いているサーバには `prefix R` (reload) か次回のサーバ起動まで効かない。
       実行時の値は既に OFF なので、reload しても ON には戻らない
 
+## 敵対レビューからの follow-up (2026-09-15 に対応済み)
+
+- **「tmux の pane 生成は rc を見る」** → **production に対象なし**。`bin/tmux-toast` は
+  `|| exit 0`、`scripts/tmux_agent_panel.sh` は `|| return 1` で元から rc を見ている
+  (`display-popup` の 2 箇所は `exec` なので rc は親へ透過)。rc を捨てていたのは本 issue の
+  実測ハーネスだけで、それは下の残タスクに記録済み
+- **「floating pane の座標計算が 2 箇所に別実装」** → 解消した。共通化の過程で**実バグを 1 件発見**:
+  tmux は「幅 == window 幅」「高さ == window 高さ」を受理しない (rc=1) のに、panel 側だけが
+  境界を許しており、**幅 150 以下の window では panel が一度も出ていなかった** (高さ側は clamp 自体が無かった)。
+  計算を `scripts/lib/tmux_float_geometry.sh` (`tt_float_geom`) へ寄せ、単体テスト 14 ケースと
+  変異検証 2 本 (旧実装の復元 / 高さ clamp 削除) を付けた
+
 ## 残タスク
 - [ ] **実測ハーネス側の穴**: `verify*.py` の `case()` は後始末で `kill -9 <server pid>` を撃つだけで
       **死んだことを確認していない**。実際にケース 24 のハングしたサーバが生き残り、**23 分間 CPU 100% で
