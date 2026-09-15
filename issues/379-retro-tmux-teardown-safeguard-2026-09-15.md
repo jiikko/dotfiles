@@ -1,0 +1,90 @@
+# 379 retro: 後始末の安全機構を自分で作って、自分で穴を開けた (2026-09-15)
+
+対象: issue 378 / 368 の切り出しと、issue 377 の残タスク消化 (隔離 tmux サーバの後始末を
+`tests/tmux/lib/kill_socket.sh` で「kill → 不在を確認 → socket 削除」へ直すところまで)。
+
+## 入れたもの
+
+| commit | 内容 |
+|---|---|
+| docs(378,368) | retro 2 件の切り出しを 3 ルールへまとめて追記 (実例は rules-rationale へ) |
+| fix(tmux,377) 1 回目 | 後始末に bounded な問い合わせと死亡確認を入れる |
+| fix(tmux,377) 2 回目 | 敵対レビューの P1 2 件を受けて判定を alive/dead/hung の三値へ作り替え |
+| docs(377) | 残タスク 6 件の決着・レビューの全数勘定を本文へ |
+
+## 気づき
+
+### 1. 「答えが無い」を「死んだ」と読む形を、穴を塞ぐ当人が作った 🔴
+
+377 の症状は「ハングしたサーバは `kill-server` も `display-message` も返さない」。それを
+issue に**自分で書いておきながら**、後始末の 1 版目は `display -p` が返らなかったときに
+`pid=""` / `path=""` を「死んでいる」と読み、**組み立て直したパスの socket を消して rc=0** を
+返していた。commit message には「唯一の handle を捨てて誰も触れないサーバを作る」のが
+旧実装の欠陥だと書いてあり、**同じ文の下でそれを再生産していた**。
+
+しかも情報は捨てていただけだった: 時間切れか EOF かは `tt__run_bounded` が `rc > 128` として
+**既に計算していた**のに、常に `return 0` で丸めていた。
+
+→ 切り出し先: [`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md)
+の節 2「沈黙 = 成功になっていないか」への**追記 1 行**。あの節は「判定不能を緑に畳まない」を
+テストハーネスの文脈で書いているが、今回は**破壊的操作の側**で同じことが起きた
+(「判定不能 → 消さない」へ倒す)。発動点が同じ (自作の安全機構) なので新規ルールにはしない。
+
+### 2. 変異 6 本を全部 red にした後でも、敵対レビューが P1 を出した 🔴
+
+1 版目は変異 6 本 (KILL 昇格削除 / 生死確認削除 / pid ゲート削除 / bounded 削除 / 時間切れ
+client の KILL 削除) で狙ったケースが red になることを確認して commit した。その上で
+敵対レビュー (opus) が **P1 2 件 + P2 2 件 + P3 4 件**を出し、うち P1-1 は実測で再現された。
+
+既存ルールが「変異は自分が想定した不変条件しか試さない」と書いているとおりの結果で、
+**実測 7 回目**として rationale へ足す価値がある (ルール本文は変更不要)。
+
+→ 切り出し先: `rules-rationale/adversarial-review-own-safeguards.md` へ実例として追記。
+
+### 3. 機構の発火経路を「実症状」で確かめていなかった 🔴
+
+1 版目の KILL 昇格は `display -p '#{pid}'` で pid を聞けることを前提にしていた。
+だが 377 の実症状では相手は**自分の pid を答えられない**。つまり昇格は
+**実症状では一度も発火しない死にコード**で、⑦ のテストが緑だったのは
+「pid を答えられるが停止要求だけ無視するサーバ」という**実在しない fixture** を使っていたから。
+
+→ 切り出し先: [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の
+「fixture が production の初期状態と違わないか」への**追記 1 行**:
+**「その fixture は実症状で成立するか。機構が前提にしている入力を、実症状の側が供給できるかを見る」**。
+既存項は「並行・レースの初期状態」に寄っているので、射程を 1 行広げる。
+
+### 4. fixture が「最初から死んでいるプロセス」だった (macOS 固有) 🟡
+
+素性チェック (`ps -o comm=` が tmux か) を通すために `/bin/sleep` をコピーして
+`tmux` という名前で起こしたが、**macOS はコピーした platform binary を即 SIGKILL する**。
+前提 assert が無かったので、KILL 昇格を消す変異が緑で通り、テストが vacuous だと気づけたのは
+変異検証のおかげだった (M1 が red にならなかった)。
+
+→ 切り出し先: **却下 (既存で足りる)**。`mutation-verify-new-tests.md` の
+「前提が早期 return で素通りしていないか」がそのまま当たる (前提 assert を置けば防げた)。
+実例として rationale へ。
+
+### 5. commit が tmux hook の偽陽性で 1 回止まった 🟢
+
+commit message の散文に `tmux` と `kill-server` が同じ並びで出たため、
+`deny-bare-tmux-kill.sh` が deny した。ルール
+([`tmux-probe-requires-socket-isolation.md`](../_claude/rules/tmux-probe-requires-socket-isolation.md))
+に既知の偽陽性として書いてある形。回避は「引用符で囲む / 言い換える / 変数で分割」の 3 つが
+挙がっているが、**今回は `git commit -F <ファイル>` でメッセージをコマンド文字列から外した**のが
+一番素直だった (hook が見るのは Bash のコマンド文字列なので、ファイル経由なら偽陽性が起きない)。
+
+→ 切り出し先: 同ルールの「回避の優先順」へ**追記 1 行** (`-F <ファイル>` を選択肢に足す)。
+🚨 ただし**検出の迂回を推奨する形にしない**ため、「散文が長い commit message に限る」と
+条件を付ける (実際に tmux を撃つコマンドは従来どおり hook の対象に残す)。
+
+## 残課題
+
+- [ ] 項目 1 を `adversarial-review-own-safeguards.md` 節 2 へ 1 行追記する
+- [ ] 項目 3 を `mutation-verify-new-tests.md` へ 1 行追記する
+- [ ] 項目 5 を `tmux-probe-requires-socket-isolation.md` の回避の優先順へ 1 行追記する
+- [ ] 項目 2・4 を `rules-rationale/` へ実例として追記する (ルール本文は変更しない)
+- [ ] **未確認**: 並列の `make test` のときだけ `sleep 300` が 1 件残る。候補 6 本を単独実行すると
+      全て残骸 0 で出所が特定できていない (300 秒で自然終了するので実害は小さい)。
+      詳細は issue 377 の「未確認として残すもの」
+
+切り出しの実行はユーザーの判断を待つ。
