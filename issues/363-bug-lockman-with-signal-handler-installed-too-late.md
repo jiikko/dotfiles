@@ -90,3 +90,13 @@ select が `done` を処理する前に `sigCh` が ready だと、Go の select
 - [ ] 反証レビュー
 - [ ] 対応方針の決定 — **356 は D + C で閉じたので、「356 とまとめて直す」選択肢は消えた**。
       単独で方針を決める
+- [ ] **塞ぐ対象に引き継ぎの調停の目印と mark を含める (2026-09-16 追記)**。上の表のとおり、
+      取得中の即死で残るのは lock だけではなくなった。**mark だけが TTL の契約を割る**
+      (掃除まで ~1h10m) ので、方針を決めるときはそこを基準にする
+- [ ] 閉じたら [366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の回収機構
+      (`reclaimTakeoverClaim` / `takeoverClaimGrace`) を「取りこぼしの受け皿」へ格下げできるか
+      再評価する。**362 と両方閉じるまでは外せない** (どちらの経路も目印を残す)
+- [ ] シグナル転送の枝 (`case sig := <-sigCh:`) に `escalateGroupKill` と同じ
+      `select { case <-exited: return; default: }` を入れるか決める。実害には pid の巻き戻し
+      再利用が要る (未確認リスク) が、`with.go` はそれを明示的な脅威として扱っているので
+      **同じ基準がこの枝にだけ適用されていないのは非対称**
