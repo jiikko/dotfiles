@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -854,7 +855,9 @@ func TestTakeoverGraceHonorsClaimDeclaredTimeout(t *testing.T) {
 	dead, claim := staleLockWithClaim(t, l)
 	body, err := json.Marshal(&takeoverClaimBody{
 		Host: "other", User: "other", PID: 1,
-		TimeoutMS: (time.Hour).Milliseconds(), // 申告 1h → 猶予 3h
+		// --io-timeout の上限 (main.go の maxIOTimeout = 5m) いっぱいで申告 → 猶予 15m。
+		// これより大きい申告は壊れた値として頭打ちにされるので、範囲内の値で測る。
+		TimeoutMS: maxIOTimeout.Milliseconds(),
 		At:        time.Now().UTC().Format(time.RFC3339),
 	})
 	if err != nil {
@@ -863,8 +866,8 @@ func TestTakeoverGraceHonorsClaimDeclaredTimeout(t *testing.T) {
 	if err := os.WriteFile(claim, body, lockFileMode); err != nil {
 		t.Fatalf("目印を書けない: %v", err)
 	}
-	// 自分の猶予 (30s) は超えるが、申告された猶予 (3h) には収まる古さ
-	old := time.Now().Add(-2 * time.Hour)
+	// 自分の猶予 (30s) は超えるが、申告された猶予 (15m) には収まる古さ
+	old := time.Now().Add(-10 * time.Minute)
 	if err := os.Chtimes(claim, old, old); err != nil {
 		t.Fatalf("Chtimes: %v", err)
 	}
@@ -961,13 +964,118 @@ func TestTakeoverGenerationAndTokenQuarantine(t *testing.T) {
 // その場で回収する fail-open になる。
 func TestTakeoverClaimGraceBounds(t *testing.T) {
 	l := &Locker{timeout: defaultIOTimeout}
-	if got := l.takeoverClaimGrace(nil); got > defaultTTL {
-		t.Fatalf("既定の猶予 %v が既定 TTL %v を超える: TTL を過ぎても引き継げない窓ができる", got, defaultTTL)
+	fallback := defaultIOTimeout * takeoverClaimGraceFactor
+	maxGrace := maxIOTimeout * takeoverClaimGraceFactor
+
+	if got := l.takeoverClaimGrace(nil); got != fallback {
+		t.Fatalf("中身を読めない目印の猶予が %v (期待 %v)", got, fallback)
 	}
-	for _, ms := range []int64{math.MaxInt64, math.MaxInt64 / 2, 5_000_000_000_000, -1} {
-		if got := l.takeoverClaimGrace(&takeoverClaimBody{TimeoutMS: ms}); got <= 0 {
-			t.Errorf("申告 %d ms で猶予が %v になった (生きた目印を即座に回収する)", ms, got)
+	if fallback > defaultTTL {
+		t.Fatalf("既定の猶予 %v が既定 TTL %v を超える: TTL を過ぎても引き継げない窓ができる", fallback, defaultTTL)
+	}
+
+	// 🚨 申告値は他ホストが書いた値。**ms のまま頭打ちにしてから変換**しないと、桁を間違えた
+	// 値で乗算が wrap し、最長のはずの猶予が最短 (= 回収する側) に化ける。
+	// 実測 2026-09-16: 変換を先にすると MaxInt64 は -1ms になり猶予が fallback に落ちた。
+	for _, c := range []struct {
+		ms   int64
+		want time.Duration
+	}{
+		{math.MaxInt64, maxGrace},
+		{math.MaxInt64 / 2, maxGrace},
+		{5_000_000_000_000, maxGrace},
+		{maxIOTimeout.Milliseconds(), maxGrace},
+		{maxIOTimeout.Milliseconds() + 1, maxGrace},
+		{-1, fallback},
+		{0, fallback},
+		{time.Second.Milliseconds(), fallback}, // 申告が自分より短ければ fallback のまま
+	} {
+		if got := l.takeoverClaimGrace(&takeoverClaimBody{TimeoutMS: c.ms}); got != c.want {
+			t.Errorf("申告 %d ms: 猶予 %v (期待 %v)", c.ms, got, c.want)
 		}
+	}
+
+	// フラグが許す --io-timeout の全域で、猶予は maxGrace を超えない (溢れない)。
+	for _, to := range []time.Duration{minIOTimeout, defaultIOTimeout, maxIOTimeout} {
+		l := &Locker{timeout: to}
+		for _, ms := range []int64{0, maxIOTimeout.Milliseconds(), math.MaxInt64} {
+			if got := l.takeoverClaimGrace(&takeoverClaimBody{TimeoutMS: ms}); got <= 0 || got > maxGrace {
+				t.Errorf("--io-timeout %v / 申告 %d ms: 猶予 %v が範囲外 (0, %v]", to, ms, got, maxGrace)
+			}
+		}
+	}
+}
+
+// ★ 回帰テスト (issue 366): 回収の途中で目印が置き直されていたら、上書きせずに譲る。
+//
+// 打刻を戻す O_TRUNC は「今そこにあるもの」への無条件操作なので、掃除が目印を浚った後に
+// 別の観測者が置き直していると、その人の目印を自分の中身で上書きして役が 2 人になる。
+func TestRefreshTakeoverClaimYieldsWhenClaimWasReplaced(t *testing.T) {
+	l := newTestLocker(t)
+	if err := l.ensureDirs(); err != nil {
+		t.Fatalf("ensureDirs: %v", err)
+	}
+	claim := takeoverClaimPathFor(l, "deadbeef")
+	if err := l.placeTakeoverClaim(claim); err != nil {
+		t.Fatalf("目印を作れない: %v", err)
+	}
+	before, err := os.ReadFile(claim)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	// 自分が観測した打刻とは違う目印がそこにある状態
+	err = l.refreshTakeoverClaim(claim, time.Unix(1, 0))
+	if !errors.Is(err, errBusy) {
+		t.Fatalf("置き直された目印を上書きした (err=%v)", err)
+	}
+	after, err := os.ReadFile(claim)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("目印の中身が書き換わった: %q -> %q", before, after)
+	}
+}
+
+// ★ 回帰テスト (issue 366): 回収が進行中 (mark が在る) なら譲り、**理由を出す**。
+//
+// 回収を始めた者が途中で死ぬと目印の打刻が凍り、以後の観測者は全員この枝へ落ちる。
+// 無言だと `check` は free・`acquire` は busy という追跡不能の矛盾が恒久化する。
+func TestTakeoverYieldsAndWarnsWhenReclaimInProgress(t *testing.T) {
+	l := newTestLocker(t)
+	dead, claim := staleLockWithClaim(t, l)
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(claim, old, old); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+	st, err := os.Stat(claim)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	// 回収を始めた者が残した mark
+	mark := fmt.Sprintf("%s.%d", claim, st.ModTime().UnixNano())
+	if err := os.WriteFile(mark, nil, lockFileMode); err != nil {
+		t.Fatalf("mark を作れない: %v", err)
+	}
+
+	var took bool
+	stderr := captureStderr(t, func() { took, err = l.tryTakeover() })
+	if err != nil {
+		t.Fatalf("tryTakeover: %v", err)
+	}
+	if took {
+		t.Fatal("回収が進行中なのに役を取った (役が 2 人になる)")
+	}
+	if !strings.Contains(stderr, "回収が進行中") {
+		t.Fatalf("譲った理由が stderr に出ない: %q", stderr)
+	}
+	cur, _, err := l.readLock()
+	if err != nil {
+		t.Fatalf("readLock: %v", err)
+	}
+	if cur == nil || cur.Token != dead.Token {
+		t.Fatalf("lock が退けられた: %+v", cur)
 	}
 }
 
