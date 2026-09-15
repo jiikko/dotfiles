@@ -42,6 +42,17 @@ const (
 	// 約 2 倍。3 倍はその余裕。
 	takeoverClaimGraceFactor = 3
 
+	// 目印の申告値として受け入れる上限。**フラグの UI 制約 (main.go の maxIOTimeout) とは
+	// 別に持つ** — 同じ値だが、UI 側を下げたときに猶予まで黙って縮み、「まだ飛行している
+	// 作成者の目印を回収する」= 二重取得の側へ倒れるのを防ぐため
+	// (2 つが一致することは TestTakeoverClaimGraceBounds が固定する)。
+	//
+	// 🚨 これを超える申告をする host と共有すると、その host がまだ飛行しているうちに
+	// 目印を回収しうる。該当するのは `--io-timeout` の範囲検証が入る前のビルド (issue 357 以前)
+	// と、将来この上限を広げたビルド。再評価の trigger: 異なる版の lockman が同じ共有を
+	// 触る運用が出たとき。
+	maxTakeoverClaimTimeout = 5 * time.Minute
+
 	// 共有前提のモード。sticky を付けないこと: rename の可否は親ディレクトリの
 	// 権限で決まるため、+t が付くと他ユーザーの lock を graveyard へ退けられず、
 	// TTL が切れても永久に引き継げなくなる。
@@ -62,6 +73,10 @@ var (
 	errBusy = errors.New("locked by someone else")
 	// errNotOwner は「自分は持ち主ではない」(release/renew の対象違い、lease 喪失)。
 	errNotOwner = errors.New("not the lock owner")
+	// errClaimReplaced は「回収しようとした目印が、途中で別の観測者に置き直された」。
+	// errBusy を流用しないこと: 流用すると「譲ってよい失敗」の集合が、将来 errBusy を
+	// 返す実装が増えたときに黙って広がる。
+	errClaimReplaced = errors.New("takeover claim was replaced")
 )
 
 // Meta は lock の中身。取得時に 1 度書いたら二度と書き換えない (識別のためだけに使う)。
@@ -372,9 +387,6 @@ func (l *Locker) tryTakeover() (bool, error) {
 		// 役は誰かが取っている。飛行中なら譲り、放棄されていれば回収する。
 		took, rerr := l.reclaimTakeoverClaim(claim, now)
 		if rerr != nil {
-			if os.IsExist(rerr) {
-				return false, nil // 取り直しに負けた。役は相手のもの
-			}
 			return false, rerr
 		}
 		if !took {
@@ -665,16 +677,18 @@ func (l *Locker) takeoverClaimGrace(c *takeoverClaimBody) time.Duration {
 	}
 	if c != nil && c.TimeoutMS > 0 {
 		ms := c.TimeoutMS
-		if max := maxIOTimeout.Milliseconds(); ms > max {
-			ms = max // 検証済みの範囲を超える申告は壊れた値。頭打ちにする
+		if max := maxTakeoverClaimTimeout.Milliseconds(); ms > max {
+			ms = max // 受け入れる上限を超える申告は壊れた値として扱う
 		}
 		if got := time.Duration(ms) * time.Millisecond; got > d {
 			d = got
 		}
 	}
-	// l.timeout はフラグ検証を通らない経路からも渡りうるので、ここでも頭打ちにする。
-	if d > maxIOTimeout {
-		d = maxIOTimeout
+	// 🚨 l.timeout 自体の頭打ち。**production の入口 (main.go) は範囲検証を通るので、ここは
+	// 直接 Locker を組む経路 (テスト・将来の埋め込み) のためだけの溢れガード**。
+	// 「検証されていない入口が production にある」という意味ではない。
+	if d > maxTakeoverClaimTimeout {
+		d = maxTakeoverClaimTimeout
 	}
 	return d * takeoverClaimGraceFactor
 }
@@ -740,9 +754,16 @@ func (l *Locker) reclaimTakeoverClaim(claim string, now time.Time) (bool, error)
 	f, err := os.OpenFile(mark, os.O_CREATE|os.O_EXCL|os.O_WRONLY, lockFileMode)
 	if err != nil {
 		if os.IsExist(err) {
-			// 🚨 ここも黙って busy にしない。回収を始めた者が途中で死ぬと、目印の打刻が
-			// 観測値のまま凍って以後の観測者は全員この枝へ落ち、**掃除まで無言で塞がる**。
-			warnf("引き継ぎの回収が進行中のため取れない (%s)。続くようなら lockman break", takeoverClaimWho(body))
+			// 🚨 **良性の競合では黙る**。同じ古さを見た者どうしの競合はミリ秒で解消するのに、
+			// そこで `lockman break` を勧めると、この道具で**最も現実的に二重取得を作る操作**
+			// (期限検査も token 照合もしない無条件 rename) へ人を誘導することになる。
+			// 実測 2026-09-16: 8 本同時の正常な回収で 7 行の break 案内が出ていた。
+			//
+			// 鳴らすのは **mark 自身が猶予を超えて古い**とき = 回収を始めた者が死んで、
+			// 掃除まで無言で塞がる状態に入っているときだけ。
+			if mst, serr := os.Stat(mark); serr == nil && now.Sub(mst.ModTime()) > l.takeoverClaimGrace(body) {
+				warnf("引き継ぎの回収が止まっている (%s)。解消しなければ lockman break", takeoverClaimWho(body))
+			}
 			return false, nil
 		}
 		return false, err
@@ -754,7 +775,7 @@ func (l *Locker) reclaimTakeoverClaim(claim string, now time.Time) (bool, error)
 		// 掃除まで引き継げなくなる (回収機構が防ぐはずの状態そのもの)。権限ドリフトの EACCES /
 		// SMB の EIO で到達する。
 		_ = os.Remove(mark)
-		if os.IsExist(err) || errors.Is(err, errBusy) {
+		if os.IsExist(err) || errors.Is(err, errClaimReplaced) {
 			return false, nil // 入れ違いに別の観測者が役を取った。譲る
 		}
 		return false, err
@@ -765,15 +786,21 @@ func (l *Locker) reclaimTakeoverClaim(claim string, now time.Time) (bool, error)
 
 // refreshTakeoverClaim は回収した目印の打刻をサーバに更新させる。
 //
-// 🚨 O_TRUNC は「今そこにあるもの」への無条件操作なので、**開く前に観測した目印と同じか
-// 照合する**。掃除が目印を浚った後に別の観測者が O_EXCL で置き直していると、その人の目印を
-// 自分の中身で上書きして役が 2 人になる — reclaimTakeoverClaim の doc が「消したり動かしたり
-// してはいけない」と書いている当のものを、書き込みでやることになる。
+// 🚨 照合は **fd に対して**行う。「Stat で照合してから別の syscall で開く」形は、そのあいだに
+// 掃除が目印を浚い、別の観測者が O_EXCL で置き直すと**その人の目印を開いて壊す** (= 役が 2 人)。
+// 先に開いてから fstat すれば、置き換えが open より前なら新しい inode を掴んで不一致で弾け、
+// open より後なら unlink 済みの旧 inode を掴むので相手には 1 バイトも書かない。どちらの順序でも
+// 壊れない。副次的に、止まりうる syscall が 1 つ減る (中断で最悪の wedge へ倒れる帯が狭まる)。
 //
-// 🚨 書き込みの失敗を握り潰さない。握り潰すと目印が「0 バイト + 新しい打刻」になり、
-// 作成者が申告した猶予が消えて、次の観測者は短い fallback で判定する。
+// 🚨 **O_TRUNC を open に付けない**。付けると開いた時点で中身が消えるので、照合で弾く前に
+// 相手の目印を壊す。切り詰めは書けた後に当てる。
+//
+// 🚨 書き込みの失敗は返す。ただし**失敗しても中身が壊れていない保証は無い** (書けた分だけ残る)。
+// 壊れた目印は次の観測者から「中身を読めない目印」に見えて短い fallback の猶予で扱われるが、
+// そのとき作成者は既に死んでいる (回収に入っているのがその証拠) ので危険側には倒れない。
+// この経路は実行時の I/O 失敗が要るためテストしていない (**未検証**)。
 func (l *Locker) refreshTakeoverClaim(claim string, observed time.Time) error {
-	st, err := os.Stat(claim)
+	f, err := os.OpenFile(claim, os.O_WRONLY, lockFileMode)
 	if os.IsNotExist(err) {
 		// 掃除に浚われた後。作り直せたら役は自分のまま、負けたら相手のもの。
 		return l.placeTakeoverClaim(claim)
@@ -781,12 +808,14 @@ func (l *Locker) refreshTakeoverClaim(claim string, observed time.Time) error {
 	if err != nil {
 		return err
 	}
-	if !st.ModTime().Equal(observed) {
-		return fmt.Errorf("%w: 回収の途中で目印が置き直された", errBusy)
-	}
-	f, err := os.OpenFile(claim, os.O_WRONLY|os.O_TRUNC, lockFileMode)
+	st, err := f.Stat()
 	if err != nil {
+		f.Close()
 		return err
+	}
+	if !st.ModTime().Equal(observed) {
+		f.Close()
+		return fmt.Errorf("%w: 回収の途中で目印が置き直された", errClaimReplaced)
 	}
 	b, err := json.Marshal(&takeoverClaimBody{
 		Host: hostname(), User: username(), PID: os.Getpid(),
@@ -797,6 +826,10 @@ func (l *Locker) refreshTakeoverClaim(claim string, observed time.Time) error {
 		return err
 	}
 	if _, err := f.Write(b); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Truncate(int64(len(b))); err != nil {
 		f.Close()
 		return err
 	}

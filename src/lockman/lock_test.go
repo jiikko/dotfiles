@@ -965,7 +965,7 @@ func TestTakeoverGenerationAndTokenQuarantine(t *testing.T) {
 func TestTakeoverClaimGraceBounds(t *testing.T) {
 	l := &Locker{timeout: defaultIOTimeout}
 	fallback := defaultIOTimeout * takeoverClaimGraceFactor
-	maxGrace := maxIOTimeout * takeoverClaimGraceFactor
+	maxGrace := maxTakeoverClaimTimeout * takeoverClaimGraceFactor
 
 	if got := l.takeoverClaimGrace(nil); got != fallback {
 		t.Fatalf("中身を読めない目印の猶予が %v (期待 %v)", got, fallback)
@@ -984,14 +984,28 @@ func TestTakeoverClaimGraceBounds(t *testing.T) {
 		{math.MaxInt64, maxGrace},
 		{math.MaxInt64 / 2, maxGrace},
 		{5_000_000_000_000, maxGrace},
-		{maxIOTimeout.Milliseconds(), maxGrace},
-		{maxIOTimeout.Milliseconds() + 1, maxGrace},
+		{maxTakeoverClaimTimeout.Milliseconds(), maxGrace},
+		{maxTakeoverClaimTimeout.Milliseconds() + 1, maxGrace},
 		{-1, fallback},
 		{0, fallback},
 		{time.Second.Milliseconds(), fallback}, // 申告が自分より短ければ fallback のまま
 	} {
 		if got := l.takeoverClaimGrace(&takeoverClaimBody{TimeoutMS: c.ms}); got != c.want {
 			t.Errorf("申告 %d ms: 猶予 %v (期待 %v)", c.ms, got, c.want)
+		}
+	}
+
+	// 🚨 申告値の上限は**フラグの UI 制約とは別の定数**で持つ。同じ値だが、UI 側を下げたときに
+	// 猶予まで黙って縮み「まだ飛行している作成者の目印を回収する」側へ倒れるのを防ぐため。
+	if maxTakeoverClaimTimeout != maxIOTimeout {
+		t.Fatalf("申告値の上限 %v と --io-timeout の上限 %v がずれている: "+
+			"どちらかを動かすときは猶予への影響を確かめること", maxTakeoverClaimTimeout, maxIOTimeout)
+	}
+	// 直接 Locker を組む経路 (フラグ検証を通らない) でも溢れない。
+	for _, to := range []time.Duration{time.Duration(math.MaxInt64), 10 * time.Hour} {
+		big := &Locker{timeout: to}
+		if got := big.takeoverClaimGrace(nil); got != maxGrace {
+			t.Errorf("l.timeout=%v: 猶予 %v (期待 %v)", to, got, maxGrace)
 		}
 	}
 
@@ -1024,10 +1038,17 @@ func TestRefreshTakeoverClaimYieldsWhenClaimWasReplaced(t *testing.T) {
 		t.Fatalf("ReadFile: %v", err)
 	}
 
-	// 自分が観測した打刻とは違う目印がそこにある状態
-	err = l.refreshTakeoverClaim(claim, time.Unix(1, 0))
-	if !errors.Is(err, errBusy) {
-		t.Fatalf("置き直された目印を上書きした (err=%v)", err)
+	// 🚨 fixture は**実際に起きる近接ケース**にする。1970 年のような桁違いの値だと、
+	// 照合を「秒で丸める」「1 時間以上ずれたときだけ弾く」のような粗い判定へ変異させても
+	// 緑のまま通り、照合の粒度を何も守らない。
+	st, err := os.Stat(claim)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	for _, skew := range []time.Duration{-time.Nanosecond, time.Nanosecond, -time.Second, -time.Minute} {
+		if err := l.refreshTakeoverClaim(claim, st.ModTime().Add(skew)); !errors.Is(err, errClaimReplaced) {
+			t.Fatalf("打刻が %v ずれた目印を上書きした (err=%v)", skew, err)
+		}
 	}
 	after, err := os.ReadFile(claim)
 	if err != nil {
@@ -1038,44 +1059,85 @@ func TestRefreshTakeoverClaimYieldsWhenClaimWasReplaced(t *testing.T) {
 	}
 }
 
-// ★ 回帰テスト (issue 366): 回収が進行中 (mark が在る) なら譲り、**理由を出す**。
+// ★ 回帰テスト (issue 366): 回収の mark が在るときは譲る。**理由を出すのは「止まっている」
+// ときだけ**で、良性の競合では黙る。
 //
-// 回収を始めた者が途中で死ぬと目印の打刻が凍り、以後の観測者は全員この枝へ落ちる。
-// 無言だと `check` は free・`acquire` は busy という追跡不能の矛盾が恒久化する。
-func TestTakeoverYieldsAndWarnsWhenReclaimInProgress(t *testing.T) {
-	l := newTestLocker(t)
-	dead, claim := staleLockWithClaim(t, l)
-	old := time.Now().Add(-2 * time.Hour)
-	if err := os.Chtimes(claim, old, old); err != nil {
-		t.Fatalf("Chtimes: %v", err)
-	}
-	st, err := os.Stat(claim)
-	if err != nil {
-		t.Fatalf("Stat: %v", err)
-	}
-	// 回収を始めた者が残した mark
-	mark := fmt.Sprintf("%s.%d", claim, st.ModTime().UnixNano())
-	if err := os.WriteFile(mark, nil, lockFileMode); err != nil {
-		t.Fatalf("mark を作れない: %v", err)
-	}
+// 回収を始めた者が途中で死ぬと目印の打刻が凍り、以後の観測者は全員この枝へ落ちて掃除まで
+// 塞がる — そこは診断が要る。一方、同じ古さを見た者どうしの競合はミリ秒で解消するので、
+// そこで `lockman break` を勧めると**最も現実的に二重取得を作る操作**へ人を誘導することになる
+// (実測 2026-09-16: 8 本同時の正常な回収で 7 行の break 案内が出ていた)。
+func TestTakeoverYieldsToReclaimMarkAndWarnsOnlyWhenStuck(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		markAge  time.Duration
+		wantWarn bool
+	}{
+		{"良性の競合 (mark が新しい)", 0, false},
+		{"回収が止まっている (mark が猶予より古い)", 2 * time.Hour, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			l := newTestLocker(t)
+			dead, claim := staleLockWithClaim(t, l)
+			old := time.Now().Add(-2 * time.Hour)
+			if err := os.Chtimes(claim, old, old); err != nil {
+				t.Fatalf("Chtimes: %v", err)
+			}
+			st, err := os.Stat(claim)
+			if err != nil {
+				t.Fatalf("Stat: %v", err)
+			}
+			mark := fmt.Sprintf("%s.%d", claim, st.ModTime().UnixNano())
+			if err := os.WriteFile(mark, nil, lockFileMode); err != nil {
+				t.Fatalf("mark を作れない: %v", err)
+			}
+			if tc.markAge > 0 {
+				at := time.Now().Add(-tc.markAge)
+				if err := os.Chtimes(mark, at, at); err != nil {
+					t.Fatalf("Chtimes(mark): %v", err)
+				}
+			}
 
-	var took bool
-	stderr := captureStderr(t, func() { took, err = l.tryTakeover() })
-	if err != nil {
-		t.Fatalf("tryTakeover: %v", err)
+			var took bool
+			stderr := captureStderr(t, func() { took, err = l.tryTakeover() })
+			if err != nil {
+				t.Fatalf("tryTakeover: %v", err)
+			}
+			if took {
+				t.Fatal("回収の mark が在るのに役を取った (役が 2 人になる)")
+			}
+			if got := strings.Contains(stderr, "lockman break"); got != tc.wantWarn {
+				t.Fatalf("break の案内が %v (期待 %v): %q", got, tc.wantWarn, stderr)
+			}
+			cur, _, err := l.readLock()
+			if err != nil {
+				t.Fatalf("readLock: %v", err)
+			}
+			if cur == nil || cur.Token != dead.Token {
+				t.Fatalf("lock が退けられた: %+v", cur)
+			}
+		})
 	}
-	if took {
-		t.Fatal("回収が進行中なのに役を取った (役が 2 人になる)")
+}
+
+// ★ 回帰テスト (issue 366): 掃除が目印を浚った後でも、回収した者は目印を置き直して役を保つ。
+//
+// 🚨 これは**配線のテスト**。照合のために open の手前へ Stat を足すと、ENOENT の配線が
+// Stat 側にだけ残って open 側から抜け落ちる。そうなると「掃除が浚った」という正常系が
+// errBusy ではない hard error になり、`acquire --wait` のリトライループにすら入らない。
+func TestRefreshTakeoverClaimRecreatesSweptClaim(t *testing.T) {
+	l := newTestLocker(t)
+	if err := l.ensureDirs(); err != nil {
+		t.Fatalf("ensureDirs: %v", err)
 	}
-	if !strings.Contains(stderr, "回収が進行中") {
-		t.Fatalf("譲った理由が stderr に出ない: %q", stderr)
+	claim := takeoverClaimPathFor(l, "deadbeef")
+
+	// 掃除に浚われた後の状態 (目印が無い)
+	if err := l.refreshTakeoverClaim(claim, time.Unix(1, 0)); err != nil {
+		t.Fatalf("浚われた目印を置き直せない: %v", err)
 	}
-	cur, _, err := l.readLock()
-	if err != nil {
-		t.Fatalf("readLock: %v", err)
-	}
-	if cur == nil || cur.Token != dead.Token {
-		t.Fatalf("lock が退けられた: %+v", cur)
+	body := readTakeoverClaimBody(claim)
+	if body == nil || body.PID != os.Getpid() {
+		t.Fatalf("置き直した目印が自分のものになっていない: %+v", body)
 	}
 }
 
