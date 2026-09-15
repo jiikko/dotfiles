@@ -110,7 +110,8 @@ window_pane_read_callback → input_parse → input_csi_dispatch
 ## upstream
 
 - [PR #5582 "Keep floating panes inside the window when it shrinks"](https://github.com/tmux/tmux/pull/5582)
-  が **2026-09-11 に OpenBSD へ適用済み** (GitHub 側へは後日)。clamp が入れば発火条件自体が消える
+  が **2026-09-11 に OpenBSD へ適用され、同日 GitHub の master へも merge 済み** (2026-09-15 に確認)。
+  clamp が入れば発火条件自体が消える
 - **3.7c の CHANGES にこの修正は入っていない** (`raw.githubusercontent.com/tmux/tmux/3.7c/CHANGES` で確認。
   jemalloc / scrollbar / message-format / unzoom-before-floating の 5 件のみ)。`brew upgrade tmux` では直らない
 - PR にハング (CPU 100%) の記述はない。**ジオメトリ問題としてのみ報告されている**
@@ -190,8 +191,10 @@ window_pane_read_callback → input_parse → input_csi_dispatch
 - [x] 実施: `_tmux.conf` の `set -g @agent_panel_on 1` を削除し、理由と「変更可能になる条件」を
       同じ場所にコメントで残した。`scripts/tmux_agent_panel.sh` の「デフォルト表示」を前提にした
       コメントも同じ commit で直した。`make test` は EXIT=0 / 失敗 0 件 (agent_panel のテストも緑)
-- [ ] **反映は未完**: 動いているサーバには `prefix R` (reload) か次回のサーバ起動まで効かない。
-      実行時の値は既に OFF なので、reload しても ON には戻らない
+- [x] **反映は完了 (やることは無かった)**。2026-09-15 に本番 socket へ読み取りのみで確認:
+      `tmux -L default show-options -gv @agent_panel_on` → `invalid option` (= 未設定 = OFF) /
+      `list-panes -a` に floating な pane は **0 件** / conf からも `set` が消えているので
+      **reload しても ON に戻らない**。適用のために撃つコマンドは無い
 
 ## 敵対レビューからの follow-up (2026-09-15 に対応済み)
 
@@ -205,13 +208,72 @@ window_pane_read_callback → input_parse → input_csi_dispatch
   計算を `scripts/lib/tmux_float_geometry.sh` (`tt_float_geom`) へ寄せ、単体テスト 14 ケースと
   変異検証 2 本 (旧実装の復元 / 高さ clamp 削除) を付けた
 
-## 残タスク
-- [ ] **実測ハーネス側の穴**: `verify*.py` の `case()` は後始末で `kill -9 <server pid>` を撃つだけで
-      **死んだことを確認していない**。実際にケース 24 のハングしたサーバが生き残り、**23 分間 CPU 100% で
-      回り続けていた** (手で `kill -9` して回収。2026-09-15)。再実行する人は同じ残骸を作るので、
-      teardown を「kill → `ps -p` で不在を確認 → socket 削除」に直すこと
-      (`verify-execution-not-just-exit-code.md`「判定は成果物で」の teardown 版)
-- [ ] 横の閾値 (+2〜+5 の間) は未特定。左寄せ / 既定 OFF を採るなら不要
-- [ ] **未検証**: ①縦だけ縮む場合 (`pane_left` は client 内 / `pane_top` が client 高を超える) は未実測
-      ②左寄せ構成で拡大⇄縮小を 10 往復させたときの累積耐性 ③`brew install --HEAD tmux` に PR #5582 が
-      入っているか ④保存済み layout に toast の floating が焼き付く経路
+## 残タスク (2026-09-15 に全件決着)
+
+- [x] **実測ハーネス側の穴** → ハーネス (`verify*.py`) は `tmp/` ごと消えているので直す対象が無い。
+      同じ規律を**正本**の `tests/tmux/lib/kill_socket.sh` (`tt_tmux_kill_socket`) へ入れた。
+      旧実装には本 issue と同じ穴が 2 つあった:
+      - `$(... display -p ...)` はサーバがハングすると**返らない** → 後始末が一緒に固まる
+      - ソケット越しの停止要求は届かなくても素通りし、**それでも socket を消す** →
+        唯一の handle を捨てて「誰も触れない CPU 100% のサーバ」を作る (= 23 分間の残骸の正体)
+
+      直した形: bounded に問い合わせる (時間切れなら待ち client も落とす) → 停止要求 →
+      効かなければ**撃つ直前に素性 (`ps -o comm=`) を取り直して** KILL へ昇格 → **不在を確認**して
+      から socket を消す。確認できなければ socket を残し、pid を stderr に出して rc=1 を返す。
+      pid は `kill` へ渡る値なので明示列挙 + 桁数でゲートする。
+
+      変異検証 (ケース名ごとの pass/fail で判定。テストは `tests/tmux/test_socket_cleanup.sh` ⑦〜⑩):
+
+      | 変異 | 結果 |
+      |---|---|
+      | KILL 昇格を削除 | ⑦ red |
+      | 生死確認を削除 (旧挙動) | ⑧ red |
+      | pid ゲートを削除 | ⑨ red |
+      | bounded をやめる (旧挙動) | ⑩ red (30s 経っても戻らない) |
+      | 時間切れ client の KILL を削除 | ⑩ red |
+      | process substitution の `exec` を外す | **全緑 = 等価変異** (bash は単純コマンドを暗黙 exec すると実測) |
+
+      🚨 ⑦ の初版は **vacuous だった**: `cp /bin/sleep` したコピーは macOS の署名で即 SIGKILL され、
+      「最初から死んでいるプロセス」を見ていた (前提 assert が無く、KILL 昇格を消す変異が緑で通った)。
+      実 tmux サーバ + 停止要求を握り潰す stub へ作り替え、⑧⑨ には実体の生存を前提 assert に足した。
+
+- [x] **横の閾値 (+2〜+5)** → **測らない**。案 1 (既定 OFF) を採ったので、閾値は対策の選択を
+      1 mm も変えない。**再開の trigger**: panel / toast を右寄せで常駐させる案 (案 2 の不採用を
+      覆す / panel を既定 ON へ戻す) を検討するとき
+
+- [x] **未検証 ①縦だけ縮む場合** → **測らない**。実験には 377 のハングを本物で起こす必要があり
+      (= CPU 100% のサーバを毎回作る)、その値で変わる判断が今は無い。**再開の trigger**: upstream の
+      clamp が入る前に発火条件を upstream へ報告する / 右寄せ常駐へ戻すとき
+
+- [x] **未検証 ②左寄せ構成の累積耐性** → **不要**。案 2 (左寄せ) を採らなかったため
+
+- [x] **未検証 ③`brew install --HEAD` に PR #5582 が入っているか** → **入る**。PR #5582
+      "Keep floating panes inside the window when it shrinks" は **2026-09-11 に master へ merge 済み**
+      (GitHub。maintainer のコメント「applied to OpenBSD now, will be in GitHub later」の後続)。
+      Homebrew の tmux formula の head は `https://github.com/tmux/tmux.git` の **master** を追う
+      (`brew info --json=v2 tmux` の `urls.head.branch` で実測) ので `--HEAD` には含まれる。
+      ただし stable は **3.7c のまま** (この修正は入っていない。既記載) で、HEAD は未リリースの
+      回帰も引くため**導入は推奨しない**。**trigger**: 3.8 が stable に来たら上げる
+      (master の CHANGES は "CHANGES FROM 3.7c TO 3.8" で floating pane の改良を多数含む)
+
+- [x] **未検証 ④保存済み layout に floating が焼き付く経路** → **経路は実在する。ただし現に
+      焼き付いた保存は 0 件**。実測 2026-09-15:
+      - 隔離サーバ (3.7b) で `new-pane -x 40 -y 3 -X 160 -Y 40` を作ると
+        `#{window_layout}` は `1304,200x50,0,0[...]<40x3,160,40,1>` と**floating を `<...>` で含む**
+      - `vendor/tmux-plugins/tmux-resurrect/scripts/save.sh:75` がその `#{window_layout}` を保存し、
+        `restore.sh:295` が `select-layout` でそのまま当てる → **復元で floating pane が生えうる**
+        (`render_panes()` の記録には無いので toggle でも消せない)
+      - 保存済み **105 件を全数走査**して `<WxH,x,y,id>` を含むものは **0 件**
+        (panel は 8 日間 OFF、toast は 2〜8 秒しか生きないため窓が小さい)
+      - **残余リスク**: 保存 (periodic save) と toast が重なると焼き付く。**trigger**: 復元後に
+        身に覚えのない floating pane が出たら、まず最新スナップショットの window 行を
+        `grep -E '<[0-9]+x[0-9]+,'` で見る。潰すなら「保存時に layout の `<...>` 節を落とす」案があるが、
+        新しい破壊的加工なので実施は別 issue にする
+      - 🚨 **3.8 で layout 文字列は JSON サブセットへ変わり、floating pane を正式に含む**
+        (master の CHANGES)。上げるときは resurrect の保存形式の互換性も見ること
+
+## 現在の状態
+
+- **この repo で打つ手は全部打った**。残っているのは upstream 側の修正待ちで、緩和 (案 1) が効いている
+- **再評価の trigger**: ①tmux 3.8 が Homebrew の stable に来たとき (clamp が入るので発火条件自体が消える)
+  ②`C-t a` で panel を常駐させたくなったとき ③復元後に身に覚えのない floating pane を見たとき (上記 ④)
