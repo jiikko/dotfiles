@@ -771,6 +771,16 @@ func TestTakeoverReclaimsAbandonedClaim(t *testing.T) {
 	if got := readTakeoverClaimBody(claim); got == nil || got.PID != os.Getpid() {
 		t.Fatalf("回収後の目印が書き直されていない: %+v (期待 PID %d)", got, os.Getpid())
 	}
+	// 🚨 mark にも自分の身元と飛行上限を書く。書かないと「回収が止まっている」の判定が
+	// 猶予の fallback に落ち、人へ出す名前も「作成者不明」になる (回収者を名指しできない)。
+	marks := takeoverMarks(t, l)
+	if len(marks) != 1 {
+		t.Fatalf("mark が %d 件 (期待 1): %v", len(marks), marks)
+	}
+	mbody := readTakeoverClaimBody(filepath.Join(l.metaDir, tmpDirName, marks[0]))
+	if mbody == nil || mbody.PID != os.Getpid() {
+		t.Fatalf("mark に自分の body が書かれていない: %+v", mbody)
+	}
 	got := graveyardTokens(t, l)
 	if len(got) != 1 || got[0] != dead.Token {
 		t.Fatalf("死んだ lock が退けられていない: %v (期待 [%s])", got, dead.Token)
@@ -1186,4 +1196,190 @@ func takeoverMarks(t *testing.T, l *Locker) []string {
 		}
 	}
 	return out
+}
+
+// ★ 回帰テスト (issue 366): 照合を通った後に目印が置き直されても、**相手の目印を壊さない**。
+//
+// 🚨 これが「照合を fd に対して行っていること」の唯一の検査。パスに対する照合
+// (os.Stat で見てから O_TRUNC で開く) へ戻す変異は、seam が無いと全テスト緑で通る —
+// 単一プロセスのテストには「照合と書き込みのあいだに置き直す第三者」が居ないため。
+//
+// なお fd 版はこの順序で **成功を返す** (旧 inode の打刻は observed のまま)。役の一意性は
+// 2 段目の再照合と tryPlace の O_EXCL が担うので、ここで固定するのは「壊さない」ことだけ。
+func TestRefreshTakeoverClaimDoesNotClobberReplacedClaim(t *testing.T) {
+	l := newTestLocker(t)
+	if err := l.ensureDirs(); err != nil {
+		t.Fatalf("ensureDirs: %v", err)
+	}
+	claim := takeoverClaimPathFor(l, "deadbeef")
+	if err := l.placeTakeoverClaim(claim); err != nil {
+		t.Fatalf("目印を作れない: %v", err)
+	}
+	st, err := os.Stat(claim)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+
+	// 照合を通った直後に「掃除が浚って別の観測者が置き直す」を差し込む
+	other, err := json.Marshal(&takeoverClaimBody{Host: "other", User: "other", PID: 4242})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	orig := takeoverRefreshHook
+	t.Cleanup(func() { takeoverRefreshHook = orig })
+	fired := false
+	takeoverRefreshHook = func() {
+		if fired {
+			return
+		}
+		fired = true
+		if err := os.Remove(claim); err != nil {
+			t.Errorf("目印を消せない: %v", err)
+		}
+		if err := os.WriteFile(claim, other, lockFileMode); err != nil {
+			t.Errorf("置き直せない: %v", err)
+		}
+	}
+
+	_ = l.refreshTakeoverClaim(claim, st.ModTime())
+	if !fired {
+		t.Fatal("前提が作れていない: seam に到達していない")
+	}
+	got := readTakeoverClaimBody(claim)
+	if got == nil || got.PID != 4242 {
+		t.Fatalf("置き直された目印を壊した: %+v (期待 PID 4242)", got)
+	}
+}
+
+// ★ 回帰テスト (issue 366): 回収で打刻を戻すとき、**自分より長い旧 body を切り詰める**。
+//
+// 回収の本命は「別ホストが置いた目印」なので、旧 body のほうが長い組み合わせ (長い hostname /
+// 長い username) は普通に起きる。切り詰めないと末尾に旧 body の破片が残って JSON が壊れ、
+// 次の観測者は申告値を失って短い fallback の猶予で判定する = 早すぎる回収へ倒れる。
+func TestReclaimTruncatesLongerPreviousBody(t *testing.T) {
+	l := newTestLocker(t)
+	_, claim := staleLockWithClaim(t, l)
+	long, err := json.Marshal(&takeoverClaimBody{
+		Host: strings.Repeat("h", 200), User: strings.Repeat("u", 200), PID: 1,
+		TimeoutMS: (5 * time.Second).Milliseconds(), At: time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	mine, err := l.marshalClaimBody()
+	if err != nil {
+		t.Fatalf("marshalClaimBody: %v", err)
+	}
+	if len(long) <= len(mine) {
+		t.Fatalf("前提が作れていない: 旧 body (%d) が自分の body (%d) より長くない", len(long), len(mine))
+	}
+	if err := os.WriteFile(claim, long, lockFileMode); err != nil {
+		t.Fatalf("目印を書けない: %v", err)
+	}
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(claim, old, old); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+
+	took, err := l.tryTakeover()
+	if err != nil {
+		t.Fatalf("tryTakeover: %v", err)
+	}
+	if !took {
+		t.Fatal("放棄された目印を回収できない")
+	}
+	if got := readTakeoverClaimBody(claim); got == nil || got.PID != os.Getpid() {
+		t.Fatalf("回収後の目印を読めない (旧 body の破片が残っている): %+v", got)
+	}
+}
+
+// ★ 回帰テスト (issue 366): 回収の途中で目印が置き直されたら、**busy として譲る** (hard error にしない)。
+//
+// hard error にすると `errBusy` に当たらないので `acquire --wait` のリトライループに入らず、
+// 良性のレース 1 回で待機が丸ごと諦める。
+func TestReclaimYieldsAsBusyWhenClaimReplacedMidway(t *testing.T) {
+	l := newTestLocker(t)
+	_, claim := staleLockWithClaim(t, l)
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(claim, old, old); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+	orig := takeoverReclaimHook
+	t.Cleanup(func() { takeoverReclaimHook = orig })
+	fired := false
+	takeoverReclaimHook = func() {
+		if fired {
+			return
+		}
+		fired = true
+		now := time.Now() // 別の観測者が置き直した = 打刻が進んだ状態
+		if err := os.Chtimes(claim, now, now); err != nil {
+			t.Errorf("Chtimes: %v", err)
+		}
+	}
+
+	took, err := l.tryTakeover()
+	if !fired {
+		t.Fatal("前提が作れていない: 回収経路に到達していない")
+	}
+	if err != nil {
+		t.Fatalf("置き直しを hard error にした (--wait が諦める): %v", err)
+	}
+	if took {
+		t.Fatal("置き直された目印を回収して役を取った")
+	}
+	if marks := takeoverMarks(t, l); len(marks) != 0 {
+		t.Fatalf("譲ったのに mark が残っている: %v", marks)
+	}
+}
+
+// ★ 回帰テスト (issue 366): 「回収が止まっている」の診断は **mark を置いた回収者**を名指しする。
+//
+// 目印 (claim) の body は**とうに死んだ作成者**のものなので、それで閾値を作ると
+// 「回収者はまだ飛行中なのに止まっていると診断する」ことになり、しかも人へ無関係な pid を見せる。
+func TestStuckReclaimWarnNamesTheReclaimerNotTheDeadCreator(t *testing.T) {
+	l := newTestLocker(t)
+	_, claim := staleLockWithClaim(t, l)
+	creator, err := json.Marshal(&takeoverClaimBody{Host: "creator", User: "creator", PID: 1111})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if err := os.WriteFile(claim, creator, lockFileMode); err != nil {
+		t.Fatalf("目印を書けない: %v", err)
+	}
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(claim, old, old); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+	st, err := os.Stat(claim)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	reclaimer, err := json.Marshal(&takeoverClaimBody{Host: "reclaimer", User: "reclaimer", PID: 2222})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	mark := fmt.Sprintf("%s.%d", claim, st.ModTime().UnixNano())
+	if err := os.WriteFile(mark, reclaimer, lockFileMode); err != nil {
+		t.Fatalf("mark を作れない: %v", err)
+	}
+	stuck := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(mark, stuck, stuck); err != nil {
+		t.Fatalf("Chtimes(mark): %v", err)
+	}
+
+	var took bool
+	stderr := captureStderr(t, func() { took, err = l.tryTakeover() })
+	if err != nil {
+		t.Fatalf("tryTakeover: %v", err)
+	}
+	if took {
+		t.Fatal("mark が在るのに役を取った")
+	}
+	if !strings.Contains(stderr, "pid=2222") {
+		t.Fatalf("回収者を名指ししていない: %q", stderr)
+	}
+	if strings.Contains(stderr, "pid=1111") {
+		t.Fatalf("とうに死んだ作成者を名指しした (人が無関係な pid を撃つ): %q", stderr)
+	}
 }
