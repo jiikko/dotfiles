@@ -58,7 +58,7 @@ shim_dir=""
 hang_dir=""
 # 🚨 shellcheck は `printf -v "$1"` の間接代入を追えない (SC2154) ので、ここで宣言しておく。
 # 消すと lint_test_scripts.sh が「referenced but not assigned」で落ちる
-raw=""; s1=""; s2=""; s7=""; s11=""
+raw=""; s1=""; s2=""; s7=""; s11=""; owner8=""
 TT_FAKE_PIDS=()
 tt_cleanup_all() {
   local s p uid; uid=$(id -u)
@@ -75,7 +75,10 @@ tt_cleanup_all() {
   done
   return 0
 }
-trap tt_cleanup_all EXIT INT TERM HUP
+# 🚨 **INT のハンドラが return すると bash は中断地点から実行を再開する** (実測)。
+# 掃除だけして続行すると、以降のケースが壊れた fixture の上で偽の ✗ を出すので、明示的に落とす
+trap tt_cleanup_all EXIT
+trap 'tt_cleanup_all; exit 130' INT TERM HUP
 
 
 # --- ⓪ 🚨 default には tmux コマンドを 1 つも撃たない (本番 kill の回帰テスト) --------------
@@ -193,7 +196,9 @@ fi
 SELF="${BASH_SOURCE[0]}"
 # 🚨 **行頭アンカーで見る**。素の部分一致だと**この検査行そのもの**が pin を満たしてしまい、
 # 本物の trap を消す変異が緑で通った (自分で変異を当てて見つけた。pin の自己参照)
-if grep -qE '^trap tt_cleanup_all EXIT INT TERM HUP$' "$SELF" && ! grep -qE '^[[:space:]]*trap[[:space:]]+-[[:space:]]' "$SELF"; then
+if grep -qE '^trap tt_cleanup_all EXIT$' "$SELF" \
+   && grep -qE "^trap 'tt_cleanup_all; exit 130' INT TERM HUP\$" "$SELF" \
+   && ! grep -qE '^[[:space:]]*trap[[:space:]]+-[[:space:]]' "$SELF"; then
   ok "この検査自身: 後始末の trap がファイル全体を覆い、途中で解除していない"
 else
   bad "この検査自身の trap が弱い (tt_cleanup_all がファイル全体を覆っていない / trap - で解除している)"
@@ -221,9 +226,18 @@ fi
 #
 # 🚨 実 tmux は使わない。ハングするサーバを本物で作ると、このテスト自身が 377 を踏む。
 # PATH stub で「kill-server に応答しないサーバ」を演じさせ、実体は使い捨てのプロセスにする。
-hang_dir=$(mktemp -d "${TMPDIR:-/tmp}/tt-hang.XXXXXX" 2>/dev/null) || hang_dir=""
+# 🚨 **`$TMPDIR` を base にしない**。AF_UNIX のパス長上限は 103 バイトで、macOS の
+# `$TMPDIR` (`/var/folders/<2>/<~30>/T/`) を base にすると socket パスが**残り 2 バイト**まで
+# 詰まる (実測 2026-09-15: 長い TMPDIR の下で ⑧⑨⑩⑫ が 4 件まとめて「socket を作れない」で
+# 赤になった)。しかもその赤は**実装の不合格と見分けが付かない**。短い base に固定して窓を作らない
+hang_dir=$(mktemp -d /tmp/tth.XXXXXX 2>/dev/null) || hang_dir=""
+# 🚨 **実パスへ直す**。`lsof` は「プロセスが bind した文字列そのもの」と照合するので
+# (実測 2026-09-15)、fixture が `/tmp/...` で bind したのに実装が `/private/tmp/...` で引くと
+# **持ち主が居ないように見える** = 生きているサーバを dead と誤判定する形の fixture になる。
+# tmux は bind の前に tmpdir を実パスへ解決するので、こちらも合わせる
+[ -n "$hang_dir" ] && hang_dir=$(cd -- "$hang_dir" && pwd -P)
 if [ -z "$hang_dir" ] || [ ! -d "$hang_dir" ]; then
-  bad "⑦〜⑩ の隔離 dir を作れない (TMPDIR=${TMPDIR:-/tmp})"
+  bad "🚨 HARNESS: ⑦〜⑫ の隔離 dir を作れない (実装の不合格ではない。/tmp を確認すること)"
 else
   tt_spawn() {  # tt_spawn <実行ファイル> -> REPLY_PID
     # 🚨 `( trap - EXIT; exec ... ) &` で起こす (lib/stub_env.sh と同じ理由: fork 直後に
@@ -254,17 +268,29 @@ exit 0
 STUB
     chmod +x "$hang_dir/tmux"
   }
+  # 🚨 **持ち主が生きたままの socket を作る**。bind して即終了すると「誰も握っていない socket」
+  # = 本物の残骸になり、新しい実装はそれを正しく dead と判定して消す (fixture が主張したい
+  # 「生きているサーバ」を 1 度も作らないまま赤 / 緑になる)
   tt_mksock() {  # tt_mksock <パス>
-    python3 -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1])' "$1" 2>/dev/null
+    local i=0
+    ( trap - EXIT; exec python3 -c 'import socket,sys,time
+s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(1); time.sleep(300)' "$1" ) >/dev/null 2>&1 &
+    REPLY_SOCK_PID="$!"          # socket の持ち主 (= 実装が stderr に出すべき pid)
+    TT_FAKE_PIDS+=("$REPLY_SOCK_PID")
+    while [ "$i" -lt 100 ]; do
+      [ -S "$1" ] && return 0
+      sleep 0.05; i=$((i + 1))
+    done
+    return 1
   }
 
   # --- ⑧ 🚨 死を確認できなければ socket を消さず、pid を出して失敗を返す ----------------------
   #
   # 素性 (`ps -o comm=`) が tmux でない pid は撃たない = 生き残る。そのとき socket を消すと
   # 「誰も触れない生きたサーバ」を作るので、**残す**のが正しい。
-  sock8="$hang_dir/sock8"; tt_mksock "$sock8"
+  sock8="$hang_dir/sock8"; tt_mksock "$sock8"; owner8="${REPLY_SOCK_PID:-}"
   if [ ! -S "$sock8" ]; then
-    bad "⑧ の前提: unix socket を作れない ($sock8)"
+    bad "🚨 HARNESS: ⑧ の socket を作れない (実装の不合格ではない)"
   else
     tt_spawn /bin/sleep; pid8=$REPLY_PID          # comm=sleep → 素性チェックに落ちる
     # 🚨 前提: 実体が生きていること。死んでいると「撃たなかった」と見分けが付かない
@@ -277,8 +303,10 @@ STUB
       bad "⑧ サーバが生きているのに socket を消した (tmux 越しに触れないサーバが残る)"
     elif [ "$rc8" -eq 0 ]; then
       bad "⑧ サーバが生き残ったのに rc=0 (沈黙で成功にしている)"
-    elif ! grep -q "$pid8" "$hang_dir/err8" 2>/dev/null; then
-      bad "⑧ stderr に pid が出ていない (残骸を手で片付ける手がかりが無い): $(cat "$hang_dir/err8")"
+    elif ! grep -q "$owner8" "$hang_dir/err8" 2>/dev/null; then
+      # 🚨 出すべきは **socket の持ち主の pid** (人が `kill -9` する相手)。
+      # サーバが自己申告した pid ではない (ハング中は申告そのものが来ない)
+      bad "⑧ stderr に持ち主の pid が出ていない (残骸を手で片付ける手がかりが無い): $(cat "$hang_dir/err8")"
     else
       ok "⑧ 死を確認できなければ socket を残し、pid を出して rc≠0 を返す"
     fi
@@ -295,7 +323,7 @@ STUB
   # 引数を記録してから `builtin kill` へ委譲する。
   sock9="$hang_dir/sock9"; tt_mksock "$sock9"
   if [ ! -S "$sock9" ]; then
-    bad "⑨ の前提: unix socket を作れない ($sock9)"
+    bad "🚨 HARNESS: ⑨ の socket を作れない (実装の不合格ではない)"
   else
     tt_stub "-1 $sock9"
     : > "$hang_dir/kill9"
@@ -334,7 +362,7 @@ STUB
   chmod +x "$hang_dir/tmux"
   rm -f -- "$hang_dir/hangpid" "$hang_dir/done10"
   if [ ! -S "$sock10" ]; then
-    bad "⑩ の前提: unix socket を作れない ($sock10)"
+    bad "🚨 HARNESS: ⑩ の socket を作れない (実装の不合格ではない)"
   else
     (
       PATH="$hang_dir:$PATH"
@@ -379,7 +407,7 @@ STUB
   # シグナルが 1 発も出ないことを直接固定する。
   sock12="$hang_dir/tmux-$(id -u)/default"; tt_mksock "$sock12"
   if [ ! -S "$sock12" ]; then
-    bad "⑫ の前提: unix socket を作れない ($sock12)"
+    bad "🚨 HARNESS: ⑫ の socket を作れない (実装の不合格ではない)"
   else
     tt_spawn /bin/sleep; pid12=$REPLY_PID     # 撃たれたら分かるように生きた実体を置く
     tt_wait_alive "$pid12" || bad "⑫ の前提: 実体 (pid=$pid12) が起動していない"
@@ -391,8 +419,11 @@ STUB
       kill() { printf '%s\n' "$*" >> "$hang_dir/kill12"; builtin kill "$@"; }
       tt_tmux_kill_socket 'sub/../default'
     ) >/dev/null 2>&1
-    if grep -q . "$hang_dir/kill12"; then
-      bad "🚨 ⑫ 本番を指すパスに生のシグナルを撃った: $(tr '\n' ';' < "$hang_dir/kill12")"
+    # 🚨 判定は「**本番方向の実体 (pid12) へ**撃っていないこと」。
+    # 「1 度も kill しない」は実装より強い主張になる (`tt__run_bounded` は時間切れのとき
+    # **自分が起こした client** を撃つので、stub をハングさせた瞬間に正しい実装でも赤くなる)
+    if grep -qE "(^| )$pid12( |\$)" "$hang_dir/kill12"; then
+      bad "🚨 ⑫ 本番を指すパスの実体へ生のシグナルを撃った: $(tr '\n' ';' < "$hang_dir/kill12")"
     elif [ ! -S "$sock12" ]; then
       bad "🚨 ⑫ 本番を指すパスの socket を消した"
     else
@@ -401,6 +432,73 @@ STUB
     kill -KILL "$pid12" 2>/dev/null || :
     rm -f -- "$sock12"
   fi
+
+  # --- ⑬ 🚨 `set -e` の呼び出し元でも、最後まで走って案内を出す --------------------------------
+  #
+  # 呼び出し元の 1 本 (tests/claude/test_tmux_pane_state_bell.sh) は `set -euo pipefail` で
+  # trap から呼ぶ。関数の中に**受けそこねた非 0** が 1 つでもあると、そこでシェルが即死し、
+  # KILL への昇格も stderr の回収案内も rc=1 も**丸ごと飛ぶ** (= 残骸に誰も気づけない)。
+  # 377 で 23 分間見逃したのと同じ形なので、`set -e` の下で end-to-end を固定する。
+  # 🚨 socket は**関数が組み立てるパスに直接 bind** する。symlink 経由だと `lsof` が
+  # bind 名で照合するため持ち主を引けず (仕様どおり)、fixture が主張したい状態にならない
+  mkdir -p "$hang_dir/tmux-$(id -u)"; chmod 700 "$hang_dir/tmux-$(id -u)"
+  sock13="$hang_dir/tmux-$(id -u)/tt-hang-13"; tt_mksock "$sock13" || bad "🚨 HARNESS: ⑬ の socket を作れない"
+  cat > "$hang_dir/tmux" <<STUB
+#!/bin/sh
+exec sleep 300                 # 🚨 何を聞いても返らない (= 377 のハング)
+STUB
+  chmod +x "$hang_dir/tmux"
+  (
+    set -euo pipefail
+    PATH="$hang_dir:$PATH"
+    TMUX_TMPDIR="$hang_dir"
+    tt_tmux_kill_socket tt-hang-13
+  ) >/dev/null 2>"$hang_dir/err13"; rc13=$?
+  if [ "$rc13" -eq 0 ]; then
+    bad "⑬ set -e の下で rc=0 を返した (止められていないのに成功扱い)"
+  elif [ "$rc13" -ne 1 ]; then
+    bad "⑬ set -e の下で途中のコマンドの rc がそのまま出た (rc=$rc13)。受けそこねた非 0 がある"
+  elif ! grep -q '回収' "$hang_dir/err13"; then
+    bad "⑬ set -e の下で回収の案内が出ていない (errexit で途中で飛んだ): $(cat "$hang_dir/err13")"
+  else
+    ok "⑬ set -e の呼び出し元でも最後まで走り、rc=1 と回収の案内を出す"
+  fi
+  rm -f -- "$sock13"
+
+  # --- ⑭ 🚨 lsof が無ければ生死を確認できない → 何も消さない (fail-closed) ----------------------
+  #
+  # 生死の判定は「socket の持ち主が居るか」だけが根拠なので、`lsof` が無い環境では
+  # **判定不能**。そこを「持ち主なし = dead」に倒すと、生きているサーバの socket を消す。
+  # PATH を「lsof だけ入っていない最小の dir」に差し替えて固定する。
+  # 🚨 socket は**関数が組み立てるパスに直接 bind** する。symlink 経由だと `lsof` が
+  # bind 名で照合するため持ち主を引けず (仕様どおり)、fixture が主張したい状態にならない
+  mkdir -p "$hang_dir/tmux-$(id -u)"; chmod 700 "$hang_dir/tmux-$(id -u)"
+  sock14="$hang_dir/tmux-$(id -u)/tt-hang-14"; tt_mksock "$sock14" || bad "🚨 HARNESS: ⑭ の socket を作れない"
+  mini="$hang_dir/mini"; mkdir -p "$mini"
+  miss=0
+  for b in ps head id dirname basename sleep rm grep sed cat mktemp chmod; do
+    src=$(command -v "$b" 2>/dev/null) || { miss=1; break; }
+    ln -sf "$src" "$mini/$b"
+  done
+  cp "$hang_dir/tmux" "$mini/tmux" 2>/dev/null || miss=1
+  if [ "$miss" -ne 0 ]; then
+    bad "🚨 HARNESS: ⑭ の最小 PATH を組めない (実装の不合格ではない)"
+  elif command -v lsof >/dev/null 2>&1 && [ -e "$mini/lsof" ]; then
+    bad "🚨 HARNESS: ⑭ の最小 PATH に lsof が入ってしまっている"
+  else
+    ( PATH="$mini"; TMUX_TMPDIR="$hang_dir"; tt_tmux_kill_socket tt-hang-14 ) \
+      >/dev/null 2>"$hang_dir/err14"; rc14=$?
+    if [ ! -S "$sock14" ]; then
+      bad "🚨 ⑭ lsof が無く生死を確認できないのに socket を消した (fail-open)"
+    elif [ "$rc14" -eq 0 ]; then
+      bad "⑭ 判定できていないのに rc=0 を返した"
+    elif ! grep -q lsof "$hang_dir/err14"; then
+      bad "⑭ 理由 (lsof が無い) が stderr に出ていない: $(cat "$hang_dir/err14")"
+    else
+      ok "⑭ lsof が無ければ何も消さず、理由つきで rc≠0 を返す (fail-closed)"
+    fi
+  fi
+  rm -f -- "$sock14"
 
   rm -rf -- "$hang_dir"; hang_dir=""
 fi
@@ -566,7 +664,10 @@ done
 # 🚨 件数を assert する (「1 件も走らないまま 0 件 fail=0 で緑」を塞ぐ)。
 # 🚨 **固定値を書かない**。旧版は dir の個数 (2 周目 P3-D) / ⑤ のファイル列の長さ (3 周目 P3) に
 # 結合しており、「対象を 1 つ減らす正しい変更」が閾値割れで red になった。可変部から導出する。
-want_checks=$(( 11 + ${#WIRED[@]} + 2 ))   # ⑥ が 8 (対象 2 件の可読性 + canary + 本走査 5) / ⑤ / ①〜④ のうち固定 4 のうち 2 は tmux 依存
+# 🚨 **新設したケースを式に足し忘れると、そのケースを丸ごと消しても緑になる**
+# (実測 2026-09-15: 式が 15 のまま実測 21 件で、⑦〜⑫ の 6 件を全部消しても `21-6 >= 15` で通った)。
+# 内訳: ⓪ 2 + ⑥ 7 + ①〜④ 4 + ⑤ ${#WIRED[@]} + ⑦〜⑭ 8
+want_checks=$(( 2 + 7 + 4 + ${#WIRED[@]} + 8 ))   # ⑦〜⑭ = 8
 [ "$checks" -ge "$want_checks" ] || bad "検査が $checks 件しか走っていない (${want_checks} 件以上のはず)"
 printf '\n検査 %d 件: fail=%d\n' "$checks" "$fails"
 [ "$fails" -eq 0 ] || exit 1

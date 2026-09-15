@@ -35,28 +35,30 @@
 #   ② 停止要求は空振りし、それでも socket を消すと**唯一の handle を捨てる**
 #      = 誰も触れない CPU 100% のサーバが残る (実測 2026-09-15: 23 分間回り続けた)
 #
-# 🚨 **「答えが無い」を「死んだ」と読まない**。ここが最初の実装の誤りだった (敵対レビュー P1-1):
-# 応答が無い理由は **死んでいる (消してよい)** と **ハングしている (絶対に消してはいけない)** の
-# 2 つあり、区別せずに socket を消すと**塞いだはずの穴を後始末自身が開ける**。
-# そこで判定を **alive / dead / hung の三値**にし、`dead` を確認したときだけ socket を消す。
+# 🚨 **生死を client の応答から推論しない** (敵対レビュー 1 周目 P1-1 / 2 周目 P1-C)。
+# 「返らない」も「黙って終わった」も**死んだ証拠にならない**:
+#   - 無応答 = ハング (消してはいけない)
+#   - 版ずれ (`protocol version mismatch`) / `tmux` が PATH に無い / fd 枯渇でも client は
+#     **速く非 0 で終わり標準出力は空**になる。サーバは生きている
+#   - 逆に、本当に死んだサーバでも client は**非 0** で終わる (「no server running」)
+#   → 応答でも rc でも分離できない。**判定は「socket の持ち主が居るか」という観測**で行う。
+#     持ち主が居ない = dead。ここだけが socket を消してよい唯一の根拠。
 #
-# 🚨 **ハングしたサーバは自分の pid を答えられない**ので、`display -p '#{pid}'` に頼ると
-# 昇格すべき場面でだけ pid が無い、という形になる (= 昇格が実質死にコード)。
-# hung のときは **socket ファイルの持ち主を `lsof` で外から引く** (実測: `lsof -t -- <socket>` が
-# サーバの pid を返す)。撃つ前に `ps -o comm=` で素性を確かめる。
+# 🚨 **ハングしたサーバは自分の pid を答えられない**ので、昇格すべき場面でだけ pid が無い、
+# という形になる (= 昇格が実質死にコード)。持ち主は `lsof` で外から引く。
+# 🚨 **lsof が無い環境では生死を確認できない**ので、その場合は**何も消さず** rc=1 を返す
+# (fail-closed)。この repo は macOS 専用で `/usr/sbin/lsof` は常在するため実害は無い。
 
 # tt__run_bounded は <コマンド> を最大 <秒> だけ走らせ、最初の 1 行を <出力変数> へ返す。
-# 戻り値: 0 = コマンドが自分で終了した (出力が空なら「答えなし」) / 2 = **時間切れ** (無応答)。
-# 🚨 この 2 つを呼び出し側へ**区別して**返すのが本ヘルパーの役目 (丸めると上記 P1-1 になる)。
+# 戻り値: 0 = コマンドが自分で終了した / 2 = **時間切れ** (無応答)。
+# 🚨 **呼び出し側は必ず `|| ...` で受ける**。`set -e` の呼び出し元 (trap から呼ぶテストがある) では、
+# 受けそこねた 1 箇所でシェルが即死し、**昇格も stderr の案内も丸ごと飛ぶ** (2 周目 P1-A の実測)。
 # 時間切れのときは待ち続けている子を KILL する (EOF と時間切れを rc で見分けてから撃つ。
 # 既に終了した pid を撃つと、pid 再利用で無関係なプロセスに当たりうる)。
-# process substitution の中は `exec` で置き換える。bash は**単純コマンドなら暗黙に exec する**ので
-# 今の呼び出しでは差が出ない (実測 2026-09-15: `exec` を外す変異は全ケース緑 = 等価変異)。
-# 複合コマンドを渡す呼び出しが増えた瞬間に `$!` がサブシェルを指し、撃っても実体が孤児として
-# 残るようになるため、明示のまま残す。
-# 🚨 fd は 199 を使う。`exec 9<` は**呼び出し元の fd 9 を奪って閉じる**ので、将来 fd 9 で
-# lock を持つコードが入ると無言で解放される (repo 全体で fd 9 の利用は現在 0 件だが、
-# 番号を譲っておく方が安い)。
+# process substitution の中は `exec` で置き換える。bash は単純コマンドなら暗黙に exec するので
+# 今の呼び出しでは差が出ない (実測: `exec` を外す変異は全ケース緑 = 等価変異) が、複合コマンドを
+# 渡す呼び出しが増えた瞬間に `$!` がサブシェルを指し、撃っても実体が孤児として残る。
+# 🚨 fd は 199 を使う。`exec 9<` は**呼び出し元の fd 9 を奪って閉じる**。
 tt__run_bounded() { # tt__run_bounded <出力変数名> <秒> <コマンド...>
   local __var="$1" __secs="$2"; shift 2
   local __line="" __pid="" __rc=0 __ret=0
@@ -83,56 +85,36 @@ tt__wait_gone() { # tt__wait_gone <pid> <回数>
   ! kill -0 "$p" 2>/dev/null
 }
 
-# tt__probe は `-L <name>` のサーバの状態を alive / dead / hung の**三値**で返す。
-# TT_PROBE_STATE / TT_PROBE_PID / TT_PROBE_PATH に入れる (pid と path は 1 往復で取るので、
-# 「pid は本物・path は捏造」のような分離した嘘は作れない)。
-tt__probe() { # tt__probe <-L の名前>
-  local name="$1" ans="" rc=0
-  TT_PROBE_PID=""; TT_PROBE_PATH=""
-  tt__run_bounded ans 3 tmux -L "$name" display -p '#{pid} #{socket_path}' || rc=$?
-  if [ "$rc" -eq 2 ]; then TT_PROBE_STATE=hung; return 0; fi
-  case "$ans" in
-    *' '*) TT_PROBE_STATE=alive; TT_PROBE_PID="${ans%% *}"; TT_PROBE_PATH="${ans#* }" ;;
-    *)     TT_PROBE_STATE=dead ;;
-  esac
-  # 🚨 pid は **後で `kill` に渡る**のでここがゲート。範囲式 `[0-9]` はロケール次第で全角を通すため
-  # 明示列挙で書き、桁数も抑える (`shell-numeric-gate-explicit-digits.md`)。`0` と負値は
-  # プロセスグループ / 全プロセスを意味するので通さない。
-  case "$TT_PROBE_PID" in ''|0|*[!0123456789]*) TT_PROBE_PID="" ;; esac
-  [ "${#TT_PROBE_PID}" -le 9 ] || TT_PROBE_PID=""
-  return 0
-}
-
-# tt__pid_of_socket は socket ファイルの持ち主を外から引く (ハング中のサーバは自分では答えられない)。
-# 曖昧なとき (複数ヒット / lsof が無い / 数字以外) は**何も返さない** = 撃たない側へ倒す。
+# tt__pid_of_socket は socket ファイルの**持ち主**を外から引く (生死判定の唯一の根拠)。
+# 戻り値: 0 = 引けた (持ち主が居れば stdout に pid、居なければ空) / 1 = **引けなかった** (lsof が無い)。
+# 曖昧なとき (複数ヒット / 数字以外) は空を返すが rc=0 にはしない (撃たない・消さない側へ倒す)。
 tt__pid_of_socket() { # tt__pid_of_socket <socket パス>
   local out="" dir=""
-  command -v lsof >/dev/null 2>&1 || return 0
-  # 🚨 **実パスへ解決してから引く**。lsof は symlink を辿らないので、macOS の
-  # `/tmp` → `/private/tmp` を経由したパスでは**常に空を返す** (= 回収できないのに
-  # 「持ち主が居ない」と読める。実測 2026-09-15)。組み立てたパスは必ずこの形になる。
+  command -v lsof >/dev/null 2>&1 || return 1
+  # 🚨 **lsof は「プロセスが bind した文字列そのもの」と照合する** (実測 2026-09-15:
+  # `/tmp/...` へ bind した socket は `/tmp/...` では当たるが `/private/tmp/...` では当たらない)。
+  # tmux は bind の前に tmpdir を実パスへ解決するので、こちらも `pwd -P` で揃える必要がある。
+  # 副作用として**別名 (symlink / hard link) 経由では当たらない**ことも実測済みで、
+  # 「socket dir に本番への別名を置いて撃たせる」経路はここで成立しない。
   dir=$(cd -- "$(dirname -- "$1")" 2>/dev/null && pwd -P) || return 0
   out=$(lsof -t -- "$dir/$(basename -- "$1")" 2>/dev/null | head -2)
-  # 🚨 **basename が symlink でも実体へは届かない** (実測 2026-09-15: `lsof -t -- <symlink>` は
-  # 空を返す。実体のパスなら pid を返す)。`pwd -P` が解決するのは dir 側だけなので、
-  # 「socket dir に本番 socket への別名を置いて撃たせる」経路はここで成立しない。
-  # 追従するようになったら `default` の除外 (呼び出し側) は basename しか見ていないので素通りする
   case "$out" in ''|*[!0123456789]*) return 0 ;; esac   # 複数行は改行を含むのでここで落ちる
   printf '%s' "$out"
-}
-
-# tt__rm_socket は socket ファイルを消す。**死亡を確認した経路からしか呼ばない**。
-tt__rm_socket() { # tt__rm_socket <socket パス>
-  case "${1##*/}" in default) return 0 ;; esac
-  [ -S "$1" ] && rm -f -- "$1"
   return 0
 }
 
-# tt_tmux_kill_socket は `-L <name>` のサーバを止め、**死んだことを確認してから** socket ファイルを
-# 消す。サーバが既にいなければ、既定の socket dir から名前で組み立てて消す (中断で trap が
-# 走らなかった前回の残骸を、次の run が回収できるようにするため)。
+# tt__rm_socket は socket ファイルを消す。**持ち主が居ないことを確認した経路からしか呼ばない**。
+tt__rm_socket() { # tt__rm_socket <socket パス>
+  case "${1##*/}" in default) return 0 ;; esac
+  if [ -S "$1" ]; then rm -f -- "$1"; fi
+  return 0
+}
+
+# tt_tmux_kill_socket は `-L <name>` のサーバを止め、**持ち主が居ないことを確認してから**
+# socket ファイルを消す。サーバが既にいなければ、既定の socket dir から名前で組み立てて消す
+# (中断で trap が走らなかった前回の残骸を、次の run が回収できるようにするため)。
 tt_tmux_kill_socket() { # tt_tmux_kill_socket <-L の名前>
-  local name="$1" path="" pid="" comm=""
+  local name="$1" path="" pid="" ans="" comm="" owner="" lsof_ok=0
   # shellcheck disable=SC2034 # discard は tt__run_bounded へ**名前で**渡す出力先 (間接代入)
   local discard=""
   [ -n "$name" ] || return 0
@@ -143,32 +125,44 @@ tt_tmux_kill_socket() { # tt_tmux_kill_socket <-L の名前>
   # `mktemp` が失敗して空になり、**tmux は TMUX_TMPDIR が空 / 不在だと
   # /private/tmp/tmux-<uid>/ へフォールバックする** (実測: 空・不在・未設定の 3 形とも同じ)。
   # 名前で弾けば、隔離が何段崩れても本番へは届かない。
-  # (`list-masked-failure-modes-before-removing-guard.md`: 「冗長」と書いた防御が
-  #  実際には kill 経路を 1 mm も守っていなかった)
   case "$name" in default) return 0 ;; esac
-  tt__probe "$name"
-  pid="$TT_PROBE_PID"; path="$TT_PROBE_PATH"
+  # 生きているうちに pid と実パスを 1 往復で取る (取れなくてもよい。生死の判定には使わない)
+  tt__run_bounded ans 3 tmux -L "$name" display -p '#{pid} #{socket_path}' || :
+  case "$ans" in
+    *' '*) pid="${ans%% *}"; path="${ans#* }" ;;
+  esac
+  # 🚨 pid は **後で `kill` に渡る**のでここがゲート。範囲式 `[0-9]` はロケール次第で全角を通すため
+  # 明示列挙で書き、桁数も抑える (`shell-numeric-gate-explicit-digits.md`)。`0` と負値は
+  # プロセスグループ / 全プロセスを意味するので通さない。
+  case "$pid" in ''|0|*[!0123456789]*) pid="" ;; esac
+  if [ "${#pid}" -gt 9 ]; then pid=""; fi
   if [ -z "$path" ]; then
-    # 答えが無かった (死んでいる / 返らない): 既定の場所を組み立てる (TMUX_TMPDIR を尊重する)
     path="${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)/$name"
   fi
   # パス側でももう一度弾く (名前は default でなくても、組み立てたパスが本番を指す形を防ぐ)。
   # 🚨 **こちらは二重の保険であって主防御ではない**。主防御は関数の先頭の名前チェック。
-  # 🚨 **kill より前に置く**。KILL を撃つようになったので、rm の手前だけでは遅い
-  # (敵対レビューが decoy サーバで「ここが load-bearing」だと実証した)。
+  # 🚨 **kill より前に置く**。KILL を撃つようになったので、rm の手前だけでは遅い。
   case "${path##*/}" in default) return 0 ;; esac
   # 🚨 `~/.config/tmux-protected-sockets` (bin/tmux shim が読む一覧) は**ここでは見ない**。
-  # 正規化と照合を別実装で持つと 2 つの判定が必ず食い違う (`adversarial-review-own-safeguards.md`
-  # §0-B)。主防御は名前チェックで、テストが渡すのは自分で作った `-L <prefix>-$$` だけ。
-  # **trigger: その一覧が非空になったら** shim 側へ公開関数を作ってここから呼ぶ (今は空なので実害なし)。
-  [ "$TT_PROBE_STATE" = dead ] && { tt__rm_socket "$path"; return 0; }
-  tt__run_bounded discard 3 tmux -L "$name" kill-server
-  tt__probe "$name"
-  [ -n "$TT_PROBE_PID" ] && pid="$TT_PROBE_PID"
-  [ "$TT_PROBE_STATE" = dead ] && { tt__rm_socket "$path"; return 0; }
-  # まだ生きている / 返らない。pid を確定させて KILL へ昇格する。
-  # 🚨 hung のときは相手が自分の pid を答えられないので、socket の持ち主を外から引く。
-  [ -n "$pid" ] || pid=$(tt__pid_of_socket "$path")
+  # 正規化と照合を別実装で持つと 2 つの判定が必ず食い違う (§0-B)。主防御は名前チェックで、
+  # テストが渡すのは自分で作った `-L <prefix>-$$` だけ。
+  # **trigger: その一覧が非空になったら** shim 側へ公開関数を作ってここから呼ぶ。
+  owner=$(tt__pid_of_socket "$path") && lsof_ok=1
+  if [ "$lsof_ok" = 0 ]; then
+    printf 'tt_tmux_kill_socket: lsof が無く生死を確認できない (socket=%s)。何もしない\n' "$path" >&2
+    return 1
+  fi
+  # 🚨 `set -e` の呼び出し元 (trap から呼ぶテストがある) では、**受けそこねた素のコマンドの
+  # 非 0 でそこから先が丸ごと飛ぶ** (2 周目 P1-A: 停止要求が rc=2 を返して昇格も案内も消えた)。
+  # ただし `[ cond ] && { ...; }` の**条件が偽**は errexit の対象外 (AND-OR の最後以外は適用
+  # されない。実測 2026-09-16 で確認。`if` にしたのは読みやすさのためで、安全性の差は無い)
+  if [ -z "$owner" ]; then tt__rm_socket "$path"; return 0; fi   # 持ち主が居ない = dead
+  tt__run_bounded discard 3 tmux -L "$name" kill-server || :
+  owner=$(tt__pid_of_socket "$path") || :
+  if [ -z "$owner" ]; then tt__rm_socket "$path"; return 0; fi
+  # まだ持ち主が居る。pid を確定させて KILL へ昇格する。
+  # 🚨 hung のときは相手が自分の pid を答えられないので、持ち主の pid をそのまま使う。
+  [ -n "$pid" ] || pid="$owner"
   if [ -n "$pid" ]; then
     # **撃つ直前に**素性を取り直す (聞いた時点の pid が既に死んで再利用されていると、
     # 無関係なプロセスを撃つ。窓は 0 にはならない = 残留リスクとして受容)。
@@ -179,10 +173,11 @@ tt_tmux_kill_socket() { # tt_tmux_kill_socket <-L の名前>
       kill -KILL "$pid" 2>/dev/null || :
       tt__wait_gone "$pid" 40 || :
     fi
-    if ! kill -0 "$pid" 2>/dev/null; then tt__rm_socket "$path"; return 0; fi
+    owner=$(tt__pid_of_socket "$path") || :
+    if [ -z "$owner" ]; then tt__rm_socket "$path"; return 0; fi
   fi
-  printf 'tt_tmux_kill_socket: サーバを止められない (state=%s pid=%s socket=%s)。socket は残す。\n' \
-    "$TT_PROBE_STATE" "${pid:-不明}" "$path" >&2
+  printf 'tt_tmux_kill_socket: サーバを止められない (owner=%s socket=%s)。socket は残す。\n' \
+    "${owner:-不明}" "$path" >&2
   printf '  回収: lsof -t -- %s で pid を引いて kill -9 する\n' "$path" >&2
   return 1
 }

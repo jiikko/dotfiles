@@ -41,11 +41,12 @@ mkdir -p "$BIN"
 . "$ROOT_DIR/tests/tmux/lib/kill_socket.sh"
 cleanup() {
   # 🚨 rc≠0 = **サーバが生き残った** (issue 377)。握り潰すと残骸が無言で積まれるので、
-  # このテスト自身を失敗させる (`set -e` は無いので明示的に拾う)
+  # このテスト自身を失敗させる。🚨 **EXIT trap の中では `return` では終了コードが変わらない**
+  # (実測: `cleanup(){ return 1; }` + `exit 0` は rc=0)。`exit` を呼ぶこと
   tt_tmux_kill_socket "$SOCK" || {
     printf '✗ 隔離サーバを止められなかった (上の stderr の回収手順を実行すること)\n' >&2
     rm -rf "$TMP_DIR"
-    return 1
+    exit 1
   }
   rm -rf "$TMP_DIR"
 }
