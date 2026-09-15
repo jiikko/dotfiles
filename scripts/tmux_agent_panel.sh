@@ -54,8 +54,8 @@ render_panes() {
 
 
 # 復元中 / bootstrap 判定 (tt_restore_in_progress / tt_only_hold_sessions)。
-# デフォルト表示 (@agent_panel_on を conf が立てる) のため、サーバ起動直後の hook でも
-# follow が走る。復元前に panel pane を作ると「総 pane 数 = 1」を破って resurrect の
+# panel が ON の間は、サーバ起動直後の hook でも follow が走る (既定は非表示。conf 側の
+# @agent_panel_on の節を参照)。復元前に panel pane を作ると「総 pane 数 = 1」を破って resurrect の
 # restore_from_scratch (スクロールバック復元) を不発にするため、guards で抑止する
 # shellcheck source=scripts/lib/tmux_resurrect_guards.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmux_resurrect_guards.sh"

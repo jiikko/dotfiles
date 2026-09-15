@@ -137,8 +137,11 @@ window_pane_read_callback → input_parse → input_csi_dispatch
 
 ## 対応案 (未着手。判断待ち)
 
-1. **`_tmux.conf:433` の既定を 0 にする (行を消す)**。1 行で panel の常駐露出が構造的に消え、座標も
-   テストも見た目も無変更。ただし**緩和であって修正ではない** (`C-t a` で ON にした瞬間に元のリスクへ戻る)
+1. **✅ 採用・実施済み (2026-09-15)**: `_tmux.conf` の `set -g @agent_panel_on 1` を削除し、既定を非表示にした。
+   panel の常駐露出が構造的に消える。座標・テスト・他の表示 (window-status の ⚙🔔🔕✓ / pane-border /
+   `C-t A` のジャンプ) は無変更。副次的に、window 切替ごとの kill+create と、それが誘発していた
+   toast 通知・resurrect の debounce 保存 (~20MB/回) も止まる。
+   ただし**緩和であって修正ではない** (`C-t a` で ON にした瞬間に元のリスクへ戻る)
 2. **右寄せをやめて左寄せにする** (X=0 側)。#63 で実測済み (client 80 に対し 70 セルはみ出すが無事)。
    根拠は観測行だけでなく不変条件でもある (`pane_left = 0` は常に client 幅未満)。副作用は見た目だけではない:
    toast は最下段なので**プロンプトの入力行に被り**、panel は左上なので**本文の左端を隠す**。
@@ -181,9 +184,16 @@ window_pane_read_callback → input_parse → input_csi_dispatch
 - **「Homebrew がパッチを当てているのでは」** → 却下。`INSTALL_RECEIPT.json` は `poured_from_bottle:true` /
   `used_options:[]` / `spec:"stable"`、formula の `patches` は空。入っているのは素の upstream 3.7b
 
-## 残タスク
+## 進捗
 
-- [ ] 対応案の選択 (ユーザー判断)
+- [x] 対応案の選択 → **案 1 (既定を非表示にする)** をユーザー判断で採用 (2026-09-15)
+- [x] 実施: `_tmux.conf` の `set -g @agent_panel_on 1` を削除し、理由と「変更可能になる条件」を
+      同じ場所にコメントで残した。`scripts/tmux_agent_panel.sh` の「デフォルト表示」を前提にした
+      コメントも同じ commit で直した。`make test` は EXIT=0 / 失敗 0 件 (agent_panel のテストも緑)
+- [ ] **反映は未完**: 動いているサーバには `prefix R` (reload) か次回のサーバ起動まで効かない。
+      実行時の値は既に OFF なので、reload しても ON には戻らない
+
+## 残タスク
 - [ ] **実測ハーネス側の穴**: `verify*.py` の `case()` は後始末で `kill -9 <server pid>` を撃つだけで
       **死んだことを確認していない**。実際にケース 24 のハングしたサーバが生き残り、**23 分間 CPU 100% で
       回り続けていた** (手で `kill -9` して回収。2026-09-15)。再実行する人は同じ残骸を作るので、
