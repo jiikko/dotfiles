@@ -169,7 +169,7 @@ deferred `Cleanup` の箇所も数える設計にすること**。①だけを�
 - [x] `Renew` の失敗を「lease 喪失（122）」と「判定不能（125）」に分ける
 - [x] 091:496 の受け入れ条件テストを追加（**既存の包み 5 箇所も含めて**）
 - [x] 変異検証: 包みを外す変異でそのテストの該当ケースが red になることを確認（7 本 + 配線 2 本）
-- [ ] 実 SMB での再現（human issue。下の「残タスク」）
+- [x] 実 SMB での再現 → [issue 375](375-human-verify-lockman-io-timeout-on-smb.md) へ起票
 
 ## 決めたこと（実装で分岐した点）
 
@@ -234,9 +234,8 @@ issue の 🚨 が「①だけを数える検査は②を素通りさせる」�
 ## 残タスク
 
 - **未検証**: smbfs のサーバ不達が実際に `readLock` / `serverNow` / `OpenFile` の
-  どこでブロックするか。**再開の trigger**: 実 SMB 共有で `with` 実行中にサーバを
-  落として再現できたとき。README「実機で測っていない前提」の 4 項目と同じ扱いで、
-  人が測る作業なので human issue に起こす価値がある
+  どこでブロックするか → **[issue 375](375-human-verify-lockman-io-timeout-on-smb.md) に
+  human issue として起こした**（期限 2026-10-15）。手順と記録してほしい実測値はそちら
 - ~~**未再現**: ②（deferred `Cleanup`）の詰まり~~ → **再現した**（2026-09-15）。
   `.cleanup_at` を FIFO にすると `stampCleanup` の write-only open がブロックする。
   「FIFO では作れない」は sweep しか見ていなかった誤り
