@@ -105,6 +105,9 @@ local function set_keymaps()
   map("n", "<leader>N", function()
     copy_and_notify(("%s:%d"):format(vim.fn.expand("%:~:."), vim.api.nvim_win_get_cursor(0)[1]))
   end, silent)
+  -- gf でも行番号付きパス (file:12 = <leader>N が作る形式) の行まで飛ぶ (既定の gF の挙動)。
+  -- gF は既定のまま。
+  map({ "n", "x" }, "gf", "gF")
   -- ハイライト検索時にカーソルを次の候補に移動しない
   map("n", "*", "*N", silent)
   map("n", "#", "#N", silent)
