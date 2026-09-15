@@ -305,6 +305,16 @@ ubuntu から移した」と書いており、README だけが取り残されて
   claim = 着手中の宣言なので、放置すると他マシンから「誰かがやっている」に見えて
   二重着手の防止ではなく**着手の阻止**として働く（ユーザー判断で解除）。
   **本 issue に着手する人は、改めて `next/` へ claim を置いてから始めること**
+- 2026-09-16: **[366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) は解消**。
+  原因はハーネスではなく **production の race** で、`tryTakeover` の「期限切れと判定 →
+  rename で退ける」が TOCTOU だった (2 人目が 1 人目の置いたばかりの lock を退けてから
+  自分の lock を置く)。調停 (観測した世代から決まる名前を O_EXCL) + 破壊的操作の直前の
+  再照合 + 放棄された目印の回収、の 3 つで閉じた。
+  **この監査が攻めていなかった範囲がもう 1 つ出た**: 同じ「照合してから名前へ破壊的操作」の
+  形が `Renew` / `Release` にもあり、どちらも実験で再現した →
+  **[380](380-bug-lockman-renew-and-release-act-on-name-after-check.md)** として起票 (継続)。
+  下の `--io-timeout` 無検証は 380 の猶予 (`takeoverClaimGrace`) にも効くので、
+  356 / 357 / 362 とまとめて直すときに一緒に見る
 - 2026-09-12: **358 の敵対レビュー 5 周目が、この監査が攻めていなかった範囲を 3 件出した**。
   掃除機構の内側は 358 で解消 (`sub` 軸の fail-closed / 打刻の失敗の伝播 / `serverNow` の
   良性判定)。外側は **[362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md)**
