@@ -172,3 +172,18 @@ CLAUDE.md「Issue管理」は done へ移す commit で参照元の open issue �
 テストの fixture も、最初は自分が想定した理想形（`106 で解消。`）を書いていた
 （[`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) の
 「fixture を検査対象が壊れない形に選んでいないか」）。実際の書き方へ差し替えてある。
+
+## 追記 (2026-09-15) — 「検出しないと決めた形」に誤報方向が抜けていた
+
+[issue 353](../353-bug-issue-progress-check-counts-other-sessions-commits.md) の決着に伴う追記。
+
+- [x] 「検出しないと決めた形」に**誤報方向**（他セッションの commit が
+      こちらの「作業対象」として指摘される）を書き足した。元は**抑止方向だけ**で、
+      実際に出たのは誤報方向だった
+- [x] しかもその誤報は `:139`（`is_changed` が true のときだけ到達する行）が作っており、
+      **339 が「安全」と認定した `changed` 側**が出典だった
+- 353 は **(A) 直さない**で決着。hook のヘッダに両方向と再評価 trigger を書いた
+
+### 残タスク
+
+- (なし。353 側で閉じた)

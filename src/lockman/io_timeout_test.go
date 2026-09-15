@@ -171,7 +171,7 @@ func TestWithSeparatesLostLeaseFromIndeterminate(t *testing.T) {
 			const ttl = 600 * time.Millisecond // tick = ttl/renewDivisor = 200ms
 			go func() {
 				// lock が置かれるのを待ってから壊す (壁時計で待たない)
-				for i := 0; i < 400; i++ {
+				for range 400 {
 					if _, err := os.Stat(l.lockPath()); err == nil {
 						c.breakIt(t, l)
 						return

@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"runtime"
 	"syscall"
 	"testing"
 	"time"
@@ -24,7 +25,7 @@ func TestOnLostKillEscalatesToSigkill(t *testing.T) {
 	}
 	const ttl = 600 * time.Millisecond // tick = 200ms
 	go func() {
-		for i := 0; i < 400; i++ {
+		for range 400 {
 			if _, err := os.Stat(l.lockPath()); err == nil {
 				_ = l.Break() // 他者が引き継いだ = lease 喪失
 				return
@@ -50,7 +51,7 @@ func TestOnLostWarnDoesNotKillChild(t *testing.T) {
 	}
 	const ttl = 600 * time.Millisecond
 	go func() {
-		for i := 0; i < 400; i++ {
+		for range 400 {
 			if _, err := os.Stat(l.lockPath()); err == nil {
 				_ = l.Break()
 				return
@@ -83,4 +84,48 @@ func shortenOnLostGrace(t *testing.T, d time.Duration) func() {
 	old := onLostGracePeriod
 	onLostGracePeriod = d
 	return func() { onLostGracePeriod = old }
+}
+
+// 🚨 更新が詰まったとき、tick ごとに goroutine を積まないこと。
+//
+// `with` は lockman で唯一の長寿命モードなので、包んだ `Renew` が毎 tick ブロックすると
+// `withTimeout` が見捨てた goroutine が溜まり続ける (回収できない)。issue 359 の項目 4 が
+// 「357 を実装したら上限を置くか決めろ」と trigger を残していた箇所。
+//
+// 判定は**時間ではなく本数**で行う。上限が無い版はこの条件で 10 本以上積む
+// (tick 200ms x 子の寿命 3s)。上限が在れば 1 本。
+func TestRenewDoesNotPileUpGoroutinesWhenBlocked(t *testing.T) {
+	l, err := NewLocker(t.TempDir(), testIOTimeout)
+	if err != nil {
+		t.Fatalf("NewLocker: %v", err)
+	}
+	const ttl = 600 * time.Millisecond // tick = 200ms
+	go func() {
+		for range 400 {
+			if _, err := os.Stat(l.lockPath()); err == nil {
+				// 詰まらせる (消してから作ると errNotOwner を拾う窓ができるので rename で被せる)
+				tmp := l.lockPath() + ".fifo"
+				if err := syscall.Mkfifo(tmp, 0o600); err != nil {
+					return
+				}
+				_ = os.Rename(tmp, l.lockPath())
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+
+	before := runtime.NumGoroutine()
+	// --on-lost warn (kill しない) にして、子が生きているあいだ tick を回し続けさせる
+	got := boundedInt(t, "runWith (詰まった renew)", func() int {
+		return runWith(l, ttl, "", false, []string{"sh", "-c", "sleep 3"})
+	})
+	if got != exitWithInvalid {
+		t.Fatalf("exit %d (期待 %d = 判定不能)", got, exitWithInvalid)
+	}
+	leaked := runtime.NumGoroutine() - before
+	// 見捨てるのは詰まった Renew 1 本だけ。余裕を見て 3 本までを許す
+	if leaked > 3 {
+		t.Fatalf("詰まった renew が %d 本の goroutine を積んだ (期待: 1 本。上限が効いていない)", leaked)
+	}
 }

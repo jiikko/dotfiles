@@ -94,8 +94,12 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	// done は select ループが 1 回だけ受け取る (受け手を 2 つにしない)。
 	exited := make(chan struct{})
 	go func() {
-		done <- cmd.Wait()
+		err := cmd.Wait()
+		// 🚨 **close が先**。done を先に送ると、main が受け取って return した後も
+		// 昇格ゴルーチンが猶予待ちで残る窓ができる。その間に pgid が再利用されると
+		// **無関係なプロセスグループへ SIGKILL を撃つ** (issue 340 項目 2 と同クラス)。
 		close(exited)
+		done <- err
 	}()
 	var escalate sync.Once
 
@@ -115,6 +119,14 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 				if outcome == renewOK {
 					outcome = classifyRenewErr(err)
 				}
+				// 🚨 **一度失敗したら更新をやめる。** `with` は唯一の長寿命モードなので、
+				// 応答しないマウントでは `RenewTimed` が **tick ごとに 1 goroutine +
+				// 1 ブロック中 syscall を積む** (`withTimeout` は見捨てた goroutine を
+				// 回収できない。util.go の 🚨)。outcome は sticky で、ここから先の更新は
+				// 結論を変えないので、積む理由が無い (issue 359 の項目 4 が
+				// 「357 を実装したら上限を置くか決めろ」と trigger を残していた)。
+				// これで 1 回の with で見捨てる goroutine は**最大 1 本**に収まる。
+				ticker.Stop()
 				if outcome == renewLost {
 					warnf("lease を失った: %v", err)
 				} else {
@@ -126,7 +138,7 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 				// 🚨 **昇格は 1 回だけ**。tick ごとに撃ち直すと猶予が毎回振り出しに戻り、
 				// SIGKILL へ永久に到達しない (上限の無い再試行は上限が無いのと同じ)。
 				if onLostKill {
-					escalate.Do(func() { go escalateGroupKill(pgid, exited) })
+					escalate.Do(func() { go escalateGroupKill(pgid, exited, onLostGracePeriod) })
 				}
 			}
 		case err := <-done:
@@ -161,6 +173,8 @@ func childExitCode(err error) int {
 // onLostGracePeriod は SIGTERM を撃ってから SIGKILL へ昇格するまでの猶予。
 // 🚨 これは「待ち」ではなく**仕様値** — 子に後片付けの機会を与えるための窓で、
 // 縮めると trap を書いた子が片付け切れない。テストが差し替えるので var。
+// 🚨 **読むのは runWith の goroutine だけ** (昇格側へは引数で渡す)。ここから直接読むと
+// テストの差し替えと data race になる (go test -race が実際に検出した)。
 var onLostGracePeriod = 5 * time.Second
 
 // escalateGroupKill は lease を失ったときに子のグループを**確実に**止める。
@@ -172,7 +186,7 @@ var onLostGracePeriod = 5 * time.Second
 //
 // 🚨 届く範囲はプロセスグループに残った子孫まで。**`setsid()` した子孫には届かない**
 // (runWith の Setpgid の注記を参照)。
-func escalateGroupKill(pgid int, exited <-chan struct{}) {
+func escalateGroupKill(pgid int, exited <-chan struct{}, grace time.Duration) {
 	if err := killGroup(pgid, syscall.SIGTERM); err != nil {
 		warnf("%v", err)
 		return
@@ -180,9 +194,9 @@ func escalateGroupKill(pgid int, exited <-chan struct{}) {
 	select {
 	case <-exited:
 		return // 猶予の内に終わった
-	case <-time.After(onLostGracePeriod):
+	case <-time.After(grace):
 	}
-	warnf("子が %v 以内に終わらないので強制終了する (lease は既に他者が持っている)", onLostGracePeriod)
+	warnf("子が %v 以内に終わらないので強制終了する (lease は既に他者が持っている)", grace)
 	_ = killGroup(pgid, syscall.SIGKILL)
 }
 
