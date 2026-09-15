@@ -30,7 +30,7 @@ render-markdown.nvim の設定を案 B へ寄せる commit (cde29e5e) まで。
 「隔離環境での *失敗* も本番の失敗ではない」がそのまま当たっており、
 そこに書かれている「nvim -l はユーザー設定を読まない」の隣の形 (`-u` は読むが描画しない)。
 
-→ 切り出し先: [`instrument-before-second-fix.md`](../_claude/rules/instrument-before-second-fix.md)
+→ 切り出し先: [`instrument-before-second-fix.md`](../../_claude/rules/instrument-before-second-fix.md)
 への**追記**。issue 368 の項目 3 が同じ節へ足そうとしている
 「nvim なら `--server <socket> --remote-expr` で生きているセッションを直接読める」の隣に、
 **「headless / `-u` の nvim は設定を読むが、描画・モード遷移・win_options の復元は起きない。
@@ -45,7 +45,7 @@ advisor の指摘で「主訴はまだ一度も再現していない」と認め
 **insert モードに入った瞬間**で、toggle ですらなかった。
 
 機構を見つけたことと、それが主訴の原因であることは別。
-→ 切り出し先: **なし**。[`instrument-before-second-fix.md`](../_claude/rules/instrument-before-second-fix.md)
+→ 切り出し先: **なし**。[`instrument-before-second-fix.md`](../../_claude/rules/instrument-before-second-fix.md)
 の「『何度直しても直らない』と言われたら、まず非対称を特定する」が既に同じことを言っている
 (今回は「どの操作で起きるか」を聞く前に機構の説明を始めた)。実例として rationale 側へ。
 
@@ -57,7 +57,7 @@ advisor の指摘で「主訴はまだ一度も再現していない」と認め
 **採用後は見出しの文字色だけ残る**という差があり、提示で断り書きが要った。
 
 → 切り出し先: **却下 (既存で足りる)**。
-[`decide-layout-in-sample-renderer-first.md`](../_claude/rules/decide-layout-in-sample-renderer-first.md)
+[`decide-layout-in-sample-renderer-first.md`](../../_claude/rules/decide-layout-in-sample-renderer-first.md)
 に issue 368 項目 1 の「見本は実物の分布で描く」を足す話が既にあり、
 今回の「見本は本体の一部 (hl 設定) を再現していない」も同じ節の射程。
 368 の切り出しにこの形を 1 行足せば足りる。

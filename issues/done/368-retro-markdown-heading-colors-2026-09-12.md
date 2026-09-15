@@ -14,7 +14,7 @@
 
 見本は「レイアウトが崩れないか」は見られるが、**変更の可視性**は実物の分布でしか見えない。
 
-→ 切り出し先: [`decide-layout-in-sample-renderer-first.md`](../_claude/rules/decide-layout-in-sample-renderer-first.md)
+→ 切り出し先: [`decide-layout-in-sample-renderer-first.md`](../../_claude/rules/decide-layout-in-sample-renderer-first.md)
 への**追記**。既存の「繰り返す単位が複数あるレイアウトは複数単位を描く」の隣に、
 「**見本は実物の分布で描く (要素の出現比が違うと、変更が見えない画面ができる)**」を足す。
 発動点が同じ (見本を作る瞬間) なので新規ルールにはしない。
@@ -33,7 +33,7 @@
 捉えられない* 形で、こちらは **観測装置が黙って無効化され、無効化された結果が正常な
 出力と区別できない** 形。
 
-→ 切り出し先: [`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)
+→ 切り出し先: [`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md)
 への**追記**。「抽出・判定を書いたら canary を置く」節の隣に、
 「**見本 / 検証スクリプトが複数の派生を持つなら、派生どうしが違う値を出すことを確かめる
 (同じ値なら片方が適用されていない)**」を足す。
@@ -51,7 +51,7 @@ nvim --headless --server "$sock" --remote-expr 'luaeval("...")'
 これで「設定は入っている (H1fg=#fe8019 / pos=inline)」「画面に出ている見出しは H3 が 4 つ」
 が同時に取れ、原因が**設定ではなくスクロール位置**だと 1 手で確定した。
 
-→ 切り出し先: [`instrument-before-second-fix.md`](../_claude/rules/instrument-before-second-fix.md)
+→ 切り出し先: [`instrument-before-second-fix.md`](../../_claude/rules/instrument-before-second-fix.md)
 への**追記**。「手元で再現しないなら、動いているプロセスの env / cwd / 起動時刻を読む」節に
 「**nvim なら `--server <socket> --remote-expr` で生きているセッションの状態を直接読める**」
 を 1 行足す (`ps eww` の nvim 版)。
