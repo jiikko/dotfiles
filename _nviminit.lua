@@ -987,24 +987,33 @@ require("lazy").setup({
       "nvim-treesitter/nvim-treesitter",
       "nvim-tree/nvim-web-devicons",
     },
-    -- 挿入モードでは装飾を消して生テキストに戻す (編集中に装飾が邪魔にならない)。
-    -- 読むとき (ノーマルモード) だけインライン装飾が乗る。
+    -- 🚨 insert でも装飾を維持する。{ "n", "c" } にすると insert に入った瞬間に
+    -- バッファ全体の装飾が剥がれ、conceal されていた `` ` `` / ** / リンクが一斉に戻って
+    -- 折り返しが変わり、画面が飛ぶ。カーソル行だけは anti_conceal が生に戻すが、
+    -- それは normal モードでも同じなので insert で新たに崩れるものはない。
     opts = {
-      render_modes = { "n", "c" },
+      render_modes = true,
       -- 見出しアイコンは差し込み ('#' を conceal) にして、全レベルで左端を揃える。
       -- 既定の overlay は「'#' の数 + 1 - アイコン幅」ぶんの空白を前に詰めるため
       -- (render/markdown/heading.lua の Render:marker)、深い見出しほど右にずれて見える。
-      heading = { position = "inline" },
+      -- 帯 (backgrounds) は持たず、階層は下の heading_fg の文字色だけで出す。
+      -- プラグインの帯は Diff 系から取るが (colors.lua の H1Bg=DiffText 等)、retrobox は
+      -- DiffText/DiffAdd/DiffChange/DiffDelete が全部 bg=#1c1c1c = Normal と同色なので、
+      -- 256色運用では H1〜H4 の帯が丸ごと消え、H5/H6 だけ見える逆転になる (実測 2026-09-12)。
+      heading = { position = "inline", backgrounds = {} },
+      -- 🚨 border は "thin" にする。nvim 0.11 の既定 "hide" は ``` の行を conceal_lines で
+      -- 丸ごと消すため、装飾が外れるたびに code block 1 個につき 2 行ぶん画面が動く。
+      code = { style = "full", border = "thin" },
+      -- 上下の枠線は虚行なので、出すとテーブル 1 個につき 2 行ぶん高さが動く。
+      -- 実測 2026-09-15: docs/README.md (テーブル 6 個) を幅 120 で開くと 119 行 → 98 行。
+      pipe_table = { style = "normal", border_enabled = false },
+      sign = { enabled = false },
     },
     config = function(_, opts)
       require("render-markdown").setup(opts)
-      -- 🚨 見出しの色は colorscheme が空けた穴を埋めるためにここで持つ。
+      -- 🚨 見出しの文字色は colorscheme が空けた穴を埋めるためにここで持つ。
       -- gruvbox / retrobox はどちらも `@markup.heading.N.markdown` を定義せず
       -- `@markup.heading` → `Title` に落ちるため、**H1〜H6 の文字色が全部同じ**になる。
-      -- さらに render-markdown の帯は Diff 系から取るが (colors.lua の H1Bg=DiffText 等)、
-      -- retrobox は DiffText/DiffAdd/DiffChange/DiffDelete が**全部 bg=#1c1c1c** =
-      -- Normal と同色なので、256色運用では H1〜H4 の帯が丸ごと消える
-      -- (逆に H5Bg=Visual / H6Bg=CursorColumn だけ見え、深い見出しほど目立つ逆転になる)。
       -- 実測 2026-09-12 (nvim_get_hl)。colorscheme 側が定義を足したらここは不要になる。
       local hl = require("dotfiles.hl")
       -- 文字色: 上位ほど暖色・強く、下位ほど寒色・低彩度 (色だけで階層を拾えるように)。
@@ -1014,19 +1023,11 @@ require("lazy").setup({
       -- (185..257 行では 6 見出し中 4 つが H3 だった)。全階層が元の色と違う必要がある。
       local heading_fg = { pal.bright_orange, pal.bright_yellow, pal.bright_aqua,
         pal.bright_blue, pal.bright_purple, pal.light4 }
-      -- 帯: 上位 3 つだけ (Normal bg は 234。濃さでも階層が出る)。H4 以降は色だけで帯なし
-      local heading_bg = { pal.dark1, pal.dark0_soft, pal.dark0 }
+      -- hl.set を通すのは ColorScheme 再適用のため: :colorscheme は link ごと全クリアする。
       for i = 1, 6 do
         local fg = heading_fg[i]
         hl.set("@markup.heading." .. i .. ".markdown",
           { fg = fg.hex, ctermfg = fg.cterm, bold = i <= 4 })
-        local bg = heading_bg[i]
-        -- RenderMarkdownHNBg は Diff 系への link (default=true) なので直接上書きする。
-        -- 帯なしの階層も空テーブルで明示的に潰す (link が残ると Normal と同色の帯が出る)。
-        -- hl.set を通すのは ColorScheme 再適用のため: :colorscheme は link ごと全クリアし、
-        -- render-markdown 側の reload は combine/bg_as_fg しか戻さない。
-        hl.set("RenderMarkdownH" .. i .. "Bg",
-          bg and { bg = bg.hex, ctermbg = bg.cterm } or {})
       end
     end,
     keys = {

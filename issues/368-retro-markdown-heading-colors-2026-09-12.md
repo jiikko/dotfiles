@@ -102,3 +102,17 @@ canary を「**markdown の `@markup.heading` が潰れていると報告され�
 | a8d41fa7 | 見出しアイコンを `inline` にして左端を揃える (overlay は `#` の数だけ空白を詰める) |
 | fe56c180 | H3 を緑→アクアへ (元の色を据え置くと変化が見えない画面ができるため) |
 | issue 365 | 全数勘定と、直さないと決めた 2 件の理由・trigger。done 済み |
+
+## 後日追記 (2026-09-15): 帯は廃止した
+
+「markdown が読みにくい」の相談で、見出しの帯 (4887d531 で足した `RenderMarkdownH{i}Bg` の
+上書き) を**やめた**。階層は文字色 (`@markup.heading.N.markdown`) だけで出す。
+
+- 上書きループは `heading.backgrounds = {}` にした時点で死にコードになるので同じ変更で消した。
+  文字色のループは残る (colorscheme が定義を持たない穴埋めなので、帯とは独立)
+- 帯が Diff 系から取られていて retrobox では見えない、という 4887d531 の実測 (2026-09-12) は
+  「だから帯を使わない」という形で `_nviminit.lua` の `heading` の opts コメントへ移した
+- 同じ変更で `render_modes = true` / `code.border = "thin"` / `pipe_table.style = "normal"` に
+  した。理由は**装飾の有無で画面の行数が動くのを止める**ため (insert に入るたびに画面が飛ぶ、が主訴)
+
+本 retro の残課題 (項目 1〜3 の rules への切り出し) はこの変更では消化していない。
