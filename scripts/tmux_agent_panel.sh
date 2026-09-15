@@ -60,6 +60,9 @@ render_panes() {
 # shellcheck source=scripts/lib/tmux_resurrect_guards.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmux_resurrect_guards.sh"
 # popup 専用セッション (scratch 等) の除外パターン TT_POPUP_SESSION_RE
+# shellcheck source=scripts/lib/tmux_float_geometry.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmux_float_geometry.sh"
+
 # shellcheck source=scripts/lib/tmux_popup_sessions.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tmux_popup_sessions.sh"
 
@@ -141,20 +144,18 @@ kill_panel() {
 }
 
 create_panel() {
-  local win="$1" n h w win_w x pid
+  local win="$1" n h win_w win_h pid
   n="$(list_agents | wc -l | tr -d ' ')"
   h=$((n + 2))
   [ "$h" -lt 3 ] && h=3
   [ "$h" -gt "$PANEL_MAX_H" ] && h=$PANEL_MAX_H
-  win_w="$(tmux display-message -p -t "$win" '#{window_width}' 2>/dev/null)" || return 1
-  case "$win_w" in ''|*[!0-9]*) return 1 ;; esac
-  w=$PANEL_W
-  [ "$w" -gt "$win_w" ] && w=$win_w   # 狭い window では window 幅に clamp (行は折り返る)
-  x=$((win_w - w))
-  [ "$x" -lt 0 ] && x=0
+  # 幅・高さの clamp と座標は lib に寄せてある (以前ここに別実装を持っていて、
+  # 「幅 == window 幅」を許していたため幅 150 以下の window では panel が出なかった)
+  read -r win_w win_h < <(tmux display-message -p -t "$win" '#{window_width} #{window_height}' 2>/dev/null) || return 1
+  tt_float_geom "$win_w" "$win_h" "$PANEL_W" "$h" top-right || return 1
   mark_busy
   pid="$(tmux new-pane -d -P -F '#{pane_id}' -t "$win" \
-    -x "$w" -y "$h" -X "$x" -Y 0 \
+    -x "$TT_FLOAT_W" -y "$TT_FLOAT_H" -X "$TT_FLOAT_X" -Y "$TT_FLOAT_Y" \
     -s 'fg=colour252,bg=colour233' -R 'fg=colour240' \
     -- "$SELF" render)" || return 1
   tmux set-option -g @agent_panel_pane "$pid"

@@ -102,21 +102,21 @@ fi
 # --- 本命: floating pane (tmux 3.7+) ---------------------------------------
 # new-pane の -X/-Y は floating panes 対応ビルドにのみ存在する
 if grep -q -- '-X x-position' <<< "$(tmux list-commands new-pane 2>/dev/null)"; then
+  # ジオメトリの決定は lib に寄せてある (clamp の罠の一次情報もそこ)。
+  # 🚨 lib が読めない環境 (新品チェックアウト / lib を持たない worktree) でも**非 0 で
+  # 死なないこと**: hook 経由の呼び出しが非 0 を返すとアクティブ pane に view-mode が積まれる
+  # (docs/feedback-nvim-tmux-2026-07-29.md 節 1)。読めなければ通知を諦めて exit 0 する。
+  # source を floating 経路の中に置くのは、下の tty 直描画 fallback を lib 不在でも生かすため。
+  # 🚨 自己位置の解決に外部コマンド (dirname) を使わないこと。このスクリプトは PATH を
+  # 絞った環境からも呼ばれ (tests/tmux/test_tmux_toast.sh の「python3 不在」ケース)、
+  # `set -e` 下ではコマンド置換の失敗がそのまま非 0 終了になる = hook 汚染に直結する。
+  _geom_dir="$(cd "${BASH_SOURCE[0]%/*}/../scripts/lib" 2>/dev/null && pwd)" || _geom_dir=""
+  [ -n "$_geom_dir" ] && [ -r "$_geom_dir/tmux_float_geometry.sh" ] || exit 0
+  # shellcheck source=scripts/lib/tmux_float_geometry.sh
+  . "$_geom_dir/tmux_float_geometry.sh" || exit 0
   read -r win_w win_h < <(tmux display-message -p '#{window_width} #{window_height}')
-  box_w=$((width + 4))
-  # 🚨 clamp は `-ge` で、上限は win_w ではなく win_w - 1。box_w == win_w は tmux が受理せず
-  # new-pane が失敗するため、**長い toast が一度も表示されない**状態になっていた
-  # (呼び出し元は `|| true` なので完全に無音。80 幅 window + 104 セルのメッセージで
-  # rc=1・pane 未作成を実測 2026-08-21)。閾値は決定論的 (表示幅 + 4 >= window 幅)。
-  [ "$box_w" -ge "$win_w" ] && box_w=$((win_w - 1))
-  [ "$box_w" -lt 1 ] && box_w=1
-  box_h=3
-  [ "$box_h" -ge "$win_h" ] && box_h=$((win_h - 1))
-  [ "$box_h" -lt 1 ] && box_h=1
-  x=$((win_w - box_w))
-  y=$((win_h - box_h))
-  [ "$x" -lt 0 ] && x=0
-  [ "$y" -lt 0 ] && y=0
+  tt_float_geom "$win_w" "$win_h" "$((width + 4))" 3 bottom-right || exit 0
+  box_w=$TT_FLOAT_W; box_h=$TT_FLOAT_H; x=$TT_FLOAT_X; y=$TT_FLOAT_Y
   # shellcheck disable=SC2016 # sh -c の '$1'/'$2' は pane 内の sh が展開する (意図どおり)
   # 🚨 失敗を無音で飲むこと (`2>/dev/null || exit 0`)。set -euo pipefail のまま非 0 で抜けると、
   # hook (after-split-window / pane-exited) 経由の呼び出しでアクティブ pane に view-mode が

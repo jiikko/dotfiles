@@ -87,3 +87,8 @@ tmux バインド (_tmux.conf) から display-popup / run-shell 経由で呼ば�
 
 - lib/tmux_resurrect_guards.sh は zshlib からも source される共有実装。POSIX 互換関数のみで
   書く (bash / zsh 両対応。判定式・TTL をスクリプト側と zsh 側で二重定義しないための集約点)
+- lib/tmux_float_geometry.sh (`tt_float_geom`) は floating pane (`new-pane -x/-y/-X/-Y`) を作る
+  すべての経路が通す。**自前で幅・高さ・座標を計算しないこと**: tmux は「幅 == window 幅」も
+  「高さ == window 高さ」も受理せず (実測)、失敗は呼び出し側で無音になるため、2 箇所に
+  分かれていた間は panel 側だけが境界を許して幅 150 以下の window で出なくなっていた
+  (issue 377)。現在の利用者は bin/tmux-toast と tmux_agent_panel.sh

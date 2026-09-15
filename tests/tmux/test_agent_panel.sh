@@ -46,7 +46,7 @@ case "$1" in
   list-sessions) printf '%s\n' "${STUB_SESSIONS:-main}" ;;
   display-message)
     case "$*" in
-      *window_width*) echo '200' ;;
+      *window_width*) echo '200 50' ;;   # create_panel は '#{window_width} #{window_height}' を 1 行で読む
       *session_name*) echo "${STUB_SESSION:-main}:" ;;
       *window_id*)
         # -t %N (pane 指定) は所属 window、無指定はカレント window
