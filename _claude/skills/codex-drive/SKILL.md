@@ -882,6 +882,11 @@ command codex exec review -m gpt-5.6-luna -c model_reasoning_effort="max" \
 - **manifest の各 lens 行に timeout 列 `2400` を付ける** (発見型レビューと違い、反証の構築は思考時間が
   長く既定の 1200 秒で rc=143 が頻発した — dotfiles issue 150 の実測。3〜4 回落ちて単発再実行では毎回完走)。
   900 秒超なので起動は detach 形 (「並列起動の作法」の nohup + Monitor) にする。
+  🚨 **`codex-run` で 1 本だけ起動するときも `-t 2400` を明示する**。`codex-run` は timeout を
+  `CODEX_FANOUT_TIMEOUT` の既定 (1200 秒) から取るので、**付け忘れると 20 分待ってから rc=143 で
+  本文ゼロ**になる (実測 2026-09-15 obaket 820 の D3: 32,062 行のログだけが残り、`-t 2400` で
+  再実行して 1,426 秒で完走した)。上の manifest の記述は `codex-fanout` の列の話なので、
+  **1 本だけのときに落としやすい**。
 
 ```bash
 # 起動は codex-fanout driver が既定 (lens ごとの brief + review-lens-header.md を連結する manifest)。
@@ -1058,6 +1063,12 @@ EOF
   レビューで見逃しやすい類)。各 patch は `git diff` 形式で別ファイルに保存し、**1 個ずつ適用 → テスト実行 →
   `git checkout -- .` で復元**を繰り返せ。テストファイルは触らない。出力は変異ごとの結果表:
   patch ファイルパス / 変異の内容 1 行 / テストの生の終了コード / 落ちたテスト名 (検知漏れなら「検知されず」)」
+  - 🚨 **patch は既定の context 付き (`git diff`、`-U3`) で保存させる。`-U0` / context 無しを使わせない**。
+    context の無いハンクは `git apply` が照合できず、**再適用すると意図しない位置に落ちる**
+    (実測 2026-09-15 obaket 809: `@@ -1080,0 +1080,5 @@` の挿入が**ファイル末尾の top level** に入り
+    `statements are not allowed at the top level` でビルド不能になった)。codex 自身は context 照合の
+    `apply_patch` で当てるので**その run では正しい位置に入り、保存された成果物からだけ再現できない**。
+    抜き取り追試が空振りするだけでなく、**後から「codex が何を検証したのか」を誰も確認できなくなる**
 - **Claude は結果表を監査する** (codex の自己申告は主張であって証拠ではない — 大原則):
   - **変異の質を patch ファイルで一瞥する**: コンパイルが通らない変異・実装と無関係な変異は検知できて当然なので数に入れない
   - **抜き取り 1 件を自分で追試する**: 表から 1 変異 (「検知された」と報告されたもの) を選び、worktree で
@@ -1091,6 +1102,13 @@ EOF
   誰にも検証されないまま done になる (実測 2026-09-07 obaket 740: D3 が足した 5 条件を設計ファイルに
   だけ書き、done へ移す直前に気づいて移した)。移すのは条件そのものと、それが足された理由 1 行
   ([`move-report-conclusions-to-issues.md`](../../rules/move-report-conclusions-to-issues.md))。
+- 🚨 **codex に issue へ記録させたら、commit 前に `grep -n 'tmp/' <issue>` で
+  gitignore 配下への参照が無いか見る**。codex は生出力のパスをそのまま
+  markdown リンクで書く。**手元には実体があるのでリンク検査は通り、新品チェックアウトと
+  CI でだけ落ちる** (実測 2026-09-15 obaket 809: `tmp/809/mutations.md` へのリンクが
+  `check-doc-links` を素通りしていた)。見つけたら**中身を issue 本文へ転記してリンクを外す**
+  (パスを tracked へ移すのではない — 同じものが 2 箇所になる)。
+  地の文での言及 (「原文は `tmp/…` にある」) はリンクではないので残してよい。
 - push は必要時のみ (CI で実地検証したい時など)。push 可否ルールは各リポジトリに従う。
 - submodule なら commit 後に即 push し親参照を bump (submodule-workflow)。
 
@@ -1145,6 +1163,9 @@ EOF
 - ✓ 設計・spec・要件は貼らずにファイルパス + セクション名で codex に読ませ、定型は templates/ との連結で組む (Claude の出力を長文 heredoc に使わない)
 - ✓ 大きい diff は codex の変更マップをナビに全 hunk を 1 回で精読し、機械的分類の hunk も最低 1 割は精読して分類を監査する (分類誤り 1 件で全 hunk 精読に戻す)
 - ✓ [3.8] の変異適用×テスト実行ループは codex に回させ、Claude は結果表 + 抜き取り 1 件の追試で監査する
+- ✓ 変異 patch は既定の context 付き (`git diff`、`-U3`) で保存させる (`-U0` は再適用すると別の位置に落ちる)
+- ✓ `codex-run` で敵対レビューを 1 本だけ回すときも `-t 2400` を明示する (既定は 1200 秒で rc=143 になる)
+- ✓ codex に issue へ記録させたら、commit 前に `grep -n 'tmp/' <issue>` で gitignore 配下へのリンクを潰す
 - ✓ 着手前に codex 適性を評価し、苦手領域 (UI/実機/主観判断) なら一度ユーザーに確認する
 - ✓ 丸投げ依頼は [R] で「要件 + 受け入れ条件」に言語化してから着手し、[7] でそのリストと照合して締める
 - ✓ [R] で「長期運用か最小変更か」の構造投資水準を確定し、D1〜[3] まで同じ水準で通す (拡張性は境界と不変条件で買い、先回りの抽象では買わない)
