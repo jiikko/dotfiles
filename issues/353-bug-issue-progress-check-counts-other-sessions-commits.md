@@ -169,15 +169,33 @@ reflog が壊れているのではなく、**「reflog は自分の commit を�
 - [x] **肯定 assert は残した**（`tests/claude/test_issue_progress_check.sh` の
       「worktree の commit を数えている (肯定)」）。339 の回帰は「無出力のはず」の否定 assert
       だけで、primary が空になる壊れ方でも緑になっていた。この穴は修正の有無と独立に塞ぐ価値がある
-- [ ] **方針の決定**: 次のどちらを取るか
-  - (A) **直さない**。`:19` が既に同じ failure mode を許容宣言しており、dedup で実害は
-    1 セッション 1 行。ヘッダと 339 の「検出しないと決めた形」に**誤報方向**を書き足して閉じる
-  - (B) セッション側が自分の worktree と開始時刻を記録する形で作り直す。**その場合、
-    P1 の A-B（push → pull → remove 後も指摘が出ること）を受け入れ条件に入れる**
-- [ ] (B) を取るなら、テストの fixture を **`commit:` 以外の作成 verb**
-      （`cherry-pick` / `revert` / `am` / `rebase (pick)` / `commit (amend)`）と
-      **`pull` / `merge` 経由で `$root` に届く形**（本番の支配的経路。`~/dotfiles` の
-      HEAD reflog は pull 202 / commit 107 / merge 84）でも通す
+- [x] **方針の決定** → **(A) 直さない**（2026-09-15、ユーザー判断）
+- [x] hook のヘッダに**誤報方向**を書き足した（`_claude/hooks/issue-progress-check.sh`）。
+      pull だけでなく **worktree 経由**でも混ざること、向きが過少（抑止）と過剰（誤報）の
+      2 つあること、直さないと決めた理由（reflog では区別できず、実装すると標準手順で
+      hook が恒久的に無音になる）、再評価の trigger を書いた
+- [x] [issue 339](done/339-bug-issue-progress-check-redisplays-explained-findings.md) の
+      「検出しないと決めた形」にも誤報方向を追記した。339 は抑止方向しか書いておらず、
+      しかも実際に出たのは **339 が「安全」と認定した `changed` 側**が作る誤報だった
+- [ ] ~~(B) を取るなら fixture を他の verb でも通す~~ → (A) を採ったので不要。
+      reflog の verb の実測（revert した実装の記録）はそのまま残す
+
+## 決定（2026-09-15）
+
+**(A) 直さない。** 根拠は本文で既に固まっている:
+
+1. 素朴な修正 3 案（a/b/c）はいずれも**実測で不成立**
+2. 実装した (B) 系（reflog 判別、`cade38ef`）は A-B 実測で
+   **「1 セッション 1 行の誤報」を「標準手順に従うと恒久的に沈黙」と交換していた**ので revert 済み
+3. dedup により実害は 1 セッション 1 行
+
+**再評価の trigger**: 1 行では済まない形（毎セッション別の issue で出続ける /
+実際の更新漏れが誤報に埋もれる）が観測されたとき。
+
+🚨 **「直さない」を選んだので、コード側の検出力は 1 mm も増えていない。**
+残したのは記録だけで、次に同じ症状を見た人が「既知・許容済み」と即断できるようにするのが目的。
+`tests/claude/test_issue_progress_check.sh` の肯定 assert（前回のセッションで残した分）は
+そのまま生きている（rc=0 を確認）。
 
 ## 参考: revert した実装
 

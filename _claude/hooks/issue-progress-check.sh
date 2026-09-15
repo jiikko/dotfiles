@@ -18,6 +18,19 @@
 # 検出しないもの (承知の上): 未 commit で番号も出していない作業 / 本文の記述が古いだけの漏れ /
 # `git pull` で混ざった他セッションの commit に付いた番号 (誤報になりうるが、1 セッション 1 回で黙る)。
 #
+# 🚨 上の「他セッションの commit」は **pull だけでなく worktree 経由でも混ざる** (issue 353)。
+# `origin/master` 起点で切った worktree は基準点より先の commit を持つので、その subject の
+# `(NNN)` が「このセッションが関わった issue」に入り、**触っていない issue を指摘する**。
+# 誤報の向きは 2 つあり、両方とも許容する:
+#   - 過少 (抑止): 他セッションの worktree が同じ issue を更新していると、自分の更新漏れが黙る
+#   - 過剰 (誤報): 他セッションの commit が「自分の作業」として指摘される  ← 353 で実際に出た形
+# **直さないと決めた** (2026-09-15): 「自分の worktree」と「他セッションの worktree」は
+# 祖先関係でも reflog でも区別できず、reflog で判別する実装 (cade38ef) は
+# `.claude/rules/worktree-per-session.md` の標準手順 (push → pull --rebase → worktree remove) で
+# **hook が恒久的に無音になる**ため revert した (A-B 実測は issue 353 に在る)。
+# dedup により実害は 1 セッション 1 行。**再評価の trigger**: 1 行では済まない形
+# (毎セッション別の issue で出続ける / 実際の更新漏れが誤報に埋もれる) が観測されたとき。
+#
 # 入力: Stop の hook JSON (stdin: session_id / cwd / stop_hook_active)。
 # 出力: 指摘があれば {"decision":"block","reason":...} (Claude が続きを処理する)。同じ指摘は 1 セッション 1 回。
 # stop_hook_active が true (block からの続き) のときは何もしない (無限ループ防止)。
