@@ -58,7 +58,7 @@ shim_dir=""
 hang_dir=""
 # 🚨 shellcheck は `printf -v "$1"` の間接代入を追えない (SC2154) ので、ここで宣言しておく。
 # 消すと lint_test_scripts.sh が「referenced but not assigned」で落ちる
-raw=""; s1=""; s2=""; s7=""
+raw=""; s1=""; s2=""; s7=""; s11=""
 TT_FAKE_PIDS=()
 tt_cleanup_all() {
   local s p uid; uid=$(id -u)
@@ -286,67 +286,91 @@ STUB
     rm -f -- "$sock8"
   fi
 
-  # --- ⑨ pid のゲート: `kill` に渡る前に数字以外を落とす (⑧ との A-B) ------------------------
+  # --- ⑨ pid のゲート: `kill` に渡る前に数字以外を落とす ---------------------------------------
   #
-  # 🚨 fixture は **`-1`**。`kill -0 -1` / `kill -KILL -1` は「**シグナルを撃てる全プロセス**」を
-  # 指すので、ここを素通りさせると後始末がセッションごと巻き込みうる。ゲートが効いていれば
-  # pid は捨てられ、通常どおり socket を回収して rc=0 になる。効いていないと `kill -0 -1` が
-  # 成功 = 「生きている」と読まれ、⑧ と同じ rc=1 + socket 残りになる (2 ケースの差が判定)。
-  #
-  # 🚨 全角数字 (`shell-numeric-gate-explicit-digits.md` が想定する最弱部) は fixture に使えない:
-  # ゲートを外しても `kill -0 ６１` が黙って失敗し「不在」と読まれるため、**有無で結果が変わらない**
-  # (実測 2026-09-15: 全角版はゲート削除の変異が緑のまま通った)。明示列挙の書き方自体は維持する。
+  # 🚨 判定は **`kill` が何を受け取ったか**を記録して見る。結果 (rc / socket) では判別できない:
+  # ゲートを外して pid=-1 が通っても、`ps -o comm= -p -1` が空を返して KILL は撃たれず、
+  # 「生きている」扱いで rc=1 + socket 残りになり、**ゲートがある場合と同じ結果**になる
+  # (敵対レビュー P2-2 の実測)。`kill` はシェル関数でビルトインより先に解決されるので、
+  # 引数を記録してから `builtin kill` へ委譲する。
   sock9="$hang_dir/sock9"; tt_mksock "$sock9"
   if [ ! -S "$sock9" ]; then
     bad "⑨ の前提: unix socket を作れない ($sock9)"
   else
     tt_stub "-1 $sock9"
-    ( PATH="$hang_dir:$PATH"; tt_tmux_kill_socket tt-hang-9 ) >/dev/null 2>&1; rc9=$?
-    if [ "$rc9" -ne 0 ] || [ -e "$sock9" ]; then
-      bad "⑨ pid=-1 (全プロセス) を pid として扱っている (rc=$rc9 / socket 残り=$([ -e "$sock9" ] && echo yes || echo no))"
+    : > "$hang_dir/kill9"
+    (
+      PATH="$hang_dir:$PATH"
+      kill() { printf '%s\n' "$*" >> "$hang_dir/kill9"; builtin kill "$@"; }
+      tt_tmux_kill_socket tt-hang-9
+    ) >/dev/null 2>&1; rc9=$?
+    # 🚨 前提: 関数が最後まで走ったこと。早期 return だと「kill へ渡らなかった」が
+    # 「そもそも判定へ到達しなかった」と見分けが付かない (ゲートを外すと -1 が記録される側)
+    if [ "$rc9" -eq 0 ]; then
+      bad "⑨ の前提が崩れた: 止められていないのに rc=0 で戻った"
+    elif grep -qE '(^| )-1( |$)' "$hang_dir/kill9"; then
+      bad "⑨ pid=-1 (シグナルを撃てる全プロセス) が kill へ渡った: $(tr '\n' ';' < "$hang_dir/kill9")"
     else
-      ok "⑨ 数字でない pid はゲートで捨てる (kill へ渡さない)"
+      ok "⑨ 数字でない pid はゲートで捨てる (kill へ 1 度も渡らない)"
     fi
     rm -f -- "$sock9"
   fi
 
-  # --- ⑩ ハングしたサーバに問い合わせても、後始末自身は固まらない ------------------------------
+  # --- ⑩ 🚨 ハングしたサーバの socket は**消さない** (敵対レビュー P1-1 の回帰) ----------------
   #
-  # 🚨 これが 377 の本体。`$(tmux display -p ...)` は**サーバがハングすると返らない**ので、
-  # 後始末の 1 行目で固まる。bounded に聞き、待ち続ける client を残さないことを見る。
-  # 判定は壁時計ではなく「完了したか」「待ち client が残っていないか」で行う。
+  # 377 の実症状は「`display -p` すら返らない」。このとき pid は取れないので、
+  # 「答えが無い = 死んだ」と読むと**生きているサーバの唯一の handle を消す**ことになる。
+  # ここでは `lsof` も答えない (socket の持ち主が居ない fixture) ので、確定できない側 =
+  # socket を残して rc≠0 を返すのが正解。あわせて、後始末自身が固まらないことも見る。
+  # 🚨 socket は**関数が組み立てるパス**に作る。別の場所に置くと「消されなかった」が
+  # 自明に成り立ち、何も守らない (`TMUX_TMPDIR` を hang_dir に差し替えて閉じ込める)
+  mkdir -p "$hang_dir/tmux-$(id -u)"; chmod 700 "$hang_dir/tmux-$(id -u)"
+  sock10="$hang_dir/tmux-$(id -u)/tt-hang-10"; tt_mksock "$sock10"
   cat > "$hang_dir/tmux" <<STUB
 #!/bin/sh
-case "\$*" in
-  *display*) echo \$\$ > "$hang_dir/hangpid"; exec sleep 300 ;;
-  *) : ;;
-esac
-exit 0
+echo \$\$ > "$hang_dir/hangpid"
+exec sleep 300                 # 🚨 display も停止要求も返らない (= 377 のハング)
 STUB
   chmod +x "$hang_dir/tmux"
   rm -f -- "$hang_dir/hangpid" "$hang_dir/done10"
-  ( PATH="$hang_dir:$PATH"; tt_tmux_kill_socket tt-hang-10 >/dev/null 2>&1; echo $? > "$hang_dir/done10" ) &
-  wait10=$!
-  i=0
-  while [ "$i" -lt 600 ]; do            # 上限 30s (bound は 3s。上限は「無限に待たない」安全網)
-    [ -s "$hang_dir/done10" ] && break
-    sleep 0.05; i=$((i + 1))
-  done
-  if [ ! -s "$hang_dir/done10" ]; then
-    bad "⑩ ハングしたサーバへの問い合わせで後始末自身が固まった (30s 経っても戻らない)"
-    kill -KILL "$wait10" 2>/dev/null || :
-    [ -s "$hang_dir/hangpid" ] && kill -KILL "$(cat "$hang_dir/hangpid")" 2>/dev/null || :
+  if [ ! -S "$sock10" ]; then
+    bad "⑩ の前提: unix socket を作れない ($sock10)"
   else
+    (
+      PATH="$hang_dir:$PATH"
+      TMUX_TMPDIR="$hang_dir"      # 再構成されるパスをこの dir 配下に閉じ込める
+      tt_tmux_kill_socket tt-hang-10 >/dev/null 2>"$hang_dir/err10"
+      echo $? > "$hang_dir/done10"
+    ) &
+    wait10=$!
+    i=0
+    while [ "$i" -lt 600 ]; do          # 上限 30s (bound は 3s x 2。上限は「無限に待たない」安全網)
+      [ -s "$hang_dir/done10" ] && break
+      sleep 0.05; i=$((i + 1))
+    done
+    rc10=$(cat "$hang_dir/done10" 2>/dev/null || true)
     hp=$(cat "$hang_dir/hangpid" 2>/dev/null || true)
-    if [ -z "$hp" ]; then
-      bad "⑩ の前提が崩れた: stub の display が呼ばれていない"
+    if [ -z "$rc10" ]; then
+      bad "⑩ ハングしたサーバへの問い合わせで後始末自身が固まった (30s 経っても戻らない)"
+      kill -KILL "$wait10" 2>/dev/null || :
+      [ -n "$hp" ] && kill -KILL "$hp" 2>/dev/null || :
+    elif [ ! -S "$sock10" ]; then
+      bad "🚨 ⑩ ハングしたサーバの socket を消した (誰も触れない CPU 100% のサーバが残る)"
+    elif [ "$rc10" = 0 ]; then
+      bad "⑩ 止められていないのに rc=0 を返した (沈黙で成功にしている)"
+    elif ! grep -q "$sock10" "$hang_dir/err10" 2>/dev/null; then
+      bad "⑩ stderr に socket パスが出ていない (回収の手がかりが無い): $(cat "$hang_dir/err10")"
+    elif [ -z "$hp" ]; then
+      bad "⑩ の前提が崩れた: stub が 1 度も呼ばれていない"
     elif kill -0 "$hp" 2>/dev/null; then
       bad "⑩ 時間切れの client が残っている (pid=$hp)。bounded の後始末が実体へ届いていない"
       kill -KILL "$hp" 2>/dev/null || :
     else
-      ok "⑩ ハングしたサーバでも bounded に戻り、待ち client を残さない"
+      ok "⑩ ハングしたサーバは socket を残して rc≠0 (後始末自身は固まらず、待ち client も残さない)"
     fi
+    rm -f -- "$sock10"
   fi
+
   rm -rf -- "$hang_dir"; hang_dir=""
 fi
 
@@ -410,15 +434,23 @@ if [ -e "$guard" ]; then ok "default という名前の socket は消さない"
 else bad "🚨 default を消した (本番の socket を消しうる)"; fi
 rm -rf -- "$guard_dir"; guard_dir=""
 
-# --- ⑦ 🚨 kill-server が届かないサーバは KILL へ昇格し、死を確認してから socket を消す -------
+# --- ⑦ 🚨 停止要求が届かないサーバは KILL へ昇格し、死を確認してから socket を消す -----------
 #
 # issue 377 の本体。実サーバを**本当にハングさせる**と、このテスト自身が 377 を踏んで
-# CPU 100% のプロセスを置き去りにする。そこで「実 tmux サーバ + `kill-server` を握り潰す
-# stub client」で、サーバ側から見た同じ状況 (コマンドが届かない) を作る。
+# CPU 100% のプロセスを置き去りにする。そこで「実 tmux サーバ + 停止要求を握り潰す stub client」で、
+# サーバ側から見た同じ状況 (コマンドが届かない) を作る。
+#
+# 🚨 **撃ったシグナルを記録して assert する**。結果 (サーバが死んだか) だけを見ると、
+# `-KILL` を `-TERM` へ弱める退行が緑のまま通る (健全なサーバは TERM でも死ぬため。
+# 敵対レビュー P2-1 の実測)。377 の定義的性質は「復旧は `kill -9` のみ」なので、種別が要点。
 tt_new_socket s7 tt-cleanup-hang
 tmux -L "$s7" -f /dev/null new-session -d 'sleep 300' >/dev/null 2>&1
 p7=$(tmux -L "$s7" display -p '#{socket_path}' 2>/dev/null)
 pid7=$(tmux -L "$s7" display -p '#{pid}' 2>/dev/null)
+# 🚨 **サーバを SIGKILL すると pane の子は道連れにならない** (launchd へ里子化して残る。
+# 実測 2026-09-15: この検査自身が `sleep 300` を 1 個置き去りにした)。掃除対象に登録する
+pane7=$(tmux -L "$s7" display -p '#{pane_pid}' 2>/dev/null)
+case "$pane7" in ''|*[!0123456789]*) pane7="" ;; *) TT_FAKE_PIDS+=("$pane7") ;; esac
 shim_dir=$(mktemp -d "${TMPDIR:-/tmp}/tt-hang7.XXXXXX" 2>/dev/null) || shim_dir=""
 if [ -z "$shim_dir" ] || [ ! -d "$shim_dir" ] || [ ! -S "$p7" ] || [ -z "$pid7" ] \
    || ! kill -0 "$pid7" 2>/dev/null; then
@@ -428,21 +460,62 @@ else
 #!/bin/sh
 case "\$*" in
   *display*) printf '%s\n' '$pid7 $p7' ;;
-  *) : ;;                       # 🚨 kill-server は握り潰す (= 届かないサーバ)
+  *) : ;;                       # 🚨 停止要求は握り潰す (= 届かないサーバ)
 esac
 exit 0
 STUB
   chmod +x "$shim_dir/tmux"
-  ( PATH="$shim_dir:$PATH"; tt_tmux_kill_socket "$s7" ) >/dev/null 2>&1; rc7=$?
+  : > "$shim_dir/killlog"
+  (
+    PATH="$shim_dir:$PATH"
+    kill() { printf '%s\n' "$*" >> "$shim_dir/killlog"; builtin kill "$@"; }
+    tt_tmux_kill_socket "$s7"
+  ) >/dev/null 2>&1; rc7=$?
   if kill -0 "$pid7" 2>/dev/null; then
-    bad "⑦ kill-server が届かないサーバを KILL へ昇格していない (pid=$pid7 が CPU を握ったまま残る)"
+    bad "⑦ 停止要求が届かないサーバを KILL へ昇格していない (pid=$pid7 が CPU を握ったまま残る)"
+  elif ! grep -qE '(^| )-KILL( |$)' "$shim_dir/killlog"; then
+    bad "⑦ KILL 以外で殺している (377 の復旧は -9 のみ): $(tr '\n' ';' < "$shim_dir/killlog")"
   elif [ -e "$p7" ]; then
     bad "⑦ サーバは死んだのに socket が残っている: $p7"
   elif [ "$rc7" -ne 0 ]; then
     bad "⑦ 片付けは成功しているのに rc=$rc7 を返した"
   else
-    ok "⑦ kill-server が届かないサーバは KILL へ昇格し、socket まで片付ける"
+    ok "⑦ 停止要求が届かないサーバは KILL へ昇格し (種別も固定)、socket まで片付ける"
   fi
+  [ -n "$pane7" ] && kill -KILL "$pane7" 2>/dev/null || :
+  rm -rf -- "$shim_dir"; shim_dir=""
+fi
+
+# --- ⑪ 🚨 完全無応答のサーバを、socket の持ち主を外から引いて回収する -------------------------
+#
+# 377 の実症状では `display -p` すら返らないので、**pid を聞く相手がいない**。
+# ⑦ の経路 (pid を聞けた) だけを持っていると、昇格は実症状では一度も発火しない死にコードになる。
+# ここは実 tmux サーバ + **全コマンドが返らない** stub client で、`lsof -t -- <socket>` から
+# 持ち主を引いて KILL し、死を確認して socket を消すまでを固定する。
+tt_new_socket s11 tt-cleanup-noresp
+tmux -L "$s11" -f /dev/null new-session -d 'sleep 300' >/dev/null 2>&1
+p11=$(tmux -L "$s11" display -p '#{socket_path}' 2>/dev/null)
+pid11=$(tmux -L "$s11" display -p '#{pid}' 2>/dev/null)
+pane11=$(tmux -L "$s11" display -p '#{pane_pid}' 2>/dev/null)   # ⑦ と同じ理由で登録する
+case "$pane11" in ''|*[!0123456789]*) pane11="" ;; *) TT_FAKE_PIDS+=("$pane11") ;; esac
+shim_dir=$(mktemp -d "${TMPDIR:-/tmp}/tt-hang11.XXXXXX" 2>/dev/null) || shim_dir=""
+if [ -z "$shim_dir" ] || [ ! -d "$shim_dir" ] || [ ! -S "$p11" ] || [ -z "$pid11" ] \
+   || ! kill -0 "$pid11" 2>/dev/null; then
+  bad "⑪ の前提が崩れている (socket=$p11 pid=$pid11 shim=$shim_dir)"
+else
+  printf '#!/bin/sh\nexec sleep 300\n' > "$shim_dir/tmux"   # 🚨 何を聞いても返らない
+  chmod +x "$shim_dir/tmux"
+  ( PATH="$shim_dir:$PATH"; tt_tmux_kill_socket "$s11" ) >/dev/null 2>&1; rc11=$?
+  if kill -0 "$pid11" 2>/dev/null; then
+    bad "⑪ 完全無応答のサーバを回収できていない (pid=$pid11 が残る。lsof 経路が効いていない)"
+  elif [ -e "$p11" ]; then
+    bad "⑪ サーバは死んだのに socket が残っている: $p11"
+  elif [ "$rc11" -ne 0 ]; then
+    bad "⑪ 回収できているのに rc=$rc11 を返した"
+  else
+    ok "⑪ 完全無応答でも socket の持ち主を外から引いて回収する (377 の実症状)"
+  fi
+  [ -n "$pane11" ] && kill -KILL "$pane11" 2>/dev/null || :
   rm -rf -- "$shim_dir"; shim_dir=""
 fi
 
