@@ -371,6 +371,37 @@ STUB
     rm -f -- "$sock10"
   fi
 
+  # --- ⑫ 🚨 本番へ向かう名前 / パスでは、生のシグナルを 1 度も撃たない ---------------------------
+  #
+  # ⓪ は「`default` に tmux コマンドを撃たない」を固定しているが、この機構が新たに持った
+  # `kill -KILL` は **`bin/tmux` shim も deny hook も素通りする** (どちらも tmux のコマンド文字列を
+  # 見るため)。名前ではなく**組み立てたパスの basename が本番を指す**形 (`sub/../default`) で、
+  # シグナルが 1 発も出ないことを直接固定する。
+  sock12="$hang_dir/tmux-$(id -u)/default"; tt_mksock "$sock12"
+  if [ ! -S "$sock12" ]; then
+    bad "⑫ の前提: unix socket を作れない ($sock12)"
+  else
+    tt_spawn /bin/sleep; pid12=$REPLY_PID     # 撃たれたら分かるように生きた実体を置く
+    tt_wait_alive "$pid12" || bad "⑫ の前提: 実体 (pid=$pid12) が起動していない"
+    tt_stub "$pid12 $sock12"
+    : > "$hang_dir/kill12"
+    (
+      PATH="$hang_dir:$PATH"
+      TMUX_TMPDIR="$hang_dir"
+      kill() { printf '%s\n' "$*" >> "$hang_dir/kill12"; builtin kill "$@"; }
+      tt_tmux_kill_socket 'sub/../default'
+    ) >/dev/null 2>&1
+    if grep -q . "$hang_dir/kill12"; then
+      bad "🚨 ⑫ 本番を指すパスに生のシグナルを撃った: $(tr '\n' ';' < "$hang_dir/kill12")"
+    elif [ ! -S "$sock12" ]; then
+      bad "🚨 ⑫ 本番を指すパスの socket を消した"
+    else
+      ok "⑫ 本番へ向かう名前 / パスでは kill も rm も 1 度も走らない"
+    fi
+    kill -KILL "$pid12" 2>/dev/null || :
+    rm -f -- "$sock12"
+  fi
+
   rm -rf -- "$hang_dir"; hang_dir=""
 fi
 

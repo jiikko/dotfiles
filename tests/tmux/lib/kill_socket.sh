@@ -113,6 +113,10 @@ tt__pid_of_socket() { # tt__pid_of_socket <socket パス>
   # 「持ち主が居ない」と読める。実測 2026-09-15)。組み立てたパスは必ずこの形になる。
   dir=$(cd -- "$(dirname -- "$1")" 2>/dev/null && pwd -P) || return 0
   out=$(lsof -t -- "$dir/$(basename -- "$1")" 2>/dev/null | head -2)
+  # 🚨 **basename が symlink でも実体へは届かない** (実測 2026-09-15: `lsof -t -- <symlink>` は
+  # 空を返す。実体のパスなら pid を返す)。`pwd -P` が解決するのは dir 側だけなので、
+  # 「socket dir に本番 socket への別名を置いて撃たせる」経路はここで成立しない。
+  # 追従するようになったら `default` の除外 (呼び出し側) は basename しか見ていないので素通りする
   case "$out" in ''|*[!0123456789]*) return 0 ;; esac   # 複数行は改行を含むのでここで落ちる
   printf '%s' "$out"
 }
