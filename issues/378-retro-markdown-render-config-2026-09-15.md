@@ -64,10 +64,23 @@ advisor の指摘で「主訴はまだ一度も再現していない」と認め
 
 ## 残課題
 
-- [ ] 項目 1 を `instrument-before-second-fix.md` へ追記する (issue 368 の項目 3 と同じ節。まとめて 1 回で)
-- [x] 項目 2 は切り出さない (既存ルールで足りる。実例は rationale 側へ)
-- [x] 項目 3 は却下 (368 の切り出しに 1 行足せば足りる)
-- [ ] `tmp/md-sample/` を捨てる (結論は本 issue と cde29e5e のコメントへ移済み。
-      見た目の再 A/B が要らなくなったら消す)
+- [x] 項目 1 を `instrument-before-second-fix.md` へ追記した (issue 368 の項目 3 と同じ節へ
+      **まとめて 1 回で**。「動いているプロセスに問い合わせ口があるなら直接聞く」と
+      「headless / `-u` は設定を読むが描画・モード遷移が起きないので見た目の観測に使わない」の 2 項)
+- [x] 項目 2 は切り出さない (既存ルールで足りる)。実例は
+      `_claude/rules-rationale/instrument-before-second-fix.md` へ移した
+- [x] 項目 3 は却下 (368 の切り出しに 1 行足せば足りる)。その 1 行
+      (「見本が本体設定の一部を再現していないなら提示時に差を断る」) は
+      `decide-layout-in-sample-renderer-first.md` へ入れた
+- [x] `tmp/md-sample/` を捨てた (2026-09-15。結論は本 issue と cde29e5e のコメントに移済み)
 
-切り出しの実行はユーザーの判断を待つ。
+## 切り出しの結果 (2026-09-15)
+
+| 追記先 (規範) | 内容 | 出典 |
+|---|---|---|
+| `_claude/rules/instrument-before-second-fix.md` | 生きているプロセスへ直接問い合わせる / headless・`-u` は本番の見た目を再現しない | 378 項目 1 + 368 項目 3 |
+| `_claude/rules/decide-layout-in-sample-renderer-first.md` | 見本は実物の分布で描く / 見本が再現していない層は断る | 368 項目 1 + 378 項目 3 |
+| `_claude/rules/verify-execution-not-just-exit-code.md` | 派生を持つ検証スクリプトは派生どうしが違う値を出すことを確かめる | 368 項目 2 |
+
+実例・実測・起源は同名の `_claude/rules-rationale/*.md` へ置いた (CLAUDE.md の
+「本文には規範だけを書き、実例は rationale へ最初から書く」)。368 の残課題も同じ変更で空になった。

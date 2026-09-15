@@ -86,9 +86,10 @@ canary を「**markdown の `@markup.heading` が潰れていると報告され�
 
 ## 残課題
 
-- [ ] 項目 1 を `decide-layout-in-sample-renderer-first.md` へ追記する
-- [ ] 項目 2 を `verify-execution-not-just-exit-code.md` へ追記する
-- [ ] 項目 3 を `instrument-before-second-fix.md` へ追記する
+- [x] 項目 1 を `decide-layout-in-sample-renderer-first.md` へ追記した (2026-09-15)
+- [x] 項目 2 を `verify-execution-not-just-exit-code.md` へ追記した (2026-09-15)
+- [x] 項目 3 を `instrument-before-second-fix.md` へ追記した (2026-09-15。issue 378 の項目 1 と
+      同じ節なので、378 の切り出しとまとめて 1 回で入れた)
 - [x] 項目 4 は切り出さない (既存ルールで足りる。実例は rationale 側へ)
 - [x] 項目 5 は却下 (issue 367 と重複)
 
@@ -116,3 +117,9 @@ canary を「**markdown の `@markup.heading` が潰れていると報告され�
   した。理由は**装飾の有無で画面の行数が動くのを止める**ため (insert に入るたびに画面が飛ぶ、が主訴)
 
 本 retro の残課題 (項目 1〜3 の rules への切り出し) はこの変更では消化していない。
+
+## 切り出し完了 (2026-09-15)
+
+残課題 3 件は [378](378-retro-markdown-render-config-2026-09-15.md) の消化と同じ変更で
+すべて rules へ入れた (実例は `_claude/rules-rationale/` 側)。切り出し先の一覧は 378 の
+「切り出しの結果」節が正本。
