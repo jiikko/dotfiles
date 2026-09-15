@@ -1,9 +1,9 @@
 # human: lockman の --io-timeout が実 SMB のサーバ不達で効くか確かめる
 
-- 起票: 2026-09-15
-- カテゴリ: human（人間しかできない作業。実 SMB 共有とサーバの停止操作が要る）
-- 期限: 2026-10-15
-- 出典: [issue 357](done/357-bug-lockman-with-bypasses-io-timeout.md) の残タスク
+起票日: 2026-09-15
+カテゴリ: human（人間しかできない作業。実 SMB 共有とサーバの停止操作が要る）
+期限: 2026-10-15
+出典: [issue 357](done/357-bug-lockman-with-bypasses-io-timeout.md) の残タスク
 
 ## なぜ人がやるのか
 
