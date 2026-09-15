@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -302,5 +303,549 @@ func TestMetaDirIsNotSticky(t *testing.T) {
 	}
 	if st.Mode()&os.ModeSticky != 0 {
 		t.Fatal(".lockman に sticky bit が付いている (他ユーザーの lock を引き継げなくなる)")
+	}
+}
+
+// takeoverSeam は「期限切れと判定した直後」の seam をテストから握る。戻り値は
+// (最初の 1 人が判定を終えたら閉じる channel, その 1 人を再開させる関数,
+//
+//	seam が呼ばれた回数を返す関数)。
+//
+// 最初の 1 人だけを止め、2 人目以降は素通りさせる。これで「B が期限切れと判定した直後に
+// A の引き継ぎを丸ごと通す」という、実測で二重取得を作った順序を決定論で再現できる。
+func takeoverSeam(t *testing.T) (observed <-chan struct{}, resume func(), calls func() int) {
+	t.Helper()
+	obs := make(chan struct{})
+	proceed := make(chan struct{})
+	var mu sync.Mutex
+	n := 0
+	orig := takeoverObservedHook
+	t.Cleanup(func() { takeoverObservedHook = orig })
+	takeoverObservedHook = func() {
+		mu.Lock()
+		n++
+		first := n == 1
+		mu.Unlock()
+		if first {
+			close(obs)
+			<-proceed
+		}
+	}
+	return obs, func() { close(proceed) }, func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return n
+	}
+}
+
+// graveyardTokens は退けられた lock の token を読み出す。
+func graveyardTokens(t *testing.T, l *Locker) []string {
+	t.Helper()
+	dir := filepath.Join(l.metaDir, graveyardDirName)
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("graveyard を読めない: %v", err)
+	}
+	var out []string
+	for _, e := range ents {
+		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatalf("graveyard の %s を読めない: %v", e.Name(), err)
+		}
+		var m Meta
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatalf("graveyard の %s が JSON でない: %v", e.Name(), err)
+		}
+		out = append(out, m.Token)
+	}
+	return out
+}
+
+// removeTakeoverClaims は引き継ぎの調停の目印を消す (掃除に浚われた状況を作る)。
+// 消した件数を返す — 0 なら「前提が作れていない」ので呼び出し側が落とすため。
+func removeTakeoverClaims(t *testing.T, l *Locker) int {
+	t.Helper()
+	dir := filepath.Join(l.metaDir, tmpDirName)
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("tmp を読めない: %v", err)
+	}
+	n := 0
+	for _, e := range ents {
+		if !strings.HasSuffix(e.Name(), takeoverClaimSuffix) {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
+			t.Fatalf("目印を消せない: %v", err)
+		}
+		n++
+	}
+	return n
+}
+
+// ★ 回帰テスト (issue 366): 期限切れと判定した後に他者が引き継ぎを完走しても、
+// 遅れてきた観測者は「その後に置かれた新しい lock」を退けない。
+//
+// 症状 (勝者の数) だけでなく機構を固定する — graveyard に入ってよいのは死んだ lock だけ。
+// 実測 2026-09-15: この防御が無いと、勝者の新しい lock が graveyard に入っていた。
+func TestStaleTakeoverDoesNotEvictFreshLock(t *testing.T) {
+	l := newTestLocker(t)
+	ttl := 50 * time.Millisecond
+	dead, err := l.Acquire(ttl, "dead")
+	if err != nil {
+		t.Fatalf("下ごしらえの Acquire: %v", err)
+	}
+	time.Sleep(3 * ttl)
+
+	observed, resume, calls := takeoverSeam(t)
+	type result struct {
+		m   *Meta
+		err error
+	}
+	late := make(chan result, 1)
+	go func() {
+		m, err := l.Acquire(time.Minute, "late")
+		late <- result{m, err}
+	}()
+
+	// 遅れてくる側が「期限切れ」と判定し終えるまで待つ。上限は安全網 (合否ではない)。
+	select {
+	case <-observed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("seam が呼ばれない: 期限切れの判定に到達していないので、このテストは何も守っていない")
+	}
+
+	// その隙に引き継ぎを完走させる
+	winner, err := l.Acquire(time.Minute, "winner")
+	if err != nil {
+		t.Fatalf("引き継ぎ側の Acquire: %v", err)
+	}
+	resume()
+	got := <-late
+
+	if got.err == nil {
+		t.Fatalf("遅れてきた観測者も勝った (二重取得): winner=%s late=%s", winner.Token, got.m.Token)
+	}
+	if !errors.Is(got.err, errBusy) {
+		t.Fatalf("busy 以外のエラー: %v", got.err)
+	}
+	for _, tok := range graveyardTokens(t, l) {
+		if tok != dead.Token {
+			t.Fatalf("死んだ lock 以外が退けられた: token=%s (死=%s 勝者=%s)", tok, dead.Token, winner.Token)
+		}
+	}
+	cur, _, err := l.readLock()
+	if err != nil {
+		t.Fatalf("readLock: %v", err)
+	}
+	if cur == nil || cur.Token != winner.Token {
+		t.Fatalf("勝者の lock が残っていない: %+v (期待 %s)", cur, winner.Token)
+	}
+	if n := calls(); n != 2 {
+		t.Fatalf("seam の呼び出しが %d 回 (期待 2): 想定した順序になっていない", n)
+	}
+}
+
+// ★ 回帰テスト (issue 366 / 2 段目の単独検査): 調停の目印が掃除に浚われていても、
+// 破壊的操作の直前の再照合が「世代が変わった」ことを見て退去を止める。
+//
+// 1 段目 (調停) と 2 段目 (再照合) はどちらか一方でも上のテストを緑にしてしまうので、
+// 段ごとに単独で red を見られる形にしてある (adversarial-review-own-safeguards.md §1.5)。
+func TestStaleTakeoverRefusesWhenGenerationChangedAfterClaimSwept(t *testing.T) {
+	l := newTestLocker(t)
+	ttl := 50 * time.Millisecond
+	dead, err := l.Acquire(ttl, "dead")
+	if err != nil {
+		t.Fatalf("下ごしらえの Acquire: %v", err)
+	}
+	time.Sleep(3 * ttl)
+
+	observed, resume, _ := takeoverSeam(t)
+	late := make(chan error, 1)
+	go func() {
+		_, err := l.Acquire(time.Minute, "late")
+		late <- err
+	}()
+	select {
+	case <-observed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("seam が呼ばれない: 期限切れの判定に到達していない")
+	}
+
+	winner, err := l.Acquire(time.Minute, "winner")
+	if err != nil {
+		t.Fatalf("引き継ぎ側の Acquire: %v", err)
+	}
+	// 1 段目を無効化する: 掃除が目印を浚った状況を作る
+	if n := removeTakeoverClaims(t, l); n == 0 {
+		t.Fatal("前提が作れていない: 調停の目印が 1 つも無い (1 段目が動いていない)")
+	}
+	resume()
+
+	if err := <-late; !errors.Is(err, errBusy) {
+		t.Fatalf("目印が無いと遅れてきた観測者が勝つ (err=%v)", err)
+	}
+	for _, tok := range graveyardTokens(t, l) {
+		if tok != dead.Token {
+			t.Fatalf("死んだ lock 以外が退けられた: token=%s (死=%s 勝者=%s)", tok, dead.Token, winner.Token)
+		}
+	}
+	cur, _, err := l.readLock()
+	if err != nil {
+		t.Fatalf("readLock: %v", err)
+	}
+	if cur == nil || cur.Token != winner.Token {
+		t.Fatalf("勝者の lock が残っていない: %+v (期待 %s)", cur, winner.Token)
+	}
+}
+
+// ★ 回帰テスト (issue 366 / 1 段目の単独検査): 同じ世代を同時に見た者が何人いても、
+// 実際に退けるのは 1 人だけ。
+//
+// 全員が「期限切れ」と判定し終えてから一斉に進む形にする (最悪の順序)。調停が無いと
+// 全員が true を返す — 先頭が退けた後の者は ENOENT / lock 不在で「作りにいってよい」に
+// 落ちるため。ここを 2 段目は守らない (世代は変わっていないので再照合は通る)。
+func TestConcurrentTakeoverElectsExactlyOneEvictor(t *testing.T) {
+	l := newTestLocker(t)
+	ttl := 50 * time.Millisecond
+	if _, err := l.Acquire(ttl, "dead"); err != nil {
+		t.Fatalf("下ごしらえの Acquire: %v", err)
+	}
+	time.Sleep(3 * ttl)
+
+	const n = 8
+	var mu sync.Mutex
+	arrived := 0
+	release := make(chan struct{})
+	orig := takeoverObservedHook
+	t.Cleanup(func() { takeoverObservedHook = orig })
+	takeoverObservedHook = func() {
+		mu.Lock()
+		arrived++
+		if arrived == n {
+			close(release)
+		}
+		mu.Unlock()
+		select {
+		case <-release:
+		case <-time.After(10 * time.Second): // 安全網。合否には使わない
+		}
+	}
+
+	var wg sync.WaitGroup
+	took := make(chan bool, n)
+	for range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ok, err := l.tryTakeover()
+			if err != nil {
+				t.Errorf("tryTakeover: %v", err)
+				return
+			}
+			took <- ok
+		}()
+	}
+	wg.Wait()
+	close(took)
+	mu.Lock()
+	got := arrived
+	mu.Unlock()
+	if got != n {
+		t.Fatalf("seam の到達が %d 回 (期待 %d): 全員が判定に到達していない", got, n)
+	}
+	wins := 0
+	for ok := range took {
+		if ok {
+			wins++
+		}
+	}
+	if wins != 1 {
+		t.Fatalf("退ける役が %d 人 (期待 1)", wins)
+	}
+}
+
+// ★ 回帰テスト (issue 366 / 2 段目の mtime 照合): 判定した後にその lock が延長されて
+// いたら、token が同じでも退けない。
+//
+// 期限の判定と保持者の Renew は別々の瞬間に serverNow を取るので、境界では
+// 「観測側は期限切れ・保持者は期限内」が両立する。世代 (token) だけを見ていると、
+// 延長で生き返った lock をそのまま退けてしまう。
+func TestStaleTakeoverRefusesRenewedLock(t *testing.T) {
+	l := newTestLocker(t)
+	ttl := 50 * time.Millisecond
+	held, err := l.Acquire(ttl, "holder")
+	if err != nil {
+		t.Fatalf("下ごしらえの Acquire: %v", err)
+	}
+	time.Sleep(3 * ttl)
+
+	observed, resume, _ := takeoverSeam(t)
+	late := make(chan error, 1)
+	go func() {
+		_, err := l.Acquire(time.Minute, "late")
+		late <- err
+	}()
+	select {
+	case <-observed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("seam が呼ばれない: 期限切れの判定に到達していない")
+	}
+
+	// 保持者が滑り込みで延長した状態を作る (token は同じ / mtime だけ進む)。
+	// 期限切れの lease は Renew が受けないので、打刻を直接作る。
+	now := time.Now()
+	if err := os.Chtimes(l.lockPath(), now, now); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+	resume()
+
+	if err := <-late; !errors.Is(err, errBusy) {
+		t.Fatalf("延長された lock を退けてしまった (err=%v)", err)
+	}
+	if got := graveyardTokens(t, l); len(got) != 0 {
+		t.Fatalf("生きている lock が退けられた: %v", got)
+	}
+	cur, _, err := l.readLock()
+	if err != nil {
+		t.Fatalf("readLock: %v", err)
+	}
+	if cur == nil || cur.Token != held.Token {
+		t.Fatalf("保持者の lock が残っていない: %+v (期待 %s)", cur, held.Token)
+	}
+}
+
+// ★ 回帰テスト (issue 366): lock の中身は他ホストが書いた値なので、token をそのまま
+// パスの構成要素にしない。調停の目印が tmp/ の外に出ると、掃除の射程からも外れる。
+func TestTakeoverClaimStaysInsideTmpForHostileToken(t *testing.T) {
+	l := newTestLocker(t)
+	if err := l.ensureDirs(); err != nil {
+		t.Fatalf("ensureDirs: %v", err)
+	}
+	// 期限切れの lock を直接こしらえる (token にパス区切りを含める)
+	b, err := json.Marshal(&Meta{Token: "../escape", TTLMillis: 1, Version: "lockman/1"})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if err := os.WriteFile(l.lockPath(), b, lockFileMode); err != nil {
+		t.Fatalf("lock を作れない: %v", err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(l.lockPath(), old, old); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+
+	if _, err := l.tryTakeover(); err != nil {
+		t.Fatalf("tryTakeover: %v", err)
+	}
+	escaped := filepath.Join(l.metaDir, "escape"+takeoverClaimSuffix)
+	if _, err := os.Stat(escaped); err == nil {
+		t.Fatalf("目印が tmp/ の外に作られた: %s", escaped)
+	}
+	ents, err := os.ReadDir(filepath.Join(l.metaDir, tmpDirName))
+	if err != nil {
+		t.Fatalf("tmp を読めない: %v", err)
+	}
+	found := false
+	for _, e := range ents {
+		if strings.HasSuffix(e.Name(), takeoverClaimSuffix) {
+			found = true
+			if !strings.HasPrefix(e.Name(), "notoken-") {
+				t.Fatalf("危険な token がそのまま目印の名前になった: %s", e.Name())
+			}
+		}
+	}
+	if !found {
+		t.Fatal("前提が作れていない: 調停の目印が 1 つも作られていない")
+	}
+}
+
+// takeoverClaimPathFor はその世代の調停の目印のパスを返す。
+func takeoverClaimPathFor(l *Locker, gen string) string {
+	return filepath.Join(l.metaDir, tmpDirName, gen+takeoverClaimSuffix)
+}
+
+// staleLockWithClaim は「期限切れの lock + その世代の目印」という下ごしらえを作る。
+func staleLockWithClaim(t *testing.T, l *Locker) (*Meta, string) {
+	t.Helper()
+	ttl := 50 * time.Millisecond
+	dead, err := l.Acquire(ttl, "dead")
+	if err != nil {
+		t.Fatalf("下ごしらえの Acquire: %v", err)
+	}
+	time.Sleep(3 * ttl)
+	claim := takeoverClaimPathFor(l, dead.Token)
+	if err := l.placeTakeoverClaim(claim); err != nil {
+		t.Fatalf("目印を作れない: %v", err)
+	}
+	return dead, claim
+}
+
+// ★ 回帰テスト (issue 366): 飛行中の目印は踏まない。踏むと役が 2 人になる (= 二重取得)。
+func TestTakeoverYieldsToLiveClaim(t *testing.T) {
+	l := newTestLocker(t)
+	dead, claim := staleLockWithClaim(t, l)
+	before, err := os.Stat(claim)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+
+	took, err := l.tryTakeover()
+	if err != nil {
+		t.Fatalf("tryTakeover: %v", err)
+	}
+	if took {
+		t.Fatal("飛行中の目印があるのに退ける役を取った")
+	}
+	after, err := os.Stat(claim)
+	if err != nil {
+		t.Fatalf("目印が消えた: %v", err)
+	}
+	if !after.ModTime().Equal(before.ModTime()) {
+		t.Fatal("飛行中の目印が回収 (作り直し) された")
+	}
+	cur, _, err := l.readLock()
+	if err != nil {
+		t.Fatalf("readLock: %v", err)
+	}
+	if cur == nil || cur.Token != dead.Token {
+		t.Fatalf("lock が退けられた: %+v", cur)
+	}
+}
+
+// ★ 回帰テスト (issue 366): 作成者が死んで残った目印は、猶予を過ぎたら回収する。
+//
+// 回収が無いと、目印を取った直後に死んだプロセス (Ctrl-C / --io-timeout の発火。どちらも
+// defer を飛ばす既定経路) がその世代の引き継ぎを掃除まで塞ぎ、**scratchRetention = 1h が
+// 既定 TTL 30m を超える**ので「TTL を過ぎれば誰かが引き継げる」という契約が割れる。
+func TestTakeoverReclaimsAbandonedClaim(t *testing.T) {
+	l := newTestLocker(t)
+	dead, claim := staleLockWithClaim(t, l)
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(claim, old, old); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+
+	took, err := l.tryTakeover()
+	if err != nil {
+		t.Fatalf("tryTakeover: %v", err)
+	}
+	if !took {
+		t.Fatal("放棄された目印を回収できない (その世代は掃除まで引き継げない)")
+	}
+	st, err := os.Stat(claim)
+	if err != nil {
+		t.Fatalf("回収後の目印が無い: %v", err)
+	}
+	if st.ModTime().Before(old.Add(time.Hour)) {
+		t.Fatalf("目印が作り直されていない (mtime=%v)", st.ModTime())
+	}
+	got := graveyardTokens(t, l)
+	if len(got) != 1 || got[0] != dead.Token {
+		t.Fatalf("死んだ lock が退けられていない: %v (期待 [%s])", got, dead.Token)
+	}
+}
+
+// ★ 回帰テスト (issue 366): 放棄された目印を同時に回収しても、役を持つのは 1 人だけ。
+//
+// 素朴な remove → create だと、先に回収した者が作り直した**新しい**目印を次の者が消して
+// しまい、役が 2 人になる。「存在しない名前へ rename できた 1 人だけが作り直す」形を固定する。
+func TestConcurrentReclaimElectsExactlyOneEvictor(t *testing.T) {
+	l := newTestLocker(t)
+	_, claim := staleLockWithClaim(t, l)
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(claim, old, old); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+
+	const n = 8
+	var mu sync.Mutex
+	arrived := 0
+	release := make(chan struct{})
+	orig := takeoverObservedHook
+	t.Cleanup(func() { takeoverObservedHook = orig })
+	takeoverObservedHook = func() {
+		mu.Lock()
+		arrived++
+		if arrived == n {
+			close(release)
+		}
+		mu.Unlock()
+		select {
+		case <-release:
+		case <-time.After(10 * time.Second): // 安全網。合否には使わない
+		}
+	}
+
+	var wg sync.WaitGroup
+	took := make(chan bool, n)
+	for range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ok, err := l.tryTakeover()
+			if err != nil {
+				t.Errorf("tryTakeover: %v", err)
+				return
+			}
+			took <- ok
+		}()
+	}
+	wg.Wait()
+	close(took)
+	mu.Lock()
+	got := arrived
+	mu.Unlock()
+	if got != n {
+		t.Fatalf("seam の到達が %d 回 (期待 %d)", got, n)
+	}
+	wins := 0
+	for ok := range took {
+		if ok {
+			wins++
+		}
+	}
+	if wins != 1 {
+		t.Fatalf("回収で役を取った者が %d 人 (期待 1)", wins)
+	}
+}
+
+// ★ 回帰テスト (issue 366): 猶予は**目印の作成者が申告した --io-timeout** から決める。
+//
+// 自分の値だけで決めると、長い --io-timeout で走っている作成者がまだ飛行しているうちに
+// その目印を回収してしまい、役が 2 人になる。
+func TestTakeoverGraceHonorsClaimDeclaredTimeout(t *testing.T) {
+	l := newTestLocker(t) // 自分の io-timeout は 5s → 申告を読まなければ猶予は 30s
+	dead, claim := staleLockWithClaim(t, l)
+	body, err := json.Marshal(&takeoverClaimBody{
+		Host: "other", User: "other", PID: 1,
+		TimeoutMS: (time.Hour).Milliseconds(), // 申告 1h → 猶予 3h
+		At:        time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if err := os.WriteFile(claim, body, lockFileMode); err != nil {
+		t.Fatalf("目印を書けない: %v", err)
+	}
+	// 自分の猶予 (30s) は超えるが、申告された猶予 (3h) には収まる古さ
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(claim, old, old); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+
+	took, err := l.tryTakeover()
+	if err != nil {
+		t.Fatalf("tryTakeover: %v", err)
+	}
+	if took {
+		t.Fatal("まだ飛行しうる作成者の目印を回収した (申告された --io-timeout を見ていない)")
+	}
+	cur, _, err := l.readLock()
+	if err != nil {
+		t.Fatalf("readLock: %v", err)
+	}
+	if cur == nil || cur.Token != dead.Token {
+		t.Fatalf("lock が退けられた: %+v", cur)
 	}
 }

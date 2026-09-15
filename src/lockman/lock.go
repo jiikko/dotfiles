@@ -13,16 +13,34 @@ import (
 // レイアウト。issue 091「ロックの実体」と一致させること。
 //
 //	<dir>/.lockman/
-//	├── lock              存在 = ロック中。中身は取得時に 1 度だけ書く
-//	├── tmp/<token>.json  書きかけの置き場
-//	├── probe/<token>     サーバ時刻を得る使い捨て
-//	└── graveyard/<token> 引き継ぎ・break で退けた旧 lock
+//	├── lock               存在 = ロック中。中身は取得時に 1 度だけ書く
+//	├── tmp/<token>.json   書きかけの置き場
+//	├── tmp/<gen>.takeover 引き継ぎの調停 (その世代を退ける役を 1 人に絞る目印)
+//	├── probe/<token>      サーバ時刻を得る使い捨て
+//	└── graveyard/<token>  引き継ぎ・break で退けた旧 lock
 const (
 	metaDirName      = ".lockman"
 	lockName         = "lock"
 	tmpDirName       = "tmp"
 	probeDirName     = "probe"
 	graveyardDirName = "graveyard"
+
+	// 引き継ぎの調停に使う目印の接尾辞。置き場は tmp/ (掃除のバックストップが要るため)。
+	//
+	// 🚨 掃除を回収の主手段にしてはいけない。目印を取った直後にプロセスが死ぬ経路は
+	// **既定の利用で踏む**ので (下の takeoverClaimGrace)、掃除 (scratchRetention = 1h) を
+	// 待たせると既定 TTL 30m を超えて引き継げなくなり、「TTL を過ぎれば誰かが引き継げる」
+	// という道具の契約を割る。回収は tryTakeover 自身が猶予つきで行い、掃除は取りこぼしの
+	// 受け皿に留める。
+	takeoverClaimSuffix = ".takeover"
+
+	// 目印の作成者が「もう飛行していない」と見なすまでの猶予の倍率。
+	//
+	// 作成者が目印を作った後に残るのは readLock + rename の 2 つだけで、それが固まれば
+	// 作成者自身の --io-timeout が発火してプロセスが終わる。終わるまでに要るのは
+	// Acquire の 1 回 + dispatch の deferred Cleanup の 1 回で、合わせて io-timeout の
+	// 約 2 倍。3 倍はその余裕。
+	takeoverClaimGraceFactor = 3
 
 	// 共有前提のモード。sticky を付けないこと: rename の可否は親ディレクトリの
 	// 権限で決まるため、+t が付くと他ユーザーの lock を graveyard へ退けられず、
@@ -271,10 +289,54 @@ func (l *Locker) tryPlace(meta *Meta) error {
 	return nil
 }
 
-// tryTakeover は stale な lock を「存在しない名前への rename」で 1 人だけが引き取る。
+// takeoverObservedHook は「期限切れと判定した直後」に呼ばれる seam。production では
+// 何もしない。
 //
-// 🚨 ここを unlink → create に書き換えてはいけない。期限切れを見つけた 2 者が
-// 「消して作り直す」と両方が勝つ。rename なら勝者は 1 人に絞られる。
+// 🚨 テストのためだけの 1 行だが、外すと回帰テストが成立しない。判定から破壊的操作
+// までの窓はミリ秒しかないので、seam が無いと「16 本で競わせて勝者を数える」統計テスト
+// にしかならず、それは負荷次第で緑になる assert (avoid-wall-clock-assertions.md)。
+// 実測 2026-09-15: 素の競争では -count=200 に 1 回しか落ちない。
+var takeoverObservedHook = func() {}
+
+// tryTakeover は stale な lock を 1 人だけが引き取る。
+//
+// 🚨 「rename は原子操作だから勝者は 1 人に絞られる」は**偽**。原子なのは操作であって、
+// 「自分が期限切れと判定したあの lock を動かす」ことは保証しない — rename は名前に対する
+// 操作で、名前の指す先は判定してから rename するまでに入れ替わる。実測 2026-09-15
+// (issue 366): 判定と rename のあいだを 60ms 広げると 10/10 で勝者が 2〜5 人になり、
+// graveyard には「先に勝った者の新しい lock」が入っていた (2 人目が 1 人目の lock を
+// 退けてから自分の lock を置いていた)。
+//
+// 閉じ方は 2 段。段ごとに変異を当てて red を確認してある (issue 366):
+//
+//  1. **調停**: 観測した世代 (lock の token) から決まる名前を tmp/ へ O_EXCL で取る。
+//     同じ世代を見た者は同じ名前を狙うので、退ける役が 1 人に絞られる。目印を取った者が
+//     死んだ場合は、猶予を過ぎた目印を**回収**する (reclaimTakeoverClaim)。
+//  2. **直前の再照合**: 破壊的操作の直前に lock を読み直し、まだ同じ世代・同じ mtime かを
+//     確かめる。1 だけでは、目印が回収・掃除された後に現れる遅延観測者と、Break / Release の
+//     割り込みが残る。
+//
+// どちらも「判定できないなら退けない」へ倒す: 取り逃した引き継ぎは次の acquire で済むが、
+// 誤った引き継ぎはそのまま二重実行になる。
+//
+// 🚨 残る窓: 2 の再照合から rename までのあいだに `lock` という**名前の指す先**が
+// 差し替わると、置かれたばかりの lock を退けうる。差し替えられる主体は 3 つあり、
+// **危険度が同じではない**:
+//
+//   - `Break`: **何も要らない**。期限検査も token 照合も目印の取得もしない無条件の rename
+//     なので、人が break を打った直後に別者が acquire すると成立する。しかも break は
+//     「詰まって見える」場面 = 引き継ぎが飛び交う場面で打たれる。**ここが最も現実的**
+//   - `Release`: 時計の逆行が要る。`Release` は readLock の**後**に serverNow を取り、
+//     `tryTakeover` は**前**に取るので、serverNow が単調なら takeover が期限切れと判定した
+//     後の Release は必ず期限切れ側に落ちて errNotOwner で帰る
+//   - 別の `tryTakeover`: 目印で止まる (1 段目)
+//
+// 窓の幅も「syscall 2 つぶん」とは限らない。**rename 自身が固まれば、退けられるのは
+// その syscall が返る瞬間の `lock` が指す先**なので、窓は stall の長さそのもので上限が無い。
+// 目印も再照合も rename より手前にあるので、この形だけはどちらでも防げない。
+// 0 にするには rename ではなく「inode を指定した削除」が要り、POSIX にその原始操作が無い。
+// 再開の trigger: 実 lock を使った並行実験でこの経路を再現できたとき (Break の経路は
+// seam で順序を作れば再現できるはず。未実施)。
 func (l *Locker) tryTakeover() (bool, error) {
 	now, err := l.serverNow()
 	if err != nil {
@@ -290,6 +352,51 @@ func (l *Locker) tryTakeover() (bool, error) {
 	if !expired(now, mtime, holderTTL(m)) {
 		return false, nil
 	}
+	takeoverObservedHook()
+
+	// 1 段目: この世代を退ける役を 1 人に絞る。
+	gen := takeoverGeneration(m, mtime)
+	claim := filepath.Join(l.metaDir, tmpDirName, gen+takeoverClaimSuffix)
+	switch err := l.placeTakeoverClaim(claim); {
+	case err == nil:
+	case os.IsExist(err):
+		// 役は誰かが取っている。飛行中なら譲り、放棄されていれば回収する。
+		took, rerr := l.reclaimTakeoverClaim(claim, now)
+		if rerr != nil {
+			if os.IsExist(rerr) {
+				return false, nil // 取り直しに負けた。役は相手のもの
+			}
+			return false, rerr
+		}
+		if !took {
+			return false, nil
+		}
+	default:
+		return false, err
+	}
+	// 退けずに帰る経路では目印を外す。外さないと、一過性の I/O エラーがその世代の
+	// 引き継ぎを猶予 (takeoverClaimGrace) いっぱい塞ぐ。**退けたときは外さない**:
+	// 同じ世代を古い state で見ている遅延観測者を、2 段目に頼らずもう 1 段止められる。
+	evicted := false
+	defer func() {
+		if !evicted {
+			_ = os.Remove(claim)
+		}
+	}()
+
+	// 2 段目: 破壊的操作の直前に取り直して照合する。ここで初めて対象が確定する。
+	m2, mtime2, err := l.readLock()
+	if err != nil && !errors.Is(err, errBusy) {
+		return false, err
+	}
+	if mtime2.IsZero() {
+		return true, nil // 別の誰かが先に退けた。作りにいって、負ければ busy になる
+	}
+	if !mtime2.Equal(mtime) || takeoverGeneration(m2, mtime2) != gen {
+		// 判定してから中身が変わった (引き継がれた / 延長された)。退けない。
+		return false, nil
+	}
+
 	grave := filepath.Join(l.metaDir, graveyardDirName, mustToken())
 	if err := os.Rename(l.lockPath(), grave); err != nil {
 		if os.IsNotExist(err) {
@@ -297,7 +404,50 @@ func (l *Locker) tryTakeover() (bool, error) {
 		}
 		return false, err
 	}
+	evicted = true
 	return true, nil
+}
+
+// takeoverGeneration は引き継ぎの調停に使う「世代 id」を返す。要件は 1 つだけ:
+// **同じ lock 世代を見た 2 者が必ず同じ id を得ること**。token は世代ごとに新しく引くので、
+// それがそのまま世代 id になる。
+//
+// 🚨 mtime を id に混ぜないこと。延長 (Renew) で mtime が動くと、同じ世代を違う mtime で
+// 見た 2 者が別々の id を得て調停をすり抜ける。二重取得までは 2 段目が止めるが、1 段目の
+// 主張 (「退ける役は 1 人」) は黙って消える。
+//
+// 🚨 token はパスの構成要素になるので、他ホストが書いた値をそのまま使わない。小文字 hex
+// 以外は mtime 由来の id へ倒す (中身を読めない lock には token が無いので、その経路にも
+// この id を使う)。mtime 由来の id は token より弱い — 別世代が同じ mtime を持つと衝突する
+// — が、衝突は「引き継がない」側へ倒れるだけで危険側には倒れない。
+//
+// 🚨 この関数は「lock の関数」ではなく「lock × その観測者が中身を parse できたか」の
+// 関数なので、1 段目の調停は **「同じ lock は誰が読んでも同じ parse 結果になる」という
+// 仮定**に乗っている (readLock は mtime と中身を独立した 2 つの syscall で採るので、
+// 対は原子的に観測されていない)。到達可能な非決定性は潰れている — tryPlace の O_EXCL
+// fallback が作る「中身が空の lock」も Renew の O_TRUNC も mtime を現在へ動かすため、
+// gen の計算に届く前に expired で弾かれる (「Renew が触らないから mtime は動かない」では
+// ない。動くが、動いた lock は期限切れにならない) — が、SMB の属性キャッシュが
+// 「古い mtime + 新しい中身」を返す環境は**未確認リスク**として残る。
+func takeoverGeneration(m *Meta, mtime time.Time) string {
+	if m != nil && isHexToken(m.Token) {
+		return m.Token
+	}
+	return fmt.Sprintf("notoken-%d", mtime.UnixNano())
+}
+
+// isHexToken は mustToken が作る形 (空でない小文字 hex) かを見る。
+func isHexToken(s string) bool {
+	if s == "" || len(s) > 64 {
+		return false
+	}
+	for i := range len(s) {
+		c := s[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // Release は自分の lock を解放する。
@@ -440,4 +590,150 @@ func (l *Locker) Break() error {
 		return err
 	}
 	return nil
+}
+
+// takeoverClaimBody は調停の目印の中身。**回収の可否を判断するために作成者が自分の
+// 飛行時間の上限 (--io-timeout) を申告する**のが本体で、host / user / pid は
+// 「誰が握ったまま死んだか」を人が追うための情報。
+type takeoverClaimBody struct {
+	Host      string `json:"host"`
+	User      string `json:"user"`
+	PID       int    `json:"pid"`
+	TimeoutMS int64  `json:"io_timeout_ms"`
+	At        string `json:"at"`
+}
+
+// placeTakeoverClaim は目印を O_EXCL で作る。既にあれば os.IsExist が真の error を返す。
+func (l *Locker) placeTakeoverClaim(claim string) error {
+	f, err := os.OpenFile(claim, os.O_CREATE|os.O_EXCL|os.O_WRONLY, lockFileMode)
+	if err != nil {
+		return err
+	}
+	b, err := json.Marshal(&takeoverClaimBody{
+		Host: hostname(), User: username(), PID: os.Getpid(),
+		TimeoutMS: l.timeout.Milliseconds(), At: time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		f.Close()
+		return err
+	}
+	// 中身は診断と猶予の申告だけなので、書けなくても目印としては成立する
+	// (読めない目印は下の fallback の猶予で扱う)。取った役を手放すほうが害が大きい。
+	_, _ = f.Write(b)
+	return f.Close()
+}
+
+// takeoverClaimGrace は「目印の作成者はもう飛行していない」と見なすまでの猶予を返す。
+//
+// 🚨 短すぎると**生きた作成者の目印を回収して役が 2 人になる** (= 二重取得) ので、
+// 判定できないときは長い側へ倒す。作成者が申告した --io-timeout を使い、読めなければ
+// 自分の値と既定値の大きいほうで代用する。
+//
+// 🚨 申告値が掃除の保持期間 (scratchRetention = 1h) を超えると、猶予より先に掃除が
+// 目印を浚いうる。`--io-timeout` に上限の検証が無いのは cleanup.go の minRetention の
+// 🚨 と同根で、そちらを直すときに一緒に見る。
+func (l *Locker) takeoverClaimGrace(c *takeoverClaimBody) time.Duration {
+	d := l.timeout
+	if defaultIOTimeout > d {
+		d = defaultIOTimeout
+	}
+	if c != nil {
+		if got := time.Duration(c.TimeoutMS) * time.Millisecond; got > d {
+			d = got
+		}
+	}
+	return d * takeoverClaimGraceFactor
+}
+
+// readTakeoverClaimBody は目印の中身を読む。読めなければ nil (猶予は fallback になる)。
+func readTakeoverClaimBody(claim string) *takeoverClaimBody {
+	b, err := os.ReadFile(claim)
+	if err != nil {
+		return nil
+	}
+	var c takeoverClaimBody
+	if err := json.Unmarshal(b, &c); err != nil {
+		return nil
+	}
+	return &c
+}
+
+// reclaimTakeoverClaim は「作成者が死んで残った目印」を回収する。回収できたら true
+// (= 呼び出し側が退ける役を引き継ぐ)。
+//
+// 🚨 **目印を消したり動かしたりして回収してはいけない**。remove も rename も「今そこに
+// あるもの」に効く無条件の操作なので、先に回収した者が作り直した**新しい**目印を次の者が
+// 奪う形になる — 直そうとしている bug と同じ TOCTOU を 1 段下で作り直すだけ
+// (実測 2026-09-16: rename + 作り直しの版は 8 本同時で役が 5 人になった)。
+//
+// 代わりに「**観測した古さ**から決まる名前」を O_EXCL で取る。同じ古さを見た者は同じ名前を
+// 狙うので、回収する役も 1 人に絞られる。目印そのものには触らない。
+//
+// 回収した者は最後に目印を「生きている」状態へ戻す (refreshTakeoverClaim)。戻さないと、
+// 自分が落ちたとき後続は同じ古さしか観測できず、回収の名前が埋まったまま次の回収ができない。
+//
+// 🚨 残る窓: 名前を取ってから戻すまでの **syscall 1 つ**のあいだに落ちると、その世代は
+// 掃除 (scratchRetention) まで引き継げない。回収を入れる前は「目印を作ってから rename まで」
+// の 3 syscall がまるごとこの窓だったので桁で縮んでいるが、0 ではない。人の脱出口は
+// `lockman break`。
+func (l *Locker) reclaimTakeoverClaim(claim string, now time.Time) (bool, error) {
+	st, err := os.Stat(claim)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil // 既に消えた。今回は譲って次の acquire に任せる
+		}
+		return false, err
+	}
+	body := readTakeoverClaimBody(claim)
+	if grace := l.takeoverClaimGrace(body); now.Sub(st.ModTime()) <= grace {
+		// 飛行中。**ここを黙って busy にしない** — check は期限切れを free と答えるので、
+		// 理由を出さないと「free なのに acquire できない」という診断不能の矛盾になる。
+		warnf("引き継ぎの調停中のため取れない (%s。猶予 %v)", takeoverClaimWho(body), grace)
+		return false, nil
+	}
+	mark := fmt.Sprintf("%s.%d", claim, st.ModTime().UnixNano())
+	f, err := os.OpenFile(mark, os.O_CREATE|os.O_EXCL|os.O_WRONLY, lockFileMode)
+	if err != nil {
+		if os.IsExist(err) {
+			return false, nil // 同じ古さを見た別の誰かが回収した
+		}
+		return false, err
+	}
+	f.Close()
+	if err := l.refreshTakeoverClaim(claim); err != nil {
+		return false, err
+	}
+	warnf("放棄された引き継ぎの目印を回収した (%s)", takeoverClaimWho(body))
+	return true, nil
+}
+
+// refreshTakeoverClaim は回収した目印の打刻をサーバに更新させる。目印が消えていたら
+// 取り直し、その取り直しに負けたら役を譲る (false)。
+func (l *Locker) refreshTakeoverClaim(claim string) error {
+	f, err := os.OpenFile(claim, os.O_WRONLY|os.O_TRUNC, lockFileMode)
+	if os.IsNotExist(err) {
+		// 掃除に浚われた後。作り直せたら役は自分のまま、負けたら相手のもの。
+		return l.placeTakeoverClaim(claim)
+	}
+	if err != nil {
+		return err
+	}
+	b, err := json.Marshal(&takeoverClaimBody{
+		Host: hostname(), User: username(), PID: os.Getpid(),
+		TimeoutMS: l.timeout.Milliseconds(), At: time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		f.Close()
+		return err
+	}
+	_, _ = f.Write(b)
+	return f.Close()
+}
+
+// takeoverClaimWho は目印の作成者を人が読める形にする。
+func takeoverClaimWho(c *takeoverClaimBody) string {
+	if c == nil {
+		return "作成者不明の目印"
+	}
+	return fmt.Sprintf("%s@%s pid=%d が %s に取得", c.User, c.Host, c.PID, c.At)
 }
