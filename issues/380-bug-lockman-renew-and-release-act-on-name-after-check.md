@@ -54,6 +54,29 @@ seam は一時的に入れて実験後に外してある (commit していない
   同族の窓を「時計の際どさ無しで」開ける。366 では `Break` を意図的な force break として
   受容し、コメントに明記した。この issue で扱うかは着手時に判断する
 
+## 2026-09-16 追記: 発火に「第三者のタイミング」は要らない — 自分の deferred Release が窓を開ける
+
+366 の敵対的レビュー (観点③) より。上の実測は seam で順序を作ったが、**実運用では
+`lockman with` が自分で窓を開ける**列がある:
+
+1. tick → `renewAsync` の goroutine G が `Renew` に入る。`readLock` と期限検査は通る
+   (まだ自分のもの)。G は `O_WRONLY|O_TRUNC` の open でブロック
+2. `--io-timeout` 発火 → `reportRenewErr` → `escalateGroupKill` → 子が死ぬ → `runWith` が return
+3. **`runWith` の defer `ReleaseTimed` が lock を削除する**
+4. `dispatch` の defer `CleanupTimed` が最大もう 1×io-timeout 走る。**その間 G は生きている**
+   (`withTimeout` は固まった goroutine を回収しない)
+5. その窓で別プロセス P2 が acquire → 新しい lock (token T2) を置く
+6. G の open が解けて **P2 の lock を truncate し、T1 の meta を書いて Sync**
+
+被害は 380 本文の「上書き」だけではない:
+
+- P2 の次の `Renew` は `m.Token != token` → `errNotOwner` → **既定の `--on-lost=kill` で
+  健全な子を SIGTERM/SIGKILL する** (無関係なジョブが殺される)
+- P2 の `Release(T2)` も `errNotOwner` → **誰も解放できない lock が TTL ぶん残る**
+
+🚨 **未確認**: 手順 6 で、stall 中の `open(2)` が「削除後に作り直された新しい inode」を
+開くかはパス解決の再試行に依存する (名前ベースの操作なので成立するはずだが実機未確認)。
+
 ## 直し方の候補
 
 366 で採った形 (観測した世代から決まる名前を O_EXCL で取って調停 → 破壊的操作の直前に
