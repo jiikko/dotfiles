@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"time"
@@ -297,6 +298,15 @@ func (l *Locker) tryPlace(meta *Meta) error {
 // にしかならず、それは負荷次第で緑になる assert (avoid-wall-clock-assertions.md)。
 // 実測 2026-09-15: 素の競争では -count=200 に 1 回しか落ちない。
 var takeoverObservedHook = func() {}
+
+// takeoverReclaimHook は「目印が放棄されたと判定した直後」に呼ばれる seam。production では
+// 何もしない。
+//
+// 🚨 これが無いと、回収の調停 (mark の O_EXCL) を検査するテストが**統計的**になる。
+// 回収した者が目印の打刻を戻した後に別の者が Stat すると「飛行中」の枝へ落ちるので、
+// 直列化した環境では mark が 1 度も作られないまま「役は 1 人」が成立してしまう
+// (= 調停が働いた証拠にならない緑)。
+var takeoverReclaimHook = func() {}
 
 // tryTakeover は stale な lock を 1 人だけが引き取る。
 //
@@ -613,14 +623,22 @@ func (l *Locker) placeTakeoverClaim(claim string) error {
 		Host: hostname(), User: username(), PID: os.Getpid(),
 		TimeoutMS: l.timeout.Milliseconds(), At: time.Now().UTC().Format(time.RFC3339),
 	})
-	if err != nil {
+	if err == nil {
+		// 中身は診断と猶予の申告だけなので、書けなくても目印としては成立する
+		// (読めない目印は takeoverClaimGrace の fallback で扱う)。取った役を手放すほうが害が大きい。
+		_, _ = f.Write(b)
+		err = f.Close()
+	} else {
 		f.Close()
+	}
+	if err != nil {
+		// 🚨 目印だけを残して帰らない。Close の失敗は SMB の write-behind の flush 失敗で
+		// 実在する経路で、残すとその世代が猶予いっぱい塞がる (プロセスは生きているので
+		// 誰も飛行していない状態を猶予で待つことになる)。取った役を明示的に手放す。
+		_ = os.Remove(claim)
 		return err
 	}
-	// 中身は診断と猶予の申告だけなので、書けなくても目印としては成立する
-	// (読めない目印は下の fallback の猶予で扱う)。取った役を手放すほうが害が大きい。
-	_, _ = f.Write(b)
-	return f.Close()
+	return nil
 }
 
 // takeoverClaimGrace は「目印の作成者はもう飛行していない」と見なすまでの猶予を返す。
@@ -641,6 +659,13 @@ func (l *Locker) takeoverClaimGrace(c *takeoverClaimBody) time.Duration {
 		if got := time.Duration(c.TimeoutMS) * time.Millisecond; got > d {
 			d = got
 		}
+	}
+	// 🚨 申告値は他ホストが書いたもので上限の検証が無い。桁を間違えた JSON で
+	// d * factor が int64 を溢れると**負の猶予**になり、作られたばかりの目印をその場で
+	// 回収する fail-open になる (この関数が防ぐはずの「役が 2 人」そのもの)。
+	// 溢れる帯域は「実質無限の猶予」= 回収しない側へ倒す。
+	if d > math.MaxInt64/takeoverClaimGraceFactor {
+		return time.Duration(math.MaxInt64)
 	}
 	return d * takeoverClaimGraceFactor
 }
@@ -691,6 +716,7 @@ func (l *Locker) reclaimTakeoverClaim(claim string, now time.Time) (bool, error)
 		warnf("引き継ぎの調停中のため取れない (%s。猶予 %v)", takeoverClaimWho(body), grace)
 		return false, nil
 	}
+	takeoverReclaimHook()
 	mark := fmt.Sprintf("%s.%d", claim, st.ModTime().UnixNano())
 	f, err := os.OpenFile(mark, os.O_CREATE|os.O_EXCL|os.O_WRONLY, lockFileMode)
 	if err != nil {
@@ -701,6 +727,11 @@ func (l *Locker) reclaimTakeoverClaim(claim string, now time.Time) (bool, error)
 	}
 	f.Close()
 	if err := l.refreshTakeoverClaim(claim); err != nil {
+		// 🚨 mark を残したまま帰らない。目印の打刻は観測した値のままなので、以後の観測者は
+		// 同じ mark 名を計算して EEXIST で弾かれ続け、**プロセスが落ちていなくても**その世代が
+		// 掃除まで引き継げなくなる (回収機構が防ぐはずの状態そのもの)。権限ドリフトの EACCES /
+		// SMB の EIO で到達する。
+		_ = os.Remove(mark)
 		return false, err
 	}
 	warnf("放棄された引き継ぎの目印を回収した (%s)", takeoverClaimWho(body))
