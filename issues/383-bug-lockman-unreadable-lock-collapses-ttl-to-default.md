@@ -71,21 +71,59 @@ SMB の属性キャッシュが『古い mtime + 新しい中身』を返す環�
 - **(c) `readLock` を 1 つの open で済ませる** (`os.Open` → `Fstat` → `ReadAll`)。2 が消える
 - おそらく (a) + (b) + (c) は独立に効くので、全部やるのが正しい
 
+## 進捗 (2026-09-16)
+
+**採用したのは (a) + (c)。(b) は 380 の領域なので触っていない** (ユーザー判断: fail-closed)。
+
+| 候補 | 判定 | 実装 |
+|---|---|---|
+| (a) `holderTTL(nil)` を fail-open にしない | **採用** | `tryTakeover` の 1 段目・2 段目で **`m == nil` を先に弾く** (`lock.go`)。`holderTTL` 自身は変えない (`TTLMillis <= 0` の既定は、有効な Meta の古い形式のために要る。Release / Renew / Status からは `m != nil` しか来ないことを全数確認した) |
+| (b) 0 バイト窓を消す (temp + rename) | **やらない** | [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md) の領域。(a) が入ったので、窓が残っていても**引き継がれない** |
+| (c) `readLock` を 1 つの open で済ませる | **採用 (ただし射程は本文の記述より狭い)** | `os.Open` → `Fstat` → `io.ReadAll` に変えた |
+
+### 🚨 (c) の射程は「2 が消える」ではなかった (実測 2026-09-16)
+
+本 issue は (c) で「torn read (2) が消える」と書いていたが、**truncate には効かない**。
+同じ fd でも、`Fstat` の後に外から `O_TRUNC` されれば `io.ReadAll` は 0 バイトを返し、
+**「古い mtime + 0 バイト」は同じように観測できる** (probe で実測: 読めたバイト数 0 / mtime は
+truncate 前のもの)。
+
+(c) が実際に消すのは**差し替え (temp + rename) のときの食い違い**だけ:
+2 syscall 版は「古い mtime + 新しい中身」を返せたが、1 つの open なら**同じ inode** の組で返る
+(同 probe: rename 後も開いた実体の中身が返る)。
+
+したがって **truncate 由来の torn read を無害化しているのは (a) の fail-closed** であって
+(c) ではない。コード側のコメントもこの形に直した (誤った理由をコードに残さない)。
+
+## 結果
+
+- 実装: `lock.go` — `tryTakeover` の 2 段に fail-closed、`readLock` を単一 open 化、
+  `readLockAfterStatHook` (テスト用 seam) を新設
+- テスト 3 本を新設 (`unreadable_lock_test.go`)。変異検証はケースごとの PASS/FAIL で判定:
+
+  | 変異 | 結果 |
+  |---|---|
+  | fail-closed の弾きを外す (旧挙動) | `TestUnreadableLockIsNeverTakenOver` red |
+  | `readLock` を 2 syscall へ戻す | `TestReadLockReturnsMtimeAndBodyFromSameFile` red |
+
+  🚨 **最初に書いた torn read のテストは vacuous だった** (静止状態で mtime と中身が
+  一致することしか見ておらず、2 syscall へ戻す変異が全緑で通った)。seam で
+  「読んでいる最中に差し替える」状態を作る形へ書き直して red になった。
+- 対照: 中身が**読める**期限切れ lock は従来どおり引き継げる (fail-closed が「常に引き継げない」へ
+  倒れていないこと)。`TestBreakRemovesUnreadableLock` で復旧路 (`break`) も固定した
+- `go test -race ./...` 緑 / `make test` は EXIT=0 / 83 件報告 / 失敗 0
+
 ## 残タスク
 
-- [ ] 上記の 3 候補の採否を決める (それぞれ独立に効く)
-- [ ] `takeoverGeneration` のコメントの「到達可能な非決定性は潰れている」を訂正する
-- [x] 0 バイト lock の残骸が `with` のプロセスより長生きし、**保持者にも回収手段が無い**ことを
-      本物の `runWith` ループで再現した (381 のレビュー観点③。`O_TRUNC` の直後で 1 本目だけ
-      止める seam。3/3): `with` の exit=125 / 解放後も lock が size=0 で残存 /
-      `readLock`=errBusy / 別マシンの `Acquire`=errBusy / **保持者自身の `Renew` も errBusy**
-- [ ] 実測: `--ttl 2h` の保持者の lock を 0 バイトにしてから 31 分後に別 Locker が
-      `Acquire` できることを再現する (レビュワーは `Chtimes` で時間を圧縮して再現済み)。
-      🚨 **上の 2 件はどちらもレビュワーのコピー環境での実測で、本セッションでは追試していない**
-- [ ] 🚨 **`with` 経路で本当に危ないのは「`open(2)` の中で止まる」と「truncate 以降」だけ**
-      (381 のレビュー観点③ が実測で絞り込んだ)。`readLock` / `serverNow` の途中で止まっても、
-      `now` は stall の後に取り直されるので `lock.go` の期限検査が errNotOwner で弾き、
-      他人の lock は無傷だった (3/3)。380 を直すときの範囲の絞り込みに使える
+- [x] 3 候補の採否を決めた ((a) + (c) を採用、(b) は 380 へ)
+- [x] `takeoverGeneration` のコメントの「到達可能な非決定性は潰れている」を訂正した
+      (truncate 経由の torn read は残るが、fail-closed で引き継ぎには到達しないことを明記)
+- [x] 0 バイト lock が保持者にも回収できないことの再現 (レビュワー環境。本セッションでは未追試)
+- [x] `--ttl 2h` の lock を 0 バイトにして既定 TTL 超過後に奪えることを、**本セッションで**
+      再現した (`TestUnreadableLockIsNeverTakenOver` の変異 G1 = fail-closed を外すと奪える)
+- [ ] **スコープ外**: (b) = `Renew` / `Release` を temp + rename にして 0 バイト窓自体を消す
+      → [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md)
+- [ ] **未実施**: 反証レビュー (本 issue の実装に対する敵対的レビュー)
 
 ## 関連
 

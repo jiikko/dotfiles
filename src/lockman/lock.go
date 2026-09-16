@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -165,11 +166,25 @@ func (l *Locker) serverNow() (time.Time, error) {
 }
 
 // readLock は現在の lock を読む。存在しなければ (nil, zero, nil) を返す。
+// 🚨 **mtime と中身は同じ fd から取る** (issue 383)。旧版は `os.Stat` → `os.ReadFile` の
+// 2 syscall で、あいだに別プロセスが lock を**差し替える** (temp + rename) と
+// 「古い mtime + 新しい中身」を観測できた。open して Fstat すれば、返す mtime と
+// バイト列は**同じ inode**のものになる。
+//
+// 🚨 **これは truncate による torn read を消さない** (実測 2026-09-16: 同じ fd でも、Fstat の後に
+// 外から `O_TRUNC` されると「古い mtime + 0 バイト」が返る)。そちらを実際に無害化しているのは
+// `tryTakeover` の fail-closed (中身を読めない lock は期限切れと判定しない) であって、
+// この関数ではない。issue 383 の候補 (c) は**単独では効かない**。
 func (l *Locker) readLock() (*Meta, time.Time, error) {
-	st, err := os.Stat(l.lockPath())
+	f, err := os.Open(l.lockPath())
 	if os.IsNotExist(err) {
 		return nil, time.Time{}, nil
 	}
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	defer func() { _ = f.Close() }()
+	st, err := f.Stat()
 	if err != nil {
 		return nil, time.Time{}, err
 	}
@@ -177,7 +192,8 @@ func (l *Locker) readLock() (*Meta, time.Time, error) {
 		// 想定外の型。壊れているので busy に倒す (勝手に消さない)。
 		return nil, time.Time{}, fmt.Errorf("%w: lock がディレクトリになっている", errBusy)
 	}
-	b, err := os.ReadFile(l.lockPath())
+	readLockAfterStatHook()
+	b, err := io.ReadAll(f)
 	if err != nil {
 		return nil, st.ModTime(), err
 	}
@@ -189,12 +205,23 @@ func (l *Locker) readLock() (*Meta, time.Time, error) {
 	return &m, st.ModTime(), nil
 }
 
+// readLockAfterStatHook は Fstat と本文の読み取りのあいだに割り込む seam。既定は何もしない。
+// **テストが「読んでいる最中に lock が差し替わった」状態を決定論で作る**ために使う
+// (この窓は本番では数 µs で、外から狙って作れない)。
+var readLockAfterStatHook = func() {}
+
 // expired は mtime と TTL から stale かを判定する。now は必ず serverNow の値を渡す。
 func expired(now, mtime time.Time, ttl time.Duration) bool {
 	return now.Sub(mtime) > ttl
 }
 
 // holderTTL は「その lock の生死を決める TTL」を返す。
+//
+// 🚨 **`m == nil` (中身を読めない lock) をここへ渡してはいけない。** 既定へ倒すと、
+// `--ttl 2h` を宣言した保持者が生きていても 30 分で「期限切れ」と判定され、
+// 正規手順で奪われる = 二重実行 (issue 383)。引き継ぎの判定は `tryTakeover` が
+// **`m == nil` を先に弾く** ことで、この経路へ到達させない。
+// ここに残る nil 分岐は、その先で nil 参照 panic を起こさないための最後の受けに過ぎない。
 //
 // 🚨 判定には**保持者が宣言した TTL** (lock の中身) を使う。奪いにきた側が渡す --ttl を
 // 使ってはいけない: 短い --ttl を指定するだけで、他人の生きている lease を早期に
@@ -381,6 +408,14 @@ func (l *Locker) tryTakeover() (bool, error) {
 	if mtime.IsZero() {
 		return true, nil // 既に誰かが退けた後。作りにいってよい
 	}
+	if m == nil {
+		// 🚨 **中身を読めない lock は「期限切れ」と判定しない** (issue 383。fail-closed)。
+		// TTL は lock の中身にしか無いので、読めない時点で生死は判定できない。既定 TTL へ
+		// 倒すと、それより長い TTL を宣言した保持者を生きたまま奪う。
+		// 詰まったら人が `lockman break` で剥がす (Break は中身を読まないので必ず効く)。
+		return false, fmt.Errorf("%w: lock の中身を読めないので引き継がない (生死を判定できない。"+
+			"保持者が居ないと分かっているなら `lockman break` で剥がす)", errBusy)
+	}
 	if !expired(now, mtime, holderTTL(m)) {
 		return false, nil
 	}
@@ -421,6 +456,10 @@ func (l *Locker) tryTakeover() (bool, error) {
 	if mtime2.IsZero() {
 		return true, nil // 別の誰かが先に退けた。作りにいって、負ければ busy になる
 	}
+	if m2 == nil {
+		// 1 段目の後に読めなくなった (別の Renew が truncate した等)。1 段目と同じ理由で退けない。
+		return false, fmt.Errorf("%w: 判定後に lock の中身を読めなくなったので引き継がない", errBusy)
+	}
 	if !mtime2.Equal(mtime) || takeoverGeneration(m2, mtime2) != gen {
 		// 判定してから中身が変わった (引き継がれた / 延長された)。退けない。
 		return false, nil
@@ -452,12 +491,16 @@ func (l *Locker) tryTakeover() (bool, error) {
 //
 // 🚨 この関数は「lock の関数」ではなく「lock × その観測者が中身を parse できたか」の
 // 関数なので、1 段目の調停は **「同じ lock は誰が読んでも同じ parse 結果になる」という
-// 仮定**に乗っている (readLock は mtime と中身を独立した 2 つの syscall で採るので、
-// 対は原子的に観測されていない)。到達可能な非決定性は潰れている — tryPlace の O_EXCL
-// fallback が作る「中身が空の lock」も Renew の O_TRUNC も mtime を現在へ動かすため、
-// gen の計算に届く前に expired で弾かれる (「Renew が触らないから mtime は動かない」では
-// ない。動くが、動いた lock は期限切れにならない) — が、SMB の属性キャッシュが
-// 「古い mtime + 新しい中身」を返す環境は**未確認リスク**として残る。
+// 仮定**に乗っている。
+//
+// 🚨 **訂正 (issue 383)**: 旧版のコメントは「到達可能な非決定性は潰れている」と書いていたが、
+// **誤りだった**。根拠にしていたのは「O_TRUNC も mtime を現在へ動かすので、gen の計算に届く前に
+// expired で弾かれる」だが、**中身を読めない lock の TTL が既定 (30m) へ倒れていた**ため、
+// それより長い TTL を宣言した保持者では expired が成立してしまう。
+// いま到達しない理由は別で、`tryTakeover` が **`m == nil` を先に弾く** (fail-closed) から。
+// mtime と中身が同じ inode から来ることは readLock の単一 open が保証するが、
+// **truncate による「古い mtime + 0 バイト」は今も観測できる** (実測 2026-09-16)。
+// その組み合わせがここへ届かないのは、上の fail-closed が引き継ぎ自体を止めるため。
 func takeoverGeneration(m *Meta, mtime time.Time) string {
 	if m != nil && isHexToken(m.Token) {
 		return m.Token
