@@ -163,7 +163,12 @@ func TestEscalateDoesNotSignalWhenAlreadyExited(t *testing.T) {
 func TestEscalateSendsTermWhenChildIsAlive(t *testing.T) {
 	pgid, termLog, _ := startTermRecordingGroup(t)
 
-	escalateGroupKill(pgid, make(chan struct{}), 10*time.Millisecond)
+	// 🚨 **grace を仕様値 (10ms) から切り離す**。この対照が見るのは「TERM が飛ぶか」だけで、
+	// 猶予の長さは主張に関係しない。10ms のままだと、ハンドラの `echo` が**同じ子への SIGKILL**
+	// に間に合わなければ記録が永遠に現れず赤くなる (レビューの実測: 素のレイテンシは
+	// 0.32〜2.58ms で今は 4 倍の余裕だが、負荷の高い runner では詰まる)。
+	// しかも落ち方が最悪で、**赤は「冒頭 guard が退行した」に見える** (実際は fixture の競走)。
+	escalateGroupKill(pgid, make(chan struct{}), 3*time.Second)
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {

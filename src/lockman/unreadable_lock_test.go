@@ -170,8 +170,39 @@ func TestUnreadableLockGuidanceReachesCLI(t *testing.T) {
 
 	// `with` 経路も同じ (定期ジョブはこちらを使う。定型文だけだと永久 skip が見えない)
 	out2 := captureStderr(t, func() { rc = run([]string{"with", l.dir, "--", "/usr/bin/true"}) })
+	if rc != exitWithBusy {
+		t.Fatalf("with rc=%d (exitWithBusy=%d を期待。子を走らせていないか)", rc, exitWithBusy)
+	}
 	if !strings.Contains(out2, "読めない") {
 		t.Fatalf("with の stderr に理由が出ていない: %q", out2)
+	}
+}
+
+// 🚨 **正常な busy では静かなままであること** (敵対レビュー 2 周目 P2)。
+//
+// 「人が動くまで解けない busy」と「正常に他者が保持中」を**機械で見分けられる差**にしてある
+// (`errUnreadableLock`)。正常系まで鳴らすと `lockman acquire || exit 0` の cron が skip の
+// たびにメールを飛ばし、operator が `2>/dev/null` を足す → **本当に伝えたい案内まで黙る**。
+func TestNormalBusyStaysQuiet(t *testing.T) {
+	l := newTestLocker(t)
+	if _, err := l.Acquire(time.Hour, "holder"); err != nil { // 中身は読める = 正常な保持
+		t.Fatalf("Acquire: %v", err)
+	}
+	var rc int
+	out := captureStderr(t, func() { rc = run([]string{"acquire", l.dir}) })
+	if rc != exitBusy {
+		t.Fatalf("rc=%d (exitBusy=%d を期待)", rc, exitBusy)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Fatalf("正常な busy で stderr を汚した (cron が 2>/dev/null を足す動機になる): %q", out)
+	}
+	// 機械から見分けられること (散文ではなく型で)
+	_, err := l.Acquire(time.Hour, "other")
+	if !errors.Is(err, errBusy) {
+		t.Fatalf("errBusy を期待: %v", err)
+	}
+	if errors.Is(err, errUnreadableLock) {
+		t.Fatalf("正常な busy が「人が動くまで解けない busy」に分類されている: %v", err)
 	}
 }
 
@@ -196,5 +227,109 @@ func TestTryPlaceRemovesOwnLockWhenBodyCannotBeWritten(t *testing.T) {
 	}
 	if _, err := os.Stat(l.lockPath()); !os.IsNotExist(err) {
 		t.Fatalf("中身を書けなかった lock が残っている (誰も引き継げない): %v", err)
+	}
+}
+
+// 🚨 **後始末が消してよいのは「自分が開いた実体」だけ** (敵対レビュー 2 周目 P1 / P1-b)。
+//
+// 初版の後始末は `os.Remove(l.lockPath())` = **名前に対する破壊的操作**で、
+// 「O_EXCL が通った = 自分のもの」に乗っていた。O_EXCL が保証するのはその瞬間だけで、
+// Write が失敗して戻るまでのあいだに `Break` (期限も token も見ない無条件 rename) が入れば、
+// 名前は**別ホストの生きた lock** を指している。そこを消すと二重実行になる。
+//
+// 🚨 初版のテストは「消えたこと」しか見ておらず、**消す範囲を 1 mm も固定していなかった**
+// (他人の lock を消しても緑だった)。これがその欠けていた否定ケース。
+func TestTryPlaceDoesNotRemoveSomeoneElsesLock(t *testing.T) {
+	l := newTestLocker(t)
+	other, err := NewLocker(l.dir, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewLocker(other): %v", err)
+	}
+
+	oldLink := tryPlaceLinkFn
+	tryPlaceLinkFn = func(string, string) error { return syscall.ENOTSUP } // smbfs の枝
+	defer func() { tryPlaceLinkFn = oldLink }()
+
+	var victim *Meta
+	fired := false
+	oldHook := tryPlaceAfterCreateHook
+	tryPlaceAfterCreateHook = func(f *os.File) {
+		// 🚨 **1 回だけ発火させる**。中で呼ぶ `other.Acquire` も同じ枝を通るので、
+		// 素の hook だと**無限再帰して固まる** (実測 2026-09-16: 600 秒で timeout)。
+		// 🚨 `sync.Once` は使えない: 再入した `Do` は 1 回目の完了を待つので**デッドロックする**
+		// (同じく実測で固まった)。ここは同期呼び出しなので素のフラグでよい。
+		if fired {
+			return
+		}
+		fired = true
+		func() {
+			// 窓の中で起きること: 人が「詰まっている」と見て break を打ち、別ホストが正規に取得する
+			if err := l.Break(); err != nil {
+				t.Errorf("Break: %v", err)
+				return
+			}
+			m, err := other.Acquire(2*time.Hour, "other-host-job")
+			if err != nil {
+				t.Errorf("other.Acquire: %v", err)
+				return
+			}
+			victim = m
+			_ = f.Close() // こちらの Write は窓の終わりに失敗する
+		}()
+	}
+	defer func() { tryPlaceAfterCreateHook = oldHook }()
+
+	if _, err := l.Acquire(time.Minute, "stalled-host"); err == nil {
+		t.Fatalf("書けないのに成功した")
+	}
+	if victim == nil {
+		t.Fatalf("前提: 別ホストの取得が成立していない")
+	}
+	m, _, err := l.readLock()
+	if err != nil {
+		t.Fatalf("readLock: %v", err)
+	}
+	if m == nil {
+		t.Fatalf("別ホストの生きた lock を消した (二重実行になる)")
+	}
+	if m.Token != victim.Token {
+		t.Fatalf("別ホストの lock が別物に置き換わっている: got=%s want=%s", m.Token, victim.Token)
+	}
+}
+
+// 🚨 **待ち直す枝では鳴らないこと** (敵対レビュー 2 周目 P3)。
+//
+// コメントには「待ち直す枝では出さない」と書いてあったが、**テストが 1 本も守っていなかった**
+// (再試行枝にも warnf を足す変異が全緑だった)。`--wait 3600` は backoff 1s→15s で数百回
+// 回るので、そこで鳴らすと stderr が数百行になり、P2 と同じく「stderr を捨てる運用」を作る。
+func TestWaitLoopDoesNotWarnPerRetry(t *testing.T) {
+	l := newTestLocker(t)
+	// 中身を読めない lock = 鳴る側の busy を置く (正常な busy だと「元々鳴らない」ので
+	// 再試行枝の有無で結果が変わらない fixture になる)
+	if _, err := l.Acquire(2*time.Hour, "holder"); err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	if err := os.Truncate(l.lockPath(), 0); err != nil {
+		t.Fatalf("Truncate: %v", err)
+	}
+	old := time.Now().Add(-(defaultTTL + 5*time.Minute))
+	if err := os.Chtimes(l.lockPath(), old, old); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+
+	var rc int
+	out := captureStderr(t, func() { rc = run([]string{"acquire", l.dir, "--wait", "3s"}) })
+	if rc != exitBusy {
+		t.Fatalf("rc=%d (exitBusy=%d を期待)", rc, exitBusy)
+	}
+	// 何回再試行しても、出るのは**諦めたときの 1 行だけ**
+	lines := 0
+	for _, ln := range strings.Split(strings.TrimSpace(out), "\n") {
+		if strings.TrimSpace(ln) != "" {
+			lines++
+		}
+	}
+	if lines != 1 {
+		t.Fatalf("待ち直す枝でも鳴っている (%d 行。1 行のはず): %q", lines, out)
 	}
 }

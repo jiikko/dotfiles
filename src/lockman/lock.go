@@ -72,6 +72,11 @@ const (
 var (
 	// errBusy は他者が保持中。異常ではなくスキップの合図。
 	errBusy = errors.New("locked by someone else")
+	// errUnreadableLock は **errBusy のうち「人が動くまで解けない」方**。
+	// 🚨 正常な busy と**機械で見分けられる差**にしておく (issue 383 の敵対レビュー P2):
+	// 散文の文面だけで区別させると、cron が `2>/dev/null` を足した瞬間に区別が消える。
+	// errBusy を包むので、既存の `errors.Is(err, errBusy)` の分岐はそのまま動く。
+	errUnreadableLock = fmt.Errorf("%w: lock の中身を読めないので引き継がない", errBusy)
 	// errNotOwner は「自分は持ち主ではない」(release/renew の対象違い、lease 喪失)。
 	errNotOwner = errors.New("not the lock owner")
 	// errClaimReplaced は「回収しようとした目印が、途中で別の観測者に置き直された」。
@@ -317,12 +322,42 @@ func (l *Locker) tryPlace(meta *Meta) error {
 		if err != nil {
 			return err
 		}
-		// 🚨 **失敗したら自分が作った lock を消す** (issue 383)。O_EXCL が通った = この lock は
-		// 自分のものなので消してよい。残すと「中身が無い lock」になり、fail-closed の下では
-		// **誰も引き継げず、保持者も居ない**恒久 wedge になる (人が `break` するまで)。
+		// 🚨 **失敗したら自分が作った lock を消す** (issue 383)。残すと「中身が無い lock」になり、
+		// fail-closed の下では**誰も引き継げず、保持者も居ない**恒久 wedge になる。
 		// この枝は link(2) が使えない FS (smbfs で ENOTSUP) でだけ通る = 本番の経路。
+		//
+		// 🚨 **「O_EXCL が通った = この lock は自分のもの」は偽** (敵対レビュー 2 周目 P1)。
+		// O_EXCL が保証するのは**その瞬間**にその名前を自分が作ったことだけで、Write / Sync /
+		// Close が失敗して戻るまでのあいだに `lock` という名前の指す先は入れ替わりうる
+		// (`Break` は期限も token も見ずに無条件で rename する)。名前で消すと、**別ホストの
+		// 生きた lock を無言で消す** = 二重実行。これは同じファイルの `tryTakeover` が
+		// 「rename が原子なのは操作であって、名前の指す先が入れ替わらないことは保証しない」と
+		// 明文で否定している前提そのもの (issue 366)。
+		// **消してよいのは、開いた実体と今の名前の指す先が同じときだけ**。
+		// 🚨 この commit が入れた stderr の案内 (「`lockman break` で剥がす」) は、まさに
+		// 0 バイト lock が在る状態で人に `break` を打たせるので、**窓の発火条件を自分で作る**。
+		own, ownErr := f.Stat() // 開いた実体を控える (Close より前でないと取れない)
 		tryPlaceAfterCreateHook(f)
 		cleanupOwn := func(cause error) error {
+			if ownErr != nil {
+				warnf("中身を書けなかった lock の実体を確認できないので消さない (%v): %v", ownErr, l.lockPath())
+				return cause
+			}
+			cur, err := os.Lstat(l.lockPath())
+			if err != nil {
+				if !os.IsNotExist(err) {
+					warnf("中身を書けなかった lock を確認できない (%v): %v", err, l.lockPath())
+				}
+				return cause // 既に無い / 見られない → 触らない
+			}
+			if !os.SameFile(own, cur) {
+				// 名前の指す先が入れ替わった = 自分のものではない。**消さない**
+				warnf("中身を書けなかった lock は別の実体に置き換わっているので消さない"+
+					" (他者が取り直した可能性): %v", l.lockPath())
+				return cause
+			}
+			// 🚨 ここから Remove までの窓は 0 にならない (同ファイルが rename について
+			// 既に受容しているのと同クラス)。縮めたうえで受容する。
 			if rmErr := os.Remove(l.lockPath()); rmErr != nil && !os.IsNotExist(rmErr) {
 				warnf("中身を書けなかった lock を消せない (%v)。`lockman break` で剥がすこと: %v", rmErr, l.lockPath())
 			}
@@ -435,8 +470,8 @@ func (l *Locker) tryTakeover() (bool, error) {
 		// 詰まったら人が `lockman break` で剥がす (Break は**中身を読まない**ので、壊れた lock にも
 		// 効く。ただし graveyard dir と rename 権限には依存する — `.lockman/graveyard` が
 		// 通常ファイルだと break 自身が失敗する。実測 2026-09-16)。
-		return false, fmt.Errorf("%w: lock の中身を読めないので引き継がない (生死を判定できない。"+
-			"保持者が居ないと分かっているなら `lockman break` で剥がす)", errBusy)
+		return false, fmt.Errorf("%w (生死を判定できない。保持者が居ないと分かっているなら"+
+			" `lockman break` で剥がす)", errUnreadableLock)
 	}
 	if !expired(now, mtime, holderTTL(m)) {
 		return false, nil
@@ -480,7 +515,7 @@ func (l *Locker) tryTakeover() (bool, error) {
 	}
 	if m2 == nil {
 		// 1 段目の後に読めなくなった (別の Renew が truncate した等)。1 段目と同じ理由で退けない。
-		return false, fmt.Errorf("%w: 判定後に lock の中身を読めなくなったので引き継がない", errBusy)
+		return false, fmt.Errorf("%w (判定後に読めなくなった)", errUnreadableLock)
 	}
 	if !mtime2.Equal(mtime) || takeoverGeneration(m2, mtime2) != gen {
 		// 判定してから中身が変わった (引き継がれた / 延長された)。退けない。

@@ -44,10 +44,14 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	meta, err := l.AcquireTimed(ttl, label)
 	if err != nil {
 		if errors.Is(err, errBusy) {
-			// 🚨 **err の中身まで出す** (issue 383)。定型文だけだと、「中身を読めない lock で
-			// 引き継がない」= 人が `break` するまで解けない状態が、正常な保持中と区別できず、
-			// 定期ジョブが静かに永久 skip される
-			warnf("他が保持中のため実行しない (%v)", err)
+			// 🚨 **「人が動くまで解けない busy」のときだけ理由を足す** (issue 383)。
+			// 定型文だけだと、中身を読めない lock による永久 skip が正常な保持中と区別できない。
+			// 逆に正常な busy まで理由を出すと、定期ジョブの stderr が毎回汚れる (敵対レビュー P2)。
+			if errors.Is(err, errUnreadableLock) {
+				warnf("他が保持中のため実行しない (%v)", err)
+			} else {
+				warnf("他が保持中のため実行しない")
+			}
 			return exitWithBusy
 		}
 		// I/O タイムアウトもここへ落ちる (判定不能 = 125。091:418)。

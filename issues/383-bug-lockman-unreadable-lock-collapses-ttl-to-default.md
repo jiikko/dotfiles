@@ -138,6 +138,32 @@ truncate 前のもの)。
 効くのは「SMB の属性キャッシュが古い mtime を返す」かつ「1 段目の token が非 hex」のときだけで、
 これは本 issue が未確認リスクとして挙げている経路そのもの。変異表に 2 段目の行が無いのはこのため。
 
+## 敵対的レビュー 2 周目 (2026-09-16)
+
+1 周目の指摘への修正が**新しい判定ロジック** (`cleanupOwn` / 理由の出し分け) だったので §7 の
+打ち切り条件に当たらず、2 周目を通した。**また P1 が出た**。
+
+| # | 指摘 | 判定 |
+|---|---|---|
+| P1 | `cleanupOwn` の前提「O_EXCL が通った = この lock は自分のもの」は**偽**。`os.Remove(l.lockPath())` は**名前**に対する操作で、Write が失敗して戻るまでのあいだに `Break` が入れば名前は**別ホストの生きた lock** を指す。消すと二重実行。**同じファイルの `tryTakeover` が「rename が原子なのは操作であって、名前の指す先が入れ替わらないことは保証しない」と明文で否定している前提そのもの** (issue 366) | **採用**。開いた実体を `f.Stat()` で控え、`os.SameFile` で照合したときだけ消す。🚨 **1 周目の修正 (stderr の案内) が「`break` を打て」と人に言うので、窓の発火条件を自分で作っていた** |
+| P1-b | その後始末のテストは「消えたこと」しか見ておらず、**消す範囲を 1 mm も固定していなかった** (他人の lock を消しても緑 / `RemoveAll` でも緑)。変異表が「消さない」方向しか無く、**正解が『消さないこと』の fixture が 0 件**だった | **採用**。否定ケース (`TestTryPlaceDoesNotRemoveSomeoneElsesLock`) を足した |
+| P2 | 「理由を出す」が**正常系まで騒がしくし、自分が作ったシグナルを埋める**。`lockman acquire \|\| exit 0` の cron が skip のたびにメールを飛ばし、operator が `2>/dev/null` を足す → **wedge の案内まで黙る** | **採用**。`errUnreadableLock` (errBusy を包む sentinel) を作り、**機械で見分けられる差**にした。鳴らすのはそちらだけ |
+| P3 | 対照テストの余裕が**自分の SIGKILL との競走**で決まっていた (`grace=0` で 20/20 取りこぼし)。落ちると「冒頭 guard の退行」に見える | **採用**。対照の grace を仕様値から切り離した (この対照は「TERM が飛ぶか」しか見ない) |
+| P3 | 「待ち直す枝では出さない」が**コメントだけで無検査** (再試行枝にも warnf を足す変異が全緑) | **採用**。`TestWaitLoopDoesNotWarnPerRetry` を足した |
+| — | 秘密の漏洩 / stdout の汚染 / seam のテスト間干渉 / fixture の残骸 | **壊せなかった** (レビューが全数確認) |
+
+### 変異検証 (2 周目の修正分)
+
+| 変異 | 結果 |
+|---|---|
+| 実体照合 (`os.SameFile`) を外す | `TestTryPlaceDoesNotRemoveSomeoneElsesLock` red |
+| 正常 busy でも理由を鳴らす | `TestNormalBusyStaysQuiet` red |
+| 再試行枝でも鳴らす | `TestWaitLoopDoesNotWarnPerRetry` red |
+
+🚨 **テストを書く側でも 2 回固まった**: hook の中で `other.Acquire` を呼ぶと同じ枝へ**再入して
+無限再帰**し、`sync.Once` で塞ごうとすると**再入した `Do` が 1 回目の完了を待ってデッドロック**した
+(どちらも 600 秒 timeout で観測)。素のフラグにした。
+
 ## 残タスク
 
 - [x] 3 候補の採否を決めた ((a) + (c) を採用、(b) は 380 へ)
@@ -151,4 +177,7 @@ truncate 前のもの)。
 - [x] 反証レビュー (敵対的レビュー) を 1 周通した。P1 の 2 件を修正し、変異で red を確認:
       `acquire` の理由出力を消す / `with` を定型文へ戻す → `TestUnreadableLockGuidanceReachesCLI` red /
       `tryPlace` の後始末を no-op へ → `TestTryPlaceRemovesOwnLockWhenBodyCannotBeWritten` red
-- [ ] **未実施**: 上の修正差分に対する 2 周目 (§7)
+- [x] 2 周目 (§7) を通した。P1 / P1-b / P2 / P3 x2 を採用し、変異で red を確認
+- [ ] **未実施**: 3 周目 (§7)。2 周目の修正が `os.SameFile` による**新しい判定ロジック**なので
+      打ち切り条件 (a) を満たさない。攻め口は「`f.Stat()` が失敗する枝」「Lstat と Remove の
+      あいだに残る窓」「Close 失敗枝で fd が無い状態」
