@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -159,6 +160,173 @@ func shortenMaxInFlightRenews(t *testing.T, n int64) func() {
 	return func() { maxInFlightRenews = old }
 }
 
+// leaseProbe は「別マシンから見て lease がどう見えるか」を 1 度に採った観測。
+//
+// 🚨 **`Acquire` が errBusy を返したことだけを「lease が生きている」と読まない。**
+// 中身を読めない lock も errBusy になる (`readLock` が fail-closed に倒す) ので、
+// 更新が止まっていても同じ緑になりうる (issue 383)。token と期限まで見て初めて
+// 「保持者の lease が生きたまま」と言える。
+type leaseProbe struct {
+	setupErr   error // 手順そのものの失敗 (assert 以前の話)
+	acquireErr error // 別マシンの Acquire の結果
+	readErr    error // 保持者の lock を読み直した結果
+	ours       bool  // 読めた lock が保持者のものか
+	alive      bool  // その lock が期限内か
+}
+
+// probeLease は「別マシンが奪えるか」と「保持者の lease が生きているか」を同じ瞬間に採る。
+// runWith の defer が lock を消すので、**観測は runWith が返る前に済ませる**必要がある。
+func probeLease(l, other *Locker, ttl time.Duration, wantToken string) leaseProbe {
+	var p leaseProbe
+	_, p.acquireErr = other.Acquire(ttl, "other")
+	m, mtime, err := l.readLock()
+	p.readErr = err
+	if err != nil || m == nil {
+		return p
+	}
+	p.ours = m.Token == wantToken
+	now, nerr := l.serverNow()
+	if nerr != nil {
+		p.readErr = nerr
+		return p
+	}
+	p.alive = !expired(now, mtime, holderTTL(m))
+	return p
+}
+
+// recvProbe は観測が返るのを**上限つきで**待つ。
+// 🚨 奪う側の `Acquire` は `--io-timeout` に包まれていない生の呼び出しなので、詰まった
+// 経路に入ると永久に返らない。上限が無いとパッケージ全体が panic し、**赤ではなく
+// 「どの assert が落ちたか分からない」**になる (boundedInt と同じ安全網)。
+func recvProbe(t *testing.T, ch <-chan leaseProbe) leaseProbe {
+	t.Helper()
+	select {
+	case p := <-ch:
+		return p
+	case <-time.After(20 * time.Second):
+		t.Fatalf("lease の観測が 20s 以内に戻らない (奪う側の Acquire が詰まった可能性)")
+		return leaseProbe{}
+	}
+}
+
+// assertLeaseHeld は「保持者の lease が生きたままだった」を検査する。
+func assertLeaseHeld(t *testing.T, what string, p leaseProbe, withExit int) {
+	t.Helper()
+	if p.setupErr != nil {
+		t.Fatalf("%s: 手順が成立しなかった: %v", what, p.setupErr)
+	}
+	if !errors.Is(p.acquireErr, errBusy) {
+		t.Fatalf("%s: 別マシンが lease を奪えた (= 更新が止まっていた): err=%v / with の exit=%d",
+			what, p.acquireErr, withExit)
+	}
+	if p.readErr != nil || !p.ours || !p.alive {
+		t.Fatalf("%s: 奪えなかったが lease が保持者のものとして生きていない "+
+			"(readErr=%v ours=%v alive=%v)。errBusy の理由が違う (issue 383)",
+			what, p.readErr, p.ours, p.alive)
+	}
+}
+
+// waitForLockToken は lock が置かれるのを待ち、保持者の token と生の中身を返す。
+func waitForLockToken(l *Locker) (string, []byte, error) {
+	for range 400 {
+		if b, err := os.ReadFile(l.lockPath()); err == nil && len(b) > 0 {
+			var m Meta
+			if err := json.Unmarshal(b, &m); err != nil {
+				return "", nil, err
+			}
+			return m.Token, b, nil
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return "", nil, errors.New("lock が置かれなかった")
+}
+
+// 🚨 上限 (maxInFlightRenews) は**詰まりが 1 度も無くても**効く。枠を戻すのは「返った更新」
+// なので、戻す側 (`timeout.go` の `defer inFlight.Add(-1)`) が壊れると上限は「累計の更新回数」
+// になり、**健全なマウントで上限 tick 目に更新が永久に止まる**。既定値 (TTL 30m / tick 10m /
+// 上限 8) なら約 80 分走った `with` が lease を失う — 381 のバグより悪い。
+//
+// 詰まりを一切作らない列で固定する。敵対レビュー 2026-09-16 (観点② false green) の指摘で、
+// 「上限と**成功する**更新の相互作用」を見ているテストが 1 本も無かった。
+func TestLeaseSurvivesLongHealthyRun(t *testing.T) {
+	// 上限 tick 目を早く来させる。健全なら枠は毎 tick 戻るので、正しい実装は上限に触れない
+	defer shortenMaxInFlightRenews(t, 2)()
+	l, err := NewLocker(t.TempDir(), testIOTimeout)
+	if err != nil {
+		t.Fatalf("NewLocker: %v", err)
+	}
+	const ttl = 600 * time.Millisecond // tick = 200ms
+	other, err := NewLocker(l.dir, testIOTimeout)
+	if err != nil {
+		t.Fatalf("NewLocker(other): %v", err)
+	}
+
+	ch := make(chan leaseProbe, 1)
+	go func() {
+		tok, _, err := waitForLockToken(l)
+		if err != nil {
+			ch <- leaseProbe{setupErr: err}
+			return
+		}
+		// 上限 (2) の 9 倍の tick を通してから観測する。枠が戻らない実装は 2 tick 目
+		// (400ms) で更新をやめるので、lease は 1000ms には死んでいる (余裕 800ms)
+		time.Sleep(1800 * time.Millisecond)
+		ch <- probeLease(l, other, ttl, tok)
+	}()
+
+	got := boundedInt(t, "runWith (健全なマウントでの長期走行)", func() int {
+		return runWith(l, ttl, "", false, []string{"sh", "-c", "sleep 3"})
+	})
+	assertLeaseHeld(t, "健全なマウントで上限 tick を超えて走行", recvProbe(t, ch), got)
+}
+
+// 🚨 判定不能 (125) を報告した後に確実な喪失 (errNotOwner) を知っても、終了コードは 125 の
+// まま。091:398-399 が 122 と 125 を分けているが、**判定不能だった窓があった事実は後から
+// 消えない**ので上書きしない (issue 381 で意図的に据え置いた決定)。
+//
+// 更新を張り直すようになって、この順序 (判定不能 → 確実な喪失) は毎 tick 起こりうる常態に
+// なった。決めた以上は固定する。敵対レビュー 2026-09-16 (観点② false green) の指摘で、
+// 既存の TestWithSeparatesLostLeaseFromIndeterminate は 1 run に 1 種類の失敗しか起こさず、
+// この順序を誰も作っていなかった。
+func TestIndeterminateThenLostKeepsIndeterminateExit(t *testing.T) {
+	l, err := NewLocker(t.TempDir(), testIOTimeout) // io-timeout = 200ms
+	if err != nil {
+		t.Fatalf("NewLocker: %v", err)
+	}
+	const ttl = 900 * time.Millisecond // tick = 300ms
+	setup := make(chan error, 1)
+	go func() {
+		if _, _, err := waitForLockToken(l); err != nil {
+			setup <- err
+			return
+		}
+		// ① FIFO を被せて判定不能を作る (tick 300ms → 期限 500ms で 1 回目の報告)
+		fifo := l.lockPath() + ".fifo"
+		if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+			setup <- err
+			return
+		}
+		if err := os.Rename(fifo, l.lockPath()); err != nil {
+			setup <- err
+			return
+		}
+		// ② 期限切れの報告が済んだ後、lock ごと退ける。**詰まった読み手は解放しない**。
+		//    以後の更新は readLock が「存在しない」を返すので errNotOwner = 確実な喪失
+		time.Sleep(700 * time.Millisecond)
+		setup <- os.Rename(l.lockPath(), fifo)
+	}()
+
+	got := boundedInt(t, "runWith (判定不能 → 確実な喪失)", func() int {
+		return runWith(l, ttl, "", false, []string{"sh", "-c", "sleep 3"}) // --on-lost warn
+	})
+	if err := <-setup; err != nil {
+		t.Fatalf("手順が成立しなかった: %v", err)
+	}
+	if got != exitWithInvalid {
+		t.Fatalf("exit %d (期待 %d = 判定不能のまま)。確実な喪失で上書きしていないか", got, exitWithInvalid)
+	}
+}
+
 // 🚨 更新が**一過性**に詰まっただけなら、復旧後も lease を持ち続けること。
 //
 // 最初の失敗で更新をやめる実装 (`ticker.Stop()`) は、これを**本物の lease 喪失**に変える:
@@ -177,28 +345,21 @@ func TestLeaseSurvivesTransientRenewBlock(t *testing.T) {
 		t.Fatalf("NewLocker(other): %v", err)
 	}
 
-	stolen := make(chan error, 1)
+	stolen := make(chan leaseProbe, 1)
 	go func() {
-		var orig []byte
-		for range 400 { // lock が置かれるのを待つ
-			if b, err := os.ReadFile(l.lockPath()); err == nil && len(b) > 0 {
-				orig = b
-				break
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-		if orig == nil {
-			stolen <- errors.New("lock が置かれなかった")
+		tok, orig, err := waitForLockToken(l)
+		if err != nil {
+			stolen <- leaseProbe{setupErr: err}
 			return
 		}
 		// ① 詰まらせる (FIFO を被せる。消してから作ると errNotOwner を拾う窓ができる)
 		fifo := l.lockPath() + ".fifo"
 		if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-			stolen <- err
+			stolen <- leaseProbe{setupErr: err}
 			return
 		}
 		if err := os.Rename(fifo, l.lockPath()); err != nil {
-			stolen <- err
+			stolen <- leaseProbe{setupErr: err}
 			return
 		}
 		// ② 詰まりを **最初の tick (300ms) + 期限 (200ms) より十分長く**保つ。
@@ -210,16 +371,16 @@ func TestLeaseSurvivesTransientRenewBlock(t *testing.T) {
 		//    その後で FIFO へ書いて詰まっている読み手を解放する。逆順だと、解放された
 		//    Renew が続けて打つ書き込み用 open がまた FIFO に当たって詰まる
 		if err := os.Rename(l.lockPath(), fifo); err != nil {
-			stolen <- err
+			stolen <- leaseProbe{setupErr: err}
 			return
 		}
 		real := l.lockPath() + ".real"
 		if err := os.WriteFile(real, orig, 0o600); err != nil {
-			stolen <- err
+			stolen <- leaseProbe{setupErr: err}
 			return
 		}
 		if err := os.Rename(real, l.lockPath()); err != nil {
-			stolen <- err
+			stolen <- leaseProbe{setupErr: err}
 			return
 		}
 		if f, err := os.OpenFile(fifo, os.O_WRONLY, 0); err == nil {
@@ -229,17 +390,13 @@ func TestLeaseSurvivesTransientRenewBlock(t *testing.T) {
 		_ = os.Remove(fifo)
 		// ④ lease が切れているはずの時刻を十分に過ぎてから、別マシンが奪えるか試す
 		time.Sleep(1500 * time.Millisecond)
-		_, aerr := other.Acquire(ttl, "other")
-		stolen <- aerr
+		stolen <- probeLease(l, other, ttl, tok)
 	}()
 
 	got := boundedInt(t, "runWith (一過性の詰まり)", func() int {
 		return runWith(l, ttl, "", false, []string{"sh", "-c", "sleep 3"}) // --on-lost warn
 	})
-	aerr := <-stolen
-	if !errors.Is(aerr, errBusy) {
-		t.Fatalf("別マシンが lease を奪えた (= 更新が止まっていた): err=%v / with の exit=%d", aerr, got)
-	}
+	assertLeaseHeld(t, "一過性の詰まりからの復旧", recvProbe(t, stolen), got)
 }
 
 // 🚨 更新が**恒久的**に詰まった (返らない fd を掴んだ) 後も、更新を再開して lease を守ること。
@@ -267,58 +424,47 @@ func TestLeaseSurvivesPermanentRenewBlock(t *testing.T) {
 		t.Fatalf("NewLocker(other): %v", err)
 	}
 
-	stolen := make(chan error, 1)
+	stolen := make(chan leaseProbe, 1)
 	go func() {
-		var orig []byte
-		for range 400 {
-			if b, err := os.ReadFile(l.lockPath()); err == nil && len(b) > 0 {
-				orig = b
-				break
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-		if orig == nil {
-			stolen <- errors.New("lock が置かれなかった")
+		tok, orig, err := waitForLockToken(l)
+		if err != nil {
+			stolen <- leaseProbe{setupErr: err}
 			return
 		}
 		// ① 詰まらせる (FIFO を被せる)
 		fifo := l.lockPath() + ".fifo"
 		if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-			stolen <- err
+			stolen <- leaseProbe{setupErr: err}
 			return
 		}
 		if err := os.Rename(fifo, l.lockPath()); err != nil {
-			stolen <- err
+			stolen <- leaseProbe{setupErr: err}
 			return
 		}
 		// ② (a) の余裕: tick(400ms) + 期限(200ms) より 400ms 長く保つ
 		time.Sleep(800 * time.Millisecond)
 		// ③ パスだけ復旧させる。**FIFO へは書かない** = 詰まった読み手は永久に返らない
 		if err := os.Rename(l.lockPath(), fifo); err != nil {
-			stolen <- err
+			stolen <- leaseProbe{setupErr: err}
 			return
 		}
 		real := l.lockPath() + ".real"
 		if err := os.WriteFile(real, orig, 0o600); err != nil {
-			stolen <- err
+			stolen <- leaseProbe{setupErr: err}
 			return
 		}
 		if err := os.Rename(real, l.lockPath()); err != nil {
-			stolen <- err
+			stolen <- leaseProbe{setupErr: err}
 			return
 		}
 		// ④ (b) の余裕: 復旧で打たれた mtime から ttl(1200ms) + 400ms 過ぎてから奪いに行く。
 		//    更新が再開していなければ、この時点で lease は死んでいる
 		time.Sleep(1600 * time.Millisecond)
-		_, aerr := other.Acquire(ttl, "other")
-		stolen <- aerr
+		stolen <- probeLease(l, other, ttl, tok)
 	}()
 
 	got := boundedInt(t, "runWith (恒久的な詰まり)", func() int {
 		return runWith(l, ttl, "", false, []string{"sh", "-c", "sleep 4"}) // --on-lost warn
 	})
-	aerr := <-stolen
-	if !errors.Is(aerr, errBusy) {
-		t.Fatalf("別マシンが lease を奪えた (= 詰まった後に更新が再開していない): err=%v / with の exit=%d", aerr, got)
-	}
+	assertLeaseHeld(t, "恒久的な詰まりからの更新再開", recvProbe(t, stolen), got)
 }
