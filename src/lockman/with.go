@@ -124,12 +124,22 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	// inFlightRenews は「まだ返っていない Renew の本数」(見捨てた分を含む)。
 	// goroutine 自身が減らすので、マウントが復旧して溜まった分が返れば枠は戻る。
 	var inFlightRenews atomic.Int64
-	cappedWarned := false
+	// 🚨 上限は**ここで 1 度だけ読む**。毎 tick 読むと、テストが差し替えた値を戻すのが
+	// runWith の走行中に重なる経路 (boundedInt の安全網が先に落ちたとき) で data race になる。
+	// すぐ下の onLostGracePeriod が「引数で渡して直読みを避けた」のと同じ理由。
+	maxInFlight := maxInFlightRenews
+	cappedReported := false
 	reportRenewErr := func(err error) {
+		cur := classifyRenewErr(err)
 		if outcome == renewOK {
-			outcome = classifyRenewErr(err)
+			outcome = cur
 		}
-		if outcome == renewLost {
+		// 🚨 **文言は今回の err から決める** (sticky な outcome からではない)。判定不能の
+		// あとに確実な喪失 (errNotOwner) を知る経路は、更新を張り直すようになって毎 tick
+		// 起こりうる。そこで「判定不能」と出すと、**他所で走っている**と運用者が知る唯一の
+		// 1 行が永久に出ない。終了コードだけは sticky にする — 判定不能だった窓があった事実は
+		// 後から消えないので 125 に留める (091:398-399。issue 381 で意図的に据え置いた)。
+		if cur == renewLost {
 			warnf("lease を失った: %v", err)
 		} else {
 			warnf("lease を確認できない (判定不能): %v", err)
@@ -158,13 +168,25 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 			if renewCh != nil {
 				continue // 前回の更新がまだ返っていない。新しく積まない
 			}
-			if n := inFlightRenews.Load(); n >= maxInFlightRenews {
-				// 見捨てた更新が上限まで溜まった = マウントが恒久的に死んでいる。
-				// ここから先は修正前と同じ「更新が走らない」状態に戻る
-				// (`--on-lost=kill` なら初回の期限切れで子は既に止めにいっている)。
-				if !cappedWarned {
-					cappedWarned = true
-					warnf("返らない更新が %d 本溜まったので更新を起こすのをやめる (lease は期限切れになる)", n)
+			if n := inFlightRenews.Load(); n >= maxInFlight {
+				// 上限に達した = ここから先は更新を起こさないので、lease は次の TTL で
+				// **必ず**切れる。黙って tick を捨てずに理由を出す。
+				//
+				// 🚨 これは**新しい保証ではなく、診断と多重防御**。枠を埋めるには 1 本ごとに
+				// 期限切れ (下の renewExpired) を通る必要があるので、ここへ来た時点で
+				// outcome は既に判定不能で、`--on-lost=kill` の昇格も済んでいる。それでも
+				// reportRenewErr に通すのは、「更新が止まった理由」を出す経路を 1 本に保つため。
+				//
+				// 🚨 「上限に達した = もう手遅れ」とは限らない。返らない更新と成功する更新が
+				// 交互に来る (半死のマウント) と、lease が生きているうちに枠だけが埋まり、
+				// **成功するはずの更新まで起こさなくなる**。`--on-lost=warn` ではこの形で
+				// 二重実行が残る (kill なら最初の期限切れで子を止めにいっている)。
+				//
+				// 🚨 報告は 1 回だけ (tick ごとに出すと warn が溢れる)。復旧して再び
+				// 上限に達しても出し直さない — 既に outcome は判定不能で確定している。
+				if !cappedReported {
+					cappedReported = true
+					reportRenewErr(fmt.Errorf("%w: 返らない更新が %d 本溜まったので更新を起こせない", errIOTimeout, n))
 				}
 				continue
 			}
@@ -219,6 +241,11 @@ func childExitCode(err error) int {
 // 🚨 上限が抑えているのは goroutine の数だけではない。見捨てた Renew は**解放されたときに
 // `lockPath()` を名前で開き直して書く** (issue 380 の TOCTOU)。つまりこの値は「後から
 // lock へ書きに来るかもしれない本数」の上限でもある。上げるときは 380 を見ること。
+//
+// 🚨 **全部が詰まる形では、この値は lease の生死の近因にならない**。上限に達するには
+// 8 サイクル ≈ 2.67 × TTL かかり、その時点で lease は 1.67 × TTL 前に死んでいる。
+// 近因になりうるのは「返らない更新と成功する更新が交互に来る」形 (lease が生きたまま枠が
+// 埋まる) だけで、そこは `--on-lost=warn` の既知の残存リスク (runWith の該当箇所)。
 //
 // 8 は「連続して 8 回詰まっても更新を再開できる」余裕。テストが縮めるので var。
 var maxInFlightRenews int64 = 8
