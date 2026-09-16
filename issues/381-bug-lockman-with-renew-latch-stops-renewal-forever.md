@@ -135,6 +135,23 @@ M1/M2 を素通り**した。最大のものは `defer inFlight.Add(-1)` の削�
 バグより悪い) のに全緑だった。自分でも追試して rc=0 を確認し、テスト 2 本を足して塞いだ
 (上記 commit)。既存 2 本の assert も `errBusy` だけを根拠にしない形へ強くした。
 
+**観点③ 並行・中断** — P2 が 2 件、P3 が 2 件。すべて **381 の修正が作ったものではない**か、
+**設計判断**なので、コードは触らず切り出した:
+
+- [384](384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) — 昇格の TERM が
+  EPERM で失敗すると `escalate.Do` が消費済みのまま二度と昇格しない / SIGKILL の直前に
+  `exited` を見直していない (両方 ready のとき timer 枝を取る確率は実測 50.1%)
+- [385](385-design-lockman-on-lost-kill-vs-keep-renewing.md) — **本修正が生んだ矛盾**。
+  「最初の判定不能で即殺す」昇格と「判定不能でも更新を続ける」ループが逆を向いており、
+  既定 (`--on-lost=kill`) では本修正の便益がほとんど回収されない (一過性の詰まりで
+  lease は守れたのに子は殺される)。fail-closed → fail-open の変更になるので独立に判断する
+
+壊せなかったと明記されたもの: `&inFlightRenews` を `runWith` の return 後に触る形 (escape して
+ヒープに上がる) / 「stall の前半 (readLock・serverNow) から他人の lock を壊す」列 /
+「同一プロセスの 2 本目の Renew が 0 バイト窓を読んで自分の子を殺す」列 (2 本目は 1 本目の
+期限切れの後にしか存在せず、その期限切れが既に昇格を撃っている) / 修正後が修正前より
+lease を失いやすくなる列。
+
 #### 塞がずに残した (理由つき)
 
 - **`warnf` の文言が無検査**: 上限到達の報告を消しても、文言を sticky な outcome 基準へ
