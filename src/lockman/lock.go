@@ -229,6 +229,14 @@ var tryPlaceBeforeIdentityHook = func() {}
 // **テストが「作れたが中身を書けない」状態を決定論で作る**ために使う (本番では I/O エラーが要る)。
 var tryPlaceAfterCreateHook = func(*os.File) {}
 
+// renewBeforeWriteHook は「照合を通った後・書き込む前」に割り込む seam。既定は何もしない。
+// **テストが「照合してから書くまでのあいだに引き継がれた」状態を決定論で作る**ために使う
+// (issue 380。本番ではこの窓は µs で、外から狙って作れない)。
+var renewBeforeWriteHook = func() {}
+
+// releaseBeforeRemoveHook は「照合を通った後・消す前」に割り込む seam。既定は何もしない。
+var releaseBeforeRemoveHook = func() {}
+
 // readLockAfterStatHook は Fstat と本文の読み取りのあいだに割り込む seam。既定は何もしない。
 // **テストが「読んでいる最中に lock が差し替わった」状態を決定論で作る**ために使う
 // (この窓は本番では数 µs で、外から狙って作れない)。
@@ -611,8 +619,13 @@ func (l *Locker) Release(token string) error {
 	if err != nil {
 		return err
 	}
+	// 照合した実体を控える (下の Remove の直前に突き合わせる)
+	own, ownErr := os.Lstat(l.lockPath())
 	if m == nil || m.Token != token {
 		return errNotOwner
+	}
+	if ownErr != nil {
+		return ownErr // 照合の土台が取れない = 消してよいか判断できない (消さない側へ倒す)
 	}
 	now, err := l.serverNow()
 	if err != nil {
@@ -620,6 +633,24 @@ func (l *Locker) Release(token string) error {
 	}
 	if expired(now, mtime, holderTTL(m)) {
 		return fmt.Errorf("%w: lease が切れている (走行中に引き継がれた可能性)", errNotOwner)
+	}
+	// 🚨 **消す直前に実体を照合する** (issue 380)。`os.Remove` は**名前**に対する操作なので、
+	// 照合から消すまでのあいだに引き継がれると**別人の lock を消す** (実測済み。しかも戻り値は
+	// nil = 成功で、消えた直後に第三者が acquire できるので二重実行に直結する)。
+	// 🚨 `Renew` と違い、ここは**構造的には閉じられない**: unlink は名前でしか撃てず、
+	// 「この inode を消す」原始操作は macOS に無い (`funlinkat` は FreeBSD 専用。実測で確認)。
+	// 窓は「照合 → Remove」に縮むが 0 にはならない。同ファイルが rename について既に
+	// 受容しているのと同クラスとして受容する。
+	releaseBeforeRemoveHook()
+	cur, err := os.Lstat(l.lockPath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // 既に無い。自分の lock は解放されている
+		}
+		return err
+	}
+	if !os.SameFile(own, cur) {
+		return fmt.Errorf("%w: 照合した lock と別の実体に置き換わっている (走行中に引き継がれた)", errNotOwner)
 	}
 	return os.Remove(l.lockPath())
 }
@@ -642,37 +673,65 @@ func (l *Locker) Release(token string) error {
 // 影響の範囲: av1ify は finalize の直前に renew の rc で保持を判定する
 // (__av1ify_lock_still_held)。rc=0 は「token 一致 かつ 期限内」までを意味する。
 func (l *Locker) Renew(token string) error {
-	m, mtime, err := l.readLock()
+	// 🚨 **照合と書き込みを同じ fd に対して行う** (issue 380)。旧版は `readLock` で照合してから
+	// **名前で開き直して** `O_TRUNC` + write していたので、そのあいだに引き継がれると
+	// **別人の lock を自分のメタで上書き**した (実測済み。しかも戻り値は nil = 成功)。
+	// 同じ fd へ書けば、名前がすり替わっても当たるのは**自分が確かめた実体**だけなので、
+	// 窓が縮むのではなく**構造的に消える**。
+	// 🚨 **`O_TRUNC` を付けない** (issue 383)。付けると write までのあいだ 0 バイトの窓が開き、
+	// 読み手には「中身を読めない lock」として見える (fail-closed 側で引き継ぎが止まる)。
+	// 内容は読んだものと同じなので長さは変わらないが、変わったときだけ fd 越しに詰める。
+	f, err := os.OpenFile(l.lockPath(), os.O_RDWR, lockFileMode)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return errNotOwner // lock が無い = 自分のものではない (旧版の readLock 経路と同じ)
+		}
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	st, err := f.Stat()
 	if err != nil {
 		return err
 	}
-	if m == nil || m.Token != token {
+	cur, err := io.ReadAll(f)
+	if err != nil {
+		return err
+	}
+	var m *Meta
+	var parsed Meta
+	if jerr := json.Unmarshal(cur, &parsed); jerr != nil {
+		// 中身が壊れている / 書きかけ。**空いているとは解釈しない** (readLock と同じ fail-closed)
+		return fmt.Errorf("%w (Renew: %v)", errUnreadableLock, jerr)
+	}
+	m = &parsed
+	if m.Token != token {
 		return errNotOwner
 	}
 	now, err := l.serverNow()
 	if err != nil {
 		return err
 	}
-	if expired(now, mtime, holderTTL(m)) {
+	if expired(now, st.ModTime(), holderTTL(m)) {
 		return fmt.Errorf("%w: lease が切れている (走行中に引き継がれた可能性)", errNotOwner)
 	}
 	b, err := json.Marshal(m)
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(l.lockPath(), os.O_WRONLY|os.O_TRUNC, lockFileMode)
-	if err != nil {
+	renewBeforeWriteHook()
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
 	if _, err := f.Write(b); err != nil {
-		f.Close()
 		return err
+	}
+	if int64(len(b)) != st.Size() {
+		// 長さが変わるのは形式が変わったときだけ。**fd 越しに**詰める (名前ではなく実体を縮める)
+		if err := f.Truncate(int64(len(b))); err != nil {
+			return err
+		}
 	}
 	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
 		return err
 	}
 	// 検算: 打刻がクライアント側だと時計ずれがそのまま TTL 判定へ入り込む。
@@ -681,7 +740,9 @@ func (l *Locker) Renew(token string) error {
 	if err != nil {
 		return err
 	}
-	st, err := os.Stat(l.lockPath())
+	// 🚨 mtime も**同じ fd** から取る。名前で Stat し直すと、その隙にすり替わった別人の lock の
+	// mtime で検算することになる。
+	st, err = f.Stat()
 	if err != nil {
 		return err
 	}

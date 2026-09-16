@@ -4,7 +4,7 @@
 カテゴリ: bug / priority: **high**
 対象: `src/lockman/lock.go` の `Renew` / `Release`
 出典: [issue 366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の横展開
-反証レビュー: 未実施
+反証レビュー: 実施予定 (実装後に 1 周)
 
 ## 問題
 
@@ -114,8 +114,77 @@ seam は一時的に入れて実験後に外してある (commit していない
 `Renew` が「他人の lock を上書きして成功を返す」ため、この判定は**保持していないのに
 保持していると答える**ことがある。
 
+## 進捗 (2026-09-16)
+
+### `Renew` は**構造的に**閉じた (窓が縮むのではなく消える)
+
+旧版は `readLock` で照合してから **名前で開き直して** `O_TRUNC` + write していた。
+新版は **`O_RDWR` で 1 回開き、読み取り・照合・書き込みをすべて同じ fd に対して行う**。
+名前がすり替わっても当たるのは**自分が確かめた実体**だけなので、窓が 0 になる。
+
+- `O_TRUNC` を**付けない**。付けると write までのあいだ 0 バイトの窓が開き、読み手には
+  「中身を読めない lock」として見える ([383](383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md)
+  の発生源そのもの)。内容は読んだものと同じなので長さは変わらないが、**変わったときだけ fd 越しに**
+  `f.Truncate` で詰める (名前ではなく実体を縮める)
+- 打刻の検算に使う mtime も **同じ fd の `f.Stat()`** から取る (名前で Stat し直すと、
+  その隙にすり替わった別人の lock の mtime で検算することになる)
+
+### `Release` は**縮めて受容**した (構造的には閉じられない)
+
+`os.Remove` は名前でしか撃てず、「この inode を消す」原始操作は macOS に無い
+(`funlinkat` は FreeBSD 専用。383 の 3 周目レビューが SDK で確認済み)。
+照合した実体を控え、**消す直前に `os.Lstat` + `os.SameFile` で突き合わせ**、一致したときだけ消す。
+一致しなければ `errNotOwner` を返す (**nil = 成功で返さない**。旧版は消したうえで成功を返していた)。
+残る窓は「照合 → Remove」で、同ファイルが rename について既に受容しているのと同クラス。
+
+### 同型の全数勘定 (issue の「grep 1 回で確定させない」に対する回答)
+
+`lockPath()` に対する破壊的操作は **5 箇所**で、すべて説明が付く:
+
+| 箇所 | 操作 | 状態 |
+|---|---|---|
+| `tryTakeover` | `os.Rename` → graveyard | [366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の 2 段調停で閉じ済み |
+| `Release` | `os.Remove` | **本 issue で縮めた** (構造的には閉じられない) |
+| `Renew` | `O_TRUNC` + write | **本 issue で構造的に閉じた** |
+| `Break` | `os.Rename` (無条件) | **意図的な force break**。366 で受容済み |
+| `tryPlace` の後始末 | `os.Remove` | [383](383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) の 2 周目で `os.SameFile` 照合を入れた |
+
+→ **「この 2 経路が残る最後の同型」という issue の主張は正しかった** (本セッションで全数確認)。
+
+### 結果
+
+- テスト 4 本を新設 (`takeover_window_test.go`)。issue が seam で実測した 2 つの再現を、
+  そのまま**恒久テスト**にした (`renewBeforeWriteHook` / `releaseBeforeRemoveHook`)
+- 変異検証 (ケースごとの PASS/FAIL で判定):
+
+  | 変異 | 結果 |
+  |---|---|
+  | `Renew` を名前で開き直す (旧実装) | `TestRenewDoesNotOverwriteLockTakenOverMidway` red |
+  | `Release` の実体照合を外す (旧実装) | `TestReleaseDoesNotRemoveLockTakenOverMidway` red |
+  | `Renew` に `O_TRUNC` 相当を戻す | `TestRenewNeverLeavesLockEmpty` + 対照 2 本 red |
+
+- 対照 (`TestRenewAndReleaseStillWorkWithoutInterference`): 誰も割り込まなければ Renew は打刻し、
+  中身の長さは変わらず、Release は消す (上の 3 本が「常に何もしない」へ倒れていないこと)
+- `go test -race ./...` 緑 / `make test` EXIT=0 / 83 件報告 / 失敗 0
+
+### 383 への波及
+
+0 バイト lock の生成経路は 2 つあった (383 の本文):
+1. **`Renew` の `O_TRUNC` 窓** → **本 issue で消えた**
+2. `tryPlace` の O_EXCL fallback の書き込み失敗 → 383 の 1 周目で後始末を入れた
+
+つまり 383 が fail-closed で守っている状態は、**通常運用では生まれなくなった** (残るのは
+I/O エラーで書けなかったときと、外部要因で壊れたとき)。383 の周辺機構 (分類・案内・後始末) は
+そのまま残すが、**発火頻度は下がる**。
+
 ## 残タスク
 
-- [ ] `Renew` の窓を閉じる (または閉じないと決めて、コメントの trigger を更新する)
-- [ ] `Release` の窓を閉じる (または閉じないと決めて、理由をコードへ残す)
-- [ ] `lock.go` に同型が他に無いかを全数で洗う
+- [x] `Renew` の窓を閉じた (構造的に。fd スコープ化)
+- [x] `Release` の窓を閉じた (縮めて受容。理由をコードへ残した)
+- [x] `lock.go` に同型が他に無いかを全数で洗った (5 箇所すべて説明が付く。上表)
+- [ ] **未実施**: 反証レビュー (敵対的レビュー)
+- [ ] **未確認**: 380 本文の「手順 6 で stall 中の `open(2)` が削除後に作り直された新しい inode を
+      開くか」。**`Renew` を fd スコープ化したので、この経路自体が無くなった** (開き直しをしない)。
+      ただし「stall 中の open がどの inode を掴むか」という一般の問いは未確認のまま
+- [ ] **スコープ外**: `maxInFlightRenews` を下げる案 (issue 本文の「後回しにするなら」)。
+      窓が消えたので**不要になった**が、見捨てられた goroutine が溜まること自体は 381 の領域
