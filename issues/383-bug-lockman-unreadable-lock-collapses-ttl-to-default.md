@@ -4,7 +4,7 @@
 カテゴリ: bug / priority: **high**
 対象: `src/lockman/lock.go` の `holderTTL` / `tryTakeover` / `takeoverGeneration` のコメント
 出典: [381](done/381-bug-lockman-with-renew-latch-stops-renewal-forever.md) の敵対的レビュー (観点① 壊す)
-反証レビュー: 未実施
+反証レビュー: 4 周実施済み (2026-09-16。下記)
 
 ## 問題
 
@@ -99,7 +99,8 @@ truncate 前のもの)。
 
 - 実装: `lock.go` — `tryTakeover` の 2 段に fail-closed、`readLock` を単一 open 化、
   `readLockAfterStatHook` (テスト用 seam) を新設
-- テスト 3 本を新設 (`unreadable_lock_test.go`)。変異検証はケースごとの PASS/FAIL で判定:
+- テスト 3 本を新設 (`unreadable_lock_test.go`。**最終的には 13 本**。周回で足した分は各節に記載)。
+  変異検証はケースごとの PASS/FAIL で判定:
 
   | 変異 | 結果 |
   |---|---|

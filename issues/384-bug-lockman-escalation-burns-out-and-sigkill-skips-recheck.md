@@ -4,7 +4,7 @@
 カテゴリ: bug / priority: medium
 対象: `src/lockman/with.go` の `escalateGroupKill` と `runWith` の `escalate.Do`
 出典: [381](done/381-bug-lockman-with-renew-latch-stops-renewal-forever.md) の敵対的レビュー (観点③ 並行・中断)
-反証レビュー: 未実施
+反証レビュー: 4 周実施済み (2026-09-16。下記)
 
 どちらも 381 の修正が作ったものではない (`escalateGroupKill` は 381 で触っていない)。
 381 のレビューで見つかったので切り出す。
@@ -122,4 +122,39 @@ issue 本文の見立てどおり「届かないことを報告する」側を�
       今回のテストは `killGroup` 自身が弾く pgid=1 で「届かない形」を作っており、
       **報告の中身は固定できているが EPERM そのものは再現していない**
 - [x] 反証レビュー (敵対的レビュー) を 1 周通した。P2-4 / P3-1 / P3-4 を採用し、P2-1 を記録
-- [ ] **未実施**: 上の修正差分に対する 2 周目 (§7)
+- [x] 2〜4 周目 (§7) も通した (383 と**同じ差分**として回した。下記)
+
+## 敵対的レビュー 2〜4 周目で、この issue の領域に当たったもの (2026-09-16)
+
+2 周目以降は 383 と同じ差分を攻めたので、周回の全数勘定は
+[383](383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) の該当節にある。
+**この issue の領域 (`with.go` / `escalate_recheck_test.go`) に当たった指摘だけ**をここに残す。
+
+| 周 | 指摘 | 判定 |
+|---|---|---|
+| 2 周目 P3 | 対照テスト `TestEscalateSendsTermWhenChildIsAlive` の余裕が**自分の SIGKILL との競走**で決まっていた (grace=10ms に対し TERM→記録のレイテンシは 0.32〜2.58ms。`grace=0` にすると 20/20 で記録を取りこぼす)。落ちると**「冒頭 guard が退行した」に見える**が、実際は fixture の競走 | **採用**。この対照は「TERM が飛ぶか」しか見ないので、grace を仕様値 (10ms) から切り離して 3s にした |
+| 3 周目 | この領域への新規指摘なし (383 の分類・後始末に集中) | — |
+| 4 周目 | 同上 | — |
+
+### この issue の領域で最終的に持っているテスト (5 本)
+
+`TestEscalateRechecksExitedBeforeSigkill` (SIGKILL 直前の見直し) /
+`TestEscalateDoesNotSignalWhenAlreadyExited` (冒頭 guard) /
+`TestEscalateSendsTermWhenChildIsAlive` (対照: 生きていれば TERM は撃つ) /
+`TestEscalateStillKillsWhenChildIsAlive` (対照: 生きていれば SIGKILL まで行く) /
+`TestEscalateReportsWhenSignalCannotReach` (届かないときの報告)
+
+変異で red を確認した対応は: SIGKILL 直前の見直しを外す → 1 本目 / 冒頭 guard を外す → 2 本目 /
+TERM 失敗時の報告を薄く → 5 本目。
+
+## 残タスク (2026-09-16 時点)
+
+- [ ] **未実施**: EPERM の実測の追試 (`setsid` した子への `kill(-pgid, TERM)`)。今回のテストは
+      `killGroup` 自身が弾く pgid=1 で「届かない形」を作っており、**報告の中身は固定できているが
+      EPERM そのものは再現していない**
+- [ ] **記録 (2 周目 P2-1)**: SIGKILL 側の guard は挙動中立ではない。**直接の子が回収済みで、
+      TERM を無視する孫が残っている**とき撃たなくなる (`exited` は `cmd.Wait()` = 直接の子の回収で
+      あってグループの空ではない)。孫の漏れ自体は既存で構造的だが、**交換したもの**
+      (再利用 pgid を撃つ ↔ 生きているメンバーを撃たない) を記録として残す
+- [ ] **未実施**: 5 周目 (§7)。383 側の修正が新しい判定を含むため。この issue の領域に
+      直接の攻め口は残っていない
