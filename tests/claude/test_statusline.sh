@@ -622,6 +622,35 @@ no_sid_json='{"workspace":{"current_dir":"/tmp"},"model":{"display_name":"Opus 5
 out="$(render_home "$no_sid_json")"
 assert_contains "$out" "[@dotfiles-zz]" "session_id が無ければ transcript のファイル名から引く"
 
+# 🚨 入れ子の JSON を文字列一致で拾わないこと。誤った名前は「存在しない宛先」になり、
+#    名前が出ないこと (空表示) より悪い。下の 2 つは、文字列一致だけで書いた第 1 版が
+#    実際に誤爆した入力 (2026-09-16 の敵対的レビューが再現させた)。
+printf '%s' "{\"pid\":$live_pid,\"sessionId\":\"SID-SELF\",\"resumedFrom\":{\"sessionId\":\"SID-A\"},\"name\":\"unrelated-session-name\"}" \
+  > "$live_file"
+out="$(render_home "$sess_json")"
+assert_lacks "$out" "[@" "入れ子の sessionId が一致しただけの json からは名前を出さない"
+
+printf '%s' "{\"pid\":$live_pid,\"sessionId\":\"SID-A\",\"meta\":{\"name\":\"WRONG-NESTED\"},\"name\":\"dotfiles-real\"}" \
+  > "$live_file"
+out="$(render_home "$sess_json")"
+assert_lacks    "$out" "[@WRONG-NESTED]"  "入れ子の name を掴まない"
+assert_contains "$out" "[@dotfiles-real]" "入れ子が在ってもトップレベルの name を出す"
+
+# 起動中のセッションの書きかけ json が混ざっても、健全な側から引ける。
+# (pid は生きているもの = このテストの親シェルを使う。死んだ pid だと生存チェックの方で
+#  落ちてしまい、「壊れた json を避けられるか」を検査したことにならない)
+broken_pid=$PPID
+if [ "$broken_pid" != "$live_pid" ] && kill -0 "$broken_pid" 2>/dev/null; then
+  broken_file="$SESS_HOME/.claude/sessions/$broken_pid.json"
+  printf '%s' '{"pid":1,"sessio' > "$broken_file"
+  printf '%s' "{\"pid\":$live_pid,\"sessionId\":\"SID-A\",\"name\":\"dotfiles-zz\"}" > "$live_file"
+  out="$(render_home "$sess_json")"
+  assert_contains "$out" "[@dotfiles-zz]" "壊れた json が在っても健全な側から名前を引ける"
+  rm -f "$broken_file"
+else
+  echo "- SKIP: 生きている別 pid を確保できず、壊れた json の影響を検査できていない"
+fi
+
 if (( fails > 0 )); then
   printf '[test-statusline] %d 件失敗\n' "$fails" >&2
   exit 1

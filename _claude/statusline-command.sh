@@ -425,8 +425,12 @@ pace_row 7d day  "$seven_pct" "$seven_reset"; pace_seven=$PACE_ROW
 #    そこに入っているのは改名前の名前。
 resolve_session_name() {  # 結果は REPLY (引けなければ空)
   REPLY=""
-  local sid="$1" f content pid rest
+  local sid="$1" f content pid
+  local -a cand=()
   [ -n "$sid" ] || return 0
+  # 第 1 段 (fork 0): 候補を絞るだけの粗いフィルタ。sid が入れ子に現れるだけのファイルも
+  # ここは通す (判定は第 2 段が行う)。死んだ pid の json は読み飛ばす — 同じ sessionId の
+  # 古い json が残り、そこに入っているのは改名前の名前 = 存在しない宛先。
   for f in "$HOME"/.claude/sessions/*.json; do
     [ -e "$f" ] || continue                 # 無マッチの glob はリテラルのまま残る
     pid=${f##*/}; pid=${pid%.json}
@@ -434,14 +438,19 @@ resolve_session_name() {  # 結果は REPLY (引けなければ空)
     case "$pid" in ''|*[!0123456789]*) continue ;; esac
     kill -0 "$pid" 2>/dev/null || continue
     content=""
-    # 1 行 JSON なので行単位では読めない。-d '' でファイル全体を 1 回で読む (fork 0)
-    IFS= read -r -d '' content < "$f" || true
-    case "$content" in *"\"sessionId\":\"$sid\""*) ;; *) continue ;; esac
-    rest=${content#*"\"name\":\""}
-    [ "$rest" != "$content" ] || return 0   # name キーが無い
-    REPLY=${rest%%\"*}
-    return 0
+    IFS= read -r -d '' content < "$f" || true   # 1 行 JSON なので行単位では読めない
+    case "$content" in *"$sid"*) cand+=("$f") ;; esac
   done
+  [ "${#cand[@]}" -gt 0 ] || return 0
+  # 第 2 段: 構造の判定は jq に任せる。文字列一致では入れ子
+  # ("resumedFrom":{"sessionId":…} / "meta":{"name":…}) をトップレベルと区別できず、
+  # **別セッションの名前**を出しうる (実測 2026-09-16: 文字列一致だけの第 1 版は
+  # その 2 形で誤爆した。回帰テストは tests/claude/test_statusline.sh)。
+  # 🚨 第 1 段で候補を絞ってから渡すこと。jq は複数ファイルを 1 つのストリームとして読むので、
+  #    途中の 1 件が壊れていると (起動中セッションの書きかけ json) そこでストリームごと
+  #    止まり、後続の健全なファイルを読まない (実測: rc=5・出力なし)。
+  read -r REPLY < <(jq -r --arg sid "$sid" \
+    'select(.sessionId == $sid) | .name // empty' "${cand[@]}" 2>/dev/null) || REPLY=""
 }
 # session_id が stdin JSON に無い版でも動くように、transcript のファイル名から補う
 # (~/.claude/projects/<slug>/<session-id>.jsonl)。ここも fork 0。
@@ -450,9 +459,10 @@ if [ -z "$session_id" ] && [ -n "$transcript" ]; then
   session_id=${session_id%.jsonl}
 fi
 resolve_session_name "$session_id"
+session_name=$REPLY
 session_part=""
-if [ -n "$REPLY" ]; then
-  session_part=" ${yellow_fg}[@${REPLY}]${reset}"
+if [ -n "$session_name" ]; then
+  session_part=" ${yellow_fg}[@${session_name}]${reset}"
 fi
 
 # Model segment (leading space, empty when not provided).
