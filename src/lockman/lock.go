@@ -187,34 +187,49 @@ func (l *Locker) serverNow() (time.Time, error) {
 // 外から `O_TRUNC` されると「古い mtime + 0 バイト」が返る)。そちらを実際に無害化しているのは
 // `tryTakeover` の fail-closed (中身を読めない lock は期限切れと判定しない) であって、
 // この関数ではない。issue 383 の候補 (c) は**単独では効かない**。
+// readLock は readLockInfo の薄い包み (mtime だけが要る呼び出し側のため)。
 func (l *Locker) readLock() (*Meta, time.Time, error) {
+	m, fi, err := l.readLockInfo()
+	if fi == nil {
+		return m, time.Time{}, err
+	}
+	return m, fi.ModTime(), err
+}
+
+// readLockInfo は現在の lock を読み、**読んだ実体そのものの `os.FileInfo`** も返す。
+//
+// 🚨 identity の土台を**別の syscall から取り直さない** (敵対レビュー 380 P1-1)。
+// `readLock` の後で `os.Lstat` し直すと、そのあいだ (中に `io.ReadAll` = SMB 1 往復が入る) に
+// 引き継がれたとき、**照合した対象と guard する対象が別の実体**になる。
+// それだと「照合した lock を消す」guard が、**引き継いだ側の lock を消す許可**として働く。
+func (l *Locker) readLockInfo() (*Meta, os.FileInfo, error) {
 	f, err := os.Open(l.lockPath())
 	if os.IsNotExist(err) {
-		return nil, time.Time{}, nil
+		return nil, nil, nil
 	}
 	if err != nil {
-		return nil, time.Time{}, err
+		return nil, nil, err
 	}
 	defer func() { _ = f.Close() }()
 	st, err := f.Stat()
 	if err != nil {
-		return nil, time.Time{}, err
+		return nil, nil, err
 	}
 	if st.IsDir() {
 		// 想定外の型。壊れているので busy に倒す (勝手に消さない)。
-		return nil, time.Time{}, fmt.Errorf("%w: lock がディレクトリになっている", errBusy)
+		return nil, st, fmt.Errorf("%w: lock がディレクトリになっている", errBusy)
 	}
 	readLockAfterStatHook()
 	b, err := io.ReadAll(f)
 	if err != nil {
-		return nil, st.ModTime(), err
+		return nil, st, err
 	}
 	var m Meta
 	if err := json.Unmarshal(b, &m); err != nil {
 		// 中身が壊れている / 書きかけ。**空いているとは解釈しない** (fail-closed)。
-		return nil, st.ModTime(), fmt.Errorf("%w: lock の中身を読めない (%v)", errBusy, err)
+		return nil, st, fmt.Errorf("%w: lock の中身を読めない (%v)", errBusy, err)
 	}
-	return &m, st.ModTime(), nil
+	return &m, st, nil
 }
 
 // tryPlaceLinkFn は `link(2)` の seam。既定は `os.Link`。
@@ -615,18 +630,17 @@ func isHexToken(s string) bool {
 // 消すと他者の lock を消すことになる。呼び出し側には errNotOwner を返して
 // 「走行中に奪われていた」ことを知らせる。
 func (l *Locker) Release(token string) error {
-	m, mtime, err := l.readLock()
+	// 🚨 identity は **読んだ実体そのもの**から取る (敵対レビュー 380 P1-1)。
+	// 別の `os.Lstat` で取り直すと、そのあいだに引き継がれたとき「照合した対象」と
+	// 「guard する対象」が食い違い、guard が**引き継いだ側の lock を消す許可**になる。
+	m, own, err := l.readLockInfo()
 	if err != nil {
 		return err
 	}
-	// 照合した実体を控える (下の Remove の直前に突き合わせる)
-	own, ownErr := os.Lstat(l.lockPath())
-	if m == nil || m.Token != token {
+	if m == nil || own == nil || m.Token != token {
 		return errNotOwner
 	}
-	if ownErr != nil {
-		return ownErr // 照合の土台が取れない = 消してよいか判断できない (消さない側へ倒す)
-	}
+	mtime := own.ModTime()
 	now, err := l.serverNow()
 	if err != nil {
 		return err
@@ -663,13 +677,9 @@ func (l *Locker) Release(token string) error {
 // 「引き継いだ側の lock を truncate して自分のメタで上書きする」形になるため。
 // 判定は Release と同じ expired / holderTTL を使う (2 つ目の判定を作らない)。
 //
-// 🚨 **readLock と下の OpenFile のあいだの窓は 0 になっていない。直さないと決めた**
-// (issue 340 項目 1 の残り)。
-// 期限検査 (issue 312) で「期限切れ lease の復活」は塞いだが、「照合した直後に他者へ
-// 引き継がれた lock を O_TRUNC で上書きする」経路は窓が縮んだだけで残る。
-// 0 にするには取得と同じ「存在しない名前への rename で勝者を 1 人に絞る」形を Renew にも
-// 持ち込む必要があり、renew のたびに rename が増える。
-// 再開の trigger: 実 lock を使った並行実験でこの上書きを再現できたとき。
+// 🚨 **旧版の注記 (「readLock と下の OpenFile のあいだの窓は 0 になっていない。直さないと
+// 決めた」「再開の trigger: 実 lock を使った並行実験で再現できたとき」) は issue 380 で解消した。**
+// trigger は発火し (issue 380 が実測)、下のとおり fd スコープ化 + 打刻後の照合で閉じてある。
 // 影響の範囲: av1ify は finalize の直前に renew の rc で保持を判定する
 // (__av1ify_lock_still_held)。rc=0 は「token 一致 かつ 期限内」までを意味する。
 func (l *Locker) Renew(token string) error {
@@ -714,22 +724,20 @@ func (l *Locker) Renew(token string) error {
 	if expired(now, st.ModTime(), holderTTL(m)) {
 		return fmt.Errorf("%w: lease が切れている (走行中に引き継がれた可能性)", errNotOwner)
 	}
-	b, err := json.Marshal(m)
-	if err != nil {
-		return err
-	}
+	// 🚨 **読んだバイト列をそのまま書き戻す** (再 marshal しない。敵対レビュー 380 P2-1 / P2-1b)。
+	// `Renew` の目的は「同じ内容を書き直してサーバに mtime を打刻させる」なので、意味論は変わらない。
+	// 再 marshal すると 2 つ壊れる:
+	//   ① **未知フィールドを黙って落とす** (旧バイナリが新バイナリの書いた lock を renew するたび
+	//      永久に消える。共有 SMB の lock dir を複数マシンが使う = 混在版が既定なので現実的)
+	//   ② 長さが変わると `Seek → Write → Truncate` の途中が**新旧の混ざった JSON** になり、
+	//      読み手には「中身を読めない lock」として見える (issue 383 の fail-closed = 人が break
+	//      するまで永久 skip)。verbatim なら長さが必ず一致するので `Truncate` 枝ごと要らない
 	renewBeforeWriteHook()
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
-	if _, err := f.Write(b); err != nil {
+	if _, err := f.Write(cur); err != nil {
 		return err
-	}
-	if int64(len(b)) != st.Size() {
-		// 長さが変わるのは形式が変わったときだけ。**fd 越しに**詰める (名前ではなく実体を縮める)
-		if err := f.Truncate(int64(len(b))); err != nil {
-			return err
-		}
 	}
 	if err := f.Sync(); err != nil {
 		return err
@@ -745,6 +753,22 @@ func (l *Locker) Renew(token string) error {
 	st, err = f.Stat()
 	if err != nil {
 		return err
+	}
+	// 🚨 **「他人を壊さない」だけでは足りない** (敵対レビュー 380 P1-2)。fd スコープにしたことで
+	// 引き継ぎ後の書き込みは orphan inode に当たる = 他人は壊さないが、そのまま nil を返すと
+	// **呼び出し側が「保持している」と誤認する**。`__av1ify_lock_still_held` は renew の rc だけを
+	// 見ており、rc=0 なら**出力を公開して元ファイルを削除する**ところまで進む (issue 380 の「影響」)。
+	// 名前が指す先が自分の実体でなくなっていたら、**保持していない**と伝える。
+	// 🚨 これは「役は 1 人」を保証しない (`refreshTakeoverClaim` の注記と同じ限界):
+	// 置き換えが open の後だと `f.Stat()` は旧 inode を返すので照合は通る。ここで見ているのは
+	// 「**名前が今も自分を指しているか**」であって、飛行中の他者との調停ではない。
+	if cur, lerr := os.Lstat(l.lockPath()); lerr != nil {
+		if os.IsNotExist(lerr) {
+			return fmt.Errorf("%w: lock が消えている (走行中に引き継がれた可能性)", errNotOwner)
+		}
+		return lerr // 判定不能は errNotOwner へ丸めない (一過性の I/O で健全な子を殺さない)
+	} else if !os.SameFile(st, cur) {
+		return fmt.Errorf("%w: 書き込んだ実体が lock でなくなっている (走行中に引き継がれた)", errNotOwner)
 	}
 	if d := now.Sub(st.ModTime()); d > clockSkewTolerance || d < -clockSkewTolerance {
 		return fmt.Errorf("mtime の打刻がサーバ時刻と %v ずれている: TTL 判定が壊れるので中断する", d)

@@ -4,7 +4,7 @@
 カテゴリ: bug / priority: **high**
 対象: `src/lockman/lock.go` の `Renew` / `Release`
 出典: [issue 366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の横展開
-反証レビュー: 実施予定 (実装後に 1 周)
+反証レビュー: 1 周実施済み (2026-09-16。下記)
 
 ## 問題
 
@@ -177,12 +177,38 @@ seam は一時的に入れて実験後に外してある (commit していない
 I/O エラーで書けなかったときと、外部要因で壊れたとき)。383 の周辺機構 (分類・案内・後始末) は
 そのまま残すが、**発火頻度は下がる**。
 
+## 敵対的レビュー 1 周目 (2026-09-16。全数勘定)
+
+**P1 が 3 件**。うち 2 件は「私の修正が半分しか直していなかった」もの。
+
+| # | 指摘 | 判定 |
+|---|---|---|
+| P1-1 | `Release` の identity の土台を、照合した実体ではなく **`readLock` の後の別 syscall (`os.Lstat`)** から取っていた。あいだに `io.ReadAll` (SMB 1 往復) が入るので、そこで引き継がれると **`own` が引き継いだ側の実体**になり、`SameFile` は当然一致して `os.Remove` が通る。**380 本文の不具合が nil のまま残っていた** = 窓を閉じたのではなく**前へずらした** | **採用**。`readLockInfo` を足し、**読んだ実体そのものの `os.FileInfo`** を identity に使う。`ownErr` の早期 return (P2-2) もこれで消えた |
+| P1-2 | `Renew` は引き継ぎ後 orphan inode に書いて **nil (成功) を返す**。fd スコープ化は「他人を壊さない」半分しか直しておらず、issue 本文の「影響」節 (`__av1ify_lock_still_held` が保持を誤認 → **出力を公開して元ファイルを削除**) はそのまま残っていた。🚨 **私の新テストが `_ = l.Renew(...)  // 成功しても失敗してもよい` と書いて、残存欠陥を仕様として固定していた** | **採用**。打刻の後に「名前が今も自分の実体を指しているか」を照合し、違えば `errNotOwner`。テストの assert も戻り値まで見る形へ (先に厳しくして **nil が返ることを再現**してから直した) |
+| P1-3 | **11 個目の fixture の嘘**: `TestRenewNeverLeavesLockEmpty` の観測点は書き込みの**前**なので、**後ろに置かれた truncate は原理的に見えない** (hook 直後に `f.Truncate(0)` を入れる変異が全テスト緑)。しかも私が根拠にした変異 (open に `O_TRUNC`) は **red for the wrong reason** だった (`ReadAll` が空 → 別の Fatalf に落ちており、`sawSize` の assert に到達していない) | **採用**。0 バイト窓が構造的に無い根拠を**verbatim 書き戻し**の側へ移し、この検査の「**検出しない形**」をテストのヘッダに明記した |
+| P2-1 / P2-1b | `json.Marshal(m)` で書き戻していたため ①**未知フィールドを黙って落とす** (旧バイナリが新バイナリの lock を renew するたび永久に消える。共有 SMB では混在版が既定) ②長さが変わると `Seek → Write → Truncate` の途中が**新旧の混ざった JSON** になる | **採用**。**読んだバイト列をそのまま書き戻す**。長さが必ず一致するので `Truncate` 枝ごと消え、3 つの問題が同時に消えた |
+| P3 | 古くなったコメント 3 箇所 (`lock.go` の「直さないと決めた」/ `with.go:249` の「名前で開き直して書く」/ `cleanup.go:203` の「lock の O_TRUNC」) | **採用**。同じ commit で直した |
+| P3 | `os.SameFile` は dev+ino しか見ない。SMB のサーバが ino を合成すると guard が恒久的に真になりうる | **記録・未確認**。383 で同じ結論。実共有での測定手順だけ残す |
+| ④ | 全数勘定の検証 | **漏れ無し**とレビューが確認 (生成 2 経路は EEXIST で落ちるので結論不変 / `sweepDir` は default-deny / `RemoveAll` は production 0 件) |
+
+### 変異検証 (レビュー対応分)
+
+| 変異 | 結果 |
+|---|---|
+| identity を別 syscall で取り直す (初版) | `TestReleaseIdentityComesFromTheLockItRead` red |
+| 打刻後の identity 照合を外す | `TestRenewDoesNotOverwriteLockTakenOverMidway` red |
+| verbatim をやめて再 marshal へ戻す | `TestRenewPreservesUnknownFields` red |
+
 ## 残タスク
 
 - [x] `Renew` の窓を閉じた (構造的に。fd スコープ化)
 - [x] `Release` の窓を閉じた (縮めて受容。理由をコードへ残した)
 - [x] `lock.go` に同型が他に無いかを全数で洗った (5 箇所すべて説明が付く。上表)
-- [ ] **未実施**: 反証レビュー (敵対的レビュー)
+- [x] 反証レビュー 1 周目。P1 3 件 + P2 2 件 + P3 を採用 (変異で red を確認)
+- [ ] **未実施**: 2 周目 (§7)。1 周目の修正が新しい判定 (`readLockInfo` / 打刻後の identity 照合 /
+      verbatim 書き戻し) を含むため打ち切り条件 (a) を満たさない。攻め口は 1 周目の報告が
+      名指ししている 4 点 (post-Sync の `Lstat` 失敗時の倒し方 / `readLockInfo` の 5 call site /
+      `Truncate` 枝削除の相互作用 / seam の位置)
 - [ ] **未確認**: 380 本文の「手順 6 で stall 中の `open(2)` が削除後に作り直された新しい inode を
       開くか」。**`Renew` を fd スコープ化したので、この経路自体が無くなった** (開き直しをしない)。
       ただし「stall 中の open がどの inode を掴むか」という一般の問いは未確認のまま

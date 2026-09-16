@@ -200,7 +200,8 @@ func (l *Locker) stampCleanup() error {
 	}
 	// 🚨 umask に削られたモードを戻す (`ensureDirs` が dir にやっているのと同じ手当て)。
 	// `.cleanup_at` は **作成者以外が「書き込みで」開く唯一のファイル**なので
-	// (lock の O_TRUNC は所有者だけ、tmp/probe/graveyard の削除は dir の権限で足りる)、
+	// (lock への書き込みは所有者だけ、tmp/probe/graveyard の削除は dir の権限で足りる。
+	// 🚨 `O_TRUNC` は issue 380 で無くなった — Renew は fd へ verbatim で書き戻す)、
 	// 0644 のまま残すと別ユーザーの打刻が**恒久的に** EACCES になる。
 	// lock.go が想定する 0777 no-sticky の共有 (SMB) 構成では実際に起きる。
 	// 6 周目の実測: この 1 行が無いと `with` の 3 回とも同じ警告が出て mtime も進まない
