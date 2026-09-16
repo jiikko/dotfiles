@@ -72,10 +72,17 @@ const (
 var (
 	// errBusy は他者が保持中。異常ではなくスキップの合図。
 	errBusy = errors.New("locked by someone else")
-	// errUnreadableLock は **errBusy のうち「人が動くまで解けない」方**。
-	// 🚨 正常な busy と**機械で見分けられる差**にしておく (issue 383 の敵対レビュー P2):
+	// errUnreadableLock は **errBusy のうち「lock の中身を読めなかった」方**。
+	// 🚨 正常な busy と**機械で見分けられる差**にしておく (敵対レビュー 2 周目 P2):
 	// 散文の文面だけで区別させると、cron が `2>/dev/null` を足した瞬間に区別が消える。
 	// errBusy を包むので、既存の `errors.Is(err, errBusy)` の分岐はそのまま動く。
+	//
+	// 🚨 **「人が動くまで解けない」とは名乗らない** (敵対レビュー 3 周目 P2-1)。同じ観測が
+	// **一過性** (健全な保持者の `Renew` が O_TRUNC している一瞬。毎 Renew ごとに窓が開く) と
+	// **恒久** (書きかけの残骸) の両方から出る。1 回の観測では区別できない。
+	// 🚨 したがって **`lockman break` を促さない**: 一過性の側でその助言に従うと、
+	// **生きた保持者を剥がして二重実行を作る** (実測 2026-09-16: 期限内の保持者が居る状態で
+	// 同じ文が出た)。読み取り専用の `status` へ誘導するに留める。
 	errUnreadableLock = fmt.Errorf("%w: lock の中身を読めないので引き継がない", errBusy)
 	// errNotOwner は「自分は持ち主ではない」(release/renew の対象違い、lease 喪失)。
 	errNotOwner = errors.New("not the lock owner")
@@ -460,9 +467,13 @@ func (l *Locker) tryTakeover() (bool, error) {
 	if err != nil && !errors.Is(err, errBusy) {
 		return false, err
 	}
-	if mtime.IsZero() {
+	if err == nil && mtime.IsZero() {
 		return true, nil // 既に誰かが退けた後。作りにいってよい
 	}
+	// 🚨 **mtime が zero でも、err が busy 系なら「退けられた」ではない** (敵対レビュー 3 周目 P1-1)。
+	// `lock` がディレクトリのときが該当し、旧版は**エラーを根拠に `took=true`** を返していた。
+	// その先で `tryPlace` が EEXIST → **素の errBusy** になるので、分類から漏れて CLI が無音になる
+	// (人が `break` すれば解ける = 人が動くまで解けない busy なのに、正常な保持と区別できない)。
 	if m == nil {
 		// 🚨 **中身を読めない lock は「期限切れ」と判定しない** (issue 383。fail-closed)。
 		// TTL は lock の中身にしか無いので、読めない時点で生死は判定できない。既定 TTL へ
@@ -470,8 +481,8 @@ func (l *Locker) tryTakeover() (bool, error) {
 		// 詰まったら人が `lockman break` で剥がす (Break は**中身を読まない**ので、壊れた lock にも
 		// 効く。ただし graveyard dir と rename 権限には依存する — `.lockman/graveyard` が
 		// 通常ファイルだと break 自身が失敗する。実測 2026-09-16)。
-		return false, fmt.Errorf("%w (生死を判定できない。保持者が居ないと分かっているなら"+
-			" `lockman break` で剥がす)", errUnreadableLock)
+		return false, fmt.Errorf("%w (書き込み中の一瞬か、書きかけの残骸。生死を判定できない。"+
+			"続くなら `lockman status` で見ること)", errUnreadableLock)
 	}
 	if !expired(now, mtime, holderTTL(m)) {
 		return false, nil

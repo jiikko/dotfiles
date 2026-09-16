@@ -164,6 +164,26 @@ truncate 前のもの)。
 無限再帰**し、`sync.Once` で塞ごうとすると**再入した `Do` が 1 回目の完了を待ってデッドロック**した
 (どちらも 600 秒 timeout で観測)。素のフラグにした。
 
+## 敵対的レビュー 3 周目 (2026-09-16)
+
+**また P1 が 2 件**。どちらも **2 周目の修正が作った / 悪化させた**もの。
+
+| # | 指摘 | 判定 |
+|---|---|---|
+| P2-1 | `errUnreadableLock` が**正反対の 2 状態を同じバケツ**に入れていた。健全な保持者の `Renew` が `O_TRUNC` している**一瞬**でも同じ分類になり、CLI が「保持者が居ないと分かっているなら `lockman break` で剥がす」と出す。**助言どおり break すると生きた保持者を剥がす = 二重実行** | **採用 (最重要)**。実測で確認 (期限内の保持者が居る状態で同じ文が出た)。**破壊的操作を促すのをやめ**、読み取り専用の `status` へ誘導する文へ変えた。一過性と恒久を 1 回の観測で区別するのは不可能なので、**区別しようとせず危険な助言を消す**方を採った |
+| P1-1 | 「人が動くまで解けない busy」が分類から漏れ、**2 周目の commit で完全に無音になった**。`lock` がディレクトリのとき、`tryTakeover` が **busy エラーを握り潰したうえで `mtime.IsZero()` を根拠に `took=true`** を返し、その先の `tryPlace` が EEXIST → 素の errBusy。commit 前は全 busy で理由が出ていたので、**分類を導入した側が分類の外に何が落ちるかを数えていなかった** | **採用**。`if err == nil && mtime.IsZero()` にした (個別に潰すのでなく**将来の zero-mtime busy 全部**に効く discriminator)。実測: ディレクトリの lock で stderr が空だった → 分類されるようになった |
+| P1-2 | **9 つ目の fixture の嘘**: `own` を **fd で控えていること自体**が無検査。`f.Stat()` を `os.Lstat(l.lockPath())` に変えても全緑 = 「照合を**する**こと」は守られているが「**何を**照合するか」は無検査。同じ論点に対して `takeoverRefreshHook` は既に seam を新設している (80 行上) のに、こちらには無い | **未対応** (4 周目へ) |
+| P2-2 | `with.go` の分類が 1 本も pin されていない (「常に理由を出す」に潰しても全緑)。commit message の変異表は **main.go では真、with.go では偽**だった | **未対応** (4 周目へ) |
+| P3-1 | Lstat エラー枝の fail-closed 方向が無検査 (「確認できなくても名前で消す」に反転しても全緑) | **未対応** (4 周目へ) |
+| P3-2 | `os.SameFile` は dev+ino 一致だけで **ino==0 / ino 再利用を返す FS では inert**。APFS では 3000 回の create/delete で再利用 0 件 = ローカルでは実演不能 | **記録・未確認**。防御コードは足さない。実 SMB での測定手順だけ残す |
+
+### 変異検証 (3 周目の修正分)
+
+| 変異 | 結果 |
+|---|---|
+| zero-mtime の判別を戻す | `TestDirectoryLockIsClassifiedAsUnreadable` red |
+| `break` を促す文へ戻す | `TestUnreadableLockIsNeverTakenOver` + `TestUnreadableLockGuidanceReachesCLI` red |
+
 ## 残タスク
 
 - [x] 3 候補の採否を決めた ((a) + (c) を採用、(b) は 380 へ)
@@ -178,6 +198,7 @@ truncate 前のもの)。
       `acquire` の理由出力を消す / `with` を定型文へ戻す → `TestUnreadableLockGuidanceReachesCLI` red /
       `tryPlace` の後始末を no-op へ → `TestTryPlaceRemovesOwnLockWhenBodyCannotBeWritten` red
 - [x] 2 周目 (§7) を通した。P1 / P1-b / P2 / P3 x2 を採用し、変異で red を確認
-- [ ] **未実施**: 3 周目 (§7)。2 周目の修正が `os.SameFile` による**新しい判定ロジック**なので
-      打ち切り条件 (a) を満たさない。攻め口は「`f.Stat()` が失敗する枝」「Lstat と Remove の
-      あいだに残る窓」「Close 失敗枝で fd が無い状態」
+- [x] 3 周目 (§7) を通した。P2-1 / P1-1 を採用 (変異で red を確認)
+- [ ] **4 周目 (§7) を実施中** (ユーザー判断 2026-09-16: 回す)。渡した攻め口:
+      ①zero-mtime の新分岐が引き継ぎを止めすぎないか ②`own` を fd で控えていること自体の無検査 (P1-2)
+      ③`with` 経路の分類の無検査 (P2-2) ④Lstat エラー枝の無検査 (P3-1)

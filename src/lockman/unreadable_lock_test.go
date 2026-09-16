@@ -44,10 +44,14 @@ func TestUnreadableLockIsNeverTakenOver(t *testing.T) {
 	if !errors.Is(err, errBusy) {
 		t.Fatalf("errBusy を期待したが %v", err)
 	}
-	// 人が次に何をすればよいかが出ていること (fail-closed の代償は「人が break する」なので、
-	// その導線がメッセージに無いと詰まったまま終わる)
-	if !strings.Contains(err.Error(), "break") {
-		t.Fatalf("復旧手段 (break) が案内されていない: %v", err)
+	// 🚨 **破壊的操作を促していないこと** (敵対レビュー 3 周目 P2-1)。同じ観測が
+	// 「健全な保持者の Renew が O_TRUNC している一瞬」からも出るので、`break` を促すと
+	// **生きた保持者を剥がして二重実行を作る**助言になる。誘導先は読み取り専用の `status`。
+	if strings.Contains(err.Error(), "break") {
+		t.Fatalf("破壊的操作 (break) を促している (一過性の窓でも同じ文が出る): %v", err)
+	}
+	if !strings.Contains(err.Error(), "status") {
+		t.Fatalf("次に見るもの (status) が案内されていない: %v", err)
 	}
 
 	// 対照: 中身が読めるなら、宣言 TTL を超えたときに限って引き継げる (fail-closed が
@@ -162,10 +166,11 @@ func TestUnreadableLockGuidanceReachesCLI(t *testing.T) {
 	if rc != exitBusy {
 		t.Fatalf("rc=%d (exitBusy=%d を期待)", rc, exitBusy)
 	}
-	for _, want := range []string{"読めない", "break"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("acquire の stderr に %q が無い (人が復旧手段にたどり着けない): %q", want, out)
-		}
+	if !strings.Contains(out, "読めない") {
+		t.Fatalf("acquire の stderr に理由が無い (恒久 wedge が正常な保持と区別できない): %q", out)
+	}
+	if strings.Contains(out, "break") {
+		t.Fatalf("CLI が破壊的操作を促している (一過性の窓でも同じ文が出る): %q", out)
 	}
 
 	// `with` 経路も同じ (定期ジョブはこちらを使う。定型文だけだと永久 skip が見えない)
@@ -331,5 +336,36 @@ func TestWaitLoopDoesNotWarnPerRetry(t *testing.T) {
 	}
 	if lines != 1 {
 		t.Fatalf("待ち直す枝でも鳴っている (%d 行。1 行のはず): %q", lines, out)
+	}
+}
+
+// 🚨 **「人が動くまで解けない busy」が分類から漏れて無音にならないこと** (3 周目 P1-1)。
+//
+// `lock` がディレクトリのとき、旧版は `readLock` の busy エラーを握り潰したうえで
+// **エラーを根拠に `took=true`** を返し、その先の `tryPlace` が EEXIST で**素の errBusy** に
+// なっていた。分類から漏れるので CLI は**無音**で、人が `break` すれば解ける wedge なのに
+// 正常な保持と見分けが付かない。
+func TestDirectoryLockIsClassifiedAsUnreadable(t *testing.T) {
+	l := newTestLocker(t)
+	if err := l.ensureDirs(); err != nil {
+		t.Fatalf("ensureDirs: %v", err)
+	}
+	if err := os.Mkdir(l.lockPath(), 0o755); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	_, err := l.Acquire(time.Hour, "x")
+	if !errors.Is(err, errBusy) {
+		t.Fatalf("errBusy を期待: %v", err)
+	}
+	if !errors.Is(err, errUnreadableLock) {
+		t.Fatalf("ディレクトリの lock が「読めない busy」に分類されていない (CLI が無音になる): %v", err)
+	}
+	var rc int
+	out := captureStderr(t, func() { rc = run([]string{"acquire", l.dir}) })
+	if rc != exitBusy {
+		t.Fatalf("rc=%d", rc)
+	}
+	if !strings.Contains(out, "読めない") {
+		t.Fatalf("CLI が無音 (恒久 wedge が正常な保持と区別できない): %q", out)
 	}
 }
