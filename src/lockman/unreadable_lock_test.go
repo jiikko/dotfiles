@@ -2,7 +2,9 @@ package main
 
 import (
 	"errors"
+	"io"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -180,6 +182,29 @@ func TestUnreadableLockGuidanceReachesCLI(t *testing.T) {
 	}
 	if !strings.Contains(out2, "読めない") {
 		t.Fatalf("with の stderr に理由が出ていない: %q", out2)
+	}
+
+	// 🚨 **案内されたコマンドを実際に走らせる** (敵対レビュー 4 周目 P1-2 = 10 個目の fixture の嘘)。
+	// 旧版は `strings.Contains(out, "status")` だけを見ており、**名指しされたコマンドがその状態で
+	// 何をするかは 1 行も検査していなかった**。実際には rc=1 (道具の失敗) / stdout 空で、
+	// 人はそこで行き止まっていた。1 周目 P2-2 (「文字列は production に出ていなかった」) の
+	// 一段外側の版 — 文字列は出ているが、指している先が空振り。
+	m := regexp.MustCompile("`lockman ([a-z]+)[^`]*`").FindStringSubmatch(out)
+	if m == nil {
+		t.Fatalf("案内にコマンドが含まれていない: %q", out)
+	}
+	var rc2 int
+	guided := captureStdout(t, func() { rc2 = run([]string{m[1], l.dir}) })
+	if rc2 == exitError {
+		t.Fatalf("案内された `lockman %s` が「道具の失敗」を返す (人が行き止まる): rc=%d", m[1], rc2)
+	}
+	if strings.TrimSpace(guided) == "" {
+		t.Fatalf("案内された `lockman %s` が何も出さない (案内が空振り)", m[1])
+	}
+	for _, want := range []string{"size", "age"} {
+		if !strings.Contains(guided, want) {
+			t.Fatalf("案内先が判断材料 (%s) を出していない: %q", want, guided)
+		}
 	}
 }
 
@@ -367,5 +392,194 @@ func TestDirectoryLockIsClassifiedAsUnreadable(t *testing.T) {
 	}
 	if !strings.Contains(out, "読めない") {
 		t.Fatalf("CLI が無音 (恒久 wedge が正常な保持と区別できない): %q", out)
+	}
+}
+
+// captureStdout は fn の実行中の os.Stdout を集める (`status` は stdout に答えを書く)。
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	orig := os.Stdout
+	os.Stdout = w
+	done := make(chan string, 1)
+	go func() {
+		b, _ := io.ReadAll(r)
+		done <- string(b)
+	}()
+	fn()
+	os.Stdout = orig
+	_ = w.Close()
+	out := <-done
+	_ = r.Close()
+	return out
+}
+
+// 🚨 **`status` は「中身を読めない lock」に答えること** (敵対レビュー 4 周目 P1-2)。
+//
+// 旧版は `Inspect` が readLock のエラーをそのまま返し、`status` が rc=1 (exitError) / stdout 空に
+// していた。`--json` でも stdout が空 + rc=1 なので、監視からは「lockman が壊れた / dir が無い」と
+// **区別できなかった**。`check` には「判定不能は busy 側へ倒す」分岐があるのに、案内はその分岐を
+// **持っていない方**を名指ししていた。
+func TestStatusAnswersForUnreadableLock(t *testing.T) {
+	l := newTestLocker(t)
+	if _, err := l.Acquire(time.Hour, "holder"); err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	if err := os.Truncate(l.lockPath(), 0); err != nil {
+		t.Fatalf("Truncate: %v", err)
+	}
+	var rc int
+	out := captureStdout(t, func() { rc = run([]string{"status", l.dir}) })
+	if rc == exitError {
+		t.Fatalf("status が「道具の失敗」を返した (dir が無いのと区別できない): rc=%d", rc)
+	}
+	if rc != exitBusy {
+		t.Fatalf("status rc=%d (exitBusy=%d を期待。空いているとは言わない)", rc, exitBusy)
+	}
+	if !strings.Contains(out, "unreadable") {
+		t.Fatalf("status が状態を答えていない: %q", out)
+	}
+	var rcj int
+	outj := captureStdout(t, func() { rcj = run([]string{"status", "--json", l.dir}) })
+	if rcj != exitBusy || !strings.Contains(outj, `"unreadable":true`) {
+		t.Fatalf("status --json が状態を出していない: rc=%d out=%q", rcj, outj)
+	}
+
+	// 🚨 `check` の契約 (判定不能は busy 側へ倒す) を壊していないこと。
+	// Inspect がエラーを返さなくなったので、`check` は `st.Held` 経由で同じ rc になる必要がある
+	var rcc int
+	captureStdout(t, func() { rcc = run([]string{"check", l.dir}) })
+	if rcc != exitBusy {
+		t.Fatalf("check rc=%d (exitBusy=%d を期待。空いているとは言わない)", rcc, exitBusy)
+	}
+}
+
+// 🚨 **`with` 経路の分類も pin する** (敵対レビュー 3 周目 P2-2 / 4 周目 P2-1)。
+// `TestNormalBusyStaysQuiet` は `acquire` しか通しておらず、`with` 側は「常に理由を出す」に
+// 潰しても全緑だった。定期ジョブが使うのはこちらなので、静けさが壊れると 2 周目 P2 が復活する。
+func TestWithStaysQuietOnNormalBusy(t *testing.T) {
+	l := newTestLocker(t)
+	if _, err := l.Acquire(time.Hour, "holder"); err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	var rc int
+	out := captureStderr(t, func() { rc = run([]string{"with", l.dir, "--", "/usr/bin/true"}) })
+	if rc != exitWithBusy {
+		t.Fatalf("rc=%d (exitWithBusy=%d を期待)", rc, exitWithBusy)
+	}
+	// 🚨 **完全一致で固定する** (部分一致だと、分類を潰して `(%v)` を常に足す変異が
+	// 「読めない を含まない / 他が保持中 を含む」を満たして**緑で通る**。実測 2026-09-16)。
+	if got := strings.TrimSpace(out); got != "lockman: 他が保持中のため実行しない" {
+		t.Fatalf("正常な busy の stderr が定型文と一致しない (分類が効いていない): %q", got)
+	}
+}
+
+// 🚨 **2 段目 (再照合) の zero-mtime も 1 段目と同じ判別であること** (敵対レビュー 4 周目 P1-1)。
+//
+// 3 周目は 1 段目だけを直し、commit と issue に「zero-mtime busy 全部に効く」と書いたが**偽**で、
+// 2 段目は素の `mtime2.IsZero()` のままだった。そこは busy エラー + zero mtime を
+// 「別の誰かが先に退けた」と読んで `took=true` を返す (fail-open) ので、その先の `tryPlace` が
+// EEXIST → **素の errBusy** になり、3 周目 P1-1 が P1 と判定した「CLI が無音」がそのまま生きていた。
+func TestStage2ZeroMtimeBusyIsNotTreatedAsEvicted(t *testing.T) {
+	l := newTestLocker(t)
+	if _, err := l.Acquire(time.Minute, "holder"); err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	past := time.Now().Add(-2 * time.Minute) // 期限切れにして 1 段目を通す
+	if err := os.Chtimes(l.lockPath(), past, past); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+	// 1 段目の判定の直後 (2 段目より前) に、lock をディレクトリへ化けさせる
+	// = readLock が (busy, zero mtime) を返す唯一の形
+	fired := false
+	old := takeoverObservedHook
+	takeoverObservedHook = func() {
+		if fired {
+			return
+		}
+		fired = true
+		if err := os.Remove(l.lockPath()); err != nil {
+			t.Errorf("Remove: %v", err)
+			return
+		}
+		if err := os.Mkdir(l.lockPath(), 0o755); err != nil {
+			t.Errorf("Mkdir: %v", err)
+		}
+	}
+	defer func() { takeoverObservedHook = old }()
+
+	took, err := l.tryTakeover()
+	if !fired {
+		t.Fatalf("前提: 1 段目の判定に到達していない")
+	}
+	if took {
+		t.Fatalf("2 段目が busy + zero-mtime を「既に退けられた」と読んで took=true を返した (fail-open)")
+	}
+	if !errors.Is(err, errUnreadableLock) {
+		t.Fatalf("2 段目が分類していない (CLI が無音になる): %v", err)
+	}
+}
+
+// 🚨 **`own` を「開いた実体」で控えていること自体を pin する** (3 周目 P1-2 / 4 周目 P2-2)。
+//
+// `f.Stat()` を `os.Lstat(l.lockPath())` に変えても既存テストは全緑だった。照合を**する**ことは
+// 守られていたが、**何を**照合するかは無検査で、パス版に戻すと 2 周目 P1 (他ホストの生きた lock を
+// 消す) がそのまま再生産される。区別できなかったのは、割り込める seam が照合の**後**にしか
+// 無かったため。
+func TestTryPlaceCapturesIdentityFromFdNotPath(t *testing.T) {
+	l := newTestLocker(t)
+	other, err := NewLocker(l.dir, 5*time.Second)
+	if err != nil {
+		t.Fatalf("NewLocker(other): %v", err)
+	}
+	oldLink := tryPlaceLinkFn
+	tryPlaceLinkFn = func(string, string) error { return syscall.ENOTSUP }
+	defer func() { tryPlaceLinkFn = oldLink }()
+
+	var victim *Meta
+	inner := false
+	oldBefore := tryPlaceBeforeIdentityHook
+	tryPlaceBeforeIdentityHook = func() {
+		if inner {
+			return // 内側の other.Acquire では発火させない (同じ枝を通るため)
+		}
+		inner = true
+		// 🚨 **実体を控える前**に、人が break を打ち、別ホストが正規に取得する
+		if err := l.Break(); err != nil {
+			t.Errorf("Break: %v", err)
+			return
+		}
+		m, err := other.Acquire(2*time.Hour, "other-host-job")
+		if err != nil {
+			t.Errorf("other.Acquire: %v", err)
+			return
+		}
+		victim = m
+	}
+	defer func() { tryPlaceBeforeIdentityHook = oldBefore }()
+
+	oldAfter := tryPlaceAfterCreateHook
+	tryPlaceAfterCreateHook = func(f *os.File) {
+		if victim != nil {
+			_ = f.Close() // 自分の Write を失敗させる (別ホストの取得が済んだ後で)
+		}
+	}
+	defer func() { tryPlaceAfterCreateHook = oldAfter }()
+
+	if _, err := l.Acquire(time.Minute, "stalled-host"); err == nil {
+		t.Fatalf("書けないのに成功した")
+	}
+	if victim == nil {
+		t.Fatalf("前提: 別ホストの取得が成立していない")
+	}
+	m, _, err := l.readLock()
+	if err != nil || m == nil {
+		t.Fatalf("別ホストの生きた lock を消した (二重実行になる): err=%v", err)
+	}
+	if m.Token != victim.Token {
+		t.Fatalf("別ホストの lock が別物に置き換わっている: got=%s want=%s", m.Token, victim.Token)
 	}
 }

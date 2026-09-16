@@ -259,11 +259,21 @@ func dispatch(cmd string, l *Locker, o *opts, child []string) int {
 		}
 		if o.jsonOut {
 			printJSON(st)
+		} else if st.Unreadable {
+			// 🚨 **一過性か恒久かは言わない** (1 回の観測では区別できない)。人が判断する材料を出す。
+			fmt.Printf("unreadable lock (size=%dB, age=%ds) — 書き込み中の一瞬か、書きかけの残骸。"+
+				"経過が伸び続けるなら残骸。`lockman break` で剥がせる (保持者が居ないことを確かめてから)\n",
+				st.SizeBytes, st.AgeSec)
 		} else if st.Held {
 			fmt.Printf("held by %s@%s (label=%s, age=%ds, expires_in=%ds)\n",
 				st.User, st.Host, st.Label, st.AgeSec, st.ExpiresIn)
 		} else {
 			fmt.Println("free")
+		}
+		// 🚨 中身を読めない lock は**空いているとは言わない** (`check` の「判定不能は busy 側へ
+		// 倒す」と揃える)。旧版は rc=1 = 「道具が壊れた」で、監視からは dir が無いのと区別できなかった
+		if st.Unreadable {
+			return exitBusy
 		}
 		return exitOK
 	case "with":

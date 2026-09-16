@@ -222,6 +222,9 @@ func (l *Locker) readLock() (*Meta, time.Time, error) {
 // ローカルのテストからは差し替えないと 1 行も実行されない (= 本番だけで走る経路になる)。
 var tryPlaceLinkFn = os.Link
 
+// tryPlaceBeforeIdentityHook は「lock を作った後・自分の実体を控える前」に割り込む seam。既定は何もしない。
+var tryPlaceBeforeIdentityHook = func() {}
+
 // tryPlaceAfterCreateHook は O_EXCL fallback で lock を作った直後に割り込む seam。既定は何もしない。
 // **テストが「作れたが中身を書けない」状態を決定論で作る**ために使う (本番では I/O エラーが要る)。
 var tryPlaceAfterCreateHook = func(*os.File) {}
@@ -343,6 +346,10 @@ func (l *Locker) tryPlace(meta *Meta) error {
 		// **消してよいのは、開いた実体と今の名前の指す先が同じときだけ**。
 		// 🚨 この commit が入れた stderr の案内 (「`lockman break` で剥がす」) は、まさに
 		// 0 バイト lock が在る状態で人に `break` を打たせるので、**窓の発火条件を自分で作る**。
+		// 🚨 **照合の「前」に割り込める seam**。これが無いと、`own` を fd (`f.Stat()`) で控えるか
+		// パス (`os.Lstat`) で控えるかを**テストから区別できない** (敵対レビュー 3 周目 P1-2 /
+		// 4 周目 P2-2)。同じ論点で `takeoverRefreshHook` は既に seam を持っている。
+		tryPlaceBeforeIdentityHook()
 		own, ownErr := f.Stat() // 開いた実体を控える (Close より前でないと取れない)
 		tryPlaceAfterCreateHook(f)
 		cleanupOwn := func(cause error) error {
@@ -521,7 +528,11 @@ func (l *Locker) tryTakeover() (bool, error) {
 	if err != nil && !errors.Is(err, errBusy) {
 		return false, err
 	}
-	if mtime2.IsZero() {
+	// 🚨 **1 段目と同じ判別を使う** (敵対レビュー 4 周目 P1-1)。3 周目は 1 段目だけ直しており、
+	// ここは `mtime2.IsZero()` の素のままで、busy エラー + zero mtime を「別の誰かが先に退けた」と
+	// 読んで `took=true` を返していた (fail-open)。commit と issue に書いた「zero-mtime busy 全部に
+	// 効く」は**偽だった** (2 箇所中 1 箇所)。判定を 2 つ持たない。
+	if err == nil && mtime2.IsZero() {
 		return true, nil // 別の誰かが先に退けた。作りにいって、負ければ busy になる
 	}
 	if m2 == nil {
@@ -682,20 +693,38 @@ func (l *Locker) Renew(token string) error {
 
 // State は check / status が返す観測結果。
 type State struct {
-	Held      bool   `json:"held"`
-	Token     string `json:"token,omitempty"`
-	Host      string `json:"host,omitempty"`
-	User      string `json:"user,omitempty"`
-	Label     string `json:"label,omitempty"`
-	AgeSec    int    `json:"age_seconds,omitempty"`
-	ExpiresIn int    `json:"expires_in_seconds,omitempty"`
+	Held bool `json:"held"`
+	// Unreadable は「lock は在るが中身を読めない」。🚨 **`status` の案内先としてこれが要る**
+	// (敵対レビュー 4 周目 P1-2): `acquire` の案内が `lockman status` を名指ししているのに、
+	// 旧版の status は rc=1 (道具の失敗) / stdout 空で、**人はそこで行き止まっていた**。
+	// 一過性 (Renew の O_TRUNC 窓) と恒久 (書きかけの残骸) は 1 回の観測では区別できないので、
+	// **人が判断するための材料** (サイズ・経過) を出すに留める。
+	Unreadable bool   `json:"unreadable,omitempty"`
+	SizeBytes  int64  `json:"size_bytes,omitempty"`
+	Token      string `json:"token,omitempty"`
+	Host       string `json:"host,omitempty"`
+	User       string `json:"user,omitempty"`
+	Label      string `json:"label,omitempty"`
+	AgeSec     int    `json:"age_seconds,omitempty"`
+	ExpiresIn  int    `json:"expires_in_seconds,omitempty"`
 }
 
 // Inspect は現在の状態を返す。**排他の根拠には使えない** (読んだ次の瞬間に変わる)。
 func (l *Locker) Inspect() (*State, error) {
 	m, mtime, err := l.readLock()
 	if err != nil {
-		return nil, err
+		if !errors.Is(err, errBusy) {
+			return nil, err
+		}
+		// 中身を読めない lock。**状態として答える** (道具の失敗にしない)。
+		st := &State{Held: true, Unreadable: true}
+		if fi, serr := os.Lstat(l.lockPath()); serr == nil {
+			st.SizeBytes = fi.Size()
+			if now, nerr := l.serverNow(); nerr == nil {
+				st.AgeSec = int(now.Sub(fi.ModTime()).Seconds())
+			}
+		}
+		return st, nil
 	}
 	if m == nil {
 		return &State{Held: false}, nil

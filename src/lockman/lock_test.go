@@ -165,8 +165,21 @@ func TestCorruptLockIsTreatedAsBusy(t *testing.T) {
 	if _, err := l.Acquire(time.Minute, ""); !errors.Is(err, errBusy) {
 		t.Fatalf("壊れた lock で busy にならない (err=%v)", err)
 	}
-	if _, err := l.Inspect(); err == nil {
-		t.Fatal("壊れた lock を Inspect がエラーにしない")
+	// 🚨 **手段ではなく意図を pin する** (issue 383 の敵対レビュー 4 周目 P1-2)。
+	// 旧版は `Inspect` が**エラーを返すこと**を assert していたが、それは当時の手段で、
+	// 意図は上のコメントどおり「空いていると解釈しない」。エラーに倒していたせいで
+	// `status` が rc=1 (道具の失敗) / stdout 空になり、**案内の行き先が空振り**していた
+	// (`acquire` が `lockman status` を名指ししているのに、人はそこで行き止まる)。
+	// いまは「保持中 かつ 中身を読めない」という**状態**として答える。
+	st, err := l.Inspect()
+	if err != nil {
+		t.Fatalf("壊れた lock で Inspect がエラーになった (状態として答えるべき): %v", err)
+	}
+	if !st.Held {
+		t.Fatal("壊れた lock を「空いている」と答えた (fail-closed が壊れている)")
+	}
+	if !st.Unreadable {
+		t.Fatal("壊れた lock が「中身を読めない」と分類されていない (CLI が案内できない)")
 	}
 }
 
