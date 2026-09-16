@@ -269,15 +269,22 @@ var onLostGracePeriod = 5 * time.Second
 func escalateGroupKill(pgid int, exited <-chan struct{}, grace time.Duration) {
 	// 🚨 **撃つ前に「もう終わっている」かを見る。** `escalate.Do` から goroutine が実走する
 	// までの間に子が回収されていると、TERM は空いた pgid へ飛び、**再利用されていれば
-	// 無関係なプロセスグループに当たる** (issue 340 項目 2 と同クラス。敵対レビューが
-	// 「close(exited) を先にしたので塞いだ」は SIGKILL 側だけだと指摘した)。
+	// 無関係なプロセスグループに当たる** (issue 340 項目 2 と同クラス)。
+	// 🚨 同じ guard が **SIGKILL の直前にも要る**。以前のコメントは「close(exited) を先にしたので
+	// SIGKILL 側は塞がっている」と読める書き方だったが、塞がっていなかった (issue 384 項目 2)。
 	select {
 	case <-exited:
 		return
 	default:
 	}
 	if err := killGroup(pgid, syscall.SIGTERM); err != nil {
-		warnf("%v", err)
+		// 🚨 **ここで返ると昇格は二度と走らない** (`escalate.Do` は sync.Once で、消費済み)。
+		// 再試行しても届かないので Once は消費したままでよい: `kill(2)` の失敗は
+		// EPERM / ESRCH / EINVAL しか無く、**一過性のものが無い** (EAGAIN も EINTR も返らない)。
+		// EPERM (子が `setsid()` した等) なら SIGKILL も EPERM で、ESRCH なら撃つ相手が居ない。
+		// 効くのは「届かなかった」を人に伝えることだけなので、そこを厚くする (issue 384 項目 1)。
+		warnf("昇格できない (%v)。**子は走り続けている可能性がある**: lease は既に他者が持っているので、"+
+			"二重実行になっていないか確認すること (pgid=%d)", err, pgid)
 		return
 	}
 	select {
@@ -285,9 +292,25 @@ func escalateGroupKill(pgid int, exited <-chan struct{}, grace time.Duration) {
 		return // 猶予の内に終わった
 	case <-time.After(grace):
 	}
+	escalateBeforeKillHook()
+	// 🚨 **撃つ直前にもう一度見る。** 両方 ready のとき Go は一様ランダムに選ぶので、
+	// 子が終わっていても timer 枝を取ることがある (実測 50.1%)。その後 warnf の write が挟まる
+	// あいだも窓で、`<-done` の後も deferred な解放が最大 --io-timeout 走るため到達機会がある。
+	// 空いた pgid を撃つと、再利用した pid がその group leader だったときに無関係なグループへ
+	// 当たる (issue 384 項目 2。関数先頭の guard と同じ理由で、SIGKILL 側にも要る)。
+	select {
+	case <-exited:
+		return
+	default:
+	}
 	warnf("子が %v 以内に終わらないので強制終了する (lease は既に他者が持っている)", grace)
 	_ = killGroup(pgid, syscall.SIGKILL)
 }
+
+// escalateBeforeKillHook は「猶予が切れてから SIGKILL を撃つまで」に割り込む seam。
+// 既定は何もしない。**テストが「timer 枝を取った後に子が終わった」状態を決定論で作る**ために使う
+// (その窓は本番では 50% のランダム選択に依存していて、テストから作れない)。
+var escalateBeforeKillHook = func() {}
 
 // killGroup はプロセスグループへシグナルを送る。
 //
