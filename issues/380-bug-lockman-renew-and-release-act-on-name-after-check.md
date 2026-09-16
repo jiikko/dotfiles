@@ -214,3 +214,25 @@ I/O エラーで書けなかったときと、外部要因で壊れたとき)。
       ただし「stall 中の open がどの inode を掴むか」という一般の問いは未確認のまま
 - [ ] **スコープ外**: `maxInFlightRenews` を下げる案 (issue 本文の「後回しにするなら」)。
       窓が消えたので**不要になった**が、見捨てられた goroutine が溜まること自体は 381 の領域
+
+## 引き継ぎ (2026-09-16 時点)
+
+**状態: 実装・テスト・レビュー 1 周が完了して push 済み。残るのは §7 の 2 周目だけ。**
+
+- 直った: `Renew` は fd スコープ (窓が構造的に 0) / `Release` は読んだ実体の identity で照合 (窓は縮むだけ) /
+  `Renew` は読んだバイト列を **verbatim** で書き戻す (未知フィールドを落とさない・混ざった JSON の窓が無い)
+- テスト: `src/lockman/takeover_window_test.go` (6 本)。seam は `renewBeforeWriteHook` /
+  `releaseBeforeRemoveHook` / `readLockAfterStatHook`
+- **次の一手**: 2 周目の敵対レビュー。攻め口は 1 周目の報告が名指ししている 4 点 —
+  ①打刻後の `os.Lstat` が失敗したときの倒し方 (いま「判定不能は errNotOwner へ丸めない」に倒してある。
+  `--on-lost=kill` が一過性の I/O で健全な子を殺さないか) ②`readLockInfo` の call site
+  ③`Truncate` 枝を消したことの相互作用 ④seam の位置 (`lock.go` の「seam は打刻を得た直後・照合より前に置く」注記)
+
+🚨 **踏んだ罠** (同じ所を触る人へ):
+- identity の土台を**別の syscall から取り直すと guard が逆に働く** (照合した対象と guard する対象が
+  食い違い、「引き継いだ側の lock を消す許可」になる)
+- 「他人を壊さない」と「保持を正しく報告する」は**別の主張**。前者だけ直して `nil` を返すと、
+  `__av1ify_lock_still_held` が保持を誤認して**出力を公開し元ファイルを削除する**
+- 0 バイト窓のテストの観測点は**書き込みの前**なので、後ろに置かれた truncate は見えない
+  (テストのヘッダに「検出しない形」として明記してある)
+

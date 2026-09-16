@@ -235,3 +235,27 @@ truncate 前のもの)。
       pre-identity seam) を含むため打ち切り条件 (a) を満たさない。攻め口: ①2 段目の新しい fail-closed が
       over-block しないか ②`status` の新分岐が「中身を読めない」以外のエラーまで飲み込まないか
       ③seam を足した後の `tryPlace` の順序 ④`cleanupOwn` の coverage 0 の 3 枝
+
+## 引き継ぎ (2026-09-16 時点)
+
+**状態: 実装・テスト・レビュー 4 周が完了して push 済み。残るのは §7 の 5 周目と、未検査の 3 点。**
+
+- 直った: 中身を読めない lock は引き継がない (fail-closed) / 読めない理由が CLI の出口に出る
+  (ただし**破壊的操作は促さない**) / `status` がその状態に答える (rc=3 + size・age) /
+  `tryPlace` の後始末は自分の実体だけを消す
+- テスト: `src/lockman/unreadable_lock_test.go` (13 本)。seam は `readLockAfterStatHook` /
+  `tryPlaceLinkFn` / `tryPlaceBeforeIdentityHook` / `tryPlaceAfterCreateHook`
+- **次の一手**: 5 周目の敵対レビュー。攻め口は 4 周目の報告の 4 点 (①2 段目の新しい fail-closed が
+  over-block しないか ②`status` の新分岐が他のエラーまで飲み込まないか ③seam を足した後の順序
+  ④`cleanupOwn` の coverage 0 の 3 枝)
+- **未検査として残っているもの**: `cleanupOwn` の異常系 3 枝は **coverage 0** (変異検証が原理的に無効。
+  `ownErr != nil` を作る seam が要る) / `os.SameFile` は ino 再利用・ino==0 を返す FS では inert
+  (**ローカルでは実演不能**。実 SMB 共有で `stat -f '%d %i'` を create/delete で繰り返すのが測定手順)
+
+🚨 **踏んだ罠**: 1 周目〜4 周目まで**毎周 P1 が出た**。核 (fail-closed) は 1 周で閉じており、
+2 周目以降は**全部「私が足した案内文と後始末」由来**。機構を足すと、その機構に固有の failure mode が
+生まれて §7 が次の周を要求する。**足す前に §0-A (作らずに済む構造はないか) を問うこと。**
+
+🚨 **380 が入ったので前提が変わった**: 0 バイト lock の主要な生成経路 (`Renew` の `O_TRUNC` 窓) は
+消えた。本 issue の機構は「外部要因で壊れたとき」の受け皿として残るが、**発火頻度は下がる**。
+
