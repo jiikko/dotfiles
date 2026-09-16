@@ -29,6 +29,7 @@ input=$(cat)
   IFS= read -r ctx_pct
   IFS= read -r effort_level
   IFS= read -r transcript
+  IFS= read -r session_id
 } <<JSON_FIELDS
 $(printf '%s' "$input" | jq -r '
   (.workspace.current_dir // .cwd // ""),
@@ -41,7 +42,8 @@ $(printf '%s' "$input" | jq -r '
   (.context_window.context_window_size // ""),
   (.context_window.used_percentage // 0),
   (.effort.level // ""),
-  (.transcript_path // "")
+  (.transcript_path // ""),
+  (.session_id // "")
 ' 2>/dev/null)
 JSON_FIELDS
 
@@ -411,6 +413,48 @@ pace_row() {
 pace_row 5h hour "$five_pct"  "$five_reset";  pace_five=$PACE_ROW
 pace_row 7d day  "$seven_pct" "$seven_reset"; pace_seven=$PACE_ROW
 
+# Session name segment (leading space, empty when the name cannot be resolved).
+# 表示するのは session id ではなく **名前** (例: dotfiles-f5)。ListAgents が出す ref
+# (`[d8a71f]`) も session id も SendMessage の宛先にはならず、宛先に使えるのは名前だけ。
+# 名前は stdin JSON に無いので、Claude Code 自身が書いている
+# ~/.claude/sessions/<pid>.json の sessionId → name を突き合わせて引く。
+# 🚨 キャッシュしないこと。名前は改名でき、古い名前は「存在しない宛先」になる
+#    (表示が空になるのは実害が無いが、間違った宛先は投げ先を間違えさせる)。
+# 🚨 fork を増やさないこと (冒頭の jq 一括化と同じ理由)。走査は bash の文字列操作だけ。
+# 🚨 死んだ pid の json は読み飛ばすこと。同じ sessionId の古い json が残ることがあり、
+#    そこに入っているのは改名前の名前。
+resolve_session_name() {  # 結果は REPLY (引けなければ空)
+  REPLY=""
+  local sid="$1" f content pid rest
+  [ -n "$sid" ] || return 0
+  for f in "$HOME"/.claude/sessions/*.json; do
+    [ -e "$f" ] || continue                 # 無マッチの glob はリテラルのまま残る
+    pid=${f##*/}; pid=${pid%.json}
+    # 数字の判定は列挙で書く (範囲 [!0-9] は locale の照合順で全角数字を通す)
+    case "$pid" in ''|*[!0123456789]*) continue ;; esac
+    kill -0 "$pid" 2>/dev/null || continue
+    content=""
+    # 1 行 JSON なので行単位では読めない。-d '' でファイル全体を 1 回で読む (fork 0)
+    IFS= read -r -d '' content < "$f" || true
+    case "$content" in *"\"sessionId\":\"$sid\""*) ;; *) continue ;; esac
+    rest=${content#*"\"name\":\""}
+    [ "$rest" != "$content" ] || return 0   # name キーが無い
+    REPLY=${rest%%\"*}
+    return 0
+  done
+}
+# session_id が stdin JSON に無い版でも動くように、transcript のファイル名から補う
+# (~/.claude/projects/<slug>/<session-id>.jsonl)。ここも fork 0。
+if [ -z "$session_id" ] && [ -n "$transcript" ]; then
+  session_id=${transcript##*/}
+  session_id=${session_id%.jsonl}
+fi
+resolve_session_name "$session_id"
+session_part=""
+if [ -n "$REPLY" ]; then
+  session_part=" ${yellow_fg}[@${REPLY}]${reset}"
+fi
+
 # Model segment (leading space, empty when not provided).
 model_part=""
 if [ -n "$model_name" ]; then
@@ -505,7 +549,7 @@ resolve_advisor() {
 resolve_advisor
 advisor_part=" ${ADVISOR_COLOR}[advisor:${ADVISOR_LABEL}]${reset}"
 
-# 1 行目: directory, branch, model, context, effort, advisor / 2 行目以降: 各ウィンドウの
+# 1 行目: directory, branch, session, model, context, effort, advisor / 2 行目以降: 各ウィンドウの
 # 消化ペース (5h → 7d)。
 # statusline は複数行出力をサポートする (公式 docs の Display multiple lines)。
 # rate limit が無いとき (Free tier 等) は 2 行目以降を出さない。ペース行は
@@ -514,7 +558,7 @@ advisor_part=" ${ADVISOR_COLOR}[advisor:${ADVISOR_LABEL}]${reset}"
 # Each non-first segment carries its own leading space. (No right-alignment:
 # the statusLine command runs without a controlling TTY so `tput cols` reports
 # the wrong width and the line would overflow past the right edge.)
-printf "%b%b%b%b%b%b" "$dir_part" "$branch_part" "$model_part" "$ctx_part" "$effort_part" "$advisor_part"
+printf "%b%b%b%b%b%b%b" "$dir_part" "$branch_part" "$session_part" "$model_part" "$ctx_part" "$effort_part" "$advisor_part"
 if [ -n "$pace_five" ]; then
   printf "\n%b" "$pace_five"
 fi

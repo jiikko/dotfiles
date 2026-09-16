@@ -547,6 +547,81 @@ else
   echo "- SKIP: go が無いので glogx との乖離を検査できていない"
 fi
 
+# --- セッション名セグメント ([@<name>]) --------------------------------------------------
+#
+# 表示する名前は SendMessage の宛先そのもの。間違った名前は「存在しない宛先」になるので、
+# 「引けなければ何も出さない」が不変条件 (空表示は実害が無い / 誤名は投げ先を誤らせる)。
+# 名前は ~/.claude/sessions/<pid>.json の sessionId → name から引くので、HOME を差し替えて
+# fixture を置く (statusline 側にテスト専用の seam を足さないため)。
+echo "[test-statusline] セッション名セグメント"
+SESS_HOME="$TMP_DIR/sess-home"
+mkdir -p "$SESS_HOME/.claude/sessions"
+render_home() {  # $1=json → HOME を fixture に差し替えて render
+  ( HOME="$SESS_HOME"; printf '%s' "$1" | "$SL" | sed $'s/\033\[[0-9;]*m//g' )
+}
+# 生きている pid はこのテストプロセス自身。
+# 🚨 死んだ pid は「live_pid より glob 順で**前**に来る」ものを実測で選ぶ。後ろに置くと
+#    live が先に見つかって stale を 1 度も読まず、pid 生存チェックを外す変異が緑のまま通る。
+live_pid=$$
+dead_pid=""
+for p in $(seq 2 4096); do
+  kill -0 "$p" 2>/dev/null && continue
+  [[ "$p.json" < "$live_pid.json" ]] || continue
+  dead_pid=$p; break
+done
+if [ -z "$dead_pid" ]; then
+  echo "- SKIP: 死んだ pid を確保できず、stale な json の読み飛ばしを検査できていない"
+fi
+sess_json='{"workspace":{"current_dir":"/tmp"},"model":{"display_name":"Opus 5"},
+  "session_id":"SID-A","transcript_path":"",
+  "context_window":{"total_input_tokens":1000,"context_window_size":1000000,"used_percentage":1}}'
+
+out="$(render_home "$sess_json")"
+assert_lacks "$out" "[@" "json が 1 つも無ければセッション名を出さない"
+
+live_file="$SESS_HOME/.claude/sessions/$live_pid.json"
+printf '%s' "{\"pid\":$live_pid,\"sessionId\":\"SID-A\",\"name\":\"dotfiles-zz\",\"nameSource\":\"derived\"}" \
+  > "$live_file"
+out="$(render_home "$sess_json")"
+assert_contains "$out" "[@dotfiles-zz]" "sessionId に対応する name を出す"
+# 名前を足しても他のセグメントがズレない (冒頭の jq 出力順と read 順の 1:1 契約)
+assert_contains "$out" "[Opus 5]"       "セッション名を足しても model 欄は model のまま"
+
+# 一致しない sessionId を渡したら出さない (他セッションの名前を出さない)
+other_json=${sess_json/SID-A/SID-OTHER}
+out="$(render_home "$other_json")"
+assert_lacks "$out" "[@" "sessionId が一致しない json の name は出さない"
+
+# stale な json (死んだ pid) には改名前の名前が残る。読み飛ばして生きている側を採る
+if [ -n "$dead_pid" ]; then
+  stale_file="$SESS_HOME/.claude/sessions/$dead_pid.json"
+  printf '%s' "{\"pid\":$dead_pid,\"sessionId\":\"SID-A\",\"name\":\"dotfiles-OLD\"}" > "$stale_file"
+  # ① stale しか無いとき (並び順に依存しない検査)
+  mv "$live_file" "$SESS_HOME/live.bak"
+  out="$(render_home "$sess_json")"
+  assert_lacks "$out" "[@" "stale な json しか無ければ名前を出さない"
+  mv "$SESS_HOME/live.bak" "$live_file"
+  # ② stale が live より先に見つかる並びでも、生きている側を採る
+  out="$(render_home "$sess_json")"
+  assert_lacks    "$out" "[@dotfiles-OLD]" "死んだ pid の json の名前 (改名前) は出さない"
+  assert_contains "$out" "[@dotfiles-zz]"  "stale が先に在っても生きている側の名前を出す"
+  rm -f "$stale_file"
+fi
+
+# name キーが無い json では出さない (途中まで書かれた json を掴まない)
+printf '%s' "{\"pid\":$live_pid,\"sessionId\":\"SID-A\"}" > "$SESS_HOME/.claude/sessions/$live_pid.json"
+out="$(render_home "$sess_json")"
+assert_lacks "$out" "[@" "name キーが無い json からは名前を出さない"
+
+# session_id が stdin JSON に無い版でも transcript のファイル名から引ける
+printf '%s' "{\"pid\":$live_pid,\"sessionId\":\"SID-A\",\"name\":\"dotfiles-zz\"}" \
+  > "$SESS_HOME/.claude/sessions/$live_pid.json"
+no_sid_json='{"workspace":{"current_dir":"/tmp"},"model":{"display_name":"Opus 5"},
+  "transcript_path":"/Users/x/.claude/projects/slug/SID-A.jsonl",
+  "context_window":{"total_input_tokens":1000,"context_window_size":1000000,"used_percentage":1}}'
+out="$(render_home "$no_sid_json")"
+assert_contains "$out" "[@dotfiles-zz]" "session_id が無ければ transcript のファイル名から引く"
+
 if (( fails > 0 )); then
   printf '[test-statusline] %d 件失敗\n' "$fails" >&2
   exit 1
