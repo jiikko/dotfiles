@@ -3,7 +3,7 @@
 起票日: 2026-09-16
 カテゴリ: design / priority: medium
 対象: `src/lockman/with.go` の `reportRenewErr` (`escalate.Do`) と select ループ
-出典: [381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md) の敵対的レビュー (観点③ 並行・中断)
+出典: [381](done/381-bug-lockman-with-renew-latch-stops-renewal-forever.md) の敵対的レビュー (観点③ 並行・中断)
 反証レビュー: 未実施
 
 ## 問題
@@ -56,6 +56,6 @@ lease 生存系のテストは**全部 `onLostKill=false`**。既定の経路を
 
 ## 関連
 
-- [381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md) — 出典。ループ側を「粘る」へ変えた
+- [381](done/381-bug-lockman-with-renew-latch-stops-renewal-forever.md) — 出典。ループ側を「粘る」へ変えた
 - [384](384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) — 昇格**実装**側の穴
 - [356](done/356-bug-lockman-with-releases-lock-while-grandchildren-run.md) — 昇格そのものの出典

@@ -3,7 +3,7 @@
 起票日: 2026-09-16
 カテゴリ: bug / priority: medium
 対象: `src/lockman/with.go` の `escalateGroupKill` と `runWith` の `escalate.Do`
-出典: [381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md) の敵対的レビュー (観点③ 並行・中断)
+出典: [381](done/381-bug-lockman-with-renew-latch-stops-renewal-forever.md) の敵対的レビュー (観点③ 並行・中断)
 反証レビュー: 未実施
 
 どちらも 381 の修正が作ったものではない (`escalateGroupKill` は 381 で触っていない)。
@@ -71,5 +71,5 @@ seam を入れて「timer 枝を取った後に exited が閉じている」状�
 ## 関連
 
 - [356](done/356-bug-lockman-with-releases-lock-while-grandchildren-run.md) — 昇格そのものの出典
-- [381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md) — 出典
+- [381](done/381-bug-lockman-with-renew-latch-stops-renewal-forever.md) — 出典
 - [385](385-design-lockman-on-lost-kill-vs-keep-renewing.md) — 昇格**ポリシー**側の矛盾

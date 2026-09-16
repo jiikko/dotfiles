@@ -3,8 +3,8 @@
 起票日: 2026-09-16
 カテゴリ: bug / priority: **high**
 対象: `src/lockman/with.go` の select ループ (`renewCh` / `renewExpired`) と `on_lost_kill_test.go`
-出典: [issue 366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の敵対的レビュー (観点③ 並行・中断)
-反証レビュー: 未実施
+出典: [issue 366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の敵対的レビュー (観点③ 並行・中断)
+反証レビュー: 実施済み (敵対的レビュー 3 観点。①壊す / ②素通り / ③並行・中断)
 
 ## 問題
 
@@ -124,7 +124,7 @@ diff が意図した行だけであることを確認してから read/green を
 **観点① 壊す** — P1 が 1 件。「中身を読めない lock は実効 TTL が 30m へ縮む」fail-open で、
 `--ttl 2h` の生きた lease が正規手順で奪える。本修正が原因ではない (`renew` サブコマンド経由でも
 到達しうる) が、`Renew` が `O_TRUNC` まで届く機会が最大 8 倍になったので露出は広がった。
-機構は実コードで確認し、[383](383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) に
+機構は実コードで確認し、[383](../383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) に
 起票した (再現の実行は未追試)。あわせて `--ttl 30s --io-timeout 5m` のように
 **io-timeout > tick** にできる (`main.go` は両者の関係を検証していない) 場合、本修正は
 何の保護も与えないことを確認した (修正前と同じ挙動に戻るだけで悪化はしない)。
@@ -138,10 +138,10 @@ M1/M2 を素通り**した。最大のものは `defer inFlight.Add(-1)` の削�
 **観点③ 並行・中断** — P2 が 2 件、P3 が 2 件。すべて **381 の修正が作ったものではない**か、
 **設計判断**なので、コードは触らず切り出した:
 
-- [384](384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) — 昇格の TERM が
+- [384](../384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) — 昇格の TERM が
   EPERM で失敗すると `escalate.Do` が消費済みのまま二度と昇格しない / SIGKILL の直前に
   `exited` を見直していない (両方 ready のとき timer 枝を取る確率は実測 50.1%)
-- [385](385-design-lockman-on-lost-kill-vs-keep-renewing.md) — **本修正が生んだ矛盾**。
+- [385](../385-design-lockman-on-lost-kill-vs-keep-renewing.md) — **本修正が生んだ矛盾**。
   「最初の判定不能で即殺す」昇格と「判定不能でも更新を続ける」ループが逆を向いており、
   既定 (`--on-lost=kill`) では本修正の便益がほとんど回収されない (一過性の詰まりで
   lease は守れたのに子は殺される)。fail-closed → fail-open の変更になるので独立に判断する
@@ -173,19 +173,24 @@ lease を失いやすくなる列。
 
 - [x] 恒久ラッチを解く設計を決めて実装する — 期限切れで参照を捨て、次の tick で新しい更新を
       積む。溜まる本数は `maxInFlightRenews` (既定 8、goroutine 自身が減らすので復旧すれば枠が戻る)
-      で抑える。[359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) 項目 4 の
+      で抑える。[359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) 項目 4 の
       「上限を置くか決めろ」への回答でもある
 - [x] `--on-lost=warn` での二重実行を A-B で実測する (上表)
 - [x] ~~`TestRenewDoesNotPileUpGoroutinesWhenBlocked` に lease の assert を足す~~ → 誤り。上記
-- [ ] **スコープ外**: [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md) の窓が
+- [ ] **スコープ外**: [380](../380-bug-lockman-renew-and-release-act-on-name-after-check.md) の窓が
       本修正で 1 本 → 最大 8 本に広がった (380 側にも追記済み)。380 の優先度判断に影響する
 - [ ] **未検証**: 上限到達の報告と `reportRenewErr` の文言は、`warnf` に seam が無いため
       **構造上テストできていない** (上の「塞がずに残した」を参照)。実行の証拠は手で確認済み
-- [ ] **スコープ外**: [383](383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) —
-      中身を読めない lock の実効 TTL が 30m へ縮む fail-open。本修正で露出が広がった
+- [ ] **スコープ外 (切り出し済み)**:
+      [383](../383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) (中身を読めない lock の
+      実効 TTL が 30m へ縮む fail-open。本修正で露出が広がった) /
+      [384](../384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) (昇格の実装の穴。
+      本修正とは独立) /
+      [385](../385-design-lockman-on-lost-kill-vs-keep-renewing.md) (**本修正が生んだ矛盾**。
+      既定の `--on-lost=kill` では本修正の便益がほとんど回収されない)
 
 ## 関連
 
-- [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) — 見捨てられた goroutine が
+- [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) — 見捨てられた goroutine が
   副作用を残す族。本 issue は「見捨てた**後**に更新を再開しない」側
-- [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md) — `Renew` 自体の TOCTOU
+- [380](../380-bug-lockman-renew-and-release-act-on-name-after-check.md) — `Renew` 自体の TOCTOU

@@ -3,7 +3,7 @@
 起票日: 2026-09-16
 カテゴリ: bug / priority: **high**
 対象: `src/lockman/lock.go` の `holderTTL` / `tryTakeover` / `takeoverGeneration` のコメント
-出典: [381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md) の敵対的レビュー (観点① 壊す)
+出典: [381](done/381-bug-lockman-with-renew-latch-stops-renewal-forever.md) の敵対的レビュー (観点① 壊す)
 反証レビュー: 未実施
 
 ## 問題
@@ -90,5 +90,5 @@ SMB の属性キャッシュが『古い mtime + 新しい中身』を返す環�
 ## 関連
 
 - [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md) — 0 バイト窓を作る側
-- [381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md) — その窓に到達する機会を増やした側
+- [381](done/381-bug-lockman-with-renew-latch-stops-renewal-forever.md) — その窓に到達する機会を増やした側
 - [366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) — 2 段構えの出典 (本件には効かない)
