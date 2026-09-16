@@ -79,7 +79,7 @@ seam は一時的に入れて実験後に外してある (commit していない
 
 ## 2026-09-16 追記: 381 の修正で「遅れて書きに来る Renew」の本数が 1 → 最大 8 になった
 
-[381](done/381-bug-lockman-with-renew-latch-stops-renewal-forever.md) を直すまで、`with` の
+[381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md) を直すまで、`with` の
 更新は**同時 1 本**しか存在しなかった (期限切れのあとも `renewCh` を握っていたため、詰まった
 1 本が返るまで次を積まなかった)。381 はその恒久ラッチを外し、期限が来たら見捨てて次の tick で
 新しい更新を積む形にしたので、**見捨てられた `Renew` が最大 `maxInFlightRenews` (既定 8) 本、
