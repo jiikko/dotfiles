@@ -44,7 +44,10 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	meta, err := l.AcquireTimed(ttl, label)
 	if err != nil {
 		if errors.Is(err, errBusy) {
-			warnf("他が保持中のため実行しない")
+			// 🚨 **err の中身まで出す** (issue 383)。定型文だけだと、「中身を読めない lock で
+			// 引き継がない」= 人が `break` するまで解けない状態が、正常な保持中と区別できず、
+			// 定期ジョブが静かに永久 skip される
+			warnf("他が保持中のため実行しない (%v)", err)
 			return exitWithBusy
 		}
 		// I/O タイムアウトもここへ落ちる (判定不能 = 125。091:418)。

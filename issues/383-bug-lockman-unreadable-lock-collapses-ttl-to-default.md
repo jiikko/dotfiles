@@ -113,6 +113,31 @@ truncate 前のもの)。
   倒れていないこと)。`TestBreakRemovesUnreadableLock` で復旧路 (`break`) も固定した
 - `go test -race ./...` 緑 / `make test` は EXIT=0 / 83 件報告 / 失敗 0
 
+## 敵対的レビュー (2026-09-16。全数勘定)
+
+指摘 9 件、**採用 5 / 記録 3 / 却下 1**。🚨 **P1 は「私の修正が作った新しい失敗モード」**だった。
+
+| # | 指摘 | 判定 |
+|---|---|---|
+| P1 | fail-closed は「自動復旧する詰まり」を**無言の恒久 wedge**に変えた。しかも代償として設計した導線 (`lockman break`) が **production のどの出口にも出ない** (`cmdAcquire` は errBusy を**無出力**で `exitBusy` にし、`with` は定型文)。既定 `--ttl 30m` では旧挙動が**正しく**自動復旧していた | **採用**。①`acquire` / `with` が busy の**理由を stderr に出す**ようにした (待ち直す枝では出さない) ②`tryPlace` の O_EXCL fallback が**自分で作った 0 バイト lock を消す**ようにした (この枝は `link(2)` が使えない smbfs = 本番でしか通らず、テストから 1 行も走っていなかったので seam を足した) |
+| P2-2 | `TestUnreadableLockIsNeverTakenOver` の red を担っていたのは `strings.Contains(err.Error(),"break")` で、**その文字列は production に 1 バイトも出ていなかった**。安全性 assert は 2 段目が止めるので全部通る | **採用**。CLI 境界 (`run([]string{"acquire", ...})` の stderr) で案内が出ることを固定するテストを足した |
+| P2-3 | 2 段目の `m2 == nil` は**等価変異** (削除しても全緑)。局所 FS では直後の世代照合が先に止め、効くのは SMB 属性キャッシュ + 非 hex token のときだけ | **記録**。到達不能な枝のテストは足さない。「2 段目は backstop」と書き分ける (下記) |
+| P3-3 | 「`Break` は必ず効く」は言い過ぎ。`graveyard` が通常ファイルだと `break` も `acquire` も rc=1/3 で**どのコマンドでも復旧できない** | **記録**。射程を「中身を読まない」までに限定して書く |
+| P3-2 | seam のテスト間干渉 (`once` を別の `readLock` が先に消費すると自明に緑) | **記録・未確認**。現状 `t.Parallel` は 0 件で到達経路が見当たらない |
+| — | SMB 属性キャッシュ / pid 再利用の再現 | **却下 (再現手段が無い)**。推測で防御を足さない |
+
+**壊せなかった経路** (レビューが実験で確認): `errBusy` をラップしたことによる呼び出し元の破綻は無い
+(`== errBusy` の同一性比較は package 内 0 件、`errors.Is` が全経路で生きている) /
+正常系の引き継ぎ (中身が読める期限切れ lock) は壊れていない /
+`IsDir` の枝は fail-closed を迂回するが、続く `tryPlace` が EEXIST で errBusy に落ちるので安全側。
+
+### 2 段目の位置づけ (P2-3 の書き分け)
+
+1 段目 (`m == nil`) が本体で、**2 段目 (`m2 == nil`) は backstop**。局所 FS では 2 段目を消しても
+直後の `takeoverGeneration(m2, mtime2) != gen` が止めるので**挙動が変わらない** (= 等価変異)。
+効くのは「SMB の属性キャッシュが古い mtime を返す」かつ「1 段目の token が非 hex」のときだけで、
+これは本 issue が未確認リスクとして挙げている経路そのもの。変異表に 2 段目の行が無いのはこのため。
+
 ## 残タスク
 
 - [x] 3 候補の採否を決めた ((a) + (c) を採用、(b) は 380 へ)
@@ -123,10 +148,7 @@ truncate 前のもの)。
       再現した (`TestUnreadableLockIsNeverTakenOver` の変異 G1 = fail-closed を外すと奪える)
 - [ ] **スコープ外**: (b) = `Renew` / `Release` を temp + rename にして 0 バイト窓自体を消す
       → [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md)
-- [ ] **未実施**: 反証レビュー (本 issue の実装に対する敵対的レビュー)
-
-## 関連
-
-- [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md) — 0 バイト窓を作る側
-- [381](done/381-bug-lockman-with-renew-latch-stops-renewal-forever.md) — その窓に到達する機会を増やした側
-- [366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) — 2 段構えの出典 (本件には効かない)
+- [x] 反証レビュー (敵対的レビュー) を 1 周通した。P1 の 2 件を修正し、変異で red を確認:
+      `acquire` の理由出力を消す / `with` を定型文へ戻す → `TestUnreadableLockGuidanceReachesCLI` red /
+      `tryPlace` の後始末を no-op へ → `TestTryPlaceRemovesOwnLockWhenBodyCannotBeWritten` red
+- [ ] **未実施**: 上の修正差分に対する 2 周目 (§7)

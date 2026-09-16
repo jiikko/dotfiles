@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -134,5 +135,66 @@ func TestReadLockReturnsMtimeAndBodyFromSameFile(t *testing.T) {
 	if m.Token != first.Token {
 		t.Fatalf("mtime を取った実体と違う中身を返した (差し替え後の中身を読んでいる): got=%s want=%s",
 			m.Token, first.Token)
+	}
+}
+
+// 🚨 **案内が production の出口まで届くこと** (issue 383 の敵対レビュー P2-2)。
+//
+// fail-closed の代償は「人が `lockman break` を打つまで詰まる」ことなので、**その導線が
+// 出口に出ていないと恒久 wedge が『普通に他が走っている』と見分けられない**。
+// 初版は `tryTakeover` が返す error の文言しか見ておらず、その文字列は
+// `cmdAcquire` が無出力で捨てていた (= production では 1 バイトも出ていなかった)。
+func TestUnreadableLockGuidanceReachesCLI(t *testing.T) {
+	l := newTestLocker(t)
+	if _, err := l.Acquire(2*time.Hour, "holder"); err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	if err := os.Truncate(l.lockPath(), 0); err != nil {
+		t.Fatalf("Truncate: %v", err)
+	}
+	old := time.Now().Add(-(defaultTTL + 5*time.Minute))
+	if err := os.Chtimes(l.lockPath(), old, old); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+
+	var rc int
+	out := captureStderr(t, func() { rc = run([]string{"acquire", l.dir}) })
+	if rc != exitBusy {
+		t.Fatalf("rc=%d (exitBusy=%d を期待)", rc, exitBusy)
+	}
+	for _, want := range []string{"読めない", "break"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("acquire の stderr に %q が無い (人が復旧手段にたどり着けない): %q", want, out)
+		}
+	}
+
+	// `with` 経路も同じ (定期ジョブはこちらを使う。定型文だけだと永久 skip が見えない)
+	out2 := captureStderr(t, func() { rc = run([]string{"with", l.dir, "--", "/usr/bin/true"}) })
+	if !strings.Contains(out2, "読めない") {
+		t.Fatalf("with の stderr に理由が出ていない: %q", out2)
+	}
+}
+
+// 🚨 **中身を書けなかった lock を残さない** (issue 383 の敵対レビュー P1)。
+//
+// `tryPlace` の O_EXCL fallback (link(2) が使えない FS = smbfs の経路) は、Write / Sync / Close に
+// 失敗しても自分が作った 0 バイト lock を消さずに返していた。fail-closed の下では、それは
+// **保持者も居ないのに誰も引き継げない**恒久 wedge になる。
+func TestTryPlaceRemovesOwnLockWhenBodyCannotBeWritten(t *testing.T) {
+	l := newTestLocker(t)
+	// link(2) が使えない FS (smbfs) の枝へ入れる。ローカルでは link が成功してしまい、
+	// fallback が 1 行も走らない
+	oldLink := tryPlaceLinkFn
+	tryPlaceLinkFn = func(string, string) error { return syscall.ENOTSUP }
+	defer func() { tryPlaceLinkFn = oldLink }()
+	old := tryPlaceAfterCreateHook
+	tryPlaceAfterCreateHook = func(f *os.File) { _ = f.Close() } // Write を必ず失敗させる
+	defer func() { tryPlaceAfterCreateHook = old }()
+
+	if _, err := l.Acquire(time.Minute, "holder"); err == nil {
+		t.Fatalf("書けないのに成功した")
+	}
+	if _, err := os.Stat(l.lockPath()); !os.IsNotExist(err) {
+		t.Fatalf("中身を書けなかった lock が残っている (誰も引き継げない): %v", err)
 	}
 }

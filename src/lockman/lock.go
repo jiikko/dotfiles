@@ -205,6 +205,15 @@ func (l *Locker) readLock() (*Meta, time.Time, error) {
 	return &m, st.ModTime(), nil
 }
 
+// tryPlaceLinkFn は `link(2)` の seam。既定は `os.Link`。
+// 🚨 **fallback (O_EXCL) の枝は link(2) が使えない FS = smbfs でしか通らない** ので、
+// ローカルのテストからは差し替えないと 1 行も実行されない (= 本番だけで走る経路になる)。
+var tryPlaceLinkFn = os.Link
+
+// tryPlaceAfterCreateHook は O_EXCL fallback で lock を作った直後に割り込む seam。既定は何もしない。
+// **テストが「作れたが中身を書けない」状態を決定論で作る**ために使う (本番では I/O エラーが要る)。
+var tryPlaceAfterCreateHook = func(*os.File) {}
+
 // readLockAfterStatHook は Fstat と本文の読み取りのあいだに割り込む seam。既定は何もしない。
 // **テストが「読んでいる最中に lock が差し替わった」状態を決定論で作る**ために使う
 // (この窓は本番では数 µs で、外から狙って作れない)。
@@ -295,7 +304,7 @@ func (l *Locker) tryPlace(meta *Meta) error {
 
 	// link(2) が使えれば、lock は「最初から中身が入った状態」で現れる (途中経過が
 	// 他者に見えない)。macOS の smbfs では ENOTSUP になりうるので O_EXCL に落とす。
-	linkErr := os.Link(tmp, l.lockPath())
+	linkErr := tryPlaceLinkFn(tmp, l.lockPath())
 	switch {
 	case linkErr == nil:
 	case os.IsExist(linkErr):
@@ -308,16 +317,27 @@ func (l *Locker) tryPlace(meta *Meta) error {
 		if err != nil {
 			return err
 		}
+		// 🚨 **失敗したら自分が作った lock を消す** (issue 383)。O_EXCL が通った = この lock は
+		// 自分のものなので消してよい。残すと「中身が無い lock」になり、fail-closed の下では
+		// **誰も引き継げず、保持者も居ない**恒久 wedge になる (人が `break` するまで)。
+		// この枝は link(2) が使えない FS (smbfs で ENOTSUP) でだけ通る = 本番の経路。
+		tryPlaceAfterCreateHook(f)
+		cleanupOwn := func(cause error) error {
+			if rmErr := os.Remove(l.lockPath()); rmErr != nil && !os.IsNotExist(rmErr) {
+				warnf("中身を書けなかった lock を消せない (%v)。`lockman break` で剥がすこと: %v", rmErr, l.lockPath())
+			}
+			return cause
+		}
 		if _, err := f.Write(b); err != nil {
 			f.Close()
-			return err
+			return cleanupOwn(err)
 		}
 		if err := f.Sync(); err != nil {
 			f.Close()
-			return err
+			return cleanupOwn(err)
 		}
 		if err := f.Close(); err != nil {
-			return err
+			return cleanupOwn(err)
 		}
 	}
 	// write-then-verify: 置けたつもりで負けている可能性を潰す。
@@ -412,7 +432,9 @@ func (l *Locker) tryTakeover() (bool, error) {
 		// 🚨 **中身を読めない lock は「期限切れ」と判定しない** (issue 383。fail-closed)。
 		// TTL は lock の中身にしか無いので、読めない時点で生死は判定できない。既定 TTL へ
 		// 倒すと、それより長い TTL を宣言した保持者を生きたまま奪う。
-		// 詰まったら人が `lockman break` で剥がす (Break は中身を読まないので必ず効く)。
+		// 詰まったら人が `lockman break` で剥がす (Break は**中身を読まない**ので、壊れた lock にも
+		// 効く。ただし graveyard dir と rename 権限には依存する — `.lockman/graveyard` が
+		// 通常ファイルだと break 自身が失敗する。実測 2026-09-16)。
 		return false, fmt.Errorf("%w: lock の中身を読めないので引き継がない (生死を判定できない。"+
 			"保持者が居ないと分かっているなら `lockman break` で剥がす)", errBusy)
 	}

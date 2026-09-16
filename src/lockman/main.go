@@ -300,6 +300,12 @@ func cmdAcquire(l *Locker, o *opts) int {
 			return exitOK
 		case errors.Is(err, errBusy):
 			if o.wait <= 0 || time.Now().After(deadline) {
+				// 🚨 **理由を出す**。busy には「正常に他者が保持中」と「中身を読めないので
+				// 引き継がない (人が break するまで詰まる)」が混ざっており、後者は
+				// **人が動かないと永久に解けない** (issue 383)。無出力で exitBusy を返すと、
+				// 恒久 wedge が「普通に他が走っている」と見分けられない。
+				// 待ち直す枝では出さない (毎周回 stderr を汚さないため)。
+				warnf("%v", err)
 				return exitBusy
 			}
 		default:

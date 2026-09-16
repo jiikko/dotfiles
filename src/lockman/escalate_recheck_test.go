@@ -62,15 +62,21 @@ func TestEscalateStillKillsWhenChildIsAlive(t *testing.T) {
 // 判定に到達しない (= 有無で結果が変わらない fixture になる)。
 func startIgnoringTermGroup(t *testing.T) (int, <-chan struct{}) {
 	t.Helper()
-	// 🚨 `trap "" TERM; sleep 30` では**グループごと TERM で死ぬ**: trap を張った sh は
-	// 生き延びるが、同じグループに居る `sleep` が TERM を受けて死に、sh の `sleep` が返って
-	// 連鎖終了する (実測 2026-09-16)。TERM を受けてもグループが生き残る形にする
-	// (死ぬのは SIGKILL のときだけ)。
+	// 🚨 **訂正 (2026-09-16 の再実測)**: 以前ここには「`trap "" TERM; sleep 30` はグループごと
+	// TERM で死ぬ (sleep が TERM を受ける)」と書いていたが**誤り**だった。`trap ''` は SIG_IGN で、
+	// **SIG_IGN は fork+exec を跨いで継承される**ので `sleep` も TERM を無視する
+	// (`trap 'cmd'` のハンドラ形は exec で既定へ戻るので、そちらは死ぬ。両形を実測して確認)。
+	// 当時の失敗の原因は下の ready 待ちの方 (trap を張り終える前に TERM が届いていた) だけ。
+	// ループ形のままにしてあるのは、下の「寿命に上限を置く」ためで、TERM 対策ではない。
 	// 🚨 **trap を張り終えたことを成果物で待つ**。`kill(pid, 0)` は fork 直後 (trap 設置前) でも
 	// 成功するので、それを前提にすると**冒頭の TERM で死ぬ**子を「準備できた」と読む
 	// (実測 2026-09-16: この形で SIGKILL 側の判定に一度も到達していなかった)。
 	ready := filepath.Join(t.TempDir(), "ready")
-	cmd := exec.Command("/bin/sh", "-c", `trap "" TERM; : > "$1"; while :; do sleep 0.2; done`, "sh", ready)
+	// 🚨 **寿命に上限を置く**。`t.Cleanup` はテストバイナリが kill / timeout で落ちると走らず、
+	// 子は TERM を無視するので**不死の孤児**になる (実測: 中間版の fixture が 1 個、
+	// 孤児として回り続けていた)。回数で切れば、後始末が走らなくても必ず終わる。
+	cmd := exec.Command("/bin/sh", "-c",
+		`trap "" TERM; : > "$1"; i=0; while [ $i -lt 150 ]; do sleep 0.2; i=$((i+1)); done`, "sh", ready)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -126,4 +132,80 @@ func waitForFile(t *testing.T, path string) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("前提: 子が準備完了を申告しない (%s)", path)
+}
+
+// 🚨 **関数冒頭の guard も検査する** (敵対レビュー P2-4)。
+//
+// 384 はこの guard を「同じ guard が SIGKILL の直前にも要る」と load-bearing として
+// 再文書化したが、変異で確かめたのは新しい方 (SIGKILL 側) だけだった。
+//
+// 🚨 判定は「グループが生きているか」では**できない** (初版はこれで、guard を外す変異が
+// 全緑だった): guard を外しても、`exited` が閉じていれば猶予の select が return するので
+// SIGKILL には到達せず、TERM を無視する子は生き残る。**TERM が撃たれたこと自体**を子に
+// 記録させる。
+func TestEscalateDoesNotSignalWhenAlreadyExited(t *testing.T) {
+	pgid, termLog, _ := startTermRecordingGroup(t)
+
+	exited := make(chan struct{})
+	close(exited) // 実走する前に子が回収されていた形
+
+	escalateGroupKill(pgid, exited, 10*time.Millisecond)
+
+	// 🚨 「起きないこと」の assert なので時間で待つ (成立条件が無い)。シグナルの配送と
+	// ハンドラの write を待つ余裕を取る。
+	time.Sleep(300 * time.Millisecond)
+	if b, err := os.ReadFile(termLog); err == nil && len(b) > 0 {
+		t.Fatalf("既に終わっているのに TERM を撃った (記録=%q)", string(b))
+	}
+}
+
+// 対照: 終わっていなければ TERM は撃つ (上の検査が「常に撃たない」へ倒れていないこと)。
+func TestEscalateSendsTermWhenChildIsAlive(t *testing.T) {
+	pgid, termLog, _ := startTermRecordingGroup(t)
+
+	escalateGroupKill(pgid, make(chan struct{}), 10*time.Millisecond)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if b, err := os.ReadFile(termLog); err == nil && len(b) > 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("生きている子へ TERM が飛んでいない (pgid=%d)", pgid)
+}
+
+// startTermRecordingGroup は **TERM を受けたことを記録する**子を新しいプロセスグループで起こす。
+//
+// 🚨 `trap 'cmd' TERM` (ハンドラ形) は `trap "" TERM` (SIG_IGN) と違い **exec で既定へ戻る**ので、
+// ループ内の `sleep` は TERM で死ぬ。sh 自身はハンドラを持つので生き残り、ループが続く。
+// 記録が要る検査はこちら、SIGKILL の有無を見る検査は無視形 (startIgnoringTermGroup) を使う。
+func startTermRecordingGroup(t *testing.T) (int, string, <-chan struct{}) {
+	t.Helper()
+	dir := t.TempDir()
+	ready := filepath.Join(dir, "ready")
+	termLog := filepath.Join(dir, "term")
+	cmd := exec.Command("/bin/sh", "-c",
+		`trap 'echo t >> "$2"' TERM; : > "$1"; i=0; while [ $i -lt 150 ]; do sleep 0.2; i=$((i+1)); done`,
+		"sh", ready, termLog)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	pgid, err := syscall.Getpgid(cmd.Process.Pid)
+	if err != nil {
+		t.Fatalf("Getpgid: %v", err)
+	}
+	waitDone := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(waitDone) }()
+	waitForFile(t, ready)
+	t.Cleanup(func() {
+		_ = killGroup(pgid, syscall.SIGKILL)
+		select {
+		case <-waitDone:
+		case <-time.After(5 * time.Second):
+			t.Errorf("後始末: 子 (pgid=%d) を回収できない", pgid)
+		}
+	})
+	return pgid, termLog, waitDone
 }
