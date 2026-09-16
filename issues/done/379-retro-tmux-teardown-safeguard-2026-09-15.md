@@ -25,7 +25,7 @@ issue に**自分で書いておきながら**、後始末の 1 版目は `displ
 しかも情報は捨てていただけだった: 時間切れか EOF かは `tt__run_bounded` が `rc > 128` として
 **既に計算していた**のに、常に `return 0` で丸めていた。
 
-→ 切り出し先: [`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md)
+→ 切り出し先: [`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md)
 の節 2「沈黙 = 成功になっていないか」への**追記 1 行**。あの節は「判定不能を緑に畳まない」を
 テストハーネスの文脈で書いているが、今回は**破壊的操作の側**で同じことが起きた
 (「判定不能 → 消さない」へ倒す)。発動点が同じ (自作の安全機構) なので新規ルールにはしない。
@@ -48,7 +48,7 @@ client の KILL 削除) で狙ったケースが red になることを確認し
 **実症状では一度も発火しない死にコード**で、⑦ のテストが緑だったのは
 「pid を答えられるが停止要求だけ無視するサーバ」という**実在しない fixture** を使っていたから。
 
-→ 切り出し先: [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の
+→ 切り出し先: [`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) の
 「fixture が production の初期状態と違わないか」への**追記 1 行**:
 **「その fixture は実症状で成立するか。機構が前提にしている入力を、実症状の側が供給できるかを見る」**。
 既存項は「並行・レースの初期状態」に寄っているので、射程を 1 行広げる。
@@ -68,7 +68,7 @@ client の KILL 削除) で狙ったケースが red になることを確認し
 
 commit message の散文に `tmux` と `kill-server` が同じ並びで出たため、
 `deny-bare-tmux-kill.sh` が deny した。ルール
-([`tmux-probe-requires-socket-isolation.md`](../_claude/rules/tmux-probe-requires-socket-isolation.md))
+([`tmux-probe-requires-socket-isolation.md`](../../_claude/rules/tmux-probe-requires-socket-isolation.md))
 に既知の偽陽性として書いてある形。回避は「引用符で囲む / 言い換える / 変数で分割」の 3 つが
 挙がっているが、**今回は `git commit -F <ファイル>` でメッセージをコマンド文字列から外した**のが
 一番素直だった (hook が見るのは Bash のコマンド文字列なので、ファイル経由なら偽陽性が起きない)。
@@ -87,19 +87,30 @@ commit message の散文に `tmux` と `kill-server` が同じ並びで出たた
 「client がどう振る舞ったか」から生死を推論していた。3 版目でようやく
 「socket の持ち主が居るか」という**直接の観測**に置き換わり、そこで初めて変異が通らなくなった。
 
-→ 切り出し先: [`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md)
+→ 切り出し先: [`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md)
 §7 への**追記 1 行**: 「**破壊的操作の前提を『推論』で組んでいないか。観測に置き換えられるなら
 置き換えるまで周回は終わらない**」。§0-B (既に答えを出している経路を使う) の破壊的操作版。
 
 ## 残課題
 
-- [ ] 項目 1 を `adversarial-review-own-safeguards.md` 節 2 へ 1 行追記する
-- [ ] 項目 3 を `mutation-verify-new-tests.md` へ 1 行追記する
-- [ ] 項目 5 を `tmux-probe-requires-socket-isolation.md` の回避の優先順へ 1 行追記する
-- [ ] 項目 2・4 を `rules-rationale/` へ実例として追記する (ルール本文は変更しない)
-- [ ] 項目 6 を `adversarial-review-own-safeguards.md` §7 へ 1 行追記する
-- [ ] **未確認**: 並列の `make test` のときだけ `sleep 300` が 1 件残る。候補 6 本を単独実行すると
-      全て残骸 0 で出所が特定できていない (300 秒で自然終了するので実害は小さい)。
-      詳細は issue 377 の「未確認として残すもの」
+- [x] 項目 1 を `adversarial-review-own-safeguards.md` §2 へ追記した
+      (「判定不能 → 消さない / 撃たない」は破壊的操作の側にも要る)
+- [x] 項目 3 を `mutation-verify-new-tests.md` へ追記した
+      (生死・存在を `kill(pid,0)` で判定しない = ゾンビにも exec 前にも成功する)
+- [x] 項目 5 を `tmux-probe-requires-socket-isolation.md` の回避の優先順へ追記した
+      (`git commit -F <ファイル>` を第 1 候補に。検出の迂回ではないことも明記)
+- [x] 項目 2・4 を `rules-rationale/` へ実例として追記した (ルール本文は変更していない)
+- [x] 項目 6 を `adversarial-review-own-safeguards.md` §7 へ追記した
+      (破壊的操作の前提を推論で組んでいないか。観測へ置き換えるまで周回は終わらない)
+- [x] **未確認のまま受容する**: 並列の `make test` のときだけ `sleep 300` が 1 件残る。
+      候補 6 本を単独実行すると全て残骸 0 で出所を特定できておらず、**300 秒で自然終了する**ので
+      377 のような「無限に回り続ける残骸」とは別物。**再開の trigger**: 並列実行後に複数件
+      たまるようになったら出所を特定する。詳細は issue 377 の「未確認として残すもの」
+
+## 切り出しの結果 (2026-09-16)
+
+387 (lockman の retro) の切り出しと**同じ commit**で入れた。追記先が重なるため
+(`adversarial-review-own-safeguards.md` は §2 と §7、`mutation-verify-new-tests.md` は
+同じ節) 分けると片方の文脈が読めなくなる。内訳は 387 の「切り出しの結果」節にまとめてある。
 
 切り出しの実行はユーザーの判断を待つ。

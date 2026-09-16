@@ -38,7 +38,7 @@ production 約 500 行に対し、テストは約 1200 行 (新設 24 本)。
 変異検証とレビューは**代替にならない**ことの実測 (`adversarial-review-own-safeguards.md` の
 「変異は自分が想定した不変条件しか試さない」がそのまま出た)。
 
-→ 切り出し先: [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の
+→ 切り出し先: [`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) の
 「よくある『守っていないテスト』の形」へ**追記 2 行**:
 **「①生死・存在を `kill(pid,0)` やプロセスの有無で見ない (ゾンビ・exec 前が同じ顔で出る)。
 `Wait` の完了・成果物で見る ②『案内した先』を検査する — 文字列が出ているかではなく、
@@ -50,7 +50,7 @@ production 約 500 行に対し、テストは約 1200 行 (新設 24 本)。
 後始末」由来**だった。足した機構がそれぞれ固有の failure mode を持ち、その修正がまた新しい判定を
 足す、の連鎖。4 周のうち 3 周は自分で作った複雑さへの対応。
 
-→ 切り出し先: [`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md)
+→ 切り出し先: [`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md)
 §0-A への**追記 1 行**: **「機構を足すたびに §7 の周回が 1 つ増えると見積もる。『あると親切』な
 案内・後始末は、それ自体が新しい安全機構で、周回のコストを持つ」**。
 
@@ -62,7 +62,7 @@ fail-closed の代償として「`lockman break` で剥がす」と案内した�
 (そして 4 周目で「その `status` が空振り」と言われた。)
 
 → 切り出し先: 新規ルールは立てない。
-[`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md)
+[`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md)
 §2 (沈黙 = 成功にしない) の隣へ**追記 1 行**: **「人へ出す案内に破壊的操作を書くときは、
 その案内が出る状態を全部列挙する。1 つでも『やってはいけない状態』が混ざるなら、
 読み取り専用の確認へ誘導する」**。
@@ -88,10 +88,25 @@ fail-closed の代償として「`lockman break` で剥がす」と案内した�
 
 ## 残課題
 
-- [ ] 項目 1 を `mutation-verify-new-tests.md` へ 2 行追記する
-- [ ] 項目 2 を `adversarial-review-own-safeguards.md` §0-A へ 1 行追記する
-- [ ] 項目 3 を同 §2 へ 1 行追記する
-- [x] 項目 4 は切り出さない (既存ルールで足りる。実例は rationale 側へ)
-- [ ] 項目 5 は切り出し不要 (記録のみ)
+- [x] 項目 1 を `mutation-verify-new-tests.md` へ追記した (3 項: seam を guard の内側へ /
+      生死・存在を `kill(pid,0)` で判定しない / 案内先は文字列でなく実行で確かめる)
+- [x] 項目 2 を `adversarial-review-own-safeguards.md` §0-A へ追記した
+      (機構を 1 つ足すたびに §7 の周回が 1 つ増えると見積もる)
+- [x] 項目 3 を同 §2 へ追記した (判定不能 → 消さない / 撃たない を破壊的操作の側にも /
+      案内に破壊的操作を書くなら出る状態を全部列挙し、案内先を実際に走らせる)
+- [x] 項目 4 は切り出さない (既存ルールで足りる)。実例は
+      `rules-rationale/adversarial-review-own-safeguards.md` へ
+- [x] 項目 5 は切り出し不要 (記録のみ)
+
+## 切り出しの結果 (2026-09-16)
+
+| 追記先 (規範) | 内容 |
+|---|---|
+| `_claude/rules/mutation-verify-new-tests.md` | seam の位置 / `kill(pid,0)` の 2 つの嘘 / 案内先は実行で確かめる |
+| `_claude/rules/adversarial-review-own-safeguards.md` §0-A | 機構 1 つ = 周回 1 つ |
+| 同 §2 | 判定不能は破壊的操作の側でも「やらない」へ倒す / 案内に破壊的操作を書くときの規律 |
+
+実例・実測 (11 個の fixture の嘘の表、4 周の内訳、推論→観測の 3 版) は同名の
+`rules-rationale/` へ。379 の切り出しと同じ commit で入れた。
 
 切り出しの実行はユーザーの判断を待つ。
