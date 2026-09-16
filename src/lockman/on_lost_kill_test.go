@@ -249,13 +249,19 @@ func waitForLockToken(l *Locker) (string, []byte, error) {
 // 詰まりを一切作らない列で固定する。敵対レビュー 2026-09-16 (観点② false green) の指摘で、
 // 「上限と**成功する**更新の相互作用」を見ているテストが 1 本も無かった。
 func TestLeaseSurvivesLongHealthyRun(t *testing.T) {
-	// 上限 tick 目を早く来させる。健全なら枠は毎 tick 戻るので、正しい実装は上限に触れない
-	defer shortenMaxInFlightRenews(t, 2)()
+	// 上限 tick 目を早く来させる。健全なら枠は毎 tick 戻るので、正しい実装は上限に触れない。
+	// 🚨 **2 まで縮めない**: 枠を埋めるのは「まだ返っていない更新」なので、負荷の高い CI で
+	// 200ms (io-timeout) を超える更新が同時に 2 本あるだけで上限に当たり、実装が正しくても
+	// 赤くなる。3 にして当たりにくくしてある (production の 8 に依存させないために縮めてはいる)。
+	defer shortenMaxInFlightRenews(t, 3)()
 	l, err := NewLocker(t.TempDir(), testIOTimeout)
 	if err != nil {
 		t.Fatalf("NewLocker: %v", err)
 	}
-	const ttl = 600 * time.Millisecond // tick = 200ms
+	// 🚨 TTL は既存で CI を通ってきた実績のある 900ms 以上にする。600ms だと lease の寿命が
+	// 更新 3 回ぶんしかなく、2 core の runner で -race を回すと取りこぼしで偽の赤が出る
+	// (壁時計に依存するテストは「上限を詰める」方向へ動かさない)。
+	const ttl = 900 * time.Millisecond // tick = 300ms
 	other, err := NewLocker(l.dir, testIOTimeout)
 	if err != nil {
 		t.Fatalf("NewLocker(other): %v", err)
@@ -268,14 +274,14 @@ func TestLeaseSurvivesLongHealthyRun(t *testing.T) {
 			ch <- leaseProbe{setupErr: err}
 			return
 		}
-		// 上限 (2) の 9 倍の tick を通してから観測する。枠が戻らない実装は 2 tick 目
-		// (400ms) で更新をやめるので、lease は 1000ms には死んでいる (余裕 800ms)
-		time.Sleep(1800 * time.Millisecond)
+		// 上限 (3) の 9 倍の tick を通してから観測する。枠が戻らない実装は 3 tick 目
+		// (900ms) で更新をやめるので、lease は 1800ms には死んでいる (余裕 900ms)
+		time.Sleep(2700 * time.Millisecond)
 		ch <- probeLease(l, other, ttl, tok)
 	}()
 
 	got := boundedInt(t, "runWith (健全なマウントでの長期走行)", func() int {
-		return runWith(l, ttl, "", false, []string{"sh", "-c", "sleep 3"})
+		return runWith(l, ttl, "", false, []string{"sh", "-c", "sleep 4"})
 	})
 	assertLeaseHeld(t, "健全なマウントで上限 tick を超えて走行", recvProbe(t, ch), got)
 }
