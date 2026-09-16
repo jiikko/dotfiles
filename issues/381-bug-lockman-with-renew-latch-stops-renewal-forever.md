@@ -62,18 +62,73 @@ case <-ticker.C:
 ## 未確認
 
 - 手順 2 の syscall が返らない (hard mount / stale handle) ことは実機で確認していない。
-  マウントが復旧すれば goroutine も解放されてラッチが外れるので、噛むのは
-  「返らない」か「復旧よりかなり遅れて返る」場合に限る
-- ただし**テストの穴** (恒久ラッチを作って lease を見ていない) はこの前提なしで成立する
+  マウントが完全に死んでいるあいだは**どの実装でも更新は成功しえない**ので、修正が効くのは
+  「掴んだ fd は死んだまま、新しい open なら通る」形 (stale handle / 掴んだまま入れ替わった
+  パス) に限る。テストはこの形を FIFO で再現している
+- **上限 (`maxInFlightRenews` = 8) に達したあとは、修正前と同じ「更新が走らない」状態に戻る**。
+  `--on-lost=kill` (既定) なら初回の期限切れで子を止めにいっているので露出は縮むが、
+  `--on-lost=warn` では二重実行の可能性が残る。honest な上限として warn を 1 回出している
+  (`with.go` の `cappedWarned`)。上限を上げると issue 380 の窓が比例して広がる
+
+## 進捗 (2026-09-16)
+
+### A-B 実測 (残タスク ③ = `--on-lost=warn` の二重実行)
+
+新テスト `TestLeaseSurvivesPermanentRenewBlock` が A-B そのもの。手順は
+`TestLeaseSurvivesTransientRenewBlock` と 1 手だけ違う: **詰まった読み手を解放しない**
+(パスは実ファイルへ戻すので、新しい `Renew` なら成功する)。
+
+| 版 | 結果 |
+|---|---|
+| 修正前 (`renewCh` を握ったまま) | **3 回とも FAIL** — `other.Acquire` が `err=<nil>` で成功 = 他マシンが引き継いだ。`with` の exit=125 で子はまだ走っていた (= 二重実行) |
+| 修正後 (期限で見捨てて次の tick で張り直す) | 3 回とも PASS (`errBusy` = 奪えない) |
+
+条件: ttl 1200ms (tick 400ms) / io-timeout 200ms / 詰まりを 800ms 保ってからパスだけ復旧 /
+復旧の 1600ms 後に別 Locker が `Acquire`。darwin arm64 / go1.25.4。
+
+### 変異検証 (ケース名ごとの pass/fail で判定)
+
+| 変異 | red になったケース | 緑のままのケース |
+|---|---|---|
+| M1: 期限切れで見捨てるのをやめる (`renewCh` を握る = 修正前) | `TestLeaseSurvivesPermanentRenewBlock` | `TestRenewDoesNotPileUpGoroutinesWhenBlocked` / `TestLeaseSurvivesTransientRenewBlock` |
+| M2: 上限 (`maxInFlightRenews`) の判定を外す | `TestRenewDoesNotPileUpGoroutinesWhenBlocked` (10 本 vs 上限 2 本) | 他 2 本 |
+
+M1 で transient 版が緑のままなのが、この issue の主張 (「一過性については守られていたが
+恒久については守られていなかった」) の裏付け。どちらの変異もビルドが通ることと、
+diff が意図した行だけであることを確認してから read/green を読んだ。
+
+### 残タスク ① は誤りだった (書き戻し)
+
+> - [ ] `TestRenewDoesNotPileUpGoroutinesWhenBlocked` に「lease が生きているか」の assert を足す
+>       (今の状態で red になるはず。ならないなら前提が作れていない)
+
+**成立しない。** あのテストは FIFO を最後まで退けないので、**どの実装でも `Renew` は 1 度も
+成功しえず**、lease は修正版でも壊れた版でも死ぬ。あそこに lease の assert を置くと
+「常に red」= 何も測らない assert になる。恒久ラッチの検査は、パスだけ復旧させて古い読み手を
+返らないまま残す**別のテスト** (`TestLeaseSurvivesPermanentRenewBlock`) が持つべきもので、
+`TestRenewDoesNotPileUpGoroutinesWhenBlocked` が守るのは**本数の上限**だけ。
+この区別はテスト本体のコメントにも書いた。
+
+### 決めたこと: `outcome` は sticky のまま (125 を 122 に上書きしない)
+
+修正で「遅れて張り直した `Renew` が `errNotOwner` を返す」経路が**初めて到達可能**になった。
+`outcome` は `if outcome == renewOK` で守られているので、判定不能 (125) のあとに確実な喪失
+(122) を知っても exit は 125 のまま。091:398-399 はこの 2 つを分けているが、**判定不能だった
+窓があった事実は後から消えない**ので 125 のままにする (終了コードは呼び出し側の API なので、
+変えるなら契約変更として別 issue で扱う)。副作用ではなく意図的な据え置き。
 
 ## 残タスク
 
-- [ ] `TestRenewDoesNotPileUpGoroutinesWhenBlocked` に「lease が生きているか」の assert を足す
-      (今の状態で red になるはず。ならないなら前提が作れていない)
-- [ ] 恒久ラッチを解く設計を決める (例: `renewExpired` を発火のたびに張り直して次の tick で
-      新しい更新を積む。ただし「見捨てた goroutine が溜まる」上限との両立が要る —
-      [359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) の項目 4 が出典)
-- [ ] `--on-lost=warn` での二重実行を A-B で実測する
+- [x] 恒久ラッチを解く設計を決めて実装する — 期限切れで参照を捨て、次の tick で新しい更新を
+      積む。溜まる本数は `maxInFlightRenews` (既定 8、goroutine 自身が減らすので復旧すれば枠が戻る)
+      で抑える。[359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) 項目 4 の
+      「上限を置くか決めろ」への回答でもある
+- [x] `--on-lost=warn` での二重実行を A-B で実測する (上表)
+- [x] ~~`TestRenewDoesNotPileUpGoroutinesWhenBlocked` に lease の assert を足す~~ → 誤り。上記
+- [ ] **スコープ外**: [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md) の窓が
+      本修正で 1 本 → 最大 8 本に広がった (380 側にも追記済み)。380 の優先度判断に影響する
+- [ ] **未検証**: 上限到達後の warn が実機で読まれるか (テストは本数だけを見ており、warn の
+      文面は検査していない)
 
 ## 関連
 

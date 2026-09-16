@@ -103,8 +103,17 @@ func shortenOnLostGrace(t *testing.T, d time.Duration) func() {
 // 「357 を実装したら上限を置くか決めろ」と trigger を残していた箇所。
 //
 // 判定は**時間ではなく本数**で行う。上限が無い版はこの条件で 10 本以上積む
-// (tick 200ms x 子の寿命 3s)。上限が在れば 1 本。
+// (tick 200ms x 子の寿命 3s)。上限が在れば maxInFlightRenews 本で止まる。
+//
+// 🚨 **ここに「lease が生きているか」の assert は置けない** (issue 381 の残タスク ① は誤り)。
+// この手順は FIFO を最後まで退けないので、**どの実装でも Renew は 1 度も成功しえない** —
+// lease は修正版でも壊れた版でも死ぬ。恒久ラッチの検査は
+// `TestLeaseSurvivesPermanentRenewBlock` (パスだけ復旧させ、古い読み手は返らないまま残す形)
+// が持つ。ここが守るのは**本数の上限**だけ。
 func TestRenewDoesNotPileUpGoroutinesWhenBlocked(t *testing.T) {
+	// 本番値 (8) のままだと、上限チェックを外す変異 (この条件で 7〜10 本) との差が
+	// 1 本ぶんしかなく tick の揺れで緑になる。2 へ縮めて桁を付ける
+	defer shortenMaxInFlightRenews(t, 2)()
 	l, err := NewLocker(t.TempDir(), testIOTimeout)
 	if err != nil {
 		t.Fatalf("NewLocker: %v", err)
@@ -134,10 +143,20 @@ func TestRenewDoesNotPileUpGoroutinesWhenBlocked(t *testing.T) {
 		t.Fatalf("exit %d (期待 %d = 判定不能)", got, exitWithInvalid)
 	}
 	leaked := runtime.NumGoroutine() - before
-	// 見捨てるのは詰まった Renew 1 本だけ。余裕を見て 3 本までを許す
-	if leaked > 3 {
-		t.Fatalf("詰まった renew が %d 本の goroutine を積んだ (期待: 1 本。上限が効いていない)", leaked)
+	// 上限を 2 に縮めてあるので、見捨てるのは 2 本まで。余裕を見て 4 本を閾値にする
+	// (上限を外すとこの条件で 7 本以上になる)
+	if leaked > 4 {
+		t.Fatalf("詰まった renew が %d 本の goroutine を積んだ (期待: %d 本。上限が効いていない)",
+			leaked, maxInFlightRenews)
 	}
+}
+
+// shortenMaxInFlightRenews は見捨てた更新の上限を縮める。仕様値なので production の既定は動かさない。
+func shortenMaxInFlightRenews(t *testing.T, n int64) func() {
+	t.Helper()
+	old := maxInFlightRenews
+	maxInFlightRenews = n
+	return func() { maxInFlightRenews = old }
 }
 
 // 🚨 更新が**一過性**に詰まっただけなら、復旧後も lease を持ち続けること。
@@ -220,5 +239,86 @@ func TestLeaseSurvivesTransientRenewBlock(t *testing.T) {
 	aerr := <-stolen
 	if !errors.Is(aerr, errBusy) {
 		t.Fatalf("別マシンが lease を奪えた (= 更新が止まっていた): err=%v / with の exit=%d", aerr, got)
+	}
+}
+
+// 🚨 更新が**恒久的**に詰まった (返らない fd を掴んだ) 後も、更新を再開して lease を守ること。
+//
+// 上の transient 版との違いは 1 手だけ: **詰まった読み手を解放しない**。
+// パスは実ファイルへ戻す (= 新しい Renew なら成功する) が、古い読み手は FIFO の inode に
+// 残って永久に返らない。stale handle / 掴んだまま死んだマウントの形。
+//
+// 修正前はここで `renewCh` が nil に戻らず、以後の tick がすべて `continue` になって
+// **更新が二度と走らない**。lease は実際に期限切れになり、他マシンが正当に引き継ぐ —
+// 子はまだ走っているので二重実行 (091 が「最も現実的な事故経路」と呼ぶ形)。
+//
+// 時間の余裕は 2 つ独立に要る。どちらも 400ms 取ってある:
+//
+//	(a) 復旧より前に tick が 1 本 FIFO を掴む (掴まないと見捨て経路に入らず、何も検査しない)
+//	(b) 復旧後の tick が 1 本、lease 期限より手前に来る
+func TestLeaseSurvivesPermanentRenewBlock(t *testing.T) {
+	l, err := NewLocker(t.TempDir(), testIOTimeout) // io-timeout = 200ms
+	if err != nil {
+		t.Fatalf("NewLocker: %v", err)
+	}
+	const ttl = 1200 * time.Millisecond // tick = 400ms
+	other, err := NewLocker(l.dir, testIOTimeout)
+	if err != nil {
+		t.Fatalf("NewLocker(other): %v", err)
+	}
+
+	stolen := make(chan error, 1)
+	go func() {
+		var orig []byte
+		for range 400 {
+			if b, err := os.ReadFile(l.lockPath()); err == nil && len(b) > 0 {
+				orig = b
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if orig == nil {
+			stolen <- errors.New("lock が置かれなかった")
+			return
+		}
+		// ① 詰まらせる (FIFO を被せる)
+		fifo := l.lockPath() + ".fifo"
+		if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+			stolen <- err
+			return
+		}
+		if err := os.Rename(fifo, l.lockPath()); err != nil {
+			stolen <- err
+			return
+		}
+		// ② (a) の余裕: tick(400ms) + 期限(200ms) より 400ms 長く保つ
+		time.Sleep(800 * time.Millisecond)
+		// ③ パスだけ復旧させる。**FIFO へは書かない** = 詰まった読み手は永久に返らない
+		if err := os.Rename(l.lockPath(), fifo); err != nil {
+			stolen <- err
+			return
+		}
+		real := l.lockPath() + ".real"
+		if err := os.WriteFile(real, orig, 0o600); err != nil {
+			stolen <- err
+			return
+		}
+		if err := os.Rename(real, l.lockPath()); err != nil {
+			stolen <- err
+			return
+		}
+		// ④ (b) の余裕: 復旧で打たれた mtime から ttl(1200ms) + 400ms 過ぎてから奪いに行く。
+		//    更新が再開していなければ、この時点で lease は死んでいる
+		time.Sleep(1600 * time.Millisecond)
+		_, aerr := other.Acquire(ttl, "other")
+		stolen <- aerr
+	}()
+
+	got := boundedInt(t, "runWith (恒久的な詰まり)", func() int {
+		return runWith(l, ttl, "", false, []string{"sh", "-c", "sleep 4"}) // --on-lost warn
+	})
+	aerr := <-stolen
+	if !errors.Is(aerr, errBusy) {
+		t.Fatalf("別マシンが lease を奪えた (= 詰まった後に更新が再開していない): err=%v / with の exit=%d", aerr, got)
 	}
 }

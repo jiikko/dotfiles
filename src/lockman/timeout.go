@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync/atomic"
 	"time"
 )
 
@@ -76,9 +77,17 @@ func (l *Locker) ReleaseTimed(token string) error {
 // 期限切れになり、他者が正当に引き継ぐ = 子が走ったまま二重実行になる
 // (敵対レビュー 2026-09-15 が A-B で実測。`ticker.Stop()` で止めた版は他マシンの
 // Acquire が成功し、止めない版は拒否された)。期限は**報告**のためだけに使う。
-func (l *Locker) renewAsync(token string) (<-chan error, <-chan time.Time) {
+// inFlight は「まだ返っていない Renew の本数」。**起こす側で増やし、返った goroutine 自身が
+// 減らす** — 呼び出し側は期限切れで chan を捨てるので、返り値からは終わりを観測できない。
+func (l *Locker) renewAsync(token string, inFlight *atomic.Int64) (<-chan error, <-chan time.Time) {
+	// 🚨 chan は**バッファ 1**。呼び出し側が期限切れで参照を捨てても、返ってきた
+	// goroutine は送信でブロックせずに終われる (捨てても goroutine 漏れにならない)。
 	ch := make(chan error, 1)
-	go func() { ch <- l.Renew(token) }()
+	inFlight.Add(1) // 🚨 go の**前**に増やす (起動までの窓で上限をすり抜けない)
+	go func() {
+		defer inFlight.Add(-1)
+		ch <- l.Renew(token)
+	}()
 	return ch, time.After(l.timeout)
 }
 

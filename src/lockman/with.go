@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -112,8 +113,18 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	// 実際に期限切れになり、他マシンが正当に引き継ぐ — 子はまだ走っているので二重実行。
 	// 敵対レビュー 2026-09-15 が A-B で実測した (止めた版は他マシンの Acquire が成功、
 	// 止めない版は拒否)。しかも既定値 (ttl 30m / tick 10m) のほうが猶予が短い。
+	//
+	// 🚨 **「やめない」は「期限が来たら見捨てる」まで含む。** 以前は期限切れのあとも
+	// renewCh を握ったままにしていたので、`Renew` の syscall が返らないと以後の tick が
+	// すべて `continue` になり、`ticker.Stop()` で作ったのと**同じ穴**が残っていた
+	// (issue 381。恒久ラッチ = 掴んだ fd が死んだまま、新しい open なら通る stale handle 形)。
+	// 期限が来たら参照を捨て、次の tick で新しい更新を積む。
 	var renewCh <-chan error
 	var renewExpired <-chan time.Time // nil = 更新が走っていない
+	// inFlightRenews は「まだ返っていない Renew の本数」(見捨てた分を含む)。
+	// goroutine 自身が減らすので、マウントが復旧して溜まった分が返れば枠は戻る。
+	var inFlightRenews atomic.Int64
+	cappedWarned := false
 	reportRenewErr := func(err error) {
 		if outcome == renewOK {
 			outcome = classifyRenewErr(err)
@@ -147,16 +158,28 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 			if renewCh != nil {
 				continue // 前回の更新がまだ返っていない。新しく積まない
 			}
-			renewCh, renewExpired = l.renewAsync(meta.Token)
+			if n := inFlightRenews.Load(); n >= maxInFlightRenews {
+				// 見捨てた更新が上限まで溜まった = マウントが恒久的に死んでいる。
+				// ここから先は修正前と同じ「更新が走らない」状態に戻る
+				// (`--on-lost=kill` なら初回の期限切れで子は既に止めにいっている)。
+				if !cappedWarned {
+					cappedWarned = true
+					warnf("返らない更新が %d 本溜まったので更新を起こすのをやめる (lease は期限切れになる)", n)
+				}
+				continue
+			}
+			renewCh, renewExpired = l.renewAsync(meta.Token, &inFlightRenews)
 		case err := <-renewCh:
 			renewCh, renewExpired = nil, nil
 			if err != nil {
 				reportRenewErr(err)
 			}
 		case <-renewExpired:
-			// 期限切れ = 判定不能。**報告は 1 回だけ**にして renewCh は握ったままにする
-			// (新しい更新を積まない)。詰まった 1 本が返れば renewCh が降りて再開する。
-			renewExpired = nil
+			// 期限切れ = 判定不能。報告して**この 1 本は見捨てる** — 参照を捨てるだけで
+			// goroutine は止められない (ブロック中の syscall は中断できない)。次の tick が
+			// 新しい更新を積み、マウントが復旧していれば lease はそこで生き返る。
+			// 溜めてよい本数は maxInFlightRenews が抑える。
+			renewCh, renewExpired = nil, nil
 			reportRenewErr(l.ioTimeoutErr())
 		case err := <-done:
 			switch outcome {
@@ -186,6 +209,19 @@ func childExitCode(err error) int {
 	warnf("子プロセスの終了を取得できない: %v", err)
 	return exitWithInvalid
 }
+
+// maxInFlightRenews は「まだ返っていない Renew」の上限。超えたら新しい更新を起こさない。
+//
+// 見捨てた 1 本は goroutine 1 つと**ブロック中の syscall = OS スレッド 1 つ**を抱える
+// (`withTimeout` の注記どおり回収できない)。上限が無いと、応答しないマウント + 短い TTL で
+// tick ごとに 1 スレッド積み、Go の既定のスレッド上限 (10000) に当てて落ちうる。
+//
+// 🚨 上限が抑えているのは goroutine の数だけではない。見捨てた Renew は**解放されたときに
+// `lockPath()` を名前で開き直して書く** (issue 380 の TOCTOU)。つまりこの値は「後から
+// lock へ書きに来るかもしれない本数」の上限でもある。上げるときは 380 を見ること。
+//
+// 8 は「連続して 8 回詰まっても更新を再開できる」余裕。テストが縮めるので var。
+var maxInFlightRenews int64 = 8
 
 // onLostGracePeriod は SIGTERM を撃ってから SIGKILL へ昇格するまでの猶予。
 // 🚨 これは「待ち」ではなく**仕様値** — 子に後片付けの機会を与えるための窓で、
