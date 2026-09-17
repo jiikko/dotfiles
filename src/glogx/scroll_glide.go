@@ -104,6 +104,16 @@ func pagerScrollKey(key string, offset, rows, total int, glide *scrollGlide) (ne
 		next := min(offset+rows/2, maxOffset)
 		glide.start(offset, next)
 		return next
+	// 🚨 shift+space は「区別して送れる端末」でしか効かない。これはアプリ側で直せない —
+	// 端末は shift が**文字を変えないキー**の修飾を落とすので、shift+space は素の 0x20 として
+	// 届き、アプリからは Space と 1 バイトも違わない (shift+a が A になるのとは事情が違う。
+	// space には shift 付きの符号が無い。矢印キーが shift 付きで届くのは、あちらが元から
+	// エスケープシーケンスで ESC [ 1;2A という形式を持っているから)。
+	// 修飾を復元するには kitty keyboard protocol か modifyOtherKeys が要り、bubbletea は起動時に
+	// 両方を要求しているが、非対応の端末 (macOS の Terminal.app) は応じない。つまり下流
+	// (tmux / この関数) では何をしても区別できないので、**この case を厚くしても解決しない**。
+	// 上スクロールの確実な経路は b / ctrl+u / pgup なので、この 3 つを消さないこと。
+	// 実測と切り分け手順は docs/issues-viewer-spec.md「半ページ移動はカーソルが滑る」の末尾。
 	case "ctrl+u", "pgup", "b", "shift+space":
 		next := max(offset-rows/2, 0)
 		glide.start(offset, next)

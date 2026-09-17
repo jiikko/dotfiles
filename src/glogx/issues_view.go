@@ -1459,10 +1459,8 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 		if !v.toggleGroupAtCursor() {
 			v.movePage(max(rows/2, 1), rows)
 		}
-	// 🚨 shift+space は kitty keyboard protocol / modifyOtherKeys に対応した端末でしか届かない
-	// (非対応の端末は素の 0x20 を送るので " " = 下方向になる。実測 2026-09-17: Apple Terminal で
-	// 届かず、隔離 tmux の send-keys S-Space では届いた)。上スクロールの確実な経路は b / ctrl+u /
-	// pgup なので、これらを消さないこと。
+	// 🚨 shift+space は端末によっては届かず、素の 0x20 (= 下方向) になる。アプリ側で直せない
+	// 理由と、上スクロールの確実な経路を消してはいけない理由は pagerScrollKey の同じ case に書いた。
 	case "ctrl+u", "pgup", "b", "shift+space":
 		v.movePage(-max(rows/2, 1), rows)
 	case "g", "home":

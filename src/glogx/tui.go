@@ -1614,6 +1614,8 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		prev := m.offset
 		m.offset = m.clampOffset(m.offset + m.pageSize()/2)
 		return m, m.startScrollAnim(prev)
+	// 🚨 shift+space は端末によっては届かない (理由は pagerScrollKey の同じ case)。この面は
+	// issues 一覧と違って b が push に割り当たっているので、上半ページの経路は ctrl+u / pgup だけ。
 	case "ctrl+u", "pgup", "shift+space":
 		prev := m.offset
 		m.offset = m.clampOffset(m.offset - m.pageSize()/2)
