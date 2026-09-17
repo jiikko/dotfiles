@@ -159,3 +159,19 @@ func TestIssuesListGlideMovesTheDrawnCursor(t *testing.T) {
 		t.Fatalf("着地後も描かれたカーソルが着地点に来ない: drawn=%d cursor=%d", got, v.cursor)
 	}
 }
+
+// close は toggle (i) 経由だと handleKey を通らない = finishAnim が効かないので、滑走を自分で
+// 止める必要がある (止めないと次に開いた一瞬だけ古い位置から滑る)。bodyGlide の
+// TestIssuesCloseStopsBodyGlide と対になる。
+func TestIssuesCloseStopsCursorGlide(t *testing.T) {
+	v := loadedView(manyIssues(40)...)
+	v.listLines(renderOpts(20))
+	v.handleKey(" ", vp(20))
+	if !v.curGlide.active {
+		t.Fatal("前提: 滑走が始まっていない")
+	}
+	v.close()
+	if v.curGlide.active {
+		t.Error("close でカーソルの滑走が残る")
+	}
+}

@@ -353,6 +353,9 @@ func (v *issuesView) close() {
 		return
 	}
 	v.closing = true
+	// 閉じたらカーソルの滑走を残さない (bodyGlide と同じ理由: 再表示の一瞬だけ古い位置から滑るのを
+	// 防ぐ)。close は toggle 経由だと handleKey を通らないので finishAnim が効かない。
+	v.curGlide.stop()
 	v.animStart = timeNow()
 	if v.closeAnimOff {
 		v.finishClose() // 演出なしの設定では同じ出口を即座に通す (片付けの経路を分けない)

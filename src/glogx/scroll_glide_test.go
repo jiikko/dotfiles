@@ -317,8 +317,11 @@ func TestIssuesCloseStopsBodyGlide(t *testing.T) {
 }
 
 // shift+space は上方向の半ページ (less / vim の流儀。ユーザー要望 2026-07-31)。space は下方向。
-// 端末が shift+space を区別せず素の " " を送る環境ではこの case に入らず従来の下方向になるだけで、
-// 既存挙動は壊れない (区別して送る端末でだけ上方向が効く)。
+//
+// 🚨 このテストは handleKey に文字列を直接渡すので、**キーが端末から届くかは何も検査していない**
+// (検査しているのは「届いた場合の向き」だけ)。実測 2026-09-17 で、届くのは kitty keyboard protocol /
+// modifyOtherKeys 対応の端末だけで、macOS の Terminal.app では届かないことが確定した。条件の正本は
+// docs/issues-viewer-spec.md「半ページ移動はカーソルが滑る (窓は滑らせない)」の末尾。
 func TestShiftSpaceScrollsUp(t *testing.T) {
 	t.Run("コミット一覧", func(t *testing.T) {
 		m := newTestBrowse(t, 40, map[string]CIState{}, nil)
