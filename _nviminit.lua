@@ -1146,7 +1146,9 @@ require("lazy").setup({
     },
   },
   install = { colorscheme = { "gruvbox" } },
-  checker = { enabled = true, frequency = 86400 },  -- 起動毎チェックはローカル fs のみ。定期 git fetch を 1時間→1日に間引き、更新通知ノイズと background 通信を抑制
+  -- notify = false: 更新がある間 lazy は起動のたびに "# Plugin Updates" を出し続ける
+  -- (checker.lua の既報告リストはセッション内でしか効かない)。更新の有無は :Lazy で見る。
+  checker = { enabled = true, frequency = 86400, notify = false },  -- 起動毎チェックはローカル fs のみ。定期 git fetch を 1時間→1日に間引き、更新通知ノイズと background 通信を抑制
 })
 
 -- プラグインロードトラッカー (:PluginLoadStats で棚卸し。off は DOTFILES_PLUGIN_LOAD_TRACKER=0。
