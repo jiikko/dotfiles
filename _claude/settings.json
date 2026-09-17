@@ -5,6 +5,7 @@
   "permissions": {
     "defaultMode": "auto"
   },
+  "model": "opus[1m]",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -157,9 +158,14 @@
   },
   "language": "日本語",
   "alwaysThinkingEnabled": true,
+  "advisorModel": "opus",
   "skipWorkflowUsageWarning": true,
   "preferredNotifChannel": "notifications_disabled",
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
-  "advisorModel": "opus"
+  "modelSettings": {
+    "claude-opus-5": {
+      "effortLevel": "low"
+    }
+  }
 }
