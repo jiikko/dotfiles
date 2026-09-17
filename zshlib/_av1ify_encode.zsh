@@ -116,6 +116,16 @@ __av1ify_finalize() {
       print -r -- ">> 出力を検証中 (全フレームデコード): $final_out"
       if ! __validate_mp4_check "$final_out"; then
         local _ng_reason="$REPLY"
+        # 段1 (postcheck) の NG と同じく、出力ファイル名にも理由を刻む。
+        # 刻まないと「無印だが実は NG」の出力がディスクに残り、後から一覧を
+        # 見ても健全なものと区別できない (実例 2026-09-18: trim-drops-audio が
+        # 報告だけされ、-enc.mp4 は無印のまま残っていた)。
+        # 🚨 rename はメッセージより前に行う — 後ろに置くと、ログが既に存在しない
+        # パスを名指しすることになる。mv 失敗時は __av1ify_mark_issue が非0 +
+        # REPLY=元パスを返すので、その場合は元の名前のまま報告する。
+        if __av1ify_mark_issue "$final_out" "check_ng-${_ng_reason}"; then
+          final_out="$REPLY"
+        fi
         print -r -- "🚨 完了 (要確認: $_ng_reason): $final_out" >&2
         print -r -- "   元ファイルは削除しません: $in" >&2
         __AV1IFY_LAST_NG_REASON="$_ng_reason"

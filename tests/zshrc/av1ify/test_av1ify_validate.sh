@@ -102,6 +102,27 @@ setopt err_exit
 unset MOCK_VALIDATE_NG
 assert_file_exists "$TEST_DIR/input.avi" "Origin survives because validate ran first"
 
+# Test 7: validate NG は出力ファイル名にも理由を刻む
+printf '\n## Test 7: validate NG marks the output filename\n'
+# 🚨 刻まないと「無印だが実は NG」の出力がディスクに残り、後から一覧を見ても
+# 健全なものと区別できない (実例 2026-09-18: trim-drops-audio が報告だけされ、
+# -enc.mp4 は無印のまま残っていた)。段1 (postcheck) の check_ng と同じ形にする。
+TEST_DIR="$TEST_TMP/validate7"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+mock_validate_reset
+MOCK_VALIDATE_NG="trim-drops-audio"
+unsetopt err_exit
+output=$(av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+unset MOCK_VALIDATE_NG
+assert_file_exists "$TEST_DIR/input-check_ng-trim-drops-audio-enc.mp4" "Output is renamed with the NG reason"
+# 🚨 元名が消えていることまで見る (copy に変える変異を素通しさせない)
+assert_file_not_exists "$TEST_DIR/input-enc.mp4" "Unmarked output no longer exists"
+assert_contains "$output" "input-check_ng-trim-drops-audio-enc.mp4" "Message names the renamed path"
+assert_file_exists "$TEST_DIR/input.avi" "Origin file is still preserved"
+
 # Test 6: ヘルプに --no-validate が載っている
 printf '\n## Test 6: --no-validate is documented\n'
 help_output=$(av1ify --help 2>&1)
