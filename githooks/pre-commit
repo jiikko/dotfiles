@@ -1,0 +1,11 @@
+#!/bin/sh
+# ステージした差分の追加行とファイル名を civility-lint で検査する (検出したらコミットを止める)。
+# 本体は dotfiles の外 (private repo) にあり、ここは呼び出すだけ。
+# 本体が無いマシンでは警告だけ出してコミットは通す。
+# 有効化は setup.sh の `git config core.hooksPath githooks`。
+lint="$HOME/src/good-chrome-extensions/bin/civility-lint"
+if [ ! -x "$lint" ]; then
+	echo "pre-commit: civility-lint が見つからないので検査をスキップ ($lint)" >&2
+	exit 0
+fi
+exec "$lint" -diff staged

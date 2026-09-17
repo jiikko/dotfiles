@@ -12,6 +12,12 @@ fi
 
 set -o pipefail
 
+# git hook を repo 管理の githooks/ から読ませる (中身は githooks/pre-commit のコメント)。
+# .git/hooks は repo 管理外でマシンごとに消えるため、setup で毎回張り直す。
+if git -C ~/dotfiles rev-parse --git-dir >/dev/null 2>&1; then
+  git -C ~/dotfiles config core.hooksPath githooks
+fi
+
 # set rc limlink
 for file in gemrc zshrc rspec gitconfig pryrc zlogin railsrc gitignore_global; do
   echo 'making symlink' _$file '->' ~/.$file

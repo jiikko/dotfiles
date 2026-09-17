@@ -22,6 +22,14 @@ cd dotfiles
 セッション永続化)、glogx の画面の仕様、tmux 周りの仕組み、nvim の棚卸しがある。
 自作ツールの使い方は [`src/README.md`](src/README.md) から各プロジェクトの README へ。
 
+## Git hooks
+
+`githooks/` を `setup.sh` が `core.hooksPath` に設定する。
+
+- `pre-commit`: ステージした差分に、成人向けを匂わせる語や作品番号の書式がないかを civility-lint
+  (dotfiles の外にある private repo のツール) で検査する。本体が無いマシンでは警告だけ出して通す。
+  誤検出を 1 行だけ通すなら、その行に `civility-lint:ignore` を書く
+
 ## Testing
 
 Run the regression test suite (Neovim, tmux, setup.sh, plus existing zsh tests) with:
