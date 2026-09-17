@@ -17,6 +17,9 @@ typeset -g __AV1IFY_R_FPS_TAG=""
 typeset -g __AV1IFY_R_DENOISE_VF=""
 typeset -g __AV1IFY_R_DENOISE_TAG=""
 typeset -g __AV1IFY_R_AAC_BITRATE=""
+# AV1_AUDIO_REENCODE_MARGIN の既定値。96k × 2.0 = 192000bps 超のソースだけを再エンコードする
+# (128k 程度は 96k へ落としても 3 時間で約 43MB しか減らず、世代劣化に見合わないため)。
+typeset -g __AV1IFY_DEFAULT_REENCODE_MARGIN="2.0"
 typeset -g __AV1IFY_R_AAC_SRC_BPS=""
 typeset -gi __AV1IFY_R_AAC_CAPPED=0
 typeset -gi __AV1IFY_R_AUDIO_REENCODE=0
@@ -403,7 +406,7 @@ __av1ify_decide_audio_action() {
     return 0
   fi
 
-  local margin="${AV1_AUDIO_REENCODE_MARGIN:-1.15}"
+  local margin="${AV1_AUDIO_REENCODE_MARGIN:-$__AV1IFY_DEFAULT_REENCODE_MARGIN}"
   if ! __av1ify_validate_reencode_margin "$margin"; then
     # 不正値のまま awk に渡すと "abc" も "" も 0 と解釈され、閾値 0 = 全ソース再エンコードに
     # 化ける (しかも閾値 0 は数値として妥当なので、算出後の検査では検出できない)。
@@ -412,7 +415,7 @@ __av1ify_decide_audio_action() {
     return 0
   fi
   local threshold
-  # %d ではなく %.0f (四捨五入) を使う。二進浮動小数では 96000*1.15 が 110399.999... に
+  # %d ではなく %.0f (四捨五入) を使う。二進浮動小数では (例: マージン 1.15 のとき) 96000*1.15 が 110399.999... に
   # なるため、%d の切り捨てだと「ちょうど閾値」のソースが閾値超と判定されてしまう。
   threshold=$(awk -v t="$target_bps" -v m="$margin" 'BEGIN { printf "%.0f", t * m }')
   if [[ ! "$threshold" =~ ^[0-9]+$ ]]; then
@@ -634,7 +637,7 @@ __av1ify_one() {
     print -r -- "[DRY-RUN] 出力候補: $out (音声/解像度は実行時判定: ファイル未参照)"
     print -r -- "[DRY-RUN] 映像: libsvtav1 (crf=${crf_plan}, preset=${preset_plan}, resolution=${res_plan}, fps=${fps_plan}, denoise=${denoise_plan}, color-tags=${color_tags_plan})"
     local audio_target_plan="${AV1_AAC_BITRATE:-96k}"
-    local audio_margin_plan="${AV1_AUDIO_REENCODE_MARGIN:-1.15}"
+    local audio_margin_plan="${AV1_AUDIO_REENCODE_MARGIN:-$__AV1IFY_DEFAULT_REENCODE_MARGIN}"
     print -r -- "[DRY-RUN] 音声: 実行時に判定 (MP4非対応コーデック、またはソースが ${audio_target_plan}×${audio_margin_plan} 超なら aac ${audio_target_plan} へ再エンコード。それ以外は copy)"
     return 0
   fi

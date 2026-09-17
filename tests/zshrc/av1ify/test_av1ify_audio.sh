@@ -8,14 +8,14 @@ source "${0:A:h}/test_helper.sh"
 
 printf '\n=== av1ify Audio Tests (50-53, 65-72) ===\n\n'
 
-# Test 50: 閾値 (96k x 1.15 = 110400bps) 超なら AAC 再エンコード (compact でも通常と同じ判定)
+# Test 50: 閾値 (96k x 2.0 = 192000bps) 超なら AAC 再エンコード (compact でも通常と同じ判定)
 printf '## Test 50: Compact re-encodes audio above the reencode threshold\n'
 TEST_DIR="$TEST_TMP/test50"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR" || exit 1
 unsetopt err_exit
-# 248000bps > 閾値 110400bps
+# 248000bps > 閾値 192000bps
 output=$(MOCK_AUDIO_BITRATE=248000 MOCK_FPS="60/1" MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_contains "$output" "aac 96k へ再エンコード" "Compact re-encodes audio to 96k"
@@ -42,7 +42,7 @@ mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR" || exit 1
 unsetopt err_exit
-# aac 248000bps > 閾値 110400bps
+# aac 248000bps > 閾値 192000bps
 output=$(MOCK_AUDIO_BITRATE=248000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_contains "$output" "aac 96k へ再エンコード" "Non-compact re-encodes aac above threshold"
@@ -61,14 +61,14 @@ assert_contains "$output" "音声: copy" "Non-compact copies aac at/below thresh
 assert_not_contains "$output" "へ再エンコード" "Non-compact does not re-encode at/below threshold"
 assert_file_exists "$TEST_DIR/input-enc.mp4" "Non-compact copy output has no aac tag"
 
-# Test 52c: 境界値 — 閾値ちょうど (110400bps) は copy、1bps 超えたら再エンコード
+# Test 52c: 境界値 — 閾値ちょうど (192000bps) は copy、1bps 超えたら再エンコード
 printf '\n## Test 52c: Threshold boundary is exclusive\n'
 TEST_DIR="$TEST_TMP/test52c"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR" || exit 1
 unsetopt err_exit
-output=$(MOCK_AUDIO_BITRATE=110400 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+output=$(MOCK_AUDIO_BITRATE=192000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_contains "$output" "音声: copy" "Exactly at threshold copies"
 
@@ -77,9 +77,21 @@ mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR" || exit 1
 unsetopt err_exit
-output=$(MOCK_AUDIO_BITRATE=110401 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+output=$(MOCK_AUDIO_BITRATE=192001 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_contains "$output" "へ再エンコード" "One bps above threshold re-encodes"
+
+# Test 52c3: 既定では 128k / 160k の一般的なソースは copy のまま (96k へ落としても削減が小さい)
+for br in 128000 160000; do
+  TEST_DIR="$TEST_TMP/test52c3-$br"
+  mkdir -p "$TEST_DIR"
+  echo "dummy video" > "$TEST_DIR/input.avi"
+  cd "$TEST_DIR" || exit 1
+  unsetopt err_exit
+  output=$(MOCK_AUDIO_BITRATE=$br av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+  setopt err_exit
+  assert_contains "$output" "音声: copy" "Default margin copies ${br}bps source"
+done
 
 # Test 52d: AV1_AUDIO_REENCODE_MARGIN で閾値を動かせる
 printf '\n## Test 52d: AV1_AUDIO_REENCODE_MARGIN shifts the threshold\n'
@@ -88,7 +100,7 @@ mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR" || exit 1
 unsetopt err_exit
-# margin=3.0 → 閾値 288000bps。248000 は下回るので copy になる (既定 1.15 なら再エンコード)
+# margin=3.0 → 閾値 288000bps。248000 は下回るので copy になる (既定 2.0 なら再エンコード)
 output=$(AV1_AUDIO_REENCODE_MARGIN=3.0 MOCK_AUDIO_BITRATE=248000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_contains "$output" "音声: copy" "Large margin keeps copy"
@@ -98,7 +110,7 @@ mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR" || exit 1
 unsetopt err_exit
-# margin=1.0 → 閾値 96000bps。100000 は上回るので再エンコード (既定 1.15 なら copy)
+# margin=1.0 → 閾値 96000bps。100000 は上回るので再エンコード (既定 2.0 なら copy)
 output=$(AV1_AUDIO_REENCODE_MARGIN=1.0 MOCK_AUDIO_BITRATE=100000 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_contains "$output" "へ再エンコード" "Small margin forces re-encode"

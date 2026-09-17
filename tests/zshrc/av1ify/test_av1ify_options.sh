@@ -376,7 +376,7 @@ echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # mock を 60fps にして両方のタグが付くことを確認。
-# 音声は再エンコード閾値 (110400bps) 超を明示し、aac タグが付く側に倒す。
+# 音声は再エンコード閾値 (192000bps) 超を明示し、aac タグが付く側に倒す。
 MOCK_AUDIO_BITRATE=248000 MOCK_FPS="60/1" MOCK_OUTPUT_WIDTH=1280 MOCK_OUTPUT_HEIGHT=720 av1ify --compact "$TEST_DIR/input.avi" > /dev/null 2>&1 || true
 setopt err_exit
 assert_file_exists "$TEST_DIR/input-720p-30fps-aac96k-enc.mp4" "Compact creates file with 720p, 30fps and aac96k tags"
@@ -409,7 +409,7 @@ echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # mock は 480x854（短辺=480）、60fps。--compact → 720p 指定だが 480 < 720 なのでスキップ、fps は適用。
-# 音声は再エンコード閾値 (110400bps) 超を明示し、aac タグが付く側に倒す。
+# 音声は再エンコード閾値 (192000bps) 超を明示し、aac タグが付く側に倒す。
 output=$(MOCK_AUDIO_BITRATE=248000 MOCK_WIDTH=480 MOCK_HEIGHT=854 MOCK_FPS="60/1" av1ify --compact "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 assert_contains "$output" "解像度変更をスキップ" "Compact skips upscale for low-res source"
