@@ -747,6 +747,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.glide.stop()
 		m.diffOv.glide.stop()
 		m.issuesOv.bodyGlide.stop()
+		m.issuesOv.curGlide.stop() // 一覧のカーソル滑走も同じ理由 (窓の起点が resize 前の行数基準)
 		m.statusOv.pagerGlide.stop()
 		m.ensureCursorVisible()
 		return m, nil

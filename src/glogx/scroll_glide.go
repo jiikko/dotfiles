@@ -1,5 +1,7 @@
 package main
 
+import "math"
+
 // scrollGlide は「表示 offset を論理 offset へ数フレームで滑らせる」状態機械。コミット一覧 /
 // diff pager / issues 本文の 3 面が共有する。
 //
@@ -138,4 +140,73 @@ func windowOffsetFor(offset, cursor, total, rows int) int {
 		offset = cursor - rows + 1
 	}
 	return clampScrollOffset(offset, total, rows)
+}
+
+// cursorAnimFrames は issues 一覧の半ページ移動でカーソルが滑るフレーム数
+// (× scrollInterval 16ms ≒ 320ms)。100ms / 200ms / 320ms の 3 案から 320ms をユーザーが選定
+// (2026-09-17)。scrollAnimFrames (100ms) より長いのは、こちらが「移動したことを見せる」演出で、
+// あちらが「飛んだことを馴染ませる」演出だから (主役が違うので同じ数にしない)。
+const cursorAnimFrames = 20
+
+// cursorGlide は「表示カーソルを論理カーソルへ数フレームで滑らせる」状態機械。issues 一覧の
+// 半ページ移動 (Space / ctrl+d / b / ctrl+u / pgup / pgdown) だけが使う。
+//
+// 🚨 scrollGlide (窓を遅らせる) とは別物なので共通化しない。一覧の窓は「カーソルを含む最小の窓」の
+// 導出値なので遅らせる余地が幾何的にゼロで、遅らせると描かれていない行が Enter/y/v の対象になる
+// (issue 031 の実測と敵対レビュー P2)。こちらは窓に触らず**カーソルの描画位置だけ**を遅らせるので、
+// 031 の不変条件 (窓は論理カーソルを必ず含む) が滑走中も生きたままになる。論理カーソル
+// (v.cursor) は即着地するので、Enter/y/v/e は常に着地点へ効く。
+type cursorGlide struct {
+	fromCursor int  // glide 開始時のカーソル行 (補間の起点)
+	shown      int  // 現在の表示カーソル (active のときだけ意味を持つ。範囲外を取りうる)
+	frame      int  // 経過フレーム数
+	active     bool // glide 中か (tick を回す必要がある = animating に含める)
+}
+
+// start は fromCursor から target への glide を開始する。距離 0 では何もしない。
+//
+// 進行中の glide を積まないための分岐は置かない: 呼び出し側 (handleKey) が finishAnim で
+// 必ず先に着地させるので、ここへ来る時点で active は落ちている (scrollGlide の連打対策と
+// 同じ結果を、状態を 1 つ減らして得ている)。
+func (g *cursorGlide) start(fromCursor, target int) bool {
+	if fromCursor == target {
+		return false // カーソルは動いていない (端で止まったとき)
+	}
+	*g = cursorGlide{fromCursor: fromCursor, shown: fromCursor, active: true}
+	return true
+}
+
+// advance は glide を 1 フレーム進める。最終フレームで論理カーソルへスナップして active を下ろす。
+func (g *cursorGlide) advance(target int) {
+	g.frame++
+	if g.frame >= cursorAnimFrames {
+		g.shown, g.active = target, false
+		return
+	}
+	t := float64(g.frame) / float64(cursorAnimFrames)
+	dist := float64(target - g.fromCursor)
+	g.shown = g.fromCursor + int(math.Round(dist*cursorEaseOutBack(t)))
+}
+
+// cursor は描画に使うカーソル行を返す (glide 中は途中位置、それ以外は論理カーソル)。
+// 途中位置は行数の範囲外を取りうる (下の行き過ぎ) ので、呼び出し側が clamp する。
+func (g *cursorGlide) cursor(target int) int {
+	if !g.active {
+		return target
+	}
+	return g.shown
+}
+
+// stop は glide を捨てて即時表示へ倒す (次のキー・行集合の入れ替え・resize)。
+func (g *cursorGlide) stop() { g.active = false }
+
+// cursorEaseOutBack は ease-out-back (最初速く、着地の手前で 1〜2 行だけ行き過ぎて戻る)。
+// t=0 で 0、t=1 で 1。行き過ぎの量は s が決める (大きいほど大きく戻る)。
+//
+// 半ページ (通常 10 行以上) では行き過ぎが 1〜2 行ぶん見えるが、移動距離が 3 行以下だと
+// 四捨五入で 0 行になり素直な減速に見える。端に着地するときも clamp で行き過ぎは出ない。
+func cursorEaseOutBack(t float64) float64 {
+	const s = 1.25
+	u := t - 1
+	return 1 + u*u*((s+1)*u+s)
 }

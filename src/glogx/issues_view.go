@@ -162,6 +162,10 @@ type issuesView struct {
 	bodyOff   int // 論理 = 着地点
 	bodyGlide scrollGlide
 
+	// curGlide は一覧の半ページ移動でカーソルを滑らせる演出 (scroll_glide.go)。論理カーソルは
+	// 即着地するので、描画だけが遅れる。
+	curGlide cursorGlide
+
 	// 開くときのスライドイン演出の開始時刻 (ゼロ値 = 演出なし)。フレーム数ではなく壁時計で
 	// 進めるのは、tick 周期が変わっても所要時間が変わらないようにするため (push 演出の
 	// pushSlides と同じ方式)。演出中の tick 周期は tickInterval が上げる (slideAnimating)。
@@ -397,6 +401,9 @@ func (v *issuesView) finishClose() bool {
 // finishAnim は演出を即座に着地させる。閉じる演出のときは片付けまで進める
 // (ここで時計だけ止めると、閉じかけの姿のまま二度と畳まれない状態で固まる)。
 func (v *issuesView) finishAnim() {
+	// 半ページ移動のカーソル滑走も即着地させる: 次のキーは必ず論理カーソル (着地点) に効くので、
+	// 描画だけが遅れて「見えている行と操作対象が違う」時間を残さない。
+	v.curGlide.stop()
 	if v.closing {
 		v.finishClose()
 		return
@@ -420,6 +427,9 @@ func (v *issuesView) slideAnimating() bool {
 func (v *issuesView) animating() bool {
 	if v.bodyGlide.active {
 		return true // 本文 pager の glide は tick で進むので「アニメ中」に含める
+	}
+	if v.curGlide.active {
+		return true // 一覧のカーソル滑走も tick で進む
 	}
 	if v.drawer.animating(timeNow()) {
 		return true // 本文の引き出しの開閉も tick で進む
@@ -452,6 +462,9 @@ func (v *issuesView) takeWantQuit() bool {
 func (v *issuesView) advanceGlide() {
 	if v.bodyGlide.active {
 		v.bodyGlide.advance(v.bodyOff)
+	}
+	if v.curGlide.active {
+		v.curGlide.advance(v.cursor)
 	}
 }
 
@@ -804,6 +817,7 @@ func (v *issuesView) matchByBase(base string) (found *issues.Issue, ambiguous bo
 func (v *issuesView) refresh() {
 	// 🚨 行集合が変わるので選択は畳む。錨は位置で持つため、残すと別の issue を指す
 	v.clearMark()
+	v.curGlide.stop() // 同じ理由で滑走も畳む (起点の行番号が別の issue を指す)
 	v.setRows(v.visibleIssues())
 	if v.numFilter.active {
 		v.autoExpandedGroups = v.numFilter.groupKeys(v.rows)
@@ -1437,13 +1451,17 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 	case "shift+down", "J":
 		v.extendMark(1, rows)
 	case "ctrl+d", "pgdown", "f":
-		v.moveCursor(max(rows/2, 1), rows)
+		v.movePage(max(rows/2, 1), rows)
 	case " ":
 		if !v.toggleGroupAtCursor() {
-			v.moveCursor(max(rows/2, 1), rows)
+			v.movePage(max(rows/2, 1), rows)
 		}
+	// 🚨 shift+space は kitty keyboard protocol / modifyOtherKeys に対応した端末でしか届かない
+	// (非対応の端末は素の 0x20 を送るので " " = 下方向になる。実測 2026-09-17: Apple Terminal で
+	// 届かず、隔離 tmux の send-keys S-Space では届いた)。上スクロールの確実な経路は b / ctrl+u /
+	// pgup なので、これらを消さないこと。
 	case "ctrl+u", "pgup", "b", "shift+space":
-		v.moveCursor(-max(rows/2, 1), rows)
+		v.movePage(-max(rows/2, 1), rows)
 	case "g", "home":
 		v.clearPendingMoveAnchors()
 		v.clearMark()
@@ -1629,6 +1647,19 @@ func (v *issuesView) handleBodyKey(key string, rows int) tea.Cmd {
 	return nil
 }
 
+// movePage は半ページ移動 (Space / ctrl+d / b / ctrl+u / pgup / pgdown)。移動そのものは
+// moveCursor と同じで、描画カーソルだけを数フレーム滑らせる (cursorGlide)。
+//
+// 🚨 1 行移動 (j/k) と端ジャンプ (g/G) には載せない。前者は距離 1 で滑らせる意味が無く連打の
+// 体感を損ね、後者は「飛ぶ」ことがそのまま操作の意味 (本文 pager の pagerScrollKey が
+// 半ページだけ glide に載せているのと同じ線引き)。
+func (v *issuesView) movePage(delta, rows int) {
+	v.ensureDisplayRows()
+	from := v.cursor
+	v.moveCursor(delta, rows)
+	v.curGlide.start(from, v.cursor)
+}
+
 // moveCursor はカーソルを動かしてスクロール位置を追従させる。素の移動は選択を解除する
 // (選択したまま離れた場所へ動くと「見えていない範囲がコピー対象」になる)。
 func (v *issuesView) moveCursor(delta, rows int) {
@@ -1712,6 +1743,22 @@ func (v *issuesView) scrollToCursor(rows int) { v.offset = v.windowOffset(rows) 
 // タブ・フィルタ切替で行数が変わる。offset を状態として持ち回ると、そのずれが「カーソル行が
 // 1 本も描かれず、見えない行が Enter・v・y の対象になる」窓として残る。導出を
 // scrollToCursor (キー) と listLines (描画) の両方が通すことで食い違いを構造的に消す。
+// dispCursor は描画に使うカーソル行 (滑走中は途中位置、それ以外は論理カーソル)。
+//
+// 🚨 窓 (offset) は滑走に載せない。窓は論理カーソルを含む最小の窓の導出値のままで、動かすのは
+// 表示カーソルだけ。だから「窓は論理カーソルを必ず含む」(issue 031 の不変条件) が滑走中も生き、
+// 見えていない行が Enter/y/v の対象になることが構造的に起きない。代わりに表示カーソルの方を窓へ
+// 収める — 半ページ移動では起点も着地点も着地後の窓に入るので通常は素通りし、行き過ぎ
+// (ease-out-back) が窓の端を越えたときだけ端で止まる。
+func (v *issuesView) dispCursor(offset, rows int) int {
+	v.ensureDisplayRows()
+	cur := clampIdx(v.curGlide.cursor(v.cursor), len(v.displayRows))
+	if !v.curGlide.active || rows <= 0 {
+		return cur
+	}
+	return min(max(cur, offset), offset+rows-1)
+}
+
 func (v *issuesView) windowOffset(rows int) int {
 	if rows <= 0 {
 		return 0
@@ -2154,11 +2201,12 @@ func (v *issuesView) listLines(o issuesRenderOpts) []string {
 	v.offset = v.windowOffset(rows)
 	offset := v.offset
 	end := min(offset+rows, len(v.displayRows))
+	dispCur := v.dispCursor(offset, rows)
 	out := make([]string, 0, rows)
 	for i := offset; i < end; i++ {
 		// バー列ぶんを先に引く: 幅ぴったりに組むと scrollbarColumn のクリップで末尾 1 文字が
 		// "…" に化ける (box.go の scrollbarColumnWidth)
-		out = append(out, v.rowLine(i, o, o.width-scrollbarColumnWidth))
+		out = append(out, v.rowLine(i, dispCur, o, o.width-scrollbarColumnWidth))
 	}
 	out = scrollbarColumn(out, o.width, len(v.displayRows), offset, o.colored)
 	return append(head, out...)
@@ -2357,11 +2405,13 @@ func groupProgress(row displayRow) string {
 
 // rowLine は一覧の 1 行 (番号・状態バッジ・カテゴリ・タイトル)。width は行が使える
 // 表示幅 (スクロールバー列を差し引いた後)。
-func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
+// rowLine は 1 行を描く。cur は「カーソル記号を出す行」= 表示カーソル (滑走中は論理カーソルと
+// 違いうる。dispCursor の doc)。
+func (v *issuesView) rowLine(i, cur int, o issuesRenderOpts, width int) string {
 	v.ensureDisplayRows()
 	row := v.displayRows[i]
 	if row.kind == displayRowGroup {
-		return v.groupLine(i, row, o, width)
+		return v.groupLine(i, cur, row, o, width)
 	}
 	iss := row.issue
 	indent := ""
@@ -2392,7 +2442,7 @@ func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
 	text := num + " " + badge + " " + catPainted + " " + title
 	// 🚨 どの経路も同じ幅に切る。titleW には下限 (4) があるので、極端に狭い幅では固定部分だけで
 	// width を超える。カーソル行だけ切っていたため、そこ以外の行が枠を突き破っていた。
-	if i != v.cursor {
+	if i != cur {
 		// 選択範囲の行は溝で示す (カーソル行は → が優先。範囲は必ずカーソルを含むので競合しない)
 		gutter := cursorGutterBlank
 		if lo, hi, ok := v.selection(); ok && i >= lo && i <= hi {
@@ -2406,14 +2456,14 @@ func (v *issuesView) rowLine(i int, o issuesRenderOpts, width int) string {
 	return clipToWidth(cursorGutterMark+paint(text, ansiBold, o.colored), width)
 }
 
-func (v *issuesView) groupLine(i int, row displayRow, o issuesRenderOpts, width int) string {
+func (v *issuesView) groupLine(i, cur int, row displayRow, o issuesRenderOpts, width int) string {
 	arrow := "▸"
 	if v.groupExpanded(row.groupKey) {
 		arrow = "▾"
 	}
 	text := arrow + " " + sanitizePlainLine(row.groupName) + " (" + groupProgress(row) + ")"
 	text = clipToWidth(text, max(width-cursorGutterWidth, 0))
-	if i != v.cursor {
+	if i != cur {
 		return clipToWidth(cursorGutterBlank+text, width)
 	}
 	if o.cursorPaint != nil {
