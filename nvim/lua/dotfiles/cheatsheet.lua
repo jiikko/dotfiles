@@ -41,12 +41,20 @@ local function pretty_lhs(lhs)
   return s
 end
 
+-- which-key が prefix (`[` `]` `g` `z` 等) を乗っ取るために張る buffer-local マッピングは、
+-- desc に "which-key-trigger" というマーカーを入れて自己識別している
+-- (which-key/triggers.lua:50 が生成、triggers.lua:32 と buf.lua:125 が同じ文字列で判定)。
+-- 人間向けの説明ではないので、which-key 自身と同じ基準で落とす。
+local function is_internal(desc)
+  return desc:find("which-key-trigger", 1, true) ~= nil
+end
+
 -- 現在バッファの buffer-local normal マッピング (desc 付き) を集める。
 -- desc の無いものは意図を表示できないので出さない (出すなら desc を付けるのが正)。
 local function collect(bufnr)
   local items = {}
   for _, m in ipairs(vim.api.nvim_buf_get_keymap(bufnr, "n")) do
-    if m.desc and m.desc ~= "" then
+    if m.desc and m.desc ~= "" and not is_internal(m.desc) then
       table.insert(items, { lhs = pretty_lhs(m.lhs), desc = m.desc })
     end
   end
