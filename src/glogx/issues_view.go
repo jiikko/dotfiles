@@ -2612,6 +2612,13 @@ func (v *issuesView) hint(width int) string {
 	// "i: 一覧へ" は出さない (戻り方は --help と README が正本。足すなら優先度を付けて並べる)。
 	return fitHintItems(width, []hintItem{
 		{"j/k: 移動", 2},
+		// 🚨 上方向を `b` で案内するのは、shift+space が端末を選ぶから (spec の
+		// 「半ページ移動はカーソルが滑る」末尾)。Apple Terminal では shift が落ちて Space と
+		// 同じ下方向になるので、案内を shift+space にすると「押しても下へ行く」案内になる。
+		// 🚨 語が「半ページ」でなく「送り」なのは幅のため: 予算幅 89 に対し現行の hint が 71 桁で、
+		// "Space/b: 半ページ" は区切り込み 19 桁と 1 桁だけ入らず、a の案内 (状態フィルタ) を
+		// 押しのける (TestIssuesViewHintFitsPopupWidth が予算幅で a が残ることを要求している)。
+		{"Space/b: 送り", 5},
 		{"Tab: カテゴリ", 3},
 		{"/: 検索", 4},
 		{"Enter: 本文", 2},
