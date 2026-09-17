@@ -320,6 +320,63 @@ __av1ify_postcheck() {
     fi
   fi
 
+  # 映像ストリーム尺の直接比較 (音声の状態に一切依存しない)
+  #
+  # 上の avsync はソースとの「相対差」(音声-映像ギャップの変化) を見るため、
+  # 音声も映像と同程度に短くなった場合は drift が小さいまま見逃しうる。
+  # 「ソースとの再生時間比較」(下のブロック、format duration) はコンテナ全体の
+  # 長さを見るため、音声だけ満尺のまま残ると映像の欠落が隠れる (実例: 別マシンで
+  # のエンコードで映像が 1:14:14 で打ち切られたが音声は満尺のまま残り、format
+  # duration は音声側に引きずられてソースとほぼ一致していた)。
+  # この検査は音声を一切参照せず、映像ストリームの尺だけをソースと直接突き合わせる。
+  if [[ -n "$src_path" && -f "$src_path" ]] && __av1ify_is_num "$out_v"; then
+    local src_v_direct
+    if __av1ify_get_stream_end "$src_path" "v:0"; then
+      src_v_direct="$REPLY"
+      local vidloss_threshold="${AV1IFY_VIDEO_LOSS_TOLERANCE:-2.0}"
+      __av1ify_is_nonneg_num "$vidloss_threshold" || vidloss_threshold=2.0
+      local vidloss_diff
+      vidloss_diff=$(awk -v s="$src_v_direct" -v o="$out_v" 'BEGIN{ d=s-o; if (d<0) d=-d; printf "%.3f", d }' 2>/dev/null) || vidloss_diff=""
+      if [[ -n "$vidloss_diff" ]]; then
+        local -F vidloss_diff_f vidloss_threshold_f
+        vidloss_diff_f=$vidloss_diff
+        vidloss_threshold_f=$vidloss_threshold
+        if (( vidloss_diff_f > vidloss_threshold_f )); then
+          # 宣言 duration (mp4 の mdhd/tkhd 等) がサンプルテーブルと食い違う壊れた
+          # ソース/出力が実在する (avsync の再判定と同じ罠)。これを encode 由来の
+          # 映像欠落と誤検出しないよう、閾値超過時だけ packet 実測で再判定する。
+          local vidloss_bad=1 m_src_v m_out_v
+          if __av1ify_packet_end "$src_path" "v:0" && m_src_v="$REPLY" \
+            && __av1ify_packet_end "$filepath" "v:0" && m_out_v="$REPLY"; then
+            local m_diff
+            m_diff=$(awk -v s="$m_src_v" -v o="$m_out_v" 'BEGIN{ d=s-o; if (d<0) d=-d; printf "%.3f", d }' 2>/dev/null) || m_diff=""
+            if [[ -n "$m_diff" ]]; then
+              local -F m_diff_f
+              m_diff_f=$m_diff
+              if (( m_diff_f <= vidloss_threshold_f )); then
+                # 終端 (packet 実測) は揃っている = 宣言 duration が不正確だっただけ。降格する
+                print -r -- ">> 映像尺判定: 宣言 duration ベースでは Δ=${vidloss_diff}s だが packet 実測では Δ=${m_diff}s のため正常と判定 (宣言 duration が不正確)"
+                vidloss_bad=0
+              else
+                # packet 実測でも欠落が残る = 本物。実測値へ更新して報告する
+                vidloss_diff="$m_diff"
+              fi
+            fi
+            # m_diff が算出不能 (awk 失敗) なケースは vidloss_bad=1 のまま (宣言ベースを維持)
+          fi
+          # packet 実測自体が失敗した場合も vidloss_bad=1 のまま (判定不能を降格の
+          # 根拠にしない。既に FLAG 側にいる状態からは、降格には実測の裏付けが要る)
+          if (( vidloss_bad )); then
+            issues+=("映像ストリーム尺不一致 (src_v=${src_v_direct}s, out_v=${out_v}s, Δ=${vidloss_diff}s, threshold=${vidloss_threshold}s)")
+            suffixes+=("vidloss")
+          fi
+        fi
+      fi
+    fi
+    # src_v_direct が取得不能 (packet 走査も失敗) なケースは判定スキップ。
+    # 他の A/V チェックと同じ fail-open 方針 (誤検知よりスキップを優先)。
+  fi
+
   # ソースとの再生時間比較
   if [[ -n "$src_path" ]]; then
     local src_fmt_dur out_fmt_dur dur_diff
