@@ -250,6 +250,13 @@ func TestCleanupDoesNotStampWhenRemoveFails(t *testing.T) {
 		t.Fatal("前提が作れていない: 削除が拒否されなかった (root 実行なら、このテストは" +
 			"守りとして成立していないので環境を変えること)")
 	}
+	// 🚨 **削除に失敗したものを「消した」に数えない** (敵対レビュー 393 の 3 周目 P2-1)。
+	// `p.add()` を `os.Remove` の**前**へ動かす変異 (削除の「試行」を数える形。実装者が
+	// 自然に書きうる) は、これが無いと全スイート緑で通る — `Removed` を exact equality で
+	// pin しているテストは 4 本あるが、**どれも fixture に削除失敗を持っていない**。
+	if res.Removed != 0 {
+		t.Errorf("削除に失敗したのに removed=%d (報告 > 実態)", res.Removed)
+	}
 	assertNoStamp(t, l, res)
 }
 

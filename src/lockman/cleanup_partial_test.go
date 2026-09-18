@@ -70,6 +70,19 @@ func TestCleanupTimedReportsPartialProgress(t *testing.T) {
 			t.Errorf("途中で止まっていない (removed=%d / 全 %d 件)。窓を再現できていないので"+
 				"このテストは一括カウントの変異を検出できない", res.Removed, residue)
 		}
+		// 🚨 **報告が実態を上回っていないこと** (3 周目 P1-1)。ここは**片側 assert** で、
+		// 見捨てた goroutine が消し続けるぶんは `got` を増やす方向にしか効かないので
+		// 偽の赤にはならない。2 周目はこれを「ほとんど何も検査しない」として消したが、
+		// **変異を当てずに vacuous と判定していた**のが誤りで、実際は期限切れ枝で
+		// 「報告 > 実態」を守る**唯一の上限**だった (実測: `removed` を 2 倍に水増しする
+		// 変異が、消した後は全スイート緑で通る)。issue 393 が直した嘘の**鏡像**
+		// (「消していないのに消したと言う」) がここに当たる。
+		// 🚨 **待ちの前に置くこと**。待った後だと goroutine が全部消し終えているので
+		// 上限が緩みきって何も検出しない。
+		if left := countDirEntries(t, filepath.Join(l.metaDir, tmpDirName)); residue-left < res.Removed {
+			t.Errorf("報告 (%d) が実際に消えた数 (%d) を上回っている", res.Removed, residue-left)
+		}
+
 		// 🚨 **見捨てた goroutine が終わるのを待ってからテストを終える** (2 周目 P1-2)。
 		// 待たないと、`t.Cleanup` の `TempDir` 削除と、掃除を続けている goroutine の
 		// **`stampCleanup` による `.cleanup_at` の再作成**が競合し、
@@ -78,19 +91,15 @@ func TestCleanupTimedReportsPartialProgress(t *testing.T) {
 		//  こちらの環境では 16 回中 0 回で再現しなかったが、機構は成立している)。
 		// 待つのは時間ではなく**成立条件** (`avoid-wall-clock-assertions.md`)。
 		hook.Store(nil) // 残りは全速で消させる
-		waitFor(t, "掃除が終わる", func() bool {
-			_, err := os.Stat(filepath.Join(l.metaDir, cleanupStampName))
-			return err == nil
-		})
+		// 🚨 待つ対象は「打刻が現れること」= 掃除の完了。**打刻はエラーが 0 件のときしか
+		// 起きない**ので、この fixture (エラーを作らない) 専用の条件である
+		// (3 周目 P3-1。将来この fixture がエラーを持つと 10 秒待って落ちる)。
+		waitForFile(t, filepath.Join(l.metaDir, cleanupStampName))
 
-		// 報告と実態が食い違っていないこと。**待った後**なので実態は確定している
-		// (待つ前に数えると、見捨てた goroutine が消し続けるぶん assert が
-		//  成立する方向へ動き続け、ほとんど何も検査しない。2 周目 P3-2)
+		// 見捨てられた後も掃除は続き、最後まで消し切ること
+		// (「見捨てられたら sweep を打ち切る」型の退行を検出する)
 		if left := countDirEntries(t, filepath.Join(l.metaDir, tmpDirName)); left != 0 {
 			t.Errorf("掃除が終わったのに %d 件残っている", left)
-		}
-		if res.Removed >= residue {
-			t.Errorf("報告 (%d) が「途中経過」になっていない (全 %d 件)", res.Removed, residue)
 		}
 	case <-time.After(20 * time.Second):
 		t.Fatal("CleanupTimed が 20s 以内に戻らない (包みが無い)")
@@ -126,7 +135,7 @@ func TestCleanupCLISaysIndeterminateWhenNothingRemoved(t *testing.T) {
 	// その外に置かれていた。
 	want := regexp.MustCompile(
 		`^lockman: cleanup: removed=判定不能 \(期限切れ。1 件も消せていないのか、消している途中なのかは分からない\) ` +
-			`skipped=(?:true|false) errors=\[.*I/O timeout.*\]\n$`)
+			`skipped=false errors=\[.*I/O timeout.*\]\n$`)
 	if !want.MatchString(out) {
 		t.Fatalf("0 件の期限切れの書式が違う:\n got=%q\nwant=%s", out, want)
 	}
@@ -261,7 +270,7 @@ func TestCleanupCLIDistinguishesPartialFromComplete(t *testing.T) {
 	// 素通りする (2 周目 P2-1 が実測: その変異は全スイート緑だった)。
 	want := regexp.MustCompile(
 		`^lockman: cleanup: removed>=\d+ \(期限切れ。ここまでは確認済み\) ` +
-			`skipped=(?:true|false) errors=\[.*I/O timeout.*\]\n$`)
+			`skipped=false errors=\[.*I/O timeout.*\]\n$`)
 	if !want.MatchString(out) {
 		t.Fatalf("期限切れ (1 件以上) の書式が違う:\n got=%q\nwant=%s", out, want)
 	}
@@ -274,17 +283,4 @@ func countDirEntries(t *testing.T, dir string) int {
 		t.Fatalf("ReadDir: %v", err)
 	}
 	return len(entries)
-}
-
-// waitFor は成立条件を上限つきでポーリングする (壁時計で待たない)。
-func waitFor(t *testing.T, what string, ok func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		if ok() {
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	t.Fatalf("%s のを 10 秒待っても成立しない", what)
 }
