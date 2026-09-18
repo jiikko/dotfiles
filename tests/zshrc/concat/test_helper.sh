@@ -273,6 +273,12 @@ export CONCAT_DURATION_TOLERANCE=100
 source "$ROOT_DIR/zshlib/_concat.zsh"
 
 # テストヘルパー関数
+#
+# 🚨 assert_* は失敗しても `return 1` しないこと (issue 388 / av1ify 側は issue 399)。
+# `setopt err_exit` の下では最初の失敗でファイルごと終了してしまい、**どの assert が
+# 検出力を持っているか**が観測できなくなる (変異検証がスイートの rc でしか判定できず、
+# ケース単位で読めない)。失敗は bad() で数え、EXIT trap が rc を 1 へ格上げする。
+# 「前提が崩れて以降の結果が無意味になる」場面だけは、呼び出し側で明示的に exit すること。
 assert_file_exists() {
   local file="$1"
   local message="$2"
@@ -280,8 +286,8 @@ assert_file_exists() {
     printf '✓ %s\n' "$message"
     return 0
   else
-    printf '✗ %s (file not found: %s)\n' "$message" "$file"
-    return 1
+    bad '✗ %s (file not found: %s)\n' "$message" "$file"
+    return 0
   fi
 }
 
@@ -292,8 +298,8 @@ assert_file_not_exists() {
     printf '✓ %s\n' "$message"
     return 0
   else
-    printf '✗ %s (file exists: %s)\n' "$message" "$file"
-    return 1
+    bad '✗ %s (file exists: %s)\n' "$message" "$file"
+    return 0
   fi
 }
 
@@ -305,8 +311,8 @@ assert_contains() {
     printf '✓ %s\n' "$message"
     return 0
   else
-    printf '✗ %s (expected to contain: %s, got: %s)\n' "$message" "$needle" "$haystack"
-    return 1
+    bad '✗ %s (expected to contain: %s, got: %s)\n' "$message" "$needle" "$haystack"
+    return 0
   fi
 }
 
@@ -318,8 +324,8 @@ assert_not_contains() {
     printf '✓ %s\n' "$message"
     return 0
   else
-    printf '✗ %s (expected NOT to contain: %s)\n' "$message" "$needle"
-    return 1
+    bad '✗ %s (expected NOT to contain: %s)\n' "$message" "$needle"
+    return 0
   fi
 }
 
@@ -331,8 +337,8 @@ assert_exit_code() {
     printf '✓ %s\n' "$message"
     return 0
   else
-    printf '✗ %s (expected exit code: %s, got: %s)\n' "$message" "$expected" "$actual"
-    return 1
+    bad '✗ %s (expected exit code: %s, got: %s)\n' "$message" "$expected" "$actual"
+    return 0
   fi
 }
 
@@ -343,7 +349,7 @@ assert_in_mock_trash() {
     printf '✓ %s\n' "$message"
     return 0
   else
-    printf '✗ %s (not in mock trash: %s)\n' "$message" "$basename"
-    return 1
+    bad '✗ %s (not in mock trash: %s)\n' "$message" "$basename"
+    return 0
   fi
 }
