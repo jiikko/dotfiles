@@ -243,6 +243,66 @@ else
   bad '✗ AV1IFY_FRAME_TOLERANCE silently disabled the density check\n%s\n' "$output"
 fi
 
+# Test 70g: nb_frames を出さないコンテナ (MKV / TS / FLV 等) のフォールバック経路
+# (3 周目の指摘 P1-2: この約 20 行をテストが 1 本も守っていなかった。mock は必ず
+#  nb_frames を正の整数で返すので primary 経路しか通らず、e2e の fixture も mp4 だった)
+printf '\n## Test 70g: Fallback expectation for containers without nb_frames (issue 397 r3)\n'
+TEST_DIR="$TEST_TMP/test70g"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+# nb_frames は N/A。映像 10s × avg 29.970 ≈ 300 が期待値になり、出力 300 なので警告なし
+output=$(MOCK_FPS="29/1" MOCK_AVG_FPS="29970029/1000000" MOCK_NB_FRAMES="N/A" \
+         MOCK_VIDEO_DURATION=10.0 MOCK_OUTPUT_NB_FRAMES=300 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" != *"フレーム密度不一致"* ]]; then
+  printf '✓ Fallback accepts a correct density when nb_frames is unavailable\n'
+else
+  bad '✗ Fallback misfired on a correct encode\n%s\n' "$output"
+fi
+
+# 同じフォールバック経路で、密度が壊れていれば検出できること (上だけだと
+# 「常に緑を返す実装」でも通ってしまう)
+TEST_DIR="$TEST_TMP/test70g2"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+output=$(MOCK_FPS="29/1" MOCK_AVG_FPS="29970029/1000000" MOCK_NB_FRAMES="N/A" \
+         MOCK_VIDEO_DURATION=10.0 MOCK_OUTPUT_NB_FRAMES=12 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" == *"フレーム密度不一致"* ]]; then
+  printf '✓ Fallback still detects a broken density\n'
+else
+  bad '✗ Fallback did not detect a broken density\n%s\n' "$output"
+fi
+
+# Test 70h: nb_frames が尺と矛盾するとき (edit list 等) は nb_frames を採用しない
+# 🚨 mp4 の nb_frames は stsz のサンプル数。`ffmpeg -ss N -i x -c copy` が書く elst が
+# あると切る前の値が残り、素朴に信じると正しいエンコードが check_ng-density に転ぶ。
+printf '\n## Test 70h: A nb_frames inconsistent with the duration is rejected (issue 397 r3)\n'
+TEST_DIR="$TEST_TMP/test70h"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+# nb_frames=686 (切る前の値) だが、映像 15s × avg 34.3 ≈ 515 が実態。出力は 515
+output=$(MOCK_FPS="40/1" MOCK_AVG_FPS="343/10" MOCK_NB_FRAMES=686 \
+         MOCK_FORMAT_DURATION=15.0 MOCK_VIDEO_DURATION=15.0 MOCK_AUDIO_DURATION=15.0 \
+         MOCK_OUTPUT_NB_FRAMES=515 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" != *"フレーム密度不一致"* ]]; then
+  printf '✓ A trimmed source is not falsely flagged\n'
+else
+  bad '✗ The stale nb_frames was trusted and the encode was flagged\n%s\n' "$output"
+fi
+if [[ "$output" == *"尺と矛盾する"* ]]; then
+  printf '✓ The rejection of nb_frames is reported\n'
+else
+  bad '✗ The rejection of nb_frames was silent\n%s\n' "$output"
+fi
+
 # Test 70c: VFR でないソース (通常の CFR) では、--fps 未指定なら従来どおり検出する
 # (回帰ガード: VFR 検出の追加が既存の Test 68 を無効化していないことを確認)
 printf '\n## Test 70c: Frame count check still fires for genuinely CFR sources (regression guard)\n'

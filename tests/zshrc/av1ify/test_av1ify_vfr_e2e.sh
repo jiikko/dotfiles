@@ -124,4 +124,36 @@ else
   check_eq "$(v_field "$out" nb_frames)" "$src_frames" "出力のフレーム数がソースと同じ"
 fi
 
+# --- Test 3: 切り出し済み (edit list 付き) の VFR ソースが誤って check_ng に転ばない ---
+# 🚨 mp4 の nb_frames は stsz のサンプル数で「デコードされるフレーム数」ではない。
+# `ffmpeg -ss N -i x.mp4 -c copy` は elst を書くので、切る前のサンプル数が残り
+# nb_frames と実フレーム数が乖離する (= スマホ動画を切ってから食わせる普通の運用)。
+# 密度検査がそれを素朴に期待値へ使うと、**完全に正しいエンコード**が check_ng-density に
+# 転び、元ファイルが残るので再実行のたびフルエンコードが走り続ける。
+printf '\n## Test 3: A trimmed (edit-list) VFR source is not falsely flagged\n'
+d="$TEST_TMP/elst"; mkdir -p "$d"
+# 長い GOP の h264 にして -ss が非キーフレーム位置に落ちるようにする (elst が書かれる条件)
+ffmpeg -nostdin -v error -y \
+  -f lavfi -i "testsrc=size=160x120:rate=40:duration=20" -f lavfi -i "sine=frequency=440:duration=20" \
+  -vf "select='not(eq(mod(n\,7)\,3))'" -fps_mode passthrough -c:v libx264 -g 250 -c:a aac -shortest "$d/full.mp4"
+ffmpeg -nostdin -v error -y -ss 5 -i "$d/full.mp4" -c copy "$d/in.mp4"
+# 前提: nb_frames と実デコード数が実際に乖離していること (乖離が無いと何も検査していない)
+_nb="$(v_field "$d/in.mp4" nb_frames)"
+_read="$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 -- "$d/in.mp4")"
+if [[ ! "$_nb" =~ ^[0-9]+$ || ! "$_read" =~ ^[0-9]+$ ]] || (( _nb - _read < 100 )); then
+  bad '✗ 前提崩れ: fixture の nb_frames(%s) と実デコード数(%s) が乖離していない\n' "$_nb" "$_read"
+else
+  __av1ify_detect_vfr "$d/in.mp4"
+  if (( ! __AV1IFY_R_VFR_DETECTED )); then
+    bad '✗ 前提崩れ: 切り出した fixture が VFR と判定されない\n'
+  else
+    out_log="$(av1ify "$d/in.mp4" 2>&1)" || bad '✗ av1ify が失敗した\n%s\n' "$out_log"
+    if [[ -f "$d/in-enc.mp4" ]]; then
+      printf '✓ 切り出し済みソースが check_ng に転ばない (nb_frames=%s / 実=%s)\n' "$_nb" "$_read"
+    else
+      bad '✗ 切り出し済みソースが check_ng に転んだ: %s\n%s\n' "$(ls "$d")" "$out_log"
+    fi
+  fi
+fi
+
 printf '\n=== av1ify VFR e2e Completed ===\n\n'

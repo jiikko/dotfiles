@@ -421,31 +421,60 @@ __av1ify_postcheck() {
     local src_frames_d out_frames_d
     src_frames_d=$(__ff_stream_field "$src_path" v:0 stream=nb_frames)
     out_frames_d=$(__ff_stream_field "$filepath" v:0 stream=nb_frames)
+
+    # 期待値の第 2 候補: 映像の実測終端 × ソース側の avg_frame_rate。
+    # 🚨 format=duration を使わないこと: コンテナの duration は**全ストリームの最大**なので、
+    # 音声が映像より長い素材で期待値が過大になり、1 フレームも失っていない出力が
+    # check_ng-density に転ぶ (2026-09-19 実測: 映像 60s / 音声 64s の VFR mp4 で発生)。
+    # 映像の真の終端は __av1ify_get_stream_end が stream=duration → packet 実測の順で返す。
+    # avg はソースから読み直す (applied_fps を使うと、決定点が壊れたとき期待値も一緒に
+    # 壊れて必ず一致する = 守りたい故障を検出できない)。
+    local want_by_duration=""
+    local src_vend=""
+    if __av1ify_get_stream_end "$src_path" "v:0"; then src_vend="$REPLY"; fi
+    if __av1ify_is_num "$src_vend"; then
+      local src_avg_raw
+      src_avg_raw=$(__ff_stream_field "$src_path" v:0 stream=avg_frame_rate)
+      want_by_duration=$(LC_ALL=C awk -v dur="$src_vend" -v fps="$src_avg_raw" 'BEGIN {
+        n = split(fps, a, "/")
+        f = (n == 2) ? ((a[2]+0 > 0) ? a[1] / a[2] : 0) : a[1]+0
+        if (f <= 0 || dur <= 0) exit 1
+        printf "%d", int(dur * f + 0.5)
+      }') || want_by_duration=""
+    fi
+
+    # 期待値の第 1 候補はソースの nb_frames。ただし **無条件には信じない**。
+    # 🚨 mp4 の nb_frames は stsz のサンプル数であって「デコードされるフレーム数」ではない。
+    # edit list (elst) があると ffmpeg は提示区間だけを出すので両者が乖離する。
+    # `ffmpeg -ss N -i x.mp4 -c copy` は elst を書くので、「スマホ動画を切ってから
+    # av1ify に食わせる」という普通の運用でこれが起きる (2026-09-19 実測: 20s/800 frames を
+    # -ss 5 で切ると duration=15.0 / nb_frames=800 / 実デコード 620。素朴に信じると
+    # 正しいエンコードが check_ng-density に転び、再実行のたびフルエンコードが走り続ける)。
+    # 乖離は duration × avg と突き合わせれば分かる (上の実測で 800 vs 598 と明確に割れる)
+    # ので、食い違ったら nb_frames を捨てて duration ベースへ倒す。
     local want_frames=""
     if [[ "$src_frames_d" =~ ^[0-9]+$ ]] && (( src_frames_d > 0 )); then
-      want_frames="$src_frames_d"
-    else
-      # nb_frames を出さないコンテナ (MKV 等) 向けのフォールバック。
-      # 🚨 format=duration を使わないこと: コンテナの duration は**全ストリームの最大**なので、
-      # 音声が映像より長い素材で期待値が過大になり、1 フレームも失っていない出力が
-      # check_ng-density に転ぶ (2026-09-19 実測: 映像 60s / 音声 64s の VFR mp4 で発生)。
-      # 映像の真の終端は __av1ify_get_stream_end が stream=duration → packet 実測の順で返す。
-      local src_vend=""
-      if __av1ify_get_stream_end "$src_path" "v:0"; then src_vend="$REPLY"; fi
-      if __av1ify_is_num "$src_vend"; then
-        # ここだけは適用fps を使わざるを得ないが、ソース側の avg_frame_rate で立てる
-        # (VFR 経路では applied_fps == ソースの avg なので、値が壊れていれば
-        #  ソースから読み直した avg と食い違い、下の比較で検出できる)
-        local src_avg_raw
-        src_avg_raw=$(__ff_stream_field "$src_path" v:0 stream=avg_frame_rate)
-        want_frames=$(LC_ALL=C awk -v dur="$src_vend" -v fps="$src_avg_raw" 'BEGIN {
-          n = split(fps, a, "/")
-          f = (n == 2) ? ((a[2]+0 > 0) ? a[1] / a[2] : 0) : a[1]+0
-          if (f <= 0 || dur <= 0) exit 1
-          printf "%d", int(dur * f + 0.5)
-        }') || want_frames=""
+      if [[ "$want_by_duration" =~ ^[0-9]+$ ]] && (( want_by_duration > 0 )); then
+        local nb_trusted
+        nb_trusted=$(LC_ALL=C awk -v nb="$src_frames_d" -v dur_based="$want_by_duration" 'BEGIN {
+          d = nb - dur_based; if (d < 0) d = -d
+          tol = dur_based * 0.05; if (tol < 24) tol = 24
+          print (d > tol) ? 0 : 1
+        }')
+        if (( nb_trusted )); then
+          want_frames="$src_frames_d"
+        else
+          want_frames="$want_by_duration"
+          print -r -- ">> nb_frames (${src_frames_d}) が尺と矛盾するため密度の期待値に使いません (edit list 等。尺ベース=${want_by_duration})"
+        fi
+      else
+        want_frames="$src_frames_d"
       fi
+    else
+      # nb_frames を出さないコンテナ (MKV / TS / FLV 等) はこちらだけが頼り
+      want_frames="$want_by_duration"
     fi
+
     if [[ "$out_frames_d" =~ ^[0-9]+$ && "$want_frames" =~ ^[0-9]+$ ]] && (( want_frames > 0 )); then
       local density_pct="${AV1IFY_DENSITY_TOLERANCE_PCT:-5}"
       __av1ify_is_nonneg_num "$density_pct" || density_pct=5
