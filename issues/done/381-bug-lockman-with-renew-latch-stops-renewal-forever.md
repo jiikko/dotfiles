@@ -179,7 +179,7 @@ lease を失いやすくなる列。
       「上限を置くか決めろ」への回答でもある
 - [x] `--on-lost=warn` での二重実行を A-B で実測する (上表)
 - [x] ~~`TestRenewDoesNotPileUpGoroutinesWhenBlocked` に lease の assert を足す~~ → 誤り。上記
-- [ ] **スコープ外**: [380](../380-bug-lockman-renew-and-release-act-on-name-after-check.md) の窓が
+- [ ] **スコープ外**: [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md) の窓が
       本修正で 1 本 → 最大 8 本に広がった (380 側にも追記済み)。380 の優先度判断に影響する
 - [ ] **未検証**: 上限到達の報告と `reportRenewErr` の文言は、`warnf` に seam が無いため
       **構造上テストできていない** (上の「塞がずに残した」を参照)。実行の証拠は手で確認済み
@@ -195,4 +195,4 @@ lease を失いやすくなる列。
 
 - [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) — 見捨てられた goroutine が
   副作用を残す族。本 issue は「見捨てた**後**に更新を再開しない」側
-- [380](../380-bug-lockman-renew-and-release-act-on-name-after-check.md) — `Renew` 自体の TOCTOU
+- [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md) — `Renew` 自体の TOCTOU

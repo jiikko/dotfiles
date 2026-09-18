@@ -3,7 +3,7 @@
 起票日: 2026-09-15
 カテゴリ: bug / priority: **high**
 対象: `src/lockman/lock.go` の `Renew` / `Release`
-出典: [issue 366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の横展開
+出典: [issue 366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の横展開
 反証レビュー: 1 周実施済み (2026-09-16。下記)
 
 ## 問題
@@ -79,7 +79,7 @@ seam は一時的に入れて実験後に外してある (commit していない
 
 ## 2026-09-16 追記: 381 の修正で「遅れて書きに来る Renew」の本数が 1 → 最大 8 になった
 
-[381](done/381-bug-lockman-with-renew-latch-stops-renewal-forever.md) を直すまで、`with` の
+[381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md) を直すまで、`with` の
 更新は**同時 1 本**しか存在しなかった (期限切れのあとも `renewCh` を握っていたため、詰まった
 1 本が返るまで次を積まなかった)。381 はその恒久ラッチを外し、期限が来たら見捨てて次の tick で
 新しい更新を積む形にしたので、**見捨てられた `Renew` が最大 `maxInFlightRenews` (既定 8) 本、
@@ -123,7 +123,7 @@ seam は一時的に入れて実験後に外してある (commit していない
 名前がすり替わっても当たるのは**自分が確かめた実体**だけなので、窓が 0 になる。
 
 - `O_TRUNC` を**付けない**。付けると write までのあいだ 0 バイトの窓が開き、読み手には
-  「中身を読めない lock」として見える ([383](done/383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md)
+  「中身を読めない lock」として見える ([383](383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md)
   の発生源そのもの)。内容は読んだものと同じなので長さは変わらないが、**変わったときだけ fd 越しに**
   `f.Truncate` で詰める (名前ではなく実体を縮める)
 - 打刻の検算に使う mtime も **同じ fd の `f.Stat()`** から取る (名前で Stat し直すと、
@@ -143,11 +143,11 @@ seam は一時的に入れて実験後に外してある (commit していない
 
 | 箇所 | 操作 | 状態 |
 |---|---|---|
-| `tryTakeover` | `os.Rename` → graveyard | [366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の 2 段調停で閉じ済み |
+| `tryTakeover` | `os.Rename` → graveyard | [366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の 2 段調停で閉じ済み |
 | `Release` | `os.Remove` | **本 issue で縮めた** (構造的には閉じられない) |
 | `Renew` | `O_TRUNC` + write | **本 issue で構造的に閉じた** |
 | `Break` | `os.Rename` (無条件) | **意図的な force break**。366 で受容済み |
-| `tryPlace` の後始末 | `os.Remove` | [383](done/383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) の 2 周目で `os.SameFile` 照合を入れた |
+| `tryPlace` の後始末 | `os.Remove` | [383](383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) の 2 周目で `os.SameFile` 照合を入れた |
 
 → **「この 2 経路が残る最後の同型」という issue の主張は正しかった** (本セッションで全数確認)。
 
@@ -217,7 +217,7 @@ I/O エラーで書けなかったときと、外部要因で壊れたとき)。
 | P2-3 | `Release` の identity 照合が `os.Remove` に**隣接していること**を、どのテストも固定していない。`releaseBeforeRemoveHook` は guard の直前にあるので、seam ごと guard を前へ動かす変異 (窓に probe の create+stat+remove と期限計算が入る) が**全スイート緑** | **記録 (未固定)**。380 が `Release` について主張しているのは「窓を**縮めた**」なので、**縮んでいることが主張の本体で、それが無検査**。検出可能性は「**検出手段はあるが未実証**」(seam を 1 つ足せば pin できると分かっているが、機構を足すと §7 の次の周を呼ぶので実装していない。3 周目 P3-3 でラベルを訂正)。再開 trigger: `Release` の窓に何かを挟む変更を入れるとき |
 | P2-4 | `Renew` の `f.Sync()` を消しても全テスト緑。守っているのは SMB の write-behind で、落とすと他マシンから mtime の更新が見えず**生きた lease を正当に引き継がれる = 二重実行** | **記録**。検出可能性は「**確実な検出手段はない**」(ローカル APFS では原理的に再現不能)。事実と trigger を `lock.go` の当該行の直上へ書いた |
 | P3-1 / P3-2 | `Renew` の `os.IsNotExist → errNotOwner` マッピングが無検査 (潰す変異が全緑) / `Release` は「消えていた」を nil で返すのに `Renew` は同じ物理状態を errNotOwner で返す非対称 | **記録**。後者は実害が見つかっていない (`runWith` の defer は warn 1 行、av1ify は rc を見ない)。前者は load-bearing (`renew` の exit 4/1、`with` の 122/125 を分ける) |
-| P3-3 / P3-4 | 見捨てられた `Renew` が遅れて着地すると graveyard entry の mtime が「いま」へ進み、[364](364-bug-lockman-with-release-failure-and-graveyard-retention.md) で入れた不変条件を静かに破る / `readLockInfo` は fi を返す前に fd を閉じるので、`Release` の identity (dev+ino) は窓のあいだ**寿命が固定されていない** | **記録**。前者は害が「記録が 7 日より長く残る」だけなので受容し、無条件だった記述を `stampGraveyard` のコメントで限定した。後者は**未確認** (APFS の object ID は単調カウンタで手元では再現不能。既判定の「SMB が ino を合成する」とは別機構) |
+| P3-3 / P3-4 | 見捨てられた `Renew` が遅れて着地すると graveyard entry の mtime が「いま」へ進み、[364](../364-bug-lockman-with-release-failure-and-graveyard-retention.md) で入れた不変条件を静かに破る / `readLockInfo` は fi を返す前に fd を閉じるので、`Release` の identity (dev+ino) は窓のあいだ**寿命が固定されていない** | **記録**。前者は害が「記録が 7 日より長く残る」だけなので受容し、無条件だった記述を `stampGraveyard` のコメントで限定した。後者は**未確認** (APFS の object ID は単調カウンタで手元では再現不能。既判定の「SMB が ino を合成する」とは別機構) |
 
 ### 変異検証 (2 周目の修正分)
 

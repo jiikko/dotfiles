@@ -312,7 +312,7 @@ ubuntu から移した」と書いており、README だけが取り残されて
   再照合 + 放棄された目印の回収、の 3 つで閉じた。
   **この監査が攻めていなかった範囲がもう 1 つ出た**: 同じ「照合してから名前へ破壊的操作」の
   形が `Renew` / `Release` にもあり、どちらも実験で再現した →
-  **[380](380-bug-lockman-renew-and-release-act-on-name-after-check.md)** として起票 (継続)。
+  **[380](done/380-bug-lockman-renew-and-release-act-on-name-after-check.md)** として起票 (継続)。
   下の `--io-timeout` 無検証は 380 の猶予 (`takeoverClaimGrace`) にも効くので、
   356 / 357 / 362 とまとめて直すときに一緒に見る
 - 2026-09-12: **358 の敵対レビュー 5 周目が、この監査が攻めていなかった範囲を 3 件出した**。

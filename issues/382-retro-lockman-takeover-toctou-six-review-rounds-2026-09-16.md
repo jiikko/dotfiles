@@ -3,7 +3,7 @@
 起票日: 2026-09-16
 カテゴリ: retro
 対象セッション: [366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の消化
-(副産物: [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md) /
+(副産物: [380](done/380-bug-lockman-renew-and-release-act-on-name-after-check.md) /
 [381](done/381-bug-lockman-with-renew-latch-stops-renewal-forever.md) 起票、
 [359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) /
 [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
@@ -119,7 +119,7 @@ seam を**変異後の破壊的操作より前**に置く。後ろだと変異�
 ## 残課題
 
 - [ ] 上記 1〜3・5〜8 の切り出し (既存ルールへの追記 8 件。新規ルールは 0 件)。**実行はユーザーの判断待ち**
-- [ ] 366 の横展開: [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md) /
+- [ ] 366 の横展開: [380](done/380-bug-lockman-renew-and-release-act-on-name-after-check.md) /
       [381](done/381-bug-lockman-with-renew-latch-stops-renewal-forever.md)
 - [ ] 366 が新設した wedge の根治: [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
       [363](363-bug-lockman-with-signal-handler-installed-too-late.md)

@@ -276,7 +276,7 @@ ms のまま `maxIOTimeout` で頭打ちにしてから変換する形へ直し�
 **別 issue へ振り分け (3 件)**: `with.go` の renew ラッチが恒久的に更新を止める →
 [381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md) (新規) /
 `Renew` の上書きは自分の deferred Release が窓を開ける →
-[380](../380-bug-lockman-renew-and-release-act-on-name-after-check.md) /
+[380](380-bug-lockman-renew-and-release-act-on-name-after-check.md) /
 取得中の Ctrl-C が残す中間状態とシグナル転送の枝の非対称 →
 [363](../363-bug-lockman-with-signal-handler-installed-too-late.md)。
 
@@ -400,7 +400,7 @@ mark を取ってから打刻を戻すまでにプロセスが死ぬと、目印
 - [x] ハーネス由来だった場合は判定軸を壁時計から外す → 該当なし (ただし回帰テストは
       seam で決定論にし、壁時計に依存させていない)
 - [x] 敵対的レビューを観点を分けて通す (①壊す / ②素通り / ③並行・中断 + 差分への 3 周。計 6 周)
-- [ ] `Renew` / `Release` の同型 → [380](../380-bug-lockman-renew-and-release-act-on-name-after-check.md)
+- [ ] `Renew` / `Release` の同型 → [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md)
 - [ ] `with` の renew ラッチが恒久的に更新を止める → [381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md)
 - [ ] この修正が新設した wedge (mark の取りこぼし) の根治 →
       [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
