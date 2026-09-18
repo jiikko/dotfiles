@@ -150,24 +150,57 @@ else
   bad '✗ Should not check frame count when fps is changed\n'
 fi
 
-# Test 70b: VFR ソース検出時もフレーム数チェックをスキップ (issue 394)
-# --fps を明示していなくても、__av1ify_detect_vfr が VFR と判定したソースは
-# -fps_mode cfr によるフレーム間引き/複製で正当にフレーム数が変わりうるため、
-# Test 70 と同じ「fps変更あり」扱いにする。
-printf '\n## Test 70b: Frame count check skipped when VFR source is detected (issue 394)\n'
+# Test 70b: VFR ソース検出時は「ソースとのフレーム数比較」をやめる (issue 394)。
+# ただし検査を捨てるのではなく密度検査へ切り替わる (issue 397) ので、
+# 密度が期待どおりのケースでは何の警告も出ないことを確認する。
+# 🚨 src 尺 10.0s × avg 29.970 ≈ 300 フレームが期待値。出力もそれに一致させる。
+printf '\n## Test 70b: VFR source swaps the src-frame-count check for a density check (issue 394/397)\n'
 TEST_DIR="$TEST_TMP/test70b"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR" || exit 1
 unsetopt err_exit
-# r_frame_rate=29/1, avg_frame_rate≈29.970 → VFR 検出。--fps は指定しないが、
-# CFR 正規化でフレーム数が大きくずれても警告しない
-output=$(MOCK_FPS="29/1" MOCK_AVG_FPS="29970029/1000000" MOCK_NB_FRAMES=300 MOCK_OUTPUT_NB_FRAMES=250 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+# ソースのメタ上のフレーム数 (250) と出力 (300) がズレていても、密度が正しければ警告しない
+output=$(MOCK_FPS="29/1" MOCK_AVG_FPS="29970029/1000000" MOCK_NB_FRAMES=250 MOCK_OUTPUT_NB_FRAMES=300 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 if [[ "$output" != *"フレーム数不一致"* ]]; then
-  printf '✓ No frame count warning when VFR source is detected\n'
+  printf '✓ No src-frame-count warning when VFR source is detected\n'
 else
-  bad '✗ Should not check frame count when VFR source is detected\n'
+  bad '✗ Should not compare against the source frame count for VFR sources\n'
+fi
+if [[ "$output" != *"フレーム密度不一致"* ]]; then
+  printf '✓ No density warning when the output density matches the applied fps\n'
+else
+  bad '✗ Density check must not fire when the density is correct\n%s\n' "$output"
+fi
+
+# Test 70d: VFR 検出時でも、密度が壊れていれば NG になる (issue 397 の中心)
+# 🚨 ここが無いと「-r に誤った値が渡ってフレームの大半が失われる」故障を誰も検出できない。
+# 実測 (実 ffmpeg): 30fps/10s/300 フレームを -r 1 で作り直すと 12 フレームになるが、
+# duration の差はちょうど 2.000s で閾値を超えず、元ファイルが削除されていた。
+printf '\n## Test 70d: Broken density is still NG for VFR sources (issue 397)\n'
+TEST_DIR="$TEST_TMP/test70d"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+# 期待密度 ≈ 300 に対し出力は 12 フレーム (96% 欠落)
+output=$(MOCK_FPS="29/1" MOCK_AVG_FPS="29970029/1000000" MOCK_NB_FRAMES=300 MOCK_OUTPUT_NB_FRAMES=12 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" == *"フレーム密度不一致"* ]]; then
+  printf '✓ Density check fires when most frames are missing\n'
+else
+  bad '✗ Density check did not fire (96%% of frames lost went undetected)\n%s\n' "$output"
+fi
+if [[ -f "$TEST_DIR/input-check_ng-density-enc.mp4" ]]; then
+  printf '✓ The output is renamed to check_ng-density\n'
+else
+  bad '✗ The output was not marked check_ng-density: %s\n' "$(ls "$TEST_DIR")"
+fi
+if [[ -f "$TEST_DIR/input.avi" ]]; then
+  printf '✓ The source file is kept (not deleted) when the density is broken\n'
+else
+  bad '✗ The source file was deleted despite the broken density\n'
 fi
 
 # Test 70c: VFR でないソース (通常の CFR) では、--fps 未指定なら従来どおり検出する

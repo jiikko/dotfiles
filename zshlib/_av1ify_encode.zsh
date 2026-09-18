@@ -16,6 +16,7 @@ typeset -g __AV1IFY_R_FPS=""
 typeset -g __AV1IFY_R_FPS_TAG=""
 typeset -gi __AV1IFY_R_VFR_DETECTED=0
 typeset -g __AV1IFY_R_VFR_AVG_FPS=""
+typeset -g __AV1IFY_R_VFR_AVG_FPS_DISP=""
 typeset -g __AV1IFY_R_DENOISE_VF=""
 typeset -g __AV1IFY_R_DENOISE_TAG=""
 typeset -g __AV1IFY_R_AAC_BITRATE=""
@@ -69,7 +70,7 @@ __av1ify_finalize() {
     REPLY="${3:-$1}"
     return 1
   fi
-  local tmp="$1" final_out="$2" in="$3" target_fps="$4" target_height="$5"
+  local tmp="$1" final_out="$2" in="$3" target_fps="$4" target_height="$5" vfr_avg_fps="${6:-}"
   __AV1IFY_CURRENT_TMP=""
   mv -f -- "$tmp" "$final_out"
   # データ損失ガード: mv が失敗して出力が存在しない (割り込みが tmp を rm した窓など) と、
@@ -88,14 +89,20 @@ __av1ify_finalize() {
     print -r -- "🚨 中断要求のため元ファイルは保持します: $in" >&2
     REPLY="$final_out"; return 1
   fi
-  # フレーム数不一致チェックの要否 (postcheck の fps_changed 引数):
-  # 明示 -fps 指定に加え、VFR 正規化 (issue 394, __av1ify_detect_vfr) でも
-  # フレームの間引き/複製が正当に起こりうるため、そちらも「fps 変更あり」として扱う。
+  # fps を変更したか (postcheck の fps_changed 引数)。明示 -fps 指定に加え、
+  # VFR 正規化 (issue 394) でもフレームの間引き/複製が正当に起こる。
+  # ただし**検査を捨てるのではなく**、適用した fps を渡して密度検査へ切り替える (issue 397)。
+  # 🚨 検査を止める入力は引数で受けること (グローバル直読みにしない)。関数のシグネチャに
+  # 現れない入力で安全機構を止めると、テストからその経路を制御できない (issue 397)。
   local _fps_changed=0
-  if [[ -n "$target_fps" ]] || (( __AV1IFY_R_VFR_DETECTED )); then
-    _fps_changed=1
-  fi
-  if __av1ify_postcheck "$final_out" "$in" "$_fps_changed" "$target_height"; then
+  [[ -n "$target_fps" || -n "$vfr_avg_fps" ]] && _fps_changed=1
+  # 密度検査に渡すのは **VFR 正規化で我々が選んだ fps** のときだけ (issue 397)。
+  # 明示 --fps の経路は改修前と同じ「フレーム数チェックを行わない」に保つ: そちらは
+  # ユーザーが尺や内容を変える操作 (trim 等) と併用されうるので、ソース尺から期待値を
+  # 立てると誤検出になる。今回リスク (-r に誤った値が渡る) を持ち込んだのは VFR 経路だけ。
+  local _applied_fps=""
+  [[ -z "$target_fps" ]] && _applied_fps="$vfr_avg_fps"
+  if __av1ify_postcheck "$final_out" "$in" "$_fps_changed" "$target_height" "$_applied_fps"; then
     final_out="$REPLY"; print -r -- "${_C_GREEN}✅ 完了: $final_out${_C_OFF}"
     # サイズ削減サマリ (元→出力)。元ファイル ($in) は削除前なのでサイズ取得可能。
     local _src_size _out_size
@@ -212,13 +219,18 @@ __av1ify_decide_resolution() {
 # (__av1ify_decide_fps と __av1ify_detect_vfr の重複を排除)。
 # 引数: $1 = raw (空可)
 # 出力: REPLY (変換できなければ空)
+# 🚨 LC_ALL=C を外さないこと: awk の printf は小数点にロケールの記号を使うため、
+# de_DE 等では "29,970" を返す。この値は ffmpeg の -r 引数になるので
+# "Invalid framerate value" でエンコードごと失敗する (issue 397)。
+# 🚨 分母が 0 以下 (ffprobe の "24/0" = 不明) は「変換不能 = 空」に倒すこと。
+# 分子をそのまま fps として返すと 24/0 が「24fps」に化け、誤った -r が渡る (issue 397)。
 __av1ify_frac_fps() {
   local raw="$1"
   REPLY=""
   [[ -z "$raw" ]] && return 0
-  REPLY=$(awk -v fps="$raw" 'BEGIN {
+  REPLY=$(LC_ALL=C awk -v fps="$raw" 'BEGIN {
     n = split(fps, a, "/")
-    if (n == 2 && a[2]+0 > 0) printf "%.3f", a[1] / a[2]
+    if (n == 2) { if (a[2]+0 > 0) printf "%.3f", a[1] / a[2] }
     else printf "%.3f", a[1]+0
   }')
 }
@@ -241,33 +253,47 @@ __av1ify_frac_fps() {
 # ファイルが check_ng になる。検出したソース以外の引数は改修前と同一に保つ。
 #
 # 引数: $1 = in
-# 出力: __AV1IFY_R_VFR_DETECTED (0/1), __AV1IFY_R_VFR_AVG_FPS (空可)
+# 出力: __AV1IFY_R_VFR_DETECTED (0/1), __AV1IFY_R_VFR_AVG_FPS (-r へ渡す生の有理数。空可),
+#       __AV1IFY_R_VFR_AVG_FPS_DISP (表示用の 10 進。空可)
 __av1ify_detect_vfr() {
   local in="$1"
   __AV1IFY_R_VFR_DETECTED=0
   __AV1IFY_R_VFR_AVG_FPS=""
+  __AV1IFY_R_VFR_AVG_FPS_DISP=""
 
-  local nominal_val="" avg_val=""
+  local nominal_val="" avg_val="" avg_raw=""
   __av1ify_frac_fps "$(__ff_stream_field "$in" v:0 stream=r_frame_rate)"
   nominal_val="$REPLY"
-  __av1ify_frac_fps "$(__ff_stream_field "$in" v:0 stream=avg_frame_rate)"
+  avg_raw=$(__ff_stream_field "$in" v:0 stream=avg_frame_rate)
+  __av1ify_frac_fps "$avg_raw"
   avg_val="$REPLY"
 
   [[ -z "$nominal_val" || -z "$avg_val" ]] && return 0
 
-  local tol_pct="${AV1IFY_FRAME_TOLERANCE_PCT:-0.5}"
+  # 🚨 postcheck のフレーム数許容% (AV1IFY_FRAME_TOLERANCE_PCT) を流用しないこと (issue 398)。
+  # 1 つのノブが 2 つの検査を逆向きに動かす: 緩めると VFR 検出が鈍って 394 のバグが復活し、
+  # 0 にすると r=30/1 / avg=30000/1001 という普通の NTSC が VFR 判定へ落ちる。
+  local tol_pct="${AV1IFY_VFR_DETECT_PCT:-0.5}"
   local is_vfr
   # 🚨 どちらかが 0 以下 (ffprobe の "0/0" = 不明) なら判定不能として VFR 扱いしない。
   # WMV/ASF は avg_frame_rate=0/0 を返すことがあり、VFR と誤判定すると -r 0.000 が
   # ffmpeg に渡って "Invalid framerate value" でエンコードが失敗する (実ファイルで確認)。
-  is_vfr=$(awk -v a="$nominal_val" -v b="$avg_val" -v tol="$tol_pct" 'BEGIN {
+  # LC_ALL=C は repo の規律に合わせた防御で、**この awk では等価**(整数 0/1 しか出さず、
+  # -v の数値解釈はロケールで変わらない。実測 2026-09-19: de_DE でも 29.970 → 29.97)。
+  # 値がロケールで壊れるのは __av1ify_frac_fps 側 (そちらは printf "%.3f" を出すので必須)。
+  is_vfr=$(LC_ALL=C awk -v a="$nominal_val" -v b="$avg_val" -v tol="$tol_pct" 'BEGIN {
     if (a <= 0 || b <= 0) { print 0; exit }
     d = (a > b) ? a - b : b - a
     print (d / a * 100 > tol) ? 1 : 0
   }')
   if (( is_vfr )); then
     __AV1IFY_R_VFR_DETECTED=1
-    __AV1IFY_R_VFR_AVG_FPS="$avg_val"
+    # 🚨 -r には ffprobe の生の有理数 (30000/1001) を渡すこと。10 進へ丸めると
+    # (a) 低 fps 長尺で duration がズレて check_ng-duration に転ぶ
+    # (b) NTSC が 2997/100 という非標準レートになる (issue 397)。
+    # 表示用の 10 進は __AV1IFY_R_VFR_AVG_FPS_DISP に分けて持つ。
+    __AV1IFY_R_VFR_AVG_FPS="$avg_raw"
+    __AV1IFY_R_VFR_AVG_FPS_DISP="$avg_val"
   fi
   return 0
 }
@@ -281,9 +307,20 @@ __av1ify_decide_fps() {
   __AV1IFY_R_FPS_TAG=""
   [[ -z "$validated" ]] && return 0
 
-  local source_fps_val=""
+  # 🚨 キャップ判定は r_frame_rate と avg_frame_rate の**大きい方**で行う (issue 397)。
+  # VFR ソースでは nominal (r) が実勢 (avg) より低く出ることがあり、r だけで判定すると
+  # r <= 指定fps < avg のときに「ソースの方が遅いので変更不要」と誤ってスキップし、
+  # target_fps が空のまま VFR 正規化の枝へ落ちて**指定より高い avg fps** で出力される。
+  local source_fps_val="" _r_val="" _avg_val=""
   __av1ify_frac_fps "$(__ff_stream_field "$in" v:0 stream=r_frame_rate)"
-  source_fps_val="$REPLY"
+  _r_val="$REPLY"
+  __av1ify_frac_fps "$(__ff_stream_field "$in" v:0 stream=avg_frame_rate)"
+  _avg_val="$REPLY"
+  if [[ -n "$_r_val" && -n "$_avg_val" ]]; then
+    source_fps_val=$(LC_ALL=C awk -v r="$_r_val" -v a="$_avg_val" 'BEGIN { printf "%.3f", (a > r) ? a : r }')
+  else
+    source_fps_val="${_r_val:-$_avg_val}"
+  fi
   if [[ -n "$source_fps_val" ]]; then
     local fps_skip
     fps_skip=$(awk -v src="$source_fps_val" -v tgt="$validated" 'BEGIN { print (src <= tgt) ? 1 : 0 }')
@@ -837,7 +874,7 @@ __av1ify_one() {
   # VFR (可変フレームレート) 検出 (issue 394: QuickTime で再生破綻する DTS 不整合の対策)
   __av1ify_detect_vfr "$in"
   if (( __AV1IFY_R_VFR_DETECTED )); then
-    print -r -- "${_C_CYAN}>> ソースは可変フレームレート (VFR) のため CFR へ正規化します (avg≈${__AV1IFY_R_VFR_AVG_FPS}fps)${_C_OFF}"
+    print -r -- "${_C_CYAN}>> ソースは可変フレームレート (VFR) のため CFR へ正規化します (avg≈${__AV1IFY_R_VFR_AVG_FPS_DISP}fps)${_C_OFF}"
   fi
 
   # CRF 自動選択 (AV1_CRF が指定されていればそちらが優先)
@@ -998,7 +1035,7 @@ __av1ify_one() {
 
   # 1回目: 設定通りに実行
   if ffmpeg "${args_common[@]}" "${args_audio[@]}" -- "$tmp"; then
-    if __av1ify_finalize "$tmp" "$final_out" "$in" "$target_fps" "$target_height"; then
+    if __av1ify_finalize "$tmp" "$final_out" "$in" "$target_fps" "$target_height" "$__AV1IFY_R_VFR_AVG_FPS"; then
       return 0
     else
       return 1
@@ -1055,7 +1092,7 @@ __av1ify_one() {
 
       __AV1IFY_CURRENT_TMP="$tmp"
       if ffmpeg "${args_common[@]}" "${args_audio[@]}" -- "$tmp"; then
-        if __av1ify_finalize "$tmp" "$final_out" "$in" "$target_fps" "$target_height"; then
+        if __av1ify_finalize "$tmp" "$final_out" "$in" "$target_fps" "$target_height" "$__AV1IFY_R_VFR_AVG_FPS"; then
           return 0
         else
           return 1

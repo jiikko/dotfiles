@@ -23,6 +23,12 @@ export AV1IFY_LOCK_ROOT="$TEST_TMP/lockman"
 typeset -gi FAIL_COUNT=0
 bad() { printf "$@"; FAIL_COUNT=$(( FAIL_COUNT + 1 )); }
 
+# 🚨 assert_* は失敗しても `return 1` しないこと (issue 399)。`setopt err_exit` の下では
+# 最初の失敗でファイルごと終了してしまい、**どの assert が検出力を持っているか**が
+# 観測できなくなる (変異検証がスイートの rc でしか判定できず、ケース単位で読めない)。
+# 失敗は bad() で数え、EXIT trap が rc を 1 へ格上げする。
+# 「前提が崩れて以降の結果が無意味になる」場面だけは、呼び出し側で明示的に exit すること。
+
 # 🚨 後始末と「失敗を rc へ格上げする」を 1 本の EXIT trap に束ねる (trap は 1 つしか持てない)。
 # zsh の EXIT trap 内の `exit 1` は終了ステータスを上書きできる (実測 2026-09-08)。
 # 本体が既に非 0 で終わっているときは `return $rc` でそれを保つ (格下げしない)。
@@ -407,8 +413,8 @@ assert_file_exists() {
     printf '✓ %s\n' "$message"
     return 0
   else
-    printf '✗ %s (file not found: %s)\n' "$message" "$file"
-    return 1
+    bad '✗ %s (file not found: %s)\n' "$message" "$file"
+    return 0
   fi
 }
 
@@ -419,8 +425,8 @@ assert_file_not_exists() {
     printf '✓ %s\n' "$message"
     return 0
   else
-    printf '✗ %s (file exists: %s)\n' "$message" "$file"
-    return 1
+    bad '✗ %s (file exists: %s)\n' "$message" "$file"
+    return 0
   fi
 }
 
@@ -432,8 +438,8 @@ assert_contains() {
     printf '✓ %s\n' "$message"
     return 0
   else
-    printf '✗ %s (expected to contain: %s)\n' "$message" "$needle"
-    return 1
+    bad '✗ %s (expected to contain: %s)\n' "$message" "$needle"
+    return 0
   fi
 }
 
@@ -445,7 +451,7 @@ assert_not_contains() {
     printf '✓ %s\n' "$message"
     return 0
   else
-    printf '✗ %s (expected NOT to contain: %s)\n' "$message" "$needle"
-    return 1
+    bad '✗ %s (expected NOT to contain: %s)\n' "$message" "$needle"
+    return 0
   fi
 }

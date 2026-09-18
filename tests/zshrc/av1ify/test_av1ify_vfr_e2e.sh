@@ -81,6 +81,21 @@ else
   [[ "$out_log" == *"可変フレームレート (VFR)"* ]] && printf '✓ VFR 正規化のメッセージが出る\n' || bad '✗ VFR 正規化のメッセージが出ない\n'
   check_eq "$(v_field "$out" avg_frame_rate)" "$(v_field "$out" r_frame_rate)" "出力の avg_frame_rate == r_frame_rate (CFR)"
   check_eq "$(pkt_duration_kinds "$out")" "1" "出力の映像パケット長が 1 種類 (CFR)"
+  # 🚨 「CFR である」だけを見ないこと (issue 397)。どんな -r でも出力は CFR になるので、
+  # 上の 2 つは **何 fps の CFR か** に対して無感覚で、-r 10 のような誤りを緑のまま通す
+  # (実測: ソース 154 フレーム中 92 フレームが drop されても 7/7 緑だった)。
+  # ソースの avg_frame_rate と突き合わせて **値そのもの** を pin する。
+  check_eq "$(v_field "$out" r_frame_rate)" "$(v_field "$d/in.mp4" avg_frame_rate)" "出力の r_frame_rate == ソースの avg_frame_rate (値の pin)"
+  # 密度: 出力フレーム数がソースの尺 × 適用 fps と一致する (postcheck の密度検査と同じ主張を実物で)
+  src_dur="$(ffprobe -v error -show_entries format=duration -of csv=p=0 -- "$d/in.mp4")"
+  exp_frames="$(LC_ALL=C awk -v dur="$src_dur" -v fps="$(v_field "$d/in.mp4" avg_frame_rate)" 'BEGIN {
+    split(fps, a, "/"); printf "%d", int(dur * a[1] / a[2] + 0.5) }')"
+  out_frames="$(v_field "$out" nb_frames)"
+  if (( out_frames >= exp_frames - 2 && out_frames <= exp_frames + 2 )); then
+    printf '✓ 出力フレーム数が期待密度と一致 (期待≈%s, out=%s)\n' "$exp_frames" "$out_frames"
+  else
+    bad '✗ 出力フレーム数が期待密度と乖離 (期待≈%s, out=%s)\n' "$exp_frames" "$out_frames"
+  fi
 fi
 
 # --- Test 2: VFR と判定されないソース → 改修前と同じ引数 (フレーム数が変わらない) ---

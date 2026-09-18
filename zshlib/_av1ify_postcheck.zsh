@@ -174,6 +174,9 @@ __av1ify_postcheck() {
   local src_path="${2:-}"
   local fps_changed="${3:-0}"
   local expected_height="${4:-}"
+  # 第5引数: fps を変更したとき、実際に ffmpeg へ渡した fps (有理数でも 10 進でも可)。
+  # これが在ると、フレーム数チェックを捨てる代わりに密度検査 (下記) を行う (issue 397)。
+  local applied_fps="${5:-}"
   local -a issues suffixes
 
   local audio_stream
@@ -393,6 +396,54 @@ __av1ify_postcheck() {
           issues+=("再生時間ズレ (src=${src_fmt_dur}s, out=${out_fmt_dur}s, Δ=${dur_diff}s)")
           suffixes+=("duration")
         fi
+      fi
+    fi
+  fi
+
+  # フレーム密度比較 (fps を変更した場合)。
+  #
+  # 🚨 fps を変えたからといって検査を丸ごと捨てないこと (issue 397)。フレーム数チェックは
+  # このパイプライン唯一の「密度」検査で、他 (duration / vidloss / avsync) は全て
+  # エンドポイント検査なので代替にならない。実測: 30fps/10s/300 フレームを -r 1 で
+  # 作り直すと 12 フレーム (96% 欠落) になるが、duration の差はちょうど 2.000s で
+  # 閾値を超えず、check_ng に転ばないまま**元ファイルが削除される**。
+  # CFR retiming の duration 変位はターゲット fps の 1〜2 フレーム間隔が上限で、
+  # 尺に比例しない (120 秒素材でも同じ 2.000s) ため、duration ではこの帯を原理的に拾えない。
+  #
+  # retiming は密度を**予測可能に**変えるので、期待値 = ソースの尺 × 適用した fps と
+  # 突き合わせる。許容は既定 5% (AV1IFY_DENSITY_TOLERANCE_PCT) と絶対フロア 24 の大きい方。
+  if [[ -n "$src_path" ]] && (( fps_changed )) && [[ -n "$applied_fps" ]]; then
+    local src_dur out_frames_d
+    src_dur=$(__ff_format_field "$src_path" format=duration)
+    out_frames_d=$(__ff_stream_field "$filepath" v:0 stream=nb_frames)
+    if [[ "$out_frames_d" =~ ^[0-9]+$ ]] && __av1ify_is_num "$src_dur"; then
+      local density_pct="${AV1IFY_DENSITY_TOLERANCE_PCT:-5}"
+      local density_out
+      # applied_fps は "30000/1001" の有理数も "29.970" の 10 進も受ける
+      # 🚨 awk の変数に exp / log / index のような**組み込み関数名を使わない** (syntax error になる)。
+      # しかも失敗を空へ畳むと「判定できなかった」が「合格」に化けて検査が黙って消える
+      # (実測 2026-09-19: `exp` を使って書いた初版がまさにこれで、密度検査が 1 度も発火しなかった)。
+      # 判定不能は第 3 の結果として**見えるように**出す。
+      density_out=$(LC_ALL=C awk -v dur="$src_dur" -v fps="$applied_fps" -v out="$out_frames_d" \
+                                 -v pct="$density_pct" -v floor="${AV1IFY_FRAME_TOLERANCE:-24}" 'BEGIN {
+        n = split(fps, a, "/")
+        f = (n == 2) ? ((a[2]+0 > 0) ? a[1] / a[2] : 0) : a[1]+0
+        if (f <= 0 || dur <= 0) exit 1
+        want = dur * f
+        d = want - out; if (d < 0) d = -d
+        tol = want * pct / 100
+        if (tol < floor) tol = floor
+        printf "%d %d %d", int(want + 0.5), int(d + 0.5), (d > tol) ? 1 : 0
+      }') || density_out=""
+      if [[ -n "$density_out" ]]; then
+        local d_want d_diff d_bad
+        read -r d_want d_diff d_bad <<< "$density_out"
+        if (( d_bad )); then
+          issues+=("フレーム密度不一致 (期待≈${d_want}, out=${out_frames_d}, Δ=${d_diff}, 適用fps=${applied_fps})")
+          suffixes+=("density")
+        fi
+      else
+        print -r -- ">> フレーム密度は判定不能 (src尺=${src_dur}, 適用fps=${applied_fps})" >&2
       fi
     fi
   fi
