@@ -595,3 +595,53 @@ func TestAbandonChecksWorkOnExclFallbackBranch(t *testing.T) {
 		}
 	})
 }
+
+// 🚨 破壊的操作 (lock を graveyard へ退ける rename) の直前でも降りること
+// (敵対レビュー 3 周目)。claim の直後の検査からここまでに 2 段目の `readLock` が挟まるので、
+// そこで見捨てられると「見捨てを宣言済みの goroutine が前世代の lock を退けて帰る」形になる。
+func TestAbandonedTakeoverDoesNotEvict(t *testing.T) {
+	l := newTestLocker(t)
+	stalePlacedLock(t, l)
+	before, _, err := l.readLock()
+	if err != nil || before == nil {
+		t.Fatalf("前提が崩れている: 期限切れ lock を読めない (%v)", err)
+	}
+
+	orig := abandonCheckBeforeEvictHook
+	t.Cleanup(func() { abandonCheckBeforeEvictHook = orig })
+	reached := false
+	abandonCheckBeforeEvictHook = func(ab *abandon) {
+		reached = true
+		// ここへ来た時点で lock はまだ在る (退ける前) ことを固定する
+		if _, serr := os.Lstat(l.lockPath()); serr != nil {
+			t.Errorf("退ける前の検査なのに lock が無い: %v", serr)
+		}
+		ab.mark()
+	}
+
+	took, err := l.tryTakeover(&abandon{})
+	if !reached {
+		t.Fatal("seam に到達していない: 2 段目の照合を通る経路を通っていない")
+	}
+	if !errors.Is(err, errAbandoned) {
+		t.Fatalf("errAbandoned を期待したが took=%v err=%v", took, err)
+	}
+	after, _, err := l.readLock()
+	if err != nil {
+		t.Fatalf("readLock: %v", err)
+	}
+	if after == nil || after.Token != before.Token {
+		t.Fatal("見捨てられた goroutine が lock を退けている (不可逆な操作を実行して帰った)")
+	}
+	// 目印も置き去りにしない (evicted=false なので既存の defer が回収する)
+	if got := tmpEntriesWithSuffix(t, l, takeoverClaimSuffix); len(got) != 0 {
+		t.Fatalf("目印が残っている: %v", got)
+	}
+	graves, err := os.ReadDir(filepath.Join(l.metaDir, graveyardDirName))
+	if err != nil {
+		t.Fatalf("graveyard を読めない: %v", err)
+	}
+	if len(graves) != 0 {
+		t.Fatalf("graveyard に退けた lock が入っている: %d 件", len(graves))
+	}
+}

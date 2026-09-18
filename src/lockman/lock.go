@@ -302,8 +302,13 @@ func (l *Locker) Acquire(ttl time.Duration, label string) (*Meta, error) {
 // (issue 362)。`AcquireTimed` だけが非 nil を渡し、それ以外は nil = 見捨てられ得ない。
 //
 // 🚨 **ensureDirs と serverNow には見捨ての検査を置かない**。前者は冪等 (mkdir は既存なら
-// 何もしない)、後者は probe を goroutine 内の defer で自分で消すので、どちらも
-// 「置いていく副作用」にならない (issue 362 の ④ と同じ扱い)。
+// 何もしない)、後者の probe は `sweepDir(probe, ...)` が回収する。
+//
+// 🚨 **訂正 (敵対レビュー 3 周目)**: ここには当初「probe は goroutine 内の defer が自分で消す」と
+// 書いていたが**誤り**。`os.Exit` は defer を走らせないので、見捨てられた goroutine の probe と
+// `tryPlace` の tmp は**実際に残る** (実測: 60 起動で 3 件ずつ)。検査を置かない理由は
+// 「消える」からではなく、**残っても掃除の担当が居て、ロック dir を塞がない**から
+// (issue 362 の ④ と同じ扱い)。この残骸はこの変更の前から在り、量も増えていない。
 func (l *Locker) acquire(ttl time.Duration, label string, ab *abandon) (*Meta, error) {
 	if err := l.ensureDirs(); err != nil {
 		return nil, err
@@ -461,7 +466,7 @@ func (l *Locker) tryPlace(meta *Meta, ab *abandon) error {
 }
 
 // abandonCheckBeforePlaceHook / abandonCheckAfterPlaceHook / abandonCheckAfterClaimHook /
-// abandonCheckBeforeMarkHook は「見捨てを見る直前」に呼ばれる seam (issue 362)。
+// abandonCheckBeforeMarkHook / abandonCheckBeforeEvictHook は「見捨てを見る直前」に呼ばれる seam (issue 362)。
 // production では何もしない。
 //
 // 🚨 これが無いと、見捨ての検査はテストから**決定論的に作れない**。`withTimeout` の期限を
@@ -474,6 +479,7 @@ var (
 	abandonCheckAfterPlaceHook  = func(*abandon) {}
 	abandonCheckAfterClaimHook  = func(*abandon) {}
 	abandonCheckBeforeMarkHook  = func(*abandon) {}
+	abandonCheckBeforeEvictHook = func(*abandon) {}
 )
 
 // undoAbandonedPlace は、見捨てられた goroutine が**自分が置いた** lock を取り消す (issue 362)。
@@ -482,9 +488,14 @@ var (
 // token 一致 + 期限内 + **読んだ実体との identity 照合**まで見るので、置けていない場合も
 // 引き継がれた後の場合も errNotOwner で止まり、他者の lock へは届かない。
 //
-// 🚨 **取り消せなかったことは黙らない**。ここで失敗すると「誰も解放できない lock が TTL ぶん
-// (既定 30 分) 残る」= この issue の被害そのものなので、人が判断する材料を出す。
-// 呼び出し側は既に I/O timeout を報告しているが、**その報告は「取れなかった」までしか言っていない**。
+// 🚨 **「黙らない」の実効性は限定的** (敵対レビュー 3 周目)。ここの警告は `ReleaseTimed` が
+// 返ってから出るので、最悪 `l.timeout` (本番の下限 100ms / 既定 10s) 遅れる。一方 `acquire` の
+// 一発実行では、期限切れの後プロセスが生きているのは**実測 1〜2ms** なので、
+// **警告はほぼ確実に出力前に os.Exit で消える**。`dispatch` の deferred cleanup も同じ
+// `l.timeout` で切るため、undo の期限が cleanup の期限より早くなることは構造上ない。
+// 人に届くのは `--wait` でプロセスが回り続けている場合だけ (**CLI での到達は未実測**)。
+// それでも警告を出すのは、届く経路が 1 つ在ることと、テストで契約として固定できるため。
+// **「人に伝わる」を前提にした設計判断をここに積まないこと。**
 //
 // 🚨 **不変条件: この関数は `lockman break` を勧めない** (敵対レビュー 2 周目)。
 // break は「期限検査も token 照合もしない無条件 rename」で、同ファイルが「この道具で最も現実的に
@@ -683,6 +694,17 @@ func (l *Locker) tryTakeover(ab *abandon) (bool, error) {
 		return false, nil
 	}
 
+	// 🚨 **破壊的操作の直前にも見る** (issue 362 の敵対レビュー 3 周目)。claim の直後にも検査は
+	// あるが、そこからここまでに 2 段目の `readLock` (詰まったマウントが止まる場所) が挟まる。
+	// 検査せずに来ると、**見捨てを宣言済みの goroutine が前世代の lock を退けて帰る**形になり、
+	// 「不可逆な操作の直前で降りる」という宣言と食い違う (実測で再現した。害は示せなかったが、
+	// 宣言と実装が食い違ったまま残すと次の人がその宣言を根拠に判断する)。
+	// 降りても `evicted` は false のままなので、上の defer が目印を回収する。
+	// 退けなかった期限切れ lock は、次の acquire が同じ手順で退ける。
+	abandonCheckBeforeEvictHook(ab)
+	if ab.abandoned() {
+		return false, errAbandoned
+	}
 	grave := filepath.Join(l.metaDir, graveyardDirName, mustToken())
 	if err := os.Rename(l.lockPath(), grave); err != nil {
 		if os.IsNotExist(err) {
