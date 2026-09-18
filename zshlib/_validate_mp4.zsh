@@ -24,7 +24,13 @@ source "${${(%):-%x}:A:h}/_ffprobe_helpers.zsh"
 
 # デコード破損を示す既知の文字列。良性警告で誤爆しないよう、具体的なものだけを列挙する。
 # (bare "error" 等は入れない — ffmpeg は良性警告にも error の語を含めるため)
-__VALIDATE_MP4_DECODE_ERROR_RE='corrupt|Invalid NAL|Error splitting|Invalid data found|moov atom not found|Error while decoding'
+#
+# "non monotonically increasing dts" (issue 394): VFR ソースのタイムスタンプが
+# CFR 前提のエンコーダへそのまま渡ると、出力の DTS が非単調増加になり QuickTime 等の
+# 厳密なプレイヤーで再生破綻する (VLC/dav1d は寛容なため無症状)。av1ify は
+# __av1ify_detect_vfr で検出したソースを常時 -fps_mode cfr で正規化して防いでいるため
+# 通常は出ないはずだが、将来その配線が外れたときに検出する安全網として残す。
+__VALIDATE_MP4_DECODE_ERROR_RE='corrupt|Invalid NAL|Error splitting|Invalid data found|moov atom not found|Error while decoding|non monotonically increasing dts'
 
 # inner: 単一ファイルのフルデコード検証 (フィルタリングや表示はしない=outer の責務)
 # $1: ファイルパス (呼び出し側が「検証対象の .mp4」と判断済みである前提)

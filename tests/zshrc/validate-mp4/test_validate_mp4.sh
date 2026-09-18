@@ -91,6 +91,12 @@ printf '## inner __validate_mp4_check の契約\n'
 ( export MOCK_ACODEC_TYPE="";                                           assert_check "$F" 1 "no-audio"        "音声なし → no-audio" )
 ( export MOCK_DECODE_LOG="frame=10 time=00:00:01.00
 [h264 @ 0x0] corrupt decoded frame";                                    assert_check "$F" 1 "decode-error"    "corrupt検出 → decode-error" )
+# issue 394: VFR ソースのタイムスタンプが CFR 前提のエンコーダを素通りすると
+# 出力の DTS が非単調増加になり QuickTime 等で再生破綻する。av1ify は
+# -fps_mode cfr で常時防いでいるが、将来その配線が外れたときの安全網としてここでも検出する。
+( export MOCK_DECODE_LOG="frame=10 time=00:00:01.00
+[null @ 0x0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 15 >= 15";
+                                                                         assert_check "$F" 1 "decode-error"    "non monotonic dts検出 → decode-error (issue 394)" )
 ( export MOCK_DURATION="100.0";                                         assert_check "$F" 1 "truncated"       "宣言100s/実10s → truncated" )
 # directional: 実デコード終端が宣言より長くても truncation ではない (元の絶対差バグの回帰ガード)
 ( export MOCK_DURATION="1.0";                                           assert_check "$F" 0 ""                "宣言1s/実10s (actual>declared) は truncated にしない" )

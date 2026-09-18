@@ -150,6 +150,38 @@ else
   bad '✗ Should not check frame count when fps is changed\n'
 fi
 
+# Test 70b: VFR ソース検出時もフレーム数チェックをスキップ (issue 394)
+# --fps を明示していなくても、__av1ify_detect_vfr が VFR と判定したソースは
+# -fps_mode cfr によるフレーム間引き/複製で正当にフレーム数が変わりうるため、
+# Test 70 と同じ「fps変更あり」扱いにする。
+printf '\n## Test 70b: Frame count check skipped when VFR source is detected (issue 394)\n'
+TEST_DIR="$TEST_TMP/test70b"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+# r_frame_rate=29/1, avg_frame_rate≈29.970 → VFR 検出。--fps は指定しないが、
+# CFR 正規化でフレーム数が大きくずれても警告しない
+output=$(MOCK_FPS="29/1" MOCK_AVG_FPS="29970029/1000000" MOCK_NB_FRAMES=300 MOCK_OUTPUT_NB_FRAMES=250 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" != *"フレーム数不一致"* ]]; then
+  printf '✓ No frame count warning when VFR source is detected\n'
+else
+  bad '✗ Should not check frame count when VFR source is detected\n'
+fi
+
+# Test 70c: VFR でないソース (通常の CFR) では、--fps 未指定なら従来どおり検出する
+# (回帰ガード: VFR 検出の追加が既存の Test 68 を無効化していないことを確認)
+printf '\n## Test 70c: Frame count check still fires for genuinely CFR sources (regression guard)\n'
+TEST_DIR="$TEST_TMP/test70c"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+output=$(MOCK_NB_FRAMES=300 MOCK_OUTPUT_NB_FRAMES=250 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "フレーム数不一致" "CFR source still triggers frame count check"
+
 # Test 71: 出力解像度不一致の検出
 printf '\n## Test 71: Output resolution mismatch detection\n'
 TEST_DIR="$TEST_TMP/test71"
