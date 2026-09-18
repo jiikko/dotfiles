@@ -964,7 +964,7 @@ type State struct {
 	// 🚨 **SizeBytes / AgeSec は「取れなかった」と「本当に 0」を区別するためにポインタ**
 	// (敵対レビュー 5 周目 P2-1 / P2-2)。値型 + omitempty だと **canonical な unreadable lock
 	// (= 0 バイト) の size_bytes が丸ごと消え**、`serverNow` が失敗したときの age は
-    // **0 = 「いま書かれたばかり」という嘘**になって出る。どちらも「判断材料を出す」という
+	// **0 = 「いま書かれたばかり」という嘘**になって出る。どちらも「判断材料を出す」という
 	// この状態の存在理由そのものを壊す。nil = 未取得 (JSON からは欠落 / 人間向けは「不明」)。
 	SizeBytes *int64 `json:"size_bytes,omitempty"`
 	Token     string `json:"token,omitempty"`
