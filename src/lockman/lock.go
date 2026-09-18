@@ -168,6 +168,15 @@ func (l *Locker) ensureDirs() error {
 // 🚨 ローカルの時計を使わないこと: マシン間で数十秒ずれると、生きている lock を
 // stale と誤判定して二重実行に直結する。probe ファイルを作り、それに打刻された
 // mtime を読むことで、どのマシンから見ても同じ時刻の出典になる。
+//
+// 🚨 **`defer` の Remove は `os.Exit` に負けることがあり、probe が残る**。見捨てられた
+// goroutine (issue 362) はプロセス終了と競走しているため。**放置してよいと判断した**
+// (issue 391)。根拠: ①製品が受け付ける最小の `--io-timeout` (100ms) では並行 400 起動でも
+// 残骸 0 件 — 残骸はマウントが実際に遅いときだけ出る ②`sweepDir(probe, 1h)` が回収する
+// (1000 件を実測で回収) ③掃除がフル走査で 100ms を超える件数はローカル APFS で約 3 万件、
+// 定常状態でそこへ届くには劣化状態で毎時 1.6 万回の acquire が要る。
+// **再評価の trigger**: SMB で「acquire が遅い」「cleanup のエラーが続く」報告が出たとき
+// (走査の 1 件あたりコストが桁で上がれば、上の 3 万件も桁で下がる)。
 func (l *Locker) serverNow() (time.Time, error) {
 	name := filepath.Join(l.metaDir, probeDirName, mustToken())
 	f, err := os.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, lockFileMode)
@@ -361,6 +370,14 @@ func (l *Locker) tryPlace(meta *Meta, ab *abandon) error {
 	if err != nil {
 		return err
 	}
+	// 🚨 **この tmp は `link(2)` の材料にしか使わない。fallback (O_EXCL) 枝は 1 バイトも読まない。**
+	// `link` が ENOTSUP になる FS (smbfs = 本番の経路) では、fsync 付きの書き込みが丸ごと
+	// 捨てられる。ローカル APFS で acquire の中央値 32.3ms → 24.0ms (-26%) の差がある
+	// (issue 391 の実測。`tryPlaceLinkFn` を ENOTSUP 固定にしたビルドで比較)。
+	// **省くには「link が使えるか」を先に知る必要があり、その判定のコストと複雑さは未検討**。
+	// 切り出し先: issue 392。
+	// 🚨 この tmp の `defer` Remove も `os.Exit` に負けて残ることがある。放置の根拠は
+	// `serverNow` の注記と同じ (issue 391)。
 	tmp := filepath.Join(l.metaDir, tmpDirName, meta.Token+".json")
 	if err := writeFileSync(tmp, b); err != nil {
 		return err
