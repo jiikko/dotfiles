@@ -196,7 +196,7 @@ lock のパスを直接開いて同じバイト列を書く。
 acquire ごとにフル走査し、stderr が鳴り続ける。3 千件なら 1 回で完走して打刻する。
 
 🚨 **`removed=0` は嘘**。実際は毎回約 2,500 件削除している。`CleanupTimed` が期限切れ時に
-部分結果を捨てるため → [issue 393](../393-bug-lockman-cleanup-timeout-discards-partial-result.md) へ切り出した。
+部分結果を捨てるため → [issue 393](393-bug-lockman-cleanup-timeout-discards-partial-result.md) へ切り出した。
 
 ## 2026-09-18 判断の差し替え: **何もしない (ただし理由が違う)**
 
