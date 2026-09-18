@@ -378,13 +378,23 @@ func (l *Locker) tryPlace(meta *Meta, ab *abandon) error {
 		return err
 	}
 	// 🚨 **この tmp は `link(2)` の材料にしか使わない。fallback (O_EXCL) 枝は 1 バイトも読まない。**
-	// `link` が使えない FS では fsync 付きの書き込みが丸ごと捨てられる。ローカル APFS で
-	// acquire の中央値 13.9ms → 9.7ms (-30%) の差がある (issue 392 の実測。
-	// `tryPlaceLinkFn` を ENOTSUP 固定にしたビルドと、そこから tmp を省いたビルドの比較)。
-	// **省くには「link が使えるか」を先に知る必要があり、その判定のコストと複雑さは未検討**。
-	// 🚨 **smbfs が ENOTSUP を返すかは未実測** (issue 091 の表が「可能性が高い」と書いたまま、
-	// 092 は測らずに done へ送られた)。現在の実運用 (av1ify) はローカル HOME で link が使えるので、
-	// **この無駄は今のところ発生していない**。切り出し先: issue 392。
+	// `link` が使えない FS では fsync 付きの書き込みが丸ごと捨てられる。**実測で
+	// acquire の 3 割** (issue 392: 本物の ExFAT 上で 27.3ms → tmp を省いた計測版 18.7ms。
+	// link が使える APFS では 8.97 vs 8.90ms = 差なし — そこでは tmp は使われている)。
+	//
+	// 🚨 **それでも直さないと決めた** (issue 392)。理由は 3 つで、**どれも実測か実験に基づく**:
+	//  1. 効果のある FS を使う運用が無い。現在の実運用 (`zshlib/_av1ify_lock.zsh`) は
+	//     ローカル HOME = link が使える側で、そこでは効果 0
+	//  2. **理想形は実験で否定済み**。`renameatx_np(tmp, lock, RENAME_EXCL)` で tmp を
+	//     捨てずに lock そのものにできれば検出も 2 回目の書き込みも要らないが、
+	//     **ExFAT では `link` と同じ ENOTSUP** (APFS では動く)。節約したい FS でだけ使えない
+	//  3. 残る案 (可否を probe する / プロセス内で覚える) は、**動いている側にコストを載せる**か
+	//     **CLI の一発実行では効かない**かのどちらか
+	//
+	// 🚨 **fsync を `link` の後ろへ移す形は採らない**。crash が挟まると中身の無い lock が残り、
+	// issue 383 が閉じた「誰も引き継げない恒久 wedge」を再導入する。
+	// 🚨 **smbfs 自体の `link` は今も未測定** (091 の表の空欄。ExFAT/FAT で ENOTSUP だからと
+	// いって smbfs がそうだとは言えない)。再開の trigger は 392 に書いた。
 	// 🚨 この tmp の `defer` Remove も `os.Exit` に負けて残ることがある。放置の根拠は
 	// `serverNow` の注記と同じ (issue 391)。
 	tmp := filepath.Join(l.metaDir, tmpDirName, meta.Token+".json")
