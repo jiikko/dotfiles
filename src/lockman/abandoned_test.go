@@ -277,6 +277,16 @@ func TestWithTimeoutMarksAbandonInProduction(t *testing.T) {
 	if !errors.Is(aerr, errIOTimeout) {
 		t.Fatalf("errIOTimeout を期待したが %v", aerr)
 	}
+	// 🚨 **errAbandoned を呼び出し側へ漏らさない**。漏れると `cmdAcquire` の `--wait` ループが
+	// `errors.Is(err, errBusy)` に当たらず `default:` へ落ち、**exit 3 (他者が保持中) のはずが
+	// exit 1 (エラー) になる**。`_av1ify_lock.zsh` は rc=3 を SKIP、rc≠0 を
+	// 「排他を用意できない = 中止」に分けているので、終了コードの API (issue 091 の表) が変わる。
+	// 構造的には起きない (mark を立てるのは select がタイムアウト枝を選んだ後で、そのとき
+	// withTimeout は errIOTimeout を返すと確定しており、goroutine の戻り値はバッファ付き chan に
+	// 入ったまま誰も読まない) が、**構造の主張はテストで固定するまで主張のまま**なので pin する。
+	if errors.Is(aerr, errAbandoned) {
+		t.Fatal("errAbandoned が呼び出し側へ漏れている (exit 3 が exit 1 に化ける)")
+	}
 	select {
 	case ok := <-observed:
 		if !ok {
