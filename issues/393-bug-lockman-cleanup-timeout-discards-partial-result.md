@@ -183,11 +183,45 @@ tmp/ に 2 時間前に打刻した残骸 10,000 件を置き、`.cleanup_at` �
 ③待ち (`waitFor`) を入れたテストが、待つことで**窓を再現しなくなっていないか** (M3 が red のままか)
 ④完全一致 pin にしたことで `TestDispatchWarnsOnCleanupFailureWithoutVerbose` と二重管理になっていないか
 
+## 敵対的レビュー 3 周目 (2026-09-19。全数勘定)
+
+指摘 6 件、**採用 4 / 記録 2 / 却下 0**。**production (実装) は 1 つも壊せておらず**、
+指摘はすべて**テストの検出力**だった。
+
+| # | 指摘 | 判定 |
+|---|---|---|
+| P1-1 | 2 周目に「ほとんど何も検査しない」として消した「報告 ≤ 実態」の assert は、**変異を当てずに vacuous と判定していた** (`mutation-verify-new-tests.md` の「等価変異と判定するなら経路を列挙してから言う」の不履行)。実際は期限切れ枝で「**報告 > 実態**」を守る**唯一の上限**で、消した後は `removed` を 2 倍に水増しする変異が**全スイート緑**で通る (**自分でも再現**)。issue 393 が直した嘘の**鏡像** (「消していないのに消したと言う」) | **採用**。元の位置 (待ちの**前**) に戻した。片側 assert なので、間に入る追加削除は `got` を増やすだけ = 偽の赤にならない。置き換えに入れていた `res.Removed >= residue` は 20 行上と**条件が完全に同じ重複**だったので削除 |
+| P2-1 | `p.add()` を `os.Remove` の**前**へ動かす変異 (削除の「試行」を数える形。実装者が自然に書きうる) も**全スイート緑**。`Removed` を exact equality で pin するテストは 4 本あるが**どれも fixture に削除失敗を持たず**、削除失敗を持つ 2 本は `Removed` を 1 mm も見ていなかった。🚨 **2 周目の退行ではなく既存の穴**だが、P1-1 で上限系が消えて母集合ゼロになっていた | **採用**。既存 fixture (`TestCleanupDoesNotStampWhenRemoveFails`) に assert を 1 行 |
+| P3-2 / P3-4 | 自前の `waitFor` は package 内 3 本目のポーリング実装 (既存の `waitForFile` で足りる) / regexp の `skipped=(?:true\|false)` が両方を受ける | **採用**。既存ヘルパーへ寄せ、`skipped=false` に締めた (1 周目に「実害を作れなかった」と記録した「期限切れ枝が Skipped を落とす」がこれで pin された) |
+| P3-1 | `waitFor` の終了条件 (打刻の出現) は **`p.errCount() == 0` のときしか起きない**ので、将来この fixture がエラーを持つと「掃除は終わっているのに 10 秒待って落ちる」。また打刻は goroutine の最後の**ファイル作成**であって最後の**動作**ではない | **記録**。fixture 専用の条件であることをテストのコメントに明記した。構造的な正解は「goroutine が返った」を直接観測する seam だが、それは新しい機構なので足さない |
+| P3-3 | `defer func(){ res.Removed, res.Errors = p.snapshot() }()` は、body 内の `res.Errors = append(...)` を **silent no-op** にする。旧来の書き方へ戻す変異は 3 本 FAIL で守られているが、「**新しい**エラー源を `res.Errors` へ足す」形は静かに消える | **記録**。構造で消す案 (局所変数にして return 直前に組む) は production の構造変更なので、やるなら別 commit + もう 1 周 |
+| — | 待ちが窓を潰していないか (M3 再実験) / `waitFor` が vacuous でないか / `errCount()` の影響 / `res.Errors` の内容・順序・重複 / `main_test.go` との二重管理 | **壊せなかった** (レビューが全部実験。特に **M3 は red のまま**で、待ちは窓 assert より後なので構造的に隠せない。`res.Errors` への append は production に **0 件**で、重複も欠落も作れなかった) |
+
+### 変異検証 (3 周目の修正分)
+
+| 変異 | 結果 |
+|---|---|
+| M8: 期限切れ枝で `removed` を 2 倍に水増しする | `TestCleanupTimedReportsPartialProgress` **FAIL** (修正前は全スイート緑) |
+| M9: `p.add()` を `os.Remove` の前へ (試行を数える) | `TestCleanupDoesNotStampWhenRemoveFails` **FAIL** (修正前は全スイート緑) |
+| M3 (再確認): カウンタを sweep の最後に一括計上 | `TestCleanupTimedReportsPartialProgress` **FAIL** のまま |
+
+### 4 周目は不要 (§7 の打ち切り条件)
+
+打ち切り条件の例外 (a)(b) を満たす: **(a) 3 周目の対応は production を 1 行も変えていない**
+(テストの assert 追加・重複削除・ヘルパーの共通化・regexp の締め。判定ロジックの新設はゼロ)。
+**(b) 各修正を直接の実測で確認した** (変異 2 本で red、M3 の red 継続、`go test -race ./...` 緑)。
+🚨 環境条件を新たに持ち込む修正も無い。
+**記録に回した P3-3 (構造で footgun を消す) を実装するなら、それは production の構造変更なので
+別 commit + もう 1 周が要る** — 本 issue のスコープでは記録に留める。
+
 ## 残タスク
 
 - [x] 反証レビュー 1 周目。P1 1 件 + P2 4 件 + P3 3 件を採用、P3 1 件を記録 (変異 3 本で red)
 - [x] 2 周目 (§7)。P1 2 件 + P2 1 件 + P3 1 件を採用、1 周目の変異表を 1 行訂正 (変異 3 本で red)
-- [ ] **未実施**: 3 周目 (§7)。2 周目の対応が production の構造を変えた (蓄積先の一本化) ため
-      打ち切り条件 (a) を満たさない
+- [x] 3 周目 (§7)。P1 1 件 + P2 1 件 + P3 2 件を採用、P3 2 件を記録 (変異 2 本で red)。
+      **4 周目は不要** (打ち切り条件 (a)(b) を満たす。production は 1 行も変えていない)
+- [ ] **スコープ外 (記録)**: `Cleanup` の `defer` が `res.Errors = append(...)` を silent no-op に
+      する footgun を構造で消す (局所変数にして return 直前に組む)。production の構造変更なので
+      別 issue / 別 commit + もう 1 周が要る
 - [x] 候補の選択 → (b) atomic のカウンタ。(c) は「排水中か 1 件も進まないか」を区別できないので却下
 - [x] `dispatch` のコメントと実装を一致させた (`removed=N` / `removed>=N` の書き分け)
