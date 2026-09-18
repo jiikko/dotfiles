@@ -360,6 +360,24 @@ else
   bad '✗ A correct encode was flagged (no margin between the trust and density windows)\n%s\n' "$output"
 fi
 
+# 崖そのものの検出: trust 窓を密度窓と同値へ戻す変異を捕まえるのは **この入力だけ**。
+# 🚨 上の 312/300 は余裕が 2 倍あるので、同値化の変異を緑のまま通す (6 周目が実証)。
+# nb=324 は「trust が却下する / 同値化すると採用される」境界の外側で、
+# 採用されると期待値 324 に対し out=299 の Δ=25 が許容 24 を超えて誤爆する。
+TEST_DIR="$TEST_TMP/test70j2"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+output=$(MOCK_FPS="29/1" MOCK_AVG_FPS="30/1" MOCK_NB_FRAMES=324 \
+         MOCK_VIDEO_DURATION=10.0 MOCK_OUTPUT_NB_FRAMES=299 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" != *"フレーム密度不一致"* ]]; then
+  printf '✓ No cliff: a nb_frames just outside the trust window is rejected, not flagged\n'
+else
+  bad '✗ The cliff is back (trust window as wide as the density window)\n%s\n' "$output"
+fi
+
 # Test 70k: 許容の env は trust / 密度の両方で同じ検証を通る (5 周目 P2)
 # 🚨 片方だけ検証すると、is_nonneg_num が通さない表記 (1e9) で 2 つの窓が別の値を使い、
 # 「trust は密度の半分」が反転する (trust 無条件採用 + 密度は既定 5% = 正しいエンコードが NG)。
@@ -374,9 +392,25 @@ output=$(AV1IFY_DENSITY_TOLERANCE_PCT=1e9 MOCK_FPS="29/1" MOCK_AVG_FPS="30/1" \
          av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 if [[ "$output" != *"フレーム密度不一致"* ]]; then
-  printf '✓ An unparsable tolerance does not invert the trust/density relationship\n'
+  printf '✓ An unparsable AV1IFY_DENSITY_TOLERANCE_PCT does not invert the relationship\n'
 else
-  bad '✗ The two windows read different values and flagged a correct encode\n%s\n' "$output"
+  bad '✗ The two windows read different PCT values and flagged a correct encode\n%s\n' "$output"
+fi
+
+# 🚨 変数は 2 つある。片方だけ撃つと、もう片方の検証を外す変異が緑で通る (6 周目が実証)。
+TEST_DIR="$TEST_TMP/test70k2"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+output=$(AV1IFY_DENSITY_FLOOR=1e9 MOCK_FPS="29/1" MOCK_AVG_FPS="30/1" \
+         MOCK_NB_FRAMES=100000 MOCK_VIDEO_DURATION=10.0 MOCK_OUTPUT_NB_FRAMES=299 \
+         av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" != *"フレーム密度不一致"* ]]; then
+  printf '✓ An unparsable AV1IFY_DENSITY_FLOOR does not invert the relationship\n'
+else
+  bad '✗ The two windows read different FLOOR values and flagged a correct encode\n%s\n' "$output"
 fi
 
 # Test 70c: VFR でないソース (通常の CFR) では、--fps 未指定なら従来どおり検出する
