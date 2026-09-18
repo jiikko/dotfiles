@@ -57,7 +57,7 @@ tmp/ に 2 時間前に打刻した残骸 10,000 件を置き、`.cleanup_at` �
   `adversarial-review-own-safeguards.md` の「判定不能を専用の値で出す」に沿う。**これが第一候補**
 
 
-## 進捗 (2026-09-19): 実装完了・敵対レビュー待ち
+## 進捗 (2026-09-19): 実装完了 (下の「敵対的レビュー 1 周目」で改訂済み)
 
 ### 候補の選択: **atomic のカウンタ** (issue の第一候補「removed=不明」は採らなかった)
 
@@ -69,34 +69,35 @@ tmp/ に 2 時間前に打刻した残骸 10,000 件を置き、`.cleanup_at` �
 
 ### 実装
 
-- `cleanupProgress` (atomic.Int64) を新設し、`Cleanup(force bool, progress ...*cleanupProgress)` で受ける。
-  `sweepDir` は消すたびに `res.Removed++` と `p.removed.Add(1)` の**両方**を進める
-- `CleanupTimed` は期限切れ時に `p.removed.Load()` のスナップショットと `Partial: true` を返す。
+- `cleanupProgress` を新設し、`Cleanup(force bool, progress ...*cleanupProgress)` で受ける。
+  `sweepDir` は消すたびに `res.Removed++` と `p.add()` の**両方**を進める
+  (🚨 **1 件ずつ**。一括で足す形は issue 393 の症状に戻る。1 周目 P1-1)
+- `CleanupTimed` は期限切れ時に `p.snapshot()` (件数 **+ sweep 中のエラー**) と `Partial: true` を返す。
   **`res` は読まない** (データ競合)
 - `CleanupResult.Partial` を新設。true = 「**少なくとも** N 件。掃除は継続中」
-- `dispatch` は `removed=N` と `removed>=N (期限切れ。掃除は途中で、次回の続きから減る)` を書き分ける
+- `dispatch` の文面 (1 周目 P2-1 / P2-2 で改訂):
+  0 件なら `removed=判定不能 (…)` / それ以外は `removed>=N (期限切れ。ここまでは確認済み)`
 - 🚨 **progress は可変長引数**。掃除の入口を 2 つに割ると `timeout_wiring_test.go` の gate
   (「生の I/O は timeout.go からしか呼ばない」) が見ている名前と実際の入口がずれる。
   実際に `cleanupWithProgress` を別メソッドへ切り出したら **gate が落ちた** (= gate は正しく働いた)。
   入口を 1 つに保ち、渡さない呼び出し側 (テスト 20 箇所) は今までどおり書ける
 
-### テスト (新設 3 本。`cleanup_partial_test.go`)
+### テスト (最終形は 5 本。`cleanup_partial_test.go`)
 
-`.cleanup_at` を FIFO にすると **sweep が終わった後の `stampCleanup` で詰まる**ので、
-「消した件数 > 0 なのに期限切れ」を決定論的に作れる (壁時計に依存しない)。
+🚨 **初版は seam を窓の手前 (`.cleanup_at` の FIFO = sweep の後) に置いており、
+一括カウントの変異を検出できなかった** (1 周目 P1-1)。窓の内側 (`sweepPauseHook`) へ移した。
 
 | テスト | 何を固定するか |
 |---|---|
-| `TestCleanupTimedReportsPartialProgress` | 期限切れでも実数 (5 件) と `Partial` を返す。**FS 側でも実際に消えたことを確認**する (報告だけが正しい形を防ぐ) |
-| `TestCleanupMarksCompleteRunAsNotPartial` | 対照。完走した掃除に `Partial` が立たない (「常に部分的」へ倒れていない) |
-| `TestCleanupCLIDistinguishesPartialFromComplete` | CLI の出口で `removed>=N` が出る (書式の書き分けが production に届いている) |
+| `TestCleanupTimedReportsPartialProgress` | **sweep の途中**で期限切れにし、`0 < removed < 全件` と `Partial` を返す (報告が実態を上回らないことも見る) |
+| `TestCleanupCLISaysIndeterminateWhenNothingRemoved` | 0 件の期限切れは `removed=判定不能`。「進んでいる」と断定しない |
+| `TestCleanupTimedKeepsSweepErrorsOnTimeout` | sweep 中のエラーを期限切れで捨てない |
+| `TestCleanupMarksCompleteRunAsNotPartial` | 対照。完走した掃除に `Partial` が立たない |
+| `TestCleanupCLIDistinguishesPartialFromComplete` | CLI の出口で `removed>=N` が出る |
 
 ### 変異検証
 
-| 変異 | 結果 |
-|---|---|
-| 期限切れ時に部分結果を捨てる (旧挙動) | `TestCleanupTimedReportsPartialProgress` + `TestCleanupCLIDistinguishesPartialFromComplete` **FAIL** / 対照の `TestCleanupMarksCompleteRunAsNotPartial` と既存の `TestIOTimeoutWrapsDeferredCleanup` は PASS |
-| CLI の書き分けを潰す (常に `removed=N`) | `TestCleanupCLIDistinguishesPartialFromComplete` **FAIL** |
+**下の「敵対的レビュー 1 周目」の表が最新** (この時点の 2 本は M3 = 一括カウントを検出できていなかった)。
 
 ### 結果
 
