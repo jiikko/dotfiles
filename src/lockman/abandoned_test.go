@@ -186,10 +186,21 @@ func TestAbandonedTakeoverLeavesNoClaim(t *testing.T) {
 		}
 		ab.mark()
 	}
+	// 🚨 **後段の検査に救われていないことを固定する** (1 段目 / 2 段目と同じ形)。
+	// rename 直前の検査を足した時点で、「目印が残らない」だけを見るテストは**この検査を外しても
+	// 緑**になった (後段が bail して defer が回収するため、最終状態が同じになる)。実測で
+	// 変異 M3 が検知力を失っているのを見つけた。ここで降りたことの観測点は「後段へ進まないこと」。
+	evictOrig := abandonCheckBeforeEvictHook
+	t.Cleanup(func() { abandonCheckBeforeEvictHook = evictOrig })
+	reachedEvict := false
+	abandonCheckBeforeEvictHook = func(*abandon) { reachedEvict = true }
 
 	took, err := l.tryTakeover(&abandon{})
 	if !reached {
 		t.Fatal("seam に到達していない: 目印を置く経路を通っていない")
+	}
+	if reachedEvict {
+		t.Fatal("目印を置いた直後に降りていない: 詰まったマウントへ 2 段目の readLock を撃っている (後段に救われた緑)")
 	}
 	if !errors.Is(err, errAbandoned) {
 		t.Fatalf("errAbandoned を期待したが took=%v err=%v", took, err)
