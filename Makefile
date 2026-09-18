@@ -306,7 +306,9 @@ CI_HEAVY_PRUNE := \( $(foreach d,$(CI_HEAVY_TEST_DIRS),-path $(d) -o) -false \) 
 # 依存のテストを足したとき「Makefile だけ直して CI が command not found で落ちる」まで
 # 気づけない (どのディレクトリが heavy かの出典はここ、依存の出典は workflow、の二重管理)。
 # heavy は zsh テストのみなので tmux/bats を省いて ~60s 節約している。
-CI_COMMANDS_HEAVY := zsh make
+# ffmpeg (ffprobe も同じ formula) は av1ify の e2e (tests/zshrc/av1ify/test_av1ify_vfr_e2e.sh) 用。
+# 無いと e2e は exit 77 で skip し、CI では一度も走らない (issue 394)。
+CI_COMMANDS_HEAVY := zsh make ffmpeg
 CI_COMMANDS_REST  := tmux zsh make bats gtimeout rg
 # rest にはあるが heavy には無い = heavy で使うと CI が落ちるコマンド (乖離検査の対象)
 CI_COMMANDS_ONLY_REST := $(filter-out $(CI_COMMANDS_HEAVY),$(CI_COMMANDS_REST))
