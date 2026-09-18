@@ -4,7 +4,7 @@ unset CDPATH
 # av1ify VFR (可変フレームレート) 正規化テスト (issue 394)
 #
 # 目的: VFR ソース (r_frame_rate と avg_frame_rate が乖離するソース) を素通しすると
-#       出力の DTS が非単調増加になり QuickTime で再生破綻する。av1ify は **検出した
+#       出力も VFR のままになる (QuickTime でブロックノイズが出た出力はこれ)。av1ify は **検出した
 #       ソース (かつ --fps 未指定) にだけ** -fps_mode cfr -r <avg fps> を付ける。
 #
 # 🚨 守りたい不変条件は 2 つ:

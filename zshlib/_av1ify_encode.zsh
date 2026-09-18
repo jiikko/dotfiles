@@ -229,7 +229,9 @@ __av1ify_frac_fps() {
 # (AV1IFY_FRAME_TOLERANCE_PCT 既定 0.5%) と揃える。
 #
 # 検出したソース (かつ --fps 未指定) にだけ `-fps_mode cfr -r <avg fps>` を付ける (issue 394:
-# VFR のタイムスタンプを素通しすると出力 DTS が非単調増加になり QuickTime で再生破綻する)。
+# VFR ソースを素通しすると出力も VFR のまま (r_frame_rate=29/1 / avg≈29.94) になり、その出力を
+# QuickTime で再生すると約5秒おきにブロックノイズが出た。CFR 化で直るかは人の目視確認待ち
+# = issue 396。出力パケットの DTS 自体は単調増加だった (原因を DTS と見たのは誤り。issue 394 訂正節))。
 # CFR retiming はフレームの複製/間引きを伴うので、検出結果は fps_changed 相当として
 # __av1ify_postcheck へ渡しフレーム数不一致チェックを抑制する。
 #

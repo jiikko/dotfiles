@@ -26,10 +26,10 @@ source "${${(%):-%x}:A:h}/_ffprobe_helpers.zsh"
 # (bare "error" 等は入れない — ffmpeg は良性警告にも error の語を含めるため)
 #
 # 🚨 "non monotonically increasing dts" は意図的に入れていない (issue 394 で一度足して取り下げた)。
-# それは VFR ソースを素通ししたときの症状で、av1ify は検出したソースだけ CFR 正規化している
-# (__av1ify_detect_vfr)。ここへ足すと、判定に掛からない従来出力や validate-mp4 単体利用
-# (--mark のリネーム) で、これまで OK だったファイルが新たに decode-error になる。
-# 足すなら、既存出力のうち何件が NG に転ぶかを実測してから。
+# この警告は **ファイルの欠陥ではない**: VFR の出力を `-f null` へ流すと、検証側の fps 変換が
+# 出力タイムスタンプを衝突させて出す (パケットの DTS を ffprobe で直接読むと単調増加だった。
+# 2026-09-18 実測)。ここへ足すと VFR というだけで正常なファイルが decode-error になり、
+# 従来出力や validate-mp4 単体利用 (--mark のリネーム) で誤 NG が出る。
 __VALIDATE_MP4_DECODE_ERROR_RE='corrupt|Invalid NAL|Error splitting|Invalid data found|moov atom not found|Error while decoding'
 
 # inner: 単一ファイルのフルデコード検証 (フィルタリングや表示はしない=outer の責務)

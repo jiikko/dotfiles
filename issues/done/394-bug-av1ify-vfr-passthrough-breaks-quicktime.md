@@ -139,3 +139,32 @@ ffmpeg の進捗表示で `dup=114 drop=0` (CFR 正規化で複製されたフ�
   4 本すべて red を確認
 - 実ファイル: 修正後の判定で VFR となるのは元ソース 91 本中 CORD 系の 1 本のみ
   (0/0 の WMV は非該当)。作り直した出力は同じ引数 (`-fps_mode cfr -r 29.970`) で生成済みなので再エンコード不要
+
+## 訂正 2 (2026-09-18): 原因を「出力 DTS の非単調増加」としたのは誤り
+
+e2e テストを書く過程で測り直した結果、本文冒頭の「原因」節は誤りだった。
+
+- 旧出力と同じ映像パケットを持つファイル (旧出力の `+genpts` リマックス) を
+  `ffprobe -show_entries packet=dts,pts` で直接読むと、**DTS の非増加 0 件 / PTS の重複 0 件**
+- 8230 件の `non monotonically increasing dts` は `ffmpeg ... -f null -` の**検証側**が出していた。
+  VFR 出力 (r_frame_rate=29/1 / avg≈29.94) を null へ流すと、出力側の fps 変換がタイムスタンプを
+  衝突させる。ファイルの欠陥ではない
+- したがって「修正後 8230 → 0 件」は「出力が CFR になった」ことしか示さない
+
+確かな事実:
+- 旧出力は VFR (r_frame_rate=29/1, avg=7374294/246329, time_base=1/14848)。QuickTime で約5秒おきに
+  ブロックノイズが出た (ユーザー報告)
+- 新出力は CFR (2997/100, time_base=1/11988)
+- **CFR 化で QuickTime の症状が直るかは未検証**。issue 396 (人の目視) が唯一の確認手段
+
+変更は挙動として妥当 (VFR 検出時だけ CFR へ正規化し、それ以外は改修前と同じ引数) なので残すが、
+QuickTime の症状との因果は 396 の結果が出るまで仮説として扱う。
+
+### e2e テスト (tests/zshrc/av1ify/test_av1ify_vfr_e2e.sh)
+
+本物の ffmpeg で av1ify を通す。ffmpeg / libsvtav1 が無い環境は exit 77 (skip)。
+- Test 1: VFR fixture (30fps から 7 枚に 1 枚を抜く) → 出力 r==avg、パケット長 1 種類
+- Test 2: VFR 判定に掛からない不規則 fixture (10 秒から 1 枚抜く、差 0.33%) → フレーム数不変
+- 変異: 改修前へ戻す (VFR 時に何も付けない) → Test 1 red / cfr の常時付与 → Test 2 red (299→300)
+- `-fps_mode cfr` を外して `-r` だけ残す変異は green (ffmpeg 8.1 では出力 -r で CFR になる =
+  等価変異。明示フラグは mock テスト test_av1ify_fps_mode.sh 側で固定)
