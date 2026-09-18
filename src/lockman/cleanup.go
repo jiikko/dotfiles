@@ -81,6 +81,16 @@ func (p *cleanupProgress) addErr(msg string) {
 	p.mu.Unlock()
 }
 
+// errCount はこれまでに積まれたエラーの件数。
+func (p *cleanupProgress) errCount() int {
+	if p == nil {
+		return 0
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.errs)
+}
+
 // snapshot は「いまここまで進んだ」を返す。見捨てた goroutine が**まだ書いている**ので、
 // 返るのは読んだ瞬間の値 (この後も増える)。
 func (p *cleanupProgress) snapshot() (int, []string) {
@@ -108,12 +118,21 @@ func (p *cleanupProgress) snapshot() (int, []string) {
 // **入口を 1 つに保つ規律はこのコメントが正本**。
 // 🚨 2 つ目以降の progress は黙って無視される (可変長引数に内在する footgun)。
 // 渡すのは `CleanupTimed` の 1 箇所だけにすること。
-func (l *Locker) Cleanup(force bool, progress ...*cleanupProgress) CleanupResult {
+func (l *Locker) Cleanup(force bool, progress ...*cleanupProgress) (res CleanupResult) {
 	p := &cleanupProgress{}
 	if len(progress) > 0 && progress[0] != nil {
 		p = progress[0]
 	}
-	var res CleanupResult
+	// 🚨 **エラーの蓄積先を 1 つにする** (敵対レビュー 393 の 2 周目 P1-1)。
+	// 1 周目は `os.Remove` の失敗だけを progress へ積み、他 (ReadDir の EACCES /
+	// Info の失敗 / serverNow / 打刻) は `res.Errors` にしか入れていなかった。
+	// 期限切れ枝は `res` を読めない (データ競合) ので、**運んでいないエラーは構造的に消える** —
+	// しかも落ちていた側 (`ReadDir` の EACCES = 権限ドリフトの典型) こそが
+	// 「排水中」と「恒久的に詰まっている」を分ける情報で、この機構の動機そのものだった
+	// (レビュー実測: 権限ドリフトの出力が「健全に排水中」と 1 文字も違わなかった)。
+	// 「どのエラーを運ぶか」を判断で選ぶ形にすると線引きが毎回争点になるので、
+	// **全部 p へ積み、res.Errors はそこから導く**。
+	defer func() { res.Removed, res.Errors = p.snapshot() }()
 	if !force && !l.cleanupDue() {
 		res.Skipped = true
 		return res
@@ -145,12 +164,12 @@ func (l *Locker) Cleanup(force bool, progress ...*cleanupProgress) CleanupResult
 		if _, statErr := os.Stat(l.metaDir); os.IsNotExist(statErr) {
 			return res
 		}
-		res.Errors = append(res.Errors, err.Error())
+		p.addErr(err.Error())
 		return res
 	}
-	l.sweepDir(tmpDirName, scratchRetention, now, &res, p)
-	l.sweepDir(probeDirName, scratchRetention, now, &res, p)
-	l.sweepDir(graveyardDirName, graveyardRetention, now, &res, p)
+	l.sweepDir(tmpDirName, scratchRetention, now, p)
+	l.sweepDir(probeDirName, scratchRetention, now, p)
+	l.sweepDir(graveyardDirName, graveyardRetention, now, p)
 	// 🚨 何か失敗していたら打刻しない。打刻するとレート制限が進んで以後 10 分は skip
 	// され、「掃除が黙って止まっている」状態が見えなくなる (毎回出し直すほうが気づける)。
 	// 対象は下限違反だけでなく **実際に起きうる失敗**も — 権限ドリフトや stale mount で
@@ -163,12 +182,12 @@ func (l *Locker) Cleanup(force bool, progress ...*cleanupProgress) CleanupResult
 	// `timed()` が見捨てた goroutine が lock を置ききる窓も広がる
 	// (実測 2026-09-12: graveyard 200 件で漏れ 40/40。issue 362)。
 	// それでも打刻するより安い: 打刻すると壊れていること自体が 10 分ごとにしか見えない。
-	if len(res.Errors) == 0 {
+	if p.errCount() == 0 {
 		// 🚨 打刻そのものの失敗も持ち帰る。握り潰すと、掃除は成功しているのに
 		// レート制限が永久に進まない状態が rc=0 / stderr 0B の完全な無音になる
 		// (5 周目の実測: .lockman が 0500 だと sweep は通り打刻だけ落ちる)。
 		if err := l.stampCleanup(); err != nil {
-			res.Errors = append(res.Errors, fmt.Sprintf("掃除は終わったが打刻できない: %v", err))
+			p.addErr(fmt.Sprintf("掃除は終わったが打刻できない: %v", err))
 		}
 	}
 	return res
@@ -183,7 +202,7 @@ func (l *Locker) Cleanup(force bool, progress ...*cleanupProgress) CleanupResult
 // (2 周目の敵対レビューが指摘。到達可能性は未確認のまま、防御は足さない)。
 // `Renew` が `clockSkewTolerance` を持つのは打刻がクライアント側へ落ちる場合の検算で、
 // 掃除は正しさに関与しないため同じ検算は要らない。
-func (l *Locker) sweepDir(sub string, retention time.Duration, now time.Time, res *CleanupResult, p *cleanupProgress) {
+func (l *Locker) sweepDir(sub string, retention time.Duration, now time.Time, p *cleanupProgress) {
 	// 🚨 掃除してよいのは残骸の 3 つのサブディレクトリだけ。**retention と同じく
 	// 「渡った値」で縛る** — ここが無いと `l.sweepDir("", scratchRetention, now, &res)`
 	// (「.lockman 直下に落ちた孤児も掃除したい」という自然な 1 行) で metaDir 直下が
@@ -194,14 +213,14 @@ func (l *Locker) sweepDir(sub string, retention time.Duration, now time.Time, re
 	switch sub {
 	case tmpDirName, probeDirName, graveyardDirName:
 	default:
-		res.Errors = append(res.Errors, fmt.Sprintf(
+		p.addErr(fmt.Sprintf(
 			"掃除の対象外のディレクトリ %q が渡された: lock 本体を消しうるので掃除しない "+
 				"(掃除してよいのは %q / %q / %q だけ)",
 			sub, tmpDirName, probeDirName, graveyardDirName))
 		return
 	}
 	if retention < minRetention {
-		res.Errors = append(res.Errors, fmt.Sprintf(
+		p.addErr(fmt.Sprintf(
 			"%s の保持期間 %s が下限 %s を下回る: 走行中の acquire の残骸を消しうるので掃除しない",
 			sub, retention, minRetention))
 		return
@@ -210,7 +229,7 @@ func (l *Locker) sweepDir(sub string, retention time.Duration, now time.Time, re
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			res.Errors = append(res.Errors, err.Error())
+			p.addErr(err.Error())
 		}
 		return
 	}
@@ -223,7 +242,7 @@ func (l *Locker) sweepDir(sub string, retention time.Duration, now time.Time, re
 			// 「他者が先に消した」は掃除の目的が達成された状態なので良性。
 			// それ以外は記録する (下の os.Remove と扱いを揃える)。
 			if !os.IsNotExist(err) {
-				res.Errors = append(res.Errors, err.Error())
+				p.addErr(err.Error())
 			}
 			continue
 		}
@@ -237,19 +256,15 @@ func (l *Locker) sweepDir(sub string, retention time.Duration, now time.Time, re
 			// (実測 2026-09-12: 同一 dir への同時 acquire 6 試行すべてで打刻が飛び、
 			//  stderr に 1.3〜3.5 KB。`_av1ify_lock.zsh` は stdout しか落としていない)。
 			if !os.IsNotExist(err) {
-				res.Errors = append(res.Errors, err.Error())
 				p.addErr(err.Error())
 			}
 			continue
 		}
-		// 🚨 **res と p の両方を進める** (issue 393)。res は呼び出し側が受け取れたときの
-		// 報告用、p は**受け取れなかったとき** (期限切れ) に外から読むためのもの。
-		// 🚨 **1 件ずつ進めること**。sweep の後にまとめて足す形は「最適化」に見えるが、
-		// **期限切れで途中まで進んだときに 0 を報告する** = issue 393 の症状そのものに戻る
-		// (敵対レビューが実測: 一括版は 10 件消して `Removed=0`)。
+		// 🚨 **1 件ずつ進めること** (issue 393)。sweep の後にまとめて足す形は「最適化」に
+		// 見えるが、**期限切れで途中まで進んだときに 0 を報告する** = issue 393 の症状そのものに
+		// 戻る (敵対レビューが実測: 一括版は 10 件消して `Removed=0`)。
 		// 下の seam はその窓の**内側**にあり、`sweepPauseHook` を差し替えたテストが
 		// 「途中で止めて数える」ことでこの形を検出する (seam を窓の手前に置くと検出できない)。
-		res.Removed++
 		p.add()
 		sweepPause()
 	}

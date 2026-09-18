@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -46,8 +47,9 @@ func TestCleanupTimedReportsPartialProgress(t *testing.T) {
 	// (= issue 393 の症状そのもの) が全スイート緑で通る** (敵対レビュー P1-1 が実測)。
 	// ここでは 1 件消すごとに待たせ、期限内に一部しか進めない状態を作る。
 	pause := func() { time.Sleep(testIOTimeout / 4) }
-	sweepPauseHook.Store(&pause)
-	t.Cleanup(func() { sweepPauseHook.Store(nil) })
+	hook := &sweepPauseHook
+	hook.Store(&pause)
+	t.Cleanup(func() { hook.Store(nil) })
 
 	ch := make(chan CleanupResult, 1)
 	go func() { ch <- l.CleanupTimed(true) }()
@@ -68,10 +70,27 @@ func TestCleanupTimedReportsPartialProgress(t *testing.T) {
 			t.Errorf("途中で止まっていない (removed=%d / 全 %d 件)。窓を再現できていないので"+
 				"このテストは一括カウントの変異を検出できない", res.Removed, residue)
 		}
-		// 報告と実態が食い違っていないこと (報告だけが正しい形を防ぐ)
-		left := countDirEntries(t, filepath.Join(l.metaDir, tmpDirName))
-		if got := residue - left; got < res.Removed {
-			t.Errorf("報告 (%d) が実際に消えた数 (%d) を上回っている", res.Removed, got)
+		// 🚨 **見捨てた goroutine が終わるのを待ってからテストを終える** (2 周目 P1-2)。
+		// 待たないと、`t.Cleanup` の `TempDir` 削除と、掃除を続けている goroutine の
+		// **`stampCleanup` による `.cleanup_at` の再作成**が競合し、
+		// `TempDir RemoveAll cleanup: ... directory not empty` で**無関係な赤**が出る
+		// (レビュー実測: 並行負荷の高い環境で `go test -race ./...` 8 回中 2 回。
+		//  こちらの環境では 16 回中 0 回で再現しなかったが、機構は成立している)。
+		// 待つのは時間ではなく**成立条件** (`avoid-wall-clock-assertions.md`)。
+		hook.Store(nil) // 残りは全速で消させる
+		waitFor(t, "掃除が終わる", func() bool {
+			_, err := os.Stat(filepath.Join(l.metaDir, cleanupStampName))
+			return err == nil
+		})
+
+		// 報告と実態が食い違っていないこと。**待った後**なので実態は確定している
+		// (待つ前に数えると、見捨てた goroutine が消し続けるぶん assert が
+		//  成立する方向へ動き続け、ほとんど何も検査しない。2 周目 P3-2)
+		if left := countDirEntries(t, filepath.Join(l.metaDir, tmpDirName)); left != 0 {
+			t.Errorf("掃除が終わったのに %d 件残っている", left)
+		}
+		if res.Removed >= residue {
+			t.Errorf("報告 (%d) が「途中経過」になっていない (全 %d 件)", res.Removed, residue)
 		}
 	case <-time.After(20 * time.Second):
 		t.Fatal("CleanupTimed が 20s 以内に戻らない (包みが無い)")
@@ -99,13 +118,17 @@ func TestCleanupCLISaysIndeterminateWhenNothingRemoved(t *testing.T) {
 	case <-time.After(20 * time.Second):
 		t.Fatal("cleanup が 20s 以内に戻らない")
 	}
-	if !strings.Contains(out, "removed=判定不能") {
-		t.Fatalf("0 件の期限切れを判定不能として出していない: %q", out)
-	}
-	for _, bad := range []string{"次回の続きから減る", "removed>=0"} {
-		if strings.Contains(out, bad) {
-			t.Fatalf("進捗があると断定している (%q): %q", bad, out)
-		}
+	// 🚨 **行の構造を丸ごと固定する** (2 周目 P2-1)。部分一致 + 「悪い語」の否定リストでは、
+	// ①同じ偽の肯定を**別の言い回し**で書けば素通りし ②否定リストの語は
+	// production から消えているので**一字一句戻したときしか鳴らない**。
+	// `main_test.go` の `TestDispatchWarnsOnCleanupFailureWithoutVerbose` が
+	// 既に同じ規律 (「部分一致で pin しない」) を書いており、新設した 2 つの書式だけが
+	// その外に置かれていた。
+	want := regexp.MustCompile(
+		`^lockman: cleanup: removed=判定不能 \(期限切れ。1 件も消せていないのか、消している途中なのかは分からない\) ` +
+			`skipped=(?:true|false) errors=\[.*I/O timeout.*\]\n$`)
+	if !want.MatchString(out) {
+		t.Fatalf("0 件の期限切れの書式が違う:\n got=%q\nwant=%s", out, want)
 	}
 }
 
@@ -233,8 +256,14 @@ func TestCleanupCLIDistinguishesPartialFromComplete(t *testing.T) {
 	case <-time.After(20 * time.Second):
 		t.Fatal("cleanup が 20s 以内に戻らない")
 	}
-	if !strings.Contains(out, "removed>=1") {
-		t.Fatalf("期限切れの件数が「少なくとも」と読める形で出ていない: %q", out)
+	// 🚨 こちらも**完全一致**。部分一致 (`Contains(out, "removed>=1")`) だと、
+	// 括弧の中身に「掃除は途中で、次回の続きから減る」のような**偽の断定**を戻す変異が
+	// 素通りする (2 周目 P2-1 が実測: その変異は全スイート緑だった)。
+	want := regexp.MustCompile(
+		`^lockman: cleanup: removed>=\d+ \(期限切れ。ここまでは確認済み\) ` +
+			`skipped=(?:true|false) errors=\[.*I/O timeout.*\]\n$`)
+	if !want.MatchString(out) {
+		t.Fatalf("期限切れ (1 件以上) の書式が違う:\n got=%q\nwant=%s", out, want)
 	}
 }
 
@@ -245,4 +274,17 @@ func countDirEntries(t *testing.T, dir string) int {
 		t.Fatalf("ReadDir: %v", err)
 	}
 	return len(entries)
+}
+
+// waitFor は成立条件を上限つきでポーリングする (壁時計で待たない)。
+func waitFor(t *testing.T, what string, ok func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if ok() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("%s のを 10 秒待っても成立しない", what)
 }
