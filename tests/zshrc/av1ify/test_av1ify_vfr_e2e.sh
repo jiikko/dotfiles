@@ -27,6 +27,9 @@ fi
 
 TEST_TMP="$(mktemp -d)"
 export AV1IFY_LOCK_ROOT="$TEST_TMP/lockman"
+# 排他 (lockman) はこのテストの対象外。CI の heavy には go が無く lockman をビルドできないので、
+# 無いときだけ排他なしで続行させる (lockman がある環境では従来どおり排他を取る)。
+export AV1IFY_ALLOW_NO_LOCK=1
 typeset -gi FAIL_COUNT=0
 bad() { printf "$@"; FAIL_COUNT=$(( FAIL_COUNT + 1 )); }
 cleanup() {
