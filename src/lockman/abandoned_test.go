@@ -217,17 +217,17 @@ func TestAbandonedReclaimLeavesNoMark(t *testing.T) {
 		t.Fatalf("Chtimes: %v", cerr)
 	}
 
-	orig := abandonCheckAfterMarkHook
-	t.Cleanup(func() { abandonCheckAfterMarkHook = orig })
+	orig := abandonCheckBeforeMarkHook
+	t.Cleanup(func() { abandonCheckBeforeMarkHook = orig })
 	reached := false
-	abandonCheckAfterMarkHook = func(ab *abandon) {
+	abandonCheckBeforeMarkHook = func(ab *abandon) {
 		reached = true
 		ab.mark()
 	}
 
 	took, err := l.tryTakeover(&abandon{})
 	if !reached {
-		t.Fatal("seam に到達していない: 回収経路 (mark の O_EXCL) を通っていない")
+		t.Fatal("seam に到達していない: 回収経路 (mark を作る手前) を通っていない")
 	}
 	if !errors.Is(err, errAbandoned) {
 		t.Fatalf("errAbandoned を期待したが took=%v err=%v", took, err)

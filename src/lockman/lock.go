@@ -467,7 +467,7 @@ var (
 	abandonCheckBeforePlaceHook = func(*abandon) {}
 	abandonCheckAfterPlaceHook  = func(*abandon) {}
 	abandonCheckAfterClaimHook  = func(*abandon) {}
-	abandonCheckAfterMarkHook   = func(*abandon) {}
+	abandonCheckBeforeMarkHook  = func(*abandon) {}
 )
 
 // undoAbandonedPlace は、見捨てられた goroutine が**自分が置いた** lock を取り消す (issue 362)。
@@ -1073,6 +1073,18 @@ func (l *Locker) reclaimTakeoverClaim(claim string, now time.Time, ab *abandon) 
 		return false, nil
 	}
 	takeoverReclaimHook()
+	// 🚨 **回収の目印 (mark) は「作らない」でしか防げない** (issue 362 の ③)。
+	// 作ってから降りる形は**害を増やす**: `refreshTakeoverClaim` を通らないので claim の打刻が
+	// 古いまま残り、以後の観測者は**同じ mark 名**を計算して EEXIST で弾かれ続ける。
+	// 消してから帰るつもりでも、その `os.Remove` 自体が詰まったマウントへの I/O なので着地しない
+	// ことがある。実測 2026-09-18 の A-B: 作った後に降りる版は「害のある ③」を
+	// **150 試行中 2 → 10 件へ増やした** (作る前に降りる版は 0 件)。
+	// 作った後に見捨てられた分は、そのまま refresh まで通す方が安全 — 打刻が戻れば
+	// 以後の観測者は別名を計算するので、残った mark は無害になり sweepDir が浚う。
+	abandonCheckBeforeMarkHook(ab)
+	if ab.abandoned() {
+		return false, errAbandoned
+	}
 	mark := fmt.Sprintf("%s.%d", claim, st.ModTime().UnixNano())
 	f, err := os.OpenFile(mark, os.O_CREATE|os.O_EXCL|os.O_WRONLY, lockFileMode)
 	if err != nil {
@@ -1101,14 +1113,6 @@ func (l *Locker) reclaimTakeoverClaim(claim string, now time.Time, ab *abandon) 
 		_, _ = f.Write(b) // 書けなくても mark としては成立する (猶予は fallback になる)
 	}
 	f.Close()
-	// 🚨 **見捨てられていたらここで降りる** (issue 362 の ③)。mark は「②の回収機構を塞ぐ」層
-	// なので、置き去りにすると ①② を直しても「引き継ぎが猶予ぶん止まる」が残る。
-	// 消し方は下の refreshTakeoverClaim 失敗パスと同じ (同じ理由・同じ 1 行)。
-	abandonCheckAfterMarkHook(ab)
-	if ab.abandoned() {
-		_ = os.Remove(mark)
-		return false, errAbandoned
-	}
 	if err := l.refreshTakeoverClaim(claim, st.ModTime()); err != nil {
 		// 🚨 mark を残したまま帰らない。目印の打刻は観測した値のままなので、以後の観測者は
 		// 同じ mark 名を計算して EEXIST で弾かれ続け、**プロセスが落ちていなくても**その世代が
