@@ -171,12 +171,19 @@ func (l *Locker) ensureDirs() error {
 //
 // 🚨 **`defer` の Remove は `os.Exit` に負けることがあり、probe が残る**。見捨てられた
 // goroutine (issue 362) はプロセス終了と競走しているため。**放置してよいと判断した**
-// (issue 391)。根拠: ①製品が受け付ける最小の `--io-timeout` (100ms) では並行 400 起動でも
-// 残骸 0 件 — 残骸はマウントが実際に遅いときだけ出る ②`sweepDir(probe, 1h)` が回収する
-// (1000 件を実測で回収) ③掃除がフル走査で 100ms を超える件数はローカル APFS で約 3 万件、
-// 定常状態でそこへ届くには劣化状態で毎時 1.6 万回の acquire が要る。
-// **再評価の trigger**: SMB で「acquire が遅い」「cleanup のエラーが続く」報告が出たとき
-// (走査の 1 件あたりコストが桁で上がれば、上の 3 万件も桁で下がる)。
+// (issue 391)。根拠は**現在の唯一の実運用経路の形**:
+// `zshlib/_av1ify_lock.zsh` は ①ロックを `~/.lockman/av1c/<key>/` = **key ごとに別 dir**
+// (滞留が 1 箇所に集まらない) ②`--io-timeout` を渡さない = **既定の 10s** (残骸が出るには
+// まず 10s の I/O が要る) の 2 点を満たす。`sweepDir(probe, 1h)` が回収することも実測済み。
+//
+// 🚨 **「遅いマウントでしか問題にならない」は誤り** (issue 391 の反証レビューで実測)。
+// 滞留が増えるだけで掃除は期限を超える — **ローカル APFS でも tmp/ が 1 万件あると
+// `--io-timeout 100ms` の掃除が期限切れし、打刻しないのでレート制限が死ぬ**
+// (3 千件なら完走する。削除を伴う走査は約 35µs/件で、走査だけの 16 倍かかる)。
+// 暴走はしない (1 回あたり数千件は削れるので数回で排水される) が、そのあいだ
+// acquire ごとにフル走査し stderr が鳴り続ける。
+// **再評価の trigger**: `--io-timeout` を既定より短くする運用が出たとき、または
+// 1 つの lock dir を共有する呼び出し元が増えたとき。
 func (l *Locker) serverNow() (time.Time, error) {
 	name := filepath.Join(l.metaDir, probeDirName, mustToken())
 	f, err := os.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, lockFileMode)
@@ -371,11 +378,13 @@ func (l *Locker) tryPlace(meta *Meta, ab *abandon) error {
 		return err
 	}
 	// 🚨 **この tmp は `link(2)` の材料にしか使わない。fallback (O_EXCL) 枝は 1 バイトも読まない。**
-	// `link` が ENOTSUP になる FS (smbfs = 本番の経路) では、fsync 付きの書き込みが丸ごと
-	// 捨てられる。ローカル APFS で acquire の中央値 32.3ms → 24.0ms (-26%) の差がある
-	// (issue 391 の実測。`tryPlaceLinkFn` を ENOTSUP 固定にしたビルドで比較)。
+	// `link` が使えない FS では fsync 付きの書き込みが丸ごと捨てられる。ローカル APFS で
+	// acquire の中央値 13.9ms → 9.7ms (-30%) の差がある (issue 392 の実測。
+	// `tryPlaceLinkFn` を ENOTSUP 固定にしたビルドと、そこから tmp を省いたビルドの比較)。
 	// **省くには「link が使えるか」を先に知る必要があり、その判定のコストと複雑さは未検討**。
-	// 切り出し先: issue 392。
+	// 🚨 **smbfs が ENOTSUP を返すかは未実測** (issue 091 の表が「可能性が高い」と書いたまま、
+	// 092 は測らずに done へ送られた)。現在の実運用 (av1ify) はローカル HOME で link が使えるので、
+	// **この無駄は今のところ発生していない**。切り出し先: issue 392。
 	// 🚨 この tmp の `defer` Remove も `os.Exit` に負けて残ることがある。放置の根拠は
 	// `serverNow` の注記と同じ (issue 391)。
 	tmp := filepath.Join(l.metaDir, tmpDirName, meta.Token+".json")
@@ -385,7 +394,9 @@ func (l *Locker) tryPlace(meta *Meta, ab *abandon) error {
 	defer func() { _ = os.Remove(tmp) }()
 
 	// 🚨 **1 段目: 不可逆な操作の直前で降りる** (issue 362)。ここまでに作ったのは tmp だけで、
-	// それは上の defer が自分で消すので、降りても何も置いていかない。
+	// それは上の defer が消す。🚨 ただし **`os.Exit` は defer を走らせない**ので、降りた後に
+	// プロセスが畳まれると tmp は残る (issue 391。放置してよいと判断済み)。
+	// **ここで防いでいるのは lock 本体を置くこと**であって、tmp が残らないことではない。
 	abandonCheckBeforePlaceHook(ab)
 	if ab.abandoned() {
 		return errAbandoned

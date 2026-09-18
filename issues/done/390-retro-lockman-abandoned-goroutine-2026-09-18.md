@@ -77,7 +77,7 @@
 ## ぼやき
 
 `os.Exit` は defer を走らせないため `serverNow` の probe と `tryPlace` の tmp が残る件は、
-[issue 391](../391-bug-lockman-os-exit-skips-defer-leaves-scratch.md) として起票した (2026-09-18)。
+[issue 391](391-bug-lockman-os-exit-skips-defer-leaves-scratch.md) として起票した (2026-09-18)。
 
 ## 残課題
 
