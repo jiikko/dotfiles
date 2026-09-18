@@ -64,5 +64,5 @@ lease 生存系のテストは**全部 `onLostKill=false`**。既定の経路を
 ## 関連
 
 - [381](done/381-bug-lockman-with-renew-latch-stops-renewal-forever.md) — 出典。ループ側を「粘る」へ変えた
-- [384](384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) — 昇格**実装**側の穴
+- [384](done/384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) — 昇格**実装**側の穴
 - [356](done/356-bug-lockman-with-releases-lock-while-grandchildren-run.md) — 昇格そのものの出典

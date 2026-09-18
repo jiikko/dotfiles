@@ -140,7 +140,7 @@ M1/M2 を素通り**した。最大のものは `defer inFlight.Add(-1)` の削�
 **観点③ 並行・中断** — P2 が 2 件、P3 が 2 件。すべて **381 の修正が作ったものではない**か、
 **設計判断**なので、コードは触らず切り出した:
 
-- [384](../384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) — 昇格の TERM が
+- [384](384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) — 昇格の TERM が
   EPERM で失敗すると `escalate.Do` が消費済みのまま二度と昇格しない / SIGKILL の直前に
   `exited` を見直していない (両方 ready のとき timer 枝を取る確率は実測 50.1%)
 - [385](../385-design-lockman-on-lost-kill-vs-keep-renewing.md) — **本修正が生んだ矛盾**。
@@ -186,7 +186,7 @@ lease を失いやすくなる列。
 - [ ] **スコープ外 (切り出し済み)**:
       [383](383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) (中身を読めない lock の
       実効 TTL が 30m へ縮む fail-open。本修正で露出が広がった) /
-      [384](../384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) (昇格の実装の穴。
+      [384](384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) (昇格の実装の穴。
       本修正とは独立) /
       [385](../385-design-lockman-on-lost-kill-vs-keep-renewing.md) (**本修正が生んだ矛盾**。
       既定の `--on-lost=kill` では本修正の便益がほとんど回収されない)

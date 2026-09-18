@@ -10,7 +10,7 @@
 直した。見捨てた本数は `maxInFlightRenews` (既定 8) で抑える。A-B 実測・変異検証 4 本・
 `make test`・敵対的レビュー 3 観点 (①壊す ②素通り ③並行・中断) を通し、
 [383](done/383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) /
-[384](384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) /
+[384](done/384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) /
 [385](385-design-lockman-on-lost-kill-vs-keep-renewing.md) を切り出した。
 
 ## 反省

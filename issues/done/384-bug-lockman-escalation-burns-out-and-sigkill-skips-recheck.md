@@ -3,7 +3,7 @@
 起票日: 2026-09-16
 カテゴリ: bug / priority: medium
 対象: `src/lockman/with.go` の `escalateGroupKill` と `runWith` の `escalate.Do`
-出典: [381](done/381-bug-lockman-with-renew-latch-stops-renewal-forever.md) の敵対的レビュー (観点③ 並行・中断)
+出典: [381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md) の敵対的レビュー (観点③ 並行・中断)
 反証レビュー: 4 周実施済み (2026-09-16。下記)
 
 どちらも 381 の修正が作ったものではない (`escalateGroupKill` は 381 で触っていない)。
@@ -170,7 +170,7 @@ E / D はどちらも `killGroup` がエラーを返す → `warnf` → `return`
 ## 敵対的レビュー 2〜4 周目で、この issue の領域に当たったもの (2026-09-16)
 
 2 周目以降は 383 と同じ差分を攻めたので、周回の全数勘定は
-[383](done/383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) の該当節にある。
+[383](383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) の該当節にある。
 **この issue の領域 (`with.go` / `escalate_recheck_test.go`) に当たった指摘だけ**をここに残す。
 
 | 周 | 指摘 | 判定 |
@@ -202,7 +202,7 @@ TERM 失敗時の報告を薄く → 5 本目。
       撃たずに帰ることになる。逆に撃てば、pgid 再利用時に無関係なグループへ当たる。
       どちらを選んでも片方の害が残る形なので、**現状 (撃たない) を選んだことを記録に留める**。
       再評価の trigger: 「孫が残り続ける」が実運用で報告されたとき
-- [x] 5 周目 (§7) は [383](done/383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) 側で
+- [x] 5 周目 (§7) は [383](383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) 側で
       2026-09-18 に実施済み。**この issue の領域 (`with.go` の昇格 / `escalate_recheck_test.go`) への
       指摘は 0 件**だった (5 周目の指摘は 3 件とも `status` の案内と `Inspect` の判断材料)
 
