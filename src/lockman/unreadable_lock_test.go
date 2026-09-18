@@ -721,3 +721,68 @@ func TestInspectReportsSizeAndAgeOfTheFileItRead(t *testing.T) {
 			agedSec, *st.AgeSec)
 	}
 }
+
+// `Inspect` の**正常枝**も、中身と打刻を同じ実体から取ること
+// (敵対レビュー 380 の 3 周目 P2-1)。
+//
+// 🚨 2 周目は unreadable 枝にしか変異を当てておらず、正常枝は無検査だった。
+// こちらのほうが影響は大きい: `mtime` は `expired(now, mtime, holderTTL(m))` に入るので、
+// `m` (中身) と `mtime` (打刻) が別ファイル由来になると **実在したことのないファイルについて
+// 期限を評価する**ことになり、それが `check` の busy/free の終了コードと
+// `status` の age / expires_in をそのまま決める。
+func TestInspectUsesMtimeOfTheFileItReadForLiveLock(t *testing.T) {
+	l := newTestLocker(t)
+	m, err := l.Acquire(time.Hour, "holder")
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	// 読む対象は「90 秒前に打刻された、生きている lock」
+	const agedSec = 90
+	old := time.Now().Add(-agedSec * time.Second)
+	if err := os.Chtimes(l.lockPath(), old, old); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+
+	// 読んでいる最中に「いま打刻された、別 token の lock」を被せる
+	var swapped bool
+	prev := readLockAfterStatHook
+	readLockAfterStatHook = func() {
+		if swapped {
+			return
+		}
+		swapped = true
+		tmp := l.lockPath() + ".swap"
+		body := []byte(`{"token":"SWAPPED","ttl_ms":3600000,"version":"lockman/1"}`)
+		if err := os.WriteFile(tmp, body, 0o644); err != nil {
+			t.Errorf("WriteFile: %v", err)
+			return
+		}
+		if err := os.Rename(tmp, l.lockPath()); err != nil {
+			t.Errorf("Rename: %v", err)
+		}
+	}
+	defer func() { readLockAfterStatHook = prev }()
+
+	st, err := l.Inspect()
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	if !swapped {
+		t.Fatalf("seam が発火していない (窓を再現できていないので、このテストは何も検査していない)")
+	}
+	if !st.Held {
+		t.Fatalf("生きている lock を保持中と答えていない: %+v", st)
+	}
+	// 中身は読んだ実体のもの。打刻も同じ実体のものでなければ「キメラ」になる
+	if st.Token != m.Token {
+		t.Fatalf("読んだ実体と違う中身を返した: got=%s want=%s", st.Token, m.Token)
+	}
+	if st.AgeSec == nil {
+		t.Fatalf("age を出していない")
+	}
+	if *st.AgeSec < agedSec/2 {
+		t.Fatalf("中身は読んだ実体 (%d 秒前) のものなのに age=%ds "+
+			"(打刻だけ差し替え後のファイルから採っている = 実在しない組み合わせで期限を評価している)",
+			agedSec, *st.AgeSec)
+	}
+}

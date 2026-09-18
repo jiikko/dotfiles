@@ -1038,7 +1038,8 @@ func intPtr(v int) *int { return &v }
 // Inspect は現在の状態を返す。**排他の根拠には使えない** (読んだ次の瞬間に変わる)。
 func (l *Locker) Inspect() (*State, error) {
 	// 🚨 **判断材料は「読んだ実体」から取る** (敵対レビュー 380 の 2 周目 P1-1)。
-	// 旧版は `readLock` で読んでから **名前を `os.Lstat` し直して** size / mtime を採っており、
+	// 旧版は `readLock` で読んでから **名前を `os.Lstat` し直して** unreadable 枝の size / age を
+	// 採っており (正常枝の mtime は当時から fd 由来。3 周目 P2-1 で訂正)、
 	// そのあいだ (中に `io.ReadAll` = SMB 1 往復が入る) に引き継がれると
 	// **読んでいない別のファイルの数字**を「この lock の判断材料」として出した
 	// (実測: 0 バイト / 90 秒前の lock を読んだのに size=200B / age=0s)。
