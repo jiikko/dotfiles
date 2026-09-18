@@ -156,4 +156,34 @@ else
   fi
 fi
 
+# --- Test 4: 映像の「尺」が start_time を含まない (密度検査の期待値の土台) ---
+# 🚨 __av1ify_get_stream_end は**終端時刻**を返し、stream=duration が無いコンテナでは
+# packet 実測 = start_time を含む絶対時刻になる。これを尺として fps を掛けると期待値が
+# start_time ぶん過大になる (実測: -output_ts_offset 600 の mkv で 620.0 → 期待値が 30 倍)。
+# VFR 判定は mkv では現状ほぼ掛からないので e2e の本流からは到達しないが、
+# 期待値の土台なので関数単体で固定する。
+printf '\n## Test 4: __av1ify_video_span returns a length, not an end timestamp\n'
+d="$TEST_TMP/span"; mkdir -p "$d"
+ffmpeg -nostdin -v error -y \
+  -f lavfi -i "testsrc=size=160x120:rate=40:duration=20" \
+  -vf "select='not(eq(mod(n\,7)\,3))'" -fps_mode passthrough -c:v libx264 \
+  -output_ts_offset 600 -f matroska "$d/offset.mkv"
+# 前提: stream=duration が無く start_time が非 0 (= packet 実測へ落ちる形) であること
+_sdur="$(v_field "$d/offset.mkv" duration)"
+_sstart="$(v_field "$d/offset.mkv" start_time)"
+if [[ "$_sdur" != "N/A" && -n "$_sdur" ]] || [[ "$_sstart" != 6* ]]; then
+  bad '✗ 前提崩れ: fixture が packet 実測経路にならない (duration=%s start=%s)\n' "$_sdur" "$_sstart"
+else
+  if __av1ify_video_span "$d/offset.mkv"; then
+    _span="$REPLY"
+    if (( _span > 19 && _span < 21 )); then
+      printf '✓ 尺が start_time を含まない (span=%s, start=%s)\n' "$_span" "$_sstart"
+    else
+      bad '✗ 尺に start_time が混ざっている (span=%s, start=%s)\n' "$_span" "$_sstart"
+    fi
+  else
+    bad '✗ __av1ify_video_span が尺を返さなかった\n'
+  fi
+fi
+
 printf '\n=== av1ify VFR e2e Completed ===\n\n'

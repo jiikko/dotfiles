@@ -139,6 +139,38 @@ __av1ify_packet_end() {
   return 1
 }
 
+# 内部補助: 映像ストリームの「尺」[秒] を返す (終端時刻ではない)
+#
+# 🚨 __av1ify_get_stream_end と混同しないこと。あちらは**終端時刻**を返し、
+# 経路によって意味が変わる: stream=duration が在れば「長さ」、無ければ
+# __av1ify_packet_end の max(pts + duration) = **start_time を含む絶対時刻**。
+# 後者を尺とみなして fps を掛けると、start_time ぶん期待値が過大になる
+# (実測 2026-09-19: -output_ts_offset 600 の mkv で vend=620.0 → 期待値 21266 フレーム、
+#  実デコードは 686)。影響するのは stream duration を持たない MKV / FLV / WebM。
+#
+# 引数: $1 = ファイルパス
+# 出力: REPLY = 尺 [秒] (取得不能なら空)
+# 戻り値: 0=取得成功, 1=取得不能
+__av1ify_video_span() {
+  local file="$1" val
+  REPLY=""
+  # 宣言 duration は既に「長さ」なのでそのまま使う (start_time を引かない)
+  val=$(__ff_stream_field "$file" v:0 stream=duration)
+  if __av1ify_is_num "$val"; then
+    REPLY="$val"
+    return 0
+  fi
+  # packet 実測は絶対時刻なので start_time を引いて長さにする
+  if __av1ify_packet_end "$file" "v:0"; then
+    local vend="$REPLY" vstart
+    __av1ify_start_time "$file" "v:0"; vstart="$REPLY"
+    REPLY=$(LC_ALL=C awk -v e="$vend" -v s="$vstart" 'BEGIN { d = e - s; if (d < 0) d = 0; printf "%.6f", d }')
+    __av1ify_is_num "$REPLY" && return 0
+  fi
+  REPLY=""
+  return 1
+}
+
 # 内部補助: ストリームの宣言 start_time [秒] を取得 (取れなければ 0 とみなす)
 # 引数: $1 = ファイルパス, $2 = stream specifier (例: v:0, a:0)
 # 出力: REPLY = start_time (欠落/N/A は "0"。コンテナの慣行どおり先頭 0 と解釈する。
@@ -414,6 +446,10 @@ __av1ify_postcheck() {
   # 同一の変数**なので、その値が壊れると ffmpeg の出力と期待値が一緒に壊れ、必ず一致する
   # (= 守りたい故障クラスを原理的に検出できない。2026-09-19 の敵対レビュー 2 周目が
   # 決定点への変異で実証: 514 フレームのソースが 202 フレームになっても ✅ 完了 だった)。
+  # 🚨 射程: この検査が拾えるのは**粗い fps 誤り**だけ。許容が max(フロア 24, 期待値 × 5%) なので、
+  # 実測で 300 フレーム (10s/30fps) なら 8% 未満、686 フレーム (20s) なら 5% 未満の fps 誤りは
+  # 無警告で通る。issue 397 が名指しした実害 (-r 1 で 96% 欠落) は確実に拾えるが、
+  # 「誤った -r の検出」一般を満たすわけではない (微小な誤差は duration 検査の担当)。
   # 期待値は**加害変数を経由しない量**から立てる: ソースのフレーム数そのもの。
   # avg_frame_rate の定義が nb_frames / duration なので、ソースをその avg で CFR 化した
   # 出力のフレーム数は元と (丸めを除いて) 一致する。誤った fps を渡せばここがズレる。
@@ -426,12 +462,12 @@ __av1ify_postcheck() {
     # 🚨 format=duration を使わないこと: コンテナの duration は**全ストリームの最大**なので、
     # 音声が映像より長い素材で期待値が過大になり、1 フレームも失っていない出力が
     # check_ng-density に転ぶ (2026-09-19 実測: 映像 60s / 音声 64s の VFR mp4 で発生)。
-    # 映像の真の終端は __av1ify_get_stream_end が stream=duration → packet 実測の順で返す。
+    # 映像の尺は __av1ify_video_span が返す (終端時刻ではなく長さ。start_time の扱いは同関数の注記)。
     # avg はソースから読み直す (applied_fps を使うと、決定点が壊れたとき期待値も一緒に
     # 壊れて必ず一致する = 守りたい故障を検出できない)。
     local want_by_duration=""
     local src_vend=""
-    if __av1ify_get_stream_end "$src_path" "v:0"; then src_vend="$REPLY"; fi
+    if __av1ify_video_span "$src_path"; then src_vend="$REPLY"; fi
     if __av1ify_is_num "$src_vend"; then
       local src_avg_raw
       src_avg_raw=$(__ff_stream_field "$src_path" v:0 stream=avg_frame_rate)
@@ -456,9 +492,15 @@ __av1ify_postcheck() {
     if [[ "$src_frames_d" =~ ^[0-9]+$ ]] && (( src_frames_d > 0 )); then
       if [[ "$want_by_duration" =~ ^[0-9]+$ ]] && (( want_by_duration > 0 )); then
         local nb_trusted
-        nb_trusted=$(LC_ALL=C awk -v nb="$src_frames_d" -v dur_based="$want_by_duration" 'BEGIN {
+        # 🚨 ここの許容を密度検査の許容と同値にしないこと。採用した nb_frames は最大で
+        # この許容ぶんズレているので、同値だと「nb を信じた直後に、正しいエンコードの
+        # 丸め 1〜2 フレームで密度検査を突き抜ける」崖ができる (実測 2026-09-19:
+        # ズレ 25 なら却下されて助かり、24 なら採用されて check_ng に転ぶ)。
+        # 密度側の半分にして、採用した nb の残差ぶんの余裕を必ず残す。
+        nb_trusted=$(LC_ALL=C awk -v nb="$src_frames_d" -v dur_based="$want_by_duration" \
+                                  -v pct="${AV1IFY_DENSITY_TOLERANCE_PCT:-5}" -v floor="${AV1IFY_DENSITY_FLOOR:-24}" 'BEGIN {
           d = nb - dur_based; if (d < 0) d = -d
-          tol = dur_based * 0.05; if (tol < 24) tol = 24
+          tol = dur_based * pct / 200; if (tol < floor / 2) tol = floor / 2
           print (d > tol) ? 0 : 1
         }')
         if (( nb_trusted )); then

@@ -247,14 +247,16 @@ fi
 # (3 周目の指摘 P1-2: この約 20 行をテストが 1 本も守っていなかった。mock は必ず
 #  nb_frames を正の整数で返すので primary 経路しか通らず、e2e の fixture も mp4 だった)
 printf '\n## Test 70g: Fallback expectation for containers without nb_frames (issue 397 r3)\n'
+# 🚨 拡張子は .mkv にする: 実 AVI は nb_frames を出すので、.avi に MOCK_NB_FRAMES="N/A" を
+# 与えると実在しない組み合わせになり「nb_frames を出さないコンテナ」の代表として誤解を招く
 TEST_DIR="$TEST_TMP/test70g"
 mkdir -p "$TEST_DIR"
-echo "dummy video" > "$TEST_DIR/input.avi"
+echo "dummy video" > "$TEST_DIR/input.mkv"
 cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 # nb_frames は N/A。映像 10s × avg 29.970 ≈ 300 が期待値になり、出力 300 なので警告なし
 output=$(MOCK_FPS="29/1" MOCK_AVG_FPS="29970029/1000000" MOCK_NB_FRAMES="N/A" \
-         MOCK_VIDEO_DURATION=10.0 MOCK_OUTPUT_NB_FRAMES=300 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+         MOCK_VIDEO_DURATION=10.0 MOCK_OUTPUT_NB_FRAMES=300 av1ify "$TEST_DIR/input.mkv" 2>&1 || true)
 setopt err_exit
 if [[ "$output" != *"フレーム密度不一致"* ]]; then
   printf '✓ Fallback accepts a correct density when nb_frames is unavailable\n'
@@ -266,11 +268,11 @@ fi
 # 「常に緑を返す実装」でも通ってしまう)
 TEST_DIR="$TEST_TMP/test70g2"
 mkdir -p "$TEST_DIR"
-echo "dummy video" > "$TEST_DIR/input.avi"
+echo "dummy video" > "$TEST_DIR/input.mkv"
 cd "$TEST_DIR" || exit 1
 unsetopt err_exit
 output=$(MOCK_FPS="29/1" MOCK_AVG_FPS="29970029/1000000" MOCK_NB_FRAMES="N/A" \
-         MOCK_VIDEO_DURATION=10.0 MOCK_OUTPUT_NB_FRAMES=12 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+         MOCK_VIDEO_DURATION=10.0 MOCK_OUTPUT_NB_FRAMES=12 av1ify "$TEST_DIR/input.mkv" 2>&1 || true)
 setopt err_exit
 if [[ "$output" == *"フレーム密度不一致"* ]]; then
   printf '✓ Fallback still detects a broken density\n'
@@ -301,6 +303,46 @@ if [[ "$output" == *"尺と矛盾する"* ]]; then
   printf '✓ The rejection of nb_frames is reported\n'
 else
   bad '✗ The rejection of nb_frames was silent\n%s\n' "$output"
+fi
+
+# Test 70i: nb_frames が尺と整合していれば **nb_frames が採用される** (逆選択の pin)
+# 🚨 これが無いと「常に尺ベースを使う」実装に変えても全テストが緑のまま通る
+# (4 周目の指摘 P2: nb_frames を第 1 候補にした理由がどこにも固定されていなかった)。
+# nb_frames を第 1 候補にするのは、尺ベースが start_time / 丸め / 宣言 duration の
+# 破損に弱いため。整合しているときは却下メッセージが出ないことで採用を観測する。
+printf '\n## Test 70i: A consistent nb_frames is actually used (issue 397 r4)\n'
+TEST_DIR="$TEST_TMP/test70i"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+# nb_frames=300 と 尺ベース (10.0 × 29.970 ≈ 300) が一致 → nb_frames を採用し、却下は起きない
+output=$(MOCK_FPS="29/1" MOCK_AVG_FPS="29970029/1000000" MOCK_NB_FRAMES=300 \
+         MOCK_VIDEO_DURATION=10.0 MOCK_OUTPUT_NB_FRAMES=300 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" != *"尺と矛盾する"* ]]; then
+  printf '✓ A consistent nb_frames is not rejected\n'
+else
+  bad '✗ A consistent nb_frames was rejected (the nb_frames branch is dead)\n%s\n' "$output"
+fi
+
+# Test 70j: nb_frames を採用したときも、丸めぶんで密度検査を突き抜けない
+# (4 周目の指摘 P2: trust の許容と密度の許容が同値だと「ズレ 25 なら助かり 24 なら転ぶ」
+#  という崖ができ、守ろうとした偽陽性が幅 1〜2 フレームの帯で生き残っていた)
+printf '\n## Test 70j: An accepted nb_frames still leaves room for rounding (issue 397 r4)\n'
+TEST_DIR="$TEST_TMP/test70j"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+# 尺ベース 300 に対し nb=324 (許容の境界付近)。出力は正しいエンコード (299)
+output=$(MOCK_FPS="29/1" MOCK_AVG_FPS="30/1" MOCK_NB_FRAMES=324 \
+         MOCK_VIDEO_DURATION=10.0 MOCK_OUTPUT_NB_FRAMES=299 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" != *"フレーム密度不一致"* ]]; then
+  printf '✓ A correct encode survives a borderline nb_frames\n'
+else
+  bad '✗ A correct encode was flagged (trust window and density window have no margin)\n%s\n' "$output"
 fi
 
 # Test 70c: VFR でないソース (通常の CFR) では、--fps 未指定なら従来どおり検出する
