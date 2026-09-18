@@ -3,7 +3,7 @@
 起票日: 2026-09-18
 カテゴリ: bug / priority: **medium**
 対象: `src/lockman/timeout.go` の `CleanupTimed`、`src/lockman/main.go` の `dispatch`
-出典: [issue 391](done/391-bug-lockman-os-exit-skips-defer-leaves-scratch.md) の反証レビュー
+出典: [issue 391](391-bug-lockman-os-exit-skips-defer-leaves-scratch.md) の反証レビュー
 反証レビュー: 未実施。**数値は起票者の実測**（下表）
 
 ## 問題
