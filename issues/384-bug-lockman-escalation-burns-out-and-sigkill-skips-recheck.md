@@ -127,7 +127,7 @@ issue 本文の見立てどおり「届かないことを報告する」側を�
 ## 敵対的レビュー 2〜4 周目で、この issue の領域に当たったもの (2026-09-16)
 
 2 周目以降は 383 と同じ差分を攻めたので、周回の全数勘定は
-[383](383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) の該当節にある。
+[383](done/383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) の該当節にある。
 **この issue の領域 (`with.go` / `escalate_recheck_test.go`) に当たった指摘だけ**をここに残す。
 
 | 周 | 指摘 | 判定 |

@@ -123,7 +123,7 @@ seam は一時的に入れて実験後に外してある (commit していない
 名前がすり替わっても当たるのは**自分が確かめた実体**だけなので、窓が 0 になる。
 
 - `O_TRUNC` を**付けない**。付けると write までのあいだ 0 バイトの窓が開き、読み手には
-  「中身を読めない lock」として見える ([383](383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md)
+  「中身を読めない lock」として見える ([383](done/383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md)
   の発生源そのもの)。内容は読んだものと同じなので長さは変わらないが、**変わったときだけ fd 越しに**
   `f.Truncate` で詰める (名前ではなく実体を縮める)
 - 打刻の検算に使う mtime も **同じ fd の `f.Stat()`** から取る (名前で Stat し直すと、
@@ -147,7 +147,7 @@ seam は一時的に入れて実験後に外してある (commit していない
 | `Release` | `os.Remove` | **本 issue で縮めた** (構造的には閉じられない) |
 | `Renew` | `O_TRUNC` + write | **本 issue で構造的に閉じた** |
 | `Break` | `os.Rename` (無条件) | **意図的な force break**。366 で受容済み |
-| `tryPlace` の後始末 | `os.Remove` | [383](383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) の 2 周目で `os.SameFile` 照合を入れた |
+| `tryPlace` の後始末 | `os.Remove` | [383](done/383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) の 2 周目で `os.SameFile` 照合を入れた |
 
 → **「この 2 経路が残る最後の同型」という issue の主張は正しかった** (本セッションで全数確認)。
 
@@ -168,6 +168,10 @@ seam は一時的に入れて実験後に外してある (commit していない
 - `go test -race ./...` 緑 / `make test` EXIT=0 / 83 件報告 / 失敗 0
 
 ### 383 への波及
+
+**383 は 2026-09-18 に done へ移した** (敵対レビュー 5 周目まで通して打ち切り条件を満たした)。
+本 issue が残す (b) = `Renew` / `Release` の temp + rename は 383 のスコープ外のまま継続。
+
 
 0 バイト lock の生成経路は 2 つあった (383 の本文):
 1. **`Renew` の `O_TRUNC` 窓** → **本 issue で消えた**

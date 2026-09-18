@@ -126,7 +126,7 @@ diff が意図した行だけであることを確認してから read/green を
 **観点① 壊す** — P1 が 1 件。「中身を読めない lock は実効 TTL が 30m へ縮む」fail-open で、
 `--ttl 2h` の生きた lease が正規手順で奪える。本修正が原因ではない (`renew` サブコマンド経由でも
 到達しうる) が、`Renew` が `O_TRUNC` まで届く機会が最大 8 倍になったので露出は広がった。
-機構は実コードで確認し、[383](../383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) に
+機構は実コードで確認し、[383](383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) に
 起票した (再現の実行は未追試)。あわせて `--ttl 30s --io-timeout 5m` のように
 **io-timeout > tick** にできる (`main.go` は両者の関係を検証していない) 場合、本修正は
 何の保護も与えないことを確認した (修正前と同じ挙動に戻るだけで悪化はしない)。
@@ -184,7 +184,7 @@ lease を失いやすくなる列。
 - [ ] **未検証**: 上限到達の報告と `reportRenewErr` の文言は、`warnf` に seam が無いため
       **構造上テストできていない** (上の「塞がずに残した」を参照)。実行の証拠は手で確認済み
 - [ ] **スコープ外 (切り出し済み)**:
-      [383](../383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) (中身を読めない lock の
+      [383](383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) (中身を読めない lock の
       実効 TTL が 30m へ縮む fail-open。本修正で露出が広がった) /
       [384](../384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) (昇格の実装の穴。
       本修正とは独立) /

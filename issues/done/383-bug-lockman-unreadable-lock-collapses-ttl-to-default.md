@@ -3,7 +3,7 @@
 起票日: 2026-09-16
 カテゴリ: bug / priority: **high**
 対象: `src/lockman/lock.go` の `holderTTL` / `tryTakeover` / `takeoverGeneration` のコメント
-出典: [381](done/381-bug-lockman-with-renew-latch-stops-renewal-forever.md) の敵対的レビュー (観点① 壊す)
+出典: [381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md) の敵対的レビュー (観点① 壊す)
 反証レビュー: 4 周実施済み (2026-09-16。下記)
 
 ## 問題
@@ -42,7 +42,7 @@
 
 1. **`Renew` の `O_TRUNC` の後で詰まる** (`lock.go:541`)。truncate だけ済んで `f.Write` へ
    進めないと、lock は **0 バイト + truncate 時刻の mtime** で安定する。
-   [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md) が提案している
+   [380](../380-bug-lockman-renew-and-release-act-on-name-after-check.md) が提案している
    「temp へ書いて rename」に直せばこの窓は消える
 2. `readLock` の **`os.Stat` と `os.ReadFile` は別の syscall** (`lock.go:169` / `lock.go:180`)。
    あいだに truncate が入ると `(truncate 前の mtime, 壊れた本文)` を観測する。
@@ -78,7 +78,7 @@ SMB の属性キャッシュが『古い mtime + 新しい中身』を返す環�
 | 候補 | 判定 | 実装 |
 |---|---|---|
 | (a) `holderTTL(nil)` を fail-open にしない | **採用** | `tryTakeover` の 1 段目・2 段目で **`m == nil` を先に弾く** (`lock.go`)。`holderTTL` 自身は変えない (`TTLMillis <= 0` の既定は、有効な Meta の古い形式のために要る。Release / Renew / Status からは `m != nil` しか来ないことを全数確認した) |
-| (b) 0 バイト窓を消す (temp + rename) | **やらない** | [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md) の領域。(a) が入ったので、窓が残っていても**引き継がれない** |
+| (b) 0 バイト窓を消す (temp + rename) | **やらない** | [380](../380-bug-lockman-renew-and-release-act-on-name-after-check.md) の領域。(a) が入ったので、窓が残っていても**引き継がれない** |
 | (c) `readLock` を 1 つの open で済ませる | **採用 (ただし射程は本文の記述より狭い)** | `os.Open` → `Fstat` → `io.ReadAll` に変えた |
 
 ### 🚨 (c) の射程は「2 が消える」ではなかった (実測 2026-09-16)
@@ -272,7 +272,7 @@ truncate 前のもの)。
 - [x] `--ttl 2h` の lock を 0 バイトにして既定 TTL 超過後に奪えることを、**本セッションで**
       再現した (`TestUnreadableLockIsNeverTakenOver` の変異 G1 = fail-closed を外すと奪える)
 - [ ] **スコープ外**: (b) = `Renew` / `Release` を temp + rename にして 0 バイト窓自体を消す
-      → [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md)
+      → [380](../380-bug-lockman-renew-and-release-act-on-name-after-check.md)
 - [x] 反証レビュー (敵対的レビュー) を 1 周通した。P1 の 2 件を修正し、変異で red を確認:
       `acquire` の理由出力を消す / `with` を定型文へ戻す → `TestUnreadableLockGuidanceReachesCLI` red /
       `tryPlace` の後始末を no-op へ → `TestTryPlaceRemovesOwnLockWhenBodyCannotBeWritten` red
