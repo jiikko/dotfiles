@@ -553,7 +553,7 @@ func TestConcurrentTakeoverElectsExactlyOneEvictor(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ok, err := l.tryTakeover()
+			ok, err := l.tryTakeover(nil)
 			if err != nil {
 				t.Errorf("tryTakeover: %v", err)
 				return
@@ -655,7 +655,7 @@ func TestTakeoverClaimStaysInsideTmpForHostileToken(t *testing.T) {
 		t.Fatalf("Chtimes: %v", err)
 	}
 
-	if _, err := l.tryTakeover(); err != nil {
+	if _, err := l.tryTakeover(nil); err != nil {
 		t.Fatalf("tryTakeover: %v", err)
 	}
 	escaped := filepath.Join(l.metaDir, "escape"+takeoverClaimSuffix)
@@ -713,7 +713,7 @@ func TestTakeoverYieldsToLiveClaim(t *testing.T) {
 	var took bool
 	// 🚨 診断が出ることも固定する。check は期限切れを free と答えるので、理由を出さないと
 	// 「free なのに acquire できない」という追跡不能の矛盾になる。
-	stderr := captureStderr(t, func() { took, err = l.tryTakeover() })
+	stderr := captureStderr(t, func() { took, err = l.tryTakeover(nil) })
 	if err != nil {
 		t.Fatalf("tryTakeover: %v", err)
 	}
@@ -764,7 +764,7 @@ func TestTakeoverReclaimsAbandonedClaim(t *testing.T) {
 		t.Fatalf("Chtimes: %v", err)
 	}
 
-	took, err := l.tryTakeover()
+	took, err := l.tryTakeover(nil)
 	if err != nil {
 		t.Fatalf("tryTakeover: %v", err)
 	}
@@ -840,7 +840,7 @@ func TestConcurrentReclaimElectsExactlyOneEvictor(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ok, err := l.tryTakeover()
+			ok, err := l.tryTakeover(nil)
 			if err != nil {
 				t.Errorf("tryTakeover: %v", err)
 				return
@@ -895,7 +895,7 @@ func TestTakeoverGraceHonorsClaimDeclaredTimeout(t *testing.T) {
 		t.Fatalf("Chtimes: %v", err)
 	}
 
-	took, err := l.tryTakeover()
+	took, err := l.tryTakeover(nil)
 	if err != nil {
 		t.Fatalf("tryTakeover: %v", err)
 	}
@@ -933,7 +933,7 @@ func TestTakeoverYieldsToClaimWithUnreadableBody(t *testing.T) {
 		t.Fatalf("Chtimes: %v", err)
 	}
 
-	took, err := l.tryTakeover()
+	took, err := l.tryTakeover(nil)
 	if err != nil {
 		t.Fatalf("tryTakeover: %v", err)
 	}
@@ -1121,7 +1121,7 @@ func TestTakeoverYieldsToReclaimMarkAndWarnsOnlyWhenStuck(t *testing.T) {
 			}
 
 			var took bool
-			stderr := captureStderr(t, func() { took, err = l.tryTakeover() })
+			stderr := captureStderr(t, func() { took, err = l.tryTakeover(nil) })
 			if err != nil {
 				t.Fatalf("tryTakeover: %v", err)
 			}
@@ -1182,7 +1182,7 @@ func TestReclaimLeavesNoMarkWhenRefreshFails(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(claim, lockFileMode) })
 
-	took, err := l.tryTakeover()
+	took, err := l.tryTakeover(nil)
 	if err == nil {
 		// 🚨 前提が作れていないと「実装が直っている」に見える緑になる (root 実行など)。
 		t.Fatalf("前提が作れていない: 打刻を戻す書き込みが失敗しなかった (took=%v)", took)
@@ -1294,7 +1294,7 @@ func TestReclaimTruncatesLongerPreviousBody(t *testing.T) {
 		t.Fatalf("Chtimes: %v", err)
 	}
 
-	took, err := l.tryTakeover()
+	took, err := l.tryTakeover(nil)
 	if err != nil {
 		t.Fatalf("tryTakeover: %v", err)
 	}
@@ -1331,7 +1331,7 @@ func TestReclaimYieldsAsBusyWhenClaimReplacedMidway(t *testing.T) {
 		}
 	}
 
-	took, err := l.tryTakeover()
+	took, err := l.tryTakeover(nil)
 	if !fired {
 		t.Fatal("前提が作れていない: 回収経路に到達していない")
 	}
@@ -1382,7 +1382,7 @@ func TestStuckReclaimWarnNamesTheReclaimerNotTheDeadCreator(t *testing.T) {
 	}
 
 	var took bool
-	stderr := captureStderr(t, func() { took, err = l.tryTakeover() })
+	stderr := captureStderr(t, func() { took, err = l.tryTakeover(nil) })
 	if err != nil {
 		t.Fatalf("tryTakeover: %v", err)
 	}

@@ -289,6 +289,16 @@ func holderTTL(m *Meta) time.Duration {
 // (チェックしてから作ると、その隙間に割り込まれるうえ、SMB クライアントの古い
 // キャッシュが判定に混入する)。
 func (l *Locker) Acquire(ttl time.Duration, label string) (*Meta, error) {
+	return l.acquire(ttl, label, nil)
+}
+
+// acquire は Acquire の本体。`ab` は「呼び出し側はもう待っていない」を伝える経路
+// (issue 362)。`AcquireTimed` だけが非 nil を渡し、それ以外は nil = 見捨てられ得ない。
+//
+// 🚨 **ensureDirs と serverNow には見捨ての検査を置かない**。前者は冪等 (mkdir は既存なら
+// 何もしない)、後者は probe を goroutine 内の defer で自分で消すので、どちらも
+// 「置いていく副作用」にならない (issue 362 の ④ と同じ扱い)。
+func (l *Locker) acquire(ttl time.Duration, label string, ab *abandon) (*Meta, error) {
 	if err := l.ensureDirs(); err != nil {
 		return nil, err
 	}
@@ -307,7 +317,7 @@ func (l *Locker) Acquire(ttl time.Duration, label string) (*Meta, error) {
 		Version:    "lockman/1",
 	}
 	// 1 回目: そのまま置きにいく
-	err = l.tryPlace(meta)
+	err = l.tryPlace(meta, ab)
 	if err == nil {
 		return meta, nil
 	}
@@ -315,21 +325,27 @@ func (l *Locker) Acquire(ttl time.Duration, label string) (*Meta, error) {
 		return nil, err
 	}
 	// 2 回目: 相手が stale なら引き継ぎを試みる
-	took, err := l.tryTakeover()
+	took, err := l.tryTakeover(ab)
 	if err != nil {
 		return nil, err
 	}
 	if !took {
 		return nil, errBusy
 	}
-	if err := l.tryPlace(meta); err != nil {
+	if err := l.tryPlace(meta, ab); err != nil {
 		return nil, err
 	}
 	return meta, nil
 }
 
 // tryPlace は lock を 1 回の原子操作で置き、置けたことを読み直して確認する。
-func (l *Locker) tryPlace(meta *Meta) error {
+//
+// 🚨 見捨てられた goroutine の扱い (issue 362) は **2 段**で、順序に意味がある:
+//  1. **作らない**: 不可逆な操作 (link / O_EXCL) の直前で降りる。いま漏れているケースは
+//     定義上その操作まで到達している (だから lock が置かれる) ので、同じ到達性で効く
+//  2. **取り消す**: それでも置けてしまった分だけ `Release` で戻す (best-effort)。
+//     取り消し自体が同じ詰まったマウントへの I/O なので、**窓は 0 にならない**
+func (l *Locker) tryPlace(meta *Meta, ab *abandon) error {
 	b, err := json.Marshal(meta)
 	if err != nil {
 		return err
@@ -339,6 +355,13 @@ func (l *Locker) tryPlace(meta *Meta) error {
 		return err
 	}
 	defer func() { _ = os.Remove(tmp) }()
+
+	// 🚨 **1 段目: 不可逆な操作の直前で降りる** (issue 362)。ここまでに作ったのは tmp だけで、
+	// それは上の defer が自分で消すので、降りても何も置いていかない。
+	abandonCheckBeforePlaceHook(ab)
+	if ab.abandoned() {
+		return errAbandoned
+	}
 
 	// link(2) が使えれば、lock は「最初から中身が入った状態」で現れる (途中経過が
 	// 他者に見えない)。macOS の smbfs では ENOTSUP になりうるので O_EXCL に落とす。
@@ -412,6 +435,14 @@ func (l *Locker) tryPlace(meta *Meta) error {
 			return cleanupOwn(err)
 		}
 	}
+	// 🚨 **2 段目: 置いた直後に取り消す** (issue 362)。検証 (write-then-verify) より**前**に
+	// 置いたのは、lock が他者から見えているのはこの時点からで、取り消しは早いほど着地しやすい
+	// ため。負けていた場合は `Release` が token 照合で errNotOwner を返すので、
+	// **他者の lock を消す側には倒れない** (380 の identity 照合つき Release をそのまま使う)。
+	abandonCheckAfterPlaceHook(ab)
+	if ab.abandoned() {
+		return l.undoAbandonedPlace(meta.Token)
+	}
 	// write-then-verify: 置けたつもりで負けている可能性を潰す。
 	got, _, err := l.readLock()
 	if err != nil {
@@ -421,6 +452,47 @@ func (l *Locker) tryPlace(meta *Meta) error {
 		return errBusy
 	}
 	return nil
+}
+
+// abandonCheckBeforePlaceHook / abandonCheckAfterPlaceHook / abandonCheckAfterClaimHook /
+// abandonCheckAfterMarkHook は「見捨てを見る直前」に呼ばれる seam (issue 362)。
+// production では何もしない。
+//
+// 🚨 これが無いと、見捨ての検査はテストから**決定論的に作れない**。`withTimeout` の期限を
+// 実時間で踏ませる形にすると、判定は「マシンの空き具合」になり、負荷次第で緑になる assert に
+// なる (avoid-wall-clock-assertions.md)。seam に `*abandon` を渡すのは、テストが
+// **その場で見捨てを立てられる**ようにするため — 立てる側と見る側が同じ 1 行で隣り合うので、
+// 検査を外す変異が確実に red になる。
+var (
+	abandonCheckBeforePlaceHook = func(*abandon) {}
+	abandonCheckAfterPlaceHook  = func(*abandon) {}
+	abandonCheckAfterClaimHook  = func(*abandon) {}
+	abandonCheckAfterMarkHook   = func(*abandon) {}
+)
+
+// undoAbandonedPlace は、見捨てられた goroutine が**自分が置いた** lock を取り消す (issue 362)。
+//
+// 🚨 取り消しは `Release` をそのまま使う (新しい判定を作らない。§0-B)。`Release` は
+// token 一致 + 期限内 + **読んだ実体との identity 照合**まで見るので、置けていない場合も
+// 引き継がれた後の場合も errNotOwner で止まり、他者の lock へは届かない。
+//
+// 🚨 **取り消せなかったことは黙らない**。ここで失敗すると「誰も解放できない lock が TTL ぶん
+// (既定 30 分) 残る」= この issue の被害そのものなので、人が `lockman break` を判断する材料を出す。
+// 呼び出し側は既に I/O timeout を報告しているが、**その報告は「取れなかった」までしか言っていない**。
+//
+// 🚨 **生の `Release` ではなく `ReleaseTimed` を使う**。「どうせ誰も待っていないのだから包みは
+// 要らない」は誤り: 包みを外しても取り消しの成功率は変わらない (期限切れでも内側の goroutine は
+// 走り続け、I/O が返れば lock は消える) 一方で、**上の警告が出るまでの時間に上限が無くなる**。
+// `--io-timeout` の不変条件 (生の I/O を呼ぶ形がコード上に残らない) を、
+// 「ここだけは例外」で崩さない — 例外は次に足す人が真似する。
+// 配線は `timeout_wiring_test.go` が機械で止める (実際にこの変更で 1 度落ちた)。
+func (l *Locker) undoAbandonedPlace(token string) error {
+	err := l.ReleaseTimed(token)
+	if err != nil && !errors.Is(err, errNotOwner) {
+		warnf("見捨てられた取得が置いた lock を取り消せない (%v)。TTL が切れるまで残る。"+
+			"急ぐなら `lockman break` で剥がすこと: %v", err, l.lockPath())
+	}
+	return errAbandoned
 }
 
 // takeoverObservedHook は「期限切れと判定した直後」に呼ばれる seam。production では
@@ -488,7 +560,7 @@ var takeoverRefreshHook = func() {}
 // 0 にするには rename ではなく「inode を指定した削除」が要り、POSIX にその原始操作が無い。
 // 再開の trigger: 実 lock を使った並行実験でこの経路を再現できたとき (Break の経路は
 // seam で順序を作れば再現できるはず。未実施)。
-func (l *Locker) tryTakeover() (bool, error) {
+func (l *Locker) tryTakeover(ab *abandon) (bool, error) {
 	now, err := l.serverNow()
 	if err != nil {
 		return false, err
@@ -526,7 +598,7 @@ func (l *Locker) tryTakeover() (bool, error) {
 	case err == nil:
 	case os.IsExist(err):
 		// 役は誰かが取っている。飛行中なら譲り、放棄されていれば回収する。
-		took, rerr := l.reclaimTakeoverClaim(claim, now)
+		took, rerr := l.reclaimTakeoverClaim(claim, now, ab)
 		if rerr != nil {
 			return false, rerr
 		}
@@ -545,6 +617,15 @@ func (l *Locker) tryTakeover() (bool, error) {
 			_ = os.Remove(claim)
 		}
 	}()
+
+	// 🚨 **見捨てられていたらここで降りる** (issue 362 の ②)。新しい後始末は要らない —
+	// `evicted` が false のままなので**上の defer がそのまま目印を回収する**。
+	// 🚨 検査は defer の**後**に置くこと。前に置くと、目印を置いた直後に降りたときに
+	// 回収する者が居なくなり、その世代の引き継ぎを猶予いっぱい塞ぐ (この issue の被害そのもの)。
+	abandonCheckAfterClaimHook(ab)
+	if ab.abandoned() {
+		return false, errAbandoned
+	}
 
 	// 2 段目: 破壊的操作の直前に取り直して照合する。ここで初めて対象が確定する。
 	m2, mtime2, err := l.readLock()
@@ -976,7 +1057,7 @@ func readTakeoverClaimBody(claim string) *takeoverClaimBody {
 // 正しさを優先した判断で、人の脱出口は `lockman break` (上の warnf が案内する)。
 // 根治は 362 / 363 の側 (見捨てられた goroutine / 遅い signal.Notify が副作用を残さなくなれば、
 // この回収機構は取りこぼしの受け皿へ格下げできる)。
-func (l *Locker) reclaimTakeoverClaim(claim string, now time.Time) (bool, error) {
+func (l *Locker) reclaimTakeoverClaim(claim string, now time.Time, ab *abandon) (bool, error) {
 	st, err := os.Stat(claim)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -1020,6 +1101,14 @@ func (l *Locker) reclaimTakeoverClaim(claim string, now time.Time) (bool, error)
 		_, _ = f.Write(b) // 書けなくても mark としては成立する (猶予は fallback になる)
 	}
 	f.Close()
+	// 🚨 **見捨てられていたらここで降りる** (issue 362 の ③)。mark は「②の回収機構を塞ぐ」層
+	// なので、置き去りにすると ①② を直しても「引き継ぎが猶予ぶん止まる」が残る。
+	// 消し方は下の refreshTakeoverClaim 失敗パスと同じ (同じ理由・同じ 1 行)。
+	abandonCheckAfterMarkHook(ab)
+	if ab.abandoned() {
+		_ = os.Remove(mark)
+		return false, errAbandoned
+	}
 	if err := l.refreshTakeoverClaim(claim, st.ModTime()); err != nil {
 		// 🚨 mark を残したまま帰らない。目印の打刻は観測した値のままなので、以後の観測者は
 		// 同じ mark 名を計算して EEXIST で弾かれ続け、**プロセスが落ちていなくても**その世代が

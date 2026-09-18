@@ -511,7 +511,7 @@ func TestStage2ZeroMtimeBusyIsNotTreatedAsEvicted(t *testing.T) {
 	}
 	defer func() { takeoverObservedHook = old }()
 
-	took, err := l.tryTakeover()
+	took, err := l.tryTakeover(nil)
 	if !fired {
 		t.Fatalf("前提: 1 段目の判定に到達していない")
 	}
