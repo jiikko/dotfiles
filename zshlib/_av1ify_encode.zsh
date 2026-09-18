@@ -228,12 +228,15 @@ __av1ify_frac_fps() {
 # 相対差が閾値を超えるなら VFR とみなす。閾値は __av1ify_postcheck のフレーム数許容%
 # (AV1IFY_FRAME_TOLERANCE_PCT 既定 0.5%) と揃える。
 #
-# 🚨 なぜ VFR 検出が要るか: `-fps_mode cfr` は常時付与するが (VFR ソースの DTS が
-# QuickTime 等の厳密なプレイヤーで再生破綻するため。issue 394)、CFR retiming は
-# フレームの間引き/複製を伴いうるので、__av1ify_postcheck のフレーム数不一致チェックが
-# VFR ソースに対して誤 NG を出しうる。検出結果は fps_changed 相当として postcheck へ渡し、
-# 正当な差分によるチェックを抑制する (CFR ソースでは検出されないため、そちらのチェックは
-# 従来どおり有効)。
+# 検出したソース (かつ --fps 未指定) にだけ `-fps_mode cfr -r <avg fps>` を付ける (issue 394:
+# VFR のタイムスタンプを素通しすると出力 DTS が非単調増加になり QuickTime で再生破綻する)。
+# CFR retiming はフレームの複製/間引きを伴うので、検出結果は fps_changed 相当として
+# __av1ify_postcheck へ渡しフレーム数不一致チェックを抑制する。
+#
+# 🚨 cfr を常時付与しないこと: 「CFR ソースには no-op」は誤りで、実ファイル 91 本の
+# 先頭 30 秒で 36 本の出力フレーム数が変わった (最大 dup=146 / drop=23。2026-09-18 実測)。
+# それらは本判定に掛からないためフレーム数チェックが効いたまま残り、従来 OK だった
+# ファイルが check_ng になる。検出したソース以外の引数は改修前と同一に保つ。
 #
 # 引数: $1 = in
 # 出力: __AV1IFY_R_VFR_DETECTED (0/1), __AV1IFY_R_VFR_AVG_FPS (空可)
@@ -252,8 +255,11 @@ __av1ify_detect_vfr() {
 
   local tol_pct="${AV1IFY_FRAME_TOLERANCE_PCT:-0.5}"
   local is_vfr
+  # 🚨 どちらかが 0 以下 (ffprobe の "0/0" = 不明) なら判定不能として VFR 扱いしない。
+  # WMV/ASF は avg_frame_rate=0/0 を返すことがあり、VFR と誤判定すると -r 0.000 が
+  # ffmpeg に渡って "Invalid framerate value" でエンコードが失敗する (実ファイルで確認)。
   is_vfr=$(awk -v a="$nominal_val" -v b="$avg_val" -v tol="$tol_pct" 'BEGIN {
-    if (a <= 0) { print 0; exit }
+    if (a <= 0 || b <= 0) { print 0; exit }
     d = (a > b) ? a - b : b - a
     print (d / a * 100 > tol) ? 1 : 0
   }')
@@ -906,11 +912,6 @@ __av1ify_one() {
     -hide_banner -nostdin -stats -y
     -i "$in"
     -map "0:v:0"
-    # 常時 CFR へ正規化する (issue 394): VFR ソースのタイムスタンプをそのまま
-    # SVT-AV1 へ渡すと、出力の DTS が非単調増加になり QuickTime 等の厳密な
-    # プレイヤーで再生破綻する (VLC/dav1d は寛容なため無症状)。CFR ソースに
-    # とっては no-op (フレームの間引き/複製が発生しない)。
-    -fps_mode cfr
     -c:v "$vcodec" -crf "$crf" -preset "$preset" -pix_fmt yuv420p
   )
   if [[ -n "$vf_option" ]]; then
@@ -918,10 +919,11 @@ __av1ify_one() {
   fi
   if [[ -n "$target_fps" ]]; then
     args_common+=(-r "$target_fps")
-  elif (( __AV1IFY_R_VFR_DETECTED )) && [[ -n "$__AV1IFY_R_VFR_AVG_FPS" ]]; then
-    # target_fps 未指定時、VFR ソースには実測平均fpsを明示する (ffmpeg が
-    # r_frame_rate と avg_frame_rate のどちらを CFR の基準にするか曖昧なため)
-    args_common+=(-r "$__AV1IFY_R_VFR_AVG_FPS")
+  elif (( __AV1IFY_R_VFR_DETECTED )); then
+    # VFR ソースだけ CFR へ正規化する (issue 394。常時付与しない理由は __av1ify_detect_vfr)。
+    # -r は実測平均fpsを明示する (ffmpeg が r_frame_rate と avg_frame_rate のどちらを
+    # CFR の基準にするか曖昧なため)。
+    args_common+=(-fps_mode cfr -r "$__AV1IFY_R_VFR_AVG_FPS")
   fi
   if [[ -n "$color_tag_override" ]]; then
     # matrix のみ。primaries/trc を渡さない理由は __av1ify_decide_color_tags の注記を参照
