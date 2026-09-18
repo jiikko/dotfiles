@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -14,7 +15,7 @@ import (
 //
 // 🚨 **ここは in-process なので「窓が縮んだか」は測れない**。goroutine は待てば必ず完走するし、
 // プロセスは終了しない。ここが固定するのは「見捨てを見て降りる / 取り消す配線が在ること」まで。
-// 実際に漏れが減るかは**バイナリの A-B** (tests/lockman/) が測る。両方要る。
+// 実際に漏れが減るかは**バイナリの A-B** (`src/lockman/ab_abandoned.sh`) が測る。両方要る。
 
 // stalePlacedLock は期限切れの lock を直接こしらえる (引き継ぎ経路へ入るための前提)。
 func stalePlacedLock(t *testing.T, l *Locker) {
@@ -278,11 +279,17 @@ func TestWithTimeoutMarksAbandonInProduction(t *testing.T) {
 	if !errors.Is(aerr, errIOTimeout) {
 		t.Fatalf("errIOTimeout を期待したが %v", aerr)
 	}
-	// 🚨 **errAbandoned を呼び出し側へ漏らさない**。漏れると `cmdAcquire` の `--wait` ループが
-	// `errors.Is(err, errBusy)` に当たらず `default:` へ落ち、**exit 3 (他者が保持中) のはずが
-	// exit 1 (エラー) になる**。`_av1ify_lock.zsh` は rc=3 を SKIP、rc≠0 を
-	// 「排他を用意できない = 中止」に分けているので、終了コードの API (issue 091 の表) が変わる。
-	// 構造的には起きない (mark を立てるのは select がタイムアウト枝を選んだ後で、そのとき
+	// 🚨 **errAbandoned を呼び出し側へ漏らさない** = 人が読む stderr を「判定不能」に保つ。
+	// 漏れると `cmdAcquire` / `runWith` は「I/O が N 以内に返らない…判定不能」ではなく
+	// `abandoned after I/O timeout` を表示する。**内部の事情**であって、人が次に何をすべきかを
+	// 何も言っていない文面になる。
+	//
+	// 🚨 **訂正 (敵対レビュー 2 周目)**: ここには当初「exit 3 が exit 1 に化ける」と書いていたが
+	// **誤り**。`errIOTimeout` も `errBusy` ではないので元から `default:` に落ちており、
+	// この場面の終了コードは修正前から exit 1 (`with` なら 125)。終了コードの API は変わらない。
+	// 変わるのは文面だけ。
+	//
+	// 構造的には漏れない (mark を立てるのは select がタイムアウト枝を選んだ後で、そのとき
 	// withTimeout は errIOTimeout を返すと確定しており、goroutine の戻り値はバッファ付き chan に
 	// 入ったまま誰も読まない) が、**構造の主張はテストで固定するまで主張のまま**なので pin する。
 	if errors.Is(aerr, errAbandoned) {
@@ -370,4 +377,221 @@ func TestUndoReportsWhenLeaseExpiredSoLockRemains(t *testing.T) {
 	if strings.Contains(stderr, "lockman break") {
 		t.Fatalf("期限切れの lock は次の取得が引き継げるので break は不要: %q", stderr)
 	}
+}
+
+// waitAbandoned は「見捨てられた」が立つのを条件で待つ (壁時計で assert しない)。
+// 上限を超えたら false を返し、呼び出し側が明示的に FAIL させる。
+func waitAbandoned(ab *abandon) bool {
+	for range 400 {
+		if ab.abandoned() {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return false
+}
+
+// newWiringLocker は「見捨てた goroutine をわざと作る」テスト用の Locker。
+// 🚨 `t.TempDir()` を使わない (後始末が goroutine と競合して実装と無関係な赤が出る)。
+func newWiringLocker(t *testing.T, timeout time.Duration) *Locker {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "lockman-wiring-")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	l, err := NewLocker(dir, timeout)
+	if err != nil {
+		t.Fatalf("NewLocker: %v", err)
+	}
+	return l
+}
+
+// 🚨 **配線の pin (敵対レビュー 2 周目 P1)**。`acquire` から下流へ `ab` を渡す点は 3 つあるが、
+// 旧版は 1 つ (1 回目の tryPlace) しか pin しておらず、**残り 2 つを `nil` に落としても
+// スイート全緑**だった。検査の中身を seam で直接叩くテストは「配線済み」を 1 mm も守らない
+// (mutation-verify-new-tests.md の「計算ヘルパーの純関数テストだけで配線済みとしていないか」)。
+//
+// ここは `AcquireTimed` から入って**引き継ぎ経路**を通す。既存の配線テストは空 dir を使うので
+// この経路へ一度も入らない。
+func TestAbandonWiringReachesTakeoverPath(t *testing.T) {
+	// ① tryTakeover(ab) — claim を置いた直後の検査まで ab が届くか
+	t.Run("tryTakeover", func(t *testing.T) {
+		l := newWiringLocker(t, 200*time.Millisecond)
+		stalePlacedLock(t, l)
+		orig := abandonCheckAfterClaimHook
+		t.Cleanup(func() { abandonCheckAfterClaimHook = orig })
+		observed := make(chan bool, 1)
+		abandonCheckAfterClaimHook = func(ab *abandon) { observed <- waitAbandoned(ab) }
+
+		if _, err := l.AcquireTimed(time.Minute, "wiring"); !errors.Is(err, errIOTimeout) {
+			t.Fatalf("errIOTimeout を期待したが %v", err)
+		}
+		select {
+		case ok := <-observed:
+			if !ok {
+				t.Fatal("tryTakeover へ ab が届いていない (nil が渡っている = ②③ の検査が production から死ぬ)")
+			}
+		case <-time.After(30 * time.Second):
+			t.Fatal("seam に到達していない: 引き継ぎ経路を通っていない")
+		}
+	})
+
+	// ② 引き継ぎ後の tryPlace(meta, ab) — この 1 行が A-B の「148 → 0」を作っている
+	t.Run("tryPlaceAfterTakeover", func(t *testing.T) {
+		l := newWiringLocker(t, 300*time.Millisecond)
+		stalePlacedLock(t, l)
+		orig := abandonCheckBeforePlaceHook
+		t.Cleanup(func() { abandonCheckBeforePlaceHook = orig })
+		calls := 0
+		observed := make(chan bool, 1)
+		abandonCheckBeforePlaceHook = func(ab *abandon) {
+			calls++
+			if calls < 2 {
+				return // 1 回目は素通りさせ、errBusy → 引き継ぎへ進ませる
+			}
+			observed <- waitAbandoned(ab)
+		}
+
+		if _, err := l.AcquireTimed(time.Minute, "wiring"); !errors.Is(err, errIOTimeout) {
+			t.Fatalf("errIOTimeout を期待したが %v", err)
+		}
+		select {
+		case ok := <-observed:
+			if !ok {
+				t.Fatal("引き継ぎ後の tryPlace へ ab が届いていない (この issue の主症状が復活する)")
+			}
+		case <-time.After(30 * time.Second):
+			t.Fatalf("2 回目の tryPlace へ到達していない (seam の到達 %d 回)", calls)
+		}
+	})
+}
+
+// 🚨 **不変条件: `undoAbandonedPlace` は `lockman break` を勧めない** (敵対レビュー 2 周目)。
+// break は期限検査も token 照合もしない無条件 rename で、コード自身が「この道具で最も現実的に
+// 二重取得を作る操作」と書いている。旧版は errNotOwner 枝に break を足しても、default 枝の
+// 警告を消しても**全緑**だった (= 危険な向きが無検査だった)。全枝をテーブルで回す。
+func TestUndoNeverSuggestsBreak(t *testing.T) {
+	cases := []struct {
+		name     string
+		setup    func(t *testing.T, l *Locker) string // 返り値は undo に渡す token
+		wantSay  bool                                 // stderr に何か出るべきか
+		wantWord string
+	}{
+		{
+			name: "取り消せた", wantSay: false,
+			setup: func(t *testing.T, l *Locker) string {
+				m, err := l.Acquire(time.Minute, "ok")
+				if err != nil {
+					t.Fatalf("Acquire: %v", err)
+				}
+				return m.Token
+			},
+		},
+		{
+			name: "自分のものではない", wantSay: false,
+			setup: func(t *testing.T, l *Locker) string {
+				if _, err := l.Acquire(time.Minute, "other"); err != nil {
+					t.Fatalf("Acquire: %v", err)
+				}
+				return "00000000000000000000000000000000"
+			},
+		},
+		{
+			name: "lease 切れで残る", wantSay: true, wantWord: "lease 切れ",
+			setup: func(t *testing.T, l *Locker) string {
+				m, err := l.Acquire(minTTL, "expired")
+				if err != nil {
+					t.Fatalf("Acquire: %v", err)
+				}
+				old := time.Now().Add(-time.Hour)
+				if cerr := os.Chtimes(l.lockPath(), old, old); cerr != nil {
+					t.Fatalf("Chtimes: %v", cerr)
+				}
+				return m.Token
+			},
+		},
+		{
+			name: "中身を読めない (確定した失敗の枝)", wantSay: true, wantWord: "取り消せない",
+			setup: func(t *testing.T, l *Locker) string {
+				if err := l.ensureDirs(); err != nil {
+					t.Fatalf("ensureDirs: %v", err)
+				}
+				if err := os.WriteFile(l.lockPath(), []byte("{broken"), lockFileMode); err != nil {
+					t.Fatalf("lock を壊せない: %v", err)
+				}
+				return "00000000000000000000000000000000"
+			},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			l := newTestLocker(t)
+			token := c.setup(t, l)
+			stderr := captureStderr(t, func() { _ = l.undoAbandonedPlace(token) })
+
+			if strings.Contains(stderr, "lockman break") {
+				t.Fatalf("break を勧めている (無条件 rename へ人を誘導する): %q", stderr)
+			}
+			if c.wantSay {
+				if stderr == "" {
+					t.Fatal("取り消せなかったのに黙っている")
+				}
+				if !strings.Contains(stderr, c.wantWord) {
+					t.Fatalf("理由 %q を伝えていない: %q", c.wantWord, stderr)
+				}
+			} else if stderr != "" {
+				t.Fatalf("言うことが無いのに出力している: %q", stderr)
+			}
+		})
+	}
+}
+
+// 🚨 **本番の枝 (O_EXCL fallback) でも同じか** (敵対レビュー 2 周目)。`tryPlace` の link(2) は
+// macOS の smbfs で ENOTSUP になり O_EXCL へ落ちる = **本番だけで走る経路**。ローカル APFS の
+// テストは link(2) の枝しか通らず、O_EXCL 枝は「1 段目の検査から lock が見えるまで」「置いてから
+// 2 段目まで」の syscall 数が違う。検査が両枝に効くことを固定する。
+func TestAbandonChecksWorkOnExclFallbackBranch(t *testing.T) {
+	origLink := tryPlaceLinkFn
+	t.Cleanup(func() { tryPlaceLinkFn = origLink })
+	tryPlaceLinkFn = func(string, string) error { return syscall.ENOTSUP }
+
+	t.Run("1段目は作らない", func(t *testing.T) {
+		l := newTestLocker(t)
+		if err := l.ensureDirs(); err != nil {
+			t.Fatalf("ensureDirs: %v", err)
+		}
+		orig := abandonCheckBeforePlaceHook
+		t.Cleanup(func() { abandonCheckBeforePlaceHook = orig })
+		abandonCheckBeforePlaceHook = func(ab *abandon) { ab.mark() }
+
+		if err := l.tryPlace(&Meta{Token: mustToken(), TTLMillis: time.Minute.Milliseconds()}, &abandon{}); !errors.Is(err, errAbandoned) {
+			t.Fatalf("errAbandoned を期待したが %v", err)
+		}
+		if _, err := os.Lstat(l.lockPath()); !os.IsNotExist(err) {
+			t.Fatalf("O_EXCL 枝で lock が作られている (%v)", err)
+		}
+	})
+
+	t.Run("2段目は取り消す", func(t *testing.T) {
+		l := newTestLocker(t)
+		if err := l.ensureDirs(); err != nil {
+			t.Fatalf("ensureDirs: %v", err)
+		}
+		orig := abandonCheckAfterPlaceHook
+		t.Cleanup(func() { abandonCheckAfterPlaceHook = orig })
+		abandonCheckAfterPlaceHook = func(ab *abandon) {
+			if _, err := os.Lstat(l.lockPath()); err != nil {
+				t.Errorf("判定の時点で lock が置かれていない: %v", err)
+			}
+			ab.mark()
+		}
+
+		if err := l.tryPlace(&Meta{Token: mustToken(), TTLMillis: time.Minute.Milliseconds()}, &abandon{}); !errors.Is(err, errAbandoned) {
+			t.Fatalf("errAbandoned を期待したが %v", err)
+		}
+		if _, err := os.Lstat(l.lockPath()); !os.IsNotExist(err) {
+			t.Fatalf("O_EXCL 枝で置いた lock が取り消されていない (%v)", err)
+		}
+	})
 }

@@ -461,7 +461,7 @@ func (l *Locker) tryPlace(meta *Meta, ab *abandon) error {
 }
 
 // abandonCheckBeforePlaceHook / abandonCheckAfterPlaceHook / abandonCheckAfterClaimHook /
-// abandonCheckAfterMarkHook は「見捨てを見る直前」に呼ばれる seam (issue 362)。
+// abandonCheckBeforeMarkHook は「見捨てを見る直前」に呼ばれる seam (issue 362)。
 // production では何もしない。
 //
 // 🚨 これが無いと、見捨ての検査はテストから**決定論的に作れない**。`withTimeout` の期限を
@@ -483,8 +483,16 @@ var (
 // 引き継がれた後の場合も errNotOwner で止まり、他者の lock へは届かない。
 //
 // 🚨 **取り消せなかったことは黙らない**。ここで失敗すると「誰も解放できない lock が TTL ぶん
-// (既定 30 分) 残る」= この issue の被害そのものなので、人が `lockman break` を判断する材料を出す。
+// (既定 30 分) 残る」= この issue の被害そのものなので、人が判断する材料を出す。
 // 呼び出し側は既に I/O timeout を報告しているが、**その報告は「取れなかった」までしか言っていない**。
+//
+// 🚨 **不変条件: この関数は `lockman break` を勧めない** (敵対レビュー 2 周目)。
+// break は「期限検査も token 照合もしない無条件 rename」で、同ファイルが「この道具で最も現実的に
+// 二重取得を作る操作」と書いているもの。ここから勧めてよい枝は 1 つも無い —
+// 判定不能なら消えるかもしれず、lease 切れなら次の取得が引き継げ、確定した失敗でも
+// その lock が自分のものである保証が無い。案内先は読み取り専用の `lockman status` に統一する。
+// (`cleanupOwn` が break を勧めるのは `os.Remove` が**実際に失敗した確定結果**に対してだけで、
+// 同じ案内でも前提が違う。そこからコピーしないこと)
 //
 // 🚨 **生の `Release` ではなく `ReleaseTimed` を使う**。「どうせ誰も待っていないのだから包みは
 // 要らない」は誤り: 包みを外しても取り消しの成功率は変わらない (期限切れでも内側の goroutine は
@@ -514,9 +522,10 @@ func (l *Locker) undoAbandonedPlace(token string) error {
 	case errors.Is(err, errNotOwner):
 		// 置けていない / 既に他者が引き継いだ。取り消すものが無いので黙る
 	default:
-		// 確定した失敗 (権限・I/O エラー)。ここだけが `break` を勧めてよい
-		warnf("見捨てられた取得が置いた lock を取り消せない (%v)。TTL が切れるまで残る。"+
-			"急ぐなら `lockman break` で剥がすこと: %v", err, l.lockPath())
+		// 権限・I/O エラー・中身を読めない lock など。**この lock が自分のものである保証すら無い**
+		// (errUnreadableLock はここへ来る) ので、残るとも言い切らない。
+		warnf("見捨てられた取得が置いた lock を取り消せない (%v)。"+
+			"残っているかは `lockman status` で見ること: %v", err, l.lockPath())
 	}
 	return errAbandoned
 }

@@ -75,3 +75,19 @@ root の `make test` にも含まれる (`GO_PROJECT_DIRS`)。
 - `bin/lockman` は `bin/lib/go_autobuild.zsh` 方式 (ソース更新時に自動再ビルド)。
   **`--async` は使わない** — glogx は popup の体感速度のため「旧版で即起動」を選んで
   いるが、排他の道具で古いバイナリが動くのは危険なので同期ビルドにする
+
+### 見捨てた goroutine の副作用を測る (issue 362)
+
+`--io-timeout` で倒した goroutine は回収できない (ブロック中の syscall は中断できない) ため、
+失敗を報告した後に lock や引き継ぎの目印を置いていくことがある。**その窓が縮んだかは
+`go test` では測れない** — in-process では goroutine が必ず完走し、プロセスも終了しないため。
+
+実バイナリの A-B は手動で回す (`make test` からは走らない):
+
+```sh
+./ab_abandoned.sh <修正前の revision> [修正後の revision]   # N=300 で試行数を変えられる
+```
+
+有効な `--io-timeout` の窓は**マシン依存**なのでスクリプトが毎回スイープで探す。
+数え方の落とし穴 (設計どおり残る目印を漏れと数えると、直っていない側が緑に見える) は
+スクリプト冒頭と issue 362 に書いてある。
