@@ -156,10 +156,14 @@ func (l *Locker) CleanupTimed(force bool) CleanupResult {
 		return l.Cleanup(force, p), nil
 	})
 	if err != nil {
+		// 🚨 **件数だけでなく sweep 中のエラーも持ち帰る** (敵対レビュー 393 の P2-3)。
+		// 旧版はここで `CleanupResult` を組み立て直してタイムアウト 1 本だけを入れており、
+		// 「排水中」と「権限ドリフトで恒久的に詰まっている」を分ける情報を捨てていた。
+		removed, errs := p.snapshot() // 読んだ後も増え続ける = 「少なくとも」の値
 		return CleanupResult{
-			Removed: int(p.removed.Load()), // 「**少なくとも** N 件」。読んだ後も増え続ける
+			Removed: removed,
 			Partial: true,
-			Errors:  []string{err.Error()},
+			Errors:  append(errs, err.Error()),
 		}
 	}
 	return res

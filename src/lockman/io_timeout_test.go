@@ -101,8 +101,18 @@ func TestIOTimeoutWrapsDeferredCleanup(t *testing.T) {
 		if len(o.res.Errors) != 1 || !strings.HasPrefix(o.res.Errors[0], errIOTimeout.Error()) {
 			t.Fatalf("掃除のタイムアウトが Errors に入っていない: %+v", o.res)
 		}
-		if o.res.Removed != 0 || o.res.Skipped {
-			t.Errorf("詰まった掃除が進んだことになっている: %+v", o.res)
+		// 🚨 **「Removed は必ず 0」は消えた不変条件** (issue 393 / 敵対レビュー P3-1)。
+		// 期限切れでも「どこまで進んだか」を報告する仕様になったので、この fixture で 0 なのは
+		// **残骸を 1 件も置いていないから**であって、「進捗を捨てているから」ではない。
+		// 旧 assert のまま fixture を現実的にすると、正しい挙動に**偽の赤**が出る。
+		if !o.res.Partial {
+			t.Errorf("期限切れなのに Partial が立っていない: %+v", o.res)
+		}
+		if o.res.Removed != 0 {
+			t.Errorf("残骸を置いていないのに消したことになっている: %+v", o.res)
+		}
+		if o.res.Skipped {
+			t.Errorf("force なのに skip された: %+v", o.res)
 		}
 	case <-time.After(20 * time.Second):
 		t.Fatal("CleanupTimed が 20s 以内に戻らない (包みが無い)")

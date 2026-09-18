@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -56,6 +57,40 @@ type CleanupResult struct {
 // 互いの件数を混ぜると、報告が「誰の掃除の件数か」を答えられなくなる。
 type cleanupProgress struct {
 	removed atomic.Int64
+	mu      sync.Mutex
+	errs    []string
+}
+
+// add は削除件数を 1 つ進める。**nil を受けてよい** (直接 `sweepDir` を呼ぶテストのため)。
+func (p *cleanupProgress) add() {
+	if p != nil {
+		p.removed.Add(1)
+	}
+}
+
+// addErr は sweep 中に起きた失敗を積む。🚨 **件数だけでなくエラーも部分結果**
+// (敵対レビュー 393 の P2-3)。期限切れで捨てると、「排水中」と「権限ドリフトで
+// 恒久的に詰まっている」を分ける情報がちょうど失われる — issue 393 の動機 2 に対しては
+// 件数より効く。
+func (p *cleanupProgress) addErr(msg string) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	p.errs = append(p.errs, msg)
+	p.mu.Unlock()
+}
+
+// snapshot は「いまここまで進んだ」を返す。見捨てた goroutine が**まだ書いている**ので、
+// 返るのは読んだ瞬間の値 (この後も増える)。
+func (p *cleanupProgress) snapshot() (int, []string) {
+	if p == nil {
+		return 0, nil
+	}
+	p.mu.Lock()
+	errs := append([]string(nil), p.errs...)
+	p.mu.Unlock()
+	return int(p.removed.Load()), errs
 }
 
 // Cleanup は残骸だけを掃除する。
@@ -64,11 +99,15 @@ type cleanupProgress struct {
 // 経路で、それを掃除という別経路から持ち込むと、rename 引き継ぎで勝者を 1 人に絞った
 // 意味が消える。期限切れの回収は Acquire の引き継ぎだけが行う。
 // .lockman/ 自体も消さない (再作成の churn と rmdir の競合を避ける)。
-// 🚨 **progress は可変長引数で受ける** (issue 393)。掃除の入口を 2 つに割ると、
-// `timeout_wiring_test.go` の gate (「生の I/O は timeout.go からしか呼ばない」) が
-// 見ている名前と実際の入口がずれる — 実際に `cleanupWithProgress` を別メソッドとして
-// 切り出したら、gate が「Cleanup の呼び出しが timeout.go から消えた」を検出して落ちた
-// (= gate は正しく働いた)。入口は 1 つに保ち、渡さない呼び出し側は今までどおり書ける。
+// 🚨 **progress は可変長引数で受ける** (issue 393)。掃除の入口を 2 つに割ると
+// `timeout_wiring_test.go` の gate が見ている名前と実際の入口がずれる。
+// 実際に `cleanupWithProgress` へ切り出すと gate は落ちるが、**落ちるのは
+// 「件数の下限 canary」であって包み忘れの検出 (offenders) ではない**
+// (敵対レビュー 393 の P3-2 が実証: timeout.go に別の wrapped 名の呼び出しを 1 つ足すと
+// 切り出したままでも gate は通る)。つまり gate はこの形を構造的には止めないので、
+// **入口を 1 つに保つ規律はこのコメントが正本**。
+// 🚨 2 つ目以降の progress は黙って無視される (可変長引数に内在する footgun)。
+// 渡すのは `CleanupTimed` の 1 箇所だけにすること。
 func (l *Locker) Cleanup(force bool, progress ...*cleanupProgress) CleanupResult {
 	p := &cleanupProgress{}
 	if len(progress) > 0 && progress[0] != nil {
@@ -199,13 +238,37 @@ func (l *Locker) sweepDir(sub string, retention time.Duration, now time.Time, re
 			//  stderr に 1.3〜3.5 KB。`_av1ify_lock.zsh` は stdout しか落としていない)。
 			if !os.IsNotExist(err) {
 				res.Errors = append(res.Errors, err.Error())
+				p.addErr(err.Error())
 			}
 			continue
 		}
 		// 🚨 **res と p の両方を進める** (issue 393)。res は呼び出し側が受け取れたときの
 		// 報告用、p は**受け取れなかったとき** (期限切れ) に外から読むためのもの。
+		// 🚨 **1 件ずつ進めること**。sweep の後にまとめて足す形は「最適化」に見えるが、
+		// **期限切れで途中まで進んだときに 0 を報告する** = issue 393 の症状そのものに戻る
+		// (敵対レビューが実測: 一括版は 10 件消して `Removed=0`)。
+		// 下の seam はその窓の**内側**にあり、`sweepPauseHook` を差し替えたテストが
+		// 「途中で止めて数える」ことでこの形を検出する (seam を窓の手前に置くと検出できない)。
 		res.Removed++
-		p.removed.Add(1)
+		p.add()
+		sweepPause()
+	}
+}
+
+// sweepPauseHook は「残骸を 1 つ消した直後」に割り込む seam。production では何もしない。
+//
+// 🚨 **atomic で持つこと**。この seam を差し替えるテストは「期限切れで見捨てられた goroutine が
+// まだ sweep を続けている」状態を作るので、素の変数だと**テストの後始末 (差し戻し) と
+// 見捨てた goroutine の読み取りがデータ競合**になる (実測 2026-09-19: `-race` が検出)。
+// 他の seam が素の変数でよいのは、見捨てられた goroutine がそこを通らないから。
+// 🚨 **窓の内側に置くこと** (敵対レビュー 393 の P1-1)。詰まりを `.cleanup_at` (sweep の後) で
+// 作る fixture では「sweep の途中で期限切れ」を構造的に再現できず、
+// **カウンタを一括で足す変異 (= issue 393 の症状そのもの) が全スイート緑で通った**。
+var sweepPauseHook atomic.Pointer[func()]
+
+func sweepPause() {
+	if f := sweepPauseHook.Load(); f != nil {
+		(*f)()
 	}
 }
 

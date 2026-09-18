@@ -229,9 +229,19 @@ func dispatch(cmd string, l *Locker, o *opts, child []string) int {
 				// 🚨 **期限切れのときは件数の意味が違う** (issue 393)。見捨てた goroutine は
 				// まだ消し続けているので、読んだ値は「少なくとも N 件」。`removed=N` と
 				// 出すと「これで打ち止め」と読めるので、`removed>=N` と書き分ける。
+				// 🚨 **0 件のときに「進んでいる」と言わない** (敵対レビュー 393 の P2-2)。
+				// 「期限切れ + 0 件」は「排水中」でも「1 件も進んでいない」でもなく**判定不能**で、
+				// 旧文面 (「掃除は途中で、次回の続きから減る」) はそこに**偽の肯定**を足していた
+				// (実測: 残骸 0 件の fixture で `removed>=0 (…次回の続きから減る)` が出た)。
+				// 判定不能を allow / deny のどちらにも丸めない (`adversarial-review-own-safeguards.md` §2)。
+				// 🚨 「掃除は途中」とも断定しない。詰まった位置が sweep の後 (打刻) なら
+				// sweep は完走している (同 P2-1。同じ fixture で「途中」が偽になっていた)。
 				removed := fmt.Sprintf("removed=%d", res.Removed)
-				if res.Partial {
-					removed = fmt.Sprintf("removed>=%d (期限切れ。掃除は途中で、次回の続きから減る)", res.Removed)
+				switch {
+				case res.Partial && res.Removed == 0:
+					removed = "removed=判定不能 (期限切れ。1 件も消せていないのか、消している途中なのかは分からない)"
+				case res.Partial:
+					removed = fmt.Sprintf("removed>=%d (期限切れ。ここまでは確認済み)", res.Removed)
 				}
 				warnf("cleanup: %s skipped=%v errors=%v", removed, res.Skipped, res.Errors)
 			}
