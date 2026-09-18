@@ -750,8 +750,36 @@ func (l *Locker) tryTakeover(ab *abandon) (bool, error) {
 		}
 		return false, err
 	}
+	l.stampGraveyard(grave, now) // 退避した時刻から retention を測る (issue 364 の 2)
 	evicted = true
 	return true, nil
+}
+
+// stampGraveyard は graveyard へ退けた lock の mtime を **退避した時刻**へ打ち直す
+// (issue 364 の 2)。
+//
+// 🚨 `os.Rename` は mtime を保つので、打ち直さないと `graveyardRetention` (7d) が
+// **lock が最後に打刻された時刻**から測られる。つまり「死んだマシンが何日も放置した lock」=
+// **最も記録する価値のあるもの**だけが、退避した直後の `Cleanup` に即座に消される
+// (実測: 8 日前の lock を `break` すると graveyard は空。同じコマンドの defer Cleanup が消す)。
+// 人が `break` を打つのはまさに「誰が握っていたのか」を知りたい場面なので、
+// `Break` の doc が言う「誰が握っていたかの記録も残す」がそこでだけ成立しなくなる。
+//
+// **正しさには関与しない**ので best-effort。失敗しても呼び出し元は止めない
+// (打刻できなければ退避前の mtime が残る = 従来どおり早く消えるだけ)。
+// 鳴らさないのは、退避は正常系にも出る操作で、ここで warn を足すと
+// 「良性の状態で鳴る診断」になるため (issue 383 の 2 周目 P2)。
+//
+// 時刻は **サーバ側の打刻** (`serverNow`) を使う。掃除の側が `serverNow` と比べるので、
+// クライアント時計で打つと skew がそのまま retention のずれになる。
+func (l *Locker) stampGraveyard(path string, now time.Time) {
+	if now.IsZero() {
+		var err error
+		if now, err = l.serverNow(); err != nil {
+			return
+		}
+	}
+	_ = os.Chtimes(path, now, now)
 }
 
 // takeoverGeneration は引き継ぎの調停に使う「世代 id」を返す。要件は 1 つだけ:
@@ -1028,6 +1056,8 @@ func (l *Locker) Break() error {
 		}
 		return err
 	}
+	// 時刻は持っていないので `stampGraveyard` 側で取り直す (取れなければ打刻しない)。
+	l.stampGraveyard(grave, time.Time{})
 	return nil
 }
 

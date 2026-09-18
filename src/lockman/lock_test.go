@@ -261,21 +261,65 @@ func TestRenewRefusesExpiredLease(t *testing.T) {
 }
 
 // Renew は保持を延ばす (延びないと TTL 内に必ず奪われる)。
+// Renew が保持を延長すること。
+//
+// 🚨 **壁時計で測らない** (issue 364 の 4 / `avoid-wall-clock-assertions.md`)。
+// 旧版は ttl=200ms に対し `Sleep(ttl/2)` + `Renew` を 3 周しており、1 周に許された余裕は
+// 100ms しかなかった。`Renew` は FS 操作 6 回 (readLock + serverNow + write + fsync ×2 +
+// serverNow + stat) なので、**測っていたのは不変条件ではなく I/O レイテンシ**
+// (実測: `Renew` に 120ms = SMB では正常な範囲の遅延を足すと red)。
+//
+// 判定軸を「何が起きたか」へ移した: TTL を長く取り、mtime を**期限の手前**へ打ち直してから
+// Renew し、**引き継げるかどうか**で見る。時間は待たず、遅いマシンでも意味が変わらない。
 func TestRenewExtendsHold(t *testing.T) {
-	l := newTestLocker(t)
-	ttl := 200 * time.Millisecond
-	m, err := l.Acquire(ttl, "")
-	if err != nil {
-		t.Fatalf("Acquire: %v", err)
-	}
-	for range 3 {
-		time.Sleep(ttl / 2)
+	ttl := time.Hour
+	// 期限の手前 (まだ有効 = Renew が受け付ける) へ寄せる
+	nearExpiry := ttl - time.Minute
+
+	t.Run("renewed", func(t *testing.T) {
+		l := newTestLocker(t)
+		m, err := l.Acquire(ttl, "")
+		if err != nil {
+			t.Fatalf("Acquire: %v", err)
+		}
+		ageLock(t, l, nearExpiry)
 		if err := l.Renew(m.Token); err != nil {
 			t.Fatalf("Renew: %v", err)
 		}
+		// Renew が打刻し直したので、同じだけ経っても期限内のまま
+		ageLock(t, l, nearExpiry)
+		if _, err := l.Acquire(ttl, "thief"); !errors.Is(err, errBusy) {
+			t.Fatalf("更新したのに奪われた (err=%v)", err)
+		}
+	})
+
+	// 対照: Renew しなければ同じ経過で奪える (= 上の green が「そもそも奪えない」由来でないこと)
+	t.Run("not renewed", func(t *testing.T) {
+		l := newTestLocker(t)
+		if _, err := l.Acquire(ttl, ""); err != nil {
+			t.Fatalf("Acquire: %v", err)
+		}
+		ageLock(t, l, nearExpiry)
+		ageLock(t, l, nearExpiry)
+		if _, err := l.Acquire(ttl, "thief"); err != nil {
+			t.Fatalf("期限切れなのに引き継げない (err=%v)", err)
+		}
+	})
+}
+
+// ageLock は lock の mtime を d だけ過去へ動かす (壁時計を待たずに「経過」を作る)。
+// 🚨 現在時刻からの絶対位置ではなく **今の mtime からの相対**で動かすこと。
+// 絶対位置で打つと、Renew が打刻し直したことが観測から消えて、上のテストが
+// 「Renew が mtime を進めたか」を 1 mm も検査しなくなる。
+func ageLock(t *testing.T, l *Locker, d time.Duration) {
+	t.Helper()
+	fi, err := os.Stat(l.lockPath())
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
 	}
-	if _, err := l.Acquire(ttl, "thief"); !errors.Is(err, errBusy) {
-		t.Fatalf("更新中なのに奪われた (err=%v)", err)
+	at := fi.ModTime().Add(-d)
+	if err := os.Chtimes(l.lockPath(), at, at); err != nil {
+		t.Fatalf("Chtimes: %v", err)
 	}
 }
 
