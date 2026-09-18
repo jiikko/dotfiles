@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 )
 
@@ -33,9 +34,28 @@ const minRetention = 10 * time.Minute
 // (黙って捨てない)。Errors が非空なら `main.go` の dispatch が verbose でなくても
 // stderr へ出す。
 type CleanupResult struct {
-	Removed int      `json:"removed"`
-	Skipped bool     `json:"skipped"`
+	Removed int  `json:"removed"`
+	Skipped bool `json:"skipped"`
+	// Partial は「期限切れで途中まで」(issue 393)。**`Removed` の意味が変わる**ので
+	// 一緒に運ぶ: false なら「これで全部」、true なら「**少なくとも** N 件は消した。
+	// 見捨てた goroutine はまだ消し続けている」。
+	// 🚨 これが無いと、期限切れの報告が `removed=0` = 「1 件も進んでいない」と読める値になり、
+	// **人が「掃除が全く進んでいない」と誤診して `rm -rf` のような手作業へ倒れる**
+	// (lock dir に対して最も危険な操作)。実測 2026-09-18: 残骸 10,000 件で 3 回連続
+	// `removed=0` を出しながら、実際は毎回 2,400〜2,500 件を消していた。
+	Partial bool     `json:"partial,omitempty"`
 	Errors  []string `json:"errors,omitempty"`
+}
+
+// cleanupProgress は「いま何件消したか」を**掃除の外から読めるようにする**カウンタ
+// (issue 393)。期限切れで呼び出し側が諦めたとき、見捨てた goroutine はまだ
+// `CleanupResult` を書き続けているので、**その構造体を読むとデータ競合になる**。
+// atomic な件数だけを共有して、期限切れ時点のスナップショットを読む。
+//
+// 🚨 呼び出しごとに新しく作る (Locker に持たせない)。同じ Locker への並行 Cleanup が
+// 互いの件数を混ぜると、報告が「誰の掃除の件数か」を答えられなくなる。
+type cleanupProgress struct {
+	removed atomic.Int64
 }
 
 // Cleanup は残骸だけを掃除する。
@@ -44,7 +64,16 @@ type CleanupResult struct {
 // 経路で、それを掃除という別経路から持ち込むと、rename 引き継ぎで勝者を 1 人に絞った
 // 意味が消える。期限切れの回収は Acquire の引き継ぎだけが行う。
 // .lockman/ 自体も消さない (再作成の churn と rmdir の競合を避ける)。
-func (l *Locker) Cleanup(force bool) CleanupResult {
+// 🚨 **progress は可変長引数で受ける** (issue 393)。掃除の入口を 2 つに割ると、
+// `timeout_wiring_test.go` の gate (「生の I/O は timeout.go からしか呼ばない」) が
+// 見ている名前と実際の入口がずれる — 実際に `cleanupWithProgress` を別メソッドとして
+// 切り出したら、gate が「Cleanup の呼び出しが timeout.go から消えた」を検出して落ちた
+// (= gate は正しく働いた)。入口は 1 つに保ち、渡さない呼び出し側は今までどおり書ける。
+func (l *Locker) Cleanup(force bool, progress ...*cleanupProgress) CleanupResult {
+	p := &cleanupProgress{}
+	if len(progress) > 0 && progress[0] != nil {
+		p = progress[0]
+	}
 	var res CleanupResult
 	if !force && !l.cleanupDue() {
 		res.Skipped = true
@@ -80,9 +109,9 @@ func (l *Locker) Cleanup(force bool) CleanupResult {
 		res.Errors = append(res.Errors, err.Error())
 		return res
 	}
-	l.sweepDir(tmpDirName, scratchRetention, now, &res)
-	l.sweepDir(probeDirName, scratchRetention, now, &res)
-	l.sweepDir(graveyardDirName, graveyardRetention, now, &res)
+	l.sweepDir(tmpDirName, scratchRetention, now, &res, p)
+	l.sweepDir(probeDirName, scratchRetention, now, &res, p)
+	l.sweepDir(graveyardDirName, graveyardRetention, now, &res, p)
 	// 🚨 何か失敗していたら打刻しない。打刻するとレート制限が進んで以後 10 分は skip
 	// され、「掃除が黙って止まっている」状態が見えなくなる (毎回出し直すほうが気づける)。
 	// 対象は下限違反だけでなく **実際に起きうる失敗**も — 権限ドリフトや stale mount で
@@ -115,7 +144,7 @@ func (l *Locker) Cleanup(force bool) CleanupResult {
 // (2 周目の敵対レビューが指摘。到達可能性は未確認のまま、防御は足さない)。
 // `Renew` が `clockSkewTolerance` を持つのは打刻がクライアント側へ落ちる場合の検算で、
 // 掃除は正しさに関与しないため同じ検算は要らない。
-func (l *Locker) sweepDir(sub string, retention time.Duration, now time.Time, res *CleanupResult) {
+func (l *Locker) sweepDir(sub string, retention time.Duration, now time.Time, res *CleanupResult, p *cleanupProgress) {
 	// 🚨 掃除してよいのは残骸の 3 つのサブディレクトリだけ。**retention と同じく
 	// 「渡った値」で縛る** — ここが無いと `l.sweepDir("", scratchRetention, now, &res)`
 	// (「.lockman 直下に落ちた孤児も掃除したい」という自然な 1 行) で metaDir 直下が
@@ -173,7 +202,10 @@ func (l *Locker) sweepDir(sub string, retention time.Duration, now time.Time, re
 			}
 			continue
 		}
+		// 🚨 **res と p の両方を進める** (issue 393)。res は呼び出し側が受け取れたときの
+		// 報告用、p は**受け取れなかったとき** (期限切れ) に外から読むためのもの。
 		res.Removed++
+		p.removed.Add(1)
 	}
 }
 

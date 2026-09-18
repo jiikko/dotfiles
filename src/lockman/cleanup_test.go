@@ -73,7 +73,7 @@ func TestSweepRefusesDirectoryOutsideScratch(t *testing.T) {
 	}
 
 	var res CleanupResult
-	l.sweepDir("", scratchRetention, time.Now(), &res) // .lockman 直下
+	l.sweepDir("", scratchRetention, time.Now(), &res, &cleanupProgress{}) // .lockman 直下
 
 	if res.Removed != 0 {
 		t.Fatalf("対象外のディレクトリで %d 件消した (期待 0)", res.Removed)
@@ -176,7 +176,7 @@ func TestSweepRefusesRetentionBelowFloor(t *testing.T) {
 	touchOld(t, victim, 24*time.Hour) // 下限を割っていなければ確実に消える古さ
 
 	var res CleanupResult
-	l.sweepDir(tmpDirName, minRetention-time.Nanosecond, time.Now(), &res)
+	l.sweepDir(tmpDirName, minRetention-time.Nanosecond, time.Now(), &res, &cleanupProgress{})
 
 	if res.Removed != 0 {
 		t.Fatalf("下限を割る保持期間で %d 件消した (期待 0)", res.Removed)

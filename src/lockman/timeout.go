@@ -143,9 +143,24 @@ func (l *Locker) BreakTimed() error {
 // CleanupTimed は掃除を包む。**タイムアウトは致命にしない** — 掃除は正しさに関与しない
 // 設計 (cleanup.go の 🚨) なので、失敗は件数と一緒に res.Errors へ入れて呼び出し側に見せる。
 func (l *Locker) CleanupTimed(force bool) CleanupResult {
-	res, err := withTimeout(l.timeout, func(_ *abandon) (CleanupResult, error) { return l.Cleanup(force), nil })
+	// 🚨 **期限切れでも「どこまで進んだか」を返す** (issue 393)。旧版は `res` を丸ごと捨てて
+	// `CleanupResult{Errors: ...}` を返しており、**実際には数千件を消しているのに
+	// `removed=0`** と報告していた (実測 2026-09-18: 残骸 10,000 件で 3 回連続 `removed=0`、
+	// 実数は毎回 2,400〜2,500 件)。`dispatch` のコメントは「部分的に進んでいるのか
+	// 何も進んでいないのかは**失敗している場面でこそ知りたい**」と約束しているのに、
+	// その唯一の場面で数字が嘘になっていた。
+	// 🚨 `res` 自体はまだ見捨てた goroutine が書いているので**読めない** (データ競合)。
+	// 読んでよいのは atomic な件数だけ。
+	p := &cleanupProgress{}
+	res, err := withTimeout(l.timeout, func(_ *abandon) (CleanupResult, error) {
+		return l.Cleanup(force, p), nil
+	})
 	if err != nil {
-		return CleanupResult{Errors: []string{err.Error()}}
+		return CleanupResult{
+			Removed: int(p.removed.Load()), // 「**少なくとも** N 件」。読んだ後も増え続ける
+			Partial: true,
+			Errors:  []string{err.Error()},
+		}
 	}
 	return res
 }

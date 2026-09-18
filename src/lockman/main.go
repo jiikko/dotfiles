@@ -226,7 +226,14 @@ func dispatch(cmd string, l *Locker, o *opts, child []string) int {
 			// 件数も一緒に出す: 部分的に進んでいるのか何も進んでいないのかは、
 			// 失敗している場面でこそ知りたい。
 			if len(res.Errors) > 0 || o.verbose {
-				warnf("cleanup: removed=%d skipped=%v errors=%v", res.Removed, res.Skipped, res.Errors)
+				// 🚨 **期限切れのときは件数の意味が違う** (issue 393)。見捨てた goroutine は
+				// まだ消し続けているので、読んだ値は「少なくとも N 件」。`removed=N` と
+				// 出すと「これで打ち止め」と読めるので、`removed>=N` と書き分ける。
+				removed := fmt.Sprintf("removed=%d", res.Removed)
+				if res.Partial {
+					removed = fmt.Sprintf("removed>=%d (期限切れ。掃除は途中で、次回の続きから減る)", res.Removed)
+				}
+				warnf("cleanup: %s skipped=%v errors=%v", removed, res.Skipped, res.Errors)
 			}
 		}()
 	}
