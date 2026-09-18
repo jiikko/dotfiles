@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -183,6 +184,9 @@ func TestUnreadableLockGuidanceReachesCLI(t *testing.T) {
 	if !strings.Contains(out2, "読めない") {
 		t.Fatalf("with の stderr に理由が出ていない: %q", out2)
 	}
+	if strings.Contains(out2, "break") {
+		t.Fatalf("with が破壊的操作を促している: %q", out2)
+	}
 
 	// 🚨 **案内されたコマンドを実際に走らせる** (敵対レビュー 4 周目 P1-2 = 10 個目の fixture の嘘)。
 	// 旧版は `strings.Contains(out, "status")` だけを見ており、**名指しされたコマンドがその状態で
@@ -205,6 +209,15 @@ func TestUnreadableLockGuidanceReachesCLI(t *testing.T) {
 		if !strings.Contains(guided, want) {
 			t.Fatalf("案内先が判断材料 (%s) を出していない: %q", want, guided)
 		}
+	}
+	// 🚨 **案内先も破壊的操作を促さない** (敵対レビュー 5 周目 P1)。
+	// `errUnreadableLock` のコメントは「break を促さない」を不変条件として宣言しているのに、
+	// 検査していたのは 3 hop 中 2 hop (err.Error() と acquire の stderr) だけで、
+	// **その 2 つが名指ししている status** は promote したまま緑だった。
+	// 不変条件は「守られている hop」ではなく「破れる hop」で pin する。
+	if strings.Contains(guided, "break") {
+		t.Fatalf("案内先の `lockman %s` が破壊的操作を促している (保持者が居ないことは"+
+			"どのコマンドでも確認できないのに): %q", m[1], guided)
 	}
 }
 
@@ -447,6 +460,11 @@ func TestStatusAnswersForUnreadableLock(t *testing.T) {
 	if rcj != exitBusy || !strings.Contains(outj, `"unreadable":true`) {
 		t.Fatalf("status --json が状態を出していない: rc=%d out=%q", rcj, outj)
 	}
+	// 🚨 **canonical な unreadable lock は 0 バイト**。値型 + omitempty だと、いちばん重要な
+	// 判断材料がちょうどそのときだけ JSON から消えていた (敵対レビュー 5 周目 P2-2)。
+	if !strings.Contains(outj, `"size_bytes":0`) {
+		t.Fatalf("status --json が 0 バイトという判断材料を落としている: %q", outj)
+	}
 
 	// 🚨 `check` の契約 (判定不能は busy 側へ倒す) を壊していないこと。
 	// Inspect がエラーを返さなくなったので、`check` は `st.Held` 経由で同じ rc になる必要がある
@@ -581,5 +599,52 @@ func TestTryPlaceCapturesIdentityFromFdNotPath(t *testing.T) {
 	}
 	if m.Token != victim.Token {
 		t.Fatalf("別ホストの lock が別物に置き換わっている: got=%s want=%s", m.Token, victim.Token)
+	}
+}
+
+// 🚨 **サーバ時刻を取れないとき、age を 0 に丸めない** (敵対レビュー 5 周目 P2-1)。
+//
+// 旧版は `serverNow` のエラーを捨てて `AgeSec` を 0 のままにしていたので、**3 時間前の残骸が
+// `age=0s` = 「いま書かれたばかり」**として出た。この状態の存在理由は「人が一過性と恒久を
+// 見分けるための材料を出すこと」なので、材料が嘘をつくのは無材料より悪い。
+// 発火条件 (probe を作れない / stat できない) は、権限・ENOSPC・詰まったマウントなど
+// **まさに wedge を疑って status を打つ場面と相関する**。
+func TestStatusDoesNotFakeAgeWhenServerTimeIsUnavailable(t *testing.T) {
+	l := newTestLocker(t)
+	if _, err := l.Acquire(time.Hour, "holder"); err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	if err := os.Truncate(l.lockPath(), 0); err != nil {
+		t.Fatalf("Truncate: %v", err)
+	}
+	old := time.Now().Add(-3 * time.Hour)
+	if err := os.Chtimes(l.lockPath(), old, old); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+	// probe を作れなくして serverNow を壊す (権限・ENOSPC・詰まったマウントの代理)
+	probe := filepath.Join(l.metaDir, probeDirName)
+	if err := os.Chmod(probe, 0o555); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(probe, 0o755) })
+
+	var rc int
+	out := captureStdout(t, func() { rc = run([]string{"status", l.dir}) })
+	if rc != exitBusy {
+		t.Fatalf("status rc=%d (exitBusy=%d を期待)", rc, exitBusy)
+	}
+	if strings.Contains(out, "age=0s") {
+		t.Fatalf("取れなかった age を 0 に丸めて出している (3 時間前の残骸が「いま」に見える): %q", out)
+	}
+	if !strings.Contains(out, "age=不明") {
+		t.Fatalf("age が取れなかったことを出していない: %q", out)
+	}
+	var rcj int
+	outj := captureStdout(t, func() { rcj = run([]string{"status", "--json", l.dir}) })
+	if rcj != exitBusy {
+		t.Fatalf("status --json rc=%d", rcj)
+	}
+	if strings.Contains(outj, `"age_seconds"`) {
+		t.Fatalf("取れなかった age を JSON に出している (機械が 0 を真に受ける): %q", outj)
 	}
 }

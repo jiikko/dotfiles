@@ -960,15 +960,22 @@ type State struct {
 	// 旧版の status は rc=1 (道具の失敗) / stdout 空で、**人はそこで行き止まっていた**。
 	// 一過性 (Renew の O_TRUNC 窓) と恒久 (書きかけの残骸) は 1 回の観測では区別できないので、
 	// **人が判断するための材料** (サイズ・経過) を出すに留める。
-	Unreadable bool   `json:"unreadable,omitempty"`
-	SizeBytes  int64  `json:"size_bytes,omitempty"`
-	Token      string `json:"token,omitempty"`
-	Host       string `json:"host,omitempty"`
-	User       string `json:"user,omitempty"`
-	Label      string `json:"label,omitempty"`
-	AgeSec     int    `json:"age_seconds,omitempty"`
-	ExpiresIn  int    `json:"expires_in_seconds,omitempty"`
+	Unreadable bool `json:"unreadable,omitempty"`
+	// 🚨 **SizeBytes / AgeSec は「取れなかった」と「本当に 0」を区別するためにポインタ**
+	// (敵対レビュー 5 周目 P2-1 / P2-2)。値型 + omitempty だと **canonical な unreadable lock
+	// (= 0 バイト) の size_bytes が丸ごと消え**、`serverNow` が失敗したときの age は
+    // **0 = 「いま書かれたばかり」という嘘**になって出る。どちらも「判断材料を出す」という
+	// この状態の存在理由そのものを壊す。nil = 未取得 (JSON からは欠落 / 人間向けは「不明」)。
+	SizeBytes *int64 `json:"size_bytes,omitempty"`
+	Token     string `json:"token,omitempty"`
+	Host      string `json:"host,omitempty"`
+	User      string `json:"user,omitempty"`
+	Label     string `json:"label,omitempty"`
+	AgeSec    *int   `json:"age_seconds,omitempty"`
+	ExpiresIn int    `json:"expires_in_seconds,omitempty"`
 }
+
+func intPtr(v int) *int { return &v }
 
 // Inspect は現在の状態を返す。**排他の根拠には使えない** (読んだ次の瞬間に変わる)。
 func (l *Locker) Inspect() (*State, error) {
@@ -980,9 +987,11 @@ func (l *Locker) Inspect() (*State, error) {
 		// 中身を読めない lock。**状態として答える** (道具の失敗にしない)。
 		st := &State{Held: true, Unreadable: true}
 		if fi, serr := os.Lstat(l.lockPath()); serr == nil {
-			st.SizeBytes = fi.Size()
+			size := fi.Size()
+			st.SizeBytes = &size
 			if now, nerr := l.serverNow(); nerr == nil {
-				st.AgeSec = int(now.Sub(fi.ModTime()).Seconds())
+				age := int(now.Sub(fi.ModTime()).Seconds())
+				st.AgeSec = &age
 			}
 		}
 		return st, nil
@@ -1001,7 +1010,7 @@ func (l *Locker) Inspect() (*State, error) {
 	ttl := holderTTL(m)
 	return &State{
 		Held: true, Token: m.Token, Host: m.Host, User: m.User, Label: m.Label,
-		AgeSec:    int(age.Seconds()),
+		AgeSec:    intPtr(int(age.Seconds())),
 		ExpiresIn: int((ttl - age).Seconds()),
 	}, nil
 }

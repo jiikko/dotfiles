@@ -261,12 +261,20 @@ func dispatch(cmd string, l *Locker, o *opts, child []string) int {
 			printJSON(st)
 		} else if st.Unreadable {
 			// 🚨 **一過性か恒久かは言わない** (1 回の観測では区別できない)。人が判断する材料を出す。
-			fmt.Printf("unreadable lock (size=%dB, age=%ds) — 書き込み中の一瞬か、書きかけの残骸。"+
-				"経過が伸び続けるなら残骸。`lockman break` で剥がせる (保持者が居ないことを確かめてから)\n",
-				st.SizeBytes, st.AgeSec)
+			// 🚨 **破壊的操作 (`lockman break`) を名指ししない** (敵対レビュー 5 周目 P1)。
+			// `errUnreadableLock` のコメントが宣言している不変条件 ("break を促さない") は
+			// `acquire` / `with` では守られていたが、**その 2 つが名指ししているこの出口**だけが
+			// 破らせていた。しかも添えていた前提「保持者が居ないことを確かめてから」は、
+			// 保持者の記録が lock の中身にしか無い以上 **どのコマンドでも確認できない**
+			// (status=unreadable / check=busy / acquire=この案内へ戻る)。
+			// 確認できない前提を付けて破壊を勧めるのは、勧めないのと同じではなく**悪い**
+			// (一過性の窓で従うと生きた保持者を剥がす = 二重実行)。材料だけ出して止める。
+			fmt.Printf("unreadable lock (size=%s, age=%s) — 書き込み中の一瞬か、書きかけの残骸。"+
+				"時間を空けて再実行し、経過が伸び続けるなら残骸 (剥がすかどうかは人が決める)\n",
+				fmtSize(st.SizeBytes), fmtAge(st.AgeSec))
 		} else if st.Held {
-			fmt.Printf("held by %s@%s (label=%s, age=%ds, expires_in=%ds)\n",
-				st.User, st.Host, st.Label, st.AgeSec, st.ExpiresIn)
+			fmt.Printf("held by %s@%s (label=%s, age=%s, expires_in=%ds)\n",
+				st.User, st.Host, st.Label, fmtAge(st.AgeSec), st.ExpiresIn)
 		} else {
 			fmt.Println("free")
 		}
@@ -374,4 +382,21 @@ func printJSON(v any) {
 
 func main() {
 	os.Exit(run(os.Args[1:]))
+}
+
+// fmtSize / fmtAge は State の「取れなかった」(nil) を **0 に丸めずに**出す
+// (敵対レビュー 5 周目 P2-1)。0 に丸めると `serverNow` が失敗したときに
+// 「age=0s = いま書かれたばかり」という嘘を、判断材料の顔で出すことになる。
+func fmtSize(v *int64) string {
+	if v == nil {
+		return "不明"
+	}
+	return fmt.Sprintf("%dB", *v)
+}
+
+func fmtAge(v *int) string {
+	if v == nil {
+		return "不明"
+	}
+	return fmt.Sprintf("%ds", *v)
 }
