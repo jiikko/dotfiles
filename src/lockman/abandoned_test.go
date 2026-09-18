@@ -77,11 +77,21 @@ func TestAbandonedBeforePlaceCreatesNoLock(t *testing.T) {
 		reached = true
 		ab.mark()
 	}
+	// 🚨 **2 段目に救われていないことを固定する**。「lock が存在しない」だけを見ると、
+	// 1 段目を外す変異を当てても 2 段目 (置いてから取り消す) が同じ結果を作るので緑のまま通る
+	// (実測: 変異 M1 がそうだった)。**作らなかった**ことの観測点は「2 段目まで到達しないこと」。
+	afterOrig := abandonCheckAfterPlaceHook
+	t.Cleanup(func() { abandonCheckAfterPlaceHook = afterOrig })
+	reachedAfter := false
+	abandonCheckAfterPlaceHook = func(*abandon) { reachedAfter = true }
 
 	ab := &abandon{}
 	err := l.tryPlace(&Meta{Token: mustToken(), TTLMillis: time.Minute.Milliseconds()}, ab)
 	if !reached {
 		t.Fatal("seam に到達していない: 検査が置かれている経路を通っていない")
+	}
+	if reachedAfter {
+		t.Fatal("1 段目で降りていない: lock を置いてから取り消している (2 段目に救われた緑)")
 	}
 	if !errors.Is(err, errAbandoned) {
 		t.Fatalf("errAbandoned を期待したが %v", err)
@@ -235,7 +245,16 @@ func TestAbandonedReclaimLeavesNoMark(t *testing.T) {
 // 🚨 これが無いと、上の 4 本は「seam で立てれば効く」しか言っておらず、**production の
 // withTimeout が mark を呼んでいなくても全部緑**になる (fixture が退行から不可視)。
 func TestWithTimeoutMarksAbandonInProduction(t *testing.T) {
-	l, err := NewLocker(t.TempDir(), 100*time.Millisecond)
+	// 🚨 `t.TempDir()` を使わない。このテストは**見捨てた goroutine をわざと作る**ので、
+	// テスト関数が返った後もその goroutine が dir を触りうる。`t.TempDir` の後始末は
+	// 失敗をテストの失敗にするため、**実装と無関係な赤**が出る (実測: 変異 M1 で
+	// 「directory not empty」が出て、変異を検知したように見えた)。後始問は best-effort にする。
+	dir, err := os.MkdirTemp("", "lockman-wiring-")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	l, err := NewLocker(dir, 100*time.Millisecond)
 	if err != nil {
 		t.Fatalf("NewLocker: %v", err)
 	}
