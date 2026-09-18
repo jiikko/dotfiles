@@ -402,7 +402,7 @@ __av1ify_postcheck() {
 
   # フレーム密度比較 (fps を変更した場合)。
   #
-  # 🚨 fps を変えたからといって検査を丸ごと捨てないこと (issue 397)。フレーム数チェックは
+  # 🚨 fps を変えたからといって検査を丸ごと捨てないこと (issue 397)。フレーム数の比較は
   # このパイプライン唯一の「密度」検査で、他 (duration / vidloss / avsync) は全て
   # エンドポイント検査なので代替にならない。実測: 30fps/10s/300 フレームを -r 1 で
   # 作り直すと 12 フレーム (96% 欠落) になるが、duration の差はちょうど 2.000s で
@@ -410,41 +410,72 @@ __av1ify_postcheck() {
   # CFR retiming の duration 変位はターゲット fps の 1〜2 フレーム間隔が上限で、
   # 尺に比例しない (120 秒素材でも同じ 2.000s) ため、duration ではこの帯を原理的に拾えない。
   #
-  # retiming は密度を**予測可能に**変えるので、期待値 = ソースの尺 × 適用した fps と
-  # 突き合わせる。許容は既定 5% (AV1IFY_DENSITY_TOLERANCE_PCT) と絶対フロア 24 の大きい方。
+  # 🚨 期待値を「ソース尺 × 適用fps」で立てないこと。適用fps は **我々が -r に渡した値と
+  # 同一の変数**なので、その値が壊れると ffmpeg の出力と期待値が一緒に壊れ、必ず一致する
+  # (= 守りたい故障クラスを原理的に検出できない。2026-09-19 の敵対レビュー 2 周目が
+  # 決定点への変異で実証: 514 フレームのソースが 202 フレームになっても ✅ 完了 だった)。
+  # 期待値は**加害変数を経由しない量**から立てる: ソースのフレーム数そのもの。
+  # avg_frame_rate の定義が nb_frames / duration なので、ソースをその avg で CFR 化した
+  # 出力のフレーム数は元と (丸めを除いて) 一致する。誤った fps を渡せばここがズレる。
   if [[ -n "$src_path" ]] && (( fps_changed )) && [[ -n "$applied_fps" ]]; then
-    local src_dur out_frames_d
-    src_dur=$(__ff_format_field "$src_path" format=duration)
+    local src_frames_d out_frames_d
+    src_frames_d=$(__ff_stream_field "$src_path" v:0 stream=nb_frames)
     out_frames_d=$(__ff_stream_field "$filepath" v:0 stream=nb_frames)
-    if [[ "$out_frames_d" =~ ^[0-9]+$ ]] && __av1ify_is_num "$src_dur"; then
+    local want_frames=""
+    if [[ "$src_frames_d" =~ ^[0-9]+$ ]] && (( src_frames_d > 0 )); then
+      want_frames="$src_frames_d"
+    else
+      # nb_frames を出さないコンテナ (MKV 等) 向けのフォールバック。
+      # 🚨 format=duration を使わないこと: コンテナの duration は**全ストリームの最大**なので、
+      # 音声が映像より長い素材で期待値が過大になり、1 フレームも失っていない出力が
+      # check_ng-density に転ぶ (2026-09-19 実測: 映像 60s / 音声 64s の VFR mp4 で発生)。
+      # 映像の真の終端は __av1ify_get_stream_end が stream=duration → packet 実測の順で返す。
+      local src_vend=""
+      if __av1ify_get_stream_end "$src_path" "v:0"; then src_vend="$REPLY"; fi
+      if __av1ify_is_num "$src_vend"; then
+        # ここだけは適用fps を使わざるを得ないが、ソース側の avg_frame_rate で立てる
+        # (VFR 経路では applied_fps == ソースの avg なので、値が壊れていれば
+        #  ソースから読み直した avg と食い違い、下の比較で検出できる)
+        local src_avg_raw
+        src_avg_raw=$(__ff_stream_field "$src_path" v:0 stream=avg_frame_rate)
+        want_frames=$(LC_ALL=C awk -v dur="$src_vend" -v fps="$src_avg_raw" 'BEGIN {
+          n = split(fps, a, "/")
+          f = (n == 2) ? ((a[2]+0 > 0) ? a[1] / a[2] : 0) : a[1]+0
+          if (f <= 0 || dur <= 0) exit 1
+          printf "%d", int(dur * f + 0.5)
+        }') || want_frames=""
+      fi
+    fi
+    if [[ "$out_frames_d" =~ ^[0-9]+$ && "$want_frames" =~ ^[0-9]+$ ]] && (( want_frames > 0 )); then
       local density_pct="${AV1IFY_DENSITY_TOLERANCE_PCT:-5}"
+      __av1ify_is_nonneg_num "$density_pct" || density_pct=5
+      # 🚨 フロアは密度検査**専用**の変数にする (issue 398 と同型)。ユーザー向けに
+      # 「変換前後のフレーム数差の許容」として文書化済みの AV1IFY_FRAME_TOLERANCE を
+      # 兼ねさせると、それを緩めた瞬間にこの破壊的判定が黙って無効化される。
+      local density_floor="${AV1IFY_DENSITY_FLOOR:-24}"
+      __av1ify_is_nonneg_num "$density_floor" || density_floor=24
       local density_out
-      # applied_fps は "30000/1001" の有理数も "29.970" の 10 進も受ける
-      # 🚨 awk の変数に exp / log / index のような**組み込み関数名を使わない** (syntax error になる)。
-      # しかも失敗を空へ畳むと「判定できなかった」が「合格」に化けて検査が黙って消える
-      # (実測 2026-09-19: `exp` を使って書いた初版がまさにこれで、密度検査が 1 度も発火しなかった)。
-      # 判定不能は第 3 の結果として**見えるように**出す。
-      density_out=$(LC_ALL=C awk -v dur="$src_dur" -v fps="$applied_fps" -v out="$out_frames_d" \
-                                 -v pct="$density_pct" -v floor="${AV1IFY_FRAME_TOLERANCE:-24}" 'BEGIN {
-        n = split(fps, a, "/")
-        f = (n == 2) ? ((a[2]+0 > 0) ? a[1] / a[2] : 0) : a[1]+0
-        if (f <= 0 || dur <= 0) exit 1
-        want = dur * f
+      density_out=$(LC_ALL=C awk -v want="$want_frames" -v out="$out_frames_d" \
+                                 -v pct="$density_pct" -v floor="$density_floor" 'BEGIN {
+        if (want <= 0) exit 1
         d = want - out; if (d < 0) d = -d
         tol = want * pct / 100
         if (tol < floor) tol = floor
-        printf "%d %d %d", int(want + 0.5), int(d + 0.5), (d > tol) ? 1 : 0
+        printf "%d %d", int(d + 0.5), (d > tol) ? 1 : 0
       }') || density_out=""
       if [[ -n "$density_out" ]]; then
-        local d_want d_diff d_bad
-        read -r d_want d_diff d_bad <<< "$density_out"
+        local d_diff d_bad
+        read -r d_diff d_bad <<< "$density_out"
         if (( d_bad )); then
-          issues+=("フレーム密度不一致 (期待≈${d_want}, out=${out_frames_d}, Δ=${d_diff}, 適用fps=${applied_fps})")
+          issues+=("フレーム密度不一致 (期待≈${want_frames}, out=${out_frames_d}, Δ=${d_diff}, 適用fps=${applied_fps})")
           suffixes+=("density")
         fi
       else
-        print -r -- ">> フレーム密度は判定不能 (src尺=${src_dur}, 適用fps=${applied_fps})" >&2
+        print -r -- ">> フレーム密度は判定不能 (期待=${want_frames}, out=${out_frames_d})" >&2
       fi
+    else
+      # 🚨 ガードが偽のときも黙って消さない。「判定不能」は合格ではない (issue 397)。
+      print -r -- ">> フレーム密度は判定不能 (ソースのフレーム数を測れない: src=${src_frames_d:-N/A}, out=${out_frames_d:-N/A})" >&2
     fi
   fi
 

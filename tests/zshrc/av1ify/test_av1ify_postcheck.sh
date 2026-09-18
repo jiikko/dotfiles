@@ -153,15 +153,16 @@ fi
 # Test 70b: VFR ソース検出時は「ソースとのフレーム数比較」をやめる (issue 394)。
 # ただし検査を捨てるのではなく密度検査へ切り替わる (issue 397) ので、
 # 密度が期待どおりのケースでは何の警告も出ないことを確認する。
-# 🚨 src 尺 10.0s × avg 29.970 ≈ 300 フレームが期待値。出力もそれに一致させる。
+# 🚨 期待値は **ソースの nb_frames** (適用fps を経由しない独立な量)。CFR 正規化は
+# avg_frame_rate = nb_frames / duration の定義どおり、フレーム数を丸め誤差の範囲で保つ。
 printf '\n## Test 70b: VFR source swaps the src-frame-count check for a density check (issue 394/397)\n'
 TEST_DIR="$TEST_TMP/test70b"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR" || exit 1
 unsetopt err_exit
-# ソースのメタ上のフレーム数 (250) と出力 (300) がズレていても、密度が正しければ警告しない
-output=$(MOCK_FPS="29/1" MOCK_AVG_FPS="29970029/1000000" MOCK_NB_FRAMES=250 MOCK_OUTPUT_NB_FRAMES=300 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+# 正しい正規化: 出力のフレーム数はソースとほぼ同じ (丸めで 1 枚ぶれる)
+output=$(MOCK_FPS="29/1" MOCK_AVG_FPS="29970029/1000000" MOCK_NB_FRAMES=300 MOCK_OUTPUT_NB_FRAMES=301 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 if [[ "$output" != *"フレーム数不一致"* ]]; then
   printf '✓ No src-frame-count warning when VFR source is detected\n'
@@ -201,6 +202,45 @@ if [[ -f "$TEST_DIR/input.avi" ]]; then
   printf '✓ The source file is kept (not deleted) when the density is broken\n'
 else
   bad '✗ The source file was deleted despite the broken density\n'
+fi
+
+# Test 70e: 音声が映像より長いソースで密度検査が誤爆しない (issue 397 の 2 周目 P1-2)
+# 🚨 期待値に format=duration (= 全ストリームの最大) を使うと、末尾に音声が残る素材で
+# 期待値が過大になり、**1 フレームも失っていない出力**が check_ng-density に転ぶ。
+# 実測 2026-09-19: 映像 60s / 音声 64s の VFR mp4 で、親 commit では ✅ 完了 だったものが
+# check_ng-density になった (ffmpeg のログは dup=1 drop=0 = フレームは無傷)。
+printf '\n## Test 70e: Density check does not misfire when audio outlasts video (issue 397 r2)\n'
+TEST_DIR="$TEST_TMP/test70e"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+# コンテナ尺 64s (音声が長い) / 映像は 60s 相当。フレーム数はソースと出力で一致している
+output=$(MOCK_FPS="29/1" MOCK_AVG_FPS="29970029/1000000" MOCK_FORMAT_DURATION=64.0 \
+         MOCK_VIDEO_DURATION=60.0 MOCK_NB_FRAMES=1800 MOCK_OUTPUT_NB_FRAMES=1800 \
+         av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" != *"フレーム密度不一致"* ]]; then
+  printf '✓ No density warning when the container duration exceeds the video duration\n'
+else
+  bad '✗ Density check misfired on an audio-longer-than-video source\n%s\n' "$output"
+fi
+
+# Test 70f: 密度検査のフロアは専用変数で、ユーザー向けの AV1IFY_FRAME_TOLERANCE では緩まない
+# (issue 398 と同型の相乗りを、398 の兄弟修正が再生産していた。2 周目 P2)
+printf '\n## Test 70f: AV1IFY_FRAME_TOLERANCE does not disable the density check (issue 397 r2)\n'
+TEST_DIR="$TEST_TMP/test70f"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+output=$(AV1IFY_FRAME_TOLERANCE=100000 MOCK_FPS="29/1" MOCK_AVG_FPS="29970029/1000000" \
+         MOCK_NB_FRAMES=300 MOCK_OUTPUT_NB_FRAMES=12 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" == *"フレーム密度不一致"* ]]; then
+  printf '✓ Density check still fires when AV1IFY_FRAME_TOLERANCE is loosened\n'
+else
+  bad '✗ AV1IFY_FRAME_TOLERANCE silently disabled the density check\n%s\n' "$output"
 fi
 
 # Test 70c: VFR でないソース (通常の CFR) では、--fps 未指定なら従来どおり検出する

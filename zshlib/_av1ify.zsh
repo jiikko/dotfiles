@@ -1075,6 +1075,18 @@ av1ify — 入力された動画ファイル、またはディレクトリ内の
   AV1IFY_FRAME_TOLERANCE (デフォルト: 24)
     変換前後のフレーム数差がこの値以下であれば警告しません。
     再エンコード時の数フレームの差異は通常無害なため、既定値は24（約1秒分）です。
+    この値は fps を変更しなかった場合の比較にだけ効きます (VFR 正規化時の判定は
+    AV1IFY_DENSITY_FLOOR / AV1IFY_DENSITY_TOLERANCE_PCT が持ちます)。
+
+  AV1IFY_VFR_DETECT_PCT (デフォルト: 0.5)
+    r_frame_rate と avg_frame_rate の相対差がこの % を超えるソースを VFR とみなし、
+    CFR へ正規化します。上げると正規化されるソースが減り、0 にすると NTSC の
+    ような通常のメタデータまで VFR 扱いになります。
+
+  AV1IFY_DENSITY_TOLERANCE_PCT (デフォルト: 5) / AV1IFY_DENSITY_FLOOR (デフォルト: 24)
+    VFR 正規化した出力のフレーム数が、ソースのフレーム数から
+    max(AV1IFY_DENSITY_FLOOR, 期待値 × PCT%) を超えてズレたら警告します
+    (誤った fps でフレームの大半が失われる事故を検出するための判定です)。
 
   AV1IFY_SYNC_TOLERANCE (デフォルト: 2.0)
     encode 前後で「音声 - 映像 duration」の関係差がこの値[秒]以下であれば警告しません。
