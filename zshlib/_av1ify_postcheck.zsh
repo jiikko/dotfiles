@@ -446,6 +446,11 @@ __av1ify_postcheck() {
   # 同一の変数**なので、その値が壊れると ffmpeg の出力と期待値が一緒に壊れ、必ず一致する
   # (= 守りたい故障クラスを原理的に検出できない。2026-09-19 の敵対レビュー 2 周目が
   # 決定点への変異で実証: 514 フレームのソースが 202 フレームになっても ✅ 完了 だった)。
+  # 🚨 もう一方の死角 (逆向き): nb_frames を出さないコンテナ (MKV / FLV / WebM) では尺ベースしか
+  # 使えないが、ffprobe が返す avg_frame_rate が**公称値**のことがある (実測 2026-09-19:
+  # 真の平均 34.3 のソースで avg=40/1)。その場合期待値が構造的に過大になり、正しいエンコードが
+  # check_ng-density に転びうる。現状これらのコンテナは r==avg で VFR 判定に掛からないため
+  # production からは到達しないが、検出側の射程が広がったら**ここを先に直すこと** (issue 397)。
   # 🚨 射程: この検査が拾えるのは**粗い fps 誤り**だけ。許容が max(フロア 24, 期待値 × 5%) なので、
   # 実測で 300 フレーム (10s/30fps) なら 8% 未満、686 フレーム (20s) なら 5% 未満の fps 誤りは
   # 無警告で通る。issue 397 が名指しした実害 (-r 1 で 96% 欠落) は確実に拾えるが、
@@ -488,6 +493,16 @@ __av1ify_postcheck() {
     # 正しいエンコードが check_ng-density に転び、再実行のたびフルエンコードが走り続ける)。
     # 乖離は duration × avg と突き合わせれば分かる (上の実測で 800 vs 598 と明確に割れる)
     # ので、食い違ったら nb_frames を捨てて duration ベースへ倒す。
+    # 🚨 許容の env は **両方の窓が使う前に 1 回だけ**検証する。片方 (密度) だけ検証して
+    # もう片方 (trust) が生値を読むと、__av1ify_is_nonneg_num が通さない表記 (1e9 等) で
+    # 二つの窓が別々の値を使い、「trust は密度の半分」という不変条件が反転する
+    # (実測 2026-09-19: AV1IFY_DENSITY_TOLERANCE_PCT=1e9 で trust は無条件採用・密度は
+    #  既定 5% に落ち、正しいエンコードが check_ng-density に転んだ)。
+    local density_pct="${AV1IFY_DENSITY_TOLERANCE_PCT:-5}"
+    __av1ify_is_nonneg_num "$density_pct" || density_pct=5
+    local density_floor="${AV1IFY_DENSITY_FLOOR:-24}"
+    __av1ify_is_nonneg_num "$density_floor" || density_floor=24
+
     local want_frames=""
     if [[ "$src_frames_d" =~ ^[0-9]+$ ]] && (( src_frames_d > 0 )); then
       if [[ "$want_by_duration" =~ ^[0-9]+$ ]] && (( want_by_duration > 0 )); then
@@ -498,7 +513,7 @@ __av1ify_postcheck() {
         # ズレ 25 なら却下されて助かり、24 なら採用されて check_ng に転ぶ)。
         # 密度側の半分にして、採用した nb の残差ぶんの余裕を必ず残す。
         nb_trusted=$(LC_ALL=C awk -v nb="$src_frames_d" -v dur_based="$want_by_duration" \
-                                  -v pct="${AV1IFY_DENSITY_TOLERANCE_PCT:-5}" -v floor="${AV1IFY_DENSITY_FLOOR:-24}" 'BEGIN {
+                                  -v pct="$density_pct" -v floor="$density_floor" 'BEGIN {
           d = nb - dur_based; if (d < 0) d = -d
           tol = dur_based * pct / 200; if (tol < floor / 2) tol = floor / 2
           print (d > tol) ? 0 : 1
@@ -518,13 +533,9 @@ __av1ify_postcheck() {
     fi
 
     if [[ "$out_frames_d" =~ ^[0-9]+$ && "$want_frames" =~ ^[0-9]+$ ]] && (( want_frames > 0 )); then
-      local density_pct="${AV1IFY_DENSITY_TOLERANCE_PCT:-5}"
-      __av1ify_is_nonneg_num "$density_pct" || density_pct=5
-      # 🚨 フロアは密度検査**専用**の変数にする (issue 398 と同型)。ユーザー向けに
+      # フロアが密度検査**専用**の変数である理由 (issue 398 と同型): ユーザー向けに
       # 「変換前後のフレーム数差の許容」として文書化済みの AV1IFY_FRAME_TOLERANCE を
       # 兼ねさせると、それを緩めた瞬間にこの破壊的判定が黙って無効化される。
-      local density_floor="${AV1IFY_DENSITY_FLOOR:-24}"
-      __av1ify_is_nonneg_num "$density_floor" || density_floor=24
       local density_out
       density_out=$(LC_ALL=C awk -v want="$want_frames" -v out="$out_frames_d" \
                                  -v pct="$density_pct" -v floor="$density_floor" 'BEGIN {

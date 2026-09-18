@@ -305,44 +305,78 @@ else
   bad '✗ The rejection of nb_frames was silent\n%s\n' "$output"
 fi
 
-# Test 70i: nb_frames が尺と整合していれば **nb_frames が採用される** (逆選択の pin)
-# 🚨 これが無いと「常に尺ベースを使う」実装に変えても全テストが緑のまま通る
-# (4 周目の指摘 P2: nb_frames を第 1 候補にした理由がどこにも固定されていなかった)。
-# nb_frames を第 1 候補にするのは、尺ベースが start_time / 丸め / 宣言 duration の
-# 破損に弱いため。整合しているときは却下メッセージが出ないことで採用を観測する。
-printf '\n## Test 70i: A consistent nb_frames is actually used (issue 397 r4)\n'
+# Test 70i: nb_frames が尺と整合していれば **nb_frames が期待値として使われる** (逆選択の pin)
+#
+# 🚨 「却下メッセージが出ないこと」で採用を観測しないこと。それは else 枝の print を
+# 見ているだけで、採用枝を `want_frames="$want_by_duration"` に差し替える (= 常に尺ベースを
+# 使う。ただし黙って) 変異を**緑のまま通す** (実測 2026-09-19 の敵対レビュー 5 周目)。
+# 採用/非採用で**密度の判定そのものが割れる**入力を使う:
+#   尺ベース=300 / nb=310 (差 10 ≤ trust 許容 12 なので採用される) / 出力=330
+#   採用時: 期待値 310、Δ=20 ≤ 許容 24 → 警告なし
+#   非採用: 期待値 300、Δ=30 > 許容 24 → 警告が出る
+printf '\n## Test 70i: A consistent nb_frames is actually used as the expectation (issue 397 r5)\n'
 TEST_DIR="$TEST_TMP/test70i"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR" || exit 1
 unsetopt err_exit
-# nb_frames=300 と 尺ベース (10.0 × 29.970 ≈ 300) が一致 → nb_frames を採用し、却下は起きない
-output=$(MOCK_FPS="29/1" MOCK_AVG_FPS="29970029/1000000" MOCK_NB_FRAMES=300 \
-         MOCK_VIDEO_DURATION=10.0 MOCK_OUTPUT_NB_FRAMES=300 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+output=$(MOCK_FPS="29/1" MOCK_AVG_FPS="30/1" MOCK_NB_FRAMES=310 \
+         MOCK_VIDEO_DURATION=10.0 MOCK_OUTPUT_NB_FRAMES=330 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
+if [[ "$output" != *"フレーム密度不一致"* ]]; then
+  printf '✓ The nb_frames value (not the duration-based one) is used as the expectation\n'
+else
+  bad '✗ The duration-based expectation was used despite a consistent nb_frames\n%s\n' "$output"
+fi
 if [[ "$output" != *"尺と矛盾する"* ]]; then
   printf '✓ A consistent nb_frames is not rejected\n'
 else
-  bad '✗ A consistent nb_frames was rejected (the nb_frames branch is dead)\n%s\n' "$output"
+  bad '✗ A consistent nb_frames was rejected\n%s\n' "$output"
 fi
 
-# Test 70j: nb_frames を採用したときも、丸めぶんで密度検査を突き抜けない
-# (4 周目の指摘 P2: trust の許容と密度の許容が同値だと「ズレ 25 なら助かり 24 なら転ぶ」
-#  という崖ができ、守ろうとした偽陽性が幅 1〜2 フレームの帯で生き残っていた)
-printf '\n## Test 70j: An accepted nb_frames still leaves room for rounding (issue 397 r4)\n'
+# Test 70j: **採用された** nb の残差 + 丸めが密度許容を突き抜けない (崖が無いこと)
+#
+# 🚨 4 周目の版 (nb=324 / 尺ベース=300) は trust ゲートが却下する入力だったので、
+# 主張していること (採用された非厳密な nb で密度検査が誤爆しない) を一度も実行していなかった
+# (実体は trust 許容の定数が変わったことの検出器)。採用される範囲の最大ズレで測る。
+printf '\n## Test 70j: An accepted nb_frames still leaves room for rounding (issue 397 r5)\n'
 TEST_DIR="$TEST_TMP/test70j"
 mkdir -p "$TEST_DIR"
 echo "dummy video" > "$TEST_DIR/input.avi"
 cd "$TEST_DIR" || exit 1
 unsetopt err_exit
-# 尺ベース 300 に対し nb=324 (許容の境界付近)。出力は正しいエンコード (299)
-output=$(MOCK_FPS="29/1" MOCK_AVG_FPS="30/1" MOCK_NB_FRAMES=324 \
-         MOCK_VIDEO_DURATION=10.0 MOCK_OUTPUT_NB_FRAMES=299 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+# 尺ベース=300 に対し nb=312 (差 12 = trust 許容ちょうど → 採用)。出力は正しいエンコード (300)
+output=$(MOCK_FPS="29/1" MOCK_AVG_FPS="30/1" MOCK_NB_FRAMES=312 \
+         MOCK_VIDEO_DURATION=10.0 MOCK_OUTPUT_NB_FRAMES=300 av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+if [[ "$output" != *"尺と矛盾する"* ]]; then
+  printf '✓ The borderline nb_frames is actually accepted (the test exercises its claim)\n'
+else
+  bad '✗ 前提崩れ: nb_frames が却下されており、採用枝を検査していない\n%s\n' "$output"
+fi
+if [[ "$output" != *"フレーム密度不一致"* ]]; then
+  printf '✓ A correct encode survives the accepted residual\n'
+else
+  bad '✗ A correct encode was flagged (no margin between the trust and density windows)\n%s\n' "$output"
+fi
+
+# Test 70k: 許容の env は trust / 密度の両方で同じ検証を通る (5 周目 P2)
+# 🚨 片方だけ検証すると、is_nonneg_num が通さない表記 (1e9) で 2 つの窓が別の値を使い、
+# 「trust は密度の半分」が反転する (trust 無条件採用 + 密度は既定 5% = 正しいエンコードが NG)。
+printf '\n## Test 70k: Tolerance env vars are validated once for both windows (issue 397 r5)\n'
+TEST_DIR="$TEST_TMP/test70k"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+output=$(AV1IFY_DENSITY_TOLERANCE_PCT=1e9 MOCK_FPS="29/1" MOCK_AVG_FPS="30/1" \
+         MOCK_NB_FRAMES=100000 MOCK_VIDEO_DURATION=10.0 MOCK_OUTPUT_NB_FRAMES=299 \
+         av1ify "$TEST_DIR/input.avi" 2>&1 || true)
 setopt err_exit
 if [[ "$output" != *"フレーム密度不一致"* ]]; then
-  printf '✓ A correct encode survives a borderline nb_frames\n'
+  printf '✓ An unparsable tolerance does not invert the trust/density relationship\n'
 else
-  bad '✗ A correct encode was flagged (trust window and density window have no margin)\n%s\n' "$output"
+  bad '✗ The two windows read different values and flagged a correct encode\n%s\n' "$output"
 fi
 
 # Test 70c: VFR でないソース (通常の CFR) では、--fps 未指定なら従来どおり検出する
