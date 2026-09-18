@@ -150,9 +150,44 @@ tmp/ に 2 時間前に打刻した残骸 10,000 件を置き、`.cleanup_at` �
 ②文面の出し分けの各枝 ③エラー収集の競合 (mutex の範囲) ④新テストの fixture が
 「sweep の途中」を本当に作れているか (M3 が red になり続けるか)
 
+## 敵対的レビュー 2 周目 (2026-09-19。全数勘定)
+
+指摘 6 件、**採用 5 / 訂正 1 / 却下 0**。**M3 (一括カウント) は red のまま**で、
+1 周目 P1-1 の対応が有効であることをレビューが独立に確認した。
+
+| # | 指摘 | 判定 |
+|---|---|---|
+| P1-1 | 1 周目の P2-3 対応は **`os.Remove` 由来のエラーしか運んでいなかった**。`ReadDir` の EACCES / `Info` の失敗 / `serverNow` / 打刻の失敗は `res.Errors` にしか入らず、期限切れ枝は `res` を読めない (データ競合) ので**構造的に消える**。🚨 落ちていた側 (`ReadDir` の EACCES = **権限ドリフトの典型**) こそが動機 2 の本命で、レビュー実測では権限ドリフトの stderr が「健全に排水中」と**1 文字も違わなかった** | **採用**。「どのエラーを運ぶか」を判断で選ぶのをやめ、**蓄積先を `cleanupProgress` 一本にして `res` はそこから導く** (`sweepDir` から `*CleanupResult` を外した)。線引きの判断ごと消える |
+| P1-2 | 1 周目が新設した seam のせいで `TestCleanupTimedReportsPartialProgress` が **flaky**。見捨てた goroutine が `stampCleanup` で `.cleanup_at` を作り直し、`t.TempDir()` の RemoveAll と競合して `directory not empty` の**無関係な赤**になる (レビュー実測: 並行負荷の高い環境で `go test -race ./...` 8 回中 2 回。しかも**そのレビュー自身の変異判定を 1 回汚染した**) | **採用**。🚨 こちらの環境では **16 回中 0 回**で再現しなかったが (単独 10 / フル 6)、**機構は成立している**ので直した。成立条件 (打刻の出現) を上限つきでポーリングしてから終わる |
+| P2-1 | `removed>=N (…)` の括弧の中身が**どのテストにも守られていなかった**。1 周目に「偽の断定」として消した文面 (「掃除は途中で、次回の続きから減る」) を戻す変異が**全スイート緑**。否定リストは `判定不能` 側の fixture にしかなく、もう一方の枝の文面は原理的に現れない。しかも否定リストの語は **production から消えた死んだリテラル**で、一字一句戻したときしか鳴らない | **採用**。両方の書式を `main_test.go` と同じく**完全一致の regexp** で pin した (同じ package が「部分一致で pin しない」と書いているのに、新設した 2 書式だけがその外にあった) |
+| P3-1 | 1 周目の変異表の M5 の行が実態より広い (`TestCleanupTimedReportsPartialProgress` は sweep エラーを持たない fixture なので落ちない) | **訂正**。下の表で 1 テストのみに直した |
+| P3-2 | 「報告 ≤ 実態」の assert は、見捨てた goroutine が消し続けるので**成立する方向へ動き続ける** (ほとんど何も検査しない) | **採用**。P1-2 の待ちを入れた後に**最終状態**を assert する形へ |
+| — | `p.errs` / `p.removed` のデータ競合 / `snapshot` が 2 つの読みを跨ぐこと / seam の production コスト / テスト間の混線 / gate の迂回 | **壊せなかった** (mutex とコピーで aliasing なし、`t.Parallel` は 0 件、可変長引数は AST 判定に影響しない) |
+
+### 変異検証 (2 周目の修正分)
+
+| 変異 | 結果 |
+|---|---|
+| M3: カウンタを sweep の最後に一括計上 (= issue 393 の症状) | `TestCleanupTimedReportsPartialProgress` **FAIL** (他の 4 本は PASS) |
+| M6: P2-1 が消した偽の断定を戻す | `TestCleanupCLIDistinguishesPartialFromComplete` **FAIL** |
+| M7: `ReadDir` のエラーを progress へ積まない (1 周目の取りこぼしを再現) | `TestCleanupDoesNotStampWhenReadDirFails` **FAIL** |
+| (1 周目) M4: 判定不能の枝を削除 | `TestCleanupCLISaysIndeterminateWhenNothingRemoved` FAIL |
+| (1 周目) M5: sweep エラーを捨てる | `TestCleanupTimedKeepsSweepErrorsOnTimeout` FAIL (**1 周目の表にあった `ReportsPartialProgress` は誤り**。あちらの fixture は sweep エラーを持たない。P3-1 で訂正) |
+
+### 3 周目が要る
+
+§7 の打ち切り条件 (a)(b) を**満たさない**: 2 周目の対応が **production の構造を変えた**
+(エラーの蓄積先を progress へ一本化し、`sweepDir` の signature から `*CleanupResult` を外した)。
+攻め口: ①蓄積先の一本化で `res.Errors` の内容・順序・重複が変わっていないか
+②`errCount()` を打刻の判定に使ったことの影響 (mutex の範囲 / 見捨てた goroutine との関係)
+③待ち (`waitFor`) を入れたテストが、待つことで**窓を再現しなくなっていないか** (M3 が red のままか)
+④完全一致 pin にしたことで `TestDispatchWarnsOnCleanupFailureWithoutVerbose` と二重管理になっていないか
+
 ## 残タスク
 
 - [x] 反証レビュー 1 周目。P1 1 件 + P2 4 件 + P3 3 件を採用、P3 1 件を記録 (変異 3 本で red)
-- [ ] **未実施**: 2 周目 (§7)。1 周目の対応が新しい判定と seam を含むため打ち切り条件 (a) を満たさない
+- [x] 2 周目 (§7)。P1 2 件 + P2 1 件 + P3 1 件を採用、1 周目の変異表を 1 行訂正 (変異 3 本で red)
+- [ ] **未実施**: 3 周目 (§7)。2 周目の対応が production の構造を変えた (蓄積先の一本化) ため
+      打ち切り条件 (a) を満たさない
 - [x] 候補の選択 → (b) atomic のカウンタ。(c) は「排水中か 1 件も進まないか」を区別できないので却下
 - [x] `dispatch` のコメントと実装を一致させた (`removed=N` / `removed>=N` の書き分け)
