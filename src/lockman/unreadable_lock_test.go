@@ -648,3 +648,76 @@ func TestStatusDoesNotFakeAgeWhenServerTimeIsUnavailable(t *testing.T) {
 		t.Fatalf("取れなかった age を JSON に出している (機械が 0 を真に受ける): %q", outj)
 	}
 }
+
+// `status` が出す判断材料 (size / age) は、**読んだ実体**から取ること
+// (敵対レビュー 380 の 2 周目 P1-1)。
+//
+// 🚨 `readLock` の後に名前を `os.Lstat` し直すと、そのあいだ (`io.ReadAll` = SMB 1 往復) に
+// 引き継がれたとき **読んでいない別のファイルの数字**を「この lock の判断材料」として出す。
+// 人間向けの案内は「経過が伸び続けるなら残骸」と**その数字を使う手順を名指ししている**ので、
+// 置き換えが続くかぎり age が 0 に戻り続け、人は「一過性だ、待とう」に倒れ続ける。
+// これは `Release` で直したのと同じ形 (1 周目 P1-1 = identity の土台を別 syscall から取り直す)。
+func TestInspectReportsSizeAndAgeOfTheFileItRead(t *testing.T) {
+	l := newTestLocker(t)
+	if _, err := l.Acquire(time.Hour, "holder"); err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	// canonical な unreadable lock (0 バイト) を作り、はっきり古い mtime を打つ
+	if err := os.Truncate(l.lockPath(), 0); err != nil {
+		t.Fatalf("Truncate: %v", err)
+	}
+	const agedSec = 90
+	old := time.Now().Add(-agedSec * time.Second)
+	if err := os.Chtimes(l.lockPath(), old, old); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+
+	// 読んでいる最中に「健全な大きさ・いま打刻された」lock を被せる
+	const swapSize = 200
+	var swapped bool
+	prev := readLockAfterStatHook
+	readLockAfterStatHook = func() {
+		if swapped {
+			return
+		}
+		swapped = true
+		tmp := l.lockPath() + ".swap"
+		body := make([]byte, swapSize)
+		for i := range body {
+			body[i] = 'x'
+		}
+		if err := os.WriteFile(tmp, body, 0o644); err != nil {
+			t.Errorf("WriteFile: %v", err)
+			return
+		}
+		if err := os.Rename(tmp, l.lockPath()); err != nil {
+			t.Errorf("Rename: %v", err)
+		}
+	}
+	defer func() { readLockAfterStatHook = prev }()
+
+	st, err := l.Inspect()
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	if !swapped {
+		t.Fatalf("seam が発火していない (窓を再現できていないので、このテストは何も検査していない)")
+	}
+	if !st.Unreadable {
+		t.Fatalf("中身を読めない lock として分類されていない: %+v", st)
+	}
+	if st.SizeBytes == nil {
+		t.Fatalf("size を出していない")
+	}
+	if *st.SizeBytes != 0 {
+		t.Fatalf("読んだ実体は 0 バイトなのに size=%dB (差し替え後のファイルを stat している)", *st.SizeBytes)
+	}
+	if st.AgeSec == nil {
+		t.Fatalf("age を出していない")
+	}
+	// 実測の余裕: 読んだ実体は 90 秒前。差し替え後は 0 秒。両者は桁で離れている
+	if *st.AgeSec < agedSec/2 {
+		t.Fatalf("読んだ実体の mtime は %d 秒前なのに age=%ds (差し替え後のファイルを stat している)",
+			agedSec, *st.AgeSec)
+	}
+}

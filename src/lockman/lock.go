@@ -963,14 +963,30 @@ func (l *Locker) Renew(token string) error {
 	// **呼び出し側が「保持している」と誤認する**。`__av1ify_lock_still_held` は renew の rc だけを
 	// 見ており、rc=0 なら**出力を公開して元ファイルを削除する**ところまで進む (issue 380 の「影響」)。
 	// 名前が指す先が自分の実体でなくなっていたら、**保持していない**と伝える。
-	// 🚨 これは「役は 1 人」を保証しない (`refreshTakeoverClaim` の注記と同じ限界):
-	// 置き換えが open の後だと `f.Stat()` は旧 inode を返すので照合は通る。ここで見ているのは
-	// 「**名前が今も自分を指しているか**」であって、飛行中の他者との調停ではない。
+	// 🚨 これは「役は 1 人」を保証しない。保証しているのは
+	// 「**`os.Lstat` を撃ったその瞬間に、名前が自分の実体を指していた**」までで、
+	// その Lstat の**後**に着地する置き換えは捕まえられない (飛行中の他者との調停ではない)。
+	// 🚨 ここに `refreshTakeoverClaim` の注記 (「置き換えが open の後だと `f.Stat()` は旧 inode を
+	// 返すので照合は通る」) を移植して書いていたが、**意味が反転していた** (2 周目 P2-2)。
+	// あちらの guard は `f.Stat().ModTime()` の比較なので旧 inode の打刻で通るが、
+	// こちらは `os.SameFile(fd の inode, 名前を引き直した inode)` なので、旧 inode を掴むことは
+	// 照合が**落ちる**理由になる (実測: open 後に Break + 別ホストの Acquire を起こすと
+	// errNotOwner が返る)。誤った限界の記述は「この照合は実質 inert」と読ませ、
+	// 1 周目 P1-2 が名指しした被害 (保持の誤認 → 出力公開 + 元ファイル削除) を止めている
+	// 唯一の機構を削る判断へ誘導する。
 	if cur, lerr := os.Lstat(l.lockPath()); lerr != nil {
 		if os.IsNotExist(lerr) {
 			return fmt.Errorf("%w: lock が消えている (走行中に引き継がれた可能性)", errNotOwner)
 		}
-		return lerr // 判定不能は errNotOwner へ丸めない (一過性の I/O で健全な子を殺さない)
+		// 🚨 丸めないのは**終了コードと文言の意味を汚さないため**であって、子の生殺には影響しない
+		// (2 周目 P2-1 で訂正。旧コメントは「一過性の I/O で健全な子を殺さない」と書いていたが、
+		// `with.go` の `reportRenewErr` は昇格を **`onLostKill` だけ**で gate しており、分類では
+		// gate していない。既定は `--on-lost=kill` なので、丸めても丸めなくても子は殺される。
+		// 実測 2026-09-19: 純粋な判定不能を起こすと kill=0.62s で子が死に、warn=5.22s で子を待つ。
+		// どちらも exit 125 なので**壁時計でしか判別できない**)。
+		// 「判定不能では昇格しない」という挙動変更は**別の設計課題**。詰まったマウントでは lease は
+		// 実際に期限切れになり他者が正当に引き継ぐので、無条件の昇格は安全側の選択でもある。
+		return lerr
 	} else if !os.SameFile(st, cur) {
 		return fmt.Errorf("%w: 書き込んだ実体が lock でなくなっている (走行中に引き継がれた)", errNotOwner)
 	}
@@ -1007,14 +1023,23 @@ func intPtr(v int) *int { return &v }
 
 // Inspect は現在の状態を返す。**排他の根拠には使えない** (読んだ次の瞬間に変わる)。
 func (l *Locker) Inspect() (*State, error) {
-	m, mtime, err := l.readLock()
+	// 🚨 **判断材料は「読んだ実体」から取る** (敵対レビュー 380 の 2 周目 P1-1)。
+	// 旧版は `readLock` で読んでから **名前を `os.Lstat` し直して** size / mtime を採っており、
+	// そのあいだ (中に `io.ReadAll` = SMB 1 往復が入る) に引き継がれると
+	// **読んでいない別のファイルの数字**を「この lock の判断材料」として出した
+	// (実測: 0 バイト / 90 秒前の lock を読んだのに size=200B / age=0s)。
+	// これは `Release` で直したのと同じ形 (1 周目 P1-1) で、そのために `readLockInfo` を
+	// 新設したのに、**その fi をいちばん必要としている呼び出し側が使っていなかった**。
+	// 数字が別ファイル由来だと `status` の案内 (「経過が伸び続けるなら残骸」) が壊れる:
+	// 置き換えが続くかぎり age は毎回 0 に戻り、人は「一過性だ、待とう」に倒れ続ける。
+	m, fi, err := l.readLockInfo()
 	if err != nil {
 		if !errors.Is(err, errBusy) {
 			return nil, err
 		}
 		// 中身を読めない lock。**状態として答える** (道具の失敗にしない)。
 		st := &State{Held: true, Unreadable: true}
-		if fi, serr := os.Lstat(l.lockPath()); serr == nil {
+		if fi != nil {
 			size := fi.Size()
 			st.SizeBytes = &size
 			if now, nerr := l.serverNow(); nerr == nil {
@@ -1027,6 +1052,7 @@ func (l *Locker) Inspect() (*State, error) {
 	if m == nil {
 		return &State{Held: false}, nil
 	}
+	mtime := fi.ModTime()
 	now, err := l.serverNow()
 	if err != nil {
 		return nil, err
