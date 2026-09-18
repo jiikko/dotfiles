@@ -78,9 +78,42 @@ fake clock を注入する。
 統制下の再現 (単独 `-count=30` / 4 並列 ×8 / 6 並列) では **0 件**。
 上の 4 番 (レイテンシ依存) が出典の候補だが**未確認**。追わずに記録だけ残す。
 
+
+## 進捗 (2026-09-19): 2 と 4 を実装した
+
+**1 と 3 は未着手**。1 は exit code の契約変更なので独立して扱う (下の残タスク)、
+3 は本文どおり未確認リスクのまま (trigger は本文に記載)。
+
+| # | 状態 | 実装 |
+|---|---|---|
+| 1 | **未着手** | — |
+| 2 | **完了** | `stampGraveyard` を新設し、`tryTakeover` と `Break` の rename 直後に **退避した時刻 (`serverNow`) で打刻し直す**。best-effort (打刻できなければ従来どおり早く消えるだけ) で、退避自体は止めない。鳴らさない理由もコードに残した (退避は正常系にも出る操作で、ここで warn を足すと「良性の状態で鳴る診断」= issue 383 の 2 周目 P2 になる) |
+| 3 | **未着手 (意図的)** | 再現手段が無い。推測で防御を足さない |
+| 4 | **完了** | `TestRenewExtendsHold` の判定軸を「経過時間」から「引き継げるか」へ移した。mtime を期限の手前へ寄せてから Renew する形で、**壁時計の待ちはゼロ** (旧 0.23s → 0.04s)。対照 (Renew しなければ同じ経過で奪える) も付けた |
+
+### 変異検証 (ケース名ごとの PASS/FAIL で判定)
+
+| 変異 | 結果 |
+|---|---|
+| `tryTakeover` の打刻を外す | `TestGraveyardRetentionIsMeasuredFromEviction/takeover` **FAIL** / `/break` は PASS |
+| `Break` の打刻を外す | 同 `/break` **FAIL** / `/takeover` は PASS |
+| `Renew` に「内容が同じなら書き直さない」最適化を入れる | `TestRenewExtendsHold/renewed` **FAIL** / `/not_renewed` は PASS |
+
+対照も置いた: `TestGraveyardStillExpiresAfterRetention` (打ち直しが「常に残す」へ倒れていないこと。
+倒れると graveyard が無限に育つ)。
+
+### 結果
+
+- `go test -race ./...` 緑 / 対象 2 本は `-count=3` でも緑 / golangci-lint 0 issues
+- 新規テスト: `src/lockman/graveyard_retention_test.go` (2 本 + ヘルパー)
+- 🚨 **fixture の古さは retention (7d) + 24h に置いた**。足りないと「打ち直さなくても残る」ので
+  変異を当てても緑で通る (テスト内にコメントで残した)
+
 ## 残タスク
 
-- [ ] 反証レビュー
-- [ ] 1 と 2 の対応 (独立に直せる)
+- [ ] 反証レビュー (2 / 4 の実装は未レビュー。変異検証のみ)
+- [ ] **1 の対応 (未着手)**。`with` が解放に失敗しても子の rc を透過する。exit code の契約変更に
+      なるので、呼び出し側 (`_av1ify_lock.zsh` ほか) の期待を洗ってから決める
+- [x] 2 の対応 (`stampGraveyard`。変異 2 本で red)
 - [ ] 3 は未確認リスクのまま。trigger は本文に記載
-- [ ] 4 の判定軸の変更
+- [x] 4 の判定軸の変更 (`TestRenewExtendsHold`。変異 1 本で red)
