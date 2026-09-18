@@ -203,16 +203,56 @@ I/O エラーで書けなかったときと、外部要因で壊れたとき)。
 | 打刻後の identity 照合を外す | `TestRenewDoesNotOverwriteLockTakenOverMidway` red |
 | verbatim をやめて再 marshal へ戻す | `TestRenewPreservesUnknownFields` red |
 
+## 敵対的レビュー 2 周目 (2026-09-19。全数勘定)
+
+指摘 7 件、**採用 4 / 記録 3 / 却下 0**。**P1 は 1 件で、1 周目 P1-1 と同じ形が
+`Inspect` に残っていた** (383 の 5 周目で新設した枝なので、本 issue の修正が作ったものではなく
+**別 issue の修正がこの issue の規律を破っていた**形)。
+
+| # | 指摘 | 判定 |
+|---|---|---|
+| P1-1 | `Inspect` の unreadable 枝が `readLock` の後に**名前を `os.Lstat` し直して** size / age を採っていた。読んでいる最中 (`io.ReadAll` = SMB 1 往復) に引き継がれると**読んでいない別のファイルの数字**を判断材料として出す (レビュー実測: 0 バイト / 90 秒前の lock を読んだのに `size=200B` / `age=0s`)。1 周目 P1-1 のために新設した `readLockInfo` を、**その fi をいちばん必要とする呼び出し側が使っていなかった**。`status` の案内は「経過が伸び続けるなら残骸」と**その数字を使う手順を名指ししている**ので、置き換えが続くと age が 0 に戻り続け、人は「一過性だ、待とう」に倒れ続ける | **採用**。`Inspect` を `readLockInfo` へ寄せた。🚨 レビューの裏取り変異が効いた: `readLockInfo` の 3 つのエラー枝を `return nil, nil, err` に変えても**全スイート緑** = 「エラー枝でも読んだ実体の FileInfo を返す」という中心的な約束は production からもテストからも使われていなかった |
+| P2-1 | `Renew` の `return lerr` に添えた理由「一過性の I/O で健全な子を殺さない」が**偽**。`with.go` の `reportRenewErr` は昇格を **`onLostKill` だけ**で gate しており、分類では gate していない。既定は `--on-lost=kill` なので丸めても丸めなくても子は殺される (レビュー実測: kill=0.62s で子が死ぬ / warn=5.22s で待つ。**どちらも exit 125 なので壁時計でしか判別できない**) | **採用 (コメントの訂正のみ)**。理由を「終了コードと文言の意味を汚さないため」へ直した。**挙動変更 (判定不能では昇格しない) は採らない** — 詰まったマウントでは lease は実際に期限切れになり他者が正当に引き継ぐので、無条件の昇格は安全側でもある。別の設計課題 |
+| P2-2 | `Renew` の残存限界のコメントが `refreshTakeoverClaim` からの移植で**意味が反転**していた。あちらの guard は `f.Stat().ModTime()` の比較なので「旧 inode を返す → 照合は通る」が正しいが、こちらは `os.SameFile` なので旧 inode を掴むことは照合が**落ちる**理由 (レビュー実測: open 後に Break + 別ホストの Acquire で errNotOwner)。誤った限界は「この照合は実質 inert」と読ませ、1 周目 P1-2 の被害を止めている唯一の機構を削る判断へ誘導する | **採用**。正しい限界 (「`os.Lstat` を撃ったその瞬間まで」) へ書き直した |
+| P2-3 | `Release` の identity 照合が `os.Remove` に**隣接していること**を、どのテストも固定していない。`releaseBeforeRemoveHook` は guard の直前にあるので、seam ごと guard を前へ動かす変異 (窓に probe の create+stat+remove と期限計算が入る) が**全スイート緑** | **記録 (未固定)**。380 が `Release` について主張しているのは「窓を**縮めた**」なので、**縮んでいることが主張の本体で、それが無検査**。検出可能性は「**未確認**」(seam を 1 つ足せば pin できるが、機構を足すと §7 の次の周を呼ぶ)。再開 trigger: `Release` の窓に何かを挟む変更を入れるとき |
+| P2-4 | `Renew` の `f.Sync()` を消しても全テスト緑。守っているのは SMB の write-behind で、落とすと他マシンから mtime の更新が見えず**生きた lease を正当に引き継がれる = 二重実行** | **記録**。検出可能性は「**確実な検出手段はない**」(ローカル APFS では原理的に再現不能)。事実と trigger を `lock.go` の当該行の直上へ書いた |
+| P3-1 / P3-2 | `Renew` の `os.IsNotExist → errNotOwner` マッピングが無検査 (潰す変異が全緑) / `Release` は「消えていた」を nil で返すのに `Renew` は同じ物理状態を errNotOwner で返す非対称 | **記録**。後者は実害が見つかっていない (`runWith` の defer は warn 1 行、av1ify は rc を見ない)。前者は load-bearing (`renew` の exit 4/1、`with` の 122/125 を分ける) |
+| P3-3 / P3-4 | 見捨てられた `Renew` が遅れて着地すると graveyard entry の mtime が「いま」へ進み、[364](364-bug-lockman-with-release-failure-and-graveyard-retention.md) で入れた不変条件を静かに破る / `readLockInfo` は fi を返す前に fd を閉じるので、`Release` の identity (dev+ino) は窓のあいだ**寿命が固定されていない** | **記録**。前者は害が「記録が 7 日より長く残る」だけなので受容し、無条件だった記述を `stampGraveyard` のコメントで限定した。後者は**未確認** (APFS の object ID は単調カウンタで手元では再現不能。既判定の「SMB が ino を合成する」とは別機構) |
+
+### 変異検証 (2 周目の修正分)
+
+| 変異 | 結果 |
+|---|---|
+| `Inspect` を旧挙動 (名前を `os.Lstat` し直す) へ戻す | `TestInspectReportsSizeAndAgeOfTheFileItRead` **FAIL** / `TestStatusAnswersForUnreadableLock` と `TestStatusDoesNotFakeAgeWhenServerTimeIsUnavailable` は PASS (過剰適合していない) |
+
+### 壊せなかった経路 (レビューが実験で確認)
+
+- **`Truncate` 枝の削除**: `lockPath()` に中身を書く production の経路は **2 つだけ** (`tryPlace` の
+  `os.Link` / O_EXCL fallback、`Renew` の verbatim)。`os.Chtimes` / `os.WriteFile` / `f.Truncate` は
+  **0 件**なので「長さは必ず一致する」は木の中の全 writer について成立する
+- **`readLockInfo` の 5 つの production call site**: defect は `Inspect` の 1 件だけ
+  (`tryPlace` の write-then-verify は `got.Token` しか見ない / `tryTakeover` の 2 段は `m == nil` で抜ける /
+  `Release` は 1 周目の修正どおり正しい)
+- **`Renew` の Fstat → ReadAll の窓**: identity も内容も同じ fd から取るので置き換えの影響を受けない
+- **`lock` がディレクトリ / symlink のとき**: 前者は分類が違っても exit code に差が出ない。
+  後者は lockman 内から作る経路が無く、データ損失にもならない
+- **380 の全数勘定 (5 箇所)** をレビューが独立に数え直して**一致**
+
 ## 残タスク
 
 - [x] `Renew` の窓を閉じた (構造的に。fd スコープ化)
 - [x] `Release` の窓を閉じた (縮めて受容。理由をコードへ残した)
 - [x] `lock.go` に同型が他に無いかを全数で洗った (5 箇所すべて説明が付く。上表)
 - [x] 反証レビュー 1 周目。P1 3 件 + P2 2 件 + P3 を採用 (変異で red を確認)
-- [ ] **未実施**: 2 周目 (§7)。1 周目の修正が新しい判定 (`readLockInfo` / 打刻後の identity 照合 /
+- [x] 2 周目 (§7) を通した。P1-1 を採用 (変異 1 本で red)、コメントの誤り 2 件を訂正、記録 4 件。
+      詳細は上節。旧記述: 未実施 — 1 周目の修正が新しい判定 (`readLockInfo` / 打刻後の identity 照合 /
       verbatim 書き戻し) を含むため打ち切り条件 (a) を満たさない。攻め口は 1 周目の報告が
       名指ししている 4 点 (post-Sync の `Lstat` 失敗時の倒し方 / `readLockInfo` の 5 call site /
       `Truncate` 枝削除の相互作用 / seam の位置)
+- [ ] **未実施**: 3 周目 (§7)。2 周目の修正が `Inspect` の call site に新しい判定を持ち込むため
+      打ち切り条件 (a) を満たさない。攻め口: ①`Inspect` が `readLockInfo` を使うようになったことで
+      `fi == nil` の経路や他のエラー枝の扱いが変わっていないか ②新テストの seam が本当に窓を
+      再現しているか ③記録に回した P2-3 / P2-4 の判断が妥当か
 - [ ] **未確認**: 380 本文の「手順 6 で stall 中の `open(2)` が削除後に作り直された新しい inode を
       開くか」。**`Renew` を fd スコープ化したので、この経路自体が無くなった** (開き直しをしない)。
       ただし「stall 中の open がどの inode を掴むか」という一般の問いは未確認のまま
