@@ -3,7 +3,7 @@
 起票日: 2026-09-19
 カテゴリ: bug / priority: **high**
 対象: `zshlib/_av1ify_encode.zsh` の `__av1ify_frac_fps` / `__av1ify_detect_vfr` / 引数組み立て (`elif (( __AV1IFY_R_VFR_DETECTED ))`) / `__av1ify_finalize` の `_fps_changed`、`zshlib/_av1ify_postcheck.zsh` のフレーム数チェック、`tests/zshrc/av1ify/test_av1ify_vfr_e2e.sh`
-出典: [issue 394](done/394-bug-av1ify-vfr-passthrough-breaks-quicktime.md) の実装 (3 commit) への敵対的レビュー (観点 3 分割: 壊す / 素通り / 回帰)
+出典: [issue 394](394-bug-av1ify-vfr-passthrough-breaks-quicktime.md) の実装 (3 commit) への敵対的レビュー (観点 3 分割: 壊す / 素通り / 回帰)
 反証レビュー: 3 観点で実施。**下記の数値はすべてレビュー時の実測** (ffmpeg 8.0.1 / SVT-AV1 4.0.1、使い捨て worktree)
 
 ## 問題
@@ -129,16 +129,57 @@ M6 が green なのは、その awk が整数 `0/1` しか出さず `-v` の数�
 - ロケールのテストが `locale -a | grep -q` で条件を書いており、`setopt pipe_fail` の下では
   `grep -q` が先に抜けて `locale` が SIGPIPE で死に、**常に無言でスキップ**していた
 
+## 敵対レビュー (6 周) の記録
+
+§7 のとおり「修正した差分にもう 1 周」を繰り返し、**2〜5 周目はすべて P1 が出た**。
+出た P1 は**全部この issue の修正が持ち込んだもの**で、1 周目が出した元の指摘
+(`-r` を誤らせる 4 経路 + 密度検査の不在) はそのまま有効だった。
+
+| 周 | 出た P1 | 何が起きていたか |
+|---|---|---|
+| 1 | 4 経路 + 検査の喪失 | 元の指摘 (この issue の本文) |
+| 2 | 密度検査が**自己言及** | 期待値 `尺 × 適用fps` の適用fps が `-r` と同一変数で、壊れると両方一緒に壊れて必ず一致 |
+| 2 | `format=duration` の誤用 | コンテナ尺は全ストリームの最大。音声が長い素材で正しい出力が NG |
+| 3 | `nb_frames` の誤用 | mp4 の nb_frames は stsz のサンプル数。elst (= `-ss` で切った動画) で乖離し、正しい出力が NG |
+| 3 | フォールバック無検査 | MKV/TS/FLV が通る枝をテストが 1 本も守っていなかった |
+| 4 | 尺と**終端時刻**の混同 | `__av1ify_get_stream_end` は経路により意味が変わる。start_time ぶん期待値が過大に |
+| 4 | trust と密度の窓が同値 | 「ズレ 25 なら助かり 24 なら転ぶ」崖。守ろうとした偽陽性が帯で生存 |
+| 5 | 採用枝が無検査 | 「却下メッセージの不在」で採用を観測しており、黙って常に尺ベースを使う変異が全緑 |
+| 5 | env 検証の非対称 | 密度側だけ検証し trust は生値。`1e9` で不変条件が反転 |
+| 6 | **P1 なし** | 残った P2 2 件はテスト側の検出力で、ケース追加のみ (判定ロジックを新設しないため 7 周目は不要) |
+
+**自分の側の再発パターン**: 3 回 (M8 / Test 70i / Test 70j) にわたり「テストで守られている」と
+commit message に書き、レビューがそのテストが何も守っていないことを変異で示した。原因は共通で
+**「その red は自分が意図した assert が出したものか」を確かめずに red を証拠に数えた**こと。
+最終的に「このテストだけが red になる変異」を 1 本ずつ特定する形に切り替えて収束した。
+
+## 残る既知の限界 (対応しないと判断したもの)
+
+1. **vidloss 判定との尺の解釈の食い違い**: 密度検査は `__av1ify_video_span` (尺)、vidloss は
+   `__av1ify_get_stream_end` (終端時刻) を使う。stream duration を持たず start_time≠0 の
+   コンテナ (MKV/FLV/WebM) では同じ実行で 20 秒の素材と 620 秒の素材として振る舞い、
+   vidloss が誤発火しうる。**本 issue の変更前から在る穴**なので別 issue にすべき残課題
+2. **VFR MKV では期待値が構造的に過大**: これらのコンテナは `nb_frames` が N/A で尺ベースしか
+   使えないが、ffprobe の `avg_frame_rate` が公称値のことがある (実測: 真の平均 34.3 のソースで
+   `avg=40/1`)。現状は `r == avg` で VFR 判定に掛からず production から到達しない。
+   **検出側の射程を広げるときは先にここを直すこと** (コード側にも注記済み)
+3. **密度検査の射程は粗い fps 誤りのみ**: 許容が max(24, 期待値 × 5%) なので、300 フレームなら
+   8% 未満、686 フレームなら 5% 未満の fps 誤りは無警告。issue 397 が名指しした実害
+   (`-r 1` で 96% 欠落) は確実に拾うが、「誤った `-r` の検出」一般は満たさない
+4. **e2e は libsvtav1 不在の環境で丸ごと skip される**。純粋なヘルパー検査 (Test 4) まで
+   エンコーダの有無に人質を取られている
+
 ## 残タスク
 
-- **2 周目の敵対レビュー** (`adversarial-review-own-safeguards.md` §7): 密度検査・閾値分離・
-  assert ハーネスの変更は新設の安全機構なので、この差分にもう 1 周攻めさせる — **実施中**
-- 症状そのもの (QuickTime での再生) は [issue 396](396-human-verify-quicktime-playback-after-vfr-fix.md) の目視待ちで**未検証のまま**
+- 症状そのもの (QuickTime での再生) は [issue 396](../396-human-verify-quicktime-playback-after-vfr-fix.md) の
+  目視待ちで**未検証のまま**。本 issue が直したのは「誤った `-r` が無検出で通ること」であって、
+  「CFR 化で QuickTime の再生破綻が直るか」は別 (394 の当初の原因診断は 8504929d で誤りと判明している)
+- 上の限界 1 (vidloss との尺の解釈) は別 issue 化が妥当
 
 ## 関連
 
-- [issue 394](done/394-bug-av1ify-vfr-passthrough-breaks-quicktime.md) — 本 issue の対象実装
-- [issue 396](396-human-verify-quicktime-playback-after-vfr-fix.md) — **そもそも症状が直ったかは未検証**
+- [issue 394](394-bug-av1ify-vfr-passthrough-breaks-quicktime.md) — 本 issue の対象実装
+- [issue 396](../396-human-verify-quicktime-playback-after-vfr-fix.md) — **そもそも症状が直ったかは未検証**
   (394 は当初「出力 DTS の非単調増加」を原因としたが 8504929d で誤りと判明し、現在の根拠は
   「旧出力が VFR」+「QuickTime との因果は目視待ち」)
 - [issue 398](398-bug-av1ify-vfr-threshold-shared-with-frame-tolerance.md) — 検出閾値の相乗り

@@ -3,7 +3,7 @@
 起票日: 2026-09-19
 カテゴリ: bug / priority: **medium**
 対象: `zshlib/_av1ify_encode.zsh` の `__av1ify_detect_vfr`、`zshlib/_av1ify_postcheck.zsh` のフレーム数チェック
-出典: [issue 394](done/394-bug-av1ify-vfr-passthrough-breaks-quicktime.md) の実装への敵対的レビュー (回帰観点)
+出典: [issue 394](394-bug-av1ify-vfr-passthrough-breaks-quicktime.md) の実装への敵対的レビュー (回帰観点)
 反証レビュー: 実施。**下記の連動はレビュー時の実測**
 
 ## 問題
@@ -41,7 +41,7 @@ VFR ソースが**黙って正規化対象から外れ、issue 394 のバグが�
 - postcheck 側: `rel_tolerance = src × 0 / 100 = 0` になり許容が絶対フロア 24 まで下がる (最も厳しい)
 - 検出側: `d > 0` で発火するので、**`r_frame_rate=30/1` / `avg_frame_rate=30000/1001` という
   ごく普通の NTSC メタデータ** (30.000 vs 29.970 = 乖離 0.1%) が VFR 判定になる
-- → `-fps_mode cfr` が広く付き、[23bb19fd](done/394-bug-av1ify-vfr-passthrough-breaks-quicktime.md) が
+- → `-fps_mode cfr` が広く付き、[23bb19fd](394-bug-av1ify-vfr-passthrough-breaks-quicktime.md) が
   「91 本中 36 本で出力フレーム数が変わる」として**明示的に避けた経路へ戻る**
 - → しかも `_fps_changed=1` でフレーム数チェックが無効化されるので、**その変化は誰にも見えない**
   ([issue 397](397-bug-av1ify-vfr-wrong-r-value-undetected-frame-loss.md))
@@ -65,3 +65,16 @@ VFR ソースが**黙って正規化対象から外れ、issue 394 のバグが�
 
 - PCT=0 にしたとき実コーパス 91 本のうち何本が VFR 判定へ転ぶかは、コーパスが手元に無いため未計測。
   「36 本の退行が戻る」は論理的帰結であって実測ではない
+
+
+## 進捗 / 結果 (2026-09-19)
+
+- [x] `AV1IFY_VFR_DETECT_PCT` へ分離 (`fix(av1ify,397,398,399): …`)
+- [x] `AV1IFY_FRAME_TOLERANCE_PCT` を両端 (0 / 5) へ振っても VFR 検出結果が変わらないことを
+      Test 8 で固定。検出閾値そのものが効くことは Test 9 で固定
+- 変異検証: 相乗りへ戻す変異 (M3) で Test 8 / Test 9 が red
+
+🚨 **同型の欠陥を、この修正の兄弟 (issue 397 の密度検査) が一度再生産した**。密度検査のフロアが
+ユーザー向けに文書化済みの `AV1IFY_FRAME_TOLERANCE` を兼ねており、緩めると破壊的判定が黙って
+無効化される状態になっていた (敵対レビュー 2 周目が検出)。`AV1IFY_DENSITY_FLOOR` へ分離済み。
+**「1 つのノブに 2 つの意味を持たせない」は、閾値を新設するたびに確認すること。**

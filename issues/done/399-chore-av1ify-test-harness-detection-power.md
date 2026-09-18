@@ -3,7 +3,7 @@
 起票日: 2026-09-19
 カテゴリ: chore / priority: **medium**
 対象: `tests/zshrc/av1ify/test_helper.sh` の `assert_*`、`tests/zshrc/av1ify/test_av1ify_fps_mode.sh`
-出典: [issue 394](done/394-bug-av1ify-vfr-passthrough-breaks-quicktime.md) の実装への敵対的レビュー (素通り観点)
+出典: [issue 394](394-bug-av1ify-vfr-passthrough-breaks-quicktime.md) の実装への敵対的レビュー (素通り観点)
 反証レビュー: 実施。**下記の中断はレビュー時の実測**
 
 ## 問題 1: 最初の assert 失敗でファイルごと終了するので、変異検証がケース単位で判定できない
@@ -53,12 +53,12 @@ MOCK_FPS=30/1 MOCK_AVG_FPS=24/0  →  ARGS: -fps_mode cfr -r 24.000
 
 ## 受け入れ条件
 
-- [ ] `assert_*` の失敗で**ファイルを中断させず**、失敗を数えて最後に一覧を出す
+- [x] `assert_*` の失敗で**ファイルを中断させず**、失敗を数えて最後に一覧を出す
       (e2e の `bad()` + EXIT trap と同じ形へ寄せる)。中断させる必要がある「前提崩れ」は
       明示的に `exit 1` する側へ分ける
-- [ ] 変異検証の判定を「ケース名ごとの pass/fail 一覧」で行えることを、実際に 1 本変異を当てて確認する
-- [ ] Test 5 の fixture を `0/0` と `24/0` の 2 ケースへ広げる (issue 397 の修正後は `24/0` も非検出が正)
-- [ ] e2e のメッセージ assert に、配線を pin する assert (値の比較) を併置する ([issue 397](397-bug-av1ify-vfr-wrong-r-value-undetected-frame-loss.md))
+- [x] 変異検証の判定を「ケース名ごとの pass/fail 一覧」で行えることを、実際に 1 本変異を当てて確認する
+- [x] Test 5 の fixture を `0/0` と `24/0` の 2 ケースへ広げる (Test 6 として追加) (issue 397 の修正後は `24/0` も非検出が正)
+- [x] e2e のメッセージ assert に、配線を pin する assert (値の比較) を併置する ([issue 397](397-bug-av1ify-vfr-wrong-r-value-undetected-frame-loss.md))
 
 ## 指摘なしだった点 (記録)
 
@@ -69,3 +69,19 @@ MOCK_FPS=30/1 MOCK_AVG_FPS=24/0  →  ARGS: -fps_mode cfr -r 24.000
   完全一致 (コメントのみ純増)、テストは 1 ケースが反転して残り、**dts 再追加の変異で red** を実測。
   しかも同じ commit で fixture の `time=` を 1s → 10s に直しており、これをしないと `truncated` が
   先に落ちて「dts を見ていない」ことを証明できなかった (= 先に落ちる別 assert を潰した正しい変異設計)
+
+
+## 結果 (2026-09-19)
+
+`assert_*` を `bad()` + `return 0` へ変えたことで、**変異検証をケース単位で読めるようになった**。
+issue 397 の敵対レビュー 6 周で、これが実際に効いた場面:
+
+- 変異 M1 で Test 6 の **3 assert すべて**が red になることを観測できた (従来は 1 本目で中断)
+- 「このテストだけが red になる変異」を 1 本ずつ特定する作業が 1 run で回せた
+  (`awk '/^## Test /{t=$0} /✗/{print t" || "$0}'` で表になる)
+- 逆に、それによって**「red は出るが、出しているのは狙った assert ではない」形**が 3 回見つかった
+  (M8 / Test 70i / Test 70j)。中断する設計のままなら、どれも「変異で red = 守られている」と
+  誤って記録されていた
+
+全 509 呼び出しは条件文脈に置かれていないことを確認済み (`if` / `&&` / `||` / `$(...)` の中に
+assert が在る箇所は 0 件) なので、`return 0` 化による誤った緑は生じない。
