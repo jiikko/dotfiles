@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -294,5 +295,79 @@ func TestWithTimeoutMarksAbandonInProduction(t *testing.T) {
 		}
 	case <-time.After(30 * time.Second): // 安全網。合否には使わない
 		t.Fatal("seam が返らない")
+	}
+}
+
+// 敵対レビュー P2 (2026-09-18): 取り消しが**判定不能**で返ったときに「TTL が切れるまで残る」と
+// 断定し、`lockman break` を勧めていた。`ReleaseTimed` の期限切れは判定不能で、内側の goroutine は
+// 走り続けて Remove に到達しうる。**消えるかもしれない lock** に対して「期限検査も token 照合も
+// しない無条件 rename」へ人を誘導するのは、この道具で最も現実的に二重取得を作る操作。
+func TestUndoDoesNotClaimTheLockRemainsWhenIndeterminate(t *testing.T) {
+	l, err := NewLocker(t.TempDir(), 50*time.Millisecond)
+	if err != nil {
+		t.Fatalf("NewLocker: %v", err)
+	}
+	meta, err := l.Acquire(time.Minute, "indeterminate")
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	// Release を期限切れにする (照合を通った後、Remove の手前で止める)
+	orig := releaseBeforeRemoveHook
+	t.Cleanup(func() { releaseBeforeRemoveHook = orig })
+	released := make(chan struct{})
+	releaseBeforeRemoveHook = func() {
+		time.Sleep(300 * time.Millisecond) // l.timeout (50ms) を確実に超える
+		close(released)
+	}
+
+	stderr := captureStderr(t, func() { _ = l.undoAbandonedPlace(meta.Token) })
+
+	if !strings.Contains(stderr, "判定できない") {
+		t.Fatalf("判定不能であることを伝えていない: %q", stderr)
+	}
+	if strings.Contains(stderr, "lockman break") {
+		t.Fatalf("判定不能なのに break を勧めている (消えるかもしれない lock に無条件 rename を打たせる): %q", stderr)
+	}
+	if strings.Contains(stderr, "TTL が切れるまで残る") {
+		t.Fatalf("判定不能なのに「残る」と断定している: %q", stderr)
+	}
+	// 実際、内側の goroutine は走り切って lock を消す = 「残る」は偽だった
+	<-released
+	for range 200 {
+		if _, serr := os.Lstat(l.lockPath()); os.IsNotExist(serr) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("期限切れで返った後も内側の goroutine が lock を消していない (このテストの前提が崩れている)")
+}
+
+// 敵対レビュー P3 (2026-09-18): lease 切れの errNotOwner を「消すものが無い」と同じ扱いで
+// 握り潰していたため、**自分が置いた lock が残っているのに stderr が完全に空**だった。
+// コメントは「取り消せなかったことは黙らない」と約束している。
+func TestUndoReportsWhenLeaseExpiredSoLockRemains(t *testing.T) {
+	l := newTestLocker(t)
+	meta, err := l.Acquire(minTTL, "expired")
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if cerr := os.Chtimes(l.lockPath(), old, old); cerr != nil {
+		t.Fatalf("Chtimes: %v", cerr)
+	}
+
+	stderr := captureStderr(t, func() { _ = l.undoAbandonedPlace(meta.Token) })
+
+	if _, serr := os.Lstat(l.lockPath()); serr != nil {
+		t.Fatalf("前提が崩れている: lease 切れでは Release は消さないはず (%v)", serr)
+	}
+	if stderr == "" {
+		t.Fatal("自分が置いた lock が残っているのに何も言っていない")
+	}
+	if !strings.Contains(stderr, "lease 切れ") {
+		t.Fatalf("残った理由 (lease 切れ) を伝えていない: %q", stderr)
+	}
+	if strings.Contains(stderr, "lockman break") {
+		t.Fatalf("期限切れの lock は次の取得が引き継げるので break は不要: %q", stderr)
 	}
 }

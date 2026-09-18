@@ -86,6 +86,12 @@ var (
 	errUnreadableLock = fmt.Errorf("%w: lock の中身を読めないので引き継がない", errBusy)
 	// errNotOwner は「自分は持ち主ではない」(release/renew の対象違い、lease 喪失)。
 	errNotOwner = errors.New("not the lock owner")
+
+	// errLeaseExpired は「token は一致するが lease が切れている」。**errNotOwner を包む**ので
+	// 既存の `errors.Is(err, errNotOwner)` はそのまま通る (終了コードの API は変えない)。
+	// 区別が要るのは `undoAbandonedPlace` だけ — 「自分のものではない」(消すものが無い) と
+	// 「自分のものだが消せず、**lock が残る**」を分けて報告するため (issue 362 の敵対レビュー P3)。
+	errLeaseExpired = fmt.Errorf("%w: lease が切れている", errNotOwner)
 	// errClaimReplaced は「回収しようとした目印が、途中で別の観測者に置き直された」。
 	// errBusy を流用しないこと: 流用すると「譲ってよい失敗」の集合が、将来 errBusy を
 	// 返す実装が増えたときに黙って広がる。
@@ -487,8 +493,28 @@ var (
 // 「ここだけは例外」で崩さない — 例外は次に足す人が真似する。
 // 配線は `timeout_wiring_test.go` が機械で止める (実際にこの変更で 1 度落ちた)。
 func (l *Locker) undoAbandonedPlace(token string) error {
-	err := l.ReleaseTimed(token)
-	if err != nil && !errors.Is(err, errNotOwner) {
+	switch err := l.ReleaseTimed(token); {
+	case err == nil:
+		// 取り消せた
+	case errors.Is(err, errIOTimeout):
+		// 🚨 **「残る」と断定しない** (issue 362 の敵対レビュー P2)。`ReleaseTimed` の期限切れは
+		// **判定不能**で、内側の goroutine は走り続けて `os.Remove` に到達しうる (実測: 到達する)。
+		// ここで `lockman break` を勧めると、**消えるかもしれない lock** に対して
+		// 「期限検査も token 照合もしない無条件 rename」(同ファイルが「この道具で最も現実的に
+		// 二重取得を作る操作」と書いているもの) を人に打たせることになる。
+		// 読み取り専用の確認へ誘導する。
+		warnf("見捨てられた取得が置いた lock を取り消せたか判定できない (%v)。"+
+			"残っているかは `lockman status` で見ること: %v", err, l.lockPath())
+	case errors.Is(err, errLeaseExpired):
+		// token は自分のものだが lease が切れていて `Release` が消さない = **lock は残る**。
+		// ただし期限切れなので次の acquire が正当に引き継げる。人の介入は要らないので
+		// `break` は勧めない。黙らないのは「自分が置いたものが残った」事実を消さないため。
+		warnf("見捨てられた取得が置いた lock は lease 切れで取り消せない。"+
+			"期限切れなので次の取得が引き継ぐ: %v", l.lockPath())
+	case errors.Is(err, errNotOwner):
+		// 置けていない / 既に他者が引き継いだ。取り消すものが無いので黙る
+	default:
+		// 確定した失敗 (権限・I/O エラー)。ここだけが `break` を勧めてよい
 		warnf("見捨てられた取得が置いた lock を取り消せない (%v)。TTL が切れるまで残る。"+
 			"急ぐなら `lockman break` で剥がすこと: %v", err, l.lockPath())
 	}
@@ -727,7 +753,7 @@ func (l *Locker) Release(token string) error {
 		return err
 	}
 	if expired(now, mtime, holderTTL(m)) {
-		return fmt.Errorf("%w: lease が切れている (走行中に引き継がれた可能性)", errNotOwner)
+		return fmt.Errorf("%w (走行中に引き継がれた可能性)", errLeaseExpired)
 	}
 	// 🚨 **消す直前に実体を照合する** (issue 380)。`os.Remove` は**名前**に対する操作なので、
 	// 照合から消すまでのあいだに引き継がれると**別人の lock を消す** (実測済み。しかも戻り値は
@@ -803,7 +829,7 @@ func (l *Locker) Renew(token string) error {
 		return err
 	}
 	if expired(now, st.ModTime(), holderTTL(m)) {
-		return fmt.Errorf("%w: lease が切れている (走行中に引き継がれた可能性)", errNotOwner)
+		return fmt.Errorf("%w (走行中に引き継がれた可能性)", errLeaseExpired)
 	}
 	// 🚨 **読んだバイト列をそのまま書き戻す** (再 marshal しない。敵対レビュー 380 P2-1 / P2-1b)。
 	// `Renew` の目的は「同じ内容を書き直してサーバに mtime を打刻させる」なので、意味論は変わらない。
