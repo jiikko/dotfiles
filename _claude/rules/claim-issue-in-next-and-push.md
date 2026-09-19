@@ -35,7 +35,7 @@
     git push
     ```
 
-    glogx の issues viewer の `n` も同じ形を作る。解除は symlink を消すだけ (`git rm issues/next/NNN-slug.md`)。
+    glogx の issues viewer の `n` も同じ目印を作るが、**バナーは書かない**ので、`n` で付けたら本文にバナーを足して一緒に push する。解除は symlink を消すだけ (`git rm issues/next/NNN-slug.md`)。
     **目印の形は `../<同名>` に固定** (glogx はそれ以外の symlink を目印として読まず、警告にする。
     `tests/issues/test_next_links_valid.sh` が CI で同じ条件を検査する)
   - 旧運用 (ファイルそのものを `next/` へ移す) は読めるが、新しい claim では使わない。既に `next/` に
@@ -46,7 +46,7 @@
   無い claim は `tests/issues/test_next_claims_have_banner.sh` が CI で落とす** (glogx の `n` で付けた claim も対象。issue 403)。`next/` の目印は
   **`next/` を見る入口にしか届かない**。issue ファイルを直接開く / 別トランスポートから
   照会してくる相手には見えず、実測 2026-09-11 に**バナーと claim の両方がある issue が
-  7 分後に別セッションで done へ送られた** (308 / 305 の 2 件)。本文の 1 行目は
+  7 分後に別セッションで done へ送られた** (308 / 305 の 2 件)。本文の冒頭は
   「どの入口から来ても目に入る」唯一の場所
 - **claim の commit に他の変更を混ぜない** (目印とバナーの 2 つだけ)。混ぜると push できない事情 (レビュー待ち・検証中) に
   claim が巻き込まれ、宣言だけが遅れる
