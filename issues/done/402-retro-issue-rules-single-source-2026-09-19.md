@@ -14,7 +14,7 @@
 
 - 一般形: **同じ規約を複数の場所へ配るときは、コピーを置かず単一の正本を読み込ませる経路を作る。
   コピーが避けられないなら、ずれを機械で検出する検査を同時に置く**。「直接変更しないこと」の注記は同期の仕組みではない
-- 切り出し済み (2026-09-19): 既存 [`claude-md-maintenance.md`](../_claude/rules/claude-md-maintenance.md) の「書き方」節に 1 項追記
+- 切り出し済み (2026-09-19): 既存 [`claude-md-maintenance.md`](../../_claude/rules/claude-md-maintenance.md) の「書き方」節に 1 項追記
   （発動点は「同じ文面を 2 箇所目へ書こうとした瞬間」で、既存の「親 CLAUDE.md の規約を重複させない」と同族）
 
 ## 2. 同じ段落を 2 箇所目へ書いた時点で、構造の問題を言い出せた
@@ -35,7 +35,7 @@ obaket の README を my-products のルートから `git commit -- apps/obaket/
 
 - 一般形: **commit の前に、対象ファイルが属する repo を `git -C <ファイルの dir> rev-parse --show-toplevel` で確かめる**
   （submodule・入れ子 repo・worktree では cwd の repo と一致しない）
-- 切り出し済み (2026-09-19): 既存 [`commit-with-pathspec.md`](../_claude/rules/commit-with-pathspec.md) の
+- 切り出し済み (2026-09-19): 既存 [`commit-with-pathspec.md`](../../_claude/rules/commit-with-pathspec.md) の
   「pathspec は cwd 相対で解決される」節に追記（同じ「pathspec が外れる」系の別経路）
 
 ## 4. 「次のセッションまで確かめられない」変更は `claude -p` で今確かめられる
@@ -46,7 +46,7 @@ obaket の README を my-products のルートから `git commit -- apps/obaket/
 
 - 一般形: **hook・rules・settings のように「セッション開始時に効く」変更は、headless の新規セッションを
   1 回起こして観測する**。「次のセッションで効くはず」で閉じない
-- 切り出し済み (2026-09-19): 既存 [`.claude/rules/worktree-per-session.md`](../.claude/rules/worktree-per-session.md) の
+- 切り出し済み (2026-09-19): 既存 [`.claude/rules/worktree-per-session.md`](../../.claude/rules/worktree-per-session.md) の
   「worktree で `_claude/` を編集しても、その変更は効かない」節に確認方法として追記
 
 ## 5. 規範を CLAUDE.md から hook 注入へ移すと、拘束力が下がりうる
