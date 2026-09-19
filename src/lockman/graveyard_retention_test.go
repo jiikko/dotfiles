@@ -65,8 +65,110 @@ func TestGraveyardRetentionIsMeasuredFromEviction(t *testing.T) {
 	}
 }
 
+// 対照: 打刻した値そのものが「退避した時刻」であること (両方向)。
+//
+// 🚨 これが無いと **「打刻しすぎ」を 1 本も検出できない**。上のテストと
+// TestGraveyardStillExpiresAfterRetention は、どちらも打刻後に自分で mtime を
+// 上書きするか「消えないこと」しか見ないので、`now.Add(100*24*time.Hour)` へ
+// 打つ変異が **full suite 全緑**で通っていた (実測 2026-09-19 の反証レビュー P2。
+// issue 364 の本文が「対照を置いた」と書いていたのは誤りだった)。
+// 打刻しすぎは graveyard が retention を無視して無限に育つ形なので、上限も見る。
+func TestGraveyardStampIsTheEvictionTime(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		evict func(t *testing.T, l *Locker)
+	}{
+		{"break", func(t *testing.T, l *Locker) {
+			if err := l.Break(); err != nil {
+				t.Fatalf("Break: %v", err)
+			}
+		}},
+		{"takeover", func(t *testing.T, l *Locker) {
+			if _, err := l.Acquire(time.Hour, "thief"); err != nil {
+				t.Fatalf("Acquire (引き継ぎ): %v", err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			l := newTestLocker(t)
+			if _, err := l.Acquire(time.Minute, "holder"); err != nil {
+				t.Fatalf("Acquire: %v", err)
+			}
+			// 退避対象を古くしておく (打刻が効かなければ古いままになる = 下限側の検出)
+			old := time.Now().Add(-(graveyardRetention + 24*time.Hour))
+			if err := os.Chtimes(l.lockPath(), old, old); err != nil {
+				t.Fatalf("Chtimes: %v", err)
+			}
+
+			before := time.Now()
+			tc.evict(t, l)
+			after := time.Now()
+
+			var stamped time.Time
+			forEachGraveyard(t, l, func(p string) {
+				fi, err := os.Stat(p)
+				if err != nil {
+					t.Fatalf("Stat: %v", err)
+				}
+				stamped = fi.ModTime()
+			})
+			if stamped.IsZero() {
+				t.Fatal("graveyard の記録が無い")
+			}
+			// 🚨 上下の**両方**を見る。下限だけだと「未来へ打つ」変異が、
+			// 上限だけだと「打たない」変異が、それぞれ緑で通る。
+			// 窓は退避の前後 ± 1 分 (serverNow は probe の実 I/O なので多少ずれる)。
+			if stamped.Before(before.Add(-time.Minute)) {
+				t.Fatalf("打刻が古すぎる: %v (退避は %v 以降)。退避時刻で打ち直していない", stamped, before)
+			}
+			if stamped.After(after.Add(time.Minute)) {
+				t.Fatalf("打刻が新しすぎる: %v (退避は %v 以前)。未来へ打つと graveyard が無限に育つ", stamped, after)
+			}
+		})
+	}
+}
+
+// 退避の打刻に使う時刻は、**不可逆な rename より前**に取得すること (反証レビュー P1)。
+//
+// 🚨 `serverNow` は probe の実 I/O (作成 + stat + 削除)。これが rename の**後ろ**にあると、
+// 応答の鈍いマウントでその I/O が `--io-timeout` を食い切り、打刻が着地しないまま
+// `BreakTimed` が「判定不能」で返る。`dispatch` は break のあとに必ず `Cleanup` を defer で
+// 走らせるので、**旧 mtime (8 日前) のまま retention 超過と判定されて記録がその場で消える**。
+// しかも人には「判定不能」という別の話が出るので、記録を失ったことが見えない。
+// 実測 (A-B、8 日前の lock を break): 速いマウント → graveyard 1 件 / 鈍いマウント → 0 件。
+//
+// 🚨 これを壁時計で再現するテストは書かない (`avoid-wall-clock-assertions.md`)。
+// 順序そのものを seam で観測する。窓は縮むだけで 0 にはならない (rename 後に残る
+// `os.Chtimes` 1 本ぶんは残る) ので、ここで守るのは「時刻の取得が前に在ること」。
+func TestBreakTakesTheStampTimeBeforeRenaming(t *testing.T) {
+	l := newTestLocker(t)
+	if _, err := l.Acquire(time.Minute, "holder"); err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+
+	called := false
+	ready := false
+	orig := breakAfterRenameHook
+	breakAfterRenameHook = func(stampReady bool) { called, ready = true, stampReady }
+	t.Cleanup(func() { breakAfterRenameHook = orig })
+
+	if err := l.Break(); err != nil {
+		t.Fatalf("Break: %v", err)
+	}
+	if !called {
+		t.Fatal("前提崩れ: rename 後の seam を通っていない (この検査は何も守っていない)")
+	}
+	if !ready {
+		t.Fatal("rename の時点で打刻用の時刻を持っていない。" +
+			"serverNow の I/O が不可逆操作の後ろにあると、鈍いマウントで退避の記録が消える")
+	}
+}
+
 // 対照: **本当に古い** graveyard の記録は従来どおり消えること
 // (打ち直しが「常に残す」へ倒れていないこと。倒れると graveyard が無限に育つ)。
+//
+// 🚨 このテストは打刻後に自分で mtime を上書きするので、**打刻した値そのものは観測しない**。
+// 値の正しさは TestGraveyardStampIsTheEvictionTime が持つ (ここは sweepDir の retention 判定の検査)。
 func TestGraveyardStillExpiresAfterRetention(t *testing.T) {
 	l := newTestLocker(t)
 	if _, err := l.Acquire(time.Minute, "holder"); err != nil {

@@ -86,7 +86,7 @@ fake clock を注入する。
 
 | # | 状態 | 実装 |
 |---|---|---|
-| 1 | **未着手** | — |
+| 1 | **完了** | 解放に失敗したとき、**子が rc=0 のときだけ** 125 へ上げる。非 0 の rc は既に失敗を伝えているので透過を保つ (真の穴は「子が成功して lock が残る」= 呼び出し側から成功と区別できない場合だけ)。番号は新設せず 125 (spec 091 の「lockman 自体のエラー」に当たる)。help の表にも明記 |
 | 2 | **完了** | `stampGraveyard` を新設し、`tryTakeover` と `Break` の rename 直後に **退避した時刻 (`serverNow`) で打刻し直す**。best-effort (打刻できなければ従来どおり早く消えるだけ) で、退避自体は止めない。鳴らさない理由もコードに残した (退避は正常系にも出る操作で、ここで warn を足すと「良性の状態で鳴る診断」= issue 383 の 2 周目 P2 になる) |
 | 3 | **未着手 (意図的)** | 再現手段が無い。推測で防御を足さない |
 | 4 | **完了** | `TestRenewExtendsHold` の判定軸を「経過時間」から「引き継げるか」へ移した。mtime を期限の手前へ寄せてから Renew する形で、**壁時計の待ちはゼロ** (旧 0.23s → 0.04s)。対照 (Renew しなければ同じ経過で奪える) も付けた |
@@ -99,8 +99,13 @@ fake clock を注入する。
 | `Break` の打刻を外す | 同 `/break` **FAIL** / `/takeover` は PASS |
 | `Renew` に「内容が同じなら書き直さない」最適化を入れる | `TestRenewExtendsHold/renewed` **FAIL** / `/not_renewed` は PASS |
 
-対照も置いた: `TestGraveyardStillExpiresAfterRetention` (打ち直しが「常に残す」へ倒れていないこと。
-倒れると graveyard が無限に育つ)。
+🚨 **この「対照を置いた」は誤りだった** (2026-09-19 の反証レビュー P2 で判明)。
+`TestGraveyardStillExpiresAfterRetention` は打刻の**後に自分で mtime を上書きしてから**
+Cleanup を回すので、`stampGraveyard` が打った値を一度も観測しない。実測: 打刻を
+`now.Add(100*24*time.Hour)` (= 100 日消えない) へ変異させても **full suite が全緑**だった。
+つまり当時のテスト対は「打刻しなさすぎ」しか検出せず、**「打刻しすぎ」は 1 本も検出していなかった**
+(打刻しすぎは graveyard が retention を無視して無限に育つ形)。
+→ `TestGraveyardStampIsTheEvictionTime` を新設し、打刻値そのものを**上下両方向**で pin した。
 
 ### 結果
 
@@ -109,11 +114,60 @@ fake clock を注入する。
 - 🚨 **fixture の古さは retention (7d) + 24h に置いた**。足りないと「打ち直さなくても残る」ので
   変異を当てても緑で通る (テスト内にコメントで残した)
 
+## 反証レビュー (2026-09-19) — P1 1 件 / P2 1 件を実装で解消
+
+| 指摘 | 判定 | 対応 |
+|---|---|---|
+| **P1**: 項目 2 の修正が**鈍いマウントでは効かず、退避の記録が黙って消える** | 実測で裏取り | 直した (下記) |
+| **P2**: 「対照を置いた」は偽。打刻しすぎを 1 本も検出していない | 実測で裏取り | 対照を新設 |
+| P3: 解放時に lease が期限切れだと rc=0・lock 残存・stderr 無音 | 根拠を実測で確認 | **現状維持** (期限切れの lock は次の acquire が即座に引き継げるので待たされる害が出ない。コメントに事実を明記済み) |
+| 項目 1 / 項目 4 | 壊せなかった | — |
+
+### P1 の中身 (項目 2 の修正が効かない母集団)
+
+`stampGraveyard` の I/O (`serverNow` = probe の作成 + stat + 削除) が **不可逆な `os.Rename` の
+後ろ**にあり、`BreakTimed` の `--io-timeout` 予算に丸ごと乗っていた。鈍いマウントではそこで
+食い切って打刻が着地せず、`dispatch` が break のあとに必ず走らせる `Cleanup` が
+**旧 mtime (8 日前) のまま retention 超過と判定して記録をその場で消す**。しかも人には
+「判定不能」という別の話が出るので、記録を失ったことが見えない。
+
+実測 (A-B、8 日前の lock を `break`):
+
+| マウント | `BreakTimed` | graveyard |
+|---|---|---|
+| 速い (`--io-timeout 5s`) | nil | **1 件** |
+| 鈍い (`--io-timeout 30ms`) | 判定不能 | **0 件** |
+
+**「死んだマシンが放置した lock を break する」は項目 2 が存在する理由そのものの母集団**なので、
+そこでだけ効かないのは実害。→ `Break` も `tryTakeover` と同じく `serverNow` を **rename の前**に
+取る形へ変更。rename 後に残る I/O は `os.Chtimes` 1 本になり、窓は**縮む** (0 にはならない)。
+
+🚨 **残る限界**: probe dir が壊れている lock では `serverNow` が即座に失敗し、best-effort で
+打刻を諦める → 旧 mtime のまま Cleanup に消える。これは今回の変更でも直らない
+(直すなら退避名に時刻を埋める等の別設計が要る)。再評価の trigger: 実運用で
+「break したのに graveyard に記録が無い」が報告されたとき。
+
+### 追加した変異検証 (ケース名ごとの PASS/FAIL)
+
+| 変異 | red になったテスト |
+|---|---|
+| `Break` の時刻取得を rename の後ろへ戻す | `TestBreakTakesTheStampTimeBeforeRenaming` |
+| 打刻しすぎ (100 日先) | `TestGraveyardStampIsTheEvictionTime` の 2 ケース |
+| 打刻しない | 上記 + `TestGraveyardRetentionIsMeasuredFromEviction` の 2 ケース |
+
+🚨 順序の検査は**壁時計で再現しない** (`avoid-wall-clock-assertions.md`)。rename 直後の seam
+(`breakAfterRenameHook`) で「その時点で打刻用の時刻を持っているか」を観測する形にした。
+
+🚨 変異ハーネス自身の欠陥も 1 件踏んだ: 判定に `grep -E '^\s+--- FAIL'` を使っていたため、
+**サブテストでない `--- FAIL:` (インデントなし) を取りこぼして M1 を「全緑」と誤読**した。
+判定式は `^ *--- FAIL` に直した。
+
 ## 残タスク
 
-- [ ] 反証レビュー (2 / 4 の実装は未レビュー。変異検証のみ)
-- [ ] **1 の対応 (未着手)**。`with` が解放に失敗しても子の rc を透過する。exit code の契約変更に
-      なるので、呼び出し側 (`_av1ify_lock.zsh` ほか) の期待を洗ってから決める
+- [x] 反証レビュー (P1 / P2 を実装で解消。P3 は現状維持の理由をコードに明記)
+- [x] **1 の対応**。呼び出し側は全数確認済み: `lockman with` を実行する production コードは 0 件
+      (issue 359 の全数勘定)、`__av1ify_lock_still_held` は rc≠0 をすべて「保持していない」に倒す
+      fail-closed なので厳しくしても安全側にしか動かない
 - [x] 2 の対応 (`stampGraveyard`。変異 2 本で red)
 - [ ] 3 は未確認リスクのまま。trigger は本文に記載
 - [x] 4 の判定軸の変更 (`TestRenewExtendsHold`。変異 1 本で red)

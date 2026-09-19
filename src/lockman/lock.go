@@ -1091,16 +1091,40 @@ func (l *Locker) Break() error {
 		return err
 	}
 	grave := filepath.Join(l.metaDir, graveyardDirName, mustToken())
+	// 🚨 打刻に使う時刻は **rename の前**に取る (issue 364 の反証レビュー P1)。
+	// `stampGraveyard` の中で取り直すと、`serverNow` の I/O (probe の作成 + stat + 削除) が
+	// **不可逆な rename のあと**に乗る。応答の鈍いマウントではそこが `--io-timeout` を食い切り、
+	// 打刻が着地しないまま `BreakTimed` が「判定不能」で返る。`dispatch` は break のあとに
+	// 必ず `Cleanup` を defer で走らせるので、**旧 mtime (8 日前) のまま retention 超過と
+	// 判定されて退避の記録がその場で消える** — しかも人には「判定不能」という別の話が出るので、
+	// 記録を失ったことが見えない。実測 (A-B、8 日前の lock を break):
+	//   速いマウント (--io-timeout 5s) → graveyard 1 件 / 鈍いマウント (30ms) → 0 件
+	// 先に取れば rename 後に残る I/O は `os.Chtimes` 1 本になり、窓は**縮む** (0 にはならない)。
+	//
+	// 🚨 取れなくても break は止めない。剥がすこと自体は記録より優先 (人が今すぐ剥がすための操作)。
+	// その場合は打刻せず従来どおり旧 mtime が残る = 早く消えるだけ (best-effort)。
+	now, err := l.serverNow()
+	if err != nil {
+		now = time.Time{} // 打刻しない
+	}
 	if err := os.Rename(l.lockPath(), grave); err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
 		return err
 	}
-	// 時刻は持っていないので `stampGraveyard` 側で取り直す (取れなければ打刻しない)。
-	l.stampGraveyard(grave, time.Time{})
+	// 「不可逆な rename の時点で、打刻に使う時刻を既に持っているか」を観測する seam。
+	// これを**構造で**pin しておかないと、時刻の取得が rename の後ろへ戻る変異
+	// (= P1 の退行そのもの) を**タイミングに依存しない形では**検出できない
+	// (鈍いマウントを実時間で再現するテストは壁時計依存になる)。
+	breakAfterRenameHook(!now.IsZero())
+	l.stampGraveyard(grave, now)
 	return nil
 }
+
+// breakAfterRenameHook は Break の rename 直後に呼ばれる seam。引数は
+// 「打刻に使う時刻を rename より前に取得できていたか」。既定は何もしない。
+var breakAfterRenameHook = func(stampReady bool) {}
 
 // takeoverClaimBody は調停の目印の中身。**回収の可否を判断するために作成者が自分の
 // 飛行時間の上限 (--io-timeout) を申告する**のが本体で、host / user / pid は
