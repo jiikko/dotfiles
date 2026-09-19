@@ -1,7 +1,5 @@
 # `staticcheck が無い` ガードが goenv の shim を掴んで素通りし、`make test` が毎回落ちる
 
-> 🚨 **担当中: Claude セッション (opus, dotfiles)**（2026-09-20〜）
-
 起票日: 2026-09-20
 カテゴリ: bug / priority: **medium**
 対象: `scripts/check_unused_excluding_tests.sh` の存在ガード (`command -v staticcheck`)
@@ -82,6 +80,63 @@ shim は「どの Go 版にも無い」ときでも PATH 上に在るので、**
 - [ ] 変異検証: ガードを元の `command -v` 形へ戻すと、上の確認が red になること
 - [ ] 同じ形 (`command -v <goenv/rbenv/nodenv が shim を持つコマンド>`) が他の検査に無いか grep する
       (**あれば同じ穴**。shim を持つ言語は goenv だけではない)
+
+## 進捗 (2026-09-20): 完了
+
+### 根本は「staticcheck が無い」ではなく **版上げで go 製ツールが 17 本消えた**
+
+goenv は **GOPATH を版ごとに分ける** (`~/go/<version>`)。実測:
+
+| | |
+|---|---|
+| `~/go/1.25.4/bin` | 17 本 (staticcheck / golangci-lint / gopls / goimports / dlv / revive …) |
+| `~/go/1.26.0/bin` | **空** |
+| `~/.anyenv/envs/goenv/versions/*/bin` | どちらも `go` と `gofmt` だけ |
+
+つまり 1.25.4 → 1.26.0 の版上げで **go 製ツールがまとめて PATH から消え、shim だけが残った**。
+staticcheck はその 1 本にすぎない (issue 本文の「1.25.4 の bin にも実体が無い可能性」は、
+**版ごとの GOPATH を見ていなかった**ため。実体は `~/go/1.25.4/bin` に在った)。
+
+### 直したこと
+
+1. **ガードを「実行できるか」で書いた** (`staticcheck --version` の rc)。案内にも
+   「いま有効な Go 版へ入れること (GOPATH が版ごとなので版を上げると消える)」を足した
+2. **同型を全数 grep した** (受け入れ条件 4)。`command -v` の対象のうち shim を持つのは
+   **go / ruby / staticcheck の 3 つ**:
+
+   | 箇所 | 判定 |
+   |---|---|
+   | `scripts/check_unused_excluding_tests.sh` (staticcheck) | **直した** (本 issue) |
+   | `bin/lib/go_autobuild.zsh` (go) | **直した**。同じ害 (案内が素通りして exit 127 の英語エラーが点滅する)。判定はすぐ下で必要な `go env GOVERSION` に寄せ、呼び出しを増やしていない |
+   | `Makefile:486` (ruby) / `Makefile:549` (go) | **直さない**。shim が通っても後続 (`ruby -c` / `go build`) が落ちて red になる = fail-closed。案内が消える害も無い |
+
+3. **staticcheck を CI と同じ pin (v0.7.0) で現行版へ導入した** → `make test` が緑に戻った
+   (`staticcheck 2026.1 (v0.7.0)`)
+
+### 受け入れ条件
+
+- [x] staticcheck が実行できない環境で、用意されているメッセージが実際に出る
+      (`tests/scripts/test_staticcheck_guard_detects_shim.sh`。**A) PATH に無い** と
+      **B) 偽 shim だけ在る** の両方を作る)
+- [x] `make test` が手元で緑に戻る (rc=0)
+- [x] 変異検証: ガードを `command -v` へ戻すと B が red。しかも **production の症状
+      (「解釈できない staticcheck の出力」が 6 module ぶん並ぶ) をそのまま再現**した
+- [x] 同型の grep (上表)
+
+### 🚨 残る問題 (本 issue のスコープ外。別 issue 候補)
+
+**版を上げるたびに go 製ツール 17 本が消える導線が、どこにも無い**。今回 staticcheck だけを
+入れ直したので `make test` は緑になったが、`golangci-lint` は **各 module の Makefile が
+`go run …@v2.5.0` で都度取る**ため影響を受けていないだけで、`gopls` / `dlv` / `goimports` などは
+消えたまま (エディタ側で効く)。直すなら「版を上げる導線 (`global_go_version` / `setup.sh`) と
+同じ場所で入れ直す」= issue 本文の案 3。**setup.sh / Brewfile のどちらにも staticcheck は無い**。
+
+### ルールへの横展開 (本文の「一般化」に対する回答)
+
+`verify-execution-not-just-exit-code.md` へ「**存在検査版**」を 1 行足す価値がある
+(「`command -v` は PATH に名前が在るかしか見ない。version manager の shim・ラッパー・alias 越しでは
+『在るのに実行できない』が起きるので、実行可否は無害なサブコマンドの rc で見る」)。
+**切り出しの実行はユーザーの判断待ち**。
 
 ## 🚨 この issue の一般化 (同型が他にもあるはず)
 
