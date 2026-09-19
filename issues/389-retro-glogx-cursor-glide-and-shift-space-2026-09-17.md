@@ -101,9 +101,19 @@ bubbletea → ultraviolet → kitty flag と外部ソースを追ってから実
 
 ## 残課題
 
-- [ ] 反省 1 の `mutation-verify-new-tests.md` への追記 (ユーザー判断待ち)
-- [ ] 反省 2 の `mutation-verify-new-tests.md` への追記 (ユーザー判断待ち)
-- [ ] 反省 3 の `instrument-before-second-fix.md` への追記 (ユーザー判断待ち)
-- [ ] hint 行に上スクロールのキー (`b`) を出すか — 今の hint は `j/k/Space: スクロール` で
+- [x] 反省 1 の `mutation-verify-new-tests.md` への追記 (ユーザー判断待ち)
+- [x] 反省 2 の `mutation-verify-new-tests.md` への追記 (ユーザー判断待ち)
+- [x] 反省 3 の `instrument-before-second-fix.md` への追記 (ユーザー判断待ち)
+- [x] hint 行に上スクロールのキー (`b`) を出すか — 今の hint は `j/k/Space: スクロール` で
       上方向を案内していない。shift+space が届かない端末では `b` が唯一の発見しやすい経路だが、
       hint 行は幅が詰まっている (`issues_view.go` の hint の注記)。ユーザーに可否を確認中
+
+## 決着 (2026-09-19)
+
+Fable サブエージェントの独立判定を踏まえて決定した。残課題なし。
+
+- 1: `mutation-verify-new-tests.md` の「ハーネス側に guard」へ「未コミット差分があれば拒否」を追記 (発動点を足すより構造で止める)
+- 2: 同ルールの「変異の有無で違う値を出すか」へ「画面の主張は描画結果から読む」を併合
+- 3: `instrument-before-second-fix.md` の表に「無反応が no-op の正しい状態から来ていないか」を一般化して追記
+- 4・5: 記録のみ
+- hint 行に `b` を出すか: ユーザー判断のため本 retro から外し、応答で確認する

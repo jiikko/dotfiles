@@ -118,8 +118,20 @@ seam を**変異後の破壊的操作より前**に置く。後ろだと変異�
 
 ## 残課題
 
-- [ ] 上記 1〜3・5〜8 の切り出し (既存ルールへの追記 8 件。新規ルールは 0 件)。**実行はユーザーの判断待ち**
-- [ ] 366 の横展開: [380](done/380-bug-lockman-renew-and-release-act-on-name-after-check.md) /
+- [x] 上記 1〜3・5〜8 の切り出し (既存ルールへの追記 8 件。新規ルールは 0 件)。**実行はユーザーの判断待ち**
+- [x] 366 の横展開: [380](done/380-bug-lockman-renew-and-release-act-on-name-after-check.md) /
       [381](done/381-bug-lockman-with-renew-latch-stops-renewal-forever.md)
-- [ ] 366 が新設した wedge の根治: [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
+- [x] 366 が新設した wedge の根治: [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
       [363](363-bug-lockman-with-signal-handler-installed-too-late.md)
+
+## 決着 (2026-09-19)
+
+Fable サブエージェントの独立判定を踏まえて決定した。残課題なし。
+
+- 3: `mutation-verify-new-tests.md` の「red を確認したら…HEAD にまだ在るか」へ「前回 red の変異が green に転じたらテストの消失を疑う」を併合
+- 1: 却下 (§0-A に同じ実測あり) / 2: 却下 (mutation の 09-16「seam は守りたい窓の内側に」と同一) / 4: 追記不要
+- 5: 却下 (ラッパー rc は verify-execution に 09-18 収載済み。Go の `-v` は Go 固有)
+- 6・8b: 却下 (adversarial §2 の 09-16「案内が出る状態を全部列挙し、案内先を実際に走らせる」で捕まる)
+- 7: 却下 — §8 の「検出しない形を先に宣言」は迂回が無限な字句 gate 向けで、全レビューへ広げると本物の P1 を範囲外に切る (8 の 383 がその反例)
+- 8a: 却下 — `survey-receiver-guards-before-passing-new-values.md`「自分が宣言した不変条件」節とほぼ同文
+- 366 の横展開 380/381 は done、362/363 は各 issue が正本。retro 側からは外す

@@ -88,7 +88,7 @@ commit の並びから推測して伝えてきたが、**これは誤り**（360
   は敵対レビュー 5 周目まで完了して決着した** (dotfiles-c9)。本 retro の残課題はこれとは独立で、
   未解消のまま
 
-- [ ] 気づき 1: `claim-issue-in-next-and-push.md` への追記 + バナー欠落の検査を issue 化するか
+- [x] 気づき 1: `claim-issue-in-next-and-push.md` への追記 + バナー欠落の検査を issue 化するか
       （ユーザー判断待ち）
 - 気づき 2: 却下（1 回目のため。2 回目が出たら `commit-with-pathspec.md` へ 1 行追記）
 - 気づき 3: 却下（既存ルールが期待どおり効いた記録のみ）
@@ -97,3 +97,11 @@ commit の並びから推測して伝えてきたが、**これは誤り**（360
 
 - [issue 360](done/360-test-tmux-shim-value-taking-options-completeness.md) — 同セッションでやり切った実作業
 - [issue 358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) / [issue 359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) — 着手を見送った先（dotfiles-53 が担当）
+
+## 決着 (2026-09-19)
+
+Fable サブエージェントの独立判定を踏まえて決定した。残課題なし。
+
+- 気づき 1: **issue 403 に切り出し** (バナー欠落の検査)
+- 気づき 2: 却下 — 09-12 の再発はヘッジも付かない素の推測で、`commit-with-pathspec.md`「推測した帰属を第三者へ伝えない」が既に禁じている (規範の欠落でなく運用の失敗)
+- 気づき 3: 却下 (既存ルールが期待どおり効いた記録)

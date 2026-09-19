@@ -92,12 +92,21 @@ production 3 commit + テスト 2 commit、新規 issue 5 本（362 / 363 / 364 
 
 ## 残課題
 
-- [ ] 上の 1〜4 の切り出し（既存ルールへの追記 / 却下）をユーザーが判断する
-- [ ] 3 は「却下」でもよいと思っている（既存ルールで言えている）
-- [ ] 4 は 361 の残課題と一緒に扱うのが自然
+- [x] 上の 1〜4 の切り出し（既存ルールへの追記 / 却下）をユーザーが判断する
+- [x] 3 は「却下」でもよいと思っている（既存ルールで言えている）
+- [x] 4 は 361 の残課題と一緒に扱うのが自然
 
 ## 関連
 
 - [issue 358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) — 対象
 - [issue 361](361-retro-claim-visibility-and-attribution-2026-09-11.md) — 気づき 4 の姉妹
 - [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) / [363](363-bug-lockman-with-signal-handler-installed-too-late.md) / [364](364-bug-lockman-with-release-failure-and-graveyard-retention.md) / [366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) — 切り出した先
+
+## 決着 (2026-09-19)
+
+Fable サブエージェントの独立判定を踏まえて決定した。残課題なし。
+
+- 1: `adversarial-review-own-safeguards.md` §8 へ追記 (守る対象の表を 🚨 宣言と照合。3 の「依存する定数も数える」を吸収)
+- 2: 同 §2 へ追記 (可視化は正常系で鳴らないか + 案内が安全か を同じ commit で。切り出し先の記載 verify-execution は誤りで、該当節は adversarial §2)
+- 3: 却下 (1 に吸収)
+- 4: 却下 — `worktree-per-session.md`「採番したら即 push…解放の連絡は取得の証明にならない」と `_claude/issue-rules.md` が正本。採番直前の fetch は競合窓を消さない

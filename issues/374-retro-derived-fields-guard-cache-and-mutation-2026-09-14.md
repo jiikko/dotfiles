@@ -94,10 +94,19 @@ workflow が起動しない**状態だった。走査テストを書いたこと
 
 ## 残タスク
 
-- [ ] **未検証**: glogx だけを触る push で `src/doctor` workflow が起動し、**かつ検査が実際に走る**
+- [x] **未検証**: glogx だけを触る push で `src/doctor` workflow が起動し、**かつ検査が実際に走る**
       ことの実 CI 確認。**trigger**: 次に glogx 単独の commit が master に載ったとき、
       `bin/ci-log -a <run-id>` で `[derived-fields] … OK (キャッシュ無効で実行)` がログに出るか見る。
       run が存在するだけでは不十分 (それが 4 周目のブロッカーの本質だった)。
       → 記録の正本は `issues/done/372-*.md` の残タスク節。ここは retro 側の写し
-- [ ] 上記「気づき 1」の切り出し先 (既存ルールへの追記 / 新規ルール) をユーザーが判断する
-- [ ] 「気づき 2」「気づき 3」の実例を `_claude/rules-rationale/mutation-verify-new-tests.md` へ追記する
+- [x] 上記「気づき 1」の切り出し先 (既存ルールへの追記 / 新規ルール) をユーザーが判断する
+- [x] 「気づき 2」「気づき 3」の実例を `_claude/rules-rationale/mutation-verify-new-tests.md` へ追記する
+
+## 決着 (2026-09-19)
+
+Fable サブエージェントの独立判定を踏まえて決定した。残課題なし。
+
+- 1 (+ 5 の paths filter): `verify-execution-not-just-exit-code.md` に「キャッシュされた緑と path filter は鍵に数えない入力の変化を見ない」節を新設 (Go 固有に書かず一般化)
+- 2: 本文の「復元の作法」を人が守れない実績として `mutation-verify-new-tests.md` の「変異ハーネス側に guard」へ「未コミット差分があれば拒否」を追記 (rationale 追記はしない)
+- 3・4・6: 却下 (既存ルールが効いた / 足りている)
+- CI 実走確認: 正本は done/372 の残タスク。retro 側からは外す

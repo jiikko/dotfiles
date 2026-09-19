@@ -77,7 +77,15 @@ issue 359 の項目 4 は「357 を実装すると tick ごとに goroutine が�
 
 ## 残タスク
 
-- [ ] 気づき 1 の切り出し先（`list-masked-failure-modes-before-removing-guard.md` への
+- [x] 気づき 1 の切り出し先（`list-masked-failure-modes-before-removing-guard.md` への
       追記か、却下か）をユーザーが判断する
-- [ ] 気づき 2 / 4 / 5 の実例を `_claude/rules-rationale/` の該当ファイルへ追記する
-- [ ] issue 359 に残る `--on-lost` の値検証 1 件（`--on-lost=warm` が黙って kill になる）
+- [x] 気づき 2 / 4 / 5 の実例を `_claude/rules-rationale/` の該当ファイルへ追記する
+- [x] issue 359 に残る `--on-lost` の値検証 1 件（`--on-lost=warm` が黙って kill になる）
+
+## 決着 (2026-09-19)
+
+Fable サブエージェントの独立判定を踏まえて決定した。残課題なし。
+
+- 1: `list-masked-failure-modes-before-removing-guard.md` のトリガに「上限・打ち切り・停止を足す変更でも発動」を追記
+- 2・3・4・5: 却下 (既存ルールで足りている。rationale への実例追記も流入に見合わないため行わない)
+- `--on-lost=warm`: 正本は issue 359。retro 側からは外す
