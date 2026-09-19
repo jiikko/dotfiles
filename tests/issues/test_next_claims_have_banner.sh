@@ -26,31 +26,48 @@ if [ ! -d "$issues_dir" ]; then
   exit 1
 fi
 
-# has_banner <file>: 最初の `## ` 見出しより前に `**担当中` / `**着手中` があれば 0
+# has_banner <file>: 最初の `## ` 見出しより前に、行頭の `**担当中` / `**着手中` (前に `> ` と `🚨 ` を許す) が
+# あれば 0。行頭に固定するのは散文・H1・HTML コメントの中の語を拾わないため。コードフェンスの中は読まない
 has_banner() {
-  awk '/^## /{exit} /\*\*(担当中|着手中)/{found=1; exit} END{exit !found}' "$1"
+  awk '/^```/{fence=!fence; next} fence{next} /^## /{exit}
+       /^(> )?(🚨 )?\*\*(担当中|着手中)/{found=1; exit} END{exit !found}' "$1"
 }
 
 # 🚨 canary: 本走査と同じ関数に既知の入力を通す (抽出が壊れて全件「バナーなし」/「あり」になるのを検出)
 canary=$(mktemp -d)
-trap 'rm -rf "$canary"' EXIT
+list=""
+trap 'rm -rf "$canary" ${list:+"$list"}' EXIT
 printf '# t\n\n> 🚨 **担当中: x**（2026-09-19〜）\n\n## 概要\n' > "$canary/yes.md"
 printf '# t\n\n## 概要\n\n**担当中: x**\n' > "$canary/late.md"   # 見出しより後 = 冒頭ではない
 printf '# t\n\n本文\n' > "$canary/no.md"
-if ! has_banner "$canary/yes.md" || has_banner "$canary/late.md" || has_banner "$canary/no.md"; then
+# shellcheck disable=SC2016 # バッククォートは markdown のフェンス (展開させない)
+printf '# t\n\n```\n**担当中: x**\n```\n過去は**担当中**だった\n' > "$canary/fence.md"   # フェンス内・散文中は数えない
+if ! has_banner "$canary/yes.md" || has_banner "$canary/late.md" || has_banner "$canary/no.md" ||
+  has_banner "$canary/fence.md"; then
   printf '✗ バナー判定の canary が期待と違う (awk の判定が壊れている)\n' >&2
   exit 1
 fi
 
+# 🚨 ディレクトリ名 (next / epic) と拡張子は大文字小文字を無視して拾う。test_next_links_valid.sh と glogx は
+# `NEXT/` `Epic/` `.MD` も有効な目印と読むので、find -path の完全一致では有効な claim を黙って飛ばす
+# (敵対レビュー 2026-09-19 で実測)。名前に改行を含んでも割れないよう -print0 で読む。
 # find の失敗は「claim 0 件 = 合格」と同じ空出力になるので rc を別に見る
-claims=$(find "$issues_dir" -path "$issues_dir/next/*.md" -o -path "$issues_dir/epic/*/next/*.md" | sort) ||
-  { printf '✗ find が失敗した\n' >&2; exit 1; }
+list=$(mktemp)
+find "$issues_dir" \( -type l -o -type f \) -print0 > "$list" || { printf '✗ find が失敗した\n' >&2; exit 1; }
 
 bad=0
 checked=0
-while IFS= read -r c; do
-  [ -n "$c" ] || continue
-  case "$(basename "$c" | tr '[:upper:]' '[:lower:]')" in readme.md | index.md | template.md) continue ;; esac
+while IFS= read -r -d '' c; do
+  rel=$(printf '%s' "${c#"$issues_dir"/}" | tr '[:upper:]' '[:lower:]')
+  # 置き場は next/<f> か epic/<name>/next/<f> だけ (段数で判定する。case の * は / もまたぐ)。
+  # それ以外の深さの目印は test_next_links_valid.sh が落とす
+  IFS=/ read -r -a seg <<< "$rel"
+  case "${#seg[@]}" in
+    2) [ "${seg[0]}" = next ] || continue ;;
+    4) [ "${seg[0]}" = epic ] && [ "${seg[2]}" = next ] || continue ;;
+    *) continue ;;
+  esac
+  case "${rel##*/}" in readme.md | index.md | template.md) continue ;; *.md) ;; *) continue ;; esac
   [ -f "$c" ] || continue # dangling は test_next_links_valid.sh の担当
   checked=$((checked + 1))
   if ! has_banner "$c"; then
@@ -60,10 +77,10 @@ while IFS= read -r c; do
     printf '  → タイトル直下に `> 🚨 **担当中: <セッション名>**（YYYY-MM-DD〜）` を書き、claim と同じ commit で push する\n' >&2
     bad=$((bad + 1))
   fi
-done <<< "$claims"
+done < "$list"
 
 if [ "$bad" -gt 0 ]; then
   printf '✗ claim のバナー: %d 件を検査、%d 件にバナーが無い (%s)\n' "$checked" "$bad" "$issues_dir" >&2
   exit 1
 fi
-printf '✓ claim のバナー: %d 件を検査、すべてバナーあり (%s。canary 3 件で判定を確認)\n' "$checked" "$issues_dir"
+printf '✓ claim のバナー: %d 件を検査、すべてバナーあり (%s。canary 4 件で判定を確認)\n' "$checked" "$issues_dir"

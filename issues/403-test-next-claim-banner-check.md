@@ -30,6 +30,15 @@
 - `make test-dir DIR=tests/issues` の集約経路から 2 本とも実行を確認 (出力行あり)。shellcheck 通過
 - claim ルール (書式・同じ commit で push・手順例)、`_claude/issue-rules.md`、`issues/README.md` を更新
 
+### 「fix(issues,403): 敵対レビュー 1 周目の指摘を反映」
+
+- P1 (採用): `NEXT/` `Epic/` `.MD` の有効な claim を 0 件扱いで見逃していた → 置き場と拡張子を大文字小文字を無視して判定、段数を `/` 分割で数える
+- P2 (採用): フェンス内・HTML コメント・H1 行・散文中の `**担当中` を通していた → 行頭アンカー (`> ` `🚨 ` を許す) + フェンス除外
+- P2 (採用): fixture が meta / dangling / 大文字小文字を守っていなかった → fixture 追加
+- P3 (採用): 改行入りファイル名が割れる → `find -print0` + `read -d ''`
+- 変異 10 本すべて red (前回 5 本 + フェンス除外 / 行頭アンカー / 大文字小文字 / meta / dangling)。実行後の一時ディレクトリ残骸ゼロ
+- 受容: canary ブロックの削除は fixture からは検出できない (canary は検査自身の自己確認で、外から壊せる seam が無い)。**確実な検出手段はない**。canary の awk と本走査は同じ関数を通るので、awk の破損そのものは fixture が落とす
+
 ## 残タスク
 
 - スコープ外: 逆向き (バナーがあるのに claim が無い = 解除時の消し忘れ) は検出しない。done へ移せば対象外になるが、claim だけ外した場合は古いバナーが残る
