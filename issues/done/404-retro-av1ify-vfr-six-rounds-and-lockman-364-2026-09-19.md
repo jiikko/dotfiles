@@ -34,7 +34,7 @@
 - 「当たっていない変異の green」を検出力の欠如と読みかけたのが 4 回 (`if false` にしたら
   else 側が再代入して打ち消す / コマンド置換が壊れて判定不能に落ちる / 置換が別の呼び出しに当たる)
 
-→ 切り出し提案: [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) に
+→ 切り出し提案: [`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) に
 **「変異の red は、ケース名 × assert まで特定して初めて証拠になる」**を 1 項として足す。
 既存の「テーブル駆動なら全ケースが red になるか」の隣。ハーネス側の判定式の罠
 (`^ *--- FAIL` / go の出力形式) は実装側 (ハーネスのコメント) に置く。
@@ -56,7 +56,7 @@ av1ify の 6 周のうち、**2〜5 周目の P1 はすべて私の修正が持�
 「**その等式が破れる条件を確かめずに前提として書いた**」形だった
 (`avg_frame_rate = nb_frames / duration` は elst があると成立しない、等)。
 
-→ 切り出し提案: [`instrument-before-second-fix.md`](../_claude/rules/instrument-before-second-fix.md) の
+→ 切り出し提案: [`instrument-before-second-fix.md`](../../_claude/rules/instrument-before-second-fix.md) の
 「前提の再検証」の行に、**「等式・定義を前提に書くときは、それが破れる入力を 1 つ挙げてから書く。
 挙げられないなら『未確認の前提』と明示する」**を足す。新規ルールは立てない (発動点が同じ)。
 
@@ -70,7 +70,7 @@ issue 364 の本文に他セッションが書いた「対照も置いた (常�
 **他人が書いた記述を鵜呑みにしかけた**点が違う。issue 本文の主張も変異で確かめてから引き継ぐ。
 
 → 切り出し提案: 既存ルールで足りる
-([`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の「検査の不在を
+([`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) の「検査の不在を
 主張するときの裏取り」が「対照の存在の主張」にもそのまま効く)。**追記も不要**と判断 —
 反省 1 の追記が同じ発動点を覆う。
 
@@ -85,11 +85,20 @@ issue 364 の本文に他セッションが書いた「対照も置いた (常�
 - **issue に「残る既知の限界」を書いてから閉じた** (av1ify 4 点 / lockman 1 点)。
   どれも「直していない」ことが後から分かる形になっている
 
-## 残課題
+## 残課題 (すべて処理済み)
 
-- [ ] 反省 1 の切り出し (`mutation-verify-new-tests.md` への 1 項追記)
-- [ ] 反省 2 の切り出し (`instrument-before-second-fix.md` への 1 行追記)
-- [ ] 反省 3 は**却下** (既存ルール + 反省 1 の追記で覆う。理由は上記)
-- [ ] `make test` の `test-unused-excluding-tests` が go 1.26.0 に staticcheck 未導入で落ち続けている
-      (本体でも再現、今回の変更とは無関係)。`global_go_version` を上げた際の取り残しに見える。
-      **別 issue にするか、setup 側で解決するかの判断待ち**
+- [x] 反省 1 の切り出し → `mutation-verify-new-tests.md` へ 1 項追記
+      (「変異の red は**ケース名 × どの assert が出したか**まで特定して初めて証拠になる」+
+      判定式が runner の出力形式を取りこぼす罠)。**新規ルールは立てない** — 発動点が
+      既存項「テーブル駆動なら全ケースが red になるか」と同じで、あちらが「緑のまま残った
+      ケース」を問うのに対しこちらは「**落ちたケースの中**」を問う関係なので、隣に置いた
+- [x] 反省 2 の切り出し → `instrument-before-second-fix.md` の「前提の再検証」行へ 1 行追記
+      (「等式・定義を前提に書くときは、それが破れる入力を 1 つ挙げてから書く」)
+- [x] 反省 3 は**却下**。理由: 反省 1 の追記が同じ発動点を覆う (「置いた」と書いたものが
+      実際には効いていない形)。他人が書いた issue 本文の主張も変異で確かめてから引き継ぐ、は
+      既存の「検査の不在を主張するときの裏取り」がそのまま効く
+- [x] staticcheck の件 → [issue 405](../405-bug-staticcheck-guard-passes-through-goenv-shim.md) として起票。
+      **調べたら「未導入」ではなく「存在ガードの欠陥」だった**: `command -v staticcheck` が
+      goenv の shim (`~/.anyenv/envs/goenv/shims/staticcheck`) を掴んで rc=0 を返すので、
+      用意されている親切なメッセージが**原理的に一度も出ない**まま、実行時の rc=127 が
+      「解釈できない staticcheck の出力」として parser に流れ込んでいた
