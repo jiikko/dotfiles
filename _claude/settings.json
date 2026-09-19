@@ -123,6 +123,11 @@
           },
           {
             "type": "command",
+            "command": "~/dotfiles/_claude/hooks/issue-rules-inject.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
             "command": "~/dotfiles/_claude/hooks/claude-links-sync.sh",
             "timeout": 10
           },
