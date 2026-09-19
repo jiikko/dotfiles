@@ -1,0 +1,1 @@
+../405-bug-staticcheck-guard-passes-through-goenv-shim.md
