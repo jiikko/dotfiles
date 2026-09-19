@@ -14,7 +14,7 @@
 
 - 一般形: **同じ規約を複数の場所へ配るときは、コピーを置かず単一の正本を読み込ませる経路を作る。
   コピーが避けられないなら、ずれを機械で検出する検査を同時に置く**。「直接変更しないこと」の注記は同期の仕組みではない
-- 切り出し先の提案: 既存 [`claude-md-maintenance.md`](../_claude/rules/claude-md-maintenance.md) の「書き方」節に 1 項追記
+- 切り出し済み (2026-09-19): 既存 [`claude-md-maintenance.md`](../_claude/rules/claude-md-maintenance.md) の「書き方」節に 1 項追記
   （発動点は「同じ文面を 2 箇所目へ書こうとした瞬間」で、既存の「親 CLAUDE.md の規約を重複させない」と同族）
 
 ## 2. 同じ段落を 2 箇所目へ書いた時点で、構造の問題を言い出せた
@@ -25,7 +25,7 @@ dotfiles に追記した直後に「obaket にも」と言われ、選択肢は�
 
 - 一般形: **自律改善の「同じ変更を 2 箇所にコピペしない」はドキュメント・規約にも適用する**。
   2 箇所目を頼まれた時点で、共通化の案を一文添える
-- 切り出し先の提案: 既存 `~/.claude/CLAUDE.md`「コード変更時の自律改善」の重複コード項に「文書・規約も同じ」と追記
+- 切り出し済み (2026-09-19): 既存 `~/.claude/CLAUDE.md`「コード変更時の自律改善」の重複コード項に「文書・規約も同じ」と追記
 
 ## 3. submodule の中のファイルを親 repo から commit して空振りした
 
@@ -35,7 +35,7 @@ obaket の README を my-products のルートから `git commit -- apps/obaket/
 
 - 一般形: **commit の前に、対象ファイルが属する repo を `git -C <ファイルの dir> rev-parse --show-toplevel` で確かめる**
   （submodule・入れ子 repo・worktree では cwd の repo と一致しない）
-- 切り出し先の提案: 既存 [`commit-with-pathspec.md`](../_claude/rules/commit-with-pathspec.md) の
+- 切り出し済み (2026-09-19): 既存 [`commit-with-pathspec.md`](../_claude/rules/commit-with-pathspec.md) の
   「pathspec は cwd 相対で解決される」節に追記（同じ「pathspec が外れる」系の別経路）
 
 ## 4. 「次のセッションまで確かめられない」変更は `claude -p` で今確かめられる
@@ -46,7 +46,7 @@ obaket の README を my-products のルートから `git commit -- apps/obaket/
 
 - 一般形: **hook・rules・settings のように「セッション開始時に効く」変更は、headless の新規セッションを
   1 回起こして観測する**。「次のセッションで効くはず」で閉じない
-- 切り出し先の提案: 既存 [`.claude/rules/worktree-per-session.md`](../.claude/rules/worktree-per-session.md) の
+- 切り出し済み (2026-09-19): 既存 [`.claude/rules/worktree-per-session.md`](../.claude/rules/worktree-per-session.md) の
   「worktree で `_claude/` を編集しても、その変更は効かない」節に確認方法として追記
 
 ## 5. 規範を CLAUDE.md から hook 注入へ移すと、拘束力が下がりうる
@@ -55,10 +55,14 @@ hook の出力は `<system-reminder>` の背景情報として届き、CLAUDE.md
 今回は CLAUDE.md に「注入された規約は CLAUDE.md と同じ拘束力で従う」の 1 行を残して補った（advisor の指摘）。
 
 - 一般形: **規範を常時ロードの場所から条件付き注入へ移すときは、常時ロード側に「注入された規約に従う」義務を 1 行残す**
-- 切り出し先の提案: dotfiles `CLAUDE.md`「`_claude/` を触るとき」節に 1 項追記
+- 切り出し済み (2026-09-19): dotfiles `CLAUDE.md`「`_claude/` を触るとき」節に 1 項追記
 
 ## 局所案（提案にしない）
 
 - my-products のルートでも `project-templates/issues` に当たって規約が注入される → 害がないため直さない
 - obaket README の「`macOS/issues/` は督促されない」が issue 276 以降事実と違っていた → 今回の置換で削除済み
 - 新設 hook の敵対的レビューを省略 → 規約文を注入するだけで判定ゲートを持たないため。報告に明記済み
+
+## 決着
+
+5 項目すべてユーザー判断で既存ルールへ追記した（commit「docs(rules,402): retro 402 の 5 項目を既存ルールへ追記」）。残課題なし。

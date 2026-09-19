@@ -25,6 +25,10 @@
 - 予防: **commit の前に `cd "$(git rev-parse --show-toplevel)"`**。ツールの cwd がサブディレクトリに
   残っている状態で pathspec を組まない (シェルの cwd は前のコマンドから持ち越される)
 - 検出: commit 直後の `git log -1 --stat` で想定ファイルが入っているか見る (下の節と同じ規律)
+- 🚨 **submodule・入れ子 repo の中のファイルは親から commit できない**。親の checkout の中に見えていても
+  別 repo なので、親の pathspec は外れる (実測 2026-09-19: 親から submodule の README を commit して空振り)。
+  commit の前に **`git -C <ファイルの dir> rev-parse --show-toplevel`** で所属 repo を確かめ、その repo で
+  commit & push してから親の参照を更新する
 - 🚨 **worktree からの `merge --ff-only` / `push` も cwd 依存**。作業 worktree (`wt-xxx`) の cwd で
   `git merge --ff-only <branch>` / `git push` を打つと、**worktree 側のブランチ**に対して
   「Already up to date」「Everything up-to-date」が返るだけで master は 1 mm も動かない

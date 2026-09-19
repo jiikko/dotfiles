@@ -44,6 +44,9 @@
 - つまり **`_claude/` の変更は「master へ push するまで動作確認できない」**。
   worktree で編集 → push → 次のセッションで効く、の順になる。
   `scripts/claude_links.sh apply` を worktree で叩いても link 先は `~/dotfiles` のまま
+- **push + `~/dotfiles` pull の後は、「次のセッションで効くはず」で閉じず headless の新規セッションで観測する**。
+  `claude -p --model haiku "<注入された文が見えるか答えて>"` を効くべき cwd / 効かないべき cwd の両方で回す
+  (A-B。数十秒・低コスト。実測 2026-09-19 issue 401 で hook の注入をこれで確認した)
 
 ## なぜ
 
