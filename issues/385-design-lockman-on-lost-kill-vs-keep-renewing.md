@@ -1,5 +1,7 @@
 # `--on-lost=kill` の「最初の判定不能で即殺す」と、381 の「判定不能でも更新を続ける」が正面から矛盾する
 
+> 🚨 **担当中: Claude セッション (opus, dotfiles)**（2026-09-20〜）
+
 起票日: 2026-09-16
 カテゴリ: design / priority: medium
 対象: `src/lockman/with.go` の `reportRenewErr` (`escalate.Do`) と select ループ
