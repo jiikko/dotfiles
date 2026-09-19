@@ -23,8 +23,11 @@ mk() { # $1=dir $2=issue 相対パス $3=本文 → issue を作り、同じ階�
 ok="$WORK/ok"
 mk "$ok" 010-bug-a.md '# a\n\n> 🚨 **担当中: s1**（2026-09-19〜）\n\n## 概要\n'
 mk "$ok" epic/g/020-bug-b.md '# b\n\n**着手中 (2026-09-19 / s2)**\n\n## 概要\n'
+# glogx の n が書く書式そのもの (src/glogx/issues/banner.go の ClaimBanner)。Go 側のテストは go test の
+# キャッシュでこのスクリプトの変更を見ないことがあるので、書式の受け入れはこちらでも固定する
+mk "$ok" 025-bug-c.md '# c\n\n> 🚨 **担当中: koji-mbp (glogx)**（2026-09-19〜）\n\n## 概要\n'
 out=$(bash "$CHECK" "$ok" 2>&1) || ng "バナーありの claim で落ちた: $out"
-case "$out" in *"2 件を検査"*) ;; *) ng "claim 2 件を数えていない: $out" ;; esac
+case "$out" in *"3 件を検査"*) ;; *) ng "claim 3 件を数えていない: $out" ;; esac
 
 # 2) 欠落 (global / epic / 見出しより後にだけある / 旧運用の実ファイル) → 4 件とも名指しで落ちる
 bad="$WORK/bad"

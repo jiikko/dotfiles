@@ -32,10 +32,23 @@ func MoveToSubdir(iss *Issue, subdir string) (string, error) {
 		return iss.Path, nil // 既に目印つき (symlink でも旧運用の配置でも)
 	}
 	if subdir == NextDirName && isOpenPlacement(iss) {
-		return iss.Path, placeNextLink(iss)
+		if err := placeNextLink(iss); err != nil {
+			return "", err
+		}
+		// 目印とバナーは 1 組 (CI はバナーの無い claim を落とす)。書けなければ目印も戻す
+		if err := writeClaimBanner(iss.Path); err != nil {
+			if rerr := os.Remove(NextLinkPath(iss)); rerr != nil {
+				return "", fmt.Errorf("担当者バナーを書けず、目印も戻せません: %w (戻し: %w)", err, rerr)
+			}
+			return "", fmt.Errorf("担当者バナーを書けないため claim を取り消しました: %w", err)
+		}
+		return iss.Path, nil
 	}
 	if subdir == "" && iss.NextLink != "" {
-		return iss.Path, removeNextLink(iss)
+		if err := removeNextLink(iss); err != nil {
+			return "", err
+		}
+		return iss.Path, clearClaimBanner(iss.Path)
 	}
 	if iss.NextLink != "" {
 		// done/ pending/ へ運ぶときは目印を先に消す。残すと dangling になり、同じ base の issue が
@@ -79,6 +92,20 @@ func MoveToSubdir(iss *Issue, subdir string) (string, error) {
 	}
 	if err := os.Rename(iss.Path, dest); err != nil {
 		return "", err
+	}
+	// バナーは next にいる間だけの表示。入るときに書き、出るとき (解除・pending・done) に外す
+	switch {
+	case subdir == NextDirName:
+		if err := writeClaimBanner(dest); err != nil {
+			if rerr := os.Rename(dest, iss.Path); rerr != nil {
+				return "", fmt.Errorf("担当者バナーを書けず、元の場所へも戻せません: %w (戻し: %w)", err, rerr)
+			}
+			return "", fmt.Errorf("担当者バナーを書けないため claim を取り消しました: %w", err)
+		}
+	case iss.Status == StatusNext:
+		if err := clearClaimBanner(dest); err != nil {
+			return dest, fmt.Errorf("移動はしたが担当者バナーを外せません: %w", err)
+		}
 	}
 	return dest, nil
 }

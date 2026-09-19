@@ -200,6 +200,13 @@ bool 2 本 (done / pending) でなく累積の段階にしたのは、操作を 
 rename から変更)。rename すると本文の相対リンク (issue ディレクトリ直下を起点に書かれる) が全部切れる。
 symlink なら同一性キー (Path) も参照も安定し、claim / 解除は symlink の作成 / 削除だけになる。
 
+**目印と一緒に本文冒頭の担当者バナーも書く / 外す** (`issues/banner.go`。dotfiles issue 403 の続き)。
+claim ルールは本文にもバナーを要求し、CI (`tests/issues/test_next_claims_have_banner.sh`) がバナーの無い
+claim を落とすため。書式は `> 🚨 **担当中: <ホスト名> (glogx)**（YYYY-MM-DD〜）` を H1 の直下に置く
+(既にバナーがあれば書かない)。解除 (`n` をもう一度) と next から pending / done へ出す移動では冒頭の
+バナーを外す。バナーを書けなければ目印も戻し、半端な claim を残さない。本文の書き換えは
+temp + rename (`atomicfile`) で、mode は保つ。
+
 - **symlink を読むのはこの目印だけ** (`issues/nextlink.go`)。走査は他のあらゆる symlink を弾く
   (PR に `issues/999.md -> ~/.ssh/id_rsa` を入れられると中身が画面に出る) ので、採用条件を 3 つに
   固定する: `next/` 直下の symlink / Readlink がちょうど `../<同名>` / 指す先が直下の通常ファイル。

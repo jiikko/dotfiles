@@ -35,7 +35,7 @@
     git push
     ```
 
-    glogx の issues viewer の `n` も同じ目印を作るが、**バナーは書かない**ので、`n` で付けたら本文にバナーを足して一緒に push する。解除は symlink を消すだけ (`git rm issues/next/NNN-slug.md`)。
+    glogx の issues viewer の `n` は目印とバナーを 1 組で書く (解除では両方を外す)。push は人が行う。解除は symlink を消すだけ (`git rm issues/next/NNN-slug.md`)。
     **目印の形は `../<同名>` に固定** (glogx はそれ以外の symlink を目印として読まず、警告にする。
     `tests/issues/test_next_links_valid.sh` が CI で同じ条件を検査する)
   - 旧運用 (ファイルそのものを `next/` へ移す) は読めるが、新しい claim では使わない。既に `next/` に
