@@ -35,7 +35,8 @@ issues/ の外から markdown リンク `[issue 012](../issues/done/012-….md)`
 
 - `期限:` の書式は `tests/issues/test_human_issues_have_deadline.sh` が検査する（箇条書き・全角コロン・日付不正で落ちる。
   issue 375 が `- 期限:` で hook と `issue-sync` から黙って漏れていた）
-- `next/` の symlink の有効性（`../<同名>` の形に固定）は `tests/issues/test_next_links_valid.sh`
+- `next/` の symlink の有効性（`../<同名>` の形に固定）は `tests/issues/test_next_links_valid.sh`、claim された issue に
+  担当者バナーがあることは `tests/issues/test_next_claims_have_banner.sh`（fixture は `…_fixtures.sh`。issue 403）
 - glogx の issues viewer（`i` キー）: `human` タブは件数 0 でも All の右に固定で出る。`n` で `next/` の claim を
   付け外しする。viewer は期限を表示しない。`epic/<name>/` は `▸ <name> (N ✓done)` の親行に折り畳まれ、
   group 名と同じ番号の issue だけが親行に統合される。**契約の一次情報は

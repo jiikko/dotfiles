@@ -48,7 +48,7 @@
 
 - `issues/*.md` — open
 - `issues/next/` — **着手の claim**。issue ファイル本体は動かさず `ln -s ../NNN-x.md issues/next/NNN-x.md` の
-  symlink を置き、**その目印だけを pathspec commit して即 push する**（push されるまで他マシンから見えない）。
+  symlink を置き、本文のタイトル直下に `> 🚨 **担当中: <誰>**（YYYY-MM-DD〜）` を書いて、**その 2 つだけを pathspec commit して即 push する**（push されるまで他マシンから見えない。バナーは next/ を見ない入口から来た相手に claim を見せる）。
   着手前に `git fetch` して既に next に居ないか見る。このディレクトリが在ることが opt-in で、無い repo では適用しない
 - `issues/pending/` — 凍結。**再開の主導権は自分**。着手条件・trigger を本文冒頭に書く
 - `issues/waiting/` — 着手済みで、**こちらから起こせない事象**（再現・観測・外部イベント）待ち。

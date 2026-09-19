@@ -28,7 +28,8 @@
 
     ```sh
     ln -s ../NNN-slug.md issues/next/NNN-slug.md && git add issues/next/NNN-slug.md
-    git commit -F - -- issues/next/NNN-slug.md <<'M'
+    # issues/NNN-slug.md のタイトル直下に `> 🚨 **担当中: <セッション名>**（YYYY-MM-DD〜）` を書いてから
+    git commit -F - -- issues/next/NNN-slug.md issues/NNN-slug.md <<'M'
     claim: issue NNN に着手
     M
     git push
@@ -40,12 +41,14 @@
   - 旧運用 (ファイルそのものを `next/` へ移す) は読めるが、新しい claim では使わない。既に `next/` に
     実ファイルとして居る issue はそのまま完了まで持ってよい (直下へ戻して張り直す必要はない)
 - **group issue (`issues/epic/<name>/`) の claim は、その group 内の `next/` (`issues/epic/<name>/next/`) へ移す。完了・保留も group 内の `done/` / `pending/` へ移す** (global の `issues/done/` へ出さない。出すとパスから epic 所属が消え、viewer が epic の進捗を出せなくなる。2026-09-06 に変更。issue 291)。global issue の完了先は従来どおり `issues/done/`。
-- 🚨 **claim したら issue 本文の 1 行目にも担当者と状態を書く**。`next/` の目印は
+- 🚨 **claim したら issue 本文の冒頭 (タイトル直下) にも担当者バナーを書き、目印と同じ commit で push する**。
+  書式は `> 🚨 **担当中: <セッション名>**（YYYY-MM-DD〜）`。**最初の `## ` 見出しより前に `**担当中` / `**着手中` が
+  無い claim は `tests/issues/test_next_claims_have_banner.sh` が CI で落とす** (glogx の `n` で付けた claim も対象。issue 403)。`next/` の目印は
   **`next/` を見る入口にしか届かない**。issue ファイルを直接開く / 別トランスポートから
   照会してくる相手には見えず、実測 2026-09-11 に**バナーと claim の両方がある issue が
   7 分後に別セッションで done へ送られた** (308 / 305 の 2 件)。本文の 1 行目は
   「どの入口から来ても目に入る」唯一の場所
-- **claim の commit に他の変更を混ぜない**。混ぜると push できない事情 (レビュー待ち・検証中) に
+- **claim の commit に他の変更を混ぜない** (目印とバナーの 2 つだけ)。混ぜると push できない事情 (レビュー待ち・検証中) に
   claim が巻き込まれ、宣言だけが遅れる
   - 🚨 **push はブランチ単位**なので「claim の commit だけを push」はできない。他に未 push の
     commit があるなら、それらも一緒に飛ぶ。**飛ばしてよいかを先に確かめる** (飛ばせないなら、
