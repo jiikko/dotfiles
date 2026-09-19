@@ -3,7 +3,7 @@
 起票日: 2026-09-20
 カテゴリ: bug / priority: **medium**
 対象: `scripts/check_unused_excluding_tests.sh` の存在ガード (`command -v staticcheck`)
-出典: [issue 404](done/404-retro-av1ify-vfr-six-rounds-and-lockman-364-2026-09-19.md) の残課題
+出典: [issue 404](404-retro-av1ify-vfr-six-rounds-and-lockman-364-2026-09-19.md) の残課題
 反証レビュー: 未実施。**下記はすべて 2026-09-20 の実測**
 
 ## 症状
@@ -143,6 +143,6 @@ staticcheck はその 1 本にすぎない (issue 本文の「1.25.4 の bin に
 **`command -v` は「PATH に名前が在る」しか見ない**。version manager の shim・ラッパー・
 `alias` 越しでは「在るのに実行できない」が普通に起きる。実行可否を見たいなら
 **実際に無害なサブコマンド (`--version`) を走らせて rc を見る**のが正しい。
-[`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)
+[`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md)
 の「exit code 0 は『失敗しなかった』であり『そもそも走らなかった』を含む」の存在検査版。
 横展開の結果しだいでは、ルールへ 1 行足す価値がある。

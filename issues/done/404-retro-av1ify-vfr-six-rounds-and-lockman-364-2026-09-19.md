@@ -97,7 +97,7 @@ issue 364 の本文に他セッションが書いた「対照も置いた (常�
 - [x] 反省 3 は**却下**。理由: 反省 1 の追記が同じ発動点を覆う (「置いた」と書いたものが
       実際には効いていない形)。他人が書いた issue 本文の主張も変異で確かめてから引き継ぐ、は
       既存の「検査の不在を主張するときの裏取り」がそのまま効く
-- [x] staticcheck の件 → [issue 405](../405-bug-staticcheck-guard-passes-through-goenv-shim.md) として起票。
+- [x] staticcheck の件 → [issue 405](405-bug-staticcheck-guard-passes-through-goenv-shim.md) として起票。
       **調べたら「未導入」ではなく「存在ガードの欠陥」だった**: `command -v staticcheck` が
       goenv の shim (`~/.anyenv/envs/goenv/shims/staticcheck`) を掴んで rc=0 を返すので、
       用意されている親切なメッセージが**原理的に一度も出ない**まま、実行時の rc=127 が
