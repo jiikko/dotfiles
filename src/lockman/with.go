@@ -40,7 +40,7 @@ func classifyRenewErr(err error) renewOutcome {
 //
 // 終了コードは呼び出し側の API なので、子プロセスの終了コードをそのまま透過し、
 // ロック側の失敗は子と衝突しない上位番号 (121/122/125) へ逃がす。
-func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv []string) int {
+func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv []string) (rc int) {
 	meta, err := l.AcquireTimed(ttl, label)
 	if err != nil {
 		if errors.Is(err, errBusy) {
@@ -59,11 +59,28 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 		return exitWithInvalid
 	}
 	defer func() {
-		// 🚨 解放のタイムアウトは**終了コードを上書きしない**。091:418 の「超えたら 125」は
-		// 取得・更新の経路に当てる規律で、子の終了コードは呼び出し側の API だから
-		// (子が成功したのに 125 を返すと、透過の契約が壊れる)。固まった事実は warn で出す。
+		// 🚨 解放に失敗したら、**子が成功していたときだけ** rc を 125 へ上げる (issue 364 の 1)。
+		//
+		// `with` は 2 つの契約を持つ: ①子の終了コードを透過する ②確実に解放する。
+		// 解放に失敗した時点で②は破れているのに、以前は warn だけで rc は子のものを透過して
+		// いたので、**rc だけを見る呼び出し側からは成功に見えた** (実測: 解放直前に probe/ が
+		// 消えると rc=0 のまま ttl_ms=1800000 の lock が 30 分残る)。
+		//
+		// 上書きを「子が rc=0 のときだけ」に絞るのは、非 0 の rc は既に「何かが失敗した」を
+		// 伝えており、そこを潰すと情報が減るだけだから。**真の穴は子が成功した場合だけ** で、
+		// そこは呼び出し側から成功と区別できない。
+		//
+		// 🚨 `errNotOwner` は上書きしない: 既に他者が引き継いでいて解放すべきものが無い
+		// (= ロックが残っていない) ので、②は破れていない。
+		// 🚨 122 (lease 喪失) / 125 (判定不能) を塗り潰さない: どちらも rc != exitOK なので
+		// 上の条件で自然に除かれる。lease 喪失のほうが具体的な情報なので残す。
 		if err := l.ReleaseTimed(meta.Token); err != nil && !errors.Is(err, errNotOwner) {
 			warnf("解放に失敗: %v", err)
+			if rc == exitOK {
+				// 文面は「子は成功したがロックが残っている」= 呼び出し側が次に何を見ればよいかまで書く。
+				warnf("子は成功したがロックを解放できていない: 次の実行は TTL が切れるまで待たされる (%s)", l.dir)
+				rc = exitWithInvalid
+			}
 		}
 	}()
 
