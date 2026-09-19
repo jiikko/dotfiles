@@ -37,11 +37,17 @@ mkdir -p "$bad/next"; printf '# g\n\n本文\n' > "$bad/next/060-bug-g.md"
 mk "$bad" 070-bug-h.md '# h\n\n```\n**担当中: x**\n```\n'
 mk "$bad" 080-bug-i.md '# i\n\n<!-- **担当中: x** -->\n'
 mk "$bad" 090-bug-j.md '# j **担当中じゃない**\n'
+mk "$bad" 101-bug-l.md '# l\n\n~~~\n**担当中: x**\n~~~\n'
+# shellcheck disable=SC2016 # バッククォートは markdown のフェンス
+mk "$bad" 102-bug-m.md '# m\n\n  ```\n**担当中: x**\n  ```\n'
 mk "$bad" 100-bug-k.md '# k\n\n過去は**担当中**だったが解除済み\n'
 if out=$(bash "$CHECK" "$bad" 2>&1); then ng "バナー欠落で通った"; fi
-for n in 030 040 050 060 070 080 090 100; do
+for n in 030 040 050 060 070 080 090 100 101 102; do
   case "$out" in *"next/$n-"*) ;; *) ng "$n の欠落を名指ししていない" ;; esac
 done
+
+# 末尾の / が複数あっても対象を見失わない (0 件の緑にならない)
+if bash "$CHECK" "$bad//" >/dev/null 2>&1; then ng "末尾 // で検査対象を見失った"; fi
 
 # 3) 大文字小文字違いの置き場・拡張子 (links_valid と glogx は目印と読む) も対象にする
 for d in NEXT Epic MD; do
@@ -62,4 +68,4 @@ ln -s ../999-gone.md "$skip/next/999-gone.md"
 out=$(bash "$CHECK" "$skip" 2>&1) || ng "meta / dangling を落とした: $out"
 case "$out" in *"1 件を検査"*) ;; *) ng "meta / dangling を数えた: $out" ;; esac
 
-if [ "$fails" -eq 0 ]; then echo "OK: next claim バナー検査 (欠落 8 形 / 大文字小文字 3 形 / 対象外 2 形)"; else exit 1; fi
+if [ "$fails" -eq 0 ]; then echo "OK: next claim バナー検査 (欠落 10 形 / 末尾 // / 大文字小文字 3 形 / 対象外 2 形)"; else exit 1; fi

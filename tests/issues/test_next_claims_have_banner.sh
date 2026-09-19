@@ -20,7 +20,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR" || exit 1
 
 issues_dir="${1:-issues}"
-issues_dir="${issues_dir%/}"
+while [ "${issues_dir%/}" != "$issues_dir" ]; do issues_dir="${issues_dir%/}"; done # 末尾 / は全部落とす (残ると prefix 除去が外れ、段数が合わず 0 件の緑になる。敵対レビュー 2 周目)
 if [ ! -d "$issues_dir" ]; then
   printf '✗ 検査対象ディレクトリが無い: %s\n' "$issues_dir" >&2
   exit 1
@@ -29,7 +29,7 @@ fi
 # has_banner <file>: 最初の `## ` 見出しより前に、行頭の `**担当中` / `**着手中` (前に `> ` と `🚨 ` を許す) が
 # あれば 0。行頭に固定するのは散文・H1・HTML コメントの中の語を拾わないため。コードフェンスの中は読まない
 has_banner() {
-  awk '/^```/{fence=!fence; next} fence{next} /^## /{exit}
+  awk '/^ {0,3}(```|~~~)/{fence=!fence; next} fence{next} /^## /{exit}
        /^(> )?(🚨 )?\*\*(担当中|着手中)/{found=1; exit} END{exit !found}' "$1"
 }
 
