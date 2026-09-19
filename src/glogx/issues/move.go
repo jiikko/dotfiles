@@ -19,8 +19,12 @@ import (
 
 // MoveToSubdir は issue を同じ issue ディレクトリ配下の subdir へ移す (subdir="" は直下へ戻す)。
 // 戻り値は移動後の絶対パス (同一性キー。目印の付け外しではファイルが動かないので元の Path)。
-// 🚨 err があっても Path が空でなければ、移動 (目印の付け外し) 自体は済んでいる (担当者バナーの後始末だけが
-// 失敗した)。呼び出し側はその Path を「動いた」として扱うこと。
+// 🚨 next から出る経路は「先にバナーを外し、外せたら目印を外す / ファイルを動かす」の順。逆順だと
+// バナーの後始末だけ失敗したとき「目印は外れたが Status はもう Next でない」ので、もう一度 n を押しても
+// 解除が skip され、古いバナーを UI から外す手段が無くなる (敵対レビュー 2026-09-19 2 周目)。この順なら
+// 失敗は「何も変わっていない」なので再実行できる。
+// 残る既知の半端: 入る向きのバナー書き込み失敗 + 巻き戻しの失敗 (二重失敗) は "" を返すが、目印・ファイルは
+// 動いている。呼び出し側は失敗時に再スキャンするので一覧は正される。
 //
 // `next` だけは例外で、**直下にある issue にはファイルを動かさず symlink の目印を置く** (nextlink.go。
 // issue 263: rename すると本文の相対リンクが切れる)。目印の解除は symlink の削除。直下に無い issue
@@ -47,14 +51,16 @@ func MoveToSubdir(iss *Issue, subdir string) (string, error) {
 		return iss.Path, nil
 	}
 	if subdir == "" && iss.NextLink != "" {
-		if err := removeNextLink(iss); err != nil {
-			return "", err
-		}
-		// 目印は外れた。バナーだけ外せなくても Path は返す (呼び出し側が「動いた」と数えるため)
 		if err := clearClaimBanner(iss.Path); err != nil {
-			return iss.Path, fmt.Errorf("目印は外したが担当者バナーを外せません: %w", err)
+			return "", fmt.Errorf("担当者バナーを外せないため next の目印も外していません: %w", err)
 		}
-		return iss.Path, nil
+		return iss.Path, removeNextLink(iss)
+	}
+	if iss.Status == StatusNext && subdir != NextDirName {
+		// next から出る (pending / done / 旧運用の実ファイルを直下へ戻す)。バナーを先に外す (上の doc)
+		if err := clearClaimBanner(iss.Path); err != nil {
+			return "", fmt.Errorf("担当者バナーを外せないため移動していません: %w", err)
+		}
 	}
 	if iss.NextLink != "" {
 		// done/ pending/ へ運ぶときは目印を先に消す。残すと dangling になり、同じ base の issue が
@@ -99,18 +105,13 @@ func MoveToSubdir(iss *Issue, subdir string) (string, error) {
 	if err := os.Rename(iss.Path, dest); err != nil {
 		return "", err
 	}
-	// バナーは next にいる間だけの表示。入るときに書き、出るとき (解除・pending・done) に外す
-	switch {
-	case subdir == NextDirName:
+	// バナーは next にいる間だけの表示。入るときは動かした後に書く (出るときは上で先に外している)
+	if subdir == NextDirName {
 		if err := writeClaimBanner(dest); err != nil {
 			if rerr := os.Rename(dest, iss.Path); rerr != nil {
 				return "", fmt.Errorf("担当者バナーを書けず、元の場所へも戻せません: %w (戻し: %w)", err, rerr)
 			}
 			return "", fmt.Errorf("担当者バナーを書けないため claim を取り消しました: %w", err)
-		}
-	case iss.Status == StatusNext:
-		if err := clearClaimBanner(dest); err != nil {
-			return dest, fmt.Errorf("移動はしたが担当者バナーを外せません: %w", err)
 		}
 	}
 	return dest, nil

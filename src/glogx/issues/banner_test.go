@@ -232,8 +232,9 @@ func TestRewriteRefusesLinkedIssueFiles(t *testing.T) {
 	}
 }
 
-// 解除で目印は外れたがバナーを外せないとき、Path は返す (呼び出し側が「動いた」と数えるため)。
-func TestUnclaimReturnsPathWhenOnlyBannerClearFails(t *testing.T) {
+// 解除でバナーを外せないときは目印も外さない (何も変えない)。外すと Status が Next でなくなり、
+// もう一度 n を押しても解除が skip されて古いバナーを UI から外せなくなる。
+func TestUnclaimChangesNothingWhenBannerClearFails(t *testing.T) {
 	fixedNow(t)
 	dir := t.TempDir()
 	p := filepath.Join(dir, "001-feat-x.md")
@@ -249,14 +250,15 @@ func TestUnclaimReturnsPathWhenOnlyBannerClearFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
-	got, err := MoveToSubdir(iss, "")
-	if err == nil {
-		t.Fatal("バナーを外せないのに成功を返した")
-	}
-	if got != p {
-		t.Fatalf("目印は外れたのに Path を返さない: %q", got)
-	}
-	if _, err := os.Lstat(iss.NextLink); !os.IsNotExist(err) {
-		t.Fatalf("目印が残った: %v", err)
+	for _, sub := range []string{"", "done"} {
+		if _, err := MoveToSubdir(iss, sub); err == nil {
+			t.Fatalf("%q: バナーを外せないのに成功を返した", sub)
+		}
+		if _, err := os.Lstat(iss.NextLink); err != nil {
+			t.Fatalf("%q: バナーを外せないのに目印を外した: %v", sub, err)
+		}
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("%q: バナーを外せないのにファイルを動かした: %v", sub, err)
+		}
 	}
 }
