@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -43,13 +44,19 @@ func TestWithReportsReleaseFailureInExitCode(t *testing.T) {
 		if rc != exitWithInvalid {
 			t.Fatalf("rc=%d (期待 %d = 解放に失敗したので成功を返さない)", rc, exitWithInvalid)
 		}
-		// 呼び出し側が次に何を見ればよいかまで出す。文面は完全一致で pin しない代わりに、
-		// **偽の断定を足す変異**を捕まえるために「何が起きたか」の語を両方見る。
-		if !strings.Contains(stderr, "子は成功したがロックを解放できていない") {
-			t.Fatalf("解放できていない事実を伝えていない: %q", stderr)
-		}
-		if !strings.Contains(stderr, "TTL が切れるまで待たされる") {
-			t.Fatalf("次の実行への影響を伝えていない: %q", stderr)
+		// 🚨 文面は**行の構造ごと** pin する (語の contains では弱い)。`%v` のエラー本文と
+		// dir は環境依存なので `.*` を許し、**行の順序・本数・それ以外の文言を固定**する。
+		// contains だけだと、2 行目に「`lockman break` で剥がすこと」のような
+		// **破壊的操作の助言を足す**変異が緑で通る (良性の状態で危険な操作を勧める形は
+		// issue 383 の 5 周目で実際に P1 になった)。
+		// 🚨 dir も `.*` にしない。呼び出し側は**この文字列を見て次の対象を決める**ので、
+		// 別の値 (metaDir 等) に差し替わると人が違うものを見に行く。実際に期待する値を埋める。
+		want := regexp.MustCompile(
+			`\Alockman: 解放に失敗: .*\n` +
+				`lockman: 子は成功したがロックを解放できていない: 次の実行は TTL が切れるまで待たされる \(` +
+				regexp.QuoteMeta(l.dir) + `\)\n\z`)
+		if !want.MatchString(stderr) {
+			t.Fatalf("stderr の構造が期待と違う:\n%q", stderr)
 		}
 	})
 

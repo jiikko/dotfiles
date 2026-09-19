@@ -70,8 +70,13 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 		// 伝えており、そこを潰すと情報が減るだけだから。**真の穴は子が成功した場合だけ** で、
 		// そこは呼び出し側から成功と区別できない。
 		//
-		// 🚨 `errNotOwner` は上書きしない: 既に他者が引き継いでいて解放すべきものが無い
-		// (= ロックが残っていない) ので、②は破れていない。
+		// 🚨 `errNotOwner` は上書きしない: 既に他者が引き継いでいるので、②で守りたい害
+		// (次の実行が TTL 切れまで待たされる) が出ない。
+		// 🚨 ただし **`errLeaseExpired` も `errNotOwner` を包む**ので同じ枝で除外される
+		// (`lock.go` の `errLeaseExpired = fmt.Errorf("%w: lease が切れている", errNotOwner)`)。
+		// こちらは**自分の lock がディスクに残ったまま**なので、「解放すべきものが無い」は
+		// 事実ではない。それでも上げないのは、期限切れの lock は次の acquire が即座に
+		// 引き継げるため**待たされる害が出ない**から (残るのは掃除されるまでの実体だけ)。
 		// 🚨 122 (lease 喪失) / 125 (判定不能) を塗り潰さない: どちらも rc != exitOK なので
 		// 上の条件で自然に除かれる。lease 喪失のほうが具体的な情報なので残す。
 		if err := l.ReleaseTimed(meta.Token); err != nil && !errors.Is(err, errNotOwner) {
