@@ -171,7 +171,7 @@ commit message に書き、レビューがそのテストが何も守ってい�
 
 ## 残タスク
 
-- 症状そのもの (QuickTime での再生) は [issue 396](../396-human-verify-quicktime-playback-after-vfr-fix.md) の
+- 症状そのもの (QuickTime での再生) は [issue 396](396-human-verify-quicktime-playback-after-vfr-fix.md) の
   目視待ちで**未検証のまま**。本 issue が直したのは「誤った `-r` が無検出で通ること」であって、
   「CFR 化で QuickTime の再生破綻が直るか」は別 (394 の当初の原因診断は 8504929d で誤りと判明している)
 - 上の限界 1 (vidloss との尺の解釈) は別 issue 化が妥当
@@ -179,7 +179,7 @@ commit message に書き、レビューがそのテストが何も守ってい�
 ## 関連
 
 - [issue 394](394-bug-av1ify-vfr-passthrough-breaks-quicktime.md) — 本 issue の対象実装
-- [issue 396](../396-human-verify-quicktime-playback-after-vfr-fix.md) — **そもそも症状が直ったかは未検証**
+- [issue 396](396-human-verify-quicktime-playback-after-vfr-fix.md) — **そもそも症状が直ったかは未検証**
   (394 は当初「出力 DTS の非単調増加」を原因としたが 8504929d で誤りと判明し、現在の根拠は
   「旧出力が VFR」+「QuickTime との因果は目視待ち」)
 - [issue 398](398-bug-av1ify-vfr-threshold-shared-with-frame-tolerance.md) — 検出閾値の相乗り
