@@ -5,7 +5,7 @@
 #
 # なぜ: 規約を ~/.claude/CLAUDE.md や rules/ に置くと issues/ を持たない repo (仕事の repo) でも
 # 毎セッション全文読まれる。逆に各 repo の issues/README.md へコピーすると更新が伝播せず乖離する
-# (2026-09-19 に my-products の 6 アプリのコピーが正本より古いまま放置されていた。issue 401)。
+# (2026-09-19 に複数 repo のコピーが正本より古いまま放置されていた。issue 401)。
 # 「issues/ があるか」の判定は他の issue 系 hook と同じ issue_hook_resolve_dir に寄せる
 # (判定を別に書くと、どの repo で効くかが hook ごとにずれる)。
 #

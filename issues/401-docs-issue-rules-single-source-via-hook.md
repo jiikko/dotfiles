@@ -25,9 +25,9 @@ type 語彙は全 repo の和集合 (ユーザー判断 2026-09-19)。
 - [x] push + `~/dotfiles` pull 後、新しいセッションで注入されることを確認
 - [x] `~/.claude/CLAUDE.md`「Issue管理」を「hook が注入する規約に従う」の 1 行 + repo 非依存の項目へ縮める
 - [x] dotfiles `issues/README.md` を repo 固有部分だけにする
-- [ ] project-templates (macos/ios) の README を repo 固有の雛形だけにし、「直接変更せず」注記を直す
-- [ ] テンプレート由来の 7 アプリの README を縮める
-- [ ] obaket / ThumbnailThumb の README から共通部分を抜く (固有節は残す)
+- [x] project-templates (macos/ios) の README を repo 固有の雛形だけにし、「直接変更せず」注記を直す
+- [x] テンプレート由来の 7 アプリの README を縮める
+- [x] obaket / ThumbnailThumb の README から共通部分を抜く (固有節は残す)
 
 ## 進捗
 
@@ -42,6 +42,13 @@ type 語彙は全 repo の和集合 (ユーザー判断 2026-09-19)。
   - CLAUDE.md の `docs/` 項 (dotfiles 固有) は repo の CLAUDE.md へ移設。retro の流入速度の根拠と Stop hook を issue-rules へ移設
   - 旧正本を指していた hook / テスト / skill / docs のコメント 9 箇所を張り替え。関連テスト 10 本 green
 
+- my-products 側 (各 submodule で commit & push、親で bump `chore(submodule): bump issues/README を共通規約 ... 10 submodule`)
+  - project-templates macos/ios: 共通規約を抜いた雛形へ (「直接変更せず」注記も直した)
+  - 7 アプリ (baby-note / dotfiles-gui / dropbox-… / fdup-macos / SnapTrim / vlc / promiseApp) を新雛形へ。vlc の固有節「あとで登録したいissue」は残した
+  - ThumbnailThumb: 太字 `**作成日**` 由来の注意・採番コマンドの所在・現状の group だけ残した
+  - obaket: 種別語彙と human/retro 書式の節を案内へ置換。「macOS/issues/ は督促されない」注記は issue 276 以降事実と食い違っていたため削除
+- 「docs(issues,401): 共通規約から特定 repo 名を外し、human の本文に手順を書く指示を足す」
+
 ## 残タスク
 
-- 未着手: 上の受け入れ条件の未チェック分
+- なし (受け入れ条件はすべて完了)

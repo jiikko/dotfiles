@@ -54,7 +54,7 @@ case "$got" in
   *) ng "規約ファイルを読めないのに警告が出ない: [$got]" ;;
 esac
 
-# 入れ子 1 段 (obaket の macOS/issues/ 形) でも注入する
+# 入れ子 1 段 (<root>/macOS/issues/ のような形) でも注入する
 rm -rf "$repo/issues"; mkdir -p "$repo/macOS/issues"
 got=$(ctx env)
 [ -n "$got" ] || ng "入れ子の <root>/*/issues で注入しない"
