@@ -2,16 +2,16 @@
 
 起票日: 2026-09-16
 カテゴリ: retro
-対象セッション: [381](done/381-bug-lockman-with-renew-latch-stops-renewal-forever.md) の実装と敵対的レビュー 3 観点
+対象セッション: [381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md) の実装と敵対的レビュー 3 観点
 
 ## やったこと (要約)
 
 恒久ラッチ (詰まった `Renew` が返らないと更新が永久に起きない) を、期限で見捨てて張り直す形へ
 直した。見捨てた本数は `maxInFlightRenews` (既定 8) で抑える。A-B 実測・変異検証 4 本・
 `make test`・敵対的レビュー 3 観点 (①壊す ②素通り ③並行・中断) を通し、
-[383](done/383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) /
-[384](done/384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) /
-[385](385-design-lockman-on-lost-kill-vs-keep-renewing.md) を切り出した。
+[383](383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) /
+[384](384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) /
+[385](../385-design-lockman-on-lost-kill-vs-keep-renewing.md) を切り出した。
 
 ## 反省
 
@@ -26,7 +26,7 @@
 「上限」と「成功する更新」の相互作用を観測する列が無かった。上限を置くときは
 「枯渇する側」だけでなく**「返ってくる側」**を通す列が要る、という一般形。
 
-**切り出し先の提案**: [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の
+**切り出し先の提案**: [`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) の
 「よくある『守っていないテスト』の形」に 1 項目追記 —
 **資源の上限 (枠・プール・カウンタ) を新設したら、枯渇の列だけでなく「枠が返る列」を通すテストを置く。
 返す側を消す変異が red になるまでが 1 セット**。
@@ -40,7 +40,7 @@ background で `make test` を回すとき、末尾に `echo "rc=$?"` を置い�
 `bash scripts/issue_done.sh` を `&&` 無しで並べ、**python が失敗しても後段が走った**
 (381 の本文更新が未反映のまま done へ移った) のも同族。
 
-[`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md) は
+[`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md) は
 「パイプ終端の status を見ない」を持つが、**「複合コマンドの最後に置いた echo / 通知が返す rc」**と
 **「`;` で繋いだ検証手順は前段の失敗を飲む」**は書かれていない。
 
@@ -54,7 +54,7 @@ background で `make test` を回すとき、末尾に `echo "rc=$?"` を置い�
 上限到達が初めて報告する」と書いた。直後に導出し直したところ、**上限に到達する経路は必ず
 事前に期限切れ報告を通る**ので誤りだった (自分で撤回してコメントを直した)。
 
-[`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md) §7 は
+[`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md) §7 は
 「指摘を直した差分にもう 1 周回す」を要求しているが、**差分に添えた説明文 (効能の主張) も
 同じ検証対象**という点は明示されていない。
 

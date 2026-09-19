@@ -2,12 +2,12 @@
 
 起票日: 2026-09-16
 カテゴリ: retro
-対象セッション: [366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の消化
-(副産物: [380](done/380-bug-lockman-renew-and-release-act-on-name-after-check.md) /
-[381](done/381-bug-lockman-with-renew-latch-stops-renewal-forever.md) 起票、
-[359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) /
-[362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
-[363](363-bug-lockman-with-signal-handler-installed-too-late.md) / `done/091` へ追記)
+対象セッション: [366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の消化
+(副産物: [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md) /
+[381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md) 起票、
+[359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) /
+[362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
+[363](../363-bug-lockman-with-signal-handler-installed-too-late.md) / `done/091` へ追記)
 
 ## 数字
 
@@ -89,7 +89,7 @@ seam を**変異後の破壊的操作より前**に置く。後ろだと変異�
 
 ### 8. 🚨 追記 (2026-09-18): 383 の 5 周でも同じ形が出た — 今度は「消した助言が 1 hop 下で復活」
 
-[383](done/383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) の 5 周目 (別セッション) でも
+[383](383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) の 5 周目 (別セッション) でも
 **5 周連続で P1**。核 (fail-closed) は 1 周で閉じており、**2〜5 周目の P1 は全部「案内文と後始末」由来**で、
 項目 1 (「自分の修正が次の周の P1 になる」) と項目 6 (「診断が最も危険な操作へ誘導する」) が
 **同じ issue の中で合流した**形だった:
@@ -119,10 +119,10 @@ seam を**変異後の破壊的操作より前**に置く。後ろだと変異�
 ## 残課題
 
 - [x] 上記 1〜3・5〜8 の切り出し (既存ルールへの追記 8 件。新規ルールは 0 件)。**実行はユーザーの判断待ち**
-- [x] 366 の横展開: [380](done/380-bug-lockman-renew-and-release-act-on-name-after-check.md) /
-      [381](done/381-bug-lockman-with-renew-latch-stops-renewal-forever.md)
-- [x] 366 が新設した wedge の根治: [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
-      [363](363-bug-lockman-with-signal-handler-installed-too-late.md)
+- [x] 366 の横展開: [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md) /
+      [381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md)
+- [x] 366 が新設した wedge の根治: [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
+      [363](../363-bug-lockman-with-signal-handler-installed-too-late.md)
 
 ## 決着 (2026-09-19)
 

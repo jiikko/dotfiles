@@ -11,7 +11,7 @@
 ②「Space でちょろっとアニメを入れて複数行のカーソル移動」→ `cursorGlide` を新設し、320ms /
 ease-out-back で入れた (3 案を視覚見本で出してユーザーが選定)。変異 7 本・`make test` rc=0・
 `make lint` 0 issues・本番バイナリでの実測 (行 3 → 11 → 16 → **17** → 16 で行き過ぎと着地を観測)。
-[done/031](done/031-refactor-glogx-remove-issues-list-glide.md) に巻き戻しの経緯を追記した。
+[done/031](031-refactor-glogx-remove-issues-list-glide.md) に巻き戻しの経緯を追記した。
 
 ## 反省
 
@@ -22,7 +22,7 @@ ease-out-back で入れた (3 案を視覚見本で出してユーザーが選�
 **1 回目の `run_case` の `git checkout -- .` で消えていた**。`grep -c` で 0 件と分かるまで
 「変異を検知できないテストを書いてしまった」と誤読しかけた。
 
-[`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の「復元の作法」は
+[`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) の「復元の作法」は
 この罠を名指ししているし、読んだうえで踏んだ。本文が挙げている発動点は「レビュー指摘を直した直後」で、
 **「変異が全 green だったので新しいテストを足した直後」という発動点が書かれていない**。しかも
 こちらの方が構造的に起きやすい — 変異検証をしている最中なので、必ずスクリプトをもう一度回す。
@@ -58,7 +58,7 @@ ease-out-back で入れた (3 案を視覚見本で出してユーザーが選�
 仮説を捨てる前に**端にいなかったかを先に潰す** (今回は `g` で先頭へ戻す 1 手で確定した)。
 外部要因 (IME・端末・tmux) の仮説を立てるのはその後でよかった。
 
-**切り出し先の提案**: [`instrument-before-second-fix.md`](../_claude/rules/instrument-before-second-fix.md)
+**切り出し先の提案**: [`instrument-before-second-fix.md`](../../_claude/rules/instrument-before-second-fix.md)
 の「『何度直しても直らない』と言われたら、まず**非対称**を特定する」節に 1 行追記 —
 「🚨 **移動・スクロール系の『無反応』は、端で止まっているだけのことがある。** 仮説を捨てる前に
 『対象が端にいなかったか』を潰す (実測 2026-09-17: 端にいたための無反応を、キーが届いていない証拠と
@@ -71,7 +71,7 @@ bubbletea → ultraviolet → kitty flag と外部ソースを追ってから実
 「端末が shift+space を区別せず素の " " を送る環境ではこの case に入らない」と既に書いていた。
 `grep -rn 'shift+space'` の 3 件目を読めば筋は立っていた。
 
-[`instrument-before-second-fix.md`](../_claude/rules/instrument-before-second-fix.md) の
+[`instrument-before-second-fix.md`](../../_claude/rules/instrument-before-second-fix.md) の
 「観測を足す前に既存の観測を grep する」がそのまま当たる。**ルールの射程は足りているので新規の
 切り出しは不要** — ただし発動点が「1 回目の修正が外れた後」なので、今回のような
 「要望を受けて調査を始める瞬間」には読まれなかった。

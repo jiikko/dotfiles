@@ -2,7 +2,7 @@
 
 起票日: 2026-09-12
 カテゴリ: retro / 対象セッション: dotfiles-c9
-対象 issue: [358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md)（done）
+対象 issue: [358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md)（done）
 
 ## 何をしたか
 
@@ -24,7 +24,7 @@ production 3 commit + テスト 2 commit、新規 issue 5 本（362 / 363 / 364 
 脅威モデルを書くこと自体は正しかったが、**書いた表の網羅性を誰も検査していない**。
 「守る対象を 1 つ落とす」は、機構を 1 つ落とすのと同じ効果を持つ。
 
-- 切り出し先候補: [`adversarial-review-own-safeguards.md`](../_claude/rules/adversarial-review-own-safeguards.md)
+- 切り出し先候補: [`adversarial-review-own-safeguards.md`](../../_claude/rules/adversarial-review-own-safeguards.md)
   §8（脅威モデルを書く節）へ「**列挙した守る対象に、コード内の 🚨 / 「絶対に」と書かれた
   不変条件が全部入っているか照合する**」を 1 行足す。新規ルールは立てない（発動点が同じ）
 
@@ -40,7 +40,7 @@ production 3 commit + テスト 2 commit、新規 issue 5 本（362 / 363 / 364 
 
 - 気づきの核: 「見えるようにする」修正は、**その失敗が正常系で起きうるかを同じ commit で問う**
   必要がある。可視化は片側だけでは完成しない（鳴らす条件と鳴らさない条件の両方が要る）
-- 切り出し先候補: [`verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)
+- 切り出し先候補: [`verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md)
   の「沈黙 = 成功」節へ、**逆向き（可視化が偽陽性を作る）**を 1 行足す。
   新規ルールは立てない（発動点は同じ「沈黙を潰すとき」）
 
@@ -68,12 +68,12 @@ production 3 commit + テスト 2 commit、新規 issue 5 本（362 / 363 / 364 
 （あちらは「空けた」の連絡、こちらは「これから取る」の合意）。
 どちらも **push されるまでは誰の物でもない**。相手も同じ結論を自分から述べている。
 
-- 切り出し先候補: [`claim-issue-in-next-and-push.md`](../_claude/rules/claim-issue-in-next-and-push.md)
+- 切り出し先候補: [`claim-issue-in-next-and-push.md`](../../_claude/rules/claim-issue-in-next-and-push.md)
   の「🚨 fetch は着手を決めた直前にもう一度打つ」の並びへ、
   **「採番も同じ。予約の合意があっても、採番の直前に `git fetch` して最大番号を取り直す」**を 1 行。
   361 の残課題とまとめて扱うのが自然
 - 🚨 **この規範の出典は本 retro に一本化する**。同日の
-  [368](done/368-retro-markdown-heading-colors-2026-09-12.md)（相手セッションの retro）も同じ件に触れるが、
+  [368](368-retro-markdown-heading-colors-2026-09-12.md)（相手セッションの retro）も同じ件に触れるが、
   向こうは重複として却下扱いにすると本人が明言している（二重管理を作らない）。
   **368 は 2026-09-15 に done へ移した**（残課題だった rules への切り出し 3 件を 378 とまとめて消化）。
   本項（採番の直前に fetch し直す）は**本 retro の残課題として継続**する
@@ -98,9 +98,9 @@ production 3 commit + テスト 2 commit、新規 issue 5 本（362 / 363 / 364 
 
 ## 関連
 
-- [issue 358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) — 対象
+- [issue 358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) — 対象
 - [issue 361](361-retro-claim-visibility-and-attribution-2026-09-11.md) — 気づき 4 の姉妹
-- [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) / [363](363-bug-lockman-with-signal-handler-installed-too-late.md) / [364](364-bug-lockman-with-release-failure-and-graveyard-retention.md) / [366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) — 切り出した先
+- [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) / [363](../363-bug-lockman-with-signal-handler-installed-too-late.md) / [364](../364-bug-lockman-with-release-failure-and-graveyard-retention.md) / [366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) — 切り出した先
 
 ## 決着 (2026-09-19)
 
