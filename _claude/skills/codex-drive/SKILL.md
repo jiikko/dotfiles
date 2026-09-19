@@ -612,6 +612,7 @@ xcodebuild を回すときは -derivedDataPath ./.derived (repo root 直下) を
   待つなら事象待ち (fake の waiter / `waitUntil*ForTesting`) + hang guard の `awaitOrFail`。実時間が検証対象そのもの
   なら integration test として分け、理由コメントを直前行に置く。
 - 確証が持てない点は決め打ちせず ⓥ コメントを残し保守的に実装する。
+- 他の AI / CLI (claude / codex 等) を呼ばない。指示にない長時間の検証 (test-load 等) を回さない。
 終わったら、変更点・検証結果・未完部分を要約。
 EOF
 )" > "$log" 2>&1; rc=$?; echo "rc=$rc" | tee "$log.rc"; tail -40 "$log"
@@ -775,6 +776,9 @@ git worktree list   # 消えたことを確認する
   「production に入った test 専用状態」として指摘され、fix4 でテスト側の bounded yield + flag へ置き換えた。
   `_claude/rules/refuse-low-value-coverage.md` の「テストのために production へ seam を足して本番側の
   複雑性を上げるなら、それはテスト困難の判定材料」と正面から衝突するので、差し戻す。
+  🚨 **テストの失敗経路に、後始末を飛ばす early return が足されていないか**も同じ位置で見る
+  (「待ちが失敗したら return」の guard が、Task の join・lease の終了・runtime の破棄を飛ばす)。
+  プロンプトで禁じても繰り返し足される (実測 obaket 806: 4 件。うち 3 件は diff 精読でしか見つからなかった)
 - **大きい diff (目安 200 行超) は「変更マップ」をナビに 1 回で精読する**: codex (read-only・luna・max) に
   「ファイル × 変更意図 × リスク順の hunk ランキング + 各 hunk の機械的/判断の分類 (根拠つき)」を
   作らせ、Claude はマップの順に diff を 1 回だけ読む (行き来と再読を消す — 精読を安くするのであって
