@@ -179,3 +179,84 @@ func TestRenamePathsWriteAndClearBanner(t *testing.T) {
 		t.Fatalf("next から done へ出したのにバナーが残った: %q", b)
 	}
 }
+
+// 読んでから書くまでの間に本文が変わったら上書きしない (エディタの保存を消さない)。
+func TestRewriteAbortsWhenFileChangedMeanwhile(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "001-feat-x.md")
+	if err := os.WriteFile(p, []byte("# x\n\n## 概要\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	edited := "# x\n\n## 概要\n\nエディタで足した行\n"
+	old := beforeRewrite
+	beforeRewrite = func(path string) {
+		if err := os.WriteFile(path, []byte(edited), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { beforeRewrite = old })
+	if err := writeClaimBanner(p); err == nil {
+		t.Fatal("並行編集があったのに書き換えた")
+	}
+	if b, _ := os.ReadFile(p); string(b) != edited {
+		t.Fatalf("並行編集が消えた: %q", b)
+	}
+}
+
+// issue ファイル自体が symlink / ハードリンクなら書き換えない (rename でリンクを壊すため)。
+func TestRewriteRefusesLinkedIssueFiles(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "real.md")
+	body := "# x\n\n## 概要\n"
+	if err := os.WriteFile(real, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sym := filepath.Join(dir, "001-feat-sym.md")
+	if err := os.Symlink("real.md", sym); err != nil {
+		t.Fatal(err)
+	}
+	hard := filepath.Join(dir, "002-feat-hard.md")
+	if err := os.Link(real, hard); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{sym, hard} {
+		if err := writeClaimBanner(p); err == nil {
+			t.Errorf("%s を書き換えた", filepath.Base(p))
+		}
+	}
+	if fi, _ := os.Lstat(sym); fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("symlink が通常ファイルに置き換わった")
+	}
+	if b, _ := os.ReadFile(real); string(b) != body {
+		t.Fatalf("リンク先が書き換わった: %q", b)
+	}
+}
+
+// 解除で目印は外れたがバナーを外せないとき、Path は返す (呼び出し側が「動いた」と数えるため)。
+func TestUnclaimReturnsPathWhenOnlyBannerClearFails(t *testing.T) {
+	fixedNow(t)
+	dir := t.TempDir()
+	p := filepath.Join(dir, "001-feat-x.md")
+	if err := os.WriteFile(p, []byte("# x\n\n## 概要\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	iss := &Issue{Path: p, Dir: dir, Rel: "001-feat-x.md"}
+	if _, err := MoveToSubdir(iss, NextDirName); err != nil {
+		t.Fatal(err)
+	}
+	iss.Status, iss.NextLink = StatusNext, NextLinkPath(iss)
+	if err := os.Chmod(dir, 0o555); err != nil { // next/ は書ける、本文の temp は作れない
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	got, err := MoveToSubdir(iss, "")
+	if err == nil {
+		t.Fatal("バナーを外せないのに成功を返した")
+	}
+	if got != p {
+		t.Fatalf("目印は外れたのに Path を返さない: %q", got)
+	}
+	if _, err := os.Lstat(iss.NextLink); !os.IsNotExist(err) {
+		t.Fatalf("目印が残った: %v", err)
+	}
+}

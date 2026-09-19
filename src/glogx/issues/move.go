@@ -19,6 +19,8 @@ import (
 
 // MoveToSubdir は issue を同じ issue ディレクトリ配下の subdir へ移す (subdir="" は直下へ戻す)。
 // 戻り値は移動後の絶対パス (同一性キー。目印の付け外しではファイルが動かないので元の Path)。
+// 🚨 err があっても Path が空でなければ、移動 (目印の付け外し) 自体は済んでいる (担当者バナーの後始末だけが
+// 失敗した)。呼び出し側はその Path を「動いた」として扱うこと。
 //
 // `next` だけは例外で、**直下にある issue にはファイルを動かさず symlink の目印を置く** (nextlink.go。
 // issue 263: rename すると本文の相対リンクが切れる)。目印の解除は symlink の削除。直下に無い issue
@@ -48,7 +50,11 @@ func MoveToSubdir(iss *Issue, subdir string) (string, error) {
 		if err := removeNextLink(iss); err != nil {
 			return "", err
 		}
-		return iss.Path, clearClaimBanner(iss.Path)
+		// 目印は外れた。バナーだけ外せなくても Path は返す (呼び出し側が「動いた」と数えるため)
+		if err := clearClaimBanner(iss.Path); err != nil {
+			return iss.Path, fmt.Errorf("目印は外したが担当者バナーを外せません: %w", err)
+		}
+		return iss.Path, nil
 	}
 	if iss.NextLink != "" {
 		// done/ pending/ へ運ぶときは目印を先に消す。残すと dangling になり、同じ base の issue が

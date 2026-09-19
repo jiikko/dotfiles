@@ -2693,6 +2693,9 @@ func (v *issuesView) markNextKey(key string) tea.Cmd {
 		}
 		newPath, err := issues.MoveToSubdir(iss, dest)
 		if err != nil {
+			if newPath != "" { // 移動は済み、バナーの後始末だけ失敗 (MoveToSubdir の doc)
+				movedPaths[iss.Path] = newPath
+			}
 			v.setPendingMoveAnchors(cursorBefore, markBefore, movedPaths)
 			v.setNotice("移動できませんでした: "+firstLine(err.Error()), false)
 			return v.scanAfterChangeCmd() // 途中まで動いた分を一覧へ反映する

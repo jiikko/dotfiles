@@ -3,8 +3,10 @@ package issues
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"glogx/atomicfile"
@@ -99,10 +101,24 @@ func removeBanner(src string) (string, bool) {
 }
 
 // rewriteIssue は path の本文を f で書き換える。mode は保つ。変更が無ければ書かない。
+//
+// 🚨 temp + rename なので、path が symlink なら「リンクが通常ファイルに置き換わり、リンク先は古いまま」、
+// ハードリンクなら「リンクが切れる」。どちらも黙って壊すより拒否する (xattr・所有者も temp + rename では
+// 保たれないが、issue ファイルに付く運用は無いので扱わない)。
+//
+// 🚨 読んでから書くまでの間にエディタが保存すると、その編集を上書きで消す。rename の直前に mtime と
+// サイズを取り直し、変わっていれば中止する。**窓は縮むだけで 0 にはならない** (取り直しから rename の
+// 間は残る)。開いているエディタのバッファも inode の差し替えで外れる (再読込が要る)。
 func rewriteIssue(path string, f func(string) (string, bool)) error {
-	fi, err := os.Stat(path)
+	fi, err := os.Lstat(path)
 	if err != nil {
 		return err
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%s は symlink なので本文を書き換えません", filepath.Base(path))
+	}
+	if st, ok := fi.Sys().(*syscall.Stat_t); ok && st.Nlink > 1 {
+		return fmt.Errorf("%s はハードリンクなので本文を書き換えません", filepath.Base(path))
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -112,8 +128,19 @@ func rewriteIssue(path string, f func(string) (string, bool)) error {
 	if !changed {
 		return nil
 	}
+	beforeRewrite(path)
+	now, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !now.ModTime().Equal(fi.ModTime()) || now.Size() != fi.Size() {
+		return fmt.Errorf("%s が書き換え中に変更されたので中止しました (もう一度実行してください)", filepath.Base(path))
+	}
 	return atomicfile.Write(path, []byte(out), fi.Mode().Perm())
 }
+
+// beforeRewrite はテストの差し替え口 (読んでから書くまでの間の並行編集を再現する)。
+var beforeRewrite = func(string) {}
 
 // bannerNow は時刻の差し替え口 (テストで日付を固定する)。
 var bannerNow = time.Now

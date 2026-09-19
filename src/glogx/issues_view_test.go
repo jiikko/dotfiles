@@ -2779,3 +2779,36 @@ func TestIssuesRebindOpenWarnsOnDifferentTitle(t *testing.T) {
 		t.Errorf("消えた issue は畳んで知らせるべき: notice=%q", v3.notice)
 	}
 }
+
+// 解除で目印は外れたがバナーだけ外せないとき、一覧は「動いた」として位置を追う (失敗扱いで捨てない)。
+func TestIssuesViewMarkNextKeepsAnchorWhenOnlyBannerClearFails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "001-feat-x.md")
+	if err := os.WriteFile(path, []byte("# 001 feat: x\n\n> 🚨 **担当中: h (glogx)**（2026-09-19〜）\n\n## 概要\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, issues.NextDirName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, issues.NextDirName, "001-feat-x.md")
+	if err := os.Symlink("../001-feat-x.md", link); err != nil {
+		t.Fatal(err)
+	}
+	iss := &issues.Issue{Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat",
+		Status: issues.StatusNext, NextLink: link}
+	v := loadedView(iss)
+	v.cwd = dir
+	if err := os.Chmod(dir, 0o555); err != nil { // next/ は書ける、本文の temp は作れない
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	v.handleKey("n", vp(10))
+	v.handleKey("y", vp(10))
+	if v.pendingCursorPath != path {
+		t.Fatalf("移動済みの issue を位置の追跡から落とした: pendingCursorPath=%q", v.pendingCursorPath)
+	}
+	if text, _ := v.takeNotice(); !strings.Contains(text, "バナーを外せません") {
+		t.Fatalf("後始末の失敗が通知に載らない: %q", text)
+	}
+}
