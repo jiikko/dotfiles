@@ -334,11 +334,16 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
   # go 自体が無い環境 (新しい Mac / PATH が通っていない) を go build の "command not found"
   # (exit 127) に任せない。popup 起点だと 1 行の英語エラーが点滅して消えるだけで、
   # 「glogx がすぐ落ちる」に見える。何を入れれば動くかまで書いて止める。
-  if ! command -v go >/dev/null 2>&1; then
+  # 🚨 **`command -v` では見ない** (issue 405 と同型)。goenv の shim は「どの版にも実体が無い」
+  # ときでも PATH 上に在り rc=0 を返すので、この案内は素通りされて結局 exit 127 の英語エラーが
+  # 点滅する — つまり案内を用意した意味が消える。実行できるかは**走らせて**確かめる。
+  # 判定には**すぐ下で必要な `go env GOVERSION`** をそのまま使う (probe を別に足すと呼び出しが
+  # 1 回増えるうえ、「判定に使った go」と「ビルドに使う go」が別の呼び出しになる)。
+  if ! local_go=$(go env GOVERSION 2>/dev/null); then
     _go_autobuild_print_go_missing "$name" "$required_go"
     return 1
   fi
-  local_go=$(go env GOVERSION 2>/dev/null) || local_go=unknown
+  : ${local_go:=unknown}
   print -u2 -- "$name: building... (go=${local_go:-unknown} / go.mod=${required_go:-?})"
   # GOTOOLCHAIN は既定 (auto) のまま。local に固定すると go.mod の要求版に足りない環境で
   # 「go.mod requires go >= X」で失敗して手動対応が必要になる。auto なら toolchain (~90MB) を

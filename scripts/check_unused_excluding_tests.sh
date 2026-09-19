@@ -34,8 +34,19 @@ src/schedkeys/editor.go:(*editor).setValue|テストが依存する test seam。
 ALLOWEOF
 )
 
-if ! command -v staticcheck >/dev/null 2>&1; then
-  echo "✗ staticcheck が無い (go install honnef.co/go/tools/cmd/staticcheck@latest)" >&2
+# 🚨 **存在は `command -v` で見ない。実際に走らせて rc を見る** (issue 405)。
+# goenv / rbenv / nodenv の shim は「**どの版にも実体が無い**」ときでも PATH 上に在り、
+# `command -v` は rc=0 で shim のパスを返す。実測 2026-09-20:
+#   command -v staticcheck  -> rc=0 /Users/…/goenv/shims/staticcheck
+#   staticcheck --version   -> rc=127 stderr "goenv: 'staticcheck' command not found"
+# このためガードは**原理的に発火せず**、用意した案内は一度も出ないまま、shim のエラー文が
+# 「解釈できない staticcheck の出力」として下の parser へ流れ込んでいた (`make test` が毎回赤)。
+# 一般形は `verify-execution-not-just-exit-code.md` の存在検査版:
+# 「PATH に名前が在る」は「実行できる」ではない。
+if ! staticcheck --version >/dev/null 2>&1; then
+  echo "✗ staticcheck を実行できない (go install honnef.co/go/tools/cmd/staticcheck@v0.7.0)" >&2
+  echo "  🚨 goenv を使っているなら **いま有効な Go 版**へ入れること (GOPATH が版ごとに分かれるので、" >&2
+  echo "     版を上げると前の版に入れた go 製ツールは PATH から消える。shim だけが残る)" >&2
   exit 1
 fi
 

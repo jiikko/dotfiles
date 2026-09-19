@@ -1,5 +1,7 @@
 # `staticcheck が無い` ガードが goenv の shim を掴んで素通りし、`make test` が毎回落ちる
 
+> 🚨 **担当中: Claude セッション (opus, dotfiles)**（2026-09-20〜）
+
 起票日: 2026-09-20
 カテゴリ: bug / priority: **medium**
 対象: `scripts/check_unused_excluding_tests.sh` の存在ガード (`command -v staticcheck`)
