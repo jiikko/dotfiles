@@ -22,9 +22,9 @@ type 語彙は全 repo の和集合 (ユーザー判断 2026-09-19)。
 
 - [x] `_claude/issue-rules.md` (共通規約) を作る
 - [x] hook `issue-rules-inject.sh` + `_claude/settings.json` 配線 + `tests/claude/test_issue_rules_inject.sh`
-- [ ] push + `~/dotfiles` pull 後、新しいセッションで注入されることを確認
-- [ ] `~/.claude/CLAUDE.md`「Issue管理」を「hook が注入する規約に従う」の 1 行 + repo 非依存の項目へ縮める
-- [ ] dotfiles `issues/README.md` を repo 固有部分だけにする
+- [x] push + `~/dotfiles` pull 後、新しいセッションで注入されることを確認
+- [x] `~/.claude/CLAUDE.md`「Issue管理」を「hook が注入する規約に従う」の 1 行 + repo 非依存の項目へ縮める
+- [x] dotfiles `issues/README.md` を repo 固有部分だけにする
 - [ ] project-templates (macos/ios) の README を repo 固有の雛形だけにし、「直接変更せず」注記を直す
 - [ ] テンプレート由来の 7 アプリの README を縮める
 - [ ] obaket / ThumbnailThumb の README から共通部分を抜く (固有節は残す)
@@ -36,7 +36,12 @@ type 語彙は全 repo の和集合 (ユーザー判断 2026-09-19)。
   - 変異 3 本すべて red: 判定を外す (常に注入) / 読めない時に黙る / 本文を先頭 5 行に切る
   - 🚨 my-products root でも注入される (`project-templates/issues` が深さ 1 の issues/ に当たる)。実害なしと判断
 
+- 「docs(issues,401): CLAUDE.md「Issue管理」と dotfiles issues/README.md を固有部分へ縮め、正本の参照を張り替える」
+  - 新規セッション E2E: `claude -p --model haiku` で SnapTrim (issues/ あり) = 注入あり (見出し 1 行を引用) /
+    issues/ なしの git repo = NO
+  - CLAUDE.md の `docs/` 項 (dotfiles 固有) は repo の CLAUDE.md へ移設。retro の流入速度の根拠と Stop hook を issue-rules へ移設
+  - 旧正本を指していた hook / テスト / skill / docs のコメント 9 箇所を張り替え。関連テスト 10 本 green
+
 ## 残タスク
 
 - 未着手: 上の受け入れ条件の未チェック分
-- 未検証: 新規セッションでの実注入 (hook の直叩きのみ確認)

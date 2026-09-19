@@ -124,7 +124,7 @@ check "既知の 101 の行は混ざらない" "" "$(grep -E '101-feat-x' <<<"$g
 
 # --- issue 339: 規約が要求する「NNN で解消」の 1 行を進捗として数える --------------------------
 #
-# 🚨 CLAUDE.md「Issue管理」は done へ移す commit で参照元の open issue にこの 1 行を要求するのに、
+# 🚨 _claude/issue-rules.md「本文」は done へ移す commit で参照元の open issue にこの 1 行を要求するのに、
 # 判定が見出しと [x] しか見ていなかったため、**規約どおり書いても未対応と判定**されていた。
 hook "$START" s7 >/dev/null
 printf '# 105 ref\n\n残課題: 106 待ち\n' >"$repo/issues/105-bug-v.md"

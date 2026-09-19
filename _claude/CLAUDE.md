@@ -60,31 +60,13 @@
 
 ## Issue管理
 
-- `issues/*.md` の内容に対応した後、作業が完了したら対応する issue ファイルを `issues/done/` ディレクトリに移動すること（ディレクトリ名が `issue/` 単数のプロジェクトでは読み替える）
-- 🚨 **issue の「不在の主張」は、着手前に数え直す**。「〜は存在しない」「〜は 1 箇所だけ」「呼び出しは 0 件」は
-  **grep 1 回の結果であって全数勘定ではない**。その主張を根拠に機構を落とす・冗長性を削る提案は、
-  取りこぼしがあると**そのまま実行して壊れる**（実測 2026-09-06: 監査 issue の「rows を直接差し替える
-  テストは実在しない」が誤りで、実際は 2 箇所あった。推奨どおり実行すると描画が空になっていた）。
-  数え直した結果は issue 本文へ書き戻す（`done/` に誤った不在の主張を残すと次の監査が同じ推論を再生成する）
-- **issue の記述を鵜呑みにしない**。実際のコードと git 履歴に照らして検証してから着手する（既に修正済み・false positive を着手前に弾く）。関連: [`verify-design-intent-before-refactor.md`](rules/verify-design-intent-before-refactor.md)（refactor 提案の事前確認）/ [`issue-creation-codex-review.md`](rules/issue-creation-codex-review.md)（issue 作成時の codex レビュー）
-- **人にやってほしい動作確認は応答本文に書いて流さず、issue に起こす**（chat は流れて存在自体が忘れられる）。`NNN-human-<スラッグ>.md`（人間しかできない作業のカテゴリ。動作確認・目視レビュー・外部サービスの操作・判断待ち）で起票し、本文に `期限: YYYY-MM-DD` を書く。**既読はファイルの位置で表す**（未読 = `issues/`、確認済み = `issues/done/`。既読ヘッダーは本文の書き換え忘れで嘘が残るので使わない）。期限切れはセッション開始時に hook（`_claude/hooks/human-tasks-due.sh`）が注入し、`issue-sync` skill でも最初に報告する。**hook が期限切れを出したらセッション冒頭で一言伝える**
-- **実質的な作業をやり切ったら、セッションの振り返りを `NNN-retro-<スラッグ>-YYYY-MM-DD.md` に起票する**（chat の反省は流れて消える）。反省・気づき・改善案を書き、各項目に切り出し先（新規 issue / `_claude/rules/` / 却下）を提案するが、切り出しの実行はユーザーの判断を待つ。typo・数行の chore・調査だけのセッションは対象外。**done は「本文の残課題が空になったとき」**（実装の有無では判定しない）。未決着の retro はセッション開始時に hook（`_claude/hooks/retro-open.sh`）が注入するので、**古いものが溜まっていたらセッション冒頭で一言伝える**。書式の正本は `issues/README.md`
-- 🚨 **retro の切り出し先は「既存ルールへの追記」を既定にする**。新規ルールを 1 本立てるのは
-  **発動点 (トリガー) が既存のどれとも違うと言えるときだけ**で、言えないなら既存ルールの節として足す。
-  理由は流入速度: `_claude/rules/` は実測で **2026-07-01 の 13 本 626 行 → 2026-09-03 に 37 本 2480 行**
-  (65 日で 4 倍、直近 3 日で +445 行) まで増え、本文は毎セッション全文読まれる。増加の経路は
-  ほぼ「retro の残課題 → rules へ切り出し」に集中している。**整理で削れるのは 1 回あたり百数十行**
-  (2026-09-03 の監査の実測) で、**1 日ぶんの流入に負ける**ので、入口で絞る方が効く
-  - 新規で立てるときは、retro の切り出し節に**なぜ既存へ追記できないか (発動点の違い)** を 1 行書く
-  - 本文には規範だけを書き、実例・実測・起源は同名の `rules-rationale/` へ最初から書く
-    (後から移す形は失敗している。実例: `rules-rationale/mutation-verify-new-tests.md` の
-    「ルール本文から移した実例」節が文頭の切れた断片集になっている)
-- **`issues/next/`（または group の `issues/epic/<name>/next/`）があるリポジトリでは、着手する issue の目印をそこへ置いて claim し、その目印だけを即 push する**（複数マシンが同じ issue 列を処理するため。claim は push されて初めて他マシンから見える。着手前に `git fetch` して既に next に居ないかを見る。group issue の claim 先は所属 group 内の `next/`、完了先は global issue が `issues/done/`、group issue は `issues/epic/<name>/done/`）。**目印は `ln -s ../NNN-x.md issues/next/NNN-x.md` の symlink で、issue ファイルは動かさない**（rename すると本文の相対リンクが切れる。issue 263）。完了時は目印を消してから `done/` へ移す。**どの `next/` も無いリポジトリ（仕事の repo 等）ではこの規律は適用しない**。詳細は [`claim-issue-in-next-and-push.md`](rules/claim-issue-in-next-and-push.md)。PostToolUse hook（`_claude/hooks/next-claim-push.sh`）が `issues/next/` への `ln -s` / 移動を検出して push を促し、UserPromptSubmit hook（`_claude/hooks/next-claim-unshared.sh`）が「他マシンから見えない claim」（未コミット / commit 済みだが未 push。glogx の `n` で人が付けたものを含む）を拾って push の可否をユーザーに伺わせる
-- **設計判断・仕様・調査記録は `docs/`**（索引は [`docs/README.md`](../docs/README.md)）。触る前に読む制約
-  (glogx の bubbletea v2 / テーマ色の定数 / tmux のセッション永続化) と、glogx の画面の契約がここにある。
-  **新しく足したら索引に 1 行足す**（載っていない文書は存在を知っている人にしか届かない）
-- **issue に関わる作業は、commit のたびに当該 issue の本文へ todolist / 進捗 / 結果 / 残タスクを追記する**（chat の報告は流れる。issue 本文が唯一残る）。todolist は受け入れ条件のチェックボックス、進捗は各項目の状態と対応 commit（hash でなく subject）、結果は実測値（テスト件数・A-B・変異の red）、残タスクは未着手 / スコープ外 / 未検証を分けて列挙する。done へ移す commit では、その番号を残課題として参照している open issue にも「NNN で解消 / 継続」を 1 行追記する。取りこぼしは Stop hook（`_claude/hooks/issue-progress-check.sh`。SessionStart の `issue-progress-start.sh` が記録した開始時 HEAD からの差分で「issue を 1 度も触っていない」「触ったが `[x]` も進捗系の見出しも増えていない」「番号を参照する open issue が未変更」を検出し、block で差し戻す。同じ指摘は 1 セッション 1 回）が止めるが、hook が見るのは構造までで、本文の正しさは書く側の責任
-- **検証・監査・レビューのレポートを `./tmp` に出したら、結論・全数勘定・却下理由を issue （または対象コードのコメント）へ移すまでが 1 セット**。`tmp/` は gitignore なのでレポート本体は消える。特に「却下した指摘とその理由」は残さないと次の audit が同じ指摘を再生成する。詳細は [`move-report-conclusions-to-issues.md`](rules/move-report-conclusions-to-issues.md)
+- **`issues/`（または `issue/`）を持つ repo では、SessionStart hook（`_claude/hooks/issue-rules-inject.sh`）が
+  issue 運用規約を注入する。注入された規約はこの CLAUDE.md と同じ拘束力で従う**。正本は
+  `~/dotfiles/_claude/issue-rules.md`、repo 固有の事項は各 repo の `issues/README.md` が補う。
+  issues/ を持たない repo（仕事の repo 等）には適用しない
+- issues/ がある repo なのに注入が見当たらないときは、issue を触る前に正本を Read する
+- `issues/next/` の claim の手順は [`claim-issue-in-next-and-push.md`](rules/claim-issue-in-next-and-push.md)、
+  検証レポートを issue へ移す手順は [`move-report-conclusions-to-issues.md`](rules/move-report-conclusions-to-issues.md)
 
 ## 設計方針
 

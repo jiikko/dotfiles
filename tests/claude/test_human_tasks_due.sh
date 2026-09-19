@@ -6,7 +6,7 @@
 # 静かに黙るだけなので気づけない (= 期限切れが誰にも見えない状態に戻る)。実測で見つかった
 # 欠陥を回帰として固定する: カテゴリの部分一致誤検出 / 依存コマンド失敗を「期限なし」と誤報 /
 # pending の取りこぼし / 「検査できなかった」の沈黙。
-# 規範: issues/README.md「`期限:`」、~/.claude/CLAUDE.md「Issue管理」
+# 規範: _claude/issue-rules.md「`期限:`」
 set -euo pipefail
 unset CDPATH
 

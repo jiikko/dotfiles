@@ -5,7 +5,7 @@
 #
 # なぜ: 実装が終わった後に issue を更新し忘れる漏れは、リマインドすると本当に漏れていることが多い
 # (実測 2026-09-06 obaket 730: 関連 issue 3 本が未更新のまま「完了」を報告していた)。書くのは Claude の
-# 手順 (~/.claude/CLAUDE.md「Issue管理」) で、この hook はその取りこぼしを出口で止める側。
+# 手順 (_claude/issue-rules.md「本文」) で、この hook はその取りこぼしを出口で止める側。
 #
 # 判定 (2 段):
 #   1. 変更の有無 — 基準点 (issue-progress-start.sh が記録した開始時 HEAD) から今までの commit と
@@ -111,7 +111,7 @@ issue_file() {
 rel() { printf '%s' "${1#"$root"/}"; }
 count_done_boxes() { grep -cE '^\s*- \[x\]' 2>/dev/null || true; }
 count_headings() { grep -cE '^#+ .*(進捗|結果|残タスク|残課題|対応|todo|TODO)' 2>/dev/null || true; }
-# 🚨 **規約が要求する形も進捗として数える** (issue 339)。CLAUDE.md「Issue管理」は
+# 🚨 **規約が要求する形も進捗として数える** (issue 339)。_claude/issue-rules.md「本文」は
 # 「done へ移す commit では、その番号を参照している open issue にも『NNN で解消 / 継続』を
 # 1 行追記する」と要求しているのに、判定が見出しと [x] しか見ていなかったため、
 # **規約どおり書いても「進捗が増えていない」と言われる**。要求と判定が食い違っていた。

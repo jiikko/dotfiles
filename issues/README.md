@@ -1,33 +1,13 @@
-# issues/ — issue 管理
+# issues/ — dotfiles 固有の issue 運用
 
-## ファイル命名規約（2026-07-16 導入）
+**共通規約（命名・type 語彙・状態ディレクトリ・`期限:`・`human`・`retro`・本文の書き方）は
+[`_claude/issue-rules.md`](../_claude/issue-rules.md) が正本**で、issues/ を持つ repo のセッションに
+SessionStart hook（`_claude/hooks/issue-rules-inject.sh`）が注入する（issue 401）。
+ここには dotfiles でだけ効く道具・検査・経緯を書く。共通規約をここへ写さない。
 
-新規 issue は次の形式で命名する:
+## 採番
 
-```
-issues/NNN-<カテゴリ>-<スラッグ>.md
-```
-
-- **NNN**: 3 桁ゼロ埋めの連番。**issues/ 配下の全体**（直下・`next/`・`pending/`・`waiting/`・`done/`・`epic/<name>/`・`epic/<name>/next/`）で最大番号 + 1 を採番する（番号は再利用しない）。状態ディレクトリや group へ移動してもファイル名は変えないため、コードコメント・commit message から「issue 012」で安定して参照できる。**`issues/` の外（コード・`docs/`・`_claude/rules*`）からは必ずこの番号で参照し、`issues/done/012-….md` のような裸のパスを書かない**（`done/` へ移すとパスだけが切れ、`](…)` でないので `scripts/issue_done.sh` の張り直しも効かない）。パスで書きたいときは markdown リンク `[issue 012](../issues/done/012-….md)` にする（リンクなら張り直しの対象になる）
-- **カテゴリ**: 下表の prefix のいずれか
-- **スラッグ**: kebab-case の短い説明。日付を残したい場合は末尾に `-YYYY-MM-DD`
-
-| prefix | 用途 |
-|---|---|
-| `feat` | 新機能・機能拡張 |
-| `bug` | 不具合修正 |
-| `refactor` | 挙動を変えない構造改善・複雑性削減 |
-| `perf` | 速度・メモリ・リソースの改善（実測の裏付けを本文に置く） |
-| `docs` | ドキュメント・ルール・コメント整備 |
-| `chore` | 雑務（依存更新・メッセージ/表示の手直し・テストの前提整理など、機能でも不具合でもないもの） |
-| `research` | 調査・設計検討（成果物がコードでないもの） |
-| `human` | **人間しかできない作業**（動作確認・目視レビュー・外部サービスの操作・判断待ち。人がやるまで open。`期限:` 必須）。何をしてほしいかはスラッグに書く（例 `068-human-verify-ci-poll.md`） |
-| `retro` | **セッションの振り返り**（Claude が実質的な作業をやり切ったら自発的に起票。反省・気づき・改善案を書き、切り出し先を提案する。本文の残課題が空になったら done。詳細は下節） |
-
-例: `issues/001-refactor-makefile-test-autodiscovery.md` / `issues/002-bug-nvim-cterm-drift-2026-07-16.md`
-
-次番号の確認 (先に `git fetch` して origin 側も数える — 別セッションが push 済みの採番は
-working tree の `ls` には見えない。148 が 2 セッションで衝突した起点):
+次番号の確認（`find` で深さを切らずに数え、origin 側も数える）:
 
 ```sh
 git fetch origin
@@ -35,121 +15,41 @@ git fetch origin
   grep -E '^[0-9]{3}-' | sort | tail -1
 ```
 
-（`ls` でディレクトリを列挙する形にしない: `epic/<name>/` の 2 段を数え漏らす。`find` は深さを切らない）
+（`ls` でディレクトリを列挙しない: `epic/<name>/` の 2 段を数え漏らす）
 
-**番号の一意性は機械が守る**: `tests/issues/test_issue_numbers_unique.sh`（`make test` に自動発見で
-含まれる）が `issues/` 配下を掘って NNN の重複を検出し、重複していたら参照の数え方まで出す。
-2026-08-28 に 127 と 133 が同時に衝突していたのを人手で見つけたのが起点で、**衝突を先に踏むのは
-番号を取る次の人**（最大番号 + 1 が既に使われている / `issues/127-*` の glob が 2 件返る）。
+- **番号の一意性は `tests/issues/test_issue_numbers_unique.sh` が検査する**（`make test` に自動発見で含まれる）。
+  2026-08-28 に 127 と 133 が同時に衝突していたのを人手で見つけたのが起点
+- 並行セッションと同時に採番するときは、番号を取る前に一声かける。衝突したら**参照の少ない側を空き番号へ寄せる**
+  （`grep -rn '<番号>'` と `git log --grep='issue <番号>'` の両方を数え、commit message から参照されている側は
+  動かさない）。改番したファイルの冒頭に「旧番号の話ならこの issue」と注記を残す（実例: 135 と 136）
 
-**並行セッションと同時に採番するときは、番号を取る前に一声かける**（衝突は commit してから
-気づくと、参照の張り替えか改番のどちらかを必ず払うことになる）。衝突してしまったら
-**参照の少ない側を空き番号へ寄せる**。`grep -rn '<番号>'` の tracked 参照と
-`git log --grep='issue <番号>'` の commit message 参照を両方数え、**commit message は履歴なので
-直せない**ため、そちらから参照されている側は動かさない。改番したファイルの冒頭には
-「過去の会話やメモの『旧番号』がこの話ならこの issue」と注記を残す（番号だけ覚えている人の
-動線が切れるため。実例: 135 と 136）。
+## 完了: `scripts/issue_done.sh <NNN>`
 
-## `期限:` — 人が読む期限を本文に書く
+🚨 **done への移動は手でやらない**。`scripts/issue_done.sh <NNN>` が ①`done/`（group issue は
+`epic/<name>/done/`）へ移動 ②`next/` の claim symlink を削除 ③本文の相対リンクを張り直し
+④他 issue からの参照を張り直し、を 1 コマンドで行い、リンク検査（`tests/issues/test_issue_links_valid.sh` /
+`test_next_links_valid.sh`）が落ちたら移動を戻す。手作業では 2026-09-09 に 12 件中 4 回落とした（issue 313）。
+issues/ の外から markdown リンク `[issue 012](../issues/done/012-….md)` で書いた参照も張り直しの対象になる。
 
-本文冒頭のメタ行（`起票日:` の隣）に `期限: YYYY-MM-DD` を書ける。
+## 検査と表示
 
-- **`human` は必須**（人間待ちの作業は放置すると価値が腐るため）。他カテゴリは任意
-- **`human` を起票する前に「機械で測れないか」を一度問い、人が要ると判断した理由を本文に書く**。
-  「人にしかできない」は過大申告されやすい（実測 2026-09-10: human 5 件に当て直したら、278 は 6 項目中
-  5 件・338 は 6 件中 4 件が pty や既存テストで機械化でき、335 は項目が丸ごと不要になった）
-- 書式は**行頭 `期限:` + 半角コロン + `YYYY-MM-DD`**。全角コロンでも `issue-sync` は拾うが、
-  表記は半角に揃える（拾えなかった期限は「期限なし」と区別できず黙って埋もれる）
-- **この書式は `tests/issues/test_human_issues_have_deadline.sh` が検査する**（`make test` から自動で走る）。
-  箇条書き（`- 期限:`）・全角コロン・`YYYY-MM-DD` でない日付は CI で落ちる。
-  実際に踏んだ形: issue 375 が `- 期限:` だったため、hook も `issue-sync` も**黙って取りこぼし**、
-  human 6 件のうち 5 件しか期限が報告されていなかった（2026-09-15）
-- 期限は「読んで確認する期限」であって「直す期限」ではない
-- **既読の唯一の出典はファイルの位置**（`issues/` にある = 未読、`issues/done/` にある = 確認済み）。
-  既読ヘッダー・チェックボックスは使わない（本文を書き換え忘れると嘘が残るため、移動で表す）
-- 未完了の一覧は glogx の issues viewer（`i` キー）の **`human` タブ**が見せる。このタブは
-  **件数 0 でも All の右に固定**で出る（少数のうちに `other` へ沈んで見落とすのを防ぐため）。
-  ただし viewer は期限を表示しないので、期限は下の hook / skill が受け持つ
-- **未完了と期限切れはセッション開始時に自動で出る**: `_claude/hooks/human-tasks-due.sh`（SessionStart
-  hook。配線は `_claude/settings.json`）が未完了の `human` issue と期限切れ／期限間近を Claude の
-  コンテキストへ注入する。読み取れなかったもの（期限なし・書式不正・読み取り不可・抽出失敗）も
-  黙って捨てず列挙する。`issue-sync` skill でも同じ点検を最初に行う
+- `期限:` の書式は `tests/issues/test_human_issues_have_deadline.sh` が検査する（箇条書き・全角コロン・日付不正で落ちる。
+  issue 375 が `- 期限:` で hook と `issue-sync` から黙って漏れていた）
+- `next/` の symlink の有効性（`../<同名>` の形に固定）は `tests/issues/test_next_links_valid.sh`
+- glogx の issues viewer（`i` キー）: `human` タブは件数 0 でも All の右に固定で出る。`n` で `next/` の claim を
+  付け外しする。viewer は期限を表示しない。`epic/<name>/` は `▸ <name> (N ✓done)` の親行に折り畳まれ、
+  group 名と同じ番号の issue だけが親行に統合される。**契約の一次情報は
+  [`docs/issues-viewer-spec.md`](../docs/issues-viewer-spec.md)**
+- 🚨 group 内の `waiting/`（`epic/<name>/waiting/`）は viewer 未対応（迷子 `?` になる）。`closed/` のような綴りの揺れも迷子
+- 関わった issue の本文更新漏れは Stop hook `_claude/hooks/issue-progress-check.sh` が差し戻す（開始時 HEAD は
+  `issue-progress-start.sh` が記録）。human / retro の催促は `human-tasks-due.sh` / `retro-open.sh`（共通処理は
+  `_claude/hooks/lib/issue-hooks.sh`）
 
-## `retro` — セッションの振り返りを流さずに残す
+## 番号なしファイル
 
-Claude が**実質的な作業をやり切った時点**（機能追加・バグ修正・ルール整備・構造変更など）で
-`NNN-retro-<スラッグ>-YYYY-MM-DD.md` を自発的に起票する。typo 修正・数行の chore・調査だけで
-終わったセッションは対象外（薄い retro を量産すると形骸化する）。
+- `audit-log` — audit 実行の記録（TSV）。**issue ファイルをパスで参照しているため、既存ファイルを rename するとここの参照が切れる**
 
-- 中身は「どこで踏んだか / 何が回りくどかったか / 次に効きそうな改善」。うまくいった話は書かない
-- **提案にするのは、抽象度が高く他の作業にも転用できる気づきだけ**。問うのは「別の repo・別の機能・
-  別の種類の作業でも同じ形で効くか」。その issue・そのコード・その道具でしか起きない局所的な改善案は
-  汎用性がなく価値が低いので、切り出し先を提案しない（その場で直したか、直さないかを 1 行書くだけ）。
-  局所的な出来事から書き始めてよいが、提案は「どういう状況で・何をすべきか」の一般形に引き上げて書く
-  （引き上げられないなら局所案として扱う）
-- **提案する項目には切り出し先を添える**（新規 issue にする / `_claude/rules/` に落とす / 却下）。
-  切り出しの実行はユーザーの判断を待つ（勝手に issue を量産しない）
-- **done の条件は「本文の残課題が空になったこと」**（全項目が issue 化・rule 化・却下のいずれかで決着）。
-  実装の有無では判定できないため、`issue-sync` の自動 done 判定の対象外（`human` と同じ扱い）
-- ルールに落ちた項目は `_claude/rules/` を正本とし、retro 側には要約を残さない（二重管理は乖離を生む）
-- 却下した項目は消さずに「却下: 理由」を 1 行残す（同じ気づきが次の retro で再生産されるのを防ぐ）
-- **関わった issue の更新漏れは応答の終わりに自動で差し戻される**: `_claude/hooks/issue-progress-check.sh`（Stop）。
-  開始時 HEAD（`issue-progress-start.sh` が SessionStart で記録）からの commit subject `(NNN)` / next/ の claim を
-  「関わった issue」とし、本文が未変更・進捗の追記なし・参照する open issue が未変更なら block して書かせる。
-  正本は `~/.claude/CLAUDE.md`「Issue管理」。
-- **未決着の retro はセッション開始時に自動で出る**: `_claude/hooks/retro-open.sh`（SessionStart
-  hook。配線は `_claude/settings.json`）が open な retro を古い順に列挙する。`human` の期限催促
-  （`human-tasks-due.sh`）と同じ「読む契機を起動に依存させない」ための仕掛け。
-  `pending/` の retro は一覧には出るが「N 件」には数えない（`human` の保留と同じ規律）
-- **経過日数はファイル名末尾の `-YYYY-MM-DD`**（無ければ本文の `起票日:`）から取るので、retro は
-  日付サフィックスを付けて命名する。読めなかったものは hook が理由つきで列挙する
-  （`日付不明` / `読み取り不可` / `起票日が未来`）。黙って落とさないのが契約
+## 経緯
 
-## ディレクトリ構成
-
-- `issues/*.md` — open な issue
-- `issues/next/` — **「次にやる」目印 兼 着手の claim**（このディレクトリが在ることが claim 運用の opt-in。無い repo では規律ごと適用されない）。glogx の issues viewer の `n` で付け外しできる。**中身は issue ファイル本体ではなく `NNN-x.md -> ../NNN-x.md` の symlink**（issue 263。ファイルを動かすと本文の相対リンクが切れる。旧運用の実ファイルも読めるが、新しい claim は symlink で置く。有効性は `tests/issues/test_next_links_valid.sh` が検査する）。
-  **複数マシンが同じ repo を触るので、着手するときはここへ移してその移動だけを即 push する**
-  （push されていない claim は他マシンから見えず、二重着手を防げない）。完了したら `done/` へ。
-  規範は [`_claude/rules/claim-issue-in-next-and-push.md`](../_claude/rules/claim-issue-in-next-and-push.md)
-- `issues/pending/` — **凍結**した issue の置き場。着手条件・trigger を本文冒頭に書いておく。
-  再開の主導権は**自分**にある（条件が揃ったと判断したら `issues/` へ戻して着手する）
-- `issues/waiting/` — **着手済みだが、こちらから起こせない事象を待っている** issue の置き場（`◌`）。
-  pending との違いは**再開の主導権が誰にあるか**: waiting は事象が向こうから来るまで動かしようがない
-  （再現待ち・観測待ち・外部イベント待ち）。本文冒頭に**待っているもの**と、
-  **それが来たとき何が分かるか**を書く（「次に出るログの `step=` で打つべき修正が決まる」等）。
-  観測が来たら `issues/` へ戻して着手する。
-  🚨 **group 内 (`epic/<name>/waiting/`) は未対応**（置くと迷子 `?` になる。理由は viewer spec）
-- `issues/done/` — 完了した issue の移動先（ファイル名は変えずに移動）
-- `issues/epic/<name>/` — **親テーマ（epic）でまとめる group issue** の置き場。中の md は open として扱われ、
-  glogx の issues viewer では `<name> (N)` の親行に折り畳まれる（`Enter` / `Space` で展開）。
-  **固定 2 段**で、これより深くは掘らない。`epic/` 直下に置いた md は迷子（`?`）として表示される
-  - `issues/epic/<name>/next/` — group issue の claim 先（global の `next/` と同じ規律。viewer の `n` はここに `../NNN-x.md` の symlink を置く）
-  - `issues/epic/<name>/done/` — **group issue の完了先**（global の `issues/done/` へは出さない。出すとパスから epic 所属が消え、viewer が「何件中何件終わったか」を答えられなくなる）。
-    viewer では group を展開すれば**状態フィルタ (`a`) を進めなくても見える**（親行に `▸ <name> (5 ✓2)` と件数 + done 件数が出る。issue 291）
-  - `issues/epic/<name>/pending/` — group issue の保留先（同上。`⏸` で見える）
-  - **epic を新設するときは番号つきの親 issue を同時に起票する** (README は番号を持たず、作業依頼の対象に
-    指定できない。obaket 736 の実例、2026-09-06)。viewer が親行として統合するのは **group 名と同じ番号を
-    持つ issue** だけ (`epic/<NNN>/NNN-*.md`。`issues_view.go` の `g.parent`)。`epic/<slug>/` に
-    `NNN-epic-<slug>.md` を置く形も可だが、その親は viewer では子と同じ行に並ぶ。親 issue には目標・
-    子 issue の表・完了条件を書き、README は索引に留めて親を指す。親の完了は「子が全て done」
-  - 予約するのは `next/` `done/` `pending/` の 3 つだけ（**`waiting/` は group では未対応**）。`closed/` のような綴りの揺れは状態にならず、中の md は迷子 `?` として一覧に出る（黙って消えはしない）
-  - 契約の一次情報は [`docs/issues-viewer-spec.md`](../docs/issues-viewer-spec.md) の「対象 / 状態ディレクトリ」節
-- `audit-log` — audit 実行の記録（TSV）。issue ではない。**issue ファイルをパスで参照しているため、既存ファイルを rename するとここの参照が切れる**
-- この `README.md` も issue ではない
-
-## 運用ルール（詳細は `~/.claude/CLAUDE.md`「Issue管理」と `_claude/rules/`）
-
-- 対応が完了したら done へ移動する（global issue は `issues/done/`、group issue は
-  `issues/epic/<name>/done/`。issue 291）。
-  🚨 **移動は `scripts/issue_done.sh <NNN>` で行う**（手でやらない）。①`done/` へ移動
-  ②`next/` の claim symlink を削除 ③本文の相対リンクを新しい深さへ張り直し
-  ④**他の issue からこの issue への参照**を張り直し、の 4 つを 1 コマンドで行い、
-  リンク検査（`tests/issues/test_issue_links_valid.sh` / `test_next_links_valid.sh`）が
-  落ちたら移動を戻す。手作業では実測で落とす（2026-09-09 に 12 件中 4 回。うち 1 回は CI が赤 = issue 313）
-- issue の新規作成・大幅改訂は commit 前に codex レビューへ通す（[`issue-creation-codex-review.md`](../_claude/rules/issue-creation-codex-review.md)）
-- issue の記述を鵜呑みにしない。着手前に実コードと git 履歴で検証する（既に修正済み・false positive を弾く）
-
-## 既存ファイルの番号付け（2026-07-16 実施済み）
-
-規約導入以前のファイルは 2026-07-16 に一括 rename 済み（作成日順に 001〜017 を採番。audit-log・コード内コメント・docs・issue 間クロスリンクのパスも同時更新済み。commit message 内の旧パスは immutable なため対象外）。
+- 番号付け規約は 2026-07-16 導入。それ以前のファイルは同日に一括 rename 済み（作成日順に 001〜017。audit-log・
+  コード内コメント・docs・issue 間リンクも同時更新。commit message 内の旧パスは immutable なため対象外）

@@ -5,7 +5,7 @@
 #
 # なぜ: retro は「反省・気づきを chat に流さない」ための器なので、器自体が読まれないと
 # 目的を果たさない。retro の done 条件は「本文の残課題が空になったこと」= 実装の有無では
-# 判定できず issue-sync の自動 done 判定の対象外 (issues/README.md「`retro`」)。したがって
+# 判定できず issue-sync の自動 done 判定の対象外 (_claude/issue-rules.md「`retro`」)。したがって
 # 「誰も読まなければ永久に open のまま溜まる」が既定の壊れ方で、セッション開始という必ず
 # 通る場所で催促する。human タスクの期限催促 (human-tasks-due.sh) と同じ発想。
 #

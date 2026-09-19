@@ -80,7 +80,7 @@ find issues -name done -prune -o -type f -name '*.md' -print0   # 起点は repo
   （各項目が issue 化・rule 化・却下で決着）であり、実装の有無では判定できない。代わりに
   **未決着の項目が残っている retro を件数つきで報告する**（放置された気づきは次の retro で
   再生産されるため）。同じ点検は SessionStart hook (`_claude/hooks/retro-open.sh`) も行うが、
-  hook を切っている環境でも黙らないためこの skill でも見る。書式は `issues/README.md` の
+  hook を切っている環境でも黙らないためこの skill でも見る。書式は `~/dotfiles/_claude/issue-rules.md` の
   `retro` 節が正本
 
 ### Step 2: Phase A — readme 一覧テーブルとの照合（テーブルを持つ repo のみ）

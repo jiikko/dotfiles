@@ -7,7 +7,7 @@
 # なぜ: 動作確認を応答本文に書くと chat に流れて存在自体が忘れられる。issue に起こす運用
 # (issues/README.md) にしても、「読む契機」が glogx の viewer を開くか issue-sync を叩くかに
 # 依存する = 起動しなければ永久に気づかない。セッション開始という必ず通る場所で催促する。
-# 出典: ~/.claude/CLAUDE.md「Issue管理」/ issues/README.md。
+# 出典: _claude/issue-rules.md「`期限:`」「`human`」。
 #
 # 状態の正本はファイルの位置: issues/ 直下 / issues/next/ / issues/epic/<name>/ /
 # issues/epic/<name>/next/ = 未完了、issues/pending/ = 着手保留 (期限は追う)、

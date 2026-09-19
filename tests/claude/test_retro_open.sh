@@ -6,7 +6,7 @@
 # 黙るだけなので気づけない (= retro が誰にも見えない状態に戻る)。human-tasks-due.sh で
 # 実測された欠陥と同型のもの (カテゴリの部分一致誤検出 / 「読めなかった」の沈黙 /
 # pending の取りこぼし) を回帰として固定する。
-# 規範: issues/README.md「`retro`」、~/.claude/CLAUDE.md「Issue管理」
+# 規範: _claude/issue-rules.md「`retro`」
 set -euo pipefail
 unset CDPATH
 

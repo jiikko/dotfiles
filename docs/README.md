@@ -61,7 +61,7 @@ glogx の画面のうち、**複数 repo をこの規約に寄せる** / **書�
 | dotfiles 固有で、必要なときだけ読む規範 | [`rules/`](../rules/README.md) — zsh の hook / trap、bench の見方 (索引つき) |
 | ディレクトリ固有の規約 | そのディレクトリの `CLAUDE.md` (`scripts/` / `tests/` / `src/glogx/` / `_claude/`) |
 | 各ツールの使い方 | `src/<name>/README.md` と `<tool> --help` |
-| 作業の記録・残課題・振り返り | [`issues/`](../issues/) (書式は `issues/README.md`) |
+| 作業の記録・残課題・振り返り | [`issues/`](../issues/) (共通規約は [`_claude/issue-rules.md`](../_claude/issue-rules.md)、dotfiles 固有は `issues/README.md`) |
 | 検証レポートの中間生成物 | `./tmp` (gitignore。**結論は issue かコードへ移す**。掃除は `make clean-tmp`) |
 
 ## 書くときの規律
