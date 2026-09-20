@@ -164,7 +164,7 @@ Cleanup を回すので、`stampGraveyard` が打った値を一度も観測し�
 
 ## 派生 issue
 
-- [issue 400](400-chore-lockman-slow-mount-derivative-cases.md): テストが「速いローカル FS」を
+- [issue 400](done/400-chore-lockman-slow-mount-derivative-cases.md): テストが「速いローカル FS」を
   暗黙の前提にしている。今回の P1 は **既存テストでは構造的に観測できず**、レビュワーが
   遅延を注入して初めて見つかった。`--io-timeout` を縮めた派生ケースを足せば、このクラスを
   CI で捕まえられる (順序の pin は 364 で入れたが、振る舞いそのものは未検査)
