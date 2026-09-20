@@ -85,6 +85,78 @@ select が `done` を処理する前に `sigCh` が ready だと、Go の select
 `with.go` は「pgid が再利用されると無関係なプロセスグループへ撃つ」を明示的な脅威として
 扱っているので、**同じ基準がこの枝に適用されていないのは非対称**。
 
+## 着手前の整理 (2026-09-21。再導出を省くため)
+
+### 周辺 issue の現状
+
+| issue | 状態 | 本 issue への効き |
+|---|---|---|
+| [356](done/356-bug-lockman-with-releases-lock-while-grandchildren-run.md) | **done** | 転送が `killGroup` 経由になり `pgid <= 1` を撃たなくなった。窓そのものは不変 |
+| [366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) | **done** | **残る中間状態が 3 種類に増えた**(下の表)。回収機構の格下げ判断は本 issue と [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) の両方が閉じてから |
+| [384](done/384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) | **done** | 下の「残タスク 4 の答え」に直結 |
+| [385](done/385-design-lockman-on-lost-kill-vs-keep-renewing.md) | **done** | `runWith` の select ループに `leaseTracker` が入った。**この issue が触るのは同じ関数**なので、着手時に rebase 前提 |
+| [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) | **open** | 見捨てられた goroutine 側の残骸。本 issue とは経路が違う (あちらは timeout、こちらはシグナル) |
+
+### 残タスク 4 (`case sig := <-sigCh:` に `exited` の guard を入れるか) は **もう答えが出ている**
+
+[384](done/384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) の実測
+(2026-09-20 / darwin 24.6 / 3 回とも同じ) で、回収済み pgid への `kill(-pgid, sig)` は
+**すべて空振り**と分かった: グループが空 → **ESRCH** / ゾンビだけ → **EPERM** /
+**生きたメンバーが 1 つでもあれば成功**。実害には「pid 再利用 **かつ** 再利用した側が
+グループリーダー」が要る。[364](done/364-bug-lockman-with-release-failure-and-graveyard-retention.md)
+では**同じ結論で受容**し、`_ = killGroup(...)` の 2 箇所に捨てている理由を書いた。
+→ **本 issue でも「非対称だが受容」で揃えるのが自然**。guard を足すなら「揃えるため」であって
+実害の除去ではない (足すこと自体は数行)。
+
+### 実装の形 (未決。**ユーザーの判断が要る**)
+
+`signal.Notify` を `Acquire` の前へ出すだけでは足りない (本文の 🚨 のとおり buffer されるだけ)。
+**回収する枝**が本体:
+
+```go
+signal.Notify(sigCh, INT, TERM, HUP)   // ← Acquire より前
+meta, err := l.AcquireTimed(ttl, label)
+// 取得中に届いていたら、ここで片付けて落ちる (子はまだ起こしていない)
+select { case sig := <-sigCh: /* 解放 + 目印の回収 */; return 128 + sig; default: }
+cmd.Start()
+```
+
+🚨 **これは挙動変更を含む**: 取得中の Ctrl-C が**即死しなくなり、最大 `--io-timeout` (既定 10s)
+待ってから片付けて落ちる**。「即死するが lock を残す」現状との二択で、**片付けるには生きている
+必要があるので両立しない**。ここを決めてから着手する。
+
+代案: `AcquireTimed` は既に `withTimeout` + `abandon` (issue 362 の機構) で動いているので、
+シグナルで `abandon` を立てて `undoAbandonedPlace` に回収させる形もありうる。窓は縮むが
+**timeout.go の API を広げる**ので、機構を 1 つ増やすコストとの比較が要る (§0-A)。
+
+### 塞ぐ対象 (366 以降は 3 種類。**mark だけが契約を割る**)
+
+| 残るもの | 塞ぐ長さ | 契約違反か |
+|---|---|---|
+| `lock` | TTL (既定 30m) | 違反ではない |
+| `tmp/<gen>.takeover` | 猶予 (既定 30s、最大 15m) | 違反ではない |
+| `tmp/<gen>.takeover.<nanos>` (mark) | **掃除まで (~1h10m)** | **違反** |
+
+### 🚨 テストは **in-process では書けない** (着手時の最大のコスト)
+
+修正が無い状態 = 「シグナルでプロセスが即死する」なので、`go test` のプロセス内で自分へ
+SIGTERM を撃つと**テストランナーごと死ぬ** (変異を当てた瞬間にスイートが消える)。
+
+- **サブプロセスで実バイナリを起こす** e2e が要る (前例: `escalate_recheck_test.go`)
+- 窓は決定論で作れる: lock パスを FIFO にして `Acquire` を確実にブロック → その状態で SIGTERM →
+  **3 種類の残骸がゼロ**であることと rc を assert (`avoid-wall-clock-assertions.md` に沿う)
+- 出典の A-B ハーネス (40 試行 × 3、ランダム遅延) は**機構の特定用**で、恒久テストには向かない
+  (確率的な観測を CI に置くと flaky になる)
+
+### 見積もり (2026-09-21 時点)
+
+| 作業 | 目安 |
+|---|---|
+| 方針決定 (即死を捨てるか / abandon 経由にするか) | **判断待ち** |
+| 実装 (Notify の前出し + 回収の枝 + 転送枝の扱いを揃える) | 30〜45 分 |
+| e2e テスト (サブプロセス + FIFO、3 種類の残骸を assert) | 60〜90 分 |
+| 変異検証 (Notify を元の位置へ / 回収の枝を外す) + 敵対レビュー 2 周 | 60〜90 分 |
+
 ## 残タスク
 
 - [ ] 反証レビュー
@@ -97,6 +169,7 @@ select が `done` を処理する前に `sigCh` が ready だと、Go の select
       (`reclaimTakeoverClaim` / `takeoverClaimGrace`) を「取りこぼしの受け皿」へ格下げできるか
       再評価する。**362 と両方閉じるまでは外せない** (どちらの経路も目印を残す)
 - [ ] シグナル転送の枝 (`case sig := <-sigCh:`) に `escalateGroupKill` と同じ
-      `select { case <-exited: return; default: }` を入れるか決める。実害には pid の巻き戻し
-      再利用が要る (未確認リスク) が、`with.go` はそれを明示的な脅威として扱っているので
-      **同じ基準がこの枝にだけ適用されていないのは非対称**
+      `select { case <-exited: return; default: }` を入れるか決める。**384 の実測で答えはほぼ
+      出ている** (回収済み pgid への kill は ESRCH / EPERM で空振り。実害には pid 再利用 かつ
+      リーダー一致が要る)。364 は同じ結論で**受容**したので、揃えるなら「非対称を消すため」に
+      入れる (数行)、揃えないなら 364 と同じく**理由をコードに書く**
