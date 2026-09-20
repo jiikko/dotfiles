@@ -210,12 +210,20 @@ func TestFailedRenewDoesNotAdvanceLeaseDeadline(t *testing.T) {
 		setupErr <- os.WriteFile(l.lockPath(), []byte("{ torn"), 0o600)
 	}()
 
+	// 🚨 **肯定側の観測を 1 つ持つ** (敵対レビュー 385 の 2 周目 P3-C)。合否が「marker が無い」+
+	// 「rc == 125」だけだと**純粋な否定**になり、列が成立しなくても緑になる。実測: argv を
+	// 存在しないバイナリに替えると `cmd.Start()` が失敗して即 125 を返し、更新も昇格も期限も
+	// 一度も通らないのに PASS (0.02s。正常時は 0.91s)。子が走り始めたことを固定する。
+	started := filepath.Join(filepath.Dir(mark), "child-started")
 	rc := boundedInt(t, "runWith (中身を読めない lock)", func() int {
 		return runWith(l, ttl, "", true, // ← 既定 = --on-lost kill
-			[]string{"sh", "-c", fmt.Sprintf("sleep 3; : > %q", mark)})
+			[]string{"sh", "-c", fmt.Sprintf(": > %q; sleep 3; : > %q", started, mark)})
 	})
 	if err := <-setupErr; err != nil {
 		t.Fatalf("前提が作れていない: %v", err)
+	}
+	if _, err := os.Stat(started); err != nil {
+		t.Fatalf("子が走り始めていない (rc=%d)。この列は成立しておらず、何も検査していない", rc)
 	}
 	if _, err := os.Stat(mark); err == nil {
 		t.Fatalf("更新が 1 回も成功していないのに子が完走した (rc=%d)。"+
