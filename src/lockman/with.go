@@ -240,6 +240,15 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 			// 終了コードを透過する薄い包みなので、子が TERM を無視するなら素で実行した
 			// ときと同じ振る舞いにする。昇格するのは lease を失ったとき —
 			// **他者が既に引き継いでいて、止めないと二重実行になる**ときだけ。
+			//
+			// 🚨 **エラーを捨てているのは意図的** (issue 364 の 3)。`sigCh` と `done` が同時に
+			// ready なとき Go の select は一様ランダムに選ぶので、**回収済みの pgid へ撃つ**窓がある。
+			// 実測 2026-09-20 (issue 384。darwin 24.6、3 回とも同じ) でその窓の失敗はすべて空振りだと
+			// 分かっている: 回収済み (グループが空) → **ESRCH** / 回収前 (ゾンビだけ) → **EPERM** /
+			// **生きたメンバーが 1 つでもあれば成功**。つまり実害には
+			// 「窓の中で pid が再利用され、**かつ再利用した側がそのグループのリーダー**」が要る
+			// (未確認。手元では再現できていない)。報告する価値のある失敗が無いので黙って捨てる。
+			// 再評価の trigger: `with` に実利用者が現れ、シグナル転送の取りこぼしが報告されたとき。
 			_ = killGroup(pgid, sig.(syscall.Signal))
 		case <-ticker.C:
 			// 🚨 **保留した昇格は、lease の期限を過ぎたらここで必ず撃つ** (issue 385)。
@@ -411,6 +420,9 @@ func escalateGroupKill(pgid int, exited <-chan struct{}, grace time.Duration) {
 	default:
 	}
 	warnf("子が %v 以内に終わらないので強制終了する (lease は既に他者が持っている)", grace)
+	// 🚨 ここもエラーを捨てる (上の転送と同じ理由。issue 364 の 3)。直前の guard を通っている =
+	// まだ回収されていないと見えた時点なので、ここでの失敗は「guard の後に回収された」形に限られ、
+	// 実測ではその失敗はすべて空振り (ESRCH / EPERM)。
 	_ = killGroup(pgid, syscall.SIGKILL)
 }
 
