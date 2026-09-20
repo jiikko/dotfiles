@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -226,4 +227,121 @@ func forEachGraveyard(t *testing.T, l *Locker, fn func(string)) {
 			fn(filepath.Join(graveyardDir(l), e.Name()))
 		}
 	}
+}
+
+// 🚨 **鈍いマウントでも、退避の記録が消えないこと** (issue 400)。
+//
+// 364 の P1 は「**不可逆な操作 (`os.Rename`) のあとに残した I/O が `--io-timeout` を食い切ると、
+// その I/O が前提の不変条件が黙って壊れる**」形だった (実測 A-B: 速いマウントでは graveyard に
+// 1 件残り、鈍いマウント (30ms) では 0 件 = 退避の記録がその場で消える)。364 は打刻に使う時刻を
+// rename の**前**で取ることで窓を縮めたが、**「鈍いマウントでも記録が残る」という振る舞い自体は
+// CI で検査されていなかった** — `newTestLocker` が速いローカル APFS + 余裕のある timeout しか
+// 作らないので、この退行は既存テストでは**構造的に観測できない**。
+//
+// 🚨 **このテストが守るのは「振る舞い」**。順序 (時刻を rename より前に取ること) は
+// `TestBreakTakesTheStampTimeBeforeRenaming` が pin しているので、ここでは assert しない
+// (同じ事実を 2 箇所で見ると、変異がどちらに当たったのか読めなくなる)。
+//
+// 決定論の作り方 (`avoid-wall-clock-assertions.md`。`sleep` で「たぶん超える」を作らない):
+//
+//	① rename の直後の seam で**テストが解放するまでブロック**する → `--io-timeout` を確実に食い切る
+//	② その seam の中で **probe dir を壊す** → 退避の**後**に `serverNow` を呼ぶ実装なら打刻できない。
+//	   rename の前に取った時刻を使う実装なら、I/O 無しで打刻が着地する
+//	③ 判定は時間ではなく「**記録が残っているか**」
+//
+// このケースが red になる退行 (どちらも「時刻をいつ取るか」の別々の壊し方):
+//   - 打刻の時刻を rename の**後ろ**で取り直す (364 以前の `Break`)
+//   - `stampGraveyard` が渡された時刻を無視して `serverNow` を呼ぶ (364 以前の `stampGraveyard`)
+func TestGraveyardRecordSurvivesSlowMount(t *testing.T) {
+	// 🚨 timeout は**テスト側で十分小さく固定**する (マシンの速さに依存させない)
+	l, err := NewLocker(t.TempDir(), 200*time.Millisecond)
+	if err != nil {
+		t.Fatalf("NewLocker: %v", err)
+	}
+	if _, err := l.Acquire(time.Minute, "holder"); err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	// retention を確実に超えた古さ (この打刻が更新されないと、次の掃除で消える)
+	old := time.Now().Add(-(graveyardRetention + 24*time.Hour))
+	if err := os.Chtimes(l.lockPath(), old, old); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+	probeDir := filepath.Join(l.metaDir, probeDirName)
+
+	release := make(chan struct{})
+	entered := make(chan struct{}, 1)
+	var releaseOnce sync.Once
+	releaseSeam := func() { releaseOnce.Do(func() { close(release) }) }
+	orig := breakAfterRenameHook
+	breakAfterRenameHook = func(bool) {
+		// ② 退避の**後**に I/O を必要とする実装を落とすため、ここで probe を壊す
+		_ = os.Chmod(probeDir, 0o555)
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		<-release // ① 解放するまで返らない = --io-timeout を必ず食い切る
+	}
+	t.Cleanup(func() {
+		breakAfterRenameHook = orig
+		releaseSeam()
+		_ = os.Chmod(probeDir, metaDirMode)
+	})
+
+	done := make(chan error, 1)
+	go func() { done <- l.BreakTimed() }()
+
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("前提が作れていない: rename 後の seam に入らない")
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, errIOTimeout) {
+			t.Fatalf("鈍いマウントなのに期限切れになっていない: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("BreakTimed が 10 秒以内に戻らない (包みが無い)")
+	}
+
+	// 見捨てられた goroutine を進ませ、打刻が着地するのを**成立条件**で待つ
+	releaseSeam()
+	stamped := waitForCondition(t, 5*time.Second, func() bool {
+		ok := false
+		forEachGraveyard(t, l, func(p string) {
+			if fi, err := os.Stat(p); err == nil && fi.ModTime().After(old.Add(time.Hour)) {
+				ok = true
+			}
+		})
+		return ok
+	})
+	if !stamped {
+		t.Fatalf("鈍いマウントで打刻が着地しない (退避の後に I/O が要る実装になっている)。" +
+			"次の掃除で退避の記録が消える")
+	}
+
+	// 期限切れで帰った後に掃除が走る経路 (`dispatch` の defer) を再現する
+	_ = os.Chmod(probeDir, metaDirMode) // 掃除は serverNow を使うので戻す
+	if res := l.Cleanup(true); len(res.Errors) != 0 {
+		t.Fatalf("Cleanup: %v", res.Errors)
+	}
+	if n := countGraveyard(t, l); n != 1 {
+		t.Fatalf("鈍いマウントで退避の記録が消えた (%d 件)", n)
+	}
+}
+
+// waitForCondition は成立条件を上限つきでポーリングし、成立したかを返す (壁時計で待たない)。
+// 🚨 **成立しなかったことを呼び出し側が判定に使う**ので、ここでは Fatal にしない
+// (「待っても成立しない」がこのテストの red そのもの)。
+func waitForCondition(t *testing.T, limit time.Duration, ok func() bool) bool {
+	t.Helper()
+	deadline := time.Now().Add(limit)
+	for time.Now().Before(deadline) {
+		if ok() {
+			return true
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return false
 }
