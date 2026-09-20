@@ -3,7 +3,7 @@
 起票日: 2026-09-19
 カテゴリ: chore / priority: **medium**
 対象: `src/lockman/graveyard_retention_test.go` / `lock_test.go` (と、同種の前提を持つ他のテスト)
-出典: [issue 364](364-bug-lockman-with-release-failure-and-graveyard-retention.md) の反証レビュー (2026-09-19) のぼやき
+出典: [issue 364](../364-bug-lockman-with-release-failure-and-graveyard-retention.md) の反証レビュー (2026-09-19) のぼやき
 反証レビュー: 未実施
 
 ## 問題
@@ -36,7 +36,7 @@
 
 ### 🚨 壁時計で作らないこと
 
-`sleep` で遅さを模すと [`avoid-wall-clock-assertions.md`](../_claude/rules/avoid-wall-clock-assertions.md)
+`sleep` で遅さを模すと [`avoid-wall-clock-assertions.md`](../../_claude/rules/avoid-wall-clock-assertions.md)
 に正面から反する (速いマシンでは緑のまま通り、負荷が上がった日にだけ落ちる)。
 窓は**決定論で**作る:
 
