@@ -1,6 +1,10 @@
 # 408 (tool): 変異検証の前提検査を共通化する — 参考実装は `tests/issues/test_issue_done.sh`
 
 起票日: 2026-09-20 (出典: obaket 872 の retro 項目 6 の切り出し検討)
+
+> **pending (2026-09-21〜)**: 着手条件は下の「trigger」。
+> **着手するときは、まず下の「設計の出発点」節から読む** — 起票時の設計 (in-place 変異 + dirty guard) は
+> 参考実装の読み違いに基づいており、受け入れ条件の半分が不要になる。
 **codex 反証レビュー 1 本で中心前提が 3 つ崩れたので、起票と同日に全面改稿した** (下の「崩れた主張」節)。
 
 ## 事実 (出典にあたって数え直したもの)
@@ -9,13 +13,13 @@
 
 | 日付 | episode | 内容 | 出典 |
 |---|---:|---|---|
-| 2026-09-04 | 1 | **worktree `~/wt-227228` 上で** 未コミットの修正を復元で消した (7 ファイルに及んだ) | [250](done/250-retro-fullscreen-registry-and-termsafe-gate-2026-09-04.md) |
-| 2026-09-14 | 3 | ルールを読んでいて 3 回 | [374](done/374-retro-derived-fields-guard-cache-and-mutation-2026-09-14.md) |
-| 2026-09-17 | 1 | 足したばかりのテストを 1 ケース目の checkout で消した | [389](done/389-retro-glogx-cursor-glide-and-shift-space-2026-09-17.md) |
-| 2026-09-20 | 1 | 未 commit の置換 4 か所を巻き戻し、「120 秒 green」の誤読を生んだ | [rationale](../_claude/rules-rationale/mutation-verify-new-tests.md) / obaket 871 |
+| 2026-09-04 | 1 | **worktree `~/wt-227228` 上で** 未コミットの修正を復元で消した (7 ファイルに及んだ) | [250](../done/250-retro-fullscreen-registry-and-termsafe-gate-2026-09-04.md) |
+| 2026-09-14 | 3 | ルールを読んでいて 3 回 | [374](../done/374-retro-derived-fields-guard-cache-and-mutation-2026-09-14.md) |
+| 2026-09-17 | 1 | 足したばかりのテストを 1 ケース目の checkout で消した | [389](../done/389-retro-glogx-cursor-glide-and-shift-space-2026-09-17.md) |
+| 2026-09-20 | 1 | 未 commit の置換 4 か所を巻き戻し、「120 秒 green」の誤読を生んだ | [rationale](../../_claude/rules-rationale/mutation-verify-new-tests.md) / obaket 871 |
 
 **= 17 日で 6 episode。** 別類型 (当たっていない変異 / 構文エラーの変異) が 2026-09-10 に 2 件
-([348](done/348-retro-issue-done-tool-and-truecolor-guard-2026-09-10.md))。**両者は同じ guard で止まらないので分けて数える。**
+([348](../done/348-retro-issue-done-tool-and-truecolor-guard-2026-09-10.md))。**両者は同じ guard で止まらないので分けて数える。**
 
 🚨 **2026-09-04 は worktree 上で起きている。** ルール本文も
 「worktree が消すのは他人の混入だけで、**その worktree にある自分の未コミット変更**は同じように消える」と
@@ -40,20 +44,48 @@
 ## 既にあるもの (ゼロから作る issue ではない)
 
 - **`tests/issues/test_issue_done.sh` の `check_mutant`** — 変異を当てて `diff -q` で**当たったことを確認**し、
-  `bash -n` で構文を見て、期待したキーワードで red を確認し、snapshot で全復元する。
-  **本 issue が欲しい guard のほぼ全部が、issue-done 専用の形で既に実装されている**。一般化の出発点はここ
+  `bash -n` で構文を見て、期待したキーワードで red を確認し、fixture の snapshot 差分で半端な状態を検出する。
+  一般化の出発点はここ。🚨 **ただし下の「設計の出発点」節のとおり、これは作業ツリーを変異させていない**
 - **`scripts/with_fresh_worktree.sh`** — worktree の作成と cleanup
 - **`~/.claude/skills/codex-drive/SKILL.md` の `[3.8]`** — worktree / 変異適用 / 実行 / 復元 / 結果表 / spot check の手順。
   軽量経路では `cp` 1 世代の backup を明示的に許可している
 
 → 新規性は「**`bin/` の汎用 CLI として切り出すこと**」だけ。`[3.8]` のフロー全体を新しく機械化する話ではない。
 
+## 🚨 設計の出発点 — 参考実装は in-place 変異ではない (2026-09-21 追記)
+
+起票時の設計は「作業ツリーのファイルを変異させ、guard で事故を止める」前提だったが、
+**参考実装 `check_mutant` は作業ツリーを 1 バイトも変異させていない**:
+
+- `make_fake_root` が**スクリプトを fake root へコピーしてから** sed を当て、`"$fake/scripts/issue_done.sh"` を実行する
+- 作業ツリーの `$SCRIPT` は `diff -q` の比較対象として読むだけ
+- `snapshot "$dm"` が見ているのも **fixture ディレクトリ**であって source tree ではない
+
+**参考実装に dirty guard が無いのは要らないからで、copy-then-mutate という構造が復元事故を原理的に
+起こさない** (`adversarial-review-own-safeguards.md` §0-A「そもそも発生させない構造はないか」)。
+起票時はこの問いを飛ばして guard の設計に入っていた。
+
+帰結:
+
+- 下の受け入れ条件のうち **dirty 拒否 / 復元 / 残骸ゼロ / trap 1 本 / 復元失敗時の結果状態**は、
+  **in-place を採る場合にだけ**要る。copy-then-mutate なら大半が消える
+- 「未確定」に書いた衝突 (dirty 拒否 vs 開発中コードの検証) も in-place 固有で、
+  コピーして変異させるなら未コミットのコードもそのままコピーできる
+- したがって道具の本体は **guard CLI ではなく「使い捨てコピーと baseline を安く作ること」**になり、
+  `codex-drive [3.8]` の機械化に近づく
+
+**着手時に確かめること**: copy-then-mutate が一般化するか。再配置できるスクリプト
+(`ISSUES_DIR` を env から取る `issue_done.sh`) では綺麗に効くが、Go module / Swift package は
+ツリーを動かすとビルドキャッシュと module path にぶつかる (だから `scripts/with_fresh_worktree.sh` がある)。
+一般形はおそらく「script は fake root / ビルド対象は worktree」の二本立て。
+
 ## やること (案)
 
 `tests/issues/test_issue_done.sh` の `check_mutant` を **repo 非依存に一般化**して `bin/` へ出す。
 入口で必ず強制するもの:
 
-1. **`git status --porcelain` が空でなければ拒否** (`--allow-dirty` は置かない。抜け道は事故の再生産)
+1. **in-place を採る場合に限り**、`git status --porcelain` が空でなければ拒否する
+   (`--allow-dirty` は置かない。抜け道は事故の再生産)。copy-then-mutate ならこの条件自体が不要
 2. 変異を当てた後、**当たったこと**を確認 (`diff -q`)
 3. 構文検査 (拡張子から言語を決める)。通らなければ **第 3 の結果** (red でも green でもない)
 4. `--verify` の結果を **rc と実行件数の両方**で記録。実行 0 件を green にしない
@@ -78,16 +110,21 @@
 
 ## 未確定 (着手前に決めること)
 
-- **未コミットの実装をどう変異させるか**。dirty 拒否と「開発中コードを検証したい」は正面から衝突する。
-  `[3.8]` は「worktree へ patch を持ち込み **baseline commit を作ってから**変異させる」設計なので、
-  それを道具側に内蔵するのが筋。CLI 仕様に baseline commit / 対象 repo / 複数ファイル / 復元失敗時の
-  結果状態が無いまま作ると、dirty 拒否を足しても普通の開発フローで使えない (P3 指摘)
+- **in-place と copy-then-mutate のどちらを採るか** (上の「設計の出発点」節)。後者を採れば
+  「未コミットの実装をどう変異させるか」という衝突自体が消える
+- **残骸ゼロの確認を汎用版でどう作るか**。参考実装は fixture ディレクトリの snapshot 差分で見ているが、
+  汎用版には fixture が無い。代替は `git status --porcelain` の前後比較になり、
+  **repo 外の生成物・子プロセスは拾えない**。受け入れ条件「`test_issue_done.sh` より弱くしない」は
+  構造的に満たせない可能性があるので、着手時に射程を書き直す
 
 ## やらない判断もありうる
 
 - 変異の当て方はタスクごとに違う (sed / python / patch / 旧実装の貼り直し)。汎用化しすぎると
   「当てる」部分は結局その場のコードになり、guard だけが残る。**それでも上の 6 episode は全部
   guard 側の抜け**なので、「当てるのは呼び出し側、guard はハーネス」の分担で足りる見込み
+- 🚨 **6 episode は「変異の前に WIP commit する」だけでコード 0 行で消える形** (表の 4 件すべてが
+  未コミットの変更を `git checkout --` で消した形)。道具の上乗せ分は「その規律を機械で強制すること」
+  であって、5 つの guard 全部が新規価値ではない
 - ただし効果は **復元事故 6 episode に限定**される。9/14 の assert 誤り・9/17 の観測設計・9/20 の
   fixture / seam は**この道具では止まらない** (起票時はここを過大に見積もっていた)
 
