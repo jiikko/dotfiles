@@ -1,42 +1,66 @@
-# goenv の版を上げると go 製ツールがまとめて消えるのに、入れ直す導線が無い
+# goenv の版を上げると go 製ツールが使えなくなるが、**実際に困るのは 1〜2 本だけ**だった
 
 起票日: 2026-09-20
-カテゴリ: chore / priority: low〜medium
-対象: `setup.sh` / `Brewfile` / `global_go_version` の導線
+カテゴリ: chore / priority: low
+対象: `~/go/<version>/bin` の go 製ツール群 / `scripts/check_unused_excluding_tests.sh` の案内
 出典: [405](done/405-bug-staticcheck-guard-passes-through-goenv-shim.md) の残る問題
 
-## 事実 (2026-09-20 の実測)
+## 事実
 
-goenv は **GOPATH を版ごとに分ける** (`~/go/<version>`)。1.25.4 → 1.26.0 の版上げで:
+goenv は **GOPATH を版ごとに分ける** (`~/go/<version>`)。`go install` したバイナリはその版の
+`bin` に入るので、global を 1.25.4 → 1.26.0 へ上げると**旧版の bin にある 17 本が一斉に
+PATH から外れる** (ファイルは消えていない。`~/go/1.25.4/bin` に残っている)。
+shim は残るので `command -v` は成功し続ける (405 のバグの原因)。
 
-| | |
-|---|---|
-| `~/go/1.25.4/bin` | **17 本** (staticcheck / golangci-lint / gopls / goimports / dlv / revive / errcheck / deadcode / benchstat / godef / gotags / impl / iferr / motion / gomodifytags / fillstruct / asmfmt) |
-| `~/go/1.26.0/bin` | **空** (405 で staticcheck を入れるまで) |
+## 🚨 起票時の前提が 2 つ誤っていた (2026-09-20 に訂正)
 
-shim は残るので `command -v` は成功し続ける。405 はそのせいで**ガードが素通りする**バグを直したが、
-**「版を上げるたびに 17 本が消える」導線そのものは手つかず**。
+1. **「`gopls` / `dlv` / `goimports` が消えてエディタが困る」は誤り**。
+   `gopls` と `goimports` は **mason が入れる** (`nvim/lua/dotfiles/lsp.lua` の `server_packages` と
+   `_nviminit.lua` の `mason-tool-installer` の `ensure_installed`)。mason bin は
+   `nvim-lspconfig` の `BufReadPre` で PATH 先頭へ prepend されるので、**goenv 側が空でも
+   nvim は自分が入れた方を使う**
+2. **「`global_go_version` の導線」は存在しない**。ファイル (`./global_go_version` = `1.26.0`) は
+   実在するが、**参照しているのは issue の本文だけ** (`.sh` / `.zsh` / `Makefile` / `.lua` / `.yml`
+   からの参照は 0 件)。「版を上げる導線に入れ直す処理を足す」は**存在しない場所を指していた**
 
-## 何が困るか
+## 使用実績の全数勘定 (2026-09-20)
 
-- `make test` は staticcheck を入れ直したので緑に戻ったが、**`gopls` / `dlv` / `goimports` は
-  消えたまま** (エディタ側で効く。気づくのは補完・定義ジャンプが死んだとき)
-- `golangci-lint` は各 module の Makefile が `go run …@v2.5.0` で都度取るので影響を受けていない
-  = **同じツール群の中で導入経路が 3 通りに割れている** (go install / go run の pin / 未管理)
-- `setup.sh` / `Brewfile` のどちらにも staticcheck は無く、「各自が `go install` する」前提
+17 本それぞれを repo 全体で参照検索し、誤検出 (散文の `impl` / `motion` 等) を目視で除いた結果:
 
-## 対応の候補 (未決)
+| ツール | 実際の参照 | 持ち主 | 判定 |
+|---|---|---|---|
+| `staticcheck` | `scripts/check_unused_excluding_tests.sh` / CI | **持ち主なし** (手動 `go install`。CI だけ `v0.7.0` を pin) | **入れ直した** (405 で現行版へ) |
+| `goimports` | `_nviminit.lua` の conform (Go の保存時整形) | **mason** (`ensure_installed`) | **入れ直した** (mason 経由。下記) |
+| `gopls` | `nvim/lua/dotfiles/lsp.lua` | **mason** | 対応不要 (mason にあった) |
+| `golangci-lint` | 各 module の Makefile | **`go run …@v2.5.0`** (都度取る) | 対応不要 (版上げの影響を受けない) |
+| `errcheck` | `.golangci.yml` に**名前**が出るだけ | golangci-lint が内蔵 | 対応不要 (単体のバイナリは不要) |
+| 残り 12 本 (`asmfmt` / `benchstat` / `deadcode` / `dlv` / `fillstruct` / `godef` / `gomodifytags` / `gotags` / `iferr` / `impl` / `motion` / `revive`) | **0 件** | — | **入れ直さない** |
 
-1. **版を上げる導線と同じ場所で入れ直す**。`global_go_version` を上げる手順 / `setup.sh` に
-   「現行版へ go install する一覧」を置く。CI と同じ**版 pin** を持たせる (`unused.yml` は
-   `v0.7.0` を pin している)
-2. **`go run …@<pin>` へ寄せる** (golangci-lint と同じ形)。都度取るので版上げの影響を受けないが、
-   毎回のダウンロード / 起動が遅くなるものはエディタ用途に向かない
-3. **エディタ用 (gopls / dlv) と検査用 (staticcheck 等) で分ける**。前者は版に追従させ、
-   後者は pin して `go run` へ寄せる
+## やったこと
 
-## 受け入れ条件
+- `goimports` を **mason で** 入れ直した (`nvim --headless "+Lazy! load mason.nvim mason-tool-installer.nvim" "+MasonToolsInstallSync"`)。
+  🚨 `go install` では入れない — 宣言された持ち主は mason なので、素の `go install` で入れると
+  **同じツールに持ち主が 2 つ**できる (mason bin が PATH 先頭なので、goenv 側は使われないまま残る)
+  - ついでに同じ `ensure_installed` にあった `prettierd` / `shellcheck` / `shfmt` も入った
+    (どれも mason bin には無かった = **mason-tool-installer が一度も走っていなかった**)
+- 残り 12 本は**入れ直さない**。参照 0 件で、必要になった人がその場で `go install` すれば足りる
 
-- [ ] 版を上げた直後に「消えたツール」が分かる、または自動で入り直す
-- [ ] 入れ直す版は CI と同じ pin を使う (手元と CI で版が割れない)
-- [ ] 導入経路が何通りあるかを 1 箇所に書く (いまは go install / go run pin / 未管理の 3 通り)
+## 残る本当の問題 (優先度 low)
+
+**`staticcheck` だけが持ち主のいない `go install` に依存している**。版を上げると消えるが、
+405 のガードが「実行できない」を検出して**入れるコマンドを版つきで出す**ようになったので、
+黙って壊れることはなくなった。これ以上の自動化 (setup.sh へ一覧を置く / `go run` の pin へ寄せる) は、
+**対象が 1 本では割に合わない**と判断して見送る。
+
+再開の trigger: 持ち主のいない go 製ツールが 2 本目を超えたとき。
+
+## 残タスク
+
+- [x] 使用実績の全数勘定 (上表)
+- [x] 困るものだけ入れ直した (`goimports` を mason 経由で。`staticcheck` は 405 で対応済み)
+- [x] 起票時の前提の誤り 2 件を訂正した
+- [ ] **未確認**: mason-tool-installer が**普段の nvim 起動で走るか**。今回は headless では
+      `VeryLazy` が発火せず、`MasonToolsInstallSync` を明示的に呼んで入れた。
+      4 本とも入っていなかったのは「一度も走っていない」証拠なので、**普段の起動でも走らない
+      可能性がある** (走るなら次に nvim を開いた人が自動で入る)。
+      確認手段: 実端末で nvim を開き、mason bin に新しいツールが増えるかを見る
