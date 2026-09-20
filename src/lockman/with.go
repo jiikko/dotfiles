@@ -111,15 +111,30 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	// グループへ SIGTERM を撃つと非 setsid の孫は死ぬが、setsid した孫は新しい pgid へ
 	// 移っており生存する)。プロセスグループで回収できる範囲が上限。
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	// 🚨 **ハンドラは子を起こす"前"に立てる** (issue 363)。旧版は `cmd.Start()` の**後**で
+	// `signal.Notify` していたので、その窓で届いた INT / TERM / HUP は**既定処理**で lockman を
+	// 即死させる。子は `Setpgid: true` で別のプロセスグループに居て端末のシグナルを受けないので、
+	// **孤児として走り続ける** — lease を更新する者が居ないまま TTL が切れ、他ホストが引き継ぐと
+	// 同じ排他区間に子が 2 つ並ぶ。出典の A-B 実測 (40 試行 ×3、遅延 0..10ms でランダムに SIGTERM、
+	// 子は TERM を無視): 漏れ 20/120 のうち **9 件が「孤児の子 + lock 漏れ」**で、
+	// **全 20 件が stdout 0B / stderr 0B の完全な無言**だった。
+	//
+	// 🚨 **`Acquire` 中の窓はこれでも残る** (2026-09-21 の判断で**受容**)。そこは子がまだ
+	// 居ないので二重実行にはならず、残るのは `lock` (TTL で解ける) / 調停の目印 (猶予で解ける) /
+	// mark (**掃除まで ~1h10m = 既定 TTL 30m を超える唯一の契約違反**)。
+	// 消すには「取得中も生きて片付ける」形が要り、それは**取得中の Ctrl-C を即死でなくする**
+	// ことと引き換えになる。即死を保つ方を選んだ (mark を消したいなら 366 の猶予側が筋)。
+	sigCh := make(chan os.Signal, 4)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(sigCh)
+
 	if err := cmd.Start(); err != nil {
 		warnf("実行できない: %v", err)
 		return exitWithInvalid
 	}
 	pgid := cmd.Process.Pid
-
-	sigCh := make(chan os.Signal, 4)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-	defer signal.Stop(sigCh)
+	afterChildStartHook()
 
 	ticker := time.NewTicker(ttl / renewDivisor)
 	defer ticker.Stop()
@@ -425,6 +440,12 @@ func escalateGroupKill(pgid int, exited <-chan struct{}, grace time.Duration) {
 	// 実測ではその失敗はすべて空振り (ESRCH / EPERM)。
 	_ = killGroup(pgid, syscall.SIGKILL)
 }
+
+// afterChildStartHook は「子を起こした直後」に割り込む seam。既定は何もしない。
+// 🚨 **`signal.Notify` より後・select ループより前**という窓を、テストから決定論で作るために要る
+// (issue 363)。ここで自分へシグナルを撃つと、ハンドラが立っていれば `sigCh` へ、
+// 立っていなければ**既定処理**へ流れる = 修正の有無がそのまま差になる。
+var afterChildStartHook = func() {}
 
 // escalateBeforeKillHook は「猶予が切れてから SIGKILL を撃つまで」に割り込む seam。
 // 既定は何もしない。**テストが「timer 枝を取った後に子が終わった」状態を決定論で作る**ために使う
