@@ -1,5 +1,7 @@
 # lockman の小粒な穴 4 件 (rc=0 での解放漏れ / graveyard の retention / reap 済み pgid への kill / 壁時計依存テスト)
 
+> 🚨 **担当中: Claude セッション (opus, dotfiles)**（2026-09-21〜）
+
 起票日: 2026-09-12
 カテゴリ: bug / priority: low〜medium
 対象: `src/lockman/with.go` / `lock.go` / `cleanup.go` / `lock_test.go`
