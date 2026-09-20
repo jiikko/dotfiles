@@ -3,7 +3,7 @@
 起票日: 2026-09-20
 カテゴリ: chore / priority: low
 対象: `~/go/<version>/bin` の go 製ツール群 / `scripts/check_unused_excluding_tests.sh` の案内
-出典: [405](done/405-bug-staticcheck-guard-passes-through-goenv-shim.md) の残る問題
+出典: [405](405-bug-staticcheck-guard-passes-through-goenv-shim.md) の残る問題
 
 ## 事実
 
@@ -59,8 +59,11 @@ shim は残るので `command -v` は成功し続ける (405 のバグの原因)
 - [x] 使用実績の全数勘定 (上表)
 - [x] 困るものだけ入れ直した (`goimports` を mason 経由で。`staticcheck` は 405 で対応済み)
 - [x] 起票時の前提の誤り 2 件を訂正した
-- [ ] **未確認**: mason-tool-installer が**普段の nvim 起動で走るか**。今回は headless では
-      `VeryLazy` が発火せず、`MasonToolsInstallSync` を明示的に呼んで入れた。
-      4 本とも入っていなかったのは「一度も走っていない」証拠なので、**普段の起動でも走らない
-      可能性がある** (走るなら次に nvim を開いた人が自動で入る)。
-      確認手段: 実端末で nvim を開き、mason bin に新しいツールが増えるかを見る
+- [x] **受容 (ユーザー判断 2026-09-20)**: mason-tool-installer が普段の nvim 起動で走るかは
+      **確認しない**。理由は「**足りなければ実行時にエラーで分かる**」から (整形が効かない /
+      LSP が起動しない、はすぐ目に見える)。
+      🚨 観測としての限界を記録しておく: 今回 4 本を入れた**後**では「走ったが入れるものが
+      無かった」と「走っていない」を**区別できない** (有無で結果が変わらない観測)。
+      判別するには pty を与えて `VeryLazy` を発火させる必要があるが、**そこまでのコストは
+      掛けないと決めた**。再開の trigger: `ensure_installed` に足したツールが入らない、と
+      気づいたとき (そのときは「一度も走っていない」が確定する)
