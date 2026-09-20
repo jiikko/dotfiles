@@ -3,7 +3,7 @@
 起票日: 2026-09-12
 カテゴリ: bug / priority: low〜medium
 対象: `src/lockman/with.go` / `lock.go` / `cleanup.go` / `lock_test.go`
-出典: [issue 358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) の敵対レビュー 5 周目
+出典: [issue 358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) の敵対レビュー 5 周目
 反証レビュー: 未実施。**出典は opus 3 体による実測**
 
 単独では issue を立てるほどでない 4 件をまとめる。**それぞれ独立に直せる**。
@@ -52,7 +52,7 @@ stderr に `解放に失敗:` は出るが rc は成功のまま。**rc だけ�
 
 ### 🚨 受容 (2026-09-21)。384 の実測でリスクの幅が本文より**狭い**と分かった
 
-[384](done/384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) の EPERM 追試
+[384](384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) の EPERM 追試
 (2026-09-20 / darwin 24.6 / 3 回とも同じ) が、この窓で起こりうる失敗を全部押さえている:
 
 | グループの状態 | `kill(-pgid, sig)` |
@@ -186,7 +186,7 @@ Cleanup を回すので、`stampGraveyard` が打った値を一度も観測し�
 
 ## 派生 issue
 
-- [issue 400](done/400-chore-lockman-slow-mount-derivative-cases.md): テストが「速いローカル FS」を
+- [issue 400](400-chore-lockman-slow-mount-derivative-cases.md): テストが「速いローカル FS」を
   暗黙の前提にしている。今回の P1 は **既存テストでは構造的に観測できず**、レビュワーが
   遅延を注入して初めて見つかった。`--io-timeout` を縮めた派生ケースを足せば、このクラスを
   CI で捕まえられる (順序の pin は 364 で入れたが、振る舞いそのものは未検査)

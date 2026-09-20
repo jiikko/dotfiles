@@ -56,7 +56,7 @@ lockman の中核の不変条件を測るテストが、低頻度で `引き継�
   まだ古い state で見ている窓)
 - ハーネス由来なら、判定軸を壁時計から外す
   ([`avoid-wall-clock-assertions.md`](../../_claude/rules/avoid-wall-clock-assertions.md))。
-  [364](../364-bug-lockman-with-release-failure-and-graveyard-retention.md) の 4 番
+  [364](364-bug-lockman-with-release-failure-and-graveyard-retention.md) の 4 番
   (`TestRenewExtendsHold` の壁時計依存) と同じ族の可能性がある
 
 ## 再現手順
@@ -103,7 +103,7 @@ graveyard: token=c820f076... label=dead     -> 死んだ lock (正当な退去)
 
 - **❌ ハーネス由来 / 壁時計依存**: 窓を広げると 10/10 で決定論的に再現し、graveyard に
   勝者の lock が入る。fixture の `ttl` や `time.Sleep` の長さとは無関係。
-  **[364](../364-bug-lockman-with-release-failure-and-graveyard-retention.md) の 4 番
+  **[364](364-bug-lockman-with-release-failure-and-graveyard-retention.md) の 4 番
   (`TestRenewExtendsHold` の壁時計依存) とは別族**なので、あちらの結論を流用しない
 - **❌ mtime 粒度 (serverNow の打刻)**: 粒度が粗いなら「期限切れの判定自体が揺れる」形に
   なるはずだが、実際は判定は正しく、判定**後**の rename が別の対象を掴んでいた

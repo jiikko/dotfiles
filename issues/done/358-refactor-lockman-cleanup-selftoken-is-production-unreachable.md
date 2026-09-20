@@ -410,7 +410,7 @@ ReadDir と Remove のあいだで他者が消す状態を、seam 無しで決�
 | ③P1-E | **`timed()` が見捨てた goroutine が「失敗」報告後に lock を置く** (35/450 = 7.8%、graveyard 200 件で 40/40) | 元からの穴 + 3・4 周目が増幅 | **[issue 362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md)** |
 | ③P1-C | **`signal.Notify` が `Acquire` / `cmd.Start()` の後** (20/120。うち 9 件は孤児の子つき。全件 0B の無音) | 元からの穴 | **[issue 363](../363-bug-lockman-with-signal-handler-installed-too-late.md)** |
 | ③P2-D | `with` が `--io-timeout` を丸ごと無視し、詰まった `Renew` が select ループごと止める | 元からの穴 | **[357](357-bug-lockman-with-bypasses-io-timeout.md) に既出**。実測だけ転記 |
-| ③P2 / P3-A / P3-B / テスト | `with` が rc=0 で解放漏れ / graveyard の retention が mtime 由来 / reap 済み pgid への kill (未確認) / `TestRenewExtendsHold` の壁時計依存 | 元からの穴 | **[issue 364](../364-bug-lockman-with-release-failure-and-graveyard-retention.md)** |
+| ③P2 / P3-A / P3-B / テスト | `with` が rc=0 で解放漏れ / graveyard の retention が mtime 由来 / reap 済み pgid への kill (未確認) / `TestRenewExtendsHold` の壁時計依存 | 元からの穴 | **[issue 364](364-bug-lockman-with-release-failure-and-graveyard-retention.md)** |
 
 #### 修正 (3 commit に割った。§7 の「次の周の攻め口」を小さく保つため)
 
@@ -461,7 +461,7 @@ ReadDir と Remove のあいだで他者が消す状態を、seam 無しで決�
   下限ちょうどの値は通ってよい
 - **②M24** (`IsDir` の skip を外す) が緑 — production に掃除対象の dir が現れる経路が無い。
   ただし「dir のエントリは永久に掃除されない」こと自体は①P3 が指摘しており、
-  `graveyard/<token>` は rename で dir のまま退避されうる → **[364](../364-bug-lockman-with-release-failure-and-graveyard-retention.md) へ**
+  `graveyard/<token>` は rename で dir のまま退避されうる → **[364](364-bug-lockman-with-release-failure-and-graveyard-retention.md) へ**
 - **③: rename の途中の状態は掃除から崩せなかった** — `os.Rename` は原子的で、`sweepDir` が
   `graveyard/` を ReadDir するときエントリは必ず完全な状態。掃除は `lock` にも `.lockman` にも
   触れないので「勝者 1 人」は掃除からは崩せない
@@ -698,7 +698,7 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
   opus を直列に回した。掃除機構の内側は 3 commit で修正、外側は
   [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
   [363](../363-bug-lockman-with-signal-handler-installed-too-late.md) /
-  [364](../364-bug-lockman-with-release-failure-and-graveyard-retention.md) へ切り出し。
+  [364](364-bug-lockman-with-release-failure-and-graveyard-retention.md) へ切り出し。
   作業中に観測した「引き継ぎの勝者が 2 人」は
   [366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) へ (上の「2.8」)
 - 2026-09-11: 起票。到達不能性を機械照合。反証レビューで起票時の根拠（寿命 vs retention）が
@@ -779,7 +779,7 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
 - 掃除機構の**外**で見つかった 5 件は別 issue へ:
   [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) (high) /
   [363](../363-bug-lockman-with-signal-handler-installed-too-late.md) (high) /
-  [364](../364-bug-lockman-with-release-failure-and-graveyard-retention.md) (low〜medium) /
+  [364](364-bug-lockman-with-release-failure-and-graveyard-retention.md) (low〜medium) /
   [366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) (high・原因未特定)。
   `with` の `--io-timeout` 素通りは [357](357-bug-lockman-with-bypasses-io-timeout.md) に既出
 - 決着済み: 下限はコンパイル時ではなく `sweepDir` の実行時に置いた (上の「実施結果」1)。

@@ -100,7 +100,7 @@ production 3 commit + テスト 2 commit、新規 issue 5 本（362 / 363 / 364 
 
 - [issue 358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) — 対象
 - [issue 361](361-retro-claim-visibility-and-attribution-2026-09-11.md) — 気づき 4 の姉妹
-- [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) / [363](../363-bug-lockman-with-signal-handler-installed-too-late.md) / [364](../364-bug-lockman-with-release-failure-and-graveyard-retention.md) / [366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) — 切り出した先
+- [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) / [363](../363-bug-lockman-with-signal-handler-installed-too-late.md) / [364](364-bug-lockman-with-release-failure-and-graveyard-retention.md) / [366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) — 切り出した先
 
 ## 決着 (2026-09-19)
 
