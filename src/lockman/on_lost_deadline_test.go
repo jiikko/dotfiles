@@ -26,6 +26,62 @@ import (
 //
 // 🚨 lease 生存系のテストが**全部 `onLostKill=false`** だったことが 385 の「テストの穴」節。
 // 既定の経路を通るのは「本当に喪失した」列だけで、ここが埋まっていなかった。
+// blockSpec は「いつから / どれだけ」詰まらせるか。複数回の詰まりを作るために使う。
+type blockSpec struct {
+	after    time.Duration // 直前の復旧 (最初は lock 取得) からの待ち
+	duration time.Duration
+}
+
+// blockRenews は lock を FIFO で覆って更新を詰まらせ、指定の時間が経ったら復旧させる、を
+// spec の回数だけ繰り返す。setup そのものの失敗は返り値の chan で返す (assert 以前の話)。
+func blockRenews(l *Locker, specs []blockSpec) <-chan error {
+	setupErr := make(chan error, 1)
+	go func() {
+		_, orig, err := waitForLockToken(l)
+		if err != nil {
+			setupErr <- err
+			return
+		}
+		for _, spec := range specs {
+			time.Sleep(spec.after)
+			// ① 詰まらせる (FIFO を被せる)
+			fifo := l.lockPath() + ".fifo"
+			if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+				setupErr <- err
+				return
+			}
+			if err := os.Rename(fifo, l.lockPath()); err != nil {
+				setupErr <- err
+				return
+			}
+			time.Sleep(spec.duration)
+			// ② 復旧させる。**順番が要る**: 先に FIFO を退かして本物を戻し、
+			//    その後で FIFO へ書いて詰まっている読み手を解放する
+			//    (逆順だと、解放された Renew の open がまた FIFO に当たって詰まる)
+			if err := os.Rename(l.lockPath(), fifo); err != nil {
+				setupErr <- err
+				return
+			}
+			real := l.lockPath() + ".real"
+			if err := os.WriteFile(real, orig, 0o600); err != nil {
+				setupErr <- err
+				return
+			}
+			if err := os.Rename(real, l.lockPath()); err != nil {
+				setupErr <- err
+				return
+			}
+			if f, err := os.OpenFile(fifo, os.O_WRONLY, 0); err == nil {
+				_, _ = f.Write(orig)
+				_ = f.Close()
+			}
+			_ = os.Remove(fifo)
+		}
+		setupErr <- nil
+	}()
+	return setupErr
+}
+
 func TestDefaultKillWaitsForLeaseDeadline(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
@@ -45,47 +101,7 @@ func TestDefaultKillWaitsForLeaseDeadline(t *testing.T) {
 			const ttl = 900 * time.Millisecond // tick = 300ms
 			mark := filepath.Join(t.TempDir(), "child-finished")
 
-			setupErr := make(chan error, 1)
-			go func() {
-				_, orig, err := waitForLockToken(l)
-				if err != nil {
-					setupErr <- err
-					return
-				}
-				// ① 詰まらせる (FIFO を被せる)
-				fifo := l.lockPath() + ".fifo"
-				if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-					setupErr <- err
-					return
-				}
-				if err := os.Rename(fifo, l.lockPath()); err != nil {
-					setupErr <- err
-					return
-				}
-				time.Sleep(tc.block)
-				// ② 復旧させる。**順番が要る**: 先に FIFO を退かして本物を戻し、
-				//    その後で FIFO へ書いて詰まっている読み手を解放する
-				//    (逆順だと、解放された Renew の open がまた FIFO に当たって詰まる)
-				if err := os.Rename(l.lockPath(), fifo); err != nil {
-					setupErr <- err
-					return
-				}
-				real := l.lockPath() + ".real"
-				if err := os.WriteFile(real, orig, 0o600); err != nil {
-					setupErr <- err
-					return
-				}
-				if err := os.Rename(real, l.lockPath()); err != nil {
-					setupErr <- err
-					return
-				}
-				if f, err := os.OpenFile(fifo, os.O_WRONLY, 0); err == nil {
-					_, _ = f.Write(orig)
-					_ = f.Close()
-				}
-				_ = os.Remove(fifo)
-				setupErr <- nil
-			}()
+			setupErr := blockRenews(l, []blockSpec{{duration: tc.block}})
 
 			// 子は 3 秒走ってからマーカーを書く。**完走したかはマーカーで見る**
 			// (`kill(pid, 0)` はゾンビにも成功するので生死の判定に使えない。issue 384)
@@ -112,5 +128,50 @@ func TestDefaultKillWaitsForLeaseDeadline(t *testing.T) {
 				t.Errorf("rc=%d (期待 %d = 判定不能)", rc, exitWithInvalid)
 			}
 		})
+	}
+}
+
+// 🚨 **更新が成功したら lease の期限も進むこと** (issue 385)。
+//
+// 「判定不能では期限まで昇格を保留する」だけでは足りない: 期限を**進めない**と、
+// 2 回目の一過性の詰まりが来たとき「最初の期限はとうに過ぎている」ので即昇格してしまい、
+// **更新が成功して lease が新しくなっているのに子を殺す**。
+//
+// この形は 1 回だけ詰まらせるテストでは**構造的に観測できない** (1 回目は期限より手前で
+// 判定するので、期限を進めるかどうかが結果を変えない)。実測 2026-09-20: 期限を進めない
+// 変異は、1 回詰まりのテスト 2 本では緑のまま通った。
+//
+// 時間の設計 (ttl=1500ms / tick=500ms / io-timeout=200ms):
+//
+//	400-800ms   1 回目の詰まり  → 700ms に判定不能。期限 (1500ms) は未到達なので保留
+//	1000ms      更新が成功      → 期限が 2500ms へ進む (ここを消すのが変異)
+//	1200-1600ms 2 回目の詰まり  → 1700ms に判定不能。正しければ期限 2500ms まで保留、
+//	                              進めていなければ「期限切れ」と読んで即昇格 = 子が死ぬ
+func TestLeaseDeadlineAdvancesOnSuccessfulRenew(t *testing.T) {
+	l, err := NewLocker(t.TempDir(), testIOTimeout) // io-timeout = 200ms
+	if err != nil {
+		t.Fatalf("NewLocker: %v", err)
+	}
+	const ttl = 1500 * time.Millisecond // tick = 500ms
+	mark := filepath.Join(t.TempDir(), "child-finished")
+
+	setupErr := blockRenews(l, []blockSpec{
+		{after: 400 * time.Millisecond, duration: 400 * time.Millisecond},
+		{after: 400 * time.Millisecond, duration: 400 * time.Millisecond},
+	})
+
+	rc := boundedInt(t, "runWith (既定の kill / 詰まり 2 回)", func() int {
+		return runWith(l, ttl, "", true, // ← 既定 = --on-lost kill
+			[]string{"sh", "-c", fmt.Sprintf("sleep 3; : > %q", mark)})
+	})
+	if err := <-setupErr; err != nil {
+		t.Fatalf("前提が作れていない: %v", err)
+	}
+	if _, err := os.Stat(mark); err != nil {
+		t.Fatalf("2 回目の一過性の詰まりで子を殺している (rc=%d)。"+
+			"更新が成功したのに lease の期限が古いままで、「期限切れ」と読んでいる", rc)
+	}
+	if rc != exitWithInvalid {
+		t.Errorf("rc=%d (期待 %d = 判定不能)", rc, exitWithInvalid)
 	}
 }
