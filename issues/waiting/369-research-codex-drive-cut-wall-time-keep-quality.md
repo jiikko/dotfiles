@@ -7,6 +7,12 @@
 - 前提: codex-drive は今後も継続して大きく使う (ユーザー確認 2026-09-13)。1 マイルストーンあたりの往復は毎回払うコスト
 - **対象外**: usage limit による停止 (避けようがないので考慮しない。ユーザー指示 2026-09-12)
 
+> 🚨 **`waiting/` (2026-09-20〜)**: 残りの受け入れ条件はすべて **codex exec を起動するセッション**を待っている。
+> このマシンでは codex を使わない方針 (ユーザー指示 2026-09-20)。
+> **待っているもの**: codex を使うマシンで codex-drive のマイルストーンを 1 つ回すこと。
+> **それが来たら分かること**: 案 0-b で Error 74 が消えるか / 型エラー往復が旧 2〜3 回から何回になったか /
+> 作業根の外へのはみ出しが無いか。詳細は末尾の「2026-09-20 の裏取り」節。
+
 ## 観測 (obaket、2026-08-30 → 09-12 の 13 日間)
 
 | epic | commits | production | tests | issue/docs | 状態 |
@@ -197,15 +203,71 @@ codex-cli 0.154.0 で確認したオプション (2026-09-13、`codex exec --hel
       effort 整合テストに FALLBACK_MODEL の allowlist を追加 (SKILL.md から消えたら検査も落ちる形)
 - [x] 案 0-b をユーザーが承認 → SKILL.md 4.3.0 へ反映 (雛形 3 箇所 / Error 74 規律の条件化 / セットの 4 項目)。
       commit: 「feat(codex-drive): 実装 run の sandbox を既定で外す」
-- [ ] 案 0-b を obaket の次マイルストーンで実測し、checkpoint に残す: Error 74 の有無 / 型エラー往復数 (旧 2〜3) /
+- [ ] 案 0-b を **codex を使うマシンの次マイルストーン**で実測し、checkpoint に残す: Error 74 の有無 / 型エラー往復数 (旧 2〜3) /
       codex が xcodebuild を自分で回せたか / 本体 checkout と worktree の git state がはみ出していないか / 要約・log に
       依頼外の破壊的操作が無いか。**危険側の観測 (はみ出し・破壊的操作) が 1 件でも出たら 0-a へ戻す**
 - [ ] 案 0-a は 0-b で危険側の観測が出た場合の代替として残す (未実施)
 - [ ] 案 1 の内訳を 1 マイルストーン分取り (run 合計と通しの壁時計を別々に)、段階 2 のうち太い工程に当たるものだけ反映する
 - [ ] 段階 3 は obaket 側の `[R]` テンプレへ移し、skill には 1 行だけ残す (**このマシンに obaket の checkout が無い**
-      (2026-09-13 `mdfind` / `~/src` 走査で 0 件) ので、obaket を持つマシンのセッションで行う)
+      (2026-09-13 `mdfind` / `~/src` 走査で 0 件。2026-09-20 に再走査して同じく 0 件) ので、obaket を持つマシンのセッションで行う)
 - [ ] 質の比較は件数の増減で判定しない。**同じ変異セット**での red / green / hang の結果表と、r1 の P1 の**内容**を前後で並べ、
       「前は拾えていた種類の指摘が消えていない」ことを Claude が読んで確認する
+
+## 2026-09-20 の裏取り (codex を起動しない範囲での確認)
+
+ユーザーの「これは可能なのか」への回答として、**codex を 1 回も起動せずに確かめられる範囲**を実測した。
+このセッションのマシンでは **codex を使わない**とユーザーが指示したため (2026-09-20)、案 0 の効果測定はここでは行わない。
+
+### 1. 版ドリフトの採り直し — 案 0 / 1-3 の前提は今も有効
+
+issue の案 0 / 1-3 は `codex-cli 0.154.0` 時点の `codex exec --help` に依存しているが、手元は **0.155.1** に上がっていた。
+採り直した結果 (2026-09-20、stdout / stderr / rc を分離して取得。rc=0):
+
+- `-s, --sandbox <SANDBOX_MODE>` の `[possible values: read-only, workspace-write, danger-full-access]` は健在
+- `-c, --config <key=value>` も健在で、help の例に `-c 'sandbox_permissions=["disk-full-read-access"]'` がある
+  (案 0-a の `-c 'sandbox_workspace_write.writable_roots=[...]'` という**書き方**は成立しうる。キーが受理されるかは未確認 —
+  確認には codex の起動が要る)
+- `--dangerously-bypass-approvals-and-sandbox` も健在 (却下済みなので使わない)
+
+→ **版ドリフトで前提は崩れていない**。案 0 / 1-3 を採り直す必要はない。
+
+### 2. `[x]` 4 件は「主張」ではなく実在することを確認した
+
+issue の `[x]` は本文の主張であって証拠ではないので、成果物側を直接読んだ (2026-09-20):
+
+| 受け入れ条件 | 確認した実体 |
+|---|---|
+| 案 1 (計測) | `bin/codex-fanout` のヘッダ usage に `label / rc / started_at / elapsed_s / out / log` の 6 列と merger 行の記述。予約語 `merger` の弾きも在る |
+| 1-1 / 1-2 | SKILL.md 4.5.0 の `[3.8]` 節の例外・`[3]` 冒頭の順序の項に反映済み (`-derivedDataPath` の並行禁止も同節) |
+| 1-3 (astra) | SKILL.md の「モデルは振らない」の例外項に「そのマイルストーンだけ `-m gpt-6-astra`」 |
+| 案 0-b | SKILL.md に「実装 run の sandbox は既定で外す」と「外せない環境は旧規律」。`[2]` / `[2p]` / `[3.7]` の雛形も `-s danger-full-access` |
+
+- 付随して確認: `~/.codex/config.toml` は `model_reasoning_effort = "low"` だが、SKILL.md は全フェーズで
+  `-m gpt-5.6-luna -c model_reasoning_effort="max"` を**明示的に渡す**ので上書きされる。541 の「low では質が落ちる」は踏まない
+
+### 3. 受け入れ条件の訂正 — 案 0-b の実測は obaket 依存ではない
+
+本 issue は「obaket の checkout がこのマシンに無いので実測できない」を、残り全項目の理由として使っていたが、
+**案 0-b についてはそれが誤り**だった。
+
+- 案 0-b の核心の問い (「sandbox を外すと codex が自分で `xcodebuild` / `swift build` を通せるか」
+  「作業根の外へはみ出さないか」) は **repo 非依存**で、手元の `~/src/working/SnapTrim` か
+  `~/src/working/swift-smbee` (SwiftPM 単体) で答えが出る。SnapTrim の `Makefile` が
+  `xcodebuild -scheme SnapTrim -configuration Release build` を叩くことは確認済み (2026-09-20 実測。
+  Error 74 が出る経路を持っている)
+- obaket が本当に要るのは **段階 3-1 (`[R]` テンプレへの移送)** と **前後比較の定量**
+  (旧「型エラー往復 2〜3 回 / マイルストーン」が何回になったか) だけ
+
+🚨 **「可能か」と「何分縮むか」は別の問い**で、本 issue はこの 2 つを混ぜていた。前者は上記のとおり
+オプションが実在し skill にも反映済みなので**ブロックしていない**。後者だけが未実測で残っている。
+
+### このマシンで閉じられない理由 → `waiting/` へ
+
+残り全項目が「codex を起動するセッション」を待っている状態で、このマシンでは着手できない
+(こちらから起こせない事象待ち = `waiting/` の定義)。着手済み・一部完了なので `pending/` ではない。
+
+**再開の trigger** (冒頭のバナーが正本): codex を使うマシンで codex-drive のマイルストーンを 1 つ回すとき。
+そのとき受け入れ条件 (Error 74 の有無 / 型エラー往復数 / git state のはみ出し / 破壊的操作の有無) を checkpoint に残す。
 
 ## 関連
 

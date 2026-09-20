@@ -39,4 +39,5 @@
 
 ## 関連
 
-- `issues/369-research-codex-drive-cut-wall-time-keep-quality.md` — 本体。段階 2 / 段階 3 / 案 0-b の実測は obaket 側 (このマシンに checkout 無し)
+- `issues/waiting/369-research-codex-drive-cut-wall-time-keep-quality.md` — 本体。2026-09-20 に waiting へ移動 (残り全項目が codex を起動するセッション待ち)。
+  段階 3 は obaket 側 (このマシンに checkout 無し) だが、案 0-b の実測は repo 非依存なので obaket 依存ではない (369 の 2026-09-20 節)
