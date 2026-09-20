@@ -41,6 +41,11 @@ func classifyRenewErr(err error) renewOutcome {
 // 終了コードは呼び出し側の API なので、子プロセスの終了コードをそのまま透過し、
 // ロック側の失敗は子と衝突しない上位番号 (121/122/125) へ逃がす。
 func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv []string) (rc int) {
+	// 🚨 **打刻より前**の時刻を控える (issue 385)。lease の期限はサーバが打刻した時刻 + TTL だが、
+	// こちらから見えるのは「呼ぶ前」と「返った後」だけ。打刻は必ずその間にあるので、
+	// **呼ぶ前**を使えば「最も早い期限」= 保守側の見積もりになる (遅く見積もると、
+	// 他者が正当に引き継げる時刻を過ぎてから昇格することになる)。
+	acquireStartedAt := time.Now()
 	meta, err := l.AcquireTimed(ttl, label)
 	if err != nil {
 		if errors.Is(err, errBusy) {
@@ -153,11 +158,23 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	// inFlightRenews は「まだ返っていない Renew の本数」(見捨てた分を含む)。
 	// goroutine 自身が減らすので、マウントが復旧して溜まった分が返れば枠は戻る。
 	var inFlightRenews atomic.Int64
+	// renewStartedAt は「いま飛んでいる更新を始めた時刻」(打刻より前)。成功したら期限の起点になる。
+	var renewStartedAt time.Time
 	// 🚨 上限は**ここで 1 度だけ読む**。毎 tick 読むと、テストが差し替えた値を戻すのが
 	// runWith の走行中に重なる経路 (boundedInt の安全網が先に落ちたとき) で data race になる。
 	// すぐ下の onLostGracePeriod が「引数で渡して直読みを避けた」のと同じ理由。
 	maxInFlight := maxInFlightRenews
 	cappedReported := false
+	// leaseDeadline は「自分の lease が生きていると言い切れる限界」(保守側の見積もり)。
+	// 更新が成功するたびに前へ進む。
+	leaseDeadline := acquireStartedAt.Add(ttl)
+	escalateNow := func() {
+		// 🚨 **昇格は 1 回だけ**。tick ごとに撃ち直すと猶予が毎回振り出しに戻り、
+		// SIGKILL へ永久に到達しない (上限の無い再試行は上限が無いのと同じ)。
+		escalate.Do(func() { go escalateGroupKill(pgid, exited, onLostGracePeriod) })
+	}
+	// 判定不能を報告済みで、まだ昇格していない状態かどうか。tick ごとに期限を見る。
+	pendingIndeterminate := false
 	reportRenewErr := func(err error) {
 		cur := classifyRenewErr(err)
 		if outcome == renewOK {
@@ -173,15 +190,33 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 		} else {
 			warnf("lease を確認できない (判定不能): %v", err)
 		}
-		// fail-closed で子を止める。**次の tick を待たない** — TTL を超えれば他者が
-		// 引き継ぐので、待つほど二重実行に近づく。
-		//
-		// 🚨 **昇格は 1 回だけ**。tick ごとに撃ち直すと猶予が毎回振り出しに戻り、
-		// SIGKILL へ永久に到達しない (上限の無い再試行は上限が無いのと同じ)。
-		if onLostKill {
-			escalate.Do(func() { go escalateGroupKill(pgid, exited, onLostGracePeriod) })
+		if !onLostKill {
+			return
 		}
+		// 🚨 **「確実な喪失」と「判定不能」で昇格の扱いを分ける** (issue 385)。
+		//
+		// - `renewLost` (errNotOwner): **他者が既に引き継いでいる**ので、待つほど二重実行が
+		//   延びる。即座に昇格する (従来どおり)
+		// - `renewIndeterminate` (I/O タイムアウト等): **lease が生きているかは分からない**が、
+		//   他者が正当に引き継げるのは**自分の lease が期限切れになってから**で、その時刻は
+		//   推測ではなく**計算できる** (最後に成功した更新の開始時刻 + TTL)。期限までは
+		//   誰も引き継げないので、そこまで昇格を保留しても二重実行の窓は開かない。
+		//
+		// 旧版は最初の判定不能で即昇格していたため、**一過性の詰まりで殺さなくてよい子を
+		// 殺していた** (実測 2026-09-20: 900ms の詰まりで warn は子が完走 3.04s / lease 保持、
+		// kill は 710ms で子が死ぬ。lease は生きていた)。381 がループ側を「判定不能でも
+		// 更新を続ける」へ変えたのに、昇格側が即殺すままで**便益が回収できていなかった**。
+		//
+		// 🚨 これは fail-open ではない。**期限を過ぎたら必ず昇格する** (下の tick の判定)。
+		// 残る窓 (TERM → SIGKILL の猶予) は、確実な喪失の経路が既に受容しているものと同じ。
+		if cur == renewLost {
+			escalateNow()
+			return
+		}
+		pendingIndeterminate = true
 	}
+	// leaseExpired は「保守側の見積もりで、自分の lease はもう生きていない」。
+	leaseExpired := func() bool { return !time.Now().Before(leaseDeadline) }
 
 	for {
 		select {
@@ -194,6 +229,12 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 			// **他者が既に引き継いでいて、止めないと二重実行になる**ときだけ。
 			_ = killGroup(pgid, sig.(syscall.Signal))
 		case <-ticker.C:
+			// 🚨 **保留した昇格は、lease の期限を過ぎたらここで必ず撃つ** (issue 385)。
+			// tick は更新が詰まっていても鳴り続けるので、これが「判定不能のまま期限を
+			// 迎えた」を拾う唯一の経路になる (粒度は tick = ttl/renewDivisor)。
+			if pendingIndeterminate && leaseExpired() {
+				escalateNow()
+			}
 			if renewCh != nil {
 				continue // 前回の更新がまだ返っていない。新しく積まない
 			}
@@ -219,12 +260,21 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 				}
 				continue
 			}
+			// 🚨 **打刻より前**の時刻 (Acquire と同じ理由)。成功したらこれを期限の起点にする。
+			renewStartedAt = time.Now()
 			renewCh, renewExpired = l.renewAsync(meta.Token, &inFlightRenews)
 		case err := <-renewCh:
 			renewCh, renewExpired = nil, nil
 			if err != nil {
 				reportRenewErr(err)
+				break
 			}
+			// 🚨 更新が成功した = サーバが打刻し直した。期限を進め、**保留していた昇格を解く**
+			// (issue 385。一過性の詰まりから復旧した形がここ)。
+			// `outcome` は sticky のままにする — 判定不能だった窓があった事実は消えないので
+			// 終了コードは 125 に留める (091:398-399 / issue 381 の判断を据え置く)。
+			leaseDeadline = renewStartedAt.Add(ttl)
+			pendingIndeterminate = false
 		case <-renewExpired:
 			// 期限切れ = 判定不能。報告して**この 1 本は見捨てる** — 参照を捨てるだけで
 			// goroutine は止められない (ブロック中の syscall は中断できない)。次の tick が
