@@ -1,5 +1,7 @@
 # `with` の `signal.Notify` が `Acquire` と `cmd.Start()` の後にあり、中断で lock と孤児の子が残る
 
+> 🚨 **担当中: Claude セッション (opus, dotfiles)**（2026-09-21〜）
+
 起票日: 2026-09-12
 カテゴリ: bug / priority: **high**
 対象: `src/lockman/with.go` の `runWith`
