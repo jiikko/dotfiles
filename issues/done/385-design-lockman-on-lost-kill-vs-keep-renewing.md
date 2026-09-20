@@ -197,3 +197,28 @@ lease 生存系のテストは**全部 `onLostKill=false`**。既定の経路を
 - [381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md) — 出典。ループ側を「粘る」へ変えた
 - [384](384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) — 昇格**実装**側の穴
 - [356](356-bug-lockman-with-releases-lock-while-grandchildren-run.md) — 昇格そのものの出典
+
+## 後日対応 (2026-09-20): `leaseTracker` を切り出して P2-A を閉じた
+
+2 周目の P2-A (「期限の**値**は無検査。猶予を①起点 ②呼び出し側へ移した変異が全緑」) を
+**受容して記録**する判断だったが、ユーザーの指示で**その場で対応した**。
+
+切り出しの目的は分割ではなく **期限の値を単体で assert できるようにすること**。
+`runWith` に散っていた 3 箇所 (起点に ttl を足す 2 箇所 / 呼び出し側の述語 / 境界の述語) を
+`leaseTracker` (`src/lockman/lease_tracker.go`) へ寄せ、**時刻は引数で受け取る**契約にした
+(内部で `time.Now()` を読むと「いつを起点にしたか」がテストから観測できず、M4 型の変異が
+また無検査へ戻る)。
+
+### 変異検証 (P2-A で「無検査」とされた 3 箇所すべて)
+
+| 変異 | 対応前 | 対応後 |
+|---|---|---|
+| M6' 境界 (述語) に猶予 | red (単体のみ) | `TestLeaseTracker` の 4 subtest + 統合 2 本が red |
+| M10' 起点 (`renewed`) に猶予 | **全緑** | `TestLeaseTracker` 2 subtest が red |
+| M4' `renewed` が渡された時刻を無視して `time.Now()` を使う | **全緑** | `TestLeaseTracker` 2 subtest が red |
+| M9' 呼び出し側 (tick) だけに猶予 | — | **緑のまま**。ただし tick と報告の 2 箇所は**多重防御**で、
+  **両方に当てると red** (`TestDefaultKillWaitsForLeaseDeadline/期限を過ぎる` +
+  `TestFailedRenewDoesNotAdvanceLeaseDeadline`)。片方だけ潰しても、もう片方が同じ判定を持つ |
+
+`go test -race ./...` 緑 / golangci-lint 0 issues。**production の挙動は変えていない**
+(期限の計算・境界・保留の意味はすべて逐語で移した)。

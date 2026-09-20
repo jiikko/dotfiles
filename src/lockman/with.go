@@ -165,18 +165,14 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	// すぐ下の onLostGracePeriod が「引数で渡して直読みを避けた」のと同じ理由。
 	maxInFlight := maxInFlightRenews
 	cappedReported := false
-	// leaseDeadline は「自分の lease が生きていると言い切れる限界」(保守側の見積もり)。
-	// 更新が成功するたびに前へ進む。
-	leaseDeadline := acquireStartedAt.Add(ttl)
+	// lease は「自分の lease が生きていると言い切れる限界」を持つ (issue 385)。
+	// 期限の計算・境界・保留の状態は `leaseTracker` が 1 箇所で持つ (`lease_tracker.go` の doc)。
+	lease := newLeaseTracker(acquireStartedAt, ttl)
 	escalateNow := func() {
 		// 🚨 **昇格は 1 回だけ**。tick ごとに撃ち直すと猶予が毎回振り出しに戻り、
 		// SIGKILL へ永久に到達しない (上限の無い再試行は上限が無いのと同じ)。
 		escalate.Do(func() { go escalateGroupKill(pgid, exited, onLostGracePeriod) })
 	}
-	// 判定不能を報告済みで、まだ昇格していない状態かどうか。tick ごとに期限を見る。
-	pendingIndeterminate := false
-	// leaseExpired は「保守側の見積もりで、自分の lease はもう生きていない」。
-	leaseExpired := func() bool { return leaseHasExpired(time.Now(), leaseDeadline) }
 	reportRenewErr := func(err error) {
 		cur := classifyRenewErr(err)
 		if outcome == renewOK {
@@ -230,11 +226,9 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 		// 重なる (`renewStartedAt` が tick の瞬間で、周期は ttl/renewDivisor) ので、tick の枝でしか
 		// 見ないと配送ジッタで「今回の tick では未到達」に落ちて**次の tick まで = ttl/3 遅れる**
 		// (実測 92 回中 1 回。既定 ttl 30m ならその 1 回が 10 分の窓になる)。
-		if leaseExpired() {
+		if lease.indeterminate(time.Now()) {
 			escalateNow()
-			return
 		}
-		pendingIndeterminate = true
 	}
 
 	for {
@@ -251,7 +245,7 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 			// 🚨 **保留した昇格は、lease の期限を過ぎたらここで必ず撃つ** (issue 385)。
 			// tick は更新が詰まっていても鳴り続けるので、これが「判定不能のまま期限を
 			// 迎えた」を拾う唯一の経路になる (粒度は tick = ttl/renewDivisor)。
-			if pendingIndeterminate && leaseExpired() {
+			if lease.dueForEscalation(time.Now()) {
 				escalateNow()
 			}
 			if renewCh != nil {
@@ -294,8 +288,7 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 			// (issue 385。一過性の詰まりから復旧した形がここ)。
 			// `outcome` は sticky のままにする — 判定不能だった窓があった事実は消えないので
 			// 終了コードは 125 に留める (091:398-399 / issue 381 の判断を据え置く)。
-			leaseDeadline = renewStartedAt.Add(ttl)
-			pendingIndeterminate = false
+			lease.renewed(renewStartedAt)
 		case <-renewExpired:
 			// 期限切れ = 判定不能。報告して**この 1 本は見捨てる** — 参照を捨てるだけで
 			// goroutine は止められない (ブロック中の syscall は中断できない)。次の tick が
@@ -314,21 +307,6 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 		}
 	}
 }
-
-// leaseHasExpired は「保守側の見積もりで、自分の lease はもう生きていない」。
-//
-// 🚨 **猶予を足さないこと**。ここへ猶予を足すのは「他者が正当に引き継げる時刻を過ぎても
-// 子を走らせ続ける」= 明示的な fail-open で、(b') が fail-open でないと言い切れる根拠を壊す。
-// 境界は `deadline` ちょうどで真。単体で固定してある (実測: この関数の中へ猶予 400ms を足す
-// 変異は、統合テストでは全部緑で通った)。
-//
-// 🚨 **固定できているのは「述語」だけで、「期限の値」は無検査** (敵対レビュー 385 の 2 周目 P2-A)。
-// 期限を決める箇所は 3 つ (①起点 `acquireStartedAt` / `renewStartedAt` に ttl を足す 2 箇所
-// ②呼び出し側 `leaseExpired` ③この述語) で、同じ幅の猶予を①や②へ移した変異は**全緑で通る**
-// (ローカルでも観測可能な幅 = ttl の 44% なのに 1 本も落ちない)。
-// 閉じるには静的 pin (「`leaseDeadline` への代入は 1 つの関数の戻り値だけ」) か壁時計の上限が要り、
-// どちらも新しい機構になるので**受容して記録**した。再開の trigger: 期限の計算を触る変更が入るとき。
-func leaseHasExpired(now, deadline time.Time) bool { return !now.Before(deadline) }
 
 // childExitCode は子の終了状態を終了コードへ変換する。
 // シグナル死は shell の慣習に合わせて 128+signal にする。

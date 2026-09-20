@@ -233,27 +233,3 @@ func TestFailedRenewDoesNotAdvanceLeaseDeadline(t *testing.T) {
 		t.Errorf("rc=%d (期待 %d = 判定不能)", rc, exitWithInvalid)
 	}
 }
-
-// 🚨 **期限の境界に猶予を足さないこと** (敵対レビュー 385 の P2-1)。
-//
-// 猶予を足すのは「他者が正当に引き継げる時刻を過ぎても子を走らせ続ける」= 明示的な fail-open で、
-// (b') が fail-open でないと言い切れる唯一の根拠を壊す。**統合テストでは捕まらない**
-// (実測: 400ms = ttl の 44% の猶予を足す変異が、パッケージ全体で緑のまま通った) ので、
-// 境界そのものを単体で固定する。
-func TestLeaseHasExpiredBoundary(t *testing.T) {
-	deadline := time.Now()
-	for _, tc := range []struct {
-		name string
-		now  time.Time
-		want bool
-	}{
-		{"期限の 1ns 前", deadline.Add(-time.Nanosecond), false},
-		{"期限ちょうど", deadline, true},
-		{"期限の 1ns 後", deadline.Add(time.Nanosecond), true},
-		{"期限の 400ms 後 (猶予を足す変異が通ってしまう幅)", deadline.Add(400 * time.Millisecond), true},
-	} {
-		if got := leaseHasExpired(tc.now, deadline); got != tc.want {
-			t.Errorf("%s: leaseHasExpired=%v (期待 %v)", tc.name, got, tc.want)
-		}
-	}
-}
