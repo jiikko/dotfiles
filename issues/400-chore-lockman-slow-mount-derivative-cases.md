@@ -1,5 +1,7 @@
 # lockman のテストが「速いローカル FS」を暗黙の前提にしている (鈍いマウントの派生ケースが無い)
 
+> 🚨 **担当中: Claude セッション (opus, dotfiles)**（2026-09-20〜）
+
 起票日: 2026-09-19
 カテゴリ: chore / priority: **medium**
 対象: `src/lockman/graveyard_retention_test.go` / `lock_test.go` (と、同種の前提を持つ他のテスト)
