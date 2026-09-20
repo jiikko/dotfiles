@@ -175,3 +175,77 @@ func TestLeaseDeadlineAdvancesOnSuccessfulRenew(t *testing.T) {
 		t.Errorf("rc=%d (期待 %d = 判定不能)", rc, exitWithInvalid)
 	}
 }
+
+// 🚨 **「失敗した更新では期限を進めない」を固定する** (敵対レビュー 385 の P1-2)。
+//
+// `case err := <-renewCh` の `break` を外すと、**失敗した更新でも期限が ttl ぶん前進し、
+// `pendingIndeterminate` も解ける**。更新が 1 回も成功していないのに昇格が来なくなるので、
+// lease は実際に死に、他者が正当に引き継いで**無制限の二重実行**になる。
+//
+// 既存のテストがこれを守れなかったのは、詰まりを FIFO で作ると `case <-renewExpired` へ
+// 落ちるので、**`renewCh` がエラーを返す列が 1 本も無かった**から。実在する速い失敗は
+// `errUnreadableLock` (lock の中身を読めない。issue 383 が「健全な保持者の Renew の一瞬でも
+// 出る」と記録している状態) なので、それで列を作る。
+//
+// 実測 A-B (2026-09-20 / ttl=900ms / io-timeout=200ms / 子は sleep 3):
+//
+//	現行        918ms で昇格、子は完走しない
+//	break 削除  3.03s (昇格ゼロ) で子が完走 = lease は死んでいるのに走り続ける
+func TestFailedRenewDoesNotAdvanceLeaseDeadline(t *testing.T) {
+	l, err := NewLocker(t.TempDir(), testIOTimeout)
+	if err != nil {
+		t.Fatalf("NewLocker: %v", err)
+	}
+	const ttl = 900 * time.Millisecond
+	mark := filepath.Join(t.TempDir(), "child-finished")
+
+	setupErr := make(chan error, 1)
+	go func() {
+		// 取得できたら中身を壊す。以後の Renew は errUnreadableLock を**即座に**返す
+		// (FIFO と違って詰まらないので、renewCh のエラー枝を通る)。
+		if _, _, err := waitForLockToken(l); err != nil {
+			setupErr <- err
+			return
+		}
+		setupErr <- os.WriteFile(l.lockPath(), []byte("{ torn"), 0o600)
+	}()
+
+	rc := boundedInt(t, "runWith (中身を読めない lock)", func() int {
+		return runWith(l, ttl, "", true, // ← 既定 = --on-lost kill
+			[]string{"sh", "-c", fmt.Sprintf("sleep 3; : > %q", mark)})
+	})
+	if err := <-setupErr; err != nil {
+		t.Fatalf("前提が作れていない: %v", err)
+	}
+	if _, err := os.Stat(mark); err == nil {
+		t.Fatalf("更新が 1 回も成功していないのに子が完走した (rc=%d)。"+
+			"失敗した更新で lease の期限を進めている = 昇格が永久に来ない", rc)
+	}
+	if rc != exitWithInvalid {
+		t.Errorf("rc=%d (期待 %d = 判定不能)", rc, exitWithInvalid)
+	}
+}
+
+// 🚨 **期限の境界に猶予を足さないこと** (敵対レビュー 385 の P2-1)。
+//
+// 猶予を足すのは「他者が正当に引き継げる時刻を過ぎても子を走らせ続ける」= 明示的な fail-open で、
+// (b') が fail-open でないと言い切れる唯一の根拠を壊す。**統合テストでは捕まらない**
+// (実測: 400ms = ttl の 44% の猶予を足す変異が、パッケージ全体で緑のまま通った) ので、
+// 境界そのものを単体で固定する。
+func TestLeaseHasExpiredBoundary(t *testing.T) {
+	deadline := time.Now()
+	for _, tc := range []struct {
+		name string
+		now  time.Time
+		want bool
+	}{
+		{"期限の 1ns 前", deadline.Add(-time.Nanosecond), false},
+		{"期限ちょうど", deadline, true},
+		{"期限の 1ns 後", deadline.Add(time.Nanosecond), true},
+		{"期限の 400ms 後 (猶予を足す変異が通ってしまう幅)", deadline.Add(400 * time.Millisecond), true},
+	} {
+		if got := leaseHasExpired(tc.now, deadline); got != tc.want {
+			t.Errorf("%s: leaseHasExpired=%v (期待 %v)", tc.name, got, tc.want)
+		}
+	}
+}

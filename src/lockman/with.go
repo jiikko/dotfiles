@@ -175,6 +175,8 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	}
 	// 判定不能を報告済みで、まだ昇格していない状態かどうか。tick ごとに期限を見る。
 	pendingIndeterminate := false
+	// leaseExpired は「保守側の見積もりで、自分の lease はもう生きていない」。
+	leaseExpired := func() bool { return leaseHasExpired(time.Now(), leaseDeadline) }
 	reportRenewErr := func(err error) {
 		cur := classifyRenewErr(err)
 		if outcome == renewOK {
@@ -198,9 +200,20 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 		// - `renewLost` (errNotOwner): **他者が既に引き継いでいる**ので、待つほど二重実行が
 		//   延びる。即座に昇格する (従来どおり)
 		// - `renewIndeterminate` (I/O タイムアウト等): **lease が生きているかは分からない**が、
-		//   他者が正当に引き継げるのは**自分の lease が期限切れになってから**で、その時刻は
-		//   推測ではなく**計算できる** (最後に成功した更新の開始時刻 + TTL)。期限までは
-		//   誰も引き継げないので、そこまで昇格を保留しても二重実行の窓は開かない。
+		//   他者が**正当な手順で**引き継げるのは自分の lease が期限切れになってからで、その時刻は
+		//   推測ではなく**計算できる** (最後に成功した更新の開始時刻 + TTL。同一レートで進む
+		//   時計を仮定している。サーバ時計が前方へステップすると保守側の保証は崩れる = 未確認)。
+		//
+		// 🚨 **例外は `lockman break`** (敵対レビュー 385 が実測)。`Break` は期限も token も見ない
+		// 無条件の rename なので、「期限までは誰も引き継げない」は break に対して**成立しない**。
+		// 実測 2026-09-20 (ttl=1800ms / 恒久的な詰まり / t=1000ms で break → 別ホストが acquire):
+		// 旧挙動は他者の取得より前に子が回収されていた (重なり −7〜−16ms) が、新挙動では
+		// **+185〜+193ms 重なる**。窓の上限は「break の後に**完了する**更新が errNotOwner を
+		// 返すまで」= 最大 1 tick + io-timeout (既定 ttl 30m なら約 10 分)。
+		// 🚨 **さらに悪い形は未確認**: 判定不能の原因そのもの (毎回 io-timeout を超えるマウント) が
+		// 続くと errNotOwner を観測できないので、重なりは期限まで (既定 30 分) 伸びうる。
+		// それでもこの設計を採るのは、break が「人が force で撃つ操作」で、`lock.go` の
+		// `tryTakeover` の注記が既に「**最も現実的に二重取得を作る操作**」として受容しているため。
 		//
 		// 旧版は最初の判定不能で即昇格していたため、**一過性の詰まりで殺さなくてよい子を
 		// 殺していた** (実測 2026-09-20: 900ms の詰まりで warn は子が完走 3.04s / lease 保持、
@@ -213,10 +226,16 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 			escalateNow()
 			return
 		}
+		// 🚨 **報告の時点でも期限を見る** (敵対レビュー 385 の P3-1)。期限は構造的に tick 境界と
+		// 重なる (`renewStartedAt` が tick の瞬間で、周期は ttl/renewDivisor) ので、tick の枝でしか
+		// 見ないと配送ジッタで「今回の tick では未到達」に落ちて**次の tick まで = ttl/3 遅れる**
+		// (実測 92 回中 1 回。既定 ttl 30m ならその 1 回が 10 分の窓になる)。
+		if leaseExpired() {
+			escalateNow()
+			return
+		}
 		pendingIndeterminate = true
 	}
-	// leaseExpired は「保守側の見積もりで、自分の lease はもう生きていない」。
-	leaseExpired := func() bool { return !time.Now().Before(leaseDeadline) }
 
 	for {
 		select {
@@ -244,13 +263,15 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 				//
 				// 🚨 これは**新しい保証ではなく、診断と多重防御**。枠を埋めるには 1 本ごとに
 				// 期限切れ (下の renewExpired) を通る必要があるので、ここへ来た時点で
-				// outcome は既に判定不能で、`--on-lost=kill` の昇格も済んでいる。それでも
-				// reportRenewErr に通すのは、「更新が止まった理由」を出す経路を 1 本に保つため。
+				// outcome は既に判定不能。**ただし昇格は済んでいるとは限らない** — issue 385 以降、
+				// 判定不能の昇格は lease の期限まで保留される (敵対レビュー 385 の P2-2 で訂正)。
+				// それでも reportRenewErr に通すのは、「更新が止まった理由」を出す経路を 1 本に保つため。
 				//
 				// 🚨 「上限に達した = もう手遅れ」とは限らない。返らない更新と成功する更新が
 				// 交互に来る (半死のマウント) と、lease が生きているうちに枠だけが埋まり、
 				// **成功するはずの更新まで起こさなくなる**。`--on-lost=warn` ではこの形で
-				// 二重実行が残る (kill なら最初の期限切れで子を止めにいっている)。
+				// 二重実行が残る (kill なら lease の期限で子を止めにいく。issue 385 以降は
+				// 「最初の期限切れで」ではない。敵対レビュー 385 の P2-2 で訂正)。
 				//
 				// 🚨 報告は 1 回だけ (tick ごとに出すと warn が溢れる)。復旧して再び
 				// 上限に達しても出し直さない — 既に outcome は判定不能で確定している。
@@ -293,6 +314,15 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 		}
 	}
 }
+
+// leaseHasExpired は「保守側の見積もりで、自分の lease はもう生きていない」。
+//
+// 🚨 **猶予を足さないこと** (敵対レビュー 385 の P2-1)。ここへ猶予を足すのは
+// 「他者が正当に引き継げる時刻を過ぎても子を走らせ続ける」= 明示的な fail-open で、
+// (b') が fail-open でないと言い切れる唯一の根拠を壊す。境界は `deadline` ちょうどで真。
+// 単体で固定してあるのは、この関数が**その根拠そのもの**だから (実測: 猶予 400ms を足す変異は
+// 統合テストでは全部緑で通った)。
+func leaseHasExpired(now, deadline time.Time) bool { return !now.Before(deadline) }
 
 // childExitCode は子の終了状態を終了コードへ変換する。
 // シグナル死は shell の慣習に合わせて 128+signal にする。
