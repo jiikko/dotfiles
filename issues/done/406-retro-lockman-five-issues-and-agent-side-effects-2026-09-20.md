@@ -110,6 +110,6 @@
       `parallel-write-agents-need-worktree-isolation.md` の後始末の項への参照に留め、二重管理にしない)
 - [x] 項目 5 の切り出し (`verify-execution-not-just-exit-code.md` へ「集約テストが赤いまま、
       その上で検証を続けない」を 1 節)
-- [x] goenv の版上げでツールが消える件を [407](../407-chore-goenv-version-bump-orphans-go-tools.md) へ切り出した
+- [x] goenv の版上げでツールが消える件を [407](407-chore-goenv-version-bump-orphans-go-tools.md) へ切り出した
 
 **切り出しは全件完了。新規ルールは 0 本** (すべて既存ルールへの追記)。
