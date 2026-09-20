@@ -102,9 +102,14 @@
 
 ## 残課題 (切り出しの実行はユーザーの判断待ち)
 
-- [ ] 項目 1 の切り出し (`mutation-verify-new-tests.md` の seam の項へ追記)
-- [ ] 項目 2 の切り出し (同ルールへ「assert を消すときも変異を当てる」を追記)
-- [ ] 項目 3 の残り (`subagent-model-tiering.md` の検閲の観点へ 1 行、**または**既存ルールへの参照)
-- [ ] 項目 5 の切り出し (`verify-execution-not-just-exit-code.md` へ 1 項)
-- [ ] **スコープ外 (別 issue 候補)**: goenv の版を上げると go 製ツール 17 本が消える導線が無い
-      (405 に記録済み。`gopls` / `dlv` / `goimports` は消えたまま)
+- [x] 項目 1 の切り出し (`mutation-verify-new-tests.md` の seam の項へ追記。
+      「置く基準は『修正を観測できるか』ではなく『退行が現れるか』」)
+- [x] 項目 2 の切り出し (同ルールへ「assert を消すときも、消す前に変異を 1 本当てる」を追記。
+      既存の等価変異の項とは**発動点が違う**ので独立した項にした)
+- [x] 項目 3 の残り (`subagent-model-tiering.md` の検閲の観点へ 1 行。作法の正本は
+      `parallel-write-agents-need-worktree-isolation.md` の後始末の項への参照に留め、二重管理にしない)
+- [x] 項目 5 の切り出し (`verify-execution-not-just-exit-code.md` へ「集約テストが赤いまま、
+      その上で検証を続けない」を 1 節)
+- [x] goenv の版上げでツールが消える件を [407](407-chore-goenv-version-bump-orphans-go-tools.md) へ切り出した
+
+**切り出しは全件完了。新規ルールは 0 本** (すべて既存ルールへの追記)。
