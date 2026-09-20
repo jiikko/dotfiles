@@ -11,7 +11,7 @@
 `make test`・敵対的レビュー 3 観点 (①壊す ②素通り ③並行・中断) を通し、
 [383](383-bug-lockman-unreadable-lock-collapses-ttl-to-default.md) /
 [384](384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) /
-[385](../385-design-lockman-on-lost-kill-vs-keep-renewing.md) を切り出した。
+[385](385-design-lockman-on-lost-kill-vs-keep-renewing.md) を切り出した。
 
 ## 反省
 

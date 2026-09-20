@@ -143,7 +143,7 @@ M1/M2 を素通り**した。最大のものは `defer inFlight.Add(-1)` の削�
 - [384](384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) — 昇格の TERM が
   EPERM で失敗すると `escalate.Do` が消費済みのまま二度と昇格しない / SIGKILL の直前に
   `exited` を見直していない (両方 ready のとき timer 枝を取る確率は実測 50.1%)
-- [385](../385-design-lockman-on-lost-kill-vs-keep-renewing.md) — **本修正が生んだ矛盾**。
+- [385](385-design-lockman-on-lost-kill-vs-keep-renewing.md) — **本修正が生んだ矛盾**。
   「最初の判定不能で即殺す」昇格と「判定不能でも更新を続ける」ループが逆を向いており、
   既定 (`--on-lost=kill`) では本修正の便益がほとんど回収されない (一過性の詰まりで
   lease は守れたのに子は殺される)。fail-closed → fail-open の変更になるので独立に判断する
@@ -188,7 +188,7 @@ lease を失いやすくなる列。
       実効 TTL が 30m へ縮む fail-open。本修正で露出が広がった) /
       [384](384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) (昇格の実装の穴。
       本修正とは独立) /
-      [385](../385-design-lockman-on-lost-kill-vs-keep-renewing.md) (**本修正が生んだ矛盾**。
+      [385](385-design-lockman-on-lost-kill-vs-keep-renewing.md) (**本修正が生んだ矛盾**。
       既定の `--on-lost=kill` では本修正の便益がほとんど回収されない)
 
 ## 関連
