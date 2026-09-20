@@ -7,6 +7,12 @@
 
 ## ルール
 
+- 🚨 **`-C <dir>` / `--cwd` を渡したことを「隔離した」と読まない。環境変数が黙って上書きする**。
+  典型は `GIT_DIR` / `GIT_WORK_TREE`: hook から起動された self-test がこれを継承したまま
+  `git -C "$tmp" init` を打つと、**`-C` の先ではなく継承した gitdir を再 init する**。
+  破壊的 API を呼ぶ前に、その API が見る**環境変数を unset する** (`env -u` / `unset`)。
+  実例は rationale (obaket 873, 2026-09-20: pre-push の lint gate が共有 checkout の submodule config に
+  `core.bare=true` を書き、**同じ checkout の全セッションが git を使えなくなった**。hook 終了後も残る)
 - **fixture の正しさに依存しない**。「テストが渡すパスは一時ディレクトリだから安全」は
   *そのテストが正しく書かれている限り*成立する条件で、**次にテストを足す人**には効かない
 - **サンドボックス外への破壊的操作を、実行前に拒否する仕掛けを同じ commit で入れる**。

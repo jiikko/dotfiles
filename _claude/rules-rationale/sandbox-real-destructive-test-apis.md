@@ -1,5 +1,26 @@
 # なぜ: 本物の破壊的 API を呼ぶテストの隔離を、同じ commit で入れる
 
+## `-C` を渡したのに本体を壊した実例 (obaket 873、2026-09-20)
+
+pre-push hook が lint gate として `bin/issue-done-test` を起動し、その self-test が
+**hook 由来の `GIT_DIR` を継承したまま** `git -C "$tmp" init` を打った。`-C` の先ではなく
+**submodule の gitdir を再 init** し、`core.bare = true` が書かれた。既存の
+`core.worktree = ../../../../apps/obaket` と矛盾して、以後 `git status` すら
+`fatal: unable to set up work tree using invalid config` で死ぬ。
+
+コストの形が特徴的だった:
+
+- **hook が終わっても残る** (config ファイルへの永続的な書き込み)
+- **同じ checkout の全セッションが止まる** (共有 checkout を複数セッションで使っていた)
+- 症状が git 全般なので、**壊した当人にも「何が壊したか」が見えない** (別セッションが
+  `bin/issue-done-test` の GIT_DIR 継承を突き止めるまで原因不明だった)
+- 復旧 (`git config --local --unset core.bare`) は 1 コマンドだが、**それを打つ権限が
+  セッションごとに違った** (片方では拒否され、もう片方では通った)
+
+真因の修正は `3ff6db9c fix(gate): issue-done-test が hook 由来の GIT_DIR を継承して本体 repo を
+再 init するのを止める` (`macOS/bin/selftest-skip-decision-test` と同じ unset を入れた)。
+
+
 ## 起源: dotfiles 148 段階 ④ の削除エンジン (2026-09-03)
 
 `src/doctor/disk/delete.go` は本物の `os.RemoveAll` と `renameatx_np` を呼ぶ。
