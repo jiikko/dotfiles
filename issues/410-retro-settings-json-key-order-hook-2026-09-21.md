@@ -65,4 +65,14 @@ headless セッションを起こす → 直っているか見る」という A-
 ## 進捗
 
 - [x] 気づき 1 を一般形に引き上げて切り出し先を提案
-- [ ] `verify-execution-not-just-exit-code.md` への追記 (ユーザーの判断待ち)
+- [x] `verify-execution-not-just-exit-code.md` への追記 (2026-09-21)
+  - 「有無で結果が変わらない観測を証拠に数えない」節へ 1 項を追加。発動点は
+    「A-B の片腕を作った瞬間」で、既存項 (観測を読む瞬間) と区別して書いた
+  - 起票時の案に **負の対照** (「別の config を見せた hook では直らない」を挟む) を足した。
+    片腕が崩れていることを確認しても、「勝手に直った」possibility は別に潰す必要がある
+  - 経緯・実例 (`jq -S` が `reverse` を打ち消した実コマンドと、最初の周で別の理由で
+    緑が付いた話) は `_claude/rules-rationale/verify-execution-not-just-exit-code.md` へ
+- [x] 未確認リスク (並行 SessionStart の read-modify-write) は trigger つきで本文に残した。
+  実測はしていないので、この issue を閉じても観測ポイントとしては生きている
+
+残タスクなし。
