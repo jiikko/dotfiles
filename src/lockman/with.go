@@ -70,8 +70,16 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	// (レビュー実測 3/3。窓の幅は `ReleaseTimed` の所要 = 詰まったマウントでは `--io-timeout` まで)。
 	// 🚨 **ここでは `Notify` しない**。取得中の即死は据え置く判断 (2026-09-21) なので、
 	// ハンドラを立てるのは子を起こす直前のまま。`Notify` していないチャネルへの `Stop` は no-op。
+	//
+	// 🚨 **受容: 解放中に届いたシグナルは acknowledge されない** (2 周目 P3-1)。この順序にすると
+	// 解放が終わるまで既定処理が戻らないので、その間の INT / TERM は **rc にも stderr にも
+	// 現れない** (実測: 詰まった解放で 7.29s 無反応、rc は子のもの / 旧版は 1/1 で即死 + lock 残存)。
+	// 窓の上限は `--io-timeout` = 最大 `maxIOTimeout` (5 分)。
+	// 「解放後に自分へ撃ち直す (cleanup-then-re-raise)」で rc に出せるが、**新しい判定と rc の
+	// 意味を作る**ので採らない。lock の整合を優先し、残余をここに記録する。
+	// 再開の trigger: 「Ctrl-C が効かない」が実運用で報告されたとき。
 	sigCh := make(chan os.Signal, 4)
-	defer signal.Stop(sigCh)
+	defer signalStop(sigCh)
 	defer func() {
 		// 🚨 解放に失敗したら、**子が成功していたときだけ** rc を 125 へ上げる (issue 364 の 1)。
 		//
@@ -134,9 +142,7 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	// mark (**掃除まで ~1h10m = 既定 TTL 30m を超える唯一の契約違反**)。
 	// 消すには「取得中も生きて片付ける」形が要り、それは**取得中の Ctrl-C を即死でなくする**
 	// ことと引き換えになる。即死を保つ方を選んだ (mark を消したいなら 366 の猶予側が筋)。
-	if sigs := notifiableSignals(signal.Ignored); len(sigs) > 0 {
-		signal.Notify(sigCh, sigs...)
-	}
+	installSignalHandler(sigCh, signal.Ignored, signal.Notify)
 
 	beforeChildStartHook()
 	if err := cmd.Start(); err != nil {
@@ -341,6 +347,26 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	}
 }
 
+// signalStop は `signal.Stop` の指標。**defer の登録順を in-process で pin する**ためだけに在る
+// (敵対レビュー 363 の 2 周目 P2-1)。1 周目は「死を再現できないので pin できない」と記録したが、
+// 守りたい不変条件は「Stop が解放より**後**に走ること」= **順序**であって死ではない。
+var signalStop = signal.Stop
+
+// installSignalHandler は「無視されていないシグナルだけを中継する」配線。
+//
+// 🚨 **空リストで `signal.Notify` を呼んではいけない** — シグナルを 1 つも渡さない `Notify` は
+// **全シグナルを中継する**ので、「全部無視されている」環境で意味が反転する (SIGURG 等まで
+// 子へ転送しにいく)。そのガードをここに閉じ込めて、単体で固定できるようにした
+// (2 周目 P2-1。production に指標を増やさずに済む形を選んだ)。
+func installSignalHandler(ch chan<- os.Signal, ignored func(os.Signal) bool,
+	notify func(chan<- os.Signal, ...os.Signal)) {
+	sigs := notifiableSignals(ignored)
+	if len(sigs) == 0 {
+		return
+	}
+	notify(ch, sigs...)
+}
+
 // notifiableSignals は `signal.Notify` に渡すシグナルを選ぶ。
 //
 // 🚨 **既に無視されているシグナルは除く** (敵対レビュー 363 の P1-2)。Go の runtime は
@@ -354,6 +380,14 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 //
 // 無視されているシグナルは **lockman 自身も無視する**ので、そもそも「即死して孤児を作る」害が
 // 無い = **fix を効かせる必要が無い**。効かせる必要があるのは「実際に殺すシグナル」だけ。
+//
+// 🚨 **回復するのは HUP / INT だけ。TERM は回復しない** (2 周目 P2-2 の実測)。Go の runtime が
+// 継承 SIG_IGN を尊重するのは HUP / INT に限られ、`signal.Ignored(SIGTERM)` は `trap ” TERM` の
+// 下でも **false** を返す。そのため TERM では「素で実行したときと同じ」にならない
+// (実測: 素の exec では子が生き延びるが、lockman 経由では旧版・新版とも死ぬ)。
+// **これは旧版からの既存の振る舞い**で本 issue の退行ではないが、上の「契約に反する」を
+// 全面的に直したかのように読ませないために射程を書く。Go が init で TERM のハンドラを
+// 入れてしまう以上、継承 disposition を後から知る手段が無いので**直せない**。
 //
 // 🚨 **空になったら `Notify` を呼ばないこと**。`signal.Notify(c)` は**シグナルを 1 つも
 // 渡さないと全シグナルを中継する**ので、「全部無視されている」環境で呼ぶと意味が反転する。

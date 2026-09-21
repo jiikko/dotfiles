@@ -10,33 +10,14 @@ import (
 	"time"
 )
 
-// 🚨 **テスト全体で INT / TERM を握っておく** (issue 363)。
+// 🚨 **`TestMain` の guard は置かない** (敵対レビュー 363 の 2 周目 P3-2)。
 //
-// このファイルのテストは**自分のプロセスへシグナルを撃つ**。`runWith` が `signal.Notify` を
-// 立てる前に撃つと、修正が無い版では**既定処理でテストランナーごと死ぬ** (変異を当てた瞬間に
-// スイートが消える = 変異検証ができない)。
-//
-// Go の `os/signal` は **登録された全チャネルへ配送**し、**1 つでも登録があれば既定処理が
-// 無効になる**。テスト側でも登録しておけば ①変異を当ててもランナーは死なない
-// ②`runWith` が登録していればそちらにも同じシグナルが届く = **「runWith が受け取れたか」
-// だけが差として観測できる**。
-//
-// 🚨 **このため「即死しないこと」自体はここでは検査できない**。363 が (B) で変えないのは
-// 取得中の窓だけで、ここで見るのは「**子が存在し始める瞬間から、シグナルを runWith が
-// 受け取って転送するか**」。
-//
-// 🚨 `os.Exit` は defer を走らせないので `defer signal.Stop(guard)` は書かない
-// (敵対レビュー P3-1。「後始末に見えて何もしない行」を置かない)。プロセスの寿命と同じ
-// ライフタイムで持つのが意図。
-func TestMain(m *testing.M) {
-	guard := make(chan os.Signal, 8)
-	signal.Notify(guard, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		for range guard { // 捨てるだけ。既定処理を無効にするのが目的
-		}
-	}()
-	os.Exit(m.Run())
-}
+// 1 周目は「自分へシグナルを撃つので、修正が無い版ではランナーごと死ぬ」対策として
+// `TestMain` で INT / TERM を `signal.Notify` していたが、**subtest 側が `runWith` を呼ぶ前に
+// 自分で登録している**ので既定処理は既に無効で、guard は**冗長**だった。
+// 害の方が大きい: guard があると**このテストバイナリが Ctrl-C でも TERM でも止まらなくなり、
+// 中断に SIGKILL が要る** (レビュー実測)。
+// 削除しても ①全スイート緑 ②変異 A で 2 subtest とも red ③ランナーは生存 を確認済み。
 
 // 子が存在し始める瞬間から、シグナルを `runWith` が受け取って子へ転送すること (issue 363)。
 //
@@ -48,7 +29,10 @@ func TestMain(m *testing.M) {
 // 「Start と Notify のあいだ」に Notify を戻す変異 (= 同じ退行) が判別の外に落ち、**緑で通る**
 // (実測)。Start の前なら判別境界が「子が存在し始める瞬間」に一致する。
 func TestSignalIsHandledFromTheMomentChildExists(t *testing.T) {
-	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT} {
+	// 🚨 production が中継するのは INT / TERM / **HUP** の 3 つ (`notifiableSignals`)。
+	// 1 周目に「主題は Ctrl-C = INT なのに TERM しか通していない」を採用したのと**同じ論拠**で
+	// HUP も通す (2 周目 P3-3)。
+	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP} {
 		t.Run(sig.String(), func(t *testing.T) {
 			l := newTestLocker(t)
 			dir := t.TempDir()
@@ -136,6 +120,82 @@ func TestNotifiableSignalsRespectsInheritedIgnore(t *testing.T) {
 			if got[i] != tc.want[i] {
 				t.Errorf("%s: %v (期待 %v)", tc.name, got, tc.want)
 				break
+			}
+		}
+	}
+}
+
+// 🚨 **`signal.Stop` は解放より"後"に走ること** (敵対レビュー 363 の 2 周目 P2-1)。
+//
+// 1 周目は「死を再現できないので in-process では pin できない」と記録したが、**守りたい不変条件は
+// 順序であって死ではない**。`signalStop` の指標を差し替えれば、Stop が呼ばれた瞬間に
+// **lock がもう消えているか**を見るだけで決定論的に固定できる。
+// (Stop が先に走ると既定処理が戻り、解放中の TERM/INT がプロセスを殺して lock が残る =
+// issue 363 が漏れと定義した signature そのもの。レビューが out-of-process で 3/3 再現)
+func TestSignalStopRunsAfterRelease(t *testing.T) {
+	l := newTestLocker(t)
+	orig := signalStop
+	var called, lockAliveAtStop bool
+	signalStop = func(c chan<- os.Signal) {
+		called = true
+		_, err := os.Stat(l.lockPath())
+		lockAliveAtStop = err == nil
+		orig(c)
+	}
+	t.Cleanup(func() { signalStop = orig })
+
+	rc := boundedInt(t, "runWith (Stop の順序)", func() int {
+		return runWith(l, time.Hour, "", false, []string{"sh", "-c", "exit 0"})
+	})
+	if !called {
+		t.Fatal("前提が作れていない: signalStop が呼ばれていない")
+	}
+	// rc の条件は「解放が別の理由で失敗した」ケースを弾くため (偽陽性よけ)
+	if lockAliveAtStop && rc == exitOK {
+		t.Fatalf("signal.Stop が解放より先に走っている (rc=%d)。既定処理が戻るので、"+
+			"解放中の TERM/INT がプロセスを殺して lock が残る", rc)
+	}
+}
+
+// 🚨 **全部無視されている環境では `signal.Notify` を呼ばないこと** (2 周目 P2-1)。
+//
+// シグナルを 1 つも渡さない `Notify` は**全シグナルを中継する**ので、意味が反転して
+// SIGURG のような内部シグナルまで子へ転送しにいく。production に指標を増やさずに固定できるよう、
+// 配線を `installSignalHandler` へ切り出してある。
+func TestInstallSignalHandlerSkipsNotifyWhenAllIgnored(t *testing.T) {
+	ch := make(chan os.Signal, 1)
+	for _, tc := range []struct {
+		name      string
+		ignored   func(os.Signal) bool
+		wantCalls [][]os.Signal
+	}{
+		{"全部無視 = 呼ばない", func(os.Signal) bool { return true }, nil},
+		{"何も無視されていない = 3 つ渡す", func(os.Signal) bool { return false },
+			[][]os.Signal{{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP}}},
+		{"HUP/INT だけ無視 = TERM だけ渡す",
+			func(s os.Signal) bool { return s == syscall.SIGHUP || s == syscall.SIGINT },
+			[][]os.Signal{{syscall.SIGTERM}}},
+	} {
+		var calls [][]os.Signal
+		// 🚨 本物の Notify へ委譲しない。空で呼ぶと全シグナルを中継してしまい、
+		// 変異を当てた瞬間にテストプロセスが内部シグナルで溢れる
+		installSignalHandler(ch, tc.ignored, func(_ chan<- os.Signal, sigs ...os.Signal) {
+			calls = append(calls, sigs)
+		})
+		if len(calls) != len(tc.wantCalls) {
+			t.Errorf("%s: 呼び出し %v (期待 %v)", tc.name, calls, tc.wantCalls)
+			continue
+		}
+		for i := range calls {
+			if len(calls[i]) != len(tc.wantCalls[i]) {
+				t.Errorf("%s: %v (期待 %v)", tc.name, calls, tc.wantCalls)
+				break
+			}
+			for j := range calls[i] {
+				if calls[i][j] != tc.wantCalls[i][j] {
+					t.Errorf("%s: %v (期待 %v)", tc.name, calls, tc.wantCalls)
+					break
+				}
 			}
 		}
 	}
