@@ -286,7 +286,7 @@ grep -q "^linked: $CH/rules/r1.md" <<<"$OUT" || ng "readlink 空の link を張�
 #    非 TTY で色を付けると全部落ちる (この 2 つが色を条件付きにする理由)。
 fixture color
 run apply
-printf '%s' "$OUT" | grep -q $'\033\[32m' && ng "非 TTY なのに色が付いている"$'\n'"$OUT"
+grep -q $'\033\[32m' <<<"$OUT" && ng "非 TTY なのに色が付いている"$'\n'"$OUT"
 grep -q "^linked: $CH/rules/r1.md" <<<"$OUT" || ng "非 TTY で linked 行が出ていない"$'\n'"$OUT"
 
 fixture color-tty
@@ -298,7 +298,7 @@ tty_out=$(DOTFILES_ROOT="$DOT" CLAUDE_HOME="$CH" python3 -c '
 import os, pty, sys
 sys.exit(pty.spawn([sys.argv[1], "apply"]))
 ' "$SCRIPT" 2>&1 || true)
-printf '%s' "$tty_out" | grep -q $'\033\[32mlinked: ' \
+grep -q $'\033\[32mlinked: ' <<<"$tty_out" \
   || ng "TTY で linked 行が緑になっていない"$'\n'"$tty_out"
 
 if [ "$fails" -ne 0 ]; then
