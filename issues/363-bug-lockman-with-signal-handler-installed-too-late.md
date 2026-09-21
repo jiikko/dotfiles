@@ -228,9 +228,50 @@ cmd.Start()
   潰すので、修正の有無で死ぬ / 死なないの差が出ない)。(B) が変えないのは取得中の窓だけなので
   対象外だが、**何を検査していないか**として記録する
 
+## 敵対的レビュー 1 周目 (2026-09-21。全数勘定)
+
+指摘 9 件、**採用 5 / 記録 4 / 却下 0**。🚨 **P1 が 2 件で、どちらも「私の修正が支えていない /
+副作用を作った」形**だった。
+
+| # | 指摘 | 判定 |
+|---|---|---|
+| P1-1 | seam を `cmd.Start()` の**後**に置いたため、判別境界が Start ではなく seam になっていた。**「Start と Notify のあいだ」に Notify を戻す変異 (= 363 そのものの退行。子は既に居るので孤児になる) が緑で通る**。しかも seam の doc が契約を **Notify 基準**で書いており、**そのとおりに置くと盲点になる配置を明文で許していた** | **採用**。seam を Start の**前**へ移し、doc を **Start 基準**へ書き直した。変異 A で red |
+| P1-2 | Notify を exec より前へ出した副作用で、**子が継承する HUP/INT の disposition が SIG_IGN → SIG_DFL に変わった**。Go の runtime は HUP/INT に限り継承 SIG_IGN を尊重するが `signal.Notify` が上書きするため。実測 (`trap '' HUP INT` の下): 素の実行と旧版は子が生き延び、**新版は死ぬ**。`with` の契約「子が無視するなら素で実行したときと同じ」に反し、`nohup` / cron で端末が切れたとき**以前は生き延びたジョブが死ぬ**。しかもその環境では**旧版に 363 の孤児問題は無かった** (lockman も子も無視していた) = 問題の無いところに挙動変更を作っていた | **採用**。`signal.Ignored` が true のものは Notify に渡さない。🚨 **空リストで `signal.Notify` を呼ぶと全シグナルを中継する**ので `len(sigs) > 0` のガードと対で意味を持つ |
+| P2-1 | `defer signal.Stop(sigCh)` が解放の defer より**後**に登録されており、LIFO で **Stop → 解放**の順に走る。Stop で既定処理が戻るので**解放中の TERM/INT がプロセスを殺し lock が残る** = 363 が漏れと定義した signature そのもの (レビュー実測 3/3)。窓幅は `ReleaseTimed` の所要 = 詰まったマウントでは `--io-timeout` (既定 10s) まで。🚨 **この commit が作った窓ではなく既存** | **採用**。sigCh の生成と Stop の defer を解放より前へ。Notify の位置は変えないので**取得中の即死は据え置き** |
+| P2-3 | 363 の主題は Ctrl-C = **SIGINT** なのに、テストが通しているのは TERM だけ | **採用**。INT/TERM のテーブル駆動にした (変異 D で red) |
+| 変異 E (レビュー外だが自分で発見) | `notifiableSignals` が `signal.Ignored` を直に呼ぶと、**テストプロセスでは何も無視されていないので選別の有無で結果が変わらず**、「無視されていても渡す」変異が緑で通った | **採用**。述語を引数で受ける形にして単体で固定 (変異 E で red) |
+| P2-2 | `defer signal.Stop` を消す変異が緑 (未 pin) | **記録**。下記のとおり in-process では原理的に pin できない |
+| P3-1 | `TestMain` の `defer signal.Stop(guard)` は `os.Exit` で**永久に走らない** | **採用**。削除し、意図 (プロセスの寿命と同じライフタイム) をコメントに書いた |
+| P3-2 / P3-3 | `boundedInt` の安全網 20s と seam の待ち (10s+10s) が同額 / Start 中はシグナルが buffer されるだけで割り込めない | **記録**。前者は前提が崩れたときにメッセージが変わるだけ (推論のみ、未実験)。後者は旧版が即死していたトレードオフ |
+| 受容の記述が不正確 | mark と調停の目印は **stale takeover 経路でしか作られない**ので、素の Acquire 中の Ctrl-C では残らない。「3 種類が常に残る」と読める書き方だった | **採用 (訂正)**。害を**過大に**見積もる方向なので安全側だったが、記述としては誤り |
+
+### 🚨 in-process では pin できないもの (2 件。記録)
+
+| 変異 | なぜ緑のままか |
+|---|---|
+| **P2-1 の defer 順を戻す** | 害は「既定処理が戻ってプロセスが死ぬ」ことだが、**ランナーを守るための `TestMain` の guard がまさにその failure mode を抑止する**。修正の正しさはレビューの out-of-process A-B (3/3 で `rc=143` + lock 残存) が根拠。検出可能性は「**検出手段はあるが未実証**」(subprocess e2e なら可能) |
+| **空でも `signal.Notify` を呼ぶ (変異 F)** | テストプロセスでは INT/TERM/HUP が無視されていないので**リストが空にならない**。空のケース自体は `notifiableSignals` の単体で固定済みで、ガードの必要性はコメントで説明 |
+
+### 変異検証 (1 周目の修正分)
+
+| 変異 | 結果 |
+|---|---|
+| A: Notify を `cmd.Start()` の後ろへ | `TestSignalIsHandledFromTheMomentChildExists` の **2 subtest とも red** |
+| D: INT/HUP を落として TERM だけ Notify | 同 `/interrupt` + `TestNotifiableSignalsRespectsInheritedIgnore` red |
+| E: 無視されていても Notify に渡す | `TestNotifiableSignalsRespectsInheritedIgnore` red |
+| F: 空でも Notify を呼ぶ | **緑** (上表の理由。記録) |
+
+`go test -race ./...` 緑 / golangci-lint 0 issues。
+
+### 2 周目が要る
+
+§7 の打ち切り条件 (a) を満たさない: 1 周目の対応で **production に新しい判定を 3 つ足した**
+(seam の位置 / `notifiableSignals` の選別 / defer の登録順という新しい不変条件)。
+
 ## 残タスク
 
-- [ ] 反証レビュー (**実施中**)
+- [x] 反証レビュー 1 周目 (採用 5 / 記録 4)。変異 3 本で red
+- [ ] **未実施**: 2 周目 (§7)。1 周目の対応が新しい判定 3 つを含むため
 - [x] 対応方針の決定 → **(B) `signal.Notify` を `cmd.Start()` の直前へ出すだけ**
       (2026-09-21 のユーザー判断「取得中の即死はそのままでよい」)。取得中の窓は受容する
 - [x] 塞ぐ対象の整理 → (B) では**取得中の残骸 (lock / 目印 / mark) は受容**する。
