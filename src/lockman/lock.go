@@ -706,6 +706,13 @@ func (l *Locker) tryTakeover(ab *abandon) (bool, error) {
 	// `evicted` が false のままなので**上の defer がそのまま目印を回収する**。
 	// 🚨 検査は defer の**後**に置くこと。前に置くと、目印を置いた直後に降りたときに
 	// 回収する者が居なくなり、その世代の引き継ぎを猶予いっぱい塞ぐ (この issue の被害そのもの)。
+	// 🚨 **「測れた効果が無いから外す」はしない** (2026-09-21 の判断。issue 362)。A-B では
+	// ②単独の漏れは before/after とも 7/300 で差が出ないが、それは非引き継ぎ経路の claim を
+	// 上の defer が元から回収していたためで、この検査が単独で止めているのは
+	// **詰まったマウントへ 2 段目の `readLock` を撃つこと** — その regime は未実測のまま。
+	// 測れない regime にしか効かない防御を「測れなかった」を根拠に外すのは順序が逆。
+	// 外すなら `list-masked-failure-modes-before-removing-guard.md` に従い、
+	// ここと `abandonCheckBeforeEvictHook` の両方を外した A-B を詰まりマウントで採ること。
 	abandonCheckAfterClaimHook(ab)
 	if ab.abandoned() {
 		return false, errAbandoned
