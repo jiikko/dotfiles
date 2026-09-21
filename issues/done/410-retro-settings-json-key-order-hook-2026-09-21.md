@@ -34,7 +34,7 @@ headless セッションを起こす → 直っているか見る」という A-
 
 ### 切り出し先
 
-**[`_claude/rules/verify-execution-not-just-exit-code.md`](../_claude/rules/verify-execution-not-just-exit-code.md)
+**[`_claude/rules/verify-execution-not-just-exit-code.md`](../../_claude/rules/verify-execution-not-just-exit-code.md)
 への追記**（新規ルールは立てない）。
 
 同ファイルの「『有無で結果が変わらない観測』を証拠に数えない」節に、発動点違いの
@@ -42,7 +42,7 @@ headless セッションを起こす → 直っているか見る」という A-
 
 - 既存節の発動点は「観測結果を**読む**瞬間」
 - 今回の発動点は「**崩し / fixture を作った**瞬間」(読む前に空振りが確定している)
-- [`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md) の
+- [`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md) の
   手順 1.6 (変異の diff を目視する) が同型だが、**あちらはコードへの変異が発動点**で、
   live な A-B の入力づくりには効かなかった (実際に読んでいたのに踏んだ)
 
