@@ -63,6 +63,15 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 		warnf("%v", err)
 		return exitWithInvalid
 	}
+	// 🚨 **`signal.Stop` の defer は、解放の defer より"先"に登録する** (敵対レビュー 363 の P2-1)。
+	// defer は LIFO なので、後から登録すると **Stop → 解放** の順に走る。Stop でハンドラが外れると
+	// 既定処理が戻るので、**解放中に届いた TERM / INT がプロセスを殺し、lock が残る** —
+	// issue 363 が漏れと定義した signature (`rc=143` + lock 残存) そのもの
+	// (レビュー実測 3/3。窓の幅は `ReleaseTimed` の所要 = 詰まったマウントでは `--io-timeout` まで)。
+	// 🚨 **ここでは `Notify` しない**。取得中の即死は据え置く判断 (2026-09-21) なので、
+	// ハンドラを立てるのは子を起こす直前のまま。`Notify` していないチャネルへの `Stop` は no-op。
+	sigCh := make(chan os.Signal, 4)
+	defer signal.Stop(sigCh)
 	defer func() {
 		// 🚨 解放に失敗したら、**子が成功していたときだけ** rc を 125 へ上げる (issue 364 の 1)。
 		//
@@ -125,16 +134,16 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	// mark (**掃除まで ~1h10m = 既定 TTL 30m を超える唯一の契約違反**)。
 	// 消すには「取得中も生きて片付ける」形が要り、それは**取得中の Ctrl-C を即死でなくする**
 	// ことと引き換えになる。即死を保つ方を選んだ (mark を消したいなら 366 の猶予側が筋)。
-	sigCh := make(chan os.Signal, 4)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-	defer signal.Stop(sigCh)
+	if sigs := notifiableSignals(signal.Ignored); len(sigs) > 0 {
+		signal.Notify(sigCh, sigs...)
+	}
 
+	beforeChildStartHook()
 	if err := cmd.Start(); err != nil {
 		warnf("実行できない: %v", err)
 		return exitWithInvalid
 	}
 	pgid := cmd.Process.Pid
-	afterChildStartHook()
 
 	ticker := time.NewTicker(ttl / renewDivisor)
 	defer ticker.Stop()
@@ -332,6 +341,36 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	}
 }
 
+// notifiableSignals は `signal.Notify` に渡すシグナルを選ぶ。
+//
+// 🚨 **既に無視されているシグナルは除く** (敵対レビュー 363 の P1-2)。Go の runtime は
+// **SIGHUP と SIGINT に限り、継承された SIG_IGN を尊重して自前ハンドラを入れない**が、
+// `signal.Notify` はそれを上書きして入れてしまう。`exec` は「catch 中」を SIG_DFL へリセットする
+// ので、**Notify を `cmd.Start()` の前へ出した副作用として、子が継承する disposition が
+// SIG_IGN → SIG_DFL に変わる** (実測 darwin 24.6: `sh -c "trap ” HUP INT; exec lockman with …"`
+// の下で、素の実行と旧版では子が HUP/INT を生き延びたのに、新版では**死ぬ**)。
+// これは `with` の契約「子が無視するなら**素で実行したときと同じ振る舞いにする**」に反する
+// (`nohup lockman with … &` や cron で端末が切れたとき、以前は生き延びた長時間ジョブが死ぬ)。
+//
+// 無視されているシグナルは **lockman 自身も無視する**ので、そもそも「即死して孤児を作る」害が
+// 無い = **fix を効かせる必要が無い**。効かせる必要があるのは「実際に殺すシグナル」だけ。
+//
+// 🚨 **空になったら `Notify` を呼ばないこと**。`signal.Notify(c)` は**シグナルを 1 つも
+// 渡さないと全シグナルを中継する**ので、「全部無視されている」環境で呼ぶと意味が反転する。
+// 🚨 **述語は引数で受け取る** (敵対レビュー 363 の変異 E)。`signal.Ignored` を直に呼ぶと、
+// テストプロセスでは何も無視されていないため**選別の有無で結果が変わらず**、
+// 「無視されていても渡す」変異が緑で通る (実測)。注入できれば選別そのものを単体で固定できる。
+func notifiableSignals(ignored func(os.Signal) bool) []os.Signal {
+	var sigs []os.Signal
+	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP} {
+		if ignored(sig) {
+			continue
+		}
+		sigs = append(sigs, sig)
+	}
+	return sigs
+}
+
 // childExitCode は子の終了状態を終了コードへ変換する。
 // シグナル死は shell の慣習に合わせて 128+signal にする。
 func childExitCode(err error) int {
@@ -441,11 +480,18 @@ func escalateGroupKill(pgid int, exited <-chan struct{}, grace time.Duration) {
 	_ = killGroup(pgid, syscall.SIGKILL)
 }
 
-// afterChildStartHook は「子を起こした直後」に割り込む seam。既定は何もしない。
-// 🚨 **`signal.Notify` より後・select ループより前**という窓を、テストから決定論で作るために要る
-// (issue 363)。ここで自分へシグナルを撃つと、ハンドラが立っていれば `sigCh` へ、
-// 立っていなければ**既定処理**へ流れる = 修正の有無がそのまま差になる。
-var afterChildStartHook = func() {}
+// beforeChildStartHook は「子を起こす直前」に割り込む seam。既定は何もしない。
+//
+// 🚨 **契約は `cmd.Start()` 基準で書く** (敵対レビュー 363 の P1-1)。初版は
+// 「`signal.Notify` より後・select ループより前」と **Notify 基準**で書いており、
+// その契約どおりに seam を置くと **Start と Notify のあいだ**という窓が判別の外に落ちた —
+// そこへ `signal.Notify` を戻す変異 (363 そのものの退行。子は既に居るので孤児になる) が
+// **緑で通った**。seam を Start の**前**へ置けば、判別境界が「子が存在し始める瞬間」に一致する。
+//
+// ここで自分へシグナルを撃つと、ハンドラが立っていれば `sigCh` に buffer されて
+// select ループが出来たての子へ転送し、立っていなければ**既定処理**へ流れる
+// (= 修正の有無がそのまま差になる)。
+var beforeChildStartHook = func() {}
 
 // escalateBeforeKillHook は「猶予が切れてから SIGKILL を撃つまで」に割り込む seam。
 // 既定は何もしない。**テストが「timer 枝を取った後に子が終わった」状態を決定論で作る**ために使う
