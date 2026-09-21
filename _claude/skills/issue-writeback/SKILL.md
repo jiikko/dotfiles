@@ -42,9 +42,20 @@ Stop hook (`_claude/hooks/issue-progress-check.sh`) が同じ関心で出口を�
   `git diff --name-only` / `git log --format=%s`（worktree の commit は本体からは見えない）
 - `issues/.../next/` に置かれた claim（symlink）
 
-issue dir の解決と固定 2 段（`epic/<name>/` とその状態ディレクトリ）の走査は
-`_claude/hooks/lib/issue-hooks.sh` の `issue_hook_resolve_dir` / `ISSUE_HOOK_DIRS` に揃える。
-`find` を自作するなら **`-name done -prune`** と「**`next/` の symlink は `-type f` で数えない**」を落とさない。
+issue dir の解決（`issues/` と `issue/`、`<root>/*/issues` の入れ子 1 段）は、**dotfiles がある環境では
+既存の lib に揃える**。hook JSON は要らず、stdin を空にすれば cwd から解決する（実測 2026-09-22）:
+
+```sh
+. ~/dotfiles/_claude/hooks/lib/issue-hooks.sh && issue_hook_resolve_dir </dev/null
+# → $ISSUE_HOOK_ROOT（repo root）/ $ISSUE_HOOK_DIRS（issue dir を 1 行 1 つ）
+```
+
+🚨 **dotfiles が無い環境（他人のマシン・CI）ではこのパスは存在しない**。その場合は自分で走査する。
+どちらの経路でも落としてはいけないのは 3 つ:
+
+- **`-name done -prune`**（`-path` で書くと起点の綴りで一致しなくなり done 全件が open に化ける）
+- **`next/` の symlink を `-type f` で数えない**（claim は直下の実体として 1 回だけ数える）
+- **`epic/<name>/` とその `next/` `pending/` `done/`**（固定 2 段）
 
 🚨 **「commit していないから対象外」にしない**。hook が構造的に落とすのがまさにここで、
 この skill の存在理由の半分を占める。
@@ -66,6 +77,10 @@ issue dir の解決と固定 2 段（`epic/<name>/` とその状態ディレク�
 ## Step 3: 報告する
 
 対象 issue ごとに 1 行。**漏れが無いものも「漏れなし」と明示する**（無報告と未点検は区別できない）。
+
+🚨 **対象 0 件のときは「抽出して 0 件だった」と書く**。抽出が壊れて空を返した場合も同じ「0 件」に
+見えるので、黙って終わると**点検したことと、抽出が空振りしたことが区別できない**。会話履歴に
+issue 番号が 1 つも出ていないなら、その事実も 1 行添える（0 件の根拠になる）。
 
 ```
 ## issue 書き戻し点検: 対象 N 件 / 要追記 M 件
