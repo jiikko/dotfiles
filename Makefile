@@ -84,9 +84,12 @@ clean-tmp:
 		echo "✓ $${n} 件 / $${size}MB を削除した (残り $$(ls tmp | wc -l | tr -d ' ') エントリ)"; \
 	fi
 
-# settings.json の揮発キー (model/effort 等) を settings.local.json へ退避してから
-# pull する。追跡対象の settings.json に混ざるマシンローカルな churn を取り除き、
+# settings.json の揮発キー (model/effort 等) を settings.local.json へ退避し、
+# 残りのキーをソートしてから pull する。追跡対象の settings.json に混ざるマシン
+# ローカルな churn と、CLI がキーを再挿入して起こす順序の入れ替わりを取り除き、
 # 複数セッション常駐中でも pull がコンフリクトしないようにする。
+# 同じスクリプトを SessionStart hook でも呼んでいる (_claude/settings.json)。
+# ここは「セッションを起こさずに pull するとき」用。
 # 詳細: _claude/hooks/normalize-settings.sh
 pull:
 	@_claude/hooks/normalize-settings.sh
