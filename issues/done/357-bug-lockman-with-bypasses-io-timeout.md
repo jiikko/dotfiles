@@ -3,7 +3,7 @@
 起票日: 2026-09-11
 カテゴリ: bug / priority: high
 対象: `src/lockman/with.go` の `runWith` / `src/lockman/main.go` の `dispatch`（deferred `Cleanup`）/ `timed`
-出典: resource-leaks 監査 2026-09-11（[issue 359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md)）
+出典: resource-leaks 監査 2026-09-11（[issue 359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md)）
 反証レビュー: 1 周実施。**起票時の「`with` だけが穴」は誤りで、`dispatch` の deferred `Cleanup` も
 包まれていないことが判明した**（下の表）。指摘を反映済み
 
@@ -248,7 +248,7 @@ issue の 🚨 が「①だけを数える検査は②を素通りさせる」�
 - [issue 091](091-feat-lockman-directory-lease-lock.md) — 仕様の正本（:418 の io-timeout / :398-399 の終了コード表 / :496 の受け入れ条件）
 - [issue 356](356-bug-lockman-with-releases-lock-while-grandchildren-run.md) — 同じ `runWith` の別の欠陥
 - [issue 340](340-risk-av1ify-lock-unverified-residuals.md) — `Renew` の残り窓（別物）
-- [issue 359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) — この issue の出典（監査記録）
+- [issue 359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) — この issue の出典（監査記録）
 
 ## 敵対的レビュー (2026-09-15 / read-only サブエージェント 1 体)
 

@@ -3,7 +3,7 @@
 起票日: 2026-09-11
 カテゴリ: bug / priority: **medium**（`with` の最初の利用者が現れたら high。理由は下の「重要度」節）
 対象: `src/lockman/with.go` の `runWith`
-出典: resource-leaks 監査 2026-09-11（[issue 359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md)）
+出典: resource-leaks 監査 2026-09-11（[issue 359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md)）
 反証レビュー: 1 周実施（指摘を反映済み。詳細は 359）
 
 ## 問題
@@ -240,4 +240,4 @@ A を採らなかったのは、正常終了時にグループを薙ぐと**意�
 - [issue 340](340-risk-av1ify-lock-unverified-residuals.md) 項目 2 — pgid 再利用（案 A が同クラスの risk を持ち込む）
 - [issue 357](357-bug-lockman-with-bypasses-io-timeout.md) — 同じ `runWith` の別の欠陥
 - [issue 091](091-feat-lockman-directory-lease-lock.md) — 仕様の正本（:282 / :381 / :293）
-- [issue 359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) — この issue の出典（監査記録）
+- [issue 359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) — この issue の出典（監査記録）

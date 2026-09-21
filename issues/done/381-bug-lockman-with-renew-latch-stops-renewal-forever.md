@@ -175,7 +175,7 @@ lease を失いやすくなる列。
 
 - [x] 恒久ラッチを解く設計を決めて実装する — 期限切れで参照を捨て、次の tick で新しい更新を
       積む。溜まる本数は `maxInFlightRenews` (既定 8、goroutine 自身が減らすので復旧すれば枠が戻る)
-      で抑える。[359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) 項目 4 の
+      で抑える。[359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) 項目 4 の
       「上限を置くか決めろ」への回答でもある
 - [x] `--on-lost=warn` での二重実行を A-B で実測する (上表)
 - [x] ~~`TestRenewDoesNotPileUpGoroutinesWhenBlocked` に lease の assert を足す~~ → 誤り。上記

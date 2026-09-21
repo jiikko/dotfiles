@@ -7,7 +7,7 @@
 起票日: 2026-09-11
 カテゴリ: refactor / priority: low
 対象: `src/lockman/cleanup.go` の `Locker.Cleanup` / `main.go` の `dispatch`
-出典: resource-leaks 監査 2026-09-11（[issue 359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md)）
+出典: resource-leaks 監査 2026-09-11（[issue 359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md)）
 反証レビュー: 1 周実施。**起票時の根拠（「1 時間より古い自分の残骸は原理的に存在しない」）は
 崩れた**。結論（削除してよい）は別の根拠で生き残っている。下の「配線しても守るものが無い」節
 
@@ -751,7 +751,7 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
 | 形 | 理由 | 責務の所在 |
 |---|---|---|
 | テスト (`TestMinRetentionFloorIsPinned`) ごと書き換えて下限を下げる | リテラル pin は敷居であって不可能性ではない。4 行 (production 3 + テスト 1) で通ることは 3 周目でコメントに開示済み | code review |
-| `--io-timeout` に極端な値 (5h) を渡して余裕の前提を崩す | 本 issue が持ち込んだ穴ではない。[359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) へ移送済み | issue 356 / 357 の実装時 |
+| `--io-timeout` に極端な値 (5h) を渡して余裕の前提を崩す | 本 issue が持ち込んだ穴ではない。[359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) へ移送済み | issue 356 / 357 の実装時 |
 | `now` を未来へ振って下限を割らずに新しい残骸を消す | production に入力を作る経路が無い (`now` も `ModTime` も同じ `serverNow()`)。2 周目に却下済み | — |
 | ENOENT フィルタの単体回帰のうち **`os.Remove` と `e.Info()` の分** | ReadDir と Remove のあいだで他者が消す状態を seam 無しで決定論的に作れない。検出可能性は A-B 実験で実証済み (4 周目 M20) | `sweepDir` に seam を入れる変更が来たとき |
 
@@ -790,7 +790,7 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
 - **`--io-timeout` に上限の検証が無く、5h を渡すと `minRetention` の根拠が崩れる (P3)** —
   指摘自体は実在する (実測で `--io-timeout 5h` が rc=0 で受理される)。ただし**本 commit が
   持ち込んだ穴ではなく**、`--on-lost` の無検証と同じ族なので
-  [359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) の「軽微だが実在する」節へ
+  [359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) の「軽微だが実在する」節へ
   移し、356 / 357 の実装時にまとめて直す。`cleanup.go` のコメントには「既定の I/O の上限」と
   書き、成立条件が既定値に限ることを明記した
 - **`graveyardRetention` / `cleanupInterval` に同型の危険はないか (P3)** — `graveyardRetention` は
@@ -801,4 +801,4 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
 ## 関連
 
 - [issue 315](315-test-unused-includes-tests-so-production-unreachable-code-stays-green.md) / [issue 317](317-test-termsafe-regression-test-observes-production-unreachable-surfaces.md) — 同型（production 到達不能な面をテストが観測）
-- [issue 359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) — この issue の出典（監査記録）
+- [issue 359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) — この issue の出典（監査記録）

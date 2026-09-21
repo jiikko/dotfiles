@@ -1,7 +1,7 @@
 # lockman の resource-leaks / performance 監査 (2026-09-11) — 記録と却下理由
 
 ✅ **2026-09-21 に done**。生存した 3 件 (356 / 357 / 358) は実装済み、却下 5 件の理由はこの本文に残る。
-最後に残っていた `--on-lost` の値検証は **[409](409-bug-lockman-on-lost-value-is-not-validated.md) へ切り出した**
+最後に残っていた `--on-lost` の値検証は **[409](../409-bug-lockman-on-lost-value-is-not-validated.md) へ切り出した**
 (この issue は監査の記録が本体で、実装待ちを抱えて open を続ける器ではないため)。
 
 起票日: 2026-09-11
@@ -33,9 +33,9 @@
 
 | issue | 内容 | 証拠の強さ |
 |---|---|---|
-| [356](done/356-bug-lockman-with-releases-lock-while-grandchildren-run.md) | `with` が孫プロセスの走行中にロックを解放する (排他が破れる) | **再現済み** (孫の生存 + 解放後の保持者との交互書き込み) |
-| [357](done/357-bug-lockman-with-bypasses-io-timeout.md) | `with` だけ I/O タイムアウトの外。詰まると SIGTERM/INT/HUP が全部効かない | 機構は**機械照合済み**、挙動は FIFO ハーネスで**再現済み**、本番条件 (応答しないマウント) は**未再現** |
-| [358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) | `Cleanup` の `selfToken` ガードが production 到達不能かつ守る対象が存在しない | 機械照合済み |
+| [356](356-bug-lockman-with-releases-lock-while-grandchildren-run.md) | `with` が孫プロセスの走行中にロックを解放する (排他が破れる) | **再現済み** (孫の生存 + 解放後の保持者との交互書き込み) |
+| [357](357-bug-lockman-with-bypasses-io-timeout.md) | `with` だけ I/O タイムアウトの外。詰まると SIGTERM/INT/HUP が全部効かない | 機構は**機械照合済み**、挙動は FIFO ハーネスで**再現済み**、本番条件 (応答しないマウント) は**未再現** |
+| [358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) | `Cleanup` の `selfToken` ガードが production 到達不能かつ守る対象が存在しない | 機械照合済み |
 
 🚨 **`lockman with` を実行している production コードは 0 件。**
 `grep -rn 'lockman with' --include='*.zsh' --include='*.sh' --include='Makefile' --include='*.go'`
@@ -47,7 +47,7 @@ acquire / renew / release しか呼ばない / `tests/zshrc/av1ify/test_helper.s
 重要度はこの事実を踏まえて **357 = high / 356 = medium** に分けた:
 
 - **357 は high**。反証レビューで穴が `with` 限定でないことが判明し (deferred `Cleanup` は
-  live な `acquire` / `break` / `cleanup` にも効く)、かつ [issue 091](done/091-feat-lockman-directory-lease-lock.md):418 が
+  live な `acquire` / `break` / `cleanup` にも効く)、かつ [issue 091](091-feat-lockman-directory-lease-lock.md):418 が
   終了コードまで指定した明文の要求 (`--io-timeout` 超過は `with` で 125) に対する違反で、
   受け入れ条件 091:496 のテストも 0 件
 - **356 は medium**。091 は孫の封じ込めを一度も約束しておらず (約束しているのは :282 の
@@ -153,10 +153,10 @@ SMB 越しの実時間は**未実測**。
 
 `util.go` の `withTimeout` のコメントが「🚨 固まった goroutine は回収できない …
 プロセスの終了で解放される前提の使い捨て」と既に明記している。lockman は `with` 以外
-すべて短命プロセスで、`with` は `withTimeout` を通らない (→ [issue 357](done/357-bug-lockman-with-bypasses-io-timeout.md))。
+すべて短命プロセスで、`with` は `withTimeout` を通らない (→ [issue 357](357-bug-lockman-with-bypasses-io-timeout.md))。
 **goroutine が積む経路が存在しない**ので、指摘として成立しない。
 
-🚨 **ただし [issue 357](done/357-bug-lockman-with-bypasses-io-timeout.md) の推奨対応 1 は
+🚨 **ただし [issue 357](357-bug-lockman-with-bypasses-io-timeout.md) の推奨対応 1 は
 まさにその経路を作る。** `with` を `withTimeout` で包むと、`with` は唯一の長寿命モード
 (TTL 30 分なら 10 分ごとに renew) なので、応答しないマウントでは **tick ごとに
 1 goroutine + 1 ブロック中 syscall が積む**。`util.go` の「プロセスの終了で解放される
@@ -187,9 +187,9 @@ goroutine 蓄積に上限を置くか、renew を専用の goroutine 1 本に固
 - `--on-lost kill` は `syscall.Kill(-pgid, SIGTERM)` を撃つだけで、**SIGKILL への昇格も
   待ちも上限も無い**。TERM を trap / 無視する子 (`ffmpeg` を含め普通にある) は生き続ける
 - lease を失った時点で**他者が既に引き継いでいる**ので、その状態は
-  [issue 356](done/356-bug-lockman-with-releases-lock-while-grandchildren-run.md) と同一の
+  [issue 356](356-bug-lockman-with-releases-lock-while-grandchildren-run.md) と同一の
   二重書き手条件。`with` は子が終わるまで返らないので無期限に続く
-- [issue 091](done/091-feat-lockman-directory-lease-lock.md):282 は
+- [issue 091](091-feat-lockman-directory-lease-lock.md):282 は
   「`--on-lost=kill|warn` (既定 `kill`) で**子プロセスを止められる**ようにする」と
   要求しており、これを満たしていない
 - 加えて `lost` は `Renew` の**あらゆる**失敗 (I/O エラー / `serverNow` 失敗 /
@@ -199,9 +199,9 @@ goroutine 蓄積に上限を置くか、renew を専用の goroutine 1 本に固
 - **この経路のテストは 0 件**。`exitWithLost` の出現は定数定義と `with.go` の return、
   `main_test.go` の `TestExitCodesDoNotCollide` (定数の重複検査だけ) のみ
 
-**行き先**: 「TERM だけでは止まらない」は [issue 356](done/356-bug-lockman-with-releases-lock-while-grandchildren-run.md)
+**行き先**: 「TERM だけでは止まらない」は [issue 356](356-bug-lockman-with-releases-lock-while-grandchildren-run.md)
 の経路 2 へ、「判定不能と lease 喪失の混同 / 終了コード」は
-[issue 357](done/357-bug-lockman-with-bypasses-io-timeout.md) の該当節へ移した。
+[issue 357](357-bug-lockman-with-bypasses-io-timeout.md) の該当節へ移した。
 
 ✅ **両方とも 2026-09-15 に解消**。356 は `--on-lost kill` を TERM → 猶予 5s → KILL へ
 昇格させ (昇格は 1 回だけ)、357 は `Renew` の失敗を `renewOutcome` の 3 値
@@ -254,9 +254,9 @@ goroutine 蓄積に上限を置くか、renew を専用の goroutine 1 本に固
 - **091 の受け入れ条件のうち 2 つが未達**:
   - 「`--io-timeout` で exit 1 になること。**「空いている」に倒れないこと**が本体」(091:496)
     → `grep -n 'io-timeout\|ioTimeout\|timed(\|withTimeout(' *_test.go` = **0 件**。
-    包んである 5 箇所も一度も検証されていない (→ [issue 357](done/357-bug-lockman-with-bypasses-io-timeout.md) の todolist に入れた)
+    包んである 5 箇所も一度も検証されていない (→ [issue 357](357-bug-lockman-with-bypasses-io-timeout.md) の todolist に入れた)
   - 「`with` の自動 renew が効いている (renew を止める変異を当てて赤になることを確認する)」
-    → `lost` 分岐 / ticker / `sigCh` を実行するテストが **0 件** (→ [issue 356](done/356-bug-lockman-with-releases-lock-while-grandchildren-run.md) の todolist に入れた)
+    → `lost` 分岐 / ticker / `sigCh` を実行するテストが **0 件** (→ [issue 356](356-bug-lockman-with-releases-lock-while-grandchildren-run.md) の todolist に入れた)
 
 ## 攻めたが見つからなかった範囲 (次の監査の起点)
 
@@ -305,24 +305,24 @@ ubuntu から移した」と書いており、README だけが取り残されて
   claim = 着手中の宣言なので、放置すると他マシンから「誰かがやっている」に見えて
   二重着手の防止ではなく**着手の阻止**として働く（ユーザー判断で解除）。
   **本 issue に着手する人は、改めて `next/` へ claim を置いてから始めること**
-- 2026-09-16: **[366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) は解消**。
+- 2026-09-16: **[366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) は解消**。
   原因はハーネスではなく **production の race** で、`tryTakeover` の「期限切れと判定 →
   rename で退ける」が TOCTOU だった (2 人目が 1 人目の置いたばかりの lock を退けてから
   自分の lock を置く)。調停 (観測した世代から決まる名前を O_EXCL) + 破壊的操作の直前の
   再照合 + 放棄された目印の回収、の 3 つで閉じた。
   **この監査が攻めていなかった範囲がもう 1 つ出た**: 同じ「照合してから名前へ破壊的操作」の
   形が `Renew` / `Release` にもあり、どちらも実験で再現した →
-  **[380](done/380-bug-lockman-renew-and-release-act-on-name-after-check.md)** として起票 (継続)。
+  **[380](380-bug-lockman-renew-and-release-act-on-name-after-check.md)** として起票 (継続)。
   下の `--io-timeout` 無検証は 380 の猶予 (`takeoverClaimGrace`) にも効くので、
   356 / 357 / 362 とまとめて直すときに一緒に見る
 - 2026-09-12: **358 の敵対レビュー 5 周目が、この監査が攻めていなかった範囲を 3 件出した**。
   掃除機構の内側は 358 で解消 (`sub` 軸の fail-closed / 打刻の失敗の伝播 / `serverNow` の
-  良性判定)。外側は **[362](done/362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md)**
+  良性判定)。外側は **[362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md)**
   (見捨てた goroutine が失敗報告後に lock を置く。35/450) /
-  **[363](done/363-bug-lockman-with-signal-handler-installed-too-late.md)**
+  **[363](363-bug-lockman-with-signal-handler-installed-too-late.md)**
   (`signal.Notify` が遅く、中断で lock + 孤児。20/120) /
-  **[364](done/364-bug-lockman-with-release-failure-and-graveyard-retention.md)** (小粒 4 件) /
-  **[366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md)**
+  **[364](364-bug-lockman-with-release-failure-and-graveyard-retention.md)** (小粒 4 件) /
+  **[366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md)**
   (引き継ぎの勝者が低頻度で 2 人。原因未特定) として起票。
   下の「軽微だが実在する」の `--io-timeout` 無検証は 362 と同じ族なので、356 / 357 と
   まとめて直すときに 362 も見る。
@@ -335,7 +335,7 @@ ubuntu から移した」と書いており、README だけが取り残されて
   書き直し、却下 5 を取り消し、却下 4 に再開 trigger を足した (上記の節)
 - 2026-09-11: `make test` を worktree で通した (rc=0。stdout / stderr を分けて確認し
   `✗` / FAIL / 失敗ターゲットの集約行はいずれも 0 件。`ok lockman 3.170s`)
-- 2026-09-11: **[358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md)
+- 2026-09-11: **[358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md)
   を実装完了** (推奨対応 A)。359 の残タスクが保留していた「下限検査をコンパイル時に
   置けるか」は**置けた**ことが実測で決着 (358 の「実施結果」1・2)。敵対レビューは 358 側の
   残タスクへ引き継いだ
@@ -396,7 +396,7 @@ ubuntu から移した」と書いており、README だけが取り残されて
       「0 / 負値 / 1ns / 10h がすべて通る。0 は全操作を即『判定不能』にする」を実測したので、
       100ms 〜 5m の範囲検証を入れた (`cleanup.go` の注記が「356 / 357 と一緒に直す」と
       予告していた分)
-- [x] **`--on-lost` の値検証は [409](409-bug-lockman-on-lost-value-is-not-validated.md) へ切り出した (2026-09-21)**。
+- [x] **`--on-lost` の値検証は [409](../409-bug-lockman-on-lost-value-is-not-validated.md) へ切り出した (2026-09-21)**。
       未対応であることは実コードで再確認済み — `main.go` の `runWith(..., o.onLost != "warn", ...)` が
       否定形で判定しており、綴り間違い (`--on-lost=warm`) は**黙って kill になる**。
       この issue 側では対応しない
@@ -404,7 +404,7 @@ ubuntu から移した」と書いており、README だけが取り残されて
   「指摘を直したら直した差分にもう 1 周回す」を求めるが、監査時点の修正は**issue 本文の
   書き換えだけでコードを 1 行も変えていない**ため 2 周目は回していない。
   **358 は実装済みなので、その差分への敵対的レビューは
-  [358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) の残タスクへ移した。**
+  [358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) の残タスクへ移した。**
   356 / 357 の実装に入るときも同様に、その差分に対して改めて敵対的レビューが要る
 
 **done の判断 (2026-09-21)**: 上の 1 件は 356 / 357 の実装では片付かなかったので、
@@ -414,6 +414,6 @@ ubuntu から移した」と書いており、README だけが取り残されて
 
 ## 関連
 
-- [issue 356](done/356-bug-lockman-with-releases-lock-while-grandchildren-run.md) / [issue 357](done/357-bug-lockman-with-bypasses-io-timeout.md) / [issue 358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) — 生存した発見
-- [issue 340](done/340-risk-av1ify-lock-unverified-residuals.md) — lockman / av1ify で「直さないと決めた」ものの記録 (今回の却下と重複していないことを照合済み)
-- [issue 318](done/318-research-dead-code-and-broken-code-audit-2026-09-06.md) / [issue 324](done/324-research-performance-audit-2026-09-06.md) — 同じ形の監査記録 issue の前例
+- [issue 356](356-bug-lockman-with-releases-lock-while-grandchildren-run.md) / [issue 357](357-bug-lockman-with-bypasses-io-timeout.md) / [issue 358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) — 生存した発見
+- [issue 340](340-risk-av1ify-lock-unverified-residuals.md) — lockman / av1ify で「直さないと決めた」ものの記録 (今回の却下と重複していないことを照合済み)
+- [issue 318](318-research-dead-code-and-broken-code-audit-2026-09-06.md) / [issue 324](324-research-performance-audit-2026-09-06.md) — 同じ形の監査記録 issue の前例

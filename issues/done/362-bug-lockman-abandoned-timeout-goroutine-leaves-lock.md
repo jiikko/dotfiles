@@ -139,7 +139,7 @@ goroutine が回収されない事実は変わらない)。
    本 issue の経路に居なかったが、これからは居る
 2. ただし **tick ごとの goroutine 蓄積には上限を置いた** — 最初の更新失敗で ticker を
    止めるので、1 回の `with` で見捨てる goroutine は**最大 1 本**
-   ([issue 359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) の項目 4 の
+   ([issue 359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) の項目 4 の
    trigger が発火したもの)
 
 つまり「見捨てた 1 本が後から lock を置く」窓は `with` にも開いたが、**本数は増えない**。

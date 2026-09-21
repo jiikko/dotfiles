@@ -96,7 +96,7 @@ commit の並びから推測して伝えてきたが、**これは誤り**（360
 ## 関連
 
 - [issue 360](360-test-tmux-shim-value-taking-options-completeness.md) — 同セッションでやり切った実作業
-- [issue 358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) / [issue 359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) — 着手を見送った先（dotfiles-53 が担当）
+- [issue 358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) / [issue 359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) — 着手を見送った先（dotfiles-53 が担当）
 
 ## 決着 (2026-09-19)
 

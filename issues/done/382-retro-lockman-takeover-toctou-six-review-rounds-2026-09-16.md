@@ -5,7 +5,7 @@
 対象セッション: [366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の消化
 (副産物: [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md) /
 [381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md) 起票、
-[359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) /
+[359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) /
 [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
 [363](363-bug-lockman-with-signal-handler-installed-too-late.md) / `done/091` へ追記)
 
