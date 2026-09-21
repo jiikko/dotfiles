@@ -31,6 +31,16 @@
 set -u
 shopt -s nullglob
 
+# 新しく張った link は緑で出す (何が増えたかを目で拾えるように)。
+# 🚨 色は stdout が TTY のときだけ。SessionStart hook (claude-links-sync.sh) は出力を
+# そのままセッションへ注入するので、非 TTY で色を混ぜるとエスケープがそのまま文字になる。
+# テストも `^linked: ` を行頭アンカーで grep しており、非 TTY で色を付けると全部落ちる。
+if [ -t 1 ]; then
+  GREEN=$'\033[32m'; RESET=$'\033[0m'
+else
+  GREEN=''; RESET=''
+fi
+
 # ${HOME:-}: set -u 下で HOME 未設定でも落ちず、preflight の「検査できない」(exit 3) へ倒す
 ROOT="${DOTFILES_ROOT:-${HOME:-}/dotfiles}"
 CLAUDE_HOME="${CLAUDE_HOME:-${HOME:-}/.claude}"
@@ -143,7 +153,7 @@ cmd_apply() {
     while :; do
       err=$(ln -sfn "$target" "$link" 2>&1 || true)
       if [ -L "$link" ] && [ "$link" -ef "$target" ]; then
-        echo "linked: $link -> $target"
+        echo "${GREEN}linked: $link -> $target${RESET}"
         n=$((n + 1))
         break
       fi

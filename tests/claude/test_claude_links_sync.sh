@@ -8,7 +8,7 @@
 # 揃っているのに毎回 apply する / 実ファイルや他ツールの link を上書きする / dir symlink 越しに
 # repo 側へ書き込む (setup.sh の migrate コメントが警告する自己参照 symlink 破壊)。両方を pin する。
 # 規範: issue 160 / ~/.claude/rules/adversarial-review-own-safeguards.md
-# ケース番号は 1〜16 + 6b。
+# ケース番号は 1〜16 + 6b + 17 (色)。
 set -euo pipefail
 unset CDPATH
 
@@ -279,8 +279,30 @@ set -e
 grep -q "^linked: $CH/rules/r1.md" <<<"$OUT" || ng "readlink 空の link を張り直していない"$'\n'"$OUT"
 [ "$CH/rules/r1.md" -ef "$DOT/_claude/rules/r1.md" ] || ng "readlink 空の後、r1.md が正しい実体を指していない"
 
+# --- 17. 新しく張った link は TTY のときだけ緑で出す ---
+# 🚨 非 TTY 側を先に固定する: hook (claude-links-sync.sh) は apply の出力をそのまま
+#    セッションへ注入するので、色が混ざるとエスケープが本文の文字として届く。
+#    さらに本ファイルの他ケースは `^linked: ` を行頭アンカーで grep しており、
+#    非 TTY で色を付けると全部落ちる (この 2 つが色を条件付きにする理由)。
+fixture color
+run apply
+printf '%s' "$OUT" | grep -q $'\033\[32m' && ng "非 TTY なのに色が付いている"$'\n'"$OUT"
+grep -q "^linked: $CH/rules/r1.md" <<<"$OUT" || ng "非 TTY で linked 行が出ていない"$'\n'"$OUT"
+
+fixture color-tty
+# pty 越しに走らせて [ -t 1 ] を真にする (パイプでは原理的に観測できない挙動)。
+# 🚨 script(1) は使わない: stdin が TTY でない環境 (CI / ツール経由) では
+#    `tcgetattr/ioctl: Operation not supported on socket` で落ち、実装のバグに見える赤が出る。
+#    pty を自分で開く方が環境に依存しない。CR が混ざるので行頭アンカーは使わない
+tty_out=$(DOTFILES_ROOT="$DOT" CLAUDE_HOME="$CH" python3 -c '
+import os, pty, sys
+sys.exit(pty.spawn([sys.argv[1], "apply"]))
+' "$SCRIPT" 2>&1 || true)
+printf '%s' "$tty_out" | grep -q $'\033\[32mlinked: ' \
+  || ng "TTY で linked 行が緑になっていない"$'\n'"$tty_out"
+
 if [ "$fails" -ne 0 ]; then
   echo "FAIL: $fails 件"
   exit 1
 fi
-echo "OK: claude_links.sh + claude-links-sync.sh (17 ケース)"
+echo "OK: claude_links.sh + claude-links-sync.sh (18 ケース)"
