@@ -268,17 +268,61 @@ cmd.Start()
 §7 の打ち切り条件 (a) を満たさない: 1 周目の対応で **production に新しい判定を 3 つ足した**
 (seam の位置 / `notifiableSignals` の選別 / defer の登録順という新しい不変条件)。
 
+## 敵対的レビュー 2 周目 (2026-09-21。全数勘定)
+
+**P1 なし**。指摘 5 件、**採用 3 / 訂正 1 / 受容 1 / 却下 0**。1 周目の対応 3 つ
+(seam の位置 / 選別 / defer 順) は**すべて実測で目的を達している**ことをレビューが独立に確認した
+(変異 A′ = Notify を「seam と Start のあいだ」へ移す形でも 2 subtest とも red / 取得中の即死は
+`rc=143` / 1.04s / stdout 0B / stderr 0B で**完全に不変** / 363 本体の A-B 40 試行 ×2 窓で
+旧版 1〜5 件に対し新版 **0/80**)。
+
+| # | 指摘 | 判定 |
+|---|---|---|
+| P2-1 | 1 周目に「**in-process では原理的に pin できない**」と記録した 2 件 (defer 順 / 空リストのガード) は、**どちらも pin できる**。守りたい不変条件は ①順序 ②呼ばれたか であって「死ぬか」ではない。レビューが PoC で green → 変異で red を実測 | **採用**。`signalStop` の指標 1 つ + 配線を `installSignalHandler` へ切り出して固定 (production の指標を 1 つに抑える形を選んだ)。変異 G / H で red |
+| P3-2 | `TestMain` の guard は**冗長** (subtest が `runWith` の前に自分で登録しているので既定処理は既に無効)。しかも INT を足したことで**テストバイナリが Ctrl-C でも TERM でも止まらなくなり、中断に SIGKILL が要る**状態を作っていた | **採用**。**削除**した。削除後も全スイート緑 / 変異 A で red / ランナーは生存 |
+| P3-3 | production が中継するのは INT/TERM/**HUP** の 3 つなのに、テーブルは 2 つだけ (1 周目に P2-3 で INT を足したのと同じ論拠) | **採用**。HUP を追加 (変異 D で red) |
+| P2-2 | `notifiableSignals` の doc が「契約を回復した」と読めるが、**回復するのは HUP / INT だけ**。Go が継承 SIG_IGN を尊重するのは HUP/INT に限られ、`signal.Ignored(SIGTERM)` は `trap '' TERM` 下でも false。**旧版からの既存の振る舞い**で本 issue の退行ではないが、doc の射程が実装と合っていない | **訂正**。射程 (TERM は直せない理由つき) を doc に書いた |
+| P3-1 | この defer 順にすると**解放中に届いたシグナルが一切 acknowledge されない** (rc にも stderr にも出ない)。窓の上限は `--io-timeout` = 最大 `maxIOTimeout` (5 分)。実測: 詰まった解放で 7.29s 無反応 (旧版は 1/1 で即死 + lock 残存) | **受容**。「解放後に自分へ撃ち直す」は**新しい判定と rc の意味**を作るので採らない。lock の整合を優先し、残余と再開の trigger をコードに書いた |
+
+### 変異検証 (2 周目の修正分。4 本とも red)
+
+| 変異 | 結果 |
+|---|---|
+| G: `defer signalStop` を解放より後に登録 (1 周目より前の順) | `TestSignalStopRunsAfterRelease` **red** |
+| H: 空リストのガードを外す | `TestInstallSignalHandlerSkipsNotifyWhenAllIgnored` **red** |
+| A: Notify を `cmd.Start()` の後ろへ | `TestSignalIsHandledFromTheMomentChildExists` の **3 subtest とも red** |
+| D: HUP を落とす | 同 `/hangup` + 単体 2 本が **red** |
+
+### 壊せなかった経路 (レビューが実験で確認)
+
+- **取得中の即死が据え置かれているか** (ユーザー判断が乗った不変条件): 旧版と**完全に一致**
+  (`rc=143` / 1.04s / stdout 0B / stderr 0B)。`sigCh` の生成は Acquire 失敗の return より後、
+  Notify の位置も Start の直前のままで、defer の移動は Notify を早めていない
+- **363 本体の退行**: A-B 40 試行 ×2 窓で新版は **0/80** (旧版は 1/40・5/40)。
+  🚨 ハーネスの検出力も示されている (最初の版は起動オーバヘッドで遅延が窓の外に落ち、
+  **両腕とも 0 件**だった = 差が出ないときはまずハーネスを疑う、の実例)
+- **`cmd.Start()` 直後の `killGroup` が子の `setpgid` 完了前に走る窓**: Go の `forkExec` は
+  子が exec するまで返らないので構造的に無い (**ソースの読みのみ**。上の 0/80 が間接的な反証)
+
+### 3 周目は不要 (§7 の打ち切り条件)
+
+打ち切り条件の例外 (a)(b) を満たす: **(a) 2 周目の対応は production の判定ロジックを新設していない**
+(テスト用の指標 1 つ + 既存の配線の切り出し + doc の訂正 + テストの追加・削除。レビューが
+「3 周目が要る」と挙げた 2 案 — **解放後の再送** と **defer を 1 つに畳む** — は**どちらも採らなかった**)。
+**(b) 各修正を直接の実測で確認した** (変異 4 本で red、`go test -race ./...` 緑、lint 0 issues)。
+
 ## 残タスク
 
 - [x] 反証レビュー 1 周目 (採用 5 / 記録 4)。変異 3 本で red
-- [ ] **未実施**: 2 周目 (§7)。1 周目の対応が新しい判定 3 つを含むため
+- [x] 2 周目 (§7)。**P1 なし**。採用 3 / 訂正 1 / 受容 1 (変異 4 本で red)。
+      **3 周目は不要** (打ち切り条件 (a)(b) を満たす。production の判定は新設していない)
 - [x] 対応方針の決定 → **(B) `signal.Notify` を `cmd.Start()` の直前へ出すだけ**
       (2026-09-21 のユーザー判断「取得中の即死はそのままでよい」)。取得中の窓は受容する
 - [x] 塞ぐ対象の整理 → (B) では**取得中の残骸 (lock / 目印 / mark) は受容**する。
       **mark だけが TTL の契約を割る** (~1h10m) ことを受容の害として記録し、
       消したいなら 366 の回収機構の猶予を短くする方が筋 (本 issue の外)
 - [x] (B) の実装とテスト (変異で red。上節)
-- [ ] 閉じたら [366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の回収機構
+- [ ] **次の人へ**: [366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の回収機構
       (`reclaimTakeoverClaim` / `takeoverClaimGrace`) を「取りこぼしの受け皿」へ格下げできるか
       再評価する。**362 と両方閉じるまでは外せない** (どちらの経路も目印を残す)
 - [ ] シグナル転送の枝 (`case sig := <-sigCh:`) に `escalateGroupKill` と同じ
