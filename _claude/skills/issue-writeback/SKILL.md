@@ -46,9 +46,14 @@ issue dir の解決（`issues/` と `issue/`、`<root>/*/issues` の入れ子 1 
 既存の lib に揃える**。hook JSON は要らず、stdin を空にすれば cwd から解決する（実測 2026-09-22）:
 
 ```sh
-. ~/dotfiles/_claude/hooks/lib/issue-hooks.sh && issue_hook_resolve_dir </dev/null
-# → $ISSUE_HOOK_ROOT（repo root）/ $ISSUE_HOOK_DIRS（issue dir を 1 行 1 つ）
+bash -c '. ~/dotfiles/_claude/hooks/lib/issue-hooks.sh && issue_hook_resolve_dir </dev/null &&
+  printf "ROOT=%s\nDIRS=%s\n" "$ISSUE_HOOK_ROOT" "$ISSUE_HOOK_DIRS"'
 ```
+
+🚨 **`bash -c` で包む（zsh から直接 source しない）**。この lib は `<root>/*/issue` を glob で試すので、
+zsh では**無マッチが NOMATCH でコマンドごと落ちる**（実測 2026-09-22: `no matches found` + rc=1）。
+落ち方が最悪で、**rc=1 が「issue dir が無い」と区別できない**ため、issues/ を持つ repo で
+「対象外」と誤報して黙る。
 
 🚨 **dotfiles が無い環境（他人のマシン・CI）ではこのパスは存在しない**。その場合は自分で走査する。
 どちらの経路でも落としてはいけないのは 3 つ:
