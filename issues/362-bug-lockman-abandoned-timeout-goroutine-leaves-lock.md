@@ -1,5 +1,7 @@
 # `--io-timeout` で倒した acquire の goroutine が、失敗を報告した後に lock を置いていく
 
+> 🚨 **担当中: Claude セッション (opus, dotfiles)**（2026-09-21〜）
+
 起票日: 2026-09-12
 カテゴリ: bug / priority: **high**
 対象: `src/lockman/util.go` の `withTimeout` / `main.go` の `cmdAcquire` と `dispatch` の defer `Cleanup`
