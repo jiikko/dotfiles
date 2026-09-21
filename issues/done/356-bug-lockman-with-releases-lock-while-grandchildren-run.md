@@ -8,7 +8,7 @@
 
 ## 問題
 
-🚨 **[363](../363-bug-lockman-with-signal-handler-installed-too-late.md) は trigger が違う** (2026-09-12 追記)。本 issue は**子が正常終了した経路**、あちらは
+🚨 **[363](363-bug-lockman-with-signal-handler-installed-too-late.md) は trigger が違う** (2026-09-12 追記)。本 issue は**子が正常終了した経路**、あちらは
 **シグナルが `signal.Notify` の導入より早く届いた経路** (実測 20/120 で lock 残存、うち 9 件は孤児の子つき)。まとめて直すなら両方の経路を見る。
 
 

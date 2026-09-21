@@ -278,7 +278,7 @@ ms のまま `maxIOTimeout` で頭打ちにしてから変換する形へ直し�
 `Renew` の上書きは自分の deferred Release が窓を開ける →
 [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md) /
 取得中の Ctrl-C が残す中間状態とシグナル転送の枝の非対称 →
-[363](../363-bug-lockman-with-signal-handler-installed-too-late.md)。
+[363](363-bug-lockman-with-signal-handler-installed-too-late.md)。
 
 ### 4 周目 (3 周目の差分限定) — 採用 6
 
@@ -390,7 +390,7 @@ mark を取ってから打刻を戻すまでにプロセスが死ぬと、目印
 **「退ける役が 2 人」を「退ける役が 0 人、最長 ~1h10m」と交換している。** 排他の道具として
 正しさを優先した判断で、人の脱出口は `lockman break` (warnf が案内する)。
 根治は [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
-[363](../363-bug-lockman-with-signal-handler-installed-too-late.md) の側で、両方が閉じれば
+[363](363-bug-lockman-with-signal-handler-installed-too-late.md) の側で、両方が閉じれば
 この回収機構は「取りこぼしの受け皿」へ格下げできる。
 
 ## 残タスク
@@ -404,4 +404,4 @@ mark を取ってから打刻を戻すまでにプロセスが死ぬと、目印
 - [ ] `with` の renew ラッチが恒久的に更新を止める → [381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md)
 - [ ] この修正が新設した wedge (mark の取りこぼし) の根治 →
       [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
-      [363](../363-bug-lockman-with-signal-handler-installed-too-late.md) が閉じたら回収機構を再評価する
+      [363](363-bug-lockman-with-signal-handler-installed-too-late.md) が閉じたら回収機構を再評価する

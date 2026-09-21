@@ -3,7 +3,7 @@
 起票日: 2026-09-12
 カテゴリ: bug / priority: **high**
 対象: `src/lockman/with.go` の `runWith`
-出典: [issue 358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) の敵対レビュー 5 周目 (観点③「並行・中断」)
+出典: [issue 358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) の敵対レビュー 5 周目 (観点③「並行・中断」)
 反証レビュー: 未実施。**出典は opus 1 体による実測 A-B**（下の表）
 
 ## 問題
@@ -42,7 +42,7 @@
 
 ## 356 との違い
 
-[issue 356](done/356-bug-lockman-with-releases-lock-while-grandchildren-run.md) は
+[issue 356](356-bug-lockman-with-releases-lock-while-grandchildren-run.md) は
 **子が正常終了した経路**で「孫が残っているのに解放する」話。本 issue の trigger は
 **シグナルが早く届いた経路**で、356 を直しても消えない。
 
@@ -91,19 +91,19 @@ select が `done` を処理する前に `sigCh` が ready だと、Go の select
 
 | issue | 状態 | 本 issue への効き |
 |---|---|---|
-| [356](done/356-bug-lockman-with-releases-lock-while-grandchildren-run.md) | **done** | 転送が `killGroup` 経由になり `pgid <= 1` を撃たなくなった。窓そのものは不変 |
-| [366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) | **done** | **残る中間状態が 3 種類に増えた**(下の表)。回収機構の格下げ判断は本 issue と [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) の両方が閉じてから |
-| [384](done/384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) | **done** | 下の「残タスク 4 の答え」に直結 |
-| [385](done/385-design-lockman-on-lost-kill-vs-keep-renewing.md) | **done** | `runWith` の select ループに `leaseTracker` が入った。**この issue が触るのは同じ関数**なので、着手時に rebase 前提 |
-| [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) | **open** | 見捨てられた goroutine 側の残骸。本 issue とは経路が違う (あちらは timeout、こちらはシグナル) |
+| [356](356-bug-lockman-with-releases-lock-while-grandchildren-run.md) | **done** | 転送が `killGroup` 経由になり `pgid <= 1` を撃たなくなった。窓そのものは不変 |
+| [366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) | **done** | **残る中間状態が 3 種類に増えた**(下の表)。回収機構の格下げ判断は本 issue と [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) の両方が閉じてから |
+| [384](384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) | **done** | 下の「残タスク 4 の答え」に直結 |
+| [385](385-design-lockman-on-lost-kill-vs-keep-renewing.md) | **done** | `runWith` の select ループに `leaseTracker` が入った。**この issue が触るのは同じ関数**なので、着手時に rebase 前提 |
+| [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) | **open** | 見捨てられた goroutine 側の残骸。本 issue とは経路が違う (あちらは timeout、こちらはシグナル) |
 
 ### 残タスク 4 (`case sig := <-sigCh:` に `exited` の guard を入れるか) は **もう答えが出ている**
 
-[384](done/384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) の実測
+[384](384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) の実測
 (2026-09-20 / darwin 24.6 / 3 回とも同じ) で、回収済み pgid への `kill(-pgid, sig)` は
 **すべて空振り**と分かった: グループが空 → **ESRCH** / ゾンビだけ → **EPERM** /
 **生きたメンバーが 1 つでもあれば成功**。実害には「pid 再利用 **かつ** 再利用した側が
-グループリーダー」が要る。[364](done/364-bug-lockman-with-release-failure-and-graveyard-retention.md)
+グループリーダー」が要る。[364](364-bug-lockman-with-release-failure-and-graveyard-retention.md)
 では**同じ結論で受容**し、`_ = killGroup(...)` の 2 箇所に捨てている理由を書いた。
 → **本 issue でも「非対称だが受容」で揃えるのが自然**。guard を足すなら「揃えるため」であって
 実害の除去ではない (足すこと自体は数行)。
@@ -322,7 +322,7 @@ cmd.Start()
       **mark だけが TTL の契約を割る** (~1h10m) ことを受容の害として記録し、
       消したいなら 366 の回収機構の猶予を短くする方が筋 (本 issue の外)
 - [x] (B) の実装とテスト (変異で red。上節)
-- [ ] **次の人へ**: [366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の回収機構
+- [ ] **次の人へ**: [366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) の回収機構
       (`reclaimTakeoverClaim` / `takeoverClaimGrace`) を「取りこぼしの受け皿」へ格下げできるか
       再評価する。**362 と両方閉じるまでは外せない** (どちらの経路も目印を残す)
 - [ ] シグナル転送の枝 (`case sig := <-sigCh:`) に `escalateGroupKill` と同じ

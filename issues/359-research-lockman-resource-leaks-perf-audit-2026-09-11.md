@@ -319,7 +319,7 @@ ubuntu から移した」と書いており、README だけが取り残されて
   掃除機構の内側は 358 で解消 (`sub` 軸の fail-closed / 打刻の失敗の伝播 / `serverNow` の
   良性判定)。外側は **[362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md)**
   (見捨てた goroutine が失敗報告後に lock を置く。35/450) /
-  **[363](363-bug-lockman-with-signal-handler-installed-too-late.md)**
+  **[363](done/363-bug-lockman-with-signal-handler-installed-too-late.md)**
   (`signal.Notify` が遅く、中断で lock + 孤児。20/120) /
   **[364](done/364-bug-lockman-with-release-failure-and-graveyard-retention.md)** (小粒 4 件) /
   **[366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md)**

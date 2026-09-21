@@ -26,7 +26,7 @@ lock を置く**。
   目印を回収する機構を入れて上限を作ってあるが、**根治はこの issue の側** (見捨てられた
   goroutine が副作用を残さないようにする) でしかできない
 - 同じ理由で **`with.go` の `signal.Notify` が `cmd.Start()` の後**であること
-  ([363](363-bug-lockman-with-signal-handler-installed-too-late.md)) も射程が広がった。
+  ([363](done/363-bug-lockman-with-signal-handler-installed-too-late.md)) も射程が広がった。
   取得中の Ctrl-C は Go 既定の即死で defer が走らないため、目印が残る
 - **この 2 つは「稀なクラッシュ」ではなく既定経路**である、というのが 366 の敵対的レビューの
   P1 だった。366 の回収機構はその指摘を受けて足したもので、362 / 363 が閉じれば
