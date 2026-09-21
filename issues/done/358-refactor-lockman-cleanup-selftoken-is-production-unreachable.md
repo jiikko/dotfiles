@@ -407,7 +407,7 @@ ReadDir と Remove のあいだで他者が消す状態を、seam 無しで決�
 | ②P3-E | `TestMinRetentionFloorIsPinned` の比 assert は `minRetention` 軸では**到達しない** (リテラル側が先に Fatal) | コメントの誤り | 本 issue (commit 1) |
 | ②P3-F | `TestCleanupRunsOnlyForMutatingCommands` の正の側が **4 コマンド中 acquire だけ** | 元からの穴 | 本 issue (commit 1) |
 | ②P3-G | `TestDispatchWarns…` が部分一致 pin (書式から `skipped=` を落とす変異が緑) | 元からの穴 | 本 issue (commit 1) |
-| ③P1-E | **`timed()` が見捨てた goroutine が「失敗」報告後に lock を置く** (35/450 = 7.8%、graveyard 200 件で 40/40) | 元からの穴 + 3・4 周目が増幅 | **[issue 362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md)** |
+| ③P1-E | **`timed()` が見捨てた goroutine が「失敗」報告後に lock を置く** (35/450 = 7.8%、graveyard 200 件で 40/40) | 元からの穴 + 3・4 周目が増幅 | **[issue 362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md)** |
 | ③P1-C | **`signal.Notify` が `Acquire` / `cmd.Start()` の後** (20/120。うち 9 件は孤児の子つき。全件 0B の無音) | 元からの穴 | **[issue 363](363-bug-lockman-with-signal-handler-installed-too-late.md)** |
 | ③P2-D | `with` が `--io-timeout` を丸ごと無視し、詰まった `Renew` が select ループごと止める | 元からの穴 | **[357](357-bug-lockman-with-bypasses-io-timeout.md) に既出**。実測だけ転記 |
 | ③P2 / P3-A / P3-B / テスト | `with` が rc=0 で解放漏れ / graveyard の retention が mtime 由来 / reap 済み pgid への kill (未確認) / `TestRenewExtendsHold` の壁時計依存 | 元からの穴 | **[issue 364](364-bug-lockman-with-release-failure-and-graveyard-retention.md)** |
@@ -696,7 +696,7 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
 - 2026-09-12: **敵対的レビュー 5 周目**。§8 の stopping rule (脅威モデル / 検出しないと決めた形 /
   打ち切りの判定) を**着手前に**固定してから、観点を ①壊す ②素通り ③並行・中断 に分けて
   opus を直列に回した。掃除機構の内側は 3 commit で修正、外側は
-  [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
+  [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
   [363](363-bug-lockman-with-signal-handler-installed-too-late.md) /
   [364](364-bug-lockman-with-release-failure-and-graveyard-retention.md) へ切り出し。
   作業中に観測した「引き継ぎの勝者が 2 人」は
@@ -777,7 +777,7 @@ func TestCleanupKeepsOwnScratch(t *testing.T) {
   **検出可能性: A-B 実験で実証済み** (単体テストは無い)。
   再評価の trigger: `sweepDir` に seam を入れる変更が来たとき
 - 掃除機構の**外**で見つかった 5 件は別 issue へ:
-  [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) (high) /
+  [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) (high) /
   [363](363-bug-lockman-with-signal-handler-installed-too-late.md) (high) /
   [364](364-bug-lockman-with-release-failure-and-graveyard-retention.md) (low〜medium) /
   [366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) (high・原因未特定)。

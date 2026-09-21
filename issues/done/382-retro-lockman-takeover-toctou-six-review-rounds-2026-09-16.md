@@ -6,7 +6,7 @@
 (副産物: [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md) /
 [381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md) 起票、
 [359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) /
-[362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
+[362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
 [363](363-bug-lockman-with-signal-handler-installed-too-late.md) / `done/091` へ追記)
 
 ## 数字
@@ -121,7 +121,7 @@ seam を**変異後の破壊的操作より前**に置く。後ろだと変異�
 - [x] 上記 1〜3・5〜8 の切り出し (既存ルールへの追記 8 件。新規ルールは 0 件)。**実行はユーザーの判断待ち**
 - [x] 366 の横展開: [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md) /
       [381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md)
-- [x] 366 が新設した wedge の根治: [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
+- [x] 366 が新設した wedge の根治: [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
       [363](363-bug-lockman-with-signal-handler-installed-too-late.md)
 
 ## 決着 (2026-09-19)

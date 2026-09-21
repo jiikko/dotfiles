@@ -8,7 +8,7 @@
 
 `--io-timeout` で見捨てた goroutine が lock / 引き継ぎの目印を置いていく問題を実装で塞いだ。
 実装・テスト・変異検証・実バイナリの A-B・敵対的レビュー 3 観点まで通した。
-結果と残タスクは [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) 本体。
+結果と残タスクは [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) 本体。
 
 ## 気づき
 

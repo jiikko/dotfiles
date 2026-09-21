@@ -3,7 +3,7 @@
 起票日: 2026-09-18
 カテゴリ: bug / priority: **low**
 対象: `src/lockman/lock.go` の `serverNow` (probe) と `tryPlace` (tmp)、`src/lockman/cleanup.go` の `sweepDir`
-出典: [issue 362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) の敵対的レビュー 3 周目 (観点「並行・中断」) のぼやき
+出典: [issue 362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) の敵対的レビュー 3 周目 (観点「並行・中断」) のぼやき
 反証レビュー: 未実施。**数値は起票者の実測**（下表）
 
 ## 問題

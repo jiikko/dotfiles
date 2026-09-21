@@ -317,7 +317,7 @@ ubuntu から移した」と書いており、README だけが取り残されて
   356 / 357 / 362 とまとめて直すときに一緒に見る
 - 2026-09-12: **358 の敵対レビュー 5 周目が、この監査が攻めていなかった範囲を 3 件出した**。
   掃除機構の内側は 358 で解消 (`sub` 軸の fail-closed / 打刻の失敗の伝播 / `serverNow` の
-  良性判定)。外側は **[362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md)**
+  良性判定)。外側は **[362](done/362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md)**
   (見捨てた goroutine が失敗報告後に lock を置く。35/450) /
   **[363](done/363-bug-lockman-with-signal-handler-installed-too-late.md)**
   (`signal.Notify` が遅く、中断で lock + 孤児。20/120) /
@@ -325,7 +325,10 @@ ubuntu から移した」と書いており、README だけが取り残されて
   **[366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md)**
   (引き継ぎの勝者が低頻度で 2 人。原因未特定) として起票。
   下の「軽微だが実在する」の `--io-timeout` 無検証は 362 と同じ族なので、356 / 357 と
-  まとめて直すときに 362 も見る
+  まとめて直すときに 362 も見る。
+  🚨 **362 は 2026-09-21 に done へ移した**（実装・敵対レビュー 3 周・判断 3 件まで決着。
+  窓は 0 ではなく「詰まり続けるマウントでの A-B」と「③ の残余 1/150 の真因」は
+  trigger 付きの未確認として done の本文に残してある）
 - 2026-09-11: resource-leaks / performance の 2 タイプを直列で実行。生存 3 件を起票、
   却下 5 件 + 却下を取り消した 1 件を本 issue に記録
 - 2026-09-11: 反証レビュー 1 周を通し、**自分の主張 6 件が崩れた**ので 356 / 357 / 358 を

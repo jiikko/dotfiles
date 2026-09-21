@@ -1,11 +1,9 @@
 # `--io-timeout` で倒した acquire の goroutine が、失敗を報告した後に lock を置いていく
 
-> 🚨 **担当中: Claude セッション (opus, dotfiles)**（2026-09-21〜）
-
 起票日: 2026-09-12
 カテゴリ: bug / priority: **high**
 対象: `src/lockman/util.go` の `withTimeout` / `main.go` の `cmdAcquire` と `dispatch` の defer `Cleanup`
-出典: [issue 358](done/358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) の敵対レビュー 5 周目 (観点③「並行・中断」)
+出典: [issue 358](358-refactor-lockman-cleanup-selftoken-is-production-unreachable.md) の敵対レビュー 5 周目 (観点③「並行・中断」)
 反証レビュー: 未実施。**出典は opus 1 体による実測 A-B**（下の表）。数値はそのまま転記している
 
 ## 問題
@@ -20,7 +18,7 @@ lock を置く**。
 
 ## 2026-09-16 追記: 見捨てられた goroutine が置いていくものが**もう 1 つ**増えた (366 より)
 
-[366](done/366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) で `tryTakeover` に
+[366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) で `tryTakeover` に
 「引き継ぎの調停の目印」(`tmp/<gen>.takeover`) を足した。見捨てられた goroutine は
 **lock だけでなくこの目印も置いていく**ので、この issue の射程が広がっている。
 
@@ -28,7 +26,7 @@ lock を置く**。
   目印を回収する機構を入れて上限を作ってあるが、**根治はこの issue の側** (見捨てられた
   goroutine が副作用を残さないようにする) でしかできない
 - 同じ理由で **`with.go` の `signal.Notify` が `cmd.Start()` の後**であること
-  ([363](done/363-bug-lockman-with-signal-handler-installed-too-late.md)) も射程が広がった。
+  ([363](363-bug-lockman-with-signal-handler-installed-too-late.md)) も射程が広がった。
   取得中の Ctrl-C は Go 既定の即死で defer が走らないため、目印が残る
 - **この 2 つは「稀なクラッシュ」ではなく既定経路**である、というのが 366 の敵対的レビューの
   P1 だった。366 の回収機構はその指摘を受けて足したもので、362 / 363 が閉じれば
@@ -116,7 +114,7 @@ defer が長くなるほど上の用量反応どおり漏れ率が上がる。
 
 ## 357 との違い
 
-[issue 357](done/357-bug-lockman-with-bypasses-io-timeout.md) は「**包まれていない** I/O が
+[issue 357](357-bug-lockman-with-bypasses-io-timeout.md) は「**包まれていない** I/O が
 ある」話。本 issue は「**包んだ** I/O の goroutine が、報告した後に勝つ」話で、
 357 を直しても消えない (357 の修正で `Cleanup` を `timed` に包むと defer は短くなるが、
 goroutine が回収されない事実は変わらない)。
@@ -141,7 +139,7 @@ goroutine が回収されない事実は変わらない)。
    本 issue の経路に居なかったが、これからは居る
 2. ただし **tick ごとの goroutine 蓄積には上限を置いた** — 最初の更新失敗で ticker を
    止めるので、1 回の `with` で見捨てる goroutine は**最大 1 本**
-   ([issue 359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) の項目 4 の
+   ([issue 359](../359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) の項目 4 の
    trigger が発火したもの)
 
 つまり「見捨てた 1 本が後から lock を置く」窓は `with` にも開いたが、**本数は増えない**。
@@ -355,7 +353,7 @@ TTL 頼み」まで。「閉じた」とは書かないこと。**
 |---|---|
 | `os.Rename(lock → graveyard)` の直前に検査が無い。見捨てを宣言済みの goroutine が前世代の lock を退けて帰る (seam で再現。害は示せず) | **直した**。宣言と実装が食い違ったまま残すと次の人がその宣言を根拠に判断するため |
 | **「取り消せなかったことは黙らない」は本番では成立しない**。警告は `ReleaseTimed` の後なので最悪 `l.timeout` (下限 100ms / 既定 10s) 遅れるが、acquire 一発実行で期限切れ後にプロセスが生きているのは**実測 1〜2ms**。構造上 undo の期限が cleanup の期限より早くなることはない | **コメントを訂正**。届くのは `--wait` でプロセスが回り続けている場合だけ (CLI での到達は未実測)。「人に伝わる」前提の設計判断をここに積まないと明記 |
-| **「probe は goroutine 内の defer が自分で消す」は誤り**。`os.Exit` は defer を走らせないので probe / tmp は実際に残る (実測 60 起動で 3 件ずつ) | **コメントを訂正**。検査を置かない理由は「消える」からではなく「掃除の担当が居てロック dir を塞がない」から。残骸は変更前から在り量も増えていない。**残骸そのものは [issue 391](done/391-bug-lockman-os-exit-skips-defer-leaves-scratch.md) へ切り出した** (8 並行 320 起動の A-B: probe 24/24 で不変、tmp 148 → 135、lock 73 → 0) |
+| **「probe は goroutine 内の defer が自分で消す」は誤り**。`os.Exit` は defer を走らせないので probe / tmp は実際に残る (実測 60 起動で 3 件ずつ) | **コメントを訂正**。検査を置かない理由は「消える」からではなく「掃除の担当が居てロック dir を塞がない」から。残骸は変更前から在り量も増えていない。**残骸そのものは [issue 391](391-bug-lockman-os-exit-skips-defer-leaves-scratch.md) へ切り出した** (8 並行 320 起動の A-B: probe 24/24 で不変、tmp 148 → 135、lock 73 → 0) |
 
 レビュワーが**壊せなかった**もの: 相互排他 (960 起動で違反 0。検出器の canary は lock 無しで
 35 件発火するので vacuous ではない) / データ競合 (`-race -count=8` で 0) / 2 周目で足した配線 pin の

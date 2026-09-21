@@ -342,7 +342,7 @@ O_EXCL」は偽**だと反証された。役が 2 人になった後は、2 人�
     POSIX に「inode を指定した削除」が無い
   - mark を取ってから打刻を戻すまでに死ぬと掃除まで塞ぐ (可用性と正しさの trade-off)
   - 役が 2 人になる生成器 4 つのうち、猶予超過は設計上の trade-off、parse 非決定性は
-    未確認リスク、見捨てられた goroutine は [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md)
+    未確認リスク、見捨てられた goroutine は [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md)
   - `f.Write` のエラー伝播は実行時の I/O 失敗が要るためテスト不能 (**未検証**と明記)
 - **次の監査に渡す検査可能な痕跡**: 「graveyard に、現に誰かが保持している token の lock が
   入っている」= 二重取得が起きた証拠
@@ -389,7 +389,7 @@ mark を取ってから打刻を戻すまでにプロセスが死ぬと、目印
 
 **「退ける役が 2 人」を「退ける役が 0 人、最長 ~1h10m」と交換している。** 排他の道具として
 正しさを優先した判断で、人の脱出口は `lockman break` (warnf が案内する)。
-根治は [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
+根治は [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
 [363](363-bug-lockman-with-signal-handler-installed-too-late.md) の側で、両方が閉じれば
 この回収機構は「取りこぼしの受け皿」へ格下げできる。
 
@@ -403,5 +403,5 @@ mark を取ってから打刻を戻すまでにプロセスが死ぬと、目印
 - [ ] `Renew` / `Release` の同型 → [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md)
 - [ ] `with` の renew ラッチが恒久的に更新を止める → [381](381-bug-lockman-with-renew-latch-stops-renewal-forever.md)
 - [ ] この修正が新設した wedge (mark の取りこぼし) の根治 →
-      [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
+      [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) /
       [363](363-bug-lockman-with-signal-handler-installed-too-late.md) が閉じたら回収機構を再評価する

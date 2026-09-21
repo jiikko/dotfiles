@@ -92,10 +92,10 @@ select が `done` を処理する前に `sigCh` が ready だと、Go の select
 | issue | 状態 | 本 issue への効き |
 |---|---|---|
 | [356](356-bug-lockman-with-releases-lock-while-grandchildren-run.md) | **done** | 転送が `killGroup` 経由になり `pgid <= 1` を撃たなくなった。窓そのものは不変 |
-| [366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) | **done** | **残る中間状態が 3 種類に増えた**(下の表)。回収機構の格下げ判断は本 issue と [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) の両方が閉じてから |
+| [366](366-bug-lockman-stale-takeover-sometimes-has-two-winners.md) | **done** | **残る中間状態が 3 種類に増えた**(下の表)。回収機構は **格下げしない**と決めた (2026-09-21、362 で決着。本 issue が「取得中の Ctrl-C は即死」を受容したため、mark を残す経路が 362 の外に現存する) |
 | [384](384-bug-lockman-escalation-burns-out-and-sigkill-skips-recheck.md) | **done** | 下の「残タスク 4 の答え」に直結 |
 | [385](385-design-lockman-on-lost-kill-vs-keep-renewing.md) | **done** | `runWith` の select ループに `leaseTracker` が入った。**この issue が触るのは同じ関数**なので、着手時に rebase 前提 |
-| [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) | **open** | 見捨てられた goroutine 側の残骸。本 issue とは経路が違う (あちらは timeout、こちらはシグナル) |
+| [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) | **done** | 見捨てられた goroutine 側の残骸。本 issue とは経路が違う (あちらは timeout、こちらはシグナル) |
 
 ### 残タスク 4 (`case sig := <-sigCh:` に `exited` の guard を入れるか) は **もう答えが出ている**
 

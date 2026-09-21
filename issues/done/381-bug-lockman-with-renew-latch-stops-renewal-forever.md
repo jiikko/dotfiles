@@ -193,6 +193,6 @@ lease を失いやすくなる列。
 
 ## 関連
 
-- [362](../362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) — 見捨てられた goroutine が
+- [362](362-bug-lockman-abandoned-timeout-goroutine-leaves-lock.md) — 見捨てられた goroutine が
   副作用を残す族。本 issue は「見捨てた**後**に更新を再開しない」側
 - [380](380-bug-lockman-renew-and-release-act-on-name-after-check.md) — `Renew` 自体の TOCTOU
