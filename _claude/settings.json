@@ -135,6 +135,11 @@
             "type": "command",
             "command": "~/dotfiles/_claude/hooks/issue-progress-start.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "~/dotfiles/_claude/hooks/normalize-settings.sh",
+            "timeout": 10
           }
         ]
       }
