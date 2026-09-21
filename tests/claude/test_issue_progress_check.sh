@@ -57,6 +57,8 @@ got=$(reason s1)
 check "101 未変更を指摘" "issues/101-feat-x.md: このセッションで 1 度も変更されていない" "$got"
 check "101 を参照する open 102 を列挙" "issues/102-bug-y.md: issue 101 を参照" "$got"
 check "無関係な 103 は出ない" "" "$(grep -E '103-docs' <<<"$got" || true)"
+# この hook は構造しか見ないので、本文の中身の点検は skill へ案内する (案内が消えたら落とす)
+check "block の案内に issue-writeback skill を添える" "skill issue-writeback" "$got"
 
 # 5. 同じ指摘は 1 セッション 1 回 / stop_hook_active では黙る
 check "同じ指摘は再送しない" "" "$(reason s1)"

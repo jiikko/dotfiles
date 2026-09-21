@@ -187,7 +187,10 @@ done <<<"$findings"
 findings="$new_findings"
 
 reason="関わった issue の更新漏れの疑い (Stop hook issue-progress-check)。各行を確認し、必要なら todolist / 進捗 / 結果 / 残タスクを追記して commit する。更新不要ならその理由を 1 行で述べて終える:
-$findings"
+$findings
+
+この hook は構造 ([x] / 見出し / 番号への言及) しか見ず、未 commit で番号も出していない作業は
+検出しない。本文の中身まで点検するなら skill issue-writeback を使う。"
 if command -v jq >/dev/null 2>&1; then
   jq -n --arg r "$reason" '{decision: "block", reason: $r}'
 else
