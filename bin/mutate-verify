@@ -1,0 +1,331 @@
+#!/bin/bash
+# mutate-verify — 変異検証の「前提検査」を機械で強制する (issue 408)。
+#
+# `_claude/rules/mutation-verify-new-tests.md` が要求する手順 0〜3 のうち、**人が毎回手で書いて
+# 毎回書き忘れる部分**だけを引き受ける。変異の当て方 (sed / patch / 旧実装の貼り直し) は
+# タスクごとに違うので呼び出し側の責任で、この道具は guard に徹する。
+#
+# ## 何を止めるか (射程)
+#
+#   1. **復元事故** — 自分は作業ツリーを 1 バイトも触らない (使い捨て worktree の中だけで変異させる)。
+#      加えて **`--apply` / `--verify` が作業ツリーを書き換えていないか**内容 hash と index の状態で
+#      確かめ、変わっていたら **rc=9** で落とす (どちらも eval なので元 repo の絶対パスを書ける。
+#      この repo のテストには `$HOME/dotfiles` を直接見るものが実在する)。
+#      🚨 **rc=9 は「並行セッションが元 repo を編集した」ときにも出る** — 原因を区別する手段は無い。
+#      どちらにせよ「変わった木の上で測った結果」なので信用しない、という判定にしている
+#   2. **baseline が green でない状態で変異を当てる** — red の増減が変異由来か元から壊れているか
+#      区別できなくなる
+#   3. **検証コマンドが 1 件も実行していない** — `--baseline-expect` を必須にして、runner の
+#      サマリ行が出ることを確かめる (rc=0 だけでは zero execution と全 pass を区別できない)
+#   4. **当たっていない変異** — `--file` が実際に変わったことを確認する
+#   5. **誤ファイルへの変異** — `--file` 以外が変わったら落とす
+#   6. **構文エラーの変異** — red でも green でもない第 3 の結果として区別する (stale build の
+#      緑を「変異を検知できないテスト」と誤診しない)
+#   7. **変異が緑のまま通る** — そのテストは主張を何も守っていない
+#   8. **想定と別の検査が落ちた** — `--expect` で帰属を確かめる (既存の assert が先に落ちても red は出る)
+#
+# ## 脅威モデル — 誰の、どの失敗を止めるか
+#
+# 止めるのは **自分が書いた `--apply` / `--verify` の書き間違い**と、**前提検査の書き忘れ**。
+# `--apply` は eval なので任意のコードが走る前提で、**悪意ある入力は対象外**
+# (信頼できない文字列を `--apply` に渡さないこと。それは呼び出し側の責任)。
+#
+# ## 何を止めないか (射程の外。ここは人が見る)
+#
+#   - **行レベルの誤変異** — 当てた diff は必ず表示するが、内容の機械照合はしない
+#     (「意図した行か」は変異の設計そのものなので呼び出し側の責任)
+#   - **assert の誤り / 観測設計 / fixture・seam の問題** — 変異が red になっても、そのテストが
+#     正しいものを見ているかは別問題 (issue 408 が起票時に過大評価していた部分)
+#   - **repo の外に書かれた生成物・子プロセス** — worktree の中は消すが、検証コマンドが
+#     `$HOME` や `/tmp` へ書いたものは追えない
+#   - 🚨 **gitignore された対象と `.git/` 配下** — `git status` に出ないので改変を検出できない
+#     (`tmp/` / `node_modules` / `.envrc` / hook の植え込み)。**書き間違いで触る場所ではない**
+#     と判断して射程から外した (red team 2 周目 P1-1 / P1-3)
+#   - 🚨 **`--expect` の具体性** — 「baseline に出る pattern」は rc=2 で拒否するが、
+#     `FAIL` のように**どのテストが落ちても出る** pattern は通る。狙ったテスト以外が落ちた red を
+#     「想定どおり」と読むので、**`--expect` にはテスト名まで含めること** (`FAIL` ではなく
+#     `FAIL: TestX/case`)。runner のサマリ表現は runner ごとに違うため機械では絞れない
+#     (red team 2 周目 P1-4)。一致した行は必ず表示するので、そこで人が確かめる
+#   - **すでに dirty なファイルのパーミッションだけの変更** — 内容 hash が同じなので見えない
+#   - **symlink の張り替え** — `[ -f ]` が偽になる先 (dangling / ディレクトリ) を指す symlink は
+#     恒久的に `<missing>` 扱いで、張り替えても差分が出ない
+#   - **submodule / nested repo の中身** — `git status` は ` M sub` の 1 エントリしか出さないので、
+#     すでに dirty な submodule の内部変更は見えない (**未確認**: この repo に submodule が無く実験していない)
+#   - **ファイル名に改行を含むパス** — 読み取りは `-z` だが、比較は行ベース (`diff` / `awk -F'|'`) なので
+#     依然として割れる。`-z` 化で塞いだのは `core.quotePath` による引用と読み取り側の分割だけ
+#   - **entry が失われた worktree の残骸** — 掃除は `git worktree list` 駆動なので、admin entry ごと
+#     消えたディレクトリ (`$TMPDIR/dotfiles-mutant.<pid>`) は掃除も警告もされない
+#
+# ## 使い方
+#
+#   mutate-verify --file src/x/main.go \
+#     --apply 'perl -0pi -e "s/if guard/if false \&\& guard/" "$MUTATE_FILE"' \
+#     --syntax 'go build ./...' \
+#     --verify 'go test ./...' \
+#     --baseline-expect '^ok ' \
+#     --expect 'FAIL: TestGuard/case'
+#
+#   --apply / --syntax / --verify は **worktree の中**で実行される。
+#   $MUTATE_FILE に --file の絶対パス (worktree 側) が入る。
+#   --syntax は shell / python / ruby なら拡張子から推定する。それ以外は明示必須
+#   (推定できないものを黙って素通しすると、検査 6 が無いまま緑が出る)。
+#
+# ## 終了コード
+#
+#   0  変異が想定どおり red になった (テストは効いている)
+#   2  使い方の誤り
+#   3  判定不能: baseline が red / 検証コマンドが走っていない / worktree を作れない
+#   4  変異が当たっていない (--file が変わらなかった)
+#   5  変異が構文エラー (第 3 の結果。当て直すこと)
+#   6  変異が緑のまま通った (そのテストは何も守っていない)
+#   7  red だが --expect に一致しない (別の検査が落ちた)
+#   8  --file 以外のファイルが変わった (誤ファイルへの変異)
+#   9  作業ツリー (worktree ではなく元の repo) が変わった — --apply / --verify が外を書いた、
+#      **または並行セッションが編集した**。他の rc より優先する (壊れた木の上の結果は信用しない)
+set -uo pipefail
+
+prog="${0##*/}"
+die() { echo "$prog: $*" >&2; exit 2; }
+note() { echo "[$prog] $*" >&2; }
+
+file="" apply="" verify="" expect="" baseline_expect="" syntax="" name=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --file)            file="${2:-}"; shift 2 || die "--file に値が無い" ;;
+    --apply)           apply="${2:-}"; shift 2 || die "--apply に値が無い" ;;
+    --verify)          verify="${2:-}"; shift 2 || die "--verify に値が無い" ;;
+    --expect)          expect="${2:-}"; shift 2 || die "--expect に値が無い" ;;
+    --baseline-expect) baseline_expect="${2:-}"; shift 2 || die "--baseline-expect に値が無い" ;;
+    --syntax)          syntax="${2:-}"; shift 2 || die "--syntax に値が無い" ;;
+    --name)            name="${2:-}"; shift 2 || die "--name に値が無い" ;;
+    -h|--help)         sed -n '2,/^set -uo pipefail/p' "$0" | sed '$d'; exit 0 ;;
+    *)                 die "未知の引数: $1" ;;
+  esac
+done
+[ -n "$file" ]            || die "--file は必須"
+[ -n "$apply" ]           || die "--apply は必須"
+[ -n "$verify" ]          || die "--verify は必須"
+[ -n "$expect" ]          || die "--expect は必須 (red の帰属を確かめないと、既存の assert が先に落ちても気づけない)"
+[ -n "$baseline_expect" ] || die "--baseline-expect は必須 (rc=0 だけでは zero execution と全 pass を区別できない)"
+[ -n "$name" ] || name="$file"
+
+root="$(git rev-parse --show-toplevel 2>/dev/null)" || die "git repo の中で実行すること"
+[ -f "$root/$file" ] || die "--file が repo 内に無い: $file"
+# 🚨 `./guard.sh` / `a/../guard.sh` のような表記を git の正規形へ揃える。
+# snapshot は git が正規化したパスを出すので、揃えないと **--file 自身が「誤ファイル」として
+# rc=8 になる** (red team 2 周目 P2-1。見逃しでなく誤検出で、rc=8 の信頼を壊す)
+_fdir="$(cd "$root/$(dirname "$file")" && pwd -P)" || die "--file のディレクトリを解決できない: $file"
+_rootp="$(cd "$root" && pwd -P)"
+case "$_fdir" in
+  "$_rootp")   file="$(basename "$file")" ;;          # repo 直下 (prefix 除去がマッチしない形)
+  "$_rootp"/*) file="${_fdir#"$_rootp"/}/$(basename "$file")" ;;
+  *)           die "--file が repo の外を指している: $file" ;;
+esac
+# 🚨 **表記は git に聞く**。macOS は既定で case-insensitive (`core.ignorecase=true`) なので
+# `--file GUARD.SH` でも `[ -f ]` は通るが、snapshot が出すのは `guard.sh`。文字列の完全一致で
+# 除外しているため、**--file 自身が「誤ファイル」として rc=8 になる** (red team 3 周目 P2-2)
+# 🚨 `--` の後ろの pathspec は **`core.ignorecase=true` でも case-sensitive** (実測 2026-09-22:
+# `ls-files -- GUARD.SH` は rc=0 だが出力が空)。magic pathspec `:(icase)` で引く
+_canon="$( { git -C "$root" ls-files --full-name -- ":(icase)$file"
+             git -C "$root" ls-files --others --full-name -- ":(icase)$file"; } 2>/dev/null | head -1)"
+[ -n "$_canon" ] && file="$_canon"
+# 🚨 symlink を --file にすると、変異は**実体**に当たるのに除外は symlink のパスなので
+# 同じ rc=8 誤検出になる。実体を指定させる (この repo は tracked symlink を実際に持つ)
+[ -L "$root/$file" ] && die "--file が symlink ($file)。変異は実体に当たるので実体のパスを指定すること"
+
+# shellcheck source=scripts/lib/worktree_scratch.sh
+. "$root/scripts/lib/worktree_scratch.sh" || die "scripts/lib/worktree_scratch.sh を読めない"
+
+# --syntax の推定。**推定できない拡張子は明示必須** (黙って素通しすると検査 6 が消える)
+if [ -z "$syntax" ]; then
+  # shellcheck disable=SC2016  # $MUTATE_FILE は run_in_wt の eval で展開させる (ここで展開してはいけない)
+  case "$file" in
+    *.sh|*.bash) syntax='bash -n "$MUTATE_FILE"' ;;
+    *.zsh)       syntax='zsh -n "$MUTATE_FILE"' ;;
+    *.py)        syntax='python3 -m py_compile "$MUTATE_FILE"' ;;
+    *.rb)        syntax='ruby -c "$MUTATE_FILE"' ;;
+    *)
+      # 🚨 拡張子で決まらなければ shebang を見る。`bin/` のスクリプトは拡張子を持たないのが普通で、
+      # 拡張子だけで打ち切ると「自分自身を変異検証できない」(この道具を書いた日に踏んだ)
+      case "$(head -1 "$root/$file")" in
+        '#!'*bash|'#!'*/sh|'#!'*" sh") syntax='bash -n "$MUTATE_FILE"' ;;
+        '#!'*zsh)                      syntax='zsh -n "$MUTATE_FILE"' ;;
+        '#!'*python*)                  syntax='python3 -m py_compile "$MUTATE_FILE"' ;;
+        '#!'*ruby*)                    syntax='ruby -c "$MUTATE_FILE"' ;;
+        *) die "--syntax を推定できない ($file: 拡張子でも shebang でも決まらない)。明示すること (例: --syntax 'go build ./...')" ;;
+      esac ;;
+  esac
+  note "--syntax を推定: $syntax"
+fi
+
+# 「変更されうるファイル」を **パス|内容 hash** で撮る。
+# 🚨 `git status --porcelain` の**行**だけを比べてはいけない。すでに dirty なファイルの
+# **内容が変わっても行は同じ** (` M x` → ` M x`) なので差分が出ない。この道具は未コミット差分を
+# 持ち込むので、**その集合こそが死角**になる (red team P1-1: 「今書いている実装」が全部そこに入る)
+# 🚨 **`-z` で読む**。`core.quotePath` が既定 (true) の環境では非 ASCII 名が `"\350\250\255…"` と
+# 引用されて `[ -f ]` が常に偽になり、ファイル名に改行があると行が割れる。どちらも
+# **恒久的に `<missing>` 固定 = 変更が不可視**になる (red team 2 周目 P1-5 / P3-1)。
+# 🚨 **index の状態 (2 文字のステータス) も含める**。内容 hash だけだと `git add` / `git reset` で
+# **working tree を変えずに index だけ**動かされたのが見えない (同 P1-2。旧実装の行比較は見ていた)。
+snapshot_tree() { # $1=repo dir
+  local d="$1" f st
+  git -C "$d" status --porcelain -z --untracked-files=all 2>/dev/null |
+  while IFS= read -r -d '' entry; do
+    [ -n "$entry" ] || continue
+    st="${entry:0:2}"; f="${entry:3}"
+    # 🚨 rename / copy は `R  <new>\0<old>\0` の **2 レコード**で出る。旧パス側を 1 エントリとして
+    # 読むと `st` にパスの先頭 2 文字が入り、そのエントリは恒久的に `<missing>` になる
+    # (2 周目 P1-5 で直した「不可視」を別の入口で再生産する形。red team 3 周目 P2-1)
+    case "$st" in R*|C*) IFS= read -r -d '' _oldpath || true ;; esac
+    if [ -f "$d/$f" ]; then printf '%s|%s|%s\n' "$f" "$st" "$(shasum -a 256 < "$d/$f" | awk '{print $1}')"
+    else printf '%s|%s|<missing>\n' "$f" "$st"; fi
+  done
+}
+
+# 元 repo の作業ツリーが変わっていないことを確かめる。**この道具が触らない**ことの確認だが、
+# `--apply` は eval なので元 repo の絶対パスを書けてしまう (red team P1-2)。
+# 🚨 **警告で済ませず rc を変える** — 射程 1 が中心の主張なので、起きたのに緑を返してはいけない
+tree_before="$(snapshot_tree "$root")"
+worktree_touched=0
+# shellcheck disable=SC2329  # WTS_ON_CLEANUP 経由で worktree_scratch.sh の EXIT trap から呼ばれる
+check_worktree_untouched() {
+  [ "$worktree_touched" -eq 1 ] && return 0   # 成功パスと EXIT trap の両方から呼ばれる。報告は 1 回
+  local after; after="$(snapshot_tree "$root")"
+  [ "$tree_before" = "$after" ] && return 0
+  worktree_touched=1
+  note "🚨 元の作業ツリーが変わった (--apply が worktree の外を書いた / 並行セッション):"
+  diff <(printf '%s\n' "$tree_before") <(printf '%s\n' "$after") >&2 || true
+}
+# shellcheck disable=SC2034  # worktree_scratch.sh の wts_cleanup が読む
+WTS_ON_CLEANUP=check_worktree_untouched
+
+wts_init "$root" "dotfiles-mutant"
+wts_create HEAD || exit 3
+
+# --- 未コミットの変更を持ち込む (worktree は git に載っているものしか持たない) -------------
+# 🚨 これが無いと「今書いたテスト」を変異検証できない。in-place を避けた設計の代償はここだけ
+if ! git -C "$root" diff HEAD --binary > "$WTS_PATH/.mutate-verify.patch" 2>/dev/null; then
+  note "未コミット差分を取れなかった"; exit 3
+fi
+if [ -s "$WTS_PATH/.mutate-verify.patch" ]; then
+  if ! git -C "$WTS_PATH" apply "$WTS_PATH/.mutate-verify.patch" 2>&1; then
+    note "未コミット差分を worktree へ当てられなかった"; exit 3
+  fi
+  note "未コミットの変更を持ち込んだ ($(git -C "$root" diff HEAD --name-only | wc -l | tr -d ' ') ファイル)"
+fi
+rm -f "$WTS_PATH/.mutate-verify.patch"
+# untracked も持ち込む (新規テストファイルを変異検証する形が普通にある)
+git -C "$root" ls-files --others --exclude-standard -z | while IFS= read -r -d '' u; do
+  mkdir -p "$WTS_PATH/$(dirname "$u")" && cp "$root/$u" "$WTS_PATH/$u"
+done
+
+export MUTATE_FILE="$WTS_PATH/$file"
+[ -f "$MUTATE_FILE" ] || { note "--file が worktree に無い: $file"; exit 3; }
+
+run_in_wt() { ( cd "$WTS_PATH" && eval "$1" ) }
+
+# 🚨 **元 repo が壊れていたら、その run の結果は信用できない**ので rc=9 を優先する。
+# rc=0 の経路だけで見ていたときは、rc=4〜7 を受けた呼び出し側が「変異が弱い」と読んで
+# **同じ `--apply` で再実行し、元 repo をもう一度壊す**形が残っていた (red team 2 周目 P2-2)
+finish() { # $1=rc
+  local rc="$1"
+  check_worktree_untouched
+  if [ "$worktree_touched" -eq 1 ]; then
+    note "🚨 元の作業ツリーが壊れている。**この結果 (rc=$rc) は信用できない**"
+    note "   --apply が \$MUTATE_FILE 以外を書いていないか直してから再実行すること"
+    rc=9
+  fi
+  exit "$rc"
+}
+
+# --- 0. baseline ---------------------------------------------------------------------------
+# 🚨 **ここから先の exit は必ず finish を通す**。`--verify` はこの下で走るので、
+# baseline 系の失敗 (rc=3 / rc=2) でも**元 repo が壊れている可能性がある**。
+# rc=3「baseline が green でない」は呼び出し側に再実行を最も強く促す rc なので、
+# ここを素の exit にすると「同じコマンドで再実行して元 repo をもう一度壊す」が残る
+# (red team 3 周目 P1-1。2 周目 P2-2 と同じ被害ループの別経路)
+note "[$name] baseline を測る"
+base_out="$WTS_PATH/.mv-baseline.log"
+run_in_wt "$verify" > "$base_out" 2>&1; base_rc=$?
+if [ "$base_rc" -ne 0 ]; then
+  note "🚨 baseline が green でない (rc=$base_rc)。変異を当てても red の増減を帰属できない"
+  tail -20 "$base_out" >&2; finish 3
+fi
+if ! grep -qE "$baseline_expect" "$base_out"; then
+  note "🚨 baseline は rc=0 だが --baseline-expect ($baseline_expect) が出ていない"
+  note "   検証コマンドが 1 件も実行していない可能性がある (zero execution を green と読まない)"
+  tail -20 "$base_out" >&2; finish 3
+fi
+# 🚨 --expect が **baseline にも出る** pattern なら、red の帰属を判定できない。
+# verbose runner では常態 (`=== RUN TestX` / pytest の node id)。`FAIL: TestX` から
+# `TestX` へ 1 文字削った瞬間に入り、**別のテストが落ちた red を「想定どおり」と読む**
+# (red team P1-3)。使い方の誤りとして拒否する
+if grep -qE "$expect" "$base_out"; then
+  note "🚨 --expect ($expect) が baseline の出力にも出ている"
+  note "   これでは「狙ったテストが落ちた」を判定できない (pass のときも出る行に一致している)"
+  note "   失敗時にだけ出る形にすること (例: 'TestX/case' でなく 'FAIL: TestX/case')"
+  grep -nE "$expect" "$base_out" | head -3 >&2; finish 2
+fi
+
+# --- 1. 変異を当てる -----------------------------------------------------------------------
+# 🚨 untracked な --file (= 新規テストファイル。主要ユースケース) は `git diff` に出ないので、
+# 当てた変異の diff が**無音で空**になる。手順 1.6 (diff を目視する) の唯一の入力が消えるので、
+# intent-to-add して diff が出る状態にしてから撮る (red team P2-5)
+git -C "$WTS_PATH" add -N -- "$file" 2>/dev/null || true
+before_hash="$(shasum -a 256 < "$MUTATE_FILE" | awk '{print $1}')"
+before_state="$(snapshot_tree "$WTS_PATH")"
+note "[$name] 変異を当てる"
+if ! run_in_wt "$apply" >&2; then
+  note "--apply が失敗した"; finish 2
+fi
+
+# 2. 当たったか (hash で見る。`diff -q` の「何かが変わった」では誤ファイルを通す)
+after_hash="$(shasum -a 256 < "$MUTATE_FILE" | awk '{print $1}')"
+if [ "$before_hash" = "$after_hash" ]; then
+  note "🚨 変異が当たっていない ($file は 1 バイトも変わっていない)"
+  note "   当たっていない変異の緑を「守られていない」と読むと、効いているテストを作り替える方向に走る"
+  finish 4
+fi
+
+# 3. 誤ファイル: --file 以外が変わっていないか
+# 🚨 除外は **完全一致** (`grep -vxF`)。部分一致だと `sub/guard.sh` や `guard.sh.bak` を
+# 「--file 自身」と読んで見逃す (red team P2-4)
+after_state="$(snapshot_tree "$WTS_PATH")"
+changed_others="$(diff <(printf '%s\n' "$before_state") <(printf '%s\n' "$after_state") |
+  sed -n 's/^[<>] //p' | awk -F'|' '{print $1}' | sort -u | grep -vxF "$file" || true)"
+if [ -n "$changed_others" ]; then
+  note "🚨 --file 以外が変わった (誤ファイルへの変異):"
+  printf '%s\n' "$changed_others" >&2
+  finish 8
+fi
+
+# 当てた diff は必ず見せる (行レベルの誤変異は人が見る。射程の外)
+note "[$name] 当てた変異:"
+git -C "$WTS_PATH" --no-pager diff -- "$file" >&2 || true
+
+# --- 4. 構文検査 (第 3 の結果) ---------------------------------------------------------------
+note "[$name] 構文検査"
+if ! run_in_wt "$syntax" >&2; then
+  note "🚨 変異が構文エラー (red でも green でもない第 3 の結果)。当て直すこと"
+  note "   ここを見ないと、runner が stale build を走らせた緑を「検知できないテスト」と誤診する"
+  finish 5
+fi
+
+# --- 5. 検証 --------------------------------------------------------------------------------
+note "[$name] 変異後の検証"
+mut_out="$WTS_PATH/.mv-mutant.log"
+run_in_wt "$verify" > "$mut_out" 2>&1; mut_rc=$?
+if [ "$mut_rc" -eq 0 ]; then
+  note "🚨 変異が緑のまま通った (そのテストは主張を何も守っていない)"
+  tail -20 "$mut_out" >&2; finish 6
+fi
+if ! grep -qE "$expect" "$mut_out"; then
+  note "🚨 red にはなったが --expect ($expect) に一致しない — 別の検査が先に落ちている"
+  note "   その red は今回のテストの検知力を何も証明しない"
+  grep -nE '(FAIL|NG:|✗|Error)' "$mut_out" | head -10 >&2 || true
+  finish 7
+fi
+
+note "[$name] ✓ 変異は想定どおり red (一致: $expect)"
+grep -nE "$expect" "$mut_out" | head -5 >&2 || true
+finish 0

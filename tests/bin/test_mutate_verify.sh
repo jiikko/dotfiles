@@ -1,0 +1,425 @@
+#!/bin/bash
+#
+# bin/mutate-verify (issue 408) の self-test。
+#
+# 🚨 **この道具は自作の安全機構**なので、正常系だけでは何も確かめたことにならない
+# (`_claude/rules/adversarial-review-own-safeguards.md` 節 1)。異常系を実験で作り、
+# **終了コードごとに** 1 ケース置く。
+#
+# fixture は隔離した git repo。本物の dotfiles を対象にすると遅いうえ、worktree を
+# 作る対象が実 repo になる (テストが本番の worktree 一覧を汚す)。
+set -uo pipefail
+
+ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+MV="$ROOT_DIR/bin/mutate-verify"
+[ -x "$MV" ] || { echo "NG: bin/mutate-verify が無い"; exit 1; }
+
+work="$(mktemp -d)"
+fails=0
+# 🚨 EXIT trap は 1 本。後始末が増えてもここへ足す
+cleanup() { rm -rf "$work"; }
+trap cleanup EXIT
+
+fail() { echo "NG: $*"; fails=$((fails + 1)); }
+
+# 🚨 残骸の基準はテスト**開始時**に採り、判定は**全ケースの後**に置く。
+# case 11 の中で採って case 11 で判定していたため、後続の新設ケース (12〜17) は
+# 1 つも覆えていなかった (red team 2 周目 P2-4)。TMPDIR 全域を見ないのは、
+# **並行して走っている他 run** を残骸と誤検出しないため (同 1 周目 P2-7)
+leftovers_before="$(for x in "${TMPDIR:-/tmp}"/dotfiles-mutant.*; do [ -e "$x" ] && echo "$x"; done)"
+
+# --- fixture: guard を持つスクリプトと、それを検証するテスト --------------------------------
+make_repo() { # $1=repo dir
+  local d="$1"
+  mkdir -p "$d/scripts/lib"
+  cp "$ROOT_DIR/scripts/lib/worktree_scratch.sh" "$d/scripts/lib/"
+  cat > "$d/guard.sh" <<'G'
+#!/bin/bash
+check() {
+  if [ "$1" = "bad" ]; then echo "rejected"; return 1; fi
+  echo "accepted"
+}
+check "$@"
+G
+  cat > "$d/other.sh" <<'O'
+#!/bin/bash
+echo "other"
+O
+  # 検証コマンド。**サマリ行を出す** (zero execution と全 pass を区別するため)
+  cat > "$d/verify.sh" <<'V'
+#!/bin/bash
+ng=0
+out="$(bash guard.sh bad 2>&1)"
+[ "$out" = "rejected" ] || { echo "FAIL: reject-bad (got=$out)"; ng=1; }
+out="$(bash guard.sh ok 2>&1)"
+[ "$out" = "accepted" ] || { echo "FAIL: accept-ok (got=$out)"; ng=1; }
+echo "ran 2 checks"
+exit "$ng"
+V
+  chmod +x "$d/guard.sh" "$d/other.sh" "$d/verify.sh"
+  git -C "$d" init -q .
+  git -C "$d" config user.email t@t; git -C "$d" config user.name t
+  git -C "$d" add -A; git -C "$d" commit -qm init
+}
+
+# mv <repo> <追加引数...> : 既定の引数を埋めて mutate-verify を呼び、rc を返す
+mv_run() {
+  local d="$1"; shift
+  ( cd "$d" && "$MV" --verify 'bash verify.sh' --baseline-expect '^ran 2 checks' "$@" ) \
+    > "$work/out.log" 2>&1
+}
+
+# ---------------------------------------------------------------------------
+# 1. 正常系: guard を外す変異で、狙ったケースが red になる → rc=0
+# ---------------------------------------------------------------------------
+d="$work/ok"; make_repo "$d"
+mv_run "$d" --file guard.sh \
+  --apply 'perl -0pi -e "s/if \[ \"\\\$1\" = \"bad\" \]/if false/" "$MUTATE_FILE"' \
+  --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 0 ] || { fail "正常系が rc=$rc (期待 0)"; cat "$work/out.log"; }
+grep -q '当てた変異' "$work/out.log" || fail "正常系で当てた diff を表示していない"
+
+# ---------------------------------------------------------------------------
+# 2. 変異が当たらない (--apply が何もしない) → rc=4
+# ---------------------------------------------------------------------------
+d="$work/noop"; make_repo "$d"
+mv_run "$d" --file guard.sh --apply 'true' --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 4 ] || fail "当たらない変異が rc=$rc (期待 4)"
+grep -q '変異が当たっていない' "$work/out.log" || fail "rc=4 の理由が出ていない"
+
+# ---------------------------------------------------------------------------
+# 3. 構文エラーの変異 → rc=5 (red でも green でもない第 3 の結果)
+# ---------------------------------------------------------------------------
+d="$work/syntax"; make_repo "$d"
+mv_run "$d" --file guard.sh --apply 'printf "\nif [ \n" >> "$MUTATE_FILE"' --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 5 ] || fail "構文エラーの変異が rc=$rc (期待 5)"
+grep -q '第 3 の結果' "$work/out.log" || fail "rc=5 が第 3 の結果だと説明していない"
+
+# ---------------------------------------------------------------------------
+# 4. 変異が緑のまま通る (テストが守っていない) → rc=6
+#    guard.sh のコメント行を足すだけ = 挙動を変えない変異
+# ---------------------------------------------------------------------------
+d="$work/green"; make_repo "$d"
+mv_run "$d" --file guard.sh --apply 'printf "\n# mutant\n" >> "$MUTATE_FILE"' --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 6 ] || fail "緑のまま通る変異が rc=$rc (期待 6)"
+grep -q '何も守っていない' "$work/out.log" || fail "rc=6 の理由が出ていない"
+
+# ---------------------------------------------------------------------------
+# 5. red だが --expect に一致しない → rc=7 (別の検査が落ちている)
+# ---------------------------------------------------------------------------
+d="$work/wrongred"; make_repo "$d"
+mv_run "$d" --file guard.sh \
+  --apply 'perl -0pi -e "s/echo \"accepted\"/echo \"WRONG\"/" "$MUTATE_FILE"' \
+  --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 7 ] || fail "別の検査が落ちた red が rc=$rc (期待 7)"
+grep -q '別の検査が先に落ちている' "$work/out.log" || fail "rc=7 の理由が出ていない"
+
+# ---------------------------------------------------------------------------
+# 6. 誤ファイルへの変異 → rc=8
+# ---------------------------------------------------------------------------
+d="$work/wrongfile"; make_repo "$d"
+mv_run "$d" --file guard.sh \
+  --apply 'perl -0pi -e "s/if \[ \"\\\$1\" = \"bad\" \]/if false/" "$MUTATE_FILE"; printf "\n# stray\n" >> other.sh' \
+  --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 8 ] || fail "誤ファイルへの変異が rc=$rc (期待 8)"
+grep -q '誤ファイル' "$work/out.log" || fail "rc=8 の理由が出ていない"
+
+# ---------------------------------------------------------------------------
+# 7. baseline が red → rc=3 (判定不能)
+# ---------------------------------------------------------------------------
+d="$work/basered"; make_repo "$d"
+perl -0pi -e 's/echo "accepted"/echo "broken"/' "$d/guard.sh"
+git -C "$d" commit -qam "baseline を壊す"
+mv_run "$d" --file guard.sh --apply 'printf "\n# m\n" >> "$MUTATE_FILE"' --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 3 ] || fail "baseline red が rc=$rc (期待 3)"
+grep -q 'baseline が green でない' "$work/out.log" || fail "rc=3 (baseline) の理由が出ていない"
+
+# ---------------------------------------------------------------------------
+# 8. zero execution: rc=0 だが --baseline-expect が出ない → rc=3
+#    🚨 これがこの道具の中心。rc だけ見る設計では「1 件も走っていない」を緑と読む
+# ---------------------------------------------------------------------------
+d="$work/zero"; make_repo "$d"
+cat > "$d/verify.sh" <<'V'
+#!/bin/bash
+# 何も実行せず成功する (テストの絞り込みを間違えた状態)
+exit 0
+V
+chmod +x "$d/verify.sh"; git -C "$d" commit -qam "何も実行しない verify"
+mv_run "$d" --file guard.sh --apply 'printf "\n# m\n" >> "$MUTATE_FILE"' --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 3 ] || fail "zero execution が rc=$rc (期待 3)"
+grep -q '1 件も実行していない' "$work/out.log" || fail "zero execution の理由が出ていない"
+
+# ---------------------------------------------------------------------------
+# 9. 引数の検証 → rc=2
+# ---------------------------------------------------------------------------
+d="$work/args"; make_repo "$d"
+for miss in --expect --baseline-expect; do
+  args=(--file guard.sh --apply true --verify 'bash verify.sh')
+  [ "$miss" = --expect ] || args+=(--expect x)
+  [ "$miss" = --baseline-expect ] || args+=(--baseline-expect x)
+  ( cd "$d" && "$MV" "${args[@]}" ) > "$work/out.log" 2>&1
+  rc=$?
+  [ "$rc" -eq 2 ] || fail "$miss 無しが rc=$rc (期待 2)"
+done
+( cd "$d" && "$MV" --file guard.sh --apply true --verify v --expect x --baseline-expect y \
+    --syntax '' ) > "$work/out.log" 2>&1
+# 拡張子でも shebang でも決まらなければ明示必須 (黙って素通しすると構文検査 = rc=5 が消える)
+printf 'echo hi\n' > "$d/noext"          # 拡張子なし・shebang なし
+cp "$d/guard.sh" "$d/hasbang"             # 拡張子なし・shebang あり (bin/ のスクリプトの形)
+git -C "$d" add -A; git -C "$d" commit -qm ext
+( cd "$d" && "$MV" --file noext --apply true --verify 'bash verify.sh' \
+    --expect x --baseline-expect '^ran' ) > "$work/out.log" 2>&1
+rc=$?
+[ "$rc" -eq 2 ] || fail "拡張子も shebang も無いファイルが rc=$rc (期待 2)"
+grep -q '推定できない' "$work/out.log" || fail "推定できない理由が出ていない"
+# 🚨 shebang からの推定が効くこと。`bin/` のスクリプトは拡張子を持たないので、これが無いと
+# この道具は自分自身を変異検証できない (実装した日に踏んだ)
+( cd "$d" && "$MV" --file hasbang --apply 'printf "\nif [ \n" >> "$MUTATE_FILE"' \
+    --verify 'bash verify.sh' --expect x --baseline-expect '^ran 2 checks' ) > "$work/out.log" 2>&1
+rc=$?
+[ "$rc" -eq 5 ] || fail "shebang から推定した構文検査が効いていない (rc=$rc 期待 5)"
+grep -q 'bash -n' "$work/out.log" || fail "shebang 推定の結果を表示していない"
+
+# ---------------------------------------------------------------------------
+# 10. 未コミットの変更が worktree へ持ち込まれる
+#     🚨 これが無いと「今書いたテスト」を変異検証できない (in-place を避けた設計の要)
+# ---------------------------------------------------------------------------
+d="$work/dirty"; make_repo "$d"
+# 未コミットで「新しい検査」を足す (commit しない)。変異がこの検査に当たることを見る。
+# 🚨 perl の s/// で書くと置換文字列の $out が perl 変数として展開されて空になる
+# (self-test を書いたその日に踏んだ)。fixture は素直に丸ごと書く
+cat > "$d/verify.sh" <<'V'
+#!/bin/bash
+ng=0
+out="$(bash guard.sh bad 2>&1)"
+[ "$out" = "rejected" ] || { echo "FAIL: reject-bad (got=$out)"; ng=1; }
+out="$(bash guard.sh edge 2>&1)"
+[ "$out" = "accepted" ] || { echo "FAIL: uncommitted-check (got=$out)"; ng=1; }
+echo "ran 3 checks"
+exit "$ng"
+V
+chmod +x "$d/verify.sh"
+# baseline のサマリ行も未コミット側の "ran 3 checks" になるので mv_run の既定は使えない
+( cd "$d" && "$MV" --verify 'bash verify.sh' --baseline-expect '^ran 3 checks' --file guard.sh \
+  --apply 'perl -0pi -e "s/echo \"accepted\"/echo \"NOPE\"/" "$MUTATE_FILE"' \
+  --expect 'FAIL: uncommitted-check' ) > "$work/out.log" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] || { fail "未コミットの検査を変異検証できない (rc=$rc)"; cat "$work/out.log"; }
+# 🚨 未コミットの変更が **作業ツリーに残っている** こと (持ち込みは copy であって move ではない)
+grep -q 'ran 3 checks' "$d/verify.sh" || fail "作業ツリーの未コミット変更が消えている"
+
+# ---------------------------------------------------------------------------
+# 11. 残骸ゼロ: 作業ツリーが 1 バイトも変わらず、worktree も残らない
+#     🚨 この道具の存在理由 (復元事故) そのものなので、必ず見る
+# ---------------------------------------------------------------------------
+d="$work/clean"; make_repo "$d"
+printf '\n# uncommitted\n' >> "$d/guard.sh"          # 未コミットの変更を置いておく
+before_hash="$(shasum -a 256 < "$d/guard.sh" | awk '{print $1}')"
+before_status="$(git -C "$d" status --porcelain --untracked-files=all)"
+mv_run "$d" --file guard.sh \
+  --apply 'perl -0pi -e "s/if \[ \"\\\$1\" = \"bad\" \]/if false/" "$MUTATE_FILE"' \
+  --expect 'FAIL: reject-bad'
+after_hash="$(shasum -a 256 < "$d/guard.sh" | awk '{print $1}')"
+[ "$before_hash" = "$after_hash" ] || fail "🚨 作業ツリーのファイルが変異で書き換わった (復元事故)"
+[ "$before_status" = "$(git -C "$d" status --porcelain --untracked-files=all)" ] ||
+  fail "🚨 作業ツリーの git state が変わった"
+# 🚨 パイプ越しの `grep -q` は pipefail 下で一致しても非 0 になる (issue 096)
+grep -q 'dotfiles-mutant' <<<"$(git -C "$d" worktree list --porcelain)" &&
+  fail "🚨 worktree が残っている"
+
+# ---------------------------------------------------------------------------
+# 12. 🚨 **すでに dirty / untracked なファイル**への誤変異も落とす → rc=8
+#     red team P1-1: porcelain の「行」だけを比べると ` M x` → ` M x` で差分が出ず、
+#     **この道具が自分で作る集合** (未コミット差分の持ち込み) がまるごと死角になっていた
+# ---------------------------------------------------------------------------
+mutate_guard='perl -0pi -e "s/if \[ \"\\\$1\" = \"bad\" \]/if false/" "$MUTATE_FILE"'
+for kind in dirty-tracked untracked; do
+  d="$work/others-$kind"; make_repo "$d"
+  if [ "$kind" = dirty-tracked ]; then
+    printf '\n# wip\n' >> "$d/other.sh"          # 未コミットの変更 (実運用で普通)
+    victim=other.sh
+  else
+    printf 'echo new\n' > "$d/newfile.sh"        # untracked
+    victim=newfile.sh
+  fi
+  mv_run "$d" --file guard.sh \
+    --apply "$mutate_guard; echo STRAY >> $victim" --expect 'FAIL: reject-bad'
+  rc=$?
+  [ "$rc" -eq 8 ] || fail "$kind な別ファイルへの変異が rc=$rc (期待 8)"
+done
+
+# ---------------------------------------------------------------------------
+# 13. 同名 basename / バックアップファイルを「--file 自身」と読まない → rc=8
+#     red team P2-4: 除外が部分一致だと sub/guard.sh や guard.sh.bak を見逃す
+# ---------------------------------------------------------------------------
+d="$work/samename"; make_repo "$d"
+mkdir -p "$d/sub"; cp "$d/other.sh" "$d/sub/guard.sh"
+git -C "$d" add -A; git -C "$d" commit -qm sub
+mv_run "$d" --file guard.sh --apply "$mutate_guard; echo STRAY >> sub/guard.sh" \
+  --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 8 ] || fail "同名 basename の別ファイルへの変異が rc=$rc (期待 8)"
+
+# ---------------------------------------------------------------------------
+# 14. 🚨 --apply が **worktree の外 (元の作業ツリー)** を書いたら緑を返さない → rc=9
+#     red team P1-2: 射程 1 (復元事故) の中心。警告 1 行で rc=0 を返していた
+# ---------------------------------------------------------------------------
+d="$work/outside"; make_repo "$d"
+printf '\n# uncommitted impl\n' >> "$d/other.sh"   # 元 repo 側の未コミット実装
+mv_run "$d" --file guard.sh \
+  --apply "$mutate_guard; echo CLOBBER >> $d/other.sh" --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 9 ] || fail "worktree の外への書き込みが rc=$rc (期待 9)"
+grep -q '元の作業ツリーが変わった' "$work/out.log" || fail "rc=9 の理由が出ていない"
+
+# ---------------------------------------------------------------------------
+# 15. --expect が baseline にも出る pattern なら使い方の誤りとして拒否 → rc=2
+#     red team P1-3: verbose runner では常態で、別のテストが落ちた red を「想定どおり」と読む
+# ---------------------------------------------------------------------------
+d="$work/vague"; make_repo "$d"
+mv_run "$d" --file guard.sh --apply "$mutate_guard" --expect 'ran 2 checks'
+rc=$?
+[ "$rc" -eq 2 ] || fail "baseline にも出る --expect が rc=$rc (期待 2)"
+grep -q 'baseline の出力にも出ている' "$work/out.log" || fail "rc=2 (曖昧な expect) の理由が出ていない"
+
+# ---------------------------------------------------------------------------
+# 16. untracked な --file でも「当てた変異」の diff が出る (手順 1.6 の入力が消えない)
+#     red team P2-5: 新規テストファイルを変異検証するのが主要ユースケースなのに無音だった
+# ---------------------------------------------------------------------------
+d="$work/untracked-file"; make_repo "$d"
+cp "$d/guard.sh" "$d/newguard.sh"                    # untracked のまま
+cat > "$d/verify.sh" <<'V'
+#!/bin/bash
+ng=0
+out="$(bash newguard.sh bad 2>&1)"
+[ "$out" = "rejected" ] || { echo "FAIL: reject-bad (got=$out)"; ng=1; }
+echo "ran 1 check"
+exit "$ng"
+V
+chmod +x "$d/verify.sh"
+( cd "$d" && "$MV" --verify 'bash verify.sh' --baseline-expect '^ran 1 check' --file newguard.sh \
+    --apply "$mutate_guard" --expect 'FAIL: reject-bad' ) > "$work/out.log" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] || { fail "untracked な --file が rc=$rc (期待 0)"; cat "$work/out.log"; }
+grep -q '^+.*if false' "$work/out.log" || fail "🚨 untracked な --file の diff が出ていない (手順 1.6 の入力が消える)"
+
+# ---------------------------------------------------------------------------
+# 17. untracked なファイルも worktree へ持ち込まれる (lib の主張のテスト)
+#     red team P2-6: 「untracked も持ち込む」はコード上の主張なのにテストが無かった
+# ---------------------------------------------------------------------------
+d="$work/carry-untracked"; make_repo "$d"
+cat > "$d/verify.sh" <<'V'
+#!/bin/bash
+ng=0
+[ -f helper.sh ] || { echo "FAIL: untracked-not-carried"; exit 1; }
+out="$(bash guard.sh bad 2>&1)"
+[ "$out" = "rejected" ] || { echo "FAIL: reject-bad (got=$out)"; ng=1; }
+echo "ran 2 checks"
+exit "$ng"
+V
+chmod +x "$d/verify.sh"
+printf 'echo helper\n' > "$d/helper.sh"             # untracked。持ち込まれないと baseline が red
+mv_run "$d" --file guard.sh --apply "$mutate_guard" --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 0 ] || { fail "untracked が持ち込まれていない (rc=$rc)"; cat "$work/out.log"; }
+
+# ---------------------------------------------------------------------------
+# 19. index (staging) だけを動かす改変も検出する → rc=9
+#     red team 2 周目 P1-2: 内容 hash だけを見ると `git add` / `git reset` が不可視になる
+#     (旧実装の porcelain 行比較は見ていた能力なので、落とさないよう固定する)
+# ---------------------------------------------------------------------------
+d="$work/indexonly"; make_repo "$d"
+printf '\n# wip\n' >> "$d/other.sh"                  # unstaged のまま置く
+mv_run "$d" --file guard.sh \
+  --apply "$mutate_guard; git -C $d add other.sh" --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 9 ] || fail "index だけを動かす改変が rc=$rc (期待 9)"
+
+# ---------------------------------------------------------------------------
+# 20. --file を `./guard.sh` と書いても誤検出しない (git の正規形へ揃える)
+#     red team 2 周目 P2-1: 見逃しでなく**誤検出**で、rc=8 の信頼を壊す
+# ---------------------------------------------------------------------------
+d="$work/dotslash"; make_repo "$d"
+mv_run "$d" --file ./guard.sh --apply "$mutate_guard" --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 0 ] || fail "--file ./guard.sh が rc=$rc (期待 0 — 正規形へ揃えていない)"
+
+# ---------------------------------------------------------------------------
+# 21. 異常終了 (rc=4〜7) でも元 repo が壊れていれば rc=9 を優先する
+#     red team 2 周目 P2-2: rc=6 を受けた呼び出し側が「変異が弱い」と読んで
+#     同じ --apply で再実行し、元 repo をもう一度壊す形が残っていた
+# ---------------------------------------------------------------------------
+d="$work/rc9-priority"; make_repo "$d"
+printf '\n# uncommitted impl\n' >> "$d/other.sh"
+mv_run "$d" --file guard.sh \
+  --apply "printf '\n# harmless\n' >> \"\$MUTATE_FILE\"; echo CLOBBER >> $d/other.sh" \
+  --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 9 ] || fail "緑のまま通る変異 + 元 repo 改変が rc=$rc (期待 9 — rc=6 を優先してはいけない)"
+
+# ---------------------------------------------------------------------------
+# 22. --verify が元 repo を壊したら、baseline 系の失敗でも rc=9 を優先する
+#     red team 3 周目 P1-1: rc=3「baseline が green でない」は再実行を最も強く促す rc なので、
+#     ここが素の exit だと「同じコマンドで再実行して元 repo をもう一度壊す」が残る
+# ---------------------------------------------------------------------------
+d="$work/verify-clobber"; make_repo "$d"
+printf '\n# uncommitted impl\n' >> "$d/other.sh"
+mv_run "$d" --file guard.sh --apply "$mutate_guard" --expect 'FAIL: reject-bad' \
+  --verify "echo CLOBBER >> $d/other.sh; bash verify.sh; exit 1"
+rc=$?
+[ "$rc" -eq 9 ] || fail "--verify が元 repo を壊したのに rc=$rc (期待 9)"
+
+# ---------------------------------------------------------------------------
+# 23. index 上に rename がある状態でも snapshot のパースが崩れない
+#     red team 3 周目 P2-1: `R  <new>\0<old>\0` の 2 レコードを 1 エントリとして読むと、
+#     旧パス側が恒久的に <missing> になる (2 周目 P1-5 の「不可視」の別入口)
+# ---------------------------------------------------------------------------
+# 🚨 **「rename があっても誤検出しない」だけを見てはいけない**。誤パースは before/after の
+#    両方に同じゴミ行を作るので判定は反転せず、**そのテストは何も守らない** (実測: 読み飛ばしを
+#    外す変異が緑のまま通った)。壊れるのは**診断**なので、rc=9 の diff を観測点にする。
+#    `other.sh` を誤パースすると `${entry:3}` = `er.sh` というゴミパスが snapshot に入る
+d="$work/rename"; make_repo "$d"
+mv_run "$d" --file guard.sh \
+  --apply "$mutate_guard; git -C $d mv other.sh renamed.sh" --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 9 ] || fail "変異中の rename で rc=$rc (期待 9 — 元 repo を触っている)"
+grep -q 'er\.sh' "$work/out.log" &&
+  fail "🚨 rename の旧パスが誤パースされ、実在しないパスが診断に混ざっている"
+grep -q 'renamed\.sh' "$work/out.log" ||
+  fail "rename の新パスが診断に出ていない"
+
+# ---------------------------------------------------------------------------
+# 24. --file の表記ゆれ (大文字小文字 / symlink) で誤検出しない
+#     red team 3 周目 P2-2: macOS は既定で case-insensitive なので `--file GUARD.SH` が通り、
+#     除外だけ外れて **--file 自身が誤ファイル扱い**になる
+# ---------------------------------------------------------------------------
+d="$work/casefold"; make_repo "$d"
+mv_run "$d" --file GUARD.SH --apply "$mutate_guard" --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 0 ] || fail "--file GUARD.SH が rc=$rc (期待 0 — git の表記へ揃えていない)"
+d="$work/symlinkfile"; make_repo "$d"
+ln -s guard.sh "$d/link.sh"; git -C "$d" add -A; git -C "$d" commit -qm link
+mv_run "$d" --file link.sh --apply "$mutate_guard" --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 2 ] || fail "--file が symlink のとき rc=$rc (期待 2 — 実体を指定させる)"
+
+# ---------------------------------------------------------------------------
+# 22. 🚨 全ケースを通した**後**の残骸ゼロ。
+#     この判定は必ずファイル末尾に置く — 2 周目に「末尾に置く」と書きながら、その後で
+#     新ケースを 3 つ判定より前に足して同じ穴を再生産した (red team 3 周目 P1-2)。
+#     **ケースを足すときは、このブロックより上に足すこと**
+# ---------------------------------------------------------------------------
+for leftover in "${TMPDIR:-/tmp}"/dotfiles-mutant.*; do
+  [ -e "$leftover" ] || continue
+  grep -qxF "$leftover" <<<"$leftovers_before" || fail "🚨 この run が残した worktree: $leftover"
+done
+
+if [ "$fails" -eq 0 ]; then echo "OK: mutate-verify (25 ケース)"; else echo "FAILED: $fails"; exit 1; fi
