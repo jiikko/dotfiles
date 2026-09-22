@@ -184,11 +184,11 @@ func run(args []string) int {
 	}
 	o, positional, err := parseFlags(cmd, rest)
 	if err != nil {
-		return exitError
+		return failCode(cmd, exitError)
 	}
 	if len(positional) < 1 {
 		warnf("対象ディレクトリを指定すること")
-		return exitError
+		return failCode(cmd, exitError)
 	}
 	// 🚨 --io-timeout の値検証。0 や負値は**全操作を即「判定不能」**にする (0 を「無制限」と
 	// 読む CLI が多いので、黙って受けると意図と逆に倒れる)。上限も要る: 大きすぎると
@@ -198,11 +198,20 @@ func run(args []string) int {
 		warnf("--io-timeout が範囲外 (%v)。%v 〜 %v で指定すること", o.ioTimeout, minIOTimeout, maxIOTimeout)
 		return failCode(cmd, exitError)
 	}
+	// 🚨 --on-lost の値検証は **subcommand を問わず無条件**に行う。フラグ登録が subcommand 分岐の
+	// 外にあるので、`--on-lost` を読まない acquire 等でも黙って受理され、「効いたつもり」を作る。
+	// 🚨 この検証が with.go の否定形の読み (`o.onLost != "warn"` = kill 扱い) を成立させている。
+	// 外すと綴り間違いが黙って kill 側に倒れる — warn のつもりの人に SIGTERM が撃たれる向きなので
+	// 危険側。値の集合の出典は issue 385 (kill | warn で確定)。
+	if o.onLost != "kill" && o.onLost != "warn" {
+		warnf("--on-lost が不正 (%q)。kill | warn のどちらかを指定すること", o.onLost)
+		return failCode(cmd, exitError)
+	}
 	if o.ttl < minTTL {
 		// 短い TTL は SMB の属性キャッシュ遅延に埋もれ、生きている lock を stale と
 		// 誤判定する。警告ではなくエラーで拒否する。
 		warnf("--ttl が短すぎる (%v)。下限は %v", o.ttl, minTTL)
-		return exitError
+		return failCode(cmd, exitError)
 	}
 	if cmd == "with" && len(child) == 0 {
 		warnf("with は -- の後ろに実行するコマンドが要る")

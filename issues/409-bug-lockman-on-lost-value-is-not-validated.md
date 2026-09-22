@@ -39,10 +39,10 @@ if o.onLost != "kill" && o.onLost != "warn" {
 
 ## 受け入れ条件
 
-- [ ] `kill` / `warn` 以外を渡すと `with` は rc=125、それ以外の subcommand は rc=1 で止まる
-- [ ] エラー文に**受け付ける値**が出る (人がその場で直せる)
-- [ ] `kill` / `warn` の正常系が退行していない (既定 `kill` を含む)
-- [ ] 変異検証: 足した検証を外す (= `!= "warn"` のままに戻す) 変異で、**このテストだけが** red になることを
+- [x] `kill` / `warn` 以外を渡すと `with` は rc=125、それ以外の subcommand は rc=1 で止まる
+- [x] エラー文に**受け付ける値**が出る (人がその場で直せる)
+- [x] `kill` / `warn` の正常系が退行していない (既定 `kill` を含む)
+- [x] 変異検証: 足した検証を外す (= `!= "warn"` のままに戻す) 変異で、**このテストだけが** red になることを
       package + テストケース名で確認する ([`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md))
 
 ## 着手前のメモ (2026-09-21 の反証レビューで確認済み)
@@ -79,8 +79,8 @@ if o.onLost != "kill" && o.onLost != "warn" {
 **同じ commit で上の 3 経路も `failCode` へ寄せる**のを推奨する
 (寄せるのは `with` のときだけ 125 に化ける関数なので、他 subcommand の rc は変わらない)。
 
-- 追加の受け入れ条件: 上の表の 3 経路が `with` で **125** を返し、`check` 等では **1** のままであること
-- 変異検証: 各経路の `failCode` を外す変異で、**その経路のテストケースだけ**が red になること
+- [x] 追加の受け入れ条件: 上の表の 3 経路が `with` で **125** を返し、`check` 等では **1** のままであること
+- [x] 変異検証: 各経路の `failCode` を外す変異で、**その経路のテストケースだけ**が red になること
 - 🚨 寄せる前に [`list-masked-failure-modes-before-removing-guard.md`](../_claude/rules/list-masked-failure-modes-before-removing-guard.md) の
   逆向き (値を変える側) として、**rc=1 に依存している呼び出し側が無いか**を確認する
   (`zshlib/_av1ify_lock.zsh` は rc=3 を SKIP・rc≠0 を中止に分けているので `with` は使っていないが、
@@ -90,3 +90,59 @@ if o.onLost != "kill" && o.onLost != "warn" {
 
 - [357](done/357-bug-lockman-with-bypasses-io-timeout.md) — `--io-timeout` の範囲検証を入れた先例 (同じ族)
 - [385](done/385-design-lockman-on-lost-kill-vs-keep-renewing.md) — `--on-lost` の意味論を決めた issue (値の集合はここで確定している)
+
+## 進捗
+
+対応 commit: `fix(lockman,409): --on-lost を値検証し、with の「引数が不正」を 125 へ揃える`
+
+### 実装
+
+- `main.go` — `--io-timeout` 検証の直後に `--on-lost` の enum 検証を足した。
+  **subcommand を問わず無条件**に行う方を選んだ (issue の推奨どおり)。理由はコード直近のコメントに
+  書いた: フラグ登録が subcommand 分岐の外なので、`--on-lost` を読まない `acquire` 等でも黙って
+  受理され「効いたつもり」を作るため
+- `main.go` — 揃っていなかった 3 経路 (`parseFlags` のエラー / 対象ディレクトリなし / `--ttl` が短すぎる) を
+  `failCode(cmd, exitError)` へ寄せた
+- `on_lost_validation_test.go` (新規) — 上記 2 つのテスト
+
+### 実測 (`go build` した実バイナリ。stdout / stderr / rc を分離、2026-09-22)
+
+対応前の表と同じ実行を取り直した。**6 行すべてが揃った**:
+
+| 実行 | 対応前 | 対応後 |
+|---|---|---|
+| `with --bogus d -- /bin/echo hi` | 1 | **125** |
+| `with -- /bin/echo hi` (dir なし) | 1 | **125** |
+| `with --ttl 1s d -- /bin/echo hi` | 1 | **125** |
+| `with --io-timeout 0 d -- /bin/echo hi` | 125 | 125 (変化なし) |
+| `with d --` (子が空) | 125 | 125 (変化なし) |
+| `with --on-lost warm d -- /bin/echo hi` | **0 (素通り)** | **125** |
+
+`check` 側は `--on-lost warm` / `--ttl 1s` とも **rc=1 のまま** (番号空間を変えたのは `with` だけ)。
+正常系 (`--on-lost warn` / `kill` / フラグ未指定) はいずれも rc=0。
+エラー文は `--on-lost が不正 ("warm")。kill | warn のどちらかを指定すること` で、受け付ける値が出る。
+
+### 変異検証 (package `lockman`、ケース名まで確認)
+
+🚨 判定の grep は `^--- FAIL` では**サブテスト名を取りこぼす** (インデントが付く)。
+`^[[:space:]]*--- FAIL:` で採り直した。
+
+| 変異 | red になったケース |
+|---|---|
+| `--on-lost` の検証ブロックを外す | `TestOnLostValueIsValidated/{typo-warm, empty, uppercase-KILL, with-uses-125}` |
+| `parseFlags` の `failCode` を外す | `TestWithInvalidArgsExitWithInvalid/unknown-flag` **のみ** |
+| 対象ディレクトリなしの `failCode` を外す | `TestWithInvalidArgsExitWithInvalid/missing-dir` **のみ** |
+| `--ttl` の `failCode` を外す | `TestWithInvalidArgsExitWithInvalid/ttl-too-short` **のみ** |
+
+検証を外す変異でも `kill` / `warn` / `default-passes` は緑のまま = 正常系の対照が効いている。
+4 本とも復元後 green。
+
+### 呼び出し側の確認 (rc=1 → 125 の影響)
+
+`with` サブコマンドの実呼び出しは **repo 内に 0 件** (2026-09-22 に grep で数え直した)。
+`zshlib/_av1ify_lock.zsh` は `acquire` / `release` を使っており、`with` はコメントで言及しているだけ。
+`check` 等の rc は変えていないので、`rc=3` を SKIP に分けている同ファイルの判定にも影響しない。
+
+### 残タスク
+
+なし (受け入れ条件はすべて満たした)。
