@@ -141,6 +141,36 @@ if o.onLost != "kill" && o.onLost != "warn" {
 `zshlib/_av1ify_lock.zsh` は `acquire` / `release` を使っており、`with` はコメントで言及しているだけ。
 `check` 等の rc は変えていないので、`rc=3` を SKIP に分けている同ファイルの判定にも影響しない。
 
+### 後日追記 (2026-09-22): 値集合を単一の出典へ寄せた
+
+done へ移した後、`--on-lost` の値集合が **production の 5 箇所に散っていた**ことが分かったので
+同日に寄せた (対応 commit: `refactor(lockman): --on-lost の値集合を単一の出典へ寄せる`)。
+検証を入れた時点では「kill か warn しか来ない」は保証されたが、**3 つ目の値を足す人**には
+何も効かない状態が残っていた。
+
+- 散っていた 5 箇所: `opts.onLost` の型 / フラグ既定値とヘルプ文の `kill | warn` /
+  検証の 2 リテラル / エラー文の `kill | warn` / `dispatch` の `o.onLost != "warn"`
+- `onLostModes` を単一の出典にし、**ヘルプ文・検証・エラー文をすべてそこから生成**するようにした
+- `dispatch` を**肯定形** (`o.onLost == onLostKillMode`) に変えた。否定形はこの issue の症状そのもの
+  (未知の値が黙って kill 側へ倒れる) を生んだ形なので、検証と併せて構造から消した
+- `with.go` の `runWith` は bool 1 つしか受け取らず 3 つ目の意味を表現できないため、
+  「値を足すときは runWith も見直せ」を定数の直近に書いた
+- 受理側のテストも `onLostModes` からループ生成に変えた (リテラルで並べると、増やした値が
+  無検査のまま通る)
+
+**変異検証 (package `lockman`)**:
+
+| 変異 | 結果 |
+|---|---|
+| エラー文から `warn` を落とす | `TestOnLostErrorListsAllModes` **のみ** red |
+| 検証ブロックを削除 | **ビルド不能** (`slices` が未使用になる) → 第 3 の結果として当て直した |
+| 検証を `if false &&` で無効化 | `typo-warm` / `empty` / `uppercase-KILL` / `with-uses-125` + エラー文テストが red |
+| `== onLostKillMode` を `!= onLostWarnMode` へ戻す | **全緑** |
+
+🚨 最後の 1 本は「肯定形と否定形が**等価**」の裏取り (検証が入った後は等価で、だから安全に倒せる)。
+`~/.claude/CLAUDE.md`「レビュー方針」の「『等価』を書く前に compiler / テストで確かめる」に沿って、
+推測でなく実行で確かめた。
+
 ### 残タスク
 
 なし (受け入れ条件はすべて満たした)。

@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // --on-lost の値検証 (issue 409)。着手時点で **0 件**だった。
 //
@@ -16,13 +19,20 @@ func TestOnLostValueIsValidated(t *testing.T) {
 		{"typo-warm", "warm", exitError}, // issue 409 の症状そのもの
 		{"empty", "", exitError},
 		{"uppercase-KILL", "KILL", exitError}, // 大文字は別値 (比較は完全一致)
-		{"kill", "kill", exitOK},
-		{"warn", "warn", exitOK},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			got := run([]string{"check", dir, "--on-lost", c.arg})
 			if got != c.want {
 				t.Fatalf("check --on-lost %q: exit %d (期待 %d)", c.arg, got, c.want)
+			}
+		})
+	}
+	// 受理側は onLostModes から回す。値を足したらテストも自動で増える
+	// (リテラルで並べると、増やした値が無検査のまま通る)
+	for _, m := range onLostModes {
+		t.Run("accepts/"+m, func(t *testing.T) {
+			if got := run([]string{"check", dir, "--on-lost", m}); got != exitOK {
+				t.Fatalf("check --on-lost %q: exit %d (期待 %d)", m, got, exitOK)
 			}
 		})
 	}
@@ -64,5 +74,20 @@ func TestWithInvalidArgsExitWithInvalid(t *testing.T) {
 				t.Errorf("check: exit %d (期待 %d — with 以外は 1 のまま)", got, exitError)
 			}
 		})
+	}
+}
+
+// エラー文が**受け付ける値を全部**出すこと (人がその場で直せる。issue 409 の受け入れ条件)。
+// onLostModes から作っているので、値を足したら文面も自動で追従する — それをここで固定する。
+func TestOnLostErrorListsAllModes(t *testing.T) {
+	dir := t.TempDir()
+	got := captureStderr(t, func() { run([]string{"check", dir, "--on-lost", "warm"}) })
+	for _, m := range onLostModes {
+		if !strings.Contains(got, m) {
+			t.Errorf("エラー文に %q が出ていない: %s", m, got)
+		}
+	}
+	if !strings.Contains(got, "warm") {
+		t.Errorf("エラー文に渡された値が出ていない: %s", got)
 	}
 }

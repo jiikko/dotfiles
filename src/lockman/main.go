@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -108,6 +109,20 @@ type opts struct {
 	onLost    string
 }
 
+// --on-lost が取る値。**ここが値集合の単一の出典**で、ヘルプ文・検証・エラー文はすべて
+// onLostModes から作る (意味論の出典は issue 385、CLI の契約は 091:282)。
+// 🚨 値を足すときは with.go の runWith も一緒に見直すこと。あちらは bool 1 つで
+// 「殺すか殺さないか」しか受け取らないので、3 つ目の意味はそのままでは表現できない。
+const (
+	onLostKillMode = "kill"
+	onLostWarnMode = "warn"
+)
+
+var onLostModes = []string{onLostKillMode, onLostWarnMode}
+
+// onLostUsage は「kill | warn」の形。ヘルプとエラー文が食い違わないよう 1 箇所で作る。
+func onLostUsage() string { return strings.Join(onLostModes, " | ") }
+
 func parseFlags(cmd string, args []string) (*opts, []string, error) {
 	o := &opts{}
 	fs := flag.NewFlagSet("lockman "+cmd, flag.ContinueOnError)
@@ -121,7 +136,7 @@ func parseFlags(cmd string, args []string) (*opts, []string, error) {
 	fs.BoolVar(&o.jsonOut, "json", false, "機械可読な出力")
 	fs.BoolVar(&o.verbose, "verbose", false, "掃除などの詳細を stderr に出す")
 	fs.BoolVar(&o.force, "force", false, "確認せず実行する")
-	fs.StringVar(&o.onLost, "on-lost", "kill", "with で lease を失ったとき: kill | warn")
+	fs.StringVar(&o.onLost, "on-lost", onLostKillMode, "with で lease を失ったとき: "+onLostUsage())
 	// 🚨 flag は最初の非フラグ引数で解析を止める。シェルからは
 	// `lockman acquire "$dir" --ttl 5m` の順で書くのが自然なので、位置引数を
 	// 取り除きながら解析し直して、フラグが後ろに来ても効くようにする。
@@ -200,11 +215,10 @@ func run(args []string) int {
 	}
 	// 🚨 --on-lost の値検証は **subcommand を問わず無条件**に行う。フラグ登録が subcommand 分岐の
 	// 外にあるので、`--on-lost` を読まない acquire 等でも黙って受理され、「効いたつもり」を作る。
-	// 🚨 この検証が with.go の否定形の読み (`o.onLost != "warn"` = kill 扱い) を成立させている。
-	// 外すと綴り間違いが黙って kill 側に倒れる — warn のつもりの人に SIGTERM が撃たれる向きなので
-	// 危険側。値の集合の出典は issue 385 (kill | warn で確定)。
-	if o.onLost != "kill" && o.onLost != "warn" {
-		warnf("--on-lost が不正 (%q)。kill | warn のどちらかを指定すること", o.onLost)
+	// 🚨 外すと綴り間違いが黙って kill 側に倒れる — warn のつもりの人に SIGTERM が
+	// 撃たれる向きなので危険側 (issue 409)。
+	if !slices.Contains(onLostModes, o.onLost) {
+		warnf("--on-lost が不正 (%q)。%s のいずれかを指定すること", o.onLost, onLostUsage())
 		return failCode(cmd, exitError)
 	}
 	if o.ttl < minTTL {
@@ -312,7 +326,7 @@ func dispatch(cmd string, l *Locker, o *opts, child []string) int {
 		}
 		return exitOK
 	case "with":
-		return runWith(l, o.ttl, o.label, o.onLost != "warn", child)
+		return runWith(l, o.ttl, o.label, o.onLost == onLostKillMode, child)
 	case "break":
 		if err := l.BreakTimed(); err != nil {
 			warnf("%v", err)
