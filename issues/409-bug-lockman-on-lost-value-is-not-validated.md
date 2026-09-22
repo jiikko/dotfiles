@@ -1,5 +1,7 @@
 # 409 (bug): lockman の `--on-lost` が値検証されておらず、綴り間違いが黙って kill になる
 
+> 🚨 **担当中: dotfiles-87**（2026-09-22〜）
+
 起票日: 2026-09-21
 出典: [359](done/359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) の残タスク (最後の 1 件。切り出して 359 を done にした)
 
