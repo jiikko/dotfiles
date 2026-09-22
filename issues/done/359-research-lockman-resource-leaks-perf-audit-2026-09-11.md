@@ -1,7 +1,7 @@
 # lockman の resource-leaks / performance 監査 (2026-09-11) — 記録と却下理由
 
 ✅ **2026-09-21 に done**。生存した 3 件 (356 / 357 / 358) は実装済み、却下 5 件の理由はこの本文に残る。
-最後に残っていた `--on-lost` の値検証は **[409](../409-bug-lockman-on-lost-value-is-not-validated.md) へ切り出した**
+最後に残っていた `--on-lost` の値検証は **[409](409-bug-lockman-on-lost-value-is-not-validated.md) へ切り出した**
 (この issue は監査の記録が本体で、実装待ちを抱えて open を続ける器ではないため)。
 
 起票日: 2026-09-11
@@ -396,7 +396,7 @@ ubuntu から移した」と書いており、README だけが取り残されて
       「0 / 負値 / 1ns / 10h がすべて通る。0 は全操作を即『判定不能』にする」を実測したので、
       100ms 〜 5m の範囲検証を入れた (`cleanup.go` の注記が「356 / 357 と一緒に直す」と
       予告していた分)
-- [x] **`--on-lost` の値検証は [409](../409-bug-lockman-on-lost-value-is-not-validated.md) へ切り出した (2026-09-21)**。
+- [x] **`--on-lost` の値検証は [409](409-bug-lockman-on-lost-value-is-not-validated.md) へ切り出した (2026-09-21)**。
       未対応であることは実コードで再確認済み — `main.go` の `runWith(..., o.onLost != "warn", ...)` が
       否定形で判定しており、綴り間違い (`--on-lost=warm`) は**黙って kill になる**。
       この issue 側では対応しない
@@ -411,6 +411,8 @@ ubuntu から移した」と書いており、README だけが取り残されて
 **409 へ切り出して閉じた**。この issue の価値は「却下した 5 件とその理由」の保管にあり
 (`move-report-conclusions-to-issues.md`)、それは done でも失われない。
 409 が未対応であることは着手前に実コードで数え直すこと (この本文の記述を鵜呑みにしない)。
+**409 は 2026-09-22 に解消** — `--on-lost` の enum 検証に加え、`with` で 1 を返していた 3 経路も
+`failCode` へ寄せた (091:397 の「子と衝突させない」に揃えた)。
 
 ## 関連
 

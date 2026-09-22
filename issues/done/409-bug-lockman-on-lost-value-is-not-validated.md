@@ -1,15 +1,13 @@
 # 409 (bug): lockman の `--on-lost` が値検証されておらず、綴り間違いが黙って kill になる
 
-> 🚨 **担当中: dotfiles-87**（2026-09-22〜）
-
 起票日: 2026-09-21
-出典: [359](done/359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) の残タスク (最後の 1 件。切り出して 359 を done にした)
+出典: [359](359-research-lockman-resource-leaks-perf-audit-2026-09-11.md) の残タスク (最後の 1 件。切り出して 359 を done にした)
 
 ## 概要
 
 `--on-lost` は `kill | warn` の 2 値だが、**判定が `!= "warn"` の否定形**なので、
 `--on-lost=warm` のような綴り間違いが**黙って kill 扱い**になる。
-[091](done/091-feat-lockman-directory-lease-lock.md):282 は `--on-lost=kill|warn` と明記しており、
+[091](091-feat-lockman-directory-lease-lock.md):282 は `--on-lost=kill|warn` と明記しており、
 未知の値の扱いは規定していない。
 
 現状 (2026-09-21 に実コードで確認):
@@ -43,7 +41,7 @@ if o.onLost != "kill" && o.onLost != "warn" {
 - [x] エラー文に**受け付ける値**が出る (人がその場で直せる)
 - [x] `kill` / `warn` の正常系が退行していない (既定 `kill` を含む)
 - [x] 変異検証: 足した検証を外す (= `!= "warn"` のままに戻す) 変異で、**このテストだけが** red になることを
-      package + テストケース名で確認する ([`mutation-verify-new-tests.md`](../_claude/rules/mutation-verify-new-tests.md))
+      package + テストケース名で確認する ([`mutation-verify-new-tests.md`](../../_claude/rules/mutation-verify-new-tests.md))
 
 ## 着手前のメモ (2026-09-21 の反証レビューで確認済み)
 
@@ -58,7 +56,7 @@ if o.onLost != "kill" && o.onLost != "warn" {
 
 ## 同じ commit で揃えたい: `with` の「引数が不正」の終了コードが 3 経路だけ 1 のまま
 
-[091](done/091-feat-lockman-directory-lease-lock.md):397 は **「`with` の終了コードは子と衝突させない」**と定め、
+[091](091-feat-lockman-directory-lease-lock.md):397 は **「`with` の終了コードは子と衝突させない」**と定め、
 :405 で 0〜120 を子の透過、:408 で **125 = lockman 自体のエラー**としている。
 ところが `run()` の検証分岐は `failCode` を通すものと通さないものが混在しており、
 **`with` なのに rc=1 を返す経路が 3 つ残っている** (1 は子が返しうる値なので、呼び出し側から
@@ -81,15 +79,15 @@ if o.onLost != "kill" && o.onLost != "warn" {
 
 - [x] 追加の受け入れ条件: 上の表の 3 経路が `with` で **125** を返し、`check` 等では **1** のままであること
 - [x] 変異検証: 各経路の `failCode` を外す変異で、**その経路のテストケースだけ**が red になること
-- 🚨 寄せる前に [`list-masked-failure-modes-before-removing-guard.md`](../_claude/rules/list-masked-failure-modes-before-removing-guard.md) の
+- 🚨 寄せる前に [`list-masked-failure-modes-before-removing-guard.md`](../../_claude/rules/list-masked-failure-modes-before-removing-guard.md) の
   逆向き (値を変える側) として、**rc=1 に依存している呼び出し側が無いか**を確認する
   (`zshlib/_av1ify_lock.zsh` は rc=3 を SKIP・rc≠0 を中止に分けているので `with` は使っていないが、
   着手時に grep で数え直すこと)
 
 ## 関連
 
-- [357](done/357-bug-lockman-with-bypasses-io-timeout.md) — `--io-timeout` の範囲検証を入れた先例 (同じ族)
-- [385](done/385-design-lockman-on-lost-kill-vs-keep-renewing.md) — `--on-lost` の意味論を決めた issue (値の集合はここで確定している)
+- [357](357-bug-lockman-with-bypasses-io-timeout.md) — `--io-timeout` の範囲検証を入れた先例 (同じ族)
+- [385](385-design-lockman-on-lost-kill-vs-keep-renewing.md) — `--on-lost` の意味論を決めた issue (値の集合はここで確定している)
 
 ## 進捗
 
