@@ -43,6 +43,8 @@ cask "coteditor"
 # cask "firefox"
 cask "google-chrome"
 cask "karabiner-elements"
+# Terminal.app プロファイル (mac/ClaudeWarm.terminal) が HackNFP-Regular を指定している。
+# 外すと Terminal が代替フォントへ黙って差し替わる (docs/theme-colors.md)
 cask "font-hack-nerd-font"
 cask "vlc"
 cask "slack"
