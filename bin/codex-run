@@ -20,7 +20,7 @@
 #     -C dir       このディレクトリへ cd してから起動する (worktree / 別 checkout のレビュー用)
 #     -o outdir    出力先 (既定: ./tmp/codex-run/<stamp>-<label>)。既存ディレクトリは codex-fanout が拒否する
 #     -l label     出力ファイル名に使うラベル (既定: mode 名)
-#     -m model     既定 gpt-5.6-luna
+#     -m model     既定 gpt-6-luna
 #     -e effort    既定 max
 #     -t sec       1 本あたりの秒数上限 (既定は codex-fanout の CODEX_FANOUT_TIMEOUT)
 #
@@ -41,7 +41,7 @@ usage() {
   awk 'NR >= 2 { if (!/^#/) exit; sub(/^# ?/, ""); print }' "$0"
 }
 
-work_dir=""; outdir=""; label=""; model="gpt-5.6-luna"; effort="max"; timeout_s=""
+work_dir=""; outdir=""; label=""; model="gpt-6-luna"; effort="max"; timeout_s=""
 while getopts ":C:o:l:m:e:t:h" opt; do
   case "$opt" in
     C) work_dir="$OPTARG" ;;

@@ -19,7 +19,7 @@
 #                                 manifest の timeout_s 列があればその行はそちらが優先
 #                                 900 を超える値で使うときは呼び出し側を detach する (Claude Code の Bash は 15 分で
 #                                 background ごと kill される。codex-drive skill「並列起動の作法」参照)
-#     CODEX_FANOUT_MERGER_MODEL   merger のモデル (既定 gpt-5.6-luna)
+#     CODEX_FANOUT_MERGER_MODEL   merger のモデル (既定 gpt-6-luna)
 #     CODEX_FANOUT_MERGER_EFFORT  merger の effort (既定 max。codex-drive の「全フェーズ max 固定」に合わせる)
 #
 # manifest (TSV・1 行 1 本。空行と # 始まりは無視。CRLF は末尾 \r を剥がして受ける):
@@ -300,7 +300,7 @@ if [ "$do_merge" -eq 1 ]; then
     fi
   } >"$merger_prompt"
   launch_with_watchdog "$timeout_s" "$outdir/merger.rc" "$outdir/merger.pid" \
-    codex exec -s read-only -m "${CODEX_FANOUT_MERGER_MODEL:-gpt-5.6-luna}" \
+    codex exec -s read-only -m "${CODEX_FANOUT_MERGER_MODEL:-gpt-6-luna}" \
     -c model_reasoning_effort="${CODEX_FANOUT_MERGER_EFFORT:-max}" \
     --ephemeral -o "$outdir/digest.md" "$(cat "$merger_prompt")" \
     </dev/null >"$outdir/merger.log" 2>&1

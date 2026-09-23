@@ -58,7 +58,7 @@ EOS
 @test "モデルと effort の既定は luna / max" {
   run "$RUN" -o "$WORK/out" review "$WORK/prompt.md"
   [ "$status" -eq 0 ]
-  grep -q "gpt-5.6-luna" "$CODEX_STUB_CALLS"
+  grep -q "gpt-6-luna" "$CODEX_STUB_CALLS"
   grep -q "model_reasoning_effort=max" "$CODEX_STUB_CALLS"
 }
 
