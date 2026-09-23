@@ -132,9 +132,18 @@ STUB
   # osascript stub へ渡った n 番目の引数 (AppleScript ソースは 2 番目)
   arg_n() { awk -v n="$1" 'BEGIN{RS="<<<ARG>>>\n"} NR==n{printf "%s", $0}' "$WORK/args"; }
 
+  # 「在庫あり」の経路は OS 同梱の Menlo-Regular に差し替えた fixture で作る。
+  # 🚨 repo のプロファイル (HackNFP) を使わないこと。在庫判定はホストの実フォントを見るので、
+  # フォント未導入の CI runner では在庫ゲートで落ち、4a / 4c が偽の赤になる (2026-09-23 に実際に赤)。
+  PRESENT="$WORK/present-font.terminal"
+  present_font_line="$(swift "$ROOT_DIR/scripts/lib/terminal_profile_appearance.swift" "$PRESENT" | grep '^Font ' || true)"
+  if [ "$present_font_line" != "Font Menlo-Regular Menlo-Regular 13 1" ]; then
+    ng "前提: present-font が「在庫あり」にならない ($present_font_line) — 4a / 4c が在庫経路を通らない"
+  fi
+
   # --- 4a. 正常系: 色 4 本とフォントが組み立てられ、警告は出ない ---------------------------
   rm -f "$WORK/args"
-  if run_restore "正常" "$PROFILE" "HackNFP-Regular 13"; then
+  if run_restore "正常" "$PRESENT" "Menlo-Regular 13"; then
     src="$(arg_n 2)"
     colors="$(grep -c 'color of settings set profileName to {' <<< "$src" || true)"
     # 🚨 本数だけ見ると、**背景色と文字色を取り違える / RGB を入れ替える**退行が素通りする
@@ -150,7 +159,7 @@ STUB
       esac
       grep -qF "set $prop of settings set profileName to {$r, $g, $b}" <<< "$src" \
         || mapping_bad="$mapping_bad $key"
-    done <<< "$(swift "$ROOT_DIR/scripts/lib/terminal_profile_appearance.swift" "$PROFILE")"
+    done <<< "$(swift "$ROOT_DIR/scripts/lib/terminal_profile_appearance.swift" "$PRESENT")"
     if [ "$colors" != "4" ]; then
       ng "正常系: 色の設定が 4 本組み立てられていない ($colors 本)"
     elif [ -n "$mapping_bad" ]; then
@@ -160,7 +169,7 @@ STUB
       ng "正常系: フォント名の設定行が組み立てられていない"
     elif ! grep -q 'set font size of settings set profileName to 13' <<< "$src"; then
       ng "正常系: フォントサイズの設定行が組み立てられていない"
-    elif [ "$(arg_n 4)" != "HackNFP-Regular" ]; then
+    elif [ "$(arg_n 4)" != "Menlo-Regular" ]; then
       ng "正常系: osascript へ渡ったフォント名が違う: $(arg_n 4)"
     elif grep -q 'WARN' "$WORK/err"; then
       ng "正常系なのに WARN が出た"; cat "$WORK/err"
@@ -196,7 +205,7 @@ STUB
   # 在庫判定を通ったフォントでも Terminal が差し替えることはありうる。設定後の読み戻しが
   # 唯一の「実際にそうなった」証拠。
   rm -f "$WORK/args"
-  if run_restore "読み戻し不一致" "$PROFILE" "SFMonoTerminal-Regular 13"; then
+  if run_restore "読み戻し不一致" "$PRESENT" "SFMonoTerminal-Regular 13"; then
     if grep -q 'にならなかった' "$WORK/err"; then
       ok "段 (b): 読み戻しが違えば WARN を出す"
     else

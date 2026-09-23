@@ -10,6 +10,7 @@ tests/setup/test_terminal_profile_appearance.sh と test_terminal_profile_restor
   broken-keyed        色 blob が現行形式のまま破損
   broken-streamtyped  色 blob が旧 NSArchiver 形式のまま破損
   missing-font        実在しないフォント名 (利用可否 0 の経路)
+  present-font        どの macOS にも同梱の Menlo-Regular (利用可否 1 の経路)
   no-font             Font キー自体が無い (旧いプロファイル書き出しとの互換)
   broken-font         Font blob が破損
   inject-font         フォント名に改行を仕込み、デコーダの出力へ行を注入しにいく
@@ -19,11 +20,15 @@ tests/setup/test_terminal_profile_appearance.sh と test_terminal_profile_restor
 
 🚨 MISSING_FONT_NAME は「実在しない」ことが前提。実在する名前に変わると、利用可否 0 の
 経路を一度も通らないまま緑になる。
+🚨 逆に「利用可否 1」の経路を repo のプロファイル (HackNFP) で作らないこと。在庫判定はホストの
+実フォントを見るので、フォント未導入の CI runner では在庫ゲートで落ちる (2026-09-23 に CI が赤)。
+PRESENT_FONT_NAME は OS 同梱で必ず在る名前にしている。
 """
 import plistlib
 import sys
 
 MISSING_FONT_NAME = "ZzQxNFP-Regular"
+PRESENT_FONT_NAME = "Menlo-Regular"
 INJECTED_COLOR = "BackgroundColor 65535 0 0"
 
 
@@ -76,6 +81,7 @@ def main():
     dump("no-font", lambda c: c.pop("Font"))
     dump("broken-font", lambda c: c.__setitem__("Font", b"bplist00" + b"\x00" * 20))
     dump("missing-font", lambda c: c.__setitem__("Font", rebuild_font(font, name=MISSING_FONT_NAME)))
+    dump("present-font", lambda c: c.__setitem__("Font", rebuild_font(font, name=PRESENT_FONT_NAME)))
     # 出力プロトコル (空白区切り 1 行 1 プロパティ) への行注入。後勝ちで色を上書きしにいく形。
     dump("inject-font",
          lambda c: c.__setitem__("Font", rebuild_font(font, name="%s 13 0\n%s\n" % (MISSING_FONT_NAME, INJECTED_COLOR))))
