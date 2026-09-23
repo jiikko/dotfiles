@@ -269,6 +269,13 @@ issue の `[x]` は本文の主張であって証拠ではないので、成果�
 **再開の trigger** (冒頭のバナーが正本): codex を使うマシンで codex-drive のマイルストーンを 1 つ回すとき。
 そのとき受け入れ条件 (Error 74 の有無 / 型エラー往復数 / git state のはみ出し / 破壊的操作の有無) を checkpoint に残す。
 
+## 2026-09-24 モデル変更
+
+- codex-drive (`bin/codex-run` / `bin/codex-fanout` の既定を含む) と codex-lead の既定モデルを `gpt-5.6-luna` → `gpt-6-luna` へ変更した
+  (effort は codex-drive が `max`・codex-lead が `low` のまま)。理由は単価 (入力 $0.10 / 出力 $0.50 per 1M。5.6-luna は $0.20 / $1.20)。
+  上の節の「現行 skill は `gpt-5.6-luna`」は記録時点の記述。**案 0 以降の実測は 6-luna で取り直す**
+  (5.6-luna の値と混ぜない)。質の比較は未実測
+
 ## 関連
 
 - `~/.claude/skills/codex-drive/SKILL.md` — 対象
