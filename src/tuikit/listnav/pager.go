@@ -20,6 +20,7 @@ type Pager struct {
 //
 // Pager を使わず offset と glide を自分で持つ画面は、これを通して計算を 1 箇所に揃える。
 func Scroll(m Motion, offset, rows, total int) (next int, glide bool) {
+	rows = max(rows, 1) // 0 以下の表示行数は 1 行として扱う (offset が total を超えないように)
 	maxOff := max(total-rows, 0)
 	switch m {
 	case Down:
@@ -60,7 +61,7 @@ func (p *Pager) Move(m Motion, total, rows, frames int) bool {
 
 // DrawOffset は描画に使う offset (滑走中は途中位置)。行数が縮んでいても範囲へ収める。
 func (p *Pager) DrawOffset(total, rows int) int {
-	return layout.ClampOffset(p.glide.Offset(p.Offset), total, rows)
+	return layout.ClampOffset(p.glide.Offset(p.Offset), total, max(rows, 1))
 }
 
 // Reset は先頭へ戻す (別の本文へ差し替えたとき。前の位置も滑走も持ち越さない)。

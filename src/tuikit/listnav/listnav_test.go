@@ -141,3 +141,35 @@ func TestPagerMove(t *testing.T) {
 		t.Fatal("Reset が先頭へ戻らない")
 	}
 }
+
+// rows=1 の半ページは窓の高さ以上に動くので、起点が窓の外になる。滑らせると描画カーソルが
+// 窓の外に居て強調が 1 行も描かれないので、滑らせない。
+func TestListHalfPageDoesNotGlideFromOutsideWindow(t *testing.T) {
+	var l List
+	l.Move(HalfDown, 30, 1, 20)
+	if l.Animating() {
+		t.Fatal("起点が窓の外なのに滑った")
+	}
+	if d := l.DrawCursor(30); d < l.Offset || d >= l.Offset+1 {
+		t.Fatalf("描画カーソル %d が窓 [%d, %d) の外", d, l.Offset, l.Offset+1)
+	}
+}
+
+// 0 以下の表示行数でも窓は total を超えず、カーソルは窓の中に居る。
+func TestNonPositiveRowsStayInRange(t *testing.T) {
+	for _, rows := range []int{0, -1, -5} {
+		var l List
+		l.Move(Bottom, 5, rows, 0)
+		if l.Cursor != 4 || l.Offset != 4 {
+			t.Fatalf("rows=%d: cursor=%d offset=%d, want 4 4", rows, l.Cursor, l.Offset)
+		}
+		if got, _ := Scroll(Bottom, 0, rows, 5); got != 4 {
+			t.Fatalf("rows=%d: Scroll(Bottom) = %d, want 4", rows, got)
+		}
+		var p Pager
+		p.Move(Bottom, 5, rows, 0)
+		if p.Offset != 4 || p.DrawOffset(5, rows) != 4 {
+			t.Fatalf("rows=%d: pager offset=%d draw=%d, want 4", rows, p.Offset, p.DrawOffset(5, rows))
+		}
+	}
+}

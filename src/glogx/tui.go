@@ -1633,9 +1633,9 @@ func (m *browseModel) applyListMotion(mo listnav.Motion) tea.Cmd {
 		m.cursor = clampIdx(m.cursor-1, len(m.commits))
 		m.ensureCursorVisible()
 	case listnav.HalfDown:
-		m.offset = m.clampOffset(m.offset + m.pageSize()/2)
+		m.offset = m.clampOffset(m.offset + listnav.Half(m.pageSize()))
 	case listnav.HalfUp:
-		m.offset = m.clampOffset(m.offset - m.pageSize()/2)
+		m.offset = m.clampOffset(m.offset - listnav.Half(m.pageSize()))
 	case listnav.Top:
 		m.cursor, m.offset = 0, 0
 		m.glide.Stop()

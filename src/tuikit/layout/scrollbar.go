@@ -56,8 +56,8 @@ func Scrollbar(rows []string, width, total, offset int, colored bool) []string {
 		if i >= start && i < start+thumb {
 			glyph = ScrollbarThumb
 		}
-		content := termwidth.Clip(row, contentW)
-		out = append(out, content+reset+termwidth.PadSpaces(contentW-termwidth.Of(content))+" "+glyph)
+		content, cw := termwidth.ClipMeasure(row, contentW) // 切り詰めと幅を 1 回で (毎フレーム全行で走る)
+		out = append(out, content+reset+termwidth.PadSpaces(contentW-cw)+" "+glyph)
 	}
 	return out
 }

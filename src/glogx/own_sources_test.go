@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -13,7 +14,7 @@ import (
 //
 // 🚨 表示の不変条件を走査で守る検査 (VS16 リテラル / 2 本目の幅エンジン) はここを回すこと。
 // "." だけを回すと、tuikit へ移した部品が黙って検査対象から外れる。
-var ownSourceRoots = []string{".", filepath.Join("..", "tuikit")}
+var ownSourceRoots = []string{".", filepath.Join("..", "tuikit"), filepath.Join("..", "doctor")}
 
 // walkOwnSources は ownSourceRoots を順に filepath.WalkDir し、各エントリで fn を呼ぶ。
 // どれかの根で .go を 1 つも見なかったら落とす (根が移動・改名されると、その根の検査が
@@ -42,7 +43,6 @@ func walkOwnSources(t *testing.T, fn fs.WalkDirFunc) error {
 // その理由。ここにも ownSourceRoots にも無い replace は TestOwnSourceRootsCoverLocalReplaces が落とす。
 var ownSourceExcluded = map[string]string{
 	"../termsafe": "VS16 の除去処理の実装そのもの (VS16 のリテラルを正当に含む)",
-	"../doctor":   "VS16 を含む文字列が既にある (2026-09-24 時点)。走査に入れるかは未決 (glogx の部品ではなく別の CLI でもある)",
 }
 
 // ownSourceRoots の正本は go.mod の replace (ローカルの module を取り込んだら、その module は
@@ -58,23 +58,90 @@ func TestOwnSourceRootsCoverLocalReplaces(t *testing.T) {
 	for _, r := range ownSourceRoots {
 		roots[filepath.ToSlash(r)] = true
 	}
-	local := 0
-	for _, line := range strings.Split(string(src), "\n") {
-		f := strings.Fields(line)
-		// replace <mod> => <path> の形だけ見る (版つき / ブロック形式はこの repo に無い)
-		if len(f) != 4 || f[0] != "replace" || f[2] != "=>" || !strings.HasPrefix(f[3], "../") {
-			continue
-		}
-		local++
-		p := filepath.ToSlash(filepath.Clean(f[3]))
+	replaced := localReplaces(string(src))
+	if len(replaced) == 0 {
+		t.Fatal("go.mod からローカルの replace を 1 つも読めなかった (読み方が壊れている)")
+	}
+	for mod, p := range replaced {
 		if roots[p] {
 			continue
 		}
 		if _, ok := ownSourceExcluded[p]; !ok {
-			t.Errorf("replace %s => %s が走査の根 (ownSourceRoots) にも除外 (ownSourceExcluded) にも無い", f[1], f[3])
+			t.Errorf("replace %s => %s が走査の根 (ownSourceRoots) にも除外 (ownSourceExcluded) にも無い", mod, p)
 		}
 	}
-	if local == 0 {
-		t.Fatal("go.mod からローカルの replace を 1 つも読めなかった (読み方が壊れている)")
+	// 除外に go.mod に無いパスが残っていたら、それは古いエントリ (消した module の理由が残り、
+	// 同じ名前の module を足し直したとき黙って走査の外に置かれる)
+	inMod := map[string]bool{}
+	for _, p := range replaced {
+		inMod[p] = true
+	}
+	for p := range ownSourceExcluded {
+		if !inMod[p] {
+			t.Errorf("ownSourceExcluded の %s は go.mod の replace に無い (古いエントリ)", p)
+		}
+	}
+}
+
+// localReplaces は go.mod のローカルの replace (パスが ./ か ../ で始まるもの) を module → パスで返す。
+// 1 行の形 (`replace a => ../a`) とブロックの形 (`replace ( ... )`)、行末のコメント、両辺の版
+// (`a v1 => ../a`) を扱う。
+func localReplaces(gomod string) map[string]string {
+	out := map[string]string{}
+	inBlock := false
+	for _, line := range strings.Split(gomod, "\n") {
+		if i := strings.Index(line, "//"); i >= 0 {
+			line = line[:i]
+		}
+		f := strings.Fields(line)
+		switch {
+		case len(f) == 0:
+			continue
+		case inBlock && f[0] == ")":
+			inBlock = false
+			continue
+		case !inBlock && f[0] == "replace" && len(f) == 2 && f[1] == "(":
+			inBlock = true
+			continue
+		case !inBlock && f[0] == "replace":
+			f = f[1:]
+		case !inBlock:
+			continue
+		}
+		// f = <mod> [ver] => <path> [ver]
+		arrow := slices.Index(f, "=>")
+		if arrow < 1 || arrow+1 >= len(f) {
+			continue
+		}
+		p := f[arrow+1]
+		if strings.HasPrefix(p, "./") || strings.HasPrefix(p, "../") {
+			out[f[0]] = filepath.ToSlash(filepath.Clean(p))
+		}
+	}
+	return out
+}
+
+// localReplaces の読み方を、go.mod に現れうる形で固定する (本物の go.mod は 1 行の形しか無いので、
+// ほかの形はここでしか通らない)。
+func TestLocalReplacesForms(t *testing.T) {
+	got := localReplaces(`module m
+
+replace a => ../a
+replace b v1.2.3 => ../b // 版とコメント付き
+replace c => github.com/x/c v1.0.0
+replace (
+	d => ./d
+	e v0.1.0 => ../e v0.1.0
+	f => example.com/f v1
+)
+`)
+	want := map[string]string{"a": "../a", "b": "../b", "d": "d", "e": "../e"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s: got %q, want %q", k, got[k], v)
+		}
 	}
 }

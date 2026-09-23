@@ -43,8 +43,10 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 - **移動の語彙 (どのキーがどの移動か) は tuikit の `listnav.MotionOf` が 1 箇所で持つ**。各画面は
   自分の動作キーを先に捌き、残りを `MotionOf` に渡して、得た移動を自分の意味で適用する
   (issues / status / doctor / コミット一覧 / job パネル / job 詳細 / pager)。画面ごとに移動の case を
-  手書きしない (手書きしていたころは、画面によって効く別名が違っていた)。配線は
-  `motion_vocabulary_test.go` が入口 (`browseModel.handleKey`) から固定している
+  手書きしない (手書きしていたころは、画面によって効く別名が違っていた)。一覧を持つ 4 画面
+  (コミット一覧 / issues / status / doctor) の配線と半ページの移動量 (`listnav.Half`) は
+  `motion_vocabulary_test.go` が入口 (`browseModel.handleKey`) から固定している。job パネル・job 詳細・
+  pager の配線は既存のテスト (`TestBrowseJobDetailPopup` 等) が捕まえる
   - 例外は doctor の削除確認パネル (`deleteScrollKeys`): 「送るキー以外は中止に落とす」安全側の
     契約なので、語彙を寄せると中止のつもりの打鍵が送りに化ける。送るキーはそこに 1 つずつ足す
 - スクロールは全 pager で `pagerScrollKey` (`scroll_glide.go`) を共有し、**手触り (glide の

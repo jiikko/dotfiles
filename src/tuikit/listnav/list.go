@@ -22,6 +22,7 @@ type List struct {
 // 進行中の滑走は必ず着地させてから動かす (積み上げると「押した分だけ遅れて動く」)。
 func (l *List) Move(m Motion, total, rows, frames int) bool {
 	l.glide.Stop()
+	rows = max(rows, 1) // 0 以下の表示行数は 1 行として扱う (窓の計算が total を超えないように)
 	if total <= 0 {
 		l.Cursor, l.Offset = 0, 0
 		return false
@@ -45,7 +46,10 @@ func (l *List) Move(m Motion, total, rows, frames int) bool {
 	}
 	l.Cursor = min(max(l.Cursor, 0), total-1)
 	l.Offset = layout.WindowOffset(l.Offset, l.Cursor, total, rows)
-	if (m == HalfDown || m == HalfUp) && frames > 0 {
+	// 起点が新しい窓の外なら滑らせない (滑走の最初のフレームで描画カーソルが窓の外に居て、
+	// カーソルの強調が 1 行も描かれない。半ページが窓の高さ以上になる rows=1 で起きる)
+	inWindow := from >= l.Offset && from < l.Offset+rows
+	if (m == HalfDown || m == HalfUp) && frames > 0 && inWindow {
 		l.glide.Start(from, l.Cursor, frames)
 	}
 	return l.Cursor != from
@@ -54,6 +58,7 @@ func (l *List) Move(m Motion, total, rows, frames int) bool {
 // Fit は行数・表示行数が変わったとき (再読込・resize) にカーソルと窓を収め直す。滑走は捨てる。
 func (l *List) Fit(total, rows int) {
 	l.glide.Stop()
+	rows = max(rows, 1)
 	if total <= 0 {
 		l.Cursor, l.Offset = 0, 0
 		return
