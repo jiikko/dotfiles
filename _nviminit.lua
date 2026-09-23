@@ -1151,6 +1151,9 @@ require("lazy").setup({
   checker = { enabled = true, frequency = 86400, notify = false },  -- 起動毎チェックはローカル fs のみ。定期 git fetch を 1時間→1日に間引き、更新通知ノイズと background 通信を抑制
 })
 
+-- lock の branch が spec と食い違っていたら自動で揃える (理由はモジュール冒頭コメント)
+require("dotfiles.lazy_branch_heal").setup()
+
 -- プラグインロードトラッカー (:PluginLoadStats で棚卸し。off は DOTFILES_PLUGIN_LOAD_TRACKER=0。
 -- docs/nvim-plugin-load-tracker.md 参照)
 require("dotfiles.plugin_load_tracker").setup()
