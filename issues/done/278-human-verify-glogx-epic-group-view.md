@@ -19,13 +19,13 @@ obaket (`~/src/my-products/apps/obaket`) で glogx の issues view を開き:
    ← **機械で確認済み**
 5. 親行が `▸ <name> (5 ✓2)` の形になる (done が 0 件の group は従来の `(N)` のまま)。
    - [x] **書式**（`(5 ✓2)` という文字列になること）← 機械で確認済み
-   - [ ] 🚨 **半角と全角が同じ桁に並んでいないか、実際の幅で目視する** ← **ここだけ人が要る**
+   - [x] 🚨 **半角と全角が同じ桁に並んでいないか、実際の幅で目視する** ← **ここだけ人が要る**
 6. [x] `epic/<name>/closed/` のように予約外の綴りのディレクトリに md を置くと、迷子 `?` として
    一覧に出る (消えない) ← **機械で確認済み**
 
 ## 結果
 
-(確認したら書いて done へ)
+- 2026-09-24: ユーザーが obaket の実端末で目視し、epic の親行と子行が縦に揃って見えることを確認 (OK)。全項目完了のため done へ
 
 ## 2026-09-10: 6 項目のうち **5 つは機械で覆われていた**（人が要るのは 1 つだけ）
 
@@ -53,7 +53,7 @@ obaket (`~/src/my-products/apps/obaket`) で glogx の issues view を開き:
 
 ### 残っている確認（これだけ）
 
-- [ ] obaket で glogx の issues view を開き、**epic の親行と子行が縦に揃って見えるか**を目視する
+- [x] obaket で glogx の issues view を開き、**epic の親行と子行が縦に揃って見えるか**を目視する
       （`▸ <name> (5 ✓2)` の行と、その下の `NNN ✓ / NNN ⏸` の子行）。ズレて見えたら
       `no-mixed-width-columns-in-terminal-ui.md` に従って**空白で埋めず全角文字へ置き換える**
 
@@ -66,6 +66,6 @@ obaket (`~/src/my-products/apps/obaket`) で glogx の issues view を開き:
 チェックボックスに反映したので、**人はこの issue を開いて `[ ]` の 1 行だけ見ればよい**。
 
 この 1 行が閉じられない理由は
-[`no-mixed-width-columns-in-terminal-ui.md`](../_claude/rules/no-mixed-width-columns-in-terminal-ui.md)
+[`no-mixed-width-columns-in-terminal-ui.md`](../../_claude/rules/no-mixed-width-columns-in-terminal-ui.md)
 が明言している —「表示幅の合計が一致していても、半角 1 文字は全角 2 カラムのセルの左に寄る」ので
 **幅を数えるテストでは検出できず、人が見るまで分からない**。機械化の余地は無い。
