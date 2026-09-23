@@ -9,6 +9,11 @@
   `make lint && echo ok` / `pytest -k new_test` の exit 0 だけで満足しない
 - **パイプの終端の status を見ない**。`cmd | tail` の `$?` は `tail` の status。
   必要なら `set -o pipefail` を使うか、リダイレクトしてから exit code を取る
+  - 🚨 **発動点は読むときだけではない。成否で後段を走らせる `&&` のつなぎを書いた瞬間にも発動する**。
+    `git push ... 2>&1 | tail -2 && <push 済み前提の後段>` は、push が落ちても `tail` の rc=0 で後段が走る。
+    前段は `> log 2>&1; rc=$?` で rc を取り、`[ $rc -eq 0 ] || exit 1` で止めてから出力を読む
+    (実測 2026-09-23 obaket 909: obaket の push が pre-push の lint gate で落ちたのに、アンブレラの
+    submodule 参照を bump して push し、数分間 remote に無い commit を指させた)
 - **検証コマンドの出力を `tail` / `head` / `grep` で削って読まない。ファイルへ落としてから読む**。
   削るのは status だけでなく**失敗の原因そのもの**。集約 target は「✗ 失敗したターゲット: X」を
   最後に出す設計が多いので、`| tail -n` は**結論だけ残して理由を捨てる**形になりやすい。
