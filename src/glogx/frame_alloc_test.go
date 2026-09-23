@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"tuikit/layout"
 
 	"doctor/disk"
 	"doctor/docker"
@@ -351,7 +352,7 @@ func budgetPanelModel(tb testing.TB) *browseModel {
 
 // indent が「余白を織り込むだけ」であることを、**全行の完全一致**で固定する。
 //
-// 🚨 「行頭が空白か」で見てはいけない: 下端の影行は shadowBottomOffset = 2 桁の空白で
+// 🚨 「行頭が空白か」で見てはいけない: 下端の影行は 影の横ずれ (2 桁)の空白で
 // 始まるため、indent を落としても行頭は空白のままで prefix 判定を素通りする。
 // 実際その形の変異 (影行だけ pre を落とす) は出力を 880 行ぶん変えるのに、
 // リポジトリ全体のテストが green だった (2026-08-14 の R1 レビューで検出)。
@@ -370,9 +371,9 @@ func TestPanelBoxIndentIsPureLeftPad(t *testing.T) {
 			// (258 では pad が 250 で届かない。R3 レビューで実測)
 			for _, width := range []int{0, 1, 9, 10, 11, 40, 80, 200, 258, 265, 300} {
 				for _, indent := range []int{0, 1, 2, 5} {
-					st := panelBoxStyle{glyphs: borderDouble, color: ansiFrameBorder}
+					st := layout.PanelStyle{Border: layout.BorderDouble, Color: ansiFrameBorder}
 					base := buildPanelBoxImpl("", content, width, colored, st)
-					st.indent = indent
+					st.Indent = indent
 					got := buildPanelBoxImpl("", content, width, colored, st)
 					if len(got) != len(base) {
 						t.Fatalf("indent=%d で行数が変わった: %d != %d (w=%d colored=%v)",
@@ -382,7 +383,7 @@ func TestPanelBoxIndentIsPureLeftPad(t *testing.T) {
 					// padSpaces(indent+1) にする等) がキャンセルして素通りする (R3 の指摘)。
 					// indent=0 のときの**絶対**の姿を 1 点固定して基準を釘付けする:
 					// 色なしの上辺は罫線の角で始まり、空白では始まらない。
-					if indent == 0 && !colored && width >= minPanelWidth && len(base) > 0 {
+					if indent == 0 && !colored && width >= layout.PanelMinWidth && len(base) > 0 {
 						if strings.HasPrefix(base[0], " ") {
 							t.Fatalf("indent=0 の上辺が空白で始まっている (基準がずれている) w=%d: %q",
 								width, base[0])
@@ -419,7 +420,7 @@ func TestWrapWindowFrameGeometry(t *testing.T) {
 			lead := len(l) - len(strings.TrimLeft(l, " "))
 			wantLead := 1
 			if i == len(got)-2 { // 下端の影行だけ余白 + shadowBottomOffset
-				wantLead = 1 + shadowBottomOffset
+				wantLead = 1 + 2 // 余白 + 影の横ずれ (layout の shadowBottomOffset)
 			}
 			if lead != wantLead {
 				t.Errorf("termW=%d 行 %d の行頭空白が %d 桁 (want %d): %q",

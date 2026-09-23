@@ -303,7 +303,7 @@ func TestZoomWindowFramedInputNoNestedBorder(t *testing.T) {
 		if strings.Contains(joined, "hint:") {
 			t.Errorf("scale %.2f: hint 行が演出枠内に混入:\n%s", scale, joined)
 		}
-		// 最小の枠 (minPanelWidth) では中身が幅で切り詰められるため、接頭辞で見る
+		// 最小の枠 (layout.PanelMinWidth) では中身が幅で切り詰められるため、接頭辞で見る
 		if !strings.Contains(joined, "FIRSTC") {
 			t.Errorf("scale %.2f: 1 行目の中身が見えていない:\n%s", scale, joined)
 		}

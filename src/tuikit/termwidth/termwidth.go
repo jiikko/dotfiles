@@ -289,3 +289,105 @@ func FillLeft(s string, width int) string {
 	}
 	return s
 }
+
+// ClipMeasure は Clip と同じ切り詰めを行い、結果の表示幅も返す。
+//
+// 枠やスクロールバーの hot path 用: 「Clip で 1 回 + 埋め草の計算でもう 1 回」同じ行を走査すると、
+// 収まる行 (多数派) の 2 回目が丸ごと無駄になる (glogx で 1 フレームの CPU の ~35% が幅計算に
+// 残った実測 2026-07-29)。切り詰めた行だけは幅を測り直す (全角の境界で width-1 に落ちる場合に
+// 埋め草を誤ると枠がずれるため、推定でなく実測する)。
+func ClipMeasure(line string, width int) (string, int) {
+	if width <= 0 {
+		return "", 0 // Clip と同じ契約 (幅 0 以下に収まる表示は空だけ)
+	}
+	w := Of(line)
+	if w <= width {
+		return line, w
+	}
+	clipped := Truncate(line, width, "…")
+	return clipped, Of(clipped)
+}
+
+// Cut は s を表示幅 width まで切る (SGR は保持)。Clip との違いは**末尾に `…` を付けないこと**だけ:
+// 重ねる板で覆う行の「見えている左側」をそのまま残す用途なので、切れた印を足すと覆い先と
+// つながって見える。
+//
+// 末尾に reset は付かない。ansi.Truncate は自分で reset を足さず、入力にあった SGR を持ち越す
+// だけなので、色を開いたままの入力は開いたまま返る (実測 2026-08-26)。開いた色は呼び出し側が
+// 境界で閉じる。
+func Cut(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	return Truncate(s, width, "")
+}
+
+// isSGRTerminator は ESC シーケンス中の r がシーケンスを終端する最終バイトか (CSI の最終バイトは英字)。
+// DropColumns / StripSGR が同じ終端判定を共有し、OSC 等へ広げるときに 1 箇所だけ直せばよいようにする。
+func isSGRTerminator(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
+}
+
+// DropColumns は s のうち表示列 n (0-based) 以降の suffix を返す。n より前に現れた SGR は結果の
+// 先頭で replay するので、残った suffix は元の色を保つ (Cut が「左の prefix を残す」の鏡像)。
+// 浮かせた板の右側に背景の行を合成するのに使う。
+//
+// 全角グリフが列 n をまたぐ場合はそのグリフを落とし、列 n に揃うよう空白で左詰めする。列 n が
+// 内容の末尾以降なら "" (右に何も無い)。不変条件: Of(DropColumns(s, n)) == Of(s) - n。
+func DropColumns(s string, n int) string {
+	if n <= 0 {
+		return s
+	}
+	var sgr strings.Builder
+	w := 0
+	i := 0 // s へのバイト index
+	for i < len(s) && w < n {
+		if s[i] == '\x1b' { // SGR (幅 0): 後で replay するため蓄積
+			j := i + 1
+			for j < len(s) && !isSGRTerminator(rune(s[j])) {
+				j++
+			}
+			if j < len(s) {
+				j++ // 終端バイトも含める
+			}
+			sgr.WriteString(s[i:j])
+			i = j
+			continue
+		}
+		// 次の grapheme クラスタを 1 個。🚨 等の複数 rune クラスタを分断・誤幅にしない
+		// (分割と幅は同じエンジンから同時に受け取る。FirstCluster の doc)
+		cluster, cw := FirstCluster(s[i:])
+		if w+cw > n { // 全角グリフが cut をまたいだ: そのグリフを落とし列 n に揃えて空白で埋める
+			i += len(cluster)
+			return sgr.String() + PadSpaces((w+cw)-n) + s[i:]
+		}
+		w += cw
+		i += len(cluster)
+	}
+	if i >= len(s) {
+		return "" // 列 n は内容の末尾以降: 右側に残すものが無い
+	}
+	return sgr.String() + s[i:]
+}
+
+// StripSGR は s から ESC シーケンスを取り除く。
+func StripSGR(s string) string {
+	if strings.IndexByte(s, '\x1b') < 0 {
+		return s // ESC 無しは Builder の確保も rune の走査も不要
+	}
+	var b strings.Builder
+	inEscape := false
+	for _, r := range s {
+		switch {
+		case inEscape:
+			if isSGRTerminator(r) {
+				inEscape = false
+			}
+		case r == '\x1b':
+			inEscape = true
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}

@@ -509,26 +509,8 @@ func paint(s, color string, colored bool) string {
 // 切り詰める。**SGR は保持する**。静的出力では使わない。
 //
 // truncateKeepANSI との違いは `…` を付けるかどうかだけ (どちらも色は残る)。切り詰めた行の
-// 表示幅も要る hot path では clipMeasure を使う (幅の二度測りを避けるため)。
+// 表示幅も要る hot path では termwidth.ClipMeasure を使う (幅の二度測りを避けるため)。
 func clipToWidth(line string, width int) string { return termwidth.Clip(line, width) }
-
-// clipMeasure は clipToWidth と同じ切り詰めを行い、結果の表示幅も返す。
-// buildPanelBoxImpl / scrollbarColumn の hot path 用: 旧実装は「clip で 1 回 + pad 計算で
-// もう 1 回」同じ行を grapheme 走査しており、収まる行 (多数派) の 2 回目が丸ごと無駄だった
-// (View 1 フレーム CPU の ~35% が dispWidth に残った実測 2026-07-29)。切り詰めた行だけは
-// 幅を実測し直す (wide グリフ境界で width-1 に落ちるケースで pad を誤ると枠がズレるため、
-// ここは推定でなく実測を維持する)。
-func clipMeasure(line string, width int) (string, int) {
-	if width <= 0 {
-		return "", 0 // clipToWidth と同じ契約 (幅 0 以下に収まる表示は空だけ。issue 053)
-	}
-	w := dispWidth(line)
-	if w <= width {
-		return line, w
-	}
-	clipped := truncateDisp(line, width, "…")
-	return clipped, dispWidth(clipped)
-}
 
 // reapplyAfterReset は text 中の SGR リセット (`ESC[m` / `ESC[0m`) の直後に bg を張り直した
 // 文字列を返す。行全体を特定の背景で塗るとき、行内のリセットで背景が切れるのを防ぐ
@@ -573,85 +555,11 @@ func reapplyAfterReset(text, bg string) string {
 	return b.String()
 }
 
-// isANSITerminator は ESC シーケンス中の rune r がシーケンスを終端する最終バイトか
-// を返す (CSI の最終バイトは英字)。自前で ESC 列を走査する dropToColumn / stripANSI が
-// 同じ終端判定を共有し、OSC 等への対応拡張時に 1 箇所だけ直せばよいようにする。
-func isANSITerminator(r rune) bool {
-	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
-}
+// truncateKeepANSI は SGR を保ったまま表示幅 width へ切る (末尾に … を付けない。tuikit termwidth.Cut の別名)。
+func truncateKeepANSI(s string, width int) string { return termwidth.Cut(s, width) }
 
-// truncateKeepANSI は s を表示幅 width まで切り詰める (可視文字だけを幅に数え、SGR は保持)。
-// clipToWidth との違いは **末尾に `…` を付けないこと**だけ: overlay で覆う行の「見えている
-// 左側」をそのまま残す用途なので、切れたことを示す記号を足すと覆い先とつながって見える。
-//
-// 末尾に reset は付かない。ansi.Truncate は**自分で reset を足さず、入力にあった SGR を
-// 持ち越すだけ**なので、色を開いたままの入力は開いたまま返る (実測 2026-08-26)。
-// 開いた色は呼び出し側 (overlay/toast) が境界で閉じる。
-func truncateKeepANSI(s string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	return truncateDisp(s, width, "")
-}
+// dropToColumn は表示列 n 以降を返す (手前の SGR は replay する。tuikit termwidth.DropColumns の別名)。
+func dropToColumn(s string, n int) string { return termwidth.DropColumns(s, n) }
 
-// dropToColumn は s のうち表示列 n (0-based) 以降の suffix を返す。ANSI 対応。cut より前に
-// 現れた SGR エスケープは結果の先頭で replay するので、残った suffix は元の色を保つ
-// (truncateKeepANSI が「左の prefix を保持」する鏡像で、こちらは「左 n 桁を捨てて右を残す」)。
-// 浮動ボックスの右側に背景テキストを合成するのに使う。全角グリフが列 n をまたぐ場合はその
-// グリフを落とし、列 n に揃うよう空白で左詰めする。列 n が内容末尾以降なら "" (右に何も無い)。
-func dropToColumn(s string, n int) string {
-	if n <= 0 {
-		return s
-	}
-	var sgr strings.Builder
-	w := 0
-	i := 0 // s へのバイト index
-	for i < len(s) && w < n {
-		if s[i] == '\x1b' { // SGR エスケープ (幅 0): 後で replay するため蓄積
-			j := i + 1
-			for j < len(s) && !isANSITerminator(rune(s[j])) {
-				j++
-			}
-			if j < len(s) {
-				j++ // 終端バイトも含める
-			}
-			sgr.WriteString(s[i:j])
-			i = j
-			continue
-		}
-		// 次の grapheme クラスタを 1 個。🚨 等の複数 rune クラスタを分断/誤幅にしない。
-		// 分割と幅は同じエンジンから同時に受け取る (termwidth.FirstCluster の doc が正本)
-		cluster, cw := firstCluster(s[i:])
-		if w+cw > n { // 全角グリフが cut をまたいだ: そのグリフを落とし列 n に揃えて空白で埋める
-			i += len(cluster)
-			return sgr.String() + padSpaces((w+cw)-n) + s[i:]
-		}
-		w += cw
-		i += len(cluster)
-	}
-	if i >= len(s) {
-		return "" // 列 n は内容の末尾以降: 右側に残すものが無い
-	}
-	return sgr.String() + s[i:]
-}
-
-func stripANSI(s string) string {
-	if strings.IndexByte(s, '\x1b') < 0 {
-		return s // ESC 無しは Builder 確保・rune 走査とも不要
-	}
-	var b strings.Builder
-	inEscape := false
-	for _, r := range s {
-		switch {
-		case inEscape:
-			if isANSITerminator(r) {
-				inEscape = false
-			}
-		case r == '\x1b':
-			inEscape = true
-		default:
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
+// stripANSI は SGR を剥がす (tuikit termwidth.StripSGR の別名)。
+func stripANSI(s string) string { return termwidth.StripSGR(s) }

@@ -271,11 +271,11 @@ func TestDiffBoxLinesScrollbar(t *testing.T) {
 	body := box[1 : len(box)-2]
 	thumbs := 0
 	for i, l := range body {
-		shade := shadowGlyphMono
+		shade := layout.ShadowMono
 		if i == 0 {
-			shade = shadowGlyphMonoEdge
+			shade = layout.ShadowMonoEdge
 		}
-		trimmed := strings.TrimSuffix(strings.TrimSuffix(l, shade), " "+borderLight.v)
+		trimmed := strings.TrimSuffix(strings.TrimSuffix(l, shade), " "+layout.BorderLight.V)
 		switch {
 		case strings.HasSuffix(trimmed, layout.ScrollbarThumb):
 			thumbs++

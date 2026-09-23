@@ -406,7 +406,7 @@ go test -run '^$' -bench BenchmarkView -benchmem .
   `external_commands.go` (git/tmux/claude/browser/clipboard の外部プロセスラッパー) /
   `terminal.go` (端末サニタイズ) / `render.go` (行生成) / `highlight.go` (diff の
   シンタックスハイライト) / `tui.go` (Bubble Tea ブラウズの中核・状態遷移) /
-  `box.go` (browseModel 非依存の枠描画プリミティブ = panel/overlay/centerBox/shadow) /
+  `box.go` (枠と影の本体は tuikit の `layout.Panel` / `OverlayCentered`。ここは glogx のテーマ色を渡すラッパと centerBox) /
   各種オーバーレイ・モーダル (`diff_overlay.go` / `job_detail_overlay.go` /
   `usage_overlay.go` / `pr_status_overlay.go` / `action_modal.go` / `toast.go` = 右下の通知
   スタック。新しい通知は上に積まれ古い通知は下から抜ける (最大 3 枚)) /

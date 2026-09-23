@@ -16,7 +16,7 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 | `widthenv` | 幅モデルが支持しない環境変数 (`RUNEWIDTH_EASTASIAN`) の検出 | 起動時の警告・テストのガード |
 | `sgr` | 基本の ANSI 色・装飾 (`Reset` / `Bold` / `Dim` / `Cyan` …) | 色を付けるときの値の単一の出典 |
 | `anim` | `Transition` (開く / 閉じる / 途中で逆再生) / `ScrollGlide` / `CursorGlide` / easing | 開閉演出と「数行ぶんの移動を滑らせる」演出 |
-| `layout` | `ComposeDrawer` (一覧の上に詳細を右から重ねる) / `DrawerGeometry` / `SlideIn` / `Scrollbar` / `WindowOffset` / `ClampOffset` / `PadTo` | 画面の合成と窓の計算 |
+| `layout` | `ComposeDrawer` (一覧の上に詳細を右から重ねる) / `DrawerGeometry` / `SlideIn` / `Scrollbar` / `Panel` (落ち影つきの板) / `Overlay` / `OverlayCentered` / `WindowOffset` / `ClampOffset` / `PadTo` | 画面の合成と窓の計算 |
 | `listnav` | `MotionOf` (キー → 移動の語彙) / `List` (一覧のカーソル + 窓 + 半ページの滑走) / `Pager` (本文のスクロール) / `Scroll` | 一覧・本文の移動を毎回書かない |
 
 ## 遷移のパターン
@@ -101,6 +101,20 @@ list.Advance()
 - 🚨 「知らないキーは中止に落とす」ような安全側の確認画面には `MotionOf` を当てない (中止のつもりの打鍵が
   移動に化ける)。送るキーはその画面で 1 つずつ列挙する
 - Space は bubbletea v1 が `" "`、v2 が `"space"` と綴るが、`MotionOf` は両方を受ける
+
+### 板を浮かせる: 落ち影つきの枠と、中央に重ねる合成
+
+モーダル・トースト・詳細パネルに使う「罫線の枠 + 右下の落ち影」の板と、それを背景の上に重ねる合成。
+
+```go
+box := layout.Panel("確認", rows, contentW+layout.PanelChrome, colored,
+	layout.PanelStyle{Border: layout.BorderLight, Color: sgr.Dim}) // 影の色の既定は近黒
+screen = layout.OverlayCentered(screen, box, width, page, colored)  // 左右の背景 (色も) を残して中央に重ねる
+```
+
+- `Panel` の各行の表示幅は `width + Indent` ちょうど (中身が長ければ `…` で切り、短ければ埋める)
+- 色なし (`colored=false`) では中身の SGR も落とす (閉じていない色が後続の行へ滲まない)
+- `Overlay` は行ごと置き換える (下に収まらなければ引き上げる)。`OverlayCentered` は板が占める列だけを差し替える
 
 ## 使う側の約束
 

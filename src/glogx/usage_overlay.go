@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"time"
+	"tuikit/layout"
 
 	"glogx/usage"
 
@@ -196,7 +197,7 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 	for _, r := range rows {
 		inner = max(inner, dispWidth(r))
 	}
-	boxWidth := min(max(inner+shadowBoxChrome, dispWidth(title)+3), width)
+	boxWidth := min(max(inner+layout.PanelChrome, dispWidth(title)+3), width)
 	return buildShadowPanelBox(title, rows, boxWidth, colored, ansiDim)
 }
 

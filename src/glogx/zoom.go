@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"tuikit/anim"
+	"tuikit/layout"
 )
 
 const (
@@ -130,12 +131,12 @@ func zoomWindow(lines []string, scale float64, width int, colored, framed bool) 
 	if h == 0 || width <= 0 || scale >= appZoomSnap {
 		return lines
 	}
-	boxW := max(min(int(math.Round(float64(width)*scale)), width), minPanelWidth)
+	boxW := max(min(int(math.Round(float64(width)*scale)), width), layout.PanelMinWidth)
 	boxH := max(min(int(math.Round(float64(h)*scale)), h), appZoomMinRows)
 	// buildPanelBoxImpl は右 1 桁を影に使い、返す行数は 中身 + 3 (上辺 + 下辺 + 下影)
 	inner, innerH := boxW, boxH // 枠なしは切り出した中身がそのまま演出フレームになる
 	if framed {
-		inner, innerH = panelInnerWidth(boxW-1), max(boxH-3, 1)
+		inner, innerH = layout.PanelInnerWidth(boxW-1), max(boxH-3, 1)
 	}
 	// framed の実画面クローム: 上 = 上余白 1 + 枠上辺 1、左 = 左余白 1 + "║ " 2
 	// (内訳の一次情報は tui.go の frameHOverhead / frameVOverhead)。これをスキップして
@@ -161,7 +162,7 @@ func zoomWindow(lines []string, scale float64, width int, colored, framed bool) 
 	box := rows
 	if framed {
 		box = buildPanelBoxImpl("", rows, boxW, colored,
-			panelBoxStyle{glyphs: borderDouble, color: ansiFrameBorder})
+			layout.PanelStyle{Border: layout.BorderDouble, Color: ansiFrameBorder})
 	}
 	out := make([]string, h)
 	pad := padSpaces(max((width-boxW)/2, 0))

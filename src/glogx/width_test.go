@@ -39,23 +39,6 @@ func TestWrapToWidthKeepsEmojiCluster(t *testing.T) {
 	}
 }
 
-// dropToColumn は全角グリフが cut をまたぐとき空白で列を揃える (overlay 合成の整合)。
-// 絵文字クラスタも幅 2 の 1 単位として扱う。
-func TestDropToColumnStraddleAndCluster(t *testing.T) {
-	// 日(幅2) が列 1 をまたぐ: 日 を落とし 1 空白で列 1 に揃え、残りを継ぐ
-	if got := dropToColumn("日本X", 1); got != " 本X" {
-		t.Errorf("dropToColumn(\"日本X\", 1) = %q; want %q", got, " 本X")
-	}
-	// ⚠️(幅2) が列 1 をまたぐ: クラスタごと落として 1 空白 + 残り
-	if got := dropToColumn("⚠️x", 1); got != " x" {
-		t.Errorf("dropToColumn(\"⚠️x\", 1) = %q; want %q", got, " x")
-	}
-	// 列 0 は素通り / 内容末尾以降は空
-	if dropToColumn("abc", 0) != "abc" || dropToColumn("abc", 10) != "" {
-		t.Error("dropToColumn の境界 (n<=0 / n>=幅) が壊れている")
-	}
-}
-
 // dropEmojiVS16 は VS16 (U+FE0F) を除去し bare 記号 (双方幅 1 で端末と食い違わない) へ倒す。
 // dropEmojiVS16 は termsafe.DropEmojiVS16 への 1 行 alias なので、**除去そのものの検査は
 // termsafe/termsafe_test.go:TestDropEmojiVS16 が持つ** (1 つの変異で両方が落ちる重複だった。

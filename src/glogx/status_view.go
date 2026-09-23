@@ -1115,9 +1115,9 @@ func slideLeftWindow(window []string, progress float64, width int, closing, colo
 	// 画面の地も既定色のため、端を描かないと空白部分で「板がどこまで来ているか」が透明になる。
 	// 色はドロップシャドウと同じ語彙 (近黒 █ / NO_COLOR は ▒)。ボーダーは板の幅の内側 1 桁を
 	// 使う (外側に足すと終端間際で画面幅からはみ出す)
-	edge := ansiShadowFg + shadowGlyphFull + ansiReset
+	edge := ansiShadowFg + layout.ShadowFull + ansiReset
 	if !colored {
-		edge = shadowGlyphMono
+		edge = layout.ShadowMono
 	}
 	inner := max(cols-1, 0)
 	out := make([]string, 0, len(window))

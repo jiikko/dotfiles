@@ -3,6 +3,7 @@ package main
 import (
 	"math"
 	"time"
+	"tuikit/layout"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -135,7 +136,7 @@ func (t *toastItem) fullBox(colored bool) []string {
 		mark, color = "✗", ansiRed
 	}
 	row := paint(mark+" "+t.text, color, colored)
-	boxW := dispWidth(row) + shadowBoxChrome
+	boxW := dispWidth(row) + layout.PanelChrome
 	// 枠線も種別色 (成功=緑 / 失敗=赤 / 進行=シアン) で染めて一体感を出す。影は中立の dim のまま。
 	return buildShadowPanelBox("", []string{row}, boxW, colored, color)
 }
