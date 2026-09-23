@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"glogx/termwidth"
+	"tuikit/termwidth"
 )
 
 // style は 1 スパンの意味。ANSI への変換は render.go が担う。

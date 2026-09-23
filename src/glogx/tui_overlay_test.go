@@ -9,9 +9,10 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"glogx/issues"
 	"glogx/usage"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestBrowseCopyURL(t *testing.T) {
@@ -438,13 +439,13 @@ func TestBrowseDiffPagerKeysScrollNotClose(t *testing.T) {
 	// だけのテストは、tick を張り忘れて実機で永久に固まるバグ (敵対的レビュー P1) を隠す。
 	// 🚨 cmd の nil 判定では足りない: maybeTick は single-flight で、既にチェーンが生きていれば
 	// nil を返す。不変条件は「glide 中は tick チェーンが生きている (m.ticking)」。
-	if m.handleKey(" "); m.diffOv.glide.active && !m.ticking {
+	if m.handleKey(" "); m.diffOv.glide.Active() && !m.ticking {
 		t.Fatal("glide 中なのに tick チェーンが無い (実機では中途位置で固まる)")
 	}
 	for range scrollAnimFrames {
 		m.diffOv.advanceGlide()
 	}
-	if m.diffOv.glide.active {
+	if m.diffOv.glide.Active() {
 		t.Errorf("%d フレームで glide が着地しない", scrollAnimFrames)
 	}
 	view := m.View().Content
@@ -1053,7 +1054,7 @@ func TestStatusViewerSlideTicksAt60FPS(t *testing.T) {
 	if got := m.tickInterval(); got != spinnerInterval {
 		t.Fatalf("スライド後に tick 周期が戻っていない: %v", got)
 	}
-	m.statusOv.pagerGlide.active = true
+	m.statusOv.pagerGlide.Start(0, 1, scrollAnimFrames)
 	if !m.spinnerActive() {
 		t.Fatal("pager glide 中にスピナーの tick が回らない")
 	}
@@ -1315,16 +1316,16 @@ func TestBrowseDiffNeighborKeysSwapCommit(t *testing.T) {
 	_, cmd := m.handleKey("d") // commit[0]
 	deliverDiffMsg(t, m, cmd)
 	m.handleKey(" ") // 半ページ送り = glide 中 + offset > 0 の状態を作る
-	if !m.diffOv.glide.active || m.diffOv.offset == 0 {
-		t.Fatalf("前提: Space で glide に載っていない: active=%v offset=%d", m.diffOv.glide.active, m.diffOv.offset)
+	if !m.diffOv.glide.Active() || m.diffOv.offset == 0 {
+		t.Fatalf("前提: Space で glide に載っていない: active=%v offset=%d", m.diffOv.glide.Active(), m.diffOv.offset)
 	}
 
 	_, cmd = m.handleKey("J")
 	if m.diffOv.sha != m.commits[1].SHA || m.cursor != 1 {
 		t.Fatalf("J で次のコミットへ移らない: sha=%.7s cursor=%d", m.diffOv.sha, m.cursor)
 	}
-	if m.diffOv.offset != 0 || m.diffOv.glide.active {
-		t.Errorf("J でスクロール位置が先頭へ戻らない / 前の滑りを持ち越した: offset=%d glide=%v", m.diffOv.offset, m.diffOv.glide.active)
+	if m.diffOv.offset != 0 || m.diffOv.glide.Active() {
+		t.Errorf("J でスクロール位置が先頭へ戻らない / 前の滑りを持ち越した: offset=%d glide=%v", m.diffOv.offset, m.diffOv.glide.Active())
 	}
 	deliverDiffMsg(t, m, cmd)
 	if len(*calls) != 2 || (*calls)[1] != m.commits[1].SHA {

@@ -11,11 +11,14 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"tuikit/anim"
+	"tuikit/layout"
 
-	tea "charm.land/bubbletea/v2"
 	"doctor/disk"
 	"glogx/issues"
 	"glogx/subproc"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // Bubble Tea による less 風の対話ブラウズ (カーソル移動 + CI job 表示)。
@@ -314,7 +317,7 @@ type browseModel struct {
 
 	// コミット一覧のスクロール glide (表示 offset を論理 offset へ滑らせる)。実体は
 	// scroll_glide.go の共有型で、diff pager / issues viewer も同じ型を持つ (手触りを揃える)。
-	glide scrollGlide
+	glide anim.ScrollGlide
 
 	// バックグラウンド再ビルド (bin/lib/go_autobuild.zsh --async) の決着監視。zero value は
 	// 「監視しない」で、shim が GO_AUTOBUILD_PENDING を立てた起動でだけ動く (autobuild.go)。
@@ -347,8 +350,8 @@ type browseModel struct {
 	// lastKey / lastKeyAt はキーリピート (押しっぱなし) の判定用 (swallowKeyRepeat)。
 	lastKey   string
 	lastKeyAt time.Time
-	// zoom は画面全体の開閉演出 (zoom.go)。zero value = 演出なしなので、Init を通らない
-	// 経路 (テスト・静的出力) は今までどおり実画面がそのまま出る。
+	// zoom は画面全体の開閉演出 (zoom.go)。実画面から始まる (newAppZoom)。Init を通らない
+	// 経路 (テスト・静的出力) も実画面がそのまま出る (開く演出は Init からも呼んでいない)。
 	zoom appZoom
 
 	// toast は右下に数秒だけ出す結果フィードバック (push/pull 完了)。自動消滅 (toast.go)。
@@ -405,6 +408,7 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 		cancel:         cancel,
 		usageOv:        usageOverlay{visible: true},
 		issuesOv:       newIssuesView(),
+		zoom:           newAppZoom(),
 		statusOv:       newStatusView(),
 		autobuild:      newAutobuildWatch(selfExePath(), os.Getenv(autobuildPendingEnv) != "", timeNow()),
 	}
@@ -585,7 +589,7 @@ func (m *browseModel) tickInterval() time.Duration {
 	if m.zoom.animating(timeNow()) || m.issuesOv.slideAnimating() || m.statusOv.slideAnimating() {
 		return zoomInterval // 短い演出なので周期がそのままフレーム数になる (60fps)
 	}
-	if m.glide.active || m.diffOv.animating() || m.toast.animating() || m.issuesOv.animating() || m.statusOv.animating() {
+	if m.glide.Active() || m.diffOv.animating() || m.toast.animating() || m.issuesOv.animating() || m.statusOv.animating() {
 		return scrollInterval // スライドを滑らかに (30fps)
 	}
 	return spinnerInterval
@@ -744,11 +748,11 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.invalidateLines() // 幅で折り返し行数が変わる
 		// resize 中の glide は破棄して即時にする (表示 offset が stale になるため)。一覧だけでなく
 		// pager 側も止める: 幅で行数が変わり、glide の着地点が resize 前の行数基準で古くなる。
-		m.glide.stop()
-		m.diffOv.glide.stop()
-		m.issuesOv.bodyGlide.stop()
-		m.issuesOv.curGlide.stop() // 一覧のカーソル滑走も同じ理由 (窓の起点が resize 前の行数基準)
-		m.statusOv.pagerGlide.stop()
+		m.glide.Stop()
+		m.diffOv.glide.Stop()
+		m.issuesOv.bodyGlide.Stop()
+		m.issuesOv.curGlide.Stop() // 一覧のカーソル滑走も同じ理由 (窓の起点が resize 前の行数基準)
+		m.statusOv.pagerGlide.Stop()
 		m.ensureCursorVisible()
 		return m, nil
 	case tickMsg:
@@ -769,8 +773,8 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.pullAnimating {
 			m.advancePullAnim() // pull で増えた新規行を 1 行/フレームで上から降らせる
 		}
-		if m.glide.active {
-			m.glide.advance(m.offset) // 一覧のスクロールを表示 offset で滑らせる
+		if m.glide.Active() {
+			m.glide.Advance(m.offset) // 一覧のスクロールを表示 offset で滑らせる
 		}
 		// pager 側 (diff / issues 一覧・本文) の glide も同じ tick で進める。共有型なので
 		// 手触り (カーブ・フレーム数) は自動的に一覧と揃う (scroll_glide.go)。
@@ -1603,11 +1607,11 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	case "g", "home":
 		m.cursor = 0
 		m.offset = 0
-		m.glide.stop() // 端へのジャンプは即時 (距離が不定で glide の意味が薄い)
+		m.glide.Stop() // 端へのジャンプは即時 (距離が不定で glide の意味が薄い)
 	case "G", "end":
 		m.cursor = clampIdx(len(m.commits)-1, len(m.commits))
 		m.ensureCursorVisible()
-		m.glide.stop()
+		m.glide.Stop()
 	// 半ページ移動も glide に載せる (ユーザー要望 2026-07-31)。カーソルは動かさずビューポート
 	// だけが動くので、prev からの距離がそのまま glide の距離になる。
 	case "ctrl+d", "pgdown":
@@ -1939,7 +1943,7 @@ func (m *browseModel) applyLogData(d logData, keepView bool) (added int, cmd tea
 	// 🚨 ciPollInFlight はここで false に戻さない: pull で SHA 集合が入れ替わっても既存 SHA は
 	// 残るので、飛んでいる旧 poll と新 poll が同一 SHA を並行取得し、完了順で古い結果が勝ちうる。
 	// 旧 poll の結果が着弾した時点で false に戻る (数周期 fetch を見送るだけで追従は途切れない)。
-	m.glide.stop() // リロードの演出はアニメ側が担うので一覧の glide は破棄
+	m.glide.Stop() // リロードの演出はアニメ側が担うので一覧の glide は破棄
 	m.verbatim = nil
 	if !m.oneline && d.raw != nil {
 		m.verbatim = VerbatimLines(d.raw, commits) // 照合失敗は nil = 自前レンダリングへ
@@ -2223,17 +2227,17 @@ func (m *browseModel) refetchAfterPush() tea.Cmd {
 // glide はフレーム数で終わる (距離では終わらない) ので、1 コミット移動でも半ページでも所要は
 // 一定 (~200ms) になり、背高コミット (長メッセージ・stat/patch) でも間延びしない。高さで
 // animate/snap が変わる違和感を避けるため行数キャップは設けない (ユーザー要望 2026-07-21)。
-// 連打の積み上げ (「押した分だけ遅れて動く」最悪の体感) の抑制は glide.start が持つ。
+// 連打の積み上げ (「押した分だけ遅れて動く」最悪の体感) の抑制は glide.Start が持つ。
 // 論理 offset は呼び出し側 (ensureCursorVisible / clampOffset) が既に動かしているので触らない。
 func (m *browseModel) startScrollAnim(prev int) tea.Cmd {
 	if m.offset == prev {
 		return nil // ビューポートは動いていない (カーソルが画面内 / 端で clamp された)
 	}
 	if m.pullAnimating {
-		m.glide.stop() // pull アニメ中は積まず即時 (連打の抑制は glide.start が持つ)
+		m.glide.Stop() // pull アニメ中は積まず即時 (連打の抑制は glide.Start が持つ)
 		return nil
 	}
-	if !m.glide.start(prev, m.offset) {
+	if !m.glide.Start(prev, m.offset, scrollAnimFrames) {
 		return nil
 	}
 	return m.maybeTick()
@@ -3300,7 +3304,7 @@ func (m *browseModel) handleDiffKey(key string) (tea.Model, tea.Cmd) {
 	// 呼ぶ者がおらず、表示位置がスクロール前で固まったまま「キーが効かない」ように見える
 	// (敵対的レビュー P1 2026-07-31: Space 後に j を何度押しても先頭行が出続ける実測)。
 	// 1 行移動・閉じるは glide を使わないので tick を増やさない。
-	if m.diffOv.glide.active {
+	if m.diffOv.glide.Active() {
 		return m, m.maybeTick()
 	}
 	return m, nil
@@ -3494,7 +3498,7 @@ func (m *browseModel) clampOffset(offset int) int {
 // offset を調整する。
 func (m *browseModel) ensureCursorVisible() {
 	lines := m.lines()
-	m.offset = windowOffsetFor(m.offset, headerLineIndex(lines, m.cursor), len(lines), m.pageSize())
+	m.offset = layout.WindowOffset(m.offset, headerLineIndex(lines, m.cursor), len(lines), m.pageSize())
 }
 
 // topVisibleCommitIdx はビューポート先頭 (offset 行目) に見えているコミットの index。
@@ -3600,7 +3604,7 @@ func (m *browseModel) viewLines() string {
 	}
 	lines := m.lines()
 	// glide 中は表示 offset (途中位置) で窓を切る。それ以外は論理 offset。
-	renderOffset := m.glide.offset(m.offset)
+	renderOffset := m.glide.Offset(m.offset)
 	offset := min(max(renderOffset, 0), max(len(lines)-page, 0))
 	end := min(offset+page, len(lines))
 	window := make([]string, 0, page)

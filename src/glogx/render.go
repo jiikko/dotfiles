@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"tuikit/termwidth"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -509,24 +510,7 @@ func paint(s, color string, colored bool) string {
 //
 // truncateKeepANSI との違いは `…` を付けるかどうかだけ (どちらも色は残る)。切り詰めた行の
 // 表示幅も要る hot path では clipMeasure を使う (幅の二度測りを避けるため)。
-func clipToWidth(line string, width int) string {
-	if width <= 0 {
-		// 幅 0 以下に収まる表示は空しかない。以前はそのまま返しており、呼び出し側の
-		// 「width - 固定列」が極小幅で負になると行が枠を突き破っていた (issue 053:
-		// issues viewer の幅 1-2。max(w-固定, 0) のガードも素通しでは意味を成さない)
-		return ""
-	}
-	// fast-path: ANSI 無しなら整形式 UTF-8 で表示幅 ≤ byte 長が成り立つので、byte 長が
-	// width 以内なら確実に幅内 = stripANSI の alloc も StringWidth 走査も省ける
-	// (View の可視行の多数派 = Author/Date/message 平文・NO_COLOR 全行がここを通る)。
-	if len(line) <= width && strings.IndexByte(line, '\x1b') < 0 {
-		return line
-	}
-	if dispWidth(line) <= width {
-		return line
-	}
-	return truncateDisp(line, width, "…")
-}
+func clipToWidth(line string, width int) string { return termwidth.Clip(line, width) }
 
 // clipMeasure は clipToWidth と同じ切り詰めを行い、結果の表示幅も返す。
 // buildPanelBoxImpl / scrollbarColumn の hot path 用: 旧実装は「clip で 1 回 + pad 計算で

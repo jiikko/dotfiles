@@ -13,7 +13,7 @@ package usage
 import (
 	"strings"
 
-	"glogx/termwidth"
+	"tuikit/termwidth"
 )
 
 const (

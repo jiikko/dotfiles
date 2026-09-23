@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"glogx/termwidth"
+	"tuikit/termwidth"
 )
 
 // textSpans はテスト用に素のテキスト 1 本のスパン列を作る。

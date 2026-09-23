@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"tuikit/layout"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -1470,7 +1471,7 @@ func assembleDeletePanel(o doctorRenderOpts, title string, blocks [][]string, ta
 		for i, l := range out {
 			out[i] = truncateDisp(l, o.width, "…")
 		}
-		return padTo(out, o.page)
+		return layout.PadTo(out, o.page)
 	}
 	var need int
 	for _, b := range blocks {
@@ -1500,7 +1501,7 @@ func assembleDeletePanel(o doctorRenderOpts, title string, blocks [][]string, ta
 	for i, l := range out {
 		out[i] = truncateDisp(l, o.width, "…")
 	}
-	return padTo(out, o.page)
+	return layout.PadTo(out, o.page)
 }
 
 // tailLines は末尾 n 行 (実行中は「今どこか」が見たいので先頭ではなく末尾を残す)。

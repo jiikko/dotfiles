@@ -10,133 +10,6 @@ import (
 	"glogx/issues"
 )
 
-// advance は上下どちらの向きでも表示 offset を論理 offset へ寄せ、有限フレームで着地して
-// active を下ろす (旧 TestBrowseScrollAnimConverges を共有型のテストへ移設。geometry 非依存)。
-func TestScrollGlideConverges(t *testing.T) {
-	for _, tc := range []struct{ from, to int }{
-		{from: 0, to: 7},  // 下スクロール (1 コミット ~7 行)
-		{from: 7, to: 0},  // 上スクロール
-		{from: 3, to: 4},  // 残り 1 行
-		{from: 5, to: 5},  // 動きなし → 即座に active を下ろす
-		{from: 0, to: 40}, // 半ページ相当の大きな距離 (2026-07-31 で glide 対象になった)
-		{from: 40, to: 0}, // 同・上向き
-	} {
-		var g scrollGlide
-		g.from, g.shown, g.frame, g.active = tc.from, tc.from, 0, true
-		prevShown := g.shown
-		frames := 0
-		for g.active {
-			g.advance(tc.to)
-			frames++
-			// ease-in: 表示 offset は目標を通り越さず単調に近づく
-			if (tc.to > tc.from && (g.shown < prevShown || g.shown > tc.to)) ||
-				(tc.to < tc.from && (g.shown > prevShown || g.shown < tc.to)) {
-				t.Fatalf("from=%d to=%d: 非単調/行き過ぎ (shown=%d)", tc.from, tc.to, g.shown)
-			}
-			prevShown = g.shown
-			if frames > 20 {
-				t.Fatalf("from=%d to=%d: 収束しない (shown=%d)", tc.from, tc.to, g.shown)
-			}
-		}
-		if g.shown != tc.to {
-			t.Errorf("from=%d to=%d: 着地 shown=%d, want %d", tc.from, tc.to, g.shown, tc.to)
-		}
-		if frames > scrollAnimFrames {
-			t.Errorf("from=%d to=%d: %d フレーム (scrollAnimFrames=%d 以内のはず)", tc.from, tc.to, frames, scrollAnimFrames)
-		}
-	}
-}
-
-// 距離に依らず所要フレーム数が一定 = 半ページでも 1 行でも同じ時間で着地する
-// (フレーム数で終わる設計。距離で終わると背高コミットや半ページで間延びする)。
-func TestScrollGlideDurationIndependentOfDistance(t *testing.T) {
-	framesFor := func(from, to int) int {
-		var g scrollGlide
-		g.start(from, to)
-		n := 0
-		for g.active {
-			g.advance(to)
-			n++
-		}
-		return n
-	}
-	short, long := framesFor(0, 1), framesFor(0, 200)
-	if short != long {
-		t.Errorf("所要フレームが距離依存: 1 行=%d / 200 行=%d", short, long)
-	}
-}
-
-func TestScrollGlideStart(t *testing.T) {
-	t.Run("距離 0 は開始しない", func(t *testing.T) {
-		var g scrollGlide
-		if g.start(5, 5) || g.active {
-			t.Error("距離 0 で glide が始まった")
-		}
-	})
-
-	t.Run("進行中の glide は積まず即時へ倒す", func(t *testing.T) {
-		var g scrollGlide
-		if !g.start(0, 10) {
-			t.Fatal("初回の start が false")
-		}
-		if g.start(10, 20) {
-			t.Error("連打で glide が積まれた (即時に倒すはず)")
-		}
-		if g.active {
-			t.Error("連打後も active (描画は論理 offset に戻すべき)")
-		}
-	})
-
-	t.Run("進行中でも距離 0 なら進行中の glide を壊さない", func(t *testing.T) {
-		var g scrollGlide
-		g.start(0, 10)
-		if g.start(7, 7) {
-			t.Error("距離 0 で start が true")
-		}
-		if !g.active {
-			t.Error("距離 0 の呼び出しで進行中の glide が消えた (カーソルが画面内で動いただけ)")
-		}
-	})
-}
-
-// offset は glide 中だけ途中位置を返し、それ以外は論理 offset をそのまま返す。
-func TestScrollGlideOffset(t *testing.T) {
-	var g scrollGlide
-	if got := g.offset(42); got != 42 {
-		t.Errorf("非 glide 時 offset = %d, want 42 (論理 offset をそのまま)", got)
-	}
-	g.start(0, 10)
-	if got := g.offset(10); got != 0 {
-		t.Errorf("glide 開始直後 offset = %d, want 0 (開始位置)", got)
-	}
-	// ease-in (t^2) なので最初の 1 フレームは距離が短いと動かない (round で 0 に落ちる)。
-	// 中盤まで進めれば開始位置と着地点の間にいる。
-	for range 3 {
-		g.advance(10)
-	}
-	if got := g.offset(10); got <= 0 || got >= 10 {
-		t.Errorf("glide 途中 offset = %d, want 0 < x < 10 (開始と着地の間)", got)
-	}
-	g.stop()
-	if got := g.offset(10); got != 10 {
-		t.Errorf("stop 後 offset = %d, want 10 (即時表示)", got)
-	}
-}
-
-// glide 中に論理 offset が動いても (resize・追加ロード) その時点の着地点へ向かう。
-func TestScrollGlideFollowsMovingTarget(t *testing.T) {
-	var g scrollGlide
-	g.start(0, 100)
-	g.advance(100)
-	// 途中で着地点が縮む (resize で maxOffset が下がった等)
-	for g.active {
-		g.advance(5)
-	}
-	if g.shown != 5 {
-		t.Errorf("動いた着地点に着かない: shown=%d, want 5", g.shown)
-	}
-}
-
 // 半ページ移動 (Space / ctrl+d) が 4 面すべてで glide に載る (ユーザー要望 2026-07-31 の回帰)。
 // 以前は j/k の 1 行移動だけがアニメで、半ページは snap していた。
 func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
@@ -154,10 +27,10 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 			// 同ファイル :240 / :347 は同じ「前提の破れ」を既に Fatal で扱っている。
 			t.Fatalf("半ページで offset が動かない (実装の退行): offset=%d", m.offset)
 		}
-		if !m.glide.active || cmd == nil {
-			t.Errorf("半ページ移動が glide に載っていない: active=%v cmd=%v", m.glide.active, cmd != nil)
+		if !m.glide.Active() || cmd == nil {
+			t.Errorf("半ページ移動が glide に載っていない: active=%v cmd=%v", m.glide.Active(), cmd != nil)
 		}
-		if got := m.glide.offset(m.offset); got != prev {
+		if got := m.glide.Offset(m.offset); got != prev {
 			t.Errorf("glide 開始位置 = %d, want %d (移動前の offset)", got, prev)
 		}
 	})
@@ -171,22 +44,22 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 		}
 		o.cache.store("abc", lines, "abc")
 		o.scroll(" ", 20)
-		if !o.glide.active {
+		if !o.glide.Active() {
 			t.Error("Space の半ページが glide に載っていない")
 		}
-		if got := o.glide.offset(o.offset); got != 0 {
+		if got := o.glide.Offset(o.offset); got != 0 {
 			t.Errorf("glide 開始位置 = %d, want 0", got)
 		}
 		// 1 行移動は glide 対象外 (距離 1 で滑らせる意味がない)
-		o.glide.stop()
+		o.glide.Stop()
 		o.scroll("j", 20)
-		if o.glide.active {
+		if o.glide.Active() {
 			t.Error("1 行移動が glide に載っている")
 		}
 		// 端ジャンプは即時
 		o.scroll(" ", 20)
 		o.scroll("G", 20)
-		if o.glide.active {
+		if o.glide.Active() {
 			t.Error("端ジャンプ (G) で glide が残っている")
 		}
 	})
@@ -198,16 +71,16 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 		// body が nil でも maxOffset=0 になり動かないため、offset を直接動かす経路で検証する
 		prev := 3
 		v.bodyOff = 10
-		v.bodyGlide.start(prev, v.bodyOff)
-		if !v.bodyGlide.active {
+		v.bodyGlide.Start(prev, v.bodyOff, scrollAnimFrames)
+		if !v.bodyGlide.Active() {
 			t.Error("本文の半ページが glide に載らない")
 		}
-		if got := v.bodyGlide.offset(v.bodyOff); got != prev {
+		if got := v.bodyGlide.Offset(v.bodyOff); got != prev {
 			t.Errorf("glide 開始位置 = %d, want %d", got, prev)
 		}
 		// 本文を閉じたら glide を残さない (次に開いた瞬間に古い位置から滑らない)
 		v.closeBody()
-		if v.bodyGlide.active {
+		if v.bodyGlide.Active() {
 			t.Error("本文を閉じても glide が残っている")
 		}
 	})
@@ -216,11 +89,11 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 		// 🚨 一覧は glide を持たない (幾何的にアニメしないため削除。issue 031)
 		v := newTestIssuesView()
 		v.bodyOff = 10
-		v.bodyGlide.start(0, 10)
+		v.bodyGlide.Start(0, 10, scrollAnimFrames)
 		for range scrollAnimFrames {
 			v.advanceGlide()
 		}
-		if v.bodyGlide.active {
+		if v.bodyGlide.Active() {
 			t.Error("advanceGlide で着地しない")
 		}
 	})
@@ -241,7 +114,7 @@ func TestGlideKeyPathsScheduleTick(t *testing.T) {
 		m.diffOv.cache.store(sha, lines, sha)
 		m.ticking = false
 		m.handleKey(" ")
-		if !m.diffOv.glide.active {
+		if !m.diffOv.glide.Active() {
 			t.Fatal("Space で glide が立たない (テスト前提の破れ)")
 		}
 		if !m.ticking {
@@ -256,7 +129,7 @@ func TestGlideKeyPathsScheduleTick(t *testing.T) {
 		m.height = 12
 		m.ticking = false
 		m.handleKey("ctrl+d")
-		if m.glide.active && !m.ticking {
+		if m.glide.Active() && !m.ticking {
 			t.Error("glide が立ったのに tick チェーンが張られない")
 		}
 	})
@@ -266,13 +139,13 @@ func TestGlideKeyPathsScheduleTick(t *testing.T) {
 // issues の一覧は glide を持たない (issue 031)。
 func TestResizeStopsAllGlides(t *testing.T) {
 	m := newTestBrowse(t, 10, map[string]CIState{}, nil)
-	m.glide.start(0, 10)
-	m.diffOv.glide.start(0, 10)
-	m.issuesOv.bodyGlide.start(0, 10)
+	m.glide.Start(0, 10, scrollAnimFrames)
+	m.diffOv.glide.Start(0, 10, scrollAnimFrames)
+	m.issuesOv.bodyGlide.Start(0, 10, scrollAnimFrames)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	if m.glide.active || m.diffOv.glide.active || m.issuesOv.bodyGlide.active {
+	if m.glide.Active() || m.diffOv.glide.Active() || m.issuesOv.bodyGlide.Active() {
 		t.Errorf("resize で glide が残る: list=%v diff=%v issuesBody=%v",
-			m.glide.active, m.diffOv.glide.active, m.issuesOv.bodyGlide.active)
+			m.glide.Active(), m.diffOv.glide.Active(), m.issuesOv.bodyGlide.Active())
 	}
 }
 
@@ -309,9 +182,9 @@ func TestIssuesListWindowAlwaysKeepsCursorVisible(t *testing.T) {
 func TestIssuesCloseStopsBodyGlide(t *testing.T) {
 	v := newTestIssuesView()
 	v.shown = true
-	v.bodyGlide.start(0, 10)
+	v.bodyGlide.Start(0, 10, scrollAnimFrames)
 	v.close()
-	if v.bodyGlide.active {
+	if v.bodyGlide.Active() {
 		t.Error("close で本文の glide が残る")
 	}
 }
@@ -330,7 +203,7 @@ func TestShiftSpaceScrollsUp(t *testing.T) {
 		m.height = 12
 		m.handleKey("ctrl+d") // まず下へ
 		for range scrollAnimFrames {
-			m.glide.advance(m.offset)
+			m.glide.Advance(m.offset)
 		}
 		down := m.offset
 		if down == 0 {

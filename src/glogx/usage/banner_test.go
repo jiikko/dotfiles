@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"glogx/termwidth"
+	"tuikit/termwidth"
 )
 
 // AA は bannerRows 行で、各行の幅が bannerWidth と一致する (幅がずれると中央寄せが崩れる)。

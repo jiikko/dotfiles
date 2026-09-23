@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"tuikit/anim"
+	"tuikit/layout"
 
 	"glogx/issues"
 )
@@ -51,8 +53,8 @@ func TestDrawerPhasesAndWidth(t *testing.T) {
 		t.Errorf("開ききった幅 = %d, want %d", got, target)
 	}
 	// 着地で静止状態へ
-	if closed := d.settle(now.Add(issuesDrawerDuration)); closed || d.phase != drawerOpen {
-		t.Errorf("開き切りの settle: closed=%v phase=%v", closed, d.phase)
+	if closed := d.settle(now.Add(issuesDrawerDuration)); closed || d.phase() != anim.Open {
+		t.Errorf("開き切りの settle: closed=%v phase=%v", closed, d.phase())
 	}
 }
 
@@ -107,8 +109,8 @@ func TestDrawerCloseIsReverseOfOpen(t *testing.T) {
 	const total = 100
 	var open issuesDrawer
 	open.open(now)
-	var closing issuesDrawer
-	closing.phase, closing.started = drawerClosing, now
+	closing := issuesDrawer{t: anim.NewOpen()}
+	closing.startClose(now)
 
 	for _, f := range []float64{0, 0.25, 0.5, 0.75, 1} {
 		at := now.Add(time.Duration(f * float64(issuesDrawerDuration)))
@@ -135,8 +137,8 @@ func TestDrawerCloseFromPartialOpen(t *testing.T) {
 	if got := d.width(total, at.Add(issuesDrawerDuration)); got != 0 {
 		t.Errorf("閉じ切りの幅 = %d, want 0", got)
 	}
-	if closed := d.settle(at.Add(issuesDrawerDuration)); !closed || d.phase != drawerClosed {
-		t.Errorf("閉じ切りの settle: closed=%v phase=%v", closed, d.phase)
+	if closed := d.settle(at.Add(issuesDrawerDuration)); !closed || d.phase() != anim.Closed {
+		t.Errorf("閉じ切りの settle: closed=%v phase=%v", closed, d.phase())
 	}
 }
 
@@ -144,12 +146,12 @@ func TestDrawerFinishLandsImmediately(t *testing.T) {
 	now := time.Date(2026, 7, 31, 12, 0, 0, 0, time.Local)
 	var d issuesDrawer
 	d.open(now)
-	if closed := d.finish(); closed || d.phase != drawerOpen {
-		t.Errorf("開く演出の finish: closed=%v phase=%v", closed, d.phase)
+	if closed := d.finish(); closed || d.phase() != anim.Open {
+		t.Errorf("開く演出の finish: closed=%v phase=%v", closed, d.phase())
 	}
 	d.startClose(now)
-	if closed := d.finish(); !closed || d.phase != drawerClosed {
-		t.Errorf("閉じる演出の finish: closed=%v phase=%v", closed, d.phase)
+	if closed := d.finish(); !closed || d.phase() != anim.Closed {
+		t.Errorf("閉じる演出の finish: closed=%v phase=%v", closed, d.phase())
 	}
 }
 
@@ -173,11 +175,11 @@ func TestComposeDrawer(t *testing.T) {
 	panel := []string{"PPPPPPPP", "QQQQQQQQ"}
 
 	// 幅 0 では下地をそのまま返す
-	if got := composeDrawer(base, panel, 0, 20, false); got[0] != base[0] {
+	if got := layout.ComposeDrawer(base, panel, 0, 20, false); got[0] != base[0] {
 		t.Errorf("幅 0 で下地が変わった: %q", got[0])
 	}
 
-	out := composeDrawer(base, panel, 10, 20, false)
+	out := layout.ComposeDrawer(base, panel, 10, 20, false)
 	for i, ln := range out {
 		if w := dispWidth(ln); w != 20 {
 			t.Errorf("行 %d の幅 = %d, want 20 (合成で幅が変わってはいけない)", i, w)
@@ -195,7 +197,7 @@ func TestComposeDrawer(t *testing.T) {
 		t.Errorf("区切りの右に本文が来ていない: %q", out[0])
 	}
 	// 見えている幅が増えるほど板の左辺は左へ動く (幅が伸びるのではなく位置が動く)
-	narrow := composeDrawer(base, panel, 6, 20, false)
+	narrow := layout.ComposeDrawer(base, panel, 6, 20, false)
 	if a, b := strings.Index(narrow[0], "▏"), strings.Index(out[0], "▏"); a <= b {
 		t.Errorf("板が左へ動いていない: 幅 6 の左辺=%d, 幅 10 の左辺=%d", a, b)
 	}
@@ -204,7 +206,7 @@ func TestComposeDrawer(t *testing.T) {
 		t.Errorf("スクロールバーと紛らわしい区切りを使っている: %q", out[0])
 	}
 	// 下地より本文の行数が少なくても落ちない
-	if got := composeDrawer(base, panel[:1], 10, 20, false); len(got) != len(base) {
+	if got := layout.ComposeDrawer(base, panel[:1], 10, 20, false); len(got) != len(base) {
 		t.Errorf("行数が保たれない: %d", len(got))
 	}
 }
@@ -252,8 +254,8 @@ func TestIssuesViewDrawerIntegration(t *testing.T) {
 	// 着地で本文を捨てる
 	now = base.Add(issuesDrawerDuration * 3)
 	v.lines(o)
-	if v.open != nil || v.drawer.phase != drawerClosed {
-		t.Errorf("閉じ切っても本文が残る: open=%v phase=%v", v.open != nil, v.drawer.phase)
+	if v.open != nil || v.drawer.phase() != anim.Closed {
+		t.Errorf("閉じ切っても本文が残る: open=%v phase=%v", v.open != nil, v.drawer.phase())
 	}
 }
 

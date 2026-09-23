@@ -13,6 +13,7 @@ package main
 
 import (
 	"time"
+	"tuikit/layout"
 
 	"glogx/usage"
 )
@@ -85,16 +86,16 @@ func (d *ratelimitDash) lines(o ratelimitRenderOpts) []string {
 		// せず理由を出す (全画面なので、ユーザーには壊れたようにしか見えない)。
 		var out []string
 		if rows := usage.RenderDashboard(o.snap, o.now, o.width, body, o.colored); rows != nil {
-			out = padTo(append(head, rows...), o.page)
+			out = layout.PadTo(append(head, rows...), o.page)
 		} else {
-			out = padTo(append(head, centerLine("表示できる利用枠がありません", o.width)), o.page)
+			out = layout.PadTo(append(head, centerLine("表示できる利用枠がありません", o.width)), o.page)
 		}
 		d.cache, d.cacheKey, d.cacheOK = append([]string(nil), out...), key, true
 		return out
 	case o.err != nil:
-		return padTo(append(head, centerLine("取得失敗", o.width)), o.page)
+		return layout.PadTo(append(head, centerLine("取得失敗", o.width)), o.page)
 	default:
-		return padTo(append(head, centerLine(o.spinner+" 取得中...", o.width)), o.page)
+		return layout.PadTo(append(head, centerLine(o.spinner+" 取得中...", o.width)), o.page)
 	}
 }
 

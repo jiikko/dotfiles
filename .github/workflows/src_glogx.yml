@@ -13,6 +13,7 @@ on:
       - 'src/glogx/**'
       - 'src/doctor/**'   # replace で取り込む共有 module (issue 148)
       - 'src/termsafe/**'  # replace で取り込む共有 module (無害化の関門。issue 228)
+      - 'src/tuikit/**'  # replace で取り込む共有 module (幅の単一情報源 + 演出・合成の部品)
       # issues/banner_test.go が module の外の CI 検査を実行して書式の一致を見る (issue 403 の続き)
       - tests/issues/test_next_claims_have_banner.sh
       # 🚨 statusline (shell) は glogx と同じ pace ルールを二重実装しており、乖離を
@@ -32,6 +33,7 @@ on:
       - 'src/glogx/**'
       - 'src/doctor/**'   # replace で取り込む共有 module (issue 148)
       - 'src/termsafe/**'  # replace で取り込む共有 module (無害化の関門。issue 228)
+      - 'src/tuikit/**'  # replace で取り込む共有 module (幅の単一情報源 + 演出・合成の部品)
       # issues/banner_test.go が module の外の CI 検査を実行して書式の一致を見る (issue 403 の続き)
       - tests/issues/test_next_claims_have_banner.sh
       # 🚨 statusline (shell) は glogx と同じ pace ルールを二重実装しており、乖離を

@@ -41,7 +41,7 @@ func toastEncapsulation(m dsl.Matcher) {
 // 🚨 このルールが安くなったのは issue 106 で PadSpaces が leaf パッケージ (termwidth) へ
 // 移り、**全パッケージから参照できるようになったから**。それ以前は「参照できない別パッケージ」
 // のために例外を 4 つ足す必要があり、費用対効果が合わないとして 118 で一度見送っていた。
-// 現在の例外は実装本体 (termwidth.go) とテストだけ (.golangci.yml の exclusions)。
+// 現在の例外はテストだけ (.golangci.yml の exclusions)。実装本体は tuikit/termwidth にあり、このルールの外。
 func padViaPadSpaces(m dsl.Matcher) {
 	m.Match(`strings.Repeat(" ", $n)`).
 		Report(`空白の連結は termwidth.PadSpaces($n) を使う (無確保。main では padSpaces)`)

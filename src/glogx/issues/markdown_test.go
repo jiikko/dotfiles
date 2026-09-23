@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"glogx/termwidth"
+	"tuikit/termwidth"
 
 	"glogx/sgr"
 )

@@ -228,6 +228,24 @@ func FirstCluster(s string) (cluster string, width int) {
 // Truncate は表示幅 width まで切り詰め末尾に tail を付す。SGR は保持する。
 func Truncate(s string, width int, tail string) string { return ansi.Truncate(s, width, tail) }
 
+// Clip は表示幅 width を超える行を、末尾に `…` を付けて切り詰める。SGR は保持する。
+// width <= 0 なら "" (幅 0 以下に収まる表示は空しかない。呼び出し側の「幅 - 固定列」が
+// 極小幅で負になったとき、行が枠を突き破らないように)。
+func Clip(line string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	// fast-path: ANSI 無しなら整形式 UTF-8 で表示幅 ≤ byte 長が成り立つので、byte 長が
+	// width 以内なら確実に幅内 = 幅の走査を省ける (画面の可視行の多数派がここを通る)。
+	if len(line) <= width && strings.IndexByte(line, '\x1b') < 0 {
+		return line
+	}
+	if Of(line) <= width {
+		return line
+	}
+	return Truncate(line, width, "…")
+}
+
 // TruncateLeft は表示幅 width になるよう**先頭**を削り、頭に head (… 等) を付す。
 // 末尾を残したいもの (ファイルパスの basename) に使う: 末尾から切ると「どのファイルか」が
 // 分からなくなるため。幅計算は Of と同じモデルを通す (この層に一本化する規律)。

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"tuikit/layout"
 )
 
 // openAnimView は演出を on にしたまま viewer を開いた状態を作る。
@@ -46,7 +47,7 @@ func TestIssuesCloseProgressFallsToZero(t *testing.T) {
 	if p := v.animProgress(); p != 0 {
 		t.Fatalf("所要を過ぎても画面外まで抜けていない: %v", p)
 	}
-	// 🚨 進捗は 0 で止まる (負に走らない)。負になると slideInWindow の局所進捗が壊れる。
+	// 🚨 進捗は 0 で止まる (負に走らない)。負になると layout.SlideIn の局所進捗が壊れる。
 	advance(issuesCloseDuration)
 	if p := v.animProgress(); p != 0 {
 		t.Fatalf("進捗が 0 を下回った: %v", p)
@@ -66,17 +67,17 @@ func TestIssuesCloseMovesOnFirstFrame(t *testing.T) {
 	// tick 1 拍 (scrollInterval) ぶん進んだ時点の進捗。閉じるので 1 から落ちる
 	p := 1 - float64(scrollInterval)/float64(issuesCloseDuration)
 
-	closing := maxRowShift(slideInWindow(window, p, width, true))
+	closing := maxRowShift(layout.SlideIn(window, p, width, true, issuesAnimStagger))
 	if closing < width/20 {
 		t.Fatalf("閉じ始めの 1 フレームで %d 桁しか動いていない (立ち上がりが潰れている)", closing)
 	}
 	// 開く側は右外から入ってくる = 1 フレーム目はまだ大きくずれている (逆向きの回帰よけ)
-	if opening := maxRowShift(slideInWindow(window, 1-p, width, false)); opening <= closing {
+	if opening := maxRowShift(layout.SlideIn(window, 1-p, width, false, issuesAnimStagger)); opening <= closing {
 		t.Fatalf("開き始めが右外から入ってきていない (ずれ %d 桁)", opening)
 	}
 }
 
-// 閉じる向きが描画まで届いている。🚨 上の検査は slideInWindow を直接叩くので、lines() が
+// 閉じる向きが描画まで届いている。🚨 上の検査は layout.SlideIn を直接叩くので、lines() が
 // closing を渡し忘れても気づかない (開く向きの平坦な立ち上がりへ黙って戻る)。
 func TestIssuesCloseCurveReachesRender(t *testing.T) {
 	advance := stubClock(t)
@@ -103,7 +104,7 @@ func TestIssuesCloseMovesAllRowsTogether(t *testing.T) {
 		window[i] = strings.Repeat("x", width)
 	}
 
-	out := slideInWindow(window, 0.5, width, true)
+	out := layout.SlideIn(window, 0.5, width, true, issuesAnimStagger)
 	head := maxRowShift(out[:1])
 	for i, ln := range out {
 		if shift := maxRowShift([]string{ln}); shift != head {

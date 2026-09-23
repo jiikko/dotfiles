@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"tuikit/anim"
 
 	"glogx/issues"
 )
@@ -275,8 +276,8 @@ func TestIssuesViewRestoreAppliesScreen(t *testing.T) {
 	if v.open == nil || v.open.Path != target.Path || v.body == nil {
 		t.Fatal("本文が開いていない")
 	}
-	if v.drawer.phase != drawerOpen {
-		t.Fatalf("引き出しが開き切っていない (演出が残っている): phase=%d", v.drawer.phase)
+	if v.drawer.phase() != anim.Open {
+		t.Fatalf("引き出しが開き切っていない (演出が残っている): phase=%d", v.drawer.phase())
 	}
 	out := strings.Join(v.lines(renderOpts(40)), "\n")
 	if !strings.Contains(out, "029-feat-b.md") {

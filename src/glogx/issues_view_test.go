@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"tuikit/anim"
 
 	"time"
 
@@ -2219,21 +2220,21 @@ func newTestIssuesView() issuesView {
 // hint にキーを足したら効果の検証も必ず書くことになる。
 // 本文 pager の半ページ送り・端ジャンプが glide の配線ごと効くことを**キー経路**で固定する。
 //
-// 🚨 TestHalfPageScrollGlidesOnAllSurfaces の本文サブテストは bodyGlide.start を直接呼ぶ
+// 🚨 TestHalfPageScrollGlidesOnAllSurfaces の本文サブテストは bodyGlide.Start を直接呼ぶ
 // (body が nil の workaround) ため、handleBodyKey が glide を配線し忘れても green のままだった。
 // pagerScrollKey への委譲 (2026-08-19) で glide を落とす退行はこのテストだけが検出する。
 func TestIssuesViewBodyHalfPageGlidesViaKeyPath(t *testing.T) {
 	e := newBodyKeyEnv(t)
 	before := e.v.bodyOff
 	e.press(" ")
-	if !e.v.bodyGlide.active {
+	if !e.v.bodyGlide.Active() {
 		t.Fatal("Space の半ページ送りが glide に載っていない (キー経路)")
 	}
-	if got := e.v.bodyGlide.offset(e.v.bodyOff); got != before {
+	if got := e.v.bodyGlide.Offset(e.v.bodyOff); got != before {
 		t.Errorf("glide 開始位置 = %d, want %d (移動前の offset)", got, before)
 	}
 	e.press("G")
-	if e.v.bodyGlide.active {
+	if e.v.bodyGlide.Active() {
 		t.Error("G の端ジャンプで glide が残っている (端ジャンプは即時)")
 	}
 }
@@ -2420,8 +2421,8 @@ func (e *bodyKeyEnv) assertClosesBody(t *testing.T, key string) {
 	e.press(key)
 	// 🚨 本文は「閉じる演出の着地後」に捨てられるので、open == nil を待つと時刻の進め方に
 	// 依存する。キーの直接の効果である「閉じる演出に入ったか」を見る。
-	if e.v.drawer.phase != drawerClosing {
-		t.Errorf("%q で本文が閉じ始めない: phase=%v", key, e.v.drawer.phase)
+	if e.v.drawer.phase() != anim.Closing {
+		t.Errorf("%q で本文が閉じ始めない: phase=%v", key, e.v.drawer.phase())
 	}
 	// 次の打鍵で実際に畳まれる (handleKey 冒頭の drawer.finish → discardBody)
 	e.press("j")
@@ -2669,8 +2670,8 @@ func TestIssuesViewBodyNeighborKeysSwapIssueWithoutReopening(t *testing.T) {
 	if v.open != c || v.cursor != 3 {
 		t.Fatalf("J で親行を飛ばして c へ移らない: open=%v cursor=%d", v.open, v.cursor)
 	}
-	if v.drawer.phase != drawerOpen {
-		t.Errorf("J で引き出しの演出が始まった (開いたままで中身だけ替える): phase=%v", v.drawer.phase)
+	if v.drawer.phase() != anim.Open {
+		t.Errorf("J で引き出しの演出が始まった (開いたままで中身だけ替える): phase=%v", v.drawer.phase())
 	}
 	if v.bodyOff != 0 {
 		t.Errorf("J でスクロール位置が先頭へ戻らない: bodyOff=%d", v.bodyOff)

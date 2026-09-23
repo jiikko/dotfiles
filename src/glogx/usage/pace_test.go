@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"glogx/sgr"
-	"glogx/termwidth"
+	"tuikit/termwidth"
 )
 
 // ゲージは「[ + 番号と空白の 2 カラム x スロット数 + 左端の余白 + ]」= 2n+3 桁ちょうど。

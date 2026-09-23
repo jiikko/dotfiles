@@ -415,8 +415,11 @@ go test -run '^$' -bench BenchmarkView -benchmem .
   3 つが外部コマンドを起動するので、値を main に置くと下位から呼べず写しになる。
   **新しい外部コマンド実行は `subproc.CommandContext` を使う** — 素の `exec.CommandContext` は
   `waitdelay_discipline_test.go` が落とす) /
-  `termwidth/` (表示幅の単一情報源 = ansi.StringWidth への一本化。main は `width.go` の別名経由、issues / usage は直接) /
   `sgr/` (基本 ANSI 色。3 パッケージで別名の写しになっていたものを 1 箇所へ) / `main.go` (配線)
+- 表示幅の単一情報源 (`termwidth`) と、演出・画面合成の部品 (drawer の開閉 / glide / slide-in /
+  窓の計算) は [`../tuikit`](../tuikit/README.md) にある (replace で取り込む。別の TUI でも使えるように
+  切り出した)。main は `width.go` の別名経由、issues / usage は `tuikit/termwidth` を直接呼ぶ。
+  glogx 側に残るのは寸法・所要時間・キーの語彙だけ (`issues_drawer.go` / `zoom.go` / `scroll_glide.go`)
 - `tools/width-probe/`: 端末が各文字に何セル割り当てるかを CPR (CSI 6n) で端末自身に
   問い合わせる調査ツール。幅ズレの原因層 (glogx / 描画エンジン / tmux / 端末) を推測でなく
   実測で切り分けるためのもので、本体からは参照しない。

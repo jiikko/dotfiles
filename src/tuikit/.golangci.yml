@@ -1,0 +1,77 @@
+# golangci-lint v2 config for tuikit.
+# 既定の linter (errcheck / govet / ineffassign / staticcheck / unused) に加えて、低ノイズの
+# 衛生系と、lib の不変条件を機械で止める depguard / forbidigo を足す。
+version: "2"
+
+# root の Makefile (run_go_projects) が全プロジェクトを並列に回すため、ロック待ちで落ちない
+# ようにする (理由の詳細は src/termsafe/.golangci.yml。issue 258)
+run:
+  allow-parallel-runners: true
+
+linters:
+  enable:
+    - copyloopvar    # loop variables needlessly copied (Go 1.22+)
+    - depguard       # lib の依存の不変条件 (下の rules)
+    - exhaustive     # default なし switch の enum 網羅を強制 (anim.Phase を足したら全 switch が止まる)
+    - forbidigo      # 幅モデルの 2 本目と、部品の中での時刻取得を禁止 (下の forbid)
+    - intrange       # for i := 0; i < n; i++  ->  for i := range n
+    - misspell       # common English misspellings in comments/strings
+    - perfsprint     # fmt.Sprintf that a faster stdlib call can replace
+    - unconvert      # redundant type conversions
+    - usestdlibvars  # hand-written constants that exist in the stdlib
+    - wastedassign   # assignments whose value is never read
+  settings:
+    exhaustive:
+      default-signifies-exhaustive: true
+    depguard:
+      rules:
+        # 部品は描画フレームワークに依存しない (「[]string → []string」と壁時計の状態機械だけ)。
+        # bubbletea に依存させると、v1 のままのアプリや別フレームワークから使えなくなる。
+        # デモ (examples/) だけが bubbletea を使ってよい。
+        no-framework-in-parts:
+          files:
+            - "**/anim/**"
+            - "**/layout/**"
+            - "**/termwidth/**"
+            - "**/widthenv/**"
+          deny:
+            - pkg: charm.land/bubbletea
+              desc: 部品はフレームワーク非依存 (tick は使う側が回す。README の「使う側の約束」)
+            - pkg: github.com/charmbracelet/bubbletea
+              desc: 部品はフレームワーク非依存 (tick は使う側が回す。README の「使う側の約束」)
+        # 幅計算の唯一の出典は termwidth.Of (= ansi.StringWidth)。runewidth は East Asian
+        # ambiguous を locale 依存で 2 桁と数え、枠の計算が実行環境でずれる (glogx issue 027)。
+        width-single-source:
+          files:
+            - "**/*.go"
+          deny:
+            - pkg: github.com/mattn/go-runewidth
+              desc: 幅は termwidth.Of で測る (locale 非依存)
+        # 分割も幅も x/ansi に一本化してある (termwidth.FirstCluster。glogx issue 124)。
+        uniseg-test-only:
+          files:
+            - "**/*.go"
+            - "!**/termwidth/width_fast_test.go"   # fast-path の受理集合をクラスタ数で総当たり検証する (幅は測らない)
+          deny:
+            - pkg: github.com/rivo/uniseg
+              desc: 分割も幅も termwidth に一本化した (termwidth.FirstCluster / termwidth.Of)
+    forbidigo:
+      forbid:
+        # depguard はパッケージ単位でしか止められず、同じ x/ansi の 2 本目の幅モデルを止められない
+        - pattern: ^ansi\.StringWidthWc$
+          msg: 幅は termwidth.Of (GraphemeWidth) の 1 系統だけ (glogx issue 112 / 124)
+        # 部品は時刻を引数 (now) で受け取る。中で取ると、使う側のテストが時刻を固定できない
+        - pattern: ^time\.(Now|Since)$
+          msg: 部品は時刻を引数で受け取る (使う側のテストで固定できるように)
+  exclusions:
+    rules:
+      # デモは実時間で動かす本物のアプリ
+      - path: examples/
+        text: 部品は時刻を引数で受け取る
+        linters:
+          - forbidigo
+
+# gofmt を CI ゲートにする (v2 では formatter は linters と別枠)
+formatters:
+  enable:
+    - gofmt

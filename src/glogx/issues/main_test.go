@@ -7,7 +7,7 @@ import (
 
 	"doctor/testtmp"
 
-	"glogx/widthenv"
+	"tuikit/widthenv"
 )
 
 // TestMain は「glogx が支持しない幅 env」でテストを走らせない (issue 054)。

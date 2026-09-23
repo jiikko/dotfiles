@@ -1,6 +1,6 @@
 package main
 
-import "glogx/termwidth"
+import "tuikit/termwidth"
 
 // 表示幅の実装は glogx/termwidth (単一情報源。幅モデルの選択理由・fast-path の設計・実測値も
 // そちらの doc が正本)。main は呼び出し箇所が多い (dispWidth だけで 40 箇所超) ので、

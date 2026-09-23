@@ -19,6 +19,8 @@ package main
 import (
 	"math"
 	"time"
+
+	"tuikit/anim"
 )
 
 const (
@@ -39,24 +41,19 @@ const (
 	appZoomSnap = 0.97
 )
 
-// appZoomPhase は演出の状態。zero value = 演出なし (テスト・非対話経路はここから動かない)。
-type appZoomPhase uint8
-
-const (
-	appZoomShown   appZoomPhase = iota // 実画面 (演出していない)
-	appZoomOpening                     // 中央から開く途中
-	appZoomClosing                     // 中央へ吸い込まれる途中
-	appZoomClosed                      // 閉じ切った (呼び出し側が終了する)
-)
-
-// appZoom は画面全体の開閉演出の状態。
+// appZoom は画面全体の開閉演出の状態。状態機械は tuikit の anim.Transition が持ち、
+// 「開いている」= 実画面、「閉じ切った」= 呼び出し側が終了する、と読む。
+//
+// 🚨 zero value は「閉じ切った」になる (Transition の zero value)。実画面から始めるので
+// newAppZoom で作ること (newBrowseModel が唯一の生成経路)。
 type appZoom struct {
-	phase   appZoomPhase
-	started time.Time
-	off     bool // 演出しない (テスト・端末が小さすぎる場合)
+	t   anim.Transition
+	off bool // 演出しない (テスト・端末が小さすぎる場合)
 }
 
-// start は開く演出を始める。
+func newAppZoom() appZoom { return appZoom{t: anim.NewOpen()} }
+
+// start は開く演出を最初から始める (今の状態によらず、閉じ切った姿から開く)。
 //
 // 🚨 **production からは呼ばれていない** (issue 316 で確認)。`tui.go` の Init が
 // `// m.zoom.start(timeNow())` とコメントアウトしており、「開く演出は入れない
@@ -67,59 +64,34 @@ func (z *appZoom) start(now time.Time) {
 	if z.off {
 		return
 	}
-	z.phase, z.started = appZoomOpening, now
+	z.t = anim.Transition{} // 実画面 (開いた状態) から呼ばれるので、閉じた姿へ戻してから開く
+	z.t.Open(now, appZoomDuration)
 }
 
 // startClose は閉じる演出を始める。演出しない設定なら false (呼び出し側は即終了する)。
 func (z *appZoom) startClose(now time.Time) bool {
-	if z.off || z.phase == appZoomClosing {
-		return z.phase == appZoomClosing
+	if z.off {
+		return false
 	}
-	z.phase, z.started = appZoomClosing, now
-	return true
+	z.t.Close(now, appZoomDuration)
+	return z.closing()
 }
 
 // closing は閉じる演出の途中か (キーで即着地させる判定に使う)。
-func (z *appZoom) closing() bool { return z.phase == appZoomClosing }
-
-// rawProgress は現在の演出の素の進捗 0..1 (演出中でなければ 1)。
-func (z *appZoom) rawProgress(now time.Time) float64 {
-	if z.phase != appZoomOpening && z.phase != appZoomClosing {
-		return 1
-	}
-	return max(min(float64(now.Sub(z.started))/float64(appZoomDuration), 1), 0)
-}
+func (z *appZoom) closing() bool { return z.t.Phase() == anim.Closing }
 
 // animating は演出の途中か (tick を回し続ける判定に使う)。
-func (z *appZoom) animating(now time.Time) bool {
-	return (z.phase == appZoomOpening || z.phase == appZoomClosing) && z.rawProgress(now) < 1
-}
+func (z *appZoom) animating(now time.Time) bool { return z.t.Animating(now) }
 
 // settle は演出が終わっていれば静止状態へ進め、閉じ切ったなら true を返す。
-func (z *appZoom) settle(now time.Time) (closed bool) {
-	if z.rawProgress(now) < 1 {
-		return false
-	}
-	return z.finish()
-}
+func (z *appZoom) settle(now time.Time) (closed bool) { return z.t.Settle(now) }
 
 // finish は演出を即座に着地させる (キー操作は待たせない)。閉じ切ったなら true。
-func (z *appZoom) finish() (closed bool) {
-	switch z.phase {
-	case appZoomOpening:
-		z.phase = appZoomShown
-	case appZoomClosing:
-		z.phase = appZoomClosed
-		return true
-	case appZoomShown, appZoomClosed:
-	}
-	return z.phase == appZoomClosed
-}
+func (z *appZoom) finish() (closed bool) { return z.t.Finish() }
 
 // scale は今フレームで画面が占める割合 (1 = 実画面)。
 //
-// 開くときは easeOutCubic で終点に向けて減速し、閉じるときはその逆再生 (進捗を反転するだけ)。
-// 別のカーブを使うと「開いた動きと閉じる動きが違う」ちぐはぐさが出る (引き出しと同じ規律)。
+// 開くときは easeOutCubic で終点に向けて減速し、閉じるときはその逆再生 (Transition.Openness)。
 //
 // 🚨 曲線の値をそのまま返さず appZoomSnap 倍して返す。素の easeOutCubic は進捗 69% で
 // appZoomSnap (0.97) に達してしまい、残り 31% (68ms) は絵が変わらない = 開くときは「早々に
@@ -127,12 +99,10 @@ func (z *appZoom) finish() (closed bool) {
 // 終点を snap 閾値に合わせておけば、動きが所要いっぱいに広がってフレームあたりの跳びが小さくなる
 // (実測: 動くフレーム 10 → 14 枚、1 フレームの平均 3.8 行 → 2.7 行)。
 func (z *appZoom) scale(now time.Time) float64 {
-	switch z.phase {
-	case appZoomOpening:
-		return easeOutCubicFloat(z.rawProgress(now)) * appZoomSnap
-	case appZoomClosing:
-		return easeOutCubicFloat(1-z.rawProgress(now)) * appZoomSnap
-	case appZoomShown, appZoomClosed:
+	switch z.t.Phase() {
+	case anim.Opening, anim.Closing:
+		return z.t.Openness(now, anim.EaseOutCubic) * appZoomSnap
+	case anim.Open, anim.Closed:
 	}
 	return 1
 }

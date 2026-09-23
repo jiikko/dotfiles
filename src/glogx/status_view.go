@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"tuikit/anim"
+	"tuikit/layout"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -68,7 +70,7 @@ type statusView struct {
 	pagerKey    string
 	pagerTitle  string
 	pagerOffset int
-	pagerGlide  scrollGlide
+	pagerGlide  anim.ScrollGlide
 
 	// discard は X の確認 (zero value = 確認なし)。確認に出した時点の行を丸ごと持つ:
 	// 実行時に git status を取り直して一致を検証するため (spec 4 節の不変条件 1)。
@@ -212,7 +214,7 @@ func (v *statusView) slideAnimating() bool {
 // animating は開閉の演出中か。spinnerActive (tick チェーンを回すか) がこれを見る
 // (issuesView.animating と同じ契約)。
 func (v *statusView) animating() bool {
-	if v.pagerGlide.active {
+	if v.pagerGlide.Active() {
 		return true // 本文 pager の glide は tick で進むので「アニメ中」に含める
 	}
 	return v.slideAnimating()
@@ -262,7 +264,7 @@ func (v *statusView) finishClose() bool {
 	v.shown, v.closing = false, false
 	v.animStart = time.Time{}
 	v.pagerKey, v.pagerTitle, v.pagerOffset = "", "", 0
-	v.pagerGlide.stop()
+	v.pagerGlide.Stop()
 	v.discarding, v.discard = false, worktreeRow{}
 	v.pollArmed = false
 	// 🚨 走行中の取得の札を降ろす。降ろさないと閉じた瞬間に飛んでいた git status の結果は
@@ -288,8 +290,8 @@ func (v *statusView) settleAnim() {
 
 // advanceGlide は全画面 diff のスクロール glide を 1 フレーム進める。
 func (v *statusView) advanceGlide() {
-	if v.pagerGlide.active {
-		v.pagerGlide.advance(v.pagerOffset)
+	if v.pagerGlide.Active() {
+		v.pagerGlide.Advance(v.pagerOffset)
 	}
 }
 
@@ -682,7 +684,7 @@ func (v *statusView) pagerKeyPress(key string, vp statusViewport) tea.Cmd {
 	switch key {
 	case "q", "esc", "h", "left", "d", "enter":
 		v.pagerKey, v.pagerTitle, v.pagerOffset = "", "", 0
-		v.pagerGlide.stop()
+		v.pagerGlide.Stop()
 		return nil
 	// 開いたまま隣のファイルへ (J/K。docs/glogx-ui-guide.md §6)。セクション境界は setCursor が
 	// 一覧と同じに扱うので、ここで境界を意識しない
@@ -893,7 +895,7 @@ func (v *statusView) openPager(vp statusViewport) tea.Cmd {
 	v.pagerKey = previewKey(row)
 	v.pagerTitle = row.dispPath() // 画面に出す文字列なので表示用 (dispPath の doc)
 	v.pagerOffset = 0
-	v.pagerGlide.stop()
+	v.pagerGlide.Stop()
 	return v.fetchDiff(row, vp.colored)
 }
 
@@ -1037,10 +1039,10 @@ func (v *statusView) lines(o statusRenderOpts) []string {
 	listW := statusListWidth(o.width)
 	var body []string
 	if listW >= o.width {
-		body = padTo(v.listLines(inner, o.width), rows)
+		body = layout.PadTo(v.listLines(inner, o.width), rows)
 	} else {
-		left := padTo(v.listLines(inner, listW), rows)
-		right := padTo(v.previewPane(inner, o.width-listW-statusSepWidth), rows)
+		left := layout.PadTo(v.listLines(inner, listW), rows)
+		right := layout.PadTo(v.previewPane(inner, o.width-listW-statusSepWidth), rows)
 		body = make([]string, 0, rows)
 		sep := paint("│ ", ansiDim, o.colored)
 		for i := range rows {
@@ -1050,7 +1052,7 @@ func (v *statusView) lines(o statusRenderOpts) []string {
 	body = append(head, body...)
 	// 🚨 契約 (ちょうど page 行) をここで必ず満たす。ヘッダー 1 行 + 本文の合成は page が
 	// 極端に小さいとき (0 / 1 行の窓) に page を超える
-	body = padTo(body, o.page)
+	body = layout.PadTo(body, o.page)
 	if box := v.pagerBox(o); len(box) > 0 {
 		body = overlayCenteredBox(body, box, o.width, o.page, o.colored)
 	}
@@ -1092,7 +1094,7 @@ func (v *statusView) animProgress() float64 {
 // 行が左から滑り込む真の平行移動 (truncateDispLeft) にしないのも意図的: 頭が画面外に出て
 // 尻尾の桁から現れる見た目になる。左端アンカーの成長なら行頭から読める形で現れる。
 func slideLeftWindow(window []string, progress float64, width int, closing, colored bool) []string {
-	ratio := 1 - easeOutCubicFloat(progress)
+	ratio := 1 - anim.EaseOutCubic(progress)
 	if closing {
 		ratio = 1 - progress
 	}
@@ -1128,7 +1130,7 @@ func (v *statusView) listLines(o statusRenderOpts, width int) []string {
 	// 🚨 整形するのは窓の中だけ (displayIndex の doc)。全行を整形してから切ると、画面に出る
 	// 行数と無関係に変更ファイル数へ比例したコストになる。
 	index, cursorAt := v.displayIndex()
-	v.offset = windowOffsetFor(v.offset, cursorAt, len(index), rows)
+	v.offset = layout.WindowOffset(v.offset, cursorAt, len(index), rows)
 	end := min(v.offset+rows, len(index))
 	out := make([]string, 0, rows)
 	for _, dl := range index[v.offset:end] {
@@ -1398,8 +1400,8 @@ func (v *statusView) pagerBox(o statusRenderOpts) []string {
 	case !ok:
 		body = []string{paint("(diff はありません)", ansiDim, o.colored)}
 	default:
-		v.pagerOffset = clampScrollOffset(v.pagerOffset, len(lines), rows)
-		start := clampScrollOffset(v.pagerGlide.offset(v.pagerOffset), len(lines), rows)
+		v.pagerOffset = layout.ClampOffset(v.pagerOffset, len(lines), rows)
+		start := layout.ClampOffset(v.pagerGlide.Offset(v.pagerOffset), len(lines), rows)
 		end := min(start+rows, len(lines))
 		body = append(body, lines[start:end]...)
 		title = fmt.Sprintf(" diff: %s [%d-%d/%d] ", v.pagerTitle, start+1, end, len(lines))

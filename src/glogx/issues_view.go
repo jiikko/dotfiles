@@ -1,16 +1,18 @@
 package main
 
 import (
-	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"tuikit/anim"
+	"tuikit/layout"
+
+	"glogx/issues"
 
 	tea "charm.land/bubbletea/v2"
-	"glogx/issues"
 )
 
 // issues viewer (i キー) の全画面ビュー。
@@ -160,11 +162,11 @@ type issuesView struct {
 	// open/body を生かしたまま逆再生するため、破棄は settleDrawer が担う。
 	drawer    issuesDrawer
 	bodyOff   int // 論理 = 着地点
-	bodyGlide scrollGlide
+	bodyGlide anim.ScrollGlide
 
 	// curGlide は一覧の半ページ移動でカーソルを滑らせる演出 (scroll_glide.go)。論理カーソルは
 	// 即着地するので、描画だけが遅れる。
-	curGlide cursorGlide
+	curGlide anim.CursorGlide
 
 	// 開くときのスライドイン演出の開始時刻 (ゼロ値 = 演出なし)。フレーム数ではなく壁時計で
 	// 進めるのは、tick 周期が変わっても所要時間が変わらないようにするため (push 演出の
@@ -219,7 +221,7 @@ const (
 	issuesCloseDuration = 112 * time.Millisecond
 	// issuesAnimStagger は開く演出で行ごとに開始をずらす割合。0 なら全行同時に動いて「板が 1 枚
 	// 滑り込む」見え方、大きいほど「上から順に流れ込む」見え方になる。閉じる演出では使わない
-	// (rowOffsetRatio の doc)。
+	// (tuikit layout.RowOffsetRatio の doc)。
 	issuesAnimStagger = 0.35
 )
 
@@ -282,7 +284,7 @@ func (v *issuesView) screen(now time.Time) (issuesScreen, bool) {
 		return issuesScreen{}, false
 	}
 	open := issuePath(v.open)
-	if v.drawer.phase == drawerClosing {
+	if v.drawer.phase() == anim.Closing {
 		open = "" // 閉じる演出の途中 = ユーザーは既に閉じている。開いた状態で復元しない
 	}
 	return issuesScreen{
@@ -355,7 +357,7 @@ func (v *issuesView) close() {
 	v.closing = true
 	// 閉じたらカーソルの滑走を残さない (bodyGlide と同じ理由: 再表示の一瞬だけ古い位置から滑るのを
 	// 防ぐ)。close は toggle 経由だと handleKey を通らないので finishAnim が効かない。
-	v.curGlide.stop()
+	v.curGlide.Stop()
 	v.animStart = timeNow()
 	if v.closeAnimOff {
 		v.finishClose() // 演出なしの設定では同じ出口を即座に通す (片付けの経路を分けない)
@@ -406,7 +408,7 @@ func (v *issuesView) finishClose() bool {
 func (v *issuesView) finishAnim() {
 	// 半ページ移動のカーソル滑走も即着地させる: 次のキーは必ず論理カーソル (着地点) に効くので、
 	// 描画だけが遅れて「見えている行と操作対象が違う」時間を残さない。
-	v.curGlide.stop()
+	v.curGlide.Stop()
 	if v.closing {
 		v.finishClose()
 		return
@@ -428,10 +430,10 @@ func (v *issuesView) slideAnimating() bool {
 
 // animating は演出の途中か (tick チェーンを回し続ける spinnerActive の判定に使う)。
 func (v *issuesView) animating() bool {
-	if v.bodyGlide.active {
+	if v.bodyGlide.Active() {
 		return true // 本文 pager の glide は tick で進むので「アニメ中」に含める
 	}
-	if v.curGlide.active {
+	if v.curGlide.Active() {
 		return true // 一覧のカーソル滑走も tick で進む
 	}
 	if v.drawer.animating(timeNow()) {
@@ -463,11 +465,11 @@ func (v *issuesView) takeWantQuit() bool {
 
 // advanceGlide はスクロール glide を 1 フレーム進める (browseModel の tick から呼ばれる)。
 func (v *issuesView) advanceGlide() {
-	if v.bodyGlide.active {
-		v.bodyGlide.advance(v.bodyOff)
+	if v.bodyGlide.Active() {
+		v.bodyGlide.Advance(v.bodyOff)
 	}
-	if v.curGlide.active {
-		v.curGlide.advance(v.cursor)
+	if v.curGlide.Active() {
+		v.curGlide.Advance(v.cursor)
 	}
 }
 
@@ -820,7 +822,7 @@ func (v *issuesView) matchByBase(base string) (found *issues.Issue, ambiguous bo
 func (v *issuesView) refresh() {
 	// 🚨 行集合が変わるので選択は畳む。錨は位置で持つため、残すと別の issue を指す
 	v.clearMark()
-	v.curGlide.stop() // 同じ理由で滑走も畳む (起点の行番号が別の issue を指す)
+	v.curGlide.Stop() // 同じ理由で滑走も畳む (起点の行番号が別の issue を指す)
 	v.setRows(v.visibleIssues())
 	if v.numFilter.active {
 		v.autoExpandedGroups = v.numFilter.groupKeys(v.rows)
@@ -1130,7 +1132,7 @@ func (v *issuesView) currentTab() string {
 // 演出に何も映らない。実際の破棄は演出が着地したとき (settleDrawer)。
 func (v *issuesView) closeBody() {
 	// 後始末は本文の有無に依らず行う (呼ばれた時点で「本文モードではない」を満たすべき)。
-	v.bodyGlide.stop()
+	v.bodyGlide.Stop()
 	v.urlPick.close()
 	if v.open == nil {
 		return
@@ -1141,7 +1143,7 @@ func (v *issuesView) closeBody() {
 // discardBody は本文の状態を実際に捨てる (演出の着地後・viewer を閉じるとき)。
 func (v *issuesView) discardBody() {
 	v.open, v.body, v.bodyOff = nil, nil, 0
-	v.bodyGlide.stop()
+	v.bodyGlide.Stop()
 	v.urlPick.close()
 	v.drawer = issuesDrawer{}
 }
@@ -1180,7 +1182,7 @@ func (v *issuesView) openIssue(iss *issues.Issue) bool {
 	v.open, v.body, v.bodyOff = iss, body, 0
 	v.urlPick.close() // 別の issue を開いたら前の URL 一覧を持ち越さない
 	v.drawer.open(timeNow())
-	v.bodyGlide.stop()
+	v.bodyGlide.Stop()
 	return true
 }
 
@@ -1658,7 +1660,7 @@ func (v *issuesView) movePage(delta, rows int) {
 	v.ensureDisplayRows()
 	from := v.cursor
 	v.moveCursor(delta, rows)
-	v.curGlide.start(from, v.cursor)
+	v.curGlide.Start(from, v.cursor, cursorAnimFrames)
 }
 
 // moveCursor はカーソルを動かしてスクロール位置を追従させる。素の移動は選択を解除する
@@ -1753,8 +1755,8 @@ func (v *issuesView) scrollToCursor(rows int) { v.offset = v.windowOffset(rows) 
 // (ease-out-back) が窓の端を越えたときだけ端で止まる。
 func (v *issuesView) dispCursor(offset, rows int) int {
 	v.ensureDisplayRows()
-	cur := clampIdx(v.curGlide.cursor(v.cursor), len(v.displayRows))
-	if !v.curGlide.active || rows <= 0 {
+	cur := clampIdx(v.curGlide.Cursor(v.cursor), len(v.displayRows))
+	if !v.curGlide.Active() || rows <= 0 {
 		return cur
 	}
 	return min(max(cur, offset), offset+rows-1)
@@ -1765,7 +1767,7 @@ func (v *issuesView) windowOffset(rows int) int {
 		return 0
 	}
 	v.ensureDisplayRows()
-	return windowOffsetFor(v.offset, v.cursor, len(v.displayRows), rows)
+	return layout.WindowOffset(v.offset, v.cursor, len(v.displayRows), rows)
 }
 
 // moveTab はタブを切り替える (端で止まらず巡回する)。
@@ -2030,18 +2032,18 @@ func (v *issuesView) lines(o issuesRenderOpts) []string {
 		// 整形は最終幅で行い、演出中は切るだけにする (途中幅で整形し直すと毎フレーム折り返しが
 		// 変わって文字が踊る。詳細は composeDrawer の doc)
 		inner.width = v.bodyWidth(o.width)
-		body = composeDrawer(padTo(v.listLines(o), o.page), padTo(v.bodyLines(inner), o.page),
+		body = layout.ComposeDrawer(layout.PadTo(v.listLines(o), o.page), layout.PadTo(v.bodyLines(inner), o.page),
 			w, o.width, o.colored)
 	default:
 		body = v.listLines(o)
 	}
-	body = padTo(body, o.page)
+	body = layout.PadTo(body, o.page)
 	// 確認モーダルは最前面 (実ファイルを動かす操作なので、裏の一覧より確実に目に入る位置)
 	if box := v.markNextBox(o.width, o.colored); len(box) > 0 {
 		body = overlayCenteredBox(body, box, o.width, o.page, o.colored)
 	}
 	if p := v.animProgress(); p < 1 {
-		body = slideInWindow(body, p, o.width, v.closing)
+		body = layout.SlideIn(body, p, o.width, v.closing, issuesAnimStagger)
 	}
 	return body
 }
@@ -2050,7 +2052,7 @@ func (v *issuesView) lines(o issuesRenderOpts) []string {
 //
 // 閉じるときは進捗を 1 → 0 へ落とす (所要も別で、issuesCloseDuration の方が短い)。🚨 反転する
 // のは進捗の向きだけで、見え方 (緩急・行ごとのずらし) まで開く演出の逆再生にはしない
-// (理由は rowOffsetRatio の doc)。
+// (理由は tuikit layout.RowOffsetRatio の doc)。
 func (v *issuesView) animProgress() float64 {
 	if v.closing {
 		return max(1-float64(timeNow().Sub(v.animStart))/float64(issuesCloseDuration), 0)
@@ -2059,65 +2061,6 @@ func (v *issuesView) animProgress() float64 {
 		return 1
 	}
 	return float64(timeNow().Sub(v.animStart)) / float64(issuesAnimDuration)
-}
-
-// padTo は行数を n へ揃える (足りなければ空行、多ければ切る)。引き出しの合成では一覧と本文の
-// 行数が違う (ヘッダーの行数が異なる) ため、重ねる前に必ず揃える。窓を「ちょうど page 行」で
-// 返す契約 (lines の doc) もこれで満たす。
-func padTo(lines []string, n int) []string {
-	for len(lines) < n {
-		lines = append(lines, "")
-	}
-	return lines[:n]
-}
-
-// slideInWindow は窓の各行を「右から左へ流し込む」途中の姿にする (closing なら右へ抜ける途中)。
-// 画面の外に居る行は空にする = 右端から現れ、右端へ消える。
-func slideInWindow(window []string, progress float64, width int, closing bool) []string {
-	out := make([]string, 0, len(window))
-	last := max(len(window)-1, 1)
-	for i, ln := range window {
-		ratio := rowOffsetRatio(progress, i, last, closing)
-		switch {
-		case ratio <= 0:
-			out = append(out, ln) // 着地済み
-			continue
-		case ratio >= 1 || ln == "":
-			out = append(out, "") // まだ画面外 (または元から空行)
-			continue
-		}
-		off := int(math.Round(ratio * float64(width)))
-		if off >= width {
-			out = append(out, "") // 端数で幅ぴったりまで押し出された (空白だけの行を残さない)
-			continue
-		}
-		out = append(out, padSpaces(off)+clipToWidth(ln, width-off))
-	}
-	return out
-}
-
-// rowOffsetRatio は行 i の横ずれを幅に対する割合で返す (0 = 着地、1 = 画面外)。
-//
-// 入ってくる向きだけ easeOutCubic で終端を減速させ、行ごとに開始をずらす (stagger)。着地する
-// ものは減速しないと「カクッ」と止まって見え、ずらしがあると上から順に流れ込んで見える。
-//
-// 🚨 出ていく向きにこの作法を流用しないこと。板には着地点が無いので、終端の減速は「もう画面から
-// 消えているのに畳まれない時間」に化ける (easeOutCubic だと 280 桁端末で残り 100ms が真っ白)。
-// ずらしも視線のある最上行を最後に回して動き出しを遅らせる。出ていくときは全行同時・等速。
-func rowOffsetRatio(progress float64, i, last int, closing bool) float64 {
-	if closing {
-		return 1 - progress // 板が 1 枚まるごと等速で右へ抜ける
-	}
-	delay := issuesAnimStagger * float64(i) / float64(last)
-	return 1 - easeOutCubicFloat((progress-delay)/(1-issuesAnimStagger))
-}
-
-// easeOutCubicFloat は 0..1 の進みを easeOutCubic で写す (終点付近で減速)。
-// toast.go の easedShown はフレーム数ベースの同種の計算だが、あちらは箱幅への写像まで
-// 含むため共有していない (こちらは壁時計ベースの進みだけを扱う)。
-func easeOutCubicFloat(p float64) float64 {
-	q := 1 - p
-	return 1 - q*q*q
 }
 
 // headLines は現在のモードのヘッダー行 (一覧ならタブ行 + 通知、本文ならパス + 状態)。
@@ -2484,8 +2427,8 @@ func (v *issuesView) bodyLines(o issuesRenderOpts) []string {
 	// 行数は幅で変わる (Body は幅ごとに整形し直す)。幅が広がって行数が減ると論理 bodyOff が
 	// 上限を超えたまま残り、k / ctrl+u は max(bodyOff-n, 0) しか見ないので「何度押しても
 	// 画面が動かない」打鍵数が生まれる。描画で確定した行数で論理 offset を収束させて防ぐ。
-	v.bodyOff = clampScrollOffset(v.bodyOff, len(lines), rows)
-	offset := clampScrollOffset(v.bodyGlide.offset(v.bodyOff), len(lines), rows)
+	v.bodyOff = layout.ClampOffset(v.bodyOff, len(lines), rows)
+	offset := layout.ClampOffset(v.bodyGlide.Offset(v.bodyOff), len(lines), rows)
 	end := min(offset+rows, len(lines))
 	nums := v.body.SrcLines()
 	out := make([]string, 0, rows)

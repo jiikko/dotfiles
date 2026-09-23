@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"glogx/termwidth"
+	"tuikit/termwidth"
 
 	"glogx/sgr"
 )

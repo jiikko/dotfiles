@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	"glogx/sgr"
-	"glogx/termwidth"
+	"tuikit/termwidth"
 )
 
 // brailleBit は (セル内 x, セル内 y) → ドットのビット。

@@ -121,7 +121,7 @@ func TestNoSecondWidthEngine(t *testing.T) {
 
 	var offenders []string
 	checked := 0
-	err := filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
+	err := walkOwnSources(t, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}

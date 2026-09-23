@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"tuikit/layout"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -776,7 +777,7 @@ type doctorRenderOpts struct {
 func (v *doctorView) lines(o doctorRenderOpts) []string {
 	// 削除の確認 / 進捗 / 結果は全画面で差し替える (重ねると狭い幅で下の行が透けて読めなくなる)
 	if panel := v.deletePanel(o); panel != nil {
-		return padTo(panel, o.page)
+		return layout.PadTo(panel, o.page)
 	}
 	v.rows = flattenDoctorRows(v.buildRows(o))
 	v.jumpIntoDetail()
@@ -793,7 +794,7 @@ func (v *doctorView) lines(o doctorRenderOpts) []string {
 		}
 		out = append(out, truncateDisp(mark+v.rows[i].text, o.width, "…"))
 	}
-	return padTo(out, o.page)
+	return layout.PadTo(out, o.page)
 }
 
 // flattenDoctorRows は row の text から改行を落として「1 row = 1 行」を機械で守る。

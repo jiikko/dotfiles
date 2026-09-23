@@ -9,7 +9,7 @@ import (
 	"github.com/alecthomas/chroma/v2/styles"
 
 	"glogx/sgr"
-	"glogx/termwidth"
+	"tuikit/termwidth"
 )
 
 // 純粋描画層: 意味付きスパン列へ ANSI を塗る。I/O・プロセス起動・非同期はここに置かない

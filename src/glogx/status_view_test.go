@@ -620,7 +620,7 @@ func TestSlideLeftWindow(t *testing.T) {
 	if none := slideLeftWindow(window, 0, 10, false, false); none[0] != "▒" || none[3] != "▒" {
 		t.Errorf("進捗 0 がボーダー 1 桁になっていない: %q", none)
 	}
-	// 閉じは全行同時・等速 (rowOffsetRatio の closing 分岐)。5 桁 = 中身 4 + ボーダー 1
+	// 閉じは全行同時・等速 (layout.RowOffsetRatio の closing 分岐)。5 桁 = 中身 4 + ボーダー 1
 	closing := slideLeftWindow(window, 0.5, 10, true, false)
 	if closing[0] != closing[3] {
 		t.Errorf("閉じで行ごとに差が出ている: %q vs %q", closing[0], closing[3])

@@ -80,15 +80,15 @@ func TestBrowseScrollAnim(t *testing.T) {
 		prev := m.offset
 		_, cmd := m.handleKey("j")
 		if m.offset == prev {
-			if m.glide.active {
+			if m.glide.Active() {
 				t.Fatal("画面内のカーソル移動で glide が立った")
 			}
 			continue
 		}
 		// ビューポートが動いた最初の j: glide 開始
-		if !m.glide.active || m.glide.offset(m.offset) != prev || cmd == nil {
+		if !m.glide.Active() || m.glide.Offset(m.offset) != prev || cmd == nil {
 			t.Fatalf("スクロール開始で glide が仕込まれない: active=%v shown=%d prev=%d cmd=%v",
-				m.glide.active, m.glide.offset(m.offset), prev, cmd != nil)
+				m.glide.Active(), m.glide.Offset(m.offset), prev, cmd != nil)
 		}
 		scrolled = true
 		break
@@ -98,7 +98,7 @@ func TestBrowseScrollAnim(t *testing.T) {
 	}
 	// 連打: glide 中の次の j は積まず即スナップ (押した分だけ遅延する体感を避ける)
 	m.handleKey("j")
-	if m.glide.active {
+	if m.glide.Active() {
 		t.Fatal("glide 中の j で glide が積まれた (即スナップのはず)")
 	}
 }
@@ -110,9 +110,9 @@ func TestBrowseScrollAnimNoHeightCap(t *testing.T) {
 	m.statuses = statusesFor(m, StateSuccess)
 	m.offset = 40 // ensureCursorVisible が背高コミットで飛ばした後を想定した大ジャンプ
 	cmd := m.startScrollAnim(0)
-	if !m.glide.active || m.glide.offset(m.offset) != 0 || cmd == nil {
+	if !m.glide.Active() || m.glide.Offset(m.offset) != 0 || cmd == nil {
 		t.Fatalf("大ジャンプが animate されない: active=%v shown=%d cmd=%v",
-			m.glide.active, m.glide.offset(m.offset), cmd != nil)
+			m.glide.Active(), m.glide.Offset(m.offset), cmd != nil)
 	}
 }
 
@@ -493,7 +493,7 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 		{"pullAnimating", func(m *browseModel) { m.pullAnimating = true }},
 		{"pushAnimating", func(m *browseModel) { m.pushAnimating = true }},
 		{"pushSlides", func(m *browseModel) { m.pushSlides = map[string]time.Time{"a": time.Now()} }},
-		{"scrollAnim", func(m *browseModel) { m.glide.active = true }},
+		{"scrollAnim", func(m *browseModel) { m.glide.Start(0, 1, scrollAnimFrames) }},
 		{"toast.animating", func(m *browseModel) { m.toast.phase = toastEntering }},
 		{"awaitCI", func(m *browseModel) { m.awaitCI = map[string]bool{"a": true} }},
 		{"detailsLoading", func(m *browseModel) { m.detailsLoading["a"] = true }},
@@ -512,8 +512,8 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 		// 🚨 以下 3 つは「全テストスイートを生き残る」ことを変異で実測した無防備な源
 		// (2026-08-13 の敵対的レビュー)。前 2 つは tickInterval 経由、3 つ目は上の
 		// statusOv.fetching の第 2 disjunct で、そこだけ覆えていなかった。
-		{"diffOv.animating", func(m *browseModel) { m.diffOv.glide.active = true }},
-		{"issuesOv.bodyGlide", func(m *browseModel) { m.issuesOv.bodyGlide.active = true }},
+		{"diffOv.animating", func(m *browseModel) { m.diffOv.glide.Start(0, 1, scrollAnimFrames) }},
+		{"issuesOv.bodyGlide", func(m *browseModel) { m.issuesOv.bodyGlide.Start(0, 1, scrollAnimFrames) }},
 		{"statusOv.preview.fetching", func(m *browseModel) { m.statusOv.preview.begin("k") }},
 	}
 	// 前提: 何も動いていない model は false (これが false でないと以下の検証が無意味になる)

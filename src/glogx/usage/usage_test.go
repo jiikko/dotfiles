@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"glogx/termwidth"
+	"tuikit/termwidth"
 )
 
 // colOf は行内の sub が始まる表示幅カラム位置を返す (CJK 幅考慮、ANSI 無し行専用)。

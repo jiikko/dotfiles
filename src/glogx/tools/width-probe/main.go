@@ -28,8 +28,8 @@ import (
 	"github.com/rivo/uniseg"
 	"golang.org/x/term"
 
-	"glogx/termwidth"
-	"glogx/widthenv"
+	"tuikit/termwidth"
+	"tuikit/widthenv"
 )
 
 type probe struct {

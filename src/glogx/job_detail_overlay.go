@@ -1,6 +1,10 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+
+	"tuikit/layout"
+)
 
 // jobDetailOverlay は job 詳細 (annotations / ログ tail) の第 2 ポップアップの状態と描画。
 // diffOverlay と同型の pager だが、diffOverlay が自前の識別子 (sha) を所有するのに対し、こちらは
@@ -125,8 +129,8 @@ func (o *jobDetailOverlay) boxLines(width int, colored bool, spinner, name, key 
 		// job 詳細 11 打鍵)。描画で確定した行数・窓で論理 offset を収束させて防ぐ
 		// (issues_view.go の bodyOff が同じ規律。🚨 pagerScrollKey の k 腕に clamp を足す形は
 		// 不可: job 詳細のスクロールは pagerScrollKey を通らない手書きなので片面しか直らない)。
-		o.offset = clampScrollOffset(o.offset, len(lines), rows)
-		start := clampScrollOffset(o.offset, len(lines), rows)
+		o.offset = layout.ClampOffset(o.offset, len(lines), rows)
+		start := layout.ClampOffset(o.offset, len(lines), rows)
 		end := min(start+rows, len(lines))
 		body = make([]string, 0, end-start)
 		for _, l := range lines[start:end] {

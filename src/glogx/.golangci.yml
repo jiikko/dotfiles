@@ -84,12 +84,13 @@ linters:
         # issues/wrap.go を除外していたが、分割器が 2 本ある限り列不変条件は閉じなかった
         # (uniseg=Unicode 15 / x/ansi=16 の版差で 2-rune クラスタの走査に違反 744 件)。
         # import 別名を使った持ち込みもここで止まる。シンボル名の走査は
-        # width_test.go:TestNoSecondWidthEngine が担当 (termwidth/ も走査範囲)。両輪。
+        # width_test.go:TestNoSecondWidthEngine が担当 (tuikit も走査範囲。own_sources_test.go)。両輪。
+        # termwidth は tuikit へ移ったので、fast-path の総当たり検証 (width_fast_test.go) の除外は
+        # tuikit/.golangci.yml が持つ。
         uniseg-split-only:
           files:
             - "**/*.go"
             - "!**/width_test.go"
-            - "!**/width_fast_test.go"   # fast-path の受理集合をクラスタ数で総当たり検証する (幅は測らない)
             # width-probe は「端末がどの幅モデルと一致するか」を測る道具で、3 モデル
             # (ansi.StringWidth / ansi.StringWidthWc / uniseg.StringWidth) を並べるのが仕事。
             # 本体からは参照しない (README の tools/ の項)。issue 124
@@ -136,8 +137,7 @@ linters:
       # 空白連結の規律 (padViaPadSpaces) は production だけに掛ける。
       # 🚨 テストは期待値の組み立てに strings.Repeat が要る (frame_alloc_test.go は
       #   「PadSpaces ≡ strings.Repeat」の同値検証そのものを持っており、置換すると自己言及になる)。
-      # 🚨 termwidth.go は PadSpaces の実装本体 (上限超過分をここで Repeat に落とす)。
-      - path: (_test\.go|termwidth/termwidth\.go)
+      - path: _test\.go
         text: 空白の連結は
         linters:
           - gocritic

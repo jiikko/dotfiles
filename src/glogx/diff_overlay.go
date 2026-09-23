@@ -1,6 +1,10 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"tuikit/anim"
+	"tuikit/layout"
+)
 
 // diffOverlay はコミット diff (d キー) を最前面に重ねる pager 型オーバーレイの状態と描画。
 // usageOverlay と同じ方針で browseModel から diff の関心事 (状態 + open/scroll/receive/render)
@@ -12,7 +16,7 @@ type diffOverlay struct {
 	offset int    // スクロール位置 (行。論理 = 着地点)
 	// glide は表示位置を offset へ滑らせるスクロールアニメ (scroll_glide.go の共有型。
 	// 一覧と同じ手触りにする。ユーザー要望 2026-07-31)。
-	glide scrollGlide
+	glide anim.ScrollGlide
 	// lines は sha → 整形済み diff 行のキャッシュと取得の単発化 (line_cache.go)。
 	cache lineCache
 }
@@ -32,7 +36,7 @@ func (o *diffOverlay) fetching() bool { return o.cache.fetching() }
 func (o *diffOverlay) close() {
 	o.sha = ""
 	o.offset = 0
-	o.glide.stop() // 閉じるときに glide を残すと、次に開いた瞬間だけ古い位置から滑る
+	o.glide.Stop() // 閉じるときに glide を残すと、次に開いた瞬間だけ古い位置から滑る
 }
 
 // reset は pull 後の全面リロードでキャッシュごと破棄する (旧 SHA の残骸を持ち越さない)。
@@ -51,7 +55,7 @@ func (o *diffOverlay) open(sha string) (needFetch bool) {
 	}
 	o.sha = sha
 	o.offset = 0
-	o.glide.stop() // 開いたまま別 SHA へ差し替える経路 (J/K) で、前の半ページ送りの滑りを持ち越さない
+	o.glide.Stop() // 開いたまま別 SHA へ差し替える経路 (J/K) で、前の半ページ送りの滑りを持ち越さない
 	return o.cache.begin(sha)
 }
 
@@ -117,8 +121,8 @@ func (o *diffOverlay) boxLines(width int, colored bool, spinner string, commit *
 		// job 詳細 11 打鍵)。描画で確定した行数・窓で論理 offset を収束させて防ぐ
 		// (issues_view.go の bodyOff が同じ規律。🚨 pagerScrollKey の k 腕に clamp を足す形は
 		// 不可: job 詳細のスクロールは pagerScrollKey を通らない手書きなので片面しか直らない)。
-		o.offset = clampScrollOffset(o.offset, len(lines), rows)
-		start := clampScrollOffset(o.glide.offset(o.offset), len(lines), rows)
+		o.offset = layout.ClampOffset(o.offset, len(lines), rows)
+		start := layout.ClampOffset(o.glide.Offset(o.offset), len(lines), rows)
 		end := min(start+rows, len(lines))
 		body = append(body, lines[start:end]...)
 		title = fmt.Sprintf(" diff: %s [%d-%d/%d] %s ", commit.ShortSHA, start+1, end, len(lines), commit.Subject)
@@ -130,11 +134,11 @@ func (o *diffOverlay) boxLines(width int, colored bool, spinner string, commit *
 
 // animating は演出の途中か (tick チェーンを回すか の判定に使う。issuesView.animating /
 // statusView.animating と同じ契約)。diff は本文 pager の glide だけがアニメ源。
-func (o *diffOverlay) animating() bool { return o.glide.active }
+func (o *diffOverlay) animating() bool { return o.glide.Active() }
 
 // advanceGlide はスクロール glide を 1 フレーム進める (browseModel の tick から呼ばれる)。
 func (o *diffOverlay) advanceGlide() {
-	if o.glide.active {
-		o.glide.advance(o.offset)
+	if o.glide.Active() {
+		o.glide.Advance(o.offset)
 	}
 }

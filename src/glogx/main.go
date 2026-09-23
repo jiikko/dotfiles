@@ -19,7 +19,7 @@ import (
 
 	"golang.org/x/term"
 
-	"glogx/widthenv"
+	"tuikit/widthenv"
 )
 
 func main() {

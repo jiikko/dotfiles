@@ -10,7 +10,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"glogx/termwidth"
+	"tuikit/termwidth"
 )
 
 // issue 本文 (markdown) を端末行へ整形する層。

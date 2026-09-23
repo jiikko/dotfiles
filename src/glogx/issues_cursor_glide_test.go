@@ -39,25 +39,25 @@ func TestIssuesListSpaceStartsCursorGlide(t *testing.T) {
 	v := loadedView(manyIssues(40)...)
 	v.listLines(renderOpts(20)) // 論理 offset を描画時の行数で収束させる (本番と同じ順序)
 	v.handleKey(" ", vp(20))
-	if !v.curGlide.active {
+	if !v.curGlide.Active() {
 		t.Fatal("Space の半ページ移動でカーソル滑走が始まっていない")
 	}
-	if v.curGlide.fromCursor != 0 || v.cursor == 0 {
-		t.Fatalf("論理カーソルが即着地していない: from=%d cursor=%d", v.curGlide.fromCursor, v.cursor)
+	if v.curGlide.From() != 0 || v.cursor == 0 {
+		t.Fatalf("論理カーソルが即着地していない: from=%d cursor=%d", v.curGlide.From(), v.cursor)
 	}
 	// 滑走の途中では描画カーソルが起点と着地点の「あいだ」にいる (どちらとも違う)。
 	v.advanceGlide()
 	v.advanceGlide()
 	got := v.dispCursor(v.offset, 20)
-	if got <= v.curGlide.fromCursor || got >= v.cursor {
-		t.Fatalf("描画カーソルが途中位置にいない: from=%d disp=%d cursor=%d", v.curGlide.fromCursor, got, v.cursor)
+	if got <= v.curGlide.From() || got >= v.cursor {
+		t.Fatalf("描画カーソルが途中位置にいない: from=%d disp=%d cursor=%d", v.curGlide.From(), got, v.cursor)
 	}
 	// 最終フレームで論理カーソルへ着地し、tick を止める。
 	for range cursorAnimFrames {
 		v.advanceGlide()
 	}
-	if v.curGlide.active || v.dispCursor(v.offset, 20) != v.cursor {
-		t.Fatalf("着地していない: active=%v disp=%d cursor=%d", v.curGlide.active, v.dispCursor(v.offset, 20), v.cursor)
+	if v.curGlide.Active() || v.dispCursor(v.offset, 20) != v.cursor {
+		t.Fatalf("着地していない: active=%v disp=%d cursor=%d", v.curGlide.Active(), v.dispCursor(v.offset, 20), v.cursor)
 	}
 }
 
@@ -66,7 +66,7 @@ func TestIssuesListLineMoveHasNoGlide(t *testing.T) {
 	v.listLines(renderOpts(20))
 	for _, key := range []string{"j", "k", "G", "g"} {
 		v.handleKey(key, vp(20))
-		if v.curGlide.active {
+		if v.curGlide.Active() {
 			t.Fatalf("%q は滑走に載せない (1 行移動と端ジャンプは距離の意味が違う)", key)
 		}
 	}
@@ -78,7 +78,7 @@ func TestIssuesListGlideKeepsCursorInsideWindow(t *testing.T) {
 	v.handleKey(" ", vp(20)) // 窓が動く距離を作る
 	v.handleKey(" ", vp(20))
 	v.handleKey(" ", vp(20))
-	if !v.curGlide.active {
+	if !v.curGlide.Active() {
 		t.Fatal("前提: 3 回目の Space で滑走が始まっていない")
 	}
 	// 全フレームで「窓は表示カーソルを含む」= カーソル行が必ず 1 本描かれる。
@@ -96,37 +96,17 @@ func TestIssuesListNextKeyLandsGlideImmediately(t *testing.T) {
 	v.listLines(renderOpts(20))
 	v.handleKey(" ", vp(20))
 	v.advanceGlide()
-	if !v.curGlide.active {
+	if !v.curGlide.Active() {
 		t.Fatal("前提: 滑走中でない")
 	}
 	v.handleKey("j", vp(20)) // 次のキーは着地点に効く (描画も即座に追いつく)
-	if v.curGlide.active || v.dispCursor(v.offset, 20) != v.cursor {
-		t.Fatalf("次のキーで着地していない: active=%v disp=%d cursor=%d", v.curGlide.active, v.dispCursor(v.offset, 20), v.cursor)
-	}
-}
-
-func TestCursorEaseOutBackOvershootsThenLands(t *testing.T) {
-	if got := cursorEaseOutBack(0); got != 0 {
-		t.Fatalf("t=0 で 0 でない: %v", got)
-	}
-	if got := cursorEaseOutBack(1); got != 1 {
-		t.Fatalf("t=1 で 1 でない: %v", got)
-	}
-	// 着地の手前で 1 を超える (行き過ぎて戻る = ease-out-back の主張そのもの)。
-	over := false
-	for i := 1; i < 100; i++ {
-		if cursorEaseOutBack(float64(i)/100) > 1 {
-			over = true
-			break
-		}
-	}
-	if !over {
-		t.Fatal("行き過ぎが 1 度も起きない (ease-out ではあるが back ではない)")
+	if v.curGlide.Active() || v.dispCursor(v.offset, 20) != v.cursor {
+		t.Fatalf("次のキーで着地していない: active=%v disp=%d cursor=%d", v.curGlide.Active(), v.dispCursor(v.offset, 20), v.cursor)
 	}
 }
 
 // 🚨 このテストが本命: カーソルが「実際に画面の上で滑って見える」ことを守る。滑走の状態
-// (curGlide.active) や dispCursor の戻り値だけを見るテストは、描画がそれを使わなくなっても
+// (curGlide.Active()) や dispCursor の戻り値だけを見るテストは、描画がそれを使わなくなっても
 // 緑のまま通る (rowLine のカーソル判定を論理カーソルへ戻す変異が、これを足すまで全 green だった)。
 func TestIssuesListGlideMovesTheDrawnCursor(t *testing.T) {
 	v := loadedView(manyIssues(40)...)
@@ -148,8 +128,8 @@ func TestIssuesListGlideMovesTheDrawnCursor(t *testing.T) {
 	}
 	if got := drawnRow(); got == v.cursor {
 		t.Fatalf("描かれたカーソルが着地点に張り付いている (滑走が画面に出ていない): drawn=%d cursor=%d", got, v.cursor)
-	} else if got <= v.curGlide.fromCursor {
-		t.Fatalf("描かれたカーソルが起点から進んでいない: drawn=%d from=%d", got, v.curGlide.fromCursor)
+	} else if got <= v.curGlide.From() {
+		t.Fatalf("描かれたカーソルが起点から進んでいない: drawn=%d from=%d", got, v.curGlide.From())
 	}
 
 	for range cursorAnimFrames {
@@ -167,11 +147,11 @@ func TestIssuesCloseStopsCursorGlide(t *testing.T) {
 	v := loadedView(manyIssues(40)...)
 	v.listLines(renderOpts(20))
 	v.handleKey(" ", vp(20))
-	if !v.curGlide.active {
+	if !v.curGlide.Active() {
 		t.Fatal("前提: 滑走が始まっていない")
 	}
 	v.close()
-	if v.curGlide.active {
+	if v.curGlide.Active() {
 		t.Error("close でカーソルの滑走が残る")
 	}
 }

@@ -62,9 +62,9 @@ func TestZoomWindowPassesThroughWhenOpen(t *testing.T) {
 // 起動は開く演出から始まり、時間で着地する。
 func TestAppZoomOpensAndSettles(t *testing.T) {
 	now := time.Unix(1000, 0)
-	var z appZoom
+	z := newAppZoom()
 	if z.scale(now) != 1 {
-		t.Fatal("zero value は演出なし (実画面) のはず")
+		t.Fatal("newAppZoom は演出なし (実画面) から始まるはず")
 	}
 	z.start(now)
 	if !z.animating(now) || z.scale(now) != 0 {
@@ -204,7 +204,7 @@ func TestZoomFrameRateDropsAfterSettle(t *testing.T) {
 // 残り 31% は絵が変わらない (開くときは早々に静止、閉じるときは 68ms 何も起きてから縮み始める)。
 // scale が終点を snap 閾値に合わせているかを、値でなく「最後まで動くか」で縛る。
 func TestZoomMovesForWholeDuration(t *testing.T) {
-	var z appZoom
+	z := newAppZoom()
 	now := time.Unix(1000, 0)
 	z.start(now)
 
@@ -214,7 +214,7 @@ func TestZoomMovesForWholeDuration(t *testing.T) {
 		t.Fatalf("所要の終わり際に絵が止まっている (scale=%v ≥ snap=%v)", s, appZoomSnap)
 	}
 	// 閉じるときも同じ (開始直後に「何も起きない時間」を作らない)
-	var c appZoom
+	c := newAppZoom()
 	c.startClose(now)
 	justAfter := now.Add(appZoomDuration / 20) // 所要の 5% 経過
 	if s := c.scale(justAfter); s >= appZoomSnap {
