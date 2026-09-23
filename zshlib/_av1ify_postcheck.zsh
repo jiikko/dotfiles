@@ -98,10 +98,22 @@ __av1ify_get_stream_end() {
 # __av1ify_get_stream_end のフォールバックと、avsync 判定の再検証で共用する。
 #
 # 引数: $1 = ファイルパス, $2 = stream specifier (例: v:0, a:0)
+#       $3 = force_full (省略時 0)。1 を渡すと末尾区間の seek 最適化を使わず、
+#       最初から全 packet 走査する (下記 🚨 参照)。
 # 出力: REPLY = 表示終端 max(pts_time + duration_time) [秒] (取得不能なら空)
 # 戻り値: 0=取得成功, 1=取得不能
+#
+# 🚨 seek 最適化 (末尾 60s だけ読む) は、宣言 duration 自体が水増しされた壊れた
+# コンテナ (idx1 が実データを超える AVI 等) では**実データの終端を素通りして
+# 存在しない位置へ着地し、宣言値に近い誤った値を返す**ことがある (実測 issue 412:
+# 実終端 9312.67s のソースで seek 版が 9364.72s = 宣言値とほぼ同値を返した)。
+# この場合 __av1ify_is_num は通ってしまう (値は構文的に正常) ため、呼び出し側は
+# 「値が取れたか」では検出できない。既に閾値超過で再測定に入っている経路
+# (vidloss/avsync の降格判定) でさらに疑わしいときは、force_full=1 で
+# 全走査に強制すること。全走査は demux のみ (デコードなし) なので
+# 1.5GB クラスでも 1 秒未満で終わる (実測)。
 __av1ify_packet_end() {
-  local file="$1" spec="$2" val fmt_dur start
+  local file="$1" spec="$2" force_full="${3:-0}" val fmt_dur start
   # 🚨 「packet 列の最後の行の pts_time」を終端に使わないこと。
   # packet はデコード順で出るため、B-frame の表示順入れ替えで最終行が最大 PTS に
   # ならない (実測: 1fps / x264 bframes=16 の 20s ソースで最終行 18.0s に対し実際の
@@ -116,15 +128,18 @@ __av1ify_packet_end() {
   END { if (seen) printf "%.6f", max }'
   # 末尾 60s 区間だけ走査する (5GB クラスでも数秒オーダー)。
   # ffprobe -read_intervals "START%" で START 秒から末尾までを読む。
-  fmt_dur=$(__ff_format_field "$file" format=duration)
-  if __av1ify_is_num "$fmt_dur"; then
-    start=$(LC_ALL=C awk -v d="$fmt_dur" 'BEGIN { s = d - 60; if (s < 0) s = 0; printf "%.0f", s }')
-    val=$(ffprobe -v error -read_intervals "${start}%" -select_streams "$spec" \
-          -show_entries packet=pts_time,duration_time -of csv=p=0 -- "$file" 2>/dev/null \
-          | LC_ALL=C awk -F, "$prog")
-    if __av1ify_is_num "$val"; then
-      REPLY="$val"
-      return 0
+  # force_full=1 のときはこの最適化を丸ごとスキップして下の全走査へ進む。
+  if (( ! force_full )); then
+    fmt_dur=$(__ff_format_field "$file" format=duration)
+    if __av1ify_is_num "$fmt_dur"; then
+      start=$(LC_ALL=C awk -v d="$fmt_dur" 'BEGIN { s = d - 60; if (s < 0) s = 0; printf "%.0f", s }')
+      val=$(ffprobe -v error -read_intervals "${start}%" -select_streams "$spec" \
+            -show_entries packet=pts_time,duration_time -of csv=p=0 -- "$file" 2>/dev/null \
+            | LC_ALL=C awk -F, "$prog")
+      if __av1ify_is_num "$val"; then
+        REPLY="$val"
+        return 0
+      fi
     fi
   fi
   # 最後の手段: 全 packet 走査 (区間スキャンで packet が拾えない超変則ケース用)
@@ -132,6 +147,38 @@ __av1ify_packet_end() {
         -of csv=p=0 -- "$file" 2>/dev/null \
         | LC_ALL=C awk -F, "$prog")
   if __av1ify_is_num "$val"; then
+    REPLY="$val"
+    return 0
+  fi
+  REPLY=""
+  return 1
+}
+
+# 内部補助: 実パケット数を取得 (seek を使わない全走査)
+#
+# frames チェック (下記) の再測定専用。コンテナの宣言 nb_frames が壊れている
+# (idx1 が実データを超えて水増しされた AVI 等) と、実際のフレーム数と乖離しうる
+# (実測 issue 412: 宣言 280,661 に対し実パケット数 278,888)。demux のみで
+# デコードを伴わないため、1.5GB クラスでも 1 秒未満で終わる (実測)。
+#
+# 引数: $1 = ファイルパス, $2 = stream specifier (例: v:0)
+# 出力: REPLY = 実パケット数 (取得不能なら空)
+# 戻り値: 0=取得成功, 1=取得不能
+#
+# 🚨 既知の限界 (issue 412 の敵対的レビューで指摘): 測っているのは「パケット数」で
+# あって「フレーム数」そのものではない。映像ストリームでは 1 packet = 1 frame が
+# 一般的な前提 (`nb_frames` 自体も多くの実装でこれを前提に算出される) だが、
+# コーデック/コンテナによっては 1 packet に複数フレームが入る、あるいは 1 フレームが
+# 複数 packet に分割される形がありうる。その場合、実フレームが欠落していても
+# パケット数の差が許容内に収まり降格してしまう可能性がある。全走査でのデコードは
+# 「壊れた index の影響を受けない」利点と引き換えに遅く、かつ本 issue の実ファイルの
+# ように**ビットストリーム自体に別の破損 (corrupt decoded frame 等) がある場合は
+# デコード結果自体が信用できない**ため、意図的にデコードを避けて packet 数で妥協している。
+__av1ify_count_packets() {
+  local file="$1" spec="$2" val
+  val=$(ffprobe -v error -select_streams "$spec" -count_packets \
+        -show_entries stream=nb_read_packets -of default=nk=1:nw=1 -- "$file" 2>/dev/null | head -n1)
+  if [[ "$val" =~ ^[0-9]+$ ]]; then
     REPLY="$val"
     return 0
   fi
@@ -393,8 +440,34 @@ __av1ify_postcheck() {
                 print -r -- ">> 映像尺判定: 宣言 duration ベースでは Δ=${vidloss_diff}s だが packet 実測では Δ=${m_diff}s のため正常と判定 (宣言 duration が不正確)"
                 vidloss_bad=0
               else
-                # packet 実測でも欠落が残る = 本物。実測値へ更新して報告する
-                vidloss_diff="$m_diff"
+                # 末尾区間の packet 実測 (seek 最適化) でも欠落が残る。ただし
+                # この seek 最適化自体が、宣言 duration が水増しされた壊れた
+                # コンテナ (idx1 が実データを超える AVI 等) では実データの終端を
+                # 素通りして宣言値に近い誤った値を再現することがある
+                # (実測 issue 412: 区間 seek 版が宣言値とほぼ同値の 9364.72s を
+                # 返し、全走査だと実際の終端 9312.67s が出た)。この経路に来るのは
+                # 既に2段階の閾値超過を経た後なので、全走査に強制して最終確認する。
+                local f_src_v f_out_v
+                if __av1ify_packet_end "$src_path" "v:0" 1 && f_src_v="$REPLY" \
+                  && __av1ify_packet_end "$filepath" "v:0" 1 && f_out_v="$REPLY"; then
+                  local f_diff
+                  f_diff=$(awk -v s="$f_src_v" -v o="$f_out_v" 'BEGIN{ d=s-o; if (d<0) d=-d; printf "%.3f", d }' 2>/dev/null) || f_diff=""
+                  if [[ -n "$f_diff" ]]; then
+                    local -F f_diff_f
+                    f_diff_f=$f_diff
+                    if (( f_diff_f <= vidloss_threshold_f )); then
+                      print -r -- ">> 映像尺判定: 末尾区間の packet 実測でも Δ=${m_diff}s だったが、全走査では Δ=${f_diff}s のため正常と判定 (区間 seek が壊れた index に着地していた)"
+                      vidloss_bad=0
+                    fi
+                    vidloss_diff="$f_diff"
+                  else
+                    vidloss_diff="$m_diff"
+                  fi
+                else
+                  # 全走査自体が失敗した場合は判定不能。区間 seek の実測値を維持する
+                  # (降格には実測の裏付けが要る)。
+                  vidloss_diff="$m_diff"
+                fi
               fi
             fi
             # m_diff が算出不能 (awk 失敗) なケースは vidloss_bad=1 のまま (宣言ベースを維持)
@@ -425,8 +498,48 @@ __av1ify_postcheck() {
         dur_diff_f=$dur_diff
         dur_threshold_f=$dur_threshold
         if (( dur_diff_f > dur_threshold_f )); then
-          issues+=("再生時間ズレ (src=${src_fmt_dur}s, out=${out_fmt_dur}s, Δ=${dur_diff}s)")
-          suffixes+=("duration")
+          # 宣言 format=duration 自体が水増しされた壊れたコンテナ (idx1 が実データを
+          # 超える AVI 等) だと、この不一致は encode 由来ではなく宣言値の誤りに
+          # すぎないことがある (実測 issue 412)。閾値超過時だけ、映像・音声それぞれの
+          # 実終端 (全走査) から「真の再生時間」を測り直して再確認する。
+          # 🚨 音声も見ること: vidloss は映像だけを見るため、映像は完全一致していて
+          # 音声だけ欠落/延長しているケースを検出できない (このブロックの上のコメント
+          # 参照)。ここで映像だけ再測定すると同じ穴が復活するので、音声ストリームが
+          # 在るなら必ず一緒に測る。出力 (av1ify が直後に生成した mp4) の宣言値は
+          # 信頼できるとみなし、ソース側だけ実測し直す。
+          local dur_bad=1 true_src_v
+          if __av1ify_packet_end "$src_path" "v:0" 1 && true_src_v="$REPLY"; then
+            local true_src_dur="$true_src_v" true_measured=1
+            if [[ -n "$audio_stream" ]]; then
+              local true_src_a
+              if __av1ify_packet_end "$src_path" "a:0" 1 && true_src_a="$REPLY"; then
+                local a_bigger
+                a_bigger=$(awk -v a="$true_src_a" -v v="$true_src_dur" 'BEGIN{ print (a>v)?1:0 }' 2>/dev/null) || a_bigger=0
+                (( a_bigger )) && true_src_dur="$true_src_a"
+              else
+                # 音声ストリームが在るのに実測できない = 判定不能。降格しない。
+                true_measured=0
+              fi
+            fi
+            if (( true_measured )); then
+              local true_dur_diff
+              true_dur_diff=$(awk -v s="$true_src_dur" -v o="$out_fmt_dur" 'BEGIN{ d=s-o; if (d<0) d=-d; printf "%.3f", d }' 2>/dev/null) || true_dur_diff=""
+              if [[ -n "$true_dur_diff" ]]; then
+                local -F true_dur_diff_f
+                true_dur_diff_f=$true_dur_diff
+                if (( true_dur_diff_f <= dur_threshold_f )); then
+                  print -r -- ">> 再生時間判定: 宣言 format=duration では Δ=${dur_diff}s だが実測 (映像/音声終端の全走査) では Δ=${true_dur_diff}s のため正常と判定 (宣言 duration が水増し)"
+                  dur_bad=0
+                fi
+              fi
+            fi
+          fi
+          # 実測自体が失敗した場合も dur_bad=1 のまま (判定不能を降格の根拠にしない。
+          # 既存の vidloss 降格と同じ fail-safe 方針)。
+          if (( dur_bad )); then
+            issues+=("再生時間ズレ (src=${src_fmt_dur}s, out=${out_fmt_dur}s, Δ=${dur_diff}s)")
+            suffixes+=("duration")
+          fi
         fi
       fi
     fi
@@ -578,8 +691,25 @@ __av1ify_postcheck() {
       local -i rel_tolerance=$(( src_frames * frame_tol_pct / 100.0 )) # -i 代入で切り捨て
       (( rel_tolerance > frame_tolerance )) && frame_tolerance=$rel_tolerance
       if (( frame_diff > frame_tolerance )); then
-        issues+=("フレーム数不一致 (src=${src_frames}, out=${out_frames}, Δ=${frame_diff}, 許容=${frame_tolerance})")
-        suffixes+=("frames")
+        # 宣言 nb_frames 自体が水増しされた壊れたコンテナ (idx1 が実データを超える
+        # AVI 等) だと、この不一致は encode 由来の欠落ではなく宣言値の誤りにすぎない
+        # (実測 issue 412)。閾値超過時だけ実パケット数 (seek なし全走査) で再確認し、
+        # そちらが許容内なら降格する。
+        local true_src_frames true_out_frames frames_confirmed=1
+        if __av1ify_count_packets "$src_path" v:0 && true_src_frames="$REPLY" \
+          && __av1ify_count_packets "$filepath" v:0 && true_out_frames="$REPLY"; then
+          local true_frame_diff=$(( true_src_frames > true_out_frames ? true_src_frames - true_out_frames : true_out_frames - true_src_frames ))
+          if (( true_frame_diff <= frame_tolerance )); then
+            frames_confirmed=0
+            print -r -- ">> フレーム数判定: 宣言 nb_frames では Δ=${frame_diff} だが実パケット数 (全走査) では Δ=${true_frame_diff} のため正常と判定 (宣言 nb_frames が水増し。src実測=${true_src_frames}, out実測=${true_out_frames})"
+          fi
+        fi
+        # 実パケット数の取得自体が失敗した場合は判定不能。frames_confirmed=1 のまま
+        # (降格には実測の裏付けが要る。既存の vidloss 降格と同じ fail-safe 方針)。
+        if (( frames_confirmed )); then
+          issues+=("フレーム数不一致 (src=${src_frames}, out=${out_frames}, Δ=${frame_diff}, 許容=${frame_tolerance})")
+          suffixes+=("frames")
+        fi
       fi
     fi
   fi

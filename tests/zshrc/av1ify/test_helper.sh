@@ -121,6 +121,16 @@ elif echo "$*" | grep -q "stream=bit_rate"; then
   # 音声ポリシーを変えるたびに巻き添えで壊れる。再エンコード側を検証したいテストは
   # MOCK_AUDIO_BITRATE を閾値超へ明示設定すること。
   echo "${MOCK_AUDIO_BITRATE-96000}"
+elif echo "$*" | grep -q "nb_read_packets"; then
+  # __av1ify_count_packets 用 (issue 412)。壊れたコンテナで宣言 nb_frames が
+  # 実データより多い場合の「実パケット数」を模す。未設定なら nb_frames と同じ値
+  # (= 既定は宣言値と実測値が一致し、frames チェックの挙動は従来どおり)。
+  last_arg=""
+  for arg in "$@"; do last_arg="$arg"; done
+  case "$last_arg" in
+    *-enc*|*check_ng*) echo "${MOCK_OUTPUT_PACKET_COUNT-${MOCK_OUTPUT_NB_FRAMES-${MOCK_NB_FRAMES-300}}}" ;;
+    *) echo "${MOCK_PACKET_COUNT-${MOCK_NB_FRAMES-300}}" ;;
+  esac
 elif echo "$*" | grep -q "nb_frames"; then
   last_arg=""
   for arg in "$@"; do last_arg="$arg"; done
@@ -179,17 +189,45 @@ elif echo "$*" | grep -q "packet=pts_time"; then
   # 既定は 1 行だけ返す簡易モック。本物の ffprobe が返す packet 列と違い
   # 「表示終端そのもの」を返す = MOCK_*_DURATION と同値になる。実装側は
   # max(pts+duration) を取るので、単一行モックでも表示終端の意味は一致する。
+  #
+  # -read_intervals の有無で「区間 seek 版」と「全走査版 (force_full=1 または
+  # 区間 seek 失敗時のフォールバック)」を区別する (issue 412: 壊れたコンテナでは
+  # 区間 seek が実データと違う値を返すことがあり、それを全走査が救う経路の
+  # 回帰テストには両者を別の値で返せる必要がある)。MOCK_*_LAST_PTS_FULL を
+  # 設定しなければ区間 seek 版と同じ値を返す (既定は従来どおり両者が一致)。
+  full_scan=0
+  echo "$*" | grep -q "read_intervals" || full_scan=1
   last_arg=""
   for arg in "$@"; do last_arg="$arg"; done
   if echo "$*" | grep -q "select_streams v"; then
     case "$last_arg" in
-      *-enc*|*check_ng*) echo "${MOCK_OUTPUT_VIDEO_LAST_PTS-${MOCK_OUTPUT_VIDEO_DURATION-${MOCK_VIDEO_LAST_PTS-${MOCK_VIDEO_DURATION-10.0}}}}" ;;
-      *) echo "${MOCK_VIDEO_LAST_PTS-${MOCK_VIDEO_DURATION-10.0}}" ;;
+      *-enc*|*check_ng*)
+        if [ "$full_scan" = 1 ] && [ -n "${MOCK_OUTPUT_VIDEO_LAST_PTS_FULL-}" ]; then
+          echo "$MOCK_OUTPUT_VIDEO_LAST_PTS_FULL"
+        else
+          echo "${MOCK_OUTPUT_VIDEO_LAST_PTS-${MOCK_OUTPUT_VIDEO_DURATION-${MOCK_VIDEO_LAST_PTS-${MOCK_VIDEO_DURATION-10.0}}}}"
+        fi ;;
+      *)
+        if [ "$full_scan" = 1 ] && [ -n "${MOCK_VIDEO_LAST_PTS_FULL-}" ]; then
+          echo "$MOCK_VIDEO_LAST_PTS_FULL"
+        else
+          echo "${MOCK_VIDEO_LAST_PTS-${MOCK_VIDEO_DURATION-10.0}}"
+        fi ;;
     esac
   elif echo "$*" | grep -q "select_streams a"; then
     case "$last_arg" in
-      *-enc*|*check_ng*) echo "${MOCK_OUTPUT_AUDIO_LAST_PTS-${MOCK_OUTPUT_AUDIO_DURATION-${MOCK_AUDIO_LAST_PTS-${MOCK_AUDIO_DURATION-10.0}}}}" ;;
-      *) echo "${MOCK_AUDIO_LAST_PTS-${MOCK_AUDIO_DURATION-10.0}}" ;;
+      *-enc*|*check_ng*)
+        if [ "$full_scan" = 1 ] && [ -n "${MOCK_OUTPUT_AUDIO_LAST_PTS_FULL-}" ]; then
+          echo "$MOCK_OUTPUT_AUDIO_LAST_PTS_FULL"
+        else
+          echo "${MOCK_OUTPUT_AUDIO_LAST_PTS-${MOCK_OUTPUT_AUDIO_DURATION-${MOCK_AUDIO_LAST_PTS-${MOCK_AUDIO_DURATION-10.0}}}}"
+        fi ;;
+      *)
+        if [ "$full_scan" = 1 ] && [ -n "${MOCK_AUDIO_LAST_PTS_FULL-}" ]; then
+          echo "$MOCK_AUDIO_LAST_PTS_FULL"
+        else
+          echo "${MOCK_AUDIO_LAST_PTS-${MOCK_AUDIO_DURATION-10.0}}"
+        fi ;;
     esac
   fi
 elif echo "$*" | grep -q "packet=dts"; then

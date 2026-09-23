@@ -793,4 +793,126 @@ assert_file_exists "$TEST_DIR/keep.mp4" "Source preserved when output not genera
 assert_file_not_exists "$TEST_DIR/out.av1.mp4" "No bogus output left behind"
 (( rc == 1 )) || { bad '✗ finalize should return 1 (NG) on missing output\n'; exit 1; }
 
+# ----------------------------------------------------------------------
+# issue 412: 宣言メタデータ (nb_frames / format=duration) が実データを超えて
+# 水増しされた壊れたコンテナ (idx1 が実データを超える AVI 等) を、実パケット数 /
+# 全走査での終端実測で救う再確認。Test 91-95 は各検査を単独で、Test 96 は
+# 実際に報告された事故 (frames/duration/vidloss が同時に NG) を再現する。
+# ----------------------------------------------------------------------
+
+# Test 91: 宣言 nb_frames は水増しだが、実パケット数 (全走査) は一致 -> 降格
+printf '\n## Test 91: declared nb_frames overstated but real packet count matches - downgraded\n'
+TEST_DIR="$TEST_TMP/test91"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+output=$(MOCK_NB_FRAMES=280661 MOCK_OUTPUT_NB_FRAMES=278888 \
+         MOCK_PACKET_COUNT=278888 MOCK_OUTPUT_PACKET_COUNT=278888 \
+         av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_not_contains "$output" "フレーム数不一致" "Declared nb_frames mismatch is downgraded"
+assert_contains "$output" "フレーム数判定" "Downgrade re-measurement is reported to the user"
+assert_not_contains "$output" "check_ng" "Output is not marked as check_ng"
+
+# Test 92: 宣言・実パケット数とも不一致 (本物の欠落) は Test 91 の緩和後も検出される
+printf '\n## Test 92: genuine frame loss (real packet count also differs) still flagged\n'
+TEST_DIR="$TEST_TMP/test92"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+output=$(MOCK_NB_FRAMES=300 MOCK_OUTPUT_NB_FRAMES=250 \
+         MOCK_PACKET_COUNT=300 MOCK_OUTPUT_PACKET_COUNT=250 \
+         av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "フレーム数不一致" "Genuine frame loss survives packet re-measurement"
+assert_contains "$output" "check_ng" "Output is marked as check_ng"
+
+# Test 93: 宣言 format=duration は水増しだが、映像・音声それぞれの全走査終端は
+# 出力と一致 -> 降格
+#
+# 🚨 MOCK_VIDEO_DURATION / MOCK_AUDIO_DURATION (ストリーム個別の宣言 duration) は
+# src/out で揃えておくこと。揃えないと本テストの対象外の検査 (avsync/vidloss、
+# さらにその手前の入力破損チェック __video_health_check の映像/コンテナ duration
+# 比率検査) が横から NG を出し、duration チェック単独の挙動を検証できなくなる。
+printf '\n## Test 93: declared format=duration overstated but full-scan ends match - downgraded\n'
+TEST_DIR="$TEST_TMP/test93"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+output=$(MOCK_VIDEO_DURATION=9312.67 MOCK_AUDIO_DURATION=9312.67 \
+         MOCK_OUTPUT_VIDEO_DURATION=9312.67 MOCK_OUTPUT_AUDIO_DURATION=9312.67 \
+         MOCK_FORMAT_DURATION=9364.72 MOCK_OUTPUT_FORMAT_DURATION=9312.96 \
+         MOCK_AUDIO_LAST_PTS_FULL=9312.96 \
+         av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_not_contains "$output" "再生時間ズレ" "Declared duration mismatch is downgraded"
+assert_contains "$output" "再生時間判定" "Downgrade re-measurement is reported to the user"
+assert_not_contains "$output" "check_ng" "Output is not marked as check_ng"
+
+# Test 94: 映像は全走査で一致するが、音声だけ本当に短くなっている場合は降格しない
+# (duration チェックが音声を無視して映像だけで判定するようになっていないかの回帰防止。
+#  vidloss は映像しか見ないため、この欠落は duration だけが守る。codex 反証レビューの
+#  P1 指摘: 映像パケット数一致だけで duration を降格すると、この欠落を隠してしまう)
+printf '\n## Test 94: audio-only truncation is not masked by a matching video full-scan\n'
+TEST_DIR="$TEST_TMP/test94"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+output=$(MOCK_VIDEO_DURATION=9312.67 MOCK_AUDIO_DURATION=9312.67 \
+         MOCK_OUTPUT_VIDEO_DURATION=9312.67 MOCK_OUTPUT_AUDIO_DURATION=9312.67 \
+         MOCK_FORMAT_DURATION=9364.72 MOCK_OUTPUT_FORMAT_DURATION=9312.96 \
+         MOCK_AUDIO_LAST_PTS_FULL=9364.72 \
+         av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "再生時間ズレ" "Genuine audio truncation still flagged despite video match"
+assert_contains "$output" "check_ng" "Output is marked as check_ng"
+
+# Test 95: 音声の全走査実測そのものが失敗したら、判定不能として降格しない
+# (fail-safe: 片方だけ実測できても、もう片方が測れないなら既存の NG を維持する)
+printf '\n## Test 95: duration re-measurement is skipped (not downgraded) when audio scan fails\n'
+TEST_DIR="$TEST_TMP/test95"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+output=$(MOCK_VIDEO_DURATION=95.0 MOCK_AUDIO_DURATION=95.0 \
+         MOCK_OUTPUT_VIDEO_DURATION=95.0 MOCK_OUTPUT_AUDIO_DURATION=95.0 \
+         MOCK_FORMAT_DURATION=100.0 MOCK_OUTPUT_FORMAT_DURATION=40.0 \
+         MOCK_AUDIO_LAST_PTS_FULL="N/A" \
+         av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "再生時間ズレ" "NG kept when audio full-scan measurement fails"
+assert_not_contains "$output" "再生時間判定" "No downgrade message when re-measurement is inconclusive"
+
+# Test 96: 実際の事故の再現 — 宣言メタデータ (nb_frames / format=duration /
+# stream=duration) が実データを超えて水増しされた壊れた AVI で、frames/duration/
+# vidloss が同時に NG になっていたが、実パケット数と全走査終端はすべて一致する
+# (issue 412 の実測値そのもの: 宣言 280,661 フレーム / 実測 278,888 フレーム)。
+# 🚨 MOCK_AUDIO_DURATION を MOCK_VIDEO_DURATION と揃えておくこと (揃えないと
+# avsync が横から NG を出し、frames/duration/vidloss の降格だけを検証できない)。
+printf '\n## Test 96: real-world repro - inflated container metadata downgrades all three checks\n'
+TEST_DIR="$TEST_TMP/test96"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+output=$(MOCK_NB_FRAMES=280661 MOCK_OUTPUT_NB_FRAMES=278888 \
+         MOCK_PACKET_COUNT=278888 MOCK_OUTPUT_PACKET_COUNT=278888 \
+         MOCK_FORMAT_DURATION=9364.72 MOCK_OUTPUT_FORMAT_DURATION=9312.96 \
+         MOCK_VIDEO_DURATION=9364.72 MOCK_OUTPUT_VIDEO_DURATION=9312.67 \
+         MOCK_AUDIO_DURATION=9364.72 MOCK_OUTPUT_AUDIO_DURATION=9312.67 \
+         MOCK_VIDEO_LAST_PTS=9364.72 MOCK_VIDEO_LAST_PTS_FULL=9312.67 \
+         MOCK_AUDIO_LAST_PTS_FULL=9312.96 \
+         av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_not_contains "$output" "フレーム数不一致" "frames NG downgraded"
+assert_not_contains "$output" "再生時間ズレ" "duration NG downgraded"
+assert_not_contains "$output" "映像ストリーム尺不一致" "vidloss NG downgraded"
+assert_not_contains "$output" "check_ng" "Output is not marked as check_ng at all"
+assert_file_exists "$TEST_DIR/input-enc.mp4" "Output renamed without any check_ng tag"
+
 printf '\n=== Postcheck Tests Completed ===\n'

@@ -217,4 +217,53 @@ output=$(MOCK_VIDEO_DURATION=100.0 MOCK_VIDEO_LAST_PTS=100.0 \
 setopt err_exit
 assert_contains "$output" "vidloss" "genuine 60s video loss still flagged after re-measurement"
 
+# ----------------------------------------------------------------------
+# Test 11: 末尾区間の packet 実測 (seek 最適化) 自体が壊れた index に着地して
+# 宣言値に近い誤った値を再現するケース (issue 412)。全走査で再確認すると
+# 一致することが分かり、正常と判定される。
+# 区別のしかた: MOCK_VIDEO_LAST_PTS (-read_intervals ありの seek 応答) は
+# 宣言値に近い壊れた値、MOCK_VIDEO_LAST_PTS_FULL (-read_intervals 無しの全走査
+# 応答) には正しい値を設定する。
+# ----------------------------------------------------------------------
+printf '\n## Test 11: interval-seek re-measurement itself is wrong, full scan corrects it\n'
+TEST_DIR="$TEST_TMP/vd_t11"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+# 🚨 MOCK_AUDIO_DURATION を src/out で揃えておくこと (未設定の既定 10.0 のままだと
+# 巨大な MOCK_VIDEO_DURATION との差で avsync が横から NG を出し、vidloss 単独の
+# 挙動を検証できなくなる)。
+output=$(MOCK_VIDEO_DURATION=9364.72 MOCK_VIDEO_LAST_PTS=9364.72 MOCK_VIDEO_LAST_PTS_FULL=9312.67 \
+         MOCK_AUDIO_DURATION=9364.72 \
+         MOCK_OUTPUT_VIDEO_DURATION=9312.67 MOCK_OUTPUT_AUDIO_DURATION=9312.67 \
+         MOCK_FORMAT_DURATION=9312.67 MOCK_OUTPUT_FORMAT_DURATION=9312.67 \
+         MOCK_NB_FRAMES=278888 MOCK_OUTPUT_NB_FRAMES=278888 \
+         av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_not_contains "$output" "vidloss" "full-scan re-measurement overrides the broken interval-seek result"
+assert_contains "$output" "区間 seek が壊れた index に着地していた" "downgrade reason is reported to the user"
+assert_file_exists "$TEST_DIR/input-enc.mp4" "Output renamed without check_ng tag"
+
+# ----------------------------------------------------------------------
+# Test 12: 全走査で再確認しても欠落が残る本物の映像喪失は、interval-seek が
+# たまたま宣言値と同じ壊れた値を返していても検出される (Test 11 の緩和が
+# false negative を作っていないことの確認)
+# ----------------------------------------------------------------------
+printf '\n## Test 12: genuine video loss survives even the full-scan re-check\n'
+TEST_DIR="$TEST_TMP/vd_t12"
+mkdir -p "$TEST_DIR"
+echo "dummy video" > "$TEST_DIR/input.avi"
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+# MOCK_AUDIO_DURATION を映像側と揃え、avsync がこのテストの主張 (vidloss 単独) に
+# 横から割り込まないようにする (codex 敵対的レビュー P3)。
+output=$(MOCK_VIDEO_DURATION=100.0 MOCK_VIDEO_LAST_PTS=100.0 MOCK_VIDEO_LAST_PTS_FULL=100.0 \
+         MOCK_AUDIO_DURATION=100.0 \
+         MOCK_OUTPUT_VIDEO_DURATION=40.0 MOCK_OUTPUT_AUDIO_DURATION=40.0 \
+         MOCK_FORMAT_DURATION=100.0 MOCK_OUTPUT_FORMAT_DURATION=40.0 \
+         av1ify "$TEST_DIR/input.avi" 2>&1 || true)
+setopt err_exit
+assert_contains "$output" "vidloss" "genuine video loss still flagged after the full-scan re-check"
+
 printf '\n=== Video-Duration (vidloss) Postcheck Tests Completed ===\n'
