@@ -42,6 +42,9 @@ func toastEncapsulation(m dsl.Matcher) {
 // 移り、**全パッケージから参照できるようになったから**。それ以前は「参照できない別パッケージ」
 // のために例外を 4 つ足す必要があり、費用対効果が合わないとして 118 で一度見送っていた。
 // 現在の例外はテストだけ (.golangci.yml の exclusions)。実装本体は tuikit/termwidth にあり、このルールの外。
+// 🚨 Go 1.26 の strings.Repeat(" ", n) は n <= 128 なら確保しない (実測 2026-09-24)。差が出るのは埋め草が
+// 129〜256 桁のとき (広い端末の最外周の枠) で、このルールが守っているのはそこ。tuikit 側は同じ退行を
+// 確保回数のテスト (layout/alloc_test.go) で止めている。
 func padViaPadSpaces(m dsl.Matcher) {
 	m.Match(`strings.Repeat(" ", $n)`).
 		Report(`空白の連結は termwidth.PadSpaces($n) を使う (無確保。main では padSpaces)`)

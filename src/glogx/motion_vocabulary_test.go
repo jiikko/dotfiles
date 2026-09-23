@@ -30,7 +30,10 @@ var motionAliases = []motionAlias{
 }
 
 // motionProbe は組み立てた画面の操作と観測。pos は半ページで動く量 (カーソル行か offset)、
-// half はその画面の半ページの期待値 (listnav.Half(その画面の表示行数))。
+// half はその画面の半ページの期待値 = listnav.Half(その画面が移動の基準に渡す行数)。
+// 🚨 基準の行数は各画面が本番で渡している値を写している (doctor は routeKeyToDoctor の page で、
+// 画面に見えている行数 page-3 ではない)。このテストが止めるのは「半ページの計算を変える」退行で、
+// 「基準にする行数の選び方」は守っていない。
 type motionProbe struct {
 	press   func(string)
 	observe func() string

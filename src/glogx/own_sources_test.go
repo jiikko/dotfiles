@@ -1,10 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 )
@@ -50,32 +51,26 @@ var ownSourceExcluded = map[string]string{
 // 🚨 「根ごとに .go が 0 件なら落とす」(walkOwnSources) は、一覧に**載っている**根しか見ないので
 // これを代わりにできない (tuikit を一覧から消しても 2 つの走査は緑のまま通った。敵対レビュー実測)。
 func TestOwnSourceRootsCoverLocalReplaces(t *testing.T) {
-	src, err := os.ReadFile("go.mod")
-	if err != nil {
-		t.Fatal(err)
-	}
 	roots := map[string]bool{}
 	for _, r := range ownSourceRoots {
 		roots[filepath.ToSlash(r)] = true
 	}
-	replaced := localReplaces(string(src))
+	replaced := localReplaces(t)
 	if len(replaced) == 0 {
 		t.Fatal("go.mod からローカルの replace を 1 つも読めなかった (読み方が壊れている)")
 	}
-	for mod, p := range replaced {
-		if roots[p] {
+	inMod := map[string]bool{}
+	for _, r := range replaced {
+		inMod[r.path] = true
+		if roots[r.path] {
 			continue
 		}
-		if _, ok := ownSourceExcluded[p]; !ok {
-			t.Errorf("replace %s => %s が走査の根 (ownSourceRoots) にも除外 (ownSourceExcluded) にも無い", mod, p)
+		if _, ok := ownSourceExcluded[r.path]; !ok {
+			t.Errorf("replace %s => %s が走査の根 (ownSourceRoots) にも除外 (ownSourceExcluded) にも無い", r.mod, r.path)
 		}
 	}
 	// 除外に go.mod に無いパスが残っていたら、それは古いエントリ (消した module の理由が残り、
 	// 同じ名前の module を足し直したとき黙って走査の外に置かれる)
-	inMod := map[string]bool{}
-	for _, p := range replaced {
-		inMod[p] = true
-	}
 	for p := range ownSourceExcluded {
 		if !inMod[p] {
 			t.Errorf("ownSourceExcluded の %s は go.mod の replace に無い (古いエントリ)", p)
@@ -83,65 +78,44 @@ func TestOwnSourceRootsCoverLocalReplaces(t *testing.T) {
 	}
 }
 
-// localReplaces は go.mod のローカルの replace (パスが ./ か ../ で始まるもの) を module → パスで返す。
-// 1 行の形 (`replace a => ../a`) とブロックの形 (`replace ( ... )`)、行末のコメント、両辺の版
-// (`a v1 => ../a`) を扱う。
-func localReplaces(gomod string) map[string]string {
-	out := map[string]string{}
-	inBlock := false
-	for _, line := range strings.Split(gomod, "\n") {
-		if i := strings.Index(line, "//"); i >= 0 {
-			line = line[:i]
-		}
-		f := strings.Fields(line)
-		switch {
-		case len(f) == 0:
-			continue
-		case inBlock && f[0] == ")":
-			inBlock = false
-			continue
-		case !inBlock && f[0] == "replace" && len(f) == 2 && f[1] == "(":
-			inBlock = true
-			continue
-		case !inBlock && f[0] == "replace":
-			f = f[1:]
-		case !inBlock:
-			continue
-		}
-		// f = <mod> [ver] => <path> [ver]
-		arrow := slices.Index(f, "=>")
-		if arrow < 1 || arrow+1 >= len(f) {
-			continue
-		}
-		p := f[arrow+1]
-		if strings.HasPrefix(p, "./") || strings.HasPrefix(p, "../") {
-			out[f[0]] = filepath.ToSlash(filepath.Clean(p))
-		}
-	}
-	return out
-}
+type localReplace struct{ mod, path string }
 
-// localReplaces の読み方を、go.mod に現れうる形で固定する (本物の go.mod は 1 行の形しか無いので、
-// ほかの形はここでしか通らない)。
-func TestLocalReplacesForms(t *testing.T) {
-	got := localReplaces(`module m
-
-replace a => ../a
-replace b v1.2.3 => ../b // 版とコメント付き
-replace c => github.com/x/c v1.0.0
-replace (
-	d => ./d
-	e v0.1.0 => ../e v0.1.0
-	f => example.com/f v1
-)
-`)
-	want := map[string]string{"a": "../a", "b": "../b", "d": "d", "e": "../e"}
-	if len(got) != len(want) {
-		t.Fatalf("got %v, want %v", got, want)
+// localReplaces は go.mod のローカルの replace を返す (同じ module が版違いで複数あれば全部)。
+//
+// 読むのは go 自身 (`go mod edit -json`)。自前で字句を読むと、go が受け付ける形 (空白の無い
+// `replace(`・引用符・絶対パス・末尾の / が無い `..`) を黙って読み落とした (敵対レビュー実測)。
+// ローカルの replace = 置き換え先に版が無いもの (go の規則)。パスは glogx からの相対へ揃える。
+func localReplaces(t *testing.T) []localReplace {
+	t.Helper()
+	out, err := exec.Command("go", "mod", "edit", "-json").Output()
+	if err != nil {
+		t.Fatalf("go mod edit -json が失敗した: %v", err)
 	}
-	for k, v := range want {
-		if got[k] != v {
-			t.Errorf("%s: got %q, want %q", k, got[k], v)
+	var mod struct {
+		Replace []struct {
+			Old struct{ Path string }
+			New struct{ Path, Version string }
 		}
 	}
+	if err := json.Unmarshal(out, &mod); err != nil {
+		t.Fatalf("go mod edit -json の出力を読めない: %v", err)
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs := make([]localReplace, 0, len(mod.Replace))
+	for _, r := range mod.Replace {
+		if r.New.Version != "" {
+			continue // module の置き換え (ローカルのディレクトリではない)
+		}
+		p := r.New.Path
+		if filepath.IsAbs(p) {
+			if rel, err := filepath.Rel(wd, p); err == nil {
+				p = rel
+			}
+		}
+		rs = append(rs, localReplace{mod: r.Old.Path, path: filepath.ToSlash(filepath.Clean(p))})
+	}
+	return rs
 }

@@ -52,6 +52,24 @@ linters:
               desc: 部品はフレームワーク非依存 (tick は使う側が回す。README の「使う側の約束」)
             - pkg: github.com/charmbracelet/bubbletea
               desc: 部品はフレームワーク非依存 (tick は使う側が回す。README の「使う側の約束」)
+        # 部品は「状態 → 文字列」の純粋な層。I/O・プロセス起動・非同期を持ち込むと、毎フレーム呼ばれる
+        # 合成の性能とテスト容易性が壊れる (glogx の render.go に掛けていた render-pure と同じ)。
+        # widthenv は環境変数を読むのが仕事なので対象外。
+        parts-pure:
+          files:
+            - "**/anim/**"
+            - "**/layout/**"
+            - "**/listnav/**"
+            - "**/sgr/**"
+            - "**/termwidth/**"
+            - "!**/*_test.go"
+          deny:
+            - pkg: os
+              desc: 部品は純粋な層 (I/O 禁止)
+            - pkg: os/exec
+              desc: 部品は純粋な層 (プロセス起動禁止)
+            - pkg: context
+              desc: 部品は純粋な層 (非同期処理は使う側へ)
         # 幅計算の唯一の出典は termwidth.Of (= ansi.StringWidth)。runewidth は East Asian
         # ambiguous を locale 依存で 2 桁と数え、枠の計算が実行環境でずれる (glogx issue 027)。
         width-single-source:

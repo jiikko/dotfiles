@@ -136,7 +136,7 @@ screen = layout.OverlayCentered(screen, box, width, page, colored)  // 左右の
 | 部品の中で `time.Now` / `time.Since` を呼ばない | `.golangci.yml` の forbidigo |
 | 幅モデルは 1 系統 (runewidth・uniseg・`ansi.StringWidthWc` を使わない) | `.golangci.yml` の depguard / forbidigo |
 | VS16 付きの文字列リテラルを書かない / 2 本目の幅エンジンを使わない | glogx の `own_sources_test.go` 経由の走査 (tuikit も対象。走査の根は glogx の go.mod の replace と突き合わせて固定) |
-| glogx の一覧 4 画面が移動の語彙を `listnav.MotionOf` から取り、半ページが `listnav.Half` | glogx の `motion_vocabulary_test.go` (入口 `browseModel.handleKey` から、別名と一次語彙の結果の一致と、半ページの移動量を見る) |
+| glogx の一覧 4 画面が移動の語彙を `listnav.MotionOf` から取り、半ページが `listnav.Half(各画面が基準に渡す行数)` | glogx の `motion_vocabulary_test.go` (入口 `browseModel.handleKey` から、別名と一次語彙の結果の一致と、半ページの移動量を見る) |
 
 CI は `.github/workflows/src_tuikit.yml` (lint + test)。tuikit を変えると glogx の CI も走る
 (`src_glogx.yml` の paths に `src/tuikit/**` がある)。
