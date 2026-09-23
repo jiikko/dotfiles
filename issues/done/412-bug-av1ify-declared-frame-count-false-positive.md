@@ -177,14 +177,15 @@ codex に red team として「偽陰性を作れるか / fail-safe が本当に
 - 2026-09-23: 起票。私物ファイルでの実測 (良い/破損の両方) と原因特定 (seek ベースの
   再測定自体が壊れている) まで完了。codex 反証レビュー (P1 2件/P2 4件) を受けて設計を
   検査ごとの独立した再測定へ改訂。実装・新規テスト10本・変異検証5パターン・敵対的
-  レビュー (P1 0件) まで完了。commit 待ち
+  レビュー (P1 0件) まで完了
+- 2026-09-23: 「fix(av1ify,412): 壊れたコンテナのメタデータ水増しを実データ欠落と誤検出しないようにする」で commit 済み。受け入れ条件すべて充足のため done へ移動
 
 ## 関連
 
-- [issue 397](done/397-bug-av1ify-vfr-wrong-r-value-undetected-frame-loss.md) —
+- [issue 397](397-bug-av1ify-vfr-wrong-r-value-undetected-frame-loss.md) —
   `frames` チェック (密度検査) の元々の実装。「残る既知の限界 1」で
   「vidloss 判定との尺の解釈の食い違い」を残課題として明記しており、本 issue はその
   具体化 + `vidloss` 自身の再測定 (`__av1ify_packet_end`) が信頼できないケースの発見
-- [issue 395](pending/395-feat-av1ify-repair-mode-for-corrupt-sources.md) —
+- [issue 395](../pending/395-feat-av1ify-repair-mode-for-corrupt-sources.md) —
   破損ソースの修復モード (pending)。本 issue は「実データは揃っているのに誤検出される」
   ケースで、395 が扱う「実データが本当に壊れている」ケースとは別
