@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 	"tuikit/layout"
+	"tuikit/listnav"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -621,26 +622,6 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 		return doctorClosed
 	case "r":
 		return doctorRescan // 止めるのは start() の先頭 (issue 211)。ここで二重に呼ばない
-	case "j", "down":
-		v.cur.move(v.rows, +1)
-	case "k", "up":
-		v.cur.move(v.rows, -1)
-	case "ctrl+d", "pgdown":
-		for range max(1, page/2) {
-			v.cur.move(v.rows, +1)
-		}
-	case "ctrl+u", "pgup":
-		for range max(1, page/2) {
-			v.cur.move(v.rows, -1)
-		}
-	case "g", "home":
-		// fellBack は消さない: tui が handleKey より前に必ず取り出すので、ここに来た時点で
-		// 常に false (書いても意味が無く、G 側にも同じ行が無い = 非対称だった)
-		v.cur.index, v.cur.key, v.cur.offset = 0, "", 0
-		v.cur.move(v.rows, 0)
-	case "G", "end":
-		v.cur.index = len(v.rows) - 1
-		v.cur.move(v.rows, 0)
 	case "enter":
 		// Enter で入って Enter で出る (対象パスの行なら親ごと畳んでカーソルを親へ戻す)
 		if v.collapseAtCursor() {
@@ -663,8 +644,38 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 			return doctorNothing
 		}
 		return action
+	default:
+		v.applyMotion(listnav.MotionOf(key), page) // 移動の語彙 (j/k/g/G/半ページ) は listnav が持つ
 	}
 	return doctorSwallow
+}
+
+// applyMotion はカーソル移動を適用する。cur.move は選択できない行 (見出し) を飛ばすので、
+// 半ページは 1 行ずつ積む (行数の足し算にすると見出しの上で止まる)。
+func (v *doctorView) applyMotion(m listnav.Motion, page int) {
+	switch m {
+	case listnav.Down:
+		v.cur.move(v.rows, +1)
+	case listnav.Up:
+		v.cur.move(v.rows, -1)
+	case listnav.HalfDown:
+		for range listnav.Half(page) {
+			v.cur.move(v.rows, +1)
+		}
+	case listnav.HalfUp:
+		for range listnav.Half(page) {
+			v.cur.move(v.rows, -1)
+		}
+	case listnav.Top:
+		// fellBack は消さない: tui が handleKey より前に必ず取り出すので、ここに来た時点で
+		// 常に false (書いても意味が無く、Bottom 側にも同じ行が無い = 非対称だった)
+		v.cur.index, v.cur.key, v.cur.offset = 0, "", 0
+		v.cur.move(v.rows, 0)
+	case listnav.Bottom:
+		v.cur.index = len(v.rows) - 1
+		v.cur.move(v.rows, 0)
+	case listnav.None:
+	}
 }
 
 // hint は最下行の案内。**幅に入らない項目は落とす** (切ると語の途中で切れて意味が壊れ、

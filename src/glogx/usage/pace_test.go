@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"glogx/sgr"
+	"tuikit/sgr"
 	"tuikit/termwidth"
 )
 

@@ -13,6 +13,7 @@ import (
 	"time"
 	"tuikit/anim"
 	"tuikit/layout"
+	"tuikit/listnav"
 
 	"doctor/disk"
 	"glogx/issues"
@@ -1594,36 +1595,6 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc":
 		return m.quit()
-	case "j", "down", "ctrl+n":
-		prev := m.offset
-		m.cursor = clampIdx(m.cursor+1, len(m.commits))
-		m.ensureCursorVisible()
-		return m, m.startScrollAnim(prev)
-	case "k", "up", "ctrl+p":
-		prev := m.offset
-		m.cursor = clampIdx(m.cursor-1, len(m.commits))
-		m.ensureCursorVisible()
-		return m, m.startScrollAnim(prev)
-	case "g", "home":
-		m.cursor = 0
-		m.offset = 0
-		m.glide.Stop() // 端へのジャンプは即時 (距離が不定で glide の意味が薄い)
-	case "G", "end":
-		m.cursor = clampIdx(len(m.commits)-1, len(m.commits))
-		m.ensureCursorVisible()
-		m.glide.Stop()
-	// 半ページ移動も glide に載せる (ユーザー要望 2026-07-31)。カーソルは動かさずビューポート
-	// だけが動くので、prev からの距離がそのまま glide の距離になる。
-	case "ctrl+d", "pgdown":
-		prev := m.offset
-		m.offset = m.clampOffset(m.offset + m.pageSize()/2)
-		return m, m.startScrollAnim(prev)
-	// 🚨 shift+space は端末によっては届かない (理由は pagerScrollKey の同じ case)。この面は
-	// issues 一覧と違って b が push に割り当たっているので、上半ページの経路は ctrl+u / pgup だけ。
-	case "ctrl+u", "pgup", "shift+space":
-		prev := m.offset
-		m.offset = m.clampOffset(m.offset - m.pageSize()/2)
-		return m, m.startScrollAnim(prev)
 	case "enter", " ", "l", "right", "tab":
 		return m, m.openPanel()
 	case "y":
@@ -1640,8 +1611,44 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, m.openEditorAtRoot()
 	case "E":
 		return m, m.openFilerAtRoot()
+	default:
+		// 移動の語彙 (j/k/g/G/半ページ) は listnav が持つ。🚨 この面は b が push (上で捌く) で
+		// Space が開くなので、上半ページの経路は ctrl+u / pgup (shift+space は端末によって届かない。
+		// 理由は pagerScrollKey の doc)
+		return m, m.applyListMotion(listnav.MotionOf(key))
 	}
 	return m, nil
+}
+
+// applyListMotion はコミット一覧の移動を適用する。1 行移動はカーソル、半ページはビューポートを
+// 動かす (1 コミットが複数行なので、カーソルは動かさず窓だけ送る)。どちらも prev からの距離を
+// glide に載せる。端へのジャンプは即時 (距離が不定で glide の意味が薄い)。
+func (m *browseModel) applyListMotion(mo listnav.Motion) tea.Cmd {
+	prev := m.offset
+	switch mo {
+	case listnav.Down:
+		m.cursor = clampIdx(m.cursor+1, len(m.commits))
+		m.ensureCursorVisible()
+	case listnav.Up:
+		m.cursor = clampIdx(m.cursor-1, len(m.commits))
+		m.ensureCursorVisible()
+	case listnav.HalfDown:
+		m.offset = m.clampOffset(m.offset + m.pageSize()/2)
+	case listnav.HalfUp:
+		m.offset = m.clampOffset(m.offset - m.pageSize()/2)
+	case listnav.Top:
+		m.cursor, m.offset = 0, 0
+		m.glide.Stop()
+		return nil
+	case listnav.Bottom:
+		m.cursor = clampIdx(len(m.commits)-1, len(m.commits))
+		m.ensureCursorVisible()
+		m.glide.Stop()
+		return nil
+	case listnav.None:
+		return nil
+	}
+	return m.startScrollAnim(prev)
 }
 
 // routeKeyToDoctor は doctor 表示中のキー処理。全画面なのでキーはここで飲み切る
@@ -2523,22 +2530,6 @@ func (m *browseModel) handlePanelKey(key string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, m.openJobDetail()
-	case "j", "down", "ctrl+n":
-		if m.panelCursor+1 < len(jobs) {
-			m.panelCursor++
-		}
-	case "k", "up", "ctrl+p":
-		m.panelCursor = max(m.panelCursor-1, -1)
-	case "g", "home":
-		// job 0 件でフォーカスを 0 にすると、存在しない job にフォーカスが移って
-		// タイトル行 (-1) へ戻れなくなる (Enter で閉じられない) ため空ではしない
-		if len(jobs) > 0 {
-			m.panelCursor = 0
-		}
-	case "G", "end":
-		if len(jobs) > 0 {
-			m.panelCursor = len(jobs) - 1
-		}
 	case "l", "right", "tab":
 		if m.panelCursor < 0 {
 			if len(jobs) > 0 {
@@ -2563,8 +2554,34 @@ func (m *browseModel) handlePanelKey(key string) (tea.Model, tea.Cmd) {
 		return m, m.openDiff()
 	case "r":
 		m.askRerun()
+	default:
+		m.applyPanelMotion(listnav.MotionOf(key), len(jobs)) // 移動の語彙は listnav が持つ
 	}
 	return m, nil
+}
+
+// applyPanelMotion は job パネルのカーソル移動を適用する。カーソルは -1 (タイトル行) から
+// jobs-1 まで。半ページは持たない (job は数件で画面に収まり、送る先が無い)。
+func (m *browseModel) applyPanelMotion(mo listnav.Motion, jobs int) {
+	switch mo {
+	case listnav.Down:
+		if m.panelCursor+1 < jobs {
+			m.panelCursor++
+		}
+	case listnav.Up:
+		m.panelCursor = max(m.panelCursor-1, -1)
+	case listnav.Top:
+		// job 0 件でフォーカスを 0 にすると、存在しない job にフォーカスが移って
+		// タイトル行 (-1) へ戻れなくなる (Enter で閉じられない) ため空ではしない
+		if jobs > 0 {
+			m.panelCursor = 0
+		}
+	case listnav.Bottom:
+		if jobs > 0 {
+			m.panelCursor = jobs - 1
+		}
+	case listnav.HalfDown, listnav.HalfUp, listnav.None:
+	}
 }
 
 // handleDetailKey は job 詳細ポップアップ表示中のキー操作。o(ブラウザ)/v(nvim)/y(コピー) の
@@ -3631,7 +3648,7 @@ func (m *browseModel) viewLines() string {
 	// リストが 1 画面に収まらないときは右端にスクロールバー列を出す (diff/job overlay と同じ
 	// 見た目)。overlay 群の合成より先に足す = ポップアップ類はバーの上に浮く。offset は
 	// glide 中の表示 offset を使っているので thumb もグライドに追従する。
-	window = scrollbarColumn(window, m.contentWidth(), len(lines), offset, m.colored)
+	window = layout.Scrollbar(window, m.contentWidth(), len(lines), offset, m.colored)
 	// job パネルは対象コミットのヘッダー行直下へ「重ねる」(リスト行を置き換える)。
 	// リストの行構成自体は変えないので、開閉で後続行がずれない。
 	// 下に収まらない場合はビューポート内へ収まる位置まで引き上げる

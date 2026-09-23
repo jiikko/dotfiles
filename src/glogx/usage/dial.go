@@ -26,8 +26,8 @@ import (
 	"strings"
 	"time"
 
-	"glogx/sgr"
 	"termsafe"
+	"tuikit/sgr"
 	"tuikit/termwidth"
 )
 

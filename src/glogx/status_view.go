@@ -12,6 +12,7 @@ import (
 	"time"
 	"tuikit/anim"
 	"tuikit/layout"
+	"tuikit/listnav"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -702,18 +703,6 @@ func (v *statusView) pagerKeyPress(key string, vp statusViewport) tea.Cmd {
 func (v *statusView) listKey(key string, vp statusViewport) tea.Cmd {
 	rows := max(vp.page-1, 1)
 	switch key {
-	case "j", "down", "ctrl+n":
-		return v.moveCursor(1)
-	case "k", "up", "ctrl+p":
-		return v.moveCursor(-1)
-	case "ctrl+d", "pgdown":
-		return v.moveCursor(rows / 2)
-	case "ctrl+u", "pgup":
-		return v.moveCursor(-rows / 2)
-	case "g", "home":
-		return v.setCursor(0)
-	case "G", "end":
-		return v.setCursor(len(v.rows) - 1)
 	case "tab":
 		return v.jumpSection()
 	case " ":
@@ -760,6 +749,26 @@ func (v *statusView) listKey(key string, vp statusViewport) tea.Cmd {
 		v.close()
 		v.wantRatelimit = true
 		return nil
+	}
+	return v.applyMotion(listnav.MotionOf(key), rows) // 移動の語彙 (j/k/g/G/半ページ) は listnav が持つ
+}
+
+// applyMotion は一覧のカーソル移動を適用する (移動したらプレビューのデバウンスを張り直す)。
+func (v *statusView) applyMotion(m listnav.Motion, rows int) tea.Cmd {
+	switch m {
+	case listnav.Down:
+		return v.moveCursor(1)
+	case listnav.Up:
+		return v.moveCursor(-1)
+	case listnav.HalfDown:
+		return v.moveCursor(listnav.Half(rows))
+	case listnav.HalfUp:
+		return v.moveCursor(-listnav.Half(rows))
+	case listnav.Top:
+		return v.setCursor(0)
+	case listnav.Bottom:
+		return v.setCursor(len(v.rows) - 1)
+	case listnav.None:
 	}
 	return nil
 }
@@ -1134,9 +1143,9 @@ func (v *statusView) listLines(o statusRenderOpts, width int) []string {
 	end := min(v.offset+rows, len(index))
 	out := make([]string, 0, rows)
 	for _, dl := range index[v.offset:end] {
-		out = append(out, v.displayLine(dl, o, width-scrollbarColumnWidth))
+		out = append(out, v.displayLine(dl, o, width-layout.ScrollbarWidth))
 	}
-	return scrollbarColumn(out, width, len(index), v.offset, o.colored)
+	return layout.Scrollbar(out, width, len(index), v.offset, o.colored)
 }
 
 // headerLine は最上段 (ブランチ + 件数)。

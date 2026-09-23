@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"tuikit/layout"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -545,9 +546,9 @@ func TestMainListScrollbar(t *testing.T) {
 	thumbs, tracks := 0, 0
 	for i, l := range rows {
 		switch {
-		case strings.HasSuffix(l, scrollbarThumbGlyph):
+		case strings.HasSuffix(l, layout.ScrollbarThumb):
 			thumbs++
-		case strings.HasSuffix(l, scrollbarTrackGlyph):
+		case strings.HasSuffix(l, layout.ScrollbarTrack):
 			tracks++
 		default:
 			t.Fatalf("リスト行 %d がバー列で終わっていない: %q", i, l)
@@ -561,7 +562,7 @@ func TestMainListScrollbar(t *testing.T) {
 	m.offset = m.clampOffset(1 << 30)
 	rows = strings.Split(m.View().Content, "\n")
 	rows = rows[:len(rows)-1]
-	if !strings.HasSuffix(rows[len(rows)-1], scrollbarThumbGlyph) {
+	if !strings.HasSuffix(rows[len(rows)-1], layout.ScrollbarThumb) {
 		t.Fatalf("末尾スクロールで thumb が下端に接地していない: %q", rows[len(rows)-1])
 	}
 
@@ -569,7 +570,7 @@ func TestMainListScrollbar(t *testing.T) {
 	fit := newTestBrowse(t, 1, nil, nil)
 	fit.usageOv.visible = false
 	for i, l := range strings.Split(fit.View().Content, "\n") {
-		if strings.HasSuffix(l, scrollbarThumbGlyph) || strings.HasSuffix(l, scrollbarTrackGlyph) {
+		if strings.HasSuffix(l, layout.ScrollbarThumb) || strings.HasSuffix(l, layout.ScrollbarTrack) {
 			t.Fatalf("収まるのにバー列が出ている (行 %d): %q", i, l)
 		}
 	}

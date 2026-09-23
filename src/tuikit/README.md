@@ -14,8 +14,10 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 |---|---|---|
 | `termwidth` | 表示幅の単一情報源 (`Of` / `Truncate` / `Clip` / `PadSpaces` / `FillRight` …) | 行を幅で切る・揃えるときは**必ずここを通す** |
 | `widthenv` | 幅モデルが支持しない環境変数 (`RUNEWIDTH_EASTASIAN`) の検出 | 起動時の警告・テストのガード |
+| `sgr` | 基本の ANSI 色・装飾 (`Reset` / `Bold` / `Dim` / `Cyan` …) | 色を付けるときの値の単一の出典 |
 | `anim` | `Transition` (開く / 閉じる / 途中で逆再生) / `ScrollGlide` / `CursorGlide` / easing | 開閉演出と「数行ぶんの移動を滑らせる」演出 |
-| `layout` | `ComposeDrawer` (一覧の上に詳細を右から重ねる) / `DrawerGeometry` / `SlideIn` / `WindowOffset` / `ClampOffset` / `PadTo` | 画面の合成と窓の計算 |
+| `layout` | `ComposeDrawer` (一覧の上に詳細を右から重ねる) / `DrawerGeometry` / `SlideIn` / `Scrollbar` / `WindowOffset` / `ClampOffset` / `PadTo` | 画面の合成と窓の計算 |
+| `listnav` | `MotionOf` (キー → 移動の語彙) / `List` (一覧のカーソル + 窓 + 半ページの滑走) / `Pager` (本文のスクロール) / `Scroll` | 一覧・本文の移動を毎回書かない |
 
 ## 遷移のパターン
 
@@ -56,6 +58,7 @@ if p < 1 { screen = layout.SlideIn(screen, p, width, false, 0.35) }
 ### 数行ぶんの移動を滑らせる
 
 - `ScrollGlide`: 表示 offset を論理 offset へ数フレームで寄せる (本文の半ページスクロール)。連打中は積み上げずに即時へ倒す
+  (ふつうは `listnav.Pager` / `listnav.List` 越しに使う。直接使うのは offset を自分で持つ画面)
 - `CursorGlide`: **描画カーソルだけ**を滑らせる (一覧の半ページ移動)。窓は論理カーソルを含む最小の窓のまま動かさないので、Enter などの決定キーは常に着地点へ効く
 
 ```go
@@ -64,10 +67,45 @@ drawn := glide.Offset(offset) // 描画だけこの値を使う。論理 offset 
 if glide.Active() { glide.Advance(offset) } // tick のたびに
 ```
 
+### 一覧を動かす: キーの語彙・カーソル・スクロールバー
+
+一覧を持つ画面で毎回書いていた「j/k・g/G・半ページ・滑走・窓の追従・スクロールバー」は `listnav` と
+`layout.Scrollbar` で済む。
+
+| 移動 | vim (一次) | emacs / 矢印 (別名) |
+|---|---|---|
+| 1 行下 / 上 | `j` / `k` | `ctrl+n` `↓` / `ctrl+p` `↑` |
+| 半ページ下 | `ctrl+d` `Space` `f` | `pgdown` |
+| 半ページ上 | `ctrl+u` `b` | `pgup` `shift+space` |
+| 先頭 / 末尾 | `g` / `G` | `home` / `end` |
+
+```go
+var list listnav.List // zero value = 先頭
+
+// キー: 画面固有の動作キー (Enter で開く・Space で選択 など) を先に捌き、残りを語彙へ渡す
+list.Move(listnav.MotionOf(key), len(items), rows, 20) // 半ページは 20 フレームかけて滑る
+
+// 描画: 窓 (list.Offset から rows 行) を組み、滑走中の描画カーソルに印を付け、右端にバーを足す
+cur := list.DrawCursor(len(items))
+lines = layout.Scrollbar(lines, width, len(items), list.Offset, colored) // 行は width-ScrollbarWidth で組む
+
+// tick のたびに
+list.Advance()
+```
+
+- 半ページ移動では**論理カーソル (`list.Cursor`) は即座に着地**し、描画カーソルだけが滑る。窓は論理カーソルを
+  含む最小の窓のまま動かさないので、Enter などの決定キーは常に着地点へ効く
+- 本文 (カーソルの無いスクロール) は `listnav.Pager`。半ページだけが滑り、1 行送りと端へのジャンプは即時
+- 🚨 動作キーと語彙がぶつかる画面 (Space = 選択、`b` = push など) は、**その画面の動作を先に捌く**。
+  `MotionOf` は画面ごとの例外を持たない (持たせると画面ごとに効くキーがまたずれ始める)
+- 🚨 「知らないキーは中止に落とす」ような安全側の確認画面には `MotionOf` を当てない (中止のつもりの打鍵が
+  移動に化ける)。送るキーはその画面で 1 つずつ列挙する
+- Space は bubbletea v1 が `" "`、v2 が `"space"` と綴るが、`MotionOf` は両方を受ける
+
 ## 使う側の約束
 
-- **tick は使う側が回す**。`Transition.Animating(now)` / `ScrollGlide.Active()` / `CursorGlide.Active()` の
-  どれかが真のあいだは再描画を続ける (tuikit は tick を持たない。フレームワーク非依存にするため)
+- **tick は使う側が回す**。`Transition.Animating(now)` / `List.Animating()` / `Pager.Animating()`
+  (直接使うなら `ScrollGlide.Active()` / `CursorGlide.Active()`) のどれかが真のあいだは再描画を続ける (tuikit は tick を持たない。フレームワーク非依存にするため)
 - **時刻は引数で渡す** (部品の中で `time.Now` を呼ばない。lint が止める)。使う側のテストで時刻を固定できる
 - **演出中に来たキーは、先に着地させてから効かせる** (`Finish()` / `Stop()`)。演出の終わりまで入力を待たせない
 - **閉じる演出のあいだは中身を捨てない**。捨てるのは `Settle` / `Finish` が `closed=true` を返してから
@@ -78,10 +116,11 @@ if glide.Active() { glide.Advance(offset) } // tick のたびに
 
 | 何を | どこで |
 |---|---|
-| 部品 (`anim` / `layout` / `termwidth` / `widthenv`) は bubbletea を import しない | `.golangci.yml` の depguard |
+| 部品 (`anim` / `layout` / `listnav` / `sgr` / `termwidth` / `widthenv`) は bubbletea を import しない | `.golangci.yml` の depguard |
 | 部品の中で `time.Now` / `time.Since` を呼ばない | `.golangci.yml` の forbidigo |
 | 幅モデルは 1 系統 (runewidth・uniseg・`ansi.StringWidthWc` を使わない) | `.golangci.yml` の depguard / forbidigo |
-| VS16 付きの文字列リテラルを書かない / 2 本目の幅エンジンを使わない | glogx の `own_sources_test.go` 経由の走査 (tuikit も対象) |
+| VS16 付きの文字列リテラルを書かない / 2 本目の幅エンジンを使わない | glogx の `own_sources_test.go` 経由の走査 (tuikit も対象。走査の根は glogx の go.mod の replace と突き合わせて固定) |
+| glogx の各画面が移動の語彙を `listnav.MotionOf` から取る | glogx の `motion_vocabulary_test.go` (入口 `browseModel.handleKey` から、別名と一次語彙の結果の一致を見る) |
 
 CI は `.github/workflows/src_tuikit.yml` (lint + test)。tuikit を変えると glogx の CI も走る
 (`src_glogx.yml` の paths に `src/tuikit/**` がある)。

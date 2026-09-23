@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"glogx/sgr"
+	"tuikit/sgr"
 )
 
 // paceGaugeMaxCells は番号付きゲージを出す最大スロット数。番号は半角 1 桁前提なので

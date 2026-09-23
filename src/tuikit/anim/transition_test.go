@@ -87,6 +87,27 @@ func TestTransitionReverseIsContinuous(t *testing.T) {
 	}
 }
 
+// 開くときと閉じるときで所要が違っても、向きを変えた瞬間に跳ばず、残りを新しい所要で進む。
+func TestTransitionReverseWithDifferentDuration(t *testing.T) {
+	const closeD = 3 * d
+	var tr Transition
+	tr.Open(t0, d)
+	mid := at(0.4)
+	before := tr.Openness(mid, EaseOutCubic)
+	tr.Close(mid, closeD)
+	if after := tr.Openness(mid, EaseOutCubic); math.Abs(after-before) > 1e-9 {
+		t.Fatalf("所要の違う逆再生で跳んだ %v -> %v", before, after)
+	}
+	// 残り (開いた割合 0.4) を閉じる所要で進む: 0.4 × 3d 後に閉じ切る
+	end := mid.Add(time.Duration(0.4 * float64(closeD)))
+	if !tr.Animating(end.Add(-time.Millisecond)) {
+		t.Fatal("閉じ切る前に演出が終わった (新しい所要で進んでいない)")
+	}
+	if !tr.Settle(end) {
+		t.Fatal("残りを新しい所要で進んだ時刻に閉じ切らない")
+	}
+}
+
 // 静止中に同じ向きを頼んでも何もしない (演出をやり直さない)。
 func TestTransitionIdempotentRequests(t *testing.T) {
 	tr := NewOpen()

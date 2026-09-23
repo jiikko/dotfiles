@@ -12,15 +12,26 @@ linters:
   enable:
     - copyloopvar    # loop variables needlessly copied (Go 1.22+)
     - depguard       # lib の依存の不変条件 (下の rules)
+    - dupl           # コピペ重複 (glogx から移した部品は glogx の lint が掛からなくなったので同じ網を張る)
+    - durationcheck  # Duration 同士の乗算バグ (所要時間を引数で受ける API が多い)
     - exhaustive     # default なし switch の enum 網羅を強制 (anim.Phase を足したら全 switch が止まる)
     - forbidigo      # 幅モデルの 2 本目と、部品の中での時刻取得を禁止 (下の forbid)
     - intrange       # for i := 0; i < n; i++  ->  for i := range n
     - misspell       # common English misspellings in comments/strings
+    - nolintlint     # 説明なし nolint コメントの禁止
     - perfsprint     # fmt.Sprintf that a faster stdlib call can replace
+    - prealloc       # 事前確保できる append ループ (毎フレーム全行で走る合成の alloc 削減)
+    - recvcheck      # value / pointer receiver の混在検出
     - unconvert      # redundant type conversions
+    - unparam        # 常に同値の引数・未使用戻り値
     - usestdlibvars  # hand-written constants that exist in the stdlib
     - wastedassign   # assignments whose value is never read
   settings:
+    dupl:
+      threshold: 120
+    nolintlint:
+      require-explanation: true
+      require-specific: true
     exhaustive:
       default-signifies-exhaustive: true
     depguard:
@@ -32,6 +43,8 @@ linters:
           files:
             - "**/anim/**"
             - "**/layout/**"
+            - "**/listnav/**"
+            - "**/sgr/**"
             - "**/termwidth/**"
             - "**/widthenv/**"
           deny:
@@ -56,6 +69,9 @@ linters:
             - pkg: github.com/rivo/uniseg
               desc: 分割も幅も termwidth に一本化した (termwidth.FirstCluster / termwidth.Of)
     forbidigo:
+      # 🚨 脅威モデル: うっかり書く典型の形 (time.Now() / ansi.StringWidthWc) を止める。**検出しない形**:
+      #   import の別名 (`tm "time"` → tm.Now) / time.Until・time.Tick 等の別 API / 変数経由の呼び出し。
+      #   analyze-types を使っていないので名前の字面でしか一致しない。意図的な迂回はレビューの責務
       forbid:
         # depguard はパッケージ単位でしか止められず、同じ x/ansi の 2 本目の幅モデルを止められない
         - pattern: ^ansi\.StringWidthWc$
@@ -65,6 +81,10 @@ linters:
           msg: 部品は時刻を引数で受け取る (使う側のテストで固定できるように)
   exclusions:
     rules:
+      # テストのヘルパーは汎用の引数を持ってよい (glogx と同じ)
+      - path: _test\.go
+        linters:
+          - unparam
       # デモは実時間で動かす本物のアプリ
       - path: examples/
         text: 部品は時刻を引数で受け取る

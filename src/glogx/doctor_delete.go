@@ -138,7 +138,10 @@ func (s *deleteScroll) scroll(key string) {
 
 // deleteScrollKeys は確認パネルで**中止に落とさない**キー (送るだけ)。
 // 🚨 ここに無いキーは既定どおり中止側へ落ちる (安全側)。送る手段が無いまま
-// 「送ろうとした打鍵で確認が消える」のを塞ぐのが目的で、既定を緩めるものではない
+// 「送ろうとした打鍵で確認が消える」のを塞ぐのが目的で、既定を緩めるものではない。
+// 🚨 他の画面と違って移動の語彙を tuikit の listnav.MotionOf に寄せていないのは意図的:
+// 寄せると Space / f / b / ctrl+n 等が「中止に落ちないキー」へ黙って増え、破壊的操作の
+// 確認で「中止のつもりの打鍵」が送りに化ける。送るキーを足すなら、ここに 1 つずつ足す
 var deleteScrollKeys = map[string]bool{
 	"j": true, "down": true, "k": true, "up": true,
 	"ctrl+d": true, "pgdown": true, "ctrl+u": true, "pgup": true,

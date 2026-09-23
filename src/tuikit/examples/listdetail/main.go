@@ -4,8 +4,8 @@
 //	go run ./examples/listdetail          # 実速度
 //	go run ./examples/listdetail -slow 3  # 演出を 3 倍に伸ばす (gif で動きを追うため)
 //
-// キー: j/k 移動 / Space・b 半ページ (カーソルが滑る) / Enter・l 詳細を開く /
-// 詳細で j/k・Space・b スクロール、J/K 隣の項目、Esc・h 閉じる / q 終了
+// キー: 移動は listnav.MotionOf の語彙 (j/k・ctrl+n/p・↑↓ / Space・f・ctrl+d・b・ctrl+u 半ページ /
+// g・G 端) / Enter・l 詳細を開く / 詳細では同じ語彙でスクロール、J/K 隣の項目、Esc・h 閉じる / q 終了
 package main
 
 import (
@@ -19,6 +19,8 @@ import (
 
 	"tuikit/anim"
 	"tuikit/layout"
+	"tuikit/listnav"
+	"tuikit/sgr"
 	"tuikit/termwidth"
 )
 
@@ -34,14 +36,7 @@ const (
 
 var drawerGeometry = layout.DrawerGeometry{Ratio: 0.8, Extra: 10, MinList: 8, MaxPeek: 18}
 
-const (
-	sgrReset  = "\x1b[0m"
-	sgrBold   = "\x1b[1m"
-	sgrDim    = "\x1b[2m"
-	sgrCyan   = "\x1b[36m"
-	sgrYellow = "\x1b[33m"
-	sgrCursor = "\x1b[7m"
-)
+const sgrCursor = "\x1b[7m"
 
 type item struct {
 	num, state, category, title string
@@ -55,15 +50,13 @@ type model struct {
 	height int
 	slow   float64
 
-	cursor    int
-	curGlide  anim.CursorGlide
-	listStart time.Time // 一覧が流れ込む演出の開始時刻
+	list      listnav.List // 一覧のカーソルと窓 (半ページでは描画カーソルだけが滑る)
+	listStart time.Time    // 一覧が流れ込む演出の開始時刻
 
-	drawer    anim.Transition
-	open      int // 開いている項目 (-1 = なし)。閉じる演出の間は残す
-	body      []string
-	bodyOff   int
-	bodyGlide anim.ScrollGlide
+	drawer anim.Transition
+	open   int // 開いている項目 (-1 = なし)。閉じる演出の間は残す
+	body   []string
+	pager  listnav.Pager // 詳細のスクロール (半ページだけ滑る)
 
 	ticking bool
 }
@@ -88,7 +81,7 @@ func (m *model) tick() tea.Cmd {
 
 func (m *model) animating(now time.Time) bool {
 	return now.Sub(m.listStart) < m.dur(listOpenDuration) ||
-		m.drawer.Animating(now) || m.curGlide.Active() || m.bodyGlide.Active()
+		m.drawer.Animating(now) || m.list.Animating() || m.pager.Animating()
 }
 
 // listRows は一覧に使える行数 (ヘッダ 2 行とフッタ 1 行を除く)。
@@ -99,24 +92,21 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.list.Fit(len(m.items), m.listRows())
 		m.buildBody()
 	case tickMsg:
 		m.ticking = false
 		if m.drawer.Settle(now) {
 			m.open, m.body = -1, nil // 閉じ切ってから中身を捨てる (逆再生の間は見えている)
 		}
-		if m.curGlide.Active() {
-			m.curGlide.Advance(m.cursor)
-		}
-		if m.bodyGlide.Active() {
-			m.bodyGlide.Advance(m.bodyOff)
-		}
+		m.list.Advance()
+		m.pager.Advance()
 	case tea.KeyPressMsg:
 		// 演出中に来たキーは着地させてから効かせる (演出の終わりまで待たせない)
 		if m.drawer.Finish() {
 			m.open, m.body = -1, nil
 		}
-		m.curGlide.Stop()
+		m.list.Stop()
 		if cmd := m.key(msg.String()); cmd != nil {
 			return m, cmd
 		}
@@ -134,63 +124,41 @@ func (m *model) key(k string) tea.Cmd {
 	if m.drawer.Phase() == anim.Open {
 		return m.bodyKey(k)
 	}
-	half := m.listRows() / 2
+	// 画面固有の動作キーを先に捌き、残りを移動の語彙へ渡す
 	switch k {
-	case "j", "down":
-		m.cursor = min(m.cursor+1, len(m.items)-1)
-	case "k", "up":
-		m.cursor = max(m.cursor-1, 0)
-	case " ", "ctrl+d":
-		from := m.cursor
-		m.cursor = min(m.cursor+half, len(m.items)-1)
-		m.curGlide.Start(from, m.cursor, m.frames(cursorFrames))
-	case "b", "ctrl+u":
-		from := m.cursor
-		m.cursor = max(m.cursor-half, 0)
-		m.curGlide.Start(from, m.cursor, m.frames(cursorFrames))
 	case "enter", "l":
-		m.openItem(m.cursor)
+		m.openItem(m.list.Cursor)
 		m.drawer.Open(time.Now(), m.dur(drawerDuration))
+		return nil
 	}
+	m.list.Move(listnav.MotionOf(k), len(m.items), m.listRows(), m.frames(cursorFrames))
 	return nil
 }
 
 func (m *model) bodyKey(k string) tea.Cmd {
-	rows := m.listRows()
-	maxOff := max(len(m.body)-rows, 0)
 	switch k {
 	case "esc", "h":
-		m.bodyGlide.Stop()
+		m.pager.Stop()
 		m.drawer.Close(time.Now(), m.dur(drawerDuration))
-	case "j", "down":
-		m.bodyOff = min(m.bodyOff+1, maxOff)
-	case "k", "up":
-		m.bodyOff = max(m.bodyOff-1, 0)
-	case " ", "ctrl+d":
-		prev := m.bodyOff
-		m.bodyOff = min(m.bodyOff+rows/2, maxOff)
-		m.bodyGlide.Start(prev, m.bodyOff, m.frames(scrollFrames))
-	case "b", "ctrl+u":
-		prev := m.bodyOff
-		m.bodyOff = max(m.bodyOff-rows/2, 0)
-		m.bodyGlide.Start(prev, m.bodyOff, m.frames(scrollFrames))
+		return nil
 	case "J", "K":
 		// 開いたまま中身だけ差し替える (板は動かない。左に覗く一覧のカーソルが追従して見える)
-		delta := 1
+		mo := listnav.Down
 		if k == "K" {
-			delta = -1
+			mo = listnav.Up
 		}
-		if next := m.cursor + delta; next >= 0 && next < len(m.items) {
-			m.cursor = next
-			m.openItem(next)
+		if m.list.Move(mo, len(m.items), m.listRows(), 0) {
+			m.openItem(m.list.Cursor)
 		}
+		return nil
 	}
+	m.pager.Move(listnav.MotionOf(k), len(m.body), m.listRows(), m.frames(scrollFrames))
 	return nil
 }
 
 func (m *model) openItem(i int) {
-	m.open, m.bodyOff = i, 0
-	m.bodyGlide.Stop()
+	m.open = i
+	m.pager.Reset()
 	m.buildBody()
 }
 
@@ -201,14 +169,14 @@ func (m *model) buildBody() {
 		return
 	}
 	it := m.items[m.open]
-	w := max(drawerGeometry.Target(m.width)-2, 1)
+	w := max(drawerGeometry.Target(m.width)-1-layout.ScrollbarWidth-1, 1) // 区切り線とスクロールバーぶんを引く
 	lines := []string{
-		sgrBold + fmt.Sprintf(" %s %s: %s", it.num, it.category, it.title) + sgrReset,
-		sgrDim + " 状態: " + it.state + sgrReset,
+		sgr.Bold + fmt.Sprintf(" %s %s: %s", it.num, it.category, it.title) + sgr.Reset,
+		sgr.Dim + " 状態: " + it.state + sgr.Reset,
 		"",
 	}
 	for p := range 6 {
-		lines = append(lines, sgrCyan+fmt.Sprintf(" ## 節 %d", p+1)+sgrReset)
+		lines = append(lines, sgr.Cyan+fmt.Sprintf(" ## 節 %d", p+1)+sgr.Reset)
 		lines = append(lines, wrap(fmt.Sprintf("%s の説明が続く。詳細は右から滑り込む引き出しとして一覧の上に重なり、"+
 			"左には一覧の端 (番号・状態・カテゴリ) が残る。どの行から開いたかが画面から消えない。", it.title), w)...)
 		lines = append(lines, "")
@@ -232,25 +200,24 @@ func wrap(s string, w int) []string {
 
 func (m *model) listLines() []string {
 	rows := m.listRows()
-	cur := min(max(m.curGlide.Cursor(m.cursor), 0), len(m.items)-1)
-	// 窓は論理カーソルを含む最小の窓 (滑っているのは描画カーソルだけ)
-	off := layout.WindowOffset(0, m.cursor, len(m.items), rows)
+	cur := m.list.DrawCursor(len(m.items))
+	w := m.width - layout.ScrollbarWidth // バー列ぶんを先に引く (layout.ScrollbarWidth の doc)
 	var out []string
-	for i := off; i < min(off+rows, len(m.items)); i++ {
+	for i := m.list.Offset; i < min(m.list.Offset+rows, len(m.items)); i++ {
 		it := m.items[i]
 		mark := "  "
-		if i == m.cursor {
+		if i == m.list.Cursor {
 			mark = "→ "
 		}
 		ln := fmt.Sprintf("%s%s %s %-9s %s", mark, it.num, it.state, it.category, it.title)
 		if i == cur {
-			ln = sgrCursor + termwidth.FillRight(ln, m.width) + sgrReset
+			ln = sgrCursor + termwidth.FillRight(ln, w) + sgr.Reset
 		} else if it.state == "*" {
-			ln = sgrYellow + ln + sgrReset
+			ln = sgr.Yellow + ln + sgr.Reset
 		}
 		out = append(out, ln)
 	}
-	return layout.PadTo(out, rows)
+	return layout.Scrollbar(layout.PadTo(out, rows), m.width, len(m.items), m.list.Offset, true)
 }
 
 func (m *model) View() tea.View {
@@ -260,24 +227,26 @@ func (m *model) View() tea.View {
 	now := time.Now()
 	body := m.listLines()
 	if m.open >= 0 {
-		w := layout.DrawerWidth(drawerGeometry.Target(m.width), m.drawer.Openness(now, anim.EaseOutCubic))
-		off := m.bodyGlide.Offset(m.bodyOff)
-		panel := m.body[min(off, len(m.body)):]
-		body = layout.ComposeDrawer(body, layout.PadTo(panel, len(body)), w, m.width, true)
+		target := drawerGeometry.Target(m.width)
+		w := layout.DrawerWidth(target, m.drawer.Openness(now, anim.EaseOutCubic))
+		off := m.pager.DrawOffset(len(m.body), len(body))
+		panel := layout.PadTo(m.body[min(off, len(m.body)):], len(body))
+		panel = layout.Scrollbar(panel, target-1, len(m.body), off, true) // 板の幅 - 区切り線
+		body = layout.ComposeDrawer(body, panel, w, m.width, true)
 	}
 	if p := float64(now.Sub(m.listStart)) / float64(m.dur(listOpenDuration)); p < 1 {
 		body = layout.SlideIn(body, p, m.width, false, listStagger)
 	}
 	head := []string{
-		sgrBold + " tuikit demo — list / detail" + sgrReset,
-		sgrDim + strings.Repeat("─", m.width) + sgrReset,
+		sgr.Bold + " tuikit demo — list / detail" + sgr.Reset,
+		sgr.Dim + strings.Repeat("─", m.width) + sgr.Reset,
 	}
-	hint := " j/k 移動  Space/b 半ページ  Enter 開く  q 終了"
+	hint := " j/k 移動  Space/b 半ページ  g/G 端  Enter 開く  q 終了"
 	if m.drawer.Phase() != anim.Closed {
 		hint = " j/k・Space/b スクロール  J/K 隣へ  Esc 閉じる  q 終了"
 	}
 	all := append(head, body...)
-	all = append(all, sgrDim+termwidth.Clip(hint, m.width)+sgrReset)
+	all = append(all, sgr.Dim+termwidth.Clip(hint, m.width)+sgr.Reset)
 	v := tea.NewView(strings.Join(all, "\n"))
 	v.AltScreen = true
 	return v
@@ -296,9 +265,11 @@ func demoItems() []item {
 	// 🚨 状態記号は ASCII にしておく。○ ● ✓ (East Asian Ambiguous) は vhs の xterm.js が 2 桁と
 	// 数え、差分描画の位置がずれてカーソル行の反転が消える (gif でだけ起きる。tmux では正しい)。
 	states := []string{"-", "*", "+"}
-	items := make([]item, len(titles))
-	for i, t := range titles {
-		items[i] = item{num: fmt.Sprintf("%03d", 30-i), state: states[i%3], category: cats[i%len(cats)], title: t}
+	// 画面に収まらない件数にする (スクロールバーと窓の送りが見えるように)
+	const n = 45
+	items := make([]item, n)
+	for i := range items {
+		items[i] = item{num: fmt.Sprintf("%03d", n-i), state: states[i%3], category: cats[i%len(cats)], title: titles[i%len(titles)]}
 	}
 	return items
 }

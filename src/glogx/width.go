@@ -2,7 +2,7 @@ package main
 
 import "tuikit/termwidth"
 
-// 表示幅の実装は glogx/termwidth (単一情報源。幅モデルの選択理由・fast-path の設計・実測値も
+// 表示幅の実装は tuikit/termwidth (単一情報源。幅モデルの選択理由・fast-path の設計・実測値も
 // そちらの doc が正本)。main は呼び出し箇所が多い (dispWidth だけで 40 箇所超) ので、
 // gitOpTimeout と同じ形で別名を置き、呼び出し側を termwidth 化のために書き換えない。
 // issues / usage は termwidth を直接呼ぶ (以前はここと同じ関数を各自で写していた。issue 106)。

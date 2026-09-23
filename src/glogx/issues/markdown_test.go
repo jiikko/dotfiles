@@ -6,7 +6,7 @@ import (
 
 	"tuikit/termwidth"
 
-	"glogx/sgr"
+	"tuikit/sgr"
 )
 
 // sample は issue 本文で実際に使われている構文を一通り含むテスト用本文

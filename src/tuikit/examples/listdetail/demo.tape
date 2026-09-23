@@ -22,13 +22,22 @@ Type `"$bin" -slow 3`
 Enter
 Sleep 1.5s
 
-# カーソル移動と半ページ移動 (描画カーソルだけが滑る: anim.CursorGlide)
+# カーソル移動と半ページ移動 (listnav.List: 半ページでは描画カーソルだけが滑り、
+# 窓はカーソルを含む最小の窓。右端のスクロールバーは layout.Scrollbar)
 Type "jj"
 Sleep 600ms
 Space
 Sleep 1.8s
+Space
+Sleep 1.8s
 Type "b"
 Sleep 1.8s
+
+# 端へのジャンプは即時 (g / G)
+Type "G"
+Sleep 900ms
+Type "g"
+Sleep 900ms
 Type "jjj"
 Sleep 600ms
 
@@ -36,7 +45,7 @@ Sleep 600ms
 Enter
 Sleep 1.5s
 
-# 詳細の半ページスクロール (anim.ScrollGlide)
+# 詳細の半ページスクロール (listnav.Pager。詳細にもスクロールバーが付く)
 Space
 Sleep 1.2s
 

@@ -12,7 +12,7 @@ import (
 	"math"
 	"strings"
 
-	"glogx/sgr"
+	"tuikit/sgr"
 	"tuikit/termwidth"
 )
 

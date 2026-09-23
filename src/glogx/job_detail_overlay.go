@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"tuikit/layout"
+	"tuikit/listnav"
 )
 
 // jobDetailOverlay は job 詳細 (annotations / ログ tail) の第 2 ポップアップの状態と描画。
@@ -84,23 +85,13 @@ func (o *jobDetailOverlay) receive(msg jobDetailMsg, currentKey string, rows int
 // 🚨 閉じキーは enter/space/esc/h/left (diffOverlay と異なる)。o/v/y の越境キーは呼び出し側
 // (handleDetailKey) が処理し、ここには渡らない。
 func (o *jobDetailOverlay) scroll(key, contentKey string, rows int) {
-	maxOffset := max(len(o.lines(contentKey))-rows, 0)
 	switch key {
 	case "enter", " ", "esc", "h", "left":
 		o.close()
-	case "j", "down", "ctrl+n":
-		o.offset = min(o.offset+1, maxOffset)
-	case "k", "up", "ctrl+p":
-		o.offset = max(o.offset-1, 0)
-	case "ctrl+d", "pgdown":
-		o.offset = min(o.offset+rows/2, maxOffset)
-	case "ctrl+u", "pgup":
-		o.offset = max(o.offset-rows/2, 0)
-	case "g", "home":
-		o.offset = 0
-	case "G", "end":
-		o.offset = maxOffset
+		return
 	}
+	// 移動の語彙と offset の計算は listnav (滑らせないので glide は使わない)
+	o.offset, _ = listnav.Scroll(listnav.MotionOf(key), o.offset, rows, len(o.lines(contentKey)))
 }
 
 // lines は key の cache 済みログ行を返す (nvim で開く v キー用の getter)。

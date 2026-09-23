@@ -9,6 +9,7 @@ import (
 	"time"
 	"tuikit/anim"
 	"tuikit/layout"
+	"tuikit/listnav"
 
 	"glogx/issues"
 
@@ -1443,10 +1444,6 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 		v.setNotice("URL 一覧は本文を開いてから u で出します", false)
 	case "/":
 		v.numFilter.start() // 絞り込み中なら続きから打てる (行集合は変わらないので refresh 不要)
-	case "j", "down", "ctrl+n":
-		v.moveCursor(1, rows)
-	case "k", "up", "ctrl+p":
-		v.moveCursor(-1, rows)
 	// 範囲選択 (ユーザー要望 2026-08-01)。y / p / Y が選択範囲へ効く。
 	// 移動が矢印と j/k の 2 系統あるので、伸張も両方に付ける (K = shift+k、J = shift+j)。
 	// 🚨 矢印だけにしない: shift+矢印は端末・多重化 (tmux) の設定次第でアプリまで届かないことが
@@ -1455,26 +1452,11 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 		v.extendMark(-1, rows)
 	case "shift+down", "J":
 		v.extendMark(1, rows)
-	case "ctrl+d", "pgdown", "f":
-		v.movePage(max(rows/2, 1), rows)
 	case " ":
+		// group 親行の Space は開閉 (それ以外の行では移動の語彙どおり半ページ)
 		if !v.toggleGroupAtCursor() {
-			v.movePage(max(rows/2, 1), rows)
+			v.applyMotion(listnav.HalfDown, rows)
 		}
-	// 🚨 shift+space は端末によっては届かず、素の 0x20 (= 下方向) になる。アプリ側で直せない
-	// 理由と、上スクロールの確実な経路を消してはいけない理由は pagerScrollKey の同じ case に書いた。
-	case "ctrl+u", "pgup", "b", "shift+space":
-		v.movePage(-max(rows/2, 1), rows)
-	case "g", "home":
-		v.clearPendingMoveAnchors()
-		v.clearMark()
-		v.cursor, v.offset = 0, 0
-	case "G", "end":
-		v.clearPendingMoveAnchors()
-		v.clearMark()
-		v.ensureDisplayRows()
-		v.cursor = max(len(v.displayRows)-1, 0)
-		v.scrollToCursor(rows)
 	case "tab", "l", "right":
 		if v.numFilter.active {
 			break // 絞り込み中はカテゴリの概念が無い (ヘッダーもタブ行を出していない)
@@ -1505,8 +1487,36 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 		v.refresh()
 	case "r":
 		return v.scanCmd(v.cwd) // loaded は落とさない (取り直し中も前回の結果を出したままにする)
+	default:
+		v.applyMotion(listnav.MotionOf(key), rows) // 移動の語彙 (j/k/g/G/半ページ) は listnav が持つ
 	}
 	return nil
+}
+
+// applyMotion は一覧のカーソル移動を適用する。半ページはカーソルの描画位置だけを滑らせる
+// (movePage)。端へのジャンプは、範囲選択と移動待ちのアンカーを捨ててから飛ぶ。
+func (v *issuesView) applyMotion(m listnav.Motion, rows int) {
+	switch m {
+	case listnav.Down:
+		v.moveCursor(1, rows)
+	case listnav.Up:
+		v.moveCursor(-1, rows)
+	case listnav.HalfDown:
+		v.movePage(listnav.Half(rows), rows)
+	case listnav.HalfUp:
+		v.movePage(-listnav.Half(rows), rows)
+	case listnav.Top:
+		v.clearPendingMoveAnchors()
+		v.clearMark()
+		v.cursor, v.offset = 0, 0
+	case listnav.Bottom:
+		v.clearPendingMoveAnchors()
+		v.clearMark()
+		v.ensureDisplayRows()
+		v.cursor = max(len(v.displayRows)-1, 0)
+		v.scrollToCursor(rows)
+	case listnav.None:
+	}
 }
 
 // numberFilterKey は番号を入力しているあいだのキー。
@@ -2149,10 +2159,10 @@ func (v *issuesView) listLines(o issuesRenderOpts) []string {
 	out := make([]string, 0, rows)
 	for i := offset; i < end; i++ {
 		// バー列ぶんを先に引く: 幅ぴったりに組むと scrollbarColumn のクリップで末尾 1 文字が
-		// "…" に化ける (box.go の scrollbarColumnWidth)
-		out = append(out, v.rowLine(i, dispCur, o, o.width-scrollbarColumnWidth))
+		// "…" に化ける (tuikit layout.ScrollbarWidth)
+		out = append(out, v.rowLine(i, dispCur, o, o.width-layout.ScrollbarWidth))
 	}
-	out = scrollbarColumn(out, o.width, len(v.displayRows), offset, o.colored)
+	out = layout.Scrollbar(out, o.width, len(v.displayRows), offset, o.colored)
 	return append(head, out...)
 }
 
@@ -2423,7 +2433,7 @@ func (v *issuesView) bodyLines(o issuesRenderOpts) []string {
 	// 左の行番号の溝ぶんも整形前に引く (溝を後付けすると幅を超える)。桁数はソース行数から
 	// 決める: 整形しないと行番号が分からず、行番号が分からないと溝幅が決まらない循環を切る
 	gutter := srcGutterWidth(v.body.SrcLineCount())
-	lines := v.body.Lines(o.width-scrollbarColumnWidth-gutter, o.colored) // バー列ぶんも引く
+	lines := v.body.Lines(o.width-layout.ScrollbarWidth-gutter, o.colored) // バー列ぶんも引く
 	// 行数は幅で変わる (Body は幅ごとに整形し直す)。幅が広がって行数が減ると論理 bodyOff が
 	// 上限を超えたまま残り、k / ctrl+u は max(bodyOff-n, 0) しか見ないので「何度押しても
 	// 画面が動かない」打鍵数が生まれる。描画で確定した行数で論理 offset を収束させて防ぐ。
@@ -2439,7 +2449,7 @@ func (v *issuesView) bodyLines(o issuesRenderOpts) []string {
 		}
 		out = append(out, srcGutter(src, gutter, o.colored)+lines[i])
 	}
-	out = scrollbarColumn(out, o.width, len(lines), offset, o.colored)
+	out = layout.Scrollbar(out, o.width, len(lines), offset, o.colored)
 	return append(header, out...)
 }
 

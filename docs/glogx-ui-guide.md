@@ -40,6 +40,13 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
   一覧では `l` = 開く / `h` = 閉じる、タブのある画面では `h`/`l` = タブ移動になる。
   「戻る = 左」「進む = 右」の向きは全画面で守る
 - `g`/`G` は端ジャンプ。`Ctrl-D`/`Ctrl-U` と `Space`/`f`/`b` は半ページ (less の語彙)
+- **移動の語彙 (どのキーがどの移動か) は tuikit の `listnav.MotionOf` が 1 箇所で持つ**。各画面は
+  自分の動作キーを先に捌き、残りを `MotionOf` に渡して、得た移動を自分の意味で適用する
+  (issues / status / doctor / コミット一覧 / job パネル / job 詳細 / pager)。画面ごとに移動の case を
+  手書きしない (手書きしていたころは、画面によって効く別名が違っていた)。配線は
+  `motion_vocabulary_test.go` が入口 (`browseModel.handleKey`) から固定している
+  - 例外は doctor の削除確認パネル (`deleteScrollKeys`): 「送るキー以外は中止に落とす」安全側の
+    契約なので、語彙を寄せると中止のつもりの打鍵が送りに化ける。送るキーはそこに 1 つずつ足す
 - スクロールは全 pager で `pagerScrollKey` (`scroll_glide.go`) を共有し、**手触り (glide の
   フレーム数・末尾で止まる挙動) を 1 箇所で決める**。画面ごとに別実装しない
 
@@ -47,10 +54,8 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 
 - `Ctrl-N`/`Ctrl-P` = ↓/↑、`Ctrl-F` = → は**カーソルを持つ画面で同じ**。`Ctrl-F` は `tui.go` の
   入口で `right` に正規化しているので、各画面は `right` だけ見ればよい
-  - 🚨 **doctor 画面 (`doctor_view.go`) だけは `Ctrl-N`/`Ctrl-P` を受けない**（移動は
-    `j`/`k`・`C-d`/`C-u`・`g`/`G` のみ）。`tui.go` の正規化コメントが対応範囲として挙げているのも
-    一覧 / パネル / 詳細 / diff の 4 つで、doctor は入っていない。足すなら他画面と同じ case を
-    `doctor_view.go` の移動キー処理へ入れる
+  - doctor 画面も語彙を `listnav.MotionOf` に寄せたので `Ctrl-N`/`Ctrl-P` を受ける (以前は doctor だけ
+    受けていなかった)。削除確認パネルは上の例外のとおり受けない
 - 🚨 **`Ctrl-B` は ← の別名ではない**。本家 glog で push だった名残で未割当のまま。
   issues viewer だけタブ移動の左として受けている (ユーザー要望 2026-07-31) が、全画面へは
   広げない (一覧・パネル側の `left` に別の意味を与えないため)

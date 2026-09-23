@@ -8,7 +8,7 @@ import (
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
 
-	"glogx/sgr"
+	"tuikit/sgr"
 	"tuikit/termwidth"
 )
 

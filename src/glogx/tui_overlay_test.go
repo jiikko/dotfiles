@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"tuikit/layout"
 
 	"glogx/issues"
 	"glogx/usage"
@@ -276,9 +277,9 @@ func TestDiffBoxLinesScrollbar(t *testing.T) {
 		}
 		trimmed := strings.TrimSuffix(strings.TrimSuffix(l, shade), " "+borderLight.v)
 		switch {
-		case strings.HasSuffix(trimmed, scrollbarThumbGlyph):
+		case strings.HasSuffix(trimmed, layout.ScrollbarThumb):
 			thumbs++
-		case strings.HasSuffix(trimmed, scrollbarTrackGlyph):
+		case strings.HasSuffix(trimmed, layout.ScrollbarTrack):
 		default:
 			t.Fatalf("本文行 %d にバー列が無い: %q", i, l)
 		}
@@ -298,7 +299,7 @@ func TestDiffBoxLinesScrollbar(t *testing.T) {
 		t.Fatalf("収まる場合の枠幅 = %d, 溢れる場合 = %d", w, dispWidth(stripANSI(box[0])))
 	}
 	for i, l := range fit[1 : len(fit)-2] {
-		if strings.Contains(l, scrollbarThumbGlyph) {
+		if strings.Contains(l, layout.ScrollbarThumb) {
 			t.Fatalf("収まるのに thumb が出ている (行 %d): %q", i, l)
 		}
 	}

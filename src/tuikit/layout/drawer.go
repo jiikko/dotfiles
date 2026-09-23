@@ -7,12 +7,8 @@ package layout
 import (
 	"math"
 
+	"tuikit/sgr"
 	"tuikit/termwidth"
-)
-
-const (
-	sgrDim   = "\x1b[2m"
-	sgrReset = "\x1b[0m"
 )
 
 // DrawerGeometry は引き出し (右から滑り込む詳細パネル) の寸法の決め方。
@@ -71,7 +67,7 @@ func ComposeDrawer(base, panel []string, w, total int, colored bool) []string {
 	left := total - w // 板の左辺 = 一覧が見えている幅
 	sep := "▏"
 	if colored {
-		sep = sgrDim + sep + sgrReset
+		sep = sgr.Dim + sep + sgr.Reset
 	}
 	out := make([]string, len(base))
 	for i, b := range base {
@@ -81,7 +77,7 @@ func ComposeDrawer(base, panel []string, w, total int, colored bool) []string {
 		}
 		line := cut(b, left)
 		if colored {
-			line += sgrReset
+			line += sgr.Reset
 		}
 		line += termwidth.PadSpaces(max(left-termwidth.Of(line), 0))
 		if left < total {
@@ -89,7 +85,7 @@ func ComposeDrawer(base, panel []string, w, total int, colored bool) []string {
 		}
 		vis := cut(p, max(w-1, 0))
 		if colored {
-			vis += sgrReset
+			vis += sgr.Reset
 		}
 		out[i] = line + vis + termwidth.PadSpaces(max(w-1-termwidth.Of(vis), 0))
 	}

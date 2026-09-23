@@ -7,7 +7,7 @@ import (
 
 	"tuikit/termwidth"
 
-	"glogx/sgr"
+	"tuikit/sgr"
 )
 
 // defaultOrder は Claude の枠のうち描くものと順序。5h セッションと weekly(all models) の

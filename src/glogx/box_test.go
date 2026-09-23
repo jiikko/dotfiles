@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"tuikit/layout"
 )
 
 func TestBuildShadowPanelBoxWidths(t *testing.T) {
@@ -139,9 +140,9 @@ func TestWithScrollbar(t *testing.T) {
 	thumbAt := func(offset int) []int {
 		var idx []int
 		for i, l := range withScrollbar(rows(10), 40, 100, offset, false) {
-			if strings.HasSuffix(l, scrollbarThumbGlyph) {
+			if strings.HasSuffix(l, layout.ScrollbarThumb) {
 				idx = append(idx, i)
-			} else if !strings.HasSuffix(l, scrollbarTrackGlyph) {
+			} else if !strings.HasSuffix(l, layout.ScrollbarTrack) {
 				t.Fatalf("行 %d にバー列が無い: %q", i, l)
 			}
 		}

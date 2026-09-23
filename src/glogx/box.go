@@ -2,6 +2,7 @@ package main
 
 import (
 	"strings"
+	"tuikit/layout"
 )
 
 // 枠描画のプリミティブ (browseModel の状態に依存しない純関数)。状態機械 (tui.go) から
@@ -138,75 +139,13 @@ const minPanelWidth = 10
 // ずれて枠が崩れないようにする。
 func panelInnerWidth(frameWidth int) int { return frameWidth - 4 }
 
-// スクロールバーのグリフ。track は枠の側辺 (│) と同じ字形にして「本文の中に走る細い溝」に見せ、
-// thumb だけ █ で持ち上げる。
-const (
-	scrollbarTrackGlyph = "│"
-	scrollbarThumbGlyph = "█"
-)
-
 // withScrollbar は buildShadowPanelBox に渡す本文行の右端に 1 桁のスクロールバー列を足す。
 // boxWidth は buildShadowPanelBox に渡すのと同じ幅を受け取り、本文幅 (inner) を内部で再計算
 // する (呼び出し側に枠の内訳を知らせない)。影付き枠は右影 1 桁を width から捻出して枠自体が
 // 1 桁狭い (buildPanelBoxImpl の fw = width-1) ため、-1 してから inner を出す — これを忘れると
 // バー列が枠の clip に食われて消える。
 func withScrollbar(rows []string, boxWidth, total, offset int, colored bool) []string {
-	return scrollbarColumn(rows, panelInnerWidth(max(boxWidth, minPanelWidth)-1), total, offset, colored)
-}
-
-// scrollbarColumnWidth はバー列がこの関数のクリップで消費する桁数 (バー 1 桁 + 手前の空き 1 桁)。
-//
-// 🚨 内訳を変えるならここ 1 箇所。事前に幅を差し引いてから行を組む呼び出し側 (issues viewer の
-// listLines / bodyLines) もこの定数を引く — 別々の数で持つと等号でずれ、小さければ全幅の行だけ
-// 末尾 1 文字が "…" に化け、大きければ 1 桁ぶん本文が痩せる。どちらも「幅を超えない」ので
-// テストの上限アサートを素通りする。
-const scrollbarColumnWidth = 2
-
-// scrollbarColumn は行列の右端に 1 桁のスクロールバー列を足す本体。innerWidth は行が使える
-// 表示幅そのもの (枠の内訳を差し引いた後の幅)。枠付きパネルは withScrollbar 経由で、
-// メインのリストビュー (viewLines) は contentWidth を直接渡してここを使う。
-// total は全行数、offset は先頭行が全体の何行目か。全体が収まる (total <= len(rows)) ときは
-// 行をそのまま返す (列を作らないので本文幅が戻る)。行はバー列 + 手前の空き 1 桁を除いた幅へ
-// クリップする。
-func scrollbarColumn(rows []string, innerWidth, total, offset int, colored bool) []string {
-	view := len(rows)
-	if view == 0 || total <= view {
-		return rows
-	}
-	contentW := innerWidth - scrollbarColumnWidth
-	if contentW < 1 {
-		// バー列 (空白 + 記号) すら入らない極小幅ではバーを描かない。以前は contentW を 1 に
-		// 床上げしており、幅 1-2 で「本文 + バー」が必ず枠を破っていた (issue 053)
-		out := make([]string, len(rows))
-		for i, r := range rows {
-			out[i] = clipToWidth(r, innerWidth)
-		}
-		return out
-	}
-	// thumb 長は表示比率、位置は offset 比率。どちらも最低 1 行を確保し、末尾 (offset=maxOffset)
-	// では thumb が下端に接地する。
-	thumb := min(max(view*view/total, 1), view)
-	maxOffset := total - view
-	start := 0
-	if travel := view - thumb; travel > 0 {
-		start = min((offset*travel+maxOffset/2)/maxOffset, travel)
-	}
-	reset := ""
-	if colored {
-		reset = ansiReset // 行末で色を閉じ、本文の SGR がバー列へ滲まないようにする
-	}
-	// track の paint は行不変なのでループ外で 1 回だけ組む (毎フレーム全行で走る)
-	track := paint(scrollbarTrackGlyph, ansiDim, colored)
-	out := make([]string, 0, view)
-	for i, row := range rows {
-		glyph := track
-		if i >= start && i < start+thumb {
-			glyph = scrollbarThumbGlyph
-		}
-		content, cw := clipMeasure(row, contentW)
-		out = append(out, content+reset+padSpaces(contentW-cw)+" "+glyph)
-	}
-	return out
+	return layout.Scrollbar(rows, panelInnerWidth(max(boxWidth, minPanelWidth)-1), total, offset, colored)
 }
 
 // 落ち影は前景ブロック文字で描く (bg ベタ塗りではない)。近黒 fg の █ 本体 + 一段淡い ▓ の
