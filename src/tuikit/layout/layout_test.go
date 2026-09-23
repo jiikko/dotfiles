@@ -87,10 +87,12 @@ func TestSlideIn(t *testing.T) {
 		}
 	}
 	// 出ていくときは全行同時・等速 (着地点が無いので、ずらすと最上行が遅れて残る)
-	out := SlideIn(window, 0.5, 20, true, 0.35)
-	for i := 1; i < len(out); i++ {
-		if a, b := len(out[0])-len(window[0]), len(out[i])-len(window[i]); a != b {
-			t.Fatalf("閉じるときに行ごとの横ずれが違う: %q", out)
+	// 等速 = 横ずれが進捗に比例する (width 20 で残り 0.25 なら 5 桁)。減速を掛けると終端で
+	// ほぼ動かなくなり、この位置にいない
+	out := SlideIn(window, 0.75, 20, true, 0.35)
+	for i := range out {
+		if got := len(out[i]) - len(window[i]); got != 5 {
+			t.Fatalf("閉じるときの行 %d の横ずれ = %d, want 5 (全行同時・等速): %q", i, got, out)
 		}
 	}
 }
