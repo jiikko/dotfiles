@@ -149,8 +149,25 @@ set -e
 [ "$(cat "$SETTINGS")" = "$orig" ] || ng "13: jq が無いのに settings.json を書き換えた"
 grep -q 'jq not found' "$CFG/stderr" || ng "13: jq 不在が stderr に出ていない"
 
+# --- 14. rc=2 を漏らさない (ConfigChange では exit 2 が設定変更の block になる) --
+# 事前検証 (jq empty) は通し、退避キーの抽出で jq が rc=2 を返す状況を shim で作る。
+fixture case14; scrambled > "$SETTINGS"
+real_jq=$(command -v jq)
+mkdir -p "$CFG/shim"
+cat > "$CFG/shim/jq" <<SHIM
+#!/bin/sh
+case "\$*" in *with_entries*) exit 2 ;; esac
+exec "$real_jq" "\$@"
+SHIM
+chmod +x "$CFG/shim/jq"
+case "$real_jq" in "$CFG/shim"/*) ng "14: shim が自分自身を実体として解決した" ;; esac
+set +e
+OUT=$(CLAUDE_CONFIG_DIR="$CFG" PATH="$CFG/shim:$PATH" "$HOOK" 2>"$CFG/stderr"); RC=$?
+set -e
+[ "$RC" -eq 1 ] || ng "14: rc=$RC (jq の rc=2 は 1 に丸めるべき)"
+
 if [ "$fails" -eq 0 ]; then
-  echo "OK: normalize-settings.sh (13 ケース)"
+  echo "OK: normalize-settings.sh (14 ケース)"
 else
   echo "✗ normalize-settings.sh: $fails 件の失敗"
   exit 1

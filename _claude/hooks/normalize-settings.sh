@@ -21,6 +21,11 @@
 # `make pull` (セッションを起こさずに pull するとき)。書き込み直後を捕まえる Stop /
 # SessionEnd は採らない — Stop は CLI の書き込みと競合し、SessionEnd は crash / kill で
 # 発火しない。SessionStart は必ず来て冪等なので、前回の書き込みをここで畳む。
+# 加えて ConfigChange hook (セッション中に設定ファイルが変わった直後) でも走らせ、
+# /model 等の書き込みを次のセッションまで dirty のまま残さない。自分の書き戻しで
+# ConfigChange が再発火しても、変化が無ければ書かないので 2 回目で止まる。
+# 🚨 ConfigChange では exit 2 が「その変更を block する」意味になる (CLI の書き込みを
+#    取り消しうる)。jq の usage error 等の rc=2 を漏らさないよう、EXIT trap で 1 に丸める。
 #
 # 🚨 SessionStart hook の stdout はセッションのコンテキストへ注入される。成功時は無言にし、
 #    退避の通知も含めて出力は stderr へ出す (`make pull` では端末に出るので情報は失わない)。
@@ -45,7 +50,13 @@ command -v jq >/dev/null 2>&1 || { echo "normalize-settings: jq not found; skip"
 jq empty "$SETTINGS" 2>/dev/null || { echo "normalize-settings: settings.json is invalid JSON; skip" >&2; exit 0; }
 
 tmp_dir=$(mktemp -d)
-trap 'rm -rf "$tmp_dir"' EXIT
+on_exit() {
+  rc=$?
+  rm -rf "$tmp_dir"
+  [ "$rc" -eq 2 ] && rc=1
+  exit "$rc"
+}
+trap on_exit EXIT
 
 # 1. settings.json に含まれる揮発キーを settings.local.json へ退避する
 extracted=$(jq -c --argjson keys "$VOLATILE" \

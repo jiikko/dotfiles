@@ -10,6 +10,17 @@
     "ENABLE_CLAUDEAI_MCP_SERVERS": "false"
   },
   "hooks": {
+    "ConfigChange": [
+      {
+        "hooks": [
+          {
+            "command": "~/dotfiles/_claude/hooks/normalize-settings.sh",
+            "timeout": 10,
+            "type": "command"
+          }
+        ]
+      }
+    ],
     "Notification": [
       {
         "hooks": [
