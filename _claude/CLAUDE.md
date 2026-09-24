@@ -22,6 +22,12 @@
 - **worktree を残さない**。コミットを master へ移せた時点で `git worktree remove` する
 - 共有 working tree に留まるなら [`commit-with-pathspec.md`](rules/commit-with-pathspec.md) に従う。書き込み権限のエージェントを 2 体以上並行させるときは [`parallel-write-agents-need-worktree-isolation.md`](rules/parallel-write-agents-need-worktree-isolation.md)
 
+## 他セッションからの問い合わせに答えるとき
+
+- **調べないと答えられない問い合わせは、背景のサブエージェント (sonnet) に調べさせて返信の下書きを作らせる**。自分の会話に残るのを「受信 / 委譲 / 返信」の数行に抑え、作業の文脈を問い合わせで埋めない
+  - サブエージェントへの指示は「読み取りのみ・返信は 3 行以内の下書きで返す」。**送信は自分で行う** (下書きを検閲してから `SendMessage`。[`subagent-model-tiering.md`](rules/subagent-model-tiering.md))
+  - 手元の記憶だけで答えられる 1〜2 行の質問 (今どの issue / どのファイルを触っているか) は委譲せずその場で返す
+
 ## 応答・成果物の長さとスコープ
 
 出力の長さ・スコープ・委譲の量は reasoning effort では制御できず、明示指示でしか効かない
