@@ -2,6 +2,7 @@ package ui
 
 import (
 	"os/exec"
+	"slices"
 	"testing"
 	"time"
 
@@ -75,7 +76,7 @@ func typeText(m *Model, s string) {
 // 回答の経路: 質問待ちのカードで r → 入力 → enter で、そのカード宛ての Answer が 1 つだけ backend に届く。
 func TestAnswerReachesBackendForSelectedCard(t *testing.T) {
 	be := newSpy()
-	m := New(be)
+	m := New(be, nil)
 	press(m, "right", "down") // 作業中の R1 → 質問待ちの列 (W1) → W2
 	if m.selected != "W2" {
 		t.Fatalf("選択が W2 に来ていない: %q", m.selected)
@@ -97,7 +98,7 @@ func TestAnswerReachesBackendForSelectedCard(t *testing.T) {
 
 func TestAnswerIsRefusedForCardThatIsNotWaiting(t *testing.T) {
 	be := newSpy()
-	m := New(be) // 最初の選択は作業中の R1
+	m := New(be, nil) // 最初の選択は作業中の R1
 	press(m, "r")
 	if m.mode != modeBoard {
 		t.Fatal("作業中のカードで回答の入力欄が開いた")
@@ -111,7 +112,7 @@ func TestAnswerIsRefusedForCardThatIsNotWaiting(t *testing.T) {
 
 func TestEscCancelsInputWithoutSending(t *testing.T) {
 	be := newSpy()
-	m := New(be)
+	m := New(be, nil)
 	press(m, "o")
 	typeText(m, "やっぱりやめる")
 	press(m, "esc", "enter") // esc の後の enter はボードの詳細切り替えで、送信ではない
@@ -123,7 +124,7 @@ func TestEscCancelsInputWithoutSending(t *testing.T) {
 // 追加オーダーの種類は tab で切り替わり、選んだ種類のまま届く。
 func TestOrderKindTabCycles(t *testing.T) {
 	be := newSpy()
-	m := New(be)
+	m := New(be, nil)
 	press(m, "o")
 	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	typeText(m, "B 案で")
@@ -137,7 +138,7 @@ func TestOrderKindTabCycles(t *testing.T) {
 // attach は選択中のカードの session で backend に頼み、画面を明け渡すコマンドを返す。
 func TestAttachUsesSelectedSession(t *testing.T) {
 	be := newSpy()
-	m := New(be)
+	m := New(be, nil)
 	press(m, "right")
 	if cmd := press(m, "a"); cmd == nil {
 		t.Fatal("attach のコマンドが返らなかった")
@@ -150,7 +151,7 @@ func TestAttachUsesSelectedSession(t *testing.T) {
 // 選択はカード ID で持つので、カードが列を移っても同じカードを指し続ける。
 func TestSelectionFollowsCardAcrossColumns(t *testing.T) {
 	be := newSpy()
-	m := New(be)
+	m := New(be, nil)
 	press(m, "right") // W1
 	be.snap.Cards[1].State = card.Review
 	be.snap.Cards[1].Wait = card.Wait{}
@@ -166,7 +167,7 @@ func TestSelectionFollowsCardAcrossColumns(t *testing.T) {
 // ボードでのペーストはキー操作として解釈しない (貼った文字に a / r が混ざっても何も起きない)。
 func TestPasteOnBoardDoesNothing(t *testing.T) {
 	be := newSpy()
-	m := New(be)
+	m := New(be, nil)
 	m.Update(tea.PasteMsg{Content: "ara"})
 	if len(be.attached) != 0 || m.mode != modeBoard {
 		t.Fatalf("ボードへのペーストが操作として実行された: attached=%v mode=%v", be.attached, m.mode)
@@ -181,7 +182,7 @@ func TestPasteOnBoardDoesNothing(t *testing.T) {
 // 空の本文で送ると backend が拒否する。そのとき入力欄は開いたままで、書き直して送れる。
 func TestEmptySubmitKeepsInputOpen(t *testing.T) {
 	be := newSpy()
-	m := New(be)
+	m := New(be, nil)
 	press(m, "right", "r", "enter")
 	if m.mode != modeInput {
 		t.Fatal("空の本文で拒否されたのに入力欄が閉じた")
@@ -193,5 +194,73 @@ func TestEmptySubmitKeepsInputOpen(t *testing.T) {
 	}
 	if a := be.applied[1].(backend.Answer); a.Text != "やっぱり遅延ロードで" || m.mode != modeBoard {
 		t.Fatalf("書き直した回答が届いてボードへ戻るはず: %#v mode=%v", a, m.mode)
+	}
+}
+
+func newRepoSpy() *spy {
+	now := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
+	return &spy{snap: backend.Snapshot{Now: now, Limit: 2, DaemonTick: now, Cards: []card.Card{
+		{ID: "D1", Repo: "dotfiles", State: card.Running, Since: now},
+		{ID: "O1", Repo: "obaket", State: card.Running, Since: now},
+		{ID: "X1", Repo: "outside", State: card.Planned, Since: now},
+		{ID: "D2", Repo: "dotfiles", State: card.Planned, Since: now},
+	}}}
+}
+
+func visibleIDs(m *Model) []string {
+	var ids []string
+	for _, c := range m.visible() {
+		ids = append(ids, c.ID)
+	}
+	return ids
+}
+
+// タブは global + 「config に在り、カードも在る repo」。config の外の repo (outside) と、
+// カードの無い repo (empty) はタブにならない。
+func TestTabsAreConfiguredReposWithCards(t *testing.T) {
+	m := New(newRepoSpy(), []string{"dotfiles", "empty", "obaket"})
+	if got, want := m.tabs(), []string{"", "dotfiles", "obaket"}; !slices.Equal(got, want) {
+		t.Fatalf("タブが違う: got %q want %q", got, want)
+	}
+}
+
+// tab で repo のタブへ移ると、そのタブの repo のカードだけが見え、選択もその中に入る。一周すると global に戻る。
+func TestTabFiltersCardsAndSelection(t *testing.T) {
+	m := New(newRepoSpy(), []string{"dotfiles", "obaket"})
+	if len(visibleIDs(m)) != 4 {
+		t.Fatalf("global は全カード (config の外も含む): %v", visibleIDs(m))
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if got := visibleIDs(m); !slices.Equal(got, []string{"D1", "D2"}) || m.tab != "dotfiles" {
+		t.Fatalf("dotfiles タブのカードが違う: tab=%q %v", m.tab, got)
+	}
+	if m.selected != "D1" && m.selected != "D2" {
+		t.Fatalf("選択が dotfiles のカードに入っていない: %q", m.selected)
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	if m.tab != "" {
+		t.Fatalf("shift+tab で global に戻るはず: %q", m.tab)
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if m.tab != "" {
+		t.Fatalf("tab で一周すると global に戻るはず: %q", m.tab)
+	}
+}
+
+// 選んでいる repo のカードが全部消えたらタブも消えるので、global へ戻す (空の画面に取り残さない)。
+func TestTabFallsBackToGlobalWhenRepoEmpties(t *testing.T) {
+	be := newRepoSpy()
+	m := New(be, []string{"dotfiles", "obaket"})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // obaket
+	if m.tab != "obaket" {
+		t.Fatalf("前提: obaket タブに居ない: %q", m.tab)
+	}
+	be.snap.Cards = slices.DeleteFunc(be.snap.Cards, func(c card.Card) bool { return c.Repo == "obaket" })
+	m.Update(tickMsg{})
+	if m.tab != "" || len(visibleIDs(m)) != 3 {
+		t.Fatalf("global に戻って全カードが見えるはず: tab=%q %v", m.tab, visibleIDs(m))
 	}
 }

@@ -15,6 +15,7 @@ bin/pro-con      # claude は起動しない。模擬の backend (fake) が状�
 
 | キー | 動作 |
 |---|---|
+| tab / shift+tab | repo タブの切り替え (global = 全 repo) |
 | ←→↑↓ / hjkl | カードの選択 |
 | enter / esc | 詳細の開閉 |
 | a | PG の session を開く (今は模擬) |
@@ -23,10 +24,24 @@ bin/pro-con      # claude は起動しない。模擬の backend (fake) が状�
 | b | btw (PG を止めずに状況を聞く) |
 | q | 終了 |
 
+## 設定 (`~/.config/pro-con/config.toml`)
+
+```toml
+repo_roots = ["~/src"]      # この直下の git repo を列挙する (深くは掘らない。.git がファイルの worktree も拾う)
+repos      = ["~/dotfiles"] # root の外にある repo を個別に足す
+```
+
+- ファイルが無ければ上の値が既定 (`$XDG_CONFIG_HOME` があればその下)。**壊れた TOML と知らないキーはエラーで起動しない**
+  (書き間違えたキーを黙って無視すると「設定したのに効かない」が無音で起きる)
+- 読めない root・repo でない `repos`・同じ名前の repo は警告にして起動する (通知行に件数と 1 件目)
+- タブに出るのは「列挙した repo のうち、カードが 1 枚以上ある repo」だけ (~/src の下は数十 repo ある)。
+  列挙に無い repo のカードは global タブにだけ出る。repo はディレクトリ名でカードと突き合わせる
+
 ## 構成
 
 | package | 役割 |
 |---|---|
+| `config` | 設定ファイルと repo の列挙 |
 | `card` | ドメイン (カード・状態・不変条件の検査)。UI にも backend にも依存しない |
 | `backend` | UI と状態の持ち主の境界 (`Backend` interface / `Command` / `Snapshot`)。UI はここより下を知らない |
 | `fake` | 模擬 backend。本物に差し替えるときは `backend.Backend` を満たす実装を足し、`main.go` の 1 行を替える |

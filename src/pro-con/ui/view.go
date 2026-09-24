@@ -33,6 +33,7 @@ func (m *Model) View() tea.View {
 func (m *Model) render() string {
 	var b strings.Builder
 	b.WriteString(sgrBold + "pro-con (mock)" + sgrReset + sgrDim + "  claude は起動しない。表示は模擬データ" + sgrReset + "\n")
+	b.WriteString(m.tabBar() + "\n")
 	b.WriteString(m.gauge() + "\n\n")
 	lines := m.boardLines()
 	b.WriteString(strings.Join(lines, "\n") + "\n")
@@ -50,12 +51,40 @@ func (m *Model) render() string {
 	return b.String()
 }
 
-// gauge は溜まり具合の 1 行 (要件 4)。
+// tabBar は global と repo のタブ。config の外の repo のカードは global にだけ出るので、その枚数も添える。
+func (m *Model) tabBar() string {
+	count := map[string]int{}
+	for _, c := range m.snap.Cards {
+		count[c.Repo]++
+	}
+	var parts []string
+	shown := 0
+	for _, t := range m.tabs() {
+		label := fmt.Sprintf("global %d", len(m.snap.Cards))
+		if t != "" {
+			label = fmt.Sprintf("%s %d", t, count[t])
+			shown += count[t]
+		}
+		if t == m.tab {
+			label = sgrReverse + " " + label + " " + sgrReset
+		} else {
+			label = " " + label + " "
+		}
+		parts = append(parts, label)
+	}
+	bar := strings.Join(parts, "│")
+	if outside := len(m.snap.Cards) - shown; outside > 0 {
+		bar += sgrDim + fmt.Sprintf("   (config の外の repo のカード %d 枚は global にだけ出る)", outside) + sgrReset
+	}
+	return bar + sgrDim + "   tab / shift+tab で切り替え" + sgrReset
+}
+
+// gauge は溜まり具合の 1 行 (要件 4)。件数は選んでいるタブの分、PG の数と上限は全体。
 func (m *Model) gauge() string {
 	counts := map[card.State]int{}
 	var oldest time.Duration
 	pending, stalled := 0, 0
-	for _, c := range m.snap.Cards {
+	for _, c := range m.visible() {
 		counts[c.State]++
 		if c.State != card.Done && c.State != card.Running {
 			if d := m.snap.Now.Sub(c.Since); d > oldest {

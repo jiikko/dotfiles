@@ -43,6 +43,11 @@ type Model struct {
 	width  int
 	height int
 
+	// repos は config から列挙した repo 名。タブは global + 「ここに在り、カードも在る repo」。
+	repos []string
+	// tab は選んでいる repo 名 ("" = global)。位置ではなく名前で持つ (タブの増減で別の repo へずれない)。
+	tab string
+
 	// 選択は位置ではなくカード ID で持つ (安定キー)。カードが列を移っても選択が付いていく。
 	selected   string
 	showDetail bool
@@ -55,12 +60,16 @@ type Model struct {
 	flash string
 }
 
-func New(be backend.Backend) *Model {
-	m := &Model{be: be, width: 120, height: 40}
+// New は repos (config から列挙した repo 名) をタブの候補にして画面を作る。nil なら global だけ。
+func New(be backend.Backend, repos []string) *Model {
+	m := &Model{be: be, repos: repos, width: 120, height: 40}
 	m.snap = be.Poll()
 	m.ensureSelection()
 	return m
 }
+
+// Notify は起動時の警告など、画面の外から通知行へ文面を出す。
+func (m *Model) Notify(s string) { m.flash = s }
 
 func tick() tea.Cmd { return tea.Tick(TickInterval, func(time.Time) tea.Msg { return tickMsg{} }) }
 
@@ -70,6 +79,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tickMsg:
 		m.snap = m.be.Poll()
+		m.ensureTab()
 		m.ensureSelection()
 		return m, tick()
 	case tea.WindowSizeMsg:
@@ -97,10 +107,63 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// columns は Snapshot をカンバンの列に分ける。列の中は Snapshot の並び順のまま。
+// tabs は global ("") と、config に在り、かつカードが 1 枚以上ある repo 名。
+// config に在ってもカードの無い repo は出さない (~/src の下は数十 repo あり、タブが埋まる)。
+func (m *Model) tabs() []string {
+	has := map[string]bool{}
+	for _, c := range m.snap.Cards {
+		has[c.Repo] = true
+	}
+	out := []string{""}
+	for _, r := range m.repos {
+		if has[r] {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// ensureTab は選んでいる repo のカードが無くなってタブが消えたら global へ戻す。
+func (m *Model) ensureTab() {
+	for _, t := range m.tabs() {
+		if t == m.tab {
+			return
+		}
+	}
+	m.tab = ""
+}
+
+func (m *Model) moveTab(delta int) {
+	ts := m.tabs()
+	cur := 0
+	for i, t := range ts {
+		if t == m.tab {
+			cur = i
+		}
+	}
+	m.tab = ts[(cur+delta+len(ts))%len(ts)]
+	m.selected = ""
+	m.ensureSelection()
+}
+
+// visible は選んでいるタブに属するカード。global は全部 (config の外の repo のカードも含む)。
+func (m *Model) visible() []card.Card {
+	if m.tab == "" {
+		return m.snap.Cards
+	}
+	var out []card.Card
+	for _, c := range m.snap.Cards {
+		if c.Repo == m.tab {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// columns は選んでいるタブのカードをカンバンの列に分ける。列の中は Snapshot の並び順のまま。
 func (m *Model) columns() [][]card.Card {
 	cols := make([][]card.Card, len(card.Columns))
-	for _, c := range m.snap.Cards {
+	for _, c := range m.visible() {
 		for i, st := range card.Columns {
 			if c.State == st {
 				cols[i] = append(cols[i], c)
@@ -175,6 +238,10 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	switch k.String() {
 	case "q", "ctrl+c":
 		return tea.Quit
+	case "tab":
+		m.moveTab(1)
+	case "shift+tab":
+		m.moveTab(-1)
 	case "left", "h":
 		m.moveCol(-1)
 	case "right", "l":
@@ -264,6 +331,7 @@ func (m *Model) submit() {
 	m.mode = modeBoard
 	m.input = nil
 	m.snap = m.be.Snapshot()
+	m.ensureTab()
 	m.ensureSelection()
 }
 

@@ -3,6 +3,8 @@
 //
 //	pro-con              TUI を起動する (模擬データ)
 //	pro-con fake-attach  attach の代わりに TUI から起動される内部用のコマンド
+//
+// 設定は ~/.config/pro-con/config.toml (無ければ既定値。書式は config package の doc)。
 package main
 
 import (
@@ -14,6 +16,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"pro-con/config"
 	"pro-con/fake"
 	"pro-con/ui"
 )
@@ -39,8 +42,28 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 2
 		}
 	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "pro-con:", err)
+		return 1
+	}
+	cfgPath := config.DefaultPath(home)
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		// 壊れた設定で黙って既定値へ落とさない (直すべき場所を出して止まる)
+		_, _ = fmt.Fprintln(stderr, "pro-con: 設定を読めない:", err)
+		return 1
+	}
+	repos, warnings := config.Discover(cfg, home)
+	names := make([]string, len(repos))
+	for i, r := range repos {
+		names[i] = r.Name
+	}
 	// 模擬時間の起点は固定しない (時刻の表示が今に近い方が見本として読みやすい)。刻みは fake が決める
-	m := ui.New(fake.New(time.Now().Truncate(time.Minute)))
+	m := ui.New(fake.New(time.Now().Truncate(time.Minute)), names)
+	if len(warnings) > 0 {
+		m.Notify(fmt.Sprintf("設定の警告 %d 件 (%s): %s", len(warnings), cfgPath, warnings[0]))
+	}
 	if _, err := tea.NewProgram(m).Run(); err != nil {
 		_, _ = fmt.Fprintln(stderr, "pro-con:", err)
 		return 1
