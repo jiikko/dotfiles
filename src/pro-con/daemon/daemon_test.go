@@ -1,0 +1,187 @@
+package daemon
+
+import (
+	"context"
+	"errors"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"pro-con/agents"
+	"pro-con/card"
+	"pro-con/live"
+	"pro-con/store"
+)
+
+var t0 = time.Date(2026, 9, 25, 1, 0, 0, 0, time.UTC)
+
+// fakeLauncher は起動・再開を記録するだけ。fail が真なら起動に失敗する。
+type fakeLauncher struct {
+	starts  []string // name
+	resumes []string // id + ":" + text
+	fail    bool
+}
+
+func (f *fakeLauncher) Start(_ context.Context, _, name, _ string) (string, error) {
+	if f.fail {
+		return "", errors.New("起動できない")
+	}
+	f.starts = append(f.starts, name)
+	return "id-" + name, nil
+}
+
+func (f *fakeLauncher) Resume(_ context.Context, id, _, text string) error {
+	f.resumes = append(f.resumes, id+":"+text)
+	return nil
+}
+
+// planned は分解済みのカードを n 枚積んだ記録を作る (箱から add → plan を通す)。
+func planned(t *testing.T, dir string, n int) {
+	t.Helper()
+	for i := range n {
+		if _, err := store.Submit(dir, store.Request{Kind: "add", Title: "t", Repo: "dotfiles", At: t0.Add(time.Duration(i) * time.Second)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.Apply(dir, t0); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := store.Load(dir)
+	for _, c := range st.Cards {
+		if _, err := store.Submit(dir, store.Request{Kind: "plan", CardID: c.ID, Issues: []card.IssueRef{{Repo: "dotfiles", Number: 1, Status: "open"}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.Apply(dir, t0); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func newDaemon(t *testing.T, dir string, l Launcher, ss []agents.Session) *Daemon {
+	t.Helper()
+	return &Daemon{Dir: dir, Limit: 2, Repos: map[string]string{"dotfiles": "/w/dotfiles"}, Launch: l,
+		List: func(context.Context) ([]agents.Session, error) { return ss, nil }, Now: func() time.Time { return t0 }}
+}
+
+func states(t *testing.T, dir string) map[string]card.Card {
+	t.Helper()
+	st, err := store.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]card.Card{}
+	for _, c := range st.Cards {
+		out[c.ID] = c
+	}
+	return out
+}
+
+// 分解済みのカードに上限まで PG を起動し、古い順に割り当てる。
+func TestDispatchRespectsLimit(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 3)
+	l := &fakeLauncher{}
+	if _, err := newDaemon(t, dir, l, nil).Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	cs := states(t, dir)
+	if len(l.starts) != 2 || cs["C-001"].State != card.Running || cs["C-002"].State != card.Running || cs["C-003"].State != card.Planned {
+		t.Fatalf("上限 2 で古い順に起動するはず: starts=%v %v %v %v", l.starts, cs["C-001"].State, cs["C-002"].State, cs["C-003"].State)
+	}
+	if cs["C-001"].Session != "id-pc-c-001" {
+		t.Fatalf("カードに session の id が入っていない: %q", cs["C-001"].Session)
+	}
+}
+
+// 起動した PG の session は、一覧に出てから pro-con の記録に登録する (session id と pid が要る)。
+func TestRegistersOnceListed(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 1)
+	l := &fakeLauncher{}
+	d := newDaemon(t, dir, l, nil)
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	reg, _ := live.LoadRegistry(filepath.Join(dir, live.RegistryFile))
+	if len(reg) != 0 {
+		t.Fatal("一覧に出る前に登録した (session id と pid が無い)")
+	}
+	d.List = func(context.Context) ([]agents.Session, error) {
+		return []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background"}}, nil
+	}
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	reg, _ = live.LoadRegistry(filepath.Join(dir, live.RegistryFile))
+	if len(reg) != 1 || reg[0].SessionID != "S1" || reg[0].PID != 42 || reg[0].CardID != "C-001" {
+		t.Fatalf("一覧に出た session を登録していない: %+v", reg)
+	}
+}
+
+// 回答を受けたカードは、新しく起動せず同じ session を再開し、回答を渡す。渡したら Resume を空にする。
+func TestAnsweredCardResumesSameSession(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 1)
+	l := &fakeLauncher{}
+	d := newDaemon(t, dir, l, []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background"}})
+	for range 2 { // 起動 → 登録
+		if _, err := d.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, r := range []store.Request{{Kind: "ask", CardID: "C-001", Question: "赤か青か"}, {Kind: "answer", CardID: "C-001", Answer: "青"}} {
+		if _, err := store.Submit(dir, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(l.starts) != 1 || len(l.resumes) != 1 || l.resumes[0] != "id-pc-c-001:青" {
+		t.Fatalf("同じ session を回答つきで再開するはず: starts=%v resumes=%v", l.starts, l.resumes)
+	}
+	if c := states(t, dir)["C-001"]; c.State != card.Running || c.Resume != "" {
+		t.Fatalf("再開の後: %v Resume=%q", c.State, c.Resume)
+	}
+}
+
+// 起動に失敗したカードは分解済みのまま残し、失敗を履歴に書く (作業中にしない)。
+func TestLaunchFailureKeepsCardPlanned(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 1)
+	notes, err := newDaemon(t, dir, &fakeLauncher{fail: true}, nil).Tick(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := states(t, dir)["C-001"]
+	if c.State != card.Planned || !strings.Contains(c.History[len(c.History)-1].Text, "起動に失敗") || len(notes) == 0 {
+		t.Fatalf("失敗したのに作業中にした / 履歴に無い: %v %+v %v", c.State, c.History, notes)
+	}
+}
+
+// PG への指示には規律 (AskUserQuestion を使わず pro-con card ask / 終えたら review / master へ push しない) とカードの ID が入る。
+func TestPromptCarriesDiscipline(t *testing.T) {
+	p := Prompt(card.Card{ID: "C-007", Title: "直す", Request: "色を直して"})
+	for _, want := range []string{"C-007", "AskUserQuestion", "pro-con card ask C-007", "pro-con card review C-007", "master へは push しない", "色を直して"} {
+		if !strings.Contains(p, want) {
+			t.Fatalf("PG への指示に %q が無い:\n%s", want, p)
+		}
+	}
+}
+
+// claude --bg の出力から短い id を読む。形が違えば読めないとエラーにする (空の id でカードを作業中にしない)。
+func TestParseBackgrounded(t *testing.T) {
+	if id, err := parseBackgrounded("backgrounded · 931e734d · m425-done\n  claude agents  list sessions\n"); err != nil || id != "931e734d" {
+		t.Fatalf("実測の形を読めない: %q %v", id, err)
+	}
+	for _, bad := range []string{"", "error: Workspace not trusted", "backgrounded ·  · x"} {
+		if _, err := parseBackgrounded(bad); err == nil {
+			t.Fatalf("読めない出力 %q を読めたことにした", bad)
+		}
+	}
+	env := withoutTmux([]string{"HOME=/h", "TMUX=/tmp/x,1,0", "TMUX_PANE=%3", "TMUXX=keep"})
+	if strings.Join(env, " ") != "HOME=/h TMUXX=keep" {
+		t.Fatalf("TMUX / TMUX_PANE だけを落とすはず: %v", env)
+	}
+}

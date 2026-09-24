@@ -197,6 +197,8 @@ type Card struct {
 	Orders   []Order
 	History  []Event
 	Log      []string // PG の出力の末尾 (本番は transcript から読む)
+	// Resume は次に PG を再開するときに渡す文 (質問への回答)。daemon が渡したら空にする (本物のモードだけ。426 の決定 2)
+	Resume string `json:",omitempty"`
 	// Archived は完了のレーンから片付けた (x)。ボードには出さないが、記録 (状態ファイル) には残す
 	Archived bool
 	// LastProgress は「実質的に進んだ」最後の時刻 (watchdog が見る。活動ではなく進捗)

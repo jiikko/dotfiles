@@ -31,7 +31,11 @@
     テスト 3 本、変異 2 本が red (--issue の書式の検査 / add の必須の検査)
 - [ ] **3c `pro-con daemon`**: 箱の適用 → PG の起動 (`claude --bg -w`、431 の設定、`live.Register`) → `claude agents --json` で状態を読んでカードへ →
   回答・追記は stop → resume (426 の決定 2・3) → 落ちた回数で止める (決定 4) → watchdog。起動の部分は本物の claude が要る (枠を使う)
-  - [ ] 3c-1 分解済みのカードに PG を起動 (上限まで)・記録 (`live.Register`) に登録・回答を受けたカードは stop → resume。起動の口は差し替えられる形にし、偽物で単体テスト (枠を使わない)
+  - [x] 3c-1 分解済みのカードに PG を起動 (上限まで)・記録 (`live.Register`) に登録・回答を受けたカードは stop → resume。起動の口は差し替えられる形にし、偽物で単体テスト (枠を使わない)
+    - 済み (2026-09-25): `src/pro-con/daemon` (Tick = 箱の適用 → 一覧に出た PG の登録 → 分解済みへの割り当て)。回答は card.Resume に入り、
+      再開で渡したら空にする。起動の口は Launcher で差し替え、本物は ExecLauncher (`claude --bg -w … --setting-sources project,local`)。
+      🚨 **ExecLauncher は本物の claude で一度も走らせていない** (3f で確かめる)。store に daemon 用の Update を足した (不変条件の検査は Apply と共通)。
+      テスト 6 本、変異 3 本が red (上限 / 再開の分岐 / 起動の失敗で作業中にしない)。敵対的レビューは未実施 (枠のため)
   - [ ] 3c-2 落ちた回数で止める (426 の決定 4)・watchdog (停滞)
   - [ ] 3c-3 `pro-con daemon` の常駐と排他 (2 つ起動しない)
 - [ ] **3d 画面**: 本物の backend が 3a の記録を読み、書き込み (回答・依頼 等) は箱に置く。読み取り専用をやめる

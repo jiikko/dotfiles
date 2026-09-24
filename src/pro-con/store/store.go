@@ -192,6 +192,42 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 	return results, nil
 }
 
+// Update は daemon の中でカードを直接進める (PG の起動で作業中へ、など。箱を通さない daemon 自身の操作)。
+// f が st を書き換え、不変条件に新しい違反が出なければ記録を書く。🚨 呼ぶのは daemon だけ (Apply と同じ書き手)。
+func Update(dir string, f func(*State) error) error {
+	st, err := Load(dir)
+	if err != nil {
+		return err
+	}
+	next := st
+	next.Cards = append([]card.Card(nil), st.Cards...)
+	if err := f(&next); err != nil {
+		return err
+	}
+	if err := newViolation(st.Cards, next.Cards); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(next, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeAtomic(filepath.Join(dir, StateFile), data)
+}
+
+// newViolation は before に無かった不変条件の違反が after に出たらエラー (件数ではなく中身で比べる)。
+func newViolation(before, after []card.Card) error {
+	seen := map[card.Violation]bool{}
+	for _, v := range card.Check(before) {
+		seen[v] = true
+	}
+	for _, v := range card.Check(after) {
+		if !seen[v] {
+			return fmt.Errorf("不変条件を破る (%s: %s)", v.CardID, v.Reason)
+		}
+	}
+	return nil
+}
+
 // apply は依頼 1 件を st に当てた次の状態と、対象のカード ID を返す。規則か不変条件に反したらエラー (st は変えない)。
 func apply(st State, r Request, now time.Time) (State, string, error) {
 	next := st
@@ -221,14 +257,8 @@ func apply(st State, r Request, now time.Time) (State, string, error) {
 		next.Cards[i] = c
 	}
 	// 件数ではなく「新しく出た違反」で判定する (ある違反を消しつつ別の違反を作る依頼を通さない)
-	before := map[card.Violation]bool{}
-	for _, v := range card.Check(st.Cards) {
-		before[v] = true
-	}
-	for _, v := range card.Check(next.Cards) {
-		if !before[v] {
-			return st, id, fmt.Errorf("%s: 不変条件を破る (%s: %s)", r.Kind, v.CardID, v.Reason)
-		}
+	if err := newViolation(st.Cards, next.Cards); err != nil {
+		return st, id, fmt.Errorf("%s: %w", r.Kind, err)
 	}
 	return next, id, nil
 }
@@ -263,6 +293,7 @@ func transition(c *card.Card, r Request, now time.Time) error {
 			return errors.New("回答が空")
 		}
 		c.Wait = card.Wait{}
+		c.Resume = r.Answer // daemon が同じ session を再開するときに渡す (426 の決定 2)
 		move(card.Planned, firstNonEmpty(r.From, "人間")+" が回答した: "+clip(r.Answer, 80)+" (PG の空きが出たら同じ session を resume)")
 	case "review": // PG が終えた
 		if c.State != card.Running {
