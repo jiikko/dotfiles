@@ -19,13 +19,22 @@ bin/pro-con      # claude は起動しない。模擬の backend (fake) が状�
 | n | 新しい依頼 (PM へ)。repo のタブで出すとその repo がスコープになる |
 | s | Claude Code の session の一覧を開閉 (`claude agents --json`。対話 / 裏・状態・名前・経過・pid・場所) |
 | y | 選択中のカードのタイトルと内容 (repo・状態・issue・依頼の原文・質問) をクリップボードへ。本文は `termsafe.PlainBlock` を通す |
-| ←→↑↓ / hjkl | カードの選択 |
+| h / l / ← / → / ctrl+f | 左右の列へ |
+| j / k / ↑ / ↓ / ctrl+n / ctrl+p | 列の中で 1 枚 |
+| ctrl+d / ctrl+u / space / f / pgdn / pgup | 半ページ |
+| g / G / home / end | 列の先頭 / 末尾 |
 | enter / esc | 詳細の開閉 |
 | a | PG の session を開く (今は模擬) |
 | r | 質問待ちのカードに回答する |
 | o | 追加オーダー (tab で 追記 / 方針変更 / 別件) |
 | b | btw (PG を止めずに状況を聞く) |
 | q | 終了 |
+
+**キーの語彙は [`docs/glogx-ui-guide.md`](../../docs/glogx-ui-guide.md) の 3 層 (vim / emacs 別名 / 動作) に従う**。
+上下の移動は `tuikit/listnav.MotionOf` に渡す (glogx と同じ語彙を 1 か所で持つ)。画面固有の動作キーは先に捌く。
+
+🚨 **ガイドの動作層と意味が食い違っているキーがある** (未決。issue 415): `o` (ガイド: ブラウザで開く / pro-con: 追加オーダー)・
+`r` (再読込 / 回答)・`a` (all・巡回 / attach)・`n` (claim / 新しい依頼)・`b` (半ページ上・push / btw)
 
 ## 設定 (`~/.config/pro-con/config.toml`)
 

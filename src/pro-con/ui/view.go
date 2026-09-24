@@ -138,16 +138,7 @@ func (m *Model) boardLines() []string {
 	cols := m.columns()
 	selCol, _, _ := m.position()
 
-	const headLines = 2 // 上枠 + 下枠
-	room := m.height - 9 - headLines
-	if m.showDetail {
-		room -= 15
-	}
-	if m.showSessions {
-		room -= len(m.sessions) + 5 // 上下の枠・見出し・エラー行・空行
-	}
-	// 枠の高さは画面の残りで固定する (枚数に合わせると、ある列の枚数が変わった瞬間に全部の列の枠が伸び縮みする)
-	shown := max(1, room/perCardLines)
+	shown := m.shownCards()
 
 	blocks := make([][]string, len(cols))
 	for i, s := range card.Columns {
@@ -178,6 +169,20 @@ func columnBorder(focused bool) string {
 		return fg(202)
 	}
 	return fg(240)
+}
+
+// shownCards は 1 列に見せるカードの枚数。枠の高さは画面の残りで固定する
+// (枚数に合わせると、ある列の枚数が変わった瞬間に全部の列の枠が伸び縮みする)。
+func (m *Model) shownCards() int {
+	const headLines = 2 // 上枠 + 下枠
+	room := m.height - 9 - headLines
+	if m.showDetail {
+		room -= 15
+	}
+	if m.showSessions {
+		room -= len(m.sessions) + 5 // 上下の枠・見出し・エラー行・空行
+	}
+	return max(1, room/perCardLines)
 }
 
 // columnBlock は 1 列分の行 (上枠に見出し + カード + 下枠)。列の高さは shown で揃える。

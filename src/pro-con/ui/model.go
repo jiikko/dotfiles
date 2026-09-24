@@ -11,6 +11,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"tuikit/listnav"
+
 	"pro-con/agents"
 	"pro-con/backend"
 	"pro-con/card"
@@ -280,15 +282,14 @@ func (m *Model) moveCol(delta int) {
 	}
 }
 
+// moveRow は列の中で delta 枚動く。端で止める (半ページ・先頭・末尾の移動も同じ関数で端に寄せる)。
 func (m *Model) moveRow(delta int) {
 	col, row, ok := m.position()
 	if !ok {
 		return
 	}
 	cs := m.columns()[col]
-	if r := row + delta; r >= 0 && r < len(cs) {
-		m.selected = cs[r].ID
-	}
+	m.selected = cs[max(0, min(row+delta, len(cs)-1))].ID
 }
 
 func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
@@ -301,12 +302,8 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		m.moveTab(-1)
 	case "left", "h":
 		m.moveCol(-1)
-	case "right", "l":
+	case "right", "l", "ctrl+f": // ctrl+f は → の別名 (docs/glogx-ui-guide.md の emacs 層。ctrl+b は ← にしない)
 		m.moveCol(1)
-	case "up", "k":
-		m.moveRow(-1)
-	case "down", "j":
-		m.moveRow(1)
 	case "enter":
 		m.showDetail = !m.showDetail
 	case "esc":
@@ -335,8 +332,32 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		m.yank()
 	case "s":
 		m.showSessions = !m.showSessions
+	default:
+		m.moveByMotion(listnav.MotionOf(k.String()))
 	}
 	return nil
+}
+
+// moveByMotion は上下の移動を tuikit の語彙 (listnav.MotionOf) で受ける。語彙は glogx と同じ
+// (j/k/ctrl+n/ctrl+p/↑↓ = 1 枚、ctrl+d/ctrl+u/space/f/pgdn/pgup = 半ページ、g/G/home/end = 先頭・末尾)。
+// 🚨 画面固有の動作キーは handleBoardKey の switch で先に捌いているので、ここへは来ない (b は btw)。
+func (m *Model) moveByMotion(mo listnav.Motion) {
+	half := listnav.Half(m.shownCards())
+	switch mo {
+	case listnav.Down:
+		m.moveRow(1)
+	case listnav.Up:
+		m.moveRow(-1)
+	case listnav.HalfDown:
+		m.moveRow(half)
+	case listnav.HalfUp:
+		m.moveRow(-half)
+	case listnav.Top:
+		m.moveRow(-len(m.snap.Cards))
+	case listnav.Bottom:
+		m.moveRow(len(m.snap.Cards))
+	case listnav.None:
+	}
 }
 
 func (m *Model) startInput(k inputKind) {
