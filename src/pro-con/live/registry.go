@@ -28,6 +28,9 @@ type Owned struct {
 	PID       int       `json:"pid,omitempty"`    // pro-con が起動・再開したプロセス (外で再開されたものは pid が違うので外れる)
 	CardID    string    `json:"cardId,omitempty"` // どのカードのために起動したか (427 が書く)
 	StartedAt time.Time `json:"startedAt"`
+	// Cwd は session の作業ディレクトリ (PG の worktree)。再開をそこで走らせる (他の cwd では transcript が見つからない / 別の tree を書く)。
+	// 所有の照合 (owns) には使わない
+	Cwd string `json:"cwd,omitempty"`
 }
 
 // LoadRegistry は記録を読む。ファイルが無ければ空 (まだ 1 本も起動していない)。壊れていたらエラー (空と区別する)。

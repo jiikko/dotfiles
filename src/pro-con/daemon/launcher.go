@@ -33,13 +33,13 @@ func (ExecLauncher) Start(ctx context.Context, repoPath, name, prompt string) (s
 	return parseBackgrounded(out)
 }
 
-func (ExecLauncher) Resume(ctx context.Context, stopID, sessionID, text string) (string, error) {
+func (ExecLauncher) Resume(ctx context.Context, stopID, sessionID, cwd, text string) (string, error) {
 	if stopID != "" {
 		if _, err := runClaude(ctx, "", "stop", stopID); err != nil {
 			return "", fmt.Errorf("claude stop %s: %w", stopID, err)
 		}
 	}
-	out, err := runClaude(ctx, "", "--bg", "--resume", sessionID, "--setting-sources", "project,local", text)
+	out, err := runClaude(ctx, cwd, "--bg", "--resume", sessionID, "--setting-sources", "project,local", text)
 	if err != nil {
 		return "", err
 	}

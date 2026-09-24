@@ -208,6 +208,8 @@ type Card struct {
 	// Crashes は PG のプロセスが落ちて Claude Code が自動で再開した時刻 (transcript の再開の文の時刻)。daemon が数えて、
 	// 短い間に上限を超えたら止める
 	Crashes []time.Time `json:",omitempty"`
+	// StopWanted は落ちた回数が上限に達したが、まだ止められていない印 (止められるまで毎 Tick 試す。時間の窓を過ぎても諦めない)
+	StopWanted bool `json:",omitempty"`
 	// Archived は完了のレーンから片付けた (x)。ボードには出さないが、記録 (状態ファイル) には残す
 	Archived bool
 	// LastProgress は「実質的に進んだ」最後の時刻 (watchdog が見る。活動ではなく進捗)

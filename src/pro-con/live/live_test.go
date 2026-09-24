@@ -311,18 +311,20 @@ func TestRegisterRejectsNoPIDAndUpserts(t *testing.T) {
 	}
 }
 
-// Claude Code がプロセスの死から自動で再開したときに足す文 (425 で実測) を、発言者を問わず再開の時刻として読む。人間の発言には数えない。
+// Claude Code がプロセスの死から自動で再開したときに足す文 (425 で実測) を、発言者を問わず再開の時刻として読む。
+// 文の先頭にあるときだけ数える (人間の発言や依頼の原文に引用された文は数えない)。再開の文は人間の発言にも数えない。
 func TestParseTranscriptRestarts(t *testing.T) {
 	data := `{"type":"user","timestamp":"2026-09-25T01:00:00Z","origin":{"kind":"human"},"message":{"content":"直して"}}
 {"type":"user","timestamp":"2026-09-25T01:05:00Z","message":{"content":"Continue from where you left off. Note: this session was automatically restarted after its process exited unexpectedly; the user has not sent a new message since the restart."}}
-{"type":"user","timestamp":"2026-09-25T01:09:00Z","message":{"content":[{"type":"text","text":"Note: this session was automatically restarted after its process exited unexpectedly"}]}}
+{"type":"user","timestamp":"2026-09-25T01:07:00Z","origin":{"kind":"human"},"message":{"content":"ログに Continue from where you left off. Note: this session was automatically restarted after its process exited unexpectedly と出た"}}
+{"type":"user","timestamp":"2026-09-25T01:09:00Z","message":{"content":[{"type":"text","text":"Continue from where you left off. Note: this session was automatically restarted after its process exited unexpectedly; ..."}]}}
 `
 	tr := parse([]byte(data))
 	want := []time.Time{time.Date(2026, 9, 25, 1, 5, 0, 0, time.UTC), time.Date(2026, 9, 25, 1, 9, 0, 0, time.UTC)}
 	if len(tr.Restarts) != 2 || !tr.Restarts[0].Equal(want[0]) || !tr.Restarts[1].Equal(want[1]) {
 		t.Fatalf("再開の時刻を読めない: %v", tr.Restarts)
 	}
-	if len(tr.Prompts) != 1 {
+	if len(tr.Prompts) != 2 {
 		t.Fatalf("再開の文を人間の発言に数えた: %+v", tr.Prompts)
 	}
 }
@@ -336,5 +338,50 @@ func TestParseTranscriptLastNew(t *testing.T) {
 `
 	if tr := parse([]byte(data)); !tr.LastNew.Equal(time.Date(2026, 9, 25, 1, 1, 0, 0, time.UTC)) || !tr.LastAt.Equal(time.Date(2026, 9, 25, 1, 3, 0, 0, time.UTC)) {
 		t.Fatalf("同じ出力の繰り返しで進捗が進んだ / 読めない: LastNew=%v LastAt=%v", tr.LastNew, tr.LastAt)
+	}
+}
+
+// ツール呼び出し (名前 + 引数) も進捗に数え、同じ呼び出しの繰り返しは数えない。結果の返っていない呼び出しの時刻を PendingSince に出す。
+func TestParseTranscriptToolProgress(t *testing.T) {
+	data := `{"type":"assistant","timestamp":"2026-09-25T01:00:00Z","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"make test"}}]}}
+{"type":"user","timestamp":"2026-09-25T01:01:00Z","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}
+{"type":"assistant","timestamp":"2026-09-25T01:02:00Z","message":{"content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"make test"}}]}}
+{"type":"user","timestamp":"2026-09-25T01:03:00Z","message":{"content":[{"type":"tool_result","tool_use_id":"t2","content":"ok"}]}}
+{"type":"assistant","timestamp":"2026-09-25T01:04:00Z","message":{"content":[{"type":"tool_use","id":"t3","name":"Bash","input":{"command":"go test ./..."}}]}}
+`
+	tr := parse([]byte(data))
+	at := func(m int) time.Time { return time.Date(2026, 9, 25, 1, m, 0, 0, time.UTC) }
+	if !tr.LastNew.Equal(at(4)) {
+		t.Fatalf("新しいツール呼び出しを進捗に数えない: %v", tr.LastNew)
+	}
+	if !tr.PendingSince.Equal(at(4)) {
+		t.Fatalf("結果の返っていない呼び出しを出さない: %v", tr.PendingSince)
+	}
+	tr = parse([]byte(data[:strings.LastIndex(data[:len(data)-1], "\n")+1])) // t3 を除く
+	if !tr.LastNew.Equal(at(0)) || !tr.PendingSince.IsZero() {
+		t.Fatalf("同じ呼び出しの繰り返しを進捗に数えた / 結果の返った呼び出しを実行中にした: LastNew=%v Pending=%v", tr.LastNew, tr.PendingSince)
+	}
+}
+
+// 同じ session id の transcript が複数の project にあれば、更新の新しい方を読む (辞書順で後ろの方を新しくして、先頭を取る実装と区別する)。
+func TestFindTranscriptPrefersNewest(t *testing.T) {
+	root := t.TempDir()
+	var newest string
+	for i, dir := range []string{"a-old", "b-new"} {
+		p := filepath.Join(root, dir, "S1.jsonl")
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		mt := time.Date(2026, 9, 25, 1, 0, 0, 0, time.UTC).Add(time.Duration(i) * time.Hour)
+		if err := os.Chtimes(p, mt, mt); err != nil {
+			t.Fatal(err)
+		}
+		newest = p
+	}
+	if p, err := FindTranscript(root, "S1"); err != nil || p != newest {
+		t.Fatalf("更新の新しい方を読まない: %q %v", p, err)
 	}
 }

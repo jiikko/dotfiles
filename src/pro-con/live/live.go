@@ -81,7 +81,17 @@ func FindTranscript(projects, sessionID string) (string, error) {
 	if err != nil || len(ms) == 0 {
 		return "", os.ErrNotExist
 	}
-	return ms[0], nil
+	// 同じ session id の transcript が複数の project にあれば (別の cwd で再開した等)、更新の新しい方 (今書かれている方)
+	best, bestAt := "", time.Time{}
+	for _, m := range ms {
+		if st, err := os.Stat(m); err == nil && (best == "" || st.ModTime().After(bestAt)) {
+			best, bestAt = m, st.ModTime()
+		}
+	}
+	if best == "" {
+		return "", os.ErrNotExist
+	}
+	return best, nil
 }
 
 // Start は裏で読み直しを始める (最初の読み取りも裏で行う。claude agents --json は最大 3 秒待つので、画面を出す前に待たない)。

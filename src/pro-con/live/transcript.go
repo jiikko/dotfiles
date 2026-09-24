@@ -28,14 +28,16 @@ type Transcript struct {
 	Outputs    []string // PG の出力の文 (古い順)
 	LastAt     time.Time
 	// LastNew は PG の出力のうち、末尾の中でそれまでに無かった文が最後に出た時刻 (watchdog の「進捗」。同じ出力を繰り返すループは数えない)
-	LastNew  time.Time
-	Restarts []time.Time // Claude Code がプロセスの死から自動で再開した時刻 (RestartNote を含む user レコード。古い順)
+	LastNew time.Time
+	// PendingSince は結果がまだ返っていないツール呼び出しのうち、最後のものの時刻 (長いコマンドの実行中。無ければゼロ)
+	PendingSince time.Time
+	Restarts     []time.Time // Claude Code がプロセスの死から自動で再開した時刻 (RestartNote を含む user レコード。古い順)
 }
 
 // RestartNote は、プロセスが死んだ session を Claude Code が自動で再開したときに会話へ足す文の一部 (2.1.281 で実測。issue 425 結果 1)。
-// origin を実測していないので、発言者を問わず user レコードの文で探す。版が変わって文が変わると、落ちた回数を数えられなくなる
+// origin を実測していないので、発言者を問わず user レコードの文の**先頭**で探す (依頼の原文などに引用された文は数えない)。版が変わって文が変わると、落ちた回数を数えられなくなる
 // (そのときは外から操作された疑いとして知らせる側に倒れる)
-const RestartNote = "this session was automatically restarted after its process exited unexpectedly"
+const RestartNote = "Continue from where you left off. Note: this session was automatically restarted after its process exited unexpectedly"
 
 // Prompt は人間の発言 1 つ。
 type Prompt struct {
@@ -85,6 +87,7 @@ func ReadTail(path string) (Transcript, error) {
 func parse(data []byte) Transcript {
 	var t Transcript
 	seen := map[string]bool{}
+	pending := map[string]time.Time{} // tool_use の id → 呼んだ時刻 (結果が返ったら消す)
 	sc := bufio.NewScanner(bytes.NewReader(data))
 	sc.Buffer(make([]byte, 0, 64<<10), 8<<20)
 	for sc.Scan() {
@@ -110,8 +113,13 @@ func parse(data []byte) Transcript {
 				t.LastPrompt = r.LastPrompt
 			}
 		case "user":
-			if r.Message != nil && strings.Contains(text(r.Message.Content), RestartNote) {
+			if r.Message != nil && strings.HasPrefix(text(r.Message.Content), RestartNote) {
 				t.Restarts = append(t.Restarts, at)
+			}
+			if r.Message != nil {
+				for _, id := range toolResults(r.Message.Content) {
+					delete(pending, id)
+				}
 			}
 			if r.Origin != nil && r.Origin.Kind == "human" && r.Message != nil {
 				if s := text(r.Message.Content); s != "" {
@@ -122,15 +130,86 @@ func parse(data []byte) Transcript {
 			if r.Message != nil {
 				if s := text(r.Message.Content); s != "" {
 					t.Outputs = append(t.Outputs, s)
-					if !seen[s] {
-						seen[s] = true
+				}
+				// 進捗は、文かツール呼び出し (名前 + 引数) のうち、それまでに無かったものが出たこと (同じ呼び出しの繰り返しは数えない)
+				for _, sig := range signatures(r.Message.Content) {
+					if !seen[sig] {
+						seen[sig] = true
 						t.LastNew = at
 					}
+				}
+				for _, id := range toolUses(r.Message.Content) {
+					pending[id] = at
 				}
 			}
 		}
 	}
+	for _, at := range pending {
+		if at.After(t.PendingSince) {
+			t.PendingSince = at
+		}
+	}
 	return t
+}
+
+type part struct {
+	Type      string          `json:"type"`
+	Text      string          `json:"text"`
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Input     json.RawMessage `json:"input"`
+	ToolUseID string          `json:"tool_use_id"`
+}
+
+func parts(raw json.RawMessage) []part {
+	var ps []part
+	if json.Unmarshal(raw, &ps) != nil {
+		return nil
+	}
+	return ps
+}
+
+// signatures は assistant の出力 1 件の中身の識別 (文 / ツールの名前 + 引数)。
+func signatures(raw json.RawMessage) []string {
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		if s = oneLine(s); s != "" {
+			return []string{"text:" + s}
+		}
+		return nil
+	}
+	var out []string
+	for _, p := range parts(raw) {
+		switch p.Type {
+		case "text":
+			if t := oneLine(p.Text); t != "" {
+				out = append(out, "text:"+t)
+			}
+		case "tool_use":
+			out = append(out, "tool:"+p.Name+":"+string(p.Input))
+		}
+	}
+	return out
+}
+
+func toolUses(raw json.RawMessage) []string {
+	var ids []string
+	for _, p := range parts(raw) {
+		if p.Type == "tool_use" && p.ID != "" {
+			ids = append(ids, p.ID)
+		}
+	}
+	return ids
+}
+
+func toolResults(raw json.RawMessage) []string {
+	var ids []string
+	for _, p := range parts(raw) {
+		if p.Type == "tool_result" && p.ToolUseID != "" {
+			ids = append(ids, p.ToolUseID)
+		}
+	}
+	return ids
 }
 
 // text は message.content (文字列か、type:text を含む配列) の文を 1 行にして返す。ツールの呼び出しと結果は含めない。

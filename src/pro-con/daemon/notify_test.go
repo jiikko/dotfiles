@@ -116,3 +116,20 @@ func TestAnnounceNotifiesAgainOnNewWait(t *testing.T) {
 		t.Fatalf("2 度目の質問を通知しない: %v", r.notified)
 	}
 }
+
+// 件数の文が変わらなくても republishEvery ごとに書き直す (tmux サーバが作り直されて option が消えても戻る)。
+func TestAnnounceRepublishesPeriodically(t *testing.T) {
+	dir := t.TempDir()
+	d := newDaemon(t, dir, &fakeLauncher{}, nil)
+	var r recorder
+	r.rig(d)
+	for _, at := range []time.Time{t0, t0.Add(30 * time.Second), t0.Add(republishEvery + time.Second)} {
+		d.Now = func() time.Time { return at }
+		if _, err := d.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(r.published) != 2 {
+		t.Fatalf("間隔ごとに書き直さない / 間隔の前に書き直した: %d 回", len(r.published))
+	}
+}

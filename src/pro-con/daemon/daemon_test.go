@@ -24,6 +24,7 @@ type fakeLauncher struct {
 	// resumeFail は再開に「失敗」と返す (実際には立っている形を作るのは一覧の側)
 	resumeFail bool
 	stops      []string
+	cwds       []string // 再開した cwd
 	stopFail   bool
 }
 
@@ -35,7 +36,8 @@ func (f *fakeLauncher) Start(_ context.Context, _, name, _ string) (string, erro
 	return "id-" + name, nil
 }
 
-func (f *fakeLauncher) Resume(_ context.Context, stopID, _, text string) (string, error) {
+func (f *fakeLauncher) Resume(_ context.Context, stopID, _, cwd, text string) (string, error) {
+	f.cwds = append(f.cwds, cwd)
 	f.resumes = append(f.resumes, stopID+":"+text)
 	if f.resumeFail {
 		return "", errors.New("再開できない")
@@ -431,6 +433,13 @@ func TestResumeSkipsStopWhenSessionIsGone(t *testing.T) {
 	if _, err := d.Tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	if len(l.resumes) != 0 {
+		t.Fatalf("一覧に無い session をすぐ再開した (Claude Code の自動の再開と重なる): %v", l.resumes)
+	}
+	d.Now = func() time.Time { return t0.Add(restartWait + time.Second) }
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	if len(l.resumes) != 1 || l.resumes[0] != ":a" {
 		t.Fatalf("一覧に無い session を止めようとした / 再開しない: %v", l.resumes)
 	}
@@ -676,5 +685,80 @@ func TestStallClearedWhenLeavingRunning(t *testing.T) {
 	r.tick(t)
 	if c := states(t, r.dir)["C-001"]; c.State != card.Waiting || c.Stalled {
 		t.Fatalf("質問待ちのカードに停滞の印が残った: %v %v", c.State, c.Stalled)
+	}
+}
+
+// 再開は、pro-con の記録にある session の作業ディレクトリ (PG の worktree) で走らせる。
+func TestResumeRunsInSessionCwd(t *testing.T) {
+	r := newCrashRig(t) // 一覧の session に cwd を足してから登録し直す
+	r.ss[0].Cwd = "/w/dotfiles/.claude/worktrees/pc-c-001"
+	r.ss[0].PID = 50
+	r.d.Now = func() time.Time { return t0 }
+	setCard(t, r.dir, "C-001", func(c *card.Card) { c.LaunchedAt = t0.Add(-time.Hour) }) // 登録し直しを通す (自分の再開の後の形)
+	reg, _ := live.LoadRegistry(filepath.Join(r.dir, live.RegistryFile))
+	reg[0].StartedAt = t0.Add(-2 * time.Hour)
+	if err := live.Register(filepath.Join(r.dir, live.RegistryFile), reg[0]); err != nil {
+		t.Fatal(err)
+	}
+	r.tick(t)
+	for _, q := range []store.Request{{Kind: "ask", CardID: "C-001", Question: "q"}, {Kind: "answer", CardID: "C-001", Answer: "a"}} {
+		if _, err := store.Submit(r.dir, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.tick(t)
+	if len(r.l.cwds) != 1 || r.l.cwds[0] != "/w/dotfiles/.claude/worktrees/pc-c-001" {
+		t.Fatalf("session の cwd で再開していない: %v", r.l.cwds)
+	}
+}
+
+// 止められないまま時間の窓を過ぎても、止めるのを諦めない (止められたら回答待ちにする)。
+func TestCrashStopKeepsTryingPastWindow(t *testing.T) {
+	r := newCrashRig(t)
+	r.l.stopFail = true
+	r.crash(t0.Add(time.Minute), 43)
+	r.tick(t)
+	r.crash(t0.Add(2*time.Minute), 44)
+	r.tick(t)
+	r.l.stopFail = false
+	r.d.Now = func() time.Time { return t0.Add(2*time.Minute + defaultCrashWindow + time.Minute) }
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; len(r.l.stops) != 1 || c.State != card.Waiting || c.StopWanted {
+		t.Fatalf("窓を過ぎたら止めるのをやめた: stops=%v %v StopWanted=%v", r.l.stops, c.State, c.StopWanted)
+	}
+}
+
+// 落ち続けた PG の session が一覧に無い (または短い id が別の session を指す) なら、止めずに回答待ちにする (別の session を止めない)。
+func TestCrashStopSkipsSessionNotOurs(t *testing.T) {
+	r := newCrashRig(t)
+	r.l.stopFail = true
+	r.crash(t0.Add(time.Minute), 43)
+	r.tick(t)
+	r.crash(t0.Add(2*time.Minute), 44)
+	r.tick(t) // 上限に達したが止められない (止める印が立つ)
+	if c := states(t, r.dir)["C-001"]; !c.StopWanted {
+		t.Fatal("前提: 止める印が立っていない")
+	}
+	r.l.stopFail = false
+	r.ss[0].SessionID = "OTHER" // 自分の PG は消え、短い id を別の session が得た
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; len(r.l.stops) != 0 || c.State != card.Waiting {
+		t.Fatalf("別の session を止めた / 回答待ちにしない: stops=%v %v", r.l.stops, c.State)
+	}
+}
+
+// 結果の返っていないツール呼び出しがある間 (長いコマンドの実行中) は、通常の閾値を過ぎても停滞にしない。
+func TestWatchdogWaitsForPendingTool(t *testing.T) {
+	r, _ := newWatchRig(t)
+	r.d.Transcript = func(string) (live.Transcript, error) { return live.Transcript{PendingSince: t0.Add(time.Minute)}, nil }
+	r.d.Now = func() time.Time { return t0.Add(30 * time.Minute) }
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; c.Stalled {
+		t.Fatal("長いコマンドの実行中に停滞にした")
+	}
+	r.d.Now = func() time.Time { return t0.Add(longToolLimit + time.Minute) }
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; !c.Stalled {
+		t.Fatal("longToolLimit を過ぎても停滞にしない")
 	}
 }
