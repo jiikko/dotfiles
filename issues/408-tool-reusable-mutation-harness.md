@@ -1,6 +1,6 @@
 # 408 (tool): 変異検証の前提検査を共通化する — 参考実装は `tests/issues/test_issue_done.sh`
 
-> 🚨 **担当中: dotfiles-87**（2026-09-22〜）
+> 🚨 **担当中: dotfiles-d4**（2026-09-24〜。dotfiles-87 から引き継ぎ: 実装と 3 周目までは 1f4ef0db に入っている）
 
 起票日: 2026-09-20 (出典: obaket 872 の retro 項目 6 の切り出し検討)
 
