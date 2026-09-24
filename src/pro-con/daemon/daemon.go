@@ -152,7 +152,8 @@ func (d *Daemon) register(now time.Time, ss []agents.Session) (int, []string, er
 	}
 	n := 0
 	for _, c := range st.Cards {
-		if c.State != card.Running || c.Session == "" {
+		// 作業中に限らない: 質問待ちの間も PG のプロセスは生きていて、落ちれば Claude Code が自動で再開する (427 の 3f で実測)
+		if c.State == card.Done || c.Session == "" {
 			continue
 		}
 		for _, s := range ss {
@@ -167,6 +168,14 @@ func (d *Daemon) register(now time.Time, ss []agents.Session) (int, []string, er
 				// 同じ session・同じプロセスで cwd だけ埋める (上の判定を通らない形なので、所有の判定には影響しない)
 			case s.Started().Before(c.LaunchedAt):
 				warn = append(warn, fmt.Sprintf("%s の session %s は pro-con の最後の起動・再開より前に始まっている (同じ短い id の別の session の疑い)。登録しない", c.ID, s.ID))
+				continue
+			case ok && o.SessionID != s.SessionID && o.ID != c.Session && o.StartedAt.Before(c.LaunchedAt):
+				// daemon 自身の再開が返した新しい短い id の session (claude --bg --resume は別の session id の session を立てる)。
+				// LaunchedAt 以降に始まっている (上の判定) ので、カードの行をこれに置き換える
+				if err := live.ReplaceCard(regPath, live.Owned{SessionID: s.SessionID, ID: s.ID, PID: s.PID, CardID: c.ID, StartedAt: s.Started(), Cwd: s.Cwd}); err != nil {
+					return n, warn, err
+				}
+				n++
 				continue
 			case ok && o.SessionID != s.SessionID:
 				warn = append(warn, fmt.Sprintf("%s の短い id %s が別の session (%s) を指している。登録しない", c.ID, s.ID, s.SessionID))
@@ -519,7 +528,8 @@ func adopt(c card.Card, ss []agents.Session, reg []live.Owned) (string, bool) {
 		if c.Launching == "起動" && s.Name == sessionName(c) {
 			return s.ID, true
 		}
-		if c.Launching == "再開" && hasOwned && s.SessionID == o.SessionID {
+		// 再開は別の session id の session を立てる (427 の 3f で実測) ので、同じ作業ディレクトリ (PG の worktree) で印の後に始まったものも取り込む
+		if c.Launching == "再開" && hasOwned && (s.SessionID == o.SessionID || (o.Cwd != "" && s.Cwd == o.Cwd)) {
 			return s.ID, true
 		}
 	}

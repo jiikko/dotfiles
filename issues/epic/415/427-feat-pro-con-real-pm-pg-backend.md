@@ -72,6 +72,18 @@
     - `src/pro-con/pm-guide.md` を `pro-con card guide` で出す (embed)。指示書に書いた `pro-con card ...` は TestPMGuideCommandsParse が今のパーサに通して、ずれを止める (変異: plan の例を `--issues` に崩すと red)。
       🚨 PM の session にこれを渡す手順 (起動時のプロンプトに入れるか) は 3f で本物の PM を立てるときに決める
 - [ ] **3f 本物の claude で通しの確認** (枠を使う。424 から引き継いだ受け入れ条件もここ)
+  - 1 回目 (2026-09-25 08:34、Claude Code 2.1.281、PG 1 本): add → plan → daemon が起動 → PG が `card ask` → kill -9 → 回答 → 再開 → PG が `card review` まで通った (約 70 秒)。
+    `claude agents --json` を 3 秒ごとに stdout / stderr を分けて記録した。実測で分かったこと:
+    - 一覧の cwd は PG の worktree (`~/dotfiles/.claude/worktrees/pc-c-001`)。transcript はその project の下
+    - **`claude --bg --resume <session-id>` は元の session を続けず、別の session id・別の短い id の session を立てる** (cwd は同じ、名前は AI の題に変わる)。
+      stop した元の session は `--all` で stopped として残る。→ daemon が自分の再開の後の新しい session を拒んでいた (「短い id が別の session を指している」)
+    - kill -9 の直後は `--all` なしの一覧にも pid 無し・`working` で出る (その間の cwd は repo root)。約 18 秒後に同じ session id が新しい pid で戻り、
+      **startedAt は再開した時刻になる**。カードが質問待ちだったので daemon は記録を書き直さず、pid が古いままになった
+    - `claude agents --json` が 3 秒を 1 回超えた (PG の起動・再開の最中)
+    - PG は規律どおり `card ask` → turn を終える → 回答で再開 → `card review` を打った。除けた依頼は 0 件
+  - 直した: 再開が返した短い id の session でカードの行を置き換える (live.ReplaceCard) / 再開の取り込みは同じ作業ディレクトリでも照らす /
+    記録の書き直しは完了以外のカード全部で行う / 一覧の上限を 10 秒へ。変異 4 本が red
+  - [ ] 直した版でもう一度通す (新しい session が登録され、画面のカードに出ること)
 
 ## 敵対的レビュー (3a〜3d、2026-09-25)
 

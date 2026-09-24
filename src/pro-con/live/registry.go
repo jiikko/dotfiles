@@ -61,7 +61,13 @@ var (
 // 🚨 書き直しは行ごと置き換える。再開のときも CardID を渡すこと (渡し忘れると、どのカードのための session かが消える。照合には影響しない)。
 // 書き込みは一時ファイルからの rename (途中で落ちても壊れた記録を残さない)。
 // 🚨 書き手は daemon だけの前提 (issue 426 の決定 1)。複数から同時に書くと、後から書いた方が前の書き込みを消す。
-func Register(path string, o Owned) error {
+func Register(path string, o Owned) error { return write(path, o, false) }
+
+// ReplaceCard は o.CardID の行を o 1 本に置き換える (再開で session が新しくなったとき。
+// claude --bg --resume は元の session を続けず、別の session id の session を立てる = 427 の 3f で実測)。
+func ReplaceCard(path string, o Owned) error { return write(path, o, true) }
+
+func write(path string, o Owned, dropCard bool) error {
 	if o.SessionID == "" {
 		return ErrNoSessionID
 	}
@@ -72,15 +78,14 @@ func Register(path string, o Owned) error {
 	if err != nil {
 		return err
 	}
-	replaced := false
-	for i, c := range cur {
-		if c.SessionID == o.SessionID {
-			cur[i], replaced = o, true
+	next := cur[:0:0]
+	for _, c := range cur {
+		if c.SessionID == o.SessionID || (dropCard && o.CardID != "" && c.CardID == o.CardID) {
+			continue
 		}
+		next = append(next, c)
 	}
-	if !replaced {
-		cur = append(cur, o)
-	}
+	cur = append(next, o)
 	data, err := json.MarshalIndent(cur, "", "  ")
 	if err != nil {
 		return err

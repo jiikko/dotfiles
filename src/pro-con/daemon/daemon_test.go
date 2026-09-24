@@ -25,6 +25,7 @@ type fakeLauncher struct {
 	resumeFail bool
 	stops      []string
 	cwds       []string // 再開した cwd
+	resumeID   string   // 空でなければ、再開はこの短い id の新しい session を立てる (本物の claude の形)
 	stopFail   bool
 }
 
@@ -41,6 +42,9 @@ func (f *fakeLauncher) Resume(_ context.Context, stopID, _, cwd, text string) (s
 	f.resumes = append(f.resumes, stopID+":"+text)
 	if f.resumeFail {
 		return "", errors.New("再開できない")
+	}
+	if f.resumeID != "" {
+		return f.resumeID, nil
 	}
 	if stopID == "" {
 		return "id-resumed", nil
@@ -851,5 +855,61 @@ func TestRegisterFillsMissingCwd(t *testing.T) {
 	r.tick(t)
 	if reg, _ = live.LoadRegistry(regPath); len(reg) != 1 || reg[0].Cwd != "/w/pc-c-001" {
 		t.Fatalf("cwd の無い行を埋め直さない: %+v", reg)
+	}
+}
+
+// 本物の claude --bg --resume は、元の session を続けずに別の session id・別の短い id の session を立てる (427 の 3f で実測)。
+// daemon 自身の再開が返した短い id の session は、カードの行をそれに置き換えて登録する (前の行は消す)。
+func TestResumeWithNewSessionReplacesRow(t *testing.T) {
+	r := newCrashRig(t)
+	r.l.resumeID = "db1e"
+	for _, q := range []store.Request{{Kind: "ask", CardID: "C-001", Question: "q"}, {Kind: "answer", CardID: "C-001", Answer: "a"}} {
+		if _, err := store.Submit(r.dir, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t1 := t0.Add(time.Minute)
+	r.d.Now = func() time.Time { return t1 }
+	r.tick(t) // 再開
+	r.ss = []agents.Session{{ID: "db1e", SessionID: "S2", PID: 60, Kind: "background", Cwd: "/w/pc-c-001", StartedAt: t1.Add(time.Second).UnixMilli()}}
+	r.tick(t)
+	reg, _ := live.LoadRegistry(filepath.Join(r.dir, live.RegistryFile))
+	if c := states(t, r.dir)["C-001"]; len(reg) != 1 || reg[0].SessionID != "S2" || reg[0].ID != "db1e" || c.Session != "db1e" {
+		t.Fatalf("再開で新しくなった session を登録しない / 前の行が残る: %+v Session=%q", reg, c.Session)
+	}
+}
+
+// 再開に「失敗」と返っても、同じ作業ディレクトリで印の後に始まった session が立っていれば取り込む (再開は別の session id になる)。
+func TestFailedResumeAdoptsNewSessionByCwd(t *testing.T) {
+	r := newCrashRig(t)
+	r.l.resumeFail = true
+	for _, q := range []store.Request{{Kind: "ask", CardID: "C-001", Question: "q"}, {Kind: "answer", CardID: "C-001", Answer: "a"}} {
+		if _, err := store.Submit(r.dir, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t1 := t0.Add(time.Minute)
+	r.d.Now = func() time.Time { return t1 }
+	r.tick(t)
+	r.ss = []agents.Session{{ID: "db1e", SessionID: "S2", PID: 60, Kind: "background", Cwd: "/w/pc-c-001", StartedAt: t1.Add(time.Second).UnixMilli()}}
+	r.d.Now = func() time.Time { return t1.Add(launchGrace + time.Second) }
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; len(r.l.resumes) != 1 || c.State != card.Running || c.Session != "db1e" {
+		t.Fatalf("別の session id で立った再開を取り込まずに再開し直した: resumes=%v %v %q", r.l.resumes, c.State, c.Session)
+	}
+}
+
+// 質問待ちの間に PG が落ちて自動で再開しても、記録を新しい pid で書き直す (作業中の列に限らない。427 の 3f で実測)。
+func TestCrashWhileWaitingReregisters(t *testing.T) {
+	r := newCrashRig(t)
+	if _, err := store.Submit(r.dir, store.Request{Kind: "ask", CardID: "C-001", Question: "q"}); err != nil {
+		t.Fatal(err)
+	}
+	r.tick(t)
+	r.crash(t0.Add(time.Minute), 43)
+	r.tick(t)
+	reg, _ := live.LoadRegistry(filepath.Join(r.dir, live.RegistryFile))
+	if c := states(t, r.dir)["C-001"]; len(reg) != 1 || reg[0].PID != 43 || c.State != card.Waiting {
+		t.Fatalf("質問待ちの間の自動の再開を取り込まない: %+v %v", reg, c.State)
 	}
 }

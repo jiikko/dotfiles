@@ -33,8 +33,8 @@ func (s Session) Started() time.Time { return time.UnixMilli(s.StartedAt) }
 // Runner は `claude agents --json` を実行し、stdout と stderr を分けて返す (テストで差し替える)。
 type Runner func(ctx context.Context) (stdout, stderr []byte, err error)
 
-// Timeout は 1 回の一覧の上限 (実測は 0.14〜0.16 秒)。
-const Timeout = 3 * time.Second
+// Timeout は 1 回の一覧の上限 (普段の実測は 0.14〜0.16 秒。PG を起動・再開している最中に 3 秒を超えたことがある = 427 の 3f)。
+const Timeout = 10 * time.Second
 
 var ErrEmptyOutput = errors.New("claude agents --json の出力が空")
 
