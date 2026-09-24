@@ -40,7 +40,7 @@ $(printf '%s' "$input" | jq -r '
   (.rate_limits.seven_day.resets_at // ""),
   (.context_window.total_input_tokens // ""),
   (.context_window.context_window_size // ""),
-  (.context_window.used_percentage // 0),
+  (.context_window.used_percentage // ""),
   (.effort.level // ""),
   (.transcript_path // ""),
   (.session_id // "")
@@ -68,7 +68,7 @@ to_int "$five_pct";  five_pct=$REPLY
 to_int "$seven_pct"; seven_pct=$REPLY
 to_int "$ctx_used";  ctx_used=$REPLY
 to_int "$ctx_size";  ctx_size=$REPLY
-to_int "$ctx_pct";   ctx_pct=${REPLY:-0}
+to_int "$ctx_pct";   ctx_pct=$REPLY
 
 # Shorten the path: replace $HOME with ~, truncate to 50 chars with leading ..
 # (置換文字列の ~ は変数経由で渡す。リテラル \~ だとバックスラッシュごと表示される)
@@ -488,7 +488,13 @@ if [ -n "$ctx_used" ] && [ "$ctx_used" -gt 0 ] 2>/dev/null; then
   else
     ctx_disp="$used_label"
   fi
-  cc=$(rate_color "$ctx_pct")
+  # 🚨 使用率が取れない (欠けている / 整数化できない) ときは 0% とみなさない。緑に倒すと
+  # 「判定できない」が「余裕がある」に見える (issue 420)。トークン数は出せるので区切りは残し、色だけ灰にする
+  if [ -n "$ctx_pct" ]; then
+    cc=$(rate_color "$ctx_pct")
+  else
+    cc="$gray_fg"
+  fi
   ctx_part=" ${cc}[ctx:${ctx_disp}]${reset}"
 fi
 

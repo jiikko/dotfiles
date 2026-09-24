@@ -75,6 +75,24 @@ assert_lacks "$minimal" "effort:" "effort 不在ならセグメントを出さ�
 assert_lacks "$minimal" "ctx:"    "context 不在ならセグメントを出さない"
 assert_lacks "$minimal" "5h"      "rate limit 不在ならセグメントを出さない"
 
+# ctx の色は used_percentage から決める。🚨 使用率が取れない (欠けている / 整数化できない) ときに 0% と
+# みなして緑にしない: 「判定できない」が「余裕がある」に見える (issue 420)。区切りは残して色だけ灰にする
+ctx_raw() { # ctx_raw <context_window に足す JSON 断片> → 色付きの生出力
+  printf '%s' "{\"cwd\":\"/tmp\",\"context_window\":{\"total_input_tokens\":190000,\"context_window_size\":200000$1}}" \
+    | "$SL" 2>"$TMP_DIR/ctx_stderr"
+}
+assert_contains "$(ctx_raw ',"used_percentage":95')"    $'\033[31m[ctx:190k/200k]' "使用率 95% の ctx は赤"
+assert_contains "$(ctx_raw '')"                         $'\033[37m[ctx:190k/200k]' "使用率が欠けた ctx は灰 (0% の緑にしない)"
+assert_lacks    "$(ctx_raw '')"                         $'\033[32m[ctx:'           "使用率が欠けた ctx を緑にしない"
+assert_contains "$(ctx_raw ',"used_percentage":"N/A"')" $'\033[37m[ctx:190k/200k]' "整数化できない使用率の ctx は灰"
+ctx_raw '' >/dev/null
+if [[ -s "$TMP_DIR/ctx_stderr" ]]; then
+  printf '✗ %s\n  stderr: %s\n' "使用率が欠けても stderr を出さない" "$(cat "$TMP_DIR/ctx_stderr")" >&2
+  fails=$(( fails + 1 ))
+else
+  printf '✓ %s\n' "使用率が欠けても stderr を出さない"
+fi
+
 # rate limit が無いときは 2 行目自体を出さない (1 行のみ)
 lines="$(printf '%s' '{"cwd":"/tmp"}' | "$SL" | wc -l | tr -d ' ')"
 if [[ "$lines" == "0" ]]; then
