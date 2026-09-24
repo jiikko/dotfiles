@@ -183,6 +183,9 @@ type Card struct {
 	LastProgress time.Time
 }
 
+// Answerable は回答を受け付けるか (質問待ちの列に居る)。backend の回答・TUI の r・案内の色がこれを見る。
+func (c Card) Answerable() bool { return c.State == Waiting }
+
 // Violation は不変条件の破れ。UI は件数を出し、0 件でないことを隠さない。
 type Violation struct {
 	CardID string

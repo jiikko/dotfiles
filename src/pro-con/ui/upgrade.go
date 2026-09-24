@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"tuikit/anim"
 
 	"pro-con/backend"
 	"pro-con/card"
@@ -214,7 +215,7 @@ func (m *Model) inputTargetChanged(st uiState) string {
 		if m.selected != st.Selected {
 			return "宛先のカード (" + st.Selected + ") が無くなった"
 		}
-		if c, _ := m.selectedCard(); st.InputKind == inputAnswer && c.State != card.Waiting {
+		if c, _ := m.selectedCard(); st.InputKind == inputAnswer && !c.Answerable() {
 			return "宛先のカード (" + st.Selected + ") がもう質問待ちでない"
 		}
 	}
@@ -253,6 +254,9 @@ func (m *Model) ImportState(data []byte) error {
 	}
 	m.tab, m.col, m.selected = st.Tab, st.Col, st.Selected
 	m.showDetail, m.showSessions = st.ShowDetail, st.ShowSessions
+	if m.showDetail { // 引き出しは開いた状態から (切り替えの前後で演出を挟まない)
+		m.drawer, m.drawerCard = anim.NewOpen(), m.selected
+	}
 	m.ensureTab()
 	m.ensureSelection()
 	m.flash = "新版に切り替えた (UI の状態とカードを引き継いだ)"

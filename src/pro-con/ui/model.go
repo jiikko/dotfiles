@@ -14,6 +14,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"tuikit/anim"
 	"tuikit/confirm"
 	"tuikit/editor"
 	"tuikit/lineedit"
@@ -84,7 +85,11 @@ type Model struct {
 	prevSlots map[string]slot
 	moves     map[string]*move
 	slides    map[panel]*slide // 下端の板の開閉の演出 (slide.go)
-	framing   bool             // frame の tick が回っているか (二重に回さない)
+	// カードの詳細の引き出し (drawer.go)。drawerCard は閉じる途中も残す (逆再生で本文が見えている必要がある)
+	drawer     anim.Transition
+	drawerCard string
+	pager      listnav.Pager
+	framing    bool // frame の tick が回っているか (二重に回さない)
 
 	picker picker // issue の一覧から依頼する画面 (picker.go)
 
@@ -252,6 +257,7 @@ func (m *Model) setSnap(s backend.Snapshot) {
 	}
 	s.Cards = cards
 	m.snap = s
+	m.dropVanishedDrawer()
 }
 
 func (m *Model) visible() []card.Card {
@@ -367,6 +373,11 @@ func (m *Model) moveRow(delta int) {
 }
 
 func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
+	if m.showDetail {
+		if cmd, handled := m.handleDrawerKey(k.String()); handled {
+			return cmd
+		}
+	}
 	switch k.String() {
 	case "ctrl+c":
 		return tea.Quit
@@ -390,12 +401,13 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	case "right", "l", "ctrl+f": // ctrl+f は → の別名 (docs/glogx-ui-guide.md の emacs 層。ctrl+b は ← にしない)
 		m.moveCol(1)
 	case "enter":
-		m.showDetail = !m.showDetail
+		m.openDrawer()
+		return m.startFrames()
 	case "a":
 		return m.attach()
 	case "r":
 		c, ok := m.selectedCard()
-		if !ok || c.State != card.Waiting {
+		if !ok || !c.Answerable() {
 			m.flash = "回答できるのは質問待ちのカードだけ"
 			return nil
 		}
@@ -471,7 +483,7 @@ func (m *Model) closeTop() bool {
 	case m.showSessions:
 		m.showSessions = false
 	case m.showDetail:
-		m.showDetail = false
+		m.closeDrawer()
 	default:
 		return false
 	}
@@ -515,13 +527,19 @@ func (m *Model) askConfirm(cmd backend.Command, question string) {
 }
 
 // askClearDone は今のタブの完了のカードを片付けるかを確かめる。片付けるものが無ければ確認を出さない。
-func (m *Model) askClearDone() {
+// doneInTab は今のタブの完了のカードの枚数 (x で片付ける対象)。
+func (m *Model) doneInTab() int {
 	n := 0
 	for _, c := range m.visible() {
 		if c.State == card.Done {
 			n++
 		}
 	}
+	return n
+}
+
+func (m *Model) askClearDone() {
+	n := m.doneInTab()
 	if n == 0 {
 		m.flash = "片付ける完了のカードが無い"
 		return

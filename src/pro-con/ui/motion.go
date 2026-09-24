@@ -86,7 +86,9 @@ func (m *Model) startFrames() tea.Cmd {
 	return frame()
 }
 
-func (m *Model) animating() bool { return len(m.moves) > 0 || len(m.slides) > 0 }
+func (m *Model) animating() bool {
+	return len(m.moves) > 0 || len(m.slides) > 0 || m.drawer.Animating(m.now()) || m.pager.Animating()
+}
 
 func (m *Model) resetSlots() {
 	m.prevSlots = m.slots()
@@ -106,6 +108,8 @@ func (m *Model) pruneMoves(now time.Time) {
 func (m *Model) onFrame() tea.Cmd {
 	m.pruneMoves(m.now())
 	m.pruneSlides(m.now())
+	m.settleDrawer(m.now())
+	m.pager.Advance()
 	if !m.animating() {
 		m.framing = false
 		return nil

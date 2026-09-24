@@ -409,7 +409,7 @@ func (s *Sim) answer(a backend.Answer) (string, error) {
 	if c == nil {
 		return "", backend.ErrNotFound
 	}
-	if c.State != card.Waiting {
+	if !c.Answerable() {
 		return "", backend.ErrNotWaiting
 	}
 	c.Wait = card.Wait{}

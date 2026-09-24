@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"tuikit/layout"
 
 	"pro-con/card"
 )
@@ -32,31 +33,31 @@ func (m *Model) View() tea.View {
 	return v
 }
 
+// headerRows はタイトル・タブ・ゲージ・罫線の行数。
+const headerRows = 4
+
 func (m *Model) render() string {
 	w := m.width
 	title := sgrBold + fg(202) + " pro-con" + sgrFgReset + sgrDim + "  mock: claude は起動しない。表示は模擬データ" + sgrReset
-	out := []string{title, m.tabBar(), m.gauge(), fg(240) + strings.Repeat("─", w) + sgrReset}
+	header := []string{title, m.tabBar(), m.gauge(), fg(240) + strings.Repeat("─", w) + sgrReset}
+	var region []string
 	if m.picker.open {
-		out = append(out, m.pickerBlock()...)
+		region = m.pickerBlock()
 	} else {
-		out = append(out, m.overlayMoves(m.boardLines())...)
+		region = m.overlayMoves(m.boardLines())
 	}
-	// 詳細・PG の一覧・入力欄・案内は画面の下端へ吸着させる。詳細の高さはカードごとに変わるので、
-	// ボードの直後に置くと下端までの隙間が選択のたびに伸び縮みする (shownCards は最大の高さで確保している)
-	var foot []string
-	foot = append(foot, m.panelLines(panelDetail, m.detailBlock)...)
-	if pg := m.panelLines(panelPG, m.pgBlock); len(pg) > 0 {
-		if len(foot) > 0 {
-			foot = append(foot, "")
-		}
-		foot = append(foot, pg...)
-	}
-	foot = append(foot, m.footLines()...)
-	pad := max(1, m.height-len(out)-len(foot))
-	for range pad {
-		out = append(out, "")
-	}
-	return strings.Join(append(out, foot...), "\n")
+	// PG の一覧・入力欄・案内は画面の下端へ吸着させ、ボードとの間を空行で埋める。
+	// カードの詳細はこの領域 (ヘッダと下端の群のあいだ) に右から重ねる
+	foot := m.footGroup()
+	region = layout.PadTo(region, max(len(region)+1, m.height-len(header)-len(foot)))
+	region = m.overlayDrawer(region)
+	return strings.Join(append(append(header, region...), foot...), "\n")
+}
+
+// footGroup は下端に吸着させる群 (PG の一覧 + 最下段)。
+func (m *Model) footGroup() []string {
+	foot := m.panelLines(panelPG, m.pgBlock)
+	return append(foot, m.footLines()...)
 }
 
 // footLines は画面の最下段の群 (入力欄・確認・sticky・flash・案内) を返す。
@@ -75,7 +76,7 @@ func (m *Model) footLines() []string {
 	if m.flash != "" {
 		out = append(out, sgrCyan+" "+m.flash+sgrReset)
 	}
-	return append(out, sgrDim+hintLine(m.hints(), m.width)+sgrReset)
+	return append(out, hintLine(m.hints(), m.width)+sgrReset)
 }
 
 // tabBar は global と repo のタブ。config の外の repo のカードは global にだけ出るので、その枚数も添える。
@@ -200,9 +201,6 @@ func columnBorder(focused bool) string {
 func (m *Model) shownCards() int {
 	const headLines = 2 // 上枠 + 下枠
 	room := m.height - 9 - headLines
-	if m.reserved(panelDetail) {
-		room -= 15
-	}
 	if m.reserved(panelPG) {
 		room -= len(m.snap.Consumers) + 5 // 上下の枠・見出し・ほかの session の行・空行
 	}
@@ -337,63 +335,6 @@ func undelivered(c card.Card) int {
 	return n
 }
 
-// detailBlock は詳細欄。現在地色の枠で囲む (いま操作の対象になっているカード)。
-func (m *Model) detailBlock() []string {
-	c, ok := m.selectedCard()
-	if !ok {
-		return nil
-	}
-	head, body := m.detailLines(c)
-	w := m.width
-	out := []string{boxTop(fg(202), sgrBold+head+sgrReset, w)}
-	for _, l := range body {
-		out = append(out, boxLine(fg(202), " "+l, w))
-	}
-	return append(out, boxBottom(fg(202), w))
-}
-
-func (m *Model) detailLines(c card.Card) (string, []string) {
-	head := c.ID + "  " + c.Title
-	var l []string
-	l = append(l, fmt.Sprintf("状態: %s%s%s (%s)  担当: %s  repo: %s  session: %s", fg(stateColor(c.State)), c.State.Label(), sgrFgReset,
-		fmtDur(m.snap.Now.Sub(c.Since)), c.Owner, c.Repo, orDash(c.Session)))
-	var refs []string
-	for _, r := range c.Issues {
-		refs = append(refs, r.String()+" ("+r.Status+")")
-	}
-	link := strings.Join(refs, ", ")
-	if link == "" {
-		link = "なし"
-		if c.Ending != card.EndNone {
-			link += " / 終わり方: " + c.Ending.Label()
-		}
-	}
-	l = append(l, "issue: "+link+"   親: "+orDash(c.ParentID))
-	l = append(l, "依頼の原文: 「"+c.Request+"」")
-	if c.Prompt != "" {
-		l = append(l, sgrDim+"PM に渡した指示: "+strings.ReplaceAll(c.Prompt, "\n", " ")+sgrReset)
-	}
-	if c.Wait.Question != "" {
-		l = append(l, sgrYellow+"質問: "+c.Wait.Question+sgrFgReset)
-	}
-	for _, o := range c.Orders {
-		st := "未達"
-		if o.Delivered {
-			st = "届いた"
-		}
-		l = append(l, fmt.Sprintf("追加オーダー (%s・%s): %s", o.Kind.Label(), st, o.Text))
-	}
-	l = append(l, sgrDim+"履歴"+sgrReset)
-	for _, e := range tail(c.History, 4) {
-		l = append(l, "  "+e.At.Format("15:04")+" "+e.Text)
-	}
-	l = append(l, sgrDim+"出力の末尾"+sgrReset)
-	for _, s := range tail(c.Log, 3) {
-		l = append(l, "  "+s)
-	}
-	return head, l
-}
-
 func (m *Model) inputLine() string {
 	var label string
 	switch m.inputKind {
@@ -447,13 +388,6 @@ func orDash(s string) string {
 	return s
 }
 
-func tail[T any](xs []T, n int) []T {
-	if len(xs) <= n {
-		return xs
-	}
-	return xs[len(xs)-n:]
-}
-
 // hints は最下行の案内。**今の状態で押して効くキーだけ**を出す (入力中にボードの案内を残すと、
 // 載せた文字が全部入力に化ける。docs/glogx-ui-guide.md §5)。最後の項目が抜ける手段。
 func (m *Model) hints() []string {
@@ -471,12 +405,34 @@ func (m *Model) hints() []string {
 	if m.picker.open {
 		return []string{"j / k 選択", "enter これをやる", "i / q / esc 閉じる"}
 	}
+	c, has := m.selectedCard()
+	// カードへの操作は、選んでいるカードで効くかどうかを色で出す (効かないものは暗く。押すと理由が flash に出る)
+	cardOps := []string{
+		avail("a attach", has && c.Session != ""), // backend は session の無いカードを ErrNoSession で拒否する
+		avail("r 回答", has && c.Answerable()),
+		avail("+ 追加オーダー", has), // 完了のカードでも「別件」は受け付ける
+		avail("? btw", has),
+		avail("e issue を開く", has && len(c.Issues) > 0), // md が実在するかは押したときに探す (描画のたびには探さない)
+		avail("y パス", has && len(c.Issues) > 0),
+		avail("Y 内容", has),
+	}
+	if m.showDetail {
+		return append(append([]string{"j / k スクロール", "J / K 隣のカード"}, cardOps...), "q / esc 閉じる")
+	}
 	back := "q 終了"
-	if m.showSessions || m.showDetail {
+	if m.showSessions {
 		back = "q / esc 閉じる"
 	}
-	return []string{"hjkl 選択", "tab repo", "n 新しい依頼", "i issue から", "enter 詳細", "a attach", "r 回答", "+ 追加オーダー", "? btw",
-		"e issue を開く", "y パス", "Y 内容", "s PG 一覧", "x 完了を片付け", back}
+	h := append([]string{"hjkl 選択", "tab repo", "n 新しい依頼", "i issue から", avail("enter 詳細", has)}, cardOps...)
+	return append(h, "s PG 一覧", avail("x 完了を片付け", m.doneInTab() > 0), back)
+}
+
+// avail は案内の 1 項目を、今押して効くなら明るく、効かないなら暗く出す。
+func avail(text string, ok bool) string {
+	if ok {
+		return text
+	}
+	return fg(239) + text + sgrFgReset
 }
 
 // hintLine は案内を幅 w に収める。入らなければ後ろから落とすが、最後の項目 (抜ける手段) は必ず残す (§5)。

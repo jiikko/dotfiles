@@ -8,16 +8,14 @@ import (
 	"tuikit/anim"
 )
 
-// 下端の板 (詳細・PG の一覧) の開閉の演出。案内の行の裏から上へせり出し、閉じるときは下へ沈む。
+// 下端の板 (PG の一覧) の開閉の演出。カードの詳細は右からの引き出し (drawer.go) で、ここは通らない。
+//案内の行の裏から上へせり出し、閉じるときは下へ沈む。
 // 板は下端に吸着しているので、見せる行数を板の上から k 行に絞るだけで「下から生える」に見える。
 // 所要は 600ms、終わり際に減速 (memory の好み「600ms〜1s・操作のメタファー」の下限。開閉は頻繁に押すので短い側)。
 
 type panel int
 
-const (
-	panelDetail panel = iota
-	panelPG
-)
+const panelPG panel = 0
 
 type slide struct {
 	start time.Time
@@ -27,12 +25,7 @@ type slide struct {
 func slideDuration() time.Duration { return 600 * time.Millisecond }
 
 // shown は板を開いている (開く途中を含む) か。
-func (m *Model) shown(p panel) bool {
-	if p == panelDetail {
-		return m.showDetail
-	}
-	return m.showSessions
-}
+func (m *Model) shown(panel) bool { return m.showSessions }
 
 // reserved は板の場所を画面に取っておくか (開いている・開閉の途中)。ボードの高さはこれで決める:
 // 閉じる途中で先にボードが伸びると、沈んでいく板と合わせて画面の高さを超える。
@@ -68,7 +61,7 @@ func (m *Model) trackPanels(before map[panel]bool) tea.Cmd {
 
 // panelState は画面の状態のうち、板の開閉の差を取るための写し。
 func (m *Model) panelState() map[panel]bool {
-	return map[panel]bool{panelDetail: m.showDetail, panelPG: m.showSessions}
+	return map[panel]bool{panelPG: m.showSessions}
 }
 
 // panelLines は板 p の今見せる行。閉じていて演出も無ければ nil。

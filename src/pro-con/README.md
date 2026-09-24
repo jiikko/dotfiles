@@ -28,7 +28,8 @@ bin/pro-con      # claude は起動しない。模擬の backend (fake) が状�
 | j / k / ↑ / ↓ / ctrl+n / ctrl+p | 列の中で 1 枚 |
 | ctrl+d / ctrl+u / space / f / pgdn / pgup | 半ページ |
 | g / G / home / end | 列の先頭 / 末尾 |
-| enter | 詳細の開閉 (画面の下端、案内の直上に下から生える) |
+| enter | 詳細の開閉。右から引き出しが滑り込み、カンバンの左端を残して重なる (glogx の issues の本文と同じ `tuikit/layout.ComposeDrawer`)。開いている間は j / k / ctrl+d / ctrl+u / g / G で本文をスクロール、J / K で同じレーンの隣のカードへ送る。カードへの操作 (a / r / + / ? / e / y / Y) は開いたまま効き、レーンの移動やタブは効かない。q / esc / h / ← / enter で閉じる |
+| (案内の行) | カードへの操作と x は、選んでいるカードで効くときだけ明るく、効かないときは暗く出す (r は質問待ちだけ、a は session のあるカードだけ、e / y は issue の紐づいたカードだけ) |
 | ctrl+r | 新版へ切り替える (ライブアップグレード。「新版あり」のときだけ) |
 | q / esc | 開いている板を 1 つ閉じる (PG の一覧 → 詳細)。q は何も開いていなければ終了。ctrl+c は即終了 |
 | a | PG の session を開く (今は模擬) |
