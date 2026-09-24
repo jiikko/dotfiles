@@ -10,7 +10,7 @@
 
 1. [x] 読み取り専用のモードで、`n` / `i` / `r` / `+` / `w` / `x` を押した時点で断る (下の進捗の「未対応」の項。小さなコードの修正)
 2. [x] retro [432](../../done/432-retro-pro-con-live-backend-2026-09-24.md) の提案 1〜4 を既存のルールへ追記する (文書だけ)
-3. [ ] [431](431-feat-pro-con-pg-session-settings.md) の計測 (本物の session を起こすので週の利用枠を使う。1 回 約 13 万 token。ここで枠が切れる見込み)
+3. [~] [431](431-feat-pro-con-pg-session-settings.md) の計測 — 済み。PG 用の設定ディレクトリでのログイン (人の作業 [433](433-human-login-pro-con-pg-config-dir.md)) 待ちで止まっている。 (本物の session を起こすので週の利用枠を使う。1 回 約 13 万 token。ここで枠が切れる見込み)
 4. [ ] [427](427-feat-pro-con-real-pm-pg-backend.md) の段階 3 (始める前に 427 に作業の小分けを書く)
 
 再開の手順: `git -C ~/dotfiles pull` → この節で最初の未チェックの項を見る → その issue の進捗の最後の行から続ける。
@@ -28,6 +28,7 @@ worktree は `~/dotfiles-wt-night` を使っていた (残っていたら `git -
 | [429](done/429-human-pro-con-try-mock-and-agent-view.md) | (human) 模擬版を触る / agent view との重なり / attach からの戻り方 | — |
 | [430](430-human-verify-bg-session-survives-reboot.md) | (human) bg session がマシンの再起動を越えて戻るか | — |
 | [431](431-feat-pro-con-pg-session-settings.md) | PG / 係の session 用の設定 (hook と規約を絞る。起動時 約 13 万 token) | 427 の前 |
+| [433](433-human-login-pro-con-pg-config-dir.md) | (human) PG 用の設定ディレクトリで 1 度ログインする | 431 の続き |
 
 ## 概要
 

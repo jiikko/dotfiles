@@ -38,6 +38,21 @@
 何も付けない / `--setting-sources project,local` / それに `--exclude-dynamic-system-prompt-sections` を足す、の 3 通りで回し、
 usage (input / cache_creation / cache_read) と、Stop hook が走ったか (transcript の hook のレコード) を比べる
 
+## 計測 (2026-09-24 / Claude Code 2.1.281 / haiku / `~/dotfiles` から `claude -p --output-format json "OK とだけ答えて"`)
+
+| 起動のしかた | 起動時の token (cache_creation + cache_read) | hook | 規約 (instructions) |
+|---|---|---|---|
+| 何も付けない | 107,403 + 14,053 = 121,456 | SessionStart が走る | 載る |
+| `--setting-sources project,local` | 95,696 + 17,890 = 113,586 (約 1 割減) | 走らない | 載る |
+| それに `--exclude-dynamic-system-prompt-sections` | 96,583 + 16,985 = 113,568 | 走らない | 載る |
+| PG 用の `CLAUDE_CONFIG_DIR` (空のディレクトリ) | 起動しない (`Not logged in · Please run /login`、rc=1。モデルは呼ばない) | — | — |
+
+- **一番大きいのは規約の注入** (transcript の `instructions` の添付、約 14 万文字): `_claude/rules/` の全ルール (`~/.claude/rules/` の link) と、
+  `~/dotfiles/CLAUDE.md` / `.claude/rules/` (project のもの)。ユーザーの分は設定ディレクトリ (`~/.claude/`) から読まれ、`--setting-sources` では外れない
+- `--setting-sources project,local` で hook (SessionStart・Stop) は外れる (hook の添付が消えた)。Stop hook の問題 (425 結果 6) はこれで止まる見込み
+- 次の手: **PG 用の設定ディレクトリ** (`CLAUDE_CONFIG_DIR`) を作り、PG に要るルールだけを link して起動する。ログインが要るので、
+  人の操作を [433](433-human-login-pro-con-pg-config-dir.md) に切り出した。ログインの後に 4 行目を測り直す
+
 ## 受け入れ条件
 
 - [ ] 役割ごとの設定ファイルがあり、daemon がそれを渡して起動する
@@ -51,4 +66,5 @@ usage (input / cache_creation / cache_read) と、Stop hook が走ったか (tra
 
 ## 進捗
 
-- [ ] 未着手 (427 の前にやる)。下調べだけ済み (2026-09-24)。計測は週の利用枠のリセット後
+- [x] 下調べと計測 (2026-09-24。上の 2 節)。`--setting-sources project,local` で hook は外れる / 規約は外れない
+- [ ] PG 用の設定ディレクトリでのログイン待ち (433)。その後: PG に要るルールを選んで link し、起動時の token を測り直す
