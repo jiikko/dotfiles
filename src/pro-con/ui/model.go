@@ -394,11 +394,20 @@ func (m *Model) moveRow(delta int) {
 	m.selected = cs[max(0, min(row+delta, len(cs)-1))].ID
 }
 
+// writeKeys は backend に書き込む操作を始めるキー (依頼・issue から依頼・回答・追加オーダー・btw・片付け)。
+// 読み取り専用の backend では押した時点で断る (案内の行でも同じ集合を暗くする: view.go の hints)。
+var writeKeys = map[string]bool{"n": true, "i": true, "r": true, "+": true, "w": true, "x": true}
+
 func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	if m.showDetail {
 		if cmd, handled := m.handleDrawerKey(k.String()); handled {
 			return cmd
 		}
+	}
+	if writeKeys[k.String()] && m.readOnly() {
+		// 入力欄を開いてから送った時点で断ると、書いた文が無駄になる (2026-09-24 の報告)。押した時点で断る
+		m.flash = "読み取り専用なので使えない (本物の PM / PG は issue 427。模擬で試すなら pro-con --mock)"
+		return nil
 	}
 	switch k.String() {
 	case "ctrl+c":

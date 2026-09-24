@@ -80,3 +80,21 @@ func TestHintsDimWritesOnReadOnlyBackend(t *testing.T) {
 		t.Fatal("読むだけの操作 (Y / enter) まで暗くなった")
 	}
 }
+
+// 読み取り専用の backend では、書き込みの操作のキーを押した時点で断る (入力欄を開かない。書いた文が無駄にならないように)。
+func TestReadOnlyRefusesWriteKeysImmediately(t *testing.T) {
+	for _, k := range []string{"n", "i", "r", "+", "w", "x"} {
+		be := roSpy{newSpy()}
+		m := New(be, nil)
+		m.selected = "W1" // 質問待ち (書き込みを受け付ける backend なら r で入力欄が開く)
+		press(m, k)
+		if m.mode != modeBoard || m.picker.open || !strings.Contains(m.flash, "読み取り専用") {
+			t.Fatalf("読み取り専用なのに %q で操作が始まった: mode=%v picker=%v flash=%q", k, m.mode, m.picker.open, m.flash)
+		}
+	}
+	m := New(newSpy(), nil) // 書き込みを受け付ける backend では、今までどおり入力欄が開く (対照)
+	press(m, "n")
+	if m.mode != modeInput {
+		t.Fatal("書き込みを受け付ける backend で n の入力欄が開かない")
+	}
+}
