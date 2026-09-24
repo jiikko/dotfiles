@@ -12,6 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"tuikit/confirm"
 	"tuikit/editor"
 	"tuikit/lineedit"
 	"tuikit/listnav"
@@ -463,10 +464,10 @@ func (m *Model) handleInputKey(k tea.KeyPressMsg) tea.Cmd {
 
 // handleConfirmKey は y/N 確認。y と Enter だけが実行で、知らないキーはすべて取り消し (docs/glogx-ui-guide.md §4)。
 func (m *Model) handleConfirmKey(k tea.KeyPressMsg) tea.Cmd {
-	switch k.String() {
-	case "ctrl+c":
+	switch key := k.String(); {
+	case key == "ctrl+c":
 		return tea.Quit
-	case "y", "enter":
+	case confirm.IsYesStrict(key):
 		m.apply(m.pending)
 	default:
 		m.flash = "取り消した (実行していない)"

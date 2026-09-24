@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 	"tuikit/anim"
+	"tuikit/confirm"
 	"tuikit/layout"
 	"tuikit/listnav"
 
@@ -2378,11 +2379,8 @@ func (m *browseModel) restartPromptLines() []string {
 	if !m.restartPromptVisible() {
 		return nil
 	}
-	return centerBox(" 新しい glogx ", []string{
-		"新しいバージョンが利用可能です",
-		"",
-		paint("r: 今すぐ再起動   その他: 後で", ansiDim, m.colored),
-	}, m.contentWidth(), m.colored)
+	return confirm.Dialog(" 新しい glogx ", []string{"新しいバージョンが利用可能です"},
+		"r: 今すぐ再起動   その他: 後で", m.contentWidth(), m.colored)
 }
 
 // keyRepeatGuard は「押しっぱなし」を 1 回の入力として扱う判定窓。🚨 端末はキーを離した

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // modalStates は actionModal の「モーダルとしての状態」を 1 つずつ立てたもの。
@@ -309,6 +311,40 @@ func TestUpdatingTargetsIsDeterministic(t *testing.T) {
 	for i := range 60 {
 		if got := a.updatingTargets(); !reflect.DeepEqual(got, want) {
 			t.Fatalf("%d 回目で順が変わった: %v (期待 %v。モーダルの行が毎フレーム入れ替わる)", i, got, want)
+		}
+	}
+}
+
+// 確認の実行キーは y / Y / Enter (confirm.IsYes)。それ以外は取り消しで、実行の Cmd を返さない。
+// Cmd は実行しない (push / pull の本物が走る)。「実行に進んだか」は実行中フラグで見る。
+func TestActionModalConfirmKeys(t *testing.T) {
+	confirms := []struct {
+		name    string
+		ask     func(*actionModal)
+		running func(*actionModal) bool
+	}{
+		{"push", func(a *actionModal) { a.pushConfirm = true }, func(a *actionModal) bool { return a.pushing }},
+		{"pull", func(a *actionModal) { a.askPull() }, func(a *actionModal) bool { return a.pulling }},
+		{"rerun", func(a *actionModal) { a.askRerun("job", func() tea.Msg { return nil }) }, func(a *actionModal) bool { return a.rerunning }},
+	}
+	for _, c := range confirms {
+		for _, tc := range []struct {
+			key string
+			run bool
+		}{{"y", true}, {"Y", true}, {"enter", true}, {"n", false}, {"esc", false}, {"j", false}} {
+			var a actionModal
+			c.ask(&a)
+			consumed, action := a.handleKey(tc.key)
+			a.stop()
+			if !consumed {
+				t.Errorf("%s 確認で %q を消費しない", c.name, tc.key)
+			}
+			if got := action != nil; got != tc.run || c.running(&a) != tc.run {
+				t.Errorf("%s 確認で %q: 実行 Cmd=%v 実行中=%v, want %v", c.name, tc.key, got, c.running(&a), tc.run)
+			}
+			if a.active() != tc.run {
+				t.Errorf("%s 確認で %q の後の active() = %v, want %v (確認は閉じ、実行中だけが残る)", c.name, tc.key, a.active(), tc.run)
+			}
 		}
 	}
 }

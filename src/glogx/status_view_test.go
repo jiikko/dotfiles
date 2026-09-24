@@ -401,6 +401,18 @@ func TestStatusDiscardConfirmRunsRestore(t *testing.T) {
 	}
 }
 
+// 大文字 Y も実行する (confirm.IsYes)。issues viewer の next 目印は Y で取り消す側で、
+// 揃えない理由は discardKey の注記。
+func TestStatusDiscardConfirmAcceptsUpperY(t *testing.T) {
+	v := newTestStatusView(t, statusRec(" M a.go"))
+	calls := stubGitOps(t, nil)
+	v.handleKey("X", testViewport())
+	applyCmd(t, v, v.handleKey("Y", testViewport()))
+	if len(calls.restoreWork) != 1 {
+		t.Fatalf("Y で git restore が走らない: %v", calls.restoreWork)
+	}
+}
+
 func TestStatusDiscardCancelKeepsFile(t *testing.T) {
 	v := newTestStatusView(t, statusRec(" M a.go"))
 	calls := stubGitOps(t, nil)

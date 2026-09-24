@@ -552,8 +552,10 @@ func TestIssuesViewMarkNextMovesAfterConfirm(t *testing.T) {
 }
 
 // 🚨 y / Enter 以外はすべて取り消し。「知らないキーを押したら実ファイルが動いた」を作らない。
+// 大文字 Y も取り消し (confirm.IsYesStrict。push / 変更の破棄は Y も実行する側で、揃えない理由は
+// status_view.go:discardKey の注記)。
 func TestIssuesViewMarkNextCancels(t *testing.T) {
-	for _, key := range []string{"n", "esc", "q", "j", "x"} {
+	for _, key := range []string{"n", "esc", "q", "j", "x", "Y"} {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "001-feat-x.md")
 		if err := os.WriteFile(path, []byte("# 001 feat: x\n"), 0o644); err != nil {

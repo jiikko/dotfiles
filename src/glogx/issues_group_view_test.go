@@ -814,7 +814,7 @@ func TestUnmarkDestLabelCoversMixedSelection(t *testing.T) {
 	// 併せて助詞の前後に空白が入っていることも見る (「から」と地の文がくっついていた)
 	v := loadedView(global, child)
 	// 箱は幅を詰めるので、短い方 (group のみ) で全文を見る
-	// 🚨 箱は 44 桁で頭打ち (centerBox) なので、**実在する長さのファイル名**で見る。
+	// 🚨 箱は 44 桁で頭打ち (confirm.MaxWidth) なので、**実在する長さのファイル名**で見る。
 	// 短い fixture だけで見ていたため、宛先が丸ごと切り落とされているのを 3 周目まで
 	// 検出できていなかった (2026-09-06 の敵対的レビュー 4 周目)
 	long := fakeEpicIssue(dir, "cloud", "292", "audit-forge-should-hand-each-agent-its-own-worktree", issues.StatusNext)

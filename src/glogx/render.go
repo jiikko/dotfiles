@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"tuikit/layout"
 	"tuikit/termwidth"
 
 	"github.com/charmbracelet/x/ansi"
@@ -37,7 +38,9 @@ const (
 	// 落ち影の前景色 (256色の近黒 232)。bg ベタ塗りではなく █/▓ の前景ブロックで影を描き、
 	// グリフの隙間から端末の地色が透けて自然な penumbra になる (端末 bg に依存せず、色の
 	// 濃淡 █>▓ で縁をフェザーできる)。buildShadowPanelBox の drop shadow。
-	ansiShadowFg = "\x1b[38;5;232m"
+	// 🚨 tuikit の既定値を指す: 確認ダイアログ (confirm.Box) は tuikit の既定の影で描くので、
+	// ここだけ別の値にすると確認ダイアログと他の板で影の色が割れる。
+	ansiShadowFg = layout.ShadowNearBlack
 	// 最外周フレームの罫線色 (256色のマゼンタ 201)。dotfiles のテーマ意味マップ
 	// (docs/theme-colors.md) の「点滅/scratch アイデンティティ」= tmux の scratch popup 枠と
 	// 同じ色で、glogx も「ふだんの pane とは別の一時的な板」であることを色で示す

@@ -42,6 +42,7 @@ linters:
         no-framework-in-parts:
           files:
             - "**/anim/**"
+            - "**/confirm/**"
             - "**/layout/**"
             - "**/listnav/**"
             - "**/sgr/**"
@@ -58,6 +59,7 @@ linters:
         parts-pure:
           files:
             - "**/anim/**"
+            - "**/confirm/**"
             - "**/layout/**"
             - "**/listnav/**"
             - "**/sgr/**"

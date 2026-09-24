@@ -103,7 +103,9 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 ## 4. 破壊的操作の語彙
 
 - 実行系 (`b` push / `u` pull / `X` 捨てる / `x` 実行 / `d` 削除 / `r` rerun) は**必ず y/N 確認**。
-  `y` と `Enter` だけが実行で、**知らないキーはすべて取り消し**に倒す
+  `y` と `Enter` だけが実行で、**知らないキーはすべて取り消し**に倒す。判定と板は tuikit の `confirm`
+  (`IsYes` = 大文字 `Y` も実行 / `IsYesStrict` = `Y` も取り消し。どちらを使うかは画面ごとの判断で、
+  揃えない理由は glogx の `status_view.go` の `discardKey` の注記)
 - 確認モーダルの `Enter` は「飲む」場合がある (doctor の削除確認は Enter で実行もキャンセルも
   しない。issue 243)。Enter が開閉 toggle として全画面に効くため、連打の勢いで削除が
   走らないようにしている

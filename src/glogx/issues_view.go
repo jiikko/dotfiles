@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 	"tuikit/anim"
+	"tuikit/confirm"
 	"tuikit/layout"
 	"tuikit/listnav"
 
@@ -2622,7 +2623,7 @@ func (v *issuesView) askMarkNext() {
 func (v *issuesView) markNextKey(key string) tea.Cmd {
 	targets, unmark := v.markNext.targets, v.markNext.unmark
 	v.markNext = issuesMarkConfirm{}
-	if key != "y" && key != "enter" {
+	if !confirm.IsYesStrict(key) {
 		return nil
 	}
 	// 外すときは issue ディレクトリ直下へ戻す (= open)。🚨 元居た場所 (done/ 等) は覚えていない:
@@ -2726,7 +2727,7 @@ func (v *issuesView) markNextBox(width int, colored bool) []string {
 	}
 	title, lines := " next の目印 ", []string{what + " に next の目印を付けます"}
 	if v.markNext.unmark {
-		// 🚨 宛先は独立した行にする。箱は 44 桁で頭打ち (centerBox) なので、1 行に繋ぐと
+		// 🚨 宛先は独立した行にする。箱は 44 桁で頭打ち (confirm.MaxWidth) なので、1 行に繋ぐと
 		// 実在する長さのファイル名 (`292-feat-audit-forge-should-hand-each-agent-its-own-worktree.md`)
 		// で宛先が丸ごと切り落とされ、「ファイルを動かす前の唯一の確認画面」に何も出ない
 		// (2026-09-06 の敵対的レビュー 4 周目で実測。3 周目までのテストは短い名前の
@@ -2737,9 +2738,7 @@ func (v *issuesView) markNextBox(width int, colored bool) []string {
 			"→ " + unmarkDestLabel(v.markNext.targets) + " へ戻します",
 		}
 	}
-	return centerBox(title, append(lines,
+	return confirm.Dialog(title, append(lines,
 		paint("(次にやる目印。ファイルを移動します。commit はしません)", ansiDim, colored),
-		"",
-		paint("y/Enter: 実行   その他: キャンセル", ansiDim, colored),
-	), width, colored)
+	), confirm.HintYesOther, width, colored)
 }

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 	"tuikit/anim"
+	"tuikit/confirm"
 	"tuikit/layout"
 	"tuikit/listnav"
 
@@ -624,7 +625,7 @@ func (v *statusView) handleKey(key string, vp statusViewport) tea.Cmd {
 //
 // 🚨 3 経路で述語が違うのは**意図的**で、揃えない (issue 071 で反証済み・issue 123 で再確認):
 //
-//	discardKey / actionModal は ToLower なので大文字 `Y` も受理、markNextKey は厳密で `Y` は取り消し。
+//	discardKey / actionModal は confirm.IsYes で大文字 `Y` も受理、markNextKey は confirm.IsYesStrict で `Y` は取り消し。
 //	071 の結論は「厳格側の `Y` は安全側で閉じる、寛容側は意図どおり実行で失敗シナリオが作れない。
 //	厳格側は doc + テストで pin 済みの契約なので、揃える方が不変条件を壊す」。
 //	123 (ux 監査) が「寛容側が最も不可逆な X で、厳格側が可逆な操作 = 非対称が危険な向き」という
@@ -634,7 +635,7 @@ func (v *statusView) handleKey(key string, vp statusViewport) tea.Cmd {
 func (v *statusView) discardKey(key string) tea.Cmd {
 	row := v.discard
 	v.discarding, v.discard = false, worktreeRow{}
-	if strings.ToLower(key) != "y" && key != "enter" {
+	if !confirm.IsYes(key) {
 		return nil
 	}
 	return v.runDiscard(row)
@@ -1429,13 +1430,8 @@ func (v *statusView) discardBox(o statusRenderOpts) []string {
 	case v.discard.section == sectionUntracked:
 		head = "次のファイルを削除します (復元できません)"
 	}
-	rows := []string{
-		head,
-		"  " + string(v.discard.code) + " " + v.discard.dispPath(),
-		"",
-		paint("y/Enter: 実行   n/Esc: キャンセル", ansiDim, o.colored),
-	}
-	return centerBox(" 変更を捨てる ", rows, o.width, o.colored)
+	body := []string{head, "  " + string(v.discard.code) + " " + v.discard.dispPath()}
+	return confirm.Dialog(" 変更を捨てる ", body, confirm.HintYesNo, o.width, o.colored)
 }
 
 // shortestPrio1 は優先度 1 の項目のうち最も短いもの ("" = 優先度 1 が無い)。

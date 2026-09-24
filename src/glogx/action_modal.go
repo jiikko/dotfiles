@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strings"
+
+	"tuikit/confirm"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -147,9 +148,9 @@ func (a *actionModal) runningQuitHint() string {
 // 次の 1 打を食べるため、no-op の通知には重すぎる。右下トーストで出す (ユーザー要望 2026-07-25)。
 func (a *actionModal) handleKey(key string) (consumed bool, action tea.Cmd) {
 	// 確認の「実行」キーは y か Enter (Enter=y はユーザー要望 2026-07-21)。それ以外はキャンセル。
-	// 🚨 ToLower なので大文字 `Y` も受理する。これを markNextKey の厳密判定へ揃えないのは
+	// 🚨 大文字 `Y` も受理する (IsYes)。これを markNextKey の厳密判定へ揃えないのは
 	//    意図的 (理由は status_view.go:discardKey の注記。issue 071 / 123)。
-	confirmYes := strings.ToLower(key) == "y" || key == "enter"
+	confirmYes := confirm.IsYes(key)
 	if a.pushConfirm {
 		a.pushConfirm = false
 		if confirmYes {
@@ -332,25 +333,13 @@ func (a *actionModal) boxLines(width int, colored bool, spinner string, unpushed
 		rows = append(rows, "", paint("完了まで終了できません", ansiDim, colored))
 	case a.pullConfirm:
 		title = " git pull --rebase "
-		rows = []string{
-			"origin から pull --rebase します",
-			"",
-			paint("y/Enter: 実行   n/Esc: キャンセル", ansiDim, colored),
-		}
+		return confirm.Dialog(title, []string{"origin から pull --rebase します"}, confirm.HintYesNo, width, colored)
 	case a.rerunConfirm:
 		title = " CI 再実行 "
-		rows = []string{
-			"失敗した job を再実行します:",
-			a.rerunJobName,
-			"",
-			paint("y/Enter: 実行   n/Esc: キャンセル", ansiDim, colored),
-		}
+		return confirm.Dialog(title, []string{"失敗した job を再実行します:", a.rerunJobName}, confirm.HintYesNo, width, colored)
 	default: // pushConfirm
-		rows = []string{
-			fmt.Sprintf("未 push の %d コミットを push します", unpushedCount),
-			"",
-			paint("y/Enter: 実行   n/Esc: キャンセル", ansiDim, colored),
-		}
+		return confirm.Dialog(title, []string{fmt.Sprintf("未 push の %d コミットを push します", unpushedCount)},
+			confirm.HintYesNo, width, colored)
 	}
-	return centerBox(title, rows, width, colored)
+	return confirm.Box(title, rows, width, colored)
 }

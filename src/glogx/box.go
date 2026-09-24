@@ -9,15 +9,6 @@ import (
 // レイアウト関数だけ。m.width/m.colored 等のモデル状態を読むもの (cursorLine/bgLine/panelLines
 // など) は tui.go に残す。
 
-// centerBox は狭い幅 (最大 44) の影付きモーダル行を組む。水平センタリングと背景リストへの
-// 合成は描画時に overlayCenteredBox が行う (行を塗り潰さず左右の背景を残す)。action モーダルが使う。
-func centerBox(title string, rows []string, width int, colored bool) []string {
-	if width <= 0 {
-		width = 80
-	}
-	return buildShadowPanelBox(title, rows, min(44, width), colored, ansiDim)
-}
-
 // overlayBox / overlayCenteredBox は tuikit layout.Overlay / layout.OverlayCentered の別名
 // (行ごと置き換える / 中央に浮かせて左右の背景を残す)。
 func overlayBox(window, box []string, anchor, page int) []string {
@@ -29,7 +20,7 @@ func overlayCenteredBox(window, box []string, width, page int, colored bool) []s
 }
 
 // buildShadowPanelBox は右下ドロップシャドウ付きの枠パネルを組み立てる (行の実効幅は ANSI を
-// 除いて計算)。呼び出し元は小面積モーダル/トースト (centerBox 経由の action モーダル + toast /
+// 除いて計算)。呼び出し元は小面積モーダル/トースト (confirm.Box 経由の action モーダル + toast /
 // usage / PR 状態)、大面積の diff / job パネル + job 詳細、画面最外周フレーム (wrapWindowFrame →
 // buildPanelBoxImpl を直接呼ぶ)。
 //
@@ -71,7 +62,7 @@ func withScrollbar(rows []string, boxWidth, total, offset int, colored bool) []s
 }
 
 // buildPanelBoxImpl は tuikit layout.Panel に glogx の影の色 (テーマの近黒) を渡して板を組む。
-// 呼び出し元は小面積モーダル/トースト (centerBox 経由の action モーダル + toast / usage / PR 状態)、
+// 呼び出し元は小面積モーダル/トースト (confirm.Box 経由の action モーダル + toast / usage / PR 状態)、
 // 大面積の diff / job パネル + job 詳細、画面最外周フレーム (wrapWindowFrame)、zoom の演出枠。
 func buildPanelBoxImpl(title string, rows []string, width int, colored bool, st layout.PanelStyle) []string {
 	st.Shadow = ansiShadowFg

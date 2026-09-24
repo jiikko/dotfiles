@@ -17,6 +17,7 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 | `sgr` | 基本の ANSI 色・装飾 (`Reset` / `Bold` / `Dim` / `Cyan` …) | 色を付けるときの値の単一の出典 |
 | `anim` | `Transition` (開く / 閉じる / 途中で逆再生) / `Elapsed` (一方向の演出の進捗) / `ScrollGlide` / `CursorGlide` / easing | 開閉演出と「数行ぶんの移動を滑らせる」演出 |
 | `layout` | `ComposeDrawer` (一覧の上に詳細を右から重ねる) / `DrawerGeometry` / `SlideIn` / `Scrollbar` / `Panel` (落ち影つきの板) / `Overlay` / `OverlayCentered` / `PadTo` | 画面の合成 |
+| `confirm` | y/N 確認ダイアログ: `Dialog` (本文 + 空行 + 案内の板) / `Box` (幅 44 で頭打ちの中央の板) / `IsYes` (y・Y・Enter) / `IsYesStrict` (y・Enter) / 案内の定型 `HintYesNo` / `HintYesOther` | 破壊的操作の確認を毎回組まない。語彙の正本は `docs/glogx-ui-guide.md` §4 |
 | `lineedit` | 1 行の入力欄 (カーソル + readline の編集キー: `ctrl+h` / `ctrl+w` / `ctrl+u` / `ctrl+k` / `ctrl+a` / `ctrl+e` …) | 入力欄を毎回書かない。キーの語彙の正本は `docs/glogx-ui-guide.md` §7 |
 | `editor` | 実ファイルを 1 つエディタで開くコマンド ($VISUAL → $EDITOR → nvim、空白で語分割、quote は解釈しない) | glogx と pro-con の共通。tea.ExecProcess で待つ前提 (GUI エディタは -w) |
 | `listnav` | `MotionOf` (キー → 移動の語彙) / `List` (一覧のカーソル + 窓 + 半ページの滑走) / `Pager` (本文のスクロール) / `Scroll` / `WindowOffset` / `ClampOffset` (窓の計算) | 一覧・本文の移動を毎回書かない |
@@ -123,6 +124,23 @@ screen = layout.OverlayCentered(screen, box, width, page, colored)  // 左右の
 - 色なし (`colored=false`) では中身の SGR も落とす (閉じていない色が後続の行へ滲まない)
 - `Overlay` は行ごと置き換える (下に収まらなければ引き上げる)。`OverlayCentered` は板が占める列だけを差し替える
 
+### 確認する: y/N のダイアログ
+
+```go
+if asking {
+	box := confirm.Dialog(" git push ", []string{"未 push の 3 コミットを push します"}, confirm.HintYesNo, width, colored)
+	screen = layout.OverlayCentered(screen, box, width, page, colored)
+}
+// キー: 確認中は何が来ても確認を閉じ、実行キーのときだけ実行する
+asking = false
+if confirm.IsYes(key) { run() }
+```
+
+- 🚨 **実行キー以外はすべて取り消しに倒す** (n / Esc を待たない)。知らないキーで実行されるのが最悪の失敗
+- 🚨 **確認中のキーに `listnav.MotionOf` を当てない** (取り消しのつもりの打鍵が移動に化ける)。対象が板に
+  入り切らず送らせたいなら、送るキーを画面側で 1 つずつ列挙する (glogx の doctor の削除確認)
+- 板は `confirm.MaxWidth` (44 桁) で頭打ち。宛先・パスのように切れると確認の意味が無くなるものは独立した行にする
+
 ## 使う側の約束
 
 - **tick は使う側が回す**。`Transition.Animating(now)` / `List.Animating()` / `Pager.Animating()`
@@ -145,7 +163,7 @@ screen = layout.OverlayCentered(screen, box, width, page, colored)  // 左右の
 
 | 何を | どこで |
 |---|---|
-| 部品 (`anim` / `layout` / `listnav` / `sgr` / `termwidth` / `widthenv`) は bubbletea を import しない | `.golangci.yml` の depguard |
+| 部品 (`anim` / `confirm` / `layout` / `listnav` / `sgr` / `termwidth` / `widthenv`) は bubbletea を import しない | `.golangci.yml` の depguard |
 | 部品の中で `time.Now` / `time.Since` を呼ばない | `.golangci.yml` の forbidigo |
 | 幅モデルは 1 系統 (runewidth・uniseg・`ansi.StringWidthWc` を使わない) | `.golangci.yml` の depguard / forbidigo |
 | VS16 付きの文字列リテラルを書かない / 2 本目の幅エンジンを使わない | glogx の `own_sources_test.go` 経由の走査 (tuikit も対象。走査の根は glogx の go.mod の replace と突き合わせて固定) |
