@@ -186,3 +186,22 @@ func TestAttachNeedsSession(t *testing.T) {
 		t.Fatalf("session の無いカードの attach は ErrNoSession のはず: %v", err)
 	}
 }
+
+// TUI からの依頼は、そのタブの repo のカードとして依頼の列に出て、PM に渡す指示にスコープが入る。
+func TestNewRequestCreatesScopedCard(t *testing.T) {
+	s := New(t0)
+	if _, err := s.Apply(backend.NewRequest{Repo: backend.Repo{Name: "dotfiles", Path: "/src/dotfiles"}, Text: "検索を足して"}); err != nil {
+		t.Fatal(err)
+	}
+	snap := s.Snapshot()
+	c := snap.Cards[len(snap.Cards)-1]
+	if c.State != card.Requested || c.Repo != "dotfiles" || c.Request != "検索を足して" {
+		t.Fatalf("依頼の列に dotfiles のカードとして出るはず: %+v", c)
+	}
+	if c.Prompt != backend.PMPrompt(backend.Repo{Name: "dotfiles", Path: "/src/dotfiles"}, "検索を足して") {
+		t.Fatalf("PM に渡す指示にスコープの前置きが無い: %q", c.Prompt)
+	}
+	if len(snap.Violations) != 0 {
+		t.Fatalf("不変条件が破れた: %v", snap.Violations)
+	}
+}

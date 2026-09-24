@@ -94,7 +94,7 @@ func TestTabSwitchDropsMotionOfHiddenCard(t *testing.T) {
 	be := newRepoSpy()
 	be.snap.Cards[1].State = card.Planned // O1 (obaket) を分解済みから始める
 	clk := &clock{t: be.snap.Now}
-	m := New(be, []string{"dotfiles", "obaket"})
+	m := New(be, repos("dotfiles", "obaket"))
 	m.now = clk.now
 	m.resetSlots()
 	be.snap.Cards[1].State = card.Running

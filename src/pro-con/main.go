@@ -16,6 +16,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"pro-con/backend"
 	"pro-con/config"
 	"pro-con/fake"
 	"pro-con/ui"
@@ -55,12 +56,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	repos, warnings := config.Discover(cfg, home)
-	names := make([]string, len(repos))
+	scopes := make([]backend.Repo, len(repos))
 	for i, r := range repos {
-		names[i] = r.Name
+		scopes[i] = backend.Repo{Name: r.Name, Path: r.Path}
 	}
 	// 模擬時間の起点は固定しない (時刻の表示が今に近い方が見本として読みやすい)。刻みは fake が決める
-	m := ui.New(fake.New(time.Now().Truncate(time.Minute)), names)
+	m := ui.New(fake.New(time.Now().Truncate(time.Minute)), scopes)
 	if len(warnings) > 0 {
 		m.Notify(fmt.Sprintf("設定の警告 %d 件 (%s): %s", len(warnings), cfgPath, warnings[0]))
 	}

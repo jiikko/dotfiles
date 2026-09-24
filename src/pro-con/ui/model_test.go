@@ -218,7 +218,7 @@ func visibleIDs(m *Model) []string {
 // タブは global + 「config に在り、カードも在る repo」。config の外の repo (outside) と、
 // カードの無い repo (empty) はタブにならない。
 func TestTabsAreConfiguredReposWithCards(t *testing.T) {
-	m := New(newRepoSpy(), []string{"dotfiles", "empty", "obaket"})
+	m := New(newRepoSpy(), repos("dotfiles", "empty", "obaket"))
 	if got, want := m.tabs(), []string{"", "dotfiles", "obaket"}; !slices.Equal(got, want) {
 		t.Fatalf("タブが違う: got %q want %q", got, want)
 	}
@@ -226,7 +226,7 @@ func TestTabsAreConfiguredReposWithCards(t *testing.T) {
 
 // tab で repo のタブへ移ると、そのタブの repo のカードだけが見え、選択もその中に入る。一周すると global に戻る。
 func TestTabFiltersCardsAndSelection(t *testing.T) {
-	m := New(newRepoSpy(), []string{"dotfiles", "obaket"})
+	m := New(newRepoSpy(), repos("dotfiles", "obaket"))
 	if len(visibleIDs(m)) != 4 {
 		t.Fatalf("global は全カード (config の外も含む): %v", visibleIDs(m))
 	}
@@ -252,7 +252,7 @@ func TestTabFiltersCardsAndSelection(t *testing.T) {
 // 選んでいる repo のカードが全部消えたらタブも消えるので、global へ戻す (空の画面に取り残さない)。
 func TestTabFallsBackToGlobalWhenRepoEmpties(t *testing.T) {
 	be := newRepoSpy()
-	m := New(be, []string{"dotfiles", "obaket"})
+	m := New(be, repos("dotfiles", "obaket"))
 	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	m.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // obaket
 	if m.tab != "obaket" {
@@ -266,3 +266,38 @@ func TestTabFallsBackToGlobalWhenRepoEmpties(t *testing.T) {
 }
 
 func keyTab() tea.KeyPressMsg { return tea.KeyPressMsg{Code: tea.KeyTab} }
+
+func repos(names ...string) []backend.Repo {
+	var out []backend.Repo
+	for _, n := range names {
+		out = append(out, backend.Repo{Name: n, Path: "/src/" + n})
+	}
+	return out
+}
+
+// repo のタブで n → 本文 → enter は、そのタブの repo (名前とパス) をスコープにした依頼として届く。
+func TestNewRequestInRepoTabCarriesScope(t *testing.T) {
+	be := newRepoSpy()
+	m := New(be, repos("dotfiles", "obaket"))
+	m.Update(keyTab()) // dotfiles
+	press(m, "n")
+	typeText(m, "検索を足して")
+	press(m, "enter")
+	r, ok := be.applied[len(be.applied)-1].(backend.NewRequest)
+	if !ok || r.Repo != (backend.Repo{Name: "dotfiles", Path: "/src/dotfiles"}) || r.Text != "検索を足して" {
+		t.Fatalf("dotfiles をスコープにした依頼として届くはず: %#v", be.applied)
+	}
+}
+
+// global のタブで出した依頼は repo を持たない (PM が判断する)。
+func TestNewRequestInGlobalTabHasNoScope(t *testing.T) {
+	be := newRepoSpy()
+	m := New(be, repos("dotfiles"))
+	press(m, "n")
+	typeText(m, "どこかの件")
+	press(m, "enter")
+	r, ok := be.applied[len(be.applied)-1].(backend.NewRequest)
+	if !ok || r.Repo != (backend.Repo{}) {
+		t.Fatalf("global の依頼は repo を持たないはず: %#v", be.applied)
+	}
+}

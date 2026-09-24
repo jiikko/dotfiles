@@ -60,15 +60,41 @@ type AddOrder struct {
 	Text   string
 }
 
+// Repo は依頼のスコープにする repo。Name はカードの Repo と突き合わせる名前、Path は PM に渡す絶対パス。
+// ゼロ値は「repo を指定しない」(global のタブから出した依頼)。
+type Repo struct {
+	Name string
+	Path string
+}
+
+// NewRequest は TUI から PM への新しい依頼。Repo は依頼を出したタブの repo (global ならゼロ値)。
+type NewRequest struct {
+	Repo Repo
+	Text string
+}
+
+// PMPrompt は PM に渡す指示の全文。repo のタブから出した依頼には、その repo の中だけが対象である旨を前置きする。
+// 本文は人間が書いたまま末尾に置く (前置きで言い換えない)。
+func PMPrompt(r Repo, text string) string {
+	if r.Name == "" {
+		return "この依頼は repo を指定していません。どの repo の作業かを判断し、カードの repo を決めてください。" +
+			"複数の repo にまたがるなら、repo ごとにカードを分けてください。\n\n依頼:\n" + text
+	}
+	return "この依頼のスコープは repo " + r.Name + " (" + r.Path + ") の中だけです。" +
+		"この repo の外のファイルを読んだり変更したりしないでください。issue とカードもこの repo に作ってください。" +
+		"\n\n依頼:\n" + text
+}
+
 // Btw は作業を止めずに状況を聞く (要件 9)。回答は Apply の戻り値の文面で返る。
 type Btw struct {
 	CardID   string
 	Question string
 }
 
-func (Answer) isCommand()   {}
-func (AddOrder) isCommand() {}
-func (Btw) isCommand()      {}
+func (Answer) isCommand()     {}
+func (AddOrder) isCommand()   {}
+func (Btw) isCommand()        {}
+func (NewRequest) isCommand() {}
 
 var (
 	ErrNotFound = errors.New("カードが見つからない")

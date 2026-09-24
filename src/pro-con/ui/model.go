@@ -30,6 +30,7 @@ const (
 	inputAnswer inputKind = iota
 	inputOrder
 	inputBtw
+	inputNew
 )
 
 type tickMsg struct{}
@@ -45,8 +46,8 @@ type Model struct {
 	width  int
 	height int
 
-	// repos は config から列挙した repo 名。タブは global + 「ここに在り、カードも在る repo」。
-	repos []string
+	// repos は config から列挙した repo。タブは global + 「ここに在り、カードも在る repo」。
+	repos []backend.Repo
 	// tab は選んでいる repo 名 ("" = global)。位置ではなく名前で持つ (タブの増減で別の repo へずれない)。
 	tab string
 
@@ -68,8 +69,8 @@ type Model struct {
 	framing   bool // frame の tick が回っているか (二重に回さない)
 }
 
-// New は repos (config から列挙した repo 名) をタブの候補にして画面を作る。nil なら global だけ。
-func New(be backend.Backend, repos []string) *Model {
+// New は repos (config から列挙した repo) をタブの候補にして画面を作る。nil なら global だけ。
+func New(be backend.Backend, repos []backend.Repo) *Model {
 	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now}
 	m.snap = be.Poll()
 	m.ensureSelection()
@@ -133,11 +134,21 @@ func (m *Model) tabs() []string {
 	}
 	out := []string{""}
 	for _, r := range m.repos {
-		if has[r] {
-			out = append(out, r)
+		if has[r.Name] {
+			out = append(out, r.Name)
 		}
 	}
 	return out
+}
+
+// tabRepo は選んでいるタブの repo (global ならゼロ値)。新しい依頼のスコープになる。
+func (m *Model) tabRepo() backend.Repo {
+	for _, r := range m.repos {
+		if r.Name == m.tab && m.tab != "" {
+			return r
+		}
+	}
+	return backend.Repo{}
 }
 
 // ensureTab は選んでいる repo のカードが無くなってタブが消えたら global へ戻す。
@@ -302,6 +313,8 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		if _, ok := m.selectedCard(); ok {
 			m.startInput(inputBtw)
 		}
+	case "n":
+		m.startInput(inputNew)
 	}
 	return nil
 }
@@ -348,6 +361,8 @@ func (m *Model) submit() {
 		cmd = backend.AddOrder{CardID: m.selected, Kind: m.orderKind, Text: text}
 	case inputBtw:
 		cmd = backend.Btw{CardID: m.selected, Question: text}
+	case inputNew:
+		cmd = backend.NewRequest{Repo: m.tabRepo(), Text: text}
 	}
 	res, err := m.be.Apply(cmd)
 	if err != nil {

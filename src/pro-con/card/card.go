@@ -143,6 +143,7 @@ type Card struct {
 	ParentID string // 1 つの依頼を分けたとき / 別件の追加オーダーの元
 	Title    string
 	Request  string // 依頼の原文 (人間が書いたまま)
+	Prompt   string // PM に渡した指示の全文 (スコープの前置き + 原文)。TUI から出した依頼だけが持つ
 	Repo     string
 	Owner    string // 受付 PM / PM-A / PG-2 / 人間
 	Session  string // 担当 PG の session id (claude --bg の id)

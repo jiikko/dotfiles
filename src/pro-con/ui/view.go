@@ -45,7 +45,7 @@ func (m *Model) render() string {
 	if m.flash != "" {
 		out = append(out, sgrCyan+" "+m.flash+sgrReset)
 	}
-	help := " ←→↑↓ 選択  tab repo  enter 詳細  a attach  r 回答  o 追加オーダー  b btw  q 終了"
+	help := " ←→↑↓ 選択  tab repo  n 新しい依頼  enter 詳細  a attach  r 回答  o 追加オーダー  b btw  q 終了"
 	out = append(out, sgrDim+help+sgrReset)
 	return strings.Join(out, "\n")
 }
@@ -327,6 +327,9 @@ func (m *Model) detailLines(c card.Card) (string, []string) {
 	}
 	l = append(l, "issue: "+link+"   親: "+orDash(c.ParentID))
 	l = append(l, "依頼の原文: 「"+c.Request+"」")
+	if c.Prompt != "" {
+		l = append(l, sgrDim+"PM に渡した指示: "+strings.ReplaceAll(c.Prompt, "\n", " ")+sgrReset)
+	}
 	if c.Wait.Question != "" {
 		l = append(l, sgrYellow+"質問: "+c.Wait.Question+sgrFgReset)
 	}
@@ -357,6 +360,11 @@ func (m *Model) inputLine() string {
 		label = fmt.Sprintf("%s へ追加オーダー [%s] (tab で種類を切り替え)", m.selected, m.orderKind.Label())
 	case inputBtw:
 		label = m.selected + " に btw (PG は止めない)"
+	case inputNew:
+		label = "新しい依頼 (global: repo 未指定。PM が判断する)"
+		if r := m.tabRepo(); r.Name != "" {
+			label = "新しい依頼 (スコープ: " + r.Name + " の中だけ)"
+		}
 	}
 	return " " + sgrBold + fg(202) + label + ": " + sgrReset + string(m.input) + "▏"
 }

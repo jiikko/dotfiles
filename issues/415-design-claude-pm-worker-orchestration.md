@@ -355,4 +355,7 @@ issue にならない終わり方 (`回答済み` / `調査のみ` / `却下` / 
   (着地の瞬間に点線の枠が消えて下のカードが詰まる場面はこの撮影に含まれていない)
 - [ ] attach で人間が打った指示をカードに残す (候補: attach 中の時間帯の transcript から人間のメッセージだけを原文で履歴へ追記する。
   LLM で要約しない。未実測: Desktop と --bg の transcript の形式が同じか。採らない場合は「attach の内容はカードに残らない」を既知の制約とする)
+- [x] TUI から PM への新しい依頼 (`n`) と、repo のスコープの前置き (2026-09-24)。repo のタブで出した依頼は「その repo の中だけ」、
+  global のタブは「repo 未指定。PM が判断する」を PM への指示の先頭に付ける (`backend.PMPrompt`)。Desktop の PM に直接話す経路も残す。
+  テスト 5 本、変異 7 本がすべて想定したテストで red
 - [ ] 段階 1 の残り: 今の Desktop の session を一覧する本物の backend (`claude agents --json` を読む)

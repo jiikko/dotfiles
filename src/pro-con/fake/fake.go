@@ -350,6 +350,8 @@ func (s *Sim) Apply(cmd backend.Command) (string, error) {
 		return s.addOrder(c)
 	case backend.Btw:
 		return s.btw(c)
+	case backend.NewRequest:
+		return s.newRequest(c)
 	}
 	return "", backend.ErrUnknownKind
 }
@@ -409,6 +411,30 @@ func (s *Sim) addOrder(o backend.AddOrder) (string, error) {
 		return msg, nil
 	}
 	return "", backend.ErrUnknownKind
+}
+
+// newRequest は TUI からの新しい依頼を依頼の列に置く。PM に渡す指示にはスコープの前置きを付ける。
+func (s *Sim) newRequest(r backend.NewRequest) (string, error) {
+	if strings.TrimSpace(r.Text) == "" {
+		return "", backend.ErrEmptyText
+	}
+	s.nextID++
+	scope := "repo 未指定 (PM が判断)"
+	if r.Repo.Name != "" {
+		scope = "repo " + r.Repo.Name
+	}
+	c := card.Card{ID: fmt.Sprintf("C-%03d", s.nextID), Title: firstLine(r.Text), Request: r.Text,
+		Prompt: backend.PMPrompt(r.Repo, r.Text), Repo: r.Repo.Name, Owner: "受付 PM", State: card.Requested, Since: s.now,
+		History: []card.Event{{At: s.now, Text: "人間が TUI から依頼した (スコープ: " + scope + ")"}}}
+	s.cards = append(s.cards, c)
+	return c.ID + " を依頼した (スコープ: " + scope + ")", nil
+}
+
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
 
 // btw は PG を止めずに状況を返す。本番は PG の最新出力を元に別プロセスで答える (415 要件 9)。
