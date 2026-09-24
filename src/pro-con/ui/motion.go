@@ -87,12 +87,13 @@ func (m *Model) startFrames() tea.Cmd {
 }
 
 func (m *Model) animating() bool {
-	return len(m.moves) > 0 || len(m.slides) > 0 || m.drawer.Animating(m.now()) || m.pager.Animating()
+	return len(m.moves) > 0 || len(m.slides) > 0 || m.drawer.Animating(m.now()) || m.pager.Animating() || m.cursorGliding(m.now())
 }
 
 func (m *Model) resetSlots() {
 	m.prevSlots = m.slots()
 	m.moves = map[string]*move{}
+	m.cursor.valid = false // 配置が丸ごと変わった (タブの切り替え等): 枠は滑らせずに置き直す
 }
 
 func (m *Model) pruneMoves(now time.Time) {
@@ -120,7 +121,7 @@ func (m *Model) onFrame() tea.Cmd {
 // slotXY は slot の画面上の位置 (ボードの左上からの桁と行)。枠の内側の左上。
 func (m *Model) slotXY(s slot) (float64, float64) {
 	w := m.colWidth()
-	return float64(s.col*(w+len(colSep)) + 1), float64(1 + s.row*perCardLines)
+	return float64(s.col*(w+len(colSep)) + 1), float64(1 + cardGap + s.row*perCardLines)
 }
 
 func (mv *move) pos(m *Model, now time.Time) (float64, float64) {

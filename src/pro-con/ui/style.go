@@ -67,6 +67,8 @@ func boxTop(border, title string, w int) string {
 	inner := w - 2
 	t := ""
 	if title != "" {
+		// 見出しは枠の内側に収める。はみ出すと、その行の右にある列がすべてずれる (狭い端末の「▶ 3 作業中 (2)」等)
+		title = ansi.Truncate(title, max(inner-3, 0), "…")
 		t = "─ " + title + border + " "
 	}
 	rest := max(0, inner-ansi.StringWidth(t))

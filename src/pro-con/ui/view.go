@@ -44,7 +44,7 @@ func (m *Model) render() string {
 	if m.picker.open {
 		region = m.pickerBlock()
 	} else {
-		region = m.overlayMoves(m.boardLines())
+		region = m.overlayMoves(m.overlayCursor(m.boardLines()))
 	}
 	// PG の一覧・入力欄・案内は画面の下端へ吸着させ、ボードとの間を空行で埋める。
 	// カードの詳細はこの領域 (ヘッダと下端の群のあいだ) に右から重ねる
@@ -204,28 +204,34 @@ func (m *Model) shownCards() int {
 	if m.reserved(panelPG) {
 		room -= len(m.snap.Consumers) + 5 // 上下の枠・見出し・ほかの session の行・空行
 	}
-	return max(1, room/perCardLines)
+	return max(1, (room-cardGap)/perCardLines) // 末尾の空き 1 行を引いてから割る
 }
 
 // columnBlock は 1 列分の行 (上枠に見出し + カード + 下枠)。列の高さは shown で揃える。
 func (m *Model) columnBlock(col int, s card.State, cs []card.Card, w, shown int, focused bool) []string {
-	label := fmt.Sprintf("%d %s (%d)", col+1, s.Label(), len(cs)) // 先頭の数字は 1〜6 でそのレーンへ飛ぶキー
+	// 先頭の数字は 1〜6 でそのレーンへ飛ぶキー。狭いときは名前を削り、キーと枚数は残す (boxTop は後ろから切る)
+	head, tail := fmt.Sprintf("%d ", col+1), fmt.Sprintf(" (%d)", len(cs))
 	if focused {
-		label = "▶ " + label
+		head = "▶ " + head
 	}
 	border := columnBorder(focused)
 	inner := w - 2
+	name := ansi.Truncate(s.Label(), max(inner-3-ansi.StringWidth(head+tail), 1), "…")
+	label := head + name + tail
 	out := []string{boxTop(border, fg(stateColor(s))+sgrBold+label+sgrReset, w)}
 	cells := m.columnCells(col, cs, inner)
+	// カードの上下に 1 行ずつ空ける (空行・カード・空行・…・空行)。選択の枠と移動中のカードの枠はこの空行の上に描くので、
+	// 隣のカードを隠さない (2026-09-24 のユーザー提案。1 列に入る枚数は 2 行詰めの約 2/3 になる)
 	var body []string
 	for r := range min(shown, len(cells)) {
+		body = append(body, "")
 		if r == shown-1 && len(cells) > shown {
 			body = append(body, fit(sgrDim+fmt.Sprintf("… 他 %d 枚", len(cells)-shown+1)+sgrReset, inner))
 			break
 		}
 		body = append(body, cells[r][0], cells[r][1])
 	}
-	for len(body) < shown*perCardLines {
+	for len(body) < shown*perCardLines+cardGap {
 		body = append(body, "")
 	}
 	for _, l := range body {
@@ -234,7 +240,11 @@ func (m *Model) columnBlock(col int, s card.State, cs []card.Card, w, shown int,
 	return append(out, boxBottom(border, w))
 }
 
-const perCardLines = 2
+const (
+	cardLines    = 2                   // カード 1 枚の行数
+	cardGap      = 1                   // カードの上下の空き (枠を描く行)
+	perCardLines = cardLines + cardGap // 1 枚あたりの縦の送り
+)
 
 // columnCells は列の中身を 1 枚 2 行のセルで並べる。移動中のカード (motion.go) は、移動先では空けて待ち、
 // 移動元には点線の枠を残す (どちらも着地まで。周りのカードが途中で詰まってずれないように)。
@@ -266,9 +276,8 @@ func (m *Model) cardCell(c card.Card, w int) (string, string) {
 	base := bg(cardColor(c.ID)) + fg(252)
 	title := c.ID + issueTag(c) + " " + c.Title // issue に紐づくカードは 1 行目に番号を出す (バッジ行は待ちの理由と時間)
 	badge := m.badgeColored(c)
-	if c.ID == m.selected {
-		l, r := fg(202)+"▌"+fg(231), base+fg(202)+"▐"+sgrReset
-		return paint(base, l+sgrBold+sgrUnderline+title+sgrNoUnderline, w-1) + r, paint(base, l+sgrBold+badge, w-1) + r
+	if c.ID == m.selected { // 目印は周りの枠 (cursor.go)。中は太字と下線だけ
+		return paint(base, " "+fg(231)+sgrBold+sgrUnderline+title+sgrNoUnderline, w), paint(base, " "+fg(231)+sgrBold+badge, w)
 	}
 	if c.State == card.Done {
 		title, badge = sgrDim+title, sgrDim+m.badge(c)

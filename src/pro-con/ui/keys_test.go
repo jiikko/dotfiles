@@ -20,7 +20,7 @@ func keysModel(t *testing.T) *Model {
 	}
 	cs = append(cs, card.Card{ID: "R0", State: card.Running, Since: now})
 	m := New(&spy{snap: backend.Snapshot{Now: now, Cards: cs}}, nil)
-	m.height = 9 + 2 + 4*perCardLines
+	m.height = 9 + 2 + 4*perCardLines + cardGap
 	m.selected = "P0"
 	if m.shownCards() != 4 {
 		t.Fatalf("前提: 1 列 4 枚のはず: %d", m.shownCards())

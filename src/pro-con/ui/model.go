@@ -86,6 +86,7 @@ type Model struct {
 	moves     map[string]*move
 	slides    map[panel]*slide // 下端の板の開閉の演出 (slide.go)
 	// カードの詳細の引き出し (drawer.go)。drawerCard は閉じる途中も残す (逆再生で本文が見えている必要がある)
+	cursor     cursorGlide // 選択中のカードを囲む枠 (cursor.go)
 	drawer     anim.Transition
 	drawerCard string
 	pager      listnav.Pager
@@ -135,7 +136,12 @@ func (m *Model) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
+	defer func() { // 選択が動いたら (キーでも、カードの移動でも) 枠を滑らせる
+		if c := m.trackCursor(); c != nil {
+			cmd = tea.Batch(cmd, c)
+		}
+	}()
 	switch msg := msg.(type) {
 	case tickMsg:
 		m.setSnap(m.be.Poll())
