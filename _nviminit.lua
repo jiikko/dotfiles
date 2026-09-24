@@ -989,10 +989,15 @@ require("lazy").setup({
     },
     -- 🚨 insert でも装飾を維持する。{ "n", "c" } にすると insert に入った瞬間に
     -- バッファ全体の装飾が剥がれ、conceal されていた `` ` `` / ** / リンクが一斉に戻って
-    -- 折り返しが変わり、画面が飛ぶ。カーソル行だけは anti_conceal が生に戻すが、
-    -- それは normal モードでも同じなので insert で新たに崩れるものはない。
+    -- 折り返しが変わり、画面が飛ぶ。
     opts = {
       render_modes = true,
+      -- カーソル行を生に戻すのは insert だけにする。既定はカーソルが乗るだけで ** / `` ` `` /
+      -- リンク URL が現れ、行が右へずれる。戻す手段は 2 系統あり、両方を揃えないと片方が残る:
+      -- treesitter の conceal は 'concealcursor' (既定の rendered = "")、プラグイン自身の
+      -- アイコン類は anti_conceal が剥がす。
+      anti_conceal = { disabled_modes = { "n", "c" } },
+      win_options = { concealcursor = { rendered = "nc" } },
       -- 見出しアイコンは差し込み ('#' を conceal) にして、全レベルで左端を揃える。
       -- 既定の overlay は「'#' の数 + 1 - アイコン幅」ぶんの空白を前に詰めるため
       -- (render/markdown/heading.lua の Render:marker)、深い見出しほど右にずれて見える。
