@@ -102,8 +102,8 @@ Claude Code の使い方を「session を立ち上げてそこで作業する」
       カード + キュー (ファイル。状態は位置で表す)
           │ dispatcher (決定論的なスクリプト) が滞留を見て PG を起動
           ▼
-      PG = claude --bg (1 タスク 1 session / 自分用の worktree)
-          │ claude logs / agents で状態と出力を読む
+      PG = claude --bg -w (1 タスク 1 session / Claude Code が作る worktree)
+          │ claude agents --json で状態、transcript で出力を読む
           ▼
       glogx の PG 画面 (カンバン + ゲージ + ログ tail + attach + btw)
 ```
@@ -125,14 +125,25 @@ Claude Code の使い方を「session を立ち上げてそこで作業する」
 
 | 形態 | 利点 | 欠点 |
 |---|---|---|
-| **`claude --bg`** | 要件 5 (直接話す) を `attach` でそのまま満たす。一覧・ログ・停止が CLI にある。worktree の後始末も `rm` が持つ | 挙動は未実測 (下記) |
+| **`claude --bg`** | 要件 5 (直接話す) を `attach` でそのまま満たす。一覧・ログ・停止が CLI にある。worktree の後始末も `rm` が持つ | trust 済みの repo の下でしか起動しない (`-w` で worktree を作らせて回避。下記) |
 | タスクごとに `claude -p --output-format stream-json` | 起動・終了・完了判定が簡単。出力がそのままログになる | 実行中に割り込めない (終わってから `--resume` で開く) |
 | tmux pane に常駐する対話 session | 途中で話しかけやすい | 何件もこなすと文脈が混ざり compaction で前タスクの前提が残る。自動化が send-keys 頼み |
 
-**`--bg` を採る前に実測すること** (未実測。help の文面は契約ではない):
-- 権限プロンプトが出たとき、bg session は止まって待つのか。それを `claude agents` から判別できるか (= `waiting` の検出に使えるか)
-- `claude agents` / `logs` の出力は機械で読める形か (JSON 出力の有無)。完了と異常終了を区別できるか
-- `rm` が消す worktree は `--bg` 自身が作ったものだけか (dispatcher が作った worktree を消さないか)
+**`--bg` の実測** (2026-09-24 / Claude Code 2.1.281 / `~/dotfiles` から haiku で 1 本起動して確認。stdout・stderr・rc を分けて採った):
+
+- ✅ **権限プロンプトで止まると `claude agents --json` に出る**: `"status":"waiting","waitingFor":"permission prompt","state":"blocked"`。
+  `waiting` の検出 (論点 5 / 要件 13) はこれで機械的にできる。`--permission-mode default` でファイル作成を頼むと、Write の確認で止まった
+- ✅ **`claude agents --json` は機械で読める** (TTY 不要)。項目は `pid` / `id` / `cwd` / `kind` (`interactive` / `background`) / `startedAt` /
+  `sessionId` / `name` / `status` (`idle` / `busy` / `waiting`)、bg には `waitingFor` / `state` も付く。**Desktop の対話 session も `kind: interactive` で並ぶ**
+  (実測時 6 本: `status` は idle / busy のみ観測)。段階 1 の見える化の情報源に使える。`--all` で完了済みも含む。完了と異常終了の区別は未確認
+- ❌ **`claude logs <id>` は端末の生の描画 (ANSI エスケープ込み)** で、機械で読むのには向かない。ログは transcript (`sessionId` から引ける jsonl) を読む
+- 🚨 **trust していないディレクトリでは `--bg` が起動しない** (`Workspace not trusted. Run claude in <dir> once and accept the trust prompt` / rc=1)。
+  dispatcher が自前で作った worktree は trust されていないので起動できない。**`claude --bg -w <name>` で Claude Code に worktree を作らせる**と、
+  trust 済みの repo の下 (`<repo>/.claude/worktrees/<name>`、ブランチ `worktree-<name>`) にでき、そのまま起動した。したがって **PG の worktree は `-w` で作る**
+- ✅ **`claude rm <id>` は session と、`-w` で作った worktree を消す** (ブランチも残らなかった)。未 push の commit や未コミットの変更がある worktree は、
+  help によると `--discard-unpushed` / `--force-remove-worktree` を渡さない限り消さない (この安全側の挙動は未実測)
+- 起動時に `TMUX` / `TMUX_PANE` を落とした (論点 5)。落とさない場合の上書きは未実測
+- 🚨 **実測時点で weekly limit の 79% を使用中だった** (bg session の描画に出た)。枠の残量は bg session の画面からは読めるが、機械で読む口は未調査
 
 ### 論点 3: カードとキューの置き場所
 
@@ -268,5 +279,6 @@ issue にならない終わり方 (`回答済み` / `調査のみ` / `却下` / 
 - [ ] 要件 14 の未実測: bg session がマシン再起動を越えて戻るか
 - [x] 決定事項 (2026-09-24): PG は自分のブランチまで push / PG の権限 / カード化は PM の規律 / 複数 repo / 上限 2
 - [ ] 論点 2〜10 の決定 (論点 6: PM の数が次の未決)
-- [ ] `claude --bg` の実測 (論点 2 の 3 項目)
+- [x] `claude --bg` の実測 (論点 2): waiting の検出 / agents --json / trust / -w / rm を確認
+- [ ] 未実測: 完了と異常終了の区別 / rm が未 push の worktree を消さないこと / マシン再起動を越えるか / 利用枠を機械で読む口
 - [ ] 段階 1 のサンプルレンダラ
