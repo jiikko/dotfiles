@@ -1036,13 +1036,16 @@ func (v *issuesView) visibleIssues() []*issues.Issue {
 //
 // [next] が状態フィルタ (a) を見ないのは、next が段階に関係なく常に見える状態だから
 // (issues.StatusFilter.shows)。目印を付けたものが「今の段階では見えない」のは逆の結果になる。
+//
+// [next] は global の目印だけ。epic の子の目印 (`epic/<name>/next/`) は group の中で ▶ として
+// 見えるので載せない (載せると同じ issue が group と [next] の 2 箇所に並ぶ。ユーザー要望 2026-09-24)。
 func (v *issuesView) rowsForTab(tab string) []*issues.Issue {
 	if tab != tabNextName {
 		return issues.Filter(v.all, tab, v.filter)
 	}
 	out := make([]*issues.Issue, 0, 8)
 	for _, iss := range v.all {
-		if iss.Status == issues.StatusNext {
+		if iss.Status == issues.StatusNext && iss.GroupKind != issues.GroupEpic {
 			out = append(out, iss)
 		}
 	}

@@ -609,10 +609,13 @@ func TestIssuesViewMarkNextUsesSelection(t *testing.T) {
 
 // [next] は All の左に固定の疑似カテゴリ (ユーザー要望 2026-08-01)。ファイル名のカテゴリでは
 // なく「next/ に居るか」で選ぶので、状態フィルタの段階に関係なく目印つきが全部出る。
+// epic の子の目印 (`epic/<name>/next/`) は数えない: group の中で ▶ として見えるので、global の
+// [next] にまで出すと同じ issue が 2 箇所に並ぶ (ユーザー要望 2026-09-24)。
 func TestIssuesViewNextPseudoTab(t *testing.T) {
 	list := append(sampleIssues(),
 		fakeIssue("040", "feat", "next-a", issues.StatusNext),
 		fakeIssue("041", "docs", "next-b", issues.StatusNext),
+		fakeEpicIssue("/repo/issues", "cloud", "042", "epic-next", issues.StatusNext),
 	)
 	v := loadedView(list...)
 
@@ -638,6 +641,9 @@ func TestIssuesViewNextPseudoTab(t *testing.T) {
 	for _, iss := range v.rows {
 		if iss.Status != issues.StatusNext {
 			t.Fatalf("[next] に目印なしが混ざった: %s", iss.Rel)
+		}
+		if iss.GroupKind == issues.GroupEpic {
+			t.Fatalf("[next] に epic の子が混ざった: %s", iss.Rel)
 		}
 	}
 	// 状態フィルタを動かしても [next] の中身は変わらない (目印が段階で消えない)
