@@ -25,7 +25,7 @@ Claude Code の使い方を「session を立ち上げてそこで作業する」
 2. **PG の自動スケーリング**。キューの滞留 (件数・最古の待ち時間) を見て PG を起動し、キューが空になったら増やさない。上限を持つ
 3. **タスクごとのログ**。PG はタスク単位でログを残し、後から読める
 4. **TUI でキューの溜まり具合を表現する**。状態ごとの件数と最古の待ち時間が一目で分かる。タスクを選ぶとログを tail できる
-5. **たまに PG と直接話せる**。TUI から該当 PG の session を対話で開ける
+5. **たまに PG と直接話せる**。TUI から該当 PG の session を対話で開ける (本物の Claude Code の画面で。論点 7 の「PG との対話」)
 6. **コンフリクトを人間が考えなくてよい**。触る予定のファイルが重なるタスクは同時に走らせない。PG ごとに worktree を分ける
 7. **依頼はタスクカードとして仕組みで管理する**
    - 人間が PM に依頼したら、PM は**作業に入る前に**カードを 1 枚作る (安定 ID / 依頼の原文をそのまま / 日時)
@@ -227,7 +227,17 @@ issue にならない終わり方 (`回答済み` / `調査のみ` / `却下` / 
   - **カンバン**: カードを状態の列に並べる。カードには紐づきのバッジ (要件 10) と担当を出す
   - **ゲージ**: 状態ごとの件数・最古の待ち時間・稼働中の PG 数 / 上限・dispatcher の生存
   - **詳細**: 選んだカードの依頼原文・履歴・紐づく issue の状態・ログ tail
-  - **キー**: attach (新しい tmux window で `claude attach <id>`) / btw (要件 9)
+  - **キー**: attach (下記) / btw (要件 9)
+- **PG との対話は「画面を切り替える」方式にする (2026-09-24 決定)**。カードを選んで Enter → TUI を一時停止し、同じ端末で
+  `claude attach <id>` を起動する (bubbletea の `tea.ExecProcess`)。抜けたら pro-con の画面に戻る。
+  - 採った理由: 本物の Claude Code の画面そのものなので、権限プロンプトも含めて再現の手間が無く、Claude Code の版が上がっても崩れない。数十行で作れる
+  - `claude attach` の help: 「← で agent view に戻る、Ctrl+Z でシェルに戻る。どちらでも session は動き続ける」。抜けても PG は止まらない
+    (← で抜けた先は Claude Code の agent view なので、pro-con へ戻るには agent view も抜ける必要がある。戻り方は実物で確かめて案内を決める)
+  - 採らなかった案: TUI の中に端末エミュレータを持って埋め込む (Claude Code の画面は truecolor・全画面の再描画・キー操作を多用し、
+    `claude logs` の出力もほぼ制御コードだった。崩れやすく、版が上がるたびに壊れうる) / transcript を読む自前のチャット UI
+    (権限プロンプト等を自前で再現することになる) / tmux の popup (重ねると抜けにくく使われなくなった記録が `docs/claude-fork-popup.md` にある)
+  - 未確認: Claude Code 自体の agent view (`claude agents` を TTY で開く画面) と役割が重なるか。重なるなら、session の一覧と対話は agent view に任せ、
+    pro-con はカード・キュー・レビュー・watchdog に絞る割り切りもありうる
 - 🚨 **見た目は本体に入れる前にサンプルレンダラで決める** (`decide-layout-in-sample-renderer-first.md`)。
   カンバンは列が複数並ぶので、サンプルでも複数列・複数カードで描く
 - 既存の `@claude_state` (`scripts/tmux_agent_panel.sh` / `scripts/tmux_agent_jump.sh`) は tmux pane を持つ対話 session の状態。
@@ -323,7 +333,9 @@ issue にならない終わり方 (`回答済み` / `調査のみ` / `却下` / 
 - [x] 「想定する使い方」の節を追加 (ゼロから作るときは使わない / 五月雨式の修正で使う / 直接使う session と同居し直列化もそちらに効かせる / 目標 4 並列)
 - [x] 論点 6 を「受付 PM + 担当 PM」に改訂 (レビューのボトルネック対策)
 - [x] 要件 15 (追加オーダー) と論点 11 を追記
+- [x] PG との対話は画面を切り替える方式 (`tea.ExecProcess` で `claude attach`) に決定 (2026-09-24)
 - [ ] 論点 2〜11 の決定 (論点 6 の振り分け単位が次の未決)
+- [ ] 未確認: Claude Code の agent view と pro-con の役割の重なり / attach から pro-con へ戻る操作
 - [ ] 未実測: 実行中の bg session へメッセージを直接送れるか (論点 8 / 11)
 - [x] `claude --bg` の実測 (論点 2): waiting の検出 / agents --json / trust / -w / rm を確認
 - [ ] 未実測: 完了と異常終了の区別 / rm が未 push の worktree を消さないこと / マシン再起動を越えるか / 利用枠を機械で読む口
