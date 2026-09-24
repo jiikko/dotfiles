@@ -7,7 +7,7 @@
 ## 概要
 
 模擬 (`src/pro-con/fake`) で UI とつなぎ込みを確かめた機能を、本物の Claude Code の session で動かす。
-**[425](done/425-research-claude-bg-remaining-measurements.md) の実測と [426](426-design-pro-con-open-decisions.md) の決定が済むまで着手しない**。
+[425](done/425-research-claude-bg-remaining-measurements.md) の実測と [426](done/426-design-pro-con-open-decisions.md) の決定は済んだ (2026-09-24)。
 
 ## 範囲 (段階ごとに分けて入れる)
 
@@ -15,7 +15,12 @@
 - [ ] 段階 4: リソースの直列化 (PG が 2 体以上になると要る)
 - [ ] 段階 5: 自動スケーリング (滞留と枠の残量で起動数を決める)
 
-## 前提 (415 の決定事項)
+## 前提
+
+- **設計の決定は 426 の「決定」節が正本** (カードの書き手は daemon / 回答は stop → resume / 追記は turn の区切り / 落ちたら自動の再開 + 回数で止める /
+  役割 4 つ (PG・テストの係・調べる係・レビューの係) / PM 1 つ / 知らせは tmux の status + macOS の通知)。ここには写さない
+
+### 415 の決定事項
 
 - PG は `claude --bg -w` で起動し、自分のブランチまで push する (master へは PM がレビューしてから)
 - 同時実行数の上限は 2 から始める
@@ -34,4 +39,4 @@
 
 ## 進捗
 
-- [ ] 着手待ち (425 / 426 の後)
+- [ ] 着手できる (425 の実測・426 の決定が済んだ。2026-09-24)

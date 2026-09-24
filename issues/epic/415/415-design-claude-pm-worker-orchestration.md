@@ -10,7 +10,7 @@
 |---|---|---|
 | [424](424-feat-pro-con-readonly-real-backend.md) | 読み取り専用の本物の backend (段階 1) | — |
 | [425](done/425-research-claude-bg-remaining-measurements.md) | `claude --bg` の残りの挙動を実測する | — |
-| [426](426-design-pro-con-open-decisions.md) | 未決の論点を決める (論点 3 / 6 / 8 / 9 / 10 / 11) | 425 |
+| [426](done/426-design-pro-con-open-decisions.md) | 未決の論点を決める (論点 3 / 6 / 8 / 9 / 10 / 11) | 425 |
 | [427](427-feat-pro-con-real-pm-pg-backend.md) | 本物の PM / PG の backend (段階 3〜5) | 425 / 426 |
 | [428](428-feat-pro-con-record-attach-instructions.md) | attach 中に人間が打った指示をカードに残す | 424 の実測 |
 | [429](429-human-pro-con-try-mock-and-agent-view.md) | (human) 模擬版を触る / agent view との重なり / attach からの戻り方 | — |
@@ -444,3 +444,4 @@ issue にならない終わり方 (`回答済み` / `調査のみ` / `却下` / 
 - [x] `?` でレーンの意味の表 (2026-09-24)。説明の正本は `card.State.Meaning`。btw は `w` へ移した。ヘッダーに「(producer-consumer)」を足した
 - [x] 移動中のカードの枠を外した (2026-09-24。「移動中のカードにはボーダーをつけなくていい」の指示)。レーンの中と同じカードだけを滑らせる。選択中のカードが動いている間は選択の枠も出さない
 - [x] 入力中の強調 (2026-09-24。「入力欄にフォーカスがあるとき、カードを動かせる状態か見分けたい」)。入力欄・y/N 確認の間はカンバンを暗い灰 1 色で描き、入力欄の行に全幅の地の色を敷く
+- [x] 426 (未決の論点) を聞き取りで決定 (2026-09-24)。論点 5 の「落ちたら自動で再実行しない」と論点 9 の hook / shim 案は 426 の決定で置き換え

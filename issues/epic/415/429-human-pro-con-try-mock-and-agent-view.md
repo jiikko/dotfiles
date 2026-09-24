@@ -21,7 +21,7 @@ agent view との重なりは「どちらを使いたいか」の判断で、ユ
 ## 期待と違ったとき
 
 - 1 で足りない操作があれば新しい子 issue を `issues/epic/415/` に起こす
-- 2 で役割を絞ると決めたら [426](426-design-pro-con-open-decisions.md) に追記する
+- 2 で役割を絞ると決めたら [426](done/426-design-pro-con-open-decisions.md) に追記する
 - 3 で戻り方が不自然なら 415 の論点 7 を open に戻して案内を決め直す
 
 ## 進捗

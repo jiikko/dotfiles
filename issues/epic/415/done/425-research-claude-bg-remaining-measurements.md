@@ -7,7 +7,7 @@
 ## 概要
 
 PG を `claude --bg -w` で動かす設計 (415 論点 2) のうち、測っていない挙動が残っている。
-本物の PM / PG の backend ([427](../427-feat-pro-con-real-pm-pg-backend.md)) と論点の決定 ([426](../426-design-pro-con-open-decisions.md)) がこれに依存する。
+本物の PM / PG の backend ([427](../427-feat-pro-con-real-pm-pg-backend.md)) と論点の決定 ([426](426-design-pro-con-open-decisions.md)) がこれに依存する。
 
 ## 測ること
 
@@ -34,7 +34,7 @@ PG を `claude --bg -w` で動かす設計 (415 論点 2) のうち、測って�
 - 🚨 **プロセスが死んだ session は daemon が自動で再開する**。約 25 秒後に新しい pid で同じ session ID が `busy` に戻り、
   会話に次の文が足された: 「Continue from where you left off. Note: this session was automatically restarted after its process exited
   unexpectedly; the user has not sent a new message since the restart. Re-verify anything time-sensitive (branch state, running processes,
-  prior partial work) before continuing.」 → 415 論点 5 の「落ちたら failed にして自動で再実行しない」とは合わない ([426](../426-design-pro-con-open-decisions.md) へ)
+  prior partial work) before continuing.」 → 415 論点 5 の「落ちたら failed にして自動で再実行しない」とは合わない ([426](426-design-pro-con-open-decisions.md) へ)
 - 「pid が無いのに `working`」は、死んでから再開されるまでの一時的な状態として読む
 
 ### 2. `claude rm` はフラグなしでは未 push の commit・未コミットの変更を持つ worktree を消さない
