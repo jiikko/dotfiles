@@ -45,7 +45,7 @@ func (m *Model) render() string {
 	if m.flash != "" {
 		out = append(out, sgrCyan+" "+m.flash+sgrReset)
 	}
-	help := " ←→↑↓ 選択  tab repo  n 新しい依頼  enter 詳細  a attach  r 回答  o 追加オーダー  b btw  q 終了"
+	help := " ←→↑↓ 選択  tab repo  n 新しい依頼  y コピー  enter 詳細  a attach  r 回答  o 追加オーダー  b btw  q 終了"
 	out = append(out, sgrDim+help+sgrReset)
 	return strings.Join(out, "\n")
 }

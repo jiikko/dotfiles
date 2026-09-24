@@ -6,6 +6,7 @@ require (
 	charm.land/bubbletea/v2 v2.0.8
 	github.com/BurntSushi/toml v1.6.0
 	github.com/charmbracelet/x/ansi v0.11.7
+	termsafe v0.0.0
 	tuikit v0.0.0
 )
 
@@ -26,4 +27,7 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 )
 
-replace tuikit => ../tuikit
+replace (
+	termsafe => ../termsafe
+	tuikit => ../tuikit
+)

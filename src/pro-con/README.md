@@ -17,6 +17,7 @@ bin/pro-con      # claude は起動しない。模擬の backend (fake) が状�
 |---|---|
 | tab / shift+tab | repo タブの切り替え (global = 全 repo) |
 | n | 新しい依頼 (PM へ)。repo のタブで出すとその repo がスコープになる |
+| y | 選択中のカードのタイトルと内容 (repo・状態・issue・依頼の原文・質問) をクリップボードへ。本文は `termsafe.PlainBlock` を通す |
 | ←→↑↓ / hjkl | カードの選択 |
 | enter / esc | 詳細の開閉 |
 | a | PG の session を開く (今は模擬) |

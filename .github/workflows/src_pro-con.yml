@@ -11,12 +11,14 @@ on:
     paths:
       - 'src/pro-con/**'
       - 'src/tuikit/**'  # replace で取り込む共有 module (演出の部品 anim)
+      - 'src/termsafe/**'  # replace で取り込む共有 module (コピーする本文の無害化)
       - .github/workflows/src_pro-con.yml
       - .github/workflows/_go-project.yml
   pull_request:
     paths:
       - 'src/pro-con/**'
       - 'src/tuikit/**'  # replace で取り込む共有 module (演出の部品 anim)
+      - 'src/termsafe/**'  # replace で取り込む共有 module (コピーする本文の無害化)
       - .github/workflows/src_pro-con.yml
       - .github/workflows/_go-project.yml
   workflow_dispatch:  # GitHub UI からの手動再実行用

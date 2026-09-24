@@ -67,11 +67,13 @@ type Model struct {
 	prevSlots map[string]slot
 	moves     map[string]*move
 	framing   bool // frame の tick が回っているか (二重に回さない)
+
+	copy func(string) error // クリップボードへ入れる (既定は pbcopy。テストは差し替える)
 }
 
 // New は repos (config から列挙した repo) をタブの候補にして画面を作る。nil なら global だけ。
 func New(be backend.Backend, repos []backend.Repo) *Model {
-	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now}
+	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, copy: pbcopy}
 	m.snap = be.Poll()
 	m.ensureSelection()
 	m.resetSlots()
@@ -315,6 +317,8 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		}
 	case "n":
 		m.startInput(inputNew)
+	case "y":
+		m.yank()
 	}
 	return nil
 }
