@@ -20,7 +20,11 @@
 
 - **作業開始後に**他の作業者 (並行セッション・人間) の変更を確認できたら (untracked の増加 / 自分が触っていないファイルの新しい差分 / 知らないコミット)、**git worktree を作ってそこで作業してよい**
 - **作業開始時点から在る** dirty / untracked はこの条件に含めない (過去の残骸かもしれない)。触らず・巻き込まずに共有 working tree のまま続行してよい
-- **worktree を残さない**。コミットを master へ移せた時点で `git worktree remove` する
+- **worktree で作業したら、元のブランチ (worktree を切った起点のブランチ) の remote へ push するまでが担当範囲**。
+  commit して「統合はお任せ」で止めない。`git push origin HEAD:<元のブランチ>` が non-fast-forward で弾かれたら
+  worktree 内で `git fetch` + rebase して検証をやり直し、push し直す
+- **worktree を残さない**。push の成功を確認してから `git worktree remove` する (`&&` で繋ぐ。push が弾かれたまま消すと未 push の commit を失う)。
+  本体の checkout が同じブランチなら、そちらも `git -C <本体> pull --rebase` して追い付かせる
 - 共有 working tree に留まるなら [`commit-with-pathspec.md`](rules/commit-with-pathspec.md) に従う。書き込み権限のエージェントを 2 体以上並行させるときは [`parallel-write-agents-need-worktree-isolation.md`](rules/parallel-write-agents-need-worktree-isolation.md)
 
 ## 他セッションからの問い合わせに答えるとき

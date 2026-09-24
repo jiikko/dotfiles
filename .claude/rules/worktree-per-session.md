@@ -8,7 +8,8 @@
   1 ファイルでも編集するなら worktree へ出る
 - **統合は `git push origin HEAD:master`**。worktree で commit してから push する
   (`cp` でファイルを戻さない。`git pull --rebase` は他セッションの未コミット変更で止まる)
-- **worktree は commit が master へ載った時点で消す** (`git worktree remove --force`)。残さない
+- **push して `~/dotfiles` へ pull するまでが担当範囲** (下節)。worktree は push の成功を確かめてから消す
+  (`git worktree remove --force`)。残さない
 - **issue 番号は採番したら即 push する**。番号は複数セッションが同じ列から取るので、
   ローカルに置いている間は衝突が見えない (実測 2026-09-03 に 3 回衝突: 214 / 221 / 223。
   2026-09-06 に 4 例目 295 — 「その番号は空きへ戻した」と伝えられた側が、本文 62 行を書き切って
