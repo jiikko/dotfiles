@@ -14,13 +14,16 @@ import (
 // 見た目は style.go の冒頭の合意 (B「枠」) に従う。表示の文言と配置にはテストを書いていない (つなぎ込みだけを検査する)。
 
 const (
-	sgrReset  = "\x1b[0m"
-	sgrBold   = "\x1b[1m"
-	sgrDim    = "\x1b[2m"
-	sgrRed    = "\x1b[38;5;196m"
-	sgrYellow = "\x1b[38;5;214m"
-	sgrCyan   = "\x1b[38;5;51m"
-	minColW   = 14
+	sgrReset = "\x1b[0m"
+	sgrBold  = "\x1b[1m"
+	sgrDim   = "\x1b[2m"
+	// 下線の開始と終了 (終了だけを戻すので、帯の背景色や太字を消さない)
+	sgrUnderline   = "\x1b[4m"
+	sgrNoUnderline = "\x1b[24m"
+	sgrRed         = "\x1b[38;5;196m"
+	sgrYellow      = "\x1b[38;5;214m"
+	sgrCyan        = "\x1b[38;5;51m"
+	minColW        = 14
 )
 
 func (m *Model) View() tea.View {
@@ -220,20 +223,20 @@ func (m *Model) columnCells(col int, cs []card.Card, inner int) [][2]string {
 }
 
 // cardCell はカード 1 枚 (2 行)。地の色はカードごとに固有 (cardColor)。列を移っても同じ色なので目で追える。
-// 選択中は左端に現在地色の ▌ + 太字 (地を塗り替えるとカードの色が消えるので、地は変えない)。完了は文字を dim にする。
+// 選択中は左右の両端に現在地色の ▌ ▐ を立て、タイトルを太字 + 下線にする (2026-09-24 に 3 案から a で合意)。
+// 地は塗り替えない (カード固有の色が消えると、列を移ったときに目で追えなくなる)。完了は文字を dim にする。
 func (m *Model) cardCell(c card.Card, w int) (string, string) {
 	base := bg(cardColor(c.ID)) + fg(252)
 	title := c.ID + " " + c.Title
 	badge := m.badgeColored(c)
-	mark := " "
-	switch {
-	case c.ID == m.selected:
-		mark = fg(202) + "▌" + fg(252)
-		title = sgrBold + title
-	case c.State == card.Done:
+	if c.ID == m.selected {
+		l, r := fg(202)+"▌"+fg(231), base+fg(202)+"▐"+sgrReset
+		return paint(base, l+sgrBold+sgrUnderline+title+sgrNoUnderline, w-1) + r, paint(base, l+sgrBold+badge, w-1) + r
+	}
+	if c.State == card.Done {
 		title, badge = sgrDim+title, sgrDim+m.badge(c)
 	}
-	return paint(base, mark+title, w), paint(base, mark+badge, w)
+	return paint(base, " "+title, w), paint(base, " "+badge, w)
 }
 
 // badgeColored は badge の待ちの理由に色を付ける (停滞 = 危険 / 質問 = 要対応 / issue 化待ち = 要対応)。
