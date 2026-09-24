@@ -1,23 +1,20 @@
-// Package termwidth は端末表示幅の単一情報源。glogx の表示幅 (main / issues / usage) は必ず
-// このパッケージを通す。
-//
-// main と issues / usage の両方から使うため独立パッケージにしてある (main の非公開関数だと
-// 下位パッケージが呼べず、以前は素の ansi.StringWidth を各パッケージへ写していた。issue 106)。
-// main 側は呼び出し箇所が多いので dispWidth 等の別名で呼ぶ (width.go)。
+// Package termwidth は端末表示幅の単一情報源。tuikit とそれを使う画面の表示幅は必ずこの
+// パッケージを通す (呼び出し側で ansi.StringWidth を直接呼ばない。glogx では素の
+// ansi.StringWidth を各パッケージへ写して食い違っていた。issue 106)。
 //
 // なぜ ansi (charmbracelet/x/ansi) に一本化するか: 描画エンジンの幅モデルと一致させるため。
-// glogx 側が別ライブラリ (mattn/go-runewidth) で幅を測ると、両者が食い違う文字
-// (⚠️ 等の VS16 付き絵文字・国旗 🇯🇵 は runewidth=1 だが ansi/端末=2) で glogx が
-// 整えた行をエンジンが別位置で測り直し、毎秒の再描画のたびに桁がずれてガタつく
-// (Terminal.app + tmux, ユーザー報告 2026-07-24)。同一ライブラリに揃えれば glogx と
-// エンジンが構造的に一致し、絵文字を削らずに揺れが止まる。
+// 使う側が別ライブラリ (mattn/go-runewidth) で幅を測ると、両者が食い違う文字
+// (⚠️ 等の VS16 付き絵文字・国旗 🇯🇵 は runewidth=1 だが ansi/端末=2) で、整えた行を
+// エンジンが別位置で測り直し、毎秒の再描画のたびに桁がずれてガタつく
+// (glogx, Terminal.app + tmux, ユーザー報告 2026-07-24)。同一ライブラリに揃えれば
+// エンジンと構造的に一致し、絵文字を削らずに揺れが止まる。
 //
 // ⚠️ ライブラリを揃えても「幅モデル (Method)」までは揃わない。x/ansi は 2 つの数え方を持つ:
-//   - GraphemeWidth: grapheme クラスタ単位 (パッケージ関数 ansi.StringWidth = これ。glogx はこちら)
+//   - GraphemeWidth: grapheme クラスタ単位 (パッケージ関数 ansi.StringWidth = これ。この層はこちら)
 //   - WcWidth: rune 単位の wcwidth (ansi.StringWidthWc)
 //
 // エンジンがどちらを使うかは bubbletea の実装詳細で、v1 と v2 で変わっている:
-//   - v1 (standardRenderer): パッケージ関数 ansi.StringWidth = GraphemeWidth (glogx と一致)
+//   - v1 (standardRenderer): パッケージ関数 ansi.StringWidth = GraphemeWidth (この層と一致)
 //   - v2 (cursed renderer / ultraviolet): ansi.Method 経由で、既定は **WcWidth**。
 //     端末が Unicode Core (mode 2027) 対応を報告したときだけ GraphemeWidth へ切り替わる
 //     (bubbletea v2 tea.go の ModeReportMsg → setWidthMethod(ansi.GraphemeWidth))。
@@ -32,15 +29,15 @@
 //	ZWJ 👨‍💻 / 家族 / 肌色       2        2   (一致)
 //	漢 / 🚀 / ● / 罫線           =        =   (一致)
 //
-// つまり国旗・keycap を含む行は glogx が 1 セル多く数える。実測では v2 の描画のほうが
+// つまり国旗・keycap を含む行はこの層が 1 セル多く数える (glogx で実測)。実測では v2 の描画のほうが
 // ASCII 行と揃っており (国旗入り行の右枠が v1: 98 セル / v2: 97 セル、ASCII 行: 97)、
 // v2 化で悪化はしていない。ただし前提が「エンジンが WcWidth である」ことに乗っているので、
 // bubbletea を上げたら Method の既定と切替条件を読み直すこと (ここが桁ズレ再発の経路)。
 //
 // East Asian Ambiguous (罫線・✓・● 等) は ansi では既定で幅 1 で、**locale には依存しない**
 // (旧 runewidth は LANG=ja_JP.* 等で幅 2 に切り替わりパネル枠計算が実行環境依存でずれた)。
-// ⚠️ ただし env `RUNEWIDTH_EASTASIAN` が真だと ansi は幅 2 に切り替わる。この層 (dispWidth /
-// symWidthTable) は幅をライブラリから引くので追従するが、**glogx の描画はこの env を支持しない**
+// ⚠️ ただし env `RUNEWIDTH_EASTASIAN` が真だと ansi は幅 2 に切り替わる。この層 (Of /
+// symWidthTable) は幅をライブラリから引くので追従するが、**tuikit の描画 (layout) はこの env を支持しない**
 // (枠・影・区切り線を strings.Repeat でグリフ数ぶん埋めている箇所があり、幅 2 になると要求の
 // 2 倍近くまで膨らむ。実測 issue 054)。検出と扱いは widthenv パッケージが一次情報。
 package termwidth
@@ -137,11 +134,11 @@ const (
 // ⚠️ 幅を 1 と決め打ちしてはいけない。x/ansi は `RUNEWIDTH_EASTASIAN` が真のとき
 // East Asian Ambiguous (罫線・矢印・…・· 等) を**幅 2** として数える (x/ansi の
 // method.go の init が env を読む)。決め打ちすると同じ文字について「自前の幅」と
-// ansi.Truncate / ansi.TruncateLeft の幅が食い違い、fillRight が要求幅を超え
-// truncateDispLeft が要求の 2 倍以上を返す (実測 2026-08-14: 罫線 10 個で
-// fillRight(s,30) の実幅が 40、truncateDispLeft(...,8) が 19)。
+// ansi.Truncate / ansi.TruncateLeft の幅が食い違い、FillRight が要求幅を超え
+// TruncateLeft が要求の 2 倍以上を返す (実測 2026-08-14: 罫線 10 個で
+// FillRight(s,30) の実幅が 40、TruncateLeft(...,8) が 19)。
 // そのため幅は**ライブラリから 1 度だけ引く**。こうすると env の設定が何であれ
-// glogx の幅モデルは ansi と構造的に一致する。
+// この層の幅モデルは ansi と構造的に一致する。
 //
 // 受理集合を足すときは acceptSymbol を触る。幅の主張はこの表が機械的に持つので、
 // コメントに幅を書き写さない。

@@ -128,6 +128,10 @@ func shadowEdge(colored bool, color string) string {
 
 // Overlay は box を window の anchor 行へ重ねる (行ごと置き換える)。下に収まらなければ、
 // page 行の中に収まる位置まで引き上げる。
+//
+// 🚨 window を**その場で書き換えて**返す (ComposeDrawer / SlideIn と違い、新しいスライスを
+// 作らない)。キャッシュした行や別の画面と共有している行を渡すと、重ねた板が
+// 元の行に残る (閉じたはずのモーダルが次のフレームにも描かれる)。共有しているならコピーを渡す。
 func Overlay(window, box []string, anchor, page int) []string {
 	start := max(min(anchor, max(page-len(box), 0)), 0)
 	for i, p := range box {
@@ -146,6 +150,8 @@ func Overlay(window, box []string, anchor, page int) []string {
 //
 // 左の背景は Cut で残し、右の背景は DropColumns で box の右端以降を復元する。box の前後に
 // reset を挟み、背景の色が box に、box の色が右の背景に滲まないようにする。
+//
+// 🚨 Overlay と同じく window をその場で書き換える (共有している行を渡さない。理由は Overlay の doc)。
 func OverlayCentered(window, box []string, width, page int, colored bool) []string {
 	if len(box) == 0 || len(window) == 0 || width <= 0 {
 		return window

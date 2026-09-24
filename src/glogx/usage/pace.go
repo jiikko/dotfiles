@@ -20,6 +20,20 @@ import (
 	"tuikit/sgr"
 )
 
+// ペースゲージの配色。🚨 _claude/statusline-command.sh の bg_in / bg_over / under_sgr と同じ値に
+// すること (同じゲージを shell でも描いている)。色の乖離を検出する検査は無い: pace_drift_test.go が
+// 突き合わせるのは状態語と閾値だけ。
+//
+// 消化量は背景で描く: 前景 (Dim / Cyan) では 1 カラム = 半スロットの塗り分けができない
+// (色の付いた空白は前景色では見えない)。現在位置は下線にする (背景色と反転は競合する)。
+const (
+	paceOnTrack  = "\x1b[42;30m"   // 想定内の消化 (緑背景 + 黒文字)
+	paceOverdraw = "\x1b[41;30m"   // 前借り (赤背景 + 黒文字)
+	paceNow      = "\x1b[4;1m"     // いま居るスロットの番号
+	paceUnspent  = sgr.BrightBlue  // 使えるのに使っていない過去 (余裕・使い残し)
+	paceFuture   = sgr.BrightBlack // まだ来ていない未来 (地の色として沈ませる)
+)
+
 // paceGaugeMaxCells は番号付きゲージを出す最大スロット数。番号は半角 1 桁前提なので
 // 2 桁になる窓 (10 等分以上) では出さず、呼び出し側が素のバーへ落ちる。
 const paceGaugeMaxCells = 9
@@ -42,20 +56,20 @@ func paceGauge(cells int, usedPct, elapsed float64, atCell int, colored bool) st
 	var b strings.Builder
 	b.WriteByte('[')
 	for c := range cols {
-		col := sgr.BrightBlack // まだ来ていない未来
+		col := paceFuture
 		switch {
 		case c < fill && c < mark:
-			col = sgr.BgGreenOnBlack // 想定内の消化
+			col = paceOnTrack
 		case c < fill:
-			col = sgr.BgRedOnBlack // 前借り
+			col = paceOverdraw
 		case c < mark:
-			col = sgr.BrightBlue // 使えるのに使っていない過去
+			col = paceUnspent
 		}
 		cell := " " // 奇数カラムは空白 (塗りの半スロット分解能をここが担う)
 		if c%2 == 0 {
 			digit := string(rune('1' + c/2))
 			if colored && c == atCell*2 {
-				digit = sgr.UnderlineBold + digit // 下線は番号だけに掛ける
+				digit = paceNow + digit // 下線は番号だけに掛ける
 			}
 			cell = digit
 		}

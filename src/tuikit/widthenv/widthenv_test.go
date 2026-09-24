@@ -46,7 +46,7 @@ func TestEastAsianAmbiguousUnset(t *testing.T) {
 // 🚨 このパッケージが前提にしている「x/ansi は Ambiguous を既定で幅 1 と数える」を、
 // ライブラリ側の実測で固定する。ここが 2 に変わったら (= 既定が変わったら) 支持しない
 // 判断の前提そのものが変わるので、Message の文言と issue 054 を読み直すこと。
-// 逆に、この env が glogx の描画を壊す理由 (罫線が 2 セルになる) もここに現れている。
+// 逆に、この env が描画を壊す理由 (罫線が 2 セルになる) もここに現れている。
 func TestAmbiguousIsNarrowByDefault(t *testing.T) {
 	// このテストプロセスは env 無しで走ることが上の TestMain で保証されている
 	for _, s := range []string{"─", "│", "…", "·", "→"} {

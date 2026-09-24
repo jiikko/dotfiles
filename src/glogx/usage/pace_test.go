@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"tuikit/sgr"
 	"tuikit/termwidth"
 )
 
@@ -45,22 +44,22 @@ func TestPaceGaugeRejectsTooManyCells(t *testing.T) {
 func TestPaceGaugeColorsByPace(t *testing.T) {
 	// 消費 80% > 経過 20%: 前借りなので赤背景が出て、青 (使い残し) は出ない。
 	over := paceGauge(5, 80, 20, 1, true)
-	if !strings.Contains(over, sgr.BgRedOnBlack) {
+	if !strings.Contains(over, paceOverdraw) {
 		t.Error("前借りなのに赤背景が無い")
 	}
-	if strings.Contains(over, sgr.BrightBlue) {
+	if strings.Contains(over, paceUnspent) {
 		t.Error("前借りなのに使い残し (青) が出ている")
 	}
 	// 消費 20% < 経過 80%: 使い残しなので青が出て、赤背景は出ない。
 	under := paceGauge(5, 20, 80, 3, true)
-	if !strings.Contains(under, sgr.BrightBlue) {
+	if !strings.Contains(under, paceUnspent) {
 		t.Error("使い残しなのに青が無い")
 	}
-	if strings.Contains(under, sgr.BgRedOnBlack) {
+	if strings.Contains(under, paceOverdraw) {
 		t.Error("使い残しなのに前借り (赤背景) が出ている")
 	}
 	// 想定どおりに消費: 緑背景。
-	if onPace := paceGauge(5, 60, 60, 2, true); !strings.Contains(onPace, sgr.BgGreenOnBlack) {
+	if onPace := paceGauge(5, 60, 60, 2, true); !strings.Contains(onPace, paceOnTrack) {
 		t.Error("想定内の消化に緑背景が無い")
 	}
 }
@@ -68,10 +67,10 @@ func TestPaceGaugeColorsByPace(t *testing.T) {
 // いま居るスロットの番号に下線を引く (どこまで来たかの現在地)。
 func TestPaceGaugeUnderlinesCurrentSlot(t *testing.T) {
 	got := paceGauge(5, 50, 50, 2, true)
-	if !strings.Contains(got, sgr.UnderlineBold+"3") {
+	if !strings.Contains(got, paceNow+"3") {
 		t.Errorf("3 番目のスロットに下線が無い: %q", got)
 	}
-	if strings.Contains(paceGauge(5, 50, 50, -1, true), sgr.UnderlineBold) {
+	if strings.Contains(paceGauge(5, 50, 50, -1, true), paceNow) {
 		t.Error("現在地不明 (-1) なのに下線を引いた")
 	}
 }
@@ -167,7 +166,7 @@ func TestCeilCols(t *testing.T) {
 // 1% でもゲージの 1 カラム目が塗られる (切り上げが描画まで効いていること)。
 func TestPaceGaugePaintsFirstColumnOnTinyUsage(t *testing.T) {
 	got := paceGauge(5, 1, 0, 0, true)
-	if !strings.Contains(got, sgr.BgRedOnBlack) {
+	if !strings.Contains(got, paceOverdraw) {
 		t.Errorf("1%% の消化が 1 カラムも塗られていない: %q", got)
 	}
 }

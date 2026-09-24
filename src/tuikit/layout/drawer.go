@@ -110,6 +110,9 @@ func cutMeasure(s string, width int) (string, int) {
 
 // PadTo は行数を n へ揃える (足りなければ空行、多ければ切る)。一覧と本文のように行数の違う
 // 2 枚を重ねる前に揃えるのに使う。
+//
+// 🚨 lines と裏の配列を共有したスライスを返す (append は容量が余っていれば lines の配列へ書く)。
+// 返り値を Overlay に渡すと lines 側の行も書き換わるので、lines を使い回すならコピーを渡す。
 func PadTo(lines []string, n int) []string {
 	for len(lines) < n {
 		lines = append(lines, "")

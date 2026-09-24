@@ -32,6 +32,9 @@ import (
 )
 
 const (
+	// dialTimeColor は盤の「時間」(経過の弧・今の針・残り時間) の色。使用率の状態色
+	// (赤/黄/緑/青/マゼンタ) と衝突しない唯一の明るい色なので、状態と時間を同じ盤に描き分けられる。
+	dialTimeColor = sgr.BrightWhite
 	// dialMinW / dialMinH は 1 枚のカードに盤を描く最小の桁数・行数。これを下回る割り当てでは
 	// 盤が潰れて読めないので、同じ情報をテキストカード (バー + 数値) で出す。
 	dialMinW = 26
@@ -701,7 +704,7 @@ func renderFace(c dialCard, remain time.Duration, elapsed float64, col string, w
 	}
 	// 外周: 経過ぶんは破線の下地、残りが明るい弧 (これが縮んで 0 になる = 復活)。
 	cv.arc(cx, cy, rOut, 0, el, sgr.Dim, 1, 3)
-	cv.arc(cx, cy, rOut, el, 1, sgr.BrightWhite, 2, 1)
+	cv.arc(cx, cy, rOut, el, 1, dialTimeColor, 2, 1)
 	// 内周: 枠の消費。
 	cv.arc(cx, cy, rIn, 0, 1, sgr.Dim, 1, 3)
 	cv.arc(cx, cy, rIn, 0, used, col, 2, 1)
@@ -710,7 +713,7 @@ func renderFace(c dialCard, remain time.Duration, elapsed float64, col string, w
 	cv.tick(cx, cy, rOut+1, rOut+6, 0, sgr.Bold)
 	// 針は中央の文字にぶつからない位置から始める (中心から引くと、角度によって残り時間の
 	// 数字を横切る)。内周の 3/4 = 中央の文字がだいたい収まる半径。
-	cv.ray(cx, cy, rIn*0.75, rOut+1, el, sgr.BrightWhite)
+	cv.ray(cx, cy, rIn*0.75, rOut+1, el, dialTimeColor)
 
 	// 中央は盤の中心 (cy) を挟む行に置く。faceH/2 で数えると 1 行上へずれ、円が細くなる
 	// 位置に文字が来てリングへ接する。
@@ -734,7 +737,7 @@ func drawCenter(cv *braille, pct int, remain time.Duration, col string, w, faceH
 	// 大きくする目的を果たせないなら大きくしない。
 	aa := bigLines(digits)
 	if aa != nil && midRow-2 >= 0 && midRow+1 < faceH && bigWidth(digits)+1 <= aaAvail { // +1 は末尾の "%"
-		putCentered(cv, midRow-2, w, remainText(remain, innerWidthAt(cy, rIn, midRow-2)), sgr.BrightWhite)
+		putCentered(cv, midRow-2, w, remainText(remain, innerWidthAt(cy, rIn, midRow-2)), dialTimeColor)
 		// 🚨 3 行を行ごとに中央寄せしない。"%" を添えた中段だけ 1 桁広く、桁揃えが崩れて
 		// 数字が斜めに見える。"%" 込みの塊を中央に置き、起点は 3 行で共有する。
 		start := w/2 - (bigWidth(digits)+1)/2
@@ -747,7 +750,7 @@ func drawCenter(cv *braille, pct int, remain time.Duration, col string, w, faceH
 		}
 		return
 	}
-	putCentered(cv, midRow, w, remainText(remain, innerWidthAt(cy, rIn, midRow)), sgr.BrightWhite)
+	putCentered(cv, midRow, w, remainText(remain, innerWidthAt(cy, rIn, midRow)), dialTimeColor)
 	putCentered(cv, midRow+1, w, fitText(innerWidthAt(cy, rIn, midRow+1), []string{digits + "%"}), col)
 }
 

@@ -102,12 +102,12 @@ func TestAcceptedSymbolsNeverCombineWithEachOther(t *testing.T) {
 // 子プロセスを起こして確かめるしかない (この形でしか退行を捕まえられない)。
 //
 // ⚠️ これは「glogx がこの env を支持する」という主張ではない。支持しないと決めてあり
-// (issue 054)、TestMain は env が真なら止まる — この子プロセスだけが GLOGX_EAW_CHILD=1 で
+// (issue 054)、TestMain は env が真なら止まる — この子プロセスだけが TUIKIT_EAW_CHILD=1 で
 // 除外される。ここが守るのは狭く「**幅計算の層**が env に追従してライブラリと一致し続ける」
 // ことだけ (fast-path が幅を決め打ちすると fillRight / truncateDispLeft の算術が破れる。
 // 046 の退行)。描画がこの env で正しいかは別問題で、実測では正しくない (widthenv 参照)。
 func TestDispWidthAgreesUnderEastAsianEnv(t *testing.T) {
-	if os.Getenv("GLOGX_EAW_CHILD") == "1" {
+	if os.Getenv("TUIKIT_EAW_CHILD") == "1" {
 		// ⚠️ まず env が実際に効いていることを止まる形で確かめる。これが無いと、x/ansi が
 		// env の読み方を変えた日にこのテストは**無言で恒真になる** (assert が
 		// dispWidth == ansi.StringWidth の形なので、両辺が同じ幅モデルに乗ると常に通る)。
@@ -159,7 +159,7 @@ func TestDispWidthAgreesUnderEastAsianEnv(t *testing.T) {
 		"TestFastDispWidthMatchesLibrary|TestAcceptedSymbolsNeverCombineWithEachOther)$"
 	cmd := exec.CommandContext(childContext(t), os.Args[0], "-test.run="+filter, "-test.v")
 	cmd.WaitDelay = time.Second // kill 後に孫が出力 pipe を握っていても Wait を返す
-	cmd.Env = append(os.Environ(), "GLOGX_EAW_CHILD=1", "RUNEWIDTH_EASTASIAN=1")
+	cmd.Env = append(os.Environ(), "TUIKIT_EAW_CHILD=1", "RUNEWIDTH_EASTASIAN=1")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("RUNEWIDTH_EASTASIAN=1 の子プロセスが失敗した: %v\n%s", err, out)
@@ -287,7 +287,7 @@ func FuzzDispWidthMatchesLibrary(f *testing.F) {
 // TestMain は「glogx が支持しない幅 env」でテストを走らせない (issue 054。main / issues / usage の
 // TestMain と同じ)。⚠️ TestDispWidthAgreesUnderEastAsianEnv が起こす子プロセスだけは除外する:
 // この env をわざと立てて「幅**計算**の層はライブラリと一致し続ける」ことを確かめるため。
-// env マーカー 1 個で判定すると、開発者が `export GLOGX_EAW_CHILD=1` したまま suite を回したとき
+// env マーカー 1 個で判定すると、開発者が `export TUIKIT_EAW_CHILD=1` したまま suite を回したとき
 // ガードが丸ごと外れるので、親が必ず渡す幅系限定の -test.run も併せて見る (実測 2026-08-15)。
 func TestMain(m *testing.M) {
 	if !isEastAsianChild() {
@@ -297,7 +297,7 @@ func TestMain(m *testing.M) {
 }
 
 func isEastAsianChild() bool {
-	if os.Getenv("GLOGX_EAW_CHILD") != "1" {
+	if os.Getenv("TUIKIT_EAW_CHILD") != "1" {
 		return false
 	}
 	for _, a := range os.Args[1:] {
