@@ -33,4 +33,6 @@ pro-con (epic 415) の演出・操作の作り込み、issue 421〜423 の修正
 
 ## 進捗
 
-- [ ] 提案 1〜4 の切り出し (ユーザーの判断待ち)
+- [x] 提案 1〜4 を既存のルールへ追記した (2026-09-24。ユーザーの「それらの issue を対応して」で実施):
+  1 → `_claude/rules/mutation-verify-new-tests.md`「到達しているか」/ 2 → `_claude/rules/no-unauthorized-branch-switch.md` の「系」節 /
+  3 → `_claude/rules/survey-receiver-guards-before-passing-new-values.md`「自分が宣言した不変条件」/ 4 → `_claude/rules/subagent-model-tiering.md` の枠の項
