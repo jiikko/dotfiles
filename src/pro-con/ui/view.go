@@ -50,7 +50,7 @@ func (m *Model) render() string {
 	// カードの詳細はこの領域 (ヘッダと下端の群のあいだ) に右から重ねる
 	foot := m.footGroup()
 	region = layout.PadTo(region, max(len(region)+1, m.height-len(header)-len(foot)))
-	region = m.overlayDrawer(region)
+	region = m.dimWhileTyping(m.overlayDrawer(region))
 	return strings.Join(m.overlayQuit(m.overlayLegend(append(append(header, region...), foot...))), "\n")
 }
 
@@ -362,7 +362,21 @@ func (m *Model) inputLine() string {
 			label = "新しい依頼 (スコープ: " + r.Name + " の中だけ)"
 		}
 	}
-	return " " + sgrBold + fg(202) + label + ": " + sgrReset + m.line.View("▏")
+	// 入力欄に居ることが一目で分かるよう、行の全幅に地の色を敷く (カンバンは dimWhileTyping で沈める)
+	return paint(bg(236), " "+sgrBold+fg(202)+label+": "+sgrReset+fg(231)+m.line.View("▏"), m.width)
+}
+
+// dimWhileTyping は入力欄・y/N 確認を出している間、カンバンの領域を色を抜いた暗い灰色で描く。
+// キーは入力に取られ、カードは動かせない。その状態を画面の側で見せる (2026-09-24 の要望)。
+func (m *Model) dimWhileTyping(region []string) []string {
+	if m.mode == modeBoard {
+		return region
+	}
+	out := make([]string, len(region))
+	for i, l := range region {
+		out[i] = fg(239) + ansi.Strip(l) + sgrReset
+	}
+	return out
 }
 
 // fit は表示幅 w に切り詰め、足りなければ空白で埋める (全角を含む行を表示幅で揃える)。
