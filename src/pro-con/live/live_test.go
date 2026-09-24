@@ -397,3 +397,14 @@ func TestParseTranscriptOrphanToolIsNotPending(t *testing.T) {
 		t.Fatalf("置き去りの呼び出しを実行中に数えた: %v", tr.PendingSince)
 	}
 }
+
+// 並列のツール呼び出しは 1 件ずつ時刻の違う別の行に書かれる。短い方の結果が先に返っても、長い方は実行中のまま。
+func TestParseTranscriptParallelToolsKeepLongOnePending(t *testing.T) {
+	data := `{"type":"assistant","timestamp":"2026-09-25T01:00:00Z","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"make test"}}]}}
+{"type":"assistant","timestamp":"2026-09-25T01:00:04Z","message":{"id":"m1","content":[{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"a.go"}}]}}
+{"type":"user","timestamp":"2026-09-25T01:00:05Z","message":{"content":[{"type":"tool_result","tool_use_id":"t2","content":"..."}]}}
+`
+	if tr := parse([]byte(data)); !tr.PendingSince.Equal(time.Date(2026, 9, 25, 1, 0, 0, 0, time.UTC)) {
+		t.Fatalf("並列の長い方の呼び出しを実行中に数えない: %v", tr.PendingSince)
+	}
+}

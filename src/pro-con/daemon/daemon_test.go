@@ -838,3 +838,18 @@ func TestResumeRefusesWithoutCwd(t *testing.T) {
 		t.Fatalf("cwd の無い session を再開した: %v %v", l.resumes, notes)
 	}
 }
+
+// 記録の行に cwd が無く (前の版が書いた等)、一覧に cwd が出ていれば、行を書き直して再開できるようにする。
+func TestRegisterFillsMissingCwd(t *testing.T) {
+	r := newCrashRig(t)
+	regPath := filepath.Join(r.dir, live.RegistryFile)
+	reg, _ := live.LoadRegistry(regPath)
+	reg[0].Cwd = ""
+	if err := live.Register(regPath, reg[0]); err != nil {
+		t.Fatal(err)
+	}
+	r.tick(t)
+	if reg, _ = live.LoadRegistry(regPath); len(reg) != 1 || reg[0].Cwd != "/w/pc-c-001" {
+		t.Fatalf("cwd の無い行を埋め直さない: %+v", reg)
+	}
+}

@@ -161,8 +161,10 @@ func (d *Daemon) register(now time.Time, ss []agents.Session) (int, []string, er
 			}
 			o, ok := known[c.ID]
 			switch {
+			case ok && o.SessionID == s.SessionID && o.PID == s.PID && (o.Cwd != "" || s.Cwd == ""):
+				continue // 登録済み (cwd が記録に無く一覧に出ていれば書き直す。無いと再開できない)
 			case ok && o.SessionID == s.SessionID && o.PID == s.PID:
-				continue // 登録済み
+				// 同じ session・同じプロセスで cwd だけ埋める (上の判定を通らない形なので、所有の判定には影響しない)
 			case s.Started().Before(c.LaunchedAt):
 				warn = append(warn, fmt.Sprintf("%s の session %s は pro-con の最後の起動・再開より前に始まっている (同じ短い id の別の session の疑い)。登録しない", c.ID, s.ID))
 				continue
