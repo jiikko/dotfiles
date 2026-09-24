@@ -617,3 +617,64 @@ func TestCrashDoesNotRecountEarlierNote(t *testing.T) {
 		t.Fatalf("前に数えた再開の文をまた数えた: %v", c.Crashes)
 	}
 }
+
+// watchRig は作業中・登録済みの PG を 1 本用意し、transcript の新しい出力の時刻を差し替えられる形にする。
+func newWatchRig(t *testing.T) (*crashRig, *time.Time) {
+	t.Helper()
+	r := newCrashRig(t)
+	var lastNew time.Time
+	r.d.Transcript = func(string) (live.Transcript, error) { return live.Transcript{LastNew: lastNew}, nil }
+	r.d.StallAfter = 10 * time.Minute
+	return r, &lastNew
+}
+
+// 新しい出力が StallAfter の間出なければ停滞にし、新しい出力が出たら外す。
+func TestWatchdogStallsAndRecovers(t *testing.T) {
+	r, lastNew := newWatchRig(t)
+	r.d.Now = func() time.Time { return t0.Add(9 * time.Minute) }
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; c.Stalled {
+		t.Fatal("閾値の前に停滞にした")
+	}
+	r.d.Now = func() time.Time { return t0.Add(11 * time.Minute) }
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; !c.Stalled {
+		t.Fatal("閾値を過ぎても停滞にしない")
+	}
+	*lastNew = t0.Add(12 * time.Minute)
+	r.d.Now = func() time.Time { return t0.Add(13 * time.Minute) }
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; c.Stalled || !c.LastProgress.Equal(*lastNew) {
+		t.Fatalf("新しい出力が出ても停滞のまま: stalled=%v LastProgress=%v", c.Stalled, c.LastProgress)
+	}
+}
+
+// コマンドの実行中は、見込みの所要の 2 倍まで停滞にしない (長いテストを停滞と誤判定しない)。
+func TestWatchdogUsesExecThreshold(t *testing.T) {
+	r, _ := newWatchRig(t)
+	setCard(t, r.dir, "C-001", func(c *card.Card) {
+		c.Exec = card.Exec{Command: "make test", Since: t0, Expected: 20 * time.Minute}
+	})
+	r.d.Now = func() time.Time { return t0.Add(30 * time.Minute) }
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; c.Stalled {
+		t.Fatal("見込みの 2 倍 (40 分) の前に停滞にした")
+	}
+}
+
+// 作業中の列を離れたカードは停滞の印を持たない (質問待ちのカードに停滞を出さない)。
+func TestStallClearedWhenLeavingRunning(t *testing.T) {
+	r, _ := newWatchRig(t)
+	r.d.Now = func() time.Time { return t0.Add(11 * time.Minute) }
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; !c.Stalled {
+		t.Fatal("前提: 停滞になっていない")
+	}
+	if _, err := store.Submit(r.dir, store.Request{Kind: "ask", CardID: "C-001", Question: "q"}); err != nil {
+		t.Fatal(err)
+	}
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; c.State != card.Waiting || c.Stalled {
+		t.Fatalf("質問待ちのカードに停滞の印が残った: %v %v", c.State, c.Stalled)
+	}
+}

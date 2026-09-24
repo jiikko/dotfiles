@@ -141,10 +141,7 @@ func (b *Backend) Refresh(ctx context.Context) {
 			continue // 記録に無い session (外のもの) の様子は足さない
 		}
 		if t := b.transcript(s.SessionID); len(t.Outputs) > 0 {
-			cards[i].Log = tail(t.Outputs, 3)
-			if t.LastAt.After(cards[i].LastProgress) {
-				cards[i].LastProgress = t.LastAt
-			}
+			cards[i].Log = tail(t.Outputs, 3) // LastProgress は daemon の watchdog だけが書く (活動と進捗を分けて判定するため)
 		}
 		if c.State == card.Running {
 			cons = append(cons, backend.Consumer{Session: s.ID, CardID: c.ID, Status: s.Status, PID: s.PID})

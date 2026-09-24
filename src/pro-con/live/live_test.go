@@ -326,3 +326,15 @@ func TestParseTranscriptRestarts(t *testing.T) {
 		t.Fatalf("再開の文を人間の発言に数えた: %+v", tr.Prompts)
 	}
 }
+
+// LastNew は、末尾の中でそれまでに無かった PG の出力が最後に出た時刻。同じ出力の繰り返しでは進まない。
+func TestParseTranscriptLastNew(t *testing.T) {
+	data := `{"type":"assistant","timestamp":"2026-09-25T01:00:00Z","message":{"content":"テストを回す"}}
+{"type":"assistant","timestamp":"2026-09-25T01:01:00Z","message":{"content":"まだ終わっていない"}}
+{"type":"assistant","timestamp":"2026-09-25T01:02:00Z","message":{"content":"まだ終わっていない"}}
+{"type":"assistant","timestamp":"2026-09-25T01:03:00Z","message":{"content":"まだ終わっていない"}}
+`
+	if tr := parse([]byte(data)); !tr.LastNew.Equal(time.Date(2026, 9, 25, 1, 1, 0, 0, time.UTC)) || !tr.LastAt.Equal(time.Date(2026, 9, 25, 1, 3, 0, 0, time.UTC)) {
+		t.Fatalf("同じ出力の繰り返しで進捗が進んだ / 読めない: LastNew=%v LastAt=%v", tr.LastNew, tr.LastAt)
+	}
+}

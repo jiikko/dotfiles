@@ -58,7 +58,12 @@ type Daemon struct {
 	// CrashLimit / CrashWindow は 0 なら既定値
 	CrashLimit  int
 	CrashWindow time.Duration
+	// StallAfter は watchdog が「進捗なし」を停滞とみなすまでの通常の時間 (コマンドの実行中は card.StallThreshold が延ばす)。0 なら既定値
+	StallAfter time.Duration
 }
+
+// defaultStallAfter は停滞の通常の閾値の既定 (426: 既定値で始めて動かしながら直す)。
+const defaultStallAfter = 15 * time.Minute
 
 // Tick は 1 回ぶんの仕事をして、何をしたかの短い記録を返す (ログ用)。
 // session の一覧を取れない Tick は、登録も割り当てもしない (一覧と照らさずに起動・再開すると、立っている session を見落として増やす /
@@ -89,6 +94,11 @@ func (d *Daemon) Tick(ctx context.Context) ([]string, error) {
 	notes = append(notes, warn...)
 	stopped, err := d.stopCrashing(ctx, now)
 	notes = append(notes, stopped...)
+	if err != nil {
+		return notes, err
+	}
+	watched, err := d.watch(now)
+	notes = append(notes, watched...)
 	if err != nil {
 		return notes, err
 	}
@@ -223,6 +233,73 @@ func (d *Daemon) stopCrashing(ctx context.Context, now time.Time) ([]string, err
 			return notes, err
 		}
 		notes = append(notes, c.ID+": "+why)
+	}
+	return notes, nil
+}
+
+// watch は作業中のカードの「実質的な進捗」を transcript から読み (それまでに無かった PG の出力が出たか)、止まっていれば停滞にする。
+// 進捗が戻れば停滞を外す。正当な待ち (リソース・枠) は数えない。transcript を読めないカードは判定しない (読めないことを停滞にしない)。
+// 🚨 見ているのは「新しい文が出たか」だけ。同じ文を繰り返すループは捕まえるが、毎回少しずつ違う文を出すループは進んでいるように見える
+func (d *Daemon) watch(now time.Time) ([]string, error) {
+	if d.Transcript == nil {
+		return nil, nil
+	}
+	base := d.StallAfter
+	if base <= 0 {
+		base = defaultStallAfter
+	}
+	st, err := store.Load(d.Dir)
+	if err != nil {
+		return nil, err
+	}
+	reg, err := live.LoadRegistry(filepath.Join(d.Dir, live.RegistryFile))
+	if err != nil {
+		return nil, err
+	}
+	var notes []string
+	for _, c := range st.Cards {
+		if c.State != card.Running || c.Wait.Kind != card.WaitNone {
+			continue
+		}
+		o, ok := owned(c, reg)
+		if !ok {
+			continue // まだ登録していない (起動の直後)
+		}
+		t, err := d.Transcript(o.SessionID)
+		if err != nil {
+			continue
+		}
+		if t.LastNew.After(c.LastProgress) {
+			if err := d.update(c.ID, func(cc *card.Card) {
+				cc.LastProgress = t.LastNew
+				if cc.Stalled {
+					cc.Stalled = false
+					cc.History = append(cc.History, card.Event{At: now, Text: "watchdog: 進捗が戻った"})
+				}
+			}); err != nil {
+				return notes, err
+			}
+			continue
+		}
+		if c.Stalled {
+			continue
+		}
+		since := c.LastProgress
+		if c.Exec.Active() && c.Exec.Since.After(since) {
+			since = c.Exec.Since
+		}
+		limit := card.StallThreshold(c, base)
+		if now.Sub(since) < limit {
+			continue
+		}
+		text := fmt.Sprintf("watchdog: %d 分進捗なし (新しい出力が無い)", int(limit/time.Minute))
+		if err := d.update(c.ID, func(cc *card.Card) {
+			cc.Stalled = true
+			cc.History = append(cc.History, card.Event{At: now, Text: text})
+		}); err != nil {
+			return notes, err
+		}
+		notes = append(notes, c.ID+": "+text)
 	}
 	return notes, nil
 }
@@ -378,7 +455,7 @@ func (d *Daemon) mark(id string, now time.Time, how string) error {
 func (d *Daemon) settle(id string, now time.Time, how, session string) error {
 	return d.update(id, func(c *card.Card) {
 		c.State, c.Since, c.Owner, c.Session = card.Running, now, "PG", session
-		c.LastProgress, c.Resume, c.Launching = now, "", ""
+		c.LastProgress, c.Resume, c.Launching, c.Stalled = now, "", "", false
 		c.History = append(c.History, card.Event{At: now, Text: "PG を" + how + "した (session " + session + ")"})
 	})
 }

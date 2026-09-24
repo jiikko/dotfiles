@@ -27,7 +27,9 @@ type Transcript struct {
 	Prompts    []Prompt // 人間の発言 (古い順)
 	Outputs    []string // PG の出力の文 (古い順)
 	LastAt     time.Time
-	Restarts   []time.Time // Claude Code がプロセスの死から自動で再開した時刻 (RestartNote を含む user レコード。古い順)
+	// LastNew は PG の出力のうち、末尾の中でそれまでに無かった文が最後に出た時刻 (watchdog の「進捗」。同じ出力を繰り返すループは数えない)
+	LastNew  time.Time
+	Restarts []time.Time // Claude Code がプロセスの死から自動で再開した時刻 (RestartNote を含む user レコード。古い順)
 }
 
 // RestartNote は、プロセスが死んだ session を Claude Code が自動で再開したときに会話へ足す文の一部 (2.1.281 で実測。issue 425 結果 1)。
@@ -82,6 +84,7 @@ func ReadTail(path string) (Transcript, error) {
 
 func parse(data []byte) Transcript {
 	var t Transcript
+	seen := map[string]bool{}
 	sc := bufio.NewScanner(bytes.NewReader(data))
 	sc.Buffer(make([]byte, 0, 64<<10), 8<<20)
 	for sc.Scan() {
@@ -119,6 +122,10 @@ func parse(data []byte) Transcript {
 			if r.Message != nil {
 				if s := text(r.Message.Content); s != "" {
 					t.Outputs = append(t.Outputs, s)
+					if !seen[s] {
+						seen[s] = true
+						t.LastNew = at
+					}
 				}
 			}
 		}

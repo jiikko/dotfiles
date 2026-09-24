@@ -46,7 +46,12 @@
       止められなければ作業中のまま次の Tick でまた試す。変異 7 本が red (再開の文を読まない / 前の文を数え直す / 時間の窓を外す /
       再開の前の回数も数える / 止められないのに回答待ちにする / 上限を 1 つ上げる / transcript の文を読まない)。
       🚨 再開の文を含むレコードの origin は未実測 (発言者を問わず探している)。Claude Code の版で文が変わると数えられず、外からの操作の疑いに倒れる
-  - [ ] 3c-2b watchdog (停滞。LastProgress と card.StallThreshold。知らせは tmux の status と macOS の通知 = 426 の決定 10)
+  - [x] 3c-2b watchdog (停滞)。進捗 = transcript の末尾に、それまでに無かった PG の出力が出たこと (`Transcript.LastNew`。同じ出力の繰り返しは数えない)。
+      新しい出力が `card.StallThreshold(c, 15 分)` の間出なければ停滞にし、出たら外す。作業中の列を離れたら停滞の印を外す (store の遷移 / daemon の起動・再開)。
+      `LastProgress` の書き手は daemon だけにした (live の画面側で transcript の最終更新を足していたのを外した)。
+      変異 5 本が red (閾値を無視 / 戻っても外さない / 実行中の延長を外す / 列を離れても残す / 繰り返しも進捗に数える)。
+      🚨 毎回少しずつ違う文を出すループは進んでいるように見える (415 論点 10 の「同じツール + 同じ引数」は未実装。ツール呼び出しは読んでいない)
+  - [ ] 3c-2c 知らせ: tmux の status と macOS の通知 (426 の決定 10。daemon が件数をファイルに書き、status が読む)
   - [x] 3c-3 `pro-con daemon` の常駐と排他 (2 つ起動しない) — 3c-2 より先に済ませた (daemon を動く形にするため)
     - 済み (2026-09-25): `pro-con daemon [--limit N] [--once]` (`src/pro-con/daemoncmd.go`)。3 秒ごとに Tick し、何をしたかを時刻つきで stdout へ。
       排他は `daemon.lock` の flock (プロセスが終われば OS が外す)。変異 1 本 (flock を外す) が red。🚨 本物の claude では未実行 (3f)
