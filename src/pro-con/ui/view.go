@@ -46,14 +46,17 @@ func (m *Model) render() string {
 		out = append(out, m.sessionsBlock()...)
 	}
 	out = append(out, "")
-	if m.mode == modeInput {
+	switch m.mode {
+	case modeInput:
 		out = append(out, m.inputLine())
+	case modeConfirm:
+		out = append(out, " "+sgrBold+sgrYellow+"方針変更: PG を止めて、指示を差し替えて再開します。よいですか? [y/N]"+sgrReset)
+	case modeBoard:
 	}
 	if m.flash != "" {
 		out = append(out, sgrCyan+" "+m.flash+sgrReset)
 	}
-	help := " ←→↑↓ 選択  tab repo  n 新しい依頼  y コピー  s claude 一覧  enter 詳細  a attach  r 回答  o 追加オーダー  b btw  q 終了"
-	out = append(out, sgrDim+help+sgrReset)
+	out = append(out, sgrDim+hintLine(m.hints(), m.width)+sgrReset)
 	return strings.Join(out, "\n")
 }
 
@@ -381,7 +384,7 @@ func (m *Model) inputLine() string {
 			label = "新しい依頼 (スコープ: " + r.Name + " の中だけ)"
 		}
 	}
-	return " " + sgrBold + fg(202) + label + ": " + sgrReset + string(m.input) + "▏"
+	return " " + sgrBold + fg(202) + label + ": " + sgrReset + m.line.View("▏")
 }
 
 // fit は表示幅 w に切り詰め、足りなければ空白で埋める (全角を含む行を表示幅で揃える)。
@@ -415,4 +418,39 @@ func tail[T any](xs []T, n int) []T {
 		return xs
 	}
 	return xs[len(xs)-n:]
+}
+
+// hints は最下行の案内。**今の状態で押して効くキーだけ**を出す (入力中にボードの案内を残すと、
+// 載せた文字が全部入力に化ける。docs/glogx-ui-guide.md §5)。最後の項目が抜ける手段。
+func (m *Model) hints() []string {
+	switch m.mode {
+	case modeInput:
+		h := []string{"enter 送信", "ctrl+h 1 文字消す", "ctrl+w 1 語消す", "ctrl+u 前を消す", "ctrl+k 後ろを消す", "ctrl+a / ctrl+e 先頭 / 末尾"}
+		if m.inputKind == inputOrder {
+			h = append([]string{"tab 種類"}, h...)
+		}
+		return append(h, "esc 取り消し")
+	case modeConfirm:
+		return []string{"y / enter 実行", "他のキー 取り消し"}
+	case modeBoard:
+	}
+	back := "q 終了"
+	if m.showSessions || m.showDetail {
+		back = "q / esc 閉じる"
+	}
+	return []string{"hjkl 選択", "tab repo", "n 新しい依頼", "enter 詳細", "a attach", "r 回答", "+ 追加オーダー", "? btw",
+		"y コピー", "s claude 一覧", back}
+}
+
+// hintLine は案内を幅 w に収める。入らなければ後ろから落とすが、最後の項目 (抜ける手段) は必ず残す (§5)。
+func hintLine(items []string, w int) string {
+	last := items[len(items)-1]
+	rest := items[:len(items)-1]
+	for {
+		line := " " + strings.Join(append(append([]string{}, rest...), last), "  ")
+		if ansi.StringWidth(line) <= w || len(rest) == 0 {
+			return line
+		}
+		rest = rest[:len(rest)-1]
+	}
 }

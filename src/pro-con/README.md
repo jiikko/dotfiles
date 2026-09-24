@@ -23,18 +23,21 @@ bin/pro-con      # claude は起動しない。模擬の backend (fake) が状�
 | j / k / ↑ / ↓ / ctrl+n / ctrl+p | 列の中で 1 枚 |
 | ctrl+d / ctrl+u / space / f / pgdn / pgup | 半ページ |
 | g / G / home / end | 列の先頭 / 末尾 |
-| enter / esc | 詳細の開閉 |
+| enter | 詳細の開閉 |
+| q / esc | 開いている板を 1 つ閉じる (session の一覧 → 詳細)。q は何も開いていなければ終了。ctrl+c は即終了 |
 | a | PG の session を開く (今は模擬) |
 | r | 質問待ちのカードに回答する |
-| o | 追加オーダー (tab で 追記 / 方針変更 / 別件) |
-| b | btw (PG を止めずに状況を聞く) |
-| q | 終了 |
+| + | 追加オーダー (tab で 追記 / 方針変更 / 別件)。**方針変更は y/N 確認** (y / enter だけが実行、他のキーは取り消し) |
+| ? | btw (PG を止めずに状況を聞く) |
+
+入力欄 (n / r / + / ?) は readline の編集キーが効く (ctrl+h / ctrl+w / ctrl+u / ctrl+k / ctrl+a / ctrl+e / ctrl+b / ctrl+f …。
+`tuikit/lineedit`)。入力中は最下行の案内が入力欄のキーに替わる。
 
 **キーの語彙は [`docs/glogx-ui-guide.md`](../../docs/glogx-ui-guide.md) の 3 層 (vim / emacs 別名 / 動作) に従う**。
 上下の移動は `tuikit/listnav.MotionOf` に渡す (glogx と同じ語彙を 1 か所で持つ)。画面固有の動作キーは先に捌く。
 
-🚨 **ガイドの動作層と意味が食い違っているキーがある** (未決。issue 415): `o` (ガイド: ブラウザで開く / pro-con: 追加オーダー)・
-`r` (再読込 / 回答)・`a` (all・巡回 / attach)・`n` (claim / 新しい依頼)・`b` (半ページ上・push / btw)
+glogx と意味を変えている字 (`a` attach / `r` 回答 / `n` 新しい依頼 / `s` session の一覧) とその理由はガイドの §8。
+`o` (ブラウザで開く) と `b` (半ページ上) はガイドの意味のために空けてあり、追加オーダーは `+`、btw は `?`。
 
 ## 設定 (`~/.config/pro-con/config.toml`)
 

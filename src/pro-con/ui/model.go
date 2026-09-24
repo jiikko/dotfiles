@@ -11,6 +11,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"tuikit/lineedit"
 	"tuikit/listnav"
 
 	"pro-con/agents"
@@ -26,6 +27,7 @@ type mode int
 const (
 	modeBoard mode = iota
 	modeInput
+	modeConfirm // 破壊的な操作の y/N 確認 (docs/glogx-ui-guide.md §4)
 )
 
 type inputKind int
@@ -60,7 +62,8 @@ type Model struct {
 	showDetail bool
 
 	mode      mode
-	input     []rune
+	line      lineedit.Line   // 入力欄 (編集キーは tuikit/lineedit。docs/glogx-ui-guide.md「入力欄の編集キー」)
+	pending   backend.Command // modeConfirm で確認している操作
 	inputKind inputKind
 	orderKind card.OrderKind
 
@@ -130,13 +133,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.PasteMsg:
 		// ペーストは入力欄にだけ入れる。ボードではキー操作として解釈しない
 		if m.mode == modeInput {
-			m.input = append(m.input, []rune(msg.Content)...)
+			m.line.Insert(msg.Content)
 		}
 		return m, nil
 	case tea.KeyPressMsg:
-		if m.mode == modeInput {
+		switch m.mode {
+		case modeInput:
 			cmd := m.handleInputKey(msg)
 			return m, tea.Batch(cmd, m.trackMoves()) // 回答などで列が変わったら演出する
+		case modeConfirm:
+			cmd := m.handleConfirmKey(msg)
+			return m, tea.Batch(cmd, m.trackMoves())
+		case modeBoard:
 		}
 		return m, m.handleBoardKey(msg)
 	}
@@ -294,8 +302,15 @@ func (m *Model) moveRow(delta int) {
 
 func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	switch k.String() {
-	case "q", "ctrl+c":
+	case "ctrl+c":
 		return tea.Quit
+	case "q":
+		// q は「今の板を 1 段戻る」(docs/glogx-ui-guide.md §1)。開いている板が無ければ終了
+		if !m.closeTop() {
+			return tea.Quit
+		}
+	case "esc":
+		m.closeTop()
 	case "tab":
 		m.moveTab(1)
 	case "shift+tab":
@@ -306,8 +321,6 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		m.moveCol(1)
 	case "enter":
 		m.showDetail = !m.showDetail
-	case "esc":
-		m.showDetail = false
 	case "a":
 		return m.attach()
 	case "r":
@@ -317,12 +330,12 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 		m.startInput(inputAnswer)
-	case "o":
+	case "+": // 追加オーダー (o はガイドで「ブラウザで開く」なので使わない)
 		if _, ok := m.selectedCard(); ok {
 			m.orderKind = card.OrderAppend
 			m.startInput(inputOrder)
 		}
-	case "b":
+	case "?": // btw = 「今どうなってる?」(b は移動の語彙で半ページ上なので使わない)
 		if _, ok := m.selectedCard(); ok {
 			m.startInput(inputBtw)
 		}
@@ -340,7 +353,8 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 
 // moveByMotion は上下の移動を tuikit の語彙 (listnav.MotionOf) で受ける。語彙は glogx と同じ
 // (j/k/ctrl+n/ctrl+p/↑↓ = 1 枚、ctrl+d/ctrl+u/space/f/pgdn/pgup = 半ページ、g/G/home/end = 先頭・末尾)。
-// 🚨 画面固有の動作キーは handleBoardKey の switch で先に捌いているので、ここへは来ない (b は btw)。
+// 🚨 画面固有の動作キーは handleBoardKey の switch で先に捌いているので、ここへは来ない。
+// 動作キーに移動の語彙 (b / f / space / g …) を使わないこと (使うとその移動が効かなくなる)。
 func (m *Model) moveByMotion(mo listnav.Motion) {
 	half := listnav.Half(m.shownCards())
 	switch mo {
@@ -360,13 +374,28 @@ func (m *Model) moveByMotion(mo listnav.Motion) {
 	}
 }
 
+// closeTop は開いている板を手前から 1 つ閉じる (session の一覧 → 詳細)。閉じたら true。
+func (m *Model) closeTop() bool {
+	switch {
+	case m.showSessions:
+		m.showSessions = false
+	case m.showDetail:
+		m.showDetail = false
+	default:
+		return false
+	}
+	return true
+}
+
 func (m *Model) startInput(k inputKind) {
 	m.mode = modeInput
 	m.inputKind = k
-	m.input = nil
+	m.line.Reset()
 	m.flash = ""
 }
 
+// handleInputKey は入力中のキー。Enter / Esc / Tab / ctrl+c 以外は編集キーとして lineedit に渡す
+// (入力中は ctrl+b / ctrl+f / ctrl+u / ctrl+d も編集の意味。一覧の移動の語彙ではない)。
 func (m *Model) handleInputKey(k tea.KeyPressMsg) tea.Cmd {
 	switch k.String() {
 	case "esc":
@@ -374,10 +403,6 @@ func (m *Model) handleInputKey(k tea.KeyPressMsg) tea.Cmd {
 		m.flash = "入力を取り消した"
 	case "enter":
 		m.submit()
-	case "backspace":
-		if len(m.input) > 0 {
-			m.input = m.input[:len(m.input)-1]
-		}
 	case "tab":
 		if m.inputKind == inputOrder {
 			m.orderKind = (m.orderKind + 1) % 3
@@ -385,15 +410,29 @@ func (m *Model) handleInputKey(k tea.KeyPressMsg) tea.Cmd {
 	case "ctrl+c":
 		return tea.Quit
 	default:
-		if k.Text != "" {
-			m.input = append(m.input, []rune(k.Text)...)
-		}
+		m.line.Key(k.String(), k.Text)
 	}
 	return nil
 }
 
+// handleConfirmKey は y/N 確認。y と Enter だけが実行で、知らないキーはすべて取り消し (docs/glogx-ui-guide.md §4)。
+func (m *Model) handleConfirmKey(k tea.KeyPressMsg) tea.Cmd {
+	switch k.String() {
+	case "ctrl+c":
+		return tea.Quit
+	case "y", "enter":
+		m.apply(m.pending)
+	default:
+		m.flash = "取り消した (実行していない)"
+		m.mode = modeBoard
+		m.line.Reset()
+	}
+	m.pending = nil
+	return nil
+}
+
 func (m *Model) submit() {
-	text := string(m.input)
+	text := m.line.String()
 	var cmd backend.Command
 	switch m.inputKind {
 	case inputAnswer:
@@ -405,17 +444,29 @@ func (m *Model) submit() {
 	case inputNew:
 		cmd = backend.NewRequest{Repo: m.tabRepo(), Text: text}
 	}
+	// 方針変更は PG を止めて指示を差し替える (途中の作業を止める) ので、送る前に確認する
+	if o, ok := cmd.(backend.AddOrder); ok && o.Kind == card.OrderRedirect && text != "" {
+		m.pending = cmd
+		m.mode = modeConfirm
+		return
+	}
+	m.apply(cmd)
+}
+
+// apply は操作を backend へ送る。空の本文で拒否されたら入力欄を開いたままにする (書き直させる)。
+func (m *Model) apply(cmd backend.Command) {
 	res, err := m.be.Apply(cmd)
 	if err != nil {
 		m.flash = "失敗: " + err.Error()
 		if errors.Is(err, backend.ErrEmptyText) {
+			m.mode = modeInput
 			return // 入力欄を開いたまま書き直させる
 		}
 	} else {
 		m.flash = res
 	}
 	m.mode = modeBoard
-	m.input = nil
+	m.line.Reset()
 	m.snap = m.be.Snapshot()
 	m.ensureTab()
 	m.ensureSelection()

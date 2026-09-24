@@ -113,7 +113,7 @@ func TestAnswerIsRefusedForCardThatIsNotWaiting(t *testing.T) {
 func TestEscCancelsInputWithoutSending(t *testing.T) {
 	be := newSpy()
 	m := New(be, nil)
-	press(m, "o")
+	press(m, "+")
 	typeText(m, "やっぱりやめる")
 	press(m, "esc", "enter") // esc の後の enter はボードの詳細切り替えで、送信ではない
 	if len(be.applied) != 0 {
@@ -125,10 +125,10 @@ func TestEscCancelsInputWithoutSending(t *testing.T) {
 func TestOrderKindTabCycles(t *testing.T) {
 	be := newSpy()
 	m := New(be, nil)
-	press(m, "o")
+	press(m, "+")
 	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	typeText(m, "B 案で")
-	press(m, "enter")
+	press(m, "enter", "y") // 方針変更は確認を挟む
 	o, ok := be.applied[0].(backend.AddOrder)
 	if !ok || o.Kind != card.OrderRedirect || o.CardID != "R1" {
 		t.Fatalf("方針変更として R1 に届くはず: %#v", be.applied[0])
@@ -172,10 +172,10 @@ func TestPasteOnBoardDoesNothing(t *testing.T) {
 	if len(be.attached) != 0 || m.mode != modeBoard {
 		t.Fatalf("ボードへのペーストが操作として実行された: attached=%v mode=%v", be.attached, m.mode)
 	}
-	press(m, "o")
+	press(m, "+")
 	m.Update(tea.PasteMsg{Content: "貼った本文"})
-	if string(m.input) != "貼った本文" {
-		t.Fatalf("入力欄へのペーストが入っていない: %q", string(m.input))
+	if m.line.String() != "貼った本文" {
+		t.Fatalf("入力欄へのペーストが入っていない: %q", m.line.String())
 	}
 }
 
