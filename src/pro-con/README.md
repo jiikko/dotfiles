@@ -17,6 +17,7 @@ bin/pro-con      # claude は起動しない。模擬の backend (fake) が状�
 |---|---|
 | tab / shift+tab | repo タブの切り替え (global = 全 repo) |
 | n | 新しい依頼 (PM へ)。repo のタブで出すとその repo がスコープになる |
+| i | issue の一覧から選んで「これやって」と依頼する (repo のタブならその repo、global なら設定の全 repo。未完了だけ。epic は見出しの下に子)。Enter → 補足 (空でよい) → Enter |
 | s | Claude Code の session の一覧を開閉 (`claude agents --json`。対話 / 裏・状態・名前・経過・pid・場所) |
 | e | 選択中のカードの issue の md をエディタで開く ($VISUAL → $EDITOR → nvim。`tuikit/editor`) |
 | y | 選択中のカードの issue の md のパス (素の値) をクリップボードへ |
@@ -69,10 +70,17 @@ PG がテストや lint を実行している間も、カードは**作業中の
 `▶ make test 3分` (リソースを占有していれば `▶ device: make e2e-device 3分`) を出す。watchdog の停滞の閾値は、
 実行中は「見込みの所要の 2 倍」と通常の閾値の長い方 (`card.StallThreshold`。長いテストを停滞と誤判定しない)。
 
+## issue の一覧から依頼する (`i`)
+
+issue の読み方 (状態 = ファイルの位置、`epic/<name>/` の 2 段、`next/` の目印) は **glogx の issues viewer と同じ `glogx/issues`** に任せる
+(`FindDirs` / `Scan` / `LoadMeta`。判定を 2 実装にしない)。並びも viewer と同じ。epic の親は「group 名と同じ番号の issue」
+(glogx の `issues_view.go` の groupHead と同じ規則)。epic の見出しを選ぶと、未完了の子の一覧を付けた依頼になる。
+依頼のカードは最初からその issue に紐づき、PM への指示に issue のパス (epic なら子の一覧) と repo のスコープが入る。
+
 ## issue のファイル
 
-カードは issue を repo + 番号で持つ。`e` / `y` は、設定で列挙した repo の `issues/` の下を歩いて `NNN-*.md` を探す
-(状態のディレクトリ・epic の下も探す。`next/` の claim の目印 = symlink は飛ばして実体を開く)。同じ番号が 2 つあれば
+カードは issue を repo + 番号で持つ。`e` / `y` は、設定で列挙した repo の issue ディレクトリを `glogx/issues` で読んで番号の md を探す
+(状態のディレクトリ・epic の下も探す。`next/` の claim の目印 = symlink は実体へ)。同じ番号が 2 つあれば
 黙って選ばずエラー。カードに issue が複数あるときは最初の 1 つ (1 行目に `#415+1` のように残りの数を出す)。
 
 ## 構成

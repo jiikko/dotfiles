@@ -25,3 +25,15 @@ func TestPMPromptGlobalLeavesRepoToPM(t *testing.T) {
 		t.Fatalf("global の依頼の前置きが違う:\n%s", p)
 	}
 }
+
+// issue の依頼はパスと番号とタイトル、epic は親と未完了の子の一覧を入れる。補足は書いたまま末尾に置く。
+func TestIssuePrompt(t *testing.T) {
+	p := IssuePrompt(IssueTarget{Number: 415, Title: "設計", Path: "/r/issues/415-d.md"}, "急ぎで")
+	if !strings.Contains(p, "/r/issues/415-d.md") || !strings.Contains(p, "#415 設計") || !strings.HasSuffix(p, "補足:\n急ぎで") {
+		t.Fatalf("issue の指示が違う:\n%s", p)
+	}
+	e := IssuePrompt(IssueTarget{Number: 200, Title: "親", Path: "/r/e/200.md", Epic: "200", Children: []string{"/r/e/201.md"}}, "")
+	if !strings.Contains(e, "epic 200") || !strings.Contains(e, "\n- /r/e/201.md") || strings.Contains(e, "補足") {
+		t.Fatalf("epic の指示が違う:\n%s", e)
+	}
+}

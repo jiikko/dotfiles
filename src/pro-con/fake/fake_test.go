@@ -2,6 +2,7 @@ package fake
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -246,4 +247,24 @@ func TestExecStartsAfterResourceAndEnds(t *testing.T) {
 		}
 	}
 	t.Fatal("20 刻みでレビューへ進まない")
+}
+
+// issue から出した依頼は、最初からその issue に紐づき、受付 PM は新しい番号を振らずに PG へ回す。
+func TestIssueRequestStaysLinked(t *testing.T) {
+	s := New(t0)
+	target := &backend.IssueTarget{Number: 415, Title: "設計", Path: "/r/issues/415-design.md"}
+	if _, err := s.Apply(backend.NewRequest{Repo: backend.Repo{Name: "dotfiles", Path: "/r"}, Issue: target}); err != nil {
+		t.Fatalf("補足なしの issue の依頼は通るはず: %v", err)
+	}
+	id := s.Snapshot().Cards[len(s.Snapshot().Cards)-1].ID
+	c := get(t, s, id)
+	if len(c.Issues) != 1 || c.Issues[0].Number != 415 || !strings.Contains(c.Prompt, "/r/issues/415-design.md") {
+		t.Fatalf("issue に紐づいていない / 指示に issue のパスが無い: %+v", c)
+	}
+	for range 10 {
+		s.Step()
+	}
+	if c := get(t, s, id); len(c.Issues) != 1 || c.Issues[0].Number != 415 || c.State == card.Requested {
+		t.Fatalf("受付 PM が別の番号を振った / 進まない: %+v", c)
+	}
 }

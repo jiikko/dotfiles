@@ -36,7 +36,11 @@ func (m *Model) render() string {
 	w := m.width
 	title := sgrBold + fg(202) + " pro-con" + sgrFgReset + sgrDim + "  mock: claude は起動しない。表示は模擬データ" + sgrReset
 	out := []string{title, m.tabBar(), m.gauge(), fg(240) + strings.Repeat("─", w) + sgrReset}
-	out = append(out, m.overlayMoves(m.boardLines())...)
+	if m.picker.open {
+		out = append(out, m.pickerBlock()...)
+	} else {
+		out = append(out, m.overlayMoves(m.boardLines())...)
+	}
 	if m.showDetail {
 		out = append(out, "")
 		out = append(out, m.detailBlock()...)
@@ -379,6 +383,15 @@ func (m *Model) inputLine() string {
 		label = fmt.Sprintf("%s へ追加オーダー [%s] (tab で種類を切り替え)", m.selected, m.orderKind.Label())
 	case inputBtw:
 		label = m.selected + " に btw (PG は止めない)"
+	case inputIssue:
+		label = "これをやる"
+		if t := m.picker.target; t != nil {
+			label = fmt.Sprintf("#%03d %s をやる", t.Number, t.Title)
+			if t.Epic != "" {
+				label = fmt.Sprintf("epic %s (未完了の子 %d) をやる", t.Epic, len(t.Children))
+			}
+		}
+		label += " — 補足があれば (空のまま enter でよい)"
 	case inputNew:
 		label = "新しい依頼 (global: repo 未指定。PM が判断する)"
 		if r := m.tabRepo(); r.Name != "" {
@@ -435,11 +448,14 @@ func (m *Model) hints() []string {
 		return []string{"y / enter 実行", "他のキー 取り消し"}
 	case modeBoard:
 	}
+	if m.picker.open {
+		return []string{"j / k 選択", "enter これをやる", "i / q / esc 閉じる"}
+	}
 	back := "q 終了"
 	if m.showSessions || m.showDetail {
 		back = "q / esc 閉じる"
 	}
-	return []string{"hjkl 選択", "tab repo", "n 新しい依頼", "enter 詳細", "a attach", "r 回答", "+ 追加オーダー", "? btw",
+	return []string{"hjkl 選択", "tab repo", "n 新しい依頼", "i issue から", "enter 詳細", "a attach", "r 回答", "+ 追加オーダー", "? btw",
 		"e issue を開く", "y パス", "Y 内容", "s claude 一覧", back}
 }
 

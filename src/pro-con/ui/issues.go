@@ -3,43 +3,38 @@ package ui
 import (
 	"errors"
 	"fmt"
-	"io/fs"
-	"path/filepath"
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"glogx/issues"
 
 	"pro-con/card"
 )
 
 // カードに紐づく issue のファイル (e でエディタ、y でパスのコピー)。issue は repo + 番号で持っているので、
-// repo の issues/ の下を歩いて番号のファイルを探す (状態はファイルの位置なので、どのディレクトリに居ても見つける)。
+// repo の issue ディレクトリから番号のファイルを探す (状態はファイルの位置なので、どのディレクトリに居ても見つける)。
 
 var errNoIssue = errors.New("このカードは issue に紐づいていない")
 
-// findIssue は repo の issues/ の下から NNN-*.md を 1 つ探す。next/ の claim の目印 (symlink) は飛ばして実体を返す。
+// findIssue は repo の issue ディレクトリから番号 number の issue のファイルを 1 つ探す。読み方 (状態のディレクトリ・
+// epic/<name>/ の 2 段・next/ の目印は実体へ) は glogx の issues viewer と同じ glogx/issues に任せる。
 // 同じ番号が 2 つ見つかったら、黙ってどちらかを選ばずエラーにする (番号の衝突は issues/README.md の検査の対象)。
 func findIssue(repoPath string, number int) (string, error) {
-	prefix := fmt.Sprintf("%03d-", number)
+	dirs := issues.FindDirs(repoPath)
+	if len(dirs) == 0 {
+		return "", fmt.Errorf("%s に issue のディレクトリが無い", repoPath)
+	}
+	list, _ := issues.Scan(dirs)
 	var found []string
-	root := filepath.Join(repoPath, "issues")
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+	for _, iss := range list {
+		if n, err := strconv.Atoi(iss.Number); err == nil && n == number {
+			found = append(found, iss.Path)
 		}
-		if d.Type()&fs.ModeSymlink != 0 || d.IsDir() {
-			return nil
-		}
-		if n := d.Name(); strings.HasPrefix(n, prefix) && strings.HasSuffix(n, ".md") {
-			found = append(found, p)
-		}
-		return nil
-	})
+	}
 	switch {
-	case err != nil:
-		return "", fmt.Errorf("%s を読めない: %w", root, err)
 	case len(found) == 0:
-		return "", fmt.Errorf("issue %03d が %s に見つからない", number, root)
+		return "", fmt.Errorf("issue %03d が %s に見つからない", number, strings.Join(dirs, ", "))
 	case len(found) > 1:
 		return "", fmt.Errorf("issue %03d が %d 個ある (番号が衝突している): %s", number, len(found), strings.Join(found, ", "))
 	}

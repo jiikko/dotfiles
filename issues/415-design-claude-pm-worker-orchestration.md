@@ -375,4 +375,8 @@ issue にならない終わり方 (`回答済み` / `調査のみ` / `却下` / 
   前回 y に割り当てた内容のコピーを Y へ移した)。エディタの解決を `tuikit/editor` に置き、glogx の editorCommand もそれに委ねた (二重実装を作らない)。
   テスト 4 本、変異 7 本が red
 - [x] テスト・lint の実行中の表示 (2026-09-24)。カードは作業中の列のまま、バッジに `▶ [リソース: ]コマンド 経過` を出す。実行中は停滞の閾値を見込みの 2 倍に。本番では要件 12 の直列化の入口が「今何を実行しているか」を記録する。テスト 4 本、変異 6 本が red
+- [x] issue の一覧から選んで「これやって」と依頼する板 (`i`。2026-09-24)。repo のタブならその repo、global なら全 repo。未完了だけを glogx の issues viewer と同じ
+  `glogx/issues` で読み (状態・epic・next/ の目印)、epic は見出しの下に子。epic を選ぶと未完了の子の一覧付きの依頼になる。カードは最初から issue に紐づき、
+  受付 PM は新しい番号を振らない。`findIssue` (e / y) も `glogx/issues` に寄せて自前の走査を消した。テスト 8 本、変異 9 本が red。
+  実 `~/dotfiles/issues` で並ぶことを隔離 tmux で確認
 - [ ] 段階 1 の残り: 今の Desktop の session を一覧する本物の backend (`claude agents --json` を読む)

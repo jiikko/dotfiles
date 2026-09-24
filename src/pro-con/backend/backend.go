@@ -7,7 +7,9 @@ package backend
 
 import (
 	"errors"
+	"fmt"
 	"os/exec"
+	"strings"
 	"time"
 
 	"pro-con/card"
@@ -68,9 +70,40 @@ type Repo struct {
 }
 
 // NewRequest は TUI から PM への新しい依頼。Repo は依頼を出したタブの repo (global ならゼロ値)。
+// Issue があれば「この issue (epic) をやって」の依頼で、Text は補足 (空でよい)。
 type NewRequest struct {
-	Repo Repo
-	Text string
+	Repo  Repo
+	Text  string
+	Issue *IssueTarget
+}
+
+// IssueTarget は依頼の対象の issue。Epic が非空なら epic 全体 (Path は親 issue、Children は未完了の子)。
+type IssueTarget struct {
+	Number   int
+	Title    string
+	Path     string
+	Epic     string
+	Children []string // 未完了の子 issue のパス (epic のとき)
+}
+
+// IssuePrompt は issue を選んで出した依頼の本文 (PMPrompt の text に渡す)。補足は人間が書いたまま末尾に置く。
+func IssuePrompt(t IssueTarget, extra string) string {
+	var b strings.Builder
+	if t.Epic != "" {
+		fmt.Fprintf(&b, "epic %s に取り組んでください。親 issue: %s (#%03d %s)。", t.Epic, t.Path, t.Number, t.Title)
+		if len(t.Children) > 0 {
+			b.WriteString("未完了の子 issue を順に進めてください:")
+			for _, c := range t.Children {
+				b.WriteString("\n- " + c)
+			}
+		}
+	} else {
+		fmt.Fprintf(&b, "issue %s (#%03d %s) に取り組んでください。", t.Path, t.Number, t.Title)
+	}
+	if strings.TrimSpace(extra) != "" {
+		b.WriteString("\n\n補足:\n" + extra)
+	}
+	return b.String()
 }
 
 // PMPrompt は PM に渡す指示の全文。repo のタブから出した依頼には、その repo の中だけが対象である旨を前置きする。

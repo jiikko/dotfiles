@@ -39,6 +39,7 @@ const (
 	inputOrder
 	inputBtw
 	inputNew
+	inputIssue // issue の一覧で選んだものへの補足 (空でよい。picker.go)
 )
 
 type tickMsg struct{}
@@ -76,6 +77,8 @@ type Model struct {
 	prevSlots map[string]slot
 	moves     map[string]*move
 	framing   bool // frame の tick が回っているか (二重に回さない)
+
+	picker picker // issue の一覧から依頼する画面 (picker.go)
 
 	copy       func(string) error     // クリップボードへ入れる (既定は pbcopy。テストは差し替える)
 	openEditor func(string) *exec.Cmd // ファイルを開くエディタのコマンド (既定は tuikit/editor。テストは差し替える)
@@ -151,6 +154,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd := m.handleConfirmKey(msg)
 			return m, tea.Batch(cmd, m.trackMoves())
 		case modeBoard:
+		}
+		if m.picker.open {
+			return m, m.handlePickerKey(msg)
 		}
 		return m, m.handleBoardKey(msg)
 	}
@@ -353,6 +359,8 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		m.yank()
 	case "e":
 		return m.openIssue()
+	case "i": // issue の一覧から選んで依頼する (docs/glogx-ui-guide.md の i = issues の板)
+		m.loadPicker()
 	case "s":
 		m.showSessions = !m.showSessions
 	default:
@@ -453,6 +461,8 @@ func (m *Model) submit() {
 		cmd = backend.Btw{CardID: m.selected, Question: text}
 	case inputNew:
 		cmd = backend.NewRequest{Repo: m.tabRepo(), Text: text}
+	case inputIssue:
+		cmd = backend.NewRequest{Repo: m.picker.repo, Text: text, Issue: m.picker.target}
 	}
 	// 方針変更は PG を止めて指示を差し替える (途中の作業を止める) ので、送る前に確認する
 	if o, ok := cmd.(backend.AddOrder); ok && o.Kind == card.OrderRedirect && text != "" {

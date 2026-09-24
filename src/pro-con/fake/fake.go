@@ -294,6 +294,11 @@ func (s *Sim) stepIntake() {
 		if c.State != card.Requested || s.now.Sub(c.Since) < 4*time.Minute {
 			continue
 		}
+		if len(c.Issues) > 0 { // issue から出した依頼: 新しい issue は作らず、その issue のまま分解済みへ
+			c.Owner = "PM-A"
+			s.setState(c, card.Planned, fmt.Sprintf("PM-A が issue %03d のまま PG へ回す", c.Issues[0].Number))
+			return
+		}
 		if strings.Contains(c.Request, "どうなってる") {
 			c.Ending = card.EndAnswered
 			s.setState(c, card.Done, "受付 PM がその場で回答した")
@@ -434,7 +439,18 @@ func (s *Sim) addOrder(o backend.AddOrder) (string, error) {
 
 // newRequest は TUI からの新しい依頼を依頼の列に置く。PM に渡す指示にはスコープの前置きを付ける。
 func (s *Sim) newRequest(r backend.NewRequest) (string, error) {
-	if strings.TrimSpace(r.Text) == "" {
+	request, prompt := r.Text, r.Text // 依頼の原文 (カードに残す) と、PM に渡す本文 (前置きの前)
+	var issues []card.IssueRef
+	if t := r.Issue; t != nil { // issue を選んで出した依頼: カードは最初からその issue に紐づく。補足 (r.Text) は空でよい
+		issues = []card.IssueRef{{Repo: r.Repo.Name, Number: t.Number, Status: "open"}}
+		title := fmt.Sprintf("#%03d %s", t.Number, t.Title)
+		if t.Epic != "" {
+			title = "epic " + t.Epic + " (#" + fmt.Sprintf("%03d", t.Number) + ")"
+		}
+		request = strings.TrimSpace(title + " をやって\n" + r.Text)
+		prompt = backend.IssuePrompt(*t, r.Text)
+	}
+	if strings.TrimSpace(request) == "" {
 		return "", backend.ErrEmptyText
 	}
 	s.nextID++
@@ -442,8 +458,9 @@ func (s *Sim) newRequest(r backend.NewRequest) (string, error) {
 	if r.Repo.Name != "" {
 		scope = "repo " + r.Repo.Name
 	}
-	c := card.Card{ID: fmt.Sprintf("C-%03d", s.nextID), Title: firstLine(r.Text), Request: r.Text,
-		Prompt: backend.PMPrompt(r.Repo, r.Text), Repo: r.Repo.Name, Owner: "受付 PM", State: card.Requested, Since: s.now,
+	c := card.Card{ID: fmt.Sprintf("C-%03d", s.nextID), Title: firstLine(request), Request: request,
+		Prompt: backend.PMPrompt(r.Repo, prompt), Repo: r.Repo.Name, Owner: "受付 PM", State: card.Requested, Since: s.now,
+		Issues:  issues,
 		History: []card.Event{{At: s.now, Text: "人間が TUI から依頼した (スコープ: " + scope + ")"}}}
 	s.cards = append(s.cards, c)
 	return c.ID + " を依頼した (スコープ: " + scope + ")", nil
