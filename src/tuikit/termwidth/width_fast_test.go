@@ -1,10 +1,12 @@
 package termwidth
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/rivo/uniseg"
@@ -155,7 +157,8 @@ func TestDispWidthAgreesUnderEastAsianEnv(t *testing.T) {
 	// 食い違い、子は「no tests to run」で 0 本走って exit 0 になり、親は緑を返す (R3 が実証)。
 	filter := "^(" + t.Name() + "|TestSymbolWidthTableMatchesLibrary|" +
 		"TestFastDispWidthMatchesLibrary|TestAcceptedSymbolsNeverCombineWithEachOther)$"
-	cmd := exec.Command(os.Args[0], "-test.run="+filter, "-test.v")
+	cmd := exec.CommandContext(childContext(t), os.Args[0], "-test.run="+filter, "-test.v")
+	cmd.WaitDelay = time.Second // kill 後に孫が出力 pipe を握っていても Wait を返す
 	cmd.Env = append(os.Environ(), "GLOGX_EAW_CHILD=1", "RUNEWIDTH_EASTASIAN=1")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -169,6 +172,21 @@ func TestDispWidthAgreesUnderEastAsianEnv(t *testing.T) {
 		t.Fatalf("子プロセスで PASS したのが %d 本 (want %d)。run filter が壊れて "+
 			"検証が消えている可能性がある\n%s", got, wantPass, out)
 	}
+}
+
+// childContext は子プロセスをテストの deadline より手前で kill させる context を返す
+// (internal/testenv.CommandContext と同じ作法)。⚠️ `go test -timeout` は親を panic で
+// 落とすだけで子を回収しないので、deadline ちょうどに任せると hang した子が孤児として残る。
+func childContext(t *testing.T) context.Context {
+	ctx := t.Context()
+	dl, ok := t.Deadline()
+	if !ok {
+		return ctx
+	}
+	grace := max(time.Until(dl)/20, time.Second) // 親が失敗を報告できる猶予を残す
+	ctx, cancel := context.WithDeadline(ctx, dl.Add(-grace))
+	t.Cleanup(cancel)
+	return ctx
 }
 
 // 受理してはいけないもの: 結合してクラスタを伸ばす文字。これらが混ざったら
