@@ -281,7 +281,13 @@ func (m *Model) badge(c card.Card) string {
 	case c.Wait.Kind == card.WaitQuota:
 		parts = append(parts, "…枠待ち")
 	}
-	if c.State != card.Done {
+	if e := c.Exec; e.Active() {
+		cmd := e.Command
+		if e.Resource != "" {
+			cmd = e.Resource + ": " + cmd
+		}
+		parts = append(parts, "▶ "+cmd+" "+fmtDur(m.snap.Now.Sub(e.Since)))
+	} else if c.State != card.Done {
 		parts = append(parts, fmtDur(m.snap.Now.Sub(c.Since)))
 	}
 	switch {

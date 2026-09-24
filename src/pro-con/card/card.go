@@ -133,6 +133,26 @@ type Order struct {
 	Delivered bool // PG へ届いたか (不変条件: 未達かどうかがカードで見える)
 }
 
+// Exec は PG が今実行しているコマンド (make test / 実機 E2E 等)。ゼロ値は「何も実行していない」。
+// 本番では直列化の入口 (issue 415 要件 12 の pro-con run / hook) が記録する。
+type Exec struct {
+	Command  string
+	Resource string        // 占有しているリソース (device / xcode 等)。占有しないコマンドは空
+	Since    time.Time     // 実行を始めた時刻
+	Expected time.Duration // 見込みの所要 (前回の実測)。0 なら不明
+}
+
+func (e Exec) Active() bool { return e.Command != "" }
+
+// StallThreshold は watchdog が「進捗なし」を停滞とみなすまでの時間。コマンドの実行中は見込みの 2 倍と base の
+// 長い方 (長いテストを停滞と誤判定しない)。それ以外は base。
+func StallThreshold(c Card, base time.Duration) time.Duration {
+	if c.Exec.Active() {
+		return max(base, 2*c.Exec.Expected)
+	}
+	return base
+}
+
 type Event struct {
 	At   time.Time
 	Text string
@@ -151,6 +171,7 @@ type Card struct {
 	Since    time.Time // 今の State に入った時刻
 	Wait     Wait
 	Stalled  bool // watchdog が停滞と判定した
+	Exec     Exec // 今実行しているコマンド (作業中の列のまま。列は担当が変わるときだけ移る)
 	Issues   []IssueRef
 	Ending   Ending
 	Orders   []Order

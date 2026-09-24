@@ -3,6 +3,7 @@ package ui
 import (
 	"os/exec"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -299,5 +300,17 @@ func TestNewRequestInGlobalTabHasNoScope(t *testing.T) {
 	r, ok := be.applied[len(be.applied)-1].(backend.NewRequest)
 	if !ok || r.Repo != (backend.Repo{}) {
 		t.Fatalf("global の依頼は repo を持たないはず: %#v", be.applied)
+	}
+}
+
+// 実行中のコマンドはバッジに出る (リソースを占有していればその名前も)。
+func TestBadgeShowsRunningCommand(t *testing.T) {
+	be := newSpy()
+	now := be.snap.Now
+	be.snap.Cards = []card.Card{{ID: "R1", State: card.Running, Since: now,
+		Exec: card.Exec{Command: "make e2e-device", Resource: "device", Since: now.Add(-3 * time.Minute)}}}
+	m := New(be, nil)
+	if b := m.badge(be.snap.Cards[0]); !strings.Contains(b, "▶ device: make e2e-device 3分") {
+		t.Fatalf("バッジに実行中のコマンドが無い: %q", b)
 	}
 }

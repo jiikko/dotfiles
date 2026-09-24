@@ -205,3 +205,45 @@ func TestNewRequestCreatesScopedCard(t *testing.T) {
 		t.Fatalf("不変条件が破れた: %v", snap.Violations)
 	}
 }
+
+// 出力の無い長い実行は、見込みの 2 倍までは停滞にしない。越えたら停滞にする。
+func TestLongExecStallsOnlyAfterTwiceExpected(t *testing.T) {
+	s := New(t0)
+	s.cards = append(s.cards, card.Card{ID: "X1", State: card.Running, Session: "s-x", Since: t0, LastProgress: t0,
+		Exec: card.Exec{Command: "make e2e", Expected: 5 * time.Minute, Since: t0}})
+	s.scripts["X1"] = &script{} // 出力しない (台本が空 = 進捗が出ない)
+	for range 9 {
+		s.Step()
+	}
+	if get(t, s, "X1").Stalled {
+		t.Fatal("見込み 5 分の実行を 9 分で停滞にした (閾値は 2 倍の 10 分)")
+	}
+	s.Step()
+	s.Step()
+	if !get(t, s, "X1").Stalled {
+		t.Fatal("見込みの 2 倍を越えても停滞にならない")
+	}
+}
+
+// 実機 E2E はリソースを占有してから実行を始め (作業中の列のまま)、出力を出し切ったら実行を終えてレビューへ進む。
+func TestExecStartsAfterResourceAndEnds(t *testing.T) {
+	s := New(t0)
+	sawExec := false
+	for range 20 {
+		s.Step()
+		c := get(t, s, "C-006")
+		if c.Exec.Active() {
+			sawExec = true
+			if c.State != card.Running || c.Wait.Kind != card.WaitNone || c.Exec.Resource != "device" {
+				t.Fatalf("実行中は作業中の列で、リソースを占有しているはず: state=%s wait=%v res=%q", c.State.Label(), c.Wait.Kind, c.Exec.Resource)
+			}
+		}
+		if c.State == card.Review {
+			if !sawExec || c.Exec.Active() {
+				t.Fatalf("実行してから終えてレビューへ進むはず: sawExec=%v active=%v", sawExec, c.Exec.Active())
+			}
+			return
+		}
+	}
+	t.Fatal("20 刻みでレビューへ進まない")
+}

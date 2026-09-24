@@ -30,6 +30,9 @@ type script struct {
 	lines    []string // 1 刻みに 1 行ずつ進捗として出る
 	then     string   // 台本を出し切った後: "review" / "question" / "" (何もしない = 進捗が止まる)
 	question string
+	// exec があれば、lines はそのコマンドの出力として出る (最初の行の前に実行を始め、出し切ったら終える)
+	exec     card.Exec
+	execDone bool
 }
 
 type Sim struct {
@@ -116,10 +119,12 @@ func (s *Sim) seed() {
 	s.resource["device"] = []string{"C-099", "C-006"} // 先頭 C-099 は人間が直接使っている session の占有という想定
 	s.externalUntil["device"] = s.now.Add(2 * StepDuration)
 	s.scripts["C-005"] = &script{lines: []string{"go test ./ui: ok"}} // then 無し = ここで進捗が止まり watchdog が拾う
-	s.scripts["C-006"] = &script{lines: []string{"make e2e-device: 12/40", "make e2e-device: 40/40 ok"}, then: "review"}
+	s.scripts["C-006"] = &script{lines: []string{"e2e: 12/40", "e2e: 26/40", "e2e: 40/40 ok"}, then: "review",
+		exec: card.Exec{Command: "make e2e-device", Resource: "device", Expected: 3 * time.Minute}}
 	s.scripts["C-003"] = &script{lines: []string{"Read bin/tmux-toast"}, then: "question",
 		question: "重なったときは縦に積みますか？ 古い方を消しますか？"}
-	s.scripts["C-004"] = &script{lines: []string{"Edit bin/av1ify: log を stderr の 1 行に", "make test: ok"}, then: "review"}
+	s.scripts["C-004"] = &script{lines: []string{"test: 120/480", "test: 480/480 ok"}, then: "review",
+		exec: card.Exec{Command: "make test", Expected: 2 * time.Minute}}
 	s.scripts["C-007"] = &script{lines: []string{"direnv を遅延ロードに変更", "zprof: 88ms"}, then: "review"}
 }
 
@@ -205,6 +210,11 @@ func (s *Sim) stepProgress() {
 			continue
 		}
 		s.deliverOrders(c)
+		if sc.exec.Active() && !sc.execDone && !c.Exec.Active() && len(sc.lines) > 0 {
+			c.Exec = sc.exec
+			c.Exec.Since = s.now
+			c.History = append(c.History, card.Event{At: s.now, Text: "▶ " + sc.exec.Command + " を実行し始めた"})
+		}
 		if len(sc.lines) > 0 {
 			c.Log = append(c.Log, sc.lines[0])
 			sc.lines = sc.lines[1:]
@@ -214,6 +224,10 @@ func (s *Sim) stepProgress() {
 				c.History = append(c.History, card.Event{At: s.now, Text: "watchdog: 進捗が戻った"})
 			}
 			continue
+		}
+		if c.Exec.Active() && sc.exec.Active() { // 台本が始めた実行だけを、出力を出し切ったところで終える
+			c.History = append(c.History, card.Event{At: s.now, Text: c.Exec.Command + " が終わった"})
+			c.Exec, sc.execDone = card.Exec{}, true
 		}
 		switch sc.then {
 		case "review":
@@ -260,10 +274,15 @@ func (s *Sim) stepWatchdog() {
 		if c.State != card.Running || c.Wait.Kind != card.WaitNone || c.Stalled {
 			continue
 		}
-		if s.now.Sub(c.LastProgress) >= StallAfter {
+		limit := card.StallThreshold(*c, StallAfter)
+		since := c.LastProgress
+		if c.Exec.Active() && c.Exec.Since.After(since) {
+			since = c.Exec.Since
+		}
+		if s.now.Sub(since) >= limit {
 			c.Stalled = true
 			c.History = append(c.History, card.Event{At: s.now,
-				Text: fmt.Sprintf("watchdog: %d 分進捗なし → PG に「待っているものの状態を確認して」と促した", int(StallAfter/time.Minute))})
+				Text: fmt.Sprintf("watchdog: %d 分進捗なし → PG に「待っているものの状態を確認して」と促した", int(limit/time.Minute))})
 		}
 	}
 }

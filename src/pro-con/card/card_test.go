@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func reasons(vs []Violation) []string {
@@ -57,6 +58,26 @@ func TestColumnsCoverEveryState(t *testing.T) {
 	for st := Requested; st <= Done; st++ {
 		if !slices.Contains(Columns, st) {
 			t.Fatalf("%s がカンバンの列に無い (その状態のカードが画面から消える)", st.Label())
+		}
+	}
+}
+
+// コマンドの実行中は見込みの 2 倍 (base より短ければ base)、実行していなければ base。
+func TestStallThreshold(t *testing.T) {
+	base := 5 * time.Minute
+	cases := []struct {
+		name string
+		exec Exec
+		want time.Duration
+	}{
+		{"実行していない", Exec{}, base},
+		{"長いテスト", Exec{Command: "make e2e", Expected: 8 * time.Minute}, 16 * time.Minute},
+		{"短いテストは base", Exec{Command: "make lint", Expected: time.Minute}, base},
+		{"見込み不明は base", Exec{Command: "make test"}, base},
+	}
+	for _, tc := range cases {
+		if got := StallThreshold(Card{Exec: tc.exec}, base); got != tc.want {
+			t.Fatalf("%s: got %v want %v", tc.name, got, tc.want)
 		}
 	}
 }
