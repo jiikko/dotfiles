@@ -1,155 +1,134 @@
 # 共通ルール
 
+`rules/*.md` は `~/.claude/rules/` に link され、毎セッション全文読まれる。この文書は rule に
+書いていない規範と、rule への索引だけを持つ (rule の中身をここで要約し直さない)。
+
 ## 作業開始前の準備
 
 - コードを書き始める前に、必ず `git pull` を実行して最新の状態に更新すること
 
 ## Git 禁止操作
 
-- **無断で `git clone` しない。必要ならユーザーに許可を取ること**
-- `git stash` を使用しない。ステージ済みの変更を退避したい場合は、別ブランチにコミットするか、ユーザーに確認すること
-- サブモジュール内でコミットしたら、**必ずそのサブモジュールのリモートにも push する**。親リポジトリの push だけでは不十分。CI がサブモジュールの参照コミットを取得できず失敗する
-- **コミット & push 前に `git status` で dirty なサブモジュールがないか確認すること**。dirty なサブモジュールがあれば、その中に入って差分を確認し、必要ならコミット & push してから親リポジトリの参照を更新すること。dirty を残したまま作業を終えない
-- **commit / push 後は、成功を報告する前に実際の git state（`git log -1 --stat` / `git status` / push 出力）を確認すること**。ヘルパー関数やツール出力の「成功」表示を鵜呑みにしない（push 失敗や heredoc 破損を成功と誤報した実例がある）
+- **無断で `git clone` しない**。必要ならユーザーに許可を取る
+- `git stash` を使わない。ステージ済みの変更を退避したいなら、別ブランチにコミットするかユーザーに確認する
+- サブモジュール内でコミットしたら、**そのサブモジュールのリモートにも push する** (親の push だけでは CI が参照コミットを取得できない)
+- **コミット & push 前に `git status` で dirty なサブモジュールがないか確認する**。あれば中で差分を確認し、必要ならコミット & push してから親の参照を更新する
+- **commit / push 後は、成功を報告する前に実際の git state (`git log -1 --stat` / `git status` / push 出力) を確認する**。ツール出力の「成功」表示を鵜呑みにしない (push 失敗や heredoc 破損を成功と誤報した実例がある)
 
 ## 並行作業者がいるときの worktree 退避
 
-- **自分が作業を開始した後に、他の作業者（並行セッション・人間）によるファイル変更を確認できた場合**（例: 作業開始時点には無かった untracked ファイルが増えた、自分が触っていないファイルに新しい差分・ステージが現れた、自分の知らないコミットが積まれた）、**git worktree を作成してそこへ移動して作業してよい**（共有 working tree の index 競合・変更巻き込みを構造的に回避するため）
-- **作業開始時点から存在する** dirty / untracked はこの条件に含めない（過去の作業の残骸かもしれず「今まさに並行作業中」の証拠ではない）。それらは従来どおり「触らない・巻き込まない」で共有 working tree のまま続行してよい
-- worktree で作った**コミットを master ブランチへ移動できた時点で、作成した worktree は必ず削除する**（`git worktree remove`）。worktree を残したまま作業を終えない（放置 worktree は「どこに何があるか分からない」状態と stale ブランチを量産する）
-- worktree を使わず共有 working tree に留まる場合は、pathspec 明示 commit の規律に従う（[`commit-with-pathspec.md`](rules/commit-with-pathspec.md)）
-- **自分が書き込み権限のエージェント（`-s workspace-write` の codex 等）を 2 体以上並行させるときも worktree を分ける**。「担当ディレクトリが重ならない」を理由に同一 working tree で走らせない（想定外のファイルに手が伸びる / 並行中の build・test が何を検証したのか分からなくなる）。詳細は [`parallel-write-agents-need-worktree-isolation.md`](rules/parallel-write-agents-need-worktree-isolation.md)
+- **作業開始後に**他の作業者 (並行セッション・人間) の変更を確認できたら (untracked の増加 / 自分が触っていないファイルの新しい差分 / 知らないコミット)、**git worktree を作ってそこで作業してよい**
+- **作業開始時点から在る** dirty / untracked はこの条件に含めない (過去の残骸かもしれない)。触らず・巻き込まずに共有 working tree のまま続行してよい
+- **worktree を残さない**。コミットを master へ移せた時点で `git worktree remove` する
+- 共有 working tree に留まるなら [`commit-with-pathspec.md`](rules/commit-with-pathspec.md) に従う。書き込み権限のエージェントを 2 体以上並行させるときは [`parallel-write-agents-need-worktree-isolation.md`](rules/parallel-write-agents-need-worktree-isolation.md)
 
 ## 応答・成果物の長さとスコープ
 
-出力の長さ・スコープ・委譲の量は reasoning effort では制御できず（reasoning effort は思考量を制御するだけ）、明示指示でしか効かないので言語化しておく。寄る方向はモデルによって違う（Opus 5 は多く喋り・広げ・委譲する側、Fable 5.1 は逆に報告が少なくなる側）。出典: [Opus 5 ガイド](https://platform.claude.com/docs/ja/build-with-claude/prompt-engineering/prompting-claude-opus-5) / `claude-api` skill の Fable 5.1 節（乖離に気づいたら同じ commit で直す）。
+出力の長さ・スコープ・委譲の量は reasoning effort では制御できず、明示指示でしか効かない
+(Opus 5 は多く喋り・広げ・委譲する側、Fable 5.1 は報告が少なくなる側に寄る。出典:
+[Opus 5 ガイド](https://platform.claude.com/docs/ja/build-with-claude/prompt-engineering/prompting-claude-opus-5) / `claude-api` skill の Fable 5.1 節)。
 
-- **応答は本題に紙面を使う**。前置き・免責・注意書きは短く。「説明して」に対しては要点のサマリを返し、詳細な解説は明示的に求められたときだけ書く
-- **成果物ドキュメント（レポート・md・要約）の長さはタスクの必要量に合わせる**。中身は尽くすが、埋め草セクション・重複したサマリ・定型文で嵩上げしない
-- **進捗更新のペース**: 最初のツール呼び出し前に何をするかを一文で言う。作業中は重要な発見か方針転換があったときだけ短く挟む。完了時は結論（何が起きたか / 何が分かったか）から書き、根拠はその後
-- 🚨 **「次はこれをやります」でターンを終えない**。次の行動を書くなら、**同じターンでその 1 手目を実行する**（宣言はツール呼び出しの*前置き*であって、ターンの*締め*ではない）。報告が長いほど「宣言で仕事をした気になる」ので、長い完了報告の直後ほど踏みやすい。実測 2026-09-09: 1 セッションで **3 回**やり、3 回ともユーザーに「スタックしていませんか？」と聞かれた（3 回とも直前のターンでツールを 1 つも呼んでいなかった）。次の作業が重い / 判断待ちで着手できないなら、**やらないと書く**（宣言して放置しない）
-- **依頼されたスコープをそのまま完遂する**。ルーチンな判断は自分で下し、解釈が分かれると成果物が実質的に変わるときだけ確認する。依頼が誤っている / もっと良い方法があると思ったら一文で述べてから依頼どおり進める。黙って狭める・広げる・別物にすり替えるのはしない
-  - 例外は「コード変更時の自律改善」が実行を義務付けている範囲だけ（境界の正本はその節と [`verify-design-intent-before-refactor.md`](rules/verify-design-intent-before-refactor.md) の「自律改善との境界」表。ここで再掲しない）。範囲外の気づきは「ぼやきポイント」に回す
-- **訂正のナレーションは重要なものだけ**。ユーザーのコード・結論・判断が変わる誤りは端的に訂正して続ける。何も変わらない言い間違いは黙って直して進む（過去の誤りの列挙・自己批判はしない）
-- **自分の判断で自己再チェックの手順を足さない**。現行モデルは指示なしでも自分の作業を見直すため、その場の思いつきで「もう一度読み返すパス」「確認用サブエージェント」を積むのはトークンを増やすだけで品質を上げない。自発的にやる検証は具体的な外部事実の確認（実コマンド・テスト実行・実出力・git state）に寄せる
-  - **これは既定のルールや明示起動した skill が定める検証・レビュー工程を省略する根拠にはならない**。「レビュー方針」の codex レビュー・敵対的レビュー、[`escalate-to-forge-after-failed-tries.md`](rules/escalate-to-forge-after-failed-tries.md) のエスカレーション、forge / cross-review / review-loop の各 Phase は要求どおり全て通す（これらはユーザーが選んだ工程であり、モデルの自己再チェックではない）
+- **応答は本題に紙面を使う**。前置き・免責は短く。「説明して」には要点のサマリを返し、詳細は求められたときだけ書く
+- **成果物ドキュメントの長さはタスクの必要量に合わせる**。埋め草セクション・重複したサマリ・定型文で嵩上げしない
+- **進捗更新**: 最初のツール呼び出し前に何をするかを一文で言う。作業中は重要な発見か方針転換のときだけ挟む。完了時は結論から書き、根拠はその後
+- 🚨 **「次はこれをやります」でターンを終えない**。次の行動を書くなら同じターンで 1 手目を実行する。長い完了報告の直後ほど踏みやすい (実測 2026-09-09: 1 セッションで 3 回やり、3 回とも「スタックしていませんか？」と聞かれた)。着手できないなら**やらないと書く**
+- **依頼されたスコープをそのまま完遂する**。ルーチンな判断は自分で下し、解釈次第で成果物が実質的に変わるときだけ確認する。依頼が誤っている / もっと良い方法があると思ったら一文で述べてから依頼どおり進める。黙って狭める・広げる・すり替えない
+  - 例外は「コード変更時の自律改善」が義務付ける範囲だけ (境界は [`verify-design-intent-before-refactor.md`](rules/verify-design-intent-before-refactor.md) の「自律改善との境界」表)。範囲外の気づきは「ぼやきポイント」へ
+- **訂正のナレーションは重要なものだけ**。ユーザーの判断が変わる誤りは端的に訂正する。何も変わらない言い間違いは黙って直す (過去の誤りの列挙・自己批判はしない)
+- **自分の判断で自己再チェックの手順を足さない** (読み返しパス・確認用サブエージェント)。自発的な検証は外部事実の確認 (実コマンド・テスト・実出力・git state) に寄せる
+  - **既定のルールや明示起動した skill が定める検証・レビュー工程は省略しない** (「レビュー方針」の codex / 敵対的レビュー、forge エスカレーション、forge / cross-review / review-loop の各 Phase)。これらはユーザーが選んだ工程であり、自己再チェックではない
 
 ## 一時ファイルの配置
 
 - **Claude がセッション中に作る成果物 (レポート・スクラッチ・中間生成物) は `./tmp`**。`/tmp` に置かない
-  - **溜まったら `make clean-tmp`** (既定は 30 日より古いトップレベルのエントリ。`DRY_RUN=1` で一覧だけ、
-    `DAYS=7` で期間を変える)。消す前に**結論が issue / コードへ移っているか**と、**issue や doc が指している
-    パスでないか**を確かめる (`grep -rn 'tmp/' issues/ _claude/`)。放置すると溜まる:
-    2026-09-02 に 309 エントリ / 831MB あり、うち 78 件 / 588MB が 1 か月超だった
-  - 🚨 `tmp/` の ignore は **`~/.gitignore_global:5` 由来**で、repo の `.gitignore` には**無い**
-    (実測)。新品チェックアウトと CI では ignore されないし、そもそも `tmp/` が存在しない
-    (`src/glogx/worktree_status_real_test.go` の doc が CI 失敗 run 30823977760 を記録している)
-  - **例外: ハーネスが指定する scratchpad** (`/private/tmp/claude-501/…`) はそのまま使ってよい。
-    置き場所を選べない
-- **スクリプト / テストが実行時に作る隔離ディレクトリはこの規約の対象外**。既定は OS の一時領域
-  (`mktemp -d` / `t.TempDir()` / `os.MkdirTemp("")`)。`./tmp` に置くなら**理由をコード直近に残す**
-  (実例: `src/glogx/worktree_status_real_test.go:repoTmpDir` — 使い捨て repo を repo 内に置く理由と、
-  無ければ作る理由が書いてある)
-- 線引きは置き場所でも `mktemp` かどうかでもなく、**終了時に消す責任が実装されているか**
-  - 🚨 「`mktemp -d` は `/tmp` ではないから抵触しない」で判断しない。macOS は TMPDIR を外しても
-    Darwin のユーザ専用一時領域 (`/var/folders/…`) を使い `/tmp` に来ないが、**Linux では
-    `/tmp` 配下になりうる**。パスで線を引くと platform で答えが変わる
-  - 🚨 消す責任は「`trap` を書いた」では終わらない。**`trap` は中断では走らず、dir を消しても
-    そこで起こしたプロセスは残る** (`scripts/tmux_reap_orphan_servers.sh` の背景注記: `mktemp -d`
-    の socket を消してもサーバが launchd に里子化して残り、自動復元が **17 日間**不発になった)
+  - 例外: ハーネスが指定する scratchpad (`/private/tmp/claude-501/…`) はそのまま使ってよい
+  - 🚨 `tmp/` の ignore が `~/.gitignore_global` 由来で repo の `.gitignore` に無い repo がある (dotfiles 等)。その場合、新品チェックアウトと CI では ignore されず、`tmp/` 自体も存在しない
+  - 消す前に、結論が issue / コードへ移っているかと、issue や doc が指しているパスでないかを確かめる (`grep -rn 'tmp/' issues/`)。dotfiles では `make clean-tmp` (`DRY_RUN=1` で一覧のみ)
+- **スクリプト / テストが実行時に作る隔離ディレクトリは対象外**。既定は OS の一時領域 (`mktemp -d` / `t.TempDir()`)。`./tmp` に置くなら理由をコード直近に残す
+- 線引きは置き場所ではなく **終了時に消す責任が実装されているか**
+  - 🚨 パスで判断しない (`mktemp -d` は macOS では `/var/folders/…`、Linux では `/tmp` 配下になりうる)
+  - 🚨 `trap` は中断では走らず、dir を消してもそこで起こしたプロセスは残る (実例: `scripts/tmux_reap_orphan_servers.sh` の背景注記。里子化した tmux サーバで自動復元が 17 日間不発)
 
 ## Issue管理
 
-- **`issues/`（または `issue/`）を持つ repo では、SessionStart hook（`_claude/hooks/issue-rules-inject.sh`）が
-  issue 運用規約を注入する。注入された規約はこの CLAUDE.md と同じ拘束力で従う**。正本は
-  `~/dotfiles/_claude/issue-rules.md`、repo 固有の事項は各 repo の `issues/README.md` が補う。
-  issues/ を持たない repo（仕事の repo 等）には適用しない
+- **`issues/` (または `issue/`) を持つ repo では、SessionStart hook が issue 運用規約を注入する。この CLAUDE.md と同じ拘束力で従う**。正本は `~/dotfiles/_claude/issue-rules.md`、repo 固有の事項は各 repo の `issues/README.md`。issues/ を持たない repo には適用しない
 - issues/ がある repo なのに注入が見当たらないときは、issue を触る前に正本を Read する
-- `issues/next/` の claim の手順は [`claim-issue-in-next-and-push.md`](rules/claim-issue-in-next-and-push.md)、
-  検証レポートを issue へ移す手順は [`move-report-conclusions-to-issues.md`](rules/move-report-conclusions-to-issues.md)
+- claim の手順は [`claim-issue-in-next-and-push.md`](rules/claim-issue-in-next-and-push.md)、検証レポートを issue へ移す手順は [`move-report-conclusions-to-issues.md`](rules/move-report-conclusions-to-issues.md)
 
 ## 設計方針
 
-- Godクラスを避けること。クラスが肥大化しそうな場合は、意味のある単位（責務ごと）でクラスを分割できないか検討すること
-- 変更したファイルにGodクラス/Godファイルの予兆（責務の混在、過度な行数など）を見つけたら、リファクタリングを提案すること（ただし行数だけで判断せず、下記のとおり複雑性が実際に下がるかで判断する）
-- **リファクタリングの目的は「複雑性を下げる」こと。行数が多いだけで単純にファイル/クラスを分けるのはリファクタではない**（分割は複雑性を移動するだけで削減しない）。「何をもって複雑性が下がるか」の判断基準と着手前の確認手順は [`verify-design-intent-before-refactor.md`](rules/verify-design-intent-before-refactor.md)
-- バグフィックス後、そのプロジェクトに導入されているlinterのカスタムルールやpresetルールで再発防止できないか検討し、提案すること
-- **zsh の hook (precmd/preexec) 経路から呼ぶ関数は `$(...)` でなく `REPLY` で返す**（fork が毎操作の体感レイテンシになる）。詳細は dotfiles repo の `rules/zsh-hook-return-via-reply.md`（dotfiles 固有の規範は `rules/README.md` が索引。zsh の trap 継承・Bench の見方もそこ）
-- **カバレッジ向上を要求されても、対象が「テスト困難 かつ 低価値」の両方を満たすなら拒否する**（数値のための水増しテストを書かない）。判断は「テスト容易性 × 価値」の 2 軸で行い、困難×高価値は逃げずにテスタブルへ直してから書く。詳細は [`refuse-low-value-coverage.md`](rules/refuse-low-value-coverage.md)
-- **検証は exit code ではなく「実行された証拠」で判定する**（exit 0 は「失敗しなかった」であり「そもそも走らなかった」を含む）。新設した検査は集約経路から実行して**その検査の出力が出ることを確認**する。`cmd | tail` の `$?` はパイプ終端の status。詳細は [`verify-execution-not-just-exit-code.md`](rules/verify-execution-not-just-exit-code.md)
-- **新規テストは「壊す変更を 1 つ当てて red を見る」まで確認してから commit する**（green は「正しい」ではなく「その書き方では壊せなかった」）。変異させても green のままのテストは主張を何も守っていないので書き直す。詳細は [`mutation-verify-new-tests.md`](rules/mutation-verify-new-tests.md)
-- **性能を主張するなら、実測値か「未実測である事実 + 実測の trigger」を残す**。数字なしで「削減した」と書かない（機能の issue で「動くはず」と書くのと同じ）。詳細は [`perf-claims-need-measurement.md`](rules/perf-claims-need-measurement.md)
-- **計測・テスト用の shim / wrapper を PATH 先頭に置くときは、実体を絶対パスで解決してから exec する**（相対名だと PATH 先頭の自分自身に解決して無限再帰し、しかも無音で回り続ける）。解決結果が shim 自身の配下でないことを起動時に確認する。詳細は [`path-shim-must-resolve-real-binary.md`](rules/path-shim-must-resolve-real-binary.md)
-- **外部コマンドの出力・終了コードを判定材料にするときは、stdout / stderr / exit code を最初から分離して測る**（`2>&1` や `| head` を通した観測を「実測事実」として設計に書かない。個別 CLI の仕様はルールでなく実装側のコメントを正本にする）。詳細は [`measure-external-cli-streams-separately.md`](rules/measure-external-cli-streams-separately.md)
-- **再利用される道具（スクリプト / CLI / Makefile target / lint ルール / ヘルパー）を新設したら、同じ変更で「入口のドキュメント」を更新する**（その作業手順を持つ skill・領域の CLAUDE.md / README・既存ツールの一覧表）。**ツールのヘッダコメントは入口に数えない**（そのファイルを開く動機は存在を知っている人にしかない）。既存ツールと使い分けが要るなら判断基準を 1 行で書く。詳細は [`new-tool-requires-entrypoint-docs.md`](rules/new-tool-requires-entrypoint-docs.md)
-- **端末 UI で全角と半角を同じ列に縦に並べない**（表示幅の合計が一致していても、半角 1 文字は全角 2 カラムのセルの左に寄るため目には揃わない。幅を数えるテストでは検出できず、人が見るまで分からない）。詳細は [`no-mixed-width-columns-in-terminal-ui.md`](rules/no-mixed-width-columns-in-terminal-ui.md)
-- **テストを壁時計に依存させない**。経過時間で assert せず「何が起きたか / 何回 / どの順で」で判定し、何かを待つときは `sleep N` でなく**成立条件を上限つきでポーリング**する（`sleep` は速いマシンでは緑のまま通り、並列化や負荷で初めて落ちる）。詳細は [`avoid-wall-clock-assertions.md`](rules/avoid-wall-clock-assertions.md)
-- **表示・レイアウトの意思決定は、本体へ入れる前にサンプルレンダラで回し切る**（本体に入れた時点でテストが「今の見た目」に張り付き、以降は見た目を変えるたびにテストを張り替えるコストを払う。凍結するのは見た目の判断だけで、ロジックはサンプルを待たずに書いてよい）。詳細は [`decide-layout-in-sample-renderer-first.md`](rules/decide-layout-in-sample-renderer-first.md)
-- **対話プロンプトの確認は回答をパイプで流し込まない**（`printf 'y\n' | script -q` はパイプが閉じた時点で pty へ EOF を送り、`read` が空回答を受ける。「y を入れたのに中止された = 実装のバグ」に見える赤が出る）。pty driver で「プロンプトを待ってから書く」。詳細は [`verify-interactive-prompt-with-pty-driver.md`](rules/verify-interactive-prompt-with-pty-driver.md)
+- God クラスを避ける。肥大化しそうなら責務ごとに分割できないか検討する
+- 変更したファイルに God クラス / God ファイルの予兆 (責務の混在など) を見つけたらリファクタを提案する。ただし**目的は複雑性を下げること**で、行数だけを理由にファイルを分けるのはリファクタではない (分割は複雑性を移動するだけ)。判断基準は [`verify-design-intent-before-refactor.md`](rules/verify-design-intent-before-refactor.md)
+- バグフィックス後、その project の linter のカスタムルール / preset で再発防止できないか検討し、提案する
+- 以下は rule が正本。発動点だけ並べる:
 
+| 発動点 | rule |
+|---|---|
+| カバレッジ向上を求められた | [`refuse-low-value-coverage.md`](rules/refuse-low-value-coverage.md) |
+| 検査・テストを「通った」と判断する | [`verify-execution-not-just-exit-code.md`](rules/verify-execution-not-just-exit-code.md) |
+| 新規テストを commit する | [`mutation-verify-new-tests.md`](rules/mutation-verify-new-tests.md) |
+| 性能を主張する | [`perf-claims-need-measurement.md`](rules/perf-claims-need-measurement.md) |
+| shim / wrapper を PATH 先頭に置く | [`path-shim-must-resolve-real-binary.md`](rules/path-shim-must-resolve-real-binary.md) |
+| 外部コマンドの出力・終了コードを判定材料にする | [`measure-external-cli-streams-separately.md`](rules/measure-external-cli-streams-separately.md) |
+| 再利用される道具を新設する | [`new-tool-requires-entrypoint-docs.md`](rules/new-tool-requires-entrypoint-docs.md) |
+| 端末 UI で縦に揃える | [`no-mixed-width-columns-in-terminal-ui.md`](rules/no-mixed-width-columns-in-terminal-ui.md) |
+| テストで時間を測る / `sleep` で待つ | [`avoid-wall-clock-assertions.md`](rules/avoid-wall-clock-assertions.md) |
+| 見た目が未確定のまま本体を書く | [`decide-layout-in-sample-renderer-first.md`](rules/decide-layout-in-sample-renderer-first.md) |
+| 対話プロンプトを自動で確認する | [`verify-interactive-prompt-with-pty-driver.md`](rules/verify-interactive-prompt-with-pty-driver.md) |
+| zsh の precmd / preexec から関数を呼ぶ | `~/dotfiles/rules/zsh-hook-return-via-reply.md` (`REPLY` で返す。dotfiles 固有の規範の索引は同 `rules/README.md`) |
 
 ## コード変更時の自律改善
 
-変更を入れる前に、変更先の周辺コードを読み、以下に該当するものがあれば **変更と同時に** 改善すること（提案ではなく実行）。
+変更を入れる前に変更先の周辺コードを読み、以下に該当するものがあれば **変更と同時に** 改善する (提案ではなく実行)。
 
-- **重複コード**: 同じロジックが複数箇所にある場合、まずヘルパー関数に抽出してから変更を入れる。同じ変更を2箇所にコピペするのは禁止
-  - **文書・規約にも同じ規律を当てる**。同じ段落を 2 箇所目へ書くよう頼まれた時点で、単一の正本から読ませる案を一文添える（issue 402）
-- **死んでいる分岐・未使用コード**: 変更対象の関数内に到達不能なコードがあれば削除する
-- **不自然な責務の混在**: 変更を入れようとしている関数が明らかに複数の責務を持っていたら、まず分離してから変更を入れる
+- **重複コード**: 同じロジックが複数箇所にあるなら、まずヘルパーに抽出してから変更を入れる。同じ変更を 2 箇所にコピペしない
+  - 文書・規約も同じ。同じ段落を 2 箇所目へ書くよう頼まれたら、単一の正本から読ませる案を一文添える
+- **死んでいる分岐・未使用コード**: 変更対象の関数内の到達不能コードは削除する
+- **不自然な責務の混在**: 変更対象の関数が明らかに複数の責務を持っていたら、まず分離してから変更を入れる
 
-「依頼された変更だけ入れて終わり」ではなく、触ったコードを前より良い状態にして返すこと。ただし、依頼と無関係なファイルまで手を広げる必要はない。
+触ったコードを前より良い状態にして返す。ただし依頼と無関係なファイルまで手を広げない。
 
 ## ぼやきポイント推奨
 
-作業中に「依頼範囲外だが将来直したくなりそうな違和感」を見つけたら、応答の最後に **ぼやき（短い気づき）** として一言添えること。判断材料の提供であり、勝手に修正してはならない（依頼範囲外）。
+依頼範囲外だが将来直したくなりそうな違和感を見つけたら、応答の最後に一言添える。判断材料の提供であり、勝手に修正しない。
 
-- 対象例: 二重に実装されている規約・未統一のスタイル混在・ハードコード・マジックナンバー・テスト漏れの予兆・依存方向の歪み・命名の食い違い 等
-- 形式: 「**なお、ぼやきポイント**: 〜」の一行〜数行。長文の分析にはしない。issue 化が妥当そうなら「issue 化しますか？」と一言添える
-- 「タスクと無関係だから黙る」のではなく「無関係だが伝える価値があるなら一行ぼやく」
-- 確信が低いもの・好みの問題・ユーザーが既知のものはぼやかなくてよい。ノイズになる
-- **ぼやきも事実の主張なら裏を取る**。「〜は検査されていない」「〜が無い」のような不在の主張は、軽い口調ゆえに裏取りの敷居が下がる。取っていないなら「**未確認だが**」と明示する（誤ったぼやきは誤った判断材料であり、そのまま issue 化まで進むと反証コストを丸ごと払う。実例 2026-09-02: 「glogx の theme 色は機械検査の対象外」は誤りで、検査は `src/glogx/box_test.go` に在った — Go の検査は `tests/` ではなく `src/<proj>/*_test.go` にある）
+- 対象例: 二重実装の規約・スタイル混在・ハードコード・マジックナンバー・テスト漏れの予兆・依存方向の歪み・命名の食い違い
+- 形式: 「**なお、ぼやきポイント**: 〜」を一行〜数行。issue 化が妥当なら「issue 化しますか？」と添える
+- 確信が低いもの・好みの問題・ユーザーが既知のものはぼやかない
+- **ぼやきも事実の主張なら裏を取る**。特に「〜は検査されていない」のような不在の主張。取っていないなら「**未確認だが**」と明示する (実例 2026-09-02: 「検査対象外」とぼやいた検査が `src/glogx/box_test.go` に在った)
 
 ## 不具合対応の原則
 
-**パッチワーク（症状への対処）ではなく、構造的な根本改修を行うこと。** これは最も重要な原則の一つである。
+**パッチワーク (症状への対処) ではなく、構造的な根本改修を行う。** 最も重要な原則の一つ。
+「ログを足して現象を追う」より先に、設計上の前提 (契約) を見直して構造で潰す。
 
-不具合対応は「ログを足して現象を追う」より先に、設計上の前提（契約）を見直して構造で潰す。
-
-- まず **不変条件（Invariant）** を言語化する（例：deep link は失われない／同一ファイルの同一性は一意／UI失敗で再生は止まらない）
-- **失敗モード**（順序競合・再送・二重実行・部分失敗・再起動）を列挙し、設計で吸収する
-- **境界（main/renderer、UI/Domain、外部API）** ごとに責務を分離し、手続きの連鎖ではなく「コマンド＋結果」の形にする
-- 同一性は **安定キー（id/path_lower 等）** に統一し、表示用文字列に依存しない
-- 追加ログは最後の手段。必要なら「イベント／状態遷移」が観測できる設計にする
-- **「この if 文を足せば直る」と思ったら立ち止まる** — その条件分岐が必要になった設計上の前提を疑うこと
-- **既存の呼び出しに新しい値・フラグ・経路を通す修正では、受け側のガード (preflight / reject) を先に grep で洗う** — 新しい呼ばれ方で初めて発火する既存ガードとの相互作用が悪化を作る。fake にも受け側の reject を模させる。詳細は [`survey-receiver-guards-before-passing-new-values.md`](rules/survey-receiver-guards-before-passing-new-values.md)
-- 修正が「症状への対処」ではなく「前提の是正」になっているかを必ず確認する。場当たり的な条件分岐の追加や、特定ケースだけを救うワークアラウンドは原則禁止
-- **直したバグは「同じ間違いが別の場所にもある」前提で grep する** — 同じ API・同じイディオムの使用箇所を横断確認する。特にテスト側で見つけた不具合は production 側を、production で見つけたらテスト・別モジュール側を必ず見る（実例: `SecItemDelete` の単発呼び出しを test helper で直した後、production の同一バグが残っていた）。**関数の契約変更（返し方・シグネチャ）も同じ扱いにする** — `echo` 返しを `REPLY` 返しへ変えたとき `$(...)` の呼び残しが 1 件出た（既存テストが検出。無ければ follow 抑止が静かに壊れていた）
-- **効果がなかった修正は必ず revert する** — バグ修正を入れて検証した結果、効果がなかった（的外れだった）場合、その修正をコードに残さず元に戻すこと。効果のない変更が積み重なるとコードの意図が不明瞭になり、将来の改修を妨げる
-- **UI / デバイス / 環境に関わる問題は、修正を提案する前に実際の環境制約（入力手段・ツールのバージョン・他 platform の参照実装）を確認する**。詳細は [`check-other-platform-reference.md`](rules/check-other-platform-reference.md) / [`no-osascript-for-ui-verification.md`](rules/no-osascript-for-ui-verification.md) / [`no-ios-simulator-verification.md`](rules/no-ios-simulator-verification.md)
+- まず **不変条件 (Invariant)** を言語化する (例: deep link は失われない / 同一ファイルの同一性は一意 / UI 失敗で再生は止まらない)
+- **失敗モード** (順序競合・再送・二重実行・部分失敗・再起動) を列挙し、設計で吸収する
+- **境界 (main/renderer、UI/Domain、外部 API)** ごとに責務を分離し、手続きの連鎖ではなく「コマンド + 結果」の形にする
+- 同一性は **安定キー (id / path_lower 等)** に統一し、表示用文字列に依存しない
+- 追加ログは最後の手段。必要なら「イベント / 状態遷移」が観測できる設計にする
+- **「この if 文を足せば直る」と思ったら立ち止まる**。その分岐が必要になった前提を疑う。特定ケースだけを救うワークアラウンドは原則禁止
+- **直したバグは「同じ間違いが別の場所にもある」前提で grep する**。テストで見つけたら production を、production で見つけたらテスト・別モジュールを見る。関数の契約変更 (返し方・シグネチャ) の呼び残しも同じ扱い
+- **効果がなかった修正は必ず revert する**
+- 新しい値・フラグ・経路を既存の呼び出しに通すなら [`survey-receiver-guards-before-passing-new-values.md`](rules/survey-receiver-guards-before-passing-new-values.md)。UI / デバイス / 環境の問題は [`check-other-platform-reference.md`](rules/check-other-platform-reference.md) / [`no-osascript-for-ui-verification.md`](rules/no-osascript-for-ui-verification.md) / [`no-ios-simulator-verification.md`](rules/no-ios-simulator-verification.md)
 
 ## レビュー方針
 
-- **重要なコード変更・バグ修正は、設計と実装の両方を外部レビューに通すことを基本とする**（設計 → レビュー → 実装 → テスト → レビュー）。レビュワーは、codex の使用がユーザーに許可されている環境では codex、それ以外では観点を分けた read-only サブエージェント（作法は [`issue-creation-codex-review.md`](rules/issue-creation-codex-review.md) の代替節）。指摘は無視せず、根拠の弱い断定・false positive を訂正してから commit する
-- 起動は skill 経由（codex を使う環境では `codex-review` / `cross-review` / `review-loop` / `codex-lead` / `codex-drive`、下表参照）。codex を使わない環境では、観点を分けた read-only サブエージェントを直接起動する（`cross-review` skill は codex を含むため丸ごとは使えない）。typo・数行の chore など軽微な変更は対象外
-- **レビューは「探す」だけで閉じない。壊しにいくパス（敵対的レビュー / red team）を 1 本混ぜる**。判断ロジック・境界・状態遷移・外部 I/O が動いた変更では、commit / PR クローズ前の最終ゲートとして通す（機械的置換・設定値変更だけなら省略してよいが、省略したことは一言明示する）
-- **「指摘なし」は「正しい」ではなく「その探し方では壊せなかった」**として扱う。不変条件は「壊す方法が見つからなかった」ではなく、テスト・型・設計で固定して初めて閉じる
-- 🚨 **commit message / 報告に「N 箇所すべてに対応した」と書くなら、その N を機械で数えてから書く**。
-  `git show --stat` / `grep -c` で足りる（実測 2026-09-06: 「4 hook すべてに入れ子のケースを追加」と
-  書いたが、変わったテストは 3 ファイルだった。無検査のまま「テストで守られている」が履歴に残る）
-- **主張は証拠ではない**。自分/codex/エージェントの「対応済み」「検証済み」「テスト green」は、diff・実行結果・外部基準（spec の test vector / 実サーバ / CI）で裏を取ってから受け入れる。裏の取れない主張は「未検証」として報告に残す
-  - 🚨 **「等価」「同一」「挙動は変わらない」を書こうとした瞬間**も同じ。自分の書き換えの同値性は、上の「対応済み」型と違って**他人の申告ではないぶん疑われにくい**が、裏取りなしに書けば同じ嘘が履歴に残る。**書く前に compiler / テストで確かめる** (実測 2026-09-21 obaket 888: `!= .enumerating` を exhaustive switch へ書き換えて enum 7 case のうち 2 case を落とし、ビルドを壊したまま commit message に「真理値表は今日の実装と完全に同一」と書いた。取りこぼしを compiler に止めさせるのが目的の変更で、最初の被害者が自分だった)
-- **自分で新設した「安全機構」(破壊的操作・後始末・検査/ゲート) は自己レビューで閉じない**。異常系 (対象 0 件 / 依存コマンド失敗 / 権限なし / 並行) を実験で作り、観点を分けた敵対的レビューを最終ゲートにする。詳細は [`adversarial-review-own-safeguards.md`](rules/adversarial-review-own-safeguards.md)
-- **「冗長だから外す」と判断した防御は、外す前に「それがマスクしていた failure mode」を列挙する**。本来の目的に対して冗長なことと、他に何も守っていないことは別。残る防御が単一障害点なら、壊す変異が検出されるか確かめてから外す。詳細は [`list-masked-failure-modes-before-removing-guard.md`](rules/list-masked-failure-modes-before-removing-guard.md)
-- **敵対レビューの出力こそ無検閲で採用しない**。発火条件（入力・順序・環境）が具体的で再現できたものだけ修正し、再現しないものは記録、示せないものは「未確認リスク」として issue / 観測ポイントに落とす。推測に基づく防御コードを足さない（作法の正本は `~/.claude/skills/codex-review/SKILL.md` の「敵対的レビューの作法」）
+- **重要なコード変更・バグ修正は、設計と実装の両方を外部レビューに通す** (設計 → レビュー → 実装 → テスト → レビュー)。codex が許可されている環境では codex (`codex-review` / `cross-review` / `review-loop` / `codex-lead` / `codex-drive`)、それ以外では観点を分けた read-only サブエージェント (作法は [`issue-creation-codex-review.md`](rules/issue-creation-codex-review.md) の代替節)。typo・数行の chore は対象外
+- 指摘は無視せず、根拠の弱い断定・false positive を訂正してから commit する
+- **壊しにいくパス (敵対的レビュー / red team) を 1 本混ぜる**。判断ロジック・境界・状態遷移・外部 I/O が動いた変更では commit 前の最終ゲートにする (機械的置換・設定値変更だけなら省略してよいが、省略したと明示する)
+- **「指摘なし」は「その探し方では壊せなかった」**。不変条件はテスト・型・設計で固定して初めて閉じる
+- **主張は証拠ではない**。自分 / codex / エージェントの「対応済み」「テスト green」は、diff・実行結果・外部基準で裏を取ってから受け入れる。取れないものは「未検証」と報告する
+  - 🚨 **「N 箇所すべてに対応した」と書くなら N を機械で数えてから** (`git show --stat` / `grep -c`。実測 2026-09-06: 4 と書いて実際は 3)
+  - 🚨 **「等価」「挙動は変わらない」も書く前に compiler / テストで確かめる**。自分の書き換えは疑われにくい (実測 2026-09-21: exhaustive switch 化で 2 case を落とし、ビルドを壊したまま「完全に同一」と書いた)
+- 自分で新設した安全機構は [`adversarial-review-own-safeguards.md`](rules/adversarial-review-own-safeguards.md)、防御を外すときは [`list-masked-failure-modes-before-removing-guard.md`](rules/list-masked-failure-modes-before-removing-guard.md)
+- **敵対レビューの出力こそ無検閲で採用しない**。発火条件が具体的で再現できたものだけ直し、再現しないものは記録、示せないものは「未確認リスク」として issue に落とす。推測で防御コードを足さない (作法の正本は `~/.claude/skills/codex-review/SKILL.md` の「敵対的レビューの作法」)
 
 ## スキルファイル参照
 
-`~/.claude/skills/` に専門知識スキルが格納されている。以下のキーワードに関連するタスクでは、対応する SKILL.md を作業前に Read すること。
-
-**エージェント (31 件) の一覧は [`agents/README.md`](agents/README.md)**。下の表は skill が主役で
-agent は一部しか載っていないので、**agent を探すときはそちらを見る** (名前を知らないと呼べない
-状態を避けるための入口。issue 001 の項目 21)。索引と実体の乖離は
-`tests/claude/test_agents_index.sh` が検出する。
+以下のキーワードに関連するタスクでは、対応する SKILL.md を作業前に Read する。
+agent はこの表に一部しか載っていないので、**agent を探すときは [`agents/README.md`](agents/README.md) を見る**
+(乖離は `tests/claude/test_agents_index.sh` が検出する)。
 
 | キーワード | 参照先 |
 |-----------|-------|
