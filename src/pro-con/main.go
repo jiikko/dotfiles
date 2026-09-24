@@ -4,6 +4,7 @@
 //	pro-con              TUI を起動する (本物: 今の Claude Code の session を読み取り専用で出す)
 //	pro-con --mock       模擬データで起動する (claude は起動しない。動作確認用)
 //	pro-con card …       PM / PG が使うカードの操作 (受付の箱に置く。pro-con card で使い方)
+//	pro-con daemon       本物のモードの dispatcher を常駐させる (PG を起動する。週の利用枠を使う)
 //	pro-con fake-attach  attach の代わりに TUI から起動される内部用のコマンド
 //
 // 設定は ~/.config/pro-con/config.toml (無ければ既定値。書式は config package の doc)。
@@ -61,6 +62,23 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				return 1
 			}
 			return runCard(args[1:], liveDir(home), stdout, stderr)
+		case "daemon": // 本物のモードの dispatcher を常駐させる (daemoncmd.go)
+			home, err := os.UserHomeDir()
+			if err != nil {
+				_, _ = fmt.Fprintln(stderr, "pro-con:", err)
+				return 1
+			}
+			cfg, err := config.Load(config.DefaultPath(home))
+			if err != nil {
+				_, _ = fmt.Fprintln(stderr, "pro-con: 設定を読めない:", err)
+				return 1
+			}
+			repos, _ := config.Discover(cfg, home)
+			paths := map[string]string{}
+			for _, r := range repos {
+				paths[r.Name] = r.Path
+			}
+			return runDaemon(args[1:], liveDir(home), paths, stdout, stderr)
 		case "-h", "--help":
 			_, _ = fmt.Fprintln(stdout, "usage: pro-con [--mock]   (既定は今の Claude Code の session を読み取り専用で出す。--mock は模擬データ)")
 			return 0

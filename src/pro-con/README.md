@@ -8,6 +8,7 @@ PM (producer) と PG (consumer) を分けて Claude Code を並列に回すた�
 ```sh
 bin/pro-con          # 本物: pro-con が起動した Claude Code の session だけを読み取り専用で出す (live。issue 424)
 bin/pro-con --mock   # 模擬: claude は起動しない。模擬の backend (fake) が状態を進める (動作確認用)
+bin/pro-con daemon   # 本物のモードの dispatcher (受付の箱の適用・PG の起動と再開・記録への登録)。2 つ起動しない。🚨 PG を起動するので利用枠を使う
 bin/pro-con card …   # PM / PG が使うカードの操作 (add / plan / ask / answer / review / close)。受付の箱に置くだけで、適用は daemon (issue 427)
 ```
 

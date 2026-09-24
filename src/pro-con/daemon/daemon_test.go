@@ -244,3 +244,21 @@ func TestRegisterRefusesOlderSession(t *testing.T) {
 		t.Fatalf("起動より前の session を取り込んだ: %+v %v", reg, notes)
 	}
 }
+
+// daemon は 2 つ起動しない (記録の書き手は 1 つだけ)。1 つ目が外したら取れる。
+func TestLockIsExclusive(t *testing.T) {
+	dir := t.TempDir()
+	unlock, err := Lock(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Lock(dir); !errors.Is(err, ErrRunning) {
+		t.Fatalf("2 つ目の daemon がロックを取れた: %v", err)
+	}
+	unlock()
+	again, err := Lock(dir)
+	if err != nil {
+		t.Fatalf("外した後にロックを取れない: %v", err)
+	}
+	again()
+}

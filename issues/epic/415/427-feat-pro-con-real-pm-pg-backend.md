@@ -40,7 +40,9 @@
       「外から操作された疑い」を知らせて書き直さない。最初の登録も、session の起動がカードの起動より前なら取り込まない。変異 2 本が red。
       🚨 pending は daemon のメモリの中だけ。daemon が起動し直すと失うので、その間に Claude Code が自動で再開した PG は「外から操作された疑い」に倒れる (3c-2 で扱う)
   - [ ] 3c-2 落ちた回数で止める (426 の決定 4)・watchdog (停滞)
-  - [ ] 3c-3 `pro-con daemon` の常駐と排他 (2 つ起動しない)
+  - [x] 3c-3 `pro-con daemon` の常駐と排他 (2 つ起動しない) — 3c-2 より先に済ませた (daemon を動く形にするため)
+    - 済み (2026-09-25): `pro-con daemon [--limit N] [--once]` (`src/pro-con/daemoncmd.go`)。3 秒ごとに Tick し、何をしたかを時刻つきで stdout へ。
+      排他は `daemon.lock` の flock (プロセスが終われば OS が外す)。変異 1 本 (flock を外す) が red。🚨 本物の claude では未実行 (3f)
 - [ ] **3d 画面**: 本物の backend が 3a の記録を読み、書き込み (回答・依頼 等) は箱に置く。読み取り専用をやめる
 - [ ] **3e PM への指示書**: PM の session に渡す、`pro-con card` の使い方と規律 (AskUserQuestion を使わない 等)
 - [ ] **3f 本物の claude で通しの確認** (枠を使う。424 から引き継いだ受け入れ条件もここ)
