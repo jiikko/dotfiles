@@ -212,14 +212,24 @@ if (( w_armed != w_idle )); then
   print -u2 "  両分岐を同じ #{pN:} で包むこと (_tmux.conf の status-right ブロック)"
   exit 1
 fi
-if (( w_armed != sr_len )); then
-  print -u2 "[test-tmux:zsh] status-right の表示幅 ${w_armed} が status-right-length ${sr_len} と一致しない (切れる/余る)"
+# pro-con の件数 (@pro-con-status) は件数があるときだけキーガイドの左に出る。キーガイドの島の幅は変えず、
+# 件数が最大 (2 桁ずつ) でも status-right-length で切れない (_tmux.conf の status-right ブロック)
+pc_max='pro-con ?99 停滞99 🚨落ちた99'
+"${TMUX_CMD[@]}" set -g @pro-con-status "$pc_max" >/dev/null
+w_pc=$(sr_width "")
+"${TMUX_CMD[@]}" set -gu @pro-con-status >/dev/null
+if (( w_pc != w_idle + ${(m)#pc_max} + 1 )); then
+  print -u2 "[test-tmux:zsh] status-right に pro-con の件数が出ない / キーガイドの幅が変わる: 件数あり ${w_pc} 件数なし ${w_idle} 件数の文 ${(m)#pc_max}"
+  exit 1
+fi
+if (( w_pc > sr_len )); then
+  print -u2 "[test-tmux:zsh] 件数が最大のとき status-right の表示幅 ${w_pc} が status-right-length ${sr_len} を超える (切れる)"
   exit 1
 fi
 assert_no_style_leak "status-right/armed" \
   "$("${TMUX_CMD[@]}" set -g @sr_probe 1 >/dev/null; "${TMUX_CMD[@]}" display-message -t dotfiles_test -p "${fmt_sr/client_prefix/@sr_probe}")"
 "${TMUX_CMD[@]}" set -gu @sr_probe >/dev/null
-print "[test-tmux:zsh] ok: status-right は両分岐とも ${w_armed} セル (status-right-length と一致)"
+print "[test-tmux:zsh] ok: status-right は両分岐とも ${w_armed} セル、pro-con の件数が最大でも ${w_pc} セル (status-right-length ${sr_len} に収まる)"
 
 # glogx popup (prefix g / C-g) の git repo ガード。repo 外では popup を出さず toast に
 # 落ちることを、conf 内の実際の条件式を取り出して両方向 (repo 内 / repo 外) で実行して固定する。
