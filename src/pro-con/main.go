@@ -1,7 +1,8 @@
 // pro-con — PM (producer) と PG (consumer) を分けて Claude Code を並列に回すための TUI。
-// 設計は issues/ の 415。今は模擬 backend (fake) だけで動く「ハリボテ」で、claude は起動しない。
+// 設計は issues/ の 415 (epic)。本物の backend は今は読み取り専用 (live。issue 424)、模擬 (fake) は動作確認用に残す。
 //
-//	pro-con              TUI を起動する (模擬データ)
+//	pro-con              TUI を起動する (本物: 今の Claude Code の session を読み取り専用で出す)
+//	pro-con --mock       模擬データで起動する (claude は起動しない。動作確認用)
 //	pro-con fake-attach  attach の代わりに TUI から起動される内部用のコマンド
 //
 // 設定は ~/.config/pro-con/config.toml (無ければ既定値。書式は config package の doc)。
@@ -9,6 +10,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -22,6 +24,7 @@ import (
 	"pro-con/backend"
 	"pro-con/config"
 	"pro-con/fake"
+	"pro-con/live"
 	"pro-con/ui"
 	"pro-con/upgrade"
 )
@@ -30,7 +33,18 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
+// stateful は、ライブアップグレードで状態を引き継ぐ backend (模擬だけ。本物の読み取り専用は持たない)。
+type stateful interface {
+	Save() ([]byte, error)
+	Restore([]byte) error
+}
+
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	mock := false
+	if len(args) > 0 && args[0] == "--mock" {
+		mock = true
+		args = args[1:]
+	}
 	if len(args) > 0 {
 		switch args[0] {
 		case "fake-attach":
@@ -40,7 +54,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 			return fakeAttach(args[1], stdin, stdout)
 		case "-h", "--help":
-			_, _ = fmt.Fprintln(stdout, "usage: pro-con   (模擬データで TUI を起動する。claude は起動しない)")
+			_, _ = fmt.Fprintln(stdout, "usage: pro-con [--mock]   (既定は今の Claude Code の session を読み取り専用で出す。--mock は模擬データ)")
 			return 0
 		default:
 			_, _ = fmt.Fprintf(stderr, "pro-con: 未知の引数 %q (pro-con --help)\n", args[0])
@@ -64,7 +78,19 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	for i, r := range repos {
 		scopes[i] = backend.Repo{Name: r.Name, Path: r.Path}
 	}
-	sim := fake.New(time.Now().Truncate(time.Minute)) // 模擬時間の起点は今 (時刻の表示が今に近い方が見本として読みやすい)
+	// 模擬と本物で状態ファイルの置き場所を分ける (模擬のカードが本物の記録に混ざらないように。issue 424)
+	var be backend.Backend
+	dir := filepath.Join(stateDir(home), "live")
+	if mock {
+		be = fake.New(time.Now().Truncate(time.Minute)) // 模擬時間の起点は今 (時刻の表示が今に近い方が見本として読みやすい)
+		dir = filepath.Join(stateDir(home), "mock")
+	} else {
+		lb := live.New(scopes, home)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		lb.Start(ctx)
+		be = lb
+	}
 	// ライブアップグレードで引き継いだ状態。読んだら環境変数は消す (エディタ・claude などの子プロセスへ漏らさない)
 	resumePath := takeResumeEnv()
 	var uiData []byte
@@ -75,15 +101,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			notes = append(notes, "引き継ぎに失敗したので最初から ("+resumePath+" は残した): "+err.Error())
 			resumePath = ""
 		} else {
-			if len(st.Backend) > 0 {
-				if err := sim.Restore(st.Backend); err != nil {
+			if s, ok := be.(stateful); ok && len(st.Backend) > 0 {
+				if err := s.Restore(st.Backend); err != nil {
 					notes = append(notes, "模擬の状態を引き継げなかった: "+err.Error())
 				}
 			}
 			uiData = st.UI
 		}
 	}
-	m := ui.New(sim, scopes)
+	m := ui.New(be, scopes)
 	if uiData != nil {
 		if err := m.ImportState(uiData); err != nil {
 			notes = append(notes, "UI の状態を引き継げなかった: "+err.Error())
@@ -112,7 +138,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			removeResume(resumePath)
 			return 0
 		}
-		p, err := switchToNew(m, sim, args, stateDir(home), resumePath)
+		p, err := switchToNew(m, be, execArgs(mock, args), dir, resumePath)
 		resumePath = p
 		m.UpgradeFailed(err)
 	}
@@ -124,14 +150,16 @@ var execFn upgrade.ExecFunc = syscall.Exec
 // switchToNew は状態を書き出して新版を exec する。成功すると戻らない。戻ってきたら (状態のファイルのパス, エラー)
 // (旧版のまま続ける)。引き継いだ状態のファイル (resume) があればそこへ上書きする (溜めない。消したパスを案内しない)。
 // exec に失敗したとき、新しく作ったファイルは消す (旧版のまま続けるので要らない)。
-func switchToNew(m *ui.Model, sim *fake.Sim, args []string, dir, resume string) (string, error) {
+func switchToNew(m *ui.Model, be backend.Backend, args []string, dir, resume string) (string, error) {
 	uiData, err := m.PrepareSwitch(ui.SwitchWait)
 	if err != nil {
 		return resume, err
 	}
-	beData, err := sim.Save()
-	if err != nil {
-		return resume, err
+	var beData []byte
+	if s, ok := be.(stateful); ok {
+		if beData, err = s.Save(); err != nil {
+			return resume, err
+		}
 	}
 	path, err := upgrade.Save(dir, resume, upgrade.State{UI: uiData, Backend: beData})
 	if err != nil {
@@ -144,6 +172,14 @@ func switchToNew(m *ui.Model, sim *fake.Sim, args []string, dir, resume string) 
 		return resume, err
 	}
 	return path, nil
+}
+
+// execArgs は新版に渡す引数 (--mock を付け直す。付け忘れると、模擬で使っていたのに本物で起動し直す)。
+func execArgs(mock bool, args []string) []string {
+	if mock {
+		return append([]string{"--mock"}, args...)
+	}
+	return args
 }
 
 // wrapperPath は案内に出す起動のコマンド (bin/pro-con の絶対パス。見つからなければ "bin/pro-con")。

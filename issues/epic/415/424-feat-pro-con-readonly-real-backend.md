@@ -35,10 +35,10 @@ PM / PG の仕組みが無くても「どの session が何をしているか忘
 
 ## 受け入れ条件
 
-- [ ] `bin/pro-con` を本物の backend で起動する口 (フラグか config) があり、模擬とは画面で区別できる (上の「模擬と本物の併用」節)
-- [ ] 模擬と本物で状態ファイルの置き場所が分かれている
-- [ ] 実在の session が一覧に出て、状態・最後の発言・cwd が読める
-- [ ] 取れないとき (claude が無い / timeout / 読めない transcript) を 0 件として出さない (`agents` の既存の扱いと揃える)
+- [x] `bin/pro-con` を本物の backend で起動する口 (フラグか config) があり、模擬とは画面で区別できる (上の「模擬と本物の併用」節)
+- [x] 模擬と本物で状態ファイルの置き場所が分かれている
+- [x] 実在の session が一覧に出て、状態・最後の発言・cwd が読める (隔離 tmux で 6 本を確認)
+- [x] 取れないとき (claude が無い / timeout / 読めない transcript) を 0 件として出さない (前のカードを残し、理由を不変条件の違反の欄に出す)
 
 ## 関連ファイル
 
@@ -46,4 +46,9 @@ PM / PG の仕組みが無くても「どの session が何をしているか忘
 
 ## 進捗
 
-- [ ] 未着手
+- [x] 読み取り専用の本物の backend (`src/pro-con/live`) と `--mock` の切り替え (2026-09-24)
+  - 実測 (Claude Code 2.1.281): Desktop の対話 session と `--bg` の session の transcript は同じ形式 (bg にだけ `sessionKind`・`custom-title`・`agent-name`)。
+    題名は `ai-title` / `custom-title`、最後に人間が打った文は `last-prompt`、人間の発言は `origin.kind == "human"`。
+    14MB の transcript の末尾 512KB を 5ms で読める。bg の最初の依頼は人間の発言の印が付かない (依頼の原文は last-prompt から取る)
+  - `claude agents --json` は 1 回 0.15 秒かかるので、画面の tick では呼ばず、裏の goroutine が 3 秒ごとに読み直す
+  - 担当 issue は推測しない (今は空)。対話の session の状態は idle / busy しか観測していない (waiting は bg だけで確認)

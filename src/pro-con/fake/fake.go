@@ -366,6 +366,9 @@ func (s *Sim) Snapshot() backend.Snapshot {
 	return backend.Snapshot{Now: s.now, Cards: cards, Consumers: cons, Limit: s.limit, DaemonTick: s.now, Violations: card.Check(cards)}
 }
 
+// Describe はヘッダーに出す説明 (backend.Describer)。
+func (s *Sim) Describe() string { return "mock: claude は起動しない。表示は模擬データ" }
+
 func (s *Sim) Apply(cmd backend.Command) (string, error) {
 	switch c := cmd.(type) {
 	case backend.Answer:

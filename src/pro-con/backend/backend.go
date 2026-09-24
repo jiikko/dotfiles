@@ -45,6 +45,12 @@ type Consumer struct {
 	Status  string // busy / waiting / idle (claude agents --json の status と同じ語)
 }
 
+// Describer はヘッダーに出す自分の説明を持つ backend (模擬か本物かを画面で見分けるため。任意)。
+type Describer interface{ Describe() string }
+
+// ReadOnlier は書き込みの操作を受け付けない backend (画面は依頼・回答などの案内を暗くする。任意)。
+type ReadOnlier interface{ ReadOnly() bool }
+
 // Command は UI からの操作。値として送り、backend が 1 か所で適用する。
 type Command interface{ isCommand() }
 

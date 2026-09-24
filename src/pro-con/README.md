@@ -3,11 +3,21 @@
 PM (producer) と PG (consumer) を分けて Claude Code を並列に回すための TUI。
 **設計の正本は issue 415** (epic `issues/epic/415/` の親 issue。残タスクは同じディレクトリの子 issue)。ここには実装側の事情だけを書く。
 
-## 現状: ハリボテ (模擬データで動く)
+## 起動のしかた: 本物 (読み取り専用) と模擬
 
 ```sh
-bin/pro-con      # claude は起動しない。模擬の backend (fake) が状態を進める
+bin/pro-con          # 本物: 今の Claude Code の session (Desktop の対話と claude --bg) を読み取り専用で出す (live。issue 424)
+bin/pro-con --mock   # 模擬: claude は起動しない。模擬の backend (fake) が状態を進める (動作確認用)
 ```
+
+- どちらで動いているかはヘッダーに出る (`live: …` / `mock: …`。backend の `Describe`)。1 つの画面に両方のカードは混ぜない
+- ライブアップグレードの状態ファイルは `$XDG_STATE_HOME/pro-con/live` と `…/mock` に分ける。新版には `--mock` を付け直す
+- **本物 (live)**: `claude agents --json` を 3 秒ごとに裏で読み、session 1 本をカード 1 枚にする (busy → 作業中 / waiting → 質問待ち /
+  idle → レビュー)。題名・依頼の原文・人間の発言・出力は transcript (`~/.claude/projects/*/<sessionId>.jsonl`) の末尾 512KB から読む。
+  書き込み (依頼・回答・追加オーダー・btw・片付け) は受け付けず、案内も暗くなる。attach できるのは `claude --bg` の session だけ
+  (対話の session は Desktop で開く)。本物の PM / PG は issue 427
+
+## 模擬 (ハリボテ) の中身
 
 - 1 秒ごとに `Poll` し、fake の模擬時間が 1 分進む (カードが列を進む・PG が質問する・watchdog が停滞を拾う・リソースの順番が回る)
 - attach (`a`) は本物の `claude attach` の代わりに `pro-con fake-attach <id>` を `tea.ExecProcess` で起動する。

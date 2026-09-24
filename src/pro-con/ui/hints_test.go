@@ -59,3 +59,24 @@ func TestHintsInDrawer(t *testing.T) {
 		t.Fatalf("詳細の案内になっていない: %q", line)
 	}
 }
+
+// roSpy は書き込みを受け付けない backend (backend.ReadOnlier)。
+type roSpy struct{ *spy }
+
+func (roSpy) ReadOnly() bool { return true }
+
+// 読み取り専用の backend では、依頼・回答・追加オーダー・btw・片付けの案内を暗くする (押しても backend が拒否する)。
+func TestHintsDimWritesOnReadOnlyBackend(t *testing.T) {
+	be := roSpy{newSpy()}
+	be.snap.Cards = append(be.snap.Cards, card.Card{ID: "D1", State: card.Done, Ending: card.EndAnswered})
+	m := New(be, nil)
+	m.selected = "W1" // 質問待ち (書き込みを受け付ける backend なら r は明るい)
+	for _, h := range []string{"n 新しい依頼", "i issue から", "r 回答", "+ 追加オーダー", "w btw", "x 完了を片付け"} {
+		if !dimmed(t, m, h) {
+			t.Fatalf("読み取り専用なのに %q が明るい", h)
+		}
+	}
+	if dimmed(t, m, "Y 内容") || dimmed(t, m, "enter 詳細") {
+		t.Fatal("読むだけの操作 (Y / enter) まで暗くなった")
+	}
+}

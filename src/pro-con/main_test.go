@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,5 +74,15 @@ func TestTakeResumeEnvUnsets(t *testing.T) {
 	}
 	if v, ok := os.LookupEnv("PRO_CON_RESUME"); ok {
 		t.Fatalf("環境変数が残った: %q", v)
+	}
+}
+
+// ライブアップグレードで新版に渡す引数は --mock を付け直す (付け忘れると、模擬で使っていたのに本物で起動し直す)。
+func TestExecArgsKeepsMock(t *testing.T) {
+	if got := strings.Join(execArgs(true, nil), " "); got != "--mock" {
+		t.Fatalf("模擬の引数: %q", got)
+	}
+	if got := execArgs(false, nil); len(got) != 0 {
+		t.Fatalf("本物の引数に余計なものが付いた: %q", got)
 	}
 }
