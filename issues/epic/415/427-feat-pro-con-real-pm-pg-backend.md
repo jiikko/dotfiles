@@ -21,6 +21,12 @@
 - 同時実行数の上限は 2 から始める
 - dispatcher と watchdog は決定論的に作る (LLM に見張らせない)
 
+## 実測で分かった前提 (425)
+
+- PG の状態は `claude agents --json --all` の `status` / `state` / `pid` / `waitingFor` で読める (完了・API エラー・停止・プロセスの死・権限待ち・質問待ちを区別できる)
+- PG への送信は SendMessage (bg session も `ListAgents` に名前で出る)。枠は `claude -p "/usage"`
+- PG にもユーザーの hook と規約が効く (起動時 約 13 万 token。Stop hook が別の作業の issue を更新させにいく)。PG 用の `--settings` で hook を絞るかを決める
+
 ## 関連ファイル
 
 - `src/pro-con/backend/backend.go` (UI との口。模擬と同じ interface を満たす)
