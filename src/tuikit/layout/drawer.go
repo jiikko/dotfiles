@@ -65,9 +65,12 @@ func ComposeDrawer(base, panel []string, w, total int, colored bool) []string {
 	}
 	w = min(w, total)
 	left := total - w // 板の左辺 = 一覧が見えている幅
-	sep := "▏"
+	sep, reset := "▏", ""
 	if colored {
-		sep = sgr.Dim + sep + sgr.Reset
+		sep, reset = sgr.Dim+sep+sgr.Reset, sgr.Reset
+	}
+	if left >= total {
+		sep = "" // total <= 0 (w も 0 以下に丸まる) では区切り線を置く桁が無い
 	}
 	out := make([]string, len(base))
 	for i, b := range base {
@@ -75,29 +78,34 @@ func ComposeDrawer(base, panel []string, w, total int, colored bool) []string {
 		if i < len(panel) {
 			p = panel[i]
 		}
-		line := cut(b, left)
-		if colored {
-			line += sgr.Reset
-		}
-		line += termwidth.PadSpaces(max(left-termwidth.Of(line), 0))
-		if left < total {
-			line += sep
-		}
-		vis := cut(p, max(w-1, 0))
-		if colored {
-			vis += sgr.Reset
-		}
-		out[i] = line + vis + termwidth.PadSpaces(max(w-1-termwidth.Of(vis), 0))
+		// 一覧側は覗き見の幅より長いのが普通なので、測る前に切る。ansi.Truncate は冒頭で全体の
+		// 幅を測るので、先に Of で測ると長い行の走査が 1 回増える。
+		line := termwidth.Cut(b, left)
+		vis, vw := cutMeasure(p, max(w-1, 0))
+		// 1 行 1 回の連結にする (毎フレーム全行で走る。+= で継ぎ足すと 1 行あたり 5 回確保していた)
+		out[i] = line + reset + termwidth.PadSpaces(max(left-termwidth.Of(line), 0)) + sep +
+			vis + reset + termwidth.PadSpaces(max(w-1-vw, 0))
 	}
 	return out
 }
 
-// cut は s を表示幅 width へ切る (SGR は残し、印は付けない)。
-func cut(s string, width int) string {
+// cutMeasure は termwidth.Cut と同じ切り詰めを行い、結果の表示幅も返す。
+//
+// 本文側用: 本文は開ききった幅で整形済みなので、開いている間は必ず収まる。先に測って収まれば
+// 切り詰めを省く (ansi.Truncate は収まる行でも冒頭で全体の幅を測るので、Cut してから Of で
+// 測り直すと同じ行を 2 回走査する)。収まらない行 (開閉の途中) だけ切って測り直す。
+//
+// ⚠️ この近道はテストで固定されていない。収まる行では ansi.Truncate も確保せずに返すので確保回数に
+// 差が出ず、効果は時間にしか現れない。消すと BenchmarkComposeDrawer の open が 1.5 倍前後に戻る。
+func cutMeasure(s string, width int) (string, int) {
 	if width <= 0 {
-		return ""
+		return "", 0
 	}
-	return termwidth.Truncate(s, width, "")
+	if w := termwidth.Of(s); w <= width {
+		return s, w
+	}
+	c := termwidth.Cut(s, width)
+	return c, termwidth.Of(c)
 }
 
 // PadTo は行数を n へ揃える (足りなければ空行、多ければ切る)。一覧と本文のように行数の違う
