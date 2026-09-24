@@ -185,3 +185,62 @@ func TestParseBackgrounded(t *testing.T) {
 		t.Fatalf("TMUX / TMUX_PANE だけを落とすはず: %v", env)
 	}
 }
+
+// pro-con が再開していないのに pid が変わった session (外の shell で同じ session を再開した疑い) は、記録を書き直さずに知らせる。
+// daemon 自身の再開の後なら書き直す。
+func TestRegisterRefusesPidChangeNotCausedByDaemon(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 1)
+	l := &fakeLauncher{}
+	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", StartedAt: t0.UnixMilli()}}
+	d := newDaemon(t, dir, l, nil)
+	d.List = func(context.Context) ([]agents.Session, error) { return ss, nil }
+	for range 2 { // 起動 → 登録
+		if _, err := d.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ss[0].PID = 99 // 外で再開された
+	notes, err := d.Tick(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, _ := live.LoadRegistry(filepath.Join(dir, live.RegistryFile))
+	if len(reg) != 1 || reg[0].PID != 42 || !strings.Contains(strings.Join(notes, "\n"), "外から操作された疑い") {
+		t.Fatalf("外で pid が変わった session の記録を書き直した / 知らせない: %+v %v", reg, notes)
+	}
+	// daemon 自身が再開した後なら書き直す
+	for _, r := range []store.Request{{Kind: "ask", CardID: "C-001", Question: "q"}, {Kind: "answer", CardID: "C-001", Answer: "a"}} {
+		if _, err := store.Submit(dir, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 2 { // 再開 → 登録
+		if _, err := d.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reg, _ = live.LoadRegistry(filepath.Join(dir, live.RegistryFile))
+	if len(reg) != 1 || reg[0].PID != 99 {
+		t.Fatalf("daemon が再開した後の pid で書き直していない: %+v", reg)
+	}
+}
+
+// カードの起動より前に始まっている session (同じ短い id の別の session の疑い) は、最初の登録でも取り込まない。
+func TestRegisterRefusesOlderSession(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 1)
+	d := newDaemon(t, dir, &fakeLauncher{}, nil)
+	if _, err := d.Tick(context.Background()); err != nil { // 起動 (カードの Since = t0)
+		t.Fatal(err)
+	}
+	d.pending = nil // daemon が起動し直して、起動の直後の印を失った形
+	d.List = func(context.Context) ([]agents.Session, error) {
+		return []agents.Session{{ID: "id-pc-c-001", SessionID: "OLD", PID: 7, Kind: "background", StartedAt: t0.Add(-time.Hour).UnixMilli()}}, nil
+	}
+	notes, _ := d.Tick(context.Background())
+	reg, _ := live.LoadRegistry(filepath.Join(dir, live.RegistryFile))
+	if len(reg) != 0 || !strings.Contains(strings.Join(notes, "\n"), "起動より前") {
+		t.Fatalf("起動より前の session を取り込んだ: %+v %v", reg, notes)
+	}
+}

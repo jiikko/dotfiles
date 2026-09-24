@@ -38,6 +38,10 @@ type Daemon struct {
 	Launch Launcher
 	List   func(context.Context) ([]agents.Session, error)
 	Now    func() time.Time
+
+	// pending は daemon 自身が起動・再開して、まだ記録を書き直していないカード。pid が変わった session の記録を書き直してよいのは
+	// これにあるカードだけ (外の shell で同じ session を再開したもの = pid が違う、を取り込まない。424 の敵対的レビューの P2)
+	pending map[string]bool
 }
 
 // Tick は 1 回ぶんの仕事をして、何をしたかの短い記録を返す (ログ用)。
@@ -56,10 +60,13 @@ func (d *Daemon) Tick(ctx context.Context) ([]string, error) {
 	if d.List != nil {
 		if ss, err := d.List(ctx); err != nil {
 			notes = append(notes, "session の一覧を取れない (登録は次の Tick へ): "+err.Error())
-		} else if n, err := d.register(ss); err != nil {
+		} else if n, warn, err := d.register(ss); err != nil {
 			return notes, err
-		} else if n > 0 {
-			notes = append(notes, fmt.Sprintf("PG の session を %d 本登録した", n))
+		} else {
+			if n > 0 {
+				notes = append(notes, fmt.Sprintf("PG の session を %d 本登録した", n))
+			}
+			notes = append(notes, warn...)
 		}
 	}
 	more, err := d.dispatch(ctx, now)
@@ -68,16 +75,19 @@ func (d *Daemon) Tick(ctx context.Context) ([]string, error) {
 
 // register は作業中のカードの session (短い id) が一覧に出ていれば、session id と pid を添えて pro-con の記録に書く。
 // 起動の直後は一覧にまだ出ないことがあるので、出るまで毎回見る。
-func (d *Daemon) register(ss []agents.Session) (int, error) {
+//   - 最初の登録: session の起動時刻がカードの起動 (作業中になった時刻) より前なら取り込まない (同じ短い id の古い session)
+//   - 書き直し (pid が変わった): daemon 自身が再開した直後 (pending) だけ。それ以外は書き直さず、外から操作された疑いを知らせる
+func (d *Daemon) register(ss []agents.Session) (int, []string, error) {
 	st, err := store.Load(d.Dir)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	regPath := filepath.Join(d.Dir, live.RegistryFile)
 	reg, err := live.LoadRegistry(regPath)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
+	var warn []string
 	known := map[string]live.Owned{}
 	for _, o := range reg {
 		known[o.CardID] = o
@@ -91,17 +101,26 @@ func (d *Daemon) register(ss []agents.Session) (int, error) {
 			if s.ID != c.Session || s.SessionID == "" || s.PID == 0 {
 				continue
 			}
-			if o, ok := known[c.ID]; ok && o.SessionID == s.SessionID && o.PID == s.PID {
+			o, ok := known[c.ID]
+			switch {
+			case ok && o.SessionID == s.SessionID && o.PID == s.PID:
 				continue // 登録済み
+			case ok && !d.pending[c.ID]:
+				warn = append(warn, fmt.Sprintf("%s の session %s の pid が %d → %d に変わった。pro-con は再開していない (外から操作された疑い)。記録は書き直さない",
+					c.ID, s.ID, o.PID, s.PID))
+				continue
+			case !ok && !d.pending[c.ID] && s.Started().Before(c.Since):
+				warn = append(warn, fmt.Sprintf("%s の session %s はカードの起動より前に始まっている (同じ短い id の別の session の疑い)。登録しない", c.ID, s.ID))
+				continue
 			}
-			// 再開で pid が変わったときも書き直す (同じ session id の行を置き換える)
 			if err := live.Register(regPath, live.Owned{SessionID: s.SessionID, ID: s.ID, PID: s.PID, CardID: c.ID, StartedAt: s.Started()}); err != nil {
-				return n, err
+				return n, warn, err
 			}
+			delete(d.pending, c.ID)
 			n++
 		}
 	}
-	return n, nil
+	return n, warn, nil
 }
 
 // dispatch は分解済みのカードに、作業中が上限に達するまで PG を割り当てる (古い順)。起動・再開に失敗したカードは分解済みのまま残し、
@@ -155,6 +174,10 @@ func (d *Daemon) dispatch(ctx context.Context, now time.Time) ([]string, error) 
 			continue
 		}
 		running++
+		if d.pending == nil {
+			d.pending = map[string]bool{}
+		}
+		d.pending[c.ID] = true // 次の登録で、この起動・再開の session を記録に書いてよい
 		notes = append(notes, fmt.Sprintf("%s に PG を%sした (%s)", c.ID, how, id))
 	}
 	return notes, nil
