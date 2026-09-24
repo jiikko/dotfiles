@@ -15,7 +15,7 @@ import (
 // 元の位置から移動先の位置まで画面上を滑らせる。
 //
 // - 元の場所には点線の枠 (ghost)、移動先の場所は空けて待つ (着地前に他のカードが詰まってずれないように)
-// - 移動中のカードは地の色 (カード固有) を変えず、周りの枠にだけ移動先の状態の色を付ける (次のフェーズへ運ばれていく)
+// - 移動中のカードは地の色 (カード固有) を変えず、枠も付けない (2026-09-24 の指示。以前は行き先の状態の色の枠を付けていた)
 // - 所要は 800ms、終わり際に減速 (EaseOutCubic)。memory の好み「600ms〜1s・主役を高コントラスト」に合わせた
 // - 演出中だけ frameInterval で再描画し、動くものが無ければ止める (アイドルで CPU を使わない)
 
@@ -131,8 +131,7 @@ func (mv *move) pos(m *Model, now time.Time) (float64, float64) {
 	return mv.fromX + (tx-mv.fromX)*p, mv.fromY + (ty-mv.fromY)*p
 }
 
-// overlayMoves は移動中のカードをボードの行の上に重ねる。地の色はカード固有のまま変えず、周りに枠を付けて
-// 枠にだけ移動先の状態の色を付ける (上枠に行き先も出す)。枠のぶん上下に 1 行ずつはみ出して描く。
+// overlayMoves は移動中のカードをボードの行の上に重ねる。レーンの中と同じ幅・同じ見た目のカードを今の位置に置くだけ。
 func (m *Model) overlayMoves(board []string) []string {
 	if len(m.moves) == 0 {
 		return board
@@ -142,16 +141,9 @@ func (m *Model) overlayMoves(board []string) []string {
 	for _, mv := range m.moves {
 		x, y := mv.pos(m, now)
 		col, row := int(x+0.5), int(y+0.5)
-		border := fg(stateColor(mv.c.State)) + sgrBold
-		t, b := m.cardCell(mv.c, inner-2)
-		lines := []string{
-			boxTop(border, "→ "+mv.c.State.Label()+sgrReset, inner),
-			border + "│" + sgrReset + t + border + "│" + sgrReset,
-			border + "│" + sgrReset + b + border + "│" + sgrReset,
-			boxBottom(border, inner),
-		}
-		for i, l := range lines {
-			if r := row - 1 + i; r >= 0 && r < len(board) {
+		t, b := m.cardCell(mv.c, inner)
+		for i, l := range []string{t, b} {
+			if r := row + i; r >= 0 && r < len(board) {
 				board[r] = splice(board[r], col, inner, l)
 			}
 		}

@@ -150,3 +150,16 @@ func TestOtherCardsStayPutDuringMotion(t *testing.T) {
 		t.Fatal("前提: 着地後も演出が残っている")
 	}
 }
+
+// 移動中のカードには枠を付けない (行き先の状態の見出し「→ …」も出さない)。カードそのものは途中の位置に見えている。
+func TestMovingCardHasNoBorder(t *testing.T) {
+	m, _, clk := movingModel(t)
+	clk.t = clk.t.Add(animDuration() / 2)
+	out := ansi.Strip(m.render())
+	if strings.Contains(out, "→ ") {
+		t.Fatalf("移動中のカードに行き先の見出しの枠が付いている:\n%s", out)
+	}
+	if n, _ := idColumn(m, "M1"); n == 0 {
+		t.Fatalf("移動中のカードが見えていない:\n%s", out)
+	}
+}

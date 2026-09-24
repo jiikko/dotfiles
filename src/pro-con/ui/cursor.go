@@ -22,7 +22,7 @@ type cursorGlide struct {
 	start        time.Time
 }
 
-// cursorTarget は枠を置く場所。カードが列を移っている最中は、移動の演出の枠に任せて出さない。
+// cursorTarget は枠を置く場所。カードが列を移っている最中は出さない (移動中のカードには枠を付けない)。
 func (m *Model) cursorTarget() (slot, bool) {
 	if m.picker.open {
 		return slot{}, false
