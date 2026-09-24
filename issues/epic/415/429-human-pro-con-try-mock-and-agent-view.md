@@ -13,6 +13,7 @@ agent view との重なりは「どちらを使いたいか」の判断で、ユ
 ## 手順
 
 1. `bin/pro-con` を起動し、しばらく触る。**やりたいのに操作が無いもの**があれば書き出す
+   - `x` で片付けた完了のカードを見返したくなるか (見返す画面はまだ無い。要るなら子 issue を起こす)
 2. `claude agents` を端末で開き (agent view)、session の一覧と対話が pro-con とどれだけ重なるかを見る。
    重なるなら「一覧と対話は agent view に任せ、pro-con はカード・キュー・レビュー・watchdog に絞る」を検討する
 3. pro-con でカードを選んで `a` (attach) し、抜けて pro-con に戻る。← で抜けると agent view に出るので、そこから戻る操作が自然か
