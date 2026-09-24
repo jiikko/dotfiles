@@ -118,3 +118,26 @@ func TestHintLineKeepsExit(t *testing.T) {
 		t.Fatalf("抜ける手段を残して後ろから落とすはず: %q", got)
 	}
 }
+
+// Enter の詳細は画面の下端 (案内の直上) に吸着する。詳細の高さがカードで違っても、案内は常に最下行で、
+// 詳細の下枠はその直上にある (ボードの直後に置くと、下端との間が選択のたびに伸び縮みする)。
+func TestDetailSticksToFooter(t *testing.T) {
+	m := New(newSpy(), nil)
+	m.width, m.height = 120, 60
+	press(m, "enter")
+	if !m.showDetail {
+		t.Fatal("enter で詳細が開かない")
+	}
+	for _, key := range []string{"", "j", "l"} {
+		if key != "" {
+			press(m, key)
+		}
+		lines := strings.Split(ansi.Strip(m.render()), "\n")
+		if len(lines) != m.height {
+			t.Fatalf("%q: 画面の行数 %d が高さ %d と違う", key, len(lines), m.height)
+		}
+		if !strings.HasPrefix(strings.TrimSpace(lines[len(lines)-2]), "╰") {
+			t.Fatalf("%q: 詳細の下枠が案内の直上に無い: %q", key, lines[len(lines)-2])
+		}
+	}
+}

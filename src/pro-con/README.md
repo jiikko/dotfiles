@@ -27,7 +27,7 @@ bin/pro-con      # claude は起動しない。模擬の backend (fake) が状�
 | j / k / ↑ / ↓ / ctrl+n / ctrl+p | 列の中で 1 枚 |
 | ctrl+d / ctrl+u / space / f / pgdn / pgup | 半ページ |
 | g / G / home / end | 列の先頭 / 末尾 |
-| enter | 詳細の開閉 |
+| enter | 詳細の開閉 (画面の下端、案内の直上に出る) |
 | ctrl+r | 新版へ切り替える (ライブアップグレード。「新版あり」のときだけ) |
 | q / esc | 開いている板を 1 つ閉じる (session の一覧 → 詳細)。q は何も開いていなければ終了。ctrl+c は即終了 |
 | a | PG の session を開く (今は模擬) |

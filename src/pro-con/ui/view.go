@@ -41,15 +41,29 @@ func (m *Model) render() string {
 	} else {
 		out = append(out, m.overlayMoves(m.boardLines())...)
 	}
+	// 詳細・PG の一覧・入力欄・案内は画面の下端へ吸着させる。詳細の高さはカードごとに変わるので、
+	// ボードの直後に置くと下端までの隙間が選択のたびに伸び縮みする (shownCards は最大の高さで確保している)
+	var foot []string
 	if m.showDetail {
-		out = append(out, "")
-		out = append(out, m.detailBlock()...)
+		foot = append(foot, m.detailBlock()...)
 	}
 	if m.showSessions {
-		out = append(out, "")
-		out = append(out, m.pgBlock()...)
+		if len(foot) > 0 {
+			foot = append(foot, "")
+		}
+		foot = append(foot, m.pgBlock()...)
 	}
-	out = append(out, "")
+	foot = append(foot, m.footLines()...)
+	pad := max(1, m.height-len(out)-len(foot))
+	for range pad {
+		out = append(out, "")
+	}
+	return strings.Join(append(out, foot...), "\n")
+}
+
+// footLines は画面の最下段の群 (入力欄・確認・sticky・flash・案内) を返す。
+func (m *Model) footLines() []string {
+	var out []string
 	switch m.mode {
 	case modeInput:
 		out = append(out, m.inputLine())
@@ -63,8 +77,7 @@ func (m *Model) render() string {
 	if m.flash != "" {
 		out = append(out, sgrCyan+" "+m.flash+sgrReset)
 	}
-	out = append(out, sgrDim+hintLine(m.hints(), m.width)+sgrReset)
-	return strings.Join(out, "\n")
+	return append(out, sgrDim+hintLine(m.hints(), m.width)+sgrReset)
 }
 
 // tabBar は global と repo のタブ。config の外の repo のカードは global にだけ出るので、その枚数も添える。
