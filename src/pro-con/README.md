@@ -1,7 +1,7 @@
 # pro-con
 
 PM (producer) と PG (consumer) を分けて Claude Code を並列に回すための TUI。
-**設計の正本は issue 415** (`issues/` 配下の `415-design-claude-pm-worker-orchestration.md`)。ここには実装側の事情だけを書く。
+**設計の正本は issue 415** (epic `issues/epic/415/` の親 issue。残タスクは同じディレクトリの子 issue)。ここには実装側の事情だけを書く。
 
 ## 現状: ハリボテ (模擬データで動く)
 

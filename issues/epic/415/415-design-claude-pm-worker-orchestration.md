@@ -2,6 +2,19 @@
 
 起票日: 2026-09-24
 
+> epic 415 の親 issue。設計の正本 (要件・不変条件・論点・決定事項) はここに置き、残タスクは同じディレクトリの子 issue で進める。
+
+## 子 issue
+
+| 番号 | 内容 | 依存 |
+|---|---|---|
+| [424](424-feat-pro-con-readonly-real-backend.md) | 読み取り専用の本物の backend (段階 1) | — |
+| [425](425-research-claude-bg-remaining-measurements.md) | `claude --bg` の残りの挙動を実測する | — |
+| [426](426-design-pro-con-open-decisions.md) | 未決の論点を決める (論点 3 / 6 / 8 / 9 / 10 / 11) | 425 |
+| [427](427-feat-pro-con-real-pm-pg-backend.md) | 本物の PM / PG の backend (段階 3〜5) | 425 / 426 |
+| [428](428-feat-pro-con-record-attach-instructions.md) | attach 中に人間が打った指示をカードに残す | 424 の実測 |
+| [429](429-human-pro-con-try-mock-and-agent-view.md) | (human) 模擬版を触る / agent view との重なり / attach からの戻り方 | — |
+
 ## 概要
 
 Claude Code の使い方を「session を立ち上げてそこで作業する」から、**要件を聞く PM と作業する PG を分ける**形へ移す。
@@ -332,17 +345,17 @@ issue にならない終わり方 (`回答済み` / `調査のみ` / `却下` / 
   - 反証できなかった主張: `lockman --help` の引用 (待ち行列なし・公平性なし・再入不可・辞書順)、xcodebuild ルールの引用、`--resume` / `attach` の記述
 - [x] 画面は TUI を主にし、Web は後から足せる構造にする方針を追記
 - [x] 要件 14 (どこが落ちても復元できる) と不変条件「状態の正本はファイルだけ」を追記
-- [ ] 要件 14 の未実測: bg session がマシン再起動を越えて戻るか
+- [x] → 425 へ切り出し: 要件 14 の未実測 (bg session がマシン再起動を越えて戻るか)
 - [x] 決定事項 (2026-09-24): PG は自分のブランチまで push / PG の権限 / カード化は PM の規律 / 複数 repo / 上限 2
 - [x] 「想定する使い方」の節を追加 (ゼロから作るときは使わない / 五月雨式の修正で使う / 直接使う session と同居し直列化もそちらに効かせる / 目標 4 並列)
 - [x] 論点 6 を「受付 PM + 担当 PM」に改訂 (レビューのボトルネック対策)
 - [x] 要件 15 (追加オーダー) と論点 11 を追記
 - [x] PG との対話は画面を切り替える方式 (`tea.ExecProcess` で `claude attach`) に決定 (2026-09-24)
-- [ ] 論点 2〜11 の決定 (論点 6 の振り分け単位が次の未決)
-- [ ] 未確認: Claude Code の agent view と pro-con の役割の重なり / attach から pro-con へ戻る操作
-- [ ] 未実測: 実行中の bg session へメッセージを直接送れるか (論点 8 / 11)
+- [x] → 426 へ切り出し: 論点 2〜11 の決定 (論点 6 の振り分け単位が次の未決)
+- [x] → 429 へ切り出し: Claude Code の agent view と pro-con の役割の重なり / attach から pro-con へ戻る操作
+- [x] → 425 へ切り出し: 実行中の bg session へメッセージを直接送れるか (論点 8 / 11)
 - [x] `claude --bg` の実測 (論点 2): waiting の検出 / agents --json / trust / -w / rm を確認
-- [ ] 未実測: 完了と異常終了の区別 / rm が未 push の worktree を消さないこと / マシン再起動を越えるか / 利用枠を機械で読む口
+- [x] → 425 へ切り出し: 完了と異常終了の区別 / rm が未 push の worktree を消さないこと / マシン再起動を越えるか / 利用枠を機械で読む口
 - [x] TUI のハリボテ (`src/pro-con/` / `bin/pro-con`)。claude は起動せず、模擬 backend (`fake`) で UI とつなぎ込みだけが動く (2026-09-24)
   - 構成: `card` (ドメインと不変条件の検査) / `backend` (UI との境界の interface) / `fake` (模擬) / `ui` (bubbletea v2)。本物へは `backend.Backend` を満たす実装を足して差し替える
   - 動くもの: カンバン・ゲージ・カード詳細・質問への回答・追加オーダー (追記 / 方針変更 / 別件)・btw・attach (`tea.ExecProcess` で `pro-con fake-attach` を起動し、抜けたら戻る)
@@ -357,7 +370,7 @@ issue にならない終わり方 (`回答済み` / `調査のみ` / `却下` / 
   「移動中に他のカードの高さが微妙に変わってごちゃごちゃする」の指摘で、列の中の並び (移ってきたカードが途中に割り込んでいた) と
   枠の高さ (枚数に合わせていたので全部の列が伸び縮みしていた) を直した。直した後の実画面 160 コマで、動いていないカードの位置の変化は 0 件
   (着地の瞬間に点線の枠が消えて下のカードが詰まる場面はこの撮影に含まれていない)
-- [ ] attach で人間が打った指示をカードに残す (候補: attach 中の時間帯の transcript から人間のメッセージだけを原文で履歴へ追記する。
+- [x] → 428 へ切り出し: attach で人間が打った指示をカードに残す (候補: attach 中の時間帯の transcript から人間のメッセージだけを原文で履歴へ追記する。
   LLM で要約しない。未実測: Desktop と --bg の transcript の形式が同じか。採らない場合は「attach の内容はカードに残らない」を既知の制約とする)
 - [x] TUI から PM への新しい依頼 (`n`) と、repo のスコープの前置き (2026-09-24)。repo のタブで出した依頼は「その repo の中だけ」、
   global のタブは「repo 未指定。PM が判断する」を PM への指示の先頭に付ける (`backend.PMPrompt`)。Desktop の PM に直接話す経路も残す。
@@ -407,4 +420,5 @@ issue にならない終わり方 (`回答済み` / `調査のみ` / `却下` / 
 - [x] `x` で完了のレーンを片付ける (2026-09-24)。y/N 確認を挟み、repo のタブではその repo の分だけ。カードは消さず `Archived` にして
   状態ファイルに残す (「依頼がどこに行ったか分からなくなる」を避ける)。画面からは Snapshot を受け取る 1 か所 (`setSnap`) で落とす。
   不変条件に「片付けたのに完了していない」を足した。片付けたカードを見返す画面はまだ無い (要るなら足す)
-- [ ] 段階 1 の残り: 今の Desktop の session を一覧する本物の backend (`claude agents --json` を読む)
+- [x] → 424 へ切り出し: 段階 1 の残り (今の Desktop の session を一覧する本物の backend。`claude agents --json` を読む)
+- [x] epic 化 (2026-09-24): `issues/epic/415/` へ移し、残タスクを子 issue 424〜429 に切り出した
