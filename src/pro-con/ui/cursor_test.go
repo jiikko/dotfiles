@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -134,5 +135,59 @@ func TestLaneLabelKeepsKeyAndCount(t *testing.T) {
 		if !strings.Contains(head, want) {
 			t.Fatalf("見出しに %q が無い: %q", want, head)
 		}
+	}
+}
+
+// unframe は画面から選択の枠を取り除いた形 (枠の縦線は列の罫線に、横線と角は空白と罫線に戻す)。
+// 枠がカードの文字を消していなければ、枠を出さないときの画面と一致する。
+func unframe(s string) string {
+	return strings.NewReplacer("┃", "│", "━", " ", "┏", "│", "┓", "│", "┗", "│", "┛", "│").Replace(s)
+}
+
+// 上下に滑っている途中でも、枠がカードの行を消さない (横線でカードの行を丸ごと消すと、動かすたびにカードが一瞬消えて見える)。
+func TestCursorGlideNeverHidesCards(t *testing.T) {
+	be := newSpy()
+	be.snap.Cards = append(be.snap.Cards,
+		card.Card{ID: "R2", Title: "二枚目", State: card.Running, Session: "s-r2", Since: be.snap.Now.Add(1)},
+		card.Card{ID: "R3", Title: "三枚目", State: card.Running, Session: "s-r3", Since: be.snap.Now.Add(2)})
+	clk := &clock{t: be.snap.Now}
+	m := New(be, nil)
+	m.now = clk.now
+	m.width, m.height = 120, 30
+	m.selected = "R1"
+	m.Update(frameMsg{})
+	press(m, "j")
+	for _, f := range []int{1, 2, 3, 4, 5} { // 所要のあいだの何コマか
+		clk.t = be.snap.Now.Add(cursorDuration * time.Duration(f) / 6)
+		lines := strings.Split(ansi.Strip(m.render()), "\n")
+		valid := m.cursor.valid
+		m.cursor.valid = false
+		bare := strings.Split(ansi.Strip(m.render()), "\n")
+		m.cursor.valid = valid
+		for i := range bare {
+			// 枠の横線は空き行 (空白) にしか描かないので、戻すと罫線の違いだけになる。文字の行は完全に一致するはず
+			if got, want := unframe(lines[i]), unframe(bare[i]); strings.TrimSpace(strings.Trim(got, "│ ")) != strings.TrimSpace(strings.Trim(want, "│ ")) &&
+				strings.ContainsAny(want, "0123456789RW枚") {
+				t.Fatalf("コマ %d/6 で %d 行目のカードが枠に消された:\n枠あり %q\n枠なし %q", f, i, lines[i], bare[i])
+			}
+		}
+	}
+}
+
+// レーンを移っても、見出しの名前の位置は変わらない (▶ の有無で名前が前後に動かない)。
+func TestLaneLabelDoesNotShift(t *testing.T) {
+	m, _ := cursorModel(t)
+	col := func() int {
+		head := strings.Split(ansi.Strip(m.render()), "\n")[headerRows]
+		i := strings.Index(head, "作業中")
+		if i < 0 {
+			t.Fatalf("見出しに 作業中 が無い: %q", head)
+		}
+		return ansi.StringWidth(head[:i])
+	}
+	before := col() // 作業中のレーンに居る (▶ 付き)
+	press(m, "l")
+	if after := col(); after != before {
+		t.Fatalf("レーンを移ったら 作業中 の見出しが %d → %d 桁に動いた", before, after)
 	}
 }

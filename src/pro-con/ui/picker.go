@@ -136,7 +136,7 @@ func (m *Model) pickerMove(delta int) {
 func (m *Model) handlePickerKey(k tea.KeyPressMsg) tea.Cmd {
 	switch k.String() {
 	case "ctrl+c":
-		return tea.Quit
+		return m.requestQuit()
 	case "i", "q", "esc":
 		m.picker.open = false
 	case "enter":

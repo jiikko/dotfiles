@@ -10,17 +10,37 @@ import (
 // State はカンバンの列。カードは常にどれか 1 つに居る (不変条件「依頼は失われない」)。
 type State int
 
+// 各列の意味は Meaning が正本 (TUI の ? の表もこれを読む)。
 const (
-	Requested State = iota // 依頼: 受付 PM がカードを作った直後
-	Planned                // 分解済み: タスクに分けてキューに積んだ (PG の空き待ち)
-	Running                // 作業中: PG が動いている (リソース待ち・枠待ちもここ)
-	Waiting                // 質問待ち: 人間か PM の回答が要る (権限プロンプトもここ)
-	Review                 // レビュー: PG が終えた。PM が diff と実行結果を読む
-	Done                   // 完了
+	Requested State = iota
+	Planned
+	Running
+	Waiting
+	Review
+	Done
 )
 
 // Columns はカンバンの左から右の並び。
 var Columns = []State{Requested, Planned, Running, Waiting, Review, Done}
+
+// Meaning はその列に居るカードが今どういう状態か (TUI の ? で出すレーンの説明)。
+func (s State) Meaning() string {
+	switch s {
+	case Requested:
+		return "受付 PM がカードを作った直後。まだタスクに分けていない"
+	case Planned:
+		return "タスクに分けてキューに積んだ。PG の空きを待っている"
+	case Running:
+		return "PG が作業している。make test などの占有リソースの順番待ち・利用枠の回復待ちもここ"
+	case Waiting:
+		return "人間か PM の回答が要る (PG の質問・権限の確認)。r で回答する"
+	case Review:
+		return "PG が作業を終えた。PM が diff と実行結果を読んでから完了にする"
+	case Done:
+		return "終わった (issue で完了・その場で回答・調査のみ・却下・issue 化待ち)。x で片付ける"
+	}
+	return ""
+}
 
 func (s State) Label() string {
 	switch s {

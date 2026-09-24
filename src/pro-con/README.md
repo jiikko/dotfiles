@@ -36,7 +36,8 @@ bin/pro-con      # claude は起動しない。模擬の backend (fake) が状�
 | a | PG の session を開く (今は模擬) |
 | r | 質問待ちのカードに回答する |
 | + | 追加オーダー (tab で 追記 / 方針変更 / 別件)。**方針変更は y/N 確認** (y / enter だけが実行、他のキーは取り消し) |
-| ? | btw (PG を止めずに状況を聞く) |
+| w | btw (PG を止めずに状況を聞く。what's up) |
+| ? | レーンの意味の表 (説明の正本は `card.State.Meaning`)。? / q / esc で閉じる |
 
 入力欄 (n / r / + / ?) は readline の編集キーが効く (ctrl+h / ctrl+w / ctrl+u / ctrl+k / ctrl+a / ctrl+e / ctrl+b / ctrl+f …。
 `tuikit/lineedit`)。入力中は最下行の案内が入力欄のキーに替わる。
@@ -45,7 +46,7 @@ bin/pro-con      # claude は起動しない。模擬の backend (fake) が状�
 上下の移動は `tuikit/listnav.MotionOf` に渡す (glogx と同じ語彙を 1 か所で持つ)。画面固有の動作キーは先に捌く。
 
 glogx と意味を変えている字 (`a` attach / `r` 回答 / `n` 新しい依頼 / `s` session の一覧) とその理由はガイドの §8。
-`o` (ブラウザで開く) と `b` (半ページ上) はガイドの意味のために空けてあり、追加オーダーは `+`、btw は `?`。
+`o` (ブラウザで開く) と `b` (半ページ上) はガイドの意味のために空けてあり、追加オーダーは `+`、btw は `w`、`?` はレーンの意味の表。
 
 ## 設定 (`~/.config/pro-con/config.toml`)
 

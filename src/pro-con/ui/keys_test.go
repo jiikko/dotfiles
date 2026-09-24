@@ -86,7 +86,7 @@ func TestActionsOnEmptyLane(t *testing.T) {
 	m := keysModel(t)
 	be := m.be.(*spy)
 	m.Update(tea.KeyPressMsg{Code: '5', Text: "5"})
-	for _, k := range []string{"r", "a", "+", "?", "y", "Y", "e"} {
+	for _, k := range []string{"r", "a", "+", "w", "y", "Y", "e"} {
 		m.Update(tea.KeyPressMsg{Code: []rune(k)[0], Text: k})
 		if m.mode != modeBoard {
 			t.Fatalf("空のレーンで %s が入力欄を開いた", k)

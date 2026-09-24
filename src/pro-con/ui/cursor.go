@@ -93,10 +93,13 @@ func (m *Model) overlayCursor(board []string) []string {
 		if r < 0 || r >= len(board) {
 			continue
 		}
-		switch r {
-		case top:
+		// 上辺・下辺は空き行に乗ったときだけ描く。滑っている途中でカードの行にかかったら縦線だけにする
+		// (横線でカードの行を丸ごと消すと、上下に動かすたびにカードが一瞬消えて見える。2026-09-24 の報告)
+		edge := isGapRow(r) || r == len(board)-1
+		switch {
+		case r == top && edge:
 			board[r] = splice(board[r], left, w, border+"┏"+strings.Repeat("━", max(w-2, 0))+"┓")
-		case bottom:
+		case r == bottom && edge:
 			board[r] = splice(board[r], left, w, border+"┗"+strings.Repeat("━", max(w-2, 0))+"┛")
 		default:
 			board[r] = splice(board[r], left, 1, border+"┃")
@@ -105,3 +108,6 @@ func (m *Model) overlayCursor(board []string) []string {
 	}
 	return board
 }
+
+// isGapRow はボードの行 r (0 = 列の見出し) がカードの間の空き行か。
+func isGapRow(r int) bool { return r >= 1 && (r-1)%perCardLines < cardGap }

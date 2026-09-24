@@ -38,7 +38,7 @@ const headerRows = 4
 
 func (m *Model) render() string {
 	w := m.width
-	title := sgrBold + fg(202) + " pro-con" + sgrFgReset + sgrDim + "  mock: claude は起動しない。表示は模擬データ" + sgrReset
+	title := sgrBold + fg(202) + " pro-con" + sgrFgReset + " (producer-consumer)" + sgrReset + sgrDim + "  mock: claude は起動しない。表示は模擬データ" + sgrReset
 	header := []string{title, m.tabBar(), m.gauge(), fg(240) + strings.Repeat("─", w) + sgrReset}
 	var region []string
 	if m.picker.open {
@@ -51,7 +51,7 @@ func (m *Model) render() string {
 	foot := m.footGroup()
 	region = layout.PadTo(region, max(len(region)+1, m.height-len(header)-len(foot)))
 	region = m.overlayDrawer(region)
-	return strings.Join(append(append(header, region...), foot...), "\n")
+	return strings.Join(m.overlayQuit(m.overlayLegend(append(append(header, region...), foot...))), "\n")
 }
 
 // footGroup は下端に吸着させる群 (PG の一覧 + 最下段)。
@@ -188,14 +188,6 @@ func (m *Model) boardLines() []string {
 	return out
 }
 
-// columnBorder は列の枠の色。選択中のカードがある列だけ現在地色にする。
-func columnBorder(focused bool) string {
-	if focused {
-		return fg(202)
-	}
-	return fg(240)
-}
-
 // shownCards は 1 列に見せるカードの枚数。枠の高さは画面の残りで固定する
 // (枚数に合わせると、ある列の枚数が変わった瞬間に全部の列の枠が伸び縮みする)。
 func (m *Model) shownCards() int {
@@ -213,8 +205,10 @@ func (m *Model) columnBlock(col int, s card.State, cs []card.Card, w, shown int,
 	head, tail := fmt.Sprintf("%d ", col+1), fmt.Sprintf(" (%d)", len(cs))
 	if focused {
 		head = "▶ " + head
+	} else {
+		head = "  " + head // ▶ の幅を空けておく (レーンを移るたびに名前が 2 桁ずれないように)
 	}
-	border := columnBorder(focused)
+	border := fg(m.laneColor(col))
 	inner := w - 2
 	name := ansi.Truncate(s.Label(), max(inner-3-ansi.StringWidth(head+tail), 1), "…")
 	label := head + name + tail
@@ -270,7 +264,7 @@ func (m *Model) columnCells(col int, cs []card.Card, inner int) [][2]string {
 }
 
 // cardCell はカード 1 枚 (2 行)。地の色はカードごとに固有 (cardColor)。列を移っても同じ色なので目で追える。
-// 選択中は左右の両端に現在地色の ▌ ▐ を立て、タイトルを太字 + 下線にする (2026-09-24 に 3 案から a で合意)。
+// 選択中はタイトルを太字 + 下線にする。選択の目印は周りの枠 (cursor.go)。
 // 地は塗り替えない (カード固有の色が消えると、列を移ったときに目で追えなくなる)。完了は文字を dim にする。
 func (m *Model) cardCell(c card.Card, w int) (string, string) {
 	base := bg(cardColor(c.ID)) + fg(252)
@@ -400,6 +394,12 @@ func orDash(s string) string {
 // hints は最下行の案内。**今の状態で押して効くキーだけ**を出す (入力中にボードの案内を残すと、
 // 載せた文字が全部入力に化ける。docs/glogx-ui-guide.md §5)。最後の項目が抜ける手段。
 func (m *Model) hints() []string {
+	if m.quitAsk {
+		return []string{"y / enter 終了", "ctrl+c 終了", "他のキー 取り消し"}
+	}
+	if m.legend {
+		return []string{"? / q / esc 閉じる"}
+	}
 	switch m.mode {
 	case modeInput:
 		h := []string{"enter 送信", "ctrl+h 1 文字消す", "ctrl+w 1 語消す", "ctrl+u 前を消す", "ctrl+k 後ろを消す", "ctrl+a / ctrl+e 先頭 / 末尾"}
@@ -420,7 +420,7 @@ func (m *Model) hints() []string {
 		avail("a attach", has && c.Session != ""), // backend は session の無いカードを ErrNoSession で拒否する
 		avail("r 回答", has && c.Answerable()),
 		avail("+ 追加オーダー", has), // 完了のカードでも「別件」は受け付ける
-		avail("? btw", has),
+		avail("w btw", has),
 		avail("e issue を開く", has && len(c.Issues) > 0), // md が実在するかは押したときに探す (描画のたびには探さない)
 		avail("y パス", has && len(c.Issues) > 0),
 		avail("Y 内容", has),
@@ -433,7 +433,7 @@ func (m *Model) hints() []string {
 		back = "q / esc 閉じる"
 	}
 	h := append([]string{"hjkl 選択", "tab repo", "n 新しい依頼", "i issue から", avail("enter 詳細", has)}, cardOps...)
-	return append(h, "s PG 一覧", avail("x 完了を片付け", m.doneInTab() > 0), back)
+	return append(h, "s PG 一覧", avail("x 完了を片付け", m.doneInTab() > 0), "? レーンの意味", back)
 }
 
 // avail は案内の 1 項目を、今押して効くなら明るく、効かないなら暗く出す。

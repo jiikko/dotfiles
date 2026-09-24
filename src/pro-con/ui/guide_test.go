@@ -81,22 +81,26 @@ func TestQClosesBoardsBeforeQuitting(t *testing.T) {
 	if isQuit(press(m, "esc")) {
 		t.Fatal("esc で終了した")
 	}
-	if !isQuit(press(m, "q")) {
-		t.Fatal("何も開いていないときの q で終了しない")
+	// 見本には作業中のカードがあるので、終了の前に確認が出る (quit_test.go)
+	if isQuit(press(m, "q")) || !m.quitAsk {
+		t.Fatal("何も開いていないときの q で終了の確認が出ない")
+	}
+	if !isQuit(press(m, "y")) {
+		t.Fatal("確認で y を押しても終了しない")
 	}
 }
 
-// b は移動の語彙 (半ページ上) のまま効き、btw は ? で開く。
-func TestBIsMotionAndQuestionMarkIsBtw(t *testing.T) {
+// b は移動の語彙 (半ページ上) のまま効き、btw は w で開く。
+func TestBIsMotionAndWIsBtw(t *testing.T) {
 	m := keysModel(t)
 	m.selected = "P4"
 	m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	if m.selected != "P2" || m.mode != modeBoard {
 		t.Fatalf("b で半ページ上へ動くはず: %s mode=%v", m.selected, m.mode)
 	}
-	m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
+	m.Update(tea.KeyPressMsg{Code: 'w', Text: "w"})
 	if m.mode != modeInput || m.inputKind != inputBtw {
-		t.Fatal("? で btw の入力欄が開かない")
+		t.Fatal("w で btw の入力欄が開かない")
 	}
 }
 

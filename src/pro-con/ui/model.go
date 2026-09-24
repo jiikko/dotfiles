@@ -87,6 +87,9 @@ type Model struct {
 	slides    map[panel]*slide // 下端の板の開閉の演出 (slide.go)
 	// カードの詳細の引き出し (drawer.go)。drawerCard は閉じる途中も残す (逆再生で本文が見えている必要がある)
 	cursor     cursorGlide // 選択中のカードを囲む枠 (cursor.go)
+	quitAsk    bool        // 終了の確認ダイアログを出している (quit.go)
+	legend     bool        // レーンの意味の表を出している (legend.go)
+	lane       laneFade    // 選んでいるレーンの枠の色の移り変わり (lanefade.go)
 	drawer     anim.Transition
 	drawerCard string
 	pager      listnav.Pager
@@ -138,7 +141,11 @@ func (m *Model) Init() tea.Cmd {
 
 func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 	defer func() { // 選択が動いたら (キーでも、カードの移動でも) 枠を滑らせる
-		if c := m.trackCursor(); c != nil {
+		c := m.trackCursor()
+		if m.trackLane() {
+			c = tea.Batch(c, m.startFrames())
+		}
+		if c != nil {
 			cmd = tea.Batch(cmd, c)
 		}
 	}()
@@ -183,6 +190,12 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyPressMsg:
+		if m.quitAsk {
+			return m, m.handleQuitKey(msg.String())
+		}
+		if m.legend {
+			return m, m.handleLegendKey(msg.String())
+		}
 		switch m.mode {
 		case modeInput:
 			cmd := m.handleInputKey(msg)
@@ -386,13 +399,13 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	}
 	switch k.String() {
 	case "ctrl+c":
-		return tea.Quit
+		return m.requestQuit()
 	case "ctrl+r": // 新版へ切り替える (ライブアップグレード。新版があるときだけ)
 		return m.requestUpgrade()
 	case "q":
 		// q は「今の板を 1 段戻る」(docs/glogx-ui-guide.md §1)。開いている板が無ければ終了
 		if !m.closeTop() {
-			return tea.Quit
+			return m.requestQuit()
 		}
 	case "esc":
 		if !m.closeTop() {
@@ -423,7 +436,9 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 			m.orderKind = card.OrderAppend
 			m.startInput(inputOrder)
 		}
-	case "?": // btw = 「今どうなってる?」(b は移動の語彙で半ページ上なので使わない)
+	case "?": // レーンの意味の表 (legend.go)
+		m.legend = true
+	case "w": // btw = 「今どうなってる?」(what's up。b は移動の語彙で半ページ上なので使わない)
 		if _, ok := m.selectedCard(); ok {
 			m.startInput(inputBtw)
 		}
@@ -517,7 +532,7 @@ func (m *Model) handleInputKey(k tea.KeyPressMsg) tea.Cmd {
 			m.orderKind = (m.orderKind + 1) % 3
 		}
 	case "ctrl+c":
-		return tea.Quit
+		return m.requestQuit()
 	default:
 		m.line.Key(k.String(), k.Text)
 	}
@@ -561,7 +576,7 @@ func (m *Model) askClearDone() {
 func (m *Model) handleConfirmKey(k tea.KeyPressMsg) tea.Cmd {
 	switch key := k.String(); {
 	case key == "ctrl+c":
-		return tea.Quit
+		return m.requestQuit()
 	case confirm.IsYesStrict(key):
 		m.apply(m.pending)
 	default:

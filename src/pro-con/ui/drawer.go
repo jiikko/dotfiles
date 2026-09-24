@@ -68,7 +68,7 @@ func (m *Model) handleDrawerKey(k string) (cmd tea.Cmd, handled bool) {
 	case "K":
 		m.stepCard(-1)
 		return nil, true
-	case "a", "r", "+", "?", "y", "Y", "e", "ctrl+c", "ctrl+r", "s":
+	case "a", "r", "+", "w", "?", "y", "Y", "e", "ctrl+c", "ctrl+r", "s":
 		return nil, false
 	}
 	if mo := listnav.MotionOf(k); mo != listnav.None {
