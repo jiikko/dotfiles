@@ -1,1 +1,0 @@
-../420-bug-statusline-ctx-color-defaults-to-zero.md
