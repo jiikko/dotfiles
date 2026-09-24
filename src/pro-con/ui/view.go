@@ -143,7 +143,7 @@ const colSep = " "
 func (m *Model) boardLines() []string {
 	w := m.colWidth()
 	cols := m.columns()
-	selCol, _, _ := m.position()
+	selCol := m.col
 
 	shown := m.shownCards()
 
@@ -194,7 +194,10 @@ func (m *Model) shownCards() int {
 
 // columnBlock は 1 列分の行 (上枠に見出し + カード + 下枠)。列の高さは shown で揃える。
 func (m *Model) columnBlock(col int, s card.State, cs []card.Card, w, shown int, focused bool) []string {
-	label := fmt.Sprintf("%s (%d)", s.Label(), len(cs))
+	label := fmt.Sprintf("%d %s (%d)", col+1, s.Label(), len(cs)) // 先頭の数字は 1〜6 でそのレーンへ飛ぶキー
+	if focused {
+		label = "▶ " + label
+	}
 	border := columnBorder(focused)
 	inner := w - 2
 	out := []string{boxTop(border, fg(stateColor(s))+sgrBold+label+sgrReset, w)}

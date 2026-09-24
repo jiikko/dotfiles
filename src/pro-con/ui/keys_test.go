@@ -55,3 +55,44 @@ func TestMotionVocabulary(t *testing.T) {
 		}
 	}
 }
+
+// 数字キーでレーンへ直接移る。空のレーンにもフォーカスが当たり (カードは選ばない)、h / l も空のレーンを飛ばさない。
+func TestLaneFocus(t *testing.T) {
+	m := keysModel(t) // 分解済み (2) に P0..P4、作業中 (3) に R0。他は空
+	m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
+	if m.col != 2 || m.selected != "R0" {
+		t.Fatalf("3 で作業中の R0 に移るはず: col=%d sel=%q", m.col, m.selected)
+	}
+	m.Update(tea.KeyPressMsg{Code: '5', Text: "5"})
+	if m.col != 4 || m.selected != "" {
+		t.Fatalf("5 で空のレビューのレーンにフォーカスが当たるはず: col=%d sel=%q", m.col, m.selected)
+	}
+	m.Update(tea.KeyPressMsg{Code: 'h', Text: "h"})
+	if m.col != 3 || m.selected != "" {
+		t.Fatalf("h で空の質問待ちのレーンに止まるはず (飛ばさない): col=%d sel=%q", m.col, m.selected)
+	}
+	m.Update(tea.KeyPressMsg{Code: '9', Text: "9"}) // レーンの数を越える数字は何もしない
+	if m.col != 3 {
+		t.Fatalf("範囲外の数字でレーンが動いた: col=%d", m.col)
+	}
+	m.Update(tea.KeyPressMsg{Code: '2', Text: "2"})
+	if m.col != 1 || m.selected != "P0" {
+		t.Fatalf("2 で分解済みの先頭に移るはず: col=%d sel=%q", m.col, m.selected)
+	}
+}
+
+// 空のレーンでカードの要る操作をしても何も送らず、落ちない。
+func TestActionsOnEmptyLane(t *testing.T) {
+	m := keysModel(t)
+	be := m.be.(*spy)
+	m.Update(tea.KeyPressMsg{Code: '5', Text: "5"})
+	for _, k := range []string{"r", "a", "+", "?", "y", "Y", "e"} {
+		m.Update(tea.KeyPressMsg{Code: []rune(k)[0], Text: k})
+		if m.mode != modeBoard {
+			t.Fatalf("空のレーンで %s が入力欄を開いた", k)
+		}
+	}
+	if len(be.applied) != 0 || len(be.attached) != 0 {
+		t.Fatalf("空のレーンで操作が送られた: %v %v", be.applied, be.attached)
+	}
+}

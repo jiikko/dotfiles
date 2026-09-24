@@ -22,7 +22,8 @@ bin/pro-con      # claude は起動しない。模擬の backend (fake) が状�
 | e | 選択中のカードの issue の md をエディタで開く ($VISUAL → $EDITOR → nvim。`tuikit/editor`) |
 | y | 選択中のカードの issue の md のパス (素の値) をクリップボードへ |
 | Y | 選択中のカードのタイトルと内容 (repo・状態・issue・依頼の原文・質問。整形した参照) をクリップボードへ。本文は `termsafe.PlainBlock` を通す |
-| h / l / ← / → / ctrl+f | 左右の列へ |
+| 1〜6 | そのレーンへ直接 (依頼 / 分解済み / 作業中 / 質問待ち / レビュー / 完了。数字はレーンの見出しの先頭に出る) |
+| h / l / ← / → / ctrl+f | 左右のレーンへ (空のレーンにも止まる。フォーカスはレーンとカードの 2 段で、空のレーンではレーンだけに当たる) |
 | j / k / ↑ / ↓ / ctrl+n / ctrl+p | 列の中で 1 枚 |
 | ctrl+d / ctrl+u / space / f / pgdn / pgup | 半ページ |
 | g / G / home / end | 列の先頭 / 末尾 |

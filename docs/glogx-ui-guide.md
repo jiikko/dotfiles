@@ -185,6 +185,8 @@ pro-con (`src/pro-con`。PM / PG を分けて Claude Code を並列に回す TUI
 | `n` | next (claim) | 新しい依頼 (new) | pro-con に claim が無い |
 | `s` | status viewer | Claude Code の session の一覧 | どちらも「板の toggle」。開く板が違う |
 
+数字 `1`〜`6` は pro-con ではレーン (カンバンの列) へ直接移るキー (glogx では issues の番号の絞り込みの入力にだけ使う)。
+
 `i` は glogx と同じく **issues の板** (pro-con では「issue を選んで依頼する」板。issue の読み方は同じ `glogx/issues`)。
 
 - `e` (エディタで開く = カードの issue の md)・`y` (素の値 = issue の md のパス)・`Y` (整形した参照 = カードのタイトルと内容) は

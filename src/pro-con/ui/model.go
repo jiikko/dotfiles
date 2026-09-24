@@ -60,7 +60,9 @@ type Model struct {
 	// tab は選んでいる repo 名 ("" = global)。位置ではなく名前で持つ (タブの増減で別の repo へずれない)。
 	tab string
 
-	// 選択は位置ではなくカード ID で持つ (安定キー)。カードが列を移っても選択が付いていく。
+	// フォーカスはレーン (col) と、そのレーンのカード (selected) の 2 段で持つ。カードの無いレーンにも当たる
+	// (selected = "")。カードは位置ではなく ID で持つ (安定キー)。カードが列を移ったらレーンのフォーカスも付いていく。
+	col        int
 	selected   string
 	showDetail bool
 
@@ -96,7 +98,7 @@ func New(be backend.Backend, repos []backend.Repo) *Model {
 	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, copy: pbcopy, openEditor: func(p string) *exec.Cmd { return editor.Command(p, nil) },
 		listSessions: func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) }}
 	m.snap = be.Poll()
-	m.ensureSelection()
+	m.focusFirst()
 	m.resetSlots()
 	return m
 }
@@ -208,8 +210,7 @@ func (m *Model) moveTab(delta int) {
 		}
 	}
 	m.tab = ts[(cur+delta+len(ts))%len(ts)]
-	m.selected = ""
-	m.ensureSelection()
+	m.focusFirst()
 	m.resetSlots() // タブの切り替えはカードが動いたのではない
 }
 
@@ -264,17 +265,35 @@ func (m *Model) positionOf(id string) (col, row int, ok bool) {
 	return 0, 0, false
 }
 
+// ensureSelection は状態が変わった後にフォーカスを直す。選んでいたカードが別のレーンへ移ったらレーンも付いていく。
+// カードが消えたら同じレーンの先頭のカード (無ければレーンだけにフォーカス)。
 func (m *Model) ensureSelection() {
-	if _, _, ok := m.position(); ok {
+	if col, _, ok := m.position(); ok {
+		m.col = col
 		return
 	}
-	for _, cs := range m.columns() {
+	m.focusLane(m.col, 0)
+}
+
+// focusFirst はカードのある最初のレーンにフォーカスする (起動時とタブの切り替え)。どのレーンも空なら先頭のレーン。
+func (m *Model) focusFirst() {
+	for i, cs := range m.columns() {
 		if len(cs) > 0 {
-			m.selected = cs[0].ID
+			m.focusLane(i, 0)
 			return
 		}
 	}
+	m.focusLane(0, 0)
+}
+
+// focusLane はレーン i にフォーカスし、row 番目 (はみ出したら末尾) のカードを選ぶ。空のレーンならカードは選ばない。
+func (m *Model) focusLane(i, row int) {
+	cols := m.columns()
+	m.col = max(0, min(i, len(cols)-1))
 	m.selected = ""
+	if cs := cols[m.col]; len(cs) > 0 {
+		m.selected = cs[max(0, min(row, len(cs)-1))].ID
+	}
 }
 
 func (m *Model) selectedCard() (card.Card, bool) {
@@ -286,27 +305,23 @@ func (m *Model) selectedCard() (card.Card, bool) {
 	return card.Card{}, false
 }
 
-// moveCol は左右の列へ移る。空の列は飛ばす。
-func (m *Model) moveCol(delta int) {
-	col, row, ok := m.position()
-	if !ok {
-		return
+// moveCol は左右のレーンへ移る。空のレーンにも止まる (レーンにフォーカスが当たる)。行の位置はなるべく保つ。
+func (m *Model) moveCol(delta int) { m.jumpCol(m.col + delta) }
+
+// jumpCol はレーン i (0 始まり) へ移る (h / l と 1〜6)。
+func (m *Model) jumpCol(i int) {
+	row := 0
+	if _, r, ok := m.position(); ok {
+		row = r
 	}
-	cols := m.columns()
-	for i := col + delta; i >= 0 && i < len(cols); i += delta {
-		if len(cols[i]) == 0 {
-			continue
-		}
-		m.selected = cols[i][min(row, len(cols[i])-1)].ID
-		return
-	}
+	m.focusLane(i, row)
 }
 
-// moveRow は列の中で delta 枚動く。端で止める (半ページ・先頭・末尾の移動も同じ関数で端に寄せる)。
+// moveRow はレーンの中で delta 枚動く。端で止める (半ページ・先頭・末尾の移動も同じ関数で端に寄せる)。
 func (m *Model) moveRow(delta int) {
 	col, row, ok := m.position()
 	if !ok {
-		return
+		return // 空のレーン
 	}
 	cs := m.columns()[col]
 	m.selected = cs[max(0, min(row+delta, len(cs)-1))].ID
@@ -364,9 +379,22 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	case "s":
 		m.showSessions = !m.showSessions
 	default:
+		if i, ok := laneKey(k.String()); ok {
+			m.jumpCol(i)
+			return nil
+		}
 		m.moveByMotion(listnav.MotionOf(k.String()))
 	}
 	return nil
+}
+
+// laneKey は 1〜(レーンの数) の数字キーをレーンの添字 (0 始まり) にする。数字はレーンの見出しの先頭に出している。
+func laneKey(key string) (int, bool) {
+	if len(key) != 1 || key[0] < '1' || key[0] > '9' {
+		return 0, false
+	}
+	i := int(key[0] - '1')
+	return i, i < len(card.Columns)
 }
 
 // moveByMotion は上下の移動を tuikit の語彙 (listnav.MotionOf) で受ける。語彙は glogx と同じ

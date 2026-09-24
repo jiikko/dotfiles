@@ -163,6 +163,9 @@ func TestSelectionFollowsCardAcrossColumns(t *testing.T) {
 	if col, _, _ := m.position(); card.Columns[col] != card.Review {
 		t.Fatalf("選択の位置がレビューの列になっていない: %s", card.Columns[col].Label())
 	}
+	if card.Columns[m.col] != card.Review {
+		t.Fatalf("レーンのフォーカスがカードに付いていかない: %s", card.Columns[m.col].Label())
+	}
 }
 
 // ボードでのペーストはキー操作として解釈しない (貼った文字に a / r が混ざっても何も起きない)。
