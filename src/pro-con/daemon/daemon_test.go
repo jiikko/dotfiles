@@ -19,8 +19,10 @@ var t0 = time.Date(2026, 9, 25, 1, 0, 0, 0, time.UTC)
 // fakeLauncher は起動・再開を記録するだけ。fail が真なら起動に失敗する。
 type fakeLauncher struct {
 	starts  []string // name
-	resumes []string // id + ":" + text
+	resumes []string // stopID + ":" + text
 	fail    bool
+	// resumeFail は再開に「失敗」と返す (実際には立っている形を作るのは一覧の側)
+	resumeFail bool
 }
 
 func (f *fakeLauncher) Start(_ context.Context, _, name, _ string) (string, error) {
@@ -31,9 +33,15 @@ func (f *fakeLauncher) Start(_ context.Context, _, name, _ string) (string, erro
 	return "id-" + name, nil
 }
 
-func (f *fakeLauncher) Resume(_ context.Context, id, _, text string) (string, error) {
-	f.resumes = append(f.resumes, id+":"+text)
-	return id, nil
+func (f *fakeLauncher) Resume(_ context.Context, stopID, _, text string) (string, error) {
+	f.resumes = append(f.resumes, stopID+":"+text)
+	if f.resumeFail {
+		return "", errors.New("再開できない")
+	}
+	if stopID == "" {
+		return "id-resumed", nil
+	}
+	return stopID, nil
 }
 
 // planned は分解済みのカードを n 枚積んだ記録を作る (箱から add → plan を通す)。
@@ -357,4 +365,111 @@ func TestLockIsExclusive(t *testing.T) {
 		t.Fatalf("外した後にロックを取れない: %v", err)
 	}
 	again()
+}
+
+// setCard は記録のカードを直接書き換える (daemon の途中の状態を作る)。
+func setCard(t *testing.T, dir, id string, f func(*card.Card)) {
+	t.Helper()
+	if err := store.Update(dir, func(s *store.State) error {
+		for i := range s.Cards {
+			if s.Cards[i].ID == id {
+				f(&s.Cards[i])
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// 印の残ったカードは、古いカードの後ろにあっても上限の判定より先に一覧と照らす (実際に立っている PG を数えずに別のカードを起動しない)。
+func TestLaunchingCardCountsBeforeLimit(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 2)
+	setCard(t, dir, "C-002", func(c *card.Card) { c.Launching, c.LaunchedAt = "起動", t0 })
+	l := &fakeLauncher{}
+	d := newDaemon(t, dir, l, []agents.Session{{ID: "cd34", SessionID: "S2", PID: 6, Name: "pc-c-002", Kind: "background", StartedAt: t0.Add(time.Second).UnixMilli()}})
+	d.Limit = 1
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	cs := states(t, dir)
+	if len(l.starts) != 0 || cs["C-002"].State != card.Running || cs["C-001"].State != card.Planned {
+		t.Fatalf("立っている PG を数えずに上限を超えて起動した: starts=%v C-001=%v C-002=%v", l.starts, cs["C-001"].State, cs["C-002"].State)
+	}
+}
+
+// 前の session が一覧に無ければ、止めずに再開する (無い id への stop で再開が永遠に届かない形を作らない)。
+func TestResumeSkipsStopWhenSessionIsGone(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 1)
+	l := &fakeLauncher{}
+	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", StartedAt: t0.Add(time.Second).UnixMilli()}}
+	d := newDaemon(t, dir, l, nil)
+	d.List = func(context.Context) ([]agents.Session, error) { return ss, nil }
+	for range 2 {
+		if _, err := d.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, r := range []store.Request{{Kind: "ask", CardID: "C-001", Question: "q"}, {Kind: "answer", CardID: "C-001", Answer: "a"}} {
+		if _, err := store.Submit(dir, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ss = nil // PG は質問して終わった
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(l.resumes) != 1 || l.resumes[0] != ":a" {
+		t.Fatalf("一覧に無い session を止めようとした / 再開しない: %v", l.resumes)
+	}
+}
+
+// 起動の結果を確かめるとき、印を書いた時刻より前に始まった同名の session は取り込まない (前の起動の残りの疑い)。
+func TestAdoptIgnoresSessionOlderThanMark(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 1)
+	setCard(t, dir, "C-001", func(c *card.Card) { c.Launching, c.LaunchedAt = "起動", t0 })
+	d := newDaemon(t, dir, &fakeLauncher{}, []agents.Session{{ID: "old1", SessionID: "S0", PID: 3, Name: "pc-c-001", Kind: "background", StartedAt: t0.Add(-time.Minute).UnixMilli()}})
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if c := states(t, dir)["C-001"]; c.State != card.Planned || c.Session == "old1" {
+		t.Fatalf("印より前に始まった同名の session を取り込んだ: %v %q", c.State, c.Session)
+	}
+}
+
+// 再開に「失敗」と返っても立っていれば、次の Tick は同じ session id の session を取り込み、同じ回答を 2 回渡さない。
+func TestFailedResumeThatActuallyResumedIsAdopted(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 1)
+	l := &fakeLauncher{}
+	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", StartedAt: t0.Add(time.Second).UnixMilli()}}
+	d := newDaemon(t, dir, l, nil)
+	d.List = func(context.Context) ([]agents.Session, error) { return ss, nil }
+	for range 2 {
+		if _, err := d.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, r := range []store.Request{{Kind: "ask", CardID: "C-001", Question: "q"}, {Kind: "answer", CardID: "C-001", Answer: "a"}} {
+		if _, err := store.Submit(dir, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t1 := t0.Add(time.Minute)
+	d.Now = func() time.Time { return t1 }
+	l.resumeFail = true
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ss[0].PID, ss[0].StartedAt = 43, t1.Add(time.Second).UnixMilli() // 実は再開していた
+	d.Now = func() time.Time { return t1.Add(launchGrace + time.Second) }
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if c := states(t, dir)["C-001"]; len(l.resumes) != 1 || c.State != card.Running || c.Resume != "" {
+		t.Fatalf("実は再開していた session を取り込まずに再開し直した: resumes=%v %v Resume=%q", l.resumes, c.State, c.Resume)
+	}
 }

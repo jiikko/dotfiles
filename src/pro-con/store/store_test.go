@@ -230,3 +230,31 @@ func TestApplyCapsPerCall(t *testing.T) {
 		t.Fatalf("残りを次の Apply で適用していない: %d", len(res))
 	}
 }
+
+// 除けた依頼は、rejected/ へ移す前に落ちても判定し直さない。後の依頼で状態が変わった後に判定し直すと、
+// 除けたはずの回答が別の質問への回答として適用される (順序が入れ替わる)。
+func TestRejectedIsNotRejudgedAfterCrash(t *testing.T) {
+	dir := t.TempDir()
+	submit(t, dir, Request{Kind: "add", Title: "x"})
+	applyAll(t, dir)
+	setState(t, dir, "C-001", card.Running)
+	box := filepath.Join(dir, InboxDir)
+	ans := submit(t, dir, Request{Kind: "answer", CardID: "C-001", Answer: "古い回答", At: t0}) // 作業中なので除ける
+	data, _ := os.ReadFile(filepath.Join(box, ans+".json"))
+	submit(t, dir, Request{Kind: "ask", CardID: "C-001", Question: "新しい質問", At: t0.Add(time.Second)})
+	applyAll(t, dir)
+	// 記録を書いた後、rejected/ へ移す前に落ちた形
+	if err := os.RemoveAll(filepath.Join(box, RejectedDir)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(box, ans+".json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	applyAll(t, dir)
+	if c := cardOf(t, dir, "C-001"); c.State != card.Waiting || c.Resume != "" {
+		t.Fatalf("除けた回答を判定し直して適用した: %v Resume=%q", c.State, c.Resume)
+	}
+	if _, err := os.Stat(filepath.Join(box, RejectedDir, ans+".json")); err != nil {
+		t.Fatalf("判定し直さずに rejected/ へ移していない: %v", err)
+	}
+}

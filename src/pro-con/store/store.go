@@ -58,7 +58,16 @@ type Request struct {
 type State struct {
 	NextID  int         `json:"nextId"`
 	Cards   []card.Card `json:"cards"`
-	Applied []string    `json:"applied"` // 適用済みの依頼の ID (除けた依頼は入れない)。古い順、最大 keepApplied
+	Applied []string    `json:"applied"` // 適用済みの依頼の ID。古い順、最大 keepApplied
+	// Rejected は除けた依頼の ID と理由。rejected/ へ移す前に落ちても、次の Apply は判定し直さずに移すだけにする
+	// (判定し直すと、後の依頼で状態が変わった後に適用されて順序が入れ替わる)。古い順、最大 keepApplied
+	Rejected []Rejected `json:"rejected,omitempty"`
+}
+
+// Rejected は除けた依頼 1 件。
+type Rejected struct {
+	ID  string `json:"id"`
+	Why string `json:"why"`
 }
 
 // Result は依頼 1 件の適用の結果。Err が空なら適用した。
@@ -130,12 +139,21 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 	for _, id := range st.Applied {
 		applied[id] = true
 	}
+	judged := map[string]string{} // 前の Apply で除けたが、rejected/ へ移す前に落ちた依頼
+	for _, r := range st.Rejected {
+		judged[r.ID] = r.Why
+	}
 	var results []Result
-	var done, rejected []string // 片付ける箱のファイル / 除ける箱のファイル
+	var done []string             // 片付ける箱のファイル
+	reject := map[string]string{} // 除ける箱のファイル → 理由
 	for _, name := range names {
 		id := strings.TrimSuffix(filepath.Base(name), ".json")
 		if applied[id] { // 前の Apply で記録には入ったが、ファイルを片付ける前に落ちた
 			done = append(done, name)
+			continue
+		}
+		if why, ok := judged[id]; ok {
+			reject[name] = why
 			continue
 		}
 		res := Result{ID: id}
@@ -153,10 +171,9 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 			}
 		}
 		if err != nil {
-			// 除けた依頼は控え (Applied) に入れない。rejected/ へ移す前に落ちても、次の Apply がもう一度判定して除ける
-			// (控えに入れると、次の Apply が「適用済み」として理由も残さずに消す)
 			res.Err = err.Error()
-			rejected = append(rejected, name)
+			reject[name] = res.Err
+			st.Rejected = append(st.Rejected, Rejected{ID: id, Why: res.Err})
 		} else {
 			done = append(done, name)
 			st.Applied = append(st.Applied, id)
@@ -165,6 +182,9 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 	}
 	if len(st.Applied) > keepApplied {
 		st.Applied = st.Applied[len(st.Applied)-keepApplied:]
+	}
+	if len(st.Rejected) > keepApplied {
+		st.Rejected = st.Rejected[len(st.Rejected)-keepApplied:]
 	}
 	if len(results) > 0 {
 		data, err := json.MarshalIndent(st, "", "  ")
@@ -178,25 +198,20 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 	for _, name := range done {
 		_ = os.Remove(name) // 消せなくても、次の Apply は Applied を見て飛ばす
 	}
-	if len(rejected) > 0 {
+	// 除けた依頼は理由を先に置いてから rejected/ へ移す。移せなくても daemon は止めない (箱に残り、次の Apply が控えを見て移し直す)。
+	// 移せなかったことは結果に出す
+	for name, why := range reject {
+		id := strings.TrimSuffix(filepath.Base(name), ".json")
 		rj := filepath.Join(box, RejectedDir)
-		if err := os.MkdirAll(rj, 0o700); err != nil {
-			return results, err
+		err := os.MkdirAll(rj, 0o700)
+		if err == nil {
+			err = os.WriteFile(filepath.Join(rj, id+".reason"), []byte(why+"\n"), 0o600)
 		}
-		why := map[string]string{}
-		for _, r := range results {
-			if r.Err != "" {
-				why[r.ID] = r.Err
-			}
+		if err == nil {
+			err = os.Rename(name, filepath.Join(rj, filepath.Base(name)))
 		}
-		for _, name := range rejected { // 理由を先に置いてから移す (移せなければ箱に残り、次の Apply がまた判定する)
-			id := strings.TrimSuffix(filepath.Base(name), ".json")
-			if err := os.WriteFile(filepath.Join(rj, id+".reason"), []byte(why[id]+"\n"), 0o600); err != nil {
-				return results, err
-			}
-			if err := os.Rename(name, filepath.Join(rj, filepath.Base(name))); err != nil {
-				return results, err
-			}
+		if err != nil {
+			results = append(results, Result{ID: id, Err: "rejected/ へ移せない (次の Apply で移し直す): " + err.Error()})
 		}
 	}
 	return results, nil

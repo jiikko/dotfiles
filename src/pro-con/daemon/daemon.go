@@ -27,9 +27,9 @@ import (
 type Launcher interface {
 	// Start は repoPath で PG を起動し、claude --bg が返す短い id を返す。name は worktree と session の名前
 	Start(ctx context.Context, repoPath, name, prompt string) (id string, err error)
-	// Resume は止めてから同じ session を text を渡して再開し、claude --bg が返す短い id を返す
+	// Resume は stopID の session を止めてから (空なら止めない) 同じ session を text を渡して再開し、claude --bg が返す短い id を返す
 	// (実行中の session に --resume するとコピーが起動するため。415 論点 11。再開で短い id が変わるかは未実測なので、返った id を使う)
-	Resume(ctx context.Context, id, sessionID, text string) (newID string, err error)
+	Resume(ctx context.Context, stopID, sessionID, text string) (newID string, err error)
 }
 
 // launchGrace は起動・再開の結果を確かめられないとき (claude が失敗と返した / daemon が途中で落ちた)、一覧に出るのを待つ長さ。
@@ -155,24 +155,32 @@ func (d *Daemon) dispatch(ctx context.Context, now time.Time, ss []agents.Sessio
 	if err != nil {
 		return nil, err
 	}
+	// 印の残ったカード (前の起動・再開の結果が分からない) は、上限の判定より先に片付ける。上限の後ろに置くと、実際に立っている PG を
+	// 数えずに別のカードを起動する (上限を下げて起動し直したときも)
 	var notes []string
+	var fresh []card.Card
 	for _, c := range queue {
+		if c.Launching == "" {
+			fresh = append(fresh, c)
+			continue
+		}
+		if id, ok := adopt(c, ss, reg); ok {
+			if err := d.settle(c.ID, now, c.Launching, id); err != nil {
+				return notes, err
+			}
+			running++
+			notes = append(notes, fmt.Sprintf("%s の PG の%sを一覧で確かめた (%s)", c.ID, c.Launching, id))
+			continue
+		}
+		if now.Sub(c.LaunchedAt) < launchGrace {
+			running++ // まだ一覧に出ていないだけかもしれない
+			continue
+		}
+		fresh = append(fresh, c) // 待っても出なかった。起動・再開し直す (古い順は保つ)
+	}
+	for _, c := range fresh {
 		if running >= d.Limit {
 			break
-		}
-		if c.Launching != "" {
-			if id, ok := adopt(c, ss, reg); ok {
-				if err := d.settle(c.ID, now, c.Launching, id); err != nil {
-					return notes, err
-				}
-				running++
-				notes = append(notes, fmt.Sprintf("%s の PG の%sを一覧で確かめた (%s)", c.ID, c.Launching, id))
-				continue
-			}
-			if now.Sub(c.LaunchedAt) < launchGrace {
-				running++ // まだ一覧に出ていないだけかもしれない
-				continue
-			}
 		}
 		how, run, err := d.prepare(c, ss, reg)
 		if err != nil {
@@ -213,13 +221,18 @@ func (d *Daemon) prepare(c card.Card, ss []agents.Session, reg []live.Owned) (st
 		if !ok {
 			return "再開", nil, fmt.Errorf("前の session (%s) が pro-con の記録に無い", c.Session)
 		}
+		stop := "" // 一覧に無い session は止めない (無い id への stop が失敗すると、再開に届かないまま繰り返す)
 		for _, s := range ss {
-			if s.ID == c.Session && s.SessionID != o.SessionID {
+			if s.ID != c.Session {
+				continue
+			}
+			if s.SessionID != o.SessionID {
 				return "再開", nil, fmt.Errorf("短い id %s が今は別の session (%s) を指している", c.Session, s.SessionID)
 			}
+			stop = c.Session
 		}
 		return "再開", func(ctx context.Context) (string, error) {
-			return d.Launch.Resume(ctx, c.Session, o.SessionID, c.Resume)
+			return d.Launch.Resume(ctx, stop, o.SessionID, c.Resume)
 		}, nil
 	}
 	path, ok := d.Repos[c.Repo]
