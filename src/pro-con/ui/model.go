@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -73,7 +74,8 @@ type Model struct {
 	inputKind inputKind
 	orderKind card.OrderKind
 
-	flash string
+	flash  string
+	sticky string // 消すまで残す通知 (捨てた書きかけの文など。flash は次の通知で消えるので置かない)。ボードの esc で消す
 
 	// カードの移動の演出 (motion.go)。now は時計 (テストで差し替える)
 	now       func() time.Time
@@ -82,6 +84,9 @@ type Model struct {
 	framing   bool // frame の tick が回っているか (二重に回さない)
 
 	picker picker // issue の一覧から依頼する画面 (picker.go)
+
+	up       *upgrader     // ライブアップグレード (upgrade.go)。nil なら無効
+	children *atomic.Int64 // 裏で外部コマンドを起こしている処理の数 (exec の前に 0 を待つ。upgrade.go の child)
 
 	copy       func(string) error     // クリップボードへ入れる (既定は pbcopy。テストは差し替える)
 	openEditor func(string) *exec.Cmd // ファイルを開くエディタのコマンド (既定は tuikit/editor。テストは差し替える)
@@ -96,7 +101,7 @@ type Model struct {
 
 // New は repos (config から列挙した repo) をタブの候補にして画面を作る。nil なら global だけ。
 func New(be backend.Backend, repos []backend.Repo) *Model {
-	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, copy: pbcopy, openEditor: func(p string) *exec.Cmd { return editor.Command(p, nil) },
+	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, copy: pbcopy, children: &atomic.Int64{}, openEditor: func(p string) *exec.Cmd { return editor.Command(p, nil) },
 		listSessions: func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) }}
 	m.snap = be.Poll()
 	m.focusFirst()
@@ -104,12 +109,23 @@ func New(be backend.Backend, repos []backend.Repo) *Model {
 	return m
 }
 
-// Notify は起動時の警告など、画面の外から通知行へ文面を出す。
-func (m *Model) Notify(s string) { m.flash = s }
+// Notify は起動時の警告など、画面の外から通知行へ文面を足す (上書きしない: 引き継ぎで捨てた書きかけの文などを消さない)。
+func (m *Model) Notify(s string) {
+	if m.flash != "" {
+		s = m.flash + " / " + s
+	}
+	m.flash = s
+}
 
 func tick() tea.Cmd { return tea.Tick(TickInterval, func(time.Time) tea.Msg { return tickMsg{} }) }
 
-func (m *Model) Init() tea.Cmd { return tea.Batch(tick(), m.fetchSessions()) }
+func (m *Model) Init() tea.Cmd {
+	cmds := []tea.Cmd{tick(), m.fetchSessions()}
+	if m.up != nil {
+		cmds = append(cmds, m.checkUpgrade())
+	}
+	return tea.Batch(cmds...)
+}
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -128,6 +144,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case editorDoneMsg:
 		m.onEditorDone(msg)
 		return m, nil
+	case upgradeTickMsg:
+		return m, m.checkUpgrade()
+	case upgradeCheckMsg:
+		return m, m.onUpgradeCheck(msg)
 	case sessionsMsg:
 		return m, m.onSessions(msg)
 	case sessionsTickMsg:
@@ -332,13 +352,17 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	switch k.String() {
 	case "ctrl+c":
 		return tea.Quit
+	case "ctrl+r": // 新版へ切り替える (ライブアップグレード。新版があるときだけ)
+		return m.requestUpgrade()
 	case "q":
 		// q は「今の板を 1 段戻る」(docs/glogx-ui-guide.md §1)。開いている板が無ければ終了
 		if !m.closeTop() {
 			return tea.Quit
 		}
 	case "esc":
-		m.closeTop()
+		if !m.closeTop() {
+			m.sticky = "" // 閉じる板が無いときの esc は、残しておいた通知を消す
+		}
 	case "tab":
 		m.moveTab(1)
 	case "shift+tab":

@@ -12,6 +12,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
+	"syscall"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -20,6 +23,7 @@ import (
 	"pro-con/config"
 	"pro-con/fake"
 	"pro-con/ui"
+	"pro-con/upgrade"
 )
 
 func main() {
@@ -60,16 +64,120 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	for i, r := range repos {
 		scopes[i] = backend.Repo{Name: r.Name, Path: r.Path}
 	}
-	// 模擬時間の起点は固定しない (時刻の表示が今に近い方が見本として読みやすい)。刻みは fake が決める
-	m := ui.New(fake.New(time.Now().Truncate(time.Minute)), scopes)
+	sim := fake.New(time.Now().Truncate(time.Minute)) // 模擬時間の起点は今 (時刻の表示が今に近い方が見本として読みやすい)
+	// ライブアップグレードで引き継いだ状態。読んだら環境変数は消す (エディタ・claude などの子プロセスへ漏らさない)
+	resumePath := takeResumeEnv()
+	var uiData []byte
+	notes := []string{}
+	if resumePath != "" {
+		if st, err := upgrade.Load(resumePath); err != nil {
+			// 読めなかったファイルは消さない (版が違うなら古い版で読める)。パスを出して、要らなければ人が消せるようにする
+			notes = append(notes, "引き継ぎに失敗したので最初から ("+resumePath+" は残した): "+err.Error())
+			resumePath = ""
+		} else {
+			if len(st.Backend) > 0 {
+				if err := sim.Restore(st.Backend); err != nil {
+					notes = append(notes, "模擬の状態を引き継げなかった: "+err.Error())
+				}
+			}
+			uiData = st.UI
+		}
+	}
+	m := ui.New(sim, scopes)
+	if uiData != nil {
+		if err := m.ImportState(uiData); err != nil {
+			notes = append(notes, "UI の状態を引き継げなかった: "+err.Error())
+		}
+	}
 	if len(warnings) > 0 {
-		m.Notify(fmt.Sprintf("設定の警告 %d 件 (%s): %s", len(warnings), cfgPath, warnings[0]))
+		notes = append(notes, fmt.Sprintf("設定の警告 %d 件 (%s): %s", len(warnings), cfgPath, warnings[0]))
 	}
-	if _, err := tea.NewProgram(m).Run(); err != nil {
-		_, _ = fmt.Fprintln(stderr, "pro-con:", err)
-		return 1
+	if len(notes) > 0 {
+		m.Notify(strings.Join(notes, " / "))
 	}
-	return 0
+	if exe, err := os.Executable(); err == nil {
+		_ = m.EnableUpgrade(exe, upgrade.ExecRunner) // bin/pro-con 以外から起動していれば無効 (ctrl+r で理由を出す)
+	}
+	for {
+		if _, err := tea.NewProgram(m).Run(); err != nil {
+			_, _ = fmt.Fprintln(stderr, "pro-con:", err)
+			if resumePath != "" {
+				// 引き継いだ状態は残す (新版が起動直後に落ちた等。直したら同じ状態で起動し直せる)
+				_, _ = fmt.Fprintf(stderr, "pro-con: 引き継いだ状態は %s に残した。直したら次で引き継げる:\n  %s=%s %s\n",
+					resumePath, upgrade.ResumeEnv, resumePath, wrapperPath())
+			}
+			return 1
+		}
+		if !m.UpgradeRequested() {
+			removeResume(resumePath)
+			return 0
+		}
+		p, err := switchToNew(m, sim, args, stateDir(home), resumePath)
+		resumePath = p
+		m.UpgradeFailed(err)
+	}
+}
+
+// execFn は syscall.Exec (テストで差し替える)。
+var execFn upgrade.ExecFunc = syscall.Exec
+
+// switchToNew は状態を書き出して新版を exec する。成功すると戻らない。戻ってきたら (状態のファイルのパス, エラー)
+// (旧版のまま続ける)。引き継いだ状態のファイル (resume) があればそこへ上書きする (溜めない。消したパスを案内しない)。
+// exec に失敗したとき、新しく作ったファイルは消す (旧版のまま続けるので要らない)。
+func switchToNew(m *ui.Model, sim *fake.Sim, args []string, dir, resume string) (string, error) {
+	uiData, err := m.PrepareSwitch(ui.SwitchWait)
+	if err != nil {
+		return resume, err
+	}
+	beData, err := sim.Save()
+	if err != nil {
+		return resume, err
+	}
+	path, err := upgrade.Save(dir, resume, upgrade.State{UI: uiData, Backend: beData})
+	if err != nil {
+		return resume, err
+	}
+	if err := upgrade.Exec(m.UpgradeExe(), args, os.Environ(), path, execFn); err != nil {
+		if resume == "" {
+			removeResume(path)
+		}
+		return resume, err
+	}
+	return path, nil
+}
+
+// wrapperPath は案内に出す起動のコマンド (bin/pro-con の絶対パス。見つからなければ "bin/pro-con")。
+func wrapperPath() string {
+	if exe, err := os.Executable(); err == nil {
+		p := filepath.Join(filepath.Dir(exe), "..", "..", "bin", "pro-con")
+		if _, err := os.Stat(p); err == nil {
+			return filepath.Clean(p)
+		}
+	}
+	return "bin/pro-con"
+}
+
+// takeResumeEnv は引き継いだ状態のファイルのパスを取り、環境変数からは消す (エディタ・claude などの子プロセスへ漏らさない。
+// 漏れると、その子から起動した pro-con が他人の状態を読む)。
+func takeResumeEnv() string {
+	p := os.Getenv(upgrade.ResumeEnv)
+	_ = os.Unsetenv(upgrade.ResumeEnv)
+	return p
+}
+
+func removeResume(path string) {
+	if path != "" {
+		_ = os.Remove(path)
+	}
+}
+
+// stateDir は引き継ぐ状態の置き場 ($XDG_STATE_HOME/pro-con、未設定なら ~/.local/state/pro-con)。
+func stateDir(home string) string {
+	base := os.Getenv("XDG_STATE_HOME")
+	if base == "" {
+		base = filepath.Join(home, ".local", "state")
+	}
+	return filepath.Join(base, "pro-con")
 }
 
 // fakeAttach は claude attach <id> の代わり。TUI から tea.ExecProcess で起動され、抜けると TUI へ戻る。

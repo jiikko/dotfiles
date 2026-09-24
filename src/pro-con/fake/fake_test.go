@@ -1,7 +1,9 @@
 package fake
 
 import (
+	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -266,5 +268,37 @@ func TestIssueRequestStaysLinked(t *testing.T) {
 	}
 	if c := get(t, s, id); len(c.Issues) != 1 || c.Issues[0].Number != 415 || c.State == card.Requested {
 		t.Fatalf("受付 PM が別の番号を振った / 進まない: %+v", c)
+	}
+}
+
+// 書き出して読み戻した Sim は、元の Sim と同じように進む (入れ替えても模擬が続く)。
+func TestSaveRestoreContinues(t *testing.T) {
+	a := New(t0)
+	for range 4 {
+		a.Step()
+	}
+	data, err := a.Save()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := New(t0.Add(time.Hour)) // 別の起点で作ってから置き換える
+	if err := b.Restore(data); err != nil {
+		t.Fatal(err)
+	}
+	for range 12 {
+		a.Step()
+		b.Step()
+	}
+	ja, _ := json.Marshal(a.Snapshot())
+	jb, _ := json.Marshal(b.Snapshot())
+	if string(ja) != string(jb) {
+		t.Fatalf("読み戻した Sim の進み方が違う:\n%s\n%s", ja, jb)
+	}
+}
+
+// Sim に欄を足したら persist.go の simState も直す (直し忘れると、その欄だけ黙って引き継がれない)。
+func TestSimFieldsArePersisted(t *testing.T) {
+	if n, want := reflect.TypeOf(Sim{}).NumField(), reflect.TypeOf(simState{}).NumField(); n != want {
+		t.Fatalf("Sim の欄 %d 個と simState の欄 %d 個が合わない。persist.go の Save / Restore を直す", n, want)
 	}
 }

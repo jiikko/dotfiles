@@ -26,10 +26,10 @@ type sessionsTickMsg struct{}
 
 func (m *Model) fetchSessions() tea.Cmd {
 	list := m.listSessions
-	return func() tea.Msg {
+	return m.child(func() tea.Msg {
 		ss, err := list(context.Background())
 		return sessionsMsg{ss: ss, err: err}
-	}
+	})
 }
 
 func (m *Model) onSessions(msg sessionsMsg) tea.Cmd {

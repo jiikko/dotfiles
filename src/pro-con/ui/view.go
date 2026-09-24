@@ -57,6 +57,9 @@ func (m *Model) render() string {
 		out = append(out, " "+sgrBold+sgrYellow+"方針変更: PG を止めて、指示を差し替えて再開します。よいですか? [y/N]"+sgrReset)
 	case modeBoard:
 	}
+	if m.sticky != "" {
+		out = append(out, sgrYellow+" "+m.sticky+sgrReset)
+	}
 	if m.flash != "" {
 		out = append(out, sgrCyan+" "+m.flash+sgrReset)
 	}
@@ -119,6 +122,9 @@ func (m *Model) gauge() string {
 	g := " " + strings.Join(parts, "  ") + sep + fmt.Sprintf("最古の待ち %s", fmtDur(oldest)) + sep +
 		fmt.Sprintf("PG %d/%d", len(m.snap.Consumers), m.snap.Limit) + sep +
 		fmt.Sprintf("daemon %s前", fmtDur(m.snap.Now.Sub(m.snap.DaemonTick))) + sep + m.sessionsSummary()
+	if u := m.upgradeSummary(); u != "" {
+		g += sep + u
+	}
 	if pending > 0 {
 		g += sep + sgrYellow + fmt.Sprintf("⚠ issue 化待ち %d", pending) + sgrFgReset
 	}
