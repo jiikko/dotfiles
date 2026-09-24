@@ -88,6 +88,7 @@ type Model struct {
 	// カードの詳細の引き出し (drawer.go)。drawerCard は閉じる途中も残す (逆再生で本文が見えている必要がある)
 	cursor     cursorGlide // 選択中のカードを囲む枠 (cursor.go)
 	quitAsk    bool        // 終了の確認ダイアログを出している (quit.go)
+	attaching  bool        // attach の照合を裏で待っている
 	legend     bool        // レーンの意味の表を出している (legend.go)
 	lane       laneFade    // 選んでいるレーンの枠の色の移り変わり (lanefade.go)
 	drawer     anim.Transition
@@ -176,6 +177,20 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
+	case attachReadyMsg:
+		m.attaching = false
+		if msg.err != nil {
+			m.flash = "attach できない: " + msg.err.Error()
+			return m, nil
+		}
+		// 照合を待つ間に入力欄を開いた・終了の確認を出した・別のカードを選んだなら、端末を明け渡さない (書いている途中の画面を奪わない)。
+		// 引き出し・? の表・PG の一覧を開いているだけなら明け渡す (戻れば同じ画面に戻る)
+		if m.mode != modeBoard || m.quitAsk || m.selected != msg.cardID {
+			m.flash = "attach を取りやめた (待っている間に画面が変わった)"
+			return m, nil
+		}
+		id := msg.cardID
+		return m, tea.ExecProcess(msg.cmd, func(err error) tea.Msg { return attachDoneMsg{cardID: id, err: err} })
 	case attachDoneMsg:
 		if msg.err != nil {
 			m.flash = "attach が失敗した: " + msg.err.Error()
@@ -635,11 +650,22 @@ func (m *Model) attach() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	cmd, err := m.be.AttachCommand(c.Session)
-	if err != nil {
-		m.flash = "attach できない: " + err.Error()
+	// backend は attach の前に照合し直すことがある (live は claude agents を呼ぶ。最大 3 秒)。キー処理の中で待たず裏で頼み、
+	// 結果 (attachReadyMsg) が届いてから画面を明け渡す
+	if m.attaching { // 照合の途中にもう一度押しても、2 回起動しない
 		return nil
 	}
-	id := c.ID
-	return tea.ExecProcess(cmd, func(err error) tea.Msg { return attachDoneMsg{cardID: id, err: err} })
+	m.attaching = true
+	be, id, session := m.be, c.ID, c.Session
+	return m.child(func() tea.Msg {
+		cmd, err := be.AttachCommand(session)
+		return attachReadyMsg{cardID: id, cmd: cmd, err: err}
+	})
+}
+
+// attachReadyMsg は attach の準備 (backend の照合) が済んだ知らせ。
+type attachReadyMsg struct {
+	cardID string
+	cmd    *exec.Cmd
+	err    error
 }

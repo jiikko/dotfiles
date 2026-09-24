@@ -141,8 +141,16 @@ func TestAttachUsesSelectedSession(t *testing.T) {
 	be := newSpy()
 	m := New(be, nil)
 	press(m, "right")
-	if cmd := press(m, "a"); cmd == nil {
+	cmd := press(m, "a")
+	if cmd == nil {
 		t.Fatal("attach のコマンドが返らなかった")
+	}
+	ready, ok := cmd().(attachReadyMsg) // 照合は裏で行い、結果が届いてから画面を明け渡す
+	if !ok {
+		t.Fatal("attach の準備の知らせが返らない")
+	}
+	if _, exec := m.Update(ready); exec == nil {
+		t.Fatal("準備が済んだのに画面を明け渡すコマンドが返らない")
 	}
 	if len(be.attached) != 1 || be.attached[0] != "s-w1" {
 		t.Fatalf("W1 の session で attach するはず: %v", be.attached)
@@ -172,7 +180,9 @@ func TestSelectionFollowsCardAcrossColumns(t *testing.T) {
 func TestPasteOnBoardDoesNothing(t *testing.T) {
 	be := newSpy()
 	m := New(be, nil)
-	m.Update(tea.PasteMsg{Content: "ara"})
+	if _, cmd := m.Update(tea.PasteMsg{Content: "ara"}); cmd != nil {
+		cmd() // attach は裏で頼むので、返ったコマンドまで走らせないと「頼んでいない」を確かめられない
+	}
 	if len(be.attached) != 0 || m.mode != modeBoard {
 		t.Fatalf("ボードへのペーストが操作として実行された: attached=%v mode=%v", be.attached, m.mode)
 	}
@@ -315,5 +325,43 @@ func TestBadgeShowsRunningCommand(t *testing.T) {
 	m := New(be, nil)
 	if b := m.badge(be.snap.Cards[0]); !strings.Contains(b, "▶ device: make e2e-device 3分") {
 		t.Fatalf("バッジに実行中のコマンドが無い: %q", b)
+	}
+}
+
+// attach の照合を待つ間に画面が変わったら (入力欄を開いた・別のカードを選んだ)、端末を明け渡さない。照合の途中の 2 度押しは 2 回起動しない。
+func TestAttachAbortsWhenScreenChanged(t *testing.T) {
+	be := newSpy()
+	m := New(be, nil)
+	press(m, "right")
+	cmd := press(m, "a")
+	if again := press(m, "a"); again != nil {
+		t.Fatal("照合の途中にもう一度 a を押したら、2 つ目の attach が走った")
+	}
+	ready := cmd().(attachReadyMsg)
+	press(m, "n") // 待っている間に入力欄を開いた
+	if _, exec := m.Update(ready); exec != nil {
+		t.Fatal("入力欄を開いているのに端末を明け渡した")
+	}
+	if !strings.Contains(m.flash, "取りやめた") {
+		t.Fatalf("取りやめた旨が出ない: %q", m.flash)
+	}
+}
+
+// 照合を待つ間に別のカードを選んだ・終了の確認を出したときも、端末を明け渡さない。
+func TestAttachAbortsOnSelectionOrQuit(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*Model)
+	}{
+		{"別のカードを選んだ", func(m *Model) { press(m, "down") }},
+		{"終了の確認を出した", func(m *Model) { press(m, "q") }},
+	} {
+		m := New(newSpy(), nil)
+		press(m, "right") // 質問待ちの W1 (下に W2 がある)
+		ready := press(m, "a")().(attachReadyMsg)
+		tc.change(m)
+		if _, exec := m.Update(ready); exec != nil {
+			t.Fatalf("%s のに端末を明け渡した", tc.name)
+		}
 	}
 }

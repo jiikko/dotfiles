@@ -87,7 +87,9 @@ func TestActionsOnEmptyLane(t *testing.T) {
 	be := m.be.(*spy)
 	m.Update(tea.KeyPressMsg{Code: '5', Text: "5"})
 	for _, k := range []string{"r", "a", "+", "w", "y", "Y", "e"} {
-		m.Update(tea.KeyPressMsg{Code: []rune(k)[0], Text: k})
+		if _, cmd := m.Update(tea.KeyPressMsg{Code: []rune(k)[0], Text: k}); cmd != nil {
+			cmd() // attach は裏で頼むので、返ったコマンドまで走らせてから「送られていない」を確かめる
+		}
 		if m.mode != modeBoard {
 			t.Fatalf("空のレーンで %s が入力欄を開いた", k)
 		}

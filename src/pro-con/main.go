@@ -85,10 +85,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		be = fake.New(time.Now().Truncate(time.Minute)) // 模擬時間の起点は今 (時刻の表示が今に近い方が見本として読みやすい)
 		dir = filepath.Join(stateDir(home), "mock")
 	} else {
-		lb := live.New(scopes, home)
+		lb := live.New(scopes, home, dir)
 		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
 		lb.Start(ctx)
+		defer func() { cancel(); lb.Wait() }() // 読み直しが止まるのを待ってから抜ける (claude の子プロセスを残さない)
 		be = lb
 	}
 	// ライブアップグレードで引き継いだ状態。読んだら環境変数は消す (エディタ・claude などの子プロセスへ漏らさない)

@@ -61,10 +61,17 @@ func TestReadTailReadsOnlyTheEnd(t *testing.T) {
 	}
 }
 
-func testBackend(ss []agents.Session, err error) (*Backend, *int) {
+// testBackend は ss を一覧に返す backend。ss の session はすべて「pro-con が起動した」記録に入れる (絞り込みは TestOnlyOwnedSessions)。
+func testBackend(t *testing.T, ss []agents.Session, err error) (*Backend, *int) {
+	t.Helper()
 	reads := 0
-	dir := os.TempDir()
-	b := New([]backend.Repo{{Name: "dotfiles", Path: "/w/dotfiles"}, {Name: "sub", Path: "/w/dotfiles/src/sub"}}, dir)
+	state := t.TempDir()
+	b := New([]backend.Repo{{Name: "dotfiles", Path: "/w/dotfiles"}, {Name: "sub", Path: "/w/dotfiles/src/sub"}}, t.TempDir(), state)
+	for _, s := range ss {
+		if e := Register(b.registry, Owned{SessionID: s.SessionID, PID: s.PID}); e != nil {
+			t.Fatal(e)
+		}
+	}
 	b.list = func(context.Context) ([]agents.Session, error) { return ss, err }
 	b.findPath = func(string) (string, error) { return os.Args[0], nil } // 存在するファイルなら何でもよい (read を差し替える)
 	b.read = func(string) (Transcript, error) {
@@ -76,15 +83,15 @@ func testBackend(ss []agents.Session, err error) (*Backend, *int) {
 }
 
 var sessions = []agents.Session{
-	{SessionID: "aaaaaaaa-1", Kind: "interactive", Status: "busy", Cwd: "/w/dotfiles/src/sub/x", Name: "対話"},
-	{SessionID: "bbbbbbbb-2", ID: "bbbbbbbb", Kind: "background", Status: "waiting", WaitingFor: "permission prompt", Cwd: "/w/dotfiles"},
-	{SessionID: "cccccccc-3", ID: "cccccccc", Kind: "background", Status: "waiting", WaitingFor: "input needed", Cwd: "/w/other"},
-	{SessionID: "dddddddd-4", Kind: "interactive", Status: "idle", Cwd: "/w/dotfiles-wt-x"},
+	{SessionID: "aaaaaaaa-1", PID: 101, Kind: "interactive", Status: "busy", Cwd: "/w/dotfiles/src/sub/x", Name: "対話"},
+	{SessionID: "bbbbbbbb-2", ID: "bbbbbbbb", PID: 102, Kind: "background", Status: "waiting", WaitingFor: "permission prompt", Cwd: "/w/dotfiles"},
+	{SessionID: "cccccccc-3", ID: "cccccccc", PID: 103, Kind: "background", Status: "waiting", WaitingFor: "input needed", Cwd: "/w/other"},
+	{SessionID: "dddddddd-4", PID: 104, Kind: "interactive", Status: "idle", Cwd: "/w/dotfiles-wt-x"},
 }
 
 // session 1 本をカード 1 枚に写す。状態・待ちの種類・repo (一番長く一致したもの)・attach の口 (裏の session だけ)。
 func TestSessionsBecomeCards(t *testing.T) {
-	b, _ := testBackend(sessions, nil)
+	b, _ := testBackend(t, sessions, nil)
 	b.Refresh(context.Background())
 	s := b.Poll()
 	if len(s.Cards) != 4 || len(s.Violations) != 0 {
@@ -116,7 +123,7 @@ func TestSessionsBecomeCards(t *testing.T) {
 
 // 一覧を取れなかったら、前のカードを残し、取れなかった理由を出す (0 本と区別する)。
 func TestListFailureKeepsLastCards(t *testing.T) {
-	b, _ := testBackend(sessions, nil)
+	b, _ := testBackend(t, sessions, nil)
 	b.Refresh(context.Background())
 	b.list = func(context.Context) ([]agents.Session, error) { return nil, errors.New("timeout") }
 	b.Refresh(context.Background())
@@ -128,7 +135,7 @@ func TestListFailureKeepsLastCards(t *testing.T) {
 
 // transcript の大きさと更新時刻が変わっていなければ読み直さない (3 秒ごとに 14MB 級を読まない)。
 func TestTranscriptIsCached(t *testing.T) {
-	b, reads := testBackend(sessions[:1], nil)
+	b, reads := testBackend(t, sessions[:1], nil)
 	b.Refresh(context.Background())
 	b.Refresh(context.Background())
 	if *reads != 1 {
@@ -138,7 +145,7 @@ func TestTranscriptIsCached(t *testing.T) {
 
 // 書き込みは受け付けない。attach できるのは裏の session だけ。
 func TestReadOnly(t *testing.T) {
-	b, _ := testBackend(nil, nil)
+	b, _ := testBackend(t, sessions, nil)
 	if _, err := b.Apply(backend.Answer{CardID: "x", Text: "y"}); !errors.Is(err, ErrReadOnly) {
 		t.Fatalf("書き込みを受け付けた: %v", err)
 	}
@@ -150,5 +157,158 @@ func TestReadOnly(t *testing.T) {
 	}
 	if !b.ReadOnly() {
 		t.Fatal("ReadOnly が偽")
+	}
+}
+
+// 本物のモードは、pro-con が起動した session (記録にあるもの) だけを出す。照合は session id (長い方) か claude --bg の短い id。
+// Desktop や他の shell の session は出さない (選べると pro-con の外の session に入力・停止できてしまう)。
+func TestOnlyOwnedSessions(t *testing.T) {
+	b, _ := testBackend(t, nil, nil)
+	b.list = func(context.Context) ([]agents.Session, error) { return sessions, nil }
+	if err := Register(b.registry, Owned{SessionID: "aaaaaaaa-1", PID: 101}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Register(b.registry, Owned{SessionID: "cccccccc-3", ID: "cccccccc", PID: 103}); err != nil {
+		t.Fatal(err)
+	}
+	b.Refresh(context.Background())
+	var ids []string
+	for _, c := range b.Poll().Cards {
+		ids = append(ids, c.ID)
+	}
+	if strings.Join(ids, ",") != "S-aaaaaaaa,S-cccccccc" {
+		t.Fatalf("記録にある session だけを出すはず: %v", ids)
+	}
+	if !strings.Contains(b.Describe(), "2 本") {
+		t.Fatalf("ヘッダーに記録の本数が出ない: %q", b.Describe())
+	}
+}
+
+// 記録が空なら 0 本で、ヘッダーでそう言う。記録が壊れていたら、空とは区別して理由を出す。
+func TestEmptyAndBrokenRegistry(t *testing.T) {
+	b, _ := testBackend(t, nil, nil)
+	b.list = func(context.Context) ([]agents.Session, error) { return sessions, nil }
+	b.Refresh(context.Background())
+	if len(b.Poll().Cards) != 0 || !strings.Contains(b.Describe(), "まだ無い") {
+		t.Fatalf("記録が空なのに %d 枚 / %q", len(b.Poll().Cards), b.Describe())
+	}
+	if err := os.WriteFile(b.registry, []byte("{壊れた"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b.Refresh(context.Background())
+	if v := b.Poll().Violations; len(v) != 1 || !strings.Contains(v[0].Reason, "記録を読めない") {
+		t.Fatalf("壊れた記録を空と区別していない: %v", v)
+	}
+}
+
+// Start は最初の読み取りを待たずに戻る (claude agents --json は最大 3 秒待つので、画面を出す前に待たない)。
+func TestStartDoesNotBlock(t *testing.T) {
+	b, _ := testBackend(t, sessions[:1], nil)
+	release := make(chan struct{})
+	b.list = func(context.Context) ([]agents.Session, error) { <-release; return sessions[:1], nil }
+	ctx, cancel := context.WithCancel(context.Background())
+	returned := make(chan struct{})
+	go func() { b.Start(ctx); close(returned) }()
+	select {
+	case <-returned:
+	case <-time.After(5 * time.Second): // 安全網 (Start が待つ退行ならここで止まる)
+		t.Fatal("Start が最初の読み取りを待っている")
+	}
+	if !strings.Contains(b.Describe(), "読み込み中") {
+		t.Fatalf("最初の読み取りの前なのに %q", b.Describe())
+	}
+	close(release)
+	cancel()
+	b.Wait()
+}
+
+// 依頼の原文は上限で切る (貼り付けた巨大な依頼を、詳細の描画のたびに折り返さない)。
+func TestRequestIsClipped(t *testing.T) {
+	b, _ := testBackend(t, sessions[:1], nil)
+	b.read = func(string) (Transcript, error) {
+		return Transcript{LastPrompt: strings.Repeat("あ", requestRunes*3)}, nil
+	}
+	b.Refresh(context.Background())
+	if n := len([]rune(b.Poll().Cards[0].Request)); n > requestRunes+1 {
+		t.Fatalf("依頼の原文が %d 文字 (上限 %d)", n, requestRunes)
+	}
+}
+
+// Register は追記し、一時ファイルを残さない (途中で落ちても壊れた記録を残さないように rename で書く)。
+func TestRegisterAppendsAtomically(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "live", RegistryFile)
+	for _, id := range []string{"a", "b"} {
+		if err := Register(p, Owned{SessionID: id, ID: id, PID: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reg, err := LoadRegistry(p)
+	if err != nil || len(reg) != 2 || reg[0].ID != "a" || reg[1].ID != "b" {
+		t.Fatalf("追記されていない: %+v %v", reg, err)
+	}
+	if ms, _ := filepath.Glob(filepath.Join(filepath.Dir(p), "*.tmp-*")); len(ms) != 0 {
+		t.Fatalf("一時ファイルが残った: %v", ms)
+	}
+}
+
+// 照合は記録の 1 行にある欄が全部一致したときだけ。どれか 1 つの一致で通すと、短い id の衝突や、
+// pro-con が起動した session を外で同じ session id のまま再開したもの (pid が違う) を拾う (敵対的レビューの P2)。
+func TestOwnsRequiresEveryRecordedField(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		rec  Owned
+		want bool
+	}{
+		{"長い id と pid が一致", Owned{SessionID: "X", PID: 100}, true},
+		{"短い id と pid が一致", Owned{ID: "bb", PID: 100}, true},
+		{"長い id は一致・短い id が違う", Owned{SessionID: "X", ID: "zz", PID: 100}, false},
+		{"短い id は一致・長い id が違う", Owned{SessionID: "Y", ID: "bb", PID: 100}, false},
+		{"pid が違う (外で再開した)", Owned{SessionID: "X", PID: 200}, false},
+		{"pid の無い行 (古い形式・書き忘れ)", Owned{SessionID: "X"}, false},
+		{"id を持たない行", Owned{PID: 100}, false},
+	} {
+		if got := owns([]Owned{tc.rec}, "X", "bb", 100); got != tc.want {
+			t.Fatalf("%s: owns=%v (期待 %v)", tc.name, got, tc.want)
+		}
+	}
+}
+
+// attach は押した瞬間に一覧を取り直して照合し直す。同じ短い id でも記録と違う session (外のもの) には撃たない。
+func TestAttachReverifiesOwnership(t *testing.T) {
+	b, _ := testBackend(t, nil, nil)
+	if err := Register(b.registry, Owned{SessionID: "bbbbbbbb-2", ID: "bbbbbbbb", PID: 102}); err != nil {
+		t.Fatal(err)
+	}
+	b.list = func(context.Context) ([]agents.Session, error) {
+		return []agents.Session{{SessionID: "bbbbbbbb-2", ID: "bbbbbbbb", PID: 102, Kind: "background"}}, nil
+	}
+	if _, err := b.AttachCommand("bbbbbbbb"); err != nil {
+		t.Fatalf("記録にある session に attach できない: %v", err)
+	}
+	b.list = func(context.Context) ([]agents.Session, error) { // 同じ短い id の、記録に無い session に入れ替わった
+		return []agents.Session{{SessionID: "ffffffff-9", ID: "bbbbbbbb", PID: 102, Kind: "background"}}, nil
+	}
+	if _, err := b.AttachCommand("bbbbbbbb"); err == nil {
+		t.Fatal("記録と違う session に attach しようとした")
+	}
+}
+
+// Register は PID の無い行を拒み (照合で誰とも一致しないので書く意味が無い)、同じ session の行は書き直す (再開のたびに PID が変わる)。
+func TestRegisterRejectsNoPIDAndUpserts(t *testing.T) {
+	p := filepath.Join(t.TempDir(), RegistryFile)
+	if err := Register(p, Owned{SessionID: "X"}); !errors.Is(err, ErrNoPID) {
+		t.Fatalf("PID の無い行を記録した: %v", err)
+	}
+	if err := Register(p, Owned{ID: "x", PID: 1}); !errors.Is(err, ErrNoSessionID) {
+		t.Fatalf("session id の無い行を記録した (短い id だけで書き直すと照合が緩む): %v", err)
+	}
+	for _, pid := range []int{100, 200} {
+		if err := Register(p, Owned{SessionID: "X", PID: pid}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reg, err := LoadRegistry(p)
+	if err != nil || len(reg) != 1 || reg[0].PID != 200 {
+		t.Fatalf("同じ session の行を書き直すはず: %+v %v", reg, err)
 	}
 }
