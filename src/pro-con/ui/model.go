@@ -3,7 +3,6 @@
 package ui
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -20,7 +19,6 @@ import (
 	"tuikit/lineedit"
 	"tuikit/listnav"
 
-	"pro-con/agents"
 	"pro-con/backend"
 	"pro-con/card"
 )
@@ -104,18 +102,12 @@ type Model struct {
 	copy       func(string) error     // クリップボードへ入れる (既定は pbcopy。テストは差し替える)
 	openEditor func(string) *exec.Cmd // ファイルを開くエディタのコマンド (既定は tuikit/editor。テストは差し替える)
 
-	// Claude Code の session の一覧 (sessions.go)
-	listSessions func(context.Context) ([]agents.Session, error)
-	sessions     []agents.Session
-	sessErr      string
-	sessFetched  bool
-	showSessions bool
+	showSessions bool // s で開く PG の一覧 (sessions.go)
 }
 
 // New は repos (config から列挙した repo) をタブの候補にして画面を作る。nil なら global だけ。
 func New(be backend.Backend, repos []backend.Repo) *Model {
-	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, slides: map[panel]*slide{}, copy: pbcopy, children: &atomic.Int64{}, openEditor: func(p string) *exec.Cmd { return editor.Command(p, nil) },
-		listSessions: func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) }}
+	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, slides: map[panel]*slide{}, copy: pbcopy, children: &atomic.Int64{}, openEditor: func(p string) *exec.Cmd { return editor.Command(p, nil) }}
 	m.setSnap(be.Poll())
 	m.focusFirst()
 	m.resetSlots()
@@ -133,7 +125,7 @@ func (m *Model) Notify(s string) {
 func tick() tea.Cmd { return tea.Tick(TickInterval, func(time.Time) tea.Msg { return tickMsg{} }) }
 
 func (m *Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{tick(), m.fetchSessions()}
+	cmds := []tea.Cmd{tick()}
 	if m.up != nil {
 		cmds = append(cmds, m.checkUpgrade())
 	}
@@ -170,10 +162,6 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 		return m, m.checkUpgrade()
 	case upgradeCheckMsg:
 		return m, m.onUpgradeCheck(msg)
-	case sessionsMsg:
-		return m, m.onSessions(msg)
-	case sessionsTickMsg:
-		return m, m.fetchSessions()
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil

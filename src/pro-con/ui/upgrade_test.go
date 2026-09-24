@@ -13,8 +13,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-
-	"pro-con/agents"
 )
 
 // upgradeModel は一時ディレクトリの repo の形 (src/pro-con/{go.mod,pro-con} + bin/lib/go_autobuild.zsh) から
@@ -225,26 +223,38 @@ func TestImportClampsCursor(t *testing.T) {
 
 func itoa(n int) string { return strconv.Itoa(n) }
 
-// session の一覧の取得 (claude agents) も「裏で外部コマンドを起こす処理」として数え、exec の前に待つ。
-func TestSessionsFetchIsTracked(t *testing.T) {
-	m := New(newSpy(), nil)
+// attach の照合 (live は claude agents を呼ぶ) も「裏で外部コマンドを起こす処理」として数え、exec の前に待つ。
+func TestAttachCheckIsTracked(t *testing.T) {
 	release := make(chan struct{})
-	m.listSessions = func(context.Context) ([]agents.Session, error) { <-release; return nil, nil }
-	cmd := m.fetchSessions()
+	be := &blockingAttach{spy: newSpy(), release: release}
+	m := New(be, nil)
+	press(m, "right") // 質問待ちの W1 (session がある)
+	cmd := press(m, "a")
 	go cmd()
 	for i := 0; m.children.Load() == 0; i++ {
 		if i > 200 {
-			t.Fatal("取得が数に入らない")
+			t.Fatal("照合が数に入らない")
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
 	if m.WaitChildren(30 * time.Millisecond) {
-		t.Fatal("取得の途中なのに待ち終わった")
+		t.Fatal("照合の途中なのに待ち終わった")
 	}
 	close(release)
 	if !m.WaitChildren(time.Second) {
-		t.Fatal("取得が終わったのに待ち続ける")
+		t.Fatal("照合が終わっても待ち終わらない")
 	}
+}
+
+// blockingAttach は release が閉じるまで AttachCommand を返さない backend (照合に時間がかかる live の代わり)。
+type blockingAttach struct {
+	*spy
+	release chan struct{}
+}
+
+func (b *blockingAttach) AttachCommand(id string) (*exec.Cmd, error) {
+	<-b.release
+	return b.spy.AttachCommand(id)
 }
 
 // 切り替えの前に裏の処理を待つ。待ち切れなければ書き出さずにエラー (exec させない)。

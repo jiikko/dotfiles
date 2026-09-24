@@ -43,6 +43,7 @@ type Consumer struct {
 	Session string
 	CardID  string // 空なら待機中
 	Status  string // busy / waiting / idle (claude agents --json の status と同じ語)
+	PID     int    // 実体のプロセス (本物だけ。模擬は 0)
 }
 
 // Describer はヘッダーに出す自分の説明を持つ backend (模擬か本物かを画面で見分けるため。任意)。

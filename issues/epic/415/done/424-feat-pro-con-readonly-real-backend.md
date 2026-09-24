@@ -67,3 +67,5 @@ PM / PG の仕組みが無くても「どの session が何をしているか忘
     4 周目は P3 のみ (コメントの射程 / 書き直しで CardID が消えうる → 427 への注意として残した)。
     記録だけ: 同じユーザーのプロセスは記録のファイルに書き足せる (脅威モデルの外) / 照合し直してから claude attach が id を解決するまでの窓は閉じられない
   - 担当 issue は推測しない (今は空)。対話の session の状態は idle / busy しか観測していない (waiting は bg だけで確認)
+- [x] pro-con の外の session の本数も出さない (2026-09-24 のユーザーの判断)。画面が自分で `claude agents` を読む経路 (ゲージの「claude N 本」・
+  `s` の一覧の「ほかの session」) を外し、PG の pid は backend の Consumer から出す。画面のパッケージが pro-con/agents を import しないことをテストで固定した

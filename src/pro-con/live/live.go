@@ -124,7 +124,7 @@ func (b *Backend) Refresh(ctx context.Context) {
 		c := b.toCard(s, b.transcript(s.SessionID))
 		cards = append(cards, c)
 		if s.Kind == "background" {
-			cons = append(cons, backend.Consumer{Session: s.ID, CardID: c.ID, Status: s.Status})
+			cons = append(cons, backend.Consumer{Session: s.ID, CardID: c.ID, Status: s.Status, PID: s.PID})
 		}
 	}
 	b.mu.Lock()
