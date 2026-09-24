@@ -56,7 +56,7 @@ func benchDiffBrowse(tb testing.TB, ja bool) *browseModel {
 	}
 	m.diffOv.sha = sha
 	m.diffOv.cache.store(sha, lines, sha)
-	m.diffOv.offset = 50
+	m.diffOv.pager.Offset = 50
 	return m
 }
 

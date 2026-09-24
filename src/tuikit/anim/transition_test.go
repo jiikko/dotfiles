@@ -142,3 +142,26 @@ func TestTransitionZeroDuration(t *testing.T) {
 		t.Fatalf("所要 0 が即着地しない: animating=%v openness=%v", tr.Animating(t0), tr.Openness(t0, EaseOutCubic))
 	}
 }
+
+func TestElapsed(t *testing.T) {
+	d := 100 * time.Millisecond
+	for _, c := range []struct {
+		name  string
+		start time.Time
+		now   time.Time
+		d     time.Duration
+		want  float64
+	}{
+		{"始まった瞬間", t0, t0, d, 0},
+		{"半分", t0, t0.Add(50 * time.Millisecond), d, 0.5},
+		{"着地", t0, t0.Add(d), d, 1},
+		{"着地の後も 1 に留まる", t0, t0.Add(3 * d), d, 1},
+		{"開始より前は 0 (時計が戻った)", t0, t0.Add(-d), d, 0},
+		{"開始時刻が zero value = 演出していない", time.Time{}, t0, d, 1},
+		{"所要 0", t0, t0, 0, 1},
+	} {
+		if got := Elapsed(c.start, c.now, c.d); got != c.want {
+			t.Errorf("%s: Elapsed = %v, want %v", c.name, got, c.want)
+		}
+	}
+}

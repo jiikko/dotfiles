@@ -96,17 +96,3 @@ func TestSlideIn(t *testing.T) {
 		}
 	}
 }
-
-func TestWindowOffset(t *testing.T) {
-	for _, tc := range []struct{ offset, cursor, total, rows, want int }{
-		{0, 5, 100, 10, 0},    // 窓の中
-		{0, 15, 100, 10, 6},   // 下へはみ出たら最下行に合わせる
-		{20, 3, 100, 10, 3},   // 上へはみ出たら最上行に合わせる
-		{95, 99, 100, 10, 90}, // 末尾を越えない
-		{0, 0, 5, 10, 0},      // 行数が窓より少ない
-	} {
-		if got := WindowOffset(tc.offset, tc.cursor, tc.total, tc.rows); got != tc.want {
-			t.Errorf("WindowOffset(%d, %d, %d, %d) = %d, want %d", tc.offset, tc.cursor, tc.total, tc.rows, got, tc.want)
-		}
-	}
-}

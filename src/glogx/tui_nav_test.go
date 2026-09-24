@@ -483,7 +483,7 @@ func TestAdvancePullAnimTerminates(t *testing.T) {
 // statusOv.slideAnimating / statusOv.animating — これらは他のテストが個別に押さえている)。
 // 「演出の登録先が tickInterval 1 箇所に集約されている」ことをこのテーブルが検査している
 // わけではない。カバーしている演出経路は scrollAnim / toast.animating / diffOv.animating /
-// issuesOv.bodyGlide の 4 つ。
+// issuesOv.bodyPager の 4 つ。
 func TestBrowseSpinnerActiveSources(t *testing.T) {
 	sources := []struct {
 		name string
@@ -513,8 +513,8 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 		// 🚨 以下 3 つは「全テストスイートを生き残る」ことを変異で実測した無防備な源
 		// (2026-08-13 の敵対的レビュー)。前 2 つは tickInterval 経由、3 つ目は上の
 		// statusOv.fetching の第 2 disjunct で、そこだけ覆えていなかった。
-		{"diffOv.animating", func(m *browseModel) { m.diffOv.glide.Start(0, 1, scrollAnimFrames) }},
-		{"issuesOv.bodyGlide", func(m *browseModel) { m.issuesOv.bodyGlide.Start(0, 1, scrollAnimFrames) }},
+		{"diffOv.animating", func(m *browseModel) { startPagerGlide(t, &m.diffOv.pager, 0, 1) }},
+		{"issuesOv.bodyPager", func(m *browseModel) { startPagerGlide(t, &m.issuesOv.bodyPager, 0, 1) }},
 		{"statusOv.preview.fetching", func(m *browseModel) { m.statusOv.preview.begin("k") }},
 	}
 	// 前提: 何も動いていない model は false (これが false でないと以下の検証が無意味になる)

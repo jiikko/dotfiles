@@ -71,11 +71,19 @@ func (t *Transition) Progress(now time.Time) float64 {
 	if t.phase != Opening && t.phase != Closing {
 		return 1
 	}
-	if t.duration <= 0 {
+	return Elapsed(t.started, now, t.duration)
+}
+
+// Elapsed は start に始まった所要 d の演出の進捗 0..1 を返す (1 = 着地)。start が zero value
+// なら 1 (演出していない)、d <= 0 も 1 (所要 0 の演出は始まった瞬間に終わっている)。
+//
+// 逆再生の要らない一方向の演出 (一覧が流れ込む・画面が抜ける) は、開始時刻だけを持ってこれに
+// 通す。開閉を行き来して途中で向きを変えるものは Transition を使う。
+func Elapsed(start, now time.Time, d time.Duration) float64 {
+	if start.IsZero() || d <= 0 {
 		return 1
 	}
-	p := float64(now.Sub(t.started)) / float64(t.duration)
-	return max(min(p, 1), 0)
+	return max(min(float64(now.Sub(start))/float64(d), 1), 0)
 }
 
 // Animating は演出の途中か (使う側が tick を回し続ける判定に使う)。

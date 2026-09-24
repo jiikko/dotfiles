@@ -1,9 +1,6 @@
 package listnav
 
-import (
-	"tuikit/anim"
-	"tuikit/layout"
-)
+import "tuikit/anim"
 
 // List は一覧のカーソルと窓。zero value = 先頭。
 //
@@ -44,8 +41,7 @@ func (l *List) Move(m Motion, total, rows, frames int) bool {
 	case None:
 		return false
 	}
-	l.Cursor = min(max(l.Cursor, 0), total-1)
-	l.Offset = layout.WindowOffset(l.Offset, l.Cursor, total, rows)
+	l.fit(total, rows)
 	// 起点が新しい窓の外なら滑らせない (滑走の最初のフレームで描画カーソルが窓の外に居て、
 	// カーソルの強調が 1 行も描かれない。半ページが窓の高さ以上になる rows=1 で起きる)
 	inWindow := from >= l.Offset && from < l.Offset+rows
@@ -58,13 +54,17 @@ func (l *List) Move(m Motion, total, rows, frames int) bool {
 // Fit は行数・表示行数が変わったとき (再読込・resize) にカーソルと窓を収め直す。滑走は捨てる。
 func (l *List) Fit(total, rows int) {
 	l.glide.Stop()
-	rows = max(rows, 1)
 	if total <= 0 {
 		l.Cursor, l.Offset = 0, 0
 		return
 	}
+	l.fit(total, max(rows, 1))
+}
+
+// fit はカーソルを [0, total) へ、窓をカーソルを含む最小の窓へ収める (total >= 1, rows >= 1)。
+func (l *List) fit(total, rows int) {
 	l.Cursor = min(max(l.Cursor, 0), total-1)
-	l.Offset = layout.WindowOffset(l.Offset, l.Cursor, total, rows)
+	l.Offset = WindowOffset(l.Offset, l.Cursor, total, rows)
 }
 
 // DrawCursor は描画に使うカーソル行 (滑走中は途中位置)。行き過ぎても [0, total) に収める。

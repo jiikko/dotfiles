@@ -231,12 +231,12 @@ func TestBrowseDiffOpenScrollClose(t *testing.T) {
 	}
 	// スクロール: j で 1 行、G で末尾
 	m.handleKey("j")
-	if m.diffOv.offset != 1 {
-		t.Errorf("j 後の offset = %d; want 1", m.diffOv.offset)
+	if m.diffOv.pager.Offset != 1 {
+		t.Errorf("j 後の offset = %d; want 1", m.diffOv.pager.Offset)
 	}
 	m.handleKey("G")
-	if m.diffOv.offset != len(diffLines)-m.visibleDiffRows() {
-		t.Errorf("G 後の offset = %d", m.diffOv.offset)
+	if m.diffOv.pager.Offset != len(diffLines)-m.visibleDiffRows() {
+		t.Errorf("G 後の offset = %d", m.diffOv.pager.Offset)
 	}
 	// q で閉じる (アプリは終了しない)
 	m.handleKey("q")
@@ -263,7 +263,7 @@ func TestDiffBoxLinesScrollbar(t *testing.T) {
 	// 溢れる: バー列あり + 幅は均一 + thumb は比率
 	o.sha = commit.SHA
 	o.cache.store(commit.SHA, diffLines(50), commit.SHA)
-	o.offset = 20
+	o.pager.Offset = 20
 	box := o.boxLines(width, false, "", commit, rows)
 	uniformWidth(t, box)
 	// 影付き箱: 末尾 2 行は下辺 (▖▁▗+影) と下端影なので本文から除く。本文行の行末は
@@ -293,7 +293,7 @@ func TestDiffBoxLinesScrollbar(t *testing.T) {
 
 	// 収まる: バー列なし (本文幅が戻る)。枠幅は溢れる場合と同じ
 	o.cache.store(commit.SHA, diffLines(rows-2), commit.SHA)
-	o.offset = 0
+	o.pager.Offset = 0
 	fit := o.boxLines(width, false, "", commit, rows)
 	if w := uniformWidth(t, fit); w != dispWidth(stripANSI(box[0])) {
 		t.Fatalf("収まる場合の枠幅 = %d, 溢れる場合 = %d", w, dispWidth(stripANSI(box[0])))
@@ -320,7 +320,7 @@ func TestPagerOverlayReclampsOffsetOnRedraw(t *testing.T) {
 	d := newDiffOverlay()
 	d.sha = commit.SHA
 	d.cache.store(commit.SHA, lines, commit.SHA)
-	d.offset = 49 // 旧 rows で G → リサイズで rows が増えた後を想定 (窓上限 42 を越えている)
+	d.pager.Offset = 49 // 旧 rows で G → リサイズで rows が増えた後を想定 (窓上限 42 を越えている)
 	if title := d.boxLines(width, false, "", commit, rows)[0]; !strings.Contains(title, "[43-50/50]") {
 		t.Errorf("diff overlay が offset を窓へ再クランプしていない: title=%q, want [43-50/50]", title)
 	}
@@ -329,19 +329,31 @@ func TestPagerOverlayReclampsOffsetOnRedraw(t *testing.T) {
 	// clamp するので title は書き戻しが無くても正しく、上スクロールだけが死ぬ (k / up /
 	// ctrl+p は max(offset-n, 0) しか見ないため rows_new - rows_old 打鍵ぶん無反応。
 	// 実測 2026-08-21: diff 33 打鍵 / job 詳細 11 打鍵)。title だけの検査ではこの退行が緑になる。
-	if d.offset != 42 {
-		t.Errorf("diff overlay が論理 offset を書き戻していない: offset=%d, want 42 (上スクロールが死ぬ)", d.offset)
+	if d.pager.Offset != 42 {
+		t.Errorf("diff overlay が論理 offset を書き戻していない: offset=%d, want 42 (上スクロールが死ぬ)", d.pager.Offset)
 	}
 
 	j := newJobDetailOverlay()
 	j.open = true
 	j.cache.store("key", lines, "key")
-	j.offset = 49
+	j.pager.Offset = 49
 	if title := j.boxLines(width, false, "", "job", "key", rows)[0]; !strings.Contains(title, "[43-50/50]") {
 		t.Errorf("job 詳細 overlay が offset を窓へ再クランプしていない: title=%q, want [43-50/50]", title)
 	}
-	if j.offset != 42 {
-		t.Errorf("job 詳細 overlay が論理 offset を書き戻していない: offset=%d, want 42", j.offset)
+	if j.pager.Offset != 42 {
+		t.Errorf("job 詳細 overlay が論理 offset を書き戻していない: offset=%d, want 42", j.pager.Offset)
+	}
+
+	// status viewer の全画面 diff も同じ規律 (pagerRows = page - 5 なので page 13 で rows 8)
+	sv := newTestStatusView(t, "")
+	sv.pagerKey, sv.pagerTitle = "k", "t"
+	sv.preview.store("k", lines, "k")
+	sv.pager.Offset = 49
+	if title := sv.pagerBox(statusRenderOpts{width: width, page: rows + 5})[0]; !strings.Contains(title, "[43-50/50]") {
+		t.Errorf("status viewer の pager が offset を窓へ再クランプしていない: title=%q, want [43-50/50]", title)
+	}
+	if sv.pager.Offset != 42 {
+		t.Errorf("status viewer の pager が論理 offset を書き戻していない: offset=%d, want 42", sv.pager.Offset)
 	}
 }
 
@@ -418,7 +430,7 @@ func TestBrowseDiffPagerKeysScrollNotClose(t *testing.T) {
 	if m.diffOv.sha == "" {
 		t.Fatal("Space で閉じた (半ページスクロールのはず)")
 	}
-	if m.diffOv.offset == 0 {
+	if m.diffOv.pager.Offset == 0 {
 		t.Error("Space でスクロールしていない")
 	}
 	m.handleKey("enter")
@@ -432,21 +444,21 @@ func TestBrowseDiffPagerKeysScrollNotClose(t *testing.T) {
 	if m.diffOv.sha == "" {
 		t.Fatal("末尾到達後のスクロールで閉じた")
 	}
-	if m.diffOv.offset != maxOffset {
-		t.Errorf("末尾で offset = %d; want %d (最終行を表示し続ける)", m.diffOv.offset, maxOffset)
+	if m.diffOv.pager.Offset != maxOffset {
+		t.Errorf("末尾で offset = %d; want %d (最終行を表示し続ける)", m.diffOv.pager.Offset, maxOffset)
 	}
 	// 半ページ移動は glide (scroll_glide.go) で数フレームかけて着地する。🚨 ここで手で
 	// advanceGlide を呼ぶ前に「キー処理が tick を返している」ことを必ず確かめる: 手で進める
 	// だけのテストは、tick を張り忘れて実機で永久に固まるバグ (敵対的レビュー P1) を隠す。
 	// 🚨 cmd の nil 判定では足りない: maybeTick は single-flight で、既にチェーンが生きていれば
 	// nil を返す。不変条件は「glide 中は tick チェーンが生きている (m.ticking)」。
-	if m.handleKey(" "); m.diffOv.glide.Active() && !m.ticking {
+	if m.handleKey(" "); m.diffOv.pager.Animating() && !m.ticking {
 		t.Fatal("glide 中なのに tick チェーンが無い (実機では中途位置で固まる)")
 	}
 	for range scrollAnimFrames {
 		m.diffOv.advanceGlide()
 	}
-	if m.diffOv.glide.Active() {
+	if m.diffOv.pager.Animating() {
 		t.Errorf("%d フレームで glide が着地しない", scrollAnimFrames)
 	}
 	view := m.View().Content
@@ -503,21 +515,21 @@ func TestBrowseDiffScrollUpClampAndReset(t *testing.T) {
 	deliverDiffMsg(t, m, cmd)
 
 	m.handleKey("G") // 末尾へ
-	end := m.diffOv.offset
+	end := m.diffOv.pager.Offset
 	if end == 0 {
 		t.Fatal("G で末尾へ動いていない")
 	}
 	m.handleKey("b") // 半ページ戻る
-	if m.diffOv.offset >= end || m.diffOv.offset < 0 {
-		t.Errorf("b (半ページ上) 後の offset = %d; want 0<=x<%d", m.diffOv.offset, end)
+	if m.diffOv.pager.Offset >= end || m.diffOv.pager.Offset < 0 {
+		t.Errorf("b (半ページ上) 後の offset = %d; want 0<=x<%d", m.diffOv.pager.Offset, end)
 	}
 	m.handleKey("g") // 先頭
-	if m.diffOv.offset != 0 {
-		t.Errorf("g 後の offset = %d; want 0", m.diffOv.offset)
+	if m.diffOv.pager.Offset != 0 {
+		t.Errorf("g 後の offset = %d; want 0", m.diffOv.pager.Offset)
 	}
 	m.handleKey("k") // 先頭で k は 0 に張り付く
-	if m.diffOv.offset != 0 {
-		t.Errorf("先頭での k 後の offset = %d; want 0 (クランプ)", m.diffOv.offset)
+	if m.diffOv.pager.Offset != 0 {
+		t.Errorf("先頭での k 後の offset = %d; want 0 (クランプ)", m.diffOv.pager.Offset)
 	}
 }
 
@@ -1055,7 +1067,7 @@ func TestStatusViewerSlideTicksAt60FPS(t *testing.T) {
 	if got := m.tickInterval(); got != spinnerInterval {
 		t.Fatalf("スライド後に tick 周期が戻っていない: %v", got)
 	}
-	m.statusOv.pagerGlide.Start(0, 1, scrollAnimFrames)
+	startPagerGlide(t, &m.statusOv.pager, 0, 1)
 	if !m.spinnerActive() {
 		t.Fatal("pager glide 中にスピナーの tick が回らない")
 	}
@@ -1169,7 +1181,7 @@ func TestSpaceKeyScrollsEverywhere(t *testing.T) {
 	m.handleKey("enter")
 	m.viewLines() // 幅ごとの整形を確定させる
 	m.handleKey("space")
-	if m.issuesOv.bodyOff == 0 {
+	if m.issuesOv.bodyPager.Offset == 0 {
 		t.Fatal("issues 本文で Space が半ページ送りしていない")
 	}
 	// 2. issues viewer の一覧 (カーソルの半ページ移動)
@@ -1189,7 +1201,7 @@ func TestSpaceKeyScrollsEverywhere(t *testing.T) {
 	m.diffOv.cache.store(m.commits[0].SHA, manyLines(100), "")
 	m.diffOv.sha = m.commits[0].SHA
 	m.handleKey("space")
-	if m.diffOv.offset == 0 {
+	if m.diffOv.pager.Offset == 0 {
 		t.Fatal("diff pager で Space が半ページ送りしていない")
 	}
 }
@@ -1317,16 +1329,16 @@ func TestBrowseDiffNeighborKeysSwapCommit(t *testing.T) {
 	_, cmd := m.handleKey("d") // commit[0]
 	deliverDiffMsg(t, m, cmd)
 	m.handleKey(" ") // 半ページ送り = glide 中 + offset > 0 の状態を作る
-	if !m.diffOv.glide.Active() || m.diffOv.offset == 0 {
-		t.Fatalf("前提: Space で glide に載っていない: active=%v offset=%d", m.diffOv.glide.Active(), m.diffOv.offset)
+	if !m.diffOv.pager.Animating() || m.diffOv.pager.Offset == 0 {
+		t.Fatalf("前提: Space で glide に載っていない: active=%v offset=%d", m.diffOv.pager.Animating(), m.diffOv.pager.Offset)
 	}
 
 	_, cmd = m.handleKey("J")
 	if m.diffOv.sha != m.commits[1].SHA || m.cursor != 1 {
 		t.Fatalf("J で次のコミットへ移らない: sha=%.7s cursor=%d", m.diffOv.sha, m.cursor)
 	}
-	if m.diffOv.offset != 0 || m.diffOv.glide.Active() {
-		t.Errorf("J でスクロール位置が先頭へ戻らない / 前の滑りを持ち越した: offset=%d glide=%v", m.diffOv.offset, m.diffOv.glide.Active())
+	if m.diffOv.pager.Offset != 0 || m.diffOv.pager.Animating() {
+		t.Errorf("J でスクロール位置が先頭へ戻らない / 前の滑りを持ち越した: offset=%d glide=%v", m.diffOv.pager.Offset, m.diffOv.pager.Animating())
 	}
 	deliverDiffMsg(t, m, cmd)
 	if len(*calls) != 2 || (*calls)[1] != m.commits[1].SHA {

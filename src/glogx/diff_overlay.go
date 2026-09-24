@@ -2,8 +2,7 @@ package main
 
 import (
 	"fmt"
-	"tuikit/anim"
-	"tuikit/layout"
+	"tuikit/listnav"
 )
 
 // diffOverlay はコミット diff (d キー) を最前面に重ねる pager 型オーバーレイの状態と描画。
@@ -12,11 +11,10 @@ import (
 // (cursor / panelSHA)・パネル閉じ・URL コピーは境界をまたぐため browseModel 側に薄く残し、
 // この型は「どの SHA を、どの位置まで、どう描くか」という pager の内部状態機械だけを持つ。
 type diffOverlay struct {
-	sha    string // 表示中の SHA ("" = 非表示)
-	offset int    // スクロール位置 (行。論理 = 着地点)
-	// glide は表示位置を offset へ滑らせるスクロールアニメ (scroll_glide.go の共有型。
-	// 一覧と同じ手触りにする。ユーザー要望 2026-07-31)。
-	glide anim.ScrollGlide
+	sha string // 表示中の SHA ("" = 非表示)
+	// pager はスクロール位置 (論理 = 着地点) と、表示位置をそこへ滑らせる glide (scroll_glide.go の
+	// pagerScrollKey を通す。一覧と同じ手触りにする。ユーザー要望 2026-07-31)。
+	pager listnav.Pager
 	// lines は sha → 整形済み diff 行のキャッシュと取得の単発化 (line_cache.go)。
 	cache lineCache
 }
@@ -35,8 +33,7 @@ func (o *diffOverlay) fetching() bool { return o.cache.fetching() }
 // close はポップアップを閉じてスクロール位置を戻す。
 func (o *diffOverlay) close() {
 	o.sha = ""
-	o.offset = 0
-	o.glide.Stop() // 閉じるときに glide を残すと、次に開いた瞬間だけ古い位置から滑る
+	o.pager.Reset() // 閉じるときに glide を残すと、次に開いた瞬間だけ古い位置から滑る
 }
 
 // reset は pull 後の全面リロードでキャッシュごと破棄する (旧 SHA の残骸を持ち越さない)。
@@ -54,8 +51,7 @@ func (o *diffOverlay) open(sha string) (needFetch bool) {
 		return false
 	}
 	o.sha = sha
-	o.offset = 0
-	o.glide.Stop() // 開いたまま別 SHA へ差し替える経路 (J/K) で、前の半ページ送りの滑りを持ち越さない
+	o.pager.Reset() // 開いたまま別 SHA へ差し替える経路 (J/K) で、前の半ページ送りの滑りを持ち越さない
 	return o.cache.begin(sha)
 }
 
@@ -91,7 +87,7 @@ func (o *diffOverlay) scroll(key string, rows int) {
 	}
 	// スクロールの語彙 (1 行 / 半ページ + glide / 端ジャンプ) は status viewer の全画面 diff と
 	// 共有する (scroll_glide.go の pagerScrollKey)。手触りを 1 箇所に集約するため。
-	o.offset = pagerScrollKey(key, o.offset, rows, len(o.visibleLines()), &o.glide)
+	pagerScrollKey(key, &o.pager, rows, len(o.visibleLines()))
 }
 
 // boxLines は diff ポップアップの描画行 (枠付き)。非表示・コミット解決不能なら nil。
@@ -115,14 +111,9 @@ func (o *diffOverlay) boxLines(width int, colored bool, spinner string, commit *
 			body = []string{paint("(diff はありません)", ansiDim, colored)}
 			break
 		}
-		// 行数と窓 (rows) は端末サイズで変わる。rows が増えると maxOffset が下がるのに論理
-		// offset は据え置かれ、k / up / ctrl+p は max(offset-n, 0) しか見ないので
-		// **(rows_new - rows_old) 打鍵だけ上スクロールが死ぬ** (実測 2026-08-21: diff 33 打鍵 /
-		// job 詳細 11 打鍵)。描画で確定した行数・窓で論理 offset を収束させて防ぐ
-		// (issues_view.go の bodyOff が同じ規律。🚨 pagerScrollKey の k 腕に clamp を足す形は
-		// 不可: job 詳細のスクロールは pagerScrollKey を通らない手書きなので片面しか直らない)。
-		o.offset = layout.ClampOffset(o.offset, len(lines), rows)
-		start := layout.ClampOffset(o.glide.Offset(o.offset), len(lines), rows)
+		// 描画で確定した行数・窓で論理 offset を収束させる (理由は listnav.Pager.Clamp の doc)
+		o.pager.Clamp(len(lines), rows)
+		start := o.pager.DrawOffset(len(lines), rows)
 		end := min(start+rows, len(lines))
 		body = append(body, lines[start:end]...)
 		title = fmt.Sprintf(" diff: %s [%d-%d/%d] %s ", commit.ShortSHA, start+1, end, len(lines), commit.Subject)
@@ -134,11 +125,9 @@ func (o *diffOverlay) boxLines(width int, colored bool, spinner string, commit *
 
 // animating は演出の途中か (tick チェーンを回すか の判定に使う。issuesView.animating /
 // statusView.animating と同じ契約)。diff は本文 pager の glide だけがアニメ源。
-func (o *diffOverlay) animating() bool { return o.glide.Active() }
+func (o *diffOverlay) animating() bool { return o.pager.Animating() }
 
 // advanceGlide はスクロール glide を 1 フレーム進める (browseModel の tick から呼ばれる)。
 func (o *diffOverlay) advanceGlide() {
-	if o.glide.Active() {
-		o.glide.Advance(o.offset)
-	}
+	o.pager.Advance()
 }

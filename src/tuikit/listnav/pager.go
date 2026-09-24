@@ -1,9 +1,6 @@
 package listnav
 
-import (
-	"tuikit/anim"
-	"tuikit/layout"
-)
+import "tuikit/anim"
 
 // Pager は本文 (カーソルの無いスクロール) の offset。zero value = 先頭。
 //
@@ -59,9 +56,20 @@ func (p *Pager) Move(m Motion, total, rows, frames int) bool {
 	return next != prev
 }
 
+// Clamp は論理 offset を 0..total-rows へ収め直す。描画で行数・表示行数が確定したときに毎回呼ぶ
+// (滑走は止めない)。
+//
+// 🚨 DrawOffset が描画の値を収めるだけでは足りない: 行数が減る・窓が広がると論理 offset が上限を
+// 超えたまま残り、Up / HalfUp は max(offset-n, 0) しか見ないので、超えた分の打鍵だけ上スクロールが
+// 空振りする (glogx の実測 2026-08-21: diff 33 打鍵)。キー側で収めないのは、キーの時点の行数は
+// 描画で確定する行数と食い違いうるため。
+func (p *Pager) Clamp(total, rows int) {
+	p.Offset = ClampOffset(p.Offset, total, max(rows, 1))
+}
+
 // DrawOffset は描画に使う offset (滑走中は途中位置)。行数が縮んでいても範囲へ収める。
 func (p *Pager) DrawOffset(total, rows int) int {
-	return layout.ClampOffset(p.glide.Offset(p.Offset), total, max(rows, 1))
+	return ClampOffset(p.glide.Offset(p.Offset), total, max(rows, 1))
 }
 
 // Reset は先頭へ戻す (別の本文へ差し替えたとき。前の位置も滑走も持ち越さない)。

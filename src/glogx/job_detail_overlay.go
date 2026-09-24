@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 
-	"tuikit/layout"
 	"tuikit/listnav"
 )
 
@@ -22,8 +21,8 @@ import (
 // から呼ばれる)。(4) ghErr (共有 sticky 警告) は触らない — browseModel の jobDetailMsg ハンドラが
 // 無条件代入して C4 契約 (成功時 nil クリア) を維持する。
 type jobDetailOverlay struct {
-	open   bool // 詳細ポップアップ表示中か
-	offset int  // スクロール位置 (行)
+	open  bool          // 詳細ポップアップ表示中か
+	pager listnav.Pager // スクロール位置 (滑らせないので glide は使わない)
 	// logs は key (detailKey) → ログ行のキャッシュと取得の単発化 (line_cache.go)。
 	cache lineCache
 }
@@ -43,7 +42,7 @@ func (o *jobDetailOverlay) fetching() bool { return o.cache.fetching() }
 // しないため)。全パネル退出経路 (handleKey q / closePanel) と handleDetailKey の閉じキーが呼ぶ。
 func (o *jobDetailOverlay) close() {
 	o.open = false
-	o.offset = 0
+	o.pager.Reset()
 }
 
 // reset は pull 後の全面リロードで cache ごと破棄する (旧 SHA のログ残骸を持ち越さない)。
@@ -57,9 +56,9 @@ func (o *jobDetailOverlay) reset() {
 // 呼び出し側は needFetch のときだけ FetchJobDetail を発行する (openDiff と対称)。
 func (o *jobDetailOverlay) startOpen(key string, rows int) (needFetch bool) {
 	o.open = true
-	o.offset = 0
+	o.pager.Reset()
 	if lines, ok := o.cache.get(key); ok {
-		o.offset = max(len(lines)-rows, 0) // ログ末尾 (直近出力) を表示
+		o.pager.Offset = max(len(lines)-rows, 0) // ログ末尾 (直近出力) を表示
 		return false
 	}
 	return o.cache.begin(key)
@@ -76,7 +75,7 @@ func (o *jobDetailOverlay) receive(msg jobDetailMsg, currentKey string, rows int
 	}
 	o.cache.store(msg.key, msg.lines, currentKey)
 	if o.open && currentKey == msg.key {
-		o.offset = max(len(msg.lines)-rows, 0)
+		o.pager.Offset = max(len(msg.lines)-rows, 0)
 	}
 }
 
@@ -90,8 +89,7 @@ func (o *jobDetailOverlay) scroll(key, contentKey string, rows int) {
 		o.close()
 		return
 	}
-	// 移動の語彙と offset の計算は listnav (滑らせないので glide は使わない)
-	o.offset, _ = listnav.Scroll(listnav.MotionOf(key), o.offset, rows, len(o.lines(contentKey)))
+	o.pager.Move(listnav.MotionOf(key), len(o.lines(contentKey)), rows, 0)
 }
 
 // lines は key の cache 済みログ行を返す (nvim で開く v キー用の getter)。
@@ -114,14 +112,9 @@ func (o *jobDetailOverlay) boxLines(width int, colored bool, spinner, name, key 
 			body = []string{paint("(詳細なし)", ansiDim, colored)}
 			break
 		}
-		// 行数と窓 (rows) は端末サイズで変わる。rows が増えると maxOffset が下がるのに論理
-		// offset は据え置かれ、k / up / ctrl+p は max(offset-n, 0) しか見ないので
-		// **(rows_new - rows_old) 打鍵だけ上スクロールが死ぬ** (実測 2026-08-21: diff 33 打鍵 /
-		// job 詳細 11 打鍵)。描画で確定した行数・窓で論理 offset を収束させて防ぐ
-		// (issues_view.go の bodyOff が同じ規律。🚨 pagerScrollKey の k 腕に clamp を足す形は
-		// 不可: job 詳細のスクロールは pagerScrollKey を通らない手書きなので片面しか直らない)。
-		o.offset = layout.ClampOffset(o.offset, len(lines), rows)
-		start := layout.ClampOffset(o.offset, len(lines), rows)
+		// 描画で確定した行数・窓で論理 offset を収束させる (理由は listnav.Pager.Clamp の doc)
+		o.pager.Clamp(len(lines), rows)
+		start := o.pager.DrawOffset(len(lines), rows)
 		end := min(start+rows, len(lines))
 		body = make([]string, 0, end-start)
 		for _, l := range lines[start:end] {

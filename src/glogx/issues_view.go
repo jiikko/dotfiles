@@ -162,8 +162,7 @@ type issuesView struct {
 	// drawer は本文を左から開く引き出しの演出状態 (issues_drawer.go)。閉じる演出のあいだは
 	// open/body を生かしたまま逆再生するため、破棄は settleDrawer が担う。
 	drawer    issuesDrawer
-	bodyOff   int // 論理 = 着地点
-	bodyGlide anim.ScrollGlide
+	bodyPager listnav.Pager // 本文のスクロール (論理 offset = 着地点 + 半ページの glide)
 
 	// curGlide は一覧の半ページ移動でカーソルを滑らせる演出 (scroll_glide.go)。論理カーソルは
 	// 即着地するので、描画だけが遅れる。
@@ -295,7 +294,7 @@ func (v *issuesView) screen(now time.Time) (issuesScreen, bool) {
 		Filter:      v.filter.String(),
 		Cursor:      issuePath(v.current()),
 		Open:        open,
-		BodyOff:     v.bodyOff,
+		BodyOff:     v.bodyPager.Offset,
 		Groups:      copyExpandedGroups(v.expandedGroups),
 		CursorGroup: v.currentGroupKey(),
 	}, true
@@ -340,8 +339,8 @@ func (v *issuesView) applyScreen(s issuesScreen) {
 			continue
 		}
 		if v.openIssue(iss) {
-			v.drawer.finish()     // 演出は出さず開き切った状態から始める
-			v.bodyOff = s.BodyOff // 行数を超えていれば bodyLines が収束させる
+			v.drawer.finish()              // 演出は出さず開き切った状態から始める
+			v.bodyPager.Offset = s.BodyOff // 行数を超えていれば bodyLines が収束させる
 		}
 		return
 	}
@@ -356,7 +355,7 @@ func (v *issuesView) close() {
 		return
 	}
 	v.closing = true
-	// 閉じたらカーソルの滑走を残さない (bodyGlide と同じ理由: 再表示の一瞬だけ古い位置から滑るのを
+	// 閉じたらカーソルの滑走を残さない (本文 pager の glide と同じ理由: 再表示の一瞬だけ古い位置から滑るのを
 	// 防ぐ)。close は toggle 経由だと handleKey を通らないので finishAnim が効かない。
 	v.curGlide.Stop()
 	v.animStart = timeNow()
@@ -367,7 +366,7 @@ func (v *issuesView) close() {
 
 // settleClose は閉じる演出が着地していれば片付ける (browseModel の tick から毎拍呼ばれる)。
 func (v *issuesView) settleClose() {
-	if !v.closing || timeNow().Sub(v.animStart) < issuesCloseDuration {
+	if !v.closing || anim.Elapsed(v.animStart, timeNow(), issuesCloseDuration) < 1 {
 		return
 	}
 	v.finishClose()
@@ -426,12 +425,12 @@ func (v *issuesView) slideAnimating() bool {
 	if v.closing {
 		return true
 	}
-	return v.shown && !v.animStart.IsZero() && timeNow().Sub(v.animStart) < issuesAnimDuration
+	return v.shown && anim.Elapsed(v.animStart, timeNow(), issuesAnimDuration) < 1
 }
 
 // animating は演出の途中か (tick チェーンを回し続ける spinnerActive の判定に使う)。
 func (v *issuesView) animating() bool {
-	if v.bodyGlide.Active() {
+	if v.bodyPager.Animating() {
 		return true // 本文 pager の glide は tick で進むので「アニメ中」に含める
 	}
 	if v.curGlide.Active() {
@@ -466,9 +465,7 @@ func (v *issuesView) takeWantQuit() bool {
 
 // advanceGlide はスクロール glide を 1 フレーム進める (browseModel の tick から呼ばれる)。
 func (v *issuesView) advanceGlide() {
-	if v.bodyGlide.Active() {
-		v.bodyGlide.Advance(v.bodyOff)
-	}
+	v.bodyPager.Advance()
 	if v.curGlide.Active() {
 		v.curGlide.Advance(v.cursor)
 	}
@@ -1136,7 +1133,7 @@ func (v *issuesView) currentTab() string {
 // 演出に何も映らない。実際の破棄は演出が着地したとき (settleDrawer)。
 func (v *issuesView) closeBody() {
 	// 後始末は本文の有無に依らず行う (呼ばれた時点で「本文モードではない」を満たすべき)。
-	v.bodyGlide.Stop()
+	v.bodyPager.Stop()
 	v.urlPick.close()
 	if v.open == nil {
 		return
@@ -1146,8 +1143,8 @@ func (v *issuesView) closeBody() {
 
 // discardBody は本文の状態を実際に捨てる (演出の着地後・viewer を閉じるとき)。
 func (v *issuesView) discardBody() {
-	v.open, v.body, v.bodyOff = nil, nil, 0
-	v.bodyGlide.Stop()
+	v.open, v.body = nil, nil
+	v.bodyPager.Reset()
 	v.urlPick.close()
 	v.drawer = issuesDrawer{}
 }
@@ -1183,10 +1180,10 @@ func (v *issuesView) openIssue(iss *issues.Issue) bool {
 		v.setNotice("本文を読めませんでした: "+firstLine(err.Error()), false)
 		return false
 	}
-	v.open, v.body, v.bodyOff = iss, body, 0
+	v.open, v.body = iss, body
+	v.bodyPager.Reset()
 	v.urlPick.close() // 別の issue を開いたら前の URL 一覧を持ち越さない
 	v.drawer.open(timeNow())
-	v.bodyGlide.Stop()
 	return true
 }
 
@@ -1195,7 +1192,7 @@ func (v *issuesView) openIssue(iss *issues.Issue) bool {
 // 親行 (本文が無い) は飛ばし、端では止めて案内する (巻かない: 「次」を押し続けて先頭へ戻ると、
 // 読み終えたのか一周したのか分からなくなる)。開閉の演出は挟まない — 引き出しは開いたままで
 // 中身だけ替わる (板の位置が動かないので、左に覗いている一覧のカーソルが追従して見える)。
-// スクロール位置は先頭へ戻す (openIssue が bodyOff を 0 にする。前の位置を引き継ぐと短い本文で
+// スクロール位置は先頭へ戻す (openIssue が bodyPager を先頭へ戻す。前の位置を引き継ぐと短い本文で
 // 空白だけが見える)。
 func (v *issuesView) openNeighbor(delta, rows int) {
 	if v.open == nil {
@@ -1234,7 +1231,7 @@ func (v *issuesView) reloadAfterEdit() tea.Cmd {
 	}
 	if v.open != nil {
 		if body, err := v.open.ReadBody(); err == nil {
-			v.body = body // bodyOff は保つ (描画側が新しい行数へ収束させる)
+			v.body = body // bodyPager の位置は保つ (描画側が新しい行数へ収束させる)
 		}
 	}
 	return v.scanAfterChangeCmd()
@@ -1658,7 +1655,7 @@ func (v *issuesView) handleBodyKey(key string, rows int) tea.Cmd {
 	default:
 		// スクロールの語彙 (1 行 / 半ページ + glide / 端ジャンプ) は diffOverlay・status viewer の
 		// 全画面 diff と共有する (scroll_glide.go の pagerScrollKey)。手触りを 1 箇所に集約するため。
-		v.bodyOff = pagerScrollKey(key, v.bodyOff, rows, v.body.Len(), &v.bodyGlide)
+		pagerScrollKey(key, &v.bodyPager, rows, v.body.Len())
 	}
 	return nil
 }
@@ -1780,7 +1777,7 @@ func (v *issuesView) windowOffset(rows int) int {
 		return 0
 	}
 	v.ensureDisplayRows()
-	return layout.WindowOffset(v.offset, v.cursor, len(v.displayRows), rows)
+	return listnav.WindowOffset(v.offset, v.cursor, len(v.displayRows), rows)
 }
 
 // moveTab はタブを切り替える (端で止まらず巡回する)。
@@ -2068,12 +2065,9 @@ func (v *issuesView) lines(o issuesRenderOpts) []string {
 // (理由は tuikit layout.RowOffsetRatio の doc)。
 func (v *issuesView) animProgress() float64 {
 	if v.closing {
-		return max(1-float64(timeNow().Sub(v.animStart))/float64(issuesCloseDuration), 0)
+		return 1 - anim.Elapsed(v.animStart, timeNow(), issuesCloseDuration)
 	}
-	if !v.animating() {
-		return 1
-	}
-	return float64(timeNow().Sub(v.animStart)) / float64(issuesAnimDuration)
+	return anim.Elapsed(v.animStart, timeNow(), issuesAnimDuration)
 }
 
 // headLines は現在のモードのヘッダー行 (一覧ならタブ行 + 通知、本文ならパス + 状態)。
@@ -2437,11 +2431,10 @@ func (v *issuesView) bodyLines(o issuesRenderOpts) []string {
 	// 決める: 整形しないと行番号が分からず、行番号が分からないと溝幅が決まらない循環を切る
 	gutter := srcGutterWidth(v.body.SrcLineCount())
 	lines := v.body.Lines(o.width-layout.ScrollbarWidth-gutter, o.colored) // バー列ぶんも引く
-	// 行数は幅で変わる (Body は幅ごとに整形し直す)。幅が広がって行数が減ると論理 bodyOff が
-	// 上限を超えたまま残り、k / ctrl+u は max(bodyOff-n, 0) しか見ないので「何度押しても
-	// 画面が動かない」打鍵数が生まれる。描画で確定した行数で論理 offset を収束させて防ぐ。
-	v.bodyOff = layout.ClampOffset(v.bodyOff, len(lines), rows)
-	offset := layout.ClampOffset(v.bodyGlide.Offset(v.bodyOff), len(lines), rows)
+	// 行数は幅で変わる (Body は幅ごとに整形し直す)。描画で確定した行数で論理 offset を収束させる
+	// (理由は listnav.Pager.Clamp の doc)
+	v.bodyPager.Clamp(len(lines), rows)
+	offset := v.bodyPager.DrawOffset(len(lines), rows)
 	end := min(offset+rows, len(lines))
 	nums := v.body.SrcLines()
 	out := make([]string, 0, rows)

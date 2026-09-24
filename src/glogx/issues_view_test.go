@@ -490,13 +490,13 @@ func TestIssuesViewEnterTogglesBody(t *testing.T) {
 	v.drawer.finish()
 	v.lines(renderOpts(20))  // 行数は描画で確定する (未描画だと Len()=0 でスクロール上限が 0)
 	v.handleKey("j", vp(10)) // 行送りは j/k のまま (Enter を奪ったので、こちらは残っていること)
-	if v.bodyOff != 1 {
-		t.Fatalf("本文の j で 1 行送れていない: %d", v.bodyOff)
+	if v.bodyPager.Offset != 1 {
+		t.Fatalf("本文の j で 1 行送れていない: %d", v.bodyPager.Offset)
 	}
 
 	v.handleKey("enter", vp(10)) // 本文の Enter = 閉じる
-	if v.bodyOff != 1 {
-		t.Fatalf("本文の Enter が行送りとして効いた: bodyOff=%d", v.bodyOff)
+	if v.bodyPager.Offset != 1 {
+		t.Fatalf("本文の Enter が行送りとして効いた: bodyOff=%d", v.bodyPager.Offset)
 	}
 	origNow := timeNow
 	timeNow = func() time.Time { return origNow().Add(issuesDrawerDuration + time.Millisecond) }
@@ -933,12 +933,12 @@ func TestIssuesViewBodyScrollClampsToEnd(t *testing.T) {
 	}
 	// handleKey に渡すのは画面行数 (page)。実際にスクロールに使える行数はヘッダーを
 	// 差し引いた visibleRows で、これが描画側とずれると末尾に届かなくなる
-	if v.bodyOff != max(v.body.Len()-v.visibleRows(vp(page)), 0) {
-		t.Fatalf("末尾を超えてスクロールした: off=%d len=%d rows=%d", v.bodyOff, v.body.Len(), v.visibleRows(vp(page)))
+	if v.bodyPager.Offset != max(v.body.Len()-v.visibleRows(vp(page)), 0) {
+		t.Fatalf("末尾を超えてスクロールした: off=%d len=%d rows=%d", v.bodyPager.Offset, v.body.Len(), v.visibleRows(vp(page)))
 	}
 	v.handleKey("g", vp(page))
-	if v.bodyOff != 0 {
-		t.Fatalf("g で先頭へ戻らない: %d", v.bodyOff)
+	if v.bodyPager.Offset != 0 {
+		t.Fatalf("g で先頭へ戻らない: %d", v.bodyPager.Offset)
 	}
 }
 
@@ -1005,17 +1005,17 @@ func TestIssuesViewBodyScrollRecoversAfterWidthGrows(t *testing.T) {
 	v.lines(narrow)
 	v.handleKey("G", vp(page)) // 狭い幅での末尾へ
 	v.lines(narrow)
-	tail := v.bodyOff
+	tail := v.bodyPager.Offset
 
 	wide := issuesRenderOpts{width: 100, page: page}
 	v.lines(wide) // 幅が広がって行数が減る
-	if v.bodyOff >= tail {
-		t.Fatalf("幅を広げても bodyOff が縮まっていない: %d -> %d", tail, v.bodyOff)
+	if v.bodyPager.Offset >= tail {
+		t.Fatalf("幅を広げても bodyOff が縮まっていない: %d -> %d", tail, v.bodyPager.Offset)
 	}
-	before := v.bodyOff
+	before := v.bodyPager.Offset
 	v.handleKey("k", vp(page))
-	if v.bodyOff != before-1 {
-		t.Fatalf("幅変更後の k が 1 行戻していない: %d -> %d", before, v.bodyOff)
+	if v.bodyPager.Offset != before-1 {
+		t.Fatalf("幅変更後の k が 1 行戻していない: %d -> %d", before, v.bodyPager.Offset)
 	}
 }
 
@@ -2226,21 +2226,21 @@ func newTestIssuesView() issuesView {
 // hint にキーを足したら効果の検証も必ず書くことになる。
 // 本文 pager の半ページ送り・端ジャンプが glide の配線ごと効くことを**キー経路**で固定する。
 //
-// 🚨 TestHalfPageScrollGlidesOnAllSurfaces の本文サブテストは bodyGlide.Start を直接呼ぶ
+// 🚨 TestHalfPageScrollGlidesOnAllSurfaces の本文サブテストは glide を startPagerGlide で直接立てる
 // (body が nil の workaround) ため、handleBodyKey が glide を配線し忘れても green のままだった。
 // pagerScrollKey への委譲 (2026-08-19) で glide を落とす退行はこのテストだけが検出する。
 func TestIssuesViewBodyHalfPageGlidesViaKeyPath(t *testing.T) {
 	e := newBodyKeyEnv(t)
-	before := e.v.bodyOff
+	before := e.v.bodyPager.Offset
 	e.press(" ")
-	if !e.v.bodyGlide.Active() {
+	if !e.v.bodyPager.Animating() {
 		t.Fatal("Space の半ページ送りが glide に載っていない (キー経路)")
 	}
-	if got := e.v.bodyGlide.Offset(e.v.bodyOff); got != before {
+	if got := pagerShown(&e.v.bodyPager); got != before {
 		t.Errorf("glide 開始位置 = %d, want %d (移動前の offset)", got, before)
 	}
 	e.press("G")
-	if e.v.bodyGlide.Active() {
+	if e.v.bodyPager.Animating() {
 		t.Error("G の端ジャンプで glide が残っている (端ジャンプは即時)")
 	}
 }
@@ -2250,42 +2250,42 @@ func TestIssuesViewBodyHintKeysAllRespond(t *testing.T) {
 	// (本文の途中まで送ってから k を押す等。端で押して「変わらない」を通すと空振りする)
 	probes := map[string]func(t *testing.T, e *bodyKeyEnv){
 		"j": func(t *testing.T, e *bodyKeyEnv) {
-			before := e.v.bodyOff
+			before := e.v.bodyPager.Offset
 			e.press("j")
-			if e.v.bodyOff <= before {
-				t.Errorf("j で本文が下へ進まない: %d → %d", before, e.v.bodyOff)
+			if e.v.bodyPager.Offset <= before {
+				t.Errorf("j で本文が下へ進まない: %d → %d", before, e.v.bodyPager.Offset)
 			}
 		},
 		"k": func(t *testing.T, e *bodyKeyEnv) {
 			// 🚨 G を押して状態を作らない。G が壊れると k の probe も red になり、
 			// 壊れていないキーを名指しして原因追跡を遅らせる
-			e.v.bodyOff = 5
-			before := e.v.bodyOff
+			e.v.bodyPager.Offset = 5
+			before := e.v.bodyPager.Offset
 			e.press("k")
-			if e.v.bodyOff >= before {
-				t.Errorf("k で本文が上へ戻らない: %d → %d", before, e.v.bodyOff)
+			if e.v.bodyPager.Offset >= before {
+				t.Errorf("k で本文が上へ戻らない: %d → %d", before, e.v.bodyPager.Offset)
 			}
 		},
 		"Space": func(t *testing.T, e *bodyKeyEnv) {
-			before := e.v.bodyOff
+			before := e.v.bodyPager.Offset
 			e.press(" ")
 			// 🚨 方向だけでなく「半ページ」まで見る (1 行送りの実装を通さない)
-			if want := before + e.rows()/2; e.v.bodyOff != want {
-				t.Errorf("Space が半ページ送りでない: %d → %d (want %d)", before, e.v.bodyOff, want)
+			if want := before + e.rows()/2; e.v.bodyPager.Offset != want {
+				t.Errorf("Space が半ページ送りでない: %d → %d (want %d)", before, e.v.bodyPager.Offset, want)
 			}
 		},
 		"g": func(t *testing.T, e *bodyKeyEnv) {
 			e.press("G")
 			e.press("g")
-			if e.v.bodyOff != 0 {
-				t.Errorf("g で先頭へ戻らない: bodyOff=%d", e.v.bodyOff)
+			if e.v.bodyPager.Offset != 0 {
+				t.Errorf("g で先頭へ戻らない: bodyOff=%d", e.v.bodyPager.Offset)
 			}
 		},
 		"G": func(t *testing.T, e *bodyKeyEnv) {
 			e.press("G")
 			// 🚨 「0 でない」ではなく末尾そのものを見る (途中で止まる実装を通さない)
-			if want := e.v.body.Len() - e.rows(); e.v.bodyOff != want {
-				t.Errorf("G が末尾へ飛ばない: bodyOff=%d want %d", e.v.bodyOff, want)
+			if want := e.v.body.Len() - e.rows(); e.v.bodyPager.Offset != want {
+				t.Errorf("G が末尾へ飛ばない: bodyOff=%d want %d", e.v.bodyPager.Offset, want)
 			}
 		},
 		"p": func(t *testing.T, e *bodyKeyEnv) {
@@ -2670,7 +2670,7 @@ func TestIssuesViewBodyNeighborKeysSwapIssueWithoutReopening(t *testing.T) {
 	if v.open != b {
 		t.Fatalf("前提: b を開けていない: %+v", v.open)
 	}
-	v.bodyOff = 3 // 次の issue で先頭へ戻ることを見るため、途中まで送った状態を作る
+	v.bodyPager.Offset = 3 // 次の issue で先頭へ戻ることを見るため、途中まで送った状態を作る
 
 	v.handleKey("J", vp(10))
 	if v.open != c || v.cursor != 3 {
@@ -2679,8 +2679,8 @@ func TestIssuesViewBodyNeighborKeysSwapIssueWithoutReopening(t *testing.T) {
 	if v.drawer.phase() != anim.Open {
 		t.Errorf("J で引き出しの演出が始まった (開いたままで中身だけ替える): phase=%v", v.drawer.phase())
 	}
-	if v.bodyOff != 0 {
-		t.Errorf("J でスクロール位置が先頭へ戻らない: bodyOff=%d", v.bodyOff)
+	if v.bodyPager.Offset != 0 {
+		t.Errorf("J でスクロール位置が先頭へ戻らない: bodyOff=%d", v.bodyPager.Offset)
 	}
 	if out := strings.Join(v.lines(renderOpts(20)), "\n"); !strings.Contains(out, "本文 C") {
 		t.Errorf("J の後に c の本文が描かれない:\n%s", out)

@@ -141,7 +141,7 @@ func TestIssuesListGlideMovesTheDrawnCursor(t *testing.T) {
 }
 
 // close は toggle (i) 経由だと handleKey を通らない = finishAnim が効かないので、滑走を自分で
-// 止める必要がある (止めないと次に開いた一瞬だけ古い位置から滑る)。bodyGlide の
+// 止める必要がある (止めないと次に開いた一瞬だけ古い位置から滑る)。本文 pager の
 // TestIssuesCloseStopsBodyGlide と対になる。
 func TestIssuesCloseStopsCursorGlide(t *testing.T) {
 	v := loadedView(manyIssues(40)...)

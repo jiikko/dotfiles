@@ -15,9 +15,9 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 | `termwidth` | 表示幅の単一情報源 (`Of` / `Truncate` / `Clip` / `PadSpaces` / `FillRight` …) | 行を幅で切る・揃えるときは**必ずここを通す** |
 | `widthenv` | 幅モデルが支持しない環境変数 (`RUNEWIDTH_EASTASIAN`) の検出 | 起動時の警告・テストのガード |
 | `sgr` | 基本の ANSI 色・装飾 (`Reset` / `Bold` / `Dim` / `Cyan` …) | 色を付けるときの値の単一の出典 |
-| `anim` | `Transition` (開く / 閉じる / 途中で逆再生) / `ScrollGlide` / `CursorGlide` / easing | 開閉演出と「数行ぶんの移動を滑らせる」演出 |
-| `layout` | `ComposeDrawer` (一覧の上に詳細を右から重ねる) / `DrawerGeometry` / `SlideIn` / `Scrollbar` / `Panel` (落ち影つきの板) / `Overlay` / `OverlayCentered` / `WindowOffset` / `ClampOffset` / `PadTo` | 画面の合成と窓の計算 |
-| `listnav` | `MotionOf` (キー → 移動の語彙) / `List` (一覧のカーソル + 窓 + 半ページの滑走) / `Pager` (本文のスクロール) / `Scroll` | 一覧・本文の移動を毎回書かない |
+| `anim` | `Transition` (開く / 閉じる / 途中で逆再生) / `Elapsed` (一方向の演出の進捗) / `ScrollGlide` / `CursorGlide` / easing | 開閉演出と「数行ぶんの移動を滑らせる」演出 |
+| `layout` | `ComposeDrawer` (一覧の上に詳細を右から重ねる) / `DrawerGeometry` / `SlideIn` / `Scrollbar` / `Panel` (落ち影つきの板) / `Overlay` / `OverlayCentered` / `PadTo` | 画面の合成 |
+| `listnav` | `MotionOf` (キー → 移動の語彙) / `List` (一覧のカーソル + 窓 + 半ページの滑走) / `Pager` (本文のスクロール) / `Scroll` / `WindowOffset` / `ClampOffset` (窓の計算) | 一覧・本文の移動を毎回書かない |
 
 ## 遷移のパターン
 
@@ -48,8 +48,9 @@ if drawer.Settle(now) { detail = nil }
 ### 一覧を開く: 上から順に右から流れ込む
 
 ```go
-p := float64(now.Sub(openedAt)) / float64(175*time.Millisecond)
-if p < 1 { screen = layout.SlideIn(screen, p, width, false, 0.35) }
+if p := anim.Elapsed(openedAt, now, 175*time.Millisecond); p < 1 {
+	screen = layout.SlideIn(screen, p, width, false, 0.35)
+}
 ```
 
 入ってくるときは行ごとに開始をずらし (stagger)、終端で減速する。**閉じるときは全行同時・等速**
@@ -96,6 +97,8 @@ list.Advance()
 - 半ページ移動では**論理カーソル (`list.Cursor`) は即座に着地**し、描画カーソルだけが滑る。窓は論理カーソルを
   含む最小の窓のまま動かさないので、Enter などの決定キーは常に着地点へ効く
 - 本文 (カーソルの無いスクロール) は `listnav.Pager`。半ページだけが滑り、1 行送りと端へのジャンプは即時
+- 🚨 `Pager` は描画で行数が確定するたびに `Clamp(total, rows)` を呼ぶ (`DrawOffset` の前)。呼ばないと、
+  折り返しが減った・窓が広がった後の上スクロールが「超えた分」だけ空振りする (理由は `Pager.Clamp` の doc)
 - 🚨 動作キーと語彙がぶつかる画面 (Space = 選択、`b` = push など) は、**その画面の動作を先に捌く**。
   `MotionOf` は画面ごとの例外を持たない (持たせると画面ごとに効くキーがまたずれ始める)
 - 表示行数 `rows` が 0 以下でも 1 行として扱う (窓や offset が行数を超えない)。rows=1 の半ページは

@@ -173,3 +173,44 @@ func TestNonPositiveRowsStayInRange(t *testing.T) {
 		}
 	}
 }
+
+func TestWindowOffset(t *testing.T) {
+	for _, tc := range []struct{ offset, cursor, total, rows, want int }{
+		{0, 5, 100, 10, 0},    // 窓の中
+		{0, 15, 100, 10, 6},   // 下へはみ出たら最下行に合わせる
+		{20, 3, 100, 10, 3},   // 上へはみ出たら最上行に合わせる
+		{95, 99, 100, 10, 90}, // 末尾を越えない
+		{0, 0, 5, 10, 0},      // 行数が窓より少ない
+	} {
+		if got := WindowOffset(tc.offset, tc.cursor, tc.total, tc.rows); got != tc.want {
+			t.Errorf("WindowOffset(%d, %d, %d, %d) = %d, want %d", tc.offset, tc.cursor, tc.total, tc.rows, got, tc.want)
+		}
+	}
+}
+
+// Clamp は行数が減った後の論理 offset を上限へ収める。収めないと Up が「超えた分」だけ空振りする。
+func TestPagerClampRecoversUpAfterShrink(t *testing.T) {
+	var p Pager
+	p.Move(Bottom, 100, 10, 0) // offset = 90
+	// 行数が 40 に減った (幅が広がって折り返しが減った等)。上限は 30
+	p.Clamp(40, 10)
+	if p.Offset != 30 {
+		t.Fatalf("Clamp 後の offset = %d, want 30", p.Offset)
+	}
+	if !p.Move(Up, 40, 10, 0) || p.Offset != 29 {
+		t.Errorf("Clamp 直後の Up が 1 打鍵目で効かない: offset = %d, want 29", p.Offset)
+	}
+}
+
+// Clamp は描画のたびに呼ばれるので、滑走を止めてはいけない (止めると半ページ送りが毎回即時になる)。
+func TestPagerClampKeepsGlide(t *testing.T) {
+	var p Pager
+	p.Move(HalfDown, 100, 20, 6)
+	if !p.Animating() {
+		t.Fatal("前提の破れ: 半ページ移動で滑走が始まらない")
+	}
+	p.Clamp(100, 20)
+	if !p.Animating() {
+		t.Error("Clamp が滑走を止めた")
+	}
+}

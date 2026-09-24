@@ -682,8 +682,8 @@ func TestStatusPagerOpensAndScrolls(t *testing.T) {
 		t.Fatalf("pagerKey = %q, want %q", v.pagerKey, key)
 	}
 	v.handleKey("j", testViewport())
-	if v.pagerOffset != 1 {
-		t.Fatalf("j 後の offset = %d, want 1", v.pagerOffset)
+	if v.pager.Offset != 1 {
+		t.Fatalf("j 後の offset = %d, want 1", v.pager.Offset)
 	}
 	v.handleKey("d", testViewport()) // toggle で閉じる
 	if v.pagerKey != "" {
@@ -1469,16 +1469,16 @@ func TestStatusPagerNeighborKeysSwapFile(t *testing.T) {
 	v.handleKey("k", testViewport()) // 初期カーソルは先頭の unstaged (b.go) なので staged の a.go へ上げる
 	v.handleKey("d", testViewport())
 	v.handleKey("j", testViewport()) // 途中まで送る (差し替えで先頭へ戻ることを見る)
-	if v.pagerKey != previewKey(v.rows[0]) || v.pagerOffset != 1 {
-		t.Fatalf("前提: a.go の diff を 1 行送った状態でない: key=%q off=%d", v.pagerKey, v.pagerOffset)
+	if v.pagerKey != previewKey(v.rows[0]) || v.pager.Offset != 1 {
+		t.Fatalf("前提: a.go の diff を 1 行送った状態でない: key=%q off=%d", v.pagerKey, v.pager.Offset)
 	}
 
 	v.handleKey("J", testViewport())
 	if v.pagerKey != previewKey(v.rows[1]) || v.cursor != 1 {
 		t.Fatalf("J でセクションをまたいで b.go へ移らない: key=%q cursor=%d", v.pagerKey, v.cursor)
 	}
-	if v.pagerOffset != 0 || v.pagerTitle != v.rows[1].dispPath() {
-		t.Errorf("J で先頭へ戻らない / タイトルが替わらない: off=%d title=%q", v.pagerOffset, v.pagerTitle)
+	if v.pager.Offset != 0 || v.pagerTitle != v.rows[1].dispPath() {
+		t.Errorf("J で先頭へ戻らない / タイトルが替わらない: off=%d title=%q", v.pager.Offset, v.pagerTitle)
 	}
 	v.handleKey("shift+down", testViewport())
 	if v.pagerKey != previewKey(v.rows[2]) || v.cursor != 2 {

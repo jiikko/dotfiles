@@ -750,10 +750,10 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// resize 中の glide は破棄して即時にする (表示 offset が stale になるため)。一覧だけでなく
 		// pager 側も止める: 幅で行数が変わり、glide の着地点が resize 前の行数基準で古くなる。
 		m.glide.Stop()
-		m.diffOv.glide.Stop()
-		m.issuesOv.bodyGlide.Stop()
+		m.diffOv.pager.Stop()
+		m.issuesOv.bodyPager.Stop()
 		m.issuesOv.curGlide.Stop() // 一覧のカーソル滑走も同じ理由 (窓の起点が resize 前の行数基準)
-		m.statusOv.pagerGlide.Stop()
+		m.statusOv.pager.Stop()
 		m.ensureCursorVisible()
 		return m, nil
 	case tickMsg:
@@ -3321,7 +3321,7 @@ func (m *browseModel) handleDiffKey(key string) (tea.Model, tea.Cmd) {
 	// 呼ぶ者がおらず、表示位置がスクロール前で固まったまま「キーが効かない」ように見える
 	// (敵対的レビュー P1 2026-07-31: Space 後に j を何度押しても先頭行が出続ける実測)。
 	// 1 行移動・閉じるは glide を使わないので tick を増やさない。
-	if m.diffOv.glide.Active() {
+	if m.diffOv.pager.Animating() {
 		return m, m.maybeTick()
 	}
 	return m, nil
@@ -3515,7 +3515,7 @@ func (m *browseModel) clampOffset(offset int) int {
 // offset を調整する。
 func (m *browseModel) ensureCursorVisible() {
 	lines := m.lines()
-	m.offset = layout.WindowOffset(m.offset, headerLineIndex(lines, m.cursor), len(lines), m.pageSize())
+	m.offset = listnav.WindowOffset(m.offset, headerLineIndex(lines, m.cursor), len(lines), m.pageSize())
 }
 
 // topVisibleCommitIdx はビューポート先頭 (offset 行目) に見えているコミットの index。

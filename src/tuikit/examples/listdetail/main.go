@@ -80,7 +80,7 @@ func (m *model) tick() tea.Cmd {
 }
 
 func (m *model) animating(now time.Time) bool {
-	return now.Sub(m.listStart) < m.dur(listOpenDuration) ||
+	return anim.Elapsed(m.listStart, now, m.dur(listOpenDuration)) < 1 ||
 		m.drawer.Animating(now) || m.list.Animating() || m.pager.Animating()
 }
 
@@ -234,7 +234,7 @@ func (m *model) View() tea.View {
 		panel = layout.Scrollbar(panel, target-1, len(m.body), off, true) // 板の幅 - 区切り線
 		body = layout.ComposeDrawer(body, panel, w, m.width, true)
 	}
-	if p := float64(now.Sub(m.listStart)) / float64(m.dur(listOpenDuration)); p < 1 {
+	if p := anim.Elapsed(m.listStart, now, m.dur(listOpenDuration)); p < 1 {
 		body = layout.SlideIn(body, p, m.width, false, listStagger)
 	}
 	head := []string{

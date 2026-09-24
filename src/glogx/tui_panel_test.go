@@ -672,8 +672,8 @@ func TestBrowseJobDetailPopup(t *testing.T) {
 	}
 	m.Update(jobDetailMsg{key: m.detailKey(), lines: lines})
 	rows := m.visibleDetailRows()
-	if m.detailOv.offset != 30-rows {
-		t.Errorf("detailOffset = %d; want 末尾表示 %d", m.detailOv.offset, 30-rows)
+	if m.detailOv.pager.Offset != 30-rows {
+		t.Errorf("detailOffset = %d; want 末尾表示 %d", m.detailOv.pager.Offset, 30-rows)
 	}
 	if !strings.Contains(m.View().Content, "log line 29") {
 		t.Errorf("末尾行が見えていない (低い端末でも末尾は見える):\n%s", m.View().Content)
@@ -691,12 +691,12 @@ func TestBrowseJobDetailPopup(t *testing.T) {
 	}
 	// k で上へスクロール、g で先頭
 	m.handleKey("k")
-	if m.detailOv.offset != 30-rows-1 {
-		t.Errorf("k 後の offset = %d", m.detailOv.offset)
+	if m.detailOv.pager.Offset != 30-rows-1 {
+		t.Errorf("k 後の offset = %d", m.detailOv.pager.Offset)
 	}
 	m.handleKey("g")
-	if m.detailOv.offset != 0 {
-		t.Errorf("g 後の offset = %d", m.detailOv.offset)
+	if m.detailOv.pager.Offset != 0 {
+		t.Errorf("g 後の offset = %d", m.detailOv.pager.Offset)
 	}
 	// h で job フォーカスへ戻る (パネルは開いたまま)
 	m.handleKey("h")
@@ -727,8 +727,8 @@ func TestBrowseJobDetailReopenScrollsToTail(t *testing.T) {
 	}
 	m.Update(jobDetailMsg{key: m.detailKey(), lines: lines})
 	m.handleKey("g") // 先頭へ
-	if m.detailOv.offset != 0 {
-		t.Fatalf("g で先頭に来ていない: offset=%d", m.detailOv.offset)
+	if m.detailOv.pager.Offset != 0 {
+		t.Fatalf("g で先頭に来ていない: offset=%d", m.detailOv.pager.Offset)
 	}
 	m.handleKey("h") // 閉じる (cache は残る)
 	if m.detailOv.open {
@@ -736,8 +736,8 @@ func TestBrowseJobDetailReopenScrollsToTail(t *testing.T) {
 	}
 	m.handleKey("l") // 再オープン (キャッシュヒット)
 	rows := m.visibleDetailRows()
-	if m.detailOv.offset != 30-rows {
-		t.Errorf("再オープン時の offset = %d; want 末尾 %d (最新ログを表示)", m.detailOv.offset, 30-rows)
+	if m.detailOv.pager.Offset != 30-rows {
+		t.Errorf("再オープン時の offset = %d; want 末尾 %d (最新ログを表示)", m.detailOv.pager.Offset, 30-rows)
 	}
 	if !strings.Contains(m.View().Content, "log line 29") {
 		t.Errorf("再オープンで末尾行が見えない:\n%s", m.View().Content)
@@ -756,8 +756,8 @@ func TestBrowseJobDetailStaleMsgDoesNotMoveOffset(t *testing.T) {
 	m.handleKey("l")
 	m.Update(jobDetailMsg{key: m.detailKey(), lines: []string{"a", "b", "c"}})
 	m.handleKey("g") // offset=0
-	if m.detailOv.offset != 0 {
-		t.Fatalf("前提: offset=0 でない (%d)", m.detailOv.offset)
+	if m.detailOv.pager.Offset != 0 {
+		t.Fatalf("前提: offset=0 でない (%d)", m.detailOv.pager.Offset)
 	}
 	// 別 job (job1) 宛の遅延結果が届いても、今開いている job0 の offset は動かない
 	staleKey := m.panelSHA + "/1"
@@ -766,14 +766,14 @@ func TestBrowseJobDetailStaleMsgDoesNotMoveOffset(t *testing.T) {
 		longLines[i] = fmt.Sprintf("stale %d", i)
 	}
 	m.Update(jobDetailMsg{key: staleKey, lines: longLines})
-	if m.detailOv.offset != 0 {
-		t.Errorf("別 key の遅延結果で offset が動いた: %d; want 0", m.detailOv.offset)
+	if m.detailOv.pager.Offset != 0 {
+		t.Errorf("別 key の遅延結果で offset が動いた: %d; want 0", m.detailOv.pager.Offset)
 	}
 	// 詳細を閉じた状態でも jobDetailMsg は offset を動かさない
 	m.handleKey("h")
 	m.Update(jobDetailMsg{key: m.detailKey(), lines: longLines})
-	if m.detailOv.offset != 0 {
-		t.Errorf("詳細非表示中に offset が動いた: %d; want 0", m.detailOv.offset)
+	if m.detailOv.pager.Offset != 0 {
+		t.Errorf("詳細非表示中に offset が動いた: %d; want 0", m.detailOv.pager.Offset)
 	}
 }
 
@@ -812,9 +812,9 @@ func TestBrowseClosePanelClosesOpenDetail(t *testing.T) {
 		t.Fatal("前提: 詳細が開いていない")
 	}
 	m.closePanel()
-	if m.detailOv.open || m.detailOv.offset != 0 || m.panelSHA != "" {
+	if m.detailOv.open || m.detailOv.pager.Offset != 0 || m.panelSHA != "" {
 		t.Errorf("closePanel が詳細を落とさない: detailOpen=%v detailOffset=%d panelSHA=%q",
-			m.detailOv.open, m.detailOv.offset, m.panelSHA)
+			m.detailOv.open, m.detailOv.pager.Offset, m.panelSHA)
 	}
 }
 
@@ -1130,7 +1130,7 @@ func TestJobDetailBoxLinesScrollbar(t *testing.T) {
 
 	// 溢れる: バー列あり + 幅は均一 + offset に応じて thumb が動く
 	o.cache.store("over", logLines(50), "over")
-	o.offset = 20
+	o.pager.Offset = 20
 	box := o.boxLines(width, false, "", "job", "over", rows)
 	uniformWidth(t, box)
 	// 影付き箱: 末尾 2 行は下辺 (▖▁▗+影) と下端影なので本文から除く。本文行の行末は
@@ -1160,7 +1160,7 @@ func TestJobDetailBoxLinesScrollbar(t *testing.T) {
 
 	// 収まる: バー列なし (本文幅が戻る)。幅は溢れる場合と同じ (枠幅は不変)
 	o.cache.store("fit", logLines(rows-2), "fit")
-	o.offset = 0
+	o.pager.Offset = 0
 	fit := o.boxLines(width, false, "", "job", "fit", rows)
 	if w := uniformWidth(t, fit); w != dispWidth(stripANSI(box[0])) {
 		t.Fatalf("収まる場合の枠幅 = %d, 溢れる場合 = %d", w, dispWidth(stripANSI(box[0])))

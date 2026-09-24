@@ -1,4 +1,4 @@
-package layout
+package listnav
 
 // ClampOffset はスクロール offset を 0..max(total-rows, 0) へ収める。
 //

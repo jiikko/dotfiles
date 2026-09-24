@@ -283,8 +283,8 @@ func TestIssuesViewRestoreAppliesScreen(t *testing.T) {
 	if !strings.Contains(out, "029-feat-b.md") {
 		t.Fatalf("復元した本文が描かれていない:\n%s", out)
 	}
-	if v.bodyOff != 7 {
-		t.Fatalf("本文のスクロール位置が戻っていない: %d", v.bodyOff)
+	if v.bodyPager.Offset != 7 {
+		t.Fatalf("本文のスクロール位置が戻っていない: %d", v.bodyPager.Offset)
 	}
 	// 復元は 1 度だけ: 以降の再スキャン (r) は「今見ている場所」を引き継ぐ。カーソルを記憶と
 	// 別の行 (feat タブの先頭 = 030) へ動かしてから取り直し、記憶の 029 へ戻らないことを見る

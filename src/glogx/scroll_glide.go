@@ -1,7 +1,6 @@
 package main
 
 import (
-	"tuikit/anim"
 	"tuikit/listnav"
 )
 
@@ -27,24 +26,17 @@ const scrollAnimFrames = 6
 // status viewer の全画面 diff が同じ手触りを持つための 1 箇所。🚨 「閉じる」キーはここで扱わない:
 // 面ごとに閉じる語彙が違う (diff は d / status は d と q) ため、呼び出し側で判定してから渡す。
 //
-// キーの語彙と offset の計算は tuikit の listnav (MotionOf / Scroll) が持つ。ここに残すのは
+// キーの語彙・offset の計算・glide を立てるかの判断は tuikit の listnav.Pager が持つ。ここに残すのは
 // less の Enter (1 行送り) と glide のフレーム数だけ。shift+space が届かない端末がある件
 // (上スクロールの確実な経路は b / ctrl+u / pgup) の実測と切り分けは
 // docs/issues-viewer-spec.md「半ページ移動はカーソルが滑る」の末尾。
-// スクロールキーでなければ offset をそのまま返す (呼び出し側は自分の語彙のキーを先に捌く)。
-func pagerScrollKey(key string, offset, rows, total int, glide *anim.ScrollGlide) (newOffset int) {
+// スクロールキーでなければ何もしない (呼び出し側は自分の語彙のキーを先に捌く)。
+func pagerScrollKey(key string, p *listnav.Pager, rows, total int) {
 	m := listnav.MotionOf(key)
 	if key == "enter" {
 		m = listnav.Down // less 流儀
 	}
-	next, slide := listnav.Scroll(m, offset, rows, total)
-	switch {
-	case m == listnav.Top || m == listnav.Bottom:
-		glide.Stop()
-	case slide:
-		glide.Start(offset, next, scrollAnimFrames)
-	}
-	return next
+	p.Move(m, total, rows, scrollAnimFrames)
 }
 
 // cursorAnimFrames は issues 一覧の半ページ移動でカーソルが滑るフレーム数

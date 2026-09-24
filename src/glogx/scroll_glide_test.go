@@ -2,12 +2,14 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 
 	"glogx/issues"
+	"tuikit/listnav"
 )
 
 // 半ページ移動 (Space / ctrl+d) が 4 面すべてで glide に載る (ユーザー要望 2026-07-31 の回帰)。
@@ -44,43 +46,43 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 		}
 		o.cache.store("abc", lines, "abc")
 		o.scroll(" ", 20)
-		if !o.glide.Active() {
+		if !o.pager.Animating() {
 			t.Error("Space の半ページが glide に載っていない")
 		}
-		if got := o.glide.Offset(o.offset); got != 0 {
+		if got := pagerShown(&o.pager); got != 0 {
 			t.Errorf("glide 開始位置 = %d, want 0", got)
 		}
 		// 1 行移動は glide 対象外 (距離 1 で滑らせる意味がない)
-		o.glide.Stop()
+		o.pager.Stop()
 		o.scroll("j", 20)
-		if o.glide.Active() {
+		if o.pager.Animating() {
 			t.Error("1 行移動が glide に載っている")
 		}
 		// 端ジャンプは即時
 		o.scroll(" ", 20)
 		o.scroll("G", 20)
-		if o.glide.Active() {
+		if o.pager.Animating() {
 			t.Error("端ジャンプ (G) で glide が残っている")
 		}
 	})
 
 	t.Run("issues 本文 pager (Space)", func(t *testing.T) {
 		v := newTestIssuesView()
-		v.bodyOff = 0
+		v.bodyPager.Offset = 0
 		v.body = nil
 		// body が nil でも maxOffset=0 になり動かないため、offset を直接動かす経路で検証する
 		prev := 3
-		v.bodyOff = 10
-		v.bodyGlide.Start(prev, v.bodyOff, scrollAnimFrames)
-		if !v.bodyGlide.Active() {
+		v.bodyPager.Offset = 10
+		startPagerGlide(t, &v.bodyPager, prev, v.bodyPager.Offset)
+		if !v.bodyPager.Animating() {
 			t.Error("本文の半ページが glide に載らない")
 		}
-		if got := v.bodyGlide.Offset(v.bodyOff); got != prev {
+		if got := pagerShown(&v.bodyPager); got != prev {
 			t.Errorf("glide 開始位置 = %d, want %d", got, prev)
 		}
 		// 本文を閉じたら glide を残さない (次に開いた瞬間に古い位置から滑らない)
 		v.closeBody()
-		if v.bodyGlide.Active() {
+		if v.bodyPager.Animating() {
 			t.Error("本文を閉じても glide が残っている")
 		}
 	})
@@ -88,12 +90,12 @@ func TestHalfPageScrollGlidesOnAllSurfaces(t *testing.T) {
 	t.Run("advanceGlide が本文 pager を進める", func(t *testing.T) {
 		// 🚨 一覧は glide を持たない (幾何的にアニメしないため削除。issue 031)
 		v := newTestIssuesView()
-		v.bodyOff = 10
-		v.bodyGlide.Start(0, 10, scrollAnimFrames)
+		v.bodyPager.Offset = 10
+		startPagerGlide(t, &v.bodyPager, 0, 10)
 		for range scrollAnimFrames {
 			v.advanceGlide()
 		}
-		if v.bodyGlide.Active() {
+		if v.bodyPager.Animating() {
 			t.Error("advanceGlide で着地しない")
 		}
 	})
@@ -114,7 +116,7 @@ func TestGlideKeyPathsScheduleTick(t *testing.T) {
 		m.diffOv.cache.store(sha, lines, sha)
 		m.ticking = false
 		m.handleKey(" ")
-		if !m.diffOv.glide.Active() {
+		if !m.diffOv.pager.Animating() {
 			t.Fatal("Space で glide が立たない (テスト前提の破れ)")
 		}
 		if !m.ticking {
@@ -135,17 +137,21 @@ func TestGlideKeyPathsScheduleTick(t *testing.T) {
 	})
 }
 
-// resize は glide を持つ 3 面すべてで捨てる (幅で行数が変わり着地点が古くなるため)。
+// resize は glide を持つ面すべて (一覧・diff・issues の本文とカーソル・status の pager) で捨てる (幅で行数が変わり着地点が古くなるため)。
 // issues の一覧は glide を持たない (issue 031)。
 func TestResizeStopsAllGlides(t *testing.T) {
 	m := newTestBrowse(t, 10, map[string]CIState{}, nil)
 	m.glide.Start(0, 10, scrollAnimFrames)
-	m.diffOv.glide.Start(0, 10, scrollAnimFrames)
-	m.issuesOv.bodyGlide.Start(0, 10, scrollAnimFrames)
+	startPagerGlide(t, &m.diffOv.pager, 0, 10)
+	startPagerGlide(t, &m.issuesOv.bodyPager, 0, 10)
+	startPagerGlide(t, &m.statusOv.pager, 0, 10)
+	m.issuesOv.curGlide.Start(0, 10, cursorAnimFrames)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	if m.glide.Active() || m.diffOv.glide.Active() || m.issuesOv.bodyGlide.Active() {
-		t.Errorf("resize で glide が残る: list=%v diff=%v issuesBody=%v",
-			m.glide.Active(), m.diffOv.glide.Active(), m.issuesOv.bodyGlide.Active())
+	if m.glide.Active() || m.diffOv.pager.Animating() || m.issuesOv.bodyPager.Animating() ||
+		m.statusOv.pager.Animating() || m.issuesOv.curGlide.Active() {
+		t.Errorf("resize で glide が残る: list=%v diff=%v issuesBody=%v status=%v issuesCursor=%v",
+			m.glide.Active(), m.diffOv.pager.Animating(), m.issuesOv.bodyPager.Animating(),
+			m.statusOv.pager.Animating(), m.issuesOv.curGlide.Active())
 	}
 }
 
@@ -182,9 +188,9 @@ func TestIssuesListWindowAlwaysKeepsCursorVisible(t *testing.T) {
 func TestIssuesCloseStopsBodyGlide(t *testing.T) {
 	v := newTestIssuesView()
 	v.shown = true
-	v.bodyGlide.Start(0, 10, scrollAnimFrames)
+	startPagerGlide(t, &v.bodyPager, 0, 10)
 	v.close()
-	if v.bodyGlide.Active() {
+	if v.bodyPager.Animating() {
 		t.Error("close で本文の glide が残る")
 	}
 }
@@ -226,13 +232,13 @@ func TestShiftSpaceScrollsUp(t *testing.T) {
 		}
 		o.cache.store("abc", lines, "abc")
 		o.scroll(" ", 20)
-		down := o.offset
+		down := o.pager.Offset
 		if down == 0 {
 			t.Fatal("Space で下スクロールしない (テスト前提の破れ)")
 		}
 		o.scroll("shift+space", 20)
-		if o.offset >= down {
-			t.Errorf("shift+space で上に戻らない: offset %d -> %d", down, o.offset)
+		if o.pager.Offset >= down {
+			t.Errorf("shift+space で上に戻らない: offset %d -> %d", down, o.pager.Offset)
 		}
 	})
 
@@ -266,11 +272,32 @@ func TestShiftSpaceScrollsUp(t *testing.T) {
 		}
 		v.body = issues.NewBody(src.String())
 		v.body.Lines(80, false) // Len() を確定させる (幅ごとに整形するため)
-		v.bodyOff = 30
-		before := v.bodyOff
+		v.bodyPager.Offset = 30
+		before := v.bodyPager.Offset
 		v.handleBodyKey("shift+space", 20)
-		if v.bodyOff >= before {
-			t.Errorf("shift+space で上に戻らない: bodyOff %d -> %d", before, v.bodyOff)
+		if v.bodyPager.Offset >= before {
+			t.Errorf("shift+space で上に戻らない: bodyOff %d -> %d", before, v.bodyPager.Offset)
 		}
 	})
 }
+
+// startPagerGlide は p を from から to への半ページ glide の途中に置く (テスト用)。
+// 本番と同じ入口 (Pager.Move の半ページ移動) を通すので、Offset は着地点 to になる。
+func startPagerGlide(t *testing.T, p *listnav.Pager, from, to int) {
+	t.Helper()
+	d := to - from
+	m := listnav.HalfDown
+	if d < 0 {
+		d, m = -d, listnav.HalfUp
+	}
+	rows := 2 * d // listnav.Half(rows) == d
+	p.Offset = from
+	p.Stop()
+	p.Move(m, max(from, to)+rows+1, rows, scrollAnimFrames)
+	if p.Offset != to || !p.Animating() {
+		t.Fatalf("startPagerGlide の前提の破れ: offset=%d (want %d) animating=%v", p.Offset, to, p.Animating())
+	}
+}
+
+// pagerShown は p の今の表示位置 (glide 中は途中位置)。行数の上限で丸めない。
+func pagerShown(p *listnav.Pager) int { return p.DrawOffset(math.MaxInt32, 1) }

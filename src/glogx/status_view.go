@@ -68,10 +68,9 @@ type statusView struct {
 	previewSeq int
 
 	// pager は d で開く全画面 diff ("" = 閉じている)。行は preview と同じキャッシュを読む。
-	pagerKey    string
-	pagerTitle  string
-	pagerOffset int
-	pagerGlide  anim.ScrollGlide
+	pagerKey   string
+	pagerTitle string
+	pager      listnav.Pager
 
 	// discard は X の確認 (zero value = 確認なし)。確認に出した時点の行を丸ごと持つ:
 	// 実行時に git status を取り直して一致を検証するため (spec 4 節の不変条件 1)。
@@ -209,13 +208,13 @@ func (v *statusView) slideAnimating() bool {
 	if v.closing {
 		return true
 	}
-	return v.shown && !v.animStart.IsZero() && timeNow().Sub(v.animStart) < statusOpenDuration
+	return v.shown && anim.Elapsed(v.animStart, timeNow(), statusOpenDuration) < 1
 }
 
 // animating は開閉の演出中か。spinnerActive (tick チェーンを回すか) がこれを見る
 // (issuesView.animating と同じ契約)。
 func (v *statusView) animating() bool {
-	if v.pagerGlide.Active() {
+	if v.pager.Animating() {
 		return true // 本文 pager の glide は tick で進むので「アニメ中」に含める
 	}
 	return v.slideAnimating()
@@ -248,7 +247,7 @@ func (v *statusView) close() {
 // settleClose は閉じる演出が終わっていたら畳む (描画・tick のどちらが先でも進むように、
 // 判定は 1 箇所へ寄せる。issuesView.settleClose と同じ作法)。
 func (v *statusView) settleClose() {
-	if v.closing && timeNow().Sub(v.animStart) >= statusCloseDuration {
+	if v.closing && anim.Elapsed(v.animStart, timeNow(), statusCloseDuration) >= 1 {
 		v.finishClose()
 	}
 }
@@ -264,8 +263,8 @@ func (v *statusView) finishClose() bool {
 	}
 	v.shown, v.closing = false, false
 	v.animStart = time.Time{}
-	v.pagerKey, v.pagerTitle, v.pagerOffset = "", "", 0
-	v.pagerGlide.Stop()
+	v.pagerKey, v.pagerTitle = "", ""
+	v.pager.Reset()
 	v.discarding, v.discard = false, worktreeRow{}
 	v.pollArmed = false
 	// 🚨 走行中の取得の札を降ろす。降ろさないと閉じた瞬間に飛んでいた git status の結果は
@@ -284,16 +283,14 @@ func (v *statusView) finishClose() bool {
 
 // settleAnim は開く演出が終わっていたら時計を捨てる (animating の判定を軽くする)。
 func (v *statusView) settleAnim() {
-	if !v.closing && !v.animStart.IsZero() && timeNow().Sub(v.animStart) >= statusOpenDuration {
+	if !v.closing && !v.animStart.IsZero() && anim.Elapsed(v.animStart, timeNow(), statusOpenDuration) >= 1 {
 		v.animStart = time.Time{}
 	}
 }
 
 // advanceGlide は全画面 diff のスクロール glide を 1 フレーム進める。
 func (v *statusView) advanceGlide() {
-	if v.pagerGlide.Active() {
-		v.pagerGlide.Advance(v.pagerOffset)
-	}
+	v.pager.Advance()
 }
 
 // setNotice / takeNotice は操作結果の受け渡し (browseModel がトーストにする)。
@@ -684,8 +681,8 @@ func (v *statusView) applyFresh(st worktreeStatus) {
 func (v *statusView) pagerKeyPress(key string, vp statusViewport) tea.Cmd {
 	switch key {
 	case "q", "esc", "h", "left", "d", "enter":
-		v.pagerKey, v.pagerTitle, v.pagerOffset = "", "", 0
-		v.pagerGlide.Stop()
+		v.pagerKey, v.pagerTitle = "", ""
+		v.pager.Reset()
 		return nil
 	// 開いたまま隣のファイルへ (J/K。docs/glogx-ui-guide.md §6)。セクション境界は setCursor が
 	// 一覧と同じに扱うので、ここで境界を意識しない
@@ -695,7 +692,7 @@ func (v *statusView) pagerKeyPress(key string, vp statusViewport) tea.Cmd {
 		return v.openNeighborPager(-1, vp)
 	}
 	total := len(v.pagerLines())
-	v.pagerOffset = pagerScrollKey(key, v.pagerOffset, v.pagerRows(vp.page), total, &v.pagerGlide)
+	pagerScrollKey(key, &v.pager, v.pagerRows(vp.page), total)
 	return nil
 }
 
@@ -903,8 +900,7 @@ func (v *statusView) openPager(vp statusViewport) tea.Cmd {
 	}
 	v.pagerKey = previewKey(row)
 	v.pagerTitle = row.dispPath() // 画面に出す文字列なので表示用 (dispPath の doc)
-	v.pagerOffset = 0
-	v.pagerGlide.Stop()
+	v.pager.Reset()
 	return v.fetchDiff(row, vp.colored)
 }
 
@@ -1085,12 +1081,9 @@ func statusListWidth(total int) int {
 // animProgress は演出の進み (0..1。演出していないときは 1 = 変形しない)。
 func (v *statusView) animProgress() float64 {
 	if v.closing {
-		return max(1-float64(timeNow().Sub(v.animStart))/float64(statusCloseDuration), 0)
+		return 1 - anim.Elapsed(v.animStart, timeNow(), statusCloseDuration)
 	}
-	if v.animStart.IsZero() {
-		return 1
-	}
-	return min(float64(timeNow().Sub(v.animStart))/float64(statusOpenDuration), 1)
+	return anim.Elapsed(v.animStart, timeNow(), statusOpenDuration)
 }
 
 // slideLeftWindow は窓を「板が左端から生えてくる」途中の姿にする (closing なら左へ縮んで消える
@@ -1139,7 +1132,7 @@ func (v *statusView) listLines(o statusRenderOpts, width int) []string {
 	// 🚨 整形するのは窓の中だけ (displayIndex の doc)。全行を整形してから切ると、画面に出る
 	// 行数と無関係に変更ファイル数へ比例したコストになる。
 	index, cursorAt := v.displayIndex()
-	v.offset = layout.WindowOffset(v.offset, cursorAt, len(index), rows)
+	v.offset = listnav.WindowOffset(v.offset, cursorAt, len(index), rows)
 	end := min(v.offset+rows, len(index))
 	out := make([]string, 0, rows)
 	for _, dl := range index[v.offset:end] {
@@ -1409,8 +1402,9 @@ func (v *statusView) pagerBox(o statusRenderOpts) []string {
 	case !ok:
 		body = []string{paint("(diff はありません)", ansiDim, o.colored)}
 	default:
-		v.pagerOffset = layout.ClampOffset(v.pagerOffset, len(lines), rows)
-		start := layout.ClampOffset(v.pagerGlide.Offset(v.pagerOffset), len(lines), rows)
+		// 描画で確定した行数・窓で論理 offset を収束させる (理由は listnav.Pager.Clamp の doc)
+		v.pager.Clamp(len(lines), rows)
+		start := v.pager.DrawOffset(len(lines), rows)
 		end := min(start+rows, len(lines))
 		body = append(body, lines[start:end]...)
 		title = fmt.Sprintf(" diff: %s [%d-%d/%d] ", v.pagerTitle, start+1, end, len(lines))
