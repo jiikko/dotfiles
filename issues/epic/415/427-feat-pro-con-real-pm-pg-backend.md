@@ -1,5 +1,7 @@
 # 427 (feat): pro-con の本物の PM / PG の backend (段階 3〜5)
 
+> 🚨 **担当中: dotfiles-5c**（2026-09-24〜）
+
 起票日: 2026-09-24
 
 親: [415](415-design-claude-pm-worker-orchestration.md) の「段階」3〜5

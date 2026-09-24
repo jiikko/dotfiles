@@ -1,7 +1,5 @@
 # 431 (feat): pro-con の PG / 係の session 用の設定 (hook と規約を絞る)
 
-> 🚨 **担当中: dotfiles-5c**（2026-09-24〜）
-
 起票日: 2026-09-24
 
 親: [415](415-design-claude-pm-worker-orchestration.md) / 実測の出典: [425](done/425-research-claude-bg-remaining-measurements.md) の結果 6
