@@ -78,7 +78,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			for _, r := range repos {
 				paths[r.Name] = r.Path
 			}
-			return runDaemon(args[1:], liveDir(home), paths, stdout, stderr)
+			return runDaemon(args[1:], liveDir(home), filepath.Join(home, ".claude", "projects"), paths, stdout, stderr)
 		case "-h", "--help":
 			_, _ = fmt.Fprintln(stdout, "usage: pro-con [--mock]   (既定は今の Claude Code の session を読み取り専用で出す。--mock は模擬データ)")
 			return 0

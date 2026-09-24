@@ -15,11 +15,13 @@ import (
 
 	"pro-con/agents"
 	"pro-con/daemon"
+	"pro-con/live"
 )
 
 const daemonInterval = 3 * time.Second
 
-func runDaemon(args []string, dir string, repos map[string]string, stdout, stderr io.Writer) int {
+// projects は transcript の置き場 (~/.claude/projects。PG が落ちて自動で再開したかを読む)。
+func runDaemon(args []string, dir, projects string, repos map[string]string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("pro-con daemon", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	limit := fs.Int("limit", 2, "同時に動かす PG の上限 (415 の決定事項: 2 から始める)")
@@ -38,7 +40,14 @@ func runDaemon(args []string, dir string, repos map[string]string, stdout, stder
 	}
 	defer unlock()
 	d := &daemon.Daemon{Dir: dir, Limit: *limit, Repos: repos, Launch: daemon.ExecLauncher{},
-		List: func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) }, Now: time.Now}
+		List: func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) }, Now: time.Now,
+		Transcript: func(sessionID string) (live.Transcript, error) {
+			p, err := live.FindTranscript(projects, sessionID)
+			if err != nil {
+				return live.Transcript{}, err
+			}
+			return live.ReadTail(p)
+		}}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	for {

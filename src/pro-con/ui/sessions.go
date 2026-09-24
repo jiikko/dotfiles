@@ -57,6 +57,8 @@ func pgStatus(c card.Card) (string, string) {
 		return "🚨 停滞", sgrRed
 	case c.Wait.Kind == card.WaitPermission:
 		return "権限待ち", sgrYellow
+	case c.Wait.Kind == card.WaitCrashed:
+		return "🚨 落ちて止めた", sgrRed
 	case c.Wait.Kind == card.WaitResource:
 		return fmt.Sprintf("%s 待ち %d 番目", c.Wait.Resource, c.Wait.Position), sgrYellow
 	case c.Wait.Kind == card.WaitQuota:

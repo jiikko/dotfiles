@@ -27,7 +27,13 @@ type Transcript struct {
 	Prompts    []Prompt // 人間の発言 (古い順)
 	Outputs    []string // PG の出力の文 (古い順)
 	LastAt     time.Time
+	Restarts   []time.Time // Claude Code がプロセスの死から自動で再開した時刻 (RestartNote を含む user レコード。古い順)
 }
+
+// RestartNote は、プロセスが死んだ session を Claude Code が自動で再開したときに会話へ足す文の一部 (2.1.281 で実測。issue 425 結果 1)。
+// origin を実測していないので、発言者を問わず user レコードの文で探す。版が変わって文が変わると、落ちた回数を数えられなくなる
+// (そのときは外から操作された疑いとして知らせる側に倒れる)
+const RestartNote = "this session was automatically restarted after its process exited unexpectedly"
 
 // Prompt は人間の発言 1 つ。
 type Prompt struct {
@@ -101,6 +107,9 @@ func parse(data []byte) Transcript {
 				t.LastPrompt = r.LastPrompt
 			}
 		case "user":
+			if r.Message != nil && strings.Contains(text(r.Message.Content), RestartNote) {
+				t.Restarts = append(t.Restarts, at)
+			}
 			if r.Origin != nil && r.Origin.Kind == "human" && r.Message != nil {
 				if s := text(r.Message.Content); s != "" {
 					t.Prompts = append(t.Prompts, Prompt{At: at, Text: s})

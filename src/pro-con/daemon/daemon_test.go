@@ -23,6 +23,8 @@ type fakeLauncher struct {
 	fail    bool
 	// resumeFail は再開に「失敗」と返す (実際には立っている形を作るのは一覧の側)
 	resumeFail bool
+	stops      []string
+	stopFail   bool
 }
 
 func (f *fakeLauncher) Start(_ context.Context, _, name, _ string) (string, error) {
@@ -42,6 +44,14 @@ func (f *fakeLauncher) Resume(_ context.Context, stopID, _, text string) (string
 		return "id-resumed", nil
 	}
 	return stopID, nil
+}
+
+func (f *fakeLauncher) Stop(_ context.Context, id string) error {
+	if f.stopFail {
+		return errors.New("止められない")
+	}
+	f.stops = append(f.stops, id)
+	return nil
 }
 
 // planned は分解済みのカードを n 枚積んだ記録を作る (箱から add → plan を通す)。
@@ -471,5 +481,139 @@ func TestFailedResumeThatActuallyResumedIsAdopted(t *testing.T) {
 	}
 	if c := states(t, dir)["C-001"]; len(l.resumes) != 1 || c.State != card.Running || c.Resume != "" {
 		t.Fatalf("実は再開していた session を取り込まずに再開し直した: resumes=%v %v Resume=%q", l.resumes, c.State, c.Resume)
+	}
+}
+
+// crashRig は作業中・登録済みの PG を 1 本用意し、transcript の再開の文を差し替えられる形にする。
+type crashRig struct {
+	dir      string
+	l        *fakeLauncher
+	d        *Daemon
+	ss       []agents.Session
+	restarts []time.Time
+}
+
+func newCrashRig(t *testing.T) *crashRig {
+	t.Helper()
+	r := &crashRig{dir: t.TempDir(), l: &fakeLauncher{}}
+	planned(t, r.dir, 1)
+	r.ss = []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", StartedAt: t0.Add(time.Second).UnixMilli()}}
+	r.d = newDaemon(t, r.dir, r.l, nil)
+	r.d.List = func(context.Context) ([]agents.Session, error) { return r.ss, nil }
+	r.d.Transcript = func(string) (live.Transcript, error) { return live.Transcript{Restarts: r.restarts}, nil }
+	for range 2 { // 起動 → 登録
+		r.tick(t)
+	}
+	return r
+}
+
+func (r *crashRig) tick(t *testing.T) []string {
+	t.Helper()
+	notes, err := r.d.Tick(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return notes
+}
+
+// crash は PG のプロセスが落ちて Claude Code が自動で再開した形を作る (新しい pid + transcript の再開の文)。
+func (r *crashRig) crash(at time.Time, pid int) {
+	r.ss[0].PID, r.ss[0].StartedAt = pid, at.UnixMilli()
+	r.restarts = append(r.restarts, at)
+}
+
+// 1 回落ちて自動で再開した PG は、記録を新しい pid で書き直して作業中のまま続ける (外から操作された疑いにしない)。
+func TestCrashOnceReregisters(t *testing.T) {
+	r := newCrashRig(t)
+	r.crash(t0.Add(time.Minute), 43)
+	notes := r.tick(t)
+	reg, _ := live.LoadRegistry(filepath.Join(r.dir, live.RegistryFile))
+	c := states(t, r.dir)["C-001"]
+	if len(reg) != 1 || reg[0].PID != 43 || c.State != card.Running || len(c.Crashes) != 1 || len(r.l.stops) != 0 {
+		t.Fatalf("1 回の自動の再開を取り込まない: reg=%+v %v crashes=%v stops=%v notes=%v", reg, c.State, c.Crashes, r.l.stops, notes)
+	}
+	if strings.Contains(strings.Join(notes, "\n"), "外から操作された疑い") {
+		t.Fatalf("自動の再開を外からの操作と知らせた: %v", notes)
+	}
+}
+
+// 短い間に上限 (2 回) 落ちた PG は止め、カードを人間の回答待ち (WaitCrashed) にする。
+func TestCrashTwiceStopsAndAsksHuman(t *testing.T) {
+	r := newCrashRig(t)
+	r.crash(t0.Add(time.Minute), 43)
+	r.tick(t)
+	r.crash(t0.Add(2*time.Minute), 44)
+	r.d.Now = func() time.Time { return t0.Add(3 * time.Minute) }
+	r.tick(t)
+	c := states(t, r.dir)["C-001"]
+	if len(r.l.stops) != 1 || r.l.stops[0] != "id-pc-c-001" || c.State != card.Waiting || c.Wait.Kind != card.WaitCrashed {
+		t.Fatalf("2 回落ちた PG を止めて人間に上げていない: stops=%v %v %v", r.l.stops, c.State, c.Wait.Kind)
+	}
+}
+
+// 間が CrashWindow より空いた 2 回は数えない (長く走る PG が時々落ちるだけで止めない)。
+func TestCrashesOutsideWindowDoNotStop(t *testing.T) {
+	r := newCrashRig(t)
+	r.crash(t0.Add(time.Minute), 43)
+	r.tick(t)
+	later := t0.Add(time.Minute + defaultCrashWindow + time.Minute)
+	r.crash(later, 44)
+	r.d.Now = func() time.Time { return later.Add(time.Second) }
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; len(r.l.stops) != 0 || c.State != card.Running {
+		t.Fatalf("間の空いた 2 回で止めた: stops=%v %v", r.l.stops, c.State)
+	}
+}
+
+// 止められなかったら作業中のまま残し、次の Tick でまた止めにいく。
+func TestCrashStopRetriesOnFailure(t *testing.T) {
+	r := newCrashRig(t)
+	r.l.stopFail = true
+	r.crash(t0.Add(time.Minute), 43)
+	r.tick(t)
+	r.crash(t0.Add(2*time.Minute), 44)
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; c.State != card.Running {
+		t.Fatalf("止められなかったのに回答待ちにした: %v", c.State)
+	}
+	r.l.stopFail = false
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; len(r.l.stops) != 1 || c.State != card.Waiting {
+		t.Fatalf("次の Tick で止め直さない: stops=%v %v", r.l.stops, c.State)
+	}
+}
+
+// 止めたカードに回答すると同じ session を再開し、前の回数ですぐ止め直さない。
+func TestAnswerAfterCrashStopResumesWithoutRestop(t *testing.T) {
+	r := newCrashRig(t)
+	r.crash(t0.Add(time.Minute), 43)
+	r.tick(t)
+	r.crash(t0.Add(2*time.Minute), 44)
+	r.tick(t)
+	if _, err := store.Submit(r.dir, store.Request{Kind: "answer", CardID: "C-001", Answer: "続けて"}); err != nil {
+		t.Fatal(err)
+	}
+	r.d.Now = func() time.Time { return t0.Add(3 * time.Minute) }
+	r.tick(t) // 再開
+	r.tick(t)
+	c := states(t, r.dir)["C-001"]
+	if len(r.l.resumes) != 1 || len(r.l.stops) != 1 || c.State != card.Running {
+		t.Fatalf("回答の後に再開しない / 前の回数で止め直した: resumes=%v stops=%v %v", r.l.resumes, r.l.stops, c.State)
+	}
+}
+
+// 再開した session の startedAt が元の開始時刻のまま (未実測。3f で測る) でも、前に数えた再開の文を次に落ちたときにまた数えない。
+func TestCrashDoesNotRecountEarlierNote(t *testing.T) {
+	r := newCrashRig(t)
+	r.d.CrashLimit = 10 // 止めずに回数だけ見る
+	orig := r.ss[0].StartedAt
+	r.crash(t0.Add(time.Minute), 43)
+	r.ss[0].StartedAt = orig
+	r.tick(t)
+	r.crash(t0.Add(2*time.Minute), 44)
+	r.ss[0].StartedAt = orig
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; len(c.Crashes) != 2 {
+		t.Fatalf("前に数えた再開の文をまた数えた: %v", c.Crashes)
 	}
 }

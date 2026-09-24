@@ -46,6 +46,13 @@ func (ExecLauncher) Resume(ctx context.Context, stopID, sessionID, text string) 
 	return parseBackgrounded(out)
 }
 
+func (ExecLauncher) Stop(ctx context.Context, id string) error {
+	if _, err := runClaude(ctx, "", "stop", id); err != nil {
+		return fmt.Errorf("claude stop %s: %w", id, err)
+	}
+	return nil
+}
+
 func runClaude(ctx context.Context, dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, launchTimeout)
 	defer cancel()

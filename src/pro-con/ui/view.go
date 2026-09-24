@@ -305,6 +305,8 @@ func (m *Model) badge(c card.Card) string {
 		parts = append(parts, "?質問")
 	case c.Wait.Kind == card.WaitPermission:
 		parts = append(parts, "?権限")
+	case c.Wait.Kind == card.WaitCrashed:
+		parts = append(parts, "🚨落ちた")
 	case c.Wait.Kind == card.WaitResource:
 		parts = append(parts, fmt.Sprintf("…%s %d番目", c.Wait.Resource, c.Wait.Position))
 	case c.Wait.Kind == card.WaitQuota:

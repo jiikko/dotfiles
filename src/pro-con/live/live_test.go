@@ -310,3 +310,19 @@ func TestRegisterRejectsNoPIDAndUpserts(t *testing.T) {
 		t.Fatalf("同じ session の行を書き直すはず: %+v %v", reg, err)
 	}
 }
+
+// Claude Code がプロセスの死から自動で再開したときに足す文 (425 で実測) を、発言者を問わず再開の時刻として読む。人間の発言には数えない。
+func TestParseTranscriptRestarts(t *testing.T) {
+	data := `{"type":"user","timestamp":"2026-09-25T01:00:00Z","origin":{"kind":"human"},"message":{"content":"直して"}}
+{"type":"user","timestamp":"2026-09-25T01:05:00Z","message":{"content":"Continue from where you left off. Note: this session was automatically restarted after its process exited unexpectedly; the user has not sent a new message since the restart."}}
+{"type":"user","timestamp":"2026-09-25T01:09:00Z","message":{"content":[{"type":"text","text":"Note: this session was automatically restarted after its process exited unexpectedly"}]}}
+`
+	tr := parse([]byte(data))
+	want := []time.Time{time.Date(2026, 9, 25, 1, 5, 0, 0, time.UTC), time.Date(2026, 9, 25, 1, 9, 0, 0, time.UTC)}
+	if len(tr.Restarts) != 2 || !tr.Restarts[0].Equal(want[0]) || !tr.Restarts[1].Equal(want[1]) {
+		t.Fatalf("再開の時刻を読めない: %v", tr.Restarts)
+	}
+	if len(tr.Prompts) != 1 {
+		t.Fatalf("再開の文を人間の発言に数えた: %+v", tr.Prompts)
+	}
+}

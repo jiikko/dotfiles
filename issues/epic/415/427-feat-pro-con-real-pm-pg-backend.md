@@ -39,7 +39,14 @@
     - 登録の穴を塞いだ (2026-09-25): 記録を書き直すのは daemon 自身が起動・再開した直後 (pending) だけ。それ以外で pid が変わったら
       「外から操作された疑い」を知らせて書き直さない。最初の登録も、session の起動がカードの起動より前なら取り込まない。変異 2 本が red。
       🚨 pending は daemon のメモリの中だけ。daemon が起動し直すと失うので、その間に Claude Code が自動で再開した PG は「外から操作された疑い」に倒れる (3c-2 で扱う)
-  - [ ] 3c-2 落ちた回数で止める (426 の決定 4)・watchdog (停滞)
+  - [x] 3c-2a 落ちた回数で止める (426 の決定 4)
+      pid が変わった作業中の session の transcript に、Claude Code の自動の再開の文 (425 結果 1 の実測。`live.RestartNote`) が新しく出ていれば
+      自動の再開として記録を書き直し、時刻を card.Crashes に数える。文が無ければ今までどおり「外から操作された疑い」。
+      最後の起動・再開の後、30 分の間に 2 回落ちたら `claude stop` して、カードを人間の回答待ち (WaitCrashed) にする。回答すると同じ session を再開する。
+      止められなければ作業中のまま次の Tick でまた試す。変異 7 本が red (再開の文を読まない / 前の文を数え直す / 時間の窓を外す /
+      再開の前の回数も数える / 止められないのに回答待ちにする / 上限を 1 つ上げる / transcript の文を読まない)。
+      🚨 再開の文を含むレコードの origin は未実測 (発言者を問わず探している)。Claude Code の版で文が変わると数えられず、外からの操作の疑いに倒れる
+  - [ ] 3c-2b watchdog (停滞。LastProgress と card.StallThreshold。知らせは tmux の status と macOS の通知 = 426 の決定 10)
   - [x] 3c-3 `pro-con daemon` の常駐と排他 (2 つ起動しない) — 3c-2 より先に済ませた (daemon を動く形にするため)
     - 済み (2026-09-25): `pro-con daemon [--limit N] [--once]` (`src/pro-con/daemoncmd.go`)。3 秒ごとに Tick し、何をしたかを時刻つきで stdout へ。
       排他は `daemon.lock` の flock (プロセスが終われば OS が外す)。変異 1 本 (flock を外す) が red。🚨 本物の claude では未実行 (3f)

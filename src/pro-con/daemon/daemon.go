@@ -30,7 +30,15 @@ type Launcher interface {
 	// Resume は stopID の session を止めてから (空なら止めない) 同じ session を text を渡して再開し、claude --bg が返す短い id を返す
 	// (実行中の session に --resume するとコピーが起動するため。415 論点 11。再開で短い id が変わるかは未実測なので、返った id を使う)
 	Resume(ctx context.Context, stopID, sessionID, text string) (newID string, err error)
+	// Stop は session を止める (落ち続けた PG。426 の決定 4)
+	Stop(ctx context.Context, id string) error
 }
+
+// 落ちた回数の既定 (426 の決定 4。動かしながら直す): CrashWindow の間に CrashLimit 回落ちたら止める。
+const (
+	defaultCrashLimit  = 2
+	defaultCrashWindow = 30 * time.Minute
+)
 
 // launchGrace は起動・再開の結果を確かめられないとき (claude が失敗と返した / daemon が途中で落ちた)、一覧に出るのを待つ長さ。
 // 過ぎても出なければ起動し直す (待たずに起動し直すと、立っていた session の上にもう 1 本増える)。
@@ -44,6 +52,12 @@ type Daemon struct {
 	Launch Launcher
 	List   func(context.Context) ([]agents.Session, error)
 	Now    func() time.Time
+	// Transcript は session の transcript の末尾を読む (PG が落ちて Claude Code が自動で再開したかを見る)。nil なら読まない
+	// (その場合、pid が変わった session はすべて外から操作された疑いとして扱う)
+	Transcript func(sessionID string) (live.Transcript, error)
+	// CrashLimit / CrashWindow は 0 なら既定値
+	CrashLimit  int
+	CrashWindow time.Duration
 }
 
 // Tick は 1 回ぶんの仕事をして、何をしたかの短い記録を返す (ログ用)。
@@ -65,7 +79,7 @@ func (d *Daemon) Tick(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return append(notes, "session の一覧を取れない (登録と割り当ては次の Tick へ): "+err.Error()), nil
 	}
-	n, warn, err := d.register(ss)
+	n, warn, err := d.register(now, ss)
 	if err != nil {
 		return notes, err
 	}
@@ -73,6 +87,11 @@ func (d *Daemon) Tick(ctx context.Context) ([]string, error) {
 		notes = append(notes, fmt.Sprintf("PG の session を %d 本登録した", n))
 	}
 	notes = append(notes, warn...)
+	stopped, err := d.stopCrashing(ctx, now)
+	notes = append(notes, stopped...)
+	if err != nil {
+		return notes, err
+	}
 	more, err := d.dispatch(ctx, now, ss)
 	return append(notes, more...), err
 }
@@ -81,7 +100,7 @@ func (d *Daemon) Tick(ctx context.Context) ([]string, error) {
 // 起動の直後は一覧にまだ出ないことがあるので、出るまで毎回見る。取り込むのは daemon が最後に起動・再開した (LaunchedAt) 後に
 // 始まった session だけで、書き直せるのは記録の行がそれより前のもの (= daemon 自身の再開の後) だけ。それ以外は外から操作された疑いを知らせる。
 // 判定の材料は記録に置く (daemon が起動し直しても失わない)。
-func (d *Daemon) register(ss []agents.Session) (int, []string, error) {
+func (d *Daemon) register(now time.Time, ss []agents.Session) (int, []string, error) {
 	st, err := store.Load(d.Dir)
 	if err != nil {
 		return 0, nil, err
@@ -116,9 +135,20 @@ func (d *Daemon) register(ss []agents.Session) (int, []string, error) {
 				warn = append(warn, fmt.Sprintf("%s の短い id %s が別の session (%s) を指している。登録しない", c.ID, s.ID, s.SessionID))
 				continue
 			case ok && !o.StartedAt.Before(c.LaunchedAt):
-				warn = append(warn, fmt.Sprintf("%s の session %s の pid が %d → %d に変わった。pro-con は再開していない (外から操作された疑い)。記録は書き直さない",
-					c.ID, s.ID, o.PID, s.PID))
-				continue
+				crashes := d.restartsSince(c, o, s.SessionID)
+				if len(crashes) == 0 {
+					warn = append(warn, fmt.Sprintf("%s の session %s の pid が %d → %d に変わった。pro-con は再開していない (外から操作された疑い)。記録は書き直さない",
+						c.ID, s.ID, o.PID, s.PID))
+					continue
+				}
+				// Claude Code 自身がプロセスの死から再開した (transcript に再開の文が新しく出た)。記録を書き直し、回数を数える
+				if err := d.update(c.ID, func(cc *card.Card) {
+					cc.Crashes = append(cc.Crashes, crashes...)
+					cc.History = append(cc.History, card.Event{At: now, Text: fmt.Sprintf("PG のプロセスが落ち、Claude Code が自動で再開した (pid %d → %d)", o.PID, s.PID)})
+				}); err != nil {
+					return n, warn, err
+				}
+				warn = append(warn, fmt.Sprintf("%s の PG が落ちて自動で再開した (pid %d → %d)", c.ID, o.PID, s.PID))
 			}
 			if err := live.Register(regPath, live.Owned{SessionID: s.SessionID, ID: s.ID, PID: s.PID, CardID: c.ID, StartedAt: s.Started()}); err != nil {
 				return n, warn, err
@@ -127,6 +157,74 @@ func (d *Daemon) register(ss []agents.Session) (int, []string, error) {
 		}
 	}
 	return n, warn, nil
+}
+
+// restartsSince は、記録の行 (o) より後・最後に数えた落ちた時刻より後に、transcript へ出た再開の文の時刻を返す。
+func (d *Daemon) restartsSince(c card.Card, o live.Owned, sessionID string) []time.Time {
+	if d.Transcript == nil {
+		return nil
+	}
+	t, err := d.Transcript(sessionID)
+	if err != nil {
+		return nil // 読めなければ数えない (外から操作された疑いとして知らせる側に倒す)
+	}
+	since := o.StartedAt
+	if n := len(c.Crashes); n > 0 && c.Crashes[n-1].After(since) {
+		since = c.Crashes[n-1]
+	}
+	var out []time.Time
+	for _, at := range t.Restarts {
+		if at.After(since) {
+			out = append(out, at)
+		}
+	}
+	return out
+}
+
+// stopCrashing は、作業中のカードのうち CrashWindow の間に CrashLimit 回以上落ちた PG を止め、カードを人間の回答待ちにする
+// (回答が来たら同じ session を再開する)。止められなかったら作業中のまま残し、次の Tick でまた試す。
+func (d *Daemon) stopCrashing(ctx context.Context, now time.Time) ([]string, error) {
+	limit, window := d.CrashLimit, d.CrashWindow
+	if limit <= 0 {
+		limit = defaultCrashLimit
+	}
+	if window <= 0 {
+		window = defaultCrashWindow
+	}
+	st, err := store.Load(d.Dir)
+	if err != nil {
+		return nil, err
+	}
+	var notes []string
+	for _, c := range st.Cards {
+		if c.State != card.Running || c.Session == "" {
+			continue
+		}
+		recent := 0
+		for _, at := range c.Crashes {
+			// 最後の起動・再開より前の回数は数えない (止めた後に回答で再開した PG を、前の回数ですぐ止め直さない)
+			if at.After(c.LaunchedAt) && now.Sub(at) <= window {
+				recent++
+			}
+		}
+		if recent < limit {
+			continue
+		}
+		if err := d.Launch.Stop(ctx, c.Session); err != nil {
+			notes = append(notes, fmt.Sprintf("%s の PG は %s の間に %d 回落ちたが、止められない (次の Tick でまた試す): %v", c.ID, window, recent, err))
+			continue
+		}
+		why := fmt.Sprintf("PG が %s の間に %d 回落ちたので止めた。回答すると同じ session を再開する", window, recent)
+		if err := d.update(c.ID, func(cc *card.Card) {
+			cc.State, cc.Since, cc.Owner = card.Waiting, now, "人間"
+			cc.Wait = card.Wait{Kind: card.WaitCrashed, Question: why}
+			cc.History = append(cc.History, card.Event{At: now, Text: why})
+		}); err != nil {
+			return notes, err
+		}
+		notes = append(notes, c.ID+": "+why)
+	}
+	return notes, nil
 }
 
 // dispatch は分解済みのカードに、作業中が上限に達するまで PG を割り当てる (古い順)。

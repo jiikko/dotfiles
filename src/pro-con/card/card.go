@@ -96,12 +96,13 @@ const (
 	WaitPermission          // 権限プロンプトで止まった (Waiting 列。claude agents --json の waitingFor)
 	WaitResource            // 占有リソースの順番待ち (要件 12。Running 列のまま)
 	WaitQuota               // 利用枠の回復待ち (Running 列のまま)
+	WaitCrashed             // PG が短い間に何度も落ちたので daemon が止めた (Waiting 列。人間が回答すると同じ session を再開する。426 の決定 4)
 )
 
 // NeedsAnswer は人間か PM の操作が要る待ちか (= Waiting 列に置く待ちか)。
 func (w WaitKind) NeedsAnswer() bool {
 	switch w {
-	case WaitQuestion, WaitPermission:
+	case WaitQuestion, WaitPermission, WaitCrashed:
 		return true
 	case WaitNone, WaitResource, WaitQuota:
 		return false
@@ -113,7 +114,7 @@ type Wait struct {
 	Kind     WaitKind
 	Resource string // WaitResource のときのリソース名 (device / xcode 等)
 	Position int    // WaitResource のときの列の順番 (1 始まり)
-	Question string // WaitQuestion / WaitPermission のときの質問文
+	Question string // WaitQuestion / WaitPermission のときの質問文。WaitCrashed のときは止めた理由
 }
 
 // IssueRef は repo + 番号で issue を指す (パスで持たない。done への移動や改番で切れないように)。
@@ -204,6 +205,9 @@ type Card struct {
 	Launching string `json:",omitempty"`
 	// LaunchedAt は daemon が最後に起動・再開を始めた時刻。これより前に始まった session は、このカードの PG として取り込まない
 	LaunchedAt time.Time `json:",omitzero"`
+	// Crashes は PG のプロセスが落ちて Claude Code が自動で再開した時刻 (transcript の再開の文の時刻)。daemon が数えて、
+	// 短い間に上限を超えたら止める
+	Crashes []time.Time `json:",omitempty"`
 	// Archived は完了のレーンから片付けた (x)。ボードには出さないが、記録 (状態ファイル) には残す
 	Archived bool
 	// LastProgress は「実質的に進んだ」最後の時刻 (watchdog が見る。活動ではなく進捗)

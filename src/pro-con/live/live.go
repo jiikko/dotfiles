@@ -66,19 +66,22 @@ func New(repos []backend.Repo, home, stateDir string) *Backend {
 		snap:     backend.Snapshot{Now: now, DaemonTick: now},
 		done:     make(chan struct{}),
 		list:     func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) },
-		findPath: func(id string) (string, error) {
-			// ディレクトリ名は cwd から Claude Code が組む (規則を真似ず、sessionId で探す)
-			ms, err := filepath.Glob(filepath.Join(projects, "*", id+".jsonl"))
-			if err != nil || len(ms) == 0 {
-				return "", os.ErrNotExist
-			}
-			return ms[0], nil
-		},
-		read:  ReadTail,
-		now:   time.Now,
-		cache: map[string]cached{},
-		paths: map[string]string{},
+		findPath: func(id string) (string, error) { return FindTranscript(projects, id) },
+		read:     ReadTail,
+		now:      time.Now,
+		cache:    map[string]cached{},
+		paths:    map[string]string{},
 	}
+}
+
+// FindTranscript は projects (~/.claude/projects) の下から sessionID の transcript を探す。
+// ディレクトリ名は cwd から Claude Code が組む (規則を真似ず、sessionId で探す)。
+func FindTranscript(projects, sessionID string) (string, error) {
+	ms, err := filepath.Glob(filepath.Join(projects, "*", sessionID+".jsonl"))
+	if err != nil || len(ms) == 0 {
+		return "", os.ErrNotExist
+	}
+	return ms[0], nil
 }
 
 // Start は裏で読み直しを始める (最初の読み取りも裏で行う。claude agents --json は最大 3 秒待つので、画面を出す前に待たない)。
