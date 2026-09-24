@@ -18,7 +18,7 @@ bin/pro-con      # claude は起動しない。模擬の backend (fake) が状�
 | tab / shift+tab | repo タブの切り替え (global = 全 repo) |
 | n | 新しい依頼 (PM へ)。repo のタブで出すとその repo がスコープになる |
 | i | issue の一覧から選んで「これやって」と依頼する (repo のタブならその repo、global なら設定の全 repo。未完了だけ。epic は見出しの下に子)。Enter → 補足 (空でよい) → Enter |
-| s | Claude Code の session の一覧を開閉 (`claude agents --json`。対話 / 裏・状態・名前・経過・pid・場所) |
+| s | PG (consumer) の一覧を開閉 (担当カード・状態・実行中のコマンド・経過。`claude agents --json` の session と session ID で突き合わせて pid を出す。PG でない session は件数だけ) |
 | e | 選択中のカードの issue の md をエディタで開く ($VISUAL → $EDITOR → nvim。`tuikit/editor`) |
 | y | 選択中のカードの issue の md のパス (素の値) をクリップボードへ |
 | Y | 選択中のカードのタイトルと内容 (repo・状態・issue・依頼の原文・質問。整形した参照) をクリップボードへ。本文は `termsafe.PlainBlock` を通す |

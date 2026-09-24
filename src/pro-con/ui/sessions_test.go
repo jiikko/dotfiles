@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"pro-con/agents"
+	"pro-con/backend"
 )
 
 var twoSessions = []agents.Session{
@@ -50,17 +51,50 @@ func TestSessionsFailureIsNotZero(t *testing.T) {
 	}
 }
 
-// s で一覧のパネルを開閉する。開いている間は session の名前と、裏の session の待ちの理由が出る。
-func TestSessionsPanelToggles(t *testing.T) {
+// s で PG の一覧を開閉する。PG ごとに担当カードが出る。PG でない session (Desktop の対話 等) は件数だけで名前は出さない。
+// pgPanel は画面から PG の一覧の枠の中だけを切り出す (カンバンにも同じカード ID が出るので、画面全体では探さない)。
+func pgPanel(m *Model) string {
+	out := ansi.Strip(m.render())
+	i := strings.Index(out, "PG (consumer)")
+	if i < 0 {
+		return ""
+	}
+	out = out[i:]
+	if j := strings.Index(out, "╰"); j >= 0 {
+		out = out[:j]
+	}
+	return out
+}
+
+func TestPGPanel(t *testing.T) {
 	m := sessionsModel(t, twoSessions, nil)
+	m.snap.Consumers = []backend.Consumer{{Session: "pg-1", CardID: "R1", Status: "busy"}}
 	m.Update(m.fetchSessions()())
 	press(m, "s")
-	out := ansi.Strip(m.render())
-	if !strings.Contains(out, "dotfiles-5c") || !strings.Contains(out, "permission prompt") {
-		t.Fatalf("パネルに session が出ていない:\n%s", out)
+	out := pgPanel(m)
+	for _, want := range []string{"PG (consumer) 1/2", "pg-1", "R1", "模擬", "対話 1 / 裏 1"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("PG の一覧に %q が無い:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "dotfiles-5c") {
+		t.Fatal("PG でない session の名前を並べた")
 	}
 	press(m, "s")
-	if strings.Contains(ansi.Strip(m.render()), "permission prompt") {
+	if strings.Contains(ansi.Strip(m.render()), "PG (consumer)") {
 		t.Fatal("閉じたのにパネルが残っている")
+	}
+}
+
+// PG と同じ session の claude の session があれば、その PG に pid を紐づけ、「ほかの session」から外す。
+func TestPGPanelMatchesRealSession(t *testing.T) {
+	bg := agents.Session{ID: "3feb603f", SessionID: "3feb603f-aaaa", Kind: "background", Status: "busy", PID: 4242}
+	m := sessionsModel(t, append([]agents.Session{bg}, twoSessions...), nil)
+	m.snap.Consumers = []backend.Consumer{{Session: "3feb603f", CardID: "R1", Status: "busy"}}
+	m.Update(m.fetchSessions()())
+	press(m, "s")
+	out := pgPanel(m)
+	if !strings.Contains(out, "pid 4242") || !strings.Contains(out, "対話 1 / 裏 1") {
+		t.Fatalf("PG に pid を紐づけ、ほかの session から外すはず:\n%s", out)
 	}
 }

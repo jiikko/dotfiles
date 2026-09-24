@@ -47,7 +47,7 @@ func (m *Model) render() string {
 	}
 	if m.showSessions {
 		out = append(out, "")
-		out = append(out, m.sessionsBlock()...)
+		out = append(out, m.pgBlock()...)
 	}
 	out = append(out, "")
 	switch m.mode {
@@ -193,7 +193,7 @@ func (m *Model) shownCards() int {
 		room -= 15
 	}
 	if m.showSessions {
-		room -= len(m.sessions) + 5 // 上下の枠・見出し・エラー行・空行
+		room -= len(m.snap.Consumers) + 5 // 上下の枠・見出し・ほかの session の行・空行
 	}
 	return max(1, room/perCardLines)
 }
@@ -465,7 +465,7 @@ func (m *Model) hints() []string {
 		back = "q / esc 閉じる"
 	}
 	return []string{"hjkl 選択", "tab repo", "n 新しい依頼", "i issue から", "enter 詳細", "a attach", "r 回答", "+ 追加オーダー", "? btw",
-		"e issue を開く", "y パス", "Y 内容", "s claude 一覧", back}
+		"e issue を開く", "y パス", "Y 内容", "s PG 一覧", back}
 }
 
 // hintLine は案内を幅 w に収める。入らなければ後ろから落とすが、最後の項目 (抜ける手段) は必ず残す (§5)。
