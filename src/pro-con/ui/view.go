@@ -41,6 +41,10 @@ func (m *Model) render() string {
 		out = append(out, "")
 		out = append(out, m.detailBlock()...)
 	}
+	if m.showSessions {
+		out = append(out, "")
+		out = append(out, m.sessionsBlock()...)
+	}
 	out = append(out, "")
 	if m.mode == modeInput {
 		out = append(out, m.inputLine())
@@ -48,7 +52,7 @@ func (m *Model) render() string {
 	if m.flash != "" {
 		out = append(out, sgrCyan+" "+m.flash+sgrReset)
 	}
-	help := " ←→↑↓ 選択  tab repo  n 新しい依頼  y コピー  enter 詳細  a attach  r 回答  o 追加オーダー  b btw  q 終了"
+	help := " ←→↑↓ 選択  tab repo  n 新しい依頼  y コピー  s claude 一覧  enter 詳細  a attach  r 回答  o 追加オーダー  b btw  q 終了"
 	out = append(out, sgrDim+help+sgrReset)
 	return strings.Join(out, "\n")
 }
@@ -107,7 +111,7 @@ func (m *Model) gauge() string {
 	sep := fg(240) + " │ " + sgrFgReset
 	g := " " + strings.Join(parts, "  ") + sep + fmt.Sprintf("最古の待ち %s", fmtDur(oldest)) + sep +
 		fmt.Sprintf("PG %d/%d", len(m.snap.Consumers), m.snap.Limit) + sep +
-		fmt.Sprintf("daemon %s前", fmtDur(m.snap.Now.Sub(m.snap.DaemonTick)))
+		fmt.Sprintf("daemon %s前", fmtDur(m.snap.Now.Sub(m.snap.DaemonTick))) + sep + m.sessionsSummary()
 	if pending > 0 {
 		g += sep + sgrYellow + fmt.Sprintf("⚠ issue 化待ち %d", pending) + sgrFgReset
 	}
@@ -138,6 +142,9 @@ func (m *Model) boardLines() []string {
 	room := m.height - 9 - headLines
 	if m.showDetail {
 		room -= 15
+	}
+	if m.showSessions {
+		room -= len(m.sessions) + 5 // 上下の枠・見出し・エラー行・空行
 	}
 	// 枠の高さは画面の残りで固定する (枚数に合わせると、ある列の枚数が変わった瞬間に全部の列の枠が伸び縮みする)
 	shown := max(1, room/perCardLines)

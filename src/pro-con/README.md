@@ -17,6 +17,7 @@ bin/pro-con      # claude は起動しない。模擬の backend (fake) が状�
 |---|---|
 | tab / shift+tab | repo タブの切り替え (global = 全 repo) |
 | n | 新しい依頼 (PM へ)。repo のタブで出すとその repo がスコープになる |
+| s | Claude Code の session の一覧を開閉 (`claude agents --json`。対話 / 裏・状態・名前・経過・pid・場所) |
 | y | 選択中のカードのタイトルと内容 (repo・状態・issue・依頼の原文・質問) をクリップボードへ。本文は `termsafe.PlainBlock` を通す |
 | ←→↑↓ / hjkl | カードの選択 |
 | enter / esc | 詳細の開閉 |
@@ -53,6 +54,7 @@ repos      = ["~/dotfiles"] # root の外にある repo を個別に足す
 | package | 役割 |
 |---|---|
 | `config` | 設定ファイルと repo の列挙 |
+| `agents` | `claude agents --json` で動いている session を一覧する (本物を読む。3 秒ごと・timeout 3 秒。取れなかったら 0 本にせずエラー) |
 | `card` | ドメイン (カード・状態・不変条件の検査)。UI にも backend にも依存しない |
 | `backend` | UI と状態の持ち主の境界 (`Backend` interface / `Command` / `Snapshot`)。UI はここより下を知らない |
 | `fake` | 模擬 backend。本物に差し替えるときは `backend.Backend` を満たす実装を足し、`main.go` の 1 行を替える |

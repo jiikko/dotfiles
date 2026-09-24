@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"pro-con/agents"
 	"pro-con/backend"
 	"pro-con/card"
 )
@@ -69,11 +71,19 @@ type Model struct {
 	framing   bool // frame の tick が回っているか (二重に回さない)
 
 	copy func(string) error // クリップボードへ入れる (既定は pbcopy。テストは差し替える)
+
+	// Claude Code の session の一覧 (sessions.go)
+	listSessions func(context.Context) ([]agents.Session, error)
+	sessions     []agents.Session
+	sessErr      string
+	sessFetched  bool
+	showSessions bool
 }
 
 // New は repos (config から列挙した repo) をタブの候補にして画面を作る。nil なら global だけ。
 func New(be backend.Backend, repos []backend.Repo) *Model {
-	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, copy: pbcopy}
+	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, copy: pbcopy,
+		listSessions: func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) }}
 	m.snap = be.Poll()
 	m.ensureSelection()
 	m.resetSlots()
@@ -85,7 +95,7 @@ func (m *Model) Notify(s string) { m.flash = s }
 
 func tick() tea.Cmd { return tea.Tick(TickInterval, func(time.Time) tea.Msg { return tickMsg{} }) }
 
-func (m *Model) Init() tea.Cmd { return tick() }
+func (m *Model) Init() tea.Cmd { return tea.Batch(tick(), m.fetchSessions()) }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -101,6 +111,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(tick(), m.trackMoves())
 	case frameMsg:
 		return m, m.onFrame()
+	case sessionsMsg:
+		return m, m.onSessions(msg)
+	case sessionsTickMsg:
+		return m, m.fetchSessions()
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
@@ -319,6 +333,8 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		m.startInput(inputNew)
 	case "y":
 		m.yank()
+	case "s":
+		m.showSessions = !m.showSessions
 	}
 	return nil
 }
