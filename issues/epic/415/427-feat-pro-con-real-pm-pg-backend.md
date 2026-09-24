@@ -29,7 +29,7 @@
 - [x] **3b `pro-con card` コマンド**: PM / PG が使う口 (`add` 依頼を積む / `ask` 質問を書く / `done` 終えた / `plan` 分けた 等)。箱に置くだけ。枠を使わない
   - 済み (2026-09-25): `src/pro-con/cardcmd.go`。置いた依頼の ID を stdout、使い方の誤りは箱に置く前に rc=2。
     テスト 3 本、変異 2 本が red (--issue の書式の検査 / add の必須の検査)
-- [ ] **3c `pro-con daemon`**: 箱の適用 → PG の起動 (`claude --bg -w`、431 の設定、`live.Register`) → `claude agents --json` で状態を読んでカードへ →
+- [x] **3c `pro-con daemon`**: 箱の適用 → PG の起動 (`claude --bg -w`、431 の設定、`live.Register`) → `claude agents --json` で状態を読んでカードへ →
   回答・追記は stop → resume (426 の決定 2・3) → 落ちた回数で止める (決定 4) → watchdog。起動の部分は本物の claude が要る (枠を使う)
   - [x] 3c-1 分解済みのカードに PG を起動 (上限まで)・記録 (`live.Register`) に登録・回答を受けたカードは stop → resume。起動の口は差し替えられる形にし、偽物で単体テスト (枠を使わない)
     - 済み (2026-09-25): `src/pro-con/daemon` (Tick = 箱の適用 → 一覧に出た PG の登録 → 分解済みへの割り当て)。回答は card.Resume に入り、
@@ -58,7 +58,7 @@
       変異 6 本が red (変わらなくても書く / 同じ待ちを何度も通知 / 書けなかった文を毎回書き直す / 待ちを抜けても覚えたまま / 落ちた件数を数えない)。
       - [x] status の置き場所は、ユーザーが 3 案から「右端のキーガイドの島の左」を選んだ (2026-09-25)。`_tmux.conf` の status-right に、件数があるときだけ出す。
         キーガイドの島は 27 セルのまま。件数が最大 (2 桁ずつ) でも status-right-length 60 に収まることを tests/tmux/test_tmux.sh が展開後の幅で pin (変異 2 本が red)
-      - [ ] 本物の tmux / osascript ではまだ動かしていない (3f で daemon を動かすときに見る)
+      - [x] 3f の 2 回とも daemon の `tmux set-option` と `osascript` は失敗を返さなかった (daemon の出力に「書けない」「出せない」が 0 件)。🚨 画面に出たかの目視は未確認
       - daemon を kill -9 すると option が古い件数のまま残る (画面は daemon の最終 tick で古さを出すが、status には出ない)
   - [x] 3c-3 `pro-con daemon` の常駐と排他 (2 つ起動しない) — 3c-2 より先に済ませた (daemon を動く形にするため)
     - 済み (2026-09-25): `pro-con daemon [--limit N] [--once]` (`src/pro-con/daemoncmd.go`)。3 秒ごとに Tick し、何をしたかを時刻つきで stdout へ。
@@ -71,7 +71,7 @@
 - [x] **3e PM への指示書**: PM の session に渡す、`pro-con card` の使い方と規律 (AskUserQuestion を使わない 等)
     - `src/pro-con/pm-guide.md` を `pro-con card guide` で出す (embed)。指示書に書いた `pro-con card ...` は TestPMGuideCommandsParse が今のパーサに通して、ずれを止める (変異: plan の例を `--issues` に崩すと red)。
       🚨 PM の session にこれを渡す手順 (起動時のプロンプトに入れるか) は 3f で本物の PM を立てるときに決める
-- [ ] **3f 本物の claude で通しの確認** (枠を使う。424 から引き継いだ受け入れ条件もここ)
+- [x] **3f 本物の claude で通しの確認** (枠を使う。424 から引き継いだ受け入れ条件もここ)
   - 1 回目 (2026-09-25 08:34、Claude Code 2.1.281、PG 1 本): add → plan → daemon が起動 → PG が `card ask` → kill -9 → 回答 → 再開 → PG が `card review` まで通った (約 70 秒)。
     `claude agents --json` を 3 秒ごとに stdout / stderr を分けて記録した。実測で分かったこと:
     - 一覧の cwd は PG の worktree (`~/dotfiles/.claude/worktrees/pc-c-001`)。transcript はその project の下
@@ -83,7 +83,10 @@
     - PG は規律どおり `card ask` → turn を終える → 回答で再開 → `card review` を打った。除けた依頼は 0 件
   - 直した: 再開が返した短い id の session でカードの行を置き換える (live.ReplaceCard) / 再開の取り込みは同じ作業ディレクトリでも照らす /
     記録の書き直しは完了以外のカード全部で行う / 一覧の上限を 10 秒へ。変異 4 本が red
-  - [ ] 直した版でもう一度通す (新しい session が登録され、画面のカードに出ること)
+  - [x] 2 回目 (08:43、直した版): 同じ手順で通った。kill -9 の約 11 秒後に「C-001 の PG が落ちて自動で再開した (pid 72295 → 72978)」と数えて記録を書き直し
+    (1 回なので止めない)、再開で新しくなった session (4e65ef8d) でカードの行を置き換えた。隔離した tmux (`-L pc3f`) で開いた本物のモードの画面に、
+    C-001 がレビューの列に出た (daemon の最終 tick「0秒前」)。後片付け: 起動した 4 本の session を `claude rm`、worktree とブランチも消えたことを確認。
+    状態の置き場は scratchpad へ退避し、`~/.local/state/pro-con/live` は空に戻した
 
 ## 敵対的レビュー (3a〜3d、2026-09-25)
 
@@ -100,7 +103,7 @@
 - [x] P2 pending の間は別の session id でも取り込む → 記録の行と session id が違えば取り込まない
 - [x] P2 (推測) `--resume` で短い id が変わると追跡が切れる → Resume が返した id をカードの Session にする。🚨 変わるかは未実測 (3f)
 - [x] P3 1 回の Apply で控え (1000) を超えると二重適用 → 1 回 500 件まで
-- [ ] P3 起動に失敗し続けると History が増え続ける → 3c-2 (回数の上限)。今は launchGrace ごとの 1 行に減った
+- [x] P3 起動に失敗し続けると History が増え続ける → 直前と同じ文は足さない (daemon.note。変異 1 本が red)
 - 記録のみ P3 `daemon.lock` を稼働中に手で消すと 2 つ目が取れる (人の手の操作だけ。対応しない)
 - 記録のみ P3 箱の依頼に送り手の認証が無い (どの PG でも別カードを操作できる)。規律で守る前提 (426)。3f で本物を動かして問題になったら再評価
 
@@ -114,9 +117,9 @@
   判定し直さずに rejected/ へ移すだけにする。移せなくても daemon は止めない (結果に出して次の Apply で移し直す)
 - [x] P2 前の session が一覧に無いのに `claude stop` を撃ち、失敗なら再開に届かない → 一覧に無ければ止めずに再開する
 - [x] P3 テストの無い分岐 (adopt の「印より前」の除外 / 再開の失敗の後の取り込み) → テストを足した
-- [ ] 3f へ: 再開した session の `startedAt` が「再開した時刻」か「元の開始時刻」か (後者なら register が再開後の登録を拒み続ける。
+- [x] 3f で実測: 自動の再開では startedAt が再開した時刻になる。`--resume` は別の session になる (上の 3f の節)。— 元の記述: 再開した session の `startedAt` が「再開した時刻」か「元の開始時刻」か (後者なら register が再開後の登録を拒み続ける。
   今のテストは前者を前提にしている)。`-w pc-<id>` を 2 回目に渡したとき (1 回目が worktree だけ作って落ちた) 起動できるか
-- [ ] P3 prepare のエラー (repo が設定に無い等) が Tick ごとに History へ 1 行足す → 3c-2 (回数の上限) で合わせて扱う
+- [x] P3 prepare のエラー (repo が設定に無い等) が Tick ごとに History へ 1 行足す → 上と同じ (直前と同じ文は足さない)
 - 記録のみ P3 この修正より前に作られた作業中カード (LaunchedAt がゼロ値) は時刻の防御が効かない。本物の daemon はまだ一度も動いていないので、該当するカードは無い
 
 変異 5 本が red (印付きを上限の後ろへ戻す / 一覧に無くても止める / adopt の時刻の除外を外す / 再開の取り込みを外す / 判定し直す)。
@@ -187,7 +190,7 @@
 
 ## 受け入れ条件 (424 から引き継ぎ)
 
-- [ ] pro-con が起動し、記録 (`sessions.json`) に書いた本物の bg session が、本物のモードのカードに出る (424 では記録を書く側が無く、実物で確かめていない)
+- [x] pro-con が起動し、記録 (`sessions.json`) に書いた本物の bg session が、本物のモードのカードに出る (3f の 2 回目) (424 では記録を書く側が無く、実物で確かめていない)
 
 ## 関連ファイル
 
@@ -196,4 +199,4 @@
 
 ## 進捗
 
-- [ ] 着手できる (425 の実測・426 の決定が済んだ。2026-09-24)
+- [x] 着手できる (425 の実測・426 の決定が済んだ。2026-09-24)

@@ -913,3 +913,26 @@ func TestCrashWhileWaitingReregisters(t *testing.T) {
 		t.Fatalf("質問待ちの間の自動の再開を取り込まない: %+v %v", reg, c.State)
 	}
 }
+
+// 起動できない理由が変わらなければ、Tick ごとに履歴を足さない。
+func TestRepeatedFailureDoesNotGrowHistory(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 1)
+	d := newDaemon(t, dir, &fakeLauncher{}, nil)
+	d.Repos = map[string]string{} // repo の場所が設定に無い
+	for range 5 {
+		if _, err := d.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c := states(t, dir)["C-001"]
+	n := 0
+	for _, e := range c.History {
+		if strings.Contains(e.Text, "場所が設定に無い") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("同じ理由を %d 回履歴に書いた", n)
+	}
+}

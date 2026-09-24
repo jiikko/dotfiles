@@ -550,8 +550,14 @@ func (d *Daemon) settle(id string, now time.Time, how, session string) error {
 	})
 }
 
+// note はカードの履歴に 1 行足す。直前と同じ文なら足さない (起動・再開できない理由が変わらないまま Tick ごとに記録が伸びないように)。
 func (d *Daemon) note(id string, now time.Time, text string) error {
-	return d.update(id, func(c *card.Card) { c.History = append(c.History, card.Event{At: now, Text: text}) })
+	return d.update(id, func(c *card.Card) {
+		if n := len(c.History); n > 0 && c.History[n-1].Text == text {
+			return
+		}
+		c.History = append(c.History, card.Event{At: now, Text: text})
+	})
 }
 
 func (d *Daemon) update(id string, f func(*card.Card)) error {
