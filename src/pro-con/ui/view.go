@@ -433,13 +433,13 @@ func (m *Model) hints() []string {
 		return []string{"j / k 選択", "enter これをやる", "i / q / esc 閉じる"}
 	}
 	c, has := m.selectedCard()
-	ro := m.readOnly() // 書き込みを受け付けない backend では、依頼・回答・追加オーダー・btw・片付けを暗くする
+
 	// カードへの操作は、選んでいるカードで効くかどうかを色で出す (効かないものは暗く。押すと理由が flash に出る)
 	cardOps := []string{
 		avail("a attach", has && c.Session != ""), // backend は session の無いカードを ErrNoSession で拒否する
-		avail("r 回答", has && c.Answerable() && !ro),
-		avail("+ 追加オーダー", has && !ro), // 完了のカードでも「別件」は受け付ける
-		avail("w btw", has && !ro),
+		avail("r 回答", has && c.Answerable() && m.accepts(backend.OpAnswer)),
+		avail("+ 追加オーダー", has && m.accepts(backend.OpOrder)), // 完了のカードでも「別件」は受け付ける
+		avail("w btw", has && m.accepts(backend.OpBtw)),
 		avail("e issue を開く", has && len(c.Issues) > 0), // md が実在するかは押したときに探す (描画のたびには探さない)
 		avail("y パス", has && len(c.Issues) > 0),
 		avail("Y 内容", has),
@@ -451,8 +451,8 @@ func (m *Model) hints() []string {
 	if m.showSessions {
 		back = "q / esc 閉じる"
 	}
-	h := append([]string{"hjkl 選択", "tab repo", avail("n 新しい依頼", !ro), avail("i issue から", !ro), avail("enter 詳細", has)}, cardOps...)
-	return append(h, "s PG 一覧", avail("x 完了を片付け", m.doneInTab() > 0 && !ro), "? レーンの意味", back)
+	h := append([]string{"hjkl 選択", "tab repo", avail("n 新しい依頼", m.accepts(backend.OpNew)), avail("i issue から", m.accepts(backend.OpNew)), avail("enter 詳細", has)}, cardOps...)
+	return append(h, "s PG 一覧", avail("x 完了を片付け", m.doneInTab() > 0 && m.accepts(backend.OpClear)), "? レーンの意味", back)
 }
 
 // avail は案内の 1 項目を、今押して効くなら明るく、効かないなら暗く出す。
@@ -476,8 +476,8 @@ func hintLine(items []string, w int) string {
 	}
 }
 
-// readOnly は backend が書き込みを受け付けないか (backend.ReadOnlier を持たない backend は受け付ける)。
-func (m *Model) readOnly() bool {
-	r, ok := m.be.(backend.ReadOnlier)
-	return ok && r.ReadOnly()
+// accepts は backend が操作 op を受けるか (backend.Accepter を持たない backend は全部受ける)。
+func (m *Model) accepts(op backend.Op) bool {
+	a, ok := m.be.(backend.Accepter)
+	return !ok || a.Accepts(op)
 }

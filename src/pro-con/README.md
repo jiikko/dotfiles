@@ -3,10 +3,10 @@
 PM (producer) と PG (consumer) を分けて Claude Code を並列に回すための TUI。
 **設計の正本は issue 415** (epic `issues/epic/415/` の親 issue。残タスクは同じディレクトリの子 issue)。ここには実装側の事情だけを書く。
 
-## 起動のしかた: 本物 (読み取り専用) と模擬
+## 起動のしかた: 本物と模擬
 
 ```sh
-bin/pro-con          # 本物: pro-con が起動した Claude Code の session だけを読み取り専用で出す (live。issue 424)
+bin/pro-con          # 本物: daemon が書くカードの記録を出す。依頼と回答は受付の箱へ (live。issue 424 / 427)
 bin/pro-con --mock   # 模擬: claude は起動しない。模擬の backend (fake) が状態を進める (動作確認用)
 bin/pro-con daemon   # 本物のモードの dispatcher (受付の箱の適用・PG の起動と再開・記録への登録)。2 つ起動しない。🚨 PG を起動するので利用枠を使う
 bin/pro-con card …   # PM / PG が使うカードの操作 (add / plan / ask / answer / review / close)。受付の箱に置くだけで、適用は daemon (issue 427)
@@ -14,16 +14,15 @@ bin/pro-con card …   # PM / PG が使うカードの操作 (add / plan / ask /
 
 - どちらで動いているかはヘッダーに出る (`live: …` / `mock: …`。backend の `Describe`)。1 つの画面に両方のカードは混ぜない
 - ライブアップグレードの状態ファイルは `$XDG_STATE_HOME/pro-con/live` と `…/mock` に分ける。新版には `--mock` を付け直す
-- **本物 (live)**: **pro-con が起動した session だけ** (記録 `$XDG_STATE_HOME/pro-con/live/sessions.json` にあるもの) を扱う。
+- **本物 (live)**: カードは daemon が書く記録 (`$XDG_STATE_HOME/pro-con/live/cards.json`) から出る。書き込みは受付の箱 (`…/live/inbox/`) に
+  置くだけで、記録へ適用するのは `pro-con daemon` (動いていないと箱に溜まり、ヘッダーに「適用待ち N 件」と出る)。
+  受けるのは新しい依頼 (n / i) と回答 (r) だけで、追加オーダー・btw・片付けはまだ (押した時点で断る)。
+- 作業中のカードには、**pro-con が起動した session だけ** (記録 `…/live/sessions.json` にあるもの) の様子 (PG の出力の末尾・pid) を足す。
   照合は記録の行の session id・短い id・pid が全部一致したときだけ (pid が違う = 外の shell で同じ session を再開したもの、は外れる)。
-  attach は押した瞬間に一覧を取り直して照合し直してから撃つ。
   Desktop や他の shell の session は出さず、選べない (選べると pro-con の外の session に入力・停止できてしまう)。
-  🚨 逆向き (外の shell から pro-con の session を attach / stop される) は Claude Code の側で止められない。検出は issue 427。
-  記録を書くのは PG を起動する側 (issue 427) で、それまでカンバンは空。
-  `claude agents --json` を 3 秒ごとに裏で読み、session 1 本をカード 1 枚にする (busy → 作業中 / waiting → 質問待ち /
-  idle → レビュー)。題名・依頼の原文・人間の発言・出力は transcript (`~/.claude/projects/*/<sessionId>.jsonl`) の末尾 512KB から読む。
-  書き込み (依頼・回答・追加オーダー・btw・片付け) は受け付けず、案内も暗くなる。attach できるのは `claude --bg` の session だけ
-  (対話の session は Desktop で開く)。本物の PM / PG は issue 427
+  attach は押した瞬間に一覧を取り直して照合し直してから撃つ。attach できるのは `claude --bg` の session だけ。
+  🚨 逆向き (外の shell から pro-con の session を attach / stop される) は Claude Code の側で止められない。検出は issue 427
+- PG の出力は transcript (`~/.claude/projects/*/<sessionId>.jsonl`) の末尾 512KB から読み、`claude agents --json` とあわせて 3 秒ごとに裏で読み直す
 
 ## 模擬 (ハリボテ) の中身
 

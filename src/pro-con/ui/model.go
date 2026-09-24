@@ -394,9 +394,9 @@ func (m *Model) moveRow(delta int) {
 	m.selected = cs[max(0, min(row+delta, len(cs)-1))].ID
 }
 
-// writeKeys は backend に書き込む操作を始めるキー (依頼・issue から依頼・回答・追加オーダー・btw・片付け)。
-// 読み取り専用の backend では押した時点で断る (案内の行でも同じ集合を暗くする: view.go の hints)。
-var writeKeys = map[string]bool{"n": true, "i": true, "r": true, "+": true, "w": true, "x": true}
+// writeKeys は backend に書き込む操作を始めるキーと、その操作の種類。受けない backend では押した時点で断る
+// (案内の行も同じ種類で暗くする: view.go の hints)。
+var writeKeys = map[string]backend.Op{"n": backend.OpNew, "i": backend.OpNew, "r": backend.OpAnswer, "+": backend.OpOrder, "w": backend.OpBtw, "x": backend.OpClear}
 
 func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	if m.showDetail {
@@ -404,9 +404,9 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 			return cmd
 		}
 	}
-	if writeKeys[k.String()] && m.readOnly() {
+	if op, ok := writeKeys[k.String()]; ok && !m.accepts(op) {
 		// 入力欄を開いてから送った時点で断ると、書いた文が無駄になる (2026-09-24 の報告)。押した時点で断る
-		m.flash = "読み取り専用なので使えない (本物の PM / PG は issue 427。模擬で試すなら pro-con --mock)"
+		m.flash = "この操作は今の backend ではまだ使えない (issue 427。模擬で試すなら pro-con --mock)"
 		return nil
 	}
 	switch k.String() {

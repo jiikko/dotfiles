@@ -49,8 +49,20 @@ type Consumer struct {
 // Describer はヘッダーに出す自分の説明を持つ backend (模擬か本物かを画面で見分けるため。任意)。
 type Describer interface{ Describe() string }
 
-// ReadOnlier は書き込みの操作を受け付けない backend (画面は依頼・回答などの案内を暗くする。任意)。
-type ReadOnlier interface{ ReadOnly() bool }
+// Op は画面から backend へ出す書き込みの操作の種類。
+type Op string
+
+const (
+	OpNew    Op = "new"    // 新しい依頼 (n / i)
+	OpAnswer Op = "answer" // 質問への回答 (r)
+	OpOrder  Op = "order"  // 追加オーダー (+)
+	OpBtw    Op = "btw"    // btw (w)
+	OpClear  Op = "clear"  // 完了のレーンを片付ける (x)
+)
+
+// Accepter は一部の操作しか受けない backend (任意。持たない backend は全部受ける)。
+// 画面は受けない操作のキーを押した時点で断り、案内の行でも暗くする (入力欄を開いてから送った時点で断ると、書いた文が無駄になる)。
+type Accepter interface{ Accepts(Op) bool }
 
 // Command は UI からの操作。値として送り、backend が 1 か所で適用する。
 type Command interface{ isCommand() }

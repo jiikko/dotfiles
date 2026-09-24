@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"pro-con/backend"
 	"pro-con/card"
 )
 
@@ -60,10 +61,10 @@ func TestHintsInDrawer(t *testing.T) {
 	}
 }
 
-// roSpy は書き込みを受け付けない backend (backend.ReadOnlier)。
+// roSpy は書き込みの操作を 1 つも受けない backend (backend.Accepter)。
 type roSpy struct{ *spy }
 
-func (roSpy) ReadOnly() bool { return true }
+func (roSpy) Accepts(backend.Op) bool { return false }
 
 // 読み取り専用の backend では、依頼・回答・追加オーダー・btw・片付けの案内を暗くする (押しても backend が拒否する)。
 func TestHintsDimWritesOnReadOnlyBackend(t *testing.T) {
@@ -88,7 +89,7 @@ func TestReadOnlyRefusesWriteKeysImmediately(t *testing.T) {
 		m := New(be, nil)
 		m.selected = "W1" // 質問待ち (書き込みを受け付ける backend なら r で入力欄が開く)
 		press(m, k)
-		if m.mode != modeBoard || m.picker.open || !strings.Contains(m.flash, "読み取り専用") {
+		if m.mode != modeBoard || m.picker.open || !strings.Contains(m.flash, "まだ使えない") {
 			t.Fatalf("読み取り専用なのに %q で操作が始まった: mode=%v picker=%v flash=%q", k, m.mode, m.picker.open, m.flash)
 		}
 	}

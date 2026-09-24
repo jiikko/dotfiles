@@ -12,6 +12,7 @@ import (
 	"pro-con/agents"
 	"pro-con/backend"
 	"pro-con/card"
+	"pro-con/store"
 )
 
 // 実測 (Claude Code 2.1.281) の transcript の形を縮めた見本。人間の発言は origin.kind=human、ツールの結果と
@@ -61,14 +62,14 @@ func TestReadTailReadsOnlyTheEnd(t *testing.T) {
 	}
 }
 
-// testBackend は ss を一覧に返す backend。ss の session はすべて「pro-con が起動した」記録に入れる (絞り込みは TestOnlyOwnedSessions)。
+// testBackend は ss を一覧に返す backend。ss の session はすべて「pro-con が起動した」記録に入れる (絞り込みは TestOnlyOwnedSessionsShowActivity)。
 func testBackend(t *testing.T, ss []agents.Session, err error) (*Backend, *int) {
 	t.Helper()
 	reads := 0
 	state := t.TempDir()
-	b := New([]backend.Repo{{Name: "dotfiles", Path: "/w/dotfiles"}, {Name: "sub", Path: "/w/dotfiles/src/sub"}}, t.TempDir(), state)
+	b := New([]backend.Repo{{Name: "dotfiles", Path: "/w/dotfiles"}}, t.TempDir(), state)
 	for _, s := range ss {
-		if e := Register(b.registry, Owned{SessionID: s.SessionID, PID: s.PID}); e != nil {
+		if e := Register(b.registry, Owned{SessionID: s.SessionID, ID: s.ID, PID: s.PID}); e != nil {
 			t.Fatal(e)
 		}
 	}
@@ -83,59 +84,74 @@ func testBackend(t *testing.T, ss []agents.Session, err error) (*Backend, *int) 
 }
 
 var sessions = []agents.Session{
-	{SessionID: "aaaaaaaa-1", PID: 101, Kind: "interactive", Status: "busy", Cwd: "/w/dotfiles/src/sub/x", Name: "対話"},
-	{SessionID: "bbbbbbbb-2", ID: "bbbbbbbb", PID: 102, Kind: "background", Status: "waiting", WaitingFor: "permission prompt", Cwd: "/w/dotfiles"},
+	{SessionID: "bbbbbbbb-2", ID: "bbbbbbbb", PID: 102, Kind: "background", Status: "busy", Cwd: "/w/dotfiles"},
 	{SessionID: "cccccccc-3", ID: "cccccccc", PID: 103, Kind: "background", Status: "waiting", WaitingFor: "input needed", Cwd: "/w/other"},
-	{SessionID: "dddddddd-4", PID: 104, Kind: "interactive", Status: "idle", Cwd: "/w/dotfiles-wt-x"},
 }
 
-// session 1 本をカード 1 枚に写す。状態・待ちの種類・repo (一番長く一致したもの)・attach の口 (裏の session だけ)。
-func TestSessionsBecomeCards(t *testing.T) {
-	b, _ := testBackend(t, sessions, nil)
+// runningCard は記録に作業中のカードを 1 枚置く (session は短い id)。記録を書くのは daemon の仕事なので、store.Update で直接置く。
+func runningCard(t *testing.T, b *Backend, id, session string) {
+	t.Helper()
+	if _, err := store.Submit(b.dir, store.Request{Kind: "add", Title: "t-" + id, Repo: "dotfiles"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Apply(b.dir, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Update(b.dir, func(st *store.State) error {
+		for i := range st.Cards {
+			if st.Cards[i].ID == id {
+				st.Cards[i].State, st.Cards[i].Session = card.Running, session
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// カードは記録 (store) から出る。作業中のカードに、pro-con が起動した session の様子 (PG の出力の末尾・pid) を足す。
+// 記録に無い session (外のもの) の様子は足さない。
+func TestOnlyOwnedSessionsShowActivity(t *testing.T) {
+	b, _ := testBackend(t, sessions[:1], nil) // bbbbbbbb だけが pro-con の記録にある
+	b.list = func(context.Context) ([]agents.Session, error) { return sessions, nil }
+	runningCard(t, b, "C-001", "bbbbbbbb")
+	runningCard(t, b, "C-002", "cccccccc") // 記録に無い session を指すカード
 	b.Refresh(context.Background())
 	s := b.Poll()
-	if len(s.Cards) != 4 || len(s.Violations) != 0 {
-		t.Fatalf("カード %d 枚 / 不変条件の違反 %v", len(s.Cards), s.Violations)
+	if len(s.Cards) != 2 {
+		t.Fatalf("記録のカードが 2 枚出るはず: %d", len(s.Cards))
 	}
-	want := []struct {
-		id, repo, session string
-		state             card.State
-		wait              card.WaitKind
-	}{
-		{"S-aaaaaaaa", "sub", "", card.Running, card.WaitNone},
-		{"S-bbbbbbbb", "dotfiles", "bbbbbbbb", card.Waiting, card.WaitPermission},
-		{"S-cccccccc", "other", "cccccccc", card.Waiting, card.WaitQuestion},
-		{"S-dddddddd", "dotfiles-wt-x", "", card.Review, card.WaitNone},
+	if len(s.Cards[0].Log) == 0 || len(s.Cards[1].Log) != 0 {
+		t.Fatalf("pro-con が起動した session の様子だけを足すはず: %v / %v", s.Cards[0].Log, s.Cards[1].Log)
 	}
-	for i, w := range want {
-		c := s.Cards[i]
-		if c.ID != w.id || c.Repo != w.repo || c.Session != w.session || c.State != w.state || c.Wait.Kind != w.wait {
-			t.Fatalf("%d 枚目: %+v (期待 %+v)", i, c, w)
-		}
-		if c.Title != "新しい題名" || c.Request != "次の依頼" {
-			t.Fatalf("%d 枚目の題名・依頼: %q / %q", i, c.Title, c.Request)
-		}
-	}
-	if len(s.Consumers) != 2 {
-		t.Fatalf("裏の session だけを PG として数えるはず: %d", len(s.Consumers))
+	if len(s.Consumers) != 1 || s.Consumers[0].CardID != "C-001" || s.Consumers[0].PID != 102 {
+		t.Fatalf("PG は pro-con が起動した session だけ: %+v", s.Consumers)
 	}
 }
 
-// 一覧を取れなかったら、前のカードを残し、取れなかった理由を出す (0 本と区別する)。
-func TestListFailureKeepsLastCards(t *testing.T) {
-	b, _ := testBackend(t, sessions, nil)
+// 記録を読めなければ前のカードを残し、理由を出す (0 枚と区別する)。session の一覧を取れないときは、カードは出して理由を足す。
+func TestReadFailures(t *testing.T) {
+	b, _ := testBackend(t, sessions[:1], nil)
+	runningCard(t, b, "C-001", "bbbbbbbb")
 	b.Refresh(context.Background())
 	b.list = func(context.Context) ([]agents.Session, error) { return nil, errors.New("timeout") }
 	b.Refresh(context.Background())
-	s := b.Poll()
-	if len(s.Cards) != 4 || len(s.Violations) != 1 || !strings.Contains(s.Violations[0].Reason, "timeout") {
-		t.Fatalf("前のカードを残して理由を出すはず: %d 枚 / %v", len(s.Cards), s.Violations)
+	if s := b.Poll(); len(s.Cards) != 1 || len(s.Violations) != 1 || !strings.Contains(s.Violations[0].Reason, "timeout") {
+		t.Fatalf("一覧を取れないときもカードは出して理由を足すはず: %d 枚 / %v", len(s.Cards), s.Violations)
+	}
+	if err := os.WriteFile(filepath.Join(b.dir, store.StateFile), []byte("{壊れた"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b.Refresh(context.Background())
+	if s := b.Poll(); len(s.Cards) != 1 || !strings.Contains(s.Violations[0].Reason, "カードの記録を読めない") {
+		t.Fatalf("記録を読めないときは前のカードを残して理由を出すはず: %d 枚 / %v", len(s.Cards), s.Violations)
 	}
 }
 
 // transcript の大きさと更新時刻が変わっていなければ読み直さない (3 秒ごとに 14MB 級を読まない)。
 func TestTranscriptIsCached(t *testing.T) {
 	b, reads := testBackend(t, sessions[:1], nil)
+	runningCard(t, b, "C-001", "bbbbbbbb")
 	b.Refresh(context.Background())
 	b.Refresh(context.Background())
 	if *reads != 1 {
@@ -143,61 +159,55 @@ func TestTranscriptIsCached(t *testing.T) {
 	}
 }
 
-// 書き込みは受け付けない。attach できるのは裏の session だけ。
-func TestReadOnly(t *testing.T) {
+// 書き込みは受付の箱に置く (記録へ適用するのは daemon)。受けるのは新しい依頼と回答だけ。attach できるのは裏の session だけ。
+func TestApplySubmitsToInbox(t *testing.T) {
 	b, _ := testBackend(t, sessions, nil)
-	if _, err := b.Apply(backend.Answer{CardID: "x", Text: "y"}); !errors.Is(err, ErrReadOnly) {
-		t.Fatalf("書き込みを受け付けた: %v", err)
+	if _, err := b.Apply(backend.NewRequest{Repo: backend.Repo{Name: "dotfiles", Path: "/w/dotfiles"}, Text: "色を直して\n詳しく"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Apply(backend.Answer{CardID: "C-001", Text: "青"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, cmd := range []backend.Command{backend.AddOrder{CardID: "C-001", Text: "x"}, backend.Btw{CardID: "C-001", Question: "?"}, backend.ClearDone{}} {
+		if _, err := b.Apply(cmd); !errors.Is(err, ErrNotYet) {
+			t.Fatalf("%T を受けた: %v", cmd, err)
+		}
+	}
+	if _, err := b.Apply(backend.NewRequest{Text: " "}); !errors.Is(err, backend.ErrEmptyText) {
+		t.Fatalf("空の依頼を置いた: %v", err)
+	}
+	res, err := store.Apply(b.dir, time.Now())
+	if err != nil || len(res) != 2 || res[0].Kind != "add" || res[1].Kind != "answer" {
+		t.Fatalf("箱に新しい依頼と回答が置かれていない: %+v %v", res, err)
+	}
+	st, _ := store.Load(b.dir)
+	if c := st.Cards[0]; c.Title != "色を直して" || c.Repo != "dotfiles" || !strings.Contains(c.Prompt, "dotfiles") {
+		t.Fatalf("依頼のカード: %+v", c)
+	}
+	if !b.Accepts(backend.OpNew) || !b.Accepts(backend.OpAnswer) || b.Accepts(backend.OpOrder) || b.Accepts(backend.OpClear) {
+		t.Fatal("受ける操作が新しい依頼と回答だけになっていない")
 	}
 	if _, err := b.AttachCommand(""); err == nil {
-		t.Fatal("対話の session (session id 無し) に attach できてしまう")
+		t.Fatal("session id 無しで attach できてしまう")
 	}
 	if cmd, err := b.AttachCommand("bbbbbbbb"); err != nil || strings.Join(cmd.Args, " ") != "claude attach bbbbbbbb" {
 		t.Fatalf("裏の session の attach: %v %v", cmd, err)
 	}
-	if !b.ReadOnly() {
-		t.Fatal("ReadOnly が偽")
-	}
 }
 
-// 本物のモードは、pro-con が起動した session (記録にあるもの) だけを出す。照合は session id (長い方) か claude --bg の短い id。
-// Desktop や他の shell の session は出さない (選べると pro-con の外の session に入力・停止できてしまう)。
-func TestOnlyOwnedSessions(t *testing.T) {
+// 受付の箱に適用待ちが溜まっていたら (daemon が動いていない)、ヘッダーで知らせる。
+func TestDescribeShowsPendingInbox(t *testing.T) {
 	b, _ := testBackend(t, nil, nil)
-	b.list = func(context.Context) ([]agents.Session, error) { return sessions, nil }
-	if err := Register(b.registry, Owned{SessionID: "aaaaaaaa-1", PID: 101}); err != nil {
-		t.Fatal(err)
-	}
-	if err := Register(b.registry, Owned{SessionID: "cccccccc-3", ID: "cccccccc", PID: 103}); err != nil {
-		t.Fatal(err)
-	}
 	b.Refresh(context.Background())
-	var ids []string
-	for _, c := range b.Poll().Cards {
-		ids = append(ids, c.ID)
+	if strings.Contains(b.Describe(), "適用待ち") {
+		t.Fatalf("箱が空なのに適用待ちと出た: %q", b.Describe())
 	}
-	if strings.Join(ids, ",") != "S-aaaaaaaa,S-cccccccc" {
-		t.Fatalf("記録にある session だけを出すはず: %v", ids)
-	}
-	if !strings.Contains(b.Describe(), "2 本") {
-		t.Fatalf("ヘッダーに記録の本数が出ない: %q", b.Describe())
-	}
-}
-
-// 記録が空なら 0 本で、ヘッダーでそう言う。記録が壊れていたら、空とは区別して理由を出す。
-func TestEmptyAndBrokenRegistry(t *testing.T) {
-	b, _ := testBackend(t, nil, nil)
-	b.list = func(context.Context) ([]agents.Session, error) { return sessions, nil }
-	b.Refresh(context.Background())
-	if len(b.Poll().Cards) != 0 || !strings.Contains(b.Describe(), "まだ無い") {
-		t.Fatalf("記録が空なのに %d 枚 / %q", len(b.Poll().Cards), b.Describe())
-	}
-	if err := os.WriteFile(b.registry, []byte("{壊れた"), 0o600); err != nil {
+	if _, err := b.Apply(backend.NewRequest{Text: "x"}); err != nil {
 		t.Fatal(err)
 	}
 	b.Refresh(context.Background())
-	if v := b.Poll().Violations; len(v) != 1 || !strings.Contains(v[0].Reason, "記録を読めない") {
-		t.Fatalf("壊れた記録を空と区別していない: %v", v)
+	if !strings.Contains(b.Describe(), "適用待ち 1 件") {
+		t.Fatalf("適用待ちを知らせない: %q", b.Describe())
 	}
 }
 
@@ -220,18 +230,6 @@ func TestStartDoesNotBlock(t *testing.T) {
 	close(release)
 	cancel()
 	b.Wait()
-}
-
-// 依頼の原文は上限で切る (貼り付けた巨大な依頼を、詳細の描画のたびに折り返さない)。
-func TestRequestIsClipped(t *testing.T) {
-	b, _ := testBackend(t, sessions[:1], nil)
-	b.read = func(string) (Transcript, error) {
-		return Transcript{LastPrompt: strings.Repeat("あ", requestRunes*3)}, nil
-	}
-	b.Refresh(context.Background())
-	if n := len([]rune(b.Poll().Cards[0].Request)); n > requestRunes+1 {
-		t.Fatalf("依頼の原文が %d 文字 (上限 %d)", n, requestRunes)
-	}
 }
 
 // Register は追記し、一時ファイルを残さない (途中で落ちても壊れた記録を残さないように rename で書く)。

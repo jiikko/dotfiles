@@ -43,7 +43,11 @@
   - [x] 3c-3 `pro-con daemon` の常駐と排他 (2 つ起動しない) — 3c-2 より先に済ませた (daemon を動く形にするため)
     - 済み (2026-09-25): `pro-con daemon [--limit N] [--once]` (`src/pro-con/daemoncmd.go`)。3 秒ごとに Tick し、何をしたかを時刻つきで stdout へ。
       排他は `daemon.lock` の flock (プロセスが終われば OS が外す)。変異 1 本 (flock を外す) が red。🚨 本物の claude では未実行 (3f)
-- [ ] **3d 画面**: 本物の backend が 3a の記録を読み、書き込み (回答・依頼 等) は箱に置く。読み取り専用をやめる
+- [x] **3d 画面**: 本物の backend が 3a の記録を読み、書き込み (回答・依頼 等) は箱に置く。読み取り専用をやめる
+  - 済み (2026-09-25): 本物の backend のカードは store の記録から出る (session 1 本 = カード 1 枚はやめた)。作業中のカードに pro-con が起動した
+    session の様子 (出力の末尾・pid) を足す。新しい依頼と回答は受付の箱へ、追加オーダー・btw・片付けはまだ (backend.Accepter で、押した時点で断る。
+    ReadOnlier を置き換えた)。箱に適用待ちが溜まったらヘッダーで知らせる。隔離 tmux で card add → daemon --once → 画面の依頼の列、を確認。
+    変異 3 本が red (外の session の様子を足す / 追加オーダーを受ける / 適用待ちを知らせない)
 - [ ] **3e PM への指示書**: PM の session に渡す、`pro-con card` の使い方と規律 (AskUserQuestion を使わない 等)
 - [ ] **3f 本物の claude で通しの確認** (枠を使う。424 から引き継いだ受け入れ条件もここ)
 
