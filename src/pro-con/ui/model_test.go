@@ -264,3 +264,5 @@ func TestTabFallsBackToGlobalWhenRepoEmpties(t *testing.T) {
 		t.Fatalf("global に戻って全カードが見えるはず: tab=%q %v", m.tab, visibleIDs(m))
 	}
 }
+
+func keyTab() tea.KeyPressMsg { return tea.KeyPressMsg{Code: tea.KeyTab} }

@@ -33,7 +33,7 @@ func (m *Model) render() string {
 	w := m.width
 	title := sgrBold + fg(202) + " pro-con" + sgrFgReset + sgrDim + "  mock: claude は起動しない。表示は模擬データ" + sgrReset
 	out := []string{title, m.tabBar(), m.gauge(), fg(240) + strings.Repeat("─", w) + sgrReset}
-	out = append(out, m.boardLines()...)
+	out = append(out, m.overlayMoves(m.boardLines())...)
 	if m.showDetail {
 		out = append(out, "")
 		out = append(out, m.detailBlock()...)
@@ -136,15 +136,12 @@ func (m *Model) boardLines() []string {
 	if m.showDetail {
 		room -= 15
 	}
-	maxCards := 0
-	for _, cs := range cols {
-		maxCards = max(maxCards, len(cs))
-	}
-	shown := max(1, min(maxCards, room/perCardLines))
+	// 枠の高さは画面の残りで固定する (枚数に合わせると、ある列の枚数が変わった瞬間に全部の列の枠が伸び縮みする)
+	shown := max(1, room/perCardLines)
 
 	blocks := make([][]string, len(cols))
 	for i, s := range card.Columns {
-		blocks[i] = m.columnBlock(s, cols[i], w, shown, i == selCol)
+		blocks[i] = m.columnBlock(i, s, cols[i], w, shown, i == selCol)
 	}
 	height := 0
 	for _, b := range blocks {
@@ -174,19 +171,19 @@ func columnBorder(focused bool) string {
 }
 
 // columnBlock は 1 列分の行 (上枠に見出し + カード + 下枠)。列の高さは shown で揃える。
-func (m *Model) columnBlock(s card.State, cs []card.Card, w, shown int, focused bool) []string {
+func (m *Model) columnBlock(col int, s card.State, cs []card.Card, w, shown int, focused bool) []string {
 	label := fmt.Sprintf("%s (%d)", s.Label(), len(cs))
 	border := columnBorder(focused)
 	inner := w - 2
 	out := []string{boxTop(border, fg(stateColor(s))+sgrBold+label+sgrReset, w)}
+	cells := m.columnCells(col, cs, inner)
 	var body []string
-	for r := range min(shown, len(cs)) {
-		if r == shown-1 && len(cs) > shown {
-			body = append(body, fit(sgrDim+fmt.Sprintf("… 他 %d 枚", len(cs)-shown+1)+sgrReset, inner))
+	for r := range min(shown, len(cells)) {
+		if r == shown-1 && len(cells) > shown {
+			body = append(body, fit(sgrDim+fmt.Sprintf("… 他 %d 枚", len(cells)-shown+1)+sgrReset, inner))
 			break
 		}
-		t, b := m.cardCell(cs[r], inner)
-		body = append(body, t, b)
+		body = append(body, cells[r][0], cells[r][1])
 	}
 	for len(body) < shown*perCardLines {
 		body = append(body, "")
@@ -199,16 +196,44 @@ func (m *Model) columnBlock(s card.State, cs []card.Card, w, shown int, focused 
 
 const perCardLines = 2
 
+// columnCells は列の中身を 1 枚 2 行のセルで並べる。移動中のカード (motion.go) は、移動先では空けて待ち、
+// 移動元には点線の枠を残す (どちらも着地まで。周りのカードが途中で詰まってずれないように)。
+func (m *Model) columnCells(col int, cs []card.Card, inner int) [][2]string {
+	var cells [][2]string
+	for _, c := range cs {
+		if mv, ok := m.moves[c.ID]; ok && mv.to.col == col {
+			cells = append(cells, [2]string{fit("", inner), fit("", inner)})
+			continue
+		}
+		t, b := m.cardCell(c, inner)
+		cells = append(cells, [2]string{t, b})
+	}
+	for _, mv := range m.moves {
+		if mv.from.col != col {
+			continue
+		}
+		g := ghostLines(inner)
+		at := min(mv.from.row, len(cells))
+		cells = append(cells[:at], append([][2]string{{g[0], g[1]}}, cells[at:]...)...)
+	}
+	return cells
+}
+
+// cardCell はカード 1 枚 (2 行)。地の色はカードごとに固有 (cardColor)。列を移っても同じ色なので目で追える。
+// 選択中は左端に現在地色の ▌ + 太字 (地を塗り替えるとカードの色が消えるので、地は変えない)。完了は文字を dim にする。
 func (m *Model) cardCell(c card.Card, w int) (string, string) {
+	base := bg(cardColor(c.ID)) + fg(252)
 	title := c.ID + " " + c.Title
-	badge := m.badge(c)
+	badge := m.badgeColored(c)
+	mark := " "
 	switch {
 	case c.ID == m.selected:
-		return paint(sgrSelected, title, w), paint(sgrSelected, badge, w)
+		mark = fg(202) + "▌" + fg(252)
+		title = sgrBold + title
 	case c.State == card.Done:
-		return sgrDim + fit(title, w) + sgrReset, sgrDim + fit(badge, w) + sgrReset
+		title, badge = sgrDim+title, sgrDim+m.badge(c)
 	}
-	return fit(title, w), fit(m.badgeColored(c), w)
+	return paint(base, mark+title, w), paint(base, mark+badge, w)
 }
 
 // badgeColored は badge の待ちの理由に色を付ける (停滞 = 危険 / 質問 = 要対応 / issue 化待ち = 要対応)。

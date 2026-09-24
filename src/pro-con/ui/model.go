@@ -4,6 +4,8 @@ package ui
 
 import (
 	"errors"
+	"slices"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -58,13 +60,20 @@ type Model struct {
 	orderKind card.OrderKind
 
 	flash string
+
+	// カードの移動の演出 (motion.go)。now は時計 (テストで差し替える)
+	now       func() time.Time
+	prevSlots map[string]slot
+	moves     map[string]*move
+	framing   bool // frame の tick が回っているか (二重に回さない)
 }
 
 // New は repos (config から列挙した repo 名) をタブの候補にして画面を作る。nil なら global だけ。
 func New(be backend.Backend, repos []string) *Model {
-	m := &Model{be: be, repos: repos, width: 120, height: 40}
+	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now}
 	m.snap = be.Poll()
 	m.ensureSelection()
+	m.resetSlots()
 	return m
 }
 
@@ -79,9 +88,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tickMsg:
 		m.snap = m.be.Poll()
+		tab := m.tab
 		m.ensureTab()
 		m.ensureSelection()
-		return m, tick()
+		if m.tab != tab { // タブが消えて global へ戻った: 配置が丸ごと変わるので演出しない
+			m.resetSlots()
+			return m, tick()
+		}
+		return m, tea.Batch(tick(), m.trackMoves())
+	case frameMsg:
+		return m, m.onFrame()
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
@@ -100,7 +116,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyPressMsg:
 		if m.mode == modeInput {
-			return m, m.handleInputKey(msg)
+			cmd := m.handleInputKey(msg)
+			return m, tea.Batch(cmd, m.trackMoves()) // 回答などで列が変わったら演出する
 		}
 		return m, m.handleBoardKey(msg)
 	}
@@ -144,6 +161,7 @@ func (m *Model) moveTab(delta int) {
 	m.tab = ts[(cur+delta+len(ts))%len(ts)]
 	m.selected = ""
 	m.ensureSelection()
+	m.resetSlots() // タブの切り替えはカードが動いたのではない
 }
 
 // visible は選んでいるタブに属するカード。global は全部 (config の外の repo のカードも含む)。
@@ -160,7 +178,9 @@ func (m *Model) visible() []card.Card {
 	return out
 }
 
-// columns は選んでいるタブのカードをカンバンの列に分ける。列の中は Snapshot の並び順のまま。
+// columns は選んでいるタブのカードをカンバンの列に分ける。列の中は「その列に入った順」(Since、同時なら ID)。
+// 移ってきたカードは必ず列の末尾に着地するので、既存のカードの位置は動かない (Snapshot の並び順のままだと、
+// 移ってきたカードが途中に割り込んで既存のカードが一斉にずれる)。
 func (m *Model) columns() [][]card.Card {
 	cols := make([][]card.Card, len(card.Columns))
 	for _, c := range m.visible() {
@@ -170,14 +190,24 @@ func (m *Model) columns() [][]card.Card {
 			}
 		}
 	}
+	for _, cs := range cols {
+		slices.SortStableFunc(cs, func(a, b card.Card) int {
+			if c := a.Since.Compare(b.Since); c != 0 {
+				return c
+			}
+			return strings.Compare(a.ID, b.ID)
+		})
+	}
 	return cols
 }
 
 // position は選択中のカードの (列, 行)。見つからなければ ok=false。
-func (m *Model) position() (col, row int, ok bool) {
+func (m *Model) position() (col, row int, ok bool) { return m.positionOf(m.selected) }
+
+func (m *Model) positionOf(id string) (col, row int, ok bool) {
 	for i, cs := range m.columns() {
 		for j, c := range cs {
-			if c.ID == m.selected {
+			if c.ID == id {
 				return i, j, true
 			}
 		}

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"hash/fnv"
 	"strconv"
 	"strings"
 
@@ -14,11 +15,23 @@ import (
 // Go からは theme/colors.yml を読めないので番号の手書きコピー (glogx の ansiFrameBorder と同じ事情)。
 
 func fg(n int) string { return "\x1b[38;5;" + strconv.Itoa(n) + "m" }
+func bg(n int) string { return "\x1b[48;5;" + strconv.Itoa(n) + "m" }
 
 const (
 	sgrSelected = "\x1b[48;5;202m\x1b[38;5;16m\x1b[1m" // 現在地 (蛍光オレンジ地に黒字)
 	sgrFgReset  = "\x1b[39m\x1b[22m"                   // 前景と太字だけを戻す (帯の背景色を消さない)
 )
+
+// cardPalette はカード固有の地の色。明るい地は文字が溶けるので暗い地だけ (docs/theme-colors.md の「選択中テキスト」の実例)。
+// 状態の色 (stateColor) や現在地色 (202) と紛れない暗さにしてある。
+var cardPalette = []int{52, 17, 22, 53, 58, 23, 54, 94, 24, 89}
+
+// cardColor はカード ID から固有の地の色を決める (同じカードは列を移っても・起動し直しても同じ色)。
+func cardColor(id string) int {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(id))
+	return cardPalette[h.Sum32()%uint32(len(cardPalette))]
+}
 
 // stateColor は列 (状態) の色。意味は theme/colors.yml に揃える。
 func stateColor(st card.State) int {
