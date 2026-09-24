@@ -48,6 +48,17 @@ Claude Code の使い方を「session を立ち上げてそこで作業する」
 - **カードが指す issue は実在する**: issue が done へ移動・改番されても切れない (パスでなく番号で参照する)
 - これらは検査で確かめられる形にする (例: 状態の場所を全部数えた数 = カード総数 / 紐づく番号が issues/ 配下に実在する)
 
+## ツールの形 (2026-09-24 に決めたこと)
+
+- **名前は `pro-con` (仮)**。producer-consumer から。役割も **PM = producer / PG = consumer** と呼ぶ。
+  ハイフン区切りは `bin/ci-log` / `bin/mutate-verify` と同じ流儀。PATH と Homebrew に同名なし (2026-09-24 に確認)
+- **glogx のような TUI**。glogx からショートカットで開ける
+- **TUI と常駐プロセスを分ける**。TUI (`pro-con`) を閉じても dispatcher (`pro-con daemon`) と PG は裏で動き続ける。
+  TUI は状態ファイルを読み、指示を出すだけにする (何度開閉しても安全)。daemon は `lockman` で 1 つに限り、
+  TUI 起動時に居なければ起こす (launchd で常駐させるかは未決)
+- **人間は普段 Claude Code Desktop で session を動かしている**。tmux の `@claude_state` は Desktop の session を見られないので、
+  段階 1 の見える化は transcript (`~/.claude/projects/*/*.jsonl`) を読む。Desktop の全 session が同じ形式で書かれるかは未実測
+
 ## 設計案 (未確定の叩き台)
 
 ```
