@@ -126,6 +126,18 @@ screen = layout.OverlayCentered(screen, box, width, page, colored)  // 左右の
 
 ### 確認する: y/N のダイアログ
 
+一覧の上に中央の板を浮かべた姿 (実際の出力から色を落としたもの。左右の背景は残る):
+
+```text
+  docs/old┌ 削除 ───────────────────────────────────┐
+  docs/dra│ 次のファイルを削除します                │▓
+→ scripts/│   scripts/legacy_sync.sh                │█
+  tmp/benc│                                         │█
+  tmp/prof│ y/Enter: 実行   その他: キャンセル      │█
+  src/tuik▖▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▗█
+            ▓█████████████████████████████████████████
+```
+
 ```go
 if asking {
 	box := confirm.Dialog(" git push ", []string{"未 push の 3 コミットを push します"}, confirm.HintYesNo, width, colored)
