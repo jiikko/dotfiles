@@ -15,9 +15,7 @@
 
 - pathspec は **cwd 相対**。`cd src/glogx` した状態で `git commit -- src/doctor/x.go` と打つと
   `src/glogx/src/doctor/x.go` を探して外れる
-- 外れたら **commit されない**。実測 (2026-09-02): `git commit -- <root 相対>` は **rc=1** +
-  stderr に `error: pathspec '...' did not match any file(s) known to git`、`git add` は **rc=128**。
-  つまり無音ではない
+- 外れたら **commit されない** (`git commit` は rc=1 + `error: pathspec '...' did not match`、`git add` は rc=128。無音ではない)
 - 🚨 **誤認は次の push で起きる**。commit が空振りした後の `git push` は
   **`Everything up-to-date` で rc=0** を返すので、push の出力だけを見ると成功に見える
 - 🚨 **push / merge に `-q` を付けない**。空振りを示す唯一の手がかり (`Everything up-to-date` /
@@ -26,13 +24,12 @@
   残っている状態で pathspec を組まない (シェルの cwd は前のコマンドから持ち越される)
 - 検出: commit 直後の `git log -1 --stat` で想定ファイルが入っているか見る (下の節と同じ規律)
 - 🚨 **submodule・入れ子 repo の中のファイルは親から commit できない**。親の checkout の中に見えていても
-  別 repo なので、親の pathspec は外れる (実測 2026-09-19: 親から submodule の README を commit して空振り)。
+  別 repo なので、親の pathspec は外れる。
   commit の前に **`git -C <ファイルの dir> rev-parse --show-toplevel`** で所属 repo を確かめ、その repo で
   commit & push してから親の参照を更新する
 - 🚨 **worktree からの `merge --ff-only` / `push` も cwd 依存**。作業 worktree (`wt-xxx`) の cwd で
   `git merge --ff-only <branch>` / `git push` を打つと、**worktree 側のブランチ**に対して
-  「Already up to date」「Everything up-to-date」が返るだけで master は 1 mm も動かない
-  (実測 2026-09-02〜03 SnapTrim、2 回踏んだ)。本体の checkout / umbrella への操作は
+  「Already up to date」「Everything up-to-date」が返るだけで master は 1 mm も動かない。本体の checkout / umbrella への操作は
   **`git -C <本体の絶対パス>`** で対象を明示し、直後に `git -C <本体> log -1 --oneline` で先端が動いたことを見る
 - 🚨 **パイプ越しでも見失う**: `git commit ... | head` のように通すと `$?` はパイプ終端の
   status になり、上の rc=1 が消える ([`verify-execution-not-just-exit-code.md`](verify-execution-not-just-exit-code.md) の系)
@@ -50,7 +47,6 @@
   modified になったファイル**にそのまま当てると今度は**漏れ**を作る。典型は、自分が消した API を
   使っていた既存テストを他セッションの WIP と読んで除外する形 — **その commit 単体ではコンパイルが
   通らない**のに、手元の作業ツリーには残りの差分があるので build も test も緑になる
-  (実測 2026-09-11 obaket 752: 変異検証用の worktree がビルドできず、そこで初めて発覚して amend)
 - 判定は `git diff -- <path>` を**読む**こと。セッション開始時から modified だったことは
   「自分と無関係」の証拠にならない (開始時点の `git status` を控えていないなら、なおさら読む)
 
@@ -91,12 +87,10 @@ pathspec 規律は「混入」は防ぐが、**履歴を書き換える操作は
 - 「直近コミット = 自分の直近コミット」と思い込まない。自分のコミットの直後に並行セッションが commit していれば、reset HEAD~1 は**他人のコミット**を、自分のコミットの上に他人が積んでいれば**自分のつもりで他人の**を切り落とす
 - 🚨 **上の確認が効くのは「自分が書いたメッセージと一致するか」までで、他セッションへの帰属には使えない**。
   全セッションが同じ git user なので **author では区別できず**、`git pull --rebase` は他人の commit を
-  自分の commit のあいだに挟むので **時刻の前後も根拠にならない** (実測 2026-09-02:
-  `23:30 → 23:52 → 23:47` と逆転していた)。帰属に使えるのは **commit が触ったファイル**と、
+  自分の commit のあいだに挟むので **時刻の前後も根拠にならない**。帰属に使えるのは **commit が触ったファイル**と、
   **本人に聞くこと**だけ。誤帰属のコストは濡れ衣だけでなく、**真の当事者を探すのをやめてしまう**こと
 - 🚨 **推測した帰属を第三者へ伝えない。** 誤情報はそこで止まらず伝播し、受け取った側が
-  無関係な相手へ確認に行く (実測 2026-09-04: 4 回外し、私の誤情報を受けた別セッションが
-  さらに別のセッションへ確認しに行った)。分からないなら「分からない」と言い、
+  無関係な相手へ確認に行く。分からないなら「分からない」と言い、
   `ListAgents` + `SendMessage` で**本人に聞く**
 - 副次の注意: **`git mv` は即座に stage される**。stage された変更は共有 index 上で「他セッションの pathspec なし commit / reset に拾われ得る」状態になるため、stage から commit までの間隔を最小にする
 

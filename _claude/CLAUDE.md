@@ -12,7 +12,7 @@
 - **無断で `git clone` しない**。必要ならユーザーに許可を取る
 - `git stash` を使わない。ステージ済みの変更を退避したいなら、別ブランチにコミットするかユーザーに確認する
 - サブモジュール内でコミットしたら、**そのサブモジュールのリモートにも push する** (親の push だけでは CI が参照コミットを取得できない)
-- **コミット & push 前に `git status` で dirty なサブモジュールがないか確認する**。あれば中で差分を確認し、必要ならコミット & push してから親の参照を更新する
+- **コミット & push 前に `git status` で dirty なサブモジュールがないか確認する**。あれば中で差分を確認し、必要ならコミット & push してから親の参照を更新する。dirty を残したまま作業を終えない
 - **commit / push 後は、成功を報告する前に実際の git state (`git log -1 --stat` / `git status` / push 出力) を確認する**。ツール出力の「成功」表示を鵜呑みにしない (push 失敗や heredoc 破損を成功と誤報した実例がある)
 
 ## 並行作業者がいるときの worktree 退避
@@ -26,7 +26,7 @@
 
 出力の長さ・スコープ・委譲の量は reasoning effort では制御できず、明示指示でしか効かない
 (Opus 5 は多く喋り・広げ・委譲する側、Fable 5.1 は報告が少なくなる側に寄る。出典:
-[Opus 5 ガイド](https://platform.claude.com/docs/ja/build-with-claude/prompt-engineering/prompting-claude-opus-5) / `claude-api` skill の Fable 5.1 節)。
+[Opus 5 ガイド](https://platform.claude.com/docs/ja/build-with-claude/prompt-engineering/prompting-claude-opus-5) / `claude-api` skill の Fable 5.1 節。乖離に気づいたら同じ commit で直す)。
 
 - **応答は本題に紙面を使う**。前置き・免責は短く。「説明して」には要点のサマリを返し、詳細は求められたときだけ書く
 - **成果物ドキュメントの長さはタスクの必要量に合わせる**。埋め草セクション・重複したサマリ・定型文で嵩上げしない
@@ -43,7 +43,7 @@
 - **Claude がセッション中に作る成果物 (レポート・スクラッチ・中間生成物) は `./tmp`**。`/tmp` に置かない
   - 例外: ハーネスが指定する scratchpad (`/private/tmp/claude-501/…`) はそのまま使ってよい
   - 🚨 `tmp/` の ignore が `~/.gitignore_global` 由来で repo の `.gitignore` に無い repo がある (dotfiles 等)。その場合、新品チェックアウトと CI では ignore されず、`tmp/` 自体も存在しない
-  - 消す前に、結論が issue / コードへ移っているかと、issue や doc が指しているパスでないかを確かめる (`grep -rn 'tmp/' issues/`)。dotfiles では `make clean-tmp` (`DRY_RUN=1` で一覧のみ)
+  - 消す前に、結論が issue / コードへ移っているかと、issue や doc が指しているパスでないかを確かめる (`grep -rn 'tmp/' issues/ _claude/`)。dotfiles では `make clean-tmp` (既定は 30 日より古いもの。`DRY_RUN=1` で一覧のみ、`DAYS=7` で期間を変える)
 - **スクリプト / テストが実行時に作る隔離ディレクトリは対象外**。既定は OS の一時領域 (`mktemp -d` / `t.TempDir()`)。`./tmp` に置くなら理由をコード直近に残す
 - 線引きは置き場所ではなく **終了時に消す責任が実装されているか**
   - 🚨 パスで判断しない (`mktemp -d` は macOS では `/var/folders/…`、Linux では `/tmp` 配下になりうる)
@@ -51,7 +51,7 @@
 
 ## Issue管理
 
-- **`issues/` (または `issue/`) を持つ repo では、SessionStart hook が issue 運用規約を注入する。この CLAUDE.md と同じ拘束力で従う**。正本は `~/dotfiles/_claude/issue-rules.md`、repo 固有の事項は各 repo の `issues/README.md`。issues/ を持たない repo には適用しない
+- **`issues/` (または `issue/`) を持つ repo では、SessionStart hook (`_claude/hooks/issue-rules-inject.sh`) が issue 運用規約を注入する。この CLAUDE.md と同じ拘束力で従う**。正本は `~/dotfiles/_claude/issue-rules.md`、repo 固有の事項は各 repo の `issues/README.md`。issues/ を持たない repo には適用しない
 - issues/ がある repo なのに注入が見当たらないときは、issue を触る前に正本を Read する
 - claim の手順は [`claim-issue-in-next-and-push.md`](rules/claim-issue-in-next-and-push.md)、検証レポートを issue へ移す手順は [`move-report-conclusions-to-issues.md`](rules/move-report-conclusions-to-issues.md)
 
@@ -93,9 +93,10 @@
 依頼範囲外だが将来直したくなりそうな違和感を見つけたら、応答の最後に一言添える。判断材料の提供であり、勝手に修正しない。
 
 - 対象例: 二重実装の規約・スタイル混在・ハードコード・マジックナンバー・テスト漏れの予兆・依存方向の歪み・命名の食い違い
-- 形式: 「**なお、ぼやきポイント**: 〜」を一行〜数行。issue 化が妥当なら「issue 化しますか？」と添える
+- 形式: 「**なお、ぼやきポイント**: 〜」を一行〜数行 (長文の分析にはしない)。issue 化が妥当なら「issue 化しますか？」と添える
+- 「タスクと無関係だから黙る」のではなく「無関係だが伝える価値があるなら一行ぼやく」
 - 確信が低いもの・好みの問題・ユーザーが既知のものはぼやかない
-- **ぼやきも事実の主張なら裏を取る**。特に「〜は検査されていない」のような不在の主張。取っていないなら「**未確認だが**」と明示する (実例 2026-09-02: 「検査対象外」とぼやいた検査が `src/glogx/box_test.go` に在った)
+- **ぼやきも事実の主張なら裏を取る**。特に「〜は検査されていない」のような不在の主張。取っていないなら「**未確認だが**」と明示する (実例 2026-09-02: 「検査対象外」とぼやいた検査が `src/glogx/box_test.go` に在った。Go の検査は `tests/` ではなく `src/<proj>/*_test.go` にある)
 
 ## 不具合対応の原則
 
@@ -114,7 +115,7 @@
 
 ## レビュー方針
 
-- **重要なコード変更・バグ修正は、設計と実装の両方を外部レビューに通す** (設計 → レビュー → 実装 → テスト → レビュー)。codex が許可されている環境では codex (`codex-review` / `cross-review` / `review-loop` / `codex-lead` / `codex-drive`)、それ以外では観点を分けた read-only サブエージェント (作法は [`issue-creation-codex-review.md`](rules/issue-creation-codex-review.md) の代替節)。typo・数行の chore は対象外
+- **重要なコード変更・バグ修正は、設計と実装の両方を外部レビューに通す** (設計 → レビュー → 実装 → テスト → レビュー)。codex が許可されている環境では codex (`codex-review` / `cross-review` / `review-loop` / `codex-lead` / `codex-drive`)、それ以外では観点を分けた read-only サブエージェント (作法は [`issue-creation-codex-review.md`](rules/issue-creation-codex-review.md) の代替節)。typo・数行の chore は対象外。codex を使わない環境では観点を分けたサブエージェントを直接起動する (`cross-review` skill は codex を含むため丸ごとは使えない)
 - 指摘は無視せず、根拠の弱い断定・false positive を訂正してから commit する
 - **壊しにいくパス (敵対的レビュー / red team) を 1 本混ぜる**。判断ロジック・境界・状態遷移・外部 I/O が動いた変更では commit 前の最終ゲートにする (機械的置換・設定値変更だけなら省略してよいが、省略したと明示する)
 - **「指摘なし」は「その探し方では壊せなかった」**。不変条件はテスト・型・設計で固定して初めて閉じる
@@ -122,7 +123,7 @@
   - 🚨 **「N 箇所すべてに対応した」と書くなら N を機械で数えてから** (`git show --stat` / `grep -c`。実測 2026-09-06: 4 と書いて実際は 3)
   - 🚨 **「等価」「挙動は変わらない」も書く前に compiler / テストで確かめる**。自分の書き換えは疑われにくい (実測 2026-09-21: exhaustive switch 化で 2 case を落とし、ビルドを壊したまま「完全に同一」と書いた)
 - 自分で新設した安全機構は [`adversarial-review-own-safeguards.md`](rules/adversarial-review-own-safeguards.md)、防御を外すときは [`list-masked-failure-modes-before-removing-guard.md`](rules/list-masked-failure-modes-before-removing-guard.md)
-- **敵対レビューの出力こそ無検閲で採用しない**。発火条件が具体的で再現できたものだけ直し、再現しないものは記録、示せないものは「未確認リスク」として issue に落とす。推測で防御コードを足さない (作法の正本は `~/.claude/skills/codex-review/SKILL.md` の「敵対的レビューの作法」)
+- **敵対レビューの出力こそ無検閲で採用しない**。発火条件が具体的で再現できたものだけ直し、再現しないものは記録、示せないものは「未確認リスク」として issue / 観測ポイントに落とす。推測で防御コードを足さない (作法の正本は `~/.claude/skills/codex-review/SKILL.md` の「敵対的レビューの作法」)
 
 ## スキルファイル参照
 

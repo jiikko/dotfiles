@@ -2,29 +2,19 @@
 
 > **トリガー型ルール。** 「この issue をやろう」と決めて最初のファイルを触る直前に発動する。
 >
-> **適用条件: 作業中の repo に `issues/next/` または `issues/epic/<name>/next/` ディレクトリが
-> 実在するときだけ。**
-> 無ければこのルール全体を読み飛ばしてよい (仕事の repo のように `issues/` を持たない repo では
-> 何もしない)。運用を始めたい repo では global または group 内の `next/` を作ることが opt-in になる。
-> hook 側も同じ条件で自分を無効化する。
+> **適用条件: 作業中の repo に `issues/next/` または `issues/epic/<name>/next/` が実在するときだけ。**
+> 無ければこのルール全体を読み飛ばしてよい (`next/` を作ることが opt-in。hook も同じ条件で無効化する)。
 
 ## ルール
 
 - **着手する前に `git fetch` して、その issue が既に global または所属 group の `next/` に居ないか見る**。
-  居たら**別のセッションが着手済み**なので、勝手に始めない (別の issue へ回るか、本人に聞く)
-  - 🚨 **fetch は「着手を決めた直前」にもう一度打つ。** セッションの最初に取った結果は古い。
-    実測 2026-09-04 (6 セッションが同じ backlog を消化した日): 見落とし / 衝突が **7 回**起き、
-    その 1 件は「自分の fetch が古く、push 済みの claim を見落とした」形だった
-  - 🚨 **`ListAgents` に他セッションが居るなら、next を見るだけでなく本人へ 1 回聞く。**
-    claim は **push されるまで next に現れない**ので、生きているセッションへの照会が
-    唯一の即時性のある手段 (同日実測: 未 push の claim による二重着手が 1 件、
-    調整中に横から完走されたのが 1 件)
-- **着手を決めたら `issues/next/` に目印を置き、その目印だけを pathspec で commit して即 push する**。
-  claim は **push されて初めて claim になる** — ローカルに留めている間、他マシンからは
-  「誰も着手していない issue」に見える
-  - 🚨 **目印は symlink で、issue ファイルは動かさない** (issue 263)。rename すると本文の相対リンク
-    (`done/549-x.md` のように issue ディレクトリ直下を起点に書かれる) が全部切れ、リンク検査の gate に落ちる。
-    書き換えると claim の commit に本文の差分が混ざる。symlink なら Path も参照も安定する
+  居たら別のセッションが着手済みなので、勝手に始めない (別の issue へ回るか、本人に聞く)
+  - 🚨 **fetch は「着手を決めた直前」にもう一度打つ** (セッション冒頭の結果は古い)
+  - 🚨 **`ListAgents` に他セッションが居るなら、本人へ 1 回聞く**。claim は push されるまで next に現れないので、
+    生きているセッションへの照会が唯一の即時性のある手段
+- **着手を決めたら `next/` に目印を置き、目印とバナーだけを pathspec で commit して即 push する**。
+  claim は **push されて初めて claim になる**
+  - 🚨 **目印は symlink で、issue ファイルは動かさない** (issue 263。rename すると本文の相対リンクが切れる)
 
     ```sh
     ln -s ../NNN-slug.md issues/next/NNN-slug.md && git add issues/next/NNN-slug.md
@@ -35,100 +25,51 @@
     git push
     ```
 
-    glogx の issues viewer の `n` は目印とバナーを 1 組で書く (解除では両方を外す)。push は人が行う。解除は symlink を消すだけ (`git rm issues/next/NNN-slug.md`)。
-    **目印の形は `../<同名>` に固定** (glogx はそれ以外の symlink を目印として読まず、警告にする。
-    `tests/issues/test_next_links_valid.sh` が CI で同じ条件を検査する)
-  - 旧運用 (ファイルそのものを `next/` へ移す) は読めるが、新しい claim では使わない。既に `next/` に
-    実ファイルとして居る issue はそのまま完了まで持ってよい (直下へ戻して張り直す必要はない)
-- **group issue (`issues/epic/<name>/`) の claim は、その group 内の `next/` (`issues/epic/<name>/next/`) へ移す。完了・保留も group 内の `done/` / `pending/` へ移す** (global の `issues/done/` へ出さない。出すとパスから epic 所属が消え、viewer が epic の進捗を出せなくなる。2026-09-06 に変更。issue 291)。global issue の完了先は従来どおり `issues/done/`。
-- 🚨 **claim したら issue 本文の冒頭 (タイトル直下) にも担当者バナーを書き、目印と同じ commit で push する**。
-  書式は `> 🚨 **担当中: <セッション名>**（YYYY-MM-DD〜）`。**最初の `## ` 見出しより前に `**担当中` / `**着手中` が
-  無い claim は `tests/issues/test_next_claims_have_banner.sh` が CI で落とす** (glogx の `n` で付けた claim も対象。issue 403)。`next/` の目印は
-  **`next/` を見る入口にしか届かない**。issue ファイルを直接開く / 別トランスポートから
-  照会してくる相手には見えず、実測 2026-09-11 に**バナーと claim の両方がある issue が
-  7 分後に別セッションで done へ送られた** (308 / 305 の 2 件)。本文の冒頭は
-  「どの入口から来ても目に入る」唯一の場所
-- **claim の commit に他の変更を混ぜない** (目印とバナーの 2 つだけ)。混ぜると push できない事情 (レビュー待ち・検証中) に
-  claim が巻き込まれ、宣言だけが遅れる
-  - 🚨 **push はブランチ単位**なので「claim の commit だけを push」はできない。他に未 push の
-    commit があるなら、それらも一緒に飛ぶ。**飛ばしてよいかを先に確かめる** (飛ばせないなら、
-    claim できていないことをユーザーへ伝えてから着手する)
-  - 🚨 **確かめ方は「自分で数える」ではなく `git log --oneline origin/master..HEAD` の全件を相手へ見せる**。
-    同一 checkout を複数セッションが使うと、自分の認識と実際に飛ぶ commit 数はずれる
-    (実測 2026-09-20 obaket: 送る側の認識 5 件に対し実際は 7 件)。数えた結果でなく**出力をそのまま貼る**
-- **push できないときは黙って進めない**。remote が進んでいるなら `git pull --rebase` してから
-  push する。それでも push できない事情があるなら、**着手前にユーザーへ一言伝える**
-  (claim できていない = 衝突しうる、という情報が要る)
-- 完了したら **目印 (symlink) を消してから** issue を done へ移す (global issue は `issues/done/`、group issue は `issues/epic/<name>/done/`)。
-  symlink を残すと dangling になり CI (`test_next_links_valid.sh`) が落ちる。旧運用で `next/` に実ファイルとして
-  居るものは従来どおり `next/` から `done/` へ移す
-  - 🚨 **手でやらない。`scripts/issue_done.sh <NNN>` に寄せる** (dotfiles の場合)。移動・目印の削除・
-    本文の相対リンクの張り直し・**他 issue からの参照の張り直し**の 4 つを 1 コマンドで行い、
-    リンク検査が落ちたら移動を戻す。手作業は実測で落とす (2026-09-09 に 12 件中 4 回。うち 1 回は CI が赤)
-- **`git pull --rebase` が衝突したら、claim を優先して片付ける**。claim の commit は
-  「1 ファイルの rename だけ」なので衝突しても解決は自明 (相手が同じ issue を触っていたなら、
-  それは**二重着手が起きている証拠**なので、続けずに相手の claim を尊重して別の issue へ回る)。
-  rebase を途中で放置しない — `--continue` か `--abort` のどちらかで必ず閉じる
-- **二重着手が起きてしまったら、捨てる側のレビュー指摘を残す側の実装に当て直してから捨てる**。
-  同じ issue を別々に攻めたレビューは、残す側が受けていない攻撃を含む。当て直して成立したものだけ
-  残す側へ移す (実測 2026-09-14 obaket 805: 捨てる側の 3 周分から 4 件採用 / 2 件不成立)
+  - **目印の形は `../<同名>` に固定** (glogx はそれ以外を目印として読まない。`tests/issues/test_next_links_valid.sh` が検査する)。
+    glogx の issues viewer の `n` は目印とバナーを 1 組で書き、解除では両方を外す (push は人が行う)
+  - 旧運用 (ファイルそのものを `next/` へ移す) は新しい claim では使わない。既に `next/` に実ファイルとして居る issue は
+    そのまま完了まで持ってよく、完了時は `next/` から `done/` へ移す
+- **group issue (`issues/epic/<name>/`) の claim / 完了 / 保留は group 内の `next/` / `done/` / `pending/` へ** (issue 291。
+  global の `issues/done/` へ出すと epic 所属が消える)
+- 🚨 **担当者バナーを本文の冒頭 (最初の `## ` より前) に書き、目印と同じ commit で push する**。`next/` の目印は
+  `next/` を見る入口にしか届かない。バナーの無い claim は `tests/issues/test_next_claims_have_banner.sh` が落とす (issue 403)
+- **claim の commit に他の変更を混ぜない** (混ぜると push できない事情に claim が巻き込まれる)
+  - 🚨 **push はブランチ単位**なので、他に未 push の commit があれば一緒に飛ぶ。**飛ばしてよいかを先に確かめ**、
+    確かめ方は `git log --oneline origin/master..HEAD` の**出力をそのまま**相手へ見せる (自分で数えた件数はずれる)。
+    飛ばせないなら、claim できていないことをユーザーへ伝えてから着手する
+- **push できないときは黙って進めない**。`git pull --rebase` してから push し、それでも無理なら着手前にユーザーへ伝える
+- 完了したら **目印 (symlink) を消してから** done へ移す (残すと dangling で CI が落ちる)
+  - 🚨 **手でやらない。dotfiles では `scripts/issue_done.sh <NNN>` に寄せる** (移動・目印削除・本文の相対リンクと
+    他 issue からの参照の張り直しを 1 コマンドで行い、リンク検査が落ちたら戻す)
+- **`git pull --rebase` が衝突したら claim を優先して片付ける**。相手が同じ issue を触っていたなら二重着手の証拠なので、
+  相手の claim を尊重して別の issue へ回る。rebase は `--continue` か `--abort` で必ず閉じる
+- **二重着手が起きてしまったら、捨てる側のレビュー指摘を残す側の実装に当て直してから捨てる**
 
 ## なぜ
 
-起源: dotfiles, 2026-09-02。別マシンのセッションと**同じ retro (164) の切り出しを同時にやり**、
-同じ趣旨のルール追記が 2 本できて rebase で衝突した。どちらも正しく仕事をしていたのに、
-**片方の成果は捨てるかマージし直すしかなかった**。根拠・実例は
-`~/dotfiles/_claude/rules-rationale/claim-issue-in-next-and-push.md` に置く
-(起動時には読まれない。ルールを疑う・改訂するときに読む)。
+起源: dotfiles, 2026-09-02。別マシンのセッションと同じ retro (164) の切り出しを同時にやり、片方の成果を捨てるしかなかった。
+根拠・実例は `~/dotfiles/_claude/rules-rationale/claim-issue-in-next-and-push.md` に置く (起動時には読まれない。ルールを疑う・改訂するときに読む)。
 
 ## 強制手段 (hook が一部を持つ)
 
-- **PostToolUse(Bash) hook** `_claude/hooks/next-claim-push.sh` が、global または group 内の `next/` への `ln -s` / 移動を
-  含む Bash コマンドを検出したら「claim を単独 commit して push したか」を注入する
-  (配線: `_claude/settings.json`)。**この hook が見えるのは Claude が Bash で動かした移動だけ**で、
-  glogx の issues viewer の `n` キー (Go 側で移動する) は Bash を通らないので発火しない
-- **UserPromptSubmit hook** `_claude/hooks/next-claim-unshared.sh` が、その穴を埋める:
-  毎プロンプトで、global または group 内の `next/` の claim が**他マシンから見えない状態** (未コミット、または
-  commit 済みだが未 push。後者は issue 249 で足した) なら
-  「push してよいか」をユーザーへ伺わせる。人が `n` で付けた claim もここで拾う。
-  **使い分け**: 移動した瞬間に Claude 自身へ促すのが前者、取りこぼした claim を後から
-  人に伺うのが後者。**押した瞬間の自動 push は採らない** (push はブランチ単位なので、
-  他の未 push commit も一緒に飛ぶ。飛ばしてよいかは人しか判断できない)
-- 🚨 **照会に答えられないセッションがある**。`to` を取る `SendMessage` を持たず
-  `ccd_session_mgmt` しか無いセッションは、UDS の相手へ**原理的に返信できない**
-  (`from=` をそのままコピーしても `session … not found`。実測 2026-09-11 に 3 形すべてで失敗)。
-  **沈黙は「空いている」と読まれる**ので、返信できないと分かったらその事実をユーザーへ上げる
-- 🚨 **jq が無い環境では hook が丸ごと無音で死ぬ** (`command -v jq || exit 0`)。検出が消えても
-  何の兆候も出ないので、claim の規律は最終的に**この md を読む人が守る**もので、hook はその補助
-- 🚨 **静的検査なので宛先が変数・相対パスだと検出できない**
-  (`D=issues/next; git mv x "$D/"` / `cd issues && git mv x next/`)。取りこぼすより出す側へ倒す方針
-- hook は**注意を出すだけ**で、push を強制しない。「fetch してから着手する」「他の変更を
-  混ぜない」も hook では強制できないため、本 md が正本のまま残る
-  ([`comment-no-restate-enforced.md`](comment-no-restate-enforced.md) の区分)
-
-## やること / やらないこと
-
-- ✓ 着手前に `git fetch` し、global または所属 group の `next/` に既に居ないか見る
-- ✓ claim の目印 (symlink) だけを pathspec commit して即 push する
-- ✓ push できない事情があるなら、着手前にユーザーへ伝える
-- ✓ 完了したら目印を消し、done へ移す（global issue は `issues/done/`、group issue は `issues/epic/<name>/done/`）
-- ✗ ローカルで claim して push しないまま作業を始める (claim になっていない)
-- ✗ claim の commit に実装や他の issue の変更を混ぜる
-- ✗ 既に global または所属 group の next に居る issue を、確認せずに横から始める
+- **PostToolUse(Bash)** `_claude/hooks/next-claim-push.sh`: `next/` への `ln -s` / 移動を含む Bash コマンドを検出したら
+  「claim を単独 commit して push したか」を注入する。Claude が Bash で動かした移動しか見えない
+- **UserPromptSubmit** `_claude/hooks/next-claim-unshared.sh`: 毎プロンプトで、他マシンから見えない claim (未コミット /
+  未 push) があれば「push してよいか」をユーザーへ伺わせる (glogx の `n` で付けた claim もここで拾う)。
+  自動 push は採らない (他の未 push commit も飛ぶため)
+- hook は注意を出すだけで、jq が無いと無音で死に、宛先が変数・相対パスの移動は検出できない。
+  **規律の正本はこの md** ([`comment-no-restate-enforced.md`](comment-no-restate-enforced.md) の区分)
+- 🚨 **照会に答えられないセッションがある** (`to` を取る `SendMessage` を持たず `ccd_session_mgmt` しか無いセッションは原理的に返信できない)。
+  沈黙は「空いている」と読まれるので、返信できないと分かったらユーザーへ上げる
 
 ## 例外
 
-- **ユーザーがその場で指示した単発の作業** (「この issue やって」) は、claim を経ずに始めてよい。
-  ユーザーは自分がどのマシンで何を頼んだか知っているため。ただし**長くかかる**と分かったら、
-  途中でも next へ移して push しておくと他マシンからの二重着手を防げる
+- **ユーザーがその場で指示した単発の作業** は claim を経ずに始めてよい。長くかかると分かったら途中でも claim して push する
 - 自分しか触らないと分かっている repo (単一マシン運用) では不要
 
 ## 関連
 
-- [`commit-with-pathspec.md`](commit-with-pathspec.md) — 「claim だけを commit する」ための
-  pathspec 規律と、他セッションの変更を巻き込まない作法
+- [`commit-with-pathspec.md`](commit-with-pathspec.md) — 「claim だけを commit する」ための pathspec 規律
 - [`parallel-write-agents-need-worktree-isolation.md`](parallel-write-agents-need-worktree-isolation.md) —
-  **同じ working tree** を複数主体が書く問題。本ルールは **同じ issue 列**を複数マシンが
-  処理する問題 (working tree は別なので worktree 分離では防げない)
-- `docs/issues-viewer-spec.md` — `next/` の元々の意味 (glogx の `n` が付ける「次にやる」目印)。
-  本ルールはその状態語彙に「着手中の claim」という第二の意味を重ねている
+  同じ working tree を複数主体が書く問題。本ルールは同じ issue 列を複数マシンが処理する問題
+- `docs/issues-viewer-spec.md` — `next/` の元々の意味 (glogx の `n` が付ける「次にやる」目印)

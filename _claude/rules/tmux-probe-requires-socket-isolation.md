@@ -14,9 +14,7 @@
 - **破壊的操作に `2>/dev/null` を付けない**（失敗・誤爆が観測不能になる）
 - **セッション作成〜計測〜kill を 1 コマンドに詰め込まない**。破壊的操作は影響を確認できる単位で分けて打つ
 - **逆に、隔離サーバは「human に回す」を減らす道具でもある**。tmux の挙動を human issue
-  (動作確認待ち) に回そうとしたら、**その前に「隔離 `-L` サーバで測れないか」を一度問う**。
-  実例 2026-08-27: 「conf を reload したら仕掛けた sleeper が死ぬか」を human に回しかけたが、
-  隔離サーバで 1 分で実測できた (生存する)。人待ちは価値が腐るので、測れるものは先に潰す
+  (動作確認待ち) に回そうとしたら、**その前に「隔離 `-L` サーバで測れないか」を一度問う** (人待ちは価値が腐る)
 - 🚨 **`tmux kill-server` は socket ファイルを消さない**（実測 2026-09-10。SIGKILL でも同じ）。
   隔離サーバを止めるだけでは**正常終了のたびに socket が 1 個ずつ残る**ので、後片付けは
   「**kill する前に** `display -p '#{socket_path}'` で実パスを控え、kill 後にそのパスだけを
@@ -24,7 +22,7 @@
   `TMUX_TMPDIR` を使い捨て dir に倒して**dir ごと消す**形なら socket もその中なので追加の後始末は要らない
 - **残骸を走査して消す掃除機構は作らない**。消すのは**自分が控えたパスだけ**にする
   （走査は母集合を取り違えた瞬間に本番の socket へ届く。`adversarial-review-own-safeguards.md` §0-A）
-- **そもそも tmux を新規に立てる必要があるか先に問う**。2026-07-30 の事故は、この問いを飛ばしたことが起点だった（測りたかったのは `bin/glogx` ラッパーと Go バイナリ直の差で、tmux を一切使わずに測れた）
+- **そもそも tmux を新規に立てる必要があるか先に問う** (2026-07-30 の事故はこの問いを飛ばしたことが起点)
 
 ## なぜ
 
@@ -32,12 +30,12 @@
 
 ## 強制手段（実装済みの部分）
 
-- 🚨 **bin/tmux shim (第一防御)** が、本番サーバ (`default` socket + `~/.config/tmux-protected-sockets` の各行) への `kill-server` / `kill-session` を**非対話シェル (TTY 無し = Claude / スクリプト) から拒否**する。`~/dotfiles/bin` が PATH 先頭 (homebrew より前) に居るので、**スクリプト内部の bare `tmux` 呼び出しも傍受できる唯一の層**（2026-09-11 の事故はテストスクリプト内部の `tmux -L default kill-server` で、文字列を見る hook では捕まえられなかった）。対話 TTY からの kill と実体を絶対パス (`/opt/homebrew/bin/tmux`) で直接呼ぶ形は「意図的」として通す（= 本番を本当に消したいときのエスケープ）。実装: `bin/tmux` / 回帰テスト: `tests/tmux/test_tmux_shim_protects_default.sh`
+- 🚨 **bin/tmux shim (第一防御)** が、本番サーバ (`default` socket + `~/.config/tmux-protected-sockets` の各行) への `kill-server` / `kill-session` を**非対話シェル (TTY 無し = Claude / スクリプト) から拒否**する。`~/dotfiles/bin` が PATH 先頭 (homebrew より前) に居るので、**スクリプト内部の bare `tmux` 呼び出しも傍受できる唯一の層**。対話 TTY からの kill と実体を絶対パス (`/opt/homebrew/bin/tmux`) で直接呼ぶ形は「意図的」として通す（= 本番を本当に消したいときのエスケープ）。実装: `bin/tmux` / 回帰テスト: `tests/tmux/test_tmux_shim_protects_default.sh`
 - **PreToolUse hook (第二防御)** が Bash ツールコマンド中の bare な `tmux kill-server` / `tmux kill-session` / `pkill tmux`、および **`-L default` / `-S <...>/default` の本番直撃** を deny する（`-L <隔離名>` / `-S <隔離パス>` は通る）。Claude が**直接打った**コマンドにしか効かない（script 内部は上の shim が担う）。実装: `_claude/hooks/deny-bare-tmux-kill.sh`（配線: `_claude/settings.json`）
 - hook が強制するのは上記パターンだけ。**隔離の実証・依頼外の破壊的操作を足さない・`2>/dev/null` 禁止は hook では強制できない**ため、本 md が正本のまま残る（[`comment-no-restate-enforced.md`](comment-no-restate-enforced.md) の区分）
 - hook は Bash ツールのコマンド文字列を静的検査するため、**引用符に入っていない散文**に「tmux → kill-server/kill-session」の並びや「pkill と tmux の同居」があると偽陽性 deny になる。[`no-comment-line-starting-with-shellcheck.md`](no-comment-line-starting-with-shellcheck.md) と同族の罠
-  - 実測 2026-08-21（issue 069 でトークン走査へ作り替えた後）: **引用符で囲んだ文字列**（`echo "tmux の kill-server を deny"` / `cases=("tmux kill-server" ...)`）と**コメント**（行頭 `#` / 行内 ` #`）は検査対象から外れて **通る**。deny になるのは引用符に入っていない散文だけ
-  - 実務で踏むのはほぼ **heredoc 本文**。`git commit -F -` の heredoc のコミットメッセージ本文は引用符に入らないので、説明文がそのまま検査対象になる（このルール自体の commit で踏んだ）
+  - **引用符で囲んだ文字列**と**コメント** (行頭 `#` / 行内 ` #`) は検査対象から外れて通る (issue 069)。deny になるのは引用符に入っていない散文だけ
+  - 実務で踏むのはほぼ **heredoc 本文** (`git commit -F -` のメッセージ本文は引用符に入らない)
   - 回避の優先順: ①**commit message はファイル経由で渡す** (`git commit -F <path>`。hook が見るのは
     Bash のコマンド文字列なので、本文が長い散文のときはこれが最も素直。**検出の迂回ではない** —
     実際に tmux を撃つコマンドは従来どおり検査対象に残る) ②引用符で囲む ③言い換える
