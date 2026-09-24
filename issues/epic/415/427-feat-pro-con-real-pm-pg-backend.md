@@ -19,9 +19,13 @@
 
 ## 段階 3 の小分け (2026-09-24 夜に決めた。上から順に進め、済んだら [x] と commit を書く)
 
-- [ ] **3a カードの置き場所** (`src/pro-con/store`): daemon だけが書くカードの記録 (`$XDG_STATE_HOME/pro-con/live/cards.json`) と、受付の箱
+- [x] **3a カードの置き場所** (`src/pro-con/store`): daemon だけが書くカードの記録 (`$XDG_STATE_HOME/pro-con/live/cards.json`) と、受付の箱
   (`…/live/inbox/` に 1 件 1 ファイルの依頼)。PM / PG / 画面は箱に置くだけで、適用は daemon の 1 か所 (426 の決定 1)。
   採番と `card.Check` の不変条件の検査も適用の中。枠を使わず単体テストで確かめられる
+  - 済み (2026-09-25): `src/pro-con/store` (Submit / Load / Apply)。依頼の種類は add / plan / ask / answer / review / close
+    (分解済み → 作業中は daemon の仕事なので 3c)。遷移の規則は `transition` の 1 か所、不変条件は「新しく出た違反」で判定。
+    テスト 6 本、変異 4 本が red (二重適用の控え / 不変条件 / 質問待ちでない回答 / 壊れた記録を空と読む)。
+    🚨 **敵対的レビューは未実施** (週の利用枠が 96% のため見送り)。二重適用の防止と「書き手は daemon だけ」の排他 (3c) を、枠が戻ったら攻めさせる
 - [ ] **3b `pro-con card` コマンド**: PM / PG が使う口 (`add` 依頼を積む / `ask` 質問を書く / `done` 終えた / `plan` 分けた 等)。箱に置くだけ。枠を使わない
 - [ ] **3c `pro-con daemon`**: 箱の適用 → PG の起動 (`claude --bg -w`、431 の設定、`live.Register`) → `claude agents --json` で状態を読んでカードへ →
   回答・追記は stop → resume (426 の決定 2・3) → 落ちた回数で止める (決定 4) → watchdog。起動の部分は本物の claude が要る (枠を使う)
