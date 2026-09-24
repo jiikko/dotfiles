@@ -16,7 +16,7 @@
 
 ## 未実測
 
-- Desktop と `--bg` の transcript の形式が同じか ([424](424-feat-pro-con-readonly-real-backend.md) で測る)
+- Desktop と `--bg` の transcript の形式が同じか ([424](done/424-feat-pro-con-readonly-real-backend.md) で測る)
 
 ## 関連ファイル
 

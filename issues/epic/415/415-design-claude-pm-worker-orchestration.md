@@ -8,7 +8,7 @@
 
 | 番号 | 内容 | 依存 |
 |---|---|---|
-| [424](424-feat-pro-con-readonly-real-backend.md) | 読み取り専用の本物の backend (段階 1) | — |
+| [424](done/424-feat-pro-con-readonly-real-backend.md) | 読み取り専用の本物の backend (段階 1) | — |
 | [425](done/425-research-claude-bg-remaining-measurements.md) | `claude --bg` の残りの挙動を実測する | — |
 | [426](done/426-design-pro-con-open-decisions.md) | 未決の論点を決める (論点 3 / 6 / 8 / 9 / 10 / 11) | 425 |
 | [427](427-feat-pro-con-real-pm-pg-backend.md) | 本物の PM / PG の backend (段階 3〜5) | 425 / 426 |
