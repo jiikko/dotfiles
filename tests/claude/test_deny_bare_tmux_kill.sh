@@ -58,7 +58,7 @@ jq -e '[.hooks.PreToolUse[]? | select((.matcher // "") | test("Bash")) | .hooks[
   || { printf '✗ PreToolUse(Bash) の配下にフックが配線されていない\n'; exit 1; }
 printf '✓ settings.json の PreToolUse(Bash) に配線されている\n'
 
-decision() {  # $1=コマンド文字列 → "deny" / "allow" / "error" / "harness-error"
+decision() {  # $1=コマンド文字列 → "deny" / "allow" / "timeout" / "error" / "harness-error"
   # 🚨 フックの異常終了・壊れた出力を allow に畳まないこと。旧実装は
   #   ... | jq -r '...// empty' | grep . || echo allow
   # で、フックが落ちても jq が失敗しても "allow" になり、「素通り」と「検査できなかった」が
@@ -89,18 +89,23 @@ decision() {  # $1=コマンド文字列 → "deny" / "allow" / "error" / "harne
   fi
   # 無出力の内訳を区別する: rc=0 は「何も deny しなかった」= 本番でも素通り。rc=124 は
   # timeout に殺された = 本番でも stdout 0 byte で素通り (これがゲート消失の観測点)。
+  # 🚨 124 を allow に畳まない: 畳むと「判定ロジックが allow を返した」と「負荷で時間切れ」が同じ
+  #    `実際=allow` になり、1 度だけ落ちたときに原因を読めなかった (issue 422)。
   # それ以外の非 0 は hook 自身の異常終了なので error に倒す。
   case "$rc" in
-    0 | 124) echo allow ;;
+    0) echo allow ;;
+    124) echo timeout ;;
     *) echo error ;;
   esac
 }
 
 expect() {  # $1=期待(deny/allow) $2=説明 $3=コマンド
-  local got
+  local got start
+  start=$SECONDS
   got="$(decision "$3")"
   if [ "$got" != "$1" ]; then
-    printf '✗ %s\n  期待=%s 実際=%s\n  cmd: %s\n' "$2" "$1" "$got" "$3"
+    printf '✗ %s\n  期待=%s 実際=%s (%d 秒)\n  cmd: %.200s\n' "$2" "$1" "$got" "$((SECONDS - start))" "$3"
+    [ "$got" = timeout ] && printf '  hook が %s 秒の timeout に殺された (本番でも deny が出ない形)。負荷の下か、入力長に対して遅くなった退行かを、単独実行の所要時間で切り分ける\n' "$HOOK_TIMEOUT"
     exit 1
   fi
   printf '✓ %s (%s)\n' "$2" "$1"
