@@ -21,6 +21,21 @@
 - 絞った設定で、起動時の context の token を 425 と同じ方法で測り直す (前後を比べる)
 - Stop hook の issue 進捗チェックは、PG では外すか、PG が触った issue だけを見る形にする
 
+## 下調べ (2026-09-24。`claude --help` を読んだだけで未計測。Claude Code 2.1.281)
+
+- `--bare`: hook・auto-memory・CLAUDE.md の自動の読み込みを飛ばす最小のモード。🚨 **認証は ANTHROPIC_API_KEY か apiKeyHelper だけで、
+  サブスクリプションの OAuth / keychain を読まない**。今の使い方 (サブスクリプション) では PG に使えない
+- `--setting-sources <user,project,local>`: 読む設定の出どころを選ぶ。`project,local` にすれば、ユーザーの設定 (`~/.claude/settings.json` =
+  `_claude/settings.json`。hook はここ) を外せる見込み。**規約 (`~/.claude/CLAUDE.md` と `~/.claude/rules/`) がこれで外れるかは未確認** (設定と別の経路の可能性)
+- `--restricted`: ユーザー・project・local の設定を無視し、Bash などコードを動かすツールと WebFetch を外す (`--tools` で戻せる)。
+  読むだけの係 (調べる係・レビューの係) の候補
+- `--exclude-dynamic-system-prompt-sections`: 機械ごとの部分 (cwd・git status 等) を最初の発言へ移し、session をまたいで prompt のキャッシュを使い回しやすくする。PG を何体も起こすときの候補
+- `--system-prompt` / `--append-system-prompt`: PG の規律 (AskUserQuestion を使わない、pro-con のコマンドで質問する 等。426 の決定 2) を渡す口
+
+計測の手順 (週の利用枠がリセットされてから。2026-09-24 の時点で 96% 使用済み。1 回 約 13 万 token): `claude -p --output-format json --model haiku "OK とだけ答えて"` を、
+何も付けない / `--setting-sources project,local` / それに `--exclude-dynamic-system-prompt-sections` を足す、の 3 通りで回し、
+usage (input / cache_creation / cache_read) と、Stop hook が走ったか (transcript の hook のレコード) を比べる
+
 ## 受け入れ条件
 
 - [ ] 役割ごとの設定ファイルがあり、daemon がそれを渡して起動する
@@ -34,4 +49,4 @@
 
 ## 進捗
 
-- [ ] 未着手 (427 の前にやる)
+- [ ] 未着手 (427 の前にやる)。下調べだけ済み (2026-09-24)。計測は週の利用枠のリセット後
