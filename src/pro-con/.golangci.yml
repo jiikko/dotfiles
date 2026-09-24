@@ -1,0 +1,29 @@
+# golangci-lint v2 config for pro-con.
+# 既定の linter (errcheck / govet / ineffassign / staticcheck / unused) に、状態の enum の網羅と衛生系を足す。
+version: "2"
+
+# 🚨 root の Makefile (run_go_projects) が全プロジェクトを並列に回すので、全プロジェクトで true にする
+# (1 つでも false が残ると、その 1 つが他の起動タイミング次第で落ちる。理由の詳細は issue 258 と
+# src/doctor/.golangci.yml のコメント)。tests/scripts/test_golangci_parallel_runners.sh が検査する
+run:
+  allow-parallel-runners: true
+
+linters:
+  enable:
+    - copyloopvar
+    - exhaustive     # card.State / WaitKind / Ending / OrderKind の switch に case を足し忘れない
+    - intrange
+    - misspell
+    - unconvert
+  settings:
+    exhaustive:
+      # default 付き switch は「残りは default で受ける」という意図表明なので網羅を要求しない (glogx / doctor と同じ)
+      default-signifies-exhaustive: true
+
+issues:
+  max-same-issues: 0
+  max-issues-per-linter: 0
+
+formatters:
+  enable:
+    - gofmt

@@ -1,0 +1,9 @@
+#!/usr/bin/env zsh
+# pro-con — PM (producer) と PG (consumer) を分けて Claude Code を並列に回す TUI (issue 415)。
+# Go implementation at: ~/dotfiles/src/pro-con/
+# 今は模擬データで動くハリボテで、claude は起動しない。機構は bin/lib/go_autobuild.zsh。
+
+set -u
+
+source "${0:A:h}/lib/go_autobuild.zsh"
+go_autobuild_exec "${0:A:h}/../src/pro-con" pro-con -- "$@"

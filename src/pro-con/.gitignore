@@ -1,0 +1,4 @@
+# go_autobuild が置く成果物と作業ファイル (bin/pro-con)
+/pro-con
+/.autobuild.*
+/*.test

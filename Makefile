@@ -17,6 +17,7 @@ ZSH_SYNTAX_FILES := \
   bin/glogx \
   bin/lib/go_autobuild.zsh \
   bin/lockman \
+  bin/pro-con \
   bin/repair-mp4-timebase \
   bin/svcdoctor \
   bin/schedkeys \
