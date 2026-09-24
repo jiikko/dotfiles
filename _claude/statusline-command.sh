@@ -184,6 +184,10 @@ dim_fg="\033[90m"        # ペース行の「まだ来ていない未来」だ�
 bg_in="\033[42;30m"      # ペース行: 想定内の消化 (緑背景 + 黒文字。1 行目の branch と同配色)
 bg_over="\033[41;30m"    # ペース行: 前借り (赤背景 + 黒文字)
 under_sgr="\033[4;1m"    # ペース行の当日 (背景色と反転は競合するので下線を使う)
+# ペース行: 使えるのに使っていない過去と「余裕」。シアン (36m) は緑背景と隣り合うと見分けが付かない
+# (glogx の盤でユーザー指摘 2026-09-01) ので明るい青にする。🚨 glogx/usage/pace.go の paceUnspent と
+# 同じ値にすること (乖離は src/glogx/usage/pace_drift_test.go の TestPaceColorsMatchStatusline が検出する)
+unspent_fg="\033[94m"
 
 now=$(date +%s)
 # 最も広い窓のスロット数 (7d = 7)。狭い窓は括弧の後ろをこの幅まで空白で埋めて、
@@ -204,7 +208,7 @@ blink_color() {
 # ゲージ本体を組む。結果は GAUGE。
 # $1 = 塗るカラム数 / $2 = 経過済みのカラム数 / $3 = 全カラム数 / $4 = 下線を引くカラム (無ければ -1)
 #   $1 と $2 の両方未満 = 想定内の消化 (緑背景) / $1 のみ = 前借り (赤背景) /
-#   $2 のみ = 使えるのに使っていない過去 (シアン) / どちらでもない = 未来 (暗灰)
+#   $2 のみ = 使えるのに使っていない過去 (明るい青) / どちらでもない = 未来 (暗灰)
 # 1 スロット = 「番号 (半角 1 桁) + 空白」の 2 カラムで、偶数カラムに番号、奇数は空白。
 # 塗りはカラムごとなので、番号と空白で色が違えばそのスロットが半分だけ消化されている。
 # 🚨 先頭に空白を 1 つ置く (末尾は最終スロットの空白カラムが担うので、括弧の中が
@@ -219,7 +223,7 @@ pace_gauge() {
     elif [ "$g_c" -lt "$g_fill" ]; then
       GAUGE="${GAUGE}${bg_over}"
     elif [ "$g_c" -lt "$g_mark" ]; then
-      GAUGE="${GAUGE}${cyan_fg}"
+      GAUGE="${GAUGE}${unspent_fg}"
     else
       GAUGE="${GAUGE}${dim_fg}"
     fi
@@ -361,7 +365,7 @@ pace_row() {
   elif [ "$pr_delta" -ge $(( -pr_band )) ]; then
     pr_color="$green_fg";   pr_word=" 適正"; pr_advice=""
   elif [ "$pr_delta" -ge $(( -pr_band * 5 / 2 )) ]; then
-    pr_color="$cyan_fg";    pr_word=" 余裕"; pr_advice="${pr_amt}${pr_aunit}分の余り"
+    pr_color="$unspent_fg"; pr_word=" 余裕"; pr_advice="${pr_amt}${pr_aunit}分の余り"
   else
     pr_color="$magenta_fg"; pr_word=" 余剰"; pr_advice="${pr_amt}${pr_aunit}分の余り"
   fi

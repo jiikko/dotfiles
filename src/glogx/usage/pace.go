@@ -21,8 +21,8 @@ import (
 )
 
 // ペースゲージの配色。🚨 _claude/statusline-command.sh の bg_in / bg_over / under_sgr と同じ値に
-// すること (同じゲージを shell でも描いている)。色の乖離を検出する検査は無い: pace_drift_test.go が
-// 突き合わせるのは状態語と閾値だけ。
+// すること (同じゲージを shell でも描いている。乖離は pace_drift_test.go の
+// TestPaceColorsMatchStatusline が検出する)。
 //
 // 消化量は背景で描く: 前景 (Dim / Cyan) では 1 カラム = 半スロットの塗り分けができない
 // (色の付いた空白は前景色では見えない)。現在位置は下線にする (背景色と反転は競合する)。

@@ -225,3 +225,87 @@ func TestPaceRulesMatchStatusline(t *testing.T) {
 		t.Logf("%s: %d 通りで一致 (帯 %d)", tc.kind, checked, bands[tc.kind])
 	}
 }
+
+// shellSGR は statusline の `name="\033[...m"` 形式の色定義を、名前 → SGR (ESC は \x1b) で返す。
+func shellSGR(src string) map[string]string {
+	re := regexp.MustCompile(`(?m)^([a-z_]+)="\\033(\[[0-9;]*m)"`)
+	out := map[string]string{}
+	for _, m := range re.FindAllStringSubmatch(src, -1) {
+		out[m[1]] = "\x1b" + m[2]
+	}
+	return out
+}
+
+// ペースゲージと状態語の色が statusline と一致する (同じゲージを 2 画面が別の色で描かない)。
+//
+// 🚨 色の定義だけでなく、shell の pace_gauge がその変数を**使っていること**も見る。定義が一致して
+// いても描画が別の変数を参照していれば、画面の色は食い違う (2026-09-24 までの「使い残し」が
+// この形: glogx は BrightBlue、statusline は cyan_fg のままだった)。
+func TestPaceColorsMatchStatusline(t *testing.T) {
+	src, err := os.ReadFile(statuslinePath(t))
+	if err != nil {
+		t.Fatalf("statusline を読めない: %v", err)
+	}
+	text := string(src)
+	sgrs := shellSGR(text)
+
+	start := strings.Index(text, "\npace_gauge() {")
+	if start < 0 {
+		t.Fatal("statusline の pace_gauge() が見つからない (抽出できない = 検査できない)")
+	}
+	end := strings.Index(text[start:], "\n}\n")
+	if end < 0 {
+		t.Fatal("statusline の pace_gauge() の終わりが見つからない")
+	}
+	gauge := text[start : start+end]
+
+	for _, c := range []struct{ shell, goVal, what string }{
+		{"bg_in", paceOnTrack, "想定内の消化"},
+		{"bg_over", paceOverdraw, "前借り"},
+		{"under_sgr", paceNow, "いま居るスロット"},
+		{"unspent_fg", paceUnspent, "使い残し"},
+		{"dim_fg", paceFuture, "まだ来ていない未来"},
+	} {
+		v, ok := sgrs[c.shell]
+		if !ok {
+			t.Errorf("%s: statusline に %s の定義が無い (抽出できない = 検査できない)", c.what, c.shell)
+			continue
+		}
+		if v != c.goVal {
+			t.Errorf("%s の色が乖離: glogx=%q / statusline %s=%q", c.what, c.goVal, c.shell, v)
+		}
+		if !strings.Contains(gauge, "${"+c.shell+"}") {
+			t.Errorf("%s: statusline の pace_gauge が %s を使っていない (定義だけ一致して描画は別の色)", c.what, c.shell)
+		}
+	}
+
+	// 状態語の色: shell は pr_color="$var"; pr_word=" 語" の行で、glogx は paceState の戻り値で決まる
+	shellColor := map[string]string{}
+	for _, m := range regexp.MustCompile(`pr_color="\$(\w+)";\s*pr_word=" *(\S+)"`).FindAllStringSubmatch(text, -1) {
+		v, ok := sgrs[m[1]]
+		if !ok {
+			t.Fatalf("状態語 %s の色 %s の定義が statusline に無い", m[2], m[1])
+		}
+		shellColor[m[2]] = v
+	}
+	goColor := map[string]string{}
+	band := paceBand(7 * 24 * time.Hour)
+	for used := range 101 {
+		for elapsed := range 101 {
+			col, word := paceState(used, float64(elapsed), band)
+			if prev, ok := goColor[word]; ok && prev != col {
+				t.Fatalf("glogx の %s が 2 色ある: %q / %q", word, prev, col)
+			}
+			goColor[word] = col
+		}
+	}
+	// 🚨 語の数を数える。どちらかの抽出が空振りすると、比べる語が 0 個のまま緑になる
+	if len(goColor) != 6 || len(shellColor) != 6 {
+		t.Fatalf("状態語の数が 6 でない: glogx=%d %v / statusline=%d %v", len(goColor), goColor, len(shellColor), shellColor)
+	}
+	for word, col := range goColor {
+		if shellColor[word] != col {
+			t.Errorf("状態語 %s の色が乖離: glogx=%q / statusline=%q", word, col, shellColor[word])
+		}
+	}
+}

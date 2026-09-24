@@ -130,6 +130,9 @@ screen = layout.OverlayCentered(screen, box, width, page, colored)  // 左右の
 - **閉じる演出のあいだは中身を捨てない**。捨てるのは `Settle` / `Finish` が `closed=true` を返してから
 - 詳細は**開ききった幅で整形**して渡す。途中の幅で整形し直すと毎フレーム折り返しが変わって文字が踊る
 - 幅は `termwidth` だけで測る。別の幅ライブラリ (runewidth 等) を混ぜると、枠の計算が端末・locale でずれる
+- `colored=false` で合成するなら、**渡す行に SGR を含めない** (色を付ける処理そのものを `colored` で止める)。
+  layout は色なしのとき reset を 1 つも出さないので、閉じていない SGR があると区切り線・隣の板・後続の行まで
+  色が続く。中身の SGR を自分で落とすのは `Panel` だけで、`ComposeDrawer` / `Scrollbar` / `OverlayCentered` は落とさない
 - `layout.Overlay` / `OverlayCentered` は**渡した行をその場で書き換える** (`PadTo` の返り値も渡した行と裏の配列を共有する)。
   キャッシュした行・別の画面と共有している行は、コピーしてから渡す
 - `RUNEWIDTH_EASTASIAN` が真だと罫線が幅 2 になり枠が崩れる (この env には対応していない)。起動時に
