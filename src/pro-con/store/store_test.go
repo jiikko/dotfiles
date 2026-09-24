@@ -193,3 +193,40 @@ func TestBrokenStateIsAnError(t *testing.T) {
 		t.Fatal("壊れた記録の上に適用した")
 	}
 }
+
+// 除けた依頼を rejected/ へ移す前に落ちても、次の Apply がもう一度判定して理由つきで除ける (理由を残さずに消さない)。
+func TestRejectedSurvivesCrashBeforeMove(t *testing.T) {
+	dir := t.TempDir()
+	submit(t, dir, Request{Kind: "add", Title: "x"})
+	applyAll(t, dir)
+	id := submit(t, dir, Request{Kind: "answer", CardID: "C-001", Answer: "y"}) // 質問待ちではない
+	box := filepath.Join(dir, InboxDir)
+	data, _ := os.ReadFile(filepath.Join(box, id+".json"))
+	applyAll(t, dir)
+	// 記録を書いた後、rejected/ へ移す前に落ちた形
+	if err := os.RemoveAll(filepath.Join(box, RejectedDir)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(box, id+".json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	applyAll(t, dir)
+	why, err := os.ReadFile(filepath.Join(box, RejectedDir, id+".reason"))
+	if err != nil || !strings.Contains(string(why), "質問待ちではない") {
+		t.Fatalf("落ちた後の除けた依頼が理由を残さずに消えた: %q %v", why, err)
+	}
+}
+
+// 1 回の Apply で適用するのは perApply 件まで (残りは次の Apply)。控えより多く適用して、落ちたときに二重適用する形を作らない。
+func TestApplyCapsPerCall(t *testing.T) {
+	dir := t.TempDir()
+	for i := range perApply + 1 {
+		submit(t, dir, Request{Kind: "add", Title: "x", At: t0.Add(time.Duration(i) * time.Millisecond)})
+	}
+	if res := applyAll(t, dir); len(res) != perApply {
+		t.Fatalf("1 回で %d 件を適用した (上限 %d)", len(res), perApply)
+	}
+	if res := applyAll(t, dir); len(res) != 1 {
+		t.Fatalf("残りを次の Apply で適用していない: %d", len(res))
+	}
+}

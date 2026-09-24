@@ -199,6 +199,11 @@ type Card struct {
 	Log      []string // PG の出力の末尾 (本番は transcript から読む)
 	// Resume は次に PG を再開するときに渡す文 (質問への回答)。daemon が渡したら空にする (本物のモードだけ。426 の決定 2)
 	Resume string `json:",omitempty"`
+	// Launching は daemon が PG の起動・再開を始めて、結果をまだ確かめていない印 ("起動" / "再開")。起動の前に記録へ書く
+	// (claude が「失敗」と返しても session が立っていることがあり、daemon が途中で落ちることもある。次の Tick が一覧で確かめる)
+	Launching string `json:",omitempty"`
+	// LaunchedAt は daemon が最後に起動・再開を始めた時刻。これより前に始まった session は、このカードの PG として取り込まない
+	LaunchedAt time.Time `json:",omitzero"`
 	// Archived は完了のレーンから片付けた (x)。ボードには出さないが、記録 (状態ファイル) には残す
 	Archived bool
 	// LastProgress は「実質的に進んだ」最後の時刻 (watchdog が見る。活動ではなく進捗)

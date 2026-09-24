@@ -32,6 +32,8 @@ const (
 	RejectedDir = "rejected" // inbox の下
 	// keepApplied は控えておく適用済みの依頼の ID の数 (落ちてから再開するまでに箱に残りうる数より十分大きい)。
 	keepApplied = 1000
+	// perApply は 1 回の Apply で適用する依頼の上限 (keepApplied より小さくする。Apply の中の注記)
+	perApply = 500
 )
 
 // Request は受付の箱に置く依頼 1 件。Kind ごとに使う欄が違う (apply を参照)。
@@ -56,7 +58,7 @@ type Request struct {
 type State struct {
 	NextID  int         `json:"nextId"`
 	Cards   []card.Card `json:"cards"`
-	Applied []string    `json:"applied"` // 適用済み (と除けた) 依頼の ID。古い順、最大 keepApplied
+	Applied []string    `json:"applied"` // 適用済みの依頼の ID (除けた依頼は入れない)。古い順、最大 keepApplied
 }
 
 // Result は依頼 1 件の適用の結果。Err が空なら適用した。
@@ -121,6 +123,9 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 		return nil, err
 	}
 	sort.Strings(names)
+	if len(names) > perApply { // 残りは次の Apply。1 回で控え (keepApplied) より多く適用すると、片付ける前に落ちたとき控えから外れた分を二重に適用する
+		names = names[:perApply]
+	}
 	applied := map[string]bool{}
 	for _, id := range st.Applied {
 		applied[id] = true
@@ -148,12 +153,14 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 			}
 		}
 		if err != nil {
+			// 除けた依頼は控え (Applied) に入れない。rejected/ へ移す前に落ちても、次の Apply がもう一度判定して除ける
+			// (控えに入れると、次の Apply が「適用済み」として理由も残さずに消す)
 			res.Err = err.Error()
 			rejected = append(rejected, name)
 		} else {
 			done = append(done, name)
+			st.Applied = append(st.Applied, id)
 		}
-		st.Applied = append(st.Applied, id)
 		results = append(results, res)
 	}
 	if len(st.Applied) > keepApplied {
@@ -176,17 +183,20 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 		if err := os.MkdirAll(rj, 0o700); err != nil {
 			return results, err
 		}
-		for _, name := range rejected {
-			_ = os.Rename(name, filepath.Join(rj, filepath.Base(name)))
-		}
-		byID := map[string]string{}
+		why := map[string]string{}
 		for _, r := range results {
 			if r.Err != "" {
-				byID[r.ID] = r.Err
+				why[r.ID] = r.Err
 			}
 		}
-		for id, why := range byID { // 除けた理由を横に置く (人が読む)
-			_ = os.WriteFile(filepath.Join(rj, id+".reason"), []byte(why+"\n"), 0o600)
+		for _, name := range rejected { // 理由を先に置いてから移す (移せなければ箱に残り、次の Apply がまた判定する)
+			id := strings.TrimSuffix(filepath.Base(name), ".json")
+			if err := os.WriteFile(filepath.Join(rj, id+".reason"), []byte(why[id]+"\n"), 0o600); err != nil {
+				return results, err
+			}
+			if err := os.Rename(name, filepath.Join(rj, filepath.Base(name))); err != nil {
+				return results, err
+			}
 		}
 	}
 	return results, nil
