@@ -33,11 +33,17 @@ wts_init() { # $1=repo root $2=prefix
 # 🚨 その worktree へ書き込んでいる残存プロセスを先に止める。
 # 中断が SIGKILL だと script だけが死に、子の `git worktree add` は生き残って checkout を
 # 続ける。消しながら書かれるので rm が "Directory not empty" で取りこぼし、残骸が固定化する
-# (2026-09-03 実測)。パスは prefix + pid で一意なので、この pattern は当該 worktree を触って
-# いるプロセスにしか当たらない。
+# (2026-09-03 実測)。
+# 🚨 パターンは**正規表現の部分一致**なので、パスをそのまま渡すと `…/prefix.452` が並行して走る
+# 別の run の `…/prefix.4521/…` にも当たって、そちらの作成や変異を殺す (red team 4 周目 P2-2 実測)。
+# メタ文字を escape し、パスの**直後が境界** (末尾 / `/` / 空白 / 引用符 / `;`) のものにだけ当てる。
+# 🚨 argv にパスを持たないプロセス (--verify が起こした `sleep` 等) には当たらない。止められるのは
+# 「この worktree のパスを argv に持つもの」だけ。
 wts_kill_holders() {
-  pkill -TERM -f "$1" 2>/dev/null || true
-  pkill -KILL -f "$1" 2>/dev/null || true
+  local pat
+  pat="$(printf '%s' "$1" | sed 's/[][\\.*^$+?(){}|]/\\&/g')($|/|[[:space:]]|[\"';])"
+  pkill -TERM -f "$pat" 2>/dev/null || true
+  pkill -KILL -f "$pat" 2>/dev/null || true
 }
 
 # worktree を消す。**先にディレクトリを消してから prune** する。

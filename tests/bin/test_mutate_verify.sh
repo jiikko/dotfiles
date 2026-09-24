@@ -391,7 +391,9 @@ mv_run "$d" --file guard.sh \
   --apply "$mutate_guard; git -C $d mv other.sh renamed.sh" --expect 'FAIL: reject-bad'
 rc=$?
 [ "$rc" -eq 9 ] || fail "変異中の rename で rc=$rc (期待 9 — 元 repo を触っている)"
-grep -q 'er\.sh' "$work/out.log" &&
+# 診断は `diff` の `< path<TAB>…` / `> path<TAB>…` 行。ゴミのパスはそこで行頭に来る
+# (`--no-renames` なので other.sh は正当に「削除」として出る。部分文字列で探すとそれに当たる)
+grep -qE '^[<>] er\.sh'$'\t' "$work/out.log" &&
   fail "🚨 rename の旧パスが誤パースされ、実在しないパスが診断に混ざっている"
 grep -q 'renamed\.sh' "$work/out.log" ||
   fail "rename の新パスが診断に出ていない"
@@ -412,7 +414,196 @@ rc=$?
 [ "$rc" -eq 2 ] || fail "--file が symlink のとき rc=$rc (期待 2 — 実体を指定させる)"
 
 # ---------------------------------------------------------------------------
-# 22. 🚨 全ケースを通した**後**の残骸ゼロ。
+# 25. baseline と変異の run で木の状態が同じ (道具の一時ファイル・intent-to-add で差を作らない)
+#     red team 4 周目 P1-2: add -N を変異の run の前だけで当て、ログも worktree に置いていたので、
+#     `git ls-files` / untracked を数える検証では**挙動を変えない変異**が red (rc=0) になった
+# ---------------------------------------------------------------------------
+d="$work/samestate"; make_repo "$d"
+printf '#!/bin/bash\necho new\n' > "$d/newtest.sh"   # untracked の --file
+cat > "$d/verify.sh" <<'V'
+#!/bin/bash
+n_tracked="$(git ls-files | wc -l | tr -d ' ')"
+n_untracked="$(git ls-files --others --exclude-standard | wc -l | tr -d ' ')"
+echo "state tracked=$n_tracked untracked=$n_untracked" > /dev/null
+# 🚨 食い違ったら**非 0 で終わる**こと。FAIL を出すだけで exit 0 だと、退行 (baseline と変異の run で
+# 木が違う) でも変異の run が緑になり、期待の rc=6 と同じ結果になって何も守らない (変異検証で実測)
+ng=0
+[ "$n_tracked" = "$(cat .expected-tracked 2>/dev/null || echo "$n_tracked")" ] || { echo "FAIL: tracked-count"; ng=1; }
+echo "ran 2 checks"
+[ -z "$(git status --porcelain -- .mv-baseline.log .mv-mutant.log mutate-verify.patch .mutate-verify.patch)" ] || { echo "FAIL: tool-files-visible"; exit 1; }
+git ls-files | wc -l | tr -d ' ' > .expected-tracked
+exit "$ng"
+V
+git -C "$d" add verify.sh; git -C "$d" commit -qm verify2
+printf '.expected-tracked\n' > "$d/.gitignore"; git -C "$d" add .gitignore; git -C "$d" commit -qm ign
+mv_run "$d" --file newtest.sh --apply 'printf "# mutant\n" >> "$MUTATE_FILE"' --expect 'FAIL: tracked-count'
+rc=$?
+[ "$rc" -eq 6 ] || { fail "🚨 挙動を変えない変異が rc=$rc (期待 6 — baseline と変異の run で木が違う)"; tail -20 "$work/out.log"; }
+grep -q 'FAIL: tool-files-visible' "$work/out.log" && fail "🚨 道具の一時ファイルが検証コマンドから見えている"
+
+# ---------------------------------------------------------------------------
+# 26. rc=0 でも、巻き添えで落ちた検査を必ず見せる (機械では判定しない。人が見る材料)
+#     red team 4 周目 P1-1: スクリプトを丸ごと殺す変異でも --expect が 1 行出れば rc=0 だった
+# ---------------------------------------------------------------------------
+d="$work/collateral"; make_repo "$d"
+mv_run "$d" --file guard.sh --apply 'perl -pi -e "s/^check \"\\\$\@\"/exit 3/" "$MUTATE_FILE"' \
+  --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 0 ] || { fail "全部を壊す変異が rc=$rc (期待 0 — 想定の検査は落ちている)"; tail -20 "$work/out.log"; }
+grep -q '^> FAIL: accept-ok' <<<"$(sed -n '/出力の差/,$p' "$work/out.log")" ||
+  fail "🚨 巻き添えで落ちた検査 (accept-ok) を表示していない"
+
+# ---------------------------------------------------------------------------
+# 27. clean な元 repo で HEAD を動かされても rc=9 (status のエントリだけでは見えない)
+#     red team 4 周目 P2-1
+# ---------------------------------------------------------------------------
+d="$work/headmove"; make_repo "$d"
+printf '#\n' >> "$d/other.sh"; git -C "$d" commit -qam second
+mv_run "$d" --file guard.sh --apply "$mutate_guard" \
+  --verify "bash verify.sh; git -C $d checkout -q HEAD~1 2>/dev/null; true" --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 9 ] || fail "🚨 元 repo の HEAD が動いたのに rc=$rc (期待 9)"
+# HEAD だけが動き、index も作業ツリーも変わらない形 (空 commit)。index の hash では捕まらないので、
+# snapshot の HEAD の行を外す退行はこちらでしか見えない (変異検証で実測)
+d="$work/headonly"; make_repo "$d"
+mv_run "$d" --file guard.sh --apply "$mutate_guard" \
+  --verify "bash verify.sh; git -C $d commit -q --allow-empty -m moved; true" --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 9 ] || fail "🚨 元 repo の HEAD だけが動いた (空 commit) のに rc=$rc (期待 9)"
+
+# ---------------------------------------------------------------------------
+# 28. worktree 側の rename (`mv` で名前を変えた untracked + 削除) で rc=8 を誤検出しない
+#     red team 4 周目 P2-3: Y 列の ` R` を 2 レコードとして読まず、旧パスを誤読した
+# ---------------------------------------------------------------------------
+d="$work/wtrename"; make_repo "$d"
+mv "$d/guard.sh" "$d/guard2.sh"
+sed -i '' 's/guard\.sh/guard2.sh/g' "$d/verify.sh"
+mv_run "$d" --file guard2.sh \
+  --apply 'perl -0pi -e "s/if \[ \"\\\$1\" = \"bad\" \]/if false/" "$MUTATE_FILE"' --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 0 ] || { fail "🚨 worktree 側の rename で rc=$rc (期待 0)"; tail -10 "$work/out.log"; }
+
+# ---------------------------------------------------------------------------
+# 29. --file の glob 文字で別ファイルを選ばない (`:(icase)` が glob として効いた)
+#     red team 4 周目 P2-4
+# ---------------------------------------------------------------------------
+d="$work/globname"; make_repo "$d"
+cp "$d/guard.sh" "$d/g[1].sh"; cp "$d/guard.sh" "$d/g1.sh"
+git -C "$d" add -A; git -C "$d" commit -qm glob
+mv_run "$d" --file 'g[1].sh' --apply 'printf "# x\n" >> "$MUTATE_FILE"' --expect 'FAIL: reject-bad'
+grep -q 'a/g1\.sh' "$work/out.log" && fail "🚨 --file 'g[1].sh' で g1.sh を変異させた"
+grep -q 'a/g\[1\]\.sh' "$work/out.log" || fail "--file 'g[1].sh' の diff が出ていない"
+
+# ---------------------------------------------------------------------------
+# 30. 構文検査が変異前の本物でも落ちるなら判定不能 (rc=3)。zsh の .sh に bash -n が当たった
+#     red team 4 周目 P2-5
+# ---------------------------------------------------------------------------
+d="$work/zshsh"; make_repo "$d"
+printf '#!/usr/bin/env zsh\nfor a (x) { echo $a }\n' > "$d/z.sh"
+git -C "$d" add z.sh; git -C "$d" commit -qm zsh
+mv_run "$d" --file z.sh --apply 'printf "# x\n" >> "$MUTATE_FILE"' --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 3 ] || fail "🚨 本物でも落ちる構文検査で rc=$rc (期待 3)"
+grep -q '変異前の本物' "$work/out.log" || fail "rc=3 の理由 (構文検査の選び方) が出ていない"
+
+# ---------------------------------------------------------------------------
+# 31. untracked の持ち込みに失敗したら判定不能 (rc=3)。元と違う木の上で測らない
+#     red team 4 周目 P3
+# ---------------------------------------------------------------------------
+d="$work/cpfail"; make_repo "$d"
+printf 'x\n' > "$d/unreadable.txt"; chmod 000 "$d/unreadable.txt"
+mv_run "$d" --file guard.sh --apply "$mutate_guard" --expect 'FAIL: reject-bad'
+rc=$?
+chmod 644 "$d/unreadable.txt"
+[ "$rc" -eq 3 ] || fail "🚨 untracked を持ち込めないのに rc=$rc (期待 3)"
+
+# ---------------------------------------------------------------------------
+# 32. lib の後始末が、並行して走る別 run (pid が接頭辞関係) のプロセスを殺さない
+#     red team 4 周目 P2-2: `pkill -f <path>` は正規表現の部分一致なので .452 が .4521 に当たった
+# ---------------------------------------------------------------------------
+kt="$work/killtest"; mkdir -p "$kt/dotfiles-mutant.4521"
+perl -e 'sleep 60' "$kt/dotfiles-mutant.4521/guard.sh" &
+victim=$!
+perl -e 'sleep 60' "$kt/dotfiles-mutant.452/guard.sh" &
+target=$!
+# パスの直後に引用符や `;` が続く argv (`sh -c 'cd <path>; …'` の形) も当の worktree のもの (5 周目 P3-6)
+perl -e 'sleep 60' "$kt/dotfiles-mutant.452\";x" &
+target2=$!
+( . "$ROOT_DIR/scripts/lib/worktree_scratch.sh"; wts_kill_holders "$kt/dotfiles-mutant.452" )
+sleep 0.2  # kill の配送を待つ (成立条件のポーリングにできない否定の assert: 生き残ることを見る)
+kill -0 "$victim" 2>/dev/null || fail "🚨 wts_kill_holders が別 run (.4521) のプロセスを殺した"
+kill -0 "$target" 2>/dev/null && fail "wts_kill_holders が当の worktree (.452) のプロセスを止めない"
+kill -0 "$target2" 2>/dev/null && fail "wts_kill_holders がパスの直後に引用符が続く argv を止めない"
+kill "$victim" "$target" "$target2" 2>/dev/null; wait "$victim" "$target" "$target2" 2>/dev/null
+
+# ---------------------------------------------------------------------------
+# 33. 最初の失敗で止まる runner でも、巻き添えで**走らなくなった**検査が見える (消えた行も出す)
+#     red team 5 周目 P1-1: 増えた行だけを出していたので、`set -e` の検証では後続が消えるだけで見えなかった
+# ---------------------------------------------------------------------------
+d="$work/failfast"; make_repo "$d"
+cat > "$d/verify.sh" <<'V'
+#!/bin/bash
+set -e
+out="$(bash guard.sh bad 2>&1 || true)"
+[ "$out" = "rejected" ] || { echo "FAIL: reject-bad (got=$out)"; exit 1; }
+echo "ok: reject-bad"
+out="$(bash guard.sh ok 2>&1)"
+[ "$out" = "accepted" ] || { echo "FAIL: accept-ok"; exit 1; }
+echo "ok: accept-ok"
+echo "ran 2 checks"
+V
+git -C "$d" commit -qam failfast
+mv_run "$d" --file guard.sh --apply 'perl -pi -e "s/^check \"\\\$\@\"/exit 3/" "$MUTATE_FILE"' --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 0 ] || fail "fail-fast の検証で rc=$rc (期待 0)"
+grep -q '^< ok: accept-ok' <<<"$(sed -n '/出力の差/,$p' "$work/out.log")" ||
+  fail "🚨 巻き添えで走らなくなった検査 (accept-ok) の消えた行を表示していない"
+
+# ---------------------------------------------------------------------------
+# 34. core.quotePath=true (git の既定) でも非 ASCII 名の --file を扱える
+#     red team 5 周目 P2-2: 正規化の ls-files が -z なしで、引用された名前がそのまま --file になった
+# ---------------------------------------------------------------------------
+d="$work/quotepath"; make_repo "$d"
+git -C "$d" mv guard.sh 設定.sh; sed -i '' 's/guard\.sh/設定.sh/g' "$d/verify.sh"
+git -C "$d" commit -qam rename; git -C "$d" config core.quotePath true
+mv_run "$d" --file 設定.sh --apply "$mutate_guard" --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 0 ] || { fail "🚨 core.quotePath=true で非 ASCII 名の --file が rc=$rc (期待 0)"; tail -5 "$work/out.log"; }
+
+# ---------------------------------------------------------------------------
+# 35. 構文検査の副作用 (py_compile の __pycache__) で、baseline と変異の run の木が変わらない
+#     red team 5 周目 P2-3: 構文検査を baseline の後に当てていたので、変異の run だけに生成物が見えた
+# ---------------------------------------------------------------------------
+if command -v python3 >/dev/null; then
+  d="$work/pycache"; make_repo "$d"
+  printf 'def f():\n    return 1\n' > "$d/g.py"
+  cat > "$d/verify.sh" <<'V'
+#!/bin/bash
+n="$(git ls-files --others --exclude-standard | wc -l | tr -d ' ')"
+echo "ran 2 checks"
+[ "$n" = "$(cat .n 2>/dev/null || echo "$n")" ] || { echo "FAIL: tree-changed (untracked=$n)"; exit 1; }
+echo "$n" > .n
+V
+  printf '.n\n' > "$d/.gitignore"
+  git -C "$d" add -A; git -C "$d" commit -qm py
+  mv_run "$d" --file g.py --apply 'printf "# x\n" >> "$MUTATE_FILE"' --expect 'FAIL: tree-changed'
+  rc=$?
+  [ "$rc" -eq 6 ] || { fail "🚨 構文検査の副作用で 2 回の run の木が変わった (rc=$rc, 期待 6)"; tail -5 "$work/out.log"; }
+fi
+
+# ---------------------------------------------------------------------------
+# 36. 元 repo で同じ commit の別ブランチへ切り替えられても rc=9 (commit hash だけでは見えない)
+#     red team 5 周目 P3-3
+# ---------------------------------------------------------------------------
+d="$work/branchswitch"; make_repo "$d"
+git -C "$d" branch other
+mv_run "$d" --file guard.sh --apply "$mutate_guard" \
+  --verify "bash verify.sh; git -C $d switch -q other; true" --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 9 ] || fail "🚨 元 repo のブランチが切り替わったのに rc=$rc (期待 9)"
+
+# ---------------------------------------------------------------------------
+# 末尾. 🚨 全ケースを通した**後**の残骸ゼロ。
 #     この判定は必ずファイル末尾に置く — 2 周目に「末尾に置く」と書きながら、その後で
 #     新ケースを 3 つ判定より前に足して同じ穴を再生産した (red team 3 周目 P1-2)。
 #     **ケースを足すときは、このブロックより上に足すこと**
@@ -422,4 +613,7 @@ for leftover in "${TMPDIR:-/tmp}"/dotfiles-mutant.*; do
   grep -qxF "$leftover" <<<"$leftovers_before" || fail "🚨 この run が残した worktree: $leftover"
 done
 
-if [ "$fails" -eq 0 ]; then echo "OK: mutate-verify (25 ケース)"; else echo "FAILED: $fails"; exit 1; fi
+# ケース数は見出しから数える (文字列で固定すると、足した・欠番にしたケースと食い違う。red team 4 周目 P3)
+# (番号の付いた見出しだけ。末尾の残骸判定は番号を付けていないので数えない)
+ncases="$(grep -cE '^# [0-9]+\. ' "$0")"
+if [ "$fails" -eq 0 ]; then echo "OK: mutate-verify ($ncases ケース)"; else echo "FAILED: $fails"; exit 1; fi

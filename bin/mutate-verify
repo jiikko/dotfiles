@@ -8,7 +8,7 @@
 # ## 何を止めるか (射程)
 #
 #   1. **復元事故** — 自分は作業ツリーを 1 バイトも触らない (使い捨て worktree の中だけで変異させる)。
-#      加えて **`--apply` / `--verify` が作業ツリーを書き換えていないか**内容 hash と index の状態で
+#      加えて **`--apply` / `--verify` が作業ツリーを書き換えていないか**内容 hash・index・HEAD で
 #      確かめ、変わっていたら **rc=9** で落とす (どちらも eval なので元 repo の絶対パスを書ける。
 #      この repo のテストには `$HOME/dotfiles` を直接見るものが実在する)。
 #      🚨 **rc=9 は「並行セッションが元 repo を編集した」ときにも出る** — 原因を区別する手段は無い。
@@ -20,9 +20,14 @@
 #   4. **当たっていない変異** — `--file` が実際に変わったことを確認する
 #   5. **誤ファイルへの変異** — `--file` 以外が変わったら落とす
 #   6. **構文エラーの変異** — red でも green でもない第 3 の結果として区別する (stale build の
-#      緑を「変異を検知できないテスト」と誤診しない)
+#      緑を「変異を検知できないテスト」と誤診しない)。構文検査が変異前の本物でも落ちるなら
+#      検査の選び方の誤りとして rc=3 (推定が外れた / 本物にも効かない検査を渡した)
 #   7. **変異が緑のまま通る** — そのテストは主張を何も守っていない
-#   8. **想定と別の検査が落ちた** — `--expect` で帰属を確かめる (既存の assert が先に落ちても red は出る)
+#   8. **想定の検査が落ちていない red** — `--expect` で帰属を確かめる (既存の assert が先に落ちても red は出る)。
+#      🚨 確かめるのは「想定の検査が落ちた」までで、「**それだけが**落ちた」ではない (次節)
+#   (前提) baseline と変異の run は **同じ木の状態** で測る。道具の一時ファイルは worktree の gitdir に置き、
+#      intent-to-add も baseline より前に済ませる (検証コマンドから見える木が 2 回で違うと、挙動を変えない
+#      変異でも red になる。red team 4 周目 P1-2)
 #
 # ## 脅威モデル — 誰の、どの失敗を止めるか
 #
@@ -46,13 +51,23 @@
 #     「想定どおり」と読むので、**`--expect` にはテスト名まで含めること** (`FAIL` ではなく
 #     `FAIL: TestX/case`)。runner のサマリ表現は runner ごとに違うため機械では絞れない
 #     (red team 2 周目 P1-4)。一致した行は必ず表示するので、そこで人が確かめる
+#   - 🚨 **巻き添えで落ちた検査** — 全部の検査を壊す変異 (スクリプトを丸ごと殺す等) でも、`--expect` の
+#     行が出れば rc=0 になる。何が「検査の失敗」かは runner ごとに違うので機械では判定せず、**baseline と
+#     変異の run の出力の差** (消えた行と増えた行) を必ず表示する。rc=0 のときはそこを見て、狙った検査だけが
+#     落ちたかを人が確かめる (red team 4 周目 P1-1 / 5 周目 P1-1)。差には無関係な行 (`ok pkg 0.2s` →
+#     `(cached)` のような揺れ) も混ざり、先頭 40 行で切る
+#   - **検証コマンド自身が作る差** — 道具は 2 回の run の間に差を作らない (一時ファイルは gitdir、構文検査は
+#     baseline の前) が、`--verify` 自身が残す生成物 (coverage.out 等) で 2 回目の木が変わる形は止めない
+#   - **argv にパスを持たない子プロセス** — 掃除は「worktree のパスを argv に持つプロセス」を止めるだけ。
+#     SIGKILL で道具が死ぬと、`--verify` が起こした `sleep` 等は PPID=1 で残る。SIGTERM / SIGINT は
+#     **実行中の `--verify` が終わるまで**処理されない (bash の trap は子の終了を待つ)
 #   - **すでに dirty なファイルのパーミッションだけの変更** — 内容 hash が同じなので見えない
 #   - **symlink の張り替え** — `[ -f ]` が偽になる先 (dangling / ディレクトリ) を指す symlink は
 #     恒久的に `<missing>` 扱いで、張り替えても差分が出ない
 #   - **submodule / nested repo の中身** — `git status` は ` M sub` の 1 エントリしか出さないので、
 #     すでに dirty な submodule の内部変更は見えない (**未確認**: この repo に submodule が無く実験していない)
-#   - **ファイル名に改行を含むパス** — 読み取りは `-z` だが、比較は行ベース (`diff` / `awk -F'|'`) なので
-#     依然として割れる。`-z` 化で塞いだのは `core.quotePath` による引用と読み取り側の分割だけ
+#   - **ファイル名に改行やタブを含むパス** — 読み取りは `-z` だが、比較は行ベース (`diff` / タブ区切りの
+#     `awk`) なので依然として割れる。`-z` 化で塞いだのは `core.quotePath` による引用と読み取り側の分割だけ
 #   - **entry が失われた worktree の残骸** — 掃除は `git worktree list` 駆動なので、admin entry ごと
 #     消えたディレクトリ (`$TMPDIR/dotfiles-mutant.<pid>`) は掃除も警告もされない
 #
@@ -60,11 +75,16 @@
 #
 #   mutate-verify --file src/x/main.go \
 #     --apply 'perl -0pi -e "s/if guard/if false \&\& guard/" "$MUTATE_FILE"' \
-#     --syntax 'go build ./...' \
+#     --syntax 'go test -vet=off -count=1 -run ^$ ./...' \
 #     --verify 'go test ./...' \
 #     --baseline-expect '^ok ' \
 #     --expect 'FAIL: TestGuard/case'
 #
+#   🚨 --syntax に `go build` を使わない: `_test.go` をコンパイルしないので、テストファイルへの構文
+#   エラーの変異を検出できない (red team 4 周目 P2-6)。`go vet` も使わない: `unreachable code` などの
+#   analyzer が構文と関係なく落ちるので、正当な変異が rc=5 になる (5 周目 P2-1)。
+#   `go test -vet=off -count=1 -run '^$' ./...` はテストもコンパイルし、テストも analyzer も走らせない。
+#   --file は **repo root からの相対パス** (今いるディレクトリからではない。絶対パスは受けない)。
 #   --apply / --syntax / --verify は **worktree の中**で実行される。
 #   $MUTATE_FILE に --file の絶対パス (worktree 側) が入る。
 #   --syntax は shell / python / ruby なら拡張子から推定する。それ以外は明示必須
@@ -126,8 +146,15 @@ esac
 # 除外しているため、**--file 自身が「誤ファイル」として rc=8 になる** (red team 3 周目 P2-2)
 # 🚨 `--` の後ろの pathspec は **`core.ignorecase=true` でも case-sensitive** (実測 2026-09-22:
 # `ls-files -- GUARD.SH` は rc=0 だが出力が空)。magic pathspec `:(icase)` で引く
-_canon="$( { git -C "$root" ls-files --full-name -- ":(icase)$file"
-             git -C "$root" ls-files --others --full-name -- ":(icase)$file"; } 2>/dev/null | head -1)"
+# 🚨 `:(icase)` だけだと pathspec が **glob として効く** (`g[1].sh` で `g1.sh` を引いて別ファイルを
+# 変異させた。red team 4 周目 P2-4)。literal を併せ、表記が完全に一致するものがあればそれを優先する
+# 🚨 `-z` で読む。既定の `core.quotePath=true` では非 ASCII 名が `"\350…"` と引用されて返り、
+# それがそのまま --file になって壊れる (snapshot 側で塞いだ穴を正規化の側で作り直していた。5 周目 P2-2)
+_canon="$( { git -C "$root" ls-files -z --full-name -- ":(literal)$file"
+             git -C "$root" ls-files -z --others --full-name -- ":(literal)$file"
+             git -C "$root" ls-files -z --full-name -- ":(icase,literal)$file"
+             git -C "$root" ls-files -z --others --full-name -- ":(icase,literal)$file"; } 2>/dev/null |
+           { IFS= read -r -d '' first && printf '%s' "$first"; } )"
 [ -n "$_canon" ] && file="$_canon"
 # 🚨 symlink を --file にすると、変異は**実体**に当たるのに除外は symlink のパスなので
 # 同じ rc=8 誤検出になる。実体を指定させる (この repo は tracked symlink を実際に持つ)
@@ -152,7 +179,7 @@ if [ -z "$syntax" ]; then
         '#!'*zsh)                      syntax='zsh -n "$MUTATE_FILE"' ;;
         '#!'*python*)                  syntax='python3 -m py_compile "$MUTATE_FILE"' ;;
         '#!'*ruby*)                    syntax='ruby -c "$MUTATE_FILE"' ;;
-        *) die "--syntax を推定できない ($file: 拡張子でも shebang でも決まらない)。明示すること (例: --syntax 'go build ./...')" ;;
+        *) die "--syntax を推定できない ($file: 拡張子でも shebang でも決まらない)。明示すること (例: --syntax 'go test -vet=off -count=1 -run ^\$ ./...')" ;;
       esac ;;
   esac
   note "--syntax を推定: $syntax"
@@ -167,18 +194,23 @@ fi
 # **恒久的に `<missing>` 固定 = 変更が不可視**になる (red team 2 周目 P1-5 / P3-1)。
 # 🚨 **index の状態 (2 文字のステータス) も含める**。内容 hash だけだと `git add` / `git reset` で
 # **working tree を変えずに index だけ**動かされたのが見えない (同 P1-2。旧実装の行比較は見ていた)。
+# 🚨 **HEAD と index も撮る**。status のエントリだけだと、clean な木で HEAD を動かされた
+# (`git checkout HEAD~1`) のが見えない (status は 0 行のまま。red team 4 周目 P2-1 実測)。
+# 区切りはタブ (パスにタブを含む repo は射程の外。冒頭の「何を止めないか」)。
 snapshot_tree() { # $1=repo dir
   local d="$1" f st
-  git -C "$d" status --porcelain -z --untracked-files=all 2>/dev/null |
+  # 同じ commit の別ブランチへの切り替えも見る (symbolic-ref。5 周目 P3-3)
+  printf 'HEAD\t%s\t%s\n' "$(git -C "$d" symbolic-ref -q HEAD 2>/dev/null)" "$(git -C "$d" rev-parse -q --verify HEAD 2>/dev/null)"
+  printf 'INDEX\t-\t%s\n' "$(git -C "$d" ls-files -s 2>/dev/null | shasum -a 256 | awk '{print $1}')"
+  # 🚨 **rename 検出を止める** (`--no-renames`)。検出は内容の類似度で決まるので、変異で中身が
+  # 変わると `R new<-old` の 1 件が `D old` + `A new` の 2 件に割れ、触っていない old が
+  # 「変わったファイル」に見える (red team 4 周目 P2-3。`mv` で名前を変えた --file で rc=8)
+  git -C "$d" status --porcelain -z --untracked-files=all --no-renames 2>/dev/null |
   while IFS= read -r -d '' entry; do
     [ -n "$entry" ] || continue
     st="${entry:0:2}"; f="${entry:3}"
-    # 🚨 rename / copy は `R  <new>\0<old>\0` の **2 レコード**で出る。旧パス側を 1 エントリとして
-    # 読むと `st` にパスの先頭 2 文字が入り、そのエントリは恒久的に `<missing>` になる
-    # (2 周目 P1-5 で直した「不可視」を別の入口で再生産する形。red team 3 周目 P2-1)
-    case "$st" in R*|C*) IFS= read -r -d '' _oldpath || true ;; esac
-    if [ -f "$d/$f" ]; then printf '%s|%s|%s\n' "$f" "$st" "$(shasum -a 256 < "$d/$f" | awk '{print $1}')"
-    else printf '%s|%s|<missing>\n' "$f" "$st"; fi
+    if [ -f "$d/$f" ]; then printf '%s\t%s\t%s\n' "$f" "$st" "$(shasum -a 256 < "$d/$f" | awk '{print $1}')"
+    else printf '%s\t%s\t<missing>\n' "$f" "$st"; fi
   done
 }
 
@@ -201,26 +233,39 @@ WTS_ON_CLEANUP=check_worktree_untouched
 
 wts_init "$root" "dotfiles-mutant"
 wts_create HEAD || exit 3
+# 道具の一時ファイル (patch / 検証の出力) は **worktree の gitdir** に置く。作業ツリーに置くと
+# 検証コマンドから untracked として見え、しかも baseline と変異の run で見える数が違う
+# (`git ls-files` / `git status` を数えるテストで、挙動を変えない変異が rc=0 になった。
+# red team 4 周目 P1-2)。gitdir は worktree と一緒に消える
+scratch="$(git -C "$WTS_PATH" rev-parse --absolute-git-dir)" || { note "worktree の gitdir を引けない"; exit 3; }
 
 # --- 未コミットの変更を持ち込む (worktree は git に載っているものしか持たない) -------------
 # 🚨 これが無いと「今書いたテスト」を変異検証できない。in-place を避けた設計の代償はここだけ
-if ! git -C "$root" diff HEAD --binary > "$WTS_PATH/.mutate-verify.patch" 2>/dev/null; then
+if ! git -C "$root" diff HEAD --binary > "$scratch/mutate-verify.patch" 2>/dev/null; then
   note "未コミット差分を取れなかった"; exit 3
 fi
-if [ -s "$WTS_PATH/.mutate-verify.patch" ]; then
-  if ! git -C "$WTS_PATH" apply "$WTS_PATH/.mutate-verify.patch" 2>&1; then
+if [ -s "$scratch/mutate-verify.patch" ]; then
+  if ! git -C "$WTS_PATH" apply "$scratch/mutate-verify.patch" 2>&1; then
     note "未コミット差分を worktree へ当てられなかった"; exit 3
   fi
   note "未コミットの変更を持ち込んだ ($(git -C "$root" diff HEAD --name-only | wc -l | tr -d ' ') ファイル)"
 fi
-rm -f "$WTS_PATH/.mutate-verify.patch"
+rm -f "$scratch/mutate-verify.patch"
 # untracked も持ち込む (新規テストファイルを変異検証する形が普通にある)
-git -C "$root" ls-files --others --exclude-standard -z | while IFS= read -r -d '' u; do
-  mkdir -p "$WTS_PATH/$(dirname "$u")" && cp "$root/$u" "$WTS_PATH/$u"
-done
+# 🚨 持ち込みの失敗は判定不能 (元と違う木の上で測ることになる。red team 4 周目 P3)
+if ! git -C "$root" ls-files --others --exclude-standard -z | while IFS= read -r -d '' u; do
+  mkdir -p "$WTS_PATH/$(dirname "$u")" && cp -P "$root/$u" "$WTS_PATH/$u" || exit 1
+done; then
+  note "untracked のファイルを worktree へ持ち込めなかった"; exit 3
+fi
 
 export MUTATE_FILE="$WTS_PATH/$file"
 [ -f "$MUTATE_FILE" ] || { note "--file が worktree に無い: $file"; exit 3; }
+# 🚨 untracked な --file (= 新規テストファイル。主要ユースケース) は `git diff` に出ないので、
+# 当てた変異の diff が**無音で空**になる。intent-to-add して diff が出る状態にする (red team P2-5)。
+# **baseline より前に**やる: 変異の run の前だけで当てると、baseline と変異の run で index が違い、
+# `git ls-files` を数える検証では挙動を変えない変異が red になる (red team 4 周目 P1-2)
+git -C "$WTS_PATH" add -N -- "$file" 2>/dev/null || true
 
 run_in_wt() { ( cd "$WTS_PATH" && eval "$1" ) }
 
@@ -244,8 +289,19 @@ finish() { # $1=rc
 # rc=3「baseline が green でない」は呼び出し側に再実行を最も強く促す rc なので、
 # ここを素の exit にすると「同じコマンドで再実行して元 repo をもう一度壊す」が残る
 # (red team 3 周目 P1-1。2 周目 P2-2 と同じ被害ループの別経路)
+# 🚨 構文検査の推定・指定が**変異前の本物**で通ることを確かめる。拡張子は shebang より優先なので
+# zsh の `.sh` に `bash -n` が当たり、正当な変異が「構文エラー」(rc=5) になった (red team 4 周目
+# P2-5)。逆に、本物にも効かない検査ではエラーを見逃す。どちらも検査の選び方の誤りなので判定不能。
+# 🚨 **baseline より前に**当てる。構文検査の副作用 (`py_compile` の `__pycache__` 等) が baseline と
+# 変異の run の間に入ると、2 回の run で木が違って挙動を変えない変異が red になる (5 周目 P2-3)
+note "[$name] 構文検査を変異前の本物に当てる"
+if ! run_in_wt "$syntax" > "$scratch/mv-syntax.log" 2>&1; then
+  note "🚨 構文検査 ($syntax) が**変異前の本物**でも落ちる。検査の選び方が合っていない (--syntax で明示すること)"
+  tail -10 "$scratch/mv-syntax.log" >&2; finish 3
+fi
+
 note "[$name] baseline を測る"
-base_out="$WTS_PATH/.mv-baseline.log"
+base_out="$scratch/mv-baseline.log"
 run_in_wt "$verify" > "$base_out" 2>&1; base_rc=$?
 if [ "$base_rc" -ne 0 ]; then
   note "🚨 baseline が green でない (rc=$base_rc)。変異を当てても red の増減を帰属できない"
@@ -268,10 +324,6 @@ if grep -qE "$expect" "$base_out"; then
 fi
 
 # --- 1. 変異を当てる -----------------------------------------------------------------------
-# 🚨 untracked な --file (= 新規テストファイル。主要ユースケース) は `git diff` に出ないので、
-# 当てた変異の diff が**無音で空**になる。手順 1.6 (diff を目視する) の唯一の入力が消えるので、
-# intent-to-add して diff が出る状態にしてから撮る (red team P2-5)
-git -C "$WTS_PATH" add -N -- "$file" 2>/dev/null || true
 before_hash="$(shasum -a 256 < "$MUTATE_FILE" | awk '{print $1}')"
 before_state="$(snapshot_tree "$WTS_PATH")"
 note "[$name] 変異を当てる"
@@ -292,7 +344,7 @@ fi
 # 「--file 自身」と読んで見逃す (red team P2-4)
 after_state="$(snapshot_tree "$WTS_PATH")"
 changed_others="$(diff <(printf '%s\n' "$before_state") <(printf '%s\n' "$after_state") |
-  sed -n 's/^[<>] //p' | awk -F'|' '{print $1}' | sort -u | grep -vxF "$file" || true)"
+  sed -n 's/^[<>] //p' | awk -F'\t' '{print $1}' | sort -u | grep -vxF "$file" || true)"
 if [ -n "$changed_others" ]; then
   note "🚨 --file 以外が変わった (誤ファイルへの変異):"
   printf '%s\n' "$changed_others" >&2
@@ -313,7 +365,7 @@ fi
 
 # --- 5. 検証 --------------------------------------------------------------------------------
 note "[$name] 変異後の検証"
-mut_out="$WTS_PATH/.mv-mutant.log"
+mut_out="$scratch/mv-mutant.log"
 run_in_wt "$verify" > "$mut_out" 2>&1; mut_rc=$?
 if [ "$mut_rc" -eq 0 ]; then
   note "🚨 変異が緑のまま通った (そのテストは主張を何も守っていない)"
@@ -328,4 +380,12 @@ fi
 
 note "[$name] ✓ 変異は想定どおり red (一致: $expect)"
 grep -nE "$expect" "$mut_out" | head -5 >&2 || true
+# 🚨 rc=0 が言うのは「想定の検査が落ちた」までで、「**それだけが**落ちた」ではない。巻き添えで
+# 他の検査も落ちたか (全部を壊す変異か) は runner ごとに出力が違うので機械では判定しない
+# (red team 4 周目 P1-1)。材料として、変異の run で**新しく出た行**を必ず見せる
+# 🚨 **消えた行も出す** (`diff`)。増えた行だけだと、最初の失敗で止まる runner (`set -e` / panic /
+# `-failfast` / `pytest -x`) では後続の検査が走らずに**消える**だけなので、巻き添えが見えない
+# (5 周目 P1-1)。`grep -vxFf` は行数の 2 乗で遅く (4000 行で 2.6s)、NUL を含む出力で行を出さなかった
+note "[$name] baseline と変異の run の出力の差 (< 消えた行 / > 増えた行。巻き添えで落ちた・走らなくなった検査が無いかをここで見る):"
+{ diff -a "$base_out" "$mut_out" || true; } | grep -a '^[<>]' | head -40 >&2
 finish 0
