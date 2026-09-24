@@ -31,6 +31,9 @@
     テスト 3 本、変異 2 本が red (--issue の書式の検査 / add の必須の検査)
 - [ ] **3c `pro-con daemon`**: 箱の適用 → PG の起動 (`claude --bg -w`、431 の設定、`live.Register`) → `claude agents --json` で状態を読んでカードへ →
   回答・追記は stop → resume (426 の決定 2・3) → 落ちた回数で止める (決定 4) → watchdog。起動の部分は本物の claude が要る (枠を使う)
+  - [ ] 3c-1 分解済みのカードに PG を起動 (上限まで)・記録 (`live.Register`) に登録・回答を受けたカードは stop → resume。起動の口は差し替えられる形にし、偽物で単体テスト (枠を使わない)
+  - [ ] 3c-2 落ちた回数で止める (426 の決定 4)・watchdog (停滞)
+  - [ ] 3c-3 `pro-con daemon` の常駐と排他 (2 つ起動しない)
 - [ ] **3d 画面**: 本物の backend が 3a の記録を読み、書き込み (回答・依頼 等) は箱に置く。読み取り専用をやめる
 - [ ] **3e PM への指示書**: PM の session に渡す、`pro-con card` の使い方と規律 (AskUserQuestion を使わない 等)
 - [ ] **3f 本物の claude で通しの確認** (枠を使う。424 から引き継いだ受け入れ条件もここ)
