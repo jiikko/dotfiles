@@ -3,6 +3,7 @@
 //
 //	pro-con              TUI を起動する (本物: 今の Claude Code の session を読み取り専用で出す)
 //	pro-con --mock       模擬データで起動する (claude は起動しない。動作確認用)
+//	pro-con card …       PM / PG が使うカードの操作 (受付の箱に置く。pro-con card で使い方)
 //	pro-con fake-attach  attach の代わりに TUI から起動される内部用のコマンド
 //
 // 設定は ~/.config/pro-con/config.toml (無ければ既定値。書式は config package の doc)。
@@ -53,6 +54,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				return 2
 			}
 			return fakeAttach(args[1], stdin, stdout)
+		case "card": // PM / PG が使うカードの操作 (受付の箱に置くだけ。cardcmd.go)
+			home, err := os.UserHomeDir()
+			if err != nil {
+				_, _ = fmt.Fprintln(stderr, "pro-con:", err)
+				return 1
+			}
+			return runCard(args[1:], liveDir(home), stdout, stderr)
 		case "-h", "--help":
 			_, _ = fmt.Fprintln(stdout, "usage: pro-con [--mock]   (既定は今の Claude Code の session を読み取り専用で出す。--mock は模擬データ)")
 			return 0
@@ -80,7 +88,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	// 模擬と本物で状態ファイルの置き場所を分ける (模擬のカードが本物の記録に混ざらないように。issue 424)
 	var be backend.Backend
-	dir := filepath.Join(stateDir(home), "live")
+	dir := liveDir(home)
 	if mock {
 		be = fake.New(time.Now().Truncate(time.Minute)) // 模擬時間の起点は今 (時刻の表示が今に近い方が見本として読みやすい)
 		dir = filepath.Join(stateDir(home), "mock")
