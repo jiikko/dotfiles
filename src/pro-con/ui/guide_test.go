@@ -128,6 +128,7 @@ func TestDetailSticksToFooter(t *testing.T) {
 	if !m.showDetail {
 		t.Fatal("enter で詳細が開かない")
 	}
+	settle(m)
 	for _, key := range []string{"", "j", "l"} {
 		if key != "" {
 			press(m, key)

@@ -71,6 +71,7 @@ func TestPGPanel(t *testing.T) {
 	m.snap.Consumers = []backend.Consumer{{Session: "pg-1", CardID: "R1", Status: "busy"}}
 	m.Update(m.fetchSessions()())
 	press(m, "s")
+	settle(m)
 	out := pgPanel(m)
 	for _, want := range []string{"PG (consumer) 1/2", "pg-1", "R1", "模擬", "対話 1 / 裏 1"} {
 		if !strings.Contains(out, want) {
@@ -81,6 +82,7 @@ func TestPGPanel(t *testing.T) {
 		t.Fatal("PG でない session の名前を並べた")
 	}
 	press(m, "s")
+	settle(m)
 	if strings.Contains(ansi.Strip(m.render()), "PG (consumer)") {
 		t.Fatal("閉じたのにパネルが残っている")
 	}
@@ -93,6 +95,7 @@ func TestPGPanelMatchesRealSession(t *testing.T) {
 	m.snap.Consumers = []backend.Consumer{{Session: "3feb603f", CardID: "R1", Status: "busy"}}
 	m.Update(m.fetchSessions()())
 	press(m, "s")
+	settle(m)
 	out := pgPanel(m)
 	if !strings.Contains(out, "pid 4242") || !strings.Contains(out, "対話 1 / 裏 1") {
 		t.Fatalf("PG に pid を紐づけ、ほかの session から外すはず:\n%s", out)

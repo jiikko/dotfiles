@@ -74,12 +74,19 @@ func (m *Model) trackMoves() tea.Cmd {
 	}
 	m.prevSlots = cur
 	m.pruneMoves(now)
-	if len(m.moves) > 0 && !m.framing {
-		m.framing = true
-		return frame()
-	}
-	return nil
+	return m.startFrames()
 }
+
+// startFrames は動くもの (カードの移動・板の開閉) があれば frame の tick を回し始める (二重には回さない)。
+func (m *Model) startFrames() tea.Cmd {
+	if !m.animating() || m.framing {
+		return nil
+	}
+	m.framing = true
+	return frame()
+}
+
+func (m *Model) animating() bool { return len(m.moves) > 0 || len(m.slides) > 0 }
 
 func (m *Model) resetSlots() {
 	m.prevSlots = m.slots()
@@ -98,7 +105,8 @@ func (m *Model) pruneMoves(now time.Time) {
 // onFrame は演出の 1 コマ。動くものが残っていれば次のコマを予約し、無ければ止める。
 func (m *Model) onFrame() tea.Cmd {
 	m.pruneMoves(m.now())
-	if len(m.moves) == 0 {
+	m.pruneSlides(m.now())
+	if !m.animating() {
 		m.framing = false
 		return nil
 	}

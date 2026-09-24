@@ -81,7 +81,8 @@ type Model struct {
 	now       func() time.Time
 	prevSlots map[string]slot
 	moves     map[string]*move
-	framing   bool // frame の tick が回っているか (二重に回さない)
+	slides    map[panel]*slide // 下端の板の開閉の演出 (slide.go)
+	framing   bool             // frame の tick が回っているか (二重に回さない)
 
 	picker picker // issue の一覧から依頼する画面 (picker.go)
 
@@ -101,7 +102,7 @@ type Model struct {
 
 // New は repos (config から列挙した repo) をタブの候補にして画面を作る。nil なら global だけ。
 func New(be backend.Backend, repos []backend.Repo) *Model {
-	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, copy: pbcopy, children: &atomic.Int64{}, openEditor: func(p string) *exec.Cmd { return editor.Command(p, nil) },
+	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, slides: map[panel]*slide{}, copy: pbcopy, children: &atomic.Int64{}, openEditor: func(p string) *exec.Cmd { return editor.Command(p, nil) },
 		listSessions: func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) }}
 	m.snap = be.Poll()
 	m.focusFirst()
@@ -181,7 +182,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.picker.open {
 			return m, m.handlePickerKey(msg)
 		}
-		return m, m.handleBoardKey(msg)
+		before := m.panelState()
+		cmd := m.handleBoardKey(msg)
+		return m, tea.Batch(cmd, m.trackPanels(before))
 	}
 	return m, nil
 }

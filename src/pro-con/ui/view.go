@@ -44,14 +44,12 @@ func (m *Model) render() string {
 	// 詳細・PG の一覧・入力欄・案内は画面の下端へ吸着させる。詳細の高さはカードごとに変わるので、
 	// ボードの直後に置くと下端までの隙間が選択のたびに伸び縮みする (shownCards は最大の高さで確保している)
 	var foot []string
-	if m.showDetail {
-		foot = append(foot, m.detailBlock()...)
-	}
-	if m.showSessions {
+	foot = append(foot, m.panelLines(panelDetail, m.detailBlock)...)
+	if pg := m.panelLines(panelPG, m.pgBlock); len(pg) > 0 {
 		if len(foot) > 0 {
 			foot = append(foot, "")
 		}
-		foot = append(foot, m.pgBlock()...)
+		foot = append(foot, pg...)
 	}
 	foot = append(foot, m.footLines()...)
 	pad := max(1, m.height-len(out)-len(foot))
@@ -202,10 +200,10 @@ func columnBorder(focused bool) string {
 func (m *Model) shownCards() int {
 	const headLines = 2 // 上枠 + 下枠
 	room := m.height - 9 - headLines
-	if m.showDetail {
+	if m.reserved(panelDetail) {
 		room -= 15
 	}
-	if m.showSessions {
+	if m.reserved(panelPG) {
 		room -= len(m.snap.Consumers) + 5 // 上下の枠・見出し・ほかの session の行・空行
 	}
 	return max(1, room/perCardLines)
