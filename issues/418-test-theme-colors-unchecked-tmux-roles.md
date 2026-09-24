@@ -1,6 +1,7 @@
 # 418 (test): theme/colors.yml の 3 つの色の役割が、tmux 側の手書きのコピーと突き合わされていない
 
 起票日: 2026-09-24
+反証レビュー: 2026-09-24 実施 (読み取り専用のサブエージェント 1 体)。主要な主張は反証できず
 
 ## 概要
 
@@ -17,9 +18,9 @@
 
 | 役割 | 値 | 検査されていない消費先 | 検査されている消費先 |
 |---|---|---|---|
-| `info_cyan` | 51 | `_tmux.conf` の `colour51` (8 箇所: status-left / status-format / message-style / copy-mode-match-style / window-status-bell-style 等) | なし |
-| `blink_magenta` | 201 | `_tmux.conf` の `colour201` (3 箇所) / `scripts/tmux_scratch_popup.sh` | Go 側だけ (`src/glogx/box_test.go` の `TestFrameBorderMatchesThemeYML`) |
-| `error_red` | 196 | `_tmux.conf` の `colour196` (3 箇所: window-status-separator / synchronize-panes の枠 等) | nvim 側だけ (`diag.error_bg`) |
+| `info_cyan` | 51 | `_tmux.conf` の `colour51` (8 行: status-left / status-format / message-style / copy-mode-match-style / window-status-bell-style 等) | なし |
+| `blink_magenta` | 201 | `_tmux.conf` の `colour201` (3 行) / `scripts/tmux_scratch_popup.sh` | Go 側だけ (`src/glogx/box_test.go` の `TestFrameBorderMatchesThemeYML`) |
+| `error_red` | 196 | `_tmux.conf` の `colour196` (3 行: window-status-separator / synchronize-panes の枠 等) | nvim 側だけ (`diag.error_bg`) |
 
 確認方法: `grep -nE 'info_cyan\|blink_magenta\|error_red\|INFO_CYAN\|BLINK_MAGENTA\|ERROR_RED' tests/theme/test_theme_colors.sh`
 のヒットは `THEME_ERROR_RED` (nvim) の 1 行だけ。`THEME_INFO_CYAN` / `THEME_BLINK_MAGENTA` / `THEME_ERROR_RED` を
