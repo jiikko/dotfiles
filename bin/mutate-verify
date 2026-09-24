@@ -80,6 +80,11 @@
 #     --baseline-expect '^ok ' \
 #     --expect 'FAIL: TestGuard/case'
 #
+#   🚨 --expect / --baseline-expect は **拡張正規表現** (`grep -E`) で照合する。テスト名の `+` `.` `(` は
+#   メタ文字になるので `\` でエスケープする (`ctrl+h` → `ctrl\+h`)。`^ok ` のようにアンカーが要る場面が
+#   あるので固定文字列には倒していない。正規表現としては外れ、固定文字列としては一致する場合は、
+#   失敗のメッセージでその旨を知らせる (issue 423)
+#
 #   🚨 --syntax に `go build` を使わない: `_test.go` をコンパイルしないので、テストファイルへの構文
 #   エラーの変異を検出できない (red team 4 周目 P2-6)。`go vet` も使わない: `unreachable code` などの
 #   analyzer が構文と関係なく落ちるので、正当な変異が rc=5 になる (5 周目 P2-1)。
@@ -214,6 +219,15 @@ snapshot_tree() { # $1=repo dir
   done
 }
 
+# hint_fixed_match は、pattern が正規表現としては外れたが固定文字列としては出力に在るときに、
+# メタ文字のエスケープ漏れを疑うよう知らせる (`ctrl+h` の `+` を踏んだ実例: issue 423)。
+hint_fixed_match() {  # $1=オプション名 $2=pattern $3=出力ファイル
+  if grep -qF -- "$2" "$3"; then
+    note "   ↳ ただし $1 は固定文字列としては出力に在る。正規表現 (grep -E) として照合しているので、"
+    note "     + . ( [ などをエスケープしたか確かめる"
+  fi
+}
+
 # 元 repo の作業ツリーが変わっていないことを確かめる。**この道具が触らない**ことの確認だが、
 # `--apply` は eval なので元 repo の絶対パスを書けてしまう (red team P1-2)。
 # 🚨 **警告で済ませず rc を変える** — 射程 1 が中心の主張なので、起きたのに緑を返してはいけない
@@ -310,6 +324,7 @@ fi
 if ! grep -qE "$baseline_expect" "$base_out"; then
   note "🚨 baseline は rc=0 だが --baseline-expect ($baseline_expect) が出ていない"
   note "   検証コマンドが 1 件も実行していない可能性がある (zero execution を green と読まない)"
+  hint_fixed_match "--baseline-expect" "$baseline_expect" "$base_out"
   tail -20 "$base_out" >&2; finish 3
 fi
 # 🚨 --expect が **baseline にも出る** pattern なら、red の帰属を判定できない。
@@ -374,6 +389,7 @@ fi
 if ! grep -qE "$expect" "$mut_out"; then
   note "🚨 red にはなったが --expect ($expect) に一致しない — 別の検査が先に落ちている"
   note "   その red は今回のテストの検知力を何も証明しない"
+  hint_fixed_match "--expect" "$expect" "$mut_out"
   grep -nE '(FAIL|NG:|✗|Error)' "$mut_out" | head -10 >&2 || true
   finish 7
 fi
