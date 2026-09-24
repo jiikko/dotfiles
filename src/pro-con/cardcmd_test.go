@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"io"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -74,4 +76,42 @@ func TestCardCommandAskAnswer(t *testing.T) {
 			t.Fatalf("%q: %+v %v (期待 %+v)", tc.args, got, err, tc.want)
 		}
 	}
+}
+
+// PM への指示書に書いたコマンドは、今のパーサに通る (指示書だけが古くなって PM が通らないコマンドを打つ形を止める)。
+func TestPMGuideCommandsParse(t *testing.T) {
+	cmds := regexp.MustCompile("`(pro-con card [^`]+)`").FindAllStringSubmatch(pmGuide, -1)
+	checked := 0
+	for _, m := range cmds {
+		line := regexp.MustCompile(`<[^>]*>#<[^>]*>`).ReplaceAllString(m[1], "dotfiles#1")
+		line = regexp.MustCompile(`<[^>]*>`).ReplaceAllString(line, "x")
+		args := splitQuoted(strings.TrimPrefix(line, "pro-con card "))
+		if args[0] == "guide" {
+			continue
+		}
+		if _, err := parseCard(args); err != nil {
+			t.Errorf("指示書のコマンドがパーサに通らない: %s → %v", m[1], err)
+		}
+		checked++
+	}
+	if checked < 5 { // 抽出が空振りしたら緑にしない
+		t.Fatalf("指示書から取り出せたコマンドが %d 本しかない", checked)
+	}
+	var out strings.Builder
+	if rc := runCard([]string{"guide"}, t.TempDir(), &out, io.Discard); rc != 0 || out.String() != pmGuide {
+		t.Fatalf("guide が指示書を出さない: rc=%d", rc)
+	}
+}
+
+// splitQuoted は "..." を 1 つの引数として空白で分ける (指示書の例を引数にするだけの最小の分け方)。
+func splitQuoted(s string) []string {
+	var out []string
+	for _, m := range regexp.MustCompile(`"([^"]*)"|(\S+)`).FindAllStringSubmatch(s, -1) {
+		if m[2] != "" {
+			out = append(out, m[2])
+		} else {
+			out = append(out, m[1])
+		}
+	}
+	return out
 }

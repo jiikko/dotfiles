@@ -4,6 +4,7 @@ package main
 // 置いた依頼の ID を stdout に出す。使い方の誤りは rc=2、箱に置けなかったら rc=1。
 
 import (
+	_ "embed"
 	"flag"
 	"fmt"
 	"io"
@@ -21,13 +22,23 @@ const cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を�
   ask <カード> <質問>                            PG が質問して turn を終える (AskUserQuestion は使わない)
   answer <カード> <回答> [--from <人間|PM>]      質問待ちのカードへの回答
   review <カード>                                PG が終えた
-  close <カード> [--ending answered|investigated|rejected|pending-issue] [--issue <repo>#<番号>]...`
+  close <カード> [--ending answered|investigated|rejected|pending-issue] [--issue <repo>#<番号>]...
+  guide                                          PM への指示書を出す (箱には何も置かない)`
+
+// pmGuide は PM の session に渡す指示書。書いてあるコマンドは TestPMGuideCommandsParse がパーサに通して、ずれを止める。
+//
+//go:embed pm-guide.md
+var pmGuide string
 
 // runCard は pro-con card の本体。dir は本物のモードの状態の置き場 (store の dir)。
 func runCard(args []string, dir string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprintln(stderr, cardUsage)
 		return 2
+	}
+	if args[0] == "guide" {
+		_, _ = fmt.Fprint(stdout, pmGuide)
+		return 0
 	}
 	req, err := parseCard(args)
 	if err != nil {

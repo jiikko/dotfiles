@@ -48,7 +48,9 @@
     session の様子 (出力の末尾・pid) を足す。新しい依頼と回答は受付の箱へ、追加オーダー・btw・片付けはまだ (backend.Accepter で、押した時点で断る。
     ReadOnlier を置き換えた)。箱に適用待ちが溜まったらヘッダーで知らせる。隔離 tmux で card add → daemon --once → 画面の依頼の列、を確認。
     変異 3 本が red (外の session の様子を足す / 追加オーダーを受ける / 適用待ちを知らせない)
-- [ ] **3e PM への指示書**: PM の session に渡す、`pro-con card` の使い方と規律 (AskUserQuestion を使わない 等)
+- [x] **3e PM への指示書**: PM の session に渡す、`pro-con card` の使い方と規律 (AskUserQuestion を使わない 等)
+    - `src/pro-con/pm-guide.md` を `pro-con card guide` で出す (embed)。指示書に書いた `pro-con card ...` は TestPMGuideCommandsParse が今のパーサに通して、ずれを止める (変異: plan の例を `--issues` に崩すと red)。
+      🚨 PM の session にこれを渡す手順 (起動時のプロンプトに入れるか) は 3f で本物の PM を立てるときに決める
 - [ ] **3f 本物の claude で通しの確認** (枠を使う。424 から引き継いだ受け入れ条件もここ)
 
 ## 前提
