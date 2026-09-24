@@ -376,8 +376,28 @@ func (s *Sim) Apply(cmd backend.Command) (string, error) {
 		return s.btw(c)
 	case backend.NewRequest:
 		return s.newRequest(c)
+	case backend.ClearDone:
+		return s.clearDone(c)
 	}
 	return "", backend.ErrUnknownKind
+}
+
+// clearDone は完了のカードを Archived にする (消さない)。片付けた枚数を返す。
+func (s *Sim) clearDone(cd backend.ClearDone) (string, error) {
+	n := 0
+	for i := range s.cards {
+		c := &s.cards[i]
+		if c.State != card.Done || c.Archived || (cd.Repo != "" && c.Repo != cd.Repo) {
+			continue
+		}
+		c.Archived = true
+		c.History = append(c.History, card.Event{At: s.now, Text: "完了のレーンから片付けた"})
+		n++
+	}
+	if n == 0 {
+		return "片付ける完了のカードが無い", nil
+	}
+	return fmt.Sprintf("完了のカード %d 枚を片付けた (記録は残っている)", n), nil
 }
 
 // answer は「まだ質問待ちなら書く」の比較付き更新。負けた側には ErrNotWaiting を返す。

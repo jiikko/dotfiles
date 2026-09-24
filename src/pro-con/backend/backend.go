@@ -124,6 +124,13 @@ type Btw struct {
 	Question string
 }
 
+// ClearDone は完了のレーンを片付ける (Repo が空なら全 repo)。カードは消さずに Archived にする
+// (「依頼したタスクがどこに行ったか分からなくなる」を避ける。記録は状態ファイルに残る)。
+type ClearDone struct {
+	Repo string
+}
+
+func (ClearDone) isCommand()  {}
 func (Answer) isCommand()     {}
 func (AddOrder) isCommand()   {}
 func (Btw) isCommand()        {}

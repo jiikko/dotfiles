@@ -302,3 +302,63 @@ func TestSimFieldsArePersisted(t *testing.T) {
 		t.Fatalf("Sim の欄 %d 個と simState の欄 %d 個が合わない。persist.go の Save / Restore を直す", n, want)
 	}
 }
+
+// ClearDone は完了のカードだけを Archived にする (消さない)。repo を指定したらその repo の分だけ。
+func TestClearDoneArchivesOnlyDoneInRepo(t *testing.T) {
+	s := New(t0)
+	// 見本の完了は dotfiles だけなので、他の repo の完了を 1 枚足す (repo の絞り込みを見るため)
+	s.cards = append(s.cards, card.Card{ID: "OB-DONE", Repo: "obaket", State: card.Done, Ending: card.EndAnswered, Since: t0})
+	before := s.Snapshot().Cards
+	var doneHere, doneOther, notDone int
+	for _, c := range before {
+		switch {
+		case c.State == card.Done && c.Repo == "dotfiles":
+			doneHere++
+		case c.State == card.Done:
+			doneOther++
+		default:
+			notDone++
+		}
+	}
+	if doneHere == 0 || doneOther == 0 {
+		t.Fatalf("見本に dotfiles と他の repo の完了カードが要る: dotfiles %d / 他 %d", doneHere, doneOther)
+	}
+	msg, err := s.Apply(backend.ClearDone{Repo: "dotfiles"})
+	if err != nil || !strings.Contains(msg, "片付けた") {
+		t.Fatalf("片付けの応答: %q %v", msg, err)
+	}
+	after := s.Snapshot().Cards
+	if len(after) != len(before) {
+		t.Fatalf("カードが消えた (片付けは Archived にするだけ): %d → %d", len(before), len(after))
+	}
+	for _, c := range after {
+		want := c.State == card.Done && c.Repo == "dotfiles"
+		if c.Archived != want {
+			t.Fatalf("%s (%v, %s) の Archived=%v (期待 %v)", c.ID, c.State, c.Repo, c.Archived, want)
+		}
+	}
+	if vs := s.Snapshot().Violations; len(vs) != 0 {
+		t.Fatalf("片付けで不変条件が破れた: %v", vs)
+	}
+	if msg, _ := s.Apply(backend.ClearDone{Repo: "dotfiles"}); !strings.Contains(msg, "無い") {
+		t.Fatalf("2 回目は片付けるものが無いはず: %q", msg)
+	}
+	// 状態ファイルにも残る (再起動で片付けたカードが戻らない / 記録が消えない)
+	b, err := s.Save()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := New(t0)
+	if err := r.Restore(b); err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, c := range r.Snapshot().Cards {
+		if c.Archived {
+			n++
+		}
+	}
+	if n != doneHere {
+		t.Fatalf("復元後の片付け済み %d 枚 (期待 %d)", n, doneHere)
+	}
+}

@@ -20,6 +20,7 @@ bin/pro-con      # claude は起動しない。模擬の backend (fake) が状�
 | i | issue の一覧から選んで「これやって」と依頼する (repo のタブならその repo、global なら設定の全 repo。未完了だけ。epic は見出しの下に子)。Enter → 補足 (空でよい) → Enter |
 | s | PG (consumer) の一覧を開閉 (詳細と同じく下から生える。担当カード・状態・実行中のコマンド・経過。`claude agents --json` の session と session ID で突き合わせて pid を出す。PG でない session は件数だけ) |
 | e | 選択中のカードの issue の md をエディタで開く ($VISUAL → $EDITOR → nvim。`tuikit/editor`) |
+| x | 完了のレーンを片付ける (y/N 確認。repo のタブではその repo の分だけ。カードは消さず Archived にして状態ファイルに残す) |
 | y | 選択中のカードの issue の md のパス (素の値) をクリップボードへ |
 | Y | 選択中のカードのタイトルと内容 (repo・状態・issue・依頼の原文・質問。整形した参照) をクリップボードへ。本文は `termsafe.PlainBlock` を通す |
 | 1〜6 | そのレーンへ直接 (依頼 / 分解済み / 作業中 / 質問待ち / レビュー / 完了。数字はレーンの見出しの先頭に出る) |
@@ -29,7 +30,7 @@ bin/pro-con      # claude は起動しない。模擬の backend (fake) が状�
 | g / G / home / end | 列の先頭 / 末尾 |
 | enter | 詳細の開閉 (画面の下端、案内の直上に下から生える) |
 | ctrl+r | 新版へ切り替える (ライブアップグレード。「新版あり」のときだけ) |
-| q / esc | 開いている板を 1 つ閉じる (session の一覧 → 詳細)。q は何も開いていなければ終了。ctrl+c は即終了 |
+| q / esc | 開いている板を 1 つ閉じる (PG の一覧 → 詳細)。q は何も開いていなければ終了。ctrl+c は即終了 |
 | a | PG の session を開く (今は模擬) |
 | r | 質問待ちのカードに回答する |
 | + | 追加オーダー (tab で 追記 / 方針変更 / 別件)。**方針変更は y/N 確認** (y / enter だけが実行、他のキーは取り消し) |

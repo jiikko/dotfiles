@@ -5,6 +5,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
 	"slices"
 	"strings"
@@ -68,11 +69,12 @@ type Model struct {
 	selected   string
 	showDetail bool
 
-	mode      mode
-	line      lineedit.Line   // 入力欄 (編集キーは tuikit/lineedit。docs/glogx-ui-guide.md「入力欄の編集キー」)
-	pending   backend.Command // modeConfirm で確認している操作
-	inputKind inputKind
-	orderKind card.OrderKind
+	mode        mode
+	line        lineedit.Line   // 入力欄 (編集キーは tuikit/lineedit。docs/glogx-ui-guide.md「入力欄の編集キー」)
+	pending     backend.Command // modeConfirm で確認している操作
+	confirmText string          // modeConfirm の確認の行に出す文
+	inputKind   inputKind
+	orderKind   card.OrderKind
 
 	flash  string
 	sticky string // 消すまで残す通知 (捨てた書きかけの文など。flash は次の通知で消えるので置かない)。ボードの esc で消す
@@ -104,7 +106,7 @@ type Model struct {
 func New(be backend.Backend, repos []backend.Repo) *Model {
 	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, slides: map[panel]*slide{}, copy: pbcopy, children: &atomic.Int64{}, openEditor: func(p string) *exec.Cmd { return editor.Command(p, nil) },
 		listSessions: func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) }}
-	m.snap = be.Poll()
+	m.setSnap(be.Poll())
 	m.focusFirst()
 	m.resetSlots()
 	return m
@@ -131,7 +133,7 @@ func (m *Model) Init() tea.Cmd {
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tickMsg:
-		m.snap = m.be.Poll()
+		m.setSnap(m.be.Poll())
 		tab := m.tab
 		m.ensureTab()
 		m.ensureSelection()
@@ -239,6 +241,19 @@ func (m *Model) moveTab(delta int) {
 }
 
 // visible は選んでいるタブに属するカード。global は全部 (config の外の repo のカードも含む)。
+// setSnap は backend の Snapshot を画面の状態にする。片付けたカード (Archived) はここで落とす
+// (タブの枚数・選択・カンバンのどれにも出さない。画面の読み手ごとに除外を書くと、1 か所の漏れで片付けたカードが戻る)。
+func (m *Model) setSnap(s backend.Snapshot) {
+	cards := make([]card.Card, 0, len(s.Cards))
+	for _, c := range s.Cards {
+		if !c.Archived {
+			cards = append(cards, c)
+		}
+	}
+	s.Cards = cards
+	m.snap = s
+}
+
 func (m *Model) visible() []card.Card {
 	if m.tab == "" {
 		return m.snap.Cards
@@ -406,6 +421,8 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		m.loadPicker()
 	case "s":
 		m.showSessions = !m.showSessions
+	case "x": // 完了のレーンを片付ける (glogx の X = 捨てる の弱い版。y/N 確認を挟む)
+		m.askClearDone()
 	default:
 		if i, ok := laneKey(k.String()); ok {
 			m.jumpCol(i)
@@ -490,6 +507,33 @@ func (m *Model) handleInputKey(k tea.KeyPressMsg) tea.Cmd {
 }
 
 // handleConfirmKey は y/N 確認。y と Enter だけが実行で、知らないキーはすべて取り消し (docs/glogx-ui-guide.md §4)。
+// askConfirm は cmd を y/N 確認に載せる (docs/glogx-ui-guide.md §4)。question は確認の行に出す文。
+func (m *Model) askConfirm(cmd backend.Command, question string) {
+	m.pending = cmd
+	m.confirmText = question
+	m.mode = modeConfirm
+}
+
+// askClearDone は今のタブの完了のカードを片付けるかを確かめる。片付けるものが無ければ確認を出さない。
+func (m *Model) askClearDone() {
+	n := 0
+	for _, c := range m.visible() {
+		if c.State == card.Done {
+			n++
+		}
+	}
+	if n == 0 {
+		m.flash = "片付ける完了のカードが無い"
+		return
+	}
+	scope := "全 repo"
+	if m.tab != "" {
+		scope = m.tab
+	}
+	m.askConfirm(backend.ClearDone{Repo: m.tab},
+		fmt.Sprintf("完了のカード %d 枚 (%s) をボードから片付けます (記録は残ります)。よいですか? [y/N]", n, scope))
+}
+
 func (m *Model) handleConfirmKey(k tea.KeyPressMsg) tea.Cmd {
 	switch key := k.String(); {
 	case key == "ctrl+c":
@@ -522,8 +566,7 @@ func (m *Model) submit() {
 	}
 	// 方針変更は PG を止めて指示を差し替える (途中の作業を止める) ので、送る前に確認する
 	if o, ok := cmd.(backend.AddOrder); ok && o.Kind == card.OrderRedirect && text != "" {
-		m.pending = cmd
-		m.mode = modeConfirm
+		m.askConfirm(cmd, "方針変更: PG を止めて、指示を差し替えて再開します。よいですか? [y/N]")
 		return
 	}
 	m.apply(cmd)
@@ -543,7 +586,7 @@ func (m *Model) apply(cmd backend.Command) {
 	}
 	m.mode = modeBoard
 	m.line.Reset()
-	m.snap = m.be.Snapshot()
+	m.setSnap(m.be.Snapshot())
 	m.ensureTab()
 	m.ensureSelection()
 }

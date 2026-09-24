@@ -81,3 +81,15 @@ func TestStallThreshold(t *testing.T) {
 		}
 	}
 }
+
+// 片付けたのに完了していないカードは、ボードから見えないまま動いている (違反として出す)。
+func TestArchivedMustBeDone(t *testing.T) {
+	ok := Card{ID: "A", State: Done, Ending: EndAnswered, Archived: true}
+	bad := Card{ID: "B", State: Running, Archived: true}
+	if vs := Check([]Card{ok}); len(vs) != 0 {
+		t.Fatalf("完了の片付けは違反ではない: %v", vs)
+	}
+	if vs := Check([]Card{bad}); len(vs) != 1 || vs[0].CardID != "B" {
+		t.Fatalf("完了していない片付けを違反として出すはず: %v", vs)
+	}
+}

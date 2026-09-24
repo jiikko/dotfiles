@@ -177,6 +177,8 @@ type Card struct {
 	Orders   []Order
 	History  []Event
 	Log      []string // PG の出力の末尾 (本番は transcript から読む)
+	// Archived は完了のレーンから片付けた (x)。ボードには出さないが、記録 (状態ファイル) には残す
+	Archived bool
 	// LastProgress は「実質的に進んだ」最後の時刻 (watchdog が見る。活動ではなく進捗)
 	LastProgress time.Time
 }
@@ -209,6 +211,9 @@ func Check(cards []Card) []Violation {
 		}
 		if c.State != Waiting && c.Wait.Kind.NeedsAnswer() {
 			out = append(out, Violation{c.ID, "回答の要る待ちなのに質問待ちの列に居ない"})
+		}
+		if c.Archived && c.State != Done {
+			out = append(out, Violation{c.ID, "片付けたが完了していない (ボードから見えないまま動いている)"})
 		}
 	}
 	return out

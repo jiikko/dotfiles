@@ -185,7 +185,8 @@ pro-con (`src/pro-con`。PM / PG を分けて Claude Code を並列に回す TUI
 | `a` | all / 巡回 | attach (PG の session を開く) | pro-con に「全部」の操作が無い。足すときに見直す |
 | `r` | 再読込 / 再実行 | 質問への回答 (reply) | 一覧は裏で自動に取り直すので再読込が要らない。PG の再実行を足すなら `r` を空ける |
 | `n` | next (claim) | 新しい依頼 (new) | pro-con に claim が無い |
-| `s` | status viewer | Claude Code の session の一覧 | どちらも「板の toggle」。開く板が違う |
+| `s` | status viewer | PG (consumer) の一覧 | どちらも「板の toggle」。開く板が違う |
+| `x` | (空き) | 完了のレーンを片付ける (y/N 確認) | glogx の `X` = 捨てる の弱い版として読める。消さずに隠すだけなので小文字 |
 
 `ctrl+r` は pro-con では新版への切り替え (ライブアップグレード。`r` = 再読込の強い版として読める)。
 

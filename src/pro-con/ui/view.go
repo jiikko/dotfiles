@@ -66,7 +66,7 @@ func (m *Model) footLines() []string {
 	case modeInput:
 		out = append(out, m.inputLine())
 	case modeConfirm:
-		out = append(out, " "+sgrBold+sgrYellow+"方針変更: PG を止めて、指示を差し替えて再開します。よいですか? [y/N]"+sgrReset)
+		out = append(out, " "+sgrBold+sgrYellow+m.confirmText+sgrReset)
 	case modeBoard:
 	}
 	if m.sticky != "" {
@@ -476,7 +476,7 @@ func (m *Model) hints() []string {
 		back = "q / esc 閉じる"
 	}
 	return []string{"hjkl 選択", "tab repo", "n 新しい依頼", "i issue から", "enter 詳細", "a attach", "r 回答", "+ 追加オーダー", "? btw",
-		"e issue を開く", "y パス", "Y 内容", "s PG 一覧", back}
+		"e issue を開く", "y パス", "Y 内容", "s PG 一覧", "x 完了を片付け", back}
 }
 
 // hintLine は案内を幅 w に収める。入らなければ後ろから落とすが、最後の項目 (抜ける手段) は必ず残す (§5)。
