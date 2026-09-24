@@ -1,5 +1,7 @@
 # 424 (feat): pro-con の読み取り専用の本物の backend (段階 1)
 
+> 🚨 **担当中: dotfiles-5c**（2026-09-24〜）
+
 起票日: 2026-09-24
 
 親: [415](415-design-claude-pm-worker-orchestration.md) の「段階」1
