@@ -7,7 +7,7 @@
 ## 概要
 
 模擬 (`src/pro-con/fake`) で UI とつなぎ込みを確かめた機能を、本物の Claude Code の session で動かす。
-**[425](425-research-claude-bg-remaining-measurements.md) の実測と [426](426-design-pro-con-open-decisions.md) の決定が済むまで着手しない**。
+**[425](done/425-research-claude-bg-remaining-measurements.md) の実測と [426](426-design-pro-con-open-decisions.md) の決定が済むまで着手しない**。
 
 ## 範囲 (段階ごとに分けて入れる)
 

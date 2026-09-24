@@ -1,15 +1,13 @@
 # 425 (research): claude --bg の残りの挙動を実測する
 
-> 🚨 **担当中: dotfiles-5c**（2026-09-24〜）
-
 起票日: 2026-09-24
 
-親: [415](415-design-claude-pm-worker-orchestration.md) の論点 2 / 5 / 8 / 11 と要件 14
+親: [415](../415-design-claude-pm-worker-orchestration.md) の論点 2 / 5 / 8 / 11 と要件 14
 
 ## 概要
 
 PG を `claude --bg -w` で動かす設計 (415 論点 2) のうち、測っていない挙動が残っている。
-本物の PM / PG の backend ([427](427-feat-pro-con-real-pm-pg-backend.md)) と論点の決定 ([426](426-design-pro-con-open-decisions.md)) がこれに依存する。
+本物の PM / PG の backend ([427](../427-feat-pro-con-real-pm-pg-backend.md)) と論点の決定 ([426](../426-design-pro-con-open-decisions.md)) がこれに依存する。
 
 ## 測ること
 
@@ -17,7 +15,7 @@ PG を `claude --bg -w` で動かす設計 (415 論点 2) のうち、測って�
 - [x] `claude rm` の安全側 → **消さない** (結果 2)
 - [x] 実行中の bg session へ直接送れるか → **SendMessage で送れる。届くのは turn の区切り** (結果 3)
 - [x] 質問で止めた session → **`waitingFor: "input needed"`。SendMessage では答えられない** (結果 4)
-- [x] 再起動を越えるか → 人の操作 (マシンの再起動) が要るので [430](430-human-verify-bg-session-survives-reboot.md) に切り出した。
+- [x] 再起動を越えるか → 人の操作 (マシンの再起動) が要るので [430](../430-human-verify-bg-session-survives-reboot.md) に切り出した。
   プロセスが死んだ場合は daemon が自動で再開することまでは確認した (結果 1)
 - [x] 利用枠を機械で読む口 → **`claude -p "/usage"` がテキストで返す** (結果 5)
 - [x] `TMUX` / `TMUX_PANE` を落とさない場合 → **測らない**。落とす前提で設計している (415 論点 5) ので結果が設計を変えない
@@ -36,7 +34,7 @@ PG を `claude --bg -w` で動かす設計 (415 論点 2) のうち、測って�
 - 🚨 **プロセスが死んだ session は daemon が自動で再開する**。約 25 秒後に新しい pid で同じ session ID が `busy` に戻り、
   会話に次の文が足された: 「Continue from where you left off. Note: this session was automatically restarted after its process exited
   unexpectedly; the user has not sent a new message since the restart. Re-verify anything time-sensitive (branch state, running processes,
-  prior partial work) before continuing.」 → 415 論点 5 の「落ちたら failed にして自動で再実行しない」とは合わない ([426](426-design-pro-con-open-decisions.md) へ)
+  prior partial work) before continuing.」 → 415 論点 5 の「落ちたら failed にして自動で再実行しない」とは合わない ([426](../426-design-pro-con-open-decisions.md) へ)
 - 「pid が無いのに `working`」は、死んでから再開されるまでの一時的な状態として読む
 
 ### 2. `claude rm` はフラグなしでは未 push の commit・未コミットの変更を持つ worktree を消さない
@@ -73,7 +71,7 @@ PG を `claude --bg -w` で動かす設計 (415 論点 2) のうち、測って�
 - 🚨 **Stop hook (`issue-progress-check.sh`) が PG に別の作業の issue を更新させようとする**。この実測の session は、自分が触っていない
   issue 425 (claim の commit だけがあった) を「更新漏れの疑い」と言われ、Read → Edit → `EnterWorktree` → Edit まで進み、権限の確認で止まった
   (書き込みは起きていない)。どの commit を「関わった」と数えたかは未確認
-- この 2 点は本物の PG の backend ([427](427-feat-pro-con-real-pm-pg-backend.md)) で、PG 用の設定 (hook を絞った `--settings`) を用意するかの判断材料になる
+- この 2 点は本物の PG の backend ([427](../427-feat-pro-con-real-pm-pg-backend.md)) で、PG 用の設定 (hook を絞った `--settings`) を用意するかの判断材料になる
 
 ## 測り方の制約
 

@@ -7,7 +7,7 @@
 ## 概要
 
 本物の PM / PG の backend ([427](427-feat-pro-con-real-pm-pg-backend.md)) を作る前に決めることの一覧。
-415 の各論点に叩き台はあるが、以下は決まっていない。実測 ([425](425-research-claude-bg-remaining-measurements.md)) の結果で決まるものと、ユーザーが決めるものがある。
+415 の各論点に叩き台はあるが、以下は決まっていない。実測 ([425](done/425-research-claude-bg-remaining-measurements.md)) の結果で決まるものと、ユーザーが決めるものがある。
 
 ## 決めること
 

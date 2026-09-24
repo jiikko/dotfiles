@@ -3,7 +3,7 @@
 起票日: 2026-09-24
 期限: 2026-10-08
 
-親: [415](415-design-claude-pm-worker-orchestration.md) の要件 14 / [425](425-research-claude-bg-remaining-measurements.md) から切り出し
+親: [415](415-design-claude-pm-worker-orchestration.md) の要件 14 / [425](done/425-research-claude-bg-remaining-measurements.md) から切り出し
 
 ## なぜ人が要るか
 
