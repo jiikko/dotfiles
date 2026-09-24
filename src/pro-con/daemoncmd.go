@@ -50,6 +50,8 @@ func runDaemon(args []string, dir, projects string, repos map[string]string, std
 		}}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	d.Publish, d.Notify = daemon.TmuxPublish(ctx), daemon.MacNotify(ctx)
+	defer func() { _ = daemon.TmuxPublish(context.Background())("") }() // 止まるときに件数を消す (古い件数を出し続けない)
 	for {
 		notes, err := d.Tick(ctx)
 		for _, n := range notes {

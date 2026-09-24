@@ -51,7 +51,14 @@
       `LastProgress` の書き手は daemon だけにした (live の画面側で transcript の最終更新を足していたのを外した)。
       変異 5 本が red (閾値を無視 / 戻っても外さない / 実行中の延長を外す / 列を離れても残す / 繰り返しも進捗に数える)。
       🚨 毎回少しずつ違う文を出すループは進んでいるように見える (415 論点 10 の「同じツール + 同じ引数」は未実装。ツール呼び出しは読んでいない)
-  - [ ] 3c-2c 知らせ: tmux の status と macOS の通知 (426 の決定 10。daemon が件数をファイルに書き、status が読む)
+  - [~] 3c-2c 知らせ (426 の決定 10)。daemon 側は済み:
+      件数の文 (`daemon.Status`。例 `pro-con ?2 停滞1 🚨落ちた1`、何も無ければ空) を、変わったときだけ tmux のユーザー option `@pro-con-status` に書く
+      (`_tmux.conf` は #() で fork しない方針なので、option を format で読む形。daemon が止まるときに外す)。
+      新しく回答待ち (質問・権限・落ちて止めた) になったカードは macOS の通知を 1 度出す (待ちを抜けたら忘れる)。
+      変異 6 本が red (変わらなくても書く / 同じ待ちを何度も通知 / 書けなかった文を毎回書き直す / 待ちを抜けても覚えたまま / 落ちた件数を数えない)。
+      - [ ] 🚨 **status のどこにどう出すかはユーザーと決める** (見た目の判断。status-right は 27 セル固定の島がある)。見本を出して合意してから `_tmux.conf` を触る
+      - [ ] 本物の tmux / osascript ではまだ動かしていない (3f で daemon を動かすときに見る)
+      - daemon を kill -9 すると option が古い件数のまま残る (画面は daemon の最終 tick で古さを出すが、status には出ない)
   - [x] 3c-3 `pro-con daemon` の常駐と排他 (2 つ起動しない) — 3c-2 より先に済ませた (daemon を動く形にするため)
     - 済み (2026-09-25): `pro-con daemon [--limit N] [--once]` (`src/pro-con/daemoncmd.go`)。3 秒ごとに Tick し、何をしたかを時刻つきで stdout へ。
       排他は `daemon.lock` の flock (プロセスが終われば OS が外す)。変異 1 本 (flock を外す) が red。🚨 本物の claude では未実行 (3f)

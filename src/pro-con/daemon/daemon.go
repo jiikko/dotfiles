@@ -60,6 +60,13 @@ type Daemon struct {
 	CrashWindow time.Duration
 	// StallAfter は watchdog が「進捗なし」を停滞とみなすまでの通常の時間 (コマンドの実行中は card.StallThreshold が延ばす)。0 なら既定値
 	StallAfter time.Duration
+	// Publish は件数の文を tmux の status 用に書く / Notify は macOS の通知を出す (426 の決定 10)。nil なら知らせない
+	Publish func(status string) error
+	Notify  func(title, body string) error
+
+	lastStatus string          // 最後に Publish した文
+	published  bool            // 1 度でも Publish したか (起動の直後に空の文も書く。前の daemon が残した文を消す)
+	notified   map[string]bool // 通知した回答待ちのカード (待ちを抜けたら消す)
 }
 
 // defaultStallAfter は停滞の通常の閾値の既定 (426: 既定値で始めて動かしながら直す)。
@@ -103,7 +110,11 @@ func (d *Daemon) Tick(ctx context.Context) ([]string, error) {
 		return notes, err
 	}
 	more, err := d.dispatch(ctx, now, ss)
-	return append(notes, more...), err
+	notes = append(notes, more...)
+	if err != nil {
+		return notes, err
+	}
+	return append(notes, d.announce()...), nil // 割り当ての結果まで含めて知らせる
 }
 
 // register は作業中のカードの session (短い id) が一覧に出ていれば、session id と pid を添えて pro-con の記録に書く。
