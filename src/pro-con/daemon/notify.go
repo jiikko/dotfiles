@@ -60,7 +60,7 @@ func (d *Daemon) announce() []string {
 	now := d.Now()
 	// 変わったときに加えて、republishEvery ごとにも書き直す (tmux サーバが作り直されて option が消えても戻る)
 	if s := Status(st.Cards); d.Publish != nil && (!d.published || s != d.lastStatus || now.Sub(d.publishedAt) >= republishEvery) {
-		if err := d.Publish(s); err != nil { // 失敗しても文が変わるまで書き直さない (tmux の外で動かしたとき Tick ごとに言い続けない)
+		if err := d.Publish(s); err != nil { // 失敗しても次は文が変わるか republishEvery 後 (tmux の外で動かしたとき Tick ごとには言い続けない)
 			notes = append(notes, "知らせ: tmux に件数を書けない: "+err.Error())
 		}
 		d.lastStatus, d.published, d.publishedAt = s, true, now

@@ -363,11 +363,12 @@ func TestParseTranscriptToolProgress(t *testing.T) {
 	}
 }
 
-// 同じ session id の transcript が複数の project にあれば、更新の新しい方を読む (辞書順で後ろの方を新しくして、先頭を取る実装と区別する)。
+// 同じ session id の transcript が複数の project にあれば、更新の新しい方を読む。新しい方を辞書順の先頭に置く
+// (末尾を取る実装と区別する。先頭を取る実装とは、並びが逆の fixture の既存テストが無いので下の 2 つ目で区別する)。
 func TestFindTranscriptPrefersNewest(t *testing.T) {
 	root := t.TempDir()
 	var newest string
-	for i, dir := range []string{"a-old", "b-new"} {
+	for i, dir := range []string{"b-old", "a-new"} {
 		p := filepath.Join(root, dir, "S1.jsonl")
 		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 			t.Fatal(err)
@@ -383,5 +384,16 @@ func TestFindTranscriptPrefersNewest(t *testing.T) {
 	}
 	if p, err := FindTranscript(root, "S1"); err != nil || p != newest {
 		t.Fatalf("更新の新しい方を読まない: %q %v", p, err)
+	}
+}
+
+// 結果の無いツール呼び出しの後に PG の出力が続いたら、その呼び出しは置き去り (実行中に数えない)。
+func TestParseTranscriptOrphanToolIsNotPending(t *testing.T) {
+	data := `{"type":"assistant","timestamp":"2026-09-25T01:00:00Z","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"make test"}}]}}
+{"type":"user","timestamp":"2026-09-25T01:05:00Z","message":{"content":"Continue from where you left off. Note: this session was automatically restarted after its process exited unexpectedly"}}
+{"type":"assistant","timestamp":"2026-09-25T01:06:00Z","message":{"content":"続きをやる"}}
+`
+	if tr := parse([]byte(data)); !tr.PendingSince.IsZero() {
+		t.Fatalf("置き去りの呼び出しを実行中に数えた: %v", tr.PendingSince)
 	}
 }

@@ -88,6 +88,7 @@ func parse(data []byte) Transcript {
 	var t Transcript
 	seen := map[string]bool{}
 	pending := map[string]time.Time{} // tool_use の id → 呼んだ時刻 (結果が返ったら消す)
+	var lastAssistant time.Time
 	sc := bufio.NewScanner(bytes.NewReader(data))
 	sc.Buffer(make([]byte, 0, 64<<10), 8<<20)
 	for sc.Scan() {
@@ -141,11 +142,15 @@ func parse(data []byte) Transcript {
 				for _, id := range toolUses(r.Message.Content) {
 					pending[id] = at
 				}
+				if at.After(lastAssistant) {
+					lastAssistant = at
+				}
 			}
 		}
 	}
+	// 実行中に数えるのは、最後の PG の出力にある呼び出しだけ (その後に出力が続いた呼び出しは、落ちて結果が書かれなかった等で置き去り)
 	for _, at := range pending {
-		if at.After(t.PendingSince) {
+		if !at.Before(lastAssistant) && at.After(t.PendingSince) {
 			t.PendingSince = at
 		}
 	}

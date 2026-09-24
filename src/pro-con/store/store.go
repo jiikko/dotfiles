@@ -292,7 +292,7 @@ func apply(st State, r Request, now time.Time) (State, string, error) {
 func transition(c *card.Card, r Request, now time.Time) error {
 	move := func(to card.State, why string) {
 		c.State, c.Since = to, now
-		c.Stalled = false // 停滞は作業中の列でだけ意味を持つ (watchdog が作業中のカードだけを見る)
+		c.Stalled = false // 停滞は作業中の列でだけ意味を持つ (watchdog が作業中のカードだけを見る)。止める印 (StopWanted) は作業中へ戻る settle が外す
 		c.History = append(c.History, card.Event{At: now, Text: why})
 	}
 	switch r.Kind {

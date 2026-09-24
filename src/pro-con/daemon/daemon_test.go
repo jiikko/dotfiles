@@ -128,7 +128,7 @@ func TestRegistersOnceListed(t *testing.T) {
 		t.Fatal("一覧に出る前に登録した (session id と pid が無い)")
 	}
 	d.List = func(context.Context) ([]agents.Session, error) {
-		return []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", StartedAt: t0.Add(time.Second).UnixMilli()}}, nil
+		return []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}, nil
 	}
 	if _, err := d.Tick(context.Background()); err != nil {
 		t.Fatal(err)
@@ -144,7 +144,7 @@ func TestAnsweredCardResumesSameSession(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	l := &fakeLauncher{}
-	d := newDaemon(t, dir, l, []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", StartedAt: t0.Add(time.Second).UnixMilli()}})
+	d := newDaemon(t, dir, l, []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}})
 	for range 2 { // 起動 → 登録
 		if _, err := d.Tick(context.Background()); err != nil {
 			t.Fatal(err)
@@ -212,7 +212,7 @@ func TestRegisterRefusesPidChangeNotCausedByDaemon(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	l := &fakeLauncher{}
-	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", StartedAt: t0.Add(time.Second).UnixMilli()}}
+	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}
 	d := newDaemon(t, dir, l, nil)
 	d.List = func(context.Context) ([]agents.Session, error) { return ss, nil }
 	for range 2 { // 起動 → 登録
@@ -323,7 +323,7 @@ func TestResumeRefusesWhenShortIDPointsElsewhere(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	l := &fakeLauncher{}
-	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", StartedAt: t0.Add(time.Second).UnixMilli()}}
+	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}
 	d := newDaemon(t, dir, l, nil)
 	d.List = func(context.Context) ([]agents.Session, error) { return ss, nil }
 	for range 2 {
@@ -416,7 +416,7 @@ func TestResumeSkipsStopWhenSessionIsGone(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	l := &fakeLauncher{}
-	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", StartedAt: t0.Add(time.Second).UnixMilli()}}
+	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}
 	d := newDaemon(t, dir, l, nil)
 	d.List = func(context.Context) ([]agents.Session, error) { return ss, nil }
 	for range 2 {
@@ -464,7 +464,7 @@ func TestFailedResumeThatActuallyResumedIsAdopted(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	l := &fakeLauncher{}
-	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", StartedAt: t0.Add(time.Second).UnixMilli()}}
+	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}
 	d := newDaemon(t, dir, l, nil)
 	d.List = func(context.Context) ([]agents.Session, error) { return ss, nil }
 	for range 2 {
@@ -506,7 +506,7 @@ func newCrashRig(t *testing.T) *crashRig {
 	t.Helper()
 	r := &crashRig{dir: t.TempDir(), l: &fakeLauncher{}}
 	planned(t, r.dir, 1)
-	r.ss = []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", StartedAt: t0.Add(time.Second).UnixMilli()}}
+	r.ss = []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}
 	r.d = newDaemon(t, r.dir, r.l, nil)
 	r.d.List = func(context.Context) ([]agents.Session, error) { return r.ss, nil }
 	r.d.Transcript = func(string) (live.Transcript, error) { return live.Transcript{Restarts: r.restarts}, nil }
@@ -760,5 +760,81 @@ func TestWatchdogWaitsForPendingTool(t *testing.T) {
 	r.tick(t)
 	if c := states(t, r.dir)["C-001"]; !c.Stalled {
 		t.Fatal("longToolLimit を過ぎても停滞にしない")
+	}
+}
+
+// 止める印は、作業中の列を離れたら外れる (質問 → 回答 → 再開した PG を、前の印ですぐ止めない)。
+func TestStopWantedClearedByAskAndResume(t *testing.T) {
+	r := newCrashRig(t)
+	r.l.stopFail = true
+	r.crash(t0.Add(time.Minute), 43)
+	r.tick(t)
+	r.crash(t0.Add(2*time.Minute), 44)
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; !c.StopWanted {
+		t.Fatal("前提: 止める印が立っていない")
+	}
+	r.l.stopFail = false
+	for _, q := range []store.Request{{Kind: "ask", CardID: "C-001", Question: "q"}, {Kind: "answer", CardID: "C-001", Answer: "a"}} {
+		if _, err := store.Submit(r.dir, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.d.Now = func() time.Time { return t0.Add(3 * time.Minute) }
+	r.tick(t) // 質問・回答を適用して再開
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; len(r.l.resumes) != 1 || len(r.l.stops) != 0 || c.State != card.Running {
+		t.Fatalf("前の印で再開した PG を止めた: resumes=%v stops=%v %v", r.l.resumes, r.l.stops, c.State)
+	}
+}
+
+// 落ち続けた PG の session が一覧に無ければ、最後に落ちてから restartWait は待つ (Claude Code の自動の再開の途中かもしれない)。
+// 過ぎても無ければ、止めずに回答待ちにし、止めなかったことを履歴に書く。
+func TestCrashStopWaitsForAutoRestartWhenUnlisted(t *testing.T) {
+	r := newCrashRig(t)
+	r.l.stopFail = true
+	r.crash(t0.Add(time.Minute), 43)
+	r.tick(t)
+	r.crash(t0.Add(2*time.Minute), 44)
+	r.tick(t) // 止める印が立つ
+	r.l.stopFail = false
+	r.ss = nil // 死んで一覧から消えた
+	r.d.Now = func() time.Time { return t0.Add(2*time.Minute + 30*time.Second) }
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; c.State != card.Running {
+		t.Fatalf("自動の再開を待たずに回答待ちにした: %v", c.State)
+	}
+	r.d.Now = func() time.Time { return t0.Add(2*time.Minute + restartWait + time.Second) }
+	r.tick(t)
+	c := states(t, r.dir)["C-001"]
+	if c.State != card.Waiting || !strings.Contains(c.Wait.Question, "一覧に無い") || len(r.l.stops) != 0 {
+		t.Fatalf("待った後に回答待ちにしない / 止めたと書いた: %v %q stops=%v", c.State, c.Wait.Question, r.l.stops)
+	}
+}
+
+// 前の session の作業ディレクトリが記録に無ければ再開しない (daemon の cwd で再開すると別の tree を書く)。
+func TestResumeRefusesWithoutCwd(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 1)
+	l := &fakeLauncher{}
+	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", StartedAt: t0.Add(time.Second).UnixMilli()}} // cwd 無し
+	d := newDaemon(t, dir, l, nil)
+	d.List = func(context.Context) ([]agents.Session, error) { return ss, nil }
+	for range 2 {
+		if _, err := d.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, q := range []store.Request{{Kind: "ask", CardID: "C-001", Question: "q"}, {Kind: "answer", CardID: "C-001", Answer: "a"}} {
+		if _, err := store.Submit(dir, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	notes, err := d.Tick(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(l.resumes) != 0 || !strings.Contains(strings.Join(notes, "\n"), "作業ディレクトリ") {
+		t.Fatalf("cwd の無い session を再開した: %v %v", l.resumes, notes)
 	}
 }

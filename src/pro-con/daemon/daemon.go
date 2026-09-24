@@ -257,11 +257,27 @@ func (d *Daemon) stopCrashing(ctx context.Context, now time.Time, ss []agents.Se
 		}
 		// 止める前に、今の一覧で短い id が記録の session を指しているかを見る (別の session を止めない)。一覧に無ければ止めるものが無い
 		o, hasOwned := owned(c, reg)
-		target := ""
+		target, listed := "", false
 		for _, s := range ss {
-			if s.ID == c.Session && hasOwned && s.SessionID == o.SessionID {
+			if s.ID != c.Session {
+				continue
+			}
+			listed = true
+			if hasOwned && s.SessionID == o.SessionID {
 				target = s.ID
 			}
+		}
+		how := "止めた"
+		switch {
+		case target != "":
+		case listed:
+			how = "止めなかった (短い id が別の session を指している)"
+		default:
+			// 一覧に無い: 死んで Claude Code の自動の再開を待っているのかもしれない (約 25 秒。425 結果 1)。最後に落ちてから restartWait 待つ
+			if n := len(c.Crashes); n > 0 && now.Sub(c.Crashes[n-1]) < restartWait {
+				continue
+			}
+			how = "止めなかった (session が一覧に無い)"
 		}
 		if target != "" {
 			if err := d.Launch.Stop(ctx, target); err != nil {
@@ -274,7 +290,7 @@ func (d *Daemon) stopCrashing(ctx context.Context, now time.Time, ss []agents.Se
 				continue
 			}
 		}
-		why := fmt.Sprintf("PG が %s の間に %d 回落ちたので止めた。回答すると同じ session を再開する", window, max(recent, limit))
+		why := fmt.Sprintf("PG が %s の間に %d 回落ちたので%s。回答すると同じ session を再開する", window, max(recent, limit), how)
 		if err := d.update(c.ID, func(cc *card.Card) {
 			cc.State, cc.Since, cc.Owner, cc.StopWanted = card.Waiting, now, "人間", false
 			cc.Wait = card.Wait{Kind: card.WaitCrashed, Question: why}
@@ -462,6 +478,9 @@ func (d *Daemon) prepare(c card.Card, now time.Time, ss []agents.Session, reg []
 			}
 			stop = c.Session
 		}
+		if o.Cwd == "" {
+			return "再開", nil, fmt.Errorf("前の session (%s) の作業ディレクトリが記録に無い (別の cwd で再開すると別の tree を書く)", c.Session)
+		}
 		if stop == "" && now.Sub(c.Since) < restartWait {
 			return "再開", nil, errWait // Claude Code の自動の再開の途中かもしれない
 		}
@@ -514,7 +533,7 @@ func (d *Daemon) mark(id string, now time.Time, how string) error {
 func (d *Daemon) settle(id string, now time.Time, how, session string) error {
 	return d.update(id, func(c *card.Card) {
 		c.State, c.Since, c.Owner, c.Session = card.Running, now, "PG", session
-		c.LastProgress, c.Resume, c.Launching, c.Stalled = now, "", "", false
+		c.LastProgress, c.Resume, c.Launching, c.Stalled, c.StopWanted = now, "", "", false, false
 		c.History = append(c.History, card.Event{At: now, Text: "PG を" + how + "した (session " + session + ")"})
 	})
 }
