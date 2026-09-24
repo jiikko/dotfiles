@@ -15,6 +15,7 @@
 | [428](428-feat-pro-con-record-attach-instructions.md) | attach 中に人間が打った指示をカードに残す | 424 の実測 |
 | [429](done/429-human-pro-con-try-mock-and-agent-view.md) | (human) 模擬版を触る / agent view との重なり / attach からの戻り方 | — |
 | [430](430-human-verify-bg-session-survives-reboot.md) | (human) bg session がマシンの再起動を越えて戻るか | — |
+| [431](431-feat-pro-con-pg-session-settings.md) | PG / 係の session 用の設定 (hook と規約を絞る。起動時 約 13 万 token) | 427 の前 |
 
 ## 概要
 
