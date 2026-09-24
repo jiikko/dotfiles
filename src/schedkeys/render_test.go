@@ -256,29 +256,31 @@ func TestInvisibleRunesRejected(t *testing.T) {
 
 // 描画が入力長に対して線形であること (自前の走査で二乗になり、1000 文字で固まっていた)。
 func TestRenderCostStaysLinear(t *testing.T) {
-	measure := func(n int) time.Duration {
+	frame := func(n int) func() time.Duration {
 		m := newTestModel()
 		m.width, m.height = 70, 14
 		openForm(t, m)
 		m.form.text.setValue(strings.Repeat("x", n))
-		start := time.Now()
-		for range 20 {
-			m.View()
+		return func() time.Duration {
+			start := time.Now()
+			for range 5 {
+				m.View()
+			}
+			return time.Since(start) / 5
 		}
-		return time.Since(start) / 20
 	}
-	small := measure(100)
-	big := measure(10000)
-	// 🚨 絶対時間で判定しない: runner の速度と -race で 2〜3 倍変わり、CI だけ落ちる
-	//    (実際に darwin レーンで 7.3ms > 5ms で落とした 2026-08-28)。守りたいのは
-	//    「入力長に対して線形」であること。100 倍の入力で 30 倍を超えるなら二乗を疑う
-	//    (二乗なら 10000 倍近くになるので、この閾値は十分に広い)
-	if small > 0 && big > small*30 {
-		t.Errorf("描画コストが入力長に対して非線形: 100 文字 %v → 10000 文字 %v", small, big)
+	small, big := frame(1000), frame(16000)
+	// 🚨 1 回の測定の比で判定しない: -race + 並列の make test では 1 回の割り込みで比が崩れ、単独では通るのに落ちた
+	//    (issue 421)。負荷は時間を足すだけで引かないので、交互に 7 回測った最小値どうしを比べる。
+	//    16 倍の入力で、線形なら 16 倍以下 (固定費があるので実測は数倍)、二乗なら 256 倍。間の 64 倍で切る。
+	//    実測 (issue 421): 今の実装で 11 倍 (-race でも同じ)、旧 viewport (startRune で先頭から数え直す二乗) で 290 倍
+	minSmall, minBig := time.Duration(1<<62), time.Duration(1<<62)
+	for range 7 {
+		minSmall = min(minSmall, small())
+		minBig = min(minBig, big())
 	}
-	// 明らかに使えない遅さだけは絶対値でも止める (runner の速度差では届かない値)
-	if big > 200*time.Millisecond {
-		t.Errorf("10000 文字の 1 フレームが %v (遅すぎる)", big)
+	if minSmall > 0 && minBig > minSmall*64 {
+		t.Errorf("描画コストが入力長に対して非線形: 1000 文字 %v → 16000 文字 %v", minSmall, minBig)
 	}
 }
 
