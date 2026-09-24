@@ -1,5 +1,7 @@
 # 425 (research): claude --bg の残りの挙動を実測する
 
+> 🚨 **担当中: dotfiles-5c**（2026-09-24〜）
+
 起票日: 2026-09-24
 
 親: [415](415-design-claude-pm-worker-orchestration.md) の論点 2 / 5 / 8 / 11 と要件 14
