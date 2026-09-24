@@ -92,14 +92,33 @@ end
 
 function M.setup()
   if vim.env.DOTFILES_PLUGIN_LOAD_TRACKER == "0" then return end
+  -- UI が付いたセッションだけを数える。headless の nvim (tests/nvim/ の全テスト・スクリプト)
+  -- もキー操作やファイルオープンでプラグインをロードするため、区別しないと count が
+  -- テストの実行回数で埋まる。`nvim foo.md` の render-markdown のように UI 接続より前に
+  -- 起きるロードもあるので、UIEnter まで溜めてから書く (UIEnter が来なければ捨てる)。
+  local ui_attached = false
+  local pending = {}
+  local group = vim.api.nvim_create_augroup("dotfiles_plugin_load_tracker", { clear = true })
   vim.api.nvim_create_autocmd("User", {
     pattern = "LazyLoad",
-    group = vim.api.nvim_create_augroup("dotfiles_plugin_load_tracker", { clear = true }),
+    group = group,
     callback = function(ev)
       local plugin = require("lazy.core.config").plugins[ev.data]
-      if plugin and M.is_trackable(plugin) then
+      if not (plugin and M.is_trackable(plugin)) then return end
+      if ui_attached then
         record(ev.data)
+      else
+        table.insert(pending, ev.data)
       end
+    end,
+  })
+  vim.api.nvim_create_autocmd("UIEnter", {
+    group = group,
+    once = true,
+    callback = function()
+      ui_attached = true
+      for _, name in ipairs(pending) do record(name) end
+      pending = {}
     end,
   })
   vim.api.nvim_create_user_command("PluginLoadStats", M.report, {

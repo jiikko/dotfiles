@@ -858,14 +858,8 @@ require("lazy").setup({
         },
       })
 
-      local original_notify = notify
-      local custom_notify = function(msg, log_level, opts)
-        -- Invalid 'priority' エラーを握りつぶす
-        if msg and type(msg) == "string" and msg:match("Invalid 'priority'") then return end
-        original_notify(msg, log_level, opts)
-      end
-
-      vim.notify = custom_notify
+      -- VeryLazy より前の通知だけがここを通る (その後は noice が vim.notify を差し替える)
+      vim.notify = notify
     end
   },
   {

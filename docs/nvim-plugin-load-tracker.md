@@ -6,6 +6,7 @@
 - 保存先: `~/.local/state/nvim/plugin-loads.json`(マシンローカルな使用実績のため state 側。repo では同期しない)
 - 確認: `:PluginLoadStats` — 計測対象プラグインをカウント少ない順に表示(count 0 が先頭に来る)
 - **off にする**: `~/.zshenv` 等で `export DOTFILES_PLUGIN_LOAD_TRACKER=0`(記録もコマンド登録も止まる)
+- **UI の付いたセッションだけを数える**: headless の nvim (tests/nvim/ の全テスト・スクリプト) は記録しない。UI 接続前のロード (`nvim foo.md` の render-markdown) は `UIEnter` で書く。以前は区別しておらず、count はほぼテストの実行回数だった (2026-09-24 に修正。それ以前の実績はリセットして取り直す)。回帰テスト: `tests/nvim/test_plugin_load_tracker.sh`
 - **リセット**: `:PluginLoadStatsReset` — 実績ファイルを削除して計測をやり直す(棚卸しの計測期間を仕切り直すときに使う)
 
 ## 使い方(棚卸しの手順)
