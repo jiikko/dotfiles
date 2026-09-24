@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"glogx/issues"
+	"tuikit/editor"
 )
 
 // atProgress は演出の進みを p (0..1) に固定した viewer を返す (壁時計を巻き戻して作る)。
@@ -1086,7 +1087,7 @@ func TestIssuesViewCopyPathAndEditor(t *testing.T) {
 		t.Fatalf("v でエディタ起動の Cmd が返らない: cmd=%v 起動数=%d", cmd != nil, len(*cmds))
 	}
 	// 🚨 「開いた」だけでなく「何を開いたか」まで見る (対象の取り違えを通さない)
-	if args, want := (*cmds)[0].Args, []string{editorFallback, iss.Path}; !slices.Equal(args, want) {
+	if args, want := (*cmds)[0].Args, []string{editor.Fallback, iss.Path}; !slices.Equal(args, want) {
 		t.Errorf("v の起動コマンドが違う: args=%v want=%v", args, want)
 	}
 }
@@ -1128,7 +1129,7 @@ func TestIssuesViewActionKeysWorkInBothModes(t *testing.T) {
 			}
 			// 対象は「その issue の実ファイル」。一覧モードと本文モードで target() が
 			// 切り替わるので、どちらでも同じファイルを指すことまで見る
-			if args, want := (*cmds)[before].Args, []string{editorFallback, path}; !slices.Equal(args, want) {
+			if args, want := (*cmds)[before].Args, []string{editor.Fallback, path}; !slices.Equal(args, want) {
 				t.Errorf("%s モードの %q の起動コマンドが違う: args=%v want=%v", mode, key, args, want)
 			}
 		}
@@ -1693,7 +1694,7 @@ func TestIssuesViewBodyHintAdvertisedEditorKeyWorks(t *testing.T) {
 	if len(*cmds) != 1 {
 		t.Fatalf("エディタの起動回数が 1 でない: %d", len(*cmds))
 	}
-	if args, want := (*cmds)[0].Args, []string{editorFallback, path}; !slices.Equal(args, want) {
+	if args, want := (*cmds)[0].Args, []string{editor.Fallback, path}; !slices.Equal(args, want) {
 		t.Errorf("e の起動コマンドが違う: args=%v want=%v", args, want)
 	}
 }
@@ -2309,7 +2310,7 @@ func TestIssuesViewBodyHintKeysAllRespond(t *testing.T) {
 			}
 			// 🚨 起動しただけでなく対象まで見る (専用テストと同じ強さに揃える。方向だけの
 			// 弱い二重化にすると「壊れても片方しか落ちない」状態になる)
-			if args, want := (*e.cmds)[before].Args, []string{editorFallback, e.v.open.Path}; !slices.Equal(args, want) {
+			if args, want := (*e.cmds)[before].Args, []string{editor.Fallback, e.v.open.Path}; !slices.Equal(args, want) {
 				t.Errorf("e の起動コマンドが違う: args=%v want=%v", args, want)
 			}
 		},

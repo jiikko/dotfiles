@@ -47,7 +47,7 @@ func (m *Model) cardText(c card.Card) string {
 	return termsafe.PlainBlock(b.String())
 }
 
-// yank は選択中のカードをクリップボードへコピーする。
+// yank は選択中のカードのタイトルと内容 (整形した参照) をコピーする (Y。docs/glogx-ui-guide.md の Y = 整形)。
 func (m *Model) yank() {
 	c, ok := m.selectedCard()
 	if !ok {

@@ -5,12 +5,14 @@ package ui
 import (
 	"context"
 	"errors"
+	"os/exec"
 	"slices"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
+	"tuikit/editor"
 	"tuikit/lineedit"
 	"tuikit/listnav"
 
@@ -75,7 +77,8 @@ type Model struct {
 	moves     map[string]*move
 	framing   bool // frame の tick が回っているか (二重に回さない)
 
-	copy func(string) error // クリップボードへ入れる (既定は pbcopy。テストは差し替える)
+	copy       func(string) error     // クリップボードへ入れる (既定は pbcopy。テストは差し替える)
+	openEditor func(string) *exec.Cmd // ファイルを開くエディタのコマンド (既定は tuikit/editor。テストは差し替える)
 
 	// Claude Code の session の一覧 (sessions.go)
 	listSessions func(context.Context) ([]agents.Session, error)
@@ -87,7 +90,7 @@ type Model struct {
 
 // New は repos (config から列挙した repo) をタブの候補にして画面を作る。nil なら global だけ。
 func New(be backend.Backend, repos []backend.Repo) *Model {
-	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, copy: pbcopy,
+	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, copy: pbcopy, openEditor: func(p string) *exec.Cmd { return editor.Command(p, nil) },
 		listSessions: func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) }}
 	m.snap = be.Poll()
 	m.ensureSelection()
@@ -116,6 +119,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(tick(), m.trackMoves())
 	case frameMsg:
 		return m, m.onFrame()
+	case editorDoneMsg:
+		m.onEditorDone(msg)
+		return m, nil
 	case sessionsMsg:
 		return m, m.onSessions(msg)
 	case sessionsTickMsg:
@@ -342,7 +348,11 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	case "n":
 		m.startInput(inputNew)
 	case "y":
+		m.yankPath()
+	case "Y":
 		m.yank()
+	case "e":
+		return m.openIssue()
 	case "s":
 		m.showSessions = !m.showSessions
 	default:

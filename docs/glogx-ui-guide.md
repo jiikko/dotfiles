@@ -185,6 +185,8 @@ pro-con (`src/pro-con`。PM / PG を分けて Claude Code を並列に回す TUI
 | `n` | next (claim) | 新しい依頼 (new) | pro-con に claim が無い |
 | `s` | status viewer | Claude Code の session の一覧 | どちらも「板の toggle」。開く板が違う |
 
+- `e` (エディタで開く = カードの issue の md)・`y` (素の値 = issue の md のパス)・`Y` (整形した参照 = カードのタイトルと内容) は
+  glogx と同じ意味で使う。エディタの解決は glogx と同じ `tuikit/editor`
 - `o` (ブラウザで開く) と `b` (半ページ上) は**空けてある**。追加オーダーは `+`、btw は `?` (「今どうなってる?」)
 - 動作キーに移動の語彙 (`b` `f` `g` `space` …) を使わない。使うとその移動が効かなくなる (btw を `b` にしていたとき、
   半ページ上が効かなかった)

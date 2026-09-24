@@ -83,11 +83,13 @@ const (
 // では「守りが薄くなった」が観測できないため (脅威モデル (d) の一部はここで拾える)。
 //
 // 実測 2026-09-09: seen=9、enforced=2 (tui.go の job ログ nvim / gitlog.go の runGitTimeout)。
+// 実測 2026-09-24: seen=7、enforced=2。editorCommand の exec.Command 2 か所を tuikit/editor へ移した
+// (glogx と pro-con でエディタの解決を 1 実装にするため) ので seen だけが 2 減った。
 // 🚨 enforced の 2 件は**注記を付けてはいけない**。ここを注記で逃がすと、
 // 「WaitDelay の代入を消す」退行 (issue 105 の形) を検出する箇所が 0 になる。
 // 正当に減らすときは、この定数も同じ commit で意識的に下げる。
 const (
-	waitDelaySeenFloor     = 8
+	waitDelaySeenFloor     = 6
 	waitDelayEnforcedFloor = 2
 )
 

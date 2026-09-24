@@ -24,7 +24,7 @@ func TestYankCopiesSelectedCard(t *testing.T) {
 		State: card.Waiting, Wait: card.Wait{Kind: card.WaitQuestion, Question: "縦に積みますか？"},
 		Issues: []card.IssueRef{{Repo: "dotfiles", Number: 921, Status: "open"}}}
 	m, copied := yankSpy(t, c)
-	press(m, "y")
+	press(m, "Y")
 	if len(*copied) != 1 {
 		t.Fatalf("コピーはちょうど 1 回のはず: %d", len(*copied))
 	}
@@ -43,7 +43,7 @@ func TestYankCopiesSelectedCard(t *testing.T) {
 func TestYankStripsControlSequences(t *testing.T) {
 	evil := "前\x1b]52;c;ZXZpbA==\x07中\x1b[31m赤\x1b[0m\r後\n次の行"
 	m, copied := yankSpy(t, card.Card{ID: "C-001", Title: "t", Request: evil, State: card.Planned})
-	press(m, "y")
+	press(m, "Y")
 	got := (*copied)[0]
 	if strings.ContainsAny(got, "\x1b\x07\r") {
 		t.Fatalf("制御文字が残っている: %q", got)
@@ -56,7 +56,7 @@ func TestYankStripsControlSequences(t *testing.T) {
 func TestYankReportsFailure(t *testing.T) {
 	m, _ := yankSpy(t, card.Card{ID: "C-001", Title: "t", State: card.Planned})
 	m.copy = func(string) error { return errors.New("pbcopy が無い") }
-	press(m, "y")
+	press(m, "Y")
 	if !strings.Contains(m.flash, "失敗") {
 		t.Fatalf("失敗を通知していない: %q", m.flash)
 	}

@@ -242,7 +242,7 @@ func (m *Model) columnCells(col int, cs []card.Card, inner int) [][2]string {
 // 地は塗り替えない (カード固有の色が消えると、列を移ったときに目で追えなくなる)。完了は文字を dim にする。
 func (m *Model) cardCell(c card.Card, w int) (string, string) {
 	base := bg(cardColor(c.ID)) + fg(252)
-	title := c.ID + " " + c.Title
+	title := c.ID + issueTag(c) + " " + c.Title // issue に紐づくカードは 1 行目に番号を出す (バッジ行は待ちの理由と時間)
 	badge := m.badgeColored(c)
 	if c.ID == m.selected {
 		l, r := fg(202)+"▌"+fg(231), base+fg(202)+"▐"+sgrReset
@@ -285,12 +285,7 @@ func (m *Model) badge(c card.Card) string {
 		parts = append(parts, fmtDur(m.snap.Now.Sub(c.Since)))
 	}
 	switch {
-	case len(c.Issues) > 0:
-		var refs []string
-		for _, r := range c.Issues {
-			refs = append(refs, fmt.Sprintf("#%03d", r.Number))
-		}
-		parts = append(parts, strings.Join(refs, " "))
+	case len(c.Issues) > 0: // 番号は 1 行目 (issueTag) に出している
 	case c.Ending == card.EndPendingIssue:
 		parts = append(parts, "⚠issue化待ち")
 	case c.Ending != card.EndNone:
@@ -439,7 +434,7 @@ func (m *Model) hints() []string {
 		back = "q / esc 閉じる"
 	}
 	return []string{"hjkl 選択", "tab repo", "n 新しい依頼", "enter 詳細", "a attach", "r 回答", "+ 追加オーダー", "? btw",
-		"y コピー", "s claude 一覧", back}
+		"e issue を開く", "y パス", "Y 内容", "s claude 一覧", back}
 }
 
 // hintLine は案内を幅 w に収める。入らなければ後ろから落とすが、最後の項目 (抜ける手段) は必ず残す (§5)。
