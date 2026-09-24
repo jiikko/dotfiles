@@ -11,17 +11,16 @@ import (
 	"pro-con/card"
 )
 
-// 見た目 (列・語・記号) は未確定。issue 415 の段階 1 でサンプルとして見てもらい、合意してから固める
-// (decide-layout-in-sample-renderer-first)。表示の文言にはテストを書いていない。
+// 見た目は style.go の冒頭の合意 (B「枠」) に従う。表示の文言と配置にはテストを書いていない (つなぎ込みだけを検査する)。
 
 const (
-	sgrReset   = "\x1b[0m"
-	sgrBold    = "\x1b[1m"
-	sgrDim     = "\x1b[2m"
-	sgrReverse = "\x1b[7m"
-	sgrRed     = "\x1b[31m"
-	sgrYellow  = "\x1b[33m"
-	minColW    = 14
+	sgrReset  = "\x1b[0m"
+	sgrBold   = "\x1b[1m"
+	sgrDim    = "\x1b[2m"
+	sgrRed    = "\x1b[38;5;196m"
+	sgrYellow = "\x1b[38;5;214m"
+	sgrCyan   = "\x1b[38;5;51m"
+	minColW   = 14
 )
 
 func (m *Model) View() tea.View {
@@ -31,24 +30,24 @@ func (m *Model) View() tea.View {
 }
 
 func (m *Model) render() string {
-	var b strings.Builder
-	b.WriteString(sgrBold + "pro-con (mock)" + sgrReset + sgrDim + "  claude は起動しない。表示は模擬データ" + sgrReset + "\n")
-	b.WriteString(m.tabBar() + "\n")
-	b.WriteString(m.gauge() + "\n\n")
-	lines := m.boardLines()
-	b.WriteString(strings.Join(lines, "\n") + "\n")
+	w := m.width
+	title := sgrBold + fg(202) + " pro-con" + sgrFgReset + sgrDim + "  mock: claude は起動しない。表示は模擬データ" + sgrReset
+	out := []string{title, m.tabBar(), m.gauge(), fg(240) + strings.Repeat("─", w) + sgrReset}
+	out = append(out, m.boardLines()...)
 	if m.showDetail {
-		b.WriteString("\n" + m.detail())
+		out = append(out, "")
+		out = append(out, m.detailBlock()...)
 	}
-	b.WriteString("\n")
+	out = append(out, "")
 	if m.mode == modeInput {
-		b.WriteString(m.inputLine() + "\n")
+		out = append(out, m.inputLine())
 	}
 	if m.flash != "" {
-		b.WriteString(sgrYellow + m.flash + sgrReset + "\n")
+		out = append(out, sgrCyan+" "+m.flash+sgrReset)
 	}
-	b.WriteString(sgrDim + "←→↑↓ 選択  enter 詳細  a attach  r 回答  o 追加オーダー  b btw  q 終了" + sgrReset)
-	return b.String()
+	help := " ←→↑↓ 選択  tab repo  enter 詳細  a attach  r 回答  o 追加オーダー  b btw  q 終了"
+	out = append(out, sgrDim+help+sgrReset)
+	return strings.Join(out, "\n")
 }
 
 // tabBar は global と repo のタブ。config の外の repo のカードは global にだけ出るので、その枚数も添える。
@@ -66,17 +65,17 @@ func (m *Model) tabBar() string {
 			shown += count[t]
 		}
 		if t == m.tab {
-			label = sgrReverse + " " + label + " " + sgrReset
+			label = sgrSelected + " " + label + " " + sgrReset
 		} else {
 			label = " " + label + " "
 		}
 		parts = append(parts, label)
 	}
-	bar := strings.Join(parts, "│")
+	bar := " " + strings.Join(parts, fg(240)+"│"+sgrFgReset)
 	if outside := len(m.snap.Cards) - shown; outside > 0 {
-		bar += sgrDim + fmt.Sprintf("   (config の外の repo のカード %d 枚は global にだけ出る)", outside) + sgrReset
+		bar += sgrDim + fmt.Sprintf("   config の外の repo のカード %d 枚は global にだけ出る", outside) + sgrReset
 	}
-	return bar + sgrDim + "   tab / shift+tab で切り替え" + sgrReset
+	return bar
 }
 
 // gauge は溜まり具合の 1 行 (要件 4)。件数は選んでいるタブの分、PG の数と上限は全体。
@@ -100,76 +99,128 @@ func (m *Model) gauge() string {
 	}
 	var parts []string
 	for _, st := range card.Columns {
-		parts = append(parts, fmt.Sprintf("%s %d", st.Label(), counts[st]))
+		parts = append(parts, fmt.Sprintf("%s%s %d%s", fg(stateColor(st)), st.Label(), counts[st], sgrFgReset))
 	}
-	g := strings.Join(parts, "  ")
-	g += fmt.Sprintf("  │ 最古の待ち %s │ PG %d/%d │ daemon %s", fmtDur(oldest), len(m.snap.Consumers), m.snap.Limit,
-		fmtDur(m.snap.Now.Sub(m.snap.DaemonTick))+"前")
+	sep := fg(240) + " │ " + sgrFgReset
+	g := " " + strings.Join(parts, "  ") + sep + fmt.Sprintf("最古の待ち %s", fmtDur(oldest)) + sep +
+		fmt.Sprintf("PG %d/%d", len(m.snap.Consumers), m.snap.Limit) + sep +
+		fmt.Sprintf("daemon %s前", fmtDur(m.snap.Now.Sub(m.snap.DaemonTick)))
 	if pending > 0 {
-		g += " │ " + sgrYellow + fmt.Sprintf("⚠ issue 化待ち %d", pending) + sgrReset
+		g += sep + sgrYellow + fmt.Sprintf("⚠ issue 化待ち %d", pending) + sgrFgReset
 	}
 	if stalled > 0 {
-		g += " │ " + sgrRed + fmt.Sprintf("🚨 停滞 %d", stalled) + sgrReset
+		g += sep + sgrRed + sgrBold + fmt.Sprintf("🚨 停滞 %d", stalled) + sgrFgReset
 	}
 	if n := len(m.snap.Violations); n > 0 {
-		g += " │ " + sgrRed + fmt.Sprintf("不変条件の破れ %d", n) + sgrReset
+		g += sep + sgrRed + fmt.Sprintf("不変条件の破れ %d", n) + sgrFgReset
 	}
 	return g
 }
 
 func (m *Model) colWidth() int {
 	n := len(card.Columns)
-	return max(minColW, (m.width-(n-1))/n)
+	return max(minColW, (m.width-(n-1)*len(colSep))/n)
 }
 
-// boardLines はカンバン。1 枚のカードは 2 行 (タイトル行 + バッジ行)。
+// colSep は列の枠と枠のあいだ。
+const colSep = " "
+
+// boardLines はカンバン。列ごとに枠つきの行を組んでから横に並べる。
 func (m *Model) boardLines() []string {
 	w := m.colWidth()
 	cols := m.columns()
-	var header []string
-	for i, st := range card.Columns {
-		header = append(header, sgrBold+fit(fmt.Sprintf("%s (%d)", st.Label(), len(cols[i])), w)+sgrReset)
-	}
-	out := []string{strings.Join(header, " ")}
-	maxRows := 0
-	for _, cs := range cols {
-		maxRows = max(maxRows, len(cs))
-	}
-	// 詳細を開いているときは下に場所を空ける
-	room := m.height - 8
+	selCol, _, _ := m.position()
+
+	const headLines = 2 // 上枠 + 下枠
+	room := m.height - 9 - headLines
 	if m.showDetail {
-		room -= 14
+		room -= 15
 	}
-	shown := max(1, min(maxRows, room/2))
-	for r := range shown {
-		var l1, l2 []string
-		for _, cs := range cols {
-			if r >= len(cs) {
-				l1, l2 = append(l1, fit("", w)), append(l2, fit("", w))
+	maxCards := 0
+	for _, cs := range cols {
+		maxCards = max(maxCards, len(cs))
+	}
+	shown := max(1, min(maxCards, room/perCardLines))
+
+	blocks := make([][]string, len(cols))
+	for i, s := range card.Columns {
+		blocks[i] = m.columnBlock(s, cols[i], w, shown, i == selCol)
+	}
+	height := 0
+	for _, b := range blocks {
+		height = max(height, len(b))
+	}
+	var out []string
+	for r := range height {
+		var row []string
+		for _, b := range blocks {
+			if r < len(b) {
+				row = append(row, b[r])
 				continue
 			}
-			if r == shown-1 && len(cs) > shown {
-				l1, l2 = append(l1, fit(sgrDim+fmt.Sprintf("… 他 %d 枚", len(cs)-shown+1)+sgrReset, w)), append(l2, fit("", w))
-				continue
-			}
-			t, bdg := m.cardCell(cs[r], w)
-			l1, l2 = append(l1, t), append(l2, bdg)
+			row = append(row, fit("", w)) // この列は他より短い (カードが少ない)
 		}
-		out = append(out, strings.Join(l1, " "), strings.Join(l2, " "))
+		out = append(out, strings.Join(row, colSep))
 	}
 	return out
 }
 
+// columnBorder は列の枠の色。選択中のカードがある列だけ現在地色にする。
+func columnBorder(focused bool) string {
+	if focused {
+		return fg(202)
+	}
+	return fg(240)
+}
+
+// columnBlock は 1 列分の行 (上枠に見出し + カード + 下枠)。列の高さは shown で揃える。
+func (m *Model) columnBlock(s card.State, cs []card.Card, w, shown int, focused bool) []string {
+	label := fmt.Sprintf("%s (%d)", s.Label(), len(cs))
+	border := columnBorder(focused)
+	inner := w - 2
+	out := []string{boxTop(border, fg(stateColor(s))+sgrBold+label+sgrReset, w)}
+	var body []string
+	for r := range min(shown, len(cs)) {
+		if r == shown-1 && len(cs) > shown {
+			body = append(body, fit(sgrDim+fmt.Sprintf("… 他 %d 枚", len(cs)-shown+1)+sgrReset, inner))
+			break
+		}
+		t, b := m.cardCell(cs[r], inner)
+		body = append(body, t, b)
+	}
+	for len(body) < shown*perCardLines {
+		body = append(body, "")
+	}
+	for _, l := range body {
+		out = append(out, boxLine(border, l, w))
+	}
+	return append(out, boxBottom(border, w))
+}
+
+const perCardLines = 2
+
 func (m *Model) cardCell(c card.Card, w int) (string, string) {
-	title := fit(c.ID+" "+c.Title, w)
-	badge := fit(m.badge(c), w)
-	if c.ID == m.selected {
-		return sgrReverse + title + sgrReset, sgrReverse + badge + sgrReset
+	title := c.ID + " " + c.Title
+	badge := m.badge(c)
+	switch {
+	case c.ID == m.selected:
+		return paint(sgrSelected, title, w), paint(sgrSelected, badge, w)
+	case c.State == card.Done:
+		return sgrDim + fit(title, w) + sgrReset, sgrDim + fit(badge, w) + sgrReset
 	}
-	if c.State == card.Done {
-		return sgrDim + title + sgrReset, sgrDim + badge + sgrReset
+	return fit(title, w), fit(m.badgeColored(c), w)
+}
+
+// badgeColored は badge の待ちの理由に色を付ける (停滞 = 危険 / 質問 = 要対応 / issue 化待ち = 要対応)。
+func (m *Model) badgeColored(c card.Card) string {
+	b := m.badge(c)
+	switch {
+	case c.Stalled:
+		return sgrRed + sgrBold + b + sgrFgReset
+	case c.Wait.Kind.NeedsAnswer(), c.Ending == card.EndPendingIssue:
+		return sgrYellow + b + sgrFgReset
 	}
-	return title, badge
+	return sgrDim + b + sgrReset
 }
 
 // badge は待ちの理由と、issue との紐づき (要件 10)。
@@ -218,16 +269,26 @@ func undelivered(c card.Card) int {
 	return n
 }
 
-func (m *Model) detail() string {
+// detailBlock は詳細欄。現在地色の枠で囲む (いま操作の対象になっているカード)。
+func (m *Model) detailBlock() []string {
 	c, ok := m.selectedCard()
 	if !ok {
-		return ""
+		return nil
 	}
-	var b strings.Builder
+	head, body := m.detailLines(c)
 	w := m.width
-	line := func(s string) { b.WriteString(fit(s, w) + "\n") }
-	line(sgrBold + c.ID + "  " + c.Title + sgrReset)
-	line(fmt.Sprintf("状態: %s (%s)  担当: %s  repo: %s  session: %s", c.State.Label(), fmtDur(m.snap.Now.Sub(c.Since)), c.Owner, c.Repo, orDash(c.Session)))
+	out := []string{boxTop(fg(202), sgrBold+head+sgrReset, w)}
+	for _, l := range body {
+		out = append(out, boxLine(fg(202), " "+l, w))
+	}
+	return append(out, boxBottom(fg(202), w))
+}
+
+func (m *Model) detailLines(c card.Card) (string, []string) {
+	head := c.ID + "  " + c.Title
+	var l []string
+	l = append(l, fmt.Sprintf("状態: %s%s%s (%s)  担当: %s  repo: %s  session: %s", fg(stateColor(c.State)), c.State.Label(), sgrFgReset,
+		fmtDur(m.snap.Now.Sub(c.Since)), c.Owner, c.Repo, orDash(c.Session)))
 	var refs []string
 	for _, r := range c.Issues {
 		refs = append(refs, r.String()+" ("+r.Status+")")
@@ -239,27 +300,27 @@ func (m *Model) detail() string {
 			link += " / 終わり方: " + c.Ending.Label()
 		}
 	}
-	line("issue: " + link + "   親: " + orDash(c.ParentID))
-	line("依頼の原文: 「" + c.Request + "」")
+	l = append(l, "issue: "+link+"   親: "+orDash(c.ParentID))
+	l = append(l, "依頼の原文: 「"+c.Request+"」")
 	if c.Wait.Question != "" {
-		line(sgrYellow + "質問: " + c.Wait.Question + sgrReset)
+		l = append(l, sgrYellow+"質問: "+c.Wait.Question+sgrFgReset)
 	}
 	for _, o := range c.Orders {
 		st := "未達"
 		if o.Delivered {
 			st = "届いた"
 		}
-		line(fmt.Sprintf("追加オーダー (%s・%s): %s", o.Kind.Label(), st, o.Text))
+		l = append(l, fmt.Sprintf("追加オーダー (%s・%s): %s", o.Kind.Label(), st, o.Text))
 	}
-	line(sgrDim + "履歴" + sgrReset)
+	l = append(l, sgrDim+"履歴"+sgrReset)
 	for _, e := range tail(c.History, 4) {
-		line("  " + e.At.Format("15:04") + " " + e.Text)
+		l = append(l, "  "+e.At.Format("15:04")+" "+e.Text)
 	}
-	line(sgrDim + "出力の末尾" + sgrReset)
-	for _, l := range tail(c.Log, 3) {
-		line("  " + l)
+	l = append(l, sgrDim+"出力の末尾"+sgrReset)
+	for _, s := range tail(c.Log, 3) {
+		l = append(l, "  "+s)
 	}
-	return b.String()
+	return head, l
 }
 
 func (m *Model) inputLine() string {
@@ -272,7 +333,7 @@ func (m *Model) inputLine() string {
 	case inputBtw:
 		label = m.selected + " に btw (PG は止めない)"
 	}
-	return sgrBold + label + ": " + sgrReset + string(m.input) + "▏"
+	return " " + sgrBold + fg(202) + label + ": " + sgrReset + string(m.input) + "▏"
 }
 
 // fit は表示幅 w に切り詰め、足りなければ空白で埋める (全角を含む行を表示幅で揃える)。
