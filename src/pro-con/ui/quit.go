@@ -46,7 +46,7 @@ func (m *Model) busyCards() (running, waiting int) {
 // q や ctrl+c の 1 打で閉じない: 本物のモードの終了は dispatcher と PG を止めるので、打ち間違いで止めない)。
 func (m *Model) requestQuit() tea.Cmd {
 	if m.mode == modeInput && m.inputKind != inputQuit { // 書きかけの文は消さない
-		m.flash = "終了は Q を押して quit と打つ (書きかけの入力はそのまま)"
+		m.info("終了は Q を押して quit と打つ (書きかけの入力はそのまま)")
 		return nil
 	}
 	m.closeAll()
@@ -68,7 +68,7 @@ func (m *Model) submitQuit() tea.Cmd {
 	m.mode = modeBoard
 	m.line.Reset()
 	if text != "quit" {
-		m.flash = "終了を取り消した (閉じるのは quit と打ったときだけ)"
+		m.info("終了を取り消した (閉じるのは quit と打ったときだけ)")
 		return nil
 	}
 	return m.quitNow()

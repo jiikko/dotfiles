@@ -131,8 +131,8 @@ func TestUpgradeSpawnErrorIsShown(t *testing.T) {
 	reply := errors.New("zsh が無い")
 	m, _, _ := upgradeModel(t, &reply)
 	cycle(m)
-	if m.up.state != upNone || !strings.Contains(m.flash, "確認ができない") {
-		t.Fatalf("尋ねられなかったことを知らせていない: state=%v flash=%q", m.up.state, m.flash)
+	if m.up.state != upNone || !strings.Contains(m.toasts.Text(), "確認ができない") {
+		t.Fatalf("尋ねられなかったことを知らせていない: state=%v flash=%q", m.up.state, m.toasts.Text())
 	}
 }
 
@@ -304,7 +304,7 @@ func TestDroppedInputSurvivesNotify(t *testing.T) {
 	m := New(newSpy(), nil)
 	_ = m.ImportState([]byte(`{"selected":"GONE","input":true,"inputKind":0,"line":"遅延ロードで"}`))
 	m.Notify("設定の警告 1 件")
-	m.flash = "新版のビルドに失敗した" // 起動直後の通知で flash が上書きされる
+	m.fail("新版のビルドに失敗した") // 起動直後の通知で上書きされる
 	if !strings.Contains(m.sticky, "遅延ロードで") || !strings.Contains(ansi.Strip(m.render()), "遅延ロードで") {
 		t.Fatalf("書いた文が消えた: sticky=%q", m.sticky)
 	}
@@ -346,18 +346,18 @@ func TestUpgradeCheckErrorsAreShownAgainAfterRecovery(t *testing.T) {
 	info, _ := os.Stat(exe)
 	_ = os.Remove(exe)
 	cycle(m)
-	if !strings.Contains(m.flash, "バイナリを見られない") {
-		t.Fatalf("バイナリが消えたことを知らせない: %q", m.flash)
+	if !strings.Contains(m.toasts.Text(), "バイナリを見られない") {
+		t.Fatalf("バイナリが消えたことを知らせない: %q", m.toasts.Text())
 	}
 	_ = os.WriteFile(exe, data, 0o755)
 	_ = os.Chtimes(exe, info.ModTime(), info.ModTime())
-	m.flash = ""
+	m.toasts.Clear()
 	cycle(m) // 回復 (差し替わった扱いになるが、ここでは通知の忘れ方だけを見る)
 	_ = os.Remove(exe)
-	m.flash = ""
+	m.toasts.Clear()
 	cycle(m)
-	if !strings.Contains(m.flash, "バイナリを見られない") {
-		t.Fatalf("回復した後の失敗を知らせない: %q", m.flash)
+	if !strings.Contains(m.toasts.Text(), "バイナリを見られない") {
+		t.Fatalf("回復した後の失敗を知らせない: %q", m.toasts.Text())
 	}
 }
 
@@ -365,7 +365,7 @@ func TestUpgradeFailedNilDoesNotPanic(t *testing.T) {
 	reply := spawnOK
 	m, _, _ := upgradeModel(t, &reply)
 	m.UpgradeFailed(nil)
-	if m.UpgradeRequested() || m.flash == "" {
-		t.Fatalf("nil でも旧版のまま続けて知らせるはず: %q", m.flash)
+	if m.UpgradeRequested() || m.toasts.Text() == "" {
+		t.Fatalf("nil でも旧版のまま続けて知らせるはず: %q", m.toasts.Text())
 	}
 }

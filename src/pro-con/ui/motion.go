@@ -87,7 +87,7 @@ func (m *Model) startFrames() tea.Cmd {
 }
 
 func (m *Model) animating() bool {
-	return len(m.moves) > 0 || len(m.slides) > 0 || m.drawer.Animating(m.now()) || m.pager.Animating() || m.cursorGliding(m.now()) || m.laneFading(m.now()) || m.bumping(m.now())
+	return len(m.moves) > 0 || len(m.slides) > 0 || m.drawer.Animating(m.now()) || m.pager.Animating() || m.cursorGliding(m.now()) || m.laneFading(m.now()) || m.bumping(m.now()) || m.toasts.Animating()
 }
 
 func (m *Model) resetSlots() {
@@ -113,11 +113,15 @@ func (m *Model) onFrame() tea.Cmd {
 	m.pruneSlides(m.now())
 	m.settleDrawer(m.now())
 	m.pager.Advance()
+	var hold tea.Cmd
+	if m.toasts.Animating() {
+		hold = toastTimers(m.toasts.Advance(true)) // 滑り込み終えた toast の「静止の後に引っ込む」合図
+	}
 	if !m.animating() {
 		m.framing = false
-		return nil
+		return hold
 	}
-	return frame()
+	return tea.Batch(frame(), hold)
 }
 
 // slotXY は slot の画面上の位置 (ボードの左上からの桁と行)。枠の内側の左上。

@@ -89,9 +89,9 @@ func (m *Model) stepCard(delta int) {
 	next := row + delta
 	if next < 0 || next >= len(cs) {
 		if delta > 0 {
-			m.flash = "これがこのレーンの最後のカードです"
+			m.info("これがこのレーンの最後のカードです")
 		} else {
-			m.flash = "これがこのレーンの最初のカードです"
+			m.info("これがこのレーンの最初のカードです")
 		}
 		return
 	}

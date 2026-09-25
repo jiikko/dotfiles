@@ -79,7 +79,7 @@ func (m *Model) render() string {
 	}
 	region = layout.PadTo(region, max(len(region)+1, room))
 	m.inputRow = len(header) + len(region) + len(foot) - len(m.footLines()) // 入力欄は最下段の群の先頭 (caret が使う)
-	region = m.dimWhileTyping(m.overlayDrawer(region))
+	region = m.overlayToast(m.dimWhileTyping(m.overlayDrawer(region)))
 	return strings.Join(m.overlayQuit(m.overlayLegend(append(append(header, region...), foot...))), "\n")
 }
 
@@ -127,7 +127,7 @@ func (m *Model) footGroup() []string {
 	return append(foot, m.footLines()...)
 }
 
-// footLines は画面の最下段の群 (入力欄・確認・sticky・flash・案内) を返す。
+// footLines は画面の最下段の群 (入力欄・確認・sticky・案内) を返す。操作の結果の通知は右下の toast (toast.go)。
 func (m *Model) footLines() []string {
 	var out []string
 	switch m.mode {
@@ -139,9 +139,6 @@ func (m *Model) footLines() []string {
 	}
 	if m.sticky != "" {
 		out = append(out, sgrYellow+" "+m.sticky+sgrReset)
-	}
-	if m.flash != "" {
-		out = append(out, sgrCyan+" "+m.flash+sgrReset)
 	}
 	return append(out, hintLine(m.hints(), m.width)+sgrReset)
 }

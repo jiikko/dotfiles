@@ -16,8 +16,10 @@ import (
 	"tuikit/anim"
 	"tuikit/confirm"
 	"tuikit/editor"
+	"tuikit/layout"
 	"tuikit/lineedit"
 	"tuikit/listnav"
+	"tuikit/toast"
 
 	"pro-con/backend"
 	"pro-con/card"
@@ -90,11 +92,8 @@ type Model struct {
 	inputKind   inputKind
 	orderKind   card.OrderKind
 
-	flash string
-	// flashShown / flashAt は、今の flash がいつから出ているか (flashTTL で消す。tick が見る)
-	flashShown string
-	flashAt    time.Time
-	sticky     string // 消すまで残す通知 (捨てた書きかけの文など。flash は次の通知で消えるので置かない)。ボードの esc で消す
+	toasts toast.Stack // 操作の結果の通知 (toast.go)
+	sticky string      // 消すまで残す通知 (捨てた書きかけの文など。flash は次の通知で消えるので置かない)。ボードの esc で消す
 
 	// カードの移動の演出 (motion.go)。now は時計 (テストで差し替える)
 	now       func() time.Time
@@ -131,6 +130,7 @@ type Model struct {
 // New は repos (config から列挙した repo) をタブの候補にして画面を作る。nil なら global だけ。
 func New(be backend.Backend, repos []backend.Repo) *Model {
 	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, slides: map[panel]*slide{}, copy: pbcopy, children: &atomic.Int64{}, openEditor: func(p string) *exec.Cmd { return editor.Command(p, nil) }, execProcess: tea.ExecProcess}
+	m.toasts = toast.Stack{Shadow: layout.ShadowNearBlack} // 落ち影は他の板と同じ近黒 (glogx と同じ)
 	m.setSnap(be.Poll())
 	m.focusFirst()
 	m.resetSlots()
@@ -144,21 +144,6 @@ func (m *Model) Notify(s string) {
 		s = m.sticky + " / " + s
 	}
 	m.sticky = s
-}
-
-// flashTTL は操作の結果の通知を出しておく長さ (消す仕組みが無く、次の操作まで古い通知が残っていた)。
-const flashTTL = 6 * time.Second
-
-// expireFlash は出てから flashTTL たった通知を消す (tick ごとに呼ぶ)。
-func (m *Model) expireFlash() {
-	now := m.now()
-	if m.flash != m.flashShown {
-		m.flashShown, m.flashAt = m.flash, now
-		return
-	}
-	if m.flash != "" && now.Sub(m.flashAt) >= flashTTL {
-		m.flash, m.flashShown = "", ""
-	}
 }
 
 // poll は backend の今の状態を画面に取り込む。
@@ -209,12 +194,14 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 	}()
 	switch msg := msg.(type) {
 	case tickMsg:
-		m.expireFlash()
 		return m, tea.Batch(tick(), m.poll())
 	case changedMsg:
 		return m, tea.Batch(m.waitChanged(), m.poll())
 	case frameMsg:
 		return m, m.onFrame()
+	case toast.Msg:
+		m.toasts.StartLeaving(msg) // 静止が明けた: 引っ込む演出へ (世代が合うときだけ)
+		return m, m.startFrames()
 	case spinMsg:
 		return m, m.onSpin()
 	case editorDoneMsg:
@@ -230,22 +217,22 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 	case attachReadyMsg:
 		m.attaching = false
 		if msg.err != nil {
-			m.flash = "attach できない: " + msg.err.Error()
+			m.fail("attach できない: " + msg.err.Error())
 			return m, nil
 		}
 		// 照合を待つ間に入力欄を開いた・終了の確認を出した・別のカードを選んだなら、端末を明け渡さない (書いている途中の画面を奪わない)。
 		// 引き出し・? の表・PG の一覧を開いているだけなら明け渡す (戻れば同じ画面に戻る)
 		if m.mode != modeBoard || m.selected != msg.cardID {
-			m.flash = "attach を取りやめた (待っている間に画面が変わった)"
+			m.info("attach を取りやめた (待っている間に画面が変わった)")
 			return m, nil
 		}
 		done := attachDoneMsg{cardID: msg.cardID, session: msg.session, from: m.now()}
 		return m, m.execProcess(msg.cmd, func(err error) tea.Msg { done.err = err; return done })
 	case attachDoneMsg:
 		if msg.err != nil {
-			m.flash = "attach が失敗した: " + msg.err.Error()
+			m.fail("attach が失敗した: " + msg.err.Error())
 		} else {
-			m.flash = msg.cardID + " の session から戻った (session は動き続けている)"
+			m.done(msg.cardID + " の session から戻った (session は動き続けている)")
 		}
 		// 失敗で戻っても、それまでに打った指示はある。transcript を全部読むので裏で頼む
 		rec, ok := m.be.(backend.AttachRecorder)
@@ -261,7 +248,7 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 		if msg.err != nil { // 残せなかったことは消さずに出す (知らずにいると、カードを見ても指示が分からない)
 			m.Notify(msg.cardID + ": attach の間の指示をカードに残せなかった: " + msg.err.Error())
 		} else if msg.n > 0 {
-			m.flash = fmt.Sprintf("%s: attach の間の指示 %d 件をカードの履歴へ送った", msg.cardID, msg.n)
+			m.done(fmt.Sprintf("%s: attach の間の指示 %d 件をカードの履歴へ送った", msg.cardID, msg.n))
 		}
 		return m, nil
 	case tea.PasteMsg:
@@ -508,7 +495,7 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	}
 	if op, ok := writeKeys[k.String()]; ok && !m.accepts(op) {
 		// 入力欄を開いてから送った時点で断ると、書いた文が無駄になる (2026-09-24 の報告)。押した時点で断る
-		m.flash = "この画面では使えない操作 (見ているだけの画面 = pro-con --view は書き込まない)"
+		m.info("この画面では使えない操作 (見ているだけの画面 = pro-con --view は書き込まない)")
 		return nil
 	}
 	switch k.String() {
@@ -522,7 +509,7 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		// q は「今の板を 1 段戻る」(docs/glogx-ui-guide.md §1) だけ。開いている板が無くても終了しない
 		// (2026-09-25 にユーザーの依頼で廃止。終了は Q → quit だけ。quit.go)
 		if !m.closeTop() {
-			m.flash = "終了は Q を押して quit と打つ"
+			m.info("終了は Q を押して quit と打つ")
 			return nil
 		}
 	case "esc":
@@ -545,7 +532,7 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	case "r":
 		c, ok := m.selectedCard()
 		if !ok || !c.Answerable() {
-			m.flash = "回答できるのは質問待ちのカードだけ"
+			m.info("回答できるのは質問待ちのカードだけ")
 			return nil
 		}
 		m.startInput(inputAnswer)
@@ -636,7 +623,6 @@ func (m *Model) startInput(k inputKind) {
 	m.mode = modeInput
 	m.inputKind = k
 	m.line.Reset()
-	m.flash = ""
 }
 
 // handleInputKey は入力中のキー。Enter / Esc / Tab / ctrl+c 以外は編集キーとして lineedit に渡す
@@ -645,7 +631,7 @@ func (m *Model) handleInputKey(k tea.KeyPressMsg) tea.Cmd {
 	switch k.String() {
 	case "esc":
 		m.mode = modeBoard
-		m.flash = "入力を取り消した"
+		m.info("入力を取り消した")
 	case "enter":
 		if m.inputKind == inputQuit {
 			return m.submitQuit()
@@ -686,7 +672,7 @@ func (m *Model) doneInTab() int {
 func (m *Model) askClearDone() {
 	n := m.doneInTab()
 	if n == 0 {
-		m.flash = "片付ける完了のカードが無い"
+		m.info("片付ける完了のカードが無い")
 		return
 	}
 	scope := "全 repo"
@@ -703,10 +689,10 @@ func (m *Model) askDelete() {
 	c, ok := m.selectedCard()
 	switch {
 	case !ok:
-		m.flash = "削除するカードを選んでいない"
+		m.info("削除するカードを選んでいない")
 		return
 	case c.Deleting():
-		m.flash = c.ID + " は削除の依頼を受けている (PG の session を止めてから消える)"
+		m.info(c.ID + " は削除の依頼を受けている (PG の session を止めてから消える)")
 		return
 	}
 	q := fmt.Sprintf("%s「%s」を削除します (依頼の列。すぐ消えます)。よいですか? [y/N]", c.ID, c.Title)
@@ -724,7 +710,7 @@ func (m *Model) handleConfirmKey(k tea.KeyPressMsg) tea.Cmd {
 	case confirm.IsYesStrict(key):
 		m.apply(m.pending)
 	default:
-		m.flash = "取り消した (実行していない)"
+		m.info("取り消した (実行していない)")
 		m.mode = modeBoard
 		m.line.Reset()
 	}
@@ -761,13 +747,13 @@ func (m *Model) submit() {
 func (m *Model) apply(cmd backend.Command) {
 	res, err := m.be.Apply(cmd)
 	if err != nil {
-		m.flash = "失敗: " + err.Error()
+		m.fail("失敗: " + err.Error())
 		if errors.Is(err, backend.ErrEmptyText) {
 			m.mode = modeInput
 			return // 入力欄を開いたまま書き直させる
 		}
 	} else {
-		m.flash = res
+		m.done(res)
 	}
 	m.mode = modeBoard
 	m.line.Reset()

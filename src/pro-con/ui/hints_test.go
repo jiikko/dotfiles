@@ -89,8 +89,8 @@ func TestReadOnlyRefusesWriteKeysImmediately(t *testing.T) {
 		m := New(be, nil)
 		m.selected = "W1" // 質問待ち (書き込みを受け付ける backend なら r で入力欄が開く)
 		press(m, k)
-		if m.mode != modeBoard || m.picker.open || !strings.Contains(m.flash, "使えない操作") {
-			t.Fatalf("読み取り専用なのに %q で操作が始まった: mode=%v picker=%v flash=%q", k, m.mode, m.picker.open, m.flash)
+		if m.mode != modeBoard || m.picker.open || !strings.Contains(m.toasts.Text(), "使えない操作") {
+			t.Fatalf("読み取り専用なのに %q で操作が始まった: mode=%v picker=%v flash=%q", k, m.mode, m.picker.open, m.toasts.Text())
 		}
 	}
 	m := New(newSpy(), nil) // 書き込みを受け付ける backend では、今までどおり入力欄が開く (対照)

@@ -109,8 +109,8 @@ func TestDrawerStepsToNextCardInLane(t *testing.T) {
 		t.Fatalf("J で W2 へ送られない: 選択 %s / 表示 %s / offset %d / 開いている %v", m.selected, m.drawerCard, m.pager.Offset, m.showDetail)
 	}
 	press(m, "J")
-	if m.selected != "W2" || !strings.Contains(m.flash, "最後") {
-		t.Fatalf("端で止まって知らせるはず: 選択 %s / %q", m.selected, m.flash)
+	if m.selected != "W2" || !strings.Contains(m.toasts.Text(), "最後") {
+		t.Fatalf("端で止まって知らせるはず: 選択 %s / %q", m.selected, m.toasts.Text())
 	}
 	press(m, "K")
 	if m.selected != "W1" {

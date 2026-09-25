@@ -68,7 +68,7 @@ func (m *Model) openIssue() tea.Cmd {
 	}
 	p, err := m.issuePath(c)
 	if err != nil {
-		m.flash = "開けない: " + err.Error()
+		m.fail("開けない: " + err.Error())
 		return nil
 	}
 	return m.execProcess(m.openEditor(p), func(err error) tea.Msg { return editorDoneMsg{path: p, err: err} })
@@ -76,29 +76,29 @@ func (m *Model) openIssue() tea.Cmd {
 
 func (m *Model) onEditorDone(msg editorDoneMsg) {
 	if msg.err != nil {
-		m.flash = "エディタが失敗した: " + msg.err.Error()
+		m.fail("エディタが失敗した: " + msg.err.Error())
 		return
 	}
-	m.flash = "エディタから戻った: " + msg.path
+	m.done("エディタから戻った: " + msg.path)
 }
 
 // yankPath は選択中のカードの issue のファイルのパス (素の値) をコピーする (y。docs/glogx-ui-guide.md の y = 素の値)。
 func (m *Model) yankPath() {
 	c, ok := m.selectedCard()
 	if !ok {
-		m.flash = "コピーするカードが選ばれていない"
+		m.info("コピーするカードが選ばれていない")
 		return
 	}
 	p, err := m.issuePath(c)
 	if err != nil {
-		m.flash = "コピーできない: " + err.Error() + " (Y でタイトルと内容をコピー)"
+		m.fail("コピーできない: " + err.Error() + " (Y でタイトルと内容をコピー)")
 		return
 	}
 	if err := m.copy(p); err != nil {
-		m.flash = "コピーに失敗した: " + err.Error()
+		m.fail("コピーに失敗した: " + err.Error())
 		return
 	}
-	m.flash = "パスをコピーした: " + p
+	m.done("パスをコピーした: " + p)
 }
 
 // issueTag はカードの 1 行目に出す issue 番号 (最初の 1 つ + 残りの数)。

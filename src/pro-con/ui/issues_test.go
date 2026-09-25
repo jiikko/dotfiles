@@ -85,8 +85,8 @@ func TestYankPathAndOpenIssue(t *testing.T) {
 func TestIssueKeysOnCardWithoutIssue(t *testing.T) {
 	m, copied, opened := issueModel(t, nil)
 	press(m, "y")
-	if len(*copied) != 0 || !strings.Contains(m.flash, "紐づいていない") || !strings.Contains(m.flash, "Y") {
-		t.Fatalf("コピーせず理由と Y を案内するはず: copied=%v flash=%q", *copied, m.flash)
+	if len(*copied) != 0 || !strings.Contains(m.toasts.Text(), "紐づいていない") || !strings.Contains(m.toasts.Text(), "Y") {
+		t.Fatalf("コピーせず理由と Y を案内するはず: copied=%v flash=%q", *copied, m.toasts.Text())
 	}
 	if cmd := press(m, "e"); cmd != nil || len(*opened) != 0 {
 		t.Fatal("issue の無いカードでエディタを開いた")
