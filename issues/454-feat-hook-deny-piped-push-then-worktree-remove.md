@@ -1,5 +1,7 @@
 # 454 (feat): push の結果をパイプに通したまま worktree を消す Bash を、PreToolUse の hook で止める
 
+> 🚨 **担当中: dotfiles-7d**（2026-09-25〜）
+
 起票日: 2026-09-25
 
 ## 概要
