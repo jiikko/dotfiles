@@ -7,14 +7,12 @@ package dispatcher
 //     (trust 済みの repo の下でないと --bg が起動しない。415 論点 2)。--setting-sources でユーザーの hook を外す (431 の計測)
 //   - TMUX / TMUX_PANE を落とす (PG が起動元の pane の状態のバッジを上書きしないように。415 論点 5)
 //   - 再開は stop してから `claude --bg --resume <session-id> <text>` (実行中の session に --resume するとコピーが起動する。415 論点 11)
-//   - 起動・再開ともユーザーの settings.json の language だけを --settings で渡す (461。-p では --setting-sources に user を入れても
-//     language が効かず、--settings で渡したときだけ効いた。440 の 7d)。🚨 中身は言語だけ (hook・許可を足すと --setting-sources で外した意味が崩れる)
-// 431 の PG 用の設定ディレクトリ (規約を絞る) はログイン待ち (433) なので、まだ渡していない。
+//   - 起動・再開とも --settings で sessionSettings (rolesettings.go) を渡す: ユーザーの settings.json の language (461。-p では
+//     --setting-sources に user を入れても language が効かず、--settings で渡したときだけ効いた。440 の 7d) と、auto memory を外す (431)
 
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -25,7 +23,7 @@ import (
 )
 
 // ExecLauncher は Launcher の本物。Claude は claude の実体の絶対パス (ResolveClaude。素の名前にしない = 464)。
-// UserSettings はユーザーの settings.json のパスで、起動・再開のたびに language を読む (空なら渡さない)。
+// UserSettings はユーザーの settings.json のパスで、起動・再開のたびに language を読む (空なら language は渡さない)。
 type ExecLauncher struct{ Claude, UserSettings string }
 
 // ErrRejected は claude が起動・再開を受け付けなかった失敗 (rc≠0 で返った / プロセスを起動できなかった)。何も立っていないので、
@@ -64,19 +62,16 @@ func (l ExecLauncher) Stop(ctx context.Context, id string) error {
 }
 
 func (l ExecLauncher) startArgs(name, prompt string) []string {
-	return withSettings([]string{"--bg", "-w", name, "-n", name, "--setting-sources", "project,local"}, languageSettings(l.UserSettings), prompt)
+	return withSettings([]string{"--bg", "-w", name, "-n", name, "--setting-sources", "project,local"}, sessionSettings(l.UserSettings), prompt)
 }
 
 func (l ExecLauncher) resumeArgs(sessionID, text string) []string {
-	return withSettings([]string{"--bg", "--resume", sessionID, "--setting-sources", "project,local"}, languageSettings(l.UserSettings), text)
+	return withSettings([]string{"--bg", "--resume", sessionID, "--setting-sources", "project,local"}, sessionSettings(l.UserSettings), text)
 }
 
-// withSettings は --settings を位置引数 (prompt) の前に挟む。settings が空なら付けない。
+// withSettings は --settings を位置引数 (prompt) の前に挟む。
 func withSettings(args []string, settings, positional string) []string {
-	if settings != "" {
-		args = append(args, "--settings", settings)
-	}
-	return append(args, positionalArg(positional))
+	return append(args, "--settings", settings, positionalArg(positional))
 }
 
 // dashGuard は「-」で始まる位置引数の前に付ける前置き。
@@ -98,33 +93,6 @@ func UserSettingsPath(home string) string {
 		return filepath.Join(d, "settings.json")
 	}
 	return filepath.Join(home, ".claude", "settings.json")
-}
-
-// languageSettings は path の settings.json から language だけを抜いた --settings の JSON を返す。
-// 読めない・壊れている・language が無い / 文字列でない / 空なら "" (渡さない。起動は止めない)。
-func languageSettings(path string) string {
-	if path == "" {
-		return ""
-	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	var s struct {
-		Language any `json:"language"`
-	}
-	if json.Unmarshal(b, &s) != nil {
-		return ""
-	}
-	lang, ok := s.Language.(string)
-	if !ok || strings.TrimSpace(lang) == "" {
-		return ""
-	}
-	out, err := json.Marshal(map[string]string{"language": lang})
-	if err != nil {
-		return ""
-	}
-	return string(out)
 }
 
 func runClaude(ctx context.Context, claude, dir string, args ...string) (string, error) {

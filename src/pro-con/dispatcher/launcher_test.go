@@ -19,28 +19,26 @@ func writeSettings(t *testing.T, body string) string {
 	return p
 }
 
-// 起動・再開の引数に、ユーザーの settings.json の language だけを --settings で渡す (461。hook・許可は持ち込まない)。
-func TestLauncherArgsPassOnlyLanguage(t *testing.T) {
+// 起動・再開の引数に、ユーザーの settings.json の language と auto memory の無効化だけを --settings で渡す (461 / 431。hook・許可は持ち込まない)。
+func TestLauncherArgsPassLanguageAndNoAutoMemory(t *testing.T) {
 	p := writeSettings(t, `{"language": "日本語", "hooks": {"Stop": []}, "permissions": {"allow": ["Bash"]}, "model": "opus"}`)
-	settings := languageSettings(p)
-	if settings != `{"language":"日本語"}` {
-		t.Fatalf("--settings の中身 = %q (言語だけのはず)", settings)
-	}
+	const settings = `{"autoMemoryEnabled":false,"language":"日本語"}`
 	l := ExecLauncher{UserSettings: p}
 	start := l.startArgs("pg-1", "依頼")
-	want := []string{"--bg", "-w", "pg-1", "-n", "pg-1", "--setting-sources", "project,local", "--settings", `{"language":"日本語"}`, "依頼"}
+	want := []string{"--bg", "-w", "pg-1", "-n", "pg-1", "--setting-sources", "project,local", "--settings", settings, "依頼"}
 	if !slices.Equal(start, want) {
 		t.Fatalf("起動の引数 = %q\nwant %q", start, want)
 	}
 	resume := l.resumeArgs("sid", "回答")
-	want = []string{"--bg", "--resume", "sid", "--setting-sources", "project,local", "--settings", `{"language":"日本語"}`, "回答"}
+	want = []string{"--bg", "--resume", "sid", "--setting-sources", "project,local", "--settings", settings, "回答"}
 	if !slices.Equal(resume, want) {
 		t.Fatalf("再開の引数 = %q\nwant %q", resume, want)
 	}
 }
 
-// 読めない・壊れている・language が無い / 文字列でない / 空なら --settings を付けない (起動は止めない。値を固定で補わない)。
-func TestLauncherArgsOmitSettingsWithoutLanguage(t *testing.T) {
+// 読めない・壊れている・language が無い / 文字列でない / 空なら language を渡さない (起動は止めない。値を固定で補わない)。
+// auto memory の無効化は language と関係なく渡す。~/.claude/CLAUDE.md は PG・PM には残す (431)。
+func TestLauncherArgsWithoutLanguageStillDisableAutoMemory(t *testing.T) {
 	cases := map[string]string{
 		"パスが空":        "",
 		"ファイルが無い":     filepath.Join(t.TempDir(), "missing.json"),
@@ -50,16 +48,43 @@ func TestLauncherArgsOmitSettingsWithoutLanguage(t *testing.T) {
 		"空":           writeSettings(t, `{"language": "  "}`),
 	}
 	for name, p := range cases {
-		if s := languageSettings(p); s != "" {
-			t.Errorf("%s: languageSettings = %q (渡さないはず)", name, s)
-		}
 		l := ExecLauncher{UserSettings: p}
-		if args := l.startArgs("n", "p"); slices.Contains(args, "--settings") {
-			t.Errorf("%s: 起動の引数に --settings が付いた: %q", name, args)
+		for kind, args := range map[string][]string{"起動": l.startArgs("n", "p"), "再開": l.resumeArgs("sid", "t")} {
+			i := slices.Index(args, "--settings")
+			if i < 0 || i+1 >= len(args) || args[i+1] != `{"autoMemoryEnabled":false}` {
+				t.Errorf("%s: %sの引数 = %q (--settings は auto memory の無効化だけのはず)", name, kind, args)
+			}
 		}
-		if args := l.resumeArgs("sid", "t"); slices.Contains(args, "--settings") {
-			t.Errorf("%s: 再開の引数に --settings が付いた: %q", name, args)
-		}
+	}
+}
+
+// haiku (要約役・btw) は家の .claude/CLAUDE.md も外す。家が分からなければ auto memory だけ外す (431)。
+func TestHaikuSettings(t *testing.T) {
+	if got, want := HaikuSettings("/h"), `{"autoMemoryEnabled":false,"claudeMdExcludes":["/h/.claude/CLAUDE.md"]}`; got != want {
+		t.Fatalf("HaikuSettings(/h) = %s\nwant %s", got, want)
+	}
+	if got, want := HaikuSettings(""), `{"autoMemoryEnabled":false}`; got != want {
+		t.Fatalf(`HaikuSettings("") = %s\nwant %s`, got, want)
+	}
+}
+
+// haiku は --setting-sources project,local と --settings を付けて claude -p を呼ぶ (prompt は標準入力)。
+func TestHaikuPassesSettings(t *testing.T) {
+	bin := t.TempDir()
+	argsFile := filepath.Join(bin, "args")
+	claude := filepath.Join(bin, "claude")
+	script := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\" >>\"" + argsFile + "\"; done\necho 要約\n"
+	if err := os.WriteFile(claude, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	out, err := HaikuAsk(claude, t.TempDir(), `{"x":1}`)(context.Background(), "問い")
+	if err != nil || strings.TrimSpace(out) != "要約" {
+		t.Fatalf("out = %q, err = %v", out, err)
+	}
+	b, _ := os.ReadFile(argsFile)
+	want := []string{"-p", "--model", "haiku", "--setting-sources", "project,local", "--settings", `{"x":1}`}
+	if got := strings.Split(strings.TrimSuffix(string(b), "\n"), "\n"); !slices.Equal(got, want) {
+		t.Fatalf("引数 = %q\nwant %q", got, want)
 	}
 }
 

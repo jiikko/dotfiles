@@ -3,7 +3,7 @@
 起票日: 2026-09-24
 期限: 2026-10-01
 
-親: [415](415-design-claude-pm-worker-orchestration.md) / 出典: [431](431-feat-pro-con-pg-session-settings.md) の計測
+親: [415](../415-design-claude-pm-worker-orchestration.md) / 出典: [431](../431-feat-pro-con-pg-session-settings.md) の計測
 
 ## なぜ人が要るか
 
@@ -26,4 +26,5 @@ PG 用の設定ディレクトリ (`CLAUDE_CONFIG_DIR`) に切り替えれば外
 
 ## 進捗
 
-- [ ] 未確認
+- [x] 2026-09-26: **不要として閉じた** (ログインはしていない)。`--settings` の `claudeMdExcludes` / `autoMemoryEnabled` で、
+  `CLAUDE_CONFIG_DIR` 無しに規約を絞れた (431 の「再計測」「対応」節)
