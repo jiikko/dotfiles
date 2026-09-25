@@ -50,9 +50,9 @@
 - [x] 受付の箱に `order` / `btw` / `clear` と、`add` の `ParentID` を足した (`store`)。完了のカードへの追記・方針変更は除ける。レビュー待ちは受ける
 - [x] dispatcher: 追加オーダーを届ける (`orders.go`)・btw に答える (`btw.go`)。起動の指示と再開の文に未達のオーダーを添える
 - [x] `live.Apply` が追加オーダー・btw・片付けを箱に置く。画面の断りの文言を「見ているだけの画面」向けに直した。README と docs/glogx-ui-guide.md §8
-- [x] 検査: store 4 本 / dispatcher 9 本 (busy は待つ → idle で届く・問いで止まった / 落ちた PG には届けない・方針変更は busy でも止める・回答に添える・
-  起動の指示に入れる・渡したものだけに印・レビュー待ちから戻す (箱の review を追い越さない)・btw は PG に触らず答える・材料が無ければ記録から) / live 2 本。
-  偽の launcher と一覧で発火条件を作った (本物の claude・state dir は触らない)。`bin/mutate-verify` で変異 13 本がすべて red
+- [x] 検査: store 4 本 / dispatcher 10 本 (busy は待つ → idle で届く・問いで止まった / 落ちた PG には届けない・方針変更は busy でも止める・回答に添える・
+  起動の指示に入れる・渡したものだけに印・レビュー待ちから戻す (箱の review を追い越さない)・btw は PG に触らず答える・材料が無ければ記録から・削除を待つカード (451) は再開しない) / live 2 本。
+  偽の launcher と一覧で発火条件を作った (本物の claude・state dir は触らない)。`bin/mutate-verify` で変異 14 本がすべて red
   (途中で 1 本が緑 = レビュー待ちの分岐が idle の分岐と重複していたので、分岐を畳んだ)
 - [ ] 本物の claude での確認 (idle の判定が turn の区切りと一致するか・再開の文が PG に読まれるか・haiku の答えの質)
 

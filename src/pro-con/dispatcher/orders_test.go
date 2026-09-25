@@ -161,17 +161,18 @@ func TestReviewWithPendingOrderGoesBackToPG(t *testing.T) {
 	}
 }
 
-// 削除の依頼を受けたカードには、未達のオーダーがあっても PG を再開しない (止めて消すのを待っている。issue 451)。
+// 削除の依頼を受けたカードは、未達のオーダーがあっても再開の列へ戻さない (PG を止めて消すのを待っている間は列を動かさない。issue 451)。
 func TestNoDeliveryToDeletingCard(t *testing.T) {
 	r := newCrashRig(t)
 	r.ss[0].Status = agents.StatusIdle
+	r.l.stopFail = true // 止められずに削除を待ち続ける形
 	order(t, r.dir, "C-001", card.OrderRedirect, "x")
 	if _, err := store.Apply(r.dir, t0); err != nil {
 		t.Fatal(err)
 	}
 	setCard(t, r.dir, "C-001", func(c *card.Card) { c.DeleteAt = t0 })
 	r.tick(t)
-	if len(r.l.resumes) != 0 {
-		t.Fatalf("削除を待つカードの PG を再開した: %v", r.l.resumes)
+	if c := states(t, r.dir)["C-001"]; len(r.l.resumes) != 0 || c.State != card.Running {
+		t.Fatalf("削除を待つカードを再開の列へ戻した: resumes=%v %v", r.l.resumes, c.State)
 	}
 }
