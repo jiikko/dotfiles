@@ -113,6 +113,7 @@ type Model struct {
 	drawerCard string
 	pager      listnav.Pager
 	framing    bool // frame の tick が回っているか (二重に回さない)
+	spinning   bool // 処理中の印の tick が回っているか (spinner.go。二重に回さない)
 
 	picker picker // issue の一覧から依頼する画面 (picker.go)
 
@@ -198,7 +199,7 @@ func (m *Model) Init() tea.Cmd {
 
 func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 	defer func() { // 選択が動いたら (キーでも、カードの移動でも) 枠を滑らせる
-		c := m.trackCursor()
+		c := tea.Batch(m.trackCursor(), m.trackSpin())
 		if m.trackLane() {
 			c = tea.Batch(c, m.startFrames())
 		}
@@ -214,6 +215,8 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 		return m, tea.Batch(m.waitChanged(), m.poll())
 	case frameMsg:
 		return m, m.onFrame()
+	case spinMsg:
+		return m, m.onSpin()
 	case editorDoneMsg:
 		m.onEditorDone(msg)
 		return m, nil

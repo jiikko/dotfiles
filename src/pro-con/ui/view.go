@@ -363,6 +363,9 @@ func (m *Model) badgeColored(c card.Card) string {
 // badge は待ちの理由と、issue との紐づき (要件 10)。
 func (m *Model) badge(c card.Card) string {
 	var parts []string
+	if m.processing(c) { // 裏で Claude かテストの係が処理している最中 (spinner.go)
+		parts = append(parts, m.spinFrame())
+	}
 	if c.Deleting() {
 		parts = append(parts, "削除中 (PG を止めている)")
 	}
