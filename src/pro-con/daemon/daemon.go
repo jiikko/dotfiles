@@ -157,7 +157,8 @@ func (d *Daemon) register(now time.Time, ss []agents.Session) (int, []string, er
 			continue
 		}
 		for _, s := range ss {
-			if s.ID != c.Session || s.SessionID == "" || s.PID == 0 {
+			// pro-con が起動するのは bg の session だけ。対話の session (人間が PG の worktree で開いたもの等) は決して取り込まない
+			if s.ID != c.Session || s.SessionID == "" || s.PID == 0 || s.Kind != "background" {
 				continue
 			}
 			o, ok := known[c.ID]
@@ -189,7 +190,8 @@ func (d *Daemon) register(now time.Time, ss []agents.Session) (int, []string, er
 				}
 				// Claude Code 自身がプロセスの死から再開した (transcript に再開の文が新しく出た)。記録を書き直してから回数を数える
 				// (逆の順だと、あいだで落ちたとき数えた文が since を進め、pid を二度と書き直せなくなる。この順なら 1 回数え漏れるだけ)
-				if err := live.Register(regPath, live.Owned{SessionID: s.SessionID, ID: s.ID, PID: s.PID, CardID: c.ID, StartedAt: s.Started(), Cwd: s.Cwd}); err != nil {
+				// cwd は記録の方を優先する (落ちている間の一覧の cwd は repo root になる = 427 の 3f。repo root を記録すると cwd の照合が repo 全体に当たる)
+				if err := live.Register(regPath, live.Owned{SessionID: s.SessionID, ID: s.ID, PID: s.PID, CardID: c.ID, StartedAt: s.Started(), Cwd: firstNonEmpty(o.Cwd, s.Cwd)}); err != nil {
 					return n, warn, err
 				}
 				n++
@@ -212,6 +214,17 @@ func (d *Daemon) register(now time.Time, ss []agents.Session) (int, []string, er
 }
 
 // restartsSince は、記録の行 (o) より後・最後に数えた落ちた時刻より後に、transcript へ出た再開の文の時刻を返す。
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
+// worktreeMarker は pro-con の PG の worktree のパスに入る部分 (claude --bg -w pc-<card> が <repo>/.claude/worktrees/pc-<card> に作る)。
+// cwd で session を照らしてよいのはこの下だけ (repo root で照らすと、同じ repo の他の session に当たる)
+const worktreeMarker = "/.claude/worktrees/pc-"
+
 func (d *Daemon) restartsSince(c card.Card, o live.Owned, sessionID string) []time.Time {
 	if d.Transcript == nil {
 		return nil
@@ -442,7 +455,7 @@ func (d *Daemon) dispatch(ctx context.Context, now time.Time, ss []agents.Sessio
 			continue
 		}
 		if err != nil {
-			if err := d.note(c.ID, now, how+"できない: "+err.Error()); err != nil {
+			if err := d.noteOnce(c.ID, now, how+"できない: "+err.Error()); err != nil {
 				return notes, err
 			}
 			notes = append(notes, fmt.Sprintf("%s の PG を%sできない: %v", c.ID, how, err))
@@ -522,14 +535,14 @@ func owned(c card.Card, reg []live.Owned) (live.Owned, bool) {
 func adopt(c card.Card, ss []agents.Session, reg []live.Owned) (string, bool) {
 	o, hasOwned := owned(c, reg)
 	for _, s := range ss {
-		if s.ID == "" || s.Started().Before(c.LaunchedAt) {
+		if s.ID == "" || s.Kind != "background" || s.Started().Before(c.LaunchedAt) {
 			continue
 		}
 		if c.Launching == "起動" && s.Name == sessionName(c) {
 			return s.ID, true
 		}
 		// 再開は別の session id の session を立てる (427 の 3f で実測) ので、同じ作業ディレクトリ (PG の worktree) で印の後に始まったものも取り込む
-		if c.Launching == "再開" && hasOwned && (s.SessionID == o.SessionID || (o.Cwd != "" && s.Cwd == o.Cwd)) {
+		if c.Launching == "再開" && hasOwned && (s.SessionID == o.SessionID || (strings.Contains(o.Cwd, worktreeMarker) && s.Cwd == o.Cwd)) {
 			return s.ID, true
 		}
 	}
@@ -550,8 +563,13 @@ func (d *Daemon) settle(id string, now time.Time, how, session string) error {
 	})
 }
 
-// note はカードの履歴に 1 行足す。直前と同じ文なら足さない (起動・再開できない理由が変わらないまま Tick ごとに記録が伸びないように)。
 func (d *Daemon) note(id string, now time.Time, text string) error {
+	return d.update(id, func(c *card.Card) { c.History = append(c.History, card.Event{At: now, Text: text}) })
+}
+
+// noteOnce は直前と同じ文なら足さない。何も起動していない理由 (起動・再開できない) にだけ使う (理由が変わらないまま Tick ごとに記録が伸びないように)。
+// 🚨 claude を実際に走らせた結果 (失敗と返った) には使わない: 走らせた回数 = 立っているかもしれない session の数が履歴から消える
+func (d *Daemon) noteOnce(id string, now time.Time, text string) error {
 	return d.update(id, func(c *card.Card) {
 		if n := len(c.History); n > 0 && c.History[n-1].Text == text {
 			return

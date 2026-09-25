@@ -132,7 +132,7 @@ func TestRegistersOnceListed(t *testing.T) {
 		t.Fatal("一覧に出る前に登録した (session id と pid が無い)")
 	}
 	d.List = func(context.Context) ([]agents.Session, error) {
-		return []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}, nil
+		return []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}, nil
 	}
 	if _, err := d.Tick(context.Background()); err != nil {
 		t.Fatal(err)
@@ -148,7 +148,7 @@ func TestAnsweredCardResumesSameSession(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	l := &fakeLauncher{}
-	d := newDaemon(t, dir, l, []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}})
+	d := newDaemon(t, dir, l, []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}})
 	for range 2 { // 起動 → 登録
 		if _, err := d.Tick(context.Background()); err != nil {
 			t.Fatal(err)
@@ -216,7 +216,7 @@ func TestRegisterRefusesPidChangeNotCausedByDaemon(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	l := &fakeLauncher{}
-	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}
+	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}
 	d := newDaemon(t, dir, l, nil)
 	d.List = func(context.Context) ([]agents.Session, error) { return ss, nil }
 	for range 2 { // 起動 → 登録
@@ -327,7 +327,7 @@ func TestResumeRefusesWhenShortIDPointsElsewhere(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	l := &fakeLauncher{}
-	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}
+	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}
 	d := newDaemon(t, dir, l, nil)
 	d.List = func(context.Context) ([]agents.Session, error) { return ss, nil }
 	for range 2 {
@@ -420,7 +420,7 @@ func TestResumeSkipsStopWhenSessionIsGone(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	l := &fakeLauncher{}
-	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}
+	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}
 	d := newDaemon(t, dir, l, nil)
 	d.List = func(context.Context) ([]agents.Session, error) { return ss, nil }
 	for range 2 {
@@ -468,7 +468,7 @@ func TestFailedResumeThatActuallyResumedIsAdopted(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	l := &fakeLauncher{}
-	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}
+	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}
 	d := newDaemon(t, dir, l, nil)
 	d.List = func(context.Context) ([]agents.Session, error) { return ss, nil }
 	for range 2 {
@@ -510,7 +510,7 @@ func newCrashRig(t *testing.T) *crashRig {
 	t.Helper()
 	r := &crashRig{dir: t.TempDir(), l: &fakeLauncher{}}
 	planned(t, r.dir, 1)
-	r.ss = []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}
+	r.ss = []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}
 	r.d = newDaemon(t, r.dir, r.l, nil)
 	r.d.List = func(context.Context) ([]agents.Session, error) { return r.ss, nil }
 	r.d.Transcript = func(string) (live.Transcript, error) { return live.Transcript{Restarts: r.restarts}, nil }
@@ -853,7 +853,7 @@ func TestRegisterFillsMissingCwd(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.tick(t)
-	if reg, _ = live.LoadRegistry(regPath); len(reg) != 1 || reg[0].Cwd != "/w/pc-c-001" {
+	if reg, _ = live.LoadRegistry(regPath); len(reg) != 1 || reg[0].Cwd != "/w/dotfiles/.claude/worktrees/pc-c-001" {
 		t.Fatalf("cwd の無い行を埋め直さない: %+v", reg)
 	}
 }
@@ -871,7 +871,7 @@ func TestResumeWithNewSessionReplacesRow(t *testing.T) {
 	t1 := t0.Add(time.Minute)
 	r.d.Now = func() time.Time { return t1 }
 	r.tick(t) // 再開
-	r.ss = []agents.Session{{ID: "db1e", SessionID: "S2", PID: 60, Kind: "background", Cwd: "/w/pc-c-001", StartedAt: t1.Add(time.Second).UnixMilli()}}
+	r.ss = []agents.Session{{ID: "db1e", SessionID: "S2", PID: 60, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t1.Add(time.Second).UnixMilli()}}
 	r.tick(t)
 	reg, _ := live.LoadRegistry(filepath.Join(r.dir, live.RegistryFile))
 	if c := states(t, r.dir)["C-001"]; len(reg) != 1 || reg[0].SessionID != "S2" || reg[0].ID != "db1e" || c.Session != "db1e" {
@@ -891,7 +891,7 @@ func TestFailedResumeAdoptsNewSessionByCwd(t *testing.T) {
 	t1 := t0.Add(time.Minute)
 	r.d.Now = func() time.Time { return t1 }
 	r.tick(t)
-	r.ss = []agents.Session{{ID: "db1e", SessionID: "S2", PID: 60, Kind: "background", Cwd: "/w/pc-c-001", StartedAt: t1.Add(time.Second).UnixMilli()}}
+	r.ss = []agents.Session{{ID: "db1e", SessionID: "S2", PID: 60, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t1.Add(time.Second).UnixMilli()}}
 	r.d.Now = func() time.Time { return t1.Add(launchGrace + time.Second) }
 	r.tick(t)
 	if c := states(t, r.dir)["C-001"]; len(r.l.resumes) != 1 || c.State != card.Running || c.Session != "db1e" {
@@ -934,5 +934,106 @@ func TestRepeatedFailureDoesNotGrowHistory(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("同じ理由を %d 回履歴に書いた", n)
+	}
+}
+
+// 再開の結果が分からないときの取り込みは、pro-con が起動する形 (bg・PG の worktree・印の後に始まった) の session だけ。
+// 人間が同じ worktree で開いた対話の session / 別の worktree / 印より前に始まった session は取り込まない。
+func TestAdoptResumeRejectsOthers(t *testing.T) {
+	wt := "/w/dotfiles/.claude/worktrees/pc-c-001"
+	for _, tc := range []struct {
+		name string
+		s    agents.Session
+	}{
+		{"対話", agents.Session{ID: "hum1", SessionID: "H", PID: 70, Kind: "interactive", Cwd: wt}},
+		{"別の worktree", agents.Session{ID: "oth1", SessionID: "O", PID: 71, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-002"}},
+		{"印より前", agents.Session{ID: "old1", SessionID: "P", PID: 72, Kind: "background", Cwd: wt}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newCrashRig(t)
+			r.l.resumeFail = true
+			for _, q := range []store.Request{{Kind: "ask", CardID: "C-001", Question: "q"}, {Kind: "answer", CardID: "C-001", Answer: "a"}} {
+				if _, err := store.Submit(r.dir, q); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t1 := t0.Add(time.Minute)
+			r.d.Now = func() time.Time { return t1 }
+			r.tick(t) // 再開が失敗と返る (印が残る)
+			s := tc.s
+			s.StartedAt = t1.Add(time.Second).UnixMilli()
+			if tc.name == "印より前" {
+				s.StartedAt = t1.Add(-time.Second).UnixMilli()
+			}
+			r.ss = []agents.Session{s} // 元の session は一覧から消えた (候補だけにする。元の session が先に当たると退行が隠れる)
+			r.tick(t)
+			if c := states(t, r.dir)["C-001"]; c.Session == s.ID {
+				t.Fatalf("%s の session を取り込んだ: %q", tc.name, c.Session)
+			}
+		})
+	}
+}
+
+// 短い id が使い回されて別の session を指している (daemon の再開の後ではない) なら、カードの行を置き換えない。
+func TestRegisterDoesNotReplaceOnReusedShortID(t *testing.T) {
+	r := newCrashRig(t) // 行は LaunchedAt 以降に登録済み (自分の再開の後ではない)
+	r.ss[0].SessionID, r.ss[0].PID = "OTHER", 80
+	r.tick(t)
+	reg, _ := live.LoadRegistry(filepath.Join(r.dir, live.RegistryFile))
+	if len(reg) != 1 || reg[0].SessionID != "S1" {
+		t.Fatalf("使い回された短い id の session で行を置き換えた: %+v", reg)
+	}
+}
+
+// 登録は bg の session だけ (同じ短い id でも対話の session は取り込まない)。
+func TestRegisterIgnoresInteractive(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 1)
+	d := newDaemon(t, dir, &fakeLauncher{}, nil)
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	d.List = func(context.Context) ([]agents.Session, error) {
+		return []agents.Session{{ID: "id-pc-c-001", SessionID: "H", PID: 9, Kind: "interactive", StartedAt: t0.Add(time.Second).UnixMilli()}}, nil
+	}
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if reg, _ := live.LoadRegistry(filepath.Join(dir, live.RegistryFile)); len(reg) != 0 {
+		t.Fatalf("対話の session を登録した: %+v", reg)
+	}
+}
+
+// 起動・再開に「失敗と返った」は、同じ文でも毎回履歴に残す (claude を走らせた回数 = 立っているかもしれない session の数)。
+func TestFailedLaunchIsAlwaysRecorded(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 1)
+	d := newDaemon(t, dir, &fakeLauncher{fail: true}, nil)
+	for i := range 2 {
+		d.Now = func() time.Time { return t0.Add(time.Duration(i) * (launchGrace + time.Second)) }
+		if _, err := d.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n := 0
+	for _, e := range states(t, dir)["C-001"].History {
+		if strings.Contains(e.Text, "失敗したと返った") {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Fatalf("走らせた 2 回の失敗のうち %d 回しか残っていない", n)
+	}
+}
+
+// 自動の再開で記録を書き直すとき、一覧の cwd が repo root (落ちている間の形) でも、記録の worktree の cwd を残す。
+func TestCrashKeepsRecordedCwd(t *testing.T) {
+	r := newCrashRig(t)
+	r.crash(t0.Add(time.Minute), 43)
+	r.ss[0].Cwd = "/w/dotfiles"
+	r.tick(t)
+	reg, _ := live.LoadRegistry(filepath.Join(r.dir, live.RegistryFile))
+	if len(reg) != 1 || reg[0].PID != 43 || reg[0].Cwd != "/w/dotfiles/.claude/worktrees/pc-c-001" {
+		t.Fatalf("記録の cwd を repo root で上書きした: %+v", reg)
 	}
 }

@@ -94,7 +94,7 @@ func FindTranscript(projects, sessionID string) (string, error) {
 	return best, nil
 }
 
-// Start は裏で読み直しを始める (最初の読み取りも裏で行う。claude agents --json は最大 3 秒待つので、画面を出す前に待たない)。
+// Start は裏で読み直しを始める (最初の読み取りも裏で行う。claude agents --json は最大 10 秒待つので、画面を出す前に待たない)。
 // ctx が終わったら止める。止まったかは Wait で待てる。
 func (b *Backend) Start(ctx context.Context) {
 	go func() {
