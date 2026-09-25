@@ -179,6 +179,7 @@ func (d *Dispatcher) writeState(now time.Time) error {
 	if u := d.usage; u != nil {
 		s.UsageSession, s.UsageWeek, s.UsageAt = u.Session, u.Week, u.At
 	}
+	s.Startup, s.StartupAlert = d.startupNote(now)
 	return store.SaveDispatcherState(d.Dir, s)
 }
 

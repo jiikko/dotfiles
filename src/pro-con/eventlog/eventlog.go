@@ -56,6 +56,7 @@ const (
 	KindArchive  = "archive"  // 完了のカードを自動で片付けた (issue 478)
 	KindConfig   = "config"   // 設定 (PG の枠・PM の数) を変えた (issue 456)
 	KindScreens  = "screens"  // 開いている画面の数で決めたこと (画面が無いので抜ける・画面が開いたので続ける)
+	KindRecover  = "recover"  // 起動時の確かめ (マシンの再起動で消えた session を待たずに復旧した / 判定できない。issue 483)
 	KindError    = "error"    // 一覧を取れない・書けない等
 	// KindScreen は画面の側の出来事 (開いた・quit で閉じた・止めた / 止めなかった)。画面が受付の箱に置き、dispatcher が書く
 	// (時刻は画面が置いた時刻。dispatcher が居ない間に置いたものは次の dispatcher が書くので、ファイルの中で時刻の順が前後しうる)

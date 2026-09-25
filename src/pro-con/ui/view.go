@@ -106,7 +106,7 @@ const dispatcherStale = 2 * time.Minute
 
 // dispatcherStopped は dispatcher が人に止められている / 1 度も回っていない / dispatcherStale より長く回っていないか。
 func (m *Model) dispatcherStopped() bool {
-	return m.snap.DispatcherHeld || m.snap.DispatcherTick.IsZero() || m.snap.Now.Sub(m.snap.DispatcherTick) > dispatcherStale
+	return m.snap.DispatcherHeld || m.snap.DispatcherGone || m.snap.DispatcherTick.IsZero() || m.snap.Now.Sub(m.snap.DispatcherTick) > dispatcherStale
 }
 
 // dispatcherGauge は dispatcher が最後に回ってからの時間。1 度も回っていない / 長く回っていなければ赤で出す。
@@ -119,6 +119,9 @@ func (m *Model) dispatcherGauge() string {
 		return sgrRed + "dispatcher 未起動" + sgrFgReset
 	}
 	d := m.snap.Now.Sub(m.snap.DispatcherTick)
+	if m.snap.DispatcherGone { // プロセスが居ない: Tick の古さ (dispatcherStale) を待たずに出す (483。クラッシュの後の --view で気づけなかった)
+		return sgrRed + fmt.Sprintf("dispatcher が動いていない (最後の Tick %s前)", fmtDur(d)) + sgrFgReset
+	}
 	if d > dispatcherStale {
 		return sgrRed + fmt.Sprintf("dispatcher %s前 (止まっている?)", fmtDur(d)) + sgrFgReset
 	}
@@ -201,6 +204,13 @@ func (m *Model) gauge() string {
 	sep := fg(240) + " │ " + sgrFgReset
 	g := " " + strings.Join(parts, "  ") + sep + "最古の待ち " + fmtDur(oldest) + sep +
 		m.pgGauge() + sep + m.dispatcherGauge()
+	if n := m.snap.Startup; n != "" && !m.dispatcherStopped() { // 起動時の確かめ (483)。止まった dispatcher の古い要約は出さない
+		if m.snap.StartupAlert {
+			g += sep + sgrYellow + n + sgrFgReset
+		} else {
+			g += sep + sgrDim + n + sgrReset
+		}
+	}
 	if n := m.snap.Screens; n > 1 { // 画面の数は package presence が数える (dispatcher が止まっていても正しい)
 		g += sep + fmt.Sprintf("画面 %d", n)
 	}

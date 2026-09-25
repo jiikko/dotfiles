@@ -8,10 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+
+	"pro-con/store"
 )
 
-// LockFile はロックのファイル名 (状態の置き場の下)。
-const LockFile = "dispatcher.lock"
+// LockFile はロックのファイル名 (状態の置き場の下)。画面は pid だけを読む (store.DispatcherGone)。
+const LockFile = store.DispatcherLockFile
 
 // ErrRunning は別の dispatcher が既に動いているとき。
 var ErrRunning = errors.New("pro-con dispatcher は既に動いている")

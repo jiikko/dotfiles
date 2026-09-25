@@ -127,16 +127,27 @@ func (d *Dispatcher) tickRuns(ctx context.Context, now time.Time) ([]eventlog.Ev
 			continue
 		}
 		if c.Exec.Active() && (d.active == nil || d.active.cardID != c.ID) {
-			// 実行の途中で dispatcher が落ちた (この dispatcher は実行していない)。残ったコマンドを止めてから、結果が無いことを渡して PG を再開する
-			// (止めずに頼み直させると、同じ worktree で 2 本が重なる)
+			// 実行の途中で dispatcher が落ちた (この dispatcher は実行していない)。残ったコマンドを止めてから (止めずに始めると、同じ worktree で
+			// 2 本が重なる)、同じコマンドを 1 度だけ頼み直す (PG に rc=-1 を返して頼み直させると、再開 1 回ぶんを使う。483)。
+			// 頼み直した実行がまた中断したら、実行がマシンか dispatcher を落としている疑いがあるので、結果が無いことを渡して PG を再開する
 			killStaleFn(c.Exec.RunID)
-			n, err := d.finishRun(now, &runJob{cardID: c.ID, command: c.Run, start: c.Exec.Since},
-				runResult{rc: -1, err: errors.New("dispatcher が実行の途中で止まったので結果が無い。もう一度頼むこと")})
-			notes = append(notes, n)
-			if err != nil {
+			if c.RunRetried {
+				n, err := d.finishRun(now, &runJob{cardID: c.ID, command: c.Run, start: c.Exec.Since},
+					runResult{rc: -1, err: errors.New("dispatcher が実行の途中で止まったので結果が無い (頼み直した実行も中断した。実行がマシンか dispatcher を落としている疑い)")})
+				notes = append(notes, n)
+				if err != nil {
+					return notes, err
+				}
+				continue
+			}
+			if err := d.update(c.ID, func(cc *card.Card) {
+				cc.Exec, cc.RunRetried = card.Exec{}, true
+				cc.History = append(cc.History, card.Event{At: now, Text: "テストの係の実行が dispatcher の停止で中断した。同じコマンドを頼み直す: " + c.Run})
+			}); err != nil {
 				return notes, err
 			}
-			continue
+			notes = append(notes, ev(eventlog.KindRun, c.ID, c.Session, fmt.Sprintf("%s のコマンドが dispatcher の停止で中断した。頼み直す: %s", c.ID, c.Run)))
+			c.Exec, c.RunRetried = card.Exec{}, true
 		}
 		if !c.Exec.Active() {
 			queue = append(queue, c)

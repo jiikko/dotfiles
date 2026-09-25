@@ -40,7 +40,11 @@ type Snapshot struct {
 	DispatcherTick time.Time // dispatcher (と watchdog) が最後に回った時刻。zero なら 1 度も回っていない。古ければ UI が警告する
 	Screens        int       // 開いている画面の数 (自分を含む。package presence。0 なら数えられなかった)
 	DispatcherHeld bool      // 人が dispatcher を止めた印がある (pro-con dispatcher --stop。画面は起こさない。issue 459)
-	Violations     []card.Violation
+	DispatcherGone bool      // 最後に動いた dispatcher のプロセスが居ない (ロックの pid。Tick の古さを待たずに出す。issue 483)
+	// Startup は dispatcher の起動時の確かめの要約 (起動から 10 分だけ。issue 483)。StartupAlert は復旧した・判定できないものがある
+	Startup      string
+	StartupAlert bool
+	Violations   []card.Violation
 }
 
 // Consumer は PG (consumer) 1 体。
