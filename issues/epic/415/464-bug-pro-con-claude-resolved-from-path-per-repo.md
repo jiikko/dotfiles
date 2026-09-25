@@ -49,6 +49,7 @@
   1 段ずつ辿る ④版つきのパスに固定していた → 固定しない ⑤`--version` だけに上限があり `which` には無かった → 解決全体に 30 秒。
   ①③④ はテスト (`TestLauncherUsesOneClaudeAcrossRepos` を古い版の repo の cwd から / `TestResolveClaudeSymlinks`) と変異 3 本で red を確かめた。
   ② の順序はテストで固定していない (本物のモードで dispatcher を動かしたまま `--stop` を撃つ仕掛けが無い)
+- `make lint` 0 件 / `make test` rc=0 (063daab8。origin/master 486dcbe3 の上に rebase 済み)
 - 分かっていて受けるもの: 解決は dispatcher の cwd で行うので、選ばれる版は dispatcher を起こした場所の `.node-version` (無ければ版管理の既定) で決まる
   (repo ごとには変わらない) / npm の `cli.js` のように `#!/usr/bin/env node` で始まる実体なら node は PATH の shim で repo ごとに選ばれうる
   (今の手元は native の `claude.exe`) / 版管理の判定は「shim の置き場が `shims`」という慣習による (volta の `~/.volta/bin` は当たらない。未実測) /
