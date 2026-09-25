@@ -38,7 +38,7 @@
 - [442](done/442-feat-pro-con-card-list-show-wait.md) — `pro-con card list / show / wait` (カードを画面なしで読む。PM の CLI にも要る)。**442 で解消** (2026-09-25)
 - [443](done/443-feat-pro-con-screen-relay.md) — 画面の中継 `pro-con screen` (人間の画面に今出ているものを外から読む)。**443 で解消** (2026-09-25)
 - [444](done/444-feat-pro-con-event-log.md) — 出来事の記録 `pro-con log` (dispatcher の判断を構造化して残し、外から読む)。**444 で解消** (2026-09-25。画面の側の出来事は 445 へ)
-- [445](445-risk-pro-con-viewer-read-only-guarantee.md) — 読み取りだけであることの担保と、見せる範囲
+- [445](done/445-risk-pro-con-viewer-read-only-guarantee.md) — 読み取りだけであることの担保と、見せる範囲。**445 で解消** (2026-09-25。カード C-009: 画面の出来事を dispatcher 経由で events.jsonl へ・`--view` の案内から断る操作を外す・読む口は socket の逃がし先の権限を直さない)
 
 ## 関連
 
