@@ -84,7 +84,7 @@
 - 変異: `bin/mutate-verify` で 21 本。すべて想定したテストが red (busy の待ち・launchGrace・起動の取り込み・restartWait・自動の再開の待ち・
   条件 2・枠の閾値・知らせ済みへの移し・前の PM を退かせる・終了の取り込み 2 本・PMRepo 空・stopPM の呼び出し・close の絞り込み・
   再開の直後の終了・起こし直しの上限 2 本・worktree の消失・知らない status・pm.json の壊れ)
-- make test: 1 回目は gofmt の 1 件で rc=2 (テストは全部 ok)。直して頼み直した結果は下に追記する
+- make test: 1 回目は gofmt の 1 件で rc=2 (テストは全部 ok)。直して頼み直したら rc=0 (4m10s。テストの係の実行)
 
 残り:
 - 🚨 **本物の claude ではまだ走らせていない** (起動・再開の引数は PG と同じ ExecLauncher)。PM を実際に起こして、知らせが turn の区切りで届くか・
