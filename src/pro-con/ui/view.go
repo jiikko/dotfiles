@@ -526,7 +526,7 @@ func (m *Model) hints() []string {
 	offer := func(hs ...hint) []string {
 		var out []string
 		for _, h := range hs {
-			if !(ro && h.acts) {
+			if !ro || !h.acts {
 				out = append(out, avail(h.text, h.ok))
 			}
 		}
