@@ -34,6 +34,7 @@ PM がレビュー待ちのカードを見て「ここを直して」と PG に�
 
 - テスト: `store.TestReworkReturnsReviewToPlanned` / `TestReworkRejectsOutsideReview`、`dispatcher.TestReworkedCardResumesSameSession`、
   `TestCardCommandAskAnswer` に rework の行、`TestPMGuideCommandsParse` が guide の rework の行をパーサに通す
+- `make test` (テストの係経由) rc=0
 - `bin/mutate-verify` で 5 本の変異 (状態の検査を外す / 空の検査を外す / 履歴を 80 文字で切る / Resume を渡さない / パーサで本文を落とす) が、それぞれ狙ったテストだけを red にするのを確かめた
 
 残り:
