@@ -45,8 +45,9 @@ PG は変異 13 本・敵対的レビュー 1 周を自分で回し、残り (�
 - [x] レビューの差し戻し: `pro-con card rework <カード> "<直してほしい点>"` (レビュー待ち → 作業中へ戻し、同じ PG を回答つきで再開する) → 446
 - [x] カードを完了・却下したら、その PG の session を止める (dispatcher の close の適用で) → 447
 - [x] カードを読む口 → 442。外の Claude から覗く口 → epic 441
-- [ ] PG の session の名前を再開の後も `pc-c-NNN` にそろえる (`--resume` で名前を付け直せるか要実測) → 488
-- [ ] レビューで見つけた小さな点: attach の指示は打った時刻のまま履歴の末尾に足すので、履歴が時刻の順に並ばなくなりうる (428 の実装) → 489
+- [x] PG の session の名前を再開の後も `pc-c-NNN` にそろえる (`--resume` で名前を付け直せるか要実測) → 488
+- [x] レビューで見つけた小さな点: attach の指示は打った時刻のまま履歴の末尾に足すので、履歴が時刻の順に並ばなくなりうる (428 の実装) → 489
+- [ ] stop の直後に `--resume` すると、`claude stop` が rc=0 を返した後でも「まだ実行中」と見てコピーを起動し、`note: session <id> is already running in the background, so this started a copy as <new>. …` を `backgrounded · …` の行の前に出した (488 の実測で 2 回とも。Claude Code 2.1.282)。🚨 **未確認**: 実測は stdout と stderr をまとめて取ったので、`note:` がどちらに出たかは分からない。stdout なら `launcher.go` の `parseBackgrounded` (stdout の 1 行目だけを読む) が「出力を読めない」で失敗するのにコピーは立つ。本物の PG の再開は通っているので stderr の見込みが高い。確かめるなら 2 つの流れを分けて取る (未起票)
 
 ## 2 回目 (2026-09-25 17:45〜18:40。カード C-003 = issue 436。ユーザーが見本 C・1000 ms を選んだ)
 

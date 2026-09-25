@@ -37,8 +37,9 @@ type Launcher interface {
 	Start(ctx context.Context, repoPath, name, prompt string) (id string, err error)
 	// Resume は stopID の session を止めてから (空なら止めない) 同じ session を text を渡して再開し、claude --bg が返す短い id を返す
 	// (実行中の session に --resume するとコピーが起動するため。415 論点 11。再開で短い id が変わるかは未実測なので、返った id を使う)
-	// cwd は session の作業ディレクトリ (PG の worktree)。再開はそこで走らせる
-	Resume(ctx context.Context, stopID, sessionID, cwd, text string) (newID string, err error)
+	// cwd は session の作業ディレクトリ (PG の worktree)。再開はそこで走らせる。name は起動のときと同じ session の名前
+	// (渡さないと、再開の後の名前は AI の付けた題になる。488 で実測)
+	Resume(ctx context.Context, stopID, sessionID, cwd, name, text string) (newID string, err error)
 	// Stop は session を止める (落ち続けた PG。426 の決定 4)
 	Stop(ctx context.Context, id string) error
 }
@@ -854,7 +855,7 @@ func (d *Dispatcher) prepare(c card.Card, now time.Time, ss []agents.Session, re
 			return "再開", nil, errWait // Claude Code の自動の再開の途中かもしれない
 		}
 		return "再開", func(ctx context.Context) (string, error) {
-			return d.Launch.Resume(ctx, stop, o.SessionID, o.Cwd, resumeText(c))
+			return d.Launch.Resume(ctx, stop, o.SessionID, o.Cwd, sessionName(c), resumeText(c))
 		}, nil
 	}
 	path, ok := d.Repos[c.Repo]

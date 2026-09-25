@@ -24,11 +24,11 @@ func TestE2EFakePGScript(t *testing.T) {
 	if st, err := os.Stat(wt); err != nil || !st.IsDir() {
 		t.Fatalf("worktree を作らない: %v", err)
 	}
-	id2, err := l.Resume(context.Background(), id1, "", wt, "続けてください")
+	id2, err := l.Resume(context.Background(), id1, "", wt, "", "続けてください")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := l.Resume(context.Background(), id2, "", wt, "テストの係の結果: `echo e2e-ok` rc=0"); err != nil {
+	if _, err := l.Resume(context.Background(), id2, "", wt, "", "テストの係の結果: `echo e2e-ok` rc=0"); err != nil {
 		t.Fatal(err)
 	}
 	ss, _ := e.List(context.Background())
