@@ -80,7 +80,7 @@
 |---|---|
 | カバレッジ向上を求められた | [`refuse-low-value-coverage.md`](rules/refuse-low-value-coverage.md) |
 | 検査・テストを「通った」と判断する | [`verify-execution-not-just-exit-code.md`](rules/verify-execution-not-just-exit-code.md) |
-| 新規テストを commit する | [`mutation-verify-new-tests.md`](rules/mutation-verify-new-tests.md) (`paths:` でテストファイルを Read したときだけ読み込まれる。**読み込まれていなければ commit の前に直接 Read する**) |
+| 新規テストを commit する | [`mutation-verify-new-tests.md`](rules/mutation-verify-new-tests.md) |
 | 性能を主張する | [`perf-claims-need-measurement.md`](rules/perf-claims-need-measurement.md) |
 | shim / wrapper を PATH 先頭に置く | [`path-shim-must-resolve-real-binary.md`](rules/path-shim-must-resolve-real-binary.md) |
 | 外部コマンドの出力・終了コードを判定材料にする | [`measure-external-cli-streams-separately.md`](rules/measure-external-cli-streams-separately.md) |

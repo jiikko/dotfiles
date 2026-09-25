@@ -109,26 +109,29 @@ glob の候補は `**/*.swift` / `**/project.yml` / `**/Package.swift` / `**/*.x
 
 ### 決定
 
-- **A 採用**: `mutation-verify-new-tests.md` に `paths:`（`tests/**` / `**/*_test.go` / `**/*Tests/**` / `**/*Tests.swift` /
-  `**/test_*` / `**/*.test.*` / `**/*.spec.*` / `**/*.bats` / `bin/mutate-verify` 等）。glob は SnapTrim / DualNoteApp の
-  `git ls-files` で、テストファイルが漏れないことを確かめた（漏れたのは docs とテスト名を含む issue だけ）
+- **A 却下（一度入れて戻した）**: eb0bc7a7 で `paths:` を付けたが、dotfiles の `CLAUDE.md`「`_claude/` を触るとき」が
+  「行動で発火するルール（commit / tmux / **テスト作法**）は無条件のまま置く」と名指ししており、mutation-verify はそのテスト作法
+  そのもの。発動点は「新規テストを commit する / green を確認した瞬間」で、テストを Write で書いて commit する流れでは
+  Read が挟まらず読み込まれない（索引の「直接 Read する」は保証にならない）。dotfiles-5c の指摘で無条件に戻した
 - **B は 2 本だけ採用**: `no-osascript-for-ui-verification.md` / `no-concurrent-spm-build-during-xcodebuild.md` に
   Swift / Xcode 系の `paths:`。**`no-ios-simulator-verification.md` は常時読み込みに残す**: 発動点が「`make test` を打つ」
   という行動で、Swift を 1 つも Read せずに打つ経路がある（「make test して」と頼まれた直後など）。0.6k と小さく、得るものも少ない
 - **C 却下**: 候補の 3 本はどれも発動点が repo に依存しない（上の C 節の分析のとおり）。移すと他 repo で規律が消える
 - **D 見送り**: 発動点が行動（着手・作成・書き出し）で、`paths:` は Read でしか発火しない（Write / Edit では発火しないことは
   dotfiles の `CLAUDE.md` に実測つきで注記済み）。`_claude/issue-rules.md` の hook 注入へ寄せる手は、拘束力（system-reminder）と
-  link の張り方が変わるので今回はやらない。**再開の trigger**: A / B の後でも常時読み込みが再び 140k を超えたとき
+  link の張り方が変わるので今回はやらない。**再開の trigger**: B の後でも常時読み込みが再び 140k を超えたとき
 
 ### 結果（`wc -m`、`paths:` の無いファイルだけ）
 
 | | 前 | 後 |
 |---|---|---|
-| global の rule（`_claude/rules/`） | 109.1k | 93.4k |
-| `~/.claude/CLAUDE.md`（索引に注記を足した分だけ増えた） | 12.0k | 12.4k |
-| global 計 | 121.1k | **105.8k** |
-| dotfiles のセッション（repo 層 7.9k を足す） | 129.0k | **113.7k**（実測） |
-| obaket のセッション（repo 層は起票時の 12.4k + 12.3k） | 145.8k | **130.5k**（見積もり。下記） |
+| global の rule（`_claude/rules/`） | 109.1k | 104.8k |
+| `~/.claude/CLAUDE.md`（Apple の 2 本の索引に注記を足した分だけ増えた） | 12.0k | 12.3k |
+| global 計 | 121.1k | **117.1k** |
+| dotfiles のセッション（repo 層 7.9k を足す） | 129.0k | **125.0k**（実測） |
+| obaket のセッション（repo 層は起票時の 12.4k + 12.3k） | 145.8k | **141.8k**（見積もり。下記） |
+
+A を戻した後の値（`wc -m`、2026-09-25）。A を入れていた間は global 計 105.8k だった
 
 起票時の global 118.5k は、その後に rule が増えて 121.1k になっていた。
 
@@ -136,8 +139,8 @@ glob の候補は `**/*.swift` / `**/project.yml` / `**/Package.swift` / `**/*.x
 
 | cwd | Read させたもの | 問い（rule の本文にしか無い文） | 答え |
 |---|---|---|---|
-| dotfiles | なし | mutation-verify の見出し「変異は「production の機構を戻す」形にする」 | NO |
-| dotfiles | `tests/tmux/test_tmux_toast.sh` | 同上 | YES |
+| dotfiles | なし | mutation-verify の見出し「変異は「production の機構を戻す」形にする」 | NO（A を入れていた間の測定。A は戻した） |
+| dotfiles | `tests/tmux/test_tmux_toast.sh` | 同上 | YES（同上） |
 | DualNoteApp | なし | no-concurrent-spm の「Reload Package が最終行のまま…」 | NO |
 | DualNoteApp | `Shared/Package.swift` | 同上 | YES |
 
@@ -146,5 +149,8 @@ Read なしでも YES になった（索引を見て答えていた）。rule �
 
 ### 残タスク
 
-- [ ] obaket のセッションの常時読み込み合計の実測（このマシンに my-products の checkout が無く測れなかった。上の 130.5k は
+- [ ] obaket のセッションの常時読み込み合計の実測（このマシンに my-products の checkout が無く測れなかった。上の 141.8k は
       起票時の repo 層の値を足した見積もり）。受け入れ条件の最後の項目。obaket のあるマシンのセッションで `wc -m` を取り直す
+- 2026-09-25（dotfiles-7d）: A を戻した（commit「docs(claude): mutation-verify の paths: を外し、無条件の読み込みに戻す (issue 414)」）。
+  B だけでは obaket の見積もりが 141.8k で、上限までの余裕は約 8k しか戻っていない。D（issue 運用の 3 本 9.5k を hook 注入へ寄せる）を
+  検討する時期は近い
