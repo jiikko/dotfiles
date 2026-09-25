@@ -1,7 +1,9 @@
 package ui
 
-// PG がカードに付けた添付 (issue 453) の見せ方。画像とファイルは o で外のアプリ (open → Preview) に渡し、
-// 文字の添付 (tmux の capture-pane -e の色つきの画面など) は詳細の中にそのまま出す。
+// PG がカードに付けた添付 (issue 453) の見せ方。画像は o で Preview に渡し、文字の添付 (tmux の capture-pane -e の色つきの画面など) は
+// 詳細の中にそのまま出す。それ以外 (ファイル) は開かずにパスだけ見せる。
+// 🚨 画像も既定のアプリには渡さない (open -a Preview)。PG が用意したファイルを人間の権限で開くので、.terminal / .webloc のような
+// 開くと動くファイルを o で動かさない
 
 import (
 	"bytes"
@@ -30,27 +32,27 @@ type openedMsg struct {
 	err error
 }
 
-// openWithSystem は paths を macOS の open に渡す (Preview は複数の画像を 1 つの窓にまとめる)。
+// openWithSystem は paths を Preview で開く (複数の画像を 1 つの窓にまとめる)。
 func openWithSystem(paths []string) error {
-	out, err := exec.Command("open", paths...).CombinedOutput()
+	out, err := exec.Command("open", append([]string{"-a", "Preview", "--"}, paths...)...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
 
-// openable は外のアプリで開く添付 (文字の添付は詳細に出しているので含めない)。
+// openable は Preview で開く添付 (画像だけ)。
 func openable(c card.Card) []string {
 	var out []string
 	for _, a := range c.Attachments {
-		if a.Kind != card.AttachText {
+		if a.Kind == card.AttachImage {
 			out = append(out, a.Path)
 		}
 	}
 	return out
 }
 
-// openAttachments は選んでいるカードの画像とファイルの添付を開く (o。docs/glogx-ui-guide.md の o = 外で開く)。
+// openAttachments は選んでいるカードの画像の添付を開く (o。docs/glogx-ui-guide.md の o = 外で開く)。
 func (m *Model) openAttachments() tea.Cmd {
 	c, ok := m.selectedCard()
 	if !ok {
@@ -60,7 +62,7 @@ func (m *Model) openAttachments() tea.Cmd {
 	paths := openable(c)
 	if len(paths) == 0 {
 		if len(c.Attachments) > 0 {
-			m.refuse("このカードの添付は文字だけ (enter の詳細に出ている)")
+			m.refuse("このカードに画像の添付は無い (文字は詳細に出ている。ほかのファイルは pro-con card show のパスから開く)")
 		} else {
 			m.refuse("このカードに添付は無い")
 		}

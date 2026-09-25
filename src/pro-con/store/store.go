@@ -24,6 +24,8 @@ import (
 	"strings"
 	"time"
 
+	"termsafe"
+
 	"pro-con/card"
 	"pro-con/wake"
 )
@@ -271,7 +273,8 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 	// 移せなかったことは結果に出す
 	for name, why := range reject {
 		id := strings.TrimSuffix(filepath.Base(name), ".json")
-		if staged, _ := filepath.Glob(filepath.Join(box, StageDir, id+"*")); len(staged) > 0 { // 除けた添付のファイル (id は数字と - と 16 進だけ)
+		if idPattern.MatchString(id) { // 除けた添付のファイル (形の合う id だけ。* などを含む手で置いた名前で、他の依頼のファイルを消さない)
+			staged, _ := filepath.Glob(filepath.Join(box, StageDir, id+"*"))
 			for _, f := range staged {
 				_ = os.Remove(f) // 消せなくても SweepAttachments が stageTTL の後に消す
 			}
@@ -542,9 +545,10 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		if r.File == "" {
 			return errors.New("添付のファイルが無い")
 		}
-		a := card.Attachment{Path: r.File, Name: r.Name, Note: r.Note, Kind: AttachKindOf(r.Name), Size: r.Size, At: r.At}
+		// 一言と名前は PG が書いた文字列。履歴と詳細にそのまま出るので、ここで制御文字・エスケープを落とす
+		a := card.Attachment{Path: r.File, Name: termsafe.PlainLine(r.Name), Note: termsafe.PlainLine(r.Note), Kind: AttachKindOf(r.Name), Size: r.Size, At: r.At}
 		c.Attachments = append(c.Attachments, a)
-		c.History = append(c.History, card.Event{At: now, Text: "添付 (" + string(a.Kind) + "): " + firstNonEmpty(r.Note, r.Name)})
+		c.History = append(c.History, card.Event{At: now, Text: "添付 (" + string(a.Kind) + "): " + firstNonEmpty(a.Note, a.Name)})
 	case "review": // PG が終えた
 		if c.State != card.Running {
 			return fmt.Errorf("作業中の列に無い (今は %s)", c.State.Label())

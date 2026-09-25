@@ -260,3 +260,45 @@ func TestSweepAttachments(t *testing.T) {
 		}
 	}
 }
+
+// 一言と名前のエスケープ (OSC 52 など) は記録に入れる前に落とす (履歴・詳細・card show にそのまま出るため)。
+func TestAttachmentNoteIsSanitized(t *testing.T) {
+	dir, work := attachRig(t)
+	if _, err := SubmitAttachment(dir, "C-001", writeFile(t, filepath.Join(work, "a.png"), "x"), "見た目\x1b]52;c;aGk=\x07"); err != nil {
+		t.Fatal(err)
+	}
+	applyOne(t, dir)
+	c := loadCard(t, dir, "C-001")
+	if a := c.Attachments[0]; strings.ContainsRune(a.Note, 0x1b) || !strings.Contains(a.Note, "見た目") {
+		t.Fatalf("一言のエスケープが残る: %q", a.Note)
+	}
+	if h := c.History[len(c.History)-1].Text; strings.ContainsRune(h, 0x1b) {
+		t.Fatalf("履歴にエスケープが残る: %q", h)
+	}
+}
+
+// 開くと動くファイル (.terminal / .webloc) と、ブラウザで JS が動く .svg は画像として扱わない (o で開かない)。
+func TestAttachKindOfDoesNotTreatActiveFilesAsImages(t *testing.T) {
+	for _, n := range []string{"x.terminal", "x.webloc", "x.svg", "x.pkg", "x"} {
+		if k := AttachKindOf(n); k != card.AttachFile {
+			t.Errorf("%s: %s (want ファイル)", n, k)
+		}
+	}
+}
+
+// 箱に手で置かれた * などの名前の依頼を除けても、ほかの依頼の添付のファイルを消さない (名前を glob のパターンにしない)。
+func TestRejectedOddNameKeepsOtherStaged(t *testing.T) {
+	dir, _ := attachRig(t)
+	stage := filepath.Join(dir, InboxDir, StageDir)
+	if err := os.MkdirAll(stage, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	other := writeFile(t, filepath.Join(stage, "00000000000000000009-dddddddd.png"), "x") // JSON を置く前の添付
+	writeFile(t, filepath.Join(dir, InboxDir, "*.json"), "{}")
+	if r := applyOne(t, dir); r.Err == "" {
+		t.Fatal("種類の無い依頼を除けない")
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Fatalf("ほかの依頼の添付を消した: %v", err)
+	}
+}

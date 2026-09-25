@@ -60,8 +60,8 @@ func TestDrawerShowsAttachments(t *testing.T) {
 	}
 }
 
-// o は画像とファイルの添付だけを外のアプリに渡す (文字の添付は詳細に出ている)。詳細を開いたままでも効く。
-func TestOpenKeyOpensImagesAndFiles(t *testing.T) {
+// o は画像の添付だけを Preview に渡す (文字の添付は詳細に出ている。ほかのファイルは開くと動くものがあるので渡さない)。詳細を開いたままでも効く。
+func TestOpenKeyOpensImagesOnly(t *testing.T) {
 	m, clk, opened, img := attachModel(t)
 	open(t, m, clk)
 	cmd := press(m, "o")
@@ -69,7 +69,7 @@ func TestOpenKeyOpensImagesAndFiles(t *testing.T) {
 		t.Fatal("o で何も起きない")
 	}
 	m.Update(cmd())
-	want := []string{img.Path, filepath.Join(filepath.Dir(img.Path), "b.pdf")}
+	want := []string{img.Path}
 	if len(*opened) != 1 || !slices.Equal((*opened)[0], want) {
 		t.Fatalf("開いたもの %v (want [%v])", *opened, want)
 	}

@@ -37,7 +37,11 @@ const (
 	stageTTL = time.Hour
 )
 
-var extPattern = regexp.MustCompile(`^\.[a-z0-9]{1,10}$`)
+var (
+	extPattern = regexp.MustCompile(`^\.[a-z0-9]{1,10}$`)
+	// idPattern は Submit が振る依頼の ID の形 (箱に手で置かれた名前を glob のパターンとして使わない)
+	idPattern = regexp.MustCompile(`^[0-9]{20}-[0-9a-f]{8}$`)
+)
 
 // attachExt は置き場のファイル名に使う拡張子 (小文字。英数字だけ。合わなければ付けない)。
 func attachExt(name string) string {
@@ -50,7 +54,8 @@ func attachExt(name string) string {
 // AttachKindOf は元のファイル名から、人間がどう見るかを決める。
 func AttachKindOf(name string) card.AttachKind {
 	switch attachExt(name) {
-	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic", ".pdf", ".svg":
+	// 🚨 .svg は入れない: 既定のアプリがブラウザだと中の JS が動く。画像は Preview に固定して開く (ui/attachments.go)
+	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic", ".pdf":
 		return card.AttachImage
 	case ".txt", ".ans", ".log", ".out":
 		return card.AttachText
