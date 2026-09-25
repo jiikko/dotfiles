@@ -52,7 +52,7 @@ func (m *Model) settleDrawer(now time.Time) {
 	}
 }
 
-// handleDrawerKey は詳細を開いている間のキー。捌いたら handled=true。カードへの操作 (a / r / + / ? / y / Y / e) と
+// handleDrawerKey は詳細を開いている間のキー。捌いたら handled=true。カードへの操作 (a / r / + / ? / y / Y / e / o) と
 // 画面全体の操作 (ctrl+c / ctrl+r / s / c) はボードへ回す。それ以外 (レーンの移動・タブ・新しい依頼 等) は飲み込む:
 // 詳細の下でカンバンの選択が動くと、開いているカードと操作の対象が食い違う。
 func (m *Model) handleDrawerKey(k string) (cmd tea.Cmd, handled bool) {
@@ -69,7 +69,7 @@ func (m *Model) handleDrawerKey(k string) (cmd tea.Cmd, handled bool) {
 	case "K":
 		m.stepCard(-1)
 		return nil, true
-	case "a", "r", "+", "w", "?", "y", "Y", "e", "d", "ctrl+c", "ctrl+r", "s", "c":
+	case "a", "r", "+", "w", "?", "y", "Y", "e", "o", "d", "ctrl+c", "ctrl+r", "s", "c":
 		return nil, false
 	}
 	if mo := listnav.MotionOf(k); mo != listnav.None {
@@ -185,6 +185,11 @@ func (m *Model) drawerBody() []string {
 			st = "届いた"
 		}
 		add("", fmt.Sprintf("追加オーダー (%s・%s): %s", o.Kind.Label(), st, o.Text))
+	}
+	if len(c.Attachments) > 0 {
+		out = append(out, "")
+		add(sgrDim, "添付")
+		out = append(out, m.attachmentLines(c, w)...)
 	}
 	out = append(out, "")
 	add(sgrDim, "履歴")

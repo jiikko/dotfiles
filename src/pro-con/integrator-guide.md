@@ -12,6 +12,7 @@ pro-con (issue 415 の epic) の本物のモードで、取り込みの係 (PG �
 1. **PG の「終わった」を証拠にしない** (415 論点 4)。diff を読み、テストを自分で走らせて確かめてから完了にする
 2. **取り込む** (カード 1 枚ずつ。レビューの列に来た古い順。`--after` で後ろのカードを塞いでいるカードを先に)
    - `pro-con card show <カード>` で依頼の原文・issue・履歴 (差し戻しの経緯・テストの係の結果) を読む
+   - 見た目を変えたカードには PG が撮った添付がある (`pro-con card show <カード>` の「添付」。画像はそのパスを Read して見る。issue 453)
    - PG のブランチは PG の worktree の HEAD (`git -C <PG の worktree> rev-parse --abbrev-ref HEAD`)。名前は `worktree-pc-c-001` の形だが、PG が付け替えていることがある
    - origin/master から取り込み用の worktree を作り、そこで merge する (`git -C <repo> worktree add --detach <repo>/../merge-<時刻> origin/master`。
      名前を `pc-` で始めない: dispatcher は `.claude/worktrees/pc-` の下を PG と役の場所として扱う)

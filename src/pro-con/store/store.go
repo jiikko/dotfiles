@@ -24,6 +24,8 @@ import (
 	"strings"
 	"time"
 
+	"termsafe"
+
 	"pro-con/card"
 	"pro-con/wake"
 )
@@ -70,15 +72,19 @@ type Request struct {
 	From     string          `json:"from,omitempty"`   // 回答した人 / 削除を依頼した人 (人間 / PM)
 	Rework   string          `json:"rework,omitempty"` // rework: レビューで直してほしい点 (書いたまま)
 	Ending   card.Ending     `json:"ending,omitempty"`
-	Said     []card.Event    `json:"said,omitempty"`     // attach: attach の間に人間が打った指示 (原文と打った時刻)
-	Note     string          `json:"note,omitempty"`     // event: 画面の出来事 (人が読む 1 文。dispatcher が出来事の記録へ書く)
-	ParentID string          `json:"parentId,omitempty"` // add: 別件の追加オーダーの元のカード
-	Order    card.OrderKind  `json:"order,omitempty"`    // order: 追記 / 方針変更 (別件は add + ParentID)
-	Text     string          `json:"text,omitempty"`     // order: 追加オーダーの本文 / handoff: 人に回す理由 (どちらも書いたまま)
-	Cards    []string        `json:"cards,omitempty"`    // clear: 片付ける完了のカード (画面が見ていたもの。適用までに完了になったカードを巻き込まない)
-	Key      string          `json:"key,omitempty"`      // config: 設定の名前 (settings.go)
-	Value    string          `json:"value,omitempty"`    // config: 設定の値 (空なら消す)
-	At       time.Time       `json:"at"`
+	Said     []card.Event    `json:"said,omitempty"` // attach: attach の間に人間が打った指示 (原文と打った時刻)
+	Note     string          `json:"note,omitempty"` // event: 画面の出来事 (人が読む 1 文。dispatcher が出来事の記録へ書く) / attachment: 添付の一言
+	Name     string          `json:"name,omitempty"` // attachment: 元のファイル名 (置き場の名前は依頼の ID と拡張子で決める)
+	// File / Size は attachment の移し先の絶対パスと大きさ。Apply が箱のファイルから入れる (依頼に書かれた値は使わない)
+	File     string         `json:"-"`
+	Size     int64          `json:"-"`
+	ParentID string         `json:"parentId,omitempty"` // add: 別件の追加オーダーの元のカード
+	Order    card.OrderKind `json:"order,omitempty"`    // order: 追記 / 方針変更 (別件は add + ParentID)
+	Text     string         `json:"text,omitempty"`     // order: 追加オーダーの本文 / handoff: 人に回す理由 (どちらも書いたまま)
+	Cards    []string       `json:"cards,omitempty"`    // clear: 片付ける完了のカード (画面が見ていたもの。適用までに完了になったカードを巻き込まない)
+	Key      string         `json:"key,omitempty"`      // config: 設定の名前 (settings.go)
+	Value    string         `json:"value,omitempty"`    // config: 設定の値 (空なら消す)
+	At       time.Time      `json:"at"`
 }
 
 // State は記録の中身。
@@ -107,7 +113,10 @@ type Result struct {
 }
 
 // Submit は依頼を受付の箱に置き、依頼の ID を返す。どのプロセスから呼んでもよい。
-func Submit(dir string, r Request) (string, error) {
+func Submit(dir string, r Request) (string, error) { return submitWith(dir, r, nil) }
+
+// submitWith は依頼を箱に置く。stage は依頼より先に箱へ置くもの (添付のファイル) を、振った依頼の ID で置く (nil なら無し)。
+func submitWith(dir string, r Request, stage func(box, id string) error) (string, error) {
 	box := filepath.Join(dir, InboxDir)
 	if err := os.MkdirAll(box, 0o700); err != nil {
 		return "", err
@@ -124,6 +133,11 @@ func Submit(dir string, r Request) (string, error) {
 	data, err := json.Marshal(r)
 	if err != nil {
 		return "", err
+	}
+	if stage != nil {
+		if err := stage(box, r.ID); err != nil {
+			return "", err
+		}
 	}
 	if err := writeAtomic(filepath.Join(box, r.ID+".json"), data); err != nil {
 		return "", err
@@ -252,8 +266,18 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 					res.Note += configNote(r.Key, r.Value)
 				}
 			} else {
+				var staged string
+				if r.Kind == KindAttachment {
+					staged, err = stageAttachment(dir, &r)
+				}
 				var next State
-				if next, res.CardID, res.Note, err = apply(st, r, now); err == nil {
+				if err == nil {
+					next, res.CardID, res.Note, err = apply(st, r, now)
+				}
+				if err == nil && r.Kind == KindAttachment { // 記録に当てられると決まってから移す (無いカードの置き場を作らない)
+					err = adoptAttachment(staged, r.File)
+				}
+				if err == nil {
 					st = next
 				}
 			}
@@ -296,6 +320,12 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 	// 移せなかったことは結果に出す
 	for name, why := range reject {
 		id := strings.TrimSuffix(filepath.Base(name), ".json")
+		if idPattern.MatchString(id) { // 除けた添付のファイル (形の合う id だけ。* などを含む手で置いた名前で、他の依頼のファイルを消さない)
+			staged, _ := filepath.Glob(filepath.Join(box, StageDir, id+"*"))
+			for _, f := range staged {
+				_ = os.Remove(f) // 消せなくても SweepAttachments が stageTTL の後に消す
+			}
+		}
 		rj := filepath.Join(box, RejectedDir)
 		err := os.MkdirAll(rj, 0o700)
 		if err == nil {
@@ -560,6 +590,20 @@ func transition(c *card.Card, r Request, now time.Time) error {
 			// 原文のまま残す (要約・切り詰めをしない)。時刻は打った時刻 (適用した時刻ではない)
 			c.History = append(c.History, card.Event{At: e.At, Text: AttachPrefix + e.Text})
 		}
+	case KindAttachment: // PG が作業の証拠を付けた (issue 453)。ファイルは Apply が移す。状態は変えない
+		if c.State == card.Done {
+			return errors.New("完了したカードには付けない")
+		}
+		if len(c.Attachments) >= MaxAttachPerCard {
+			return fmt.Errorf("添付は 1 枚のカードに %d 件まで", MaxAttachPerCard)
+		}
+		if r.File == "" {
+			return errors.New("添付のファイルが無い")
+		}
+		// 一言と名前は PG が書いた文字列。履歴と詳細にそのまま出るので、ここで制御文字・エスケープを落とす
+		a := card.Attachment{Path: r.File, Name: termsafe.PlainLine(r.Name), Note: termsafe.PlainLine(r.Note), Kind: AttachKindOf(r.Name), Size: r.Size, At: r.At}
+		c.Attachments = append(c.Attachments, a)
+		c.History = append(c.History, card.Event{At: now, Text: "添付 (" + string(a.Kind) + "): " + firstNonEmpty(a.Note, a.Name)})
 	case "review": // PG が終えた
 		if c.State != card.Running {
 			return fmt.Errorf("作業中の列に無い (今は %s)", c.State.Label())

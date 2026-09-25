@@ -29,6 +29,8 @@ const cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を�
   ask <カード> <質問>                            PG が質問して turn を終える (AskUserQuestion は使わない)
   answer <カード> <回答> [--from <人間|PM>]      質問待ちのカードへの回答
   run <カード> -- <コマンド>...                  PG がテストの係にコマンドの実行を頼んで turn を終える (結果は再開のときに届く)
+  attach <カード> <ファイル> [--note <一言>]      PG が作業の証拠 (画面の見た目・コマンドの出力) をカードに添付する
+                                                 (.png などは画像、.txt / .ans は文字。1 件 20 MiB・1 枚に 50 件まで)
   review <カード>                                PG が終えた
   rework <カード> <直してほしい点>               レビュー待ちのカードを PG に差し戻す (同じ session を再開する)
   handoff <カード> <理由> [--from <PM|取り込みの係>]  PG の質問 / レビュー待ちを人に回したことを履歴に残す (列は変えない)
@@ -82,6 +84,9 @@ func runCard(args []string, env viewEnv, stdout, stderr io.Writer) int {
 	case "log":
 		return runCardLog(args[1:], env, stdout, stderr)
 	}
+	if args[0] == "attach" {
+		return runCardAttach(args[1:], env.dir, stdout, stderr)
+	}
 	req, wait, err := parseCardWait(args)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "pro-con card: %v\n%s\n", err, cardUsage)
@@ -98,6 +103,40 @@ func runCard(args []string, env viewEnv, stdout, stderr io.Writer) int {
 	}
 	_, _ = fmt.Fprintln(stdout, id)
 	return 0
+}
+
+// runCardAttach はファイルを受付の箱に写して添付の依頼を置く (移して記録に載せるのは dispatcher。issue 453)。
+func runCardAttach(args []string, dir string, stdout, stderr io.Writer) int {
+	id, file, note, err := parseAttach(args)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "pro-con card: %v\n%s\n", err, cardUsage)
+		return 2
+	}
+	reqID, err := store.SubmitAttachment(dir, id, file, note)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "pro-con card attach: 受付の箱に置けない:", err)
+		return 1
+	}
+	_, _ = fmt.Fprintln(stdout, reqID)
+	return 0
+}
+
+func parseAttach(args []string) (id, file, note string, err error) {
+	fs := flag.NewFlagSet("pro-con card attach", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.StringVar(&note, "note", "", "")
+	var pos []string // カードとファイルはフラグの前にも後にも置ける (parseCardArgs と同じ)
+	for len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		pos, args = append(pos, args[0]), args[1:]
+	}
+	if err := fs.Parse(args); err != nil {
+		return "", "", "", err
+	}
+	pos = append(pos, fs.Args()...)
+	if len(pos) != 2 {
+		return "", "", "", fmt.Errorf("attach は `attach <カード> <ファイル> [--note <一言>]` (位置引数は 2 個。受け取ったのは %d 個)", len(pos))
+	}
+	return pos[0], pos[1], note, nil
 }
 
 // issueList は --issue <repo>#<番号> を複数受ける。
