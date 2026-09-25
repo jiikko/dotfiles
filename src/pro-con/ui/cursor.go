@@ -102,8 +102,13 @@ func (m *Model) overlayCursor(board []string) []string {
 		case r == bottom && edge:
 			board[r] = splice(board[r], left, w, border+"┗"+strings.Repeat("━", max(w-2, 0))+"┛")
 		default:
-			board[r] = splice(board[r], left, 1, border+"┃")
-			board[r] = splice(board[r], left+w-1, 1, border+"┃")
+			// 縦線も同じ理由で、カードの行ではレーンの外枠か列の間に乗ったときだけ描く。レーンを跨いで滑る途中で
+			// カードの中に描くと、地の色の無い縦筋が中身を掃き、全角文字も途中で切れて、中身が一瞬消えて見える (2026-09-25 の報告)
+			for _, x := range []int{left, left + w - 1} {
+				if edge || m.isFrameCol(x) {
+					board[r] = splice(board[r], x, 1, border+"┃")
+				}
+			}
 		}
 	}
 	return board
@@ -111,3 +116,10 @@ func (m *Model) overlayCursor(board []string) []string {
 
 // isGapRow はボードの行 r (0 = 列の見出し) がカードの間の空き行か。
 func isGapRow(r int) bool { return r >= 1 && (r-1)%perCardLines < cardGap }
+
+// isFrameCol はボードの桁 x がレーンの外枠か列の間 (カードの中身が無い桁) か。
+func (m *Model) isFrameCol(x int) bool {
+	w := m.colWidth()
+	p := x % (w + len(colSep))
+	return x >= 0 && (p == 0 || p >= w-1)
+}

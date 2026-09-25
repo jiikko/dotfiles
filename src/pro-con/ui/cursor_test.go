@@ -11,10 +11,10 @@ import (
 	"pro-con/card"
 )
 
-// frameCol は画面に描かれた枠の左辺 (┃) の表示桁。見つからなければ -1。
+// frameCol は画面に描かれた枠の左辺の表示桁 (左上の角 ┏ で測る。滑走中のカードの行には縦線を描かないため)。見つからなければ -1。
 func frameCol(m *Model) int {
 	for _, l := range strings.Split(ansi.Strip(m.render()), "\n") {
-		if i := strings.Index(l, "┃"); i >= 0 {
+		if i := strings.Index(l, "┏"); i >= 0 {
 			return ansi.StringWidth(l[:i])
 		}
 	}
@@ -90,6 +90,38 @@ func TestCursorSnapsOnTabSwitch(t *testing.T) {
 	}
 	if m.cursorGliding(clk.t) {
 		t.Fatal("タブの切り替えで枠が滑っている")
+	}
+}
+
+// レーンを跨いで滑る途中でも、枠はカードの中身の桁に描かない (縦線が中身を掃くと、カードが一瞬消えて見える)。
+// 全角の混ざったカード (W1 の「?質問」) を通るので、全角を途中で切って空白に化かす形も捕まえる。
+func TestCursorGlideKeepsCardContent(t *testing.T) {
+	m, clk := cursorModel(t)
+	press(m, "l")
+	w := m.colWidth()
+	drawn := 0
+	for step := range 6 {
+		want := strings.Split(ansi.Strip(strings.Join(m.boardLines(), "\n")), "\n")
+		got := strings.Split(ansi.Strip(strings.Join(m.overlayCursor(m.boardLines()), "\n")), "\n")
+		for r := range want {
+			if isGapRow(r) || r == 0 || r == len(want)-1 {
+				continue
+			}
+			for col := range len(card.Columns) {
+				x := col*(w+len(colSep)) + 1 // レーンの中身 (外枠の内側)
+				g, wn := ansi.Cut(got[r], x, x+w-2), ansi.Cut(want[r], x, x+w-2)
+				if g != wn {
+					t.Fatalf("滑走 %d コマ目、行 %d・レーン %d の中身が枠で書き換わった:\n got %q\nwant %q", step, r, col+1, g, wn)
+				}
+			}
+		}
+		if strings.Contains(strings.Join(got, "\n"), "━") {
+			drawn++
+		}
+		clk.t = clk.t.Add(cursorDuration / 6)
+	}
+	if drawn == 0 {
+		t.Fatal("前提: 滑走中に枠が一度も描かれていない (何も検査していない)")
 	}
 }
 
