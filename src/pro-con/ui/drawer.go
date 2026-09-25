@@ -169,6 +169,12 @@ func (m *Model) drawerBody() []string {
 	if c.Prompt != "" {
 		add(sgrDim, "PM に渡した指示: "+c.Prompt)
 	}
+	if len(c.After) > 0 {
+		add("", "順番: "+strings.Join(c.After, ", ")+" の後 (PM が付けた。完了するまで起動しない)")
+	}
+	if b := m.blockedBy(c); b != "" {
+		add(sgrYellow, "待ち: "+b+" の後")
+	}
 	if c.Wait.Question != "" {
 		add(sgrYellow, "質問: "+c.Wait.Question)
 	}

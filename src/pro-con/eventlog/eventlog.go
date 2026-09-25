@@ -48,7 +48,7 @@ const (
 	KindWatchdog = "watchdog" // 停滞
 	KindRun      = "run"      // テストの係の実行
 	KindLaunch   = "launch"   // PG を起動・再開した / 一覧で確かめた / できなかった
-	KindHold     = "hold"     // 利用枠で起動・再開を待たせた
+	KindHold     = "hold"     // 利用枠で起動・再開を待たせた / 順番の前のカードの完了を待たせた (issue 468)
 	KindOrder    = "order"    // 追加オーダーを届けるため PG を再開の列へ戻した (issue 438)
 	KindBtw      = "btw"      // btw に答えた (issue 438)
 	KindStop     = "stop"     // PG を止めた・止め直した・止められない (終了のとき・閉じたとき)

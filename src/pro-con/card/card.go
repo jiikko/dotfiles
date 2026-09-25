@@ -273,6 +273,9 @@ type Card struct {
 	Archived bool
 	// FromRequest はこのカードを作った受付の箱の依頼 (add) の ID。`pro-con card add` が、置いた依頼から振られたカード ID を引く (issue 442)
 	FromRequest string `json:",omitempty"`
+	// After はこのカードより先に完了させるカード (PM が `card plan --after` で付ける。issue 468)。dispatcher はこれらが完了するまで起動しない。
+	// 同じ判断・不変条件を変えるカードを並べない (並べると、合わせた結果が片方のテストでしか守られない)
+	After []string `json:",omitempty"`
 	// LastProgress は「実質的に進んだ」最後の時刻 (watchdog が見る。活動ではなく進捗)
 	LastProgress time.Time
 }
@@ -327,5 +330,5 @@ func Check(cards []Card) []Violation {
 			out = append(out, Violation{c.ID, "片付けたが完了していない (ボードから見えないまま動いている)"})
 		}
 	}
-	return out
+	return append(out, afterViolations(cards)...)
 }
