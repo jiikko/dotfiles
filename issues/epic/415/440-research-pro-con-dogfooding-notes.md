@@ -89,5 +89,23 @@ PG は変異 13 本・敵対的レビュー 1 周を自分で回し、残り (�
   `--request` = ユーザーの原文・`--prompt` = PM の指示 に分けた。usage の `--prompt <PM に渡した指示>` という書き方が紛らわしい (直す候補。未起票)
 - PG の報告が英語になる件の仮説: PG は `claude --bg … --setting-sources project,local` で起動し、`"language": "日本語"` を置いた
   ユーザーの settings.json を読まない。**未確認** (確かめるなら、同じ起動で言語の設定だけを変えた A-B)。今は指示に「報告は日本語」と書いて回している
+  - **A-B の結果 (2026-09-25 dotfiles-7d。Claude Code 2.1.282・haiku・隔離した cwd・`--settings '{"disableAllHooks":true}'` で user の hook を切る)**:
+    仮説は `-p` では**確かめられなかった** (user の settings.json を読んでも英語になる)。英語の依頼「Summarize in one sentence what a git worktree is.」への返答:
+
+    | 読む層 | 言語の設定 | 返答 (2〜3 回) |
+    |---|---|---|
+    | `--setting-sources project,local` (PG と同じ) | 無し | 英語 × 3 |
+    | `--setting-sources user,project,local` (user の `"language": "日本語"` を読む) | user の settings.json | 英語 × 3 (hook を切らない版も英語 × 2) |
+    | 既定 (`--setting-sources` を付けない) | user の settings.json | 英語 × 2 |
+    | `--setting-sources project,local --settings '{"language":"日本語"}'` | `--settings` で言語だけ | **日本語 × 3** |
+
+    日本語の依頼には、どの条件でも日本語で返した。→ `-p` では user の settings.json の `language` は応答の言語に効いていない (効いたのは `--settings` で渡したときだけ)。
+    🚨 **`--bg` は測れていない**: 隔離した cwd では「Workspace not trusted」で起動を拒む (信頼を与えるには対話で `claude` を開いて承認し、`~/.claude.json` に書く必要があり、
+    そこまではしなかった)。PG は `--bg` なので、`--bg` では振る舞いが違う可能性は残る。確かめるなら、信頼済みの repo の worktree (PG と同じ置き場) で `--bg` の A-B を取る
+  - 直し方の候補 (案と理由まで。dispatcher.Prompt の変更は C-007 の後):
+    1. **`--settings` で言語だけ渡す** (`claude --bg … --setting-sources project,local --settings '{"language":"日本語"}'`): `-p` で効くことを確かめた唯一の形。
+       ユーザーの settings.json の他の設定 (hook・許可) は読まないまま、言語だけを足せる。言語の値は config (または user の settings.json の `language`) から読んで渡すと、日本語の決め打ちにならない
+    2. **起動の指示 (dispatcher.Prompt) に「報告・質問は日本語で」を入れる**: 今の差し戻しの文でやっている形。確実だが、指示の文が長くなり、言語を変えるにはコードを変える
+    → 1 を既定にし、1 が `--bg` で効かないと分かったら 2 を足す (--bg の A-B を先に取る)
 - 4 回目で PM (私) がしたこと: 依頼 3 枚 (437 / 451 は PG へ、452 / 453 は起票のみ)・レビュー 2 枚・差し戻し 2 回・取り込み 2 回・dispatcher の入れ替え 1 回
 
