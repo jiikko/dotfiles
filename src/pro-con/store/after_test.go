@@ -8,7 +8,7 @@ import (
 	"pro-con/card"
 )
 
-// plan --after は順番を付ける (二重に書いた相手は 1 つにまとめる)。記録に無い相手・循環は除ける (issue 468)。
+// plan --after は順番を付ける (二重に書いた相手は 1 つにまとめる)。まだ振っていない番号・循環は除ける (issue 468)。
 func TestPlanAfter(t *testing.T) {
 	dir := t.TempDir()
 	for range 3 {
