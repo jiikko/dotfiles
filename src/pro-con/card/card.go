@@ -154,6 +154,25 @@ type Order struct {
 	Delivered bool // PG へ届いたか (不変条件: 未達かどうかがカードで見える)
 }
 
+// Pending は PG へまだ届けていない追加オーダー (追記・方針変更。別件は新しいカードになるので積まない)。
+func (c Card) Pending() []Order {
+	var out []Order
+	for _, o := range c.Orders {
+		if !o.Delivered {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// Btw は PG を止めずに聞いた「今どうなってる?」1 件 (415 要件 9)。答えは PG とは別のプロセスが出す (PG の文脈を汚さない)。
+type Btw struct {
+	Question string
+	At       time.Time
+	Answer   string    `json:",omitempty"`
+	Answered time.Time `json:",omitzero"` // zero なら未回答 (dispatcher が答える)
+}
+
 // Exec は今実行しているコマンド (make test / 実機 E2E 等)。ゼロ値は「何も実行していない」。
 // 本物のモードでは、PG が `pro-con card run` で頼んだコマンドを dispatcher (テストの係) が実行している間だけ入る (426 の決定 5)。
 type Exec struct {
@@ -208,6 +227,7 @@ type Card struct {
 	Issues   []IssueRef
 	Ending   Ending
 	Orders   []Order
+	Btws     []Btw `json:",omitempty"`
 	History  []Event
 	Log      []string // PG の出力の末尾 (本番は transcript から読む)
 	// Resume は次に PG を再開するときに渡す文 (質問への回答)。dispatcher が渡したら空にする (本物のモードだけ。426 の決定 2)

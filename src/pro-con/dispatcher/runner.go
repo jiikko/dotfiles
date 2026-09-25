@@ -173,8 +173,11 @@ func (d *Dispatcher) tickRuns(ctx context.Context, now time.Time) ([]eventlog.Ev
 	return notes, nil
 }
 
-// CancelRun は実行中の 1 本を取り消して終わるまで待つ (dispatcher が抜ける前に呼ぶ)。
-func (d *Dispatcher) CancelRun() { d.cancelRun(10 * time.Second) }
+// CancelRun は実行中の 1 本 (テストの係) を取り消して終わるまで待ち、btw の答えを作っている 1 本も取り消す (dispatcher が抜ける前に呼ぶ)。
+func (d *Dispatcher) CancelRun() {
+	d.cancelRun(10 * time.Second)
+	d.cancelBtw()
+}
 
 // cancelRun は実行中の 1 本を取り消し、終わるまで待つ (上限 wait)。終了のときに使う (dispatcher が抜けた後にコマンドを残さない)。
 func (d *Dispatcher) cancelRun(wait time.Duration) {
@@ -399,16 +402,25 @@ func HaikuSummarize(dir string) func(ctx context.Context, tail string) (string, 
 	return func(ctx context.Context, tail string) (string, error) {
 		ctx, cancel := context.WithTimeout(ctx, summarizeTimeout)
 		defer cancel()
-		prompt := "次はテストかビルドのコマンドの失敗したログの末尾です。何が失敗したか (落ちたテスト名・エラーの場所と内容) を日本語で 5 行以内に要約してください。ログに書かれていないことは書かず、質問もしないこと。\n\n" + tail
-		cmd := exec.CommandContext(ctx, "claude", "-p", "--model", "haiku", "--setting-sources", "project,local")
-		cmd.Dir = dir
-		cmd.Env = withoutTmux(os.Environ())
-		cmd.Stdin = strings.NewReader(prompt)
-		var out, errOut bytes.Buffer
-		cmd.Stdout, cmd.Stderr = &out, &errOut
-		if err := cmd.Run(); err != nil {
-			return "", fmt.Errorf("claude -p: %w: %s", err, strings.TrimSpace(errOut.String()))
-		}
-		return out.String(), nil
+		return haiku(ctx, dir, "次はテストかビルドのコマンドの失敗したログの末尾です。何が失敗したか (落ちたテスト名・エラーの場所と内容) を日本語で 5 行以内に要約してください。ログに書かれていないことは書かず、質問もしないこと。\n\n"+tail)
 	}
+}
+
+// HaikuAsk は btw の答えを haiku に作らせる (btw.go。上限は呼ぶ側が付ける)。
+func HaikuAsk(dir string) func(ctx context.Context, prompt string) (string, error) {
+	return func(ctx context.Context, prompt string) (string, error) { return haiku(ctx, dir, prompt) }
+}
+
+// haiku は prompt を安いモデルの claude -p に渡す。状態の置き場で動かす (repo の hook・規約を読ませない)。
+func haiku(ctx context.Context, dir, prompt string) (string, error) {
+	cmd := exec.CommandContext(ctx, "claude", "-p", "--model", "haiku", "--setting-sources", "project,local")
+	cmd.Dir = dir
+	cmd.Env = withoutTmux(os.Environ())
+	cmd.Stdin = strings.NewReader(prompt)
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("claude -p: %w: %s", err, strings.TrimSpace(errOut.String()))
+	}
+	return out.String(), nil
 }

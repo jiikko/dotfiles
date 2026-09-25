@@ -334,7 +334,7 @@ func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo stri
 			Runner: dispatcher.ExecRunner{}, FakePM: e2e.FakePM, PMOff: pmOff} // テストの係は本物のシェル (偽の worktree で走る)。失敗の要約 (haiku) はしない
 	}
 	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{}, PMRepo: pmRepo, PMGuide: pmGuide, PMOff: pmOff,
-		Runner: dispatcher.ExecRunner{}, Summarize: dispatcher.HaikuSummarize(dir), Usage: dispatcher.ReadUsage(dir),
+		Runner: dispatcher.ExecRunner{}, Summarize: dispatcher.HaikuSummarize(dir), Ask: dispatcher.HaikuAsk(dir), Usage: dispatcher.ReadUsage(dir),
 		List:    func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) },
 		ListAll: func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunnerAll) }, Now: time.Now,
 		Transcript: func(sessionID string) (live.Transcript, error) {

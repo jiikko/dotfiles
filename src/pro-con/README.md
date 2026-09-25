@@ -26,7 +26,15 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 - ライブアップグレードの状態ファイルは `$XDG_STATE_HOME/pro-con/live` と `…/mock` に分ける。新版には `--mock` を付け直す
 - **本物 (live)**: カードは dispatcher が書く記録 (`$XDG_STATE_HOME/pro-con/live/cards.json`) から出る。書き込みは受付の箱 (`…/live/inbox/`) に
   置くだけで、記録へ適用するのは `pro-con dispatcher` (動いていないと箱に溜まり、ヘッダーに「適用待ち N 件」と出る)。
-  受けるのは新しい依頼 (n / i)・回答 (r)・削除 (d) だけで、追加オーダー・btw・片付けはまだ (押した時点で断る)。
+  操作はすべて受ける (新しい依頼 n / i・回答 r・削除 d・追加オーダー +・btw w・片付け x)。PG へ届ける・答えるのも dispatcher (issue 438):
+  - **追記**は PG の turn の区切りで届ける (dispatcher は SendMessage を呼べないので、回答と同じ「止めて同じ session を再開」)。
+    busy の間は積んで待ち、作業中のまま idle になったら再開する。`card ask` / `run` / `review` で turn を終えたら、その先の再開
+    (回答・テストの結果・差し戻し) に添えて届ける。レビュー待ちに未達が残っていたら PG へ戻す。AskUserQuestion / 権限の確認で
+    止まっている PG・落ちている PG には届けない (未達のままカードに見える)
+  - **方針変更**は待たずに PG を止めて、指示を差し替えて同じ session を再開する (worktree の途中の変更は残る)。**別件**は元のカードの子の新しい依頼
+  - **btw** は PG に届けない (止めない・文脈を汚さない。415 要件 9)。dispatcher が PG の出力の末尾とカードの記録から haiku で答え、
+    答えはカードの履歴に出る (PG の出力が無ければ記録だけから答える)
+  - **片付け**は画面が見ていた完了のカードだけを Archived にする (記録には残る)
 - 作業中のカードには、**pro-con が起動した session だけ** (記録 `…/live/sessions.json` にあるもの) の様子 (PG の出力の末尾・pid) を足す。
   照合は記録の行の session id・短い id・pid が全部一致したときだけ (pid が違う = 外の shell で同じ session を再開したもの、は外れる)。
   Desktop や他の shell の session は出さず、選べない (選べると pro-con の外の session に入力・停止できてしまう)。
@@ -82,8 +90,8 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 | Q | 終了の入力欄を開く。`quit` と打って enter したときだけ閉じる (本物のモードでは dispatcher と PG を止めてから閉じる。次に開くと続きから再開。ほかに画面が開いていれば、この画面だけ閉じる)。ctrl+c も同じ入力欄を開く (1 打では閉じない) |
 | a | PG の session を開く (今は模擬) |
 | r | 質問待ちのカードに回答する |
-| + | 追加オーダー (tab で 追記 / 方針変更 / 別件)。**方針変更は y/N 確認** (y / enter だけが実行、他のキーは取り消し) |
-| w | btw (PG を止めずに状況を聞く。what's up) |
+| + | 追加オーダー (tab で 追記 / 方針変更 / 別件)。**方針変更は y/N 確認** (y / enter だけが実行、他のキーは取り消し)。届いたかは詳細に「未達 / 届いた」で出る |
+| w | btw (PG を止めずに状況を聞く。what's up)。本物のモードでは答えがカードの履歴に出る |
 | ? | レーンの意味の表 (説明の正本は `card.State.Meaning`)。? / q / esc で閉じる |
 
 入力欄 (n / r / + / ?) は readline の編集キーが効く (ctrl+h / ctrl+w / ctrl+u / ctrl+k / ctrl+a / ctrl+e / ctrl+b / ctrl+f …。

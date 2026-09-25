@@ -2,8 +2,8 @@
 // **pro-con が起動した session** (registry.go の記録にあるもの) の様子 (PG の出力の末尾・pid) を `claude agents --json` と transcript から足す。
 // Desktop や他の shell で立ち上げた session は出さない (選べると、pro-con の外の session に入力・停止できてしまう)。
 //
-// 書き込みは受付の箱に置くだけ (store.Submit)。記録へ適用するのは dispatcher (426 の決定 1)。受けるのは新しい依頼と回答だけで、
-// 追加オーダー・btw・片付けはまだ受けない (Accepts。画面は押した時点で断る)。
+// 書き込みは受付の箱に置くだけ (store.Submit)。記録へ適用するのは dispatcher (426 の決定 1)。新しい依頼・回答・追加オーダー・btw・
+// 片付けを受ける。PG へ届ける・答えるのは dispatcher (dispatcher/orders.go・btw.go。issue 438)。
 package live
 
 import (
@@ -28,9 +28,6 @@ import (
 
 // Interval は一覧と transcript を読み直す間隔。claude agents --json は 1 回 0.15 秒ほどかかるので、画面の tick (1 秒) では呼ばない。
 const Interval = 3 * time.Second
-
-// ErrNotYet は本物のモードでまだ受けない操作 (追加オーダー・btw・片付け)。
-var ErrNotYet = errors.New("本物のモードではまだ使えない操作 (issue 427)。模擬で試すなら pro-con --mock")
 
 // Backend は本物の backend。
 type Backend struct {
@@ -301,11 +298,11 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 	if err != nil {
 		extra = append(extra, card.Violation{Reason: "dispatcher の様子を読めない: " + err.Error()})
 	}
-	pending, _ := filepath.Glob(filepath.Join(b.dir, store.InboxDir, "*.json"))
+	pending, _ := store.Pending(b.dir)
 	b.mu.Lock()
 	b.snap = backend.Snapshot{Now: now, Cards: cards, Consumers: cons, Limit: ds.Cap, LimitMax: ds.Limit, LimitWhy: ds.Why,
 		DispatcherTick: ds.Tick, Screens: screens, Violations: append(card.Check(cards), extra...)}
-	b.pending, b.ready = len(pending), true
+	b.pending, b.ready = pending, true
 	b.mu.Unlock()
 }
 
@@ -353,9 +350,10 @@ func (b *Backend) Snapshot() backend.Snapshot {
 	return s
 }
 
-// Apply は受付の箱に依頼を置く (記録へ適用するのは dispatcher)。受けるのは新しい依頼と回答と削除だけ。
+// Apply は受付の箱に依頼を置く (記録へ適用するのは dispatcher)。操作はすべて受ける (backend.Accepter を持たない。断るのは読み取りだけの画面 = viewOnly)。
 func (b *Backend) Apply(cmd backend.Command) (string, error) {
 	var r store.Request
+	done := "受け付けた (dispatcher が適用するとカードに出る)"
 	switch c := cmd.(type) {
 	case backend.NewRequest:
 		if strings.TrimSpace(c.Text) == "" && c.Issue == nil {
@@ -375,8 +373,44 @@ func (b *Backend) Apply(cmd backend.Command) (string, error) {
 		r = store.Request{Kind: "answer", CardID: c.CardID, Answer: c.Text, From: firstNonEmpty(c.From, "人間")}
 	case backend.DeleteCard:
 		r = store.Request{Kind: "delete", CardID: c.CardID, From: firstNonEmpty(c.From, "人間")}
+	case backend.AddOrder:
+		if strings.TrimSpace(c.Text) == "" {
+			return "", backend.ErrEmptyText
+		}
+		if c.Kind == card.OrderSeparate { // 別件は元のカードの子の新しい依頼 (PM が分けて issue に紐づける)
+			parent, ok := b.card(c.CardID)
+			if !ok {
+				return "", backend.ErrNotFound
+			}
+			repo := b.repo(parent.Repo)
+			r = store.Request{Kind: "add", ParentID: parent.ID, Title: clip(firstLine(c.Text), 40), Request: c.Text,
+				Prompt: backend.PMPrompt(repo, parent.ID+" の追加オーダー (別件) として出た依頼です。同じファイルを触るなら "+parent.ID+" の後に着手してください。\n\n"+c.Text),
+				Repo:   repo.Name, Owner: "PM"}
+			done = "別件として受け付けた (dispatcher が適用すると " + parent.ID + " の子の新しいカードになる)"
+			break
+		}
+		r = store.Request{Kind: "order", CardID: c.CardID, Order: c.Kind, Text: c.Text}
+		done = "追加オーダーを受け付けた (追記は PG の turn の区切りで、方針変更は PG を止めて届ける)"
+	case backend.Btw:
+		if strings.TrimSpace(c.Question) == "" {
+			return "", backend.ErrEmptyText
+		}
+		r = store.Request{Kind: "btw", CardID: c.CardID, Question: c.Question}
+		done = "btw を受け付けた (PG は止めない。答えはカードの履歴に出る)"
+	case backend.ClearDone:
+		var ids []string
+		for _, cc := range b.Snapshot().Cards { // 画面が見ている完了のカードだけ (適用までに完了になったカードを巻き込まない)
+			if cc.State == card.Done && !cc.Archived && (c.Repo == "" || cc.Repo == c.Repo) {
+				ids = append(ids, cc.ID)
+			}
+		}
+		if len(ids) == 0 {
+			return "片付ける完了のカードが無い", nil
+		}
+		r = store.Request{Kind: "clear", Cards: ids}
+		done = fmt.Sprintf("完了のカード %d 枚の片付けを受け付けた (記録には残る)", len(ids))
 	default:
-		return "", ErrNotYet
+		return "", backend.ErrUnknownKind
 	}
 	if _, err := store.Submit(b.dir, r); err != nil {
 		return "", err
@@ -384,12 +418,27 @@ func (b *Backend) Apply(cmd backend.Command) (string, error) {
 	if r.Kind == "delete" {
 		return r.CardID + " の削除を受け付けた (依頼の列ならすぐ、ほかは PG の session を止めてから消える)", nil
 	}
-	return "受け付けた (dispatcher が適用するとカードに出る)", nil
+	return done, nil
 }
 
-// Accepts は本物のモードで受ける操作 (backend.Accepter)。新しい依頼と回答と削除だけ。
-func (b *Backend) Accepts(op backend.Op) bool {
-	return op == backend.OpNew || op == backend.OpAnswer || op == backend.OpDelete
+// card は最後に読んだ記録のカード。
+func (b *Backend) card(id string) (card.Card, bool) {
+	for _, c := range b.Snapshot().Cards {
+		if c.ID == id {
+			return c, true
+		}
+	}
+	return card.Card{}, false
+}
+
+// repo は repo の名前から場所を引く (設定に無ければ名前だけ。PMPrompt は名前と場所を前置きに出す)。
+func (b *Backend) repo(name string) backend.Repo {
+	for _, r := range b.repos {
+		if r.Name == name {
+			return r
+		}
+	}
+	return backend.Repo{Name: name}
 }
 
 // AttachCommand は裏の session を claude attach で開く。対話 session (Desktop) には attach の口が無い。
@@ -476,7 +525,7 @@ func (b *Backend) Describe() string {
 	case b.pending > 0:
 		return fmt.Sprintf("live: 受付の箱に適用待ち %d 件 (pro-con dispatcher が動いていない? 模擬は pro-con --mock)", b.pending)
 	}
-	return "live: 本物のカード (依頼と回答は受付の箱へ。追加オーダー・btw・片付けはまだ。模擬は pro-con --mock)"
+	return "live: 本物のカード (操作は受付の箱へ。dispatcher が適用する。模擬は pro-con --mock)"
 }
 
 func clip(s string, n int) string {

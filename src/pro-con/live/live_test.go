@@ -163,7 +163,7 @@ func TestTranscriptIsCached(t *testing.T) {
 	}
 }
 
-// 書き込みは受付の箱に置く (記録へ適用するのは dispatcher)。受けるのは新しい依頼と回答だけ。attach できるのは裏の session だけ。
+// 書き込みは受付の箱に置く (記録へ適用するのは dispatcher)。操作はすべて受ける (issue 438)。attach できるのは裏の session だけ。
 func TestApplySubmitsToInbox(t *testing.T) {
 	b, _ := testBackend(t, sessions, nil)
 	if _, err := b.Apply(backend.NewRequest{Repo: backend.Repo{Name: "dotfiles", Path: "/w/dotfiles"}, Text: "色を直して\n詳しく"}); err != nil {
@@ -171,11 +171,6 @@ func TestApplySubmitsToInbox(t *testing.T) {
 	}
 	if _, err := b.Apply(backend.Answer{CardID: "C-001", Text: "青"}); err != nil {
 		t.Fatal(err)
-	}
-	for _, cmd := range []backend.Command{backend.AddOrder{CardID: "C-001", Text: "x"}, backend.Btw{CardID: "C-001", Question: "?"}, backend.ClearDone{}} {
-		if _, err := b.Apply(cmd); !errors.Is(err, ErrNotYet) {
-			t.Fatalf("%T を受けた: %v", cmd, err)
-		}
 	}
 	if _, err := b.Apply(backend.NewRequest{Text: " "}); !errors.Is(err, backend.ErrEmptyText) {
 		t.Fatalf("空の依頼を置いた: %v", err)
@@ -188,9 +183,6 @@ func TestApplySubmitsToInbox(t *testing.T) {
 	if c := st.Cards[0]; c.Title != "色を直して" || c.Repo != "dotfiles" || !strings.Contains(c.Prompt, "dotfiles") {
 		t.Fatalf("依頼のカード: %+v", c)
 	}
-	if !b.Accepts(backend.OpNew) || !b.Accepts(backend.OpAnswer) || !b.Accepts(backend.OpDelete) || b.Accepts(backend.OpOrder) || b.Accepts(backend.OpClear) {
-		t.Fatal("受ける操作が新しい依頼と回答と削除だけになっていない")
-	}
 	if _, err := b.Apply(backend.DeleteCard{CardID: "C-001"}); err != nil {
 		t.Fatal(err)
 	}
@@ -199,6 +191,9 @@ func TestApplySubmitsToInbox(t *testing.T) {
 	}
 	if st, _ := store.Load(b.dir); len(st.Cards) != 0 {
 		t.Fatalf("依頼の列のカードが消えていない: %+v", st.Cards)
+	}
+	if _, ok := backend.Backend(b).(backend.Accepter); ok {
+		t.Fatal("本物のモードが操作を選んで断る口を持っている (画面が押した時点で断る)")
 	}
 	if _, err := b.AttachCommand(""); err == nil {
 		t.Fatal("session id 無しで attach できてしまう")
