@@ -187,7 +187,7 @@ func (l e2eLauncher) newSession(cwd, name, cardID string) (string, error) {
 	f.Seq++
 	id := fmt.Sprintf("e2e%05d", f.Seq)
 	f.Sessions = append(f.Sessions, agents.Session{
-		ID: id, SessionID: fmt.Sprintf("e2e-session-%05d", f.Seq), Kind: "background", Status: "idle", State: "blocked", Name: name,
+		ID: id, SessionID: fmt.Sprintf("e2e-session-%05d", f.Seq), Kind: "background", Status: agents.StatusIdle, State: "blocked", Name: name,
 		Cwd: cwd, PID: 900000 + f.Seq, StartedAt: time.Now().UnixMilli(),
 	})
 	f.Cards[id] = cardID

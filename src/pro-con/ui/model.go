@@ -505,7 +505,7 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	}
 	if op, ok := writeKeys[k.String()]; ok && !m.accepts(op) {
 		// 入力欄を開いてから送った時点で断ると、書いた文が無駄になる (2026-09-24 の報告)。押した時点で断る
-		m.flash = "この操作は今の backend ではまだ使えない (issue 427。模擬で試すなら pro-con --mock)"
+		m.flash = "この画面では使えない操作 (見ているだけの画面 = pro-con --view は書き込まない)"
 		return nil
 	}
 	switch k.String() {

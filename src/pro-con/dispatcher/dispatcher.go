@@ -3,7 +3,9 @@
 //  1. 受付の箱を記録へ適用する (store.Apply)
 //  2. 起動した PG の session を pro-con の記録 (live.Register) に登録する (session id と pid が一覧に出てから)
 //  3. (落ちた PG を見張る trackDead の後に) 閉じたカード・削除の依頼を受けたカードの PG の session を止める (close.go。issue 447 / 451)。削除のカードは止まったら記録から外す
-//  4. 分解済みのカードに、上限まで PG を割り当てる。回答を受けたカード (Resume が有る) は同じ session を再開し、それ以外は新しく起動する
+//  4. 追加オーダーを届けるカードを再開の列へ戻し (orders.go)、btw に答える (btw.go)
+//  5. 分解済みのカードに、上限まで PG を割り当てる。回答を受けたカード (Resume が有る) と追加オーダーを届けるカードは同じ session を再開し、
+//     それ以外は新しく起動する
 //
 // 書き手は dispatcher だけ (426 の決定 1)。PG の起動と再開は Launcher に任せ、テストでは偽物に差し替える。
 // 起動・再開の前に印を記録へ書き、結果は次の Tick で session の一覧と照らして確かめる (claude の「失敗」と実際が食い違う / 途中で落ちる)。
@@ -80,6 +82,9 @@ type Dispatcher struct {
 	Runner    Runner
 	Summarize func(ctx context.Context, tail string) (string, error)
 	active    *runJob // 実行中の 1 本 (無ければ nil)
+	// Ask は btw の答えを作る (btw.go。本物は haiku)。nil なら記録だけから答える
+	Ask func(ctx context.Context, prompt string) (string, error)
+	btw *btwJob // 答えを作っている 1 本 (無ければ nil)
 
 	// Usage は利用枠の使用率を読む (usage.go)。nil なら枠で絞らない (e2e・テスト)
 	Usage      func(context.Context) (Usage, error)
@@ -184,6 +189,16 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	}
 	ran, err := d.tickRuns(ctx, now)
 	notes = append(notes, ran...)
+	if err != nil {
+		return notes, err
+	}
+	delivered, err := d.deliverOrders(now, ss)
+	notes = append(notes, delivered...)
+	if err != nil {
+		return notes, err
+	}
+	answered, err := d.tickBtws(ctx, now)
+	notes = append(notes, answered...)
 	if err != nil {
 		return notes, err
 	}
@@ -621,8 +636,8 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 	return notes, nil
 }
 
-// resumes は回答を受けて、同じ session を再開するカードか。
-func resumes(c card.Card) bool { return c.Resume != "" && c.Session != "" }
+// resumes は同じ session を再開するカードか (回答・テストの結果・差し戻しを受けた / 追加オーダーを届ける)。
+func resumes(c card.Card) bool { return (c.Resume != "" || len(c.Pending()) > 0) && c.Session != "" }
 
 // prepare は起動・再開の前提を確かめて、実行する関数を返す。再開は、前の session が pro-con の記録にあり、
 // 今の一覧でその短い id が同じ session を指している (別の session を止めない) ときだけ。
@@ -655,7 +670,7 @@ func (d *Dispatcher) prepare(c card.Card, now time.Time, ss []agents.Session, re
 			return "再開", nil, errWait // Claude Code の自動の再開の途中かもしれない
 		}
 		return "再開", func(ctx context.Context) (string, error) {
-			return d.Launch.Resume(ctx, stop, o.SessionID, o.Cwd, c.Resume)
+			return d.Launch.Resume(ctx, stop, o.SessionID, o.Cwd, resumeText(c))
 		}, nil
 	}
 	path, ok := d.Repos[c.Repo]
@@ -731,6 +746,9 @@ func (d *Dispatcher) settle(id string, now time.Time, how, session string) error
 		c.State, c.Since, c.Owner, c.Session = card.Running, now, "PG", session
 		c.LastProgress, c.Resume, c.Launching, c.Stalled, c.StopWanted, c.Stopped = now, "", "", false, false, false
 		c.History = append(c.History, card.Event{At: now, Text: "PG を" + how + "した (session " + session + ")"})
+		if n := markDelivered(c); n > 0 {
+			c.History = append(c.History, card.Event{At: now, Text: deliveredNote(n)})
+		}
 	})
 }
 
@@ -780,6 +798,9 @@ func Prompt(c card.Card) string {
 		b.WriteString("\n指示:\n" + c.Prompt + "\n")
 	} else if c.Request != "" {
 		b.WriteString("\n依頼の原文:\n" + c.Request + "\n")
+	}
+	if o := ordersText(c); o != "" { // 起動より前に積まれた追加オーダー (起動を確かめたら届いた印を付ける = settle)
+		b.WriteString("\n" + o)
 	}
 	return b.String()
 }

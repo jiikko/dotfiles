@@ -69,6 +69,7 @@ func (d *Dispatcher) Shutdown(ctx context.Context) (notes []eventlog.Event, err 
 	defer cancel()
 	now := d.Now()
 	d.cancelRun(10 * time.Second) // テストの係の実行中の 1 本を取り消す (再開した PG は続きから頼み直す)
+	d.cancelBtw()                 // btw の答えは次の dispatcher が作り直す
 	// 止める直前に PG が置いた質問・完了の依頼を先に適用する (作業中のまま分解済みへ戻すと、次の起動で除けられて失われる)
 	if res, err := store.Apply(d.Dir, now); err != nil {
 		notes = append(notes, ev(eventlog.KindError, "", "", "箱の依頼を適用できない (止めるのは続ける): "+err.Error()))

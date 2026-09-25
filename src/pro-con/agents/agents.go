@@ -65,6 +65,9 @@ func List(ctx context.Context, run Runner) ([]Session, error) {
 	return ss, nil
 }
 
+// StatusIdle は turn を終えて次の入力を待つ session の Status (425 の実測: 正常に終えた turn / API エラーで落ちた turn)。
+const StatusIdle = "idle"
+
 // StateStopped は `claude stop` で止めた session の State。
 const StateStopped = "stopped"
 

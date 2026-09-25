@@ -22,6 +22,7 @@ var t0 = time.Date(2026, 9, 25, 1, 0, 0, 0, time.UTC)
 // fakeLauncher は起動・再開を記録するだけ。fail が真なら起動に失敗する。
 type fakeLauncher struct {
 	starts  []string // name
+	prompts []string // 起動の指示
 	resumes []string // stopID + ":" + text
 	fail    bool
 	// resumeFail は再開に「失敗」と返す (実際には立っている形を作るのは一覧の側)
@@ -33,11 +34,11 @@ type fakeLauncher struct {
 	stopTries  []string // 失敗も含めて止めようとした id
 }
 
-func (f *fakeLauncher) Start(_ context.Context, _, name, _ string) (string, error) {
+func (f *fakeLauncher) Start(_ context.Context, _, name, prompt string) (string, error) {
 	if f.fail {
 		return "", errors.New("起動できない")
 	}
-	f.starts = append(f.starts, name)
+	f.starts, f.prompts = append(f.starts, name), append(f.prompts, prompt)
 	return "id-" + name, nil
 }
 
