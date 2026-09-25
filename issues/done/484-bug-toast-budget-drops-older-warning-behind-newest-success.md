@@ -1,7 +1,5 @@
 # 484 (bug): toast の描画予算が「最新の成功の箱」を数えず、長い警告 2 枚の古い方が出ない
 
-> 🚨 **担当中: dotfiles-c2**（2026-09-26〜）
-
 起票日: 2026-09-26
 
 ## 概要
@@ -43,8 +41,9 @@ glogx の `toastDrawBudget(page, warnings)` は「新しい重要警告 2 枚の
 
 ## 関連して記録しておく制約 (直さない / 未測定)
 
-- **低い窓 (page 9〜12)**: 予算の上限 `page-1` が長い警告 2 枚 (12 行) より小さく、古い方は出ない。窓の高さの制約として受容した。
-  最新は必ず出すので、押したキーの結果が消えることは無い
+- **低い窓**: 予算の上限 `page-1` が「最新 + 長い警告 2 枚」の行数より小さいと、古い警告は出ない。窓の高さの制約として受容した。
+  最新は必ず出すので、押したキーの結果が消えることは無い。起票時は「page 9〜12」と書いたが、長い警告 2 枚 + 成功 (計 16 行) の
+  場面では page 12〜16 がこれに当たる (修正後の敵対レビューの実測。修正前と同じ結果)
 - **性能 (未実測)**: 警告が静止している間、`ImportantHeight` が毎フレーム `fullBox` を組み直すので 1 フレームあたり約 46 allocs 増える
   (敵対レビューの計測。成功だけなら 0)。`frame_alloc_test.go` の `TestFrameAllocBudget` は成功通知 1 枚の model しか持たず、
   この増加を測れない (toast-holding で 180 / 上限 186 の PASS)。フレーム時間への影響は未測定。
@@ -61,6 +60,20 @@ glogx の `toastDrawBudget(page, warnings)` は「新しい重要警告 2 枚の
 
 ## 進捗
 
-- [ ] 最新の高さを予算に入れる
-- [ ] page=20 の回帰テスト (変異で red を確認)
-- [ ] (任意) frame_alloc に警告 2 枚の model を足して allocs を測る
+- [x] 最新の高さを予算に入れる — commit「toast の予算に最新の箱も数え、長い警告 2 枚の後の成功で古い警告が落ちないようにする (issue 484)」。
+  `Stack.ImportantHeight` を `Stack.ReservedHeight` に作り替えた (最新 1 枚 + 重要な枚を最新を含め n 枚。BoxLines が描かない
+  frame 0 の枚は数えない)。高さは箱を組まずに `item.height` で求める
+- [x] page=20 の回帰テスト — `TestToastBudgetReservesNewestSuccessAndTwoWarnings` (glogx の View 経由)、`TestToastReservedHeight`、
+  `TestToastHeightMatchesFullBox`。変異 3 本 (重要でない最新を数えない / frame 0 も数える / height を 1 行ずらす) でそれぞれ red を確認
+- [x] 性能 — 最新を毎フレーム数えるため、箱を組む形だと toast-holding が 192 allocs/frame (上限 186) に増えた。`item.height` に替えて
+  181 (上限 186)。敵対レビューの `testing.AllocsPerRun`: `ReservedHeight(2,40)` は成功 1 枚で 1、警告 2 枚 + 成功で 15
+  (旧 ImportantHeight の約 46 より少ない)。frame_alloc に警告 2 枚の model は足していない (必要になったら上の trigger で)。
+  フレーム時間は未測定
+
+## 結果
+
+- issue の表の場面 (長い警告 A・B + 成功、幅 40): reserved=16。page 18 / 19 / 20 / 24 / 30 / 40 で 3 枚とも描かれる (敵対レビューの実測)
+- 成功・進行中だけなら reserved は最新 1 枚 (最大 6 行) で下限 8 行を超えず、予算は修正前と同じ
+- `make test`: この修正の commit で lint の 1 件 (前の commit で入った toast_test.go の prealloc) を除いて通過。その 1 件を直して `make lint` rc=0
+- 敵対レビュー (opus・読み取りのみ): 指摘 0 件。公開 API の probe で 4,585,536 通り (通知 6 種 × 最大 4 回 × frame 0〜12 × 幅 4 通り ×
+  page 4〜60) を回し、ReservedHeight と BoxLines の保護対象の不一致 0 / 予算内で落ちる警告 0 / 予算・窓超え 0 / 途中で切れた箱 0
