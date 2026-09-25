@@ -224,7 +224,7 @@ func (d *Dispatcher) deferRun(now time.Time, job *runJob, r runResult) ([]eventl
 		d.blocked = &runBlock{cardID: job.cardID, command: job.command, since: now}
 	}
 	if now.Sub(d.blocked.since) >= runLockGiveUp {
-		n, err := d.finishRun(now, job, runResult{rc: -1, err: fmt.Errorf("repo の lock が %s たっても空かないので実行しない (%v)", runLockGiveUp, r.err)})
+		n, err := d.finishRun(now, job, runResult{rc: -1, err: fmt.Errorf("repo の lock が %s たっても空かないので実行しない (%w)", runLockGiveUp, r.err)})
 		return []eventlog.Event{n}, err
 	}
 	d.blocked.retryAt = now.Add(runLockRetry)
@@ -437,7 +437,7 @@ func (r ExecRunner) Run(ctx context.Context, dir, command, logPath, runID string
 			return -1, fmt.Errorf("lockman が失敗した (rc=%d。コマンドは走っていない): %s", rc, strings.TrimSpace(logTail(logPath)))
 		case rc == lockmanWithLost || rc == lockmanWithInvalid:
 			// 子の rc が上書きされうる (122 = 走行中に lease を失った / 125 = 子の後の解放に失敗)。子自身がこの値で抜けたのとは区別できない
-			return rc, fmt.Errorf("lockman の rc かもしれない (122 = 走行中に lock を失った / 125 = lock の解放に失敗。ログの lockman の行を見ること)")
+			return rc, errors.New("lockman の rc かもしれない (122 = 走行中に lock を失った / 125 = lock の解放に失敗。ログの lockman の行を見ること)")
 		}
 		return ee.ExitCode(), nil
 	case ctx.Err() != nil:
@@ -485,7 +485,7 @@ func runLockDir(ctx context.Context, dir string) (string, error) {
 // withRunLock は実行の bash (runCommand) を `lockman with <lockDir> -- <bash>` で包む。bash は自分の pgid を pgidFile へ書く (runScript)。
 func withRunLock(ctx context.Context, bash *exec.Cmd, lockman, lockDir, pgidFile, runID string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, lockman, append([]string{"with", lockDir, "--label", "pro-con テストの係 " + runID, "--"}, bash.Args...)...)
-	cmd.Env = append(bash.Env, runPgidEnv+"="+pgidFile)
+	cmd.Env = append(slices.Clone(bash.Env), runPgidEnv+"="+pgidFile)
 	return cmd
 }
 
