@@ -53,7 +53,7 @@ func LoadSettings(dir string) (Settings, error) {
 	}
 	var s Settings
 	if err := json.Unmarshal(data, &s); err != nil {
-		return Settings{}, fmt.Errorf("%w (%s): %v", ErrSettingsBroken, p, err)
+		return Settings{}, fmt.Errorf("%w (%s): %w", ErrSettingsBroken, p, err)
 	}
 	return s, nil
 }

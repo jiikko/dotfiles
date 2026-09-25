@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"pro-con/store"
@@ -80,7 +81,7 @@ func showConfig(dir string, stdout, stderr io.Writer) int {
 		if n == 0 {
 			return "(設定なし)"
 		}
-		return fmt.Sprint(n)
+		return strconv.Itoa(n)
 	}
 	_, _ = fmt.Fprintf(stdout, "limit  設定 %s", set(s.Limit))
 	if ok {
