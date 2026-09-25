@@ -194,6 +194,33 @@ func TestAnsweredCardResumesSameSession(t *testing.T) {
 	}
 }
 
+// 差し戻したカードは、回答と同じく新しく起動せず同じ session を再開し、直してほしい点を渡す (issue 446)。
+func TestReworkedCardResumesSameSession(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 1)
+	l := &fakeLauncher{}
+	d := newDispatcher(t, dir, l, []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}})
+	for range 2 { // 起動 → 登録
+		if _, err := d.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, r := range []store.Request{{Kind: "review", CardID: "C-001"}, {Kind: "rework", CardID: "C-001", Rework: "テストを足して"}} {
+		if _, err := store.Submit(dir, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(l.starts) != 1 || len(l.resumes) != 1 || !strings.HasPrefix(l.resumes[0], "id-pc-c-001:"+store.ReworkPrefix+"テストを足して") {
+		t.Fatalf("同じ session を直してほしい点つきで再開するはず: starts=%v resumes=%v", l.starts, l.resumes)
+	}
+	if c := states(t, dir)["C-001"]; c.State != card.Running || c.Resume != "" {
+		t.Fatalf("再開の後: %v Resume=%q", c.State, c.Resume)
+	}
+}
+
 // 起動に失敗したカードは分解済みのまま残し、失敗を履歴に書く (作業中にしない)。
 func TestLaunchFailureKeepsCardPlanned(t *testing.T) {
 	dir := t.TempDir()

@@ -100,6 +100,51 @@ func TestLifecycle(t *testing.T) {
 	}
 }
 
+// 差し戻し (rework) はレビュー待ちから分解済みへ戻し、同じ session を再開する文を持たせる。履歴には直してほしい点を原文のまま残す。
+func TestReworkReturnsReviewToPlanned(t *testing.T) {
+	dir := t.TempDir()
+	submit(t, dir, Request{Kind: "add", Title: "x"})
+	applyAll(t, dir)
+	setState(t, dir, "C-001", card.Review)
+	fix := strings.Repeat("テストが変異で red になるかを確かめていない。", 5) // 80 文字を超える (切り詰めたら落ちる)
+	submit(t, dir, Request{Kind: "rework", CardID: "C-001", Rework: fix})
+	if res := applyAll(t, dir); len(res) != 1 || res[0].Err != "" {
+		t.Fatalf("rework: %+v", res)
+	}
+	c := cardOf(t, dir, "C-001")
+	if c.State != card.Planned || !strings.Contains(c.Resume, fix) || !strings.Contains(c.Resume, "pro-con card review C-001") {
+		t.Fatalf("rework の後: %v Resume=%q", c.State, c.Resume)
+	}
+	if got := c.History[len(c.History)-1].Text; got != "差し戻した: "+fix {
+		t.Fatalf("履歴に原文が残らない: %q", got)
+	}
+}
+
+// レビュー待ちでないカードへの差し戻しと、直してほしい点が空の差し戻しは断る。
+func TestReworkRejectsOutsideReview(t *testing.T) {
+	for _, tc := range []struct {
+		state card.State
+		fix   string
+		want  string
+	}{
+		{card.Running, "直して", "レビュー待ちではない"},
+		{card.Done, "直して", "レビュー待ちではない"},
+		{card.Review, " ", "直してほしい点が空"},
+	} {
+		dir := t.TempDir()
+		submit(t, dir, Request{Kind: "add", Title: "x"})
+		applyAll(t, dir)
+		setState(t, dir, "C-001", tc.state)
+		submit(t, dir, Request{Kind: "rework", CardID: "C-001", Rework: tc.fix})
+		if res := applyAll(t, dir); len(res) != 1 || !strings.Contains(res[0].Err, tc.want) {
+			t.Fatalf("%v %q: %+v", tc.state, tc.fix, res)
+		}
+		if c := cardOf(t, dir, "C-001"); c.State != tc.state || c.Resume != "" {
+			t.Fatalf("断った差し戻しでカードが変わった: %v Resume=%q", c.State, c.Resume)
+		}
+	}
+}
+
 // 規則に反する依頼は記録に入れず、理由つきで rejected/ へ除ける (黙って捨てない)。カードは変わらない。
 func TestRejectsInvalidTransition(t *testing.T) {
 	dir := t.TempDir()
