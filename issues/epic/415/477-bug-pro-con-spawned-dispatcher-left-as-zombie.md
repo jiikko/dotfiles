@@ -47,4 +47,5 @@ dispatcher が抜けても、親の画面が生きている間は刈り取られ
   `ps` で居なくなるのを待つ。画面 (テスト) の子の `Z` で見えたら落ちる
   - 変異 (`bin/mutate-verify`。旧実装の `Start` → `Release` へ戻す) で red: `抜けた dispatcher (pid 41932) が画面の子のゾンビで残った: ppid=41911 stat=ZN`
   - 検査が守らない形: goroutine で `cmd.Wait()` する形は、この検査では green になる (exec をまたぐ漏れは検査していない)
+- [x] `make test` (repo root) rc=0 (2026-09-25、テストの係。6m11s。ログに FAIL 0 件)
 - 直す前の版の画面から ctrl+r で上げた場合、それまでに溜まったゾンビは新しい版でも刈り取られない (画面を閉じれば消える)
