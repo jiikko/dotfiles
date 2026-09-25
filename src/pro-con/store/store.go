@@ -68,8 +68,12 @@ type Request struct {
 	From     string          `json:"from,omitempty"`   // 回答した人 / 削除を依頼した人 (人間 / PM)
 	Rework   string          `json:"rework,omitempty"` // rework: レビューで直してほしい点 (書いたまま)
 	Ending   card.Ending     `json:"ending,omitempty"`
-	Said     []card.Event    `json:"said,omitempty"` // attach: attach の間に人間が打った指示 (原文と打った時刻)
-	Note     string          `json:"note,omitempty"` // event: 画面の出来事 (人が読む 1 文。dispatcher が出来事の記録へ書く)
+	Said     []card.Event    `json:"said,omitempty"`     // attach: attach の間に人間が打った指示 (原文と打った時刻)
+	Note     string          `json:"note,omitempty"`     // event: 画面の出来事 (人が読む 1 文。dispatcher が出来事の記録へ書く)
+	ParentID string          `json:"parentId,omitempty"` // add: 別件の追加オーダーの元のカード
+	Order    card.OrderKind  `json:"order,omitempty"`    // order: 追記 / 方針変更 (別件は add + ParentID)
+	Text     string          `json:"text,omitempty"`     // order: 追加オーダーの本文 (書いたまま)
+	Cards    []string        `json:"cards,omitempty"`    // clear: 片付ける完了のカード (画面が見ていたもの。適用までに完了になったカードを巻き込まない)
 	At       time.Time       `json:"at"`
 }
 
@@ -307,9 +311,15 @@ func apply(st State, r Request, now time.Time) (State, string, string, error) {
 		}
 		id = fmt.Sprintf("C-%03d", next.NextID)
 		next.NextID++
-		c := card.Card{ID: id, Title: firstNonEmpty(r.Title, clip(r.Request, 40)), Request: r.Request, Prompt: r.Prompt, Repo: r.Repo,
+		c := card.Card{ID: id, ParentID: r.ParentID, Title: firstNonEmpty(r.Title, clip(r.Request, 40)), Request: r.Request, Prompt: r.Prompt, Repo: r.Repo,
 			Owner: firstNonEmpty(r.Owner, "PM"), State: card.Requested, Since: now, FromRequest: r.ID,
 			History: []card.Event{{At: now, Text: "依頼を受けた"}}}
+		if p := indexOf(next.Cards, r.ParentID); r.ParentID != "" { // 親が無ければ不変条件 (親カードが存在しない) が弾く
+			c.History[0].Text = r.ParentID + " の追加オーダー (別件) から分けた"
+			if p >= 0 {
+				next.Cards[p].History = append(next.Cards[p].History, card.Event{At: now, Text: "追加オーダー (別件) を " + id + " に分けた: " + clip(r.Request, 80)})
+			}
+		}
 		next.Cards = append(next.Cards, c)
 	case "delete":
 		i := indexOf(next.Cards, r.CardID)
@@ -326,6 +336,16 @@ func apply(st State, r Request, now time.Time) (State, string, string, error) {
 			return st, "", "", errors.New("event: 出来事の文が空")
 		}
 		return st, "", r.Note, nil
+	case "clear": // 画面が完了のレーンを片付けた (x)。消さずに Archived にする。見ていた後に完了でなくなったカード・無いカードは飛ばす
+		if len(r.Cards) == 0 {
+			return st, "", "", errors.New("clear: 片付けるカードが無い")
+		}
+		for _, cid := range r.Cards {
+			if i := indexOf(next.Cards, cid); i >= 0 && next.Cards[i].State == card.Done && !next.Cards[i].Archived {
+				next.Cards[i].Archived = true
+				next.Cards[i].History = append(next.Cards[i].History, card.Event{At: now, Text: "完了のレーンから片付けた"})
+			}
+		}
 	default:
 		i := indexOf(next.Cards, r.CardID)
 		if i < 0 {
@@ -433,6 +453,24 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		c.Run, c.RunAt, c.RunCwd = r.Command, now, r.Cwd
 		c.Wait = card.Wait{Kind: card.WaitResource, Resource: RunResource}
 		c.History = append(c.History, card.Event{At: now, Text: "テストの係に頼んだ: " + clip(r.Command, 80)})
+	case "order": // 人間が作業中のカードへ追加オーダーを出した (要件 15)。積むだけで、PG へ届けるのは dispatcher (orders.go)
+		if r.Order != card.OrderAppend && r.Order != card.OrderRedirect {
+			return fmt.Errorf("追記か方針変更ではない (%s。別件は新しい依頼にする)", r.Order.Label())
+		}
+		if c.State == card.Done { // レビュー待ちは受ける (PG の review と同じ Apply で来たオーダーを捨てない。dispatcher が PG へ戻して届ける)
+			return errors.New("完了したカードには出せない。別件で出す")
+		}
+		if strings.TrimSpace(r.Text) == "" {
+			return errors.New("本文が空")
+		}
+		c.Orders = append(c.Orders, card.Order{Kind: r.Order, Text: r.Text, At: now})
+		c.History = append(c.History, card.Event{At: now, Text: "追加オーダー (" + r.Order.Label() + "): " + r.Text}) // 原文のまま
+	case "btw": // 人間が PG を止めずに状況を聞いた (要件 9)。答えるのは dispatcher (btw.go)。どの列でも受ける
+		if strings.TrimSpace(r.Question) == "" {
+			return errors.New("質問が空")
+		}
+		c.Btws = append(c.Btws, card.Btw{Question: r.Question, At: now})
+		c.History = append(c.History, card.Event{At: now, Text: "btw: " + r.Question})
 	case "attach": // 画面が attach から戻り、その間に人間が PG へ打った指示を残す (issue 428)。どの列でも受け、状態は変えない
 		if len(r.Said) == 0 {
 			return errors.New("指示が無い")

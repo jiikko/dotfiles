@@ -49,6 +49,8 @@ const (
 	KindRun      = "run"      // テストの係の実行
 	KindLaunch   = "launch"   // PG を起動・再開した / 一覧で確かめた / できなかった
 	KindHold     = "hold"     // 利用枠で起動・再開を待たせた
+	KindOrder    = "order"    // 追加オーダーを届けるため PG を再開の列へ戻した (issue 438)
+	KindBtw      = "btw"      // btw に答えた (issue 438)
 	KindStop     = "stop"     // PG を止めた・止め直した・止められない (終了のとき・閉じたとき)
 	KindDelete   = "delete"   // カードを削除した / 削除の依頼を受けた / 削除できない (issue 451)
 	KindScreens  = "screens"  // 開いている画面の数で決めたこと (画面が無いので抜ける・画面が開いたので続ける)
