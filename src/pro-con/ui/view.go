@@ -419,6 +419,10 @@ func (m *Model) badge(c card.Card) string {
 		parts = append(parts, "▶ "+cmd+" "+fmtDur(m.snap.Now.Sub(e.Since)))
 	} else if c.State != card.Done {
 		parts = append(parts, fmtDur(m.snap.Now.Sub(c.Since)))
+		// PG が今走らせているもの (issue 473)。集め直されていない古い様子はボードには出さない (詳細は古いと添えて出す)
+		if label, since, ok := c.DoingHeadline(); ok && m.snap.Now.Sub(c.DoingAt) <= card.DoingStale {
+			parts = append(parts, "▸ "+label+" "+fmtDur(m.snap.Now.Sub(since)))
+		}
 	}
 	switch {
 	case len(c.Issues) > 0: // 番号は 1 行目 (issueTag) に出している

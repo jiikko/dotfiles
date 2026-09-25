@@ -116,9 +116,13 @@ func waitLabel(w card.Wait) string {
 
 // cardDetail は show の中身 (--json の形)。Log は PG の出力の末尾 (transcript から読む。記録には無い)。
 type cardDetail struct {
-	Card    card.Card `json:"card"`
-	Log     []string  `json:"log"`
-	Waiting string    `json:"waiting,omitempty"` // 何を待っているか (list と同じ。順番の前のカードは記録の全カードから引く)
+	Card card.Card `json:"card"`
+	Log  []string  `json:"log"`
+	// Doing は PG が今走らせているもの、DoingAt は dispatcher がそれを集めた時刻 (store.DoingFile。Card には記録の形 (json) で載らない)
+	Doing    []card.Doing `json:"doing"`
+	DoingAt  time.Time    `json:"doingAt,omitzero"`
+	DoingErr string       `json:"doingErr,omitempty"` // 集めた様子を読めなかった理由 (カードの詳細は出す)
+	Waiting  string       `json:"waiting,omitempty"`  // 何を待っているか (list と同じ。順番の前のカードは記録の全カードから引く)
 }
 
 // viewEnv は読む口が見る場所。
@@ -215,7 +219,14 @@ func loadDetail(env viewEnv, id string) (cardDetail, error) {
 		}
 		return cardDetail{}, fmt.Errorf("カード %q が無い", id)
 	}
-	return cardDetail{Card: c, Log: pgLog(env, c), Waiting: waitingIn(env.dir, c)}, nil
+	d := cardDetail{Card: c, Log: pgLog(env, c), Doing: []card.Doing{}, Waiting: waitingIn(env.dir, c)}
+	if doing, err := store.LoadDoing(env.dir); err != nil {
+		d.DoingErr = err.Error()
+	} else {
+		doing.Attach(&c)
+		d.Doing, d.DoingAt = append(d.Doing, c.Doing...), c.DoingAt
+	}
+	return d, nil
 }
 
 // pgLog はカードの PG の出力の末尾。起動の記録で短い id から session id を引き、transcript を読む。読めなければ空
@@ -283,18 +294,23 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 	if c.Wait.Question != "" {
 		p("質問: %s", c.Wait.Question)
 	}
-	if c.Run != "" {
-		p("テストの係に頼んだコマンド (結果待ち): %s", c.Run)
-	}
-	if c.Exec.Active() {
-		p("実行中: %s (%s から)", c.Exec.Command, fmtAge(now.Sub(c.Exec.Since)))
-	}
 	for _, o := range c.Orders {
 		st := "未達"
 		if o.Delivered {
 			st = "届いた"
 		}
 		p("追加オーダー (%s・%s): %s", o.Kind.Label(), st, o.Text)
+	}
+	c.Doing, c.DoingAt = d.Doing, d.DoingAt
+	if ls := c.DoingLines(now, fmtAge); len(ls) > 0 || d.DoingErr != "" {
+		p("")
+		p("%s", card.DoingHead(c, now, fmtAge))
+		if d.DoingErr != "" {
+			p("  dispatcher が集めた様子を読めない: %s", d.DoingErr)
+		}
+		for _, l := range ls {
+			p("  %s", l)
+		}
 	}
 	p("")
 	p("履歴")

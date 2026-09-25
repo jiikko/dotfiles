@@ -100,6 +100,11 @@ func viewFixtureIn(t *testing.T, dir string) viewEnv {
 	if err := os.WriteFile(filepath.Join(proj, "sess-1.jsonl"), []byte(tr), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.SaveDoing(dir, store.Doing{At: time.Now(), Cards: map[string][]card.Doing{
+		"C-001": {{Kind: card.DoingProcess, Text: "bash mut.sh", Since: time.Now().Add(-13 * time.Minute)}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
 	return viewEnv{dir: dir, projects: projects, now: time.Now}
 }
 
@@ -138,10 +143,25 @@ func TestCardShow(t *testing.T) {
 			t.Fatalf("show に %q が無い: rc=%d out=%q err=%q", want, rc, out, errOut)
 		}
 	}
+	if !strings.Contains(out, "今走っているもの (dispatcher が集めた様子)\n  13 分  bash mut.sh\n") {
+		t.Fatalf("show に PG が今走らせているもの (dispatcher が集めたもの) が無い: %q", out)
+	}
 	rc, out, _ = viewCmd(t, env, "show", "C-001", "--json")
 	var d cardDetail
 	if rc != 0 || json.Unmarshal([]byte(out), &d) != nil || d.Card.ID != "C-001" || len(d.Log) != 1 || d.Log[0] != "色の候補を 3 つ作った" {
 		t.Fatalf("show --json: rc=%d %q", rc, out)
+	}
+	if len(d.Doing) != 1 || d.Doing[0].Text != "bash mut.sh" || d.DoingAt.IsZero() {
+		t.Fatalf("show --json に今走っているものが無い: %q", out)
+	}
+	if _, out, _ := viewCmd(t, env, "show", "C-002"); strings.Contains(out, "今走っているもの") {
+		t.Fatalf("集めたものの無いカードに節を出した: %q", out)
+	}
+	if err := os.WriteFile(filepath.Join(env.dir, store.DoingFile), []byte("{壊れた"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if rc, out, _ := viewCmd(t, env, "show", "C-001"); rc != 0 || !strings.Contains(out, "dispatcher が集めた様子を読めない") || !strings.Contains(out, "依頼の原文") {
+		t.Fatalf("集めた様子が読めなくても詳細は出し、読めないと言うはず: rc=%d %q", rc, out)
 	}
 	// 同じ短い id の行が 2 本あり、先の行の transcript が無くても、後ろの行の transcript を出す (先の行で打ち切らない)
 	two, _ := json.Marshal([]live.Owned{

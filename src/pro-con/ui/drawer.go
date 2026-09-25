@@ -185,6 +185,13 @@ func (m *Model) drawerBody() []string {
 		}
 		add("", fmt.Sprintf("追加オーダー (%s・%s): %s", o.Kind.Label(), st, o.Text))
 	}
+	if ls := c.DoingLines(m.snap.Now, fmtDur); len(ls) > 0 { // PG が今走らせているもの (issue 473)
+		out = append(out, "")
+		add(sgrDim, card.DoingHead(c, m.snap.Now, fmtDur))
+		for _, l := range ls {
+			add("", "  "+l)
+		}
+	}
 	out = append(out, "")
 	add(sgrDim, "履歴")
 	for _, e := range c.History {

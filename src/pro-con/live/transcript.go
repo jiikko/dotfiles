@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -32,6 +33,18 @@ type Transcript struct {
 	// PendingSince は結果がまだ返っていないツール呼び出しのうち、最後のものの時刻 (長いコマンドの実行中。無ければゼロ)
 	PendingSince time.Time
 	Restarts     []time.Time // Claude Code がプロセスの死から自動で再開した時刻 (RestartNote を含む user レコード。古い順)
+	// Calls は結果がまだ返っていない道具の呼び出し (呼んだ順)。Agents は裏で走らせたサブエージェントのうち、終わりの知らせ
+	// (task-notification) がまだ末尾に無いもの (起こした順)。どちらも issue 473 の「今走っているもの」
+	Calls  []Call
+	Agents []Call
+}
+
+// Call は道具の呼び出し 1 つ。
+type Call struct {
+	ID   string // tool_use の id (サブエージェントは agentId)
+	Name string // 道具の名前 (Bash / Agent / Read …)
+	Text string // 引数の要約 (1 行。Bash はコマンド、Agent は説明)
+	At   time.Time
 }
 
 // RestartNote は、プロセスが死んだ session を Claude Code が自動で再開したときに会話へ足す文の一部 (2.1.281 で実測。issue 425 結果 1)。
@@ -55,6 +68,16 @@ type record struct {
 	Message     *struct {
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
+	// ToolUseResult は道具の結果の付帯情報。裏のサブエージェントを起こした結果は isAsync と agentId を持つ (2.1.282 で実測)。
+	// 🚨 RawMessage で受ける: 文字列のこともあり (エラーの結果)、構造体で受けると行ごと読めなくなる
+	ToolUseResult json.RawMessage `json:"toolUseResult"`
+}
+
+// asyncAgent は裏のサブエージェントを起こした結果の付帯情報。
+type asyncAgent struct {
+	IsAsync     bool   `json:"isAsync"`
+	AgentID     string `json:"agentId"`
+	Description string `json:"description"`
 }
 
 // ReadTail は path の末尾を読む。
@@ -106,7 +129,10 @@ func parse(data []byte) Transcript { return parseFrom(bytes.NewReader(data)) }
 func parseFrom(rd io.Reader) Transcript {
 	var t Transcript
 	seen := map[string]bool{}
-	pending := map[string]time.Time{} // tool_use の id → 呼んだ時刻 (結果が返ったら消す)
+	pending := map[string]Call{} // tool_use の id → 呼び出し (結果が返ったら消す)
+	var order []string           // pending の呼んだ順
+	agents := map[string]Call{}  // agentId → 裏のサブエージェント (終わりの知らせで消す)
+	var agentOrder []string
 	// 🚨 bufio.Scanner にしない: 行の長さに上限があり、それを超える行 (大きなツールの結果) で読むのを黙って止め、後の発言を落とす
 	br := bufio.NewReader(rd)
 	for line, err := br.ReadBytes('\n'); len(line) > 0 || err == nil; line, err = br.ReadBytes('\n') {
@@ -117,6 +143,11 @@ func parseFrom(rd io.Reader) Transcript {
 		at, _ := time.Parse(time.RFC3339Nano, r.Timestamp)
 		if at.After(t.LastAt) {
 			t.LastAt = at
+		}
+		if r.Type != "assistant" {
+			for _, id := range finishedTasks(line) {
+				delete(agents, id)
+			}
 		}
 		switch r.Type {
 		case "ai-title":
@@ -134,6 +165,12 @@ func parseFrom(rd io.Reader) Transcript {
 		case "user":
 			if r.Message != nil && strings.HasPrefix(text(r.Message.Content), RestartNote) {
 				t.Restarts = append(t.Restarts, at)
+				clear(agents) // プロセスが死んだので、裏のサブエージェントも一緒に消えている
+			}
+			var a asyncAgent
+			if json.Unmarshal(r.ToolUseResult, &a) == nil && a.IsAsync && a.AgentID != "" {
+				agents[a.AgentID] = Call{ID: a.AgentID, Name: "Agent", Text: oneLine(a.Description), At: at}
+				agentOrder = append(agentOrder, a.AgentID)
 			}
 			if r.Message != nil {
 				if results := toolResults(r.Message.Content); len(results) > 0 {
@@ -163,18 +200,55 @@ func parseFrom(rd io.Reader) Transcript {
 						t.LastNew = at
 					}
 				}
-				for _, id := range toolUses(r.Message.Content) {
-					pending[id] = at
+				for _, c := range toolUses(r.Message.Content) {
+					c.At = at
+					pending[c.ID] = c
+					order = append(order, c.ID)
 				}
 			}
 		}
 	}
-	for _, at := range pending {
-		if at.After(t.PendingSince) {
-			t.PendingSince = at
+	for _, id := range order {
+		if c, ok := pending[id]; ok {
+			delete(pending, id) // 同じ id が 2 度出ても 1 度だけ
+			t.Calls = append(t.Calls, c)
+			if c.At.After(t.PendingSince) {
+				t.PendingSince = c.At
+			}
+		}
+	}
+	for _, id := range agentOrder {
+		if c, ok := agents[id]; ok {
+			delete(agents, id)
+			t.Agents = append(t.Agents, c)
 		}
 	}
 	return t
+}
+
+var (
+	notificationRe = regexp.MustCompile(`<task-notification>.*?</task-notification>`)
+	taskIDRe       = regexp.MustCompile(`<task-id>([^<]+)</task-id>`)
+	taskStatusRe   = regexp.MustCompile(`<status>([^<]+)</status>`)
+)
+
+// finishedTasks は行 (JSON の 1 レコードの生の文字) に載った終わりの知らせ (task-notification) の task-id。status が running のものは除く。
+// 知らせは queue-operation / attachment / user のどのレコードにも載りうる (2.1.282 で実測。版で変わる) ので、種類を問わず生の文字から探す。
+// 🚨 assistant の行では探さない (PG が知らせの文を書いただけで終わったことにしない)。道具の結果に載った知らせ (PG が別の transcript を
+// 読んだ出力など) は拾ってしまうが、消えるのはその id の作業だけ
+func finishedTasks(line []byte) []string {
+	if !bytes.Contains(line, []byte("<task-notification>")) { // 末尾 512KB の全行で正規表現を回さない
+		return nil
+	}
+	var ids []string
+	for _, n := range notificationRe.FindAll(line, -1) {
+		id, st := taskIDRe.FindSubmatch(n), taskStatusRe.FindSubmatch(n)
+		if id == nil || (st != nil && string(st[1]) == "running") {
+			continue
+		}
+		ids = append(ids, string(id[1]))
+	}
+	return ids
 }
 
 type part struct {
@@ -217,14 +291,28 @@ func signatures(raw json.RawMessage) []string {
 	return out
 }
 
-func toolUses(raw json.RawMessage) []string {
-	var ids []string
+func toolUses(raw json.RawMessage) []Call {
+	var cs []Call
 	for _, p := range parts(raw) {
 		if p.Type == "tool_use" && p.ID != "" {
-			ids = append(ids, p.ID)
+			cs = append(cs, Call{ID: p.ID, Name: p.Name, Text: callText(p.Input)})
 		}
 	}
-	return ids
+	return cs
+}
+
+// callText は道具の引数の要約 (1 行)。説明 (description) があればそれ、無ければコマンド・ファイル・URL・パターンの順に最初にあるもの。
+func callText(input json.RawMessage) string {
+	var in map[string]any
+	if json.Unmarshal(input, &in) != nil {
+		return ""
+	}
+	for _, k := range []string{"description", "command", "file_path", "url", "pattern", "prompt"} {
+		if s, ok := in[k].(string); ok && strings.TrimSpace(s) != "" {
+			return oneLine(s)
+		}
+	}
+	return ""
 }
 
 func toolResults(raw json.RawMessage) []string {

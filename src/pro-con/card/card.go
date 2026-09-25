@@ -230,6 +230,10 @@ type Card struct {
 	Btws     []Btw `json:",omitempty"`
 	History  []Event
 	Log      []string // PG の出力の末尾 (本番は transcript から読む)
+	// Doing は PG が今走らせているもの、DoingAt は dispatcher がそれを集めた時刻 (issue 473)。読む側 (画面・card show) が store.DoingFile から足す。
+	// 🚨 記録 (cards.json) には書かない: 書き手は dispatcher の Apply だけで、数秒で古くなる様子を記録の差分に混ぜない
+	Doing   []Doing   `json:"-"`
+	DoingAt time.Time `json:"-"`
 	// Resume は次に PG を再開するときに渡す文 (質問への回答)。dispatcher が渡したら空にする (本物のモードだけ。426 の決定 2)
 	Resume string `json:",omitempty"`
 	// Launching は dispatcher が PG の起動・再開を始めて、結果をまだ確かめていない印 ("起動" / "再開")。起動の前に記録へ書く

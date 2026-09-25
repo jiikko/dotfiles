@@ -375,6 +375,7 @@ func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo stri
 	}
 	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{Claude: cl.Path, UserSettings: userSettingsPath()}, PMRepo: pmRepo, PMGuide: pmGuide, PMOff: pmOff,
 		Runner: dispatcher.ExecRunner{}, Summarize: dispatcher.HaikuSummarize(cl.Path, dir), Ask: dispatcher.HaikuAsk(cl.Path, dir), Usage: dispatcher.ReadUsage(cl.Path, dir),
+		Procs: dispatcher.PSProcs, JobsDir: filepath.Join(filepath.Dir(projects), "jobs"),
 		List: func(ctx context.Context) ([]agents.Session, error) {
 			return agents.List(ctx, agents.ExecRunner(cl.Path))
 		},

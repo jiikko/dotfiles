@@ -46,6 +46,11 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
   (要約しない。受付の箱経由で dispatcher が書く。issue 428)。
   🚨 逆向き (外の shell から pro-con の session を attach / stop される) は Claude Code の側で止められない。検出は issue 427
 - PG の出力は transcript (`~/.claude/projects/*/<sessionId>.jsonl`) の末尾 512KB から読み、`claude agents --json` とあわせて 3 秒ごとに裏で読み直す
+- **PG が今走らせているもの** (issue 473) は dispatcher が 10 秒ごとに集めて `…/live/doing.json` に書き、詳細・`card show`・ボードのバッジ
+  (`▸ mut.sh 13分`) が読むだけで出す (画面は ps を回さない)。集めるのは、一覧と記録で pid が一致した PG の session の子孫のプロセス
+  (Bash のコマンド・裏の shell)・transcript の末尾の裏のサブエージェントと結果待ちの道具の呼び出し。テストの係に頼んだコマンドの
+  順番待ち / 実行中はカードの記録から足す。🚨 PG の外へ抜けたプロセス (`nohup … &` で親が launchd に移ったもの) は出ない
+  (cwd で拾うと、人が worktree で開いた shell まで PG のものとして出す)。1 分集め直されていなければ詳細は古いと添え、ボードには出さない
 
 ## 画面と dispatcher のつながり (即時の割り振り・複数の画面・終了)
 

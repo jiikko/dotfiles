@@ -83,6 +83,11 @@ type Dispatcher struct {
 	Runner    Runner
 	Summarize func(ctx context.Context, tail string) (string, error)
 	active    *runJob // 実行中の 1 本 (無ければ nil)
+	// Procs はプロセスの一覧を読む (doing.go。PG が今走らせているもの)。nil なら集めない (e2e・テスト)。
+	// JobsDir は Claude Code が session ごとに様子を書く置き場 (~/.claude/jobs)。空ならサブエージェントを transcript だけで判じる
+	Procs   func(context.Context) ([]Proc, error)
+	JobsDir string
+	doingAt time.Time // 最後に集めた時刻
 	// Ask は btw の答えを作る (btw.go。本物は haiku)。nil なら記録だけから答える
 	Ask func(ctx context.Context, prompt string) (string, error)
 	btw *btwJob // 答えを作っている 1 本 (無ければ nil)
@@ -241,6 +246,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	if err != nil {
 		return notes, err
 	}
+	d.collectDoing(ctx, now, ss)
 	return append(notes, d.announce()...), nil // 割り当ての結果まで含めて知らせる
 }
 
