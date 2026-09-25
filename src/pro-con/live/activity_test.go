@@ -14,7 +14,7 @@ import (
 )
 
 // 活動は PG の応答の文と道具の呼び出しだけ (思考・道具の結果・人間の発言は出さない)。道具は要点 (コマンド・worktree の中の相対パス) を 1 行で、
-// 制御文字は落とす。
+// 応答の文は改行を残して (詳細が markdown として描く。486)、どちらも制御文字は落とす。
 func TestActivitiesFromAssistantRecord(t *testing.T) {
 	o := Owned{ID: "s1", SessionID: "sess-1", Cwd: "/wt/pc-c-001"}
 	line := `{"type":"assistant","timestamp":"2026-09-25T11:31:00Z","message":{"content":[` +
@@ -24,10 +24,11 @@ func TestActivitiesFromAssistantRecord(t *testing.T) {
 		`{"type":"tool_use","id":"t2","name":"Edit","input":{"file_path":"/wt/pc-c-001/dispatcher/close.go","old_string":"a","new_string":"b"}},` +
 		`{"type":"tool_use","id":"t3","name":"Read","input":{"file_path":"/elsewhere/x.go"}},` +
 		`{"type":"tool_use","id":"t4","name":"TaskList","input":{}},` +
-		`{"type":"tool_use","id":"t5","name":"Bash","input":{"command":"printf '\u001b]52;c;x\u0007'"}}]}}`
+		`{"type":"tool_use","id":"t5","name":"Bash","input":{"command":"printf '\u001b]52;c;x\u0007'"}},` +
+		`{"type":"text","text":"見出し\u001b]52;c;x\u0007\n- 項目"}]}}`
 	got := activities([]byte(line), o, nil)
-	want := []string{"テストを 回す", "Bash: go test ./dispatcher/...", "Edit: dispatcher/close.go", "Read: /elsewhere/x.go", "TaskList: -"}
-	if len(got) != 6 {
+	want := []string{"テストを\n回す", "Bash: go test ./dispatcher/...", "Edit: dispatcher/close.go", "Read: /elsewhere/x.go", "TaskList: -"}
+	if len(got) != 7 {
 		t.Fatalf("活動の数が違う: %d %+v", len(got), got)
 	}
 	for i, w := range want {
@@ -37,6 +38,9 @@ func TestActivitiesFromAssistantRecord(t *testing.T) {
 	}
 	if strings.ContainsAny(got[5].Text, "\x1b\x07") {
 		t.Fatalf("道具の引数の制御文字を落としていない: %q", got[5].Text)
+	}
+	if strings.ContainsAny(got[6].Text, "\x1b\x07") || !strings.Contains(got[6].Text, "\n- 項目") {
+		t.Fatalf("応答の文の制御文字を落として改行は残す、になっていない: %q", got[6].Text)
 	}
 	for _, other := range []string{
 		`{"type":"user","timestamp":"2026-09-25T11:32:00Z","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}`,
