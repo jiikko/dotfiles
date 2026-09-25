@@ -63,16 +63,17 @@ func (m *Model) render() string {
 		title += sgrDim + "  " + d.Describe() + sgrReset
 	}
 	header := []string{title, m.tabBar(), m.gauge(), fg(240) + strings.Repeat("─", w) + sgrReset}
+	// PG の一覧・入力欄・案内は画面の下端へ吸着させ、ボードとの間を空行で埋める (最低 1 行)。
+	// カードの詳細はこの領域 (ヘッダと下端の群のあいだ) に右から重ねる
+	foot := m.footGroup()
+	room := m.height - len(header) - len(foot)
 	var region []string
 	if m.picker.open {
 		region = m.pickerBlock()
 	} else {
-		region = m.overlayBump(m.overlayMoves(m.overlayCursor(m.boardLines())))
+		region = m.overlayBump(m.overlayMoves(m.overlayCursor(m.boardLines())), room-1)
 	}
-	// PG の一覧・入力欄・案内は画面の下端へ吸着させ、ボードとの間を空行で埋める。
-	// カードの詳細はこの領域 (ヘッダと下端の群のあいだ) に右から重ねる
-	foot := m.footGroup()
-	region = layout.PadTo(region, max(len(region)+1, m.height-len(header)-len(foot)))
+	region = layout.PadTo(region, max(len(region)+1, room))
 	m.inputRow = len(header) + len(region) + len(foot) - len(m.footLines()) // 入力欄は最下段の群の先頭 (caret が使う)
 	region = m.dimWhileTyping(m.overlayDrawer(region))
 	return strings.Join(m.overlayQuit(m.overlayLegend(append(append(header, region...), foot...))), "\n")

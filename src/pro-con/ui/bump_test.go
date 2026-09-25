@@ -127,3 +127,18 @@ func TestBumpKeepsTakingKeys(t *testing.T) {
 		t.Fatalf("揺れの途中の l で質問待ちのレーンへ移るはず: %q", m.selected)
 	}
 }
+
+// 画面が低くボードの下に空き行が無いときは、下へ揺れてもボードを伸ばさない (伸ばすと画面が 1 行増えて端末が送られる)。
+func TestBumpDownKeepsScreenHeight(t *testing.T) {
+	for _, h := range []int{12, 13, 14, 30} {
+		m, clk := cursorModel(t)
+		m.height = h
+		lines := len(strings.Split(m.render(), "\n"))
+		start := clk.t
+		press(m, "j")
+		clk.t = start.Add(peak)
+		if got := len(strings.Split(m.render(), "\n")); got != lines {
+			t.Fatalf("高さ %d: 下へ揺れて画面の行数が %d → %d に変わった", h, lines, got)
+		}
+	}
+}

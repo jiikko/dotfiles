@@ -55,8 +55,9 @@ func (m *Model) bumpShift(now time.Time) (int, int) {
 }
 
 // overlayBump は揺れているレーンの帯をずらす。はみ出した分は切る (左右の端の外・ボードの上端の外)。
-// 下へずれるときだけボードを 1 行伸ばす (下枠を消さない。ボードの下には空き行があるので画面の高さは変わらない)。
-func (m *Model) overlayBump(board []string) []string {
+// 下へずれるときは、ボードが rows 行より短ければ 1 行伸ばして下枠を残す (rows を超えて伸ばすと画面が 1 行増える。
+// 画面が低いと shownCards の下限 1 枚でボードの下の空き行が無くなるので、そのときは下枠を切る)。
+func (m *Model) overlayBump(board []string, rows int) []string {
 	dx, dy := m.bumpShift(m.now())
 	if dx == 0 && dy == 0 {
 		return board
@@ -67,7 +68,7 @@ func (m *Model) overlayBump(board []string) []string {
 	for _, l := range board {
 		total = max(total, ansi.StringWidth(l))
 	}
-	if dy > 0 {
+	if dy > 0 && len(board) < rows {
 		board = append(board, strings.Repeat(" ", total))
 	}
 	band := make([]string, len(board))
