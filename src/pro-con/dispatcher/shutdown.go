@@ -59,8 +59,8 @@ func (d *Dispatcher) gone(c card.Card, now time.Time, ss []agents.Session, reg [
 	if _, ok := owned(c, reg); !ok {
 		return false
 	}
-	target, wait := d.stopTarget(c, now, ss, reg)
-	return target == "" && !wait
+	plan := d.stopTarget(c, now, ss, reg) // 記録にあるので、記録に無い session を拾う側 (strayPlan) には行かない
+	return plan.target == "" && !plan.wait
 }
 
 // ErrStopTimeout は、動いている dispatcher が時間内に止まらなかったとき (dispatcher は止め直しを続ける。残りは dispatcher.log)。
