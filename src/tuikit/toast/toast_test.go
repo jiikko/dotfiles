@@ -651,3 +651,33 @@ func TestToastSameNoticeDoesNotStack(t *testing.T) {
 		t.Errorf("出し直した最新が滑り込み直していない: phase=%d", s.Phase())
 	}
 }
+
+// 間に別の通知が挟まっても、同じ断りは重ならない (最新とだけ比べると 断り → 成功 → 断り で重なり、本物の警告を押し出す。敵対レビュー 2 周目)。
+func TestToastSameNoticeDoesNotStackAcrossOthers(t *testing.T) {
+	var s Stack
+	s.Show("push failed", false)
+	for _, n := range []struct {
+		text string
+		ok   bool
+	}{{"断り", false}, {"成功", true}, {"断り", false}, {"成功", true}} {
+		s.Show(n.text, n.ok)
+	}
+	var texts []string
+	for _, e := range s.Entries() {
+		texts = append(texts, e.Text)
+	}
+	if !slices.Equal(texts, []string{"成功", "断り", "push failed"}) {
+		t.Fatalf("積み方 = %q, want [成功 断り push failed]", texts)
+	}
+}
+
+// 空白だけの長い文でも、印の付いた 1 行の箱を出す (0 行の空箱にしない。敵対レビュー 2 周目)。
+func TestToastWhitespaceOnlyTextKeepsMark(t *testing.T) {
+	var s Stack
+	s.Show(strings.Repeat(" ", 80), false)
+	advanceToHolding(&s)
+	box := s.BoxLines(false, 100, 40)
+	if len(box) != BoxHeight || !strings.Contains(strings.Join(box, "\n"), "✗") {
+		t.Fatalf("空白だけの文の箱が壊れた (%d 行):\n%s", len(box), strings.Join(box, "\n"))
+	}
+}

@@ -27,17 +27,15 @@ func TestToastDrawBudget(t *testing.T) {
 		page int
 		want int
 	}{
-		// 下限は折り返した箱 2 枚ぶん (toast.MaxBoxHeight*2 = 12)、上限は page-1 (窓を覆い切らない)
 		{4, 4},
 		{8, 7},
 		{9, 8},
-		{11, 10},
-		{15, 12},
-		{16, 12},
+		{11, 8},
+		{15, 8},
+		{16, 8},
 		{24, 12},
-		{30, 15},
 	} {
-		if got := toastDrawBudget(c.page); got != c.want {
+		if got := toastDrawBudget(c.page, 0); got != c.want {
 			t.Errorf("page=%d: 予算=%d, want %d", c.page, got, c.want)
 		}
 	}
@@ -51,7 +49,7 @@ func TestToastBoxLinesDoesNotCutSecondBoxAtPageEightBudget(t *testing.T) {
 		s.Advance()
 	}
 
-	budget := toastDrawBudget(8)
+	budget := toastDrawBudget(8, s.ImportantHeight(2, 0))
 	got := s.BoxLines(false, budget, 0)
 	if len(got) > budget {
 		t.Fatalf("page=8 の予算 %d 行を超えた: %d 行", budget, len(got))

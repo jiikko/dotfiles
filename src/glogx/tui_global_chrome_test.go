@@ -194,3 +194,19 @@ func TestToastDrawBudgetFitsTwoWrappedWarnings(t *testing.T) {
 		}
 	}
 }
+
+// 警告の無い 1 行の箱は、中くらいの窓でも 2 枚まで (予算の下限を一律に上げると 3 枚入って窓を覆う。敵対レビュー 2 周目)。
+func TestToastShortSuccessesStayWithinHalfPage(t *testing.T) {
+	m := newTestBrowse(t, 3, nil, nil)
+	m.width, m.height = 100, 14 // page=13
+	for _, s := range []string{"OLDEST-SUCCESS", "pulled", "コピーした"} {
+		m.toast.Show(s, true)
+	}
+	for i := 0; m.toast.Animating() && i < 100; i++ {
+		m.toast.Advance()
+	}
+	out := stripANSI(m.View().Content)
+	if strings.Contains(out, "OLDEST-SUCCESS") || !strings.Contains(out, "pulled") {
+		t.Fatalf("page=13 で 1 行の成功が 2 枚に収まっていない (最古が残る / 2 枚目が消えた):\n%s", out)
+	}
+}

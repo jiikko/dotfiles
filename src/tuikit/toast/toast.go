@@ -197,6 +197,9 @@ func wrapText(text string, width, maxLines int) []string {
 		lines = append(lines, line)
 		rest = next
 	}
+	if len(lines) == 0 {
+		return []string{""} // 空白だけの文: 印だけの 1 行を残す (0 行だと印の無い空箱になる)
+	}
 	return lines
 }
 
@@ -312,11 +315,10 @@ func (s *Stack) push(text string, ok, info bool) {
 	// 🚨 積んだままにすると「PR を検索中...」の下に「PR #123 を開きます」が並び、終わったのに
 	// 検索中と書いてある状態が数秒残る (実測 2026-07-31)。1 枠時代は上書きで自然に消えていた。
 	s.dropInfo()
-	// 🚨 最新と同じ通知 (文と種類が同じ) は重ねず、最新を出し直す。断り (赤) は重要なので追い出しで最後まで残り、
-	// 同じキーを 3 回押すと同じ断りが 3 枚積まれて、本物の失敗の警告を押し出す
-	if s.visible() && s.text == text && s.ok == ok && s.info == info {
-		s.item = item{}
-	}
+	// 🚨 積んでいる通知と同じもの (文と種類が同じ) は重ねず、その枚を外して最上段に出し直す。断り (赤) は重要なので
+	// 追い出しで最後まで残り、同じキーの連打で同じ断りが積まれて本物の失敗の警告を押し出す。最新だけと比べると、
+	// 間に別の通知が挟まる (断り → 成功 → 断り) と重なる (敵対レビュー 2 周目)
+	s.dropSame(text, ok, info)
 	if s.visible() {
 		// 今の最新を 1 段下へ押し下げてから、新しいものを最上段に置く
 		s.older = append([]item{s.item}, s.older...)
@@ -357,6 +359,40 @@ func evictOne(older []item) []item {
 		}
 	}
 	return append(older[:drop], older[drop+1:]...)
+}
+
+// dropSame は text / ok / info が同じ枚を取り除く (出し直す前に)。最上段なら下を繰り上げる。
+func (s *Stack) dropSame(text string, ok, info bool) {
+	same := func(t *item) bool { return t.text == text && t.ok == ok && t.info == info }
+	kept := s.older[:0]
+	for i := range s.older {
+		if !same(&s.older[i]) {
+			kept = append(kept, s.older[i])
+		}
+	}
+	s.older = kept
+	if s.visible() && same(&s.item) {
+		s.item = item{}
+		if len(s.older) > 0 {
+			s.item, s.older = s.older[0], s.older[1:]
+		}
+	}
+}
+
+// ImportantHeight は新しい順に重要な (失敗・断りの) 枚を n 枚まで数え、幅 maxWidth で組んだときの行数の合計を返す。
+// 窓の高さから描画の予算を決める側が「警告 n 枚ぶん」を実際の高さで確保するため (折り返した箱は BoxHeight より高い)。
+func (s *Stack) ImportantHeight(n, maxWidth int) int {
+	total := 0
+	for _, it := range s.items() {
+		if n == 0 {
+			break
+		}
+		if it.important() {
+			total += len(it.fullBox(false, maxWidth, MaxTextLines))
+			n--
+		}
+	}
+	return total
 }
 
 // dropInfo は進行中トースト (info) を取り除く (結果が出たら用済み)。

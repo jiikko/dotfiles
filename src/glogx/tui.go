@@ -3584,14 +3584,12 @@ func (m *browseModel) finishWithGlobalChrome(window []string, page int) string {
 	if box := m.usageOv.boxLines(m.contentWidth(), m.colored, m.spinner()); len(box) > 0 {
 		window = overlayBoxTopRight(window, box, m.contentWidth(), m.colored)
 	}
-	if box := m.toast.BoxLines(m.colored, toastDrawBudget(page), m.contentWidth()); len(box) > 0 {
+	if box := m.toast.BoxLines(m.colored, toastDrawBudget(page, m.toast.ImportantHeight(2, m.contentWidth())), m.contentWidth()); len(box) > 0 {
 		window = overlayBoxBottomRight(window, box, m.contentWidth(), m.colored)
 	}
 	return m.finishWindow(window, page)
 }
 
-// toastDrawBudget は、通常の半ページ予算を保ちつつ重要警告 2 枚ぶんを確保する。
-// 下限がないと狭い窓で重要警告が 1 枚に減り、上限がないと 2 箱が窓を覆うため、両方が要る。
 // toastTimers は toast の退場タイマー (静止に入った枚ごと) を bubbletea の Tick にする (tuikit/toast はタイマーを張らない)。
 func toastTimers(ts []toast.Timer) tea.Cmd {
 	cmds := make([]tea.Cmd, 0, len(ts))
@@ -3602,9 +3600,13 @@ func toastTimers(ts []toast.Timer) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func toastDrawBudget(page int) int {
-	// 🚨 2 枚ぶんは折り返した箱の高さ (MaxBoxHeight) で数える。BoxHeight (1 行の箱) で数えると、長い警告 2 枚の 2 枚目が落ちる
-	return min(max(page/2, toast.MaxBoxHeight*2), max(page-1, toast.BoxHeight))
+// toastDrawBudget は、通常の半ページ予算を保ちつつ重要警告 2 枚ぶんを確保する。
+// 下限がないと狭い窓で重要警告が 1 枚に減り、上限がないと 2 箱が窓を覆うため、両方が要る。
+// warnings は新しい重要警告 2 枚の実際の行数 (Stack.ImportantHeight)。🚨 下限は 1 行の箱 2 枚ぶん (BoxHeight*2) と
+// これの大きい方: 折り返した警告は 1 行の箱より高く、BoxHeight で数えると 2 枚目が落ちる。一律に MaxBoxHeight*2 へ
+// 上げると、警告の無い 1 行の箱が 3 枚入って窓を覆う (敵対レビュー 2 周目)。
+func toastDrawBudget(page, warnings int) int {
+	return min(max(page/2, toast.BoxHeight*2, warnings), max(page-1, toast.BoxHeight))
 }
 
 // viewLines は画面content を組む本体 (旧 View)。テストはここではなく View().Content を見る。
