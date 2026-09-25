@@ -94,6 +94,19 @@
 - 画面に PM の様子 (居る / 知らせ待ち) を出していない。PM の数を設定で変える話は 456
 - 別の repo の issue を PM がどこで書くか (その repo に PM 用の worktree を作る) は指示書に書いただけで、機械では強制しない
 
+### 2026-09-25 レビューの差し戻し: PM を起こさない口
+
+- **dispatcher の `--pm=on|off` と設定の `pm = "on"|"off"`。`--pm` を書けば設定より勝つ** (起動ごとに明示した方を優先する。設定で off でも
+  `--pm=on` で 1 回だけ起こせる)。README の設定の節に書いた。画面が起こす dispatcher は `--pm` を付けないので、画面から使うときは設定で決める
+- off のときは PM を起動も再開もせず、依頼の列のカードはそのまま置く (`pm.json` にも書かない)。`PMRepo` は残すので、前の dispatcher が起こした PM は終了で止める
+- off で起動した dispatcher は「PM を起こさない (--pm=off / 設定 pm = "off")。依頼の列のカードはそのまま置く」を出来事 (events.jsonl) と dispatcher のログに 1 行出す。
+  文は dispatcher に渡した `PMOff` から出す (配線の渡し忘れも告知のテストで捕まる)
+- 設定の `pm` と `--pm` の書き間違いは誤り (on と読むと、止めたつもりの PM が起動して枠を使う)
+- 確かめたこと: テスト 4 本 (`TestPMOffLeavesRequestedCards` / `TestResolvePM` / `TestRunDispatcherAnnouncesPMOff` / `TestLoadPMMode`)、
+  変異 7 本すべて想定したテストが red (tellPM の off の判定・--pm=off・設定 off・--pm=on が設定に勝つ・告知・PMOff の配線・設定の値の検査)。
+  敵対的レビューは省いた (値で分岐を 1 つ止める口で、状態遷移・外部 I/O の新しい経路は無い)
+- origin/master (C-008 = 451 の削除) に rebase した。451 の削除も止める相手をカード ID で絞るので PM には当たらない
+
 ## 関連
 
 - 427 の残っていること / 415 の論点 6 (PM の数と役割)
