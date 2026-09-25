@@ -113,20 +113,28 @@ func TestTickRecordsScreenEvents(t *testing.T) {
 	if _, err := store.Submit(dir, store.Request{Kind: store.KindEvent, Note: "画面 (pid 1): 開いた", At: at}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := store.Submit(dir, store.Request{Kind: store.KindEvent, Note: " "}); err != nil { // 空の文は除けた出来事になる
+		t.Fatal(err)
+	}
 	d := newDispatcher(t, dir, &fakeLauncher{}, nil)
 	var got []eventlog.Event
 	d.Record = func(evs []eventlog.Event) { got = append(got, evs...) }
 	if _, err := d.Tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	var screens []eventlog.Event
+	var screens, rejects []eventlog.Event
 	for _, e := range got {
 		switch e.Kind {
 		case eventlog.KindScreen:
 			screens = append(screens, e)
-		case eventlog.KindApply, eventlog.KindReject:
+		case eventlog.KindReject:
+			rejects = append(rejects, e)
+		case eventlog.KindApply:
 			t.Fatalf("画面の出来事に適用の出来事を重ねた: %+v", e)
 		}
+	}
+	if len(rejects) != 1 || !strings.Contains(rejects[0].Reason, "出来事の文が空") {
+		t.Fatalf("空の文の出来事を除けた出来事にしない: %+v", got)
 	}
 	if len(screens) != 1 || screens[0].Reason != "画面 (pid 1): 開いた" || !screens[0].At.Equal(at) {
 		t.Fatalf("画面の出来事を書かない / 時刻が画面の置いた時刻でない: %+v", got)
