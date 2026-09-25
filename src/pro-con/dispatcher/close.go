@@ -69,9 +69,9 @@ func (d *Dispatcher) stopMarked(ctx context.Context, now time.Time, ss []agents.
 		if err == nil && len(remaining) == 0 && !wait && len(unsure) == 0 {
 			delete(d.stopFrom, c.ID)
 			if deleting {
-				kind, n, err := d.dropCard(c, now, stopped)
+				n, err := d.dropCard(c, now, stopped)
 				if n != "" {
-					notes = append(notes, ev(kind, c.ID, c.Session, c.ID+": "+n))
+					notes = append(notes, ev(eventlog.KindDelete, c.ID, c.Session, c.ID+": "+n))
 				}
 				if err != nil {
 					return notes, err
@@ -158,10 +158,10 @@ func (d *Dispatcher) finishMarkedStop(id string, now time.Time, text string) err
 	})
 }
 
-// dropCard は PG が止まったのを確かめた削除のカードを記録から外し、記録に残す出来事 (種類と文) を返す。
+// dropCard は PG が止まったのを確かめた削除のカードを記録から外し、記録に残す出来事の文を返す。
 // 外せない (不変条件に反する = 子カードが後から付いた等) ときは印を外して履歴に書き、カードを残す。
 // 🚨 pro-con が起動した session の記録の行は消さない (終了のときの確かめで、消したカードの PG も止まっていることを見続ける)。
-func (d *Dispatcher) dropCard(c card.Card, now time.Time, stopped bool) (string, string, error) {
+func (d *Dispatcher) dropCard(c card.Card, now time.Time, stopped bool) (string, error) {
 	how := "PG の session を止めた"
 	if !stopped {
 		how = "PG の session は動いていなかった"
@@ -171,8 +171,8 @@ func (d *Dispatcher) dropCard(c card.Card, now time.Time, stopped bool) (string,
 		return nil
 	})
 	if err == nil {
-		return eventlog.KindDelete, fmt.Sprintf("「%s」を削除した (%s が依頼。%s。worktree とブランチは残す)", c.Title, c.DeleteBy, how), nil
+		return fmt.Sprintf("「%s」を削除した (%s が依頼。%s。worktree とブランチは残す)", c.Title, c.DeleteBy, how), nil
 	}
 	text := fmt.Sprintf("削除できない: %v (%s。カードは残した)", err, how)
-	return eventlog.KindDelete, text, d.finishMarkedStop(c.ID, now, text)
+	return text, d.finishMarkedStop(c.ID, now, text)
 }
