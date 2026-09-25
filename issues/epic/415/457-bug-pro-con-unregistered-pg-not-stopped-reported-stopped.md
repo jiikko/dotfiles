@@ -77,3 +77,7 @@ PG の session が pro-con の記録 (sessions.json) に取り込まれなかっ
 ## 関連
 
 - 460 (監査の記録) / 427 の終了の保証 / 447 (閉じたら止める)
+- 2026-09-25 PM のレビュー: 差し戻しなし。止める対象を広げる所 (`unregistered`) は、pro-con が起動で受け取った短い id が一致し、かつ worktree の場所か
+  「bg・最後の起動より後に始まった」も一致したものだけを止め、名前だけの手がかりは止めずに名指しする形で、外の session に触らないのを読んで確かめた。
+  make test の赤 (`tests/tmux/test_log_kill_command.sh`) は、単独では master でも C-010 のブランチでも 3/3 ずつ緑 (偽の tmux を使う検査。ロードアベレージ 25 の時間帯に落ちた = 471)。
+  取り込んだ tree で pro-con の `make lint` 0 件・`go test -race` 15 パッケージ ok → master へ (376472e5 まで)。カード C-010 を閉じた
