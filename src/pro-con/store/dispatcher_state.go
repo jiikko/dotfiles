@@ -14,9 +14,11 @@ const DispatcherStateFile = "dispatcher-state.json"
 // DispatcherState は DispatcherStateFile の中身。
 type DispatcherState struct {
 	Tick  time.Time `json:"tick"`  // 最後に回った時刻
-	Limit int       `json:"limit"` // --limit
-	Cap   int       `json:"cap"`   // 今の同時に動かす数 (利用枠の残量で絞る。dispatcher/usage.go)
-	Why   string    `json:"why"`   // Cap を絞った / 枠を読めない理由
+	Limit int       `json:"limit"` // 同時に動かす PG の人の上限 (設定か --limit。LimitFrom)
+	// LimitFrom は Limit がどこから来たか ("設定" = pro-con config set / "起動の引数" = --limit か既定)
+	LimitFrom string `json:"limit_from,omitempty"`
+	Cap       int    `json:"cap"` // 今の同時に動かす数 (利用枠の残量で絞る。dispatcher/usage.go)
+	Why       string `json:"why"` // Cap を絞った / 枠を読めない理由
 	// 最後に読めた利用枠の使用率 (%)。UsageAt が zero なら読めたことが無い
 	UsageSession int       `json:"usage_session"`
 	UsageWeek    int       `json:"usage_week"`

@@ -342,8 +342,8 @@ func isUnder(child, root string) bool {
 // dirTag は状態の置き場の短い印 (実行の印に混ぜて、別の置き場の dispatcher (e2e と本物) の実行と取り違えない)。
 func dirTag(dir string) string { return fmt.Sprintf("%x", sha1.Sum([]byte(dir)))[:8] }
 
-// runMarkerPrefix は実行の bash の $0 に載せる印の頭。
-const runMarkerPrefix = "pro-con-run:"
+// RunMark は実行の bash の $0 に載せる印の頭。
+const RunMark = "pro-con-run:"
 
 // runScript は実行の bash が走らせる台本。頼まれたコマンドは環境変数 (runCommandEnv) で渡して eval する:
 //   - 文字列を連結しない (末尾のバックスラッシュ・閉じていない here-doc で、足した行と繋がって意味が変わった = 427 の敵対的レビューで実測)
@@ -363,7 +363,7 @@ const runCommandEnv = "PRO_CON_RUN_COMMAND"
 
 // runCommand は実行の bash を組む。印は $0 (`pro-con-run:<runID>`)。
 func runCommand(ctx context.Context, command, runID string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "/bin/bash", "-c", runScript, runMarkerPrefix+runID)
+	cmd := exec.CommandContext(ctx, "/bin/bash", "-c", runScript, RunMark+runID)
 	cmd.Env = append(withoutTmux(os.Environ()), runCommandEnv+"="+command)
 	return cmd
 }
@@ -380,7 +380,7 @@ func killStale(runID string) {
 	if err != nil {
 		return
 	}
-	marker := " " + runMarkerPrefix + runID
+	marker := " " + RunMark + runID
 	for _, line := range strings.Split(string(out), "\n") {
 		f := strings.Fields(line)
 		// 撃つのは、dispatcher が起こした形 (`/bin/bash -c <台本> <印>`) のグループの先頭だけ。印を引数の最後に置いた
