@@ -115,7 +115,7 @@ func (m *Model) onFrame() tea.Cmd {
 	m.pager.Advance()
 	var hold tea.Cmd
 	if m.toasts.Animating() {
-		hold = toastTimers(m.toasts.Advance(true)) // 滑り込み終えた toast の「静止の後に引っ込む」合図
+		hold = toastTimers(m.toasts.Advance()) // 滑り込み終えた toast の「静止の後に引っ込む」合図
 	}
 	if !m.animating() {
 		m.framing = false

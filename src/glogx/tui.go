@@ -798,7 +798,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.toast.Animating() {
 			// トーストの横スライド (右画面外との出入り) をカラム単位で 1 フレーム進める。
 			// 入場完了時は holding へ移り toast.Hold 後の退場タイマーを返す。
-			toastHoldCmd = toastTimers(m.toast.Advance(m.colored))
+			toastHoldCmd = toastTimers(m.toast.Advance())
 		}
 		m.frame++
 		// list に毎フレーム変化する内容 (loading スピナー) が乗るのは fetch/awaitCI の 2 状態
@@ -3584,7 +3584,7 @@ func (m *browseModel) finishWithGlobalChrome(window []string, page int) string {
 	if box := m.usageOv.boxLines(m.contentWidth(), m.colored, m.spinner()); len(box) > 0 {
 		window = overlayBoxTopRight(window, box, m.contentWidth(), m.colored)
 	}
-	if box := m.toast.BoxLines(m.colored, toastDrawBudget(page)); len(box) > 0 {
+	if box := m.toast.BoxLines(m.colored, toastDrawBudget(page), m.contentWidth()); len(box) > 0 {
 		window = overlayBoxBottomRight(window, box, m.contentWidth(), m.colored)
 	}
 	return m.finishWindow(window, page)

@@ -495,7 +495,7 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	}
 	if op, ok := writeKeys[k.String()]; ok && !m.accepts(op) {
 		// 入力欄を開いてから送った時点で断ると、書いた文が無駄になる (2026-09-24 の報告)。押した時点で断る
-		m.info("この画面では使えない操作 (見ているだけの画面 = pro-con --view は書き込まない)")
+		m.refuse("この画面では使えない操作 (見ているだけの画面 = pro-con --view は書き込まない)")
 		return nil
 	}
 	switch k.String() {
@@ -509,7 +509,7 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		// q は「今の板を 1 段戻る」(docs/glogx-ui-guide.md §1) だけ。開いている板が無くても終了しない
 		// (2026-09-25 にユーザーの依頼で廃止。終了は Q → quit だけ。quit.go)
 		if !m.closeTop() {
-			m.info("終了は Q を押して quit と打つ")
+			m.refuse("終了は Q を押して quit と打つ")
 			return nil
 		}
 	case "esc":
@@ -532,7 +532,7 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	case "r":
 		c, ok := m.selectedCard()
 		if !ok || !c.Answerable() {
-			m.info("回答できるのは質問待ちのカードだけ")
+			m.refuse("回答できるのは質問待ちのカードだけ")
 			return nil
 		}
 		m.startInput(inputAnswer)
@@ -672,7 +672,7 @@ func (m *Model) doneInTab() int {
 func (m *Model) askClearDone() {
 	n := m.doneInTab()
 	if n == 0 {
-		m.info("片付ける完了のカードが無い")
+		m.refuse("片付ける完了のカードが無い")
 		return
 	}
 	scope := "全 repo"
@@ -689,7 +689,7 @@ func (m *Model) askDelete() {
 	c, ok := m.selectedCard()
 	switch {
 	case !ok:
-		m.info("削除するカードを選んでいない")
+		m.refuse("削除するカードを選んでいない")
 		return
 	case c.Deleting():
 		m.info(c.ID + " は削除の依頼を受けている (PG の session を止めてから消える)")

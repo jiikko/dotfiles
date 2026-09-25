@@ -50,7 +50,7 @@ func TestToastLeavingReachesHiddenViaTick(t *testing.T) {
 				}
 			}
 			if m.toast.Phase() != toast.Holding {
-				t.Fatalf("入場が holding に到達しない: phase=%d shown=%d", m.toast.Phase(), m.toast.Shown())
+				t.Fatalf("入場が holding に到達しない: phase=%d frame=%d", m.toast.Phase(), m.toast.Frame())
 			}
 
 			// tickMsg ハンドラが実際に返した Cmd から退場タイマー (toast.Msg) を回収する
@@ -69,7 +69,7 @@ func TestToastLeavingReachesHiddenViaTick(t *testing.T) {
 				m.Update(tickMsg{})
 			}
 			if m.toast.Visible() {
-				t.Fatalf("退場が hidden まで到達しない: phase=%d shown=%d", m.toast.Phase(), m.toast.Shown())
+				t.Fatalf("退場が hidden まで到達しない: phase=%d frame=%d", m.toast.Phase(), m.toast.Frame())
 			}
 		})
 	}

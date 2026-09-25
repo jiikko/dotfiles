@@ -533,7 +533,7 @@ func TestBrowsePushNoUnpushed(t *testing.T) {
 		m.Update(tickMsg{})
 	}
 	if v := stripANSI(m.View().Content); !strings.Contains(v, "未 push のコミットはありません") {
-		t.Fatalf("トーストが描画されない (phase=%d shown=%d)", m.toast.Phase(), m.toast.Shown())
+		t.Fatalf("トーストが描画されない (phase=%d frame=%d)", m.toast.Phase(), m.toast.Frame())
 	}
 	// トーストはキーを消費しない (モーダルと違い、次のキーが本来の動作をする)
 	m.handleKey("j")
@@ -755,7 +755,7 @@ func TestBrowseClaudeUpdateToastStacksWithExisting(t *testing.T) {
 		if !m2.toast.Animating() {
 			break
 		}
-		m2.toast.Advance(m2.colored)
+		m2.toast.Advance()
 	}
 	out := stripANSI(m2.View().Content)
 	if !strings.Contains(out, "9.9.9") || !strings.Contains(out, "先行警告") {

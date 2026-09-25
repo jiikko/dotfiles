@@ -322,7 +322,7 @@ func budgetToastModel(tb testing.TB) *browseModel {
 	m := benchBrowseSubjects(tb, 20, 120, 40, false)
 	m.toast.Show("3 件の警告をコピーしました: ほか", true)
 	for m.toast.Animating() {
-		m.toast.Advance(m.colored)
+		m.toast.Advance()
 	}
 	return m
 }

@@ -9,6 +9,7 @@ package toast
 
 import (
 	"math"
+	"strings"
 	"time"
 
 	"termsafe"
@@ -23,7 +24,7 @@ import (
 var Hold = 3 * time.Second
 
 // SlideFrames は入場/退場の横スライドを何フレームで渡り切るか。frame を 0→N で進め、
-// 表示カラム shown = easeOutCubic(frame/N) × 箱幅 とする (箱幅に依らずほぼ一定時間
+// 表示カラム = easeOutCubic(frame/N) × 箱幅 とする (箱幅に依らずほぼ一定時間
 // ~12frame × scrollInterval ≈ 200ms)。行 (縦) でなくカラム (横) を動かすため、箱が数行でも
 // 解像度の高い滑らかなスライドになる。
 const SlideFrames = 12
@@ -60,14 +61,14 @@ type Phase int
 
 const (
 	Hidden   Phase = iota // 非表示
-	Entering              // 右画面外から左へ 滑り込み中 (shown 0→boxWidth)
+	Entering              // 右画面外から左へ 滑り込み中 (frame 0→SlideFrames)
 	Holding               // 全幅表示で静止 (Hold 後に leaving へ)
-	Leaving               // 右画面外へ 滑り出し中 (shown boxWidth→0)
+	Leaving               // 右画面外へ 滑り出し中 (frame SlideFrames→0)
 )
 
 // item は右下に出す結果フィードバック 1 枚。右の画面外から左へ「にゅっと」滑り込んで現れ、
-// 数秒静止し、また右へ「にゅっと」滑り出て消える横スライド (shown = 箱の左から見せているカラム数を
-// tick で増減させ、右端揃えで overlay すると箱が水平移動して見える)。行単位でなくカラム単位で
+// 数秒静止し、また右へ「にゅっと」滑り出て消える横スライド (箱の左から見せるカラム数を frame から
+// 求め、右端揃えで overlay すると箱が水平移動して見える)。行単位でなくカラム単位で
 // 動かすため、箱が数行でも滑らかなアニメになる。glogx は tmux の display-popup 内で動くため
 // tmux-toast (floating pane) は popup に隠れて出せず、glogx 自身の TUI 内に描く。
 type item struct {
@@ -76,9 +77,11 @@ type item struct {
 	info   bool // true=進行中/中立 (…シアン)。ok より優先し、完了/失敗どちらでもない状態を表す
 	seq    int  // 世代: 退場タイマーの有効性判定 + 再表示リセット
 	phase  Phase
-	shown  int    // 現在見せている箱の左カラム数 (0=画面右外に収納 / boxWidth=全幅表示)
 	shadow string // 落ち影の SGR 色 (積んだときの Stack.Shadow)
-	frame  int    // スライドの進捗フレーム (入場 0→N / 退場 N→0)。shown = easedShown(frame)
+	// frame はスライドの進捗 (入場 0→N / 退場 N→0)。見せるカラム数は描画時に easedShown(frame, 箱幅) で求める。
+	// 🚨 カラム数を状態に持たない: 箱幅は描画時の画面幅 (折り返し) で変わるので、進めた時点の幅で
+	// 決めたカラム数は窓の幅が変わると箱幅とずれる。
+	frame int
 }
 
 // reset は 1 枚を「これから滑り込む状態」に作り直す (スタックが積むときに使う)。seq は世代管理
@@ -87,7 +90,7 @@ func (t *item) reset(text string, ok, info bool, seq int, shadow string) {
 	t.seq, t.shadow = seq, shadow
 	t.text, t.ok, t.info = text, ok, info
 	t.phase = Entering
-	t.shown, t.frame = 0, 0
+	t.frame = 0
 }
 
 // animating は入場/退場アニメ中か (tick を回す必要がある + spinnerActive に含める)。holding は
@@ -97,35 +100,31 @@ func (t *item) animating() bool { return t.phase == Entering || t.phase == Leavi
 // visible は表示中か (holding 含む)。
 func (t *item) visible() bool { return t.phase != Hidden }
 
-// boxWidth は箱の総カラム幅 (スライドの終点)。実描画幅と一致させるため fullBox の 1 行目の
-// 表示幅を使う (layout.Panel の最小幅クランプ込み)。色に依らず一定。
-func (t *item) boxWidth(colored bool) int {
-	full := t.fullBox(colored)
+// boxWidth は幅 maxWidth で組んだ箱の総カラム幅 (スライドの終点)。実描画幅と一致させるため fullBox の
+// 1 行目の表示幅を使う (layout.Panel の最小幅クランプ込み)。色に依らず一定。
+func (t *item) boxWidth(colored bool, maxWidth int) int {
+	full := t.fullBox(colored, maxWidth)
 	if len(full) == 0 {
 		return 0
 	}
 	return termwidth.Of(full[0])
 }
 
-// advance はアニメを 1 フレーム進める。frame を入場で 0→N、退場で N→0 に動かし、表示カラムは
-// easedShown(frame) で求める (easeOutCubic)。入場完了で holding へ移り Hold 後の退場
-// タイマーを予約して返す。退場完了で hidden。
-func (t *item) advance(colored bool) (hold *Timer) {
-	w := t.boxWidth(colored)
+// advance はアニメを 1 フレーム進める。frame を入場で 0→N、退場で N→0 に動かす (見せるカラム数は
+// 描画時に easedShown で求める)。入場完了で holding へ移り Hold 後の退場タイマーを予約して返す。退場完了で hidden。
+func (t *item) advance() (hold *Timer) {
 	switch t.phase {
 	case Entering:
 		t.frame++
-		t.shown = easedShown(t.frame, w)
 		if t.frame >= SlideFrames {
-			t.shown = w
+			t.frame = SlideFrames
 			t.phase = Holding
 			return &Timer{After: Hold, Msg: Msg{seq: t.seq}}
 		}
 	case Leaving:
 		t.frame--
-		t.shown = easedShown(t.frame, w)
 		if t.frame <= 0 {
-			t.shown = 0
+			t.frame = 0
 			t.phase = Hidden
 			t.text = ""
 		}
@@ -143,7 +142,8 @@ func (t *item) startLeaving(msg Msg) {
 }
 
 // fullBox は内容幅にフィットした影付き小箱 (全行)。スライドの基準になる全幅・全行の算出にも使う。
-func (t *item) fullBox(colored bool) []string {
+// maxWidth は箱 (影込み) に使ってよい表示幅 (0 以下は上限なし)。収まらない文は箱の中で折り返す (wrapText)。
+func (t *item) fullBox(colored bool, maxWidth int) []string {
 	mark, color := "✓", sgr.Green
 	switch {
 	case t.info:
@@ -151,29 +151,106 @@ func (t *item) fullBox(colored bool) []string {
 	case !t.ok:
 		mark, color = "✗", sgr.Red
 	}
-	row := mark + " " + t.text
-	if colored {
-		row = color + row + sgr.Reset
+	textW := 0 // 0 = 折り返さない
+	if maxWidth > 0 {
+		// 印 + 空白の 2 桁と枠 (PanelChrome) を引いた残りが文の幅。🚨 下限は Panel の最小幅から導く
+		// (狭すぎる窓で 0 以下になると 1 字も置けず、wrapText が進まない)
+		textW = max(maxWidth, layout.PanelMinWidth) - layout.PanelChrome - markWidth
 	}
-	boxW := termwidth.Of(row) + layout.PanelChrome
+	lines := wrapText(t.text, textW, MaxTextLines)
+	rows := make([]string, len(lines))
+	contentW := 0
+	for i, l := range lines {
+		lead := mark + " "
+		if i > 0 {
+			lead = termwidth.PadSpaces(markWidth) // 2 行目以降は印の下を空けて文の頭を揃える
+		}
+		rows[i] = lead + l
+		contentW = max(contentW, termwidth.Of(rows[i]))
+		if colored {
+			rows[i] = color + rows[i] + sgr.Reset
+		}
+	}
 	// 枠線も種別色 (成功=緑 / 失敗=赤 / 進行=シアン) で染めて一体感を出す。影は中立の dim のまま。
-	return layout.Panel("", []string{row}, boxW, colored, layout.PanelStyle{Border: layout.BorderLight, Color: color, Shadow: t.shadow})
+	return layout.Panel("", rows, contentW+layout.PanelChrome, colored, layout.PanelStyle{Border: layout.BorderLight, Color: color, Shadow: t.shadow})
 }
 
-// boxLines は現フレームで見せる箱行 (全行) を返す。各行を箱の左 shown カラムに切り、右端揃えで
+// markWidth は行頭の印と空白 ("✓ ") の表示幅。
+const markWidth = 2
+
+// MaxTextLines は 1 枚の通知が折り返してよい行数の上限。🚨 上限が無いと長いエラー出力 (gh / git の
+// stderr を埋め込む通知がある) が 1 枚で画面を覆う。超えた分は最終行の末尾を … にして、切ったことを見せる。
+const MaxTextLines = 3
+
+// wrapText は text を表示幅 width ごとの行に分ける (width <= 0 なら分けない)。空白があればそこで
+// 改行し (英文の単語を割らない)、無ければ文字 (書記素) の境で割る。maxLines 行を超えたら最終行を
+// … で切り詰める。text は push で無害化済み (SGR・制御文字を含まない) の前提。
+func wrapText(text string, width, maxLines int) []string {
+	if width <= 0 || termwidth.Of(text) <= width {
+		return []string{text}
+	}
+	var lines []string
+	rest := text
+	for rest != "" {
+		if len(lines) == maxLines-1 {
+			// 最後の 1 行: 入り切らなければ … で切ったことを示す
+			if termwidth.Of(rest) > width {
+				rest = termwidth.Truncate(rest, width, "…")
+			}
+			return append(lines, rest)
+		}
+		line, next := cutLine(rest, width)
+		lines = append(lines, line)
+		rest = next
+	}
+	return lines
+}
+
+// cutLine は s の先頭から表示幅 width に収まる 1 行を切り出し、行と残りを返す。
+func cutLine(s string, width int) (line, rest string) {
+	used, end, lastSpace := 0, 0, -1
+	for end < len(s) {
+		c, w := termwidth.FirstCluster(s[end:])
+		if used+w > width {
+			break
+		}
+		if c == " " {
+			lastSpace = end
+		}
+		used += w
+		end += len(c)
+	}
+	if end >= len(s) {
+		return s, ""
+	}
+	if end == 0 {
+		// 1 字も入らない (幅 1 に全角など): 1 字だけ出して進める (止まらないことを優先する)
+		c, _ := termwidth.FirstCluster(s)
+		return c, s[len(c):]
+	}
+	if s[end] == ' ' {
+		lastSpace = end // ちょうど語の切れ目で幅に達した (手前の空白まで戻らない)
+	}
+	if lastSpace > 0 {
+		return s[:lastSpace], strings.TrimLeft(s[lastSpace:], " ")
+	}
+	return s[:end], strings.TrimLeft(s[end:], " ")
+}
+
+// boxLines は現フレームで見せる箱行 (全行) を返す。maxWidth は fullBox と同じ (箱に使ってよい表示幅)。各行を箱の左 shown カラムに切り、右端揃えで
 // overlay されると「右画面外から左へ滑り込む/右へ滑り出る」横スライドになる。左カラム切りで開いた
 // SGR は行末で閉じる (右端揃え合成の背景に色がにじまないように)。非表示なら nil。
-func (t *item) boxLines(colored bool) []string {
+func (t *item) boxLines(colored bool, maxWidth int) []string {
 	if t.phase == Hidden {
 		return nil
 	}
-	full := t.fullBox(colored)
+	full := t.fullBox(colored, maxWidth)
 	if len(full) == 0 {
 		return nil
 	}
 	// 箱幅は full から直に導く (boxWidth を呼ぶと fullBox をもう一度組んでしまう。表示中は毎フレーム
 	// 走るので二重構築を避ける)。
-	v := min(max(t.shown, 0), termwidth.Of(full[0]))
+	v := easedShown(t.frame, termwidth.Of(full[0]))
 	if v <= 0 {
 		return nil
 	}
@@ -321,14 +398,14 @@ func (s *Stack) Animating() bool {
 
 // Advance は全ての枚を 1 フレーム進め、静止に入った枚の退場タイマーをまとめて返す。
 // 抜け切った (hidden) 枚はここで取り除く = 下から抜けていく。
-func (s *Stack) Advance(colored bool) []Timer {
+func (s *Stack) Advance() []Timer {
 	var timers []Timer
-	if t := s.advance(colored); t != nil {
+	if t := s.advance(); t != nil {
 		timers = append(timers, *t)
 	}
 	kept := s.older[:0]
 	for i := range s.older {
-		if t := s.older[i].advance(colored); t != nil {
+		if t := s.older[i].advance(); t != nil {
 			timers = append(timers, *t)
 		}
 		if s.older[i].visible() {
@@ -352,12 +429,16 @@ func (s *Stack) StartLeaving(msg Msg) {
 	}
 }
 
-// BoxHeight は 1 枚の箱の行数 (上罫線 + 内容 1 行 + 下罫線 + 落ち影)。fullBox が内容 1 行で
-// layout.Panel を呼ぶので一定。🚨 箱の形を変えたらここも直す (テストで pin してある)。
+// BoxHeight は折り返さない 1 枚の箱の行数 (上罫線 + 内容 1 行 + 下罫線 + 落ち影)。折り返した箱は
+// 内容の行数ぶん (最大 MaxTextLines - 1 行) 高くなるので、これは 1 枚の高さの下限。
+// 🚨 箱の形を変えたらここも直す (テストで pin してある)。
 const BoxHeight = 4
 
 // BoxLines はスタック全体の描画行 (上から下)。maxLines に入らない枚は出さない。
 // 予算の下限は呼び出し側 (toastDrawBudget) が窓の高さに応じて確保する。
+// maxWidth は箱 (影込み) に使ってよい表示幅 = 重ねる先の窓の幅。長い文はこの幅で箱の中に折り返す。
+// 🚨 窓の幅を渡すこと (0 以下は上限なし)。上限なしで窓より広い箱を重ねると、重ねる側が右端を切るか
+// 端末が折り返して、文の末尾と枠が消える。
 //
 // 🚨 行数の上限が要る: 低い端末では 3 枚 (12 行) が窓 (11 行) を超え、一番下の箱が途中で切れて
 // 壊れて見えた (実測 2026-07-31: 窓 11 行に対し 12 行)。枚数の上限 (StackMax) だけでは
@@ -369,32 +450,37 @@ const BoxHeight = 4
 // 出ない」状態ができる (実測 2026-08-13: 警告の後に成功通知が来た狭い端末で、警告が 1 行も
 // 描かれなかった)。🚨 残す枚の並び順は元のまま (上が新しい) — 重要な枚を上へ繰り上げると、
 // スタックの「新しいものが上」という読み方が崩れる。
-func (s *Stack) BoxLines(colored bool, maxLines int) []string {
+func (s *Stack) BoxLines(colored bool, maxLines, maxWidth int) []string {
 	items := s.items()
 	boxes := make([][]string, 0, len(items))
 	shown := make([]*item, 0, len(items))
 	for _, it := range items {
-		box := it.boxLines(colored)
+		box := it.boxLines(colored, maxWidth)
 		if len(box) == 0 {
 			continue // まだ滑り込み前 (幅 0) は予算を食わない
 		}
 		boxes = append(boxes, box)
 		shown = append(shown, it)
 	}
-	fit := max(maxLines/BoxHeight, 1) // 最新の 1 枚は上限を超えても出す
+	// 予算は行数で数える (折り返した箱は高いので、枚数では窓からはみ出す)。
+	total := 0
+	for _, b := range boxes {
+		total += len(b)
+	}
 	// 🚨 i >= 1 で止めて最新 (index 0) を重要度選別から外す。「最新の 1 枚は出す」は
-	// この保護 + 最終段の先頭切りの 2 つで成る: fit の下限 1 だけでは「残る 1 枚が最新」を
-	// 保証しない (実測 2026-08-14: 最新が成功/進行中だとここで落ち、押したキーの
-	// フィードバックが古い警告に覆い隠された。issue 057)。evictOne はこの保護を持たなくて
-	// よい — あちらの対象 s.older は構造的に最新を含まない (important() の doc)
-	for i := len(boxes) - 1; i >= 1 && len(boxes) > fit; i-- {
+	// この保護 + 最終段の「先頭の 1 枚は必ず残す」の 2 つで成る (実測 2026-08-14: 最新が成功/進行中だと
+	// ここで落ち、押したキーのフィードバックが古い警告に覆い隠された。issue 057)。evictOne はこの保護を
+	// 持たなくてよい — あちらの対象 s.older は構造的に最新を含まない (important() の doc)
+	for i := len(boxes) - 1; i >= 1 && total > maxLines; i-- {
 		if !shown[i].important() {
+			total -= len(boxes[i])
 			boxes = append(boxes[:i], boxes[i+1:]...)
 			shown = append(shown[:i], shown[i+1:]...)
 		}
 	}
-	if len(boxes) > fit {
-		boxes = boxes[:fit] // 全部重要なら古い方から落とす
+	for len(boxes) > 1 && total > maxLines {
+		total -= len(boxes[len(boxes)-1]) // 全部重要なら古い方から落とす (最新の 1 枚は上限を超えても出す)
+		boxes = boxes[:len(boxes)-1]
 	}
 	var out []string
 	for _, box := range boxes {
@@ -406,12 +492,12 @@ func (s *Stack) BoxLines(colored bool, maxLines int) []string {
 // Visible は 1 枚でも表示中か。
 func (s *Stack) Visible() bool { return s.visible() || len(s.older) > 0 }
 
-// Text / OK / Info / Phase / Shown は最新 (最上段) の 1 枚の中身と状態 (画面とテストが「最新の通知」を読むため)。
+// Text / OK / Info / Phase / Frame は最新 (最上段) の 1 枚の中身と状態 (画面とテストが「最新の通知」を読むため)。
 func (s *Stack) Text() string { return s.text }
 func (s *Stack) OK() bool     { return s.ok }
 func (s *Stack) Info() bool   { return s.info }
 func (s *Stack) Phase() Phase { return s.phase }
-func (s *Stack) Shown() int   { return s.shown }
+func (s *Stack) Frame() int   { return s.frame }
 
 // Entry は積まれている 1 枚の中身。
 type Entry struct {

@@ -51,7 +51,7 @@ func (m *Model) cardText(c card.Card) string {
 func (m *Model) yank() {
 	c, ok := m.selectedCard()
 	if !ok {
-		m.info("コピーするカードが選ばれていない")
+		m.refuse("コピーするカードが選ばれていない")
 		return
 	}
 	if err := m.copy(m.cardText(c)); err != nil {

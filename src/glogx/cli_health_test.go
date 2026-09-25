@@ -473,7 +473,7 @@ func TestBrowseStartupShowsCLIHealthWarningsInView(t *testing.T) {
 	}
 	m.Update(msg)
 	for i := 0; m.toast.Animating() && i < 100; i++ {
-		m.toast.Advance(m.colored)
+		m.toast.Advance()
 	}
 
 	out := stripANSI(m.View().Content)

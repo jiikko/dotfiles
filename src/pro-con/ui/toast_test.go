@@ -63,3 +63,22 @@ func TestToastDrivesFramesAndLeaves(t *testing.T) {
 		t.Fatalf("滑り込み終えても静止の後の合図を頼まない: hold=%v phase=%v", hold, m.toasts.Phase())
 	}
 }
+
+// 画面より長い通知は箱の中で折り返し、末尾まで見せて画面の幅を超えない (2026-09-25 のユーザーの指摘:
+// 省略されて末尾と枠が消えていた)。overlayToast が BoxLines に画面の幅を渡す配線を固定する。
+func TestToastLongTextWrapsWithinWidth(t *testing.T) {
+	m, _ := cursorModel(t)
+	m.fail(strings.Repeat("見ているだけの画面なので、カードの作成は別のターミナルで pro-con を開いてください。", 2) + " TAILMARK")
+	for range toast.SlideFrames + 1 {
+		m.onFrame()
+	}
+	out := ansi.Strip(m.render())
+	if !strings.Contains(out, "TAILMARK") {
+		t.Fatalf("長い通知の末尾が画面に出ていない:\n%s", out)
+	}
+	for _, l := range strings.Split(out, "\n") {
+		if w := ansi.StringWidth(l); w > m.width {
+			t.Errorf("行の幅 %d が画面の幅 %d を超える: %q", w, m.width, l)
+		}
+	}
+}

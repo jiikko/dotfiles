@@ -46,11 +46,11 @@ func TestToastBoxLinesDoesNotCutSecondBoxAtPageEightBudget(t *testing.T) {
 	s.Show("警告A", false)
 	s.Show("警告B", false)
 	for range toast.SlideFrames + 2 {
-		s.Advance(false)
+		s.Advance()
 	}
 
 	budget := toastDrawBudget(8)
-	got := s.BoxLines(false, budget)
+	got := s.BoxLines(false, budget, 0)
 	if len(got) > budget {
 		t.Fatalf("page=8 の予算 %d 行を超えた: %d 行", budget, len(got))
 	}
@@ -69,9 +69,9 @@ func TestToastShadowIsGlogxNearBlack(t *testing.T) {
 	m := newTestBrowse(t, 5, nil, nil)
 	m.toast.Show("pulled", true)
 	for range toast.SlideFrames + 2 {
-		m.toast.Advance(true)
+		m.toast.Advance()
 	}
-	joined := strings.Join(m.toast.BoxLines(true, 20), "\n")
+	joined := strings.Join(m.toast.BoxLines(true, 20, 0), "\n")
 	if !strings.Contains(joined, ansiShadowFg+"█") && !strings.Contains(joined, ansiShadowFg+"▓") {
 		t.Fatalf("通知の箱の落ち影が ansiShadowFg でない:\n%q", joined)
 	}

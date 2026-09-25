@@ -22,20 +22,20 @@ func TestToastLifecycle(t *testing.T) {
 	if !to.Visible() || to.phase != Entering || !to.ok || to.text != "done" {
 		t.Fatalf("show 後: phase=%d visible=%v ok=%v text=%q", to.phase, to.Visible(), to.ok, to.text)
 	}
-	boxW := to.boxWidth(false)
+	boxW := to.boxWidth(false, 0)
 	if boxW < 10 {
 		t.Fatalf("箱幅が不足: %d", boxW)
 	}
 	// 入場: holding になるまで advance。退場タイマー (holdCmd) は入場完了時に 1 回だけ返る
 	var holdCmds, guard int
 	for to.phase == Entering && guard < 100 {
-		if ts := to.Advance(false); len(ts) > 0 {
+		if ts := to.Advance(); len(ts) > 0 {
 			holdCmds++
 		}
 		guard++
 	}
-	if to.phase != Holding || to.shown != boxW {
-		t.Fatalf("入場完了後: phase=%d shown=%d (want holding/%d)", to.phase, to.shown, boxW)
+	if to.phase != Holding || easedShown(to.frame, boxW) != boxW {
+		t.Fatalf("入場完了後: phase=%d shown=%d (want holding/%d)", to.phase, easedShown(to.frame, boxW), boxW)
 	}
 	if holdCmds != 1 {
 		t.Errorf("退場タイマーは入場完了時に 1 回だけ返るべき: %d", holdCmds)
@@ -51,7 +51,7 @@ func TestToastLifecycle(t *testing.T) {
 	// 退場: hidden まで
 	guard = 0
 	for to.Visible() && guard < 100 {
-		to.Advance(false)
+		to.Advance()
 		guard++
 	}
 	if to.phase != Hidden || to.Visible() || to.text != "" {
@@ -62,7 +62,7 @@ func TestToastLifecycle(t *testing.T) {
 // advanceToHolding は entering のトーストを holding まで tick で進める (テスト用ヘルパー)。
 func advanceToHolding(to *Stack) {
 	for guard := 0; to.phase == Entering && guard < 100; guard++ {
-		to.Advance(false)
+		to.Advance()
 	}
 }
 
@@ -93,21 +93,21 @@ func TestToastStaleTimerDoesNotLeaveNewer(t *testing.T) {
 func TestToastBoxLinesRevealsLeftColumns(t *testing.T) {
 	var to Stack
 	to.Show("pushed", true) // ASCII のみ (全角境界の半端幅を避け、可視幅=shown を厳密比較)
-	boxW := to.boxWidth(false)
-	full := to.fullBox(false)
+	boxW := to.boxWidth(false, 0)
+	full := to.fullBox(false, 0)
 	// 入場 1 フレーム: 全行が出るが、各行の可視幅は shown (<boxW) に切られている
-	to.Advance(false)
-	got := to.boxLines(false) // 1 枚分の描画を見る (スタックの行数上限とは別)
+	to.Advance()
+	got := to.boxLines(false, 0) // 1 枚分の描画を見る (スタックの行数上限とは別)
 	if len(got) != len(full) {
 		t.Errorf("スライド中も全行が出るべき: got=%d 行 want=%d 行", len(got), len(full))
 	}
 	wv := termwidth.Of(got[0])
-	if wv != to.shown || wv >= boxW {
-		t.Errorf("入場途中の可視幅が左スライドでない: 可視幅=%d shown=%d boxW=%d", wv, to.shown, boxW)
+	if wv != easedShown(to.frame, boxW) || wv >= boxW {
+		t.Errorf("入場途中の可視幅が左スライドでない: 可視幅=%d shown=%d boxW=%d", wv, easedShown(to.frame, boxW), boxW)
 	}
 	// holding まで進めると全幅 + ✓/text
 	advanceToHolding(&to)
-	lines := to.boxLines(false)
+	lines := to.boxLines(false, 0)
 	plain := ansi.Strip(strings.Join(lines, "\n"))
 	if termwidth.Of(lines[0]) != boxW || !strings.Contains(plain, "✓") || !strings.Contains(plain, "pushed") {
 		t.Errorf("全表示に ✓/pushed が無い / 全幅でない:\n%s", plain)
@@ -116,12 +116,12 @@ func TestToastBoxLinesRevealsLeftColumns(t *testing.T) {
 	var ng Stack
 	ng.Show("failed", false)
 	advanceToHolding(&ng)
-	if !strings.Contains(ansi.Strip(strings.Join(ng.boxLines(false), "\n")), "✗") {
+	if !strings.Contains(ansi.Strip(strings.Join(ng.boxLines(false, 0), "\n")), "✗") {
 		t.Error("失敗トーストに ✗ が無い")
 	}
 	// 非表示は nil
 	var empty Stack
-	if empty.boxLines(false) != nil {
+	if empty.boxLines(false, 0) != nil {
 		t.Error("非表示で nil を返さない")
 	}
 }
@@ -176,13 +176,13 @@ func TestToastStackRemovesFinishedFromBottom(t *testing.T) {
 	s.Show("新しい", true)
 	// 入場を終わらせる
 	for range SlideFrames + 2 {
-		s.Advance(false)
+		s.Advance()
 	}
 	// 古い方 (下) の静止が明けて退場 → 抜け切るまで進める
 	oldSeq := s.older[0].seq
 	s.StartLeaving(Msg{seq: oldSeq})
 	for range SlideFrames + 2 {
-		s.Advance(false)
+		s.Advance()
 	}
 	if len(s.older) != 0 {
 		t.Errorf("抜けた枚が残っている: %+v", s.older)
@@ -198,7 +198,7 @@ func TestToastStackLeavingIsPerItem(t *testing.T) {
 	s.Show("古い", true)
 	s.Show("新しい", true)
 	for range SlideFrames + 2 {
-		s.Advance(false)
+		s.Advance()
 	}
 	s.StartLeaving(Msg{seq: s.older[0].seq})
 	if s.older[0].phase != Leaving {
@@ -215,9 +215,9 @@ func TestToastStackBoxLinesOrder(t *testing.T) {
 	s.Show("古い通知", true)
 	s.Show("新しい通知", true)
 	for range SlideFrames + 2 {
-		s.Advance(false)
+		s.Advance()
 	}
-	out := strings.Join(s.BoxLines(false, 100), "\n")
+	out := strings.Join(s.BoxLines(false, 100, 0), "\n")
 	iNew, iOld := strings.Index(out, "新しい通知"), strings.Index(out, "古い通知")
 	if iNew < 0 || iOld < 0 {
 		t.Fatalf("両方描かれていない:\n%s", out)
@@ -260,7 +260,7 @@ func TestToastBoxLineCount(t *testing.T) {
 	var s Stack
 	s.Show("x", true)
 	advanceToHolding(&s)
-	if got := len(s.boxLines(false)); got != BoxHeight {
+	if got := len(s.boxLines(false, 0)); got != BoxHeight {
 		t.Errorf("箱の行数 = %d, want %d (BoxHeight を直すこと)", got, BoxHeight)
 	}
 }
@@ -270,10 +270,10 @@ func TestToastBoxLinesShowsTwoWarningsWithEightLineBudget(t *testing.T) {
 	s.Show("警告A", false)
 	s.Show("警告B", false)
 	for range SlideFrames + 2 {
-		s.Advance(false)
+		s.Advance()
 	}
 
-	out := strings.Join(s.BoxLines(false, BoxHeight*2), "\n")
+	out := strings.Join(s.BoxLines(false, BoxHeight*2, 0), "\n")
 	if !strings.Contains(out, "警告A") || !strings.Contains(out, "警告B") {
 		t.Fatalf("予算 8 行で重要警告 2 枚が描かれない:\n%s", out)
 	}
@@ -285,10 +285,10 @@ func TestToastBoxLinesDropsOldestWarningWhenThreeDoNotFit(t *testing.T) {
 		s.Show(text, false)
 	}
 	for range SlideFrames + 2 {
-		s.Advance(false)
+		s.Advance()
 	}
 
-	out := strings.Join(s.BoxLines(false, BoxHeight*2), "\n")
+	out := strings.Join(s.BoxLines(false, BoxHeight*2, 0), "\n")
 	if strings.Contains(out, "警告A") {
 		t.Fatalf("警告 3 枚で最古が表示対象に残っている:\n%s", out)
 	}
@@ -304,7 +304,7 @@ func TestToastBoxLinesRespectsMaxLines(t *testing.T) {
 		s.Show(txt, true)
 	}
 	for range SlideFrames + 2 {
-		s.Advance(false)
+		s.Advance()
 	}
 	for _, c := range []struct {
 		maxLines  int
@@ -315,7 +315,7 @@ func TestToastBoxLinesRespectsMaxLines(t *testing.T) {
 		{BoxHeight, 1},
 		{1, 1}, // 上限より箱が大きくても最新 1 枚は出す (見えない通知より覆う通知)
 	} {
-		got := len(s.BoxLines(false, c.maxLines))
+		got := len(s.BoxLines(false, c.maxLines, 0))
 		if want := c.wantBoxes * BoxHeight; got != want {
 			t.Errorf("maxLines=%d: %d 行 (%d 箱), want %d 行 (%d 箱)",
 				c.maxLines, got, got/BoxHeight, want, c.wantBoxes)
@@ -378,14 +378,14 @@ func TestToastBoxLinesKeepsWarningWithinBudget(t *testing.T) {
 	s.Show("ok1", true)
 	s.Show("ok2", true)
 	for range SlideFrames + 2 {
-		s.Advance(false)
+		s.Advance()
 	}
 	if len(s.items()) != 3 {
 		t.Fatalf("前提が崩れた: 3 枚保持していない (%d)", len(s.items()))
 	}
 
 	// 2 枚ぶんの予算しかない = 1 枚落とす。落ちるのは重要でない最古 (ok1) で、警告は残る
-	out := strings.Join(s.BoxLines(false, BoxHeight*2), "\n")
+	out := strings.Join(s.BoxLines(false, BoxHeight*2, 0), "\n")
 	if !strings.Contains(out, "未 push") {
 		t.Errorf("予算内に警告が描かれない (保持しているのに見えない):\n%s", out)
 	}
@@ -404,8 +404,8 @@ func TestToastBoxLinesKeepsWarningWithinBudget(t *testing.T) {
 	// 🚨 行数だけの assert にしない: 最新が落ちて古い警告が残っても行数は同じ 4 行で通る。
 	// 実際この fixture は issue 057 のバグ (最新 ok2 が消え「未 push」だけが描かれる) を
 	// 再現していたのに、行数 assert だったため green を返し続けていた
-	one := strings.Join(s.BoxLines(false, BoxHeight), "\n")
-	if got := len(s.BoxLines(false, BoxHeight)); got != BoxHeight {
+	one := strings.Join(s.BoxLines(false, BoxHeight, 0), "\n")
+	if got := len(s.BoxLines(false, BoxHeight, 0)); got != BoxHeight {
 		t.Errorf("予算 1 枚のとき %d 行 (want %d)", got, BoxHeight)
 	}
 	if !strings.Contains(one, "ok2") {
@@ -442,9 +442,9 @@ func TestToastBoxLinesAlwaysDrawsNewest(t *testing.T) {
 		var s Stack
 		c.build(&s)
 		for range SlideFrames + 2 {
-			s.Advance(false)
+			s.Advance()
 		}
-		got := strings.Join(s.BoxLines(false, c.maxLines), "\n")
+		got := strings.Join(s.BoxLines(false, c.maxLines, 0), "\n")
 		if !strings.Contains(got, c.want) {
 			t.Errorf("%s: 最新のトースト %q が 1 行も描かれない:\n%s", c.name, c.want, got)
 		}
@@ -457,7 +457,7 @@ func TestClearKeepsGenerationAndShadow(t *testing.T) {
 	s.Show("消す前", true)
 	var timers []Timer
 	for range SlideFrames + 2 {
-		timers = append(timers, s.Advance(false)...)
+		timers = append(timers, s.Advance()...)
 	}
 	if len(timers) != 1 {
 		t.Fatalf("前提: 静止に入った枚の退場タイマーが 1 つ: %d", len(timers))
@@ -471,7 +471,7 @@ func TestClearKeepsGenerationAndShadow(t *testing.T) {
 	}
 	s.Show("消した後", true)
 	for range SlideFrames + 2 {
-		s.Advance(false)
+		s.Advance()
 	}
 	s.StartLeaving(timers[0].Msg) // 消す前の枚のタイマーが届く
 	if s.Phase() != Holding || s.Text() != "消した後" {
@@ -488,5 +488,98 @@ func TestEntriesNewestFirst(t *testing.T) {
 	got := s.Entries()
 	if len(got) != 3 || got[0] != (Entry{Text: "C", Info: true}) || got[1] != (Entry{Text: "B"}) || got[2] != (Entry{Text: "A", OK: true}) {
 		t.Fatalf("Entries: %+v", got)
+	}
+}
+
+// 窓より長い文は箱の中で折り返し、どの行も窓の幅を超えず、文は 1 字も欠けない (右端で切られて
+// 文の末尾と枠が消えていた。2026-09-25 のユーザーの指摘)。英文は空白で割り、日本語は字の境で割る。
+func TestToastWrapsLongTextWithinWidth(t *testing.T) {
+	cases := []struct{ name, text string }{
+		{"英文", "push failed: remote rejected the update because the branch is protected"},
+		{"日本語", "見ているだけの画面なので、カードの作成は別のターミナルの pro-con から行ってください"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			const width = 40
+			var s Stack
+			s.Show(c.text, false)
+			advanceToHolding(&s)
+			box := s.BoxLines(false, 100, width)
+			if len(box) <= BoxHeight {
+				t.Fatalf("折り返していない (%d 行):\n%s", len(box), strings.Join(box, "\n"))
+			}
+			var body strings.Builder
+			for _, row := range box {
+				if w := termwidth.Of(row); w > width {
+					t.Errorf("行の幅 %d が窓の幅 %d を超える: %q", w, width, row)
+				}
+				inner := strings.Trim(ansi.Strip(row), "│▖▁▗▓█▒░ ─┌┐")
+				inner = strings.TrimPrefix(inner, "✗ ")
+				if inner != "" {
+					body.WriteString(inner)
+				}
+			}
+			want := strings.ReplaceAll(c.text, " ", "")
+			if got := strings.ReplaceAll(body.String(), " ", ""); got != want {
+				t.Errorf("折り返しで文が欠けた:\n got %q\nwant %q", got, want)
+			}
+		})
+	}
+}
+
+// 折り返しても MaxTextLines 行を超える文は、最終行の末尾を … にして切ったことを見せる (1 枚で画面を覆わない)。
+func TestToastWrapCapsLinesWithEllipsis(t *testing.T) {
+	var s Stack
+	s.Show(strings.Repeat("あ", 200), false)
+	advanceToHolding(&s)
+	box := s.BoxLines(false, 100, 40)
+	if want := BoxHeight + MaxTextLines - 1; len(box) != want {
+		t.Fatalf("箱の行数 = %d, want %d:\n%s", len(box), want, strings.Join(box, "\n"))
+	}
+	if last := box[len(box)-3]; !strings.Contains(last, "…") {
+		t.Errorf("最終行に … が無い: %q", last)
+	}
+}
+
+// 上限なし (0) と窓に収まる文は従来どおり 1 行の箱のまま。
+func TestToastShortTextStaysOneLine(t *testing.T) {
+	var s Stack
+	s.Show("pushed", true)
+	advanceToHolding(&s)
+	for _, w := range []int{0, 40} {
+		if got := len(s.BoxLines(false, 100, w)); got != BoxHeight {
+			t.Errorf("maxWidth=%d: 箱の行数 = %d, want %d", w, got, BoxHeight)
+		}
+	}
+}
+
+// 折り返した高い箱も行数の予算で数える (枚数で数えると窓からはみ出す)。最新は予算を超えても出す。
+func TestToastBudgetCountsWrappedHeight(t *testing.T) {
+	var s Stack
+	s.Show("古い成功", true)
+	s.Show(strings.Repeat("長い警告 ", 30), false)
+	advanceToHolding(&s)
+	// 予算 8 行は 1 行の箱なら 2 枚入る。高い箱 (6 行) + 1 行の箱 (4 行) = 10 行は入らない
+	box := s.BoxLines(false, BoxHeight*2, 40)
+	out := strings.Join(box, "\n")
+	if strings.Contains(out, "古い成功") || len(box) > BoxHeight*2 {
+		t.Errorf("予算 %d 行を %d 行で超えた (高い箱と古い成功が両方描かれた):\n%s", BoxHeight*2, len(box), out)
+	}
+	if !strings.Contains(out, "長い警告") {
+		t.Errorf("最新の高い箱が予算超えで消えた:\n%s", out)
+	}
+}
+
+// 静止中に窓が狭くなっても、箱は新しい幅で全幅が出る (見せるカラム数を状態に持たない)。
+func TestToastHoldingFollowsWidthChange(t *testing.T) {
+	var s Stack
+	s.Show(strings.Repeat("abc ", 20), true)
+	advanceToHolding(&s)
+	for _, w := range []int{100, 30} {
+		box := s.BoxLines(false, 100, w)
+		full := s.fullBox(false, w)
+		if termwidth.Of(box[0]) != termwidth.Of(full[0]) {
+			t.Errorf("maxWidth=%d: 静止中なのに全幅が出ない (%d / %d)", w, termwidth.Of(box[0]), termwidth.Of(full[0]))
+		}
 	}
 }

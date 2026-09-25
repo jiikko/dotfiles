@@ -49,7 +49,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		m.ticking = false
 		var cmds []tea.Cmd
-		for _, t := range m.toasts.Advance(true) { // 入場を終えた枚の退場タイマー (toast は張らないので、ここで Tick にする)
+		for _, t := range m.toasts.Advance() { // 入場を終えた枚の退場タイマー (toast は張らないので、ここで Tick にする)
 			msg := t.Msg
 			cmds = append(cmds, tea.Tick(t.After, func(time.Time) tea.Msg { return msg }))
 		}
@@ -66,6 +66,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.toasts.Show(fmt.Sprintf("push rejected: non-fast-forward (%d)", m.n), false)
 		case "i":
 			m.toasts.ShowInfo(fmt.Sprintf("fetching origin... (%d)", m.n))
+		case "l":
+			m.toasts.Show(fmt.Sprintf("push rejected: remote rejected the update because the branch is protected and requires review (%d)", m.n), false)
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		}
@@ -78,10 +80,10 @@ func (m *model) View() tea.View {
 	w, h := max(m.width, 20), max(m.height, 8)
 	lines := make([]string, h)
 	lines[0] = sgr.Bold + " tuikit/toast" + sgr.Reset
-	help := []string{"", " s  成功の通知 (緑)", " f  失敗の通知 (赤)", " i  進行中の通知 (次の通知で退く)", " q  終了", "",
+	help := []string{"", " s  成功の通知 (緑)", " f  失敗の通知 (赤)", " i  進行中の通知 (次の通知で退く)", " l  長い通知 (窓の幅で折り返す)", " q  終了", "",
 		sgr.Dim + " 新しい通知は上に積まれ、古い通知は下から抜ける (最大 3 枚)" + sgr.Reset}
 	copy(lines[1:], help)
-	box := m.toasts.BoxLines(true, h-1)
+	box := m.toasts.BoxLines(true, h-1, w)
 	overlayBottomRight(lines, box, w)
 	v := tea.NewView(strings.Join(lines, "\n"))
 	v.AltScreen = true

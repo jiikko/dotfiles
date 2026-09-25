@@ -1283,7 +1283,7 @@ func TestIssuesViewerNotifiesViaToast(t *testing.T) {
 		if !m.toast.Animating() {
 			break
 		}
-		m.toast.Advance(m.colored)
+		m.toast.Advance()
 	}
 	// viewer は全画面なので、トーストを合成しないと画面に出ない
 	if out := stripANSI(m.View().Content); !strings.Contains(out, "コピーしました") {

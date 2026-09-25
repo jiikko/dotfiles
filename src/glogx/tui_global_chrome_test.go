@@ -82,7 +82,7 @@ func showToastLanded(t *testing.T, m *browseModel, text string) {
 	t.Helper()
 	m.toast.Show(text, true)
 	for i := 0; m.toast.Animating() && i < 100; i++ {
-		m.toast.Advance(m.colored)
+		m.toast.Advance()
 	}
 	if m.toast.Animating() {
 		t.Fatal("トーストのアニメが 100 フレームで着地しない (前提が崩れた)")
@@ -96,7 +96,7 @@ func showWarningsLanded(t *testing.T, m *browseModel, texts ...string) {
 		m.toast.Show(text, false)
 	}
 	for i := 0; m.toast.Animating() && i < 100; i++ {
-		m.toast.Advance(m.colored)
+		m.toast.Advance()
 	}
 	if m.toast.Animating() {
 		t.Fatal("重要警告のアニメが 100 フレームで着地しない (前提が崩れた)")
@@ -161,4 +161,21 @@ func TestToastDrawBudgetIsWiredThroughViewContent(t *testing.T) {
 			t.Fatalf("page=8 の警告箱が途中で切れている: 本文行=%d, 全体=%d:\n%s", warningLine, len(lines), out)
 		}
 	})
+}
+
+// 窓より長い通知は右端で切らず、箱の中で折り返して末尾まで見せる (2026-09-25 のユーザーの指摘: 右端で
+// 文の末尾と枠が切れていた)。配線 (BoxLines に窓の幅を渡す) を View 経由で固定する。
+func TestToastLongTextWrapsWithinViewWidth(t *testing.T) {
+	m := newTestBrowse(t, 3, nil, nil)
+	m.width, m.height = 50, 20
+	showWarningsLanded(t, m, "push failed: remote rejected the update because the branch is protected TAILMARK")
+	out := stripANSI(m.View().Content)
+	if !strings.Contains(out, "TAILMARK") {
+		t.Fatalf("長い通知の末尾が画面に出ていない:\n%s", out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if w := dispWidth(line); w > m.contentWidth() {
+			t.Errorf("行の幅 %d が窓の幅 %d を超える: %q", w, m.contentWidth(), line)
+		}
+	}
 }

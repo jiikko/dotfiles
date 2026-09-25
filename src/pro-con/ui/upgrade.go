@@ -141,7 +141,7 @@ func (m *Model) onUpgradeCheck(msg upgradeCheckMsg) tea.Cmd {
 func (m *Model) requestUpgrade() tea.Cmd {
 	switch {
 	case m.up == nil:
-		m.info("ライブアップグレードは無効 (bin/pro-con = ソースのディレクトリから起動していない)")
+		m.refuse("ライブアップグレードは無効 (bin/pro-con = ソースのディレクトリから起動していない)")
 	case m.up.state != upReady:
 		m.info("新版はまだ無い")
 	default:

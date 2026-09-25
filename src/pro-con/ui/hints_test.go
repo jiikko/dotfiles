@@ -92,6 +92,10 @@ func TestReadOnlyRefusesWriteKeysImmediately(t *testing.T) {
 		if m.mode != modeBoard || m.picker.open || !strings.Contains(m.toasts.Text(), "使えない操作") {
 			t.Fatalf("読み取り専用なのに %q で操作が始まった: mode=%v picker=%v flash=%q", k, m.mode, m.picker.open, m.toasts.Text())
 		}
+		// 断った理由は赤の ✗ (シアンの … だと効かなかったことが進行中の知らせに見える。2026-09-25 のユーザーの指摘)
+		if m.toasts.OK() || m.toasts.Info() {
+			t.Fatalf("%q を断る通知が赤の ✗ でない: ok=%v info=%v", k, m.toasts.OK(), m.toasts.Info())
+		}
 	}
 	m := New(newSpy(), nil) // 書き込みを受け付ける backend では、今までどおり入力欄が開く (対照)
 	press(m, "n")

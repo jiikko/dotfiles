@@ -86,7 +86,7 @@ func (m *Model) onEditorDone(msg editorDoneMsg) {
 func (m *Model) yankPath() {
 	c, ok := m.selectedCard()
 	if !ok {
-		m.info("コピーするカードが選ばれていない")
+		m.refuse("コピーするカードが選ばれていない")
 		return
 	}
 	p, err := m.issuePath(c)
