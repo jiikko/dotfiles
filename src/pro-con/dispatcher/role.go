@@ -187,7 +187,7 @@ func (d *Dispatcher) tellRole(ctx context.Context, now time.Time, ss []agents.Se
 		told[k] = true
 	}
 	pm.Told = nil
-	for _, c := range st.Cards {
+	for _, c := range card.Board(st.Cards) { // 上ほど優先 (人がレーンで並べ替えられる。issue 470)。役は上から扱う
 		k, ok := r.key(c)
 		if !ok {
 			continue

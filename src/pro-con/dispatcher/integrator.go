@@ -53,7 +53,7 @@ func integratorNotice(d *Dispatcher, cards []card.Card, untold, pending []string
 	var b strings.Builder
 	b.WriteString("pro-con: 次のカードを指示書のとおりに扱って。\n")
 	var rest []string
-	for _, c := range cards {
+	for _, c := range card.Board(cards) { // 人がレーンで並べた順 (上ほど優先。issue 470)
 		k, ok := integratorKey(c)
 		if !ok || !slices.Contains(pending, k) {
 			continue

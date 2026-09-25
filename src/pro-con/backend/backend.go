@@ -101,6 +101,7 @@ const (
 	OpBtw    Op = "btw"    // btw (w)
 	OpClear  Op = "clear"  // 完了のレーンを片付ける (x)
 	OpDelete Op = "delete" // カードを削除する (d)
+	OpMove   Op = "move"   // レーンの中の並び (優先度) を入れ替える (K / J)
 	OpResume Op = "resume" // 人が止めた dispatcher を起こす (c)
 )
 
@@ -213,6 +214,17 @@ type DeleteCard struct {
 	CardID string
 	From   string // 人間 / PM
 }
+
+// MoveCard はカードをレーンの中で 1 つ上 (Delta = -1) / 下 (+1) の隣と入れ替える (issue 470。上ほど優先)。Repo は画面のタブ
+// (空なら global = 全 repo の並びの中の隣)。隣は backend が適用の時点の並びで決める (押した回数だけ動く)。
+type MoveCard struct {
+	CardID string
+	Repo   string
+	Delta  int
+	Seen   time.Time // 画面が見ていたカードの Since。適用までに列を移っていたら動かさない (見ていない列で入れ替えない)
+}
+
+func (MoveCard) isCommand() {}
 
 // ResumeDispatcher は人が止めた dispatcher を起こす (止めた印を外して起こす。issue 459)。
 type ResumeDispatcher struct{}

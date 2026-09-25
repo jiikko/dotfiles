@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os/exec"
 	"slices"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -375,8 +374,8 @@ func (m *Model) visible() []card.Card {
 	return out
 }
 
-// columns は選んでいるタブのカードをカンバンの列に分ける。列の中は「その列に入った順」(Since、同時なら ID)。
-// 移ってきたカードは必ず列の末尾に着地するので、既存のカードの位置は動かない (Snapshot の並び順のままだと、
+// columns は選んでいるタブのカードをカンバンの列に分ける。列の中はレーンの並び (card.LaneCompare: 上ほど優先。K / J で入れ替えて
+// いなければ、その列に入った順)。移ってきたカードは必ず列の末尾に着地するので、既存のカードの位置は動かない (Snapshot の並び順のままだと、
 // 移ってきたカードが途中に割り込んで既存のカードが一斉にずれる)。
 func (m *Model) columns() [][]card.Card {
 	cols := make([][]card.Card, len(card.Columns))
@@ -388,12 +387,7 @@ func (m *Model) columns() [][]card.Card {
 		}
 	}
 	for _, cs := range cols {
-		slices.SortStableFunc(cs, func(a, b card.Card) int {
-			if c := a.Since.Compare(b.Since); c != 0 {
-				return c
-			}
-			return strings.Compare(a.ID, b.ID)
-		})
+		slices.SortStableFunc(cs, card.LaneCompare)
 	}
 	return cols
 }
@@ -494,7 +488,7 @@ func (m *Model) stepRow(delta int) tea.Cmd {
 
 // writeKeys は backend に書き込む操作を始めるキーと、その操作の種類。受けない backend では押した時点で断る
 // (案内の行も同じ種類で暗くする: view.go の hints)。
-var writeKeys = map[string]backend.Op{"n": backend.OpNew, "i": backend.OpNew, "r": backend.OpAnswer, "+": backend.OpOrder, "w": backend.OpBtw, "x": backend.OpClear, "d": backend.OpDelete, "c": backend.OpResume}
+var writeKeys = map[string]backend.Op{"n": backend.OpNew, "i": backend.OpNew, "r": backend.OpAnswer, "+": backend.OpOrder, "w": backend.OpBtw, "x": backend.OpClear, "d": backend.OpDelete, "K": backend.OpMove, "J": backend.OpMove, "c": backend.OpResume}
 
 func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	if m.showDetail {
@@ -574,6 +568,10 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		m.askClearDone()
 	case "d": // カードを削除する (glogx の d = 削除。y/N 確認を挟む)
 		m.askDelete()
+	case "K": // 選んでいるカードを 1 つ上と入れ替える (優先度を上げる。j / k の強い版 = 選択ではなくカードを動かす。issue 470)
+		return m.moveCard(-1)
+	case "J": // 1 つ下と入れ替える (優先度を下げる)
+		return m.moveCard(1)
 	case "c": // 人が止めた dispatcher を起こす (continue。glogx で空いている字。PG が再開して利用枠を使うので y/N 確認を挟む)
 		m.askResume()
 	default:
@@ -583,6 +581,33 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		}
 		return m.moveByMotion(listnav.MotionOf(k.String()))
 	}
+	return nil
+}
+
+// moveCard は選んでいるカードをレーンの中で delta (-1 = 上 / +1 = 下) の隣と入れ替えるよう backend に頼む。選択はカードについていく
+// (選択は ID で持つ)。端では頼まずに止めて知らせる (巻かない)。隣は backend が適用の時点の並びで決めるので、速く続けて押しても押した回数だけ動く。
+func (m *Model) moveCard(delta int) tea.Cmd {
+	col, row, ok := m.position()
+	if !ok {
+		m.refuse("動かすカードを選んでいない")
+		return nil
+	}
+	if next := row + delta; next < 0 || next >= len(m.columns()[col]) {
+		if delta < 0 {
+			m.info("レーンの先頭なので、これより上げられない")
+		} else {
+			m.info("レーンの末尾なので、これより下げられない")
+		}
+		return m.startBump(0, delta)
+	}
+	c := m.columns()[col][row]
+	if res, err := m.be.Apply(backend.MoveCard{CardID: c.ID, Repo: m.tab, Delta: delta, Seen: c.Since}); err != nil {
+		m.fail("失敗: " + err.Error())
+	} else if res != "" {
+		m.done(res)
+	}
+	m.setSnap(m.be.Snapshot())
+	m.ensureSelection()
 	return nil
 }
 

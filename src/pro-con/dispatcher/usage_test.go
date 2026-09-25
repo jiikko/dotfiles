@@ -258,7 +258,7 @@ func TestResumeBeforeOlderStart(t *testing.T) {
 		t.Fatal(err)
 	}
 	setCard(t, dir, "C-002", func(c *card.Card) { c.Since = t0.Add(-time.Hour) }) // 再開を待つ C-001 より古い
-	if c := states(t, dir); c["C-001"].State != card.Planned || !resumes(c["C-001"]) || c["C-002"].State != card.Planned {
+	if c := states(t, dir); c["C-001"].State != card.Planned || !c["C-001"].Resumes() || c["C-002"].State != card.Planned {
 		t.Fatalf("前提: 両方とも分解済みで C-001 は再開待ちのはず: %+v", c)
 	}
 	if _, err := d.Tick(context.Background()); err != nil {

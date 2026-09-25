@@ -64,9 +64,9 @@ func pmLabels(keys []string) string {
 // 指示は書かない (指示の正本は pm-guide.md)。
 func pmNotice(cards []card.Card, untold, pending []string) string {
 	var b strings.Builder
-	b.WriteString("pro-con: 次のカードを指示書のとおりに扱って。\n")
+	b.WriteString("pro-con: 次のカードを指示書のとおりに扱って (上ほど優先)。\n")
 	var restReq, restAsk []string
-	for _, c := range cards {
+	for _, c := range card.Board(cards) {
 		k, ok := pmKey(c)
 		if !ok || !slices.Contains(pending, k) {
 			continue

@@ -72,7 +72,7 @@ func TestHintsDimWritesOnReadOnlyBackend(t *testing.T) {
 	be.snap.Cards = append(be.snap.Cards, card.Card{ID: "D1", State: card.Done, Ending: card.EndAnswered})
 	m := New(be, nil)
 	m.selected = "W1" // 質問待ち (書き込みを受け付ける backend なら r は明るい)
-	for _, h := range []string{"n 新しい依頼", "i issue から", "r 回答", "+ 追加オーダー", "w btw", "x 完了を片付け"} {
+	for _, h := range []string{"n 新しい依頼", "i issue から", "r 回答", "+ 追加オーダー", "w btw", "x 完了を片付け", "K / J 優先度"} {
 		if !dimmed(t, m, h) {
 			t.Fatalf("読み取り専用なのに %q が明るい", h)
 		}
@@ -84,7 +84,7 @@ func TestHintsDimWritesOnReadOnlyBackend(t *testing.T) {
 
 // 読み取り専用の backend では、書き込みの操作のキーを押した時点で断る (入力欄を開かない。書いた文が無駄にならないように)。
 func TestReadOnlyRefusesWriteKeysImmediately(t *testing.T) {
-	for _, k := range []string{"n", "i", "r", "+", "w", "x"} {
+	for _, k := range []string{"n", "i", "r", "+", "w", "x", "K", "J"} {
 		be := roSpy{newSpy()}
 		m := New(be, nil)
 		m.selected = "W1" // 質問待ち (書き込みを受け付ける backend なら r で入力欄が開く)

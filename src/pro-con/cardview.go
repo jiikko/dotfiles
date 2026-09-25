@@ -167,6 +167,8 @@ func runCardList(args []string, env viewEnv, stdout, stderr io.Writer) int {
 			return slices.ContainsFunc(st.Cards, func(c card.Card) bool { return c.ID == a.ID })
 		}), st.Cards...)
 	}
+	// 列の順 (左から)、列の中はレーンの並び (上ほど優先。画面と同じ。issue 470)
+	cards = card.Board(cards)
 	out := []cardSummary{}
 	for _, c := range cards {
 		if (c.Archived && !*all) || (want != nil && c.State != *want) {
