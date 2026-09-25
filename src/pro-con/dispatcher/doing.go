@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"pro-con/agents"
 	"pro-con/card"
@@ -33,6 +34,9 @@ const doingEvery = 10 * time.Second
 // doingMax はカード 1 枚に載せるプロセスの上限 (make test の子孫で詳細が埋まらないように)。
 const doingMax = 12
 
+// psTimeout は ps 1 回の上限 (普段は 0.04 秒)。
+const psTimeout = 5 * time.Second
+
 // Proc はプロセス 1 つ。
 type Proc struct {
 	PID, PPID int
@@ -42,6 +46,8 @@ type Proc struct {
 
 // PSProcs は本物の ps でプロセスの一覧を読む。
 func PSProcs(ctx context.Context) ([]Proc, error) {
+	ctx, cancel := context.WithTimeout(ctx, psTimeout) // ps が詰まっても Tick (登録・割り当て) を止めない
+	defer cancel()
 	out, err := exec.CommandContext(ctx, "ps", "-A", "-ww", "-o", "pid=,ppid=,etime=,command=").Output()
 	if err != nil {
 		return nil, err
@@ -62,11 +68,13 @@ func parsePS(out string) []Proc {
 		if err1 != nil || err2 != nil || !ok {
 			continue
 		}
-		// command は 4 つ目の欄から行末まで (空白を含む)。etime の後の空白を飛ばして切り出す
-		rest := strings.TrimLeft(line, " ")
+		// command は 4 つ目の欄から行末まで (空白を含む)。欄の区切りは Fields と同じ空白で数える (区切りの判定を食い違わせない)
+		rest := line
 		for range 3 {
-			rest = strings.TrimLeft(rest[strings.IndexByte(rest, ' '):], " ")
+			rest = strings.TrimLeftFunc(rest, unicode.IsSpace)
+			rest = rest[strings.IndexFunc(rest, unicode.IsSpace):] // Fields が 4 欄以上を返したので、ここでは必ず見つかる
 		}
+		rest = strings.TrimLeftFunc(rest, unicode.IsSpace)
 		ps = append(ps, Proc{PID: pid, PPID: ppid, Elapsed: el, Command: rest})
 	}
 	return ps
@@ -206,8 +214,11 @@ func (d *Dispatcher) collectDoing(ctx context.Context, now time.Time, ss []agent
 		if !ok {
 			continue
 		}
+		if !liveIn(ss, c.Session, o.PID) { // 一覧と記録で pid が合わない = 今動いていると確かめられない session は、transcript の残りも出さない
+			continue
+		}
 		var ds []card.Doing
-		if perr == nil && liveIn(ss, c.Session, o.PID) {
+		if perr == nil && isClaude(procs, o.PID) {
 			ds = processDoings(o.PID, procs, now)
 		}
 		ds = append(ds, d.transcriptDoings(o, perr == nil)...)
@@ -216,6 +227,18 @@ func (d *Dispatcher) collectDoing(ctx context.Context, now time.Time, ss []agent
 		}
 	}
 	_ = store.SaveDoing(d.Dir, out)
+}
+
+// isClaude は ps の一覧で pid が claude のプロセスか。一覧 (ss) は Tick の頭に取ったもので、ps はその後なので、
+// その間に PG が落ちて pid が使い回されたら、外のプロセスの子孫を出してしまう。同じ ps の中で pid の中身を確かめる。
+func isClaude(procs []Proc, pid int) bool {
+	for _, p := range procs {
+		if p.PID == pid {
+			f := strings.Fields(p.Command)
+			return len(f) > 0 && filepath.Base(f[0]) == "claude"
+		}
+	}
+	return false
 }
 
 // liveIn は短い id の session が一覧に居て、pid が記録と一致するか (一致しない pid の子孫は出さない)。

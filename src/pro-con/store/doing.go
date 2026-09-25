@@ -46,7 +46,11 @@ func LoadDoing(dir string) (Doing, error) {
 }
 
 // Attach は c に集めた様子を足す (DoingFile の中身。無ければ何もしない)。画面と card show が同じ足し方をする。
+// 完了したカードには足さない (dispatcher は完了のカードを集めないが、完了してから次に集めるまで最大 10 秒は前の様子が残る)。
 func (d Doing) Attach(c *card.Card) {
+	if c.State == card.Done {
+		return
+	}
 	if ds := d.Cards[c.ID]; len(ds) > 0 {
 		c.Doing, c.DoingAt = ds, d.At
 	}

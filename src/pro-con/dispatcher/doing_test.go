@@ -104,6 +104,8 @@ func newDoingRig(t *testing.T) *doingRig {
 		return r.tr, nil
 	}
 	r.procs = []Proc{
+		{PID: 10, PPID: 1, Elapsed: time.Hour, Command: "claude bg-spare --bg-spare /tmp/x.sock"},
+		{PID: 20, PPID: 1, Elapsed: time.Hour, Command: "claude bg-spare --bg-spare /tmp/y.sock"},
 		{PID: 12, PPID: 10, Elapsed: time.Minute, Command: "make test"},
 		{PID: 22, PPID: 20, Elapsed: time.Minute, Command: "外の PG のコマンド"},
 	}
@@ -156,11 +158,14 @@ func TestCollectDoingOnlyOwnedSessions(t *testing.T) {
 func TestCollectDoingNeedsMatchingPIDAndFallsBackToCalls(t *testing.T) {
 	r := newDoingRig(t)
 	r.tr = live.Transcript{Calls: []live.Call{{Name: "Bash", Text: "make test", At: t0}}}
+	r.tr.Agents = []live.Call{{Name: "Agent", Text: "裏の子", At: t0}}
+	r.tr.Calls = append(r.tr.Calls, live.Call{Name: "WebFetch", Text: "https://x", At: t0})
 	r.d.collectDoing(context.Background(), t0, []agents.Session{{ID: "s1", SessionID: "sess-1", PID: 99}})
 	got, _ := store.LoadDoing(r.dir)
 	if ds := got.Cards["C-001"]; len(ds) != 0 {
-		t.Fatalf("pid の違う session の子孫を出した: %+v", ds)
+		t.Fatalf("pid の違う session の子孫も transcript の残り (道具・サブエージェント) も出さないはず: %+v", ds)
 	}
+	r.tr = live.Transcript{Calls: []live.Call{{Name: "Bash", Text: "make test", At: t0}}}
 	r.procsErr = errors.New("ps が無い")
 	got = r.collect(t, t0.Add(doingEvery))
 	if ds := got.Cards["C-001"]; got.Err != "ps が無い" || len(ds) != 1 || ds[0].Kind != card.DoingTool || ds[0].Text != "Bash: make test" {
@@ -199,5 +204,23 @@ func TestCollectDoingThrottles(t *testing.T) {
 	r.procs = nil
 	if got := r.collect(t, t0.Add(doingEvery)); calls != 2 || len(got.Cards) != 0 {
 		t.Fatalf("間隔を過ぎたら集め直して、終わったものを消すはず: calls=%d %+v", calls, got.Cards)
+	}
+}
+
+// 一覧は Tick の頭に取ったもの。ps を読む前に PG が落ちて pid が外のプロセスに使い回されたら、その子孫は出さない
+// (同じ ps の中で、pid が claude のプロセスかを確かめる)。
+func TestCollectDoingRejectsReusedPID(t *testing.T) {
+	r := newDoingRig(t)
+	r.procs[0].Command = "/usr/bin/vim 外のプロセス"
+	if got := r.collect(t, t0); len(got.Cards["C-001"]) != 0 {
+		t.Fatalf("pid を使い回した外のプロセスの子孫を出した: %+v", got.Cards)
+	}
+}
+
+// 欄の区切りがタブでも落ちずに読む (区切りの数え方を Fields と揃える)。
+func TestParsePSTabSeparated(t *testing.T) {
+	ps := parsePS("101\t1\t01:02\tsleep 9\n")
+	if len(ps) != 1 || ps[0].PID != 101 || ps[0].Command != "sleep 9" {
+		t.Fatalf("タブ区切りの行: %+v", ps)
 	}
 }
