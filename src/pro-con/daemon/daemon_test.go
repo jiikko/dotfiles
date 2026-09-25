@@ -86,7 +86,7 @@ func planned(t *testing.T, dir string, n int) {
 func newDaemon(t *testing.T, dir string, l Launcher, ss []agents.Session) *Daemon {
 	t.Helper()
 	return &Daemon{Dir: dir, Limit: 2, Repos: map[string]string{"dotfiles": "/w/dotfiles"}, Launch: l,
-		List: func(context.Context) ([]agents.Session, error) { return ss, nil }, Now: func() time.Time { return t0 }}
+		List: func(context.Context) ([]agents.Session, error) { return ss, nil }, Now: func() time.Time { return t0 }, Sleep: func(time.Duration) {}}
 }
 
 func states(t *testing.T, dir string) map[string]card.Card {

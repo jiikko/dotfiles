@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -112,13 +113,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		dir = filepath.Join(stateDir(home), "mock")
 	} else {
 		lb := live.New(scopes, home, dir)
-		repoPaths := map[string]string{}
-		for _, r := range scopes {
-			repoPaths[r.Name] = r.Path
-		}
-		lb.SetStopper(func(ctx context.Context) error {
-			return stopDaemon(ctx, dir, filepath.Join(home, ".claude", "projects"), repoPaths, io.Discard)
-		})
+		lb.SetStopper(func(ctx context.Context) error { return stopInChild(ctx, dir) })
 		ctx, cancel := context.WithCancel(context.Background())
 		lb.Start(ctx)
 		defer func() { cancel(); lb.Wait() }() // 読み直しが止まるのを待ってから抜ける (claude の子プロセスを残さない)
@@ -179,6 +174,40 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		p, err := switchToNew(m, be, execArgs(mock, args), dir, resumePath)
 		resumePath = p
 		m.UpgradeFailed(err)
+	}
+}
+
+// stopInChild は `pro-con daemon --stop` を別のプロセスで走らせて待つ。画面を ctrl+c で閉じても (待たずに閉じても)、
+// 止める処理は子が最後まで続ける (画面のプロセスの中で止めると、閉じた瞬間に途中で切れる)。子の出力は状態の置き場の stop.log へ
+// (画面が先に閉じるとパイプが切れて子が書けなくなるので、パイプにしない)。
+func stopInChild(ctx context.Context, dir string) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	logPath := filepath.Join(dir, "stop.log")
+	f, err := os.Create(logPath)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(exe, "daemon", "--stop")
+	cmd.Stdout, cmd.Stderr = f, f
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // 端末の割り込みを子へ届けない
+	if err := cmd.Start(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait(); _ = f.Close() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			out, _ := os.ReadFile(logPath)
+			return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
+		}
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("止める処理が時間内に終わらない (子はまだ続けている。結果は %s)", logPath)
 	}
 }
 

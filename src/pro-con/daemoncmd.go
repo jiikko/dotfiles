@@ -59,6 +59,7 @@ func runDaemon(args []string, dir, projects string, repos map[string]string, std
 			for _, n := range notes {
 				_, _ = fmt.Fprintf(stdout, "%s %s\n", time.Now().Format("15:04:05"), n)
 			}
+			daemon.WriteStopResult(dir, err)
 			if err != nil {
 				_, _ = fmt.Fprintln(stderr, "pro-con daemon: 止める途中で:", err)
 				return 1

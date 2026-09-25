@@ -83,37 +83,50 @@ func TestShutdownReportsStopFailure(t *testing.T) {
 	}
 }
 
-// 動いている daemon には止める印を置いて、止まる (ロックが外れる) まで待つ。動いていなければ false を返す。
+// 動いている daemon には止める印を置いて、止まる (ロックが外れる) まで待ち、daemon が書いた結果を返す。動いていなければ false を返す。
 func TestRequestStop(t *testing.T) {
 	dir := t.TempDir()
 	if running, err := RequestStop(context.Background(), dir, time.Second); running || err != nil {
 		t.Fatalf("daemon が居ないのに居る扱い: %v %v", running, err)
 	}
-	unlock, err := Lock(dir) // 動いている daemon の形
-	if err != nil {
-		t.Fatal(err)
-	}
-	done := make(chan error, 1)
-	go func() { _, err := RequestStop(context.Background(), dir, 10*time.Second); done <- err }()
-	for i := 0; !StopRequested(dir); i++ { // daemon の側: 印を見つけたら止めて抜ける
-		if i > 250 {
-			t.Fatal("止める印が 5 秒たっても置かれない")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	// 否定の確認 (起きないことに待つ条件は無いので時間で見る): daemon がロックを持っている間は待ちを抜けない
-	select {
-	case err := <-done:
-		t.Fatalf("daemon が止まる前に待ちを抜けた: %v", err)
-	case <-time.After(300 * time.Millisecond):
-	}
-	unlock()
-	if err := <-done; err != nil {
-		t.Fatalf("daemon が止まったのに待ちが終わらない: %v", err)
+	for _, tc := range []struct {
+		name   string
+		result func() // daemon が抜ける前にすること
+		ok     bool
+	}{
+		{"止め終えた", func() { WriteStopResult(dir, nil) }, true},
+		{"止めきれなかった", func() { WriteStopResult(dir, errors.New("1 本の PG を止められなかった")) }, false},
+		{"結果を書かずに抜けた (SIGTERM 等)", func() {}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			unlock, err := Lock(dir) // 動いている daemon の形
+			if err != nil {
+				t.Fatal(err)
+			}
+			done := make(chan error, 1)
+			go func() { _, err := RequestStop(context.Background(), dir, 10*time.Second); done <- err }()
+			for i := 0; !StopRequested(dir); i++ { // daemon の側: 印を見つけたら止めて抜ける
+				if i > 250 {
+					t.Fatal("止める印が 5 秒たっても置かれない")
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			// 否定の確認 (起きないことに待つ条件は無いので時間で見る): daemon がロックを持っている間は待ちを抜けない
+			select {
+			case err := <-done:
+				t.Fatalf("daemon が止まる前に待ちを抜けた: %v", err)
+			case <-time.After(300 * time.Millisecond):
+			}
+			tc.result()
+			unlock()
+			if err := <-done; (err == nil) != tc.ok {
+				t.Fatalf("daemon の結果を読み違えた: %v", err)
+			}
+		})
 	}
 }
 
-// 時間内に止まらなければ ErrStopTimeout。印は残す (daemon が後で見つけて止める)。
+// 時間内に止まらなければ ErrStopTimeout。止める印は取り下げる (画面が閉じた後で daemon が止めに入らないように)。
 func TestRequestStopTimeout(t *testing.T) {
 	dir := t.TempDir()
 	unlock, err := Lock(dir)
@@ -124,7 +137,91 @@ func TestRequestStopTimeout(t *testing.T) {
 	if _, err := RequestStop(context.Background(), dir, 300*time.Millisecond); !errors.Is(err, ErrStopTimeout) {
 		t.Fatalf("止まらない daemon を待ち切らない: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, StopRequestFile)); err != nil {
-		t.Fatalf("止める印が残っていない: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, StopRequestFile)); !os.IsNotExist(err) {
+		t.Fatalf("止める印を取り下げていない: %v", err)
+	}
+}
+
+// 起動した直後でまだ記録に無い PG も、一覧に出たら記録に載せてから止める (止め漏らして、daemon の居ないところで走らせない)。
+func TestShutdownStopsJustLaunchedPG(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 1)
+	l := &fakeLauncher{}
+	d := newDaemon(t, dir, l, nil)
+	if _, err := d.Tick(context.Background()); err != nil { // 起動 (一覧にはまだ出ていない = 記録に無い)
+		t.Fatal(err)
+	}
+	calls := 0
+	d.List = func(context.Context) ([]agents.Session, error) {
+		calls++
+		if calls < 3 { // 止めに入ってからしばらく一覧に出ない
+			return nil, nil
+		}
+		return []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}, nil
+	}
+	if _, err := d.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if c := states(t, dir)["C-001"]; len(l.stops) != 1 || c.State != card.Planned || !c.Stopped {
+		t.Fatalf("起動した直後の PG を止め漏らした: stops=%v %v %v", l.stops, c.State, c.Stopped)
+	}
+}
+
+// 止める直前に PG が置いた質問は、止める前に適用する (作業中のまま分解済みへ戻して、次の起動で除けて失わない)。
+func TestShutdownAppliesPendingRequests(t *testing.T) {
+	r := newCrashRig(t)
+	if _, err := store.Submit(r.dir, store.Request{Kind: "ask", CardID: "C-001", Question: "赤か青か"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.d.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if c := states(t, r.dir)["C-001"]; c.State != card.Waiting || c.Wait.Question != "赤か青か" {
+		t.Fatalf("止める直前に置いた質問を失った: %v %q", c.State, c.Wait.Question)
+	}
+}
+
+// 落ちて自動の再開を待っている PG (一覧に pid 無し) は、戻るのを待ってから止める。戻らなければ列を変えずに止めきれなかったと返す。
+func TestShutdownWaitsForAutoRestart(t *testing.T) {
+	for _, comesBack := range []bool{true, false} {
+		r := newCrashRig(t)
+		calls := 0
+		r.d.List = func(context.Context) ([]agents.Session, error) {
+			calls++
+			s := r.ss[0]
+			if calls < 3 || !comesBack {
+				s.PID = 0
+			}
+			return []agents.Session{s}, nil
+		}
+		_, err := r.d.Shutdown(context.Background())
+		c := states(t, r.dir)["C-001"]
+		if comesBack && (err != nil || len(r.l.stops) != 1 || !c.Stopped) {
+			t.Fatalf("戻った PG を止めない: err=%v stops=%v Stopped=%v", err, r.l.stops, c.Stopped)
+		}
+		if !comesBack && (err == nil || len(r.l.stops) != 0 || c.State != card.Running || c.Stopped) {
+			t.Fatalf("戻らない PG を止めた扱いにした: err=%v stops=%v %v Stopped=%v", err, r.l.stops, c.State, c.Stopped)
+		}
+	}
+}
+
+// 再開の結果が分からないカード (印が残っている) は、立っていれば取り込んで止める。印を消して二重に再開させない。
+func TestShutdownStopsUnconfirmedResume(t *testing.T) {
+	r := newCrashRig(t)
+	r.l.resumeFail = true
+	for _, q := range []store.Request{{Kind: "ask", CardID: "C-001", Question: "q"}, {Kind: "answer", CardID: "C-001", Answer: "a"}} {
+		if _, err := store.Submit(r.dir, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t1 := t0.Add(time.Minute)
+	r.d.Now = func() time.Time { return t1 }
+	r.tick(t) // 再開が失敗と返る (印が残る)
+	r.ss = []agents.Session{{ID: "db1e", SessionID: "S2", PID: 60, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t1.Add(time.Second).UnixMilli()}}
+	if _, err := r.d.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if c := states(t, r.dir)["C-001"]; len(r.l.stops) != 1 || r.l.stops[0] != "db1e" || c.Launching != "" {
+		t.Fatalf("結果の分からない再開で立った PG を止めない: stops=%v Launching=%q", r.l.stops, c.Launching)
 	}
 }

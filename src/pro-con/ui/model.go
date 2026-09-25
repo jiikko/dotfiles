@@ -198,7 +198,7 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 		m.stopping, m.stopErr = false, msg.err
 		return m, tea.Quit
 	case tea.KeyPressMsg:
-		if m.stopping { // 止め終えるまで待つ。ctrl+c だけは待たずに閉じる (止めるのは daemon が続ける)
+		if m.stopping { // 止め終えるまで待つ。ctrl+c だけは待たずに閉じる (止める処理は別プロセスの pro-con daemon --stop が続ける)
 			if msg.String() == "ctrl+c" {
 				return m, tea.Quit
 			}
