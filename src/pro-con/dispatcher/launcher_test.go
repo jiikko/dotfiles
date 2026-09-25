@@ -23,12 +23,13 @@ func TestLauncherArgsPassOnlyLanguage(t *testing.T) {
 	if settings != `{"language":"日本語"}` {
 		t.Fatalf("--settings の中身 = %q (言語だけのはず)", settings)
 	}
-	start := startArgs("pg-1", "依頼", settings)
+	l := ExecLauncher{UserSettings: p}
+	start := l.startArgs("pg-1", "依頼")
 	want := []string{"--bg", "-w", "pg-1", "-n", "pg-1", "--setting-sources", "project,local", "--settings", `{"language":"日本語"}`, "依頼"}
 	if !slices.Equal(start, want) {
 		t.Fatalf("起動の引数 = %q\nwant %q", start, want)
 	}
-	resume := resumeArgs("sid", "回答", settings)
+	resume := l.resumeArgs("sid", "回答")
 	want = []string{"--bg", "--resume", "sid", "--setting-sources", "project,local", "--settings", `{"language":"日本語"}`, "回答"}
 	if !slices.Equal(resume, want) {
 		t.Fatalf("再開の引数 = %q\nwant %q", resume, want)
@@ -46,14 +47,14 @@ func TestLauncherArgsOmitSettingsWithoutLanguage(t *testing.T) {
 		"空":           writeSettings(t, `{"language": "  "}`),
 	}
 	for name, p := range cases {
-		s := languageSettings(p)
-		if s != "" {
+		if s := languageSettings(p); s != "" {
 			t.Errorf("%s: languageSettings = %q (渡さないはず)", name, s)
 		}
-		if args := startArgs("n", "p", s); slices.Contains(args, "--settings") {
+		l := ExecLauncher{UserSettings: p}
+		if args := l.startArgs("n", "p"); slices.Contains(args, "--settings") {
 			t.Errorf("%s: 起動の引数に --settings が付いた: %q", name, args)
 		}
-		if args := resumeArgs("sid", "t", s); slices.Contains(args, "--settings") {
+		if args := l.resumeArgs("sid", "t"); slices.Contains(args, "--settings") {
 			t.Errorf("%s: 再開の引数に --settings が付いた: %q", name, args)
 		}
 	}

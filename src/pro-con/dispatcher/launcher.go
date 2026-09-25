@@ -30,7 +30,7 @@ type ExecLauncher struct{ UserSettings string }
 const launchTimeout = 30 * time.Second
 
 func (l ExecLauncher) Start(ctx context.Context, repoPath, name, prompt string) (string, error) {
-	out, err := runClaude(ctx, repoPath, startArgs(name, prompt, languageSettings(l.UserSettings))...)
+	out, err := runClaude(ctx, repoPath, l.startArgs(name, prompt)...)
 	if err != nil {
 		return "", err
 	}
@@ -43,7 +43,7 @@ func (l ExecLauncher) Resume(ctx context.Context, stopID, sessionID, cwd, text s
 			return "", fmt.Errorf("claude stop %s: %w", stopID, err)
 		}
 	}
-	out, err := runClaude(ctx, cwd, resumeArgs(sessionID, text, languageSettings(l.UserSettings))...)
+	out, err := runClaude(ctx, cwd, l.resumeArgs(sessionID, text)...)
 	if err != nil {
 		return "", err
 	}
@@ -57,12 +57,12 @@ func (ExecLauncher) Stop(ctx context.Context, id string) error {
 	return nil
 }
 
-func startArgs(name, prompt, settings string) []string {
-	return withSettings([]string{"--bg", "-w", name, "-n", name, "--setting-sources", "project,local"}, settings, prompt)
+func (l ExecLauncher) startArgs(name, prompt string) []string {
+	return withSettings([]string{"--bg", "-w", name, "-n", name, "--setting-sources", "project,local"}, languageSettings(l.UserSettings), prompt)
 }
 
-func resumeArgs(sessionID, text, settings string) []string {
-	return withSettings([]string{"--bg", "--resume", sessionID, "--setting-sources", "project,local"}, settings, text)
+func (l ExecLauncher) resumeArgs(sessionID, text string) []string {
+	return withSettings([]string{"--bg", "--resume", sessionID, "--setting-sources", "project,local"}, languageSettings(l.UserSettings), text)
 }
 
 // withSettings は --settings を位置引数 (prompt) の前に挟む。settings が空なら付けない。
