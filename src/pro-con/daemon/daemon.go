@@ -259,7 +259,6 @@ func (d *Daemon) trackDead(now time.Time, ss []agents.Session) error {
 	return nil
 }
 
-// restartsSince は、記録の行 (o) より後・最後に数えた落ちた時刻より後に、transcript へ出た再開の文の時刻を返す。
 func firstNonEmpty(a, b string) string {
 	if a != "" {
 		return a
@@ -271,6 +270,7 @@ func firstNonEmpty(a, b string) string {
 // cwd で session を照らしてよいのはこの下だけ (repo root で照らすと、同じ repo の他の session に当たる)
 const worktreeMarker = "/.claude/worktrees/pc-"
 
+// restartsSince は、記録の行 (o) より後・最後に数えた落ちた時刻より後に、transcript へ出た再開の文の時刻を返す。
 func (d *Daemon) restartsSince(c card.Card, o live.Owned, sessionID string) []time.Time {
 	if d.Transcript == nil {
 		return nil
@@ -346,7 +346,7 @@ func (d *Daemon) stopCrashing(ctx context.Context, now time.Time, ss []agents.Se
 		case listed:
 			how = "止めなかった (一覧の session が記録と一致しない。別の session か、外から操作された疑い)"
 		default:
-			// 一覧に無い: 死んで Claude Code の自動の再開を待っているのかもしれない (約 25 秒。425 結果 1)。最後に落ちてから restartWait 待つ
+			// 一覧に無い: 死んで Claude Code の自動の再開を待っているのかもしれない (約 25 秒。425 結果 1)。落ちたのを最初に見た時刻 (DeadSince) から restartWait 待つ
 			if c.DeadSince.IsZero() || now.Sub(c.DeadSince) < restartWait {
 				continue
 			}
