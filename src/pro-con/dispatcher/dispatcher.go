@@ -651,9 +651,9 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		case card.Planned:
 			// 順番 (issue 468) は初めての起動だけを止める。一度起動したカードの再開・起動の結果が分からないカードは止めない (立っているかもしれない)
 			if b := card.Blockers(st.Cards, c); len(b) > 0 && c.Session == "" && c.Launching == "" {
-				text := strings.Join(b, ", ") + " の完了を待つ (順番)"
-				if n := len(c.History); n == 0 || c.History[n-1].Text != text { // 変わったときだけ書く (Tick ごとに記録を伸ばさない)
-					if err := d.note(c.ID, now, text); err != nil {
+				text := afterWaitPrefix + strings.Join(b, ", ") + " の完了を待つ"
+				if lastAfterWait(c) != text { // 変わったときだけ書く (Tick ごとに記録を伸ばさない)
+					if err := d.update(c.ID, func(cc *card.Card) { cc.History = append(cc.History, card.Event{At: now, Text: text}) }); err != nil {
 						return notes, err
 					}
 					notes = append(notes, ev(eventlog.KindHold, c.ID, "", c.ID+": "+text))
@@ -779,6 +779,20 @@ func (d *Dispatcher) reject(id string, now time.Time, how string, launchErr erro
 		text = id + ": " + why
 	})
 	return ev(eventlog.KindLaunch, id, "", text), err
+}
+
+// afterWaitPrefix は順番で待たせた理由の文の頭 (issue 468)。頭で探す (btw の答えは直近の出来事を文の途中に引用する)。
+const afterWaitPrefix = "順番: "
+
+// lastAfterWait は履歴で最後に書いた順番の待ちの文 (無ければ空)。🚨 最後の 1 行とは比べない: 待っている間に btw・追加オーダーが
+// 履歴に入ると、同じ待ちを書き直す
+func lastAfterWait(c card.Card) string {
+	for i := len(c.History) - 1; i >= 0; i-- {
+		if strings.HasPrefix(c.History[i].Text, afterWaitPrefix) {
+			return c.History[i].Text
+		}
+	}
+	return ""
 }
 
 // resumes は同じ session を再開するカードか (回答・テストの結果・差し戻しを受けた / 追加オーダーを届ける)。

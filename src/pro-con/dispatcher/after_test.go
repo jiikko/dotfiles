@@ -47,7 +47,7 @@ func TestDispatchWaitsForPredecessor(t *testing.T) {
 	if !slices.Equal(l.starts, []string{"pc-c-001"}) {
 		t.Fatalf("前のカードが終わる前に後のカードを起動した: %v", l.starts)
 	}
-	if !hasNote(notes, eventlog.KindHold, "C-002: C-001 の完了を待つ") {
+	if !hasNote(notes, eventlog.KindHold, "C-002: 順番: C-001 の完了を待つ") {
 		t.Fatalf("待っている理由を出来事の記録に書かない: %q", notes)
 	}
 	again, err := d.Tick(context.Background())
@@ -57,12 +57,19 @@ func TestDispatchWaitsForPredecessor(t *testing.T) {
 	c := states(t, dir)["C-002"]
 	n := 0
 	for _, e := range c.History {
-		if strings.Contains(e.Text, "C-001 の完了を待つ") {
+		if strings.HasPrefix(e.Text, "順番: C-001 の完了を待つ") {
 			n++
 		}
 	}
 	if n != 1 || hasNote(again, eventlog.KindHold, "C-001 の完了を待つ") {
 		t.Fatalf("待っている理由を Tick ごとに書き足した: 履歴 %d 回 / %q", n, again)
+	}
+	// 待っている間に別の出来事 (btw) が履歴に入っても、同じ待ちは書き直さない
+	if _, err := store.Submit(dir, store.Request{Kind: "btw", CardID: "C-002", Question: "今どう?"}); err != nil {
+		t.Fatal(err)
+	}
+	if notes, err := d.Tick(context.Background()); err != nil || hasNote(notes, eventlog.KindHold, "C-001 の完了を待つ") {
+		t.Fatalf("別の出来事の後に同じ待ちを書き直した: %q %v", notes, err)
 	}
 	if err := store.Update(dir, func(s *store.State) error {
 		for i := range s.Cards {
