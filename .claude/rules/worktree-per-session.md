@@ -32,6 +32,9 @@
 - 🚨 **push が成功したことを確認するまで worktree を消さない**。`push; pull; worktree remove` を `;` で
   繋ぐと、push が non-fast-forward で弾かれても後続が走り、**未 push の commit を持つ worktree を消す**
   (実測 2026-09-05 retro 266: 4 commit が一時的に参照なしになり、hash から復元した)。`&&` で繋ぐ
+  - 🚨 `&&` でも、push の出力を `| tail` に通すと rc は tail のもので、同じ事故になる (retro 450)。push の rc は `> log 2>&1; rc=$?` で直接取る。
+    この形 (push をパイプに通したまま worktree / branch を消す 1 本の Bash) は PreToolUse の `_claude/hooks/deny-piped-push-then-destroy.sh` が止める
+    (字面で見る粗い判定。検出しない形と、分かっていて受ける偽陽性は hook の冒頭)
 - 🚨 **本体への pull / worktree remove は `git -C ~/dotfiles` で対象を明示する**。worktree の cwd で
   `git pull` を打つと detached HEAD で必ず失敗する (同日 3 回)。`commit-with-pathspec.md` の
   「worktree からの merge / push も cwd 依存」と同じ罠の pull 版
