@@ -42,6 +42,7 @@ const (
 	inputBtw
 	inputNew
 	inputIssue // issue の一覧で選んだものへの補足 (空でよい。picker.go)
+	inputQuit  // 終了 (quit と打って enter したときだけ閉じる。quit.go)
 )
 
 type tickMsg struct{}
@@ -75,8 +76,11 @@ type Model struct {
 	inputKind   inputKind
 	orderKind   card.OrderKind
 
-	flash  string
-	sticky string // 消すまで残す通知 (捨てた書きかけの文など。flash は次の通知で消えるので置かない)。ボードの esc で消す
+	flash string
+	// flashShown / flashAt は、今の flash がいつから出ているか (flashTTL で消す。tick が見る)
+	flashShown string
+	flashAt    time.Time
+	sticky     string // 消すまで残す通知 (捨てた書きかけの文など。flash は次の通知で消えるので置かない)。ボードの esc で消す
 
 	// カードの移動の演出 (motion.go)。now は時計 (テストで差し替える)
 	now       func() time.Time
@@ -85,7 +89,6 @@ type Model struct {
 	slides    map[panel]*slide // 下端の板の開閉の演出 (slide.go)
 	// カードの詳細の引き出し (drawer.go)。drawerCard は閉じる途中も残す (逆再生で本文が見えている必要がある)
 	cursor     cursorGlide // 選択中のカードを囲む枠 (cursor.go)
-	quitAsk    bool        // 終了の確認ダイアログを出している (quit.go)
 	stopping   bool        // 終了のために backend (daemon と PG) を止めている最中 (quit.go)
 	stopErr    error       // 止めきれなかった理由 (終了後に main が出す)
 	attaching  bool        // attach の照合を裏で待っている
@@ -116,12 +119,28 @@ func New(be backend.Backend, repos []backend.Repo) *Model {
 	return m
 }
 
-// Notify は起動時の警告など、画面の外から通知行へ文面を足す (上書きしない: 引き継ぎで捨てた書きかけの文などを消さない)。
+// Notify は起動時の警告など、画面の外から通知を足す。操作の結果 (flash) と違って時間では消さず、esc で消すまで残す
+// (上書きしない: 引き継ぎで捨てた書きかけの文などを消さない)。
 func (m *Model) Notify(s string) {
-	if m.flash != "" {
-		s = m.flash + " / " + s
+	if m.sticky != "" {
+		s = m.sticky + " / " + s
 	}
-	m.flash = s
+	m.sticky = s
+}
+
+// flashTTL は操作の結果の通知を出しておく長さ (消す仕組みが無く、次の操作まで古い通知が残っていた)。
+const flashTTL = 6 * time.Second
+
+// expireFlash は出てから flashTTL たった通知を消す (tick ごとに呼ぶ)。
+func (m *Model) expireFlash() {
+	now := m.now()
+	if m.flash != m.flashShown {
+		m.flashShown, m.flashAt = m.flash, now
+		return
+	}
+	if m.flash != "" && now.Sub(m.flashAt) >= flashTTL {
+		m.flash, m.flashShown = "", ""
+	}
 }
 
 func tick() tea.Cmd { return tea.Tick(TickInterval, func(time.Time) tea.Msg { return tickMsg{} }) }
@@ -146,6 +165,7 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 	}()
 	switch msg := msg.(type) {
 	case tickMsg:
+		m.expireFlash()
 		m.setSnap(m.be.Poll())
 		tab := m.tab
 		m.ensureTab()
@@ -175,7 +195,7 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 		}
 		// 照合を待つ間に入力欄を開いた・終了の確認を出した・別のカードを選んだなら、端末を明け渡さない (書いている途中の画面を奪わない)。
 		// 引き出し・? の表・PG の一覧を開いているだけなら明け渡す (戻れば同じ画面に戻る)
-		if m.mode != modeBoard || m.quitAsk || m.selected != msg.cardID {
+		if m.mode != modeBoard || m.selected != msg.cardID {
 			m.flash = "attach を取りやめた (待っている間に画面が変わった)"
 			return m, nil
 		}
@@ -203,9 +223,6 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 				return m, tea.Quit
 			}
 			return m, nil
-		}
-		if m.quitAsk {
-			return m, m.handleQuitKey(msg.String())
 		}
 		if m.legend {
 			return m, m.handleLegendKey(msg.String())
@@ -425,10 +442,14 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		return m.requestQuit()
 	case "ctrl+r": // 新版へ切り替える (ライブアップグレード。新版があるときだけ)
 		return m.requestUpgrade()
+	case "Q":
+		return m.requestQuit()
 	case "q":
-		// q は「今の板を 1 段戻る」(docs/glogx-ui-guide.md §1)。開いている板が無ければ終了
+		// q は「今の板を 1 段戻る」(docs/glogx-ui-guide.md §1) だけ。開いている板が無くても終了しない
+		// (2026-09-25 にユーザーの依頼で廃止。終了は Q → quit だけ。quit.go)
 		if !m.closeTop() {
-			return m.requestQuit()
+			m.flash = "終了は Q を押して quit と打つ"
+			return nil
 		}
 	case "esc":
 		if !m.closeTop() {
@@ -549,6 +570,9 @@ func (m *Model) handleInputKey(k tea.KeyPressMsg) tea.Cmd {
 		m.mode = modeBoard
 		m.flash = "入力を取り消した"
 	case "enter":
+		if m.inputKind == inputQuit {
+			return m.submitQuit()
+		}
 		m.submit()
 	case "tab":
 		if m.inputKind == inputOrder {
@@ -625,6 +649,8 @@ func (m *Model) submit() {
 		cmd = backend.NewRequest{Repo: m.tabRepo(), Text: text}
 	case inputIssue:
 		cmd = backend.NewRequest{Repo: m.picker.repo, Text: text, Issue: m.picker.target}
+	case inputQuit: // enter は submitQuit が受ける (ここへは来ない)
+		return
 	}
 	// 方針変更は PG を止めて指示を差し替える (途中の作業を止める) ので、送る前に確認する
 	if o, ok := cmd.(backend.AddOrder); ok && o.Kind == card.OrderRedirect && text != "" {

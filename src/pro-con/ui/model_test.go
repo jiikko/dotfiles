@@ -347,14 +347,14 @@ func TestAttachAbortsWhenScreenChanged(t *testing.T) {
 	}
 }
 
-// 照合を待つ間に別のカードを選んだ・終了の確認を出したときも、端末を明け渡さない。
+// 照合を待つ間に別のカードを選んだ・終了の入力欄を開いたときも、端末を明け渡さない。
 func TestAttachAbortsOnSelectionOrQuit(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		change func(*Model)
 	}{
 		{"別のカードを選んだ", func(m *Model) { press(m, "down") }},
-		{"終了の確認を出した", func(m *Model) { press(m, "q") }},
+		{"終了の入力欄を開いた", func(m *Model) { press(m, "Q") }},
 	} {
 		m := New(newSpy(), nil)
 		press(m, "right") // 質問待ちの W1 (下に W2 がある)

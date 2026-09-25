@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"pro-con/daemon"
 	"strings"
 	"testing"
 	"time"
@@ -84,5 +85,23 @@ func TestExecArgsKeepsMock(t *testing.T) {
 	}
 	if got := execArgs(false, nil); len(got) != 0 {
 		t.Fatalf("本物の引数に余計なものが付いた: %q", got)
+	}
+}
+
+// 画面を開いたとき、daemon が動いていなければ起動し、動いていれば起動しない。
+func TestStartDaemonIfIdle(t *testing.T) {
+	dir := t.TempDir()
+	spawned := 0
+	spawn := func(string) error { spawned++; return nil }
+	if started, err := startDaemonIfIdle(dir, spawn); !started || err != nil || spawned != 1 {
+		t.Fatalf("daemon が居ないのに起動しない: started=%v err=%v spawned=%d", started, err, spawned)
+	}
+	unlock, err := daemon.Lock(dir) // daemon が動いている形
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	if started, err := startDaemonIfIdle(dir, spawn); started || err != nil || spawned != 1 {
+		t.Fatalf("daemon が動いているのに起動した: started=%v err=%v spawned=%d", started, err, spawned)
 	}
 }

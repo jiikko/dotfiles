@@ -13,6 +13,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -26,6 +27,7 @@ import (
 
 	"pro-con/backend"
 	"pro-con/config"
+	"pro-con/daemon"
 	"pro-con/fake"
 	"pro-con/live"
 	"pro-con/ui"
@@ -105,6 +107,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	for i, r := range repos {
 		scopes[i] = backend.Repo{Name: r.Name, Path: r.Path}
 	}
+	var notes []string // 起動時に画面へ出す知らせ
 	// 模擬と本物で状態ファイルの置き場所を分ける (模擬のカードが本物の記録に混ざらないように。issue 424)
 	var be backend.Backend
 	dir := liveDir(home)
@@ -114,6 +117,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	} else {
 		lb := live.New(scopes, home, dir)
 		lb.SetStopper(func(ctx context.Context) error { return stopInChild(ctx, dir) })
+		// 画面を開いたら daemon も立てる (閉じると止める。2026-09-25 にユーザーが決めた形。415 の「TUI と常駐プロセス」)
+		if started, err := startDaemonIfIdle(dir, spawnDaemon); err != nil {
+			notes = append(notes, "daemon を起動できない: "+err.Error()+" (手で起動する: pro-con daemon)")
+		} else if started {
+			notes = append(notes, "daemon を起動した (ログ: "+filepath.Join(dir, "daemon.log")+")")
+		}
 		ctx, cancel := context.WithCancel(context.Background())
 		lb.Start(ctx)
 		defer func() { cancel(); lb.Wait() }() // 読み直しが止まるのを待ってから抜ける (claude の子プロセスを残さない)
@@ -122,7 +131,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// ライブアップグレードで引き継いだ状態。読んだら環境変数は消す (エディタ・claude などの子プロセスへ漏らさない)
 	resumePath := takeResumeEnv()
 	var uiData []byte
-	notes := []string{}
 	if resumePath != "" {
 		if st, err := upgrade.Load(resumePath); err != nil {
 			// 読めなかったファイルは消さない (版が違うなら古い版で読める)。パスを出して、要らなければ人が消せるようにする
@@ -175,6 +183,41 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		resumePath = p
 		m.UpgradeFailed(err)
 	}
+}
+
+// startDaemonIfIdle は、daemon が動いていなければ spawn で起動する (動いていれば何もしない)。
+// 確かめてから起動するまでの間に別の画面が起動しても、2 つ目の daemon はロックを取れずに抜けるだけ。
+func startDaemonIfIdle(dir string, spawn func(dir string) error) (bool, error) {
+	unlock, err := daemon.Lock(dir)
+	if errors.Is(err, daemon.ErrRunning) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	unlock()
+	return true, spawn(dir)
+}
+
+// spawnDaemon は `pro-con daemon` を画面とは別のプロセスグループで起動する (画面を閉じても、ctrl+c が届いても道連れにしない。
+// 止めるのは終了のときの `daemon --stop`)。出力は状態の置き場の daemon.log へ足す (画面より長く生きるのでパイプにしない)。
+func spawnDaemon(dir string) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "daemon.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	cmd := exec.Command(exe, "daemon")
+	cmd.Stdout, cmd.Stderr = f, f
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	return cmd.Process.Release()
 }
 
 // stopInChild は `pro-con daemon --stop` を別のプロセスで走らせて待つ。画面を ctrl+c で閉じても (待たずに閉じても)、

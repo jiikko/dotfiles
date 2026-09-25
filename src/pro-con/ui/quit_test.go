@@ -9,68 +9,56 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/charmbracelet/x/ansi"
-
-	"pro-con/card"
 )
 
-// 作業中・質問待ちのカードがあるとき、q / ctrl+c はすぐ終了せず、中央に確認のダイアログを出す。
-// 入力欄・y/N 確認・issue の板の ctrl+c も同じ確認を通る。
-func TestQuitAsksWhenCardsAreBusy(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		setup func(*Model)
-		key   string
-	}{
-		{"ボードの q", func(*Model) {}, "q"},
-		{"ボードの ctrl+c", func(*Model) {}, "ctrl+c"},
-		{"入力欄の ctrl+c", func(m *Model) { press(m, "n") }, "ctrl+c"},
-		{"issue の板の ctrl+c", func(m *Model) { m.picker.open = true }, "ctrl+c"},
-	} {
+// quitBy は Q で終了の入力欄を開き、text を打って enter する。最後のコマンドを返す。
+func quitBy(m *Model, text string) tea.Cmd {
+	press(m, "Q")
+	typeText(m, text)
+	return press(m, "enter")
+}
+
+// 終了は Q で開く入力欄に quit と打って enter したときだけ。それ以外の文字・空・esc では閉じない (打ち間違いで daemon と PG を止めない)。
+func TestQuitOnlyByTypingQuit(t *testing.T) {
+	for _, text := range []string{"", "q", "quit!", "Quit", "yes"} {
 		m := New(newSpy(), nil)
-		tc.setup(m)
-		if isQuit(press(m, tc.key)) {
-			t.Fatalf("%s: 作業中のカードがあるのに確認なしで終了した", tc.name)
-		}
-		if !m.quitAsk || !strings.Contains(ansi.Strip(m.render()), "本当に終了しますか") {
-			t.Fatalf("%s: 確認のダイアログが出ない", tc.name)
+		if isQuit(quitBy(m, text)) || m.mode != modeBoard {
+			t.Fatalf("%q で閉じた / 入力欄が残った: mode=%v", text, m.mode)
 		}
 	}
-}
-
-// 確認では y / Enter / もう一度の ctrl+c で終了し、それ以外は取り消し (知らないキーで終了しない)。
-func TestQuitDialogKeys(t *testing.T) {
-	for _, tc := range []struct {
-		key  string
-		quit bool
-	}{{"y", true}, {"enter", true}, {"ctrl+c", true}, {"n", false}, {"esc", false}, {"j", false}, {"Y", false}} {
-		m := New(newSpy(), nil)
-		press(m, "q")
-		got := isQuit(press(m, tc.key))
-		if got != tc.quit || m.quitAsk {
-			t.Fatalf("確認中の %q: 終了=%v (期待 %v) / まだ確認中=%v", tc.key, got, tc.quit, m.quitAsk)
-		}
-	}
-}
-
-// 動いているカードが無ければ、確認を出さずにすぐ終了する。
-func TestQuitImmediatelyWhenIdle(t *testing.T) {
-	be := newSpy()
-	be.snap.Cards = []card.Card{{ID: "D1", State: card.Done, Ending: card.EndAnswered}, {ID: "P1", State: card.Planned}}
-	m := New(be, nil)
-	if !isQuit(press(m, "q")) || m.quitAsk {
-		t.Fatal("動いているカードが無いのに確認を出した")
-	}
-}
-
-// ダイアログの文は板の幅で切れない (切れると、何件動いているか・何が起きるかが読めない)。
-func TestQuitDialogFitsWithoutTruncation(t *testing.T) {
 	m := New(newSpy(), nil)
-	press(m, "q")
-	out := ansi.Strip(m.render())
-	for _, want := range []string{"作業中 1 枚・質問待ち 2 枚", "本当に終了しますか?", "終了すると進み具合は消えます"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("ダイアログに %q が切れずに出ていない:\n%s", want, out)
-		}
+	press(m, "Q")
+	if m.mode != modeInput || !strings.Contains(ansi.Strip(m.render()), "quit と打って") {
+		t.Fatal("Q で終了の入力欄が開かない")
+	}
+	if isQuit(press(m, "esc")) || m.mode != modeBoard {
+		t.Fatal("esc で閉じた / 取り消せない")
+	}
+	if !isQuit(quitBy(New(newSpy(), nil), "quit")) {
+		t.Fatal("quit と打って enter しても閉じない")
+	}
+}
+
+// q と ctrl+c の 1 打では閉じない。ctrl+c は終了の入力欄を開くだけ。入力の途中の ctrl+c は書きかけの文を消さない。
+func TestSingleKeysDoNotQuit(t *testing.T) {
+	m := New(newSpy(), nil)
+	if isQuit(press(m, "q")) || isQuit(press(m, "ctrl+c")) || m.mode != modeInput || m.inputKind != inputQuit {
+		t.Fatalf("q / ctrl+c の 1 打で閉じた / ctrl+c で終了の入力欄が開かない: mode=%v", m.mode)
+	}
+	m = New(newSpy(), nil)
+	press(m, "n")
+	typeText(m, "書きかけ")
+	if isQuit(press(m, "ctrl+c")) || m.inputKind != inputNew || m.line.String() != "書きかけ" {
+		t.Fatalf("入力の途中の ctrl+c で書きかけを消した: kind=%v line=%q", m.inputKind, m.line.String())
+	}
+}
+
+// 終了の入力欄には、止める PG の本数を出す (本物のモードでは daemon と PG を止めて閉じる)。
+func TestQuitLabelShowsBusyPGs(t *testing.T) {
+	m := New(&stopSpy{spy: newSpy()}, nil) // 作業中 1・質問待ち 2
+	press(m, "Q")
+	if got := ansi.Strip(m.render()); !strings.Contains(got, "作業中 1 本・質問待ち 2 本") {
+		t.Fatal("終了の入力欄に止める PG の本数が出ない")
 	}
 }
 
@@ -100,9 +88,8 @@ func runStop(t *testing.T, m *Model, cmd tea.Cmd) tea.Cmd {
 // 本物のモードでは、終了の前に daemon と PG を止める。止めている間は「止めています」を出し、止め終えてから閉じる。
 func TestQuitStopsBackendBeforeClosing(t *testing.T) {
 	be := &stopSpy{spy: newSpy()}
-	be.snap.Cards = []card.Card{{ID: "D1", State: card.Done, Ending: card.EndAnswered}}
 	m := New(be, nil)
-	cmd := press(m, "q")
+	cmd := quitBy(m, "quit")
 	if !m.stopping || !strings.Contains(ansi.Strip(m.render()), "止めています") || be.calls != 0 {
 		t.Fatalf("止めている最中を出さない / 閉じる前に止め終えた扱い: stopping=%v calls=%d", m.stopping, be.calls)
 	}
@@ -111,35 +98,11 @@ func TestQuitStopsBackendBeforeClosing(t *testing.T) {
 	}
 }
 
-// 動いている PG があれば、止める前に確認する。y で止めて閉じ、それ以外は止めない。
-func TestQuitConfirmsBeforeStoppingBusyPGs(t *testing.T) {
-	for _, tc := range []struct {
-		key  string
-		stop bool
-	}{{"y", true}, {"n", false}} {
-		be := &stopSpy{spy: newSpy()} // 作業中 1・質問待ち 2
-		m := New(be, nil)
-		press(m, "q")
-		if !m.quitAsk || !strings.Contains(ansi.Strip(m.render()), "PG と daemon を止めて終了しますか") {
-			t.Fatalf("%s: 動いている PG があるのに確認を出さない", tc.key)
-		}
-		cmd := press(m, tc.key)
-		if tc.stop {
-			if !isQuit(runStop(t, m, cmd)) || be.calls != 1 {
-				t.Fatalf("y で止めて閉じない: calls=%d", be.calls)
-			}
-		} else if cmd != nil && isQuit(cmd) || be.calls != 0 || m.stopping {
-			t.Fatalf("取り消したのに止めた / 閉じた: calls=%d stopping=%v", be.calls, m.stopping)
-		}
-	}
-}
-
 // 止めている間は他のキーを受けない。ctrl+c だけは待たずに閉じる。
 func TestQuitWhileStoppingIgnoresKeys(t *testing.T) {
 	be := &stopSpy{spy: newSpy()}
-	be.snap.Cards = nil
 	m := New(be, nil)
-	press(m, "q")
+	quitBy(m, "quit")
 	if cmd := press(m, "n"); cmd != nil || m.mode != modeBoard || !m.stopping {
 		t.Fatal("止めている間にキーを受けた")
 	}
@@ -151,9 +114,8 @@ func TestQuitWhileStoppingIgnoresKeys(t *testing.T) {
 // 止めきれなかった理由は、閉じた後に main が出せるように残す。
 func TestQuitKeepsStopError(t *testing.T) {
 	be := &stopSpy{spy: newSpy(), err: errors.New("2 本の PG を止められなかった")}
-	be.snap.Cards = nil
 	m := New(be, nil)
-	if !isQuit(runStop(t, m, press(m, "q"))) || m.StopErr() == nil {
+	if !isQuit(runStop(t, m, quitBy(m, "quit"))) || m.StopErr() == nil {
 		t.Fatalf("止めきれなかった理由を残さない: %v", m.StopErr())
 	}
 }

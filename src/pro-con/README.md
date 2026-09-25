@@ -8,7 +8,7 @@ PM (producer) と PG (consumer) を分けて Claude Code を並列に回すた�
 ```sh
 bin/pro-con          # 本物: daemon が書くカードの記録を出す。依頼と回答は受付の箱へ (live。issue 424 / 427)
 bin/pro-con --mock   # 模擬: claude は起動しない。模擬の backend (fake) が状態を進める (動作確認用)
-bin/pro-con daemon   # 本物のモードの dispatcher (受付の箱の適用・PG の起動と再開・記録への登録)。2 つ起動しない。🚨 PG を起動するので利用枠を使う
+bin/pro-con daemon   # (画面を開くと、居なければ画面が起こす) 本物のモードの dispatcher (受付の箱の適用・PG の起動と再開・記録への登録)。2 つ起動しない。🚨 PG を起動するので利用枠を使う
 bin/pro-con daemon --stop  # daemon と、pro-con が起動した PG を止める。作業中のカードは次に daemon を起動したら続きから再開する (画面の終了も同じことをする)
 bin/pro-con card …   # PM / PG が使うカードの操作 (add / plan / ask / answer / review / close)。受付の箱に置くだけで、適用は daemon (issue 427)
 bin/pro-con card guide  # PM の session に渡す指示書 (src/pro-con/pm-guide.md) を出す
@@ -54,7 +54,8 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 | (選択の枠) | 選択中のカードは現在地の色の太い枠で囲む。選択が移ると、枠が元の位置から行き先まで 180ms で滑る (レーンを跨いでも。Excel のセルのカーソルの見え方)。カードの上下には 1 行ずつ空きがあり、枠はそこに描くので隣のカードを隠さない |
 | (案内の行) | カードへの操作と x は、選んでいるカードで効くときだけ明るく、効かないときは暗く出す (r は質問待ちだけ、a は session のあるカードだけ、e / y は issue の紐づいたカードだけ) |
 | ctrl+r | 新版へ切り替える (ライブアップグレード。「新版あり」のときだけ) |
-| q / esc | 開いている板を 1 つ閉じる (PG の一覧 → 詳細)。q は何も開いていなければ終了。ctrl+c も終了。作業中・質問待ちのカードがあれば、どちらも確認のダイアログを挟む。本物のモードでは終了の前に daemon と PG を止め (`daemon --stop` と同じ)、止め終えてから閉じる |
+| q / esc | 開いている板を 1 つ閉じる (PG の一覧 → 詳細)。何も開いていなくても終了しない (2026-09-25 に廃止) |
+| Q | 終了の入力欄を開く。`quit` と打って enter したときだけ閉じる (本物のモードでは daemon と PG を止めてから閉じる。次に開くと続きから再開)。ctrl+c も同じ入力欄を開く (1 打では閉じない) |
 | a | PG の session を開く (今は模擬) |
 | r | 質問待ちのカードに回答する |
 | + | 追加オーダー (tab で 追記 / 方針変更 / 別件)。**方針変更は y/N 確認** (y / enter だけが実行、他のキーは取り消し) |

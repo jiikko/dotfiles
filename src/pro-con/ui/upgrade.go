@@ -211,6 +211,7 @@ func (m *Model) inputTargetChanged(st uiState) string {
 			return "宛先のタブ (" + orDash(st.Tab) + ") が無くなった"
 		}
 	case inputIssue: // 宛先は選んだ issue (状態に入っている)
+	case inputQuit: // 引き継がない (ExportState。入れ替えの後に終了しない)
 	case inputAnswer, inputOrder, inputBtw: // 宛先は選択中のカード
 		if m.selected != st.Selected {
 			return "宛先のカード (" + st.Selected + ") が無くなった"
@@ -242,7 +243,7 @@ type uiState struct {
 // ExportState は引き継ぐ UI の状態。
 func (m *Model) ExportState() ([]byte, error) {
 	return json.Marshal(uiState{Tab: m.tab, Col: m.col, Selected: m.selected, ShowDetail: m.showDetail, ShowSessions: m.showSessions,
-		Input: m.mode == modeInput, InputKind: m.inputKind, OrderKind: m.orderKind, Line: m.line.String(), Cursor: m.line.Cursor(),
+		Input: m.mode == modeInput && m.inputKind != inputQuit, InputKind: m.inputKind, OrderKind: m.orderKind, Line: m.line.String(), Cursor: m.line.Cursor(),
 		Target: m.picker.target, TargetRepo: m.picker.repo})
 }
 

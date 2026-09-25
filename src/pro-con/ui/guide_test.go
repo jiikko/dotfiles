@@ -68,7 +68,7 @@ func isQuit(cmd tea.Cmd) bool {
 	return ok
 }
 
-// q は開いている板を手前から 1 つずつ閉じ、何も開いていなければ終了する。esc は閉じるだけで終了しない (§1 / §3)。
+// q は開いている板を手前から 1 つずつ閉じ、何も開いていなくても終了しない (終了は Q → quit だけ)。esc は閉じるだけで終了しない (§1 / §3)。
 func TestQClosesBoardsBeforeQuitting(t *testing.T) {
 	m := New(newSpy(), nil)
 	press(m, "enter", "s") // 詳細と session の一覧を開く
@@ -81,12 +81,8 @@ func TestQClosesBoardsBeforeQuitting(t *testing.T) {
 	if isQuit(press(m, "esc")) {
 		t.Fatal("esc で終了した")
 	}
-	// 見本には作業中のカードがあるので、終了の前に確認が出る (quit_test.go)
-	if isQuit(press(m, "q")) || !m.quitAsk {
-		t.Fatal("何も開いていないときの q で終了の確認が出ない")
-	}
-	if !isQuit(press(m, "y")) {
-		t.Fatal("確認で y を押しても終了しない")
+	if isQuit(press(m, "q")) || m.mode != modeBoard || !strings.Contains(m.flash, "quit") {
+		t.Fatalf("何も開いていないときの q で終了しかけた / 終了の仕方を知らせない: mode=%v flash=%q", m.mode, m.flash)
 	}
 }
 

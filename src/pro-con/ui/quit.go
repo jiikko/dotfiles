@@ -1,6 +1,6 @@
 package ui
 
-// 終了の確認。作業中・質問待ちのカードがあるときに q / ctrl+c で終了しようとしたら、tuikit/confirm のダイアログを中央に出す。
+// 終了。Q (または ctrl+c) で終了の入力欄を開き、quit と打って enter したときだけ閉じる。
 // 本物のモード (backend.Stopper を持つ backend) は、終了のときに daemon と pro-con が起動した PG を止めてから閉じる
 // (次に daemon を起動したら続きから再開する)。止めている間は「止めています」を出す。
 // ライブアップグレード (ctrl+r) の終了は入れ替えであって終了ではないので、ここを通さない (upgrade.go)。
@@ -8,6 +8,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -41,13 +42,45 @@ func (m *Model) busyCards() (running, waiting int) {
 	return running, waiting
 }
 
-// requestQuit は終了を求める。動いているカードが無ければすぐ終了し、あれば確認を出す。
+// requestQuit は終了の入力欄を開く。閉じるのは、そこへ quit と打って enter したときだけ (2026-09-25 にユーザーが決めた形。
+// q や ctrl+c の 1 打で閉じない: 本物のモードの終了は daemon と PG を止めるので、打ち間違いで止めない)。
 func (m *Model) requestQuit() tea.Cmd {
-	if r, w := m.busyCards(); r+w == 0 {
-		return m.quitNow()
+	if m.mode == modeInput && m.inputKind != inputQuit { // 書きかけの文は消さない
+		m.flash = "終了は Q を押して quit と打つ (書きかけの入力はそのまま)"
+		return nil
 	}
-	m.quitAsk = true
+	m.closeAll()
+	m.startInput(inputQuit)
 	return nil
+}
+
+// closeAll は開いている板を全部閉じる (終了の入力欄を、何かの板の上ではなくボードの上で開く)。
+func (m *Model) closeAll() {
+	m.legend = false
+	m.picker.open = false
+	for m.closeTop() {
+	}
+}
+
+// submitQuit は終了の入力欄の enter。quit と打ったときだけ終了する。それ以外は取り消し。
+func (m *Model) submitQuit() tea.Cmd {
+	text := strings.TrimSpace(m.line.String())
+	m.mode = modeBoard
+	m.line.Reset()
+	if text != "quit" {
+		m.flash = "終了を取り消した (閉じるのは quit と打ったときだけ)"
+		return nil
+	}
+	return m.quitNow()
+}
+
+// quitLabel は終了の入力欄の見出し。
+func (m *Model) quitLabel() string {
+	r, w := m.busyCards()
+	if _, ok := m.be.(backend.Stopper); ok {
+		return fmt.Sprintf("終了するには quit と打って enter (作業中 %d 本・質問待ち %d 本の PG と daemon を止めて閉じる。次に開くと続きから)", r, w)
+	}
+	return "終了するには quit と打って enter (模擬なので進み具合は消える)"
 }
 
 // quitNow は終了する。backend が止める口を持てば (本物のモード)、止め終えてから閉じる。
@@ -64,46 +97,11 @@ func (m *Model) quitNow() tea.Cmd {
 	}
 }
 
-// handleQuitKey は確認中のキー。y / Enter で終了、確認中にもう一度 ctrl+c でも終了 (強制)。それ以外はすべて取り消し
-// (docs/glogx-ui-guide.md §4。知らないキーで終了するのが最悪の失敗)。
-func (m *Model) handleQuitKey(key string) tea.Cmd {
-	m.quitAsk = false
-	if confirm.IsYesStrict(key) || key == "ctrl+c" {
-		return m.quitNow()
-	}
-	m.flash = "終了を取り消した"
-	return nil
-}
-
 // overlayQuit は確認のダイアログを画面の中央に重ねる。
 func (m *Model) overlayQuit(screen []string) []string {
 	if m.stopping {
 		box := confirm.Dialog(" 終了 ", []string{"daemon と PG を止めています…", "", "ctrl+c: 待たずに閉じる"}, "", m.width, true)
 		return layout.OverlayCentered(screen, box, m.width, len(screen), true)
 	}
-	if !m.quitAsk {
-		return screen
-	}
-	r, w := m.busyCards()
-	// 🚨 板は confirm.MaxWidth (44 桁) で頭打ちなので、1 行に繋がず行を分ける (切れると確認の意味が欠ける)
-	body := []string{
-		"動いているカードがあります",
-		fmt.Sprintf("(作業中 %d 枚・質問待ち %d 枚)", r, w),
-		"本当に終了しますか?",
-		"",
-		"模擬の backend なので、",
-		"終了すると進み具合は消えます",
-	}
-	if _, ok := m.be.(backend.Stopper); ok {
-		body = []string{
-			"動いている PG があります",
-			fmt.Sprintf("(作業中 %d 本・質問待ち %d 本)", r, w),
-			"PG と daemon を止めて終了しますか?",
-			"",
-			"次に pro-con daemon を起動すると",
-			"続きから再開します",
-		}
-	}
-	box := confirm.Dialog(" 終了 ", body, confirm.HintYesOther, m.width, true)
-	return layout.OverlayCentered(screen, box, m.width, len(screen), true)
+	return screen
 }

@@ -362,6 +362,8 @@ func (m *Model) inputLine() string {
 			}
 		}
 		label += " — 補足があれば (空のまま enter でよい)"
+	case inputQuit:
+		label = m.quitLabel()
 	case inputNew:
 		label = "新しい依頼 (global: repo 未指定。PM が判断する)"
 		if r := m.tabRepo(); r.Name != "" {
@@ -417,9 +419,6 @@ func (m *Model) hints() []string {
 	if m.stopping {
 		return []string{"ctrl+c 待たずに閉じる"}
 	}
-	if m.quitAsk {
-		return []string{"y / enter 終了", "ctrl+c 終了", "他のキー 取り消し"}
-	}
 	if m.legend {
 		return []string{"? / q / esc 閉じる"}
 	}
@@ -452,7 +451,7 @@ func (m *Model) hints() []string {
 	if m.showDetail {
 		return append(append([]string{"j / k スクロール", "J / K 隣のカード"}, cardOps...), "q / esc 閉じる")
 	}
-	back := "q 終了"
+	back := "Q 終了"
 	if m.showSessions {
 		back = "q / esc 閉じる"
 	}

@@ -247,7 +247,7 @@ func (b *Backend) Apply(cmd backend.Command) (string, error) {
 	if _, err := store.Submit(b.dir, r); err != nil {
 		return "", err
 	}
-	return "受付の箱に置いた (daemon が適用する。pro-con daemon が動いていなければ進まない)", nil
+	return "受け付けた (daemon が適用するとカードに出る)", nil
 }
 
 // Accepts は本物のモードで受ける操作 (backend.Accepter)。新しい依頼と回答だけ。
