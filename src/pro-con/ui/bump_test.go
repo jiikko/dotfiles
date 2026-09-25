@@ -143,23 +143,24 @@ func TestBumpDownKeepsScreenHeight(t *testing.T) {
 	}
 }
 
-// 揺れの途中で同じ端をまた押しても (連打)、揺れは始め直さない (1 回だけ最後まで見せる)。揺れが終わった後に押せば、また揺れる。
-// 判定は枠の位置で見る: 最初の押下から 2*peak の時点は、始め直していなければ揺れがほぼ収まって元の行、始め直していれば 2 回目の出きった所で 1 行上
-func TestBumpIgnoresRepeatWhileShaking(t *testing.T) {
-	m, clk := cursorModel(t) // 作業中のレーンは R1 の 1 枚だけ
-	x0, y0 := framePos(m)
-	start := clk.t
-	press(m, "k")
-	clk.t = start.Add(peak)
-	press(m, "k") // 連打
-	clk.t = start.Add(2 * peak)
-	if x, y := framePos(m); x != x0 || y != y0 {
-		t.Fatalf("揺れの途中の連打で揺れを始め直した: 枠が (%d, %d) (期待 (%d, %d) = 最初の揺れが収まりかけ)", x, y, x0, y0)
-	}
-	clk.t = start.Add(bumpDuration + time.Millisecond) // 最初の揺れが終わった後
-	press(m, "k")
-	clk.t = clk.t.Add(peak)
-	if _, y := framePos(m); y != y0-1 {
-		t.Fatalf("揺れが終わった後の押下で揺れない: 枠の行 %d (期待 %d)", y, y0-1)
+// 連打の抑止は 500ms (ユーザーの指定。定数から時刻を作ると、定数を変えてもテストが一緒にずれて気づけないので数字で固定する):
+// 揺れを始めてから 490ms の同じ向きの押下では始め直さず、510ms の押下では始め直す。判定は枠の位置で見る
+// (始め直していれば、その押下の peak 後に 1 行上へ出きっている。始め直さなければ最初の揺れの続きで元の行)
+func TestBumpIgnoresRepeatWithinGuard(t *testing.T) {
+	for _, tc := range []struct {
+		after   time.Duration
+		restart bool
+	}{{490 * time.Millisecond, false}, {510 * time.Millisecond, true}} {
+		m, clk := cursorModel(t) // 作業中のレーンは R1 の 1 枚だけ
+		_, y0 := framePos(m)
+		start := clk.t
+		press(m, "k")
+		clk.t = start.Add(tc.after)
+		press(m, "k")
+		clk.t = start.Add(tc.after + peak)
+		_, y := framePos(m)
+		if got := y == y0-1; got != tc.restart {
+			t.Fatalf("%v 後の押下: 始め直した = %v (期待 %v。枠の行 %d・元の行 %d)", tc.after, got, tc.restart, y, y0)
+		}
 	}
 }

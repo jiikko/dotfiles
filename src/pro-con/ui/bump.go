@@ -23,11 +23,14 @@ type bump struct {
 	start       time.Time
 }
 
-// startBump は押した向きへの揺れを始める。同じレーン・同じ向きで揺れている途中にまたぶつかった (連打) ときは、始め直さずに
-// 今の揺れを最後まで見せる (始め直すと、押すたびに揺れが頭から出て 1 回ぶんも見えない。2026-09-25 のユーザーの依頼)。
-// 向きが違う・別のレーンでぶつかったときは、新しく揺らす。
+// bumpRepeatGuard は連打を抑える間隔。同じレーン・同じ向きの揺れを始めてからこの間の押下では始め直さない
+// (始め直すと、押すたびに揺れが頭から出て 1 回ぶんも見えない)。2026-09-25 のユーザーの指定 (500ms)。
+const bumpRepeatGuard = 500 * time.Millisecond
+
+// startBump は押した向きへの揺れを始める。同じレーン・同じ向きで、前の揺れを始めてから bumpRepeatGuard 以内の押下 (連打) は無視する。
+// 向きが違う・別のレーンでぶつかったときは、すぐ新しく揺らす。
 func (m *Model) startBump(dx, dy int) tea.Cmd {
-	if m.bumping(m.now()) && m.bump.col == m.col && m.bump.dx == dx && m.bump.dy == dy {
+	if !m.bump.start.IsZero() && m.now().Sub(m.bump.start) < bumpRepeatGuard && m.bump.col == m.col && m.bump.dx == dx && m.bump.dy == dy {
 		return nil // 今の揺れの tick は回っている
 	}
 	m.bump = bump{col: m.col, dx: dx, dy: dy, start: m.now()}
