@@ -4,6 +4,7 @@
 //	repos      = ["~/dotfiles"] # root の外にある repo を個別に足す
 //	pm_repo    = "~/dotfiles"   # PM (依頼を受けてカードを分ける session) を起動する repo。PM はその下の worktree で動く (issue 437)
 //	pm         = "on"           # "off" なら dispatcher は PM を起こさない (人か外の Claude が PM をする運用)。dispatcher の --pm が勝つ
+//	integrator = "on"           # "off" なら dispatcher は取り込みの係 (issue 487) を起こさない。dispatcher の --integrator が勝つ
 package config
 
 import (
@@ -24,6 +25,8 @@ type Config struct {
 	Repos     []string `toml:"repos"`
 	PMRepo    string   `toml:"pm_repo"` // 空なら defaultPMRepo
 	PM        string   `toml:"pm"`      // "on" / "off" / 空 (= on)
+	// Integrator は取り込みの係 (487) を起こすか: "on" / "off" / 空 (= on)
+	Integrator string `toml:"integrator"`
 }
 
 // defaultPMRepo は pm_repo を書いていないときの PM の repo (pro-con の issue がある repo)。
@@ -73,10 +76,13 @@ func Load(path string) (Config, error) {
 		for i, k := range und {
 			keys[i] = k.String()
 		}
-		return Config{}, fmt.Errorf("%s: 知らないキー %s (使えるのは repo_roots / repos / pm_repo / pm)", path, strings.Join(keys, ", "))
+		return Config{}, fmt.Errorf("%s: 知らないキー %s (使えるのは repo_roots / repos / pm_repo / pm / integrator)", path, strings.Join(keys, ", "))
 	}
 	if c.PM != "" && c.PM != "on" && c.PM != "off" { // 書き間違いを on と読むと、止めたつもりの PM が起動して枠を使う
 		return Config{}, fmt.Errorf("%s: pm は \"on\" か \"off\" (%q)", path, c.PM)
+	}
+	if c.Integrator != "" && c.Integrator != "on" && c.Integrator != "off" { // 同じ理由。取り込みの係は master へ push するので PM より重い (487)
+		return Config{}, fmt.Errorf("%s: integrator は \"on\" か \"off\" (%q)", path, c.Integrator)
 	}
 	return c, nil
 }

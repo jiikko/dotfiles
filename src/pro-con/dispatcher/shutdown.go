@@ -138,7 +138,7 @@ const stopCallTimeout = 30 * time.Second
 func (d *Dispatcher) stopCards(ctx context.Context, notes *[]eventlog.Event) (int, map[string]string) {
 	tried := map[string]string{}
 	done := map[string]bool{}
-	pmDone := false
+	rolesDone := map[string]bool{} // 止め終えた役 (役のカード ID)
 	seen := map[string]bool{}
 	note := func(n eventlog.Event) { // 周をまたいで同じ知らせを重ねない
 		if !seen[n.Reason] {
@@ -188,11 +188,14 @@ func (d *Dispatcher) stopCards(ctx context.Context, notes *[]eventlog.Event) (in
 			continue
 		}
 		waiting := 0
-		if !pmDone { // PM も止める (pm.go。記録にまだ無い起動の直後の PM も)
-			if d.stopPM(ctx, now, ss, reg, last, tried, notes) {
+		for _, r := range roles() { // 役 (PM・取り込みの係) も止める (role.go。記録にまだ無い起動の直後の役も)
+			if rolesDone[r.cardID] {
+				continue
+			}
+			if d.stopRole(r, ctx, now, ss, reg, last, tried, notes) {
 				waiting++
 			} else {
-				pmDone = true
+				rolesDone[r.cardID] = true
 			}
 		}
 		for _, c := range st.Cards {
@@ -535,8 +538,8 @@ func (d *Dispatcher) unknownStateNote(cardID, who string, s agents.Session) []ev
 
 // stopName は止める相手の名 (警告の文に使う)。
 func stopName(cardID string) string {
-	if cardID == PMCardID {
-		return "PM"
+	if r := roleFor(cardID); r != nil {
+		return r.name
 	}
 	return cardID + " の PG"
 }

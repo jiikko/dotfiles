@@ -19,6 +19,7 @@ bin/pro-con dispatcher --stop  # dispatcher と、pro-con が起動した PG を
                                # 人が止めた印 (`dispatcher-held`) を置く: 開いている画面は dispatcher を起こし直さず、ゲージに「止めてある」と出す。外すのは画面の c か、次に手で `pro-con dispatcher` を起動したとき (issue 459)
 bin/pro-con card …   # PM / PG が使うカードの操作 (add / plan / ask / answer / handoff / review / rework / close / delete。plan --after は前のカードが完了するまで起動させない = issue 468。handoff は PM が PG の質問を人に回したことを履歴に残す。rework はレビュー待ちを直してほしい点つきで PG に戻す。delete は依頼の列ならすぐ消し、ほかは PG の session を止めてから消す = issue 451)。受付の箱に置くだけで、適用は dispatcher (issue 427)
 bin/pro-con card guide  # PM の session に渡す指示書 (src/pro-con/pm-guide.md) を出す。dispatcher は依頼の列にカードが来たら・PG が質問したら PM を起動 / 再開してこれと新しいカード・質問を渡す (issue 437。PM は 1 つ・--limit に数えない)
+bin/pro-con card guide --integrator  # 取り込みの係の session に渡す指示書 (src/pro-con/integrator-guide.md) を出す。dispatcher はカードがレビューの列に来たら取り込みの係を起動 / 再開してこれとカードを渡す。係はレビューし、master へ merge して push し閉じるか、差し戻す・人に回す (issue 487。1 つ・--limit に数えない)
 bin/pro-con card list | show C-001 | wait C-001 --until review  # カードを画面なしで読む (--json も)。読むだけで、箱にも記録にも socket の wake / notify にも書かない (issue 442)。add は適用を待ってカード ID を返す
 bin/pro-con card log C-001 [--follow] [--json]  # PG の活動 (応答の文と道具の呼び出し。例 `Bash: go test ./...` / `Edit: close.go`) を時刻の順に。再開で入れ替わった前の session から続けて出す。思考は Claude Code が中身を保存しないので出せず、道具の結果は長いので出さない。読むだけ (issue 467)
 bin/pro-con log [--card C-001] [--follow] [--since 10m] [--json]  # dispatcher の出来事 (適用・除けた・起動・再開・止めた・削除・枠・watchdog・画面の数・画面を開いた / quit で閉じた) を読む。画面の出来事は画面が受付の箱に置き dispatcher が書く (--view の画面は置かない。issue 445)。記録は状態の置き場の events.jsonl (1 MiB で events.1.jsonl へ回す)。読むだけ (issue 444)
@@ -128,11 +129,13 @@ glogx と意味を変えている字 (`a` attach / `r` 回答 / `n` 新しい依
 repo_roots = ["~/src"]      # この直下の git repo を列挙する (深くは掘らない。.git がファイルの worktree も拾う)
 repos      = ["~/dotfiles"] # root の外にある repo を個別に足す
 pm_repo    = "~/dotfiles"   # PM を起動する repo (PM はその下の worktree .claude/worktrees/pc-pm-<時刻> で動く。issue 437)
+integrator = "on"            # 取り込みの係 (issue 487) を起こすか。"off" なら起こさない (レビューの列は人か外の Claude が扱う)。dispatcher の --integrator=on|off が勝つ
 pm         = "on"           # "off" なら dispatcher は PM を起動も再開もしない (依頼の列のカードはそのまま置き、人か外の Claude が PM をする)
 ```
 
 - **PM を起こさない口は 2 つ: dispatcher の `--pm=off` と設定の `pm = "off"`。`--pm` (on / off) を書けば設定より勝つ** (起動ごとに明示した方を優先する。
   設定で off にしていても `pro-con dispatcher --pm=on` で 1 回だけ起こせる)。off で起動した dispatcher は、そのことを出来事 (`pro-con log`) と dispatcher のログに 1 行出す。
+  取り込みの係 (487) も同じ形で `--integrator=off` と設定の `integrator = "off"` を持つ。
   off でも、前の dispatcher が起こした PM は終了で止める。🚨 画面が起こす dispatcher には `--pm` を付けないので、画面から使うときは設定の方で決める
 - ファイルが無ければ上の値が既定 (`$XDG_CONFIG_HOME` があればその下)。**壊れた TOML と知らないキーはエラーで起動しない**
   (書き間違えたキーを黙って無視すると「設定したのに効かない」が無音で起きる)

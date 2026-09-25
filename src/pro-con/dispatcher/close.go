@@ -2,7 +2,7 @@ package dispatcher
 
 // PG を止めてから片付けるカード: 閉じたカード (issue 447。StopAfterClose) と、削除の依頼を受けたカード (issue 451。DeleteAt)。
 // 印は依頼の適用と同時に付き、dispatcher が Tick ごとに止める。止めた・止まったかの判定は終了のとき (shutdown.go の ensureStopped) と同じ部品を使う。
-// 🚨 PG の worktree とブランチは消さない (PM が cherry-pick で取り込む。削除しても取り込み前の作業が入っている)。
+// 🚨 PG の worktree とブランチは消さない (取り込みの係が merge で取り込む。削除しても取り込み前の作業が入っている)。
 
 import (
 	"context"

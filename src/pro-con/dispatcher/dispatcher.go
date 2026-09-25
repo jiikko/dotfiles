@@ -114,14 +114,12 @@ type Dispatcher struct {
 	PMGuide string
 	// PMOff は PM を起動も再開もしない (dispatcher の --pm=off / 設定 pm = "off"。人か外の Claude が PM をする運用)。依頼の列のカードはそのまま置く。
 	// 🚨 PMRepo は残す: 前の dispatcher が起こした PM も、終了 (Shutdown) では止める
-	PMOff    bool
-	pmHeld   string // 枠で PM を起こさない理由 (変わったときだけログに書く)
-	pmFailed string // PM を起こせない理由 (同上)
-	pmStatus string // 知らない PM の status (同上)
-	// pmRejects は claude が PM の起動・再開を受け付けなかったのが続いた回数、pmRejected は最後のその失敗。launchRejectLimit 回続いたら起こさない。
-	// 🚨 メモリにだけ持つ: PM には回答で戻す人の番が無いので、直した後に dispatcher を起動し直すのが戻し方 (claude の実体を引き直すのも起動時だけ = 464)
-	pmRejects  int
-	pmRejected string
+	PMOff bool
+	// IntegratorGuide は取り込みの係 (487) を起動するときに渡す指示書 (src/pro-con/integrator-guide.md の全文)。
+	// IntegratorOff は取り込みの係を起動も再開もしない (--integrator=off / 設定 integrator = "off")。レビューの列のカードはそのまま置く
+	IntegratorGuide string
+	IntegratorOff   bool
+	runs            map[string]*roleRun // 役ごとの、メモリだけに持つ様子 (role.go)
 	// Exists は PM の作業ディレクトリが在るかを見る (nil なら os.Stat)。テストが差し替える
 	Exists func(dir string) bool
 
@@ -237,10 +235,12 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	if ctx.Err() != nil { // 枠を読んでいる間に止められた。取り消された ctx で起動して「失敗」を履歴に残さない
 		return notes, nil
 	}
-	told, err := d.tellPM(ctx, now, ss)
-	notes = append(notes, told...)
-	if err != nil { // PM の壊れ (pm.json が読めない等) で PG の割り当てまで止めない
-		notes = append(notes, ev(eventlog.KindError, PMCardID, "", "PM を扱えない (PG の割り当ては続ける): "+err.Error()))
+	for _, r := range roles() {
+		told, err := d.tellRole(ctx, now, ss, r)
+		notes = append(notes, told...)
+		if err != nil { // 役の壊れ (pm.json が読めない等) で PG の割り当てとほかの役まで止めない
+			notes = append(notes, ev(eventlog.KindError, r.cardID, "", r.name+" を扱えない (PG の割り当ては続ける): "+err.Error()))
+		}
 	}
 	more, err := d.dispatch(ctx, now, ss)
 	notes = append(notes, more...)

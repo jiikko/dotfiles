@@ -31,7 +31,7 @@ const cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を�
   run <カード> -- <コマンド>...                  PG がテストの係にコマンドの実行を頼んで turn を終える (結果は再開のときに届く)
   review <カード>                                PG が終えた
   rework <カード> <直してほしい点>               レビュー待ちのカードを PG に差し戻す (同じ session を再開する)
-  handoff <カード> <理由> [--from <PM|人間>]      PG の質問を人に回したことを履歴に残す (列は変えない)
+  handoff <カード> <理由> [--from <PM|取り込みの係>]  PG の質問 / レビュー待ちを人に回したことを履歴に残す (列は変えない)
   close <カード> [--ending answered|investigated|rejected|pending-issue] [--issue <repo>#<番号>]...
   delete <カード> [--from <人間|PM>]              カードを消す (依頼の列はすぐ。それ以外は PG の session を止めてから。worktree とブランチは残す)
   guide                                          PM への指示書を出す (箱には何も置かない)
@@ -47,6 +47,11 @@ const cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を�
 //go:embed pm-guide.md
 var pmGuide string
 
+// integratorGuide は取り込みの係 (487) の session に渡す指示書。書いてあるコマンドは TestIntegratorGuideCommandsParse がパーサに通す。
+//
+//go:embed integrator-guide.md
+var integratorGuide string
+
 // addWait は add が適用を待つ既定の長さ (dispatcher が動いていれば 1 秒かからない。427 の実測で約 130 ms)。
 const addWait = 10 * time.Second
 
@@ -58,7 +63,15 @@ func runCard(args []string, env viewEnv, stdout, stderr io.Writer) int {
 	}
 	switch args[0] {
 	case "guide":
-		_, _ = fmt.Fprint(stdout, pmGuide)
+		switch {
+		case len(args) == 1:
+			_, _ = fmt.Fprint(stdout, pmGuide)
+		case len(args) == 2 && args[1] == "--integrator":
+			_, _ = fmt.Fprint(stdout, integratorGuide)
+		default:
+			_, _ = fmt.Fprintln(stderr, "usage: pro-con card guide [--integrator]")
+			return 2
+		}
 		return 0
 	case "list":
 		return runCardList(args[1:], env, stdout, stderr)
