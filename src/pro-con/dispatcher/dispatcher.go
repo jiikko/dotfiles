@@ -870,10 +870,6 @@ func (d *Dispatcher) settle(id string, now time.Time, how, session string) error
 	})
 }
 
-func (d *Dispatcher) note(id string, now time.Time, text string) error {
-	return d.update(id, func(c *card.Card) { c.History = append(c.History, card.Event{At: now, Text: text}) })
-}
-
 // noteOnce は直前と同じ文なら足さない。何も起動していない理由 (起動・再開できない) にだけ使う (理由が変わらないまま Tick ごとに記録が伸びないように)。
 // 🚨 claude を実際に走らせた結果 (失敗と返った) には使わない: 走らせた回数 = 立っているかもしれない session の数が履歴から消える
 func (d *Dispatcher) noteOnce(id string, now time.Time, text string) error {
