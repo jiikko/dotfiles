@@ -116,8 +116,10 @@ if [[ -e "$output" ]]; then
 fi
 
 # 最初の動画から解像度・フレームレートを取得
+# 先頭の非空行だけを取る: stream group を持つ入力では ffprobe 9 が csv の先頭に空行を出す
+# (zshlib/_ffprobe_helpers.zsh の __ff_first_row と同じ理由。本スクリプトは bash 単体なので inline)
 ref_info=$(ffprobe -v error -select_streams v:0 \
-  -show_entries stream=width,height,r_frame_rate -of csv=p=0 "${files[0]}")
+  -show_entries stream=width,height,r_frame_rate -of csv=p=0 "${files[0]}" | awk 'NF { print; exit }')
 ref_width=$(echo "$ref_info" | cut -d, -f1)
 ref_height=$(echo "$ref_info" | cut -d, -f2)
 ref_fps_frac=$(echo "$ref_info" | cut -d, -f3)
@@ -161,7 +163,7 @@ for f in "${files[@]}"; do
 
   if [[ -n "$fadeout" ]]; then
     dur=$(ffprobe -v error -select_streams v:0 \
-      -show_entries stream=duration -of csv=p=0 "$f")
+      -show_entries stream=duration -of csv=p=0 "$f" | awk 'NF { print; exit }')
     fade_st=$(echo "$dur - $fadeout" | bc)
     ffmpeg -y -hide_banner -loglevel error \
       -i "$f" \

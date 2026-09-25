@@ -61,7 +61,7 @@ __video_health_check() {
   # --- チェック2: 音声ストリームの存在確認 ---
   local audio_stream
   audio_stream=$(ffprobe -v error -select_streams a -show_entries stream=index \
-    -of csv=p=0 -- "$file" 2>/dev/null | head -n1)
+    -of csv=p=0 -- "$file" 2>/dev/null | __ff_first_row)
 
   if [[ -z "$audio_stream" ]]; then
     issues+=("音声ストリームなし")

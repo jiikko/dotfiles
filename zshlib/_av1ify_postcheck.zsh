@@ -259,7 +259,7 @@ __av1ify_postcheck() {
   local -a issues suffixes
 
   local audio_stream
-  audio_stream=$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 -- "$filepath" 2>/dev/null | head -n1)
+  audio_stream=$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 -- "$filepath" 2>/dev/null | __ff_first_row)
   if [[ -z "$audio_stream" ]]; then
     # ソースに音声が無い場合、出力に音声が無いのは -an エンコードの正常な結果
     # (__av1ify_one が「音声: なし（-an）」で意図的に作る)。NG にすると音声なし素材が
@@ -269,7 +269,7 @@ __av1ify_postcheck() {
     local src_probe_out="" src_silent=0
     if [[ -n "$src_path" && -f "$src_path" ]]; then
       if src_probe_out=$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 -- "$src_path" 2>/dev/null); then
-        [[ -z "${src_probe_out%%$'\n'*}" ]] && src_silent=1
+        [[ -z "$(print -r -- "$src_probe_out" | __ff_first_row)" ]] && src_silent=1
       fi
     fi
     if (( src_silent )); then

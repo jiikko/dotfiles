@@ -83,6 +83,8 @@ if echo "$*" | grep -q "select_streams a " && echo "$*" | grep -q "stream=index"
   case "$input_file" in
     *no_video*) echo "" ;;
     *no_audio*) echo "" ;;
+    # stream group 付き入力 (LCEVC 等): ffprobe 9 の csv は group セクションぶんの空行を先に出す (実測 9.0.2)
+    *stream_group*) printf '\n1\n' ;;
     *)          echo "1" ;;
   esac
   exit 0
@@ -273,5 +275,18 @@ exit_code=$?
 setopt err_exit
 assert_exit_code "0" "$exit_code" "MPEG-TS with DTS backward returns 0 (excluded from DTS check)"
 assert_not_contains "$REPLY" "タイムスタンプ破損" "DTS backward not reported as corruption for MPEG-TS"
+
+# Test 15: stream group 付き入力で csv 先頭の空行を「音声なし」と誤判定しない (回帰テスト)
+#
+# ffprobe 9 は stream group を持つ mp4 で -of csv の先頭に空行を出す。先頭行を head -n1 で
+# 取っていたため、音声 (aac) が実在するのに「音声ストリームなし」で av1ify がスキップしていた。
+printf '\n## Test 15: stream group leading blank line is NOT "no audio" (regression)\n'
+touch "$TEST_TMP/stream_group.mp4"
+unsetopt err_exit
+__video_health_check "$TEST_TMP/stream_group.mp4"
+exit_code=$?
+setopt err_exit
+assert_exit_code "0" "$exit_code" "stream group input with audio returns 0"
+assert_not_contains "$REPLY" "音声ストリームなし" "leading blank csv line not reported as no audio"
 
 printf '\n=== video_health Tests Completed ===\n'

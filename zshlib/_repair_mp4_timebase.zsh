@@ -7,6 +7,8 @@
 # ${${(%):-%x}} は「今 source されているファイル自身のパス」を取る zsh のイディオム。
 # shellcheck disable=SC1091,SC2298
 source "${${(%):-%x}:A:h}/_ansi_colors.zsh"
+# shellcheck disable=SC1091,SC2298
+source "${${(%):-%x}:A:h}/_ffprobe_helpers.zsh"
 
 repair-mp4-timebase() {
   if [[ "$1" == "-h" || "$1" == "--help" || $# -lt 2 ]]; then
@@ -48,7 +50,7 @@ EOF
     # 現在のtime_baseを確認
     local current_tb
     current_tb=$(ffprobe -v error -select_streams v:0 \
-      -show_entries stream=time_base -of csv=p=0 -- "$file" 2>/dev/null | head -n1)
+      -show_entries stream=time_base -of csv=p=0 -- "$file" 2>/dev/null | __ff_first_row)
 
     if [[ "$current_tb" == "1/${timescale}" ]]; then
       print -r -- "→ ${_C_GREEN}スキップ: ${file:t} (既に 1/${timescale})${_C_OFF}"
@@ -80,7 +82,7 @@ EOF
     # 検証: time_baseが変わったか
     local new_tb
     new_tb=$(ffprobe -v error -select_streams v:0 \
-      -show_entries stream=time_base -of csv=p=0 -- "$tmp" 2>/dev/null | head -n1)
+      -show_entries stream=time_base -of csv=p=0 -- "$tmp" 2>/dev/null | __ff_first_row)
 
     if [[ "$new_tb" != "1/${timescale}" ]]; then
       rm -f -- "$tmp"

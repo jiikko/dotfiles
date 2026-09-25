@@ -7,6 +7,9 @@
 # ネットワークボリューム判定 (av1ify と共有。テストが本ファイルを単体 source するため自己 source)
 # shellcheck disable=SC1091,SC2296,SC2298  # zsh 固有の自ファイルパス展開 (shellcheck は解析不可)
 source "${${(%):-%x}:A:h}/_fs_helpers.zsh"
+# csv 出力の先頭行取得 (__ff_first_row)
+# shellcheck disable=SC1091,SC2296,SC2298
+source "${${(%):-%x}:A:h}/_ffprobe_helpers.zsh"
 
 __concat_allowed_extensions=(mp4 avi mov mkv webm flv wmv m4v mpg mpeg 3gp ts m2ts)
 
@@ -319,7 +322,7 @@ __concat_get_video_info() {
   out=$(ffprobe -v error -select_streams v:0 \
     -show_entries stream=codec_name,width,height,pix_fmt \
     -of csv=p=0 -- "$file" 2>/dev/null) || return 1
-  print -r -- "${out%%$'\n'*}"
+  print -r -- "$out" | __ff_first_row
 }
 
 # r_frame_rate は ffprobe の推測値で、CFR でも実際と違う値を返すことがある
@@ -329,7 +332,7 @@ __concat_get_video_frame_rate() {
   local file="$1"
   ffprobe -v error -select_streams v:0 \
     -show_entries stream=r_frame_rate \
-    -of csv=p=0 -- "$file" 2>/dev/null | head -n1
+    -of csv=p=0 -- "$file" 2>/dev/null | __ff_first_row
 }
 
 # rc=1 は ffprobe 自体の失敗 (__concat_get_video_info と同じ契約)。空を返して呼び出し側の
@@ -339,7 +342,7 @@ __concat_get_video_time_base() {
   out=$(ffprobe -v error -select_streams v:0 \
     -show_entries stream=time_base \
     -of csv=p=0 -- "$file" 2>/dev/null) || return 1
-  print -r -- "${out%%$'\n'*}"
+  print -r -- "$out" | __ff_first_row
 }
 
 # 音声の time_base は含めない (別チェック __concat_get_audio_time_base で remux 案内つきの
@@ -350,7 +353,7 @@ __concat_get_audio_info() {
   out=$(ffprobe -v error -select_streams a:0 \
     -show_entries stream=codec_name,sample_rate,channels \
     -of csv=p=0 -- "$file" 2>/dev/null) || return 1
-  print -r -- "${out%%$'\n'*}"
+  print -r -- "$out" | __ff_first_row
 }
 
 # 音声 time_base。codec / sample_rate / channels が同じでも time_base が違う (mp4 の 1/44100 と
@@ -361,7 +364,7 @@ __concat_get_audio_time_base() {
   out=$(ffprobe -v error -select_streams a:0 \
     -show_entries stream=time_base \
     -of csv=p=0 -- "$file" 2>/dev/null) || return 1
-  print -r -- "${out%%$'\n'*}"
+  print -r -- "$out" | __ff_first_row
 }
 
 __concat_get_duration() {
