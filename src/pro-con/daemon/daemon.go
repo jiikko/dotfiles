@@ -290,6 +290,9 @@ func (d *Daemon) stopCrashing(ctx context.Context, now time.Time, ss []agents.Se
 			if s.ID != c.Session {
 				continue
 			}
+			if hasOwned && s.SessionID == o.SessionID && s.PID == 0 {
+				continue // 落ちて Claude Code の自動の再開を待っている (pid 無しで一覧に出る = 427 の 3f)。一覧に無いのと同じく待つ
+			}
 			listed = true
 			if hasOwned && s.SessionID == o.SessionID && s.PID == o.PID { // pid が記録と違うものは止めない (登録の側と同じ基準)
 				target = s.ID
@@ -504,7 +507,10 @@ func (d *Daemon) prepare(c card.Card, now time.Time, ss []agents.Session, reg []
 			if s.SessionID != o.SessionID {
 				return "再開", nil, fmt.Errorf("短い id %s が今は別の session (%s) を指している", c.Session, s.SessionID)
 			}
-			if s.PID != 0 && s.PID != o.PID { // 登録の側が「外から操作された疑い」として書き直さなかった形。止めも再開もしない
+			if s.PID == 0 { // 落ちて自動の再開を待っている。一覧に無いのと同じく待ってから、止めずに再開する
+				continue
+			}
+			if s.PID != o.PID { // 登録の側が「外から操作された疑い」として書き直さなかった形。止めも再開もしない
 				return "再開", nil, fmt.Errorf("session %s の pid が記録 (%d) と違う (%d)。外から操作された疑い", c.Session, o.PID, s.PID)
 			}
 			stop = c.Session
@@ -528,12 +534,27 @@ func (d *Daemon) prepare(c card.Card, now time.Time, ss []agents.Session, reg []
 
 func sessionName(c card.Card) string { return "pc-" + strings.ToLower(c.ID) }
 
-// worktreePath は claude --bg -w <name> が作る PG の worktree (427 の 3f で実測)。repo の場所が分からなければ空 (何とも一致しない)。
+// worktreePath は claude --bg -w <name> が作る PG の worktree (427 の 3f で実測)。repo の場所が分からなければ空 (呼び出し側が空を弾く)。
 func worktreePath(repoPath string, c card.Card) string {
 	if repoPath == "" {
 		return ""
 	}
 	return filepath.Join(repoPath, ".claude", "worktrees", sessionName(c))
+}
+
+// samePath は 2 つのパスが同じ場所か (symlink を解決して比べる。claude の一覧の cwd は解決済みのパスで出る見込みで、
+// 設定の repo のパスは symlink を含みうる)。解決できなければ Clean した文字列で比べる。どちらかが空なら一致しない
+func samePath(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	resolve := func(p string) string {
+		if r, err := filepath.EvalSymlinks(p); err == nil {
+			return r
+		}
+		return filepath.Clean(p)
+	}
+	return resolve(a) == resolve(b)
 }
 
 func owned(c card.Card, reg []live.Owned) (live.Owned, bool) {
@@ -555,7 +576,7 @@ func adopt(c card.Card, repoPath string, ss []agents.Session, reg []live.Owned) 
 		}
 		// 起動は、名前に加えて cwd がこのカードの repo の worktree そのもの (<repo>/.claude/worktrees/pc-<card>) のときだけ。
 		// 名前だけだと、別の状態の置き場で動く daemon が同じカード ID で立てた PG に当たる (カード ID は置き場ごとに C-001 から振られる)
-		if c.Launching == "起動" && s.Name == sessionName(c) && s.Cwd == worktreePath(repoPath, c) {
+		if wt := worktreePath(repoPath, c); c.Launching == "起動" && wt != "" && s.Name == sessionName(c) && samePath(s.Cwd, wt) {
 			return s.ID, true
 		}
 		// 再開は別の session id の session を立てる (427 の 3f で実測) ので、同じ作業ディレクトリ (PG の worktree) で印の後に始まったものも取り込む

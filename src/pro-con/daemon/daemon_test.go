@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1095,7 +1096,79 @@ func TestCrashStopSkipsPidMismatch(t *testing.T) {
 	r.l.stopFail = false
 	r.ss[0].PID = 99 // 再開の文は増えていない
 	r.tick(t)
-	if len(r.l.stops) != 0 {
-		t.Fatalf("pid の違う session を止めた: %v", r.l.stops)
+	if c := states(t, r.dir)["C-001"]; len(r.l.stops) != 0 || c.State != card.Waiting || !strings.Contains(c.Wait.Question, "一致しない") {
+		t.Fatalf("pid の違う session を止めた / 止めなかったことを書いて回答待ちにしない: stops=%v %v %q", r.l.stops, c.State, c.Wait.Question)
+	}
+}
+
+// 止める印が立った後、自分の PG が落ちている最中 (一覧に pid 無しで出る) なら、最後に落ちてから restartWait は待つ
+// (「記録と一致しない」として回答待ちへ送ると、自動の再開で戻った PG が回答待ちのカードの下で走り続ける)。
+func TestCrashStopWaitsWhileDead(t *testing.T) {
+	r := newCrashRig(t)
+	r.l.stopFail = true
+	r.crash(t0.Add(time.Minute), 43)
+	r.tick(t)
+	r.crash(t0.Add(2*time.Minute), 44)
+	r.tick(t)
+	r.l.stopFail = false
+	r.ss[0].PID = 0 // 落ちて自動の再開を待っている
+	r.d.Now = func() time.Time { return t0.Add(2*time.Minute + 10*time.Second) }
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; c.State != card.Running {
+		t.Fatalf("落ちている最中の自分の PG を待たずに回答待ちへ送った: %v %q", c.State, c.Wait.Question)
+	}
+}
+
+// 回答の後、前の session が落ちている最中 (pid 無し) なら restartWait は再開しない。過ぎたら止めずに再開する。
+func TestResumeWaitsWhileDead(t *testing.T) {
+	r := newCrashRig(t)
+	for _, q := range []store.Request{{Kind: "ask", CardID: "C-001", Question: "q"}, {Kind: "answer", CardID: "C-001", Answer: "a"}} {
+		if _, err := store.Submit(r.dir, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.ss[0].PID = 0
+	r.tick(t)
+	if len(r.l.resumes) != 0 {
+		t.Fatalf("落ちている最中に再開した (自動の再開と重なる): %v", r.l.resumes)
+	}
+	r.d.Now = func() time.Time { return t0.Add(restartWait + time.Second) }
+	r.tick(t)
+	if len(r.l.resumes) != 1 || r.l.resumes[0] != ":a" {
+		t.Fatalf("待った後に止めずに再開しない: %v", r.l.resumes)
+	}
+}
+
+// パスは symlink を解決して比べる (設定の repo のパスが symlink を含んでも、一覧の解決済みの cwd と一致する)。空は何とも一致しない。
+func TestSamePath(t *testing.T) {
+	real := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(filepath.Join(real, ".claude", "worktrees", "pc-c-001"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	resolved, _ := filepath.EvalSymlinks(filepath.Join(real, ".claude", "worktrees", "pc-c-001"))
+	if !samePath(filepath.Join(link, ".claude", "worktrees", "pc-c-001"), resolved) {
+		t.Fatal("symlink を含むパスと解決済みのパスを別の場所と読んだ")
+	}
+	if samePath("", "") || samePath("/a", "") {
+		t.Fatal("空のパスを一致と読んだ")
+	}
+}
+
+// repo の場所が分からなければ、名前が同じでも起動の取り込みをしない (空の cwd どうしで一致させない)。
+func TestAdoptStartNeedsRepoPath(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 1)
+	setCard(t, dir, "C-001", func(c *card.Card) { c.Launching, c.LaunchedAt = "起動", t0 })
+	d := newDaemon(t, dir, &fakeLauncher{}, []agents.Session{{ID: "nn11", SessionID: "N", PID: 3, Name: "pc-c-001", Kind: "background", StartedAt: t0.Add(time.Second).UnixMilli()}})
+	d.Repos = map[string]string{}
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if c := states(t, dir)["C-001"]; c.Session == "nn11" {
+		t.Fatal("repo の場所が分からないのに名前だけで取り込んだ")
 	}
 }
