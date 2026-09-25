@@ -3,7 +3,6 @@ package ui
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -107,35 +106,28 @@ func TestCursorSnapsOnTabSwitch(t *testing.T) {
 	}
 }
 
-// レーンを跨いで滑る途中でも、枠はカードの中身の桁に描かない (縦線が中身を掃くと、カードが一瞬消えて見える)。
-// 全角の混ざったカード (W1 の「?質問」) を通るので、全角を途中で切って空白に化かす形も捕まえる。
-func TestCursorGlideKeepsCardContent(t *testing.T) {
-	m, clk := cursorModel(t)
-	press(m, "l")
-	w := m.colWidth()
-	drawn := 0
-	for step := range 6 {
-		want := strings.Split(ansi.Strip(strings.Join(m.boardLines(), "\n")), "\n")
-		got := strings.Split(ansi.Strip(strings.Join(m.overlayCursor(m.boardLines()), "\n")), "\n")
-		for r := range want {
-			if isGapRow(r) || r == 0 || r == len(want)-1 {
-				continue
-			}
-			for col := range len(card.Columns) {
-				x := col*(w+len(colSep)) + 1 // レーンの中身 (外枠の内側)
-				g, wn := ansi.Cut(got[r], x, x+w-2), ansi.Cut(want[r], x, x+w-2)
-				if g != wn {
-					t.Fatalf("滑走 %d コマ目、行 %d・レーン %d の中身が枠で書き換わった:\n got %q\nwant %q", step, r, col+1, g, wn)
+// 滑る途中のどのコマでも、枠は丸ごと見えている (4 つの角がそろう)。途中で枠が消えて行き先に現れる「ちらつき」を戻さない
+// (2026-09-25 にユーザーが見本の B を選んだ。レーンを跨ぐ (l) と上下 (j) で見る)。
+func TestCursorGlideKeepsWholeFrame(t *testing.T) {
+	for _, key := range []string{"l", "j"} {
+		m, clk := cursorModel(t)
+		if key == "j" {
+			m.selected = "W1" // 質問待ちのレーン (2 枚) の上で下へ
+			m.Update(frameMsg{})
+		}
+		press(m, key)
+		if !m.cursorGliding(clk.t) {
+			t.Fatalf("%s: 前提: 枠が滑り始めていない", key)
+		}
+		for step := range 6 {
+			out := ansi.Strip(strings.Join(m.overlayCursor(m.boardLines()), "\n"))
+			for _, c := range []string{frameTL, frameTR, frameBL, frameBR} {
+				if n := strings.Count(out, c); n != 1 {
+					t.Fatalf("%s: 滑走 %d コマ目で枠の角 %q が %d 個 (1 個のはず = 枠が丸ごと見えている)", key, step, c, n)
 				}
 			}
+			clk.t = clk.t.Add(cursorDuration / 6)
 		}
-		if strings.Contains(strings.Join(got, "\n"), frameH) {
-			drawn++
-		}
-		clk.t = clk.t.Add(cursorDuration / 6)
-	}
-	if drawn == 0 {
-		t.Fatal("前提: 滑走中に枠が一度も描かれていない (何も検査していない)")
 	}
 }
 
@@ -180,42 +172,6 @@ func TestLaneLabelKeepsKeyAndCount(t *testing.T) {
 	for _, want := range []string{"3 作", "(1)", "4 質", "(2)"} {
 		if !strings.Contains(head, want) {
 			t.Fatalf("見出しに %q が無い: %q", want, head)
-		}
-	}
-}
-
-// unframe は画面から選択の枠を取り除いた形 (枠の縦線は列の罫線に、横線と角は空白と罫線に戻す)。
-// 枠がカードの文字を消していなければ、枠を出さないときの画面と一致する。
-func unframe(s string) string {
-	return strings.NewReplacer(frameV, "│", frameH, " ", frameTL, "│", frameTR, "│", frameBL, "│", frameBR, "│").Replace(s)
-}
-
-// 上下に滑っている途中でも、枠がカードの行を消さない (横線でカードの行を丸ごと消すと、動かすたびにカードが一瞬消えて見える)。
-func TestCursorGlideNeverHidesCards(t *testing.T) {
-	be := newSpy()
-	be.snap.Cards = append(be.snap.Cards,
-		card.Card{ID: "R2", Title: "二枚目", State: card.Running, Session: "s-r2", Since: be.snap.Now.Add(1)},
-		card.Card{ID: "R3", Title: "三枚目", State: card.Running, Session: "s-r3", Since: be.snap.Now.Add(2)})
-	clk := &clock{t: be.snap.Now}
-	m := New(be, nil)
-	m.now = clk.now
-	m.width, m.height = 120, 30
-	m.selected = "R1"
-	m.Update(frameMsg{})
-	press(m, "j")
-	for _, f := range []int{1, 2, 3, 4, 5} { // 所要のあいだの何コマか
-		clk.t = be.snap.Now.Add(cursorDuration * time.Duration(f) / 6)
-		lines := strings.Split(ansi.Strip(m.render()), "\n")
-		valid := m.cursor.valid
-		m.cursor.valid = false
-		bare := strings.Split(ansi.Strip(m.render()), "\n")
-		m.cursor.valid = valid
-		for i := range bare {
-			// 枠の横線は空き行 (空白) にしか描かないので、戻すと罫線の違いだけになる。文字の行は完全に一致するはず
-			if got, want := unframe(lines[i]), unframe(bare[i]); strings.TrimSpace(strings.Trim(got, "│ ")) != strings.TrimSpace(strings.Trim(want, "│ ")) &&
-				strings.ContainsAny(want, "0123456789RW枚") {
-				t.Fatalf("コマ %d/6 で %d 行目のカードが枠に消された:\n枠あり %q\n枠なし %q", f, i, lines[i], bare[i])
-			}
 		}
 	}
 }

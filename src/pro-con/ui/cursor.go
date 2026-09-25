@@ -101,37 +101,23 @@ func (m *Model) overlayCursor(board []string) []string {
 	w := m.colWidth()
 	border := fg(frameColor) + sgrBold
 	top, bottom := row-cardGap, row+cardLines
+	// 滑っている途中も枠を丸ごと描く (カードの中身の上にも線が乗る)。2026-09-25 にユーザーが見本 (tmp/pro-con-cursor-sample.py) の B を選んだ。
+	// 前は「カードが一瞬消えて見える」(2026-09-24 / 25 の報告) を避けて空き行と外枠の上だけに描いていたが、それだと滑る途中で枠がほぼ消え、
+	// 消えてから行き先に現れるちらつきに見えた。止まっているときは枠がカードの上下の空き行に乗るので、隣のカードは隠さない
 	for r := top; r <= bottom; r++ {
 		if r < 0 || r >= len(board) {
 			continue
 		}
-		// 上辺・下辺は空き行に乗ったときだけ描く。滑っている途中でカードの行にかかったら縦線だけにする
-		// (横線でカードの行を丸ごと消すと、上下に動かすたびにカードが一瞬消えて見える。2026-09-24 の報告)
-		edge := isGapRow(r) || r == len(board)-1
-		switch {
-		case r == top && edge:
+		switch r {
+		case top:
 			board[r] = splice(board[r], left, w, border+frameTL+strings.Repeat(frameH, max(w-2, 0))+frameTR)
-		case r == bottom && edge:
+		case bottom:
 			board[r] = splice(board[r], left, w, border+frameBL+strings.Repeat(frameH, max(w-2, 0))+frameBR)
 		default:
-			// 縦線も同じ理由で、カードの行ではレーンの外枠か列の間に乗ったときだけ描く。レーンを跨いで滑る途中で
-			// カードの中に描くと、地の色の無い縦筋が中身を掃き、全角文字も途中で切れて、中身が一瞬消えて見える (2026-09-25 の報告)
 			for _, x := range []int{left, left + w - 1} {
-				if edge || m.isFrameCol(x) {
-					board[r] = splice(board[r], x, 1, border+frameV)
-				}
+				board[r] = splice(board[r], x, 1, border+frameV)
 			}
 		}
 	}
 	return board
-}
-
-// isGapRow はボードの行 r (0 = 列の見出し) がカードの間の空き行か。
-func isGapRow(r int) bool { return r >= 1 && (r-1)%perCardLines < cardGap }
-
-// isFrameCol はボードの桁 x がレーンの外枠か列の間 (カードの中身が無い桁) か。
-func (m *Model) isFrameCol(x int) bool {
-	w := m.colWidth()
-	p := x % (w + len(colSep))
-	return x >= 0 && (p == 0 || p >= w-1)
 }
