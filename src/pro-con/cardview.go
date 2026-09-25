@@ -66,12 +66,19 @@ type cardSummary struct {
 	Question string    `json:"question,omitempty"` // 回答の要る待ちの文
 	Archived bool      `json:"archived,omitempty"`
 	Deleting bool      `json:"deleting,omitempty"` // 削除の依頼を受けて、PG の session を止めてから消えるのを待っている
+	Turn     string    `json:"turn,omitempty"`     // 今誰の番か (card.Turn の Label。人の番は "人")
 }
 
-// summarize は cards (記録の全カード) から、順番で待っている前のカードも引く。
-func summarize(c card.Card, cards []card.Card) cardSummary {
+// summarize は cards (記録の全カード) から、順番で待っている前のカードも引く。誰の番かは dispatcher が起こさない役 r で決める。
+func summarize(c card.Card, cards []card.Card, r card.Roles) cardSummary {
 	return cardSummary{ID: c.ID, State: c.State.Label(), Title: c.Title, Owner: c.Owner, Session: c.Session, Since: c.Since,
-		Waiting: waiting(c, cards), Question: c.Wait.Question, Archived: c.Archived, Deleting: c.Deleting()}
+		Waiting: waiting(c, cards), Question: c.Wait.Question, Archived: c.Archived, Deleting: c.Deleting(), Turn: c.Turn(r).Label()}
+}
+
+// rolesIn は dispatcher が最後に書いた、起こさない役 (読めなければ「どちらも起こす」= 人の番を少なめに出す)。
+func rolesIn(dir string) card.Roles {
+	ds, _, _ := store.LoadDispatcherState(dir)
+	return ds.Roles
 }
 
 // waitingIn は waiting を、記録 (dir) の動いているカードで引く (書庫から読んだカードにも使える)。記録を読めなければ順番の待ちは出さない。
@@ -170,11 +177,12 @@ func runCardList(args []string, env viewEnv, stdout, stderr io.Writer) int {
 	// 列の順 (左から)、列の中はレーンの並び (上ほど優先。画面と同じ。issue 470)
 	cards = card.Board(cards)
 	out := []cardSummary{}
+	roles := rolesIn(env.dir)
 	for _, c := range cards {
 		if (c.Archived && !*all) || (want != nil && c.State != *want) {
 			continue
 		}
-		out = append(out, summarize(c, st.Cards))
+		out = append(out, summarize(c, st.Cards, roles))
 	}
 	if *asJSON {
 		return writeJSON(stdout, stderr, out)
@@ -190,6 +198,9 @@ func runCardList(args []string, env viewEnv, stdout, stderr io.Writer) int {
 		line := fmt.Sprintf("%s  %s  %s  担当: %s  (%s)", s.ID, col, s.Title, orDashCLI(s.Owner), fmtAge(now.Sub(s.Since)))
 		if s.Waiting != "" {
 			line += "  待ち: " + s.Waiting
+		}
+		if s.Turn == card.TurnHuman.Label() {
+			line += "  人の番"
 		}
 		_, _ = fmt.Fprintln(stdout, line)
 	}
@@ -413,7 +424,7 @@ func runCardWait(args []string, env viewEnv, stdout, stderr io.Writer) int {
 		return 1
 	}
 	if *asJSON {
-		s := summarize(got, nil)
+		s := summarize(got, nil, rolesIn(env.dir))
 		s.Waiting = waitingIn(env.dir, got) // 書庫から読んだカードでも、順番の待ちは記録の動いているカードで引く
 		return writeJSON(stdout, stderr, s)
 	}

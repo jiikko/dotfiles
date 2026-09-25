@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"pro-con/card"
 	"pro-con/eventlog"
 	"pro-con/store"
 )
@@ -93,4 +94,19 @@ func hasEvent(evs []eventlog.Event, kind, text string) bool {
 		}
 	}
 	return false
+}
+
+// 起こさない役 (PMOff / IntegratorOff) を様子に書く。画面と card list はこれで人の番 (card.Turn) を決める。
+func TestStateRecordsRolesOff(t *testing.T) {
+	r := newUsageRig(t)
+	r.d.PMOff, r.d.IntegratorOff = true, true
+	r.tick(t)
+	if st, _, _ := store.LoadDispatcherState(r.d.Dir); st.Roles != (card.Roles{PMOff: true, IntegratorOff: true}) {
+		t.Fatalf("起こさない役を様子に書いていない: %+v", st.Roles)
+	}
+	r.d.PMOff = false
+	r.tick(t)
+	if st, _, _ := store.LoadDispatcherState(r.d.Dir); st.Roles != (card.Roles{IntegratorOff: true}) {
+		t.Fatalf("起こすようにした役を様子から外さない: %+v", st.Roles)
+	}
 }

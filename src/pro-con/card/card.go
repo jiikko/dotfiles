@@ -345,7 +345,69 @@ const handoffMark = " が人に回した: "
 // HandoffText は質問を人に回したときに履歴へ残す文 (理由は原文のまま)。
 func HandoffText(by, why string) string { return by + handoffMark + why }
 
-// HandedOff は今の質問を人に回したか (質問待ちに入った後の履歴に HandoffText がある)。人の番の目印 (452) ができるまでは履歴から読む。
+// Turn はそのカードを今先へ進めるのが誰か (issue 452。画面の目印・`pro-con card list` が読む。判定はここだけに置く)。
+type Turn int
+
+const (
+	TurnNone       Turn = iota // 誰の番でもない (完了・片付けた・削除中)
+	TurnPG                     // PG かテストの係が動いている / PG の空き・前のカードを待っている
+	TurnPM                     // PM (依頼を分ける・PG の質問に答えるか人に回す)
+	TurnIntegrator             // 取り込みの係 (レビュー。487)
+	TurnHuman                  // 人間が操作しないと進まない
+)
+
+func (t Turn) Label() string {
+	switch t {
+	case TurnNone:
+		return ""
+	case TurnPG:
+		return "PG"
+	case TurnPM:
+		return "PM"
+	case TurnIntegrator:
+		return "取り込みの係"
+	case TurnHuman:
+		return "人"
+	}
+	return fmt.Sprintf("Turn(%d)", int(t))
+}
+
+// Roles は dispatcher が起こさない役 (設定 pm / integrator = "off")。起こさない役の番は人の番になる。ゼロ値は「どちらも起こす」。
+type Roles struct {
+	PMOff         bool `json:"pm_off,omitempty"`
+	IntegratorOff bool `json:"integrator_off,omitempty"`
+}
+
+// Turn は今誰の番か。人の番は、権限の確認 (PM には答えられない)・落ち続けて止めた PG・PM が人に回した質問とレビュー・
+// 起こさない役 (r) の仕事 (依頼・質問・レビュー)。
+func (c Card) Turn(r Roles) Turn {
+	if c.Archived || c.Deleting() {
+		return TurnNone
+	}
+	switch c.State {
+	case Requested:
+		if r.PMOff {
+			return TurnHuman
+		}
+		return TurnPM
+	case Planned, Running:
+		return TurnPG
+	case Waiting:
+		if c.Wait.Kind != WaitQuestion || c.HandedOff() || r.PMOff { // 権限の確認・落ちて止めた (Check は Waiting を NeedsAnswer の待ちに限る)
+			return TurnHuman
+		}
+		return TurnPM
+	case Review:
+		if c.HandedOff() || r.IntegratorOff {
+			return TurnHuman
+		}
+		return TurnIntegrator
+	case Done:
+	}
+	return TurnNone
+}
+
+// HandedOff は今の質問を人に回したか (質問待ちに入った後の履歴に HandoffText がある)。
 func (c Card) HandedOff() bool {
 	if (c.State != Waiting || c.Wait.Kind != WaitQuestion) && c.State != Review { // レビュー待ちは取り込みの係が人に回す (487)
 		return false

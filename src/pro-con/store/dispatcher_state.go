@@ -9,6 +9,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"pro-con/card"
 )
 
 // DispatcherLockFile は dispatcher の排他のロックのファイル (dispatcher.Lock が flock し、持っているプロセスの pid を書く)。
@@ -48,6 +50,8 @@ type DispatcherState struct {
 	// Startup は起動時の確かめの要約 (issue 483。起動から 10 分だけ。無ければ空)。StartupAlert は復旧した・判定できないものがある
 	Startup      string `json:"startup,omitempty"`
 	StartupAlert bool   `json:"startup_alert,omitempty"`
+	// Roles は dispatcher が起こさない役 (設定 pm / integrator = "off")。画面と card list が人の番 (card.Turn) を決めるのに読む
+	Roles card.Roles `json:"roles"`
 }
 
 // SaveDispatcherState は様子を書く (書きかけを読ませない)。
