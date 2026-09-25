@@ -32,6 +32,7 @@ func labelCol(m *Model, label string) int {
 const peak = bumpDuration * 15 / 100
 
 // 上端 (カード 1 枚のレーン) で ↑ / k を押すと、レーンごと 1 行上へずれ、枠も一緒に動く。下端の ↓ / j は 1 行下。
+// 下へずれても下枠は切らない (ボードの下の空き行へ出す)。
 func TestBumpVerticalAtEdge(t *testing.T) {
 	for _, tc := range []struct {
 		key string
@@ -39,7 +40,7 @@ func TestBumpVerticalAtEdge(t *testing.T) {
 	}{{"k", -1}, {"j", 1}} {
 		m, clk := cursorModel(t) // 作業中のレーンは R1 の 1 枚だけ
 		x0, y0 := framePos(m)
-		lines := len(strings.Split(m.render(), "\n"))
+		corners := strings.Count(ansi.Strip(m.render()), "╰") // レーンの下枠の左の角 (6 本)
 		start := clk.t
 		if cmd := press(m, tc.key); cmd == nil {
 			t.Fatalf("%s: 端でぶつかったのに演出の tick が回らない", tc.key)
@@ -51,8 +52,8 @@ func TestBumpVerticalAtEdge(t *testing.T) {
 		if x, y := framePos(m); x != x0 || y != y0+tc.dy {
 			t.Fatalf("%s: 出きった所で枠が (%d, %d) (期待 (%d, %d))", tc.key, x, y, x0, y0+tc.dy)
 		}
-		if got := len(strings.Split(m.render(), "\n")); got != lines {
-			t.Fatalf("%s: 揺れで画面の行数が %d → %d に変わった", tc.key, lines, got)
+		if got := strings.Count(ansi.Strip(m.render()), "╰"); got != corners {
+			t.Fatalf("%s: 揺れたレーンの下枠が消えた (角 %d → %d)", tc.key, corners, got)
 		}
 	}
 }
