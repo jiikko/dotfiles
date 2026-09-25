@@ -64,7 +64,7 @@ func integratorNotice(d *Dispatcher, cards []card.Card, untold, pending []string
 		}
 		wt := ""
 		if path, ok := d.Repos[c.Repo]; ok {
-			wt = WorktreePath(path, c)
+			wt = card.WorktreePath(path, c)
 		}
 		fmt.Fprintf(&b, "- レビュー待ち %s「%s」(repo: %s / PG の worktree: %s)\n", c.ID, c.Title, orNone(c.Repo), orNone(wt))
 	}

@@ -23,7 +23,6 @@ import (
 	"termsafe"
 
 	"pro-con/card"
-	"pro-con/dispatcher"
 	"pro-con/store"
 )
 
@@ -169,7 +168,7 @@ func (m *Monitor) conflicts(ctx context.Context, repo string, cards []card.Card,
 		if c.Repo != repo || !watched(c) {
 			continue
 		}
-		wt := dispatcher.WorktreePath(path, c)
+		wt := card.WorktreePath(path, c)
 		if _, err := os.Stat(wt); err != nil { // まだ起動していない / 片付けた
 			continue
 		}

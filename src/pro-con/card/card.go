@@ -4,6 +4,7 @@ package card
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -387,4 +388,16 @@ func Check(cards []Card) []Violation {
 		}
 	}
 	return append(out, afterViolations(cards)...)
+}
+
+// SessionName は PG の session と worktree の名前 (claude --bg -w <name> -n <name>)。
+func SessionName(c Card) string { return "pc-" + strings.ToLower(c.ID) }
+
+// WorktreePath は claude --bg -w <name> が作る PG の worktree (427 の 3f で実測。dispatcher と見張り = package monitor が使う)。
+// repo の場所が分からなければ空 (呼び出し側が空を弾く)。
+func WorktreePath(repoPath string, c Card) string {
+	if repoPath == "" {
+		return ""
+	}
+	return filepath.Join(repoPath, ".claude", "worktrees", SessionName(c))
 }

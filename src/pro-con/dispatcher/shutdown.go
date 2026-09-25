@@ -494,7 +494,7 @@ func unregistered(c card.Card, repoPath string, ss []agents.Session, reg []live.
 	if has && c.Launching == "" {
 		return agents.Session{}, false, false // 記録の行で照らす (短い id を別の session が得た形には触らない)
 	}
-	wt := WorktreePath(repoPath, c)
+	wt := card.WorktreePath(repoPath, c)
 	inWorktree := func(s agents.Session) bool { return wt != "" && samePath(s.Cwd, wt) }
 	var loose *agents.Session
 	for _, s := range ss {
@@ -508,7 +508,7 @@ func unregistered(c card.Card, repoPath string, ss []agents.Session, reg []live.
 		}
 		// 起動・再開の途中で、claude が返した id がまだカードに無い形。起動は名前 (-n) が手がかり。再開は名前を渡さないので
 		// worktree に居る対話でない session を名指しする (人間の対話の session を数えて、終了を永久に失敗させない)
-		if loose == nil && c.Launching != "" && inWorktree(s) && (s.Name == sessionName(c) || (c.Launching == "再開" && s.Kind != "interactive")) {
+		if loose == nil && c.Launching != "" && inWorktree(s) && (s.Name == card.SessionName(c) || (c.Launching == "再開" && s.Kind != "interactive")) {
 			loose = &s
 		}
 	}

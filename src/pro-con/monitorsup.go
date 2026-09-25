@@ -66,7 +66,7 @@ func superviseMonitor(ctx context.Context, s monitorSup) (stop func()) {
 		var crashes []time.Time
 		heldSaid := false
 		for ctx.Err() == nil {
-			err, held, ok := s.runOnce(ctx)
+			held, ok, err := s.runOnce(ctx)
 			if !ok || ctx.Err() != nil { // 起こせなかった (出来事にした) / 止める途中に抜けた
 				return
 			}
@@ -97,23 +97,23 @@ func superviseMonitor(ctx context.Context, s monitorSup) (stop func()) {
 
 // runOnce は見張りを 1 回起こして、抜けるか ctx が終わるまで待つ。held は lock を他が持っていて抜けた、ok が偽なら起こせなかった
 // (実行ファイルが無い等。起こし直しても直らないので、出来事にして起こし直さない)。
-func (s monitorSup) runOnce(ctx context.Context) (err error, held, ok bool) {
+func (s monitorSup) runOnce(ctx context.Context) (held, ok bool, err error) {
 	cmd, err := s.command()
 	if err != nil {
 		s.say("見張りを起こせない: " + err.Error())
-		return err, false, false
+		return false, false, err
 	}
 	r, w, err := os.Pipe()
 	if err != nil {
 		s.say("見張りを起こせない (パイプを作れない): " + err.Error())
-		return err, false, false
+		return false, false, err
 	}
 	cmd.Stdin = r
 	if err := cmd.Start(); err != nil {
 		_ = r.Close()
 		_ = w.Close()
 		s.say("見張りを起こせない: " + err.Error())
-		return err, false, false
+		return false, false, err
 	}
 	_ = r.Close() // 読む側は子だけが持つ (親が持つと、書く側を閉じても EOF にならない)
 	exited := make(chan error, 1)
@@ -128,18 +128,18 @@ func (s monitorSup) runOnce(ctx context.Context) (err error, held, ok bool) {
 			_ = cmd.Process.Kill()
 			<-exited
 		}
-		return nil, false, true
+		return false, true, nil
 	case err = <-exited:
 		_ = w.Close()
 	}
 	var exit *exec.ExitError
 	if errors.As(err, &exit) && exit.ExitCode() == monitorExitHeld {
-		return err, true, true
+		return true, true, err
 	}
 	if err == nil {
 		err = errors.New("rc=0") // 見張りは stdin が閉じるか信号でしか抜けない。自分で抜けたのは落ちたのと同じに扱う
 	}
-	return err, false, true
+	return false, true, err
 }
 
 // sleepCtx は d だけ待つ (ctx が終われば先に戻る)。

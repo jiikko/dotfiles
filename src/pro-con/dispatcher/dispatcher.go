@@ -856,7 +856,7 @@ func (d *Dispatcher) prepare(c card.Card, now time.Time, ss []agents.Session, re
 			return "再開", nil, errWait // Claude Code の自動の再開の途中かもしれない
 		}
 		return "再開", func(ctx context.Context) (string, error) {
-			return d.Launch.Resume(ctx, stop, o.SessionID, o.Cwd, sessionName(c), resumeText(c))
+			return d.Launch.Resume(ctx, stop, o.SessionID, o.Cwd, card.SessionName(c), resumeText(c))
 		}, nil
 	}
 	path, ok := d.Repos[c.Repo]
@@ -864,11 +864,11 @@ func (d *Dispatcher) prepare(c card.Card, now time.Time, ss []agents.Session, re
 		return "起動", nil, fmt.Errorf("repo %q の場所が設定に無い", c.Repo)
 	}
 	if c.LaunchedAt.IsZero() { // 起動し直し (印を書いた後) なら、在る worktree はこのカードの前の起動が作ったもの
-		if err := leftoverWorktree(WorktreePath(path, c)); err != nil {
+		if err := leftoverWorktree(card.WorktreePath(path, c)); err != nil {
 			return "起動", nil, err
 		}
 	}
-	return "起動", func(ctx context.Context) (string, error) { return d.Launch.Start(ctx, path, sessionName(c), Prompt(c)) }, nil
+	return "起動", func(ctx context.Context) (string, error) { return d.Launch.Start(ctx, path, card.SessionName(c), Prompt(c)) }, nil
 }
 
 // needsHumanError は、起動・再開の前提が崩れていてやり直しても直らないので、人の番へ回す失敗 (文は理由)。
@@ -891,15 +891,6 @@ func leftoverWorktree(wt string) error {
 		"中身を確かめて片付けてから回答すると起動する", wt))
 }
 
-func sessionName(c card.Card) string { return "pc-" + strings.ToLower(c.ID) }
-
-// WorktreePath は claude --bg -w <name> が作る PG の worktree (427 の 3f で実測。見張り = package monitor も使う)。repo の場所が分からなければ空 (呼び出し側が空を弾く)。
-func WorktreePath(repoPath string, c card.Card) string {
-	if repoPath == "" {
-		return ""
-	}
-	return filepath.Join(repoPath, ".claude", "worktrees", sessionName(c))
-}
 
 // samePath は 2 つのパスが同じ場所か (symlink を解決して比べる。claude の一覧の cwd は解決済みのパスで出る見込みで、
 // 設定の repo のパスは symlink を含みうる)。解決できなければ Clean した文字列で比べる。どちらかが空なら一致しない
@@ -935,7 +926,7 @@ func adopt(c card.Card, repoPath string, ss []agents.Session, reg []live.Owned) 
 		}
 		// 起動は、名前に加えて cwd がこのカードの repo の worktree そのもの (<repo>/.claude/worktrees/pc-<card>) のときだけ。
 		// 名前だけだと、別の状態の置き場で動く dispatcher が同じカード ID で立てた PG に当たる (カード ID は置き場ごとに C-001 から振られる)
-		if wt := WorktreePath(repoPath, c); c.Launching == "起動" && wt != "" && s.Name == sessionName(c) && samePath(s.Cwd, wt) {
+		if wt := card.WorktreePath(repoPath, c); c.Launching == "起動" && wt != "" && s.Name == card.SessionName(c) && samePath(s.Cwd, wt) {
 			return s.ID, true
 		}
 		// 再開は別の session id の session を立てる (427 の 3f で実測) ので、同じ作業ディレクトリ (PG の worktree) で印の後に始まったものも取り込む
