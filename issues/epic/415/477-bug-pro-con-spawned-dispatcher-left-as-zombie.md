@@ -67,6 +67,7 @@ dispatcher が抜けても、親の画面が生きている間は刈り取られ
     - 中継が待つ: 「dispatcher の生きている間に戻らない」で red
     - 分岐を消す: 「中継が失敗した (exit status 2)」で red
   - ③ 並行・中断: 画面の SIGKILL / SIGTERM / SIGHUP、ctrl+c、同時の spawn で、悪くなる形は無い (推論)。変更由来で残るリスクは下の「未確認のリスク」
+- [x] origin/master へ rebase した後の `make test` (repo root) rc=0 (2026-09-25、テストの係。4m28s。ログに FAIL 0 件)。ブランチは `worktree-pc-c-020-rebased`
 - 未確認のリスク (どれも再現しておらず、直していない)
   - keeper の spawn が中継を待っている数 ms の間に ctrl+r の exec が重なると、中継が 1 体だけ新版の子のゾンビで残る
     - 画面を閉じれば消え、溜まらない
