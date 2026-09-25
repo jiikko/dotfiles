@@ -106,29 +106,62 @@ func TestCursorSnapsOnTabSwitch(t *testing.T) {
 	}
 }
 
-// 滑る途中のどのコマでも、枠は丸ごと見えている (4 つの角がそろう)。途中で枠が消えて行き先に現れる「ちらつき」を戻さない
-// (2026-09-25 にユーザーが見本の B を選んだ。レーンを跨ぐ (l) と上下 (j) で見る)。
+// 滑る途中のどのコマでも、枠は丸ごと見えている。途中で枠が消えて行き先に現れる「ちらつき」を戻さない (2026-09-25 にユーザーが見本の B を選んだ)。
+// 辺が字の上に乗ったコマでは二重線の代わりに上線 / 下線 / 赤の背景で描く (見本の D) ので、どちらかが出ていればよい。レーンを跨ぐ (l) と上下 (j) で見る
 func TestCursorGlideKeepsWholeFrame(t *testing.T) {
 	for _, key := range []string{"l", "j"} {
-		m, clk := cursorModel(t)
-		if key == "j" {
-			m.selected = "W1" // 質問待ちのレーン (2 枚) の上で下へ
-			m.Update(frameMsg{})
-		}
-		press(m, key)
-		if !m.cursorGliding(clk.t) {
-			t.Fatalf("%s: 前提: 枠が滑り始めていない", key)
-		}
+		m, clk := glideModel(t, key)
 		for step := range 6 {
-			out := ansi.Strip(strings.Join(m.overlayCursor(m.boardLines()), "\n"))
-			for _, c := range []string{frameTL, frameTR, frameBL, frameBR} {
-				if n := strings.Count(out, c); n != 1 {
-					t.Fatalf("%s: 滑走 %d コマ目で枠の角 %q が %d 個 (1 個のはず = 枠が丸ごと見えている)", key, step, c, n)
+			raw := strings.Join(m.overlayCursor(m.boardLines()), "\n")
+			for _, e := range []struct{ name, line, soft string }{{"上辺", frameH, sgrOverline}, {"下辺", frameBL, sgrUnderline}, {"縦の辺", frameV, sgrFrameBg}} {
+				if !strings.Contains(raw, e.line) && !strings.Contains(raw, e.soft) {
+					t.Fatalf("%s: 滑走 %d コマ目で枠の%sが見えない", key, step, e.name)
 				}
 			}
 			clk.t = clk.t.Add(cursorDuration / 6)
 		}
 	}
+}
+
+// 滑る途中のどのコマでも、枠はカードの字を消さない (字の上では色だけ変える。見本の D)。各行の字 (空白と罫線以外) が、枠を重ねる前と同じ並びで残る。
+func TestCursorGlideKeepsText(t *testing.T) {
+	text := func(line string) string {
+		var b strings.Builder
+		for _, c := range cellsOf(line) {
+			if c.start && !underFrame([]frameCell{c}, 0) {
+				b.WriteString(c.r)
+			}
+		}
+		return b.String()
+	}
+	for _, key := range []string{"l", "j"} {
+		m, clk := glideModel(t, key)
+		for step := range 6 {
+			bare := m.boardLines()
+			over := m.overlayCursor(m.boardLines())
+			for r := range bare {
+				if got, want := text(over[r]), text(bare[r]); got != want {
+					t.Fatalf("%s: 滑走 %d コマ目、行 %d の字が枠で消えた:\n got %q\nwant %q", key, step, r, got, want)
+				}
+			}
+			clk.t = clk.t.Add(cursorDuration / 6)
+		}
+	}
+}
+
+// glideModel は key で選択を動かし、枠が滑り始めた所の Model を返す (l = レーンを跨ぐ / j = 質問待ちのレーンの W1 から下へ)。
+func glideModel(t *testing.T, key string) (*Model, *clock) {
+	t.Helper()
+	m, clk := cursorModel(t)
+	if key == "j" {
+		m.selected = "W1"
+		m.Update(frameMsg{})
+	}
+	press(m, key)
+	if !m.cursorGliding(clk.t) {
+		t.Fatalf("%s: 前提: 枠が滑り始めていない", key)
+	}
+	return m, clk
 }
 
 // 枠はカードの上下の空き行に描くので、選んだカードの上下のカードも見えたまま。見出しの文字も消さない。
