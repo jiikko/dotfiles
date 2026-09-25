@@ -210,6 +210,9 @@ type Card struct {
 	Crashes []time.Time `json:",omitempty"`
 	// StopWanted は落ちた回数が上限に達したが、まだ止められていない印 (止められるまで毎 Tick 試す。時間の窓を過ぎても諦めない)
 	StopWanted bool `json:",omitempty"`
+	// DeadSince は daemon が、このカードの PG の session が一覧に無い / pid 無し (落ちて自動の再開を待っている) のを最初に見た時刻。
+	// 生きているのを見たら外す。止める・再開する前の待ち (restartWait) はここから数える
+	DeadSince time.Time `json:",omitzero"`
 	// Archived は完了のレーンから片付けた (x)。ボードには出さないが、記録 (状態ファイル) には残す
 	Archived bool
 	// LastProgress は「実質的に進んだ」最後の時刻 (watchdog が見る。活動ではなく進捗)

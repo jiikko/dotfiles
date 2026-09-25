@@ -113,6 +113,9 @@ func (d *Daemon) Tick(ctx context.Context) ([]string, error) {
 		notes = append(notes, fmt.Sprintf("PG の session を %d 本登録した", n))
 	}
 	notes = append(notes, warn...)
+	if err := d.trackDead(now, ss); err != nil {
+		return notes, err
+	}
 	stopped, err := d.stopCrashing(ctx, now, ss)
 	notes = append(notes, stopped...)
 	if err != nil {
@@ -217,6 +220,45 @@ func (d *Daemon) register(now time.Time, ss []agents.Session) (int, []string, er
 	return n, warn, nil
 }
 
+// trackDead は、PG の session を持つカードごとに「一覧に無い / pid 無し」を最初に見た時刻を DeadSince に書き、生きているのを見たら外す。
+// 待ちの起点を「落ちた (のを見た) 時刻」にするため (直前の再開や回答の時刻から数えると、長く走ってから落ちた PG を待たずに扱う)
+func (d *Daemon) trackDead(now time.Time, ss []agents.Session) error {
+	st, err := store.Load(d.Dir)
+	if err != nil {
+		return err
+	}
+	reg, err := live.LoadRegistry(filepath.Join(d.Dir, live.RegistryFile))
+	if err != nil {
+		return err
+	}
+	for _, c := range st.Cards {
+		if c.State == card.Done || c.Session == "" {
+			continue
+		}
+		o, ok := owned(c, reg)
+		if !ok {
+			continue
+		}
+		alive := false
+		for _, s := range ss {
+			if s.SessionID == o.SessionID && s.PID != 0 {
+				alive = true
+			}
+		}
+		switch {
+		case alive && !c.DeadSince.IsZero():
+			if err := d.update(c.ID, func(cc *card.Card) { cc.DeadSince = time.Time{} }); err != nil {
+				return err
+			}
+		case !alive && c.DeadSince.IsZero():
+			if err := d.update(c.ID, func(cc *card.Card) { cc.DeadSince = now }); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // restartsSince は、記録の行 (o) より後・最後に数えた落ちた時刻より後に、transcript へ出た再開の文の時刻を返す。
 func firstNonEmpty(a, b string) string {
 	if a != "" {
@@ -305,7 +347,7 @@ func (d *Daemon) stopCrashing(ctx context.Context, now time.Time, ss []agents.Se
 			how = "止めなかった (一覧の session が記録と一致しない。別の session か、外から操作された疑い)"
 		default:
 			// 一覧に無い: 死んで Claude Code の自動の再開を待っているのかもしれない (約 25 秒。425 結果 1)。最後に落ちてから restartWait 待つ
-			if n := len(c.Crashes); n > 0 && now.Sub(c.Crashes[n-1]) < restartWait {
+			if c.DeadSince.IsZero() || now.Sub(c.DeadSince) < restartWait {
 				continue
 			}
 			how = "止めなかった (session が一覧に無い)"
@@ -518,7 +560,7 @@ func (d *Daemon) prepare(c card.Card, now time.Time, ss []agents.Session, reg []
 		if o.Cwd == "" {
 			return "再開", nil, fmt.Errorf("前の session (%s) の作業ディレクトリが記録に無い (別の cwd で再開すると別の tree を書く)", c.Session)
 		}
-		if stop == "" && now.Sub(c.Since) < restartWait {
+		if stop == "" && (c.DeadSince.IsZero() || now.Sub(c.DeadSince) < restartWait) {
 			return "再開", nil, errWait // Claude Code の自動の再開の途中かもしれない
 		}
 		return "再開", func(ctx context.Context) (string, error) {

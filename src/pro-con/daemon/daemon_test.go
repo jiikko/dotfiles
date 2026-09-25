@@ -795,7 +795,7 @@ func TestStopWantedClearedByAskAndResume(t *testing.T) {
 	}
 }
 
-// 落ち続けた PG の session が一覧に無ければ、最後に落ちてから restartWait は待つ (Claude Code の自動の再開の途中かもしれない)。
+// 落ち続けた PG の session が一覧に無ければ、消えたのを最初に見てから restartWait は待つ (Claude Code の自動の再開の途中かもしれない)。
 // 過ぎても無ければ、止めずに回答待ちにし、止めなかったことを履歴に書く。
 func TestCrashStopWaitsForAutoRestartWhenUnlisted(t *testing.T) {
 	r := newCrashRig(t)
@@ -811,7 +811,7 @@ func TestCrashStopWaitsForAutoRestartWhenUnlisted(t *testing.T) {
 	if c := states(t, r.dir)["C-001"]; c.State != card.Running {
 		t.Fatalf("自動の再開を待たずに回答待ちにした: %v", c.State)
 	}
-	r.d.Now = func() time.Time { return t0.Add(2*time.Minute + restartWait + time.Second) }
+	r.d.Now = func() time.Time { return t0.Add(2*time.Minute + 30*time.Second + restartWait + time.Second) } // 消えたのを最初に見てから 1 分
 	r.tick(t)
 	c := states(t, r.dir)["C-001"]
 	if c.State != card.Waiting || !strings.Contains(c.Wait.Question, "一覧に無い") || len(r.l.stops) != 0 {
@@ -1170,5 +1170,97 @@ func TestAdoptStartNeedsRepoPath(t *testing.T) {
 	}
 	if c := states(t, dir)["C-001"]; c.Session == "nn11" {
 		t.Fatal("repo の場所が分からないのに名前だけで取り込んだ")
+	}
+}
+
+// 再開から長く走った後に落ちた PG も、落ちたのを見てから restartWait は待つ (直前の再開の時刻から数えると、待たずに回答待ちへ送る)。
+func TestCrashStopWaitsFromDeathNotLastRestart(t *testing.T) {
+	r := newCrashRig(t)
+	r.l.stopFail = true
+	r.crash(t0.Add(time.Minute), 43)
+	r.tick(t)
+	r.crash(t0.Add(2*time.Minute), 44)
+	r.tick(t) // 止める印が立つ
+	r.l.stopFail = false
+	r.ss[0].PID = 0 // 最後の再開から 1 分半走ってから落ちた
+	r.d.Now = func() time.Time { return t0.Add(3*time.Minute + 30*time.Second) }
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; c.State != card.Running {
+		t.Fatalf("落ちたのを見た直後に回答待ちへ送った: %v %q", c.State, c.Wait.Question)
+	}
+	r.crash(t0.Add(3*time.Minute+45*time.Second), 45) // 自動の再開で戻る
+	r.d.Now = func() time.Time { return t0.Add(3*time.Minute + 45*time.Second) }
+	r.tick(t)
+	if len(r.l.stops) != 1 {
+		t.Fatalf("戻った自分の PG を止めない: stops=%v", r.l.stops)
+	}
+}
+
+// 回答の後、前の session が落ちたのを見てから restartWait は再開しない (回答から 1 分過ぎていても。上限で再開が待たされた形)。
+func TestResumeWaitsFromDeathNotAnswer(t *testing.T) {
+	r := newCrashRig(t)
+	for _, q := range []store.Request{{Kind: "ask", CardID: "C-001", Question: "q"}, {Kind: "answer", CardID: "C-001", Answer: "a"}} {
+		if _, err := store.Submit(r.dir, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.d.Limit = 0
+	r.tick(t) // 回答 (Since = t0)。上限で再開は待たされる
+	if c := states(t, r.dir)["C-001"]; c.State != card.Planned || len(r.l.resumes) != 0 {
+		t.Fatalf("前提: 回答で分解済みに戻り、まだ再開していない: %v %v", c.State, r.l.resumes)
+	}
+	r.d.Limit = 2
+	r.ss[0].PID = 0 // 回答から 2 分後、前の session が落ちている
+	r.d.Now = func() time.Time { return t0.Add(2 * time.Minute) }
+	r.tick(t)
+	if len(r.l.resumes) != 0 {
+		t.Fatalf("落ちたのを見た直後に再開した (自動の再開と重なる): %v", r.l.resumes)
+	}
+}
+
+// 起動の取り込みは、設定の repo のパスが symlink を含んでも、一覧の解決済みの cwd と照らせる (二重起動にしない)。
+func TestAdoptStartWithSymlinkedRepo(t *testing.T) {
+	real := filepath.Join(t.TempDir(), "repo")
+	wt := filepath.Join(real, ".claude", "worktrees", "pc-c-001")
+	if err := os.MkdirAll(wt, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	resolved, _ := filepath.EvalSymlinks(wt)
+	dir := t.TempDir()
+	planned(t, dir, 1)
+	setCard(t, dir, "C-001", func(c *card.Card) { c.Launching, c.LaunchedAt = "起動", t0 })
+	d := newDaemon(t, dir, &fakeLauncher{}, []agents.Session{{ID: "sy11", SessionID: "Y", PID: 3, Name: "pc-c-001", Kind: "background", Cwd: resolved, StartedAt: t0.Add(time.Second).UnixMilli()}})
+	d.Repos = map[string]string{"dotfiles": link}
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if c := states(t, dir)["C-001"]; c.Session != "sy11" {
+		t.Fatalf("symlink を含む repo のパスで、立っていた自分の PG を取り込めない: %q", c.Session)
+	}
+}
+
+// 一度落ちて戻った PG の「落ちたのを見た時刻」は、戻ったのを見たら外す。後でまた落ちたときは、その時刻から待つ。
+func TestDeadSinceClearedWhenAlive(t *testing.T) {
+	r := newCrashRig(t)
+	r.l.stopFail = true
+	r.ss[0].PID = 0 // 一度落ちる
+	r.d.Now = func() time.Time { return t0.Add(time.Minute) }
+	r.tick(t)
+	r.crash(t0.Add(time.Minute+15*time.Second), 43) // 戻る (1 回目)
+	r.d.Now = func() time.Time { return t0.Add(time.Minute + 15*time.Second) }
+	r.tick(t)
+	r.crash(t0.Add(2*time.Minute), 44) // 2 回目。止めに行くが失敗 (印が立つ)
+	r.d.Now = func() time.Time { return t0.Add(2 * time.Minute) }
+	r.tick(t)
+	r.l.stopFail = false
+	r.ss[0].PID = 0 // 5 分後にまた落ちる
+	r.d.Now = func() time.Time { return t0.Add(7 * time.Minute) }
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; c.State != card.Running {
+		t.Fatalf("前に落ちた時刻が残っていて、今落ちた PG を待たずに回答待ちへ送った: %v %q", c.State, c.Wait.Question)
 	}
 }
