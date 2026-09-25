@@ -38,6 +38,7 @@
   - 止めても知らない state のまま `--all` に残る版で、止め直しの周ごとに警告が重なる (実測 17 回) → 1 本の session につき dispatcher の生涯で 1 回
     (`Dispatcher.unknownSeen`。`TestUnknownStateWarningOncePerSession`)
   - 判定できる session (生きている / pid 無しの working) にも警告を出す変異が生き残る → 出さないことを検査 (`TestNoUnknownStateWarningForKnownStates`)
+- [x] origin/master に rebase した後の `make test` rc=0 (テストの係。6m24s)
 - 受けた帰結 (直していない): 止めた session も知らない state (例: state の欄が無い) で残る版では、止まったと確かめる手段が無いので、
   終了は名指しの失敗のまま ok にならず (serve の stopUntilDone は止め直しを続ける)、閉じたときは closeStopWait の後に「止められない」で諦める。
   黙って「止まった」と読むより声が出る側を選んだ。その版が来たら、止めた後の state を実測して許可リストに足す
