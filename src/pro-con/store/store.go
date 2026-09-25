@@ -453,7 +453,7 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		if strings.TrimSpace(r.Text) == "" {
 			return errors.New("人に回す理由が空")
 		}
-		c.History = append(c.History, card.Event{At: now, Text: firstNonEmpty(r.From, "PM") + " が人に回した: " + r.Text}) // 原文のまま
+		c.History = append(c.History, card.Event{At: now, Text: card.HandoffText(firstNonEmpty(r.From, "PM"), r.Text)}) // 原文のまま
 	case "run": // PG がテストの係にコマンドの実行を頼んで turn を終えた (426 の決定 5)。結果は dispatcher が再開のときに渡す
 		if c.State != card.Running {
 			return fmt.Errorf("作業中の列に無い (今は %s)", c.State.Label())

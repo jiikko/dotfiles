@@ -259,10 +259,10 @@ func (d *Dispatcher) preparePM(row live.Owned, hasRow bool, cur agents.Session, 
 
 // pmKey は PM に知らせる物の鍵。依頼の列のカードはカード ID、PG の質問はカード ID と質問待ちに入った時刻
 // (回答で列を離れてまた質問したら、離れたのを見ていなくても別の鍵になる = また知らせる)。
-// 権限の確認と落ちて止めた PG は PM には答えられない (人の番。452) ので知らせない。
+// 権限の確認と落ちて止めた PG、PM が人に回した質問は PM には片付けられない (人の番。452) ので知らせない (残すと PM を起こす理由になり続ける)。
 func pmKey(c card.Card) (string, bool) {
 	switch {
-	case c.Archived:
+	case c.Archived || c.HandedOff():
 		return "", false
 	case c.State == card.Requested:
 		return c.ID, true
@@ -288,7 +288,7 @@ func pmLabels(keys []string) string {
 // 指示は書かない (指示の正本は pm-guide.md)。
 func pmNotice(cards []card.Card, untold, pending []string) string {
 	var b strings.Builder
-	b.WriteString("pro-con: 依頼の列と質問待ちの列に次のカードがある。指示書のとおりに扱って。\n")
+	b.WriteString("pro-con: 次のカードを指示書のとおりに扱って。\n")
 	var restReq, restAsk []string
 	for _, c := range cards {
 		k, ok := pmKey(c)

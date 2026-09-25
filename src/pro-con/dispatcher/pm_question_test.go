@@ -96,3 +96,34 @@ func TestPMRenotifiedOfQuestionAfterDeath(t *testing.T) {
 		t.Fatalf("消えた PM の後に、答えていない質問を知らせ直していない: %v", r.l.resumes)
 	}
 }
+
+// 人に回した質問 (handoff) は PM には片付けられないので、知らせる物から外す: PM が落ちても、それだけのために起こさない。
+func TestPMNotWokenForHandedOffQuestion(t *testing.T) {
+	r := startedPM(t)
+	if _, err := store.Submit(r.dir, store.Request{Kind: "plan", CardID: "C-001", Issues: []card.IssueRef{{Repo: "dotfiles", Number: 1}}}); err != nil {
+		t.Fatal(err)
+	}
+	asked(t, r.dir, "C-009", "赤か青か", t0) // handoff を適用する時計 (r.now) より後に質問待ちに入らない
+	r.tick(t)
+	if _, err := store.Submit(r.dir, store.Request{Kind: "handoff", CardID: "C-009", Text: "好みは人が決める", From: "PM"}); err != nil {
+		t.Fatal(err)
+	}
+	r.tick(t)
+	r.ss = nil // PM が一覧から消えた
+	for i := 1; i <= 3; i++ {
+		r.now = t0.Add(time.Duration(i) * time.Hour)
+		r.tick(t)
+		r.now = r.now.Add(restartWait + time.Second)
+		r.tick(t)
+	}
+	pmStarts := slices.DeleteFunc(slices.Clone(r.l.starts), func(n string) bool { return !strings.HasPrefix(n, "pc-pm-") }) // PG の起動 (C-001) は数えない
+	if len(r.l.resumes) != 1 || len(pmStarts) != 1 {
+		t.Fatalf("人に回した質問のためだけに PM を起こした: resumes=%v PM の起動=%v", r.l.resumes, pmStarts)
+	}
+	asked(t, r.dir, "C-009", "次の質問", t0.Add(5*time.Hour)) // 人が答えて、また質問した: 新しい質問は知らせる
+	r.now = t0.Add(5 * time.Hour)
+	r.tick(t)
+	if len(r.l.resumes) != 2 || !strings.Contains(r.l.resumes[1], "次の質問") {
+		t.Fatalf("人に回した後の新しい質問を知らせていない: %v", r.l.resumes)
+	}
+}
