@@ -27,13 +27,15 @@ func TestToastDrawBudget(t *testing.T) {
 		page int
 		want int
 	}{
+		// 下限は折り返した箱 2 枚ぶん (toast.MaxBoxHeight*2 = 12)、上限は page-1 (窓を覆い切らない)
 		{4, 4},
 		{8, 7},
 		{9, 8},
-		{11, 8},
-		{15, 8},
-		{16, 8},
+		{11, 10},
+		{15, 12},
+		{16, 12},
 		{24, 12},
+		{30, 15},
 	} {
 		if got := toastDrawBudget(c.page); got != c.want {
 			t.Errorf("page=%d: 予算=%d, want %d", c.page, got, c.want)

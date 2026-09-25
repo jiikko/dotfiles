@@ -3603,7 +3603,8 @@ func toastTimers(ts []toast.Timer) tea.Cmd {
 }
 
 func toastDrawBudget(page int) int {
-	return min(max(page/2, toast.BoxHeight*2), max(page-1, toast.BoxHeight))
+	// 🚨 2 枚ぶんは折り返した箱の高さ (MaxBoxHeight) で数える。BoxHeight (1 行の箱) で数えると、長い警告 2 枚の 2 枚目が落ちる
+	return min(max(page/2, toast.MaxBoxHeight*2), max(page-1, toast.BoxHeight))
 }
 
 // viewLines は画面content を組む本体 (旧 View)。テストはここではなく View().Content を見る。

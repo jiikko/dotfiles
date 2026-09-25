@@ -9,7 +9,6 @@ package toast
 
 import (
 	"math"
-	"strings"
 	"time"
 
 	"termsafe"
@@ -100,16 +99,6 @@ func (t *item) animating() bool { return t.phase == Entering || t.phase == Leavi
 // visible は表示中か (holding 含む)。
 func (t *item) visible() bool { return t.phase != Hidden }
 
-// boxWidth は幅 maxWidth で組んだ箱の総カラム幅 (スライドの終点)。実描画幅と一致させるため fullBox の
-// 1 行目の表示幅を使う (layout.Panel の最小幅クランプ込み)。色に依らず一定。
-func (t *item) boxWidth(colored bool, maxWidth int) int {
-	full := t.fullBox(colored, maxWidth)
-	if len(full) == 0 {
-		return 0
-	}
-	return termwidth.Of(full[0])
-}
-
 // advance はアニメを 1 フレーム進める。frame を入場で 0→N、退場で N→0 に動かす (見せるカラム数は
 // 描画時に easedShown で求める)。入場完了で holding へ移り Hold 後の退場タイマーを予約して返す。退場完了で hidden。
 func (t *item) advance() (hold *Timer) {
@@ -143,7 +132,8 @@ func (t *item) startLeaving(msg Msg) {
 
 // fullBox は内容幅にフィットした影付き小箱 (全行)。スライドの基準になる全幅・全行の算出にも使う。
 // maxWidth は箱 (影込み) に使ってよい表示幅 (0 以下は上限なし)。収まらない文は箱の中で折り返す (wrapText)。
-func (t *item) fullBox(colored bool, maxWidth int) []string {
+// textLines は折り返してよい行数 (1..MaxTextLines。低い窓では BoxLines が減らす)。
+func (t *item) fullBox(colored bool, maxWidth, textLines int) []string {
 	mark, color := "✓", sgr.Green
 	switch {
 	case t.info:
@@ -157,7 +147,7 @@ func (t *item) fullBox(colored bool, maxWidth int) []string {
 		// (狭すぎる窓で 0 以下になると 1 字も置けず、wrapText が進まない)
 		textW = max(maxWidth, layout.PanelMinWidth) - layout.PanelChrome - markWidth
 	}
-	lines := wrapText(t.text, textW, MaxTextLines)
+	lines := wrapText(t.text, textW, textLines)
 	rows := make([]string, len(lines))
 	contentW := 0
 	for i, l := range lines {
@@ -182,6 +172,10 @@ const markWidth = 2
 // stderr を埋め込む通知がある) が 1 枚で画面を覆う。超えた分は最終行の末尾を … にして、切ったことを見せる。
 const MaxTextLines = 3
 
+// MaxBoxHeight は折り返した 1 枚の箱の最大の行数。窓の高さから予算を決める側 (「警告 2 枚ぶんを確保する」等) は
+// BoxHeight ではなくこちらで数える (BoxHeight で数えると、折り返した警告が 2 枚目から予算に入らない)。
+const MaxBoxHeight = BoxHeight + MaxTextLines - 1
+
 // wrapText は text を表示幅 width ごとの行に分ける (width <= 0 なら分けない)。空白があればそこで
 // 改行し (英文の単語を割らない)、無ければ文字 (書記素) の境で割る。maxLines 行を超えたら最終行を
 // … で切り詰める。text は push で無害化済み (SGR・制御文字を含まない) の前提。
@@ -190,7 +184,7 @@ func wrapText(text string, width, maxLines int) []string {
 		return []string{text}
 	}
 	var lines []string
-	rest := text
+	rest := trimLeadingSpaces(text) // 先頭の空白だけの行を作らない (折り返すときだけ。1 行に収まる文は触らない)
 	for rest != "" {
 		if len(lines) == maxLines-1 {
 			// 最後の 1 行: 入り切らなければ … で切ったことを示す
@@ -214,7 +208,7 @@ func cutLine(s string, width int) (line, rest string) {
 		if used+w > width {
 			break
 		}
-		if c == " " {
+		if c == " " { // 🚨 書記素で比べる (バイトで見ると「空白 + 結合文字」を空白と取り違えて割る)
 			lastSpace = end
 		}
 		used += w
@@ -228,23 +222,36 @@ func cutLine(s string, width int) (line, rest string) {
 		c, _ := termwidth.FirstCluster(s)
 		return c, s[len(c):]
 	}
-	if s[end] == ' ' {
+	if c, _ := termwidth.FirstCluster(s[end:]); c == " " {
 		lastSpace = end // ちょうど語の切れ目で幅に達した (手前の空白まで戻らない)
 	}
 	if lastSpace > 0 {
-		return s[:lastSpace], strings.TrimLeft(s[lastSpace:], " ")
+		return s[:lastSpace], trimLeadingSpaces(s[lastSpace:])
 	}
-	return s[:end], strings.TrimLeft(s[end:], " ")
+	return s[:end], trimLeadingSpaces(s[end:])
+}
+
+// trimLeadingSpaces は先頭の空白 (単独の書記素としての " ") を落とす。strings.TrimLeft はバイトで剥がすので、
+// 「空白 + 結合文字」の書記素から空白だけを剥がし、結合文字を次の行の頭に残す。
+func trimLeadingSpaces(s string) string {
+	for s != "" {
+		c, _ := termwidth.FirstCluster(s)
+		if c != " " {
+			break
+		}
+		s = s[len(c):]
+	}
+	return s
 }
 
 // boxLines は現フレームで見せる箱行 (全行) を返す。maxWidth は fullBox と同じ (箱に使ってよい表示幅)。各行を箱の左 shown カラムに切り、右端揃えで
 // overlay されると「右画面外から左へ滑り込む/右へ滑り出る」横スライドになる。左カラム切りで開いた
 // SGR は行末で閉じる (右端揃え合成の背景に色がにじまないように)。非表示なら nil。
-func (t *item) boxLines(colored bool, maxWidth int) []string {
+func (t *item) boxLines(colored bool, maxWidth, textLines int) []string {
 	if t.phase == Hidden {
 		return nil
 	}
-	full := t.fullBox(colored, maxWidth)
+	full := t.fullBox(colored, maxWidth, textLines)
 	if len(full) == 0 {
 		return nil
 	}
@@ -305,6 +312,11 @@ func (s *Stack) push(text string, ok, info bool) {
 	// 🚨 積んだままにすると「PR を検索中...」の下に「PR #123 を開きます」が並び、終わったのに
 	// 検索中と書いてある状態が数秒残る (実測 2026-07-31)。1 枠時代は上書きで自然に消えていた。
 	s.dropInfo()
+	// 🚨 最新と同じ通知 (文と種類が同じ) は重ねず、最新を出し直す。断り (赤) は重要なので追い出しで最後まで残り、
+	// 同じキーを 3 回押すと同じ断りが 3 枚積まれて、本物の失敗の警告を押し出す
+	if s.visible() && s.text == text && s.ok == ok && s.info == info {
+		s.item = item{}
+	}
 	if s.visible() {
 		// 今の最新を 1 段下へ押し下げてから、新しいものを最上段に置く
 		s.older = append([]item{s.item}, s.older...)
@@ -454,8 +466,11 @@ func (s *Stack) BoxLines(colored bool, maxLines, maxWidth int) []string {
 	items := s.items()
 	boxes := make([][]string, 0, len(items))
 	shown := make([]*item, 0, len(items))
+	// 🚨 低い窓では 1 枚の折り返しを予算に収まる行数まで減らす。最新の 1 枚は予算を超えても出すので、
+	// 高い箱のままだと重ねる側が窓の下端で切り、下辺と影が消える (1 行の箱なら予算 4 行で収まっていた)
+	textLines := min(MaxTextLines, max(maxLines-(BoxHeight-1), 1))
 	for _, it := range items {
-		box := it.boxLines(colored, maxWidth)
+		box := it.boxLines(colored, maxWidth, textLines)
 		if len(box) == 0 {
 			continue // まだ滑り込み前 (幅 0) は予算を食わない
 		}

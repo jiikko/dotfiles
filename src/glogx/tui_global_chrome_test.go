@@ -179,3 +179,18 @@ func TestToastLongTextWrapsWithinViewWidth(t *testing.T) {
 		}
 	}
 }
+
+// 折り返した長い警告 2 枚も、窓に余裕があれば 2 枚とも描く (予算を 1 行の箱の高さで数えると 2 枚目が落ちる。敵対レビュー P2-1)。
+func TestToastDrawBudgetFitsTwoWrappedWarnings(t *testing.T) {
+	m := newTestBrowse(t, 3, nil, nil)
+	m.width, m.height = 50, 17 // page=16: 半ページは 8 行 = 1 行の箱なら 2 枚ぶん
+	showWarningsLanded(t, m,
+		"push failed: remote rejected the update OLDERMARK",
+		"pull failed: could not resolve host github.com NEWERMARK")
+	out := stripANSI(m.View().Content)
+	for _, want := range []string{"OLDERMARK", "NEWERMARK"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("折り返した警告 %q が描かれていない:\n%s", want, out)
+		}
+	}
+}

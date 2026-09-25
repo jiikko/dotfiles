@@ -22,7 +22,7 @@ func TestToastLifecycle(t *testing.T) {
 	if !to.Visible() || to.phase != Entering || !to.ok || to.text != "done" {
 		t.Fatalf("show 後: phase=%d visible=%v ok=%v text=%q", to.phase, to.Visible(), to.ok, to.text)
 	}
-	boxW := to.boxWidth(false, 0)
+	boxW := termwidth.Of(to.fullBox(false, 0, MaxTextLines)[0])
 	if boxW < 10 {
 		t.Fatalf("箱幅が不足: %d", boxW)
 	}
@@ -93,11 +93,11 @@ func TestToastStaleTimerDoesNotLeaveNewer(t *testing.T) {
 func TestToastBoxLinesRevealsLeftColumns(t *testing.T) {
 	var to Stack
 	to.Show("pushed", true) // ASCII のみ (全角境界の半端幅を避け、可視幅=shown を厳密比較)
-	boxW := to.boxWidth(false, 0)
-	full := to.fullBox(false, 0)
+	boxW := termwidth.Of(to.fullBox(false, 0, MaxTextLines)[0])
+	full := to.fullBox(false, 0, MaxTextLines)
 	// 入場 1 フレーム: 全行が出るが、各行の可視幅は shown (<boxW) に切られている
 	to.Advance()
-	got := to.boxLines(false, 0) // 1 枚分の描画を見る (スタックの行数上限とは別)
+	got := to.boxLines(false, 0, MaxTextLines) // 1 枚分の描画を見る (スタックの行数上限とは別)
 	if len(got) != len(full) {
 		t.Errorf("スライド中も全行が出るべき: got=%d 行 want=%d 行", len(got), len(full))
 	}
@@ -107,7 +107,7 @@ func TestToastBoxLinesRevealsLeftColumns(t *testing.T) {
 	}
 	// holding まで進めると全幅 + ✓/text
 	advanceToHolding(&to)
-	lines := to.boxLines(false, 0)
+	lines := to.boxLines(false, 0, MaxTextLines)
 	plain := ansi.Strip(strings.Join(lines, "\n"))
 	if termwidth.Of(lines[0]) != boxW || !strings.Contains(plain, "✓") || !strings.Contains(plain, "pushed") {
 		t.Errorf("全表示に ✓/pushed が無い / 全幅でない:\n%s", plain)
@@ -116,12 +116,12 @@ func TestToastBoxLinesRevealsLeftColumns(t *testing.T) {
 	var ng Stack
 	ng.Show("failed", false)
 	advanceToHolding(&ng)
-	if !strings.Contains(ansi.Strip(strings.Join(ng.boxLines(false, 0), "\n")), "✗") {
+	if !strings.Contains(ansi.Strip(strings.Join(ng.boxLines(false, 0, MaxTextLines), "\n")), "✗") {
 		t.Error("失敗トーストに ✗ が無い")
 	}
 	// 非表示は nil
 	var empty Stack
-	if empty.boxLines(false, 0) != nil {
+	if empty.boxLines(false, 0, MaxTextLines) != nil {
 		t.Error("非表示で nil を返さない")
 	}
 }
@@ -260,7 +260,7 @@ func TestToastBoxLineCount(t *testing.T) {
 	var s Stack
 	s.Show("x", true)
 	advanceToHolding(&s)
-	if got := len(s.boxLines(false, 0)); got != BoxHeight {
+	if got := len(s.boxLines(false, 0, MaxTextLines)); got != BoxHeight {
 		t.Errorf("箱の行数 = %d, want %d (BoxHeight を直すこと)", got, BoxHeight)
 	}
 }
@@ -577,9 +577,77 @@ func TestToastHoldingFollowsWidthChange(t *testing.T) {
 	advanceToHolding(&s)
 	for _, w := range []int{100, 30} {
 		box := s.BoxLines(false, 100, w)
-		full := s.fullBox(false, w)
+		full := s.fullBox(false, w, MaxTextLines)
 		if termwidth.Of(box[0]) != termwidth.Of(full[0]) {
 			t.Errorf("maxWidth=%d: 静止中なのに全幅が出ない (%d / %d)", w, termwidth.Of(box[0]), termwidth.Of(full[0]))
 		}
+	}
+}
+
+// 低い窓では最新の 1 枚の折り返しを予算の行数まで減らし、箱を下端で切らせない (最新は予算を超えても出すので、
+// 高い箱のままだと重ねる側が下辺と影を切る。敵対レビュー P2-2)。
+func TestToastTallBoxShrinksToBudget(t *testing.T) {
+	var s Stack
+	s.Show(strings.Repeat("長い警告 ", 30), false)
+	advanceToHolding(&s)
+	for _, budget := range []int{BoxHeight, BoxHeight + 1} {
+		box := s.BoxLines(false, budget, 40)
+		if len(box) > budget {
+			t.Errorf("予算 %d 行に %d 行の箱を出した:\n%s", budget, len(box), strings.Join(box, "\n"))
+		}
+		if last := box[len(box)-3]; !strings.Contains(last, "…") {
+			t.Errorf("予算 %d 行: 減らした最終行に … が無い: %q", budget, last)
+		}
+	}
+}
+
+// 英文は語の途中で割らない (空白で割る。敵対レビュー P2-3: 文字の復元だけでは語を割っても緑だった)。
+func TestToastWrapBreaksAtSpaces(t *testing.T) {
+	text := "push failed: remote rejected the update because the branch is protected"
+	words := map[string]bool{}
+	for _, w := range strings.Fields(text) {
+		words[w] = true
+	}
+	for _, line := range wrapText(text, 17, MaxTextLines) { // 17: 20 だと語の境がちょうど行末に来て、語を割る実装でも同じ行になる
+		for _, w := range strings.Fields(strings.TrimSuffix(line, "…")) {
+			if !words[w] && !strings.HasSuffix(line, "…") {
+				t.Errorf("語の途中で割った: 行 %q の %q", line, w)
+			}
+		}
+	}
+}
+
+// 先頭が空白の文を折り返しても、空白だけの行を作らない (敵対レビュー P3-1)。
+func TestToastWrapSkipsLeadingSpaces(t *testing.T) {
+	for _, line := range wrapText("  "+strings.Repeat("x", 40), 10, MaxTextLines) {
+		if strings.TrimSpace(line) == "" {
+			t.Fatalf("空白だけの行ができた: %q", wrapText("  "+strings.Repeat("x", 40), 10, MaxTextLines))
+		}
+	}
+}
+
+// 「空白 + 結合文字」の書記素が行の境に来ても、空白を剥がして結合文字だけを次の行へ残さない (敵対レビュー P3-2)。
+func TestToastWrapKeepsSpaceWithCombiningMark(t *testing.T) {
+	text := "ab ́cd"
+	got := wrapText(text, 2, MaxTextLines)
+	if strings.Join(got, "") != text {
+		t.Fatalf("書記素が割れた: %q (元 %q)", got, text)
+	}
+}
+
+// 最新と同じ通知は重ねずに出し直す。断り (赤) は追い出しで残るので、同じキーの連打で本物の警告を押し出さない (敵対レビュー P3-3)。
+func TestToastSameNoticeDoesNotStack(t *testing.T) {
+	var s Stack
+	s.Show("push failed", false)
+	advanceToHolding(&s)
+	for range StackMax {
+		s.Show("終了は Q を押して quit と打つ", false)
+	}
+	got := s.Entries()
+	if len(got) != 2 || got[0].Text != "終了は Q を押して quit と打つ" || got[1].Text != "push failed" {
+		t.Fatalf("同じ断りが重なった / 本物の警告が押し出された: %+v", got)
+	}
+	if s.Phase() != Entering {
+		t.Errorf("出し直した最新が滑り込み直していない: phase=%d", s.Phase())
 	}
 }
