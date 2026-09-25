@@ -75,7 +75,7 @@ func pmRegRow(t *testing.T, dir string) (live.Owned, bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return pmRow(reg)
+	return roleRow(reg, PMCardID)
 }
 
 // startedPM は C-001 を依頼して PM を起動し、一覧に出た PM を記録に載せたところまで進める。
@@ -575,15 +575,15 @@ func TestPMRejectCountResetsOnOtherOutcomes(t *testing.T) {
 	tickAt(1)
 	r.l.reject, r.l.fail = false, true // 立っているかもしれない失敗
 	tickAt(2)
-	if r.d.pmRejects != 0 {
-		t.Fatalf("拒否でない失敗で回数を 0 に戻していない: %d", r.d.pmRejects)
+	if r.d.roleRun(pmRole).rejects != 0 {
+		t.Fatalf("拒否でない失敗で回数を 0 に戻していない: %d", r.d.roleRun(pmRole).rejects)
 	}
 	r.l.reject, r.l.fail = true, false
 	tickAt(3)
 	tickAt(4)
 	r.l.reject = false
 	tickAt(5) // 起動できた
-	if r.d.pmRejects != 0 || loadPM(t, r.dir).Session == "" {
-		t.Fatalf("起動できたのに回数を 0 に戻していない: %d %+v", r.d.pmRejects, loadPM(t, r.dir))
+	if r.d.roleRun(pmRole).rejects != 0 || loadPM(t, r.dir).Session == "" {
+		t.Fatalf("起動できたのに回数を 0 に戻していない: %d %+v", r.d.roleRun(pmRole).rejects, loadPM(t, r.dir))
 	}
 }

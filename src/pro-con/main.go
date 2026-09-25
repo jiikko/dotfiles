@@ -161,7 +161,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			if warn != "" {
 				_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", warn)
 			}
-			return runDispatcher(args[1:], liveDir(home), filepath.Join(home, ".claude", "projects"), paths, pmConfig{Repo: pmRepo, Mode: cfg.PM}, stdout, stderr)
+			return runDispatcher(args[1:], liveDir(home), filepath.Join(home, ".claude", "projects"), paths, pmConfig{Repo: pmRepo, Mode: cfg.PM, IntegratorMode: cfg.Integrator}, stdout, stderr)
 		case "-h", "--help":
 			_, _ = fmt.Fprintln(stdout, "usage: pro-con [--mock]   (既定は今の Claude Code の session を読み取り専用で出す。--mock は模擬データ)")
 			return 0

@@ -501,7 +501,7 @@ func transition(c *card.Card, r Request, now time.Time) error {
 			c.Resume = r.Answer
 		}
 		move(card.Planned, firstNonEmpty(r.From, "人間")+" が回答した: "+clip(r.Answer, 80)+" (PG の空きが出たら同じ session を resume)")
-	case "rework": // PM がレビューで差し戻した (issue 446)。回答と同じく分解済みへ戻し、dispatcher が同じ session を再開する
+	case "rework": // 取り込みの係 (487) がレビューで差し戻した (issue 446)。回答と同じく分解済みへ戻し、dispatcher が同じ session を再開する
 		if c.State != card.Review {
 			return fmt.Errorf("レビュー待ちではない (今は %s)", c.State.Label())
 		}
@@ -510,9 +510,9 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		}
 		c.Resume = ReworkPrefix + r.Rework + "\n直したら、もう一度 `pro-con card review " + c.ID + "` を実行してから turn を終える。"
 		move(card.Planned, "差し戻した: "+r.Rework) // 原文のまま残す (要約・切り詰めをしない)
-	case "handoff": // PM が PG の質問を人に回した。人の番の目印 (452) ができるまでは履歴に残すだけで、列も質問も変えない
-		if c.State != card.Waiting || c.Wait.Kind != card.WaitQuestion {
-			return fmt.Errorf("PG の質問待ちではない (今は %s)", c.State.Label())
+	case "handoff": // PM が PG の質問を / 取り込みの係がレビュー待ちを人に回した (487)。人の番の目印 (452) ができるまでは履歴に残すだけで、列も質問も変えない
+		if (c.State != card.Waiting || c.Wait.Kind != card.WaitQuestion) && c.State != card.Review {
+			return fmt.Errorf("PG の質問待ちでもレビュー待ちでもない (今は %s)", c.State.Label())
 		}
 		if strings.TrimSpace(r.Text) == "" {
 			return errors.New("人に回す理由が空")
@@ -565,7 +565,7 @@ func transition(c *card.Card, r Request, now time.Time) error {
 			return fmt.Errorf("作業中の列に無い (今は %s)", c.State.Label())
 		}
 		move(card.Review, "PG が終えた。レビュー待ち")
-	case "close": // PM がレビューを通して完了にした。依頼の列からも閉じられる (その場で回答した・却下した。Ending を付ける)
+	case "close": // 取り込みの係 (487) がレビューを通して完了にした。PM は依頼の列からも閉じられる (その場で回答した・却下した。Ending を付ける)
 		if c.State != card.Review && c.State != card.Requested {
 			return fmt.Errorf("レビューの列に無い (今は %s)", c.State.Label())
 		}

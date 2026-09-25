@@ -157,7 +157,7 @@ func TestHandoffRecordsInHistory(t *testing.T) {
 	submit(t, dir, Request{Kind: "handoff", CardID: "C-001", Text: why, From: "PM"})
 	submit(t, dir, Request{Kind: "handoff", CardID: "C-001", Text: " ", From: "PM"})
 	res := applyAll(t, dir)
-	if len(res) != 4 || !strings.Contains(res[0].Err, "PG の質問待ちではない") || res[1].Err != "" || res[2].Err != "" || !strings.Contains(res[3].Err, "理由が空") {
+	if len(res) != 4 || !strings.Contains(res[0].Err, "PG の質問待ちでもレビュー待ちでもない") || res[1].Err != "" || res[2].Err != "" || !strings.Contains(res[3].Err, "理由が空") {
 		t.Fatalf("handoff: %+v", res)
 	}
 	c := cardOf(t, dir, "C-001")

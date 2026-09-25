@@ -303,7 +303,7 @@ func HandoffText(by, why string) string { return by + handoffMark + why }
 
 // HandedOff は今の質問を人に回したか (質問待ちに入った後の履歴に HandoffText がある)。人の番の目印 (452) ができるまでは履歴から読む。
 func (c Card) HandedOff() bool {
-	if c.State != Waiting || c.Wait.Kind != WaitQuestion {
+	if (c.State != Waiting || c.Wait.Kind != WaitQuestion) && c.State != Review { // レビュー待ちは取り込みの係が人に回す (487)
 		return false
 	}
 	for _, e := range c.History {
