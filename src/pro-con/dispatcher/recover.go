@@ -13,6 +13,7 @@ package dispatcher
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -195,7 +196,7 @@ func (d *Dispatcher) checkAtStart(ctx context.Context, now time.Time, ss []agent
 // bootTime はマシンの起動時刻 (BootTime が nil なら読めない = 判定できない)。
 func (d *Dispatcher) bootTime() (time.Time, error) {
 	if d.BootTime == nil {
-		return time.Time{}, fmt.Errorf("起動時刻を読む口が無い")
+		return time.Time{}, errors.New("起動時刻を読む口が無い")
 	}
 	return d.BootTime()
 }
@@ -203,7 +204,7 @@ func (d *Dispatcher) bootTime() (time.Time, error) {
 // listAllForCheck は止めた session も出す一覧 (ListAll が nil なら読めない = 判定できない。List で代えない: failed は List に出ない)。
 func (d *Dispatcher) listAllForCheck(ctx context.Context) ([]agents.Session, error) {
 	if d.ListAll == nil {
-		return nil, fmt.Errorf("--all の一覧を読む口が無い")
+		return nil, errors.New("--all の一覧を読む口が無い")
 	}
 	return d.ListAll(ctx)
 }
