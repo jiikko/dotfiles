@@ -63,6 +63,7 @@
 - [x] 差し戻し (取り込みで 458 / 461 とぶつかった) に対応: origin/master (445 まで) に rebase し、ブランチ `pc-c-012-r2` へ push (自分のブランチへ force push しない)。
   461 の `ExecLauncher{UserSettings}` と btw の `Ask` を両方残し、445 の `store.Pending` (画面の出来事を数えない) に合わせた。分解済みへ戻す処理は 458 の `requeue` に寄せた。
   ガイド §8 は 445 の「--view では断る操作を出さない」を正にした
+- [x] rebase 後の make test rc=0 (テストの係・repo の root で・所要 4m15s)
 - [ ] 本物の claude での確認 (idle の判定が turn の区切りと一致するか・再開の文が PG に読まれるか・haiku の答えの質)
 
 ## 残り・未確認のリスク
