@@ -33,7 +33,7 @@
   | 作業中の列のまま turn を終えた (idle) | 止めて再開して届ける。箱に適用待ちがあれば次の Tick (PG が turn の最後に置いた `card review` を追い越さない) | 同左 |
   | `card ask` / `card run` / レビュー待ちで turn を終えた | 回答・テストの結果・差し戻しの再開に添えて届ける。レビュー待ちに未達が残っていたら PG へ戻す | 同左 (レビュー待ちは戻す) |
   | AskUserQuestion / 権限の確認で止まった (status waiting) | 届けない (止めると問いが消える。attach で進めれば idle で届く) | 止めて再開 |
-  | 落ちている (一覧に無い / pid 無し) | 待つ (自動の再開の後の turn で届く。落ち続けて止めたら回答の再開に添える) | prepare の待ち (restartWait) の後、止めずに再開 |
+  | 落ちている (一覧に無い / pid 無し) | 待つ (自動の再開の後の turn で届く。戻らなければ 458 の requeueVanished の再開に、落ち続けて止めたら回答の再開に添える) | prepare の待ち (restartWait) の後、止めずに再開 |
   | まだ起動していない | 起動の指示に入れる | 同左 |
 
 - 届いた印 (`Order.Delivered`) は起動・再開を確かめたとき (settle) に付ける。付けるのは起動・再開の印 (`LaunchedAt`) までに積まれたものだけ
@@ -50,9 +50,9 @@
 - [x] 受付の箱に `order` / `btw` / `clear` と、`add` の `ParentID` を足した (`store`)。完了のカードへの追記・方針変更は除ける。レビュー待ちは受ける
 - [x] dispatcher: 追加オーダーを届ける (`orders.go`)・btw に答える (`btw.go`)。起動の指示と再開の文に未達のオーダーを添える
 - [x] `live.Apply` が追加オーダー・btw・片付けを箱に置く。画面の断りの文言を「見ているだけの画面」向けに直した。README と docs/glogx-ui-guide.md §8
-- [x] 検査: store 5 本 / dispatcher 11 本 (busy は待つ → idle で届く・問いで止まった / 落ちた PG には届けない・方針変更は busy でも止める・回答に添える・
-  起動の指示に入れる・渡したものだけに印・レビュー待ちから戻す (箱の review を追い越さない)・btw は PG に触らず答える・材料が無ければ記録から・削除を待つカード (451) は再開しない) / live 2 本。
-  偽の launcher と一覧で発火条件を作った (本物の claude・state dir は触らない)。`bin/mutate-verify` で変異 14 本がすべて red
+- [x] 検査: store 5 本 / dispatcher 12 本 (busy は待つ → idle で届く・問いで止まった / 落ちた PG には届けない・方針変更は busy でも止める・回答に添える・
+  起動の指示に入れる・渡したものだけに印・レビュー待ちから戻す (箱の review を追い越さない)・btw は PG に触らず答える・材料が無ければ記録から・削除を待つカード (451) は再開しない・消えた PG (458) の再開に添える) / live 2 本。
+  偽の launcher と一覧で発火条件を作った (本物の claude・state dir は触らない)。`bin/mutate-verify` で変異 15 本がすべて red (差し戻しの後、458 / 461 / 445 の入った master に rebase した木で当て直した)
   (途中で 1 本が緑 = レビュー待ちの分岐が idle の分岐と重複していたので、分岐を畳んだ)
 - [x] 敵対的レビュー (sonnet 1 体・読み取りだけ): 採用 2 件 = ①同じ Apply でオーダーの後に PM の close が来ると、未達のまま完了に埋まる →
   未達が残るカードの close を除ける (dispatcher がレビュー待ちから PG へ戻して届ける) ②方針変更は箱の適用待ちを見ずに再開し、PG の
@@ -60,6 +60,9 @@
   (store `TestCloseRefusedWithPendingOrder` / dispatcher `TestRedirectWaitsForInbox`)。記録だけ 1 件 = 下の残り (テストの係の実行)。
   btw の `At` の重複・`order` の omitempty はレビューが追って実害なしと確かめた
 - [x] make test rc=0 (テストの係・所要 5m19s。origin/master (472 まで) を merge した後の `cca9a8c3`)
+- [x] 差し戻し (取り込みで 458 / 461 とぶつかった) に対応: origin/master (445 まで) に rebase し、ブランチ `pc-c-012-r2` へ push (自分のブランチへ force push しない)。
+  461 の `ExecLauncher{UserSettings}` と btw の `Ask` を両方残し、445 の `store.Pending` (画面の出来事を数えない) に合わせた。分解済みへ戻す処理は 458 の `requeue` に寄せた。
+  ガイド §8 は 445 の「--view では断る操作を出さない」を正にした
 - [ ] 本物の claude での確認 (idle の判定が turn の区切りと一致するか・再開の文が PG に読まれるか・haiku の答えの質)
 
 ## 残り・未確認のリスク
