@@ -662,7 +662,7 @@ func TestToastSameNoticeDoesNotStackAcrossOthers(t *testing.T) {
 	}{{"断り", false}, {"成功", true}, {"断り", false}, {"成功", true}} {
 		s.Show(n.text, n.ok)
 	}
-	var texts []string
+	texts := make([]string, 0, StackMax)
 	for _, e := range s.Entries() {
 		texts = append(texts, e.Text)
 	}
