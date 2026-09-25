@@ -50,4 +50,9 @@ dispatcher が何を判断したか (箱の依頼を適用した / PG を起動�
   - 1 回に渡す出来事が MaxBytes を超えると 1 ファイルが上限を超える (1 Tick の出来事はその大きさにならないので実害は無い)
   - 読み進める間に 2 回回ると、1 つ前の回した分を失う (1 MiB を 1 秒で書くことは無い)
 - [x] 2026-09-25: `make test` rc=0 (テストの係。lint 込み・6m30s)
+- [x] 2026-09-25 差し戻し (レビュー): origin/master (447 の閉じたら PG を止める・443 の `pro-con screen`) に rebase。main.go の振り分けは
+  `screen` と `log` を両方残し、shutdown.go の `ensureStopped` は 447 の引数 (cards / polls / sent) のまま返す notes を出来事にした。
+  close.go の `stopClosed` も出来事 (種類 `stop`・カード・session) に揃え、「閉じたので止めた / 既に止まっていた / 止められない」が events.jsonl に出る
+  (`TestCloseStopRecordsEvents`)。テストの重複 (`syncBuf` が 443 の screencmd_test.go と同名) は 443 の方を使う。
+  rebase 後に変異を当て直して 16 本 (前の 13 本 + close.go の 3 本) がすべて red。`go test -race ./...` は 447・443 のテストを含めて緑
 - [ ] 残り: 画面の側の出来事 (開いた・閉じた・quit で止めた / 止めなかった) は 445 の判断待ち (上の「決めたこと」)
