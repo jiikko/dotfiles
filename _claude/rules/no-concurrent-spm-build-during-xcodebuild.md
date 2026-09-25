@@ -1,3 +1,16 @@
+---
+paths:
+  - "**/*.swift"
+  - "**/Package.swift"
+  - "**/Package.resolved"
+  - "**/project.yml"
+  - "**/*.xcodeproj/**"
+  - "**/*.xcworkspace/**"
+  - "**/*.xcconfig"
+  - "**/*.entitlements"
+  - "**/Info.plist"
+---
+<!-- paths: xcodebuild と SwiftPM を並行させる場面でしか発動しないので、Apple のプロジェクトのファイルを Read したときに読み込む (2026-09-24: 常時読み込みの指示ファイル合計が上限 150k 字を超えたため / issue 414) -->
 # xcodebuild 実行中に同一 checkout の SwiftPM で swift build/test を並行させない
 
 > **トリガー型ルール。** `make test` / `make build` (xcodebuild) を background で走らせたまま、

@@ -80,7 +80,7 @@
 |---|---|
 | カバレッジ向上を求められた | [`refuse-low-value-coverage.md`](rules/refuse-low-value-coverage.md) |
 | 検査・テストを「通った」と判断する | [`verify-execution-not-just-exit-code.md`](rules/verify-execution-not-just-exit-code.md) |
-| 新規テストを commit する | [`mutation-verify-new-tests.md`](rules/mutation-verify-new-tests.md) |
+| 新規テストを commit する | [`mutation-verify-new-tests.md`](rules/mutation-verify-new-tests.md) (`paths:` でテストファイルを Read したときだけ読み込まれる。**読み込まれていなければ commit の前に直接 Read する**) |
 | 性能を主張する | [`perf-claims-need-measurement.md`](rules/perf-claims-need-measurement.md) |
 | shim / wrapper を PATH 先頭に置く | [`path-shim-must-resolve-real-binary.md`](rules/path-shim-must-resolve-real-binary.md) |
 | 外部コマンドの出力・終了コードを判定材料にする | [`measure-external-cli-streams-separately.md`](rules/measure-external-cli-streams-separately.md) |
@@ -125,7 +125,7 @@
 - **「この if 文を足せば直る」と思ったら立ち止まる**。その分岐が必要になった前提を疑う。特定ケースだけを救うワークアラウンドは原則禁止
 - **直したバグは「同じ間違いが別の場所にもある」前提で grep する**。テストで見つけたら production を、production で見つけたらテスト・別モジュールを見る。関数の契約変更 (返し方・シグネチャ) の呼び残しも同じ扱い
 - **効果がなかった修正は必ず revert する**
-- 新しい値・フラグ・経路を既存の呼び出しに通すなら [`survey-receiver-guards-before-passing-new-values.md`](rules/survey-receiver-guards-before-passing-new-values.md)。UI / デバイス / 環境の問題は [`check-other-platform-reference.md`](rules/check-other-platform-reference.md) / [`no-osascript-for-ui-verification.md`](rules/no-osascript-for-ui-verification.md) / [`no-ios-simulator-verification.md`](rules/no-ios-simulator-verification.md)
+- 新しい値・フラグ・経路を既存の呼び出しに通すなら [`survey-receiver-guards-before-passing-new-values.md`](rules/survey-receiver-guards-before-passing-new-values.md)。UI / デバイス / 環境の問題は [`check-other-platform-reference.md`](rules/check-other-platform-reference.md) / [`no-osascript-for-ui-verification.md`](rules/no-osascript-for-ui-verification.md) / [`no-ios-simulator-verification.md`](rules/no-ios-simulator-verification.md)。Apple のプロジェクトでは `no-osascript-for-ui-verification.md` と [`no-concurrent-spm-build-during-xcodebuild.md`](rules/no-concurrent-spm-build-during-xcodebuild.md) (xcodebuild の実行中に同じ checkout で `swift build` / `swift test` を並行させない) が `paths:` で Swift / Xcode のファイルを Read したときだけ読み込まれる。**読み込まれていなければ UI 確認・並行ビルドの前に直接 Read する**
 
 ## レビュー方針
 

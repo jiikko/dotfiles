@@ -1,3 +1,16 @@
+---
+paths:
+  - "**/*.swift"
+  - "**/Package.swift"
+  - "**/Package.resolved"
+  - "**/project.yml"
+  - "**/*.xcodeproj/**"
+  - "**/*.xcworkspace/**"
+  - "**/*.xcconfig"
+  - "**/*.entitlements"
+  - "**/Info.plist"
+---
+<!-- paths: macOS / iOS アプリの UI 確認でしか発動しないので、Apple のプロジェクトのファイルを Read したときに読み込む (2026-09-24: 常時読み込みの指示ファイル合計が上限 150k 字を超えたため / issue 414) -->
 # UI 動作確認に osascript / AppleScript を主役として使わない
 
 ## ルール
