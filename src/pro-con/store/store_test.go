@@ -145,6 +145,30 @@ func TestReworkRejectsOutsideReview(t *testing.T) {
 	}
 }
 
+// PM が PG の質問を人に回した (handoff) ことは履歴に原文で残すだけで、列も質問も変えない (人の番の目印は 452)。質問待ちでなければ断る。
+func TestHandoffRecordsInHistory(t *testing.T) {
+	dir := t.TempDir()
+	submit(t, dir, Request{Kind: "add", Title: "x"})
+	applyAll(t, dir)
+	setState(t, dir, "C-001", card.Running)
+	submit(t, dir, Request{Kind: "handoff", CardID: "C-001", Text: "早すぎる", From: "PM"})
+	submit(t, dir, Request{Kind: "ask", CardID: "C-001", Question: "赤か青か"})
+	why := strings.Repeat("色の好みは人が決めるので人に回す。", 6) // 80 文字を超える (切り詰めたら落ちる)
+	submit(t, dir, Request{Kind: "handoff", CardID: "C-001", Text: why, From: "PM"})
+	submit(t, dir, Request{Kind: "handoff", CardID: "C-001", Text: " ", From: "PM"})
+	res := applyAll(t, dir)
+	if len(res) != 4 || !strings.Contains(res[0].Err, "PG の質問待ちでもレビュー待ちでもない") || res[1].Err != "" || res[2].Err != "" || !strings.Contains(res[3].Err, "理由が空") {
+		t.Fatalf("handoff: %+v", res)
+	}
+	c := cardOf(t, dir, "C-001")
+	if c.State != card.Waiting || c.Wait.Kind != card.WaitQuestion || c.Wait.Question != "赤か青か" {
+		t.Fatalf("人に回したら列か質問が変わった: %v %+v", c.State, c.Wait)
+	}
+	if got := c.History[len(c.History)-1].Text; got != "PM が人に回した: "+why {
+		t.Fatalf("履歴に人に回した理由が原文で残らない: %q", got)
+	}
+}
+
 // 規則に反する依頼は記録に入れず、理由つきで rejected/ へ除ける (黙って捨てない)。カードは変わらない。
 func TestRejectsInvalidTransition(t *testing.T) {
 	dir := t.TempDir()

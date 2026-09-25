@@ -75,18 +75,25 @@ func TestCardCommandAskAnswer(t *testing.T) {
 		{[]string{"rework", "C-001", "テストを足して"}, store.Request{Kind: "rework", CardID: "C-001", Rework: "テストを足して"}},
 		{[]string{"delete", "C-001"}, store.Request{Kind: "delete", CardID: "C-001", From: "人間"}},
 		{[]string{"delete", "C-001", "--from", "PM"}, store.Request{Kind: "delete", CardID: "C-001", From: "PM"}},
+		{[]string{"handoff", "C-001", "色の好みは人が決める"}, store.Request{Kind: "handoff", CardID: "C-001", Text: "色の好みは人が決める", From: "PM"}},
 	} {
 		got, _, err := parseCardWait(tc.args)
 		if err != nil || got.Kind != tc.want.Kind || got.CardID != tc.want.CardID || got.Question != tc.want.Question ||
-			got.Answer != tc.want.Answer || got.Rework != tc.want.Rework || got.From != tc.want.From && tc.want.From != "" || got.Ending != tc.want.Ending {
+			got.Answer != tc.want.Answer || got.Rework != tc.want.Rework || got.Text != tc.want.Text || got.From != tc.want.From && tc.want.From != "" || got.Ending != tc.want.Ending {
 			t.Fatalf("%q: %+v %v (期待 %+v)", tc.args, got, err, tc.want)
 		}
 	}
 }
 
 // PM への指示書に書いたコマンドは、今のパーサに通る (指示書だけが古くなって PM が通らないコマンドを打つ形を止める)。
-func TestPMGuideCommandsParse(t *testing.T) {
-	cmds := regexp.MustCompile("`(pro-con card [^`]+)`").FindAllStringSubmatch(pmGuide, -1)
+func TestPMGuideCommandsParse(t *testing.T) { guideCommandsParse(t, pmGuide) }
+
+// 取り込みの係の指示書 (487) も同じ: 書いてあるコマンドがパーサに通る。
+func TestIntegratorGuideCommandsParse(t *testing.T) { guideCommandsParse(t, integratorGuide) }
+
+func guideCommandsParse(t *testing.T, guide string) {
+	t.Helper()
+	cmds := regexp.MustCompile("`(pro-con card [^`]+)`").FindAllStringSubmatch(guide, -1)
 	checked := 0
 	for _, m := range cmds {
 		line := regexp.MustCompile(`<[^>]*>#<[^>]*>`).ReplaceAllString(m[1], "dotfiles#1")
@@ -111,7 +118,7 @@ func TestPMGuideCommandsParse(t *testing.T) {
 		}
 		checked++
 	}
-	logs := regexp.MustCompile("`(pro-con log[^`]*)`").FindAllStringSubmatch(pmGuide, -1)
+	logs := regexp.MustCompile("`(pro-con log[^`]*)`").FindAllStringSubmatch(guide, -1)
 	for _, m := range logs { // 出来事の記録を読む口 (logcmd.go)。使い方の誤り (rc=2) にならないかを見る
 		line := regexp.MustCompile(`<[^>]*>`).ReplaceAllString(m[1], "x")
 		var e strings.Builder
@@ -125,9 +132,26 @@ func TestPMGuideCommandsParse(t *testing.T) {
 	if checked < 5 { // 抽出が空振りしたら緑にしない
 		t.Fatalf("指示書から取り出せたコマンドが %d 本しかない", checked)
 	}
-	var out strings.Builder
-	if rc := runCard([]string{"guide"}, viewEnv{dir: t.TempDir(), now: time.Now}, &out, io.Discard); rc != 0 || out.String() != pmGuide {
-		t.Fatalf("guide が指示書を出さない: rc=%d", rc)
+}
+
+// card guide は PM の指示書を、card guide --integrator は取り込みの係の指示書を出す (487)。ほかの引数は使い方の誤り。
+func TestCardGuideOutputs(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+		rc   int
+	}{
+		{[]string{"guide"}, pmGuide, 0},
+		{[]string{"guide", "--integrator"}, integratorGuide, 0},
+		{[]string{"guide", "--pm"}, "", 2},
+	} {
+		var out strings.Builder
+		if rc := runCard(tc.args, viewEnv{dir: t.TempDir(), now: time.Now}, &out, io.Discard); rc != tc.rc || out.String() != tc.want {
+			t.Errorf("%v: rc=%d (期待 %d) / 指示書が違う", tc.args, rc, tc.rc)
+		}
+	}
+	if pmGuide == integratorGuide {
+		t.Fatal("前提: PM と取り込みの係の指示書が同じ")
 	}
 }
 

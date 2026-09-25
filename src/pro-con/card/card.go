@@ -4,6 +4,7 @@ package card
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -210,6 +211,26 @@ type Event struct {
 	Text string
 }
 
+// AttachKind は添付の種類 (人間がどう見るかを決める。issue 453)。
+type AttachKind string
+
+const (
+	AttachImage AttachKind = "画像"   // open で Preview に渡す
+	AttachText  AttachKind = "文字"   // 詳細の中にそのまま出す (tmux の capture-pane -e の色つきの文字など)
+	AttachFile  AttachKind = "ファイル" // それ以外。open に渡す
+)
+
+// Attachment は PG がカードに付けた証拠 1 件 (作った画面の見た目・コマンドの出力。issue 453)。
+// ファイルは dispatcher が状態の置き場の attachments/<カード>/ へ移したもの (Path は絶対パス)。カードが記録から外れたら dispatcher が消す
+type Attachment struct {
+	Path string
+	Name string // PG が付けたときの元のファイル名
+	Note string `json:",omitempty"`
+	Kind AttachKind
+	Size int64
+	At   time.Time // PG が付けた時刻
+}
+
 type Card struct {
 	ID       string
 	ParentID string // 1 つの依頼を分けたとき / 別件の追加オーダーの元
@@ -229,7 +250,9 @@ type Card struct {
 	Orders   []Order
 	Btws     []Btw `json:",omitempty"`
 	History  []Event
-	Log      []string // PG の出力の末尾 (本番は transcript から読む)
+	// Attachments は PG が `pro-con card attach` で付けた添付 (付けた順。issue 453)
+	Attachments []Attachment `json:",omitempty"`
+	Log         []string     // PG の出力の末尾 (本番は transcript から読む)
 	// Doing は PG が今走らせているもの、DoingAt は dispatcher がそれを集めた時刻 (issue 473)。読む側 (画面・card show) が store.DoingFile から足す。
 	// 🚨 記録 (cards.json) には書かない: 書き手は dispatcher の Apply だけで、数秒で古くなる様子を記録の差分に混ぜない
 	Doing   []Doing   `json:"-"`
@@ -296,6 +319,25 @@ func Children(cards []Card, id string) []string {
 		}
 	}
 	return out
+}
+
+// handoffMark は PM が PG の質問を人に回したときの履歴の文の印 (HandoffText が書き、HandedOff が読む)。
+const handoffMark = " が人に回した: "
+
+// HandoffText は質問を人に回したときに履歴へ残す文 (理由は原文のまま)。
+func HandoffText(by, why string) string { return by + handoffMark + why }
+
+// HandedOff は今の質問を人に回したか (質問待ちに入った後の履歴に HandoffText がある)。人の番の目印 (452) ができるまでは履歴から読む。
+func (c Card) HandedOff() bool {
+	if (c.State != Waiting || c.Wait.Kind != WaitQuestion) && c.State != Review { // レビュー待ちは取り込みの係が人に回す (487)
+		return false
+	}
+	for _, e := range c.History {
+		if !e.At.Before(c.Since) && strings.Contains(e.Text, handoffMark) {
+			return true
+		}
+	}
+	return false
 }
 
 // Answerable は回答を受け付けるか (質問待ちの列に居る)。backend の回答・TUI の r・案内の色がこれを見る。

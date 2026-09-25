@@ -60,6 +60,7 @@ type Prompt struct {
 
 type record struct {
 	Type        string                 `json:"type"`
+	UUID        string                 `json:"uuid"`
 	Timestamp   string                 `json:"timestamp"`
 	AITitle     string                 `json:"aiTitle"`
 	CustomTitle string                 `json:"customTitle"`

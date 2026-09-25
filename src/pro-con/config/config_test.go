@@ -138,3 +138,16 @@ func TestLoadPMMode(t *testing.T) {
 		t.Fatalf("pm の書き間違いを誤りにしていない: %v", err)
 	}
 }
+
+// integrator も "on" / "off" だけ (487)。書き間違いを on と読むと、止めたつもりの取り込みの係が master へ push する。
+func TestLoadIntegratorMode(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.toml")
+	write(t, p, "integrator = \"off\"\n")
+	if c, err := Load(p); err != nil || c.Integrator != "off" {
+		t.Fatalf("integrator = off を読んでいない: %+v %v", c, err)
+	}
+	write(t, p, "integrator = \"of\"\n")
+	if _, err := Load(p); err == nil || !strings.Contains(err.Error(), "integrator は") {
+		t.Fatalf("integrator の書き間違いを誤りにしていない: %v", err)
+	}
+}

@@ -1,6 +1,6 @@
 // Package dispatcher は本物のモードの dispatcher (issue 427 の段階 3c-1)。1 回の Tick で:
 //
-//  1. 受付の箱を記録へ適用する (store.Apply)。終えたカードを記録から書庫へ移す (store.Archive。issue 478)
+//  1. 受付の箱を記録へ適用する (store.Apply)。終えたカードを記録から書庫へ移す (store.Archive。issue 478)。記録に無いカードの添付を消す (issue 453)
 //  2. 起動した PG の session を pro-con の記録 (live.Register) に登録する (session id と pid が一覧に出てから)
 //  3. (落ちた PG を見張る trackDead の後に) 閉じたカード・削除の依頼を受けたカードの PG の session を止める (close.go。issue 447 / 451)。削除のカードは止まったら記録から外す
 //  4. 依頼の列のカードを PM に知らせる (pm.go。issue 437)。PM が居なければ起動し、居れば再開する
@@ -17,6 +17,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -82,7 +84,8 @@ type Dispatcher struct {
 	// Runner はテストの係の実行 / Summarize は失敗したログの要約 (runner.go)。Runner が nil ならテストの係を動かさない
 	Runner    Runner
 	Summarize func(ctx context.Context, tail string) (string, error)
-	active    *runJob // 実行中の 1 本 (無ければ nil)
+	active    *runJob   // 実行中の 1 本 (無ければ nil)
+	blocked   *runBlock // repo の lock を他が持っていて始められなかった頼み (runner.go の deferRun。無ければ nil)
 	// Procs はプロセスの一覧を読む (doing.go。PG が今走らせているもの)。nil なら集めない (e2e・テスト)。
 	// JobsDir は Claude Code が session ごとに様子を書く置き場 (~/.claude/jobs)。空ならサブエージェントを transcript だけで判じる
 	Procs   func(context.Context) ([]Proc, error)
@@ -97,7 +100,10 @@ type Dispatcher struct {
 	usage      *Usage    // 最後に読めた値
 	usageErr   string    // 最後の読み取りの誤り
 	usageTried time.Time // 最後に読みに行った時刻
-	held       string    // 枠で起動・再開を待たせている知らせ (変わったときだけログに書く)
+	// settings は変えた設定 (store/settings.go。Tick ごとに読み直す) / settingsErr は読めなかった理由
+	settings    store.Settings
+	settingsErr string
+	held        string // 枠で起動・再開を待たせている知らせ (変わったときだけログに書く)
 
 	ticked bool // 1 度でも Tick したか
 	// Record は Tick / Shutdown の出来事を渡す (ログの行と events.jsonl。dispatchercmd.go)。記録を変えた知らせ (Changed) より先に呼ぶ
@@ -114,14 +120,12 @@ type Dispatcher struct {
 	PMGuide string
 	// PMOff は PM を起動も再開もしない (dispatcher の --pm=off / 設定 pm = "off"。人か外の Claude が PM をする運用)。依頼の列のカードはそのまま置く。
 	// 🚨 PMRepo は残す: 前の dispatcher が起こした PM も、終了 (Shutdown) では止める
-	PMOff    bool
-	pmHeld   string // 枠で PM を起こさない理由 (変わったときだけログに書く)
-	pmFailed string // PM を起こせない理由 (同上)
-	pmStatus string // 知らない PM の status (同上)
-	// pmRejects は claude が PM の起動・再開を受け付けなかったのが続いた回数、pmRejected は最後のその失敗。launchRejectLimit 回続いたら起こさない。
-	// 🚨 メモリにだけ持つ: PM には回答で戻す人の番が無いので、直した後に dispatcher を起動し直すのが戻し方 (claude の実体を引き直すのも起動時だけ = 464)
-	pmRejects  int
-	pmRejected string
+	PMOff bool
+	// IntegratorGuide は取り込みの係 (487) を起動するときに渡す指示書 (src/pro-con/integrator-guide.md の全文)。
+	// IntegratorOff は取り込みの係を起動も再開もしない (--integrator=off / 設定 integrator = "off")。レビューの列のカードはそのまま置く
+	IntegratorGuide string
+	IntegratorOff   bool
+	runs            map[string]*roleRun // 役ごとの、メモリだけに持つ様子 (role.go)
 	// Exists は PM の作業ディレクトリが在るかを見る (nil なら os.Stat)。テストが差し替える
 	Exists func(dir string) bool
 
@@ -176,10 +180,15 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 		return nil, err
 	}
 	notes = append(notes, applied(res)...)
+	d.loadSettings()
 	if len(res) > 0 && d.Changed != nil { // 箱の依頼を適用した直後に知らせる (一覧の取得 (最大 10 秒) を待たせずにカードを画面へ出す)
 		d.Changed()
 	}
 	notes = append(notes, d.archive(now)...)
+	// 書庫へ移した・削除したカードの添付を消す (記録を書いた後に消す。落ちても次の Tick が消し直す。issue 453)
+	if _, err := store.SweepAttachments(d.Dir, now); err != nil {
+		notes = append(notes, ev(eventlog.KindError, "", "", "添付を片付けられない (次の Tick で消し直す): "+err.Error()))
+	}
 	ss, err := d.List(ctx)
 	if err != nil {
 		return append(notes, ev(eventlog.KindError, "", "", "session の一覧を取れない (登録と割り当ては次の Tick へ): "+err.Error())), nil
@@ -236,10 +245,12 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	if ctx.Err() != nil { // 枠を読んでいる間に止められた。取り消された ctx で起動して「失敗」を履歴に残さない
 		return notes, nil
 	}
-	told, err := d.tellPM(ctx, now, ss)
-	notes = append(notes, told...)
-	if err != nil { // PM の壊れ (pm.json が読めない等) で PG の割り当てまで止めない
-		notes = append(notes, ev(eventlog.KindError, PMCardID, "", "PM を扱えない (PG の割り当ては続ける): "+err.Error()))
+	for _, r := range roles() {
+		told, err := d.tellRole(ctx, now, ss, r)
+		notes = append(notes, told...)
+		if err != nil { // 役の壊れ (pm.json が読めない等) で PG の割り当てとほかの役まで止めない
+			notes = append(notes, ev(eventlog.KindError, r.cardID, "", r.name+" を扱えない (PG の割り当ては続ける): "+err.Error()))
+		}
 	}
 	more, err := d.dispatch(ctx, now, ss)
 	notes = append(notes, more...)
@@ -706,16 +717,25 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		fresh = append(fresh, c) // 待っても出なかった。起動・再開し直す (古い順は保つ)
 	}
 	limit, why := d.capacity(now)
+	lim, _ := d.limit()
 	held := ""
 	for i, c := range fresh {
 		if running >= limit {
-			if running < d.Limit { // 枠で絞らなくても止まっていたなら、枠のせいにしない
+			if running < lim { // 枠で絞らなくても止まっていたなら、枠のせいにしない
 				held = fmt.Sprintf("分解済みの %d 枚を起動・再開しない (%s)", len(fresh)-i, why)
 			}
 			break
 		}
 		how, run, err := d.prepare(c, now, ss, reg)
 		if errors.Is(err, errWait) {
+			continue
+		}
+		if nh := needsHumanError(""); errors.As(err, &nh) {
+			why := fmt.Sprintf("%sしない: %v", how, err)
+			if err := d.update(c.ID, func(cc *card.Card) { askAfterCrashes(cc, now, why) }); err != nil {
+				return notes, err
+			}
+			notes = append(notes, ev(eventlog.KindLaunch, c.ID, c.Session, c.ID+": "+why))
 			continue
 		}
 		if err != nil {
@@ -842,7 +862,32 @@ func (d *Dispatcher) prepare(c card.Card, now time.Time, ss []agents.Session, re
 	if !ok {
 		return "起動", nil, fmt.Errorf("repo %q の場所が設定に無い", c.Repo)
 	}
+	if c.LaunchedAt.IsZero() { // 起動し直し (印を書いた後) なら、在る worktree はこのカードの前の起動が作ったもの
+		if err := leftoverWorktree(worktreePath(path, c)); err != nil {
+			return "起動", nil, err
+		}
+	}
 	return "起動", func(ctx context.Context) (string, error) { return d.Launch.Start(ctx, path, sessionName(c), Prompt(c)) }, nil
+}
+
+// needsHumanError は、起動・再開の前提が崩れていてやり直しても直らないので、人の番へ回す失敗 (文は理由)。
+type needsHumanError string
+
+func (e needsHumanError) Error() string { return string(e) }
+
+// leftoverWorktree は、初めて起動するカードの worktree が既に在れば needsHumanError を返す (465)。claude -w は同じ名前の worktree を
+// 黙って使うので、状態の置き場を作り直して C-001 から振り直したカードが、前の世代のブランチとコミットの上で作業を始める
+// (PG の worktree は消さない。447)。確かめられないときは起動しない (次の Tick で見直す)
+func leftoverWorktree(wt string) error {
+	_, err := os.Lstat(wt)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil
+	case err != nil:
+		return fmt.Errorf("worktree %s が在るかを確かめられない: %w", wt, err)
+	}
+	return needsHumanError(fmt.Sprintf("worktree %s が既に在る (前の状態の置き場で同じカード ID が使った worktree かもしれない。claude -w はそのブランチの上で黙って作業を始める)。"+
+		"中身を確かめて片付けてから回答すると起動する", wt))
 }
 
 func sessionName(c card.Card) string { return "pc-" + strings.ToLower(c.ID) }
@@ -952,6 +997,10 @@ func Prompt(c card.Card) string {
 	b.WriteString("- 作業は自分の worktree で行い、commit は自分のブランチまで push する (master へは push しない)\n")
 	fmt.Fprintf(&b, "- 質問があるときは AskUserQuestion を使わず、`pro-con card ask %s \"<質問>\"` を実行してから turn を終える (回答は再開のときに届く)\n", c.ID)
 	fmt.Fprintf(&b, "- make test・ビルド・実機 E2E など時間のかかるコマンドは自分で走らせず、`pro-con card run %s -- <コマンド>` で頼んでから turn を終える (結果は再開のときに届く。同時に頼めるのは 1 本。パイプや && を含む 1 行は `-- bash -c '<1 行>'` で頼む)\n", c.ID)
+	fmt.Fprintf(&b, "- 画面の見た目を変えたら撮って `pro-con card attach %s <ファイル> --note \"<一言>\"` で添付する (人間とレビューする側が見る。"+
+		"TUI は隔離した tmux (`-L`) で動かして `tmux capture-pane -e -p` を .ans に書く (色つきの文字)。画像が要るなら vhs の Screenshot で .png。"+
+		"`screencapture` は bg では壁紙しか写らないので使わない)\n", c.ID)
+	b.WriteString("- run を頼んだら、その結果が届くまで ask しない (質問は結果を受け取ってからにする。先に ask すると、頼んだ実行が取り消される)\n")
 	fmt.Fprintf(&b, "- 終えたら `pro-con card review %s` を実行してから turn を終える\n", c.ID)
 	if len(c.Issues) > 0 {
 		var refs []string
