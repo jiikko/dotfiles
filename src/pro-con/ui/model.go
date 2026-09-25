@@ -70,6 +70,7 @@ type Model struct {
 	showDetail bool
 
 	mode        mode
+	inputRow    int             // 最後の render で入力欄を置いた行 (view.go の caret)
 	line        lineedit.Line   // 入力欄 (編集キーは tuikit/lineedit。docs/glogx-ui-guide.md「入力欄の編集キー」)
 	pending     backend.Command // modeConfirm で確認している操作
 	confirmText string          // modeConfirm の確認の行に出す文

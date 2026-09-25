@@ -31,7 +31,26 @@ const (
 func (m *Model) View() tea.View {
 	v := tea.NewView(m.render())
 	v.AltScreen = true
+	v.Cursor = m.caret()
 	return v
+}
+
+// caret は入力欄のキャレットに置く端末のカーソル。入力欄が無ければ nil (カーソルを隠す)。
+// 🚨 IME は変換中の文字を端末のカーソルの位置に出す。カーソルを置かないと、描画の差分を書き終えた位置 (毎回変わる) に出て、
+// 日本語の変換中に入力欄から外れる。位置は render と同じ行の並び (ヘッダ + 領域 + PG の一覧 + 入力欄) から数える
+func (m *Model) caret() *tea.Cursor {
+	if m.mode != modeInput || m.stopping {
+		return nil
+	}
+	y := m.inputRow // render が数えた入力欄の行
+	head, before, _ := m.inputParts()
+	x := min(ansi.StringWidth(head+before), m.width-1) // 幅は表示のセル数 (全角は 2)
+	if y < 0 || y >= m.height || x < 0 {
+		return nil
+	}
+	c := tea.NewCursor(x, y)
+	c.Shape = tea.CursorBar
+	return c
 }
 
 // headerRows はタイトル・タブ・ゲージ・罫線の行数。
@@ -54,6 +73,7 @@ func (m *Model) render() string {
 	// カードの詳細はこの領域 (ヘッダと下端の群のあいだ) に右から重ねる
 	foot := m.footGroup()
 	region = layout.PadTo(region, max(len(region)+1, m.height-len(header)-len(foot)))
+	m.inputRow = len(header) + len(region) + len(foot) - len(m.footLines()) // 入力欄は最下段の群の先頭 (caret が使う)
 	region = m.dimWhileTyping(m.overlayDrawer(region))
 	return strings.Join(m.overlayQuit(m.overlayLegend(append(append(header, region...), foot...))), "\n")
 }
@@ -344,7 +364,7 @@ func undelivered(c card.Card) int {
 	return n
 }
 
-func (m *Model) inputLine() string {
+func (m *Model) inputHead() string {
 	var label string
 	switch m.inputKind {
 	case inputAnswer:
@@ -370,8 +390,19 @@ func (m *Model) inputLine() string {
 			label = "新しい依頼 (スコープ: " + r.Name + " の中だけ)"
 		}
 	}
+	return " " + sgrBold + fg(202) + label + ": " + sgrReset + fg(231)
+}
+
+// inputParts は入力欄の見出し・キャレットの前・後 (キャレットは caret が端末のカーソルで出す)。
+func (m *Model) inputParts() (head, before, after string) {
+	s, cur := []rune(m.line.String()), m.line.Cursor()
+	return m.inputHead(), string(s[:cur]), string(s[cur:])
+}
+
+func (m *Model) inputLine() string {
+	head, before, after := m.inputParts()
 	// 入力欄に居ることが一目で分かるよう、行の全幅に地の色を敷く (カンバンは dimWhileTyping で沈める)
-	return paint(bg(236), " "+sgrBold+fg(202)+label+": "+sgrReset+fg(231)+m.line.View("▏"), m.width)
+	return paint(bg(236), head+before+after, m.width)
 }
 
 // dimWhileTyping は入力欄・y/N 確認を出している間、カンバンの領域を色を抜いた暗い灰色で描く。
