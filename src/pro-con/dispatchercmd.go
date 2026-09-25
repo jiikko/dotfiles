@@ -417,7 +417,7 @@ func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo stri
 	home, _ := os.UserHomeDir() // 分からなければ "" (言語と ~/.claude/CLAUDE.md の除外を渡さないだけで、起動は止めない)
 	haiku := dispatcher.HaikuSettings(home)
 	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{Claude: cl.Path, UserSettings: userSettingsPath(home)}, PMRepo: pmRepo, PMGuide: pmGuide, PMOff: pmOff, IntegratorGuide: integratorGuide,
-		Runner: dispatcher.ExecRunner{}, Summarize: dispatcher.HaikuSummarize(cl.Path, dir, haiku), Ask: dispatcher.HaikuAsk(cl.Path, dir, haiku), Usage: dispatcher.ReadUsage(cl.Path, dir),
+		Runner: dispatcher.ExecRunner{Lockman: "lockman"}, Summarize: dispatcher.HaikuSummarize(cl.Path, dir, haiku), Ask: dispatcher.HaikuAsk(cl.Path, dir, haiku), Usage: dispatcher.ReadUsage(cl.Path, dir),
 		List: func(ctx context.Context) ([]agents.Session, error) {
 			return agents.List(ctx, agents.ExecRunner(cl.Path))
 		},

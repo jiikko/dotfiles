@@ -84,7 +84,8 @@ type Dispatcher struct {
 	// Runner はテストの係の実行 / Summarize は失敗したログの要約 (runner.go)。Runner が nil ならテストの係を動かさない
 	Runner    Runner
 	Summarize func(ctx context.Context, tail string) (string, error)
-	active    *runJob // 実行中の 1 本 (無ければ nil)
+	active    *runJob   // 実行中の 1 本 (無ければ nil)
+	blocked   *runBlock // repo の lock を他が持っていて始められなかった頼み (runner.go の deferRun。無ければ nil)
 	// Ask は btw の答えを作る (btw.go。本物は haiku)。nil なら記録だけから答える
 	Ask func(ctx context.Context, prompt string) (string, error)
 	btw *btwJob // 答えを作っている 1 本 (無ければ nil)
