@@ -2,7 +2,8 @@
 //
 //  1. 受付の箱を記録へ適用する (store.Apply)
 //  2. 起動した PG の session を pro-con の記録 (live.Register) に登録する (session id と pid が一覧に出てから)
-//  3. 分解済みのカードに、上限まで PG を割り当てる。回答を受けたカード (Resume が有る) は同じ session を再開し、それ以外は新しく起動する
+//  3. 閉じたカードの PG の session を止める (close.go。issue 447)
+//  4. 分解済みのカードに、上限まで PG を割り当てる。回答を受けたカード (Resume が有る) は同じ session を再開し、それ以外は新しく起動する
 //
 // 書き手は dispatcher だけ (426 の決定 1)。PG の起動と再開は Launcher に任せ、テストでは偽物に差し替える。
 // 起動・再開の前に印を記録へ書き、結果は次の Tick で session の一覧と照らして確かめる (claude の「失敗」と実際が食い違う / 途中で落ちる)。
@@ -160,6 +161,11 @@ func (d *Dispatcher) tick(ctx context.Context) ([]string, error) {
 		notes = append(notes, fmt.Sprintf("PG の session を %d 本登録した", n))
 	}
 	notes = append(notes, warn...)
+	closed, err := d.stopClosed(ctx, now)
+	notes = append(notes, closed...)
+	if err != nil {
+		return notes, err
+	}
 	if err := d.trackDead(now, ss); err != nil {
 		return notes, err
 	}

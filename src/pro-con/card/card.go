@@ -225,6 +225,9 @@ type Card struct {
 	// DeadSince は dispatcher が、このカードの PG の session が一覧に無い / pid 無し (落ちて自動の再開を待っている) のを最初に見た時刻。
 	// 生きているのを見たら外す。止める・再開する前の待ち (restartWait) はここから数える
 	DeadSince time.Time `json:",omitzero"`
+	// StopAfterClose はカードを閉じた (close) が、dispatcher がまだ PG の session を止め終えていない印 (close の適用と同時に付く。
+	// dispatcher が落ちても次の Tick で止める)。止まったのを確かめたか、closeStopWait を過ぎて諦めたら外す
+	StopAfterClose bool `json:",omitempty"`
 	// Stopped は pro-con の終了で dispatcher が PG を止めた印。次の再開は、落ちた PG の自動の再開を待たずに (止めずに) 行う。起動・再開で外す
 	Stopped bool `json:",omitempty"`
 	// Run は PG が `pro-con card run` で頼んだ、まだ結果を返していないコマンド (シェルの 1 行)。RunAt は頼んだ時刻 (順番の鍵)。

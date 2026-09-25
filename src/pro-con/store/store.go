@@ -389,6 +389,7 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		if r.Ending != card.EndNone {
 			c.Ending = r.Ending
 		}
+		c.StopAfterClose = c.Session != "" // PG の session は dispatcher が止める (worktree とブランチは PM が取り込むので残す)
 		move(card.Done, "完了にした")
 	default:
 		return fmt.Errorf("未知の依頼 %q", r.Kind)

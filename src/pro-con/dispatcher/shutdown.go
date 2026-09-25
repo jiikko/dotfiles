@@ -81,7 +81,7 @@ func (d *Dispatcher) Shutdown(ctx context.Context) ([]string, error) {
 	// 止めた session も出す一覧で確かめ、残っていれば止め直す (カードが完了した後も生きている PG も止める)
 	ectx, ecancel := context.WithTimeout(base, ensureBudget) // 確かめる段は別の上限 (前の段が上限を使い切っても、最後の確かめまで届く)
 	defer ecancel()
-	more, remaining, err := d.ensureStopped(ectx, tried)
+	more, remaining, err := d.ensureStopped(ectx, tried, nil, ensurePolls)
 	notes = append(notes, more...)
 	if err != nil {
 		return notes, err
@@ -228,7 +228,9 @@ const ensurePolls = 15
 // 照合は session id だけで、記録の pid は見ない: 同じ session id で pid だけ違うのは Claude Code の自動の再開 (pro-con の PG そのもの)。
 // 外の shell の `claude --resume` は別の session id を立てる (427 の 3f で実測) ので、外の session には当たらない
 // extra はカードの側で止めようとした session (短い id → カード)。記録に無くても (起動・再開の途中で取り込んだもの) 同じく確かめる。
-func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string) ([]string, []string, error) {
+// cards が nil でなければ、そのカードの session だけを確かめる (閉じたカードの PG を止める = close.go)。
+// polls は止め直しの周の数 (周の間は shutdownPoll 待つ)。0 なら待たずに 1 周だけ止めて、もう 1 度だけ見る。
+func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string, cards map[string]bool, polls int) ([]string, []string, error) {
 	var notes []string
 	list := d.ListAll
 	if list == nil {
@@ -248,11 +250,14 @@ func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string)
 		} else {
 			reg = append(reg, retired...)
 		}
+		if cards != nil {
+			reg = slices.DeleteFunc(reg, func(o live.Owned) bool { return !cards[o.CardID] })
+		}
 		lctx, cancel := context.WithTimeout(ctx, stopCallTimeout)
 		ss, err := list(lctx)
 		cancel()
 		if err != nil {
-			if attempt >= ensurePolls || ctx.Err() != nil {
+			if attempt >= polls || ctx.Err() != nil {
 				return notes, nil, fmt.Errorf("止まったかを確かめる一覧を取れない: %w", err)
 			}
 			d.sleep(shutdownPoll)
@@ -275,7 +280,7 @@ func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string)
 				}
 			}
 		}
-		if len(remaining) == 0 || attempt >= ensurePolls || ctx.Err() != nil {
+		if len(remaining) == 0 || attempt >= polls || ctx.Err() != nil {
 			if len(remaining) > 0 { // 最後の周で止め直したものがあるかもしれないので、もう 1 度だけ見る
 				lctx, cancel := context.WithTimeout(ctx, stopCallTimeout)
 				if ss, err := list(lctx); err == nil {
