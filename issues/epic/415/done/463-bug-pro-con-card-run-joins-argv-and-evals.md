@@ -2,7 +2,7 @@
 
 起票日: 2026-09-25
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 
@@ -21,6 +21,17 @@
 - argv を 1 つずつ quote してから繋ぐ (Go で POSIX シェルの quote を書く)。または argv の配列のまま記録に持ち、実行も配列で渡す (シェルを通すのをやめる)
 - どちらにするかは、PG がパイプや `&&` を含む 1 行を頼みたい場面 (`-- 'make test 2>&1 | tail'` のような 1 引数の形) を残すかで決める。README と pm-guide の書き方も合わせる
 
+## 対応 (C-018)
+
+- 決めたこと: **argv を 1 つずつ POSIX シェルの quote にしてから繋ぐ** (`src/pro-con/e2ecmd.go` の `shellJoin`。記録はシェルの 1 行のまま、runner の eval も変えない)。
+  引用の要らない語はそのまま残すので、記録・画面の `make test` は今までどおり
+- 1 引数の 1 行 (`-- 'make test 2>&1 | tail'`) は残さない: 1 語として quote されるので rc=127 で**目に見えて**落ちる (黙って別物にはならない)。
+  パイプや `&&` を含む 1 行は `-- bash -c '<1 行>'` で頼む、と README と PG への指示文 (`dispatcher.go`) に書いた
+- 検査: `TestCardRunParse` に、引用つきの argv (`A|B` / 空白 / `'` / 空文字 / `$HOME` / `*` / `;` / `\` / 改行) を bash で eval して同じ argv へ戻るかを足した。直す前は red (exit status 2)
+- [x] 変異 2 本で red (shellJoin を素の Join / `'` のエスケープを外す)。bin/mutate-verify を card run で、どちらも rc=0 (想定どおり `FAIL: TestCardRunParse`)
+- [x] make test rc=0 (a6a5cd67。pro-con card run)
+
 ## 関連
 
 - 460 (監査の記録)
+- 2026-09-25 PM のレビュー: 差し戻しなし。カード C-018 (自動の PM が分けた 1 枚目の組)。C-019 と合わせた tree で pro-con の `make lint` 0 件・`go test -race` 15 パッケージ ok → master へ

@@ -272,8 +272,8 @@ func TestBrowsePanelJobCursorAndOpen(t *testing.T) {
 	if cmd != nil {
 		t.Errorf("URL なし job で Cmd が返った")
 	}
-	if !strings.Contains(m.toast.text, "URL がありません") {
-		t.Errorf("トーストが出ていない: %q", m.toast.text)
+	if !strings.Contains(m.toast.Text(), "URL がありません") {
+		t.Errorf("トーストが出ていない: %q", m.toast.Text())
 	}
 	// k でタイトル行まで戻れば Enter は「閉じる」に戻る
 	m.handleKey("k")
@@ -576,8 +576,8 @@ func TestBrowseOpenJobRejectsNonHTTP(t *testing.T) {
 	if called {
 		t.Errorf("file:// URL がブラウザに渡された")
 	}
-	if !strings.Contains(m.toast.text, "http(s) 以外") {
-		t.Errorf("トーストが出ていない: %q", m.toast.text)
+	if !strings.Contains(m.toast.Text(), "http(s) 以外") {
+		t.Errorf("トーストが出ていない: %q", m.toast.Text())
 	}
 }
 
@@ -636,9 +636,9 @@ func TestBrowseJobLogOpenInEditor(t *testing.T) {
 	// (起動対象は $VISUAL/$EDITOR で変わる。ここの job ログ経路だけは nvim 固定だが、
 	// トーストは editorClosedMsg で共通なので総称になる)。原因は err がそのまま載る
 	m.Update(editorClosedMsg{err: errors.New("nvim: not found")})
-	if m.toast.ok || !strings.Contains(m.toast.text, "エディタを開けません") ||
-		!strings.Contains(m.toast.text, "nvim: not found") {
-		t.Errorf("起動失敗の失敗トーストが出ない: %q ok=%v", m.toast.text, m.toast.ok)
+	if m.toast.OK() || !strings.Contains(m.toast.Text(), "エディタを開けません") ||
+		!strings.Contains(m.toast.Text(), "nvim: not found") {
+		t.Errorf("起動失敗の失敗トーストが出ない: %q ok=%v", m.toast.Text(), m.toast.OK())
 	}
 
 	// ログが空なら起動しない
@@ -1190,8 +1190,8 @@ func TestBrowseEditorExitErrorStillReloads(t *testing.T) {
 	if !m.issuesOv.scanning {
 		t.Error("異常終了で取り直しが走らない (保存済みの編集が反映されない)")
 	}
-	if m.toast.ok || !strings.Contains(m.toast.text, "異常終了") {
-		t.Errorf("異常終了の通知が出ない: %q ok=%v", m.toast.text, m.toast.ok)
+	if m.toast.OK() || !strings.Contains(m.toast.Text(), "異常終了") {
+		t.Errorf("異常終了の通知が出ない: %q ok=%v", m.toast.Text(), m.toast.OK())
 	}
 
 	// 起動失敗はファイルが変わっていないので取り直さない (分岐が効いていること)
@@ -1201,8 +1201,8 @@ func TestBrowseEditorExitErrorStillReloads(t *testing.T) {
 	if m2.issuesOv.scanning {
 		t.Error("起動失敗で取り直しが走った (ファイルは変わっていないので不要)")
 	}
-	if !strings.Contains(m2.toast.text, "開けませんでした") {
-		t.Errorf("起動失敗の通知が出ない: %q", m2.toast.text)
+	if !strings.Contains(m2.toast.Text(), "開けませんでした") {
+		t.Errorf("起動失敗の通知が出ない: %q", m2.toast.Text())
 	}
 }
 

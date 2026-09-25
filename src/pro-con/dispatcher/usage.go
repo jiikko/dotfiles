@@ -77,15 +77,15 @@ func firstLine(s string) string {
 	return s
 }
 
-// ReadUsage は dir (状態の置き場) で `claude -p /usage` を実行して使用率を読む。
-func ReadUsage(dir string) func(context.Context) (Usage, error) {
-	return func(ctx context.Context) (Usage, error) { return readUsage(ctx, dir) }
+// ReadUsage は dir (状態の置き場) で `claude -p /usage` を実行して使用率を読む (claude は実体の絶対パス)。
+func ReadUsage(claude, dir string) func(context.Context) (Usage, error) {
+	return func(ctx context.Context) (Usage, error) { return readUsage(ctx, claude, dir) }
 }
 
-func readUsage(ctx context.Context, dir string) (Usage, error) {
+func readUsage(ctx context.Context, claude, dir string) (Usage, error) {
 	ctx, cancel := context.WithTimeout(ctx, usageTimeout)
 	defer cancel()
-	cmd := usageCmd(ctx, dir)
+	cmd := usageCmd(ctx, claude, dir)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -98,8 +98,8 @@ func readUsage(ctx context.Context, dir string) (Usage, error) {
 // usageCmd は枠を読むコマンド (引数と置き場はテストが固定する)。
 // 🚨 --setting-sources "" は user の settings の env と plugin も落とす。今は認証を settings に置いていないので同じアカウントの枠を読むが、
 // 置くようになったら (apiKeyHelper / CLAUDE_CONFIG_DIR) PG と別の枠を読む
-func usageCmd(ctx context.Context, dir string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "claude", "-p", "--no-session-persistence", "--setting-sources", "", "/usage")
+func usageCmd(ctx context.Context, claude, dir string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, claude, "-p", "--no-session-persistence", "--setting-sources", "", "/usage")
 	cmd.Dir = dir // 空の project が 1 つだけできる (Claude Code が cwd ごとに memory の dir を作る)
 	cmd.Env = withoutTmux(os.Environ())
 	cmd.WaitDelay = time.Second // 子孫が stdout を握ったままでも timeout で戻る (launcher と同じ)
@@ -120,17 +120,37 @@ func (d *Dispatcher) refreshUsage(ctx context.Context, now time.Time) {
 	u.At, d.usage, d.usageErr = now, &u, ""
 }
 
-// capacity は今の同時に動かす PG の数と、上限 (Limit) より絞った理由 (絞っていなければ空)。
+// limit は同時に動かす PG の人の上限と、その出どころ。設定 (pro-con config set) が起動の引数 --limit に勝つ (store/settings.go)。
+func (d *Dispatcher) limit() (int, string) {
+	if d.settings.Limit > 0 {
+		return d.settings.Limit, LimitFromSetting
+	}
+	return d.Limit, LimitFromFlag
+}
+
+// loadSettings は変えた設定を読み直す (Tick ごと。箱の依頼を適用した後)。読めなければ起動の引数で動き、理由を様子に出す
+// (壊れた設定で dispatcher を止めない。直すのは次の pro-con config set)。
+func (d *Dispatcher) loadSettings() {
+	s, err := store.LoadSettings(d.Dir)
+	d.settings, d.settingsErr = s, ""
+	if err != nil {
+		d.settingsErr = "設定を読めない (起動の引数で動く): " + err.Error()
+	}
+}
+
+// capacity は今の同時に動かす PG の数と、人の上限 (limit) より絞った理由 (絞っていなければ空)。
+// 🚨 利用枠の絞りは人の上限より優先する (上限を上げても枠を超えて起動しない)。
 func (d *Dispatcher) capacity(now time.Time) (int, string) {
+	lim, _ := d.limit()
 	if d.Usage == nil {
-		return d.Limit, ""
+		return lim, ""
 	}
 	u := d.usage
 	if u == nil && d.usageErr == "" {
-		return d.Limit, "" // まだ読みに行っていない (最初の Tick が一覧の失敗で抜けた等)
+		return lim, "" // まだ読みに行っていない (最初の Tick が一覧の失敗で抜けた等)
 	}
 	if u == nil || now.Sub(u.At) > usageStale {
-		return d.Limit, "枠を読めない (上限のまま): " + d.usageErr
+		return lim, "枠を読めない (上限のまま): " + d.usageErr
 	}
 	pct := max(u.Session, u.Week)
 	note := ""
@@ -140,20 +160,30 @@ func (d *Dispatcher) capacity(now time.Time) (int, string) {
 	switch {
 	case pct >= usageStopAt:
 		return 0, fmt.Sprintf("枠 %d%%: 新しく起動・再開しない", pct) + note
-	case pct >= usageSlowAt && d.Limit > 1:
+	case pct >= usageSlowAt && lim > 1:
 		return 1, fmt.Sprintf("枠 %d%%: 同時に 1 本まで", pct) + note
 	case note != "":
-		return d.Limit, "枠" + note
+		return lim, "枠" + note
 	}
-	return d.Limit, ""
+	return lim, ""
 }
 
 // writeState は dispatcher の様子を書く (store.DispatcherStateFile)。
 func (d *Dispatcher) writeState(now time.Time) error {
 	c, why := d.capacity(now)
-	s := store.DispatcherState{Tick: now, Limit: d.Limit, Cap: c, Why: why}
+	if d.settingsErr != "" {
+		why = strings.TrimPrefix(why+" / "+d.settingsErr, " / ")
+	}
+	lim, from := d.limit()
+	s := store.DispatcherState{Tick: now, Limit: lim, LimitFrom: from, Cap: c, Why: why}
 	if u := d.usage; u != nil {
 		s.UsageSession, s.UsageWeek, s.UsageAt = u.Session, u.Week, u.At
 	}
 	return store.SaveDispatcherState(d.Dir, s)
 }
+
+// Limit の出どころ (store.DispatcherState.LimitFrom)。
+const (
+	LimitFromSetting = "設定"
+	LimitFromFlag    = "起動の引数"
+)

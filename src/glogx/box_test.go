@@ -10,7 +10,7 @@ import (
 )
 
 func TestBuildShadowPanelBoxWidths(t *testing.T) {
-	lines := buildShadowPanelBox(" title ", []string{"row", strings.Repeat("x", 200)}, 40, false, ansiDim)
+	lines := buildShadowPanelBox(" title ", []string{"row", strings.Repeat("x", 200)}, 40, false)
 	// 枠 (top/bottom) + 2 行 + 下端の落ち影 1 行 = 5 行。影を足しても footprint 幅は 40 のまま
 	if len(lines) != 5 {
 		t.Fatalf("枠 + 2 行 + 影 1 行のはずが %d 行", len(lines))
@@ -28,7 +28,7 @@ func TestJapanesePanelBoxWidths(t *testing.T) {
 		"❯ ✓ テストジョブ (日本語)",
 		"  ✗ " + strings.Repeat("長", 40), // inner を超えて全角境界で切り詰められる
 	}
-	lines := buildShadowPanelBox(" CI jobs: abc1234 日本語のサブジェクトがとても長い場合の切り詰め ", rows, 40, true, ansiDim)
+	lines := buildShadowPanelBox(" CI jobs: abc1234 日本語のサブジェクトがとても長い場合の切り詰め ", rows, 40, true)
 	for _, l := range lines {
 		if w := dispWidth(l); w != 40 {
 			t.Errorf("パネル行の幅 = %d; want 40: %q", w, l)
@@ -38,7 +38,7 @@ func TestJapanesePanelBoxWidths(t *testing.T) {
 
 func TestBuildPanelBoxTitleStripsANSI(t *testing.T) {
 	// SGR 入りの job 名/subject がタイトルに載っても罫線幅と dim 塗りを崩さない
-	lines := buildShadowPanelBox(" \x1b[31mred job\x1b[0m ", []string{"row"}, 40, false, ansiDim)
+	lines := buildShadowPanelBox(" \x1b[31mred job\x1b[0m ", []string{"row"}, 40, false)
 	if strings.Contains(lines[0], "\x1b") {
 		t.Errorf("タイトルに ANSI が残っている: %q", lines[0])
 	}
@@ -51,7 +51,7 @@ func TestBuildPanelBoxTitleStripsANSI(t *testing.T) {
 // 端末 bg が透けて penumbra になり縁が柔らかくなる。footprint 幅は据え置き。
 func TestShadowForegroundBlocksAndFeather(t *testing.T) {
 	// colored: 前景ブロック + フェザー、旧 bg 塗りは無い
-	lines := buildShadowPanelBox(" t ", []string{"a", "b"}, 20, true, ansiDim)
+	lines := buildShadowPanelBox(" t ", []string{"a", "b"}, 20, true)
 	joined := strings.Join(lines, "\n")
 	if strings.Contains(joined, "\x1b[48;5;233m") {
 		t.Error("旧 bg ベタ塗り (256色 233) が残っている")
@@ -68,7 +68,7 @@ func TestShadowForegroundBlocksAndFeather(t *testing.T) {
 		}
 	}
 	// NO_COLOR: 近黒 fg が使えないため ▒ 本体 + ░ フェザーの階調で代用、ANSI は含まない
-	mono := buildShadowPanelBox(" t ", []string{"a", "b"}, 20, false, ansiDim)
+	mono := buildShadowPanelBox(" t ", []string{"a", "b"}, 20, false)
 	mj := strings.Join(mono, "\n")
 	if strings.ContainsRune(mj, '\x1b') {
 		t.Error("NO_COLOR 出力に ANSI が混入している")

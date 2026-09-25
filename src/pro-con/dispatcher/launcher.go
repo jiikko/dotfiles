@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -23,14 +24,19 @@ import (
 	"time"
 )
 
-// ExecLauncher は Launcher の本物。UserSettings はユーザーの settings.json のパスで、起動・再開のたびに language を読む (空なら渡さない)。
-type ExecLauncher struct{ UserSettings string }
+// ExecLauncher は Launcher の本物。Claude は claude の実体の絶対パス (ResolveClaude。素の名前にしない = 464)。
+// UserSettings はユーザーの settings.json のパスで、起動・再開のたびに language を読む (空なら渡さない)。
+type ExecLauncher struct{ Claude, UserSettings string }
+
+// ErrRejected は claude が起動・再開を受け付けなかった失敗 (rc≠0 で返った / プロセスを起動できなかった)。何も立っていないので、
+// 同じ失敗を繰り返さずに数えられる (462。時間切れ・--bg の出力が読めないものは、立っているかもしれないので含めない)
+var ErrRejected = errors.New("claude が受け付けなかった")
 
 // launchTimeout は claude --bg / stop が戻るまでの上限 (--bg は起動したらすぐ戻る。実測は 1 秒未満)。
 const launchTimeout = 30 * time.Second
 
 func (l ExecLauncher) Start(ctx context.Context, repoPath, name, prompt string) (string, error) {
-	out, err := runClaude(ctx, repoPath, l.startArgs(name, prompt)...)
+	out, err := runClaude(ctx, l.Claude, repoPath, l.startArgs(name, prompt)...)
 	if err != nil {
 		return "", err
 	}
@@ -39,19 +45,19 @@ func (l ExecLauncher) Start(ctx context.Context, repoPath, name, prompt string) 
 
 func (l ExecLauncher) Resume(ctx context.Context, stopID, sessionID, cwd, text string) (string, error) {
 	if stopID != "" {
-		if _, err := runClaude(ctx, "", "stop", stopID); err != nil {
+		if _, err := runClaude(ctx, l.Claude, "", "stop", stopID); err != nil {
 			return "", fmt.Errorf("claude stop %s: %w", stopID, err)
 		}
 	}
-	out, err := runClaude(ctx, cwd, l.resumeArgs(sessionID, text)...)
+	out, err := runClaude(ctx, l.Claude, cwd, l.resumeArgs(sessionID, text)...)
 	if err != nil {
 		return "", err
 	}
 	return parseBackgrounded(out)
 }
 
-func (ExecLauncher) Stop(ctx context.Context, id string) error {
-	if _, err := runClaude(ctx, "", "stop", id); err != nil {
+func (l ExecLauncher) Stop(ctx context.Context, id string) error {
+	if _, err := runClaude(ctx, l.Claude, "", "stop", id); err != nil {
 		return fmt.Errorf("claude stop %s: %w", id, err)
 	}
 	return nil
@@ -70,7 +76,20 @@ func withSettings(args []string, settings, positional string) []string {
 	if settings != "" {
 		args = append(args, "--settings", settings)
 	}
-	return append(args, positional)
+	return append(args, positionalArg(positional))
+}
+
+// dashGuard は「-」で始まる位置引数の前に付ける前置き。
+const dashGuard = "pro-con から:\n"
+
+// positionalArg は位置引数が「-」で始まらないようにする (462)。claude は「-」で始まる引数をオプションと読み、
+// 箇条書きの回答・追加オーダーで `error: unknown option` の rc=1 になる。
+// 🚨 `--` で区切る形は claude が受けるかを実測していないので使わない。本文は削らない
+func positionalArg(s string) string {
+	if strings.HasPrefix(s, "-") {
+		return dashGuard + s
+	}
+	return s
 }
 
 // UserSettingsPath は claude が読むユーザーの settings.json (CLAUDE_CONFIG_DIR があればその下)。
@@ -108,16 +127,22 @@ func languageSettings(path string) string {
 	return string(out)
 }
 
-func runClaude(ctx context.Context, dir string, args ...string) (string, error) {
+func runClaude(ctx context.Context, claude, dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, launchTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "claude", args...)
+	cmd := exec.CommandContext(ctx, claude, args...)
 	cmd.Dir = dir
 	cmd.Env = withoutTmux(os.Environ())
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	cmd.WaitDelay = time.Second
 	if err := cmd.Run(); err != nil {
+		var exit *exec.ExitError
+		// 起動できなかった (cmd.Process が無い: chdir の失敗・claude が無い) か、時間内に自分で rc≠0 を返したものだけが「立っていない」。
+		// 取り消し・時間切れ (ctx) は claude のせいではないので数えない
+		if ctx.Err() == nil && (cmd.Process == nil || (errors.As(err, &exit) && exit.Exited())) {
+			err = fmt.Errorf("%w: %w", ErrRejected, err)
+		}
 		return "", fmt.Errorf("claude %s: %w: %s", args[0], err, strings.TrimSpace(errOut.String()))
 	}
 	return out.String(), nil

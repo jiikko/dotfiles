@@ -337,9 +337,9 @@ func TestBrowseUpdateCLIHealth(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("cliHealthMsg returned nil command")
 	}
-	if len(m.toast.older) != 1 || !strings.Contains(m.toast.text, "codex が見つかりません") ||
-		!strings.Contains(m.toast.older[0].text, "claude がログアウト状態です") {
-		t.Fatalf("toast stack = top %q older %#v", m.toast.text, m.toast.older)
+	if (len(m.toast.Entries())-1) != 1 || !strings.Contains(m.toast.Text(), "codex が見つかりません") ||
+		!strings.Contains(m.toast.Entries()[1].Text, "claude がログアウト状態です") {
+		t.Fatalf("toast stack = top %q older %#v", m.toast.Text(), m.toast.Entries())
 	}
 	if !strings.Contains(m.lastWarning, "codex が見つかりません") {
 		t.Fatalf("lastWarning = %q", m.lastWarning)
@@ -472,8 +472,8 @@ func TestBrowseStartupShowsCLIHealthWarningsInView(t *testing.T) {
 		t.Fatal("Init が積んだ Cmd から cliHealthMsg が届かない (起動配線が切れている)")
 	}
 	m.Update(msg)
-	for i := 0; m.toast.animating() && i < 100; i++ {
-		m.toast.advance(m.colored)
+	for i := 0; m.toast.Animating() && i < 100; i++ {
+		m.toast.Advance()
 	}
 
 	out := stripANSI(m.View().Content)

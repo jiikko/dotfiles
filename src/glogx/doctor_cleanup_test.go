@@ -465,15 +465,15 @@ func TestCursorFallbackIsToldThroughBrowseModel(t *testing.T) {
 
 	// 次のキー操作で**画面に**出る。🚨 **browseModel.handleKey 経由**で見る
 	// (tui.go に配線があるので、doctorView だけ叩くと配線の穴を守れない)
-	m.toast.text = ""
+	m.toast.Clear()
 	m.handleKey("j")
-	if !strings.Contains(m.toast.text, "近くの行へ移りました") {
-		t.Fatalf("寄せたことが画面に出ない (toast=%q)", m.toast.text)
+	if !strings.Contains(m.toast.Text(), "近くの行へ移りました") {
+		t.Fatalf("寄せたことが画面に出ない (toast=%q)", m.toast.Text())
 	}
 	// 一度出したら再発しない (毎キー出ると邪魔)
-	m.toast.text = ""
+	m.toast.Clear()
 	m.handleKey("j")
-	if strings.Contains(m.toast.text, "近くの行へ移りました") {
+	if strings.Contains(m.toast.Text(), "近くの行へ移りました") {
 		t.Fatal("同じ寄せで 2 回目もトーストが出た")
 	}
 

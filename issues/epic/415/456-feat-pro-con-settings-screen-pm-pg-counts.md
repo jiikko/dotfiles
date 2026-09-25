@@ -37,3 +37,11 @@
 ## 関連
 
 - 437 (PM を起こす。PM の数はここで 1 つから始める) / 415 の論点 6 (PM の数と役割) / 455 (枠に何を数えるか) / 440 (3 回目: 枠を変えるのに止めるしかない)
+
+## 進捗: 画面ではない部分 (C-029。2026-09-26)
+
+- `pro-con config set limit <n> | set pm 1 | unset <名前> | show`: 受付の箱に kind=config を置き、dispatcher が Apply で状態の置き場の `settings.json` に書いて次の Tick から使う (起動し直しても続く)
+- 上限の優先: 利用枠の絞り > 設定 > `--limit` > 既定 2 (README に記載)。dispatcher-state.json に `limit_from` (設定 / 起動の引数) を足した。settings.json が壊れていたら `--limit` で動き、理由を様子の Why に出す
+- PM の数は 1 だけ受ける (0 と 2 以上は除ける)。1 しか受けないので dispatcher はまだ読まない (415 の論点 6 の後で配線する)
+- `pro-con ps [--json]`: dispatcher (lock の pid) / PM・PG (起動の記録) / テストの係 (実行の印) / 画面 (relay の印)。`ps` を 1 回読むだけで、状態の置き場に書かない・dispatcher の lock も presence の印も触らない。busy / idle と要約の係 (haiku) はまだ出さない
+- 残り: 設定画面そのもの (見た目。取り込みの係)

@@ -21,8 +21,12 @@ import (
 	"pro-con/eventlog"
 	"pro-con/live"
 	"pro-con/presence"
+	"pro-con/store"
 	"pro-con/wake"
 )
+
+// fromScreenFlag は画面が起こす / 止める dispatcher に付けるフラグの名前 (main の dispatcherCmd / stopInChild と e2e の後始末が付ける)。
+const fromScreenFlag = "from-screen"
 
 var dispatcherInterval = 3 * time.Second // テストが延ばす (Poke でだけ起きることを見る)
 
@@ -31,12 +35,13 @@ var dispatcherInterval = 3 * time.Second // テストが延ばす (Poke でだ�
 func runDispatcher(args []string, dir, projects string, repos map[string]string, pm pmConfig, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("pro-con dispatcher", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	limit := fs.Int("limit", 2, "同時に動かす PG の上限 (415 の決定事項: 2 から始める)")
+	limit := fs.Int("limit", 2, "同時に動かす PG の上限 (415 の決定事項: 2 から始める)。pro-con config set limit があればそちらが勝つ (これは設定が無いときの値)")
 	once := fs.Bool("once", false, "1 回だけ回して終わる")
 	stopAll := fs.Bool("stop", false, "動いている dispatcher と、pro-con が起動した PG を止める (次に dispatcher を起動したら続きから再開する)")
 	e2eRoot := fs.String("e2e", "", "e2e モードの置き場 (PG は台本どおりに動く偽物。claude を起動しない。pro-con e2e が使う)")
 	pmFlag := fs.String("pm", "", `"off" なら PM を起動も再開もしない (依頼の列のカードはそのまま置く)。"on" / "off" を書けば設定の pm より勝つ`)
 	alone := fs.Duration("exit-without-screens", 0, "開いている画面が 1 つも無い状態がこの長さ続いたら、PG を止めて抜ける (画面が起こすときに付ける。0 なら抜けない)")
+	fromScreen := fs.Bool(fromScreenFlag, false, "画面が起こす / 止める (内部用。人が止めた印を --stop で置かず、起動で外さない。印があれば起動せずに抜ける)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -59,6 +64,13 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 		}
 	}
 	if *stopAll {
+		if !*fromScreen { // 人が止めた: 印を置く (画面の keeper が起こし直さない。issue 459)。止める前に置く (止め終えた直後の keeper に先を越されない)
+			if err := store.Hold(dir, time.Now()); err != nil {
+				_, _ = fmt.Fprintln(stderr, "pro-con dispatcher --stop: 止めた印を置けない (開いている画面が dispatcher を起こし直しうる):", err)
+			} else {
+				_, _ = fmt.Fprintln(stdout, "止めた印を置いた: 開いている画面は dispatcher を起こさない (画面の c か、手で pro-con dispatcher を起動すると外れる)")
+			}
+		}
 		// 止めている間に SIGTERM / SIGHUP / SIGINT が来ても (画面の終了・ログアウトと重なる)、1 回目は止めるのをもう 1 度だけ試してから抜ける。
 		// 2 回目ですぐ抜ける (止まらない形でも kill -9 無しで止められる)。
 		// 🚨 signal.Ignore にしない: 無視は exec した子 (claude stop / claude agents) に引き継がれ、子も止められなくなる (Notify で受けた分は引き継がれない)
@@ -78,6 +90,11 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 		}
 		return 0
 	}
+	cl, err := resolveClaude(context.Background(), e2e)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", err)
+		return 1
+	}
 	unlock, err := dispatcher.Lock(dir)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", err)
@@ -85,8 +102,21 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 	}
 	defer unlock()
 	_ = dispatcher.StopRequested(dir) // 前の --stop が dispatcher の居ない間に置いた印は捨てる (起動した途端に止まらないように)
-	d := newDispatcherFor(dir, projects, repos, pm.Repo, pmOff, *limit, e2e)
+	d := newDispatcherFor(dir, projects, repos, pm.Repo, pmOff, *limit, cl, e2e)
 	d.Record = eventSink(dir, stdout, stderr)
+	// 🚨 lock を取ってから見る: 画面が印を見てから起こすまでの間に --stop が印を置いても、起こされた側が回らずに抜ける
+	if *fromScreen && store.Held(dir) {
+		say(d, eventlog.KindStop, "人が止めた印 (dispatcher --stop) があるので、画面が起こした dispatcher は回らずに抜ける")
+		return 0
+	}
+	if !*fromScreen {
+		if released, err := store.Release(dir); err != nil {
+			say(d, eventlog.KindError, "人が止めた印を外せない (開いている画面は、この dispatcher が抜けた後に起こし直さない): "+err.Error())
+		} else if released {
+			say(d, eventlog.KindLaunch, "手で起動したので、人が止めた印 (dispatcher --stop) を外した")
+		}
+	}
+	sayClaude(d, cl)
 	if d.PMOff { // 依頼の列にカードが溜まっても PM が来ないのは、この設定のせいだと後から分かるように (dispatcher の値から出す = 渡し忘れも見える)
 		say(d, eventlog.KindHold, "PM を起こさない ("+pmWhy+")。依頼の列のカードはそのまま置く (PM は人か外の Claude が行う)")
 	}
@@ -203,6 +233,7 @@ var stopRetryEvery = 10 * time.Second
 
 // stopUntilDone は PG を止める。止めきれなければ結果 (頼んだ画面が読む) を書いてから、止まるまで止め直す。止め終えたら真。
 // 止めている間に画面が開いたら (presence) 止めるのをやめて偽を返す (カードは続きから再開できる形になっている)。
+// 人が止めた印 (store.Held) があれば、画面が開いても止めきる (印がある間、画面は dispatcher を起こさないので、続ける者が居ない)。
 // 🚨 止めきれないまま抜けない: 抜けると、pro-con が起動した PG を見張る者が居なくなる。o.retries が正なら、その回数で諦める (取り消された ctx の中の最後の試み)
 func stopUntilDone(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-chan struct{}, o serveOpts, stderr io.Writer) bool {
 	for try := 1; ; try++ {
@@ -224,7 +255,7 @@ func stopUntilDone(ctx context.Context, d *dispatcher.Dispatcher, dir string, wa
 		case <-time.After(stopRetryEvery):
 		case <-wakes:
 		}
-		if screensOpen(dir) && ctx.Err() == nil {
+		if screensOpen(dir) && ctx.Err() == nil && !store.Held(dir) { // 人が止めたなら、画面が開いても止めきる (issue 459)
 			say(d, eventlog.KindScreens, "止めている間に画面が開いたので、止めるのをやめて続ける")
 			return false
 		}
@@ -250,8 +281,13 @@ func stopDispatcher(ctx context.Context, dir, projects string, repos map[string]
 	}
 	defer unlock()
 	_ = dispatcher.StopRequested(dir)
-	d := newDispatcherFor(dir, projects, repos, pmRepo, false, 1, e2e) // 止めるだけ (PM は PMOff でも止める)
-	d.Record = eventSink(dir, stdout, stdout)                          // dispatcher の役を取った (lock を持つ) ので、出来事を書いてよい
+	cl, err := resolveClaude(ctx, e2e) // 止める役を取ったときだけ (動いている dispatcher に頼むだけなら claude は要らない)
+	if err != nil {
+		return err
+	}
+	d := newDispatcherFor(dir, projects, repos, pmRepo, false, 1, cl, e2e) // 止めるだけ (PM は PMOff でも止める)
+	d.Record = eventSink(dir, stdout, stdout)                              // dispatcher の役を取った (lock を持つ) ので、出来事を書いてよい
+	sayClaude(d, cl)
 	// 自分で止めている間に次の --stop が来たら、その --stop は結果のファイルを読む。止めきれなければ止まるまで止め直す
 	// (画面の待ちが切れて閉じても、このプロセスは別のプロセスグループで続ける)
 	if !stopUntilDone(ctx, d, dir, nil, serveOpts{}, stdout) {
@@ -290,6 +326,26 @@ func say(d *dispatcher.Dispatcher, kind, text string) {
 		if d.Changed != nil {
 			d.Changed()
 		}
+	}
+}
+
+// resolveClaude は本物の dispatcher が使う claude の実体を引く (e2e モードは claude を起動しないので引かない)。
+// 解決は家の cwd で行う (起こした側の cwd の .node-version で版を決めない。dispatcher.ResolveClaude)
+func resolveClaude(ctx context.Context, e2e *dispatcher.E2E) (dispatcher.Claude, error) {
+	if e2e != nil {
+		return dispatcher.Claude{}, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return dispatcher.Claude{}, err
+	}
+	return dispatcher.ResolveClaude(ctx, home)
+}
+
+// sayClaude は使う claude の実体と版を出来事に残す (464。e2e モードは claude を起動しないので残さない)。
+func sayClaude(d *dispatcher.Dispatcher, cl dispatcher.Claude) {
+	if cl.Path != "" {
+		say(d, eventlog.KindLaunch, fmt.Sprintf("claude は %s (%s) を使う", cl.Path, cl.Version))
 	}
 }
 
@@ -336,16 +392,20 @@ func userSettingsPath() string {
 	return dispatcher.UserSettingsPath(home)
 }
 
-// newDispatcherFor は dispatcher を組む。e2e が nil なら本物 (claude を起動する)、あれば偽の PG と偽の一覧 (claude を起動しない。PM は起こさず FakePM が役を持つ)。
-func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo string, pmOff bool, limit int, e2e *dispatcher.E2E) *dispatcher.Dispatcher {
+// newDispatcherFor は dispatcher を組む。e2e が nil なら本物 (claude の実体 cl を起動する)、あれば偽の PG と偽の一覧 (claude を起動しない。PM は起こさず FakePM が役を持つ)。
+func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo string, pmOff bool, limit int, cl dispatcher.Claude, e2e *dispatcher.E2E) *dispatcher.Dispatcher {
 	if e2e != nil {
 		return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: e2e.Launcher(), List: e2e.List, ListAll: e2e.ListAll, Now: time.Now,
 			Runner: dispatcher.ExecRunner{}, FakePM: e2e.FakePM, PMOff: pmOff} // テストの係は本物のシェル (偽の worktree で走る)。失敗の要約 (haiku) はしない
 	}
-	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{UserSettings: userSettingsPath()}, PMRepo: pmRepo, PMGuide: pmGuide, PMOff: pmOff,
-		Runner: dispatcher.ExecRunner{Lockman: "lockman"}, Summarize: dispatcher.HaikuSummarize(dir), Ask: dispatcher.HaikuAsk(dir), Usage: dispatcher.ReadUsage(dir),
-		List:    func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) },
-		ListAll: func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunnerAll) }, Now: time.Now,
+	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{Claude: cl.Path, UserSettings: userSettingsPath()}, PMRepo: pmRepo, PMGuide: pmGuide, PMOff: pmOff,
+		Runner: dispatcher.ExecRunner{Lockman: "lockman"}, Summarize: dispatcher.HaikuSummarize(cl.Path, dir), Ask: dispatcher.HaikuAsk(cl.Path, dir), Usage: dispatcher.ReadUsage(cl.Path, dir),
+		List: func(ctx context.Context) ([]agents.Session, error) {
+			return agents.List(ctx, agents.ExecRunner(cl.Path))
+		},
+		ListAll: func(ctx context.Context) ([]agents.Session, error) {
+			return agents.List(ctx, agents.ExecRunnerAll(cl.Path))
+		}, Now: time.Now,
 		Transcript: func(sessionID string) (live.Transcript, error) {
 			p, err := live.FindTranscript(projects, sessionID)
 			if err != nil {

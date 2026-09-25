@@ -1412,7 +1412,7 @@ func (v *statusView) pagerBox(o statusRenderOpts) []string {
 		title = fmt.Sprintf(" diff: %s [%d-%d/%d] ", v.pagerTitle, start+1, end, len(lines))
 		body = withScrollbar(body, width, len(lines), start, o.colored)
 	}
-	return buildShadowPanelBox(title, body, width, o.colored, ansiDim)
+	return buildShadowPanelBox(title, body, width, o.colored)
 }
 
 // pagerRows は全画面 diff の本文行数 (visibleDiffRows と同じ内訳: 枠 2 + 影 1 + 余白 1 + hint 1)。

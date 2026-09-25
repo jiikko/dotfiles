@@ -87,7 +87,7 @@ func (m *Model) startFrames() tea.Cmd {
 }
 
 func (m *Model) animating() bool {
-	return len(m.moves) > 0 || len(m.slides) > 0 || m.drawer.Animating(m.now()) || m.pager.Animating() || m.cursorGliding(m.now()) || m.laneFading(m.now()) || m.bumping(m.now())
+	return len(m.moves) > 0 || len(m.slides) > 0 || m.drawer.Animating(m.now()) || m.pager.Animating() || m.cursorGliding(m.now()) || m.laneFading(m.now()) || m.bumping(m.now()) || m.toasts.Animating()
 }
 
 func (m *Model) resetSlots() {
@@ -113,11 +113,15 @@ func (m *Model) onFrame() tea.Cmd {
 	m.pruneSlides(m.now())
 	m.settleDrawer(m.now())
 	m.pager.Advance()
+	var hold tea.Cmd
+	if m.toasts.Animating() {
+		hold = toastTimers(m.toasts.Advance()) // 滑り込み終えた toast の「静止の後に引っ込む」合図
+	}
 	if !m.animating() {
 		m.framing = false
-		return nil
+		return hold
 	}
-	return frame()
+	return tea.Batch(frame(), hold)
 }
 
 // slotXY は slot の画面上の位置 (ボードの左上からの桁と行)。枠の内側の左上。
@@ -142,8 +146,7 @@ func (m *Model) overlayMoves(board []string) []string {
 	for _, mv := range m.moves {
 		x, y := mv.pos(m, now)
 		col, row := int(x+0.5), int(y+0.5)
-		t, b := m.cardCell(mv.c, inner)
-		for i, l := range []string{t, b} {
+		for i, l := range m.cardCell(mv.c, inner) {
 			if r := row + i; r >= 0 && r < len(board) {
 				board[r] = splice(board[r], col, inner, l)
 			}
@@ -166,10 +169,11 @@ func splice(line string, x, w int, s string) string {
 	return left + sgrReset + s + sgrReset + right
 }
 
-// ghostLines は元の場所に一瞬残す点線の枠 (2 行)。
+// ghostLines は元の場所に一瞬残す点線の枠 (cardLines 行)。
 func ghostLines(w int) []string {
-	return []string{
-		fg(240) + "┌" + strings.Repeat("┄", max(0, w-2)) + "┐" + sgrReset,
-		fg(240) + "└" + strings.Repeat("┄", max(0, w-2)) + "┘" + sgrReset,
+	out := []string{fg(240) + "┌" + strings.Repeat("┄", max(0, w-2)) + "┐" + sgrReset}
+	for range cardLines - 2 {
+		out = append(out, fg(240)+"┆"+strings.Repeat(" ", max(0, w-2))+"┆"+sgrReset)
 	}
+	return append(out, fg(240)+"└"+strings.Repeat("┄", max(0, w-2))+"┘"+sgrReset)
 }

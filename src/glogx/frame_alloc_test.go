@@ -320,9 +320,9 @@ func budgetUsageGlanceModel(tb testing.TB) *browseModel {
 // holding を advance で作ってから測る。
 func budgetToastModel(tb testing.TB) *browseModel {
 	m := benchBrowseSubjects(tb, 20, 120, 40, false)
-	m.toast.show("3 件の警告をコピーしました: ほか", true)
-	for m.toast.animating() {
-		m.toast.advance(m.colored)
+	m.toast.Show("3 件の警告をコピーしました: ほか", true)
+	for m.toast.Animating() {
+		m.toast.Advance()
 	}
 	return m
 }

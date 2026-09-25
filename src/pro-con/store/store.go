@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -61,6 +62,7 @@ type Request struct {
 	Repo     string          `json:"repo,omitempty"`
 	Owner    string          `json:"owner,omitempty"`
 	Issues   []card.IssueRef `json:"issues,omitempty"`
+	After    []string        `json:"after,omitempty"` // plan: このカードより先に完了させるカード (issue 468)
 	Question string          `json:"question,omitempty"`
 	Command  string          `json:"command,omitempty"` // run: テストの係に実行を頼むコマンド (シェルの 1 行)
 	Cwd      string          `json:"cwd,omitempty"`     // run: 頼んだシェルの作業ディレクトリ (dispatcher が PG の worktree と照らす)
@@ -72,8 +74,10 @@ type Request struct {
 	Note     string          `json:"note,omitempty"`     // event: 画面の出来事 (人が読む 1 文。dispatcher が出来事の記録へ書く)
 	ParentID string          `json:"parentId,omitempty"` // add: 別件の追加オーダーの元のカード
 	Order    card.OrderKind  `json:"order,omitempty"`    // order: 追記 / 方針変更 (別件は add + ParentID)
-	Text     string          `json:"text,omitempty"`     // order: 追加オーダーの本文 (書いたまま)
+	Text     string          `json:"text,omitempty"`     // order: 追加オーダーの本文 / handoff: 人に回す理由 (どちらも書いたまま)
 	Cards    []string        `json:"cards,omitempty"`    // clear: 片付ける完了のカード (画面が見ていたもの。適用までに完了になったカードを巻き込まない)
+	Key      string          `json:"key,omitempty"`      // config: 設定の名前 (settings.go)
+	Value    string          `json:"value,omitempty"`    // config: 設定の値 (空なら消す)
 	At       time.Time       `json:"at"`
 }
 
@@ -131,16 +135,39 @@ func Submit(dir string, r Request) (string, error) {
 // Pending は受付の箱の適用待ちの依頼の数 (画面の出来事 = event は数えない: 画面を開くたびに置くので、dispatcher の最初の Tick まで
 // 「適用待ち」が出て、dispatcher が止まっているように見える)。読めない・壊れたファイルは依頼として数える (除けられるまで待ちには違いない)。
 func Pending(dir string) int {
-	names, _ := filepath.Glob(filepath.Join(dir, InboxDir, "*.json"))
 	n := 0
-	for _, name := range names {
-		var r Request
-		if data, err := os.ReadFile(name); err == nil && json.Unmarshal(data, &r) == nil && r.Kind == KindEvent {
-			continue
+	for _, r := range inbox(dir) {
+		if r.Kind != KindEvent {
+			n++
 		}
-		n++
 	}
 	return n
+}
+
+// PendingRequests は受付の箱の適用待ちの依頼 (読めないものは除く。読むだけ)。
+func PendingRequests(dir string) []Request {
+	var out []Request
+	for _, r := range inbox(dir) {
+		if r.Kind != "" {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// inbox は箱のファイルを置いた順に読む。読めない・壊れたファイルは Kind が空の Request。
+func inbox(dir string) []Request {
+	names, _ := filepath.Glob(filepath.Join(dir, InboxDir, "*.json"))
+	sort.Strings(names)
+	out := make([]Request, 0, len(names))
+	for _, name := range names {
+		var r Request
+		if data, err := os.ReadFile(name); err != nil || json.Unmarshal(data, &r) != nil {
+			r = Request{}
+		}
+		out = append(out, r)
+	}
+	return out
 }
 
 // Load は記録を読む。無ければ空の記録。壊れていたらエラー (空と区別する)。
@@ -185,6 +212,7 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 	for _, r := range st.Rejected {
 		judged[r.ID] = r.Why
 	}
+	var set *Settings // config の依頼が来たときだけ読む (settings.go)
 	var results []Result
 	var done []string             // 片付ける箱のファイル
 	reject := map[string]string{} // 除ける箱のファイル → 理由
@@ -210,9 +238,24 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 			if r.Kind == KindEvent {
 				res.At = r.At
 			}
-			var next State
-			if next, res.CardID, res.Note, err = apply(st, r, now); err == nil {
-				st = next
+			if r.Kind == KindConfig {
+				var f func(*Settings)
+				if f, err = CheckSetting(r.Key, r.Value); err == nil { // 🚨 検査に落ちた依頼では読み書きしない (壊れた設定をゼロ値で黙って書き直さない)
+					if set == nil {
+						s, lerr := LoadSettings(dir) // 壊れていたらゼロ値から書き直す (直す口がこの依頼しか無い)
+						set = &s
+						if lerr != nil {
+							res.Note = "壊れていた " + SettingsFile + " を書き直した。"
+						}
+					}
+					f(set)
+					res.Note += configNote(r.Key, r.Value)
+				}
+			} else {
+				var next State
+				if next, res.CardID, res.Note, err = apply(st, r, now); err == nil {
+					st = next
+				}
 			}
 		}
 		if err != nil {
@@ -230,6 +273,12 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 	}
 	if len(st.Rejected) > keepApplied {
 		st.Rejected = st.Rejected[len(st.Rejected)-keepApplied:]
+	}
+	if set != nil {
+		// 🚨 記録 (適用済みの控え) より先に書く: 間で落ちても、次の Apply は同じ依頼を同じ順に当て直すだけ (後に書くと、控えにだけ入って設定が消える)
+		if err := saveSettings(dir, *set); err != nil {
+			return nil, err
+		}
 	}
 	if len(results) > 0 {
 		data, err := json.MarshalIndent(st, "", "  ")
@@ -351,6 +400,11 @@ func apply(st State, r Request, now time.Time) (State, string, string, error) {
 		if i < 0 {
 			return st, r.CardID, "", fmt.Errorf("%s: カード %q が無い", r.Kind, r.CardID)
 		}
+		if r.Kind == "plan" {
+			if err := checkAfter(next, r.After); err != nil {
+				return st, r.CardID, "", fmt.Errorf("plan: %w", err)
+			}
+		}
 		id = r.CardID
 		c := next.Cards[i]
 		if err := transition(&c, r, now); err != nil {
@@ -378,7 +432,7 @@ func remove(st *State, i int, r Request, now time.Time) (string, error) {
 		return "", nil // 既に削除の依頼を受けている (二重に押した)
 	}
 	if c.State == card.Requested && c.Session == "" && c.Launching == "" {
-		st.Cards = append(st.Cards[:i], st.Cards[i+1:]...)
+		st.Cards = card.Drop(st.Cards, c.ID, now)
 		return fmt.Sprintf("「%s」を削除した (依頼の列。%s が依頼)", c.Title, by), nil
 	}
 	// テストの係への頼みはここでは取り下げない (実行中の印を消すと、前の dispatcher が残した実行を止められない)。dispatcher が止めてから取り下げる
@@ -411,7 +465,17 @@ func transition(c *card.Card, r Request, now time.Time) error {
 			// global で受けた依頼は、PM が分けた issue の repo で作業する (付けないと、dispatcher が起動先を決められずに止まる)
 			c.Repo = r.Issues[0].Repo
 		}
-		move(card.Planned, "タスクに分けてキューに積んだ")
+		// 相手が記録に有るか・循環しないかは不変条件 (card.Check) が見る
+		for _, a := range r.After {
+			if !slices.Contains(c.After, a) {
+				c.After = append(c.After, a)
+			}
+		}
+		why := "タスクに分けてキューに積んだ"
+		if len(c.After) > 0 {
+			why += " (" + strings.Join(c.After, ", ") + " の後に起動する)"
+		}
+		move(card.Planned, why)
 	case "ask": // PG が質問を書いて turn を終えた
 		if c.State != card.Running {
 			return fmt.Errorf("作業中の列に無い (今は %s)", c.State.Label())
@@ -429,7 +493,13 @@ func transition(c *card.Card, r Request, now time.Time) error {
 			return errors.New("回答が空")
 		}
 		c.Wait = card.Wait{}
-		c.Resume = r.Answer // dispatcher が同じ session を再開するときに渡す (426 の決定 2)
+		// dispatcher が同じ session を再開するときに渡す (426 の決定 2)。まだ渡せていない文 (再開を claude が受け付けずに人の番へ回った
+		// 差し戻し・テストの結果など。462) があれば消さずに前に残す
+		if c.Resume != "" {
+			c.Resume += "\n\n回答: " + r.Answer
+		} else {
+			c.Resume = r.Answer
+		}
 		move(card.Planned, firstNonEmpty(r.From, "人間")+" が回答した: "+clip(r.Answer, 80)+" (PG の空きが出たら同じ session を resume)")
 	case "rework": // PM がレビューで差し戻した (issue 446)。回答と同じく分解済みへ戻し、dispatcher が同じ session を再開する
 		if c.State != card.Review {
@@ -440,6 +510,14 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		}
 		c.Resume = ReworkPrefix + r.Rework + "\n直したら、もう一度 `pro-con card review " + c.ID + "` を実行してから turn を終える。"
 		move(card.Planned, "差し戻した: "+r.Rework) // 原文のまま残す (要約・切り詰めをしない)
+	case "handoff": // PM が PG の質問を人に回した。人の番の目印 (452) ができるまでは履歴に残すだけで、列も質問も変えない
+		if c.State != card.Waiting || c.Wait.Kind != card.WaitQuestion {
+			return fmt.Errorf("PG の質問待ちではない (今は %s)", c.State.Label())
+		}
+		if strings.TrimSpace(r.Text) == "" {
+			return errors.New("人に回す理由が空")
+		}
+		c.History = append(c.History, card.Event{At: now, Text: card.HandoffText(firstNonEmpty(r.From, "PM"), r.Text)}) // 原文のまま
 	case "run": // PG がテストの係にコマンドの実行を頼んで turn を終えた (426 の決定 5)。結果は dispatcher が再開のときに渡す
 		if c.State != card.Running {
 			return fmt.Errorf("作業中の列に無い (今は %s)", c.State.Label())
@@ -502,6 +580,21 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		move(card.Done, "完了にした")
 	default:
 		return fmt.Errorf("未知の依頼 %q", r.Kind)
+	}
+	return nil
+}
+
+// checkAfter は plan --after の相手が、振った番号のカードか (記録に在る・書庫へ移った・削除した)。まだ振っていない番号 (打ち間違い) は除ける。
+// 🚨 記録に在るかだけで判定しない: 完了から 24 時間で書庫へ移ったカードの後に積めなくなる (issue 478)。循環は card.Check が見る
+func checkAfter(st State, after []string) error {
+	for _, a := range after {
+		if indexOf(st.Cards, a) >= 0 {
+			continue
+		}
+		var n int
+		if _, err := fmt.Sscanf(a, "C-%d", &n); err != nil || fmt.Sprintf("C-%03d", n) != a || n < 1 || n >= st.NextID {
+			return fmt.Errorf("順番の前のカード %s が無い (まだ振っていない番号)", a)
+		}
 	}
 	return nil
 }

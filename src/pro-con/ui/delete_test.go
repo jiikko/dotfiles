@@ -46,8 +46,8 @@ func TestDeleteRequestedCardAsksFirst(t *testing.T) {
 	m.selected = id
 	press(m, "d")
 	m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
-	if shown(m, id) || !strings.Contains(m.flash, "削除した") {
-		t.Fatalf("y の後も残っている: flash=%q", m.flash)
+	if shown(m, id) || !strings.Contains(m.toasts.Text(), "削除した") {
+		t.Fatalf("y の後も残っている: flash=%q", m.toasts.Text())
 	}
 }
 
@@ -66,8 +66,8 @@ func TestDeleteRunningCardStopsPGFirst(t *testing.T) {
 		t.Fatal("止める前に消えた / 削除中と出ない")
 	}
 	press(m, "d")
-	if m.mode != modeBoard || !strings.Contains(m.flash, "削除の依頼を受けている") {
-		t.Fatalf("削除中のカードでまた確認を出した: mode=%v %q", m.mode, m.flash)
+	if m.mode != modeBoard || !strings.Contains(m.toasts.Text(), "削除の依頼を受けている") {
+		t.Fatalf("削除中のカードでまた確認を出した: mode=%v %q", m.mode, m.toasts.Text())
 	}
 	be.Step()
 	m.setSnap(be.Snapshot())

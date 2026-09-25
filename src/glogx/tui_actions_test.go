@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"tuikit/toast"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -114,8 +115,8 @@ func TestBrowseUpdateFlow(t *testing.T) {
 		t.Fatal("updateMsg 後も updating のまま")
 	}
 	// 変わった場合は成功トーストに "vX → vY" が出る (旧: キー待ちの結果ダイアログ)
-	if !m.toast.visible() || !m.toast.ok || !strings.Contains(m.toast.text, "v2.1.216 → v2.2.0") {
-		t.Fatalf("バージョン変化がトーストに出ない: visible=%v ok=%v text=%q", m.toast.visible(), m.toast.ok, m.toast.text)
+	if !m.toast.Visible() || !m.toast.OK() || !strings.Contains(m.toast.Text(), "v2.1.216 → v2.2.0") {
+		t.Fatalf("バージョン変化がトーストに出ない: visible=%v ok=%v text=%q", m.toast.Visible(), m.toast.OK(), m.toast.Text())
 	}
 	// トーストなのでキー待ちで塞がらない: 通常キーは本来の動作 (カーソル移動) をする
 	if _, _ = m.handleKey("j"); m.cursor != 0 {
@@ -132,14 +133,14 @@ func TestBrowseUpdateFlow(t *testing.T) {
 	}
 	_, cmd2 := m2.handleKey("C")
 	deliverUpdateMsg(m2, cmd2)
-	if !m2.toast.visible() || !strings.Contains(m2.toast.text, "変化なし") || !strings.Contains(m2.toast.text, "v2.2.0") {
-		t.Fatalf("変化なしがトーストに出ない: visible=%v text=%q", m2.toast.visible(), m2.toast.text)
+	if !m2.toast.Visible() || !strings.Contains(m2.toast.Text(), "変化なし") || !strings.Contains(m2.toast.Text(), "v2.2.0") {
+		t.Fatalf("変化なしがトーストに出ない: visible=%v text=%q", m2.toast.Visible(), m2.toast.Text())
 	}
-	if strings.Contains(m2.toast.text, "最新版") {
-		t.Fatalf("update 実行結果を「最新版」と偽っている: text=%q", m2.toast.text)
+	if strings.Contains(m2.toast.Text(), "最新版") {
+		t.Fatalf("update 実行結果を「最新版」と偽っている: text=%q", m2.toast.Text())
 	}
-	if !strings.Contains(m2.toast.text, "claude is already up to date.") {
-		t.Fatalf("CLI の言い分 (note) がトーストに出ない: text=%q", m2.toast.text)
+	if !strings.Contains(m2.toast.Text(), "claude is already up to date.") {
+		t.Fatalf("CLI の言い分 (note) がトーストに出ない: text=%q", m2.toast.Text())
 	}
 }
 
@@ -160,8 +161,8 @@ func TestBrowseUpdateFailureShowsDialogAndClearsUpdating(t *testing.T) {
 	if m.actModal.anyUpdating() {
 		t.Fatal("更新失敗後も updating のまま (無限ブロックから復帰できない)")
 	}
-	if !m.toast.visible() || m.toast.ok || !strings.Contains(m.toast.text, "更新に失敗") || !strings.Contains(m.toast.text, "タイムアウト") {
-		t.Fatalf("失敗理由が error トーストに出ない: visible=%v ok=%v text=%q", m.toast.visible(), m.toast.ok, m.toast.text)
+	if !m.toast.Visible() || m.toast.OK() || !strings.Contains(m.toast.Text(), "更新に失敗") || !strings.Contains(m.toast.Text(), "タイムアウト") {
+		t.Fatalf("失敗理由が error トーストに出ない: visible=%v ok=%v text=%q", m.toast.Visible(), m.toast.OK(), m.toast.Text())
 	}
 	// 失敗文言は w でコピーできるよう lastWarning にも残る (showWarning 経由。issue 026 の規律)
 	if !strings.Contains(m.lastWarning, "更新に失敗") {
@@ -353,8 +354,8 @@ func TestBrowsePushFlow(t *testing.T) {
 	if m.statuses[newSHA] != StatePending {
 		t.Fatalf("pending が反映されない: %v", m.statuses[newSHA])
 	}
-	if !m.toast.visible() || !m.toast.ok || !strings.Contains(m.toast.text, "push") {
-		t.Fatalf("push 完了トーストが出ない: visible=%v ok=%v text=%q", m.toast.visible(), m.toast.ok, m.toast.text)
+	if !m.toast.Visible() || !m.toast.OK() || !strings.Contains(m.toast.Text(), "push") {
+		t.Fatalf("push 完了トーストが出ない: visible=%v ok=%v text=%q", m.toast.Visible(), m.toast.OK(), m.toast.Text())
 	}
 }
 
@@ -422,8 +423,8 @@ func TestBrowsePullFlow(t *testing.T) {
 	m2.handleKey("u")
 	m2.handleKey("y")
 	m2.Update(pullMsg{err: errors.New("conflict のため rebase を中断して元に戻しました")})
-	if m2.toast.visible() == false || m2.toast.ok || !strings.Contains(m2.toast.text, "conflict") {
-		t.Fatalf("pull 失敗トーストが出ない: visible=%v ok=%v text=%q", m2.toast.visible(), m2.toast.ok, m2.toast.text)
+	if m2.toast.Visible() == false || m2.toast.OK() || !strings.Contains(m2.toast.Text(), "conflict") {
+		t.Fatalf("pull 失敗トーストが出ない: visible=%v ok=%v text=%q", m2.toast.Visible(), m2.toast.OK(), m2.toast.Text())
 	}
 }
 
@@ -444,8 +445,8 @@ func TestBrowseTmuxPrefixFeedback(t *testing.T) {
 	t.Run("prefix は飲んで案内", func(t *testing.T) {
 		m := newTestBrowseWithPrefix(t, "ctrl+t")
 		m.handleKey("ctrl+t")
-		if !strings.Contains(m.toast.text, "効きません") || m.toast.info || m.toast.ok {
-			t.Fatalf("prefix の失敗 toast が出ない: text=%q info=%v ok=%v", m.toast.text, m.toast.info, m.toast.ok)
+		if !strings.Contains(m.toast.Text(), "効きません") || m.toast.Info() || m.toast.OK() {
+			t.Fatalf("prefix の失敗 toast が出ない: text=%q info=%v ok=%v", m.toast.Text(), m.toast.Info(), m.toast.OK())
 		}
 		if m.cursor != 0 {
 			t.Fatal("prefix 単体でカーソルが動いた")
@@ -459,8 +460,8 @@ func TestBrowseTmuxPrefixFeedback(t *testing.T) {
 		if m.cursor != 1 {
 			t.Fatal("prefix 直後のキーが飲み込まれてカーソルが動かない")
 		}
-		if strings.Contains(m.toast.text, "prefix+j") {
-			t.Fatalf("prefix に続くキーで失敗 toast が出た: %q", m.toast.text)
+		if strings.Contains(m.toast.Text(), "prefix+j") {
+			t.Fatalf("prefix に続くキーで失敗 toast が出た: %q", m.toast.Text())
 		}
 	})
 	// prefix 連打 (tmux のリテラル送信の癖) は毎回同じ案内を出すだけ
@@ -468,8 +469,8 @@ func TestBrowseTmuxPrefixFeedback(t *testing.T) {
 		m := newTestBrowseWithPrefix(t, "ctrl+t")
 		m.handleKey("ctrl+t")
 		m.handleKey("ctrl+t")
-		if !strings.Contains(m.toast.text, "効きません") || m.cursor != 0 {
-			t.Fatalf("prefix 連打の案内が出ない: text=%q cursor=%d", m.toast.text, m.cursor)
+		if !strings.Contains(m.toast.Text(), "効きません") || m.cursor != 0 {
+			t.Fatalf("prefix 連打の案内が出ない: text=%q cursor=%d", m.toast.Text(), m.cursor)
 		}
 	})
 	// y/N 確認モーダル中はモーダルの語彙を優先: C-t は「任意キー = キャンセル」で
@@ -490,8 +491,8 @@ func TestBrowseTmuxPrefixFeedback(t *testing.T) {
 	t.Run("tmux 外では機能オフ", func(t *testing.T) {
 		m := newTestBrowseWithPrefix(t, "")
 		m.handleKey("ctrl+t")
-		if m.toast.visible() {
-			t.Fatalf("tmux 外で prefix 案内が出た: %q", m.toast.text)
+		if m.toast.Visible() {
+			t.Fatalf("tmux 外で prefix 案内が出た: %q", m.toast.Text())
 		}
 	})
 }
@@ -522,17 +523,17 @@ func TestBrowsePushNoUnpushed(t *testing.T) {
 		t.Fatal("未 push なしで push 確認に入った")
 	}
 	// キー待ちのモーダルでなく右下トーストで出す (ユーザー要望 2026-07-25)
-	if !m.toast.visible() || m.toast.ok || !strings.Contains(m.toast.text, "未 push のコミットはありません") {
-		t.Fatalf("未 push なしの通知がトーストで出ない: visible=%v ok=%v text=%q", m.toast.visible(), m.toast.ok, m.toast.text)
+	if !m.toast.Visible() || m.toast.OK() || !strings.Contains(m.toast.Text(), "未 push のコミットはありません") {
+		t.Fatalf("未 push なしの通知がトーストで出ない: visible=%v ok=%v text=%q", m.toast.Visible(), m.toast.OK(), m.toast.Text())
 	}
 	// 入場スライドを holding まで進めてから描画を見る (entering の途中は shown=0 で未描画)
 	m.width, m.height = 80, 20
 	m.maybeTick()
-	for i := 0; i < 200 && m.toast.phase != toastHolding; i++ {
+	for i := 0; i < 200 && m.toast.Phase() != toast.Holding; i++ {
 		m.Update(tickMsg{})
 	}
 	if v := stripANSI(m.View().Content); !strings.Contains(v, "未 push のコミットはありません") {
-		t.Fatalf("トーストが描画されない (phase=%d shown=%d)", m.toast.phase, m.toast.shown)
+		t.Fatalf("トーストが描画されない (phase=%d frame=%d)", m.toast.Phase(), m.toast.Frame())
 	}
 	// トーストはキーを消費しない (モーダルと違い、次のキーが本来の動作をする)
 	m.handleKey("j")
@@ -646,8 +647,8 @@ func TestBrowseRerunFlow(t *testing.T) {
 	if m.actModal.rerunning {
 		t.Fatal("rerunMsg 後も rerunning のまま")
 	}
-	if !m.toast.visible() || !strings.Contains(m.toast.text, "再実行") {
-		t.Fatalf("成功トーストが出ない: %q", m.toast.text)
+	if !m.toast.Visible() || !strings.Contains(m.toast.Text(), "再実行") {
+		t.Fatalf("成功トーストが出ない: %q", m.toast.Text())
 	}
 	if m.panelGrace != rerunPollGrace {
 		t.Fatalf("猶予ポーリングが張られない: grace=%d want %d", m.panelGrace, rerunPollGrace)
@@ -666,8 +667,8 @@ func TestBrowseRerunGuards(t *testing.T) {
 	m.openPanel()
 	m.handleKey("j")
 	m.handleKey("r")
-	if m.actModal.rerunConfirm || !strings.Contains(m.toast.text, "GitHub Actions") {
-		t.Fatalf("StatusContext job で確認に入った / トーストが出ない: %q", m.toast.text)
+	if m.actModal.rerunConfirm || !strings.Contains(m.toast.Text(), "GitHub Actions") {
+		t.Fatalf("StatusContext job で確認に入った / トーストが出ない: %q", m.toast.Text())
 	}
 	// 失敗以外の job は再実行不可
 	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
@@ -676,25 +677,25 @@ func TestBrowseRerunGuards(t *testing.T) {
 	m2.openPanel()
 	m2.handleKey("j")
 	m2.handleKey("r")
-	if m2.actModal.rerunConfirm || !strings.Contains(m2.toast.text, "失敗") {
-		t.Fatalf("成功 job で確認に入った / トーストが出ない: %q", m2.toast.text)
+	if m2.actModal.rerunConfirm || !strings.Contains(m2.toast.Text(), "失敗") {
+		t.Fatalf("成功 job で確認に入った / トーストが出ない: %q", m2.toast.Text())
 	}
 	// タイトル行フォーカス (job 未選択) では確認に入らず、選択を促すトーストを出す
 	// (o/Y と挙動を揃える。UX 統一のためユーザー判断で無言 no-op から変更)
-	m2.toast = toast{}
+	m2.toast.Clear()
 	m2.panelCursor = -1
 	m2.handleKey("r")
 	if m2.actModal.rerunConfirm {
 		t.Fatal("タイトル行フォーカスで r が確認に入った")
 	}
-	if !strings.Contains(m2.toast.text, "job を選択") {
-		t.Fatalf("タイトル行フォーカスの r で選択を促すトーストが出ない: %q", m2.toast.text)
+	if !strings.Contains(m2.toast.Text(), "job を選択") {
+		t.Fatalf("タイトル行フォーカスの r で選択を促すトーストが出ない: %q", m2.toast.Text())
 	}
 	// o (ブラウザで開く) も同様に選択を促す (o/r/Y の挙動統一)
-	m2.toast = toast{}
+	m2.toast.Clear()
 	m2.handleKey("o")
-	if !strings.Contains(m2.toast.text, "job を選択") {
-		t.Fatalf("タイトル行フォーカスの o で選択を促すトーストが出ない: %q", m2.toast.text)
+	if !strings.Contains(m2.toast.Text(), "job を選択") {
+		t.Fatalf("タイトル行フォーカスの o で選択を促すトーストが出ない: %q", m2.toast.Text())
 	}
 	if called {
 		t.Fatal("ガード経路で runJobRerun が呼ばれた")
@@ -719,8 +720,8 @@ func TestBrowseRerunFailureShowsToast(t *testing.T) {
 	if m.actModal.rerunning {
 		t.Fatal("失敗後も rerunning のまま")
 	}
-	if !m.toast.visible() || m.toast.ok || !strings.Contains(m.toast.text, "失敗") {
-		t.Fatalf("失敗トーストが出ない: %q ok=%v", m.toast.text, m.toast.ok)
+	if !m.toast.Visible() || m.toast.OK() || !strings.Contains(m.toast.Text(), "失敗") {
+		t.Fatalf("失敗トーストが出ない: %q ok=%v", m.toast.Text(), m.toast.OK())
 	}
 	if m.panelGrace != 0 {
 		t.Fatal("失敗なのに猶予ポーリングが張られた")
@@ -734,27 +735,27 @@ func TestBrowseClaudeUpdateToastStacksWithExisting(t *testing.T) {
 	// 空きトースト → version 通知 (成功色) を表示
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.Update(claudeUpdateAvailableMsg{latest: "9.9.9"})
-	if !m.toast.visible() || !m.toast.ok || !strings.Contains(m.toast.text, "9.9.9") {
-		t.Fatalf("空きトーストで version 通知が出ない: visible=%v ok=%v text=%q", m.toast.visible(), m.toast.ok, m.toast.text)
+	if !m.toast.Visible() || !m.toast.OK() || !strings.Contains(m.toast.Text(), "9.9.9") {
+		t.Fatalf("空きトーストで version 通知が出ない: visible=%v ok=%v text=%q", m.toast.Visible(), m.toast.OK(), m.toast.Text())
 	}
 
 	// 先行 error トースト表示中 → 上に積まれ、先行も残る (どちらも読める)
 	m2 := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m2.height = 24 // 🚨 2 枚出すには窓の高さが要る (低い窓では行数上限で古い方を出さない。toast の doc)
-	m2.toast.show("先行警告: ...", false)
+	m2.toast.Show("先行警告: ...", false)
 	m2.Update(claudeUpdateAvailableMsg{latest: "9.9.9"})
-	if !strings.Contains(m2.toast.text, "9.9.9") {
-		t.Errorf("最上段が version 通知でない: %q", m2.toast.text)
+	if !strings.Contains(m2.toast.Text(), "9.9.9") {
+		t.Errorf("最上段が version 通知でない: %q", m2.toast.Text())
 	}
-	if len(m2.toast.older) != 1 || !strings.Contains(m2.toast.older[0].text, "先行警告") {
-		t.Errorf("先行 error が消えた (積まれていない): %+v", m2.toast.older)
+	if (len(m2.toast.Entries())-1) != 1 || !strings.Contains(m2.toast.Entries()[1].Text, "先行警告") {
+		t.Errorf("先行 error が消えた (積まれていない): %+v", m2.toast.Entries())
 	}
 	// 描画にも両方出る (上が新しい = version 通知)。滑り込みを進めてから見る
 	for range 40 {
-		if !m2.toast.animating() {
+		if !m2.toast.Animating() {
 			break
 		}
-		m2.toast.advance(m2.colored)
+		m2.toast.Advance()
 	}
 	out := stripANSI(m2.View().Content)
 	if !strings.Contains(out, "9.9.9") || !strings.Contains(out, "先行警告") {
@@ -773,8 +774,8 @@ func TestBrowseCopyLastWarning(t *testing.T) {
 
 	// 警告がまだ無い → コピーせず error トースト (ユーザー要望 2026-07-23)。lastWarning は汚さない
 	m.handleKey("w")
-	if stubbed || m.toast.ok || !strings.Contains(m.toast.text, "コピーできる警告はありません") {
-		t.Fatalf("警告無しで w が誤動作: copied=%q toast=%q ok=%v", copied, m.toast.text, m.toast.ok)
+	if stubbed || m.toast.OK() || !strings.Contains(m.toast.Text(), "コピーできる警告はありません") {
+		t.Fatalf("警告無しで w が誤動作: copied=%q toast=%q ok=%v", copied, m.toast.Text(), m.toast.OK())
 	}
 	if m.lastWarning != "" {
 		t.Fatalf("『警告なし』トーストが lastWarning を汚した: %q", m.lastWarning)
@@ -787,13 +788,13 @@ func TestBrowseCopyLastWarning(t *testing.T) {
 	}
 
 	// 不変条件の核: トースト表示状態をリセット (消滅) しても w でコピーできる
-	m.toast = toast{}
+	m.toast.Clear()
 	m.handleKey("w")
-	if copied != "push に失敗: boom" || !strings.Contains(m.toast.text, "警告をコピーしました") {
-		t.Fatalf("トースト消滅後に w でコピーできない: copied=%q toast=%q", copied, m.toast.text)
+	if copied != "push に失敗: boom" || !strings.Contains(m.toast.Text(), "警告をコピーしました") {
+		t.Fatalf("トースト消滅後に w でコピーできない: copied=%q toast=%q", copied, m.toast.Text())
 	}
-	if !m.toast.ok {
-		t.Fatalf("コピー成功トーストが緑 (ok) でない: ok=%v", m.toast.ok)
+	if !m.toast.OK() {
+		t.Fatalf("コピー成功トーストが緑 (ok) でない: ok=%v", m.toast.OK())
 	}
 }
 
@@ -803,8 +804,8 @@ func TestBrowseCopyLastWarningError(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.showWarning("なにか失敗")
 	m.handleKey("w")
-	if m.toast.ok || !strings.Contains(m.toast.text, "コピーに失敗しました") {
-		t.Fatalf("コピー失敗の error トーストが出ない: %q ok=%v", m.toast.text, m.toast.ok)
+	if m.toast.OK() || !strings.Contains(m.toast.Text(), "コピーに失敗しました") {
+		t.Fatalf("コピー失敗の error トーストが出ない: %q ok=%v", m.toast.Text(), m.toast.OK())
 	}
 	if m.lastWarning != "なにか失敗" {
 		t.Fatalf("コピー失敗トーストが lastWarning を汚した: %q", m.lastWarning)
@@ -815,7 +816,7 @@ func TestBrowseCopyLastWarningError(t *testing.T) {
 func TestBrowseSuccessToastDoesNotClobberLastWarning(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.showWarning("失敗A")
-	m.toast.show("push しました", true) // 成功トースト (showWarning 非経由)
+	m.toast.Show("push しました", true) // 成功トースト (showWarning 非経由)
 	if m.lastWarning != "失敗A" {
 		t.Fatalf("成功トーストで lastWarning が上書きされた: %q", m.lastWarning)
 	}
@@ -840,8 +841,8 @@ func TestBrowseCopyWarningFromShowWarning(t *testing.T) {
 	if m.lastWarning != "diff の取得に失敗しました: boom" {
 		t.Fatalf("showWarning が lastWarning に残さない: %q", m.lastWarning)
 	}
-	m.toast = toast{} // トースト消滅をシミュレート
-	m.handleKey("w")  // トーストが消えても lastWarning は残る
+	m.toast.Clear()  // トースト消滅をシミュレート
+	m.handleKey("w") // トーストが消えても lastWarning は残る
 	if !strings.Contains(*copied, "diff の取得に失敗") {
 		t.Fatalf("showWarning が w でコピーされない: copied=%q", *copied)
 	}
@@ -1072,8 +1073,8 @@ func TestBrowseUpdateSkipsWhenAlreadyLatest(t *testing.T) {
 		t.Fatal("早期リターン後も updating のまま")
 	}
 	// トーストは主語 (CLI 名) 付き (ユーザー要望 2026-08-12)
-	if !m.toast.visible() || !strings.Contains(m.toast.text, "claude") || !strings.Contains(m.toast.text, "最新版") || !strings.Contains(m.toast.text, "v2.2.0") {
-		t.Fatalf("主語付きの最新版トーストが出ない: visible=%v text=%q", m.toast.visible(), m.toast.text)
+	if !m.toast.Visible() || !strings.Contains(m.toast.Text(), "claude") || !strings.Contains(m.toast.Text(), "最新版") || !strings.Contains(m.toast.Text(), "v2.2.0") {
+		t.Fatalf("主語付きの最新版トーストが出ない: visible=%v text=%q", m.toast.Visible(), m.toast.Text())
 	}
 
 	// codex 側も同じ早期リターン (鏡像)
@@ -1092,8 +1093,8 @@ func TestBrowseUpdateSkipsWhenAlreadyLatest(t *testing.T) {
 	if codexCalls != 0 {
 		t.Fatalf("latest 一致でも codex update が実行された (calls=%d)", codexCalls)
 	}
-	if !m2.toast.visible() || !strings.Contains(m2.toast.text, "codex") || !strings.Contains(m2.toast.text, "最新版") {
-		t.Fatalf("codex 最新版トーストが出ない: visible=%v text=%q", m2.toast.visible(), m2.toast.text)
+	if !m2.toast.Visible() || !strings.Contains(m2.toast.Text(), "codex") || !strings.Contains(m2.toast.Text(), "最新版") {
+		t.Fatalf("codex 最新版トーストが出ない: visible=%v text=%q", m2.toast.Visible(), m2.toast.Text())
 	}
 }
 
@@ -1316,8 +1317,8 @@ func TestUpdateDoesNotOverlapConfirmModal(t *testing.T) {
 			}
 			// 譲ったことを伝えるトーストが唯一のフィードバック。消えると「C が効かない」だけに
 			// なる。🚨 View() には入場アニメーションの途中なので出ない。状態で検査する。
-			if !strings.Contains(m.toast.text, "claude update は確認") {
-				t.Errorf("update を譲った理由のトーストが無い: text=%q", m.toast.text)
+			if !strings.Contains(m.toast.Text(), "claude update は確認") {
+				t.Errorf("update を譲った理由のトーストが無い: text=%q", m.toast.Text())
 			}
 
 			// この状態の Enter は「確認への応答」として働く (update 画面での誤爆ではない)。

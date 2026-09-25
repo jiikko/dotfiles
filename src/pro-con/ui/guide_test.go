@@ -81,8 +81,8 @@ func TestQClosesBoardsBeforeQuitting(t *testing.T) {
 	if isQuit(press(m, "esc")) {
 		t.Fatal("esc で終了した")
 	}
-	if isQuit(press(m, "q")) || m.mode != modeBoard || !strings.Contains(m.flash, "quit") {
-		t.Fatalf("何も開いていないときの q で終了しかけた / 終了の仕方を知らせない: mode=%v flash=%q", m.mode, m.flash)
+	if isQuit(press(m, "q")) || m.mode != modeBoard || !strings.Contains(m.toasts.Text(), "quit") {
+		t.Fatalf("何も開いていないときの q で終了しかけた / 終了の仕方を知らせない: mode=%v flash=%q", m.mode, m.toasts.Text())
 	}
 }
 

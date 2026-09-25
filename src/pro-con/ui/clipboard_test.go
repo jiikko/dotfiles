@@ -57,7 +57,7 @@ func TestYankReportsFailure(t *testing.T) {
 	m, _ := yankSpy(t, card.Card{ID: "C-001", Title: "t", State: card.Planned})
 	m.copy = func(string) error { return errors.New("pbcopy が無い") }
 	press(m, "Y")
-	if !strings.Contains(m.flash, "失敗") {
-		t.Fatalf("失敗を通知していない: %q", m.flash)
+	if !strings.Contains(m.toasts.Text(), "失敗") {
+		t.Fatalf("失敗を通知していない: %q", m.toasts.Text())
 	}
 }

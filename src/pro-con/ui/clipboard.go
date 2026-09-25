@@ -51,12 +51,12 @@ func (m *Model) cardText(c card.Card) string {
 func (m *Model) yank() {
 	c, ok := m.selectedCard()
 	if !ok {
-		m.flash = "コピーするカードが選ばれていない"
+		m.refuse("コピーするカードが選ばれていない")
 		return
 	}
 	if err := m.copy(m.cardText(c)); err != nil {
-		m.flash = "コピーに失敗した: " + err.Error()
+		m.fail("コピーに失敗した: " + err.Error())
 		return
 	}
-	m.flash = c.ID + " のタイトルと内容をクリップボードへコピーした"
+	m.done(c.ID + " のタイトルと内容をクリップボードへコピーした")
 }

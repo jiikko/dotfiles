@@ -764,8 +764,8 @@ func TestStatusViewerUKeyGuidesToP(t *testing.T) {
 	if !m.statusOv.visible() {
 		t.Fatal("u で viewer が閉じた")
 	}
-	if !m.toast.visible() || !strings.Contains(m.toast.text, "p") {
-		t.Fatalf("u の案内が出ていない: %q", m.toast.text)
+	if !m.toast.Visible() || !strings.Contains(m.toast.Text(), "p") {
+		t.Fatalf("u の案内が出ていない: %q", m.toast.Text())
 	}
 }
 
@@ -869,7 +869,7 @@ func TestStatusViewerPushKeyNoUnpushedShowsToast(t *testing.T) {
 	if m.actModal.pushConfirm {
 		t.Fatal("未 push なしで push 確認が開いた")
 	}
-	if !m.toast.visible() {
+	if !m.toast.Visible() {
 		t.Fatal("未 push なしの理由がトーストで出ていない")
 	}
 }
@@ -921,7 +921,7 @@ func TestStatusViewerNoticeBecomesToast(t *testing.T) {
 	m.Update(tea.KeyPressMsg{Code: 's', Text: "s"})
 	deliverStatus(t, &m.statusOv, statusRec("M  a.go"))
 	m.Update(tea.KeyPressMsg{Code: 'X', Text: "X", Mod: tea.ModShift})
-	if !m.toast.visible() && m.lastWarning == "" {
+	if !m.toast.Visible() && m.lastWarning == "" {
 		t.Fatal("viewer の notice がトースト/警告に出ていない")
 	}
 }

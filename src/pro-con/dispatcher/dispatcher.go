@@ -1,6 +1,6 @@
 // Package dispatcher は本物のモードの dispatcher (issue 427 の段階 3c-1)。1 回の Tick で:
 //
-//  1. 受付の箱を記録へ適用する (store.Apply)
+//  1. 受付の箱を記録へ適用する (store.Apply)。終えたカードを記録から書庫へ移す (store.Archive。issue 478)
 //  2. 起動した PG の session を pro-con の記録 (live.Register) に登録する (session id と pid が一覧に出てから)
 //  3. (落ちた PG を見張る trackDead の後に) 閉じたカード・削除の依頼を受けたカードの PG の session を止める (close.go。issue 447 / 451)。削除のカードは止まったら記録から外す
 //  4. 依頼の列のカードを PM に知らせる (pm.go。issue 437)。PM が居なければ起動し、居れば再開する
@@ -93,7 +93,10 @@ type Dispatcher struct {
 	usage      *Usage    // 最後に読めた値
 	usageErr   string    // 最後の読み取りの誤り
 	usageTried time.Time // 最後に読みに行った時刻
-	held       string    // 枠で起動・再開を待たせている知らせ (変わったときだけログに書く)
+	// settings は変えた設定 (store/settings.go。Tick ごとに読み直す) / settingsErr は読めなかった理由
+	settings    store.Settings
+	settingsErr string
+	held        string // 枠で起動・再開を待たせている知らせ (変わったときだけログに書く)
 
 	ticked bool // 1 度でも Tick したか
 	// Record は Tick / Shutdown の出来事を渡す (ログの行と events.jsonl。dispatchercmd.go)。記録を変えた知らせ (Changed) より先に呼ぶ
@@ -114,6 +117,10 @@ type Dispatcher struct {
 	pmHeld   string // 枠で PM を起こさない理由 (変わったときだけログに書く)
 	pmFailed string // PM を起こせない理由 (同上)
 	pmStatus string // 知らない PM の status (同上)
+	// pmRejects は claude が PM の起動・再開を受け付けなかったのが続いた回数、pmRejected は最後のその失敗。launchRejectLimit 回続いたら起こさない。
+	// 🚨 メモリにだけ持つ: PM には回答で戻す人の番が無いので、直した後に dispatcher を起動し直すのが戻し方 (claude の実体を引き直すのも起動時だけ = 464)
+	pmRejects  int
+	pmRejected string
 	// Exists は PM の作業ディレクトリが在るかを見る (nil なら os.Stat)。テストが差し替える
 	Exists func(dir string) bool
 
@@ -130,6 +137,7 @@ type Dispatcher struct {
 	published   bool                 // 1 度でも Publish したか (起動の直後に空の文も書く。前の dispatcher が残した文を消す)
 	notified    map[string]bool      // 通知した回答待ちのカード (待ちを抜けたら消す)
 	stopFrom    map[string]time.Time // 印の付いたカードを、この dispatcher が最初に止めに入った時刻 (close.go。諦めるまでの時間の起点)
+	unknownSeen map[string]bool      // 知らない state の警告を出した session id (unknownStateNote。止め直しの周・Tick ごとに重ねない)
 }
 
 // defaultStallAfter は停滞の通常の閾値の既定 (426: 既定値で始めて動かしながら直す)。
@@ -167,9 +175,11 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 		return nil, err
 	}
 	notes = append(notes, applied(res)...)
+	d.loadSettings()
 	if len(res) > 0 && d.Changed != nil { // 箱の依頼を適用した直後に知らせる (一覧の取得 (最大 10 秒) を待たせずにカードを画面へ出す)
 		d.Changed()
 	}
+	notes = append(notes, d.archive(now)...)
 	ss, err := d.List(ctx)
 	if err != nil {
 		return append(notes, ev(eventlog.KindError, "", "", "session の一覧を取れない (登録と割り当ては次の Tick へ): "+err.Error())), nil
@@ -237,6 +247,22 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 		return notes, err
 	}
 	return append(notes, d.announce()...), nil // 割り当ての結果まで含めて知らせる
+}
+
+// archive は終えたカードを書庫へ移す。移せなくても Tick は続ける (記録が大きいままになるだけで、割り当ては止めない)。
+// 出来事に出すのは自動で片付けたカードだけ (人が片付けたカードは画面に出ていないので、移しても見た目が変わらない)。
+func (d *Dispatcher) archive(now time.Time) []eventlog.Event {
+	moved, err := store.Archive(d.Dir, now)
+	if err != nil {
+		return []eventlog.Event{ev(eventlog.KindError, "", "", "終えたカードを書庫へ移せない (次の Tick で移し直す): "+err.Error())}
+	}
+	var notes []eventlog.Event
+	for _, c := range moved {
+		if len(c.History) > 0 && c.History[len(c.History)-1].Text == store.AutoClearText {
+			notes = append(notes, ev(eventlog.KindArchive, c.ID, "", c.ID+": "+store.AutoClearText+" (card show で読める)"))
+		}
+	}
+	return notes
 }
 
 // register は作業中のカードの session (短い id) が一覧に出ていれば、session id と pid を添えて pro-con の記録に書く。
@@ -616,6 +642,7 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 	}
 	running := 0
 	var queue []card.Card
+	var notes []eventlog.Event
 	for _, c := range st.Cards {
 		if c.Deleting() { // 起動・再開しない (PG を止めて消すのを待っている)。起動の結果が分からないものは立っているかもしれないので数える
 			if c.State == card.Running || c.Launching != "" {
@@ -627,6 +654,17 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		case card.Running:
 			running++
 		case card.Planned:
+			// 順番 (issue 468) は初めての起動だけを止める。一度起動したカードの再開・起動の結果が分からないカードは止めない (立っているかもしれない)
+			if b := card.Blockers(st.Cards, c); len(b) > 0 && c.Session == "" && c.Launching == "" {
+				text := afterWaitPrefix + strings.Join(b, ", ") + " の完了を待つ"
+				if lastAfterWait(c) != text { // 変わったときだけ書く (Tick ごとに記録を伸ばさない)
+					if err := d.update(c.ID, func(cc *card.Card) { cc.History = append(cc.History, card.Event{At: now, Text: text}) }); err != nil {
+						return notes, err
+					}
+					notes = append(notes, ev(eventlog.KindHold, c.ID, "", c.ID+": "+text))
+				}
+				continue
+			}
 			queue = append(queue, c)
 		case card.Requested, card.Waiting, card.Review, card.Done:
 		}
@@ -646,7 +684,6 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 	}
 	// 印の残ったカード (前の起動・再開の結果が分からない) は、上限の判定より先に片付ける。上限の後ろに置くと、実際に立っている PG を
 	// 数えずに別のカードを起動する (上限を下げて起動し直したときも)
-	var notes []eventlog.Event
 	var fresh []card.Card
 	for _, c := range queue {
 		if c.Launching == "" {
@@ -668,10 +705,11 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		fresh = append(fresh, c) // 待っても出なかった。起動・再開し直す (古い順は保つ)
 	}
 	limit, why := d.capacity(now)
+	lim, _ := d.limit()
 	held := ""
 	for i, c := range fresh {
 		if running >= limit {
-			if running < d.Limit { // 枠で絞らなくても止まっていたなら、枠のせいにしない
+			if running < lim { // 枠で絞らなくても止まっていたなら、枠のせいにしない
 				held = fmt.Sprintf("分解済みの %d 枚を起動・再開しない (%s)", len(fresh)-i, why)
 			}
 			break
@@ -693,7 +731,18 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		running++ // 失敗と返っても立っているかもしれないので、確かめるまで上限に数える
 		id, launchErr := run(ctx)
 		if launchErr != nil {
-			if err := d.note(c.ID, now, how+"に失敗したと返った (立っているかもしれないので、一覧で確かめてから起動し直す): "+launchErr.Error()); err != nil {
+			if errors.Is(launchErr, ErrRejected) {
+				note, err := d.reject(c.ID, now, how, launchErr)
+				if err != nil {
+					return notes, err
+				}
+				notes = append(notes, note)
+				continue
+			}
+			if err := d.update(c.ID, func(cc *card.Card) {
+				cc.Rejects = 0 // 続いていない
+				cc.History = append(cc.History, card.Event{At: now, Text: how + "に失敗したと返った (立っているかもしれないので、一覧で確かめてから起動し直す): " + launchErr.Error()})
+			}); err != nil {
 				return notes, err
 			}
 			notes = append(notes, ev(eventlog.KindLaunch, c.ID, c.Session, fmt.Sprintf("%s の PG の%sに失敗: %v", c.ID, how, launchErr)))
@@ -711,6 +760,45 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		}
 	}
 	return notes, nil
+}
+
+// launchRejectLimit は、claude が起動・再開を受け付けない失敗が何回続いたら人の番へ回すか (462)。
+// 本文の形・trust していない repo・消えた worktree・未ログインは、何度やり直しても同じ失敗になり、印の残ったカードが枠を占め続ける
+const launchRejectLimit = 3
+
+// reject は claude が起動・再開を受け付けなかった (何も立っていない) 失敗を数える。launchRejectLimit 回続いたら人の番へ回す
+// (印は外す。回答すると同じカードをもう一度起動・再開する)。上限の前は、他の失敗と同じく印を残して launchGrace の後にやり直す
+func (d *Dispatcher) reject(id string, now time.Time, how string, launchErr error) (eventlog.Event, error) {
+	text := fmt.Sprintf("%s の PG の%sを claude が受け付けなかった: %v", id, how, launchErr)
+	err := d.update(id, func(c *card.Card) {
+		c.Rejects++
+		if c.Rejects < launchRejectLimit {
+			c.History = append(c.History, card.Event{At: now, Text: fmt.Sprintf("%sを claude が受け付けなかった (%d 回目): %v", how, c.Rejects, launchErr)})
+			return
+		}
+		why := fmt.Sprintf("%sを claude が %d 回続けて受け付けなかったので、やり直さない (最後: %v)。直してから回答すると、もう一度%sする", how, c.Rejects, launchErr, how)
+		if how == "起動" {
+			why += " (回答の本文は PG に渡らない。最初の指示で起動し直す)"
+		}
+		c.Launching, c.Rejects = "", 0
+		askAfterCrashes(c, now, why)
+		text = id + ": " + why
+	})
+	return ev(eventlog.KindLaunch, id, "", text), err
+}
+
+// afterWaitPrefix は順番で待たせた理由の文の頭 (issue 468)。頭で探す (btw の答えは直近の出来事を文の途中に引用する)。
+const afterWaitPrefix = "順番: "
+
+// lastAfterWait は履歴で最後に書いた順番の待ちの文 (無ければ空)。🚨 最後の 1 行とは比べない: 待っている間に btw・追加オーダーが
+// 履歴に入ると、同じ待ちを書き直す
+func lastAfterWait(c card.Card) string {
+	for i := len(c.History) - 1; i >= 0; i-- {
+		if strings.HasPrefix(c.History[i].Text, afterWaitPrefix) {
+			return c.History[i].Text
+		}
+	}
+	return ""
 }
 
 // resumes は同じ session を再開するカードか (回答・テストの結果・差し戻しを受けた / 追加オーダーを届ける)。
@@ -824,7 +912,7 @@ func (d *Dispatcher) settle(id string, now time.Time, how, session string) error
 			c.CrashesFrom = now
 		}
 		c.State, c.Since, c.Owner, c.Session = card.Running, now, "PG", session
-		c.LastProgress, c.Resume, c.Launching, c.Stalled, c.StopWanted, c.Stopped = now, "", "", false, false, false
+		c.LastProgress, c.Resume, c.Launching, c.Stalled, c.StopWanted, c.Stopped, c.Rejects = now, "", "", false, false, false, 0
 		// 消えたのを見た時刻は前の session のもの。残すと、再開が同じ短い id を返したとき (未実測)、一覧に出る前に消えたと読んで再開し直す
 		c.DeadSince = time.Time{}
 		c.History = append(c.History, card.Event{At: now, Text: "PG を" + how + "した (session " + session + ")"})
@@ -832,10 +920,6 @@ func (d *Dispatcher) settle(id string, now time.Time, how, session string) error
 			c.History = append(c.History, card.Event{At: now, Text: deliveredNote(n)})
 		}
 	})
-}
-
-func (d *Dispatcher) note(id string, now time.Time, text string) error {
-	return d.update(id, func(c *card.Card) { c.History = append(c.History, card.Event{At: now, Text: text}) })
 }
 
 // noteOnce は直前と同じ文なら足さない。何も起動していない理由 (起動・再開できない) にだけ使う (理由が変わらないまま Tick ごとに記録が伸びないように)。
@@ -867,7 +951,8 @@ func Prompt(c card.Card) string {
 	b.WriteString("規律:\n")
 	b.WriteString("- 作業は自分の worktree で行い、commit は自分のブランチまで push する (master へは push しない)\n")
 	fmt.Fprintf(&b, "- 質問があるときは AskUserQuestion を使わず、`pro-con card ask %s \"<質問>\"` を実行してから turn を終える (回答は再開のときに届く)\n", c.ID)
-	fmt.Fprintf(&b, "- make test・ビルド・実機 E2E など時間のかかるコマンドは自分で走らせず、`pro-con card run %s -- <コマンド>` で頼んでから turn を終える (結果は再開のときに届く。同時に頼めるのは 1 本)\n", c.ID)
+	fmt.Fprintf(&b, "- make test・ビルド・実機 E2E など時間のかかるコマンドは自分で走らせず、`pro-con card run %s -- <コマンド>` で頼んでから turn を終える (結果は再開のときに届く。同時に頼めるのは 1 本。パイプや && を含む 1 行は `-- bash -c '<1 行>'` で頼む)\n", c.ID)
+	b.WriteString("- run を頼んだら、その結果が届くまで ask しない (質問は結果を受け取ってからにする。先に ask すると、頼んだ実行が取り消される)\n")
 	fmt.Fprintf(&b, "- 終えたら `pro-con card review %s` を実行してから turn を終える\n", c.ID)
 	if len(c.Issues) > 0 {
 		var refs []string
@@ -875,6 +960,9 @@ func Prompt(c card.Card) string {
 			refs = append(refs, r.String())
 		}
 		fmt.Fprintf(&b, "\n関わる issue: %s\n", strings.Join(refs, ", "))
+	}
+	if len(c.After) > 0 { // 同じ判断を変えるカードとして PM が順番を付けた (issue 468)
+		fmt.Fprintf(&b, "\n順番: このカードは %s の後に回された (同じ判断・不変条件を変える)。先に入った変更を master で読んでから作り、合わせた結果をテストで守る\n", strings.Join(c.After, ", "))
 	}
 	if c.Prompt != "" {
 		b.WriteString("\n指示:\n" + c.Prompt + "\n")

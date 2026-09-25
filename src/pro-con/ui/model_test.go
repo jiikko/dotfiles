@@ -343,8 +343,8 @@ func TestAttachAbortsWhenScreenChanged(t *testing.T) {
 	if _, exec := m.Update(ready); exec != nil {
 		t.Fatal("入力欄を開いているのに端末を明け渡した")
 	}
-	if !strings.Contains(m.flash, "取りやめた") {
-		t.Fatalf("取りやめた旨が出ない: %q", m.flash)
+	if !strings.Contains(m.toasts.Text(), "取りやめた") {
+		t.Fatalf("取りやめた旨が出ない: %q", m.toasts.Text())
 	}
 }
 
@@ -414,8 +414,8 @@ func TestAttachDoneRecordsInstructions(t *testing.T) {
 	if rec.card != "W1" || rec.session != "s-w1" || !rec.from.Equal(from) || !rec.to.Equal(back) {
 		t.Fatalf("attach の窓を渡していない: %+v", rec)
 	}
-	if !strings.Contains(m.flash, "2 件") {
-		t.Fatalf("残した件数を知らせない: %q", m.flash)
+	if !strings.Contains(m.toasts.Text(), "2 件") {
+		t.Fatalf("残した件数を知らせない: %q", m.toasts.Text())
 	}
 	rec.err = errors.New("読めない")
 	_, cmd = m.Update(attachDoneMsg{cardID: "W1", session: "s-w1", from: from})

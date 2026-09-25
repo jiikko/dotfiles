@@ -5,6 +5,8 @@
 //	pro-con --mock       模擬データで起動する (claude は起動しない。動作確認用)
 //	pro-con card …       PM / PG が使うカードの操作 (受付の箱に置く。pro-con card で使い方)
 //	pro-con log          dispatcher の出来事の記録を読む (読むだけ。pro-con log --help)
+//	pro-con config …     止めずに PG の枠と PM の数を変える (受付の箱に置く。pro-con config で使い方)
+//	pro-con ps           pro-con が起動したプロセスを役ごとに出す (読むだけ)
 //	pro-con dispatcher       本物のモードの dispatcher を常駐させる (PG を起動する。週の利用枠を使う)
 //	pro-con fake-attach  attach の代わりに TUI から起動される内部用のコマンド
 //
@@ -33,6 +35,7 @@ import (
 	"pro-con/fake"
 	"pro-con/live"
 	"pro-con/relay"
+	"pro-con/store"
 	"pro-con/ui"
 	"pro-con/upgrade"
 )
@@ -98,6 +101,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				return 2
 			}
 			return fakeAttach(args[1], stdin, stdout)
+		case spawnDetachedCmd: // spawnDispatcher が挟む中継 (内部用)
+			return spawnDetached(args[1:], stderr)
 		case "e2e": // Claude が e2e モードの画面を操作する口 (e2ecmd.go)
 			return runE2E(args[1:], stdout, stderr)
 		case "card": // PM / PG が使うカードの操作 (受付の箱に置くだけ。cardcmd.go)
@@ -107,6 +112,16 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				return 1
 			}
 			return runCard(args[1:], viewEnv{dir: liveDir(home), projects: filepath.Join(home, ".claude", "projects"), now: time.Now}, stdout, stderr)
+		case "config", "ps": // 止めずに PG の枠・PM の数を変える口 (configcmd.go) / 役ごとのプロセスの一覧 (読むだけ。pscmd.go)
+			home, err := os.UserHomeDir()
+			if err != nil {
+				_, _ = fmt.Fprintln(stderr, "pro-con:", err)
+				return 1
+			}
+			if args[0] == "ps" {
+				return runPS(args[1:], liveDir(home), time.Now, execProcs, stdout, stderr)
+			}
+			return runConfig(args[1:], liveDir(home), stdout, stderr)
 		case "screen": // 人間の画面に今出ているものを外から読む (読むだけ。screencmd.go)
 			home, err := os.UserHomeDir()
 			if err != nil {
@@ -297,7 +312,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 // startDispatcherIfIdle は、dispatcher が動いていなければ spawn で起動する (動いていれば何もしない)。
 // 確かめてから起動するまでの間に別の画面が起動しても、2 つ目の dispatcher はロックを取れずに抜けるだけ。
+// 人が止めた印 (store.Held。issue 459) があれば起こさない。確かめてから起こすまでに印が置かれても、起こされた側 (--from-screen) が抜ける
 func startDispatcherIfIdle(dir string, spawn func(dir string) error) (bool, error) {
+	if store.Held(dir) {
+		return false, nil
+	}
 	unlock, err := dispatcher.Lock(dir)
 	if errors.Is(err, dispatcher.ErrRunning) {
 		return false, nil
@@ -326,6 +345,8 @@ func wireLive(lb *live.Backend, view bool, dir string, spawn func(dir string) er
 	// 画面を開いたら dispatcher も立てる (閉じると止める。2026-09-25 にユーザーが決めた形。415 の「TUI と常駐プロセス」)
 	if started, err := startDispatcherIfIdle(dir, spawn); err != nil {
 		notes = append(notes, "dispatcher を起動できない: "+err.Error()+" (手で起動する: pro-con dispatcher)")
+	} else if store.Held(dir) {
+		notes = append(notes, "dispatcher は人が止めてある (pro-con dispatcher --stop) ので起こさない。c で起こす")
 	} else if started {
 		notes = append(notes, "dispatcher を起動した (ログ: "+filepath.Join(dir, "dispatcher.log")+")")
 	}
@@ -335,28 +356,60 @@ func wireLive(lb *live.Backend, view bool, dir string, spawn func(dir string) er
 // dispatcherCmd は画面が起こす dispatcher のコマンド。画面が 1 つも無い状態が 1 分続いたら、PG を止めて抜ける
 // (最後の画面が quit を通らずに消えても PG を残さない)。
 func dispatcherCmd(exe string, extra []string) *exec.Cmd {
-	return exec.Command(exe, append([]string{"dispatcher", "--exit-without-screens", "1m"}, extra...)...)
+	return exec.Command(exe, append([]string{"dispatcher", "--" + fromScreenFlag, "--exit-without-screens", "1m"}, extra...)...)
 }
 
 // spawnDispatcher は `pro-con dispatcher` を画面とは別のプロセスグループで起動する (画面を閉じても、ctrl+c が届いても道連れにしない。
 // 止めるのは終了のときの `dispatcher --stop`)。出力は状態の置き場の dispatcher.log へ足す (画面より長く生きるのでパイプにしない)。
+// 🚨 画面の子にしない: 中継 (spawnDetached) を挟み、中継だけを待つ。dispatcher は launchd の子になり、抜けたら launchd が刈り取る
+// (画面の子のままだと、抜けた dispatcher が画面を閉じるまでゾンビで残り、keeper が起こし直すたびに溜まる。Wait の goroutine は
+// ctrl+r の exec で消えるので足りない。issue 477)。
 func spawnDispatcher(dir string, extra []string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(filepath.Join(dir, "dispatcher.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	logPath := filepath.Join(dir, "dispatcher.log")
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = f.Close() }()
 	cmd := dispatcherCmd(exe, extra)
+	cmd.Args = append([]string{exe, spawnDetachedCmd}, cmd.Args[1:]...)
 	cmd.Stdout, cmd.Stderr = f, f
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil {
-		return err
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("dispatcher を起動する中継が失敗した (%w。様子は %s)", err, logPath)
 	}
-	return cmd.Process.Release()
+	return nil
+}
+
+// spawnDetachedCmd は spawnDispatcher が挟む中継の内部用のサブコマンド。
+const spawnDetachedCmd = "spawn-detached"
+
+// spawnDetached は中継: 自分のバイナリを args で別のプロセスグループに起動し、待たずに抜ける (起こした子は launchd の子になる)。
+// 子の出力は中継の stdout / stderr (spawnDispatcher が渡した dispatcher.log) をそのまま引き継ぐ。
+func spawnDetached(args []string, stderr io.Writer) int {
+	exe, err := os.Executable()
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "pro-con spawn-detached:", err)
+		return 1
+	}
+	cmd := exec.Command(exe, args...)
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		_, _ = fmt.Fprintln(stderr, "pro-con spawn-detached:", err)
+		return 1
+	}
+	return 0
+}
+
+// stopCmd は画面の quit (と e2e の後始末) が dispatcher と PG を止めるコマンド。人が止めた印を置かない (--from-screen。issue 459):
+// 最後の画面の quit で止めても、次に開いた画面は今までどおり dispatcher を起こす。
+func stopCmd(exe string, extra []string) *exec.Cmd {
+	return exec.Command(exe, append([]string{"dispatcher", "--stop", "--" + fromScreenFlag}, extra...)...)
 }
 
 // stopInChild は `pro-con dispatcher --stop` を別のプロセスで走らせて待つ。画面を ctrl+c で閉じても (待たずに閉じても)、
@@ -376,7 +429,7 @@ func stopInChild(ctx context.Context, dir string, extra []string) error {
 	if st, err := f.Stat(); err == nil {
 		from = st.Size()
 	}
-	cmd := exec.Command(exe, append([]string{"dispatcher", "--stop"}, extra...)...)
+	cmd := stopCmd(exe, extra)
 	cmd.Stdout, cmd.Stderr = f, f
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // 端末の割り込みを子へ届けない
 	if err := cmd.Start(); err != nil {

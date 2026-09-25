@@ -34,14 +34,14 @@ func TestBrowseCopyURL(t *testing.T) {
 	if *copied != "https://github.com/o/r/runs/1" {
 		t.Errorf("job URL = %q", *copied)
 	}
-	if !m.toast.ok || !strings.Contains(m.toast.text, "コピーしました") {
-		t.Errorf("コピー成功トーストが出ていない: %q ok=%v", m.toast.text, m.toast.ok)
+	if !m.toast.OK() || !strings.Contains(m.toast.Text(), "コピーしました") {
+		t.Errorf("コピー成功トーストが出ていない: %q ok=%v", m.toast.Text(), m.toast.OK())
 	}
 	// URL なし job (job1) は失敗トースト
 	m.handleKey("j")
 	m.handleKey("y")
-	if m.toast.ok || !strings.Contains(m.toast.text, "コピーできる URL がありません") {
-		t.Errorf("URL なしの失敗トーストが出ていない: %q ok=%v", m.toast.text, m.toast.ok)
+	if m.toast.OK() || !strings.Contains(m.toast.Text(), "コピーできる URL がありません") {
+		t.Errorf("URL なしの失敗トーストが出ていない: %q ok=%v", m.toast.Text(), m.toast.OK())
 	}
 }
 
@@ -89,8 +89,8 @@ func TestBrowseOpenPR(t *testing.T) {
 	if *opened != "https://github.com/o/r/pull/12" {
 		t.Errorf("開いた URL = %q", *opened)
 	}
-	if !m.toast.ok || !strings.Contains(m.toast.text, "PR #12") {
-		t.Errorf("PR を開く成功トーストが出ない: %q ok=%v", m.toast.text, m.toast.ok)
+	if !m.toast.OK() || !strings.Contains(m.toast.Text(), "PR #12") {
+		t.Errorf("PR を開く成功トーストが出ない: %q ok=%v", m.toast.Text(), m.toast.OK())
 	}
 	// キャッシュ済みなので 2 回目の p は再取得せず即 open
 	_, cmd = m.handleKey("p")
@@ -115,8 +115,8 @@ func TestBrowsePRResultAfterCursorMoveDoesNotOpen(t *testing.T) {
 	if *opened != "" {
 		t.Errorf("カーソル移動後の遅延 PR がブラウザで開いた: %q", *opened)
 	}
-	if strings.Contains(m.toast.text, "開きます") {
-		t.Errorf("stale な結果のトーストが出た: %q", m.toast.text)
+	if strings.Contains(m.toast.Text(), "開きます") {
+		t.Errorf("stale な結果のトーストが出た: %q", m.toast.Text())
 	}
 	if pr, ok := m.prCache[sha]; !ok || pr == nil || pr.Number != 7 {
 		t.Errorf("キャッシュ/バッジへの反映まで捨てられた: %v", m.prCache[sha])
@@ -167,8 +167,8 @@ func TestBrowseOpenPRErrorNotCached(t *testing.T) {
 	if _, ok := m.prCache[sha]; ok {
 		t.Fatalf("エラー結果がキャッシュされている")
 	}
-	if m.toast.ok || !strings.Contains(m.toast.text, "PR の取得に失敗") {
-		t.Errorf("エラートーストが出ない: %q ok=%v", m.toast.text, m.toast.ok)
+	if m.toast.OK() || !strings.Contains(m.toast.Text(), "PR の取得に失敗") {
+		t.Errorf("エラートーストが出ない: %q ok=%v", m.toast.Text(), m.toast.OK())
 	}
 	// 再度 p → 再取得が走る
 	_, cmd := m.handleKey("p")
@@ -182,8 +182,8 @@ func TestBrowseOpenPRNotFound(t *testing.T) {
 	sha := m.commits[0].SHA
 	m.statuses[sha] = StateSuccess
 	m.Update(prMsg{sha: sha, pr: nil})
-	if !strings.Contains(m.toast.text, "PR はありません") {
-		t.Errorf("PR なしのトーストが出ない: %q", m.toast.text)
+	if !strings.Contains(m.toast.Text(), "PR はありません") {
+		t.Errorf("PR なしのトーストが出ない: %q", m.toast.Text())
 	}
 	// nil もキャッシュされ、再度 p を押しても API へ行かない
 	_, cmd := m.handleKey("p")
@@ -198,8 +198,8 @@ func TestBrowseOpenPRUnpushed(t *testing.T) {
 	if _, cmd := m.handleKey("p"); cmd != nil {
 		t.Errorf("未 push コミットで PR 取得が走った")
 	}
-	if !strings.Contains(m.toast.text, "未 push") {
-		t.Errorf("未 push のトーストが出ない: %q", m.toast.text)
+	if !strings.Contains(m.toast.Text(), "未 push") {
+		t.Errorf("未 push のトーストが出ない: %q", m.toast.Text())
 	}
 }
 
@@ -405,10 +405,10 @@ func TestBrowseDiffErrorShowsToastAndCloses(t *testing.T) {
 	if m.diffOv.sha != "" {
 		t.Error("取得失敗時にポップアップが開いたまま")
 	}
-	if m.toast.ok || !strings.Contains(m.toast.text, "diff の取得に失敗") {
-		t.Errorf("失敗トーストが出ない: %q ok=%v", m.toast.text, m.toast.ok)
+	if m.toast.OK() || !strings.Contains(m.toast.Text(), "diff の取得に失敗") {
+		t.Errorf("失敗トーストが出ない: %q ok=%v", m.toast.Text(), m.toast.OK())
 	}
-	if m.lastWarning != m.toast.text {
+	if m.lastWarning != m.toast.Text() {
 		t.Errorf("取得失敗が lastWarning に残らない: %q", m.lastWarning)
 	}
 }
@@ -596,8 +596,8 @@ func TestBrowseListOpenCommitURLNoRepo(t *testing.T) {
 	if cmd != nil {
 		t.Error("repo なしで open コマンドが返った")
 	}
-	if !m.toast.visible() || m.toast.ok {
-		t.Errorf("repo なしの失敗トーストが出ていない: visible=%v ok=%v", m.toast.visible(), m.toast.ok)
+	if !m.toast.Visible() || m.toast.OK() {
+		t.Errorf("repo なしの失敗トーストが出ていない: visible=%v ok=%v", m.toast.Visible(), m.toast.OK())
 	}
 }
 
@@ -621,8 +621,8 @@ func TestBrowseCopyJobContextCached(t *testing.T) {
 	if strings.Contains(*copied, "\x1b[") {
 		t.Fatal("コピー内容に ANSI が残っている")
 	}
-	if !m.toast.ok || !strings.Contains(m.toast.text, "コピーしました") {
-		t.Fatalf("完了トーストが出ない: %q ok=%v", m.toast.text, m.toast.ok)
+	if !m.toast.OK() || !strings.Contains(m.toast.Text(), "コピーしました") {
+		t.Fatalf("完了トーストが出ない: %q ok=%v", m.toast.Text(), m.toast.OK())
 	}
 }
 
@@ -725,10 +725,10 @@ func TestBrowsePRStatusGuardsAndErrors(t *testing.T) {
 	// 未 push は取得しない
 	// 未 push は取得コマンドを返さないが、理由の失敗トーストは出す (cmd は maybeTick を含む)
 	if m.handleKey("P"); m.prStatusOv.visible() {
-		t.Fatalf("未 push で PR 取得に入った: %q", m.toast.text)
+		t.Fatalf("未 push で PR 取得に入った: %q", m.toast.Text())
 	}
-	if !strings.Contains(m.toast.text, "未 push") {
-		t.Fatalf("未 push トーストが出ない: %q", m.toast.text)
+	if !strings.Contains(m.toast.Text(), "未 push") {
+		t.Fatalf("未 push トーストが出ない: %q", m.toast.Text())
 	}
 	// 取得エラーはキャッシュせず閉じ、失敗トーストを出す (次の P で再試行できる)
 	m.statuses = statusesFor(m, StateSuccess)
@@ -736,8 +736,8 @@ func TestBrowsePRStatusGuardsAndErrors(t *testing.T) {
 	m.handleKey("P")
 	sha := m.commits[0].SHA
 	m.Update(prStatusMsg{sha: sha, ghErr: &GHError{Kind: GHOther, Detail: "boom"}})
-	if m.prStatusOv.visible() || m.toast.ok || !strings.Contains(m.toast.text, "PR の取得に失敗") {
-		t.Fatalf("エラーで閉じない / 失敗トーストが出ない: visible=%v toast=%q", m.prStatusOv.visible(), m.toast.text)
+	if m.prStatusOv.visible() || m.toast.OK() || !strings.Contains(m.toast.Text(), "PR の取得に失敗") {
+		t.Fatalf("エラーで閉じない / 失敗トーストが出ない: visible=%v toast=%q", m.prStatusOv.visible(), m.toast.Text())
 	}
 	if _, ok := m.prStatusOv.cache[sha]; ok {
 		t.Fatal("エラーがキャッシュされた (PR なし誤答が固定される)")
@@ -834,10 +834,10 @@ func TestBrowsePRStatusStaleErrorNoToast(t *testing.T) {
 	releaseKey(m)
 	m.handleKey("P") // B を開く (fetch B)
 	m.Update(prStatusMsg{sha: shaB, status: &PRStatus{PRRef: PRRef{Number: 2, State: "OPEN"}, Title: "b"}})
-	m.toast = toast{}
+	m.toast.Clear()
 	m.Update(prStatusMsg{sha: shaA, ghErr: &GHError{Kind: GHOther, Detail: "boom"}}) // A の遅延エラー
-	if m.toast.visible() {
-		t.Fatalf("別 sha の遅延エラーでトーストが出た: %q", m.toast.text)
+	if m.toast.Visible() {
+		t.Fatalf("別 sha の遅延エラーでトーストが出た: %q", m.toast.Text())
 	}
 	if !m.prStatusOv.visible() {
 		t.Fatal("別 sha の遅延エラーで B の表示が閉じられた")
@@ -1269,21 +1269,21 @@ func TestIssuesViewerNotifiesViaToast(t *testing.T) {
 	m.issuesOv.finishAnim()
 
 	m.handleKey("p") // 番号をコピー
-	if !m.toast.visible() {
+	if !m.toast.Visible() {
 		t.Fatal("番号コピーでトーストが出ない")
 	}
-	if !m.toast.ok {
-		t.Errorf("成功なのに失敗色: %q", m.toast.text)
+	if !m.toast.OK() {
+		t.Errorf("成功なのに失敗色: %q", m.toast.Text())
 	}
-	if !strings.Contains(m.toast.text, "コピーしました") {
-		t.Errorf("トーストの文面が想定と違う: %q", m.toast.text)
+	if !strings.Contains(m.toast.Text(), "コピーしました") {
+		t.Errorf("トーストの文面が想定と違う: %q", m.toast.Text())
 	}
 	// トーストは右から滑り込むので、入場アニメを進めてから見る (通常経路と同じ)
 	for range 30 {
-		if !m.toast.animating() {
+		if !m.toast.Animating() {
 			break
 		}
-		m.toast.advance(m.colored)
+		m.toast.Advance()
 	}
 	// viewer は全画面なので、トーストを合成しないと画面に出ない
 	if out := stripANSI(m.View().Content); !strings.Contains(out, "コピーしました") {
@@ -1309,8 +1309,8 @@ func TestIssuesViewerCopyFailureToast(t *testing.T) {
 	m.issuesOv.finishAnim()
 
 	m.handleKey("y")
-	if !m.toast.visible() || m.toast.ok {
-		t.Fatalf("失敗が失敗色のトーストになっていない: visible=%v ok=%v", m.toast.visible(), m.toast.ok)
+	if !m.toast.Visible() || m.toast.OK() {
+		t.Fatalf("失敗が失敗色のトーストになっていない: visible=%v ok=%v", m.toast.Visible(), m.toast.OK())
 	}
 	if !strings.Contains(m.lastWarning, "コピーに失敗") {
 		t.Errorf("lastWarning に残っていない (w でコピーできない): %q", m.lastWarning)
@@ -1350,8 +1350,8 @@ func TestBrowseDiffNeighborKeysSwapCommit(t *testing.T) {
 		t.Fatalf("shift+↓ で末尾のコミットへ移らない: sha=%.7s cursor=%d", m.diffOv.sha, m.cursor)
 	}
 	m.handleKey("J")
-	if m.diffOv.sha != m.commits[2].SHA || !strings.Contains(m.toast.text, "最後") {
-		t.Errorf("末尾の J で止まらない / 案内が出ない: sha=%.7s toast=%q", m.diffOv.sha, m.toast.text)
+	if m.diffOv.sha != m.commits[2].SHA || !strings.Contains(m.toast.Text(), "最後") {
+		t.Errorf("末尾の J で止まらない / 案内が出ない: sha=%.7s toast=%q", m.diffOv.sha, m.toast.Text())
 	}
 	if _, cmd = m.handleKey("K"); cmd != nil {
 		t.Errorf("キャッシュ済みの隣へ戻るのに取得コマンドが出た")

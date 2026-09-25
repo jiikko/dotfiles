@@ -19,9 +19,9 @@ pro-con のカード C-014 の依頼。pro-con (`src/pro-con`) のリソース�
 
 ### issue にしたもの
 
-- P2 → [477](477-bug-pro-con-spawned-dispatcher-left-as-zombie.md): 画面が起こした dispatcher は Wait されず、抜けるとゾンビで残る。
+- P2 → [477](done/477-bug-pro-con-spawned-dispatcher-left-as-zombie.md): 画面が起こした dispatcher は Wait されず、抜けるとゾンビで残る。
   keeper の起こし直しが続くと溜まり続ける (プローブで 5/5 がゾンビになった)
-- P3 → [478](478-perf-pro-con-cards-json-grows-and-is-reread-every-tick.md): cards.json は終えたカードも持ち続け、空の Tick でも 8 回読み直す
+- P3 → [478](done/478-perf-pro-con-cards-json-grows-and-is-reread-every-tick.md): cards.json は終えたカードも持ち続け、空の Tick でも 8 回読み直す
   (実測: 750 枚で Load 1 回 17ms)
 
 ### 記録のみ (発火条件を示せない・影響が小さい)

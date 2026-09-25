@@ -80,11 +80,11 @@ func TestRestartPromptShowsInViewers(t *testing.T) {
 // showToastLanded はトーストを出して滑り込みアニメを着地させる (箱幅 0 の間は描かれないため)。
 func showToastLanded(t *testing.T, m *browseModel, text string) {
 	t.Helper()
-	m.toast.show(text, true)
-	for i := 0; m.toast.animating() && i < 100; i++ {
-		m.toast.advance(m.colored)
+	m.toast.Show(text, true)
+	for i := 0; m.toast.Animating() && i < 100; i++ {
+		m.toast.Advance()
 	}
-	if m.toast.animating() {
+	if m.toast.Animating() {
 		t.Fatal("トーストのアニメが 100 フレームで着地しない (前提が崩れた)")
 	}
 }
@@ -93,12 +93,12 @@ func showToastLanded(t *testing.T, m *browseModel, text string) {
 func showWarningsLanded(t *testing.T, m *browseModel, texts ...string) {
 	t.Helper()
 	for _, text := range texts {
-		m.toast.show(text, false)
+		m.toast.Show(text, false)
 	}
-	for i := 0; m.toast.animating() && i < 100; i++ {
-		m.toast.advance(m.colored)
+	for i := 0; m.toast.Animating() && i < 100; i++ {
+		m.toast.Advance()
 	}
-	if m.toast.animating() {
+	if m.toast.Animating() {
 		t.Fatal("重要警告のアニメが 100 フレームで着地しない (前提が崩れた)")
 	}
 }
@@ -161,4 +161,69 @@ func TestToastDrawBudgetIsWiredThroughViewContent(t *testing.T) {
 			t.Fatalf("page=8 の警告箱が途中で切れている: 本文行=%d, 全体=%d:\n%s", warningLine, len(lines), out)
 		}
 	})
+}
+
+// 窓より長い通知は右端で切らず、箱の中で折り返して末尾まで見せる (2026-09-25 のユーザーの指摘: 右端で
+// 文の末尾と枠が切れていた)。配線 (BoxLines に窓の幅を渡す) を View 経由で固定する。
+func TestToastLongTextWrapsWithinViewWidth(t *testing.T) {
+	m := newTestBrowse(t, 3, nil, nil)
+	m.width, m.height = 50, 20
+	showWarningsLanded(t, m, "push failed: remote rejected the update because the branch is protected TAILMARK")
+	out := stripANSI(m.View().Content)
+	if !strings.Contains(out, "TAILMARK") {
+		t.Fatalf("長い通知の末尾が画面に出ていない:\n%s", out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if w := dispWidth(line); w > m.contentWidth() {
+			t.Errorf("行の幅 %d が窓の幅 %d を超える: %q", w, m.contentWidth(), line)
+		}
+	}
+}
+
+// 折り返した長い警告 2 枚も、窓に余裕があれば 2 枚とも描く (予算を 1 行の箱の高さで数えると 2 枚目が落ちる。敵対レビュー P2-1)。
+func TestToastDrawBudgetFitsTwoWrappedWarnings(t *testing.T) {
+	m := newTestBrowse(t, 3, nil, nil)
+	m.width, m.height = 50, 17 // page=16: 半ページは 8 行 = 1 行の箱なら 2 枚ぶん
+	showWarningsLanded(t, m,
+		"push failed: remote rejected the update OLDERMARK",
+		"pull failed: could not resolve host github.com NEWERMARK")
+	out := stripANSI(m.View().Content)
+	for _, want := range []string{"OLDERMARK", "NEWERMARK"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("折り返した警告 %q が描かれていない:\n%s", want, out)
+		}
+	}
+}
+
+// 警告の無い 1 行の箱は、中くらいの窓でも 2 枚まで (予算の下限を一律に上げると 3 枚入って窓を覆う。敵対レビュー 2 周目)。
+func TestToastShortSuccessesStayWithinHalfPage(t *testing.T) {
+	m := newTestBrowse(t, 3, nil, nil)
+	m.width, m.height = 100, 14 // page=13
+	for _, s := range []string{"OLDEST-SUCCESS", "pulled", "コピーした"} {
+		m.toast.Show(s, true)
+	}
+	for i := 0; m.toast.Animating() && i < 100; i++ {
+		m.toast.Advance()
+	}
+	out := stripANSI(m.View().Content)
+	if strings.Contains(out, "OLDEST-SUCCESS") || !strings.Contains(out, "pulled") {
+		t.Fatalf("page=13 で 1 行の成功が 2 枚に収まっていない (最古が残る / 2 枚目が消えた):\n%s", out)
+	}
+}
+
+// 長い警告 2 枚の後に成功が来ても、窓に余裕があれば警告 2 枚とも描く (最新の成功の箱が警告の予算を先に使い、
+// 古い警告が落ちていた。issue 484 の page=20 の再現)。
+func TestToastBudgetReservesNewestSuccessAndTwoWarnings(t *testing.T) {
+	m := newTestBrowse(t, 3, nil, nil)
+	m.width, m.height = 50, 21 // page=20
+	long := strings.Repeat("remote rejected the update ", 4)
+	m.toast.Show(long+"OLDERMARK", false)
+	m.toast.Show(long+"NEWERMARK", false)
+	showToastLanded(t, m, "SUCCESSMARK")
+	out := stripANSI(m.View().Content)
+	for _, want := range []string{"OLDERMARK", "NEWERMARK", "SUCCESSMARK"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("page=20 で %q が描かれていない:\n%s", want, out)
+		}
+	}
 }

@@ -77,7 +77,7 @@ func (m *Model) UpgradeFailed(err error) {
 	if err == nil {
 		err = errors.New("exec が戻ってきた")
 	}
-	m.flash = "新版への切り替えに失敗した (旧版のまま続ける): " + err.Error()
+	m.fail("新版への切り替えに失敗した (旧版のまま続ける): " + err.Error())
 }
 
 func upgradeTick() tea.Cmd {
@@ -113,23 +113,25 @@ func (m *Model) onUpgradeCheck(msg upgradeCheckMsg) tea.Cmd {
 	switch {
 	case msg.err != nil: // バイナリが見えない (差し替えの途中なら次の周期で戻る。消えたまま = clean 等は知らせる)
 		if e := "バイナリを見られない (bin/pro-con で起動し直すとビルドされる): " + msg.err.Error(); u.checkErr != e {
-			m.flash, u.checkErr = "新版の確認ができない: "+e, e
+			m.fail("新版の確認ができない: " + e)
+			u.checkErr = e
 		}
 	case msg.replaced:
 		if u.state != upReady {
-			m.flash = "新版ができた: ctrl+r で切り替える (カードも UI の状態も引き継ぐ)"
+			m.done("新版ができた: ctrl+r で切り替える (カードも UI の状態も引き継ぐ)")
 		}
 		u.state = upReady
 	case msg.spawned:
 		u.state, u.lastSpawn = upBuilding, msg.at
 	case msg.failed:
 		if u.state != upFailed {
-			m.flash = "新版のビルドに失敗した (旧版のまま続ける): " + u.src.LogPath()
+			m.fail("新版のビルドに失敗した (旧版のまま続ける): " + u.src.LogPath())
 		}
 		u.state = upFailed
 	case msg.spawnErr != nil:
 		if e := msg.spawnErr.Error(); u.checkErr != e {
-			m.flash, u.checkErr = "新版の確認ができない: "+e, e
+			m.fail("新版の確認ができない: " + e)
+			u.checkErr = e
 		}
 	}
 	return upgradeTick()
@@ -139,9 +141,9 @@ func (m *Model) onUpgradeCheck(msg upgradeCheckMsg) tea.Cmd {
 func (m *Model) requestUpgrade() tea.Cmd {
 	switch {
 	case m.up == nil:
-		m.flash = "ライブアップグレードは無効 (bin/pro-con = ソースのディレクトリから起動していない)"
+		m.refuse("ライブアップグレードは無効 (bin/pro-con = ソースのディレクトリから起動していない)")
 	case m.up.state != upReady:
-		m.flash = "新版はまだ無い"
+		m.info("新版はまだ無い")
 	default:
 		m.up.requested = true
 		return tea.Quit
@@ -260,7 +262,7 @@ func (m *Model) ImportState(data []byte) error {
 	}
 	m.ensureTab()
 	m.ensureSelection()
-	m.flash = "新版に切り替えた (UI の状態とカードを引き継いだ)"
+	m.done("新版に切り替えた (UI の状態とカードを引き継いだ)")
 	// 書きかけの入力は宛先のカードが同じときだけ戻す (カードが無くなっていたら、別のカードへ送られないよう戻さない。
 	// 書いた文は失わないよう通知に出す)。新しい依頼 (n) と issue からの依頼はカードに依らない
 	if st.Input {

@@ -15,6 +15,7 @@ import (
 	"tuikit/confirm"
 	"tuikit/layout"
 	"tuikit/listnav"
+	"tuikit/toast"
 
 	"doctor/disk"
 	"glogx/issues"
@@ -356,8 +357,8 @@ type browseModel struct {
 	// 経路 (テスト・静的出力) も実画面がそのまま出る (開く演出は Init からも呼んでいない)。
 	zoom appZoom
 
-	// toast は右下に数秒だけ出す結果フィードバック (push/pull 完了)。自動消滅 (toast.go)。
-	toast toast
+	// toast は右下に数秒だけ出す結果フィードバック (push/pull 完了)。自動消滅 (tuikit/toast)。
+	toast toast.Stack
 
 	ticking bool // 80ms スピナー tick チェーンが 1 本生きているか (maybeTick の single-flight)
 	// push 成功の演出 (startPushAnim)。演出が statuses の StateUnpushed を先に消していく
@@ -386,6 +387,7 @@ func newBrowseModel(commits []Commit, statuses map[string]CIState, toFetch []str
 	toFetch = capFetchSHAs(toFetch)
 	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	m := &browseModel{
+		toast:          toast.Stack{Shadow: ansiShadowFg}, // 落ち影は他の板と同じ近黒 (buildPanelBoxImpl と同じ)
 		commits:        commits,
 		statuses:       statuses,
 		fetched:        map[string]CIState{},
@@ -457,7 +459,7 @@ func (m *browseModel) Init() tea.Cmd {
 	// 文言で D へ誘導する。起動時に走査はしない (issue 148 の骨格)。
 	if c, ok := loadDoctorDiskCache(); ok {
 		if text := doctorStartupToast(c, ok, timeNow()); text != "" {
-			m.toast.showInfo(text)
+			m.toast.ShowInfo(text)
 			markDoctorNotified(timeNow())
 		}
 	}
@@ -468,7 +470,7 @@ func (m *browseModel) Init() tea.Cmd {
 	// いることを知らない (ユーザー要望 2026-07-31)。
 	if res, notify, _ := m.autobuild.handle(autobuildRunning, timeNow()); notify {
 		text, ok := autobuildToast(res)
-		m.toast.show(text, ok)
+		m.toast.Show(text, ok)
 	} else if autobuildStaleBinary(selfExePath()) {
 		// ビルド中でもないのに失敗記録が残っている = 旧版に固定された状態。「ビルド中」と違って
 		// 自然には解消しないので、コピー可能な警告 (w) として出す。
@@ -591,7 +593,7 @@ func (m *browseModel) tickInterval() time.Duration {
 	if m.zoom.animating(timeNow()) || m.issuesOv.slideAnimating() || m.statusOv.slideAnimating() {
 		return zoomInterval // 短い演出なので周期がそのままフレーム数になる (60fps)
 	}
-	if m.glide.Active() || m.diffOv.animating() || m.toast.animating() || m.issuesOv.animating() || m.statusOv.animating() {
+	if m.glide.Active() || m.diffOv.animating() || m.toast.Animating() || m.issuesOv.animating() || m.statusOv.animating() {
 		return scrollInterval // スライドを滑らかに (30fps)
 	}
 	return spinnerInterval
@@ -707,7 +709,7 @@ func (m *browseModel) showWarning(text string) {
 	// 表示 (toast 側で無害化) とは別にここでも無害化する。制御文字入りの文字列を
 	// 貼り付け先へ持ち出さない
 	m.lastWarning = sanitizePlainLine(text)
-	m.toast.show(text, false)
+	m.toast.Show(text, false)
 }
 
 // deliverNotice は viewer の操作結果 (takeNotice の戻り) をトーストへ流す。成功はトースト、
@@ -721,7 +723,7 @@ func (m *browseModel) deliverNotice(text string, ok bool) bool {
 		return false
 	}
 	if ok {
-		m.toast.show(text, true)
+		m.toast.Show(text, true)
 	} else {
 		m.showWarning(text)
 	}
@@ -733,7 +735,7 @@ func (m *browseModel) deliverNotice(text string, ok bool) bool {
 // 以前は先行トーストを潰さないよう専用タイマーで遅延再送していたが、
 // トーストが積めるようになったので調停は不要になった (toast の doc 参照)。
 func (m *browseModel) showClaudeUpdate(latest string) tea.Cmd {
-	m.toast.show("Claude Code v"+latest+" が公開されています (C で更新)", true)
+	m.toast.Show("Claude Code v"+latest+" が公開されています (C で更新)", true)
 	return m.maybeTick()
 }
 
@@ -793,10 +795,10 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		var toastHoldCmd tea.Cmd
-		if m.toast.animating() {
+		if m.toast.Animating() {
 			// トーストの横スライド (右画面外との出入り) をカラム単位で 1 フレーム進める。
-			// 入場完了時は holding へ移り toastHold 後の退場タイマーを返す。
-			toastHoldCmd = m.toast.advance(m.colored)
+			// 入場完了時は holding へ移り toast.Hold 後の退場タイマーを返す。
+			toastHoldCmd = toastTimers(m.toast.Advance())
 		}
 		m.frame++
 		// list に毎フレーム変化する内容 (loading スピナー) が乗るのは fetch/awaitCI の 2 状態
@@ -928,10 +930,10 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.maybeTick()
 		}
 		if msg.pr == nil {
-			m.toast.show("このコミットに紐づく PR はありません", false)
+			m.toast.Show("このコミットに紐づく PR はありません", false)
 			return m, m.maybeTick()
 		}
-		m.toast.show(fmt.Sprintf("PR #%d を開きます", msg.pr.Number), true)
+		m.toast.Show(fmt.Sprintf("PR #%d を開きます", msg.pr.Number), true)
 		return m, tea.Batch(m.openURLCmd(msg.pr.URL), m.maybeTick())
 	case prStatusMsg:
 		// receive は当該 sha が表示中ならエラー時に close するため、sha 一致は receive の前に捕捉する。
@@ -1007,7 +1009,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case claudeUpdateAvailableMsg:
 		return m, m.showClaudeUpdate(msg.latest)
 	case codexUpdateAvailableMsg:
-		m.toast.show("codex v"+msg.latest+" が公開されています (X で更新)", true)
+		m.toast.Show("codex v"+msg.latest+" が公開されています (X で更新)", true)
 		return m, m.maybeTick()
 	case doctorDiskMsg:
 		return m, tea.Batch(m.doctorOv.receiveDisk(msg), m.maybeTick())
@@ -1049,7 +1051,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if notify {
 			text, ok := autobuildToast(res)
-			m.toast.show(text, ok)
+			m.toast.Show(text, ok)
 			return m, tea.Batch(m.maybeTick(), watch) // トーストのスライドは tick で進む
 		}
 		return m, watch
@@ -1063,11 +1065,11 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.autobuild = newAutobuildWatch(selfExePath(), true, timeNow())
 		if res, notify, _ := m.autobuild.handle(autobuildRunning, timeNow()); notify {
 			text, ok := autobuildToast(res)
-			m.toast.show(text, ok)
+			m.toast.Show(text, ok)
 		}
 		return m, tea.Batch(m.autobuild.tickCmd(), m.maybeTick())
-	case toastMsg:
-		m.toast.startLeaving(msg) // 静止明け: 退場アニメへ (世代一致時のみ)。maybeTick で tick 再開
+	case toast.Msg:
+		m.toast.StartLeaving(msg) // 静止明け: 退場アニメへ (世代一致時のみ)。maybeTick で tick 再開
 		return m, m.maybeTick()
 	case usageRefreshMsg:
 		// バックグラウンドで /usage を再取得し、次回リフレッシュを予約する。取得中も snap は
@@ -1157,7 +1159,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.maybeTick()
 		}
 		// 成功トーストを右下にせり上げつつ全面リロード (アニメで画面が動いてもトーストは数秒残る)。
-		m.toast.show("pull --rebase しました", true)
+		m.toast.Show("pull --rebase しました", true)
 		// pull で自分のソースが更新されたなら、その場で裏ビルドを始める (autobuildAfterPull)。
 		// status viewer を開いたまま p で pull した場合は、その場で読み直す: 自動更新は 1.5 秒
 		// 周期なので、待たせるとヘッダーの ahead/behind が古いまま残って「効いていない」に見える。
@@ -1168,7 +1170,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showWarning("再実行に失敗: " + firstLine(msg.err.Error()))
 			return m, m.maybeTick()
 		}
-		m.toast.show("CI を再実行します", true)
+		m.toast.Show("CI を再実行します", true)
 		// パネルを開いたままなら猶予つきで追従対象に留める (rerun が GraphQL に映るまでのラグは
 		// rerunPollGrace のコメント参照)。映れば StatePending になり、以降は通常の追従へ
 		// 自然に引き継がれる。パネルが閉じられていれば何もしない (次の開き直しで最新を取る)
@@ -1194,7 +1196,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 本来の直し方は「描画とキー判定を同一の状態値から導出する」(issue 071 に残置)。
 		if m.actModal.pushConfirm || m.actModal.pullConfirm || m.actModal.rerunConfirm ||
 			m.actModal.pushing || m.actModal.pulling || m.actModal.rerunning {
-			m.toast.show(msg.target+" update は確認/実行が終わってから実行してください", true)
+			m.toast.Show(msg.target+" update は確認/実行が終わってから実行してください", true)
 			return m, m.maybeTick()
 		}
 		return m, tea.Batch(m.actModal.runUpdate(msg.target), m.maybeTick())
@@ -1220,11 +1222,11 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.err != nil:
 			m.showWarning(name + "更新に失敗: " + firstLine(msg.err.Error()))
 		case msg.before != "" && msg.after != "" && msg.before != msg.after:
-			m.toast.show(name+"v"+msg.before+" → v"+msg.after+" に更新しました", true)
+			m.toast.Show(name+"v"+msg.before+" → v"+msg.after+" に更新しました", true)
 		case msg.before != "" && msg.before == msg.after && msg.early:
 			// glogx 自身が「installed >= キャッシュ済み latest」を証明した早期リターン。
 			// ここだけが「最新です」と言ってよい (update は走っていない)。
-			m.toast.show(name+"すでに最新版です (v"+msg.before+")", true)
+			m.toast.Show(name+"すでに最新版です (v"+msg.before+")", true)
 		case msg.before != "" && msg.before == msg.after:
 			// update を走らせたのにバージョンが動かなかった。🚨 これを「最新です」と言わないこと:
 			// CLI は自前の stale なキャッシュを見て「更新不要」と判断しても exit 0 で成功する
@@ -1236,11 +1238,11 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showWarning(name + "update を実行しましたが v" + msg.before + " のままです (公開は v" + latest + ")" + updateNoteSuffix(msg.note))
 				return m, m.maybeTick()
 			}
-			m.toast.show(name+"update を実行しましたが変化なし (v"+msg.before+")"+updateNoteSuffix(msg.note), true)
+			m.toast.Show(name+"update を実行しましたが変化なし (v"+msg.before+")"+updateNoteSuffix(msg.note), true)
 		case msg.after != "":
-			m.toast.show(name+"現在のバージョン: v"+msg.after, true) // before 不明で比較できず
+			m.toast.Show(name+"現在のバージョン: v"+msg.after, true) // before 不明で比較できず
 		default:
-			m.toast.show(name+"update を実行しました", true) // 前後とも取得できず
+			m.toast.Show(name+"update を実行しました", true) // 前後とも取得できず
 		}
 		return m, m.maybeTick()
 	case pushMsg:
@@ -1249,7 +1251,7 @@ func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showWarning("push に失敗: " + firstLine(msg.err.Error()))
 			return m, m.maybeTick()
 		}
-		m.toast.show("push しました", true)
+		m.toast.Show("push しました", true)
 		if !m.hasRepo || len(m.commits) == 0 {
 			return m, m.maybeTick() // 再取得先が無くてもトーストは出す (アニメ tick を回す)
 		}
@@ -1447,7 +1449,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// tmux 外や取得失敗では tmuxPrefix="" のままこの機能ごと無効になる。
 	if m.tmuxPrefix != "" && key == m.tmuxPrefix {
 		// 通知は右下トースト (中央ダイアログは操作を遮って重い)
-		m.toast.show("tmux prefix は popup では効きません (C-g で閉じてから)", false)
+		m.toast.Show("tmux prefix は popup では効きません (C-g で閉じてから)", false)
 		return m, m.maybeTick()
 	}
 	// emacs 流の水平移動エイリアス (C-n/C-p = ↓/↑ は各ビューで対応済み)。ここで
@@ -1571,7 +1573,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		if warn == "" {
 			// コピーできる警告が無い旨は error トーストで出す (ユーザー要望 2026-07-23)。lastWarning は
 			// 汚さない (この文言自体はコピー対象でないため showWarning は通さない)。
-			m.toast.show("コピーできる警告はありません", false)
+			m.toast.Show("コピーできる警告はありません", false)
 			return m, m.maybeTick()
 		}
 		m.copyWithToast(warn, "警告をコピーしました")
@@ -1659,7 +1661,7 @@ func (m *browseModel) routeKeyToDoctor(key string) (tea.Model, tea.Cmd) {
 	// 描画中に選択行が消えて寄せていたら、**キーを飲まずに**知らせる (issue 210)。
 	// カーソルの寄せは View から起きるので、通知経路はここしか無い
 	if t := m.doctorOv.takeCursorFellBack(); t != "" {
-		m.toast.show(t, false)
+		m.toast.Show(t, false)
 	}
 	// U (usage) は doctor の上でも効く (issues / status と同じ契約。issue 227 ③)。usage の箱は
 	// finishWithGlobalChrome がどの画面にも重ねるので「取得だけ走って画面に出ない」は起きない。
@@ -1679,7 +1681,7 @@ func (m *browseModel) routeKeyToDoctor(key string) (tea.Model, tea.Cmd) {
 		// 再スキャンの理由がある場合は伝える (「前回の結果だったので取り直します」等)。
 		// 🚨 黙って走らせない: ユーザーは Space / d を押したのであって r を押していない
 		if t := m.doctorOv.takeToast(); t != "" {
-			m.toast.show(t, false)
+			m.toast.Show(t, false)
 		}
 		// close() を経由しない: 数件だけの partial を書いて完全な結果を潰さない (doctorView.saveCache の注記)
 		return m, tea.Batch(m.doctorOv.rescan(), m.maybeTick())
@@ -1690,9 +1692,9 @@ func (m *browseModel) routeKeyToDoctor(key string) (tea.Model, tea.Cmd) {
 	case doctorCopyLog:
 		m.copyWithToast(m.doctorOv.copyPayload(), "実行の記録をコピーしました (LLM にそのまま貼れます)")
 	case doctorNothing:
-		m.toast.show("この行にはコピーするものがありません", false)
+		m.toast.Show("この行にはコピーするものがありません", false)
 	case doctorToast:
-		m.toast.show(m.doctorOv.takeToast(), false)
+		m.toast.Show(m.doctorOv.takeToast(), false)
 	case doctorRunDelete:
 		// 削除 (と、その下見) は doctorView が組んだ Cmd をそのまま走らせる
 		return m, tea.Batch(m.doctorOv.takeDeleteCmd(), m.maybeTick())
@@ -1808,7 +1810,7 @@ func (m *browseModel) routeKeyToStatus(key string) (tea.Model, tea.Cmd) {
 		if key == "u" {
 			// u は一覧の pull キーだが、ここでは p を使う (誤爆しやすい隣接キーで remote を
 			// 叩かせない。spec 3 節)。黙って無視すると「押したのに何も起きない」になるので理由を返す
-			m.toast.show("pull は p です (status viewer では u を使いません)", false)
+			m.toast.Show("pull は p です (status viewer では u を使いません)", false)
 			return m, m.maybeTick()
 		}
 	}
@@ -1837,7 +1839,7 @@ func (m *browseModel) confirmPush() tea.Cmd {
 	if m.unpushedCount() == 0 {
 		// 「押しても何も起きない理由」の通知はキー待ちのモーダルでなく右下トーストで出す
 		// (ユーザー要望 2026-07-25)。他の no-op 通知 (コピー対象なし・PR なし等) と同じ経路。
-		m.toast.show("未 push のコミットはありません", false)
+		m.toast.Show("未 push のコミットはありません", false)
 		return m.maybeTick()
 	}
 	m.actModal.pushConfirm = true
@@ -2547,7 +2549,7 @@ func (m *browseModel) handlePanelKey(key string) (tea.Model, tea.Cmd) {
 	case "P":
 		// パネル内では PR 状態ポップアップを開かない仕様 (重ね順が複雑化する)。他の無効操作
 		// (job 未選択の o/r 等) と同様、無反応でなく理由をトーストで返す
-		m.toast.show("PR 状態はパネルを閉じてから P で表示します", false)
+		m.toast.Show("PR 状態はパネルを閉じてから P で表示します", false)
 	case "d":
 		return m, m.openDiff()
 	case "r":
@@ -2617,9 +2619,9 @@ func (m *browseModel) openNeighborJobDetail(delta int) tea.Cmd {
 	ni := m.panelCursor + delta
 	if ni < 0 || ni >= len(jobs) {
 		if delta > 0 {
-			m.toast.show("これが最後の job です", false)
+			m.toast.Show("これが最後の job です", false)
 		} else {
-			m.toast.show("これが最初の job です", false)
+			m.toast.Show("これが最初の job です", false)
 		}
 		return nil
 	}
@@ -2633,7 +2635,7 @@ func (m *browseModel) openNeighborJobDetail(delta int) tea.Cmd {
 func (m *browseModel) copyJobContext() tea.Cmd {
 	job, ok := m.focusedJob()
 	if !ok {
-		m.toast.show("job を選択してから Y で詳細をコピーします", false)
+		m.toast.Show("job を選択してから Y で詳細をコピーします", false)
 		return nil
 	}
 	if lines := m.detailOv.lines(m.detailKey()); len(lines) > 0 {
@@ -2677,15 +2679,15 @@ func (m *browseModel) askRerun() {
 	job, ok := m.focusedJob()
 	if !ok {
 		// タイトル行フォーカス (job 未選択) で r。o/Y と揃えて選択を促す。
-		m.toast.show("job を選択してから r で再実行します", false)
+		m.toast.Show("job を選択してから r で再実行します", false)
 		return
 	}
 	if job.CheckID == 0 {
-		m.toast.show("GitHub Actions の job ではないため再実行できません", false)
+		m.toast.Show("GitHub Actions の job ではないため再実行できません", false)
 		return
 	}
 	if job.State != StateFailure {
-		m.toast.show("再実行できるのは失敗した job だけです", false)
+		m.toast.Show("再実行できるのは失敗した job だけです", false)
 		return
 	}
 	repo, sha, id := m.repo, m.panelSHA, job.CheckID
@@ -2821,7 +2823,7 @@ func (m *browseModel) commitURL() string {
 func (m *browseModel) openCommitURL() tea.Cmd {
 	url := m.commitURL()
 	if url == "" {
-		m.toast.show("GitHub の remote が無いため開けません", false)
+		m.toast.Show("GitHub の remote が無いため開けません", false)
 		return nil
 	}
 	return m.openURLCmd(url)
@@ -2832,10 +2834,10 @@ func (m *browseModel) openCommitURL() tea.Cmd {
 // 警告を上書きして w の再試行を潰さないため、showWarning は通さない)。
 func (m *browseModel) copyWithToast(text, successMsg string) {
 	if err := copyToClipboard(text); err != nil {
-		m.toast.show("コピーに失敗しました: "+firstLine(err.Error()), false)
+		m.toast.Show("コピーに失敗しました: "+firstLine(err.Error()), false)
 		return
 	}
-	m.toast.show(successMsg, true)
+	m.toast.Show(successMsg, true)
 }
 
 func (m *browseModel) copyFocusURL() {
@@ -2846,7 +2848,7 @@ func (m *browseModel) copyFocusURL() {
 		url = m.commitURL()
 	}
 	if url == "" {
-		m.toast.show("コピーできる URL がありません", false)
+		m.toast.Show("コピーできる URL がありません", false)
 		return
 	}
 	// クリップボードへ入れる直前にも平文にする (copyJobContextLines と同じ理由。job.URL は外部 CI が
@@ -3067,7 +3069,7 @@ func (m *browseModel) closePanel() {
 // http(s) だけを開く。
 func (m *browseModel) openURLCmd(url string) tea.Cmd {
 	if !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "http://") {
-		m.toast.show("http(s) 以外の URL は開きません", false)
+		m.toast.Show("http(s) 以外の URL は開きません", false)
 		return nil
 	}
 	return func() tea.Msg {
@@ -3093,7 +3095,7 @@ func jobLogText(lines []string) string {
 func (m *browseModel) openJobLogInEditor() tea.Cmd {
 	lines := m.detailOv.lines(m.detailKey())
 	if len(lines) == 0 {
-		m.toast.show("開けるログがありません", false)
+		m.toast.Show("開けるログがありません", false)
 		return nil
 	}
 	// -R (readonly) + nomodifiable + buftype=nofile で「閲覧してコピーするだけ」の scratch に
@@ -3119,11 +3121,11 @@ func (m *browseModel) openJob() tea.Cmd {
 	if !ok {
 		// タイトル行フォーカス (job 未選択) で o。Y (copyJobContext) と揃えて選択を促す
 		// (job パネルの o/r/Y は job 未選択なら無反応なので理由をトーストで出す)。
-		m.toast.show("job を選択してから o で開きます", false)
+		m.toast.Show("job を選択してから o で開きます", false)
 		return nil
 	}
 	if job.URL == "" {
-		m.toast.show("この job には詳細ページの URL がありません", false)
+		m.toast.Show("この job には詳細ページの URL がありません", false)
 		return nil
 	}
 	return m.openURLCmd(job.URL)
@@ -3137,12 +3139,12 @@ func (m *browseModel) prTargetSHA() (sha string, ok bool) {
 		return "", false
 	}
 	if !m.hasRepo {
-		m.toast.show("GitHub の remote が無いため PR を取得できません", false)
+		m.toast.Show("GitHub の remote が無いため PR を取得できません", false)
 		return "", false
 	}
 	sha = m.commits[m.cursor].SHA
 	if m.statuses[sha] == StateUnpushed {
-		m.toast.show("未 push のコミットに PR はありません", false)
+		m.toast.Show("未 push のコミットに PR はありません", false)
 		return "", false
 	}
 	return sha, true
@@ -3157,7 +3159,7 @@ func (m *browseModel) openPR() tea.Cmd {
 	}
 	if pr, ok := m.prCache[sha]; ok {
 		if pr == nil {
-			m.toast.show("このコミットに紐づく PR はありません", false)
+			m.toast.Show("このコミットに紐づく PR はありません", false)
 			return nil
 		}
 		return m.openURLCmd(pr.URL)
@@ -3168,7 +3170,7 @@ func (m *browseModel) openPR() tea.Cmd {
 	m.prBusy[sha] = true
 	// 進行中トースト (…) は直後に届く prMsg の結果トーストで上書きされる。tick は呼び出し側
 	// (handleListKey/handlePanelKey の maybeTick) が回す。
-	m.toast.showInfo("PR を検索中...")
+	m.toast.ShowInfo("PR を検索中...")
 	repo := m.repo
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
@@ -3292,9 +3294,9 @@ func (m *browseModel) openNeighborDiff(delta int) tea.Cmd {
 	ni := idx + delta
 	if ni < 0 || ni >= len(m.commits) {
 		if delta > 0 {
-			m.toast.show("これが最後のコミットです", false)
+			m.toast.Show("これが最後のコミットです", false)
 		} else {
-			m.toast.show("これが最初のコミットです", false)
+			m.toast.Show("これが最初のコミットです", false)
 		}
 		return nil
 	}
@@ -3582,16 +3584,29 @@ func (m *browseModel) finishWithGlobalChrome(window []string, page int) string {
 	if box := m.usageOv.boxLines(m.contentWidth(), m.colored, m.spinner()); len(box) > 0 {
 		window = overlayBoxTopRight(window, box, m.contentWidth(), m.colored)
 	}
-	if box := m.toast.boxLines(m.colored, toastDrawBudget(page)); len(box) > 0 {
+	if box := m.toast.BoxLines(m.colored, toastDrawBudget(page, m.toast.ReservedHeight(2, m.contentWidth())), m.contentWidth()); len(box) > 0 {
 		window = overlayBoxBottomRight(window, box, m.contentWidth(), m.colored)
 	}
 	return m.finishWindow(window, page)
 }
 
-// toastDrawBudget は、通常の半ページ予算を保ちつつ重要警告 2 枚ぶんを確保する。
+// toastTimers は toast の退場タイマー (静止に入った枚ごと) を bubbletea の Tick にする (tuikit/toast はタイマーを張らない)。
+func toastTimers(ts []toast.Timer) tea.Cmd {
+	cmds := make([]tea.Cmd, 0, len(ts))
+	for _, t := range ts {
+		msg := t.Msg
+		cmds = append(cmds, tea.Tick(t.After, func(time.Time) tea.Msg { return msg }))
+	}
+	return tea.Batch(cmds...)
+}
+
+// toastDrawBudget は、通常の半ページ予算を保ちつつ最新の 1 枚と重要警告 2 枚ぶんを確保する。
 // 下限がないと狭い窓で重要警告が 1 枚に減り、上限がないと 2 箱が窓を覆うため、両方が要る。
-func toastDrawBudget(page int) int {
-	return min(max(page/2, toastBoxLines*2), max(page-1, toastBoxLines))
+// reserved は最新 + 新しい重要警告 2 枚の実際の行数 (Stack.ReservedHeight)。🚨 下限は 1 行の箱 2 枚ぶん (BoxHeight*2) と
+// これの大きい方: 折り返した警告は 1 行の箱より高く、BoxHeight で数えると 2 枚目が落ちる。最新を数えないと、最新が成功の
+// とき警告の分を先に使う (issue 484)。一律に MaxBoxHeight*2 へ上げると、警告の無い 1 行の箱が 3 枚入って窓を覆う。
+func toastDrawBudget(page, reserved int) int {
+	return min(max(page/2, toast.BoxHeight*2, reserved), max(page-1, toast.BoxHeight))
 }
 
 // viewLines は画面content を組む本体 (旧 View)。テストはここではなく View().Content を見る。
@@ -3819,7 +3834,7 @@ func (m *browseModel) panelLines() []string {
 	case len(jobs) > 0:
 		title = fmt.Sprintf(" CI jobs: %s (%d 件) %s ", commit.ShortSHA, len(jobs), commit.Subject)
 	}
-	box := buildShadowPanelBox(title, rows, width, m.colored, ansiDim)
+	box := buildShadowPanelBox(title, rows, width, m.colored)
 	if m.detailOv.visible() {
 		// 詳細ボックスは job パネルの「子」であることが分かるよう段差を付ける (ユーザー要望)
 		for _, line := range m.detailBoxLines(width - len(detailIndent)) {

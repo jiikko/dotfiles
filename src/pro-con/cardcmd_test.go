@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os/exec"
 	"regexp"
 	"strings"
 	"testing"
@@ -74,10 +75,11 @@ func TestCardCommandAskAnswer(t *testing.T) {
 		{[]string{"rework", "C-001", "テストを足して"}, store.Request{Kind: "rework", CardID: "C-001", Rework: "テストを足して"}},
 		{[]string{"delete", "C-001"}, store.Request{Kind: "delete", CardID: "C-001", From: "人間"}},
 		{[]string{"delete", "C-001", "--from", "PM"}, store.Request{Kind: "delete", CardID: "C-001", From: "PM"}},
+		{[]string{"handoff", "C-001", "色の好みは人が決める"}, store.Request{Kind: "handoff", CardID: "C-001", Text: "色の好みは人が決める", From: "PM"}},
 	} {
 		got, _, err := parseCardWait(tc.args)
 		if err != nil || got.Kind != tc.want.Kind || got.CardID != tc.want.CardID || got.Question != tc.want.Question ||
-			got.Answer != tc.want.Answer || got.Rework != tc.want.Rework || got.From != tc.want.From && tc.want.From != "" || got.Ending != tc.want.Ending {
+			got.Answer != tc.want.Answer || got.Rework != tc.want.Rework || got.Text != tc.want.Text || got.From != tc.want.From && tc.want.From != "" || got.Ending != tc.want.Ending {
 			t.Fatalf("%q: %+v %v (期待 %+v)", tc.args, got, err, tc.want)
 		}
 	}
@@ -148,6 +150,16 @@ func TestCardRunParse(t *testing.T) {
 	r, _, err := parseCardWait([]string{"run", "C-001", "--", "go", "test", "-run", "TestX", "./..."})
 	if err != nil || r.Kind != "run" || r.CardID != "C-001" || r.Command != "go test -run TestX ./..." {
 		t.Fatalf("run を読めない: %+v %v", r, err)
+	}
+	// 引用つきの argv も、テストの係が bash で eval したときに同じ argv へ戻る (空白で繋ぐと 'A|B' がパイプになった = 463)
+	argv := []string{"printf", `%s\n`, "A|B", "x y", "it's", "", "$HOME", "*", "a;b", `back\slash`, "改行\nの後"}
+	r, _, err = parseCardWait(append([]string{"run", "C-001", "--"}, argv...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("/bin/bash", "-c", r.Command).Output()
+	if want := strings.Join(argv[2:], "\n") + "\n"; err != nil || string(out) != want {
+		t.Fatalf("argv が戻らない: %q → %q (%v)、want %q", r.Command, out, err, want)
 	}
 	for _, bad := range [][]string{{"run", "C-001"}, {"run", "C-001", "--"}, {"run", "--", "make"}, {"run", "C-001", "make"}, {"run", "C-001", "make", "--", "test"}} {
 		if _, _, err := parseCardWait(bad); err == nil {

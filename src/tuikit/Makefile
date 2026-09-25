@@ -12,6 +12,7 @@ lint:
 test:
 	go test -race ./...
 
-# 一覧 → 詳細の遷移を gif に撮る (vhs が要る。手順と前提は README の「デモ」)
+# デモの gif を撮る (一覧 → 詳細の遷移と、右下の通知。vhs が要る。手順と前提は README の「デモ」)
 demo:
 	vhs examples/listdetail/demo.tape
+	vhs examples/toast/demo.tape

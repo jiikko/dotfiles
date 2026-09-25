@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/rivo/uniseg v0.4.7
+	termsafe v0.0.0
 )
 
 require (
@@ -26,3 +27,5 @@ require (
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
 	github.com/mattn/go-runewidth v0.0.24 // indirect
 )
+
+replace termsafe => ../termsafe

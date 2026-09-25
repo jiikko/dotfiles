@@ -4,6 +4,7 @@ package card
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -237,6 +238,8 @@ type Card struct {
 	Launching string `json:",omitempty"`
 	// LaunchedAt は dispatcher が最後に起動・再開を始めた時刻。これより前に始まった session は、このカードの PG として取り込まない
 	LaunchedAt time.Time `json:",omitzero"`
+	// Rejects は claude が起動・再開を受け付けなかった (rc≠0 がすぐ返った) のが続いた回数。起動・再開が済んだか、人の番へ回したら 0 に戻す (462)
+	Rejects int `json:",omitempty"`
 	// Crashes は PG のプロセスが落ちて Claude Code が自動で再開した時刻 (transcript の再開の文の時刻)。dispatcher が数えて、
 	// 短い間に上限を超えたら止める
 	Crashes []time.Time `json:",omitempty"`
@@ -267,10 +270,13 @@ type Card struct {
 	// RunCwd は頼んだ側 (`pro-con card run` を打ったシェル) の作業ディレクトリ。dispatcher はそのカードの PG の worktree と一致するときだけ実行する
 	// (別のカードの名前で頼まれた実行を、そのカードの worktree で走らせない)
 	RunCwd string `json:",omitempty"`
-	// Archived は完了のレーンから片付けた (x)。ボードには出さないが、記録 (状態ファイル) には残す
+	// Archived は完了のレーンから片付けた (x・完了から 24 時間の自動)。ボードには出さない。dispatcher が記録から書庫へ移す (store.Archive)
 	Archived bool
 	// FromRequest はこのカードを作った受付の箱の依頼 (add) の ID。`pro-con card add` が、置いた依頼から振られたカード ID を引く (issue 442)
 	FromRequest string `json:",omitempty"`
+	// After はこのカードより先に完了させるカード (PM が `card plan --after` で付ける。issue 468)。dispatcher はこれらが完了するまで起動しない。
+	// 同じ判断・不変条件を変えるカードを並べない (並べると、合わせた結果が片方のテストでしか守られない)
+	After []string `json:",omitempty"`
 	// LastProgress は「実質的に進んだ」最後の時刻 (watchdog が見る。活動ではなく進捗)
 	LastProgress time.Time
 }
@@ -287,6 +293,25 @@ func Children(cards []Card, id string) []string {
 		}
 	}
 	return out
+}
+
+// handoffMark は PM が PG の質問を人に回したときの履歴の文の印 (HandoffText が書き、HandedOff が読む)。
+const handoffMark = " が人に回した: "
+
+// HandoffText は質問を人に回したときに履歴へ残す文 (理由は原文のまま)。
+func HandoffText(by, why string) string { return by + handoffMark + why }
+
+// HandedOff は今の質問を人に回したか (質問待ちに入った後の履歴に HandoffText がある)。人の番の目印 (452) ができるまでは履歴から読む。
+func (c Card) HandedOff() bool {
+	if c.State != Waiting || c.Wait.Kind != WaitQuestion {
+		return false
+	}
+	for _, e := range c.History {
+		if !e.At.Before(c.Since) && strings.Contains(e.Text, handoffMark) {
+			return true
+		}
+	}
+	return false
 }
 
 // Answerable は回答を受け付けるか (質問待ちの列に居る)。backend の回答・TUI の r・案内の色がこれを見る。
@@ -325,5 +350,5 @@ func Check(cards []Card) []Violation {
 			out = append(out, Violation{c.ID, "片付けたが完了していない (ボードから見えないまま動いている)"})
 		}
 	}
-	return out
+	return append(out, afterViolations(cards)...)
 }

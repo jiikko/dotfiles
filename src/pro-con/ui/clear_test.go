@@ -46,8 +46,8 @@ func TestClearDoneLane(t *testing.T) {
 	if doneCount(m) != 0 {
 		t.Fatalf("y の後も完了のレーンに %d 枚残っている", doneCount(m))
 	}
-	if !strings.Contains(m.flash, "片付けた") {
-		t.Fatalf("片付けた旨が出ない: %q", m.flash)
+	if !strings.Contains(m.toasts.Text(), "片付けた") {
+		t.Fatalf("片付けた旨が出ない: %q", m.toasts.Text())
 	}
 	if want := total - done; len(m.snap.Cards) != want || !strings.Contains(ansi.Strip(m.tabBar()), "global "+itoa(want)) {
 		t.Fatalf("片付けたカードがまだ数えられている: %d 枚 / %q", len(m.snap.Cards), ansi.Strip(m.tabBar()))
@@ -55,8 +55,8 @@ func TestClearDoneLane(t *testing.T) {
 
 	// 片付けるものが無ければ確認を出さない (空の確認に y を押させない)
 	press(m, "x")
-	if m.mode != modeBoard || !strings.Contains(m.flash, "無い") {
-		t.Fatalf("完了が 0 枚なのに確認へ進んだ: mode=%v flash=%q", m.mode, m.flash)
+	if m.mode != modeBoard || !strings.Contains(m.toasts.Text(), "無い") {
+		t.Fatalf("完了が 0 枚なのに確認へ進んだ: mode=%v flash=%q", m.mode, m.toasts.Text())
 	}
 }
 

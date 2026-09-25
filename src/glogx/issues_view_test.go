@@ -1875,7 +1875,7 @@ func TestIssuesScanMsgDeliversRebindNotice(t *testing.T) {
 	if !strings.Contains(m.lastWarning, "見つかりません") {
 		t.Errorf("畳んだ理由が lastWarning に届いていない (q で恒久喪失する): %q", m.lastWarning)
 	}
-	if !m.toast.visible() {
+	if !m.toast.Visible() {
 		t.Error("畳んだ理由のトーストが積まれていない")
 	}
 	if text, _ := m.issuesOv.takeNotice(); text != "" {

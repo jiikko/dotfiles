@@ -495,7 +495,7 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 		{"pushAnimating", func(m *browseModel) { m.pushAnimating = true }},
 		{"pushSlides", func(m *browseModel) { m.pushSlides = map[string]time.Time{"a": time.Now()} }},
 		{"scrollAnim", func(m *browseModel) { m.glide.Start(0, 1, scrollAnimFrames) }},
-		{"toast.animating", func(m *browseModel) { m.toast.phase = toastEntering }},
+		{"toast.animating", func(m *browseModel) { m.toast.Show("x", true) }}, // 積んだ直後は入場のスライド中
 		{"awaitCI", func(m *browseModel) { m.awaitCI = map[string]bool{"a": true} }},
 		{"detailsLoading", func(m *browseModel) { m.detailsLoading["a"] = true }},
 		{"detailOv.fetching", func(m *browseModel) { m.detailOv.cache.begin("a") }},
@@ -601,16 +601,16 @@ func TestBrowseJobDetailNeighborKeysSwapJob(t *testing.T) {
 		t.Errorf("J で未取得の隣 job を取りに行かない: cmd=%v busy=%v", cmd != nil, m.detailOv.cache.busy[m.detailKey()])
 	}
 	m.handleKey("J")
-	if m.panelCursor != 1 || !strings.Contains(m.toast.text, "最後") {
-		t.Errorf("末尾の J で止まらない / 案内が出ない: cursor=%d toast=%q", m.panelCursor, m.toast.text)
+	if m.panelCursor != 1 || !strings.Contains(m.toast.Text(), "最後") {
+		t.Errorf("末尾の J で止まらない / 案内が出ない: cursor=%d toast=%q", m.panelCursor, m.toast.Text())
 	}
 	m.handleKey("shift+up")
 	if m.panelCursor != 0 || m.detailKey() != keyBefore || !m.detailOv.visible() {
 		t.Fatalf("shift+↑ で build へ戻らない: cursor=%d key=%q open=%v", m.panelCursor, m.detailKey(), m.detailOv.open)
 	}
 	m.handleKey("K")
-	if m.panelCursor != 0 || !strings.Contains(m.toast.text, "最初") {
-		t.Errorf("先頭の K でタイトル行へ抜けた / 案内が出ない: cursor=%d toast=%q", m.panelCursor, m.toast.text)
+	if m.panelCursor != 0 || !strings.Contains(m.toast.Text(), "最初") {
+		t.Errorf("先頭の K でタイトル行へ抜けた / 案内が出ない: cursor=%d toast=%q", m.panelCursor, m.toast.Text())
 	}
 }
 

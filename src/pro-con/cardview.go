@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -66,9 +67,34 @@ type cardSummary struct {
 	Deleting bool      `json:"deleting,omitempty"` // 削除の依頼を受けて、PG の session を止めてから消えるのを待っている
 }
 
-func summarize(c card.Card) cardSummary {
+// summarize は cards (記録の全カード) から、順番で待っている前のカードも引く。
+func summarize(c card.Card, cards []card.Card) cardSummary {
 	return cardSummary{ID: c.ID, State: c.State.Label(), Title: c.Title, Owner: c.Owner, Session: c.Session, Since: c.Since,
-		Waiting: waitLabel(c.Wait), Question: c.Wait.Question, Archived: c.Archived, Deleting: c.Deleting()}
+		Waiting: waiting(c, cards), Question: c.Wait.Question, Archived: c.Archived, Deleting: c.Deleting()}
+}
+
+// waitingIn は waiting を、記録 (dir) の動いているカードで引く (書庫から読んだカードにも使える)。記録を読めなければ順番の待ちは出さない。
+func waitingIn(dir string, c card.Card) string {
+	var cards []card.Card
+	if c.State == card.Planned && len(c.After) > 0 {
+		if st, err := store.Load(dir); err == nil {
+			cards = st.Cards
+		}
+	}
+	return waiting(c, cards)
+}
+
+// waiting は何を待っているか。PG の待ち (waitLabel) が無ければ、順番の前のカード (issue 468)。
+func waiting(c card.Card, cards []card.Card) string {
+	if l := waitLabel(c.Wait); l != "" {
+		return l
+	}
+	if c.State == card.Planned {
+		if b := card.Blockers(cards, c); len(b) > 0 {
+			return strings.Join(b, ", ") + " の後"
+		}
+	}
+	return ""
 }
 
 func waitLabel(w card.Wait) string {
@@ -90,8 +116,9 @@ func waitLabel(w card.Wait) string {
 
 // cardDetail は show の中身 (--json の形)。Log は PG の出力の末尾 (transcript から読む。記録には無い)。
 type cardDetail struct {
-	Card card.Card `json:"card"`
-	Log  []string  `json:"log"`
+	Card    card.Card `json:"card"`
+	Log     []string  `json:"log"`
+	Waiting string    `json:"waiting,omitempty"` // 何を待っているか (list と同じ。順番の前のカードは記録の全カードから引く)
 }
 
 // viewEnv は読む口が見る場所。
@@ -125,12 +152,22 @@ func runCardList(args []string, env viewEnv, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "pro-con card list:", err)
 		return 1
 	}
+	cards := st.Cards
+	if *all { // 書庫へ移した終えたカードも (issue 478)。記録と書庫の両方にあれば記録を正とする (移す途中で落ちた形)
+		arch, err := store.LoadArchive(env.dir)
+		if err != nil {
+			_, _ = fmt.Fprintln(stderr, "pro-con card list:", err)
+		}
+		cards = append(slices.DeleteFunc(arch, func(a card.Card) bool {
+			return slices.ContainsFunc(st.Cards, func(c card.Card) bool { return c.ID == a.ID })
+		}), st.Cards...)
+	}
 	out := []cardSummary{}
-	for _, c := range st.Cards {
+	for _, c := range cards {
 		if (c.Archived && !*all) || (want != nil && c.State != *want) {
 			continue
 		}
-		out = append(out, summarize(c))
+		out = append(out, summarize(c, st.Cards))
 	}
 	if *asJSON {
 		return writeJSON(stdout, stderr, out)
@@ -169,26 +206,16 @@ func runCardShow(args []string, env viewEnv, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// loadDetail は記録からカードを、起動の記録と transcript から PG の出力の末尾を読む (どれも読むだけ)。
+// loadDetail は記録 (無ければ書庫) からカードを、起動の記録と transcript から PG の出力の末尾を読む (どれも読むだけ)。
 func loadDetail(env viewEnv, id string) (cardDetail, error) {
-	st, err := store.Load(env.dir)
-	if err != nil {
-		return cardDetail{}, err
-	}
-	c, ok := findCard(st, id)
+	c, ok, err := store.Find(env.dir, id)
 	if !ok {
+		if err != nil {
+			return cardDetail{}, err
+		}
 		return cardDetail{}, fmt.Errorf("カード %q が無い", id)
 	}
-	return cardDetail{Card: c, Log: pgLog(env, c)}, nil
-}
-
-func findCard(st store.State, id string) (card.Card, bool) {
-	for _, c := range st.Cards {
-		if c.ID == id {
-			return c, true
-		}
-	}
-	return card.Card{}, false
+	return cardDetail{Card: c, Log: pgLog(env, c), Waiting: waitingIn(env.dir, c)}, nil
 }
 
 // pgLog はカードの PG の出力の末尾。起動の記録で短い id から session id を引き、transcript を読む。読めなければ空
@@ -247,8 +274,11 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 	if c.Deleting() {
 		p("削除中: %s が %s前に依頼した (PG の session を止めてから消える)", c.DeleteBy, fmtAge(now.Sub(c.DeleteAt)))
 	}
-	if l := waitLabel(c.Wait); l != "" {
-		p("待ち: %s", l)
+	if len(c.After) > 0 {
+		p("順番: %s の後 (PM が付けた。完了するまで起動しない)", strings.Join(c.After, ", "))
+	}
+	if d.Waiting != "" {
+		p("待ち: %s", d.Waiting)
 	}
 	if c.Wait.Question != "" {
 		p("質問: %s", c.Wait.Question)
@@ -302,14 +332,12 @@ func runCardWait(args []string, env viewEnv, stdout, stderr io.Writer) int {
 		}
 		target = &s
 	}
-	st, err := store.Load(env.dir)
-	if err != nil {
-		_, _ = fmt.Fprintln(stderr, "pro-con card wait:", err)
-		return 1
-	}
-	first, ok := findCard(st, id)
+	first, ok, err := store.Find(env.dir, id) // 書庫へ移した終えたカードも (完了しているので下で抜ける)
 	if !ok {
-		_, _ = fmt.Fprintf(stderr, "pro-con card wait: カード %q が無い\n", id)
+		if err == nil {
+			err = fmt.Errorf("カード %q が無い", id)
+		}
+		_, _ = fmt.Fprintln(stderr, "pro-con card wait:", err)
 		return 1
 	}
 	waitFirstRead()
@@ -332,13 +360,12 @@ func runCardWait(args []string, env viewEnv, stdout, stderr io.Writer) int {
 	}
 	var got card.Card
 	err = waitFor(env.dir, *timeout, stderr, func() (bool, error) {
-		st, err := store.Load(env.dir)
-		if err != nil {
-			return false, err
-		}
-		c, ok := findCard(st, id)
+		c, ok, err := store.Find(env.dir, id) // 待つ間に完了して書庫へ移っても見失わない
 		if !ok {
-			return false, fmt.Errorf("カード %q が記録から消えた", id)
+			if err == nil {
+				err = fmt.Errorf("カード %q が記録から消えた", id)
+			}
+			return false, err
 		}
 		got = c
 		return done(c)
@@ -352,7 +379,9 @@ func runCardWait(args []string, env viewEnv, stdout, stderr io.Writer) int {
 		return 1
 	}
 	if *asJSON {
-		return writeJSON(stdout, stderr, summarize(got))
+		s := summarize(got, nil)
+		s.Waiting = waitingIn(env.dir, got) // 書庫から読んだカードでも、順番の待ちは記録の動いているカードで引く
+		return writeJSON(stdout, stderr, s)
 	}
 	_, _ = fmt.Fprintf(stdout, "%s  %s → %s  %s\n", got.ID, first.State.Label(), got.State.Label(), got.Title)
 	return 0
