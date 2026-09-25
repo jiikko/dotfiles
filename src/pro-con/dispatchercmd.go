@@ -27,20 +27,26 @@ import (
 var dispatcherInterval = 3 * time.Second // テストが延ばす (Poke でだけ起きることを見る)
 
 // projects は transcript の置き場 (~/.claude/projects。PG が落ちて自動で再開したかを読む)。
-// pmRepo は PM を起動する repo (空なら PM を起こさない。issue 437)。
-func runDispatcher(args []string, dir, projects string, repos map[string]string, pmRepo string, stdout, stderr io.Writer) int {
+// pm は PM の設定 (issue 437)。
+func runDispatcher(args []string, dir, projects string, repos map[string]string, pm pmConfig, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("pro-con dispatcher", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	limit := fs.Int("limit", 2, "同時に動かす PG の上限 (415 の決定事項: 2 から始める)")
 	once := fs.Bool("once", false, "1 回だけ回して終わる")
 	stopAll := fs.Bool("stop", false, "動いている dispatcher と、pro-con が起動した PG を止める (次に dispatcher を起動したら続きから再開する)")
 	e2eRoot := fs.String("e2e", "", "e2e モードの置き場 (PG は台本どおりに動く偽物。claude を起動しない。pro-con e2e が使う)")
+	pmFlag := fs.String("pm", "", `"off" なら PM を起動も再開もしない (依頼の列のカードはそのまま置く)。"on" / "off" を書けば設定の pm より勝つ`)
 	alone := fs.Duration("exit-without-screens", 0, "開いている画面が 1 つも無い状態がこの長さ続いたら、PG を止めて抜ける (画面が起こすときに付ける。0 なら抜けない)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if *limit < 1 {
 		_, _ = fmt.Fprintln(stderr, "pro-con dispatcher: --limit は 1 以上")
+		return 2
+	}
+	pmOff, pmWhy, err := resolvePM(*pmFlag, pm.Mode)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", err)
 		return 2
 	}
 	var e2e *dispatcher.E2E
@@ -66,7 +72,7 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 			os.Exit(1)
 		}()
 		defer signal.Stop(sigs)
-		if err := stopDispatcher(ctx, dir, projects, repos, pmRepo, e2e, stdout); err != nil {
+		if err := stopDispatcher(ctx, dir, projects, repos, pm.Repo, e2e, stdout); err != nil {
 			_, _ = fmt.Fprintln(stderr, "pro-con dispatcher --stop:", err)
 			return 1
 		}
@@ -79,8 +85,11 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 	}
 	defer unlock()
 	_ = dispatcher.StopRequested(dir) // 前の --stop が dispatcher の居ない間に置いた印は捨てる (起動した途端に止まらないように)
-	d := newDispatcherFor(dir, projects, repos, pmRepo, *limit, e2e)
+	d := newDispatcherFor(dir, projects, repos, pm.Repo, *limit, e2e)
 	d.Record = eventSink(dir, stdout, stderr)
+	if d.PMOff = pmOff; pmOff { // 依頼の列にカードが溜まっても PM が来ないのは、この設定のせいだと後から分かるように
+		say(d, eventlog.KindHold, "PM を起こさない ("+pmWhy+")。依頼の列のカードはそのまま置く (PM は人か外の Claude が行う)")
+	}
 	defer d.CancelRun()                                                                                    // どの出口 (Tick のエラー・SIGTERM) でも、テストの係の実行を残して抜けない
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP) // SIGHUP: 端末・tmux のペインを閉じた (既定の動作で死ぬと実行を残す)
 	defer stop()
@@ -292,6 +301,30 @@ func sayOr(d *dispatcher.Dispatcher, errOut io.Writer, kind, text string) {
 		return
 	}
 	say(d, kind, text)
+}
+
+// pmConfig は設定から読んだ PM の値 (main が渡す)。
+type pmConfig struct {
+	Repo string // PM を起動する repo (空なら PM を起こさない)
+	Mode string // 設定の pm ("on" / "off" / 空)
+}
+
+// resolvePM は PM を起こさないかを決める。dispatcher の --pm が設定の pm に勝つ (起動ごとに明示した方を優先する)。
+// why は off のとき、どちらで決まったか。
+func resolvePM(flagVal, cfgVal string) (off bool, why string, err error) {
+	switch flagVal {
+	case "off":
+		return true, "--pm=off", nil
+	case "on":
+		return false, "", nil
+	case "":
+	default:
+		return false, "", fmt.Errorf(`--pm は "on" か "off" (%q)`, flagVal)
+	}
+	if cfgVal == "off" {
+		return true, `設定 pm = "off"`, nil
+	}
+	return false, "", nil
 }
 
 // newDispatcherFor は dispatcher を組む。e2e が nil なら本物 (claude を起動する)、あれば偽の PG と偽の一覧 (claude を起動しない。PM は起こさず FakePM が役を持つ)。

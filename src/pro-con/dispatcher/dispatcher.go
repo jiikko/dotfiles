@@ -101,7 +101,10 @@ type Dispatcher struct {
 	// PMRepo は PM を起動する repo の絶対パス (pm.go。PM はその下の worktree で動く)。空なら PM を起こさない (e2e モード)
 	PMRepo string
 	// PMGuide は PM を起動するときに渡す指示書 (src/pro-con/pm-guide.md の全文。正本はそのファイルで、dispatcher は指示を書かない)
-	PMGuide  string
+	PMGuide string
+	// PMOff は PM を起動も再開もしない (dispatcher の --pm=off / 設定 pm = "off"。人か外の Claude が PM をする運用)。依頼の列のカードはそのまま置く。
+	// 🚨 PMRepo は残す: 前の dispatcher が起こした PM も、終了 (Shutdown) では止める
+	PMOff    bool
 	pmHeld   string // 枠で PM を起こさない理由 (変わったときだけログに書く)
 	pmFailed string // PM を起こせない理由 (同上)
 	pmStatus string // 知らない PM の status (同上)

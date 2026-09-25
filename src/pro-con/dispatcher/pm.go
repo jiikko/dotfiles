@@ -53,9 +53,9 @@ func (d *Dispatcher) pmWorktree(name string) string {
 }
 
 // tellPM は依頼の列のカードを PM に知らせる。PM が居なければ起動し、居れば (idle になってから) 再開して知らせる。
-// PMRepo が空なら何もしない (e2e モード・設定で PM の repo が見つからない)。
+// PMRepo が空 (e2e モード・設定で PM の repo が見つからない) か PMOff なら何もしない。
 func (d *Dispatcher) tellPM(ctx context.Context, now time.Time, ss []agents.Session) ([]eventlog.Event, error) {
-	if d.PMRepo == "" {
+	if d.PMRepo == "" || d.PMOff {
 		return nil, nil
 	}
 	st, err := store.Load(d.Dir)

@@ -479,3 +479,34 @@ func TestBrokenPMStateDoesNotStopDispatch(t *testing.T) {
 		t.Fatalf("PM の壊れで PG を起動しなかった: %v", r.l.starts)
 	}
 }
+
+// PMOff (--pm=off / 設定 pm = "off") なら PM を起動も再開もせず、依頼の列のカードはそのまま置く。前から居る PM も終了では止める。
+func TestPMOffLeavesRequestedCards(t *testing.T) {
+	t.Run("起動しない", func(t *testing.T) {
+		r := newPMRig(t)
+		r.d.PMOff = true
+		request(t, r.dir, "一つ目")
+		r.tick(t)
+		if r.l.startTries != 0 || states(t, r.dir)["C-001"].State != card.Requested {
+			t.Fatalf("off なのに PM を起動した / カードを動かした: %v", r.l.starts)
+		}
+		if pm := loadPM(t, r.dir); pm.Launching != "" || len(pm.Told) != 0 {
+			t.Fatalf("off なのに PM の様子を書いた: %+v", pm)
+		}
+	})
+	t.Run("再開しないが終了では止める", func(t *testing.T) {
+		r := startedPM(t)
+		r.d.PMOff = true
+		request(t, r.dir, "二つ目")
+		r.tick(t)
+		if len(r.l.resumes) != 0 {
+			t.Fatalf("off なのに PM を再開した: %v", r.l.resumes)
+		}
+		if _, err := r.d.Shutdown(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Contains(r.l.stops, "id-"+pmName) {
+			t.Fatalf("off のとき、前から居る PM を終了で止めていない: %v", r.l.stops)
+		}
+	})
+}

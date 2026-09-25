@@ -101,8 +101,12 @@ glogx と意味を変えている字 (`a` attach / `r` 回答 / `n` 新しい依
 repo_roots = ["~/src"]      # この直下の git repo を列挙する (深くは掘らない。.git がファイルの worktree も拾う)
 repos      = ["~/dotfiles"] # root の外にある repo を個別に足す
 pm_repo    = "~/dotfiles"   # PM を起動する repo (PM はその下の worktree .claude/worktrees/pc-pm-<時刻> で動く。issue 437)
+pm         = "on"           # "off" なら dispatcher は PM を起動も再開もしない (依頼の列のカードはそのまま置き、人か外の Claude が PM をする)
 ```
 
+- **PM を起こさない口は 2 つ: dispatcher の `--pm=off` と設定の `pm = "off"`。`--pm` (on / off) を書けば設定より勝つ** (起動ごとに明示した方を優先する。
+  設定で off にしていても `pro-con dispatcher --pm=on` で 1 回だけ起こせる)。off で起動した dispatcher は、そのことを出来事 (`pro-con log`) と dispatcher のログに 1 行出す。
+  off でも、前の dispatcher が起こした PM は終了で止める。🚨 画面が起こす dispatcher には `--pm` を付けないので、画面から使うときは設定の方で決める
 - ファイルが無ければ上の値が既定 (`$XDG_CONFIG_HOME` があればその下)。**壊れた TOML と知らないキーはエラーで起動しない**
   (書き間違えたキーを黙って無視すると「設定したのに効かない」が無音で起きる)
 - 読めない root・repo でない `repos`・同じ名前の repo は警告にして起動する (通知行に件数と 1 件目)

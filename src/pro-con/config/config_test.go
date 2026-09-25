@@ -125,3 +125,16 @@ func TestPMRepoPath(t *testing.T) {
 		t.Fatalf("repo でない pm_repo で PM を起こす形になった: %q %q", got, warn)
 	}
 }
+
+// pm は "on" / "off" だけ。書き間違いを on と読まない (止めたつもりの PM が起動して枠を使う)。
+func TestLoadPMMode(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.toml")
+	write(t, p, "pm = \"off\"\n")
+	if c, err := Load(p); err != nil || c.PM != "off" {
+		t.Fatalf("pm = off を読んでいない: %+v %v", c, err)
+	}
+	write(t, p, "pm = \"of\"\n")
+	if _, err := Load(p); err == nil || !strings.Contains(err.Error(), "pm") {
+		t.Fatalf("pm の書き間違いを誤りにしていない: %v", err)
+	}
+}
