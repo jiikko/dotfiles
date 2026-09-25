@@ -81,14 +81,36 @@ func Append(dir string, evs []Event) error {
 	if err != nil {
 		return err
 	}
-	if st, err := f.Stat(); err == nil && st.Mode().Perm() != 0o600 { // 前から在ったファイルの権限が緩くても自分だけにする
+	st, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return err
+	}
+	if st.Mode().Perm() != 0o600 { // 前から在ったファイルの権限が緩くても自分だけにする
 		_ = f.Chmod(0o600)
 	}
-	_, err = f.Write(buf.Bytes())
+	data := buf.Bytes()
+	if st.Size() > 0 && !endsWithNewline(p, st.Size()) { // 前の書き手が行の途中で落ちた: その行と最初の 1 件をつなげない
+		data = append([]byte{'\n'}, data...)
+	}
+	_, err = f.Write(data)
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
 	return err
+}
+
+func endsWithNewline(p string, size int64) bool {
+	f, err := os.Open(p)
+	if err != nil {
+		return true
+	}
+	defer func() { _ = f.Close() }()
+	b := make([]byte, 1)
+	if _, err := f.ReadAt(b, size-1); err != nil {
+		return true
+	}
+	return b[0] == '\n'
 }
 
 // Read は回した分と今の分を古い順に読む。
@@ -130,11 +152,13 @@ func (f *Follower) Next() ([]Event, error) {
 	}
 	switch {
 	case !f.started: // 最初: 回した分を全部読んでから今の分を頭から
-		evs, _, err := readOld(f.dir, 0, 0)
+		evs, oldIno, err := readOld(f.dir, 0, 0)
 		if err != nil {
 			return nil, err
 		}
-		out = evs
+		if oldIno != ino { // 開いた直後に回された: 回った先は今開いているファイルと同じなので 2 度読まない
+			out = evs
+		}
 		f.off = 0
 	case f.ino != 0 && f.ino != ino: // 読んでいる間に回された: 回った先の残りを読んでから、新しいファイルを頭から
 		evs, _, err := readOld(f.dir, f.ino, f.off)

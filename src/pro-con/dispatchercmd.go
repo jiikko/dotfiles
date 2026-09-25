@@ -94,7 +94,7 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 		defer func() { _ = srv.Close() }()
 		wakes, d.Changed = srv.Wakes(), srv.Broadcast
 	}
-	return serve(ctx, d, dir, wakes, serveOpts{interval: dispatcherInterval, once: *once, alone: *alone}, stdout, stderr)
+	return serve(ctx, d, dir, wakes, serveOpts{interval: dispatcherInterval, once: *once, alone: *alone}, stderr)
 }
 
 // serveOpts は serve の回し方。
@@ -112,7 +112,7 @@ type serveOpts struct {
 }
 
 // serve は dispatcher を回す。Tick の後は interval か、依頼を置いた側に起こされる (wakes) まで待つ。
-func serve(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-chan struct{}, o serveOpts, stdout, stderr io.Writer) int {
+func serve(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-chan struct{}, o serveOpts, stderr io.Writer) int {
 	now := o.now
 	if now == nil {
 		now = time.Now
@@ -129,7 +129,7 @@ func serve(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-ch
 			}
 		}
 		if stop {
-			if stopUntilDone(ctx, d, dir, wakes, o, stdout, stderr) {
+			if stopUntilDone(ctx, d, dir, wakes, o, stderr) {
 				return 0
 			}
 			aloneSince = now() // 止めている間に画面が開いた。止めるのをやめて続ける
@@ -137,10 +137,9 @@ func serve(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-ch
 		}
 		_, err := d.Tick(ctx) // 出来事は Tick が d.Record (eventSink) へ渡す
 		if err != nil {
-			_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", err)
-			say(d, eventlog.KindError, "Tick が失敗したので抜ける: "+err.Error())
+			sayOr(d, stderr, eventlog.KindError, "Tick が失敗したので抜ける: "+err.Error())
 			if o.alone > 0 && !screensOpen(dir) { // 画面が起こした dispatcher は、抜ける前に PG を止める (画面が無ければ見張る者が居なくなる)
-				stopUntilDone(ctx, d, dir, nil, serveOpts{}, stdout, stderr)
+				stopUntilDone(ctx, d, dir, nil, serveOpts{}, stderr)
 			}
 			return 1
 		}
@@ -154,7 +153,7 @@ func serve(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-ch
 			// 🚨 画面にも同時に SIGTERM が届いている (ログアウト・pkill) かもしれないので、画面が消えるのを少し待ってから決める
 			// (待たずに見ると、閉じる途中の画面を「開いている」と数えて止めずに抜け、画面も quit を通らずに抜けて PG が残る)
 			if o.alone > 0 && !screensStayOpen(dir, signalGrace) {
-				stopUntilDone(ctx, d, dir, nil, serveOpts{interval: o.interval, retries: 1}, stdout, stderr)
+				stopUntilDone(ctx, d, dir, nil, serveOpts{interval: o.interval, retries: 1}, stderr)
 				if b, _ := os.ReadFile(filepath.Join(dir, dispatcher.StopResultFile)); strings.TrimSpace(string(b)) != "ok" {
 					return 1 // 止めきれないまま抜ける (残りは dispatcher.log。画面を開けば keeper が次の dispatcher を起こして続きを扱う)
 				}
@@ -195,7 +194,7 @@ var stopRetryEvery = 10 * time.Second
 // stopUntilDone は PG を止める。止めきれなければ結果 (頼んだ画面が読む) を書いてから、止まるまで止め直す。止め終えたら真。
 // 止めている間に画面が開いたら (presence) 止めるのをやめて偽を返す (カードは続きから再開できる形になっている)。
 // 🚨 止めきれないまま抜けない: 抜けると、pro-con が起動した PG を見張る者が居なくなる。o.retries が正なら、その回数で諦める (取り消された ctx の中の最後の試み)
-func stopUntilDone(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-chan struct{}, o serveOpts, stdout, stderr io.Writer) bool {
+func stopUntilDone(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-chan struct{}, o serveOpts, stderr io.Writer) bool {
 	for try := 1; ; try++ {
 		_, err := d.Shutdown(ctx) // 出来事は Shutdown が d.Record へ渡す
 		if try == 1 || err == nil {
@@ -205,12 +204,10 @@ func stopUntilDone(ctx context.Context, d *dispatcher.Dispatcher, dir string, wa
 			return true
 		}
 		if o.retries > 0 && try >= o.retries {
-			_, _ = fmt.Fprintln(stderr, "pro-con dispatcher: 止めきれないまま抜ける:", err)
-			say(d, eventlog.KindStop, "止めきれないまま抜ける: "+err.Error())
+			sayOr(d, stderr, eventlog.KindStop, "止めきれないまま抜ける: "+err.Error())
 			return true
 		}
-		_, _ = fmt.Fprintln(stderr, "pro-con dispatcher: 止めきれない (止め直す):", err)
-		say(d, eventlog.KindStop, "止めきれない (止め直す): "+err.Error())
+		sayOr(d, stderr, eventlog.KindStop, "止めきれない (止め直す): "+err.Error())
 		select {
 		case <-ctx.Done():
 			o.retries = try + 1 // 取り消された: もう 1 度だけ試して抜ける
@@ -247,7 +244,7 @@ func stopDispatcher(ctx context.Context, dir, projects string, repos map[string]
 	d.Record = eventSink(dir, stdout, stdout) // dispatcher の役を取った (lock を持つ) ので、出来事を書いてよい
 	// 自分で止めている間に次の --stop が来たら、その --stop は結果のファイルを読む。止めきれなければ止まるまで止め直す
 	// (画面の待ちが切れて閉じても、このプロセスは別のプロセスグループで続ける)
-	if !stopUntilDone(ctx, d, dir, nil, serveOpts{}, stdout, stdout) {
+	if !stopUntilDone(ctx, d, dir, nil, serveOpts{}, stdout) {
 		return errors.New("止めている間に画面が開いたので、止めるのをやめた (開いた画面の dispatcher が続きを扱う)")
 	}
 	data, _ := os.ReadFile(filepath.Join(dir, dispatcher.StopResultFile))
@@ -276,11 +273,24 @@ func eventSink(dir string, out, errOut io.Writer) func([]eventlog.Event) {
 	}
 }
 
-// say は dispatcher の外側 (serve) で決めたことを出来事として渡す。
+// say は dispatcher の外側 (serve) で決めたことを出来事として渡し、購読している側 (画面・pro-con log --follow) へ知らせる。
 func say(d *dispatcher.Dispatcher, kind, text string) {
 	if d.Record != nil {
 		d.Record([]eventlog.Event{{Kind: kind, Reason: text}})
+		if d.Changed != nil {
+			d.Changed()
+		}
 	}
+}
+
+// sayOr は say と同じ。出来事の書き先が無い (Record が nil) ときだけ errOut へ出す
+// (両方へ出すと、stdout と stderr を同じファイルへ向ける dispatcher.log / stop.log に同じ文が 2 行入る)。
+func sayOr(d *dispatcher.Dispatcher, errOut io.Writer, kind, text string) {
+	if d.Record == nil {
+		_, _ = fmt.Fprintln(errOut, "pro-con dispatcher:", text)
+		return
+	}
+	say(d, kind, text)
 }
 
 // newDispatcherFor は dispatcher を組む。e2e が nil なら本物 (claude を起動する)、あれば偽の PG と偽の一覧 (claude を起動しない)。

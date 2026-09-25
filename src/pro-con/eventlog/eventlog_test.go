@@ -47,6 +47,20 @@ func TestAppendPermissions(t *testing.T) {
 	}
 }
 
+// 前の書き手が行の途中で落ちて末尾が改行で終わっていなくても、次に足す出来事は壊れた行につながらずに読める。
+func TestAppendAfterTruncatedLine(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, File), []byte(`{"kind":"apply","reason":"trunc`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Append(dir, []Event{evN(1)}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Read(dir); err != nil || len(got) != 1 || got[0] != evN(1) {
+		t.Fatalf("壊れた行の後に足した出来事が読めない: %v %v", reasons(got), err)
+	}
+}
+
 // 上限を超えそうになったら 1 つ前へ回す。読むと回した分から古い順に並び、置き場は上限の 2 倍を超えない。
 func TestAppendRotates(t *testing.T) {
 	old := MaxBytes

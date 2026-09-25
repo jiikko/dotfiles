@@ -56,7 +56,12 @@ var ErrStopperDied = errors.New("pro-con dispatcher が止め終える前に終�
 // すぐには止められない形 (落ちて自動の再開を待っている / 起動・再開の直後で一覧にまだ出ない) は、一覧を取り直しながら shutdownPolls 回待つ。
 // 待っても止められなかったカードは列を変えず (次の dispatcher が普段どおり扱う)、止めきれなかった本数をエラーで返す。
 func (d *Dispatcher) Shutdown(ctx context.Context) (notes []eventlog.Event, err error) {
-	defer func() { d.record(notes) }()
+	defer func() {
+		d.record(notes)
+		if len(notes) > 0 && d.Changed != nil { // 書いてから知らせる (pro-con log --follow がすぐ読める)
+			d.Changed()
+		}
+	}()
 	// 🚨 止めるのを途中で打ち切らない: SIGTERM で ctx が切られても、止める・一覧を取るのは続ける (1 回ずつに上限を付ける)。
 	// どこかで失敗しても、止められる分は止めて最後の確かめ (ensureStopped) まで進む (1 回の一覧の失敗で 1 本も止めずに抜けない)
 	base := context.WithoutCancel(ctx)

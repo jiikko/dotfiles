@@ -37,7 +37,7 @@ func TestServeWakesOnPoke(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int)
 	go func() {
-		done <- serve(ctx, d, dir, srv.Wakes(), serveOpts{interval: time.Hour}, io.Discard, io.Discard)
+		done <- serve(ctx, d, dir, srv.Wakes(), serveOpts{interval: time.Hour}, io.Discard)
 	}()
 	wait := func(n int32) {
 		t.Helper()
@@ -73,7 +73,7 @@ func TestServeExitsWithoutScreens(t *testing.T) {
 		List: func(context.Context) ([]agents.Session, error) { ticks.Add(1); return nil, nil }}
 	done := make(chan int, 1)
 	go func() {
-		done <- serve(context.Background(), d, dir, nil, serveOpts{interval: 10 * time.Millisecond, alone: 100 * time.Millisecond}, io.Discard, io.Discard)
+		done <- serve(context.Background(), d, dir, nil, serveOpts{interval: 10 * time.Millisecond, alone: 100 * time.Millisecond}, io.Discard)
 	}()
 	for ticks.Load() < 30 { // 画面が開いている間は、alone の何倍も回っても抜けない
 		select {
@@ -120,7 +120,7 @@ func TestServeAloneGraceCountsFromLastScreen(t *testing.T) {
 		List: func(context.Context) ([]agents.Session, error) { ticks.Add(1); return nil, nil }}
 	done := make(chan int, 1)
 	go func() {
-		done <- serve(context.Background(), d, dir, nil, serveOpts{interval: 5 * time.Millisecond, alone: time.Minute, now: now}, io.Discard, io.Discard)
+		done <- serve(context.Background(), d, dir, nil, serveOpts{interval: 5 * time.Millisecond, alone: time.Minute, now: now}, io.Discard)
 	}()
 	waitTicks := func(n int32) {
 		t.Helper()
@@ -197,7 +197,7 @@ func TestStopUntilDoneRetriesAndYieldsToScreen(t *testing.T) {
 			}
 			t.Cleanup(sc.Close)
 		}
-		ok := stopUntilDone(context.Background(), d, dir, nil, serveOpts{}, io.Discard, io.Discard)
+		ok := stopUntilDone(context.Background(), d, dir, nil, serveOpts{}, io.Discard)
 		b, _ := os.ReadFile(filepath.Join(dir, dispatcher.StopResultFile))
 		return ok, d, string(b)
 	}
@@ -269,7 +269,7 @@ func serveUntilSignal(t *testing.T, screenOpen bool) (bool, int) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int, 1)
 	go func() {
-		done <- serve(ctx, d, dir, nil, serveOpts{interval: time.Hour, alone: time.Hour}, io.Discard, io.Discard)
+		done <- serve(ctx, d, dir, nil, serveOpts{interval: time.Hour, alone: time.Hour}, io.Discard)
 	}()
 	for ticks.Load() == 0 {
 		time.Sleep(5 * time.Millisecond)
@@ -367,7 +367,7 @@ func TestServeSignalWaitsForClosingScreens(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int, 1)
 	go func() {
-		done <- serve(ctx, d, dir, nil, serveOpts{interval: time.Hour, alone: time.Hour}, io.Discard, io.Discard)
+		done <- serve(ctx, d, dir, nil, serveOpts{interval: time.Hour, alone: time.Hour}, io.Discard)
 	}()
 	for ticks.Load() == 0 {
 		time.Sleep(5 * time.Millisecond)
@@ -403,7 +403,7 @@ func TestServeAloneTreatsUncountableAsNoScreens(t *testing.T) {
 		List: func(context.Context) ([]agents.Session, error) { return nil, nil }}
 	done := make(chan int, 1)
 	go func() {
-		done <- serve(context.Background(), d, dir, nil, serveOpts{interval: 5 * time.Millisecond, alone: 20 * time.Millisecond}, io.Discard, io.Discard)
+		done <- serve(context.Background(), d, dir, nil, serveOpts{interval: 5 * time.Millisecond, alone: 20 * time.Millisecond}, io.Discard)
 	}()
 	select {
 	case <-done:
@@ -427,7 +427,7 @@ func TestServeSignalStopFailureExitsNonZero(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int, 1)
 	go func() {
-		done <- serve(ctx, d, dir, nil, serveOpts{interval: time.Hour, alone: time.Hour}, io.Discard, io.Discard)
+		done <- serve(ctx, d, dir, nil, serveOpts{interval: time.Hour, alone: time.Hour}, io.Discard)
 	}()
 	for ticks.Load() == 0 {
 		time.Sleep(5 * time.Millisecond)
