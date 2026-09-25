@@ -157,7 +157,8 @@ func activities(line []byte, o Owned, seen map[string]bool) []backend.Activity {
 	}
 	var out []backend.Activity
 	say := func(text string) {
-		if text = termsafe.PlainLine(oneLine(text)); text != "" {
+		// 応答の文は改行を残す (詳細が markdown として描く。486)。無害化は行ごとに効く PlainBlock (制御文字を落とし、改行だけ残す)
+		if text = termsafe.PlainBlock(strings.TrimSpace(text)); text != "" {
 			out = append(out, backend.Activity{At: at, Session: o.ID, Text: text})
 		}
 	}

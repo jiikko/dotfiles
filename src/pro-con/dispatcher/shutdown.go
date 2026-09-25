@@ -53,7 +53,8 @@ func requeue(c *card.Card, now time.Time, resume string) {
 // gone は、作業中のカードの PG の session が一覧から消えて、restartWait を過ぎても戻らないか (Shutdown が「既に止まっていた」とする形と同じ判定)。
 // 消えたのを見た時刻 (DeadSince) が要る: 短い id が変わっただけで session は生きている形 (trackDead は生きていると見て外す) を消えたと読まない
 func (d *Dispatcher) gone(c card.Card, now time.Time, ss []agents.Session, reg []live.Owned) bool {
-	if c.State != card.Running || c.Launching != "" || c.DeadSince.IsZero() {
+	// テストの係の結果を待っているカードは戻さない (結果が出たら finishRun が分解済みへ戻して再開する。戻すと頼みを捨てる = 483)
+	if c.State != card.Running || c.Launching != "" || c.DeadSince.IsZero() || c.Run != "" {
 		return false
 	}
 	if _, ok := owned(c, reg); !ok {

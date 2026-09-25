@@ -192,7 +192,7 @@ func (e Exec) Active() bool { return e.Command != "" }
 // DropRun はテストの係への頼みと実行中の記録を取り下げる。作業中の列を離れるときは必ず呼ぶ
 // (残すと、後で届いた結果や「結果が無い」が、別の理由で再開した PG を止めて再開し直す)。
 func (c *Card) DropRun() {
-	c.Run, c.RunAt, c.RunCwd, c.Exec = "", time.Time{}, "", Exec{}
+	c.Run, c.RunAt, c.RunCwd, c.Exec, c.RunRetried = "", time.Time{}, "", Exec{}, false
 	if c.Wait.Kind == WaitResource {
 		c.Wait = Wait{}
 	}
@@ -208,8 +208,9 @@ func StallThreshold(c Card, base time.Duration) time.Duration {
 }
 
 type Event struct {
-	At   time.Time
-	Text string
+	At     time.Time
+	Text   string
+	Screen string `json:",omitempty"` // 打った画面 (画面から受付の箱に置いた依頼だけ。「a1b2c3 join review」。issue 481)
 }
 
 // AttachKind は添付の種類 (人間がどう見るかを決める。issue 453)。
@@ -292,6 +293,9 @@ type Card struct {
 	DeleteBy string    `json:",omitempty"`
 	// Stopped は pro-con の終了で dispatcher が PG を止めた印。次の再開は、落ちた PG の自動の再開を待たずに (止めずに) 行う。起動・再開で外す
 	Stopped bool `json:",omitempty"`
+	// Revived は、落ちた・消えた PG を人の判断なしに再開へ回した印 (458 の消えた PG・483 の再起動の復旧)。再開 (settle) で落ちた回数の
+	// 数え始め (CrashesFrom) を今に戻さない (戻すと、落ち続ける PG を上限に届かないまま再開し続ける)。再開と人の回答待ちへ送るときに外す
+	Revived bool `json:",omitempty"`
 	// Run は PG が `pro-con card run` で頼んだ、まだ結果を返していないコマンド (シェルの 1 行)。RunAt は頼んだ時刻 (順番の鍵)。
 	// dispatcher が順番に実行し、結果を持たせて PG を再開したら空にする
 	Run   string    `json:",omitempty"`
@@ -299,6 +303,9 @@ type Card struct {
 	// RunCwd は頼んだ側 (`pro-con card run` を打ったシェル) の作業ディレクトリ。dispatcher はそのカードの PG の worktree と一致するときだけ実行する
 	// (別のカードの名前で頼まれた実行を、そのカードの worktree で走らせない)
 	RunCwd string `json:",omitempty"`
+	// RunRetried は、実行の途中で dispatcher が止まった Run を 1 度頼み直した印 (issue 483)。また中断したら頼み直さずに rc=-1 を返す
+	// (実行そのものがマシンか dispatcher を落としている疑い)。Run を外すときに外す
+	RunRetried bool `json:",omitempty"`
 	// Archived は完了のレーンから片付けた (x・完了から 24 時間の自動)。ボードには出さない。dispatcher が記録から書庫へ移す (store.Archive)
 	Archived bool
 	// FromRequest はこのカードを作った受付の箱の依頼 (add) の ID。`pro-con card add` が、置いた依頼から振られたカード ID を引く (issue 442)

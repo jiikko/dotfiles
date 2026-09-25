@@ -38,9 +38,36 @@ type Snapshot struct {
 	LimitMax       int       // 上限 (dispatcher の --limit)
 	LimitWhy       string    // Limit を絞った / 利用枠を読めない理由 (無ければ空)
 	DispatcherTick time.Time // dispatcher (と watchdog) が最後に回った時刻。zero なら 1 度も回っていない。古ければ UI が警告する
-	Screens        int       // 開いている画面の数 (自分を含む。package presence。0 なら数えられなかった)
+	Screens        []Screen  // 開いている画面 (持ち主と join。自分を含む。開いた順。package presence。空なら数えられなかった / 模擬)
 	DispatcherHeld bool      // 人が dispatcher を止めた印がある (pro-con dispatcher --stop。画面は起こさない。issue 459)
-	Violations     []card.Violation
+	DispatcherGone bool      // 最後に動いた dispatcher のプロセスが居ない (ロックの pid。Tick の古さを待たずに出す。issue 483)
+	// Startup は dispatcher の起動時の確かめの要約 (起動から 10 分だけ。issue 483)。StartupAlert は復旧した・判定できないものがある
+	Startup      string
+	StartupAlert bool
+	Violations   []card.Violation
+}
+
+// Screen は開いている画面 1 つ (package presence の印。見ているだけの画面 = --view は入らない。issue 481)。
+type Screen struct {
+	ID     string // 短い画面 ID
+	Join   bool   // 加わった画面 (pro-con --join)。偽なら持ち主
+	Label  string // --as <ラベル> (任意)
+	TTY    string // 端末 (取れなければ空)
+	PID    int
+	Opened time.Time
+	Self   bool // この画面
+}
+
+// ScreenTally は開いている画面を、持ち主と join に分けて数える (自分を含む)。
+func (s Snapshot) ScreenTally() (owners, joins int) {
+	for _, sc := range s.Screens {
+		if sc.Join {
+			joins++
+		} else {
+			owners++
+		}
+	}
+	return owners, joins
 }
 
 // Consumer は PG (consumer) 1 体。
@@ -64,7 +91,7 @@ type Activity struct {
 	At      time.Time `json:"at"`
 	Session string    `json:"session"`        // どの session の活動か (pro-con の短い id。再開で入れ替わると変わる)
 	Tool    string    `json:"tool,omitempty"` // 道具の名前 (Bash / Edit …)。空なら応答の文
-	Text    string    `json:"text"`           // 応答の文、または道具の呼び出しの要点 (コマンド・ファイル)。1 行・制御文字なし
+	Text    string    `json:"text"`           // 応答の文 (改行を残した markdown。486)、または道具の呼び出しの要点 (1 行)。どちらも制御文字なし
 }
 
 // Line は Text に道具の名前を前置きした 1 行 (「Bash: go test ./...」)。応答の文はそのまま。
@@ -84,6 +111,20 @@ type ActivityReader interface {
 
 // ReadOnly は読み取りだけの backend (pro-con --view)。画面は終了の見出しを「見ているだけ」にする (止める口・書く口は持たない)。
 type ReadOnly interface{ ReadOnly() }
+
+// Joiner は加わった画面 (pro-con --join) の backend。読み書きするが、dispatcher を起こさず、quit で閉じても止めない (issue 481)。
+type Joiner interface{ Joined() }
+
+// Rejected は、この画面が受付の箱に置いた依頼を dispatcher が除けたこと (理由は dispatcher が書いたまま。issue 481)。
+type Rejected struct {
+	Kind   string // 依頼の種類 (answer / delete …)
+	CardID string // 対象のカード (無ければ空)
+	Why    string
+}
+
+// RejectReader は、この画面が置いた依頼のうち除けられたものを渡す backend (任意)。渡した分は忘れる (画面は 1 度だけ出す)。
+// 🚨 除けた理由は dispatcher が記録に書いたものだけを渡す (カードの変化から推測しない = 誤った知らせになる)
+type RejectReader interface{ TakeRejected() []Rejected }
 
 // Notifier は状態が変わったと知らせる backend (画面は tick を待たずに描き直す。任意)。
 type Notifier interface{ Changed() <-chan struct{} }
@@ -116,10 +157,17 @@ type Stopper interface {
 	StopAll(ctx context.Context) error
 }
 
-// KeptRunning は、ほかの画面が開いているので dispatcher と PG を止めずに閉じたこと (StopAll の結果。失敗ではない)。
-type KeptRunning struct{ Others int } //nolint:errname // 失敗ではなく StopAll の結果 (error の経路で返すだけ)。KeptRunningError と名付けると失敗に読める
+// KeptRunning は、ほかの持ち主の画面が開いている / この画面が join なので dispatcher と PG を止めずに閉じたこと
+// (StopAll の結果。失敗ではない)。Others はほかに開いている持ち主の画面の数。
+type KeptRunning struct { //nolint:errname // 失敗ではなく StopAll の結果 (error の経路で返すだけ)。KeptRunningError と名付けると失敗に読める
+	Others int
+	Join   bool // この画面が join (pro-con --join)
+}
 
 func (k KeptRunning) Error() string {
+	if k.Join {
+		return "join の画面なので、dispatcher と PG は止めずに閉じた"
+	}
 	return fmt.Sprintf("ほかに %d 画面が開いているので、dispatcher と PG は止めずに閉じた", k.Others)
 }
 

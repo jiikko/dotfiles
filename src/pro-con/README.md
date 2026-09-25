@@ -9,6 +9,7 @@ PM (producer) と PG (consumer) を分けて Claude Code を並列に回すた�
 bin/pro-con          # 本物: dispatcher が書くカードの記録を出す。依頼と回答は受付の箱へ (live。issue 424 / 427)
 bin/pro-con --mock   # 模擬: claude は起動しない。模擬の backend (fake) が状態を進める (動作確認用)
 bin/pro-con --view   # 見ているだけの画面: 動いている pro-con をそのまま映す。依頼・回答・attach を受けず (案内の行にも出さない)、dispatcher を起こさず、quit で閉じても何も止めない (画面の数にも入らない。epic 441)。書くのは画面の中継と、ctrl+r の引き継ぎ・落ちた画面の印の後始末だけ (issue 445)
+bin/pro-con --join [--as review]   # 加わる画面: 読み書きは普通の画面と同じ (依頼・回答・差し戻し・削除・attach)。dispatcher を起こさず (c も受けない)、quit で閉じても dispatcher と PG を止めない。--view / --mock とは組まない (issue 481)。--as は画面の一覧に出す名前 (普通の画面にも付けてよい)
 bin/pro-con dispatcher   # 割り振り係: 受付の箱の適用・PM と PG の起動と再開・テストの係・見張り (画面を開くと、居なければ画面が起こす。旧名 daemon)。2 つ起動しない。🚨 PG を起動するので利用枠を使う
                          # 同時に動かす PG は --limit (既定 2) まで。利用枠 (`claude -p /usage` を 5 分ごとに読む) の 5 時間と週の大きい方が 80% 以上なら 1 本、95% 以上なら新しく起動・再開しない (ゲージの「PG n/m」と理由)
 bin/pro-con config set limit 3 | set pm 1 | unset limit | show  # 止めずに PG の枠 (同時に動かす PG の上限) と PM の数を変える (issue 456)。受付の箱に置き、dispatcher が状態の置き場の settings.json に書いて次の Tick から使う (起動し直しても続く)
@@ -75,8 +76,23 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
   (入力からカードが出るまで 約 4 秒 → 約 130 ms)。socket は速くするための口で、正しさは頼らない (届かなくても 3 秒のポーリングが拾う)。
   逃がし先 `/tmp/pro-con-<uid>/` の権限が緩ければ、直すのは dispatcher (listen する側) だけ。繋ぐ側 (画面・`card wait`・`log --follow`) は
   直さずにつながず、1 行知らせてポーリングで待つ (issue 445)
-- **同じ置き場で画面を複数開いてよい**: 画面は開いている間 `screens/<id>.lock` を flock で持つ (package `presence`)。2 つ以上開いていれば
-  ゲージに「画面 N」。Q → quit で閉じるとき、ほかに画面が開いていれば **この画面だけ閉じる** (dispatcher と PG は動いたまま)。最後の画面だけが止める
+- **同じ置き場で画面を複数開いてよい**: 画面は開いている間 `screens/<id>.lock` を flock で持つ (package `presence`)。印の中身に
+  モード (持ち主 / join)・`--as` の名前・端末・pid・開いた時刻を書き、2 つ以上開いていれば (または join なら) ゲージに一覧
+  (「a1b2c3 持ち主 (この画面) · d4e5f6 join review」。4 つ以上なら数だけにして、s の板の下段に一覧)。生きているかの正本は flock
+- **持ち主と join (issue 481)**: `--join` でない画面はすべて持ち主。Q → quit で閉じるとき、ほかに **持ち主の画面** が開いていれば
+  この画面だけ閉じる (dispatcher と PG は動いたまま)。**最後の持ち主の画面が止める** (join の画面が残っていても止める。確認の見出しに
+  「join の画面が N 残り、止めた後は表示が止まる」)。join の画面の quit は何も止めない。数え直しは quit の排他 (`quit.lock`) の中
+  - 止めている途中で止めるのをやめるのは **持ち主の画面が開いたときだけ** (join の画面が残っている・開いただけでは取り消さない。
+    join は dispatcher を起こさないので、取り消すと止めたはずの PG が動き続ける)
+  - 無画面で抜ける判定 (`--exit-without-screens`) は **持ち主と join を合わせて** 数える (持ち主が kill -9 で消えても、join が開いている間は
+    PG を止めない。join も閉じたら 1 分で止まる)。ただし dispatcher が SIGTERM / SIGHUP・Tick の失敗で**抜けるとき**は、持ち主の画面が
+    無ければ PG を止めてから抜ける (join は dispatcher を起こし直さないので、止めずに抜けると見張る者の居ない PG が残る)
+  - join の画面は dispatcher を起こさない: 居なければゲージに「起こすのは持ち主の画面か pro-con dispatcher」、打った依頼には
+    「受付の箱で待っている」と出す。人が止めた印があれば join からは外せない (c を案内に出さず、押すと理由つきで断る)
+- **どの画面から打ったか・除けた理由 (issue 481)**: 画面が受付の箱に置く依頼には画面の名前 (「a1b2c3 join review」) が付き、適用で
+  足された履歴の行 (詳細・`pro-con card show`) と出来事 (`pro-con log`) に残る。dispatcher が除けた依頼 (2 つの画面が同じカードへ
+  回答を重ねた後の方など) は、**置いた画面にだけ** dispatcher が書いた理由をトーストで出す (画面が覚えた依頼 ID と記録の `rejected` を
+  照らす。カードの変化から推測しない)。ctrl+r の入れ替えの前に置いた依頼の分は、入れ替えた後の画面には出ない
 - **終了で pro-con が起動した claude を確実に止める**: 最後の画面が閉じるとき、dispatcher は pro-con の起動の記録 (`sessions.json` と、
   再開で入れ替わった前の session の `sessions-retired.json`) にある session を止め、`claude agents --json --all` で全部が stopped になったかを
   確かめて、残れば止め直す。止まらない session はカードと短い id で名指しする。pro-con が起動していない session には触らない
@@ -88,6 +104,16 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
   画面が起こす dispatcher・画面の quit の停止には内部用の `--from-screen` が付き、印を置かない・外さない (最後の画面の quit で止めても、
   次に開いた画面は今までどおり起こす)。印を見てから起こすまでの間に `--stop` が来ても、起こされた dispatcher は印を見て回らずに抜ける。
   印がある間は、止めている途中で画面が開いても止めるのをやめない (issue 459)
+- **クラッシュ・再起動の後は、起動したときに自動で復旧する** (コマンドも引数も無い。画面が起こしても手で起動しても同じ。issue 483)。
+  dispatcher は一覧を取れた最初の Tick で 1 度だけ、記録にある作業中のカードの PG・PM・取り込みの係の session を調べる。
+  **マシンの起動時刻 (`kern.boottime`) より前に始まり、`claude agents --json --all` に pid 無し・止まった state で残る**ものだけを
+  待たずに再開する (作業中のカードは分解済みへ戻して同じ session を再開、テストの係の結果を待つカードは頼み直してから。落ちた回数に数え、上限なら人の番へ)。
+  🚨 それ以外 (再起動より後に始まった session が居ない・--all にも居ない・起動時刻を読めない) は判定できないので復旧せず、出すだけにする
+  (いつもの経路 = 自動の再開を 1 分待ってから戻す 458 に任せる。二重に起こさない)。結果は `pro-con log` (kind `recover`) に 1 行、
+  ヘッダーのゲージに起動から 10 分「起動時: 復旧 N / 判定できない M」。判定の表は 483 の本文
+- テストの係の実行の途中で dispatcher が止まった実行は、残ったプロセスを止めてから同じコマンドを 1 度だけ頼み直す
+  (また中断したら rc=-1 で PG に返す。実行がマシンか dispatcher を落としている疑い)。結果を待つカードは、PG が一覧から消えても戻さない
+- ヘッダーの「dispatcher が動いていない」は、lock のファイルの pid が居ないとき (Tick の古さの 2 分を待たずに出す。`--view` でも)
 
 ## 模擬 (ハリボテ) の中身
 
@@ -100,7 +126,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 | tab / shift+tab | repo タブの切り替え (global = 全 repo) |
 | n | 新しい依頼 (PM へ)。repo のタブで出すとその repo がスコープになる |
 | i | issue の一覧から選んで「これやって」と依頼する (repo のタブならその repo、global なら設定の全 repo。未完了だけ。epic は見出しの下に子)。Enter → 補足 (空でよい) → Enter |
-| s | PG (consumer) の一覧を開閉 (詳細と同じく下から生える。担当カード・状態・実行中のコマンド・経過・実体の pid (本物のモードは backend が照合した pid。模擬は「模擬」)。pro-con の外の session は名前も本数も出さない。画面は `claude agents` を自分で読まない) |
+| s | PG (consumer) の一覧を開閉 (詳細と同じく下から生える。担当カード・状態・実行中のコマンド・経過・実体の pid (本物のモードは backend が照合した pid。模擬は「模擬」)。pro-con の外の session は名前も本数も出さない。画面は `claude agents` を自分で読まない)。画面が 2 つ以上 (または join) なら下段に開いている画面の一覧 (モード・名前・開いた時刻・端末・pid) |
 | e | 選択中のカードの issue の md をエディタで開く ($VISUAL → $EDITOR → nvim。`tuikit/editor`) |
 | x | 完了のレーンを片付ける (y/N 確認。repo のタブではその repo の分だけ。カードは消さず Archived にする。本物のモードでは dispatcher が書庫へ移す) |
 | d | 選択中のカードを削除する (y/N 確認。依頼の列ならすぐ消える。ほかの列は「削除中」になり、dispatcher が PG の session を止めたのを確かめてから消える。1 分で止められなければカードを残して理由を履歴に書く。PG の worktree とブランチは消さない。消したことは dispatcher の記録に残る。issue 451) |
@@ -127,7 +153,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 | + | 追加オーダー (tab で 追記 / 方針変更 / 別件)。**方針変更は y/N 確認** (y / enter だけが実行、他のキーは取り消し)。届いたかは詳細に「未達 / 届いた」で出る |
 | w | btw (PG を止めずに状況を聞く。what's up)。本物のモードでは答えがカードの履歴に出る |
 | ? | レーンの意味の表 (説明の正本は `card.State.Meaning`)。? / q / esc で閉じる |
-| c | 人が止めた dispatcher を起こす (continue。y/N 確認。作業中のカードの PG が再開して利用枠を使う)。`pro-con dispatcher --stop` で止めた印があるときだけ効き、案内にもそのときだけ出る (ゲージは「dispatcher 止めてある (c で起こす)」)。`--view` では受けない (issue 459) |
+| c | 人が止めた dispatcher を起こす (continue。y/N 確認。作業中のカードの PG が再開して利用枠を使う)。`pro-con dispatcher --stop` で止めた印があるときだけ効き、案内にもそのときだけ出る (ゲージは「dispatcher 止めてある (c で起こす)」)。`--view` と `--join` では受けない (issue 459 / 481) |
 
 入力欄 (n / r / + / ?) は readline の編集キーが効く (ctrl+h / ctrl+w / ctrl+u / ctrl+k / ctrl+a / ctrl+e / ctrl+b / ctrl+f …。
 `tuikit/lineedit`)。入力中は最下行の案内が入力欄のキーに替わる。

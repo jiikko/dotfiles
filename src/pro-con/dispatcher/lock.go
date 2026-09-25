@@ -8,11 +8,14 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+
+	"pro-con/store"
 )
 
-// LockFile はロックのファイル名 (状態の置き場の下)。MonitorLockFile は見張り (pro-con monitor。issue 475) のロック。
+// LockFile はロックのファイル名 (状態の置き場の下)。画面は pid だけを読む (store.DispatcherGone)。
+// MonitorLockFile は見張り (pro-con monitor。issue 475) のロック。
 const (
-	LockFile        = "dispatcher.lock"
+	LockFile        = store.DispatcherLockFile
 	MonitorLockFile = "monitor.lock"
 )
 
