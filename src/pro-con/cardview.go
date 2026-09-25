@@ -329,7 +329,11 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 	p("")
 	p("履歴")
 	for _, e := range c.History {
-		p("  %s %s", e.At.Local().Format("01-02 15:04"), e.Text) // テストの係の結果・回答・attach の指示もここに載る
+		from := "" // どの画面から打ったか (issue 481)
+		if e.Screen != "" {
+			from = " (画面 " + e.Screen + ")"
+		}
+		p("  %s %s%s", e.At.Local().Format("01-02 15:04"), e.Text, from) // テストの係の結果・回答・attach の指示もここに載る
 	}
 	p("")
 	p("出力 (PG の出力の末尾)")

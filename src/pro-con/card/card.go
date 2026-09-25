@@ -207,8 +207,9 @@ func StallThreshold(c Card, base time.Duration) time.Duration {
 }
 
 type Event struct {
-	At   time.Time
-	Text string
+	At     time.Time
+	Text   string
+	Screen string `json:",omitempty"` // 打った画面 (画面から受付の箱に置いた依頼だけ。「a1b2c3 join review」。issue 481)
 }
 
 // AttachKind は添付の種類 (人間がどう見るかを決める。issue 453)。

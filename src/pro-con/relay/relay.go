@@ -39,7 +39,9 @@ var minInterval = 100 * time.Millisecond
 // Frame は画面 1 枚。
 type Frame struct {
 	ID     string    `json:"id"`
-	View   bool      `json:"view"` // 見ているだけの画面 (--view)
+	View   bool      `json:"view"`            // 見ているだけの画面 (--view)
+	Join   bool      `json:"join,omitempty"`  // 加わった画面 (--join。issue 481)
+	Label  string    `json:"label,omitempty"` // --as <名前>
 	PID    int       `json:"pid"`
 	At     time.Time `json:"at"` // 最後に中身が変わった時刻 (中身が同じ描き直しでは進まない)
 	Width  int       `json:"width"`
@@ -173,7 +175,7 @@ func (w *Writer) Close() {
 }
 
 func sameContent(a, b Frame) bool {
-	if a.ANSI != b.ANSI || a.View != b.View || a.Width != b.Width || a.Height != b.Height || len(a.State) != len(b.State) {
+	if a.ANSI != b.ANSI || a.View != b.View || a.Join != b.Join || a.Label != b.Label || a.Width != b.Width || a.Height != b.Height || len(a.State) != len(b.State) {
 		return false
 	}
 	for k, v := range a.State {

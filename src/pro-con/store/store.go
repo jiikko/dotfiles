@@ -84,6 +84,7 @@ type Request struct {
 	Cards    []string       `json:"cards,omitempty"`    // clear: 片付ける完了のカード (画面が見ていたもの。適用までに完了になったカードを巻き込まない)
 	Seen     time.Time      `json:"seen,omitzero"`      // move: 頼んだ側が見ていたカードの Since (違えば列を移った後なので動かさない。空なら見ない)
 	Delta    int            `json:"delta,omitempty"`    // move: -1 = 1 つ上 / +1 = 1 つ下と入れ替える (Repo が空でなければ、その repo のカードの中の隣。issue 470)
+	Screen   string         `json:"screen,omitempty"`   // 置いた画面 (「a1b2c3 join review」。画面から置いた依頼だけ。履歴と出来事に残す。issue 481)
 	Key      string         `json:"key,omitempty"`      // config: 設定の名前 (settings.go)
 	Value    string         `json:"value,omitempty"`    // config: 設定の値 (空なら消す)
 	At       time.Time      `json:"at"`
@@ -109,6 +110,7 @@ type Rejected struct {
 // 画面の出来事 (event) の文)
 type Result struct {
 	ID, Kind, CardID string
+	Screen           string // 依頼を置いた画面 (Request.Screen。画面以外が置いた依頼は空)
 	Err              string
 	Note             string
 	At               time.Time // event: 画面が出来事を置いた時刻 (dispatcher が出来事の記録へ書く。適用した時刻ではない)
@@ -250,7 +252,7 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 		}
 		if err == nil {
 			r.ID = id // ファイル名が正本 (中身の id は信じない)
-			res.Kind, res.CardID = r.Kind, r.CardID
+			res.Kind, res.CardID, res.Screen = r.Kind, r.CardID, r.Screen
 			if r.Kind == KindEvent {
 				res.At = r.At
 			}
@@ -280,6 +282,7 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 					err = adoptAttachment(staged, r.File)
 				}
 				if err == nil {
+					tagScreen(st, &next, r.Screen)
 					st = next
 				}
 			}
@@ -341,6 +344,41 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 		}
 	}
 	return results, nil
+}
+
+// tagScreen は依頼 1 件の適用で足された履歴の行に、依頼を置いた画面を付ける (screen が空なら何もしない)。
+// 足された行は、前の状態のそのカードの履歴に無い行 (attach の指示は時刻の位置に差し込まれるので、末尾の差では拾えない)。
+func tagScreen(before State, next *State, screen string) {
+	if screen == "" {
+		return
+	}
+	type key struct {
+		at   time.Time
+		text string
+	}
+	old := map[string]map[key]bool{}
+	for _, c := range before.Cards {
+		m := map[key]bool{}
+		for _, e := range c.History {
+			m[key{e.At, e.Text}] = true
+		}
+		old[c.ID] = m
+	}
+	for i, c := range next.Cards {
+		var hist []card.Event // 書き換えるカードだけ複製する (next.Cards は before と履歴の配列を共有している)
+		for j, e := range c.History {
+			if e.Screen != "" || old[c.ID][key{e.At, e.Text}] {
+				continue
+			}
+			if hist == nil {
+				hist = slices.Clone(c.History)
+			}
+			hist[j].Screen = screen
+		}
+		if hist != nil {
+			next.Cards[i].History = hist
+		}
+	}
 }
 
 // Update は dispatcher の中でカードを直接進める (PG の起動で作業中へ、など。箱を通さない dispatcher 自身の操作)。

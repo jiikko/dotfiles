@@ -63,9 +63,16 @@ func TestServeWakesOnPoke(t *testing.T) {
 
 // 画面が起こした dispatcher (alone) は、開いている画面がある間は回り続け、1 つも無い状態が続いたら PG を止めて抜ける
 // (最後の画面が quit を通らずに消えても PG を残さない)。止めた結果も書く。
+// join の画面も数える (持ち主が落ちても、join が開いている間は PG を止めない。issue 481)。
 func TestServeExitsWithoutScreens(t *testing.T) {
+	for _, mode := range []presence.Mode{presence.Owner, presence.Join} {
+		t.Run(string(mode), func(t *testing.T) { serveExitsWithoutScreens(t, mode) })
+	}
+}
+
+func serveExitsWithoutScreens(t *testing.T, mode presence.Mode) {
 	dir := t.TempDir()
-	scr, err := presence.Open(dir)
+	scr, err := presence.OpenAs(dir, presence.Info{Mode: mode})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,13 +181,14 @@ func (f *stopFlaky) Stop(context.Context, string) error {
 	return nil
 }
 
-// 止めきれなければ抜けずに止め直し、止まったら抜けて結果を ok で書き直す。止めている間に画面が開いたら、止めるのをやめて続ける。
+// 止めきれなければ抜けずに止め直し、止まったら抜けて結果を ok で書き直す。止めている間に持ち主の画面が開いたら、止めるのをやめて続ける。
 // ただし人が止めた印 (issue 459) があれば、画面が開いていても止めきる (画面は印がある間 dispatcher を起こさないので、続ける者が居ない)。
+// join の画面 (issue 481) が開いていても止めきる (join は dispatcher を起こさないので、持ち主の quit の停止を取り消すと PG が残る)。
 func TestStopUntilDoneRetriesAndYieldsToScreen(t *testing.T) {
 	old := stopRetryEvery
 	stopRetryEvery = time.Millisecond
 	t.Cleanup(func() { stopRetryEvery = old })
-	run := func(t *testing.T, aliveLists int, openScreen, held bool) (bool, *dispatcher.Dispatcher, string) {
+	run := func(t *testing.T, aliveLists int, screen presence.Mode, held bool) (bool, *dispatcher.Dispatcher, string) { // screen が空なら画面を開かない
 		dir := t.TempDir()
 		if held {
 			if err := store.Hold(dir, time.Now()); err != nil {
@@ -204,8 +212,8 @@ func TestStopUntilDoneRetriesAndYieldsToScreen(t *testing.T) {
 				}
 				return []agents.Session{{ID: "pg1", SessionID: "S1", PID: pid, Kind: "background", State: state}}, nil
 			}}
-		if openScreen {
-			sc, err := presence.Open(dir)
+		if screen != "" {
+			sc, err := presence.OpenAs(dir, presence.Info{Mode: screen})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -216,7 +224,7 @@ func TestStopUntilDoneRetriesAndYieldsToScreen(t *testing.T) {
 		return ok, d, string(b)
 	}
 	// 1 回目の Shutdown の確かめ (一覧を ensurePolls+2 = 17 回取る) の間は止まらず、2 回目の途中で止まる
-	if ok, _, res := run(t, 20, false, false); !ok || res != "ok\n" {
+	if ok, _, res := run(t, 20, "", false); !ok || res != "ok\n" {
 		t.Fatalf("止まるまで止め直さない / 結果を ok で書き直さない: ok=%v res=%q", ok, res)
 	}
 	type result struct {
@@ -224,10 +232,13 @@ func TestStopUntilDoneRetriesAndYieldsToScreen(t *testing.T) {
 		res string
 	}
 	got := make(chan result, 1)
-	if ok, _, res := run(t, 20, true, true); !ok || res != "ok\n" {
+	if ok, _, res := run(t, 20, presence.Owner, true); !ok || res != "ok\n" {
 		t.Fatalf("人が止めたのに、画面が開いたので止めるのをやめた: ok=%v res=%q", ok, res)
 	}
-	go func() { ok, _, res := run(t, 1<<30, true, false); got <- result{ok, res} }()
+	if ok, _, res := run(t, 20, presence.Join, false); !ok || res != "ok\n" {
+		t.Fatalf("join の画面が開いているだけで、持ち主の quit の停止をやめた: ok=%v res=%q", ok, res)
+	}
+	go func() { ok, _, res := run(t, 1<<30, presence.Owner, false); got <- result{ok, res} }()
 	select {
 	case r := <-got:
 		if r.ok || r.res == "ok\n" || r.res == "" {
@@ -242,18 +253,19 @@ func TestStopUntilDoneRetriesAndYieldsToScreen(t *testing.T) {
 // いない ctx で行う (取り消された ctx のままでは claude の呼び出しが即座に失敗する。偽物も ctx を見る)。画面が開いていれば止めない
 // (画面が dispatcher を起こし直し、PG はそのまま続く)。
 func TestServeStopsOnSignalWhenSpawnedByScreen(t *testing.T) {
-	for _, screenOpen := range []bool{false, true} {
-		if stopped, rc := serveUntilSignal(t, screenOpen); stopped == screenOpen || rc != 0 {
-			t.Fatalf("画面が開いている=%v で、止めた=%v rc=%d", screenOpen, stopped, rc)
+	// join の画面しか無ければ止める (join は dispatcher を起こし直さないので、止めずに抜けると見張る者の居ない PG が残る。issue 481)
+	for _, screen := range []presence.Mode{"", presence.Owner, presence.Join} {
+		if stopped, rc := serveUntilSignal(t, screen); stopped != (screen != presence.Owner) || rc != 0 {
+			t.Fatalf("開いている画面=%q で、止めた=%v rc=%d", screen, stopped, rc)
 		}
 	}
 }
 
-func serveUntilSignal(t *testing.T, screenOpen bool) (bool, int) {
+func serveUntilSignal(t *testing.T, screen presence.Mode) (bool, int) { // screen が空なら画面を開かない
 	t.Helper()
 	dir := t.TempDir()
-	if screenOpen {
-		sc, err := presence.Open(dir)
+	if screen != "" {
+		sc, err := presence.OpenAs(dir, presence.Info{Mode: screen})
 		if err != nil {
 			t.Fatal(err)
 		}
