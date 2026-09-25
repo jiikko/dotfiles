@@ -491,6 +491,9 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		if c.State != card.Review && c.State != card.Requested {
 			return fmt.Errorf("レビューの列に無い (今は %s)", c.State.Label())
 		}
+		if n := len(c.Pending()); n > 0 { // 未達のまま完了に埋めない (dispatcher がレビュー待ちから PG へ戻して届ける。issue 438)
+			return fmt.Errorf("PG へ届いていない追加オーダーが %d 件ある (dispatcher が PG へ戻して届ける。届いてからもう一度閉じる)", n)
+		}
 		c.Issues = append(c.Issues, r.Issues...)
 		if r.Ending != card.EndNone {
 			c.Ending = r.Ending
