@@ -76,6 +76,7 @@ type Request struct {
 	Order    card.OrderKind  `json:"order,omitempty"`    // order: 追記 / 方針変更 (別件は add + ParentID)
 	Text     string          `json:"text,omitempty"`     // order: 追加オーダーの本文 (書いたまま)
 	Cards    []string        `json:"cards,omitempty"`    // clear: 片付ける完了のカード (画面が見ていたもの。適用までに完了になったカードを巻き込まない)
+	Delta    int             `json:"delta,omitempty"`    // move: -1 = 1 つ上 / +1 = 1 つ下と入れ替える (Repo が空でなければ、その repo のカードの中の隣。issue 470)
 	At       time.Time       `json:"at"`
 }
 
@@ -333,6 +334,22 @@ func apply(st State, r Request, now time.Time) (State, string, string, error) {
 		if note, err = remove(&next, i, r, now); err != nil {
 			return st, id, "", fmt.Errorf("delete: %w", err)
 		}
+	case "move": // レーンの中の並び (= 優先度) を 1 つ上 / 下と入れ替える (issue 470)。隣は適用の時点の並びで決める (押した回数だけ動く)
+		i := indexOf(next.Cards, r.CardID)
+		if i < 0 {
+			return st, r.CardID, "", fmt.Errorf("move: カード %q が無い", r.CardID)
+		}
+		id = r.CardID
+		other, err := card.Move(next.Cards, r.CardID, r.Repo, r.Delta)
+		if err != nil {
+			return st, id, "", fmt.Errorf("move: %w", err)
+		}
+		c := &next.Cards[i]
+		how := card.MovedText(r.Delta, other)
+		if b := card.Blockers(next.Cards, *c); c.State == card.Planned && len(b) > 0 && c.Session == "" {
+			how += "。" + strings.Join(b, ", ") + " の完了を待つので、それまでは起動しない" // 並びより順番 (issue 468) が勝つ
+		}
+		c.History = append(c.History, card.Event{At: now, Text: how})
 	case KindEvent: // 画面の出来事。記録 (カード) は変えず、dispatcher が出来事の記録へ書くだけ (書き手を dispatcher 1 つに保つ。issue 445)
 		if strings.TrimSpace(r.Note) == "" {
 			return st, "", "", errors.New("event: 出来事の文が空")

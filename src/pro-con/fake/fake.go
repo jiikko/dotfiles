@@ -245,21 +245,34 @@ func (s *Sim) stepProgress() {
 
 // stepDispatch は枠が空いていれば分解済みのカードを上から順に PG へ渡す (模擬の dispatcher)。
 func (s *Sim) stepDispatch() {
-	for i := range s.cards {
+	// 本物の dispatcher と同じ順: 再開 (回答を受けたカード) が先、その中はレーンの並び (上ほど優先。issue 470)
+	var queue []card.Card
+	for _, c := range s.cards {
+		if c.State == card.Planned {
+			queue = append(queue, c)
+		}
+	}
+	slices.SortStableFunc(queue, func(a, b card.Card) int {
+		if ra, rb := a.Resumes(), b.Resumes(); ra != rb {
+			if ra {
+				return -1
+			}
+			return 1
+		}
+		return card.LaneCompare(a, b)
+	})
+	for _, q := range queue {
 		if s.busyConsumers() >= s.limit {
 			return
 		}
-		c := &s.cards[i]
-		if c.State != card.Planned {
-			continue
-		}
+		c := s.find(q.ID)
 		why := "PG が着手した"
 		if c.Session == "" {
 			c.Session = s.newSession()
 		} else {
 			why = "同じ session を resume した"
 		}
-		c.Owner = "PG"
+		c.Owner, c.Resume = "PG", ""
 		c.LastProgress = s.now
 		if s.scripts[c.ID] == nil {
 			s.scripts[c.ID] = &script{lines: []string{"Read issue", "Edit", "make test: ok"}, then: "review"}
@@ -384,6 +397,14 @@ func (s *Sim) Apply(cmd backend.Command) (string, error) {
 		return s.clearDone(c)
 	case backend.DeleteCard:
 		return s.deleteCard(c)
+	case backend.MoveCard:
+		other, err := card.Move(s.cards, c.CardID, c.Repo, c.Delta)
+		if err != nil {
+			return "", err
+		}
+		mc := s.find(c.CardID)
+		mc.History = append(mc.History, card.Event{At: s.now, Text: card.MovedText(c.Delta, other)})
+		return "", nil
 	}
 	return "", backend.ErrUnknownKind
 }
@@ -460,6 +481,7 @@ func (s *Sim) answer(a backend.Answer) (string, error) {
 		return "", backend.ErrNotWaiting
 	}
 	c.Wait = card.Wait{}
+	c.Resume = a.Text // 再開で渡す (本物と同じく、再開を待つ印にもなる = card.Resumes)
 	c.History = append(c.History, card.Event{At: s.now, Text: a.From + " が回答した: " + a.Text})
 	s.setState(c, card.Planned, "回答を受けて再開待ち (PG の空きが出たら同じ session を resume)")
 	return c.ID + " に回答した。PG の空きが出たら再開する", nil

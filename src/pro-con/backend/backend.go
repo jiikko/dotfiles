@@ -76,6 +76,7 @@ const (
 	OpBtw    Op = "btw"    // btw (w)
 	OpClear  Op = "clear"  // 完了のレーンを片付ける (x)
 	OpDelete Op = "delete" // カードを削除する (d)
+	OpMove   Op = "move"   // レーンの中の並び (優先度) を入れ替える (K / J)
 )
 
 // Accepter は一部の操作しか受けない backend (任意。持たない backend は全部受ける)。
@@ -188,6 +189,15 @@ type DeleteCard struct {
 	From   string // 人間 / PM
 }
 
+// MoveCard はカードをレーンの中で 1 つ上 (Delta = -1) / 下 (+1) の隣と入れ替える (issue 470。上ほど優先)。Repo は画面のタブ
+// (空なら global = 全 repo の並びの中の隣)。隣は backend が適用の時点の並びで決める (押した回数だけ動く)。
+type MoveCard struct {
+	CardID string
+	Repo   string
+	Delta  int
+}
+
+func (MoveCard) isCommand()   {}
 func (DeleteCard) isCommand() {}
 func (ClearDone) isCommand()  {}
 func (Answer) isCommand()     {}

@@ -421,6 +421,9 @@ func (b *Backend) Apply(cmd backend.Command) (string, error) {
 		r = store.Request{Kind: "answer", CardID: c.CardID, Answer: c.Text, From: firstNonEmpty(c.From, "人間")}
 	case backend.DeleteCard:
 		r = store.Request{Kind: "delete", CardID: c.CardID, From: firstNonEmpty(c.From, "人間")}
+	case backend.MoveCard:
+		r = store.Request{Kind: "move", CardID: c.CardID, Repo: c.Repo, Delta: c.Delta}
+		done = "" // 動いたカードそのものが知らせ (押すたびに通知を重ねない)
 	case backend.AddOrder:
 		if strings.TrimSpace(c.Text) == "" {
 			return "", backend.ErrEmptyText

@@ -18,7 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -625,7 +625,7 @@ func (d *Dispatcher) watch(now time.Time) ([]eventlog.Event, error) {
 	return notes, nil
 }
 
-// dispatch は分解済みのカードに、作業中が上限 (利用枠で絞った数。usage.go) に達するまで PG を割り当てる (再開が先、その中は古い順)。
+// dispatch は分解済みのカードに、作業中が上限 (利用枠で絞った数。usage.go) に達するまで PG を割り当てる (再開が先、その中はレーンの並び)。
 //   - 起動・再開の前に、印 (Launching) と時刻を記録に書く。結果が分かったら印を外して作業中にする
 //   - 前の Tick の起動・再開の結果が分からないまま (印が残っている) のカードは、一覧で確かめる。立っていれば取り込み、
 //     launchGrace を過ぎても出なければ起動し直す。待っている間は上限に数える
@@ -664,14 +664,18 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		case card.Requested, card.Waiting, card.Review, card.Done:
 		}
 	}
-	// 回答を受けた再開の初回を新しい起動より先に (途中まで進んだ作業と、その worktree を待たせない。枠で 1 本に絞ったときに効く)。その中は古い順。
+	// 回答を受けた再開の初回を新しい起動より先に (途中まで進んだ作業と、その worktree を待たせない。枠で 1 本に絞ったときに効く)。
+	// その中はレーンの並び (上ほど優先。人が入れ替えられる = issue 470。入れ替えていなければ列に入った順)。
 	// 🚨 印の残った再試行は先にしない: 失敗し続ける再開が毎回先頭に並び、1 本の枠を永久に占めて他のカードを起動させなくなる
-	first := func(c card.Card) bool { return resumes(c) && c.Launching == "" }
-	sort.SliceStable(queue, func(i, j int) bool {
-		if ri, rj := first(queue[i]), first(queue[j]); ri != rj {
-			return ri
+	first := func(c card.Card) bool { return c.Resumes() && c.Launching == "" }
+	slices.SortStableFunc(queue, func(a, b card.Card) int {
+		if ra, rb := first(a), first(b); ra != rb {
+			if ra {
+				return -1
+			}
+			return 1
 		}
-		return queue[i].Since.Before(queue[j].Since)
+		return card.LaneCompare(a, b)
 	})
 	reg, err := live.LoadRegistry(filepath.Join(d.Dir, live.RegistryFile))
 	if err != nil {
@@ -795,13 +799,10 @@ func lastAfterWait(c card.Card) string {
 	return ""
 }
 
-// resumes は同じ session を再開するカードか (回答・テストの結果・差し戻しを受けた / 追加オーダーを届ける)。
-func resumes(c card.Card) bool { return (c.Resume != "" || len(c.Pending()) > 0) && c.Session != "" }
-
 // prepare は起動・再開の前提を確かめて、実行する関数を返す。再開は、前の session が pro-con の記録にあり、
 // 今の一覧でその短い id が同じ session を指している (別の session を止めない) ときだけ。
 func (d *Dispatcher) prepare(c card.Card, now time.Time, ss []agents.Session, reg []live.Owned) (string, func(context.Context) (string, error), error) {
-	if resumes(c) {
+	if c.Resumes() {
 		o, ok := owned(c, reg)
 		if !ok {
 			return "再開", nil, fmt.Errorf("前の session (%s) が pro-con の記録に無い", c.Session)

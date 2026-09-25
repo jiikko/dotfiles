@@ -27,9 +27,9 @@ var Columns = []State{Requested, Planned, Running, Waiting, Review, Done}
 func (s State) Meaning() string {
 	switch s {
 	case Requested:
-		return "受付 PM がカードを作った直後。まだタスクに分けていない"
+		return "受付 PM がカードを作った直後。まだタスクに分けていない。PM は上から分ける"
 	case Planned:
-		return "タスクに分けてキューに積んだ。PG の空きを待っている"
+		return "タスクに分けてキューに積んだ。PG の空きを待っている。上から起動する (K / J で並べ替え。↻ の再開は先)"
 	case Running:
 		return "PG が作業している。make test などの占有リソースの順番待ち・利用枠の回復待ちもここ"
 	case Waiting:
@@ -221,15 +221,17 @@ type Card struct {
 	Session  string // 担当 PG の session id (claude --bg の id)
 	State    State
 	Since    time.Time // 今の State に入った時刻
-	Wait     Wait
-	Stalled  bool // watchdog が停滞と判定した
-	Exec     Exec // 今実行しているコマンド (作業中の列のまま。列は担当が変わるときだけ移る)
-	Issues   []IssueRef
-	Ending   Ending
-	Orders   []Order
-	Btws     []Btw `json:",omitempty"`
-	History  []Event
-	Log      []string // PG の出力の末尾 (本番は transcript から読む)
+	// Rank は人が入れ替えたレーンの中の並び (issue 470。rank.go)。Since が変わる (列を移る) と効かなくなる
+	Rank    Rank `json:",omitzero"`
+	Wait    Wait
+	Stalled bool // watchdog が停滞と判定した
+	Exec    Exec // 今実行しているコマンド (作業中の列のまま。列は担当が変わるときだけ移る)
+	Issues  []IssueRef
+	Ending  Ending
+	Orders  []Order
+	Btws    []Btw `json:",omitempty"`
+	History []Event
+	Log     []string // PG の出力の末尾 (本番は transcript から読む)
 	// Resume は次に PG を再開するときに渡す文 (質問への回答)。dispatcher が渡したら空にする (本物のモードだけ。426 の決定 2)
 	Resume string `json:",omitempty"`
 	// Launching は dispatcher が PG の起動・再開を始めて、結果をまだ確かめていない印 ("起動" / "再開")。起動の前に記録へ書く
@@ -293,6 +295,10 @@ func Children(cards []Card, id string) []string {
 	}
 	return out
 }
+
+// Resumes は同じ session の再開を待っているか (回答・差し戻し・テストの結果・未達の追加オーダーを持つ。dispatcher はこれを
+// 新しい起動より先にする。画面は分解済みのレーンで印を出す)。
+func (c Card) Resumes() bool { return (c.Resume != "" || len(c.Pending()) > 0) && c.Session != "" }
 
 // Answerable は回答を受け付けるか (質問待ちの列に居る)。backend の回答・TUI の r・案内の色がこれを見る。
 func (c Card) Answerable() bool { return c.State == Waiting }

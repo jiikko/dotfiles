@@ -128,10 +128,9 @@ func (d *Dispatcher) tellPM(ctx context.Context, now time.Time, ss []agents.Sess
 		told[id] = true
 	}
 	pm.Told = nil
-	for _, c := range st.Cards {
-		if c.State != card.Requested || c.Archived {
-			continue
-		}
+	lane := slices.DeleteFunc(slices.Clone(st.Cards), func(c card.Card) bool { return c.State != card.Requested || c.Archived })
+	slices.SortStableFunc(lane, card.LaneCompare) // 上ほど優先 (人がレーンで並べ替えられる。issue 470)。PM は上から分ける
+	for _, c := range lane {
 		requested = append(requested, c.ID)
 		if told[c.ID] {
 			pm.Told = append(pm.Told, c.ID) // 列を離れたカードは外れる
@@ -259,7 +258,7 @@ func (d *Dispatcher) preparePM(row live.Owned, hasRow bool, cur agents.Session, 
 // pmNotice は PM に渡す知らせ。新しいカードを ID・題・repo で並べ、まだ依頼の列にある他のカードは ID だけ添える。指示は書かない (指示の正本は pm-guide.md)。
 func pmNotice(cards []card.Card, untold, requested []string) string {
 	var b strings.Builder
-	b.WriteString("pro-con: 依頼の列に次のカードがある。指示書のとおりに扱って。\n")
+	b.WriteString("pro-con: 依頼の列に次のカードがある (上ほど優先)。指示書のとおりに扱って。\n")
 	byID := map[string]card.Card{}
 	for _, c := range cards {
 		byID[c.ID] = c

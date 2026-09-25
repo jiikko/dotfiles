@@ -410,6 +410,8 @@ func (m *Model) badge(c card.Card) string {
 		parts = append(parts, "…枠待ち")
 	case m.blockedBy(c) != "":
 		parts = append(parts, "…"+m.blockedBy(c)+" の後")
+	case c.State == card.Planned && c.Resumes(): // 並びより先に起動する (dispatcher は再開を新しい起動より先にする。issue 470)
+		parts = append(parts, "↻再開が先")
 	}
 	if e := c.Exec; e.Active() {
 		cmd := e.Command
@@ -591,7 +593,8 @@ func (m *Model) hints() []string {
 		back = "q / esc 閉じる"
 	}
 	h := append([]string{"hjkl 選択", "tab repo"}, offer(
-		hint{"n 新しい依頼", m.accepts(backend.OpNew), true}, hint{"i issue から", m.accepts(backend.OpNew), true}, hint{"enter 詳細", has, false})...)
+		hint{"n 新しい依頼", m.accepts(backend.OpNew), true}, hint{"i issue から", m.accepts(backend.OpNew), true}, hint{"enter 詳細", has, false},
+		hint{"K / J 優先度", has && m.accepts(backend.OpMove), true})...)
 	h = append(h, cardOps...)
 	h = append(append(h, "s PG 一覧"), offer(hint{"x 完了を片付け", m.doneInTab() > 0 && m.accepts(backend.OpClear), true})...)
 	return append(h, "? レーンの意味", back)
