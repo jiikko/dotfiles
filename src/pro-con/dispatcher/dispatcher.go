@@ -76,6 +76,13 @@ type Dispatcher struct {
 	Summarize func(ctx context.Context, tail string) (string, error)
 	active    *runJob // 実行中の 1 本 (無ければ nil)
 
+	// Usage は利用枠の使用率を読む (usage.go)。nil なら枠で絞らない (e2e・テスト)
+	Usage      func(context.Context) (Usage, error)
+	usage      *Usage    // 最後に読めた値
+	usageErr   string    // 最後の読み取りの誤り
+	usageTried time.Time // 最後に読みに行った時刻
+	held       string    // 枠で起動・再開を待たせている知らせ (変わったときだけログに書く)
+
 	// FakePM は e2e モードの偽の PM (Tick の頭で呼ぶ)。本物のモードでは nil
 	FakePM func() error
 
@@ -99,7 +106,16 @@ const defaultStallAfter = 15 * time.Minute
 // Tick は 1 回ぶんの仕事をして、何をしたかの短い記録を返す (ログ用)。
 // session の一覧を取れない Tick は、登録も割り当てもしない (一覧と照らさずに起動・再開すると、立っている session を見落として増やす /
 // 別の session を止める)。
+// 回ったことは StatusFile に書く (途中で抜けた Tick も。画面が dispatcher の生存を見る)。
 func (d *Dispatcher) Tick(ctx context.Context) ([]string, error) {
+	notes, err := d.tick(ctx)
+	if werr := d.writeState(d.Now()); werr != nil {
+		notes = append(notes, "dispatcher の様子を書けない: "+werr.Error())
+	}
+	return notes, err
+}
+
+func (d *Dispatcher) tick(ctx context.Context) ([]string, error) {
 	now := d.Now()
 	var notes []string
 	if d.FakePM != nil {
@@ -145,6 +161,10 @@ func (d *Dispatcher) Tick(ctx context.Context) ([]string, error) {
 	notes = append(notes, ran...)
 	if err != nil {
 		return notes, err
+	}
+	d.refreshUsage(ctx, now)
+	if ctx.Err() != nil { // 枠を読んでいる間に止められた。取り消された ctx で起動して「失敗」を履歴に残さない
+		return notes, nil
 	}
 	more, err := d.dispatch(ctx, now, ss)
 	notes = append(notes, more...)
@@ -467,7 +487,7 @@ func (d *Dispatcher) watch(now time.Time) ([]string, error) {
 	return notes, nil
 }
 
-// dispatch は分解済みのカードに、作業中が上限に達するまで PG を割り当てる (古い順)。
+// dispatch は分解済みのカードに、作業中が上限 (利用枠で絞った数。usage.go) に達するまで PG を割り当てる (再開が先、その中は古い順)。
 //   - 起動・再開の前に、印 (Launching) と時刻を記録に書く。結果が分かったら印を外して作業中にする
 //   - 前の Tick の起動・再開の結果が分からないまま (印が残っている) のカードは、一覧で確かめる。立っていれば取り込み、
 //     launchGrace を過ぎても出なければ起動し直す。待っている間は上限に数える
@@ -488,7 +508,15 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		case card.Requested, card.Waiting, card.Review, card.Done:
 		}
 	}
-	sort.SliceStable(queue, func(i, j int) bool { return queue[i].Since.Before(queue[j].Since) })
+	// 回答を受けた再開の初回を新しい起動より先に (途中まで進んだ作業と、その worktree を待たせない。枠で 1 本に絞ったときに効く)。その中は古い順。
+	// 🚨 印の残った再試行は先にしない: 失敗し続ける再開が毎回先頭に並び、1 本の枠を永久に占めて他のカードを起動させなくなる
+	first := func(c card.Card) bool { return resumes(c) && c.Launching == "" }
+	sort.SliceStable(queue, func(i, j int) bool {
+		if ri, rj := first(queue[i]), first(queue[j]); ri != rj {
+			return ri
+		}
+		return queue[i].Since.Before(queue[j].Since)
+	})
 	reg, err := live.LoadRegistry(filepath.Join(d.Dir, live.RegistryFile))
 	if err != nil {
 		return nil, err
@@ -516,8 +544,13 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		}
 		fresh = append(fresh, c) // 待っても出なかった。起動・再開し直す (古い順は保つ)
 	}
-	for _, c := range fresh {
-		if running >= d.Limit {
+	limit, why := d.capacity(now)
+	held := ""
+	for i, c := range fresh {
+		if running >= limit {
+			if running < d.Limit { // 枠で絞らなくても止まっていたなら、枠のせいにしない
+				held = fmt.Sprintf("分解済みの %d 枚を起動・再開しない (%s)", len(fresh)-i, why)
+			}
 			break
 		}
 		how, run, err := d.prepare(c, now, ss, reg)
@@ -547,6 +580,12 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 			return notes, err
 		}
 		notes = append(notes, fmt.Sprintf("%s に PG を%sした (%s)", c.ID, how, id))
+	}
+	if held != d.held { // 枠で待たせていることは、変わったときだけ書く (Tick ごとにログを埋めない)
+		d.held = held
+		if held != "" {
+			notes = append(notes, held)
+		}
 	}
 	return notes, nil
 }

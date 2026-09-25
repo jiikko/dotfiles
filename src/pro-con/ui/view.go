@@ -78,6 +78,44 @@ func (m *Model) render() string {
 	return strings.Join(m.overlayQuit(m.overlayLegend(append(append(header, region...), foot...))), "\n")
 }
 
+// limitWhyCells はゲージに出す絞りの理由の幅の上限。
+const limitWhyCells = 40
+
+// pgGauge は動いている PG の数 / 今の同時実行数。利用枠で上限より絞っていれば上限と理由も出す。
+func (m *Model) pgGauge() string {
+	if m.dispatcherStopped() && m.snap.LimitMax > 0 { // 止まった dispatcher の最後の絞りを今の値として出さない
+		return fmt.Sprintf("PG %d/%d", len(m.snap.Consumers), m.snap.LimitMax)
+	}
+	g := fmt.Sprintf("PG %d/%d", len(m.snap.Consumers), m.snap.Limit)
+	if m.snap.Limit < m.snap.LimitMax {
+		g += fmt.Sprintf(" (上限 %d)", m.snap.LimitMax)
+	}
+	if w := m.snap.LimitWhy; w != "" { // 1 行に潰して短く切る (後ろに並ぶ停滞・不変条件の破れの警告を画面の外へ押し出さない)
+		g += " " + sgrYellow + ansi.Truncate(strings.Join(strings.Fields(w), " "), limitWhyCells, "…") + sgrFgReset
+	}
+	return g
+}
+
+// dispatcherStale はこれより長く回っていなければ dispatcher が止まっている疑いとして赤で出す (Tick は数秒ごと)。
+const dispatcherStale = 2 * time.Minute
+
+// dispatcherStopped は dispatcher が 1 度も回っていない / dispatcherStale より長く回っていないか。
+func (m *Model) dispatcherStopped() bool {
+	return m.snap.DispatcherTick.IsZero() || m.snap.Now.Sub(m.snap.DispatcherTick) > dispatcherStale
+}
+
+// dispatcherGauge は dispatcher が最後に回ってからの時間。1 度も回っていない / 長く回っていなければ赤で出す。
+func (m *Model) dispatcherGauge() string {
+	if m.snap.DispatcherTick.IsZero() {
+		return sgrRed + "dispatcher 未起動" + sgrFgReset
+	}
+	d := m.snap.Now.Sub(m.snap.DispatcherTick)
+	if d > dispatcherStale {
+		return sgrRed + fmt.Sprintf("dispatcher %s前 (止まっている?)", fmtDur(d)) + sgrFgReset
+	}
+	return fmt.Sprintf("dispatcher %s前", fmtDur(d))
+}
+
 // footGroup は下端に吸着させる群 (PG の一覧 + 最下段)。
 func (m *Model) footGroup() []string {
 	foot := m.panelLines(panelPG, m.pgBlock)
@@ -156,8 +194,7 @@ func (m *Model) gauge() string {
 	}
 	sep := fg(240) + " │ " + sgrFgReset
 	g := " " + strings.Join(parts, "  ") + sep + fmt.Sprintf("最古の待ち %s", fmtDur(oldest)) + sep +
-		fmt.Sprintf("PG %d/%d", len(m.snap.Consumers), m.snap.Limit) + sep +
-		fmt.Sprintf("dispatcher %s前", fmtDur(m.snap.Now.Sub(m.snap.DispatcherTick)))
+		m.pgGauge() + sep + m.dispatcherGauge()
 	if u := m.upgradeSummary(); u != "" {
 		g += sep + u
 	}

@@ -363,7 +363,7 @@ func (s *Sim) Snapshot() backend.Snapshot {
 			cons = append(cons, backend.Consumer{Session: c.Session, CardID: c.ID, Status: st})
 		}
 	}
-	return backend.Snapshot{Now: s.now, Cards: cards, Consumers: cons, Limit: s.limit, DispatcherTick: s.now, Violations: card.Check(cards)}
+	return backend.Snapshot{Now: s.now, Cards: cards, Consumers: cons, Limit: s.limit, LimitMax: s.limit, DispatcherTick: s.now, Violations: card.Check(cards)}
 }
 
 // Describe はヘッダーに出す説明 (backend.Describer)。

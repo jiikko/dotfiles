@@ -34,8 +34,10 @@ type Snapshot struct {
 	Now            time.Time
 	Cards          []card.Card
 	Consumers      []Consumer
-	Limit          int       // PG の同時実行数の上限
-	DispatcherTick time.Time // dispatcher (と watchdog) が最後に回った時刻。古ければ UI が警告する
+	Limit          int       // 今の PG の同時実行数 (利用枠の残量で上限より絞ることがある)
+	LimitMax       int       // 上限 (dispatcher の --limit)
+	LimitWhy       string    // Limit を絞った / 利用枠を読めない理由 (無ければ空)
+	DispatcherTick time.Time // dispatcher (と watchdog) が最後に回った時刻。zero なら 1 度も回っていない。古ければ UI が警告する
 	Violations     []card.Violation
 }
 

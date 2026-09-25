@@ -425,3 +425,20 @@ func TestAttachUsesReplacement(t *testing.T) {
 		t.Fatalf("差し替えた attach を使わない: %v %v", cmd, err)
 	}
 }
+
+// 上限と dispatcher の生存は、dispatcher が書く様子 (store.DispatcherStateFile) から出す。無ければ 1 度も回っていない (zero)。
+func TestSnapshotReadsDispatcherState(t *testing.T) {
+	b, _ := testBackend(t, sessions[:1], nil)
+	b.Refresh(context.Background())
+	if s := b.Poll(); !s.DispatcherTick.IsZero() || s.Limit != 0 {
+		t.Fatalf("dispatcher が回っていないのに生存・上限を出した: %v %d", s.DispatcherTick, s.Limit)
+	}
+	tick := time.Date(2026, 9, 25, 1, 2, 3, 0, time.UTC)
+	if err := store.SaveDispatcherState(b.dir, store.DispatcherState{Tick: tick, Limit: 3, Cap: 1, Why: "枠 85%"}); err != nil {
+		t.Fatal(err)
+	}
+	b.Refresh(context.Background())
+	if s := b.Poll(); !s.DispatcherTick.Equal(tick) || s.Limit != 1 || s.LimitMax != 3 || s.LimitWhy != "枠 85%" {
+		t.Fatalf("dispatcher の様子を出さない: %v %d/%d %q", s.DispatcherTick, s.Limit, s.LimitMax, s.LimitWhy)
+	}
+}

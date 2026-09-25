@@ -176,10 +176,14 @@ func (b *Backend) Refresh(ctx context.Context) {
 			cons = append(cons, backend.Consumer{Session: s.ID, CardID: c.ID, Status: s.Status, PID: s.PID})
 		}
 	}
+	ds, _, err := store.LoadDispatcherState(b.dir) // 無ければ zero (dispatcher が 1 度も回っていない)
+	if err != nil {
+		extra = append(extra, card.Violation{Reason: "dispatcher の様子を読めない: " + err.Error()})
+	}
 	pending, _ := filepath.Glob(filepath.Join(b.dir, store.InboxDir, "*.json"))
 	b.mu.Lock()
-	b.snap = backend.Snapshot{Now: now, Cards: cards, Consumers: cons, Limit: len(cons), DispatcherTick: now,
-		Violations: append(card.Check(cards), extra...)}
+	b.snap = backend.Snapshot{Now: now, Cards: cards, Consumers: cons, Limit: ds.Cap, LimitMax: ds.Limit, LimitWhy: ds.Why,
+		DispatcherTick: ds.Tick, Violations: append(card.Check(cards), extra...)}
 	b.pending, b.ready = len(pending), true
 	b.mu.Unlock()
 }
