@@ -126,6 +126,7 @@ worktree が要らない) は、別プロセスにする決定でもそのまま
     diff --stat の上限 (30 ファイル) / コメント 2 か所
   - 記録だけ (未確認リスク): 見張りの起こし直しの間に直った衝突は「消えた」を知らせない (知らせた物をメモリだけに持つ割り切り。残っている衝突はもう 1 度知らせる) /
     ctrl+c でプロセスグループに信号が届いたとき、dispatcher の ctx が取り消される前に見張りが抜けると「見張りが抜けた」が 1 行余分に出うる (推測。再現していない)
+- [x] `make test` / `make lint` 緑 (テストの係。lint の depguard で PG の worktree のパスの関数を dispatcher から `card.SessionName` / `card.WorktreePath` へ移した = 見張りは dispatcher を import しない)
 - [ ] 本番の dispatcher で、見張りが起き、衝突が出来事 (`pro-con log`) に出ることを確かめる
 - 未テスト: dispatcher を kill -9 したときに見張りが抜けること (パイプの EOF。起こし直しの係のテストは「止めるときに stdin を閉じる」まで) /
   `IsAncestor` で commit の無い・取り込み済みのカードを飛ばすこと (飛ばさなくても merge-tree は衝突なしを返すので、結果は変わらない。git の呼び出しを減らすだけ)
