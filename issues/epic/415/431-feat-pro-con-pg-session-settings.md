@@ -51,6 +51,24 @@ usage (input / cache_creation / cache_read) と、Stop hook が走ったか (tra
 - 次の手: **PG 用の設定ディレクトリ** (`CLAUDE_CONFIG_DIR`) を作り、PG に要るルールだけを link して起動する。ログインが要るので、
   人の操作を [433](433-human-login-pro-con-pg-config-dir.md) に切り出した。ログインの後に 4 行目を測り直す
 
+## 再計測 (2026-09-26 / Claude Code 2.1.282。`claude -p "/context"` はモデルを呼ばずに読み込まれる規約を列挙する = 枠を使わない)
+
+worktree `pc-c-031` から。「Memory files」は `/context` の見積もり:
+
+| 起動のしかた | Memory files | 載るもの |
+|---|---|---|
+| 何も付けない | 95.8k | `~/.claude/CLAUDE.md` + `_claude/rules/` の User 34 本 + project 3 本 + MEMORY.md |
+| `--setting-sources project,local` (今の PG) | 15.3k | `~/.claude/CLAUDE.md` (8.5k。**Project として**) + project 3 本 + MEMORY.md (1.2k) |
+| それに `--settings '{"claudeMdExcludes":["~/.claude/CLAUDE.md"],"autoMemoryEnabled":false}'` | 5.6k 未満 | project 3 本だけ |
+| `--settings` で `disableAllHooks` + `claudeMdExcludes` に「3 本以外の `_claude/rules/*.md`」(user は読む) | 22.5k | 指名した User 3 本 + project 3 本 (Skills / Custom agents も user の分が戻る) |
+
+- 🚨 **2.1.282 では `--setting-sources project,local` で `~/.claude/rules/` は外れている**。上の「計測」節 (2.1.281) の「規約は外れない」と食い違う。
+  版の差か `-p` と `--bg` の差かは未確認。ただし pro-con が `--bg` で起こした PG (C-031) の context にも User の rules は載っていない
+- `~/.claude/CLAUDE.md` が残るのは、祖先 `/Users/koji` の `.claude/CLAUDE.md` として Project 扱いで拾われるため (見込み。`/context` の Type が Project)
+- `claudeMdExcludes` (picomatch の glob / 絶対パス。User・Project・Local に効く) と `autoMemoryEnabled` は `--settings` (flag) からも効く。
+  **`CLAUDE_CONFIG_DIR` もログイン (433) も要らずに規約を絞れる**。460 の「projects の置き場がずれる」問題も起きない
+- `disableAllHooks` を `--settings` で渡したときに hook が本当に止まるかは未確認 (`/context` に hook は出ない)
+
 ## 🚨 前提 (2026-09-25 の監査 460 で分かったこと)
 
 - PG 用の `CLAUDE_CONFIG_DIR` を渡すと、PG の transcript は `$CLAUDE_CONFIG_DIR/projects` に書かれるが、pro-con は `~/.claude/projects` に決め打ちで読む
