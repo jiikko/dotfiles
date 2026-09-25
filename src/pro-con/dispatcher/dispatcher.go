@@ -714,7 +714,7 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		if errors.Is(err, errWait) {
 			continue
 		}
-		if nh := needsHuman(""); errors.As(err, &nh) {
+		if nh := needsHumanError(""); errors.As(err, &nh) {
 			why := fmt.Sprintf("%sしない: %v", how, err)
 			if err := d.update(c.ID, func(cc *card.Card) { askAfterCrashes(cc, now, why) }); err != nil {
 				return notes, err
@@ -854,12 +854,12 @@ func (d *Dispatcher) prepare(c card.Card, now time.Time, ss []agents.Session, re
 	return "起動", func(ctx context.Context) (string, error) { return d.Launch.Start(ctx, path, sessionName(c), Prompt(c)) }, nil
 }
 
-// needsHuman は、起動・再開の前提が崩れていてやり直しても直らないので、人の番へ回す失敗 (文は理由)。
-type needsHuman string
+// needsHumanError は、起動・再開の前提が崩れていてやり直しても直らないので、人の番へ回す失敗 (文は理由)。
+type needsHumanError string
 
-func (e needsHuman) Error() string { return string(e) }
+func (e needsHumanError) Error() string { return string(e) }
 
-// leftoverWorktree は、初めて起動するカードの worktree が既に在れば needsHuman を返す (465)。claude -w は同じ名前の worktree を
+// leftoverWorktree は、初めて起動するカードの worktree が既に在れば needsHumanError を返す (465)。claude -w は同じ名前の worktree を
 // 黙って使うので、状態の置き場を作り直して C-001 から振り直したカードが、前の世代のブランチとコミットの上で作業を始める
 // (PG の worktree は消さない。447)。確かめられないときは起動しない (次の Tick で見直す)
 func leftoverWorktree(wt string) error {
@@ -870,7 +870,7 @@ func leftoverWorktree(wt string) error {
 	case err != nil:
 		return fmt.Errorf("worktree %s が在るかを確かめられない: %w", wt, err)
 	}
-	return needsHuman(fmt.Sprintf("worktree %s が既に在る (前の状態の置き場で同じカード ID が使った worktree かもしれない。claude -w はそのブランチの上で黙って作業を始める)。"+
+	return needsHumanError(fmt.Sprintf("worktree %s が既に在る (前の状態の置き場で同じカード ID が使った worktree かもしれない。claude -w はそのブランチの上で黙って作業を始める)。"+
 		"中身を確かめて片付けてから回答すると起動する", wt))
 }
 
