@@ -78,13 +78,20 @@ func TestTakeResumeEnvUnsets(t *testing.T) {
 	}
 }
 
-// ライブアップグレードで新版に渡す引数は --mock を付け直す (付け忘れると、模擬で使っていたのに本物で起動し直す)。
-func TestExecArgsKeepsMock(t *testing.T) {
-	if got := strings.Join(execArgs(true, nil), " "); got != "--mock" {
-		t.Fatalf("模擬の引数: %q", got)
+// ライブアップグレードで新版に渡す引数は --mock / --e2e <置き場> を付け直す (付け忘れると、模擬や e2e で使っていたのに本物で起動し直す)。
+func TestParseModeKeepsModeArgs(t *testing.T) {
+	if mock, _, mode, rest, err := parseMode([]string{"--mock", "x"}); !mock || strings.Join(mode, " ") != "--mock" || strings.Join(rest, " ") != "x" || err != nil {
+		t.Fatalf("模擬の引数: mock=%v mode=%q rest=%q err=%v", mock, mode, rest, err)
 	}
-	if got := execArgs(false, nil); len(got) != 0 {
-		t.Fatalf("本物の引数に余計なものが付いた: %q", got)
+	_, e2e, mode, _, err := parseMode([]string{"--e2e", "/tmp/e2e-root"})
+	if e2e == nil || e2e.Root != "/tmp/e2e-root" || strings.Join(mode, " ") != "--e2e /tmp/e2e-root" || err != nil {
+		t.Fatalf("e2e の引数: %+v mode=%q err=%v", e2e, mode, err)
+	}
+	if _, _, _, _, err := parseMode([]string{"--e2e"}); err == nil {
+		t.Fatal("置き場の無い --e2e を受けた")
+	}
+	if _, e2e, mode, _, _ := parseMode(nil); e2e != nil || len(mode) != 0 {
+		t.Fatalf("本物の引数に余計なものが付いた: %q", mode)
 	}
 }
 

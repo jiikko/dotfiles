@@ -309,6 +309,10 @@ func transition(c *card.Card, r Request, now time.Time) error {
 			return fmt.Errorf("依頼の列に無い (今は %s)", c.State.Label())
 		}
 		c.Issues = append(c.Issues, r.Issues...)
+		if c.Repo == "" && len(r.Issues) > 0 {
+			// global で受けた依頼は、PM が分けた issue の repo で作業する (付けないと、daemon が起動先を決められずに止まる)
+			c.Repo = r.Issues[0].Repo
+		}
 		move(card.Planned, "タスクに分けてキューに積んだ")
 	case "ask": // PG が質問を書いて turn を終えた
 		if c.State != card.Running {

@@ -277,3 +277,21 @@ func TestRunRequest(t *testing.T) {
 		t.Fatalf("頼みを受けない / 2 本目を受けた: %+v Run=%q wait=%v", res, c.Run, c.Wait.Kind)
 	}
 }
+
+// global で受けた依頼 (repo 無し) は、PM が分けた issue の repo で作業する。repo のある依頼は変えない。
+func TestPlanSetsRepoFromIssue(t *testing.T) {
+	dir := t.TempDir()
+	submit(t, dir, Request{Kind: "add", Title: "global", At: t0})
+	submit(t, dir, Request{Kind: "add", Title: "scoped", Repo: "dotfiles", At: t0.Add(time.Second)})
+	applyAll(t, dir)
+	for _, id := range []string{"C-001", "C-002"} {
+		submit(t, dir, Request{Kind: "plan", CardID: id, Issues: []card.IssueRef{{Repo: "glogx", Number: 3, Status: "open"}}})
+	}
+	applyAll(t, dir)
+	if c := cardOf(t, dir, "C-001"); c.Repo != "glogx" {
+		t.Fatalf("global の依頼に issue の repo を付けない: %q", c.Repo)
+	}
+	if c := cardOf(t, dir, "C-002"); c.Repo != "dotfiles" {
+		t.Fatalf("repo のある依頼の repo を変えた: %q", c.Repo)
+	}
+}

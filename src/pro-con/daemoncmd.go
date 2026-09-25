@@ -27,6 +27,7 @@ func runDaemon(args []string, dir, projects string, repos map[string]string, std
 	limit := fs.Int("limit", 2, "同時に動かす PG の上限 (415 の決定事項: 2 から始める)")
 	once := fs.Bool("once", false, "1 回だけ回して終わる")
 	stopAll := fs.Bool("stop", false, "動いている daemon と、pro-con が起動した PG を止める (次に daemon を起動したら続きから再開する)")
+	e2eRoot := fs.String("e2e", "", "e2e モードの置き場 (PG は台本どおりに動く偽物。claude を起動しない。pro-con e2e が使う)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -34,8 +35,17 @@ func runDaemon(args []string, dir, projects string, repos map[string]string, std
 		_, _ = fmt.Fprintln(stderr, "pro-con daemon: --limit は 1 以上")
 		return 2
 	}
+	var e2e *daemon.E2E
+	if *e2eRoot != "" {
+		e := daemon.E2E{Root: *e2eRoot}
+		e2e, dir, repos = &e, e.StateDir(), map[string]string{daemon.E2ERepo: e.RepoDir()}
+		if err := os.MkdirAll(e.RepoDir(), 0o700); err != nil {
+			_, _ = fmt.Fprintln(stderr, "pro-con daemon:", err)
+			return 1
+		}
+	}
 	if *stopAll {
-		if err := stopDaemon(context.Background(), dir, projects, repos, stdout); err != nil {
+		if err := stopDaemon(context.Background(), dir, projects, repos, e2e, stdout); err != nil {
 			_, _ = fmt.Fprintln(stderr, "pro-con daemon --stop:", err)
 			return 1
 		}
@@ -48,12 +58,14 @@ func runDaemon(args []string, dir, projects string, repos map[string]string, std
 	}
 	defer unlock()
 	_ = daemon.StopRequested(dir) // 前の --stop が daemon の居ない間に置いた印は捨てる (起動した途端に止まらないように)
-	d := newExecDaemon(dir, projects, repos, *limit)
+	d := newDaemonFor(dir, projects, repos, *limit, e2e)
 	defer d.CancelRun()                                                                                    // どの出口 (Tick のエラー・SIGTERM) でも、テストの係の実行を残して抜けない
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP) // SIGHUP: 端末・tmux のペインを閉じた (既定の動作で死ぬと実行を残す)
 	defer stop()
-	d.Publish, d.Notify = daemon.TmuxPublish(ctx), daemon.MacNotify(ctx)
-	defer func() { _ = daemon.TmuxPublish(context.Background())("") }() // 止まるときに件数を消す (古い件数を出し続けない)
+	if e2e == nil { // e2e モードは本物の tmux の件数・macOS の通知に触らない
+		d.Publish, d.Notify = daemon.TmuxPublish(ctx), daemon.MacNotify(ctx)
+		defer func() { _ = daemon.TmuxPublish(context.Background())("") }() // 止まるときに件数を消す (古い件数を出し続けない)
+	}
 	for {
 		if daemon.StopRequested(dir) {
 			notes, err := d.Shutdown(ctx)
@@ -90,7 +102,7 @@ func runDaemon(args []string, dir, projects string, repos map[string]string, std
 const stopTimeout = 120 * time.Second
 
 // stopDaemon は daemon と PG を止める。daemon が動いていれば止めるよう頼んで待ち、動いていなければ自分で daemon の役を取って止める。
-func stopDaemon(ctx context.Context, dir, projects string, repos map[string]string, stdout io.Writer) error {
+func stopDaemon(ctx context.Context, dir, projects string, repos map[string]string, e2e *daemon.E2E, stdout io.Writer) error {
 	running, err := daemon.RequestStop(ctx, dir, stopTimeout)
 	if running || err != nil {
 		return err
@@ -101,7 +113,7 @@ func stopDaemon(ctx context.Context, dir, projects string, repos map[string]stri
 	}
 	defer unlock()
 	_ = daemon.StopRequested(dir)
-	d := newExecDaemon(dir, projects, repos, 1)
+	d := newDaemonFor(dir, projects, repos, 1, e2e)
 	notes, err := d.Shutdown(ctx)
 	for _, n := range notes {
 		_, _ = fmt.Fprintln(stdout, n)
@@ -110,7 +122,12 @@ func stopDaemon(ctx context.Context, dir, projects string, repos map[string]stri
 	return err
 }
 
-func newExecDaemon(dir, projects string, repos map[string]string, limit int) *daemon.Daemon {
+// newDaemonFor は daemon を組む。e2e が nil なら本物 (claude を起動する)、あれば偽の PG と偽の一覧 (claude を起動しない)。
+func newDaemonFor(dir, projects string, repos map[string]string, limit int, e2e *daemon.E2E) *daemon.Daemon {
+	if e2e != nil {
+		return &daemon.Daemon{Dir: dir, Limit: limit, Repos: repos, Launch: e2e.Launcher(), List: e2e.List, Now: time.Now,
+			Runner: daemon.ExecRunner{}, FakePM: e2e.FakePM} // テストの係は本物のシェル (偽の worktree で走る)。失敗の要約 (haiku) はしない
+	}
 	return &daemon.Daemon{Dir: dir, Limit: limit, Repos: repos, Launch: daemon.ExecLauncher{},
 		Runner: daemon.ExecRunner{}, Summarize: daemon.HaikuSummarize(dir),
 		List: func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) }, Now: time.Now,

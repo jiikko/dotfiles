@@ -107,6 +107,13 @@
     箱に置いたときの文は「受け付けた (daemon が適用するとカードに出る)」
   - 変異 8 本が red (quit 以外でも閉じる / Q で開かない / 入力の途中の ctrl+c で書きかけを消す / q で閉じる /
     通知を消さない / 数え直さない / 起動時の知らせを時間で消す / daemon が居ても起こす)
+- [x] e2e モード (2026-09-25 にユーザーが依頼。「本物の daemon + 偽の PG」を選んだ): `pro-con --e2e <dir>` と、Claude が操作する口 `pro-con e2e`
+  (start / keys / text / screen / wait / stop / scenario。画面は置き場ごとの隔離した tmux サーバ)。PG と PM は台本どおりの偽物 (daemon/e2e.go)。
+  `scenario` が依頼 → 偽の PM が分解 → 偽の PG が質問 → 画面で回答 → 再開 → テストの係 (`echo e2e-ok`) → 再開 → レビュー → Q → quit を約 30 秒で通す
+  (隔離サーバ・socket・プロセスは残らない)。tests/pro-con/test_e2e_scenario.sh が make test の中で回す
+  - 作って見つかった本物のモードの穴: global で受けた依頼は repo が無く、PM が `card plan --issue` で分けても repo が付かないので、
+    daemon が起動先を決められずに止まっていた → plan のとき repo の無いカードには最初の issue の repo を付ける
+  - 変異: 偽の PM を外す / plan で repo を付けない、の 2 本で通しのテストが red。偽の PG の台本と偽の PM の単体テストもある
 - [ ] 段階 5: 自動スケーリング (滞留と枠の残量で起動数を決める)
 
 ## 段階 3 の小分け (2026-09-24 夜に決めた。上から順に進め、済んだら [x] と commit を書く)

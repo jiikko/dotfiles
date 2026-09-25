@@ -75,6 +75,9 @@ func New(repos []backend.Repo, home, stateDir string) *Backend {
 	}
 }
 
+// SetList は session の一覧の読み方を差し替える (e2e モードは偽の一覧を読む)。Start の前に呼ぶ。
+func (b *Backend) SetList(f func(context.Context) ([]agents.Session, error)) { b.list = f }
+
 // SetStopper は終了のときの停止をつなぐ。
 func (b *Backend) SetStopper(f func(context.Context) error) { b.stopAll = f }
 

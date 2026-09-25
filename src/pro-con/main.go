@@ -38,6 +38,25 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
+// parseMode は先頭の起動モードの引数 (--mock / --e2e <置き場>) を読む。modeArgs はライブアップグレードで新版に付け直す引数
+// (付け忘れると、模擬や e2e で使っていたのに本物で起動し直す)。
+func parseMode(args []string) (mock bool, e2e *daemon.E2E, modeArgs, rest []string, err error) {
+	switch {
+	case len(args) > 0 && args[0] == "--mock":
+		return true, nil, []string{"--mock"}, args[1:], nil
+	case len(args) > 0 && args[0] == "--e2e":
+		if len(args) < 2 {
+			return false, nil, nil, nil, errors.New("--e2e には置き場のディレクトリが要る (pro-con --e2e <dir>)")
+		}
+		root, err := filepath.Abs(args[1])
+		if err != nil {
+			return false, nil, nil, nil, err
+		}
+		return false, &daemon.E2E{Root: root}, []string{"--e2e", root}, args[2:], nil
+	}
+	return false, nil, nil, args, nil
+}
+
 // stateful は、ライブアップグレードで状態を引き継ぐ backend (模擬だけ。本物の読み取り専用は持たない)。
 type stateful interface {
 	Save() ([]byte, error)
@@ -45,10 +64,10 @@ type stateful interface {
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	mock := false
-	if len(args) > 0 && args[0] == "--mock" {
-		mock = true
-		args = args[1:]
+	mock, e2e, modeArgs, args, err := parseMode(args)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "pro-con:", err)
+		return 2
 	}
 	if len(args) > 0 {
 		switch args[0] {
@@ -58,6 +77,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				return 2
 			}
 			return fakeAttach(args[1], stdin, stdout)
+		case "e2e": // Claude が e2e モードの画面を操作する口 (e2ecmd.go)
+			return runE2E(args[1:], stdout, stderr)
 		case "card": // PM / PG が使うカードの操作 (受付の箱に置くだけ。cardcmd.go)
 			home, err := os.UserHomeDir()
 			if err != nil {
@@ -107,6 +128,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	for i, r := range repos {
 		scopes[i] = backend.Repo{Name: r.Name, Path: r.Path}
 	}
+	if e2e != nil { // e2e モードの repo は置き場の下の偽の repo だけ (本物の repo に触らない)
+		scopes, warnings = []backend.Repo{{Name: daemon.E2ERepo, Path: e2e.RepoDir()}}, nil
+	}
 	var notes []string // 起動時に画面へ出す知らせ
 	// 模擬と本物で状態ファイルの置き場所を分ける (模擬のカードが本物の記録に混ざらないように。issue 424)
 	var be backend.Backend
@@ -115,10 +139,17 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		be = fake.New(time.Now().Truncate(time.Minute)) // 模擬時間の起点は今 (時刻の表示が今に近い方が見本として読みやすい)
 		dir = filepath.Join(stateDir(home), "mock")
 	} else {
+		var daemonArgs []string // daemon の子プロセスに渡す引数 (e2e モードなら --e2e <置き場>)
+		if e2e != nil {
+			dir, daemonArgs = e2e.StateDir(), modeArgs
+		}
 		lb := live.New(scopes, home, dir)
-		lb.SetStopper(func(ctx context.Context) error { return stopInChild(ctx, dir) })
+		if e2e != nil {
+			lb.SetList(e2e.List) // 偽の session の一覧 (本物の claude agents を読まない)
+		}
+		lb.SetStopper(func(ctx context.Context) error { return stopInChild(ctx, dir, daemonArgs) })
 		// 画面を開いたら daemon も立てる (閉じると止める。2026-09-25 にユーザーが決めた形。415 の「TUI と常駐プロセス」)
-		if started, err := startDaemonIfIdle(dir, spawnDaemon); err != nil {
+		if started, err := startDaemonIfIdle(dir, func(dir string) error { return spawnDaemon(dir, daemonArgs) }); err != nil {
 			notes = append(notes, "daemon を起動できない: "+err.Error()+" (手で起動する: pro-con daemon)")
 		} else if started {
 			notes = append(notes, "daemon を起動した (ログ: "+filepath.Join(dir, "daemon.log")+")")
@@ -179,7 +210,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 			return 0
 		}
-		p, err := switchToNew(m, be, execArgs(mock, args), dir, resumePath)
+		p, err := switchToNew(m, be, append(append([]string(nil), modeArgs...), args...), dir, resumePath)
 		resumePath = p
 		m.UpgradeFailed(err)
 	}
@@ -201,7 +232,7 @@ func startDaemonIfIdle(dir string, spawn func(dir string) error) (bool, error) {
 
 // spawnDaemon は `pro-con daemon` を画面とは別のプロセスグループで起動する (画面を閉じても、ctrl+c が届いても道連れにしない。
 // 止めるのは終了のときの `daemon --stop`)。出力は状態の置き場の daemon.log へ足す (画面より長く生きるのでパイプにしない)。
-func spawnDaemon(dir string) error {
+func spawnDaemon(dir string, extra []string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
@@ -211,7 +242,7 @@ func spawnDaemon(dir string) error {
 		return err
 	}
 	defer func() { _ = f.Close() }()
-	cmd := exec.Command(exe, "daemon")
+	cmd := exec.Command(exe, append([]string{"daemon"}, extra...)...)
 	cmd.Stdout, cmd.Stderr = f, f
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
@@ -223,7 +254,7 @@ func spawnDaemon(dir string) error {
 // stopInChild は `pro-con daemon --stop` を別のプロセスで走らせて待つ。画面を ctrl+c で閉じても (待たずに閉じても)、
 // 止める処理は子が最後まで続ける (画面のプロセスの中で止めると、閉じた瞬間に途中で切れる)。子の出力は状態の置き場の stop.log へ
 // (画面が先に閉じるとパイプが切れて子が書けなくなるので、パイプにしない)。
-func stopInChild(ctx context.Context, dir string) error {
+func stopInChild(ctx context.Context, dir string, extra []string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
@@ -233,7 +264,7 @@ func stopInChild(ctx context.Context, dir string) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(exe, "daemon", "--stop")
+	cmd := exec.Command(exe, append([]string{"daemon", "--stop"}, extra...)...)
 	cmd.Stdout, cmd.Stderr = f, f
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // 端末の割り込みを子へ届けない
 	if err := cmd.Start(); err != nil {
@@ -282,14 +313,6 @@ func switchToNew(m *ui.Model, be backend.Backend, args []string, dir, resume str
 		return resume, err
 	}
 	return path, nil
-}
-
-// execArgs は新版に渡す引数 (--mock を付け直す。付け忘れると、模擬で使っていたのに本物で起動し直す)。
-func execArgs(mock bool, args []string) []string {
-	if mock {
-		return append([]string{"--mock"}, args...)
-	}
-	return args
 }
 
 // wrapperPath は案内に出す起動のコマンド (bin/pro-con の絶対パス。見つからなければ "bin/pro-con")。

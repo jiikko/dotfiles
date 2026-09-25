@@ -12,6 +12,8 @@ bin/pro-con daemon   # (画面を開くと、居なければ画面が起こす) 
 bin/pro-con daemon --stop  # daemon と、pro-con が起動した PG を止める。作業中のカードは次に daemon を起動したら続きから再開する (画面の終了も同じことをする)
 bin/pro-con card …   # PM / PG が使うカードの操作 (add / plan / ask / answer / review / close)。受付の箱に置くだけで、適用は daemon (issue 427)
 bin/pro-con card guide  # PM の session に渡す指示書 (src/pro-con/pm-guide.md) を出す
+bin/pro-con --e2e <dir>  # e2e モード: 画面・daemon・受付の箱・記録は本物、PG と PM だけ台本どおりの偽物 (claude を起動しない。利用枠を使わない)
+bin/pro-con e2e <start|keys|text|screen|wait|stop|scenario> <dir> ...  # Claude が e2e モードの画面を操作する口 (隔離した tmux サーバで動かす)
 bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンドを頼む。daemon が PG の worktree で 1 本ずつ順に実行し、結果を渡して PG を再開する (失敗は haiku が要約)
                                          # 🚨 PG に `pro-con card` を許すことは、その worktree で任意のコマンドを PG の permission の外で (daemon の権限で) 走らせるのを許すのと同じ。守っているのは「頼んだ場所がそのカードの PG の worktree」だけ
 ```
@@ -151,3 +153,26 @@ issue の読み方 (状態 = ファイルの位置、`epic/<name>/` の 2 段、
 - **カードは固有の地の色を持つ** (`ui/style.go` の `cardColor`。ID から決まるので列を移っても同じ色)。選択中は左右の両端に現在地色の ▌ ▐ を立て、タイトルを太字 + 下線にする (地は塗り替えない。3 案から a で合意)
 - 🚨 **移動中も他のカードの位置と枠の高さは変えない**。列の中は「その列に入った順」に並べ (移ってきたカードは末尾に着地する)、
   枠の高さは画面の残りで固定する。`TestOtherCardsStayPutDuringMotion` が検査する
+
+## e2e モード (Claude が画面を動かして確かめる)
+
+画面・daemon・受付の箱・記録は本物のまま、PG と PM だけを台本どおりの偽物にする (`src/pro-con/daemon/e2e.go`)。claude は起動しないので利用枠を使わない。
+置き場 `<dir>` の下に閉じる (`state/` = 状態、`repo/` = 偽の repo と PG の worktree)。本物の記録・tmux の件数・macOS の通知には触らない。
+
+- 偽の PM: 依頼の列のカードを、その場で分解済みにする (e2e#1)
+- 偽の PG の台本: 起動されたら質問する → 回答で再開されたらテストの係に `echo e2e-ok` を頼む → その結果で再開されたらレビューに出す
+
+操作 (画面は置き場ごとの隔離した tmux サーバ `-L pro-con-e2e-<hash>` で動く。ユーザーの tmux の設定は読まない):
+
+```sh
+bin/pro-con e2e scenario ./tmp/e2e      # 依頼 → 質問 → 回答 → テストの係 → レビュー → Q → quit を通しで確かめる (約 30 秒)
+bin/pro-con e2e start ./tmp/e2e         # 手で動かすとき: 起動
+bin/pro-con e2e keys ./tmp/e2e n        # tmux のキー名で送る (Enter / Escape / Q / r / l ...)
+bin/pro-con e2e text ./tmp/e2e "依頼の文"
+bin/pro-con e2e wait ./tmp/e2e "質問待ち (1)" 30
+bin/pro-con e2e screen ./tmp/e2e        # 画面の文字
+bin/pro-con e2e stop ./tmp/e2e          # Q → quit で閉じる (daemon と偽の PG も止まる)
+```
+
+`tests/pro-con/test_e2e_scenario.sh` が make test の中で `scenario` を回す (tmux が無ければ skip)。
+

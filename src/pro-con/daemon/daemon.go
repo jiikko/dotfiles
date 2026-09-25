@@ -76,6 +76,9 @@ type Daemon struct {
 	Summarize func(ctx context.Context, tail string) (string, error)
 	active    *runJob // 実行中の 1 本 (無ければ nil)
 
+	// FakePM は e2e モードの偽の PM (Tick の頭で呼ぶ)。本物のモードでは nil
+	FakePM func() error
+
 	// Sleep は終了のときの待ち (Shutdown)。nil なら time.Sleep (テストで差し替える)
 	Sleep func(time.Duration)
 	// StallAfter は watchdog が「進捗なし」を停滞とみなすまでの通常の時間 (コマンドの実行中は card.StallThreshold が延ばす)。0 なら既定値
@@ -99,6 +102,11 @@ const defaultStallAfter = 15 * time.Minute
 func (d *Daemon) Tick(ctx context.Context) ([]string, error) {
 	now := d.Now()
 	var notes []string
+	if d.FakePM != nil {
+		if err := d.FakePM(); err != nil {
+			notes = append(notes, "e2e の偽の PM: "+err.Error())
+		}
+	}
 	res, err := store.Apply(d.Dir, now)
 	if err != nil {
 		return nil, err
