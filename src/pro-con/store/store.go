@@ -608,8 +608,13 @@ func transition(c *card.Card, r Request, now time.Time) error {
 			if strings.TrimSpace(e.Text) == "" {
 				return errors.New("空の指示がある")
 			}
+			if e.At.IsZero() { // 時刻の位置へ差し込むので、時刻の無い指示は履歴の先頭へ行ってしまう
+				return errors.New("時刻の無い指示がある")
+			}
+		}
+		for _, e := range r.Said {
 			// 原文のまま残す (要約・切り詰めをしない)。時刻は打った時刻 (適用した時刻ではない)
-			c.History = append(c.History, card.Event{At: e.At, Text: AttachPrefix + e.Text})
+			c.History = insertByTime(c.History, card.Event{At: e.At, Text: AttachPrefix + e.Text})
 		}
 	case KindAttachment: // PG が作業の証拠を付けた (issue 453)。ファイルは Apply が移す。状態は変えない
 		if c.State == card.Done {
@@ -702,6 +707,18 @@ func firstNonEmpty(xs ...string) string {
 		}
 	}
 	return ""
+}
+
+// insertByTime は e を、時刻が e より後の出来事の直前へ差し込む (同じ時刻なら後ろへ。issue 489)。
+// 履歴は起きた順の記録で、attach の間の指示だけが過去の時刻 (打った時刻) で後から届く。末尾へ足すと、その間に足した
+// 出来事 (テストの係の結果・質問) より後ろに並び、表示の順と時刻が食い違う。後ろから探すのは、ふつうは末尾の数件で止まるため。
+// 🚨 apply はカードを浅くコピーするので、h の配列は適用前の state と共有している。Clip して、ずらす先を新しい配列にする
+func insertByTime(h []card.Event, e card.Event) []card.Event {
+	i := len(h)
+	for i > 0 && h[i-1].At.After(e.At) {
+		i--
+	}
+	return slices.Insert(slices.Clip(h), i, e)
 }
 
 func clip(s string, n int) string {
