@@ -56,12 +56,13 @@ func Move(cards []Card, id, repo string, delta int) (string, error) {
 		}
 	}
 	slices.SortStableFunc(lane, func(a, b int) int { return LaneCompare(cards[a], cards[b]) })
-	// 同じ鍵 (同じ Tick で列に入ったカード) を入れ替えても並びが変わらないので、並びを保ったまま鍵をばらす
+	// 同じ鍵 (同じ Tick で列に入ったカード) を入れ替えても並びが変わらないので、並びを保ったまま鍵をばらす。
+	// 🚨 前へ (小さい側へ) ずらす: 後ろへずらすと鍵が今より大きくなり、同じ時刻に後から列へ入ったカードが途中に割り込む
 	keys := make([]time.Time, len(lane))
-	for k, j := range lane {
-		keys[k] = cards[j].LaneKey()
-		if k > 0 && !keys[k].After(keys[k-1]) {
-			keys[k] = keys[k-1].Add(time.Nanosecond)
+	for k := len(lane) - 1; k >= 0; k-- {
+		keys[k] = cards[lane[k]].LaneKey()
+		if k < len(lane)-1 && !keys[k].Before(keys[k+1]) {
+			keys[k] = keys[k+1].Add(-time.Nanosecond)
 		}
 	}
 	var view []int // lane の中の位置 (repo の中のカードだけ)

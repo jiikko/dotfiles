@@ -76,6 +76,7 @@ type Request struct {
 	Order    card.OrderKind  `json:"order,omitempty"`    // order: 追記 / 方針変更 (別件は add + ParentID)
 	Text     string          `json:"text,omitempty"`     // order: 追加オーダーの本文 (書いたまま)
 	Cards    []string        `json:"cards,omitempty"`    // clear: 片付ける完了のカード (画面が見ていたもの。適用までに完了になったカードを巻き込まない)
+	Seen     time.Time       `json:"seen,omitzero"`      // move: 頼んだ側が見ていたカードの Since (違えば列を移った後なので動かさない。空なら見ない)
 	Delta    int             `json:"delta,omitempty"`    // move: -1 = 1 つ上 / +1 = 1 つ下と入れ替える (Repo が空でなければ、その repo のカードの中の隣。issue 470)
 	At       time.Time       `json:"at"`
 }
@@ -340,6 +341,9 @@ func apply(st State, r Request, now time.Time) (State, string, string, error) {
 			return st, r.CardID, "", fmt.Errorf("move: カード %q が無い", r.CardID)
 		}
 		id = r.CardID
+		if !r.Seen.IsZero() && !r.Seen.Equal(next.Cards[i].Since) { // 見ていない列で入れ替えない (回答で分解済みへ移った・起動した後)
+			return st, id, "", fmt.Errorf("move: 押した後に %s の列へ移ったので動かさない", next.Cards[i].State.Label())
+		}
 		other, err := card.Move(next.Cards, r.CardID, r.Repo, r.Delta)
 		if err != nil {
 			return st, id, "", fmt.Errorf("move: %w", err)

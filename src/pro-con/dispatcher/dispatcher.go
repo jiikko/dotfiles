@@ -666,10 +666,8 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 	}
 	// 回答を受けた再開の初回を新しい起動より先に (途中まで進んだ作業と、その worktree を待たせない。枠で 1 本に絞ったときに効く)。
 	// その中はレーンの並び (上ほど優先。人が入れ替えられる = issue 470。入れ替えていなければ列に入った順)。
-	// 🚨 印の残った再試行は先にしない: 失敗し続ける再開が毎回先頭に並び、1 本の枠を永久に占めて他のカードを起動させなくなる
-	first := func(c card.Card) bool { return c.Resumes() && c.Launching == "" }
 	slices.SortStableFunc(queue, func(a, b card.Card) int {
-		if ra, rb := first(a), first(b); ra != rb {
+		if ra, rb := a.ResumesFirst(), b.ResumesFirst(); ra != rb {
 			if ra {
 				return -1
 			}

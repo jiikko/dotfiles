@@ -587,7 +587,8 @@ func (m *Model) moveCard(delta int) tea.Cmd {
 		}
 		return m.startBump(0, delta)
 	}
-	if res, err := m.be.Apply(backend.MoveCard{CardID: m.selected, Repo: m.tab, Delta: delta}); err != nil {
+	c := m.columns()[col][row]
+	if res, err := m.be.Apply(backend.MoveCard{CardID: c.ID, Repo: m.tab, Delta: delta, Seen: c.Since}); err != nil {
 		m.fail("失敗: " + err.Error())
 	} else if res != "" {
 		m.done(res)

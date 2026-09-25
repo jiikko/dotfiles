@@ -81,3 +81,16 @@ func TestRankDropsOnLaneChange(t *testing.T) {
 		t.Fatalf("移った先では末尾に着くはず: %v", got)
 	}
 }
+
+// 同じ鍵をばらしても、同じ時刻に後から列へ入ったカードが入れ替えたカードの間に割り込まない (ばらすのは前へ)。
+func TestMoveKeepsLaterArrivalsBelow(t *testing.T) {
+	t0 := time.Date(2026, 9, 26, 1, 0, 0, 0, time.UTC)
+	cs := []Card{{ID: "C-005", State: Planned, Since: t0}, {ID: "C-006", State: Planned, Since: t0}}
+	if _, err := Move(cs, "C-006", "", -1); err != nil {
+		t.Fatal(err)
+	}
+	cs = append(cs, Card{ID: "C-007", State: Planned, Since: t0}) // 同じ Apply (同じ now) で後から積まれた
+	if got := lane(cs, Planned, ""); !slices.Equal(got, []string{"C-006", "C-005", "C-007"}) {
+		t.Fatalf("後から来たカードは末尾のはず: %v", got)
+	}
+}

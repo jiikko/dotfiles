@@ -195,6 +195,7 @@ type MoveCard struct {
 	CardID string
 	Repo   string
 	Delta  int
+	Seen   time.Time // 画面が見ていたカードの Since。適用までに列を移っていたら動かさない (見ていない列で入れ替えない)
 }
 
 func (MoveCard) isCommand()   {}

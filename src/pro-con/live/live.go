@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -422,7 +423,7 @@ func (b *Backend) Apply(cmd backend.Command) (string, error) {
 	case backend.DeleteCard:
 		r = store.Request{Kind: "delete", CardID: c.CardID, From: firstNonEmpty(c.From, "人間")}
 	case backend.MoveCard:
-		r = store.Request{Kind: "move", CardID: c.CardID, Repo: c.Repo, Delta: c.Delta}
+		r = store.Request{Kind: "move", CardID: c.CardID, Repo: c.Repo, Delta: c.Delta, Seen: c.Seen}
 		done = "" // 動いたカードそのものが知らせ (押すたびに通知を重ねない)
 	case backend.AddOrder:
 		if strings.TrimSpace(c.Text) == "" {
@@ -466,10 +467,29 @@ func (b *Backend) Apply(cmd backend.Command) (string, error) {
 	if _, err := store.Submit(b.dir, r); err != nil {
 		return "", err
 	}
+	if r.Kind == "move" {
+		b.moveAhead(r)
+	}
 	if r.Kind == "delete" {
 		return r.CardID + " の削除を受け付けた (依頼の列ならすぐ、ほかは PG の session を止めてから消える)", nil
 	}
 	return done, nil
+}
+
+// moveAhead は箱に置いた並べ替えを、読んだ記録 (画面が見ている並び) にも先に当てる。dispatcher の適用 (約 130 ms) を待つ間に
+// 続けて押したキーが、古い並びの端の判定で断られたり、同じ隣を指したりしないように (押した回数だけ動く)。
+// 正本は dispatcher が書く記録で、次の読み直しで置き換わる。🚨 当てられなくても (端・列を移った) 何もしない: 判定は dispatcher が下す
+func (b *Backend) moveAhead(r store.Request) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	i := slices.IndexFunc(b.snap.Cards, func(c card.Card) bool { return c.ID == r.CardID })
+	if i < 0 || (!r.Seen.IsZero() && !r.Seen.Equal(b.snap.Cards[i].Since)) {
+		return
+	}
+	cards := slices.Clone(b.snap.Cards) // Snapshot で渡した slice を書き換えない
+	if _, err := card.Move(cards, r.CardID, r.Repo, r.Delta); err == nil {
+		b.snap.Cards = cards
+	}
 }
 
 // card は最後に読んだ記録のカード。

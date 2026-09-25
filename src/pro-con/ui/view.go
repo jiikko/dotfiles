@@ -410,7 +410,7 @@ func (m *Model) badge(c card.Card) string {
 		parts = append(parts, "…枠待ち")
 	case m.blockedBy(c) != "":
 		parts = append(parts, "…"+m.blockedBy(c)+" の後")
-	case c.State == card.Planned && c.Resumes(): // 並びより先に起動する (dispatcher は再開を新しい起動より先にする。issue 470)
+	case c.State == card.Planned && c.ResumesFirst(): // 並びより先に起動する (dispatcher は再開を新しい起動より先にする。issue 470)
 		parts = append(parts, "↻再開が先")
 	}
 	if e := c.Exec; e.Active() {

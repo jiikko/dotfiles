@@ -398,6 +398,9 @@ func (s *Sim) Apply(cmd backend.Command) (string, error) {
 	case backend.DeleteCard:
 		return s.deleteCard(c)
 	case backend.MoveCard:
+		if mc := s.find(c.CardID); mc != nil && !c.Seen.IsZero() && !c.Seen.Equal(mc.Since) {
+			return "", fmt.Errorf("押した後に %s の列へ移ったので動かさない", mc.State.Label())
+		}
 		other, err := card.Move(s.cards, c.CardID, c.Repo, c.Delta)
 		if err != nil {
 			return "", err

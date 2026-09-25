@@ -54,7 +54,7 @@ func TestMoveCardSendsTabAndStopsAtEdge(t *testing.T) {
 		t.Fatalf("先頭で上へを backend に頼んだ: %+v", be.applied)
 	}
 	press(m, "J")
-	if len(be.applied) != 1 || be.applied[0] != (backend.MoveCard{CardID: "W1", Repo: m.tab, Delta: 1}) {
+	if len(be.applied) != 1 || be.applied[0] != (backend.MoveCard{CardID: "W1", Repo: m.tab, Delta: 1, Seen: be.snap.Cards[1].Since}) {
 		t.Fatalf("J で下へを頼むはず: %+v", be.applied)
 	}
 }
