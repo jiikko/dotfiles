@@ -18,8 +18,8 @@ import (
 	"pro-con/card"
 )
 
-// stopWait は daemon と PG を止め終えるまで待つ上限 (daemon --stop の待ち 60 秒 + 自分で止める場合の余裕)。
-const stopWait = 90 * time.Second
+// stopWait は daemon と PG を止め終えるまで待つ上限 (daemon --stop の待ち 120 秒 + 余裕)。
+const stopWait = 150 * time.Second
 
 // stopDoneMsg は止め終えた (か、止めきれなかった) 知らせ。
 type stopDoneMsg struct{ err error }

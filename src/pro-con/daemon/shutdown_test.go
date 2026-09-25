@@ -39,16 +39,25 @@ func TestShutdownStopsOwnPGsAndMakesThemResumable(t *testing.T) {
 	}
 }
 
-// 終了で止めるのは、記録と session id・pid が一致する bg の session だけ (外の session に触らない)。
+// 終了で止めるのは、pro-con が起動した bg の session だけ (同じ短い id でも対話の session / 別の session id には触らない)。
+// 同じ session id で pid だけ違うもの (Claude Code の自動の再開で戻った自分の PG) は止める。
 func TestShutdownTouchesOnlyOwnSessions(t *testing.T) {
 	r := newCrashRig(t)
-	r.ss[0].PID = 99 // 外から操作された疑い (pid が記録と違う)
+	r.ss[0].PID = 99 // 自動の再開で戻った (再開の文はまだ無い)
 	r.ss = append(r.ss, agents.Session{ID: "hum1", SessionID: "H", PID: 70, Kind: "interactive"})
 	if _, err := r.d.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if len(r.l.stops) != 0 {
-		t.Fatalf("記録と一致しない session を止めた: %v", r.l.stops)
+	if len(r.l.stops) != 1 || r.l.stops[0] != "id-pc-c-001" {
+		t.Fatalf("自分の PG だけを止めていない: %v", r.l.stops)
+	}
+	r2 := newCrashRig(t)
+	r2.ss[0].SessionID = "OTHER" // 短い id を別の session が得た
+	if _, err := r2.d.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(r2.l.stops) != 0 {
+		t.Fatalf("別の session id の session を止めた: %v", r2.l.stops)
 	}
 }
 
@@ -223,5 +232,40 @@ func TestShutdownStopsUnconfirmedResume(t *testing.T) {
 	}
 	if c := states(t, r.dir)["C-001"]; len(r.l.stops) != 1 || r.l.stops[0] != "db1e" || c.Launching != "" {
 		t.Fatalf("結果の分からない再開で立った PG を止めない: stops=%v Launching=%q", r.l.stops, c.Launching)
+	}
+}
+
+// 待ちの途中で、自動の再開により新しい pid で戻った PG も止める (再開の文がまだ無くても。「既に止まっていた」にしない)。
+func TestShutdownStopsPGRestartedWithNewPid(t *testing.T) {
+	r := newCrashRig(t)
+	calls := 0
+	r.d.List = func(context.Context) ([]agents.Session, error) {
+		calls++
+		s := r.ss[0]
+		if calls < 3 {
+			s.PID = 0
+		} else {
+			s.PID = 4242
+		}
+		return []agents.Session{s}, nil
+	}
+	if _, err := r.d.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.l.stops) != 1 {
+		t.Fatalf("新しい pid で戻った PG を止めない: %v", r.l.stops)
+	}
+}
+
+// 待ちの判定は周ごとに今の時刻で行う (起動の結果が分からないカードは、launchGrace が過ぎたら待たずに先へ進む)。
+func TestShutdownRechecksGraceEachPoll(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 1)
+	setCard(t, dir, "C-001", func(c *card.Card) { c.Launching, c.LaunchedAt = "起動", t0 })
+	d := newDaemon(t, dir, &fakeLauncher{}, nil)
+	n := 0
+	d.Now = func() time.Time { n++; return t0.Add(time.Duration(n) * 20 * time.Second) }
+	if _, err := d.Shutdown(context.Background()); err != nil {
+		t.Fatalf("launchGrace が過ぎても待ち続けて失敗にした: %v", err)
 	}
 }

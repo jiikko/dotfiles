@@ -85,8 +85,8 @@ func runDaemon(args []string, dir, projects string, repos map[string]string, std
 	}
 }
 
-// stopTimeout は、動いている daemon が止め終えるまで待つ上限 (PG 1 本の claude stop は 1 秒ほど。本数 × 数秒 + 1 Tick より十分長く)。
-const stopTimeout = 60 * time.Second
+// stopTimeout は、動いている daemon が止め終えるまで待つ上限。Shutdown の待ち (約 46 秒 + 一覧の取り直し) と実行中の 1 Tick より長く。
+const stopTimeout = 120 * time.Second
 
 // stopDaemon は daemon と PG を止める。daemon が動いていれば止めるよう頼んで待ち、動いていなければ自分で daemon の役を取って止める。
 func stopDaemon(ctx context.Context, dir, projects string, repos map[string]string, stdout io.Writer) error {
@@ -105,6 +105,7 @@ func stopDaemon(ctx context.Context, dir, projects string, repos map[string]stri
 	for _, n := range notes {
 		_, _ = fmt.Fprintln(stdout, n)
 	}
+	daemon.WriteStopResult(dir, err) // 自分で止めている間に次の --stop が来たら、その --stop はこれを読む
 	return err
 }
 

@@ -63,17 +63,24 @@ func (d *Daemon) Shutdown(ctx context.Context) ([]string, error) {
 		}
 	}
 	done := map[string]bool{}
+	seenWarn := map[string]bool{}
 	failed := 0
 	for attempt := 0; ; attempt++ {
+		now := d.Now() // 待ちの判定 (launchGrace / restartWait) は周ごとに今の時刻で行う
 		ss, err := d.List(ctx)
 		if err != nil {
 			return notes, fmt.Errorf("session の一覧を取れないので止められない: %w", err)
 		}
 		// 起動・再開の直後で記録にまだ無い PG を、止める前に記録へ載せる
-		if _, warn, err := d.register(now, ss); err != nil {
+		_, warn, err := d.register(now, ss)
+		if err != nil {
 			return notes, err
-		} else if attempt == 0 {
-			notes = append(notes, warn...)
+		}
+		for _, w := range warn { // 周をまたいで同じ警告を重ねない
+			if !seenWarn[w] {
+				seenWarn[w] = true
+				notes = append(notes, w)
+			}
 		}
 		st, err := store.Load(d.Dir)
 		if err != nil {
@@ -172,14 +179,12 @@ func (d *Daemon) stopTarget(c card.Card, now time.Time, ss []agents.Session, reg
 		if s.ID != c.Session || s.Kind != "background" || s.SessionID != o.SessionID {
 			continue
 		}
-		switch s.PID {
-		case 0:
+		if s.PID == 0 {
 			return "", true // 落ちて Claude Code の自動の再開を待っている
-		case o.PID:
-			return s.ID, false
-		default:
-			return "", false // pid が記録と違う (外から操作された疑い)。触らない
 		}
+		// pid が記録と違っても止める: 同じ session id で pid だけ違うのは Claude Code の自動の再開 (外の shell の --resume は
+		// 別の session id を立てる = 427 の 3f)。再開の文がまだ書かれていないと register が記録を書き直さないので、ここで照らす
+		return s.ID, false
 	}
 	// 一覧に無い: 止まっている。ただし落ちたのを見た直後なら、自動の再開を待っている途中かもしれない
 	return "", !c.DeadSince.IsZero() && now.Sub(c.DeadSince) < restartWait
