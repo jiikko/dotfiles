@@ -36,14 +36,21 @@
     「一覧に無い」と読むため
   - 起動・再開が済んだら (`settle`) DeadSince を外すようにした。敵対レビューの指摘: 再開が同じ短い id を返すと (未実測)、記録の前の行が当たり、
     一覧に出る前に前の時刻で「消えた」と読んで再開し直す (`TestVanishedResumeDoesNotRepeatBeforeListed` で red を見てから直した。変異でも red)
+- 差し戻しで足したこと: 一覧から消えた回数も落ちた回数 (`Crashes`) に、消えたのを見た時刻で数える。CrashWindow の間に CrashLimit 回に
+  達したら分解済みへ戻さずに回答待ち (人の番。`WaitCrashed`) へ送り、理由を書く (上限の無い再開で利用枠を使い続けない。462 と同じ根)
+  - 数え方 (`recentCrashes`) と回答待ちへの遷移 (`askAfterCrashes`) は `stopCrashing` と共有した (2 つ作らない)
+  - 数え始めを `LaunchedAt` から `CrashesFrom` (新しい欄) に分けた。`LaunchedAt` は消えた PG の再開でも進むので、そのままでは
+    消える → 再開のたびに回数が 0 に戻る。`CrashesFrom` は起動・再開で進めるが、消えた PG の再開 (Resume が resumeAfterVanish) では
+    進めない。空 (前からの記録) なら `LaunchedAt` から数える
+  - テスト: `TestVanishingRepeatedlyAsksHuman` (直す前に red: 2 回目も再開していた) / `TestVanishesOutsideWindowDoNotStop` /
+    `TestAnswerResetsVanishCount`。変異 4 本 (消えた回数を数えない / 消えた再開でも数え始めを進める / 回答でも進めない / 窓を見ない) が
+    それぞれ想定のテストで red
 - 確かめたこと: 偽の lister で一覧から消した形を作り、直す前に `TestVanishedRunningCardResumes` が red (作業中のまま・再開 0 回)。
   変異 4 本 (`bin/mutate-verify`) がそれぞれ想定のテストで red: 呼び出しを外す / 停止より前に呼ぶ (`TestVanishedAfterCrashLimitStillAsksHuman`)
   / restartWait の待ちを外す / DeadSince の条件を外す (`TestLiveSessionUnderOtherShortIDIsNotVanished`)
 - 残り:
   - pid 無しのまま restartWait を過ぎても一覧に残る形 (自動の再開が止まった) は扱っていない (stopTarget は「止める」と返すので gone は偽)
   - 記録に載る前 (起動は返ったが一覧に一度も出ない) に消えた作業中のカードは扱っていない (再開に要る session id と cwd が無い)
-  - 消える → 再開 → また消える、を繰り返しても落ちた回数に数えないので、止まらずに再開し続ける (外から止めた / 再起動の形では起きにくい)
-
 ## 関連
 
 - 460 (監査の記録) / 455 (枠に何を数えるか) / 430 (再起動の後も bg session が残るか)
