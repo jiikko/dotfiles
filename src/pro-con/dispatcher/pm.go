@@ -338,6 +338,7 @@ func (d *Dispatcher) stopPM(ctx context.Context, now time.Time, ss []agents.Sess
 		// 記録の行はまだ前の PM を指している)。今の PM は最後の起動・再開の後に始まったものだけ (同じ短い id の別の session を止めない)
 		if (hasRow && s.SessionID == row.SessionID) || (pm.Session != "" && s.ID == pm.Session && !s.Started().Before(pm.LaunchedAt)) {
 			targets = append(targets, s.ID)
+			*notes = append(*notes, d.unknownStateNote(PMCardID, stopName(PMCardID), s)...)
 		}
 	}
 	if len(targets) == 0 && pm.Launching == "" {
