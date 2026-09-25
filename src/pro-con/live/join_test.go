@@ -56,7 +56,8 @@ func TestJoinNeverWakesDispatcher(t *testing.T) {
 	b.SetKeeper(func() error { keeps.Add(1); return nil })
 	jb := b.Join()
 	openAs(t, b, presence.Join)
-	b.keep() // dispatcher の様子は zero (1 度も回っていない) = 持ち主なら起こす
+	b.refresh(context.Background(), false) // dispatcher の様子を読む (1 度も回っていない = 持ち主なら起こす)
+	b.keep()
 	if keeps.Load() != 0 {
 		t.Fatal("join の画面が dispatcher を起こした")
 	}
@@ -66,7 +67,6 @@ func TestJoinNeverWakesDispatcher(t *testing.T) {
 	if _, err := jb.Apply(backend.ResumeDispatcher{}); !errors.Is(err, ErrJoinNoResume) || keeps.Load() != 0 {
 		t.Fatalf("join の画面の c が dispatcher を起こした: %v", err)
 	}
-	b.refresh(context.Background(), false) // dispatcher の様子を読む (1 度も回っていない)
 	msg, err := jb.Apply(backend.NewRequest{Text: "調べて"})
 	if err != nil || !strings.Contains(msg, "受付の箱で待っている") {
 		t.Fatalf("dispatcher が居ないのに、箱で待っていると知らせない: %q %v", msg, err)
