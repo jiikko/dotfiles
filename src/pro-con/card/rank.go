@@ -32,6 +32,19 @@ func LaneCompare(a, b Card) int {
 	return strings.Compare(a.ID, b.ID)
 }
 
+// Board は cards をカンバンの並び (列の左から、列の中はレーンの並び) にした写しを返す (cards は書き換えない)。
+// 画面の外で並びを出す口 (card list・PM への知らせ) が使う。
+func Board(cards []Card) []Card {
+	out := slices.Clone(cards)
+	slices.SortStableFunc(out, func(a, b Card) int {
+		if a.State != b.State {
+			return int(a.State) - int(b.State)
+		}
+		return LaneCompare(a, b)
+	})
+	return out
+}
+
 // ErrLaneEdge は入れ替える隣が無い (レーンの先頭で上へ・末尾で下へ。巻かない)。
 var ErrLaneEdge = errors.New("レーンの端なので、それ以上は動かせない")
 

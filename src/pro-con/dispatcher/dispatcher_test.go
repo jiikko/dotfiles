@@ -253,7 +253,7 @@ func TestLaunchFailureKeepsCardPlanned(t *testing.T) {
 // PG への指示には規律 (AskUserQuestion を使わず pro-con card ask / 終えたら review / master へ push しない) とカードの ID が入る。
 func TestPromptCarriesDiscipline(t *testing.T) {
 	p := Prompt(card.Card{ID: "C-007", Title: "直す", Request: "色を直して"})
-	for _, want := range []string{"C-007", "AskUserQuestion", "pro-con card ask C-007", "pro-con card review C-007", "pro-con card run C-007 --", "master へは push しない", "色を直して"} {
+	for _, want := range []string{"C-007", "AskUserQuestion", "pro-con card ask C-007", "pro-con card review C-007", "pro-con card run C-007 --", "master へは push しない", "色を直して", "結果が届くまで ask しない"} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("PG への指示に %q が無い:\n%s", want, p)
 		}
@@ -444,6 +444,65 @@ func TestRepeatedRejectedLaunchGoesToHuman(t *testing.T) {
 	}
 	if c := states(t, dir)["C-001"]; c.State != card.Planned {
 		t.Fatalf("立っているかもしれない失敗まで人の番へ回した: %v", c.State)
+	}
+}
+
+// 状態の置き場を作り直すとカード ID は C-001 から振り直されるので、前の世代の PG の worktree (<repo>/.claude/worktrees/pc-c-001) が
+// 残っていると claude -w はそれを黙って使う (465)。初回の起動の前に在れば起動せずに人の番へ回し、消して回答すると起動する。
+func TestStartRefusesLeftoverWorktree(t *testing.T) {
+	dir, repo := t.TempDir(), t.TempDir()
+	wt := filepath.Join(repo, ".claude", "worktrees", "pc-c-001")
+	if err := os.MkdirAll(wt, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	planned(t, dir, 1)
+	l := &fakeLauncher{}
+	d := newDispatcher(t, dir, l, nil)
+	d.Repos = map[string]string{"dotfiles": repo}
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	c := states(t, dir)["C-001"]
+	if l.startTries != 0 || c.State != card.Waiting || c.Wait.Kind != card.WaitCrashed || c.Launching != "" || !strings.Contains(c.Wait.Question, wt) {
+		t.Fatalf("前の世代の worktree の上で起動した / 人の番へ回らない: 起動の試行 %d %v %v Launching=%q %q", l.startTries, c.State, c.Wait.Kind, c.Launching, c.Wait.Question)
+	}
+	if err := os.RemoveAll(wt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Submit(dir, store.Request{Kind: "answer", CardID: "C-001", Answer: "消した"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Apply(dir, t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(l.starts) != 1 {
+		t.Fatalf("worktree を消して回答しても起動しない: %v", l.starts)
+	}
+}
+
+// 結果の分からない起動 (claude が worktree を作ってから失敗と返した) の起動し直しでは、在る worktree はこのカードが作ったものなので止めない (465)。
+func TestRestartAfterUnknownLaunchKeepsOwnWorktree(t *testing.T) {
+	dir, repo := t.TempDir(), t.TempDir()
+	planned(t, dir, 1)
+	l := &fakeLauncher{fail: true}
+	d := newDispatcher(t, dir, l, nil)
+	d.Repos = map[string]string{"dotfiles": repo}
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, ".claude", "worktrees", "pc-c-001"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	l.fail = false
+	d.Now = func() time.Time { return t0.Add(launchGrace + time.Second) }
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if c := states(t, dir)["C-001"]; len(l.starts) != 1 || c.State != card.Running {
+		t.Fatalf("自分の起動が作った worktree で起動し直さない: %v %v", l.starts, c.State)
 	}
 }
 

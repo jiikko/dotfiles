@@ -35,6 +35,7 @@ func (m *Model) openDrawer() {
 	m.showDetail = true
 	m.drawerCard = m.selected
 	m.pager.Reset()
+	m.act = activityView{loading: m.act.loading} // 前に開いたときの活動を出さない (読み直すまで「読んでいる…」)
 	m.drawer.Open(m.now(), drawerDuration)
 }
 
@@ -52,7 +53,7 @@ func (m *Model) settleDrawer(now time.Time) {
 }
 
 // handleDrawerKey は詳細を開いている間のキー。捌いたら handled=true。カードへの操作 (a / r / + / ? / y / Y / e) と
-// 画面全体の操作 (ctrl+c / ctrl+r / s) はボードへ回す。それ以外 (レーンの移動・タブ・新しい依頼 等) は飲み込む:
+// 画面全体の操作 (ctrl+c / ctrl+r / s / c) はボードへ回す。それ以外 (レーンの移動・タブ・新しい依頼 等) は飲み込む:
 // 詳細の下でカンバンの選択が動くと、開いているカードと操作の対象が食い違う。
 func (m *Model) handleDrawerKey(k string) (cmd tea.Cmd, handled bool) {
 	switch k {
@@ -68,7 +69,7 @@ func (m *Model) handleDrawerKey(k string) (cmd tea.Cmd, handled bool) {
 	case "K":
 		m.stepCard(-1)
 		return nil, true
-	case "a", "r", "+", "w", "?", "y", "Y", "e", "d", "ctrl+c", "ctrl+r", "s":
+	case "a", "r", "+", "w", "?", "y", "Y", "e", "d", "ctrl+c", "ctrl+r", "s", "c":
 		return nil, false
 	}
 	if mo := listnav.MotionOf(k); mo != listnav.None {
@@ -134,7 +135,7 @@ func (m *Model) drawerTextWidth() int {
 	return max(drawerGeometry.Target(m.width)-2-layout.ScrollbarWidth, 10)
 }
 
-// drawerBody は本文の全行 (開ききった幅で折り返し済み)。履歴と出力は切り出さずに全部出す。
+// drawerBody は本文の全行 (開ききった幅で折り返し済み)。履歴と出力 (活動を読める backend では活動) は切り出さずに全部出す。
 func (m *Model) drawerBody() []string {
 	c, ok := m.drawerCardData()
 	if !ok {
@@ -191,6 +192,10 @@ func (m *Model) drawerBody() []string {
 		add("", "  "+e.At.Local().Format("15:04")+" "+e.Text) // 記録の時刻の時間帯は書いた側による (transcript 由来は UTC)
 	}
 	out = append(out, "")
+	if m.activityReader() != nil {
+		m.addActivity(add)
+		return out
+	}
 	add(sgrDim, "出力")
 	for _, s := range c.Log {
 		add("", "  "+s)

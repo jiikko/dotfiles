@@ -342,8 +342,8 @@ func isUnder(child, root string) bool {
 // dirTag は状態の置き場の短い印 (実行の印に混ぜて、別の置き場の dispatcher (e2e と本物) の実行と取り違えない)。
 func dirTag(dir string) string { return fmt.Sprintf("%x", sha1.Sum([]byte(dir)))[:8] }
 
-// runMarkerPrefix は実行の bash の $0 に載せる印の頭。
-const runMarkerPrefix = "pro-con-run:"
+// RunMark は実行の bash の $0 に載せる印の頭。
+const RunMark = "pro-con-run:"
 
 // runScript は実行の bash が走らせる台本。頼まれたコマンドは環境変数 (runCommandEnv) で渡して eval する:
 //   - 文字列を連結しない (末尾のバックスラッシュ・閉じていない here-doc で、足した行と繋がって意味が変わった = 427 の敵対的レビューで実測)
@@ -363,7 +363,7 @@ const runCommandEnv = "PRO_CON_RUN_COMMAND"
 
 // runCommand は実行の bash を組む。印は $0 (`pro-con-run:<runID>`)。
 func runCommand(ctx context.Context, command, runID string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "/bin/bash", "-c", runScript, runMarkerPrefix+runID)
+	cmd := exec.CommandContext(ctx, "/bin/bash", "-c", runScript, RunMark+runID)
 	cmd.Env = append(withoutTmux(os.Environ()), runCommandEnv+"="+command)
 	return cmd
 }
@@ -380,7 +380,7 @@ func killStale(runID string) {
 	if err != nil {
 		return
 	}
-	marker := " " + runMarkerPrefix + runID
+	marker := " " + RunMark + runID
 	for _, line := range strings.Split(string(out), "\n") {
 		f := strings.Fields(line)
 		// 撃つのは、dispatcher が起こした形 (`/bin/bash -c <台本> <印>`) のグループの先頭だけ。印を引数の最後に置いた
@@ -397,23 +397,26 @@ func killStale(runID string) {
 // summarizeTimeout は要約の上限。
 const summarizeTimeout = 3 * time.Minute
 
-// HaikuSummarize は失敗したログの末尾を haiku に要約させる (426 の決定 5)。状態の置き場で動かす (repo の hook・規約を読ませない)。
-func HaikuSummarize(claude, dir string) func(ctx context.Context, tail string) (string, error) {
+// HaikuSummarize は失敗したログの末尾を haiku に要約させる (426 の決定 5)。settings は HaikuSettings。
+func HaikuSummarize(claude, dir, settings string) func(ctx context.Context, tail string) (string, error) {
 	return func(ctx context.Context, tail string) (string, error) {
 		ctx, cancel := context.WithTimeout(ctx, summarizeTimeout)
 		defer cancel()
-		return haiku(ctx, claude, dir, "次はテストかビルドのコマンドの失敗したログの末尾です。何が失敗したか (落ちたテスト名・エラーの場所と内容) を日本語で 5 行以内に要約してください。ログに書かれていないことは書かず、質問もしないこと。\n\n"+tail)
+		return haiku(ctx, claude, dir, settings, "次はテストかビルドのコマンドの失敗したログの末尾です。何が失敗したか (落ちたテスト名・エラーの場所と内容) を日本語で 5 行以内に要約してください。ログに書かれていないことは書かず、質問もしないこと。\n\n"+tail)
 	}
 }
 
 // HaikuAsk は btw の答えを haiku に作らせる (btw.go。上限は呼ぶ側が付ける)。
-func HaikuAsk(claude, dir string) func(ctx context.Context, prompt string) (string, error) {
-	return func(ctx context.Context, prompt string) (string, error) { return haiku(ctx, claude, dir, prompt) }
+func HaikuAsk(claude, dir, settings string) func(ctx context.Context, prompt string) (string, error) {
+	return func(ctx context.Context, prompt string) (string, error) {
+		return haiku(ctx, claude, dir, settings, prompt)
+	}
 }
 
 // haiku は prompt を安いモデルの claude -p に渡す (claude は実体の絶対パス)。状態の置き場で動かす (repo の hook・規約を読ませない)。
-func haiku(ctx context.Context, claude, dir, prompt string) (string, error) {
-	cmd := exec.CommandContext(ctx, claude, "-p", "--model", "haiku", "--setting-sources", "project,local")
+// settings (HaikuSettings) で、それでも祖先から拾われる ~/.claude/CLAUDE.md と auto memory を外す (431)
+func haiku(ctx context.Context, claude, dir, settings, prompt string) (string, error) {
+	cmd := exec.CommandContext(ctx, claude, "-p", "--model", "haiku", "--setting-sources", "project,local", "--settings", settings)
 	cmd.Dir = dir
 	cmd.Env = withoutTmux(os.Environ())
 	cmd.Stdin = strings.NewReader(prompt)
