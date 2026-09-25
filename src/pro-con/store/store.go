@@ -277,7 +277,7 @@ func apply(st State, r Request, now time.Time) (State, string, error) {
 		id = fmt.Sprintf("C-%03d", next.NextID)
 		next.NextID++
 		c := card.Card{ID: id, Title: firstNonEmpty(r.Title, clip(r.Request, 40)), Request: r.Request, Prompt: r.Prompt, Repo: r.Repo,
-			Owner: firstNonEmpty(r.Owner, "PM"), State: card.Requested, Since: now,
+			Owner: firstNonEmpty(r.Owner, "PM"), State: card.Requested, Since: now, FromRequest: r.ID,
 			History: []card.Event{{At: now, Text: "依頼を受けた"}}}
 		next.Cards = append(next.Cards, c)
 	default:

@@ -15,14 +15,14 @@ import (
 func card_(t *testing.T, dir string, args ...string) (rc int, out, errOut string) {
 	t.Helper()
 	var o, e bytes.Buffer
-	rc = runCard(args, dir, &o, &e)
+	rc = runCard(args, viewEnv{dir: dir, projects: dir, now: time.Now}, &o, &e)
 	return rc, o.String(), e.String()
 }
 
 // pro-con card で置いた依頼を dispatcher (store.Apply) が適用すると、カードが進む。置いた依頼の ID は stdout に出る。
 func TestCardCommandRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	rc, out, errOut := card_(t, dir, "add", "--title", "色を直す", "--request", "statusline の色", "--repo", "dotfiles")
+	rc, out, errOut := card_(t, dir, "add", "--title", "色を直す", "--request", "statusline の色", "--repo", "dotfiles", "--wait", "0")
 	if rc != 0 || strings.TrimSpace(out) == "" || errOut != "" {
 		t.Fatalf("add: rc=%d out=%q err=%q", rc, out, errOut)
 	}
@@ -70,7 +70,7 @@ func TestCardCommandAskAnswer(t *testing.T) {
 		{[]string{"answer", "C-001", "青", "--from", "PM"}, store.Request{Kind: "answer", CardID: "C-001", Answer: "青", From: "PM"}},
 		{[]string{"close", "C-001", "--ending", "answered"}, store.Request{Kind: "close", CardID: "C-001", Ending: card.EndAnswered}},
 	} {
-		got, err := parseCard(tc.args)
+		got, _, err := parseCardWait(tc.args)
 		if err != nil || got.Kind != tc.want.Kind || got.CardID != tc.want.CardID || got.Question != tc.want.Question ||
 			got.Answer != tc.want.Answer || got.From != tc.want.From && tc.want.From != "" || got.Ending != tc.want.Ending {
 			t.Fatalf("%q: %+v %v (期待 %+v)", tc.args, got, err, tc.want)
@@ -89,7 +89,18 @@ func TestPMGuideCommandsParse(t *testing.T) {
 		if args[0] == "guide" {
 			continue
 		}
-		if _, err := parseCard(args); err != nil {
+		if args[0] == "list" || args[0] == "show" || args[0] == "wait" { // 読む口は parseCardWait を通らない。使い方の誤り (rc=2) にならないかを見る
+			if args[0] == "wait" {
+				args = append(args, "--timeout", "1ms") // 指示書の例のまま待たない (カードも無いのですぐ返る)
+			}
+			var e strings.Builder
+			if rc := runCard(args, viewEnv{dir: t.TempDir(), now: time.Now}, io.Discard, &e); rc == 2 {
+				t.Errorf("指示書のコマンドが使い方の誤りになる: %s → %s", m[1], e.String())
+			}
+			checked++
+			continue
+		}
+		if _, _, err := parseCardWait(args); err != nil {
 			t.Errorf("指示書のコマンドがパーサに通らない: %s → %v", m[1], err)
 		}
 		checked++
@@ -98,7 +109,7 @@ func TestPMGuideCommandsParse(t *testing.T) {
 		t.Fatalf("指示書から取り出せたコマンドが %d 本しかない", checked)
 	}
 	var out strings.Builder
-	if rc := runCard([]string{"guide"}, t.TempDir(), &out, io.Discard); rc != 0 || out.String() != pmGuide {
+	if rc := runCard([]string{"guide"}, viewEnv{dir: t.TempDir(), now: time.Now}, &out, io.Discard); rc != 0 || out.String() != pmGuide {
 		t.Fatalf("guide が指示書を出さない: rc=%d", rc)
 	}
 }
@@ -118,12 +129,12 @@ func splitQuoted(s string) []string {
 
 // pro-con card run <カード> -- <コマンド>... は -- の後ろをそのままコマンドにする (フラグとして読まない)。
 func TestCardRunParse(t *testing.T) {
-	r, err := parseCard([]string{"run", "C-001", "--", "go", "test", "-run", "TestX", "./..."})
+	r, _, err := parseCardWait([]string{"run", "C-001", "--", "go", "test", "-run", "TestX", "./..."})
 	if err != nil || r.Kind != "run" || r.CardID != "C-001" || r.Command != "go test -run TestX ./..." {
 		t.Fatalf("run を読めない: %+v %v", r, err)
 	}
 	for _, bad := range [][]string{{"run", "C-001"}, {"run", "C-001", "--"}, {"run", "--", "make"}, {"run", "C-001", "make"}, {"run", "C-001", "make", "--", "test"}} {
-		if _, err := parseCard(bad); err == nil {
+		if _, _, err := parseCardWait(bad); err == nil {
 			t.Fatalf("形の違う run を読んだ: %v", bad)
 		}
 	}

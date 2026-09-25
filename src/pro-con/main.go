@@ -103,7 +103,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				_, _ = fmt.Fprintln(stderr, "pro-con:", err)
 				return 1
 			}
-			return runCard(args[1:], liveDir(home), stdout, stderr)
+			return runCard(args[1:], viewEnv{dir: liveDir(home), projects: filepath.Join(home, ".claude", "projects"), now: time.Now}, stdout, stderr)
 		case "dispatcher", "daemon": // 本物のモードの dispatcher を常駐させる (dispatchercmd.go)。daemon は 2026-09-25 に dispatcher へ改名する前の名前 (別名として残す)
 			if args[0] == "daemon" {
 				_, _ = fmt.Fprintln(stderr, "pro-con: daemon は dispatcher に改名した (pro-con dispatcher)")
