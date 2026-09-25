@@ -59,6 +59,41 @@
 - 名前に時刻を入れる: 前の PM の worktree が残っていても同じ名前で `-w` しない (既存の名前での `-w` の挙動は未実測)
 - e2e モードは PM を起こさない (偽の PM = FakePM が役を持つ)
 
+## 進捗
+
+### 2026-09-25 (カード C-007 の PG)
+
+やったこと:
+- `dispatcher/pm.go` (tellPM / registerPM / pmAdopt / stopPM)・`store/pm_state.go` (pm.json)。Tick は PG の割り当ての直前に PM を扱う。
+  PM の壊れ (pm.json が読めない等) は出来事に書いて PG の割り当ては続ける
+- 終了: `Shutdown` の stopCards の周で PM も止める (記録に載る前の起動・再開の直後の PM も)。最後の ensureStopped は記録の PM の行 (と退いた前の PM) も確かめる
+- 設定 `pm_repo` (既定 `~/dotfiles`)。main が pm-guide.md の埋め込みを `Dispatcher.PMGuide` に渡す (指示の正本は pm-guide.md だけ)。
+  pm-guide.md に「作業場所」を足した (PM の worktree で commit・push し、本体の checkout に書かない / その worktree は消さない)
+- C-006 (444) の出来事の型に rebase した (PM の出来事はカード ID `PM` で、kind は launch / hold / suspect / stop / error)
+
+設計に後から足したもの (Opus の敵対的レビューの指摘で、再現できた分):
+- 再開が返った直後 (記録の行はまだ前の PM) に終了すると、新しい PM が止まらずに残っていた → stopPM は記録の行に加え、今の PM の短い id (最後の起動・再開の後に始まったもの) も止める
+- 落ち続ける PM を上限なしで約 90 秒ごとに再開していた → 生きていない PM を起こし直すのは 30 分に 3 回まで (`Revivals`。窓が過ぎたらまた起こす)
+- PM の worktree が消えると再開が失敗し続け、依頼が永久に届かなかった → 記録の cwd が無ければ新しい worktree で起動する
+- 知らない status (版で増えた値) の PM を idle とみなして止めていた → idle のときだけ止めて再開する (知らない値は出来事に 1 度書く)
+- pid 無しの working が続く PM を期限なく待っていた → PG と同じく restartWait で見切る
+
+確かめたこと:
+- テスト: `dispatcher/pm_test.go` 19 本 (偽の launcher と一覧。本物の claude と state dir に触らない) + `config` 1 本。
+  447 が PM を止めない / 終了では PM を止める、は `TestCloseDoesNotStopPM` で固定した
+- 変異: `bin/mutate-verify` で 21 本。すべて想定したテストが red (busy の待ち・launchGrace・起動の取り込み・restartWait・自動の再開の待ち・
+  条件 2・枠の閾値・知らせ済みへの移し・前の PM を退かせる・終了の取り込み 2 本・PMRepo 空・stopPM の呼び出し・close の絞り込み・
+  再開の直後の終了・起こし直しの上限 2 本・worktree の消失・知らない status・pm.json の壊れ)
+- make test: 1 回目は gofmt の 1 件で rc=2 (テストは全部 ok)。直して頼み直した結果は下に追記する
+
+残り:
+- 🚨 **本物の claude ではまだ走らせていない** (起動・再開の引数は PG と同じ ExecLauncher)。PM を実際に起こして、知らせが turn の区切りで届くか・
+  `-w pc-pm-<時刻>` の worktree ができるかを dogfooding (440) で確かめる
+- 未確認のリスク: 知らせの turn の途中で PM が落ち、Claude Code の自動の再開がその turn を続けないと、そのカードは知らせ済みのまま届かない
+  (PM が生きているので条件 2 に当たらない)。自動の再開が turn を続けるかは未実測
+- 画面に PM の様子 (居る / 知らせ待ち) を出していない。PM の数を設定で変える話は 456
+- 別の repo の issue を PM がどこで書くか (その repo に PM 用の worktree を作る) は指示書に書いただけで、機械では強制しない
+
 ## 関連
 
 - 427 の残っていること / 415 の論点 6 (PM の数と役割)

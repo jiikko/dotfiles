@@ -363,7 +363,7 @@ func (d *Dispatcher) stopPM(ctx context.Context, now time.Time, ss []agents.Sess
 	}
 	if adopted != "" {
 		settlePM(&pm, adopted) // 取り込んだ起動・再開は今の PM にする (記録に載るのは次の起動の Tick)
-		pm.Told = nil         // 止めたので知らせは届いていないかもしれない。次は依頼の列を全部知らせる
+		pm.Told = nil          // 止めたので知らせは届いていないかもしれない。次は依頼の列を全部知らせる
 	}
 	pm.Stopped = true
 	if err := store.SavePM(d.Dir, pm); err != nil {
