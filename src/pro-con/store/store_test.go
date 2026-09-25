@@ -314,3 +314,24 @@ func TestSubmitPokesDispatcher(t *testing.T) {
 		t.Fatal("箱に置いても dispatcher を起こさない")
 	}
 }
+
+// attach の間の指示は、どの列のカードにも原文と打った時刻で履歴に足す。状態は変えない。空の指示は受けない。
+func TestAttachAppendsSaidVerbatim(t *testing.T) {
+	dir := t.TempDir()
+	submit(t, dir, Request{Kind: "add", Title: "x"})
+	applyAll(t, dir)
+	said := t0.Add(-time.Minute)
+	long := strings.Repeat("長い指示", 50)
+	submit(t, dir, Request{Kind: "attach", CardID: "C-001", Said: []card.Event{{At: said, Text: "a"}, {At: said.Add(time.Second), Text: long}}})
+	submit(t, dir, Request{Kind: "attach", CardID: "C-001"})
+	submit(t, dir, Request{Kind: "attach", CardID: "C-001", Said: []card.Event{{At: said, Text: " "}}})
+	res := applyAll(t, dir)
+	if res[0].Err != "" || res[1].Err == "" || res[2].Err == "" {
+		t.Fatalf("指示を受けない / 空の指示を受けた: %+v", res)
+	}
+	c := cardOf(t, dir, "C-001")
+	h := c.History[len(c.History)-2:]
+	if c.State != card.Requested || h[0].Text != AttachPrefix+"a" || !h[0].At.Equal(said) || h[1].Text != AttachPrefix+long {
+		t.Fatalf("状態を変えた / 原文と打った時刻のまま残していない: %v %+v", c.State, h)
+	}
+}

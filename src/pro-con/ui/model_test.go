@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"os/exec"
 	"slices"
 	"strings"
@@ -363,5 +364,63 @@ func TestAttachAbortsOnSelectionOrQuit(t *testing.T) {
 		if _, exec := m.Update(ready); exec != nil {
 			t.Fatalf("%s のに端末を明け渡した", tc.name)
 		}
+	}
+}
+
+// recorder は attach の間の指示を残す口を持つ spy (backend.AttachRecorder)。
+type recorder struct {
+	*spy
+	card, session string
+	from, to      time.Time
+	n             int
+	err           error
+}
+
+func (r *recorder) RecordAttach(cardID, session string, from, to time.Time) (int, error) {
+	r.card, r.session, r.from, r.to = cardID, session, from, to
+	return r.n, r.err
+}
+
+// 戻りの知らせは、端末を明け渡した時刻を持つ (この時刻より前に打った文は attach の間の指示ではない)。
+func TestAttachDoneCarriesHandOverTime(t *testing.T) {
+	m := New(newSpy(), nil)
+	at := time.Date(2026, 9, 24, 10, 1, 0, 0, time.UTC)
+	m.now = func() time.Time { return at }
+	var back tea.ExecCallback
+	m.execProcess = func(_ *exec.Cmd, f tea.ExecCallback) tea.Cmd { back = f; return func() tea.Msg { return nil } }
+	press(m, "right") // W1
+	m.Update(press(m, "a")())
+	if back == nil {
+		t.Fatal("端末を明け渡していない")
+	}
+	done, ok := back(nil).(attachDoneMsg)
+	if !ok || done.cardID != "W1" || done.session != "s-w1" || !done.from.Equal(at) {
+		t.Fatalf("戻りの知らせに明け渡した時刻とカードの session が無い: %+v", done)
+	}
+}
+
+// attach から戻ったら、明け渡した時刻から戻った時刻までの指示をカードに残すよう裏で頼む。残せなければ消えない通知で出す (issue 428)。
+func TestAttachDoneRecordsInstructions(t *testing.T) {
+	rec := &recorder{spy: newSpy(), n: 2}
+	m := New(rec, nil)
+	back := time.Date(2026, 9, 24, 10, 5, 0, 0, time.UTC)
+	m.now = func() time.Time { return back }
+	from := back.Add(-3 * time.Minute)
+	_, cmd := m.Update(attachDoneMsg{cardID: "W1", session: "s-w1", from: from, err: errors.New("exit 1")})
+	if cmd == nil {
+		t.Fatal("失敗で戻っても、それまでの指示を残すよう頼むはず")
+	}
+	m.Update(cmd())
+	if rec.card != "W1" || rec.session != "s-w1" || !rec.from.Equal(from) || !rec.to.Equal(back) {
+		t.Fatalf("attach の窓を渡していない: %+v", rec)
+	}
+	if !strings.Contains(m.flash, "2 件") {
+		t.Fatalf("残した件数を知らせない: %q", m.flash)
+	}
+	rec.err = errors.New("読めない")
+	_, cmd = m.Update(attachDoneMsg{cardID: "W1", session: "s-w1", from: from})
+	m.Update(cmd())
+	if !strings.Contains(m.sticky, "残せなかった") {
+		t.Fatalf("残せなかったことを消えない通知で出さない: %q", m.sticky)
 	}
 }

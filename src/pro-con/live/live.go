@@ -382,6 +382,50 @@ func (b *Backend) AttachCommand(sessionID string) (*exec.Cmd, error) {
 	return nil, errors.New("pro-con が起動した session ではない (または終わった): " + sessionID)
 }
 
+// RecordAttach は attach の間 (from〜to) に人間が打った指示を、受付の箱に置く (記録へ残すのは dispatcher。backend.AttachRecorder)。
+// sessionID は短い id (カードの Session)。transcript は記録の session id で引く。attach の間に再開で入れ替わった前の session も引ける
+// (退いた側の記録も見る)。指示が無ければ何も置かない。
+func (b *Backend) RecordAttach(cardID, sessionID string, from, to time.Time) (int, error) {
+	full, err := b.fullSessionID(sessionID)
+	if err != nil {
+		return 0, err
+	}
+	path, err := b.findPath(full)
+	if err != nil {
+		return 0, fmt.Errorf("session %s の transcript が見つからない: %w", sessionID, err)
+	}
+	ps, err := HumanPrompts(path, from, to)
+	if err != nil || len(ps) == 0 {
+		return 0, err
+	}
+	said := make([]card.Event, len(ps))
+	for i, p := range ps {
+		said[i] = card.Event{At: p.At, Text: p.Text}
+	}
+	if _, err := store.Submit(b.dir, store.Request{Kind: "attach", CardID: cardID, Said: said}); err != nil {
+		return 0, err
+	}
+	return len(ps), nil
+}
+
+// fullSessionID は pro-con が起動した session の短い id から session id を引く (今の記録、無ければ退いた側)。
+func (b *Backend) fullSessionID(id string) (string, error) {
+	reg, err := LoadRegistry(b.registry)
+	if err != nil {
+		return "", err
+	}
+	retired, err := LoadRetired(b.registry)
+	if err != nil {
+		return "", err
+	}
+	for _, o := range append(reg, retired...) {
+		if id != "" && o.ID == id && o.SessionID != "" {
+			return o.SessionID, nil
+		}
+	}
+	return "", errors.New("pro-con が起動した session の記録に無い: " + id)
+}
+
 // requestRunes は依頼の原文を詳細に出す上限 (文字数)。
 const requestRunes = 2000
 

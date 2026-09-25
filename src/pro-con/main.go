@@ -220,6 +220,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 1
 		}
 		if !m.UpgradeRequested() {
+			// 裏の処理 (attach の間の指示を受付の箱へ置く等) を終えてから抜ける。bubbletea は走っている Cmd を待たない
+			_ = m.WaitChildren(ui.SwitchWait)
 			removeResume(resumePath)
 			var kept backend.KeptRunning
 			if err := m.StopErr(); errors.As(err, &kept) { // ほかの画面が開いているので止めなかった (失敗ではない)

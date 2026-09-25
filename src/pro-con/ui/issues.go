@@ -71,7 +71,7 @@ func (m *Model) openIssue() tea.Cmd {
 		m.flash = "開けない: " + err.Error()
 		return nil
 	}
-	return tea.ExecProcess(m.openEditor(p), func(err error) tea.Msg { return editorDoneMsg{path: p, err: err} })
+	return m.execProcess(m.openEditor(p), func(err error) tea.Msg { return editorDoneMsg{path: p, err: err} })
 }
 
 func (m *Model) onEditorDone(msg editorDoneMsg) {

@@ -51,7 +51,15 @@ type tickMsg struct{}
 type changedMsg struct{}
 
 type attachDoneMsg struct {
+	cardID, session string
+	from            time.Time // 端末を明け渡した時刻 (この後に打った指示をカードに残す。issue 428)
+	err             error
+}
+
+// attachRecordedMsg は attach の間の指示をカードに残すよう頼んだ結果 (backend.AttachRecorder)。
+type attachRecordedMsg struct {
 	cardID string
+	n      int
 	err    error
 }
 
@@ -110,13 +118,15 @@ type Model struct {
 
 	copy       func(string) error     // クリップボードへ入れる (既定は pbcopy。テストは差し替える)
 	openEditor func(string) *exec.Cmd // ファイルを開くエディタのコマンド (既定は tuikit/editor。テストは差し替える)
+	// execProcess は端末を明け渡して外のコマンドを走らせる (既定は tea.ExecProcess。テストは戻りの知らせを取り出すために差し替える)
+	execProcess func(*exec.Cmd, tea.ExecCallback) tea.Cmd
 
 	showSessions bool // s で開く PG の一覧 (sessions.go)
 }
 
 // New は repos (config から列挙した repo) をタブの候補にして画面を作る。nil なら global だけ。
 func New(be backend.Backend, repos []backend.Repo) *Model {
-	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, slides: map[panel]*slide{}, copy: pbcopy, children: &atomic.Int64{}, openEditor: func(p string) *exec.Cmd { return editor.Command(p, nil) }}
+	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, slides: map[panel]*slide{}, copy: pbcopy, children: &atomic.Int64{}, openEditor: func(p string) *exec.Cmd { return editor.Command(p, nil) }, execProcess: tea.ExecProcess}
 	m.setSnap(be.Poll())
 	m.focusFirst()
 	m.resetSlots()
@@ -223,13 +233,29 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 			m.flash = "attach を取りやめた (待っている間に画面が変わった)"
 			return m, nil
 		}
-		id := msg.cardID
-		return m, tea.ExecProcess(msg.cmd, func(err error) tea.Msg { return attachDoneMsg{cardID: id, err: err} })
+		done := attachDoneMsg{cardID: msg.cardID, session: msg.session, from: m.now()}
+		return m, m.execProcess(msg.cmd, func(err error) tea.Msg { done.err = err; return done })
 	case attachDoneMsg:
 		if msg.err != nil {
 			m.flash = "attach が失敗した: " + msg.err.Error()
 		} else {
 			m.flash = msg.cardID + " の session から戻った (session は動き続けている)"
+		}
+		// 失敗で戻っても、それまでに打った指示はある。transcript を全部読むので裏で頼む
+		rec, ok := m.be.(backend.AttachRecorder)
+		if !ok {
+			return m, nil
+		}
+		to := m.now()
+		return m, m.child(func() tea.Msg {
+			n, err := rec.RecordAttach(msg.cardID, msg.session, msg.from, to)
+			return attachRecordedMsg{cardID: msg.cardID, n: n, err: err}
+		})
+	case attachRecordedMsg:
+		if msg.err != nil { // 残せなかったことは消さずに出す (知らずにいると、カードを見ても指示が分からない)
+			m.Notify(msg.cardID + ": attach の間の指示をカードに残せなかった: " + msg.err.Error())
+		} else if msg.n > 0 {
+			m.flash = fmt.Sprintf("%s: attach の間の指示 %d 件をカードの履歴へ送った", msg.cardID, msg.n)
 		}
 		return m, nil
 	case tea.PasteMsg:
@@ -717,13 +743,14 @@ func (m *Model) attach() tea.Cmd {
 	be, id, session := m.be, c.ID, c.Session
 	return m.child(func() tea.Msg {
 		cmd, err := be.AttachCommand(session)
-		return attachReadyMsg{cardID: id, cmd: cmd, err: err}
+		return attachReadyMsg{cardID: id, session: session, cmd: cmd, err: err}
 	})
 }
 
 // attachReadyMsg は attach の準備 (backend の照合) が済んだ知らせ。
 type attachReadyMsg struct {
-	cardID string
-	cmd    *exec.Cmd
-	err    error
+	cardID  string
+	session string
+	cmd     *exec.Cmd
+	err     error
 }

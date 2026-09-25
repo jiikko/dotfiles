@@ -50,6 +50,13 @@ type Consumer struct {
 	PID     int    // 実体のプロセス (本物だけ。模擬は 0)
 }
 
+// AttachRecorder は attach の間に人間が PG へ打った指示をカードの履歴へ残す backend (任意。持たない backend は残さない)。
+// 画面は attach から戻ったら、明け渡した時刻 from と戻った時刻 to を渡して裏で呼ぶ。返すのは残すよう頼んだ指示の数。
+// 🚨 要約しない (人間の発言を原文で残す。issue 428)。
+type AttachRecorder interface {
+	RecordAttach(cardID, sessionID string, from, to time.Time) (int, error)
+}
+
 // Notifier は状態が変わったと知らせる backend (画面は tick を待たずに描き直す。任意)。
 type Notifier interface{ Changed() <-chan struct{} }
 

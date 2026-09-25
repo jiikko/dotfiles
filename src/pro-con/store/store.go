@@ -40,6 +40,9 @@ const (
 // RunResource はテストの係 (dispatcher が直列に実行する列) のリソース名。今は 1 本の列だけ (426 の決定 5)。
 const RunResource = "テスト"
 
+// AttachPrefix は attach の間に人間が打った指示を履歴に残すときの前置き。
+const AttachPrefix = "attach で人間が指示: "
+
 // Request は受付の箱に置く依頼 1 件。Kind ごとに使う欄が違う (apply を参照)。
 type Request struct {
 	ID       string          `json:"id"` // 箱のファイル名から Submit が付ける。二重適用を防ぐ鍵
@@ -57,6 +60,7 @@ type Request struct {
 	Answer   string          `json:"answer,omitempty"`
 	From     string          `json:"from,omitempty"` // 回答した人 (人間 / PM)
 	Ending   card.Ending     `json:"ending,omitempty"`
+	Said     []card.Event    `json:"said,omitempty"` // attach: attach の間に人間が打った指示 (原文と打った時刻)
 	At       time.Time       `json:"at"`
 }
 
@@ -348,6 +352,17 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		c.Run, c.RunAt, c.RunCwd = r.Command, now, r.Cwd
 		c.Wait = card.Wait{Kind: card.WaitResource, Resource: RunResource}
 		c.History = append(c.History, card.Event{At: now, Text: "テストの係に頼んだ: " + clip(r.Command, 80)})
+	case "attach": // 画面が attach から戻り、その間に人間が PG へ打った指示を残す (issue 428)。どの列でも受け、状態は変えない
+		if len(r.Said) == 0 {
+			return errors.New("指示が無い")
+		}
+		for _, e := range r.Said {
+			if strings.TrimSpace(e.Text) == "" {
+				return errors.New("空の指示がある")
+			}
+			// 原文のまま残す (要約・切り詰めをしない)。時刻は打った時刻 (適用した時刻ではない)
+			c.History = append(c.History, card.Event{At: e.At, Text: AttachPrefix + e.Text})
+		}
 	case "review": // PG が終えた
 		if c.State != card.Running {
 			return fmt.Errorf("作業中の列に無い (今は %s)", c.State.Label())

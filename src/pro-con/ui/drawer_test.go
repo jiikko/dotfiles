@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -145,6 +146,24 @@ func TestDrawerClosesAndKeepsContentWhileClosing(t *testing.T) {
 		if m.drawerCard != "" || strings.Contains(screen(m), "履歴-00") {
 			t.Fatalf("%s: 閉じ切った後も中身が残っている", k)
 		}
+	}
+}
+
+// 履歴の時刻は手元の時間帯で出す (attach の指示の時刻は transcript の UTC のまま記録に入る。issue 428)。
+func TestDrawerHistoryInLocalTime(t *testing.T) {
+	orig := time.Local
+	time.Local = time.FixedZone("JST", 9*60*60)
+	t.Cleanup(func() { time.Local = orig })
+	m, be, clk := drawerModel(t)
+	for i := range be.snap.Cards {
+		if be.snap.Cards[i].ID == "W1" {
+			be.snap.Cards[i].History = append(be.snap.Cards[i].History, card.Event{At: time.Date(2026, 9, 24, 1, 2, 0, 0, time.UTC), Text: "UTC の指示"})
+		}
+	}
+	m.Update(tickMsg{})
+	open(t, m, clk)
+	if body := ansi.Strip(strings.Join(m.drawerBody(), "\n")); !strings.Contains(body, "10:02 UTC の指示") {
+		t.Fatalf("UTC の時刻のまま出した: %q", body[strings.LastIndex(body, "履歴-59"):])
 	}
 }
 

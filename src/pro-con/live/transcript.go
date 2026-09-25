@@ -84,15 +84,34 @@ func ReadTail(path string) (Transcript, error) {
 	return parse(data), nil
 }
 
-func parse(data []byte) Transcript {
+// HumanPrompts は path の transcript の**全体**から、from 以降 to 以前の人間の発言を古い順に返す (attach の間に打った指示。issue 428)。
+// 末尾だけ (ReadTail) だと、長く attach していた間の先頭の発言を落とす。
+func HumanPrompts(path string, from, to time.Time) ([]Prompt, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }() // 読むだけなので閉じる失敗は結果に影響しない
+	var out []Prompt
+	for _, p := range parseFrom(f).Prompts {
+		if !p.At.Before(from) && !p.At.After(to) {
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
+func parse(data []byte) Transcript { return parseFrom(bytes.NewReader(data)) }
+
+func parseFrom(rd io.Reader) Transcript {
 	var t Transcript
 	seen := map[string]bool{}
 	pending := map[string]time.Time{} // tool_use の id → 呼んだ時刻 (結果が返ったら消す)
-	sc := bufio.NewScanner(bytes.NewReader(data))
-	sc.Buffer(make([]byte, 0, 64<<10), 8<<20)
-	for sc.Scan() {
+	// 🚨 bufio.Scanner にしない: 行の長さに上限があり、それを超える行 (大きなツールの結果) で読むのを黙って止め、後の発言を落とす
+	br := bufio.NewReader(rd)
+	for line, err := br.ReadBytes('\n'); len(line) > 0 || err == nil; line, err = br.ReadBytes('\n') {
 		var r record
-		if json.Unmarshal(sc.Bytes(), &r) != nil {
+		if json.Unmarshal(line, &r) != nil {
 			continue // 読めない行は飛ばす (書きかけの最後の行など)
 		}
 		at, _ := time.Parse(time.RFC3339Nano, r.Timestamp)
@@ -128,7 +147,7 @@ func parse(data []byte) Transcript {
 				}
 			}
 			if r.Origin != nil && r.Origin.Kind == "human" && r.Message != nil {
-				if s := text(r.Message.Content); s != "" {
+				if s := text(r.Message.Content); s != "" && !strings.HasPrefix(s, RestartNote) { // 再開の文は人間の発言ではない (origin は未実測)
 					t.Prompts = append(t.Prompts, Prompt{At: at, Text: s})
 				}
 			}

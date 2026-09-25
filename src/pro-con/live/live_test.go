@@ -664,3 +664,53 @@ func TestStartKeepsDispatcher(t *testing.T) {
 	}
 	t.Fatal("dispatcher が居ないのに、読み直しのループが起こさない")
 }
+
+// attach の間 (from〜to) に人間が打った指示だけを、受付の箱に置く。dispatcher が適用すると原文のまま履歴に入る (issue 428)。
+// transcript は全体を読む (末尾を読む ReadTail だと、長い attach の先頭の発言を落とす)。
+func TestRecordAttachSubmitsHumanPromptsInWindow(t *testing.T) {
+	b, _ := testBackend(t, sessions, nil)
+	runningCard(t, b, "C-001", "bbbbbbbb")
+	p := filepath.Join(t.TempDir(), "s.jsonl")
+	head := `{"type":"user","timestamp":"2026-09-24T09:59:00Z","origin":{"kind":"human"},"message":{"content":"attach の最初の指示"}}`
+	pad := strings.Repeat(`{"type":"system","content":"`+strings.Repeat("x", 1000)+`"}`+"\n", tailBytes/1000+10)
+	huge := `{"type":"user","message":{"content":[{"type":"tool_result","content":"` + strings.Repeat("y", 9<<20) + `"}]}}` // 大きなツールの結果 1 行の後も読み続ける
+	restart := `{"type":"user","timestamp":"2026-09-24T09:59:30Z","origin":{"kind":"human"},"message":{"content":"` + RestartNote + `."}}`
+	if err := os.WriteFile(p, []byte(head+"\n"+huge+"\n"+restart+"\n"+pad+sample), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var looked string
+	b.findPath = func(id string) (string, error) { looked = id; return p, nil }
+	from, to := time.Date(2026, 9, 24, 9, 59, 0, 0, time.UTC), time.Date(2026, 9, 24, 10, 0, 30, 0, time.UTC)
+	n, err := b.RecordAttach("C-001", "bbbbbbbb", from, to)
+	if err != nil || n != 2 || looked != "bbbbbbbb-2" {
+		t.Fatalf("窓の中の人間の発言 2 件を、記録の session id の transcript から拾うはず: n=%d err=%v 引いた id=%q", n, err, looked)
+	}
+	if _, err := store.Apply(b.dir, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Load(b.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, e := range st.Cards[0].History {
+		if strings.HasPrefix(e.Text, store.AttachPrefix) {
+			got = append(got, e.At.UTC().Format("15:04:05")+" "+strings.TrimPrefix(e.Text, store.AttachPrefix))
+		}
+	}
+	if strings.Join(got, "|") != "09:59:00 attach の最初の指示|10:00:00 最初の依頼" {
+		t.Fatalf("履歴に原文と打った時刻で入っていない (窓の外の発言・ツールの結果・他 session のメッセージ・再開の文は入れない): %q", got)
+	}
+
+	// 窓に発言が無ければ何も置かない
+	if n, err := b.RecordAttach("C-001", "bbbbbbbb", to.Add(time.Hour), to.Add(2*time.Hour)); n != 0 || err != nil {
+		t.Fatalf("発言の無い窓で n=%d err=%v", n, err)
+	}
+	if left, _ := filepath.Glob(filepath.Join(b.dir, store.InboxDir, "*.json")); len(left) != 0 {
+		t.Fatalf("発言が無いのに箱に置いた: %v", left)
+	}
+	// pro-con が起動していない session は引かない
+	if _, err := b.RecordAttach("C-001", "zzzzzzzz", from, to); err == nil {
+		t.Fatal("記録に無い session の transcript を読んだ")
+	}
+}

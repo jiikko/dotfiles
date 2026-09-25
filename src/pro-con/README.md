@@ -28,6 +28,8 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
   照合は記録の行の session id・短い id・pid が全部一致したときだけ (pid が違う = 外の shell で同じ session を再開したもの、は外れる)。
   Desktop や他の shell の session は出さず、選べない (選べると pro-con の外の session に入力・停止できてしまう)。
   attach は押した瞬間に一覧を取り直して照合し直してから撃つ。attach できるのは `claude --bg` の session だけ。
+  attach から戻ると、その間に人間が打った文 (transcript の `origin.kind == "human"`) を原文のままカードの履歴へ残す
+  (要約しない。受付の箱経由で dispatcher が書く。issue 428)。
   🚨 逆向き (外の shell から pro-con の session を attach / stop される) は Claude Code の側で止められない。検出は issue 427
 - PG の出力は transcript (`~/.claude/projects/*/<sessionId>.jsonl`) の末尾 512KB から読み、`claude agents --json` とあわせて 3 秒ごとに裏で読み直す
 

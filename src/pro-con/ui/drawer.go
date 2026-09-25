@@ -182,7 +182,7 @@ func (m *Model) drawerBody() []string {
 	out = append(out, "")
 	add(sgrDim, "履歴")
 	for _, e := range c.History {
-		add("", "  "+e.At.Format("15:04")+" "+e.Text)
+		add("", "  "+e.At.Local().Format("15:04")+" "+e.Text) // 記録の時刻の時間帯は書いた側による (transcript 由来は UTC)
 	}
 	out = append(out, "")
 	add(sgrDim, "出力")
