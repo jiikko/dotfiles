@@ -77,15 +77,15 @@ func firstLine(s string) string {
 	return s
 }
 
-// ReadUsage は dir (状態の置き場) で `claude -p /usage` を実行して使用率を読む。
-func ReadUsage(dir string) func(context.Context) (Usage, error) {
-	return func(ctx context.Context) (Usage, error) { return readUsage(ctx, dir) }
+// ReadUsage は dir (状態の置き場) で `claude -p /usage` を実行して使用率を読む (claude は実体の絶対パス)。
+func ReadUsage(claude, dir string) func(context.Context) (Usage, error) {
+	return func(ctx context.Context) (Usage, error) { return readUsage(ctx, claude, dir) }
 }
 
-func readUsage(ctx context.Context, dir string) (Usage, error) {
+func readUsage(ctx context.Context, claude, dir string) (Usage, error) {
 	ctx, cancel := context.WithTimeout(ctx, usageTimeout)
 	defer cancel()
-	cmd := usageCmd(ctx, dir)
+	cmd := usageCmd(ctx, claude, dir)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -98,8 +98,8 @@ func readUsage(ctx context.Context, dir string) (Usage, error) {
 // usageCmd は枠を読むコマンド (引数と置き場はテストが固定する)。
 // 🚨 --setting-sources "" は user の settings の env と plugin も落とす。今は認証を settings に置いていないので同じアカウントの枠を読むが、
 // 置くようになったら (apiKeyHelper / CLAUDE_CONFIG_DIR) PG と別の枠を読む
-func usageCmd(ctx context.Context, dir string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "claude", "-p", "--no-session-persistence", "--setting-sources", "", "/usage")
+func usageCmd(ctx context.Context, claude, dir string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, claude, "-p", "--no-session-persistence", "--setting-sources", "", "/usage")
 	cmd.Dir = dir // 空の project が 1 つだけできる (Claude Code が cwd ごとに memory の dir を作る)
 	cmd.Env = withoutTmux(os.Environ())
 	cmd.WaitDelay = time.Second // 子孫が stdout を握ったままでも timeout で戻る (launcher と同じ)

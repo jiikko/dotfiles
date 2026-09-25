@@ -360,11 +360,11 @@ func TestUsageCmd(t *testing.T) {
 	t.Setenv("TMUX", "/tmp/tmux-1/default,1,0")
 	t.Setenv("TMUX_PANE", "%1")
 	t.Setenv("PRO_CON_KEEP", "1")
-	cmd := usageCmd(context.Background(), "/state")
+	cmd := usageCmd(context.Background(), "/bin/claude", "/state")
 	if cmd.Env == nil || !slices.Contains(cmd.Env, "PRO_CON_KEEP=1") {
 		t.Fatalf("親の環境を引き継いでいない / Env が nil (親の TMUX がそのまま渡る): %d 個", len(cmd.Env))
 	}
-	want := []string{"claude", "-p", "--no-session-persistence", "--setting-sources", "", "/usage"}
+	want := []string{"/bin/claude", "-p", "--no-session-persistence", "--setting-sources", "", "/usage"}
 	if strings.Join(cmd.Args, "\x00") != strings.Join(want, "\x00") || cmd.Dir != "/state" || cmd.WaitDelay != time.Second {
 		t.Fatalf("args=%q dir=%q waitDelay=%v", cmd.Args, cmd.Dir, cmd.WaitDelay)
 	}

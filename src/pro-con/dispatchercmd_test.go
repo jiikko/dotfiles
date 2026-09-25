@@ -160,12 +160,28 @@ func TestNewDispatcherPassesUserSettingsToLauncher(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
-	d := newDispatcherFor(t.TempDir(), filepath.Join(home, ".claude", "projects"), nil, "", false, 1, nil)
+	d := newDispatcherFor(t.TempDir(), filepath.Join(home, ".claude", "projects"), nil, "", false, 1, dispatcher.Claude{Path: "/x/claude"}, nil)
 	l, ok := d.Launch.(dispatcher.ExecLauncher)
 	if !ok {
 		t.Fatalf("Launch = %T (本物の launcher のはず)", d.Launch)
 	}
 	if want := filepath.Join(home, ".claude", "settings.json"); l.UserSettings != want {
 		t.Fatalf("UserSettings = %q, want %q", l.UserSettings, want)
+	}
+	if l.Claude != "/x/claude" { // 起動時に解決した実体で起動・再開する (464)
+		t.Fatalf("Claude = %q", l.Claude)
+	}
+}
+
+// claude の実体を解決できなければ、本物の dispatcher は起動しない (素の名前に倒すと repo ごとに別の版が動く。464)。lock も取らない。
+func TestRealDispatcherRefusesWithoutClaude(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	dir := t.TempDir()
+	var out, errOut bytes.Buffer
+	if rc := runDispatcher([]string{"--once"}, dir, "", nil, pmConfig{}, &out, &errOut); rc != 1 || !strings.Contains(errOut.String(), "claude が PATH に無い") {
+		t.Fatalf("rc=%d stderr=%q", rc, errOut.String())
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("状態の置き場に書いた: %v", entries)
 	}
 }

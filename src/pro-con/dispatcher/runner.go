@@ -398,22 +398,22 @@ func killStale(runID string) {
 const summarizeTimeout = 3 * time.Minute
 
 // HaikuSummarize は失敗したログの末尾を haiku に要約させる (426 の決定 5)。状態の置き場で動かす (repo の hook・規約を読ませない)。
-func HaikuSummarize(dir string) func(ctx context.Context, tail string) (string, error) {
+func HaikuSummarize(claude, dir string) func(ctx context.Context, tail string) (string, error) {
 	return func(ctx context.Context, tail string) (string, error) {
 		ctx, cancel := context.WithTimeout(ctx, summarizeTimeout)
 		defer cancel()
-		return haiku(ctx, dir, "次はテストかビルドのコマンドの失敗したログの末尾です。何が失敗したか (落ちたテスト名・エラーの場所と内容) を日本語で 5 行以内に要約してください。ログに書かれていないことは書かず、質問もしないこと。\n\n"+tail)
+		return haiku(ctx, claude, dir, "次はテストかビルドのコマンドの失敗したログの末尾です。何が失敗したか (落ちたテスト名・エラーの場所と内容) を日本語で 5 行以内に要約してください。ログに書かれていないことは書かず、質問もしないこと。\n\n"+tail)
 	}
 }
 
 // HaikuAsk は btw の答えを haiku に作らせる (btw.go。上限は呼ぶ側が付ける)。
-func HaikuAsk(dir string) func(ctx context.Context, prompt string) (string, error) {
-	return func(ctx context.Context, prompt string) (string, error) { return haiku(ctx, dir, prompt) }
+func HaikuAsk(claude, dir string) func(ctx context.Context, prompt string) (string, error) {
+	return func(ctx context.Context, prompt string) (string, error) { return haiku(ctx, claude, dir, prompt) }
 }
 
-// haiku は prompt を安いモデルの claude -p に渡す。状態の置き場で動かす (repo の hook・規約を読ませない)。
-func haiku(ctx context.Context, dir, prompt string) (string, error) {
-	cmd := exec.CommandContext(ctx, "claude", "-p", "--model", "haiku", "--setting-sources", "project,local")
+// haiku は prompt を安いモデルの claude -p に渡す (claude は実体の絶対パス)。状態の置き場で動かす (repo の hook・規約を読ませない)。
+func haiku(ctx context.Context, claude, dir, prompt string) (string, error) {
+	cmd := exec.CommandContext(ctx, claude, "-p", "--model", "haiku", "--setting-sources", "project,local")
 	cmd.Dir = dir
 	cmd.Env = withoutTmux(os.Environ())
 	cmd.Stdin = strings.NewReader(prompt)

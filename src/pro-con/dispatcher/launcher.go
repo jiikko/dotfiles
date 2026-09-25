@@ -24,8 +24,9 @@ import (
 	"time"
 )
 
-// ExecLauncher は Launcher の本物。UserSettings はユーザーの settings.json のパスで、起動・再開のたびに language を読む (空なら渡さない)。
-type ExecLauncher struct{ UserSettings string }
+// ExecLauncher は Launcher の本物。Claude は claude の実体の絶対パス (ResolveClaude。素の名前にしない = 464)。
+// UserSettings はユーザーの settings.json のパスで、起動・再開のたびに language を読む (空なら渡さない)。
+type ExecLauncher struct{ Claude, UserSettings string }
 
 // ErrRejected は claude が起動・再開を受け付けなかった失敗 (rc≠0 で返った / プロセスを起動できなかった)。何も立っていないので、
 // 同じ失敗を繰り返さずに数えられる (462。時間切れ・--bg の出力が読めないものは、立っているかもしれないので含めない)
@@ -35,7 +36,7 @@ var ErrRejected = errors.New("claude が受け付けなかった")
 const launchTimeout = 30 * time.Second
 
 func (l ExecLauncher) Start(ctx context.Context, repoPath, name, prompt string) (string, error) {
-	out, err := runClaude(ctx, repoPath, l.startArgs(name, prompt)...)
+	out, err := runClaude(ctx, l.Claude, repoPath, l.startArgs(name, prompt)...)
 	if err != nil {
 		return "", err
 	}
@@ -44,19 +45,19 @@ func (l ExecLauncher) Start(ctx context.Context, repoPath, name, prompt string) 
 
 func (l ExecLauncher) Resume(ctx context.Context, stopID, sessionID, cwd, text string) (string, error) {
 	if stopID != "" {
-		if _, err := runClaude(ctx, "", "stop", stopID); err != nil {
+		if _, err := runClaude(ctx, l.Claude, "", "stop", stopID); err != nil {
 			return "", fmt.Errorf("claude stop %s: %w", stopID, err)
 		}
 	}
-	out, err := runClaude(ctx, cwd, l.resumeArgs(sessionID, text)...)
+	out, err := runClaude(ctx, l.Claude, cwd, l.resumeArgs(sessionID, text)...)
 	if err != nil {
 		return "", err
 	}
 	return parseBackgrounded(out)
 }
 
-func (ExecLauncher) Stop(ctx context.Context, id string) error {
-	if _, err := runClaude(ctx, "", "stop", id); err != nil {
+func (l ExecLauncher) Stop(ctx context.Context, id string) error {
+	if _, err := runClaude(ctx, l.Claude, "", "stop", id); err != nil {
 		return fmt.Errorf("claude stop %s: %w", id, err)
 	}
 	return nil
@@ -126,10 +127,10 @@ func languageSettings(path string) string {
 	return string(out)
 }
 
-func runClaude(ctx context.Context, dir string, args ...string) (string, error) {
+func runClaude(ctx context.Context, claude, dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, launchTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "claude", args...)
+	cmd := exec.CommandContext(ctx, claude, args...)
 	cmd.Dir = dir
 	cmd.Env = withoutTmux(os.Environ())
 	var out, errOut bytes.Buffer

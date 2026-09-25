@@ -510,3 +510,80 @@ func TestPMOffLeavesRequestedCards(t *testing.T) {
 		}
 	})
 }
+
+// claude が PM の起動・再開を受け付けない (rc≠0 がすぐ返る) のが launchRejectLimit 回続いたら、起こし直さない (462 の PM 版)。
+// 起こし直しの上限 (pmReviveLimit) は生きていない PM を起こし直すときにしか効かず、1 度も起動できていない PM と終了で止めた PM には当たらない。
+func TestPMRejectedLaunchLimited(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T) *pmRig
+		tries func(r *pmRig) int
+	}{
+		{"起動", func(t *testing.T) *pmRig {
+			r := newPMRig(t)
+			request(t, r.dir, "一つ目")
+			return r
+		}, func(r *pmRig) int { return r.l.startTries }},
+		{"終了で止めた後の再開", func(t *testing.T) *pmRig {
+			r := startedPM(t)
+			if _, err := r.d.Shutdown(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			r.ss = nil
+			return r
+		}, func(r *pmRig) int { return len(r.l.resumes) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := tc.setup(t)
+			r.l.reject = true
+			var notes []eventlog.Event
+			for i := range 40 {
+				r.now = t0.Add(time.Hour + time.Duration(i)*30*time.Second)
+				before := tc.tries(r)
+				notes = append(notes, r.tick(t)...)
+				// 上限に達した拒否の直後に見る (印は launchGrace の後の Tick でも外れるので、最後に見ても差が出ない)
+				if pm := loadPM(t, r.dir); tc.tries(r) == launchRejectLimit && before < launchRejectLimit && pm.Launching != "" {
+					t.Fatalf("起こし直さないのに印を残した (終了が一覧に出るのを待つ): %+v", pm)
+				}
+			}
+			if n := tc.tries(r); n != launchRejectLimit {
+				t.Fatalf("受け付けられない%sを %d 回試した (上限 %d)", tc.name, n, launchRejectLimit)
+			}
+			held := 0
+			for _, n := range notes {
+				if n.Kind == eventlog.KindHold && strings.Contains(n.Reason, "受け付けなかった") {
+					held++
+				}
+			}
+			if held != 1 {
+				t.Fatalf("起こし直さない理由の出来事 = %d 件 (1 件のはず): %v", held, notes)
+			}
+		})
+	}
+}
+
+// PM の拒否の回数は「続いた」回数: 立っているかもしれない失敗・起動できたら 0 に戻る (飛び飛びの拒否で起こさなくならない)。
+func TestPMRejectCountResetsOnOtherOutcomes(t *testing.T) {
+	r := newPMRig(t)
+	request(t, r.dir, "一つ目")
+	tickAt := func(i int) {
+		r.now = t0.Add(time.Hour + time.Duration(i)*2*launchGrace)
+		r.tick(t)
+	}
+	r.l.reject = true
+	tickAt(0)
+	tickAt(1)
+	r.l.reject, r.l.fail = false, true // 立っているかもしれない失敗
+	tickAt(2)
+	if r.d.pmRejects != 0 {
+		t.Fatalf("拒否でない失敗で回数を 0 に戻していない: %d", r.d.pmRejects)
+	}
+	r.l.reject, r.l.fail = true, false
+	tickAt(3)
+	tickAt(4)
+	r.l.reject = false
+	tickAt(5) // 起動できた
+	if r.d.pmRejects != 0 || loadPM(t, r.dir).Session == "" {
+		t.Fatalf("起動できたのに回数を 0 に戻していない: %d %+v", r.d.pmRejects, loadPM(t, r.dir))
+	}
+}

@@ -91,16 +91,20 @@ func (s Session) Stopped() bool {
 // Stopped は偽 (止めに行く)。呼び出し側は止めるときに警告を出す
 func (s Session) UnknownState() bool { return s.PID == 0 && !s.Stopped() && s.State != stateWorking }
 
-// ExecRunner は本物の claude を呼ぶ (止めた session は出ない)。
-func ExecRunner(ctx context.Context) ([]byte, []byte, error) { return execAgents(ctx) }
+// ExecRunner は本物の claude (claude は実体のパス) を呼ぶ (止めた session は出ない)。
+func ExecRunner(claude string) func(context.Context) ([]byte, []byte, error) {
+	return func(ctx context.Context) ([]byte, []byte, error) { return execAgents(ctx, claude) }
+}
 
 // ExecRunnerAll は止めた session も出す (`--all`。止めたことを確かめるのに使う。2.1.282 で実測 2026-09-25: `claude stop` した
 // session は `--all` なしでは出ず、`--all` では state: stopped・pid 無しで残る。25 秒後も自動で再開しない)。
-func ExecRunnerAll(ctx context.Context) ([]byte, []byte, error) { return execAgents(ctx, "--all") }
+func ExecRunnerAll(claude string) func(context.Context) ([]byte, []byte, error) {
+	return func(ctx context.Context) ([]byte, []byte, error) { return execAgents(ctx, claude, "--all") }
+}
 
-func execAgents(ctx context.Context, extra ...string) ([]byte, []byte, error) {
+func execAgents(ctx context.Context, claude string, extra ...string) ([]byte, []byte, error) {
 	var out, errOut bytes.Buffer
-	cmd := exec.CommandContext(ctx, "claude", append([]string{"agents", "--json"}, extra...)...)
+	cmd := exec.CommandContext(ctx, claude, append([]string{"agents", "--json"}, extra...)...)
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	cmd.WaitDelay = time.Second
 	err := cmd.Run()

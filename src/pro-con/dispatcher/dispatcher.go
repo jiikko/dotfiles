@@ -113,6 +113,10 @@ type Dispatcher struct {
 	pmHeld   string // 枠で PM を起こさない理由 (変わったときだけログに書く)
 	pmFailed string // PM を起こせない理由 (同上)
 	pmStatus string // 知らない PM の status (同上)
+	// pmRejects は claude が PM の起動・再開を受け付けなかったのが続いた回数、pmRejected は最後のその失敗。launchRejectLimit 回続いたら起こさない。
+	// 🚨 メモリにだけ持つ: PM には回答で戻す人の番が無いので、直した後に dispatcher を起動し直すのが戻し方 (claude の実体を引き直すのも起動時だけ = 464)
+	pmRejects  int
+	pmRejected string
 	// Exists は PM の作業ディレクトリが在るかを見る (nil なら os.Stat)。テストが差し替える
 	Exists func(dir string) bool
 

@@ -8,6 +8,7 @@ package dispatcher
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -85,6 +86,7 @@ func (d *Dispatcher) tellPM(ctx context.Context, now time.Time, ss []agents.Sess
 		if id, ok := d.pmAdopt(pm, row, hasRow, ss); ok {
 			notes = append(notes, ev(eventlog.KindLaunch, PMCardID, id, fmt.Sprintf("PM の%sを一覧で確かめた (%s)", pm.Launching, id)))
 			settlePM(&pm, id)
+			d.pmRejects = 0
 		} else if now.Sub(pm.LaunchedAt) < launchGrace {
 			return notes, save()
 		} else {
@@ -163,6 +165,16 @@ func (d *Dispatcher) tellPM(ctx context.Context, now time.Time, ss []agents.Sess
 		}
 		return notes, save()
 	}
+	// 受け付けられない起動・再開 (trust していない repo・未ログイン・古い claude) を繰り返さない。起こし直しの上限は、1 度も起動できていない PM と
+	// 終了で止めた PM には当たらない (462 の PM 版)
+	if d.pmRejects >= launchRejectLimit {
+		why := fmt.Sprintf("PM の起動・再開を claude が %d 回続けて受け付けなかったので、起こさない (最後: %s)。直してから dispatcher を起動し直すと、もう一度起こす", d.pmRejects, d.pmRejected)
+		if d.pmHeld != why {
+			d.pmHeld = why
+			notes = append(notes, ev(eventlog.KindHold, PMCardID, pm.Session, why))
+		}
+		return notes, save()
+	}
 	if limit, why := d.capacity(now); limit == 0 {
 		if d.pmHeld != why {
 			d.pmHeld = why
@@ -192,6 +204,15 @@ func (d *Dispatcher) tellPM(ctx context.Context, now time.Time, ss []agents.Sess
 	}
 	before = fmt.Sprint(pm)
 	id, launchErr := run(ctx)
+	if errors.Is(launchErr, ErrRejected) {
+		d.pmRejects++
+		d.pmRejected = launchErr.Error()
+		if d.pmRejects >= launchRejectLimit {
+			pm.Launching = "" // 何も立っていない (印を残すと、終了が一覧に出るのを待ち続ける)
+		}
+		return append(notes, ev(eventlog.KindLaunch, PMCardID, "", fmt.Sprintf("PM の%sを claude が受け付けなかった (%d 回目): %v", how, d.pmRejects, launchErr))), save()
+	}
+	d.pmRejects = 0 // 続いていない
 	if launchErr != nil {
 		return append(notes, ev(eventlog.KindLaunch, PMCardID, "", fmt.Sprintf("PM の%sに失敗したと返った (立っているかもしれないので、一覧で確かめてから起こし直す): %v", how, launchErr))), nil
 	}

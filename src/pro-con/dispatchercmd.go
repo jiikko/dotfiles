@@ -58,6 +58,13 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 			return 1
 		}
 	}
+	var cl dispatcher.Claude // e2e モードは claude を起動しないので引かない
+	if e2e == nil {
+		if cl, err = dispatcher.ResolveClaude(context.Background()); err != nil {
+			_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", err)
+			return 1
+		}
+	}
 	if *stopAll {
 		// 止めている間に SIGTERM / SIGHUP / SIGINT が来ても (画面の終了・ログアウトと重なる)、1 回目は止めるのをもう 1 度だけ試してから抜ける。
 		// 2 回目ですぐ抜ける (止まらない形でも kill -9 無しで止められる)。
@@ -72,7 +79,7 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 			os.Exit(1)
 		}()
 		defer signal.Stop(sigs)
-		if err := stopDispatcher(ctx, dir, projects, repos, pm.Repo, e2e, stdout); err != nil {
+		if err := stopDispatcher(ctx, dir, projects, repos, pm.Repo, cl, e2e, stdout); err != nil {
 			_, _ = fmt.Fprintln(stderr, "pro-con dispatcher --stop:", err)
 			return 1
 		}
@@ -85,8 +92,9 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 	}
 	defer unlock()
 	_ = dispatcher.StopRequested(dir) // 前の --stop が dispatcher の居ない間に置いた印は捨てる (起動した途端に止まらないように)
-	d := newDispatcherFor(dir, projects, repos, pm.Repo, pmOff, *limit, e2e)
+	d := newDispatcherFor(dir, projects, repos, pm.Repo, pmOff, *limit, cl, e2e)
 	d.Record = eventSink(dir, stdout, stderr)
+	sayClaude(d, cl)
 	if d.PMOff { // 依頼の列にカードが溜まっても PM が来ないのは、この設定のせいだと後から分かるように (dispatcher の値から出す = 渡し忘れも見える)
 		say(d, eventlog.KindHold, "PM を起こさない ("+pmWhy+")。依頼の列のカードはそのまま置く (PM は人か外の Claude が行う)")
 	}
@@ -235,7 +243,7 @@ func stopUntilDone(ctx context.Context, d *dispatcher.Dispatcher, dir string, wa
 const stopTimeout = 120 * time.Second
 
 // stopDispatcher は dispatcher と PG を止める。dispatcher が動いていれば止めるよう頼んで待ち、動いていなければ自分で dispatcher の役を取って止める。
-func stopDispatcher(ctx context.Context, dir, projects string, repos map[string]string, pmRepo string, e2e *dispatcher.E2E, stdout io.Writer) error {
+func stopDispatcher(ctx context.Context, dir, projects string, repos map[string]string, pmRepo string, cl dispatcher.Claude, e2e *dispatcher.E2E, stdout io.Writer) error {
 	running, err := dispatcher.RequestStop(ctx, dir, stopTimeout)
 	if errors.Is(err, dispatcher.ErrStopperDied) { // 止めていた dispatcher が落ちた: 止める役を引き継ぐ
 		_, _ = fmt.Fprintln(stdout, "止めていた dispatcher が落ちたので、止める役を引き継ぐ")
@@ -250,8 +258,9 @@ func stopDispatcher(ctx context.Context, dir, projects string, repos map[string]
 	}
 	defer unlock()
 	_ = dispatcher.StopRequested(dir)
-	d := newDispatcherFor(dir, projects, repos, pmRepo, false, 1, e2e) // 止めるだけ (PM は PMOff でも止める)
-	d.Record = eventSink(dir, stdout, stdout)                          // dispatcher の役を取った (lock を持つ) ので、出来事を書いてよい
+	d := newDispatcherFor(dir, projects, repos, pmRepo, false, 1, cl, e2e) // 止めるだけ (PM は PMOff でも止める)
+	d.Record = eventSink(dir, stdout, stdout)                              // dispatcher の役を取った (lock を持つ) ので、出来事を書いてよい
+	sayClaude(d, cl)
 	// 自分で止めている間に次の --stop が来たら、その --stop は結果のファイルを読む。止めきれなければ止まるまで止め直す
 	// (画面の待ちが切れて閉じても、このプロセスは別のプロセスグループで続ける)
 	if !stopUntilDone(ctx, d, dir, nil, serveOpts{}, stdout) {
@@ -290,6 +299,13 @@ func say(d *dispatcher.Dispatcher, kind, text string) {
 		if d.Changed != nil {
 			d.Changed()
 		}
+	}
+}
+
+// sayClaude は使う claude の実体と版を出来事に残す (464。e2e モードは claude を起動しないので残さない)。
+func sayClaude(d *dispatcher.Dispatcher, cl dispatcher.Claude) {
+	if cl.Path != "" {
+		say(d, eventlog.KindLaunch, fmt.Sprintf("claude は %s (%s) を使う", cl.Path, cl.Version))
 	}
 }
 
@@ -336,16 +352,20 @@ func userSettingsPath() string {
 	return dispatcher.UserSettingsPath(home)
 }
 
-// newDispatcherFor は dispatcher を組む。e2e が nil なら本物 (claude を起動する)、あれば偽の PG と偽の一覧 (claude を起動しない。PM は起こさず FakePM が役を持つ)。
-func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo string, pmOff bool, limit int, e2e *dispatcher.E2E) *dispatcher.Dispatcher {
+// newDispatcherFor は dispatcher を組む。e2e が nil なら本物 (claude の実体 cl を起動する)、あれば偽の PG と偽の一覧 (claude を起動しない。PM は起こさず FakePM が役を持つ)。
+func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo string, pmOff bool, limit int, cl dispatcher.Claude, e2e *dispatcher.E2E) *dispatcher.Dispatcher {
 	if e2e != nil {
 		return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: e2e.Launcher(), List: e2e.List, ListAll: e2e.ListAll, Now: time.Now,
 			Runner: dispatcher.ExecRunner{}, FakePM: e2e.FakePM, PMOff: pmOff} // テストの係は本物のシェル (偽の worktree で走る)。失敗の要約 (haiku) はしない
 	}
-	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{UserSettings: userSettingsPath()}, PMRepo: pmRepo, PMGuide: pmGuide, PMOff: pmOff,
-		Runner: dispatcher.ExecRunner{}, Summarize: dispatcher.HaikuSummarize(dir), Ask: dispatcher.HaikuAsk(dir), Usage: dispatcher.ReadUsage(dir),
-		List:    func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) },
-		ListAll: func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunnerAll) }, Now: time.Now,
+	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{Claude: cl.Path, UserSettings: userSettingsPath()}, PMRepo: pmRepo, PMGuide: pmGuide, PMOff: pmOff,
+		Runner: dispatcher.ExecRunner{}, Summarize: dispatcher.HaikuSummarize(cl.Path, dir), Ask: dispatcher.HaikuAsk(cl.Path, dir), Usage: dispatcher.ReadUsage(cl.Path, dir),
+		List: func(ctx context.Context) ([]agents.Session, error) {
+			return agents.List(ctx, agents.ExecRunner(cl.Path))
+		},
+		ListAll: func(ctx context.Context) ([]agents.Session, error) {
+			return agents.List(ctx, agents.ExecRunnerAll(cl.Path))
+		}, Now: time.Now,
 		Transcript: func(sessionID string) (live.Transcript, error) {
 			p, err := live.FindTranscript(projects, sessionID)
 			if err != nil {
