@@ -555,6 +555,7 @@ func (m *Model) hints() []string {
 		hint{"d 削除", has && !c.Deleting() && m.accepts(backend.OpDelete), true},
 	)
 	if m.showDetail {
+		cardOps = append(cardOps, avail("o 添付を開く", has && len(openable(c)) > 0))
 		return append(append([]string{"j / k スクロール", "J / K 隣のカード"}, cardOps...), "q / esc 閉じる")
 	}
 	back := "Q 終了"

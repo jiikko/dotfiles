@@ -253,7 +253,7 @@ func TestLaunchFailureKeepsCardPlanned(t *testing.T) {
 // PG への指示には規律 (AskUserQuestion を使わず pro-con card ask / 終えたら review / master へ push しない) とカードの ID が入る。
 func TestPromptCarriesDiscipline(t *testing.T) {
 	p := Prompt(card.Card{ID: "C-007", Title: "直す", Request: "色を直して"})
-	for _, want := range []string{"C-007", "AskUserQuestion", "pro-con card ask C-007", "pro-con card review C-007", "pro-con card run C-007 --", "master へは push しない", "色を直して"} {
+	for _, want := range []string{"C-007", "AskUserQuestion", "pro-con card ask C-007", "pro-con card review C-007", "pro-con card run C-007 --", "pro-con card attach C-007 ", "master へは push しない", "色を直して"} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("PG への指示に %q が無い:\n%s", want, p)
 		}

@@ -1,6 +1,6 @@
 // Package dispatcher は本物のモードの dispatcher (issue 427 の段階 3c-1)。1 回の Tick で:
 //
-//  1. 受付の箱を記録へ適用する (store.Apply)。終えたカードを記録から書庫へ移す (store.Archive。issue 478)
+//  1. 受付の箱を記録へ適用する (store.Apply)。終えたカードを記録から書庫へ移す (store.Archive。issue 478)。記録に無いカードの添付を消す (issue 453)
 //  2. 起動した PG の session を pro-con の記録 (live.Register) に登録する (session id と pid が一覧に出てから)
 //  3. (落ちた PG を見張る trackDead の後に) 閉じたカード・削除の依頼を受けたカードの PG の session を止める (close.go。issue 447 / 451)。削除のカードは止まったら記録から外す
 //  4. 依頼の列のカードを PM に知らせる (pm.go。issue 437)。PM が居なければ起動し、居れば再開する
@@ -175,6 +175,10 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 		d.Changed()
 	}
 	notes = append(notes, d.archive(now)...)
+	// 書庫へ移した・削除したカードの添付を消す (記録を書いた後に消す。落ちても次の Tick が消し直す。issue 453)
+	if _, err := store.SweepAttachments(d.Dir, now); err != nil {
+		notes = append(notes, ev(eventlog.KindError, "", "", "添付を片付けられない (次の Tick で消し直す): "+err.Error()))
+	}
 	ss, err := d.List(ctx)
 	if err != nil {
 		return append(notes, ev(eventlog.KindError, "", "", "session の一覧を取れない (登録と割り当ては次の Tick へ): "+err.Error())), nil
@@ -946,6 +950,9 @@ func Prompt(c card.Card) string {
 	b.WriteString("- 作業は自分の worktree で行い、commit は自分のブランチまで push する (master へは push しない)\n")
 	fmt.Fprintf(&b, "- 質問があるときは AskUserQuestion を使わず、`pro-con card ask %s \"<質問>\"` を実行してから turn を終える (回答は再開のときに届く)\n", c.ID)
 	fmt.Fprintf(&b, "- make test・ビルド・実機 E2E など時間のかかるコマンドは自分で走らせず、`pro-con card run %s -- <コマンド>` で頼んでから turn を終える (結果は再開のときに届く。同時に頼めるのは 1 本。パイプや && を含む 1 行は `-- bash -c '<1 行>'` で頼む)\n", c.ID)
+	fmt.Fprintf(&b, "- 画面の見た目を変えたら撮って `pro-con card attach %s <ファイル> --note \"<一言>\"` で添付する (人間とレビューする側が見る。"+
+		"TUI は隔離した tmux (`-L`) で動かして `tmux capture-pane -e -p` を .ans に書く (色つきの文字)。画像が要るなら vhs の Screenshot で .png。"+
+		"`screencapture` は bg では壁紙しか写らないので使わない)\n", c.ID)
 	fmt.Fprintf(&b, "- 終えたら `pro-con card review %s` を実行してから turn を終える\n", c.ID)
 	if len(c.Issues) > 0 {
 		var refs []string
