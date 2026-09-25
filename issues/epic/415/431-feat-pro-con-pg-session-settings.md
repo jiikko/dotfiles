@@ -51,6 +51,12 @@ usage (input / cache_creation / cache_read) と、Stop hook が走ったか (tra
 - 次の手: **PG 用の設定ディレクトリ** (`CLAUDE_CONFIG_DIR`) を作り、PG に要るルールだけを link して起動する。ログインが要るので、
   人の操作を [433](433-human-login-pro-con-pg-config-dir.md) に切り出した。ログインの後に 4 行目を測り直す
 
+## 🚨 前提 (2026-09-25 の監査 460 で分かったこと)
+
+- PG 用の `CLAUDE_CONFIG_DIR` を渡すと、PG の transcript は `$CLAUDE_CONFIG_DIR/projects` に書かれるが、pro-con は `~/.claude/projects` に決め打ちで読む
+  (`src/pro-con/main.go` の 2 か所・`live.New`)。そのままでは見張り (`dispatcher.watch`)・落ちた回数 (`restartsSince`)・カードの表示・428 の attach の記録が**黙って止まる**。
+  `CLAUDE_CONFIG_DIR` を使うなら、同じ変更で projects の置き場を合わせ、見つからないことを出来事に出す
+
 ## 受け入れ条件
 
 - [ ] 役割ごとの設定ファイルがあり、daemon がそれを渡して起動する
