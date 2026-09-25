@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -18,12 +19,27 @@ type fakeRunner struct {
 	dirs     []string
 	commands []string
 	release  chan int
-	canceled bool // 取り消し (ctx.Done) を見た
+	started  chan struct{} // 実行を始めた (記録を足した) 知らせ。テストはこれを待ってから dirs / commands を読む (別の goroutine で走るため)
+	canceled bool          // 取り消し (ctx.Done) を見た
 }
 
-func (f *fakeRunner) Run(ctx context.Context, dir, command, logPath string) (int, error) {
+// waitStarted は n 本目の実行が始まるまで待つ (上限 5 秒)。
+func (f *fakeRunner) waitStarted(t *testing.T) {
+	t.Helper()
+	select {
+	case <-f.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("実行が 5 秒たっても始まらない")
+	}
+}
+
+func (f *fakeRunner) Run(ctx context.Context, dir, command, logPath string, started func(int)) (int, error) {
 	f.dirs, f.commands = append(f.dirs, dir), append(f.commands, command)
+	if started != nil {
+		started(4242)
+	}
 	_ = os.WriteFile(logPath, []byte("FAIL: TestFoo (0.01s)\n--- 出力の末尾 ---\n"), 0o600)
+	f.started <- struct{}{}
 	select {
 	case rc := <-f.release:
 		return rc, nil
@@ -45,7 +61,7 @@ func runRig(t *testing.T, n int) (*crashRig, *fakeRunner, *[]string) {
 			Cwd: "/w/dotfiles/.claude/worktrees/pc-c-00" + string(rune('0'+i)), StartedAt: t0.Add(time.Second).UnixMilli()})
 		r.tick(t) // 登録
 	}
-	fr := &fakeRunner{release: make(chan int, 1)}
+	fr := &fakeRunner{release: make(chan int, 1), started: make(chan struct{}, 4)}
 	var summarized []string
 	r.d.Runner = fr
 	r.d.Summarize = func(_ context.Context, tail string) (string, error) {
@@ -81,6 +97,11 @@ func TestRunsSeriallyInWorktreeAndResumes(t *testing.T) {
 	askRun(t, r.dir, "C-001", "make test", t0)
 	askRun(t, r.dir, "C-002", "go test ./...", t0.Add(time.Second))
 	r.tick(t)
+	fr.waitStarted(t)
+	r.tick(t) // 始まった実行のプロセスグループをカードに書く
+	if c := states(t, r.dir)["C-001"]; c.Exec.PGID != 4242 {
+		t.Fatalf("実行のプロセスグループをカードに記録しない: %d", c.Exec.PGID)
+	}
 	cs := states(t, r.dir)
 	if len(fr.commands) != 1 || fr.commands[0] != "make test" || fr.dirs[0] != "/w/dotfiles/.claude/worktrees/pc-c-001" {
 		t.Fatalf("先に頼んだ方を PG の worktree で実行していない: %v %v", fr.commands, fr.dirs)
@@ -94,6 +115,7 @@ func TestRunsSeriallyInWorktreeAndResumes(t *testing.T) {
 	}
 	fr.release <- 0
 	waitDone(t, r)
+	fr.waitStarted(t) // 2 本目が始まった
 	c := states(t, r.dir)["C-001"]
 	if len(r.l.resumes) != 1 || !strings.Contains(r.l.resumes[0], "rc=0") || !strings.Contains(r.l.resumes[0], "成功") || len(*summarized) != 0 {
 		t.Fatalf("成功の結果を渡して再開しない / 成功なのに要約した: resumes=%v summarized=%d", r.l.resumes, len(*summarized))
@@ -127,13 +149,20 @@ func TestRunFailureIsSummarized(t *testing.T) {
 	}
 }
 
-// 実行の途中で daemon が止まって (実行していない daemon が) 実行中の記録を見たら、結果が無いことを渡して再開する。
+// 実行の途中で daemon が止まって (実行していない daemon が) 実行中の記録を見たら、残ったコマンドを止めてから、結果が無いことを渡して再開する。
 func TestInterruptedRunIsReported(t *testing.T) {
 	r, fr, _ := runRig(t, 1)
+	var killed []string
+	old := killStaleFn
+	killStaleFn = func(pgid int, command string) { killed = append(killed, fmt.Sprintf("%d:%s", pgid, command)) }
+	t.Cleanup(func() { killStaleFn = old })
 	setCard(t, r.dir, "C-001", func(c *card.Card) {
-		c.Run, c.RunAt, c.Exec = "make test", t0, card.Exec{Command: "make test", Since: t0}
+		c.Run, c.RunAt, c.Exec = "make test", t0, card.Exec{Command: "make test", Since: t0, PGID: 777}
 	})
 	r.tick(t)
+	if len(killed) != 1 || killed[0] != "777:make test" {
+		t.Fatalf("前の daemon が残した実行を止めにいかない: %v", killed)
+	}
 	if len(fr.commands) != 0 || len(r.l.resumes) != 1 || !strings.Contains(r.l.resumes[0], "結果が無い") {
 		t.Fatalf("途中で止まった実行を知らせて再開しない: commands=%v resumes=%v", fr.commands, r.l.resumes)
 	}
@@ -159,6 +188,7 @@ func TestShutdownCancelsRun(t *testing.T) {
 	r, fr, _ := runRig(t, 1)
 	askRun(t, r.dir, "C-001", "make test", t0)
 	r.tick(t)
+	fr.waitStarted(t)
 	if _, err := r.d.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -177,6 +207,7 @@ func TestRunDroppedWhenCardLeavesRunning(t *testing.T) {
 	r, fr, _ := runRig(t, 1)
 	askRun(t, r.dir, "C-001", "make test", t0)
 	r.tick(t) // 実行を始める
+	fr.waitStarted(t)
 	if _, err := store.Submit(r.dir, store.Request{Kind: "ask", CardID: "C-001", Question: "q"}); err != nil {
 		t.Fatal(err)
 	}
@@ -222,8 +253,9 @@ func TestRunFailureWithoutOutputIsNotSummarized(t *testing.T) {
 // silentRunner は何も出力しない (ログを空で作る) 実行。
 type silentRunner struct{ f *fakeRunner }
 
-func (s silentRunner) Run(ctx context.Context, dir, command, logPath string) (int, error) {
+func (s silentRunner) Run(ctx context.Context, dir, command, logPath string, _ func(int)) (int, error) {
 	_ = os.WriteFile(logPath, nil, 0o600)
+	s.f.started <- struct{}{}
 	select {
 	case rc := <-s.f.release:
 		return rc, nil
@@ -244,5 +276,24 @@ func TestRunDroppedWhenCrashStopped(t *testing.T) {
 	r.tick(t)
 	if c := states(t, r.dir)["C-001"]; c.State != card.Waiting || c.Run != "" {
 		t.Fatalf("落ちて止めたカードに頼みが残る: %v Run=%q", c.State, c.Run)
+	}
+}
+
+// worktree の下のディレクトリから頼んだものは受け、頼んだ場所で実行する。結果を渡したら頼んだ場所の記録も消す。
+func TestRunFromWorktreeSubdirectory(t *testing.T) {
+	r, fr, _ := runRig(t, 1)
+	sub := "/w/dotfiles/.claude/worktrees/pc-c-001/src/pro-con"
+	if _, err := store.Submit(r.dir, store.Request{Kind: "run", CardID: "C-001", Command: "go test ./...", Cwd: sub, At: t0}); err != nil {
+		t.Fatal(err)
+	}
+	r.tick(t)
+	fr.waitStarted(t)
+	if len(fr.dirs) != 1 || fr.dirs[0] != sub {
+		t.Fatalf("worktree の下からの頼みを断った / 頼んだ場所で実行しない: %v", fr.dirs)
+	}
+	fr.release <- 0
+	waitDone(t, r)
+	if c := states(t, r.dir)["C-001"]; c.RunCwd != "" {
+		t.Fatalf("結果を渡した後も頼んだ場所の記録が残る: %q", c.RunCwd)
 	}
 }

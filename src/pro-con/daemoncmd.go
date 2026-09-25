@@ -49,8 +49,8 @@ func runDaemon(args []string, dir, projects string, repos map[string]string, std
 	defer unlock()
 	_ = daemon.StopRequested(dir) // 前の --stop が daemon の居ない間に置いた印は捨てる (起動した途端に止まらないように)
 	d := newExecDaemon(dir, projects, repos, *limit)
-	defer d.CancelRun() // どの出口 (Tick のエラー・SIGTERM) でも、テストの係の実行を残して抜けない
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer d.CancelRun()                                                                                    // どの出口 (Tick のエラー・SIGTERM) でも、テストの係の実行を残して抜けない
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP) // SIGHUP: 端末・tmux のペインを閉じた (既定の動作で死ぬと実行を残す)
 	defer stop()
 	d.Publish, d.Notify = daemon.TmuxPublish(ctx), daemon.MacNotify(ctx)
 	defer func() { _ = daemon.TmuxPublish(context.Background())("") }() // 止まるときに件数を消す (古い件数を出し続けない)

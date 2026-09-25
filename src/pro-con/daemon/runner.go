@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -27,8 +28,9 @@ import (
 )
 
 // Runner はコマンドを dir で実行し、出力 (stdout と stderr) を logPath へ書いて終了コードを返す。
+// started は実行を始めたときにプロセスグループの番号を知らせる (記録して、daemon が死んだ後に次の daemon が止められるように)。
 type Runner interface {
-	Run(ctx context.Context, dir, command, logPath string) (rc int, err error)
+	Run(ctx context.Context, dir, command, logPath string, started func(pgid int)) (rc int, err error)
 }
 
 // RunsDir は実行のログの置き場 (状態の置き場の下)。
@@ -43,6 +45,7 @@ type runJob struct {
 	start                    time.Time
 	done                     chan runResult
 	cancel                   context.CancelFunc // 実行を取り消す (終了のとき)
+	pgid                     atomic.Int64       // 実行のプロセスグループ (始まったら入る。Tick がカードに書く)
 }
 
 type runResult struct {
@@ -67,7 +70,17 @@ func (d *Daemon) tickRuns(ctx context.Context, now time.Time) ([]string, error) 
 			}
 		}
 	}
-	if d.active != nil {
+	if d.active != nil { // 始まった実行のプロセスグループをカードに書く (記録の書き手は Tick だけ。goroutine からは書かない)
+		if pg := int(d.active.pgid.Load()); pg != 0 {
+			id := d.active.cardID
+			if err := d.update(id, func(cc *card.Card) {
+				if cc.Exec.Active() && cc.Exec.PGID == 0 {
+					cc.Exec.PGID = pg
+				}
+			}); err != nil {
+				return nil, err
+			}
+		}
 		select {
 		case r := <-d.active.done:
 			n, err := d.finishRun(now, d.active, r)
@@ -93,7 +106,9 @@ func (d *Daemon) tickRuns(ctx context.Context, now time.Time) ([]string, error) 
 			continue
 		}
 		if c.Exec.Active() && (d.active == nil || d.active.cardID != c.ID) {
-			// 実行の途中で daemon が落ちた (この daemon は実行していない)。結果が無いことを渡して PG を再開する
+			// 実行の途中で daemon が落ちた (この daemon は実行していない)。残ったコマンドを止めてから、結果が無いことを渡して PG を再開する
+			// (止めずに頼み直させると、同じ worktree で 2 本が重なる)
+			killStaleFn(c.Exec.PGID, c.Exec.Command)
 			n, err := d.finishRun(now, &runJob{cardID: c.ID, command: c.Run, start: c.Exec.Since},
 				runResult{rc: -1, err: errors.New("daemon が実行の途中で止まったので結果が無い。もう一度頼むこと")})
 			notes = append(notes, n)
@@ -119,7 +134,7 @@ func (d *Daemon) tickRuns(ctx context.Context, now time.Time) ([]string, error) 
 			if err != nil {
 				return notes, err
 			}
-		case !samePath(c.RunCwd, o.Cwd):
+		case !isUnder(c.RunCwd, o.Cwd):
 			// 🚨 そのカードの PG の worktree から頼まれたものだけを実行する (別のカードの名前で、その worktree で走らせない)
 			n, err := d.finishRun(now, &runJob{cardID: c.ID, command: c.Run, start: now},
 				runResult{rc: -1, err: fmt.Errorf("頼んだ場所 (%s) がこのカードの PG の worktree ではないので実行しない", c.RunCwd)})
@@ -139,7 +154,7 @@ func (d *Daemon) tickRuns(ctx context.Context, now time.Time) ([]string, error) 
 				return notes, err
 			}
 			d.active = job
-			go d.execute(runCtx, job, o.Cwd)
+			go d.execute(runCtx, job, c.RunCwd) // 頼んだ場所 (worktree かその下) で実行する
 			notes = append(notes, fmt.Sprintf("%s のコマンドを実行する: %s", c.ID, c.Run))
 		}
 	}
@@ -182,7 +197,7 @@ func (d *Daemon) execute(ctx context.Context, job *runJob, dir string) {
 		return
 	}
 	defer job.cancel()
-	r.rc, r.err = d.Runner.Run(ctx, dir, job.command, job.logPath)
+	r.rc, r.err = d.Runner.Run(ctx, dir, job.command, job.logPath, func(pg int) { job.pgid.Store(int64(pg)) })
 	// 出力が無ければ要約させない (空のログを渡すと、要約の代わりに「ログを貼って」と返ってくる = 427 の段階 4 の本物の確認で実測)
 	if tail := logTail(job.logPath); (r.rc != 0 || r.err != nil) && d.Summarize != nil && strings.TrimSpace(tail) != "" {
 		if s, err := d.Summarize(ctx, tail); err == nil {
@@ -222,7 +237,7 @@ func (d *Daemon) finishRun(now time.Time, job *runJob, r runResult) (string, err
 		if cc.State != card.Running || cc.Run == "" { // 止められた等で、もう結果を待っていない
 			return
 		}
-		cc.Run, cc.RunAt, cc.Exec, cc.Wait = "", time.Time{}, card.Exec{}, card.Wait{}
+		cc.DropRun()
 		cc.State, cc.Since, cc.Resume = card.Planned, now, text
 		cc.History = append(cc.History, card.Event{At: now, Text: fmt.Sprintf("テストの係: rc=%d (%s)。結果を渡して PG を再開する", r.rc, clipLine(job.command))})
 	})
@@ -271,7 +286,7 @@ const runTimeout = time.Hour
 // ExecRunner は本物のシェルで実行する。TMUX / TMUX_PANE は落とす (PG と同じ理由)。
 type ExecRunner struct{}
 
-func (ExecRunner) Run(ctx context.Context, dir, command, logPath string) (int, error) {
+func (ExecRunner) Run(ctx context.Context, dir, command, logPath string, started func(pgid int)) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, runTimeout)
 	defer cancel()
 	f, err := os.Create(logPath)
@@ -290,6 +305,9 @@ func (ExecRunner) Run(ctx context.Context, dir, command, logPath string) (int, e
 	if err := cmd.Start(); err != nil {
 		return -1, err
 	}
+	if started != nil {
+		started(cmd.Process.Pid) // Setpgid なので pid = プロセスグループの番号
+	}
 	// 終わった後も、SIGTERM を無視した子や bash が抜けた後に残った子を、プロセスグループごと止める (daemon の後に残さない)
 	defer func() { _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }()
 	err = cmd.Wait()
@@ -304,6 +322,37 @@ func (ExecRunner) Run(ctx context.Context, dir, command, logPath string) (int, e
 	default:
 		return -1, err
 	}
+}
+
+// isUnder は child が root そのものかその下か (symlink を解決して比べる)。どちらかが空なら偽。
+func isUnder(child, root string) bool {
+	if child == "" || root == "" {
+		return false
+	}
+	resolve := func(p string) string {
+		if r, err := filepath.EvalSymlinks(p); err == nil {
+			return r
+		}
+		return filepath.Clean(p)
+	}
+	rel, err := filepath.Rel(resolve(root), resolve(child))
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, "../")
+}
+
+// killStaleFn は killStale (テストで差し替えて、呼ばれたかを見る)。
+var killStaleFn = killStale
+
+// killStale は、前の daemon が実行したまま残したコマンドのプロセスグループを止める。pid は使い回されるので、
+// グループの先頭がまだそのコマンドを実行している bash (`/bin/bash -c <command>`) のときだけ撃つ。
+func killStale(pgid int, command string) {
+	if pgid <= 1 {
+		return
+	}
+	out, err := exec.Command("ps", "-o", "command=", "-p", fmt.Sprint(pgid)).Output()
+	if err != nil || strings.TrimSpace(string(out)) != "/bin/bash -c "+command {
+		return
+	}
+	_ = syscall.Kill(-pgid, syscall.SIGKILL)
 }
 
 // summarizeTimeout は要約の上限。

@@ -161,6 +161,8 @@ type Exec struct {
 	Resource string        // 占有しているリソース (device / xcode 等)。占有しないコマンドは空
 	Since    time.Time     // 実行を始めた時刻
 	Expected time.Duration // 見込みの所要 (前回の実測)。0 なら不明
+	// PGID は daemon (テストの係) が実行しているコマンドのプロセスグループ。daemon が死んで残ったコマンドを、次の daemon が止めるため
+	PGID int `json:",omitempty"`
 }
 
 func (e Exec) Active() bool { return e.Command != "" }
