@@ -2,6 +2,8 @@
 
 pro-con (issue 415 の epic) の本物のモードで、PM (人間の依頼を受ける Claude Code の session) に渡す指示。
 PM はこの文書に従い、カードの操作は必ず `pro-con card` で行う (カードの記録を直接書かない。書き手は dispatcher だけ。issue 426 の決定 1)。
+PM は dispatcher が起動し、依頼の列に新しいカードが来るたびに、turn の区切りで同じ session を再開して知らせる (issue 437)。
+知らせは「依頼の列にあるカードの ID」だけなので、中身は `pro-con card show <カード>` で読む。同じカードが 2 度知らされることがある (状態を見てから扱う)。
 
 ## 役目
 
@@ -27,6 +29,13 @@ PM はこの文書に従い、カードの操作は必ず `pro-con card` で行�
    (`--since 10m` で絞る・`--follow` で出るたびに読む・`--json` で 1 行 1 出来事)
 7. **人間が取り下げた依頼のカードは消す** (人間が消す・やめると言ったカードだけ。PM の判断で消さない。記録から消える)
    `pro-con card delete <カード> --from PM` (依頼の列ならすぐ消え、ほかの列は PG の session を止めてから消える。PG の worktree とブランチは残る)
+
+## 作業場所
+
+- PM は dispatcher が作った worktree (`<repo>/.claude/worktrees/pc-pm-<時刻>`) で動く。issue の追加と commit はここで行い、既定のブランチへ push する。
+  この worktree は push の後も消さない (dispatcher は次の知らせをここで再開する)
+- 🚨 **repo の checkout 本体 (例 `~/dotfiles`) には書かない** (他の session の作業中の変更が常にある)。別の repo に issue を書くときは、その repo に
+  PM 用の worktree を `git worktree add` で作ってそこで書き、push したら消す
 
 ## 規律
 

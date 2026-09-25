@@ -27,7 +27,8 @@ import (
 var dispatcherInterval = 3 * time.Second // テストが延ばす (Poke でだけ起きることを見る)
 
 // projects は transcript の置き場 (~/.claude/projects。PG が落ちて自動で再開したかを読む)。
-func runDispatcher(args []string, dir, projects string, repos map[string]string, stdout, stderr io.Writer) int {
+// pmRepo は PM を起動する repo (空なら PM を起こさない。issue 437)。
+func runDispatcher(args []string, dir, projects string, repos map[string]string, pmRepo string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("pro-con dispatcher", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	limit := fs.Int("limit", 2, "同時に動かす PG の上限 (415 の決定事項: 2 から始める)")
@@ -65,7 +66,7 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 			os.Exit(1)
 		}()
 		defer signal.Stop(sigs)
-		if err := stopDispatcher(ctx, dir, projects, repos, e2e, stdout); err != nil {
+		if err := stopDispatcher(ctx, dir, projects, repos, pmRepo, e2e, stdout); err != nil {
 			_, _ = fmt.Fprintln(stderr, "pro-con dispatcher --stop:", err)
 			return 1
 		}
@@ -78,7 +79,7 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 	}
 	defer unlock()
 	_ = dispatcher.StopRequested(dir) // 前の --stop が dispatcher の居ない間に置いた印は捨てる (起動した途端に止まらないように)
-	d := newDispatcherFor(dir, projects, repos, *limit, e2e)
+	d := newDispatcherFor(dir, projects, repos, pmRepo, *limit, e2e)
 	d.Record = eventSink(dir, stdout, stderr)
 	defer d.CancelRun()                                                                                    // どの出口 (Tick のエラー・SIGTERM) でも、テストの係の実行を残して抜けない
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP) // SIGHUP: 端末・tmux のペインを閉じた (既定の動作で死ぬと実行を残す)
@@ -225,7 +226,7 @@ func stopUntilDone(ctx context.Context, d *dispatcher.Dispatcher, dir string, wa
 const stopTimeout = 120 * time.Second
 
 // stopDispatcher は dispatcher と PG を止める。dispatcher が動いていれば止めるよう頼んで待ち、動いていなければ自分で dispatcher の役を取って止める。
-func stopDispatcher(ctx context.Context, dir, projects string, repos map[string]string, e2e *dispatcher.E2E, stdout io.Writer) error {
+func stopDispatcher(ctx context.Context, dir, projects string, repos map[string]string, pmRepo string, e2e *dispatcher.E2E, stdout io.Writer) error {
 	running, err := dispatcher.RequestStop(ctx, dir, stopTimeout)
 	if errors.Is(err, dispatcher.ErrStopperDied) { // 止めていた dispatcher が落ちた: 止める役を引き継ぐ
 		_, _ = fmt.Fprintln(stdout, "止めていた dispatcher が落ちたので、止める役を引き継ぐ")
@@ -240,7 +241,7 @@ func stopDispatcher(ctx context.Context, dir, projects string, repos map[string]
 	}
 	defer unlock()
 	_ = dispatcher.StopRequested(dir)
-	d := newDispatcherFor(dir, projects, repos, 1, e2e)
+	d := newDispatcherFor(dir, projects, repos, pmRepo, 1, e2e)
 	d.Record = eventSink(dir, stdout, stdout) // dispatcher の役を取った (lock を持つ) ので、出来事を書いてよい
 	// 自分で止めている間に次の --stop が来たら、その --stop は結果のファイルを読む。止めきれなければ止まるまで止め直す
 	// (画面の待ちが切れて閉じても、このプロセスは別のプロセスグループで続ける)
@@ -293,13 +294,13 @@ func sayOr(d *dispatcher.Dispatcher, errOut io.Writer, kind, text string) {
 	say(d, kind, text)
 }
 
-// newDispatcherFor は dispatcher を組む。e2e が nil なら本物 (claude を起動する)、あれば偽の PG と偽の一覧 (claude を起動しない)。
-func newDispatcherFor(dir, projects string, repos map[string]string, limit int, e2e *dispatcher.E2E) *dispatcher.Dispatcher {
+// newDispatcherFor は dispatcher を組む。e2e が nil なら本物 (claude を起動する)、あれば偽の PG と偽の一覧 (claude を起動しない。PM は起こさず FakePM が役を持つ)。
+func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo string, limit int, e2e *dispatcher.E2E) *dispatcher.Dispatcher {
 	if e2e != nil {
 		return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: e2e.Launcher(), List: e2e.List, ListAll: e2e.ListAll, Now: time.Now,
 			Runner: dispatcher.ExecRunner{}, FakePM: e2e.FakePM} // テストの係は本物のシェル (偽の worktree で走る)。失敗の要約 (haiku) はしない
 	}
-	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{},
+	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{}, PMRepo: pmRepo, PMGuide: pmGuide,
 		Runner: dispatcher.ExecRunner{}, Summarize: dispatcher.HaikuSummarize(dir), Usage: dispatcher.ReadUsage(dir),
 		List:    func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) },
 		ListAll: func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunnerAll) }, Now: time.Now,

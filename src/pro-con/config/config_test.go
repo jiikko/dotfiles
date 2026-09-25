@@ -103,3 +103,25 @@ func TestDiscoverWarnsAndContinues(t *testing.T) {
 		}
 	}
 }
+
+// pm_repo: 書かなければ ~/dotfiles、書けばその repo。repo でなければ空と理由 (PM を起こさない)。
+func TestPMRepoPath(t *testing.T) {
+	home := t.TempDir()
+	write(t, filepath.Join(home, "dotfiles", ".git", "HEAD"), "")
+	write(t, filepath.Join(home, "w", "pm", ".git", "HEAD"), "")
+	p := filepath.Join(t.TempDir(), "config.toml")
+	write(t, p, "pm_repo = \"~/w/pm\"\n")
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, warn := c.PMRepoPath(home); got != filepath.Join(home, "w", "pm") || warn != "" {
+		t.Fatalf("pm_repo を読んでいない: %q %q", got, warn)
+	}
+	if got, _ := (Config{}).PMRepoPath(home); got != filepath.Join(home, "dotfiles") {
+		t.Fatalf("pm_repo が無いときに ~/dotfiles にならない: %q", got)
+	}
+	if got, warn := (Config{PMRepo: "~/nope"}).PMRepoPath(home); got != "" || warn == "" {
+		t.Fatalf("repo でない pm_repo で PM を起こす形になった: %q %q", got, warn)
+	}
+}

@@ -31,13 +31,18 @@ type fakeLauncher struct {
 	resumeID   string   // 空でなければ、再開はこの短い id の新しい session を立てる (本物の claude の形)
 	stopFail   bool
 	stopTries  []string // 失敗も含めて止めようとした id
+	startTries int      // 失敗も含めて起動しようとした回数
+	repos      []string // 起動した repo
+	prompts    []string // 起動の指示
 }
 
-func (f *fakeLauncher) Start(_ context.Context, _, name, _ string) (string, error) {
+func (f *fakeLauncher) Start(_ context.Context, repo, name, prompt string) (string, error) {
+	f.startTries++
 	if f.fail {
 		return "", errors.New("起動できない")
 	}
 	f.starts = append(f.starts, name)
+	f.repos, f.prompts = append(f.repos, repo), append(f.prompts, prompt)
 	return "id-" + name, nil
 }
 

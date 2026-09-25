@@ -3,7 +3,8 @@
 //  1. 受付の箱を記録へ適用する (store.Apply)
 //  2. 起動した PG の session を pro-con の記録 (live.Register) に登録する (session id と pid が一覧に出てから)
 //  3. (落ちた PG を見張る trackDead の後に) 閉じたカード・削除の依頼を受けたカードの PG の session を止める (close.go。issue 447 / 451)。削除のカードは止まったら記録から外す
-//  4. 分解済みのカードに、上限まで PG を割り当てる。回答を受けたカード (Resume が有る) は同じ session を再開し、それ以外は新しく起動する
+//  4. 依頼の列のカードを PM に知らせる (pm.go。issue 437)。PM が居なければ起動し、居れば再開する
+//  5. 分解済みのカードに、上限まで PG を割り当てる。回答を受けたカード (Resume が有る) は同じ session を再開し、それ以外は新しく起動する
 //
 // 書き手は dispatcher だけ (426 の決定 1)。PG の起動と再開は Launcher に任せ、テストでは偽物に差し替える。
 // 起動・再開の前に印を記録へ書き、結果は次の Tick で session の一覧と照らして確かめる (claude の「失敗」と実際が食い違う / 途中で落ちる)。
@@ -97,6 +98,15 @@ type Dispatcher struct {
 
 	// FakePM は e2e モードの偽の PM (Tick の頭で呼ぶ)。本物のモードでは nil
 	FakePM func() error
+	// PMRepo は PM を起動する repo の絶対パス (pm.go。PM はその下の worktree で動く)。空なら PM を起こさない (e2e モード)
+	PMRepo string
+	// PMGuide は PM を起動するときに渡す指示書 (src/pro-con/pm-guide.md の全文。正本はそのファイルで、dispatcher は指示を書かない)
+	PMGuide  string
+	pmHeld   string // 枠で PM を起こさない理由 (変わったときだけログに書く)
+	pmFailed string // PM を起こせない理由 (同上)
+	pmStatus string // 知らない PM の status (同上)
+	// Exists は PM の作業ディレクトリが在るかを見る (nil なら os.Stat)。テストが差し替える
+	Exists func(dir string) bool
 
 	// Sleep は終了のときの待ち (Shutdown)。nil なら time.Sleep (テストで差し替える)
 	Sleep func(time.Duration)
@@ -190,6 +200,11 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	d.refreshUsage(ctx, now)
 	if ctx.Err() != nil { // 枠を読んでいる間に止められた。取り消された ctx で起動して「失敗」を履歴に残さない
 		return notes, nil
+	}
+	told, err := d.tellPM(ctx, now, ss)
+	notes = append(notes, told...)
+	if err != nil { // PM の壊れ (pm.json が読めない等) で PG の割り当てまで止めない
+		notes = append(notes, ev(eventlog.KindError, PMCardID, "", "PM を扱えない (PG の割り当ては続ける): "+err.Error()))
 	}
 	more, err := d.dispatch(ctx, now, ss)
 	notes = append(notes, more...)

@@ -2,9 +2,11 @@
 //
 //	repo_roots = ["~/src"]      # この直下の git repo を列挙する (深くは掘らない)
 //	repos      = ["~/dotfiles"] # root の外にある repo を個別に足す
+//	pm_repo    = "~/dotfiles"   # PM (依頼を受けてカードを分ける session) を起動する repo。PM はその下の worktree で動く (issue 437)
 package config
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -19,6 +21,19 @@ import (
 type Config struct {
 	RepoRoots []string `toml:"repo_roots"`
 	Repos     []string `toml:"repos"`
+	PMRepo    string   `toml:"pm_repo"` // 空なら defaultPMRepo
+}
+
+// defaultPMRepo は pm_repo を書いていないときの PM の repo (pro-con の issue がある repo)。
+const defaultPMRepo = "~/dotfiles"
+
+// PMRepoPath は PM を起動する repo の絶対パス。リポジトリでなければ空と、PM を起こさない理由を返す。
+func (c Config) PMRepoPath(home string) (string, string) {
+	p := expand(cmp.Or(c.PMRepo, defaultPMRepo), home)
+	if !isRepo(p) {
+		return "", fmt.Sprintf("pm_repo の %s は repo ではない (PM を起こさない)", p)
+	}
+	return p, ""
 }
 
 // Default はファイルが無いときの設定。dotfiles は ~/src の外にあるので個別に足している
@@ -56,7 +71,7 @@ func Load(path string) (Config, error) {
 		for i, k := range und {
 			keys[i] = k.String()
 		}
-		return Config{}, fmt.Errorf("%s: 知らないキー %s (使えるのは repo_roots / repos)", path, strings.Join(keys, ", "))
+		return Config{}, fmt.Errorf("%s: 知らないキー %s (使えるのは repo_roots / repos / pm_repo)", path, strings.Join(keys, ", "))
 	}
 	return c, nil
 }

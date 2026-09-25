@@ -115,6 +115,7 @@ const stopCallTimeout = 30 * time.Second
 func (d *Dispatcher) stopCards(ctx context.Context, notes *[]eventlog.Event) (int, map[string]string) {
 	tried := map[string]string{}
 	done := map[string]bool{}
+	pmDone := false
 	seen := map[string]bool{}
 	note := func(n eventlog.Event) { // 周をまたいで同じ知らせを重ねない
 		if !seen[n.Reason] {
@@ -164,6 +165,13 @@ func (d *Dispatcher) stopCards(ctx context.Context, notes *[]eventlog.Event) (in
 			continue
 		}
 		waiting := 0
+		if !pmDone { // PM も止める (pm.go。記録にまだ無い起動の直後の PM も)
+			if d.stopPM(ctx, now, ss, reg, last, tried, notes) {
+				waiting++
+			} else {
+				pmDone = true
+			}
+		}
 		for _, c := range st.Cards {
 			if done[c.ID] || c.State == card.Done || (c.Session == "" && c.Launching == "") {
 				continue

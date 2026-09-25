@@ -29,7 +29,7 @@ func TestRunDispatcherWiresSocket(t *testing.T) {
 	dir := dispatcher.E2E{Root: root}.StateDir()
 	var out, errOut bytes.Buffer
 	rc := make(chan int, 1)
-	go func() { rc <- runDispatcher([]string{"--e2e", root}, "", "", nil, &out, &errOut) }()
+	go func() { rc <- runDispatcher([]string{"--e2e", root}, "", "", nil, "", &out, &errOut) }()
 	waitFor := func(what string, cond func() bool) {
 		t.Helper()
 		for range 400 {
