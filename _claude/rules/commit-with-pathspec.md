@@ -20,6 +20,8 @@
   **`Everything up-to-date` で rc=0** を返すので、push の出力だけを見ると成功に見える
 - 🚨 **push / merge に `-q` を付けない**。空振りを示す唯一の手がかり (`Everything up-to-date` /
   `Already up to date`) がその 1 行なので、黙らせると rc=0 だけが残って完全に無音になる
+- 🚨 **push を再試行するなら、合間の `pull --rebase` の rc を見る**。衝突で止まった rebase の上で打った push も
+  `Everything up-to-date` rc=0 を返す。rc≠0 なら再試行のループを抜けて rebase を片付ける
 - 予防: **commit の前に `cd "$(git rev-parse --show-toplevel)"`**。ツールの cwd がサブディレクトリに
   残っている状態で pathspec を組まない (シェルの cwd は前のコマンドから持ち越される)
 - 検出: commit 直後の `git log -1 --stat` で想定ファイルが入っているか見る (下の節と同じ規律)

@@ -543,3 +543,9 @@ frame 通知を出していた / overlay 表示中の取消が先に効いて ro
 - **エラー文言の grep** (同上): 「guard で止まったか、後で `set -u` が落としたか」を stderr の `unbound variable` で見分けていたが、
   macOS の bash が日本語 (`未割り当ての変数です`) で出すため一致せず、変異が緑のままだった。CI (ubuntu, C.UTF-8) では通る形。
   最終的に「guard の後に runtime が 1 回も呼ばれていない」(呼び出しの記録) で判定する形に置き換えた
+
+## 「fake の状態は実測の表から作る」の起源 (dotfiles retro 448, 2026-09-25)
+
+pro-con の終了の保証で、「止めたら state: stopped」を 1 回の実測から fake に写し、判定も state の名前で書いた。dogfooding で、
+終えた session は stop 後も state: done のまま (pid 無し) と分かり、止め直しが続いた (01dbb3b0 で修正)。fake に無い状態が
+本番で出たため、テストは緑のまま判定が外れていた

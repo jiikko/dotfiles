@@ -35,3 +35,13 @@
 - 4 (帰属の推測): `commit-with-pathspec.md` の「推測した帰属を第三者へ伝えない」がそのまま当たる
 - 5 (確かめずに説明): CLAUDE.md の「主張は証拠ではない」が当たる
 - 見張りが一時的な状態 (再開の途中の分解済み) で早く抜けた: `avoid-wall-clock-assertions.md` の「ポーリングする条件は待ちたい事象そのものにする」が当たる
+
+## 決着 (2026-09-25, pro-con C-016)
+
+3 件とも既存に同じ規範が無いことを grep で確かめてから、ユーザーの決定どおり追記した (本文は規範だけ、起源は同名の `rules-rationale/`)。
+
+1. `_claude/rules/mutation-verify-new-tests.md` の「fake / stub」へ「fake の状態は実測で列挙した表から作り、判定は名前が増えても崩れない性質で書く」
+2. `_claude/rules/commit-with-pathspec.md` の push の空振りの項 (`-q` の次) へ「再試行の合間の `pull --rebase` の rc を見る」
+3. `_claude/rules/adversarial-review-own-safeguards.md` の §0 へ 0-C「正しさの判定を、落ちうる補助の経路に載せていないか」
+
+残課題なし。
