@@ -58,13 +58,6 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 			return 1
 		}
 	}
-	var cl dispatcher.Claude // e2e モードは claude を起動しないので引かない
-	if e2e == nil {
-		if cl, err = dispatcher.ResolveClaude(context.Background()); err != nil {
-			_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", err)
-			return 1
-		}
-	}
 	if *stopAll {
 		// 止めている間に SIGTERM / SIGHUP / SIGINT が来ても (画面の終了・ログアウトと重なる)、1 回目は止めるのをもう 1 度だけ試してから抜ける。
 		// 2 回目ですぐ抜ける (止まらない形でも kill -9 無しで止められる)。
@@ -79,11 +72,16 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 			os.Exit(1)
 		}()
 		defer signal.Stop(sigs)
-		if err := stopDispatcher(ctx, dir, projects, repos, pm.Repo, cl, e2e, stdout); err != nil {
+		if err := stopDispatcher(ctx, dir, projects, repos, pm.Repo, e2e, stdout); err != nil {
 			_, _ = fmt.Fprintln(stderr, "pro-con dispatcher --stop:", err)
 			return 1
 		}
 		return 0
+	}
+	cl, err := resolveClaude(context.Background(), e2e)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", err)
+		return 1
 	}
 	unlock, err := dispatcher.Lock(dir)
 	if err != nil {
@@ -243,7 +241,7 @@ func stopUntilDone(ctx context.Context, d *dispatcher.Dispatcher, dir string, wa
 const stopTimeout = 120 * time.Second
 
 // stopDispatcher は dispatcher と PG を止める。dispatcher が動いていれば止めるよう頼んで待ち、動いていなければ自分で dispatcher の役を取って止める。
-func stopDispatcher(ctx context.Context, dir, projects string, repos map[string]string, pmRepo string, cl dispatcher.Claude, e2e *dispatcher.E2E, stdout io.Writer) error {
+func stopDispatcher(ctx context.Context, dir, projects string, repos map[string]string, pmRepo string, e2e *dispatcher.E2E, stdout io.Writer) error {
 	running, err := dispatcher.RequestStop(ctx, dir, stopTimeout)
 	if errors.Is(err, dispatcher.ErrStopperDied) { // 止めていた dispatcher が落ちた: 止める役を引き継ぐ
 		_, _ = fmt.Fprintln(stdout, "止めていた dispatcher が落ちたので、止める役を引き継ぐ")
@@ -258,6 +256,10 @@ func stopDispatcher(ctx context.Context, dir, projects string, repos map[string]
 	}
 	defer unlock()
 	_ = dispatcher.StopRequested(dir)
+	cl, err := resolveClaude(ctx, e2e) // 止める役を取ったときだけ (動いている dispatcher に頼むだけなら claude は要らない)
+	if err != nil {
+		return err
+	}
 	d := newDispatcherFor(dir, projects, repos, pmRepo, false, 1, cl, e2e) // 止めるだけ (PM は PMOff でも止める)
 	d.Record = eventSink(dir, stdout, stdout)                              // dispatcher の役を取った (lock を持つ) ので、出来事を書いてよい
 	sayClaude(d, cl)
@@ -300,6 +302,19 @@ func say(d *dispatcher.Dispatcher, kind, text string) {
 			d.Changed()
 		}
 	}
+}
+
+// resolveClaude は本物の dispatcher が使う claude の実体を引く (e2e モードは claude を起動しないので引かない)。
+// 解決は家の cwd で行う (起こした側の cwd の .node-version で版を決めない。dispatcher.ResolveClaude)
+func resolveClaude(ctx context.Context, e2e *dispatcher.E2E) (dispatcher.Claude, error) {
+	if e2e != nil {
+		return dispatcher.Claude{}, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return dispatcher.Claude{}, err
+	}
+	return dispatcher.ResolveClaude(ctx, home)
 }
 
 // sayClaude は使う claude の実体と版を出来事に残す (464。e2e モードは claude を起動しないので残さない)。

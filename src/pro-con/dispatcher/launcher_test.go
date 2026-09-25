@@ -190,11 +190,12 @@ esac
 }
 
 // PATH に nodenv の shim があり NODENV_VERSION が無くても、repo ごとに別の版の claude で起動・再開しない (464)。
-// 実体は dispatcher の cwd で 1 回だけ解決する (ここでは .node-version の無い cwd = nodenv の既定の 22.11.0)。
+// 実体は渡した cwd で 1 回だけ解決する。dispatcher を起こした cwd (ここでは古い版を指す repo) には左右されない
+// (.node-version の無い cwd = nodenv の既定の 22.11.0)。
 func TestLauncherUsesOneClaudeAcrossRepos(t *testing.T) {
 	repoOld, repoNew, logFile := fakeNodenv(t)
-	t.Chdir(t.TempDir())
-	cl, err := ResolveClaude(context.Background())
+	t.Chdir(repoOld)
+	cl, err := ResolveClaude(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,10 +222,9 @@ func TestLauncherUsesOneClaudeAcrossRepos(t *testing.T) {
 // 解決できない形は dispatcher を起動させない (素の名前に倒さない)。shim を置いた版管理が実体を返せない / 返したものがまた shim。
 func TestResolveClaudeRefusesUnresolvableShim(t *testing.T) {
 	fakeNodenv(t)
-	t.Chdir(t.TempDir())
 	shims := strings.Split(os.Getenv("PATH"), string(os.PathListSeparator))[0]
 	t.Setenv("PATH", shims+string(os.PathListSeparator)+"/usr/bin:/bin") // nodenv が見つからない
-	if cl, err := ResolveClaude(context.Background()); err == nil {
+	if cl, err := ResolveClaude(context.Background(), t.TempDir()); err == nil {
 		t.Fatalf("nodenv が無いのに解決した: %+v", cl)
 	}
 	bin := t.TempDir()
@@ -232,7 +232,53 @@ func TestResolveClaudeRefusesUnresolvableShim(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", shims+string(os.PathListSeparator)+bin+string(os.PathListSeparator)+"/usr/bin:/bin")
-	if cl, err := ResolveClaude(context.Background()); err == nil {
+	if cl, err := ResolveClaude(context.Background(), t.TempDir()); err == nil {
 		t.Fatalf("shim を実体として受けた: %+v", cl)
+	}
+}
+
+// 版管理の本体への symlink を shim に置く形 (mise) も shim として辿る。shim でない symlink (native の ~/.local/bin/claude → versions/<版>) は
+// 版つきの先に固定しない (自動更新が古い版を消すと、動き続けている dispatcher の起動がすべて失敗する)。
+func TestResolveClaudeSymlinks(t *testing.T) {
+	top := t.TempDir()
+	write := func(path, body string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := func(target, path string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	real := filepath.Join(top, "real", "claude")
+	write(real, "#!/bin/sh\necho '2.1.300 (Claude Code)'\n")
+	mise := filepath.Join(top, "bin", "mise")
+	write(mise, "#!/bin/sh\n[ \"$1\" = which ] && echo "+real+"\n")
+	shims := filepath.Join(top, "mise", "shims")
+	link(mise, filepath.Join(shims, "claude"))
+	t.Setenv("PATH", shims+string(os.PathListSeparator)+filepath.Dir(mise)+string(os.PathListSeparator)+"/usr/bin:/bin")
+	if cl, err := ResolveClaude(context.Background(), t.TempDir()); err != nil || cl.Path != real {
+		t.Fatalf("mise の形の shim を辿らない: %+v %v", cl, err)
+	}
+	other := filepath.Join(top, "other", "bin") // shims の外から shim を指す symlink (~/bin/claude → shim)
+	link(filepath.Join(shims, "claude"), filepath.Join(other, "claude"))
+	t.Setenv("PATH", other+string(os.PathListSeparator)+filepath.Dir(mise)+string(os.PathListSeparator)+"/usr/bin:/bin")
+	if cl, err := ResolveClaude(context.Background(), t.TempDir()); err != nil || cl.Path != real {
+		t.Fatalf("shim を指す symlink を辿らない: %+v %v", cl, err)
+	}
+	local := filepath.Join(top, "local", "bin")
+	link(real, filepath.Join(local, "claude"))
+	t.Setenv("PATH", local+string(os.PathListSeparator)+"/usr/bin:/bin")
+	if cl, err := ResolveClaude(context.Background(), t.TempDir()); err != nil || cl.Path != filepath.Join(local, "claude") || cl.Version != "2.1.300 (Claude Code)" {
+		t.Fatalf("shim でない symlink の先に固定した: %+v %v", cl, err)
 	}
 }

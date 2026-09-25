@@ -510,7 +510,7 @@ func (b *Backend) AttachCommand(sessionID string) (*exec.Cmd, error) {
 			if b.attach != nil {
 				return b.attach(sessionID), nil
 			}
-			return exec.Command("claude", "attach", sessionID), nil
+			return exec.Command("claude", "attach", sessionID), nil // 画面は素の名前 (execList と同じ。464 の残り)
 		}
 	}
 	return nil, errors.New("pro-con が起動した session ではない (または終わった): " + sessionID)

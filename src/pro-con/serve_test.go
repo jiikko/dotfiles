@@ -331,7 +331,7 @@ func TestStopTakesOverWhenStopperDies(t *testing.T) {
 		unlock()
 	}()
 	var out bytes.Buffer
-	if err := stopDispatcher(context.Background(), dir, "", map[string]string{dispatcher.E2ERepo: e.RepoDir()}, "", dispatcher.Claude{}, &e, &out); err != nil {
+	if err := stopDispatcher(context.Background(), dir, "", map[string]string{dispatcher.E2ERepo: e.RepoDir()}, "", &e, &out); err != nil {
 		t.Fatalf("引き継いで止めない: %v\n%s", err, out.String())
 	}
 	all, _ := e.ListAll(context.Background())
