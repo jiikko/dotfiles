@@ -176,3 +176,29 @@ func TestNoDeliveryToDeletingCard(t *testing.T) {
 		t.Fatalf("削除を待つカードを再開の列へ戻した: resumes=%v %v", r.l.resumes, c.State)
 	}
 }
+
+// 方針変更も、PG が turn の最後に置いた依頼 (review / run) が箱に残っている間は再開しない (追い越して除けさせない)。
+func TestRedirectWaitsForInbox(t *testing.T) {
+	r := newCrashRig(t)
+	r.ss[0].Status = "busy"
+	order(t, r.dir, "C-001", card.OrderRedirect, "青に")
+	list := r.d.List
+	r.d.List = func(ctx context.Context) ([]agents.Session, error) {
+		if _, err := store.Submit(r.dir, store.Request{Kind: "review", CardID: "C-001"}); err != nil {
+			t.Fatal(err)
+		}
+		r.d.List = list
+		return list(ctx)
+	}
+	r.tick(t)
+	if len(r.l.resumes) != 0 {
+		t.Fatalf("箱に review が残っているのに方針変更で再開した: %v", r.l.resumes)
+	}
+	r.tick(t)
+	if rej, _ := filepath.Glob(filepath.Join(r.dir, store.InboxDir, store.RejectedDir, "*.json")); len(rej) != 0 {
+		t.Fatalf("PG の review が除けられた: %v", rej)
+	}
+	if len(r.l.resumes) != 1 || !strings.Contains(r.l.resumes[0], "青に") {
+		t.Fatalf("方針変更を届けていない: %v", r.l.resumes)
+	}
+}

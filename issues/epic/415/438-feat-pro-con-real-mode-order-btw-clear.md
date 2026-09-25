@@ -50,14 +50,20 @@
 - [x] 受付の箱に `order` / `btw` / `clear` と、`add` の `ParentID` を足した (`store`)。完了のカードへの追記・方針変更は除ける。レビュー待ちは受ける
 - [x] dispatcher: 追加オーダーを届ける (`orders.go`)・btw に答える (`btw.go`)。起動の指示と再開の文に未達のオーダーを添える
 - [x] `live.Apply` が追加オーダー・btw・片付けを箱に置く。画面の断りの文言を「見ているだけの画面」向けに直した。README と docs/glogx-ui-guide.md §8
-- [x] 検査: store 4 本 / dispatcher 10 本 (busy は待つ → idle で届く・問いで止まった / 落ちた PG には届けない・方針変更は busy でも止める・回答に添える・
+- [x] 検査: store 5 本 / dispatcher 11 本 (busy は待つ → idle で届く・問いで止まった / 落ちた PG には届けない・方針変更は busy でも止める・回答に添える・
   起動の指示に入れる・渡したものだけに印・レビュー待ちから戻す (箱の review を追い越さない)・btw は PG に触らず答える・材料が無ければ記録から・削除を待つカード (451) は再開しない) / live 2 本。
   偽の launcher と一覧で発火条件を作った (本物の claude・state dir は触らない)。`bin/mutate-verify` で変異 14 本がすべて red
   (途中で 1 本が緑 = レビュー待ちの分岐が idle の分岐と重複していたので、分岐を畳んだ)
+- [x] 敵対的レビュー (sonnet 1 体・読み取りだけ): 採用 2 件 = ①同じ Apply でオーダーの後に PM の close が来ると、未達のまま完了に埋まる →
+  未達が残るカードの close を除ける (dispatcher がレビュー待ちから PG へ戻して届ける) ②方針変更は箱の適用待ちを見ずに再開し、PG の
+  `card review` / `run` を追い越して除けさせうる → 方針変更も箱が空くまで待つ。どちらも直す前に red を見た検査を足した
+  (store `TestCloseRefusedWithPendingOrder` / dispatcher `TestRedirectWaitsForInbox`)。記録だけ 1 件 = 下の残り (テストの係の実行)。
+  btw の `At` の重複・`order` の omitempty はレビューが追って実害なしと確かめた
 - [ ] 本物の claude での確認 (idle の判定が turn の区切りと一致するか・再開の文が PG に読まれるか・haiku の答えの質)
 
 ## 残り・未確認のリスク
 
 - 再開の直後に session がまだ idle に見える間に次のオーダーが来ると、立ち上がったばかりの PG を止めて再開し直しうる (未実測。無害に近いが turn の途中を切る)
 - 415 論点 11 の「方針変更で止める前に、その時点の diff をカードに記録する」はしていない (worktree は `claude stop` で消えないので変更は残る)
+- 方針変更でテストの係の実行中のカードを戻すと、実行を止めるのは次の Tick (tickRuns が deliverOrders より先に回る)。その間の結果は捨てる (カードの履歴には「取り下げた」が残る)
 - AskUserQuestion で止まった PG へ追記が届かないまま残る (規律違反の PG。見張りは watchdog 側の課題)

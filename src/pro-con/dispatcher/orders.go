@@ -50,6 +50,11 @@ func (d *Dispatcher) deliverOrders(now time.Time, ss []agents.Session) ([]eventl
 		if !ok {
 			continue // まだ登録していない (起動の直後)。登録を待つ
 		}
+		// 箱に適用待ちがあれば次の Tick へ (方針変更も): PG が turn の最後に置いた `card review` / `run` を、この後の再開で追い越して除けさせない
+		// (箱の依頼は次の Tick の頭で適用される)
+		if inboxBusy(d.Dir) {
+			continue
+		}
 		why := ""
 		switch {
 		case hasRedirect(pending):
@@ -60,9 +65,6 @@ func (d *Dispatcher) deliverOrders(now time.Time, ss []agents.Session) ([]eventl
 		case c.Run != "" || c.Exec.Active():
 			continue // テストの係の結果を渡す再開に添えて届ける
 		case idle(o, ss):
-			if inboxBusy(d.Dir) {
-				continue
-			}
 			why = "PG が turn を終えた (idle)。追加オーダーを届けるため同じ session を再開する"
 			if c.State == card.Review {
 				why = "レビュー待ちだが、PG へ届いていない追加オーダーがある。同じ session を再開して届ける"
@@ -82,8 +84,7 @@ func (d *Dispatcher) deliverOrders(now time.Time, ss []agents.Session) ([]eventl
 	return notes, nil
 }
 
-// inboxBusy は受付の箱に適用待ちがある (読めない) か。あれば idle の PG の再開を次の Tick へ送る: PG が turn の最後に置いた
-// `card review` などを、この後の再開で追い越さない (箱の依頼は次の Tick の頭で適用される)
+// inboxBusy は受付の箱に適用待ちがある (読めない) か。
 func inboxBusy(dir string) bool {
 	n, err := store.Pending(dir)
 	return err != nil || n > 0

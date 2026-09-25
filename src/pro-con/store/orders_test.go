@@ -97,3 +97,20 @@ func TestClearArchivesOnlyListedDone(t *testing.T) {
 		t.Fatal("頼まれた完了のカードだけを片付けていない")
 	}
 }
+
+// 未達の追加オーダーが残るカードは閉じない (同じ Apply でオーダーの後に close が来ても、オーダーを完了のカードに埋めない)。
+func TestCloseRefusedWithPendingOrder(t *testing.T) {
+	dir := t.TempDir()
+	submit(t, dir, Request{Kind: "add", Title: "a"})
+	applyAll(t, dir)
+	setState(t, dir, "C-001", card.Review)
+	submit(t, dir, Request{Kind: "order", CardID: "C-001", Text: "README も"})
+	submit(t, dir, Request{Kind: "close", CardID: "C-001", Ending: card.EndAnswered})
+	res := applyAll(t, dir)
+	if len(res) != 2 || res[0].Err != "" || res[1].Err == "" {
+		t.Fatalf("未達のオーダーを残したまま閉じた: %+v", res)
+	}
+	if c := cardOf(t, dir, "C-001"); c.State != card.Review {
+		t.Fatalf("%v", c.State)
+	}
+}
