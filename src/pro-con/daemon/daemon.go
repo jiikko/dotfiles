@@ -71,6 +71,11 @@ type Daemon struct {
 	// CrashLimit / CrashWindow は 0 なら既定値
 	CrashLimit  int
 	CrashWindow time.Duration
+	// Runner はテストの係の実行 / Summarize は失敗したログの要約 (runner.go)。Runner が nil ならテストの係を動かさない
+	Runner    Runner
+	Summarize func(ctx context.Context, tail string) (string, error)
+	active    *runJob // 実行中の 1 本 (無ければ nil)
+
 	// Sleep は終了のときの待ち (Shutdown)。nil なら time.Sleep (テストで差し替える)
 	Sleep func(time.Duration)
 	// StallAfter は watchdog が「進捗なし」を停滞とみなすまでの通常の時間 (コマンドの実行中は card.StallThreshold が延ばす)。0 なら既定値
@@ -125,6 +130,11 @@ func (d *Daemon) Tick(ctx context.Context) ([]string, error) {
 	}
 	watched, err := d.watch(now)
 	notes = append(notes, watched...)
+	if err != nil {
+		return notes, err
+	}
+	ran, err := d.tickRuns(ctx, now)
+	notes = append(notes, ran...)
 	if err != nil {
 		return notes, err
 	}
@@ -399,7 +409,7 @@ func (d *Daemon) watch(now time.Time) ([]string, error) {
 	}
 	var notes []string
 	for _, c := range st.Cards {
-		if c.State != card.Running || c.Wait.Kind != card.WaitNone {
+		if c.State != card.Running || c.Wait.Kind != card.WaitNone || c.Run != "" { // テストの係の実行を待っている間は PG の進み具合を見ない
 			continue
 		}
 		o, ok := owned(c, reg)
@@ -678,6 +688,7 @@ func Prompt(c card.Card) string {
 	b.WriteString("規律:\n")
 	b.WriteString("- 作業は自分の worktree で行い、commit は自分のブランチまで push する (master へは push しない)\n")
 	fmt.Fprintf(&b, "- 質問があるときは AskUserQuestion を使わず、`pro-con card ask %s \"<質問>\"` を実行してから turn を終える (回答は再開のときに届く)\n", c.ID)
+	fmt.Fprintf(&b, "- make test・ビルド・実機 E2E など時間のかかるコマンドは自分で走らせず、`pro-con card run %s -- <コマンド>` で頼んでから turn を終える (結果は再開のときに届く。同時に頼めるのは 1 本)\n", c.ID)
 	fmt.Fprintf(&b, "- 終えたら `pro-con card review %s` を実行してから turn を終える\n", c.ID)
 	if len(c.Issues) > 0 {
 		var refs []string

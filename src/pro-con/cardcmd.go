@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -21,6 +22,7 @@ const cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を�
   plan <カード> [--issue <repo>#<番号>]...      タスクに分けてキューに積んだ
   ask <カード> <質問>                            PG が質問して turn を終える (AskUserQuestion は使わない)
   answer <カード> <回答> [--from <人間|PM>]      質問待ちのカードへの回答
+  run <カード> -- <コマンド>...                  PG がテストの係にコマンドの実行を頼んで turn を終える (結果は再開のときに届く)
   review <カード>                                PG が終えた
   close <カード> [--ending answered|investigated|rejected|pending-issue] [--issue <repo>#<番号>]...
   guide                                          PM への指示書を出す (箱には何も置かない)`
@@ -75,6 +77,13 @@ var endings = map[string]card.Ending{
 // parseCard は引数を依頼にする。操作ごとに要る引数が無ければエラー (箱に置く前に止める。daemon で除けられるより早く気づける)。
 func parseCard(args []string) (store.Request, error) {
 	op, rest := args[0], args[1:]
+	if op == "run" { // pro-con card run C-001 -- make test (-- の後ろはそのままコマンド。フラグとして読まない)
+		i := slices.Index(rest, "--")
+		if i != 1 || len(rest) < 3 {
+			return store.Request{}, fmt.Errorf("run は `run <カード> -- <コマンド>...`")
+		}
+		return store.Request{Kind: "run", CardID: rest[0], Command: strings.Join(rest[2:], " ")}, nil
+	}
 	fs := flag.NewFlagSet("pro-con card "+op, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	var r store.Request

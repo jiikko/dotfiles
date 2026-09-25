@@ -258,3 +258,22 @@ func TestRejectedIsNotRejudgedAfterCrash(t *testing.T) {
 		t.Fatalf("判定し直さずに rejected/ へ移していない: %v", err)
 	}
 }
+
+// テストの係への頼みは作業中のカードだけ。結果を返す前にもう 1 本は頼めない。
+func TestRunRequest(t *testing.T) {
+	dir := t.TempDir()
+	submit(t, dir, Request{Kind: "add", Title: "x"})
+	applyAll(t, dir)
+	submit(t, dir, Request{Kind: "run", CardID: "C-001", Command: "make test"})
+	if res := applyAll(t, dir); !strings.Contains(res[0].Err, "作業中の列に無い") {
+		t.Fatalf("作業中でないカードの頼みを受けた: %+v", res)
+	}
+	setState(t, dir, "C-001", card.Running)
+	submit(t, dir, Request{Kind: "run", CardID: "C-001", Command: "make test"})
+	submit(t, dir, Request{Kind: "run", CardID: "C-001", Command: "make lint"})
+	res := applyAll(t, dir)
+	c := cardOf(t, dir, "C-001")
+	if res[0].Err != "" || !strings.Contains(res[1].Err, "まだ返していない") || c.Run != "make test" || c.Wait.Kind != card.WaitResource {
+		t.Fatalf("頼みを受けない / 2 本目を受けた: %+v Run=%q wait=%v", res, c.Run, c.Wait.Kind)
+	}
+}

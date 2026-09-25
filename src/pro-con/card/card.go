@@ -154,8 +154,8 @@ type Order struct {
 	Delivered bool // PG へ届いたか (不変条件: 未達かどうかがカードで見える)
 }
 
-// Exec は PG が今実行しているコマンド (make test / 実機 E2E 等)。ゼロ値は「何も実行していない」。
-// 本番では直列化の入口 (issue 415 要件 12 の pro-con run / hook) が記録する。
+// Exec は今実行しているコマンド (make test / 実機 E2E 等)。ゼロ値は「何も実行していない」。
+// 本物のモードでは、PG が `pro-con card run` で頼んだコマンドを daemon (テストの係) が実行している間だけ入る (426 の決定 5)。
 type Exec struct {
 	Command  string
 	Resource string        // 占有しているリソース (device / xcode 等)。占有しないコマンドは空
@@ -215,6 +215,10 @@ type Card struct {
 	DeadSince time.Time `json:",omitzero"`
 	// Stopped は pro-con の終了で daemon が PG を止めた印。次の再開は、落ちた PG の自動の再開を待たずに (止めずに) 行う。起動・再開で外す
 	Stopped bool `json:",omitempty"`
+	// Run は PG が `pro-con card run` で頼んだ、まだ結果を返していないコマンド (シェルの 1 行)。RunAt は頼んだ時刻 (順番の鍵)。
+	// daemon が順番に実行し、結果を持たせて PG を再開したら空にする
+	Run   string    `json:",omitempty"`
+	RunAt time.Time `json:",omitzero"`
 	// Archived は完了のレーンから片付けた (x)。ボードには出さないが、記録 (状態ファイル) には残す
 	Archived bool
 	// LastProgress は「実質的に進んだ」最後の時刻 (watchdog が見る。活動ではなく進捗)

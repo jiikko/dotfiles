@@ -111,6 +111,7 @@ func stopDaemon(ctx context.Context, dir, projects string, repos map[string]stri
 
 func newExecDaemon(dir, projects string, repos map[string]string, limit int) *daemon.Daemon {
 	return &daemon.Daemon{Dir: dir, Limit: limit, Repos: repos, Launch: daemon.ExecLauncher{},
+		Runner: daemon.ExecRunner{}, Summarize: daemon.HaikuSummarize(dir),
 		List: func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) }, Now: time.Now,
 		Transcript: func(sessionID string) (live.Transcript, error) {
 			p, err := live.FindTranscript(projects, sessionID)

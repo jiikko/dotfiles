@@ -115,3 +115,16 @@ func splitQuoted(s string) []string {
 	}
 	return out
 }
+
+// pro-con card run <カード> -- <コマンド>... は -- の後ろをそのままコマンドにする (フラグとして読まない)。
+func TestCardRunParse(t *testing.T) {
+	r, err := parseCard([]string{"run", "C-001", "--", "go", "test", "-run", "TestX", "./..."})
+	if err != nil || r.Kind != "run" || r.CardID != "C-001" || r.Command != "go test -run TestX ./..." {
+		t.Fatalf("run を読めない: %+v %v", r, err)
+	}
+	for _, bad := range [][]string{{"run", "C-001"}, {"run", "C-001", "--"}, {"run", "--", "make"}, {"run", "C-001", "make"}, {"run", "C-001", "make", "--", "test"}} {
+		if _, err := parseCard(bad); err == nil {
+			t.Fatalf("形の違う run を読んだ: %v", bad)
+		}
+	}
+}

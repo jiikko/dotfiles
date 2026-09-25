@@ -36,6 +36,9 @@ const (
 	perApply = 500
 )
 
+// RunResource はテストの係 (daemon が直列に実行する列) のリソース名。今は 1 本の列だけ (426 の決定 5)。
+const RunResource = "テスト"
+
 // Request は受付の箱に置く依頼 1 件。Kind ごとに使う欄が違う (apply を参照)。
 type Request struct {
 	ID       string          `json:"id"` // 箱のファイル名から Submit が付ける。二重適用を防ぐ鍵
@@ -48,6 +51,7 @@ type Request struct {
 	Owner    string          `json:"owner,omitempty"`
 	Issues   []card.IssueRef `json:"issues,omitempty"`
 	Question string          `json:"question,omitempty"`
+	Command  string          `json:"command,omitempty"` // run: テストの係に実行を頼むコマンド (シェルの 1 行)
 	Answer   string          `json:"answer,omitempty"`
 	From     string          `json:"from,omitempty"` // 回答した人 (人間 / PM)
 	Ending   card.Ending     `json:"ending,omitempty"`
@@ -321,6 +325,19 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		c.Wait = card.Wait{}
 		c.Resume = r.Answer // daemon が同じ session を再開するときに渡す (426 の決定 2)
 		move(card.Planned, firstNonEmpty(r.From, "人間")+" が回答した: "+clip(r.Answer, 80)+" (PG の空きが出たら同じ session を resume)")
+	case "run": // PG がテストの係にコマンドの実行を頼んで turn を終えた (426 の決定 5)。結果は daemon が再開のときに渡す
+		if c.State != card.Running {
+			return fmt.Errorf("作業中の列に無い (今は %s)", c.State.Label())
+		}
+		if c.Run != "" || c.Exec.Active() {
+			return fmt.Errorf("前に頼んだコマンドの結果をまだ返していない (%s)", clip(firstNonEmpty(c.Run, c.Exec.Command), 60))
+		}
+		if strings.TrimSpace(r.Command) == "" {
+			return errors.New("コマンドが空")
+		}
+		c.Run, c.RunAt = r.Command, now
+		c.Wait = card.Wait{Kind: card.WaitResource, Resource: RunResource}
+		c.History = append(c.History, card.Event{At: now, Text: "テストの係に頼んだ: " + clip(r.Command, 80)})
 	case "review": // PG が終えた
 		if c.State != card.Running {
 			return fmt.Errorf("作業中の列に無い (今は %s)", c.State.Label())

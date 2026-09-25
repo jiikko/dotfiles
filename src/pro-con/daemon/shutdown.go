@@ -52,6 +52,7 @@ var ErrStopTimeout = errors.New("pro-con daemon が時間内に止まらない")
 func (d *Daemon) Shutdown(ctx context.Context) ([]string, error) {
 	now := d.Now()
 	var notes []string
+	d.cancelRun(10 * time.Second) // テストの係の実行中の 1 本を取り消す (再開した PG は続きから頼み直す)
 	// 止める直前に PG が置いた質問・完了の依頼を先に適用する (作業中のまま分解済みへ戻すと、次の起動で除けられて失われる)
 	res, err := store.Apply(d.Dir, now)
 	if err != nil {
@@ -122,6 +123,7 @@ func (d *Daemon) Shutdown(ctx context.Context) ([]string, error) {
 				}
 				if cc.State == card.Running {
 					cc.State, cc.Since, cc.Resume = card.Planned, now, resumeAfterStop
+					cc.Run, cc.RunAt, cc.Exec, cc.Wait = "", time.Time{}, card.Exec{}, card.Wait{} // テストの係への頼みも取り下げる (続きから頼み直す)
 					text += " (次に daemon を起動したら続きから再開する)"
 				}
 				cc.History = append(cc.History, card.Event{At: now, Text: text})
