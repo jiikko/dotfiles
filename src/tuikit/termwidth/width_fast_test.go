@@ -128,19 +128,22 @@ func TestDispWidthAgreesUnderEastAsianEnv(t *testing.T) {
 		if got := ansi.StringWidth(FillRight(s, 30)); got != 30 {
 			t.Fatalf("EASTASIAN=1: FillRight(s,30) の実幅が %d (要求 30)", got)
 		}
-		// truncateDispLeft は「dispWidth が ansi.StringWidth だったとき」と同じ結果で
-		// なければならない。⚠️ 実幅 <= 要求幅では主張できない: 全角グリフが切り位置を
-		// またぐと ansi.TruncateLeft の丸めで要求 8 に対し 9 になる (fast-path 導入前から
-		// そうなので本修正の責任範囲ではない。ここでは「変えていないこと」を主張する)
+		// TruncateLeft は env の幅モデルのまま要求幅を破らない。全角グリフが切り位置をまたぐと
+		// ansi.TruncateLeft 単体は要求 8 に対し 9 を返すが、TruncateLeft はもう 1 桁削って収める
+		// (issue 416)。ansi の結果が収まっているときは、それと同じ結果になる (変えるのははみ出す場合だけ)
 		for _, in := range []string{s + "abc", "─┌┐abc", strings.Repeat("→", 7) + "x"} {
 			for _, wd := range []int{4, 8, 15} {
+				got := TruncateLeft(in, wd, "…")
+				if w := ansi.StringWidth(got); w > wd {
+					t.Fatalf("EASTASIAN=1: TruncateLeft(%q,%d) の実幅が %d (要求 %d): %q", in, wd, w, wd, got)
+				}
 				drop := ansi.StringWidth(in) - wd + ansi.StringWidth("…")
 				lib := in
-				if drop > 0 {
+				if ansi.StringWidth(in) > wd && drop > 0 { // 収まっているものは削らない (TruncateLeft の契約)
 					lib = ansi.TruncateLeft(in, drop, "…")
 				}
-				if got := TruncateLeft(in, wd, "…"); got != lib {
-					t.Fatalf("EASTASIAN=1: TruncateLeft(%q,%d) が ansi 基準と違う: %q != %q",
+				if ansi.StringWidth(lib) <= wd && got != lib {
+					t.Fatalf("EASTASIAN=1: TruncateLeft(%q,%d) が収まる ansi の結果と違う: %q != %q",
 						in, wd, got, lib)
 				}
 			}

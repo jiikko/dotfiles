@@ -1,6 +1,7 @@
 package layout
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -32,6 +33,10 @@ func TestDrawerTarget(t *testing.T) {
 		}
 		if total > geo.MinList*2 && total-got > geo.MaxPeek {
 			t.Fatalf("total=%d: 覗き見 %d 桁が上限 %d を超えた", total, total-got, geo.MaxPeek)
+		}
+		// 本文は比率ぶんより狭くしない (MinList は Extra の分しか抑えない。DrawerGeometry の doc)
+		if ratio := int(math.Round(float64(total) * geo.Ratio)); total > geo.MinList*2 && got < ratio {
+			t.Fatalf("total=%d: 本文 %d が比率ぶん %d より狭い", total, got, ratio)
 		}
 	}
 }
@@ -93,6 +98,24 @@ func TestSlideIn(t *testing.T) {
 	for i := range out {
 		if got := len(out[i]) - len(window[i]); got != 5 {
 			t.Fatalf("閉じるときの行 %d の横ずれ = %d, want 5 (全行同時・等速): %q", i, got, out)
+		}
+	}
+}
+
+// issue 416: ASCII + VS16 (キーキャップ) を含む行で、合成した行が 1 桁はみ出していた
+// (ansi.Truncate がこのクラスタを幅 1 と数えて切るため。termwidth.Truncate が測り直す)。
+func TestComposeKeepsWidthWithKeycaps(t *testing.T) {
+	const keycap = "1️⃣"
+	for _, colored := range []bool{false, true} {
+		for i, ln := range ComposeDrawer([]string{keycap, keycap + "a"}, []string{keycap + keycap}, 11, 12, colored) {
+			if w := termwidth.Of(ln); w != 12 {
+				t.Errorf("colored=%v 行 %d: ComposeDrawer の幅 %d (want 12): %q", colored, i, w, ln)
+			}
+		}
+		for i, ln := range Scrollbar([]string{keycap + "a", "b"}, 4, 3, 0, colored) {
+			if w := termwidth.Of(ln); w > 4 {
+				t.Errorf("colored=%v 行 %d: Scrollbar の幅 %d > 4: %q", colored, i, w, ln)
+			}
 		}
 	}
 }

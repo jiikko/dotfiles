@@ -14,15 +14,21 @@ import (
 // DrawerGeometry は引き出し (右から滑り込む詳細パネル) の寸法の決め方。
 //
 // 左に一覧の端を残すのが引き出しの目的: 全画面で置き換えると「どの一覧のどこから開いたか」が
-// 画面から消える。残す幅は比率で決めた上で [MinList, MaxPeek] に収める。
+// 画面から消える。残す幅は比率で決め、上乗せ (Extra) と上限 (MaxPeek) で本文を広げる。
+//
+// 🚨 本文は比率ぶん (total * Ratio) より狭くしない。MinList が抑えるのは Extra で広げる分だけで、
+// 比率ぶんの本文は削らない。なので狭い画面 (glogx の寸法で total=17〜37) では、左に残る一覧は
+// MinList を下回る。素直に MinList で頭打ちにすると、総幅 20 桁で本文が 16 → 12 桁と「広げたのに
+// 狭くなる」本末転倒が起きた (glogx の実測。commit 51937016)。この契約は glogx の
+// TestDrawerTargetWidth と、ここの TestDrawerTarget が固定している
 type DrawerGeometry struct {
 	// Ratio は開ききったときに本文が占める幅の割合 (例: 0.8)。
 	Ratio float64
 	// Extra は比率に上乗せする桁数。比率を上げるのでなく固定の上乗せにするのは、狭い端末でも
 	// 一覧側が同じ桁数だけ残るようにするため。
 	Extra int
-	// MinList は左に残す一覧の最小幅。本文が画面を食い切って「どこから開いたか」が消えるのを防ぐ。
-	// 画面幅が MinList*2 以下なら、覗き見の余地が無いので全幅を本文に使う。
+	// MinList は Extra で本文を広げるときに、左に残す一覧の最小幅 (比率ぶんの本文は削らないので、
+	// 狭い画面ではこれを下回る。型の doc)。画面幅が MinList*2 以下なら全幅を本文に使う。
 	MinList int
 	// MaxPeek は左に残す一覧の最大幅。🚨 比率だけで決めると画面が広いほど一覧が場所を食う
 	// (覗き見に要るのは「どの行から開いたか」が分かる幅だけ)。0 は上限なし。
@@ -80,10 +86,10 @@ func ComposeDrawer(base, panel []string, w, total int, colored bool) []string {
 		}
 		// 一覧側は覗き見の幅より長いのが普通なので、測る前に切る。ansi.Truncate は冒頭で全体の
 		// 幅を測るので、先に Of で測ると長い行の走査が 1 回増える。
-		line := termwidth.Cut(b, left)
+		line, lw := termwidth.CutMeasure(b, left)
 		vis, vw := cutMeasure(p, max(w-1, 0))
 		// 1 行 1 回の連結にする (毎フレーム全行で走る。+= で継ぎ足すと 1 行あたり 5 回確保していた)
-		out[i] = line + reset + termwidth.PadSpaces(max(left-termwidth.Of(line), 0)) + sep +
+		out[i] = line + reset + termwidth.PadSpaces(max(left-lw, 0)) + sep +
 			vis + reset + termwidth.PadSpaces(max(w-1-vw, 0))
 	}
 	return out
@@ -104,8 +110,7 @@ func cutMeasure(s string, width int) (string, int) {
 	if w := termwidth.Of(s); w <= width {
 		return s, w
 	}
-	c := termwidth.Cut(s, width)
-	return c, termwidth.Of(c)
+	return termwidth.CutMeasure(s, width)
 }
 
 // PadTo は行数を n へ揃える (足りなければ空行、多ければ切る)。一覧と本文のように行数の違う

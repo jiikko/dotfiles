@@ -223,7 +223,42 @@ func FirstCluster(s string) (cluster string, width int) {
 }
 
 // Truncate は表示幅 width まで切り詰め末尾に tail を付す。SGR は保持する。
-func Truncate(s string, width int, tail string) string { return ansi.Truncate(s, width, tail) }
+//
+// 🚨 ansi.Truncate の結果が Of で width を超えることがある: ASCII + VS16 (キーキャップ `1️⃣` 等) を
+// 切り詰めの走査では幅 1、StringWidth では幅 2 と数える (x/ansi v0.11.7 の内部の食い違い。issue 416)。
+// はみ出したときは、Of で width に収まる最も長い切り方を探し直す (この層の幅は Of が正本)。
+func Truncate(s string, width int, tail string) string {
+	r, _ := truncateMeasure(s, width, tail)
+	return r
+}
+
+// truncateMeasure は Truncate の本体で、結果の表示幅も返す。測った幅を呼び出し側 (ClipMeasure /
+// CutMeasure) でも使い回し、同じ行を 2 回測らない (描画のたびに全行で走る)。
+//
+// ほとんどの行は最初の 1 回で収まる。はみ出したときだけ、ansi へ渡す幅 t を二分探索して
+// 「Of(結果) <= width」を満たす最大の t を取る (結果の幅は t について単調)。🚨 比べる相手は常に
+// 要求された width で、t ではない: t と比べると、はみ出すたびに目標を詰めて削りすぎる
+// (`Cut("x1️⃣y", 3)` が "x" になった。敵対的レビューで実証)。1 字ずつ詰める形は、キーキャップの
+// 数だけ切り直すので長い行で遅い (O(はみ出し × 長さ))。二分探索なら O(長さ × log width)。
+func truncateMeasure(s string, width int, tail string) (string, int) {
+	r := ansi.Truncate(s, width, tail)
+	w := Of(r)
+	if width <= 0 || w <= width {
+		return r, w
+	}
+	best, bestW := "", 0 // t = 0 の結果 (空) は必ず収まる
+	lo, hi := 1, width-1
+	for lo <= hi {
+		t := lo + (hi-lo)/2
+		c := ansi.Truncate(s, t, tail)
+		if cw := Of(c); cw <= width {
+			best, bestW, lo = c, cw, t+1
+		} else {
+			hi = t - 1
+		}
+	}
+	return best, bestW
+}
 
 // Clip は表示幅 width を超える行を、末尾に `…` を付けて切り詰める。SGR は保持する。
 // width <= 0 なら "" (幅 0 以下に収まる表示は空しかない。呼び出し側の「幅 - 固定列」が
@@ -247,11 +282,48 @@ func Clip(line string, width int) string {
 // 末尾を残したいもの (ファイルパスの basename) に使う: 末尾から切ると「どのファイルか」が
 // 分からなくなるため。幅計算は Of と同じモデルを通す (この層に一本化する規律)。
 func TruncateLeft(s string, width int, head string) string {
-	drop := Of(s) - width + Of(head)
-	if drop <= 0 {
-		return s
+	if Of(head) > width {
+		head = "" // 印すら入らない幅では印を諦める (幅 0 以下なら、全部削って空になる)
 	}
-	return ansi.TruncateLeft(s, drop, head)
+	sw := Of(s)
+	if sw <= width {
+		return s // 収まっているものは削らない (head の幅を足して削る量を出すと、収まる行まで削っていた)
+	}
+	drop := sw - width + Of(head)
+	// 🚨 ansi.TruncateLeft の結果は Of で見ると width からずれる: 切れ目が全角の途中に落ちるとその字を
+	// 残して 1 桁はみ出し (issue 416: TruncateLeft("あ", 1) が幅 2)、キーキャップは幅 1 と数えて削りすぎる。
+	// 見積もった drop で幅ちょうどになればそれで確定 (それより広くはできない。ほとんどの行はここで終わる)。
+	// 狭いときは 1 桁少なく削って収まらないことを確かめて確定する (全角の跨ぎ)。🚨 確かめる呼び出しを
+	// 常にすると、status viewer の 1 フレームの確保が 56 回増えた (glogx の TestFrameAllocBudget)。
+	// それでも決まらなければ、収まる最小の drop を二分探索する (結果の幅は drop について単調)。
+	// どれも収まらなければ空を返す
+	fits := func(d int) (string, int, bool) {
+		r := ansi.TruncateLeft(s, d, head)
+		w := Of(r)
+		return r, w, w <= width
+	}
+	if r, w, ok := fits(drop); ok {
+		if w == width {
+			return r
+		}
+		if _, _, fewer := fits(drop - 1); !fewer {
+			return r
+		}
+	}
+	best, found := "", false
+	lo, hi := 1, sw
+	for lo <= hi {
+		d := lo + (hi-lo)/2
+		if r, _, ok := fits(d); ok {
+			best, found, hi = r, true, d-1
+		} else {
+			lo = d + 1
+		}
+	}
+	if !found {
+		return ""
+	}
+	return best
 }
 
 // PadSpaces は n 個の空白を返す。毎フレーム全行で呼ばれるため、事前確保した定数文字列の
@@ -301,8 +373,15 @@ func ClipMeasure(line string, width int) (string, int) {
 	if w <= width {
 		return line, w
 	}
-	clipped := Truncate(line, width, "…")
-	return clipped, Of(clipped)
+	return truncateMeasure(line, width, "…")
+}
+
+// CutMeasure は Cut と同じ切り詰めを行い、結果の表示幅も返す (切った行をもう一度測らない)。
+func CutMeasure(s string, width int) (string, int) {
+	if width <= 0 {
+		return "", 0
+	}
+	return truncateMeasure(s, width, "")
 }
 
 // Cut は s を表示幅 width まで切る (SGR は保持)。Clip との違いは**末尾に `…` を付けないこと**だけ:
