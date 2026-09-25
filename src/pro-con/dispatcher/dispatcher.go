@@ -616,6 +616,7 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 	}
 	running := 0
 	var queue []card.Card
+	var notes []eventlog.Event
 	for _, c := range st.Cards {
 		if c.Deleting() { // 起動・再開しない (PG を止めて消すのを待っている)。起動の結果が分からないものは立っているかもしれないので数える
 			if c.State == card.Running || c.Launching != "" {
@@ -627,6 +628,17 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		case card.Running:
 			running++
 		case card.Planned:
+			// 順番 (issue 468) は初めての起動だけを止める。一度起動したカードの再開・起動の結果が分からないカードは止めない (立っているかもしれない)
+			if b := card.Blockers(st.Cards, c); len(b) > 0 && c.Session == "" && c.Launching == "" {
+				text := strings.Join(b, ", ") + " の完了を待つ (順番)"
+				if n := len(c.History); n == 0 || c.History[n-1].Text != text { // 変わったときだけ書く (Tick ごとに記録を伸ばさない)
+					if err := d.note(c.ID, now, text); err != nil {
+						return notes, err
+					}
+					notes = append(notes, ev(eventlog.KindHold, c.ID, "", c.ID+": "+text))
+				}
+				continue
+			}
 			queue = append(queue, c)
 		case card.Requested, card.Waiting, card.Review, card.Done:
 		}
@@ -646,7 +658,6 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 	}
 	// 印の残ったカード (前の起動・再開の結果が分からない) は、上限の判定より先に片付ける。上限の後ろに置くと、実際に立っている PG を
 	// 数えずに別のカードを起動する (上限を下げて起動し直したときも)
-	var notes []eventlog.Event
 	var fresh []card.Card
 	for _, c := range queue {
 		if c.Launching == "" {
@@ -875,6 +886,9 @@ func Prompt(c card.Card) string {
 			refs = append(refs, r.String())
 		}
 		fmt.Fprintf(&b, "\n関わる issue: %s\n", strings.Join(refs, ", "))
+	}
+	if len(c.After) > 0 { // 同じ判断を変えるカードとして PM が順番を付けた (issue 468)
+		fmt.Fprintf(&b, "\n順番: このカードは %s の後に回された (同じ判断・不変条件を変える)。先に入った変更を master で読んでから作り、合わせた結果をテストで守る\n", strings.Join(c.After, ", "))
 	}
 	if c.Prompt != "" {
 		b.WriteString("\n指示:\n" + c.Prompt + "\n")

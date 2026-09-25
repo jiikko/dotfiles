@@ -382,6 +382,8 @@ func (m *Model) badge(c card.Card) string {
 		parts = append(parts, fmt.Sprintf("…%s %d番目", c.Wait.Resource, c.Wait.Position))
 	case c.Wait.Kind == card.WaitQuota:
 		parts = append(parts, "…枠待ち")
+	case m.blockedBy(c) != "":
+		parts = append(parts, "…"+m.blockedBy(c)+" の後")
 	}
 	if e := c.Exec; e.Active() {
 		cmd := e.Command
@@ -403,6 +405,14 @@ func (m *Model) badge(c card.Card) string {
 		parts = append(parts, fmt.Sprintf("+追加%d未達", n))
 	}
 	return strings.Join(parts, " ")
+}
+
+// blockedBy は分解済みのカードが順番で待っている前のカード (完了していないもの。issue 468)。待っていなければ空。
+func (m *Model) blockedBy(c card.Card) string {
+	if c.State != card.Planned {
+		return ""
+	}
+	return strings.Join(card.Blockers(m.snap.Cards, c), ", ")
 }
 
 func undelivered(c card.Card) int {

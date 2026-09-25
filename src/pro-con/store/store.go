@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -61,6 +62,7 @@ type Request struct {
 	Repo     string          `json:"repo,omitempty"`
 	Owner    string          `json:"owner,omitempty"`
 	Issues   []card.IssueRef `json:"issues,omitempty"`
+	After    []string        `json:"after,omitempty"` // plan: このカードより先に完了させるカード (issue 468)
 	Question string          `json:"question,omitempty"`
 	Command  string          `json:"command,omitempty"` // run: テストの係に実行を頼むコマンド (シェルの 1 行)
 	Cwd      string          `json:"cwd,omitempty"`     // run: 頼んだシェルの作業ディレクトリ (dispatcher が PG の worktree と照らす)
@@ -378,7 +380,7 @@ func remove(st *State, i int, r Request, now time.Time) (string, error) {
 		return "", nil // 既に削除の依頼を受けている (二重に押した)
 	}
 	if c.State == card.Requested && c.Session == "" && c.Launching == "" {
-		st.Cards = append(st.Cards[:i], st.Cards[i+1:]...)
+		st.Cards = card.Drop(st.Cards, c.ID, now)
 		return fmt.Sprintf("「%s」を削除した (依頼の列。%s が依頼)", c.Title, by), nil
 	}
 	// テストの係への頼みはここでは取り下げない (実行中の印を消すと、前の dispatcher が残した実行を止められない)。dispatcher が止めてから取り下げる
@@ -411,7 +413,17 @@ func transition(c *card.Card, r Request, now time.Time) error {
 			// global で受けた依頼は、PM が分けた issue の repo で作業する (付けないと、dispatcher が起動先を決められずに止まる)
 			c.Repo = r.Issues[0].Repo
 		}
-		move(card.Planned, "タスクに分けてキューに積んだ")
+		// 相手が記録に有るか・循環しないかは不変条件 (card.Check) が見る
+		for _, a := range r.After {
+			if !slices.Contains(c.After, a) {
+				c.After = append(c.After, a)
+			}
+		}
+		why := "タスクに分けてキューに積んだ"
+		if len(c.After) > 0 {
+			why += " (" + strings.Join(c.After, ", ") + " の後に起動する)"
+		}
+		move(card.Planned, why)
 	case "ask": // PG が質問を書いて turn を終えた
 		if c.State != card.Running {
 			return fmt.Errorf("作業中の列に無い (今は %s)", c.State.Label())

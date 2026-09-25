@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -156,7 +155,7 @@ func (d *Dispatcher) dropCard(c card.Card, now time.Time, stopped bool) (string,
 		how = "PG の session は動いていなかった"
 	}
 	err := store.Update(d.Dir, func(s *store.State) error {
-		s.Cards = slices.DeleteFunc(s.Cards, func(cc card.Card) bool { return cc.ID == c.ID })
+		s.Cards = card.Drop(s.Cards, c.ID, now)
 		return nil
 	})
 	if err == nil {
