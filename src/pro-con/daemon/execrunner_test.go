@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -74,11 +75,12 @@ func TestExecRunnerKillsLeftoverChild(t *testing.T) {
 }
 
 // 前の daemon が残した実行は、実行ごとの印で見つけて止める。単純なコマンド (bash が exec で置き換わる形) でも印が残ること、
-// 印の違う実行は撃たないことを、本物の bash で確かめる。生死は Wait の完了で見る (撃たれた子はゾンビで残り kill(pid, 0) が成功する)。
+// 印の違う実行と、同じ印を引数の最後に置いた他のプロセス (daemon が起こした形ではないもの) は撃たないことを、本物のプロセスで確かめる。
+// 生死は Wait の完了で見る (撃たれた子はゾンビで残り kill(pid, 0) が成功する)。印はテストごとに一意にする (並行するテストと撃ち合わない)。
 func TestKillStaleByRunMarker(t *testing.T) {
-	start := func(command, runID string) chan struct{} {
+	id := func(s string) string { return fmt.Sprintf("%s-%s-%d.log", t.Name(), s, os.Getpid()) }
+	start := func(cmd *exec.Cmd) chan struct{} {
 		t.Helper()
-		cmd := runCommand(context.Background(), command, runID)
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)
@@ -88,11 +90,14 @@ func TestKillStaleByRunMarker(t *testing.T) {
 		t.Cleanup(func() { _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); <-done })
 		return done
 	}
-	other := start("sleep 61", "other-run.log")
-	mine := start("sleep 62", "mine-run.log") // 単純なコマンド (印が無ければ exec で消える形)
-	waitMarker(t, "other-run.log")            // 否定の確認の前提: 撃たれうる形で ps に出ている
-	waitMarker(t, "mine-run.log")
-	killStale("mine-run.log")
+	other := start(runCommand(context.Background(), "sleep 61", id("other")))
+	mine := start(runCommand(context.Background(), "sleep 62", id("mine"))) // 単純なコマンド (印が無ければ exec で消える形)
+	// 偽物は exec されない形 (2 つの文) にする。sh が sleep に置き換わると印が消えて、照合の候補にすらならない (偽物の意味が無い)
+	imposter := start(exec.Command("/bin/sh", "-c", "sleep 63; true", runMarkerPrefix+id("mine")))
+	waitMarker(t, id("other")) // 否定の確認の前提: 撃たれうる形で ps に出ている
+	waitMarker(t, id("mine"))
+	waitPS(t, "/bin/sh -c sleep 63; true "+runMarkerPrefix+id("mine")) // 偽物も ps に出ている
+	killStale(id("mine"))
 	select {
 	case <-mine:
 	case <-time.After(5 * time.Second):
@@ -101,6 +106,8 @@ func TestKillStaleByRunMarker(t *testing.T) {
 	select {
 	case <-other:
 		t.Fatal("印の違う実行を撃った")
+	case <-imposter:
+		t.Fatal("daemon が起こした形ではないプロセスを、印が同じというだけで撃った")
 	case <-time.After(300 * time.Millisecond): // 否定の確認 (起きないことに待つ条件は無い)
 	}
 }
@@ -108,21 +115,40 @@ func TestKillStaleByRunMarker(t *testing.T) {
 // waitMarker は印の実行が ps に出るまで待つ (上限 5 秒)。
 func waitMarker(t *testing.T, runID string) {
 	t.Helper()
+	waitPS(t, "/bin/bash -c eval \"$"+runCommandEnv+"\" "+runMarkerPrefix+runID)
+}
+
+// waitPS は ps の command にその文が出るまで待つ (上限 5 秒)。
+func waitPS(t *testing.T, want string) {
+	t.Helper()
 	for range 250 {
 		out, _ := exec.Command("ps", "-A", "-ww", "-o", "command=").Output()
-		if strings.Contains(string(out), runMarkerPrefix+runID) {
+		if strings.Contains(string(out), want) {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("印 %s の実行が ps に出ない", runID)
+	t.Fatalf("ps に出ない: %s", want)
 }
 
-// 実行の終了コードは、印のために足した `exit $?` の行を通っても変わらない。
-func TestRunCommandKeepsExitCode(t *testing.T) {
-	dir := t.TempDir()
-	rc, err := ExecRunner{}.Run(context.Background(), dir, "exit 3", filepath.Join(dir, "log"), "t3")
-	if rc != 3 || err != nil {
-		t.Fatalf("終了コードが変わった: rc=%d err=%v", rc, err)
+// 頼まれたコマンドの意味と終了コードは、台本で包んでも変わらない (末尾のバックスラッシュも元の bash -c と同じに読む)。
+// 子がシグナルで死んだときは bash が 128+n で返す。
+func TestRunCommandKeepsMeaningAndExitCode(t *testing.T) {
+	for _, tc := range []struct {
+		command string
+		rc      int
+		out     string
+	}{
+		{"exit 3", 3, ""},
+		{`echo a \`, 0, "a\n"},
+		{`sh -c 'kill -SEGV $$'`, 139, ""},
+	} {
+		dir := t.TempDir()
+		log := filepath.Join(dir, "log")
+		rc, err := ExecRunner{}.Run(context.Background(), dir, tc.command, log, "t3")
+		out, _ := os.ReadFile(log)
+		if rc != tc.rc || err != nil || (tc.out != "" && string(out) != tc.out) {
+			t.Fatalf("%q: rc=%d err=%v 出力=%q (期待 rc=%d 出力=%q)", tc.command, rc, err, out, tc.rc, tc.out)
+		}
 	}
 }

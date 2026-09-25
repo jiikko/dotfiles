@@ -285,7 +285,6 @@ func (ExecRunner) Run(ctx context.Context, dir, command, logPath, runID string) 
 	defer func() { _ = f.Close() }()
 	cmd := runCommand(ctx, command, runID)
 	cmd.Dir = dir
-	cmd.Env = withoutTmux(os.Environ())
 	cmd.Stdout, cmd.Stderr = f, f
 	// make test などは子プロセスを起こすので、取り消し・時間切れはプロセスグループごと止める (bash だけ止めると子が残る)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -328,10 +327,22 @@ func isUnder(child, root string) bool {
 // runMarkerPrefix は実行の bash の $0 に載せる印の頭。
 const runMarkerPrefix = "pro-con-run:"
 
-// runCommand は実行の bash を組む。中身の後ろに `exit $?` の行を足して、bash が単純なコマンドに exec で置き換わるのを防ぐ
-// (置き換わると $0 の印が ps から消える = 427 の敵対的レビューで実測)。印は $0 (`pro-con-run:<runID>`)。
+// runScript は実行の bash が走らせる台本。頼まれたコマンドは環境変数 (runCommandEnv) で渡して eval する:
+//   - 文字列を連結しない (末尾のバックスラッシュ・閉じていない here-doc で、足した行と繋がって意味が変わった = 427 の敵対的レビューで実測)
+//   - eval (組み込み) を通すので、bash は単純なコマンドに exec で置き換わらない (置き換わると $0 の印が ps から消える。
+//     /bin/bash 3.2 で実測。TestKillStaleByRunMarker が単純なコマンドで固定している)
+//
+// 終了コードは頼まれたコマンドのもの。ただしシグナルで死んだときは bash が 128+n で返す (exec されていた前の形では -1 だった)。
+const runScript = "eval \"$" + runCommandEnv + "\""
+
+// runCommandEnv は頼まれたコマンドを渡す環境変数。
+const runCommandEnv = "PRO_CON_RUN_COMMAND"
+
+// runCommand は実行の bash を組む。印は $0 (`pro-con-run:<runID>`)。
 func runCommand(ctx context.Context, command, runID string) *exec.Cmd {
-	return exec.CommandContext(ctx, "/bin/bash", "-c", command+"\nexit $?", runMarkerPrefix+runID)
+	cmd := exec.CommandContext(ctx, "/bin/bash", "-c", runScript, runMarkerPrefix+runID)
+	cmd.Env = append(withoutTmux(os.Environ()), runCommandEnv+"="+command)
+	return cmd
 }
 
 // killStaleFn は killStale (テストで差し替えて、呼ばれたかを見る)。
@@ -342,17 +353,19 @@ func killStale(runID string) {
 	if runID == "" {
 		return
 	}
-	out, err := exec.Command("ps", "-A", "-ww", "-o", "pgid=,command=").Output()
+	out, err := exec.Command("ps", "-A", "-ww", "-o", "pid=,pgid=,command=").Output()
 	if err != nil {
 		return
 	}
 	marker := " " + runMarkerPrefix + runID
 	for _, line := range strings.Split(string(out), "\n") {
 		f := strings.Fields(line)
-		if len(f) < 2 || !strings.HasSuffix(strings.TrimSpace(line), marker) {
+		// 撃つのは、daemon が起こした形 (`/bin/bash -c <台本> <印>`) のグループの先頭だけ。印を引数の最後に置いた
+		// 他のプロセス (pgrep -f <印> 等) のグループを撃たない
+		if len(f) < 4 || f[2] != "/bin/bash" || f[3] != "-c" || f[0] != f[1] || !strings.HasSuffix(strings.TrimSpace(line), marker) {
 			continue
 		}
-		if pgid, err := strconv.Atoi(f[0]); err == nil && pgid > 1 {
+		if pgid, err := strconv.Atoi(f[1]); err == nil && pgid > 1 {
 			_ = syscall.Kill(-pgid, syscall.SIGKILL)
 		}
 	}
