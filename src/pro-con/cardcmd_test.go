@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os/exec"
 	"regexp"
 	"strings"
 	"testing"
@@ -148,6 +149,16 @@ func TestCardRunParse(t *testing.T) {
 	r, _, err := parseCardWait([]string{"run", "C-001", "--", "go", "test", "-run", "TestX", "./..."})
 	if err != nil || r.Kind != "run" || r.CardID != "C-001" || r.Command != "go test -run TestX ./..." {
 		t.Fatalf("run を読めない: %+v %v", r, err)
+	}
+	// 引用つきの argv も、テストの係が bash で eval したときに同じ argv へ戻る (空白で繋ぐと 'A|B' がパイプになった = 463)
+	argv := []string{"printf", `%s\n`, "A|B", "x y", "it's", "", "$HOME", "*", "a;b", `back\slash`, "改行\nの後"}
+	r, _, err = parseCardWait(append([]string{"run", "C-001", "--"}, argv...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("/bin/bash", "-c", r.Command).Output()
+	if want := strings.Join(argv[2:], "\n") + "\n"; err != nil || string(out) != want {
+		t.Fatalf("argv が戻らない: %q → %q (%v)、want %q", r.Command, out, err, want)
 	}
 	for _, bad := range [][]string{{"run", "C-001"}, {"run", "C-001", "--"}, {"run", "--", "make"}, {"run", "C-001", "make"}, {"run", "C-001", "make", "--", "test"}} {
 		if _, _, err := parseCardWait(bad); err == nil {

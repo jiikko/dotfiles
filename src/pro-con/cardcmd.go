@@ -113,13 +113,13 @@ func parseCardWait(args []string) (store.Request, time.Duration, error) {
 func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 	wait := addWait
 	op, rest := args[0], args[1:]
-	if op == "run" { // pro-con card run C-001 -- make test (-- の後ろはそのままコマンド。フラグとして読まない)
+	if op == "run" { // pro-con card run C-001 -- make test (-- の後ろは argv。フラグとして読まない)
 		i := slices.Index(rest, "--")
 		if i != 1 || len(rest) < 3 {
 			return store.Request{}, wait, errors.New("run は `run <カード> -- <コマンド>...`")
 		}
 		cwd, _ := os.Getwd() // dispatcher が、頼んだのがそのカードの PG の worktree かを照らす
-		return store.Request{Kind: "run", CardID: rest[0], Command: strings.Join(rest[2:], " "), Cwd: cwd}, wait, nil
+		return store.Request{Kind: "run", CardID: rest[0], Command: shellJoin(rest[2:]), Cwd: cwd}, wait, nil
 	}
 	fs := flag.NewFlagSet("pro-con card "+op, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)

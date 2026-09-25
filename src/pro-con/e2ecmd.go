@@ -232,4 +232,19 @@ func removeE2ESocket(root string) {
 	_ = os.Remove(rec)
 }
 
-func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
+// shellQuote は s を POSIX シェルの 1 語にする。引用の要らない語はそのまま返す (記録・画面に `make test` と出す)。
+func shellQuote(s string) string {
+	if s != "" && strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+=:,./-") == "" {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// shellJoin は argv を、シェルが eval すると同じ argv に戻る 1 行にする (空白で繋ぐだけだと引用が外れて別のコマンドになる = 463)。
+func shellJoin(argv []string) string {
+	q := make([]string, len(argv))
+	for i, a := range argv {
+		q[i] = shellQuote(a)
+	}
+	return strings.Join(q, " ")
+}
