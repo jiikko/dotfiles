@@ -79,7 +79,21 @@ esac
 exit 0
 EOS
 chmod +x "$TMP_DIR/bin/tmux"
+# stub date: `date +%s` を STUB_NOW に固定する (それ以外の呼び出しは実体へ)。
+# 🚨 抑止ガードの判定を壁時計に預けない: テスト側で取った epoch と script 側の `date` の間に
+# 1 秒超かかると (make test の並列腕と同時に走る負荷で実際に起きた) 差が閾値に届き、
+# ガードが正しくても落ちる。実体は PATH を書き換える前に絶対パスで解決しておく
+REAL_DATE="$(command -v date)"
+export REAL_DATE
+cat > "$TMP_DIR/bin/date" <<'EOS'
+#!/bin/sh
+if [ -n "${STUB_NOW:-}" ] && [ "$*" = "+%s" ]; then echo "$STUB_NOW"; exit 0; fi
+exec "$REAL_DATE" "$@"
+EOS
+chmod +x "$TMP_DIR/bin/date"
 export PATH="$TMP_DIR/bin:$PATH"
+NOW=1000000000
+export STUB_NOW="$NOW"
 
 fail=0
 ok()   { printf '✓ %s\n' "$1"; }
@@ -105,34 +119,65 @@ fi
 
 # --- 再入ガード: 直近の toast があれば何もしない ---------------------------
 reset_calls
-STUB_LAST="$(date +%s)" run_toast "🪟 二発目"
+STUB_LAST="$NOW" run_toast "🪟 二発目"
 if grep -q '^tmux new-pane' "$CALLS"; then
   ng "再入ガード: 直近 toast ありでも new-pane が呼ばれた (hook 無限増殖の再発)"
 else
   ok "再入ガード: 直近 2 秒以内なら new-pane を呼ばない"
 fi
 
+# 境界: 1 秒前は窓の内側、2 秒前は外側 (閾値 `-lt 2` を固定する)
+reset_calls
+STUB_LAST="$((NOW - 1))" run_toast "🪟 1 秒後"
+if grep -q '^tmux new-pane' "$CALLS"; then
+  ng "再入ガード: 1 秒前の toast でも new-pane が呼ばれた"
+else
+  ok "再入ガード: 1 秒前の toast は窓の内側"
+fi
+reset_calls
+STUB_LAST="$((NOW - 2))" run_toast "🪟 2 秒後"
+if grep -q '^tmux new-pane' "$CALLS"; then
+  ok "再入ガード: 2 秒前の toast は窓の外側 (表示する)"
+else
+  ng "再入ガード: 2 秒経っても抑止された (通知が必要以上に間引かれる)"
+fi
+
 # --- agent panel の quiet 窓: 直近に panel が動いていたら何もしない --------
 reset_calls
-STUB_PANEL="$(date +%s)" run_toast "🪟 panel 直後"
+STUB_PANEL="$NOW" run_toast "🪟 panel 直後"
 if grep -q '^tmux new-pane' "$CALLS"; then
   ng "panel quiet: 窓の内側でも new-pane が呼ばれた"
 else
   ok "panel quiet: 窓の内側では new-pane を呼ばない"
 fi
 
+reset_calls
+STUB_PANEL="$((NOW - 2))" run_toast "🪟 panel 2 秒後"
+if grep -q '^tmux new-pane' "$CALLS"; then
+  ng "panel quiet: 2 秒前の panel でも new-pane が呼ばれた"
+else
+  ok "panel quiet: 2 秒前の panel は窓の内側"
+fi
+reset_calls
+STUB_PANEL="$((NOW - 3))" run_toast "🪟 panel 3 秒後"
+if grep -q '^tmux new-pane' "$CALLS"; then
+  ok "panel quiet: 3 秒前の panel は窓の外側 (表示する)"
+else
+  ng "panel quiet: 3 秒経っても抑止された"
+fi
+
 # --- -F: 抑止ガードを外す (ユーザー操作への直接の応答を間引かない) ---------
 # 用途は C-v のペースト通知。間引かれると押した本人が「効いていない」と読む
 # (実測 2026-09-05: window 切替直後のペーストが panel の quiet 窓に食われて無音だった)
 reset_calls
-STUB_LAST="$(date +%s)" run_toast -F "📋 強制"
+STUB_LAST="$NOW" run_toast -F "📋 強制"
 if grep -q '^tmux new-pane' "$CALLS"; then
   ok "-F: 再入ガードの内側でも表示する"
 else
   ng "-F: 再入ガードに食われた (ペースト通知が無音になる)"
 fi
 reset_calls
-STUB_PANEL="$(date +%s)" run_toast -F "📋 強制"
+STUB_PANEL="$NOW" run_toast -F "📋 強制"
 if grep -q '^tmux new-pane' "$CALLS"; then
   ok "-F: panel quiet 窓の内側でも表示する"
 else
@@ -141,7 +186,7 @@ fi
 # 🚨 -F でも epoch は記録する。記録をやめると、この new-pane が発火する
 # after-split-window hook 側の抑止が外れ、toast が toast を生む形に戻る
 reset_calls
-STUB_LAST="$(date +%s)" run_toast -F "📋 強制"
+STUB_LAST="$NOW" run_toast -F "📋 強制"
 if grep -q -- 'set-option -g @tmux_toast_last_epoch' "$CALLS"; then
   ok "-F: 抑止は外すが epoch の記録は続ける (hook 側の無限増殖抑止を壊さない)"
 else
