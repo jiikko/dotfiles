@@ -22,7 +22,8 @@ type PMState struct {
 	LaunchedAt time.Time `json:"launchedAt,omitzero"`
 	// Telling は印と一緒に渡している最中のカード。取り込めたら Told へ移す (取り込めなければ、次の起動・再開でまた渡す)
 	Telling []string `json:"telling,omitempty"`
-	// Told は今の PM に知らせ済みで、まだ依頼の列にあるカード (列を離れたら外す)
+	// Told は今の PM に知らせ済みで、まだ残っている物の鍵 (依頼の列のカードはカード ID、PG の質問はカード ID@質問待ちに入った時刻。
+	// dispatcher.pmKey。列を離れたら外す)。Telling も同じ鍵
 	Told []string `json:"told,omitempty"`
 	// DeadSince は PM の session が一覧に無い / pid 無し (落ちて自動の再開を待っている) のを最初に見た時刻。生きているのを見たら外す
 	DeadSince time.Time `json:"deadSince,omitzero"`

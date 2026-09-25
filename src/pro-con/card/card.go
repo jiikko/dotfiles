@@ -4,6 +4,7 @@ package card
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -292,6 +293,25 @@ func Children(cards []Card, id string) []string {
 		}
 	}
 	return out
+}
+
+// handoffMark は PM が PG の質問を人に回したときの履歴の文の印 (HandoffText が書き、HandedOff が読む)。
+const handoffMark = " が人に回した: "
+
+// HandoffText は質問を人に回したときに履歴へ残す文 (理由は原文のまま)。
+func HandoffText(by, why string) string { return by + handoffMark + why }
+
+// HandedOff は今の質問を人に回したか (質問待ちに入った後の履歴に HandoffText がある)。人の番の目印 (452) ができるまでは履歴から読む。
+func (c Card) HandedOff() bool {
+	if c.State != Waiting || c.Wait.Kind != WaitQuestion {
+		return false
+	}
+	for _, e := range c.History {
+		if !e.At.Before(c.Since) && strings.Contains(e.Text, handoffMark) {
+			return true
+		}
+	}
+	return false
 }
 
 // Answerable は回答を受け付けるか (質問待ちの列に居る)。backend の回答・TUI の r・案内の色がこれを見る。

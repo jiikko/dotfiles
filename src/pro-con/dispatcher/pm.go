@@ -1,6 +1,6 @@
 package dispatcher
 
-// PM (人間の依頼を受けてカードを分ける Claude の session) を起こして、依頼の列に来たカードを知らせる (issue 437。設計と失敗モードの表は 437 の本文)。
+// PM (人間の依頼を受けてカードを分ける Claude の session) を起こして、依頼の列に来たカードと PG の質問を知らせる (issue 437。設計と失敗モードの表は 437 の本文)。
 // PM は 1 つ (415 の論点 6)。起こし方は PG の回答と同じ Launcher.Resume (止めてから --resume)。記録が無ければ起動する。
 // 🚨 PM の session は起動の記録 (sessions.json) にカード ID PMCardID で載せる。終了 (Shutdown) の確かめはカードで絞らないので PM も止め、
 // 閉じたカードの PG を止める側 (close.go) はカード ID で絞るので PM には当たらない。
@@ -53,7 +53,7 @@ func (d *Dispatcher) pmWorktree(name string) string {
 	return filepath.Join(d.PMRepo, ".claude", "worktrees", name)
 }
 
-// tellPM は依頼の列のカードを PM に知らせる。PM が居なければ起動し、居れば (idle になってから) 再開して知らせる。
+// tellPM は依頼の列のカードと PG の質問を PM に知らせる。PM が居なければ起動し、居れば (idle になってから) 再開して知らせる。
 // PMRepo が空 (e2e モード・設定で PM の repo が見つからない) か PMOff なら何もしない。
 func (d *Dispatcher) tellPM(ctx context.Context, now time.Time, ss []agents.Session) ([]eventlog.Event, error) {
 	if d.PMRepo == "" || d.PMOff {
@@ -122,25 +122,26 @@ func (d *Dispatcher) tellPM(ctx context.Context, now time.Time, ss []agents.Sess
 	case (hasRow || pm.Session != "") && pm.DeadSince.IsZero():
 		pm.DeadSince = now
 	}
-	var requested, untold []string
+	var pending, untold []string // 知らせる物の鍵 (pmKey)
 	told := map[string]bool{}
-	for _, id := range pm.Told {
-		told[id] = true
+	for _, k := range pm.Told {
+		told[k] = true
 	}
 	pm.Told = nil
 	for _, c := range st.Cards {
-		if c.State != card.Requested || c.Archived {
+		k, ok := pmKey(c)
+		if !ok {
 			continue
 		}
-		requested = append(requested, c.ID)
-		if told[c.ID] {
-			pm.Told = append(pm.Told, c.ID) // 列を離れたカードは外れる
+		pending = append(pending, k)
+		if told[k] {
+			pm.Told = append(pm.Told, k) // 列を離れたカードは外れる
 		} else {
-			untold = append(untold, c.ID)
+			untold = append(untold, k)
 		}
 	}
-	// 起こすのは、知らせていないカードがあるときと、PM が生きていないのに依頼の列にカードが残っているとき (知らせた後に落ちた・止めた)
-	if len(untold) == 0 && (alive || len(requested) == 0) {
+	// 起こすのは、知らせていない物があるときと、PM が生きていないのに知らせる物が残っているとき (知らせた後に落ちた・止めた)
+	if len(untold) == 0 && (alive || len(pending) == 0) {
 		return notes, save()
 	}
 	switch {
@@ -183,7 +184,7 @@ func (d *Dispatcher) tellPM(ctx context.Context, now time.Time, ss []agents.Sess
 		return notes, save()
 	}
 	d.pmHeld = ""
-	how, name, run, err := d.preparePM(row, hasRow, cur, alive, now, st.Cards, untold, requested)
+	how, name, run, err := d.preparePM(row, hasRow, cur, alive, now, st.Cards, untold, pending)
 	if err != nil {
 		if d.pmFailed != err.Error() { // 理由が変わらないまま Tick ごとにログを埋めない
 			d.pmFailed = err.Error()
@@ -192,7 +193,7 @@ func (d *Dispatcher) tellPM(ctx context.Context, now time.Time, ss []agents.Sess
 		return notes, save()
 	}
 	d.pmFailed = ""
-	pm.Launching, pm.LaunchedAt, pm.Telling = how, now, requested
+	pm.Launching, pm.LaunchedAt, pm.Telling = how, now, pending
 	if reviving {
 		pm.Revivals = append(pm.Revivals, now)
 	}
@@ -217,7 +218,7 @@ func (d *Dispatcher) tellPM(ctx context.Context, now time.Time, ss []agents.Sess
 		return append(notes, ev(eventlog.KindLaunch, PMCardID, "", fmt.Sprintf("PM の%sに失敗したと返った (立っているかもしれないので、一覧で確かめてから起こし直す): %v", how, launchErr))), nil
 	}
 	settlePM(&pm, id)
-	notes = append(notes, ev(eventlog.KindLaunch, PMCardID, id, fmt.Sprintf("PM を%sして依頼の列のカードを知らせた (%s: %s)", how, id, strings.Join(requested, ", "))))
+	notes = append(notes, ev(eventlog.KindLaunch, PMCardID, id, fmt.Sprintf("PM を%sして依頼の列のカードと PG の質問を知らせた (%s: %s)", how, id, pmLabels(pending))))
 	return notes, save()
 }
 
@@ -232,8 +233,8 @@ func settlePM(pm *store.PMState, id string) {
 }
 
 // preparePM は起動・再開の前提を確かめて、実行する関数を返す。記録に PM の行があれば同じ session を再開し、無ければ起動する。
-func (d *Dispatcher) preparePM(row live.Owned, hasRow bool, cur agents.Session, alive bool, now time.Time, cards []card.Card, untold, requested []string) (how, name string, run func(context.Context) (string, error), err error) {
-	notice := pmNotice(cards, untold, requested)
+func (d *Dispatcher) preparePM(row live.Owned, hasRow bool, cur agents.Session, alive bool, now time.Time, cards []card.Card, untold, pending []string) (how, name string, run func(context.Context) (string, error), err error) {
+	notice := pmNotice(cards, untold, pending)
 	if hasRow && (alive || d.exists(row.Cwd)) {
 		if row.Cwd == "" {
 			return "再開", "", nil, fmt.Errorf("前の PM (%s) の作業ディレクトリが記録に無い (別の cwd で再開すると別の tree を書く)", row.ID)
@@ -256,26 +257,61 @@ func (d *Dispatcher) preparePM(row live.Owned, hasRow bool, cur agents.Session, 
 	return "起動", name, func(ctx context.Context) (string, error) { return d.Launch.Start(ctx, d.PMRepo, name, prompt) }, nil
 }
 
-// pmNotice は PM に渡す知らせ。新しいカードを ID・題・repo で並べ、まだ依頼の列にある他のカードは ID だけ添える。指示は書かない (指示の正本は pm-guide.md)。
-func pmNotice(cards []card.Card, untold, requested []string) string {
+// pmKey は PM に知らせる物の鍵。依頼の列のカードはカード ID、PG の質問はカード ID と質問待ちに入った時刻
+// (回答で列を離れてまた質問したら、離れたのを見ていなくても別の鍵になる = また知らせる)。
+// 権限の確認と落ちて止めた PG、PM が人に回した質問は PM には片付けられない (人の番。452) ので知らせない (残すと PM を起こす理由になり続ける)。
+func pmKey(c card.Card) (string, bool) {
+	switch {
+	case c.Archived || c.HandedOff():
+		return "", false
+	case c.State == card.Requested:
+		return c.ID, true
+	case c.State == card.Waiting && c.Wait.Kind == card.WaitQuestion:
+		return c.ID + "@" + c.Since.UTC().Format(time.RFC3339Nano), true
+	}
+	return "", false
+}
+
+// pmLabels は出来事に書く、知らせた物の短い名前 (質問は「C-001 の質問」)。
+func pmLabels(keys []string) string {
+	var out []string
+	for _, k := range keys {
+		if id, _, ok := strings.Cut(k, "@"); ok {
+			k = id + " の質問"
+		}
+		out = append(out, k)
+	}
+	return strings.Join(out, ", ")
+}
+
+// pmNotice は PM に渡す知らせ。新しい依頼を ID・題・repo で、新しい PG の質問をそれに質問の文を足して並べ、知らせ済みで残っているものは ID だけ添える。
+// 指示は書かない (指示の正本は pm-guide.md)。
+func pmNotice(cards []card.Card, untold, pending []string) string {
 	var b strings.Builder
-	b.WriteString("pro-con: 依頼の列に次のカードがある。指示書のとおりに扱って。\n")
-	byID := map[string]card.Card{}
+	b.WriteString("pro-con: 次のカードを指示書のとおりに扱って。\n")
+	var restReq, restAsk []string
 	for _, c := range cards {
-		byID[c.ID] = c
-	}
-	for _, id := range untold {
-		c := byID[id]
-		fmt.Fprintf(&b, "- 新しい依頼 %s「%s」(repo: %s)\n", c.ID, c.Title, orNone(c.Repo))
-	}
-	var rest []string
-	for _, id := range requested {
-		if !slices.Contains(untold, id) {
-			rest = append(rest, id)
+		k, ok := pmKey(c)
+		if !ok || !slices.Contains(pending, k) {
+			continue
+		}
+		fresh := slices.Contains(untold, k)
+		switch {
+		case c.State == card.Requested && fresh:
+			fmt.Fprintf(&b, "- 新しい依頼 %s「%s」(repo: %s)\n", c.ID, c.Title, orNone(c.Repo))
+		case c.State == card.Requested:
+			restReq = append(restReq, c.ID)
+		case fresh:
+			fmt.Fprintf(&b, "- PG の質問 %s「%s」(repo: %s): %s\n", c.ID, c.Title, orNone(c.Repo), c.Wait.Question)
+		default:
+			restAsk = append(restAsk, c.ID)
 		}
 	}
-	if len(rest) > 0 {
-		fmt.Fprintf(&b, "- まだ依頼の列に残っている: %s\n", strings.Join(rest, ", "))
+	if len(restReq) > 0 {
+		fmt.Fprintf(&b, "- まだ依頼の列に残っている: %s\n", strings.Join(restReq, ", "))
+	}
+	if len(restAsk) > 0 {
+		fmt.Fprintf(&b, "- まだ回答していない PG の質問: %s\n", strings.Join(restAsk, ", "))
 	}
 	b.WriteString("中身は `pro-con card show <カード>` で読む。\n")
 	return b.String()
