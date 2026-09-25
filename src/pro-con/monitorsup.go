@@ -22,8 +22,9 @@ import (
 	"time"
 )
 
-// monitorCommand は見張りのコマンド (stdin は superviseMonitor が付ける)。テストが差し替える
-// (既定のまま go test から呼ぶと、テストのバイナリを monitor の引数で起こしてしまう)。
+// monitorCommand は見張りのコマンド (stdin は superviseMonitor が付ける)。
+// 🚨 runDispatcher を e2e / --once 以外で呼ぶテストを足すなら、これを差し替える (既定のまま go test から呼ぶと、テストのバイナリを monitor の引数で起こす)。
+// 今の runDispatcher のテストはすべて --e2e か --once なので見張りを起こさない。
 var monitorCommand = func(stdout, stderr io.Writer) (*exec.Cmd, error) {
 	exe, err := os.Executable()
 	if err != nil {

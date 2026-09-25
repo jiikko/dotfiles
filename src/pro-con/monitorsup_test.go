@@ -3,13 +3,17 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"pro-con/dispatcher"
+	"pro-con/monitor"
+	"pro-con/store"
 )
 
 // supRig は起こし直しの係を、sh の台本を見張りの代わりにして回す。
@@ -84,9 +88,18 @@ func TestMonitorHeldIsNotCounted(t *testing.T) {
 // 止めるときは stdin (パイプ) を閉じる: SIGTERM を無視する見張りも EOF で抜ける。止めた後は起こし直さず、落ちたとも書かない。
 func TestMonitorStopClosesStdin(t *testing.T) {
 	r := &supRig{}
-	stop := superviseMonitor(context.Background(), r.sup(`trap "" TERM; cat >/dev/null`))
-	eventually(t, "起こさない", func() bool { n, _ := r.snapshot(); return n == 1 })
-	time.Sleep(50 * time.Millisecond) // cat が stdin を読み始める
+	s := r.sup("")
+	ready := &syncBuffer{}
+	s.command = func() (*exec.Cmd, error) {
+		r.mu.Lock()
+		r.starts++
+		r.mu.Unlock()
+		cmd := exec.Command("sh", "-c", `trap "" TERM; echo ready; cat >/dev/null`)
+		cmd.Stdout = ready
+		return cmd, nil
+	}
+	stop := superviseMonitor(context.Background(), s)
+	eventually(t, "見張りが SIGTERM を無視する形で立たない", func() bool { return strings.Contains(ready.String(), "ready") }) // trap を入れた後
 	start := time.Now()
 	stop()
 	if d := time.Since(start); d >= 5*time.Second {
@@ -127,5 +140,48 @@ func TestRunMonitorExitsHeldWhenLocked(t *testing.T) {
 	unlock()
 	if rc := runMonitor([]string{"--once"}, dir, nil, &out, &errOut); rc != 0 {
 		t.Fatalf("lock が空いたのに見ない: rc=%d: %s", rc, errOut.String())
+	}
+}
+
+// syncBuffer は子の stdout を並行に書かれてよい形で受ける。
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (w *syncBuffer) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.b.Write(p)
+}
+
+func (w *syncBuffer) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.b.String()
+}
+
+// 見張りは同じ失敗を毎回ログに書かない (取り込む先の無い repo は直すまで毎分失敗する)。直ったら 1 度書く。
+func TestWatchLogsSameErrorOnce(t *testing.T) {
+	dir := t.TempDir()
+	broken := filepath.Join(dir, store.StateFile)
+	if err := os.WriteFile(broken, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := &monitor.Monitor{Dir: dir}
+	ctx, cancel := context.WithCancel(context.Background())
+	var out, errOut syncBuffer
+	done := make(chan int)
+	go func() { done <- watch(ctx, m, time.Millisecond, false, &out, &errOut) }()
+	eventually(t, "失敗を書かない", func() bool { return strings.Contains(errOut.String(), "読めない") })
+	time.Sleep(30 * time.Millisecond) // 何周も失敗させる
+	if err := os.Remove(broken); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "直ったと書かない", func() bool { return strings.Contains(errOut.String(), "前の失敗は直った") })
+	cancel()
+	<-done
+	if n := strings.Count(errOut.String(), "読めない"); n != 1 {
+		t.Fatalf("同じ失敗を %d 回書いた:\n%s", n, errOut.String())
 	}
 }

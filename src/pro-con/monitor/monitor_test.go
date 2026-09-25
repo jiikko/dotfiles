@@ -184,7 +184,7 @@ func TestOnlyCommittedWorkOfWatchedCardsIsChecked(t *testing.T) {
 	}
 }
 
-// PG どうしの衝突は、どちらも master と衝突しないときに知らせる (master と衝突するカードの組は二重に知らせない)。
+// PG どうしの衝突は、どちらも master と衝突しないときに知らせる (master と衝突するカードの組は二重に知らせず、見ていないだけなので「消えた」にもしない)。
 func TestConflictBetweenPGs(t *testing.T) {
 	r := newRig(t)
 	r.card("C-001", card.Running)
@@ -198,9 +198,8 @@ func TestConflictBetweenPGs(t *testing.T) {
 	r.master("g.txt", "master\n") // 両方とも master と衝突する: 組の知らせは消え、master との衝突を 2 つ知らせる
 	got = r.check()
 	s := notes(got)
-	if len(got) != 3 || !strings.Contains(s, "C-001 の commit 済みの分が origin/master と衝突する") || !strings.Contains(s, "C-002 の commit 済みの分が origin/master と衝突する") ||
-		!strings.Contains(s, "C-001 と C-002 の衝突は見えなくなった") {
-		t.Fatalf("master との衝突に置き換わらない:\n%s", s)
+	if len(got) != 2 || !strings.Contains(s, "C-001 の commit 済みの分が origin/master と衝突する") || !strings.Contains(s, "C-002 の commit 済みの分が origin/master と衝突する") {
+		t.Fatalf("master との衝突を知らせない / 見ていないだけの組の衝突を「消えた」にした:\n%s", s)
 	}
 }
 
@@ -326,5 +325,49 @@ func TestPairSkippedWhenEitherConflictsWithMaster(t *testing.T) {
 		if len(got) != 1 || got[0].CardID != side || !strings.Contains(got[0].Note, "origin/master と衝突する (f.txt)") {
 			t.Fatalf("%s だけが master と衝突するのに、組の衝突も知らせた / master との衝突を知らせない:\n%s", side, notes(got))
 		}
+	}
+}
+
+// merge-tree が失敗した組・止める途中の Check は、前に知らせた衝突を「消えた」にしない (失敗・取り消しを「衝突なし」と取り違えない)。
+func TestFailedOrCanceledCheckKeepsFindings(t *testing.T) {
+	r := newRig(t)
+	r.card("C-001", card.Running)
+	r.commit("C-001", "f.txt", "1\nPG\n3\n")
+	r.master("f.txt", "1\nMASTER\n3\n")
+	if got := r.check(); len(got) != 1 {
+		t.Fatalf("衝突を知らせない:\n%s", notes(got))
+	}
+	r.master("g.txt", "moved\n") // 取り込む先が動いて組が変わる → 覚えた結果を使わず git を呼ぶ
+	r.m.Git = &failingGit{Git: ExecGit{}}
+	if got := r.check(); len(got) != 0 {
+		t.Fatalf("merge-tree の失敗で「消えた」を置いた:\n%s", notes(got))
+	}
+	r.m.Git = nil
+	r.master("g.txt", "moved again\n")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	r.sent = nil
+	if _, err := r.m.Check(ctx); err == nil || len(r.sent) != 0 {
+		t.Fatalf("取り消された Check が知らせを置いた / 取り消しを返さない: err=%v\n%s", err, notes(r.sent))
+	}
+	if got := r.check(); len(got) != 0 {
+		t.Fatalf("残っている衝突を知らせ直した / 消えたとした:\n%s", notes(got))
+	}
+}
+
+// 組の鍵はカードの ID の順 (レーンの並べ替えで cards.json の順が変わっても、同じ組を「消えた」→「衝突する」と知らせ直さない)。
+func TestPairKeyIgnoresCardOrder(t *testing.T) {
+	r := newRig(t)
+	r.card("C-001", card.Running)
+	r.card("C-002", card.Running)
+	r.commit("C-001", "g.txt", "one\n")
+	r.commit("C-002", "g.txt", "two\n")
+	if got := r.check(); len(got) != 1 {
+		t.Fatalf("組の衝突を知らせない:\n%s", notes(got))
+	}
+	r.cards[0], r.cards[1] = r.cards[1], r.cards[0]
+	r.save()
+	if got := r.check(); len(got) != 0 {
+		t.Fatalf("並べ替えただけで知らせ直した:\n%s", notes(got))
 	}
 }

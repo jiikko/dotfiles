@@ -18,7 +18,7 @@ import (
 	"pro-con/monitor"
 )
 
-// monitorInterval は見張りの既定の間隔 (git の結果は HEAD の組が変わったときだけ出し直すので、git を呼ぶのは変わったときだけ)。
+// monitorInterval は見張りの既定の間隔 (merge-tree と取り込み済みかの結果は commit の組で覚えるので、毎回呼ぶ git は取り込む先と各 worktree の HEAD を読む rev-parse だけ)。
 const monitorInterval = time.Minute
 
 // monitorExitHeld は、別の見張りが lock を持っていたので何もせずに抜けたときの終了コード
@@ -70,13 +70,20 @@ func runMonitor(args []string, dir string, repos map[string]string, stdout, stde
 
 // watch は m.Check を interval ごとに、ctx が終わるまで回す。
 func watch(ctx context.Context, m *monitor.Monitor, interval time.Duration, once bool, stdout, stderr io.Writer) int {
+	last := "" // 同じ失敗を毎回ログに書かない (取り込む先の無い repo は直すまで毎回失敗する。変わったときと、直ったときに 1 度)
 	for {
 		n, err := m.Check(ctx)
 		if n > 0 {
 			_, _ = fmt.Fprintf(stdout, "%s 見張り: %d 件を受付の箱に置いた\n", time.Now().Format("15:04:05"), n)
 		}
-		if err != nil && ctx.Err() == nil {
+		switch {
+		case ctx.Err() != nil:
+		case err != nil && err.Error() != last:
+			last = err.Error()
 			_, _ = fmt.Fprintln(stderr, "pro-con monitor:", err) // 1 回の失敗では抜けない (次の回で見直す)
+		case err == nil && last != "":
+			last = ""
+			_, _ = fmt.Fprintln(stderr, "pro-con monitor: 前の失敗は直った")
 		}
 		if once {
 			if err != nil {

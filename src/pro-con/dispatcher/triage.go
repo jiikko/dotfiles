@@ -4,7 +4,7 @@ package dispatcher
 // 材料は dispatcher が集めて prompt に入れる (haiku に tools を渡さない = 読むだけ・書かないは構造で決まる):
 //   - ログの末尾
 //   - そのカードの変更 (PG の worktree の、取り込む先との分かれ目から作業ツリーまでの diff --stat と、未追跡のファイルの数。commit 前の変更も含む)
-//   - 同じコマンドの最近の結果 (dispatcher のメモリだけ。実際に走って rc が出たものだけ。落ちたら次の dispatcher は空から始める)
+//   - 同じ repo の同じコマンドの最近の結果 (dispatcher のメモリだけ。実際に走って rc が出たものだけ。落ちたら次の dispatcher は空から始める)
 // 🚨 判定は証拠ではない (「見込み」)。PG に渡す結果の文に要約と並べるだけで、dispatcher は判定を見て動きを変えない。
 // 枠: 実行を始めるとき (Tick の中) に capacity が 0 (95% 以上 = 新しく起動・再開しない) なら、その実行は要約しない。
 
@@ -25,11 +25,11 @@ type SummaryInput struct {
 	Recent string // 同じコマンドの最近の結果 (無ければ空)
 }
 
-// runRecord はテストの係が実際に走らせた 1 本の結果 (rc が出たもの)。
+// runRecord はテストの係が実際に走らせた 1 本の結果 (rc が出たもの)。repo はカードの repo (別の repo の同じコマンドと混ぜない)。
 type runRecord struct {
-	cardID, command string
-	rc              int
-	at              time.Time
+	cardID, repo, command string
+	rc                    int
+	at                    time.Time
 }
 
 // keepRuns は覚えておく結果の数 / recentShown は材料に並べる同じコマンドの結果の数。
@@ -44,19 +44,19 @@ func (d *Dispatcher) remember(job *runJob, r runResult, now time.Time) {
 	if r.rc < 0 || r.err != nil {
 		return
 	}
-	d.recent = append(d.recent, runRecord{cardID: job.cardID, command: job.command, rc: r.rc, at: now})
+	d.recent = append(d.recent, runRecord{cardID: job.cardID, repo: job.repo, command: job.command, rc: r.rc, at: now})
 	if len(d.recent) > keepRuns {
 		d.recent = d.recent[len(d.recent)-keepRuns:]
 	}
 }
 
-// recentRuns は同じコマンドの最近の結果を、新しい順に材料の文にする (Tick の中から呼ぶ)。
-func (d *Dispatcher) recentRuns(cardID, command string) string {
+// recentRuns は同じ repo の同じコマンドの最近の結果を、新しい順に材料の文にする (Tick の中から呼ぶ)。
+func (d *Dispatcher) recentRuns(cardID, repo, command string) string {
 	var b strings.Builder
 	n := 0
 	for i := len(d.recent) - 1; i >= 0 && n < recentShown; i-- {
 		r := d.recent[i]
-		if r.command != command {
+		if r.command != command || r.repo != repo {
 			continue
 		}
 		who := r.cardID
@@ -69,8 +69,11 @@ func (d *Dispatcher) recentRuns(cardID, command string) string {
 	return b.String()
 }
 
-// diffTimeout は変更の材料を集める git 1 回の上限。
-const diffTimeout = 20 * time.Second
+// diffTimeout は変更の材料を集める git 1 回の上限 / maxStatLines は材料に並べる変更のファイルの数。
+const (
+	diffTimeout  = 20 * time.Second
+	maxStatLines = 30
+)
 
 // changeStat は dir (PG の worktree かその下) の変更の材料。取り込む先 (origin/HEAD → origin/master → origin/main) との分かれ目から作業ツリーまで。
 // 取れなければ空 (要約は材料なしで続ける)。🚨 index も ref も書かない読み取りだけ
@@ -88,6 +91,9 @@ func changeStat(ctx context.Context, dir string) string {
 	stat, err := gitOut(ctx, dir, "diff", "--stat", base)
 	if err != nil {
 		return ""
+	}
+	if lines := strings.Split(stat, "\n"); len(lines) > maxStatLines+1 { // 大きな変更で prompt を膨らませない (最後の行は合計)
+		stat = strings.Join(lines[:maxStatLines], "\n") + fmt.Sprintf("\n(ほか %d ファイル)\n", len(lines)-1-maxStatLines) + lines[len(lines)-1]
 	}
 	untracked := 0
 	if st, err := gitOut(ctx, dir, "status", "--porcelain", "--untracked-files=normal"); err == nil {

@@ -62,6 +62,7 @@ type runJob struct {
 	// どちらも Tick の中で決めて写す (実行の goroutine から dispatcher の欄を読まない)
 	summarize bool
 	recent    string
+	repo      string // カードの repo (最近の結果を repo で分ける)
 }
 
 type runResult struct {
@@ -176,7 +177,7 @@ func (d *Dispatcher) tickRuns(ctx context.Context, now time.Time) ([]eventlog.Ev
 			limit, _ := d.capacity(now)
 			job := &runJob{cardID: c.ID, command: c.Run, start: now, done: make(chan runResult, 1), cancel: cancel,
 				logPath:   filepath.Join(d.Dir, RunsDir, fmt.Sprintf("%s-%d-%s.log", c.ID, now.Unix(), dirTag(d.Dir))),
-				summarize: d.Summarize != nil && limit > 0, recent: d.recentRuns(c.ID, c.Run)}
+				summarize: d.Summarize != nil && limit > 0, recent: d.recentRuns(c.ID, c.Repo, c.Run), repo: c.Repo}
 			if err := d.update(c.ID, func(cc *card.Card) {
 				cc.Exec = card.Exec{Command: c.Run, Resource: store.RunResource, Since: now, RunID: filepath.Base(job.logPath)} // 始める前に印を記録する
 				cc.Wait = card.Wait{}

@@ -14,7 +14,7 @@ bin/pro-con dispatcher   # 割り振り係: 受付の箱の適用・PM と PG �
 bin/pro-con config set limit 3 | set pm 1 | unset limit | show  # 止めずに PG の枠 (同時に動かす PG の上限) と PM の数を変える (issue 456)。受付の箱に置き、dispatcher が状態の置き場の settings.json に書いて次の Tick から使う (起動し直しても続く)
                          # 🚨 上限の優先: 利用枠の絞り (80% で 1 本 / 95% で 0 本) > 設定 (config set limit) > dispatcher の --limit > 既定 2。--limit は「設定が無いときの値」で、unset limit で戻る (画面が起こす dispatcher は --limit を付けない)
                          # PM の数は今は 1 だけを受ける (2 以上は 415 の論点 6 が決まるまで断る。今は 1 つで動くので dispatcher はまだ読まない。PM を起こさないのは --pm=off / config.toml の pm = "off")。settings.json が壊れていたら --limit で動き、理由をゲージに出す
-bin/pro-con ps [--json]  # pro-con が起動したプロセスを役ごとに出す (dispatcher / PM / PG / テストの係 / 画面。pid・経過・状態・カード・コマンド)。読むだけ: 状態の置き場に書かず、dispatcher の lock も画面の印 (presence) も触らない。生きているかは ps を 1 回読んで決める (busy / idle は出さない)。pro-con の外の session は出さない
+bin/pro-con ps [--json]  # pro-con が起動したプロセスを役ごとに出す (dispatcher / 見張り / PM / PG / テストの係 / 画面。pid・経過・状態・カード・コマンド)。読むだけ: 状態の置き場に書かず、dispatcher の lock も画面の印 (presence) も触らない。生きているかは ps を 1 回読んで決める (busy / idle は出さない)。pro-con の外の session は出さない
 bin/pro-con dispatcher --stop  # dispatcher と、pro-con が起動した PG を止める。作業中のカードは次に dispatcher を起動したら続きから再開する (画面の終了も同じことをする)
                                # 人が止めた印 (`dispatcher-held`) を置く: 開いている画面は dispatcher を起こし直さず、ゲージに「止めてある」と出す。外すのは画面の c か、次に手で `pro-con dispatcher` を起動したとき (issue 459)
 bin/pro-con card …   # PM / PG が使うカードの操作 (add / plan / ask / answer / handoff / review / rework / close / delete。plan --after は前のカードが完了するまで起動させない = issue 468。handoff は PM が PG の質問を人に回したことを履歴に残す。rework はレビュー待ちを直してほしい点つきで PG に戻す。delete は依頼の列ならすぐ消し、ほかは PG の session を止めてから消す = issue 451)。受付の箱に置くだけで、適用は dispatcher (issue 427)

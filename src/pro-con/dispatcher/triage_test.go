@@ -58,8 +58,11 @@ func TestRememberSkipsRunsWithoutCommandRC(t *testing.T) {
 		t.Fatalf("rc の無い実行を覚えた: %+v", d.recent)
 	}
 	d.remember(job, runResult{rc: 1}, t0)
-	if got := d.recentRuns("C-002", "make test"); !strings.Contains(got, "C-001: rc=1") {
+	if got := d.recentRuns("C-002", "", "make test"); !strings.Contains(got, "C-001: rc=1") {
 		t.Fatalf("走った実行を覚えない: %q", got)
+	}
+	if got := d.recentRuns("C-002", "other", "make test"); got != "" {
+		t.Fatalf("別の repo の同じコマンドの結果を混ぜた: %q", got)
 	}
 }
 

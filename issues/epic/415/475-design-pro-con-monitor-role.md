@@ -115,8 +115,17 @@ worktree が要らない) は、別プロセスにする決定でもそのまま
   履歴の文から結果を拾う形が脆い (P2) / `Cap` では 80% を判定できない (P2。後回しの節に書いた) / merge-tree の失敗と組の二重の知らせ (P3) / git diff の時間の上限 (P3)。
   採らなかった: 1 周ぶんの知らせを 1 件にまとめる (衝突が現れる・消えるのは少ないので、1 件ずつのまま)
 - [x] 実装: `monitor/` (判定と git の読み取り)・`monitorcmd.go` (`pro-con monitor`)・`monitorsup.go` (dispatcher が起こして止める)・
-  受付の箱の `monitor` と出来事の `monitor`・`dispatcher.LockMonitor`・`dispatcher/triage.go` (一次判定の材料と prompt、枠)・`haiku()` の `--no-session-persistence`・README
-- [x] テスト 20 本 (monitor 8・起こし直し 5・一次判定 5・store 1・出来事 1。既存の 2 本 = 適用待ちの数・haiku の引数を広げた) と変異 31 本すべて red
+  受付の箱の `monitor` と出来事の `monitor`・`dispatcher.LockMonitor`・`dispatcher/triage.go` (一次判定の材料と prompt、枠)・`haiku()` の `--no-session-persistence`・`pro-con ps` の「見張り」の行・README
+- [x] 新しいテスト 24 本 (monitor 10・起こし直しと watch 6・一次判定 5・store 1・出来事 1・ps 1。ほかに既存の 2 本 = 適用待ちの数・haiku の引数を広げた) と変異 36 本すべて red
+- [x] 実装のレビュー (opus) と敵対的レビュー (opus) 1 周ずつ。採った指摘:
+  - 偽の「消えた」: 止める途中・HEAD が読めない・merge-tree が失敗した・master と衝突して組を見なかった ときに、前に知らせた衝突を消えたとしていた
+    (見られなかった物を repo・カード・組の単位で `unseen` に入れ、前の結果を残す。時間切れは覚えない) — 敵対的レビューで再現された P2
+  - 組の鍵が cards.json の順 (レーンの並べ替え = 470) に依存していた (ID の順に揃えた)
+  - 最近の結果が別の repo の同じコマンドを混ぜていた (repo で分けた) / 取り込み済みかの `IsAncestor` を毎分呼び、失敗で repo ごと止まっていた (覚える・カード単位で飛ばす)
+  - 取り込む先の無い repo が毎分同じ失敗をログに書く (変わったときと直ったときだけ) / stdin を閉じるテストが trap の前に通りうる (ready を待つ) /
+    diff --stat の上限 (30 ファイル) / コメント 2 か所
+  - 記録だけ (未確認リスク): 見張りの起こし直しの間に直った衝突は「消えた」を知らせない (知らせた物をメモリだけに持つ割り切り。残っている衝突はもう 1 度知らせる) /
+    ctrl+c でプロセスグループに信号が届いたとき、dispatcher の ctx が取り消される前に見張りが抜けると「見張りが抜けた」が 1 行余分に出うる (推測。再現していない)
 - [ ] 本番の dispatcher で、見張りが起き、衝突が出来事 (`pro-con log`) に出ることを確かめる
 - 未テスト: dispatcher を kill -9 したときに見張りが抜けること (パイプの EOF。起こし直しの係のテストは「止めるときに stdin を閉じる」まで) /
   `IsAncestor` で commit の無い・取り込み済みのカードを飛ばすこと (飛ばさなくても merge-tree は衝突なしを返すので、結果は変わらない。git の呼び出しを減らすだけ)

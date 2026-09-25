@@ -36,7 +36,7 @@ const psUsage = `usage: pro-con ps [--json]   (pro-con が起動したプロセ�
 
 // Proc は一覧の 1 行。
 type Proc struct {
-	Role    string        `json:"role"` // dispatcher / PM / PG / テストの係 / 画面 (Session に画面の id)
+	Role    string        `json:"role"` // dispatcher / 見張り / PM / PG / テストの係 / 画面 (Session に画面の id)
 	PID     int           `json:"pid,omitempty"`
 	Age     time.Duration `json:"age,omitempty"` // 起動からの経過 (分からなければ 0)
 	State   string        `json:"state"`         // 動いている / 止まっている / 作業中 など
@@ -129,6 +129,14 @@ func collectProcs(dir string, now time.Time, procs map[int]string) (rows []Proc,
 		}
 	}
 	rows = append(rows, d)
+	// 見張り (issue 475): dispatcher と同じく、lock のファイルの pid でコマンド行に monitor を含むものだけ
+	mon := Proc{Role: "見張り", State: "止まっている"}
+	if b, err := os.ReadFile(filepath.Join(dir, dispatcher.MonitorLockFile)); err == nil {
+		if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && alive(pid) && strings.Contains(procs[pid], " monitor") {
+			mon.PID, mon.State, mon.Command = pid, "動いている", procs[pid]
+		}
+	}
+	rows = append(rows, mon)
 
 	st, err := store.Load(dir)
 	if err != nil {
