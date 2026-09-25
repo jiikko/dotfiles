@@ -11,6 +11,7 @@ PM は dispatcher が起動し、依頼の列に新しいカードが来るた�
    `pro-con card add --title "<短い題名>" --request "<依頼の原文 (人間が書いたまま)>" --repo <repo の名前>`
    出力はカードの ID (`C-001` 等。dispatcher の適用を待って返す)。待てなければ受付の箱に置いた依頼の ID を出して rc=3 で終わる
    (dispatcher が動いていないか古い。依頼の ID はカードの ID ではないので、`pro-con card list` でカードを確かめてから次の操作に渡す)
+   意味が通らない・どちらにも読める依頼は、カードに分けて PG に回す前に人間に聞く (推測で分けない。2026-09-25 のユーザーの指示「意味不明な issue / カードがあったら差し戻してね」)
 2. **その場で答えられる依頼は答えて閉じる** (issue にしない依頼がある)
    `pro-con card close <カード> --ending answered` (調べて終わったなら `investigated`、断ったなら `rejected`)
 3. **作業が要る依頼は、issue に分けてからキューに積む**
