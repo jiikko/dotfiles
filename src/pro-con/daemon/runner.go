@@ -332,7 +332,12 @@ const runMarkerPrefix = "pro-con-run:"
 //   - eval (組み込み) を通すので、bash は単純なコマンドに exec で置き換わらない (置き換わると $0 の印が ps から消える。
 //     /bin/bash 3.2 で実測。TestKillStaleByRunMarker が単純なコマンドで固定している)
 //
-// 終了コードは頼まれたコマンドのもの。ただしシグナルで死んだときは bash が 128+n で返す (exec されていた前の形では -1 だった)。
+// 終了コードは頼まれたコマンドのもの。ただし次の 2 つは直接の `bash -c` と違う (eval を通すため):
+//   - シグナルで死んだときは bash が 128+n で返す (exec されていた前の形では -1 だった)
+//   - 構文エラーは rc=1 (直接の `bash -c` は 2)。エラー文の頭も `eval:` になる
+//
+// 🚨 制限: 頼まれたコマンド自身が `exec` を含むと (例 `cd x && exec make test`)、bash が置き換わって印が消え、daemon が落ちた後に止められない。
+// setsid / Setpgid で自分のグループを作った子孫も、グループごと撃つ方式では止められない
 const runScript = "eval \"$" + runCommandEnv + "\""
 
 // runCommandEnv は頼まれたコマンドを渡す環境変数。

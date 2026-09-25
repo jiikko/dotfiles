@@ -94,9 +94,15 @@ func TestKillStaleByRunMarker(t *testing.T) {
 	mine := start(runCommand(context.Background(), "sleep 62", id("mine"))) // 単純なコマンド (印が無ければ exec で消える形)
 	// 偽物は exec されない形 (2 つの文) にする。sh が sleep に置き換わると印が消えて、照合の候補にすらならない (偽物の意味が無い)
 	imposter := start(exec.Command("/bin/sh", "-c", "sleep 63; true", runMarkerPrefix+id("mine")))
+	// `/bin/bash` でも `-c` ではない形 (照合の f[3] を外すと撃たれる)
+	notC := start(exec.Command("/bin/bash", "-x", "-c", "sleep 64; true", runMarkerPrefix+id("mine")))
+	// グループの先頭ではない `/bin/bash -c … 印` (先頭は別の bash。照合の pid = pgid を外すとグループごと撃たれる)
+	notLeader := start(exec.Command("/bin/bash", "-c", runCommandEnv+"='sleep 65' /bin/bash -c 'eval \"$"+runCommandEnv+"\"' "+runMarkerPrefix+id("mine")+"; true"))
 	waitMarker(t, id("other")) // 否定の確認の前提: 撃たれうる形で ps に出ている
 	waitMarker(t, id("mine"))
 	waitPS(t, "/bin/sh -c sleep 63; true "+runMarkerPrefix+id("mine")) // 偽物も ps に出ている
+	waitPS(t, "/bin/bash -x -c sleep 64; true "+runMarkerPrefix+id("mine"))
+	waitPS(t, "/bin/bash -c eval \"$"+runCommandEnv+"\" "+runMarkerPrefix+id("mine")) // 先頭ではない方 (mine 本体と同じ形)
 	killStale(id("mine"))
 	select {
 	case <-mine:
@@ -108,6 +114,10 @@ func TestKillStaleByRunMarker(t *testing.T) {
 		t.Fatal("印の違う実行を撃った")
 	case <-imposter:
 		t.Fatal("daemon が起こした形ではないプロセスを、印が同じというだけで撃った")
+	case <-notC:
+		t.Fatal("`-c` ではない bash を、印が同じというだけで撃った")
+	case <-notLeader:
+		t.Fatal("グループの先頭ではない bash の印で、そのグループを撃った")
 	case <-time.After(300 * time.Millisecond): // 否定の確認 (起きないことに待つ条件は無い)
 	}
 }
@@ -142,6 +152,7 @@ func TestRunCommandKeepsMeaningAndExitCode(t *testing.T) {
 		{"exit 3", 3, ""},
 		{`echo a \`, 0, "a\n"},
 		{`sh -c 'kill -SEGV $$'`, 139, ""},
+		{`echo 'unterminated`, 1, ""}, // 構文エラーは rc=1 (直接の bash -c は 2。runScript の注記)
 	} {
 		dir := t.TempDir()
 		log := filepath.Join(dir, "log")
