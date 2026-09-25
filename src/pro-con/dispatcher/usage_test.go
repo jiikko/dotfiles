@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -370,5 +371,63 @@ func TestUsageCmd(t *testing.T) {
 		if strings.HasPrefix(e, "TMUX=") || strings.HasPrefix(e, "TMUX_PANE=") {
 			t.Fatalf("TMUX を落としていない: %q", e)
 		}
+	}
+}
+
+// 箱の依頼を適用したら、session の一覧を取る (最大 10 秒) より前に画面へ知らせる。知らせる時点でカードは記録にある。
+func TestChangedAfterApplyBeforeList(t *testing.T) {
+	dir := t.TempDir()
+	var order []string
+	d := newDispatcher(t, dir, &fakeLauncher{}, nil)
+	d.List = func(context.Context) ([]agents.Session, error) { order = append(order, "list"); return nil, nil }
+	d.Changed = func() {
+		st, _ := store.Load(dir)
+		order = append(order, fmt.Sprintf("changed:%d", len(st.Cards)))
+	}
+	if _, err := store.Submit(dir, store.Request{Kind: "add", Title: "t", Repo: "dotfiles"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(order) < 2 || order[0] != "changed:1" || order[1] != "list" {
+		t.Fatalf("適用の直後 (一覧の前) に知らせない: %v", order)
+	}
+	order = nil
+	if _, err := d.Tick(context.Background()); err != nil { // 何もしない Tick は知らせない (画面を無駄に読み直させない)
+		t.Fatal(err)
+	}
+	if len(order) != 1 {
+		t.Fatalf("何もしない Tick で知らせた: %v", order)
+	}
+}
+
+// 箱の依頼の適用が無くても、何かをした Tick (起動・登録など) の後は画面へ知らせる。
+func TestChangedAfterLaunch(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 1) // 箱は空 (適用済み)
+	d := newDispatcher(t, dir, &fakeLauncher{}, nil)
+	var changed int
+	d.Changed = func() { changed++ }
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if changed != 1 {
+		t.Fatalf("PG を起動した Tick の後に知らせない: %d 回", changed)
+	}
+}
+
+// 起動して最初の Tick は、何もしなくても画面へ知らせる (先に開いていた画面の「dispatcher 未起動」を 3 秒待たせない)。
+func TestChangedAfterFirstTick(t *testing.T) {
+	d := newDispatcher(t, t.TempDir(), &fakeLauncher{}, nil)
+	changed := 0
+	d.Changed = func() { changed++ }
+	for range 3 {
+		if _, err := d.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if changed != 1 {
+		t.Fatalf("何もしない Tick 3 回で %d 回知らせた (最初の 1 回だけのはず)", changed)
 	}
 }

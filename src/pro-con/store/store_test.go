@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"pro-con/card"
+	"pro-con/wake"
 )
 
 var t0 = time.Date(2026, 9, 25, 1, 0, 0, 0, time.UTC)
@@ -293,5 +294,23 @@ func TestPlanSetsRepoFromIssue(t *testing.T) {
 	}
 	if c := cardOf(t, dir, "C-002"); c.Repo != "dotfiles" {
 		t.Fatalf("repo のある依頼の repo を変えた: %q", c.Repo)
+	}
+}
+
+// 箱に置いたら dispatcher を起こす (package wake)。
+func TestSubmitPokesDispatcher(t *testing.T) {
+	dir := t.TempDir()
+	srv, err := wake.Listen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = srv.Close() }()
+	if _, err := Submit(dir, Request{Kind: "add", Title: "t"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-srv.Wakes():
+	case <-time.After(10 * time.Second):
+		t.Fatal("箱に置いても dispatcher を起こさない")
 	}
 }

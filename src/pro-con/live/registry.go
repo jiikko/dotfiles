@@ -17,6 +17,10 @@ import (
 // RegistryFile は記録のファイル名 (本物のモードの状態の置き場の下。模擬とは別の場所)。
 const RegistryFile = "sessions.json"
 
+// RetiredFile は、再開で入れ替わって記録から外した前の session (ReplaceCard が外した行) を足していくファイル (RegistryFile と同じ置き場)。
+// 読むのは終了のときの確かめだけ (dispatcher の ensureStopped。入れ替わった前の session が生きていても止める)。カードとの対応には使わない
+const RetiredFile = "sessions-retired.json"
+
 // Owned は pro-con が起動した session 1 本。照合は「記録にある欄が全部一致し、PID もある」(owns)。
 // 🚨 PID は必須。PID が無いと、pro-con が起動した session を他の shell で同じ session id のまま再開 (--resume) したものまで
 // 「自分のもの」と見なす (敵対的レビュー 2026-09-24 の P2 / 2 周目の P1)。PID は session ごとの worker (`claude bg-spare …`) で、
@@ -79,13 +83,37 @@ func write(path string, o Owned, dropCard bool) error {
 		return err
 	}
 	next := cur[:0:0]
+	var retired []Owned
 	for _, c := range cur {
-		if c.SessionID == o.SessionID || (dropCard && o.CardID != "" && c.CardID == o.CardID) {
+		if c.SessionID == o.SessionID {
+			continue // 同じ session の書き直し
+		}
+		if dropCard && o.CardID != "" && c.CardID == o.CardID {
+			retired = append(retired, c) // 再開で入れ替わった前の session
 			continue
 		}
 		next = append(next, c)
 	}
-	cur = append(next, o)
+	if len(retired) > 0 { // 先に退いた側へ足す (記録から外した後で落ちても、前の session を見失わない)
+		retiredPath := filepath.Join(filepath.Dir(path), RetiredFile)
+		old, err := LoadRegistry(retiredPath)
+		if err != nil {
+			return err
+		}
+		if err := writeRows(retiredPath, append(old, retired...)); err != nil {
+			return err
+		}
+	}
+	return writeRows(path, append(next, o))
+}
+
+// LoadRetired は、再開で入れ替わって記録から外した前の session を読む (RetiredFile)。
+func LoadRetired(registryPath string) ([]Owned, error) {
+	return LoadRegistry(filepath.Join(filepath.Dir(registryPath), RetiredFile))
+}
+
+// writeRows は行を path へ書く (一時ファイルからの rename)。
+func writeRows(path string, cur []Owned) error {
 	data, err := json.MarshalIndent(cur, "", "  ")
 	if err != nil {
 		return err
@@ -93,7 +121,7 @@ func write(path string, o Owned, dropCard bool) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), RegistryFile+".tmp-*")
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return err
 	}

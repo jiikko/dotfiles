@@ -98,8 +98,20 @@ func (e E2E) FakePM() error {
 	return nil
 }
 
-// List は偽の session の一覧 (`claude agents --json` の代わり)。
-func (e E2E) List(context.Context) ([]agents.Session, error) {
+// List は偽の session の一覧 (`claude agents --json` の代わり。止めた session は出ない)。
+func (e E2E) List(ctx context.Context) ([]agents.Session, error) {
+	all, err := e.ListAll(ctx)
+	var out []agents.Session
+	for _, s := range all {
+		if !s.Stopped() {
+			out = append(out, s)
+		}
+	}
+	return out, err
+}
+
+// ListAll は止めた session も出す (`claude agents --json --all` の代わり)。
+func (e E2E) ListAll(context.Context) ([]agents.Session, error) {
 	e2eMu.Lock()
 	defer e2eMu.Unlock()
 	f, err := e.load()
@@ -157,13 +169,11 @@ func (l e2eLauncher) Stop(_ context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	kept := f.Sessions[:0]
-	for _, s := range f.Sessions {
-		if s.ID != id {
-			kept = append(kept, s)
+	for i, s := range f.Sessions { // 本物の claude stop と同じく、一覧 (--all) には stopped で残す
+		if s.ID == id {
+			f.Sessions[i].State, f.Sessions[i].PID, f.Sessions[i].Status = agents.StateStopped, 0, ""
 		}
 	}
-	f.Sessions = kept
 	return l.e.save(f)
 }
 
@@ -177,7 +187,7 @@ func (l e2eLauncher) newSession(cwd, name, cardID string) (string, error) {
 	f.Seq++
 	id := fmt.Sprintf("e2e%05d", f.Seq)
 	f.Sessions = append(f.Sessions, agents.Session{
-		ID: id, SessionID: fmt.Sprintf("e2e-session-%05d", f.Seq), Kind: "background", Status: "idle", Name: name,
+		ID: id, SessionID: fmt.Sprintf("e2e-session-%05d", f.Seq), Kind: "background", Status: "idle", State: "blocked", Name: name,
 		Cwd: cwd, PID: 900000 + f.Seq, StartedAt: time.Now().UnixMilli(),
 	})
 	f.Cards[id] = cardID

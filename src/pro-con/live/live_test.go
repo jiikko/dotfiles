@@ -13,7 +13,10 @@ import (
 	"pro-con/agents"
 	"pro-con/backend"
 	"pro-con/card"
+	"pro-con/presence"
 	"pro-con/store"
+	"pro-con/wake"
+	"sync/atomic"
 )
 
 // 実測 (Claude Code 2.1.281) の transcript の形を縮めた見本。人間の発言は origin.kind=human、ツールの結果と
@@ -441,4 +444,223 @@ func TestSnapshotReadsDispatcherState(t *testing.T) {
 	if s := b.Poll(); !s.DispatcherTick.Equal(tick) || s.Limit != 1 || s.LimitMax != 3 || s.LimitWhy != "枠 85%" {
 		t.Fatalf("dispatcher の様子を出さない: %v %d/%d %q", s.DispatcherTick, s.Limit, s.LimitMax, s.LimitWhy)
 	}
+}
+
+// dispatcher に知らされたら (package wake の Broadcast)、一覧を取り直さずにすぐカードを読み直し、画面へ知らせる。
+func TestBroadcastRefreshesWithoutList(t *testing.T) {
+	short, err := os.MkdirTemp("/tmp", "pclv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(short) })
+	b, _ := testBackend(t, sessions[:1], nil)
+	b.dir, b.registry = short, filepath.Join(short, RegistryFile) // socket のパスの上限に収める
+	if err := Register(b.registry, Owned{SessionID: sessions[0].SessionID, ID: sessions[0].ID, PID: sessions[0].PID}); err != nil {
+		t.Fatal(err)
+	}
+	var lists atomic.Int32
+	b.list = func(context.Context) ([]agents.Session, error) { lists.Add(1); return sessions[:1], nil }
+	srv, err := wake.Listen(short)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = srv.Close() })
+	ctx, cancel := context.WithCancel(context.Background())
+	b.Start(ctx)
+	t.Cleanup(func() { cancel(); b.Wait() })
+	waitFor := func(what string, cond func() bool) {
+		t.Helper()
+		for range 400 {
+			if cond() {
+				return
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+		t.Fatal(what)
+	}
+	waitFor("購読しない", func() bool { return srv.Subscribers() == 1 && lists.Load() == 1 })
+	for len(b.Changed()) > 0 { // 最初の読み直しの知らせを捨てる
+		<-b.Changed()
+	}
+	runningCard(t, b, "C-001", "bbbbbbbb")
+	srv.Broadcast()
+	waitFor("知らされてもカードを読み直さない", func() bool { return len(b.Poll().Cards) == 1 })
+	select {
+	case <-b.Changed():
+	case <-time.After(10 * time.Second):
+		t.Fatal("読み直しを画面へ知らせない")
+	}
+	if n := lists.Load(); n != 1 {
+		t.Fatalf("知らされた読み直しで一覧を取り直した (%d 回)", n)
+	}
+	if c := b.Poll().Consumers; len(c) != 1 || c[0].PID != 102 {
+		t.Fatalf("前に取った一覧で PG を出していない: %+v", c)
+	}
+}
+
+// shortState は socket のパスの上限に収まる置き場の backend (testBackend と同じ差し替え)。
+func shortState(t *testing.T) *Backend {
+	t.Helper()
+	short, err := os.MkdirTemp("/tmp", "pcst")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(short) })
+	b, _ := testBackend(t, nil, nil)
+	b.dir, b.registry = short, filepath.Join(short, RegistryFile)
+	return b
+}
+
+// 同じ置き場で複数の画面を開いてよい: ほかの画面が開いていれば、閉じても dispatcher と PG を止めない。最後の画面は止める
+// (package presence が数える。dispatcher が居なくてもよい)。この画面の印が無ければ (置けなかった) 最後の画面として止める。
+func TestStopAllOnlyByLastScreen(t *testing.T) {
+	a, b := shortState(t), shortState(t)
+	b.dir, b.registry = a.dir, a.registry
+	var stops atomic.Int32
+	for _, be := range []*Backend{a, b} {
+		be.SetStopper(func(context.Context) error { stops.Add(1); return nil })
+		sc, err := presence.Open(be.dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		be.screen = sc
+	}
+	ctx := context.Background()
+	var kept backend.KeptRunning
+	if err := a.StopAll(ctx); !errors.As(err, &kept) || kept.Others != 1 || stops.Load() != 0 {
+		t.Fatalf("ほかの画面が開いているのに止めた / 数を返さない: %v stops=%d", err, stops.Load())
+	}
+	if err := b.StopAll(ctx); err != nil || stops.Load() != 1 {
+		t.Fatalf("最後の画面が止めない: %v stops=%d", err, stops.Load())
+	}
+	c := shortState(t) // 印を置けなかった画面
+	c.SetStopper(func(context.Context) error { stops.Add(1); return nil })
+	if err := c.StopAll(ctx); err != nil || stops.Load() != 2 {
+		t.Fatalf("印が無いのに止めない: %v stops=%d", err, stops.Load())
+	}
+}
+
+// 画面を開くと印を置き、ほかの画面へ知らせる: ほかの画面は 3 秒のポーリングを待たずに「画面 2」になる。閉じると 1 に戻る。
+func TestOpeningScreenUpdatesOthers(t *testing.T) {
+	a := shortState(t)
+	srv, err := wake.Listen(a.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = srv.Close() })
+	a.interval = time.Hour // 読み直すのは知らされたときだけ
+	actx, acancel := context.WithCancel(context.Background())
+	a.Start(actx)
+	t.Cleanup(func() { acancel(); a.Wait() })
+	waitFor := func(what string, cond func() bool) {
+		t.Helper()
+		for range 400 {
+			if cond() {
+				return
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+		t.Fatal(what)
+	}
+	waitFor("自分の画面を数えない / 購読しない", func() bool { return a.Poll().Screens == 1 && srv.Subscribers() == 1 })
+	b := shortState(t)
+	b.dir, b.registry, b.interval = a.dir, a.registry, time.Hour
+	b.SetStopper(func(context.Context) error { return nil })
+	bctx, bcancel := context.WithCancel(context.Background())
+	b.Start(bctx)
+	waitFor("ほかの画面が開いても「画面 2」にならない", func() bool { return a.Poll().Screens == 2 })
+	var kept backend.KeptRunning
+	if err := b.StopAll(context.Background()); !errors.As(err, &kept) {
+		t.Fatalf("ほかの画面が開いているのに止めた: %v", err)
+	}
+	bcancel()
+	b.Wait()
+	waitFor("ほかの画面が閉じても 1 に戻らない", func() bool { return a.Poll().Screens == 1 })
+}
+
+// Wait は購読の goroutine も待つ (画面の終了で購読の接続を残さない)。
+func TestWaitWaitsForSubscription(t *testing.T) {
+	b := shortState(t)
+	var ended atomic.Bool
+	b.subscribe = func(ctx context.Context, _ *wake.Subscriber) {
+		<-ctx.Done()
+		time.Sleep(50 * time.Millisecond) // 後始末に時間がかかる形
+		ended.Store(true)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	b.Start(ctx)
+	cancel()
+	b.Wait()
+	if !ended.Load() {
+		t.Fatal("購読が終わる前に Wait が戻った")
+	}
+}
+
+// 一覧が空 (nil) でも、知らせによる読み直しのたびに一覧を取り直さない (claude agents は最大 10 秒)。
+func TestEmptyListNotRefetchedOnKick(t *testing.T) {
+	b := shortState(t)
+	var lists atomic.Int32
+	b.list = func(context.Context) ([]agents.Session, error) { lists.Add(1); return nil, nil }
+	ctx := context.Background()
+	b.refresh(ctx, true)
+	b.refresh(ctx, false)
+	b.refresh(ctx, false)
+	if n := lists.Load(); n != 1 {
+		t.Fatalf("空の一覧を知らせのたびに取り直した: %d 回", n)
+	}
+}
+
+// 画面は dispatcher が居なければ (1 度も回っていない / 長く回っていない) 起こす。回っていれば起こさない。閉じる途中なら起こさない
+// (最後の画面が止めた後で起こし直さない)。開いている印を置けなかった画面も起こさない (止める・起こすを繰り返さない)。
+func TestKeepStartsDispatcherWhenAbsent(t *testing.T) {
+	b := shortState(t)
+	var starts int
+	b.SetKeeper(func() error { starts++; return nil })
+	b.SetStopper(func(context.Context) error { return nil })
+	now := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
+	set := func(tick time.Time) { b.mu.Lock(); b.snap.Now, b.snap.DispatcherTick = now, tick; b.mu.Unlock() }
+	set(time.Time{})
+	b.keep()
+	if starts != 0 {
+		t.Fatal("開いている印の無い画面が dispatcher を起こした")
+	}
+	sc, err := presence.Open(b.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.screen = sc
+	b.keep()
+	set(now.Add(-keepAfter - time.Second))
+	b.keep()
+	set(now.Add(-time.Second))
+	b.keep()
+	if starts != 2 {
+		t.Fatalf("居ない dispatcher を 2 回起こし、回っているときは起こさないはず: %d", starts)
+	}
+	if err := b.StopAll(context.Background()); err != nil { // 閉じる (最後の画面)
+		t.Fatal(err)
+	}
+	set(time.Time{})
+	b.keep()
+	if starts != 2 {
+		t.Fatal("閉じる途中の画面が dispatcher を起こした")
+	}
+}
+
+// 画面の読み直しのループが、dispatcher が居ないときに起こす (配線)。
+func TestStartKeepsDispatcher(t *testing.T) {
+	b := shortState(t)
+	b.interval = 20 * time.Millisecond
+	var starts atomic.Int32
+	b.SetKeeper(func() error { starts.Add(1); return nil })
+	ctx, cancel := context.WithCancel(context.Background())
+	b.Start(ctx)
+	defer func() { cancel(); b.Wait() }()
+	for range 400 {
+		if starts.Load() > 0 {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatal("dispatcher が居ないのに、読み直しのループが起こさない")
 }

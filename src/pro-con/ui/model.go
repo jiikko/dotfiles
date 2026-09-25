@@ -47,6 +47,9 @@ const (
 
 type tickMsg struct{}
 
+// changedMsg は backend が状態の変化を知らせた (backend.Notifier)。
+type changedMsg struct{}
+
 type attachDoneMsg struct {
 	cardID string
 	err    error
@@ -144,10 +147,36 @@ func (m *Model) expireFlash() {
 	}
 }
 
+// poll は backend の今の状態を画面に取り込む。
+func (m *Model) poll() tea.Cmd {
+	m.setSnap(m.be.Poll())
+	tab := m.tab
+	m.ensureTab()
+	m.ensureSelection()
+	if m.tab != tab { // タブが消えて global へ戻った: 配置が丸ごと変わるので演出しない
+		m.resetSlots()
+		return nil
+	}
+	return m.trackMoves()
+}
+
 func tick() tea.Cmd { return tea.Tick(TickInterval, func(time.Time) tea.Msg { return tickMsg{} }) }
 
+// waitChanged は backend の変化の知らせを待つ (Notifier でなければ nil)。
+func (m *Model) waitChanged() tea.Cmd {
+	n, ok := m.be.(backend.Notifier)
+	if !ok {
+		return nil
+	}
+	ch := n.Changed()
+	return func() tea.Msg {
+		<-ch
+		return changedMsg{}
+	}
+}
+
 func (m *Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{tick()}
+	cmds := []tea.Cmd{tick(), m.waitChanged()}
 	if m.up != nil {
 		cmds = append(cmds, m.checkUpgrade())
 	}
@@ -167,15 +196,9 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 	switch msg := msg.(type) {
 	case tickMsg:
 		m.expireFlash()
-		m.setSnap(m.be.Poll())
-		tab := m.tab
-		m.ensureTab()
-		m.ensureSelection()
-		if m.tab != tab { // タブが消えて global へ戻った: 配置が丸ごと変わるので演出しない
-			m.resetSlots()
-			return m, tick()
-		}
-		return m, tea.Batch(tick(), m.trackMoves())
+		return m, tea.Batch(tick(), m.poll())
+	case changedMsg:
+		return m, tea.Batch(m.waitChanged(), m.poll())
 	case frameMsg:
 		return m, m.onFrame()
 	case editorDoneMsg:
@@ -460,9 +483,9 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		m.moveTab(1)
 	case "shift+tab":
 		m.moveTab(-1)
-	case "left", "h":
+	case "left", "h", "ctrl+b": // ctrl+b は ← の別名 (ユーザー要望 2026-09-25。docs/glogx-ui-guide.md の emacs 層の例外)
 		m.moveCol(-1)
-	case "right", "l", "ctrl+f": // ctrl+f は → の別名 (docs/glogx-ui-guide.md の emacs 層。ctrl+b は ← にしない)
+	case "right", "l", "ctrl+f": // ctrl+f は → の別名 (docs/glogx-ui-guide.md の emacs 層)
 		m.moveCol(1)
 	case "enter":
 		m.openDrawer()

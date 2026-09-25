@@ -1,6 +1,7 @@
 package ui
 
 import (
+	tea "charm.land/bubbletea/v2"
 	"strings"
 	"testing"
 	"time"
@@ -70,5 +71,83 @@ func TestGaugeBoundsLimitWhy(t *testing.T) {
 	j := strings.Index(plain[i:], " │ ")
 	if i < 0 || j < 0 || ansi.StringWidth(plain[i:i+j]) > limitWhyCells {
 		t.Fatalf("理由を %d セルで切らない: %q", limitWhyCells, plain)
+	}
+}
+
+// notifySpy は変化を知らせる backend (backend.Notifier)。
+type notifySpy struct {
+	*spy
+	ch chan struct{}
+}
+
+func (n notifySpy) Changed() <-chan struct{} { return n.ch }
+
+// backend が変化を知らせたら、1 秒の tick を待たずに取り込み、次の知らせを待ち直す。
+func TestChangedMsgPollsAndRearms(t *testing.T) {
+	be := notifySpy{spy: newSpy(), ch: make(chan struct{}, 1)}
+	m := New(be, nil)
+	if m.waitChanged() == nil {
+		t.Fatal("Notifier なのに知らせを待たない")
+	}
+	be.snap.Cards = be.snap.Cards[:1]
+	_, cmd := m.Update(changedMsg{})
+	if len(m.snap.Cards) != 1 {
+		t.Fatalf("知らせで取り込まない: %d 枚", len(m.snap.Cards))
+	}
+	be.ch <- struct{}{}
+	if !hasChanged(cmd) {
+		t.Fatal("知らせの後に次の知らせを待ち直さない")
+	}
+}
+
+// hasChanged は cmd (Batch を含む) を実行して changedMsg が出るか。
+func hasChanged(cmd tea.Cmd) bool {
+	if cmd == nil {
+		return false
+	}
+	switch msg := cmd().(type) {
+	case changedMsg:
+		return true
+	case tea.BatchMsg:
+		for _, c := range msg {
+			if hasChanged(c) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// 起動したら backend の知らせを待ち始める (待ち始めないと、知らせは 1 度も届かず 1 秒の tick に戻る)。
+func TestInitWaitsForChanges(t *testing.T) {
+	be := notifySpy{spy: newSpy(), ch: make(chan struct{}, 1)}
+	be.ch <- struct{}{}
+	if !hasChanged(New(be, nil).Init()) {
+		t.Fatal("起動しても backend の知らせを待たない")
+	}
+}
+
+// 2 つ以上の画面が開いていればゲージに数を出し、終了の見出しは「この画面だけ閉じる」になる。
+func TestScreensShownAndQuitLabel(t *testing.T) {
+	be := &stopSpy{spy: newSpy()}
+	be.snap.Screens = 2
+	m := New(be, nil)
+	if g := ansi.Strip(m.gauge()); !strings.Contains(g, "画面 2") {
+		t.Fatalf("画面の数を出さない: %q", g)
+	}
+	if l := m.quitLabel(); !strings.Contains(l, "ほかに 1 画面") || strings.Contains(l, "止めて閉じる") {
+		t.Fatalf("ほかの画面が開いているのに止めると案内した: %q", l)
+	}
+	be.snap.DispatcherTick = be.snap.Now.Add(-dispatcherStale - time.Second)
+	if g := ansi.Strip(New(be, nil).gauge()); !strings.Contains(g, "画面 2") {
+		t.Fatalf("dispatcher が止まっていると画面の数を隠した: %q", g)
+	}
+	be.snap.Screens = 1
+	m = New(be, nil)
+	if g := ansi.Strip(m.gauge()); strings.Contains(g, "画面 ") {
+		t.Fatalf("画面が 1 つなのに数を出した: %q", g)
+	}
+	if l := m.quitLabel(); !strings.Contains(l, "止めて閉じる") {
+		t.Fatalf("最後の画面なのに止めると案内しない: %q", l)
 	}
 }

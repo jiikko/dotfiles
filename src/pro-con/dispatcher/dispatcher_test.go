@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +29,7 @@ type fakeLauncher struct {
 	cwds       []string // 再開した cwd
 	resumeID   string   // 空でなければ、再開はこの短い id の新しい session を立てる (本物の claude の形)
 	stopFail   bool
+	stopTries  []string // 失敗も含めて止めようとした id
 }
 
 func (f *fakeLauncher) Start(_ context.Context, _, name, _ string) (string, error) {
@@ -54,6 +56,7 @@ func (f *fakeLauncher) Resume(_ context.Context, stopID, _, cwd, text string) (s
 }
 
 func (f *fakeLauncher) Stop(_ context.Context, id string) error {
+	f.stopTries = append(f.stopTries, id)
 	if f.stopFail {
 		return errors.New("止められない")
 	}
@@ -85,8 +88,28 @@ func planned(t *testing.T, dir string, n int) {
 
 func newDispatcher(t *testing.T, dir string, l Launcher, ss []agents.Session) *Dispatcher {
 	t.Helper()
-	return &Dispatcher{Dir: dir, Limit: 2, Repos: map[string]string{"dotfiles": "/w/dotfiles"}, Launch: l,
+	d := &Dispatcher{Dir: dir, Limit: 2, Repos: map[string]string{"dotfiles": "/w/dotfiles"}, Launch: l,
 		List: func(context.Context) ([]agents.Session, error) { return ss, nil }, Now: func() time.Time { return t0 }, Sleep: func(time.Duration) {}}
+	if fl, ok := l.(*fakeLauncher); ok {
+		d.ListAll = func(ctx context.Context) ([]agents.Session, error) { return fl.listAll(ctx, d.List) }
+	}
+	return d
+}
+
+// listAll は `claude agents --json --all` の偽物: 一覧 (d.List。テストが途中で差し替える) に、止めた session を stopped で重ねる
+// (本物は止めた session を --all に state: stopped・pid 無しで残す。2.1.282 で実測)。
+func (f *fakeLauncher) listAll(ctx context.Context, list func(context.Context) ([]agents.Session, error)) ([]agents.Session, error) {
+	ss, err := list(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := append([]agents.Session(nil), ss...)
+	for i := range out {
+		if slices.Contains(f.stops, out[i].ID) {
+			out[i].State, out[i].PID = agents.StateStopped, 0
+		}
+	}
+	return out, nil
 }
 
 func states(t *testing.T, dir string) map[string]card.Card {

@@ -31,6 +31,21 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
   🚨 逆向き (外の shell から pro-con の session を attach / stop される) は Claude Code の側で止められない。検出は issue 427
 - PG の出力は transcript (`~/.claude/projects/*/<sessionId>.jsonl`) の末尾 512KB から読み、`claude agents --json` とあわせて 3 秒ごとに裏で読み直す
 
+## 画面と dispatcher のつながり (即時の割り振り・複数の画面・終了)
+
+- **入力したら待たずに割り振る**: 受付の箱に置いた側 (画面・`pro-con card`) が、状態の置き場の Unix socket (`dispatcher.sock`。長い置き場は
+  `/tmp/pro-con-<uid>/<hash>.sock`) で dispatcher を起こす (package `wake`)。dispatcher は適用したら画面へ知らせ、画面はすぐ読み直す
+  (入力からカードが出るまで 約 4 秒 → 約 130 ms)。socket は速くするための口で、正しさは頼らない (届かなくても 3 秒のポーリングが拾う)
+- **同じ置き場で画面を複数開いてよい**: 画面は開いている間 `screens/<id>.lock` を flock で持つ (package `presence`)。2 つ以上開いていれば
+  ゲージに「画面 N」。Q → quit で閉じるとき、ほかに画面が開いていれば **この画面だけ閉じる** (dispatcher と PG は動いたまま)。最後の画面だけが止める
+- **終了で pro-con が起動した claude を確実に止める**: 最後の画面が閉じるとき、dispatcher は pro-con の起動の記録 (`sessions.json` と、
+  再開で入れ替わった前の session の `sessions-retired.json`) にある session を止め、`claude agents --json --all` で全部が stopped になったかを
+  確かめて、残れば止め直す。止まらない session はカードと短い id で名指しする。pro-con が起動していない session には触らない
+- 画面が起こした dispatcher (`--exit-without-screens 1m`) は、**画面が 1 つも無い状態が 1 分続いたら** PG を止めて抜ける (端末を閉じた・落ちた・
+  kill -9 のように quit を通らずに消えても PG を残さない)。SIGTERM / SIGHUP でも、画面が消えていれば止めてから抜ける。
+  手で起動した `pro-con dispatcher` (PM が CLI で使う形) は、`--stop` か最後の画面の quit まで動く
+- 画面は開いている間、dispatcher が 10 秒以上回っていなければ起こし直す (落ちた・前の画面が止めている最中に開いた)
+
 ## 模擬 (ハリボテ) の中身
 
 - 1 秒ごとに `Poll` し、fake の模擬時間が 1 分進む (カードが列を進む・PG が質問する・watchdog が停滞を拾う・リソースの順番が回る)
@@ -58,7 +73,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 | (案内の行) | カードへの操作と x は、選んでいるカードで効くときだけ明るく、効かないときは暗く出す (r は質問待ちだけ、a は session のあるカードだけ、e / y は issue の紐づいたカードだけ) |
 | ctrl+r | 新版へ切り替える (ライブアップグレード。「新版あり」のときだけ) |
 | q / esc | 開いている板を 1 つ閉じる (PG の一覧 → 詳細)。何も開いていなくても終了しない (2026-09-25 に廃止) |
-| Q | 終了の入力欄を開く。`quit` と打って enter したときだけ閉じる (本物のモードでは dispatcher と PG を止めてから閉じる。次に開くと続きから再開)。ctrl+c も同じ入力欄を開く (1 打では閉じない) |
+| Q | 終了の入力欄を開く。`quit` と打って enter したときだけ閉じる (本物のモードでは dispatcher と PG を止めてから閉じる。次に開くと続きから再開。ほかに画面が開いていれば、この画面だけ閉じる)。ctrl+c も同じ入力欄を開く (1 打では閉じない) |
 | a | PG の session を開く (今は模擬) |
 | r | 質問待ちのカードに回答する |
 | + | 追加オーダー (tab で 追記 / 方針変更 / 別件)。**方針変更は y/N 確認** (y / enter だけが実行、他のキーは取り消し) |

@@ -5,20 +5,25 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"pro-con/agents"
 	"pro-con/dispatcher"
 	"pro-con/live"
+	"pro-con/presence"
+	"pro-con/wake"
 )
 
-const dispatcherInterval = 3 * time.Second
+var dispatcherInterval = 3 * time.Second // テストが延ばす (Poke でだけ起きることを見る)
 
 // projects は transcript の置き場 (~/.claude/projects。PG が落ちて自動で再開したかを読む)。
 func runDispatcher(args []string, dir, projects string, repos map[string]string, stdout, stderr io.Writer) int {
@@ -28,6 +33,7 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 	once := fs.Bool("once", false, "1 回だけ回して終わる")
 	stopAll := fs.Bool("stop", false, "動いている dispatcher と、pro-con が起動した PG を止める (次に dispatcher を起動したら続きから再開する)")
 	e2eRoot := fs.String("e2e", "", "e2e モードの置き場 (PG は台本どおりに動く偽物。claude を起動しない。pro-con e2e が使う)")
+	alone := fs.Duration("exit-without-screens", 0, "開いている画面が 1 つも無い状態がこの長さ続いたら、PG を止めて抜ける (画面が起こすときに付ける。0 なら抜けない)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -45,7 +51,20 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 		}
 	}
 	if *stopAll {
-		if err := stopDispatcher(context.Background(), dir, projects, repos, e2e, stdout); err != nil {
+		// 止めている間に SIGTERM / SIGHUP / SIGINT が来ても (画面の終了・ログアウトと重なる)、1 回目は止めるのをもう 1 度だけ試してから抜ける。
+		// 2 回目ですぐ抜ける (止まらない形でも kill -9 無しで止められる)。
+		// 🚨 signal.Ignore にしない: 無視は exec した子 (claude stop / claude agents) に引き継がれ、子も止められなくなる (Notify で受けた分は引き継がれない)
+		ctx, cancel := context.WithCancel(context.Background())
+		sigs := make(chan os.Signal, 2)
+		signal.Notify(sigs, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGINT)
+		go func() {
+			<-sigs
+			cancel()
+			<-sigs
+			os.Exit(1)
+		}()
+		defer signal.Stop(sigs)
+		if err := stopDispatcher(ctx, dir, projects, repos, e2e, stdout); err != nil {
 			_, _ = fmt.Fprintln(stderr, "pro-con dispatcher --stop:", err)
 			return 1
 		}
@@ -66,18 +85,53 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 		d.Publish, d.Notify = dispatcher.TmuxPublish(ctx), dispatcher.MacNotify(ctx)
 		defer func() { _ = dispatcher.TmuxPublish(context.Background())("") }() // 止まるときに件数を消す (古い件数を出し続けない)
 	}
+	var wakes <-chan struct{} // 開けなければ nil (ポーリングだけで動く)
+	if srv, err := wake.Listen(dir); err != nil {
+		_, _ = fmt.Fprintln(stderr, "pro-con dispatcher: 即時に起こす口を開けない (3 秒ごとのポーリングだけで動く):", err)
+	} else {
+		defer func() { _ = srv.Close() }()
+		wakes, d.Changed = srv.Wakes(), srv.Broadcast
+	}
+	return serve(ctx, d, dir, wakes, serveOpts{interval: dispatcherInterval, once: *once, alone: *alone}, stdout, stderr)
+}
+
+// serveOpts は serve の回し方。
+type serveOpts struct {
+	interval time.Duration // Tick の間隔 (起こされたら待たずに回る)
+	once     bool          // 1 回だけ回して抜ける
+	// alone は、開いている画面 (package presence) が 1 つも無い状態がこの長さ続いたら PG を止めて抜ける (0 なら抜けない)。
+	// 🚨 画面が起こした dispatcher に付ける: 最後の画面が quit を通らずに消えても (端末を閉じた・落ちた・kill -9)、pro-con が起動した
+	// PG を残さない。猶予は、ctrl+r の入れ替え・開き直しの間に止めないため
+	alone time.Duration
+	// now は alone を測る時計 (テストが差し替える)。nil なら time.Now
+	now func() time.Time
+	// retries は stopUntilDone の止め直しの上限 (0 なら止まるまで)
+	retries int
+}
+
+// serve は dispatcher を回す。Tick の後は interval か、依頼を置いた側に起こされる (wakes) まで待つ。
+func serve(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-chan struct{}, o serveOpts, stdout, stderr io.Writer) int {
+	now := o.now
+	if now == nil {
+		now = time.Now
+	}
+	aloneSince := now() // 起こした画面がすぐ落ちた場合も数える
 	for {
-		if dispatcher.StopRequested(dir) {
-			notes, err := d.Shutdown(ctx)
-			for _, n := range notes {
-				_, _ = fmt.Fprintf(stdout, "%s %s\n", time.Now().Format("15:04:05"), n)
+		stop := dispatcher.StopRequested(dir)
+		if o.alone > 0 && !stop {
+			if screensOpen(dir) {
+				aloneSince = now()
+			} else if now().Sub(aloneSince) >= o.alone {
+				_, _ = fmt.Fprintf(stdout, "%s 開いている画面が %s 無いので、PG を止めて抜ける\n", now().Format("15:04:05"), o.alone)
+				stop = true
 			}
-			dispatcher.WriteStopResult(dir, err)
-			if err != nil {
-				_, _ = fmt.Fprintln(stderr, "pro-con dispatcher: 止める途中で:", err)
-				return 1
+		}
+		if stop {
+			if stopUntilDone(ctx, d, dir, wakes, o, stdout, stderr) {
+				return 0
 			}
-			return 0
+			aloneSince = now() // 止めている間に画面が開いた。止めるのをやめて続ける
+			continue
 		}
 		notes, err := d.Tick(ctx)
 		for _, n := range notes {
@@ -85,15 +139,88 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 		}
 		if err != nil {
 			_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", err)
+			if o.alone > 0 && !screensOpen(dir) { // 画面が起こした dispatcher は、抜ける前に PG を止める (画面が無ければ見張る者が居なくなる)
+				stopUntilDone(ctx, d, dir, nil, serveOpts{}, stdout, stderr)
+			}
 			return 1
 		}
-		if *once {
+		if o.once {
 			return 0
 		}
 		select {
 		case <-ctx.Done():
+			// 画面が起こした dispatcher は、画面が無ければ PG を止めてから抜ける (SIGTERM / SIGHUP でも pro-con が起動した PG を残さない)。
+			// 画面が開いていれば止めない (画面が dispatcher を起こし直し、PG はそのまま続く。止めて再開すると枠を使う)
+			// 🚨 画面にも同時に SIGTERM が届いている (ログアウト・pkill) かもしれないので、画面が消えるのを少し待ってから決める
+			// (待たずに見ると、閉じる途中の画面を「開いている」と数えて止めずに抜け、画面も quit を通らずに抜けて PG が残る)
+			if o.alone > 0 && !screensStayOpen(dir, signalGrace) {
+				stopUntilDone(ctx, d, dir, nil, serveOpts{interval: o.interval, retries: 1}, stdout, stderr)
+				if b, _ := os.ReadFile(filepath.Join(dir, dispatcher.StopResultFile)); strings.TrimSpace(string(b)) != "ok" {
+					return 1 // 止めきれないまま抜ける (残りは dispatcher.log。画面を開けば keeper が次の dispatcher を起こして続きを扱う)
+				}
+			}
 			return 0
-		case <-time.After(dispatcherInterval):
+		case <-time.After(o.interval):
+		case <-wakes:
+		}
+	}
+}
+
+// screensOpen は開いている画面があるか (数えられなければ無いとみなす: 止める側に倒す)。
+func screensOpen(dir string) bool {
+	n, err := presence.Count(dir)
+	return err == nil && n > 0
+}
+
+// signalGrace は、取り消されたときに画面が消えるのを待つ長さ。
+var signalGrace = 5 * time.Second
+
+// screensStayOpen は、grace の間ずっと画面が開いているか (途中で 1 度でも 0 になれば偽)。
+func screensStayOpen(dir string, grace time.Duration) bool {
+	deadline := time.Now().Add(grace)
+	for {
+		if !screensOpen(dir) {
+			return false
+		}
+		if time.Now().After(deadline) {
+			return true
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// stopRetryEvery は、止めきれなかったときに止め直す間隔。
+var stopRetryEvery = 10 * time.Second
+
+// stopUntilDone は PG を止める。止めきれなければ結果 (頼んだ画面が読む) を書いてから、止まるまで止め直す。止め終えたら真。
+// 止めている間に画面が開いたら (presence) 止めるのをやめて偽を返す (カードは続きから再開できる形になっている)。
+// 🚨 止めきれないまま抜けない: 抜けると、pro-con が起動した PG を見張る者が居なくなる。o.retries が正なら、その回数で諦める (取り消された ctx の中の最後の試み)
+func stopUntilDone(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-chan struct{}, o serveOpts, stdout, stderr io.Writer) bool {
+	for try := 1; ; try++ {
+		notes, err := d.Shutdown(ctx)
+		for _, n := range notes {
+			_, _ = fmt.Fprintf(stdout, "%s %s\n", time.Now().Format("15:04:05"), n)
+		}
+		if try == 1 || err == nil {
+			dispatcher.WriteStopResult(dir, err) // 頼んだ画面は最初の結果を読む。後から止め終えたら ok で書き直す
+		}
+		if err == nil {
+			return true
+		}
+		if o.retries > 0 && try >= o.retries {
+			_, _ = fmt.Fprintln(stderr, "pro-con dispatcher: 止めきれないまま抜ける:", err)
+			return true
+		}
+		_, _ = fmt.Fprintln(stderr, "pro-con dispatcher: 止めきれない (止め直す):", err)
+		select {
+		case <-ctx.Done():
+			o.retries = try + 1 // 取り消された: もう 1 度だけ試して抜ける
+		case <-time.After(stopRetryEvery):
+		case <-wakes:
+		}
+		if screensOpen(dir) && ctx.Err() == nil {
+			_, _ = fmt.Fprintln(stdout, time.Now().Format("15:04:05"), "止めている間に画面が開いたので、止めるのをやめて続ける")
+			return false
 		}
 	}
 }
@@ -104,6 +231,10 @@ const stopTimeout = 120 * time.Second
 // stopDispatcher は dispatcher と PG を止める。dispatcher が動いていれば止めるよう頼んで待ち、動いていなければ自分で dispatcher の役を取って止める。
 func stopDispatcher(ctx context.Context, dir, projects string, repos map[string]string, e2e *dispatcher.E2E, stdout io.Writer) error {
 	running, err := dispatcher.RequestStop(ctx, dir, stopTimeout)
+	if errors.Is(err, dispatcher.ErrStopperDied) { // 止めていた dispatcher が落ちた: 止める役を引き継ぐ
+		_, _ = fmt.Fprintln(stdout, "止めていた dispatcher が落ちたので、止める役を引き継ぐ")
+		running, err = false, nil
+	}
 	if running || err != nil {
 		return err
 	}
@@ -114,23 +245,28 @@ func stopDispatcher(ctx context.Context, dir, projects string, repos map[string]
 	defer unlock()
 	_ = dispatcher.StopRequested(dir)
 	d := newDispatcherFor(dir, projects, repos, 1, e2e)
-	notes, err := d.Shutdown(ctx)
-	for _, n := range notes {
-		_, _ = fmt.Fprintln(stdout, n)
+	// 自分で止めている間に次の --stop が来たら、その --stop は結果のファイルを読む。止めきれなければ止まるまで止め直す
+	// (画面の待ちが切れて閉じても、このプロセスは別のプロセスグループで続ける)
+	if !stopUntilDone(ctx, d, dir, nil, serveOpts{}, stdout, stdout) {
+		return errors.New("止めている間に画面が開いたので、止めるのをやめた (開いた画面の dispatcher が続きを扱う)")
 	}
-	dispatcher.WriteStopResult(dir, err) // 自分で止めている間に次の --stop が来たら、その --stop はこれを読む
-	return err
+	data, _ := os.ReadFile(filepath.Join(dir, dispatcher.StopResultFile))
+	if r := strings.TrimSpace(string(data)); r != "ok" {
+		return errors.New(r)
+	}
+	return nil
 }
 
 // newDispatcherFor は dispatcher を組む。e2e が nil なら本物 (claude を起動する)、あれば偽の PG と偽の一覧 (claude を起動しない)。
 func newDispatcherFor(dir, projects string, repos map[string]string, limit int, e2e *dispatcher.E2E) *dispatcher.Dispatcher {
 	if e2e != nil {
-		return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: e2e.Launcher(), List: e2e.List, Now: time.Now,
+		return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: e2e.Launcher(), List: e2e.List, ListAll: e2e.ListAll, Now: time.Now,
 			Runner: dispatcher.ExecRunner{}, FakePM: e2e.FakePM} // テストの係は本物のシェル (偽の worktree で走る)。失敗の要約 (haiku) はしない
 	}
 	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{},
 		Runner: dispatcher.ExecRunner{}, Summarize: dispatcher.HaikuSummarize(dir), Usage: dispatcher.ReadUsage(dir),
-		List: func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) }, Now: time.Now,
+		List:    func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) },
+		ListAll: func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunnerAll) }, Now: time.Now,
 		Transcript: func(sessionID string) (live.Transcript, error) {
 			p, err := live.FindTranscript(projects, sessionID)
 			if err != nil {

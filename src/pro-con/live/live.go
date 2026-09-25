@@ -15,12 +15,15 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"pro-con/agents"
 	"pro-con/backend"
 	"pro-con/card"
+	"pro-con/presence"
 	"pro-con/store"
+	"pro-con/wake"
 )
 
 // Interval は一覧と transcript を読み直す間隔。claude agents --json は 1 回 0.15 秒ほどかかるので、画面の tick (1 秒) では呼ばない。
@@ -48,6 +51,20 @@ type Backend struct {
 	done    chan struct{}
 	cache   map[string]cached // transcript のパス → 大きさ・更新時刻と読んだ結果 (変わっていなければ読み直さない)
 	paths   map[string]string // sessionId → transcript のパス
+	// ss / ssErr は最後に取った session の一覧 (dispatcher に知らされた読み直しは一覧を取り直さない。Refresh の goroutine だけが触る)
+	ss       []agents.Session
+	ssErr    error
+	listed   bool          // 1 度でも一覧を取ったか (一覧が空 (nil) のときも、知らせのたびに取り直さない)
+	interval time.Duration // 一覧つきで読み直す間隔 (Interval。テストが延ばす)
+	// subscribe は dispatcher の購読を回す (テストで差し替える)
+	subscribe func(ctx context.Context, s *wake.Subscriber)
+	// screen はこの画面が開いている印 (package presence。閉じるとき、ほかの画面の有無を数える)。Start で置く
+	screen *presence.Screen
+	// keeper は dispatcher が居なければ起こす (main がつなぐ。画面が開いている間は dispatcher を動かし続ける)。leaving は閉じる途中
+	// (自分が頼んだ停止の後で起こし直さない)
+	keeper  func() error
+	leaving atomic.Bool
+	changed chan struct{} // 読み直したら値が入る (画面が 1 秒の tick を待たずに描き直す。backend.Notifier)
 }
 
 type cached struct {
@@ -62,19 +79,25 @@ func New(repos []backend.Repo, home, stateDir string) *Backend {
 	projects := filepath.Join(home, ".claude", "projects")
 	now := time.Now()
 	return &Backend{
-		repos:    repos,
-		dir:      stateDir,
-		registry: filepath.Join(stateDir, RegistryFile),
-		snap:     backend.Snapshot{Now: now, DispatcherTick: now},
-		done:     make(chan struct{}),
-		list:     func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) },
-		findPath: func(id string) (string, error) { return FindTranscript(projects, id) },
-		read:     ReadTail,
-		now:      time.Now,
-		cache:    map[string]cached{},
-		paths:    map[string]string{},
+		repos:     repos,
+		dir:       stateDir,
+		registry:  filepath.Join(stateDir, RegistryFile),
+		snap:      backend.Snapshot{Now: now, DispatcherTick: now},
+		done:      make(chan struct{}),
+		list:      func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) },
+		findPath:  func(id string) (string, error) { return FindTranscript(projects, id) },
+		read:      ReadTail,
+		now:       time.Now,
+		cache:     map[string]cached{},
+		paths:     map[string]string{},
+		changed:   make(chan struct{}, 1),
+		interval:  Interval,
+		subscribe: func(ctx context.Context, s *wake.Subscriber) { s.Run(ctx) },
 	}
 }
+
+// Changed は読み直すたびに値が入る (溜まった分は 1 つにまとめる。backend.Notifier)。
+func (b *Backend) Changed() <-chan struct{} { return b.changed }
 
 // SetList は session の一覧の読み方を差し替える (e2e モードは偽の一覧を読む)。Start の前に呼ぶ。
 func (b *Backend) SetList(f func(context.Context) ([]agents.Session, error)) { b.list = f }
@@ -82,13 +105,45 @@ func (b *Backend) SetList(f func(context.Context) ([]agents.Session, error)) { b
 // SetAttach は attach のコマンドを差し替える (e2e モードは本物の claude を起動しない)。
 func (b *Backend) SetAttach(f func(sessionID string) *exec.Cmd) { b.attach = f }
 
+// SetKeeper は dispatcher が居ないときに起こす口をつなぐ (Start の前に呼ぶ)。
+func (b *Backend) SetKeeper(f func() error) { b.keeper = f }
+
+// keepAfter は dispatcher がこれより長く回っていなければ起こし直す (Tick は 3 秒ごと。起こしたばかりの dispatcher を二重に起こさない
+// のは dispatcher の lock が守る)。
+const keepAfter = 10 * time.Second
+
+// keep は dispatcher が居なければ起こす (閉じる途中の画面は起こさない)。
+// 🚨 開いている印 (presence) を置けなかった画面も起こさない: 画面が起こした dispatcher は、数えられる画面が無いと 1 分で PG を止めて抜けるので、
+// 起こし直すたびに PG の停止と再開を繰り返して枠を使う
+func (b *Backend) keep() {
+	if b.keeper == nil || b.leaving.Load() || b.screen == nil {
+		return
+	}
+	b.mu.Lock()
+	tick, now := b.snap.DispatcherTick, b.snap.Now
+	b.mu.Unlock()
+	if tick.IsZero() || now.Sub(tick) > keepAfter {
+		_ = b.keeper()
+	}
+}
+
 // SetStopper は終了のときの停止をつなぐ。
 func (b *Backend) SetStopper(f func(context.Context) error) { b.stopAll = f }
 
 // StopAll は dispatcher と、pro-con が起動した PG を止める (backend.Stopper)。
+// ほかの画面が開いていれば止めずに backend.KeptRunning を返す (止めるのは最後に閉じる画面だけ。package presence が数えるので、
+// dispatcher が居なくても数えられる)。この画面の印を置けなかった・数えられなければ、最後の画面として止める。
 func (b *Backend) StopAll(ctx context.Context) error {
 	if b.stopAll == nil {
 		return errors.New("止める口がつながっていない")
+	}
+	b.leaving.Store(true) // この後は dispatcher を起こし直さない (最後の画面なら、これから止める)
+	if b.screen != nil {
+		others, err := b.screen.Leave()
+		_ = wake.Notify(b.dir) // ほかの画面の「画面 N」を直す
+		if err == nil && others > 0 {
+			return backend.KeptRunning{Others: others}
+		}
 	}
 	return b.stopAll(ctx)
 }
@@ -115,11 +170,29 @@ func FindTranscript(projects, sessionID string) (string, error) {
 
 // Start は裏で読み直しを始める (最初の読み取りも裏で行う。claude agents --json は最大 10 秒待つので、画面を出す前に待たない)。
 // ctx が終わったら止める。止まったかは Wait で待てる。
+// dispatcher が記録を変えたと知らせてきたら (package wake の購読)、一覧を取り直さずにすぐ読み直す。
 func (b *Backend) Start(ctx context.Context) {
+	kick := make(chan struct{}, 1)
+	subDone := make(chan struct{})
+	if sc, err := presence.Open(b.dir); err == nil { // 置けなければ、閉じるときは最後の画面として止める (StopAll)
+		b.screen = sc
+		_ = wake.Notify(b.dir) // ほかの画面の「画面 N」を直す
+	}
+	sub := wake.NewSubscriber(b.dir, func() {
+		select {
+		case kick <- struct{}{}:
+		default:
+		}
+	})
+	go func() {
+		defer close(subDone)
+		b.subscribe(ctx, sub)
+	}()
 	go func() {
 		defer close(b.done)
+		defer func() { <-subDone }() // Wait は購読の goroutine も待つ
 		b.Refresh(ctx)
-		t := time.NewTicker(Interval)
+		t := time.NewTicker(b.interval)
 		defer t.Stop()
 		for {
 			select {
@@ -127,6 +200,9 @@ func (b *Backend) Start(ctx context.Context) {
 				return
 			case <-t.C:
 				b.Refresh(ctx)
+				b.keep()
+			case <-kick:
+				b.refresh(ctx, false)
 			}
 		}
 	}()
@@ -138,7 +214,17 @@ func (b *Backend) Wait() { <-b.done }
 // Refresh はカードの記録を読み、作業中のカードに pro-con が起動した session の様子を足して Snapshot を作り直す。
 // 🚨 1 つの goroutine からだけ呼ぶ (Start の中)。transcript のキャッシュ (cache / paths) は lock の外で触っている。
 // 記録を読めなければ前の Snapshot を残して理由を出す (0 枚と区別する)。session の一覧を取れないときは、カードは出して理由を足す。
-func (b *Backend) Refresh(ctx context.Context) {
+func (b *Backend) Refresh(ctx context.Context) { b.refresh(ctx, true) }
+
+// refresh は Refresh の本体。withList が偽なら session の一覧は前に取ったものを使う (dispatcher に知らされたとき。
+// claude agents --json は最大 10 秒かかるので、カードの記録の変化を画面へ出すのを待たせない)。
+func (b *Backend) refresh(ctx context.Context, withList bool) {
+	defer func() {
+		select {
+		case b.changed <- struct{}{}:
+		default:
+		}
+	}()
 	st, err := store.Load(b.dir)
 	if err != nil {
 		b.fail("カードの記録を読めない: " + err.Error())
@@ -151,7 +237,11 @@ func (b *Backend) Refresh(ctx context.Context) {
 	}
 	now := b.now()
 	var extra []card.Violation
-	ss, err := b.list(ctx)
+	if withList || !b.listed {
+		b.ss, b.ssErr, b.listed = nil, nil, true
+		b.ss, b.ssErr = b.list(ctx)
+	}
+	ss, err := b.ss, b.ssErr
 	if err != nil {
 		extra = append(extra, card.Violation{Reason: "session の一覧を取れない (PG の様子は古いまま): " + err.Error()})
 	}
@@ -176,6 +266,7 @@ func (b *Backend) Refresh(ctx context.Context) {
 			cons = append(cons, backend.Consumer{Session: s.ID, CardID: c.ID, Status: s.Status, PID: s.PID})
 		}
 	}
+	screens, _ := presence.Count(b.dir)            // 数えられなければ 0 (「画面 N」を出さず、終了は止める側の案内になる)
 	ds, _, err := store.LoadDispatcherState(b.dir) // 無ければ zero (dispatcher が 1 度も回っていない)
 	if err != nil {
 		extra = append(extra, card.Violation{Reason: "dispatcher の様子を読めない: " + err.Error()})
@@ -183,7 +274,7 @@ func (b *Backend) Refresh(ctx context.Context) {
 	pending, _ := filepath.Glob(filepath.Join(b.dir, store.InboxDir, "*.json"))
 	b.mu.Lock()
 	b.snap = backend.Snapshot{Now: now, Cards: cards, Consumers: cons, Limit: ds.Cap, LimitMax: ds.Limit, LimitWhy: ds.Why,
-		DispatcherTick: ds.Tick, Violations: append(card.Check(cards), extra...)}
+		DispatcherTick: ds.Tick, Screens: screens, Violations: append(card.Check(cards), extra...)}
 	b.pending, b.ready = len(pending), true
 	b.mu.Unlock()
 }

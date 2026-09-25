@@ -38,6 +38,7 @@ type Snapshot struct {
 	LimitMax       int       // 上限 (dispatcher の --limit)
 	LimitWhy       string    // Limit を絞った / 利用枠を読めない理由 (無ければ空)
 	DispatcherTick time.Time // dispatcher (と watchdog) が最後に回った時刻。zero なら 1 度も回っていない。古ければ UI が警告する
+	Screens        int       // 開いている画面の数 (自分を含む。package presence。0 なら数えられなかった)
 	Violations     []card.Violation
 }
 
@@ -48,6 +49,9 @@ type Consumer struct {
 	Status  string // busy / waiting / idle (claude agents --json の status と同じ語)
 	PID     int    // 実体のプロセス (本物だけ。模擬は 0)
 }
+
+// Notifier は状態が変わったと知らせる backend (画面は tick を待たずに描き直す。任意)。
+type Notifier interface{ Changed() <-chan struct{} }
 
 // Describer はヘッダーに出す自分の説明を持つ backend (模擬か本物かを画面で見分けるため。任意)。
 type Describer interface{ Describe() string }
@@ -69,8 +73,16 @@ type Accepter interface{ Accepts(Op) bool }
 
 // Stopper は、画面を終了するときに backend が動かしているもの (本物のモード: dispatcher と、pro-con が起動した PG) を止める口。
 // 持たない backend (模擬) は、画面を閉じるだけで終わる。
+// 🚨 同じ置き場で複数の画面を開いてよい。止めるのは最後に閉じる画面だけで、ほかの画面が開いていれば KeptRunning を返す (失敗ではない)。
 type Stopper interface {
 	StopAll(ctx context.Context) error
+}
+
+// KeptRunning は、ほかの画面が開いているので dispatcher と PG を止めずに閉じたこと (StopAll の結果。失敗ではない)。
+type KeptRunning struct{ Others int }
+
+func (k KeptRunning) Error() string {
+	return fmt.Sprintf("ほかに %d 画面が開いているので、dispatcher と PG は止めずに閉じた", k.Others)
 }
 
 // Command は UI からの操作。値として送り、backend が 1 か所で適用する。

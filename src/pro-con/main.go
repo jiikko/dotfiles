@@ -161,6 +161,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 		}
 		lb.SetStopper(func(ctx context.Context) error { return stopInChild(ctx, dir, dispatcherArgs) })
+		// 画面が開いている間は dispatcher を動かし続ける (落ちた / 前の画面が止めている間に開いた、を起こし直す)
+		lb.SetKeeper(func() error {
+			_, err := startDispatcherIfIdle(dir, func(dir string) error { return spawnDispatcher(dir, dispatcherArgs) })
+			return err
+		})
 		// 画面を開いたら dispatcher も立てる (閉じると止める。2026-09-25 にユーザーが決めた形。415 の「TUI と常駐プロセス」)
 		if started, err := startDispatcherIfIdle(dir, func(dir string) error { return spawnDispatcher(dir, dispatcherArgs) }); err != nil {
 			notes = append(notes, "dispatcher を起動できない: "+err.Error()+" (手で起動する: pro-con dispatcher)")
@@ -216,9 +221,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		if !m.UpgradeRequested() {
 			removeResume(resumePath)
+			var kept backend.KeptRunning
+			if err := m.StopErr(); errors.As(err, &kept) { // ほかの画面が開いているので止めなかった (失敗ではない)
+				_, _ = fmt.Fprintln(stderr, "pro-con:", err)
+				return 0
+			}
 			if err := m.StopErr(); err != nil { // 終了のときに dispatcher と PG を止めきれなかった (画面を閉じた後に出す)
 				_, _ = fmt.Fprintln(stderr, "pro-con: 終了のときに止めきれなかった:", err)
-				_, _ = fmt.Fprintln(stderr, "  もう一度止める: pro-con dispatcher --stop")
+				_, _ = fmt.Fprintf(stderr, "  様子: %s / %s。もう一度止める: pro-con dispatcher --stop\n",
+					filepath.Join(dir, "dispatcher.log"), filepath.Join(dir, "stop.log"))
 				return 1
 			}
 			return 0
@@ -243,6 +254,12 @@ func startDispatcherIfIdle(dir string, spawn func(dir string) error) (bool, erro
 	return true, spawn(dir)
 }
 
+// dispatcherCmd は画面が起こす dispatcher のコマンド。画面が 1 つも無い状態が 1 分続いたら、PG を止めて抜ける
+// (最後の画面が quit を通らずに消えても PG を残さない)。
+func dispatcherCmd(exe string, extra []string) *exec.Cmd {
+	return exec.Command(exe, append([]string{"dispatcher", "--exit-without-screens", "1m"}, extra...)...)
+}
+
 // spawnDispatcher は `pro-con dispatcher` を画面とは別のプロセスグループで起動する (画面を閉じても、ctrl+c が届いても道連れにしない。
 // 止めるのは終了のときの `dispatcher --stop`)。出力は状態の置き場の dispatcher.log へ足す (画面より長く生きるのでパイプにしない)。
 func spawnDispatcher(dir string, extra []string) error {
@@ -255,7 +272,7 @@ func spawnDispatcher(dir string, extra []string) error {
 		return err
 	}
 	defer func() { _ = f.Close() }()
-	cmd := exec.Command(exe, append([]string{"dispatcher"}, extra...)...)
+	cmd := dispatcherCmd(exe, extra)
 	cmd.Stdout, cmd.Stderr = f, f
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
@@ -273,9 +290,13 @@ func stopInChild(ctx context.Context, dir string, extra []string) error {
 		return err
 	}
 	logPath := filepath.Join(dir, "stop.log")
-	f, err := os.Create(logPath)
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) // 足していく (前の --stop が止め直しを続けていれば、そのログを消さない)
 	if err != nil {
 		return err
+	}
+	var from int64 // 失敗したときに出すのは、この子が書いた分だけ
+	if st, err := f.Stat(); err == nil {
+		from = st.Size()
 	}
 	cmd := exec.Command(exe, append([]string{"dispatcher", "--stop"}, extra...)...)
 	cmd.Stdout, cmd.Stderr = f, f
@@ -290,6 +311,9 @@ func stopInChild(ctx context.Context, dir string, extra []string) error {
 	case err := <-done:
 		if err != nil {
 			out, _ := os.ReadFile(logPath)
+			if int64(len(out)) >= from {
+				out = out[from:]
+			}
 			return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 		}
 		return nil

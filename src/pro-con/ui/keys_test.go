@@ -30,7 +30,7 @@ func keysModel(t *testing.T) *Model {
 
 func ctrl(r rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: r, Mod: tea.ModCtrl} }
 
-// 移動は tuikit の語彙 (glogx と同じ): ctrl+n / ctrl+p は ↓ / ↑、g / G は先頭 / 末尾、ctrl+d / ctrl+u は半ページ、ctrl+f は →。
+// 移動は tuikit の語彙 (glogx と同じ): ctrl+n / ctrl+p は ↓ / ↑、g / G は先頭 / 末尾、ctrl+d / ctrl+u は半ページ、ctrl+f / ctrl+b は → / ←。
 func TestMotionVocabulary(t *testing.T) {
 	steps := []struct {
 		name string
@@ -46,6 +46,7 @@ func TestMotionVocabulary(t *testing.T) {
 		{"ctrl+d (端で止まる)", ctrl('d'), "P4"},
 		{"ctrl+u", ctrl('u'), "P2"},
 		{"ctrl+f", ctrl('f'), "R0"},
+		{"ctrl+b", ctrl('b'), "P0"}, // ← の別名 (ユーザー要望 2026-09-25)。h / ← と同じく同じ行へ
 	}
 	m := keysModel(t)
 	for _, st := range steps {

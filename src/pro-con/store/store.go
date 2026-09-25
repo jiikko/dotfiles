@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"pro-con/card"
+	"pro-con/wake"
 )
 
 const (
@@ -103,6 +104,7 @@ func Submit(dir string, r Request) (string, error) {
 	if err := writeAtomic(filepath.Join(box, r.ID+".json"), data); err != nil {
 		return "", err
 	}
+	_ = wake.Poke(dir) // dispatcher をすぐ起こす。居なくても箱のファイルは残り、ポーリングが拾う (package wake)
 	return r.ID, nil
 }
 

@@ -64,7 +64,10 @@ type Dispatcher struct {
 	Repos  map[string]string // repo の名前 → 絶対パス (カードの Repo から起動先を決める)
 	Launch Launcher
 	List   func(context.Context) ([]agents.Session, error)
-	Now    func() time.Time
+	// ListAll は止めた session も出す一覧 (`claude agents --json --all`)。終了のとき、pro-con が起動した session がすべて止まったかを
+	// 確かめるのに使う (shutdown.go の ensureStopped)。nil なら List で確かめる (一覧に無い = 止まった、とみなす。テスト用)
+	ListAll func(context.Context) ([]agents.Session, error)
+	Now     func() time.Time
 	// Transcript は session の transcript の末尾を読む (PG が落ちて Claude Code が自動で再開したかを見る)。nil なら読まない
 	// (その場合、pid が変わった session はすべて外から操作された疑いとして扱う)
 	Transcript func(sessionID string) (live.Transcript, error)
@@ -82,6 +85,10 @@ type Dispatcher struct {
 	usageErr   string    // 最後の読み取りの誤り
 	usageTried time.Time // 最後に読みに行った時刻
 	held       string    // 枠で起動・再開を待たせている知らせ (変わったときだけログに書く)
+
+	ticked bool // 1 度でも Tick したか
+	// Changed は記録を変えたときに呼ぶ (画面へ「読み直して」と知らせる。package wake の Broadcast)。nil なら知らせない
+	Changed func()
 
 	// FakePM は e2e モードの偽の PM (Tick の頭で呼ぶ)。本物のモードでは nil
 	FakePM func() error
@@ -112,6 +119,12 @@ func (d *Dispatcher) Tick(ctx context.Context) ([]string, error) {
 	if werr := d.writeState(d.Now()); werr != nil {
 		notes = append(notes, "dispatcher の様子を書けない: "+werr.Error())
 	}
+	// 何かした Tick の後 (起動・登録・停滞など) と、起動して最初の Tick の後 (先に開いた画面の「dispatcher 未起動」を直す)。
+	// 画面は 3 秒のポーリングを待たずに読み直す
+	if (len(notes) > 0 || !d.ticked) && d.Changed != nil {
+		d.Changed()
+	}
+	d.ticked = true
 	return notes, err
 }
 
@@ -131,6 +144,9 @@ func (d *Dispatcher) tick(ctx context.Context) ([]string, error) {
 		if r.Err != "" {
 			notes = append(notes, fmt.Sprintf("箱の依頼 %s (%s) を除けた: %s", r.ID, r.Kind, r.Err))
 		}
+	}
+	if len(res) > 0 && d.Changed != nil { // 箱の依頼を適用した直後に知らせる (一覧の取得 (最大 10 秒) を待たせずにカードを画面へ出す)
+		d.Changed()
 	}
 	ss, err := d.List(ctx)
 	if err != nil {
