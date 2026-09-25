@@ -1,0 +1,1 @@
+../417-bug-glogx-untrusted-text-bypasses-termsafe.md
