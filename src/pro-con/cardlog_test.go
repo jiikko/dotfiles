@@ -53,7 +53,9 @@ func TestCardLogFollow(t *testing.T) {
 	t.Cleanup(func() { viewPoll = old })
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	env.ctx = ctx
+	oldCtx := followContext
+	followContext = func() (context.Context, context.CancelFunc) { return ctx, cancel }
+	t.Cleanup(func() { followContext = oldCtx })
 	var out, errOut syncBuf
 	rc := make(chan int, 1)
 	go func() { rc <- runCard([]string{"log", "C-001", "--follow"}, env, &out, &errOut) }()

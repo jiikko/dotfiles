@@ -25,6 +25,11 @@ import (
 
 const cardLogUsage = "usage: pro-con card log <カード> [--follow] [--json]"
 
+// followContext は --follow を終える context (ctrl+c / SIGTERM で終わり rc=0。pro-con log と同じ)。テストが差し替える
+var followContext = func() (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+}
+
 func runCardLog(args []string, env viewEnv, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("pro-con card log", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -88,12 +93,8 @@ func runCardLog(args []string, env viewEnv, stdout, stderr io.Writer) int {
 		}
 		return 0
 	}
-	ctx := env.ctx
-	if ctx == nil { // --follow は ctrl+c で終わる (rc=0。pro-con log と同じ)
-		var stop context.CancelFunc
-		ctx, stop = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
-	}
+	ctx, stop := followContext()
+	defer stop()
 	// transcript の追記は dispatcher から知らされないので、viewPoll ごとの読み直しで追う (知らせは再開で session が入れ替わったのを早く拾う)
 	// 読めない transcript があっても追い続ける (ほかの session は読める。消えた transcript は次に探し直す)。同じ理由は 1 度だけ知らせる
 	warned := ""
