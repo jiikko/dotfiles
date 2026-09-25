@@ -1,6 +1,6 @@
 // Package dispatcher は本物のモードの dispatcher (issue 427 の段階 3c-1)。1 回の Tick で:
 //
-//  1. 受付の箱を記録へ適用する (store.Apply)
+//  1. 受付の箱を記録へ適用する (store.Apply)。終えたカードを記録から書庫へ移す (store.Archive。issue 478)
 //  2. 起動した PG の session を pro-con の記録 (live.Register) に登録する (session id と pid が一覧に出てから)
 //  3. (落ちた PG を見張る trackDead の後に) 閉じたカード・削除の依頼を受けたカードの PG の session を止める (close.go。issue 447 / 451)。削除のカードは止まったら記録から外す
 //  4. 依頼の列のカードを PM に知らせる (pm.go。issue 437)。PM が居なければ起動し、居れば再開する
@@ -170,6 +170,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	if len(res) > 0 && d.Changed != nil { // 箱の依頼を適用した直後に知らせる (一覧の取得 (最大 10 秒) を待たせずにカードを画面へ出す)
 		d.Changed()
 	}
+	notes = append(notes, d.archive(now)...)
 	ss, err := d.List(ctx)
 	if err != nil {
 		return append(notes, ev(eventlog.KindError, "", "", "session の一覧を取れない (登録と割り当ては次の Tick へ): "+err.Error())), nil
@@ -237,6 +238,22 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 		return notes, err
 	}
 	return append(notes, d.announce()...), nil // 割り当ての結果まで含めて知らせる
+}
+
+// archive は終えたカードを書庫へ移す。移せなくても Tick は続ける (記録が大きいままになるだけで、割り当ては止めない)。
+// 出来事に出すのは自動で片付けたカードだけ (人が片付けたカードは画面に出ていないので、移しても見た目が変わらない)。
+func (d *Dispatcher) archive(now time.Time) []eventlog.Event {
+	moved, err := store.Archive(d.Dir, now)
+	if err != nil {
+		return []eventlog.Event{ev(eventlog.KindError, "", "", "終えたカードを書庫へ移せない (次の Tick で移し直す): "+err.Error())}
+	}
+	var notes []eventlog.Event
+	for _, c := range moved {
+		if len(c.History) > 0 && c.History[len(c.History)-1].Text == store.AutoClearText {
+			notes = append(notes, ev(eventlog.KindArchive, c.ID, "", c.ID+": "+store.AutoClearText+" (card show で読める)"))
+		}
+	}
+	return notes
 }
 
 // register は作業中のカードの session (短い id) が一覧に出ていれば、session id と pid を添えて pro-con の記録に書く。

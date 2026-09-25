@@ -573,3 +573,32 @@ func TestViewCommandsDoNotFixFallbackDir(t *testing.T) {
 		t.Fatalf("読む口が逃がし先に書いた: %v", after)
 	}
 }
+
+// 書庫へ移した終えたカード (issue 478) も、show / list --all / wait で読める。記録と書庫の両方にあっても 1 枚として出す。
+func TestCardViewReadsArchive(t *testing.T) {
+	env := viewFixture(t)
+	if moved, err := store.Archive(env.dir, time.Now()); err != nil || len(moved) != 1 || moved[0].ID != "C-003" {
+		t.Fatalf("片付けた C-003 を書庫へ移せない: %v %v", moved, err)
+	}
+	if rc, out, errOut := viewCmd(t, env, "show", "C-003"); rc != 0 || !strings.Contains(out, "終わったもの") {
+		t.Fatalf("書庫のカードを show できない: rc=%d out=%q err=%q", rc, out, errOut)
+	}
+	if rc, _, errOut := viewCmd(t, env, "wait", "C-003"); rc != 1 || !strings.Contains(errOut, "完了しているので") {
+		t.Fatalf("書庫のカードを wait が見失った: rc=%d err=%q", rc, errOut)
+	}
+	if _, out, _ := viewCmd(t, env, "list"); strings.Contains(out, "C-003") {
+		t.Fatalf("書庫へ移した片付け済みのカードを一覧に出した: %q", out)
+	}
+	if _, out, _ := viewCmd(t, env, "list", "--all"); strings.Count(out, "C-003") != 1 {
+		t.Fatalf("--all で書庫のカードを出していない: %q", out)
+	}
+	if err := store.Update(env.dir, func(st *store.State) error { // 書庫に足した後、記録から外す前に落ちた形
+		st.Cards = append(st.Cards, card.Card{ID: "C-003", Title: "終わったもの", State: card.Done, Ending: card.EndAnswered, Archived: true})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, out, _ := viewCmd(t, env, "list", "--all"); strings.Count(out, "C-003") != 1 {
+		t.Fatalf("--all で記録と書庫の両方にあるカードを 1 枚として出していない: %q", out)
+	}
+}
