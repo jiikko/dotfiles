@@ -29,7 +29,11 @@ const (
 )
 
 func (m *Model) View() tea.View {
-	v := tea.NewView(m.render())
+	r := m.render()
+	if m.frameSink != nil {
+		m.frameSink(r, m.width, m.height, m.relayState())
+	}
+	v := tea.NewView(r)
 	v.AltScreen = true
 	v.Cursor = m.caret()
 	return v

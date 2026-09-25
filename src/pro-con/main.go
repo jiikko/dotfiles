@@ -30,6 +30,7 @@ import (
 	"pro-con/dispatcher"
 	"pro-con/fake"
 	"pro-con/live"
+	"pro-con/relay"
 	"pro-con/ui"
 	"pro-con/upgrade"
 )
@@ -64,7 +65,7 @@ type stateful interface {
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	view := len(args) > 0 && args[0] == "--view" // 見ているだけの画面 (dispatcher を起こさない・止めない・書かない)。--e2e と重ねてよい
+	view := len(args) > 0 && args[0] == "--view" // 見ているだけの画面 (dispatcher を起こさない・止めない・受付の箱にも記録にも書かない。画面の中継 relay/ だけは書く)。--e2e と重ねてよい
 	if view {
 		args = args[1:]
 	}
@@ -104,6 +105,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				return 1
 			}
 			return runCard(args[1:], viewEnv{dir: liveDir(home), projects: filepath.Join(home, ".claude", "projects"), now: time.Now}, stdout, stderr)
+		case "screen": // 人間の画面に今出ているものを外から読む (読むだけ。screencmd.go)
+			home, err := os.UserHomeDir()
+			if err != nil {
+				_, _ = fmt.Fprintln(stderr, "pro-con:", err)
+				return 1
+			}
+			return runScreen(args[1:], home, time.Now, stdout, stderr)
 		case "dispatcher", "daemon": // 本物のモードの dispatcher を常駐させる (dispatchercmd.go)。daemon は 2026-09-25 に dispatcher へ改名する前の名前 (別名として残す)
 			if args[0] == "daemon" {
 				_, _ = fmt.Fprintln(stderr, "pro-con: daemon は dispatcher に改名した (pro-con dispatcher)")
@@ -212,6 +220,31 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if exe, err := os.Executable(); err == nil {
 		_ = m.EnableUpgrade(exe, upgrade.ExecRunner) // bin/pro-con 以外から起動していれば無効 (ctrl+r で理由を出す)
 	}
+	// 画面の中継 (issue 443。外の Claude が pro-con screen で読む)。本物のモードと e2e モードだけ (--view の画面も中継する)
+	var rw *relay.Writer
+	openRelay := func() {
+		if mock {
+			return
+		}
+		w, err := relay.Open(dir)
+		if err != nil {
+			m.Notify("画面の中継を置けない (pro-con screen から読めない): " + err.Error())
+			return
+		}
+		rw = w
+		m.SetFrameSink(func(a string, width, height int, st map[string]string) {
+			w.Put(relay.Frame{View: view, At: time.Now(), Width: width, Height: height, ANSI: a, State: st})
+		})
+	}
+	closeRelay := func() {
+		if rw != nil {
+			m.SetFrameSink(nil)
+			rw.Close()
+			rw = nil
+		}
+	}
+	openRelay()
+	defer closeRelay()
 	for {
 		if _, err := tea.NewProgram(m).Run(); err != nil {
 			_, _ = fmt.Fprintln(stderr, "pro-con:", err)
@@ -239,9 +272,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 			return 0
 		}
+		closeRelay() // 新しい版へ exec すると defer が走らず、中継のファイルが落ちた画面の残りになる。戻ってきたら (失敗) 開き直す
 		p, err := switchToNew(m, be, append(append([]string(nil), modeArgs...), args...), dir, resumePath)
 		resumePath = p
 		m.UpgradeFailed(err)
+		openRelay()
 	}
 }
 

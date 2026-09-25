@@ -68,6 +68,8 @@ type Model struct {
 	snap   backend.Snapshot
 	width  int
 	height int
+	// frameSink は画面の中継の受け口 (relay.go。nil なら中継しない)
+	frameSink FrameSink
 
 	// repos は config から列挙した repo。タブは global + 「ここに在り、カードも在る repo」。
 	repos []backend.Repo
