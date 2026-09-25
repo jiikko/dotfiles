@@ -43,6 +43,9 @@ const RunResource = "テスト"
 // AttachPrefix は attach の間に人間が打った指示を履歴に残すときの前置き。
 const AttachPrefix = "attach で人間が指示: "
 
+// ReworkPrefix は差し戻しで PG を再開するときに、直してほしい点の前に付ける前置き (回答と区別できるように)。
+const ReworkPrefix = "レビューで差し戻された。直してほしい点:\n"
+
 // Request は受付の箱に置く依頼 1 件。Kind ごとに使う欄が違う (apply を参照)。
 type Request struct {
 	ID       string          `json:"id"` // 箱のファイル名から Submit が付ける。二重適用を防ぐ鍵
@@ -58,7 +61,8 @@ type Request struct {
 	Command  string          `json:"command,omitempty"` // run: テストの係に実行を頼むコマンド (シェルの 1 行)
 	Cwd      string          `json:"cwd,omitempty"`     // run: 頼んだシェルの作業ディレクトリ (dispatcher が PG の worktree と照らす)
 	Answer   string          `json:"answer,omitempty"`
-	From     string          `json:"from,omitempty"` // 回答した人 (人間 / PM)
+	From     string          `json:"from,omitempty"`   // 回答した人 (人間 / PM)
+	Rework   string          `json:"rework,omitempty"` // rework: レビューで直してほしい点 (書いたまま)
 	Ending   card.Ending     `json:"ending,omitempty"`
 	Said     []card.Event    `json:"said,omitempty"` // attach: attach の間に人間が打った指示 (原文と打った時刻)
 	At       time.Time       `json:"at"`
@@ -339,6 +343,15 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		c.Wait = card.Wait{}
 		c.Resume = r.Answer // dispatcher が同じ session を再開するときに渡す (426 の決定 2)
 		move(card.Planned, firstNonEmpty(r.From, "人間")+" が回答した: "+clip(r.Answer, 80)+" (PG の空きが出たら同じ session を resume)")
+	case "rework": // PM がレビューで差し戻した (issue 446)。回答と同じく分解済みへ戻し、dispatcher が同じ session を再開する
+		if c.State != card.Review {
+			return fmt.Errorf("レビュー待ちではない (今は %s)", c.State.Label())
+		}
+		if strings.TrimSpace(r.Rework) == "" {
+			return errors.New("直してほしい点が空")
+		}
+		c.Resume = ReworkPrefix + r.Rework + "\n直したら、もう一度 `pro-con card review " + c.ID + "` を実行してから turn を終える。"
+		move(card.Planned, "差し戻した: "+r.Rework) // 原文のまま残す (要約・切り詰めをしない)
 	case "run": // PG がテストの係にコマンドの実行を頼んで turn を終えた (426 の決定 5)。結果は dispatcher が再開のときに渡す
 		if c.State != card.Running {
 			return fmt.Errorf("作業中の列に無い (今は %s)", c.State.Label())

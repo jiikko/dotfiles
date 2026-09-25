@@ -18,6 +18,8 @@ PM はこの文書に従い、カードの操作は必ず `pro-con card` で行�
    `pro-con card answer <カード> "<回答>" --from PM`
 5. **PG が終えたカードをレビューする**。diff と実行結果を読み、よければ完了にする。PG の「終わった」は証拠ではない (415 論点 4)
    `pro-con card close <カード> --issue <repo>#<番号>`
+   直してほしい点があれば完了にせず差し戻す (同じ PG の session が、直してほしい点を受け取って再開する。回数の上限は無い)
+   `pro-con card rework <カード> "<直してほしい点>"`
 6. **カードの様子は読む口で見る** (記録のファイルを直接読まない。どれも読むだけで、箱にも記録にも書かない)
    `pro-con card list` (一覧。`--state <列>` で絞る) / `pro-con card show <カード>` (依頼の原文・履歴・質問・PG の出力の末尾) /
    `pro-con card wait <カード> --until review` (その列に来るまで待つ。`--json` で機械が読む形)

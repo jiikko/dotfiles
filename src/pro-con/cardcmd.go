@@ -29,6 +29,7 @@ const cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を�
   answer <カード> <回答> [--from <人間|PM>]      質問待ちのカードへの回答
   run <カード> -- <コマンド>...                  PG がテストの係にコマンドの実行を頼んで turn を終える (結果は再開のときに届く)
   review <カード>                                PG が終えた
+  rework <カード> <直してほしい点>               レビュー待ちのカードを PG に差し戻す (同じ session を再開する)
   close <カード> [--ending answered|investigated|rejected|pending-issue] [--issue <repo>#<番号>]...
   guide                                          PM への指示書を出す (箱には何も置かない)
 読むだけ (箱にも記録にも書かない):
@@ -139,11 +140,11 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 	case "close":
 		fs.Var(&issues, "issue", "")
 		fs.StringVar(&ending, "ending", "", "")
-	case "ask", "review":
+	case "ask", "review", "rework":
 	default:
 		return r, wait, fmt.Errorf("未知の操作 %q", op)
 	}
-	// カードの ID と本文 (ask / answer) はフラグの前に置く (pro-con card ask C-001 "質問")。flag はフラグの後の位置引数しか残さないので先に取る
+	// カードの ID と本文 (ask / answer / rework) はフラグの前に置く (pro-con card ask C-001 "質問")。flag はフラグの後の位置引数しか残さないので先に取る
 	var pos []string
 	for len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
 		pos, rest = append(pos, rest[0]), rest[1:]
@@ -152,7 +153,7 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 		return r, wait, err
 	}
 	pos = append(pos, fs.Args()...)
-	need := map[string]int{"add": 0, "plan": 1, "review": 1, "close": 1, "ask": 2, "answer": 2}[op]
+	need := map[string]int{"add": 0, "plan": 1, "review": 1, "close": 1, "ask": 2, "answer": 2, "rework": 2}[op]
 	if len(pos) != need {
 		return r, wait, fmt.Errorf("%s は位置引数が %d 個 (受け取ったのは %d 個)", op, need, len(pos))
 	}
@@ -168,6 +169,8 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 		r.Question = pos[1]
 	case "answer":
 		r.Answer = pos[1]
+	case "rework":
+		r.Rework = pos[1]
 	case "close":
 		if ending != "" {
 			e, ok := endings[ending]
