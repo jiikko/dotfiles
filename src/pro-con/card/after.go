@@ -6,7 +6,8 @@ import (
 )
 
 // Blockers は c.After のうち、まだ完了していないカードの ID。空なら起動してよい。完了は終わり方を問わない
-// (却下された前のカードも待たない。後のカードは今の master を読んで作る)。記録に無い相手は数えない (Drop が外し、Check が違反として出す)。
+// (却下された前のカードも待たない。後のカードは今の master を読んで作る)。記録 (cards) に無い相手は待たない: 記録から外れるのは
+// 完了して書庫へ移ったカード (issue 478) と削除したカードだけで、どちらも戻らない (まだ振っていない番号は plan の適用が除ける)。
 func Blockers(cards []Card, c Card) []string {
 	var out []string
 	for _, id := range c.After {
@@ -34,7 +35,8 @@ func Drop(cards []Card, id string, now time.Time) []Card {
 	return out
 }
 
-// afterViolations は順番の相手が記録に無いカードと、順番が循環しているカード (自分に戻る) を出す。
+// afterViolations は順番が循環しているカード (自分に戻る) を出す。🚨 相手が記録に無いことは違反にしない: 前のカードが書庫へ移ると
+// 記録から外れ、違反にすると書庫への移動 (store.Archive) がまとめて止まる。
 func afterViolations(cards []Card) []Violation {
 	byID := make(map[string]Card, len(cards))
 	for _, c := range cards {
@@ -42,11 +44,6 @@ func afterViolations(cards []Card) []Violation {
 	}
 	var out []Violation
 	for _, c := range cards {
-		for _, a := range c.After {
-			if _, ok := byID[a]; !ok {
-				out = append(out, Violation{c.ID, "順番の前のカード " + a + " が存在しない"})
-			}
-		}
 		if reaches(byID, c.After, c.ID) {
 			out = append(out, Violation{c.ID, "順番が循環している (前のカードを辿ると自分に戻る)"})
 		}

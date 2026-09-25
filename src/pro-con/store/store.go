@@ -353,6 +353,11 @@ func apply(st State, r Request, now time.Time) (State, string, string, error) {
 		if i < 0 {
 			return st, r.CardID, "", fmt.Errorf("%s: カード %q が無い", r.Kind, r.CardID)
 		}
+		if r.Kind == "plan" {
+			if err := checkAfter(next, r.After); err != nil {
+				return st, r.CardID, "", fmt.Errorf("plan: %w", err)
+			}
+		}
 		id = r.CardID
 		c := next.Cards[i]
 		if err := transition(&c, r, now); err != nil {
@@ -520,6 +525,21 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		move(card.Done, "完了にした")
 	default:
 		return fmt.Errorf("未知の依頼 %q", r.Kind)
+	}
+	return nil
+}
+
+// checkAfter は plan --after の相手が、振った番号のカードか (記録に在る・書庫へ移った・削除した)。まだ振っていない番号 (打ち間違い) は除ける。
+// 🚨 記録に在るかだけで判定しない: 完了から 24 時間で書庫へ移ったカードの後に積めなくなる (issue 478)。循環は card.Check が見る
+func checkAfter(st State, after []string) error {
+	for _, a := range after {
+		if indexOf(st.Cards, a) >= 0 {
+			continue
+		}
+		var n int
+		if _, err := fmt.Sscanf(a, "C-%d", &n); err != nil || fmt.Sprintf("C-%03d", n) != a || n < 1 || n >= st.NextID {
+			return fmt.Errorf("順番の前のカード %s が無い (まだ振っていない番号)", a)
+		}
 	}
 	return nil
 }

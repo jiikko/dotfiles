@@ -7,15 +7,18 @@ import (
 	"time"
 )
 
-// 順番 (After) の相手が記録に無い・順番が循環している、は違反 (dispatcher が永久に起動しない)。
+// 順番が循環している、は違反 (dispatcher が永久に起動しない)。相手が記録に無いのは違反ではない (書庫へ移った)。
 func TestCheckAfter(t *testing.T) {
 	ok := []Card{{ID: "A", State: Planned}, {ID: "B", State: Planned, After: []string{"A"}}}
 	if vs := Check(ok); len(vs) != 0 {
 		t.Fatalf("順番の付いた正しい集合で違反が出た: %v", reasons(vs))
 	}
-	missing := []Card{{ID: "B", State: Planned, After: []string{"nope"}}}
-	if vs := Check(missing); len(vs) != 1 || vs[0].CardID != "B" || !strings.Contains(vs[0].Reason, "nope") {
-		t.Fatalf("存在しない相手を違反として出すはず: %v", reasons(vs))
+	archived := []Card{{ID: "B", State: Planned, After: []string{"A"}}} // A は完了して書庫へ移った
+	if vs := Check(archived); len(vs) != 0 {
+		t.Fatalf("記録に無い前のカード (書庫へ移った) を違反にすると、書庫への移動が止まる: %v", reasons(vs))
+	}
+	if got := Blockers(archived, archived[0]); len(got) != 0 {
+		t.Fatalf("書庫へ移った前のカードを待つ: %v", got)
 	}
 	self := []Card{{ID: "A", State: Planned, After: []string{"A"}}}
 	if vs := Check(self); len(vs) != 1 || !strings.Contains(vs[0].Reason, "循環") {

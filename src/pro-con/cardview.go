@@ -379,7 +379,9 @@ func runCardWait(args []string, env viewEnv, stdout, stderr io.Writer) int {
 		return 1
 	}
 	if *asJSON {
-		return writeJSON(stdout, stderr, summarize(got, nil)) // 列が変わるまで待った後なので、順番の待ちは出さない (分解済みから動いたカードには無い)
+		s := summarize(got, nil)
+		s.Waiting = waitingIn(env.dir, got) // 書庫から読んだカードでも、順番の待ちは記録の動いているカードで引く
+		return writeJSON(stdout, stderr, s)
 	}
 	_, _ = fmt.Fprintf(stdout, "%s  %s → %s  %s\n", got.ID, first.State.Label(), got.State.Label(), got.Title)
 	return 0

@@ -116,3 +116,41 @@ func TestPromptNamesPredecessors(t *testing.T) {
 		t.Fatalf("起動の指示に前のカードが無い: %s", p)
 	}
 }
+
+// 前のカードが完了して 24 時間たち書庫へ移っても、完了として読む (記録に無い = 消えた、と読まない)。書庫へ移すことも止めない
+// (後のカードの順番が残っていても、他の終えたカードまで道連れで移せなくならない)。後のカードの順番は表示のために残す。
+func TestArchivedPredecessorReleasesSuccessor(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 1) // C-001
+	planAfter(t, dir, "C-001")
+	l := &fakeLauncher{}
+	d := newDispatcher(t, dir, l, nil)
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Update(dir, func(s *store.State) error {
+		for i := range s.Cards {
+			if s.Cards[i].ID == "C-001" {
+				s.Cards[i].State, s.Cards[i].Ending, s.Cards[i].Since = card.Done, card.EndAnswered, t0
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	d.Now = func() time.Time { return t0.Add(store.AutoClearAfter + time.Minute) }
+	notes, err := d.Tick(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.ContainsFunc(notes, func(e eventlog.Event) bool { return e.Kind == eventlog.KindError }) {
+		t.Fatalf("書庫へ移せない: %q", notes)
+	}
+	cs := states(t, dir)
+	if _, ok := cs["C-001"]; ok {
+		t.Fatalf("完了から 24 時間たった前のカードが書庫へ移っていない: %v", cs)
+	}
+	if !slices.Contains(l.starts, "pc-c-002") || !slices.Equal(cs["C-002"].After, []string{"C-001"}) {
+		t.Fatalf("書庫へ移った前のカードを待ち続ける / 順番を消した: %v %+v", l.starts, cs["C-002"].After)
+	}
+}
