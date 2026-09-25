@@ -88,9 +88,10 @@ func TestDeleteGivesUpAndKeepsCard(t *testing.T) {
 	}
 }
 
-// 削除の依頼を受けたカードは、回答で分解済みへ戻っていても PG を再開しない (止めて消す)。
+// 削除の依頼を受けたカードは、回答で分解済みへ戻っていても PG を再開しない (止まるのを待つ間も)。止まったら消す。
 func TestDeleteDoesNotResume(t *testing.T) {
 	r := newCrashRig(t)
+	r.d.ListAll = func(ctx context.Context) ([]agents.Session, error) { return r.d.List(ctx) } // 止めても一覧がすぐには変わらない
 	if _, err := store.Submit(r.dir, store.Request{Kind: "ask", CardID: "C-001", Question: "q"}); err != nil {
 		t.Fatal(err)
 	}
@@ -100,9 +101,12 @@ func TestDeleteDoesNotResume(t *testing.T) {
 	}
 	deleteCard(t, r.dir, "C-001") // 同じ Tick で回答と削除を適用する (回答で開いた再開の口を、削除が閉じる)
 	r.tick(t)
-	if len(r.l.resumes) != 0 || len(r.l.starts) != 1 {
-		t.Fatalf("削除の依頼を受けたカードの PG を再開・起動した: resumes=%v starts=%v", r.l.resumes, r.l.starts)
+	r.tick(t)
+	if c, ok := states(t, r.dir)["C-001"]; !ok || c.State != card.Planned || len(r.l.resumes) != 0 || len(r.l.starts) != 1 {
+		t.Fatalf("削除の依頼を受けたカードの PG を再開・起動した: ok=%v resumes=%v starts=%v", ok, r.l.resumes, r.l.starts)
 	}
+	r.ss[0].PID, r.ss[0].State = 0, agents.StateStopped
+	r.tick(t)
 	if _, ok := states(t, r.dir)["C-001"]; ok {
 		t.Fatal("止めた後にカードを外さない")
 	}

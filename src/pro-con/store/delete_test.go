@@ -3,6 +3,7 @@ package store
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"pro-con/card"
 )
@@ -46,10 +47,10 @@ func TestDeleteInProgressMarksAndFreezes(t *testing.T) {
 			t.Fatalf("削除の印の付いたカードが %s を受けた", r.Kind)
 		}
 	}
-	at := c.DeleteAt
 	submit(t, dir, Request{Kind: "delete", CardID: "C-001"})
-	if res := applyAll(t, dir); res[0].Err != "" || !cardOf(t, dir, "C-001").DeleteAt.Equal(at) || cardOf(t, dir, "C-001").Run != "" {
-		t.Fatalf("二重の削除で印を付け直した / 除けた: %+v", res)
+	res, err := Apply(dir, t0.Add(time.Minute))
+	if again := cardOf(t, dir, "C-001"); err != nil || res[0].Err != "" || !again.DeleteAt.Equal(c.DeleteAt) || len(again.History) != len(c.History) {
+		t.Fatalf("二重の削除で印を付け直した / 除けた: %+v %v", res, err)
 	}
 }
 
