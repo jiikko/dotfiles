@@ -5,6 +5,8 @@
 //	pro-con --mock       模擬データで起動する (claude は起動しない。動作確認用)
 //	pro-con card …       PM / PG が使うカードの操作 (受付の箱に置く。pro-con card で使い方)
 //	pro-con log          dispatcher の出来事の記録を読む (読むだけ。pro-con log --help)
+//	pro-con config …     止めずに PG の枠と PM の数を変える (受付の箱に置く。pro-con config で使い方)
+//	pro-con ps           pro-con が起動したプロセスを役ごとに出す (読むだけ)
 //	pro-con dispatcher       本物のモードの dispatcher を常駐させる (PG を起動する。週の利用枠を使う)
 //	pro-con fake-attach  attach の代わりに TUI から起動される内部用のコマンド
 //
@@ -109,6 +111,16 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				return 1
 			}
 			return runCard(args[1:], viewEnv{dir: liveDir(home), projects: filepath.Join(home, ".claude", "projects"), now: time.Now}, stdout, stderr)
+		case "config", "ps": // 止めずに PG の枠・PM の数を変える口 (configcmd.go) / 役ごとのプロセスの一覧 (読むだけ。pscmd.go)
+			home, err := os.UserHomeDir()
+			if err != nil {
+				_, _ = fmt.Fprintln(stderr, "pro-con:", err)
+				return 1
+			}
+			if args[0] == "ps" {
+				return runPS(args[1:], liveDir(home), time.Now, execProcs, stdout, stderr)
+			}
+			return runConfig(args[1:], liveDir(home), stdout, stderr)
 		case "screen": // 人間の画面に今出ているものを外から読む (読むだけ。screencmd.go)
 			home, err := os.UserHomeDir()
 			if err != nil {

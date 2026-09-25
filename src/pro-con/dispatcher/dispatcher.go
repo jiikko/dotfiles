@@ -92,7 +92,10 @@ type Dispatcher struct {
 	usage      *Usage    // 最後に読めた値
 	usageErr   string    // 最後の読み取りの誤り
 	usageTried time.Time // 最後に読みに行った時刻
-	held       string    // 枠で起動・再開を待たせている知らせ (変わったときだけログに書く)
+	// settings は変えた設定 (store/settings.go。Tick ごとに読み直す) / settingsErr は読めなかった理由
+	settings    store.Settings
+	settingsErr string
+	held        string // 枠で起動・再開を待たせている知らせ (変わったときだけログに書く)
 
 	ticked bool // 1 度でも Tick したか
 	// Record は Tick / Shutdown の出来事を渡す (ログの行と events.jsonl。dispatchercmd.go)。記録を変えた知らせ (Changed) より先に呼ぶ
@@ -171,6 +174,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 		return nil, err
 	}
 	notes = append(notes, applied(res)...)
+	d.loadSettings()
 	if len(res) > 0 && d.Changed != nil { // 箱の依頼を適用した直後に知らせる (一覧の取得 (最大 10 秒) を待たせずにカードを画面へ出す)
 		d.Changed()
 	}
@@ -700,10 +704,11 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		fresh = append(fresh, c) // 待っても出なかった。起動・再開し直す (古い順は保つ)
 	}
 	limit, why := d.capacity(now)
+	lim, _ := d.limit()
 	held := ""
 	for i, c := range fresh {
 		if running >= limit {
-			if running < d.Limit { // 枠で絞らなくても止まっていたなら、枠のせいにしない
+			if running < lim { // 枠で絞らなくても止まっていたなら、枠のせいにしない
 				held = fmt.Sprintf("分解済みの %d 枚を起動・再開しない (%s)", len(fresh)-i, why)
 			}
 			break

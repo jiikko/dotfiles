@@ -31,7 +31,7 @@ var dispatcherInterval = 3 * time.Second // テストが延ばす (Poke でだ�
 func runDispatcher(args []string, dir, projects string, repos map[string]string, pm pmConfig, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("pro-con dispatcher", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	limit := fs.Int("limit", 2, "同時に動かす PG の上限 (415 の決定事項: 2 から始める)")
+	limit := fs.Int("limit", 2, "同時に動かす PG の上限 (415 の決定事項: 2 から始める)。pro-con config set limit があればそちらが勝つ (これは設定が無いときの値)")
 	once := fs.Bool("once", false, "1 回だけ回して終わる")
 	stopAll := fs.Bool("stop", false, "動いている dispatcher と、pro-con が起動した PG を止める (次に dispatcher を起動したら続きから再開する)")
 	e2eRoot := fs.String("e2e", "", "e2e モードの置き場 (PG は台本どおりに動く偽物。claude を起動しない。pro-con e2e が使う)")

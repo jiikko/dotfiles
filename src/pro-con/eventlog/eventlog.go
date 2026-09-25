@@ -54,6 +54,7 @@ const (
 	KindStop     = "stop"     // PG を止めた・止め直した・止められない (終了のとき・閉じたとき)
 	KindDelete   = "delete"   // カードを削除した / 削除の依頼を受けた / 削除できない (issue 451)
 	KindArchive  = "archive"  // 完了のカードを自動で片付けた (issue 478)
+	KindConfig   = "config"   // 設定 (PG の枠・PM の数) を変えた (issue 456)
 	KindScreens  = "screens"  // 開いている画面の数で決めたこと (画面が無いので抜ける・画面が開いたので続ける)
 	KindError    = "error"    // 一覧を取れない・書けない等
 	// KindScreen は画面の側の出来事 (開いた・quit で閉じた・止めた / 止めなかった)。画面が受付の箱に置き、dispatcher が書く
