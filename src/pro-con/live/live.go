@@ -31,6 +31,7 @@ var ErrNotYet = errors.New("本物のモードではまだ使えない操作 (is
 
 // Backend は本物の backend。
 type Backend struct {
+	stopAll  func(context.Context) error // 終了のときに daemon と PG を止める (main が daemon の停止をつなぐ。live は daemon を import できない)
 	repos    []backend.Repo
 	dir      string // 本物のモードの状態の置き場 (カードの記録・受付の箱・pro-con が起動した session の記録)
 	registry string // pro-con が起動した session の記録 (registry.go)
@@ -72,6 +73,17 @@ func New(repos []backend.Repo, home, stateDir string) *Backend {
 		cache:    map[string]cached{},
 		paths:    map[string]string{},
 	}
+}
+
+// SetStopper は終了のときの停止をつなぐ。
+func (b *Backend) SetStopper(f func(context.Context) error) { b.stopAll = f }
+
+// StopAll は daemon と、pro-con が起動した PG を止める (backend.Stopper)。
+func (b *Backend) StopAll(ctx context.Context) error {
+	if b.stopAll == nil {
+		return errors.New("止める口がつながっていない")
+	}
+	return b.stopAll(ctx)
 }
 
 // FindTranscript は projects (~/.claude/projects) の下から sessionID の transcript を探す。

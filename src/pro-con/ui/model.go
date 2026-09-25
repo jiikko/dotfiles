@@ -86,6 +86,8 @@ type Model struct {
 	// カードの詳細の引き出し (drawer.go)。drawerCard は閉じる途中も残す (逆再生で本文が見えている必要がある)
 	cursor     cursorGlide // 選択中のカードを囲む枠 (cursor.go)
 	quitAsk    bool        // 終了の確認ダイアログを出している (quit.go)
+	stopping   bool        // 終了のために backend (daemon と PG) を止めている最中 (quit.go)
+	stopErr    error       // 止めきれなかった理由 (終了後に main が出す)
 	attaching  bool        // attach の照合を裏で待っている
 	legend     bool        // レーンの意味の表を出している (legend.go)
 	lane       laneFade    // 選んでいるレーンの枠の色の移り変わり (lanefade.go)
@@ -192,7 +194,16 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 			m.line.Insert(msg.Content)
 		}
 		return m, nil
+	case stopDoneMsg:
+		m.stopping, m.stopErr = false, msg.err
+		return m, tea.Quit
 	case tea.KeyPressMsg:
+		if m.stopping { // 止め終えるまで待つ。ctrl+c だけは待たずに閉じる (止めるのは daemon が続ける)
+			if msg.String() == "ctrl+c" {
+				return m, tea.Quit
+			}
+			return m, nil
+		}
 		if m.quitAsk {
 			return m, m.handleQuitKey(msg.String())
 		}

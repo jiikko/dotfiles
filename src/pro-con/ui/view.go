@@ -414,6 +414,9 @@ func orDash(s string) string {
 // hints は最下行の案内。**今の状態で押して効くキーだけ**を出す (入力中にボードの案内を残すと、
 // 載せた文字が全部入力に化ける。docs/glogx-ui-guide.md §5)。最後の項目が抜ける手段。
 func (m *Model) hints() []string {
+	if m.stopping {
+		return []string{"ctrl+c 待たずに閉じる"}
+	}
 	if m.quitAsk {
 		return []string{"y / enter 終了", "ctrl+c 終了", "他のキー 取り消し"}
 	}

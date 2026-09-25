@@ -112,6 +112,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		dir = filepath.Join(stateDir(home), "mock")
 	} else {
 		lb := live.New(scopes, home, dir)
+		repoPaths := map[string]string{}
+		for _, r := range scopes {
+			repoPaths[r.Name] = r.Path
+		}
+		lb.SetStopper(func(ctx context.Context) error {
+			return stopDaemon(ctx, dir, filepath.Join(home, ".claude", "projects"), repoPaths, io.Discard)
+		})
 		ctx, cancel := context.WithCancel(context.Background())
 		lb.Start(ctx)
 		defer func() { cancel(); lb.Wait() }() // 読み直しが止まるのを待ってから抜ける (claude の子プロセスを残さない)
@@ -162,6 +169,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		if !m.UpgradeRequested() {
 			removeResume(resumePath)
+			if err := m.StopErr(); err != nil { // 終了のときに daemon と PG を止めきれなかった (画面を閉じた後に出す)
+				_, _ = fmt.Fprintln(stderr, "pro-con: 終了のときに止めきれなかった:", err)
+				_, _ = fmt.Fprintln(stderr, "  もう一度止める: pro-con daemon --stop")
+				return 1
+			}
 			return 0
 		}
 		p, err := switchToNew(m, be, execArgs(mock, args), dir, resumePath)

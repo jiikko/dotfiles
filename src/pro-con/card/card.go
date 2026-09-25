@@ -213,6 +213,8 @@ type Card struct {
 	// DeadSince は daemon が、このカードの PG の session が一覧に無い / pid 無し (落ちて自動の再開を待っている) のを最初に見た時刻。
 	// 生きているのを見たら外す。止める・再開する前の待ち (restartWait) はここから数える
 	DeadSince time.Time `json:",omitzero"`
+	// Stopped は pro-con の終了で daemon が PG を止めた印。次の再開は、落ちた PG の自動の再開を待たずに (止めずに) 行う。起動・再開で外す
+	Stopped bool `json:",omitempty"`
 	// Archived は完了のレーンから片付けた (x)。ボードには出さないが、記録 (状態ファイル) には残す
 	Archived bool
 	// LastProgress は「実質的に進んだ」最後の時刻 (watchdog が見る。活動ではなく進捗)

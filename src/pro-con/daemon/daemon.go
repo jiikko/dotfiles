@@ -560,7 +560,7 @@ func (d *Daemon) prepare(c card.Card, now time.Time, ss []agents.Session, reg []
 		if o.Cwd == "" {
 			return "再開", nil, fmt.Errorf("前の session (%s) の作業ディレクトリが記録に無い (別の cwd で再開すると別の tree を書く)", c.Session)
 		}
-		if stop == "" && (c.DeadSince.IsZero() || now.Sub(c.DeadSince) < restartWait) {
+		if stop == "" && !c.Stopped && (c.DeadSince.IsZero() || now.Sub(c.DeadSince) < restartWait) { // 終了で止めたものは自動の再開を待たない
 			return "再開", nil, errWait // Claude Code の自動の再開の途中かもしれない
 		}
 		return "再開", func(ctx context.Context) (string, error) {
@@ -638,7 +638,7 @@ func (d *Daemon) mark(id string, now time.Time, how string) error {
 func (d *Daemon) settle(id string, now time.Time, how, session string) error {
 	return d.update(id, func(c *card.Card) {
 		c.State, c.Since, c.Owner, c.Session = card.Running, now, "PG", session
-		c.LastProgress, c.Resume, c.Launching, c.Stalled, c.StopWanted = now, "", "", false, false
+		c.LastProgress, c.Resume, c.Launching, c.Stalled, c.StopWanted, c.Stopped = now, "", "", false, false, false
 		c.History = append(c.History, card.Event{At: now, Text: "PG を" + how + "した (session " + session + ")"})
 	})
 }

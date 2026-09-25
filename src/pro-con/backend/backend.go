@@ -6,6 +6,7 @@
 package backend
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -63,6 +64,12 @@ const (
 // Accepter は一部の操作しか受けない backend (任意。持たない backend は全部受ける)。
 // 画面は受けない操作のキーを押した時点で断り、案内の行でも暗くする (入力欄を開いてから送った時点で断ると、書いた文が無駄になる)。
 type Accepter interface{ Accepts(Op) bool }
+
+// Stopper は、画面を終了するときに backend が動かしているもの (本物のモード: daemon と、pro-con が起動した PG) を止める口。
+// 持たない backend (模擬) は、画面を閉じるだけで終わる。
+type Stopper interface {
+	StopAll(ctx context.Context) error
+}
 
 // Command は UI からの操作。値として送り、backend が 1 か所で適用する。
 type Command interface{ isCommand() }
