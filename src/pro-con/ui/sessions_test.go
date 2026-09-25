@@ -38,7 +38,8 @@ func TestPGPanel(t *testing.T) {
 	press(m, "s")
 	settle(m)
 	out := pgPanel(m)
-	for _, want := range []string{"PG (consumer) 2/2", "pg-1", "R1", "模擬", "3feb603f", "pid 4242"} {
+	// 見出しの数は枠を使っている PG だけ (issue 455)。W1 は作業中の列に居ないので、一覧には出すが数えない
+	for _, want := range []string{"PG (consumer) 1/2", "pg-1", "R1", "模擬", "3feb603f", "pid 4242"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("PG の一覧に %q が無い:\n%s", want, out)
 		}
