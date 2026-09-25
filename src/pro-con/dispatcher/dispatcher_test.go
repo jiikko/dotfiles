@@ -1354,6 +1354,23 @@ func TestVanishedRunningCardResumes(t *testing.T) {
 	}
 }
 
+// 消えた PG を再開した直後 (まだ一覧に出ない) に、前に消えたのを見た時刻で再開し直さない
+// (再開が同じ短い id を返すと、記録の前の行がそのまま当たる。再開で短い id が変わるかは未実測)。
+func TestVanishedResumeDoesNotRepeatBeforeListed(t *testing.T) {
+	r := newCrashRig(t)
+	r.l.resumeID = "id-pc-c-001"
+	r.ss = nil
+	r.d.Now = func() time.Time { return t0.Add(time.Minute) }
+	r.tick(t)
+	r.d.Now = func() time.Time { return t0.Add(time.Minute + restartWait + time.Second) }
+	r.tick(t) // 戻して再開
+	r.d.Now = func() time.Time { return t0.Add(time.Minute + restartWait + 2*time.Second) }
+	r.tick(t)
+	if len(r.l.resumes) != 1 {
+		t.Fatalf("再開した直後に前の時刻で再開し直した (同じ session が 2 本立つ): %v", r.l.resumes)
+	}
+}
+
 // 短い id が一覧から消えても、同じ session id の session が生きていれば消えたと読まない (再開すると同じ session が 2 本立つ)。
 func TestLiveSessionUnderOtherShortIDIsNotVanished(t *testing.T) {
 	r := newCrashRig(t)

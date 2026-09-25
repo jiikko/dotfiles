@@ -783,6 +783,8 @@ func (d *Dispatcher) settle(id string, now time.Time, how, session string) error
 	return d.update(id, func(c *card.Card) {
 		c.State, c.Since, c.Owner, c.Session = card.Running, now, "PG", session
 		c.LastProgress, c.Resume, c.Launching, c.Stalled, c.StopWanted, c.Stopped = now, "", "", false, false, false
+		// 消えたのを見た時刻は前の session のもの。残すと、再開が同じ短い id を返したとき (未実測)、一覧に出る前に消えたと読んで再開し直す
+		c.DeadSince = time.Time{}
 		c.History = append(c.History, card.Event{At: now, Text: "PG を" + how + "した (session " + session + ")"})
 	})
 }
