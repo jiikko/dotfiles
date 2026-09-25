@@ -537,3 +537,9 @@ frame 通知を出していた / overlay 表示中の取消が先に効いて ro
 - **スタブの 2 形** (2026-09-08 dotfiles 332): 変異 7 本を全部 red にした後、敵対レビューが引数を捨てるスタブと
   定数を返すスタブの両方を指摘した
 - **敵対レビューとの併用**: 変異を全部 red にした後でも敵対レビューが P1 を出した実測 6 回 (adversarial-review-own-safeguards の rationale)
+- **条件文脈の中の assert** (2026-09-25 swift-smbee 087 / retro 096): fake `sleep` の中で retry 間隔を assert したが、
+  それを呼ぶ helper が `helper || status=$?` で呼ばれていたため失敗が拾われず、`sleep 1` → `sleep 2` の変異が緑のままだった
+  (敵対レビューが発見)
+- **エラー文言の grep** (同上): 「guard で止まったか、後で `set -u` が落としたか」を stderr の `unbound variable` で見分けていたが、
+  macOS の bash が日本語 (`未割り当ての変数です`) で出すため一致せず、変異が緑のままだった。CI (ubuntu, C.UTF-8) では通る形。
+  最終的に「guard の後に runtime が 1 回も呼ばれていない」(呼び出しの記録) で判定する形に置き換えた
