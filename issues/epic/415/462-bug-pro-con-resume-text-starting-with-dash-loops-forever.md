@@ -36,6 +36,7 @@
 - 敵対レビューで直したもの: ①人の番へ回したあとの回答 (store の answer) が、まだ渡せていない差し戻し・テストの結果の文を上書きして消していた
   → 残っていれば前に残して「回答: 」を続ける (`TestRejectedResumeKeepsUndeliveredTextThroughAnswer`) ②ctx の取り消し (dispatcher の終了) も拒否に数えていた
   → ctx が生きているときだけ ③回数の 0 戻しが未検査 → `TestRejectCountResetsOnOtherOutcomes`。この 4 本も変異で red を確かめた (計 10 本)
+- `make test` rc=0 (af6a64cf。1 回目は呼び出しの無くなった `Dispatcher.note` を unused で落とした → 消した)
 - 分かっていて受けるもの: 起動 (session 無し) の拒否から人の番へ回したときの回答は、きっかけにしかならず本文は PG に渡らない (最初の指示で起動し直す。
   理由の文にそう書く) / 再開の前の `claude stop` が rc≠0 を返し続けた形も拒否に数えるので、前の session が生きたまま人の番へ回りうる (質問待ちで
   idle のまま残るのと同じ形) / `claude --bg` が立ててから rc≠0 で返す形があれば誤判定になる (未実測。人の番で止まるのでループは閉じる)
