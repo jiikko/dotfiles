@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -33,11 +32,8 @@ func (f *fakeRunner) waitStarted(t *testing.T) {
 	}
 }
 
-func (f *fakeRunner) Run(ctx context.Context, dir, command, logPath string, started func(int)) (int, error) {
+func (f *fakeRunner) Run(ctx context.Context, dir, command, logPath, _ string) (int, error) {
 	f.dirs, f.commands = append(f.dirs, dir), append(f.commands, command)
-	if started != nil {
-		started(4242)
-	}
 	_ = os.WriteFile(logPath, []byte("FAIL: TestFoo (0.01s)\n--- 出力の末尾 ---\n"), 0o600)
 	f.started <- struct{}{}
 	select {
@@ -98,9 +94,8 @@ func TestRunsSeriallyInWorktreeAndResumes(t *testing.T) {
 	askRun(t, r.dir, "C-002", "go test ./...", t0.Add(time.Second))
 	r.tick(t)
 	fr.waitStarted(t)
-	r.tick(t) // 始まった実行のプロセスグループをカードに書く
-	if c := states(t, r.dir)["C-001"]; c.Exec.PGID != 4242 {
-		t.Fatalf("実行のプロセスグループをカードに記録しない: %d", c.Exec.PGID)
+	if c := states(t, r.dir)["C-001"]; c.Exec.RunID == "" || !strings.HasPrefix(c.Exec.RunID, "C-001-") {
+		t.Fatalf("実行を始める前に印を記録しない: %q", c.Exec.RunID)
 	}
 	cs := states(t, r.dir)
 	if len(fr.commands) != 1 || fr.commands[0] != "make test" || fr.dirs[0] != "/w/dotfiles/.claude/worktrees/pc-c-001" {
@@ -154,13 +149,13 @@ func TestInterruptedRunIsReported(t *testing.T) {
 	r, fr, _ := runRig(t, 1)
 	var killed []string
 	old := killStaleFn
-	killStaleFn = func(pgid int, command string) { killed = append(killed, fmt.Sprintf("%d:%s", pgid, command)) }
+	killStaleFn = func(runID string) { killed = append(killed, runID) }
 	t.Cleanup(func() { killStaleFn = old })
 	setCard(t, r.dir, "C-001", func(c *card.Card) {
-		c.Run, c.RunAt, c.Exec = "make test", t0, card.Exec{Command: "make test", Since: t0, PGID: 777}
+		c.Run, c.RunAt, c.Exec = "make test", t0, card.Exec{Command: "make test", Since: t0, RunID: "C-001-777.log"}
 	})
 	r.tick(t)
-	if len(killed) != 1 || killed[0] != "777:make test" {
+	if len(killed) != 1 || killed[0] != "C-001-777.log" {
 		t.Fatalf("前の daemon が残した実行を止めにいかない: %v", killed)
 	}
 	if len(fr.commands) != 0 || len(r.l.resumes) != 1 || !strings.Contains(r.l.resumes[0], "結果が無い") {
@@ -253,7 +248,7 @@ func TestRunFailureWithoutOutputIsNotSummarized(t *testing.T) {
 // silentRunner は何も出力しない (ログを空で作る) 実行。
 type silentRunner struct{ f *fakeRunner }
 
-func (s silentRunner) Run(ctx context.Context, dir, command, logPath string, _ func(int)) (int, error) {
+func (s silentRunner) Run(ctx context.Context, dir, command, logPath, _ string) (int, error) {
 	_ = os.WriteFile(logPath, nil, 0o600)
 	s.f.started <- struct{}{}
 	select {

@@ -17,8 +17,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -28,9 +28,9 @@ import (
 )
 
 // Runner はコマンドを dir で実行し、出力 (stdout と stderr) を logPath へ書いて終了コードを返す。
-// started は実行を始めたときにプロセスグループの番号を知らせる (記録して、daemon が死んだ後に次の daemon が止められるように)。
+// Runner はコマンドを dir で実行し、出力を logPath へ書いて終了コードを返す。runID は実行ごとの印 (残った実行を後で見つけるため)。
 type Runner interface {
-	Run(ctx context.Context, dir, command, logPath string, started func(pgid int)) (rc int, err error)
+	Run(ctx context.Context, dir, command, logPath, runID string) (rc int, err error)
 }
 
 // RunsDir は実行のログの置き場 (状態の置き場の下)。
@@ -45,7 +45,6 @@ type runJob struct {
 	start                    time.Time
 	done                     chan runResult
 	cancel                   context.CancelFunc // 実行を取り消す (終了のとき)
-	pgid                     atomic.Int64       // 実行のプロセスグループ (始まったら入る。Tick がカードに書く)
 }
 
 type runResult struct {
@@ -70,17 +69,7 @@ func (d *Daemon) tickRuns(ctx context.Context, now time.Time) ([]string, error) 
 			}
 		}
 	}
-	if d.active != nil { // 始まった実行のプロセスグループをカードに書く (記録の書き手は Tick だけ。goroutine からは書かない)
-		if pg := int(d.active.pgid.Load()); pg != 0 {
-			id := d.active.cardID
-			if err := d.update(id, func(cc *card.Card) {
-				if cc.Exec.Active() && cc.Exec.PGID == 0 {
-					cc.Exec.PGID = pg
-				}
-			}); err != nil {
-				return nil, err
-			}
-		}
+	if d.active != nil {
 		select {
 		case r := <-d.active.done:
 			n, err := d.finishRun(now, d.active, r)
@@ -108,7 +97,7 @@ func (d *Daemon) tickRuns(ctx context.Context, now time.Time) ([]string, error) 
 		if c.Exec.Active() && (d.active == nil || d.active.cardID != c.ID) {
 			// 実行の途中で daemon が落ちた (この daemon は実行していない)。残ったコマンドを止めてから、結果が無いことを渡して PG を再開する
 			// (止めずに頼み直させると、同じ worktree で 2 本が重なる)
-			killStaleFn(c.Exec.PGID, c.Exec.Command)
+			killStaleFn(c.Exec.RunID)
 			n, err := d.finishRun(now, &runJob{cardID: c.ID, command: c.Run, start: c.Exec.Since},
 				runResult{rc: -1, err: errors.New("daemon が実行の途中で止まったので結果が無い。もう一度頼むこと")})
 			notes = append(notes, n)
@@ -147,7 +136,7 @@ func (d *Daemon) tickRuns(ctx context.Context, now time.Time) ([]string, error) 
 			job := &runJob{cardID: c.ID, command: c.Run, start: now, done: make(chan runResult, 1), cancel: cancel,
 				logPath: filepath.Join(d.Dir, RunsDir, fmt.Sprintf("%s-%d.log", c.ID, now.Unix()))}
 			if err := d.update(c.ID, func(cc *card.Card) {
-				cc.Exec = card.Exec{Command: c.Run, Resource: store.RunResource, Since: now}
+				cc.Exec = card.Exec{Command: c.Run, Resource: store.RunResource, Since: now, RunID: filepath.Base(job.logPath)} // 始める前に印を記録する
 				cc.Wait = card.Wait{}
 				cc.History = append(cc.History, card.Event{At: now, Text: "テストの係が実行を始めた: " + c.Run})
 			}); err != nil {
@@ -197,7 +186,7 @@ func (d *Daemon) execute(ctx context.Context, job *runJob, dir string) {
 		return
 	}
 	defer job.cancel()
-	r.rc, r.err = d.Runner.Run(ctx, dir, job.command, job.logPath, func(pg int) { job.pgid.Store(int64(pg)) })
+	r.rc, r.err = d.Runner.Run(ctx, dir, job.command, job.logPath, filepath.Base(job.logPath))
 	// 出力が無ければ要約させない (空のログを渡すと、要約の代わりに「ログを貼って」と返ってくる = 427 の段階 4 の本物の確認で実測)
 	if tail := logTail(job.logPath); (r.rc != 0 || r.err != nil) && d.Summarize != nil && strings.TrimSpace(tail) != "" {
 		if s, err := d.Summarize(ctx, tail); err == nil {
@@ -286,7 +275,7 @@ const runTimeout = time.Hour
 // ExecRunner は本物のシェルで実行する。TMUX / TMUX_PANE は落とす (PG と同じ理由)。
 type ExecRunner struct{}
 
-func (ExecRunner) Run(ctx context.Context, dir, command, logPath string, started func(pgid int)) (int, error) {
+func (ExecRunner) Run(ctx context.Context, dir, command, logPath, runID string) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, runTimeout)
 	defer cancel()
 	f, err := os.Create(logPath)
@@ -294,7 +283,7 @@ func (ExecRunner) Run(ctx context.Context, dir, command, logPath string, started
 		return -1, err
 	}
 	defer func() { _ = f.Close() }()
-	cmd := exec.CommandContext(ctx, "/bin/bash", "-c", command)
+	cmd := runCommand(ctx, command, runID)
 	cmd.Dir = dir
 	cmd.Env = withoutTmux(os.Environ())
 	cmd.Stdout, cmd.Stderr = f, f
@@ -304,9 +293,6 @@ func (ExecRunner) Run(ctx context.Context, dir, command, logPath string, started
 	cmd.WaitDelay = 5 * time.Second
 	if err := cmd.Start(); err != nil {
 		return -1, err
-	}
-	if started != nil {
-		started(cmd.Process.Pid) // Setpgid なので pid = プロセスグループの番号
 	}
 	// 終わった後も、SIGTERM を無視した子や bash が抜けた後に残った子を、プロセスグループごと止める (daemon の後に残さない)
 	defer func() { _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }()
@@ -339,20 +325,37 @@ func isUnder(child, root string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, "../")
 }
 
+// runMarkerPrefix は実行の bash の $0 に載せる印の頭。
+const runMarkerPrefix = "pro-con-run:"
+
+// runCommand は実行の bash を組む。中身の後ろに `exit $?` の行を足して、bash が単純なコマンドに exec で置き換わるのを防ぐ
+// (置き換わると $0 の印が ps から消える = 427 の敵対的レビューで実測)。印は $0 (`pro-con-run:<runID>`)。
+func runCommand(ctx context.Context, command, runID string) *exec.Cmd {
+	return exec.CommandContext(ctx, "/bin/bash", "-c", command+"\nexit $?", runMarkerPrefix+runID)
+}
+
 // killStaleFn は killStale (テストで差し替えて、呼ばれたかを見る)。
 var killStaleFn = killStale
 
-// killStale は、前の daemon が実行したまま残したコマンドのプロセスグループを止める。pid は使い回されるので、
-// グループの先頭がまだそのコマンドを実行している bash (`/bin/bash -c <command>`) のときだけ撃つ。
-func killStale(pgid int, command string) {
-	if pgid <= 1 {
+// killStale は、前の daemon が残した実行 (印が runID のもの) のプロセスグループを止める。印で探すので、pid の使い回しで別のものを撃たない。
+func killStale(runID string) {
+	if runID == "" {
 		return
 	}
-	out, err := exec.Command("ps", "-o", "command=", "-p", fmt.Sprint(pgid)).Output()
-	if err != nil || strings.TrimSpace(string(out)) != "/bin/bash -c "+command {
+	out, err := exec.Command("ps", "-A", "-ww", "-o", "pgid=,command=").Output()
+	if err != nil {
 		return
 	}
-	_ = syscall.Kill(-pgid, syscall.SIGKILL)
+	marker := " " + runMarkerPrefix + runID
+	for _, line := range strings.Split(string(out), "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 || !strings.HasSuffix(strings.TrimSpace(line), marker) {
+			continue
+		}
+		if pgid, err := strconv.Atoi(f[0]); err == nil && pgid > 1 {
+			_ = syscall.Kill(-pgid, syscall.SIGKILL)
+		}
+	}
 }
 
 // summarizeTimeout は要約の上限。

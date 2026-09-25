@@ -161,8 +161,9 @@ type Exec struct {
 	Resource string        // 占有しているリソース (device / xcode 等)。占有しないコマンドは空
 	Since    time.Time     // 実行を始めた時刻
 	Expected time.Duration // 見込みの所要 (前回の実測)。0 なら不明
-	// PGID は daemon (テストの係) が実行しているコマンドのプロセスグループ。daemon が死んで残ったコマンドを、次の daemon が止めるため
-	PGID int `json:",omitempty"`
+	// RunID は daemon (テストの係) の実行ごとの印。実行の bash の引数 ($0) に `pro-con-run:<RunID>` として載る。
+	// daemon が死んで残った実行を、次の daemon がこの印で見つけて止める (実行を始める前に記録する)
+	RunID string `json:",omitempty"`
 }
 
 func (e Exec) Active() bool { return e.Command != "" }
