@@ -35,6 +35,7 @@ import (
 	"pro-con/fake"
 	"pro-con/live"
 	"pro-con/relay"
+	"pro-con/store"
 	"pro-con/ui"
 	"pro-con/upgrade"
 )
@@ -311,7 +312,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 // startDispatcherIfIdle は、dispatcher が動いていなければ spawn で起動する (動いていれば何もしない)。
 // 確かめてから起動するまでの間に別の画面が起動しても、2 つ目の dispatcher はロックを取れずに抜けるだけ。
+// 人が止めた印 (store.Held。issue 459) があれば起こさない。確かめてから起こすまでに印が置かれても、起こされた側 (--from-screen) が抜ける
 func startDispatcherIfIdle(dir string, spawn func(dir string) error) (bool, error) {
+	if store.Held(dir) {
+		return false, nil
+	}
 	unlock, err := dispatcher.Lock(dir)
 	if errors.Is(err, dispatcher.ErrRunning) {
 		return false, nil
@@ -340,6 +345,8 @@ func wireLive(lb *live.Backend, view bool, dir string, spawn func(dir string) er
 	// 画面を開いたら dispatcher も立てる (閉じると止める。2026-09-25 にユーザーが決めた形。415 の「TUI と常駐プロセス」)
 	if started, err := startDispatcherIfIdle(dir, spawn); err != nil {
 		notes = append(notes, "dispatcher を起動できない: "+err.Error()+" (手で起動する: pro-con dispatcher)")
+	} else if store.Held(dir) {
+		notes = append(notes, "dispatcher は人が止めてある (pro-con dispatcher --stop) ので起こさない。c で起こす")
 	} else if started {
 		notes = append(notes, "dispatcher を起動した (ログ: "+filepath.Join(dir, "dispatcher.log")+")")
 	}
@@ -349,7 +356,7 @@ func wireLive(lb *live.Backend, view bool, dir string, spawn func(dir string) er
 // dispatcherCmd は画面が起こす dispatcher のコマンド。画面が 1 つも無い状態が 1 分続いたら、PG を止めて抜ける
 // (最後の画面が quit を通らずに消えても PG を残さない)。
 func dispatcherCmd(exe string, extra []string) *exec.Cmd {
-	return exec.Command(exe, append([]string{"dispatcher", "--exit-without-screens", "1m"}, extra...)...)
+	return exec.Command(exe, append([]string{"dispatcher", "--" + fromScreenFlag, "--exit-without-screens", "1m"}, extra...)...)
 }
 
 // spawnDispatcher は `pro-con dispatcher` を画面とは別のプロセスグループで起動する (画面を閉じても、ctrl+c が届いても道連れにしない。
@@ -399,6 +406,12 @@ func spawnDetached(args []string, stderr io.Writer) int {
 	return 0
 }
 
+// stopCmd は画面の quit (と e2e の後始末) が dispatcher と PG を止めるコマンド。人が止めた印を置かない (--from-screen。issue 459):
+// 最後の画面の quit で止めても、次に開いた画面は今までどおり dispatcher を起こす。
+func stopCmd(exe string, extra []string) *exec.Cmd {
+	return exec.Command(exe, append([]string{"dispatcher", "--stop", "--" + fromScreenFlag}, extra...)...)
+}
+
 // stopInChild は `pro-con dispatcher --stop` を別のプロセスで走らせて待つ。画面を ctrl+c で閉じても (待たずに閉じても)、
 // 止める処理は子が最後まで続ける (画面のプロセスの中で止めると、閉じた瞬間に途中で切れる)。子の出力は状態の置き場の stop.log へ
 // (画面が先に閉じるとパイプが切れて子が書けなくなるので、パイプにしない)。
@@ -416,7 +429,7 @@ func stopInChild(ctx context.Context, dir string, extra []string) error {
 	if st, err := f.Stat(); err == nil {
 		from = st.Size()
 	}
-	cmd := exec.Command(exe, append([]string{"dispatcher", "--stop"}, extra...)...)
+	cmd := stopCmd(exe, extra)
 	cmd.Stdout, cmd.Stderr = f, f
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // 端末の割り込みを子へ届けない
 	if err := cmd.Start(); err != nil {
