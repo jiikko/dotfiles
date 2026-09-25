@@ -193,7 +193,7 @@ func (m *Model) gauge() string {
 		parts = append(parts, fmt.Sprintf("%s%s %d%s", fg(stateColor(st)), st.Label(), counts[st], sgrFgReset))
 	}
 	sep := fg(240) + " │ " + sgrFgReset
-	g := " " + strings.Join(parts, "  ") + sep + fmt.Sprintf("最古の待ち %s", fmtDur(oldest)) + sep +
+	g := " " + strings.Join(parts, "  ") + sep + "最古の待ち " + fmtDur(oldest) + sep +
 		m.pgGauge() + sep + m.dispatcherGauge()
 	if n := m.snap.Screens; n > 1 { // 画面の数は package presence が数える (dispatcher が止まっていても正しい)
 		g += sep + fmt.Sprintf("画面 %d", n)

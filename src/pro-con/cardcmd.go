@@ -5,6 +5,7 @@ package main
 
 import (
 	_ "embed"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -81,7 +82,7 @@ func parseCard(args []string) (store.Request, error) {
 	if op == "run" { // pro-con card run C-001 -- make test (-- の後ろはそのままコマンド。フラグとして読まない)
 		i := slices.Index(rest, "--")
 		if i != 1 || len(rest) < 3 {
-			return store.Request{}, fmt.Errorf("run は `run <カード> -- <コマンド>...`")
+			return store.Request{}, errors.New("run は `run <カード> -- <コマンド>...`")
 		}
 		cwd, _ := os.Getwd() // dispatcher が、頼んだのがそのカードの PG の worktree かを照らす
 		return store.Request{Kind: "run", CardID: rest[0], Command: strings.Join(rest[2:], " "), Cwd: cwd}, nil
@@ -128,7 +129,7 @@ func parseCard(args []string) (store.Request, error) {
 	switch op {
 	case "add":
 		if strings.TrimSpace(r.Title) == "" && strings.TrimSpace(r.Request) == "" {
-			return r, fmt.Errorf("add には --title か --request が要る")
+			return r, errors.New("add には --title か --request が要る")
 		}
 	case "ask":
 		r.Question = pos[1]

@@ -173,7 +173,7 @@ func (d *Dispatcher) stopCards(ctx context.Context, notes *[]string) (int, map[s
 			done[c.ID] = true
 			if wait { // 待っても止められる形にならなかった。列は変えない
 				failed++
-				*notes = append(*notes, fmt.Sprintf("%s の PG は落ちて戻らない / 一覧に出ないので止められない (列はそのまま。次の dispatcher が扱う)", c.ID))
+				*notes = append(*notes, c.ID+" の PG は落ちて戻らない / 一覧に出ないので止められない (列はそのまま。次の dispatcher が扱う)")
 				continue
 			}
 			recorded := c.Stopped && c.State != card.Running // 前の Shutdown で止めたと書いた (止め直しの周ごとに履歴を足さない)

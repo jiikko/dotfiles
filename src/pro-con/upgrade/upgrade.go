@@ -38,7 +38,8 @@ type Source struct {
 func Detect(exe string) (Source, error) {
 	exe, err := filepath.EvalSymlinks(exe)
 	if err != nil {
-		return Source{}, fmt.Errorf("%w: %v", ErrNoSource, err)
+		// 包むのは ErrNoSource だけ (呼び出し側の契約は「無効」の 1 つ)。EvalSymlinks の失敗は理由の文として添える
+		return Source{}, fmt.Errorf("%w: %v", ErrNoSource, err) //nolint:errorlint // 原因まで包むと fs.ErrNotExist 等にも一致し、「無効」以外の分岐を呼び出し側に誘う
 	}
 	dir := filepath.Dir(exe)
 	if filepath.Base(exe) != BinaryName {

@@ -135,7 +135,7 @@ func (l e2eLauncher) Start(_ context.Context, repoPath, name, _ string) (string,
 	return id, l.act(cardOfName(name), wt, store.Request{Kind: "ask", Question: "続けてよいですか (e2e の偽の PG)"})
 }
 
-func (l e2eLauncher) Resume(_ context.Context, stopID, _, cwd, text string) (string, error) {
+func (l e2eLauncher) Resume(ctx context.Context, stopID, _, cwd, text string) (string, error) {
 	e2eMu.Lock()
 	f, err := l.e.load()
 	e2eMu.Unlock()
@@ -147,7 +147,7 @@ func (l e2eLauncher) Resume(_ context.Context, stopID, _, cwd, text string) (str
 		cardID = cardOfName(filepath.Base(cwd))
 	}
 	if stopID != "" {
-		if err := l.Stop(context.Background(), stopID); err != nil {
+		if err := l.Stop(ctx, stopID); err != nil {
 			return "", err
 		}
 	}

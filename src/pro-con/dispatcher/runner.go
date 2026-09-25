@@ -304,7 +304,7 @@ func (ExecRunner) Run(ctx context.Context, dir, command, logPath, runID string) 
 	case errors.As(err, &ee) && ctx.Err() == nil:
 		return ee.ExitCode(), nil
 	case ctx.Err() != nil:
-		return -1, fmt.Errorf("時間切れか中断 (%v)", ctx.Err())
+		return -1, fmt.Errorf("時間切れか中断 (%w)", ctx.Err())
 	default:
 		return -1, err
 	}

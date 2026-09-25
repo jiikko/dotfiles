@@ -51,7 +51,7 @@ func List(ctx context.Context, run Runner) ([]Session, error) {
 	}
 	if err != nil {
 		if msg := firstLine(errOut); msg != "" {
-			return nil, fmt.Errorf("claude agents --json が失敗: %v: %s", err, msg)
+			return nil, fmt.Errorf("claude agents --json が失敗: %w: %s", err, msg)
 		}
 		return nil, fmt.Errorf("claude agents --json が失敗: %w", err)
 	}

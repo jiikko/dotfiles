@@ -74,7 +74,7 @@ func (m *Model) laneColor(i int) int {
 }
 
 // mix256 は 256 色の a と b を t (0..1) で RGB で混ぜ、一番近い 256 色 (6×6×6 の cube か 24 段の灰) を返す。
-func mix256(a, b int, t float64) int {
+func mix256(a, b int, t float64) int { //nolint:unparam // 256 色の汎用の混色 (両端を引数で受け、lanefade_test.go が t=0 / 1 / 0.5 を固定する)
 	if t <= 0 {
 		return a
 	}

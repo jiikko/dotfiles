@@ -86,7 +86,7 @@ type Stopper interface {
 }
 
 // KeptRunning は、ほかの画面が開いているので dispatcher と PG を止めずに閉じたこと (StopAll の結果。失敗ではない)。
-type KeptRunning struct{ Others int }
+type KeptRunning struct{ Others int } //nolint:errname // 失敗ではなく StopAll の結果 (error の経路で返すだけ)。KeptRunningError と名付けると失敗に読める
 
 func (k KeptRunning) Error() string {
 	return fmt.Sprintf("ほかに %d 画面が開いているので、dispatcher と PG は止めずに閉じた", k.Others)

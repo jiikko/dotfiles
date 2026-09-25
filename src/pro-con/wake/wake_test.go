@@ -140,11 +140,7 @@ func TestLongDirFallsBackToTempDir(t *testing.T) {
 	if Path("/private"+long) != p {
 		t.Fatal("置き場の書き方 (/var と /private/var) で socket のパスが変わった")
 	}
-	wd, _ := os.Getwd()
-	t.Cleanup(func() { _ = os.Chdir(wd) })
-	if err := os.Chdir(filepath.Dir(long)); err != nil {
-		t.Fatal(err)
-	}
+	t.Chdir(filepath.Dir(long)) // 抜けるときに元の cwd へ戻す
 	if Path(filepath.Base(long)) != p {
 		t.Fatal("相対パスで socket のパスが変わった")
 	}
