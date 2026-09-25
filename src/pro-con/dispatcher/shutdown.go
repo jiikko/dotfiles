@@ -447,8 +447,9 @@ func (d *Dispatcher) strayPlan(c card.Card, ss []agents.Session, reg []live.Owne
 // 閉じたとき (close.go) で同じこれを使う。
 //
 // proven (止めてよい) は、短い id がカードの Session (pro-con の起動・再開が返した id) で、cwd がそのカードの worktree
-// (<repo>/.claude/worktrees/pc-<card>) そのものの session だけ。外の shell の claude は別の短い id を持ち、PG の worktree の外で動く
-// ので当たらない。kind と開始時刻は見ない (取り込まれなかった理由そのもの。理由は register が出来事に出す)。
+// (<repo>/.claude/worktrees/pc-<card>) そのものか、register が取り込むのと同じ根拠 (kind が background・最後の起動より後に開始) を
+// 満たす session だけ (session id も要る)。外の shell の claude は別の短い id を持つので当たらない。worktree に居れば kind と開始時刻は
+// 見ない (取り込まれなかった理由そのもの。理由は register が出来事に出す)。
 // 示せない生きている session (短い id だけ一致して cwd が違う / 起動・再開の途中でカードの worktree に居る) は proven を偽で返す
 // (呼び出し側は止めずに名指しする)。止まっている session・記録にある session (別のカードの行・再開で入れ替わった前の行も) は返さない。
 func unregistered(c card.Card, repoPath string, ss []agents.Session, reg []live.Owned) (s agents.Session, proven, ok bool) {
@@ -464,7 +465,9 @@ func unregistered(c card.Card, repoPath string, ss []agents.Session, reg []live.
 			continue
 		}
 		if !has && c.Session != "" && s.ID == c.Session {
-			return s, inWorktree(s) && s.SessionID != "", true
+			// register が取り込む根拠 (bg・最後の起動より後) を満たすのに pid 0 で載らなかった形 (落ちている間は cwd が repo root になる = 427 の 3f) も止める
+			byRegister := s.Kind == "background" && !s.Started().Before(c.LaunchedAt)
+			return s, s.SessionID != "" && (inWorktree(s) || byRegister), true
 		}
 		// 起動・再開の途中で、claude が返した id がまだカードに無い形。起動は名前 (-n) が手がかり。再開は名前を渡さないので
 		// worktree に居る対話でない session を名指しする (人間の対話の session を数えて、終了を永久に失敗させない)

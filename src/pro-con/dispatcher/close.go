@@ -122,32 +122,21 @@ func (d *Dispatcher) stopMarked(ctx context.Context, now time.Time, ss []agents.
 // deleteTargets は削除のカードで、記録の行に加えて止める session (短い id → カード) と、消すのを待つ理由を返す。
 //   - 起動・再開の直後・落ちて自動の再開の途中は、終了のときと同じ stopTarget で扱う (待てば分かる = wait)
 //   - 🚨 stopTarget の「止めるものが無い」は、終了のときは列を変えないだけだが、削除ではカードを消す根拠になる。記録に載っていない
-//     カードの session が一覧に出ていれば (pid 0・register が載せなかった形)、それも止めて確かめる。session id が無くて確かめられなければ消さない
+//     カードの session は ensureStopped が終了と同じ unregistered で拾う (launchGrace の内でも。短い id と worktree で示せれば止め、
+//     示せない・session id が無ければ残りとして名指しする = 消さない)
 //   - 再開で入れ替わった前の session の記録が読めなければ、その分を確かめられないので消さない
 //   - テストの係への頼みが残っている間も消さない (実行の印を失うと、残った実行を止められない。tickRuns が止めて取り下げる)
 func (d *Dispatcher) deleteTargets(c card.Card, now time.Time, ss []agents.Session, reg []live.Owned) (map[string]string, bool, []string) {
 	extra := map[string]string{}
 	var unsure []string
-	target, wait := d.stopTarget(c, now, ss, reg)
-	if target != "" {
-		extra[target] = c.ID
-	}
-	if _, ok := owned(c, reg); !ok && c.Session != "" {
-		for _, s := range ss {
-			if s.ID != c.Session || s.Kind != "background" || s.Started().Before(c.LaunchedAt) {
-				continue
-			}
-			if s.SessionID == "" {
-				unsure = append(unsure, fmt.Sprintf("session %s の session id が一覧に無く、止まったかを確かめられない", s.ID))
-				continue
-			}
-			extra[s.ID] = c.ID
-		}
+	plan := d.stopTarget(c, now, ss, reg)
+	if plan.target != "" {
+		extra[plan.target] = c.ID
 	}
 	if _, err := live.LoadRetired(filepath.Join(d.Dir, live.RegistryFile)); err != nil {
 		unsure = append(unsure, "再開で入れ替わった前の session の記録を読めない: "+err.Error())
 	}
-	return extra, wait || c.Run != "" || c.Exec.Active(), unsure
+	return extra, plan.wait || c.Run != "" || c.Exec.Active(), unsure
 }
 
 // finishMarkedStop は印を外して履歴に書く (止め終えた / 諦めた)。削除の印も外す (諦めたカードは残り、もう一度削除を頼める)。
