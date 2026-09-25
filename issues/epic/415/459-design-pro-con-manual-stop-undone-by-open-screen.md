@@ -49,3 +49,4 @@
   `live` / `ui` の各 1 本。守りを 1 つずつ外す変異 8 本で red を確かめた (`bin/mutate-verify`)
 - 未対応のまま残した形: 画面の quit が止めきれなかったときの案内「もう一度止める: pro-con dispatcher --stop」を人が打つと、それは人の停止なので
   印が置かれる (次に開いた画面は起こさず「止めてある」と出る)
+- make test rc=0 (テストの係、repo の root。2026-09-26。ログ: `~/.local/state/pro-con/live/runs/C-027-1790350295-34255ca5.log`)
