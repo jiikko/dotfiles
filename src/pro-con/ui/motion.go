@@ -87,7 +87,7 @@ func (m *Model) startFrames() tea.Cmd {
 }
 
 func (m *Model) animating() bool {
-	return len(m.moves) > 0 || len(m.slides) > 0 || m.drawer.Animating(m.now()) || m.pager.Animating() || m.cursorGliding(m.now()) || m.laneFading(m.now())
+	return len(m.moves) > 0 || len(m.slides) > 0 || m.drawer.Animating(m.now()) || m.pager.Animating() || m.cursorGliding(m.now()) || m.laneFading(m.now()) || m.bumping(m.now())
 }
 
 func (m *Model) resetSlots() {
@@ -95,6 +95,7 @@ func (m *Model) resetSlots() {
 	m.moves = map[string]*move{}
 	m.cursor.valid = false // 配置が丸ごと変わった (タブの切り替え等): 枠は滑らせずに置き直す
 	m.lane.shown = -1      // レーンの色も移さずに点け直す
+	m.bump = bump{}        // 揺れていたレーンは別の配置のもの
 }
 
 func (m *Model) pruneMoves(now time.Time) {

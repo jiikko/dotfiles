@@ -101,6 +101,7 @@ type Model struct {
 	slides    map[panel]*slide // 下端の板の開閉の演出 (slide.go)
 	// カードの詳細の引き出し (drawer.go)。drawerCard は閉じる途中も残す (逆再生で本文が見えている必要がある)
 	cursor     cursorGlide // 選択中のカードを囲む枠 (cursor.go)
+	bump       bump        // 選択が端でぶつかったときのレーンの揺れ (bump.go)
 	stopping   bool        // 終了のために backend (dispatcher と PG) を止めている最中 (quit.go)
 	stopErr    error       // 止めきれなかった理由 (終了後に main が出す)
 	attaching  bool        // attach の照合を裏で待っている
@@ -450,8 +451,16 @@ func (m *Model) selectedCard() (card.Card, bool) {
 	return card.Card{}, false
 }
 
-// moveCol は左右のレーンへ移る。空のレーンにも止まる (レーンにフォーカスが当たる)。行の位置はなるべく保つ。
-func (m *Model) moveCol(delta int) { m.jumpCol(m.col + delta) }
+// moveCol は左右のレーンへ 1 つ移る。空のレーンにも止まる (レーンにフォーカスが当たる)。行の位置はなるべく保つ。
+// 端でそれ以上動けなければ、押した向きへレーンを揺らす (bump.go)。
+func (m *Model) moveCol(delta int) tea.Cmd {
+	from := m.col
+	m.jumpCol(m.col + delta)
+	if m.col == from {
+		return m.startBump(delta, 0)
+	}
+	return nil
+}
 
 // jumpCol はレーン i (0 始まり) へ移る (h / l と 1〜6)。
 func (m *Model) jumpCol(i int) {
@@ -462,14 +471,24 @@ func (m *Model) jumpCol(i int) {
 	m.focusLane(i, row)
 }
 
-// moveRow はレーンの中で delta 枚動く。端で止める (半ページ・先頭・末尾の移動も同じ関数で端に寄せる)。
-func (m *Model) moveRow(delta int) {
+// moveRow はレーンの中で delta 枚動く。端で止める (半ページ・先頭・末尾の移動も同じ関数で端に寄せる)。動いたら true。
+func (m *Model) moveRow(delta int) bool {
 	col, row, ok := m.position()
 	if !ok {
-		return // 空のレーン
+		return false // 空のレーン
 	}
 	cs := m.columns()[col]
 	m.selected = cs[max(0, min(row+delta, len(cs)-1))].ID
+	return m.selected != cs[row].ID
+}
+
+// stepRow は 1 枚だけ上下に動く。端でそれ以上動けなければ、押した向きへレーンを揺らす (bump.go)。
+// 半ページ・先頭・末尾は「端へ寄せる」移動なので揺らさない。
+func (m *Model) stepRow(delta int) tea.Cmd {
+	if m.moveRow(delta) {
+		return nil
+	}
+	return m.startBump(0, delta)
 }
 
 // writeKeys は backend に書き込む操作を始めるキーと、その操作の種類。受けない backend では押した時点で断る
@@ -510,9 +529,9 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	case "shift+tab":
 		m.moveTab(-1)
 	case "left", "h", "ctrl+b": // ctrl+b は ← の別名 (ユーザー要望 2026-09-25。docs/glogx-ui-guide.md の emacs 層の例外)
-		m.moveCol(-1)
+		return m.moveCol(-1)
 	case "right", "l", "ctrl+f": // ctrl+f は → の別名 (docs/glogx-ui-guide.md の emacs 層)
-		m.moveCol(1)
+		return m.moveCol(1)
 	case "enter":
 		m.openDrawer()
 		return m.startFrames()
@@ -555,7 +574,7 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 			m.jumpCol(i)
 			return nil
 		}
-		m.moveByMotion(listnav.MotionOf(k.String()))
+		return m.moveByMotion(listnav.MotionOf(k.String()))
 	}
 	return nil
 }
@@ -573,13 +592,13 @@ func laneKey(key string) (int, bool) {
 // (j/k/ctrl+n/ctrl+p/↑↓ = 1 枚、ctrl+d/ctrl+u/space/f/pgdn/pgup = 半ページ、g/G/home/end = 先頭・末尾)。
 // 🚨 画面固有の動作キーは handleBoardKey の switch で先に捌いているので、ここへは来ない。
 // 動作キーに移動の語彙 (b / f / space / g …) を使わないこと (使うとその移動が効かなくなる)。
-func (m *Model) moveByMotion(mo listnav.Motion) {
+func (m *Model) moveByMotion(mo listnav.Motion) tea.Cmd {
 	half := listnav.Half(m.shownCards())
 	switch mo {
 	case listnav.Down:
-		m.moveRow(1)
+		return m.stepRow(1)
 	case listnav.Up:
-		m.moveRow(-1)
+		return m.stepRow(-1)
 	case listnav.HalfDown:
 		m.moveRow(half)
 	case listnav.HalfUp:
@@ -590,6 +609,7 @@ func (m *Model) moveByMotion(mo listnav.Motion) {
 		m.moveRow(len(m.snap.Cards))
 	case listnav.None:
 	}
+	return nil
 }
 
 // closeTop は開いている板を手前から 1 つ閉じる (session の一覧 → 詳細)。閉じたら true。

@@ -67,7 +67,7 @@ func (m *Model) render() string {
 	if m.picker.open {
 		region = m.pickerBlock()
 	} else {
-		region = m.overlayMoves(m.overlayCursor(m.boardLines()))
+		region = m.overlayBump(m.overlayMoves(m.overlayCursor(m.boardLines())))
 	}
 	// PG の一覧・入力欄・案内は画面の下端へ吸着させ、ボードとの間を空行で埋める。
 	// カードの詳細はこの領域 (ヘッダと下端の群のあいだ) に右から重ねる
