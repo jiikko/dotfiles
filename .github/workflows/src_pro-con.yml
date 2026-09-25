@@ -14,6 +14,9 @@ on:
       - 'src/termsafe/**'  # replace で取り込む共有 module (コピーする本文の無害化)
       - 'src/glogx/**'  # replace で取り込む (issue の読み方 glogx/issues)
       - 'src/doctor/**'  # glogx の依存 (replace は依存先から引き継がれないので pro-con にも要る)
+      - 'tests/pro-con/**'  # e2e の通し (下の e2e job)
+      - bin/pro-con
+      - bin/lib/go_autobuild.zsh
       - .github/workflows/src_pro-con.yml
       - .github/workflows/_go-project.yml
   pull_request:
@@ -23,6 +26,9 @@ on:
       - 'src/termsafe/**'  # replace で取り込む共有 module (コピーする本文の無害化)
       - 'src/glogx/**'  # replace で取り込む (issue の読み方 glogx/issues)
       - 'src/doctor/**'  # glogx の依存 (replace は依存先から引き継がれないので pro-con にも要る)
+      - 'tests/pro-con/**'  # e2e の通し (下の e2e job)
+      - bin/pro-con
+      - bin/lib/go_autobuild.zsh
       - .github/workflows/src_pro-con.yml
       - .github/workflows/_go-project.yml
   workflow_dispatch:  # GitHub UI からの手動再実行用
@@ -41,3 +47,31 @@ jobs:
     uses: ./.github/workflows/_go-project.yml
     with:
       dir: src/pro-con
+
+  # tests/pro-con/ の e2e の通し。tests.yml の rest の腕には go が無く、そこでは skip (77) になるので、
+  # go と tmux を揃えたここで走らせる。🚨 ここでは 77 も失敗と数える (skip で緑にすると CI のどこでも走らない)
+  e2e:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: src/pro-con/go.mod
+          cache-dependency-path: src/pro-con/go.sum
+
+      - uses: ./.github/actions/ensure-toolchain
+        with:
+          commands: tmux jq zsh
+
+      - name: e2e
+        run: |
+          n=0
+          for t in tests/pro-con/test_*.sh; do
+            rc=0; bash "$t" || rc=$?
+            if [ "$rc" -ne 0 ]; then echo "::error::[FAIL] $t (rc=$rc。77 = skip もここでは失敗)"; exit 1; fi
+            echo "[ok] $t"; n=$((n + 1))
+          done
+          [ "$n" -gt 0 ] || { echo "::error::tests/pro-con/ にテストが 1 件も無い"; exit 1; }

@@ -4,6 +4,10 @@
 set -u
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 command -v tmux >/dev/null 2>&1 || { echo "[skip] tmux が無い"; exit 77; }
+# go は bin/pro-con の自動ビルドが使う。tests.yml の rest の腕には go が無いので skip し、
+# go と tmux を揃えた .github/workflows/src_pro-con.yml の e2e job で走らせる (そちらは 77 を失敗と数える)
+command -v go >/dev/null 2>&1 || { echo "[skip] go が無い"; exit 77; }
+command -v jq >/dev/null 2>&1 || { echo "[skip] jq が無い"; exit 77; }
 work="$(mktemp -d)" || exit 1
 trap 'rm -rf "$work"' EXIT
 root="$work/e2e"
