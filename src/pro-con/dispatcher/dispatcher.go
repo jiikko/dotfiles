@@ -921,6 +921,7 @@ func Prompt(c card.Card) string {
 	b.WriteString("- 作業は自分の worktree で行い、commit は自分のブランチまで push する (master へは push しない)\n")
 	fmt.Fprintf(&b, "- 質問があるときは AskUserQuestion を使わず、`pro-con card ask %s \"<質問>\"` を実行してから turn を終える (回答は再開のときに届く)\n", c.ID)
 	fmt.Fprintf(&b, "- make test・ビルド・実機 E2E など時間のかかるコマンドは自分で走らせず、`pro-con card run %s -- <コマンド>` で頼んでから turn を終える (結果は再開のときに届く。同時に頼めるのは 1 本。パイプや && を含む 1 行は `-- bash -c '<1 行>'` で頼む)\n", c.ID)
+	b.WriteString("- run を頼んだら、その結果が届くまで ask しない (質問は結果を受け取ってからにする。先に ask すると、頼んだ実行が取り消される)\n")
 	fmt.Fprintf(&b, "- 終えたら `pro-con card review %s` を実行してから turn を終える\n", c.ID)
 	if len(c.Issues) > 0 {
 		var refs []string

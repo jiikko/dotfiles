@@ -72,7 +72,7 @@ type Request struct {
 	Note     string          `json:"note,omitempty"`     // event: 画面の出来事 (人が読む 1 文。dispatcher が出来事の記録へ書く)
 	ParentID string          `json:"parentId,omitempty"` // add: 別件の追加オーダーの元のカード
 	Order    card.OrderKind  `json:"order,omitempty"`    // order: 追記 / 方針変更 (別件は add + ParentID)
-	Text     string          `json:"text,omitempty"`     // order: 追加オーダーの本文 (書いたまま)
+	Text     string          `json:"text,omitempty"`     // order: 追加オーダーの本文 / handoff: 人に回す理由 (どちらも書いたまま)
 	Cards    []string        `json:"cards,omitempty"`    // clear: 片付ける完了のカード (画面が見ていたもの。適用までに完了になったカードを巻き込まない)
 	At       time.Time       `json:"at"`
 }
@@ -446,6 +446,14 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		}
 		c.Resume = ReworkPrefix + r.Rework + "\n直したら、もう一度 `pro-con card review " + c.ID + "` を実行してから turn を終える。"
 		move(card.Planned, "差し戻した: "+r.Rework) // 原文のまま残す (要約・切り詰めをしない)
+	case "handoff": // PM が PG の質問を人に回した。人の番の目印 (452) ができるまでは履歴に残すだけで、列も質問も変えない
+		if c.State != card.Waiting || c.Wait.Kind != card.WaitQuestion {
+			return fmt.Errorf("PG の質問待ちではない (今は %s)", c.State.Label())
+		}
+		if strings.TrimSpace(r.Text) == "" {
+			return errors.New("人に回す理由が空")
+		}
+		c.History = append(c.History, card.Event{At: now, Text: firstNonEmpty(r.From, "PM") + " が人に回した: " + r.Text}) // 原文のまま
 	case "run": // PG がテストの係にコマンドの実行を頼んで turn を終えた (426 の決定 5)。結果は dispatcher が再開のときに渡す
 		if c.State != card.Running {
 			return fmt.Errorf("作業中の列に無い (今は %s)", c.State.Label())

@@ -75,10 +75,11 @@ func TestCardCommandAskAnswer(t *testing.T) {
 		{[]string{"rework", "C-001", "テストを足して"}, store.Request{Kind: "rework", CardID: "C-001", Rework: "テストを足して"}},
 		{[]string{"delete", "C-001"}, store.Request{Kind: "delete", CardID: "C-001", From: "人間"}},
 		{[]string{"delete", "C-001", "--from", "PM"}, store.Request{Kind: "delete", CardID: "C-001", From: "PM"}},
+		{[]string{"handoff", "C-001", "色の好みは人が決める"}, store.Request{Kind: "handoff", CardID: "C-001", Text: "色の好みは人が決める", From: "PM"}},
 	} {
 		got, _, err := parseCardWait(tc.args)
 		if err != nil || got.Kind != tc.want.Kind || got.CardID != tc.want.CardID || got.Question != tc.want.Question ||
-			got.Answer != tc.want.Answer || got.Rework != tc.want.Rework || got.From != tc.want.From && tc.want.From != "" || got.Ending != tc.want.Ending {
+			got.Answer != tc.want.Answer || got.Rework != tc.want.Rework || got.Text != tc.want.Text || got.From != tc.want.From && tc.want.From != "" || got.Ending != tc.want.Ending {
 			t.Fatalf("%q: %+v %v (期待 %+v)", tc.args, got, err, tc.want)
 		}
 	}
