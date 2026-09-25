@@ -64,7 +64,9 @@ type Backend struct {
 	// (自分が頼んだ停止の後で起こし直さない)
 	keeper  func() error
 	leaving atomic.Bool
-	changed chan struct{} // 読み直したら値が入る (画面が 1 秒の tick を待たずに描き直す。backend.Notifier)
+	// viewOnly は読み取りだけで開く (pro-con --view)。画面の印を置かない (数えない) / ほかの画面へ知らせない
+	viewOnly bool
+	changed  chan struct{} // 読み直したら値が入る (画面が 1 秒の tick を待たずに描き直す。backend.Notifier)
 }
 
 type cached struct {
@@ -104,6 +106,31 @@ func (b *Backend) SetList(f func(context.Context) ([]agents.Session, error)) { b
 
 // SetAttach は attach のコマンドを差し替える (e2e モードは本物の claude を起動しない)。
 func (b *Backend) SetAttach(f func(sessionID string) *exec.Cmd) { b.attach = f }
+
+// View は読み取りだけの画面 (pro-con --view) の backend を返す (Start の前に呼ぶ)。依頼・回答・attach を受けず、止める口を持たないので、
+// quit はこの画面を閉じるだけになる。画面の印を置かないので、ほかの画面の「最後の画面か」の数えにも入らない。
+// 🚨 SetStopper / SetKeeper をつながないこと (つながっていても View の backend からは呼べないが、keeper は Start の読み直しから呼ばれる)
+func (b *Backend) View() backend.Backend {
+	b.viewOnly = true
+	return viewOnly{b}
+}
+
+// viewOnly は読み取りだけの backend (backend.ReadOnly)。Stopper / AttachRecorder を持たない (型の上で止める・書く口が無い)。
+type viewOnly struct{ b *Backend }
+
+func (v viewOnly) Poll() backend.Snapshot     { return v.b.Poll() }
+func (v viewOnly) Snapshot() backend.Snapshot { return v.b.Snapshot() }
+func (v viewOnly) Changed() <-chan struct{}   { return v.b.Changed() }
+func (v viewOnly) Accepts(backend.Op) bool    { return false }
+func (v viewOnly) ReadOnly()                  {}
+func (v viewOnly) Describe() string {
+	return "view (読み取りだけ・quit で何も止めない) / " + v.b.Describe()
+}
+func (v viewOnly) Apply(backend.Command) (string, error)   { return "", ErrViewOnly }
+func (v viewOnly) AttachCommand(string) (*exec.Cmd, error) { return nil, ErrViewOnly }
+
+// ErrViewOnly は読み取りだけの画面で書く操作をしたとき。
+var ErrViewOnly = errors.New("見ているだけの画面 (pro-con --view) なので受けない")
 
 // SetKeeper は dispatcher が居ないときに起こす口をつなぐ (Start の前に呼ぶ)。
 func (b *Backend) SetKeeper(f func() error) { b.keeper = f }
@@ -174,9 +201,12 @@ func FindTranscript(projects, sessionID string) (string, error) {
 func (b *Backend) Start(ctx context.Context) {
 	kick := make(chan struct{}, 1)
 	subDone := make(chan struct{})
-	if sc, err := presence.Open(b.dir); err == nil { // 置けなければ、閉じるときは最後の画面として止める (StopAll)
-		b.screen = sc
-		_ = wake.Notify(b.dir) // ほかの画面の「画面 N」を直す
+	// 見ているだけの画面は数えない: 数えると、普通の画面が閉じるときに「ほかに画面が開いている」と見て、止めるべきものを止めない
+	if !b.viewOnly {
+		if sc, err := presence.Open(b.dir); err == nil { // 置けなければ、閉じるときは最後の画面として止める (StopAll)
+			b.screen = sc
+			_ = wake.Notify(b.dir) // ほかの画面の「画面 N」を直す
+		}
 	}
 	sub := wake.NewSubscriber(b.dir, func() {
 		select {

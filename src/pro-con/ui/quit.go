@@ -77,6 +77,9 @@ func (m *Model) submitQuit() tea.Cmd {
 // quitLabel は終了の入力欄の見出し。
 func (m *Model) quitLabel() string {
 	r, w := m.busyCards()
+	if _, ok := m.be.(backend.ReadOnly); ok {
+		return "終了するには quit と打って enter (見ているだけ。dispatcher と PG は動いたまま)"
+	}
 	if _, ok := m.be.(backend.Stopper); ok {
 		if n := m.snap.Screens - 1; n > 0 { // 最後に閉じる画面だけが止める (閉じる時点で dispatcher に聞き直す)
 			return fmt.Sprintf("終了するには quit と打って enter (ほかに %d 画面が開いているので、この画面だけ閉じる。dispatcher と PG は動いたまま)", n)

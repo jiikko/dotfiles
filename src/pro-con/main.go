@@ -64,10 +64,21 @@ type stateful interface {
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	view := len(args) > 0 && args[0] == "--view" // 見ているだけの画面 (dispatcher を起こさない・止めない・書かない)。--e2e と重ねてよい
+	if view {
+		args = args[1:]
+	}
 	mock, e2e, modeArgs, args, err := parseMode(args)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "pro-con:", err)
 		return 2
+	}
+	if view {
+		if mock {
+			_, _ = fmt.Fprintln(stderr, "pro-con: --view は本物のモード (と --e2e) で使う (模擬は見るだけにする必要が無い)")
+			return 2
+		}
+		modeArgs = append([]string{"--view"}, modeArgs...) // ライブアップグレードの後も --view のまま
 	}
 	if len(args) > 0 && len(modeArgs) > 0 {
 		// 🚨 --e2e / --mock は画面の起動にだけ付ける。サブコマンドの前に付くと、サブコマンドは本物の置き場で動いてしまう
@@ -160,23 +171,32 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				lb.SetAttach(func(id string) *exec.Cmd { return exec.Command(exe, "fake-attach", id) }) // 本物の claude attach を起動しない
 			}
 		}
-		lb.SetStopper(func(ctx context.Context) error { return stopInChild(ctx, dir, dispatcherArgs) })
-		// 画面が開いている間は dispatcher を動かし続ける (落ちた / 前の画面が止めている間に開いた、を起こし直す)
-		lb.SetKeeper(func() error {
-			_, err := startDispatcherIfIdle(dir, func(dir string) error { return spawnDispatcher(dir, dispatcherArgs) })
-			return err
-		})
-		// 画面を開いたら dispatcher も立てる (閉じると止める。2026-09-25 にユーザーが決めた形。415 の「TUI と常駐プロセス」)
-		if started, err := startDispatcherIfIdle(dir, func(dir string) error { return spawnDispatcher(dir, dispatcherArgs) }); err != nil {
-			notes = append(notes, "dispatcher を起動できない: "+err.Error()+" (手で起動する: pro-con dispatcher)")
-		} else if started {
-			notes = append(notes, "dispatcher を起動した (ログ: "+filepath.Join(dir, "dispatcher.log")+")")
+		if view { // 見ているだけ: 止める口・起こす口をつながず、dispatcher も起こさない
+			ctx, cancel := context.WithCancel(context.Background())
+			be = lb.View()
+			lb.Start(ctx)
+			defer func() { cancel(); lb.Wait() }()
+			notes = append(notes, "見ているだけの画面 (--view): 依頼・回答・attach は受けない。quit で閉じても dispatcher と PG は止めない")
+		} else {
+			lb.SetStopper(func(ctx context.Context) error { return stopInChild(ctx, dir, dispatcherArgs) })
+			// 画面が開いている間は dispatcher を動かし続ける (落ちた / 前の画面が止めている間に開いた、を起こし直す)
+			lb.SetKeeper(func() error {
+				_, err := startDispatcherIfIdle(dir, func(dir string) error { return spawnDispatcher(dir, dispatcherArgs) })
+				return err
+			})
+			// 画面を開いたら dispatcher も立てる (閉じると止める。2026-09-25 にユーザーが決めた形。415 の「TUI と常駐プロセス」)
+			if started, err := startDispatcherIfIdle(dir, func(dir string) error { return spawnDispatcher(dir, dispatcherArgs) }); err != nil {
+				notes = append(notes, "dispatcher を起動できない: "+err.Error()+" (手で起動する: pro-con dispatcher)")
+			} else if started {
+				notes = append(notes, "dispatcher を起動した (ログ: "+filepath.Join(dir, "dispatcher.log")+")")
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			lb.Start(ctx)
+			defer func() { cancel(); lb.Wait() }() // 読み直しが止まるのを待ってから抜ける (claude の子プロセスを残さない)
+			be = lb
 		}
-		ctx, cancel := context.WithCancel(context.Background())
-		lb.Start(ctx)
-		defer func() { cancel(); lb.Wait() }() // 読み直しが止まるのを待ってから抜ける (claude の子プロセスを残さない)
-		be = lb
 	}
+
 	// ライブアップグレードで引き継いだ状態。読んだら環境変数は消す (エディタ・claude などの子プロセスへ漏らさない)
 	resumePath := takeResumeEnv()
 	var uiData []byte

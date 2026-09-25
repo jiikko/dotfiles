@@ -57,6 +57,9 @@ type AttachRecorder interface {
 	RecordAttach(cardID, sessionID string, from, to time.Time) (int, error)
 }
 
+// ReadOnly は読み取りだけの backend (pro-con --view)。画面は終了の見出しを「見ているだけ」にする (止める口・書く口は持たない)。
+type ReadOnly interface{ ReadOnly() }
+
 // Notifier は状態が変わったと知らせる backend (画面は tick を待たずに描き直す。任意)。
 type Notifier interface{ Changed() <-chan struct{} }
 

@@ -714,3 +714,51 @@ func TestRecordAttachSubmitsHumanPromptsInWindow(t *testing.T) {
 		t.Fatal("記録に無い session の transcript を読んだ")
 	}
 }
+
+// 見ているだけの画面 (pro-con --view) の backend は、止める口・書く口を持たず (型の上で)、依頼・回答・attach を受けない。
+// 画面の印を置かないので、ほかの画面の「最後の画面か」の数えにも入らない。
+func TestViewOnlyBackend(t *testing.T) {
+	b := shortState(t)
+	var stops atomic.Int32
+	b.SetStopper(func(context.Context) error { stops.Add(1); return nil })
+	be := b.View()
+	if _, ok := be.(backend.Stopper); ok {
+		t.Fatal("見ているだけの backend が止める口を持っている")
+	}
+	if _, ok := be.(backend.AttachRecorder); ok {
+		t.Fatal("見ているだけの backend が書く口 (attach の記録) を持っている")
+	}
+	if _, ok := be.(backend.ReadOnly); !ok {
+		t.Fatal("読み取りだけだと画面に知らせない")
+	}
+	acc, ok := be.(backend.Accepter)
+	if !ok {
+		t.Fatal("操作を断れない")
+	}
+	for _, op := range []backend.Op{backend.OpNew, backend.OpAnswer, backend.OpOrder, backend.OpBtw, backend.OpClear} {
+		if acc.Accepts(op) {
+			t.Fatalf("見ているだけなのに %s を受ける", op)
+		}
+	}
+	if _, err := be.Apply(backend.NewRequest{Text: "x"}); !errors.Is(err, ErrViewOnly) {
+		t.Fatalf("見ているだけなのに依頼を置いた: %v", err)
+	}
+	if _, err := be.AttachCommand("bbbbbbbb"); !errors.Is(err, ErrViewOnly) {
+		t.Fatalf("見ているだけなのに attach のコマンドを返した: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	b.Start(ctx)
+	defer func() { cancel(); b.Wait() }()
+	for range 20 { // 最初の読み直しが済むまで
+		if b.Snapshot().Now.After(time.Time{}) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if n, err := presence.Count(b.dir); err != nil || n != 0 {
+		t.Fatalf("見ているだけの画面を数えた: %d %v", n, err)
+	}
+	if left, _ := filepath.Glob(filepath.Join(b.dir, store.InboxDir, "*.json")); len(left) != 0 || stops.Load() != 0 {
+		t.Fatalf("見ているだけの画面が書いた / 止めた: 箱 %v stops=%d", left, stops.Load())
+	}
+}

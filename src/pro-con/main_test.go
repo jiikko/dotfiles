@@ -123,3 +123,13 @@ func TestModeFlagBeforeSubcommandIsRejected(t *testing.T) {
 		}
 	}
 }
+
+// --view は画面の起動にだけ付ける (サブコマンドの前・模擬とは組まない)。
+func TestViewFlagRejectedWithSubcommandOrMock(t *testing.T) {
+	for _, args := range [][]string{{"--view", "dispatcher", "--stop"}, {"--view", "--mock"}} {
+		var out, errOut bytes.Buffer
+		if rc := run(args, strings.NewReader(""), &out, &errOut); rc != 2 {
+			t.Fatalf("%v: rc=%d (2 のはず) %s", args, rc, errOut.String())
+		}
+	}
+}

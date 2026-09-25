@@ -119,3 +119,19 @@ func TestQuitKeepsStopError(t *testing.T) {
 		t.Fatalf("止めきれなかった理由を残さない: %v", m.StopErr())
 	}
 }
+
+// viewSpy は読み取りだけの backend (backend.ReadOnly。止める口を持たない)。
+type viewSpy struct{ *spy }
+
+func (viewSpy) ReadOnly() {}
+
+// 見ているだけの画面の終了は、この画面を閉じるだけで何も止めないと案内し、quit で止める処理を通らずに閉じる。
+func TestViewOnlyQuitStopsNothing(t *testing.T) {
+	m := New(viewSpy{spy: newSpy()}, nil)
+	if l := m.quitLabel(); !strings.Contains(l, "見ているだけ") || strings.Contains(l, "止めて閉じる") {
+		t.Fatalf("見ているだけの画面で止めると案内した: %q", l)
+	}
+	if !isQuit(quitBy(m, "quit")) || m.stopping {
+		t.Fatal("見ているだけの画面が quit で止める処理を通った / 閉じない")
+	}
+}
