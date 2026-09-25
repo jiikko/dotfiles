@@ -1,7 +1,5 @@
 # 414 (docs): global rule の常時読み込みを減らし、上限 150k 字までの余裕を取り戻す
 
-> 🚨 **担当中: dotfiles-7d**（2026-09-25〜）
-
 起票日: 2026-09-24
 
 ## 概要
@@ -92,10 +90,10 @@ glob の候補は `**/*.swift` / `**/project.yml` / `**/Package.swift` / `**/*.x
 
 ## 受け入れ条件
 
-- [ ] A / B / C / D のどれを採るかを決め、採らないものは理由を 1 行書く
-- [ ] 採った rule に `paths:` と理由コメントを付ける（書式は `shell-numeric-gate-explicit-digits.md` と同じ）
-- [ ] `~/.claude/CLAUDE.md` の索引表で、`paths:` 付きにした rule の発動点を「読み込まれないときは直接 Read する」に揃える
-- [ ] 採った glob で実際に読み込まれることを確かめる（`claude -p --model haiku --settings '{"disableAllHooks":true}' --allowedTools=Read`
+- [x] A / B / C / D のどれを採るかを決め、採らないものは理由を 1 行書く（下の「決定」）
+- [x] 採った rule に `paths:` と理由コメントを付ける（書式は `shell-numeric-gate-explicit-digits.md` と同じ）
+- [x] `~/.claude/CLAUDE.md` の索引表で、`paths:` 付きにした rule の発動点を「読み込まれないときは直接 Read する」に揃える
+- [x] 採った glob で実際に読み込まれることを確かめる（`claude -p --model haiku --settings '{"disableAllHooks":true}' --allowedTools=Read`
       でテストファイルを Read させる / 何も Read させない、の 2 通り。hook を切らないと Stop hook が応答を上書きする）
 - [ ] obaket のセッションの常時読み込み合計を測り直し、結果をこの issue に書く
 
@@ -107,3 +105,46 @@ glob の候補は `**/*.swift` / `**/project.yml` / `**/Package.swift` / `**/*.x
 ## 進捗
 
 - 2026-09-24 起票（obaket のセッションで実測）。起票前の反証レビュー（sonnet 1 体）で、案 A に入れていた 3 本（avoid-wall-clock / pty-driver / sandbox-destructive）がテスト以外でも発動すると指摘され、A から外した。issue 系の 3 本の見落としも指摘され、D として足した。字数・パス・commit・案 B・案 C の判断は反証されなかった
+- 2026-09-25（dotfiles-7d）: A と B の一部を実施（commit「docs(claude): mutation-verify と Apple 専用の 2 本を paths: で条件ロードにする (issue 414)」）
+
+### 決定
+
+- **A 採用**: `mutation-verify-new-tests.md` に `paths:`（`tests/**` / `**/*_test.go` / `**/*Tests/**` / `**/*Tests.swift` /
+  `**/test_*` / `**/*.test.*` / `**/*.spec.*` / `**/*.bats` / `bin/mutate-verify` 等）。glob は SnapTrim / DualNoteApp の
+  `git ls-files` で、テストファイルが漏れないことを確かめた（漏れたのは docs とテスト名を含む issue だけ）
+- **B は 2 本だけ採用**: `no-osascript-for-ui-verification.md` / `no-concurrent-spm-build-during-xcodebuild.md` に
+  Swift / Xcode 系の `paths:`。**`no-ios-simulator-verification.md` は常時読み込みに残す**: 発動点が「`make test` を打つ」
+  という行動で、Swift を 1 つも Read せずに打つ経路がある（「make test して」と頼まれた直後など）。0.6k と小さく、得るものも少ない
+- **C 却下**: 候補の 3 本はどれも発動点が repo に依存しない（上の C 節の分析のとおり）。移すと他 repo で規律が消える
+- **D 見送り**: 発動点が行動（着手・作成・書き出し）で、`paths:` は Read でしか発火しない（Write / Edit では発火しないことは
+  dotfiles の `CLAUDE.md` に実測つきで注記済み）。`_claude/issue-rules.md` の hook 注入へ寄せる手は、拘束力（system-reminder）と
+  link の張り方が変わるので今回はやらない。**再開の trigger**: A / B の後でも常時読み込みが再び 140k を超えたとき
+
+### 結果（`wc -m`、`paths:` の無いファイルだけ）
+
+| | 前 | 後 |
+|---|---|---|
+| global の rule（`_claude/rules/`） | 109.1k | 93.4k |
+| `~/.claude/CLAUDE.md`（索引に注記を足した分だけ増えた） | 12.0k | 12.4k |
+| global 計 | 121.1k | **105.8k** |
+| dotfiles のセッション（repo 層 7.9k を足す） | 129.0k | **113.7k**（実測） |
+| obaket のセッション（repo 層は起票時の 12.4k + 12.3k） | 145.8k | **130.5k**（見積もり。下記） |
+
+起票時の global 118.5k は、その後に rule が増えて 121.1k になっていた。
+
+### 読み込まれることの確認（`claude -p --model haiku --settings '{"disableAllHooks":true}' --allowedTools=Read`）
+
+| cwd | Read させたもの | 問い（rule の本文にしか無い文） | 答え |
+|---|---|---|---|
+| dotfiles | なし | mutation-verify の見出し「変異は「production の機構を戻す」形にする」 | NO |
+| dotfiles | `tests/tmux/test_tmux_toast.sh` | 同上 | YES |
+| DualNoteApp | なし | no-concurrent-spm の「Reload Package が最終行のまま…」 | NO |
+| DualNoteApp | `Shared/Package.swift` | 同上 | YES |
+
+較正: 常時読み込みの rule の文は Read なしで YES、存在しない文は NO。🚨 最初は問いの文が索引に足した説明と重なっていて、
+Read なしでも YES になった（索引を見て答えていた）。rule の本文にしか無い文へ替えて測り直した
+
+### 残タスク
+
+- [ ] obaket のセッションの常時読み込み合計の実測（このマシンに my-products の checkout が無く測れなかった。上の 130.5k は
+      起票時の repo 層の値を足した見積もり）。受け入れ条件の最後の項目。obaket のあるマシンのセッションで `wc -m` を取り直す
