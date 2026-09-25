@@ -1,7 +1,5 @@
 # 417 (bug): glogx で外部由来の文字列が termsafe を通らずに届く経路がある (クリップボードの job URL ほか)
 
-> 🚨 **担当中: dotfiles-7d**（2026-09-25〜）
-
 起票日: 2026-09-24
 反証レビュー: 2026-09-24 実施 (読み取り専用のサブエージェント 1 体)。主要な主張は反証できず
 
@@ -82,7 +80,28 @@ SGR と OSC 8 以外のシーケンスをセルの内容に取り込み、次の
 
 ## 進捗
 
-- [ ] P2-1 job URL のクリップボード
-- [ ] P3-5 BiDi
-- [ ] P3-1〜4 画面への経路
-- [ ] P3-6 の判断を記録
+すべて「fix(glogx,termsafe): 外部由来の URL・エラー文・ブランチ名・BiDi 文字を無害化する」で対応。
+
+- [x] P2-1 job URL のクリップボード — job の url を `detailsOf` で、PR の url を `pickBestPR` で平文にし、
+  クリップボードへ入れる 3 箇所 (`copyFocusURL` / `copyJobContextLines` / PR ポップアップの `y`) でも直前に平文にする。
+  **スキャンで見落としていた経路が 1 つあった**: PR ポップアップの `y` は `FetchPRStatus` の別経路で、url が生のままだった。
+  コピーする側の無害化を一度外したら既存の `TestBrowseCopyJobContextSanitizesHeader` が落ちた (別の経路で組んだ値を守っていた)
+  ので、受け取る側とコピーする側の両方に置く形にした (クリップボードは描画処理のような後ろ盾が無い)
+- [x] P3-5 BiDi — termsafe の `mustStrip` に U+202A〜202E / U+2066〜2069 を足した (`isBidiControl`)。`IsPlain` もこれを含む値を
+  落とすので、doctor はそういうパス・名前を表示から落とし、落とした件数は従来どおり出す (敵対的レビューで確認)。
+  LRM / RLM / ZWJ / 幅 0 の文字 (U+200B 等) / U+061C / U+2028・2029 は残す (並びを入れ替えない or 正当な入力を書き換える。判断の理由は `isBidiControl` の doc)
+- [x] P3-1〜4 画面への経路 — gh の stderr (`GHError.Warning`)、status のブランチ名・追跡先 (`parseBranchHeader`)、
+  git status のエラー (`v.err`)、プレビューのエラー行を平文にした。どれも表示にしか使わない値
+- [x] P3-6 — `ParseLog` の Subject / Author / AuthorEmail / Message は SGR も落とす (git は色を付けない欄なので、SGR は作者が書いたもの)。
+  **ただし既定の verbatim 表示には効かない** (下の残課題)
+- テスト: 経路ごとに 1 本ずつ (URL 2 / コピー 2 / BiDi / gh / ブランチ / status のエラー) + 既存 2 本の期待値を更新。
+  変異 (bin/mutate-verify) 9 本すべて red (守りを 1 つずつ外す形)。make test (root) / lint 緑
+- 敵対的レビュー 1 本 (上位モデル): P1 なし。P2 は下の残課題 1。P3 の「作者名の変更がテストされていない」はテストを足して変異で red を確認、
+  「PR url のコメントの食い違い」はコメントを直した。修正は判断ロジックを足していないので 2 周目は省略
+
+### 残課題 (未着手)
+
+1. **既定の verbatim 表示では、作者が書いた SGR (ESC[8m 等) が残る**。`LoadLogDisplay` は git の出力を行ごとに色を残して無害化していて、
+   1 行の中の git の色と作者の SGR を区別できない。直すなら verbatim の出力の組み方から考える必要がある (敵対的レビューで実証)
+2. PR ポップアップのタイトル・ブランチ名と CI の job 名は `DetailLine` (SGR を残す) のまま。同じく ESC[8m が効く。意図的かは未判断
+3. `exitGitError` (`main.go`) は git の stderr を生のまま stderr へ出す (git を直接叩いたのと同じ、というパリティのため。意図的)

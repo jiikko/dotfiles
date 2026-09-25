@@ -2646,11 +2646,11 @@ func (m *browseModel) copyJobContext() tea.Cmd {
 
 // copyJobContextLines は job 詳細行をヘッダ (job 名 / commit / URL) 付きの Markdown にして
 // クリップボードへ入れる。ヘッダ・本文とも制御コードを除去したプレーンテキストにする。
-// 🚨 job.URL (= StatusContext の targetUrl 等) は外部 CI が任意に設定でき無害化を一切通って
-// いない。生のままシステムクリップボードへ流すと、ペースト先の端末で OSC52 (クリップボード
-// 書き換え)/カーソル操作等が発火しうる (レビュー確定)。stripANSI 単体は OSC を落とせない
-// (英字終端判定のため OSC の途中で誤終了し BEL が残る・実測) ので、OSC/DCS を確実に落とす
-// sanitizeDetailLine を先に通し、残る SGR (色) を stripANSI で除去して完全な平文にする。
+// job.URL (= StatusContext の targetUrl 等) は外部 CI が任意に設定できる。detailsOf が受け取った時点で
+// 平文にしているが、クリップボードは描画処理のような後ろ盾の無い最後の関門なので、ここでも通す
+// (受け取る側の 1 箇所だけに頼ると、CheckDetail を別の経路で組んだときに素通りする。issue 417)。
+// 🚨 stripANSI 単体は OSC を落とせない (英字終端判定のため OSC の途中で誤終了し BEL が残る・実測) ので、
+// sanitizeDetailLine を先に通す順を崩さないこと。
 // c.Subject は %q が制御文字を Go エスケープするため安全。本文 lines は取得時に
 // sanitizeDetailLine 済みなので jobLogText の stripANSI だけで足りる。
 func (m *browseModel) copyJobContextLines(job CheckDetail, lines []string) {
@@ -2849,6 +2849,9 @@ func (m *browseModel) copyFocusURL() {
 		m.toast.show("コピーできる URL がありません", false)
 		return
 	}
+	// クリップボードへ入れる直前にも平文にする (copyJobContextLines と同じ理由。job.URL は外部 CI が
+	// 設定できる。issue 417 まではここが生のままクリップボードへ入れていた)
+	url = sanitizePlainLine(url)
 	m.copyWithToast(url, "コピーしました: "+url)
 }
 
@@ -3211,7 +3214,10 @@ func (m *browseModel) handlePRStatusKey(key string) (tea.Model, tea.Cmd) {
 		}
 	case "y":
 		if pr := m.prStatusOv.current(); pr != nil {
-			m.copyWithToast(pr.URL, "コピーしました: "+pr.URL)
+			// PR の url は取得の段階で無害化していない (表示する欄だけを無害化している)。
+			// クリップボードは最後の関門なので、入れる直前に平文にする (issue 417)
+			url := sanitizePlainLine(pr.URL)
+			m.copyWithToast(url, "コピーしました: "+url)
 		}
 	}
 	return m, nil

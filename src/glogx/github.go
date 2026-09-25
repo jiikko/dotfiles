@@ -52,7 +52,8 @@ type GHError struct {
 
 func (e *GHError) Error() string { return e.Detail }
 
-// Warning はユーザー向けの 1 行警告文。
+// Warning はユーザー向けの 1 行警告文。Detail は gh の stderr (外部の文字列) を含むので平文にしてから出す
+// (hint 行と main の stderr への直接出力の両方がここを通る。issue 417)。
 func (e *GHError) Warning() string {
 	switch e.Kind {
 	case GHNotInstalled:
@@ -60,9 +61,9 @@ func (e *GHError) Warning() string {
 	case GHNotAuthenticated:
 		return "glogx: gh が未認証のため CI 状態を取得できません (gh auth login)"
 	case GHRateLimited:
-		return "glogx: GitHub API の rate limit に達しています: " + firstLine(e.Detail)
+		return "glogx: GitHub API の rate limit に達しています: " + sanitizePlainLine(firstLine(e.Detail))
 	default:
-		return "glogx: CI 状態の取得に失敗しました: " + firstLine(e.Detail)
+		return "glogx: CI 状態の取得に失敗しました: " + sanitizePlainLine(firstLine(e.Detail))
 	}
 }
 
@@ -439,7 +440,16 @@ func pickBestByState[T any](nodes []T, state func(*T) string) *T {
 }
 
 func pickBestPR(nodes []PRRef) *PRRef {
-	return pickBestByState(nodes, func(p *PRRef) string { return p.State })
+	best := pickBestByState(nodes, func(p *PRRef) string { return p.State })
+	if best == nil {
+		return nil
+	}
+	// この url はブラウザで開く経路 (openURLCmd) へ流れる。GitHub が作る値だが、job の url と同じく
+	// 受け取った時点で平文にしておく (issue 417)。PR ポップアップの y (コピー) は FetchPRStatus の
+	// 別の経路で、そちらはコピーする直前に無害化している
+	pr := *best
+	pr.URL = sanitizePlainLine(pr.URL)
+	return &pr
 }
 
 // fillUnknownFetched は一括取得の応答に無かった SHA を unknown で埋めて返す
@@ -550,12 +560,14 @@ func detailsOf(rollup *rollupPayload) []CheckDetail {
 		if !node.StartedAt.IsZero() && !node.CompletedAt.IsZero() {
 			duration = node.CompletedAt.Sub(node.StartedAt)
 		}
-		// name は外部 (StatusContext を作る任意のインテグレーション) が制御できる表示文字列。
-		// パネルと終了後の静的出力にそのまま載るため、ここで無害化する
+		// name と url は外部 (StatusContext を作る任意のインテグレーション) が制御できる文字列。
+		// name はパネルと終了後の静的出力へ、url はクリップボード (copyFocusURL / copyJobContextLines) と
+		// ブラウザへ流れるので、ここで 1 回だけ無害化する (コピーする側ごとに無害化すると片方が漏れる。
+		// issue 417: copyFocusURL が生の url をクリップボードへ入れていた)。url は色も要らないので平文にする
 		details = append(details, CheckDetail{
 			Name:      sanitizeDetailLine(name),
 			State:     nodeState(node),
-			URL:       url,
+			URL:       sanitizePlainLine(url),
 			CheckID:   node.DatabaseID,
 			Duration:  duration,
 			StartedAt: node.StartedAt,

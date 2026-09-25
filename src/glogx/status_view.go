@@ -351,7 +351,7 @@ func (v *statusView) receive(msg statusLoadMsg) tea.Cmd {
 	}
 	v.loading = false
 	if msg.err != nil {
-		v.err = firstLine(msg.err.Error())
+		v.err = sanitizePlainLine(firstLine(msg.err.Error())) // git の stderr を含む (issue 417)
 		if !v.loaded {
 			v.rows = nil
 		}
@@ -568,7 +568,8 @@ func (v *statusView) receivePreview(msg statusPreviewMsg) {
 		return
 	}
 	if msg.err != nil {
-		v.storePreview(msg.key, []string{"(diff を取得できませんでした: " + firstLine(msg.err.Error()) + ")"})
+		// エラー文は git の stderr や os.Open の生のパスを含む (issue 417)
+		v.storePreview(msg.key, []string{"(diff を取得できませんでした: " + sanitizePlainLine(firstLine(msg.err.Error())) + ")"})
 		return
 	}
 	if len(msg.lines) == 0 {

@@ -912,3 +912,38 @@ func TestDetailsOfNormalizesVS16InJobName(t *testing.T) {
 		t.Errorf("bare 記号まで落ちている: %+v", got)
 	}
 }
+
+// job の url は外部 CI が任意に設定でき、クリップボード (copyFocusURL / copyJobContextLines) と
+// ブラウザへ流れる。detailsOf が受け取った時点で平文にする (issue 417: copyFocusURL が生のまま
+// クリップボードへ入れていた)。コピーする側では無害化しないので、ここが唯一の関門。
+func TestDetailsOfSanitizesURL(t *testing.T) {
+	const evil = "https://ci.example.com/42\x1b]52;c;cHduZWQ=\a\x1b[2J\u009b31m"
+	rollup := &rollupPayload{State: "FAILURE"}
+	rollup.Contexts.Nodes = []rollupContext{
+		{Typename: "CheckRun", Name: "build", Status: "COMPLETED", Conclusion: "FAILURE", DetailsURL: evil},
+		{Typename: "StatusContext", Context: "ci/legacy", State: "SUCCESS", TargetURL: evil},
+	}
+	got := detailsOf(rollup)
+	if len(got) != 2 {
+		t.Fatalf("detailsOf が 2 件を返さない: %+v", got)
+	}
+	for _, d := range got {
+		if strings.ContainsAny(d.URL, "\x1b\a\u009b") {
+			t.Errorf("%s: url に制御シーケンスが残っている: %q", d.Name, d.URL)
+		}
+		if !strings.HasPrefix(d.URL, "https://ci.example.com/42") {
+			t.Errorf("%s: url の本体まで落ちている: %q", d.Name, d.URL)
+		}
+	}
+}
+
+// PR の url も受け取った時点で平文にする (copy はクリップボードへ生で入れる)。
+func TestPickBestPRSanitizesURL(t *testing.T) {
+	pr := pickBestPR([]PRRef{{Number: 1, State: "OPEN", URL: "https://github.com/o/r/pull/1\x1b]52;c;eA==\a"}})
+	if pr == nil {
+		t.Fatal("PR が選ばれない")
+	}
+	if strings.ContainsAny(pr.URL, "\x1b\a") || pr.URL != "https://github.com/o/r/pull/1" {
+		t.Errorf("PR の url = %q, want %q", pr.URL, "https://github.com/o/r/pull/1")
+	}
+}

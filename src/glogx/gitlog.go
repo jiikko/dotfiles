@@ -182,18 +182,24 @@ func ParseLog(out string) ([]Commit, error) {
 		body = strings.TrimRight(body, "\n")
 		// subject/message/body/author はコミット作者が任意の文字を入れられる外部入力。
 		// CI ログと同じ端末制御シーケンス注入 (OSC52 のクリップボード書き込み等) の経路に
-		// なるため、ここ (解析の単一ファネル) で無害化する。SGR (色) は残る。タブも残す
-		// (静的出力の git log パリティ契約。タブ展開は TUI 描画側 — sanitizeLineKeepTabs の doc)
+		// なるため、ここ (解析の単一ファネル) で無害化する。タブは残す
+		// (静的出力の git log パリティ契約。タブ展開は TUI 描画側 — sanitizeLineKeepTabs の doc)。
+		// SGR (色) を残すのは git が --color=always で色を付ける欄 (decoration の %D と、--stat / -p の
+		// body) だけ。subject / author / email / message (%B) に git は色を付けないので、そこにある SGR は
+		// 作者が書いたもので、ESC[8m で文字を隠せる。色も落として平文にする (issue 417)。
+		// 🚨 これが効くのは Commit のフィールドを描く --oneline と予備の mediumLines だけ。既定の verbatim
+		// 表示は git の出力を行ごとに LoadLogDisplay で無害化していて、1 行の中の git の色と作者の SGR を
+		// 区別できないので SGR を残している (issue 417 の残課題)
 		commits = append(commits, Commit{
 			SHA:         parts[0],
 			ShortSHA:    parts[1],
-			Subject:     sanitizeLineKeepTabs(parts[2]),
-			Author:      sanitizeLineKeepTabs(parts[3]),
-			AuthorEmail: sanitizeLineKeepTabs(parts[4]),
+			Subject:     sanitizePlainKeepTabs(parts[2]),
+			Author:      sanitizePlainKeepTabs(parts[3]),
+			AuthorEmail: sanitizePlainKeepTabs(parts[4]),
 			Date:        parts[5],
 			RelDate:     parts[6],
 			Decoration:  sanitizeLineKeepTabs(parts[7]),
-			Message:     sanitizeGitText(strings.TrimRight(parts[8], "\n")),
+			Message:     sanitizeAuthorText(strings.TrimRight(parts[8], "\n")),
 			Body:        sanitizeGitText(capGitBody(body, parts[1])),
 		})
 	}
@@ -222,6 +228,18 @@ func truncatedNotice(sha string) string {
 
 // sanitizeGitText は複数行の git 由来テキストを行ごとに sanitizeLineKeepTabs へ通す
 // (\n は構造なので保持。サニタイザは制御文字として \n を落とすため行単位で呼ぶ)。
+// sanitizeAuthorText は作者が書いた複数行 (%B) を行ごとに平文にする (色も落とす。sanitizeGitText は色を残す)。
+func sanitizeAuthorText(s string) string {
+	if s == "" {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = sanitizePlainKeepTabs(l)
+	}
+	return strings.Join(lines, "\n")
+}
+
 func sanitizeGitText(s string) string {
 	if s == "" {
 		return s

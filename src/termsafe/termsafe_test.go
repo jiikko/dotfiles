@@ -194,3 +194,27 @@ func TestPlainBlockKeepsOnlyNewlines(t *testing.T) {
 		t.Errorf("PlainBlock が改行を落とした: %q", got)
 	}
 }
+
+// 双方向テキストの制御文字は並びを見た目の上で入れ替えられるので落とす (issue 417)。
+// LRM / RLM と ZWJ は並びを入れ替えない / 絵文字の合成に要るので残す。
+func TestDropsBidiControls(t *testing.T) {
+	for _, r := range []rune{0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069} {
+		in := "safe" + string(r) + "txt.exe"
+		for _, f := range []func(string) string{DetailLine, LineKeepTabs, PlainLine, PlainLineKeepTabs, PlainBlock} {
+			if got := f(in); got != "safetxt.exe" {
+				t.Errorf("U+%04X: %q, want %q", r, got, "safetxt.exe")
+			}
+		}
+		if IsPlain(in) {
+			t.Errorf("U+%04X を含む値を IsPlain が通した", r)
+		}
+	}
+	for _, keep := range []string{"a\u200eb", "a\u200fb", "👨\u200d💻"} {
+		if got := PlainLine(keep); got != keep {
+			t.Errorf("%q を書き換えた: %q", keep, got)
+		}
+		if !IsPlain(keep) {
+			t.Errorf("%q を IsPlain が落とした", keep)
+		}
+	}
+}

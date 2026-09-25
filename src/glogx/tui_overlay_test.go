@@ -1375,3 +1375,36 @@ func TestBrowseDiffNeighborStartsFromShownSHA(t *testing.T) {
 		t.Fatalf("開いている SHA の隣にならない: sha=%.7s cursor=%d", m.diffOv.sha, m.cursor)
 	}
 }
+
+// issue 417: パネルの y (focus 中の job の URL をコピー) が、外部 CI が設定した url を生のまま
+// クリップボードへ入れていた。detailsOf を通らずに組んだ CheckDetail でも漏れないことを見る。
+func TestBrowseCopyFocusURLSanitizes(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.statuses = statusesFor(m, StateFailure)
+	m.details[m.commits[0].SHA] = []CheckDetail{
+		{Name: "lint", State: StateFailure, CheckID: 7, URL: "https://x/\x1b]52;c;cHduZWQ=\x07ok"},
+	}
+	copied := stubClipboard(t)
+	m.openPanel()
+	m.handleKey("j") // focus を job へ (開いた直後はコミットの url が対象)
+	m.copyFocusURL()
+	if strings.ContainsAny(*copied, "\x1b\x07") {
+		t.Fatalf("コピー内容に端末制御シーケンスが残った: %q", *copied)
+	}
+	if !strings.HasPrefix(*copied, "https://x/") || !strings.HasSuffix(*copied, "ok") {
+		t.Fatalf("無害化で url の本体まで欠けた: %q", *copied)
+	}
+}
+
+// PR ポップアップの y も同じ (PR の url は取得の段階で無害化していない)。
+func TestBrowseCopyPRURLSanitizes(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	sha := m.commits[0].SHA
+	copied := stubClipboard(t)
+	m.prStatusOv.open(sha)
+	m.prStatusOv.receive(sha, &PRStatus{PRRef: PRRef{Number: 1, State: "OPEN", URL: "https://github.com/o/r/pull/1\x1b]52;c;eA==\x07"}}, nil)
+	m.handlePRStatusKey("y")
+	if *copied != "https://github.com/o/r/pull/1" {
+		t.Fatalf("コピー内容 = %q, want %q", *copied, "https://github.com/o/r/pull/1")
+	}
+}

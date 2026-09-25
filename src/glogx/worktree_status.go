@@ -139,7 +139,9 @@ func parseBranchHeader(rec string) (branch, track string) {
 	if i := strings.Index(rest, "..."); i >= 0 {
 		rest = rest[:i]
 	}
-	return rest, track
+	// ref 名は ASCII の制御文字しか禁じられておらず、C1 や双方向テキストの制御文字を含む
+	// ブランチは正当に作れる。ヘッダの表示にしか使わないので、ここで平文にする (issue 417)
+	return sanitizePlainLine(rest), sanitizePlainLine(track)
 }
 
 // rowsFor は 1 エントリを表示行へ写像する (spec 2 節の表)。XY の両方が立つ場合だけ 2 行になる。

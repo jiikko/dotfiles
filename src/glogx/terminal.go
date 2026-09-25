@@ -17,7 +17,8 @@ import "termsafe"
 // fast path は termsafe.sanitize の中にあり、sanitize はループを持つため var / func どちらでも
 // インライン化されない — `go build -gcflags=-m ./...` (src/termsafe) の can inline 一覧に載らない。
 // var → func で消えるのは間接呼び出しだけで、効果自体は実在するが理由が違っていた)
-func sanitizeDetailLine(s string) string   { return termsafe.DetailLine(s) }
-func sanitizeLineKeepTabs(s string) string { return termsafe.LineKeepTabs(s) }
-func sanitizePlainLine(s string) string    { return termsafe.PlainLine(s) }
-func dropEmojiVS16(s string) string        { return termsafe.DropEmojiVS16(s) }
+func sanitizeDetailLine(s string) string    { return termsafe.DetailLine(s) }
+func sanitizeLineKeepTabs(s string) string  { return termsafe.LineKeepTabs(s) }
+func sanitizePlainLine(s string) string     { return termsafe.PlainLine(s) }
+func sanitizePlainKeepTabs(s string) string { return termsafe.PlainLineKeepTabs(s) }
+func dropEmojiVS16(s string) string         { return termsafe.DropEmojiVS16(s) }

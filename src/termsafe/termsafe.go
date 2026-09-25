@@ -181,14 +181,28 @@ func needsSanitize(s string) bool {
 	return !utf8.ValidString(s) || strings.ContainsFunc(s, mustStrip)
 }
 
-// mustStrip はそのままでは端末へ出せない rune。C0 制御文字 / DEL / C1 制御文字 / BOM。
+// mustStrip はそのままでは端末へ出せない rune。C0 制御文字 / DEL / C1 制御文字 / BOM /
+// 双方向テキストの制御文字 (isBidiControl)。
 //
 // C1 (U+0080-U+009F) を含めるのは、8bit 版の CSI (U+009B) / OSC (U+009D) が 7bit の
 // ESC[ / ESC] と同じ制御機能を持つため。UTF-8 の端末が解釈するかは実装依存だが、
 // 「解釈しない端末が多い」は安全の根拠にならないので出さない。git のブランチ名は ASCII 制御
 // 文字しか禁じておらず、C1 入りの ref は正当に作れる (= 外部から実際に入ってくる)。
 func mustStrip(r rune) bool {
-	return r < 0x20 || r == 0x7f || isC1(r) || r == '\ufeff'
+	return r < 0x20 || r == 0x7f || isC1(r) || r == '\ufeff' || isBidiControl(r)
+}
+
+// isBidiControl は表示順を書き換える双方向テキストの制御文字 (embedding / override / isolate:
+// U+202A-U+202E / U+2066-U+2069) か。BiDi 対応の端末では、これ 1 文字で後ろの文字列が逆順に
+// 描かれ、コミットの件名・ファイル名・issue のタイトルの並びを見た目の上で偽装できる
+// (Trojan Source, CVE-2021-42574 と同じ手口。issue 417)。制御シーケンスではないので ESC の
+// 除去では落ちない。
+//
+// 残すもの: LRM / RLM (U+200E / U+200F) は並びを入れ替えない印で、ZWJ (U+200D) は絵文字の
+// 合成に要る。幅 0 の文字 (U+200B 等) も今は落とさない (偽装ではなく「見えない文字」の問題で、
+// 落とすと正当な入力を書き換える。必要になったら別に判断する)。
+func isBidiControl(r rune) bool {
+	return (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069)
 }
 
 func isC1(r rune) bool { return r >= 0x80 && r <= 0x9f }

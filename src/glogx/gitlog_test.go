@@ -56,10 +56,10 @@ func TestParseLogWithBody(t *testing.T) {
 // commit message は作者が任意の文字を入れられる外部入力。OSC52 (クリップボード書き込み) 等の
 // 端末制御シーケンスが素通りしない (SGR の色だけ残る) こと (2026-07-29)。
 func TestParseLogSanitizesControlSequences(t *testing.T) {
-	subject := "fix\x1b]52;c;bWFsaWNpb3Vz\x07 bug"                 // OSC52 注入
+	subject := "fix\x1b]52;c;bWFsaWNpb3Vz\x07 \x1b[8mbug"          // OSC52 注入 + 文字を隠す SGR
 	message := subject + "\n\n\x1b[2Jbody \x1b[31mred\x1b[0m line" // CSI 画面消去 + SGR
 	body := "line1\n\x1b]0;evil-title\x07line2"                    // OSC タイトル変更
-	out := rec(strings.Repeat("a", 40), "aaaaaaa", subject, "ko\x1b[2Aji", "k@x", "d", "now", "", message, body)
+	out := rec(strings.Repeat("a", 40), "aaaaaaa", subject, "ko\x1b[2A\x1b[8mji", "k@x", "d", "now", "", message, body)
 	commits, err := ParseLog(out)
 	if err != nil {
 		t.Fatal(err)
@@ -68,8 +68,9 @@ func TestParseLogSanitizesControlSequences(t *testing.T) {
 	if c.Subject != "fix bug" {
 		t.Errorf("Subject = %q; want OSC52 が落ちた \"fix bug\"", c.Subject)
 	}
-	if want := "fix bug\n\nbody \x1b[31mred\x1b[0m line"; c.Message != want {
-		t.Errorf("Message = %q; want %q (CSI 消去は落ち SGR は残る)", c.Message, want)
+	// subject / message は作者が書く欄で git は色を付けないので、SGR も落とす (issue 417。ESC[8m で文字を隠せる)
+	if want := "fix bug\n\nbody red line"; c.Message != want {
+		t.Errorf("Message = %q; want %q (CSI 消去も SGR も落ちる)", c.Message, want)
 	}
 	if want := "line1\nline2"; c.Body != want {
 		t.Errorf("Body = %q; want %q (OSC が落ち改行は残る)", c.Body, want)

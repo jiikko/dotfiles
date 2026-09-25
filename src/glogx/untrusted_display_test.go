@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -773,4 +774,44 @@ func assertSanitizedAndVisible(t *testing.T, where string, lines []string, wantV
 				where, w)
 		}
 	}
+}
+
+// issue 417: 外部由来の文字列が termsafe を通らずに画面 / stderr へ届いていた 4 経路。
+// どれも表示にしか使わない値なので、受け取った時点で平文にしている。
+const evil417 = "\x1b]52;c;cHduZWQ=\a\u009b2J\u202eevil"
+
+func assertNoTermControl(t *testing.T, what, got string) {
+	t.Helper()
+	if strings.ContainsAny(got, "\x1b\a\u009b\u202e") {
+		t.Errorf("%s に制御シーケンスが残っている: %q", what, got)
+	}
+	if !strings.Contains(got, "evil") {
+		t.Errorf("%s の本文まで落ちている: %q", what, got)
+	}
+}
+
+func TestGHWarningSanitizesStderr(t *testing.T) {
+	for _, k := range []GHErrorKind{GHRateLimited, GHOther} {
+		assertNoTermControl(t, "GHError.Warning", (&GHError{Kind: k, Detail: "gh: " + evil417}).Warning())
+	}
+}
+
+func TestStatusBranchHeaderIsSanitized(t *testing.T) {
+	branch, track := parseBranchHeader("## main" + evil417 + "...origin/main [ahead 1" + evil417 + "]")
+	assertNoTermControl(t, "branch", branch)
+	assertNoTermControl(t, "track", track)
+}
+
+func TestStatusErrorsAreSanitized(t *testing.T) {
+	v := newTestStatusView(t, "")
+	v.receive(statusLoadMsg{err: errors.New("fatal: " + evil417), gen: v.gen})
+	assertNoTermControl(t, "git status のエラー", v.err)
+
+	v.preview.begin("k")
+	v.receivePreview(statusPreviewMsg{gen: v.gen, key: "k", err: errors.New("open " + evil417 + ".txt: permission denied")})
+	lines, ok := v.preview.get("k")
+	if !ok || len(lines) != 1 {
+		t.Fatalf("プレビューのエラーが保存されていない: ok=%v lines=%q", ok, lines)
+	}
+	assertNoTermControl(t, "プレビューのエラー", lines[0])
 }
