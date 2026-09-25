@@ -63,9 +63,16 @@ func TestServeWakesOnPoke(t *testing.T) {
 
 // 画面が起こした dispatcher (alone) は、開いている画面がある間は回り続け、1 つも無い状態が続いたら PG を止めて抜ける
 // (最後の画面が quit を通らずに消えても PG を残さない)。止めた結果も書く。
+// join の画面も数える (持ち主が落ちても、join が開いている間は PG を止めない。issue 481)。
 func TestServeExitsWithoutScreens(t *testing.T) {
+	for _, mode := range []presence.Mode{presence.Owner, presence.Join} {
+		t.Run(string(mode), func(t *testing.T) { serveExitsWithoutScreens(t, mode) })
+	}
+}
+
+func serveExitsWithoutScreens(t *testing.T, mode presence.Mode) {
 	dir := t.TempDir()
-	scr, err := presence.Open(dir)
+	scr, err := presence.OpenAs(dir, presence.Info{Mode: mode})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,9 +253,9 @@ func TestStopUntilDoneRetriesAndYieldsToScreen(t *testing.T) {
 // いない ctx で行う (取り消された ctx のままでは claude の呼び出しが即座に失敗する。偽物も ctx を見る)。画面が開いていれば止めない
 // (画面が dispatcher を起こし直し、PG はそのまま続く)。
 func TestServeStopsOnSignalWhenSpawnedByScreen(t *testing.T) {
-	// join の画面も数える (持ち主が落ちても、join が開いている間は PG を止めない。issue 481)
+	// join の画面しか無ければ止める (join は dispatcher を起こし直さないので、止めずに抜けると見張る者の居ない PG が残る。issue 481)
 	for _, screen := range []presence.Mode{"", presence.Owner, presence.Join} {
-		if stopped, rc := serveUntilSignal(t, screen); stopped != (screen == "") || rc != 0 {
+		if stopped, rc := serveUntilSignal(t, screen); stopped != (screen != presence.Owner) || rc != 0 {
 			t.Fatalf("開いている画面=%q で、止めた=%v rc=%d", screen, stopped, rc)
 		}
 	}

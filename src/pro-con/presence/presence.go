@@ -16,6 +16,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -215,20 +216,19 @@ func scan(d string) ([]Info, error) {
 		if strings.HasPrefix(name, ".tmp-") { // 作ってから印の名前にするまでの間に落ちた画面の残り。数えない
 			// 🚨 作っている最中のものに触らない (flock を先に取ると、その画面が印を置けなくなる)。古いものだけ片付ける
 			if info, err := e.Info(); err == nil && time.Since(info.ModTime()) > staleTmp {
-				_, _ = heldBySomeone(filepath.Join(d, name))
+				_, _, _ = heldBySomeone(filepath.Join(d, name))
 			}
 			continue
 		}
 		if !strings.HasSuffix(name, ".lock") || name == quitFile {
 			continue
 		}
-		p := filepath.Join(d, name)
-		held, err := heldBySomeone(p)
+		held, data, err := heldBySomeone(filepath.Join(d, name))
 		if err != nil {
 			return nil, err
 		}
 		if held {
-			out = append(out, readInfo(p, strings.TrimSuffix(name, ".lock")))
+			out = append(out, readInfo(data, strings.TrimSuffix(name, ".lock")))
 		}
 	}
 	slices.SortStableFunc(out, func(a, b Info) int { return a.Opened.Compare(b.Opened) })
@@ -238,9 +238,9 @@ func scan(d string) ([]Info, error) {
 // readInfo は生きている印の中身。読めなければ (前の版の空の印・壊れた中身) 持ち主として扱う
 // (前の版の画面は持ち主。join を持ち主と数え違えると、最後の持ち主の quit で止めずに閉じるが、PG は画面が全部閉じてから
 // dispatcher の --exit-without-screens が止める)。
-func readInfo(p, id string) Info {
+func readInfo(data []byte, id string) Info {
 	var i Info
-	if data, err := os.ReadFile(p); err != nil || json.Unmarshal(data, &i) != nil {
+	if json.Unmarshal(data, &i) != nil {
 		i = Info{}
 	}
 	if i.Mode != Join {
@@ -250,25 +250,28 @@ func readInfo(p, id string) Info {
 	return i
 }
 
-// heldBySomeone は印の flock が持たれているか。持たれていなければ (画面が落ちた) 印を消す。
+// heldBySomeone は印の flock が持たれているか。持たれていれば印の中身 (flock を確かめたのと同じ fd から読む) も返す。
+// 持たれていなければ (画面が落ちた) 印を消す。
 // 🚨 flock は開いたファイルごと (同じプロセスでも別に開けば別) なので、自分の画面の印も「持たれている」と数える
-func heldBySomeone(p string) (bool, error) {
+// 🚨 中身をパスで開き直して読まない: 確かめた直後に相手が閉じて印を消すと読めず、閉じた join を持ち主と数え違える
+func heldBySomeone(p string) (bool, []byte, error) {
 	f, err := os.OpenFile(p, os.O_RDWR, 0)
 	if errors.Is(err, os.ErrNotExist) {
-		return false, nil // 数えるあいだに閉じた
+		return false, nil, nil // 数えるあいだに閉じた
 	}
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	defer func() { _ = f.Close() }()
 	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 	if errors.Is(err, syscall.EWOULDBLOCK) {
-		return true, nil
+		data, _ := io.ReadAll(f) // 読めなければ空 = 持ち主として数える (readInfo)
+		return true, data, nil
 	}
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	_ = os.Remove(p) // 誰も持っていない = 落ちた画面の印 (自分が flock を持っている間に消すので、開き直した画面とは競わない。id は毎回新しい)
 	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-	return false, nil
+	return false, nil, nil
 }

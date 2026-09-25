@@ -188,7 +188,8 @@ func serve(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-ch
 		_, err := d.Tick(ctx) // 出来事は Tick が d.Record (eventSink) へ渡す
 		if err != nil {
 			sayOr(d, stderr, eventlog.KindError, "Tick が失敗したので抜ける: "+err.Error())
-			if o.alone > 0 && !screensOpen(dir) { // 画面が起こした dispatcher は、抜ける前に PG を止める (画面が無ければ見張る者が居なくなる)
+			// 画面が起こした dispatcher は、抜ける前に PG を止める (持ち主の画面が無ければ見張る者が居なくなる。join は起こし直さない = issue 481)
+			if o.alone > 0 && !ownersOpen(dir) {
 				stopUntilDone(ctx, d, dir, nil, serveOpts{}, stderr)
 			}
 			return 1
@@ -199,10 +200,11 @@ func serve(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-ch
 		select {
 		case <-ctx.Done():
 			// 画面が起こした dispatcher は、画面が無ければ PG を止めてから抜ける (SIGTERM / SIGHUP でも pro-con が起動した PG を残さない)。
-			// 画面が開いていれば止めない (画面が dispatcher を起こし直し、PG はそのまま続く。止めて再開すると枠を使う)
+			// 持ち主の画面が開いていれば止めない (持ち主の画面が dispatcher を起こし直し、PG はそのまま続く。止めて再開すると枠を使う)。
+			// 🚨 join の画面しか無ければ止める: join は dispatcher を起こさないので、止めずに抜けると PG を見張る者が居なくなる (issue 481)
 			// 🚨 画面にも同時に SIGTERM が届いている (ログアウト・pkill) かもしれないので、画面が消えるのを少し待ってから決める
 			// (待たずに見ると、閉じる途中の画面を「開いている」と数えて止めずに抜け、画面も quit を通らずに抜けて PG が残る)
-			if o.alone > 0 && !screensStayOpen(dir, signalGrace) {
+			if o.alone > 0 && !ownersStayOpen(dir, signalGrace) {
 				stopUntilDone(ctx, d, dir, nil, serveOpts{interval: o.interval, retries: 1}, stderr)
 				if b, _ := os.ReadFile(filepath.Join(dir, dispatcher.StopResultFile)); strings.TrimSpace(string(b)) != "ok" {
 					return 1 // 止めきれないまま抜ける (残りは dispatcher.log。画面を開けば keeper が次の dispatcher を起こして続きを扱う)
@@ -223,8 +225,8 @@ func screensOpen(dir string) bool {
 }
 
 // ownersOpen は開いている持ち主の画面があるか (数えられなければ無いとみなす: 止める側に倒す)。
-// 止めている途中で止めるのをやめる判定はこちら: join の画面は dispatcher を起こさないので、join が開いただけ・残っているだけで
-// 持ち主の quit の停止を取り消すと、止めたはずの PG が動き続ける (issue 481)
+// 「画面が dispatcher を起こし直してくれる」前提の判定はこちら (止めている途中でやめる・止めずに抜ける): join の画面は dispatcher を
+// 起こさないので、join が開いている・残っているだけで止めずにおくと、止めたはずの PG・見張る者の居ない PG が動き続ける (issue 481)
 func ownersOpen(dir string) bool {
 	n, err := presence.Owners(dir)
 	return err == nil && n > 0
@@ -233,11 +235,11 @@ func ownersOpen(dir string) bool {
 // signalGrace は、取り消されたときに画面が消えるのを待つ長さ。
 var signalGrace = 5 * time.Second
 
-// screensStayOpen は、grace の間ずっと画面が開いているか (途中で 1 度でも 0 になれば偽)。
-func screensStayOpen(dir string, grace time.Duration) bool {
+// ownersStayOpen は、grace の間ずっと持ち主の画面が開いているか (途中で 1 度でも 0 になれば偽)。
+func ownersStayOpen(dir string, grace time.Duration) bool {
 	deadline := time.Now().Add(grace)
 	for {
-		if !screensOpen(dir) {
+		if !ownersOpen(dir) {
 			return false
 		}
 		if time.Now().After(deadline) {
