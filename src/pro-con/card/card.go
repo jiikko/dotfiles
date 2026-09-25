@@ -220,6 +220,9 @@ type Card struct {
 	// Crashes は PG のプロセスが落ちて Claude Code が自動で再開した時刻 (transcript の再開の文の時刻)。dispatcher が数えて、
 	// 短い間に上限を超えたら止める
 	Crashes []time.Time `json:",omitempty"`
+	// CrashesFrom は Crashes を数え始める時刻 (これより前の回数は数えない)。起動・再開で進めるが、一覧から消えた PG の再開では進めない
+	// (進めると、消える → 再開を繰り返す PG の回数が毎回 0 に戻る)。空なら LaunchedAt から数える
+	CrashesFrom time.Time `json:",omitzero"`
 	// StopWanted は落ちた回数が上限に達したが、まだ止められていない印 (止められるまで毎 Tick 試す。時間の窓を過ぎても諦めない)
 	StopWanted bool `json:",omitempty"`
 	// DeadSince は dispatcher が、このカードの PG の session が一覧に無い / pid 無し (落ちて自動の再開を待っている) のを最初に見た時刻。

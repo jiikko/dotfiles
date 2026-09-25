@@ -1403,3 +1403,71 @@ func TestVanishedAfterCrashLimitStillAsksHuman(t *testing.T) {
 		t.Fatalf("落ち続けて消えた PG を回答待ちにせず再開へ回した: %v %v resumes=%v Resume=%q", c.State, c.Wait.Kind, r.l.resumes, c.Resume)
 	}
 }
+
+// vanish は一覧から PG を消し、消えたのを見る Tick と restartWait を過ぎた Tick を回す (消えた PG を戻して再開するところまで)。
+// 再開した PG は一覧に戻す (next の短い id)。
+func (r *crashRig) vanish(t *testing.T, at time.Time, next string) {
+	t.Helper()
+	keep := r.ss[0]
+	r.ss = nil
+	r.d.Now = func() time.Time { return at }
+	r.tick(t)
+	r.d.Now = func() time.Time { return at.Add(restartWait + time.Second) }
+	r.tick(t)
+	// 本物の再開は別の session id の session を立てる (427 の 3f)
+	keep.ID, keep.SessionID, keep.PID, keep.StartedAt = next, "S-"+next, keep.PID+1, at.Add(restartWait+2*time.Second).UnixMilli()
+	r.ss = []agents.Session{keep}
+	r.d.Now = func() time.Time { return at.Add(restartWait + 3*time.Second) }
+	r.tick(t) // 再開した session を登録する
+}
+
+// 消える → 再開 → また消える、を繰り返す PG は、落ちた回数と同じ上限 (CrashWindow の間に CrashLimit 回) で止め、
+// 分解済みへ戻さずに回答待ち (人の番) へ送って理由を書く (上限の無い再開で利用枠を使い続けない)。
+func TestVanishingRepeatedlyAsksHuman(t *testing.T) {
+	r := newCrashRig(t)
+	r.l.resumeID = "id-r1"
+	r.vanish(t, t0.Add(time.Minute), "id-r1")
+	if c := states(t, r.dir)["C-001"]; c.State != card.Running || len(r.l.resumes) != 1 {
+		t.Fatalf("前提: 1 回目は戻して再開する: %v resumes=%v", c.State, r.l.resumes)
+	}
+	r.vanish(t, t0.Add(5*time.Minute), "id-r2")
+	c := states(t, r.dir)["C-001"]
+	if len(r.l.resumes) != 1 || c.State != card.Waiting || c.Wait.Kind != card.WaitCrashed || !strings.Contains(c.Wait.Question, "一覧から消えた") {
+		t.Fatalf("消え続ける PG を上限で人の番へ送らない: resumes=%v %v %v %q", r.l.resumes, c.State, c.Wait.Kind, c.Wait.Question)
+	}
+}
+
+// 消えた回数も CrashWindow の外のものは数えない (長く走る PG が時々消えるだけで止めない)。
+func TestVanishesOutsideWindowDoNotStop(t *testing.T) {
+	r := newCrashRig(t)
+	r.l.resumeID = "id-r1"
+	r.vanish(t, t0.Add(time.Minute), "id-r1")
+	r.l.resumeID = "id-r2"
+	r.vanish(t, t0.Add(time.Minute+defaultCrashWindow+time.Minute), "id-r2")
+	if c := states(t, r.dir)["C-001"]; c.State != card.Running || len(r.l.resumes) != 2 {
+		t.Fatalf("間の空いた 2 回で止めた: %v resumes=%v", c.State, r.l.resumes)
+	}
+}
+
+// 人の回答で再開したら、それより前に消えた回数は数えない (回答の後の 1 回目で、すぐ人の番へ戻さない)。
+func TestAnswerResetsVanishCount(t *testing.T) {
+	r := newCrashRig(t)
+	r.l.resumeID = "id-r1"
+	r.vanish(t, t0.Add(time.Minute), "id-r1")
+	for _, q := range []store.Request{{Kind: "ask", CardID: "C-001", Question: "q"}, {Kind: "answer", CardID: "C-001", Answer: "a"}} {
+		if _, err := store.Submit(r.dir, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.l.resumeID = "id-r2"
+	r.d.Now = func() time.Time { return t0.Add(3 * time.Minute) }
+	r.tick(t) // 回答で再開
+	r.ss[0].ID, r.ss[0].SessionID, r.ss[0].StartedAt = "id-r2", "S-id-r2", t0.Add(3*time.Minute+time.Second).UnixMilli()
+	r.d.Now = func() time.Time { return t0.Add(3*time.Minute + 2*time.Second) }
+	r.tick(t)
+	r.l.resumeID = "id-r3"
+	r.vanish(t, t0.Add(4*time.Minute), "id-r3")
+	if c := states(t, r.dir)["C-001"]; c.State != card.Running || len(r.l.resumes) != 3 {
+		t.Fatalf("回答の前に消えた回数で人の番へ戻した: %v %q resumes=%v", c.State, c.Wait.Question, r.l.resumes)
+	}
+}

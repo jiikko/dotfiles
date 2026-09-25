@@ -384,13 +384,6 @@ func (d *Dispatcher) restartsSince(c card.Card, o live.Owned, sessionID string) 
 // stopCrashing は、作業中のカードのうち CrashWindow の間に CrashLimit 回以上落ちた PG を止め、カードを人間の回答待ちにする
 // (回答が来たら同じ session を再開する)。止められなかったら作業中のまま残し、次の Tick でまた試す。
 func (d *Dispatcher) stopCrashing(ctx context.Context, now time.Time, ss []agents.Session) ([]eventlog.Event, error) {
-	limit, window := d.CrashLimit, d.CrashWindow
-	if limit <= 0 {
-		limit = defaultCrashLimit
-	}
-	if window <= 0 {
-		window = defaultCrashWindow
-	}
 	st, err := store.Load(d.Dir)
 	if err != nil {
 		return nil, err
@@ -404,13 +397,7 @@ func (d *Dispatcher) stopCrashing(ctx context.Context, now time.Time, ss []agent
 		if c.State != card.Running || c.Session == "" {
 			continue
 		}
-		recent := 0
-		for _, at := range c.Crashes {
-			// 最後の起動・再開より前の回数は数えない (止めた後に回答で再開した PG を、前の回数ですぐ止め直さない)
-			if at.After(c.LaunchedAt) && now.Sub(at) <= window {
-				recent++
-			}
-		}
+		recent, limit, window := d.recentCrashes(c, now)
 		if recent < limit && !c.StopWanted {
 			continue
 		}
@@ -453,17 +440,42 @@ func (d *Dispatcher) stopCrashing(ctx context.Context, now time.Time, ss []agent
 			}
 		}
 		why := fmt.Sprintf("PG が %s の間に %d 回落ちたので%s。回答すると同じ session を再開する", window, max(recent, limit), how)
-		if err := d.update(c.ID, func(cc *card.Card) {
-			cc.DropRun() // 作業中の列を離れる (テストの係への頼みは取り下げる)
-			cc.State, cc.Since, cc.Owner, cc.StopWanted = card.Waiting, now, "人間", false
-			cc.Wait = card.Wait{Kind: card.WaitCrashed, Question: why}
-			cc.History = append(cc.History, card.Event{At: now, Text: why})
-		}); err != nil {
+		if err := d.update(c.ID, func(cc *card.Card) { askAfterCrashes(cc, now, why) }); err != nil {
 			return notes, err
 		}
 		notes = append(notes, ev(eventlog.KindCrash, c.ID, c.Session, c.ID+": "+why))
 	}
 	return notes, nil
+}
+
+// recentCrashes は、CrashWindow の間に落ちた (自動の再開・一覧から消えた) 回数と、止める上限・窓を返す。
+// 数え始め (CrashesFrom。空なら最後の起動・再開) より前の回数は数えない (止めた後に回答で再開した PG を、前の回数ですぐ止め直さない)
+func (d *Dispatcher) recentCrashes(c card.Card, now time.Time) (recent, limit int, window time.Duration) {
+	limit, window = d.CrashLimit, d.CrashWindow
+	if limit <= 0 {
+		limit = defaultCrashLimit
+	}
+	if window <= 0 {
+		window = defaultCrashWindow
+	}
+	from := c.CrashesFrom
+	if from.IsZero() {
+		from = c.LaunchedAt
+	}
+	for _, at := range c.Crashes {
+		if at.After(from) && now.Sub(at) <= window {
+			recent++
+		}
+	}
+	return recent, limit, window
+}
+
+// askAfterCrashes は、落ち続けた PG のカードを人間の回答待ちにする (回答が来たら同じ session を再開する)。
+func askAfterCrashes(c *card.Card, now time.Time, why string) {
+	c.DropRun() // 作業中の列を離れる (テストの係への頼みは取り下げる)
+	c.State, c.Since, c.Owner, c.StopWanted = card.Waiting, now, "人間", false
+	c.Wait = card.Wait{Kind: card.WaitCrashed, Question: why}
+	c.History = append(c.History, card.Event{At: now, Text: why})
 }
 
 // requeueVanished は、PG の session が自動の再開なしに一覧から消えた (外からの claude stop・マシンの再起動) 作業中のカードを
@@ -483,8 +495,19 @@ func (d *Dispatcher) requeueVanished(now time.Time, ss []agents.Session) ([]even
 		if !d.gone(c, now, ss, reg) {
 			continue
 		}
+		// 消えたのも落ちた回数に数える (消えたのを見た時刻で)。上限に達したら戻さずに人の番へ (上限の無い再開で利用枠を使い続けない)
+		c.Crashes = append(c.Crashes, c.DeadSince)
+		recent, limit, window := d.recentCrashes(c, now)
 		text := fmt.Sprintf("PG の session が一覧から消えて戻らない (%s 待った)。分解済みへ戻し、同じ session を再開する", restartWait)
+		if recent >= limit {
+			text = fmt.Sprintf("PG が %s の間に %d 回落ちた / 一覧から消えたので、再開し直さない (最後は一覧から消えて戻らない)。回答すると同じ session を再開する", window, recent)
+		}
 		if err := d.update(c.ID, func(cc *card.Card) {
+			cc.Crashes = c.Crashes
+			if recent >= limit {
+				askAfterCrashes(cc, now, text)
+				return
+			}
 			requeue(cc, now, resumeAfterVanish)
 			cc.History = append(cc.History, card.Event{At: now, Text: text})
 		}); err != nil {
@@ -781,6 +804,9 @@ func (d *Dispatcher) mark(id string, now time.Time, how string) error {
 // settle は起動・再開が済んだカードを作業中にする。
 func (d *Dispatcher) settle(id string, now time.Time, how, session string) error {
 	return d.update(id, func(c *card.Card) {
+		if c.Resume != resumeAfterVanish { // 消えた PG の再開は人が決めた再開ではないので、落ちた回数を数え直さない
+			c.CrashesFrom = now
+		}
 		c.State, c.Since, c.Owner, c.Session = card.Running, now, "PG", session
 		c.LastProgress, c.Resume, c.Launching, c.Stalled, c.StopWanted, c.Stopped = now, "", "", false, false, false
 		// 消えたのを見た時刻は前の session のもの。残すと、再開が同じ短い id を返したとき (未実測)、一覧に出る前に消えたと読んで再開し直す
