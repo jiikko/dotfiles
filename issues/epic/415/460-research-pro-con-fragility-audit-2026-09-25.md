@@ -48,6 +48,7 @@ PM がコードで確かめたもの: `card run` の `strings.Join` / `runClaude
 - P1 (潜在) → [466](done/466-bug-pro-con-session-stopped-reads-unknown-state-as-stopped.md): `Stopped()` が知らない state を止まったと読む (読んだだけ。457 の後に着手)
 - P1 (潜在) → 431 へ: transcript の置き場を `~/.claude/projects` に決め打ち (`main.go` 2 か所・`live.New`)。`CLAUDE_CONFIG_DIR` を渡すと (431 / 433 の次の手) 見張り・落ちた回数・
   カードの表示が黙って止まる。`usage.go` には合わせる注意があるが transcript の側には無い
+  - 2026-09-26: 431 は `CLAUDE_CONFIG_DIR` を採らず (433 は解消)、この P1 は今は起きない。使うようになったら再び当たる
 - P2 (記録・未確認): 2.1.282 の help は `--bg --resume` を「同じ ID で続ける」と書くが、実測 (記録の 20 本) では再開ごとに新しい短い id。help どおりの版になると
   `register` が pid を書き直さず、次の再開が「pid が記録と違う」で止まる。trigger: claude の版を上げたとき、再開で id が変わるかを 1 回見る
 - P3 (記録・実測): `HaikuSummarize` に `--no-session-persistence` が無く、`~/.claude/projects/-Users-koji--local-state-pro-con-live/` に約 200KB の transcript が残る。tools も絞っていない
