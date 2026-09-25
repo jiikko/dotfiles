@@ -49,7 +49,7 @@ func TestToastBoxLinesDoesNotCutSecondBoxAtPageEightBudget(t *testing.T) {
 		s.Advance()
 	}
 
-	budget := toastDrawBudget(8, s.ImportantHeight(2, 0))
+	budget := toastDrawBudget(8, s.ReservedHeight(2, 0))
 	got := s.BoxLines(false, budget, 0)
 	if len(got) > budget {
 		t.Fatalf("page=8 の予算 %d 行を超えた: %d 行", budget, len(got))
