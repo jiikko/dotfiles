@@ -37,6 +37,10 @@ const (
 	perApply = 500
 )
 
+// KindEvent は画面の出来事 (開いた・quit で閉じた・止めた / 止めなかった) の依頼の種類。
+// 🚨 --view の画面は置かない (受付の箱にも書かない = 読むだけ)
+const KindEvent = "event"
+
 // RunResource はテストの係 (dispatcher が直列に実行する列) のリソース名。今は 1 本の列だけ (426 の決定 5)。
 const RunResource = "テスト"
 
@@ -65,6 +69,7 @@ type Request struct {
 	Rework   string          `json:"rework,omitempty"` // rework: レビューで直してほしい点 (書いたまま)
 	Ending   card.Ending     `json:"ending,omitempty"`
 	Said     []card.Event    `json:"said,omitempty"` // attach: attach の間に人間が打った指示 (原文と打った時刻)
+	Note     string          `json:"note,omitempty"` // event: 画面の出来事 (人が読む 1 文。dispatcher が出来事の記録へ書く)
 	At       time.Time       `json:"at"`
 }
 
@@ -84,11 +89,13 @@ type Rejected struct {
 	Why string `json:"why"`
 }
 
-// Result は依頼 1 件の適用の結果。Err が空なら適用した。Note は記録に残す出来事 (カードを消したとき。消したカードの履歴には残せない)
+// Result は依頼 1 件の適用の結果。Err が空なら適用した。Note は記録に残す出来事 (カードを消したとき。消したカードの履歴には残せない /
+// 画面の出来事 (event) の文)
 type Result struct {
 	ID, Kind, CardID string
 	Err              string
 	Note             string
+	At               time.Time // event: 画面が出来事を置いた時刻 (dispatcher が出来事の記録へ書く。適用した時刻ではない)
 }
 
 // Submit は依頼を受付の箱に置き、依頼の ID を返す。どのプロセスから呼んでもよい。
@@ -181,6 +188,9 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 		if err == nil {
 			r.ID = id // ファイル名が正本 (中身の id は信じない)
 			res.Kind, res.CardID = r.Kind, r.CardID
+			if r.Kind == KindEvent {
+				res.At = r.At
+			}
 			var next State
 			if next, res.CardID, res.Note, err = apply(st, r, now); err == nil {
 				st = next
@@ -296,6 +306,11 @@ func apply(st State, r Request, now time.Time) (State, string, string, error) {
 		if note, err = remove(&next, i, r, now); err != nil {
 			return st, id, "", fmt.Errorf("delete: %w", err)
 		}
+	case KindEvent: // 画面の出来事。記録 (カード) は変えず、dispatcher が出来事の記録へ書くだけ (書き手を dispatcher 1 つに保つ。issue 445)
+		if strings.TrimSpace(r.Note) == "" {
+			return st, "", "", errors.New("event: 出来事の文が空")
+		}
+		return st, "", r.Note, nil
 	default:
 		i := indexOf(next.Cards, r.CardID)
 		if i < 0 {

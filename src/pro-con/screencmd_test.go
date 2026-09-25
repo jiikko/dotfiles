@@ -145,6 +145,7 @@ func TestScreenDoesNotWrite(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(d, "dead.lock"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	_, fallback := looseFallback(t) // screen は socket を使わない。逃がし先の緩い権限も直さない (issue 445)
 	before := snapshotTree(t, root)
 	for _, args := range [][]string{
 		{}, {"--all"}, {"--json"}, {"--all", "--json"}, {"--screen", a.ID()}, {"--screen", a.ID(), "--ansi", "--json"},
@@ -161,6 +162,7 @@ func TestScreenDoesNotWrite(t *testing.T) {
 			t.Fatalf("pro-con screen が %s を変えた:\n前 %s\n後 %s", p, v, after[p])
 		}
 	}
+	stillLoose(t, fallback)
 }
 
 // --follow は 1 枚目がまだでも待つ (画面を開いた直後に始めても、すぐ諦めない)。上限で終わったらそう言う。

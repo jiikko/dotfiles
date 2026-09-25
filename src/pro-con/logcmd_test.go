@@ -14,9 +14,11 @@ import (
 var logT0 = time.Date(2026, 9, 25, 1, 0, 0, 0, time.UTC)
 
 // logFixture は出来事を 3 つ置いた置き場 (C-001 の起動、C-002 の適用、カードの無いエラー)。
-func logFixture(t *testing.T) string {
+func logFixture(t *testing.T) string { t.Helper(); return logFixtureIn(t, viewDir(t)) }
+
+// logFixtureIn は logFixture を置き場 dir に作る。
+func logFixtureIn(t *testing.T, dir string) string {
 	t.Helper()
-	dir := viewDir(t)
 	if err := eventlog.Append(dir, []eventlog.Event{
 		{At: logT0, Kind: eventlog.KindLaunch, Card: "C-001", Session: "s1", Reason: "C-001 に PG を起動した (s1)"},
 		{At: logT0.Add(time.Minute), Kind: eventlog.KindApply, Card: "C-002", Reason: "箱の依頼 r2 (add) を適用した"},
@@ -147,4 +149,20 @@ func TestLogDoesNotWrite(t *testing.T) {
 			t.Fatalf("pro-con log が socket に %q を送った (送ってよいのは sub だけ)", l)
 		}
 	}
+}
+
+// 🚨 log --follow は、socket の逃がし先の緩い権限を直さず、つながずに読み直しで待ち、そう 1 行知らせる (issue 445)。
+func TestLogDoesNotFixFallbackDir(t *testing.T) {
+	long, fallback := looseFallback(t)
+	dir := logFixtureIn(t, long)
+	old := viewPoll
+	viewPoll = 20 * time.Millisecond
+	t.Cleanup(func() { viewPoll = old })
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	rc, out, errOut := logCmd(t, ctx, dir, "--follow")
+	if rc != 0 || strings.Count(out, "\n") != 3 || strings.Count(errOut, "読み直しで待つ") != 1 {
+		t.Fatalf("逃がし先を使えないことを 1 行知らせない / 読めない: rc=%d %q %q", rc, out, errOut)
+	}
+	stillLoose(t, fallback)
 }

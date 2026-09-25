@@ -53,6 +53,9 @@ const (
 	KindDelete   = "delete"   // カードを削除した / 削除の依頼を受けた / 削除できない (issue 451)
 	KindScreens  = "screens"  // 開いている画面の数で決めたこと (画面が無いので抜ける・画面が開いたので続ける)
 	KindError    = "error"    // 一覧を取れない・書けない等
+	// KindScreen は画面の側の出来事 (開いた・quit で閉じた・止めた / 止めなかった)。画面が受付の箱に置き、dispatcher が書く
+	// (時刻は画面が置いた時刻。dispatcher が居ない間に置いたものは次の dispatcher が書くので、ファイルの中で時刻の順が前後しうる)
+	KindScreen = "screen"
 )
 
 // Append は出来事を足す (1 回の write。読む側は改行で終わった行だけを読むので、書きかけを読まない)。

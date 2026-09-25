@@ -105,3 +105,30 @@ func TestCloseStopRecordsEvents(t *testing.T) {
 	closed(t, func(r *crashRig) { r.ss[0].PID, r.ss[0].State = 0, agents.StateStopped }, "既に止まっていた")
 	closed(t, func(r *crashRig) { r.l.stopFail = true }, "止められない")
 }
+
+// 画面の出来事 (受付の箱の event) は、画面の出来事 (screen) として画面が置いた時刻のまま書く (「依頼を適用した」を重ねない)。
+func TestTickRecordsScreenEvents(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Date(2026, 9, 25, 10, 0, 0, 0, time.UTC)
+	if _, err := store.Submit(dir, store.Request{Kind: store.KindEvent, Note: "画面 (pid 1): 開いた", At: at}); err != nil {
+		t.Fatal(err)
+	}
+	d := newDispatcher(t, dir, &fakeLauncher{}, nil)
+	var got []eventlog.Event
+	d.Record = func(evs []eventlog.Event) { got = append(got, evs...) }
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var screens []eventlog.Event
+	for _, e := range got {
+		switch e.Kind {
+		case eventlog.KindScreen:
+			screens = append(screens, e)
+		case eventlog.KindApply, eventlog.KindReject:
+			t.Fatalf("画面の出来事に適用の出来事を重ねた: %+v", e)
+		}
+	}
+	if len(screens) != 1 || screens[0].Reason != "画面 (pid 1): 開いた" || !screens[0].At.Equal(at) {
+		t.Fatalf("画面の出来事を書かない / 時刻が画面の置いた時刻でない: %+v", got)
+	}
+}

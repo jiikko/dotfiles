@@ -64,6 +64,20 @@ func TestRunDispatcherWiresSocket(t *testing.T) {
 		}
 		return false
 	})
+	// 画面の出来事は、画面が置いた時刻のまま events.jsonl に入る (dispatcher が居ない間に置いたものを後で書いても、時刻がずれない。issue 445)
+	opened := time.Now().Add(-time.Hour).Truncate(time.Second)
+	if _, err := store.Submit(dir, store.Request{Kind: store.KindEvent, Note: "画面 (pid 1): 開いた", At: opened}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor("画面の出来事を置いた時刻のまま書かない", func() bool {
+		evs, _ := eventlog.Read(dir)
+		for _, e := range evs {
+			if e.Kind == eventlog.KindScreen && e.At.Equal(opened) {
+				return true
+			}
+		}
+		return false
+	})
 	if st, err := os.Stat(filepath.Join(dir, eventlog.File)); err != nil || st.Mode().Perm() != 0o600 {
 		t.Fatalf("events.jsonl の権限: %v %v", st, err)
 	}

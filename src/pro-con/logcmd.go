@@ -78,7 +78,7 @@ func runLog(ctx context.Context, args []string, dir string, now func() time.Time
 		return 0
 	}
 	// dispatcher は出来事を書いてから知らせる (Tick・Shutdown・serve の say のどれも Record → Changed) ので、知らせで読み直せば即時に出る
-	err = watchDir(ctx, dir, func() (bool, error) {
+	err = watchDir(ctx, dir, stderr, func() (bool, error) {
 		evs, err := f.Next()
 		if err != nil {
 			return false, err

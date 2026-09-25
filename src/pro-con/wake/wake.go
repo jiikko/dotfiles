@@ -63,39 +63,62 @@ func canonical(dir string) string {
 // fallbackRoot は長い置き場の socket を置くディレクトリの親 (テストが一時ディレクトリに差し替える)。
 var fallbackRoot = "/tmp"
 
+// SetFallbackRoot は fallbackRoot を差し替え、戻す関数を返す (ほかの package のテストが本物の /tmp/pro-con-<uid> に触らないため)。
+func SetFallbackRoot(root string) (restore func()) {
+	old := fallbackRoot
+	fallbackRoot = root
+	return func() { fallbackRoot = old }
+}
+
 // fallbackDir は長い置き場の socket を置くディレクトリ。
 func fallbackDir() string { return filepath.Join(fallbackRoot, fmt.Sprintf("pro-con-%d", os.Getuid())) }
 
-// ensureFallbackDir は fallbackDir を自分だけのディレクトリとして用意する (create が偽なら作らずに確かめるだけ)。
+// ErrUnsafeDir は逃がす先 (fallbackDir) を使えないとき (他のユーザーのもの・symlink・権限が緩い)。繋ぐ側はつながずに読み直しで待つ。
+var ErrUnsafeDir = errors.New("socket の逃がし先を使えない")
+
+// ensureFallbackDir は fallbackDir を自分だけのディレクトリとして用意する (Listen = dispatcher だけが呼ぶ)。
 // 🚨 /tmp は誰でも書けるので、他のユーザーが先に作った (持ち主が違う・symlink) ものは使わない (dispatcher に成りすまされる)。
-// 自分のもので権限だけ緩い (テストが落ちて戻し損ねた等) なら 0700 に直す
-func ensureFallbackDir(create bool) error {
+// 自分のもので権限だけ緩い (テストが落ちて戻し損ねた等) なら 0700 に直す。直すのは listen する側だけ (繋ぐ側 = 読む口は直さない。issue 445)
+func ensureFallbackDir() error {
 	d := fallbackDir()
-	if create {
-		if err := os.Mkdir(d, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
-			return err
-		}
+	if err := os.Mkdir(d, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+		return err
 	}
-	st, err := os.Lstat(d)
+	loose, err := checkFallbackDir(d)
 	if err != nil {
 		return err
 	}
-	sys, ok := st.Sys().(*syscall.Stat_t)
-	if !st.IsDir() || !ok || int(sys.Uid) != os.Getuid() {
-		return fmt.Errorf("%s が自分のディレクトリではない (他のユーザーが作った・symlink)", d)
-	}
-	if st.Mode().Perm()&0o077 != 0 {
+	if loose {
 		return os.Chmod(d, 0o700)
 	}
 	return nil
 }
 
-// dialPath は繋ぐ先の socket のパス。逃がす先なら、自分のディレクトリかを先に確かめる。
+// checkFallbackDir は d が自分のディレクトリかを確かめ、権限が緩い (0700 より広い) かを返す。何も書かない。
+func checkFallbackDir(d string) (loose bool, err error) {
+	st, err := os.Lstat(d)
+	if err != nil {
+		return false, err
+	}
+	sys, ok := st.Sys().(*syscall.Stat_t)
+	if !st.IsDir() || !ok || int(sys.Uid) != os.Getuid() {
+		return false, fmt.Errorf("%w: %s が自分のディレクトリではない (他のユーザーが作った・symlink)", ErrUnsafeDir, d)
+	}
+	return st.Mode().Perm()&0o077 != 0, nil
+}
+
+// dialPath は繋ぐ先の socket のパス。逃がす先なら、自分のディレクトリで権限が 0700 かを先に確かめる。
+// 🚨 繋ぐ側は権限を直さない (読むだけの口 = card wait・log --follow・--view の画面が、状態の置き場の外の metadata を書かない)。
+// 緩ければつながずに ErrUnsafeDir を返す (呼び出し側はポーリングで待つ。次に dispatcher が Listen するときに直す)
 func dialPath(dir string) (string, error) {
 	p := Path(dir)
-	if filepath.Dir(p) == fallbackDir() {
-		if err := ensureFallbackDir(false); err != nil {
+	if d := filepath.Dir(p); d == fallbackDir() {
+		loose, err := checkFallbackDir(d)
+		if err != nil {
 			return "", err
+		}
+		if loose {
+			return "", fmt.Errorf("%w: %s の権限が緩い (0700 でない)。dispatcher が次に起動するときに直す", ErrUnsafeDir, d)
 		}
 	}
 	return p, nil
@@ -137,7 +160,7 @@ type Server struct {
 func Listen(dir string) (*Server, error) {
 	p := Path(dir)
 	if filepath.Dir(p) == fallbackDir() {
-		if err := ensureFallbackDir(true); err != nil {
+		if err := ensureFallbackDir(); err != nil {
 			return nil, err
 		}
 	}
@@ -261,11 +284,20 @@ func (s *Server) Close() error {
 type Subscriber struct {
 	dir      string
 	onChange func()
+	refused  func(error) // 逃がし先を使えないのでつながなかった (OnRefused)
+	warned   bool        // refused を呼んだ (つながるまで繰り返さない)
 }
 
 // NewSubscriber は dir の dispatcher の購読を作る (Run で始める)。onChange は記録が変わったと知らされるたびに呼ぶ。
 func NewSubscriber(dir string, onChange func()) *Subscriber {
 	return &Subscriber{dir: dir, onChange: onChange}
+}
+
+// OnRefused は、socket の逃がし先を使えない (ErrUnsafeDir。権限が緩い・自分のものでない) のでつながなかったときに呼ぶ f をつなぐ
+// (Run の前に呼ぶ)。つながるまでの間に 1 度だけ呼ぶ。つながらなくても、呼び出し側はポーリングで待てる。
+func (s *Subscriber) OnRefused(f func(error)) *Subscriber {
+	s.refused = f
+	return s
 }
 
 // Run は購読する。切れたら retryEvery ごとに繋ぎ直す (dispatcher の起動し直し・まだ起動していない、を待つ)。ctx が終わったら戻る。
@@ -284,6 +316,10 @@ func (s *Subscriber) Run(ctx context.Context) {
 func (s *Subscriber) once(ctx context.Context) {
 	p, err := dialPath(s.dir)
 	if err != nil {
+		if errors.Is(err, ErrUnsafeDir) && s.refused != nil && !s.warned {
+			s.warned = true
+			s.refused(err)
+		}
 		return
 	}
 	var d net.Dialer
@@ -301,7 +337,8 @@ func (s *Subscriber) once(ctx context.Context) {
 		return
 	}
 	_ = c.SetWriteDeadline(time.Time{})
-	s.onChange() // 繋がっていない間の知らせ (dispatcher の最初の Tick 等) を取り逃しているかもしれないので、繋がったら 1 度読み直させる
+	s.warned = false // また使えなくなったら、もう 1 度知らせる
+	s.onChange()     // 繋がっていない間の知らせ (dispatcher の最初の Tick 等) を取り逃しているかもしれないので、繋がったら 1 度読み直させる
 	r := bufio.NewReader(c)
 	for {
 		if _, err := r.ReadString('\n'); err != nil {

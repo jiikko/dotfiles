@@ -67,7 +67,7 @@ type stateful interface {
 }
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	view := len(args) > 0 && args[0] == "--view" // 見ているだけの画面 (dispatcher を起こさない・止めない・受付の箱にも記録にも書かない。画面の中継 relay/ だけは書く)。--e2e と重ねてよい
+	view := len(args) > 0 && args[0] == "--view" // 見ているだけの画面 (dispatcher を起こさない・止めない・受付の箱にも記録にも書かない。書くのは画面の中継 relay/ と、ctrl+r の引き継ぎ・落ちた画面の印の後始末だけ = issue 445)。--e2e と重ねてよい
 	if view {
 		args = args[1:]
 	}
@@ -417,6 +417,8 @@ func switchToNew(m *ui.Model, be backend.Backend, args []string, dir, resume str
 			return resume, err
 		}
 	}
+	// 🚨 --view の画面もここで状態の置き場に resume-*.json を書く (読むだけの例外 (a)。issue 445): 中身はこの画面自身の表示の状態
+	// (選んでいるカード・開いている板) だけで、カード・受付の箱・dispatcher・PG の状態は変えず、新版が読んだら消す
 	path, err := upgrade.Save(dir, resume, upgrade.State{UI: uiData, Backend: beData})
 	if err != nil {
 		return resume, err

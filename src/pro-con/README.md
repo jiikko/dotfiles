@@ -8,14 +8,14 @@ PM (producer) と PG (consumer) を分けて Claude Code を並列に回すた�
 ```sh
 bin/pro-con          # 本物: dispatcher が書くカードの記録を出す。依頼と回答は受付の箱へ (live。issue 424 / 427)
 bin/pro-con --mock   # 模擬: claude は起動しない。模擬の backend (fake) が状態を進める (動作確認用)
-bin/pro-con --view   # 見ているだけの画面: 動いている pro-con をそのまま映す。依頼・回答・attach を受けず、dispatcher を起こさず、quit で閉じても何も止めない (画面の数にも入らない。epic 441)
+bin/pro-con --view   # 見ているだけの画面: 動いている pro-con をそのまま映す。依頼・回答・attach を受けず (案内の行にも出さない)、dispatcher を起こさず、quit で閉じても何も止めない (画面の数にも入らない。epic 441)。書くのは画面の中継と、ctrl+r の引き継ぎ・落ちた画面の印の後始末だけ (issue 445)
 bin/pro-con dispatcher   # 割り振り係: 受付の箱の適用・PM と PG の起動と再開・テストの係・見張り (画面を開くと、居なければ画面が起こす。旧名 daemon)。2 つ起動しない。🚨 PG を起動するので利用枠を使う
                          # 同時に動かす PG は --limit (既定 2) まで。利用枠 (`claude -p /usage` を 5 分ごとに読む) の 5 時間と週の大きい方が 80% 以上なら 1 本、95% 以上なら新しく起動・再開しない (ゲージの「PG n/m」と理由)
 bin/pro-con dispatcher --stop  # dispatcher と、pro-con が起動した PG を止める。作業中のカードは次に dispatcher を起動したら続きから再開する (画面の終了も同じことをする)
 bin/pro-con card …   # PM / PG が使うカードの操作 (add / plan / ask / answer / review / rework / close / delete。rework はレビュー待ちを直してほしい点つきで PG に戻す。delete は依頼の列ならすぐ消し、ほかは PG の session を止めてから消す = issue 451)。受付の箱に置くだけで、適用は dispatcher (issue 427)
 bin/pro-con card guide  # PM の session に渡す指示書 (src/pro-con/pm-guide.md) を出す。dispatcher は依頼の列にカードが来たら PM を起動 / 再開してこれと新しいカードを渡す (issue 437。PM は 1 つ・--limit に数えない)
 bin/pro-con card list | show C-001 | wait C-001 --until review  # カードを画面なしで読む (--json も)。読むだけで、箱にも記録にも socket の wake / notify にも書かない (issue 442)。add は適用を待ってカード ID を返す
-bin/pro-con log [--card C-001] [--follow] [--since 10m] [--json]  # dispatcher の出来事 (適用・除けた・起動・再開・止めた・削除・枠・watchdog・画面の数) を読む。記録は状態の置き場の events.jsonl (1 MiB で events.1.jsonl へ回す)。読むだけ (issue 444)
+bin/pro-con log [--card C-001] [--follow] [--since 10m] [--json]  # dispatcher の出来事 (適用・除けた・起動・再開・止めた・削除・枠・watchdog・画面の数・画面を開いた / quit で閉じた) を読む。画面の出来事は画面が受付の箱に置き dispatcher が書く (--view の画面は置かない。issue 445)。記録は状態の置き場の events.jsonl (1 MiB で events.1.jsonl へ回す)。読むだけ (issue 444)
 bin/pro-con --e2e <dir>  # e2e モード: 画面・dispatcher・受付の箱・記録は本物、PG と PM だけ台本どおりの偽物 (claude を起動しない。利用枠を使わない)
 bin/pro-con e2e <start|keys|text|screen|wait|stop|scenario> <dir> ...  # Claude が e2e モードの画面を操作する口 (隔離した tmux サーバで動かす)
 bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンドを頼む。dispatcher が PG の worktree で 1 本ずつ順に実行し、結果を渡して PG を再開する (失敗は haiku が要約)
@@ -40,7 +40,9 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 
 - **入力したら待たずに割り振る**: 受付の箱に置いた側 (画面・`pro-con card`) が、状態の置き場の Unix socket (`dispatcher.sock`。長い置き場は
   `/tmp/pro-con-<uid>/<hash>.sock`) で dispatcher を起こす (package `wake`)。dispatcher は適用したら画面へ知らせ、画面はすぐ読み直す
-  (入力からカードが出るまで 約 4 秒 → 約 130 ms)。socket は速くするための口で、正しさは頼らない (届かなくても 3 秒のポーリングが拾う)
+  (入力からカードが出るまで 約 4 秒 → 約 130 ms)。socket は速くするための口で、正しさは頼らない (届かなくても 3 秒のポーリングが拾う)。
+  逃がし先 `/tmp/pro-con-<uid>/` の権限が緩ければ、直すのは dispatcher (listen する側) だけ。繋ぐ側 (画面・`card wait`・`log --follow`) は
+  直さずにつながず、1 行知らせてポーリングで待つ (issue 445)
 - **同じ置き場で画面を複数開いてよい**: 画面は開いている間 `screens/<id>.lock` を flock で持つ (package `presence`)。2 つ以上開いていれば
   ゲージに「画面 N」。Q → quit で閉じるとき、ほかに画面が開いていれば **この画面だけ閉じる** (dispatcher と PG は動いたまま)。最後の画面だけが止める
 - **終了で pro-con が起動した claude を確実に止める**: 最後の画面が閉じるとき、dispatcher は pro-con の起動の記録 (`sessions.json` と、
@@ -76,7 +78,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 | enter | 詳細の開閉。右から引き出しが滑り込み、カンバンの左端を残して重なる (glogx の issues の本文と同じ `tuikit/layout.ComposeDrawer`)。開いている間は j / k / ctrl+d / ctrl+u / g / G で本文をスクロール、J / K で同じレーンの隣のカードへ送る。カードへの操作 (a / r / + / ? / e / y / Y / d) は開いたまま効き、レーンの移動やタブは効かない。q / esc / h / ← / enter で閉じる |
 | (入力中) | 入力欄・y/N 確認を出している間は、カンバンを暗い灰 1 色で描き、入力欄の行に地の色を敷く (キーは入力に取られ、カードは動かせない) |
 | (選択の枠) | 選択中のカードは赤 (196) の太字の二重線 (╔═╗ ║ ╚═╝) の枠で囲む (issue 472。字と色は `ui/cursor.go` の定数)。選択が移ると、枠が元の位置から行き先まで 180ms で滑る (レーンを跨いでも。Excel のセルのカーソルの見え方)。カードの上下には 1 行ずつ空きがあり、枠はそこに描くので隣のカードを隠さない |
-| (案内の行) | カードへの操作と x は、選んでいるカードで効くときだけ明るく、効かないときは暗く出す (r は質問待ちだけ、a は session のあるカードだけ、e / y は issue の紐づいたカードだけ) |
+| (案内の行) | カードへの操作と x は、選んでいるカードで効くときだけ明るく、効かないときは暗く出す (r は質問待ちだけ、a は session のあるカードだけ、e / y は issue の紐づいたカードだけ)。見ているだけの画面 (`--view`) では、押すと断る操作 (a / r / + / w / d / n / i / x) を出さない |
 | ctrl+r | 新版へ切り替える (ライブアップグレード。「新版あり」のときだけ) |
 | q / esc | 開いている板を 1 つ閉じる (PG の一覧 → 詳細)。何も開いていなくても終了しない (2026-09-25 に廃止) |
 | Q | 終了の入力欄を開く。`quit` と打って enter したときだけ閉じる (本物のモードでは dispatcher と PG を止めてから閉じる。次に開くと続きから再開。ほかに画面が開いていれば、この画面だけ閉じる)。ctrl+c も同じ入力欄を開く (1 打では閉じない) |

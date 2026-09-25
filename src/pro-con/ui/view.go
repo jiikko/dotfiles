@@ -516,18 +516,34 @@ func (m *Model) hints() []string {
 		return []string{"j / k 選択", "enter これをやる", "i / q / esc 閉じる"}
 	}
 	c, has := m.selectedCard()
+	_, ro := m.be.(backend.ReadOnly)
+	// hint は案内の 1 項目。acts は PG・記録へ働きかける操作 (attach・依頼・回答など)。見ているだけの画面 (--view) では出さない
+	// (押しても断るだけ。暗く出すと、状態が変われば押せるように読める)
+	type hint struct {
+		text     string
+		ok, acts bool
+	}
+	offer := func(hs ...hint) []string {
+		var out []string
+		for _, h := range hs {
+			if !(ro && h.acts) {
+				out = append(out, avail(h.text, h.ok))
+			}
+		}
+		return out
+	}
 
 	// カードへの操作は、選んでいるカードで効くかどうかを色で出す (効かないものは暗く。押すと理由が flash に出る)
-	cardOps := []string{
-		avail("a attach", has && c.Session != ""), // backend は session の無いカードを ErrNoSession で拒否する
-		avail("r 回答", has && c.Answerable() && m.accepts(backend.OpAnswer)),
-		avail("+ 追加オーダー", has && m.accepts(backend.OpOrder)), // 完了のカードでも「別件」は受け付ける
-		avail("w btw", has && m.accepts(backend.OpBtw)),
-		avail("e issue を開く", has && len(c.Issues) > 0), // md が実在するかは押したときに探す (描画のたびには探さない)
-		avail("y パス", has && len(c.Issues) > 0),
-		avail("Y 内容", has),
-		avail("d 削除", has && !c.Deleting() && m.accepts(backend.OpDelete)),
-	}
+	cardOps := offer(
+		hint{"a attach", has && c.Session != "", true}, // backend は session の無いカードを ErrNoSession で拒否する
+		hint{"r 回答", has && c.Answerable() && m.accepts(backend.OpAnswer), true},
+		hint{"+ 追加オーダー", has && m.accepts(backend.OpOrder), true}, // 完了のカードでも「別件」は受け付ける
+		hint{"w btw", has && m.accepts(backend.OpBtw), true},
+		hint{"e issue を開く", has && len(c.Issues) > 0, false}, // md が実在するかは押したときに探す (描画のたびには探さない)
+		hint{"y パス", has && len(c.Issues) > 0, false},
+		hint{"Y 内容", has, false},
+		hint{"d 削除", has && !c.Deleting() && m.accepts(backend.OpDelete), true},
+	)
 	if m.showDetail {
 		return append(append([]string{"j / k スクロール", "J / K 隣のカード"}, cardOps...), "q / esc 閉じる")
 	}
@@ -535,8 +551,11 @@ func (m *Model) hints() []string {
 	if m.showSessions {
 		back = "q / esc 閉じる"
 	}
-	h := append([]string{"hjkl 選択", "tab repo", avail("n 新しい依頼", m.accepts(backend.OpNew)), avail("i issue から", m.accepts(backend.OpNew)), avail("enter 詳細", has)}, cardOps...)
-	return append(h, "s PG 一覧", avail("x 完了を片付け", m.doneInTab() > 0 && m.accepts(backend.OpClear)), "? レーンの意味", back)
+	h := append([]string{"hjkl 選択", "tab repo"}, offer(
+		hint{"n 新しい依頼", m.accepts(backend.OpNew), true}, hint{"i issue から", m.accepts(backend.OpNew), true}, hint{"enter 詳細", has, false})...)
+	h = append(h, cardOps...)
+	h = append(append(h, "s PG 一覧"), offer(hint{"x 完了を片付け", m.doneInTab() > 0 && m.accepts(backend.OpClear), true})...)
+	return append(h, "? レーンの意味", back)
 }
 
 // avail は案内の 1 項目を、今押して効くなら明るく、効かないなら暗く出す。
