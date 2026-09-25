@@ -2,7 +2,7 @@
 
 起票日: 2026-09-25
 
-親: [441](441-design-pro-con-viewer.md)
+親: [441](../441-design-pro-con-viewer.md)
 
 ## 概要
 
@@ -81,4 +81,8 @@
   テストの後に本物の逃がし先の mtime が変わらないことを確かめた) / P3 適用待ちの数・`--follow --since` の取りこぼし・テストの穴 3 つ
 - 記録のみ: 画面の開閉 (1 回 2〜3 件) も適用済みの控え (1000 件) を使うが、1 回の Apply が 500 件までなので二重適用の守りは弱まらない
 
-残り: 無し (`make test` の結果は下に追記する)
+- `make test`: 1 回目 rc=2 (pro-con の lint 1 件: `ui/view.go` の `!(ro && h.acts)` に staticcheck QF1001。Go のテストは全部緑) →
+  `!ro || !h.acts` に直して `make lint` 0 件・変異を当て直して red → 2 回目 rc=0 (テストの係。4m18s)。その後 origin/master (472 の枠など) に
+  rebase し、README の競合を解いて `go test -race ./...` 緑・`make lint` 0 件
+
+残り: 無し
