@@ -10,7 +10,7 @@ import (
 	"pro-con/eventlog"
 )
 
-// unknownStates は、pid 無しで止まった state (stopped / done) でも自動の再開の途中 (working) でもない形 (issue 466 の発火条件:
+// unknownStates は、pid 無しで止まった state (stopped / done / failed) でも自動の再開の途中 (working) でもない形 (issue 466 の発火条件:
 // 再開の途中を表す state の名前が変わった版 / state の欄が無くなった版)。
 var unknownStates = []string{"resuming", ""}
 
@@ -59,6 +59,18 @@ func TestShutdownStopsPGInUnknownState(t *testing.T) {
 				t.Fatalf("知らない state の警告を出来事に出さない: %s", joinNotes(notes))
 			}
 		})
+	}
+}
+
+// マシンのクラッシュの後、claude は前の PG を pid 無し・failed で出し、claude stop しても failed のまま (482。2.1.282 で実測)。
+// 止まった形として読み、止めたことを確かめる一覧 (ListAll) に残っていても止め直さずに抜ける (旧: 止め直し続けて抜けない)。
+func TestShutdownTreatsFailedWithoutPIDAsStopped(t *testing.T) {
+	r := newCrashRig(t)
+	r.ss[0].PID, r.ss[0].State = 0, "failed"
+	r.d.ListAll = func(context.Context) ([]agents.Session, error) { return r.ss, nil }
+	notes, err := r.d.Shutdown(context.Background())
+	if err != nil || strings.Contains(joinNotes(notes), "止まったと判定できない") {
+		t.Fatalf("pid 無し・failed の PG を止まったと読まない: err=%v notes=%s", err, joinNotes(notes))
 	}
 }
 
