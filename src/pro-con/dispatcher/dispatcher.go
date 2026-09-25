@@ -636,7 +636,8 @@ func (d *Dispatcher) watch(now time.Time) ([]eventlog.Event, error) {
 	return notes, nil
 }
 
-// dispatch は分解済みのカードに、作業中が上限 (利用枠で絞った数。usage.go) に達するまで PG を割り当てる (再開が先、その中は古い順)。
+// dispatch は分解済みのカードに、枠を使うカード (card.HoldsPGSlot: turn の途中の PG) が上限 (利用枠で絞った数。usage.go) に達するまで
+// PG を割り当てる (再開が先、その中は古い順)。テストの係の結果を待って idle の PG は枠を使わない (issue 455)
 //   - 起動・再開の前に、印 (Launching) と時刻を記録に書く。結果が分かったら印を外して作業中にする
 //   - 前の Tick の起動・再開の結果が分からないまま (印が残っている) のカードは、一覧で確かめる。立っていれば取り込み、
 //     launchGrace を過ぎても出なければ起動し直す。待っている間は上限に数える
@@ -646,19 +647,29 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 	if err != nil {
 		return nil, err
 	}
+	reg, err := live.LoadRegistry(filepath.Join(d.Dir, live.RegistryFile))
+	if err != nil {
+		return nil, err
+	}
+	holds := func(c card.Card) bool {
+		o, ok := owned(c, reg)
+		return card.HoldsPGSlot(c, ok && idle(o, ss))
+	}
 	running := 0
 	var queue []card.Card
 	var notes []eventlog.Event
 	for _, c := range st.Cards {
 		if c.Deleting() { // 起動・再開しない (PG を止めて消すのを待っている)。起動の結果が分からないものは立っているかもしれないので数える
-			if c.State == card.Running || c.Launching != "" {
+			if holds(c) || c.Launching != "" {
 				running++
 			}
 			continue
 		}
 		switch c.State {
 		case card.Running:
-			running++
+			if holds(c) {
+				running++
+			}
 		case card.Planned:
 			// 順番 (issue 468) は初めての起動だけを止める。一度起動したカードの再開・起動の結果が分からないカードは止めない (立っているかもしれない)
 			if b := card.Blockers(st.Cards, c); len(b) > 0 && c.Session == "" && c.Launching == "" {
@@ -684,10 +695,6 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		}
 		return queue[i].Since.Before(queue[j].Since)
 	})
-	reg, err := live.LoadRegistry(filepath.Join(d.Dir, live.RegistryFile))
-	if err != nil {
-		return nil, err
-	}
 	// 印の残ったカード (前の起動・再開の結果が分からない) は、上限の判定より先に片付ける。上限の後ろに置くと、実際に立っている PG を
 	// 数えずに別のカードを起動する (上限を下げて起動し直したときも)
 	var fresh []card.Card

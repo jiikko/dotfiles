@@ -135,7 +135,7 @@ func (d *Dispatcher) deleteTargets(c card.Card, now time.Time, ss []agents.Sessi
 	if _, err := live.LoadRetired(filepath.Join(d.Dir, live.RegistryFile)); err != nil {
 		unsure = append(unsure, "再開で入れ替わった前の session の記録を読めない: "+err.Error())
 	}
-	return extra, plan.wait || c.Run != "" || c.Exec.Active(), unsure
+	return extra, plan.wait || c.AwaitsRun(), unsure
 }
 
 // finishMarkedStop は印を外して履歴に書く (止め終えた / 諦めた)。削除の印も外す (諦めたカードは残り、もう一度削除を頼める)。

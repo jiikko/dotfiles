@@ -552,7 +552,7 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		if c.State != card.Running {
 			return fmt.Errorf("作業中の列に無い (今は %s)", c.State.Label())
 		}
-		if c.Run != "" || c.Exec.Active() {
+		if c.AwaitsRun() {
 			return fmt.Errorf("前に頼んだコマンドの結果をまだ返していない (%s)", clip(firstNonEmpty(c.Run, c.Exec.Command), 60))
 		}
 		if strings.TrimSpace(r.Command) == "" {

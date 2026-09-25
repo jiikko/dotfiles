@@ -7,6 +7,9 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+
+	"pro-con/backend"
+	"pro-con/card"
 )
 
 // ゲージの PG の数は今の同時実行数。利用枠で上限より絞っていれば上限と理由も出す。dispatcher が 1 度も回っていない /
@@ -149,5 +152,27 @@ func TestScreensShownAndQuitLabel(t *testing.T) {
 	}
 	if l := m.quitLabel(); !strings.Contains(l, "止めて閉じる") {
 		t.Fatalf("最後の画面なのに止めると案内しない: %q", l)
+	}
+}
+
+// ゲージと PG の一覧の見出しの「PG n/m」は、枠を使っている PG (dispatcher と同じ card.HoldsPGSlot) を数える (issue 455)。
+// テストの係の結果を待って idle の PG は一覧には出すが数えない。
+func TestGaugeCountsOnlyPGsHoldingSlot(t *testing.T) {
+	be := newSpy()
+	now := be.snap.Now
+	be.snap.Cards = append(be.snap.Cards,
+		card.Card{ID: "R2", State: card.Running, Session: "s-r2", Since: now, Run: "make test"},
+		card.Card{ID: "R3", State: card.Running, Session: "s-r3", Since: now, Run: "make test"})
+	be.snap.Consumers = []backend.Consumer{
+		{Session: "s-r1", CardID: "R1", Status: "busy"},
+		{Session: "s-r2", CardID: "R2", Status: "idle"}, // 結果待ちで turn を終えた: 数えない
+		{Session: "s-r3", CardID: "R3", Status: "busy"}, // 頼んだが turn の途中: 数える
+	}
+	m := New(be, nil)
+	if g := ansi.Strip(m.gauge()); !strings.Contains(g, "PG 2/2") {
+		t.Fatalf("枠を使っていない PG を数えた: %q", g)
+	}
+	if b := ansi.Strip(strings.Join(m.pgBlock(), "\n")); !strings.Contains(b, "PG (consumer) 2/2") || !strings.Contains(b, "R2") {
+		t.Fatalf("一覧の見出しの数がゲージと違う / 結果待ちの PG を一覧から落とした: %q", b)
 	}
 }

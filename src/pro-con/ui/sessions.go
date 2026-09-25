@@ -20,7 +20,7 @@ func (m *Model) pgBlock() []string {
 			queued++
 		}
 	}
-	title := fmt.Sprintf("PG (consumer) %d/%d  PG の空き待ち %d 件", len(m.snap.Consumers), m.snap.Limit, queued)
+	title := fmt.Sprintf("PG (consumer) %d/%d  PG の空き待ち %d 件", m.snap.SlotsUsed(), m.snap.Limit, queued)
 	out := []string{boxTop(border, sgrBold+title+sgrReset, w)}
 	if len(m.snap.Consumers) == 0 {
 		out = append(out, boxLine(border, sgrDim+" 動いている PG は無い"+sgrReset, w))

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"pro-con/agents"
 	"pro-con/card"
 )
 
@@ -49,6 +50,26 @@ type Consumer struct {
 	CardID  string // 空なら待機中
 	Status  string // busy / waiting / idle (claude agents --json の status と同じ語)
 	PID     int    // 実体のプロセス (本物だけ。模擬は 0)
+}
+
+// Idle は PG が turn を終えて次の入力を待っているか (一覧の status が idle)。
+func (c Consumer) Idle() bool { return c.Status == agents.StatusIdle }
+
+// SlotsUsed は一覧 (Consumers) の PG のうち枠を使っている数 (dispatcher と同じ判定 card.HoldsPGSlot。issue 455)。
+// テストの係の結果を待って idle の PG は、一覧には居るが数えない。
+// 🚨 母数は dispatcher と違う: dispatcher は一覧に居ない作業中の PG と、起動の結果が分からない (Launching) カードも数える
+func (s Snapshot) SlotsUsed() int {
+	cards := map[string]card.Card{}
+	for _, c := range s.Cards {
+		cards[c.ID] = c
+	}
+	n := 0
+	for _, pg := range s.Consumers {
+		if card.HoldsPGSlot(cards[pg.CardID], pg.Idle()) {
+			n++
+		}
+	}
+	return n
 }
 
 // AttachRecorder は attach の間に人間が PG へ打った指示をカードの履歴へ残す backend (任意。持たない backend は残さない)。

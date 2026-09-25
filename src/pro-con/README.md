@@ -10,7 +10,7 @@ bin/pro-con          # 本物: dispatcher が書くカードの記録を出す�
 bin/pro-con --mock   # 模擬: claude は起動しない。模擬の backend (fake) が状態を進める (動作確認用)
 bin/pro-con --view   # 見ているだけの画面: 動いている pro-con をそのまま映す。依頼・回答・attach を受けず (案内の行にも出さない)、dispatcher を起こさず、quit で閉じても何も止めない (画面の数にも入らない。epic 441)。書くのは画面の中継と、ctrl+r の引き継ぎ・落ちた画面の印の後始末だけ (issue 445)
 bin/pro-con dispatcher   # 割り振り係: 受付の箱の適用・PM と PG の起動と再開・テストの係・見張り (画面を開くと、居なければ画面が起こす。旧名 daemon)。2 つ起動しない。🚨 PG を起動するので利用枠を使う
-                         # 同時に動かす PG は --limit (既定 2) まで。利用枠 (`claude -p /usage` を 5 分ごとに読む) の 5 時間と週の大きい方が 80% 以上なら 1 本、95% 以上なら新しく起動・再開しない (ゲージの「PG n/m」と理由)
+                         # 同時に動かす PG は --limit (既定 2) まで。数えるのは turn の途中の PG だけで、テストの係の結果を待って idle の PG は数えない (issue 455。結果が届いたら枠の空きを待って再開する)。利用枠 (`claude -p /usage` を 5 分ごとに読む) の 5 時間と週の大きい方が 80% 以上なら 1 本、95% 以上なら新しく起動・再開しない (ゲージの「PG n/m」と理由)
 bin/pro-con config set limit 3 | set pm 1 | unset limit | show  # 止めずに PG の枠 (同時に動かす PG の上限) と PM の数を変える (issue 456)。受付の箱に置き、dispatcher が状態の置き場の settings.json に書いて次の Tick から使う (起動し直しても続く)
                          # 🚨 上限の優先: 利用枠の絞り (80% で 1 本 / 95% で 0 本) > 設定 (config set limit) > dispatcher の --limit > 既定 2。--limit は「設定が無いときの値」で、unset limit で戻る (画面が起こす dispatcher は --limit を付けない)
                          # PM の数は今は 1 だけを受ける (2 以上は 415 の論点 6 が決まるまで断る。今は 1 つで動くので dispatcher はまだ読まない。PM を起こさないのは --pm=off / config.toml の pm = "off")。settings.json が壊れていたら --limit で動き、理由をゲージに出す

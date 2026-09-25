@@ -188,6 +188,17 @@ type Exec struct {
 
 func (e Exec) Active() bool { return e.Command != "" }
 
+// AwaitsRun はテストの係に頼んだコマンドの結果を待っているか (頼みが列にある / 実行中)。
+func (c Card) AwaitsRun() bool { return c.Run != "" || c.Exec.Active() }
+
+// HoldsPGSlot は作業中のカードが PG の枠 (--limit) を使っているか (issue 455)。枠は turn の途中の PG だけを数える:
+// テストの係の結果を待つ PG は turn を終えて idle で、トークンを使わない (重い処理はテストの係が 1 本ずつ回す) ので数えない。
+// idle と確かめられないうち (頼んだ直後で turn の途中 / 一覧に居ない) は数える。結果が届くと分解済みへ戻り、枠の空きを待って再開する (再開が先)。
+// idle は、このカードの PG が一覧で idle と出ているか。
+func HoldsPGSlot(c Card, idle bool) bool {
+	return c.State == Running && (!c.AwaitsRun() || !idle)
+}
+
 // DropRun はテストの係への頼みと実行中の記録を取り下げる。作業中の列を離れるときは必ず呼ぶ
 // (残すと、後で届いた結果や「結果が無い」が、別の理由で再開した PG を止めて再開し直す)。
 func (c *Card) DropRun() {

@@ -62,7 +62,7 @@ func (d *Dispatcher) deliverOrders(now time.Time, ss []agents.Session) ([]eventl
 			if c.Run != "" {
 				why += "。テストの係への頼み (" + clipLine(c.Run) + ") は取り下げた"
 			}
-		case c.Run != "" || c.Exec.Active():
+		case c.AwaitsRun():
 			continue // テストの係の結果を渡す再開に添えて届ける
 		case idle(o, ss):
 			why = "PG が turn を終えた (idle)。追加オーダーを届けるため同じ session を再開する"
