@@ -30,7 +30,7 @@ PG は変異 13 本・敵対的レビュー 1 周を自分で回し、残り (�
 - 🚨 **終了で止まったものを「止まっていない」と数え続けた** (実バグ)。作業を終えた session は `claude stop` 後も state が `done` のまま pid 無し。
   → 01dbb3b0 で直した (止まった = pid 無し かつ working でない)。直した版の `--stop` は 1 秒で ok
 - ✗ PM の CLI にカードを読む口が無い: `card add` は受付の箱の依頼 ID だけを返し、カード ID (C-002) が分からない。状態・PG の出力・質問は
-  cards.json を python で読んだ。状態の変化も 5 秒ごとに読んで待った → [442](../441/442-feat-pro-con-card-list-show-wait.md)
+  cards.json を python で読んだ。状態の変化も 5 秒ごとに読んで待った → [442](../441/done/442-feat-pro-con-card-list-show-wait.md)
 - ✗ **PM がレビューで差し戻す口が無い**: 操作は add / plan / ask / answer / review / close / run / guide だけで、レビュー待ちのカードに
   直してほしい点を渡して PG を再開する操作が無い。今回は取り込めたが、直してほしい点 (下の「履歴の順」) を PG に返せなかった
 - ✗ 完了にしたカードの PG の session が止まらない (state done・pid ありの idle のまま残る)。終了のときには止まるが、それまでプロセスが残る
