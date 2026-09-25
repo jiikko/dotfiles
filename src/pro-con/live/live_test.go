@@ -444,12 +444,16 @@ func TestSnapshotReadsDispatcherState(t *testing.T) {
 		t.Fatalf("dispatcher が回っていないのに生存・上限を出した: %v %d", s.DispatcherTick, s.Limit)
 	}
 	tick := time.Date(2026, 9, 25, 1, 2, 3, 0, time.UTC)
-	if err := store.SaveDispatcherState(b.dir, store.DispatcherState{Tick: tick, Limit: 3, Cap: 1, Why: "枠 85%"}); err != nil {
+	if err := store.SaveDispatcherState(b.dir, store.DispatcherState{Tick: tick, Limit: 3, Cap: 1, Why: "枠 85%",
+		Roles: card.Roles{PMOff: true}}); err != nil {
 		t.Fatal(err)
 	}
 	b.Refresh(context.Background())
 	if s := b.Poll(); !s.DispatcherTick.Equal(tick) || s.Limit != 1 || s.LimitMax != 3 || s.LimitWhy != "枠 85%" {
 		t.Fatalf("dispatcher の様子を出さない: %v %d/%d %q", s.DispatcherTick, s.Limit, s.LimitMax, s.LimitWhy)
+	}
+	if s := b.Poll(); s.Roles != (card.Roles{PMOff: true}) {
+		t.Fatalf("起こさない役を出さない (人の番を決められない): %+v", s.Roles)
 	}
 }
 

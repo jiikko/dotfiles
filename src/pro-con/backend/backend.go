@@ -34,12 +34,13 @@ type Snapshot struct {
 	Now            time.Time
 	Cards          []card.Card
 	Consumers      []Consumer
-	Limit          int       // 今の PG の同時実行数 (利用枠の残量で上限より絞ることがある)
-	LimitMax       int       // 上限 (dispatcher の --limit)
-	LimitWhy       string    // Limit を絞った / 利用枠を読めない理由 (無ければ空)
-	DispatcherTick time.Time // dispatcher (と watchdog) が最後に回った時刻。zero なら 1 度も回っていない。古ければ UI が警告する
-	Screens        int       // 開いている画面の数 (自分を含む。package presence。0 なら数えられなかった)
-	DispatcherHeld bool      // 人が dispatcher を止めた印がある (pro-con dispatcher --stop。画面は起こさない。issue 459)
+	Limit          int        // 今の PG の同時実行数 (利用枠の残量で上限より絞ることがある)
+	LimitMax       int        // 上限 (dispatcher の --limit)
+	LimitWhy       string     // Limit を絞った / 利用枠を読めない理由 (無ければ空)
+	DispatcherTick time.Time  // dispatcher (と watchdog) が最後に回った時刻。zero なら 1 度も回っていない。古ければ UI が警告する
+	Screens        int        // 開いている画面の数 (自分を含む。package presence。0 なら数えられなかった)
+	DispatcherHeld bool       // 人が dispatcher を止めた印がある (pro-con dispatcher --stop。画面は起こさない。issue 459)
+	Roles          card.Roles // dispatcher が起こさない役 (最後に回ったときの値)。人の番の目印 (card.Turn) に使う
 	Violations     []card.Violation
 }
 

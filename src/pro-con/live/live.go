@@ -366,7 +366,7 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 		extra = append(extra, card.Violation{Reason: b.refused})
 	}
 	b.snap = backend.Snapshot{Now: now, Cards: cards, Consumers: cons, Limit: ds.Cap, LimitMax: ds.Limit, LimitWhy: ds.Why,
-		DispatcherTick: ds.Tick, Screens: screens, DispatcherHeld: store.Held(b.dir), Violations: append(card.Check(cards), extra...)}
+		DispatcherTick: ds.Tick, Screens: screens, DispatcherHeld: store.Held(b.dir), Roles: ds.Roles, Violations: append(card.Check(cards), extra...)}
 	b.pending, b.ready = pending, true
 	b.mu.Unlock()
 }

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"pro-con/card"
 )
 
 // DispatcherStateFile は dispatcher が Tick ごとに書く自分の様子。画面が「dispatcher が回っているか」と今の上限を読む (415 要件 13)。
@@ -23,6 +25,8 @@ type DispatcherState struct {
 	UsageSession int       `json:"usage_session"`
 	UsageWeek    int       `json:"usage_week"`
 	UsageAt      time.Time `json:"usage_at"`
+	// Roles は dispatcher が起こさない役 (設定 pm / integrator = "off")。画面と card list が人の番 (card.Turn) を決めるのに読む
+	Roles card.Roles `json:"roles"`
 }
 
 // SaveDispatcherState は様子を書く (書きかけを読ませない)。

@@ -113,6 +113,9 @@ func TestCardList(t *testing.T) {
 	if !strings.Contains(out, "待ち: 質問") {
 		t.Fatalf("質問待ちが一覧で見えない: %q", out)
 	}
+	if strings.Contains(out, "人の番") {
+		t.Fatalf("PM が先に受ける質問を人の番と出した: %q", out)
+	}
 	if _, out, _ := viewCmd(t, env, "list", "--all"); !strings.Contains(out, "C-003") {
 		t.Fatalf("--all で片付けたものが出ない: %q", out)
 	}
@@ -126,6 +129,25 @@ func TestCardList(t *testing.T) {
 	}
 	if rc, _, _ := viewCmd(t, env, "list", "--state", "nosuch"); rc != 2 {
 		t.Fatalf("未知の列は rc=2: %d", rc)
+	}
+}
+
+// 誰の番かは dispatcher が書いた起こさない役で決める (PM を起こさないなら、PG の質問と依頼は人の番)。
+func TestCardListMarksHumansTurn(t *testing.T) {
+	env := viewFixture(t)
+	if err := store.SaveDispatcherState(env.dir, store.DispatcherState{Tick: time.Now(), Roles: card.Roles{PMOff: true}}); err != nil {
+		t.Fatal(err)
+	}
+	_, out, _ := viewCmd(t, env, "list")
+	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+		if !strings.HasSuffix(l, "人の番") {
+			t.Fatalf("PM を起こさないのに人の番と出さない: %q", l)
+		}
+	}
+	rc, out, _ := viewCmd(t, env, "list", "--state", "waiting", "--json")
+	var got []cardSummary
+	if rc != 0 || json.Unmarshal([]byte(out), &got) != nil || len(got) != 1 || got[0].Turn != card.TurnHuman.Label() {
+		t.Fatalf("--json に人の番が出ない: rc=%d %q", rc, out)
 	}
 }
 
