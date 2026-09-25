@@ -38,8 +38,8 @@
   - `dispatcher/launcher.go`: `ExecLauncher{UserSettings}` を持たせ、起動・再開のたびにユーザーの settings.json から
     `language` **だけ**を抜いて `--settings '{"language":…}'` を位置引数 (prompt) の前に挟む。読めない・壊れている・
     無い・文字列でない・空なら付けない (起動は止めない)。パスは claude と同じく `CLAUDE_CONFIG_DIR` があればその下 (`UserSettingsPath`)
-  - `dispatchercmd.go`: 本物の dispatcher が `UserSettingsPath(home)` を渡す。437 の PM も同じ `d.Launch.Start/Resume` を通るので、437 が入れば PM にも効く
-    (437 のブランチ `origin/worktree-pc-c-007` の `dispatcher/pm.go` が `d.Launch.Start` / `Resume` を呼ぶのを確認)
+  - `dispatchercmd.go`: 本物の dispatcher が `UserSettingsPath(home)` を渡す。437 の PM も同じ `d.Launch.Start/Resume` を通るので PM にも効く
+    (origin/master 60d94191 へ rebase し、`dispatcher/pm.go` が `d.Launch.Start` / `Resume` を呼ぶのを確認)
 - 確かめたこと
   - テスト: `dispatcher/launcher_test.go` (言語だけを渡す・hook / 許可 / model を持ち込まない・渡さない 6 通り・CLAUDE_CONFIG_DIR) と
     `dispatchercmd_test.go` の配線 (本物の dispatcher の launcher が settings.json のパスを持つ)。偽の settings.json を TempDir に置き、claude は起動しない
