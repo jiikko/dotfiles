@@ -55,4 +55,5 @@ dispatcher が何を判断したか (箱の依頼を適用した / PG を起動�
   close.go の `stopClosed` も出来事 (種類 `stop`・カード・session) に揃え、「閉じたので止めた / 既に止まっていた / 止められない」が events.jsonl に出る
   (`TestCloseStopRecordsEvents`)。テストの重複 (`syncBuf` が 443 の screencmd_test.go と同名) は 443 の方を使う。
   rebase 後に変異を当て直して 16 本 (前の 13 本 + close.go の 3 本) がすべて red。`go test -race ./...` は 447・443 のテストを含めて緑
+- [x] 2026-09-25: 差し戻しの後の `make test` rc=0 (テストの係。4m16s)
 - [ ] 残り: 画面の側の出来事 (開いた・閉じた・quit で止めた / 止めなかった) は 445 の判断待ち (上の「決めたこと」)
