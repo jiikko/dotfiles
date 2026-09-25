@@ -33,4 +33,6 @@
   止めた session を attach で同じ id のまま起こし直せるかは確かめていない
 - claude (native binary) が起動時にシグナルの扱いを戻すかは確かめていない (`--stop` は Notify で受けるので、子は既定の扱いで起動する。
   Go の signal.Ignore なら子に引き継がれることは実測した)
-- `claude agents --json` / `--all` の出力の形は 2.1.282 で測った。版が上がって state の値が変わると、止まったかの確かめが「止まっていない」に倒れ続ける (止め直しを続ける側)
+- `claude agents --json` / `--all` の出力の形は 2.1.282 で測った。止まったかは pid と state で決める (pid 無し かつ working でない = 01dbb3b0。
+  dogfooding で、終えた session が stop 後も state: done のままだと分かって直した)。版が上がって pid が出なくなる / working の綴りが変わると、
+  止まったかの確かめがどちらかへ倒れる (未確認)
