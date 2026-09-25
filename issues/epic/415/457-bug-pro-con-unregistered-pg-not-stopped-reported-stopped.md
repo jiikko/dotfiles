@@ -69,7 +69,10 @@ PG の session が pro-con の記録 (sessions.json) に取り込まれなかっ
     (レビューの P2。`TestShutdownTouchesOnlyOwnSessions` がこの形を ok と決めているので変えていない。名指しに回すかは PM の判断)
   - 同じ repo を 2 つの状態の置き場で使うと worktree のパスがぶつかる (カード ID が同じ)。この変更の前からの形で未確認
   - 止まったかの判定 `Session.Stopped()` は 466 が扱う (ここではその 1 か所を使うだけにした)
-  - make test は `pro-con card run` で頼んだ (結果は下に追記する)
+- [x] make test (`pro-con card run`、ee0c531a): rc=2。Go のテストは pro-con (-race) を含め全部 ok。落ちたのは
+  `tests/tmux/test_log_kill_command.sh` の 1 本だけ (「kill-server で直前保存が quiet 起動される」: 期待した `save quiet` の呼び出しが無い)。
+  この変更は pro-con の Go だけで tmux には触っていない (test と対象のスクリプトの最後の変更は 2026-09-05)。原因は調べていない。
+  テストの係の環境に左右されている疑いがあるが未確認
 
 ## 関連
 
