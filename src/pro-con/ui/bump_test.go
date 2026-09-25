@@ -8,10 +8,10 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// framePos は画面に描かれた選択の枠の左上の角 (┏) の (桁, 行)。見つからなければ (-1, -1)。
+// framePos は画面に描かれた選択の枠の左上の角 (frameTL) の (桁, 行)。見つからなければ (-1, -1)。
 func framePos(m *Model) (int, int) {
 	for r, l := range strings.Split(ansi.Strip(m.render()), "\n") {
-		if i := strings.Index(l, "┏"); i >= 0 {
+		if i := strings.Index(l, frameTL); i >= 0 {
 			return ansi.StringWidth(l[:i]), r
 		}
 	}

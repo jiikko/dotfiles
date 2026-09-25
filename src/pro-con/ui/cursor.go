@@ -11,6 +11,18 @@ import (
 	"tuikit/anim"
 )
 
+// 選択の枠の文字と色 (issue 472: 赤い二重線。ユーザーの指定)。赤は docs/theme-colors.md の 196 (sync の枠と同じ番号。
+// 選んでいるレーンの枠の現在地の色 202 (lanefade.go) とは分けてある)。テストもこの定数で枠を探す。
+const (
+	frameColor = 196
+	frameTL    = "╔"
+	frameTR    = "╗"
+	frameBL    = "╚"
+	frameBR    = "╝"
+	frameH     = "═"
+	frameV     = "║"
+)
+
 // cursorDuration はカーソルの移動の所要。押すたびに動くので、カードが列を移る演出 (800ms) より短い。
 const cursorDuration = 180 * time.Millisecond
 
@@ -87,7 +99,7 @@ func (m *Model) overlayCursor(board []string) []string {
 	x, y := m.cursorPos(m.now())
 	left, row := int(x+0.5)-1, int(y+0.5) // slotXY は枠の内側の左上。枠は列の外枠に重ねる
 	w := m.colWidth()
-	border := fg(202) + sgrBold
+	border := fg(frameColor) + sgrBold
 	top, bottom := row-cardGap, row+cardLines
 	for r := top; r <= bottom; r++ {
 		if r < 0 || r >= len(board) {
@@ -98,15 +110,15 @@ func (m *Model) overlayCursor(board []string) []string {
 		edge := isGapRow(r) || r == len(board)-1
 		switch {
 		case r == top && edge:
-			board[r] = splice(board[r], left, w, border+"┏"+strings.Repeat("━", max(w-2, 0))+"┓")
+			board[r] = splice(board[r], left, w, border+frameTL+strings.Repeat(frameH, max(w-2, 0))+frameTR)
 		case r == bottom && edge:
-			board[r] = splice(board[r], left, w, border+"┗"+strings.Repeat("━", max(w-2, 0))+"┛")
+			board[r] = splice(board[r], left, w, border+frameBL+strings.Repeat(frameH, max(w-2, 0))+frameBR)
 		default:
 			// 縦線も同じ理由で、カードの行ではレーンの外枠か列の間に乗ったときだけ描く。レーンを跨いで滑る途中で
 			// カードの中に描くと、地の色の無い縦筋が中身を掃き、全角文字も途中で切れて、中身が一瞬消えて見える (2026-09-25 の報告)
 			for _, x := range []int{left, left + w - 1} {
 				if edge || m.isFrameCol(x) {
-					board[r] = splice(board[r], x, 1, border+"┃")
+					board[r] = splice(board[r], x, 1, border+frameV)
 				}
 			}
 		}
