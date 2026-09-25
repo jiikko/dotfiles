@@ -96,7 +96,7 @@ const (
 	WaitPermission          // 権限プロンプトで止まった (Waiting 列。claude agents --json の waitingFor)
 	WaitResource            // 占有リソースの順番待ち (要件 12。Running 列のまま)
 	WaitQuota               // 利用枠の回復待ち (Running 列のまま)
-	WaitCrashed             // PG が短い間に何度も落ちたので daemon が止めた (Waiting 列。人間が回答すると同じ session を再開する。426 の決定 4)
+	WaitCrashed             // PG が短い間に何度も落ちたので dispatcher が止めた (Waiting 列。人間が回答すると同じ session を再開する。426 の決定 4)
 )
 
 // NeedsAnswer は人間か PM の操作が要る待ちか (= Waiting 列に置く待ちか)。
@@ -155,14 +155,14 @@ type Order struct {
 }
 
 // Exec は今実行しているコマンド (make test / 実機 E2E 等)。ゼロ値は「何も実行していない」。
-// 本物のモードでは、PG が `pro-con card run` で頼んだコマンドを daemon (テストの係) が実行している間だけ入る (426 の決定 5)。
+// 本物のモードでは、PG が `pro-con card run` で頼んだコマンドを dispatcher (テストの係) が実行している間だけ入る (426 の決定 5)。
 type Exec struct {
 	Command  string
 	Resource string        // 占有しているリソース (device / xcode 等)。占有しないコマンドは空
 	Since    time.Time     // 実行を始めた時刻
 	Expected time.Duration // 見込みの所要 (前回の実測)。0 なら不明
-	// RunID は daemon (テストの係) の実行ごとの印。実行の bash の引数 ($0) に `pro-con-run:<RunID>` として載る。
-	// daemon が死んで残った実行を、次の daemon がこの印で見つけて止める (実行を始める前に記録する)
+	// RunID は dispatcher (テストの係) の実行ごとの印。実行の bash の引数 ($0) に `pro-con-run:<RunID>` として載る。
+	// dispatcher が死んで残った実行を、次の dispatcher がこの印で見つけて止める (実行を始める前に記録する)
 	RunID string `json:",omitempty"`
 }
 
@@ -210,28 +210,28 @@ type Card struct {
 	Orders   []Order
 	History  []Event
 	Log      []string // PG の出力の末尾 (本番は transcript から読む)
-	// Resume は次に PG を再開するときに渡す文 (質問への回答)。daemon が渡したら空にする (本物のモードだけ。426 の決定 2)
+	// Resume は次に PG を再開するときに渡す文 (質問への回答)。dispatcher が渡したら空にする (本物のモードだけ。426 の決定 2)
 	Resume string `json:",omitempty"`
-	// Launching は daemon が PG の起動・再開を始めて、結果をまだ確かめていない印 ("起動" / "再開")。起動の前に記録へ書く
-	// (claude が「失敗」と返しても session が立っていることがあり、daemon が途中で落ちることもある。次の Tick が一覧で確かめる)
+	// Launching は dispatcher が PG の起動・再開を始めて、結果をまだ確かめていない印 ("起動" / "再開")。起動の前に記録へ書く
+	// (claude が「失敗」と返しても session が立っていることがあり、dispatcher が途中で落ちることもある。次の Tick が一覧で確かめる)
 	Launching string `json:",omitempty"`
-	// LaunchedAt は daemon が最後に起動・再開を始めた時刻。これより前に始まった session は、このカードの PG として取り込まない
+	// LaunchedAt は dispatcher が最後に起動・再開を始めた時刻。これより前に始まった session は、このカードの PG として取り込まない
 	LaunchedAt time.Time `json:",omitzero"`
-	// Crashes は PG のプロセスが落ちて Claude Code が自動で再開した時刻 (transcript の再開の文の時刻)。daemon が数えて、
+	// Crashes は PG のプロセスが落ちて Claude Code が自動で再開した時刻 (transcript の再開の文の時刻)。dispatcher が数えて、
 	// 短い間に上限を超えたら止める
 	Crashes []time.Time `json:",omitempty"`
 	// StopWanted は落ちた回数が上限に達したが、まだ止められていない印 (止められるまで毎 Tick 試す。時間の窓を過ぎても諦めない)
 	StopWanted bool `json:",omitempty"`
-	// DeadSince は daemon が、このカードの PG の session が一覧に無い / pid 無し (落ちて自動の再開を待っている) のを最初に見た時刻。
+	// DeadSince は dispatcher が、このカードの PG の session が一覧に無い / pid 無し (落ちて自動の再開を待っている) のを最初に見た時刻。
 	// 生きているのを見たら外す。止める・再開する前の待ち (restartWait) はここから数える
 	DeadSince time.Time `json:",omitzero"`
-	// Stopped は pro-con の終了で daemon が PG を止めた印。次の再開は、落ちた PG の自動の再開を待たずに (止めずに) 行う。起動・再開で外す
+	// Stopped は pro-con の終了で dispatcher が PG を止めた印。次の再開は、落ちた PG の自動の再開を待たずに (止めずに) 行う。起動・再開で外す
 	Stopped bool `json:",omitempty"`
 	// Run は PG が `pro-con card run` で頼んだ、まだ結果を返していないコマンド (シェルの 1 行)。RunAt は頼んだ時刻 (順番の鍵)。
-	// daemon が順番に実行し、結果を持たせて PG を再開したら空にする
+	// dispatcher が順番に実行し、結果を持たせて PG を再開したら空にする
 	Run   string    `json:",omitempty"`
 	RunAt time.Time `json:",omitzero"`
-	// RunCwd は頼んだ側 (`pro-con card run` を打ったシェル) の作業ディレクトリ。daemon はそのカードの PG の worktree と一致するときだけ実行する
+	// RunCwd は頼んだ側 (`pro-con card run` を打ったシェル) の作業ディレクトリ。dispatcher はそのカードの PG の worktree と一致するときだけ実行する
 	// (別のカードの名前で頼まれた実行を、そのカードの worktree で走らせない)
 	RunCwd string `json:",omitempty"`
 	// Archived は完了のレーンから片付けた (x)。ボードには出さないが、記録 (状態ファイル) には残す

@@ -1,4 +1,4 @@
-package daemon
+package dispatcher
 
 // ExecLauncher は本物の claude で PG を起動・再開する。
 //

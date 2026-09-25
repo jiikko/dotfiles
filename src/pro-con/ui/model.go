@@ -89,7 +89,7 @@ type Model struct {
 	slides    map[panel]*slide // 下端の板の開閉の演出 (slide.go)
 	// カードの詳細の引き出し (drawer.go)。drawerCard は閉じる途中も残す (逆再生で本文が見えている必要がある)
 	cursor     cursorGlide // 選択中のカードを囲む枠 (cursor.go)
-	stopping   bool        // 終了のために backend (daemon と PG) を止めている最中 (quit.go)
+	stopping   bool        // 終了のために backend (dispatcher と PG) を止めている最中 (quit.go)
 	stopErr    error       // 止めきれなかった理由 (終了後に main が出す)
 	attaching  bool        // attach の照合を裏で待っている
 	legend     bool        // レーンの意味の表を出している (legend.go)
@@ -218,7 +218,7 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 		m.stopping, m.stopErr = false, msg.err
 		return m, tea.Quit
 	case tea.KeyPressMsg:
-		if m.stopping { // 止め終えるまで待つ。ctrl+c だけは待たずに閉じる (止める処理は別プロセスの pro-con daemon --stop が続ける)
+		if m.stopping { // 止め終えるまで待つ。ctrl+c だけは待たずに閉じる (止める処理は別プロセスの pro-con dispatcher --stop が続ける)
 			if msg.String() == "ctrl+c" {
 				return m, tea.Quit
 			}

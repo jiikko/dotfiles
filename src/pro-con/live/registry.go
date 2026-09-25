@@ -60,7 +60,7 @@ var (
 // 起動する側は、claude --bg が返す短い id で一覧を引き、SessionID と PID を得てから記録する (427)。
 // 🚨 書き直しは行ごと置き換える。再開のときも CardID を渡すこと (渡し忘れると、どのカードのための session かが消える。照合には影響しない)。
 // 書き込みは一時ファイルからの rename (途中で落ちても壊れた記録を残さない)。
-// 🚨 書き手は daemon だけの前提 (issue 426 の決定 1)。複数から同時に書くと、後から書いた方が前の書き込みを消す。
+// 🚨 書き手は dispatcher だけの前提 (issue 426 の決定 1)。複数から同時に書くと、後から書いた方が前の書き込みを消す。
 func Register(path string, o Owned) error { return write(path, o, false) }
 
 // ReplaceCard は o.CardID の行を o 1 本に置き換える (再開で session が新しくなったとき。

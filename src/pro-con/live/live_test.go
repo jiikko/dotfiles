@@ -89,7 +89,7 @@ var sessions = []agents.Session{
 	{SessionID: "cccccccc-3", ID: "cccccccc", PID: 103, Kind: "background", Status: "waiting", WaitingFor: "input needed", Cwd: "/w/other"},
 }
 
-// runningCard は記録に作業中のカードを 1 枚置く (session は短い id)。記録を書くのは daemon の仕事なので、store.Update で直接置く。
+// runningCard は記録に作業中のカードを 1 枚置く (session は短い id)。記録を書くのは dispatcher の仕事なので、store.Update で直接置く。
 func runningCard(t *testing.T, b *Backend, id, session string) {
 	t.Helper()
 	if _, err := store.Submit(b.dir, store.Request{Kind: "add", Title: "t-" + id, Repo: "dotfiles"}); err != nil {
@@ -160,7 +160,7 @@ func TestTranscriptIsCached(t *testing.T) {
 	}
 }
 
-// 書き込みは受付の箱に置く (記録へ適用するのは daemon)。受けるのは新しい依頼と回答だけ。attach できるのは裏の session だけ。
+// 書き込みは受付の箱に置く (記録へ適用するのは dispatcher)。受けるのは新しい依頼と回答だけ。attach できるのは裏の session だけ。
 func TestApplySubmitsToInbox(t *testing.T) {
 	b, _ := testBackend(t, sessions, nil)
 	if _, err := b.Apply(backend.NewRequest{Repo: backend.Repo{Name: "dotfiles", Path: "/w/dotfiles"}, Text: "色を直して\n詳しく"}); err != nil {
@@ -196,7 +196,7 @@ func TestApplySubmitsToInbox(t *testing.T) {
 	}
 }
 
-// 受付の箱に適用待ちが溜まっていたら (daemon が動いていない)、ヘッダーで知らせる。
+// 受付の箱に適用待ちが溜まっていたら (dispatcher が動いていない)、ヘッダーで知らせる。
 func TestDescribeShowsPendingInbox(t *testing.T) {
 	b, _ := testBackend(t, nil, nil)
 	b.Refresh(context.Background())

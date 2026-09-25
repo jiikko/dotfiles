@@ -19,7 +19,7 @@ func card_(t *testing.T, dir string, args ...string) (rc int, out, errOut string
 	return rc, o.String(), e.String()
 }
 
-// pro-con card で置いた依頼を daemon (store.Apply) が適用すると、カードが進む。置いた依頼の ID は stdout に出る。
+// pro-con card で置いた依頼を dispatcher (store.Apply) が適用すると、カードが進む。置いた依頼の ID は stdout に出る。
 func TestCardCommandRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	rc, out, errOut := card_(t, dir, "add", "--title", "色を直す", "--request", "statusline の色", "--repo", "dotfiles")
@@ -39,7 +39,7 @@ func TestCardCommandRoundTrip(t *testing.T) {
 	}
 }
 
-// 使い方の誤りは箱に置く前に rc=2 で止める (daemon で除けられるより早く気づける)。
+// 使い方の誤りは箱に置く前に rc=2 で止める (dispatcher で除けられるより早く気づける)。
 func TestCardCommandRejectsBadUsage(t *testing.T) {
 	for _, args := range [][]string{
 		{},

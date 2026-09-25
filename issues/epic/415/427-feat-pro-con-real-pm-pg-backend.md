@@ -4,6 +4,9 @@
 
 起票日: 2026-09-24
 
+> 🚨 2026-09-25 に `pro-con daemon` を役割どおり **`pro-con dispatcher`** (割り振り係) に改名した (コード・コマンド・画面・状態のファイル名)。
+> この issue の以前の記録の「daemon」は dispatcher のこと。`pro-con daemon` は別名として残してある
+
 親: [415](415-design-claude-pm-worker-orchestration.md) の「段階」3〜5
 
 ## 概要

@@ -137,7 +137,7 @@ func (m *Model) gauge() string {
 	sep := fg(240) + " │ " + sgrFgReset
 	g := " " + strings.Join(parts, "  ") + sep + fmt.Sprintf("最古の待ち %s", fmtDur(oldest)) + sep +
 		fmt.Sprintf("PG %d/%d", len(m.snap.Consumers), m.snap.Limit) + sep +
-		fmt.Sprintf("daemon %s前", fmtDur(m.snap.Now.Sub(m.snap.DaemonTick)))
+		fmt.Sprintf("dispatcher %s前", fmtDur(m.snap.Now.Sub(m.snap.DispatcherTick)))
 	if u := m.upgradeSummary(); u != "" {
 		g += sep + u
 	}

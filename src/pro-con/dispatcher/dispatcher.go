@@ -1,13 +1,13 @@
-// Package daemon は本物のモードの dispatcher (issue 427 の段階 3c-1)。1 回の Tick で:
+// Package dispatcher は本物のモードの dispatcher (issue 427 の段階 3c-1)。1 回の Tick で:
 //
 //  1. 受付の箱を記録へ適用する (store.Apply)
 //  2. 起動した PG の session を pro-con の記録 (live.Register) に登録する (session id と pid が一覧に出てから)
 //  3. 分解済みのカードに、上限まで PG を割り当てる。回答を受けたカード (Resume が有る) は同じ session を再開し、それ以外は新しく起動する
 //
-// 書き手は daemon だけ (426 の決定 1)。PG の起動と再開は Launcher に任せ、テストでは偽物に差し替える。
+// 書き手は dispatcher だけ (426 の決定 1)。PG の起動と再開は Launcher に任せ、テストでは偽物に差し替える。
 // 起動・再開の前に印を記録へ書き、結果は次の Tick で session の一覧と照らして確かめる (claude の「失敗」と実際が食い違う / 途中で落ちる)。
 // 落ちた回数で止める・watchdog は 3c-2、常駐と排他は 3c-3。
-package daemon
+package dispatcher
 
 import (
 	"context"
@@ -42,7 +42,7 @@ const (
 	defaultCrashWindow = 30 * time.Minute
 )
 
-// launchGrace は起動・再開の結果を確かめられないとき (claude が失敗と返した / daemon が途中で落ちた)、一覧に出るのを待つ長さ。
+// launchGrace は起動・再開の結果を確かめられないとき (claude が失敗と返した / dispatcher が途中で落ちた)、一覧に出るのを待つ長さ。
 // 過ぎても出なければ起動し直す (待たずに起動し直すと、立っていた session の上にもう 1 本増える)。
 const launchGrace = time.Minute
 
@@ -57,8 +57,8 @@ const longToolLimit = time.Hour
 // errWait は、今は起動・再開せずに次の Tick を待つ (失敗ではないので履歴に書かない)。
 var errWait = errors.New("待つ")
 
-// Daemon は dispatcher の 1 つ。
-type Daemon struct {
+// Dispatcher は dispatcher の 1 つ。
+type Dispatcher struct {
 	Dir    string            // 本物のモードの状態の置き場 (記録・箱・pro-con が起動した session の記録)
 	Limit  int               // 同時に動かす PG の上限
 	Repos  map[string]string // repo の名前 → 絶対パス (カードの Repo から起動先を決める)
@@ -89,7 +89,7 @@ type Daemon struct {
 
 	lastStatus  string          // 最後に Publish した文
 	publishedAt time.Time       // 最後に Publish を試みた時刻
-	published   bool            // 1 度でも Publish したか (起動の直後に空の文も書く。前の daemon が残した文を消す)
+	published   bool            // 1 度でも Publish したか (起動の直後に空の文も書く。前の dispatcher が残した文を消す)
 	notified    map[string]bool // 通知した回答待ちのカード (待ちを抜けたら消す)
 }
 
@@ -99,7 +99,7 @@ const defaultStallAfter = 15 * time.Minute
 // Tick は 1 回ぶんの仕事をして、何をしたかの短い記録を返す (ログ用)。
 // session の一覧を取れない Tick は、登録も割り当てもしない (一覧と照らさずに起動・再開すると、立っている session を見落として増やす /
 // 別の session を止める)。
-func (d *Daemon) Tick(ctx context.Context) ([]string, error) {
+func (d *Dispatcher) Tick(ctx context.Context) ([]string, error) {
 	now := d.Now()
 	var notes []string
 	if d.FakePM != nil {
@@ -155,10 +155,10 @@ func (d *Daemon) Tick(ctx context.Context) ([]string, error) {
 }
 
 // register は作業中のカードの session (短い id) が一覧に出ていれば、session id と pid を添えて pro-con の記録に書く。
-// 起動の直後は一覧にまだ出ないことがあるので、出るまで毎回見る。取り込むのは daemon が最後に起動・再開した (LaunchedAt) 後に
-// 始まった session だけで、書き直せるのは記録の行がそれより前のもの (= daemon 自身の再開の後) だけ。それ以外は外から操作された疑いを知らせる。
-// 判定の材料は記録に置く (daemon が起動し直しても失わない)。
-func (d *Daemon) register(now time.Time, ss []agents.Session) (int, []string, error) {
+// 起動の直後は一覧にまだ出ないことがあるので、出るまで毎回見る。取り込むのは dispatcher が最後に起動・再開した (LaunchedAt) 後に
+// 始まった session だけで、書き直せるのは記録の行がそれより前のもの (= dispatcher 自身の再開の後) だけ。それ以外は外から操作された疑いを知らせる。
+// 判定の材料は記録に置く (dispatcher が起動し直しても失わない)。
+func (d *Dispatcher) register(now time.Time, ss []agents.Session) (int, []string, error) {
 	st, err := store.Load(d.Dir)
 	if err != nil {
 		return 0, nil, err
@@ -198,7 +198,7 @@ func (d *Daemon) register(now time.Time, ss []agents.Session) (int, []string, er
 				warn = append(warn, fmt.Sprintf("%s の session %s は pro-con の最後の起動・再開より前に始まっている (同じ短い id の別の session の疑い)。登録しない", c.ID, s.ID))
 				continue
 			case ok && o.SessionID != s.SessionID && o.ID != c.Session && o.StartedAt.Before(c.LaunchedAt):
-				// daemon 自身の再開が返した新しい短い id の session (claude --bg --resume は別の session id の session を立てる)。
+				// dispatcher 自身の再開が返した新しい短い id の session (claude --bg --resume は別の session id の session を立てる)。
 				// LaunchedAt 以降に始まっている (上の判定) ので、カードの行をこれに置き換える
 				if err := live.ReplaceCard(regPath, live.Owned{SessionID: s.SessionID, ID: s.ID, PID: s.PID, CardID: c.ID, StartedAt: s.Started(), Cwd: s.Cwd}); err != nil {
 					return n, warn, err
@@ -242,7 +242,7 @@ func (d *Daemon) register(now time.Time, ss []agents.Session) (int, []string, er
 
 // trackDead は、PG の session を持つカードごとに「一覧に無い / pid 無し」を最初に見た時刻を DeadSince に書き、生きているのを見たら外す。
 // 待ちの起点を「落ちた (のを見た) 時刻」にするため (直前の再開や回答の時刻から数えると、長く走ってから落ちた PG を待たずに扱う)
-func (d *Daemon) trackDead(now time.Time, ss []agents.Session) error {
+func (d *Dispatcher) trackDead(now time.Time, ss []agents.Session) error {
 	st, err := store.Load(d.Dir)
 	if err != nil {
 		return err
@@ -291,7 +291,7 @@ func firstNonEmpty(a, b string) string {
 const worktreeMarker = "/.claude/worktrees/pc-"
 
 // restartsSince は、記録の行 (o) より後・最後に数えた落ちた時刻より後に、transcript へ出た再開の文の時刻を返す。
-func (d *Daemon) restartsSince(c card.Card, o live.Owned, sessionID string) []time.Time {
+func (d *Dispatcher) restartsSince(c card.Card, o live.Owned, sessionID string) []time.Time {
 	if d.Transcript == nil {
 		return nil
 	}
@@ -314,7 +314,7 @@ func (d *Daemon) restartsSince(c card.Card, o live.Owned, sessionID string) []ti
 
 // stopCrashing は、作業中のカードのうち CrashWindow の間に CrashLimit 回以上落ちた PG を止め、カードを人間の回答待ちにする
 // (回答が来たら同じ session を再開する)。止められなかったら作業中のまま残し、次の Tick でまた試す。
-func (d *Daemon) stopCrashing(ctx context.Context, now time.Time, ss []agents.Session) ([]string, error) {
+func (d *Dispatcher) stopCrashing(ctx context.Context, now time.Time, ss []agents.Session) ([]string, error) {
 	limit, window := d.CrashLimit, d.CrashWindow
 	if limit <= 0 {
 		limit = defaultCrashLimit
@@ -400,7 +400,7 @@ func (d *Daemon) stopCrashing(ctx context.Context, now time.Time, ss []agents.Se
 // watch は作業中のカードの「実質的な進捗」を transcript から読み (それまでに無かった PG の出力が出たか)、止まっていれば停滞にする。
 // 進捗が戻れば停滞を外す。正当な待ち (リソース・枠) は数えない。transcript を読めないカードは判定しない (読めないことを停滞にしない)。
 // 🚨 見ているのは「新しい文が出たか」だけ。同じ文を繰り返すループは捕まえるが、毎回少しずつ違う文を出すループは進んでいるように見える
-func (d *Daemon) watch(now time.Time) ([]string, error) {
+func (d *Dispatcher) watch(now time.Time) ([]string, error) {
 	if d.Transcript == nil {
 		return nil, nil
 	}
@@ -472,7 +472,7 @@ func (d *Daemon) watch(now time.Time) ([]string, error) {
 //   - 前の Tick の起動・再開の結果が分からないまま (印が残っている) のカードは、一覧で確かめる。立っていれば取り込み、
 //     launchGrace を過ぎても出なければ起動し直す。待っている間は上限に数える
 //   - 起動・再開の前提 (repo の場所 / 前の session の記録) が無いカードは、何も起動せずに履歴へ書く
-func (d *Daemon) dispatch(ctx context.Context, now time.Time, ss []agents.Session) ([]string, error) {
+func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Session) ([]string, error) {
 	st, err := store.Load(d.Dir)
 	if err != nil {
 		return nil, err
@@ -556,7 +556,7 @@ func resumes(c card.Card) bool { return c.Resume != "" && c.Session != "" }
 
 // prepare は起動・再開の前提を確かめて、実行する関数を返す。再開は、前の session が pro-con の記録にあり、
 // 今の一覧でその短い id が同じ session を指している (別の session を止めない) ときだけ。
-func (d *Daemon) prepare(c card.Card, now time.Time, ss []agents.Session, reg []live.Owned) (string, func(context.Context) (string, error), error) {
+func (d *Dispatcher) prepare(c card.Card, now time.Time, ss []agents.Session, reg []live.Owned) (string, func(context.Context) (string, error), error) {
 	if resumes(c) {
 		o, ok := owned(c, reg)
 		if !ok {
@@ -638,7 +638,7 @@ func adopt(c card.Card, repoPath string, ss []agents.Session, reg []live.Owned) 
 			continue
 		}
 		// 起動は、名前に加えて cwd がこのカードの repo の worktree そのもの (<repo>/.claude/worktrees/pc-<card>) のときだけ。
-		// 名前だけだと、別の状態の置き場で動く daemon が同じカード ID で立てた PG に当たる (カード ID は置き場ごとに C-001 から振られる)
+		// 名前だけだと、別の状態の置き場で動く dispatcher が同じカード ID で立てた PG に当たる (カード ID は置き場ごとに C-001 から振られる)
 		if wt := worktreePath(repoPath, c); c.Launching == "起動" && wt != "" && s.Name == sessionName(c) && samePath(s.Cwd, wt) {
 			return s.ID, true
 		}
@@ -651,12 +651,12 @@ func adopt(c card.Card, repoPath string, ss []agents.Session, reg []live.Owned) 
 }
 
 // mark は起動・再開を始める印を記録に書く (結果を待つ前に)。
-func (d *Daemon) mark(id string, now time.Time, how string) error {
+func (d *Dispatcher) mark(id string, now time.Time, how string) error {
 	return d.update(id, func(c *card.Card) { c.Launching, c.LaunchedAt = how, now })
 }
 
 // settle は起動・再開が済んだカードを作業中にする。
-func (d *Daemon) settle(id string, now time.Time, how, session string) error {
+func (d *Dispatcher) settle(id string, now time.Time, how, session string) error {
 	return d.update(id, func(c *card.Card) {
 		c.State, c.Since, c.Owner, c.Session = card.Running, now, "PG", session
 		c.LastProgress, c.Resume, c.Launching, c.Stalled, c.StopWanted, c.Stopped = now, "", "", false, false, false
@@ -664,13 +664,13 @@ func (d *Daemon) settle(id string, now time.Time, how, session string) error {
 	})
 }
 
-func (d *Daemon) note(id string, now time.Time, text string) error {
+func (d *Dispatcher) note(id string, now time.Time, text string) error {
 	return d.update(id, func(c *card.Card) { c.History = append(c.History, card.Event{At: now, Text: text}) })
 }
 
 // noteOnce は直前と同じ文なら足さない。何も起動していない理由 (起動・再開できない) にだけ使う (理由が変わらないまま Tick ごとに記録が伸びないように)。
 // 🚨 claude を実際に走らせた結果 (失敗と返った) には使わない: 走らせた回数 = 立っているかもしれない session の数が履歴から消える
-func (d *Daemon) noteOnce(id string, now time.Time, text string) error {
+func (d *Dispatcher) noteOnce(id string, now time.Time, text string) error {
 	return d.update(id, func(c *card.Card) {
 		if n := len(c.History); n > 0 && c.History[n-1].Text == text {
 			return
@@ -679,7 +679,7 @@ func (d *Daemon) noteOnce(id string, now time.Time, text string) error {
 	})
 }
 
-func (d *Daemon) update(id string, f func(*card.Card)) error {
+func (d *Dispatcher) update(id string, f func(*card.Card)) error {
 	return store.Update(d.Dir, func(s *store.State) error {
 		for i := range s.Cards {
 			if s.Cards[i].ID == id {

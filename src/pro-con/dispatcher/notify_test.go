@@ -1,4 +1,4 @@
-package daemon
+package dispatcher
 
 import (
 	"context"
@@ -34,7 +34,7 @@ type recorder struct {
 	failPub   bool
 }
 
-func (r *recorder) rig(d *Daemon) {
+func (r *recorder) rig(d *Dispatcher) {
 	d.Publish = func(s string) error {
 		r.published = append(r.published, s)
 		if r.failPub {
@@ -50,7 +50,7 @@ func TestAnnouncePublishesOnChangeAndNotifiesOnce(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	l := &fakeLauncher{}
-	d := newDaemon(t, dir, l, nil)
+	d := newDispatcher(t, dir, l, nil)
 	var r recorder
 	r.rig(d)
 	for range 2 {
@@ -77,7 +77,7 @@ func TestAnnouncePublishesOnChangeAndNotifiesOnce(t *testing.T) {
 // tmux に書けなくても、文が変わるまでは書き直さない (tmux の外で動かしたとき Tick ごとに言い続けない)。
 func TestAnnounceDoesNotRetryFailedPublishUntilChange(t *testing.T) {
 	dir := t.TempDir()
-	d := newDaemon(t, dir, &fakeLauncher{}, nil)
+	d := newDispatcher(t, dir, &fakeLauncher{}, nil)
 	r := recorder{failPub: true}
 	r.rig(d)
 	for range 3 {
@@ -120,7 +120,7 @@ func TestAnnounceNotifiesAgainOnNewWait(t *testing.T) {
 // 件数の文が変わらなくても republishEvery ごとに書き直す (tmux サーバが作り直されて option が消えても戻る)。
 func TestAnnounceRepublishesPeriodically(t *testing.T) {
 	dir := t.TempDir()
-	d := newDaemon(t, dir, &fakeLauncher{}, nil)
+	d := newDispatcher(t, dir, &fakeLauncher{}, nil)
 	var r recorder
 	r.rig(d)
 	for _, at := range []time.Time{t0, t0.Add(30 * time.Second), t0.Add(republishEvery + time.Second)} {

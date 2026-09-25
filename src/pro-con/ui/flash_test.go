@@ -36,11 +36,11 @@ func TestNotifyStaysUntilEsc(t *testing.T) {
 	now := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
 	m := New(newSpy(), nil)
 	m.now = func() time.Time { return now }
-	m.Notify("daemon を起動した")
+	m.Notify("dispatcher を起動した")
 	m.Update(tickMsg{})
 	now = now.Add(time.Hour)
 	m.Update(tickMsg{})
-	if m.sticky != "daemon を起動した" {
+	if m.sticky != "dispatcher を起動した" {
 		t.Fatalf("起動時の知らせが時間で消えた: %q", m.sticky)
 	}
 	press(m, "esc")

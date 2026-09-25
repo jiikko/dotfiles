@@ -1,12 +1,12 @@
-package daemon
+package dispatcher
 
 // 🚨 信頼の前提: PG に `pro-con card` を許すことは、その PG の worktree で任意のシェルのコマンドを、PG の Claude Code の permission の外で
-// (daemon の権限で) 走らせることを許すのと同じ。守っているのは「頼んだ場所がそのカードの PG の worktree であること」(RunCwd) だけ。
+// (dispatcher の権限で) 走らせることを許すのと同じ。守っているのは「頼んだ場所がそのカードの PG の worktree であること」(RunCwd) だけ。
 //
-// テストの係 (426 の決定 5): PG が `pro-con card run <カード> -- <コマンド>` で頼んだコマンドを、daemon が PG の worktree で 1 本ずつ順に実行する
+// テストの係 (426 の決定 5): PG が `pro-con card run <カード> -- <コマンド>` で頼んだコマンドを、dispatcher が PG の worktree で 1 本ずつ順に実行する
 // (make test / 実機 E2E を PG ごとに走らせると、占有リソースを取り合う)。結果 (rc・ログ) を持たせて PG を再開する。
 // 失敗したときだけ、安いモデル (haiku) の Claude がログの末尾を要約する (成功では token を使わない)。
-// 実行は裏の goroutine で回し、Tick を止めない。daemon が実行の途中で落ちたら、次の daemon は「結果が無い」として PG を再開する。
+// 実行は裏の goroutine で回し、Tick を止めない。dispatcher が実行の途中で落ちたら、次の dispatcher は「結果が無い」として PG を再開する。
 
 import (
 	"bytes"
@@ -55,7 +55,7 @@ type runResult struct {
 }
 
 // tickRuns はテストの係の 1 回ぶん: 終わった実行の結果を渡し、次の実行を始め、待っているカードに順番を書く。
-func (d *Daemon) tickRuns(ctx context.Context, now time.Time) ([]string, error) {
+func (d *Dispatcher) tickRuns(ctx context.Context, now time.Time) ([]string, error) {
 	var notes []string
 	if d.active != nil { // 実行中のカードが作業中の列を離れた / 頼みが取り下げられたら、実行を取り消す (結果はもう誰も待っていない)
 		st, err := store.Load(d.Dir)
@@ -96,11 +96,11 @@ func (d *Daemon) tickRuns(ctx context.Context, now time.Time) ([]string, error) 
 			continue
 		}
 		if c.Exec.Active() && (d.active == nil || d.active.cardID != c.ID) {
-			// 実行の途中で daemon が落ちた (この daemon は実行していない)。残ったコマンドを止めてから、結果が無いことを渡して PG を再開する
+			// 実行の途中で dispatcher が落ちた (この dispatcher は実行していない)。残ったコマンドを止めてから、結果が無いことを渡して PG を再開する
 			// (止めずに頼み直させると、同じ worktree で 2 本が重なる)
 			killStaleFn(c.Exec.RunID)
 			n, err := d.finishRun(now, &runJob{cardID: c.ID, command: c.Run, start: c.Exec.Since},
-				runResult{rc: -1, err: errors.New("daemon が実行の途中で止まったので結果が無い。もう一度頼むこと")})
+				runResult{rc: -1, err: errors.New("dispatcher が実行の途中で止まったので結果が無い。もう一度頼むこと")})
 			notes = append(notes, n)
 			if err != nil {
 				return notes, err
@@ -162,11 +162,11 @@ func (d *Daemon) tickRuns(ctx context.Context, now time.Time) ([]string, error) 
 	return notes, nil
 }
 
-// CancelRun は実行中の 1 本を取り消して終わるまで待つ (daemon が抜ける前に呼ぶ)。
-func (d *Daemon) CancelRun() { d.cancelRun(10 * time.Second) }
+// CancelRun は実行中の 1 本を取り消して終わるまで待つ (dispatcher が抜ける前に呼ぶ)。
+func (d *Dispatcher) CancelRun() { d.cancelRun(10 * time.Second) }
 
-// cancelRun は実行中の 1 本を取り消し、終わるまで待つ (上限 wait)。終了のときに使う (daemon が抜けた後にコマンドを残さない)。
-func (d *Daemon) cancelRun(wait time.Duration) {
+// cancelRun は実行中の 1 本を取り消し、終わるまで待つ (上限 wait)。終了のときに使う (dispatcher が抜けた後にコマンドを残さない)。
+func (d *Dispatcher) cancelRun(wait time.Duration) {
 	if d.active == nil {
 		return
 	}
@@ -179,7 +179,7 @@ func (d *Daemon) cancelRun(wait time.Duration) {
 }
 
 // execute は裏で実行し、失敗なら要約して結果を返す。
-func (d *Daemon) execute(ctx context.Context, job *runJob, dir string) {
+func (d *Dispatcher) execute(ctx context.Context, job *runJob, dir string) {
 	var r runResult
 	if err := os.MkdirAll(filepath.Dir(job.logPath), 0o700); err != nil {
 		r.rc, r.err = -1, err
@@ -198,7 +198,7 @@ func (d *Daemon) execute(ctx context.Context, job *runJob, dir string) {
 }
 
 // finishRun は結果をカードに持たせ、分解済みへ戻す (dispatch が結果を渡して同じ session を再開する)。
-func (d *Daemon) finishRun(now time.Time, job *runJob, r runResult) (string, error) {
+func (d *Dispatcher) finishRun(now time.Time, job *runJob, r runResult) (string, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "テストの係の結果: `%s` rc=%d (所要 %s)\n", job.command, r.rc, now.Sub(job.start).Round(time.Second))
 	switch {
@@ -294,7 +294,7 @@ func (ExecRunner) Run(ctx context.Context, dir, command, logPath, runID string) 
 	if err := cmd.Start(); err != nil {
 		return -1, err
 	}
-	// 終わった後も、SIGTERM を無視した子や bash が抜けた後に残った子を、プロセスグループごと止める (daemon の後に残さない)
+	// 終わった後も、SIGTERM を無視した子や bash が抜けた後に残った子を、プロセスグループごと止める (dispatcher の後に残さない)
 	defer func() { _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }()
 	err = cmd.Wait()
 	var ee *exec.ExitError
@@ -325,7 +325,7 @@ func isUnder(child, root string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, "../")
 }
 
-// dirTag は状態の置き場の短い印 (実行の印に混ぜて、別の置き場の daemon (e2e と本物) の実行と取り違えない)。
+// dirTag は状態の置き場の短い印 (実行の印に混ぜて、別の置き場の dispatcher (e2e と本物) の実行と取り違えない)。
 func dirTag(dir string) string { return fmt.Sprintf("%x", sha1.Sum([]byte(dir)))[:8] }
 
 // runMarkerPrefix は実行の bash の $0 に載せる印の頭。
@@ -340,7 +340,7 @@ const runMarkerPrefix = "pro-con-run:"
 //   - シグナルで死んだときは bash が 128+n で返す (exec されていた前の形では -1 だった)
 //   - 構文エラーは rc=1 (直接の `bash -c` は 2)。エラー文の頭も `eval:` になる
 //
-// 🚨 制限: 頼まれたコマンド自身が `exec` を含むと (例 `cd x && exec make test`)、bash が置き換わって印が消え、daemon が落ちた後に止められない。
+// 🚨 制限: 頼まれたコマンド自身が `exec` を含むと (例 `cd x && exec make test`)、bash が置き換わって印が消え、dispatcher が落ちた後に止められない。
 // setsid / Setpgid で自分のグループを作った子孫も、グループごと撃つ方式では止められない
 const runScript = "eval \"$" + runCommandEnv + "\""
 
@@ -357,7 +357,7 @@ func runCommand(ctx context.Context, command, runID string) *exec.Cmd {
 // killStaleFn は killStale (テストで差し替えて、呼ばれたかを見る)。
 var killStaleFn = killStale
 
-// killStale は、前の daemon が残した実行 (印が runID のもの) のプロセスグループを止める。印で探すので、pid の使い回しで別のものを撃たない。
+// killStale は、前の dispatcher が残した実行 (印が runID のもの) のプロセスグループを止める。印で探すので、pid の使い回しで別のものを撃たない。
 func killStale(runID string) {
 	if runID == "" {
 		return
@@ -369,7 +369,7 @@ func killStale(runID string) {
 	marker := " " + runMarkerPrefix + runID
 	for _, line := range strings.Split(string(out), "\n") {
 		f := strings.Fields(line)
-		// 撃つのは、daemon が起こした形 (`/bin/bash -c <台本> <印>`) のグループの先頭だけ。印を引数の最後に置いた
+		// 撃つのは、dispatcher が起こした形 (`/bin/bash -c <台本> <印>`) のグループの先頭だけ。印を引数の最後に置いた
 		// 他のプロセス (pgrep -f <印> 等) のグループを撃たない
 		if len(f) < 4 || f[2] != "/bin/bash" || f[3] != "-c" || f[0] != f[1] || !strings.HasSuffix(strings.TrimSpace(line), marker) {
 			continue

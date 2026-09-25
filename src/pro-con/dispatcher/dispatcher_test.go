@@ -1,4 +1,4 @@
-package daemon
+package dispatcher
 
 import (
 	"context"
@@ -83,9 +83,9 @@ func planned(t *testing.T, dir string, n int) {
 	}
 }
 
-func newDaemon(t *testing.T, dir string, l Launcher, ss []agents.Session) *Daemon {
+func newDispatcher(t *testing.T, dir string, l Launcher, ss []agents.Session) *Dispatcher {
 	t.Helper()
-	return &Daemon{Dir: dir, Limit: 2, Repos: map[string]string{"dotfiles": "/w/dotfiles"}, Launch: l,
+	return &Dispatcher{Dir: dir, Limit: 2, Repos: map[string]string{"dotfiles": "/w/dotfiles"}, Launch: l,
 		List: func(context.Context) ([]agents.Session, error) { return ss, nil }, Now: func() time.Time { return t0 }, Sleep: func(time.Duration) {}}
 }
 
@@ -107,7 +107,7 @@ func TestDispatchRespectsLimit(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 3)
 	l := &fakeLauncher{}
-	if _, err := newDaemon(t, dir, l, nil).Tick(context.Background()); err != nil {
+	if _, err := newDispatcher(t, dir, l, nil).Tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	cs := states(t, dir)
@@ -124,7 +124,7 @@ func TestRegistersOnceListed(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	l := &fakeLauncher{}
-	d := newDaemon(t, dir, l, nil)
+	d := newDispatcher(t, dir, l, nil)
 	if _, err := d.Tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestAnsweredCardResumesSameSession(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	l := &fakeLauncher{}
-	d := newDaemon(t, dir, l, []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}})
+	d := newDispatcher(t, dir, l, []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}})
 	for range 2 { // 起動 → 登録
 		if _, err := d.Tick(context.Background()); err != nil {
 			t.Fatal(err)
@@ -175,7 +175,7 @@ func TestAnsweredCardResumesSameSession(t *testing.T) {
 func TestLaunchFailureKeepsCardPlanned(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
-	notes, err := newDaemon(t, dir, &fakeLauncher{fail: true}, nil).Tick(context.Background())
+	notes, err := newDispatcher(t, dir, &fakeLauncher{fail: true}, nil).Tick(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,13 +212,13 @@ func TestParseBackgrounded(t *testing.T) {
 }
 
 // pro-con が再開していないのに pid が変わった session (外の shell で同じ session を再開した疑い) は、記録を書き直さずに知らせる。
-// daemon 自身の再開の後なら、daemon が起動し直していても (メモリの印が無くても) 書き直す。
-func TestRegisterRefusesPidChangeNotCausedByDaemon(t *testing.T) {
+// dispatcher 自身の再開の後なら、dispatcher が起動し直していても (メモリの印が無くても) 書き直す。
+func TestRegisterRefusesPidChangeNotCausedByDispatcher(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	l := &fakeLauncher{}
 	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}
-	d := newDaemon(t, dir, l, nil)
+	d := newDispatcher(t, dir, l, nil)
 	d.List = func(context.Context) ([]agents.Session, error) { return ss, nil }
 	for range 2 { // 起動 → 登録
 		if _, err := d.Tick(context.Background()); err != nil {
@@ -234,7 +234,7 @@ func TestRegisterRefusesPidChangeNotCausedByDaemon(t *testing.T) {
 	if len(reg) != 1 || reg[0].PID != 42 || !strings.Contains(strings.Join(notes, "\n"), "外から操作された疑い") {
 		t.Fatalf("外で pid が変わった session の記録を書き直した / 知らせない: %+v %v", reg, notes)
 	}
-	// daemon 自身が再開した後なら書き直す。再開の後に daemon が起動し直した形 (新しい Daemon) でも同じ。
+	// dispatcher 自身が再開した後なら書き直す。再開の後に dispatcher が起動し直した形 (新しい Dispatcher) でも同じ。
 	// (外で変わった pid のままでは再開しない = prepare が拒むので、外の操作が終わって記録の pid に戻った形から始める)
 	ss[0].PID = 42
 	for _, r := range []store.Request{{Kind: "ask", CardID: "C-001", Question: "q"}, {Kind: "answer", CardID: "C-001", Answer: "a"}} {
@@ -248,14 +248,14 @@ func TestRegisterRefusesPidChangeNotCausedByDaemon(t *testing.T) {
 		t.Fatal(err)
 	}
 	ss[0].PID, ss[0].StartedAt = 100, t1.Add(time.Second).UnixMilli()
-	d2 := newDaemon(t, dir, l, ss)
+	d2 := newDispatcher(t, dir, l, ss)
 	d2.Now = d.Now
 	if _, err := d2.Tick(context.Background()); err != nil { // 登録
 		t.Fatal(err)
 	}
 	reg, _ = live.LoadRegistry(filepath.Join(dir, live.RegistryFile))
 	if len(reg) != 1 || reg[0].PID != 100 || len(l.resumes) != 1 {
-		t.Fatalf("daemon が再開した後の pid で書き直していない: %+v resumes=%v", reg, l.resumes)
+		t.Fatalf("dispatcher が再開した後の pid で書き直していない: %+v resumes=%v", reg, l.resumes)
 	}
 }
 
@@ -263,7 +263,7 @@ func TestRegisterRefusesPidChangeNotCausedByDaemon(t *testing.T) {
 func TestRegisterRefusesOlderSession(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
-	d := newDaemon(t, dir, &fakeLauncher{}, nil)
+	d := newDispatcher(t, dir, &fakeLauncher{}, nil)
 	if _, err := d.Tick(context.Background()); err != nil { // 起動 (LaunchedAt = t0)
 		t.Fatal(err)
 	}
@@ -282,7 +282,7 @@ func TestFailedLaunchThatActuallyStartedIsAdopted(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	l := &fakeLauncher{fail: true}
-	d := newDaemon(t, dir, l, nil)
+	d := newDispatcher(t, dir, l, nil)
 	if _, err := d.Tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +303,7 @@ func TestUnconfirmedLaunchWaitsGraceThenRetries(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 2)
 	l := &fakeLauncher{fail: true}
-	d := newDaemon(t, dir, l, nil)
+	d := newDispatcher(t, dir, l, nil)
 	d.Limit = 1
 	if _, err := d.Tick(context.Background()); err != nil {
 		t.Fatal(err)
@@ -331,7 +331,7 @@ func TestResumeRefusesWhenShortIDPointsElsewhere(t *testing.T) {
 	planned(t, dir, 1)
 	l := &fakeLauncher{}
 	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}
-	d := newDaemon(t, dir, l, nil)
+	d := newDispatcher(t, dir, l, nil)
 	d.List = func(context.Context) ([]agents.Session, error) { return ss, nil }
 	for range 2 {
 		if _, err := d.Tick(context.Background()); err != nil {
@@ -358,7 +358,7 @@ func TestNoDispatchWithoutSessionList(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	l := &fakeLauncher{}
-	d := newDaemon(t, dir, l, nil)
+	d := newDispatcher(t, dir, l, nil)
 	d.List = func(context.Context) ([]agents.Session, error) { return nil, errors.New("claude agents が落ちた") }
 	if _, err := d.Tick(context.Background()); err != nil {
 		t.Fatal(err)
@@ -368,7 +368,7 @@ func TestNoDispatchWithoutSessionList(t *testing.T) {
 	}
 }
 
-// daemon は 2 つ起動しない (記録の書き手は 1 つだけ)。1 つ目が外したら取れる。
+// dispatcher は 2 つ起動しない (記録の書き手は 1 つだけ)。1 つ目が外したら取れる。
 func TestLockIsExclusive(t *testing.T) {
 	dir := t.TempDir()
 	unlock, err := Lock(dir)
@@ -376,7 +376,7 @@ func TestLockIsExclusive(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := Lock(dir); !errors.Is(err, ErrRunning) {
-		t.Fatalf("2 つ目の daemon がロックを取れた: %v", err)
+		t.Fatalf("2 つ目の dispatcher がロックを取れた: %v", err)
 	}
 	unlock()
 	again, err := Lock(dir)
@@ -386,7 +386,7 @@ func TestLockIsExclusive(t *testing.T) {
 	again()
 }
 
-// setCard は記録のカードを直接書き換える (daemon の途中の状態を作る)。
+// setCard は記録のカードを直接書き換える (dispatcher の途中の状態を作る)。
 func setCard(t *testing.T, dir, id string, f func(*card.Card)) {
 	t.Helper()
 	if err := store.Update(dir, func(s *store.State) error {
@@ -407,7 +407,7 @@ func TestLaunchingCardCountsBeforeLimit(t *testing.T) {
 	planned(t, dir, 2)
 	setCard(t, dir, "C-002", func(c *card.Card) { c.Launching, c.LaunchedAt = "起動", t0 })
 	l := &fakeLauncher{}
-	d := newDaemon(t, dir, l, []agents.Session{{ID: "cd34", SessionID: "S2", PID: 6, Name: "pc-c-002", Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-002", StartedAt: t0.Add(time.Second).UnixMilli()}})
+	d := newDispatcher(t, dir, l, []agents.Session{{ID: "cd34", SessionID: "S2", PID: 6, Name: "pc-c-002", Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-002", StartedAt: t0.Add(time.Second).UnixMilli()}})
 	d.Limit = 1
 	if _, err := d.Tick(context.Background()); err != nil {
 		t.Fatal(err)
@@ -424,7 +424,7 @@ func TestResumeSkipsStopWhenSessionIsGone(t *testing.T) {
 	planned(t, dir, 1)
 	l := &fakeLauncher{}
 	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}
-	d := newDaemon(t, dir, l, nil)
+	d := newDispatcher(t, dir, l, nil)
 	d.List = func(context.Context) ([]agents.Session, error) { return ss, nil }
 	for range 2 {
 		if _, err := d.Tick(context.Background()); err != nil {
@@ -457,7 +457,7 @@ func TestAdoptIgnoresSessionOlderThanMark(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	setCard(t, dir, "C-001", func(c *card.Card) { c.Launching, c.LaunchedAt = "起動", t0 })
-	d := newDaemon(t, dir, &fakeLauncher{}, []agents.Session{{ID: "old1", SessionID: "S0", PID: 3, Name: "pc-c-001", Kind: "background", StartedAt: t0.Add(-time.Minute).UnixMilli()}})
+	d := newDispatcher(t, dir, &fakeLauncher{}, []agents.Session{{ID: "old1", SessionID: "S0", PID: 3, Name: "pc-c-001", Kind: "background", StartedAt: t0.Add(-time.Minute).UnixMilli()}})
 	if _, err := d.Tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -472,7 +472,7 @@ func TestFailedResumeThatActuallyResumedIsAdopted(t *testing.T) {
 	planned(t, dir, 1)
 	l := &fakeLauncher{}
 	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}
-	d := newDaemon(t, dir, l, nil)
+	d := newDispatcher(t, dir, l, nil)
 	d.List = func(context.Context) ([]agents.Session, error) { return ss, nil }
 	for range 2 {
 		if _, err := d.Tick(context.Background()); err != nil {
@@ -504,7 +504,7 @@ func TestFailedResumeThatActuallyResumedIsAdopted(t *testing.T) {
 type crashRig struct {
 	dir      string
 	l        *fakeLauncher
-	d        *Daemon
+	d        *Dispatcher
 	ss       []agents.Session
 	restarts []time.Time
 }
@@ -514,7 +514,7 @@ func newCrashRig(t *testing.T) *crashRig {
 	r := &crashRig{dir: t.TempDir(), l: &fakeLauncher{}}
 	planned(t, r.dir, 1)
 	r.ss = []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}
-	r.d = newDaemon(t, r.dir, r.l, nil)
+	r.d = newDispatcher(t, r.dir, r.l, nil)
 	r.d.List = func(context.Context) ([]agents.Session, error) { return r.ss, nil }
 	r.d.Transcript = func(string) (live.Transcript, error) { return live.Transcript{Restarts: r.restarts}, nil }
 	for range 2 { // 起動 → 登録
@@ -819,13 +819,13 @@ func TestCrashStopWaitsForAutoRestartWhenUnlisted(t *testing.T) {
 	}
 }
 
-// 前の session の作業ディレクトリが記録に無ければ再開しない (daemon の cwd で再開すると別の tree を書く)。
+// 前の session の作業ディレクトリが記録に無ければ再開しない (dispatcher の cwd で再開すると別の tree を書く)。
 func TestResumeRefusesWithoutCwd(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	l := &fakeLauncher{}
 	ss := []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", StartedAt: t0.Add(time.Second).UnixMilli()}} // cwd 無し
-	d := newDaemon(t, dir, l, nil)
+	d := newDispatcher(t, dir, l, nil)
 	d.List = func(context.Context) ([]agents.Session, error) { return ss, nil }
 	for range 2 {
 		if _, err := d.Tick(context.Background()); err != nil {
@@ -862,7 +862,7 @@ func TestRegisterFillsMissingCwd(t *testing.T) {
 }
 
 // 本物の claude --bg --resume は、元の session を続けずに別の session id・別の短い id の session を立てる (427 の 3f で実測)。
-// daemon 自身の再開が返した短い id の session は、カードの行をそれに置き換えて登録する (前の行は消す)。
+// dispatcher 自身の再開が返した短い id の session は、カードの行をそれに置き換えて登録する (前の行は消す)。
 func TestResumeWithNewSessionReplacesRow(t *testing.T) {
 	r := newCrashRig(t)
 	r.l.resumeID = "db1e"
@@ -921,7 +921,7 @@ func TestCrashWhileWaitingReregisters(t *testing.T) {
 func TestRepeatedFailureDoesNotGrowHistory(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
-	d := newDaemon(t, dir, &fakeLauncher{}, nil)
+	d := newDispatcher(t, dir, &fakeLauncher{}, nil)
 	d.Repos = map[string]string{} // repo の場所が設定に無い
 	for range 5 {
 		if _, err := d.Tick(context.Background()); err != nil {
@@ -977,7 +977,7 @@ func TestAdoptResumeRejectsOthers(t *testing.T) {
 	}
 }
 
-// 短い id が使い回されて別の session を指している (daemon の再開の後ではない) なら、カードの行を置き換えない。
+// 短い id が使い回されて別の session を指している (dispatcher の再開の後ではない) なら、カードの行を置き換えない。
 func TestRegisterDoesNotReplaceOnReusedShortID(t *testing.T) {
 	r := newCrashRig(t) // 行は LaunchedAt 以降に登録済み (自分の再開の後ではない)
 	r.ss[0].SessionID, r.ss[0].PID = "OTHER", 80
@@ -992,7 +992,7 @@ func TestRegisterDoesNotReplaceOnReusedShortID(t *testing.T) {
 func TestRegisterIgnoresInteractive(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
-	d := newDaemon(t, dir, &fakeLauncher{}, nil)
+	d := newDispatcher(t, dir, &fakeLauncher{}, nil)
 	if _, err := d.Tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -1011,7 +1011,7 @@ func TestRegisterIgnoresInteractive(t *testing.T) {
 func TestFailedLaunchIsAlwaysRecorded(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
-	d := newDaemon(t, dir, &fakeLauncher{fail: true}, nil)
+	d := newDispatcher(t, dir, &fakeLauncher{fail: true}, nil)
 	for i := range 2 {
 		d.Now = func() time.Time { return t0.Add(time.Duration(i) * (launchGrace + time.Second)) }
 		if _, err := d.Tick(context.Background()); err != nil {
@@ -1042,12 +1042,12 @@ func TestCrashKeepsRecordedCwd(t *testing.T) {
 }
 
 // 起動の結果を確かめるとき、名前が同じでも cwd がこのカードの repo の worktree でなければ取り込まない
-// (別の状態の置き場の daemon が同じカード ID で立てた PG)。
+// (別の状態の置き場の dispatcher が同じカード ID で立てた PG)。
 func TestAdoptStartRequiresOwnWorktree(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	setCard(t, dir, "C-001", func(c *card.Card) { c.Launching, c.LaunchedAt = "起動", t0 })
-	d := newDaemon(t, dir, &fakeLauncher{}, []agents.Session{{ID: "zz99", SessionID: "Z", PID: 3, Name: "pc-c-001", Kind: "background",
+	d := newDispatcher(t, dir, &fakeLauncher{}, []agents.Session{{ID: "zz99", SessionID: "Z", PID: 3, Name: "pc-c-001", Kind: "background",
 		Cwd: "/w/other-repo/.claude/worktrees/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}})
 	if _, err := d.Tick(context.Background()); err != nil {
 		t.Fatal(err)
@@ -1163,7 +1163,7 @@ func TestAdoptStartNeedsRepoPath(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	setCard(t, dir, "C-001", func(c *card.Card) { c.Launching, c.LaunchedAt = "起動", t0 })
-	d := newDaemon(t, dir, &fakeLauncher{}, []agents.Session{{ID: "nn11", SessionID: "N", PID: 3, Name: "pc-c-001", Kind: "background", StartedAt: t0.Add(time.Second).UnixMilli()}})
+	d := newDispatcher(t, dir, &fakeLauncher{}, []agents.Session{{ID: "nn11", SessionID: "N", PID: 3, Name: "pc-c-001", Kind: "background", StartedAt: t0.Add(time.Second).UnixMilli()}})
 	d.Repos = map[string]string{}
 	if _, err := d.Tick(context.Background()); err != nil {
 		t.Fatal(err)
@@ -1233,7 +1233,7 @@ func TestAdoptStartWithSymlinkedRepo(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	setCard(t, dir, "C-001", func(c *card.Card) { c.Launching, c.LaunchedAt = "起動", t0 })
-	d := newDaemon(t, dir, &fakeLauncher{}, []agents.Session{{ID: "sy11", SessionID: "Y", PID: 3, Name: "pc-c-001", Kind: "background", Cwd: resolved, StartedAt: t0.Add(time.Second).UnixMilli()}})
+	d := newDispatcher(t, dir, &fakeLauncher{}, []agents.Session{{ID: "sy11", SessionID: "Y", PID: 3, Name: "pc-c-001", Kind: "background", Cwd: resolved, StartedAt: t0.Add(time.Second).UnixMilli()}})
 	d.Repos = map[string]string{"dotfiles": link}
 	if _, err := d.Tick(context.Background()); err != nil {
 		t.Fatal(err)

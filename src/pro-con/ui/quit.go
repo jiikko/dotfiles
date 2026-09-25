@@ -1,8 +1,8 @@
 package ui
 
 // 終了。Q (または ctrl+c) で終了の入力欄を開き、quit と打って enter したときだけ閉じる。
-// 本物のモード (backend.Stopper を持つ backend) は、終了のときに daemon と pro-con が起動した PG を止めてから閉じる
-// (次に daemon を起動したら続きから再開する)。止めている間は「止めています」を出す。
+// 本物のモード (backend.Stopper を持つ backend) は、終了のときに dispatcher と pro-con が起動した PG を止めてから閉じる
+// (次に dispatcher を起動したら続きから再開する)。止めている間は「止めています」を出す。
 // ライブアップグレード (ctrl+r) の終了は入れ替えであって終了ではないので、ここを通さない (upgrade.go)。
 
 import (
@@ -19,7 +19,7 @@ import (
 	"pro-con/card"
 )
 
-// stopWait は daemon と PG を止め終えるまで待つ上限 (daemon --stop の待ち 120 秒 + 余裕)。
+// stopWait は dispatcher と PG を止め終えるまで待つ上限 (dispatcher --stop の待ち 120 秒 + 余裕)。
 const stopWait = 150 * time.Second
 
 // stopDoneMsg は止め終えた (か、止めきれなかった) 知らせ。
@@ -43,7 +43,7 @@ func (m *Model) busyCards() (running, waiting int) {
 }
 
 // requestQuit は終了の入力欄を開く。閉じるのは、そこへ quit と打って enter したときだけ (2026-09-25 にユーザーが決めた形。
-// q や ctrl+c の 1 打で閉じない: 本物のモードの終了は daemon と PG を止めるので、打ち間違いで止めない)。
+// q や ctrl+c の 1 打で閉じない: 本物のモードの終了は dispatcher と PG を止めるので、打ち間違いで止めない)。
 func (m *Model) requestQuit() tea.Cmd {
 	if m.mode == modeInput && m.inputKind != inputQuit { // 書きかけの文は消さない
 		m.flash = "終了は Q を押して quit と打つ (書きかけの入力はそのまま)"
@@ -78,7 +78,7 @@ func (m *Model) submitQuit() tea.Cmd {
 func (m *Model) quitLabel() string {
 	r, w := m.busyCards()
 	if _, ok := m.be.(backend.Stopper); ok {
-		return fmt.Sprintf("終了するには quit と打って enter (作業中 %d 本・質問待ち %d 本の PG と daemon を止めて閉じる。次に開くと続きから)", r, w)
+		return fmt.Sprintf("終了するには quit と打って enter (作業中 %d 本・質問待ち %d 本の PG と dispatcher を止めて閉じる。次に開くと続きから)", r, w)
 	}
 	return "終了するには quit と打って enter (模擬なので進み具合は消える)"
 }
@@ -100,7 +100,7 @@ func (m *Model) quitNow() tea.Cmd {
 // overlayQuit は確認のダイアログを画面の中央に重ねる。
 func (m *Model) overlayQuit(screen []string) []string {
 	if m.stopping {
-		box := confirm.Dialog(" 終了 ", []string{"daemon と PG を止めています…", "", "ctrl+c: 待たずに閉じる"}, "", m.width, true)
+		box := confirm.Dialog(" 終了 ", []string{"dispatcher と PG を止めています…", "", "ctrl+c: 待たずに閉じる"}, "", m.width, true)
 		return layout.OverlayCentered(screen, box, m.width, len(screen), true)
 	}
 	return screen

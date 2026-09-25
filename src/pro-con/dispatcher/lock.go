@@ -1,6 +1,6 @@
-package daemon
+package dispatcher
 
-// daemon の排他 (2 つ起動しない。記録の書き手は 1 つだけ。426 の決定 1)。flock はプロセスが終われば OS が外すので、落ちても取り残されない。
+// dispatcher の排他 (2 つ起動しない。記録の書き手は 1 つだけ。426 の決定 1)。flock はプロセスが終われば OS が外すので、落ちても取り残されない。
 
 import (
 	"errors"
@@ -11,12 +11,12 @@ import (
 )
 
 // LockFile はロックのファイル名 (状態の置き場の下)。
-const LockFile = "daemon.lock"
+const LockFile = "dispatcher.lock"
 
-// ErrRunning は別の daemon が既に動いているとき。
-var ErrRunning = errors.New("pro-con daemon は既に動いている")
+// ErrRunning は別の dispatcher が既に動いているとき。
+var ErrRunning = errors.New("pro-con dispatcher は既に動いている")
 
-// Lock は状態の置き場の daemon のロックを取る。取れなければ ErrRunning。返した関数で外す。
+// Lock は状態の置き場の dispatcher のロックを取る。取れなければ ErrRunning。返した関数で外す。
 func Lock(dir string) (func(), error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
@@ -30,7 +30,7 @@ func Lock(dir string) (func(), error) {
 		if errors.Is(err, syscall.EWOULDBLOCK) {
 			return nil, ErrRunning
 		}
-		return nil, fmt.Errorf("daemon のロックを取れない: %w", err)
+		return nil, fmt.Errorf("dispatcher のロックを取れない: %w", err)
 	}
 	_ = f.Truncate(0)
 	_, _ = fmt.Fprintf(f, "%d\n", os.Getpid()) // 人が読む用 (どのプロセスが持っているか)

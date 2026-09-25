@@ -38,7 +38,7 @@ func (s *spy) AttachCommand(id string) (*exec.Cmd, error) {
 
 func newSpy() *spy {
 	now := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
-	return &spy{snap: backend.Snapshot{Now: now, Limit: 2, DaemonTick: now, Cards: []card.Card{
+	return &spy{snap: backend.Snapshot{Now: now, Limit: 2, DispatcherTick: now, Cards: []card.Card{
 		{ID: "R1", State: card.Running, Session: "s-r1", Since: now},
 		{ID: "W1", State: card.Waiting, Session: "s-w1", Since: now, Wait: card.Wait{Kind: card.WaitQuestion, Question: "?"}},
 		{ID: "W2", State: card.Waiting, Session: "s-w2", Since: now, Wait: card.Wait{Kind: card.WaitQuestion, Question: "?"}},
@@ -213,7 +213,7 @@ func TestEmptySubmitKeepsInputOpen(t *testing.T) {
 
 func newRepoSpy() *spy {
 	now := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
-	return &spy{snap: backend.Snapshot{Now: now, Limit: 2, DaemonTick: now, Cards: []card.Card{
+	return &spy{snap: backend.Snapshot{Now: now, Limit: 2, DispatcherTick: now, Cards: []card.Card{
 		{ID: "D1", Repo: "dotfiles", State: card.Running, Since: now},
 		{ID: "O1", Repo: "obaket", State: card.Running, Since: now},
 		{ID: "X1", Repo: "outside", State: card.Planned, Since: now},

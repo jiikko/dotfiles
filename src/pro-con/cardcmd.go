@@ -1,6 +1,6 @@
 package main
 
-// pro-con card — PM / PG が使うカードの操作の口 (issue 427 の段階 3b)。受付の箱に依頼を置くだけで、記録への適用は daemon (store.Apply)。
+// pro-con card — PM / PG が使うカードの操作の口 (issue 427 の段階 3b)。受付の箱に依頼を置くだけで、記録への適用は dispatcher (store.Apply)。
 // 置いた依頼の ID を stdout に出す。使い方の誤りは rc=2、箱に置けなかったら rc=1。
 
 import (
@@ -18,7 +18,7 @@ import (
 	"pro-con/store"
 )
 
-const cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を置く。適用は daemon)
+const cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を置く。適用は dispatcher)
   add --title <題名> [--request <依頼の原文>] [--repo <repo>] [--prompt <PM に渡した指示>]
   plan <カード> [--issue <repo>#<番号>]...      タスクに分けてキューに積んだ
   ask <カード> <質問>                            PG が質問して turn を終える (AskUserQuestion は使わない)
@@ -75,7 +75,7 @@ var endings = map[string]card.Ending{
 	"answered": card.EndAnswered, "investigated": card.EndResearchOnly, "rejected": card.EndRejected, "pending-issue": card.EndPendingIssue,
 }
 
-// parseCard は引数を依頼にする。操作ごとに要る引数が無ければエラー (箱に置く前に止める。daemon で除けられるより早く気づける)。
+// parseCard は引数を依頼にする。操作ごとに要る引数が無ければエラー (箱に置く前に止める。dispatcher で除けられるより早く気づける)。
 func parseCard(args []string) (store.Request, error) {
 	op, rest := args[0], args[1:]
 	if op == "run" { // pro-con card run C-001 -- make test (-- の後ろはそのままコマンド。フラグとして読まない)
@@ -83,7 +83,7 @@ func parseCard(args []string) (store.Request, error) {
 		if i != 1 || len(rest) < 3 {
 			return store.Request{}, fmt.Errorf("run は `run <カード> -- <コマンド>...`")
 		}
-		cwd, _ := os.Getwd() // daemon が、頼んだのがそのカードの PG の worktree かを照らす
+		cwd, _ := os.Getwd() // dispatcher が、頼んだのがそのカードの PG の worktree かを照らす
 		return store.Request{Kind: "run", CardID: rest[0], Command: strings.Join(rest[2:], " "), Cwd: cwd}, nil
 	}
 	fs := flag.NewFlagSet("pro-con card "+op, flag.ContinueOnError)

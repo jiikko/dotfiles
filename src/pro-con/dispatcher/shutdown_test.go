@@ -1,4 +1,4 @@
-package daemon
+package dispatcher
 
 import (
 	"context"
@@ -61,14 +61,14 @@ func TestShutdownTouchesOnlyOwnSessions(t *testing.T) {
 	}
 }
 
-// 終了で止めた作業中のカードは、次の daemon が待たずに (止めずに) 続きから再開する。
+// 終了で止めた作業中のカードは、次の dispatcher が待たずに (止めずに) 続きから再開する。
 func TestResumeAfterShutdownDoesNotWait(t *testing.T) {
 	r := newCrashRig(t)
 	if _, err := r.d.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	r.ss = nil // 止めたので一覧に出ない
-	d2 := newDaemon(t, r.dir, r.l, nil)
+	d2 := newDispatcher(t, r.dir, r.l, nil)
 	if _, err := d2.Tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -92,15 +92,15 @@ func TestShutdownReportsStopFailure(t *testing.T) {
 	}
 }
 
-// 動いている daemon には止める印を置いて、止まる (ロックが外れる) まで待ち、daemon が書いた結果を返す。動いていなければ false を返す。
+// 動いている dispatcher には止める印を置いて、止まる (ロックが外れる) まで待ち、dispatcher が書いた結果を返す。動いていなければ false を返す。
 func TestRequestStop(t *testing.T) {
 	dir := t.TempDir()
 	if running, err := RequestStop(context.Background(), dir, time.Second); running || err != nil {
-		t.Fatalf("daemon が居ないのに居る扱い: %v %v", running, err)
+		t.Fatalf("dispatcher が居ないのに居る扱い: %v %v", running, err)
 	}
 	for _, tc := range []struct {
 		name   string
-		result func() // daemon が抜ける前にすること
+		result func() // dispatcher が抜ける前にすること
 		ok     bool
 	}{
 		{"止め終えた", func() { WriteStopResult(dir, nil) }, true},
@@ -108,34 +108,34 @@ func TestRequestStop(t *testing.T) {
 		{"結果を書かずに抜けた (SIGTERM 等)", func() {}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			unlock, err := Lock(dir) // 動いている daemon の形
+			unlock, err := Lock(dir) // 動いている dispatcher の形
 			if err != nil {
 				t.Fatal(err)
 			}
 			done := make(chan error, 1)
 			go func() { _, err := RequestStop(context.Background(), dir, 10*time.Second); done <- err }()
-			for i := 0; !StopRequested(dir); i++ { // daemon の側: 印を見つけたら止めて抜ける
+			for i := 0; !StopRequested(dir); i++ { // dispatcher の側: 印を見つけたら止めて抜ける
 				if i > 250 {
 					t.Fatal("止める印が 5 秒たっても置かれない")
 				}
 				time.Sleep(20 * time.Millisecond)
 			}
-			// 否定の確認 (起きないことに待つ条件は無いので時間で見る): daemon がロックを持っている間は待ちを抜けない
+			// 否定の確認 (起きないことに待つ条件は無いので時間で見る): dispatcher がロックを持っている間は待ちを抜けない
 			select {
 			case err := <-done:
-				t.Fatalf("daemon が止まる前に待ちを抜けた: %v", err)
+				t.Fatalf("dispatcher が止まる前に待ちを抜けた: %v", err)
 			case <-time.After(300 * time.Millisecond):
 			}
 			tc.result()
 			unlock()
 			if err := <-done; (err == nil) != tc.ok {
-				t.Fatalf("daemon の結果を読み違えた: %v", err)
+				t.Fatalf("dispatcher の結果を読み違えた: %v", err)
 			}
 		})
 	}
 }
 
-// 時間内に止まらなければ ErrStopTimeout。止める印は取り下げる (画面が閉じた後で daemon が止めに入らないように)。
+// 時間内に止まらなければ ErrStopTimeout。止める印は取り下げる (画面が閉じた後で dispatcher が止めに入らないように)。
 func TestRequestStopTimeout(t *testing.T) {
 	dir := t.TempDir()
 	unlock, err := Lock(dir)
@@ -144,19 +144,19 @@ func TestRequestStopTimeout(t *testing.T) {
 	}
 	defer unlock()
 	if _, err := RequestStop(context.Background(), dir, 300*time.Millisecond); !errors.Is(err, ErrStopTimeout) {
-		t.Fatalf("止まらない daemon を待ち切らない: %v", err)
+		t.Fatalf("止まらない dispatcher を待ち切らない: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, StopRequestFile)); !os.IsNotExist(err) {
 		t.Fatalf("止める印を取り下げていない: %v", err)
 	}
 }
 
-// 起動した直後でまだ記録に無い PG も、一覧に出たら記録に載せてから止める (止め漏らして、daemon の居ないところで走らせない)。
+// 起動した直後でまだ記録に無い PG も、一覧に出たら記録に載せてから止める (止め漏らして、dispatcher の居ないところで走らせない)。
 func TestShutdownStopsJustLaunchedPG(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	l := &fakeLauncher{}
-	d := newDaemon(t, dir, l, nil)
+	d := newDispatcher(t, dir, l, nil)
 	if _, err := d.Tick(context.Background()); err != nil { // 起動 (一覧にはまだ出ていない = 記録に無い)
 		t.Fatal(err)
 	}
@@ -262,7 +262,7 @@ func TestShutdownRechecksGraceEachPoll(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
 	setCard(t, dir, "C-001", func(c *card.Card) { c.Launching, c.LaunchedAt = "起動", t0 })
-	d := newDaemon(t, dir, &fakeLauncher{}, nil)
+	d := newDispatcher(t, dir, &fakeLauncher{}, nil)
 	n := 0
 	d.Now = func() time.Time { n++; return t0.Add(time.Duration(n) * 20 * time.Second) }
 	if _, err := d.Shutdown(context.Background()); err != nil {

@@ -6,22 +6,22 @@ PM (producer) と PG (consumer) を分けて Claude Code を並列に回すた�
 ## 起動のしかた: 本物と模擬
 
 ```sh
-bin/pro-con          # 本物: daemon が書くカードの記録を出す。依頼と回答は受付の箱へ (live。issue 424 / 427)
+bin/pro-con          # 本物: dispatcher が書くカードの記録を出す。依頼と回答は受付の箱へ (live。issue 424 / 427)
 bin/pro-con --mock   # 模擬: claude は起動しない。模擬の backend (fake) が状態を進める (動作確認用)
-bin/pro-con daemon   # (画面を開くと、居なければ画面が起こす) 本物のモードの dispatcher (受付の箱の適用・PG の起動と再開・記録への登録)。2 つ起動しない。🚨 PG を起動するので利用枠を使う
-bin/pro-con daemon --stop  # daemon と、pro-con が起動した PG を止める。作業中のカードは次に daemon を起動したら続きから再開する (画面の終了も同じことをする)
-bin/pro-con card …   # PM / PG が使うカードの操作 (add / plan / ask / answer / review / close)。受付の箱に置くだけで、適用は daemon (issue 427)
+bin/pro-con dispatcher   # 割り振り係: 受付の箱の適用・PG の起動と再開・テストの係・見張り (画面を開くと、居なければ画面が起こす。旧名 daemon)。2 つ起動しない。🚨 PG を起動するので利用枠を使う
+bin/pro-con dispatcher --stop  # dispatcher と、pro-con が起動した PG を止める。作業中のカードは次に dispatcher を起動したら続きから再開する (画面の終了も同じことをする)
+bin/pro-con card …   # PM / PG が使うカードの操作 (add / plan / ask / answer / review / close)。受付の箱に置くだけで、適用は dispatcher (issue 427)
 bin/pro-con card guide  # PM の session に渡す指示書 (src/pro-con/pm-guide.md) を出す
-bin/pro-con --e2e <dir>  # e2e モード: 画面・daemon・受付の箱・記録は本物、PG と PM だけ台本どおりの偽物 (claude を起動しない。利用枠を使わない)
+bin/pro-con --e2e <dir>  # e2e モード: 画面・dispatcher・受付の箱・記録は本物、PG と PM だけ台本どおりの偽物 (claude を起動しない。利用枠を使わない)
 bin/pro-con e2e <start|keys|text|screen|wait|stop|scenario> <dir> ...  # Claude が e2e モードの画面を操作する口 (隔離した tmux サーバで動かす)
-bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンドを頼む。daemon が PG の worktree で 1 本ずつ順に実行し、結果を渡して PG を再開する (失敗は haiku が要約)
-                                         # 🚨 PG に `pro-con card` を許すことは、その worktree で任意のコマンドを PG の permission の外で (daemon の権限で) 走らせるのを許すのと同じ。守っているのは「頼んだ場所がそのカードの PG の worktree」だけ
+bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンドを頼む。dispatcher が PG の worktree で 1 本ずつ順に実行し、結果を渡して PG を再開する (失敗は haiku が要約)
+                                         # 🚨 PG に `pro-con card` を許すことは、その worktree で任意のコマンドを PG の permission の外で (dispatcher の権限で) 走らせるのを許すのと同じ。守っているのは「頼んだ場所がそのカードの PG の worktree」だけ
 ```
 
 - どちらで動いているかはヘッダーに出る (`live: …` / `mock: …`。backend の `Describe`)。1 つの画面に両方のカードは混ぜない
 - ライブアップグレードの状態ファイルは `$XDG_STATE_HOME/pro-con/live` と `…/mock` に分ける。新版には `--mock` を付け直す
-- **本物 (live)**: カードは daemon が書く記録 (`$XDG_STATE_HOME/pro-con/live/cards.json`) から出る。書き込みは受付の箱 (`…/live/inbox/`) に
-  置くだけで、記録へ適用するのは `pro-con daemon` (動いていないと箱に溜まり、ヘッダーに「適用待ち N 件」と出る)。
+- **本物 (live)**: カードは dispatcher が書く記録 (`$XDG_STATE_HOME/pro-con/live/cards.json`) から出る。書き込みは受付の箱 (`…/live/inbox/`) に
+  置くだけで、記録へ適用するのは `pro-con dispatcher` (動いていないと箱に溜まり、ヘッダーに「適用待ち N 件」と出る)。
   受けるのは新しい依頼 (n / i) と回答 (r) だけで、追加オーダー・btw・片付けはまだ (押した時点で断る)。
 - 作業中のカードには、**pro-con が起動した session だけ** (記録 `…/live/sessions.json` にあるもの) の様子 (PG の出力の末尾・pid) を足す。
   照合は記録の行の session id・短い id・pid が全部一致したときだけ (pid が違う = 外の shell で同じ session を再開したもの、は外れる)。
@@ -57,7 +57,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 | (案内の行) | カードへの操作と x は、選んでいるカードで効くときだけ明るく、効かないときは暗く出す (r は質問待ちだけ、a は session のあるカードだけ、e / y は issue の紐づいたカードだけ) |
 | ctrl+r | 新版へ切り替える (ライブアップグレード。「新版あり」のときだけ) |
 | q / esc | 開いている板を 1 つ閉じる (PG の一覧 → 詳細)。何も開いていなくても終了しない (2026-09-25 に廃止) |
-| Q | 終了の入力欄を開く。`quit` と打って enter したときだけ閉じる (本物のモードでは daemon と PG を止めてから閉じる。次に開くと続きから再開)。ctrl+c も同じ入力欄を開く (1 打では閉じない) |
+| Q | 終了の入力欄を開く。`quit` と打って enter したときだけ閉じる (本物のモードでは dispatcher と PG を止めてから閉じる。次に開くと続きから再開)。ctrl+c も同じ入力欄を開く (1 打では閉じない) |
 | a | PG の session を開く (今は模擬) |
 | r | 質問待ちのカードに回答する |
 | + | 追加オーダー (tab で 追記 / 方針変更 / 別件)。**方針変更は y/N 確認** (y / enter だけが実行、他のキーは取り消し) |
@@ -156,7 +156,7 @@ issue の読み方 (状態 = ファイルの位置、`epic/<name>/` の 2 段、
 
 ## e2e モード (Claude が画面を動かして確かめる)
 
-画面・daemon・受付の箱・記録は本物のまま、PG と PM だけを台本どおりの偽物にする (`src/pro-con/daemon/e2e.go`)。claude は起動しないので利用枠を使わない。
+画面・dispatcher・受付の箱・記録は本物のまま、PG と PM だけを台本どおりの偽物にする (`src/pro-con/dispatcher/e2e.go`)。claude は起動しないので利用枠を使わない。
 置き場 `<dir>` の下に閉じる (`state/` = 状態、`repo/` = 偽の repo と PG の worktree)。本物の記録・tmux の件数・macOS の通知には触らない。
 
 - 偽の PM: 依頼の列のカードを、その場で分解済みにする (e2e#1)
@@ -171,7 +171,7 @@ bin/pro-con e2e keys ./tmp/e2e n        # tmux のキー名で送る (Enter / Es
 bin/pro-con e2e text ./tmp/e2e "依頼の文"
 bin/pro-con e2e wait ./tmp/e2e "質問待ち (1)" 30
 bin/pro-con e2e screen ./tmp/e2e        # 画面の文字
-bin/pro-con e2e stop ./tmp/e2e          # Q → quit で閉じる (daemon と偽の PG も止まる)
+bin/pro-con e2e stop ./tmp/e2e          # Q → quit で閉じる (dispatcher と偽の PG も止まる)
 ```
 
 `tests/pro-con/test_e2e_scenario.sh` が make test の中で `scenario` を回す (tmux が無ければ skip)。

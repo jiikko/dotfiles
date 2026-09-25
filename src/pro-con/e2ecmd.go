@@ -2,14 +2,14 @@ package main
 
 // pro-con e2e — Claude が e2e モードの画面を操作する口 (2026-09-25 にユーザーが依頼)。画面は隔離した tmux サーバ
 // (`-L pro-con-e2e-<置き場のハッシュ>`、`-f /dev/null` でユーザーの設定を読まない) の中で動かし、キーを送って画面の文字を読む。
-// PG は台本どおりに動く偽物 (daemon/e2e.go) なので claude は起動しない (利用枠を使わない)。
+// PG は台本どおりに動く偽物 (dispatcher/e2e.go) なので claude は起動しない (利用枠を使わない)。
 //
-//	pro-con e2e start <置き場>             画面を起動する (daemon は画面が起こす)
+//	pro-con e2e start <置き場>             画面を起動する (dispatcher は画面が起こす)
 //	pro-con e2e keys <置き場> <キー>...     tmux のキー名で送る (Enter / Escape / Q / r / Down 等)
 //	pro-con e2e text <置き場> <文>          文をそのまま打つ
 //	pro-con e2e screen <置き場>             画面の文字を出す
 //	pro-con e2e wait <置き場> <文> [秒]     画面にその文が出るまで待つ (既定 30 秒。出なければ rc=1 で画面を出す)
-//	pro-con e2e stop <置き場>               Q → quit で閉じる (daemon と偽の PG も止まる)。閉じなければ隔離サーバを止める
+//	pro-con e2e stop <置き場>               Q → quit で閉じる (dispatcher と偽の PG も止まる)。閉じなければ隔離サーバを止める
 //	pro-con e2e scenario <置き場>           依頼 → 質問 → 回答 → テストの係 → レビュー → 終了を通しで確かめる
 
 import (
@@ -154,20 +154,20 @@ func e2eStart(root string) error {
 	return e2eWait(root, "producer-consumer", 20*time.Second)
 }
 
-// e2eStop は Q → quit で閉じ、画面が抜けるまで待つ (daemon と偽の PG を止め終えるまで)。抜けなければ隔離サーバを止める。
+// e2eStop は Q → quit で閉じ、画面が抜けるまで待つ (dispatcher と偽の PG を止め終えるまで)。抜けなければ隔離サーバを止める。
 func e2eStop(root string) (err error) {
-	// どの出口でも、最後に daemon と偽の PG を止め、控えた socket を消す (画面が先に落ちていた / 隔離サーバを止めた場合も。
-	// daemon は画面と別のプロセスグループなので、画面や隔離サーバと一緒には終わらない)
+	// どの出口でも、最後に dispatcher と偽の PG を止め、控えた socket を消す (画面が先に落ちていた / 隔離サーバを止めた場合も。
+	// dispatcher は画面と別のプロセスグループなので、画面や隔離サーバと一緒には終わらない)
 	defer func() {
 		if exe, xerr := os.Executable(); xerr == nil {
-			if out, serr := exec.Command(exe, "daemon", "--stop", "--e2e", root).CombinedOutput(); serr != nil && err == nil {
-				err = fmt.Errorf("daemon を止められない: %w: %s", serr, strings.TrimSpace(string(out)))
+			if out, serr := exec.Command(exe, "dispatcher", "--stop", "--e2e", root).CombinedOutput(); serr != nil && err == nil {
+				err = fmt.Errorf("dispatcher を止められない: %w: %s", serr, strings.TrimSpace(string(out)))
 			}
 		}
 		removeE2ESocket(root)
 	}()
 	if err := e2eTmux(root, "has-session").Run(); err != nil {
-		return nil // 画面は動いていない (daemon は上の defer が止める)
+		return nil // 画面は動いていない (dispatcher は上の defer が止める)
 	}
 	_ = e2eTmux(root, "send-keys", "-t", "0", "Q").Run()
 	_ = e2eTmux(root, "send-keys", "-t", "0", "-l", "quit").Run()

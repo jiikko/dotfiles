@@ -1,7 +1,7 @@
 // Package fake は claude を起動せずに pro-con の画面とつなぎ込みを動かすための模擬 backend。
 //
 // 時間は壁時計ではなく刻みで進める (Poll 1 回 = 模擬時間で StepDuration)。テストは Step を直接呼んで
-// 決定的に状態を進める。ここにある dispatcher / watchdog の判定は模擬であり、本番の daemon の実装ではない
+// 決定的に状態を進める。ここにある dispatcher / watchdog の判定は模擬であり、本番の dispatcher の実装ではない
 // (本番の判定をここへ育てるなら、fake から切り出して backend 側の package に置く)。
 package fake
 
@@ -363,7 +363,7 @@ func (s *Sim) Snapshot() backend.Snapshot {
 			cons = append(cons, backend.Consumer{Session: c.Session, CardID: c.ID, Status: st})
 		}
 	}
-	return backend.Snapshot{Now: s.now, Cards: cards, Consumers: cons, Limit: s.limit, DaemonTick: s.now, Violations: card.Check(cards)}
+	return backend.Snapshot{Now: s.now, Cards: cards, Consumers: cons, Limit: s.limit, DispatcherTick: s.now, Violations: card.Check(cards)}
 }
 
 // Describe はヘッダーに出す説明 (backend.Describer)。

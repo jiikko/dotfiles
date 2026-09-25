@@ -1,7 +1,7 @@
-package daemon
+package dispatcher
 
-// pro-con を終了するときの停止 (2026-09-25 にユーザーが決めた形: daemon と、pro-con が起動した PG を全部止め、次に daemon を起動したら続きから再開する)。
-// 止めるのは daemon だけ (PG の session に触るのは daemon の役)。画面は `pro-con daemon --stop` で頼む。
+// pro-con を終了するときの停止 (2026-09-25 にユーザーが決めた形: dispatcher と、pro-con が起動した PG を全部止め、次に dispatcher を起動したら続きから再開する)。
+// 止めるのは dispatcher だけ (PG の session に触るのは dispatcher の役)。画面は `pro-con dispatcher --stop` で頼む。
 
 import (
 	"context"
@@ -18,8 +18,8 @@ import (
 	"pro-con/store"
 )
 
-// StopRequestFile は、動いている daemon に止めるよう頼む印 (状態の置き場の下)。daemon は Tick の間に見つけたら Shutdown して抜ける。
-// StopResultFile は、止めた daemon が抜ける前に書く結果 ("ok" か、止めきれなかった理由)。頼んだ側はロックが外れた後にこれを読む
+// StopRequestFile は、動いている dispatcher に止めるよう頼む印 (状態の置き場の下)。dispatcher は Tick の間に見つけたら Shutdown して抜ける。
+// StopResultFile は、止めた dispatcher が抜ける前に書く結果 ("ok" か、止めきれなかった理由)。頼んだ側はロックが外れた後にこれを読む
 // (ロックが外れただけでは、止め終えたのか、止める前に落ちた / SIGTERM で抜けたのか区別できない)。
 const (
 	StopRequestFile = "stop-request"
@@ -38,18 +38,18 @@ func WriteStopResult(dir string, err error) {
 // resumeAfterStop は、終了で止めた作業中の PG を次に再開するときに渡す文。
 const resumeAfterStop = "pro-con の終了で作業の途中で止めた。止まる前の続きから作業を再開して (規律は最初の指示のとおり)"
 
-// ErrStopTimeout は、動いている daemon が時間内に止まらなかったとき。
-var ErrStopTimeout = errors.New("pro-con daemon が時間内に止まらない")
+// ErrStopTimeout は、動いている dispatcher が時間内に止まらなかったとき。
+var ErrStopTimeout = errors.New("pro-con dispatcher が時間内に止まらない")
 
 // Shutdown は pro-con が起動した PG の session を全部止め、カードを次の起動で続きから再開できる形にする:
-//   - 作業中 → 分解済みへ戻し、再開の文 (resumeAfterStop) を持たせる (次の daemon が --resume する)
+//   - 作業中 → 分解済みへ戻し、再開の文 (resumeAfterStop) を持たせる (次の dispatcher が --resume する)
 //   - それ以外 (質問待ち・レビュー待ち等) → 列はそのまま
 //
 // 止めたカードには Stopped の印を付ける (再開のとき、落ちた PG の自動の再開を待つ restartWait を飛ばす)。
-// 止める相手は、記録と session id・pid が一致する bg の session、または daemon 自身が起動・再開した直後でまだ記録に無い session だけ。
+// 止める相手は、記録と session id・pid が一致する bg の session、または dispatcher 自身が起動・再開した直後でまだ記録に無い session だけ。
 // すぐには止められない形 (落ちて自動の再開を待っている / 起動・再開の直後で一覧にまだ出ない) は、一覧を取り直しながら shutdownPolls 回待つ。
-// 待っても止められなかったカードは列を変えず (次の daemon が普段どおり扱う)、止めきれなかった本数をエラーで返す。
-func (d *Daemon) Shutdown(ctx context.Context) ([]string, error) {
+// 待っても止められなかったカードは列を変えず (次の dispatcher が普段どおり扱う)、止めきれなかった本数をエラーで返す。
+func (d *Dispatcher) Shutdown(ctx context.Context) ([]string, error) {
 	now := d.Now()
 	var notes []string
 	d.cancelRun(10 * time.Second) // テストの係の実行中の 1 本を取り消す (再開した PG は続きから頼み直す)
@@ -104,7 +104,7 @@ func (d *Daemon) Shutdown(ctx context.Context) ([]string, error) {
 			done[c.ID] = true
 			if wait { // 待っても止められる形にならなかった。列は変えない
 				failed++
-				notes = append(notes, fmt.Sprintf("%s の PG は落ちて戻らない / 一覧に出ないので止められない (列はそのまま。次の daemon が扱う)", c.ID))
+				notes = append(notes, fmt.Sprintf("%s の PG は落ちて戻らない / 一覧に出ないので止められない (列はそのまま。次の dispatcher が扱う)", c.ID))
 				continue
 			}
 			if target != "" {
@@ -124,7 +124,7 @@ func (d *Daemon) Shutdown(ctx context.Context) ([]string, error) {
 				if cc.State == card.Running {
 					cc.State, cc.Since, cc.Resume = card.Planned, now, resumeAfterStop
 					cc.DropRun() // テストの係への頼みも取り下げる (続きから頼み直す)
-					text += " (次に daemon を起動したら続きから再開する)"
+					text += " (次に dispatcher を起動したら続きから再開する)"
 				}
 				cc.History = append(cc.History, card.Event{At: now, Text: text})
 			}); err != nil {
@@ -151,7 +151,7 @@ const (
 	shutdownPolls = 23
 )
 
-func (d *Daemon) sleep(t time.Duration) {
+func (d *Dispatcher) sleep(t time.Duration) {
 	if d.Sleep != nil {
 		d.Sleep(t)
 		return
@@ -161,7 +161,7 @@ func (d *Daemon) sleep(t time.Duration) {
 
 // stopTarget は、終了のときにこのカードで止める session の短い id を返す。wait が真なら、今は止められないが待てば止められる形。
 // 両方とも空 / 偽なら、止めるものが無い (既に止まっている)。
-func (d *Daemon) stopTarget(c card.Card, now time.Time, ss []agents.Session, reg []live.Owned) (string, bool) {
+func (d *Dispatcher) stopTarget(c card.Card, now time.Time, ss []agents.Session, reg []live.Owned) (string, bool) {
 	if c.Launching != "" { // 起動・再開の結果が分からない。立っていれば取り込んで止める
 		if id, ok := adopt(c, d.Repos[c.Repo], ss, reg); ok {
 			for _, s := range ss {
@@ -174,7 +174,7 @@ func (d *Daemon) stopTarget(c card.Card, now time.Time, ss []agents.Session, reg
 		return "", now.Sub(c.LaunchedAt) < launchGrace // 印の直後ならまだ一覧に出ていないだけかもしれない
 	}
 	o, ok := owned(c, reg)
-	if !ok { // daemon が起動・再開した直後で、記録にまだ無い (register が載せるのを待つ)
+	if !ok { // dispatcher が起動・再開した直後で、記録にまだ無い (register が載せるのを待つ)
 		return "", now.Sub(c.LaunchedAt) < launchGrace
 	}
 	for _, s := range ss {
@@ -198,8 +198,8 @@ func StopRequested(dir string) bool {
 	return err == nil
 }
 
-// RequestStop は動いている daemon に止めるよう頼み、止まる (ロックが外れる) まで待つ。
-// daemon が動いていなければ false を返す (呼び出し側が自分で daemon の役を取って止める)。
+// RequestStop は動いている dispatcher に止めるよう頼み、止まる (ロックが外れる) まで待つ。
+// dispatcher が動いていなければ false を返す (呼び出し側が自分で dispatcher の役を取って止める)。
 func RequestStop(ctx context.Context, dir string, timeout time.Duration) (bool, error) {
 	unlock, err := Lock(dir)
 	if err == nil {
@@ -224,7 +224,7 @@ func RequestStop(ctx context.Context, dir string, timeout time.Duration) (bool, 
 			unlock()
 			data, err := os.ReadFile(filepath.Join(dir, StopResultFile))
 			if err != nil {
-				return true, errors.New("pro-con daemon が止め終える前に終わった (止めた結果が無い)")
+				return true, errors.New("pro-con dispatcher が止め終える前に終わった (止めた結果が無い)")
 			}
 			if r := strings.TrimSpace(string(data)); r != "ok" {
 				return true, errors.New(r)
@@ -232,6 +232,6 @@ func RequestStop(ctx context.Context, dir string, timeout time.Duration) (bool, 
 			return true, nil
 		}
 	}
-	_ = os.Remove(filepath.Join(dir, StopRequestFile)) // 取り下げる (画面が閉じた後で daemon が止めに入らないように)
+	_ = os.Remove(filepath.Join(dir, StopRequestFile)) // 取り下げる (画面が閉じた後で dispatcher が止めに入らないように)
 	return true, ErrStopTimeout
 }

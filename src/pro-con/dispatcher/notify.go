@@ -1,4 +1,4 @@
-package daemon
+package dispatcher
 
 // 知らせ (426 の決定 10): 件数を tmux のユーザー option に書き (status が読む)、質問待ちと落ちて止めた PG は macOS の通知でも知らせる。
 // 🚨 status のどこにどう出すかは未配線 (見た目はユーザーと決める。issue 427 の 3c-2c)。option の名前は StatusOption
@@ -14,7 +14,7 @@ import (
 	"pro-con/store"
 )
 
-// StatusOption は daemon が件数を書く tmux のユーザー option。tmux の status は #() で fork せず、これを format で読む (_tmux.conf の方針)。
+// StatusOption は dispatcher が件数を書く tmux のユーザー option。tmux の status は #() で fork せず、これを format で読む (_tmux.conf の方針)。
 const StatusOption = "@pro-con-status"
 
 // republishEvery は件数の文が変わらなくても書き直す間隔。
@@ -50,8 +50,8 @@ func Status(cards []card.Card) string {
 }
 
 // announce は件数の文が変わったら Publish し、新しく人間の回答待ちになったカード (質問・権限・落ちて止めた) を Notify する。
-// 同じ待ちを 2 度知らせない (待ちを抜けたら忘れるので、次に待ちに入ったらまた知らせる。daemon が起動し直すと、待っているカードを 1 度ずつ知らせ直す)。
-func (d *Daemon) announce() []string {
+// 同じ待ちを 2 度知らせない (待ちを抜けたら忘れるので、次に待ちに入ったらまた知らせる。dispatcher が起動し直すと、待っているカードを 1 度ずつ知らせ直す)。
+func (d *Dispatcher) announce() []string {
 	st, err := store.Load(d.Dir)
 	if err != nil {
 		return []string{"知らせ: 記録を読めない: " + err.Error()}

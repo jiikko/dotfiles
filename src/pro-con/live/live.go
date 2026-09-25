@@ -1,8 +1,8 @@
-// Package live は本物の backend (issue 424 / 427 の段階 3d)。カードは daemon が書く記録 (store) から読み、作業中のカードには
+// Package live は本物の backend (issue 424 / 427 の段階 3d)。カードは dispatcher が書く記録 (store) から読み、作業中のカードには
 // **pro-con が起動した session** (registry.go の記録にあるもの) の様子 (PG の出力の末尾・pid) を `claude agents --json` と transcript から足す。
 // Desktop や他の shell で立ち上げた session は出さない (選べると、pro-con の外の session に入力・停止できてしまう)。
 //
-// 書き込みは受付の箱に置くだけ (store.Submit)。記録へ適用するのは daemon (426 の決定 1)。受けるのは新しい依頼と回答だけで、
+// 書き込みは受付の箱に置くだけ (store.Submit)。記録へ適用するのは dispatcher (426 の決定 1)。受けるのは新しい依頼と回答だけで、
 // 追加オーダー・btw・片付けはまだ受けない (Accepts。画面は押した時点で断る)。
 package live
 
@@ -32,7 +32,7 @@ var ErrNotYet = errors.New("本物のモードではまだ使えない操作 (is
 // Backend は本物の backend。
 type Backend struct {
 	attach   func(sessionID string) *exec.Cmd // attach のコマンド (nil なら本物の claude attach。e2e モードは偽の attach)
-	stopAll  func(context.Context) error      // 終了のときに daemon と PG を止める (main が daemon の停止をつなぐ。live は daemon を import できない)
+	stopAll  func(context.Context) error      // 終了のときに dispatcher と PG を止める (main が dispatcher の停止をつなぐ。live は dispatcher を import できない)
 	repos    []backend.Repo
 	dir      string // 本物のモードの状態の置き場 (カードの記録・受付の箱・pro-con が起動した session の記録)
 	registry string // pro-con が起動した session の記録 (registry.go)
@@ -43,7 +43,7 @@ type Backend struct {
 
 	mu      sync.Mutex
 	snap    backend.Snapshot
-	pending int  // 受付の箱の適用待ちの数 (daemon が動いていないと溜まる。ヘッダーに出す)
+	pending int  // 受付の箱の適用待ちの数 (dispatcher が動いていないと溜まる。ヘッダーに出す)
 	ready   bool // 最初の読み取りが済んだか
 	done    chan struct{}
 	cache   map[string]cached // transcript のパス → 大きさ・更新時刻と読んだ結果 (変わっていなければ読み直さない)
@@ -65,7 +65,7 @@ func New(repos []backend.Repo, home, stateDir string) *Backend {
 		repos:    repos,
 		dir:      stateDir,
 		registry: filepath.Join(stateDir, RegistryFile),
-		snap:     backend.Snapshot{Now: now, DaemonTick: now},
+		snap:     backend.Snapshot{Now: now, DispatcherTick: now},
 		done:     make(chan struct{}),
 		list:     func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) },
 		findPath: func(id string) (string, error) { return FindTranscript(projects, id) },
@@ -85,7 +85,7 @@ func (b *Backend) SetAttach(f func(sessionID string) *exec.Cmd) { b.attach = f }
 // SetStopper は終了のときの停止をつなぐ。
 func (b *Backend) SetStopper(f func(context.Context) error) { b.stopAll = f }
 
-// StopAll は daemon と、pro-con が起動した PG を止める (backend.Stopper)。
+// StopAll は dispatcher と、pro-con が起動した PG を止める (backend.Stopper)。
 func (b *Backend) StopAll(ctx context.Context) error {
 	if b.stopAll == nil {
 		return errors.New("止める口がつながっていない")
@@ -170,7 +170,7 @@ func (b *Backend) Refresh(ctx context.Context) {
 			continue // 記録に無い session (外のもの) の様子は足さない
 		}
 		if t := b.transcript(s.SessionID); len(t.Outputs) > 0 {
-			cards[i].Log = tail(t.Outputs, 3) // LastProgress は daemon の watchdog だけが書く (活動と進捗を分けて判定するため)
+			cards[i].Log = tail(t.Outputs, 3) // LastProgress は dispatcher の watchdog だけが書く (活動と進捗を分けて判定するため)
 		}
 		if c.State == card.Running {
 			cons = append(cons, backend.Consumer{Session: s.ID, CardID: c.ID, Status: s.Status, PID: s.PID})
@@ -178,7 +178,7 @@ func (b *Backend) Refresh(ctx context.Context) {
 	}
 	pending, _ := filepath.Glob(filepath.Join(b.dir, store.InboxDir, "*.json"))
 	b.mu.Lock()
-	b.snap = backend.Snapshot{Now: now, Cards: cards, Consumers: cons, Limit: len(cons), DaemonTick: now,
+	b.snap = backend.Snapshot{Now: now, Cards: cards, Consumers: cons, Limit: len(cons), DispatcherTick: now,
 		Violations: append(card.Check(cards), extra...)}
 	b.pending, b.ready = len(pending), true
 	b.mu.Unlock()
@@ -228,7 +228,7 @@ func (b *Backend) Snapshot() backend.Snapshot {
 	return s
 }
 
-// Apply は受付の箱に依頼を置く (記録へ適用するのは daemon)。受けるのは新しい依頼と回答だけ。
+// Apply は受付の箱に依頼を置く (記録へ適用するのは dispatcher)。受けるのは新しい依頼と回答だけ。
 func (b *Backend) Apply(cmd backend.Command) (string, error) {
 	var r store.Request
 	switch c := cmd.(type) {
@@ -254,7 +254,7 @@ func (b *Backend) Apply(cmd backend.Command) (string, error) {
 	if _, err := store.Submit(b.dir, r); err != nil {
 		return "", err
 	}
-	return "受け付けた (daemon が適用するとカードに出る)", nil
+	return "受け付けた (dispatcher が適用するとカードに出る)", nil
 }
 
 // Accepts は本物のモードで受ける操作 (backend.Accepter)。新しい依頼と回答だけ。
@@ -298,7 +298,7 @@ func (b *Backend) Describe() string {
 	case !b.ready:
 		return "live: 読み込み中… (模擬は pro-con --mock)"
 	case b.pending > 0:
-		return fmt.Sprintf("live: 受付の箱に適用待ち %d 件 (pro-con daemon が動いていない? 模擬は pro-con --mock)", b.pending)
+		return fmt.Sprintf("live: 受付の箱に適用待ち %d 件 (pro-con dispatcher が動いていない? 模擬は pro-con --mock)", b.pending)
 	}
 	return "live: 本物のカード (依頼と回答は受付の箱へ。追加オーダー・btw・片付けはまだ。模擬は pro-con --mock)"
 }

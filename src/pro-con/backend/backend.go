@@ -1,5 +1,5 @@
 // Package backend は UI と「状態を持つ側」の境界。UI はこの package の型だけを知り、
-// 実装 (今は fake。本番は状態ファイル + claude agents --json を読む daemon クライアント) を知らない。
+// 実装 (今は fake。本番は状態ファイル + claude agents --json を読む dispatcher クライアント) を知らない。
 //
 // 状態の正本は backend 側にあり、UI は Snapshot を読むことと Command を送ることしかしない
 // (415 要件 14: TUI が落ちても何も失わない)。
@@ -31,12 +31,12 @@ type Backend interface {
 
 // Snapshot はある瞬間の全状態。UI はこれだけから画面を組む。
 type Snapshot struct {
-	Now        time.Time
-	Cards      []card.Card
-	Consumers  []Consumer
-	Limit      int       // PG の同時実行数の上限
-	DaemonTick time.Time // daemon (と watchdog) が最後に回った時刻。古ければ UI が警告する
-	Violations []card.Violation
+	Now            time.Time
+	Cards          []card.Card
+	Consumers      []Consumer
+	Limit          int       // PG の同時実行数の上限
+	DispatcherTick time.Time // dispatcher (と watchdog) が最後に回った時刻。古ければ UI が警告する
+	Violations     []card.Violation
 }
 
 // Consumer は PG (consumer) 1 体。
@@ -65,7 +65,7 @@ const (
 // 画面は受けない操作のキーを押した時点で断り、案内の行でも暗くする (入力欄を開いてから送った時点で断ると、書いた文が無駄になる)。
 type Accepter interface{ Accepts(Op) bool }
 
-// Stopper は、画面を終了するときに backend が動かしているもの (本物のモード: daemon と、pro-con が起動した PG) を止める口。
+// Stopper は、画面を終了するときに backend が動かしているもの (本物のモード: dispatcher と、pro-con が起動した PG) を止める口。
 // 持たない backend (模擬) は、画面を閉じるだけで終わる。
 type Stopper interface {
 	StopAll(ctx context.Context) error

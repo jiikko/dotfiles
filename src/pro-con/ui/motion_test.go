@@ -127,7 +127,7 @@ func layoutOf(m *Model, id string) (line, col, bottom int) {
 // (列の中を Snapshot 順に並べると M1 が R1 の上に割り込み、枠の高さを枚数に合わせると全部の枠が伸びる)。
 func TestOtherCardsStayPutDuringMotion(t *testing.T) {
 	now := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
-	be := &spy{snap: backend.Snapshot{Now: now, Limit: 2, DaemonTick: now, Cards: []card.Card{
+	be := &spy{snap: backend.Snapshot{Now: now, Limit: 2, DispatcherTick: now, Cards: []card.Card{
 		{ID: "M1", Title: "動く", State: card.Planned, Since: now.Add(-5 * time.Minute)},
 		{ID: "R1", Title: "動かない", State: card.Running, Since: now.Add(-10 * time.Minute)},
 	}}}

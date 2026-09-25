@@ -1,4 +1,4 @@
-package daemon
+package dispatcher
 
 import (
 	"context"
@@ -144,7 +144,7 @@ func TestRunFailureIsSummarized(t *testing.T) {
 	}
 }
 
-// 実行の途中で daemon が止まって (実行していない daemon が) 実行中の記録を見たら、残ったコマンドを止めてから、結果が無いことを渡して再開する。
+// 実行の途中で dispatcher が止まって (実行していない dispatcher が) 実行中の記録を見たら、残ったコマンドを止めてから、結果が無いことを渡して再開する。
 func TestInterruptedRunIsReported(t *testing.T) {
 	r, fr, _ := runRig(t, 1)
 	var killed []string
@@ -156,7 +156,7 @@ func TestInterruptedRunIsReported(t *testing.T) {
 	})
 	r.tick(t)
 	if len(killed) != 1 || killed[0] != "C-001-777.log" {
-		t.Fatalf("前の daemon が残した実行を止めにいかない: %v", killed)
+		t.Fatalf("前の dispatcher が残した実行を止めにいかない: %v", killed)
 	}
 	if len(fr.commands) != 0 || len(r.l.resumes) != 1 || !strings.Contains(r.l.resumes[0], "結果が無い") {
 		t.Fatalf("途中で止まった実行を知らせて再開しない: commands=%v resumes=%v", fr.commands, r.l.resumes)

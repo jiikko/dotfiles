@@ -4,7 +4,7 @@
 //	pro-con              TUI を起動する (本物: 今の Claude Code の session を読み取り専用で出す)
 //	pro-con --mock       模擬データで起動する (claude は起動しない。動作確認用)
 //	pro-con card …       PM / PG が使うカードの操作 (受付の箱に置く。pro-con card で使い方)
-//	pro-con daemon       本物のモードの dispatcher を常駐させる (PG を起動する。週の利用枠を使う)
+//	pro-con dispatcher       本物のモードの dispatcher を常駐させる (PG を起動する。週の利用枠を使う)
 //	pro-con fake-attach  attach の代わりに TUI から起動される内部用のコマンド
 //
 // 設定は ~/.config/pro-con/config.toml (無ければ既定値。書式は config package の doc)。
@@ -27,7 +27,7 @@ import (
 
 	"pro-con/backend"
 	"pro-con/config"
-	"pro-con/daemon"
+	"pro-con/dispatcher"
 	"pro-con/fake"
 	"pro-con/live"
 	"pro-con/ui"
@@ -40,7 +40,7 @@ func main() {
 
 // parseMode は先頭の起動モードの引数 (--mock / --e2e <置き場>) を読む。modeArgs はライブアップグレードで新版に付け直す引数
 // (付け忘れると、模擬や e2e で使っていたのに本物で起動し直す)。
-func parseMode(args []string) (mock bool, e2e *daemon.E2E, modeArgs, rest []string, err error) {
+func parseMode(args []string) (mock bool, e2e *dispatcher.E2E, modeArgs, rest []string, err error) {
 	switch {
 	case len(args) > 0 && args[0] == "--mock":
 		return true, nil, []string{"--mock"}, args[1:], nil
@@ -52,7 +52,7 @@ func parseMode(args []string) (mock bool, e2e *daemon.E2E, modeArgs, rest []stri
 		if err != nil {
 			return false, nil, nil, nil, err
 		}
-		return false, &daemon.E2E{Root: root}, []string{"--e2e", root}, args[2:], nil
+		return false, &dispatcher.E2E{Root: root}, []string{"--e2e", root}, args[2:], nil
 	}
 	return false, nil, nil, args, nil
 }
@@ -71,8 +71,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	if len(args) > 0 && len(modeArgs) > 0 {
 		// 🚨 --e2e / --mock は画面の起動にだけ付ける。サブコマンドの前に付くと、サブコマンドは本物の置き場で動いてしまう
-		// (`pro-con --e2e X daemon --stop` が本物の daemon と PG を止める)。daemon は `pro-con daemon --e2e <dir>`
-		_, _ = fmt.Fprintf(stderr, "pro-con: %s はサブコマンド (%s) の前には付けない (daemon なら pro-con daemon --e2e <dir>、画面なら pro-con %s)\n",
+		// (`pro-con --e2e X dispatcher --stop` が本物の dispatcher と PG を止める)。dispatcher は `pro-con dispatcher --e2e <dir>`
+		_, _ = fmt.Fprintf(stderr, "pro-con: %s はサブコマンド (%s) の前には付けない (dispatcher なら pro-con dispatcher --e2e <dir>、画面なら pro-con %s)\n",
 			modeArgs[0], args[0], strings.Join(modeArgs, " "))
 		return 2
 	}
@@ -93,7 +93,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				return 1
 			}
 			return runCard(args[1:], liveDir(home), stdout, stderr)
-		case "daemon": // 本物のモードの dispatcher を常駐させる (daemoncmd.go)
+		case "dispatcher", "daemon": // 本物のモードの dispatcher を常駐させる (dispatchercmd.go)。daemon は 2026-09-25 に dispatcher へ改名する前の名前 (別名として残す)
+			if args[0] == "daemon" {
+				_, _ = fmt.Fprintln(stderr, "pro-con: daemon は dispatcher に改名した (pro-con dispatcher)")
+			}
 			home, err := os.UserHomeDir()
 			if err != nil {
 				_, _ = fmt.Fprintln(stderr, "pro-con:", err)
@@ -109,7 +112,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			for _, r := range repos {
 				paths[r.Name] = r.Path
 			}
-			return runDaemon(args[1:], liveDir(home), filepath.Join(home, ".claude", "projects"), paths, stdout, stderr)
+			return runDispatcher(args[1:], liveDir(home), filepath.Join(home, ".claude", "projects"), paths, stdout, stderr)
 		case "-h", "--help":
 			_, _ = fmt.Fprintln(stdout, "usage: pro-con [--mock]   (既定は今の Claude Code の session を読み取り専用で出す。--mock は模擬データ)")
 			return 0
@@ -136,7 +139,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		scopes[i] = backend.Repo{Name: r.Name, Path: r.Path}
 	}
 	if e2e != nil { // e2e モードの repo は置き場の下の偽の repo だけ (本物の repo に触らない)
-		scopes, warnings = []backend.Repo{{Name: daemon.E2ERepo, Path: e2e.RepoDir()}}, nil
+		scopes, warnings = []backend.Repo{{Name: dispatcher.E2ERepo, Path: e2e.RepoDir()}}, nil
 	}
 	var notes []string // 起動時に画面へ出す知らせ
 	// 模擬と本物で状態ファイルの置き場所を分ける (模擬のカードが本物の記録に混ざらないように。issue 424)
@@ -146,9 +149,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		be = fake.New(time.Now().Truncate(time.Minute)) // 模擬時間の起点は今 (時刻の表示が今に近い方が見本として読みやすい)
 		dir = filepath.Join(stateDir(home), "mock")
 	} else {
-		var daemonArgs []string // daemon の子プロセスに渡す引数 (e2e モードなら --e2e <置き場>)
+		var dispatcherArgs []string // dispatcher の子プロセスに渡す引数 (e2e モードなら --e2e <置き場>)
 		if e2e != nil {
-			dir, daemonArgs = e2e.StateDir(), modeArgs
+			dir, dispatcherArgs = e2e.StateDir(), modeArgs
 		}
 		lb := live.New(scopes, home, dir)
 		if e2e != nil {
@@ -157,12 +160,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				lb.SetAttach(func(id string) *exec.Cmd { return exec.Command(exe, "fake-attach", id) }) // 本物の claude attach を起動しない
 			}
 		}
-		lb.SetStopper(func(ctx context.Context) error { return stopInChild(ctx, dir, daemonArgs) })
-		// 画面を開いたら daemon も立てる (閉じると止める。2026-09-25 にユーザーが決めた形。415 の「TUI と常駐プロセス」)
-		if started, err := startDaemonIfIdle(dir, func(dir string) error { return spawnDaemon(dir, daemonArgs) }); err != nil {
-			notes = append(notes, "daemon を起動できない: "+err.Error()+" (手で起動する: pro-con daemon)")
+		lb.SetStopper(func(ctx context.Context) error { return stopInChild(ctx, dir, dispatcherArgs) })
+		// 画面を開いたら dispatcher も立てる (閉じると止める。2026-09-25 にユーザーが決めた形。415 の「TUI と常駐プロセス」)
+		if started, err := startDispatcherIfIdle(dir, func(dir string) error { return spawnDispatcher(dir, dispatcherArgs) }); err != nil {
+			notes = append(notes, "dispatcher を起動できない: "+err.Error()+" (手で起動する: pro-con dispatcher)")
 		} else if started {
-			notes = append(notes, "daemon を起動した (ログ: "+filepath.Join(dir, "daemon.log")+")")
+			notes = append(notes, "dispatcher を起動した (ログ: "+filepath.Join(dir, "dispatcher.log")+")")
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		lb.Start(ctx)
@@ -213,9 +216,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		if !m.UpgradeRequested() {
 			removeResume(resumePath)
-			if err := m.StopErr(); err != nil { // 終了のときに daemon と PG を止めきれなかった (画面を閉じた後に出す)
+			if err := m.StopErr(); err != nil { // 終了のときに dispatcher と PG を止めきれなかった (画面を閉じた後に出す)
 				_, _ = fmt.Fprintln(stderr, "pro-con: 終了のときに止めきれなかった:", err)
-				_, _ = fmt.Fprintln(stderr, "  もう一度止める: pro-con daemon --stop")
+				_, _ = fmt.Fprintln(stderr, "  もう一度止める: pro-con dispatcher --stop")
 				return 1
 			}
 			return 0
@@ -226,11 +229,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 }
 
-// startDaemonIfIdle は、daemon が動いていなければ spawn で起動する (動いていれば何もしない)。
-// 確かめてから起動するまでの間に別の画面が起動しても、2 つ目の daemon はロックを取れずに抜けるだけ。
-func startDaemonIfIdle(dir string, spawn func(dir string) error) (bool, error) {
-	unlock, err := daemon.Lock(dir)
-	if errors.Is(err, daemon.ErrRunning) {
+// startDispatcherIfIdle は、dispatcher が動いていなければ spawn で起動する (動いていれば何もしない)。
+// 確かめてから起動するまでの間に別の画面が起動しても、2 つ目の dispatcher はロックを取れずに抜けるだけ。
+func startDispatcherIfIdle(dir string, spawn func(dir string) error) (bool, error) {
+	unlock, err := dispatcher.Lock(dir)
+	if errors.Is(err, dispatcher.ErrRunning) {
 		return false, nil
 	}
 	if err != nil {
@@ -240,19 +243,19 @@ func startDaemonIfIdle(dir string, spawn func(dir string) error) (bool, error) {
 	return true, spawn(dir)
 }
 
-// spawnDaemon は `pro-con daemon` を画面とは別のプロセスグループで起動する (画面を閉じても、ctrl+c が届いても道連れにしない。
-// 止めるのは終了のときの `daemon --stop`)。出力は状態の置き場の daemon.log へ足す (画面より長く生きるのでパイプにしない)。
-func spawnDaemon(dir string, extra []string) error {
+// spawnDispatcher は `pro-con dispatcher` を画面とは別のプロセスグループで起動する (画面を閉じても、ctrl+c が届いても道連れにしない。
+// 止めるのは終了のときの `dispatcher --stop`)。出力は状態の置き場の dispatcher.log へ足す (画面より長く生きるのでパイプにしない)。
+func spawnDispatcher(dir string, extra []string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(filepath.Join(dir, "daemon.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	f, err := os.OpenFile(filepath.Join(dir, "dispatcher.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = f.Close() }()
-	cmd := exec.Command(exe, append([]string{"daemon"}, extra...)...)
+	cmd := exec.Command(exe, append([]string{"dispatcher"}, extra...)...)
 	cmd.Stdout, cmd.Stderr = f, f
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
@@ -261,7 +264,7 @@ func spawnDaemon(dir string, extra []string) error {
 	return cmd.Process.Release()
 }
 
-// stopInChild は `pro-con daemon --stop` を別のプロセスで走らせて待つ。画面を ctrl+c で閉じても (待たずに閉じても)、
+// stopInChild は `pro-con dispatcher --stop` を別のプロセスで走らせて待つ。画面を ctrl+c で閉じても (待たずに閉じても)、
 // 止める処理は子が最後まで続ける (画面のプロセスの中で止めると、閉じた瞬間に途中で切れる)。子の出力は状態の置き場の stop.log へ
 // (画面が先に閉じるとパイプが切れて子が書けなくなるので、パイプにしない)。
 func stopInChild(ctx context.Context, dir string, extra []string) error {
@@ -274,7 +277,7 @@ func stopInChild(ctx context.Context, dir string, extra []string) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(exe, append([]string{"daemon", "--stop"}, extra...)...)
+	cmd := exec.Command(exe, append([]string{"dispatcher", "--stop"}, extra...)...)
 	cmd.Stdout, cmd.Stderr = f, f
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // 端末の割り込みを子へ届けない
 	if err := cmd.Start(); err != nil {

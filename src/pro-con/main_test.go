@@ -5,7 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"pro-con/daemon"
+	"pro-con/dispatcher"
 	"strings"
 	"testing"
 	"time"
@@ -96,27 +96,27 @@ func TestParseModeKeepsModeArgs(t *testing.T) {
 	}
 }
 
-// 画面を開いたとき、daemon が動いていなければ起動し、動いていれば起動しない。
-func TestStartDaemonIfIdle(t *testing.T) {
+// 画面を開いたとき、dispatcher が動いていなければ起動し、動いていれば起動しない。
+func TestStartDispatcherIfIdle(t *testing.T) {
 	dir := t.TempDir()
 	spawned := 0
 	spawn := func(string) error { spawned++; return nil }
-	if started, err := startDaemonIfIdle(dir, spawn); !started || err != nil || spawned != 1 {
-		t.Fatalf("daemon が居ないのに起動しない: started=%v err=%v spawned=%d", started, err, spawned)
+	if started, err := startDispatcherIfIdle(dir, spawn); !started || err != nil || spawned != 1 {
+		t.Fatalf("dispatcher が居ないのに起動しない: started=%v err=%v spawned=%d", started, err, spawned)
 	}
-	unlock, err := daemon.Lock(dir) // daemon が動いている形
+	unlock, err := dispatcher.Lock(dir) // dispatcher が動いている形
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer unlock()
-	if started, err := startDaemonIfIdle(dir, spawn); started || err != nil || spawned != 1 {
-		t.Fatalf("daemon が動いているのに起動した: started=%v err=%v spawned=%d", started, err, spawned)
+	if started, err := startDispatcherIfIdle(dir, spawn); started || err != nil || spawned != 1 {
+		t.Fatalf("dispatcher が動いているのに起動した: started=%v err=%v spawned=%d", started, err, spawned)
 	}
 }
 
-// --e2e / --mock はサブコマンドの前に付けられない (付くと、サブコマンドが本物の置き場で動いて本物の daemon と PG を止める / 起こす)。
+// --e2e / --mock はサブコマンドの前に付けられない (付くと、サブコマンドが本物の置き場で動いて本物の dispatcher と PG を止める / 起こす)。
 func TestModeFlagBeforeSubcommandIsRejected(t *testing.T) {
-	for _, args := range [][]string{{"--e2e", t.TempDir(), "daemon", "--stop"}, {"--mock", "card", "add", "--title", "x"}, {"--e2e", t.TempDir(), "daemon"}} {
+	for _, args := range [][]string{{"--e2e", t.TempDir(), "dispatcher", "--stop"}, {"--mock", "card", "add", "--title", "x"}, {"--e2e", t.TempDir(), "dispatcher"}} {
 		var out, errOut bytes.Buffer
 		if rc := run(args, strings.NewReader(""), &out, &errOut); rc != 2 || !strings.Contains(errOut.String(), "サブコマンド") {
 			t.Fatalf("%v を受けた: rc=%d stderr=%q", args, rc, errOut.String())

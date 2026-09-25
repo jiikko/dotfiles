@@ -18,7 +18,7 @@ func quitBy(m *Model, text string) tea.Cmd {
 	return press(m, "enter")
 }
 
-// 終了は Q で開く入力欄に quit と打って enter したときだけ。それ以外の文字・空・esc では閉じない (打ち間違いで daemon と PG を止めない)。
+// 終了は Q で開く入力欄に quit と打って enter したときだけ。それ以外の文字・空・esc では閉じない (打ち間違いで dispatcher と PG を止めない)。
 func TestQuitOnlyByTypingQuit(t *testing.T) {
 	for _, text := range []string{"", "q", "quit!", "Quit", "yes"} {
 		m := New(newSpy(), nil)
@@ -53,7 +53,7 @@ func TestSingleKeysDoNotQuit(t *testing.T) {
 	}
 }
 
-// 終了の入力欄には、止める PG の本数を出す (本物のモードでは daemon と PG を止めて閉じる)。
+// 終了の入力欄には、止める PG の本数を出す (本物のモードでは dispatcher と PG を止めて閉じる)。
 func TestQuitLabelShowsBusyPGs(t *testing.T) {
 	m := New(&stopSpy{spy: newSpy()}, nil) // 作業中 1・質問待ち 2
 	press(m, "Q")
@@ -85,7 +85,7 @@ func runStop(t *testing.T, m *Model, cmd tea.Cmd) tea.Cmd {
 	return next
 }
 
-// 本物のモードでは、終了の前に daemon と PG を止める。止めている間は「止めています」を出し、止め終えてから閉じる。
+// 本物のモードでは、終了の前に dispatcher と PG を止める。止めている間は「止めています」を出し、止め終えてから閉じる。
 func TestQuitStopsBackendBeforeClosing(t *testing.T) {
 	be := &stopSpy{spy: newSpy()}
 	m := New(be, nil)

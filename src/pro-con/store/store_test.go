@@ -46,7 +46,7 @@ func cardOf(t *testing.T, dir, id string) card.Card {
 	return card.Card{}
 }
 
-// setState は記録のカードの状態を直接書き換える (作業中への遷移は daemon の仕事で、3a の箱からは起こせないため)。
+// setState は記録のカードの状態を直接書き換える (作業中への遷移は dispatcher の仕事で、3a の箱からは起こせないため)。
 func setState(t *testing.T, dir, id string, s card.State) {
 	t.Helper()
 	st, err := Load(dir)
@@ -64,7 +64,7 @@ func setState(t *testing.T, dir, id string, s card.State) {
 	}
 }
 
-// 依頼の流れ: add → plan → (daemon が作業中へ) → ask → answer (分解済みへ戻る) / review → close。どの時点でも不変条件を破らない。
+// 依頼の流れ: add → plan → (dispatcher が作業中へ) → ask → answer (分解済みへ戻る) / review → close。どの時点でも不変条件を破らない。
 func TestLifecycle(t *testing.T) {
 	dir := t.TempDir()
 	submit(t, dir, Request{Kind: "add", Title: "色を直す", Request: "statusline の色が見えづらい", Repo: "dotfiles"})

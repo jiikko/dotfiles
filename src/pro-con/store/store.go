@@ -1,14 +1,14 @@
 // Package store は本物のモードのカードの記録 (issue 427 の段階 3a)。
 //
-// 書き手は daemon だけ (issue 426 の決定 1)。PM / PG / 画面は受付の箱 (inbox) に依頼を 1 件 1 ファイルで置き (Submit)、
-// daemon が Apply でまとめて記録 (cards.json) へ適用する。採番と、状態の遷移の規則・不変条件 (card.Check) の検査も Apply の中の 1 か所。
+// 書き手は dispatcher だけ (issue 426 の決定 1)。PM / PG / 画面は受付の箱 (inbox) に依頼を 1 件 1 ファイルで置き (Submit)、
+// dispatcher が Apply でまとめて記録 (cards.json) へ適用する。採番と、状態の遷移の規則・不変条件 (card.Check) の検査も Apply の中の 1 か所。
 //
 // 失敗モード:
 //   - 書きかけの依頼が箱に見える → Submit は一時ファイルに書いてから rename する (箱には完成したファイルしか現れない)
 //   - 記録を書いた後、箱のファイルを消す前に落ちる → 次の Apply で同じ依頼を二重に適用しないよう、適用済みの依頼の ID を記録に控える
 //   - 規則に反する依頼・壊れた依頼 → 記録に入れず、理由つきで inbox/rejected/ へ除ける (黙って捨てない)
 //
-// 🚨 Apply を 2 つの daemon から同時に呼ばない (記録の書き込みが後勝ちになる)。daemon の排他は 3c で入れる。
+// 🚨 Apply を 2 つの dispatcher から同時に呼ばない (記録の書き込みが後勝ちになる)。dispatcher の排他は 3c で入れる。
 package store
 
 import (
@@ -36,7 +36,7 @@ const (
 	perApply = 500
 )
 
-// RunResource はテストの係 (daemon が直列に実行する列) のリソース名。今は 1 本の列だけ (426 の決定 5)。
+// RunResource はテストの係 (dispatcher が直列に実行する列) のリソース名。今は 1 本の列だけ (426 の決定 5)。
 const RunResource = "テスト"
 
 // Request は受付の箱に置く依頼 1 件。Kind ごとに使う欄が違う (apply を参照)。
@@ -52,7 +52,7 @@ type Request struct {
 	Issues   []card.IssueRef `json:"issues,omitempty"`
 	Question string          `json:"question,omitempty"`
 	Command  string          `json:"command,omitempty"` // run: テストの係に実行を頼むコマンド (シェルの 1 行)
-	Cwd      string          `json:"cwd,omitempty"`     // run: 頼んだシェルの作業ディレクトリ (daemon が PG の worktree と照らす)
+	Cwd      string          `json:"cwd,omitempty"`     // run: 頼んだシェルの作業ディレクトリ (dispatcher が PG の worktree と照らす)
 	Answer   string          `json:"answer,omitempty"`
 	From     string          `json:"from,omitempty"` // 回答した人 (人間 / PM)
 	Ending   card.Ending     `json:"ending,omitempty"`
@@ -125,7 +125,7 @@ func Load(dir string) (State, error) {
 	return st, nil
 }
 
-// Apply は受付の箱の依頼を置いた順に記録へ適用する (daemon だけが呼ぶ)。記録を書いてから箱のファイルを片付ける。
+// Apply は受付の箱の依頼を置いた順に記録へ適用する (dispatcher だけが呼ぶ)。記録を書いてから箱のファイルを片付ける。
 func Apply(dir string, now time.Time) ([]Result, error) {
 	st, err := Load(dir)
 	if err != nil {
@@ -203,7 +203,7 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 	for _, name := range done {
 		_ = os.Remove(name) // 消せなくても、次の Apply は Applied を見て飛ばす
 	}
-	// 除けた依頼は理由を先に置いてから rejected/ へ移す。移せなくても daemon は止めない (箱に残り、次の Apply が控えを見て移し直す)。
+	// 除けた依頼は理由を先に置いてから rejected/ へ移す。移せなくても dispatcher は止めない (箱に残り、次の Apply が控えを見て移し直す)。
 	// 移せなかったことは結果に出す
 	for name, why := range reject {
 		id := strings.TrimSuffix(filepath.Base(name), ".json")
@@ -222,8 +222,8 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 	return results, nil
 }
 
-// Update は daemon の中でカードを直接進める (PG の起動で作業中へ、など。箱を通さない daemon 自身の操作)。
-// f が st を書き換え、不変条件に新しい違反が出なければ記録を書く。🚨 呼ぶのは daemon だけ (Apply と同じ書き手)。
+// Update は dispatcher の中でカードを直接進める (PG の起動で作業中へ、など。箱を通さない dispatcher 自身の操作)。
+// f が st を書き換え、不変条件に新しい違反が出なければ記録を書く。🚨 呼ぶのは dispatcher だけ (Apply と同じ書き手)。
 func Update(dir string, f func(*State) error) error {
 	st, err := Load(dir)
 	if err != nil {
@@ -310,7 +310,7 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		}
 		c.Issues = append(c.Issues, r.Issues...)
 		if c.Repo == "" && len(r.Issues) > 0 {
-			// global で受けた依頼は、PM が分けた issue の repo で作業する (付けないと、daemon が起動先を決められずに止まる)
+			// global で受けた依頼は、PM が分けた issue の repo で作業する (付けないと、dispatcher が起動先を決められずに止まる)
 			c.Repo = r.Issues[0].Repo
 		}
 		move(card.Planned, "タスクに分けてキューに積んだ")
@@ -331,9 +331,9 @@ func transition(c *card.Card, r Request, now time.Time) error {
 			return errors.New("回答が空")
 		}
 		c.Wait = card.Wait{}
-		c.Resume = r.Answer // daemon が同じ session を再開するときに渡す (426 の決定 2)
+		c.Resume = r.Answer // dispatcher が同じ session を再開するときに渡す (426 の決定 2)
 		move(card.Planned, firstNonEmpty(r.From, "人間")+" が回答した: "+clip(r.Answer, 80)+" (PG の空きが出たら同じ session を resume)")
-	case "run": // PG がテストの係にコマンドの実行を頼んで turn を終えた (426 の決定 5)。結果は daemon が再開のときに渡す
+	case "run": // PG がテストの係にコマンドの実行を頼んで turn を終えた (426 の決定 5)。結果は dispatcher が再開のときに渡す
 		if c.State != card.Running {
 			return fmt.Errorf("作業中の列に無い (今は %s)", c.State.Label())
 		}

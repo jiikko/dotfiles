@@ -1,6 +1,6 @@
-package daemon
+package dispatcher
 
-// e2e モード (2026-09-25 にユーザーが依頼): 画面・daemon・受付の箱・記録は本物のまま、PG の claude だけを台本どおりに動く偽物にする
+// e2e モード (2026-09-25 にユーザーが依頼): 画面・dispatcher・受付の箱・記録は本物のまま、PG の claude だけを台本どおりに動く偽物にする
 // (利用枠を使わない)。Claude が `pro-con e2e` で画面を操作して、質問 → 回答 → テストの係 → レビュー → 終了を通しで確かめるため。
 //
 // 偽の PM (FakePM) が依頼の列のカードを、その場で分解済みにする (本物では PM の Claude の仕事)。
@@ -38,14 +38,14 @@ func (e E2E) StateDir() string     { return filepath.Join(e.Root, "state") }
 func (e E2E) RepoDir() string      { return filepath.Join(e.Root, "repo") }
 func (e E2E) sessionsPath() string { return filepath.Join(e.StateDir(), "e2e-sessions.json") }
 
-// e2eFile は偽の session の一覧 (画面と daemon が読む) と、session → カードの対応 (偽の PG が自分のカードを知るため)。
+// e2eFile は偽の session の一覧 (画面と dispatcher が読む) と、session → カードの対応 (偽の PG が自分のカードを知るため)。
 type e2eFile struct {
 	Sessions []agents.Session  `json:"sessions"`
 	Cards    map[string]string `json:"cards"` // 短い id → カードの ID
 	Seq      int               `json:"seq"`
 }
 
-var e2eMu sync.Mutex // 同じプロセスの中の読み書きをまとめる (書き手は daemon だけ。画面は読むだけ)
+var e2eMu sync.Mutex // 同じプロセスの中の読み書きをまとめる (書き手は dispatcher だけ。画面は読むだけ)
 
 func (e E2E) load() (e2eFile, error) {
 	f := e2eFile{Cards: map[string]string{}}
@@ -81,7 +81,7 @@ func (e E2E) save(f e2eFile) error {
 }
 
 // FakePM は偽の PM: 依頼の列のカードを、その場で分解済みにする (本物では PM の Claude が issue に分けてキューに積む)。
-// daemon の Tick の頭で呼ぶ (箱に置いた plan は同じ Tick の Apply で入る)。
+// dispatcher の Tick の頭で呼ぶ (箱に置いた plan は同じ Tick の Apply で入る)。
 func (e E2E) FakePM() error {
 	st, err := store.Load(e.StateDir())
 	if err != nil {
