@@ -327,13 +327,22 @@ func resolvePM(flagVal, cfgVal string) (off bool, why string, err error) {
 	return false, "", nil
 }
 
+// userSettingsPath はユーザーの settings.json (家が分からなければ "" = 言語を渡さない)。
+func userSettingsPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return dispatcher.UserSettingsPath(home)
+}
+
 // newDispatcherFor は dispatcher を組む。e2e が nil なら本物 (claude を起動する)、あれば偽の PG と偽の一覧 (claude を起動しない。PM は起こさず FakePM が役を持つ)。
 func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo string, pmOff bool, limit int, e2e *dispatcher.E2E) *dispatcher.Dispatcher {
 	if e2e != nil {
 		return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: e2e.Launcher(), List: e2e.List, ListAll: e2e.ListAll, Now: time.Now,
 			Runner: dispatcher.ExecRunner{}, FakePM: e2e.FakePM, PMOff: pmOff} // テストの係は本物のシェル (偽の worktree で走る)。失敗の要約 (haiku) はしない
 	}
-	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{}, PMRepo: pmRepo, PMGuide: pmGuide, PMOff: pmOff,
+	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{UserSettings: userSettingsPath()}, PMRepo: pmRepo, PMGuide: pmGuide, PMOff: pmOff,
 		Runner: dispatcher.ExecRunner{}, Summarize: dispatcher.HaikuSummarize(dir), Usage: dispatcher.ReadUsage(dir),
 		List:    func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunner) },
 		ListAll: func(ctx context.Context) ([]agents.Session, error) { return agents.List(ctx, agents.ExecRunnerAll) }, Now: time.Now,

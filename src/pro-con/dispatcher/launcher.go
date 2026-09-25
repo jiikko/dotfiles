@@ -7,39 +7,43 @@ package dispatcher
 //     (trust 済みの repo の下でないと --bg が起動しない。415 論点 2)。--setting-sources でユーザーの hook を外す (431 の計測)
 //   - TMUX / TMUX_PANE を落とす (PG が起動元の pane の状態のバッジを上書きしないように。415 論点 5)
 //   - 再開は stop してから `claude --bg --resume <session-id> <text>` (実行中の session に --resume するとコピーが起動する。415 論点 11)
+//   - 起動・再開ともユーザーの settings.json の language だけを --settings で渡す (461。-p では --setting-sources に user を入れても
+//     language が効かず、--settings で渡したときだけ効いた。440 の 7d)。🚨 中身は言語だけ (hook・許可を足すと --setting-sources で外した意味が崩れる)
 // 431 の PG 用の設定ディレクトリ (規約を絞る) はログイン待ち (433) なので、まだ渡していない。
 
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
 
-// ExecLauncher は Launcher の本物。
-type ExecLauncher struct{}
+// ExecLauncher は Launcher の本物。UserSettings はユーザーの settings.json のパスで、起動・再開のたびに language を読む (空なら渡さない)。
+type ExecLauncher struct{ UserSettings string }
 
 // launchTimeout は claude --bg / stop が戻るまでの上限 (--bg は起動したらすぐ戻る。実測は 1 秒未満)。
 const launchTimeout = 30 * time.Second
 
-func (ExecLauncher) Start(ctx context.Context, repoPath, name, prompt string) (string, error) {
-	out, err := runClaude(ctx, repoPath, "--bg", "-w", name, "-n", name, "--setting-sources", "project,local", prompt)
+func (l ExecLauncher) Start(ctx context.Context, repoPath, name, prompt string) (string, error) {
+	out, err := runClaude(ctx, repoPath, startArgs(name, prompt, languageSettings(l.UserSettings))...)
 	if err != nil {
 		return "", err
 	}
 	return parseBackgrounded(out)
 }
 
-func (ExecLauncher) Resume(ctx context.Context, stopID, sessionID, cwd, text string) (string, error) {
+func (l ExecLauncher) Resume(ctx context.Context, stopID, sessionID, cwd, text string) (string, error) {
 	if stopID != "" {
 		if _, err := runClaude(ctx, "", "stop", stopID); err != nil {
 			return "", fmt.Errorf("claude stop %s: %w", stopID, err)
 		}
 	}
-	out, err := runClaude(ctx, cwd, "--bg", "--resume", sessionID, "--setting-sources", "project,local", text)
+	out, err := runClaude(ctx, cwd, resumeArgs(sessionID, text, languageSettings(l.UserSettings))...)
 	if err != nil {
 		return "", err
 	}
@@ -51,6 +55,57 @@ func (ExecLauncher) Stop(ctx context.Context, id string) error {
 		return fmt.Errorf("claude stop %s: %w", id, err)
 	}
 	return nil
+}
+
+func startArgs(name, prompt, settings string) []string {
+	return withSettings([]string{"--bg", "-w", name, "-n", name, "--setting-sources", "project,local"}, settings, prompt)
+}
+
+func resumeArgs(sessionID, text, settings string) []string {
+	return withSettings([]string{"--bg", "--resume", sessionID, "--setting-sources", "project,local"}, settings, text)
+}
+
+// withSettings は --settings を位置引数 (prompt) の前に挟む。settings が空なら付けない。
+func withSettings(args []string, settings, positional string) []string {
+	if settings != "" {
+		args = append(args, "--settings", settings)
+	}
+	return append(args, positional)
+}
+
+// UserSettingsPath は claude が読むユーザーの settings.json (CLAUDE_CONFIG_DIR があればその下)。
+func UserSettingsPath(home string) string {
+	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
+		return filepath.Join(d, "settings.json")
+	}
+	return filepath.Join(home, ".claude", "settings.json")
+}
+
+// languageSettings は path の settings.json から language だけを抜いた --settings の JSON を返す。
+// 読めない・壊れている・language が無い / 文字列でない / 空なら "" (渡さない。起動は止めない)。
+func languageSettings(path string) string {
+	if path == "" {
+		return ""
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var s struct {
+		Language any `json:"language"`
+	}
+	if json.Unmarshal(b, &s) != nil {
+		return ""
+	}
+	lang, ok := s.Language.(string)
+	if !ok || strings.TrimSpace(lang) == "" {
+		return ""
+	}
+	out, err := json.Marshal(map[string]string{"language": lang})
+	if err != nil {
+		return ""
+	}
+	return string(out)
 }
 
 func runClaude(ctx context.Context, dir string, args ...string) (string, error) {

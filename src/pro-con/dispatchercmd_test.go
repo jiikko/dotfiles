@@ -140,3 +140,18 @@ func TestRunDispatcherAnnouncesPMOff(t *testing.T) {
 		}
 	}
 }
+
+// 本物の dispatcher の launcher は、ユーザーの settings.json を読む (461。渡し忘れると PG / PM の言語が効かない)。claude は起動しない。
+func TestNewDispatcherPassesUserSettingsToLauncher(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	d := newDispatcherFor(t.TempDir(), filepath.Join(home, ".claude", "projects"), nil, "", false, 1, nil)
+	l, ok := d.Launch.(dispatcher.ExecLauncher)
+	if !ok {
+		t.Fatalf("Launch = %T (本物の launcher のはず)", d.Launch)
+	}
+	if want := filepath.Join(home, ".claude", "settings.json"); l.UserSettings != want {
+		t.Fatalf("UserSettings = %q, want %q", l.UserSettings, want)
+	}
+}
