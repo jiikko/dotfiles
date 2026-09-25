@@ -349,7 +349,7 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 		extra = append(extra, card.Violation{Reason: b.refused})
 	}
 	b.snap = backend.Snapshot{Now: now, Cards: cards, Consumers: cons, Limit: ds.Cap, LimitMax: ds.Limit, LimitWhy: ds.Why,
-		DispatcherTick: ds.Tick, Screens: screens, Violations: append(card.Check(cards), extra...)}
+		DispatcherTick: ds.Tick, Screens: screens, DispatcherHeld: store.Held(b.dir), Violations: append(card.Check(cards), extra...)}
 	b.pending, b.ready = pending, true
 	b.mu.Unlock()
 }
@@ -445,6 +445,8 @@ func (b *Backend) Apply(cmd backend.Command) (string, error) {
 		}
 		r = store.Request{Kind: "btw", CardID: c.CardID, Question: c.Question}
 		done = "btw を受け付けた (PG は止めない。答えはカードの履歴に出る)"
+	case backend.ResumeDispatcher:
+		return b.resume()
 	case backend.ClearDone:
 		var ids []string
 		for _, cc := range b.Snapshot().Cards { // 画面が見ている完了のカードだけ (適用までに完了になったカードを巻き込まない)
@@ -467,6 +469,24 @@ func (b *Backend) Apply(cmd backend.Command) (string, error) {
 		return r.CardID + " の削除を受け付けた (依頼の列ならすぐ、ほかは PG の session を止めてから消える)", nil
 	}
 	return done, nil
+}
+
+// resume は人が止めた印を外して dispatcher を起こす (c。issue 459)。印が無くても、居なければ起こす。
+func (b *Backend) resume() (string, error) {
+	if b.keeper == nil {
+		return "", errors.New("dispatcher を起こす口がつながっていない")
+	}
+	released, err := store.Release(b.dir)
+	if err != nil {
+		return "", fmt.Errorf("人が止めた印を外せない: %w", err)
+	}
+	if released {
+		b.event("c で人が止めた印を外した (dispatcher を起こす)") // 起こす前に置く: 起きた dispatcher が箱を適用して書く
+	}
+	if err := b.keeper(); err != nil {
+		return "", fmt.Errorf("印は外したが dispatcher を起こせない: %w", err)
+	}
+	return "dispatcher を起こした (作業中のカードの PG は続きから再開する)", nil
 }
 
 // card は最後に読んだ記録のカード。

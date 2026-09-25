@@ -14,6 +14,7 @@ import (
 	"pro-con/dispatcher"
 	"pro-con/live"
 	"pro-con/presence"
+	"pro-con/store"
 	"pro-con/wake"
 	"strings"
 	"sync"
@@ -96,10 +97,17 @@ func TestServeExitsWithoutScreens(t *testing.T) {
 	}
 }
 
-// 画面が起こす dispatcher には「画面が無くなったら抜ける」を付ける (手で起動した dispatcher には付かない)。
+// 画面が起こす dispatcher には「画面が起こした」と「画面が無くなったら抜ける」を付ける (手で起動した dispatcher には付かない)。
 func TestSpawnedDispatcherExitsWithoutScreens(t *testing.T) {
 	cmd := dispatcherCmd("/bin/pro-con", []string{"--e2e", "/x"})
-	if got := strings.Join(cmd.Args[1:], " "); got != "dispatcher --exit-without-screens 1m --e2e /x" {
+	if got := strings.Join(cmd.Args[1:], " "); got != "dispatcher --from-screen --exit-without-screens 1m --e2e /x" {
+		t.Fatalf("args=%q", got)
+	}
+}
+
+// 画面の quit の停止は「画面が止めた」と付ける (人が止めた印を置かない。issue 459)。
+func TestScreenStopCmdIsFromScreen(t *testing.T) {
+	if got := strings.Join(stopCmd("/bin/pro-con", []string{"--e2e", "/x"}).Args[1:], " "); got != "dispatcher --stop --from-screen --e2e /x" {
 		t.Fatalf("args=%q", got)
 	}
 }
@@ -167,12 +175,18 @@ func (f *stopFlaky) Stop(context.Context, string) error {
 }
 
 // 止めきれなければ抜けずに止め直し、止まったら抜けて結果を ok で書き直す。止めている間に画面が開いたら、止めるのをやめて続ける。
+// ただし人が止めた印 (issue 459) があれば、画面が開いていても止めきる (画面は印がある間 dispatcher を起こさないので、続ける者が居ない)。
 func TestStopUntilDoneRetriesAndYieldsToScreen(t *testing.T) {
 	old := stopRetryEvery
 	stopRetryEvery = time.Millisecond
 	t.Cleanup(func() { stopRetryEvery = old })
-	run := func(t *testing.T, aliveLists int, openScreen bool) (bool, *dispatcher.Dispatcher, string) {
+	run := func(t *testing.T, aliveLists int, openScreen, held bool) (bool, *dispatcher.Dispatcher, string) {
 		dir := t.TempDir()
+		if held {
+			if err := store.Hold(dir, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+		}
 		if err := live.Register(filepath.Join(dir, live.RegistryFile), live.Owned{SessionID: "S1", ID: "pg1", PID: 42, CardID: "C-001"}); err != nil {
 			t.Fatal(err)
 		}
@@ -202,7 +216,7 @@ func TestStopUntilDoneRetriesAndYieldsToScreen(t *testing.T) {
 		return ok, d, string(b)
 	}
 	// 1 回目の Shutdown の確かめ (一覧を ensurePolls+2 = 17 回取る) の間は止まらず、2 回目の途中で止まる
-	if ok, _, res := run(t, 20, false); !ok || res != "ok\n" {
+	if ok, _, res := run(t, 20, false, false); !ok || res != "ok\n" {
 		t.Fatalf("止まるまで止め直さない / 結果を ok で書き直さない: ok=%v res=%q", ok, res)
 	}
 	type result struct {
@@ -210,7 +224,10 @@ func TestStopUntilDoneRetriesAndYieldsToScreen(t *testing.T) {
 		res string
 	}
 	got := make(chan result, 1)
-	go func() { ok, _, res := run(t, 1<<30, true); got <- result{ok, res} }()
+	if ok, _, res := run(t, 20, true, true); !ok || res != "ok\n" {
+		t.Fatalf("人が止めたのに、画面が開いたので止めるのをやめた: ok=%v res=%q", ok, res)
+	}
+	go func() { ok, _, res := run(t, 1<<30, true, false); got <- result{ok, res} }()
 	select {
 	case r := <-got:
 		if r.ok || r.res == "ok\n" || r.res == "" {

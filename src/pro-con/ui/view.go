@@ -104,13 +104,17 @@ func (m *Model) pgGauge() string {
 // dispatcherStale はこれより長く回っていなければ dispatcher が止まっている疑いとして赤で出す (Tick は数秒ごと)。
 const dispatcherStale = 2 * time.Minute
 
-// dispatcherStopped は dispatcher が 1 度も回っていない / dispatcherStale より長く回っていないか。
+// dispatcherStopped は dispatcher が人に止められている / 1 度も回っていない / dispatcherStale より長く回っていないか。
 func (m *Model) dispatcherStopped() bool {
-	return m.snap.DispatcherTick.IsZero() || m.snap.Now.Sub(m.snap.DispatcherTick) > dispatcherStale
+	return m.snap.DispatcherHeld || m.snap.DispatcherTick.IsZero() || m.snap.Now.Sub(m.snap.DispatcherTick) > dispatcherStale
 }
 
 // dispatcherGauge は dispatcher が最後に回ってからの時間。1 度も回っていない / 長く回っていなければ赤で出す。
+// 人が止めた (印がある) なら、止まっているのは意図どおりなので黄で「止めてある」と出す (画面は起こさない。issue 459)
 func (m *Model) dispatcherGauge() string {
+	if m.snap.DispatcherHeld {
+		return sgrYellow + "dispatcher 止めてある (c で起こす)" + sgrFgReset
+	}
 	if m.snap.DispatcherTick.IsZero() {
 		return sgrRed + "dispatcher 未起動" + sgrFgReset
 	}
@@ -555,6 +559,9 @@ func (m *Model) hints() []string {
 		hint{"n 新しい依頼", m.accepts(backend.OpNew), true}, hint{"i issue から", m.accepts(backend.OpNew), true}, hint{"enter 詳細", has, false})...)
 	h = append(h, cardOps...)
 	h = append(append(h, "s PG 一覧"), offer(hint{"x 完了を片付け", m.doneInTab() > 0 && m.accepts(backend.OpClear), true})...)
+	if m.snap.DispatcherHeld { // 止めてあるときだけ出す (いつも出すと、暗い字が「状態が変われば押せる」以上の意味を持たない)
+		h = append(h, offer(hint{"c dispatcher を起こす", m.accepts(backend.OpResume), true})...)
+	}
 	return append(h, "? レーンの意味", back)
 }
 

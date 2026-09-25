@@ -52,7 +52,7 @@ func (m *Model) settleDrawer(now time.Time) {
 }
 
 // handleDrawerKey は詳細を開いている間のキー。捌いたら handled=true。カードへの操作 (a / r / + / ? / y / Y / e) と
-// 画面全体の操作 (ctrl+c / ctrl+r / s) はボードへ回す。それ以外 (レーンの移動・タブ・新しい依頼 等) は飲み込む:
+// 画面全体の操作 (ctrl+c / ctrl+r / s / c) はボードへ回す。それ以外 (レーンの移動・タブ・新しい依頼 等) は飲み込む:
 // 詳細の下でカンバンの選択が動くと、開いているカードと操作の対象が食い違う。
 func (m *Model) handleDrawerKey(k string) (cmd tea.Cmd, handled bool) {
 	switch k {
@@ -68,7 +68,7 @@ func (m *Model) handleDrawerKey(k string) (cmd tea.Cmd, handled bool) {
 	case "K":
 		m.stepCard(-1)
 		return nil, true
-	case "a", "r", "+", "w", "?", "y", "Y", "e", "d", "ctrl+c", "ctrl+r", "s":
+	case "a", "r", "+", "w", "?", "y", "Y", "e", "d", "ctrl+c", "ctrl+r", "s", "c":
 		return nil, false
 	}
 	if mo := listnav.MotionOf(k); mo != listnav.None {

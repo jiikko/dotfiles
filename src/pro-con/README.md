@@ -12,6 +12,7 @@ bin/pro-con --view   # 見ているだけの画面: 動いている pro-con を�
 bin/pro-con dispatcher   # 割り振り係: 受付の箱の適用・PM と PG の起動と再開・テストの係・見張り (画面を開くと、居なければ画面が起こす。旧名 daemon)。2 つ起動しない。🚨 PG を起動するので利用枠を使う
                          # 同時に動かす PG は --limit (既定 2) まで。利用枠 (`claude -p /usage` を 5 分ごとに読む) の 5 時間と週の大きい方が 80% 以上なら 1 本、95% 以上なら新しく起動・再開しない (ゲージの「PG n/m」と理由)
 bin/pro-con dispatcher --stop  # dispatcher と、pro-con が起動した PG を止める。作業中のカードは次に dispatcher を起動したら続きから再開する (画面の終了も同じことをする)
+                               # 人が止めた印 (`dispatcher-held`) を置く: 開いている画面は dispatcher を起こし直さず、ゲージに「止めてある」と出す。外すのは画面の c か、次に手で `pro-con dispatcher` を起動したとき (issue 459)
 bin/pro-con card …   # PM / PG が使うカードの操作 (add / plan / ask / answer / review / rework / close / delete。rework はレビュー待ちを直してほしい点つきで PG に戻す。delete は依頼の列ならすぐ消し、ほかは PG の session を止めてから消す = issue 451)。受付の箱に置くだけで、適用は dispatcher (issue 427)
 bin/pro-con card guide  # PM の session に渡す指示書 (src/pro-con/pm-guide.md) を出す。dispatcher は依頼の列にカードが来たら PM を起動 / 再開してこれと新しいカードを渡す (issue 437。PM は 1 つ・--limit に数えない)
 bin/pro-con card list | show C-001 | wait C-001 --until review  # カードを画面なしで読む (--json も)。読むだけで、箱にも記録にも socket の wake / notify にも書かない (issue 442)。add は適用を待ってカード ID を返す
@@ -62,7 +63,11 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 - 画面が起こした dispatcher (`--exit-without-screens 1m`) は、**画面が 1 つも無い状態が 1 分続いたら** PG を止めて抜ける (端末を閉じた・落ちた・
   kill -9 のように quit を通らずに消えても PG を残さない)。SIGTERM / SIGHUP でも、画面が消えていれば止めてから抜ける。
   手で起動した `pro-con dispatcher` (PM が CLI で使う形) は、`--stop` か最後の画面の quit まで動く
-- 画面は開いている間、dispatcher が 10 秒以上回っていなければ起こし直す (落ちた・前の画面が止めている最中に開いた)
+- 画面は開いている間、dispatcher が 10 秒以上回っていなければ起こし直す (落ちた・前の画面が止めている最中に開いた)。
+  **人が `pro-con dispatcher --stop` で止めたときは起こさない** (状態の置き場の `dispatcher-held` が印。開いたときも起こさない)。
+  画面が起こす dispatcher・画面の quit の停止には内部用の `--from-screen` が付き、印を置かない・外さない (最後の画面の quit で止めても、
+  次に開いた画面は今までどおり起こす)。印を見てから起こすまでの間に `--stop` が来ても、起こされた dispatcher は印を見て回らずに抜ける。
+  印がある間は、止めている途中で画面が開いても止めるのをやめない (issue 459)
 
 ## 模擬 (ハリボテ) の中身
 
@@ -91,7 +96,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 | (選択の枠) | 選択中のカードは赤 (196) の太字の二重線 (╔═╗ ║ ╚═╝) の枠で囲む (issue 472。字と色は `ui/cursor.go` の定数)。選択が移ると、枠が元の位置から行き先まで 180ms で滑る (レーンを跨いでも。Excel のセルのカーソルの見え方)。滑る途中も枠は丸ごと見える (途中で消えて見えるちらつきを避けた)。カードの字の上では線で置き換えず、字を残して色だけ変える (横の辺は赤の上線 / 下線、縦の辺は赤の背景。上線は端末と tmux によっては出ない。issue 472)。カードの上下には 1 行ずつ空きがあり、枠はそこに描くので隣のカードを隠さない |
 | (処理中の印) | 裏で処理中のカード (PG が turn の途中 = PG の status が busy / テストの係が実行中) は、バッジの頭に回る印 (⠋⠙⠹…) を出す。回すカードがある間だけ 100ms ごとに描き直す (`ui/spinner.go`) |
 | (通知) | 操作の結果の通知は、ボードの右下の toast (`tuikit/toast`。glogx と同じ) に出る。右から滑り込み、数秒止まって、また右へ引っ込む。成功は ✓ 緑・失敗は ✗ 赤・断りや案内は … シアン (`ui/toast.go` の done / fail / info)。起動時の警告のような消すまで残す通知だけは下端の行 (esc で消す) |
-| (案内の行) | カードへの操作と x は、選んでいるカードで効くときだけ明るく、効かないときは暗く出す (r は質問待ちだけ、a は session のあるカードだけ、e / y は issue の紐づいたカードだけ)。見ているだけの画面 (`--view`) では、押すと断る操作 (a / r / + / w / d / n / i / x) を出さない |
+| (案内の行) | カードへの操作と x は、選んでいるカードで効くときだけ明るく、効かないときは暗く出す (r は質問待ちだけ、a は session のあるカードだけ、e / y は issue の紐づいたカードだけ)。見ているだけの画面 (`--view`) では、押すと断る操作 (a / r / + / w / d / n / i / x / c) を出さない |
 | ctrl+r | 新版へ切り替える (ライブアップグレード。「新版あり」のときだけ) |
 | q / esc | 開いている板を 1 つ閉じる (PG の一覧 → 詳細)。何も開いていなくても終了しない (2026-09-25 に廃止) |
 | Q | 終了の入力欄を開く。`quit` と打って enter したときだけ閉じる (本物のモードでは dispatcher と PG を止めてから閉じる。次に開くと続きから再開。ほかに画面が開いていれば、この画面だけ閉じる)。ctrl+c も同じ入力欄を開く (1 打では閉じない) |
@@ -100,6 +105,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 | + | 追加オーダー (tab で 追記 / 方針変更 / 別件)。**方針変更は y/N 確認** (y / enter だけが実行、他のキーは取り消し)。届いたかは詳細に「未達 / 届いた」で出る |
 | w | btw (PG を止めずに状況を聞く。what's up)。本物のモードでは答えがカードの履歴に出る |
 | ? | レーンの意味の表 (説明の正本は `card.State.Meaning`)。? / q / esc で閉じる |
+| c | 人が止めた dispatcher を起こす (continue。y/N 確認。作業中のカードの PG が再開して利用枠を使う)。`pro-con dispatcher --stop` で止めた印があるときだけ効き、案内にもそのときだけ出る (ゲージは「dispatcher 止めてある (c で起こす)」)。`--view` では受けない (issue 459) |
 
 入力欄 (n / r / + / ?) は readline の編集キーが効く (ctrl+h / ctrl+w / ctrl+u / ctrl+k / ctrl+a / ctrl+e / ctrl+b / ctrl+f …。
 `tuikit/lineedit`)。入力中は最下行の案内が入力欄のキーに替わる。

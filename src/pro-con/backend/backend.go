@@ -39,6 +39,7 @@ type Snapshot struct {
 	LimitWhy       string    // Limit を絞った / 利用枠を読めない理由 (無ければ空)
 	DispatcherTick time.Time // dispatcher (と watchdog) が最後に回った時刻。zero なら 1 度も回っていない。古ければ UI が警告する
 	Screens        int       // 開いている画面の数 (自分を含む。package presence。0 なら数えられなかった)
+	DispatcherHeld bool      // 人が dispatcher を止めた印がある (pro-con dispatcher --stop。画面は起こさない。issue 459)
 	Violations     []card.Violation
 }
 
@@ -76,6 +77,7 @@ const (
 	OpBtw    Op = "btw"    // btw (w)
 	OpClear  Op = "clear"  // 完了のレーンを片付ける (x)
 	OpDelete Op = "delete" // カードを削除する (d)
+	OpResume Op = "resume" // 人が止めた dispatcher を起こす (c)
 )
 
 // Accepter は一部の操作しか受けない backend (任意。持たない backend は全部受ける)。
@@ -187,6 +189,11 @@ type DeleteCard struct {
 	CardID string
 	From   string // 人間 / PM
 }
+
+// ResumeDispatcher は人が止めた dispatcher を起こす (止めた印を外して起こす。issue 459)。
+type ResumeDispatcher struct{}
+
+func (ResumeDispatcher) isCommand() {}
 
 func (DeleteCard) isCommand() {}
 func (ClearDone) isCommand()  {}
