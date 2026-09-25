@@ -35,4 +35,5 @@
   Go の signal.Ignore なら子に引き継がれることは実測した)
 - `claude agents --json` / `--all` の出力の形は 2.1.282 で測った。止まったかは pid と state で決める (pid 無し かつ working でない = 01dbb3b0。
   dogfooding で、終えた session が stop 後も state: done のままだと分かって直した)。版が上がって pid が出なくなる / working の綴りが変わると、
-  止まったかの確かめがどちらかへ倒れる (未確認)
+  止まったかの確かめがどちらかへ倒れる (未確認)。→ 466 で「止まった = pid 無し かつ stopped / done」の許可リストに直し、知らない state は
+  止めに行って警告を出す側へ倒した (pid が出なくなる版では、生きている done を止まったと読む形が残る)
