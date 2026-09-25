@@ -16,6 +16,7 @@ import (
 	"pro-con/backend"
 	"pro-con/fake"
 	"pro-con/live"
+	"pro-con/store"
 	"pro-con/ui"
 )
 
@@ -144,7 +145,7 @@ func TestWireLiveViewStopsAndStartsNothing(t *testing.T) {
 	for _, view := range []bool{true, false} {
 		dir := t.TempDir()
 		spawns, stops := 0, 0
-		be, _ := wireLive(live.New(nil, t.TempDir(), dir), view, dir,
+		be, _ := wireLive(live.New(nil, t.TempDir(), dir), screenFlags{view: view}, dir,
 			func(string) error { spawns++; return nil }, func(context.Context) error { stops++; return nil })
 		_, stopper := be.(backend.Stopper)
 		_, readOnly := be.(backend.ReadOnly)
@@ -214,5 +215,47 @@ func TestSpawnedDispatcherIsNotLeftAsZombie(t *testing.T) {
 			t.Fatalf("抜けた dispatcher (pid %d) が刈り取られない: %q", pid, strings.TrimSpace(string(out)))
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// --join は --view / --mock と組まない (読むだけのつもりが書ける形を作らない)。サブコマンドの前にも付けない。--as には名前が要る (issue 481)。
+func TestJoinFlagMisuseIsUsageError(t *testing.T) {
+	for _, args := range [][]string{
+		{"--join", "--view"}, {"--view", "--join"}, {"--join", "--mock"}, {"--join", "dispatcher", "--stop"},
+		{"--as"}, {"--join", "--as", "--e2e", "x"}, {"--view", "--as", "x"},
+	} {
+		var out, errOut bytes.Buffer
+		if rc := run(args, strings.NewReader(""), &out, &errOut); rc != 2 {
+			t.Fatalf("%v: rc=%d (2 のはず) %s", args, rc, errOut.String())
+		}
+	}
+	f, rest, err := parseScreen([]string{"--as", "review", "--join", "--e2e", "/x"})
+	if err != nil || !f.join || f.label != "review" || strings.Join(rest, " ") != "--e2e /x" || strings.Join(f.args, " ") != "--as review --join" {
+		t.Fatalf("--join --as を読めない: %+v rest=%q err=%v", f, rest, err)
+	}
+}
+
+// --join の画面は書く口を持つが、dispatcher を起こさない。居ない・人が止めてあるときは理由を出す (起動したときから join しか無い形)。
+func TestWireLiveJoinWakesNothing(t *testing.T) {
+	for _, held := range []bool{false, true} {
+		dir := t.TempDir()
+		if held {
+			if err := store.Hold(dir, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		spawns := 0
+		be, notes := wireLive(live.New(nil, t.TempDir(), dir), screenFlags{join: true}, dir,
+			func(string) error { spawns++; return nil }, func(context.Context) error { return nil })
+		_, joined := be.(backend.Joiner)
+		_, readOnly := be.(backend.ReadOnly)
+		all := strings.Join(notes, "\n")
+		want := "dispatcher が動いていない。起こすのは持ち主の画面か pro-con dispatcher"
+		if held {
+			want = "join の画面からは外せない"
+		}
+		if !joined || readOnly || spawns != 0 || !strings.Contains(all, want) {
+			t.Fatalf("held=%v: join=%v 読み取りだけ=%v 起こした=%d notes=%q", held, joined, readOnly, spawns, all)
+		}
 	}
 }

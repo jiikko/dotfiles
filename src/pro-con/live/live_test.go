@@ -600,7 +600,7 @@ func TestScreenEventsGoToInbox(t *testing.T) {
 	if err := a.StopAll(ctx); !errors.As(err, &kept) {
 		t.Fatal(err)
 	}
-	if got = inboxEvents(t, a.dir); len(got) != 3 || !strings.Contains(got[2], "ほかに 1 画面が開いているので dispatcher と PG は止めなかった") {
+	if got = inboxEvents(t, a.dir); len(got) != 3 || !strings.Contains(got[2], "ほかに持ち主の画面が 1 開いているので dispatcher と PG は止めなかった") {
 		t.Fatalf("止めなかったことを置かない: %q", got)
 	}
 	if err := b.StopAll(ctx); !errors.Is(err, fail) {
@@ -612,7 +612,7 @@ func TestScreenEventsGoToInbox(t *testing.T) {
 	if got = inboxEvents(t, a.dir); len(got) != 5 || !strings.Contains(got[4], "止めきれなかった: 止まらない") {
 		t.Fatalf("止めきれなかったことを置かない: %q", got)
 	}
-	if !strings.HasPrefix(got[0], fmt.Sprintf("画面 (pid %d): ", os.Getpid())) {
+	if want := fmt.Sprintf("画面 %s (pid %d): ", a.screenName(), os.Getpid()); !strings.HasPrefix(got[0], want) && !strings.HasPrefix(got[1], want) {
 		t.Fatalf("どの画面の出来事か分からない: %q", got[0])
 	}
 }
@@ -639,20 +639,20 @@ func TestOpeningScreenUpdatesOthers(t *testing.T) {
 		}
 		t.Fatal(what)
 	}
-	waitFor("自分の画面を数えない / 購読しない", func() bool { return a.Poll().Screens == 1 && srv.Subscribers() == 1 })
+	waitFor("自分の画面を数えない / 購読しない", func() bool { return len(a.Poll().Screens) == 1 && srv.Subscribers() == 1 })
 	b := shortState(t)
 	b.dir, b.registry, b.interval = a.dir, a.registry, time.Hour
 	b.SetStopper(func(context.Context) error { return nil })
 	bctx, bcancel := context.WithCancel(context.Background())
 	b.Start(bctx)
-	waitFor("ほかの画面が開いても「画面 2」にならない", func() bool { return a.Poll().Screens == 2 })
+	waitFor("ほかの画面が開いても「画面 2」にならない", func() bool { return len(a.Poll().Screens) == 2 })
 	var kept backend.KeptRunning
 	if err := b.StopAll(context.Background()); !errors.As(err, &kept) {
 		t.Fatalf("ほかの画面が開いているのに止めた: %v", err)
 	}
 	bcancel()
 	b.Wait()
-	waitFor("ほかの画面が閉じても 1 に戻らない", func() bool { return a.Poll().Screens == 1 })
+	waitFor("ほかの画面が閉じても 1 に戻らない", func() bool { return len(a.Poll().Screens) == 1 })
 }
 
 // Wait は購読の goroutine も待つ (画面の終了で購読の接続を残さない)。

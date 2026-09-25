@@ -37,13 +37,13 @@ func TestCountAndLeave(t *testing.T) {
 	if n := mustCount(t, dir); n != 3 {
 		t.Fatalf("3 つ開いているのに %d", n)
 	}
-	if n, err := a.Leave(); err != nil || n != 2 {
+	if n, err := a.Leave(); err != nil || n.Owners != 2 {
 		t.Fatalf("ほかに 2 つ開いているのに %d (%v)", n, err)
 	}
 	if n := mustCount(t, dir); n != 2 {
 		t.Fatalf("閉じた画面を数えた: %d", n)
 	}
-	if n, err := b.Leave(); err != nil || n != 1 {
+	if n, err := b.Leave(); err != nil || n.Owners != 1 {
 		t.Fatalf("ほかに 1 つ開いているのに %d (%v)", n, err)
 	}
 }
@@ -60,7 +60,7 @@ func TestSimultaneousLeaveExactlyOneLast(t *testing.T) {
 		var wg sync.WaitGroup
 		for _, s := range ss {
 			wg.Add(1)
-			go func() { defer wg.Done(); n, _ := s.Leave(); res <- n }()
+			go func() { defer wg.Done(); n, _ := s.Leave(); res <- n.Owners }()
 		}
 		wg.Wait()
 		close(res)
@@ -120,5 +120,49 @@ func TestOpenIsAtomicAgainstConcurrentCount(t *testing.T) {
 			t.Fatalf("%d 回目: 開いた直後の画面の印が消された (数えられない画面になる)", i)
 		}
 		s.Close()
+	}
+}
+
+// 持ち主と join を分けて数える。持ち主の Leave は、join が残っていても持ち主が 0 なら最後を受ける (issue 481)。
+func TestTallyByMode(t *testing.T) {
+	dir := t.TempDir()
+	owner := open(t, dir)
+	j, err := OpenAs(dir, Info{Mode: Join, Label: "review", TTY: "/dev/ttys009"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(j.Close)
+	ss, err := List(dir)
+	if err != nil || len(ss) != 2 {
+		t.Fatalf("2 つ開いているのに %v (%v)", ss, err)
+	}
+	var got Info
+	for _, s := range ss {
+		if s.ID == j.Info().ID {
+			got = s
+		}
+	}
+	if got.Mode != Join || got.Label != "review" || got.TTY != "/dev/ttys009" || got.PID != os.Getpid() || got.Opened.IsZero() {
+		t.Fatalf("join の画面の見分けを読めない: %+v", got)
+	}
+	if n, err := Owners(dir); err != nil || n != 1 {
+		t.Fatalf("持ち主は 1 つなのに %d (%v)", n, err)
+	}
+	left, err := owner.Leave()
+	if err != nil || left != (Tally{Owners: 0, Joins: 1}) {
+		t.Fatalf("持ち主が閉じたら ほかは join 1 つ (持ち主 0) のはず: %+v (%v)", left, err)
+	}
+}
+
+// 中身を読めない印 (前の版の画面は空のファイルを置く) は、flock が持たれていれば持ち主として数える。
+func TestUnreadableInfoCountsAsOwner(t *testing.T) {
+	dir := t.TempDir()
+	s := open(t, dir)
+	if err := os.WriteFile(s.path, []byte("{壊れた"), 0o600); err != nil { // flock は s が持ったまま
+		t.Fatal(err)
+	}
+	ss, err := List(dir)
+	if err != nil || len(ss) != 1 || ss[0].Mode != Owner || ss[0].ID != s.Info().ID {
+		t.Fatalf("中身の壊れた生きている印を持ち主として数えない: %+v (%v)", ss, err)
 	}
 }

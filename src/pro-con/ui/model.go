@@ -151,6 +151,7 @@ func (m *Model) Notify(s string) {
 // poll は backend の今の状態を画面に取り込む。
 func (m *Model) poll() tea.Cmd {
 	m.setSnap(m.be.Poll())
+	m.showRejected()
 	tab := m.tab
 	m.ensureTab()
 	m.ensureSelection()
@@ -347,6 +348,21 @@ func (m *Model) moveTab(delta int) {
 }
 
 // visible は選んでいるタブに属するカード。global は全部 (config の外の repo のカードも含む)。
+// showRejected は、この画面が置いた依頼を dispatcher が除けた理由を出す (ほかの画面の依頼は出さない。issue 481)。
+func (m *Model) showRejected() {
+	rr, ok := m.be.(backend.RejectReader)
+	if !ok {
+		return
+	}
+	for _, r := range rr.TakeRejected() {
+		what := r.Kind
+		if r.CardID != "" {
+			what = r.CardID + " への " + r.Kind
+		}
+		m.refuse("打った依頼 (" + what + ") は dispatcher が除けた: " + r.Why)
+	}
+}
+
 // setSnap は backend の Snapshot を画面の状態にする。片付けたカード (Archived) はここで落とす
 // (タブの枚数・選択・カンバンのどれにも出さない。画面の読み手ごとに除外を書くと、1 か所の漏れで片付けたカードが戻る)。
 func (m *Model) setSnap(s backend.Snapshot) {
@@ -498,7 +514,11 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	}
 	if op, ok := writeKeys[k.String()]; ok && !m.accepts(op) {
 		// 入力欄を開いてから送った時点で断ると、書いた文が無駄になる (2026-09-24 の報告)。押した時点で断る
-		m.refuse("この画面では使えない操作 (見ているだけの画面 = pro-con --view は書き込まない)")
+		if m.joined() {
+			m.refuse("join の画面からは dispatcher を起こさない (持ち主の画面の c か、手で pro-con dispatcher を起動する)")
+		} else {
+			m.refuse("この画面では使えない操作 (見ているだけの画面 = pro-con --view は書き込まない)")
+		}
 		return nil
 	}
 	switch k.String() {
