@@ -143,7 +143,7 @@ func stageAttachment(dir string, r *Request) (staged string, err error) {
 	return staged, nil
 }
 
-// adoptAttachment は箱のファイルを移し先へ移す (0700 / 0600)。staged が空なら移し済み。
+// adoptAttachment は箱のファイルを移し先 (0700 のカードの置き場) へ移す。staged が空なら移し済み。
 func adoptAttachment(staged, dst string) error {
 	d := filepath.Dir(dst)
 	if err := os.MkdirAll(d, 0o700); err != nil {
@@ -155,10 +155,7 @@ func adoptAttachment(staged, dst string) error {
 	if staged == "" {
 		return nil
 	}
-	if err := os.Rename(staged, dst); err != nil {
-		return err
-	}
-	return os.Chmod(dst, 0o600)
+	return os.Rename(staged, dst) // 箱のファイルは copyFile が 0600 で作っている (rename は権限を保つ)
 }
 
 // SweepAttachments は記録に無いカードの添付 (削除した・書庫へ移した) と、依頼の来ない箱のファイルを消す (dispatcher だけが呼ぶ)。
