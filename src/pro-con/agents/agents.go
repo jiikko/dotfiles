@@ -76,7 +76,12 @@ const stateWorking = "working"
 // stateDone は作業を終えた session の State。
 const stateDone = "done"
 
-// Stopped は止まっている session か: プロセスが無く (pid 無し)、state が止まった形 (stopped / done) の許可リストにある。
+// stateFailed は turn が落ちた session の State。pid があれば API エラーで止まった turn (プロセスは生きている)、
+// pid 無しならプロセスごと消えた (マシンのクラッシュ・再起動の後。2.1.282 で実測 2026-09-26: 再起動から 30 分たっても
+// pid 無し・failed のままで自動で再開しない。issue 482)
+const stateFailed = "failed"
+
+// Stopped は止まっている session か: プロセスが無く (pid 無し)、state が止まった形 (stopped / done / failed) の許可リストにある。
 // 🚨 state の名前だけで決めない: 作業を終えた session (done) を claude stop すると、state は done のまま pid が無くなる
 // (2.1.282 で実測 2026-09-25。dogfooding で、stopped だけを見ていた判定が止まったものを止め直し続けた)。
 // 🚨 「working でない」で決めない: 再開の途中を表す state の名前が変わる / state の欄が無くなる版では、再開の途中の PG を
@@ -84,7 +89,7 @@ const stateDone = "done"
 // 425 の実測: 正常に終えた (pid あり・blocked) / API エラー (pid あり・failed) / claude stop (pid 無し・stopped) /
 // kill -9 (数秒 pid 無し・working のまま自動で再開)
 func (s Session) Stopped() bool {
-	return s.PID == 0 && (s.State == StateStopped || s.State == stateDone)
+	return s.PID == 0 && (s.State == StateStopped || s.State == stateDone || s.State == stateFailed)
 }
 
 // UnknownState は、pid 無しで止まったとも自動の再開の途中 (working) とも判定できない session か (知らない state・state の欄が無い)。
