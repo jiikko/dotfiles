@@ -52,7 +52,8 @@ var ErrStopperDied = errors.New("pro-con dispatcher が止め終える前に終�
 //   - それ以外 (質問待ち・レビュー待ち等) → 列はそのまま
 //
 // 止めたカードには Stopped の印を付ける (再開のとき、落ちた PG の自動の再開を待つ restartWait を飛ばす)。
-// 止める相手は、記録と session id・pid が一致する bg の session、または dispatcher 自身が起動・再開した直後でまだ記録に無い session だけ。
+// 止める相手は、記録と session id が一致する session、dispatcher 自身が起動・再開した直後でまだ記録に無い session、
+// 記録に載らなかったがカードの短い id と worktree で pro-con の PG と示せる session (unregistered) だけ。
 // すぐには止められない形 (落ちて自動の再開を待っている / 起動・再開の直後で一覧にまだ出ない) は、一覧を取り直しながら shutdownPolls 回待つ。
 // 待っても止められなかったカードは列を変えず (次の dispatcher が普段どおり扱う)、止めきれなかった本数をエラーで返す。
 func (d *Dispatcher) Shutdown(ctx context.Context) (notes []eventlog.Event, err error) {
@@ -167,15 +168,21 @@ func (d *Dispatcher) stopCards(ctx context.Context, notes *[]eventlog.Event) (in
 			if done[c.ID] || c.State == card.Done || (c.Session == "" && c.Launching == "") {
 				continue
 			}
-			target, wait := d.stopTarget(c, now, ss, reg)
-			if wait && !last {
+			plan := d.stopTarget(c, now, ss, reg)
+			target := plan.target
+			if plan.wait && !last {
 				waiting++
 				continue
 			}
 			done[c.ID] = true
-			if wait { // 待っても止められる形にならなかった。列は変えない
+			if plan.wait { // 待っても止められる形にならなかった。列は変えない
 				failed++
 				*notes = append(*notes, ev(eventlog.KindStop, c.ID, c.Session, c.ID+" の PG は落ちて戻らない / 一覧に出ないので止められない (列はそのまま。次の dispatcher が扱う)"))
+				continue
+			}
+			if plan.unproven != "" { // 列は変えない。名指しは確かめる段 (ensureStopped) が失敗として返す
+				failed++
+				*notes = append(*notes, ev(eventlog.KindStop, c.ID, c.Session, plan.unproven+" (列はそのまま)"))
 				continue
 			}
 			recorded := c.Stopped && c.State != card.Running // 前の Shutdown で止めたと書いた (止め直しの周ごとに履歴を足さない)
@@ -189,7 +196,11 @@ func (d *Dispatcher) stopCards(ctx context.Context, notes *[]eventlog.Event) (in
 					*notes = append(*notes, ev(eventlog.KindStop, c.ID, target, fmt.Sprintf("%s の PG (%s) を止められない: %v", c.ID, target, err)))
 					continue
 				}
-				*notes = append(*notes, ev(eventlog.KindStop, c.ID, target, fmt.Sprintf("%s の PG (%s) を止めた", c.ID, target)))
+				text := fmt.Sprintf("%s の PG (%s) を止めた", c.ID, target)
+				if plan.stray {
+					text = strayStopped(c.ID, target)
+				}
+				*notes = append(*notes, ev(eventlog.KindStop, c.ID, target, text))
 			}
 			if recorded { // 止め直しても履歴は書き直さない (起動の途中の印だけは外す: 残すと次の dispatcher が二重に扱う)
 				if c.Launching != "" {
@@ -225,10 +236,12 @@ func (d *Dispatcher) stopCards(ctx context.Context, notes *[]eventlog.Event) (in
 const ensurePolls = 15
 
 // ensureStopped は、pro-con の記録にある session (pro-con が起動したもの) がすべて止まった (state: stopped か、一覧から消えた) かを
-// 確かめ、生きているものを止め直す。止まらなかった session を「カード (短い id)」で返す。記録に無い session には触らない。
+// 確かめ、生きているものを止め直す。止まらなかった session を「カード (短い id)」で返す。記録に無い session で触るのは、
+// unregistered が pro-con の PG と示したものだけ (示せない生きているものは止めずに、止まらなかったものとして名指しする)。
 //
-// 照合は session id だけで、記録の pid は見ない: 同じ session id で pid だけ違うのは Claude Code の自動の再開 (pro-con の PG そのもの)。
-// 外の shell の `claude --resume` は別の session id を立てる (427 の 3f で実測) ので、外の session には当たらない
+// 照合は session id だけで、記録の pid と kind は見ない: 同じ session id で pid だけ違うのは Claude Code の自動の再開 (pro-con の PG そのもの)。
+// 外の shell の `claude --resume` は別の session id を立てる (427 の 3f で実測) ので、外の session には当たらない。
+// kind で絞ると、claude の版で kind の値が変わったときに生きている PG を止まったと数える (issue 457)
 // extra はカードの側で止めようとした session (短い id → カード)。記録に無くても (起動・再開の途中で取り込んだもの) 同じく確かめる。
 // cards が nil でなければ、そのカードの session だけを確かめる (閉じたカードの PG を止める = close.go)。
 // polls は止め直しの周の数 (周の間は shutdownPoll 待つ)。0 なら待たずに 1 周だけ止めて、もう 1 度だけ見る。
@@ -252,8 +265,9 @@ func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string,
 		} else {
 			reg = append(reg, retired...)
 		}
+		all := reg // 記録に無い session を探すときは、別のカードの行も「記録にある」として除ける
 		if cards != nil {
-			reg = slices.DeleteFunc(reg, func(o live.Owned) bool { return !cards[o.CardID] })
+			reg = slices.DeleteFunc(slices.Clone(reg), func(o live.Owned) bool { return !cards[o.CardID] })
 		}
 		lctx, cancel := context.WithTimeout(ctx, stopCallTimeout)
 		ss, err := list(lctx)
@@ -265,19 +279,27 @@ func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string,
 			d.sleep(shutdownPoll)
 			continue
 		}
+		targets, stray, unproven, err := d.checkTargets(reg, all, extra, cards, ss)
+		if err != nil {
+			return notes, nil, sent, err
+		}
 		var remaining []string
-		for _, o := range withExtra(reg, extra, ss) {
+		for _, o := range targets {
 			for _, s := range ss {
-				if s.SessionID != o.SessionID || s.Kind != "background" || s.Stopped() {
+				if s.SessionID != o.SessionID || s.Stopped() {
 					continue
 				}
 				remaining = append(remaining, fmt.Sprintf("%s (%s)", o.CardID, s.ID))
 				sctx, cancel := context.WithTimeout(ctx, stopCallTimeout)
 				err := d.Launch.Stop(sctx, s.ID)
 				cancel()
-				if err != nil {
+				switch {
+				case err != nil:
 					notes = append(notes, ev(eventlog.KindStop, o.CardID, s.ID, fmt.Sprintf("%s の PG (%s) を止め直せない: %v", o.CardID, s.ID, err)))
-				} else {
+				case stray[s.SessionID]:
+					sent++
+					notes = append(notes, ev(eventlog.KindStop, o.CardID, s.ID, strayStopped(o.CardID, s.ID)))
+				default:
 					sent++
 					notes = append(notes, ev(eventlog.KindStop, o.CardID, s.ID, fmt.Sprintf("%s の PG (%s) がまだ動いていたので止め直した", o.CardID, s.ID)))
 				}
@@ -287,14 +309,45 @@ func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string,
 			if len(remaining) > 0 { // 最後の周で止め直したものがあるかもしれないので、もう 1 度だけ見る
 				lctx, cancel := context.WithTimeout(ctx, stopCallTimeout)
 				if ss, err := list(lctx); err == nil {
-					remaining = stillAlive(withExtra(reg, extra, ss), ss)
+					remaining = stillAlive(targets, ss)
 				}
 				cancel()
 			}
-			return notes, remaining, sent, nil
+			// 示せない session は止めていないので待たない (止め直しの周を使わない)。止まったとは数えず名指しする
+			return notes, append(remaining, unproven...), sent, nil
 		}
 		d.sleep(shutdownPoll)
 	}
+}
+
+// checkTargets は、止まったかを確かめる行 (記録の行 reg + カードの側で止めようとした extra + 記録に無いカードの PG = unregistered) と、
+// そのうち記録に無かった session id、示せない生きている session の名指しを返す。all は別のカードの行も含む記録 (記録に無いかの判定に使う)。
+func (d *Dispatcher) checkTargets(reg, all []live.Owned, extra map[string]string, cards map[string]bool, ss []agents.Session) (targets []live.Owned, stray map[string]bool, unproven []string, err error) {
+	st, err := store.Load(d.Dir)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("カードの記録を読めないので、記録に無い PG が止まったかを確かめられない: %w", err)
+	}
+	targets = withExtra(reg, extra, ss)
+	stray = map[string]bool{}
+	for _, c := range st.Cards {
+		if cards != nil && !cards[c.ID] {
+			continue
+		}
+		s, proven, ok := unregistered(c, d.Repos[c.Repo], ss, all)
+		switch {
+		case !ok || slices.ContainsFunc(targets, func(o live.Owned) bool { return o.SessionID == s.SessionID && s.SessionID != "" }):
+		case proven:
+			stray[s.SessionID] = true
+			targets = append(targets, live.Owned{ID: s.ID, SessionID: s.SessionID, CardID: c.ID})
+		default:
+			unproven = append(unproven, unprovenName(c, s))
+		}
+	}
+	return targets, stray, unproven, nil
+}
+
+func strayStopped(cardID, id string) string {
+	return fmt.Sprintf("%s の PG (%s) は pro-con の記録に無かったが、カードの session の id と worktree が一致したので止めた", cardID, id)
 }
 
 // withExtra は記録の行に、カードの側で止めようとした session (一覧で短い id から session id を引く) を足す。
@@ -313,7 +366,7 @@ func stillAlive(reg []live.Owned, ss []agents.Session) []string {
 	var out []string
 	for _, o := range reg {
 		for _, s := range ss {
-			if s.SessionID == o.SessionID && s.Kind == "background" && !s.Stopped() {
+			if s.SessionID == o.SessionID && !s.Stopped() {
 				out = append(out, fmt.Sprintf("%s (%s)", o.CardID, s.ID))
 			}
 		}
@@ -335,33 +388,94 @@ func (d *Dispatcher) sleep(t time.Duration) {
 	time.Sleep(t)
 }
 
-// stopTarget は、終了のときにこのカードで止める session の短い id を返す。wait が真なら、今は止められないが待てば止められる形。
-// 両方とも空 / 偽なら、止めるものが無い (既に止まっている)。
-func (d *Dispatcher) stopTarget(c card.Card, now time.Time, ss []agents.Session, reg []live.Owned) (string, bool) {
+// stopPlan は、終了のときにこのカードで止める相手 (stopTarget の結果)。すべて空 / 偽なら、止めるものが無い (既に止まっている)。
+type stopPlan struct {
+	target   string // 止める session の短い id
+	wait     bool   // 今は止められないが、待てば止められる形
+	stray    bool   // target は記録に無い session (unregistered が pro-con の PG と示したもの)
+	unproven string // 記録に無く、pro-con が起動したと示せない生きている session の名指し (止めない。「既に止まっていた」とも書かない)
+}
+
+// stopTarget は、終了のときにこのカードで止める相手を返す。
+func (d *Dispatcher) stopTarget(c card.Card, now time.Time, ss []agents.Session, reg []live.Owned) stopPlan {
 	if c.Launching != "" { // 起動・再開の結果が分からない。立っていれば取り込んで止める (落ちて pid 0 でも止める。claude stop が再開を抑える)
 		if id, ok := adopt(c, d.Repos[c.Repo], ss, reg); ok {
-			return id, false
+			return stopPlan{target: id}
 		}
-		return "", now.Sub(c.LaunchedAt) < launchGrace // 印の直後ならまだ一覧に出ていないだけかもしれない
+		if now.Sub(c.LaunchedAt) < launchGrace { // 印の直後ならまだ一覧に出ていないだけかもしれない
+			return stopPlan{wait: true}
+		}
+		return d.strayPlan(c, ss, reg)
 	}
 	o, ok := owned(c, reg)
 	if !ok { // dispatcher が起動・再開した直後で、記録にまだ無い (register が載せるのを待つ)
-		return "", now.Sub(c.LaunchedAt) < launchGrace
+		if now.Sub(c.LaunchedAt) < launchGrace {
+			return stopPlan{wait: true}
+		}
+		return d.strayPlan(c, ss, reg) // 🚨 待っても載らなかった。記録に無いことを止まった証拠にしない
 	}
 	for _, s := range ss {
-		if s.ID != c.Session || s.Kind != "background" || s.SessionID != o.SessionID {
+		if s.ID != c.Session || s.SessionID != o.SessionID {
 			continue
 		}
 		if s.PID == 0 { // 落ちて Claude Code の自動の再開を待っている: そのまま止める (claude stop が再開を抑える。2.1.282 で実測 2026-09-25:
 			// kill -9 の直後 (pid 無し・working) に stop → rc=0 で stopped になり、35 秒後も再開しない)
-			return s.ID, false
+			return stopPlan{target: s.ID}
 		}
 		// pid が記録と違っても止める: 同じ session id で pid だけ違うのは Claude Code の自動の再開 (外の shell の --resume は
 		// 別の session id を立てる = 427 の 3f)。再開の文がまだ書かれていないと register が記録を書き直さないので、ここで照らす
-		return s.ID, false
+		return stopPlan{target: s.ID}
 	}
 	// 一覧に無い: 止まっている。ただし落ちたのを見た直後なら、自動の再開を待っている途中かもしれない
-	return "", !c.DeadSince.IsZero() && now.Sub(c.DeadSince) < restartWait
+	return stopPlan{wait: !c.DeadSince.IsZero() && now.Sub(c.DeadSince) < restartWait}
+}
+
+func (d *Dispatcher) strayPlan(c card.Card, ss []agents.Session, reg []live.Owned) stopPlan {
+	s, proven, ok := unregistered(c, d.Repos[c.Repo], ss, reg)
+	switch {
+	case !ok:
+		return stopPlan{}
+	case proven:
+		return stopPlan{target: s.ID, stray: true}
+	}
+	return stopPlan{unproven: unprovenName(c, s)}
+}
+
+// unregistered は、記録 (reg) に無いのに生きているこのカードの PG の session を一覧から探す (issue 457: claude の版で kind が変わった /
+// 時計が戻って開始が LaunchedAt より前になった、で register が取り込まなかったもの)。終了 (stopTarget / ensureStopped) と
+// 閉じたとき (close.go) で同じこれを使う。
+//
+// proven (止めてよい) は、短い id がカードの Session (pro-con の起動・再開が返した id) で、cwd がそのカードの worktree
+// (<repo>/.claude/worktrees/pc-<card>) そのものの session だけ。外の shell の claude は別の短い id を持ち、PG の worktree の外で動く
+// ので当たらない。kind と開始時刻は見ない (取り込まれなかった理由そのもの。理由は register が出来事に出す)。
+// 示せない生きている session (短い id だけ一致して cwd が違う / 起動・再開の途中でカードの worktree に居る) は proven を偽で返す
+// (呼び出し側は止めずに名指しする)。止まっている session・記録にある session (別のカードの行・再開で入れ替わった前の行も) は返さない。
+func unregistered(c card.Card, repoPath string, ss []agents.Session, reg []live.Owned) (s agents.Session, proven, ok bool) {
+	if _, has := owned(c, reg); has {
+		return agents.Session{}, false, false // 記録の行で照らす (短い id を別の session が得た形には触らない)
+	}
+	wt := worktreePath(repoPath, c)
+	inWorktree := func(s agents.Session) bool { return wt != "" && samePath(s.Cwd, wt) }
+	var loose *agents.Session
+	for _, s := range ss {
+		if s.ID == "" || s.Stopped() || slices.ContainsFunc(reg, func(o live.Owned) bool { return o.SessionID != "" && o.SessionID == s.SessionID }) {
+			continue
+		}
+		if c.Session != "" && s.ID == c.Session {
+			return s, inWorktree(s) && s.SessionID != "", true
+		}
+		if loose == nil && c.Launching != "" && inWorktree(s) {
+			loose = &s
+		}
+	}
+	if loose != nil {
+		return *loose, false, true
+	}
+	return agents.Session{}, false, false
+}
+
+func unprovenName(c card.Card, s agents.Session) string {
+	return fmt.Sprintf("%s (%s: 記録に無い session が生きている。pro-con が起動したと示せないので止めていない)", c.ID, s.ID)
 }
 
 // StopRequested は止める印があるかを見て、あれば消す。
