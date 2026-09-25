@@ -25,3 +25,12 @@
 ## 関連
 
 - 460 (監査の記録) / 427 (同時に 2 つの置き場) / 451 (削除のときも worktree は残す)
+
+## 進捗
+
+- 2026-09-25 (C-025): 1 つ目の方針を入れた。`dispatcher.prepare` が、まだ一度も起動を始めていない (`LaunchedAt` が空) カードの
+  `<repo>/.claude/worktrees/pc-<カード>` が在れば起動せず、462 の人の番の部品 (`askAfterCrashes`) で理由 (パス) を書く。
+  片付けてから回答すると起動する。起動し直し (印の後) は自分の前の起動が作った worktree なので止めない。
+  検査は `TestStartRefusesLeftoverWorktree` / `TestRestartAfterUnknownLaunchKeepsOwnWorktree` (偽の launcher と一時 repo。変異 2 本で red を確認)
+  - 427 の「同時に 2 つの置き場」でも、後から起動する側の C-00N は同じ理由で止まる (起動の直前と claude -w の間の競合は残る)
+- 残り: 使い終わった PG の worktree とブランチの片付けの口 (人が判断する。pc-c-002〜010)

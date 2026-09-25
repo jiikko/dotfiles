@@ -17,6 +17,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -717,6 +719,14 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		if errors.Is(err, errWait) {
 			continue
 		}
+		if nh := needsHumanError(""); errors.As(err, &nh) {
+			why := fmt.Sprintf("%sしない: %v", how, err)
+			if err := d.update(c.ID, func(cc *card.Card) { askAfterCrashes(cc, now, why) }); err != nil {
+				return notes, err
+			}
+			notes = append(notes, ev(eventlog.KindLaunch, c.ID, c.Session, c.ID+": "+why))
+			continue
+		}
 		if err != nil {
 			if err := d.noteOnce(c.ID, now, how+"できない: "+err.Error()); err != nil {
 				return notes, err
@@ -841,7 +851,32 @@ func (d *Dispatcher) prepare(c card.Card, now time.Time, ss []agents.Session, re
 	if !ok {
 		return "起動", nil, fmt.Errorf("repo %q の場所が設定に無い", c.Repo)
 	}
+	if c.LaunchedAt.IsZero() { // 起動し直し (印を書いた後) なら、在る worktree はこのカードの前の起動が作ったもの
+		if err := leftoverWorktree(worktreePath(path, c)); err != nil {
+			return "起動", nil, err
+		}
+	}
 	return "起動", func(ctx context.Context) (string, error) { return d.Launch.Start(ctx, path, sessionName(c), Prompt(c)) }, nil
+}
+
+// needsHumanError は、起動・再開の前提が崩れていてやり直しても直らないので、人の番へ回す失敗 (文は理由)。
+type needsHumanError string
+
+func (e needsHumanError) Error() string { return string(e) }
+
+// leftoverWorktree は、初めて起動するカードの worktree が既に在れば needsHumanError を返す (465)。claude -w は同じ名前の worktree を
+// 黙って使うので、状態の置き場を作り直して C-001 から振り直したカードが、前の世代のブランチとコミットの上で作業を始める
+// (PG の worktree は消さない。447)。確かめられないときは起動しない (次の Tick で見直す)
+func leftoverWorktree(wt string) error {
+	_, err := os.Lstat(wt)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil
+	case err != nil:
+		return fmt.Errorf("worktree %s が在るかを確かめられない: %w", wt, err)
+	}
+	return needsHumanError(fmt.Sprintf("worktree %s が既に在る (前の状態の置き場で同じカード ID が使った worktree かもしれない。claude -w はそのブランチの上で黙って作業を始める)。"+
+		"中身を確かめて片付けてから回答すると起動する", wt))
 }
 
 func sessionName(c card.Card) string { return "pc-" + strings.ToLower(c.ID) }
