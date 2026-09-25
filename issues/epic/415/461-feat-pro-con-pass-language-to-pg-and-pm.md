@@ -48,4 +48,7 @@
   - **`--bg` で効いた** (上の方法で 1 回、2.1.282、haiku、cwd = この repo の worktree `pc-c-013`): 英語の問いに「パリはフランスの首都です。」。
     Workspace not trusted は出なかった。`claude stop a09fba4c` 後、稼働一覧から消え `--all` で `state: done` を確認
   - 🚨 対照 (`--settings` 無しの `--bg`) は取っていない (1 本だけの約束のため)。英語で返る側の証拠は 7d の `-p` の測定だけ。model も haiku で、PG の既定の model では測っていない
+  - 敵対的レビュー (読み取りのみのサブエージェント 1 本): 再現する不具合は無し。「`Start` / `Resume` が language を読む配線がテストで守られていない」
+    (`Start` の中で `""` を渡しても緑) は正しかったので、引数の組み立てを `ExecLauncher` のメソッドにして閉じた (変異 2 本で red を確認)。
+    記録だけ: language の前後の空白は trim せずそのまま渡す (claude 側の扱いは未確認。実害は見ていない)
 - 残り: 本物の dispatcher で PG を起こして報告が日本語になるかは、次の dogfooding で見る (440)。PM が指示に「報告は日本語で」と書いている分は、それを見てから外す
