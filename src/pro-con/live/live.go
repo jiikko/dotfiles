@@ -31,7 +31,8 @@ var ErrNotYet = errors.New("本物のモードではまだ使えない操作 (is
 
 // Backend は本物の backend。
 type Backend struct {
-	stopAll  func(context.Context) error // 終了のときに daemon と PG を止める (main が daemon の停止をつなぐ。live は daemon を import できない)
+	attach   func(sessionID string) *exec.Cmd // attach のコマンド (nil なら本物の claude attach。e2e モードは偽の attach)
+	stopAll  func(context.Context) error      // 終了のときに daemon と PG を止める (main が daemon の停止をつなぐ。live は daemon を import できない)
 	repos    []backend.Repo
 	dir      string // 本物のモードの状態の置き場 (カードの記録・受付の箱・pro-con が起動した session の記録)
 	registry string // pro-con が起動した session の記録 (registry.go)
@@ -77,6 +78,9 @@ func New(repos []backend.Repo, home, stateDir string) *Backend {
 
 // SetList は session の一覧の読み方を差し替える (e2e モードは偽の一覧を読む)。Start の前に呼ぶ。
 func (b *Backend) SetList(f func(context.Context) ([]agents.Session, error)) { b.list = f }
+
+// SetAttach は attach のコマンドを差し替える (e2e モードは本物の claude を起動しない)。
+func (b *Backend) SetAttach(f func(sessionID string) *exec.Cmd) { b.attach = f }
 
 // SetStopper は終了のときの停止をつなぐ。
 func (b *Backend) SetStopper(f func(context.Context) error) { b.stopAll = f }
@@ -274,6 +278,9 @@ func (b *Backend) AttachCommand(sessionID string) (*exec.Cmd, error) {
 	}
 	for _, s := range ss {
 		if s.ID == sessionID && owns(reg, s.SessionID, s.ID, s.PID) {
+			if b.attach != nil {
+				return b.attach(sessionID), nil
+			}
 			return exec.Command("claude", "attach", sessionID), nil
 		}
 	}

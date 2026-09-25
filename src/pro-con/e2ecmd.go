@@ -155,37 +155,42 @@ func e2eStart(root string) error {
 }
 
 // e2eStop は Q → quit で閉じ、画面が抜けるまで待つ (daemon と偽の PG を止め終えるまで)。抜けなければ隔離サーバを止める。
-func e2eStop(root string) error {
+func e2eStop(root string) (err error) {
+	// どの出口でも、最後に daemon と偽の PG を止め、控えた socket を消す (画面が先に落ちていた / 隔離サーバを止めた場合も。
+	// daemon は画面と別のプロセスグループなので、画面や隔離サーバと一緒には終わらない)
+	defer func() {
+		if exe, xerr := os.Executable(); xerr == nil {
+			if out, serr := exec.Command(exe, "daemon", "--stop", "--e2e", root).CombinedOutput(); serr != nil && err == nil {
+				err = fmt.Errorf("daemon を止められない: %w: %s", serr, strings.TrimSpace(string(out)))
+			}
+		}
+		removeE2ESocket(root)
+	}()
 	if err := e2eTmux(root, "has-session").Run(); err != nil {
-		return nil // 動いていない
+		return nil // 画面は動いていない (daemon は上の defer が止める)
 	}
 	_ = e2eTmux(root, "send-keys", "-t", "0", "Q").Run()
 	_ = e2eTmux(root, "send-keys", "-t", "0", "-l", "quit").Run()
 	_ = e2eTmux(root, "send-keys", "-t", "0", "Enter").Run()
 	for range 300 { // 60 秒
 		if err := e2eTmux(root, "has-session").Run(); err != nil {
-			removeE2ESocket(root) // 画面が抜けて、session と一緒に隔離サーバも終わった。残った socket を消す
-			return nil
+			return nil // 画面が抜けて、session と一緒に隔離サーバも終わった (socket は defer が消す)
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	// 🚨 撃つのは、この置き場の名前で作った隔離サーバだけ (socket のパスが名前で終わることを確かめてから)
-	sock, err := e2eTmux(root, "display-message", "-p", "#{socket_path}").Output()
-	if err != nil || !strings.HasSuffix(strings.TrimSpace(string(sock)), "/"+e2eSocket(root)) {
-		return fmt.Errorf("60 秒待っても画面が閉じない。隔離サーバを確かめられないので止めない (socket=%q)", strings.TrimSpace(string(sock)))
-	}
+	// 撃つのは -L <この置き場の隔離名> のサーバだけ (e2eTmux が必ず -L を付け、TMUX を落としている)
 	_ = e2eTmux(root, "kill-server").Run()
-	removeE2ESocket(root)
 	return errors.New("60 秒待っても画面が閉じないので、隔離サーバを止めた")
 }
 
 // e2eScenario は台本どおりの通し: 依頼 → (偽の PG が質問) → 回答 → (テストの係が echo e2e-ok を実行) → レビュー → 終了。
 func e2eScenario(root string, stdout io.Writer) error {
 	step := func(s string) { _, _ = fmt.Fprintln(stdout, time.Now().Format("15:04:05"), s) }
-	if err := e2eStart(root); err != nil {
+	err := e2eStart(root)
+	defer func() { _ = e2eStop(root) }() // 起動の待ちが失敗しても後始末する (new-session には成功しているかもしれない)
+	if err != nil {
 		return err
 	}
-	defer func() { _ = e2eStop(root) }()
 	send := func(keys ...string) error {
 		return e2eTmux(root, append([]string{"send-keys", "-t", "0"}, keys...)...).Run()
 	}

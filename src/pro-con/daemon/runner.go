@@ -11,6 +11,7 @@ package daemon
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
 	"errors"
 	"fmt"
 	"os"
@@ -134,7 +135,7 @@ func (d *Daemon) tickRuns(ctx context.Context, now time.Time) ([]string, error) 
 		default:
 			runCtx, cancel := context.WithCancel(ctx)
 			job := &runJob{cardID: c.ID, command: c.Run, start: now, done: make(chan runResult, 1), cancel: cancel,
-				logPath: filepath.Join(d.Dir, RunsDir, fmt.Sprintf("%s-%d.log", c.ID, now.Unix()))}
+				logPath: filepath.Join(d.Dir, RunsDir, fmt.Sprintf("%s-%d-%s.log", c.ID, now.Unix(), dirTag(d.Dir)))}
 			if err := d.update(c.ID, func(cc *card.Card) {
 				cc.Exec = card.Exec{Command: c.Run, Resource: store.RunResource, Since: now, RunID: filepath.Base(job.logPath)} // 始める前に印を記録する
 				cc.Wait = card.Wait{}
@@ -323,6 +324,9 @@ func isUnder(child, root string) bool {
 	rel, err := filepath.Rel(resolve(root), resolve(child))
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, "../")
 }
+
+// dirTag は状態の置き場の短い印 (実行の印に混ぜて、別の置き場の daemon (e2e と本物) の実行と取り違えない)。
+func dirTag(dir string) string { return fmt.Sprintf("%x", sha1.Sum([]byte(dir)))[:8] }
 
 // runMarkerPrefix は実行の bash の $0 に載せる印の頭。
 const runMarkerPrefix = "pro-con-run:"

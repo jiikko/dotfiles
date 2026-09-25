@@ -69,6 +69,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "pro-con:", err)
 		return 2
 	}
+	if len(args) > 0 && len(modeArgs) > 0 {
+		// 🚨 --e2e / --mock は画面の起動にだけ付ける。サブコマンドの前に付くと、サブコマンドは本物の置き場で動いてしまう
+		// (`pro-con --e2e X daemon --stop` が本物の daemon と PG を止める)。daemon は `pro-con daemon --e2e <dir>`
+		_, _ = fmt.Fprintf(stderr, "pro-con: %s はサブコマンド (%s) の前には付けない (daemon なら pro-con daemon --e2e <dir>、画面なら pro-con %s)\n",
+			modeArgs[0], args[0], strings.Join(modeArgs, " "))
+		return 2
+	}
 	if len(args) > 0 {
 		switch args[0] {
 		case "fake-attach":
@@ -146,6 +153,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		lb := live.New(scopes, home, dir)
 		if e2e != nil {
 			lb.SetList(e2e.List) // 偽の session の一覧 (本物の claude agents を読まない)
+			if exe, err := os.Executable(); err == nil {
+				lb.SetAttach(func(id string) *exec.Cmd { return exec.Command(exe, "fake-attach", id) }) // 本物の claude attach を起動しない
+			}
 		}
 		lb.SetStopper(func(ctx context.Context) error { return stopInChild(ctx, dir, daemonArgs) })
 		// 画面を開いたら daemon も立てる (閉じると止める。2026-09-25 にユーザーが決めた形。415 の「TUI と常駐プロセス」)

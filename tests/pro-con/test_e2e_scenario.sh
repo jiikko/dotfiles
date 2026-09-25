@@ -21,6 +21,9 @@ fi
 if ps -A -o command= | grep -F -- "--e2e $root" | grep -v grep > /dev/null; then
   echo "✗ 閉じた後も e2e の daemon / 画面のプロセスが残っている"; exit 1
 fi
+if [ -e "$root/e2e-tmux-socket" ]; then
+  echo "✗ 隔離サーバの socket の控えが残っている (閉じたのに socket を消していない)"; cat "$root/e2e-tmux-socket"; exit 1
+fi
 if ! jq -e '.cards[0].State == 4' "$root/state/cards.json" > /dev/null; then
   echo "✗ カードがレビューの列に居ない"; jq -c '.cards[0]' "$root/state/cards.json"; exit 1
 fi

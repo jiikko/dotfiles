@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -110,5 +111,15 @@ func TestStartDaemonIfIdle(t *testing.T) {
 	defer unlock()
 	if started, err := startDaemonIfIdle(dir, spawn); started || err != nil || spawned != 1 {
 		t.Fatalf("daemon が動いているのに起動した: started=%v err=%v spawned=%d", started, err, spawned)
+	}
+}
+
+// --e2e / --mock はサブコマンドの前に付けられない (付くと、サブコマンドが本物の置き場で動いて本物の daemon と PG を止める / 起こす)。
+func TestModeFlagBeforeSubcommandIsRejected(t *testing.T) {
+	for _, args := range [][]string{{"--e2e", t.TempDir(), "daemon", "--stop"}, {"--mock", "card", "add", "--title", "x"}, {"--e2e", t.TempDir(), "daemon"}} {
+		var out, errOut bytes.Buffer
+		if rc := run(args, strings.NewReader(""), &out, &errOut); rc != 2 || !strings.Contains(errOut.String(), "サブコマンド") {
+			t.Fatalf("%v を受けた: rc=%d stderr=%q", args, rc, errOut.String())
+		}
 	}
 }

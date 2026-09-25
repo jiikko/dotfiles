@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -406,5 +407,21 @@ func TestParseTranscriptParallelToolsKeepLongOnePending(t *testing.T) {
 `
 	if tr := parse([]byte(data)); !tr.PendingSince.Equal(time.Date(2026, 9, 25, 1, 0, 0, 0, time.UTC)) {
 		t.Fatalf("並列の長い方の呼び出しを実行中に数えない: %v", tr.PendingSince)
+	}
+}
+
+// attach のコマンドを差し替えたら (e2e モード)、本物の claude attach ではなくそれを使う。
+func TestAttachUsesReplacement(t *testing.T) {
+	b, _ := testBackend(t, nil, nil)
+	if err := Register(b.registry, Owned{SessionID: "e2e-session-1", ID: "e2e00001", PID: 900001}); err != nil {
+		t.Fatal(err)
+	}
+	b.list = func(context.Context) ([]agents.Session, error) {
+		return []agents.Session{{SessionID: "e2e-session-1", ID: "e2e00001", PID: 900001, Kind: "background"}}, nil
+	}
+	b.SetAttach(func(id string) *exec.Cmd { return exec.Command("/bin/echo", "fake", id) })
+	cmd, err := b.AttachCommand("e2e00001")
+	if err != nil || cmd.Path != "/bin/echo" || strings.Join(cmd.Args, " ") != "/bin/echo fake e2e00001" {
+		t.Fatalf("差し替えた attach を使わない: %v %v", cmd, err)
 	}
 }
