@@ -1,9 +1,12 @@
 package dispatcher
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -69,5 +72,69 @@ func TestUserSettingsPath(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", "/c")
 	if got := UserSettingsPath("/h"); got != "/c/settings.json" {
 		t.Fatalf("CLAUDE_CONFIG_DIR = %q", got)
+	}
+}
+
+// fakeClaude は PATH の先頭に偽の claude を置く。本物 (commander) と同じく、「-」で始まる引数のうち知らないものを
+// オプションと読んで rc=1 で落ち (`error: unknown option`)、それ以外は --bg の最初の行を返す。受けた引数は返すパスに書く。
+func fakeClaude(t *testing.T) (argsFile string) {
+	t.Helper()
+	bin := t.TempDir()
+	argsFile = filepath.Join(bin, "args")
+	script := `#!/bin/sh
+for a in "$@"; do printf '%s\n' "$a" >>"` + argsFile + `"; done
+skip=0
+for a in "$@"; do
+  if [ $skip = 1 ]; then skip=0; continue; fi
+  case "$a" in
+    --bg) ;;
+    -w|-n|--resume|--setting-sources|--settings) skip=1 ;;
+    -*) echo "error: unknown option '$a'" >&2; exit 1 ;;
+  esac
+done
+echo "backgrounded · ab12 · pc-c-001"
+`
+	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return argsFile
+}
+
+// 回答・追加オーダーの本文が「-」で始まっても (箇条書き)、claude がオプションと読まずに再開できる (462)。本文は削らずに届く。
+func TestResumeTextStartingWithDashIsNotReadAsOption(t *testing.T) {
+	argsFile := fakeClaude(t)
+	text := "- A にする\n- B はやめる"
+	id, err := ExecLauncher{}.Resume(context.Background(), "", "sid", t.TempDir(), text)
+	if err != nil {
+		t.Fatalf("「-」で始まる本文で再開が失敗した: %v", err)
+	}
+	if id != "ab12" {
+		t.Fatalf("id = %q", id)
+	}
+	if b, _ := os.ReadFile(argsFile); !strings.Contains(string(b), text) {
+		t.Fatalf("本文がそのまま届いていない: %q", b)
+	}
+	if _, err := (ExecLauncher{}).Start(context.Background(), t.TempDir(), "pc-c-001", "-x で始まる指示"); err != nil {
+		t.Fatalf("「-」で始まる指示で起動が失敗した: %v", err)
+	}
+}
+
+// claude が rc≠0 で返した / 起動できなかった失敗は ErrRejected (何も立っていない)。--bg の出力が読めないだけのものは違う (立っているかもしれない)。
+func TestLauncherClassifiesRejected(t *testing.T) {
+	fakeClaude(t)
+	if _, err := runClaude(context.Background(), "", "--bogus"); !errors.Is(err, ErrRejected) {
+		t.Fatalf("rc=1 の失敗が ErrRejected でない: %v", err)
+	}
+	if _, err := runClaude(context.Background(), filepath.Join(t.TempDir(), "gone"), "--bg"); !errors.Is(err, ErrRejected) {
+		t.Fatalf("消えた cwd (chdir の失敗) が ErrRejected でない: %v", err)
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := runClaude(cancelled, "", "--bg"); err == nil || errors.Is(err, ErrRejected) {
+		t.Fatalf("取り消し (dispatcher の終了) を ErrRejected にした: %v", err)
+	}
+	if _, err := parseBackgrounded("何か別の出力"); errors.Is(err, ErrRejected) {
+		t.Fatalf("出力が読めないだけの失敗を ErrRejected にした: %v", err)
 	}
 }

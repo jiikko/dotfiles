@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -24,6 +25,8 @@ type fakeLauncher struct {
 	starts  []string // name
 	resumes []string // stopID + ":" + text
 	fail    bool
+	// reject は起動・再開に「claude が受け付けなかった」(ErrRejected。rc≠0 がすぐ返った) と返す
+	reject bool
 	// resumeFail は再開に「失敗」と返す (実際には立っている形を作るのは一覧の側)
 	resumeFail bool
 	stops      []string
@@ -38,6 +41,9 @@ type fakeLauncher struct {
 
 func (f *fakeLauncher) Start(_ context.Context, repo, name, prompt string) (string, error) {
 	f.startTries++
+	if f.reject {
+		return "", fmt.Errorf("claude --bg: %w: exit status 1: error: unknown option", ErrRejected)
+	}
 	if f.fail {
 		return "", errors.New("起動できない")
 	}
@@ -49,6 +55,9 @@ func (f *fakeLauncher) Start(_ context.Context, repo, name, prompt string) (stri
 func (f *fakeLauncher) Resume(_ context.Context, stopID, _, cwd, text string) (string, error) {
 	f.cwds = append(f.cwds, cwd)
 	f.resumes = append(f.resumes, stopID+":"+text)
+	if f.reject {
+		return "", fmt.Errorf("claude --bg: %w: exit status 1: error: unknown option", ErrRejected)
+	}
 	if f.resumeFail {
 		return "", errors.New("再開できない")
 	}
@@ -378,6 +387,137 @@ func TestUnconfirmedLaunchWaitsGraceThenRetries(t *testing.T) {
 	}
 	if len(l.starts) != 1 || l.starts[0] != "pc-c-001" {
 		t.Fatalf("launchGrace を過ぎても起動し直さない: %v", l.starts)
+	}
+}
+
+// claude が起動・再開を受け付けない (rc≠0 がすぐ返る) 失敗が launchRejectLimit 回続いたら、分解済みで回し続けず人の番へ回して理由を書く (462)。
+// 回答すると同じカードをもう一度起動・再開する。立っているかもしれない失敗 (fail) は数えない (取り込む前に人の番へ回さない)。
+func TestRepeatedRejectedLaunchGoesToHuman(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 2)
+	l := &fakeLauncher{reject: true}
+	d := newDispatcher(t, dir, l, nil)
+	d.Limit = 1
+	at := t0
+	for i := range launchRejectLimit {
+		d.Now = func() time.Time { return at }
+		if _, err := d.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if c := states(t, dir)["C-001"]; i < launchRejectLimit-1 && c.State != card.Planned {
+			t.Fatalf("%d 回目で人の番へ回した: %v", i+1, c.State)
+		}
+		at = at.Add(launchGrace + time.Second)
+	}
+	c := states(t, dir)["C-001"]
+	if c.State != card.Waiting || c.Wait.Kind != card.WaitCrashed || c.Launching != "" || !strings.Contains(c.Wait.Question, "unknown option") {
+		t.Fatalf("%d 回すぐ失敗しても人の番へ回らない: %v %v Launching=%q %q", launchRejectLimit, c.State, c.Wait.Kind, c.Launching, c.Wait.Question)
+	}
+	tries := l.startTries
+	d.Now = func() time.Time { return at }
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := l.startTries - tries; got != 1 || states(t, dir)["C-002"].Launching == "" {
+		t.Fatalf("人の番へ回したカードが枠を空けない (次のカードを起動しない): 起動の試行 %d", got)
+	}
+	l.reject = false
+	if _, err := store.Submit(dir, store.Request{Kind: "answer", CardID: "C-001", Answer: "- 直した"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Apply(dir, at); err != nil {
+		t.Fatal(err)
+	}
+	if c := states(t, dir)["C-001"]; c.State != card.Planned || c.Rejects != 0 {
+		t.Fatalf("回答で分解済みへ戻らない / 回数が残った: %v Rejects=%d", c.State, c.Rejects)
+	}
+
+	dir = t.TempDir()
+	planned(t, dir, 1)
+	l = &fakeLauncher{fail: true}
+	d = newDispatcher(t, dir, l, nil)
+	for i := range launchRejectLimit + 1 {
+		d.Now = func() time.Time { return t0.Add(time.Duration(i) * (launchGrace + time.Second)) }
+		if _, err := d.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if c := states(t, dir)["C-001"]; c.State != card.Planned {
+		t.Fatalf("立っているかもしれない失敗まで人の番へ回した: %v", c.State)
+	}
+}
+
+// 再開を claude が受け付けずに人の番へ回ったカードに回答しても、まだ渡せていない文 (差し戻し) は消えず、回答と一緒に同じ session へ届く (462)。
+func TestRejectedResumeKeepsUndeliveredTextThroughAnswer(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 1)
+	l := &fakeLauncher{}
+	d := newDispatcher(t, dir, l, []agents.Session{{ID: "id-pc-c-001", SessionID: "S1", PID: 42, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}})
+	for range 2 { // 起動 → 登録
+		if _, err := d.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, r := range []store.Request{{Kind: "review", CardID: "C-001"}, {Kind: "rework", CardID: "C-001", Rework: "テストを足す"}} {
+		if _, err := store.Submit(dir, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	l.reject = true
+	at := t0.Add(time.Hour) // 一覧の session (t0 の 1 秒後に始まった) を、再開の印より後に立った session として取り込まないように
+	for range launchRejectLimit {
+		d.Now = func() time.Time { return at }
+		if _, err := d.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		at = at.Add(launchGrace + time.Second)
+	}
+	if c := states(t, dir)["C-001"]; c.State != card.Waiting || c.Wait.Kind != card.WaitCrashed {
+		t.Fatalf("再開の拒否が続いても人の番へ回らない: %v %v", c.State, c.Wait.Kind)
+	}
+	l.reject = false
+	if _, err := store.Submit(dir, store.Request{Kind: "answer", CardID: "C-001", Answer: "- trust した"}); err != nil {
+		t.Fatal(err)
+	}
+	d.Now = func() time.Time { return at }
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	last := l.resumes[len(l.resumes)-1]
+	if c := states(t, dir)["C-001"]; c.State != card.Running || !strings.Contains(last, "テストを足す") || !strings.Contains(last, "- trust した") {
+		t.Fatalf("回答で差し戻しの文が消えた / 再開しない: %v %q", c.State, last)
+	}
+}
+
+// 拒否の回数は「続いた」ものだけ: 拒否以外の失敗・起動の成功で 0 に戻る (前の拒否を持ち越して早く人の番へ回さない)。
+func TestRejectCountResetsOnOtherOutcomes(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 1)
+	l := &fakeLauncher{reject: true}
+	d := newDispatcher(t, dir, l, nil)
+	at := t0
+	tick := func() {
+		t.Helper()
+		d.Now = func() time.Time { return at }
+		if _, err := d.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		at = at.Add(launchGrace + time.Second)
+	}
+	for range launchRejectLimit - 1 {
+		tick()
+	}
+	l.reject, l.fail = false, true
+	tick()
+	if c := states(t, dir)["C-001"]; c.Rejects != 0 {
+		t.Fatalf("拒否以外の失敗で回数が戻らない: %d", c.Rejects)
+	}
+	l.reject, l.fail = true, false
+	tick()
+	l.reject = false
+	tick()
+	if c := states(t, dir)["C-001"]; c.State != card.Running || c.Rejects != 0 {
+		t.Fatalf("起動の成功で回数が戻らない: %v %d", c.State, c.Rejects)
 	}
 }
 

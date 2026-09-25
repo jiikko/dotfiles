@@ -693,7 +693,18 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		running++ // 失敗と返っても立っているかもしれないので、確かめるまで上限に数える
 		id, launchErr := run(ctx)
 		if launchErr != nil {
-			if err := d.note(c.ID, now, how+"に失敗したと返った (立っているかもしれないので、一覧で確かめてから起動し直す): "+launchErr.Error()); err != nil {
+			if errors.Is(launchErr, ErrRejected) {
+				note, err := d.reject(c.ID, now, how, launchErr)
+				if err != nil {
+					return notes, err
+				}
+				notes = append(notes, note)
+				continue
+			}
+			if err := d.update(c.ID, func(cc *card.Card) {
+				cc.Rejects = 0 // 続いていない
+				cc.History = append(cc.History, card.Event{At: now, Text: how + "に失敗したと返った (立っているかもしれないので、一覧で確かめてから起動し直す): " + launchErr.Error()})
+			}); err != nil {
 				return notes, err
 			}
 			notes = append(notes, ev(eventlog.KindLaunch, c.ID, c.Session, fmt.Sprintf("%s の PG の%sに失敗: %v", c.ID, how, launchErr)))
@@ -711,6 +722,31 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		}
 	}
 	return notes, nil
+}
+
+// launchRejectLimit は、claude が起動・再開を受け付けない失敗が何回続いたら人の番へ回すか (462)。
+// 本文の形・trust していない repo・消えた worktree・未ログインは、何度やり直しても同じ失敗になり、印の残ったカードが枠を占め続ける
+const launchRejectLimit = 3
+
+// reject は claude が起動・再開を受け付けなかった (何も立っていない) 失敗を数える。launchRejectLimit 回続いたら人の番へ回す
+// (印は外す。回答すると同じカードをもう一度起動・再開する)。上限の前は、他の失敗と同じく印を残して launchGrace の後にやり直す
+func (d *Dispatcher) reject(id string, now time.Time, how string, launchErr error) (eventlog.Event, error) {
+	text := fmt.Sprintf("%s の PG の%sを claude が受け付けなかった: %v", id, how, launchErr)
+	err := d.update(id, func(c *card.Card) {
+		c.Rejects++
+		if c.Rejects < launchRejectLimit {
+			c.History = append(c.History, card.Event{At: now, Text: fmt.Sprintf("%sを claude が受け付けなかった (%d 回目): %v", how, c.Rejects, launchErr)})
+			return
+		}
+		why := fmt.Sprintf("%sを claude が %d 回続けて受け付けなかったので、やり直さない (最後: %v)。直してから回答すると、もう一度%sする", how, c.Rejects, launchErr, how)
+		if how == "起動" {
+			why += " (回答の本文は PG に渡らない。最初の指示で起動し直す)"
+		}
+		c.Launching, c.Rejects = "", 0
+		askAfterCrashes(c, now, why)
+		text = id + ": " + why
+	})
+	return ev(eventlog.KindLaunch, id, "", text), err
 }
 
 // resumes は同じ session を再開するカードか (回答・テストの結果・差し戻しを受けた / 追加オーダーを届ける)。
@@ -824,7 +860,7 @@ func (d *Dispatcher) settle(id string, now time.Time, how, session string) error
 			c.CrashesFrom = now
 		}
 		c.State, c.Since, c.Owner, c.Session = card.Running, now, "PG", session
-		c.LastProgress, c.Resume, c.Launching, c.Stalled, c.StopWanted, c.Stopped = now, "", "", false, false, false
+		c.LastProgress, c.Resume, c.Launching, c.Stalled, c.StopWanted, c.Stopped, c.Rejects = now, "", "", false, false, false, 0
 		// 消えたのを見た時刻は前の session のもの。残すと、再開が同じ短い id を返したとき (未実測)、一覧に出る前に消えたと読んで再開し直す
 		c.DeadSince = time.Time{}
 		c.History = append(c.History, card.Event{At: now, Text: "PG を" + how + "した (session " + session + ")"})

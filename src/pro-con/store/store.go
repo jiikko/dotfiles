@@ -429,7 +429,13 @@ func transition(c *card.Card, r Request, now time.Time) error {
 			return errors.New("回答が空")
 		}
 		c.Wait = card.Wait{}
-		c.Resume = r.Answer // dispatcher が同じ session を再開するときに渡す (426 の決定 2)
+		// dispatcher が同じ session を再開するときに渡す (426 の決定 2)。まだ渡せていない文 (再開を claude が受け付けずに人の番へ回った
+		// 差し戻し・テストの結果など。462) があれば消さずに前に残す
+		if c.Resume != "" {
+			c.Resume += "\n\n回答: " + r.Answer
+		} else {
+			c.Resume = r.Answer
+		}
 		move(card.Planned, firstNonEmpty(r.From, "人間")+" が回答した: "+clip(r.Answer, 80)+" (PG の空きが出たら同じ session を resume)")
 	case "rework": // PM がレビューで差し戻した (issue 446)。回答と同じく分解済みへ戻し、dispatcher が同じ session を再開する
 		if c.State != card.Review {

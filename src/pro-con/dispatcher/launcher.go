@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -25,6 +26,10 @@ import (
 
 // ExecLauncher は Launcher の本物。UserSettings はユーザーの settings.json のパスで、起動・再開のたびに language を読む (空なら渡さない)。
 type ExecLauncher struct{ UserSettings string }
+
+// ErrRejected は claude が起動・再開を受け付けなかった失敗 (rc≠0 で返った / プロセスを起動できなかった)。何も立っていないので、
+// 同じ失敗を繰り返さずに数えられる (462。時間切れ・--bg の出力が読めないものは、立っているかもしれないので含めない)
+var ErrRejected = errors.New("claude が受け付けなかった")
 
 // launchTimeout は claude --bg / stop が戻るまでの上限 (--bg は起動したらすぐ戻る。実測は 1 秒未満)。
 const launchTimeout = 30 * time.Second
@@ -70,7 +75,20 @@ func withSettings(args []string, settings, positional string) []string {
 	if settings != "" {
 		args = append(args, "--settings", settings)
 	}
-	return append(args, positional)
+	return append(args, positionalArg(positional))
+}
+
+// dashGuard は「-」で始まる位置引数の前に付ける前置き。
+const dashGuard = "pro-con から:\n"
+
+// positionalArg は位置引数が「-」で始まらないようにする (462)。claude は「-」で始まる引数をオプションと読み、
+// 箇条書きの回答・追加オーダーで `error: unknown option` の rc=1 になる。
+// 🚨 `--` で区切る形は claude が受けるかを実測していないので使わない。本文は削らない
+func positionalArg(s string) string {
+	if strings.HasPrefix(s, "-") {
+		return dashGuard + s
+	}
+	return s
 }
 
 // UserSettingsPath は claude が読むユーザーの settings.json (CLAUDE_CONFIG_DIR があればその下)。
@@ -118,6 +136,12 @@ func runClaude(ctx context.Context, dir string, args ...string) (string, error) 
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	cmd.WaitDelay = time.Second
 	if err := cmd.Run(); err != nil {
+		var exit *exec.ExitError
+		// 起動できなかった (cmd.Process が無い: chdir の失敗・claude が無い) か、時間内に自分で rc≠0 を返したものだけが「立っていない」。
+		// 取り消し・時間切れ (ctx) は claude のせいではないので数えない
+		if ctx.Err() == nil && (cmd.Process == nil || (errors.As(err, &exit) && exit.Exited())) {
+			err = fmt.Errorf("%w: %w", ErrRejected, err)
+		}
 		return "", fmt.Errorf("claude %s: %w: %s", args[0], err, strings.TrimSpace(errOut.String()))
 	}
 	return out.String(), nil

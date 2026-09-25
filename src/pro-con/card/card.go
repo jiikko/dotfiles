@@ -237,6 +237,8 @@ type Card struct {
 	Launching string `json:",omitempty"`
 	// LaunchedAt は dispatcher が最後に起動・再開を始めた時刻。これより前に始まった session は、このカードの PG として取り込まない
 	LaunchedAt time.Time `json:",omitzero"`
+	// Rejects は claude が起動・再開を受け付けなかった (rc≠0 がすぐ返った) のが続いた回数。起動・再開が済んだか、人の番へ回したら 0 に戻す (462)
+	Rejects int `json:",omitempty"`
 	// Crashes は PG のプロセスが落ちて Claude Code が自動で再開した時刻 (transcript の再開の文の時刻)。dispatcher が数えて、
 	// 短い間に上限を超えたら止める
 	Crashes []time.Time `json:",omitempty"`
