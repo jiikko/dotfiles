@@ -53,3 +53,5 @@
     記録だけ: language の前後の空白は trim せずそのまま渡す (claude 側の扱いは未確認。実害は見ていない)
   - `make test` rc=0 (origin/master f8ab3915 へ rebase 後の c3915c80。pro-con card run)
 - 残り: 本物の dispatcher で PG を起こして報告が日本語になるかは、次の dogfooding で見る (440)。PM が指示に「報告は日本語で」と書いている分は、それを見てから外す
+- 2026-09-25 PM のレビュー: 差し戻しなし。`--bg` で日本語になるのを PG が本物の worktree で 1 本起こして確かめた (起こした session は止めて一覧から消えたのも見た)。
+  C-011 と合わせた tree で pro-con の `make lint` 0 件・`go test -race` 15 パッケージ ok → master へ。PG はブランチの rebase の後に自分のブランチへ `-f` で push した (本人が報告)

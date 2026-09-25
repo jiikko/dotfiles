@@ -59,3 +59,5 @@
 ## 関連
 
 - 460 (監査の記録) / 455 (枠に何を数えるか) / 430 (再起動の後も bg session が残るか)
+- 2026-09-25 PM のレビュー: 1 回差し戻した (消える → 再開 → また消える、が上限なく回り利用枠を使い続ける)。直しは、戻した回数を落ちた回数と同じ部品 (`recentCrashes`) で数え、上限で人の番へ送る形で妥当。
+  make test の赤 (`tests/zshrc/test_dotfiles_check_result_ownership.sh` の 1 件) は、単独では PG が 5/5・PM が 1/1 緑 (負荷で揺れた。471)。C-013 と合わせた tree で pro-con の `make lint` 0 件・`go test -race` 15 パッケージ ok → master へ

@@ -35,3 +35,4 @@
 
 - C-010 (457) のテストの係の make test で `tests/tmux/test_log_kill_command.sh` の 1 本だけが落ちた (rc=2)。単独では master でも C-010 のブランチでも 3/3 ずつ緑。
   同じ時間帯のロードアベレージは 25 (14 コア)。負荷で落ちるテストが、PG の作業の合否を 1 回ぶん無駄にした
+- C-011 (458) のテストの係の make test でも、`tests/zshrc/test_dotfiles_check_result_ownership.sh` の 1 件だけが落ちた (rc=2)。単独では 5/5 と 1/1 緑。負荷で揺れるテストの 2 本目
