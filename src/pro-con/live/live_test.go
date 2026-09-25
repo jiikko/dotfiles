@@ -589,6 +589,14 @@ func TestScreenEventsGoToInbox(t *testing.T) {
 		be.Start(ctx)
 	}
 	defer func() { cancel(); a.Wait(); b.Wait() }()
+	select { // 最初の読み直し: 箱に画面の出来事しか無いので「適用待ち」は出さない (dispatcher が止まっているように見せない)
+	case <-a.Changed():
+	case <-time.After(10 * time.Second):
+		t.Fatal("読み直しが済まない")
+	}
+	if d := a.Describe(); strings.Contains(d, "適用待ち") {
+		t.Fatalf("画面の出来事を適用待ちに数えた: %q", d)
+	}
 	got := inboxEvents(t, a.dir)
 	if len(got) != 2 || !strings.Contains(got[0], "開いた (開いている画面 1)") || !strings.Contains(got[1], "開いた (開いている画面 2)") {
 		t.Fatalf("開いたことを置かない: %q", got)
