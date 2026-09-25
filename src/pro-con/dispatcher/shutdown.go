@@ -41,6 +41,28 @@ func WriteStopResult(dir string, err error) {
 // resumeAfterStop は、終了で止めた作業中の PG を次に再開するときに渡す文。
 const resumeAfterStop = "pro-con の終了で作業の途中で止めた。止まる前の続きから作業を再開して (規律は最初の指示のとおり)"
 
+// resumeAfterVanish は、作業中に一覧から消えて戻らなかった PG を再開するときに渡す文 (requeueVanished)。
+const resumeAfterVanish = "PG の session が作業の途中で止まっていた (外から止められた / マシンの再起動など)。止まる前の続きから作業を再開して (規律は最初の指示のとおり)"
+
+// requeue は作業中のカードを分解済みへ戻し、次の割り当てで同じ session を resume の文で再開させる (終了の Shutdown と、消えた PG の requeueVanished)。
+func requeue(c *card.Card, now time.Time, resume string) {
+	c.State, c.Since, c.Resume = card.Planned, now, resume
+	c.DropRun() // テストの係への頼みも取り下げる (続きから頼み直す)
+}
+
+// gone は、作業中のカードの PG の session が一覧から消えて、restartWait を過ぎても戻らないか (Shutdown が「既に止まっていた」とする形と同じ判定)。
+// 消えたのを見た時刻 (DeadSince) が要る: 短い id が変わっただけで session は生きている形 (trackDead は生きていると見て外す) を消えたと読まない
+func (d *Dispatcher) gone(c card.Card, now time.Time, ss []agents.Session, reg []live.Owned) bool {
+	if c.State != card.Running || c.Launching != "" || c.DeadSince.IsZero() {
+		return false
+	}
+	if _, ok := owned(c, reg); !ok {
+		return false
+	}
+	target, wait := d.stopTarget(c, now, ss, reg)
+	return target == "" && !wait
+}
+
 // ErrStopTimeout は、動いている dispatcher が時間内に止まらなかったとき (dispatcher は止め直しを続ける。残りは dispatcher.log)。
 var ErrStopTimeout = errors.New("pro-con dispatcher が時間内に止まらない (dispatcher は止め直しを続ける。残りの PG は dispatcher.log に出る)")
 
@@ -225,8 +247,7 @@ func (d *Dispatcher) stopCards(ctx context.Context, notes *[]eventlog.Event) (in
 					text = "pro-con の終了: PG の session は既に止まっていた"
 				}
 				if cc.State == card.Running {
-					cc.State, cc.Since, cc.Resume = card.Planned, now, resumeAfterStop
-					cc.DropRun() // テストの係への頼みも取り下げる (続きから頼み直す)
+					requeue(cc, now, resumeAfterStop)
 					text += " (次に dispatcher を起動したら続きから再開する)"
 				}
 				cc.History = append(cc.History, card.Event{At: now, Text: text})

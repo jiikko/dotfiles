@@ -190,6 +190,12 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	if err != nil {
 		return notes, err
 	}
+	// 落ち続けたものを回答待ちへ送った後に見る (上限に達したものを、消えた PG として再開へ回さない)
+	requeued, err := d.requeueVanished(now, ss)
+	notes = append(notes, requeued...)
+	if err != nil {
+		return notes, err
+	}
 	watched, err := d.watch(now)
 	notes = append(notes, watched...)
 	if err != nil {
@@ -456,6 +462,35 @@ func (d *Dispatcher) stopCrashing(ctx context.Context, now time.Time, ss []agent
 			return notes, err
 		}
 		notes = append(notes, ev(eventlog.KindCrash, c.ID, c.Session, c.ID+": "+why))
+	}
+	return notes, nil
+}
+
+// requeueVanished は、PG の session が自動の再開なしに一覧から消えた (外からの claude stop・マシンの再起動) 作業中のカードを
+// 分解済みへ戻す。同じ Tick の割り当て (dispatch) が同じ session を再開する (一覧に無いので止めずに)。
+// 戻さないと作業中のまま枠を占め続け、回答・差し戻し・閉じるのどれも作業中では受けないので、人も PM も動かせない (458)。
+func (d *Dispatcher) requeueVanished(now time.Time, ss []agents.Session) ([]eventlog.Event, error) {
+	st, err := store.Load(d.Dir)
+	if err != nil {
+		return nil, err
+	}
+	reg, err := live.LoadRegistry(filepath.Join(d.Dir, live.RegistryFile))
+	if err != nil {
+		return nil, err
+	}
+	var notes []eventlog.Event
+	for _, c := range st.Cards {
+		if !d.gone(c, now, ss, reg) {
+			continue
+		}
+		text := fmt.Sprintf("PG の session が一覧から消えて戻らない (%s 待った)。分解済みへ戻し、同じ session を再開する", restartWait)
+		if err := d.update(c.ID, func(cc *card.Card) {
+			requeue(cc, now, resumeAfterVanish)
+			cc.History = append(cc.History, card.Event{At: now, Text: text})
+		}); err != nil {
+			return notes, err
+		}
+		notes = append(notes, ev(eventlog.KindCrash, c.ID, c.Session, c.ID+": "+text))
 	}
 	return notes, nil
 }

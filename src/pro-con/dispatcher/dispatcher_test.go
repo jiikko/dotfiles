@@ -1320,3 +1320,69 @@ func TestDeadSinceClearedWhenAlive(t *testing.T) {
 		t.Fatalf("前に落ちた時刻が残っていて、今落ちた PG を待たずに回答待ちへ送った: %v %q", c.State, c.Wait.Question)
 	}
 }
+
+// 作業中の PG の session が自動の再開なしに一覧から消えたら (外からの claude stop・再起動)、消えたのを見てから restartWait は待ち、
+// 過ぎても戻らなければ分解済みへ戻して同じ session を再開する (作業中のまま枠を占め続けない = 458)。戻したことは履歴と出来事に書く。
+func TestVanishedRunningCardResumes(t *testing.T) {
+	r := newCrashRig(t)
+	r.ss = nil // 一覧から消えた (再開の文は出ない)
+	r.d.Now = func() time.Time { return t0.Add(time.Minute) }
+	r.tick(t)
+	r.d.Now = func() time.Time { return t0.Add(time.Minute + restartWait - time.Second) }
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; c.State != card.Running || len(r.l.resumes) != 0 {
+		t.Fatalf("自動の再開を待たずに戻した: %v resumes=%v", c.State, r.l.resumes)
+	}
+	r.d.Now = func() time.Time { return t0.Add(time.Minute + restartWait + time.Second) }
+	notes := r.tick(t)
+	c := states(t, r.dir)["C-001"]
+	if len(r.l.resumes) != 1 || r.l.resumes[0] != ":"+resumeAfterVanish || len(r.l.stops) != 0 || c.State != card.Running {
+		t.Fatalf("消えた PG を分解済みへ戻して同じ session を止めずに再開しない: resumes=%v stops=%v %v", r.l.resumes, r.l.stops, c.State)
+	}
+	found := false
+	for _, h := range c.History {
+		found = found || strings.Contains(h.Text, "一覧から消えて戻らない")
+	}
+	var kinds []string
+	for _, n := range notes {
+		if n.Card == "C-001" && strings.Contains(n.Reason, "一覧から消えて戻らない") {
+			kinds = append(kinds, n.Kind)
+		}
+	}
+	if !found || !slices.Equal(kinds, []string{eventlog.KindCrash}) {
+		t.Fatalf("戻したことを履歴 / 出来事に書かない: history=%+v notes=%v", c.History, notes)
+	}
+}
+
+// 短い id が一覧から消えても、同じ session id の session が生きていれば消えたと読まない (再開すると同じ session が 2 本立つ)。
+func TestLiveSessionUnderOtherShortIDIsNotVanished(t *testing.T) {
+	r := newCrashRig(t)
+	r.ss[0].ID = "other-short-id"
+	r.d.Now = func() time.Time { return t0.Add(time.Minute) }
+	r.tick(t)
+	r.d.Now = func() time.Time { return t0.Add(time.Minute + restartWait + time.Second) }
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; c.State != card.Running || len(r.l.resumes) != 0 {
+		t.Fatalf("生きている session を消えたと読んで再開した: %v resumes=%v", c.State, r.l.resumes)
+	}
+}
+
+// 落ちた回数が上限に達した PG の session が一覧から消えたときは、今までどおり回答待ちにする (消えた PG として再開し直さない)。
+func TestVanishedAfterCrashLimitStillAsksHuman(t *testing.T) {
+	r := newCrashRig(t)
+	r.l.stopFail = true
+	r.crash(t0.Add(time.Minute), 43)
+	r.tick(t)
+	r.crash(t0.Add(2*time.Minute), 44)
+	r.tick(t) // 止める印が立つ
+	r.l.stopFail = false
+	r.ss = nil
+	r.d.Now = func() time.Time { return t0.Add(2*time.Minute + 30*time.Second) }
+	r.tick(t)
+	r.d.Now = func() time.Time { return t0.Add(2*time.Minute + 30*time.Second + restartWait + time.Second) }
+	r.tick(t)
+	c := states(t, r.dir)["C-001"]
+	if c.State != card.Waiting || c.Wait.Kind != card.WaitCrashed || len(r.l.resumes) != 0 || c.Resume != "" {
+		t.Fatalf("落ち続けて消えた PG を回答待ちにせず再開へ回した: %v %v resumes=%v Resume=%q", c.State, c.Wait.Kind, r.l.resumes, c.Resume)
+	}
+}
