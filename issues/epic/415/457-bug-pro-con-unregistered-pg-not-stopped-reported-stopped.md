@@ -56,11 +56,15 @@ PG の session が pro-con の記録 (sessions.json) に取り込まれなかっ
   - P1 カードの記録が読めないと、確かめる段が 1 本も止めずに抜ける (後退) → 記録の行は止め、記録に無い分は確かめられないと名指しする
     (`TestShutdownStopsOwnedWhenCardsUnreadable`)
   - P2 終了のカードの段が再開で入れ替わった前の行を見ずに「記録に無い」と書く → strayPlan に retired も渡す (再現は組んでいない)
+- [x] origin/master に rebase して、並行の C-008 (451 削除) の `deleteTargets` が持っていた「記録に無い session」の独自の拾い方
+  (短い id + kind + 開始時刻。cwd は見ない) を消し、`ensureStopped` の中の同じ `unregistered` に任せた (判定を 1 つにする)。
+  451 のテストはすべて green。proven の「register と同じ根拠」の枝を殺す変異で `TestDeleteStopsUnregisteredSession` が red
 - [ ] 残り
   - 起動・再開の途中 (Launching) で、claude が返した id がまだカードに無い形は、名指しするだけで止めない
     (起動は名前、再開は worktree しか手がかりが無く、pro-con が起動したと示せない)。再開の途中にカードの worktree で人間が bg の session を
     立てていると、その間は終了が名指しで失敗する (再開の新しい session の名前が引き継がれるかは未測定。引き継がれるなら名前で絞れる)
-  - 記録に無いまま落ちた PG (pid 0・cwd が repo root になる = 427 の 3f) は cwd で示せないので、戻るまでは名指しだけになる (レビューの P2。再現は組んでいない)
+  - 記録に無いまま落ちた PG (pid 0・cwd が repo root になる = 427 の 3f) は、register が取り込む根拠 (kind が background・LaunchedAt 以降に開始) を
+    満たせば止める (451 の `TestDeleteStopsUnregisteredSession` の形)。kind も時刻も崩れていて cwd も repo root なら、戻るまでは名指しだけになる
   - 記録の行はあるが、短い id が別の session id を指す形 (register が「別の session を指している」と知らせる) は、今も「一覧に無い = 止まっている」と読む
     (レビューの P2。`TestShutdownTouchesOnlyOwnSessions` がこの形を ok と決めているので変えていない。名指しに回すかは PM の判断)
   - 同じ repo を 2 つの状態の置き場で使うと worktree のパスがぶつかる (カード ID が同じ)。この変更の前からの形で未確認
