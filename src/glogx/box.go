@@ -61,7 +61,7 @@ func withScrollbar(rows []string, boxWidth, total, offset int, colored bool) []s
 }
 
 // buildPanelBoxImpl は tuikit layout.Panel に glogx の影の色 (テーマの近黒) を渡して板を組む。
-// 呼び出し元は小面積モーダル/トースト (confirm.Box 経由の action モーダル + toast / usage / PR 状態)、
+// 呼び出し元は小面積モーダル (confirm.Box 経由の action モーダル / usage / PR 状態)、
 // 大面積の diff / job パネル + job 詳細、画面最外周フレーム (wrapWindowFrame)、zoom の演出枠。
 func buildPanelBoxImpl(title string, rows []string, width int, colored bool, st layout.PanelStyle) []string {
 	st.Shadow = ansiShadowFg
