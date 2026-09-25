@@ -43,6 +43,24 @@ else
   ng "pane 地 window-style = base_pane_bg — _tmux.conf の window-style 行に bg=colour${THEME_BASE_PANE_BG} が見つからない"
 fi
 assert_tmux "カーソル = active_green" "cursor-colour colour${THEME_ACTIVE_GREEN}"
+# info_cyan / blink_magenta / error_red は _tmux.conf の中で同じ番号を別の意味にも使っている (区切り線の 196・
+# コピーモードの 51 等) ので、colors.yml の役割のコメントが挙げる用途の行だけを、その行に固有の断片ごと固定する
+# (番号だけの部分一致だと、別の意味の行が残っていれば緑になる。issue 418)
+assert_tmux "session 帯 = info_cyan"   "#[bg=colour${THEME_INFO_CYAN}#,fg=colour235] #{p18:session_name}"
+assert_tmux "path 帯 = info_cyan"      "#[bg=colour${THEME_INFO_CYAN}] #{s|\${HOME}|~|:pane_current_path}"
+assert_tmux "bell = info_cyan"         "window-status-bell-style 'bg=colour${THEME_INFO_CYAN},"
+assert_tmux "通知 message-style = info_cyan" "message-style 'bg=colour${THEME_INFO_CYAN},"
+assert_tmux "sync 枠 = error_red"      "pane_synchronized,fg=colour${THEME_ERROR_RED}#,bg=colour${THEME_ERROR_RED}"
+assert_tmux "点滅 (scratch / prefix) = blink_magenta" "#{?#{E:@blink-phase},#[bg=colour${THEME_BLINK_MAGENTA}],"
+assert_tmux "scratch の時計 = blink_magenta" "#[bg=colour${THEME_BLINK_MAGENTA}]#[bold] %H:%M:%S"
+
+echo ""
+echo "## scripts/tmux_scratch_popup.sh との一致"
+if grep -qF -- "-S \"fg=colour33,bg=colour${THEME_BLINK_MAGENTA},bold\"" "$ROOT_DIR/scripts/tmux_scratch_popup.sh"; then
+  ok "scratch popup の枠の地 = blink_magenta"
+else
+  ng "scratch popup の枠の地 = blink_magenta — tmux_scratch_popup.sh に bg=colour${THEME_BLINK_MAGENTA} の -S 指定が見つからない"
+fi
 
 echo ""
 echo "## nvim palette.lua との一致"

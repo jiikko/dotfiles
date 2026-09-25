@@ -1,7 +1,5 @@
 # 418 (test): theme/colors.yml の 3 つの色の役割が、tmux 側の手書きのコピーと突き合わされていない
 
-> 🚨 **担当中: dotfiles-7d**（2026-09-25〜）
-
 起票日: 2026-09-24
 反証レビュー: 2026-09-24 実施 (読み取り専用のサブエージェント 1 体)。主要な主張は反証できず
 
@@ -54,6 +52,15 @@
 
 ## 進捗
 
-- [ ] info_cyan の tmux 側を検査
-- [ ] blink_magenta の tmux / scratch popup 側を検査
-- [ ] error_red の tmux 側を検査
+すべて「test(theme): info_cyan / blink_magenta / error_red の tmux 側を colors.yml と突き合わせる」で対応。
+
+- [x] info_cyan の tmux 側を検査 — session 帯・path 帯・bell (`window-status-bell-style`)・通知 (`message-style`) の 4 行
+- [x] blink_magenta の tmux / scratch popup 側を検査 — 点滅 (`@blink-phase`)・scratch の時計・`scripts/tmux_scratch_popup.sh` の枠の地
+- [x] error_red の tmux 側を検査 — 同期中の枠 (`pane_synchronized`)
+- 固定したのは colors.yml の役割のコメントが挙げる用途の行だけで、行に固有の断片ごと固定した。_tmux.conf は同じ番号を
+  別の意味にも使っている (区切り線の 196、scratch の点滅の相方の 196、コピーモードの 51 等) ので、番号だけの部分一致だと
+  別の意味の行が残っていれば緑になる。**別の意味の行は固定していない** (変えたときに誤って赤くならないように)
+- yml の info_cyan が挙げる「popup ブランチ」の消費先は特定できなかった (`scripts/tmux_agent_panel.sh` の場所の列は
+  `38;5;51` だが、ブランチではない)。未固定
+- 検証: 変異 (bin/mutate-verify) 3 本とも red (session 帯を 50 に / 同期の枠を 197 に / scratch popup の地を 200 に)。
+  判断ロジックを持たない検査の追加なので敵対的レビューは省略
