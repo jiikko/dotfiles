@@ -181,5 +181,6 @@
     "command": "~/.claude/statusline-command.sh",
     "refreshInterval": 60,
     "type": "command"
-  }
+  },
+  "workflowSizeGuideline": "small"
 }
