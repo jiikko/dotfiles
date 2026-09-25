@@ -46,7 +46,34 @@ dispatcher が抜けても、親の画面が生きている間は刈り取られ
   中継は本物を走らせ、`dispatcher` は pid を書いて即抜ける偽物にする。本物の dispatcher・状態の置き場には触らない)。抜けた偽の dispatcher の pid が
   `ps` で居なくなるのを待つ。画面 (テスト) の子の `Z` で見えたら落ちる
   - 変異 (`bin/mutate-verify`。旧実装の `Start` → `Release` へ戻す) で red: `抜けた dispatcher (pid 41932) が画面の子のゾンビで残った: ppid=41911 stat=ZN`
-  - 検査が守らない形: goroutine で `cmd.Wait()` する形は、この検査では green になる (exec をまたぐ漏れは検査していない)
+  - 検査は、次の 4 つがすべて揃うことを見る
+    - spawn が「release の合図まで居続ける偽 dispatcher」の生きている間に戻る
+    - 偽 dispatcher の親が画面 (テスト) でない
+    - 偽 dispatcher が抜けた後、画面の子にゾンビが残らない
+    - 中継は TestMain が `run` を通して走らせる (本番の分岐を通る)
+- [x] 敵対的レビュー (2026-09-25、Opus で読むだけ・観点を分けて直列に 3 本)
+  - ① 壊す: 次の 5 点は崩れない (コードからの推論)
+    - PG が見張られずに残る形は無い
+    - dispatcher が 2 本立つ形は無い (Lock のまま)
+    - 終了の保証 (presence / `--stop`) は崩れない
+    - プロセスグループは変わらない
+    - 中継の失敗経路は問題ない
+  - ② 素通り: 旧版の検査は、次の 3 つの退行で green のままだった。どれも再現した
+    - run の `spawn-detached` の分岐を消す (TestMain が横取りしていた)
+    - dispatcher を直接起こして goroutine で Wait する
+    - 中継が dispatcher を Run で待つ
+  - ② の対応: 検査を上の形に直した。`bin/mutate-verify` で、上の 3 つと旧実装 (Start → Release) の計 4 つがすべて red になるのを確かめた
+    - 旧実装と goroutine で Wait: 「親が画面のまま」で red
+    - 中継が待つ: 「dispatcher の生きている間に戻らない」で red
+    - 分岐を消す: 「中継が失敗した (exit status 2)」で red
+  - ③ 並行・中断: 画面の SIGKILL / SIGTERM / SIGHUP、ctrl+c、同時の spawn で、悪くなる形は無い (推論)。変更由来で残るリスクは下の「未確認のリスク」
+- 未確認のリスク (どれも再現しておらず、直していない)
+  - keeper の spawn が中継を待っている数 ms の間に ctrl+r の exec が重なると、中継が 1 体だけ新版の子のゾンビで残る
+    - 画面を閉じれば消え、溜まらない
+    - dispatcher は launchd の子になるので、孤児・二重にはならない
+  - 中継が抜けずに止まる (SIGSTOP など) と、期限の無い `cmd.Run` で keeper の goroutine が止まる。画面の読み直しと quit の `lb.Wait` が進まない
+  - 中継が dispatcher を起こした直後、自分が抜ける前に kill されると、「起動できない」と誤って知らせる (keeper はエラーを捨てる)
+  - exe のパスが `spawn-detached` を知らない版に差し替わると、中継が rc=2 で dispatcher が黙って起きない (keeper がエラーを捨てる)。直す前は古い版の dispatcher が起きていた
 - [x] `make test` (repo root) rc=0 (2026-09-25、テストの係。6m11s。ログに FAIL 0 件)
 - 直す前の版の画面から ctrl+r で上げた場合、それまでに溜まったゾンビは新しい版でも刈り取られない (画面を閉じれば消える)
 - 2026-09-25 PM のレビュー: 差し戻した (二重 fork は終了の保証・keeper の起こし直し・presence に絡む自作の安全機構の変更なので、取り込む前に Opus の敵対的レビューを通す)
