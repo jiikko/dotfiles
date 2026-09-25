@@ -68,8 +68,15 @@ func List(ctx context.Context, run Runner) ([]Session, error) {
 // StateStopped は `claude stop` で止めた session の State。
 const StateStopped = "stopped"
 
-// Stopped は止めた session か (自動で再開しない)。
-func (s Session) Stopped() bool { return s.State == StateStopped }
+// stateWorking は動いている (か、落ちて Claude Code が自動で再開する途中の) session の State。
+const stateWorking = "working"
+
+// Stopped は止まっている session か: プロセスが無く (pid 無し)、落ちて自動の再開を待っている途中 (pid 無しの working) でもない。
+// 🚨 state の名前だけで決めない: 作業を終えた session (done) を claude stop すると、state は done のまま pid が無くなる
+// (2.1.282 で実測 2026-09-25。dogfooding で、stopped だけを見ていた判定が止まったものを止め直し続けた)。
+// 425 の実測: 正常に終えた (pid あり・blocked) / API エラー (pid あり・failed) / claude stop (pid 無し・stopped) /
+// kill -9 (数秒 pid 無し・working のまま自動で再開)
+func (s Session) Stopped() bool { return s.PID == 0 && s.State != stateWorking }
 
 // ExecRunner は本物の claude を呼ぶ (止めた session は出ない)。
 func ExecRunner(ctx context.Context) ([]byte, []byte, error) { return execAgents(ctx) }

@@ -70,3 +70,24 @@ func TestListTimesOut(t *testing.T) {
 		t.Fatalf("timeout のエラーのはず: %v", err)
 	}
 }
+
+// 止まっているかは pid と state で決める (state の名前の一覧に頼らない。実測した 6 通り)。
+func TestSessionStopped(t *testing.T) {
+	for _, tc := range []struct {
+		state string
+		pid   int
+		want  bool
+	}{
+		{"stopped", 0, true},   // claude stop
+		{"done", 0, true},      // 作業を終えた session を claude stop (2.1.282、dogfooding で見つけた形)
+		{"done", 15885, false}, // 作業を終えて idle のまま (プロセスは生きている)
+		{"blocked", 42, false}, // turn を正常に終えて次の入力待ち
+		{"failed", 42, false},  // API エラーで turn が落ちた
+		{"working", 0, false},  // kill -9 の直後 (Claude Code が自動で再開する)
+		{"working", 42, false}, // 作業中
+	} {
+		if got := (Session{State: tc.state, PID: tc.pid}).Stopped(); got != tc.want {
+			t.Errorf("state=%s pid=%d: 止まっている=%v (%v のはず)", tc.state, tc.pid, got, tc.want)
+		}
+	}
+}

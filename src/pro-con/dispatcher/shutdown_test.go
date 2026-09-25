@@ -471,7 +471,7 @@ func TestEnsureStoppedRunsAfterCardStageTimesOut(t *testing.T) {
 		}
 		s := r.ss[0]
 		if slices.Contains(r.l.stops, s.ID) {
-			s.State = agents.StateStopped
+			s.State, s.PID = agents.StateStopped, 0 // 本物と同じく、止めると pid が無くなる
 		}
 		return []agents.Session{s}, nil
 	}

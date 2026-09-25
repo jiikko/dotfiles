@@ -184,11 +184,11 @@ func TestStopUntilDoneRetriesAndYieldsToScreen(t *testing.T) {
 				mu.Lock()
 				defer mu.Unlock()
 				lists++
-				state := "working"
+				state, pid := "working", 42
 				if lists > aliveLists {
-					state = agents.StateStopped
+					state, pid = agents.StateStopped, 0 // 本物と同じく、止めると pid が無くなる
 				}
-				return []agents.Session{{ID: "pg1", SessionID: "S1", PID: 42, Kind: "background", State: state}}, nil
+				return []agents.Session{{ID: "pg1", SessionID: "S1", PID: pid, Kind: "background", State: state}}, nil
 			}}
 		if openScreen {
 			sc, err := presence.Open(dir)
@@ -260,11 +260,11 @@ func serveUntilSignal(t *testing.T, screenOpen bool) (bool, int) {
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
-			state := "working"
+			state, pid := "working", 42
 			if stopped.Load() {
-				state = agents.StateStopped
+				state, pid = agents.StateStopped, 0 // 本物と同じく、止めると pid が無くなる
 			}
-			return []agents.Session{{ID: "pg1", SessionID: "S1", PID: 42, Kind: "background", State: state}}, nil
+			return []agents.Session{{ID: "pg1", SessionID: "S1", PID: pid, Kind: "background", State: state}}, nil
 		}}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int, 1)
@@ -358,11 +358,11 @@ func TestServeSignalWaitsForClosingScreens(t *testing.T) {
 	d := &dispatcher.Dispatcher{Dir: dir, Limit: 1, Now: time.Now, Sleep: func(time.Duration) {}, Launch: &ctxLauncher{stopped: &stopped},
 		List: func(context.Context) ([]agents.Session, error) { ticks.Add(1); return nil, nil },
 		ListAll: func(context.Context) ([]agents.Session, error) {
-			state := "working"
+			state, pid := "working", 42
 			if stopped.Load() {
-				state = agents.StateStopped
+				state, pid = agents.StateStopped, 0 // 本物と同じく、止めると pid が無くなる
 			}
-			return []agents.Session{{ID: "pg1", SessionID: "S1", PID: 42, Kind: "background", State: state}}, nil
+			return []agents.Session{{ID: "pg1", SessionID: "S1", PID: pid, Kind: "background", State: state}}, nil
 		}}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int, 1)
