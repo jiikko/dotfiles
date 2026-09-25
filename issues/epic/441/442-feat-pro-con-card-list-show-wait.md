@@ -1,5 +1,7 @@
 # 442 (feat): pro-con card list / show / wait — カードを画面なしで読む
 
+> 🚨 **担当中: dotfiles-7d**（2026-09-25〜）
+
 起票日: 2026-09-25
 
 親: [441](441-design-pro-con-viewer.md)
