@@ -219,6 +219,9 @@ func (d *Dispatcher) stopCards(ctx context.Context, notes *[]eventlog.Event) (in
 			recorded := c.Stopped && c.State != card.Running // 前の Shutdown で止めたと書いた (止め直しの周ごとに履歴を足さない)
 			if target != "" {
 				tried[target] = c.ID
+				if i := slices.IndexFunc(ss, func(s agents.Session) bool { return s.ID == target }); i >= 0 {
+					*notes = append(*notes, unknownStateNote(c.ID, ss[i])...)
+				}
 				sctx, cancel := context.WithTimeout(ctx, stopCallTimeout)
 				err := d.Launch.Stop(sctx, target)
 				cancel()
@@ -317,6 +320,7 @@ func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string,
 					continue
 				}
 				remaining = append(remaining, fmt.Sprintf("%s (%s)", o.CardID, s.ID))
+				notes = append(notes, unknownStateNote(o.CardID, s)...)
 				sctx, cancel := context.WithTimeout(ctx, stopCallTimeout)
 				err := d.Launch.Stop(sctx, s.ID)
 				cancel()
@@ -514,6 +518,15 @@ func unregistered(c card.Card, repoPath string, ss []agents.Session, reg []live.
 // stoppable は、一覧の session が止める相手になりうるか (生きていて、claude stop に渡す短い id がある)。
 // 対話の session は短い id を持たない: 記録と同じ session id でも (attach 等) 止めない・残りに数えない
 func stoppable(s agents.Session) bool { return s.ID != "" && !s.Stopped() }
+
+// unknownStateNote は、止まったと判定できない session (pid 無しで知らない state = agents.UnknownState) を止めに行くときの警告 (issue 466)。
+// 止まったと読んで黙って止めない形を、止めに行く側へ倒したことを残す。それ以外の session には何も返さない
+func unknownStateNote(cardID string, s agents.Session) []eventlog.Event {
+	if !s.UnknownState() {
+		return nil
+	}
+	return []eventlog.Event{ev(eventlog.KindStop, cardID, s.ID, fmt.Sprintf("%s の PG (%s) は pid が無く state が %q (知らない値。claude の版が変わった?) なので、止まったと判定できない。止めに行く", cardID, s.ID, s.State))}
+}
 
 func unprovenName(c card.Card, s agents.Session) string {
 	return fmt.Sprintf("%s (%s: 記録に無い session が生きている。pro-con が起動したと示せないので止めていない)", c.ID, s.ID)

@@ -96,7 +96,7 @@ func TestCloseStopFailureKeepsCloseAndIsRecorded(t *testing.T) {
 	}
 }
 
-// 止めたと返っても一覧で止まっていなければ、止まったとは書かない (判定は終了のときと同じ = pid 無し かつ working でない)。
+// 止めたと返っても一覧で止まっていなければ、止まったとは書かない (判定は終了のときと同じ agents.Session.Stopped)。
 // 止める要求を出した後の Tick で止まったのを見たら「止めた」と書く (既に止まっていた、と取り違えない)。
 func TestCloseChecksStoppedInList(t *testing.T) {
 	r := newCrashRig(t)

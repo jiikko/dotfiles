@@ -71,7 +71,7 @@ func TestListTimesOut(t *testing.T) {
 	}
 }
 
-// 止まっているかは pid と state で決める (state の名前の一覧に頼らない。実測した 6 通り)。
+// 止まっているかは pid と、止まった state の許可リスト (stopped / done) で決める (実測した 7 通り + 知らない state)。
 func TestSessionStopped(t *testing.T) {
 	for _, tc := range []struct {
 		state string
@@ -85,6 +85,9 @@ func TestSessionStopped(t *testing.T) {
 		{"failed", 42, false},  // API エラーで turn が落ちた
 		{"working", 0, false},  // kill -9 の直後 (Claude Code が自動で再開する)
 		{"working", 42, false}, // 作業中
+		// 知らない state で pid 無し (再開の途中の名前が変わった版 / state の欄が無くなった版) は止まったと読まない (issue 466)
+		{"resuming", 0, false},
+		{"", 0, false},
 	} {
 		if got := (Session{State: tc.state, PID: tc.pid}).Stopped(); got != tc.want {
 			t.Errorf("state=%s pid=%d: 止まっている=%v (%v のはず)", tc.state, tc.pid, got, tc.want)

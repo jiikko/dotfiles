@@ -21,8 +21,7 @@ type Session struct {
 	SessionID string `json:"sessionId"`
 	Kind      string `json:"kind"`   // interactive / background
 	Status    string `json:"status"` // idle / busy / waiting
-	// State は session の状態 (working / blocked / failed / stopped。425 の実測)。stopped だけが「止めた」で、それ以外は
-	// プロセスが生きているか、落ちて Claude Code が自動で再開する途中 (pid が 0 で working)
+	// State は session の状態 (working / blocked / failed / stopped / done。425 の実測)。止まったかは Stopped で判じる (pid と合わせて見る)
 	State      string `json:"state"`
 	WaitingFor string `json:"waitingFor"`
 	Name       string `json:"name"`
@@ -74,12 +73,23 @@ const StateStopped = "stopped"
 // stateWorking は動いている (か、落ちて Claude Code が自動で再開する途中の) session の State。
 const stateWorking = "working"
 
-// Stopped は止まっている session か: プロセスが無く (pid 無し)、落ちて自動の再開を待っている途中 (pid 無しの working) でもない。
+// stateDone は作業を終えた session の State。
+const stateDone = "done"
+
+// Stopped は止まっている session か: プロセスが無く (pid 無し)、state が止まった形 (stopped / done) の許可リストにある。
 // 🚨 state の名前だけで決めない: 作業を終えた session (done) を claude stop すると、state は done のまま pid が無くなる
 // (2.1.282 で実測 2026-09-25。dogfooding で、stopped だけを見ていた判定が止まったものを止め直し続けた)。
+// 🚨 「working でない」で決めない: 再開の途中を表す state の名前が変わる / state の欄が無くなる版では、再開の途中の PG を
+// 止まったと読み、閉じても終了でも止めない (issue 466)。許可リストに無い pid 無しは UnknownState (止めに行く側)
 // 425 の実測: 正常に終えた (pid あり・blocked) / API エラー (pid あり・failed) / claude stop (pid 無し・stopped) /
 // kill -9 (数秒 pid 無し・working のまま自動で再開)
-func (s Session) Stopped() bool { return s.PID == 0 && s.State != stateWorking }
+func (s Session) Stopped() bool {
+	return s.PID == 0 && (s.State == StateStopped || s.State == stateDone)
+}
+
+// UnknownState は、pid 無しで止まったとも自動の再開の途中 (working) とも判定できない session か (知らない state・state の欄が無い)。
+// Stopped は偽 (止めに行く)。呼び出し側は止めるときに警告を出す
+func (s Session) UnknownState() bool { return s.PID == 0 && !s.Stopped() && s.State != stateWorking }
 
 // ExecRunner は本物の claude を呼ぶ (止めた session は出ない)。
 func ExecRunner(ctx context.Context) ([]byte, []byte, error) { return execAgents(ctx) }
