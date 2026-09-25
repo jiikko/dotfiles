@@ -868,7 +868,9 @@ func (d *Dispatcher) prepare(c card.Card, now time.Time, ss []agents.Session, re
 			return "起動", nil, err
 		}
 	}
-	return "起動", func(ctx context.Context) (string, error) { return d.Launch.Start(ctx, path, card.SessionName(c), Prompt(c)) }, nil
+	return "起動", func(ctx context.Context) (string, error) {
+		return d.Launch.Start(ctx, path, card.SessionName(c), Prompt(c))
+	}, nil
 }
 
 // needsHumanError は、起動・再開の前提が崩れていてやり直しても直らないので、人の番へ回す失敗 (文は理由)。
@@ -890,7 +892,6 @@ func leftoverWorktree(wt string) error {
 	return needsHumanError(fmt.Sprintf("worktree %s が既に在る (前の状態の置き場で同じカード ID が使った worktree かもしれない。claude -w はそのブランチの上で黙って作業を始める)。"+
 		"中身を確かめて片付けてから回答すると起動する", wt))
 }
-
 
 // samePath は 2 つのパスが同じ場所か (symlink を解決して比べる。claude の一覧の cwd は解決済みのパスで出る見込みで、
 // 設定の repo のパスは symlink を含みうる)。解決できなければ Clean した文字列で比べる。どちらかが空なら一致しない
