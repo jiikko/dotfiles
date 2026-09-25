@@ -57,7 +57,7 @@ func TestManualStopHoldsScreenKeeper(t *testing.T) {
 	if started, err := startDispatcherIfIdle(dir, spawn); started || err != nil || spawns != 0 {
 		t.Fatalf("人が止めたのに画面の keeper が dispatcher を起こした: started=%v err=%v spawns=%d", started, err, spawns)
 	}
-	_, notes := wireLive(live.New(nil, t.TempDir(), dir), false, dir, spawn, func(context.Context) error { return nil })
+	_, notes := wireLive(live.New(nil, t.TempDir(), dir), screenFlags{}, dir, spawn, func(context.Context) error { return nil })
 	if spawns != 0 || !strings.Contains(strings.Join(notes, "\n"), "止めてある") {
 		t.Fatalf("人が止めたのに開いた画面が起こした / 止めてあると知らせない: spawns=%d notes=%q", spawns, notes)
 	}

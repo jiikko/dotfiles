@@ -101,6 +101,8 @@ type screenEntry struct {
 	ID     string            `json:"id"`
 	Open   bool              `json:"open"`
 	View   bool              `json:"view"`
+	Join   bool              `json:"join,omitempty"`  // 加わった画面 (--join。issue 481)
+	Label  string            `json:"label,omitempty"` // --as <名前>
 	At     time.Time         `json:"at,omitzero"`
 	Width  int               `json:"width,omitempty"`
 	Height int               `json:"height,omitempty"`
@@ -113,7 +115,7 @@ func listScreens(ss []relay.Screen, now time.Time, asJSON bool, stdout, stderr i
 		e := screenEntry{ID: s.ID, Open: s.Open}
 		if s.Path != "" {
 			if f, err := relay.Read(s.Path); err == nil {
-				e.View, e.At, e.Width, e.Height, e.State = f.View, f.At, f.Width, f.Height, f.State
+				e.View, e.Join, e.Label, e.At, e.Width, e.Height, e.State = f.View, f.Join, f.Label, f.At, f.Width, f.Height, f.State
 			}
 		}
 		out = append(out, e)
@@ -130,8 +132,14 @@ func listScreens(ss []relay.Screen, now time.Time, asJSON bool, stdout, stderr i
 
 func screenHeader(e screenEntry, now time.Time) string {
 	kind := "普通の画面"
-	if e.View {
+	switch {
+	case e.View:
 		kind = "見ているだけ (--view)"
+	case e.Join:
+		kind = "加わった画面 (--join)"
+	}
+	if e.Label != "" {
+		kind += " " + e.Label
 	}
 	if !e.Open {
 		kind += "・閉じた画面の残り"
@@ -155,7 +163,7 @@ func printFrame(f relay.Frame, open bool, now time.Time, withANSI, asJSON bool, 
 		}
 		return writeJSON(stdout, stderr, f)
 	}
-	e := screenEntry{ID: f.ID, Open: open, View: f.View, At: f.At, Width: f.Width, Height: f.Height, State: f.State}
+	e := screenEntry{ID: f.ID, Open: open, View: f.View, Join: f.Join, Label: f.Label, At: f.At, Width: f.Width, Height: f.Height, State: f.State}
 	_, _ = fmt.Fprintln(stdout, "--- "+screenHeader(e, now))
 	body := f.Plain
 	if withANSI {

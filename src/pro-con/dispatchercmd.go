@@ -215,9 +215,18 @@ func serve(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-ch
 	}
 }
 
-// screensOpen は開いている画面があるか (数えられなければ無いとみなす: 止める側に倒す)。
+// screensOpen は開いている画面 (持ち主と join) があるか (数えられなければ無いとみなす: 止める側に倒す)。
+// 無画面で抜ける判定はこちら: 持ち主が落ちても、join の画面が開いている間は PG を止めない (issue 481)
 func screensOpen(dir string) bool {
 	n, err := presence.Count(dir)
+	return err == nil && n > 0
+}
+
+// ownersOpen は開いている持ち主の画面があるか (数えられなければ無いとみなす: 止める側に倒す)。
+// 止めている途中で止めるのをやめる判定はこちら: join の画面は dispatcher を起こさないので、join が開いただけ・残っているだけで
+// 持ち主の quit の停止を取り消すと、止めたはずの PG が動き続ける (issue 481)
+func ownersOpen(dir string) bool {
+	n, err := presence.Owners(dir)
 	return err == nil && n > 0
 }
 
@@ -242,7 +251,8 @@ func screensStayOpen(dir string, grace time.Duration) bool {
 var stopRetryEvery = 10 * time.Second
 
 // stopUntilDone は PG を止める。止めきれなければ結果 (頼んだ画面が読む) を書いてから、止まるまで止め直す。止め終えたら真。
-// 止めている間に画面が開いたら (presence) 止めるのをやめて偽を返す (カードは続きから再開できる形になっている)。
+// 止めている間に持ち主の画面が開いたら (presence) 止めるのをやめて偽を返す (カードは続きから再開できる形になっている)。
+// join の画面 (pro-con --join) では取り消さない (開いた持ち主は dispatcher を起こすが、join は起こさない。issue 481)。
 // 人が止めた印 (store.Held) があれば、画面が開いても止めきる (印がある間、画面は dispatcher を起こさないので、続ける者が居ない)。
 // 🚨 止めきれないまま抜けない: 抜けると、pro-con が起動した PG を見張る者が居なくなる。o.retries が正なら、その回数で諦める (取り消された ctx の中の最後の試み)
 func stopUntilDone(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-chan struct{}, o serveOpts, stderr io.Writer) bool {
@@ -265,8 +275,8 @@ func stopUntilDone(ctx context.Context, d *dispatcher.Dispatcher, dir string, wa
 		case <-time.After(stopRetryEvery):
 		case <-wakes:
 		}
-		if screensOpen(dir) && ctx.Err() == nil && !store.Held(dir) { // 人が止めたなら、画面が開いても止めきる (issue 459)
-			say(d, eventlog.KindScreens, "止めている間に画面が開いたので、止めるのをやめて続ける")
+		if ownersOpen(dir) && ctx.Err() == nil && !store.Held(dir) { // 人が止めたなら、画面が開いても止めきる (issue 459)
+			say(d, eventlog.KindScreens, "止めている間に持ち主の画面が開いたので、止めるのをやめて続ける")
 			return false
 		}
 	}
@@ -301,7 +311,7 @@ func stopDispatcher(ctx context.Context, dir, projects string, repos map[string]
 	// 自分で止めている間に次の --stop が来たら、その --stop は結果のファイルを読む。止めきれなければ止まるまで止め直す
 	// (画面の待ちが切れて閉じても、このプロセスは別のプロセスグループで続ける)
 	if !stopUntilDone(ctx, d, dir, nil, serveOpts{}, stdout) {
-		return errors.New("止めている間に画面が開いたので、止めるのをやめた (開いた画面の dispatcher が続きを扱う)")
+		return errors.New("止めている間に持ち主の画面が開いたので、止めるのをやめた (開いた画面の dispatcher が続きを扱う)")
 	}
 	data, _ := os.ReadFile(filepath.Join(dir, dispatcher.StopResultFile))
 	if r := strings.TrimSpace(string(data)); r != "ok" {

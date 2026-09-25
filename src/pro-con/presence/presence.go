@@ -5,14 +5,20 @@
 //
 // 閉じるときは quit.lock を取ってから自分の flock を外し、ほかに持たれている flock を数える。2 つの画面が同時に閉じても、
 // quit.lock を後に取った方は先に閉じた方の flock がもう外れているのを見るので、ちょうど 1 つだけが 0 (最後) を受ける。
+//
+// 画面には持ち主 (普通の画面) と join (pro-con --join。加わるだけ) がある (issue 481)。印のファイルの中身にモードなどを書き
+// (Info)、数えるときに分ける。🚨 生きているかの正本は flock (中身が古くても・壊れていても、flock が持たれていれば開いている)。
+// 中身を読めない印 (前の版の画面は空のファイルを置く) は持ち主として数える。
 package presence
 
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -26,15 +32,74 @@ const quitFile = "quit.lock"
 // staleTmp は作りかけの印を落ちた画面の残りとみなすまでの時間 (作ってから rename するまでは一瞬)。
 const staleTmp = time.Minute
 
+// Mode は画面のモード。
+type Mode string
+
+const (
+	Owner Mode = "owner" // 持ち主 (普通の画面)。dispatcher を起こし、最後に閉じる持ち主が dispatcher と PG を止める
+	Join  Mode = "join"  // 加わった画面 (pro-con --join)。読み書きするが、dispatcher を起こさず、閉じても止めない
+)
+
+// Label はモードの表示名。
+func (m Mode) Label() string {
+	if m == Join {
+		return "join"
+	}
+	return "持ち主"
+}
+
+// Info は開いている画面 1 つの見分け (印のファイルの中身)。
+type Info struct {
+	ID     string    `json:"id"` // 画面 ID (印の名前。表示は Short)
+	Mode   Mode      `json:"mode"`
+	Label  string    `json:"label,omitempty"` // --as <ラベル> (任意)
+	TTY    string    `json:"tty,omitempty"`   // 端末 (取れなければ空)
+	PID    int       `json:"pid"`
+	Opened time.Time `json:"opened"`
+}
+
+// Short は画面 ID の短い形 (画面の一覧・依頼の履歴に出す)。
+func (i Info) Short() string { return ShortID(i.ID) }
+
+// ShortID は画面 ID の短い形。
+func ShortID(id string) string {
+	if len(id) > 6 {
+		return id[:6]
+	}
+	return id
+}
+
+// Name は依頼の履歴・出来事に残す画面の名前 (「a1b2c3 join review」)。
+func (i Info) Name() string {
+	n := i.Short() + " " + i.Mode.Label()
+	if i.Label != "" {
+		n += " " + i.Label
+	}
+	return n
+}
+
+// Tally は開いている画面の数をモードごとに数えたもの。
+type Tally struct{ Owners, Joins int }
+
+// Total は持ち主と join を合わせた数。
+func (t Tally) Total() int { return t.Owners + t.Joins }
+
 // Screen は開いている画面 1 つの印。
 type Screen struct {
 	dir  string // 置き場の screens/
 	path string
 	f    *os.File
+	info Info
 }
 
-// Open は置き場 dir に、この画面が開いている印を置く。
-func Open(dir string) (*Screen, error) {
+// Info はこの画面の見分け。
+func (s *Screen) Info() Info { return s.info }
+
+// Open は置き場 dir に、持ち主の画面が開いている印を置く。
+func Open(dir string) (*Screen, error) { return OpenAs(dir, Info{Mode: Owner}) }
+
+// OpenAs は置き場 dir に、この画面が開いている印を置く (ID・pid・開いた時刻は OpenAs が埋める)。
+func OpenAs(dir string, info Info) (*Screen, error) {
 	d := filepath.Join(dir, Dir)
 	if err := os.MkdirAll(d, 0o700); err != nil {
 		return nil, err
@@ -57,29 +122,45 @@ func Open(dir string) (*Screen, error) {
 		_ = os.Remove(tmp)
 		return nil, err
 	}
+	if info.Mode == "" {
+		info.Mode = Owner
+	}
+	info.ID, info.PID, info.Opened = id, os.Getpid(), time.Now()
+	// 中身は印の名前にする前に書く (数える側には書き終えた印しか見えない)
+	data, err := json.Marshal(info)
+	if err == nil {
+		_, err = f.Write(data)
+	}
+	if err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return nil, err
+	}
 	p := filepath.Join(d, id+".lock")
 	if err := os.Rename(tmp, p); err != nil {
 		_ = f.Close()
 		_ = os.Remove(tmp)
 		return nil, err
 	}
-	return &Screen{dir: d, path: p, f: f}, nil
+	return &Screen{dir: d, path: p, f: f, info: info}, nil
 }
 
-// Leave はこの画面の印を外し、ほかに開いている画面の数を返す (0 なら最後の画面。呼び出し側が dispatcher と PG を止める)。
+// Leave はこの画面の印を外し、ほかに開いている画面の数をモードごとに返す (Owners が 0 なら最後の持ち主。呼び出し側が
+// dispatcher と PG を止める)。数え直しは quit.lock の中で行う (同時に閉じた持ち主のうち、ちょうど 1 つだけが 0 を受ける)。
 // 2 度目以降は数えるだけ。
-func (s *Screen) Leave() (int, error) {
+func (s *Screen) Leave() (Tally, error) {
 	q, err := os.OpenFile(filepath.Join(s.dir, quitFile), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		return 0, err
+		return Tally{}, err
 	}
 	defer func() { _ = q.Close() }()
 	if err := syscall.Flock(int(q.Fd()), syscall.LOCK_EX); err != nil { // 閉じる画面どうしを順に並べる (待つのは数えるあいだだけ)
-		return 0, err
+		return Tally{}, err
 	}
 	defer func() { _ = syscall.Flock(int(q.Fd()), syscall.LOCK_UN) }()
 	s.Close()
-	return count(s.dir)
+	ss, err := scan(s.dir)
+	return tally(ss), err
 }
 
 // Close は数えずに印を外す (Leave しないで抜ける経路。落ちたのと同じ扱い)。
@@ -93,18 +174,42 @@ func (s *Screen) Close() {
 	s.f = nil
 }
 
-// Count は置き場 dir で開いている画面の数 (自分を含む)。数えられなければ誤り。
-func Count(dir string) (int, error) { return count(filepath.Join(dir, Dir)) }
+// Count は置き場 dir で開いている画面の数 (持ち主と join。自分を含む)。数えられなければ誤り。
+func Count(dir string) (int, error) {
+	ss, err := List(dir)
+	return len(ss), err
+}
 
-func count(d string) (int, error) {
+// Owners は置き場 dir で開いている持ち主の画面の数 (自分を含む)。数えられなければ誤り。
+func Owners(dir string) (int, error) {
+	ss, err := List(dir)
+	return tally(ss).Owners, err
+}
+
+// List は置き場 dir で開いている画面 (開いた順)。数えられなければ誤り。
+func List(dir string) ([]Info, error) { return scan(filepath.Join(dir, Dir)) }
+
+func tally(ss []Info) Tally {
+	var t Tally
+	for _, i := range ss {
+		if i.Mode == Join {
+			t.Joins++
+		} else {
+			t.Owners++
+		}
+	}
+	return t
+}
+
+func scan(d string) ([]Info, error) {
 	es, err := os.ReadDir(d)
 	if errors.Is(err, os.ErrNotExist) {
-		return 0, nil
+		return nil, nil
 	}
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	n := 0
+	var out []Info
 	for _, e := range es {
 		name := e.Name()
 		if strings.HasPrefix(name, ".tmp-") { // 作ってから印の名前にするまでの間に落ちた画面の残り。数えない
@@ -117,15 +222,32 @@ func count(d string) (int, error) {
 		if !strings.HasSuffix(name, ".lock") || name == quitFile {
 			continue
 		}
-		held, err := heldBySomeone(filepath.Join(d, name))
+		p := filepath.Join(d, name)
+		held, err := heldBySomeone(p)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 		if held {
-			n++
+			out = append(out, readInfo(p, strings.TrimSuffix(name, ".lock")))
 		}
 	}
-	return n, nil
+	slices.SortStableFunc(out, func(a, b Info) int { return a.Opened.Compare(b.Opened) })
+	return out, nil
+}
+
+// readInfo は生きている印の中身。読めなければ (前の版の空の印・壊れた中身) 持ち主として扱う
+// (前の版の画面は持ち主。join を持ち主と数え違えると、最後の持ち主の quit で止めずに閉じるが、PG は画面が全部閉じてから
+// dispatcher の --exit-without-screens が止める)。
+func readInfo(p, id string) Info {
+	var i Info
+	if data, err := os.ReadFile(p); err != nil || json.Unmarshal(data, &i) != nil {
+		i = Info{}
+	}
+	if i.Mode != Join {
+		i.Mode = Owner
+	}
+	i.ID = id // 名前が正本
+	return i
 }
 
 // heldBySomeone は印の flock が持たれているか。持たれていなければ (画面が落ちた) 印を消す。
