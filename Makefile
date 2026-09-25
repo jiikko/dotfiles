@@ -50,7 +50,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-parallel test-discovered-serial test-discovered-heavy test-discovered-rest test-discovered-rest-parallel test-nvim test-tmux test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-cd-rc test-trigger-log-writers test-skip-exit-code test-assert-reaches-exit test-workflow-action-pins test-go-project-lanes test-unused-excluding-tests test-go-lint test-go test-src test-fresh
+.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-parallel test-discovered-serial test-discovered-heavy test-discovered-rest test-discovered-rest-parallel test-nvim test-tmux test-pro-con-slow test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-cd-rc test-trigger-log-writers test-skip-exit-code test-assert-reaches-exit test-workflow-action-pins test-go-project-lanes test-unused-excluding-tests test-go-lint test-go test-src test-fresh
 
 # ./tmp のスクラッチを掃除する (既定は 30 日より古いトップレベルのエントリ)。
 #
@@ -399,6 +399,11 @@ test-nvim:
 
 test-tmux:
 	@$(MAKE) test-dir DIR=tests/tmux
+
+# pro-con の e2e のうち 1 分以上かかるもの (画面の kill -9 から dispatcher が抜けるまで約 60 秒)。make test の自動収集
+# (test_*.sh) から外してあり、CI では .github/workflows/src_pro-con.yml の e2e job が走らせる。一覧は tests/pro-con/README.md
+test-pro-con-slow:
+	@bash tests/pro-con/e2e_screen_killed.sh
 
 test-setup:
 	@$(MAKE) test-dir DIR=tests/setup

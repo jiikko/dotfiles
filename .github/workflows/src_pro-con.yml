@@ -69,7 +69,8 @@ jobs:
       - name: e2e
         run: |
           n=0
-          for t in tests/pro-con/test_*.sh; do
+          # e2e_*.sh は 1 分以上かかるので make test の自動収集から外した分 (tests/pro-con/README.md)。ここでは両方走らせる
+          for t in tests/pro-con/test_*.sh tests/pro-con/e2e_*.sh; do
             rc=0; bash "$t" || rc=$?
             if [ "$rc" -ne 0 ]; then echo "::error::[FAIL] $t (rc=$rc。77 = skip もここでは失敗)"; exit 1; fi
             echo "[ok] $t"; n=$((n + 1))
