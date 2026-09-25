@@ -171,30 +171,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				lb.SetAttach(func(id string) *exec.Cmd { return exec.Command(exe, "fake-attach", id) }) // 本物の claude attach を起動しない
 			}
 		}
-		if view { // 見ているだけ: 止める口・起こす口をつながず、dispatcher も起こさない
-			ctx, cancel := context.WithCancel(context.Background())
-			be = lb.View()
-			lb.Start(ctx)
-			defer func() { cancel(); lb.Wait() }()
-			notes = append(notes, "見ているだけの画面 (--view): 依頼・回答・attach は受けない。quit で閉じても dispatcher と PG は止めない")
-		} else {
-			lb.SetStopper(func(ctx context.Context) error { return stopInChild(ctx, dir, dispatcherArgs) })
-			// 画面が開いている間は dispatcher を動かし続ける (落ちた / 前の画面が止めている間に開いた、を起こし直す)
-			lb.SetKeeper(func() error {
-				_, err := startDispatcherIfIdle(dir, func(dir string) error { return spawnDispatcher(dir, dispatcherArgs) })
-				return err
-			})
-			// 画面を開いたら dispatcher も立てる (閉じると止める。2026-09-25 にユーザーが決めた形。415 の「TUI と常駐プロセス」)
-			if started, err := startDispatcherIfIdle(dir, func(dir string) error { return spawnDispatcher(dir, dispatcherArgs) }); err != nil {
-				notes = append(notes, "dispatcher を起動できない: "+err.Error()+" (手で起動する: pro-con dispatcher)")
-			} else if started {
-				notes = append(notes, "dispatcher を起動した (ログ: "+filepath.Join(dir, "dispatcher.log")+")")
-			}
-			ctx, cancel := context.WithCancel(context.Background())
-			lb.Start(ctx)
-			defer func() { cancel(); lb.Wait() }() // 読み直しが止まるのを待ってから抜ける (claude の子プロセスを残さない)
-			be = lb
-		}
+		var more []string
+		be, more = wireLive(lb, view, dir, func(dir string) error { return spawnDispatcher(dir, dispatcherArgs) },
+			func(ctx context.Context) error { return stopInChild(ctx, dir, dispatcherArgs) })
+		notes = append(notes, more...)
+		ctx, cancel := context.WithCancel(context.Background())
+		lb.Start(ctx)
+		defer func() { cancel(); lb.Wait() }() // 読み直しが止まるのを待ってから抜ける (claude の子プロセスを残さない)
 	}
 
 	// ライブアップグレードで引き継いだ状態。読んだら環境変数は消す (エディタ・claude などの子プロセスへ漏らさない)
@@ -274,6 +257,29 @@ func startDispatcherIfIdle(dir string, spawn func(dir string) error) (bool, erro
 	}
 	unlock()
 	return true, spawn(dir)
+}
+
+// wireLive は本物の画面の backend をつなぐ (Start の前)。view なら見ているだけ: 止める口・起こす口をつながず、dispatcher も起こさない。
+// そうでなければ、画面を閉じるときに止める口 (stop) と、画面が開いている間 dispatcher を動かし続ける口 (spawn) をつなぎ、
+// 居なければ今 dispatcher を起こす。起動のときに画面へ出す知らせを返す。
+func wireLive(lb *live.Backend, view bool, dir string, spawn func(dir string) error, stop func(context.Context) error) (backend.Backend, []string) {
+	if view {
+		return lb.View(), []string{"見ているだけの画面 (--view): 依頼・回答・attach は受けない。quit で閉じても dispatcher と PG は止めない"}
+	}
+	var notes []string
+	lb.SetStopper(stop)
+	// 画面が開いている間は dispatcher を動かし続ける (落ちた / 前の画面が止めている間に開いた、を起こし直す)
+	lb.SetKeeper(func() error {
+		_, err := startDispatcherIfIdle(dir, spawn)
+		return err
+	})
+	// 画面を開いたら dispatcher も立てる (閉じると止める。2026-09-25 にユーザーが決めた形。415 の「TUI と常駐プロセス」)
+	if started, err := startDispatcherIfIdle(dir, spawn); err != nil {
+		notes = append(notes, "dispatcher を起動できない: "+err.Error()+" (手で起動する: pro-con dispatcher)")
+	} else if started {
+		notes = append(notes, "dispatcher を起動した (ログ: "+filepath.Join(dir, "dispatcher.log")+")")
+	}
+	return lb, notes
 }
 
 // dispatcherCmd は画面が起こす dispatcher のコマンド。画面が 1 つも無い状態が 1 分続いたら、PG を止めて抜ける

@@ -10,8 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"context"
 	"pro-con/backend"
 	"pro-con/fake"
+	"pro-con/live"
 	"pro-con/ui"
 )
 
@@ -130,6 +132,25 @@ func TestViewFlagRejectedWithSubcommandOrMock(t *testing.T) {
 		var out, errOut bytes.Buffer
 		if rc := run(args, strings.NewReader(""), &out, &errOut); rc != 2 {
 			t.Fatalf("%v: rc=%d (2 のはず) %s", args, rc, errOut.String())
+		}
+	}
+}
+
+// 画面の backend のつなぎ方: --view は止める口も起こす口もつながず、dispatcher を起こさない (quit で PG を止めない)。
+// 普通の画面は止める口をつなぎ、dispatcher が居なければ起こす。
+func TestWireLiveViewStopsAndStartsNothing(t *testing.T) {
+	for _, view := range []bool{true, false} {
+		dir := t.TempDir()
+		spawns, stops := 0, 0
+		be, _ := wireLive(live.New(nil, t.TempDir(), dir), view, dir,
+			func(string) error { spawns++; return nil }, func(context.Context) error { stops++; return nil })
+		_, stopper := be.(backend.Stopper)
+		_, readOnly := be.(backend.ReadOnly)
+		if view && (stopper || !readOnly || spawns != 0) {
+			t.Fatalf("--view: 止める口=%v 読み取りだけ=%v dispatcher を起こした=%d (止める口なし・読み取りだけ・起こさない のはず)", stopper, readOnly, spawns)
+		}
+		if !view && (!stopper || readOnly || spawns != 1) {
+			t.Fatalf("普通の画面: 止める口=%v 読み取りだけ=%v dispatcher を起こした=%d", stopper, readOnly, spawns)
 		}
 	}
 }

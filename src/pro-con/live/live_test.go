@@ -719,8 +719,6 @@ func TestRecordAttachSubmitsHumanPromptsInWindow(t *testing.T) {
 // 画面の印を置かないので、ほかの画面の「最後の画面か」の数えにも入らない。
 func TestViewOnlyBackend(t *testing.T) {
 	b := shortState(t)
-	var stops atomic.Int32
-	b.SetStopper(func(context.Context) error { stops.Add(1); return nil })
 	be := b.View()
 	if _, ok := be.(backend.Stopper); ok {
 		t.Fatal("見ているだけの backend が止める口を持っている")
@@ -749,16 +747,15 @@ func TestViewOnlyBackend(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	b.Start(ctx)
 	defer func() { cancel(); b.Wait() }()
-	for range 20 { // 最初の読み直しが済むまで
-		if b.Snapshot().Now.After(time.Time{}) {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	select { // 最初の読み直しが済むまで (読み直しの途中で書く経路も見る)
+	case <-be.(backend.Notifier).Changed():
+	case <-time.After(10 * time.Second):
+		t.Fatal("読み直しが済まない")
 	}
 	if n, err := presence.Count(b.dir); err != nil || n != 0 {
 		t.Fatalf("見ているだけの画面を数えた: %d %v", n, err)
 	}
-	if left, _ := filepath.Glob(filepath.Join(b.dir, store.InboxDir, "*.json")); len(left) != 0 || stops.Load() != 0 {
-		t.Fatalf("見ているだけの画面が書いた / 止めた: 箱 %v stops=%d", left, stops.Load())
+	if left, _ := filepath.Glob(filepath.Join(b.dir, store.InboxDir, "*.json")); len(left) != 0 {
+		t.Fatalf("見ているだけの画面が受付の箱に書いた: %v", left)
 	}
 }
