@@ -233,7 +233,9 @@ func TestRegisterRefusesPidChangeNotCausedByDaemon(t *testing.T) {
 	if len(reg) != 1 || reg[0].PID != 42 || !strings.Contains(strings.Join(notes, "\n"), "外から操作された疑い") {
 		t.Fatalf("外で pid が変わった session の記録を書き直した / 知らせない: %+v %v", reg, notes)
 	}
-	// daemon 自身が再開した後なら書き直す。再開の後に daemon が起動し直した形 (新しい Daemon) でも同じ
+	// daemon 自身が再開した後なら書き直す。再開の後に daemon が起動し直した形 (新しい Daemon) でも同じ。
+	// (外で変わった pid のままでは再開しない = prepare が拒むので、外の操作が終わって記録の pid に戻った形から始める)
+	ss[0].PID = 42
 	for _, r := range []store.Request{{Kind: "ask", CardID: "C-001", Question: "q"}, {Kind: "answer", CardID: "C-001", Answer: "a"}} {
 		if _, err := store.Submit(dir, r); err != nil {
 			t.Fatal(err)
@@ -285,7 +287,7 @@ func TestFailedLaunchThatActuallyStartedIsAdopted(t *testing.T) {
 	}
 	l.fail = false
 	d.List = func(context.Context) ([]agents.Session, error) {
-		return []agents.Session{{ID: "ab12", SessionID: "S1", PID: 5, Name: "pc-c-001", Kind: "background", StartedAt: t0.Add(time.Second).UnixMilli()}}, nil
+		return []agents.Session{{ID: "ab12", SessionID: "S1", PID: 5, Name: "pc-c-001", Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}, nil
 	}
 	if _, err := d.Tick(context.Background()); err != nil {
 		t.Fatal(err)
@@ -404,7 +406,7 @@ func TestLaunchingCardCountsBeforeLimit(t *testing.T) {
 	planned(t, dir, 2)
 	setCard(t, dir, "C-002", func(c *card.Card) { c.Launching, c.LaunchedAt = "起動", t0 })
 	l := &fakeLauncher{}
-	d := newDaemon(t, dir, l, []agents.Session{{ID: "cd34", SessionID: "S2", PID: 6, Name: "pc-c-002", Kind: "background", StartedAt: t0.Add(time.Second).UnixMilli()}})
+	d := newDaemon(t, dir, l, []agents.Session{{ID: "cd34", SessionID: "S2", PID: 6, Name: "pc-c-002", Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-002", StartedAt: t0.Add(time.Second).UnixMilli()}})
 	d.Limit = 1
 	if _, err := d.Tick(context.Background()); err != nil {
 		t.Fatal(err)
@@ -1035,5 +1037,65 @@ func TestCrashKeepsRecordedCwd(t *testing.T) {
 	reg, _ := live.LoadRegistry(filepath.Join(r.dir, live.RegistryFile))
 	if len(reg) != 1 || reg[0].PID != 43 || reg[0].Cwd != "/w/dotfiles/.claude/worktrees/pc-c-001" {
 		t.Fatalf("記録の cwd を repo root で上書きした: %+v", reg)
+	}
+}
+
+// 起動の結果を確かめるとき、名前が同じでも cwd がこのカードの repo の worktree でなければ取り込まない
+// (別の状態の置き場の daemon が同じカード ID で立てた PG)。
+func TestAdoptStartRequiresOwnWorktree(t *testing.T) {
+	dir := t.TempDir()
+	planned(t, dir, 1)
+	setCard(t, dir, "C-001", func(c *card.Card) { c.Launching, c.LaunchedAt = "起動", t0 })
+	d := newDaemon(t, dir, &fakeLauncher{}, []agents.Session{{ID: "zz99", SessionID: "Z", PID: 3, Name: "pc-c-001", Kind: "background",
+		Cwd: "/w/other-repo/.claude/worktrees/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}})
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if c := states(t, dir)["C-001"]; c.Session == "zz99" {
+		t.Fatal("別の repo の worktree で立った同名の PG を取り込んだ")
+	}
+}
+
+// 回答で再開するとき、session の pid が記録と違えば (外から操作された疑い) 止めも再開もしない。
+func TestResumeRefusesWhenPidDiffers(t *testing.T) {
+	r := newCrashRig(t)
+	r.ss[0].PID = 99 // 再開の文なしに pid が変わった
+	for _, q := range []store.Request{{Kind: "ask", CardID: "C-001", Question: "q"}, {Kind: "answer", CardID: "C-001", Answer: "a"}} {
+		if _, err := store.Submit(r.dir, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	notes := r.tick(t)
+	if len(r.l.resumes) != 0 || len(r.l.stops) != 0 || !strings.Contains(strings.Join(notes, "\n"), "pid が記録") {
+		t.Fatalf("pid の違う session を止めた / 再開した: resumes=%v stops=%v %v", r.l.resumes, r.l.stops, notes)
+	}
+}
+
+// 短い id は一致するのに kind が background でない session は、取り込まずに知らせる (claude の版で値が変わった疑い)。
+func TestRegisterWarnsOnUnexpectedKind(t *testing.T) {
+	r := newCrashRig(t)
+	r.ss[0].Kind = ""
+	notes := r.tick(t)
+	if !strings.Contains(strings.Join(notes, "\n"), "background ではない") {
+		t.Fatalf("kind の違う session を黙って飛ばした: %v", notes)
+	}
+}
+
+// 止める印が立った後、再開の文なしに pid だけが変わった session (外から操作された疑い) は止めない。
+func TestCrashStopSkipsPidMismatch(t *testing.T) {
+	r := newCrashRig(t)
+	r.l.stopFail = true
+	r.crash(t0.Add(time.Minute), 43)
+	r.tick(t)
+	r.crash(t0.Add(2*time.Minute), 44)
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; !c.StopWanted {
+		t.Fatal("前提: 止める印が立っていない")
+	}
+	r.l.stopFail = false
+	r.ss[0].PID = 99 // 再開の文は増えていない
+	r.tick(t)
+	if len(r.l.stops) != 0 {
+		t.Fatalf("pid の違う session を止めた: %v", r.l.stops)
 	}
 }

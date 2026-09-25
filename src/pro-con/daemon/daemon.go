@@ -158,7 +158,11 @@ func (d *Daemon) register(now time.Time, ss []agents.Session) (int, []string, er
 		}
 		for _, s := range ss {
 			// pro-con が起動するのは bg の session だけ。対話の session (人間が PG の worktree で開いたもの等) は決して取り込まない
-			if s.ID != c.Session || s.SessionID == "" || s.PID == 0 || s.Kind != "background" {
+			if s.ID == c.Session && s.Kind != "background" {
+				warn = append(warn, fmt.Sprintf("%s の短い id %s の session の kind が %q (background ではない)。取り込まない (claude の版で値が変わった?)", c.ID, s.ID, s.Kind))
+				continue
+			}
+			if s.ID != c.Session || s.SessionID == "" || s.PID == 0 {
 				continue
 			}
 			o, ok := known[c.ID]
@@ -287,7 +291,7 @@ func (d *Daemon) stopCrashing(ctx context.Context, now time.Time, ss []agents.Se
 				continue
 			}
 			listed = true
-			if hasOwned && s.SessionID == o.SessionID {
+			if hasOwned && s.SessionID == o.SessionID && s.PID == o.PID { // pid が記録と違うものは止めない (登録の側と同じ基準)
 				target = s.ID
 			}
 		}
@@ -295,7 +299,7 @@ func (d *Daemon) stopCrashing(ctx context.Context, now time.Time, ss []agents.Se
 		switch {
 		case target != "":
 		case listed:
-			how = "止めなかった (短い id が別の session を指している)"
+			how = "止めなかった (一覧の session が記録と一致しない。別の session か、外から操作された疑い)"
 		default:
 			// 一覧に無い: 死んで Claude Code の自動の再開を待っているのかもしれない (約 25 秒。425 結果 1)。最後に落ちてから restartWait 待つ
 			if n := len(c.Crashes); n > 0 && now.Sub(c.Crashes[n-1]) < restartWait {
@@ -432,7 +436,7 @@ func (d *Daemon) dispatch(ctx context.Context, now time.Time, ss []agents.Sessio
 			fresh = append(fresh, c)
 			continue
 		}
-		if id, ok := adopt(c, ss, reg); ok {
+		if id, ok := adopt(c, d.Repos[c.Repo], ss, reg); ok {
 			if err := d.settle(c.ID, now, c.Launching, id); err != nil {
 				return notes, err
 			}
@@ -500,6 +504,9 @@ func (d *Daemon) prepare(c card.Card, now time.Time, ss []agents.Session, reg []
 			if s.SessionID != o.SessionID {
 				return "再開", nil, fmt.Errorf("短い id %s が今は別の session (%s) を指している", c.Session, s.SessionID)
 			}
+			if s.PID != 0 && s.PID != o.PID { // 登録の側が「外から操作された疑い」として書き直さなかった形。止めも再開もしない
+				return "再開", nil, fmt.Errorf("session %s の pid が記録 (%d) と違う (%d)。外から操作された疑い", c.Session, o.PID, s.PID)
+			}
 			stop = c.Session
 		}
 		if o.Cwd == "" {
@@ -521,6 +528,14 @@ func (d *Daemon) prepare(c card.Card, now time.Time, ss []agents.Session, reg []
 
 func sessionName(c card.Card) string { return "pc-" + strings.ToLower(c.ID) }
 
+// worktreePath は claude --bg -w <name> が作る PG の worktree (427 の 3f で実測)。repo の場所が分からなければ空 (何とも一致しない)。
+func worktreePath(repoPath string, c card.Card) string {
+	if repoPath == "" {
+		return ""
+	}
+	return filepath.Join(repoPath, ".claude", "worktrees", sessionName(c))
+}
+
 func owned(c card.Card, reg []live.Owned) (live.Owned, bool) {
 	for _, o := range reg {
 		if o.CardID == c.ID && o.ID == c.Session {
@@ -532,13 +547,15 @@ func owned(c card.Card, reg []live.Owned) (live.Owned, bool) {
 
 // adopt は結果の分からない起動・再開の session が一覧に出ているかを見る。印を書いた後 (LaunchedAt 以降) に始まったものだけ:
 // 起動はこのカードの session の名前、再開は前の session と同じ session id。
-func adopt(c card.Card, ss []agents.Session, reg []live.Owned) (string, bool) {
+func adopt(c card.Card, repoPath string, ss []agents.Session, reg []live.Owned) (string, bool) {
 	o, hasOwned := owned(c, reg)
 	for _, s := range ss {
 		if s.ID == "" || s.Kind != "background" || s.Started().Before(c.LaunchedAt) {
 			continue
 		}
-		if c.Launching == "起動" && s.Name == sessionName(c) {
+		// 起動は、名前に加えて cwd がこのカードの repo の worktree そのもの (<repo>/.claude/worktrees/pc-<card>) のときだけ。
+		// 名前だけだと、別の状態の置き場で動く daemon が同じカード ID で立てた PG に当たる (カード ID は置き場ごとに C-001 から振られる)
+		if c.Launching == "起動" && s.Name == sessionName(c) && s.Cwd == worktreePath(repoPath, c) {
 			return s.ID, true
 		}
 		// 再開は別の session id の session を立てる (427 の 3f で実測) ので、同じ作業ディレクトリ (PG の worktree) で印の後に始まったものも取り込む
