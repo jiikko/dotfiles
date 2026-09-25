@@ -4,7 +4,9 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
+	"pro-con/agents"
 	"pro-con/eventlog"
 	"pro-con/store"
 )
@@ -75,4 +77,31 @@ func TestShutdownRecordsEvents(t *testing.T) {
 		}
 	}
 	t.Fatalf("止めた出来事にカード・session が無い: %+v", got)
+}
+
+// 閉じたカードの PG を止めた結果 (止めた / 既に止まっていた / 止められない) も、種類 stop・カード・session つきで Record へ渡る
+// (close.go。pro-con log --card で追える)。
+func TestCloseStopRecordsEvents(t *testing.T) {
+	closed := func(t *testing.T, setup func(r *crashRig), want string) {
+		t.Helper()
+		r := newCrashRig(t)
+		now := t0
+		r.d.Now = func() time.Time { return now }
+		setup(r)
+		var got []eventlog.Event
+		r.d.Record = func(evs []eventlog.Event) { got = append(got, evs...) }
+		closeCard(t, r.dir, "C-001")
+		r.tick(t)
+		now = t0.Add(closeStopWait)
+		r.tick(t)
+		for _, e := range got {
+			if e.Kind == eventlog.KindStop && e.Card == "C-001" && e.Session == "id-pc-c-001" && strings.Contains(e.Reason, want) {
+				return
+			}
+		}
+		t.Fatalf("「%s」の stop の出来事が無い: %+v", want, got)
+	}
+	closed(t, func(*crashRig) {}, "PG の session を止めた")
+	closed(t, func(r *crashRig) { r.ss[0].PID, r.ss[0].State = 0, agents.StateStopped }, "既に止まっていた")
+	closed(t, func(r *crashRig) { r.l.stopFail = true }, "止められない")
 }
