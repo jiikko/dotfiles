@@ -478,7 +478,7 @@ func snapshotTree(t *testing.T, dir string) map[string]string {
 	return m
 }
 
-// 🚨 読む口 (list / show / wait) は、状態の置き場を 1 バイトも変えず、socket へ wake / notify を送らない (441 の守ること 1 / 445)。
+// 🚨 読む口 (list / show / wait / log) は、状態の置き場を 1 バイトも変えず、socket へ wake / notify を送らない (441 の守ること 1 / 445)。
 // 購読の sub だけは送ってよい (dispatcher は購読の数を判断に使わない)。
 func TestViewCommandsDoNotWrite(t *testing.T) {
 	env := viewFixture(t)
@@ -492,6 +492,7 @@ func TestViewCommandsDoNotWrite(t *testing.T) {
 		{"show", "C-001"}, {"show", "C-001", "--json"}, {"show", "C-999"},
 		{"wait", "C-001", "--timeout", "200ms"}, {"wait", "C-001", "--until", "質問待ち", "--timeout", "1s"},
 		{"wait", "C-999", "--timeout", "100ms"},
+		{"log", "C-001"}, {"log", "C-001", "--json"}, {"log", "C-002"}, {"log", "C-999"},
 	} {
 		viewCmd(t, env, args...)
 	}

@@ -58,6 +58,30 @@ type AttachRecorder interface {
 	RecordAttach(cardID, sessionID string, from, to time.Time) (int, error)
 }
 
+// Activity は PG の活動 1 つ (応答の文か道具の呼び出し。transcript から読む。issue 467)。
+// 思考 (thinking) は Claude Code が中身をほぼ保存しないので無い。道具の結果も持たない (長い。何をしたかは呼び出しで分かる)。
+type Activity struct {
+	At      time.Time `json:"at"`
+	Session string    `json:"session"`        // どの session の活動か (pro-con の短い id。再開で入れ替わると変わる)
+	Tool    string    `json:"tool,omitempty"` // 道具の名前 (Bash / Edit …)。空なら応答の文
+	Text    string    `json:"text"`           // 応答の文、または道具の呼び出しの要点 (コマンド・ファイル)。1 行・制御文字なし
+}
+
+// Line は Text に道具の名前を前置きした 1 行 (「Bash: go test ./...」)。応答の文はそのまま。
+func (a Activity) Line() string {
+	if a.Tool == "" {
+		return a.Text
+	}
+	return a.Tool + ": " + a.Text
+}
+
+// ActivityReader は作業中のカードの PG の活動を読む backend (任意。持たない backend (模擬) は出力の末尾だけを出す)。
+// 返すのはそのカードのために pro-con が起動した session (再開で入れ替わった前の session も) の活動を古い順に、末尾の上限まで。
+// 🚨 読むだけ (--view でも使う。受付の箱・記録・PG の session に何も書かない)。transcript を読むので画面は裏で呼ぶ。
+type ActivityReader interface {
+	Activity(cardID string) ([]Activity, error)
+}
+
 // ReadOnly は読み取りだけの backend (pro-con --view)。画面は終了の見出しを「見ているだけ」にする (止める口・書く口は持たない)。
 type ReadOnly interface{ ReadOnly() }
 
