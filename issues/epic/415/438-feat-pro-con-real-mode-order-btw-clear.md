@@ -59,6 +59,7 @@
   `card review` / `run` を追い越して除けさせうる → 方針変更も箱が空くまで待つ。どちらも直す前に red を見た検査を足した
   (store `TestCloseRefusedWithPendingOrder` / dispatcher `TestRedirectWaitsForInbox`)。記録だけ 1 件 = 下の残り (テストの係の実行)。
   btw の `At` の重複・`order` の omitempty はレビューが追って実害なしと確かめた
+- [x] make test rc=0 (テストの係・所要 5m19s。origin/master (472 まで) を merge した後の `cca9a8c3`)
 - [ ] 本物の claude での確認 (idle の判定が turn の区切りと一致するか・再開の文が PG に読まれるか・haiku の答えの質)
 
 ## 残り・未確認のリスク
