@@ -28,8 +28,8 @@
 - 1 引数の 1 行 (`-- 'make test 2>&1 | tail'`) は残さない: 1 語として quote されるので rc=127 で**目に見えて**落ちる (黙って別物にはならない)。
   パイプや `&&` を含む 1 行は `-- bash -c '<1 行>'` で頼む、と README と PG への指示文 (`dispatcher.go`) に書いた
 - 検査: `TestCardRunParse` に、引用つきの argv (`A|B` / 空白 / `'` / 空文字 / `$HOME` / `*` / `;` / `\` / 改行) を bash で eval して同じ argv へ戻るかを足した。直す前は red (exit status 2)
-- [ ] 変異 2 本で red (shellJoin を素の Join / `'` のエスケープを外す)。bin/mutate-verify を card run で
-- [ ] make test
+- [x] 変異 2 本で red (shellJoin を素の Join / `'` のエスケープを外す)。bin/mutate-verify を card run で、どちらも rc=0 (想定どおり `FAIL: TestCardRunParse`)
+- [x] make test rc=0 (a6a5cd67。pro-con card run)
 
 ## 関連
 
