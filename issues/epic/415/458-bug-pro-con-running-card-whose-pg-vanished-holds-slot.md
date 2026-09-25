@@ -48,6 +48,11 @@
 - 確かめたこと: 偽の lister で一覧から消した形を作り、直す前に `TestVanishedRunningCardResumes` が red (作業中のまま・再開 0 回)。
   変異 4 本 (`bin/mutate-verify`) がそれぞれ想定のテストで red: 呼び出しを外す / 停止より前に呼ぶ (`TestVanishedAfterCrashLimitStillAsksHuman`)
   / restartWait の待ちを外す / DeadSince の条件を外す (`TestLiveSessionUnderOtherShortIDIsNotVanished`)
+- make test (repo の root。rebase の後): go のテストは src/pro-con を含めて全部 ok。落ちたのは
+  `tests/zshrc/test_dotfiles_check_result_ownership.sh` の 1 件 (「親の死後に 1 件公開した」) だけで、この変更は `_zshrc` に触れていない。
+  単独で zsh から 5 回走らせると 5 回とも 9/9 通る (並列 97 本の負荷で揺れた見込み。原因は未確認)
+  - 1 つ前の make test は、master で `stopTarget` が `stopPlan` を返す形に変わった (457) のに `gone` が古い形のままでビルドが落ちた。
+    rebase の後にテストを回していなかった。`gone` を `stopPlan` の target / wait で判じる形に直した
 - 残り:
   - pid 無しのまま restartWait を過ぎても一覧に残る形 (自動の再開が止まった) は扱っていない (stopTarget は「止める」と返すので gone は偽)
   - 記録に載る前 (起動は返ったが一覧に一度も出ない) に消えた作業中のカードは扱っていない (再開に要る session id と cwd が無い)
