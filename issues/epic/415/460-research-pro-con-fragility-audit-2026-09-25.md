@@ -59,3 +59,9 @@ PM がコードで確かめたもの: `card run` の `strings.Join` / `runClaude
 攻めたが指摘が出なかった範囲 (観点 2): `exec.Command` を使う非テストの Go 11 ファイル (うち claude を呼ぶのは agents / launcher / usage / runner / live の attach の 5)。
 `/usage` の正規表現は 2.1.282 の実出力と一致 / pid や startedAt の型が変わると Unmarshal のエラーで Tick が止まる (黙らない) / `parseBackgrounded` が読めなくても adopt が拾う /
 shutdown は `--all` で確かめている / locale に依存しない (JSON と英語の文面だけ)。読んでいない: TMPDIR と socket のパス長 / 空の `[]` が一瞬返ることがあるか
+
+## 反証レビュー (2026-09-25。sonnet・読むだけ。457・458・459・462〜466 の 8 本)
+
+- 8 本とも反証できなかった (主張どおり)。463 は `eval` の別物になる形を実行で、462 は実機の `claude -p … "-hello"` が rc=1 (`unknown option`) で確かめた。
+  **462 の直し方の候補の `--` は効く** (`claude -p … -- "-hello"` が rc=0)。465 の `-w` の再利用は `--bg` を打たない決まりのため再検証していない (issue 側は実測済み)
+- 重複なし (457 と 466 は判定の領域が近いが、原因が別: 記録に載らない / state の名前の読み方)
