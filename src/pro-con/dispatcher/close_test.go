@@ -97,18 +97,31 @@ func TestCloseStopFailureKeepsCloseAndIsRecorded(t *testing.T) {
 }
 
 // 止めたと返っても一覧で止まっていなければ、止まったとは書かない (判定は終了のときと同じ = pid 無し かつ working でない)。
+// 止める要求を出した後の Tick で止まったのを見たら「止めた」と書く (既に止まっていた、と取り違えない)。
 func TestCloseChecksStoppedInList(t *testing.T) {
 	r := newCrashRig(t)
-	r.d.ListAll = func(ctx context.Context) ([]agents.Session, error) { return r.d.List(ctx) } // 止めても一覧が変わらない
+	r.d.ListAll = func(ctx context.Context) ([]agents.Session, error) { return r.d.List(ctx) } // 止めても一覧がすぐには変わらない
 	closeCard(t, r.dir, "C-001")
 	r.tick(t)
 	if c := states(t, r.dir)["C-001"]; !c.StopAfterClose {
 		t.Fatalf("止まっていない PG を止めた扱いにした: 履歴=%q", lastHistory(c))
 	}
-	r.ss[0].PID, r.ss[0].State = 0, agents.StateStopped // 止まった
+	r.ss[0].PID, r.ss[0].State = 0, agents.StateStopped // 止める要求が効いて止まった
 	r.tick(t)
-	if c := states(t, r.dir)["C-001"]; c.StopAfterClose || !strings.Contains(lastHistory(c), "既に止まっていた") {
-		t.Fatalf("止まったのを確かめても印を外さない: %v %q", c.StopAfterClose, lastHistory(c))
+	if c := states(t, r.dir)["C-001"]; c.StopAfterClose || c.CloseStopSent || !strings.Contains(lastHistory(c), "PG の session を止めた") {
+		t.Fatalf("止めた PG の履歴が違う / 印が残る: %v %v %q", c.StopAfterClose, c.CloseStopSent, lastHistory(c))
+	}
+}
+
+// 閉じたときに PG が既に止まっていれば、止める要求を出さず「既に止まっていた」と書く。
+func TestCloseRecordsAlreadyStoppedPG(t *testing.T) {
+	r := newCrashRig(t)
+	r.ss[0].PID, r.ss[0].State = 0, agents.StateStopped
+	closeCard(t, r.dir, "C-001")
+	r.tick(t)
+	c := states(t, r.dir)["C-001"]
+	if len(r.l.stopTries) != 0 || c.StopAfterClose || !strings.Contains(lastHistory(c), "既に止まっていた") {
+		t.Fatalf("既に止まっていた PG の扱いが違う: tries=%v %v %q", r.l.stopTries, c.StopAfterClose, lastHistory(c))
 	}
 }
 

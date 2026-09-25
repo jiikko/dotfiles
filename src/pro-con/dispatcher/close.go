@@ -29,17 +29,22 @@ func (d *Dispatcher) stopClosed(ctx context.Context, now time.Time) ([]string, e
 		if !c.StopAfterClose {
 			continue
 		}
-		more, remaining, err := d.ensureStopped(ctx, nil, map[string]bool{c.ID: true}, 0)
+		more, remaining, sent, err := d.ensureStopped(ctx, nil, map[string]bool{c.ID: true}, 0)
 		if err == nil && len(remaining) == 0 {
 			text := "閉じたので PG の session を止めた (worktree とブランチは残す)"
-			if len(more) == 0 {
-				text = "閉じた: PG の session は既に止まっていた"
+			if sent == 0 && !c.CloseStopSent { // 前の Tick で止める要求を出して、この Tick で止まったのを見た形は「止めた」
+				text = "閉じた後に確かめたら PG の session は既に止まっていた"
 			}
 			notes = append(notes, c.ID+": "+text)
 			if err := d.finishCloseStop(c.ID, now, text); err != nil {
 				return notes, err
 			}
 			continue
+		}
+		if sent > 0 && !c.CloseStopSent {
+			if err := d.update(c.ID, func(cc *card.Card) { cc.CloseStopSent = true }); err != nil {
+				return notes, err
+			}
 		}
 		if now.Sub(c.Since) < closeStopWait {
 			continue // 次の Tick で止め直す
@@ -59,7 +64,7 @@ func (d *Dispatcher) stopClosed(ctx context.Context, now time.Time) ([]string, e
 
 func (d *Dispatcher) finishCloseStop(id string, now time.Time, text string) error {
 	return d.update(id, func(cc *card.Card) {
-		cc.StopAfterClose = false
+		cc.StopAfterClose, cc.CloseStopSent = false, false
 		cc.History = append(cc.History, card.Event{At: now, Text: text})
 	})
 }

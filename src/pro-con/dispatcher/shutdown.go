@@ -81,7 +81,7 @@ func (d *Dispatcher) Shutdown(ctx context.Context) ([]string, error) {
 	// 止めた session も出す一覧で確かめ、残っていれば止め直す (カードが完了した後も生きている PG も止める)
 	ectx, ecancel := context.WithTimeout(base, ensureBudget) // 確かめる段は別の上限 (前の段が上限を使い切っても、最後の確かめまで届く)
 	defer ecancel()
-	more, remaining, err := d.ensureStopped(ectx, tried, nil, ensurePolls)
+	more, remaining, _, err := d.ensureStopped(ectx, tried, nil, ensurePolls)
 	notes = append(notes, more...)
 	if err != nil {
 		return notes, err
@@ -230,8 +230,8 @@ const ensurePolls = 15
 // extra はカードの側で止めようとした session (短い id → カード)。記録に無くても (起動・再開の途中で取り込んだもの) 同じく確かめる。
 // cards が nil でなければ、そのカードの session だけを確かめる (閉じたカードの PG を止める = close.go)。
 // polls は止め直しの周の数 (周の間は shutdownPoll 待つ)。0 なら待たずに 1 周だけ止めて、もう 1 度だけ見る。
-func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string, cards map[string]bool, polls int) ([]string, []string, error) {
-	var notes []string
+// sent は止める要求が通った回数 (「pro-con が止めた」と「既に止まっていた」を区別する = close.go)。
+func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string, cards map[string]bool, polls int) (notes, remaining []string, sent int, err error) {
 	list := d.ListAll
 	if list == nil {
 		list = d.List
@@ -240,7 +240,7 @@ func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string,
 	for attempt := 0; ; attempt++ {
 		reg, err := live.LoadRegistry(regPath)
 		if err != nil {
-			return notes, nil, fmt.Errorf("pro-con が起動した session の記録を読めないので、止まったかを確かめられない: %w", err)
+			return notes, nil, sent, fmt.Errorf("pro-con が起動した session の記録を読めないので、止まったかを確かめられない: %w", err)
 		}
 		// 入れ替わった前の session の記録が読めなくても、記録にある session は止める (読めない分は知らせる)
 		if retired, err := live.LoadRetired(regPath); err != nil {
@@ -258,7 +258,7 @@ func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string,
 		cancel()
 		if err != nil {
 			if attempt >= polls || ctx.Err() != nil {
-				return notes, nil, fmt.Errorf("止まったかを確かめる一覧を取れない: %w", err)
+				return notes, nil, sent, fmt.Errorf("止まったかを確かめる一覧を取れない: %w", err)
 			}
 			d.sleep(shutdownPoll)
 			continue
@@ -276,6 +276,7 @@ func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string,
 				if err != nil {
 					notes = append(notes, fmt.Sprintf("%s の PG (%s) を止め直せない: %v", o.CardID, s.ID, err))
 				} else {
+					sent++
 					notes = append(notes, fmt.Sprintf("%s の PG (%s) がまだ動いていたので止め直した", o.CardID, s.ID))
 				}
 			}
@@ -288,7 +289,7 @@ func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string,
 				}
 				cancel()
 			}
-			return notes, remaining, nil
+			return notes, remaining, sent, nil
 		}
 		d.sleep(shutdownPoll)
 	}

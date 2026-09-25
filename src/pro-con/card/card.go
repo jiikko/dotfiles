@@ -228,6 +228,9 @@ type Card struct {
 	// StopAfterClose はカードを閉じた (close) が、dispatcher がまだ PG の session を止め終えていない印 (close の適用と同時に付く。
 	// dispatcher が落ちても次の Tick で止める)。止まったのを確かめたか、closeStopWait を過ぎて諦めたら外す
 	StopAfterClose bool `json:",omitempty"`
+	// CloseStopSent は StopAfterClose の間に、dispatcher が PG の session へ止める要求を出した印 (止まったのを後の Tick で見たとき、
+	// 「止めた」と「既に止まっていた」を取り違えない)。StopAfterClose と一緒に外す
+	CloseStopSent bool `json:",omitempty"`
 	// Stopped は pro-con の終了で dispatcher が PG を止めた印。次の再開は、落ちた PG の自動の再開を待たずに (止めずに) 行う。起動・再開で外す
 	Stopped bool `json:",omitempty"`
 	// Run は PG が `pro-con card run` で頼んだ、まだ結果を返していないコマンド (シェルの 1 行)。RunAt は頼んだ時刻 (順番の鍵)。
