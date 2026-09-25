@@ -202,3 +202,20 @@ func TestRedirectWaitsForInbox(t *testing.T) {
 		t.Fatalf("方針変更を届けていない: %v", r.l.resumes)
 	}
 }
+
+// 一覧から消えて戻らない PG (458) に積まれた追記は、分解済みへ戻した再開の文に添えて届く (消えた PG の再開と別に待たせない)。
+func TestAppendRidesOnVanishedResume(t *testing.T) {
+	r := newCrashRig(t)
+	order(t, r.dir, "C-001", card.OrderAppend, "README も")
+	r.ss = nil // 一覧から消えた
+	r.d.Now = func() time.Time { return t0.Add(time.Minute) }
+	r.tick(t)
+	r.d.Now = func() time.Time { return t0.Add(time.Minute + restartWait + time.Second) }
+	r.tick(t)
+	if len(r.l.resumes) != 1 || !strings.HasPrefix(r.l.resumes[0], ":"+resumeAfterVanish) || !strings.Contains(r.l.resumes[0], "README も") {
+		t.Fatalf("消えた PG の再開に追記を添えていない: %v", r.l.resumes)
+	}
+	if c := states(t, r.dir)["C-001"]; len(c.Pending()) != 0 {
+		t.Fatalf("届いた印が無い: %+v", c.Orders)
+	}
+}

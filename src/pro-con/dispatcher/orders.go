@@ -13,8 +13,8 @@ package dispatcher
 //   - busy: 追記は積んだまま待つ (未達がカードに見える)
 //   - AskUserQuestion / 権限の確認で止まっている (status: waiting): 追記は届けない (止めると問いが消える。人間が attach して進めれば
 //     turn が終わり、idle で届く)。方針変更は止めて再開する
-//   - 落ちている (一覧に無い / pid 無し): 追記は待つ (自動で再開されれば、その turn の後で届く)。方針変更は prepare の待ち
-//     (restartWait) を経て、止めずに再開する。落ち続けて質問待ちになったら、回答の再開に添えて届く
+//   - 落ちている (一覧に無い / pid 無し): 追記は待つ (自動で再開されれば、その turn の後で届く。戻らなければ requeueVanished の再開に
+//     添えて届く = 458)。方針変更は prepare の待ち (restartWait) を経て、止めずに再開する。落ち続けて質問待ちになったら、回答の再開に添えて届く
 
 import (
 	"fmt"
@@ -73,8 +73,8 @@ func (d *Dispatcher) deliverOrders(now time.Time, ss []agents.Session) ([]eventl
 			continue // busy / 問いで止まっている / 落ちている: 次の Tick で見直す
 		}
 		if err := d.update(c.ID, func(cc *card.Card) {
-			cc.DropRun()
-			cc.State, cc.Since, cc.Stalled = card.Planned, now, false
+			requeue(cc, now, cc.Resume) // 再開の文は resumeText が未達のオーダーから組む (Resume は空のまま)
+			cc.Stalled = false
 			cc.History = append(cc.History, card.Event{At: now, Text: why})
 		}); err != nil {
 			return notes, err
