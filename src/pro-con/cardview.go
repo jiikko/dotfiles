@@ -331,7 +331,7 @@ func runCardWait(args []string, env viewEnv, stdout, stderr io.Writer) int {
 		return false, nil
 	}
 	var got card.Card
-	err = waitFor(env.dir, *timeout, func() (bool, error) {
+	err = waitFor(env.dir, *timeout, stderr, func() (bool, error) {
 		st, err := store.Load(env.dir)
 		if err != nil {
 			return false, err
@@ -361,10 +361,10 @@ func runCardWait(args []string, env viewEnv, stdout, stderr io.Writer) int {
 var errWaitTimeout = errors.New("時間切れ")
 
 // waitFor は cond が真になるまで待つ。上限は timeout (過ぎたら errWaitTimeout)。
-func waitFor(dir string, timeout time.Duration, cond func() (bool, error)) error {
+func waitFor(dir string, timeout time.Duration, warn io.Writer, cond func() (bool, error)) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	if err := watchDir(ctx, dir, cond); err != nil || ctx.Err() == nil {
+	if err := watchDir(ctx, dir, warn, cond); err != nil || ctx.Err() == nil {
 		return err
 	}
 	return errWaitTimeout
@@ -372,12 +372,19 @@ func waitFor(dir string, timeout time.Duration, cond func() (bool, error)) error
 
 // watchDir は cond が真になるか ctx が終わるまで、cond を呼び続ける。dispatcher の知らせ (購読) で呼び直し、届かなくても viewPoll ごとに呼び直す。
 // ctx が終わったら nil を返す (呼び出し側が ctx.Err で見分ける)。
-// 🚨 購読は sub を送るだけ (wake / notify は送らない)。dispatcher が居なくてもポーリングで待てる
-func watchDir(ctx context.Context, dir string, cond func() (bool, error)) error {
+// 🚨 購読は sub を送るだけ (wake / notify は送らない)。dispatcher が居なくてもポーリングで待てる。
+// socket の逃がし先の権限が緩ければ直さずにつながず (直すのは dispatcher だけ。issue 445)、warn に 1 行知らせてポーリングで待つ
+func watchDir(ctx context.Context, dir string, warn io.Writer, cond func() (bool, error)) error {
 	changed := make(chan struct{}, 1)
+	refused := make(chan error, 1) // 知らせは待ちのループから書く (購読の goroutine から warn へ書くと、呼び出し側の書き込みと競る)
 	go wake.NewSubscriber(dir, func() {
 		select {
 		case changed <- struct{}{}:
+		default:
+		}
+	}).OnRefused(func(err error) {
+		select {
+		case refused <- err:
 		default:
 		}
 	}).Run(ctx)
@@ -391,6 +398,8 @@ func watchDir(ctx context.Context, dir string, cond func() (bool, error)) error 
 		select {
 		case <-ctx.Done():
 			return nil
+		case err := <-refused:
+			_, _ = fmt.Fprintf(warn, "pro-con: dispatcher の知らせを受けずに %v ごとの読み直しで待つ (%v)\n", viewPoll, err)
 		case <-changed:
 		case <-tick.C:
 		}
@@ -411,7 +420,7 @@ func addAndWait(dir string, req store.Request, timeout time.Duration, stdout, st
 		return 0
 	}
 	var cardID, rejected string
-	err = waitFor(dir, timeout, func() (bool, error) {
+	err = waitFor(dir, timeout, stderr, func() (bool, error) {
 		st, err := store.Load(dir)
 		if err != nil {
 			return false, err

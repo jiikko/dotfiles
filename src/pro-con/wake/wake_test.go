@@ -2,6 +2,7 @@ package wake
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -198,7 +199,7 @@ func useFallbackRoot(t *testing.T) string {
 }
 
 // 逃がす先が自分のディレクトリでなければ (symlink・他のユーザーが作った) socket を置かず、繋ぎにも行かない (成りすまされない)。
-// 自分のもので権限だけ緩ければ 0700 に直して使う。
+// 自分のもので権限だけ緩ければ、繋ぐ側はつながず、listen する側 (dispatcher) が 0700 に直して使う。
 func TestFallbackDirMustBeOwn(t *testing.T) {
 	useFallbackRoot(t)
 	long := filepath.Join(t.TempDir(), strings.Repeat("d", 120))
@@ -225,7 +226,14 @@ func TestFallbackDirMustBeOwn(t *testing.T) {
 	if err := os.Chmod(fallbackDir(), 0o777); err != nil { // umask を越えて緩める
 		t.Fatal(err)
 	}
-	s := listen(t, long)
+	// 繋ぐ側 (Poke・購読) は緩い権限を直さず、つながない (読む口が状態の置き場の外を書かない。issue 445)
+	if err := Poke(long); !errors.Is(err, ErrUnsafeDir) {
+		t.Fatalf("権限の緩い逃がし先へ繋ぎに行った: %v", err)
+	}
+	if st, err := os.Stat(fallbackDir()); err != nil || st.Mode().Perm() != 0o777 {
+		t.Fatalf("繋ぐ側が権限を直した: %v %v", st.Mode(), err)
+	}
+	s := listen(t, long) // 直すのは listen する側 (dispatcher) だけ
 	if st, err := os.Stat(fallbackDir()); err != nil || st.Mode().Perm() != 0o700 {
 		t.Fatalf("緩い権限を直さない: %v %v", st.Mode(), err)
 	}
@@ -233,6 +241,45 @@ func TestFallbackDirMustBeOwn(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-s.Wakes()
+}
+
+// 購読は、逃がし先の権限が緩ければつながずに 1 度だけ知らせ (直さない)、dispatcher が直して listen したらつながる。
+func TestSubscriberRefusesLooseFallbackDir(t *testing.T) {
+	useFallbackRoot(t)
+	long := filepath.Join(t.TempDir(), strings.Repeat("d", 120))
+	if err := os.MkdirAll(long, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(fallbackDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(fallbackDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	t.Cleanup(func() { cancel(); wg.Wait() })
+	refused := make(chan error, 10)
+	changed := make(chan struct{}, 10)
+	sub := NewSubscriber(long, func() { changed <- struct{}{} }).OnRefused(func(err error) { refused <- err })
+	wg.Add(1)
+	go func() { defer wg.Done(); sub.Run(ctx) }()
+	if err := <-refused; !errors.Is(err, ErrUnsafeDir) {
+		t.Fatalf("知らせの理由が違う: %v", err)
+	}
+	time.Sleep(3 * retryEvery) // 繋ぎ直しを何度か回す (知らせは 1 度だけ・権限は直さない)
+	if len(refused) != 0 {
+		t.Fatalf("つながらない間に何度も知らせた: %d", len(refused)+1)
+	}
+	if st, err := os.Stat(fallbackDir()); err != nil || st.Mode().Perm() != 0o755 {
+		t.Fatalf("購読が権限を直した: %v %v", st.Mode(), err)
+	}
+	listen(t, long)
+	select {
+	case <-changed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("dispatcher が直して listen した後もつながらない")
+	}
 }
 
 // Notify は購読している画面すべてへ知らせる (画面を開いた・閉じた。dispatcher は Tick を回さずに中継する)。

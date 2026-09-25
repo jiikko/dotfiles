@@ -67,6 +67,8 @@ type Backend struct {
 	// viewOnly は読み取りだけで開く (pro-con --view)。画面の印を置かない (数えない) / ほかの画面へ知らせない
 	viewOnly bool
 	changed  chan struct{} // 読み直したら値が入る (画面が 1 秒の tick を待たずに描き直す。backend.Notifier)
+	// refused は socket の逃がし先を使えないので購読をつながなかった理由 (空ならつながっている / まだ試していない)。画面の違反の行に 1 行出す。mu で守る
+	refused string
 }
 
 type cached struct {
@@ -165,14 +167,35 @@ func (b *Backend) StopAll(ctx context.Context) error {
 		return errors.New("止める口がつながっていない")
 	}
 	b.leaving.Store(true) // この後は dispatcher を起こし直さない (最後の画面なら、これから止める)
+	why := "画面の印を置けなかったので最後の画面として"
 	if b.screen != nil {
 		others, err := b.screen.Leave()
 		_ = wake.Notify(b.dir) // ほかの画面の「画面 N」を直す
-		if err == nil && others > 0 {
+		switch {
+		case err != nil:
+			why = "ほかの画面を数えられない (" + err.Error() + ") ので最後の画面として"
+		case others > 0:
+			b.event(fmt.Sprintf("quit で閉じた: ほかに %d 画面が開いているので dispatcher と PG は止めなかった", others))
 			return backend.KeptRunning{Others: others}
+		default:
+			why = "最後の画面なので"
 		}
 	}
-	return b.stopAll(ctx)
+	// 止める前に置く: 止める dispatcher が Shutdown の前に箱を適用するので、その dispatcher が書く
+	b.event("quit で閉じた: " + why + " dispatcher と PG を止める")
+	err := b.stopAll(ctx)
+	if err != nil {
+		b.event("quit で止めきれなかった: " + err.Error()) // 止めた後なので、次に起動した dispatcher が書く
+	}
+	return err
+}
+
+// event は画面の出来事を受付の箱に置く (出来事の記録 events.jsonl へ書くのは dispatcher。書き手を 1 つに保つ = issue 445)。
+// dispatcher が居なければ次に起動した dispatcher が書く。画面が quit を通らずに消えた (落ちた・端末を閉じた) ときは何も残らない
+// (dispatcher の「画面が無い」の出来事 (screens) が代わりになる)。置けなくても画面の動きは変えない。
+// 🚨 --view の画面からは呼ばない (受付の箱にも書かない。Start は viewOnly なら呼ばず、StopAll は View の backend から呼べない)
+func (b *Backend) event(text string) {
+	_, _ = store.Submit(b.dir, store.Request{Kind: store.KindEvent, Note: fmt.Sprintf("画面 (pid %d): %s", os.Getpid(), text)})
 }
 
 // FindTranscript は projects (~/.claude/projects) の下から sessionID の transcript を探す。
@@ -205,14 +228,26 @@ func (b *Backend) Start(ctx context.Context) {
 	if !b.viewOnly {
 		if sc, err := presence.Open(b.dir); err == nil { // 置けなければ、閉じるときは最後の画面として止める (StopAll)
 			b.screen = sc
-			_ = wake.Notify(b.dir) // ほかの画面の「画面 N」を直す
+			n, _ := presence.Count(b.dir)
+			b.event(fmt.Sprintf("開いた (開いている画面 %d)", n)) // ctrl+r の入れ替えでも新版が開き直すので出る
+			_ = wake.Notify(b.dir)                      // ほかの画面の「画面 N」を直す
+		} else {
+			b.event("開いた (開いている印を置けない: " + err.Error() + ")")
 		}
 	}
 	sub := wake.NewSubscriber(b.dir, func() {
+		b.mu.Lock()
+		b.refused = "" // つながった (つながるたびに 1 度呼ばれる)
+		b.mu.Unlock()
 		select {
 		case kick <- struct{}{}:
 		default:
 		}
+	}).OnRefused(func(err error) {
+		// 🚨 画面は逃がし先の権限を直さない (--view は読むだけ。直すのは dispatcher だけ。issue 445)。つながずに 3 秒の読み直しで出す
+		b.mu.Lock()
+		b.refused = "dispatcher の知らせを受けずに " + b.interval.String() + " ごとの読み直しで出す: " + err.Error()
+		b.mu.Unlock()
 	})
 	go func() {
 		defer close(subDone)
@@ -296,13 +331,20 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 			cons = append(cons, backend.Consumer{Session: s.ID, CardID: c.ID, Status: s.Status, PID: s.PID})
 		}
 	}
-	screens, _ := presence.Count(b.dir)            // 数えられなければ 0 (「画面 N」を出さず、終了は止める側の案内になる)
+	// 数えられなければ 0 (「画面 N」を出さず、終了は止める側の案内になる)。
+	// 数えるとき落ちた画面の印を消す (screens/ を書く)。--view の画面も消してよい: どの画面が数えても同じ後始末で、
+	// 画面・dispatcher・PG の状態を変えない (読むだけの例外 (b)。issue 445)
+	screens, _ := presence.Count(b.dir)
+
 	ds, _, err := store.LoadDispatcherState(b.dir) // 無ければ zero (dispatcher が 1 度も回っていない)
 	if err != nil {
 		extra = append(extra, card.Violation{Reason: "dispatcher の様子を読めない: " + err.Error()})
 	}
 	pending, _ := filepath.Glob(filepath.Join(b.dir, store.InboxDir, "*.json"))
 	b.mu.Lock()
+	if b.refused != "" {
+		extra = append(extra, card.Violation{Reason: b.refused})
+	}
 	b.snap = backend.Snapshot{Now: now, Cards: cards, Consumers: cons, Limit: ds.Cap, LimitMax: ds.Limit, LimitWhy: ds.Why,
 		DispatcherTick: ds.Tick, Screens: screens, Violations: append(card.Check(cards), extra...)}
 	b.pending, b.ready = len(pending), true

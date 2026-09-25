@@ -60,9 +60,12 @@ func mustApply(t *testing.T, dir string) {
 }
 
 // fixture: C-001 は質問待ち (PG の session s1 に transcript あり)、C-002 は依頼、C-003 は完了して片付けた
-func viewFixture(t *testing.T) viewEnv {
+func viewFixture(t *testing.T) viewEnv { t.Helper(); return viewFixtureIn(t, viewDir(t)) }
+
+// viewFixtureIn は viewFixture を置き場 dir に作る。
+func viewFixtureIn(t *testing.T, dir string) viewEnv {
 	t.Helper()
-	dir, projects := viewDir(t), t.TempDir()
+	projects := t.TempDir()
 	mustSubmit(t, dir, store.Request{Kind: "add", Title: "色を直す", Request: "statusline の色を直して"})
 	mustSubmit(t, dir, store.Request{Kind: "add", Title: "別件", Request: "README を読みやすく"})
 	mustSubmit(t, dir, store.Request{Kind: "add", Title: "終わったもの", Request: "片付け済み"})
@@ -518,5 +521,55 @@ func TestViewCommandsDoNotWrite(t *testing.T) {
 		if l != "sub" {
 			t.Fatalf("読む口が socket に %q を送った (送ってよいのは sub だけ)", l)
 		}
+	}
+}
+
+// looseFallback は socket の逃がし先の親を一時ディレクトリに差し替え (本物の /tmp/pro-con-<uid> に触らない)、逃がし先を緩い権限 (0755) で置く。
+// 返すのは socket のパスが逃がし先に倒れる長い置き場と、逃がし先のディレクトリ。
+func looseFallback(t *testing.T) (long, fallback string) {
+	t.Helper()
+	root := viewDir(t)
+	t.Cleanup(wake.SetFallbackRoot(root))
+	fallback = filepath.Join(root, fmt.Sprintf("pro-con-%d", os.Getuid()))
+	if err := os.Mkdir(fallback, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(fallback, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	long = filepath.Join(viewDir(t), strings.Repeat("d", 110))
+	if err := os.Mkdir(long, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Dir(wake.Path(long)) != fallback {
+		t.Fatalf("前提: socket が逃がし先に倒れない: %s", wake.Path(long))
+	}
+	return long, fallback
+}
+
+// stillLoose は逃がし先の権限が 0755 のまま (読む口が直していない) かを見る。
+func stillLoose(t *testing.T, fallback string) {
+	t.Helper()
+	if st, err := os.Stat(fallback); err != nil || st.Mode().Perm() != 0o755 {
+		t.Fatalf("読む口が socket の逃がし先の権限を直した (直すのは dispatcher だけ): %v %v", st.Mode(), err)
+	}
+}
+
+// 🚨 読む口 (card wait) は、socket の逃がし先 (/tmp/pro-con-<uid>/) の緩い権限を直さず (状態の置き場の外も書かない)、
+// つながずに読み直しで待ち、そう 1 行知らせる (issue 445)。
+func TestViewCommandsDoNotFixFallbackDir(t *testing.T) {
+	long, fallback := looseFallback(t)
+	env := viewFixtureIn(t, long)
+	old := viewPoll
+	viewPoll = 20 * time.Millisecond
+	t.Cleanup(func() { viewPoll = old })
+	before := snapshotTree(t, fallback)
+	rc, _, errOut := viewCmd(t, env, "wait", "C-001", "--timeout", "300ms")
+	if rc != 1 || strings.Count(errOut, "読み直しで待つ") != 1 || !strings.Contains(errOut, "権限が緩い") {
+		t.Fatalf("逃がし先を使えないことを 1 行知らせない: rc=%d %q", rc, errOut)
+	}
+	stillLoose(t, fallback)
+	if after := snapshotTree(t, fallback); len(after) != len(before) {
+		t.Fatalf("読む口が逃がし先に書いた: %v", after)
 	}
 }

@@ -2,10 +2,13 @@ package live
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -549,6 +552,68 @@ func TestStopAllOnlyByLastScreen(t *testing.T) {
 	}
 }
 
+// inboxEvents は受付の箱に置かれた画面の出来事の文 (置いた順)。
+func inboxEvents(t *testing.T, dir string) []string {
+	t.Helper()
+	names, _ := filepath.Glob(filepath.Join(dir, store.InboxDir, "*.json"))
+	sort.Strings(names)
+	var out []string
+	for _, n := range names {
+		data, err := os.ReadFile(n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var r store.Request
+		if err := json.Unmarshal(data, &r); err != nil {
+			t.Fatal(err)
+		}
+		if r.Kind == store.KindEvent {
+			out = append(out, r.Note)
+		}
+	}
+	return out
+}
+
+// 画面の出来事 (開いた・quit で閉じた・止めた / 止めなかった / 止めきれなかった) は受付の箱に置く (events.jsonl へ書くのは dispatcher。
+// issue 445)。止めるときは止める前に置く (止める dispatcher が Shutdown の前に箱を適用して書く)。
+func TestScreenEventsGoToInbox(t *testing.T) {
+	a, b := shortState(t), shortState(t)
+	b.dir, b.registry = a.dir, a.registry
+	var atStop []string // 止める口が呼ばれた時点で箱にあった出来事
+	fail := errors.New("止まらない")
+	for _, be := range []*Backend{a, b} {
+		be.SetStopper(func(context.Context) error { atStop = inboxEvents(t, a.dir); return fail })
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	for _, be := range []*Backend{a, b} {
+		be.Start(ctx)
+	}
+	defer func() { cancel(); a.Wait(); b.Wait() }()
+	got := inboxEvents(t, a.dir)
+	if len(got) != 2 || !strings.Contains(got[0], "開いた (開いている画面 1)") || !strings.Contains(got[1], "開いた (開いている画面 2)") {
+		t.Fatalf("開いたことを置かない: %q", got)
+	}
+	var kept backend.KeptRunning
+	if err := a.StopAll(ctx); !errors.As(err, &kept) {
+		t.Fatal(err)
+	}
+	if got = inboxEvents(t, a.dir); len(got) != 3 || !strings.Contains(got[2], "ほかに 1 画面が開いているので dispatcher と PG は止めなかった") {
+		t.Fatalf("止めなかったことを置かない: %q", got)
+	}
+	if err := b.StopAll(ctx); !errors.Is(err, fail) {
+		t.Fatal(err)
+	}
+	if len(atStop) != 4 || !strings.Contains(atStop[3], "最後の画面なので dispatcher と PG を止める") {
+		t.Fatalf("止める前に置かない: %q", atStop)
+	}
+	if got = inboxEvents(t, a.dir); len(got) != 5 || !strings.Contains(got[4], "止めきれなかった: 止まらない") {
+		t.Fatalf("止めきれなかったことを置かない: %q", got)
+	}
+	if !strings.HasPrefix(got[0], fmt.Sprintf("画面 (pid %d): ", os.Getpid())) {
+		t.Fatalf("どの画面の出来事か分からない: %q", got[0])
+	}
+}
+
 // 画面を開くと印を置き、ほかの画面へ知らせる: ほかの画面は 3 秒のポーリングを待たずに「画面 2」になる。閉じると 1 に戻る。
 func TestOpeningScreenUpdatesOthers(t *testing.T) {
 	a := shortState(t)
@@ -766,5 +831,50 @@ func TestViewOnlyBackend(t *testing.T) {
 	}
 	if left, _ := filepath.Glob(filepath.Join(b.dir, store.InboxDir, "*.json")); len(left) != 0 {
 		t.Fatalf("見ているだけの画面が受付の箱に書いた: %v", left)
+	}
+}
+
+// 🚨 見ているだけの画面 (--view) は、socket の逃がし先 (/tmp/pro-con-<uid>/) の緩い権限を直さず、つながずに読み直しで出し、
+// 違反の行に 1 行知らせる (直すのは dispatcher だけ。issue 445)。
+func TestViewDoesNotFixFallbackDir(t *testing.T) {
+	root, err := os.MkdirTemp("/tmp", "pcfb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	t.Cleanup(wake.SetFallbackRoot(root)) // 本物の /tmp/pro-con-<uid> に触らない
+	fallback := filepath.Join(root, fmt.Sprintf("pro-con-%d", os.Getuid()))
+	if err := os.Mkdir(fallback, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(fallback, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := testBackend(t, nil, nil)
+	long := filepath.Join(root, strings.Repeat("d", 110))
+	if err := os.Mkdir(long, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	b.dir, b.registry, b.interval = long, filepath.Join(long, RegistryFile), 20*time.Millisecond
+	if filepath.Dir(wake.Path(long)) != fallback {
+		t.Fatalf("前提: socket が逃がし先に倒れない: %s", wake.Path(long))
+	}
+	be := b.View()
+	ctx, cancel := context.WithCancel(context.Background())
+	b.Start(ctx)
+	defer func() { cancel(); b.Wait() }()
+	deadline := time.After(10 * time.Second)
+	for told := false; !told; {
+		select {
+		case <-be.(backend.Notifier).Changed():
+		case <-deadline:
+			t.Fatalf("逃がし先を使えないことを知らせない: %+v", be.Snapshot().Violations)
+		}
+		for _, v := range be.Snapshot().Violations {
+			told = told || strings.Contains(v.Reason, "読み直しで出す")
+		}
+	}
+	if st, err := os.Stat(fallback); err != nil || st.Mode().Perm() != 0o755 {
+		t.Fatalf("見ているだけの画面が逃がし先の権限を直した: %v %v", st.Mode(), err)
 	}
 }

@@ -16,6 +16,10 @@ func ev(kind, cardID, session, text string) eventlog.Event {
 func applied(res []store.Result) []eventlog.Event {
 	var out []eventlog.Event
 	for _, r := range res {
+		if r.Kind == store.KindEvent && r.Err == "" { // 画面の出来事は、その出来事として書く (「依頼を適用した」を重ねない)
+			out = append(out, eventlog.Event{At: r.At, Kind: eventlog.KindScreen, Reason: r.Note})
+			continue
+		}
 		if r.Err != "" {
 			out = append(out, ev(eventlog.KindReject, r.CardID, "", fmt.Sprintf("箱の依頼 %s (%s) を除けた: %s", r.ID, r.Kind, r.Err)))
 			continue

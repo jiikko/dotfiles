@@ -380,3 +380,25 @@ func TestAttachAppendsSaidVerbatim(t *testing.T) {
 		t.Fatalf("状態を変えた / 原文と打った時刻のまま残していない: %v %+v", c.State, h)
 	}
 }
+
+// 画面の出来事 (event) はカードを変えず、文と画面が置いた時刻を結果に載せる (dispatcher が出来事の記録へ書く)。空の文は除ける。
+func TestEventRequestCarriesNoteAndTime(t *testing.T) {
+	dir := t.TempDir()
+	submit(t, dir, Request{Kind: "add", Title: "x"})
+	applyAll(t, dir)
+	before := cardOf(t, dir, "C-001")
+	at := t0.Add(-time.Hour)
+	submit(t, dir, Request{Kind: KindEvent, Note: "画面 (pid 1): 開いた", At: at})
+	submit(t, dir, Request{Kind: KindEvent, Note: " "})
+	res := applyAll(t, dir)
+	if res[0].Err != "" || res[0].Note != "画面 (pid 1): 開いた" || !res[0].At.Equal(at) || res[1].Err == "" {
+		t.Fatalf("出来事の文・時刻を返さない / 空の文を受けた: %+v", res)
+	}
+	st, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Cards) != 1 || len(cardOf(t, dir, "C-001").History) != len(before.History) {
+		t.Fatalf("出来事でカードが変わった: %+v", st.Cards)
+	}
+}
