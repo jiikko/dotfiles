@@ -114,6 +114,36 @@ func TestLogFollowWakesOnNotification(t *testing.T) {
 	}
 }
 
+// --follow --since は、読み始めた後に足された出来事を時刻で落とさない (画面の出来事は画面が置いた時刻のまま後から書かれる。issue 445)。
+// 読み始めの分は --since で絞る。
+func TestLogFollowKeepsLateEvents(t *testing.T) {
+	dir := logFixture(t)
+	f := listenFake(t, dir)
+	old := viewPoll
+	viewPoll = time.Hour
+	t.Cleanup(func() { viewPoll = old })
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var out, errOut syncBuf
+	rc := make(chan int, 1)
+	go func() {
+		rc <- runLog(ctx, []string{"--follow", "--since", "30s"}, dir, func() time.Time { return logT0.Add(3 * time.Minute) }, &out, &errOut)
+	}()
+	waitUntil(t, "--follow が購読しない", f.subscribed)
+	if err := eventlog.Append(dir, []eventlog.Event{{At: logT0, Kind: eventlog.KindScreen, Reason: "画面 (pid 1): 開いた"}}); err != nil {
+		t.Fatal(err)
+	}
+	f.broadcast()
+	waitUntil(t, "遅れて書かれた画面の出来事を --since で落とした", func() bool { return strings.Contains(out.String(), "画面 (pid 1): 開いた") })
+	if strings.Contains(out.String(), "C-001 に PG を起動した") {
+		t.Fatalf("読み始めの分を --since で絞っていない: %q", out.String())
+	}
+	cancel()
+	if r := <-rc; r != 0 {
+		t.Fatalf("取り消しで rc=%d (%s)", r, errOut.String())
+	}
+}
+
 // 🚨 pro-con log (--follow も) は、状態の置き場を 1 バイトも変えず、socket へ wake / notify を送らない (441 の守ること 1 / 445)。
 // 購読の sub だけは送ってよい (TestViewCommandsDoNotWrite と同じ形)。
 func TestLogDoesNotWrite(t *testing.T) {

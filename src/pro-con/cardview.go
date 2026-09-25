@@ -377,7 +377,11 @@ func waitFor(dir string, timeout time.Duration, warn io.Writer, cond func() (boo
 func watchDir(ctx context.Context, dir string, warn io.Writer, cond func() (bool, error)) error {
 	changed := make(chan struct{}, 1)
 	refused := make(chan error, 1) // 知らせは待ちのループから書く (購読の goroutine から warn へ書くと、呼び出し側の書き込みと競る)
-	go wake.NewSubscriber(dir, func() {
+	// 購読が終わるのを待ってから戻る (戻った後も購読が繋ぎ直しを続けると、戻った後の呼び出し側・テストの差し替えと競る)
+	subCtx, stop := context.WithCancel(ctx)
+	subDone := make(chan struct{})
+	defer func() { stop(); <-subDone }()
+	sub := wake.NewSubscriber(dir, func() {
 		select {
 		case changed <- struct{}{}:
 		default:
@@ -387,7 +391,8 @@ func watchDir(ctx context.Context, dir string, warn io.Writer, cond func() (bool
 		case refused <- err:
 		default:
 		}
-	}).Run(ctx)
+	})
+	go func() { defer close(subDone); sub.Run(subCtx) }()
 	tick := time.NewTicker(viewPoll)
 	defer tick.Stop()
 	for {

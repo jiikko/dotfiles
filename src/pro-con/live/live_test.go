@@ -877,4 +877,34 @@ func TestViewDoesNotFixFallbackDir(t *testing.T) {
 	if st, err := os.Stat(fallback); err != nil || st.Mode().Perm() != 0o755 {
 		t.Fatalf("見ているだけの画面が逃がし先の権限を直した: %v %v", st.Mode(), err)
 	}
+	srv, err := wake.Listen(long) // dispatcher が起動して直すと、つながって知らせが消える
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = srv.Close() }()
+	for told := true; told; {
+		select {
+		case <-be.(backend.Notifier).Changed():
+		case <-deadline:
+			t.Fatalf("つながった後も知らせが残る: %+v", be.Snapshot().Violations)
+		}
+		told = false
+		for _, v := range be.Snapshot().Violations {
+			told = told || strings.Contains(v.Reason, "読み直しで出す")
+		}
+	}
+}
+
+// 開いている印を置けない画面も、開いたことは置く (理由つき。閉じるときは最後の画面として止める)。
+func TestScreenEventWithoutPresence(t *testing.T) {
+	b := shortState(t)
+	if err := os.WriteFile(filepath.Join(b.dir, presence.Dir), nil, 0o600); err != nil { // screens/ を作れなくする
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	b.Start(ctx)
+	defer func() { cancel(); b.Wait() }()
+	if got := inboxEvents(t, b.dir); len(got) != 1 || !strings.Contains(got[0], "開いた (開いている印を置けない: ") {
+		t.Fatalf("印を置けないまま開いたことを置かない: %q", got)
+	}
 }

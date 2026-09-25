@@ -70,6 +70,19 @@ func SetFallbackRoot(root string) (restore func()) {
 	return func() { fallbackRoot = old }
 }
 
+// RunIsolated は逃がし先の親を使い捨ての一時ディレクトリにして run を走らせる (ほかの package の TestMain から呼ぶ。
+// t.TempDir の置き場は macOS では長く、socket が逃がし先へ倒れるので、差し替えないと本物の /tmp/pro-con-<uid> を作り・直し・繋ぎに行く)。
+func RunIsolated(run func() int) int {
+	root, err := os.MkdirTemp("/tmp", "pcfb") // 短く (逃がした socket のパスも上限に収める)
+	if err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, "wake: 逃がし先の親を作れない:", err)
+		return 1
+	}
+	defer func() { _ = os.RemoveAll(root) }()
+	defer SetFallbackRoot(root)()
+	return run()
+}
+
 // fallbackDir は長い置き場の socket を置くディレクトリ。
 func fallbackDir() string { return filepath.Join(fallbackRoot, fmt.Sprintf("pro-con-%d", os.Getuid())) }
 

@@ -264,8 +264,13 @@ func TestSubscriberRefusesLooseFallbackDir(t *testing.T) {
 	sub := NewSubscriber(long, func() { changed <- struct{}{} }).OnRefused(func(err error) { refused <- err })
 	wg.Add(1)
 	go func() { defer wg.Done(); sub.Run(ctx) }()
-	if err := <-refused; !errors.Is(err, ErrUnsafeDir) {
-		t.Fatalf("知らせの理由が違う: %v", err)
+	select {
+	case err := <-refused:
+		if !errors.Is(err, ErrUnsafeDir) {
+			t.Fatalf("知らせの理由が違う: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("逃がし先を使えないことを知らせない")
 	}
 	time.Sleep(3 * retryEvery) // 繋ぎ直しを何度か回す (知らせは 1 度だけ・権限は直さない)
 	if len(refused) != 0 {

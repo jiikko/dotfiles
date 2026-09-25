@@ -19,7 +19,7 @@ import (
 )
 
 const logUsage = "usage: pro-con log [--card <カード>] [--follow] [--since <時刻>] [--json]\n" +
-	"  --since は 15:04 / 2006-01-02 15:04 / RFC 3339 / 長さ (10m = 10 分前から)"
+	"  --since は 15:04 / 2006-01-02 15:04 / RFC 3339 / 長さ (10m = 10 分前から)。--follow で読み始めた後に足された分は時刻で絞らない"
 
 func runLog(ctx context.Context, args []string, dir string, now func() time.Time, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("pro-con log", flag.ContinueOnError)
@@ -77,6 +77,9 @@ func runLog(ctx context.Context, args []string, dir string, now func() time.Time
 	if !*follow {
 		return 0
 	}
+	// 読み始めた後に足された出来事は、時刻で絞らない: 画面の出来事は画面が置いた時刻のまま後から書かれる (dispatcher が居ない間に
+	// 置いたものは次の dispatcher が書く) ので、--since より前の時刻でも今足された出来事として出す (issue 445)
+	since = time.Time{}
 	// dispatcher は出来事を書いてから知らせる (Tick・Shutdown・serve の say のどれも Record → Changed) ので、知らせで読み直せば即時に出る
 	err = watchDir(ctx, dir, stderr, func() (bool, error) {
 		evs, err := f.Next()

@@ -124,6 +124,21 @@ func Submit(dir string, r Request) (string, error) {
 	return r.ID, nil
 }
 
+// Pending は受付の箱の適用待ちの依頼の数 (画面の出来事 = event は数えない: 画面を開くたびに置くので、dispatcher の最初の Tick まで
+// 「適用待ち」が出て、dispatcher が止まっているように見える)。読めない・壊れたファイルは依頼として数える (除けられるまで待ちには違いない)。
+func Pending(dir string) int {
+	names, _ := filepath.Glob(filepath.Join(dir, InboxDir, "*.json"))
+	n := 0
+	for _, name := range names {
+		var r Request
+		if data, err := os.ReadFile(name); err == nil && json.Unmarshal(data, &r) == nil && r.Kind == KindEvent {
+			continue
+		}
+		n++
+	}
+	return n
+}
+
 // Load は記録を読む。無ければ空の記録。壊れていたらエラー (空と区別する)。
 func Load(dir string) (State, error) {
 	data, err := os.ReadFile(filepath.Join(dir, StateFile))

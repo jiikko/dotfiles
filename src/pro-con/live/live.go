@@ -340,14 +340,14 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 	if err != nil {
 		extra = append(extra, card.Violation{Reason: "dispatcher の様子を読めない: " + err.Error()})
 	}
-	pending, _ := filepath.Glob(filepath.Join(b.dir, store.InboxDir, "*.json"))
+	pending := store.Pending(b.dir)
 	b.mu.Lock()
 	if b.refused != "" {
 		extra = append(extra, card.Violation{Reason: b.refused})
 	}
 	b.snap = backend.Snapshot{Now: now, Cards: cards, Consumers: cons, Limit: ds.Cap, LimitMax: ds.Limit, LimitWhy: ds.Why,
 		DispatcherTick: ds.Tick, Screens: screens, Violations: append(card.Check(cards), extra...)}
-	b.pending, b.ready = len(pending), true
+	b.pending, b.ready = pending, true
 	b.mu.Unlock()
 }
 

@@ -402,3 +402,19 @@ func TestEventRequestCarriesNoteAndTime(t *testing.T) {
 		t.Fatalf("出来事でカードが変わった: %+v", st.Cards)
 	}
 }
+
+// 適用待ちの数に画面の出来事 (event) は入れない (画面を開くたびに「dispatcher が動いていない?」と出さない)。壊れたファイルは数える。
+func TestPendingSkipsEvents(t *testing.T) {
+	dir := t.TempDir()
+	submit(t, dir, Request{Kind: KindEvent, Note: "画面 (pid 1): 開いた"})
+	if n := Pending(dir); n != 0 {
+		t.Fatalf("画面の出来事を適用待ちに数えた: %d", n)
+	}
+	submit(t, dir, Request{Kind: "add", Title: "x"})
+	if err := os.WriteFile(filepath.Join(dir, InboxDir, "broken.json"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if n := Pending(dir); n != 2 {
+		t.Fatalf("依頼・壊れたファイルを数えない: %d", n)
+	}
+}
