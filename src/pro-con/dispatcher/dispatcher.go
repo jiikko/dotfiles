@@ -2,7 +2,7 @@
 //
 //  1. 受付の箱を記録へ適用する (store.Apply)
 //  2. 起動した PG の session を pro-con の記録 (live.Register) に登録する (session id と pid が一覧に出てから)
-//  3. 閉じたカード・削除の依頼を受けたカードの PG の session を止める (close.go。issue 447 / 451)。削除のカードは止まったら記録から外す
+//  3. (落ちた PG を見張る trackDead の後に) 閉じたカード・削除の依頼を受けたカードの PG の session を止める (close.go。issue 447 / 451)。削除のカードは止まったら記録から外す
 //  4. 分解済みのカードに、上限まで PG を割り当てる。回答を受けたカード (Resume が有る) は同じ session を再開し、それ以外は新しく起動する
 //
 // 書き手は dispatcher だけ (426 の決定 1)。PG の起動と再開は Launcher に任せ、テストでは偽物に差し替える。
@@ -106,10 +106,11 @@ type Dispatcher struct {
 	Publish func(status string) error
 	Notify  func(title, body string) error
 
-	lastStatus  string          // 最後に Publish した文
-	publishedAt time.Time       // 最後に Publish を試みた時刻
-	published   bool            // 1 度でも Publish したか (起動の直後に空の文も書く。前の dispatcher が残した文を消す)
-	notified    map[string]bool // 通知した回答待ちのカード (待ちを抜けたら消す)
+	lastStatus  string               // 最後に Publish した文
+	publishedAt time.Time            // 最後に Publish を試みた時刻
+	published   bool                 // 1 度でも Publish したか (起動の直後に空の文も書く。前の dispatcher が残した文を消す)
+	notified    map[string]bool      // 通知した回答待ちのカード (待ちを抜けたら消す)
+	stopFrom    map[string]time.Time // 印の付いたカードを、この dispatcher が最初に止めに入った時刻 (close.go。諦めるまでの時間の起点)
 }
 
 // defaultStallAfter は停滞の通常の閾値の既定 (426: 既定値で始めて動かしながら直す)。
@@ -162,12 +163,13 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 		notes = append(notes, ev(eventlog.KindRegister, "", "", fmt.Sprintf("PG の session を %d 本登録した", n)))
 	}
 	notes = append(notes, warn...)
+	if err := d.trackDead(now, ss); err != nil {
+		return notes, err
+	}
+	// trackDead の後: 落ちたのを初めて見た Tick でも、自動の再開を待ってから消す (DeadSince が付いていないと待たずに消す)
 	closed, err := d.stopMarked(ctx, now, ss)
 	notes = append(notes, closed...)
 	if err != nil {
-		return notes, err
-	}
-	if err := d.trackDead(now, ss); err != nil {
 		return notes, err
 	}
 	stopped, err := d.stopCrashing(ctx, now, ss)

@@ -42,19 +42,32 @@ func (d *Dispatcher) stopMarked(ctx context.Context, now time.Time, ss []agents.
 		if !c.StopAfterClose && !deleting {
 			continue
 		}
-		since, extra, wait := c.Since, map[string]string(nil), false
+		// 諦めるまでの時間は、この dispatcher が止めに入った時刻からも数える (落ちていた dispatcher が起動し直した最初の Tick で、1 度も待たずに諦めない)
+		if _, ok := d.stopFrom[c.ID]; !ok {
+			if d.stopFrom == nil {
+				d.stopFrom = map[string]time.Time{}
+			}
+			d.stopFrom[c.ID] = now
+		}
+		since := c.Since
 		if deleting {
 			since = c.DeleteAt
-			var target string
-			if target, wait = d.stopTarget(c, now, ss, reg); target != "" {
-				extra = map[string]string{target: c.ID}
-			}
-			// テストの係への頼みが残っている間は外さない (実行の印を失うと、残った実行を止められない)。tickRuns が止めて取り下げる
-			wait = wait || c.Run != "" || c.Exec.Active()
+		}
+		if from := d.stopFrom[c.ID]; from.After(since) {
+			since = from
+		}
+		// wait: 待てば分かる形 (時間で終わる)。この間は消さず、諦めもしない。unsure: 止まったと確かめられない形。消さず、上限で諦める
+		var extra map[string]string
+		var wait bool
+		var unsure []string
+		if deleting {
+			extra, wait, unsure = d.deleteTargets(c, now, ss, reg)
 		}
 		more, remaining, sent, err := d.ensureStopped(ctx, extra, map[string]bool{c.ID: true}, 0)
+		notes = append(notes, more...)
 		stopped := sent > 0 || c.StopSent // 前の Tick で止める要求を出して、この Tick で止まったのを見た形も「止めた」
-		if err == nil && len(remaining) == 0 && !wait {
+		if err == nil && len(remaining) == 0 && !wait && len(unsure) == 0 {
+			delete(d.stopFrom, c.ID)
 			if deleting {
 				kind, n, err := d.dropCard(c, now, stopped)
 				if n != "" {
@@ -80,10 +93,11 @@ func (d *Dispatcher) stopMarked(ctx context.Context, now time.Time, ss []agents.
 				return notes, err
 			}
 		}
-		if now.Sub(since) < closeStopWait {
+		if wait || now.Sub(since) < closeStopWait {
 			continue // 次の Tick で止め直す
 		}
-		reasons := make([]string, 0, len(more)+len(remaining))
+		delete(d.stopFrom, c.ID)
+		reasons := make([]string, 0, len(more)+len(remaining)+len(unsure))
 		for _, m := range more {
 			reasons = append(reasons, m.Reason)
 		}
@@ -91,9 +105,7 @@ func (d *Dispatcher) stopMarked(ctx context.Context, now time.Time, ss []agents.
 		if err != nil {
 			reasons = append(reasons[:len(more)], err.Error())
 		}
-		if wait && len(reasons) == 0 {
-			reasons = []string{"起動・再開の直後の session が一覧に出ない / 落ちた PG が自動の再開から戻らない"}
-		}
+		reasons = append(reasons, unsure...)
 		why := strings.Join(reasons, " / ")
 		kind, text := eventlog.KindStop, fmt.Sprintf("閉じたが PG の session を止められない: %s (止める: claude stop <id>)", why)
 		if deleting {
@@ -105,6 +117,37 @@ func (d *Dispatcher) stopMarked(ctx context.Context, now time.Time, ss []agents.
 		}
 	}
 	return notes, nil
+}
+
+// deleteTargets は削除のカードで、記録の行に加えて止める session (短い id → カード) と、消すのを待つ理由を返す。
+//   - 起動・再開の直後・落ちて自動の再開の途中は、終了のときと同じ stopTarget で扱う (待てば分かる = wait)
+//   - 🚨 stopTarget の「止めるものが無い」は、終了のときは列を変えないだけだが、削除ではカードを消す根拠になる。記録に載っていない
+//     カードの session が一覧に出ていれば (pid 0・register が載せなかった形)、それも止めて確かめる。session id が無くて確かめられなければ消さない
+//   - 再開で入れ替わった前の session の記録が読めなければ、その分を確かめられないので消さない
+//   - テストの係への頼みが残っている間も消さない (実行の印を失うと、残った実行を止められない。tickRuns が止めて取り下げる)
+func (d *Dispatcher) deleteTargets(c card.Card, now time.Time, ss []agents.Session, reg []live.Owned) (map[string]string, bool, []string) {
+	extra := map[string]string{}
+	var unsure []string
+	target, wait := d.stopTarget(c, now, ss, reg)
+	if target != "" {
+		extra[target] = c.ID
+	}
+	if _, ok := owned(c, reg); !ok && c.Session != "" {
+		for _, s := range ss {
+			if s.ID != c.Session || s.Kind != "background" || s.Started().Before(c.LaunchedAt) {
+				continue
+			}
+			if s.SessionID == "" {
+				unsure = append(unsure, fmt.Sprintf("session %s の session id が一覧に無く、止まったかを確かめられない", s.ID))
+				continue
+			}
+			extra[s.ID] = c.ID
+		}
+	}
+	if _, err := live.LoadRetired(filepath.Join(d.Dir, live.RegistryFile)); err != nil {
+		unsure = append(unsure, "再開で入れ替わった前の session の記録を読めない: "+err.Error())
+	}
+	return extra, wait || c.Run != "" || c.Exec.Active(), unsure
 }
 
 // finishMarkedStop は印を外して履歴に書く (止め終えた / 諦めた)。削除の印も外す (諦めたカードは残り、もう一度削除を頼める)。
