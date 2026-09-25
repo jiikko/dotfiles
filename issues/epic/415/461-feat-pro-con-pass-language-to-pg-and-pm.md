@@ -21,3 +21,31 @@
 ## 関連
 
 - 440 (4 回目の記録と 7d の測定) / 431 (PG の session の設定。役割ごとの `--settings` はそちらの叩き台と同じ口) / 437 (PM の起動)
+
+## `--bg` で効くかを確かめる方法
+
+本物の PG と同じ repo の worktree (trusted) を cwd にして、`--bg` を **1 本だけ**起こし、終わったら必ず止める:
+
+1. `claude agents --json --cwd <worktree>` で基準を見る (同じ cwd の session が無いこと)
+2. `cd <worktree> && claude --bg -n <名前> --model haiku --setting-sources project,local --settings '{"language":"日本語"}' "What is the capital of France? Answer in one short sentence. Do not use any tools."`
+   (`-w` は付けない。worktree の中で -w を付けると入れ子の worktree を作る)
+3. `claude logs <id>` で返事の言語を見る
+4. `claude stop <id>` → `claude agents --json` に id が無く、`--all` で `state: done` になったのを見る
+
+## 進捗
+
+- 2026-09-25 (C-013): 実装
+  - `dispatcher/launcher.go`: `ExecLauncher{UserSettings}` を持たせ、起動・再開のたびにユーザーの settings.json から
+    `language` **だけ**を抜いて `--settings '{"language":…}'` を位置引数 (prompt) の前に挟む。読めない・壊れている・
+    無い・文字列でない・空なら付けない (起動は止めない)。パスは claude と同じく `CLAUDE_CONFIG_DIR` があればその下 (`UserSettingsPath`)
+  - `dispatchercmd.go`: 本物の dispatcher が `UserSettingsPath(home)` を渡す。437 の PM も同じ `d.Launch.Start/Resume` を通るので、437 が入れば PM にも効く
+    (437 のブランチ `origin/worktree-pc-c-007` の `dispatcher/pm.go` が `d.Launch.Start` / `Resume` を呼ぶのを確認)
+- 確かめたこと
+  - テスト: `dispatcher/launcher_test.go` (言語だけを渡す・hook / 許可 / model を持ち込まない・渡さない 6 通り・CLAUDE_CONFIG_DIR) と
+    `dispatchercmd_test.go` の配線 (本物の dispatcher の launcher が settings.json のパスを持つ)。偽の settings.json を TempDir に置き、claude は起動しない
+  - `bin/mutate-verify` で変異 7 本すべて想定のテストが red (rc=0): language だけでなく全体を渡す / 空の language を通す / 空でも --settings を付ける /
+    起動に渡さない / 再開に渡さない / CLAUDE_CONFIG_DIR を無視 / dispatcher の配線を外す
+  - **`--bg` で効いた** (上の方法で 1 回、2.1.282、haiku、cwd = この repo の worktree `pc-c-013`): 英語の問いに「パリはフランスの首都です。」。
+    Workspace not trusted は出なかった。`claude stop a09fba4c` 後、稼働一覧から消え `--all` で `state: done` を確認
+  - 🚨 対照 (`--settings` 無しの `--bg`) は取っていない (1 本だけの約束のため)。英語で返る側の証拠は 7d の `-p` の測定だけ。model も haiku で、PG の既定の model では測っていない
+- 残り: 本物の dispatcher で PG を起こして報告が日本語になるかは、次の dogfooding で見る (440)。PM が指示に「報告は日本語で」と書いている分は、それを見てから外す
