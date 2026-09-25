@@ -24,6 +24,26 @@
 - DeadSince から restartWait を過ぎても戻らない作業中のカードは、分解済みへ戻して同じ session を再開する (終了の `Shutdown` が既に同じ判定で分解済みへ戻している。それを使う)
 - 戻したことを履歴と出来事に書く
 
+## 進捗
+
+### 2026-09-25 (C-011)
+
+- やったこと: Tick の落ち続けたときの停止 (`stopCrashing`) の直後に `requeueVanished` を足した (`dispatcher.go`)。
+  判定は `gone` (`shutdown.go`) で、終了の `stopTarget` が「止めるものが無い・待たない」と返す形に、作業中・起動の印なし・記録にある・
+  DeadSince ありを重ねたもの。戻し方は Shutdown と共有の `requeue` (分解済み + 再開の文 + テストの係の頼みを取り下げ) に抜き出した。
+  同じ Tick の割り当てが同じ session を止めずに再開する。履歴と出来事 (`crash`) に「一覧から消えて戻らない」と書く
+  - DeadSince を条件に入れたのは、短い id だけ変わって session id が生きている形 (trackDead は生きていると見て外す) を、stopTarget が
+    「一覧に無い」と読むため
+  - 起動・再開が済んだら (`settle`) DeadSince を外すようにした。敵対レビューの指摘: 再開が同じ短い id を返すと (未実測)、記録の前の行が当たり、
+    一覧に出る前に前の時刻で「消えた」と読んで再開し直す (`TestVanishedResumeDoesNotRepeatBeforeListed` で red を見てから直した。変異でも red)
+- 確かめたこと: 偽の lister で一覧から消した形を作り、直す前に `TestVanishedRunningCardResumes` が red (作業中のまま・再開 0 回)。
+  変異 4 本 (`bin/mutate-verify`) がそれぞれ想定のテストで red: 呼び出しを外す / 停止より前に呼ぶ (`TestVanishedAfterCrashLimitStillAsksHuman`)
+  / restartWait の待ちを外す / DeadSince の条件を外す (`TestLiveSessionUnderOtherShortIDIsNotVanished`)
+- 残り:
+  - pid 無しのまま restartWait を過ぎても一覧に残る形 (自動の再開が止まった) は扱っていない (stopTarget は「止める」と返すので gone は偽)
+  - 記録に載る前 (起動は返ったが一覧に一度も出ない) に消えた作業中のカードは扱っていない (再開に要る session id と cwd が無い)
+  - 消える → 再開 → また消える、を繰り返しても落ちた回数に数えないので、止まらずに再開し続ける (外から止めた / 再起動の形では起きにくい)
+
 ## 関連
 
 - 460 (監査の記録) / 455 (枠に何を数えるか) / 430 (再起動の後も bg session が残るか)
