@@ -188,6 +188,7 @@ pro-con (`src/pro-con`。PM / PG を分けて Claude Code を並列に回す TUI
 | `n` | next (claim) | 新しい依頼 (new) | pro-con に claim が無い |
 | `s` | status viewer | PG (consumer) の一覧 | どちらも「板の toggle」。開く板が違う |
 | `x` | (空き) | 完了のレーンを片付ける (y/N 確認) | glogx の `X` = 捨てる の弱い版として読める。消さずに隠すだけなので小文字 |
+| `d` | diff / 削除 (doctor) | カードを削除する (y/N 確認。依頼の列でも確かめる) | pro-con に diff が無い。§4 の `d` 削除と同じ動詞。処理中のカードは PG を止めてから消える |
 
 `ctrl+r` は pro-con では新版への切り替え (ライブアップグレード。`r` = 再読込の強い版として読める)。
 

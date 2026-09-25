@@ -63,11 +63,12 @@ type cardSummary struct {
 	Waiting  string    `json:"waiting,omitempty"`  // 何を待っているか (質問・権限・順番待ち・利用枠・落ちた)
 	Question string    `json:"question,omitempty"` // 回答の要る待ちの文
 	Archived bool      `json:"archived,omitempty"`
+	Deleting bool      `json:"deleting,omitempty"` // 削除の依頼を受けて、PG の session を止めてから消えるのを待っている
 }
 
 func summarize(c card.Card) cardSummary {
 	return cardSummary{ID: c.ID, State: c.State.Label(), Title: c.Title, Owner: c.Owner, Session: c.Session, Since: c.Since,
-		Waiting: waitLabel(c.Wait), Question: c.Wait.Question, Archived: c.Archived}
+		Waiting: waitLabel(c.Wait), Question: c.Wait.Question, Archived: c.Archived, Deleting: c.Deleting()}
 }
 
 func waitLabel(w card.Wait) string {
@@ -242,6 +243,9 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 	p("依頼の原文: 「%s」", c.Request)
 	if c.Prompt != "" {
 		p("PM に渡した指示: %s", c.Prompt)
+	}
+	if c.Deleting() {
+		p("削除中: %s が %s前に依頼した (PG の session を止めてから消える)", c.DeleteBy, fmtAge(now.Sub(c.DeleteAt)))
 	}
 	if l := waitLabel(c.Wait); l != "" {
 		p("待ち: %s", l)

@@ -21,6 +21,9 @@ func applied(res []store.Result) []eventlog.Event {
 			continue
 		}
 		out = append(out, ev(eventlog.KindApply, r.CardID, "", fmt.Sprintf("箱の依頼 %s (%s) を適用した", r.ID, r.Kind)))
+		if r.Note != "" { // 記録から外したカードは履歴に残せないので、出来事にだけ残る
+			out = append(out, ev(eventlog.KindDelete, r.CardID, "", r.CardID+": "+r.Note))
+		}
 	}
 	return out
 }

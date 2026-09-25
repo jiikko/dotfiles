@@ -495,7 +495,7 @@ func (m *Model) stepRow(delta int) tea.Cmd {
 
 // writeKeys は backend に書き込む操作を始めるキーと、その操作の種類。受けない backend では押した時点で断る
 // (案内の行も同じ種類で暗くする: view.go の hints)。
-var writeKeys = map[string]backend.Op{"n": backend.OpNew, "i": backend.OpNew, "r": backend.OpAnswer, "+": backend.OpOrder, "w": backend.OpBtw, "x": backend.OpClear}
+var writeKeys = map[string]backend.Op{"n": backend.OpNew, "i": backend.OpNew, "r": backend.OpAnswer, "+": backend.OpOrder, "w": backend.OpBtw, "x": backend.OpClear, "d": backend.OpDelete}
 
 func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	if m.showDetail {
@@ -571,6 +571,8 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		m.showSessions = !m.showSessions
 	case "x": // 完了のレーンを片付ける (glogx の X = 捨てる の弱い版。y/N 確認を挟む)
 		m.askClearDone()
+	case "d": // カードを削除する (glogx の d = 削除。y/N 確認を挟む)
+		m.askDelete()
 	default:
 		if i, ok := laneKey(k.String()); ok {
 			m.jumpCol(i)
@@ -690,6 +692,26 @@ func (m *Model) askClearDone() {
 	}
 	m.askConfirm(backend.ClearDone{Repo: m.tab},
 		fmt.Sprintf("完了のカード %d 枚 (%s) をボードから片付けます (記録は残ります)。よいですか? [y/N]", n, scope))
+}
+
+// askDelete は選んでいるカードを削除するかを確かめる。依頼の列でも確かめる (docs/glogx-ui-guide.md §4: 削除は必ず y/N)。
+// 依頼の列より右のカードは PG の session を止めてから消えるので、そう書く。
+func (m *Model) askDelete() {
+	c, ok := m.selectedCard()
+	switch {
+	case !ok:
+		m.flash = "削除するカードを選んでいない"
+		return
+	case c.Deleting():
+		m.flash = c.ID + " は削除の依頼を受けている (PG の session を止めてから消える)"
+		return
+	}
+	q := fmt.Sprintf("%s「%s」を削除します (依頼の列。すぐ消えます)。よいですか? [y/N]", c.ID, c.Title)
+	if c.State != card.Requested {
+		q = fmt.Sprintf("%s「%s」(%s) を削除します。PG の session を止めてから消えます (worktree とブランチは残ります)。よいですか? [y/N]",
+			c.ID, c.Title, c.State.Label())
+	}
+	m.askConfirm(backend.DeleteCard{CardID: c.ID, From: "人間"}, q)
 }
 
 func (m *Model) handleConfirmKey(k tea.KeyPressMsg) tea.Cmd {

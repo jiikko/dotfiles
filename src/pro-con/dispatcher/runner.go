@@ -64,7 +64,7 @@ func (d *Dispatcher) tickRuns(ctx context.Context, now time.Time) ([]eventlog.Ev
 			return nil, err
 		}
 		for _, c := range st.Cards {
-			if c.ID == d.active.cardID && (c.State != card.Running || c.Run == "") {
+			if c.ID == d.active.cardID && (c.State != card.Running || c.Run == "" || c.Deleting()) {
 				d.cancelRun(10 * time.Second)
 				notes = append(notes, ev(eventlog.KindRun, c.ID, c.Session, c.ID+": 結果を待つ PG が居なくなったので実行を取り消した"))
 				break
@@ -94,6 +94,16 @@ func (d *Dispatcher) tickRuns(ctx context.Context, now time.Time) ([]eventlog.Ev
 	var queue []card.Card
 	for _, c := range st.Cards {
 		if c.Run == "" || c.State != card.Running {
+			continue
+		}
+		if c.Deleting() { // 削除の依頼を受けた: 実行しない・結果で再開しない。前の dispatcher が残した実行は止めてから取り下げる
+			if c.Exec.Active() {
+				killStaleFn(c.Exec.RunID)
+			}
+			if err := d.update(c.ID, func(cc *card.Card) { cc.DropRun() }); err != nil {
+				return notes, err
+			}
+			notes = append(notes, ev(eventlog.KindRun, c.ID, c.Session, c.ID+": 削除の依頼を受けたので、テストの係への頼みを取り下げた"))
 			continue
 		}
 		if c.Exec.Active() && (d.active == nil || d.active.cardID != c.ID) {

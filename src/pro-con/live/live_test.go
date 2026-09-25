@@ -188,8 +188,17 @@ func TestApplySubmitsToInbox(t *testing.T) {
 	if c := st.Cards[0]; c.Title != "色を直して" || c.Repo != "dotfiles" || !strings.Contains(c.Prompt, "dotfiles") {
 		t.Fatalf("依頼のカード: %+v", c)
 	}
-	if !b.Accepts(backend.OpNew) || !b.Accepts(backend.OpAnswer) || b.Accepts(backend.OpOrder) || b.Accepts(backend.OpClear) {
-		t.Fatal("受ける操作が新しい依頼と回答だけになっていない")
+	if !b.Accepts(backend.OpNew) || !b.Accepts(backend.OpAnswer) || !b.Accepts(backend.OpDelete) || b.Accepts(backend.OpOrder) || b.Accepts(backend.OpClear) {
+		t.Fatal("受ける操作が新しい依頼と回答と削除だけになっていない")
+	}
+	if _, err := b.Apply(backend.DeleteCard{CardID: "C-001"}); err != nil {
+		t.Fatal(err)
+	}
+	if res, err := store.Apply(b.dir, time.Now()); err != nil || len(res) != 1 || res[0].Kind != "delete" || res[0].Err != "" {
+		t.Fatalf("箱に削除の依頼が置かれていない: %+v %v", res, err)
+	}
+	if st, _ := store.Load(b.dir); len(st.Cards) != 0 {
+		t.Fatalf("依頼の列のカードが消えていない: %+v", st.Cards)
 	}
 	if _, err := b.AttachCommand(""); err == nil {
 		t.Fatal("session id 無しで attach できてしまう")
@@ -733,7 +742,7 @@ func TestViewOnlyBackend(t *testing.T) {
 	if !ok {
 		t.Fatal("操作を断れない")
 	}
-	for _, op := range []backend.Op{backend.OpNew, backend.OpAnswer, backend.OpOrder, backend.OpBtw, backend.OpClear} {
+	for _, op := range []backend.Op{backend.OpNew, backend.OpAnswer, backend.OpOrder, backend.OpBtw, backend.OpClear, backend.OpDelete} {
 		if acc.Accepts(op) {
 			t.Fatalf("見ているだけなのに %s を受ける", op)
 		}

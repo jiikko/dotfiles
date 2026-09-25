@@ -363,6 +363,9 @@ func (m *Model) badgeColored(c card.Card) string {
 // badge は待ちの理由と、issue との紐づき (要件 10)。
 func (m *Model) badge(c card.Card) string {
 	var parts []string
+	if c.Deleting() {
+		parts = append(parts, "削除中 (PG を止めている)")
+	}
 	switch {
 	case c.Stalled:
 		parts = append(parts, "🚨停滞")
@@ -523,6 +526,7 @@ func (m *Model) hints() []string {
 		avail("e issue を開く", has && len(c.Issues) > 0), // md が実在するかは押したときに探す (描画のたびには探さない)
 		avail("y パス", has && len(c.Issues) > 0),
 		avail("Y 内容", has),
+		avail("d 削除", has && !c.Deleting() && m.accepts(backend.OpDelete)),
 	}
 	if m.showDetail {
 		return append(append([]string{"j / k スクロール", "J / K 隣のカード"}, cardOps...), "q / esc 閉じる")

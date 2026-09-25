@@ -50,6 +50,7 @@ func TestCardCommandRejectsBadUsage(t *testing.T) {
 		{"plan", "C-001", "--issue", "dotfiles"}, // 番号が無い
 		{"close", "C-001", "--ending", "done"},   // 未知の終わり方
 		{"review"},                               // カードが無い
+		{"delete"},                               // カードが無い
 	} {
 		dir := t.TempDir()
 		if rc, _, errOut := card_(t, dir, args...); rc != 2 || errOut == "" {
@@ -71,6 +72,8 @@ func TestCardCommandAskAnswer(t *testing.T) {
 		{[]string{"answer", "C-001", "青", "--from", "PM"}, store.Request{Kind: "answer", CardID: "C-001", Answer: "青", From: "PM"}},
 		{[]string{"close", "C-001", "--ending", "answered"}, store.Request{Kind: "close", CardID: "C-001", Ending: card.EndAnswered}},
 		{[]string{"rework", "C-001", "テストを足して"}, store.Request{Kind: "rework", CardID: "C-001", Rework: "テストを足して"}},
+		{[]string{"delete", "C-001"}, store.Request{Kind: "delete", CardID: "C-001", From: "人間"}},
+		{[]string{"delete", "C-001", "--from", "PM"}, store.Request{Kind: "delete", CardID: "C-001", From: "PM"}},
 	} {
 		got, _, err := parseCardWait(tc.args)
 		if err != nil || got.Kind != tc.want.Kind || got.CardID != tc.want.CardID || got.Question != tc.want.Question ||

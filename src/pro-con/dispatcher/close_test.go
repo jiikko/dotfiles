@@ -108,8 +108,8 @@ func TestCloseChecksStoppedInList(t *testing.T) {
 	}
 	r.ss[0].PID, r.ss[0].State = 0, agents.StateStopped // 止める要求が効いて止まった
 	r.tick(t)
-	if c := states(t, r.dir)["C-001"]; c.StopAfterClose || c.CloseStopSent || !strings.Contains(lastHistory(c), "PG の session を止めた") {
-		t.Fatalf("止めた PG の履歴が違う / 印が残る: %v %v %q", c.StopAfterClose, c.CloseStopSent, lastHistory(c))
+	if c := states(t, r.dir)["C-001"]; c.StopAfterClose || c.StopSent || !strings.Contains(lastHistory(c), "PG の session を止めた") {
+		t.Fatalf("止めた PG の履歴が違う / 印が残る: %v %v %q", c.StopAfterClose, c.StopSent, lastHistory(c))
 	}
 }
 

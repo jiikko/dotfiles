@@ -75,6 +75,7 @@ const (
 	OpOrder  Op = "order"  // 追加オーダー (+)
 	OpBtw    Op = "btw"    // btw (w)
 	OpClear  Op = "clear"  // 完了のレーンを片付ける (x)
+	OpDelete Op = "delete" // カードを削除する (d)
 )
 
 // Accepter は一部の操作しか受けない backend (任意。持たない backend は全部受ける)。
@@ -180,6 +181,14 @@ type ClearDone struct {
 	Repo string
 }
 
+// DeleteCard はカードを消す (issue 451)。依頼の列のカードはすぐ消え、それ以外は PG の session を止めてから消える
+// (それまでカードは「削除中」で残る)。🚨 PG の worktree とブランチは消さない。
+type DeleteCard struct {
+	CardID string
+	From   string // 人間 / PM
+}
+
+func (DeleteCard) isCommand() {}
 func (ClearDone) isCommand()  {}
 func (Answer) isCommand()     {}
 func (AddOrder) isCommand()   {}
@@ -195,4 +204,5 @@ var (
 	ErrNoSession   = errors.New("このカードには PG の session が無い")
 	ErrNotActive   = errors.New("このカードは作業中ではない")
 	ErrUnknownKind = errors.New("未知の操作")
+	ErrDeleting    = errors.New("このカードは削除の依頼を受けている (PG を止めてから消す)")
 )

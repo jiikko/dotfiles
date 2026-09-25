@@ -2,7 +2,7 @@
 //
 //  1. 受付の箱を記録へ適用する (store.Apply)
 //  2. 起動した PG の session を pro-con の記録 (live.Register) に登録する (session id と pid が一覧に出てから)
-//  3. 閉じたカードの PG の session を止める (close.go。issue 447)
+//  3. 閉じたカード・削除の依頼を受けたカードの PG の session を止める (close.go。issue 447 / 451)。削除のカードは止まったら記録から外す
 //  4. 分解済みのカードに、上限まで PG を割り当てる。回答を受けたカード (Resume が有る) は同じ session を再開し、それ以外は新しく起動する
 //
 // 書き手は dispatcher だけ (426 の決定 1)。PG の起動と再開は Launcher に任せ、テストでは偽物に差し替える。
@@ -162,7 +162,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 		notes = append(notes, ev(eventlog.KindRegister, "", "", fmt.Sprintf("PG の session を %d 本登録した", n)))
 	}
 	notes = append(notes, warn...)
-	closed, err := d.stopClosed(ctx, now)
+	closed, err := d.stopMarked(ctx, now, ss)
 	notes = append(notes, closed...)
 	if err != nil {
 		return notes, err
@@ -523,6 +523,12 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 	running := 0
 	var queue []card.Card
 	for _, c := range st.Cards {
+		if c.Deleting() { // 起動・再開しない (PG を止めて消すのを待っている)。起動の結果が分からないものは立っているかもしれないので数える
+			if c.State == card.Running || c.Launching != "" {
+				running++
+			}
+			continue
+		}
 		switch c.State {
 		case card.Running:
 			running++

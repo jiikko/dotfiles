@@ -1,53 +1,86 @@
 package dispatcher
 
-// 閉じたカードの PG を止める (issue 447)。close の適用でカードに StopAfterClose が付き、dispatcher が Tick ごとに止める。
-// 止めた・止まったかの判定は終了のとき (shutdown.go の ensureStopped) と同じ部品を使う。
-// 🚨 PG の worktree とブランチは消さない (PM が cherry-pick で取り込む)。
+// PG を止めてから片付けるカード: 閉じたカード (issue 447。StopAfterClose) と、削除の依頼を受けたカード (issue 451。DeleteAt)。
+// 印は依頼の適用と同時に付き、dispatcher が Tick ごとに止める。止めた・止まったかの判定は終了のとき (shutdown.go の ensureStopped) と同じ部品を使う。
+// 🚨 PG の worktree とブランチは消さない (PM が cherry-pick で取り込む。削除しても取り込み前の作業が入っている)。
 
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
+	"pro-con/agents"
 	"pro-con/card"
 	"pro-con/eventlog"
+	"pro-con/live"
 	"pro-con/store"
 )
 
-// closeStopWait は、閉じてから止まったのを確かめられるまで Tick ごとに止め直す長さ。過ぎたら諦めて履歴に書く (close 自体は成立している)。
+// closeStopWait は、印を付けてから止まったのを確かめられるまで Tick ごとに止め直す長さ。過ぎたら諦めて履歴に書く
+// (close はそのまま成立している。削除はカードを消さずに残す)。
 const closeStopWait = time.Minute
 
-// stopClosed は StopAfterClose の付いたカードの PG の session (起動の記録にあるもの・再開で入れ替わった前のもの) を止める。
+// stopMarked は印の付いたカードの PG の session (起動の記録にあるもの・再開で入れ替わった前のもの) を止める。
 // 1 回の Tick では待たない (ensureStopped を 0 周で回す)。止まらなければ次の Tick で止め直す。
-func (d *Dispatcher) stopClosed(ctx context.Context, now time.Time) ([]eventlog.Event, error) {
+// 削除のカードは作業の途中でも印が付くので、起動・再開の直後でまだ記録に無い session も止める (終了のときと同じ stopTarget)。
+// 閉じたカードは PG が review を打った後なので、記録に載っている。
+func (d *Dispatcher) stopMarked(ctx context.Context, now time.Time, ss []agents.Session) ([]eventlog.Event, error) {
 	st, err := store.Load(d.Dir)
+	if err != nil {
+		return nil, err
+	}
+	reg, err := live.LoadRegistry(filepath.Join(d.Dir, live.RegistryFile))
 	if err != nil {
 		return nil, err
 	}
 	var notes []eventlog.Event
 	for _, c := range st.Cards {
-		if !c.StopAfterClose {
+		deleting := c.Deleting()
+		if !c.StopAfterClose && !deleting {
 			continue
 		}
-		more, remaining, sent, err := d.ensureStopped(ctx, nil, map[string]bool{c.ID: true}, 0)
-		if err == nil && len(remaining) == 0 {
+		since, extra, wait := c.Since, map[string]string(nil), false
+		if deleting {
+			since = c.DeleteAt
+			var target string
+			if target, wait = d.stopTarget(c, now, ss, reg); target != "" {
+				extra = map[string]string{target: c.ID}
+			}
+			// テストの係への頼みが残っている間は外さない (実行の印を失うと、残った実行を止められない)。tickRuns が止めて取り下げる
+			wait = wait || c.Run != "" || c.Exec.Active()
+		}
+		more, remaining, sent, err := d.ensureStopped(ctx, extra, map[string]bool{c.ID: true}, 0)
+		stopped := sent > 0 || c.StopSent // 前の Tick で止める要求を出して、この Tick で止まったのを見た形も「止めた」
+		if err == nil && len(remaining) == 0 && !wait {
+			if deleting {
+				kind, n, err := d.dropCard(c, now, stopped)
+				if n != "" {
+					notes = append(notes, ev(kind, c.ID, c.Session, c.ID+": "+n))
+				}
+				if err != nil {
+					return notes, err
+				}
+				continue
+			}
 			text := "閉じたので PG の session を止めた (worktree とブランチは残す)"
-			if sent == 0 && !c.CloseStopSent { // 前の Tick で止める要求を出して、この Tick で止まったのを見た形は「止めた」
+			if !stopped {
 				text = "閉じた後に確かめたら PG の session は既に止まっていた"
 			}
 			notes = append(notes, ev(eventlog.KindStop, c.ID, c.Session, c.ID+": "+text))
-			if err := d.finishCloseStop(c.ID, now, text); err != nil {
+			if err := d.finishMarkedStop(c.ID, now, text); err != nil {
 				return notes, err
 			}
 			continue
 		}
-		if sent > 0 && !c.CloseStopSent {
-			if err := d.update(c.ID, func(cc *card.Card) { cc.CloseStopSent = true }); err != nil {
+		if sent > 0 && !c.StopSent {
+			if err := d.update(c.ID, func(cc *card.Card) { cc.StopSent = true }); err != nil {
 				return notes, err
 			}
 		}
-		if now.Sub(c.Since) < closeStopWait {
+		if now.Sub(since) < closeStopWait {
 			continue // 次の Tick で止め直す
 		}
 		reasons := make([]string, 0, len(more)+len(remaining))
@@ -58,19 +91,45 @@ func (d *Dispatcher) stopClosed(ctx context.Context, now time.Time) ([]eventlog.
 		if err != nil {
 			reasons = append(reasons[:len(more)], err.Error())
 		}
+		if wait && len(reasons) == 0 {
+			reasons = []string{"起動・再開の直後の session が一覧に出ない / 落ちた PG が自動の再開から戻らない"}
+		}
 		why := strings.Join(reasons, " / ")
-		text := fmt.Sprintf("閉じたが PG の session を止められない: %s (止める: claude stop <id>)", why)
-		notes = append(notes, ev(eventlog.KindStop, c.ID, c.Session, c.ID+": "+text))
-		if err := d.finishCloseStop(c.ID, now, text); err != nil {
+		kind, text := eventlog.KindStop, fmt.Sprintf("閉じたが PG の session を止められない: %s (止める: claude stop <id>)", why)
+		if deleting {
+			kind, text = eventlog.KindDelete, fmt.Sprintf("削除できない: PG の session を止められない: %s (カードは残した。止めてからもう一度削除する: claude stop <id>)", why)
+		}
+		notes = append(notes, ev(kind, c.ID, c.Session, c.ID+": "+text))
+		if err := d.finishMarkedStop(c.ID, now, text); err != nil {
 			return notes, err
 		}
 	}
 	return notes, nil
 }
 
-func (d *Dispatcher) finishCloseStop(id string, now time.Time, text string) error {
+// finishMarkedStop は印を外して履歴に書く (止め終えた / 諦めた)。削除の印も外す (諦めたカードは残り、もう一度削除を頼める)。
+func (d *Dispatcher) finishMarkedStop(id string, now time.Time, text string) error {
 	return d.update(id, func(cc *card.Card) {
-		cc.StopAfterClose, cc.CloseStopSent = false, false
+		cc.StopAfterClose, cc.StopSent, cc.DeleteAt, cc.DeleteBy = false, false, time.Time{}, ""
 		cc.History = append(cc.History, card.Event{At: now, Text: text})
 	})
+}
+
+// dropCard は PG が止まったのを確かめた削除のカードを記録から外し、記録に残す出来事 (種類と文) を返す。
+// 外せない (不変条件に反する = 子カードが後から付いた等) ときは印を外して履歴に書き、カードを残す。
+// 🚨 pro-con が起動した session の記録の行は消さない (終了のときの確かめで、消したカードの PG も止まっていることを見続ける)。
+func (d *Dispatcher) dropCard(c card.Card, now time.Time, stopped bool) (string, string, error) {
+	how := "PG の session を止めた"
+	if !stopped {
+		how = "PG の session は動いていなかった"
+	}
+	err := store.Update(d.Dir, func(s *store.State) error {
+		s.Cards = slices.DeleteFunc(s.Cards, func(cc card.Card) bool { return cc.ID == c.ID })
+		return nil
+	})
+	if err == nil {
+		return eventlog.KindDelete, fmt.Sprintf("「%s」を削除した (%s が依頼。%s。worktree とブランチは残す)", c.Title, c.DeleteBy, how), nil
+	}
+	text := fmt.Sprintf("削除できない: %v (%s。カードは残した)", err, how)
+	return eventlog.KindDelete, text, d.finishMarkedStop(c.ID, now, text)
 }

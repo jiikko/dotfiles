@@ -158,6 +158,7 @@ func (s *Sim) busyConsumers() int {
 // Step は模擬時間を 1 刻み進める。
 func (s *Sim) Step() {
 	s.now = s.now.Add(StepDuration)
+	s.stepDelete()
 	s.stepResources()
 	s.stepProgress()
 	s.stepDispatch()
@@ -381,6 +382,8 @@ func (s *Sim) Apply(cmd backend.Command) (string, error) {
 		return s.newRequest(c)
 	case backend.ClearDone:
 		return s.clearDone(c)
+	case backend.DeleteCard:
+		return s.deleteCard(c)
 	}
 	return "", backend.ErrUnknownKind
 }
@@ -403,6 +406,44 @@ func (s *Sim) clearDone(cd backend.ClearDone) (string, error) {
 	return fmt.Sprintf("完了のカード %d 枚を片付けた (記録は残っている)", n), nil
 }
 
+// deleteCard は本物のモード (store の delete) と同じ振る舞い: 依頼の列のカードはすぐ消し、それ以外は削除の印を付けて、
+// 次の刻みで PG を止めてから消す (stepDelete)。子カードの親は消さない。
+func (s *Sim) deleteCard(d backend.DeleteCard) (string, error) {
+	c := s.find(d.CardID)
+	if c == nil {
+		return "", backend.ErrNotFound
+	}
+	if kids := card.Children(s.cards, c.ID); len(kids) > 0 {
+		return "", fmt.Errorf("子カード %s の親なので消せない (先に子カードを消す)", strings.Join(kids, ", "))
+	}
+	if c.Deleting() {
+		return c.ID + " は削除の依頼を受けている (PG を止めてから消す)", nil
+	}
+	if c.State == card.Requested {
+		s.cards = slices.DeleteFunc(s.cards, func(x card.Card) bool { return x.ID == d.CardID })
+		return d.CardID + " を削除した", nil
+	}
+	by := d.From
+	if by == "" {
+		by = "人間"
+	}
+	c.DeleteAt, c.DeleteBy = s.now, by
+	c.History = append(c.History, card.Event{At: s.now, Text: by + " が削除を依頼した (PG の session を止めてから消す。worktree とブランチは残す)"})
+	return c.ID + " の削除を受け付けた (PG の session を止めてから消す)", nil
+}
+
+// stepDelete は削除の印の付いたカードの PG を止めて (模擬: リソースの列と台本を外す) 消す。ほかの刻みより先に回す
+// (印の付いたカードを起動・進行・レビューさせない)。
+func (s *Sim) stepDelete() {
+	for _, c := range s.cards {
+		if c.Deleting() {
+			s.releaseResources(c.ID)
+			delete(s.scripts, c.ID)
+		}
+	}
+	s.cards = slices.DeleteFunc(s.cards, card.Card.Deleting)
+}
+
 // answer は「まだ質問待ちなら書く」の比較付き更新。負けた側には ErrNotWaiting を返す。
 func (s *Sim) answer(a backend.Answer) (string, error) {
 	if strings.TrimSpace(a.Text) == "" {
@@ -411,6 +452,9 @@ func (s *Sim) answer(a backend.Answer) (string, error) {
 	c := s.find(a.CardID)
 	if c == nil {
 		return "", backend.ErrNotFound
+	}
+	if c.Deleting() {
+		return "", backend.ErrDeleting
 	}
 	if !c.Answerable() {
 		return "", backend.ErrNotWaiting
@@ -428,6 +472,9 @@ func (s *Sim) addOrder(o backend.AddOrder) (string, error) {
 	c := s.find(o.CardID)
 	if c == nil {
 		return "", backend.ErrNotFound
+	}
+	if c.Deleting() { // 別件の子カードを作ると、親を消したときに親を失う
+		return "", backend.ErrDeleting
 	}
 	switch o.Kind {
 	case card.OrderSeparate:

@@ -353,7 +353,7 @@ func (b *Backend) Snapshot() backend.Snapshot {
 	return s
 }
 
-// Apply は受付の箱に依頼を置く (記録へ適用するのは dispatcher)。受けるのは新しい依頼と回答だけ。
+// Apply は受付の箱に依頼を置く (記録へ適用するのは dispatcher)。受けるのは新しい依頼と回答と削除だけ。
 func (b *Backend) Apply(cmd backend.Command) (string, error) {
 	var r store.Request
 	switch c := cmd.(type) {
@@ -373,17 +373,24 @@ func (b *Backend) Apply(cmd backend.Command) (string, error) {
 			return "", backend.ErrEmptyText
 		}
 		r = store.Request{Kind: "answer", CardID: c.CardID, Answer: c.Text, From: firstNonEmpty(c.From, "人間")}
+	case backend.DeleteCard:
+		r = store.Request{Kind: "delete", CardID: c.CardID, From: firstNonEmpty(c.From, "人間")}
 	default:
 		return "", ErrNotYet
 	}
 	if _, err := store.Submit(b.dir, r); err != nil {
 		return "", err
 	}
+	if r.Kind == "delete" {
+		return r.CardID + " の削除を受け付けた (依頼の列ならすぐ、ほかは PG の session を止めてから消える)", nil
+	}
 	return "受け付けた (dispatcher が適用するとカードに出る)", nil
 }
 
-// Accepts は本物のモードで受ける操作 (backend.Accepter)。新しい依頼と回答だけ。
-func (b *Backend) Accepts(op backend.Op) bool { return op == backend.OpNew || op == backend.OpAnswer }
+// Accepts は本物のモードで受ける操作 (backend.Accepter)。新しい依頼と回答と削除だけ。
+func (b *Backend) Accepts(op backend.Op) bool {
+	return op == backend.OpNew || op == backend.OpAnswer || op == backend.OpDelete
+}
 
 // AttachCommand は裏の session を claude attach で開く。対話 session (Desktop) には attach の口が無い。
 // 🚨 撃つ直前に一覧を取り直し、記録と照合し直す (最大 3 秒前の一覧の短い id のまま撃つと、その間に入れ替わった外の session へ attach しうる)。

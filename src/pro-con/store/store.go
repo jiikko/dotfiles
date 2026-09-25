@@ -61,7 +61,7 @@ type Request struct {
 	Command  string          `json:"command,omitempty"` // run: テストの係に実行を頼むコマンド (シェルの 1 行)
 	Cwd      string          `json:"cwd,omitempty"`     // run: 頼んだシェルの作業ディレクトリ (dispatcher が PG の worktree と照らす)
 	Answer   string          `json:"answer,omitempty"`
-	From     string          `json:"from,omitempty"`   // 回答した人 (人間 / PM)
+	From     string          `json:"from,omitempty"`   // 回答した人 / 削除を依頼した人 (人間 / PM)
 	Rework   string          `json:"rework,omitempty"` // rework: レビューで直してほしい点 (書いたまま)
 	Ending   card.Ending     `json:"ending,omitempty"`
 	Said     []card.Event    `json:"said,omitempty"` // attach: attach の間に人間が打った指示 (原文と打った時刻)
@@ -84,10 +84,11 @@ type Rejected struct {
 	Why string `json:"why"`
 }
 
-// Result は依頼 1 件の適用の結果。Err が空なら適用した。
+// Result は依頼 1 件の適用の結果。Err が空なら適用した。Note は記録に残す出来事 (カードを消したとき。消したカードの履歴には残せない)
 type Result struct {
 	ID, Kind, CardID string
 	Err              string
+	Note             string
 }
 
 // Submit は依頼を受付の箱に置き、依頼の ID を返す。どのプロセスから呼んでもよい。
@@ -181,7 +182,7 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 			r.ID = id // ファイル名が正本 (中身の id は信じない)
 			res.Kind, res.CardID = r.Kind, r.CardID
 			var next State
-			if next, res.CardID, err = apply(st, r, now); err == nil {
+			if next, res.CardID, res.Note, err = apply(st, r, now); err == nil {
 				st = next
 			}
 		}
@@ -268,15 +269,16 @@ func newViolation(before, after []card.Card) error {
 	return nil
 }
 
-// apply は依頼 1 件を st に当てた次の状態と、対象のカード ID を返す。規則か不変条件に反したらエラー (st は変えない)。
-func apply(st State, r Request, now time.Time) (State, string, error) {
+// apply は依頼 1 件を st に当てた次の状態と、対象のカード ID と、記録に残す出来事 (無ければ空) を返す。
+// 規則か不変条件に反したらエラー (st は変えない)。
+func apply(st State, r Request, now time.Time) (State, string, string, error) {
 	next := st
 	next.Cards = append([]card.Card(nil), st.Cards...)
-	var id string
+	var id, note string
 	switch r.Kind {
 	case "add":
 		if strings.TrimSpace(r.Title) == "" && strings.TrimSpace(r.Request) == "" {
-			return st, "", errors.New("add: 題名も依頼の原文も空")
+			return st, "", "", errors.New("add: 題名も依頼の原文も空")
 		}
 		id = fmt.Sprintf("C-%03d", next.NextID)
 		next.NextID++
@@ -284,23 +286,56 @@ func apply(st State, r Request, now time.Time) (State, string, error) {
 			Owner: firstNonEmpty(r.Owner, "PM"), State: card.Requested, Since: now, FromRequest: r.ID,
 			History: []card.Event{{At: now, Text: "依頼を受けた"}}}
 		next.Cards = append(next.Cards, c)
+	case "delete":
+		i := indexOf(next.Cards, r.CardID)
+		if i < 0 {
+			return st, r.CardID, "", fmt.Errorf("delete: カード %q が無い", r.CardID)
+		}
+		id = r.CardID
+		var err error
+		if note, err = remove(&next, i, r, now); err != nil {
+			return st, id, "", fmt.Errorf("delete: %w", err)
+		}
 	default:
 		i := indexOf(next.Cards, r.CardID)
 		if i < 0 {
-			return st, r.CardID, fmt.Errorf("%s: カード %q が無い", r.Kind, r.CardID)
+			return st, r.CardID, "", fmt.Errorf("%s: カード %q が無い", r.Kind, r.CardID)
 		}
 		id = r.CardID
 		c := next.Cards[i]
 		if err := transition(&c, r, now); err != nil {
-			return st, id, fmt.Errorf("%s: %w", r.Kind, err)
+			return st, id, "", fmt.Errorf("%s: %w", r.Kind, err)
 		}
 		next.Cards[i] = c
 	}
 	// 件数ではなく「新しく出た違反」で判定する (ある違反を消しつつ別の違反を作る依頼を通さない)
 	if err := newViolation(st.Cards, next.Cards); err != nil {
-		return st, id, fmt.Errorf("%s: %w", r.Kind, err)
+		return st, id, "", fmt.Errorf("%s: %w", r.Kind, err)
 	}
-	return next, id, nil
+	return next, id, note, nil
+}
+
+// remove は削除の依頼 (issue 451)。依頼の列のカード (PG が付いていない) はすぐ記録から外す。それ以外は印 (DeleteAt) を付けるだけで、
+// dispatcher が PG の session を止めたのを確かめてから外す (dispatcher/close.go)。返すのは記録に残す出来事。
+// 🚨 PG の worktree とブランチには触らない (取り込み前の作業が入っている)。
+func remove(st *State, i int, r Request, now time.Time) (string, error) {
+	c := st.Cards[i]
+	if kids := card.Children(st.Cards, c.ID); len(kids) > 0 {
+		return "", fmt.Errorf("子カード %s の親なので消せない (先に子カードを消す)", strings.Join(kids, ", "))
+	}
+	by := firstNonEmpty(r.From, "人間")
+	if c.Deleting() {
+		return "", nil // 既に削除の依頼を受けている (二重に押した)
+	}
+	if c.State == card.Requested && c.Session == "" && c.Launching == "" {
+		st.Cards = append(st.Cards[:i], st.Cards[i+1:]...)
+		return fmt.Sprintf("「%s」を削除した (依頼の列。%s が依頼)", c.Title, by), nil
+	}
+	// テストの係への頼みはここでは取り下げない (実行中の印を消すと、前の dispatcher が残した実行を止められない)。dispatcher が止めてから取り下げる
+	c.DeleteAt, c.DeleteBy = now, by
+	c.History = append(c.History, card.Event{At: now, Text: by + " が削除を依頼した (PG の session を止めてから消す。worktree とブランチは残す)"})
+	st.Cards[i] = c
+	return fmt.Sprintf("「%s」の削除の依頼を受けた (%s。PG の session を止めてから消す)", c.Title, by), nil
 }
 
 // transition はカードの状態を 1 つ進める。遷移の規則 (どの状態からどの依頼を受けるか) はここだけに書く。
@@ -312,6 +347,9 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		c.State, c.Since = to, now
 		c.Stalled = false // 停滞は作業中の列でだけ意味を持つ (watchdog が作業中のカードだけを見る)。止める印 (StopWanted) は作業中へ戻る settle が外す
 		c.History = append(c.History, card.Event{At: now, Text: why})
+	}
+	if c.Deleting() { // PG を止めて消すのを待っている。質問・完了・実行の頼みで列を動かさない (動かすと再開・実行の口が開く)
+		return errors.New("削除の依頼を受けている")
 	}
 	switch r.Kind {
 	case "plan": // PM がタスクに分けてキューに積んだ
