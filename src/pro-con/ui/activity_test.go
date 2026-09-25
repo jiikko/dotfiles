@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"pro-con/backend"
 )
 
@@ -160,5 +162,40 @@ func TestDrawerActivityKeepsPositionWhenHeadIsDropped(t *testing.T) {
 	}
 	if got := screen(m); strings.Index(got, anchor) != strings.Index(want, anchor) {
 		t.Fatalf("頭が捨てられて読んでいる行がずれた:\n前\n%s\n後\n%s", want, got)
+	}
+}
+
+// 応答の文は markdown として整形して出す (486): 改行・箇条書きが元の形で読め、コードブロックは色が付く。道具の呼び出しは 1 行のまま。
+func TestDrawerRendersResponseAsMarkdown(t *testing.T) {
+	m, be, clk := activityModel(t, 0)
+	now := be.snap.Now
+	be.items["W1"] = []backend.Activity{
+		{At: now, Session: "s-w1", Text: "どれにしますか?\n\n- A: 左端に帯\n- B: 右端に印\n\n```go\nfunc main() {}\n```"},
+		{At: now, Session: "s-w1", Tool: "Bash", Text: "go test ./..."},
+	}
+	open(t, m, clk)
+	deliver(m, be)
+	raw := m.drawerBody()
+	var lines []string
+	for _, l := range raw {
+		lines = append(lines, ansi.Strip(l))
+	}
+	idx := func(sub string) int {
+		for i, l := range lines {
+			if strings.Contains(l, sub) {
+				return i
+			}
+		}
+		return -1
+	}
+	q, a, b, code, tool := idx("どれにしますか?"), idx("A: 左端に帯"), idx("B: 右端に印"), idx("func main() {}"), idx("Bash: go test ./...")
+	if q < 0 || a <= q || b <= a || code <= b || tool <= code {
+		t.Fatalf("応答の文が行に分かれて順に出ていない (q=%d a=%d b=%d code=%d tool=%d):\n%s", q, a, b, code, tool, strings.Join(lines, "\n"))
+	}
+	if strings.Contains(lines[q], "A: 左端に帯") {
+		t.Fatalf("改行を潰して 1 行に並べた: %q", lines[q])
+	}
+	if !strings.Contains(raw[code], "\x1b[") {
+		t.Fatalf("コードブロックに色が付いていない: %q", raw[code])
 	}
 }

@@ -6,8 +6,11 @@ package ui
 
 import (
 	"slices"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
+
+	"glogx/issues"
 
 	"pro-con/backend"
 )
@@ -107,10 +110,19 @@ func (m *Model) addActivity(add func(style, text string)) {
 			session = a.Session
 			add(sgrDim, "  ── 再開: session "+orDash(a.Session)+" ──")
 		}
-		line := a.Text
+		stamp := "  " + a.At.Local().Format("15:04") + " "
 		if a.Tool != "" {
-			line = sgrCyan + a.Tool + sgrFgReset + ": " + a.Text
+			add("", stamp+sgrCyan+a.Tool+sgrFgReset+": "+a.Text)
+			continue
 		}
-		add("", "  "+a.At.Local().Format("15:04")+" "+line)
+		// 応答の文は markdown として整形する (見出し・箇条書き・コードブロックのハイライト。486)。時刻の幅だけ字下げして並べる
+		body, _ := issues.RenderBody(a.Text, max(m.drawerTextWidth()-len(stamp), 10), true)
+		for i, l := range body {
+			if i == 0 {
+				add("", stamp+l)
+				continue
+			}
+			add("", strings.Repeat(" ", len(stamp))+l)
+		}
 	}
 }

@@ -26,7 +26,7 @@ type Transcript struct {
 	Title      string
 	LastPrompt string
 	Prompts    []Prompt // 人間の発言 (古い順)
-	Outputs    []string // PG の出力の文 (古い順)
+	Outputs    []string // PG の出力の文 (古い順)。改行を残した原文 (markdown。rawText)
 	LastAt     time.Time
 	// LastNew は PG の出力のうち、末尾の中でそれまでに無かった文が最後に出た時刻 (watchdog の「進捗」。同じ出力を繰り返すループは数えない)
 	LastNew time.Time
@@ -192,7 +192,7 @@ func parseFrom(rd io.Reader) Transcript {
 		case "assistant":
 			if r.Message != nil {
 				if s := text(r.Message.Content); s != "" {
-					t.Outputs = append(t.Outputs, s)
+					t.Outputs = append(t.Outputs, rawText(r.Message.Content)) // 画面が markdown として描くので改行を残す (486)
 				}
 				// 進捗は、文かツール呼び出し (名前 + 引数) のうち、それまでに無かったものが出たこと (同じ呼び出しの繰り返しは数えない)
 				for _, sig := range signatures(r.Message.Content) {
@@ -349,3 +349,26 @@ func text(raw json.RawMessage) string {
 }
 
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+// rawText は text と同じ中身を、改行を残したまま返す (PG の出力 = Outputs 用。486)。複数の文の部分は空行でつなぐ。
+// 🚨 text (1 行に潰す) を変えない: 人間の発言・再開の文の判定・watchdog の進捗の数え方 (signatures) が 1 行の形に依存している
+func rawText(raw json.RawMessage) string {
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return strings.TrimSpace(s)
+	}
+	var parts []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(raw, &parts) != nil {
+		return ""
+	}
+	var b []string
+	for _, p := range parts {
+		if p.Type == "text" && strings.TrimSpace(p.Text) != "" {
+			b = append(b, strings.TrimSpace(p.Text))
+		}
+	}
+	return strings.Join(b, "\n\n")
+}

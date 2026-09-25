@@ -87,7 +87,7 @@ type Activity struct {
 	At      time.Time `json:"at"`
 	Session string    `json:"session"`        // どの session の活動か (pro-con の短い id。再開で入れ替わると変わる)
 	Tool    string    `json:"tool,omitempty"` // 道具の名前 (Bash / Edit …)。空なら応答の文
-	Text    string    `json:"text"`           // 応答の文、または道具の呼び出しの要点 (コマンド・ファイル)。1 行・制御文字なし
+	Text    string    `json:"text"`           // 応答の文 (改行を残した markdown。486)、または道具の呼び出しの要点 (1 行)。どちらも制御文字なし
 }
 
 // Line は Text に道具の名前を前置きした 1 行 (「Bash: go test ./...」)。応答の文はそのまま。

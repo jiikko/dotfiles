@@ -337,8 +337,8 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 	}
 	p("")
 	p("出力 (PG の出力の末尾)")
-	for _, s := range d.Log {
-		p("  %s", s)
+	for _, s := range d.Log { // 1 件が複数行になりうる (改行を残した原文。486)
+		p("  %s", strings.ReplaceAll(s, "\n", "\n  "))
 	}
 }
 
