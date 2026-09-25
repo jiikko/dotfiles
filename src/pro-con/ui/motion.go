@@ -146,8 +146,7 @@ func (m *Model) overlayMoves(board []string) []string {
 	for _, mv := range m.moves {
 		x, y := mv.pos(m, now)
 		col, row := int(x+0.5), int(y+0.5)
-		t, b := m.cardCell(mv.c, inner)
-		for i, l := range []string{t, b} {
+		for i, l := range m.cardCell(mv.c, inner) {
 			if r := row + i; r >= 0 && r < len(board) {
 				board[r] = splice(board[r], col, inner, l)
 			}
@@ -170,10 +169,11 @@ func splice(line string, x, w int, s string) string {
 	return left + sgrReset + s + sgrReset + right
 }
 
-// ghostLines は元の場所に一瞬残す点線の枠 (2 行)。
+// ghostLines は元の場所に一瞬残す点線の枠 (cardLines 行)。
 func ghostLines(w int) []string {
-	return []string{
-		fg(240) + "┌" + strings.Repeat("┄", max(0, w-2)) + "┐" + sgrReset,
-		fg(240) + "└" + strings.Repeat("┄", max(0, w-2)) + "┘" + sgrReset,
+	out := []string{fg(240) + "┌" + strings.Repeat("┄", max(0, w-2)) + "┐" + sgrReset}
+	for range cardLines - 2 {
+		out = append(out, fg(240)+"┆"+strings.Repeat(" ", max(0, w-2))+"┆"+sgrReset)
 	}
+	return append(out, fg(240)+"└"+strings.Repeat("┄", max(0, w-2))+"┘"+sgrReset)
 }

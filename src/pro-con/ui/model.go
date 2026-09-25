@@ -111,8 +111,9 @@ type Model struct {
 	drawer     anim.Transition
 	drawerCard string
 	pager      listnav.Pager
-	framing    bool // frame の tick が回っているか (二重に回さない)
-	spinning   bool // 処理中の印の tick が回っているか (spinner.go。二重に回さない)
+	act        activityView // 引き出しに出している PG の活動 (activity.go)
+	framing    bool         // frame の tick が回っているか (二重に回さない)
+	spinning   bool         // 処理中の印の tick が回っているか (spinner.go。二重に回さない)
 
 	picker picker // issue の一覧から依頼する画面 (picker.go)
 
@@ -186,7 +187,7 @@ func (m *Model) Init() tea.Cmd {
 
 func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 	defer func() { // 選択が動いたら (キーでも、カードの移動でも) 枠を滑らせる
-		c := tea.Batch(m.trackCursor(), m.trackSpin())
+		c := tea.Batch(m.trackCursor(), m.trackSpin(), m.trackActivity())
 		if m.trackLane() {
 			c = tea.Batch(c, m.startFrames())
 		}
@@ -196,9 +197,12 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 	}()
 	switch msg := msg.(type) {
 	case tickMsg:
-		return m, tea.Batch(tick(), m.poll())
+		return m, tea.Batch(tick(), m.poll(), m.fetchActivity())
 	case changedMsg:
-		return m, tea.Batch(m.waitChanged(), m.poll())
+		return m, tea.Batch(m.waitChanged(), m.poll(), m.fetchActivity())
+	case activityMsg:
+		m.onActivity(msg)
+		return m, nil
 	case frameMsg:
 		return m, m.onFrame()
 	case toast.Msg:
@@ -490,7 +494,7 @@ func (m *Model) stepRow(delta int) tea.Cmd {
 
 // writeKeys は backend に書き込む操作を始めるキーと、その操作の種類。受けない backend では押した時点で断る
 // (案内の行も同じ種類で暗くする: view.go の hints)。
-var writeKeys = map[string]backend.Op{"n": backend.OpNew, "i": backend.OpNew, "r": backend.OpAnswer, "+": backend.OpOrder, "w": backend.OpBtw, "x": backend.OpClear, "d": backend.OpDelete}
+var writeKeys = map[string]backend.Op{"n": backend.OpNew, "i": backend.OpNew, "r": backend.OpAnswer, "+": backend.OpOrder, "w": backend.OpBtw, "x": backend.OpClear, "d": backend.OpDelete, "c": backend.OpResume}
 
 func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	if m.showDetail {
@@ -570,6 +574,8 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		m.askClearDone()
 	case "d": // カードを削除する (glogx の d = 削除。y/N 確認を挟む)
 		m.askDelete()
+	case "c": // 人が止めた dispatcher を起こす (continue。glogx で空いている字。PG が再開して利用枠を使うので y/N 確認を挟む)
+		m.askResume()
 	default:
 		if i, ok := laneKey(k.String()); ok {
 			m.jumpCol(i)
@@ -662,6 +668,16 @@ func (m *Model) askConfirm(cmd backend.Command, question string) {
 	m.pending = cmd
 	m.confirmText = question
 	m.mode = modeConfirm
+}
+
+// askResume は人が止めた dispatcher (pro-con dispatcher --stop) を起こすかを確かめる。止めた印が無ければ確認を出さない。
+func (m *Model) askResume() {
+	if !m.snap.DispatcherHeld {
+		m.info("dispatcher は人が止めていない (c は pro-con dispatcher --stop で止めたものを起こす)")
+		return
+	}
+	m.askConfirm(backend.ResumeDispatcher{},
+		"人が止めた dispatcher を起こします (作業中のカードの PG は続きから再開し、利用枠を使います)。よいですか? [y/N]")
 }
 
 // askClearDone は今のタブの完了のカードを片付けるかを確かめる。片付けるものが無ければ確認を出さない。

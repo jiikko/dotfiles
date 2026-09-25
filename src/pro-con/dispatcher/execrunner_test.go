@@ -93,16 +93,16 @@ func TestKillStaleByRunMarker(t *testing.T) {
 	other := start(runCommand(context.Background(), "sleep 61", id("other")))
 	mine := start(runCommand(context.Background(), "sleep 62", id("mine"))) // 単純なコマンド (印が無ければ exec で消える形)
 	// 偽物は exec されない形 (2 つの文) にする。sh が sleep に置き換わると印が消えて、照合の候補にすらならない (偽物の意味が無い)
-	imposter := start(exec.Command("/bin/sh", "-c", "sleep 63; true", runMarkerPrefix+id("mine")))
+	imposter := start(exec.Command("/bin/sh", "-c", "sleep 63; true", RunMark+id("mine")))
 	// `/bin/bash` でも `-c` ではない形 (照合の f[3] を外すと撃たれる)
-	notC := start(exec.Command("/bin/bash", "-x", "-c", "sleep 64; true", runMarkerPrefix+id("mine")))
+	notC := start(exec.Command("/bin/bash", "-x", "-c", "sleep 64; true", RunMark+id("mine")))
 	// グループの先頭ではない `/bin/bash -c … 印` (先頭は別の bash。照合の pid = pgid を外すとグループごと撃たれる)
-	notLeader := start(exec.Command("/bin/bash", "-c", runCommandEnv+"='sleep 65' /bin/bash -c 'eval \"$"+runCommandEnv+"\"' "+runMarkerPrefix+id("mine")+"; true"))
+	notLeader := start(exec.Command("/bin/bash", "-c", runCommandEnv+"='sleep 65' /bin/bash -c 'eval \"$"+runCommandEnv+"\"' "+RunMark+id("mine")+"; true"))
 	waitMarker(t, id("other")) // 否定の確認の前提: 撃たれうる形で ps に出ている
 	waitMarker(t, id("mine"))
-	waitPS(t, "/bin/sh -c sleep 63; true "+runMarkerPrefix+id("mine")) // 偽物も ps に出ている
-	waitPS(t, "/bin/bash -x -c sleep 64; true "+runMarkerPrefix+id("mine"))
-	waitPS(t, "/bin/bash -c eval \"$"+runCommandEnv+"\" "+runMarkerPrefix+id("mine")) // 先頭ではない方 (mine 本体と同じ形)
+	waitPS(t, "/bin/sh -c sleep 63; true "+RunMark+id("mine")) // 偽物も ps に出ている
+	waitPS(t, "/bin/bash -x -c sleep 64; true "+RunMark+id("mine"))
+	waitPS(t, "/bin/bash -c eval \"$"+runCommandEnv+"\" "+RunMark+id("mine")) // 先頭ではない方 (mine 本体と同じ形)
 	killStale(id("mine"))
 	select {
 	case <-mine:
@@ -125,7 +125,7 @@ func TestKillStaleByRunMarker(t *testing.T) {
 // waitMarker は印の実行が ps に出るまで待つ (上限 5 秒)。
 func waitMarker(t *testing.T, runID string) {
 	t.Helper()
-	waitPS(t, "/bin/bash -c eval \"$"+runCommandEnv+"\" "+runMarkerPrefix+runID)
+	waitPS(t, "/bin/bash -c eval \"$"+runCommandEnv+"\" "+RunMark+runID)
 }
 
 // waitPS は ps の command にその文が出るまで待つ (上限 5 秒)。

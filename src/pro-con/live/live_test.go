@@ -911,3 +911,30 @@ func TestScreenEventWithoutPresence(t *testing.T) {
 		t.Fatalf("印を置けないまま開いたことを置かない: %q", got)
 	}
 }
+
+// 人が止めた印 (issue 459) は Snapshot に出る。c (ResumeDispatcher) は印を外してから dispatcher を起こし、外したことを出来事に残す。
+func TestResumeReleasesHoldThenStarts(t *testing.T) {
+	b := shortState(t)
+	var heldAtStart []bool
+	b.SetKeeper(func() error { heldAtStart = append(heldAtStart, store.Held(b.dir)); return nil })
+	if err := store.Hold(b.dir, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	b.refresh(context.Background(), false)
+	if !b.Snapshot().DispatcherHeld {
+		t.Fatal("印があるのに Snapshot に出さない")
+	}
+	if _, err := b.Apply(backend.ResumeDispatcher{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(heldAtStart) != 1 || heldAtStart[0] {
+		t.Fatalf("印を外してから 1 回起こすはず: %v", heldAtStart)
+	}
+	b.refresh(context.Background(), false)
+	if b.Snapshot().DispatcherHeld {
+		t.Fatal("外した印が Snapshot に残る")
+	}
+	if got := inboxEvents(t, b.dir); len(got) != 1 || !strings.Contains(got[0], "印を外した") {
+		t.Fatalf("印を外したことを出来事に置かない: %q", got)
+	}
+}

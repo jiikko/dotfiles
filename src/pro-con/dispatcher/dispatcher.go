@@ -17,6 +17,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -92,7 +94,10 @@ type Dispatcher struct {
 	usage      *Usage    // 最後に読めた値
 	usageErr   string    // 最後の読み取りの誤り
 	usageTried time.Time // 最後に読みに行った時刻
-	held       string    // 枠で起動・再開を待たせている知らせ (変わったときだけログに書く)
+	// settings は変えた設定 (store/settings.go。Tick ごとに読み直す) / settingsErr は読めなかった理由
+	settings    store.Settings
+	settingsErr string
+	held        string // 枠で起動・再開を待たせている知らせ (変わったときだけログに書く)
 
 	ticked bool // 1 度でも Tick したか
 	// Record は Tick / Shutdown の出来事を渡す (ログの行と events.jsonl。dispatchercmd.go)。記録を変えた知らせ (Changed) より先に呼ぶ
@@ -171,6 +176,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 		return nil, err
 	}
 	notes = append(notes, applied(res)...)
+	d.loadSettings()
 	if len(res) > 0 && d.Changed != nil { // 箱の依頼を適用した直後に知らせる (一覧の取得 (最大 10 秒) を待たせずにカードを画面へ出す)
 		d.Changed()
 	}
@@ -704,16 +710,25 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		fresh = append(fresh, c) // 待っても出なかった。起動・再開し直す (古い順は保つ)
 	}
 	limit, why := d.capacity(now)
+	lim, _ := d.limit()
 	held := ""
 	for i, c := range fresh {
 		if running >= limit {
-			if running < d.Limit { // 枠で絞らなくても止まっていたなら、枠のせいにしない
+			if running < lim { // 枠で絞らなくても止まっていたなら、枠のせいにしない
 				held = fmt.Sprintf("分解済みの %d 枚を起動・再開しない (%s)", len(fresh)-i, why)
 			}
 			break
 		}
 		how, run, err := d.prepare(c, now, ss, reg)
 		if errors.Is(err, errWait) {
+			continue
+		}
+		if nh := needsHumanError(""); errors.As(err, &nh) {
+			why := fmt.Sprintf("%sしない: %v", how, err)
+			if err := d.update(c.ID, func(cc *card.Card) { askAfterCrashes(cc, now, why) }); err != nil {
+				return notes, err
+			}
+			notes = append(notes, ev(eventlog.KindLaunch, c.ID, c.Session, c.ID+": "+why))
 			continue
 		}
 		if err != nil {
@@ -840,7 +855,32 @@ func (d *Dispatcher) prepare(c card.Card, now time.Time, ss []agents.Session, re
 	if !ok {
 		return "起動", nil, fmt.Errorf("repo %q の場所が設定に無い", c.Repo)
 	}
+	if c.LaunchedAt.IsZero() { // 起動し直し (印を書いた後) なら、在る worktree はこのカードの前の起動が作ったもの
+		if err := leftoverWorktree(worktreePath(path, c)); err != nil {
+			return "起動", nil, err
+		}
+	}
 	return "起動", func(ctx context.Context) (string, error) { return d.Launch.Start(ctx, path, sessionName(c), Prompt(c)) }, nil
+}
+
+// needsHumanError は、起動・再開の前提が崩れていてやり直しても直らないので、人の番へ回す失敗 (文は理由)。
+type needsHumanError string
+
+func (e needsHumanError) Error() string { return string(e) }
+
+// leftoverWorktree は、初めて起動するカードの worktree が既に在れば needsHumanError を返す (465)。claude -w は同じ名前の worktree を
+// 黙って使うので、状態の置き場を作り直して C-001 から振り直したカードが、前の世代のブランチとコミットの上で作業を始める
+// (PG の worktree は消さない。447)。確かめられないときは起動しない (次の Tick で見直す)
+func leftoverWorktree(wt string) error {
+	_, err := os.Lstat(wt)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil
+	case err != nil:
+		return fmt.Errorf("worktree %s が在るかを確かめられない: %w", wt, err)
+	}
+	return needsHumanError(fmt.Sprintf("worktree %s が既に在る (前の状態の置き場で同じカード ID が使った worktree かもしれない。claude -w はそのブランチの上で黙って作業を始める)。"+
+		"中身を確かめて片付けてから回答すると起動する", wt))
 }
 
 func sessionName(c card.Card) string { return "pc-" + strings.ToLower(c.ID) }
@@ -953,6 +993,7 @@ func Prompt(c card.Card) string {
 	fmt.Fprintf(&b, "- 画面の見た目を変えたら撮って `pro-con card attach %s <ファイル> --note \"<一言>\"` で添付する (人間とレビューする側が見る。"+
 		"TUI は隔離した tmux (`-L`) で動かして `tmux capture-pane -e -p` を .ans に書く (色つきの文字)。画像が要るなら vhs の Screenshot で .png。"+
 		"`screencapture` は bg では壁紙しか写らないので使わない)\n", c.ID)
+	b.WriteString("- run を頼んだら、その結果が届くまで ask しない (質問は結果を受け取ってからにする。先に ask すると、頼んだ実行が取り消される)\n")
 	fmt.Fprintf(&b, "- 終えたら `pro-con card review %s` を実行してから turn を終える\n", c.ID)
 	if len(c.Issues) > 0 {
 		var refs []string

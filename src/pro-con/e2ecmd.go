@@ -160,7 +160,7 @@ func e2eStop(root string) (err error) {
 	// dispatcher は画面と別のプロセスグループなので、画面や隔離サーバと一緒には終わらない)
 	defer func() {
 		if exe, xerr := os.Executable(); xerr == nil {
-			if out, serr := exec.Command(exe, "dispatcher", "--stop", "--e2e", root).CombinedOutput(); serr != nil && err == nil {
+			if out, serr := stopCmd(exe, []string{"--e2e", root}).CombinedOutput(); serr != nil && err == nil {
 				err = fmt.Errorf("dispatcher を止められない: %w: %s", serr, strings.TrimSpace(string(out)))
 			}
 		}

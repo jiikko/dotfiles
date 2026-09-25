@@ -104,13 +104,17 @@ func (m *Model) pgGauge() string {
 // dispatcherStale はこれより長く回っていなければ dispatcher が止まっている疑いとして赤で出す (Tick は数秒ごと)。
 const dispatcherStale = 2 * time.Minute
 
-// dispatcherStopped は dispatcher が 1 度も回っていない / dispatcherStale より長く回っていないか。
+// dispatcherStopped は dispatcher が人に止められている / 1 度も回っていない / dispatcherStale より長く回っていないか。
 func (m *Model) dispatcherStopped() bool {
-	return m.snap.DispatcherTick.IsZero() || m.snap.Now.Sub(m.snap.DispatcherTick) > dispatcherStale
+	return m.snap.DispatcherHeld || m.snap.DispatcherTick.IsZero() || m.snap.Now.Sub(m.snap.DispatcherTick) > dispatcherStale
 }
 
 // dispatcherGauge は dispatcher が最後に回ってからの時間。1 度も回っていない / 長く回っていなければ赤で出す。
+// 人が止めた (印がある) なら、止まっているのは意図どおりなので黄で「止めてある」と出す (画面は起こさない。issue 459)
 func (m *Model) dispatcherGauge() string {
+	if m.snap.DispatcherHeld {
+		return sgrYellow + "dispatcher 止めてある (c で起こす)" + sgrFgReset
+	}
 	if m.snap.DispatcherTick.IsZero() {
 		return sgrRed + "dispatcher 未起動" + sgrFgReset
 	}
@@ -281,7 +285,7 @@ func (m *Model) columnBlock(col int, s card.State, cs []card.Card, w, shown int,
 	out := []string{boxTop(border, fg(stateColor(s))+sgrBold+label+sgrReset, w)}
 	cells := m.columnCells(col, cs, inner)
 	// カードの上下に 1 行ずつ空ける (空行・カード・空行・…・空行)。選択の枠と移動中のカードの枠はこの空行の上に描くので、
-	// 隣のカードを隠さない (2026-09-24 のユーザー提案。1 列に入る枚数は 2 行詰めの約 2/3 になる)
+	// 隣のカードを隠さない (2026-09-24 のユーザー提案)
 	var body []string
 	for r := range min(shown, len(cells)) {
 		body = append(body, "")
@@ -289,7 +293,7 @@ func (m *Model) columnBlock(col int, s card.State, cs []card.Card, w, shown int,
 			body = append(body, fit(sgrDim+fmt.Sprintf("… 他 %d 枚", len(cells)-shown+1)+sgrReset, inner))
 			break
 		}
-		body = append(body, cells[r][0], cells[r][1])
+		body = append(body, cells[r]...)
 	}
 	for len(body) < shown*perCardLines+cardGap {
 		body = append(body, "")
@@ -301,48 +305,77 @@ func (m *Model) columnBlock(col int, s card.State, cs []card.Card, w, shown int,
 }
 
 const (
-	cardLines    = 2                   // カード 1 枚の行数
+	cardLines    = 3                   // カード 1 枚の行数 (タイトル titleLines 行 + バッジ 1 行)
+	titleLines   = cardLines - 1       // タイトルを折り返して見せる行数 (収まらない分は末尾を … で切る)
 	cardGap      = 1                   // カードの上下の空き (枠を描く行)
 	perCardLines = cardLines + cardGap // 1 枚あたりの縦の送り
 )
 
-// columnCells は列の中身を 1 枚 2 行のセルで並べる。移動中のカード (motion.go) は、移動先では空けて待ち、
+// columnCells は列の中身を 1 枚 cardLines 行のセルで並べる。移動中のカード (motion.go) は、移動先では空けて待ち、
 // 移動元には点線の枠を残す (どちらも着地まで。周りのカードが途中で詰まってずれないように)。
-func (m *Model) columnCells(col int, cs []card.Card, inner int) [][2]string {
-	var cells [][2]string
+func (m *Model) columnCells(col int, cs []card.Card, inner int) [][]string {
+	var cells [][]string
 	for _, c := range cs {
 		if mv, ok := m.moves[c.ID]; ok && mv.to.col == col {
-			cells = append(cells, [2]string{fit("", inner), fit("", inner)})
+			blank := make([]string, cardLines)
+			for i := range blank {
+				blank[i] = fit("", inner)
+			}
+			cells = append(cells, blank)
 			continue
 		}
-		t, b := m.cardCell(c, inner)
-		cells = append(cells, [2]string{t, b})
+		cells = append(cells, m.cardCell(c, inner))
 	}
 	for _, mv := range m.moves {
 		if mv.from.col != col {
 			continue
 		}
-		g := ghostLines(inner)
 		at := min(mv.from.row, len(cells))
-		cells = append(cells[:at], append([][2]string{{g[0], g[1]}}, cells[at:]...)...)
+		cells = append(cells[:at], append([][]string{ghostLines(inner)}, cells[at:]...)...)
 	}
 	return cells
 }
 
-// cardCell はカード 1 枚 (2 行)。地の色はカードごとに固有 (cardColor)。列を移っても同じ色なので目で追える。
+// cardCell はカード 1 枚 (タイトル titleLines 行 + バッジ 1 行)。地の色はカードごとに固有 (cardColor)。列を移っても同じ色なので目で追える。
 // 選択中はタイトルを太字 + 下線にする。選択の目印は周りの枠 (cursor.go)。
 // 地は塗り替えない (カード固有の色が消えると、列を移ったときに目で追えなくなる)。完了は文字を dim にする。
-func (m *Model) cardCell(c card.Card, w int) (string, string) {
+func (m *Model) cardCell(c card.Card, w int) []string {
 	base := bg(cardColor(c.ID)) + fg(252)
 	title := c.ID + issueTag(c) + " " + c.Title // issue に紐づくカードは 1 行目に番号を出す (バッジ行は待ちの理由と時間)
 	badge := m.badgeColored(c)
-	if c.ID == m.selected { // 目印は周りの枠 (cursor.go)。中は太字と下線だけ
-		return paint(base, " "+fg(231)+sgrBold+sgrUnderline+title+sgrNoUnderline, w), paint(base, " "+fg(231)+sgrBold+badge, w)
+	pre, badgePre := "", ""
+	switch {
+	case c.ID == m.selected: // 目印は周りの枠 (cursor.go)。中は太字と下線だけ
+		pre, badgePre = fg(231)+sgrBold+sgrUnderline, fg(231)+sgrBold
+	case c.State == card.Done:
+		pre, badgePre, badge = sgrDim, sgrDim, m.badge(c)
 	}
-	if c.State == card.Done {
-		title, badge = sgrDim+title, sgrDim+m.badge(c)
+	var out []string
+	for _, l := range wrapLines(title, w-1, titleLines) { // 先頭の 1 桁は空白
+		if l != "" {
+			l = pre + l + sgrNoUnderline
+		}
+		out = append(out, paint(base, " "+l, w))
 	}
-	return paint(base, " "+title, w), paint(base, " "+badge, w)
+	return append(out, paint(base, " "+badgePre+badge, w))
+}
+
+// wrapLines は SGR を含まない s を表示幅 w で n 行に折り返す (全角の途中では切らない)。足りない行は空、収まらない分は最後の行の末尾を … で切る。
+func wrapLines(s string, w, n int) []string {
+	out := make([]string, n)
+	for i := range n {
+		if s == "" || w <= 0 {
+			break
+		}
+		if i == n-1 {
+			out[i] = ansi.Truncate(s, w, "…")
+			break
+		}
+		head := ansi.Truncate(s, w, "")
+		out[i] = head
+		s = strings.TrimLeft(ansi.Cut(s, ansi.StringWidth(head), ansi.StringWidth(s)), " ")
+	}
+	return out
 }
 
 // badgeColored は badge の待ちの理由に色を付ける (停滞 = 危険 / 質問 = 要対応 / issue 化待ち = 要対応)。
@@ -566,6 +599,9 @@ func (m *Model) hints() []string {
 		hint{"n 新しい依頼", m.accepts(backend.OpNew), true}, hint{"i issue から", m.accepts(backend.OpNew), true}, hint{"enter 詳細", has, false})...)
 	h = append(h, cardOps...)
 	h = append(append(h, "s PG 一覧"), offer(hint{"x 完了を片付け", m.doneInTab() > 0 && m.accepts(backend.OpClear), true})...)
+	if m.snap.DispatcherHeld { // 止めてあるときだけ出す (いつも出すと、暗い字が「状態が変われば押せる」以上の意味を持たない)
+		h = append(h, offer(hint{"c dispatcher を起こす", m.accepts(backend.OpResume), true})...)
+	}
 	return append(h, "? レーンの意味", back)
 }
 

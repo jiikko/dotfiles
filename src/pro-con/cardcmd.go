@@ -2,7 +2,7 @@ package main
 
 // pro-con card — PM / PG が使うカードの操作の口 (issue 427 の段階 3b)。受付の箱に依頼を置くだけで、記録への適用は dispatcher (store.Apply)。
 // 置いた依頼の ID を stdout に出す (add は適用を待ってカード ID を出す)。使い方の誤りは rc=2、箱に置けなかったら rc=1。
-// 読むだけの口 (list / show / wait) は cardview.go。
+// 読むだけの口 (list / show / wait) は cardview.go、log は cardlog.go。
 
 import (
 	_ "embed"
@@ -33,6 +33,7 @@ const cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を�
                                                  (.png などは画像、.txt / .ans は文字。1 件 20 MiB・1 枚に 50 件まで)
   review <カード>                                PG が終えた
   rework <カード> <直してほしい点>               レビュー待ちのカードを PG に差し戻す (同じ session を再開する)
+  handoff <カード> <理由> [--from <PM|人間>]      PG の質問を人に回したことを履歴に残す (列は変えない)
   close <カード> [--ending answered|investigated|rejected|pending-issue] [--issue <repo>#<番号>]...
   delete <カード> [--from <人間|PM>]              カードを消す (依頼の列はすぐ。それ以外は PG の session を止めてから。worktree とブランチは残す)
   guide                                          PM への指示書を出す (箱には何も置かない)
@@ -40,7 +41,8 @@ const cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を�
   list [--state <列>] [--all] [--json]           カードの一覧 (--all は片付けたものも)
   show <カード> [--json]                         依頼の原文・履歴・質問・PG の出力の末尾 (画面の詳細と同じ中身)
   wait <カード> [--until <列>] [--timeout <長さ>] [--json]
-                                                 列が変わる (--until ならその列に居る) まで待つ (既定 10m。時間切れは rc=1)`
+                                                 列が変わる (--until ならその列に居る) まで待つ (既定 10m。時間切れは rc=1)
+  log <カード> [--follow] [--json]               PG の活動 (応答の文と道具の呼び出し) を時刻の順に。再開で入れ替わった前の session から続けて出す`
 
 // pmGuide は PM の session に渡す指示書。書いてあるコマンドは TestPMGuideCommandsParse がパーサに通して、ずれを止める。
 //
@@ -66,6 +68,8 @@ func runCard(args []string, env viewEnv, stdout, stderr io.Writer) int {
 		return runCardShow(args[1:], env, stdout, stderr)
 	case "wait":
 		return runCardWait(args[1:], env, stdout, stderr)
+	case "log":
+		return runCardLog(args[1:], env, stdout, stderr)
 	}
 	if args[0] == "attach" {
 		return runCardAttach(args[1:], env.dir, stdout, stderr)
@@ -191,6 +195,8 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 		fs.Var((*afterList)(&r.After), "after", "")
 	case "answer", "delete":
 		fs.StringVar(&r.From, "from", "人間", "")
+	case "handoff":
+		fs.StringVar(&r.From, "from", "PM", "")
 	case "close":
 		fs.Var(&issues, "issue", "")
 		fs.StringVar(&ending, "ending", "", "")
@@ -207,7 +213,7 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 		return r, wait, err
 	}
 	pos = append(pos, fs.Args()...)
-	need := map[string]int{"add": 0, "plan": 1, "review": 1, "close": 1, "delete": 1, "ask": 2, "answer": 2, "rework": 2}[op]
+	need := map[string]int{"add": 0, "plan": 1, "review": 1, "close": 1, "delete": 1, "ask": 2, "answer": 2, "rework": 2, "handoff": 2}[op]
 	if len(pos) != need {
 		return r, wait, fmt.Errorf("%s は位置引数が %d 個 (受け取ったのは %d 個)", op, need, len(pos))
 	}
@@ -225,6 +231,8 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 		r.Answer = pos[1]
 	case "rework":
 		r.Rework = pos[1]
+	case "handoff":
+		r.Text = pos[1]
 	case "close":
 		if ending != "" {
 			e, ok := endings[ending]

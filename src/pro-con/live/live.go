@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -66,7 +67,19 @@ type Backend struct {
 	changed  chan struct{} // 読み直したら値が入る (画面が 1 秒の tick を待たずに描き直す。backend.Notifier)
 	// refused は socket の逃がし先を使えないので購読をつながなかった理由 (空ならつながっている / まだ試していない)。画面の違反の行に 1 行出す。mu で守る
 	refused string
+	// logs はカード ID → 読んでいる活動 (Activity。画面が裏で呼ぶ。actMu で守る。Refresh の goroutine とは別)
+	actMu sync.Mutex
+	logs  map[string]*cardActivity
 }
+
+// cardActivity は 1 枚のカードの、読んだ活動 (末尾の activityKeep 件) と続きを読む位置。
+type cardActivity struct {
+	log   *CardLog
+	items []backend.Activity
+}
+
+// activityKeep は画面が 1 枚のカードについて持つ活動の上限 (古いものから捨てる。全部は pro-con card log で読める)。
+const activityKeep = 1000
 
 type cached struct {
 	size  int64
@@ -92,6 +105,7 @@ func New(repos []backend.Repo, home, stateDir string) *Backend {
 		cache:     map[string]cached{},
 		paths:     map[string]string{},
 		changed:   make(chan struct{}, 1),
+		logs:      map[string]*cardActivity{},
 		interval:  Interval,
 		subscribe: func(ctx context.Context, s *wake.Subscriber) { s.Run(ctx) },
 	}
@@ -130,6 +144,9 @@ func (v viewOnly) Accepts(backend.Op) bool    { return false }
 func (v viewOnly) ReadOnly()                  {}
 func (v viewOnly) Describe() string {
 	return "view (読み取りだけ・quit で何も止めない) / " + v.b.Describe()
+}
+func (v viewOnly) Activity(cardID string) ([]backend.Activity, error) {
+	return v.b.Activity(cardID) // 読むだけ (transcript と起動の記録を開いて読む)
 }
 func (v viewOnly) Apply(backend.Command) (string, error)   { return "", ErrViewOnly }
 func (v viewOnly) AttachCommand(string) (*exec.Cmd, error) { return nil, ErrViewOnly }
@@ -349,7 +366,7 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 		extra = append(extra, card.Violation{Reason: b.refused})
 	}
 	b.snap = backend.Snapshot{Now: now, Cards: cards, Consumers: cons, Limit: ds.Cap, LimitMax: ds.Limit, LimitWhy: ds.Why,
-		DispatcherTick: ds.Tick, Screens: screens, Violations: append(card.Check(cards), extra...)}
+		DispatcherTick: ds.Tick, Screens: screens, DispatcherHeld: store.Held(b.dir), Violations: append(card.Check(cards), extra...)}
 	b.pending, b.ready = pending, true
 	b.mu.Unlock()
 }
@@ -445,6 +462,8 @@ func (b *Backend) Apply(cmd backend.Command) (string, error) {
 		}
 		r = store.Request{Kind: "btw", CardID: c.CardID, Question: c.Question}
 		done = "btw を受け付けた (PG は止めない。答えはカードの履歴に出る)"
+	case backend.ResumeDispatcher:
+		return b.resume()
 	case backend.ClearDone:
 		var ids []string
 		for _, cc := range b.Snapshot().Cards { // 画面が見ている完了のカードだけ (適用までに完了になったカードを巻き込まない)
@@ -467,6 +486,24 @@ func (b *Backend) Apply(cmd backend.Command) (string, error) {
 		return r.CardID + " の削除を受け付けた (依頼の列ならすぐ、ほかは PG の session を止めてから消える)", nil
 	}
 	return done, nil
+}
+
+// resume は人が止めた印を外して dispatcher を起こす (c。issue 459)。印が無くても、居なければ起こす。
+func (b *Backend) resume() (string, error) {
+	if b.keeper == nil {
+		return "", errors.New("dispatcher を起こす口がつながっていない")
+	}
+	released, err := store.Release(b.dir)
+	if err != nil {
+		return "", fmt.Errorf("人が止めた印を外せない: %w", err)
+	}
+	if released {
+		b.event("c で人が止めた印を外した (dispatcher を起こす)") // 起こす前に置く: 起きた dispatcher が箱を適用して書く
+	}
+	if err := b.keeper(); err != nil {
+		return "", fmt.Errorf("印は外したが dispatcher を起こせない: %w", err)
+	}
+	return "dispatcher を起こした (作業中のカードの PG は続きから再開する)", nil
 }
 
 // card は最後に読んだ記録のカード。
@@ -540,6 +577,28 @@ func (b *Backend) RecordAttach(cardID, sessionID string, from, to time.Time) (in
 		return 0, err
 	}
 	return len(ps), nil
+}
+
+// Activity はカードの PG の活動を古い順に返す (backend.ActivityReader。末尾の activityKeep 件)。呼ぶたびに前の続きだけを読む。
+// 🚨 読むだけ。カードが最後に読んだ記録に無ければ (片付けた等) 空。
+func (b *Backend) Activity(cardID string) ([]backend.Activity, error) {
+	c, ok := b.card(cardID)
+	if !ok {
+		return nil, nil
+	}
+	b.actMu.Lock()
+	defer b.actMu.Unlock()
+	a := b.logs[cardID]
+	if a == nil || a.log.session != c.Session { // 起動の記録にカードの無い古い行は、今の短い id で拾う
+		a = &cardActivity{log: NewCardLog(b.registry, b.findPath, cardID, c.Session)}
+		b.logs[cardID] = a
+	}
+	got, err := a.log.Next()
+	// 後から見つかった前の session の分は、今までの分より古いことがある: 時刻の位置に差し込む (同じ時刻は前からの順のまま)
+	a.items = append(a.items, got...)
+	slices.SortStableFunc(a.items, func(x, y backend.Activity) int { return x.At.Compare(y.At) })
+	a.items = tail(a.items, activityKeep)
+	return slices.Clone(a.items), err
 }
 
 // fullSessionID は pro-con が起動した session の短い id から session id を引く (今の記録、無ければ退いた側)。
