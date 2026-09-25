@@ -1,7 +1,5 @@
 # 419 (test): glogx のテストが本物の docker を叩いていて、実コマンドの検査もそれを見ていない
 
-> 🚨 **担当中: dotfiles-7d**（2026-09-25〜）
-
 起票日: 2026-09-24
 反証レビュー: 2026-09-24 実施 (読み取り専用のサブエージェント 1 体)。主要な主張は反証できず
 
@@ -63,6 +61,14 @@ docker が呼ばれることを確認し、起票者はヘルパーと検査の 
 
 ## 進捗
 
-- [ ] 検査に docker を足して red を確認
-- [ ] installInertDoctor に dockerOpts
-- [ ] P3 の 2 件の判断
+- [x] 検査に docker を足して red を確認 — 「fix(glogx): テストで本物の docker を叩かない」。直す前のコードで
+  `test_no_real_commands_in_tests.sh` が red (`docker system df --format json` を 6 回)
+- [x] installInertDoctor に dockerOpts — 同じ commit。**差し替え漏れは 3 箇所だった**: `installInertDoctor` のほかに、
+  doctor 画面を struct literal で直接組むテスト用の `multiItemView` (`doctor_delete_test.go`。3 本が使う) と
+  `untrusted_display_test.go` の 1 箇所。どのテストが叩いているかは、偽物の docker に呼ばれた時刻を記録させ、
+  `go test -json` の各テストの開始時刻と突き合わせて特定した
+  - 直した後: subset (PASS 337 件) / all (PASS 1425 件) とも実コマンドの呼び出し 0 回。見張る shim は docker を含めて 6 本
+  - `make -C src/glogx lint` / `test` 緑
+- [ ] P3 の 2 件の判断 — **未着手** (Cmd の closure が差し替え口を実行時に読む / 後始末の latch の add が goroutine の中)。
+  どちらも今は実害が無い。別の issue に切り出すかは未決
+- 敵対的レビュー: 未実施 (テストの差し替えの追加と、検査の shim の一覧に 1 語足すだけ。判定のロジックは変えていない)

@@ -1005,7 +1005,8 @@ func multiItemView(t *testing.T, f *fakeDelete) *doctorView {
 					return "PID\tStatus\tLabel\n", "", 0, nil
 				}}
 		},
-		brewRun: func(context.Context, string, ...string) (string, string, int, error) { return "", "", 0, nil },
+		brewRun:    func(context.Context, string, ...string) (string, string, int, error) { return "", "", 0, nil },
+		dockerOpts: noDockerOptions, // 本物の docker system df を叩かない (issue 419)
 	}
 	if f != nil {
 		v.deleteFn = f.fn

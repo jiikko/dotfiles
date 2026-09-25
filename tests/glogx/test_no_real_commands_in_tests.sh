@@ -42,7 +42,7 @@ LOG="$TMP/calls.log"
 : > "$LOG"
 # doctor が触りうる外部コマンド。**実体があるかに関わらず** shim を置く
 # (実体が無いマシンでも「呼ぼうとした」ことは検出したい)
-for cmd in brew xcrun pgrep launchctl du; do
+for cmd in brew xcrun pgrep launchctl du docker; do
   cat > "$SHIM/$cmd" <<SHIMEOF
 #!/bin/sh
 echo "\$(basename "\$0") \$*" >> "$LOG"
