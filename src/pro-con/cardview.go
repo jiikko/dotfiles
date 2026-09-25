@@ -126,6 +126,7 @@ type viewEnv struct {
 	dir      string // 本物のモードの状態の置き場 (store と起動の記録)
 	projects string // ~/.claude/projects (PG の transcript)
 	now      func() time.Time
+	ctx      context.Context // card log --follow を終える (nil なら ctrl+c / SIGTERM で終える。テストが差し替える)
 }
 
 func runCardList(args []string, env viewEnv, stdout, stderr io.Writer) int {

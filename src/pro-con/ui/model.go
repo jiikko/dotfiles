@@ -111,8 +111,9 @@ type Model struct {
 	drawer     anim.Transition
 	drawerCard string
 	pager      listnav.Pager
-	framing    bool // frame の tick が回っているか (二重に回さない)
-	spinning   bool // 処理中の印の tick が回っているか (spinner.go。二重に回さない)
+	act        activityView // 引き出しに出している PG の活動 (activity.go)
+	framing    bool         // frame の tick が回っているか (二重に回さない)
+	spinning   bool         // 処理中の印の tick が回っているか (spinner.go。二重に回さない)
 
 	picker picker // issue の一覧から依頼する画面 (picker.go)
 
@@ -184,7 +185,7 @@ func (m *Model) Init() tea.Cmd {
 
 func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 	defer func() { // 選択が動いたら (キーでも、カードの移動でも) 枠を滑らせる
-		c := tea.Batch(m.trackCursor(), m.trackSpin())
+		c := tea.Batch(m.trackCursor(), m.trackSpin(), m.trackActivity())
 		if m.trackLane() {
 			c = tea.Batch(c, m.startFrames())
 		}
@@ -194,9 +195,12 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 	}()
 	switch msg := msg.(type) {
 	case tickMsg:
-		return m, tea.Batch(tick(), m.poll())
+		return m, tea.Batch(tick(), m.poll(), m.fetchActivity())
 	case changedMsg:
-		return m, tea.Batch(m.waitChanged(), m.poll())
+		return m, tea.Batch(m.waitChanged(), m.poll(), m.fetchActivity())
+	case activityMsg:
+		m.onActivity(msg)
+		return m, nil
 	case frameMsg:
 		return m, m.onFrame()
 	case toast.Msg:

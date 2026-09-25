@@ -2,7 +2,7 @@ package main
 
 // pro-con card — PM / PG が使うカードの操作の口 (issue 427 の段階 3b)。受付の箱に依頼を置くだけで、記録への適用は dispatcher (store.Apply)。
 // 置いた依頼の ID を stdout に出す (add は適用を待ってカード ID を出す)。使い方の誤りは rc=2、箱に置けなかったら rc=1。
-// 読むだけの口 (list / show / wait) は cardview.go。
+// 読むだけの口 (list / show / wait) は cardview.go、log は cardlog.go。
 
 import (
 	_ "embed"
@@ -38,7 +38,8 @@ const cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を�
   list [--state <列>] [--all] [--json]           カードの一覧 (--all は片付けたものも)
   show <カード> [--json]                         依頼の原文・履歴・質問・PG の出力の末尾 (画面の詳細と同じ中身)
   wait <カード> [--until <列>] [--timeout <長さ>] [--json]
-                                                 列が変わる (--until ならその列に居る) まで待つ (既定 10m。時間切れは rc=1)`
+                                                 列が変わる (--until ならその列に居る) まで待つ (既定 10m。時間切れは rc=1)
+  log <カード> [--follow] [--json]               PG の活動 (応答の文と道具の呼び出し) を時刻の順に。再開で入れ替わった前の session から続けて出す`
 
 // pmGuide は PM の session に渡す指示書。書いてあるコマンドは TestPMGuideCommandsParse がパーサに通して、ずれを止める。
 //
@@ -64,6 +65,8 @@ func runCard(args []string, env viewEnv, stdout, stderr io.Writer) int {
 		return runCardShow(args[1:], env, stdout, stderr)
 	case "wait":
 		return runCardWait(args[1:], env, stdout, stderr)
+	case "log":
+		return runCardLog(args[1:], env, stdout, stderr)
 	}
 	req, wait, err := parseCardWait(args)
 	if err != nil {
