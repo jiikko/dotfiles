@@ -36,6 +36,19 @@
 
 ## 進捗
 
-- [ ] `failed` + pid 無しを止まった形にする / テストに 1 行
-- [ ] 変異 (許可リストから外す) で red を確認
+- [x] `failed` + pid 無しを止まった形にする / テストに 1 行 (「pro-con: pid 無しの failed を止まった session と読む」)
+- [x] dispatcher の段でも固定: `TestShutdownTreatsFailedWithoutPIDAsStopped` (ListAll に failed が残っても Shutdown が抜ける。
+  「pro-con: クラッシュ後の failed の PG で終了が抜けることを dispatcher の段で固定する」)
+- [x] 変異: `Stopped()` の許可リストから failed を外すと、`TestSessionStopped` の `state=failed pid=0` と
+  `TestShutdownTreatsFailedWithoutPIDAsStopped` (Shutdown がエラーで返る) の 2 本が red。戻して green
+- [x] 敵対レビュー (opus 1 本): 壊せなかった。呼び出し元の全数で挙動が変わるのは `stoppable` 経由 (ensureStopped / stillAlive /
+  unregistered) と pm.go / e2e.go の skip だけで、requeueVanished (gone → stopTarget) は `Stopped()` を見ないので変わらない
 - [ ] 本番の dispatcher を起動し直して、5 本の止め直しが止まることを確認
+
+## 未確認リスク (敵対レビューの P2。推測)
+
+- 「pid あり・failed (API エラー)」のプロセスがその後に落ちて pid 無し・failed になり、**しかも Claude Code が自動で再開する**形は
+  測っていない。あれば ensureStopped / close の「既に止まっていた」が止めずに通り、後で PG が戻る。窓の形は stopped / done を
+  許可リストに入れたときと同じ (今回新しく生まれた型ではない)
+- 潰し方: API エラーで failed になった claude を kill -9 し、`claude agents --json --all` の遷移を 1 回測る。
+  **trigger**: close / delete の後に PG が戻ってきた報告が出たとき
