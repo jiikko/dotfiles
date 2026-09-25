@@ -3,6 +3,12 @@
 # bin/codex-fanout の正常系 + 異常系 (一部失敗 / 全滅 / 起動前検証 / タイムアウト / 中断 /
 # digest 空 / outdir 使い回し)。実 codex は起動せず、PATH 先頭の stub で置き換える。
 
+# shellcheck source=tests/lib/wait_until.sh
+. "$BATS_TEST_DIRNAME/lib/wait_until.sh"
+
+# proc_gone: pid が居ない、または zombie (回収待ち) か。🚨 kill -0 は zombie にも成功するので、それだけで生死を見ない
+proc_gone() { ! kill -0 "$1" 2>/dev/null || [[ "$(ps -o stat= -p "$1" 2>/dev/null)" == Z* ]]; }
+
 setup() {
   DRIVER="$BATS_TEST_DIRNAME/../bin/codex-fanout"
   WORK="$BATS_TEST_TMPDIR/work"
@@ -234,10 +240,10 @@ EOS
   elapsed="$(awk -F'\t' '$1=="hang"{print $4}' "$WORK/out6/runs.tsv")"
   [[ "$elapsed" =~ ^[0-9]+$ ]] && [ "$elapsed" -ge 2 ]
   # codex (stub) が立てた孫プロセスも死んでいる (process group kill)
+  [ -s "$WORK/out6/hang.out.md.grandchild" ] || { echo "前提: stub が孫を立てる前に kill された (孫の検査が成り立たない)"; false; }
   gpid="$(cat "$WORK/out6/hang.out.md.grandchild")"
-  sleep 0.5
-  run kill -0 "$gpid"
-  [ "$status" -ne 0 ]
+  # 死ぬまで上限つきで待つ (固定の sleep 0.5 は負荷の下で足りず、make test の中でだけ落ちた。2026-09-25)
+  tt_wait_until proc_gone "$gpid" || { echo "10 秒待っても孫 $gpid が残っている"; ps -o pid,stat,command -p "$gpid"; false; }
 }
 
 @test "SIGTERM 中断: 走行中の codex を kill してから死ぬ (孤児化させない)" {
@@ -266,12 +272,9 @@ EOS
   [ -n "$gpid" ]
   kill -TERM "$dpid"
   wait "$dpid" || true
-  sleep 0.5
-  # driver の死後に codex もその孫も生き残っていないこと (process group kill)
-  run kill -0 "$cpid"
-  [ "$status" -ne 0 ]
-  run kill -0 "$gpid"
-  [ "$status" -ne 0 ]
+  # driver の死後に codex もその孫も生き残っていないこと (process group kill)。死ぬまで上限つきで待つ (固定の sleep は負荷の下で足りない)
+  tt_wait_until proc_gone "$cpid" || { echo "10 秒待っても codex $cpid が残っている"; false; }
+  tt_wait_until proc_gone "$gpid" || { echo "10 秒待っても孫 $gpid が残っている"; ps -o pid,stat,command -p "$gpid"; false; }
 }
 
 @test "-M で merger を省略し、成功なら exit 0" {
