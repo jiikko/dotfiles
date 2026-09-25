@@ -80,11 +80,11 @@ func TestRestartPromptShowsInViewers(t *testing.T) {
 // showToastLanded はトーストを出して滑り込みアニメを着地させる (箱幅 0 の間は描かれないため)。
 func showToastLanded(t *testing.T, m *browseModel, text string) {
 	t.Helper()
-	m.toast.show(text, true)
-	for i := 0; m.toast.animating() && i < 100; i++ {
-		m.toast.advance(m.colored)
+	m.toast.Show(text, true)
+	for i := 0; m.toast.Animating() && i < 100; i++ {
+		m.toast.Advance(m.colored)
 	}
-	if m.toast.animating() {
+	if m.toast.Animating() {
 		t.Fatal("トーストのアニメが 100 フレームで着地しない (前提が崩れた)")
 	}
 }
@@ -93,12 +93,12 @@ func showToastLanded(t *testing.T, m *browseModel, text string) {
 func showWarningsLanded(t *testing.T, m *browseModel, texts ...string) {
 	t.Helper()
 	for _, text := range texts {
-		m.toast.show(text, false)
+		m.toast.Show(text, false)
 	}
-	for i := 0; m.toast.animating() && i < 100; i++ {
-		m.toast.advance(m.colored)
+	for i := 0; m.toast.Animating() && i < 100; i++ {
+		m.toast.Advance(m.colored)
 	}
-	if m.toast.animating() {
+	if m.toast.Animating() {
 		t.Fatal("重要警告のアニメが 100 フレームで着地しない (前提が崩れた)")
 	}
 }

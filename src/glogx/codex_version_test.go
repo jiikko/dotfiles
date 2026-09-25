@@ -50,8 +50,8 @@ func TestBrowseCodexUpdateFlow(t *testing.T) {
 	if bm.actModal.anyUpdating() {
 		t.Fatal("updateMsg 後も updating が立ったまま")
 	}
-	if !strings.Contains(bm.toast.text, "codex ") || !strings.Contains(bm.toast.text, "0.150.0") {
-		t.Fatalf("codex 表記の結果トーストが出ない: %q", bm.toast.text)
+	if !strings.Contains(bm.toast.Text(), "codex ") || !strings.Contains(bm.toast.Text(), "0.150.0") {
+		t.Fatalf("codex 表記の結果トーストが出ない: %q", bm.toast.Text())
 	}
 }
 
@@ -124,18 +124,18 @@ func TestCodexUpdateThatDidNotUpdateIsNotReportedAsLatest(t *testing.T) {
 	if runCalls != 1 {
 		t.Fatalf("codex update 実行回数 = %d, want 1 (早期リターンしてはいけない)", runCalls)
 	}
-	if strings.Contains(m.toast.text, "最新版") {
-		t.Fatalf("更新されなかったのに「最新版」と案内している: text=%q", m.toast.text)
+	if strings.Contains(m.toast.Text(), "最新版") {
+		t.Fatalf("更新されなかったのに「最新版」と案内している: text=%q", m.toast.Text())
 	}
 	// 警告として出す (ok=false)。w でコピーできるよう lastWarning にも積まれる。
-	if m.toast.ok {
-		t.Fatalf("公開版より古いままなのに成功トーストで出している: text=%q", m.toast.text)
+	if m.toast.OK() {
+		t.Fatalf("公開版より古いままなのに成功トーストで出している: text=%q", m.toast.Text())
 	}
-	if !strings.Contains(m.toast.text, "v0.152.0") || !strings.Contains(m.toast.text, "v0.153.0") {
-		t.Fatalf("現行版と公開版の両方がトーストに出ない: text=%q", m.toast.text)
+	if !strings.Contains(m.toast.Text(), "v0.152.0") || !strings.Contains(m.toast.Text(), "v0.153.0") {
+		t.Fatalf("現行版と公開版の両方がトーストに出ない: text=%q", m.toast.Text())
 	}
-	if !strings.Contains(m.toast.text, "Codex is already up to date.") {
-		t.Fatalf("codex の言い分 (note) がトーストに出ない: text=%q", m.toast.text)
+	if !strings.Contains(m.toast.Text(), "Codex is already up to date.") {
+		t.Fatalf("codex の言い分 (note) がトーストに出ない: text=%q", m.toast.Text())
 	}
 	if m.actModal.anyUpdating() {
 		t.Fatal("updateMsg 後も updating のまま")

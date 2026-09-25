@@ -216,8 +216,8 @@ func TestGitLogFingerprintBaselineCatchesStartupWindow(t *testing.T) {
 	if !m.logWatch.hasSeen || m.logWatch.seen != fp {
 		t.Errorf("一致した指紋が基準にならなかった: hasSeen=%v seen=%q", m.logWatch.hasSeen, m.logWatch.seen)
 	}
-	if m.toast.visible() {
-		t.Errorf("変化していないのにトーストが出た: %q", m.toast.text)
+	if m.toast.Visible() {
+		t.Errorf("変化していないのにトーストが出た: %q", m.toast.Text())
 	}
 
 	// 「読み込みの後に commit された」= 基準がまだ無い状態で、手元と食い違う指紋が届く
@@ -279,8 +279,8 @@ func TestGitLogReflectKeepsAnchorRow(t *testing.T) {
 	if m.pullAnimating {
 		t.Error("途中を読んでいるのに降らせる演出が始まった (行がずれる)")
 	}
-	if !m.toast.visible() || !strings.Contains(m.toast.text, "1 件") {
-		t.Errorf("新規コミット件数のトーストが出ない: visible=%v text=%q", m.toast.visible(), m.toast.text)
+	if !m.toast.Visible() || !strings.Contains(m.toast.Text(), "1 件") {
+		t.Errorf("新規コミット件数のトーストが出ない: visible=%v text=%q", m.toast.Visible(), m.toast.Text())
 	}
 	// 反映後は基準を降ろしたままにする (測定値を基準にすると、読み直しが測定より新しい状態を
 	// 読んだときに「表示は変わらないのにトーストだけ出る」再読込が 1 回増える)
@@ -453,7 +453,7 @@ func TestGitLogFPDiscardsMeasurementTakenBeforeSelfReload(t *testing.T) {
 	if len(m.commits) != 3 {
 		t.Fatalf("pull の読み直しが効いていない: %d 件", len(m.commits))
 	}
-	m.toast = toast{} // pull のトーストと区別する
+	m.toast.Clear() // pull のトーストと区別する
 	// 🚨 pull の演出中は見送り (gitLogReloadDeferred) に入って何もしないため、演出を落として
 	// 「古い測定値をどう扱うか」だけを判定に残す (落とさないと、この検査は演出のおかげで
 	// 通ってしまい、古い測定値を採用する変異を検知できない — 実測 2026-09-01)。
@@ -462,8 +462,8 @@ func TestGitLogFPDiscardsMeasurementTakenBeforeSelfReload(t *testing.T) {
 	if cmd := m.handleGitLogFP(gitLogFPMsg{fp: staleFP, ok: true}); cmd != nil {
 		t.Error("読み直し前に測った指紋で再読込が走った")
 	}
-	if m.toast.visible() {
-		t.Errorf("自分の pull の直後に外部変更のトーストが出た: %q", m.toast.text)
+	if m.toast.Visible() {
+		t.Errorf("自分の pull の直後に外部変更のトーストが出た: %q", m.toast.Text())
 	}
 	if m.logWatch.hasSeen {
 		t.Errorf("古い指紋を基準にした: %q (次の観測でも不一致になり、もう一度無駄に反映する)", m.logWatch.seen)
@@ -596,8 +596,8 @@ func TestGitLogEmptyFingerprintIsNotSentinel(t *testing.T) {
 	if !m.logWatch.hasSeen {
 		t.Error("空の指紋を基準として保てていない")
 	}
-	if m.toast.visible() {
-		t.Errorf("変化していないのにトーストが出た: %q", m.toast.text)
+	if m.toast.Visible() {
+		t.Errorf("変化していないのにトーストが出た: %q", m.toast.Text())
 	}
 }
 
@@ -624,15 +624,15 @@ func TestGitLogReloadDiscardsWhenSelfReloadHappenedMeanwhile(t *testing.T) {
 	commitLines(t, dir, 10, "c4")
 	m.reloadAfterPull() // 利用者の pull が先に反映された (c4 まで)
 	m.pullAnimating = false
-	m.toast = toast{}
+	m.toast.Clear()
 	if cmd := m.handleGitLogReload(staleMsg.(gitLogReloadMsg)); cmd != nil {
 		t.Error("古い読み直しの結果で何か起きた")
 	}
 	if len(m.commits) != 4 || m.commits[0].Subject != "c4" {
 		t.Fatalf("古い logData が pull の結果を上書きした: %d 件 先頭=%q", len(m.commits), m.commits[0].Subject)
 	}
-	if m.toast.visible() {
-		t.Errorf("捨てた読み直しでトーストが出た: %q", m.toast.text)
+	if m.toast.Visible() {
+		t.Errorf("捨てた読み直しでトーストが出た: %q", m.toast.Text())
 	}
 	if m.logWatch.reloading {
 		t.Error("reloading の札が降りていない (以降の観測が全部見送られる)")

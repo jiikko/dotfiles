@@ -437,7 +437,7 @@ func (m *browseModel) handleGitLogReload(msg gitLogReloadMsg) tea.Cmd {
 	// その状態で画面が先頭へ飛ぶ (この機能の主旨に反する)。
 	keepView := m.cursor > 0 || m.offset > 0
 	added, cmd := m.applyLogData(msg.data, keepView)
-	m.toast.show(gitLogChangeToast(added), true)
+	m.toast.Show(gitLogChangeToast(added), true)
 	return tea.Batch(cmd, m.maybeTick())
 }
 

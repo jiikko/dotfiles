@@ -1,26 +1,26 @@
-package main
+package toast
 
 import (
 	"fmt"
 	"slices"
 	"strings"
 	"testing"
-)
 
-// visible は「1 枚でも出ているか」のテスト用ショートハンド。本番の描画は boxLines、フレーム
-// 判定は animating を使うので、この畳んだ判定はテストの assert からしか要らない。
-func (s *toast) visible() bool { return s.toastItem.visible() || len(s.older) > 0 }
+	"tuikit/termwidth"
+
+	"github.com/charmbracelet/x/ansi"
+)
 
 // show → entering、tick で右画面外から左へ滑り込み (shown 0→boxWidth)、入場完了で holding +
 // 退場タイマー、startLeaving → leaving、tick で右へ滑り出て hidden、という一連の状態遷移。
 func TestToastLifecycle(t *testing.T) {
-	var to toast
-	if to.visible() || to.animating() {
+	var to Stack
+	if to.Visible() || to.Animating() {
 		t.Fatal("初期は非表示・非アニメ")
 	}
-	to.show("done", true)
-	if !to.visible() || to.phase != toastEntering || !to.ok || to.text != "done" {
-		t.Fatalf("show 後: phase=%d visible=%v ok=%v text=%q", to.phase, to.visible(), to.ok, to.text)
+	to.Show("done", true)
+	if !to.Visible() || to.phase != Entering || !to.ok || to.text != "done" {
+		t.Fatalf("show 後: phase=%d visible=%v ok=%v text=%q", to.phase, to.Visible(), to.ok, to.text)
 	}
 	boxW := to.boxWidth(false)
 	if boxW < 10 {
@@ -28,41 +28,41 @@ func TestToastLifecycle(t *testing.T) {
 	}
 	// 入場: holding になるまで advance。退場タイマー (holdCmd) は入場完了時に 1 回だけ返る
 	var holdCmds, guard int
-	for to.phase == toastEntering && guard < 100 {
-		if cmd := to.advance(false); cmd != nil {
+	for to.phase == Entering && guard < 100 {
+		if ts := to.Advance(false); len(ts) > 0 {
 			holdCmds++
 		}
 		guard++
 	}
-	if to.phase != toastHolding || to.shown != boxW {
+	if to.phase != Holding || to.shown != boxW {
 		t.Fatalf("入場完了後: phase=%d shown=%d (want holding/%d)", to.phase, to.shown, boxW)
 	}
 	if holdCmds != 1 {
 		t.Errorf("退場タイマーは入場完了時に 1 回だけ返るべき: %d", holdCmds)
 	}
-	if to.animating() {
+	if to.Animating() {
 		t.Error("holding 中は animating=false (tick 不要)")
 	}
 	// holding 明け → leaving
-	to.startLeaving(toastMsg{seq: to.seq})
-	if to.phase != toastLeaving || !to.animating() {
-		t.Fatalf("startLeaving 後: phase=%d animating=%v", to.phase, to.animating())
+	to.StartLeaving(Msg{seq: to.seq})
+	if to.phase != Leaving || !to.Animating() {
+		t.Fatalf("startLeaving 後: phase=%d animating=%v", to.phase, to.Animating())
 	}
 	// 退場: hidden まで
 	guard = 0
-	for to.visible() && guard < 100 {
-		to.advance(false)
+	for to.Visible() && guard < 100 {
+		to.Advance(false)
 		guard++
 	}
-	if to.phase != toastHidden || to.visible() || to.text != "" {
-		t.Fatalf("退場完了後: phase=%d visible=%v text=%q", to.phase, to.visible(), to.text)
+	if to.phase != Hidden || to.Visible() || to.text != "" {
+		t.Fatalf("退場完了後: phase=%d visible=%v text=%q", to.phase, to.Visible(), to.text)
 	}
 }
 
 // advanceToHolding は entering のトーストを holding まで tick で進める (テスト用ヘルパー)。
-func advanceToHolding(to *toast) {
-	for guard := 0; to.phase == toastEntering && guard < 100; guard++ {
-		to.advance(false)
+func advanceToHolding(to *Stack) {
+	for guard := 0; to.phase == Entering && guard < 100; guard++ {
+		to.Advance(false)
 	}
 }
 
@@ -70,83 +70,68 @@ func advanceToHolding(to *toast) {
 // 新トーストを holding まで進めた状態で試すことで、phase 条件では弾けず seq ガードだけが
 // 分岐を左右する場面を作る (startLeaving の `msg.seq == t.seq` を消すと最初の assert が落ちる)。
 func TestToastStaleTimerDoesNotLeaveNewer(t *testing.T) {
-	var to toast
-	to.show("first", true)
+	var to Stack
+	to.Show("first", true)
 	oldSeq := to.seq
 	advanceToHolding(&to)    // 1つ目を holding へ
-	to.show("second", false) // 上書き (seq 前進・entering へリセット)
+	to.Show("second", false) // 上書き (seq 前進・entering へリセット)
 	advanceToHolding(&to)    // 2つ目も holding へ = phase==holding は満たされ、残る守りは seq のみ
 
 	// 古い世代のタイマー (oldSeq) が届いても、seq 不一致なので新トーストを退場させない。
-	to.startLeaving(toastMsg{seq: oldSeq})
-	if to.phase != toastHolding || to.text != "second" {
+	to.StartLeaving(Msg{seq: oldSeq})
+	if to.phase != Holding || to.text != "second" {
 		t.Errorf("古い seq のタイマーが新トーストを退場させた: phase=%d text=%q", to.phase, to.text)
 	}
 	// 正しい世代のタイマーなら退場に入る (seq ガードは一致時に通す、の対検証)。
-	to.startLeaving(toastMsg{seq: to.seq})
-	if to.phase != toastLeaving {
+	to.StartLeaving(Msg{seq: to.seq})
+	if to.phase != Leaving {
 		t.Errorf("正しい seq で退場に入らない: phase=%d", to.phase)
 	}
 }
 
 // 入場途中は箱の左 shown カラムだけ (可視幅=shown、全幅未満)、holding で全幅が出る。横スライド。
 func TestToastBoxLinesRevealsLeftColumns(t *testing.T) {
-	var to toast
-	to.show("pushed", true) // ASCII のみ (全角境界の半端幅を避け、可視幅=shown を厳密比較)
+	var to Stack
+	to.Show("pushed", true) // ASCII のみ (全角境界の半端幅を避け、可視幅=shown を厳密比較)
 	boxW := to.boxWidth(false)
 	full := to.fullBox(false)
 	// 入場 1 フレーム: 全行が出るが、各行の可視幅は shown (<boxW) に切られている
-	to.advance(false)
-	got := to.toastItem.boxLines(false) // 1 枚分の描画を見る (スタックの行数上限とは別)
+	to.Advance(false)
+	got := to.boxLines(false) // 1 枚分の描画を見る (スタックの行数上限とは別)
 	if len(got) != len(full) {
 		t.Errorf("スライド中も全行が出るべき: got=%d 行 want=%d 行", len(got), len(full))
 	}
-	wv := dispWidth(got[0])
+	wv := termwidth.Of(got[0])
 	if wv != to.shown || wv >= boxW {
 		t.Errorf("入場途中の可視幅が左スライドでない: 可視幅=%d shown=%d boxW=%d", wv, to.shown, boxW)
 	}
 	// holding まで進めると全幅 + ✓/text
 	advanceToHolding(&to)
-	lines := to.toastItem.boxLines(false)
-	plain := stripANSI(strings.Join(lines, "\n"))
-	if dispWidth(lines[0]) != boxW || !strings.Contains(plain, "✓") || !strings.Contains(plain, "pushed") {
+	lines := to.boxLines(false)
+	plain := ansi.Strip(strings.Join(lines, "\n"))
+	if termwidth.Of(lines[0]) != boxW || !strings.Contains(plain, "✓") || !strings.Contains(plain, "pushed") {
 		t.Errorf("全表示に ✓/pushed が無い / 全幅でない:\n%s", plain)
 	}
 	// 失敗は ✗
-	var ng toast
-	ng.show("failed", false)
+	var ng Stack
+	ng.Show("failed", false)
 	advanceToHolding(&ng)
-	if !strings.Contains(stripANSI(strings.Join(ng.toastItem.boxLines(false), "\n")), "✗") {
+	if !strings.Contains(ansi.Strip(strings.Join(ng.boxLines(false), "\n")), "✗") {
 		t.Error("失敗トーストに ✗ が無い")
 	}
 	// 非表示は nil
-	var empty toast
-	if empty.toastItem.boxLines(false) != nil {
+	var empty Stack
+	if empty.boxLines(false) != nil {
 		t.Error("非表示で nil を返さない")
-	}
-}
-
-// 右下合成: box は window の下端行に載り、その行の左背景は保持され、対象外の行は不変。
-func TestOverlayBoxBottomRightKeepsLeftAndAnchorsBottom(t *testing.T) {
-	window := []string{"row0-left", "row1-left", "row2-left", "row3-left"}
-	out := overlayBoxBottomRight(window, []string{"BBB"}, 20, false)
-	if !strings.Contains(out[3], "BBB") {
-		t.Errorf("box が下端に載っていない: %q", out[3])
-	}
-	if !strings.HasPrefix(out[3], "row3-left") {
-		t.Errorf("下端行の左背景が保持されていない: %q", out[3])
-	}
-	if out[0] != "row0-left" {
-		t.Errorf("box 対象外の行が変わった: %q", out[0])
 	}
 }
 
 // 新しい通知は上に積まれ、古い通知は下から抜けていく (ユーザー要望 2026-07-31)。
 func TestToastStacksNewestOnTop(t *testing.T) {
-	var s toast
-	s.show("1 番目", true)
-	s.show("2 番目", true)
-	s.show("3 番目", true)
+	var s Stack
+	s.Show("1 番目", true)
+	s.Show("2 番目", true)
+	s.Show("3 番目", true)
 
 	items := s.items()
 	if len(items) != 3 {
@@ -166,13 +151,13 @@ func TestToastStacksNewestOnTop(t *testing.T) {
 
 // 上限を超えたら一番古い (一番下) を捨てる。画面を覆わないための guard。
 func TestToastStackCapsOldest(t *testing.T) {
-	var s toast
+	var s Stack
 	for _, txt := range []string{"1", "2", "3", "4", "5"} {
-		s.show(txt, true)
+		s.Show(txt, true)
 	}
 	items := s.items()
-	if len(items) != toastStackMax {
-		t.Fatalf("枚数 = %d, want %d (上限)", len(items), toastStackMax)
+	if len(items) != StackMax {
+		t.Fatalf("枚数 = %d, want %d (上限)", len(items), StackMax)
 	}
 	if items[0].text != "5" {
 		t.Errorf("最上段 = %q, want 5 (最新)", items[0].text)
@@ -186,53 +171,53 @@ func TestToastStackCapsOldest(t *testing.T) {
 
 // 抜けた枚は取り除かれ、残りが繰り上がる (下から抜けていく)。
 func TestToastStackRemovesFinishedFromBottom(t *testing.T) {
-	var s toast
-	s.show("古い", true)
-	s.show("新しい", true)
+	var s Stack
+	s.Show("古い", true)
+	s.Show("新しい", true)
 	// 入場を終わらせる
-	for range toastSlideFrames + 2 {
-		s.advance(false)
+	for range SlideFrames + 2 {
+		s.Advance(false)
 	}
 	// 古い方 (下) の静止が明けて退場 → 抜け切るまで進める
 	oldSeq := s.older[0].seq
-	s.startLeaving(toastMsg{seq: oldSeq})
-	for range toastSlideFrames + 2 {
-		s.advance(false)
+	s.StartLeaving(Msg{seq: oldSeq})
+	for range SlideFrames + 2 {
+		s.Advance(false)
 	}
 	if len(s.older) != 0 {
 		t.Errorf("抜けた枚が残っている: %+v", s.older)
 	}
-	if s.text != "新しい" || !s.visible() {
-		t.Errorf("残るべき枚が消えた: text=%q visible=%v", s.text, s.visible())
+	if s.text != "新しい" || !s.Visible() {
+		t.Errorf("残るべき枚が消えた: text=%q visible=%v", s.text, s.Visible())
 	}
 }
 
 // 退場タイマーは枚ごとに独立 (seq が一致した枚だけ動く)。
 func TestToastStackLeavingIsPerItem(t *testing.T) {
-	var s toast
-	s.show("古い", true)
-	s.show("新しい", true)
-	for range toastSlideFrames + 2 {
-		s.advance(false)
+	var s Stack
+	s.Show("古い", true)
+	s.Show("新しい", true)
+	for range SlideFrames + 2 {
+		s.Advance(false)
 	}
-	s.startLeaving(toastMsg{seq: s.older[0].seq})
-	if s.older[0].phase != toastLeaving {
+	s.StartLeaving(Msg{seq: s.older[0].seq})
+	if s.older[0].phase != Leaving {
 		t.Errorf("下の枚が退場に入らない: %v", s.older[0].phase)
 	}
-	if s.phase == toastLeaving {
+	if s.phase == Leaving {
 		t.Error("関係ない上の枚まで退場に入った (seq の取り違え)")
 	}
 }
 
 // 描画は上から下に並ぶ (新しいものが上)。
 func TestToastStackBoxLinesOrder(t *testing.T) {
-	var s toast
-	s.show("古い通知", true)
-	s.show("新しい通知", true)
-	for range toastSlideFrames + 2 {
-		s.advance(false)
+	var s Stack
+	s.Show("古い通知", true)
+	s.Show("新しい通知", true)
+	for range SlideFrames + 2 {
+		s.Advance(false)
 	}
-	out := strings.Join(s.boxLines(false, 100), "\n")
+	out := strings.Join(s.BoxLines(false, 100), "\n")
 	iNew, iOld := strings.Index(out, "新しい通知"), strings.Index(out, "古い通知")
 	if iNew < 0 || iOld < 0 {
 		t.Fatalf("両方描かれていない:\n%s", out)
@@ -245,9 +230,9 @@ func TestToastStackBoxLinesOrder(t *testing.T) {
 // 進行中トースト (…シアン) は新しい通知が来たら退く。🚨 積んだままにすると「PR を検索中...」の
 // 下に結果が並び、終わったのに検索中と書いてある状態が数秒残る (実測 2026-07-31)。
 func TestToastInfoIsSupersededByResult(t *testing.T) {
-	var s toast
-	s.showInfo("PR を検索中...")
-	s.show("PR #123 を開きます", true)
+	var s Stack
+	s.ShowInfo("PR を検索中...")
+	s.Show("PR #123 を開きます", true)
 	items := s.items()
 	if len(items) != 1 {
 		t.Fatalf("枚数 = %d, want 1 (進行中は退く): %+v", len(items), items)
@@ -256,10 +241,10 @@ func TestToastInfoIsSupersededByResult(t *testing.T) {
 		t.Errorf("残ったのが結果でない: %q", items[0].text)
 	}
 	// 下に積まれていた進行中も落ちる
-	var s2 toast
-	s2.show("先行の結果", true)
-	s2.showInfo("検索中...")
-	s2.show("新しい結果", true)
+	var s2 Stack
+	s2.Show("先行の結果", true)
+	s2.ShowInfo("検索中...")
+	s2.Show("新しい結果", true)
 	for _, it := range s2.items() {
 		if it.info {
 			t.Errorf("進行中が残っている: %q", it.text)
@@ -272,57 +257,38 @@ func TestToastInfoIsSupersededByResult(t *testing.T) {
 
 // 箱の行数は一定 (上罫線 + 内容 + 下罫線 + 影)。行数上限の計算がこれに依存している。
 func TestToastBoxLineCount(t *testing.T) {
-	var s toast
-	s.show("x", true)
+	var s Stack
+	s.Show("x", true)
 	advanceToHolding(&s)
-	if got := len(s.toastItem.boxLines(false)); got != toastBoxLines {
-		t.Errorf("箱の行数 = %d, want %d (toastBoxLines を直すこと)", got, toastBoxLines)
-	}
-}
-
-func TestToastDrawBudget(t *testing.T) {
-	for _, c := range []struct {
-		page int
-		want int
-	}{
-		{4, 4},
-		{8, 7},
-		{9, 8},
-		{11, 8},
-		{15, 8},
-		{16, 8},
-		{24, 12},
-	} {
-		if got := toastDrawBudget(c.page); got != c.want {
-			t.Errorf("page=%d: 予算=%d, want %d", c.page, got, c.want)
-		}
+	if got := len(s.boxLines(false)); got != BoxHeight {
+		t.Errorf("箱の行数 = %d, want %d (BoxHeight を直すこと)", got, BoxHeight)
 	}
 }
 
 func TestToastBoxLinesShowsTwoWarningsWithEightLineBudget(t *testing.T) {
-	var s toast
-	s.show("警告A", false)
-	s.show("警告B", false)
-	for range toastSlideFrames + 2 {
-		s.advance(false)
+	var s Stack
+	s.Show("警告A", false)
+	s.Show("警告B", false)
+	for range SlideFrames + 2 {
+		s.Advance(false)
 	}
 
-	out := strings.Join(s.boxLines(false, toastBoxLines*2), "\n")
+	out := strings.Join(s.BoxLines(false, BoxHeight*2), "\n")
 	if !strings.Contains(out, "警告A") || !strings.Contains(out, "警告B") {
 		t.Fatalf("予算 8 行で重要警告 2 枚が描かれない:\n%s", out)
 	}
 }
 
 func TestToastBoxLinesDropsOldestWarningWhenThreeDoNotFit(t *testing.T) {
-	var s toast
+	var s Stack
 	for _, text := range []string{"警告A", "警告B", "警告C"} {
-		s.show(text, false)
+		s.Show(text, false)
 	}
-	for range toastSlideFrames + 2 {
-		s.advance(false)
+	for range SlideFrames + 2 {
+		s.Advance(false)
 	}
 
-	out := strings.Join(s.boxLines(false, toastBoxLines*2), "\n")
+	out := strings.Join(s.BoxLines(false, BoxHeight*2), "\n")
 	if strings.Contains(out, "警告A") {
 		t.Fatalf("警告 3 枚で最古が表示対象に残っている:\n%s", out)
 	}
@@ -331,49 +297,28 @@ func TestToastBoxLinesDropsOldestWarningWhenThreeDoNotFit(t *testing.T) {
 	}
 }
 
-func TestToastBoxLinesDoesNotCutSecondBoxAtPageEightBudget(t *testing.T) {
-	var s toast
-	s.show("警告A", false)
-	s.show("警告B", false)
-	for range toastSlideFrames + 2 {
-		s.advance(false)
-	}
-
-	budget := toastDrawBudget(8)
-	got := s.boxLines(false, budget)
-	if len(got) > budget {
-		t.Fatalf("page=8 の予算 %d 行を超えた: %d 行", budget, len(got))
-	}
-	if len(got)%toastBoxLines != 0 {
-		t.Fatalf("箱が途中で切れている: %d 行", len(got))
-	}
-	if strings.Contains(strings.Join(got, "\n"), "警告A") {
-		t.Fatalf("page=8 相当では 2 枚目の警告まで描かれた:\n%s", strings.Join(got, "\n"))
-	}
-}
-
 // 行数上限を超える古い枚は出さない。箱の途中で切らない。最新は上限を超えても出す。
 func TestToastBoxLinesRespectsMaxLines(t *testing.T) {
-	var s toast
+	var s Stack
 	for _, txt := range []string{"1", "2", "3"} {
-		s.show(txt, true)
+		s.Show(txt, true)
 	}
-	for range toastSlideFrames + 2 {
-		s.advance(false)
+	for range SlideFrames + 2 {
+		s.Advance(false)
 	}
 	for _, c := range []struct {
 		maxLines  int
 		wantBoxes int
 	}{
 		{100, 3},
-		{toastBoxLines * 2, 2},
-		{toastBoxLines, 1},
+		{BoxHeight * 2, 2},
+		{BoxHeight, 1},
 		{1, 1}, // 上限より箱が大きくても最新 1 枚は出す (見えない通知より覆う通知)
 	} {
-		got := len(s.boxLines(false, c.maxLines))
-		if want := c.wantBoxes * toastBoxLines; got != want {
+		got := len(s.BoxLines(false, c.maxLines))
+		if want := c.wantBoxes * BoxHeight; got != want {
 			t.Errorf("maxLines=%d: %d 行 (%d 箱), want %d 行 (%d 箱)",
-				c.maxLines, got, got/toastBoxLines, want, c.wantBoxes)
+				c.maxLines, got, got/BoxHeight, want, c.wantBoxes)
 		}
 	}
 }
@@ -382,10 +327,10 @@ func TestToastBoxLinesRespectsMaxLines(t *testing.T) {
 // 3 回来ただけで警告が消える (実測 2026-08-13。issue 028 P2 が要求していた
 // 「重要度 error > info の逆転を防ぐ」が、スタック化後は満たされていなかった)。
 func TestToastEvictionKeepsWarningOverSuccess(t *testing.T) {
-	var s toast
-	s.show("警告: 未 push があります", false) // ok=false = 警告/拒否理由
+	var s Stack
+	s.Show("警告: 未 push があります", false) // ok=false = 警告/拒否理由
 	for i := 1; i <= 3; i++ {
-		s.show(fmt.Sprintf("ok%d", i), true) // 成功通知で埋める
+		s.Show(fmt.Sprintf("ok%d", i), true) // 成功通知で埋める
 	}
 
 	items := s.items()
@@ -400,16 +345,16 @@ func TestToastEvictionKeepsWarningOverSuccess(t *testing.T) {
 	if slices.Contains(texts, "ok1") {
 		t.Errorf("最古の成功通知が残っている (重要でない最古を捨てていない): %v", texts)
 	}
-	if len(s.items()) != toastStackMax {
-		t.Errorf("保持枚数が上限と違う: %d want %d", len(s.items()), toastStackMax)
+	if len(s.items()) != StackMax {
+		t.Errorf("保持枚数が上限と違う: %d want %d", len(s.items()), StackMax)
 	}
 }
 
 // 全部が警告なら従来どおり最古を捨てる (重要度が同じなら年齢順)。
 func TestToastEvictionFallsBackToAgeWhenAllWarnings(t *testing.T) {
-	var s toast
-	for i := 1; i <= toastStackMax+1; i++ {
-		s.show(fmt.Sprintf("warn%d", i), false)
+	var s Stack
+	for i := 1; i <= StackMax+1; i++ {
+		s.Show(fmt.Sprintf("warn%d", i), false)
 	}
 	items := s.items()
 	texts := make([]string, 0, len(items))
@@ -419,7 +364,7 @@ func TestToastEvictionFallsBackToAgeWhenAllWarnings(t *testing.T) {
 	if slices.Contains(texts, "warn1") {
 		t.Errorf("全部警告のとき最古が捨てられていない: %v", texts)
 	}
-	if !slices.Contains(texts, fmt.Sprintf("warn%d", toastStackMax+1)) {
+	if !slices.Contains(texts, fmt.Sprintf("warn%d", StackMax+1)) {
 		t.Errorf("最新の警告が残っていない: %v", texts)
 	}
 }
@@ -428,19 +373,19 @@ func TestToastEvictionFallsBackToAgeWhenAllWarnings(t *testing.T) {
 // 🚨 保持と表示で規則が違うと「保持はしているのに重要な通知だけ画面に出ない」状態になる
 // (実測 2026-08-13: 警告の後に成功通知が来た狭い端末で、警告が 1 行も描かれなかった)。
 func TestToastBoxLinesKeepsWarningWithinBudget(t *testing.T) {
-	var s toast
-	s.show("警告: 未 push があります", false) // 最古 = 予算で最初に落ちる位置
-	s.show("ok1", true)
-	s.show("ok2", true)
-	for range toastSlideFrames + 2 {
-		s.advance(false)
+	var s Stack
+	s.Show("警告: 未 push があります", false) // 最古 = 予算で最初に落ちる位置
+	s.Show("ok1", true)
+	s.Show("ok2", true)
+	for range SlideFrames + 2 {
+		s.Advance(false)
 	}
 	if len(s.items()) != 3 {
 		t.Fatalf("前提が崩れた: 3 枚保持していない (%d)", len(s.items()))
 	}
 
 	// 2 枚ぶんの予算しかない = 1 枚落とす。落ちるのは重要でない最古 (ok1) で、警告は残る
-	out := strings.Join(s.boxLines(false, toastBoxLines*2), "\n")
+	out := strings.Join(s.BoxLines(false, BoxHeight*2), "\n")
 	if !strings.Contains(out, "未 push") {
 		t.Errorf("予算内に警告が描かれない (保持しているのに見えない):\n%s", out)
 	}
@@ -459,9 +404,9 @@ func TestToastBoxLinesKeepsWarningWithinBudget(t *testing.T) {
 	// 🚨 行数だけの assert にしない: 最新が落ちて古い警告が残っても行数は同じ 4 行で通る。
 	// 実際この fixture は issue 057 のバグ (最新 ok2 が消え「未 push」だけが描かれる) を
 	// 再現していたのに、行数 assert だったため green を返し続けていた
-	one := strings.Join(s.boxLines(false, toastBoxLines), "\n")
-	if got := len(s.boxLines(false, toastBoxLines)); got != toastBoxLines {
-		t.Errorf("予算 1 枚のとき %d 行 (want %d)", got, toastBoxLines)
+	one := strings.Join(s.BoxLines(false, BoxHeight), "\n")
+	if got := len(s.BoxLines(false, BoxHeight)); got != BoxHeight {
+		t.Errorf("予算 1 枚のとき %d 行 (want %d)", got, BoxHeight)
 	}
 	if !strings.Contains(one, "ok2") {
 		t.Errorf("予算 1 枚のとき最新 (ok2) が描かれない (issue 057):\n%s", one)
@@ -475,33 +420,73 @@ func TestToastBoxLinesAlwaysDrawsNewest(t *testing.T) {
 	cases := []struct {
 		name     string
 		maxLines int
-		build    func(*toast)
+		build    func(*Stack)
 		want     string
 	}{
-		{"fit=1: 警告 1 枚 + 成功", toastBoxLines*2 - 1, func(s *toast) {
-			s.show("git push に失敗しました", false)
-			s.show("コピーしました", true)
+		{"fit=1: 警告 1 枚 + 成功", BoxHeight*2 - 1, func(s *Stack) {
+			s.Show("git push に失敗しました", false)
+			s.Show("コピーしました", true)
 		}, "コピーしました"},
-		{"fit=2: 警告 2 枚 + 成功", toastBoxLines*3 - 2, func(s *toast) {
-			s.show("警告A", false)
-			s.show("警告B", false)
-			s.show("コピーしました", true)
+		{"fit=2: 警告 2 枚 + 成功", BoxHeight*3 - 2, func(s *Stack) {
+			s.Show("警告A", false)
+			s.Show("警告B", false)
+			s.Show("コピーしました", true)
 		}, "コピーしました"},
-		{"fit=2: 警告 2 枚 + 進行中 (info)", toastBoxLines*3 - 2, func(s *toast) {
-			s.show("警告A", false)
-			s.show("警告B", false)
-			s.showInfo("PR を検索中...")
+		{"fit=2: 警告 2 枚 + 進行中 (info)", BoxHeight*3 - 2, func(s *Stack) {
+			s.Show("警告A", false)
+			s.Show("警告B", false)
+			s.ShowInfo("PR を検索中...")
 		}, "PR を検索中"},
 	}
 	for _, c := range cases {
-		var s toast
+		var s Stack
 		c.build(&s)
-		for range toastSlideFrames + 2 {
-			s.advance(false)
+		for range SlideFrames + 2 {
+			s.Advance(false)
 		}
-		got := strings.Join(s.boxLines(false, c.maxLines), "\n")
+		got := strings.Join(s.BoxLines(false, c.maxLines), "\n")
 		if !strings.Contains(got, c.want) {
 			t.Errorf("%s: 最新のトースト %q が 1 行も描かれない:\n%s", c.name, c.want, got)
 		}
+	}
+}
+
+// Clear は積んでいた通知を即座に消す。🚨 世代は巻き戻さない: 消す前の枚の退場タイマーが、消した後に積んだ枚を退場させない。
+func TestClearKeepsGenerationAndShadow(t *testing.T) {
+	s := Stack{Shadow: "\x1b[38;5;232m"}
+	s.Show("消す前", true)
+	var timers []Timer
+	for range SlideFrames + 2 {
+		timers = append(timers, s.Advance(false)...)
+	}
+	if len(timers) != 1 {
+		t.Fatalf("前提: 静止に入った枚の退場タイマーが 1 つ: %d", len(timers))
+	}
+	s.Clear()
+	if s.Visible() || len(s.Entries()) != 0 {
+		t.Fatalf("Clear の後も通知が残る: %+v", s.Entries())
+	}
+	if s.Shadow == "" {
+		t.Fatal("Clear が影の色まで消した")
+	}
+	s.Show("消した後", true)
+	for range SlideFrames + 2 {
+		s.Advance(false)
+	}
+	s.StartLeaving(timers[0].Msg) // 消す前の枚のタイマーが届く
+	if s.Phase() != Holding || s.Text() != "消した後" {
+		t.Fatalf("消す前の枚のタイマーが、消した後の枚を退場させた: phase=%d text=%q", s.Phase(), s.Text())
+	}
+}
+
+// Entries は表示中の枚を上から (新しい順に) 返す。
+func TestEntriesNewestFirst(t *testing.T) {
+	var s Stack
+	s.Show("A", true)
+	s.Show("B", false)
+	s.ShowInfo("C")
+	got := s.Entries()
+	if len(got) != 3 || got[0] != (Entry{Text: "C", Info: true}) || got[1] != (Entry{Text: "B"}) || got[2] != (Entry{Text: "A", OK: true}) {
+		t.Fatalf("Entries: %+v", got)
 	}
 }

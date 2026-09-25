@@ -742,8 +742,8 @@ func TestDoctorCopyThroughBrowseModel(t *testing.T) {
 	if copied != "/p/a" {
 		t.Fatalf("y でパスがクリップボードに届かない: %q", copied)
 	}
-	if !m.toast.visible() || !strings.Contains(m.toast.text, "コピー") {
-		t.Errorf("コピーのトーストが出ない: %q", m.toast.text)
+	if !m.toast.Visible() || !strings.Contains(m.toast.Text(), "コピー") {
+		t.Errorf("コピーのトーストが出ない: %q", m.toast.Text())
 	}
 	if !strings.Contains(m.hintLine(), "y: パスをコピー") {
 		t.Errorf("hint に y/Y が無い: %q", m.hintLine())

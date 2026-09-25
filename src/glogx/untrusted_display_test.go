@@ -82,8 +82,8 @@ func TestUsageBoxSanitizesVersion(t *testing.T) {
 func TestToastAndWarningAreSanitized(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)
 	m.showWarning("push に失敗: fatal" + osc8 + "0;PWNED" + st8 + " remote rejected")
-	if hasTerminalControl(m.toast.text) {
-		t.Errorf("トーストに制御シーケンスが残った: %q", m.toast.text)
+	if hasTerminalControl(m.toast.Text()) {
+		t.Errorf("トーストに制御シーケンスが残った: %q", m.toast.Text())
 	}
 	if hasTerminalControl(m.lastWarning) {
 		t.Errorf("コピー対象の警告に制御シーケンスが残った: %q", m.lastWarning)
@@ -97,8 +97,8 @@ func TestToastAndWarningAreSanitized(t *testing.T) {
 		if !strings.Contains(m.lastWarning, want) {
 			t.Fatalf("警告に %q が残っていない: %q (検査対象が空)", want, m.lastWarning)
 		}
-		if !strings.Contains(m.toast.text, want) {
-			t.Fatalf("トーストに %q が残っていない: %q (検査対象が空)", want, m.toast.text)
+		if !strings.Contains(m.toast.Text(), want) {
+			t.Fatalf("トーストに %q が残っていない: %q (検査対象が空)", want, m.toast.Text())
 		}
 	}
 }
@@ -110,13 +110,13 @@ func TestToastAndWarningAreSanitized(t *testing.T) {
 // 「以降が全部消える」形の画面破壊になる)。
 func TestPanelBoxDropsANSIWhenNotColored(t *testing.T) {
 	rows := []string{"\x1b[41;30m閉じていない SGR", "無関係な次の行"}
-	for _, line := range buildShadowPanelBox(" title ", rows, 40, false, ansiDim) {
+	for _, line := range buildShadowPanelBox(" title ", rows, 40, false) {
 		if strings.Contains(line, "\x1b") {
 			t.Errorf("色なしモードなのに ANSI が枠へ出た: %q", line)
 		}
 	}
 	// 色ありモードでは従来どおり通す (色を出すのが仕事なので落とさない)
-	got := strings.Join(buildShadowPanelBox(" title ", rows, 40, true, ansiDim), "\n")
+	got := strings.Join(buildShadowPanelBox(" title ", rows, 40, true), "\n")
 	if !strings.Contains(got, "\x1b[41;30m") {
 		t.Errorf("色ありモードで外部の SGR まで落とした: %q", got)
 	}

@@ -218,15 +218,15 @@ func TestAutobuildToast(t *testing.T) {
 // (ユーザー要望 2026-08-01)。🚨 トーストだと目を離している間に行動の機会だけが消える。
 func TestAutobuildMsgInstalledOpensRestartPrompt(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.toast.phase = toastHidden
+	m.toast.Clear()
 	m.autobuild = autobuildWatch{active: true, until: timeNow().Add(autobuildWatchTimeout)}
 
 	m.Update(autobuildMsg{result: autobuildInstalled})
 	if !m.restartPending {
 		t.Error("完成しても再起動ダイアログが出ない")
 	}
-	if m.toast.visible() {
-		t.Errorf("ダイアログとトーストが二重に出た: %q", m.toast.text)
+	if m.toast.Visible() {
+		t.Errorf("ダイアログとトーストが二重に出た: %q", m.toast.Text())
 	}
 	if m.autobuild.active {
 		t.Error("完了後も監視が続いている (tick が残る)")
@@ -372,15 +372,15 @@ func TestRestartPromptKeys(t *testing.T) {
 // 検出する唯一の経路)。Batch の要素数で「通知の tick と監視の tick が両方束ねられている」を見る。
 func TestAutobuildMsgKeepsWatchingWhileNotifying(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.toast.phase = toastHidden
+	m.toast.Clear()
 	m.ticking = false // single-flight で maybeTick が nil を返すと Batch の要素が減る
 	m.autobuild = autobuildWatch{
 		binPath: "/x/glogx", failedPath: "/x/" + autobuildFailedStamp,
 		active: true, until: timeNow().Add(autobuildWatchTimeout), pending: autobuildStarted,
 	}
 	_, cmd := m.Update(autobuildMsg{result: autobuildRunning})
-	if !strings.Contains(m.toast.text, "ビルド中") {
-		t.Fatalf("開始の通知が出ていない: %q", m.toast.text)
+	if !strings.Contains(m.toast.Text(), "ビルド中") {
+		t.Fatalf("開始の通知が出ていない: %q", m.toast.Text())
 	}
 	if !m.autobuild.active {
 		t.Fatal("開始を伝えただけで監視が止まった (失敗を拾えない)")
@@ -405,7 +405,7 @@ func TestPullStartsAutobuildAndOffersRestart(t *testing.T) {
 	t.Cleanup(func() { spawnAutobuild = orig })
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.toast.phase = toastHidden
+	m.toast.Clear()
 	m.actModal.pulling = true
 	// 🚨 pullMsg の Batch をそのまま走らせる (配線ごと固定する)。deliverMsgs は Batch を
 	// 再帰展開して match したものだけ Update へ渡すので、tick が状態を進めてしまうことはない。
@@ -424,8 +424,8 @@ func TestPullStartsAutobuildAndOffersRestart(t *testing.T) {
 	if !m.autobuild.active {
 		t.Fatal("ビルドを起動したのに監視を張っていない (完成を検出できない)")
 	}
-	if !strings.Contains(m.toast.text, "ビルド中") {
-		t.Errorf("「ビルド中」を伝えていない: %q", m.toast.text)
+	if !strings.Contains(m.toast.Text(), "ビルド中") {
+		t.Errorf("「ビルド中」を伝えていない: %q", m.toast.Text())
 	}
 	// 完成すれば通常の autobuildMsg 経路が再起動ダイアログを出す
 	m.Update(autobuildMsg{result: autobuildInstalled})
@@ -445,13 +445,13 @@ func TestPullWithoutSourceChangeIsQuiet(t *testing.T) {
 	t.Cleanup(func() { spawnAutobuild = orig })
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.toast.phase = toastHidden
+	m.toast.Clear()
 	m.Update(autobuildSpawnMsg{spawned: false})
 	if m.autobuild.active {
 		t.Error("ビルドを起動していないのに監視を張った (tick が増える)")
 	}
-	if m.toast.visible() {
-		t.Errorf("何も起きていないのにトーストを出した: %q", m.toast.text)
+	if m.toast.Visible() {
+		t.Errorf("何も起きていないのにトーストを出した: %q", m.toast.Text())
 	}
 }
 
@@ -467,16 +467,16 @@ func TestPullDoesNotStackAutobuildWatch(t *testing.T) {
 
 func TestAutobuildNotifiesAtStartup(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.toast.phase = toastHidden
+	m.toast.Clear()
 	m.autobuild = newAutobuildWatch("/some/dir/glogx", true, timeNow())
 	m.Init()
-	if !m.toast.visible() {
+	if !m.toast.Visible() {
 		t.Fatal("起動直後に「ビルド中」トーストが出ていない")
 	}
 	// 🚨 「次回起動で反映」とは書かない: 完成したら再起動ダイアログを出すので、その場で反映できる。
 	// ビルド中であることと、完成後に行動できることの両方が伝わっているか。
-	if !strings.Contains(m.toast.text, "ビルド中") || !strings.Contains(m.toast.text, "再起動") {
-		t.Errorf("文面が想定と違う: %q", m.toast.text)
+	if !strings.Contains(m.toast.Text(), "ビルド中") || !strings.Contains(m.toast.Text(), "再起動") {
+		t.Errorf("文面が想定と違う: %q", m.toast.Text())
 	}
 	if !m.autobuild.active {
 		t.Error("開始を伝えただけで監視を止めた (失敗を拾えない)")
@@ -485,15 +485,15 @@ func TestAutobuildNotifiesAtStartup(t *testing.T) {
 
 func TestAutobuildMsgShowsFailureToast(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.toast.phase = toastHidden
+	m.toast.Clear()
 	m.autobuild = autobuildWatch{active: true, until: timeNow().Add(autobuildWatchTimeout)}
 
 	m.Update(autobuildMsg{result: autobuildFailed})
-	if !m.toast.visible() || m.toast.ok {
-		t.Errorf("失敗通知が失敗色のトーストになっていない: visible=%v ok=%v", m.toast.visible(), m.toast.ok)
+	if !m.toast.Visible() || m.toast.OK() {
+		t.Errorf("失敗通知が失敗色のトーストになっていない: visible=%v ok=%v", m.toast.Visible(), m.toast.OK())
 	}
-	if !strings.Contains(m.toast.text, ".autobuild.log") {
-		t.Errorf("失敗の調べ方 (ログの場所) が文面に無い: %q", m.toast.text)
+	if !strings.Contains(m.toast.Text(), ".autobuild.log") {
+		t.Errorf("失敗の調べ方 (ログの場所) が文面に無い: %q", m.toast.Text())
 	}
 }
 
@@ -517,19 +517,19 @@ func TestAutobuildNotWatchedWithoutEnv(t *testing.T) {
 func TestAutobuildStaleWarnsAtStartup(t *testing.T) {
 	stubSelfExe(t, staleWorkdir(t, true))
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.toast.phase = toastHidden
+	m.toast.Clear()
 	m.Init()
-	if !m.toast.visible() {
+	if !m.toast.Visible() {
 		t.Fatal("失敗が残っているのに起動時の警告が出ない")
 	}
-	if m.toast.ok {
+	if m.toast.OK() {
 		t.Error("失敗の警告が成功色になっている")
 	}
 	// 文面は原因 (失敗記録 / 誰もビルドしていない) ではなく次の行動を出す。どちらの根拠でも
 	// 復旧手順は同じで、理由はログにある (issue 033)。
 	for _, want := range []string{"古い版", "GO_AUTOBUILD_SYNC=1", ".autobuild.log"} {
-		if !strings.Contains(m.toast.text, want) {
-			t.Errorf("文面に %q が無い: %q", want, m.toast.text)
+		if !strings.Contains(m.toast.Text(), want) {
+			t.Errorf("文面に %q が無い: %q", want, m.toast.Text())
 		}
 	}
 	// w でコピーできるよう lastWarning にも残す (調べ方をユーザーが持ち出せる)
@@ -558,11 +558,11 @@ func TestAutobuildStaleSilentWhenNotStale(t *testing.T) {
 			stubSelfExe(t, exe)
 
 			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-			m.toast.phase = toastHidden
+			m.toast.Clear()
 			m.autobuild = autobuildWatch{} // 監視もしていない通常起動
 			m.Init()
-			if m.toast.visible() {
-				t.Errorf("通常起動で警告が出た: %q", m.toast.text)
+			if m.toast.Visible() {
+				t.Errorf("通常起動で警告が出た: %q", m.toast.Text())
 			}
 		})
 	}
@@ -578,14 +578,14 @@ func TestAutobuildRunningWinsOverStaleStamp(t *testing.T) {
 	stubSelfExe(t, exe)
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.toast.phase = toastHidden
+	m.toast.Clear()
 	m.autobuild = newAutobuildWatch(exe, true, timeNow()) // 再挑戦が走っている
 	m.Init()
-	if !strings.Contains(m.toast.text, "ビルド中") {
-		t.Fatalf("ビルド中が出ていない: %q", m.toast.text)
+	if !strings.Contains(m.toast.Text(), "ビルド中") {
+		t.Fatalf("ビルド中が出ていない: %q", m.toast.Text())
 	}
-	if len(m.toast.older) != 0 {
-		t.Errorf("失敗の警告が重ねて積まれた: %+v", m.toast.older)
+	if (len(m.toast.Entries()) - 1) != 0 {
+		t.Errorf("失敗の警告が重ねて積まれた: %+v", m.toast.Entries())
 	}
 }
 

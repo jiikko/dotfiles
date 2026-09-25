@@ -121,12 +121,12 @@ func (o *prStatusOverlay) boxLines(width int, colored bool, spinner, ciLine stri
 		width = 80
 	}
 	if o.busy[o.sha] {
-		return buildShadowPanelBox(" PR ", []string{paint(spinner+" PR を取得中...", ansiDim, colored)}, width, colored, ansiDim)
+		return buildShadowPanelBox(" PR ", []string{paint(spinner+" PR を取得中...", ansiDim, colored)}, width, colored)
 	}
 	pr := o.cache[o.sha]
 	if pr == nil {
 		// receive で PR なしが確定したケース (呼び出し側は notice も出すが、開いたままなら枠で示す)
-		return buildShadowPanelBox(" PR ", []string{paint("(紐づく PR はありません)", ansiDim, colored)}, width, colored, ansiDim)
+		return buildShadowPanelBox(" PR ", []string{paint("(紐づく PR はありません)", ansiDim, colored)}, width, colored)
 	}
 	title := fmt.Sprintf(" PR #%d: %s ", pr.Number, sanitizeDetailLine(pr.Title))
 	rows := []string{
@@ -140,5 +140,5 @@ func (o *prStatusOverlay) boxLines(width int, colored bool, spinner, ciLine stri
 	if ciLine != "" {
 		rows = append(rows, "CI: "+ciLine)
 	}
-	return buildShadowPanelBox(title, rows, width, colored, ansiDim)
+	return buildShadowPanelBox(title, rows, width, colored)
 }

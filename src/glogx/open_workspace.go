@@ -61,6 +61,6 @@ func (m *browseModel) openFilerAtRoot() tea.Cmd {
 		cmd.Dir = repoRoot()
 		return runEditorCmd(cmd)
 	}
-	m.toast.show("ファイラーが見つかりません ("+strings.Join(filerCandidates, "/")+")", false)
+	m.toast.Show("ファイラーが見つかりません ("+strings.Join(filerCandidates, "/")+")", false)
 	return m.maybeTick()
 }

@@ -120,7 +120,7 @@ func (o *diffOverlay) boxLines(width int, colored bool, spinner string, commit *
 		// j/k スクロール中の現在位置を視覚化する (withScrollbar が影付き枠の本文幅を補正する)
 		body = withScrollbar(body, width, len(lines), start, colored)
 	}
-	return buildShadowPanelBox(title, body, width, colored, ansiDim)
+	return buildShadowPanelBox(title, body, width, colored)
 }
 
 // animating は演出の途中か (tick チェーンを回すか の判定に使う。issuesView.animating /

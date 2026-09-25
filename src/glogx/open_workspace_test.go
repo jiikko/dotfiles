@@ -113,8 +113,8 @@ func TestOpenFilerAtRootNoneFound(t *testing.T) {
 	if len(*cmds) != 0 {
 		t.Fatalf("ファイラー不在なのに起動している: %v", (*cmds)[0].Args)
 	}
-	if !strings.Contains(m.toast.text, "ファイラーが見つかりません") {
-		t.Fatalf("不在理由のトーストが出ていない: %q", m.toast.text)
+	if !strings.Contains(m.toast.Text(), "ファイラーが見つかりません") {
+		t.Fatalf("不在理由のトーストが出ていない: %q", m.toast.Text())
 	}
 }
 

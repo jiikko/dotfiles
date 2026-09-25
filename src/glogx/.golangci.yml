@@ -150,12 +150,6 @@ linters:
       - path: main\.go
         linters:
           - forbidigo
-      # toast の内部フィールドは toast.go 自身と、埋め込みを直接読む設計のテストだけが触れる
-      # (ruleguard.rules.go の toastEncapsulation 参照)
-      - path: (toast\.go|_test\.go)
-        text: toast の内部状態
-        linters:
-          - gocritic
       # テストのテーブル/フローの相似は仕様 (dupl の対象にしない)
       - path: _test\.go
         linters:
@@ -165,7 +159,7 @@ linters:
 
 issues:
   # 既定 (true) は 1 行 1 issue に重複除去するため、同一行に別 linter の指摘があると
-  # ruleguard のカスタム不変条件 (toastEncapsulation 等) が無言で隠れる (導入時の変異検証で
+  # ruleguard のカスタム不変条件 (padViaPadSpaces 等) が無言で隠れる (導入時の変異検証で
   # 実際に踏んだ: unused と同居した行で ruleguard の指摘が消えた)。せっかくの強制が
   # 別 linter の陰で false green になるのを防ぐため、行内の全指摘を出す。
   uniq-by-line: false

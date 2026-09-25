@@ -15,8 +15,8 @@ func TestPRTargetSHAEmptyCommits(t *testing.T) {
 	if sha, ok := m.prTargetSHA(); ok || sha != "" {
 		t.Errorf("コミット 0 件で ok=true: sha=%q", sha)
 	}
-	if m.toast.visible() {
-		t.Errorf("コミット 0 件は無言で nil の契約なのにトーストが出た: %q", m.toast.text)
+	if m.toast.Visible() {
+		t.Errorf("コミット 0 件は無言で nil の契約なのにトーストが出た: %q", m.toast.Text())
 	}
 }
 
@@ -26,8 +26,8 @@ func TestPRTargetSHANoRepo(t *testing.T) {
 	if _, ok := m.prTargetSHA(); ok {
 		t.Error("remote なしで ok=true")
 	}
-	if !m.toast.visible() || m.toast.ok || !strings.Contains(m.toast.text, "remote が無いため") {
-		t.Errorf("remote なしの理由 error トーストが出ない: %q", m.toast.text)
+	if !m.toast.Visible() || m.toast.OK() || !strings.Contains(m.toast.Text(), "remote が無いため") {
+		t.Errorf("remote なしの理由 error トーストが出ない: %q", m.toast.Text())
 	}
 }
 
@@ -38,8 +38,8 @@ func TestPRTargetSHAUnpushed(t *testing.T) {
 	if _, ok := m.prTargetSHA(); ok {
 		t.Error("未 push コミットで ok=true (GitHub 上に存在しない SHA を問い合わせてしまう)")
 	}
-	if !m.toast.visible() || m.toast.ok || !strings.Contains(m.toast.text, "未 push") {
-		t.Errorf("未 push の理由 error トーストが出ない: %q", m.toast.text)
+	if !m.toast.Visible() || m.toast.OK() || !strings.Contains(m.toast.Text(), "未 push") {
+		t.Errorf("未 push の理由 error トーストが出ない: %q", m.toast.Text())
 	}
 }
 
@@ -50,7 +50,7 @@ func TestPRTargetSHAOK(t *testing.T) {
 	if !ok || sha != m.commits[1].SHA {
 		t.Errorf("カーソル位置の SHA が返らない: sha=%q ok=%v", sha, ok)
 	}
-	if m.toast.visible() {
-		t.Errorf("成功経路でトーストが出た: %q", m.toast.text)
+	if m.toast.Visible() {
+		t.Errorf("成功経路でトーストが出た: %q", m.toast.Text())
 	}
 }

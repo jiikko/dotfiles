@@ -20,7 +20,7 @@ func overlayCenteredBox(window, box []string, width, page int, colored bool) []s
 }
 
 // buildShadowPanelBox は右下ドロップシャドウ付きの枠パネルを組み立てる (行の実効幅は ANSI を
-// 除いて計算)。呼び出し元は小面積モーダル/トースト (confirm.Box 経由の action モーダル + toast /
+// 除いて計算)。呼び出し元は小面積モーダル (confirm.Box 経由の action モーダル /
 // usage / PR 状態)、大面積の diff / job パネル + job 詳細、画面最外周フレーム (wrapWindowFrame →
 // buildPanelBoxImpl を直接呼ぶ)。
 //
@@ -29,10 +29,9 @@ func overlayCenteredBox(window, box []string, width, page int, colored bool) []s
 // (2026-07-29) で diff / job / PR パネルへ再導入し全ポップアップを統一した。影なしの
 // buildPanelBox 変種はこの統一で呼び出しゼロになったため削除済み (必要になったら git 履歴から
 // 復活させる)。最外周フレームは画面端の余白セルにだけ影を落としコンテンツと重ならない (issue 025)。
-// border は枠線 (上辺・側辺・下辺) の SGR 色。ドロップシャドウのブロックは中立のまま (dim)。
-// 通常は ansiDim を渡す。toast だけが種別色 (緑/赤/シアン) を渡して枠ごと色付けする。
-func buildShadowPanelBox(title string, rows []string, width int, colored bool, border string) []string {
-	return buildPanelBoxImpl(title, rows, width, colored, layout.PanelStyle{Border: layout.BorderLight, Color: border})
+// 枠線は ansiDim (種別色で枠を染める通知の箱は tuikit/toast が自分で組む)。
+func buildShadowPanelBox(title string, rows []string, width int, colored bool) []string {
+	return buildPanelBoxImpl(title, rows, width, colored, layout.PanelStyle{Border: layout.BorderLight, Color: ansiDim})
 }
 
 // wrapWindowFrame は画面全体のコンテンツ (リスト + overlay 群を合成済みの window) を、最外周に
