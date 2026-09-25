@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -82,7 +83,8 @@ func parseCard(args []string) (store.Request, error) {
 		if i != 1 || len(rest) < 3 {
 			return store.Request{}, fmt.Errorf("run は `run <カード> -- <コマンド>...`")
 		}
-		return store.Request{Kind: "run", CardID: rest[0], Command: strings.Join(rest[2:], " ")}, nil
+		cwd, _ := os.Getwd() // daemon が、頼んだのがそのカードの PG の worktree かを照らす
+		return store.Request{Kind: "run", CardID: rest[0], Command: strings.Join(rest[2:], " "), Cwd: cwd}, nil
 	}
 	fs := flag.NewFlagSet("pro-con card "+op, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)

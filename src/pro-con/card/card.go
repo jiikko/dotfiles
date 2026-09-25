@@ -165,6 +165,15 @@ type Exec struct {
 
 func (e Exec) Active() bool { return e.Command != "" }
 
+// DropRun はテストの係への頼みと実行中の記録を取り下げる。作業中の列を離れるときは必ず呼ぶ
+// (残すと、後で届いた結果や「結果が無い」が、別の理由で再開した PG を止めて再開し直す)。
+func (c *Card) DropRun() {
+	c.Run, c.RunAt, c.RunCwd, c.Exec = "", time.Time{}, "", Exec{}
+	if c.Wait.Kind == WaitResource {
+		c.Wait = Wait{}
+	}
+}
+
 // StallThreshold は watchdog が「進捗なし」を停滞とみなすまでの時間。コマンドの実行中は見込みの 2 倍と base の
 // 長い方 (長いテストを停滞と誤判定しない)。それ以外は base。
 func StallThreshold(c Card, base time.Duration) time.Duration {
@@ -219,6 +228,9 @@ type Card struct {
 	// daemon が順番に実行し、結果を持たせて PG を再開したら空にする
 	Run   string    `json:",omitempty"`
 	RunAt time.Time `json:",omitzero"`
+	// RunCwd は頼んだ側 (`pro-con card run` を打ったシェル) の作業ディレクトリ。daemon はそのカードの PG の worktree と一致するときだけ実行する
+	// (別のカードの名前で頼まれた実行を、そのカードの worktree で走らせない)
+	RunCwd string `json:",omitempty"`
 	// Archived は完了のレーンから片付けた (x)。ボードには出さないが、記録 (状態ファイル) には残す
 	Archived bool
 	// LastProgress は「実質的に進んだ」最後の時刻 (watchdog が見る。活動ではなく進捗)

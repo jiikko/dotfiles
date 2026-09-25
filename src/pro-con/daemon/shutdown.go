@@ -123,7 +123,7 @@ func (d *Daemon) Shutdown(ctx context.Context) ([]string, error) {
 				}
 				if cc.State == card.Running {
 					cc.State, cc.Since, cc.Resume = card.Planned, now, resumeAfterStop
-					cc.Run, cc.RunAt, cc.Exec, cc.Wait = "", time.Time{}, card.Exec{}, card.Wait{} // テストの係への頼みも取り下げる (続きから頼み直す)
+					cc.DropRun() // テストの係への頼みも取り下げる (続きから頼み直す)
 					text += " (次に daemon を起動したら続きから再開する)"
 				}
 				cc.History = append(cc.History, card.Event{At: now, Text: text})

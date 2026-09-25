@@ -52,6 +52,7 @@ type Request struct {
 	Issues   []card.IssueRef `json:"issues,omitempty"`
 	Question string          `json:"question,omitempty"`
 	Command  string          `json:"command,omitempty"` // run: テストの係に実行を頼むコマンド (シェルの 1 行)
+	Cwd      string          `json:"cwd,omitempty"`     // run: 頼んだシェルの作業ディレクトリ (daemon が PG の worktree と照らす)
 	Answer   string          `json:"answer,omitempty"`
 	From     string          `json:"from,omitempty"` // 回答した人 (人間 / PM)
 	Ending   card.Ending     `json:"ending,omitempty"`
@@ -295,6 +296,9 @@ func apply(st State, r Request, now time.Time) (State, string, error) {
 // transition はカードの状態を 1 つ進める。遷移の規則 (どの状態からどの依頼を受けるか) はここだけに書く。
 func transition(c *card.Card, r Request, now time.Time) error {
 	move := func(to card.State, why string) {
+		if c.State == card.Running && to != card.Running {
+			c.DropRun() // 作業中の列を離れたら、テストの係への頼みは取り下げる
+		}
 		c.State, c.Since = to, now
 		c.Stalled = false // 停滞は作業中の列でだけ意味を持つ (watchdog が作業中のカードだけを見る)。止める印 (StopWanted) は作業中へ戻る settle が外す
 		c.History = append(c.History, card.Event{At: now, Text: why})
@@ -335,7 +339,7 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		if strings.TrimSpace(r.Command) == "" {
 			return errors.New("コマンドが空")
 		}
-		c.Run, c.RunAt = r.Command, now
+		c.Run, c.RunAt, c.RunCwd = r.Command, now, r.Cwd
 		c.Wait = card.Wait{Kind: card.WaitResource, Resource: RunResource}
 		c.History = append(c.History, card.Event{At: now, Text: "テストの係に頼んだ: " + clip(r.Command, 80)})
 	case "review": // PG が終えた

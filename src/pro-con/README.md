@@ -13,6 +13,7 @@ bin/pro-con daemon --stop  # daemon と、pro-con が起動した PG を止め�
 bin/pro-con card …   # PM / PG が使うカードの操作 (add / plan / ask / answer / review / close)。受付の箱に置くだけで、適用は daemon (issue 427)
 bin/pro-con card guide  # PM の session に渡す指示書 (src/pro-con/pm-guide.md) を出す
 bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンドを頼む。daemon が PG の worktree で 1 本ずつ順に実行し、結果を渡して PG を再開する (失敗は haiku が要約)
+                                         # 🚨 PG に `pro-con card` を許すことは、その worktree で任意のコマンドを PG の permission の外で (daemon の権限で) 走らせるのを許すのと同じ。守っているのは「頼んだ場所がそのカードの PG の worktree」だけ
 ```
 
 - どちらで動いているかはヘッダーに出る (`live: …` / `mock: …`。backend の `Describe`)。1 つの画面に両方のカードは混ぜない

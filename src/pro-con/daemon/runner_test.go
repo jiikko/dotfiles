@@ -18,6 +18,7 @@ type fakeRunner struct {
 	dirs     []string
 	commands []string
 	release  chan int
+	canceled bool // 取り消し (ctx.Done) を見た
 }
 
 func (f *fakeRunner) Run(ctx context.Context, dir, command, logPath string) (int, error) {
@@ -27,6 +28,7 @@ func (f *fakeRunner) Run(ctx context.Context, dir, command, logPath string) (int
 	case rc := <-f.release:
 		return rc, nil
 	case <-ctx.Done():
+		f.canceled = true
 		return -1, ctx.Err()
 	}
 }
@@ -55,7 +57,8 @@ func runRig(t *testing.T, n int) (*crashRig, *fakeRunner, *[]string) {
 
 func askRun(t *testing.T, dir, id, cmd string, at time.Time) {
 	t.Helper()
-	if _, err := store.Submit(dir, store.Request{Kind: "run", CardID: id, Command: cmd, At: at}); err != nil {
+	wt := "/w/dotfiles/.claude/worktrees/pc-" + strings.ToLower(id) // そのカードの PG の worktree から頼む
+	if _, err := store.Submit(dir, store.Request{Kind: "run", CardID: id, Command: cmd, Cwd: wt, At: at}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -163,7 +166,83 @@ func TestShutdownCancelsRun(t *testing.T) {
 	if r.d.active != nil || c.Run != "" || c.Exec.Active() || c.State != card.Planned {
 		t.Fatalf("終了で実行を取り消さない / 頼みが残る: active=%v Run=%q exec=%v %v", r.d.active != nil, c.Run, c.Exec, c.State)
 	}
-	if len(fr.commands) != 1 {
-		t.Fatalf("前提: 実行が始まっていない: %v", fr.commands)
+	if len(fr.commands) != 1 || !fr.canceled {
+		t.Fatalf("実行が始まっていない / 取り消していない: %v canceled=%v", fr.commands, fr.canceled)
+	}
+}
+
+// 実行を待っているカードが作業中の列を離れたら (質問した等)、実行を取り消して頼みを取り下げる。
+// 回答で再開した PG に、後から届いた結果や「結果が無い」を渡して止め直さない。
+func TestRunDroppedWhenCardLeavesRunning(t *testing.T) {
+	r, fr, _ := runRig(t, 1)
+	askRun(t, r.dir, "C-001", "make test", t0)
+	r.tick(t) // 実行を始める
+	if _, err := store.Submit(r.dir, store.Request{Kind: "ask", CardID: "C-001", Question: "q"}); err != nil {
+		t.Fatal(err)
+	}
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; c.Run != "" || c.Exec.Active() || r.d.active != nil || !fr.canceled {
+		t.Fatalf("質問で列を離れたのに頼みが残る / 実行を取り消さない: Run=%q exec=%v active=%v canceled=%v", c.Run, c.Exec, r.d.active != nil, fr.canceled)
+	}
+	if _, err := store.Submit(r.dir, store.Request{Kind: "answer", CardID: "C-001", Answer: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	r.tick(t) // 回答で再開
+	r.tick(t)
+	if len(r.l.resumes) != 1 || !strings.HasSuffix(r.l.resumes[0], ":a") {
+		t.Fatalf("回答で再開した PG を、テストの係の結果で止め直した: %v", r.l.resumes)
+	}
+}
+
+// 別のカードの worktree から頼まれた実行はしない (C-001 の PG が C-002 の名前で頼んでも、C-002 の worktree で走らせない)。
+func TestRunRefusesRequestFromOtherWorktree(t *testing.T) {
+	r, fr, _ := runRig(t, 1)
+	if _, err := store.Submit(r.dir, store.Request{Kind: "run", CardID: "C-001", Command: "rm -rf x", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-002", At: t0}); err != nil {
+		t.Fatal(err)
+	}
+	r.tick(t)
+	if len(fr.commands) != 0 || len(r.l.resumes) != 1 || !strings.Contains(r.l.resumes[0], "worktree ではない") {
+		t.Fatalf("別の worktree からの頼みを実行した / 断ったことを渡さない: %v %v", fr.commands, r.l.resumes)
+	}
+}
+
+// 出力の無い失敗は要約させず、出力が無かったことを渡す (空のログを要約させると、要約の代わりに問い返しが入る)。
+func TestRunFailureWithoutOutputIsNotSummarized(t *testing.T) {
+	r, fr, summarized := runRig(t, 1)
+	r.d.Runner = silentRunner{fr}
+	askRun(t, r.dir, "C-001", "false", t0)
+	r.tick(t)
+	fr.release <- 1
+	waitDone(t, r)
+	if len(*summarized) != 0 || len(r.l.resumes) != 1 || !strings.Contains(r.l.resumes[0], "出力なし") {
+		t.Fatalf("空のログを要約させた / 出力が無いことを渡さない: summarized=%d %v", len(*summarized), r.l.resumes)
+	}
+}
+
+// silentRunner は何も出力しない (ログを空で作る) 実行。
+type silentRunner struct{ f *fakeRunner }
+
+func (s silentRunner) Run(ctx context.Context, dir, command, logPath string) (int, error) {
+	_ = os.WriteFile(logPath, nil, 0o600)
+	select {
+	case rc := <-s.f.release:
+		return rc, nil
+	case <-ctx.Done():
+		return -1, ctx.Err()
+	}
+}
+
+// 落ち続けて止めた (回答待ちへ送った) カードでも、テストの係への頼みを取り下げる。
+func TestRunDroppedWhenCrashStopped(t *testing.T) {
+	r, _, _ := runRig(t, 1)
+	askRun(t, r.dir, "C-001", "make test", t0)
+	r.d.Runner = nil // 実行は始めない (頼みだけ残っている形)
+	r.tick(t)
+	r.crash(t0.Add(time.Minute), 43)
+	r.tick(t)
+	r.crash(t0.Add(2*time.Minute), 44)
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; c.State != card.Waiting || c.Run != "" {
+		t.Fatalf("落ちて止めたカードに頼みが残る: %v Run=%q", c.State, c.Run)
 	}
 }

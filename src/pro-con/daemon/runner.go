@@ -1,5 +1,8 @@
 package daemon
 
+// 🚨 信頼の前提: PG に `pro-con card` を許すことは、その PG の worktree で任意のシェルのコマンドを、PG の Claude Code の permission の外で
+// (daemon の権限で) 走らせることを許すのと同じ。守っているのは「頼んだ場所がそのカードの PG の worktree であること」(RunCwd) だけ。
+//
 // テストの係 (426 の決定 5): PG が `pro-con card run <カード> -- <コマンド>` で頼んだコマンドを、daemon が PG の worktree で 1 本ずつ順に実行する
 // (make test / 実機 E2E を PG ごとに走らせると、占有リソースを取り合う)。結果 (rc・ログ) を持たせて PG を再開する。
 // 失敗したときだけ、安いモデル (haiku) の Claude がログの末尾を要約する (成功では token を使わない)。
@@ -51,6 +54,19 @@ type runResult struct {
 // tickRuns はテストの係の 1 回ぶん: 終わった実行の結果を渡し、次の実行を始め、待っているカードに順番を書く。
 func (d *Daemon) tickRuns(ctx context.Context, now time.Time) ([]string, error) {
 	var notes []string
+	if d.active != nil { // 実行中のカードが作業中の列を離れた / 頼みが取り下げられたら、実行を取り消す (結果はもう誰も待っていない)
+		st, err := store.Load(d.Dir)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range st.Cards {
+			if c.ID == d.active.cardID && (c.State != card.Running || c.Run == "") {
+				d.cancelRun(10 * time.Second)
+				notes = append(notes, c.ID+": 結果を待つ PG が居なくなったので実行を取り消した")
+				break
+			}
+		}
+	}
 	if d.active != nil {
 		select {
 		case r := <-d.active.done:
@@ -95,14 +111,23 @@ func (d *Daemon) tickRuns(ctx context.Context, now time.Time) ([]string, error) 
 		c := queue[0]
 		queue = queue[1:]
 		o, ok := owned(c, reg)
-		if !ok || !strings.Contains(o.Cwd, worktreeMarker) {
+		switch {
+		case !ok || !strings.Contains(o.Cwd, worktreeMarker):
 			n, err := d.finishRun(now, &runJob{cardID: c.ID, command: c.Run, start: now},
 				runResult{rc: -1, err: errors.New("PG の作業ディレクトリが記録に無いので実行できない")})
 			notes = append(notes, n)
 			if err != nil {
 				return notes, err
 			}
-		} else {
+		case !samePath(c.RunCwd, o.Cwd):
+			// 🚨 そのカードの PG の worktree から頼まれたものだけを実行する (別のカードの名前で、その worktree で走らせない)
+			n, err := d.finishRun(now, &runJob{cardID: c.ID, command: c.Run, start: now},
+				runResult{rc: -1, err: fmt.Errorf("頼んだ場所 (%s) がこのカードの PG の worktree ではないので実行しない", c.RunCwd)})
+			notes = append(notes, n)
+			if err != nil {
+				return notes, err
+			}
+		default:
 			runCtx, cancel := context.WithCancel(ctx)
 			job := &runJob{cardID: c.ID, command: c.Run, start: now, done: make(chan runResult, 1), cancel: cancel,
 				logPath: filepath.Join(d.Dir, RunsDir, fmt.Sprintf("%s-%d.log", c.ID, now.Unix()))}
@@ -132,6 +157,9 @@ func (d *Daemon) tickRuns(ctx context.Context, now time.Time) ([]string, error) 
 	return notes, nil
 }
 
+// CancelRun は実行中の 1 本を取り消して終わるまで待つ (daemon が抜ける前に呼ぶ)。
+func (d *Daemon) CancelRun() { d.cancelRun(10 * time.Second) }
+
 // cancelRun は実行中の 1 本を取り消し、終わるまで待つ (上限 wait)。終了のときに使う (daemon が抜けた後にコマンドを残さない)。
 func (d *Daemon) cancelRun(wait time.Duration) {
 	if d.active == nil {
@@ -155,8 +183,9 @@ func (d *Daemon) execute(ctx context.Context, job *runJob, dir string) {
 	}
 	defer job.cancel()
 	r.rc, r.err = d.Runner.Run(ctx, dir, job.command, job.logPath)
-	if (r.rc != 0 || r.err != nil) && d.Summarize != nil {
-		if s, err := d.Summarize(ctx, logTail(job.logPath)); err == nil {
+	// 出力が無ければ要約させない (空のログを渡すと、要約の代わりに「ログを貼って」と返ってくる = 427 の段階 4 の本物の確認で実測)
+	if tail := logTail(job.logPath); (r.rc != 0 || r.err != nil) && d.Summarize != nil && strings.TrimSpace(tail) != "" {
+		if s, err := d.Summarize(ctx, tail); err == nil {
 			r.summary = strings.TrimSpace(s)
 		}
 	}
@@ -179,8 +208,10 @@ func (d *Daemon) finishRun(now time.Time, job *runJob, r runResult) (string, err
 		if r.summary != "" {
 			b.WriteString("要約:\n" + r.summary + "\n")
 		}
-		if tail := logTail(job.logPath); tail != "" {
+		if tail := logTail(job.logPath); strings.TrimSpace(tail) != "" {
 			b.WriteString("ログの末尾:\n" + tail + "\n")
+		} else {
+			b.WriteString("出力なし (stdout / stderr とも空)\n")
 		}
 	}
 	if job.logPath != "" {
@@ -205,13 +236,26 @@ func clipLine(s string) string {
 	return s
 }
 
+// logTailBytes はログの末尾を読む量 (巨大なログを丸ごと読まない)。
+const logTailBytes = 64 << 10
+
 // logTail はログの末尾 runTailLines 行 (読めなければ空)。
 func logTail(path string) string {
 	if path == "" {
 		return ""
 	}
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	st, err := f.Stat()
+	if err != nil {
+		return ""
+	}
+	off := max(st.Size()-logTailBytes, 0)
+	data := make([]byte, st.Size()-off)
+	if _, err := f.ReadAt(data, off); err != nil {
 		return ""
 	}
 	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
@@ -243,7 +287,12 @@ func (ExecRunner) Run(ctx context.Context, dir, command, logPath string) (int, e
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) }
 	cmd.WaitDelay = 5 * time.Second
-	err = cmd.Run()
+	if err := cmd.Start(); err != nil {
+		return -1, err
+	}
+	// 終わった後も、SIGTERM を無視した子や bash が抜けた後に残った子を、プロセスグループごと止める (daemon の後に残さない)
+	defer func() { _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }()
+	err = cmd.Wait()
 	var ee *exec.ExitError
 	switch {
 	case err == nil:
@@ -265,7 +314,7 @@ func HaikuSummarize(dir string) func(ctx context.Context, tail string) (string, 
 	return func(ctx context.Context, tail string) (string, error) {
 		ctx, cancel := context.WithTimeout(ctx, summarizeTimeout)
 		defer cancel()
-		prompt := "次はテストかビルドのコマンドの失敗したログの末尾です。何が失敗したか (落ちたテスト名・エラーの場所と内容) を日本語で 5 行以内に要約してください。推測は書かないこと。\n\n" + tail
+		prompt := "次はテストかビルドのコマンドの失敗したログの末尾です。何が失敗したか (落ちたテスト名・エラーの場所と内容) を日本語で 5 行以内に要約してください。ログに書かれていないことは書かず、質問もしないこと。\n\n" + tail
 		cmd := exec.CommandContext(ctx, "claude", "-p", "--model", "haiku", "--setting-sources", "project,local")
 		cmd.Dir = dir
 		cmd.Env = withoutTmux(os.Environ())

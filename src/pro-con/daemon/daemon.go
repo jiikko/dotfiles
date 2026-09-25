@@ -377,6 +377,7 @@ func (d *Daemon) stopCrashing(ctx context.Context, now time.Time, ss []agents.Se
 		}
 		why := fmt.Sprintf("PG が %s の間に %d 回落ちたので%s。回答すると同じ session を再開する", window, max(recent, limit), how)
 		if err := d.update(c.ID, func(cc *card.Card) {
+			cc.DropRun() // 作業中の列を離れる (テストの係への頼みは取り下げる)
 			cc.State, cc.Since, cc.Owner, cc.StopWanted = card.Waiting, now, "人間", false
 			cc.Wait = card.Wait{Kind: card.WaitCrashed, Question: why}
 			cc.History = append(cc.History, card.Event{At: now, Text: why})
