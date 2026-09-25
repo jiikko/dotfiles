@@ -321,7 +321,7 @@ if [ "$base_rc" -ne 0 ]; then
   note "🚨 baseline が green でない (rc=$base_rc)。変異を当てても red の増減を帰属できない"
   tail -20 "$base_out" >&2; finish 3
 fi
-if ! grep -qE "$baseline_expect" "$base_out"; then
+if ! grep -qE -e "$baseline_expect" "$base_out"; then
   note "🚨 baseline は rc=0 だが --baseline-expect ($baseline_expect) が出ていない"
   note "   検証コマンドが 1 件も実行していない可能性がある (zero execution を green と読まない)"
   hint_fixed_match "--baseline-expect" "$baseline_expect" "$base_out"
@@ -331,11 +331,11 @@ fi
 # verbose runner では常態 (`=== RUN TestX` / pytest の node id)。`FAIL: TestX` から
 # `TestX` へ 1 文字削った瞬間に入り、**別のテストが落ちた red を「想定どおり」と読む**
 # (red team P1-3)。使い方の誤りとして拒否する
-if grep -qE "$expect" "$base_out"; then
+if grep -qE -e "$expect" "$base_out"; then
   note "🚨 --expect ($expect) が baseline の出力にも出ている"
   note "   これでは「狙ったテストが落ちた」を判定できない (pass のときも出る行に一致している)"
   note "   失敗時にだけ出る形にすること (例: 'TestX/case' でなく 'FAIL: TestX/case')"
-  grep -nE "$expect" "$base_out" | head -3 >&2; finish 2
+  grep -nE -e "$expect" "$base_out" | head -3 >&2; finish 2
 fi
 
 # --- 1. 変異を当てる -----------------------------------------------------------------------
@@ -386,7 +386,7 @@ if [ "$mut_rc" -eq 0 ]; then
   note "🚨 変異が緑のまま通った (そのテストは主張を何も守っていない)"
   tail -20 "$mut_out" >&2; finish 6
 fi
-if ! grep -qE "$expect" "$mut_out"; then
+if ! grep -qE -e "$expect" "$mut_out"; then
   note "🚨 red にはなったが --expect ($expect) に一致しない — 別の検査が先に落ちている"
   note "   その red は今回のテストの検知力を何も証明しない"
   hint_fixed_match "--expect" "$expect" "$mut_out"
@@ -395,7 +395,7 @@ if ! grep -qE "$expect" "$mut_out"; then
 fi
 
 note "[$name] ✓ 変異は想定どおり red (一致: $expect)"
-grep -nE "$expect" "$mut_out" | head -5 >&2 || true
+grep -nE -e "$expect" "$mut_out" | head -5 >&2 || true
 # 🚨 rc=0 が言うのは「想定の検査が落ちた」までで、「**それだけが**落ちた」ではない。巻き添えで
 # 他の検査も落ちたか (全部を壊す変異か) は runner ごとに出力が違うので機械では判定しない
 # (red team 4 周目 P1-1)。材料として、変異の run で**新しく出た行**を必ず見せる

@@ -33,3 +33,11 @@ pro-con の e2e 回帰テスト (a6fb64a0) / pro-con の lint の強化 (6965342
 - 4: bin/mutate-verify の grep に `-e` を付ける (`--expect` / `--baseline-expect` の照合 4 か所)。道具の局所的な直し
   → 切り出し先: 新規 issue 候補 (直すかはユーザーの判断待ち。直さないなら bin/mutate-verify のヘッダの「--expect は grep -E」の注記に「`-` で始めない」を足す)
 - 3・5: 局所的 (その場で直した)。提案しない
+
+## 決着 (2026-09-25。ユーザーの「これもやって」で残りを実行)
+
+- 1 の機械化 → **issue 454 に切り出した** (PreToolUse の hook。dotfiles-7d に依頼)
+- 4 → **その場で直した**: `bin/mutate-verify` の `--expect` / `--baseline-expect` の照合に `-e` を付けた。**照合は 4 か所ではなく 5 か所**だった
+  (`grep -qE` 4 + 一致した行を出す `grep -nE` 1。機械で数えた)。`tests/bin/test_mutate_verify.sh` に 5c (`-?FAIL: reject-bad` / `-?ran 2 checks` で rc=0) を足し、
+  `-e` を外す変異でそのケースだけが rc=3 で red になるのを確かめた
+- 1 (規範)・2・3・5 は本文のとおり却下 / 局所で決着済み。残課題は無いので done へ

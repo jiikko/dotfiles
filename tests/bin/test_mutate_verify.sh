@@ -133,6 +133,17 @@ rc=$?
 grep -q '固定文字列としては出力に在る' "$work/out.log" || fail "エスケープ漏れを案内していない"
 
 # ---------------------------------------------------------------------------
+# 5c. `-` で始まるパターン (`--- FAIL:` など) を grep のオプションと読まない (retro 450 の 4)
+#     `-?` は ERE では「- が 0 個か 1 個」なので、fixture の `FAIL: reject-bad` / `ran 2 checks` に一致する
+# ---------------------------------------------------------------------------
+d="$work/dashpat"; make_repo "$d"
+( cd "$d" && "$MV" --verify 'bash verify.sh' --baseline-expect '-?ran 2 checks' --file guard.sh \
+  --apply 'perl -0pi -e "s/if \[ \"\\\$1\" = \"bad\" \]/if false/" "$MUTATE_FILE"' \
+  --expect '-?FAIL: reject-bad' ) > "$work/out.log" 2>&1
+rc=$?
+[ "$rc" -eq 0 ] || { fail "- で始まる --expect / --baseline-expect が rc=$rc (期待 0)"; cat "$work/out.log"; }
+
+# ---------------------------------------------------------------------------
 # 6. 誤ファイルへの変異 → rc=8
 # ---------------------------------------------------------------------------
 d="$work/wrongfile"; make_repo "$d"
