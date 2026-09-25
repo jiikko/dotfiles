@@ -2,7 +2,7 @@
 
 起票日: 2026-09-25
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 
@@ -26,3 +26,10 @@
   - (レビューの差し戻し) 止める要求を出した Tick と止まったのを見た Tick が分かれると「既に止まっていた」と書いていた。止める要求が通ったかを `ensureStopped` が返し (sent)、カードに `CloseStopSent` として持つ。履歴は「止めた」(要求を出した) と「閉じた後に確かめたら既に止まっていた」(1 度も出していない) を分ける
 - 確かめたこと: `dispatcher/close_test.go` の 6 本 (偽の launcher / lister・t.TempDir)。そのカードだけ止める / 入れ替わった前の session も止める / 失敗は close を保ったまま止め直し → 諦めて履歴 / 一覧で止まっていなければ止めた扱いにせず、次の Tick で止まったら「止めた」と書く / 閉じたとき既に止まっていれば止めずに「既に止まっていた」 / PG の無いカードは何もしない。`bin/mutate-verify` で 9 つの変異 (印を付けない・カードで絞らない・待たずに諦める・一覧を見ずに止めた扱い・諦めても印を外さない・要求を出した印を見ない / 書かない / 今の Tick の要求を見ない・sent を数えない) がすべて red。`make test` は差し戻し前の版で rc=0
 - 残り: 実機 (本物の claude) で閉じたカードの PG が stopped になるかは未確認 (dogfooding で見る)。この変更より前に閉じて残っている PG は印が無いので止めない (終了のときに止まる)
+- 2026-09-25 PM のレビュー: 差し戻し 1 回 (止めた後の Tick で「既に止まっていた」と書く → CloseStopSent で区別。本物の `card rework` で戻した)。
+  取り込んだ tree で make test rc=0 → master へ (9a76ce07 / 149d05ab)
+- ✓ **実機で確かめた** (2026-09-25 19:44): 447 を含む dispatcher で C-006 を閉じると、履歴と dispatcher のログに
+  「閉じたので PG の session を止めた (worktree とブランチは残す)」が出て、`claude agents --json --all` の c938b1a7 が pid 無しになった。
+  同じ時に動いていた C-007 / C-008 の PG は working のまま (ほかのカードに触らない)。「既に止まっていた」の側は C-005 を閉じたときに出た
+  (dispatcher を入れ替えるときに PG が止まっていたため)
+- 残りは無い (この変更より前に閉じて残っていた PG は、終了のときに止まる)
