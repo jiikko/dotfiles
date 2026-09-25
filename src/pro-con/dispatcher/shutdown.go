@@ -279,14 +279,11 @@ func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string,
 			d.sleep(shutdownPoll)
 			continue
 		}
-		targets, stray, unproven, err := d.checkTargets(reg, all, extra, cards, ss)
-		if err != nil {
-			return notes, nil, sent, err
-		}
+		targets, stray, unproven := d.checkTargets(reg, all, extra, cards, ss)
 		var remaining []string
 		for _, o := range targets {
 			for _, s := range ss {
-				if s.SessionID != o.SessionID || s.Stopped() {
+				if s.SessionID != o.SessionID || !stoppable(s) {
 					continue
 				}
 				remaining = append(remaining, fmt.Sprintf("%s (%s)", o.CardID, s.ID))
@@ -322,13 +319,13 @@ func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string,
 
 // checkTargets は、止まったかを確かめる行 (記録の行 reg + カードの側で止めようとした extra + 記録に無いカードの PG = unregistered) と、
 // そのうち記録に無かった session id、示せない生きている session の名指しを返す。all は別のカードの行も含む記録 (記録に無いかの判定に使う)。
-func (d *Dispatcher) checkTargets(reg, all []live.Owned, extra map[string]string, cards map[string]bool, ss []agents.Session) (targets []live.Owned, stray map[string]bool, unproven []string, err error) {
-	st, err := store.Load(d.Dir)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("カードの記録を読めないので、記録に無い PG が止まったかを確かめられない: %w", err)
-	}
+func (d *Dispatcher) checkTargets(reg, all []live.Owned, extra map[string]string, cards map[string]bool, ss []agents.Session) (targets []live.Owned, stray map[string]bool, unproven []string) {
 	targets = withExtra(reg, extra, ss)
 	stray = map[string]bool{}
+	st, err := store.Load(d.Dir)
+	if err != nil { // 記録の行は止める (1 回の失敗で 1 本も止めずに抜けない)。記録に無い分は確かめられないので ok にしない
+		return targets, stray, []string{"カードの記録を読めないので、記録に無い PG が止まったかを確かめられない: " + err.Error()}
+	}
 	for _, c := range st.Cards {
 		if cards != nil && !cards[c.ID] {
 			continue
@@ -343,7 +340,7 @@ func (d *Dispatcher) checkTargets(reg, all []live.Owned, extra map[string]string
 			unproven = append(unproven, unprovenName(c, s))
 		}
 	}
-	return targets, stray, unproven, nil
+	return targets, stray, unproven
 }
 
 func strayStopped(cardID, id string) string {
@@ -366,7 +363,7 @@ func stillAlive(reg []live.Owned, ss []agents.Session) []string {
 	var out []string
 	for _, o := range reg {
 		for _, s := range ss {
-			if s.SessionID == o.SessionID && !s.Stopped() {
+			if s.SessionID == o.SessionID && stoppable(s) {
 				out = append(out, fmt.Sprintf("%s (%s)", o.CardID, s.ID))
 			}
 		}
@@ -431,6 +428,10 @@ func (d *Dispatcher) stopTarget(c card.Card, now time.Time, ss []agents.Session,
 }
 
 func (d *Dispatcher) strayPlan(c card.Card, ss []agents.Session, reg []live.Owned) stopPlan {
+	// 再開で入れ替わった前の行も「記録にある」(確かめる段が止める)。読めなければ記録の行だけで判じる (確かめる段が知らせる)
+	if retired, err := live.LoadRetired(filepath.Join(d.Dir, live.RegistryFile)); err == nil {
+		reg = append(slices.Clone(reg), retired...)
+	}
 	s, proven, ok := unregistered(c, d.Repos[c.Repo], ss, reg)
 	switch {
 	case !ok:
@@ -451,20 +452,23 @@ func (d *Dispatcher) strayPlan(c card.Card, ss []agents.Session, reg []live.Owne
 // 示せない生きている session (短い id だけ一致して cwd が違う / 起動・再開の途中でカードの worktree に居る) は proven を偽で返す
 // (呼び出し側は止めずに名指しする)。止まっている session・記録にある session (別のカードの行・再開で入れ替わった前の行も) は返さない。
 func unregistered(c card.Card, repoPath string, ss []agents.Session, reg []live.Owned) (s agents.Session, proven, ok bool) {
-	if _, has := owned(c, reg); has {
+	_, has := owned(c, reg)
+	if has && c.Launching == "" {
 		return agents.Session{}, false, false // 記録の行で照らす (短い id を別の session が得た形には触らない)
 	}
 	wt := worktreePath(repoPath, c)
 	inWorktree := func(s agents.Session) bool { return wt != "" && samePath(s.Cwd, wt) }
 	var loose *agents.Session
 	for _, s := range ss {
-		if s.ID == "" || s.Stopped() || slices.ContainsFunc(reg, func(o live.Owned) bool { return o.SessionID != "" && o.SessionID == s.SessionID }) {
+		if !stoppable(s) || slices.ContainsFunc(reg, func(o live.Owned) bool { return o.SessionID != "" && o.SessionID == s.SessionID }) {
 			continue
 		}
-		if c.Session != "" && s.ID == c.Session {
+		if !has && c.Session != "" && s.ID == c.Session {
 			return s, inWorktree(s) && s.SessionID != "", true
 		}
-		if loose == nil && c.Launching != "" && inWorktree(s) {
+		// 起動・再開の途中で、claude が返した id がまだカードに無い形。起動は名前 (-n) が手がかり。再開は名前を渡さないので
+		// worktree に居る対話でない session を名指しする (人間の対話の session を数えて、終了を永久に失敗させない)
+		if loose == nil && c.Launching != "" && inWorktree(s) && (s.Name == sessionName(c) || (c.Launching == "再開" && s.Kind != "interactive")) {
 			loose = &s
 		}
 	}
@@ -473,6 +477,10 @@ func unregistered(c card.Card, repoPath string, ss []agents.Session, reg []live.
 	}
 	return agents.Session{}, false, false
 }
+
+// stoppable は、一覧の session が止める相手になりうるか (生きていて、claude stop に渡す短い id がある)。
+// 対話の session は短い id を持たない: 記録と同じ session id でも (attach 等) 止めない・残りに数えない
+func stoppable(s agents.Session) bool { return s.ID != "" && !s.Stopped() }
 
 func unprovenName(c card.Card, s agents.Session) string {
 	return fmt.Sprintf("%s (%s: 記録に無い session が生きている。pro-con が起動したと示せないので止めていない)", c.ID, s.ID)

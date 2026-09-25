@@ -2,6 +2,7 @@ package dispatcher
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"pro-con/card"
 	"pro-con/eventlog"
 	"pro-con/live"
+	"pro-con/store"
 )
 
 // unregisteredRig は、作業中の C-001 の PG が一覧に出ているのに記録 (sessions.json) に取り込まれないまま launchGrace を過ぎた形を作る (issue 457)。
@@ -126,5 +128,84 @@ func TestCloseNamesUnprovenLiveSession(t *testing.T) {
 	c := states(t, r.dir)["C-001"]
 	if len(r.l.stopTries) != 0 || !strings.Contains(lastHistory(c), "止められない") || !strings.Contains(lastHistory(c), "id-pc-c-001") {
 		t.Fatalf("示せない session の扱いが違う: tries=%v 履歴=%q", r.l.stopTries, lastHistory(c))
+	}
+}
+
+// 再開の途中 (記録には前の行) で、再開が立てた新しい PG が取り込まれない形 (kind が違う) でも、止まったとは書かず名指しする。
+func TestShutdownNamesUnadoptedResume(t *testing.T) {
+	r := newCrashRig(t)
+	r.l.resumeFail = true // 再開に「失敗」と返る (立っているかは一覧で見る)
+	for _, q := range []store.Request{{Kind: "ask", CardID: "C-001", Question: "q"}, {Kind: "answer", CardID: "C-001", Answer: "a"}} {
+		if _, err := store.Submit(r.dir, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t1 := t0.Add(time.Minute)
+	r.d.Now = func() time.Time { return t1 }
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; c.Launching != "再開" {
+		t.Fatalf("前提が違う: Launching=%q", c.Launching)
+	}
+	r.ss = []agents.Session{{ID: "db1e", SessionID: "S2", PID: 60, Kind: "bg", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t1.Add(time.Second).UnixMilli()}}
+	r.d.Now = func() time.Time { return t1.Add(launchGrace + time.Minute) }
+	_, err := r.d.Shutdown(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "C-001 (db1e") {
+		t.Fatalf("再開が立てた生きている PG を名指ししない: %v stops=%v", err, r.l.stops)
+	}
+	if h := lastHistory(states(t, r.dir)["C-001"]); strings.Contains(h, "既に止まっていた") {
+		t.Fatalf("止めていないのに既に止まっていたと書いた: %q", h)
+	}
+}
+
+// 起動の結果が分からないカードの worktree に、名前の違う (人間の) session が居ても、名指しして終了を失敗させ続けない。
+func TestShutdownIgnoresOtherSessionInWorktreeWhileLaunching(t *testing.T) {
+	dir := t.TempDir()
+	l := &fakeLauncher{fail: true} // 起動に「失敗」と返る (Launching=起動 が残る)
+	planned(t, dir, 1)
+	var ss []agents.Session
+	d := newDispatcher(t, dir, l, nil)
+	d.List = func(context.Context) ([]agents.Session, error) { return ss, nil }
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if c := states(t, dir)["C-001"]; c.Launching != "起動" {
+		t.Fatalf("前提が違う: Launching=%q", c.Launching)
+	}
+	ss = []agents.Session{{ID: "hum1", SessionID: "H1", PID: 90, Kind: "background", Name: "my-review", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t0.Add(time.Second).UnixMilli()}}
+	d.Now = func() time.Time { return t0.Add(launchGrace + time.Minute) }
+	if _, err := d.Shutdown(context.Background()); err != nil || len(l.stopTries) != 0 {
+		t.Fatalf("pro-con が起動していない session を名指し / 止めた: %v tries=%v", err, l.stopTries)
+	}
+	setCard(t, dir, "C-001", func(c *card.Card) { c.Launching, c.Stopped = "起動", false })
+	ss[0].Name, ss[0].Kind = "pc-c-001", "bg" // 名前が PG のもの (kind は取り込まれない値): 止めずに名指しする
+	if _, err := d.Shutdown(context.Background()); err == nil || !strings.Contains(err.Error(), "C-001 (hum1") || len(l.stopTries) != 0 {
+		t.Fatalf("起動の途中の取り込まれない PG を名指ししない / 止めた: %v tries=%v", err, l.stopTries)
+	}
+}
+
+// 記録と同じ session id の対話の session (短い id が無い) は、止めない・残りに数えない (claude stop に空の id を渡さない)。
+func TestEnsureStoppedSkipsSessionWithoutShortID(t *testing.T) {
+	r := newCrashRig(t)
+	r.ss = append(r.ss, agents.Session{ID: "", SessionID: "S1", PID: 77, Kind: "interactive", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001"})
+	if _, err := r.d.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(r.l.stopTries, "") {
+		t.Fatalf("短い id の無い session を止めようとした: %q", r.l.stopTries)
+	}
+}
+
+// カードの記録が読めなくても、記録にある PG は止める。記録に無い分は確かめられないので ok にしない。
+func TestShutdownStopsOwnedWhenCardsUnreadable(t *testing.T) {
+	r := newCrashRig(t)
+	if err := os.WriteFile(filepath.Join(r.dir, store.StateFile), []byte("{broken"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := r.d.Shutdown(context.Background())
+	if !slices.Contains(r.l.stops, "id-pc-c-001") {
+		t.Fatalf("カードの記録が読めないと記録にある PG を止めない: %v", r.l.stops)
+	}
+	if err == nil || !strings.Contains(err.Error(), "カードの記録を読めない") {
+		t.Fatalf("記録に無い PG を確かめられないのに ok にした: %v", err)
 	}
 }
