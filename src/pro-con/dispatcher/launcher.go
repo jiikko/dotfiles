@@ -6,7 +6,7 @@ package dispatcher
 //   - 起動は `claude --bg -w <name> -n <name> --setting-sources project,local <prompt>`。-w で Claude Code に worktree を作らせる
 //     (trust 済みの repo の下でないと --bg が起動しない。415 論点 2)。--setting-sources でユーザーの hook を外す (431 の計測)
 //   - TMUX / TMUX_PANE を落とす (PG が起動元の pane の状態のバッジを上書きしないように。415 論点 5)
-//   - 再開は stop してから `claude --bg --resume <session-id> <text>` (実行中の session に --resume するとコピーが起動する。415 論点 11)
+//   - 再開は stop してから `claude --bg --resume <session-id> -n <name> <text>` (実行中の session に --resume するとコピーが起動する。415 論点 11)
 //   - 起動・再開とも --settings で sessionSettings (rolesettings.go) を渡す: ユーザーの settings.json の language (461。-p では
 //     --setting-sources に user を入れても language が効かず、--settings で渡したときだけ効いた。440 の 7d) と、auto memory を外す (431)
 
@@ -41,13 +41,13 @@ func (l ExecLauncher) Start(ctx context.Context, repoPath, name, prompt string) 
 	return parseBackgrounded(out)
 }
 
-func (l ExecLauncher) Resume(ctx context.Context, stopID, sessionID, cwd, text string) (string, error) {
+func (l ExecLauncher) Resume(ctx context.Context, stopID, sessionID, cwd, name, text string) (string, error) {
 	if stopID != "" {
 		if _, err := runClaude(ctx, l.Claude, "", "stop", stopID); err != nil {
 			return "", fmt.Errorf("claude stop %s: %w", stopID, err)
 		}
 	}
-	out, err := runClaude(ctx, l.Claude, cwd, l.resumeArgs(sessionID, text)...)
+	out, err := runClaude(ctx, l.Claude, cwd, l.resumeArgs(sessionID, name, text)...)
 	if err != nil {
 		return "", err
 	}
@@ -65,8 +65,9 @@ func (l ExecLauncher) startArgs(name, prompt string) []string {
 	return withSettings([]string{"--bg", "-w", name, "-n", name, "--setting-sources", "project,local"}, sessionSettings(l.UserSettings), prompt)
 }
 
-func (l ExecLauncher) resumeArgs(sessionID, text string) []string {
-	return withSettings([]string{"--bg", "--resume", sessionID, "--setting-sources", "project,local"}, sessionSettings(l.UserSettings), text)
+// resumeArgs は -n で名前を付け直す (付けないと、再開の後の名前は AI の付けた題になる。488 で -n の有無の A-B を実測)
+func (l ExecLauncher) resumeArgs(sessionID, name, text string) []string {
+	return withSettings([]string{"--bg", "--resume", sessionID, "-n", name, "--setting-sources", "project,local"}, sessionSettings(l.UserSettings), text)
 }
 
 // withSettings は --settings を位置引数 (prompt) の前に挟む。

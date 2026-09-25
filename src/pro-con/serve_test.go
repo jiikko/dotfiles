@@ -164,7 +164,7 @@ type stopFlaky struct {
 }
 
 func (f *stopFlaky) Start(context.Context, string, string, string) (string, error) { return "", nil }
-func (f *stopFlaky) Resume(context.Context, string, string, string, string) (string, error) {
+func (f *stopFlaky) Resume(context.Context, string, string, string, string, string) (string, error) {
 	return "", nil
 }
 func (f *stopFlaky) Stop(context.Context, string) error {
@@ -303,7 +303,7 @@ func serveUntilSignal(t *testing.T, screenOpen bool) (bool, int) {
 type ctxLauncher struct{ stopped *atomic.Bool }
 
 func (l *ctxLauncher) Start(context.Context, string, string, string) (string, error) { return "", nil }
-func (l *ctxLauncher) Resume(context.Context, string, string, string, string) (string, error) {
+func (l *ctxLauncher) Resume(context.Context, string, string, string, string, string) (string, error) {
 	return "", nil
 }
 func (l *ctxLauncher) Stop(ctx context.Context, _ string) error {

@@ -28,15 +28,16 @@ type fakeLauncher struct {
 	// reject は起動・再開に「claude が受け付けなかった」(ErrRejected。rc≠0 がすぐ返った) と返す
 	reject bool
 	// resumeFail は再開に「失敗」と返す (実際には立っている形を作るのは一覧の側)
-	resumeFail bool
-	stops      []string
-	cwds       []string // 再開した cwd
-	resumeID   string   // 空でなければ、再開はこの短い id の新しい session を立てる (本物の claude の形)
-	stopFail   bool
-	stopTries  []string // 失敗も含めて止めようとした id
-	startTries int      // 失敗も含めて起動しようとした回数
-	repos      []string // 起動した repo
-	prompts    []string // 起動の指示
+	resumeFail  bool
+	stops       []string
+	cwds        []string // 再開した cwd
+	resumeNames []string // 再開で付け直した session の名前 (488)
+	resumeID    string   // 空でなければ、再開はこの短い id の新しい session を立てる (本物の claude の形)
+	stopFail    bool
+	stopTries   []string // 失敗も含めて止めようとした id
+	startTries  int      // 失敗も含めて起動しようとした回数
+	repos       []string // 起動した repo
+	prompts     []string // 起動の指示
 }
 
 func (f *fakeLauncher) Start(_ context.Context, repo, name, prompt string) (string, error) {
@@ -52,7 +53,8 @@ func (f *fakeLauncher) Start(_ context.Context, repo, name, prompt string) (stri
 	return "id-" + name, nil
 }
 
-func (f *fakeLauncher) Resume(_ context.Context, stopID, _, cwd, text string) (string, error) {
+func (f *fakeLauncher) Resume(_ context.Context, stopID, _, cwd, name, text string) (string, error) {
+	f.resumeNames = append(f.resumeNames, name)
 	f.cwds = append(f.cwds, cwd)
 	f.resumes = append(f.resumes, stopID+":"+text)
 	if f.reject {
@@ -971,6 +973,9 @@ func TestResumeRunsInSessionCwd(t *testing.T) {
 	r.tick(t)
 	if len(r.l.cwds) != 1 || r.l.cwds[0] != "/w/dotfiles/.claude/worktrees/pc-c-001" {
 		t.Fatalf("session の cwd で再開していない: %v", r.l.cwds)
+	}
+	if len(r.l.resumeNames) != 1 || r.l.resumeNames[0] != "pc-c-001" { // 渡さないと再開の後は AI の付けた題になる (488)
+		t.Fatalf("再開で session の名前を pc-c-NNN に付け直していない: %v", r.l.resumeNames)
 	}
 }
 
