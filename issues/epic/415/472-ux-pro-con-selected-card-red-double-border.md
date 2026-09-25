@@ -20,3 +20,14 @@
 ## 関連
 
 - 436 (端でぶつかる揺れ) / `docs/theme-colors.md` / `docs/glogx-ui-guide.md`
+
+## 進捗
+
+- 2026-09-25: ユーザーの依頼で、カード C-015 (PG) を取り下げて PM (人間の代わりの Claude) が実装した (見た目の直しは PM が優先して行う)。
+  C-015 は `pro-con card delete` で消した (451 の削除の実機の確かめ 1 回目: 分解済み・PG 無しのカードが同じ秒に消え、出来事に 2 行)
+- 枠の字と色を `ui/cursor.go` の定数 (frameColor = 196 / ╔ ═ ╗ ║ ╚ ╝) にし、枠を探すテスト (cursor_test / bump_test) も定数を使う形にした。
+  見た目を固定する `TestCursorFrameIsRedDoubleLine` を足した。変異: 左上の字を ┏ に戻す → red / 色を 202 に戻す → red (bin/mutate-verify。どちらも rc=0)
+- 隔離した tmux (`-L`) で `bin/pro-con --mock` を撮った: 完了のレーンの選択中のカードが赤の太字の二重線で囲まれる (196 の指定 4 か所)。
+  1 回目の撮影で、枠の中の全角の字のあいだに空白が入って見えた (「回 答済」) が、撮り直し 3 回と、制御文字ごとの比較 (master と同じ字面) では再現しなかった。原因は未確認
+- 赤は docs/theme-colors.md の 196 (危険/警告状態の sync の枠と同じ番号) を使った。表に pro-con の選択の枠を足した。pro-con は警告 (停滞・dispatcher が止まっている・新版のビルド失敗・不変条件の破れ) にも同じ 196 (`ui/view.go` の sgrRed) を使っているので、選択の枠と警告が同じ色になる (ユーザーに伝えた)
+- 残り: 枠が滑る途中でほぼ消えて見える (ちらつく) 件は、ユーザーの依頼で同じ所を直す。見本 (`tmp/pro-con-cursor-sample.py`。NOW / A / B / C) で動き方を選んでもらっている

@@ -11,10 +11,10 @@ import (
 	"pro-con/card"
 )
 
-// frameCol は画面に描かれた枠の左辺の表示桁 (左上の角 ┏ で測る。滑走中のカードの行には縦線を描かないため)。見つからなければ -1。
+// frameCol は画面に描かれた枠の左辺の表示桁 (左上の角 frameTL で測る。滑走中のカードの行には縦線を描かないため)。見つからなければ -1。
 func frameCol(m *Model) int {
 	for _, l := range strings.Split(ansi.Strip(m.render()), "\n") {
-		if i := strings.Index(l, "┏"); i >= 0 {
+		if i := strings.Index(l, frameTL); i >= 0 {
 			return ansi.StringWidth(l[:i])
 		}
 	}
@@ -41,8 +41,22 @@ func TestCursorFramesSelectedCard(t *testing.T) {
 		t.Fatalf("枠の左辺が %d 桁目 (期待 %d = 作業中のレーン)", got, want)
 	}
 	out := ansi.Strip(m.render())
-	if !strings.Contains(out, "┗") {
+	if !strings.Contains(out, frameBL) {
 		t.Fatalf("枠の下辺が無い:\n%s", out)
+	}
+}
+
+// 選択の枠はユーザーが指定した赤い二重線 (issue 472)。定数で枠を探す他のテストでは、定数の値そのものが戻っても気づけないので、ここで字面と色を固定する。
+func TestCursorFrameIsRedDoubleLine(t *testing.T) {
+	m, _ := cursorModel(t)
+	raw := m.render()
+	for _, want := range []string{"╔", "═", "╗", "║", "╚", "╝"} {
+		if !strings.Contains(ansi.Strip(raw), want) {
+			t.Fatalf("枠に二重線の %q が無い", want)
+		}
+	}
+	if !strings.Contains(raw, fg(196)+sgrBold+"╔") {
+		t.Fatalf("枠の左上が赤 (196) の太字で描かれていない")
 	}
 }
 
@@ -115,7 +129,7 @@ func TestCursorGlideKeepsCardContent(t *testing.T) {
 				}
 			}
 		}
-		if strings.Contains(strings.Join(got, "\n"), "━") {
+		if strings.Contains(strings.Join(got, "\n"), frameH) {
 			drawn++
 		}
 		clk.t = clk.t.Add(cursorDuration / 6)
@@ -138,7 +152,7 @@ func TestCursorLeavesNeighborsVisible(t *testing.T) {
 	m.selected = "R2" // 作業中のレーンの真ん中
 	m.Update(frameMsg{})
 	out := ansi.Strip(m.render())
-	if !strings.Contains(out, "┃") {
+	if !strings.Contains(out, frameV) {
 		t.Fatalf("前提: 枠が描かれていない:\n%s", out)
 	}
 	for _, want := range []string{"R1", "R2", "R3", "3 作業中"} {
@@ -173,7 +187,7 @@ func TestLaneLabelKeepsKeyAndCount(t *testing.T) {
 // unframe は画面から選択の枠を取り除いた形 (枠の縦線は列の罫線に、横線と角は空白と罫線に戻す)。
 // 枠がカードの文字を消していなければ、枠を出さないときの画面と一致する。
 func unframe(s string) string {
-	return strings.NewReplacer("┃", "│", "━", " ", "┏", "│", "┓", "│", "┗", "│", "┛", "│").Replace(s)
+	return strings.NewReplacer(frameV, "│", frameH, " ", frameTL, "│", frameTR, "│", frameBL, "│", frameBR, "│").Replace(s)
 }
 
 // 上下に滑っている途中でも、枠がカードの行を消さない (横線でカードの行を丸ごと消すと、動かすたびにカードが一瞬消えて見える)。
