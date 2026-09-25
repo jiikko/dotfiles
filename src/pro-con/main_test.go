@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"pro-con/dispatcher"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -152,5 +154,40 @@ func TestWireLiveViewStopsAndStartsNothing(t *testing.T) {
 		if !view && (!stopper || readOnly || spawns != 1) {
 			t.Fatalf("普通の画面: 止める口=%v 読み取りだけ=%v dispatcher を起こした=%d", stopper, readOnly, spawns)
 		}
+	}
+}
+
+// 画面が起こした dispatcher が抜けても、画面の子にゾンビで残らない (keeper が起こし直すたびに溜まる。issue 477)。
+func TestSpawnedDispatcherIsNotLeftAsZombie(t *testing.T) {
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "dispatcher.pid")
+	t.Setenv(fakeDispatcherPidEnv, pidFile)
+	if err := spawnDispatcher(dir, nil); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second) // 上限だけ (通る形は刈り取られた時点で終わる)
+	pid := 0
+	for pid == 0 {
+		if b, err := os.ReadFile(pidFile); err == nil {
+			pid, _ = strconv.Atoi(string(b))
+		}
+		if pid == 0 && time.Now().After(deadline) {
+			t.Fatal("偽の dispatcher が起動しない")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for {
+		out, err := exec.Command("ps", "-o", "ppid=,stat=", "-p", strconv.Itoa(pid)).Output()
+		if err != nil { // 居ない = 刈り取られた
+			return
+		}
+		f := strings.Fields(string(out))
+		if len(f) == 2 && f[0] == strconv.Itoa(os.Getpid()) && strings.HasPrefix(f[1], "Z") {
+			t.Fatalf("抜けた dispatcher (pid %d) が画面の子のゾンビで残った: ppid=%s stat=%s", pid, f[0], f[1])
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("抜けた dispatcher (pid %d) が刈り取られない: %q", pid, strings.TrimSpace(string(out)))
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

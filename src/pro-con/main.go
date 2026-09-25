@@ -98,6 +98,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				return 2
 			}
 			return fakeAttach(args[1], stdin, stdout)
+		case spawnDetachedCmd: // spawnDispatcher が挟む中継 (内部用)
+			return spawnDetached(args[1:], stderr)
 		case "e2e": // Claude が e2e モードの画面を操作する口 (e2ecmd.go)
 			return runE2E(args[1:], stdout, stderr)
 		case "card": // PM / PG が使うカードの操作 (受付の箱に置くだけ。cardcmd.go)
@@ -340,23 +342,49 @@ func dispatcherCmd(exe string, extra []string) *exec.Cmd {
 
 // spawnDispatcher は `pro-con dispatcher` を画面とは別のプロセスグループで起動する (画面を閉じても、ctrl+c が届いても道連れにしない。
 // 止めるのは終了のときの `dispatcher --stop`)。出力は状態の置き場の dispatcher.log へ足す (画面より長く生きるのでパイプにしない)。
+// 🚨 画面の子にしない: 中継 (spawnDetached) を挟み、中継だけを待つ。dispatcher は launchd の子になり、抜けたら launchd が刈り取る
+// (画面の子のままだと、抜けた dispatcher が画面を閉じるまでゾンビで残り、keeper が起こし直すたびに溜まる。Wait の goroutine は
+// ctrl+r の exec で消えるので足りない。issue 477)。
 func spawnDispatcher(dir string, extra []string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(filepath.Join(dir, "dispatcher.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	logPath := filepath.Join(dir, "dispatcher.log")
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = f.Close() }()
 	cmd := dispatcherCmd(exe, extra)
+	cmd.Args = append([]string{exe, spawnDetachedCmd}, cmd.Args[1:]...)
 	cmd.Stdout, cmd.Stderr = f, f
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil {
-		return err
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("dispatcher を起動する中継が失敗した (%w。様子は %s)", err, logPath)
 	}
-	return cmd.Process.Release()
+	return nil
+}
+
+// spawnDetachedCmd は spawnDispatcher が挟む中継の内部用のサブコマンド。
+const spawnDetachedCmd = "spawn-detached"
+
+// spawnDetached は中継: 自分のバイナリを args で別のプロセスグループに起動し、待たずに抜ける (起こした子は launchd の子になる)。
+// 子の出力は中継の stdout / stderr (spawnDispatcher が渡した dispatcher.log) をそのまま引き継ぐ。
+func spawnDetached(args []string, stderr io.Writer) int {
+	exe, err := os.Executable()
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "pro-con spawn-detached:", err)
+		return 1
+	}
+	cmd := exec.Command(exe, args...)
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		_, _ = fmt.Fprintln(stderr, "pro-con spawn-detached:", err)
+		return 1
+	}
+	return 0
 }
 
 // stopInChild は `pro-con dispatcher --stop` を別のプロセスで走らせて待つ。画面を ctrl+c で閉じても (待たずに閉じても)、
