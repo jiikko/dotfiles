@@ -583,23 +583,26 @@ func killStale(runID string) {
 // summarizeTimeout は要約の上限。
 const summarizeTimeout = 3 * time.Minute
 
-// HaikuSummarize は失敗したログの末尾を haiku に要約させる (426 の決定 5)。状態の置き場で動かす (repo の hook・規約を読ませない)。
-func HaikuSummarize(claude, dir string) func(ctx context.Context, tail string) (string, error) {
+// HaikuSummarize は失敗したログの末尾を haiku に要約させる (426 の決定 5)。settings は HaikuSettings。
+func HaikuSummarize(claude, dir, settings string) func(ctx context.Context, tail string) (string, error) {
 	return func(ctx context.Context, tail string) (string, error) {
 		ctx, cancel := context.WithTimeout(ctx, summarizeTimeout)
 		defer cancel()
-		return haiku(ctx, claude, dir, "次はテストかビルドのコマンドの失敗したログの末尾です。何が失敗したか (落ちたテスト名・エラーの場所と内容) を日本語で 5 行以内に要約してください。ログに書かれていないことは書かず、質問もしないこと。\n\n"+tail)
+		return haiku(ctx, claude, dir, settings, "次はテストかビルドのコマンドの失敗したログの末尾です。何が失敗したか (落ちたテスト名・エラーの場所と内容) を日本語で 5 行以内に要約してください。ログに書かれていないことは書かず、質問もしないこと。\n\n"+tail)
 	}
 }
 
 // HaikuAsk は btw の答えを haiku に作らせる (btw.go。上限は呼ぶ側が付ける)。
-func HaikuAsk(claude, dir string) func(ctx context.Context, prompt string) (string, error) {
-	return func(ctx context.Context, prompt string) (string, error) { return haiku(ctx, claude, dir, prompt) }
+func HaikuAsk(claude, dir, settings string) func(ctx context.Context, prompt string) (string, error) {
+	return func(ctx context.Context, prompt string) (string, error) {
+		return haiku(ctx, claude, dir, settings, prompt)
+	}
 }
 
 // haiku は prompt を安いモデルの claude -p に渡す (claude は実体の絶対パス)。状態の置き場で動かす (repo の hook・規約を読ませない)。
-func haiku(ctx context.Context, claude, dir, prompt string) (string, error) {
-	cmd := exec.CommandContext(ctx, claude, "-p", "--model", "haiku", "--setting-sources", "project,local")
+// settings (HaikuSettings) で、それでも祖先から拾われる ~/.claude/CLAUDE.md と auto memory を外す (431)
+func haiku(ctx context.Context, claude, dir, settings, prompt string) (string, error) {
+	cmd := exec.CommandContext(ctx, claude, "-p", "--model", "haiku", "--setting-sources", "project,local", "--settings", settings)
 	cmd.Dir = dir
 	cmd.Env = withoutTmux(os.Environ())
 	cmd.Stdin = strings.NewReader(prompt)

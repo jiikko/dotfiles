@@ -384,9 +384,8 @@ func resolvePM(flagVal, cfgVal string) (off bool, why string, err error) {
 }
 
 // userSettingsPath はユーザーの settings.json (家が分からなければ "" = 言語を渡さない)。
-func userSettingsPath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
+func userSettingsPath(home string) string {
+	if home == "" {
 		return ""
 	}
 	return dispatcher.UserSettingsPath(home)
@@ -398,8 +397,10 @@ func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo stri
 		return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: e2e.Launcher(), List: e2e.List, ListAll: e2e.ListAll, Now: time.Now,
 			Runner: dispatcher.ExecRunner{}, FakePM: e2e.FakePM, PMOff: pmOff} // テストの係は本物のシェル (偽の worktree で走る)。失敗の要約 (haiku) はしない
 	}
-	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{Claude: cl.Path, UserSettings: userSettingsPath()}, PMRepo: pmRepo, PMGuide: pmGuide, PMOff: pmOff,
-		Runner: dispatcher.ExecRunner{Lockman: "lockman"}, Summarize: dispatcher.HaikuSummarize(cl.Path, dir), Ask: dispatcher.HaikuAsk(cl.Path, dir), Usage: dispatcher.ReadUsage(cl.Path, dir),
+	home, _ := os.UserHomeDir() // 分からなければ "" (言語と ~/.claude/CLAUDE.md の除外を渡さないだけで、起動は止めない)
+	haiku := dispatcher.HaikuSettings(home)
+	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{Claude: cl.Path, UserSettings: userSettingsPath(home)}, PMRepo: pmRepo, PMGuide: pmGuide, PMOff: pmOff,
+		Runner: dispatcher.ExecRunner{Lockman: "lockman"}, Summarize: dispatcher.HaikuSummarize(cl.Path, dir, haiku), Ask: dispatcher.HaikuAsk(cl.Path, dir, haiku), Usage: dispatcher.ReadUsage(cl.Path, dir),
 		List: func(ctx context.Context) ([]agents.Session, error) {
 			return agents.List(ctx, agents.ExecRunner(cl.Path))
 		},
