@@ -105,6 +105,7 @@
 - 確かめたこと: テスト 4 本 (`TestPMOffLeavesRequestedCards` / `TestResolvePM` / `TestRunDispatcherAnnouncesPMOff` / `TestLoadPMMode`)、
   変異 7 本すべて想定したテストが red (tellPM の off の判定・--pm=off・設定 off・--pm=on が設定に勝つ・告知・PMOff の配線・設定の値の検査)。
   敵対的レビューは省いた (値で分岐を 1 つ止める口で、状態遷移・外部 I/O の新しい経路は無い)
+- make test: rc=0 (5m13s。テストの係の実行)
 - origin/master (C-008 = 451 の削除) に rebase した。451 の削除も止める相手をカード ID で絞るので PM には当たらない
 
 ## 関連
