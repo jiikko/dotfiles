@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"pro-con/card"
+	"pro-con/eventlog"
 	"pro-con/store"
 )
 
@@ -51,17 +52,17 @@ func Status(cards []card.Card) string {
 
 // announce は件数の文が変わったら Publish し、新しく人間の回答待ちになったカード (質問・権限・落ちて止めた) を Notify する。
 // 同じ待ちを 2 度知らせない (待ちを抜けたら忘れるので、次に待ちに入ったらまた知らせる。dispatcher が起動し直すと、待っているカードを 1 度ずつ知らせ直す)。
-func (d *Dispatcher) announce() []string {
+func (d *Dispatcher) announce() []eventlog.Event {
 	st, err := store.Load(d.Dir)
 	if err != nil {
-		return []string{"知らせ: 記録を読めない: " + err.Error()}
+		return []eventlog.Event{ev(eventlog.KindError, "", "", "知らせ: 記録を読めない: "+err.Error())}
 	}
-	var notes []string
+	var notes []eventlog.Event
 	now := d.Now()
 	// 変わったときに加えて、republishEvery ごとにも書き直す (tmux サーバが作り直されて option が消えても戻る)
 	if s := Status(st.Cards); d.Publish != nil && (!d.published || s != d.lastStatus || now.Sub(d.publishedAt) >= republishEvery) {
 		if err := d.Publish(s); err != nil { // 失敗しても次は文が変わるか republishEvery 後 (tmux の外で動かしたとき Tick ごとには言い続けない)
-			notes = append(notes, "知らせ: tmux に件数を書けない: "+err.Error())
+			notes = append(notes, ev(eventlog.KindError, "", "", "知らせ: tmux に件数を書けない: "+err.Error()))
 		}
 		d.lastStatus, d.published, d.publishedAt = s, true, now
 	}
@@ -82,7 +83,7 @@ func (d *Dispatcher) announce() []string {
 		}
 		body := c.ID + " " + c.Title + ": " + c.Wait.Question
 		if err := d.Notify("pro-con: 回答待ち", body); err != nil {
-			notes = append(notes, "知らせ: 通知を出せない: "+err.Error())
+			notes = append(notes, ev(eventlog.KindError, c.ID, "", "知らせ: 通知を出せない: "+err.Error()))
 			continue // 次の Tick でまた出す
 		}
 		d.notified[c.ID] = true

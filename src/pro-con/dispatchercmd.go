@@ -18,6 +18,7 @@ import (
 
 	"pro-con/agents"
 	"pro-con/dispatcher"
+	"pro-con/eventlog"
 	"pro-con/live"
 	"pro-con/presence"
 	"pro-con/wake"
@@ -78,6 +79,7 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 	defer unlock()
 	_ = dispatcher.StopRequested(dir) // 前の --stop が dispatcher の居ない間に置いた印は捨てる (起動した途端に止まらないように)
 	d := newDispatcherFor(dir, projects, repos, *limit, e2e)
+	d.Record = eventSink(dir, stdout, stderr)
 	defer d.CancelRun()                                                                                    // どの出口 (Tick のエラー・SIGTERM) でも、テストの係の実行を残して抜けない
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP) // SIGHUP: 端末・tmux のペインを閉じた (既定の動作で死ぬと実行を残す)
 	defer stop()
@@ -122,7 +124,7 @@ func serve(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-ch
 			if screensOpen(dir) {
 				aloneSince = now()
 			} else if now().Sub(aloneSince) >= o.alone {
-				_, _ = fmt.Fprintf(stdout, "%s 開いている画面が %s 無いので、PG を止めて抜ける\n", now().Format("15:04:05"), o.alone)
+				say(d, eventlog.KindScreens, fmt.Sprintf("開いている画面が %s 無いので、PG を止めて抜ける", o.alone))
 				stop = true
 			}
 		}
@@ -133,12 +135,10 @@ func serve(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-ch
 			aloneSince = now() // 止めている間に画面が開いた。止めるのをやめて続ける
 			continue
 		}
-		notes, err := d.Tick(ctx)
-		for _, n := range notes {
-			_, _ = fmt.Fprintf(stdout, "%s %s\n", time.Now().Format("15:04:05"), n)
-		}
+		_, err := d.Tick(ctx) // 出来事は Tick が d.Record (eventSink) へ渡す
 		if err != nil {
 			_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", err)
+			say(d, eventlog.KindError, "Tick が失敗したので抜ける: "+err.Error())
 			if o.alone > 0 && !screensOpen(dir) { // 画面が起こした dispatcher は、抜ける前に PG を止める (画面が無ければ見張る者が居なくなる)
 				stopUntilDone(ctx, d, dir, nil, serveOpts{}, stdout, stderr)
 			}
@@ -197,10 +197,7 @@ var stopRetryEvery = 10 * time.Second
 // 🚨 止めきれないまま抜けない: 抜けると、pro-con が起動した PG を見張る者が居なくなる。o.retries が正なら、その回数で諦める (取り消された ctx の中の最後の試み)
 func stopUntilDone(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-chan struct{}, o serveOpts, stdout, stderr io.Writer) bool {
 	for try := 1; ; try++ {
-		notes, err := d.Shutdown(ctx)
-		for _, n := range notes {
-			_, _ = fmt.Fprintf(stdout, "%s %s\n", time.Now().Format("15:04:05"), n)
-		}
+		_, err := d.Shutdown(ctx) // 出来事は Shutdown が d.Record へ渡す
 		if try == 1 || err == nil {
 			dispatcher.WriteStopResult(dir, err) // 頼んだ画面は最初の結果を読む。後から止め終えたら ok で書き直す
 		}
@@ -209,9 +206,11 @@ func stopUntilDone(ctx context.Context, d *dispatcher.Dispatcher, dir string, wa
 		}
 		if o.retries > 0 && try >= o.retries {
 			_, _ = fmt.Fprintln(stderr, "pro-con dispatcher: 止めきれないまま抜ける:", err)
+			say(d, eventlog.KindStop, "止めきれないまま抜ける: "+err.Error())
 			return true
 		}
 		_, _ = fmt.Fprintln(stderr, "pro-con dispatcher: 止めきれない (止め直す):", err)
+		say(d, eventlog.KindStop, "止めきれない (止め直す): "+err.Error())
 		select {
 		case <-ctx.Done():
 			o.retries = try + 1 // 取り消された: もう 1 度だけ試して抜ける
@@ -219,7 +218,7 @@ func stopUntilDone(ctx context.Context, d *dispatcher.Dispatcher, dir string, wa
 		case <-wakes:
 		}
 		if screensOpen(dir) && ctx.Err() == nil {
-			_, _ = fmt.Fprintln(stdout, time.Now().Format("15:04:05"), "止めている間に画面が開いたので、止めるのをやめて続ける")
+			say(d, eventlog.KindScreens, "止めている間に画面が開いたので、止めるのをやめて続ける")
 			return false
 		}
 	}
@@ -245,6 +244,7 @@ func stopDispatcher(ctx context.Context, dir, projects string, repos map[string]
 	defer unlock()
 	_ = dispatcher.StopRequested(dir)
 	d := newDispatcherFor(dir, projects, repos, 1, e2e)
+	d.Record = eventSink(dir, stdout, stdout) // dispatcher の役を取った (lock を持つ) ので、出来事を書いてよい
 	// 自分で止めている間に次の --stop が来たら、その --stop は結果のファイルを読む。止めきれなければ止まるまで止め直す
 	// (画面の待ちが切れて閉じても、このプロセスは別のプロセスグループで続ける)
 	if !stopUntilDone(ctx, d, dir, nil, serveOpts{}, stdout, stdout) {
@@ -255,6 +255,32 @@ func stopDispatcher(ctx context.Context, dir, projects string, repos map[string]
 		return errors.New(r)
 	}
 	return nil
+}
+
+// eventSink は dispatcher の出来事を、時刻つきの 1 行で out へ出し (dispatcher.log / nohup の先)、状態の置き場の events.jsonl へ足す
+// (pro-con log が読む。issue 444)。🚨 呼んでよいのは dispatcher の lock を持つプロセスだけ (書き手を 1 つにする = 426 の決定 1)。
+func eventSink(dir string, out, errOut io.Writer) func([]eventlog.Event) {
+	return func(evs []eventlog.Event) {
+		now := time.Now()
+		stamped := make([]eventlog.Event, len(evs))
+		for i, e := range evs {
+			if e.At.IsZero() {
+				e.At = now
+			}
+			stamped[i] = e
+			_, _ = fmt.Fprintf(out, "%s %s\n", e.At.Format("15:04:05"), e.Reason)
+		}
+		if err := eventlog.Append(dir, stamped); err != nil {
+			_, _ = fmt.Fprintln(errOut, "pro-con dispatcher: 出来事を events.jsonl に書けない:", err)
+		}
+	}
+}
+
+// say は dispatcher の外側 (serve) で決めたことを出来事として渡す。
+func say(d *dispatcher.Dispatcher, kind, text string) {
+	if d.Record != nil {
+		d.Record([]eventlog.Event{{Kind: kind, Reason: text}})
+	}
 }
 
 // newDispatcherFor は dispatcher を組む。e2e が nil なら本物 (claude を起動する)、あれば偽の PG と偽の一覧 (claude を起動しない)。

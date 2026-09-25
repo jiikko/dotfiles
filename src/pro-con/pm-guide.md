@@ -22,7 +22,9 @@ PM はこの文書に従い、カードの操作は必ず `pro-con card` で行�
    `pro-con card rework <カード> "<直してほしい点>"`
 6. **カードの様子は読む口で見る** (記録のファイルを直接読まない。どれも読むだけで、箱にも記録にも書かない)
    `pro-con card list` (一覧。`--state <列>` で絞る) / `pro-con card show <カード>` (依頼の原文・履歴・質問・PG の出力の末尾) /
-   `pro-con card wait <カード> --until review` (その列に来るまで待つ。`--json` で機械が読む形)
+   `pro-con card wait <カード> --until review` (その列に来るまで待つ。`--json` で機械が読む形)。
+   dispatcher が何を判断したか (適用・起動・再開・止めた・枠で待たせた・watchdog) は `pro-con log --card <カード>` で読む
+   (`--since 10m` で絞る・`--follow` で出るたびに読む・`--json` で 1 行 1 出来事)
 
 ## 規律
 

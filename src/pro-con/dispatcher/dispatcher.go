@@ -21,6 +21,7 @@ import (
 
 	"pro-con/agents"
 	"pro-con/card"
+	"pro-con/eventlog"
 	"pro-con/live"
 	"pro-con/store"
 )
@@ -88,6 +89,9 @@ type Dispatcher struct {
 	held       string    // 枠で起動・再開を待たせている知らせ (変わったときだけログに書く)
 
 	ticked bool // 1 度でも Tick したか
+	// Record は Tick / Shutdown の出来事を渡す (ログの行と events.jsonl。dispatchercmd.go)。記録を変えた知らせ (Changed) より先に呼ぶ
+	// (知らせを受けて読みに来た pro-con log --follow が、その出来事をもう読めるように)。nil なら渡さない
+	Record func([]eventlog.Event)
 	// Changed は記録を変えたときに呼ぶ (画面へ「読み直して」と知らせる。package wake の Broadcast)。nil なら知らせない
 	Changed func()
 
@@ -115,11 +119,12 @@ const defaultStallAfter = 15 * time.Minute
 // session の一覧を取れない Tick は、登録も割り当てもしない (一覧と照らさずに起動・再開すると、立っている session を見落として増やす /
 // 別の session を止める)。
 // 回ったことは StatusFile に書く (途中で抜けた Tick も。画面が dispatcher の生存を見る)。
-func (d *Dispatcher) Tick(ctx context.Context) ([]string, error) {
+func (d *Dispatcher) Tick(ctx context.Context) ([]eventlog.Event, error) {
 	notes, err := d.tick(ctx)
 	if werr := d.writeState(d.Now()); werr != nil {
-		notes = append(notes, "dispatcher の様子を書けない: "+werr.Error())
+		notes = append(notes, ev(eventlog.KindError, "", "", "dispatcher の様子を書けない: "+werr.Error()))
 	}
+	d.record(notes)
 	// 何かした Tick の後 (起動・登録・停滞など) と、起動して最初の Tick の後 (先に開いた画面の「dispatcher 未起動」を直す)。
 	// 画面は 3 秒のポーリングを待たずに読み直す
 	if (len(notes) > 0 || !d.ticked) && d.Changed != nil {
@@ -129,36 +134,32 @@ func (d *Dispatcher) Tick(ctx context.Context) ([]string, error) {
 	return notes, err
 }
 
-func (d *Dispatcher) tick(ctx context.Context) ([]string, error) {
+func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	now := d.Now()
-	var notes []string
+	var notes []eventlog.Event
 	if d.FakePM != nil {
 		if err := d.FakePM(); err != nil {
-			notes = append(notes, "e2e の偽の PM: "+err.Error())
+			notes = append(notes, ev(eventlog.KindError, "", "", "e2e の偽の PM: "+err.Error()))
 		}
 	}
 	res, err := store.Apply(d.Dir, now)
 	if err != nil {
 		return nil, err
 	}
-	for _, r := range res {
-		if r.Err != "" {
-			notes = append(notes, fmt.Sprintf("箱の依頼 %s (%s) を除けた: %s", r.ID, r.Kind, r.Err))
-		}
-	}
+	notes = append(notes, applied(res)...)
 	if len(res) > 0 && d.Changed != nil { // 箱の依頼を適用した直後に知らせる (一覧の取得 (最大 10 秒) を待たせずにカードを画面へ出す)
 		d.Changed()
 	}
 	ss, err := d.List(ctx)
 	if err != nil {
-		return append(notes, "session の一覧を取れない (登録と割り当ては次の Tick へ): "+err.Error()), nil
+		return append(notes, ev(eventlog.KindError, "", "", "session の一覧を取れない (登録と割り当ては次の Tick へ): "+err.Error())), nil
 	}
 	n, warn, err := d.register(now, ss)
 	if err != nil {
 		return notes, err
 	}
 	if n > 0 {
-		notes = append(notes, fmt.Sprintf("PG の session を %d 本登録した", n))
+		notes = append(notes, ev(eventlog.KindRegister, "", "", fmt.Sprintf("PG の session を %d 本登録した", n)))
 	}
 	notes = append(notes, warn...)
 	closed, err := d.stopClosed(ctx, now)
@@ -200,7 +201,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]string, error) {
 // 起動の直後は一覧にまだ出ないことがあるので、出るまで毎回見る。取り込むのは dispatcher が最後に起動・再開した (LaunchedAt) 後に
 // 始まった session だけで、書き直せるのは記録の行がそれより前のもの (= dispatcher 自身の再開の後) だけ。それ以外は外から操作された疑いを知らせる。
 // 判定の材料は記録に置く (dispatcher が起動し直しても失わない)。
-func (d *Dispatcher) register(now time.Time, ss []agents.Session) (int, []string, error) {
+func (d *Dispatcher) register(now time.Time, ss []agents.Session) (int, []eventlog.Event, error) {
 	st, err := store.Load(d.Dir)
 	if err != nil {
 		return 0, nil, err
@@ -210,7 +211,7 @@ func (d *Dispatcher) register(now time.Time, ss []agents.Session) (int, []string
 	if err != nil {
 		return 0, nil, err
 	}
-	var warn []string
+	var warn []eventlog.Event
 	known := map[string]live.Owned{}
 	for _, o := range reg {
 		known[o.CardID] = o
@@ -224,7 +225,7 @@ func (d *Dispatcher) register(now time.Time, ss []agents.Session) (int, []string
 		for _, s := range ss {
 			// pro-con が起動するのは bg の session だけ。対話の session (人間が PG の worktree で開いたもの等) は決して取り込まない
 			if s.ID == c.Session && s.Kind != "background" {
-				warn = append(warn, fmt.Sprintf("%s の短い id %s の session の kind が %q (background ではない)。取り込まない (claude の版で値が変わった?)", c.ID, s.ID, s.Kind))
+				warn = append(warn, ev(eventlog.KindSuspect, c.ID, s.ID, fmt.Sprintf("%s の短い id %s の session の kind が %q (background ではない)。取り込まない (claude の版で値が変わった?)", c.ID, s.ID, s.Kind)))
 				continue
 			}
 			if s.ID != c.Session || s.SessionID == "" || s.PID == 0 {
@@ -237,7 +238,7 @@ func (d *Dispatcher) register(now time.Time, ss []agents.Session) (int, []string
 			case ok && o.SessionID == s.SessionID && o.PID == s.PID:
 				// 同じ session・同じプロセスで cwd だけ埋める (上の判定を通らない形なので、所有の判定には影響しない)
 			case s.Started().Before(c.LaunchedAt):
-				warn = append(warn, fmt.Sprintf("%s の session %s は pro-con の最後の起動・再開より前に始まっている (同じ短い id の別の session の疑い)。登録しない", c.ID, s.ID))
+				warn = append(warn, ev(eventlog.KindSuspect, c.ID, s.ID, fmt.Sprintf("%s の session %s は pro-con の最後の起動・再開より前に始まっている (同じ短い id の別の session の疑い)。登録しない", c.ID, s.ID)))
 				continue
 			case ok && o.SessionID != s.SessionID && o.ID != c.Session && o.StartedAt.Before(c.LaunchedAt):
 				// dispatcher 自身の再開が返した新しい短い id の session (claude --bg --resume は別の session id の session を立てる)。
@@ -248,13 +249,13 @@ func (d *Dispatcher) register(now time.Time, ss []agents.Session) (int, []string
 				n++
 				continue
 			case ok && o.SessionID != s.SessionID:
-				warn = append(warn, fmt.Sprintf("%s の短い id %s が別の session (%s) を指している。登録しない", c.ID, s.ID, s.SessionID))
+				warn = append(warn, ev(eventlog.KindSuspect, c.ID, s.ID, fmt.Sprintf("%s の短い id %s が別の session (%s) を指している。登録しない", c.ID, s.ID, s.SessionID)))
 				continue
 			case ok && !o.StartedAt.Before(c.LaunchedAt):
 				crashes := d.restartsSince(c, o, s.SessionID)
 				if len(crashes) == 0 {
-					warn = append(warn, fmt.Sprintf("%s の session %s の pid が %d → %d に変わった。pro-con は再開していない (外から操作された疑い)。記録は書き直さない",
-						c.ID, s.ID, o.PID, s.PID))
+					warn = append(warn, ev(eventlog.KindSuspect, c.ID, s.ID, fmt.Sprintf("%s の session %s の pid が %d → %d に変わった。pro-con は再開していない (外から操作された疑い)。記録は書き直さない",
+						c.ID, s.ID, o.PID, s.PID)))
 					continue
 				}
 				// Claude Code 自身がプロセスの死から再開した (transcript に再開の文が新しく出た)。記録を書き直してから回数を数える
@@ -270,7 +271,7 @@ func (d *Dispatcher) register(now time.Time, ss []agents.Session) (int, []string
 				}); err != nil {
 					return n, warn, err
 				}
-				warn = append(warn, fmt.Sprintf("%s の PG が落ちて自動で再開した (pid %d → %d)", c.ID, o.PID, s.PID))
+				warn = append(warn, ev(eventlog.KindCrash, c.ID, s.ID, fmt.Sprintf("%s の PG が落ちて自動で再開した (pid %d → %d)", c.ID, o.PID, s.PID)))
 				continue
 			}
 			if err := live.Register(regPath, live.Owned{SessionID: s.SessionID, ID: s.ID, PID: s.PID, CardID: c.ID, StartedAt: s.Started(), Cwd: s.Cwd}); err != nil {
@@ -356,7 +357,7 @@ func (d *Dispatcher) restartsSince(c card.Card, o live.Owned, sessionID string) 
 
 // stopCrashing は、作業中のカードのうち CrashWindow の間に CrashLimit 回以上落ちた PG を止め、カードを人間の回答待ちにする
 // (回答が来たら同じ session を再開する)。止められなかったら作業中のまま残し、次の Tick でまた試す。
-func (d *Dispatcher) stopCrashing(ctx context.Context, now time.Time, ss []agents.Session) ([]string, error) {
+func (d *Dispatcher) stopCrashing(ctx context.Context, now time.Time, ss []agents.Session) ([]eventlog.Event, error) {
 	limit, window := d.CrashLimit, d.CrashWindow
 	if limit <= 0 {
 		limit = defaultCrashLimit
@@ -372,7 +373,7 @@ func (d *Dispatcher) stopCrashing(ctx context.Context, now time.Time, ss []agent
 	if err != nil {
 		return nil, err
 	}
-	var notes []string
+	var notes []eventlog.Event
 	for _, c := range st.Cards {
 		if c.State != card.Running || c.Session == "" {
 			continue
@@ -421,7 +422,7 @@ func (d *Dispatcher) stopCrashing(ctx context.Context, now time.Time, ss []agent
 						return notes, err
 					}
 				}
-				notes = append(notes, fmt.Sprintf("%s の PG は落ち続けたが、止められない (次の Tick でまた試す): %v", c.ID, err))
+				notes = append(notes, ev(eventlog.KindCrash, c.ID, target, fmt.Sprintf("%s の PG は落ち続けたが、止められない (次の Tick でまた試す): %v", c.ID, err)))
 				continue
 			}
 		}
@@ -434,7 +435,7 @@ func (d *Dispatcher) stopCrashing(ctx context.Context, now time.Time, ss []agent
 		}); err != nil {
 			return notes, err
 		}
-		notes = append(notes, c.ID+": "+why)
+		notes = append(notes, ev(eventlog.KindCrash, c.ID, c.Session, c.ID+": "+why))
 	}
 	return notes, nil
 }
@@ -442,7 +443,7 @@ func (d *Dispatcher) stopCrashing(ctx context.Context, now time.Time, ss []agent
 // watch は作業中のカードの「実質的な進捗」を transcript から読み (それまでに無かった PG の出力が出たか)、止まっていれば停滞にする。
 // 進捗が戻れば停滞を外す。正当な待ち (リソース・枠) は数えない。transcript を読めないカードは判定しない (読めないことを停滞にしない)。
 // 🚨 見ているのは「新しい文が出たか」だけ。同じ文を繰り返すループは捕まえるが、毎回少しずつ違う文を出すループは進んでいるように見える
-func (d *Dispatcher) watch(now time.Time) ([]string, error) {
+func (d *Dispatcher) watch(now time.Time) ([]eventlog.Event, error) {
 	if d.Transcript == nil {
 		return nil, nil
 	}
@@ -458,7 +459,7 @@ func (d *Dispatcher) watch(now time.Time) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	var notes []string
+	var notes []eventlog.Event
 	for _, c := range st.Cards {
 		if c.State != card.Running || c.Wait.Kind != card.WaitNone || c.Run != "" { // テストの係の実行を待っている間は PG の進み具合を見ない
 			continue
@@ -504,7 +505,7 @@ func (d *Dispatcher) watch(now time.Time) ([]string, error) {
 		}); err != nil {
 			return notes, err
 		}
-		notes = append(notes, c.ID+": "+text)
+		notes = append(notes, ev(eventlog.KindWatchdog, c.ID, c.Session, c.ID+": "+text))
 	}
 	return notes, nil
 }
@@ -514,7 +515,7 @@ func (d *Dispatcher) watch(now time.Time) ([]string, error) {
 //   - 前の Tick の起動・再開の結果が分からないまま (印が残っている) のカードは、一覧で確かめる。立っていれば取り込み、
 //     launchGrace を過ぎても出なければ起動し直す。待っている間は上限に数える
 //   - 起動・再開の前提 (repo の場所 / 前の session の記録) が無いカードは、何も起動せずに履歴へ書く
-func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Session) ([]string, error) {
+func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Session) ([]eventlog.Event, error) {
 	st, err := store.Load(d.Dir)
 	if err != nil {
 		return nil, err
@@ -545,7 +546,7 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 	}
 	// 印の残ったカード (前の起動・再開の結果が分からない) は、上限の判定より先に片付ける。上限の後ろに置くと、実際に立っている PG を
 	// 数えずに別のカードを起動する (上限を下げて起動し直したときも)
-	var notes []string
+	var notes []eventlog.Event
 	var fresh []card.Card
 	for _, c := range queue {
 		if c.Launching == "" {
@@ -557,7 +558,7 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 				return notes, err
 			}
 			running++
-			notes = append(notes, fmt.Sprintf("%s の PG の%sを一覧で確かめた (%s)", c.ID, c.Launching, id))
+			notes = append(notes, ev(eventlog.KindLaunch, c.ID, id, fmt.Sprintf("%s の PG の%sを一覧で確かめた (%s)", c.ID, c.Launching, id)))
 			continue
 		}
 		if now.Sub(c.LaunchedAt) < launchGrace {
@@ -583,7 +584,7 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 			if err := d.noteOnce(c.ID, now, how+"できない: "+err.Error()); err != nil {
 				return notes, err
 			}
-			notes = append(notes, fmt.Sprintf("%s の PG を%sできない: %v", c.ID, how, err))
+			notes = append(notes, ev(eventlog.KindLaunch, c.ID, c.Session, fmt.Sprintf("%s の PG を%sできない: %v", c.ID, how, err)))
 			continue
 		}
 		if err := d.mark(c.ID, now, how); err != nil {
@@ -595,18 +596,18 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 			if err := d.note(c.ID, now, how+"に失敗したと返った (立っているかもしれないので、一覧で確かめてから起動し直す): "+launchErr.Error()); err != nil {
 				return notes, err
 			}
-			notes = append(notes, fmt.Sprintf("%s の PG の%sに失敗: %v", c.ID, how, launchErr))
+			notes = append(notes, ev(eventlog.KindLaunch, c.ID, c.Session, fmt.Sprintf("%s の PG の%sに失敗: %v", c.ID, how, launchErr)))
 			continue
 		}
 		if err := d.settle(c.ID, now, how, id); err != nil {
 			return notes, err
 		}
-		notes = append(notes, fmt.Sprintf("%s に PG を%sした (%s)", c.ID, how, id))
+		notes = append(notes, ev(eventlog.KindLaunch, c.ID, id, fmt.Sprintf("%s に PG を%sした (%s)", c.ID, how, id)))
 	}
 	if held != d.held { // 枠で待たせていることは、変わったときだけ書く (Tick ごとにログを埋めない)
 		d.held = held
 		if held != "" {
-			notes = append(notes, held)
+			notes = append(notes, ev(eventlog.KindHold, "", "", held))
 		}
 	}
 	return notes, nil

@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"pro-con/dispatcher"
+	"pro-con/eventlog"
 	"pro-con/store"
 	"pro-con/wake"
 )
@@ -51,6 +53,19 @@ func TestRunDispatcherWiresSocket(t *testing.T) {
 	}
 	waitFor("箱に置いても待ちを切り上げない", func() bool { return state().Tick.After(first) })
 	waitFor("適用しても画面へ知らせない", func() bool { return changes.Load() > 0 })
+	// 適用した出来事は events.jsonl に残る (pro-con log が読む。issue 444)
+	waitFor("適用した出来事を events.jsonl に書かない", func() bool {
+		evs, _ := eventlog.Read(dir)
+		for _, e := range evs {
+			if e.Kind == eventlog.KindApply && e.Card == "C-001" && !e.At.IsZero() {
+				return true
+			}
+		}
+		return false
+	})
+	if st, err := os.Stat(filepath.Join(dir, eventlog.File)); err != nil || st.Mode().Perm() != 0o600 {
+		t.Fatalf("events.jsonl の権限: %v %v", st, err)
+	}
 	sctx, scancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer scancel()
 	if running, err := dispatcher.RequestStop(sctx, dir, 30*time.Second); !running || err != nil {

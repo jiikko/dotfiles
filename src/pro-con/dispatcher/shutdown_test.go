@@ -453,7 +453,7 @@ func TestShutdownStopsDespiteBrokenRetired(t *testing.T) {
 	if err != nil || !slices.Contains(r.l.stops, "id-pc-c-001") {
 		t.Fatalf("退いた記録が壊れていると記録の session を止めない: %v stops=%v", err, r.l.stops)
 	}
-	if !strings.Contains(strings.Join(notes, "\n"), "読めない") {
+	if !strings.Contains(joinNotes(notes), "読めない") {
 		t.Fatalf("退いた記録を読めないことを知らせない: %v", notes)
 	}
 }
@@ -499,7 +499,7 @@ func TestRecordedCardStillStopsLiveSessionAndClearsMark(t *testing.T) {
 	}
 	c := states(t, r.dir)["C-001"]
 	if !slices.Contains(r.l.stops, "id-fresh") {
-		t.Fatalf("止めたと書いたカードの生きている session を止めない: %v\n%s", r.l.stops, strings.Join(notes, "\n"))
+		t.Fatalf("止めたと書いたカードの生きている session を止めない: %v\n%s", r.l.stops, joinNotes(notes))
 	}
 	if c.Launching != "" {
 		t.Fatalf("起動の途中の印が残った: %q", c.Launching)

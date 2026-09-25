@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"regexp"
 	"strings"
@@ -105,6 +106,17 @@ func TestPMGuideCommandsParse(t *testing.T) {
 			t.Errorf("指示書のコマンドがパーサに通らない: %s → %v", m[1], err)
 		}
 		checked++
+	}
+	logs := regexp.MustCompile("`(pro-con log[^`]*)`").FindAllStringSubmatch(pmGuide, -1)
+	for _, m := range logs { // 出来事の記録を読む口 (logcmd.go)。使い方の誤り (rc=2) にならないかを見る
+		line := regexp.MustCompile(`<[^>]*>`).ReplaceAllString(m[1], "x")
+		var e strings.Builder
+		if rc := runLog(context.Background(), splitQuoted(strings.TrimPrefix(strings.TrimPrefix(line, "pro-con log"), " ")), t.TempDir(), time.Now, io.Discard, &e); rc == 2 {
+			t.Errorf("指示書のコマンドが使い方の誤りになる: %s → %s", m[1], e.String())
+		}
+	}
+	if len(logs) == 0 {
+		t.Error("指示書の役目 6 に pro-con log が無い")
 	}
 	if checked < 5 { // 抽出が空振りしたら緑にしない
 		t.Fatalf("指示書から取り出せたコマンドが %d 本しかない", checked)

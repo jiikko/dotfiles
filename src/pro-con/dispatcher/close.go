@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"pro-con/card"
+	"pro-con/eventlog"
 	"pro-con/store"
 )
 
@@ -19,12 +20,12 @@ const closeStopWait = time.Minute
 
 // stopClosed は StopAfterClose の付いたカードの PG の session (起動の記録にあるもの・再開で入れ替わった前のもの) を止める。
 // 1 回の Tick では待たない (ensureStopped を 0 周で回す)。止まらなければ次の Tick で止め直す。
-func (d *Dispatcher) stopClosed(ctx context.Context, now time.Time) ([]string, error) {
+func (d *Dispatcher) stopClosed(ctx context.Context, now time.Time) ([]eventlog.Event, error) {
 	st, err := store.Load(d.Dir)
 	if err != nil {
 		return nil, err
 	}
-	var notes []string
+	var notes []eventlog.Event
 	for _, c := range st.Cards {
 		if !c.StopAfterClose {
 			continue
@@ -35,7 +36,7 @@ func (d *Dispatcher) stopClosed(ctx context.Context, now time.Time) ([]string, e
 			if sent == 0 && !c.CloseStopSent { // 前の Tick で止める要求を出して、この Tick で止まったのを見た形は「止めた」
 				text = "閉じた後に確かめたら PG の session は既に止まっていた"
 			}
-			notes = append(notes, c.ID+": "+text)
+			notes = append(notes, ev(eventlog.KindStop, c.ID, c.Session, c.ID+": "+text))
 			if err := d.finishCloseStop(c.ID, now, text); err != nil {
 				return notes, err
 			}
@@ -49,12 +50,17 @@ func (d *Dispatcher) stopClosed(ctx context.Context, now time.Time) ([]string, e
 		if now.Sub(c.Since) < closeStopWait {
 			continue // 次の Tick で止め直す
 		}
-		why := strings.Join(append(more, remaining...), " / ")
-		if err != nil {
-			why = strings.Join(append(more, err.Error()), " / ")
+		reasons := make([]string, 0, len(more)+len(remaining))
+		for _, m := range more {
+			reasons = append(reasons, m.Reason)
 		}
+		reasons = append(reasons, remaining...)
+		if err != nil {
+			reasons = append(reasons[:len(more)], err.Error())
+		}
+		why := strings.Join(reasons, " / ")
 		text := fmt.Sprintf("閉じたが PG の session を止められない: %s (止める: claude stop <id>)", why)
-		notes = append(notes, c.ID+": "+text)
+		notes = append(notes, ev(eventlog.KindStop, c.ID, c.Session, c.ID+": "+text))
 		if err := d.finishCloseStop(c.ID, now, text); err != nil {
 			return notes, err
 		}

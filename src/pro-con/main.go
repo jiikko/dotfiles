@@ -4,6 +4,7 @@
 //	pro-con              TUI を起動する (本物: 今の Claude Code の session を読み取り専用で出す)
 //	pro-con --mock       模擬データで起動する (claude は起動しない。動作確認用)
 //	pro-con card …       PM / PG が使うカードの操作 (受付の箱に置く。pro-con card で使い方)
+//	pro-con log          dispatcher の出来事の記録を読む (読むだけ。pro-con log --help)
 //	pro-con dispatcher       本物のモードの dispatcher を常駐させる (PG を起動する。週の利用枠を使う)
 //	pro-con fake-attach  attach の代わりに TUI から起動される内部用のコマンド
 //
@@ -18,6 +19,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -112,6 +114,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				return 1
 			}
 			return runScreen(args[1:], home, time.Now, stdout, stderr)
+		case "log": // dispatcher の出来事の記録を読む (読むだけ。logcmd.go)
+			home, err := os.UserHomeDir()
+			if err != nil {
+				_, _ = fmt.Fprintln(stderr, "pro-con:", err)
+				return 1
+			}
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM) // --follow は ctrl+c で終わる (rc=0)
+			defer stop()
+			return runLog(ctx, args[1:], liveDir(home), time.Now, stdout, stderr)
 		case "dispatcher", "daemon": // 本物のモードの dispatcher を常駐させる (dispatchercmd.go)。daemon は 2026-09-25 に dispatcher へ改名する前の名前 (別名として残す)
 			if args[0] == "daemon" {
 				_, _ = fmt.Fprintln(stderr, "pro-con: daemon は dispatcher に改名した (pro-con dispatcher)")

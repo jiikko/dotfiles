@@ -356,11 +356,20 @@ func runCardWait(args []string, env viewEnv, stdout, stderr io.Writer) int {
 
 var errWaitTimeout = errors.New("時間切れ")
 
-// waitFor は cond が真になるまで待つ。dispatcher の知らせ (購読) で読み直し、届かなくても viewPoll ごとに読み直す。上限は timeout。
-// 🚨 購読は sub を送るだけ (wake / notify は送らない)。dispatcher が居なくてもポーリングで待てる
+// waitFor は cond が真になるまで待つ。上限は timeout (過ぎたら errWaitTimeout)。
 func waitFor(dir string, timeout time.Duration, cond func() (bool, error)) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	if err := watchDir(ctx, dir, cond); err != nil || ctx.Err() == nil {
+		return err
+	}
+	return errWaitTimeout
+}
+
+// watchDir は cond が真になるか ctx が終わるまで、cond を呼び続ける。dispatcher の知らせ (購読) で呼び直し、届かなくても viewPoll ごとに呼び直す。
+// ctx が終わったら nil を返す (呼び出し側が ctx.Err で見分ける)。
+// 🚨 購読は sub を送るだけ (wake / notify は送らない)。dispatcher が居なくてもポーリングで待てる
+func watchDir(ctx context.Context, dir string, cond func() (bool, error)) error {
 	changed := make(chan struct{}, 1)
 	go wake.NewSubscriber(dir, func() {
 		select {
@@ -377,7 +386,7 @@ func waitFor(dir string, timeout time.Duration, cond func() (bool, error)) error
 		}
 		select {
 		case <-ctx.Done():
-			return errWaitTimeout
+			return nil
 		case <-changed:
 		case <-tick.C:
 		}

@@ -15,6 +15,7 @@ import (
 
 	"pro-con/agents"
 	"pro-con/card"
+	"pro-con/eventlog"
 	"pro-con/live"
 	"pro-con/store"
 	"pro-con/wake"
@@ -54,24 +55,20 @@ var ErrStopperDied = errors.New("pro-con dispatcher が止め終える前に終�
 // 止める相手は、記録と session id・pid が一致する bg の session、または dispatcher 自身が起動・再開した直後でまだ記録に無い session だけ。
 // すぐには止められない形 (落ちて自動の再開を待っている / 起動・再開の直後で一覧にまだ出ない) は、一覧を取り直しながら shutdownPolls 回待つ。
 // 待っても止められなかったカードは列を変えず (次の dispatcher が普段どおり扱う)、止めきれなかった本数をエラーで返す。
-func (d *Dispatcher) Shutdown(ctx context.Context) ([]string, error) {
+func (d *Dispatcher) Shutdown(ctx context.Context) (notes []eventlog.Event, err error) {
+	defer func() { d.record(notes) }()
 	// 🚨 止めるのを途中で打ち切らない: SIGTERM で ctx が切られても、止める・一覧を取るのは続ける (1 回ずつに上限を付ける)。
 	// どこかで失敗しても、止められる分は止めて最後の確かめ (ensureStopped) まで進む (1 回の一覧の失敗で 1 本も止めずに抜けない)
 	base := context.WithoutCancel(ctx)
 	ctx, cancel := context.WithTimeout(base, shutdownBudget) // カードから辿って止める段の上限 (claude が応答しなくても次の段へ進む)
 	defer cancel()
 	now := d.Now()
-	var notes []string
 	d.cancelRun(10 * time.Second) // テストの係の実行中の 1 本を取り消す (再開した PG は続きから頼み直す)
 	// 止める直前に PG が置いた質問・完了の依頼を先に適用する (作業中のまま分解済みへ戻すと、次の起動で除けられて失われる)
 	if res, err := store.Apply(d.Dir, now); err != nil {
-		notes = append(notes, "箱の依頼を適用できない (止めるのは続ける): "+err.Error())
+		notes = append(notes, ev(eventlog.KindError, "", "", "箱の依頼を適用できない (止めるのは続ける): "+err.Error()))
 	} else {
-		for _, r := range res {
-			if r.Err != "" {
-				notes = append(notes, fmt.Sprintf("箱の依頼 %s (%s) を除けた: %s", r.ID, r.Kind, r.Err))
-			}
-		}
+		notes = append(notes, applied(res)...)
 	}
 	failed, tried := d.stopCards(ctx, &notes)
 	if d.Publish != nil {
@@ -91,7 +88,7 @@ func (d *Dispatcher) Shutdown(ctx context.Context) ([]string, error) {
 			len(remaining), strings.Join(remaining, ", "))
 	}
 	if failed > 0 { // カードの側で止めきれなかったと書いたものも、記録にある session は確かめた結果止まっている (列を変えなかっただけ)
-		notes = append(notes, fmt.Sprintf("%d 枚のカードは列を変えずに残した (記録にある session は止まっていることを確かめた)", failed))
+		notes = append(notes, ev(eventlog.KindStop, "", "", fmt.Sprintf("%d 枚のカードは列を変えずに残した (記録にある session は止まっていることを確かめた)", failed)))
 	}
 	return notes, nil
 }
@@ -109,13 +106,13 @@ const stopCallTimeout = 30 * time.Second
 // stopCards はカードから辿って PG を止め、作業中のカードを次の起動で続きから再開できる形にする。止めきれなかったカードの数を返す。
 // 一覧・記録を読めない周は待って取り直し、shutdownPolls を過ぎたら諦めて戻る (後の ensureStopped が記録から止める)。
 // 止めようとした session (短い id → カード) も返す: 起動・再開の途中で取り込んだ session は記録にまだ無いので、確かめる段 (ensureStopped) に渡す。
-func (d *Dispatcher) stopCards(ctx context.Context, notes *[]string) (int, map[string]string) {
+func (d *Dispatcher) stopCards(ctx context.Context, notes *[]eventlog.Event) (int, map[string]string) {
 	tried := map[string]string{}
 	done := map[string]bool{}
 	seen := map[string]bool{}
-	note := func(n string) { // 周をまたいで同じ知らせを重ねない
-		if !seen[n] {
-			seen[n] = true
+	note := func(n eventlog.Event) { // 周をまたいで同じ知らせを重ねない
+		if !seen[n.Reason] {
+			seen[n.Reason] = true
 			*notes = append(*notes, n)
 		}
 	}
@@ -130,7 +127,7 @@ func (d *Dispatcher) stopCards(ctx context.Context, notes *[]string) (int, map[s
 		ss, err := d.List(lctx)
 		cancel()
 		if err != nil {
-			note("session の一覧を取れない (取り直す): " + err.Error())
+			note(ev(eventlog.KindError, "", "", "session の一覧を取れない (取り直す): "+err.Error()))
 			if last {
 				return failed, tried
 			}
@@ -139,14 +136,14 @@ func (d *Dispatcher) stopCards(ctx context.Context, notes *[]string) (int, map[s
 		// 起動・再開の直後で記録にまだ無い PG を、止める前に記録へ載せる
 		_, warn, err := d.register(now, ss)
 		if err != nil {
-			note("起動した session を記録に載せられない (止めるのは続ける): " + err.Error())
+			note(ev(eventlog.KindError, "", "", "起動した session を記録に載せられない (止めるのは続ける): "+err.Error()))
 		}
 		for _, w := range warn {
 			note(w)
 		}
 		st, err := store.Load(d.Dir)
 		if err != nil {
-			note("カードの記録を読めない (取り直す): " + err.Error())
+			note(ev(eventlog.KindError, "", "", "カードの記録を読めない (取り直す): "+err.Error()))
 			if last {
 				return failed, tried
 			}
@@ -154,7 +151,7 @@ func (d *Dispatcher) stopCards(ctx context.Context, notes *[]string) (int, map[s
 		}
 		reg, err := live.LoadRegistry(filepath.Join(d.Dir, live.RegistryFile))
 		if err != nil {
-			note("pro-con が起動した session の記録を読めない (取り直す): " + err.Error())
+			note(ev(eventlog.KindError, "", "", "pro-con が起動した session の記録を読めない (取り直す): "+err.Error()))
 			if last {
 				return failed, tried
 			}
@@ -173,7 +170,7 @@ func (d *Dispatcher) stopCards(ctx context.Context, notes *[]string) (int, map[s
 			done[c.ID] = true
 			if wait { // 待っても止められる形にならなかった。列は変えない
 				failed++
-				*notes = append(*notes, c.ID+" の PG は落ちて戻らない / 一覧に出ないので止められない (列はそのまま。次の dispatcher が扱う)")
+				*notes = append(*notes, ev(eventlog.KindStop, c.ID, c.Session, c.ID+" の PG は落ちて戻らない / 一覧に出ないので止められない (列はそのまま。次の dispatcher が扱う)"))
 				continue
 			}
 			recorded := c.Stopped && c.State != card.Running // 前の Shutdown で止めたと書いた (止め直しの周ごとに履歴を足さない)
@@ -184,15 +181,15 @@ func (d *Dispatcher) stopCards(ctx context.Context, notes *[]string) (int, map[s
 				cancel()
 				if err != nil {
 					failed++
-					*notes = append(*notes, fmt.Sprintf("%s の PG (%s) を止められない: %v", c.ID, target, err))
+					*notes = append(*notes, ev(eventlog.KindStop, c.ID, target, fmt.Sprintf("%s の PG (%s) を止められない: %v", c.ID, target, err)))
 					continue
 				}
-				*notes = append(*notes, fmt.Sprintf("%s の PG (%s) を止めた", c.ID, target))
+				*notes = append(*notes, ev(eventlog.KindStop, c.ID, target, fmt.Sprintf("%s の PG (%s) を止めた", c.ID, target)))
 			}
 			if recorded { // 止め直しても履歴は書き直さない (起動の途中の印だけは外す: 残すと次の dispatcher が二重に扱う)
 				if c.Launching != "" {
 					if err := d.update(c.ID, func(cc *card.Card) { cc.Launching = "" }); err != nil {
-						*notes = append(*notes, fmt.Sprintf("%s のカードを書き直せない (PG は止めた): %v", c.ID, err))
+						*notes = append(*notes, ev(eventlog.KindError, c.ID, target, fmt.Sprintf("%s のカードを書き直せない (PG は止めた): %v", c.ID, err)))
 					}
 				}
 				continue
@@ -210,7 +207,7 @@ func (d *Dispatcher) stopCards(ctx context.Context, notes *[]string) (int, map[s
 				}
 				cc.History = append(cc.History, card.Event{At: now, Text: text})
 			}); err != nil {
-				*notes = append(*notes, fmt.Sprintf("%s のカードを書き直せない (PG は止めた): %v", c.ID, err))
+				*notes = append(*notes, ev(eventlog.KindError, c.ID, target, fmt.Sprintf("%s のカードを書き直せない (PG は止めた): %v", c.ID, err)))
 			}
 		}
 		if waiting == 0 {
@@ -231,7 +228,7 @@ const ensurePolls = 15
 // cards が nil でなければ、そのカードの session だけを確かめる (閉じたカードの PG を止める = close.go)。
 // polls は止め直しの周の数 (周の間は shutdownPoll 待つ)。0 なら待たずに 1 周だけ止めて、もう 1 度だけ見る。
 // sent は止める要求が通った回数 (「pro-con が止めた」と「既に止まっていた」を区別する = close.go)。
-func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string, cards map[string]bool, polls int) (notes, remaining []string, sent int, err error) {
+func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string, cards map[string]bool, polls int) (notes []eventlog.Event, remaining []string, sent int, err error) {
 	list := d.ListAll
 	if list == nil {
 		list = d.List
@@ -245,7 +242,7 @@ func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string,
 		// 入れ替わった前の session の記録が読めなくても、記録にある session は止める (読めない分は知らせる)
 		if retired, err := live.LoadRetired(regPath); err != nil {
 			if attempt == 0 {
-				notes = append(notes, "再開で入れ替わった前の session の記録を読めない (その分は確かめられない): "+err.Error())
+				notes = append(notes, ev(eventlog.KindError, "", "", "再開で入れ替わった前の session の記録を読めない (その分は確かめられない): "+err.Error()))
 			}
 		} else {
 			reg = append(reg, retired...)
@@ -274,10 +271,10 @@ func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string,
 				err := d.Launch.Stop(sctx, s.ID)
 				cancel()
 				if err != nil {
-					notes = append(notes, fmt.Sprintf("%s の PG (%s) を止め直せない: %v", o.CardID, s.ID, err))
+					notes = append(notes, ev(eventlog.KindStop, o.CardID, s.ID, fmt.Sprintf("%s の PG (%s) を止め直せない: %v", o.CardID, s.ID, err)))
 				} else {
 					sent++
-					notes = append(notes, fmt.Sprintf("%s の PG (%s) がまだ動いていたので止め直した", o.CardID, s.ID))
+					notes = append(notes, ev(eventlog.KindStop, o.CardID, s.ID, fmt.Sprintf("%s の PG (%s) がまだ動いていたので止め直した", o.CardID, s.ID)))
 				}
 			}
 		}

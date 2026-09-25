@@ -12,6 +12,7 @@ import (
 
 	"pro-con/agents"
 	"pro-con/card"
+	"pro-con/eventlog"
 	"pro-con/live"
 	"pro-con/store"
 )
@@ -281,7 +282,7 @@ func TestRegisterRefusesPidChangeNotCausedByDispatcher(t *testing.T) {
 		t.Fatal(err)
 	}
 	reg, _ := live.LoadRegistry(filepath.Join(dir, live.RegistryFile))
-	if len(reg) != 1 || reg[0].PID != 42 || !strings.Contains(strings.Join(notes, "\n"), "外から操作された疑い") {
+	if len(reg) != 1 || reg[0].PID != 42 || !strings.Contains(joinNotes(notes), "外から操作された疑い") {
 		t.Fatalf("外で pid が変わった session の記録を書き直した / 知らせない: %+v %v", reg, notes)
 	}
 	// dispatcher 自身が再開した後なら書き直す。再開の後に dispatcher が起動し直した形 (新しい Dispatcher) でも同じ。
@@ -322,7 +323,7 @@ func TestRegisterRefusesOlderSession(t *testing.T) {
 	}
 	notes, _ := d.Tick(context.Background())
 	reg, _ := live.LoadRegistry(filepath.Join(dir, live.RegistryFile))
-	if len(reg) != 0 || !strings.Contains(strings.Join(notes, "\n"), "起動・再開より前") {
+	if len(reg) != 0 || !strings.Contains(joinNotes(notes), "起動・再開より前") {
 		t.Fatalf("起動より前の session を取り込んだ: %+v %v", reg, notes)
 	}
 }
@@ -398,7 +399,7 @@ func TestResumeRefusesWhenShortIDPointsElsewhere(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(l.resumes) != 0 || !strings.Contains(strings.Join(notes, "\n"), "別の session") {
+	if len(l.resumes) != 0 || !strings.Contains(joinNotes(notes), "別の session") {
 		t.Fatalf("別の session を指す短い id で再開した: %v %v", l.resumes, notes)
 	}
 }
@@ -573,7 +574,7 @@ func newCrashRig(t *testing.T) *crashRig {
 	return r
 }
 
-func (r *crashRig) tick(t *testing.T) []string {
+func (r *crashRig) tick(t *testing.T) []eventlog.Event {
 	t.Helper()
 	notes, err := r.d.Tick(context.Background())
 	if err != nil {
@@ -598,7 +599,7 @@ func TestCrashOnceReregisters(t *testing.T) {
 	if len(reg) != 1 || reg[0].PID != 43 || c.State != card.Running || len(c.Crashes) != 1 || len(r.l.stops) != 0 {
 		t.Fatalf("1 回の自動の再開を取り込まない: reg=%+v %v crashes=%v stops=%v notes=%v", reg, c.State, c.Crashes, r.l.stops, notes)
 	}
-	if strings.Contains(strings.Join(notes, "\n"), "外から操作された疑い") {
+	if strings.Contains(joinNotes(notes), "外から操作された疑い") {
 		t.Fatalf("自動の再開を外からの操作と知らせた: %v", notes)
 	}
 }
@@ -891,7 +892,7 @@ func TestResumeRefusesWithoutCwd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(l.resumes) != 0 || !strings.Contains(strings.Join(notes, "\n"), "作業ディレクトリ") {
+	if len(l.resumes) != 0 || !strings.Contains(joinNotes(notes), "作業ディレクトリ") {
 		t.Fatalf("cwd の無い session を再開した: %v %v", l.resumes, notes)
 	}
 }
@@ -1117,7 +1118,7 @@ func TestResumeRefusesWhenPidDiffers(t *testing.T) {
 		}
 	}
 	notes := r.tick(t)
-	if len(r.l.resumes) != 0 || len(r.l.stops) != 0 || !strings.Contains(strings.Join(notes, "\n"), "pid が記録") {
+	if len(r.l.resumes) != 0 || len(r.l.stops) != 0 || !strings.Contains(joinNotes(notes), "pid が記録") {
 		t.Fatalf("pid の違う session を止めた / 再開した: resumes=%v stops=%v %v", r.l.resumes, r.l.stops, notes)
 	}
 }
@@ -1127,7 +1128,7 @@ func TestRegisterWarnsOnUnexpectedKind(t *testing.T) {
 	r := newCrashRig(t)
 	r.ss[0].Kind = ""
 	notes := r.tick(t)
-	if !strings.Contains(strings.Join(notes, "\n"), "background ではない") {
+	if !strings.Contains(joinNotes(notes), "background ではない") {
 		t.Fatalf("kind の違う session を黙って飛ばした: %v", notes)
 	}
 }

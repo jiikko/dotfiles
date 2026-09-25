@@ -11,6 +11,7 @@ import (
 
 	"pro-con/agents"
 	"pro-con/card"
+	"pro-con/eventlog"
 	"pro-con/store"
 )
 
@@ -79,7 +80,7 @@ func newUsageRig(t *testing.T) *usageRig {
 	return r
 }
 
-func (r *usageRig) tick(t *testing.T) []string {
+func (r *usageRig) tick(t *testing.T) []eventlog.Event {
 	t.Helper()
 	notes, err := r.d.Tick(context.Background())
 	if err != nil {
@@ -147,10 +148,10 @@ func TestUsageRefreshAndStale(t *testing.T) {
 func TestUsageHoldNotedOnce(t *testing.T) {
 	r := newUsageRig(t)
 	r.pct = 96
-	held := func(notes []string) int {
+	held := func(notes []eventlog.Event) int {
 		n := 0
-		for _, s := range notes {
-			if strings.Contains(s, "起動・再開しない") {
+		for _, e := range notes {
+			if e.Kind == eventlog.KindHold && strings.Contains(e.Reason, "起動・再開しない") {
 				n++
 			}
 		}
@@ -219,8 +220,8 @@ func TestHoldNotBlamedOnUsageAtFullLimit(t *testing.T) {
 	r.pct = 85
 	r.now = t0.Add(usageEvery)
 	for _, s := range r.tick(t) {
-		if strings.Contains(s, "起動・再開しない") {
-			t.Fatalf("上限で止まっているのに枠のせいにした: %q", s)
+		if strings.Contains(s.Reason, "起動・再開しない") {
+			t.Fatalf("上限で止まっているのに枠のせいにした: %q", s.Reason)
 		}
 	}
 }

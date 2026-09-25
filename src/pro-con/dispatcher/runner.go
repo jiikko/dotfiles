@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"pro-con/card"
+	"pro-con/eventlog"
 	"pro-con/live"
 	"pro-con/store"
 )
@@ -55,8 +56,8 @@ type runResult struct {
 }
 
 // tickRuns はテストの係の 1 回ぶん: 終わった実行の結果を渡し、次の実行を始め、待っているカードに順番を書く。
-func (d *Dispatcher) tickRuns(ctx context.Context, now time.Time) ([]string, error) {
-	var notes []string
+func (d *Dispatcher) tickRuns(ctx context.Context, now time.Time) ([]eventlog.Event, error) {
+	var notes []eventlog.Event
 	if d.active != nil { // 実行中のカードが作業中の列を離れた / 頼みが取り下げられたら、実行を取り消す (結果はもう誰も待っていない)
 		st, err := store.Load(d.Dir)
 		if err != nil {
@@ -65,7 +66,7 @@ func (d *Dispatcher) tickRuns(ctx context.Context, now time.Time) ([]string, err
 		for _, c := range st.Cards {
 			if c.ID == d.active.cardID && (c.State != card.Running || c.Run == "") {
 				d.cancelRun(10 * time.Second)
-				notes = append(notes, c.ID+": 結果を待つ PG が居なくなったので実行を取り消した")
+				notes = append(notes, ev(eventlog.KindRun, c.ID, c.Session, c.ID+": 結果を待つ PG が居なくなったので実行を取り消した"))
 				break
 			}
 		}
@@ -145,7 +146,7 @@ func (d *Dispatcher) tickRuns(ctx context.Context, now time.Time) ([]string, err
 			}
 			d.active = job
 			go d.execute(runCtx, job, c.RunCwd) // 頼んだ場所 (worktree かその下) で実行する
-			notes = append(notes, fmt.Sprintf("%s のコマンドを実行する: %s", c.ID, c.Run))
+			notes = append(notes, ev(eventlog.KindRun, c.ID, c.Session, fmt.Sprintf("%s のコマンドを実行する: %s", c.ID, c.Run)))
 		}
 	}
 	for i, c := range queue { // 待っているカードに順番を書く (1 始まり。実行中の 1 本の後ろ)
@@ -198,7 +199,7 @@ func (d *Dispatcher) execute(ctx context.Context, job *runJob, dir string) {
 }
 
 // finishRun は結果をカードに持たせ、分解済みへ戻す (dispatch が結果を渡して同じ session を再開する)。
-func (d *Dispatcher) finishRun(now time.Time, job *runJob, r runResult) (string, error) {
+func (d *Dispatcher) finishRun(now time.Time, job *runJob, r runResult) (eventlog.Event, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "テストの係の結果: `%s` rc=%d (所要 %s)\n", job.command, r.rc, now.Sub(job.start).Round(time.Second))
 	switch {
@@ -231,7 +232,7 @@ func (d *Dispatcher) finishRun(now time.Time, job *runJob, r runResult) (string,
 		cc.State, cc.Since, cc.Resume = card.Planned, now, text
 		cc.History = append(cc.History, card.Event{At: now, Text: fmt.Sprintf("テストの係: rc=%d (%s)。結果を渡して PG を再開する", r.rc, clipLine(job.command))})
 	})
-	return fmt.Sprintf("%s のコマンドが終わった: rc=%d", job.cardID, r.rc), err
+	return ev(eventlog.KindRun, job.cardID, "", fmt.Sprintf("%s のコマンドが終わった: rc=%d", job.cardID, r.rc)), err
 }
 
 func clipLine(s string) string {
