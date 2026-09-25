@@ -119,7 +119,7 @@
   終了で止めた PM を起動のたびに再開していた (敵対的レビューで再現)。pm-guide の役目 4 に、人に回す質問の目安と handoff を書いた
 - PG への指示 (`dispatcher.Prompt`) に「run を頼んだら、その結果が届くまで ask しない」を足した
 - 確かめたこと: テスト 7 本 (`pm_question_test.go` 5 本・`TestHandoffRecordsInHistory`・`TestPromptCarriesDiscipline` / `TestCardCommandAskAnswer` に追記)。
-  直す前に red を見た。変異は `bin/mutate-verify` で 13 本、すべて想定のテストが red。敵対的レビュー (sonnet 以外の read-only サブエージェント) 1 回
+  直す前に red を見た。変異は `bin/mutate-verify` で 13 本、すべて想定のテストが red。敵対的レビュー (read-only のサブエージェント) 1 回。指摘のうち再現した「人に回した質問で PM を起こし続ける」を直した
 - 残り / 未確認のリスク:
   - ask は run の頼みが残っていても受け付ける (指示に書いただけで機械では強制しない)。PG が指示を守らなければ C-020 と同じく実行が取り消される。
     構造で直すなら store の ask で「前に頼んだ実行の結果をまだ返していない」を断る (run と同じ条件)
