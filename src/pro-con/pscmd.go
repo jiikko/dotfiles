@@ -143,15 +143,18 @@ func collectProcs(dir string, now time.Time, procs map[int]string) (rows []Proc,
 		warns = append(warns, "起動の記録を読めない: "+err.Error())
 	}
 	sort.SliceStable(reg, func(i, j int) bool {
-		return reg[i].CardID == dispatcher.PMCardID && reg[j].CardID != dispatcher.PMCardID
+		return roleOrder(reg[i].CardID) < roleOrder(reg[j].CardID)
 	})
 	for _, o := range reg {
 		p := Proc{Role: "PG", PID: o.PID, Card: o.CardID, Session: o.ID, State: "止まっている"}
 		if !o.StartedAt.IsZero() {
 			p.Age = now.Sub(o.StartedAt)
 		}
-		if o.CardID == dispatcher.PMCardID {
+		switch o.CardID {
+		case dispatcher.PMCardID:
 			p.Role, p.Card = "PM", ""
+		case dispatcher.IntegratorCardID:
+			p.Role, p.Card = "取り込み", ""
 		}
 		if alive(o.PID) && strings.Contains(procs[o.PID], "claude") { // pid が別のプロセスに使い回されたものを数えない (dispatcher の行と同じ)
 			p.State = "動いている"
@@ -197,4 +200,15 @@ func collectProcs(dir string, now time.Time, procs map[int]string) (rows []Proc,
 		}
 	}
 	return rows, warns
+}
+
+// roleOrder は一覧の並び (PM → 取り込みの係 → PG)。
+func roleOrder(cardID string) int {
+	switch cardID {
+	case dispatcher.PMCardID:
+		return 0
+	case dispatcher.IntegratorCardID:
+		return 1
+	}
+	return 2
 }

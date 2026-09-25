@@ -20,6 +20,7 @@ type fakeRunner struct {
 	release  chan int
 	started  chan struct{} // 実行を始めた (記録を足した) 知らせ。テストはこれを待ってから dirs / commands を読む (別の goroutine で走るため)
 	canceled bool          // 取り消し (ctx.Done) を見た
+	busy     int           // 残り何回、repo の lock を他が持っている (始めずに errRunLockBusy を返す) 形にするか
 }
 
 // waitStarted は n 本目の実行が始まるまで待つ (上限 5 秒)。
@@ -36,6 +37,10 @@ func (f *fakeRunner) Run(ctx context.Context, dir, command, logPath, _ string) (
 	f.dirs, f.commands = append(f.dirs, dir), append(f.commands, command)
 	_ = os.WriteFile(logPath, []byte("FAIL: TestFoo (0.01s)\n--- 出力の末尾 ---\n"), 0o600)
 	f.started <- struct{}{}
+	if f.busy > 0 {
+		f.busy--
+		return -1, errRunLockBusy
+	}
 	select {
 	case rc := <-f.release:
 		return rc, nil
@@ -291,4 +296,103 @@ func TestRunFromWorktreeSubdirectory(t *testing.T) {
 	if c := states(t, r.dir)["C-001"]; c.RunCwd != "" {
 		t.Fatalf("結果を渡した後も頼んだ場所の記録が残る: %q", c.RunCwd)
 	}
+}
+
+// repo の lock を pro-con の外が持っていて始められなかった 1 本は、結果にせず (PG を再開しない・要約しない) 列の先頭で待たせ、
+// runLockRetry の後に取りにいく。待っている間は「外が使用中」と出し、取り直しで履歴を伸ばさない。
+func TestRunWaitsWhileRepoLockIsHeldOutside(t *testing.T) {
+	r, fr, summarized := runRig(t, 2)
+	now := t0
+	r.d.Now = func() time.Time { return now }
+	fr.busy = 2
+	askRun(t, r.dir, "C-001", "make test", t0)
+	askRun(t, r.dir, "C-002", "go test ./...", t0.Add(time.Second))
+	r.tick(t)
+	fr.waitStarted(t)
+	waitDone(t, r)
+	cs := states(t, r.dir)
+	c := cs["C-001"]
+	if len(r.l.resumes) != 0 || len(*summarized) != 0 || c.Run != "make test" || c.Exec.Active() {
+		t.Fatalf("始めていない 1 本を結果にした: resumes=%v summarized=%d Run=%q exec=%v", r.l.resumes, len(*summarized), c.Run, c.Exec)
+	}
+	if c.Wait.Kind != card.WaitResource || c.Wait.Resource != runBusyResource || c.Wait.Position != 1 || cs["C-002"].Wait.Position != 2 {
+		t.Fatalf("外が使用中の待ちを出さない: C-001=%+v C-002=%+v", c.Wait, cs["C-002"].Wait)
+	}
+	now = now.Add(runLockRetry - time.Second)
+	r.tick(t)
+	if len(fr.commands) != 1 {
+		t.Fatalf("間を空けずに取りにいった: %v", fr.commands)
+	}
+	now = now.Add(time.Second)
+	r.tick(t) // 2 回目も外が持っている
+	fr.waitStarted(t)
+	waitDone(t, r)
+	now = now.Add(runLockRetry)
+	r.tick(t) // 3 回目で始まる
+	fr.waitStarted(t)
+	if len(fr.commands) != 3 || fr.commands[2] != "make test" || states(t, r.dir)["C-001"].Wait.Kind != card.WaitNone {
+		t.Fatalf("空いた後に同じカードから始めない: %v %+v", fr.commands, states(t, r.dir)["C-001"].Wait)
+	}
+	fr.release <- 0
+	waitDone(t, r)
+	if len(r.l.resumes) != 1 || !strings.Contains(r.l.resumes[0], "rc=0") {
+		t.Fatalf("始めた後の結果を渡さない: %v", r.l.resumes)
+	}
+	var waits, starts int
+	for _, e := range states(t, r.dir)["C-001"].History {
+		waits += strings.Count(e.Text, "pro-con の外が持っている")
+		starts += strings.Count(e.Text, "テストの係が実行を始めた")
+	}
+	if waits != 1 || starts != 1 {
+		t.Fatalf("取り直しのたびに履歴を伸ばした: 待ち=%d 始めた=%d", waits, starts)
+	}
+}
+
+// lock が空くのを待つのには上限がある (中身を読めない lock のように人が動くまで空かない busy を黙って待ち続けない)。
+// 超えたら「実行できなかった」と lockman の言い分を渡して PG を再開する。
+func TestRunGivesUpWaitingForRepoLock(t *testing.T) {
+	r, fr, _ := runRig(t, 1)
+	now := t0
+	r.d.Now = func() time.Time { return now }
+	fr.busy = 1000
+	askRun(t, r.dir, "C-001", "make test", t0)
+	for i := 0; len(r.l.resumes) == 0; i++ {
+		if i > int(runLockGiveUp/runLockRetry)+2 {
+			t.Fatalf("上限を過ぎても待ち続ける: now=%s", now.Sub(t0))
+		}
+		r.tick(t)
+		fr.waitStarted(t)
+		waitDone(t, r)
+		now = now.Add(runLockRetry)
+	}
+	if now.Sub(t0) < runLockGiveUp || !strings.Contains(r.l.resumes[0], "空かない") || !strings.Contains(r.l.resumes[0], errRunLockBusy.Error()) {
+		t.Fatalf("上限の前に諦めた / 理由を渡さない (%s): %s", now.Sub(t0), r.l.resumes[0])
+	}
+}
+
+// 待たせていた頼みが取り下げられたら、待ちの印を持ち越さない (次の頼みを間を空けずに始め、「外が使用中」を出さず、始めた履歴を書く)。
+func TestRunBlockIsForgottenWhenRequestIsDropped(t *testing.T) {
+	r, fr, _ := runRig(t, 1)
+	r.d.Now = func() time.Time { return t0 }
+	fr.busy = 1
+	askRun(t, r.dir, "C-001", "make test", t0)
+	r.tick(t)
+	fr.waitStarted(t)
+	waitDone(t, r)
+	setCard(t, r.dir, "C-001", func(c *card.Card) { c.DropRun() })
+	askRun(t, r.dir, "C-001", "go test ./x", t0) // 間に Tick を挟まない (取り下げを列から見ることができない形)
+	r.tick(t)
+	fr.waitStarted(t)
+	if len(fr.commands) != 2 || fr.commands[1] != "go test ./x" {
+		t.Fatalf("取り下げた頼みの待ちを持ち越して、次の頼みを待たせた: %v", fr.commands)
+	}
+	var starts int
+	for _, e := range states(t, r.dir)["C-001"].History {
+		starts += strings.Count(e.Text, "テストの係が実行を始めた")
+	}
+	if starts != 2 {
+		t.Fatalf("別の頼みを取り直し扱いにして、始めた履歴を書かない: %d", starts)
+	}
+	fr.release <- 0
+	waitDone(t, r)
 }

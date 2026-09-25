@@ -40,6 +40,7 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 	stopAll := fs.Bool("stop", false, "動いている dispatcher と、pro-con が起動した PG を止める (次に dispatcher を起動したら続きから再開する)")
 	e2eRoot := fs.String("e2e", "", "e2e モードの置き場 (PG は台本どおりに動く偽物。claude を起動しない。pro-con e2e が使う)")
 	pmFlag := fs.String("pm", "", `"off" なら PM を起動も再開もしない (依頼の列のカードはそのまま置く)。"on" / "off" を書けば設定の pm より勝つ`)
+	intFlag := fs.String("integrator", "", `"off" なら取り込みの係を起動も再開もしない (レビューの列のカードはそのまま置く)。"on" / "off" を書けば設定の integrator より勝つ`)
 	alone := fs.Duration("exit-without-screens", 0, "開いている画面が 1 つも無い状態がこの長さ続いたら、PG を止めて抜ける (画面が起こすときに付ける。0 なら抜けない)")
 	fromScreen := fs.Bool(fromScreenFlag, false, "画面が起こす / 止める (内部用。人が止めた印を --stop で置かず、起動で外さない。印があれば起動せずに抜ける)")
 	if err := fs.Parse(args); err != nil {
@@ -50,6 +51,11 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 		return 2
 	}
 	pmOff, pmWhy, err := resolvePM(*pmFlag, pm.Mode)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", err)
+		return 2
+	}
+	intOff, intWhy, err := resolveOnOff("integrator", *intFlag, pm.IntegratorMode)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", err)
 		return 2
@@ -119,6 +125,10 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 	sayClaude(d, cl)
 	if d.PMOff { // 依頼の列にカードが溜まっても PM が来ないのは、この設定のせいだと後から分かるように (dispatcher の値から出す = 渡し忘れも見える)
 		say(d, eventlog.KindHold, "PM を起こさない ("+pmWhy+")。依頼の列のカードはそのまま置く (PM は人か外の Claude が行う)")
+	}
+	d.IntegratorOff = intOff
+	if d.IntegratorOff {
+		say(d, eventlog.KindHold, "取り込みの係を起こさない ("+intWhy+")。レビューの列のカードはそのまま置く (取り込みは人か外の Claude が行う)")
 	}
 	defer d.CancelRun()                                                                                    // どの出口 (Tick のエラー・SIGTERM) でも、テストの係の実行を残して抜けない
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP) // SIGHUP: 端末・tmux のペインを閉じた (既定の動作で死ぬと実行を残す)
@@ -363,22 +373,29 @@ func sayOr(d *dispatcher.Dispatcher, errOut io.Writer, kind, text string) {
 type pmConfig struct {
 	Repo string // PM を起動する repo (空なら PM を起こさない)
 	Mode string // 設定の pm ("on" / "off" / 空)
+	// IntegratorMode は設定の integrator ("on" / "off" / 空。487)
+	IntegratorMode string
 }
 
-// resolvePM は PM を起こさないかを決める。dispatcher の --pm が設定の pm に勝つ (起動ごとに明示した方を優先する)。
-// why は off のとき、どちらで決まったか。
+// resolvePM は PM を起こさないかを決める (resolveOnOff の pm 版)。
 func resolvePM(flagVal, cfgVal string) (off bool, why string, err error) {
+	return resolveOnOff("pm", flagVal, cfgVal)
+}
+
+// resolveOnOff は役 (pm / integrator) を起こさないかを決める。dispatcher の --<name> が設定の <name> に勝つ (起動ごとに明示した方を優先する)。
+// why は off のとき、どちらで決まったか。
+func resolveOnOff(name, flagVal, cfgVal string) (off bool, why string, err error) {
 	switch flagVal {
 	case "off":
-		return true, "--pm=off", nil
+		return true, "--" + name + "=off", nil
 	case "on":
 		return false, "", nil
 	case "":
 	default:
-		return false, "", fmt.Errorf(`--pm は "on" か "off" (%q)`, flagVal)
+		return false, "", fmt.Errorf(`--%s は "on" か "off" (%q)`, name, flagVal)
 	}
 	if cfgVal == "off" {
-		return true, `設定 pm = "off"`, nil
+		return true, `設定 ` + name + ` = "off"`, nil
 	}
 	return false, "", nil
 }
@@ -399,8 +416,8 @@ func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo stri
 	}
 	home, _ := os.UserHomeDir() // 分からなければ "" (言語と ~/.claude/CLAUDE.md の除外を渡さないだけで、起動は止めない)
 	haiku := dispatcher.HaikuSettings(home)
-	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{Claude: cl.Path, UserSettings: userSettingsPath(home)}, PMRepo: pmRepo, PMGuide: pmGuide, PMOff: pmOff,
-		Runner: dispatcher.ExecRunner{}, Summarize: dispatcher.HaikuSummarize(cl.Path, dir, haiku), Ask: dispatcher.HaikuAsk(cl.Path, dir, haiku), Usage: dispatcher.ReadUsage(cl.Path, dir),
+	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{Claude: cl.Path, UserSettings: userSettingsPath(home)}, PMRepo: pmRepo, PMGuide: pmGuide, PMOff: pmOff, IntegratorGuide: integratorGuide,
+		Runner: dispatcher.ExecRunner{Lockman: "lockman"}, Summarize: dispatcher.HaikuSummarize(cl.Path, dir, haiku), Ask: dispatcher.HaikuAsk(cl.Path, dir, haiku), Usage: dispatcher.ReadUsage(cl.Path, dir),
 		List: func(ctx context.Context) ([]agents.Session, error) {
 			return agents.List(ctx, agents.ExecRunner(cl.Path))
 		},

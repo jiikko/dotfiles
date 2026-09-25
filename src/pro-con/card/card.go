@@ -211,6 +211,26 @@ type Event struct {
 	Text string
 }
 
+// AttachKind は添付の種類 (人間がどう見るかを決める。issue 453)。
+type AttachKind string
+
+const (
+	AttachImage AttachKind = "画像"   // open で Preview に渡す
+	AttachText  AttachKind = "文字"   // 詳細の中にそのまま出す (tmux の capture-pane -e の色つきの文字など)
+	AttachFile  AttachKind = "ファイル" // それ以外。open に渡す
+)
+
+// Attachment は PG がカードに付けた証拠 1 件 (作った画面の見た目・コマンドの出力。issue 453)。
+// ファイルは dispatcher が状態の置き場の attachments/<カード>/ へ移したもの (Path は絶対パス)。カードが記録から外れたら dispatcher が消す
+type Attachment struct {
+	Path string
+	Name string // PG が付けたときの元のファイル名
+	Note string `json:",omitempty"`
+	Kind AttachKind
+	Size int64
+	At   time.Time // PG が付けた時刻
+}
+
 type Card struct {
 	ID       string
 	ParentID string // 1 つの依頼を分けたとき / 別件の追加オーダーの元
@@ -232,7 +252,9 @@ type Card struct {
 	Orders  []Order
 	Btws    []Btw `json:",omitempty"`
 	History []Event
-	Log     []string // PG の出力の末尾 (本番は transcript から読む)
+	// Attachments は PG が `pro-con card attach` で付けた添付 (付けた順。issue 453)
+	Attachments []Attachment `json:",omitempty"`
+	Log         []string     // PG の出力の末尾 (本番は transcript から読む)
 	// Resume は次に PG を再開するときに渡す文 (質問への回答)。dispatcher が渡したら空にする (本物のモードだけ。426 の決定 2)
 	Resume string `json:",omitempty"`
 	// Launching は dispatcher が PG の起動・再開を始めて、結果をまだ確かめていない印 ("起動" / "再開")。起動の前に記録へ書く
@@ -313,7 +335,7 @@ func HandoffText(by, why string) string { return by + handoffMark + why }
 
 // HandedOff は今の質問を人に回したか (質問待ちに入った後の履歴に HandoffText がある)。人の番の目印 (452) ができるまでは履歴から読む。
 func (c Card) HandedOff() bool {
-	if c.State != Waiting || c.Wait.Kind != WaitQuestion {
+	if (c.State != Waiting || c.Wait.Kind != WaitQuestion) && c.State != Review { // レビュー待ちは取り込みの係が人に回す (487)
 		return false
 	}
 	for _, e := range c.History {

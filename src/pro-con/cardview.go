@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -298,6 +299,17 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 		}
 		p("追加オーダー (%s・%s): %s", o.Kind.Label(), st, o.Text)
 	}
+	if len(c.Attachments) > 0 { // PG が付けた証拠 (issue 453)。画像はパスを Read / open する
+		p("")
+		p("添付")
+		for _, a := range c.Attachments {
+			line := fmt.Sprintf("  %s %s  %s  %s", a.At.Local().Format("01-02 15:04"), a.Kind, attachLabel(a), a.Path)
+			if _, err := os.Stat(a.Path); err != nil {
+				line += "  (ファイルが無い: 書庫へ移したか削除したときに消した)"
+			}
+			p("%s", line)
+		}
+	}
 	p("")
 	p("履歴")
 	for _, e := range c.History {
@@ -526,6 +538,14 @@ func writeJSON(stdout, stderr io.Writer, v any) int {
 		return 1
 	}
 	return 0
+}
+
+// attachLabel は添付の一言 (無ければ元のファイル名)。
+func attachLabel(a card.Attachment) string {
+	if strings.TrimSpace(a.Note) != "" {
+		return a.Note
+	}
+	return a.Name
 }
 
 func orDashCLI(s string) string {

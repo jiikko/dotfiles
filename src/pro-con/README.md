@@ -19,13 +19,18 @@ bin/pro-con dispatcher --stop  # dispatcher と、pro-con が起動した PG を
                                # 人が止めた印 (`dispatcher-held`) を置く: 開いている画面は dispatcher を起こし直さず、ゲージに「止めてある」と出す。外すのは画面の c か、次に手で `pro-con dispatcher` を起動したとき (issue 459)
 bin/pro-con card …   # PM / PG が使うカードの操作 (add / plan / ask / answer / handoff / review / rework / close / delete。plan --after は前のカードが完了するまで起動させない = issue 468。handoff は PM が PG の質問を人に回したことを履歴に残す。rework はレビュー待ちを直してほしい点つきで PG に戻す。delete は依頼の列ならすぐ消し、ほかは PG の session を止めてから消す = issue 451)。受付の箱に置くだけで、適用は dispatcher (issue 427)
 bin/pro-con card guide  # PM の session に渡す指示書 (src/pro-con/pm-guide.md) を出す。dispatcher は依頼の列にカードが来たら・PG が質問したら PM を起動 / 再開してこれと新しいカード・質問を渡す (issue 437。PM は 1 つ・--limit に数えない)
+bin/pro-con card guide --integrator  # 取り込みの係の session に渡す指示書 (src/pro-con/integrator-guide.md) を出す。dispatcher はカードがレビューの列に来たら取り込みの係を起動 / 再開してこれとカードを渡す。係はレビューし、master へ merge して push し閉じるか、差し戻す・人に回す (issue 487。1 つ・--limit に数えない)
+bin/pro-con card attach C-001 shot.png --note "詳細の見た目"  # PG が作業の証拠 (画面の見た目・コマンドの出力) をカードに添付する (issue 453)。ファイルを受付の箱の files/ に写して依頼を置き、
+                                         # dispatcher が状態の置き場の attachments/<カード>/ (0700 / 0600) へ移して記録に載せる。1 件 20 MiB・1 枚に 50 件まで。
+                                         # 人間は詳細 (enter) の「添付」で見て o で画像を Preview に開く (.txt / .ans の文字は詳細の中にそのまま出す)。card show にパス。
+                                         # カードが記録から外れたら (削除・書庫へ移した) dispatcher が添付を消す
 bin/pro-con card move C-001 up   # レーンの中で 1 つ上 (down なら下) と入れ替える (画面の K / J と同じ。--repo でその repo の中の隣。issue 470)
 bin/pro-con card list | show C-001 | wait C-001 --until review  # カードを画面なしで読む (--json も)。読むだけで、箱にも記録にも socket の wake / notify にも書かない (issue 442)。add は適用を待ってカード ID を返す
 bin/pro-con card log C-001 [--follow] [--json]  # PG の活動 (応答の文と道具の呼び出し。例 `Bash: go test ./...` / `Edit: close.go`) を時刻の順に。再開で入れ替わった前の session から続けて出す。思考は Claude Code が中身を保存しないので出せず、道具の結果は長いので出さない。読むだけ (issue 467)
 bin/pro-con log [--card C-001] [--follow] [--since 10m] [--json]  # dispatcher の出来事 (適用・除けた・起動・再開・止めた・削除・枠・watchdog・画面の数・画面を開いた / quit で閉じた) を読む。画面の出来事は画面が受付の箱に置き dispatcher が書く (--view の画面は置かない。issue 445)。記録は状態の置き場の events.jsonl (1 MiB で events.1.jsonl へ回す)。読むだけ (issue 444)
 bin/pro-con --e2e <dir>  # e2e モード: 画面・dispatcher・受付の箱・記録は本物、PG と PM だけ台本どおりの偽物 (claude を起動しない。利用枠を使わない)
 bin/pro-con e2e <start|keys|text|screen|wait|stop|scenario> <dir> ...  # Claude が e2e モードの画面を操作する口 (隔離した tmux サーバで動かす)
-bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンドを頼む。dispatcher が PG の worktree で 1 本ずつ順に実行し、結果を渡して PG を再開する (失敗は haiku が要約)
+bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンドを頼む。dispatcher が PG の worktree で 1 本ずつ順に実行し、結果を渡して PG を再開する (失敗は haiku が要約)。repo の lock (`<git の共通ディレクトリ>/pro-con-locks/test`) を `lockman with` で取って走らせ、外が持っていれば「pro-con の外が使用中」で待つ (issue 471)
                                          # -- の後ろは argv として 1 つずつ quote して記録する (引用はそのまま届く)。パイプや && を含む 1 行は `-- bash -c 'make test 2>&1 | tail'` で頼む (issue 463)
                                          # 🚨 PG に `pro-con card` を許すことは、その worktree で任意のコマンドを PG の permission の外で (dispatcher の権限で) 走らせるのを許すのと同じ。守っているのは「頼んだ場所がそのカードの PG の worktree」だけ
 ```
@@ -91,6 +96,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 | e | 選択中のカードの issue の md をエディタで開く ($VISUAL → $EDITOR → nvim。`tuikit/editor`) |
 | x | 完了のレーンを片付ける (y/N 確認。repo のタブではその repo の分だけ。カードは消さず Archived にする。本物のモードでは dispatcher が書庫へ移す) |
 | d | 選択中のカードを削除する (y/N 確認。依頼の列ならすぐ消える。ほかの列は「削除中」になり、dispatcher が PG の session を止めたのを確かめてから消える。1 分で止められなければカードを残して理由を履歴に書く。PG の worktree とブランチは消さない。消したことは dispatcher の記録に残る。issue 451) |
+| o | 選択中のカードの画像の添付を Preview で開く (`open -a Preview`。複数の画像を 1 つの窓にまとめる)。文字の添付 (.txt / .ans) は詳細の中に出ている。それ以外のファイルは開かない (PG が用意したファイルを人間の権限で動かさない。パスは card show)。詳細を開いたままでも効く (issue 453) |
 | y | 選択中のカードの issue の md のパス (素の値) をクリップボードへ |
 | Y | 選択中のカードのタイトルと内容 (repo・状態・issue・依頼の原文・質問。整形した参照) をクリップボードへ。本文は `termsafe.PlainBlock` を通す |
 | 1〜6 | そのレーンへ直接 (依頼 / 分解済み / 作業中 / 質問待ち / レビュー / 完了。数字はレーンの見出しの先頭に出る) |
@@ -99,7 +105,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 | ctrl+d / ctrl+u / space / f / pgdn / pgup | 半ページ |
 | g / G / home / end | 列の先頭 / 末尾 |
 | K / J | 選択中のカードを 1 つ上 / 下のカードと入れ替える (issue 470。レーンの中は上ほど優先度が高い)。選択はカードについていく。端では止めて知らせる (巻かない)。repo のタブではその repo のカードの中の隣と入れ替える。書くのは dispatcher (画面は受付の箱に置くだけ。速く続けて押しても、押した回数だけ動く)。分解済みの列は上から PG を起動する (回答・差し戻しを受けた再開は並びより先。バッジに ↻再開が先)。依頼の列は PM が上から分ける。`--after` の前のカードが終わっていなければ、上げても起動しない (履歴に理由)。詳細を開いている間の J / K は隣のカードへ送る |
-| enter | 詳細の開閉。右から引き出しが滑り込み、カンバンの左端を残して重なる (glogx の issues の本文と同じ `tuikit/layout.ComposeDrawer`)。開いている間は j / k / ctrl+d / ctrl+u / g / G で本文をスクロール、J / K で同じレーンの隣のカードへ送る。本物のモードでは末尾の節が PG の「活動」(応答の文と道具の呼び出し。末尾を見ていれば新しいものを追う)、模擬では「出力」(出力の末尾)。カードへの操作 (a / r / + / ? / e / y / Y / d) は開いたまま効き、レーンの移動やタブは効かない。q / esc / h / ← / enter で閉じる |
+| enter | 詳細の開閉。右から引き出しが滑り込み、カンバンの左端を残して重なる (glogx の issues の本文と同じ `tuikit/layout.ComposeDrawer`)。開いている間は j / k / ctrl+d / ctrl+u / g / G で本文をスクロール、J / K で同じレーンの隣のカードへ送る。本物のモードでは末尾の節が PG の「活動」(応答の文と道具の呼び出し。末尾を見ていれば新しいものを追う)、模擬では「出力」(出力の末尾)。カードへの操作 (a / r / + / ? / e / o / y / Y / d) は開いたまま効き、レーンの移動やタブは効かない。q / esc / h / ← / enter で閉じる |
 | (入力中) | 入力欄・y/N 確認を出している間は、カンバンを暗い灰 1 色で描き、入力欄の行に地の色を敷く (キーは入力に取られ、カードは動かせない) |
 | (選択の枠) | 選択中のカードは赤 (196) の太字の二重線 (╔═╗ ║ ╚═╝) の枠で囲む (issue 472。字と色は `ui/cursor.go` の定数)。選択が移ると、枠が元の位置から行き先まで 180ms で滑る (レーンを跨いでも。Excel のセルのカーソルの見え方)。滑る途中も枠は丸ごと見える (途中で消えて見えるちらつきを避けた)。カードの字の上では線で置き換えず、字を残して色だけ変える (横の辺は赤の上線 / 下線、縦の辺は赤の背景。上線は端末と tmux によっては出ない。issue 472)。カードの上下には 1 行ずつ空きがあり、枠はそこに描くので隣のカードを隠さない |
 | (処理中の印) | 裏で処理中のカード (PG が turn の途中 = PG の status が busy / テストの係が実行中) は、バッジの頭に回る印 (⠋⠙⠹…) を出す。回すカードがある間だけ 100ms ごとに描き直す (`ui/spinner.go`) |
@@ -122,7 +128,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 上下の移動は `tuikit/listnav.MotionOf` に渡す (glogx と同じ語彙を 1 か所で持つ)。画面固有の動作キーは先に捌く。
 
 glogx と意味を変えている字 (`a` attach / `r` 回答 / `n` 新しい依頼 / `s` session の一覧) とその理由はガイドの §8。
-`o` (ブラウザで開く) と `b` (半ページ上) はガイドの意味のために空けてあり、追加オーダーは `+`、btw は `w`、`?` はレーンの意味の表。
+`o` はガイドの「外で開く」の意味で、添付を `open` に渡す (issue 453)。`b` (半ページ上) はガイドの意味のために空けてあり、追加オーダーは `+`、btw は `w`、`?` はレーンの意味の表。
 
 ## 設定 (`~/.config/pro-con/config.toml`)
 
@@ -130,11 +136,13 @@ glogx と意味を変えている字 (`a` attach / `r` 回答 / `n` 新しい依
 repo_roots = ["~/src"]      # この直下の git repo を列挙する (深くは掘らない。.git がファイルの worktree も拾う)
 repos      = ["~/dotfiles"] # root の外にある repo を個別に足す
 pm_repo    = "~/dotfiles"   # PM を起動する repo (PM はその下の worktree .claude/worktrees/pc-pm-<時刻> で動く。issue 437)
+integrator = "on"            # 取り込みの係 (issue 487) を起こすか。"off" なら起こさない (レビューの列は人か外の Claude が扱う)。dispatcher の --integrator=on|off が勝つ
 pm         = "on"           # "off" なら dispatcher は PM を起動も再開もしない (依頼の列のカードはそのまま置き、人か外の Claude が PM をする)
 ```
 
 - **PM を起こさない口は 2 つ: dispatcher の `--pm=off` と設定の `pm = "off"`。`--pm` (on / off) を書けば設定より勝つ** (起動ごとに明示した方を優先する。
   設定で off にしていても `pro-con dispatcher --pm=on` で 1 回だけ起こせる)。off で起動した dispatcher は、そのことを出来事 (`pro-con log`) と dispatcher のログに 1 行出す。
+  取り込みの係 (487) も同じ形で `--integrator=off` と設定の `integrator = "off"` を持つ。
   off でも、前の dispatcher が起こした PM は終了で止める。🚨 画面が起こす dispatcher には `--pm` を付けないので、画面から使うときは設定の方で決める
 - ファイルが無ければ上の値が既定 (`$XDG_CONFIG_HOME` があればその下)。**壊れた TOML と知らないキーはエラーで起動しない**
   (書き間違えたキーを黙って無視すると「設定したのに効かない」が無音で起きる)

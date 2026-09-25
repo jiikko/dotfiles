@@ -33,9 +33,19 @@ type PMState struct {
 	Stopped bool `json:"stopped,omitempty"`
 }
 
-// LoadPM は PM の様子を読む。無ければゼロ値 (まだ 1 度も起こしていない)。壊れていたらエラー (ゼロ値と区別する: 起こし直すと 2 本立つ)。
-func LoadPM(dir string) (PMState, error) {
-	data, err := os.ReadFile(filepath.Join(dir, PMStateFile))
+// IntegratorStateFile は dispatcher が起こした取り込みの係の様子 (issue 487)。中身は PMState と同じ型。
+const IntegratorStateFile = "integrator.json"
+
+// LoadPM は PM の様子を読む (LoadRole の PM 版)。
+func LoadPM(dir string) (PMState, error) { return LoadRole(dir, PMStateFile, "PM") }
+
+// SavePM は PM の様子を書く (SaveRole の PM 版)。
+func SavePM(dir string, s PMState) error { return SaveRole(dir, PMStateFile, s) }
+
+// LoadRole は dispatcher が起こした役 (who) の様子を file から読む。無ければゼロ値 (まだ 1 度も起こしていない)。
+// 壊れていたらエラー (ゼロ値と区別する: 起こし直すと 2 本立つ)。
+func LoadRole(dir, file, who string) (PMState, error) {
+	data, err := os.ReadFile(filepath.Join(dir, file))
 	if errors.Is(err, os.ErrNotExist) {
 		return PMState{}, nil
 	}
@@ -44,13 +54,13 @@ func LoadPM(dir string) (PMState, error) {
 	}
 	var s PMState
 	if err := json.Unmarshal(data, &s); err != nil {
-		return PMState{}, fmt.Errorf("PM の様子 (%s) を読めない: %w", filepath.Join(dir, PMStateFile), err)
+		return PMState{}, fmt.Errorf("%s の様子 (%s) を読めない: %w", who, filepath.Join(dir, file), err)
 	}
 	return s, nil
 }
 
-// SavePM は PM の様子を書く (書きかけを読ませない)。
-func SavePM(dir string, s PMState) error {
+// SaveRole は役の様子を file へ書く (書きかけを読ませない)。
+func SaveRole(dir, file string, s PMState) error {
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
@@ -58,5 +68,5 @@ func SavePM(dir string, s PMState) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	return writeAtomic(filepath.Join(dir, PMStateFile), data)
+	return writeAtomic(filepath.Join(dir, file), data)
 }
