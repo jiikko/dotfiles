@@ -141,13 +141,7 @@ func (t *item) fullBox(colored bool, maxWidth, textLines int) []string {
 	case !t.ok:
 		mark, color = "✗", sgr.Red
 	}
-	textW := 0 // 0 = 折り返さない
-	if maxWidth > 0 {
-		// 印 + 空白の 2 桁と枠 (PanelChrome) を引いた残りが文の幅。🚨 下限は Panel の最小幅から導く
-		// (狭すぎる窓で 0 以下になると 1 字も置けず、wrapText が進まない)
-		textW = max(maxWidth, layout.PanelMinWidth) - layout.PanelChrome - markWidth
-	}
-	lines := wrapText(t.text, textW, textLines)
+	lines := wrapText(t.text, textWidth(maxWidth), textLines)
 	rows := make([]string, len(lines))
 	contentW := 0
 	for i, l := range lines {
@@ -163,6 +157,21 @@ func (t *item) fullBox(colored bool, maxWidth, textLines int) []string {
 	}
 	// 枠線も種別色 (成功=緑 / 失敗=赤 / 進行=シアン) で染めて一体感を出す。影は中立の dim のまま。
 	return layout.Panel("", rows, contentW+layout.PanelChrome, colored, layout.PanelStyle{Border: layout.BorderLight, Color: color, Shadow: t.shadow})
+}
+
+// textWidth は箱の幅の上限 maxWidth のうち文に使える幅 (0 = 折り返さない)。印 + 空白の 2 桁と枠 (PanelChrome) を
+// 引いた残り。🚨 下限は Panel の最小幅から導く (狭すぎる窓で 0 以下になると 1 字も置けず、wrapText が進まない)
+func textWidth(maxWidth int) int {
+	if maxWidth <= 0 {
+		return 0
+	}
+	return max(maxWidth, layout.PanelMinWidth) - layout.PanelChrome - markWidth
+}
+
+// height は fullBox が組む箱の行数 (Panel は内容の行数 + 上辺・下辺・影の 3 行)。箱を組まずに求める
+// (ReservedHeight が描画のたびに呼ぶので、枠と影の文字列まで作ると 1 フレームの確保が増える)。
+func (t *item) height(maxWidth, textLines int) int {
+	return BoxHeight - 1 + len(wrapText(t.text, textWidth(maxWidth), textLines))
 }
 
 // markWidth は行頭の印と空白 ("✓ ") の表示幅。
@@ -379,18 +388,25 @@ func (s *Stack) dropSame(text string, ok, info bool) {
 	}
 }
 
-// ImportantHeight は新しい順に重要な (失敗・断りの) 枚を n 枚まで数え、幅 maxWidth で組んだときの行数の合計を返す。
-// 窓の高さから描画の予算を決める側が「警告 n 枚ぶん」を実際の高さで確保するため (折り返した箱は BoxHeight より高い)。
-func (s *Stack) ImportantHeight(n, maxWidth int) int {
-	total := 0
+// ReservedHeight は BoxLines が予算より優先して残す枚の行数の合計 (幅 maxWidth で組んだとき)。最新の 1 枚 (重要で
+// なくても必ず出す) と、新しい順に重要な (失敗・断りの) 枚を最新を含めて n 枚まで数える。窓の高さから描画の予算を
+// 決める側が「最新 + 警告 n 枚ぶん」を実際の高さで確保するため (折り返した箱は BoxHeight より高い)。
+// 🚨 最新を数えないと、最新が成功・進行中のとき、その箱が確保したはずの警告 n 枚ぶんを先に使い、古い警告が落ちる (issue 484)。
+// 数える枚は BoxLines が描く枚と同じ (まだ滑り込んでいない frame 0 の枚は描かれないので数えない)
+func (s *Stack) ReservedHeight(n, maxWidth int) int {
+	total, first := 0, true
 	for _, it := range s.items() {
-		if n == 0 {
-			break
+		if it.frame <= 0 {
+			continue // BoxLines の boxLines が nil を返す枚 (幅 0)
 		}
-		if it.important() {
-			total += len(it.fullBox(false, maxWidth, MaxTextLines))
+		switch {
+		case it.important() && n > 0:
 			n--
+		case !first:
+			continue
 		}
+		first = false
+		total += it.height(maxWidth, MaxTextLines)
 	}
 	return total
 }

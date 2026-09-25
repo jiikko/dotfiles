@@ -210,3 +210,20 @@ func TestToastShortSuccessesStayWithinHalfPage(t *testing.T) {
 		t.Fatalf("page=13 で 1 行の成功が 2 枚に収まっていない (最古が残る / 2 枚目が消えた):\n%s", out)
 	}
 }
+
+// 長い警告 2 枚の後に成功が来ても、窓に余裕があれば警告 2 枚とも描く (最新の成功の箱が警告の予算を先に使い、
+// 古い警告が落ちていた。issue 484 の page=20 の再現)。
+func TestToastBudgetReservesNewestSuccessAndTwoWarnings(t *testing.T) {
+	m := newTestBrowse(t, 3, nil, nil)
+	m.width, m.height = 50, 21 // page=20
+	long := strings.Repeat("remote rejected the update ", 4)
+	m.toast.Show(long+"OLDERMARK", false)
+	m.toast.Show(long+"NEWERMARK", false)
+	showToastLanded(t, m, "SUCCESSMARK")
+	out := stripANSI(m.View().Content)
+	for _, want := range []string{"OLDERMARK", "NEWERMARK", "SUCCESSMARK"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("page=20 で %q が描かれていない:\n%s", want, out)
+		}
+	}
+}

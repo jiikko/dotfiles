@@ -681,3 +681,52 @@ func TestToastWhitespaceOnlyTextKeepsMark(t *testing.T) {
 		t.Fatalf("空白だけの文の箱が壊れた (%d 行):\n%s", len(box), strings.Join(box, "\n"))
 	}
 }
+
+// ReservedHeight は最新の 1 枚 (重要でなくても) と、新しい重要な枚を最新を含めて n 枚まで数える (issue 484)。
+// BoxLines が描かない枚 (滑り込み前の frame 0) は数えない。
+func TestToastReservedHeight(t *testing.T) {
+	long := strings.Repeat("長い警告 ", 30) // 幅 40 で 3 行 → 箱 6 行
+	var s Stack
+	s.Show(long+"A", false)
+	s.Show(long+"B", false)
+	s.Show("ok", true)
+	advanceToHolding(&s)
+	if got, want := s.ReservedHeight(2, 40), 4+6+6; got != want {
+		t.Errorf("最新が成功: ReservedHeight = %d, want %d (成功 4 + 警告 6×2)", got, want)
+	}
+	if got, want := s.ReservedHeight(1, 40), 4+6; got != want {
+		t.Errorf("n=1: ReservedHeight = %d, want %d", got, want)
+	}
+	s.Show(long+"C", false) // 最新が警告なら、最新は警告 n 枚の 1 枚として数える (ok は C を積んだときに追い出される)
+	advanceToHolding(&s)
+	if got, want := s.ReservedHeight(2, 40), 6+6; got != want {
+		t.Errorf("最新が警告: ReservedHeight = %d, want %d (C + B)", got, want)
+	}
+
+	var f Stack // 滑り込み前 (frame 0) の最新は BoxLines が描かないので数えない
+	f.Show(long+"A", false)
+	f.Show(long+"B", false)
+	advanceToHolding(&f)
+	f.Show("ok", true)
+	if got, want := f.ReservedHeight(2, 40), 6+6; got != want {
+		t.Errorf("frame 0 の成功を数えた: ReservedHeight = %d, want %d (B + A)", got, want)
+	}
+	f.Advance()
+	if got, want := f.ReservedHeight(2, 40), 4+6+6; got != want {
+		t.Errorf("滑り込み始めた成功を数えない: ReservedHeight = %d, want %d", got, want)
+	}
+}
+
+// height は fullBox が組む箱の行数と一致する (予算の計算が実際の描画とずれない)。
+func TestToastHeightMatchesFullBox(t *testing.T) {
+	for _, text := range []string{"ok", strings.Repeat("長い警告 ", 30), strings.Repeat(" ", 80), "push failed: remote rejected the update"} {
+		for _, w := range []int{0, 5, 20, 40, 200} {
+			for lines := 1; lines <= MaxTextLines; lines++ {
+				it := item{text: text}
+				if got, want := it.height(w, lines), len(it.fullBox(false, w, lines)); got != want {
+					t.Errorf("text=%q w=%d lines=%d: height=%d, fullBox=%d 行", text, w, lines, got, want)
+				}
+			}
+		}
+	}
+}
