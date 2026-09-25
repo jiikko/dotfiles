@@ -51,4 +51,5 @@
   - 敵対的レビュー (読み取りのみのサブエージェント 1 本): 再現する不具合は無し。「`Start` / `Resume` が language を読む配線がテストで守られていない」
     (`Start` の中で `""` を渡しても緑) は正しかったので、引数の組み立てを `ExecLauncher` のメソッドにして閉じた (変異 2 本で red を確認)。
     記録だけ: language の前後の空白は trim せずそのまま渡す (claude 側の扱いは未確認。実害は見ていない)
+  - `make test` rc=0 (origin/master f8ab3915 へ rebase 後の c3915c80。pro-con card run)
 - 残り: 本物の dispatcher で PG を起こして報告が日本語になるかは、次の dogfooding で見る (440)。PM が指示に「報告は日本語で」と書いている分は、それを見てから外す
