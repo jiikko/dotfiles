@@ -68,7 +68,7 @@ func TestHaikuSettings(t *testing.T) {
 	}
 }
 
-// haiku は --setting-sources project,local と --settings を付けて claude -p を呼ぶ (prompt は標準入力)。
+// haiku は --no-session-persistence (transcript を残さない。460 の P3) と --setting-sources project,local と --settings を付けて claude -p を呼ぶ (prompt は標準入力)。
 func TestHaikuPassesSettings(t *testing.T) {
 	bin := t.TempDir()
 	argsFile := filepath.Join(bin, "args")
@@ -82,7 +82,7 @@ func TestHaikuPassesSettings(t *testing.T) {
 		t.Fatalf("out = %q, err = %v", out, err)
 	}
 	b, _ := os.ReadFile(argsFile)
-	want := []string{"-p", "--model", "haiku", "--setting-sources", "project,local", "--settings", `{"x":1}`}
+	want := []string{"-p", "--model", "haiku", "--no-session-persistence", "--setting-sources", "project,local", "--settings", `{"x":1}`}
 	if got := strings.Split(strings.TrimSuffix(string(b), "\n"), "\n"); !slices.Equal(got, want) {
 		t.Fatalf("引数 = %q\nwant %q", got, want)
 	}

@@ -65,8 +65,8 @@ func runRig(t *testing.T, n int) (*crashRig, *fakeRunner, *[]string) {
 	fr := &fakeRunner{release: make(chan int, 1), started: make(chan struct{}, 4)}
 	var summarized []string
 	r.d.Runner = fr
-	r.d.Summarize = func(_ context.Context, tail string) (string, error) {
-		summarized = append(summarized, tail)
+	r.d.Summarize = func(_ context.Context, in SummaryInput) (string, error) {
+		summarized = append(summarized, in.Tail)
 		return "TestFoo が落ちた", nil
 	}
 	return r, fr, &summarized
@@ -133,7 +133,7 @@ func TestRunFailureIsSummarized(t *testing.T) {
 	for _, summarizeFails := range []bool{false, true} {
 		r, fr, _ := runRig(t, 1)
 		if summarizeFails {
-			r.d.Summarize = func(context.Context, string) (string, error) { return "", errors.New("haiku が落ちた") }
+			r.d.Summarize = func(context.Context, SummaryInput) (string, error) { return "", errors.New("haiku が落ちた") }
 		}
 		askRun(t, r.dir, "C-001", "make test", t0)
 		r.tick(t)

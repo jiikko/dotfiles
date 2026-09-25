@@ -84,7 +84,7 @@ type Dispatcher struct {
 	CrashWindow time.Duration
 	// Runner はテストの係の実行 / Summarize は失敗したログの要約 (runner.go)。Runner が nil ならテストの係を動かさない
 	Runner    Runner
-	Summarize func(ctx context.Context, tail string) (string, error)
+	Summarize func(ctx context.Context, in SummaryInput) (string, error)
 	active    *runJob   // 実行中の 1 本 (無ければ nil)
 	blocked   *runBlock // repo の lock を他が持っていて始められなかった頼み (runner.go の deferRun。無ければ nil)
 	// Procs はプロセスの一覧を読む (doing.go。PG が今走らせているもの)。nil なら集めない (e2e・テスト)。
@@ -127,6 +127,7 @@ type Dispatcher struct {
 	IntegratorGuide string
 	IntegratorOff   bool
 	runs            map[string]*roleRun // 役ごとの、メモリだけに持つ様子 (role.go)
+	recent          []runRecord         // テストの係が実際に走らせた最近の結果 (失敗の一次判定の材料。triage.go)
 	// Exists は PM の作業ディレクトリが在るかを見る (nil なら os.Stat)。テストが差し替える
 	Exists func(dir string) bool
 
@@ -863,7 +864,7 @@ func (d *Dispatcher) prepare(c card.Card, now time.Time, ss []agents.Session, re
 		return "起動", nil, fmt.Errorf("repo %q の場所が設定に無い", c.Repo)
 	}
 	if c.LaunchedAt.IsZero() { // 起動し直し (印を書いた後) なら、在る worktree はこのカードの前の起動が作ったもの
-		if err := leftoverWorktree(worktreePath(path, c)); err != nil {
+		if err := leftoverWorktree(WorktreePath(path, c)); err != nil {
 			return "起動", nil, err
 		}
 	}
@@ -892,8 +893,8 @@ func leftoverWorktree(wt string) error {
 
 func sessionName(c card.Card) string { return "pc-" + strings.ToLower(c.ID) }
 
-// worktreePath は claude --bg -w <name> が作る PG の worktree (427 の 3f で実測)。repo の場所が分からなければ空 (呼び出し側が空を弾く)。
-func worktreePath(repoPath string, c card.Card) string {
+// WorktreePath は claude --bg -w <name> が作る PG の worktree (427 の 3f で実測。見張り = package monitor も使う)。repo の場所が分からなければ空 (呼び出し側が空を弾く)。
+func WorktreePath(repoPath string, c card.Card) string {
 	if repoPath == "" {
 		return ""
 	}
@@ -934,7 +935,7 @@ func adopt(c card.Card, repoPath string, ss []agents.Session, reg []live.Owned) 
 		}
 		// 起動は、名前に加えて cwd がこのカードの repo の worktree そのもの (<repo>/.claude/worktrees/pc-<card>) のときだけ。
 		// 名前だけだと、別の状態の置き場で動く dispatcher が同じカード ID で立てた PG に当たる (カード ID は置き場ごとに C-001 から振られる)
-		if wt := worktreePath(repoPath, c); c.Launching == "起動" && wt != "" && s.Name == sessionName(c) && samePath(s.Cwd, wt) {
+		if wt := WorktreePath(repoPath, c); c.Launching == "起動" && wt != "" && s.Name == sessionName(c) && samePath(s.Cwd, wt) {
 			return s.ID, true
 		}
 		// 再開は別の session id の session を立てる (427 の 3f で実測) ので、同じ作業ディレクトリ (PG の worktree) で印の後に始まったものも取り込む

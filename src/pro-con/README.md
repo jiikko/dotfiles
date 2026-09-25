@@ -28,9 +28,12 @@ bin/pro-con card move C-001 up   # レーンの中で 1 つ上 (down なら下) 
 bin/pro-con card list | show C-001 | wait C-001 --until review  # カードを画面なしで読む (--json も)。読むだけで、箱にも記録にも socket の wake / notify にも書かない (issue 442)。add は適用を待ってカード ID を返す
 bin/pro-con card log C-001 [--follow] [--json]  # PG の活動 (応答の文と道具の呼び出し。例 `Bash: go test ./...` / `Edit: close.go`) を時刻の順に。再開で入れ替わった前の session から続けて出す。思考は Claude Code が中身を保存しないので出せず、道具の結果は長いので出さない。読むだけ (issue 467)
 bin/pro-con log [--card C-001] [--follow] [--since 10m] [--json]  # dispatcher の出来事 (適用・除けた・起動・再開・止めた・削除・枠・watchdog・画面の数・画面を開いた / quit で閉じた) を読む。画面の出来事は画面が受付の箱に置き dispatcher が書く (--view の画面は置かない。issue 445)。記録は状態の置き場の events.jsonl (1 MiB で events.1.jsonl へ回す)。読むだけ (issue 444)
+bin/pro-con monitor [--once] [--interval 1m]  # 見張り (issue 475)。dispatcher が子として起こし、落ちたら起こし直し (30 分に 3 回まで)、抜けるときに止める (手で起動しなくてよい。2 つ起動しない = monitor.lock)。
+                         # PG の commit 済みの分を git merge-tree で origin/master と・PG どうしで突き合わせた衝突と、テストの順番の長さ (3 本以上か先頭が 30 分以上) を見る。
+                         # 読むだけ (git fetch もしない) で、見つけた・消えたときだけ受付の箱に置き、dispatcher が出来事 (pro-con log の monitor) に書く。e2e モードと --once の dispatcher では起こさない
 bin/pro-con --e2e <dir>  # e2e モード: 画面・dispatcher・受付の箱・記録は本物、PG と PM だけ台本どおりの偽物 (claude を起動しない。利用枠を使わない)
 bin/pro-con e2e <start|keys|text|screen|wait|stop|scenario> <dir> ...  # Claude が e2e モードの画面を操作する口 (隔離した tmux サーバで動かす)
-bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンドを頼む。dispatcher が PG の worktree で 1 本ずつ順に実行し、結果を渡して PG を再開する (失敗は haiku が要約)。repo の lock (`<git の共通ディレクトリ>/pro-con-locks/test`) を `lockman with` で取って走らせ、外が持っていれば「pro-con の外が使用中」で待つ (issue 471)
+bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンドを頼む。dispatcher が PG の worktree で 1 本ずつ順に実行し、結果を渡して PG を再開する (失敗は haiku が要約し、1 行目に一次判定 = この変更のせい / 負荷・環境 / 前から / 判定できない を書く。見込みで証拠ではない。枠 95% 以上で始めた実行は要約しない。issue 475)。repo の lock (`<git の共通ディレクトリ>/pro-con-locks/test`) を `lockman with` で取って走らせ、外が持っていれば「pro-con の外が使用中」で待つ (issue 471)
                                          # -- の後ろは argv として 1 つずつ quote して記録する (引用はそのまま届く)。パイプや && を含む 1 行は `-- bash -c 'make test 2>&1 | tail'` で頼む (issue 463)
                                          # 🚨 PG に `pro-con card` を許すことは、その worktree で任意のコマンドを PG の permission の外で (dispatcher の権限で) 走らせるのを許すのと同じ。守っているのは「頼んだ場所がそのカードの PG の worktree」だけ
 ```
@@ -211,6 +214,7 @@ issue の読み方 (状態 = ファイルの位置、`epic/<name>/` の 2 段、
 | `backend` | UI と状態の持ち主の境界 (`Backend` interface / `Command` / `Snapshot`)。UI はここより下を知らない |
 | `fake` | 模擬 backend。本物に差し替えるときは `backend.Backend` を満たす実装を足し、`main.go` の 1 行を替える |
 | `ui` | bubbletea v2 の TUI。状態は持たない (Snapshot を描き、Command を送るだけ) |
+| `monitor` | 見張り (`pro-con monitor`。issue 475)。読むだけで、見つけたことは受付の箱に置く |
 
 - `fake` の dispatcher / watchdog / リソース列は**模擬**で、本番の判定ではない。本番の判定を育てるなら fake から切り出す
 - **見た目は B「枠」で合意** (2026-09-24。A 帯 / C カードと実物で見比べて選んだ)。列と詳細を角丸の罫線で囲み、選択中のカードがある列の枠だけを

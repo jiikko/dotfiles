@@ -20,6 +20,10 @@ func applied(res []store.Result) []eventlog.Event {
 			out = append(out, eventlog.Event{At: r.At, Kind: eventlog.KindScreen, Reason: r.Note})
 			continue
 		}
+		if r.Kind == store.KindMonitor && r.Err == "" { // 見張りの知らせも同じ (issue 475)
+			out = append(out, eventlog.Event{At: r.At, Kind: eventlog.KindMonitor, Card: r.CardID, Reason: r.Note})
+			continue
+		}
 		if r.Err != "" {
 			out = append(out, ev(eventlog.KindReject, r.CardID, "", fmt.Sprintf("箱の依頼 %s (%s) を除けた: %s", r.ID, r.Kind, r.Err)))
 			continue

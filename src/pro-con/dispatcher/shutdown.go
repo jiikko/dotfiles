@@ -494,7 +494,7 @@ func unregistered(c card.Card, repoPath string, ss []agents.Session, reg []live.
 	if has && c.Launching == "" {
 		return agents.Session{}, false, false // 記録の行で照らす (短い id を別の session が得た形には触らない)
 	}
-	wt := worktreePath(repoPath, c)
+	wt := WorktreePath(repoPath, c)
 	inWorktree := func(s agents.Session) bool { return wt != "" && samePath(s.Cwd, wt) }
 	var loose *agents.Session
 	for _, s := range ss {

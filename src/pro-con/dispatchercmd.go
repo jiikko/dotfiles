@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -143,6 +144,12 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 	} else {
 		defer func() { _ = srv.Close() }()
 		wakes, d.Changed = srv.Wakes(), srv.Broadcast
+	}
+	// 見張り (issue 475)。e2e モードの偽の worktree と、1 回だけの dispatcher では起こさない。
+	// 🚨 d の欄 (Record / Changed) を書き終えてから起こす (起こし直しの goroutine が say で読む)
+	if e2e == nil && !*once {
+		stopMonitor := superviseMonitor(ctx, defaultMonitorSup(func(text string) { say(d, eventlog.KindMonitor, text) }, stdout, stderr))
+		defer stopMonitor() // unlock より先に走る (見張りを止めてから dispatcher の lock を外す)
 	}
 	return serve(ctx, d, dir, wakes, serveOpts{interval: dispatcherInterval, once: *once, alone: *alone}, stderr)
 }
@@ -312,8 +319,12 @@ func stopDispatcher(ctx context.Context, dir, projects string, repos map[string]
 
 // eventSink は dispatcher の出来事を、時刻つきの 1 行で out へ出し (dispatcher.log / nohup の先)、状態の置き場の events.jsonl へ足す
 // (pro-con log が読む。issue 444)。🚨 呼んでよいのは dispatcher の lock を持つプロセスだけ (書き手を 1 つにする = 426 の決定 1)。
+// 🚨 並行に呼ばれる (Tick と、見張りを起こし直す goroutine = monitorsup.go)。1 つずつ書く (追記と回しを競わせない)
 func eventSink(dir string, out, errOut io.Writer) func([]eventlog.Event) {
+	var mu sync.Mutex
 	return func(evs []eventlog.Event) {
+		mu.Lock()
+		defer mu.Unlock()
 		now := time.Now()
 		stamped := make([]eventlog.Event, len(evs))
 		for i, e := range evs {

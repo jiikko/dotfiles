@@ -60,6 +60,9 @@ const (
 	// KindScreen は画面の側の出来事 (開いた・quit で閉じた・止めた / 止めなかった)。画面が受付の箱に置き、dispatcher が書く
 	// (時刻は画面が置いた時刻。dispatcher が居ない間に置いたものは次の dispatcher が書くので、ファイルの中で時刻の順が前後しうる)
 	KindScreen = "screen"
+	// KindMonitor は見張り (pro-con monitor。issue 475) の知らせ (取り込みの衝突・テストの順番の長さ) と、見張りを起こした・落ちた。
+	// 知らせは見張りが受付の箱に置き、dispatcher が書く (時刻は見張りが置いた時刻)
+	KindMonitor = "monitor"
 )
 
 // Append は出来事を足す (1 回の write。読む側は改行で終わった行だけを読むので、書きかけを読まない)。

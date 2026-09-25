@@ -44,6 +44,13 @@ const (
 // 🚨 --view の画面は置かない (受付の箱にも書かない = 読むだけ)
 const KindEvent = "event"
 
+// KindMonitor は見張り (pro-con monitor。issue 475) が見つけたこと (取り込みの衝突・テストの順番の長さ) の依頼の種類。
+// event と同じく記録 (カード) は変えず、dispatcher が出来事の記録へ書くだけ (見張りは読むだけ。書き手は dispatcher 1 つ = 426 の決定 1)
+const KindMonitor = "monitor"
+
+// noteOnly は記録を変えず、dispatcher が出来事の記録へ書くだけの依頼か (画面の出来事・見張りの知らせ)。
+func noteOnly(kind string) bool { return kind == KindEvent || kind == KindMonitor }
+
 // RunResource はテストの係 (dispatcher が直列に実行する列) のリソース名。今は 1 本の列だけ (426 の決定 5)。
 const RunResource = "テスト"
 
@@ -148,12 +155,12 @@ func submitWith(dir string, r Request, stage func(box, id string) error) (string
 	return r.ID, nil
 }
 
-// Pending は受付の箱の適用待ちの依頼の数 (画面の出来事 = event は数えない: 画面を開くたびに置くので、dispatcher の最初の Tick まで
-// 「適用待ち」が出て、dispatcher が止まっているように見える)。読めない・壊れたファイルは依頼として数える (除けられるまで待ちには違いない)。
+// Pending は受付の箱の適用待ちの依頼の数 (画面の出来事 = event と見張りの知らせ = monitor は数えない: 画面を開くたびに・見張りが見るたびに置くので、
+// dispatcher の最初の Tick まで「適用待ち」が出て、dispatcher が止まっているように見える)。読めない・壊れたファイルは依頼として数える (除けられるまで待ちには違いない)。
 func Pending(dir string) int {
 	n := 0
 	for _, r := range inbox(dir) {
-		if r.Kind != KindEvent {
+		if !noteOnly(r.Kind) {
 			n++
 		}
 	}
@@ -251,7 +258,7 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 		if err == nil {
 			r.ID = id // ファイル名が正本 (中身の id は信じない)
 			res.Kind, res.CardID = r.Kind, r.CardID
-			if r.Kind == KindEvent {
+			if noteOnly(r.Kind) {
 				res.At = r.At
 			}
 			if r.Kind == KindConfig {
@@ -436,6 +443,11 @@ func apply(st State, r Request, now time.Time) (State, string, string, error) {
 			return st, "", "", errors.New("event: 出来事の文が空")
 		}
 		return st, "", r.Note, nil
+	case KindMonitor: // 見張りの知らせ。カードの ID は出来事に付けるだけ (片付けた後のカードでも除けない = 知らせは記録に当てない)
+		if strings.TrimSpace(r.Note) == "" {
+			return st, "", "", errors.New("monitor: 知らせの文が空")
+		}
+		return st, r.CardID, r.Note, nil
 	case "clear": // 画面が完了のレーンを片付けた (x)。消さずに Archived にする。見ていた後に完了でなくなったカード・無いカードは飛ばす
 		if len(r.Cards) == 0 {
 			return st, "", "", errors.New("clear: 片付けるカードが無い")

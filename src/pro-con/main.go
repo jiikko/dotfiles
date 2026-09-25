@@ -152,16 +152,24 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				_, _ = fmt.Fprintln(stderr, "pro-con: 設定を読めない:", err)
 				return 1
 			}
-			repos, _ := config.Discover(cfg, home)
-			paths := map[string]string{}
-			for _, r := range repos {
-				paths[r.Name] = r.Path
-			}
+			paths := discoverPaths(cfg, home)
 			pmRepo, warn := cfg.PMRepoPath(home)
 			if warn != "" {
 				_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", warn)
 			}
 			return runDispatcher(args[1:], liveDir(home), filepath.Join(home, ".claude", "projects"), paths, pmConfig{Repo: pmRepo, Mode: cfg.PM, IntegratorMode: cfg.Integrator}, stdout, stderr)
+		case "monitor": // 見張り (dispatcher が子として起こす。読むだけで、見つけたことは受付の箱に置く。monitorcmd.go)
+			home, err := os.UserHomeDir()
+			if err != nil {
+				_, _ = fmt.Fprintln(stderr, "pro-con:", err)
+				return 1
+			}
+			paths, err := repoPaths(home)
+			if err != nil {
+				_, _ = fmt.Fprintln(stderr, "pro-con monitor:", err)
+				return 1
+			}
+			return runMonitor(args[1:], liveDir(home), paths, stdout, stderr)
 		case "-h", "--help":
 			_, _ = fmt.Fprintln(stdout, "usage: pro-con [--mock]   (既定は今の Claude Code の session を読み取り専用で出す。--mock は模擬データ)")
 			return 0
@@ -526,4 +534,23 @@ func fakeAttach(session string, stdin io.Reader, stdout io.Writer) int {
 	_, _ = fmt.Fprint(stdout, "\n  Enter で pro-con に戻る > ")
 	_, _ = bufio.NewReader(stdin).ReadString('\n')
 	return 0
+}
+
+// repoPaths は設定の repo の名前 → パス。
+func repoPaths(home string) (map[string]string, error) {
+	cfg, err := config.Load(config.DefaultPath(home))
+	if err != nil {
+		return nil, fmt.Errorf("設定を読めない: %w", err)
+	}
+	return discoverPaths(cfg, home), nil
+}
+
+// discoverPaths は設定の repo を見つけて、名前 → パスにする (見つからない repo は入れない)。
+func discoverPaths(cfg config.Config, home string) map[string]string {
+	repos, _ := config.Discover(cfg, home)
+	paths := map[string]string{}
+	for _, r := range repos {
+		paths[r.Name] = r.Path
+	}
+	return paths
 }
