@@ -85,10 +85,19 @@ func popupConf(prefix string) string {
 		"unbind -a",
 		"bind -n " + popupLeaveKey + " kill-server",
 	}
-	if prefix != "" {
-		lines = append(lines, "set -g prefix "+prefix, "bind d kill-server", "bind "+prefix+" send-prefix")
+	if prefix != "" { // キー名は引用する (# はそのままだと注釈の始まりに読まれ、conf 全体が効かなくなる。敵対的レビューで再現)
+		q := tmuxQuote(prefix)
+		lines = append(lines, "set -g prefix "+q, "bind d kill-server", "bind "+q+" send-prefix")
 	}
 	return strings.Join(append(lines, ""), "\n")
+}
+
+// tmuxQuote は tmux の設定の 1 語として k を引用する (' を含まなければ '...'、含めば "..." で \ と " と $ を逃がす)。
+func tmuxQuote(k string) string {
+	if !strings.Contains(k, "'") {
+		return "'" + k + "'"
+	}
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, `$`, `\$`).Replace(k) + `"`
 }
 
 // command は c を popup の中の入れ子のサーバで走らせる tmux のコマンドを組む (dir は一時ディレクトリ)。

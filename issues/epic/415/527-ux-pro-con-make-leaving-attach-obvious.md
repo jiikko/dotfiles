@@ -71,4 +71,7 @@
   - 本物の `claude attach` は Ctrl+Z で rc=0 で終わる (止まらない)。使い捨ての bg session を popup で開いて戻るキーで閉じても、session は idle のまま残った
   - tmux の外: 端末を渡す前に戻り方の案内の枠 (`ui/attachguide.go`)。戻り・キーが効くことを e2e の画面で確かめた
   - 戻れなくなったとき: `pro-con attach --leave` (`leavecmd.go`)。`?` の表 (流れ)・`pro-con help usage`・README に戻り方
+  - 敵対的レビュー: 外の prefix が `#` だと入れ子の conf が丸ごと効かなくなる (再現) → キー名を引用して直し、`#`・`;`・`'` を本物の tmux に読ませて確かめた。
+    案内の enter の時点で選択の変化を見直すようにした。`--leave` は画面を複数開いていれば全部の attach を終わらせる (仕様として help に書いた)。
+    未確認のリスク: popup が正しく閉じたのに tmux が何か文を出したら「popup を開けない」と出る (出す形を確かめていない。起きたら `ui/attachpopup.go` の run の分岐を見る)
   - 518 の懸念 (Ctrl+Z で戻ったとき描き直すか): tmux の中は端末を渡さないので `ExecProcess` を通らない。外は 518 の直しの上の経路のまま

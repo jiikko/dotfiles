@@ -31,14 +31,19 @@ func TestPopupCommand(t *testing.T) {
 // 入れ子の tmux のキーは戻るキー (外の prefix + d・Ctrl+Z) と、prefix を 2 回で prefix を送るものだけ。他は全部 claude attach へ渡す。
 func TestPopupConfBindsOnlyLeaveKeys(t *testing.T) {
 	conf := popupConf("C-t")
-	for _, want := range []string{"unbind -a", "set -g prefix2 None", "bind -n C-z kill-server", "set -g prefix C-t", "bind d kill-server",
-		"bind C-t send-prefix", "set -g destroy-unattached on"} {
+	for _, want := range []string{"unbind -a", "set -g prefix2 None", "bind -n C-z kill-server", "set -g prefix 'C-t'", "bind d kill-server",
+		"bind 'C-t' send-prefix", "set -g destroy-unattached on"} {
 		if !strings.Contains(conf, want) {
 			t.Fatalf("入れ子の tmux の設定に %q が無い:\n%s", want, conf)
 		}
 	}
 	if strings.Index(conf, "unbind -a") > strings.Index(conf, "bind -n") || strings.Index(conf, "unbind -a") > strings.Index(conf, "bind d") {
 		t.Fatal("戻るキーを bind した後で全部を外している")
+	}
+	for prefix, want := range map[string]string{"#": "bind '#' send-prefix", ";": "bind ';' send-prefix", "'": `bind "'" send-prefix`} {
+		if conf := popupConf(prefix); !strings.Contains(conf, want) { // 引用しないと # は注釈・; はコマンドの区切りに読まれる
+			t.Fatalf("prefix %q を引用していない:\n%s", prefix, conf)
+		}
 	}
 	if conf := popupConf(""); strings.Contains(conf, "bind d") || strings.Contains(conf, "send-prefix") {
 		t.Fatalf("外の prefix が無いのに prefix の bind を足した:\n%s", conf)
@@ -83,5 +88,19 @@ func TestAttachGuideCancel(t *testing.T) {
 	press(m, "esc")
 	if handed || m.guide != nil {
 		t.Fatalf("案内でやめたのに端末を渡した (%v) / 案内が残った", handed)
+	}
+}
+
+// 案内を出している間に選んでいたカードが外れたら、enter でも端末を渡さない。
+func TestAttachGuideRechecksSelection(t *testing.T) {
+	m := New(newSpy(), nil)
+	handed := false
+	m.execProcess = func(*exec.Cmd, tea.ExecCallback) tea.Cmd { handed = true; return nil }
+	press(m, "right")
+	m.Update(press(m, "a")())
+	m.selected = "W2" // 裏の読み直しで選択が移った
+	press(m, "enter")
+	if handed {
+		t.Fatal("案内の間に選択が変わったのに端末を渡した")
 	}
 }

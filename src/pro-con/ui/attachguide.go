@@ -48,6 +48,11 @@ func (m *Model) handleAttachGuideKey(k tea.KeyPressMsg) tea.Cmd {
 		m.info("attach をやめた")
 		return nil
 	}
+	// 案内を出している間に、選んでいたカードが裏の読み直しで外れた・切り替えの暗転に入ったなら、端末を渡さない (attachReadyMsg と同じ見方)
+	if m.selected != g.cardID || !m.fade.leaving.IsZero() {
+		m.info("attach を取りやめた (案内を出している間に画面が変わった)")
+		return nil
+	}
 	m.guideSeen = true
 	return m.execAttach(*g)
 }
