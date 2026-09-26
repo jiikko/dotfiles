@@ -2,7 +2,7 @@
 
 起票日: 2026-09-27
 
-親: [415](415-design-claude-pm-worker-orchestration.md) / 切り出し元: [452](done/452-ux-pro-con-mark-cards-waiting-for-human.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md) / 切り出し元: [452](452-ux-pro-con-mark-cards-waiting-for-human.md)
 
 ## 概要
 
