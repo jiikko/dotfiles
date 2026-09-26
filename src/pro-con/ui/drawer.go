@@ -113,6 +113,7 @@ func (m *Model) dropVanishedDrawer() {
 	}
 	if _, ok := m.drawerCardData(); !ok {
 		m.showDetail, m.drawerCard = false, ""
+		m.diff = diffView{} // 差分の板もそのカードのもの
 		m.drawer = anim.Transition{}
 	}
 }

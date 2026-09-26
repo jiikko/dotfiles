@@ -108,7 +108,8 @@ func (ExecProgressGit) Diff(ctx context.Context, wt, base string, limit int) ([]
 	ctx, cancel := context.WithTimeout(ctx, diffTimeout)
 	defer cancel()
 	// 🚨 --no-ext-diff / --no-textconv: repo の設定の外の道具を走らせない (読むだけ)。-M: 名前を変えたファイルを消して足したと出さない
-	cmd := exec.CommandContext(ctx, "git", "-C", wt, "--no-optional-locks", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", "--merge-base", base)
+	// core.quotePath=false: 日本語の名前を "\346…" と引用させない (板の見出しに名前のまま出す)
+	cmd := exec.CommandContext(ctx, "git", "-C", wt, "--no-optional-locks", "-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", "--merge-base", base)
 	cmd.WaitDelay = time.Second
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	out, err := cmd.StdoutPipe()
@@ -136,18 +137,20 @@ func (ExecProgressGit) Diff(ctx context.Context, wt, base string, limit int) ([]
 const diffLineBytes = 1000
 
 // readDiffLines は r から先頭 limit 行を、1 行ずつ無害化して読む (タブは空白 4 つ)。limit を越える行があれば cut。
+// 🚨 1 行は diffLineBytes までしか持たない (minify したファイルの数百 MB の 1 行を丸ごと確保しない。残りは読み捨てる)。
 func readDiffLines(r io.Reader, limit int) ([]string, bool, error) {
-	br := bufio.NewReader(r)
+	br := bufio.NewReaderSize(r, diffLineBytes+1)
 	var lines []string
 	for {
-		l, err := br.ReadString('\n')
-		if l != "" {
+		l, long, err := readCappedLine(br)
+		if l != "" || long || err == nil {
 			if len(lines) >= limit {
 				return lines, true, nil
 			}
-			l = strings.TrimSuffix(l, "\n")
-			if len(l) > diffLineBytes {
-				l = strings.ToValidUTF8(l[:diffLineBytes], "") + " …"
+			if long {
+				l = strings.ToValidUTF8(l, "") + " …"
+			} else if strings.HasPrefix(l, "+++ ") || strings.HasPrefix(l, "--- ") {
+				l = strings.TrimRight(l, "\t") // git は空白を含む名前の後ろに TAB を付ける (空白 4 つに化けて名前の一部になる)
 			}
 			lines = append(lines, termsafe.PlainLine(l))
 		}
@@ -160,8 +163,29 @@ func readDiffLines(r io.Reader, limit int) ([]string, bool, error) {
 	}
 }
 
+// readCappedLine は改行までの先頭 diffLineBytes バイトを返す (改行は含めない)。long は切ったか。err は io.EOF で終わり。
+func readCappedLine(br *bufio.Reader) (string, bool, error) {
+	var b []byte
+	long := false
+	for {
+		frag, err := br.ReadSlice('\n')
+		if err == nil {
+			frag = frag[:len(frag)-1]
+		}
+		if room := max(diffLineBytes-len(b), 0); len(frag) > room {
+			b, long = append(b, frag[:room]...), true
+		} else {
+			b = append(b, frag...)
+		}
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		return string(b), long, err
+	}
+}
+
 // parseStatusZ は `git status --porcelain -z` の出力から、変更の数と先頭 limit 個の `XY パス` を返す。
-// 名前を変えた・写した変更 (R / C) は、元の名前が NUL 区切りでもう 1 つ続く (数えない)。
+// 名前を変えた・写した変更 (X か Y が R / C) は、元の名前が NUL 区切りでもう 1 つ続く (数えない)。
 func parseStatusZ(out string, limit int) (int, []string) {
 	var n int
 	var files []string
@@ -175,7 +199,7 @@ func parseStatusZ(out string, limit int) (int, []string) {
 		if len(files) < limit {
 			files = append(files, termsafe.PlainLine(r[:2]+" "+r[3:]))
 		}
-		if r[0] == 'R' || r[0] == 'C' {
+		if r[0] == 'R' || r[0] == 'C' || r[1] == 'R' || r[1] == 'C' { // 作業ツリー側 (git add -N した rename) も元の名前が続く
 			i++
 		}
 	}
@@ -194,15 +218,18 @@ func (d *Dispatcher) collectProgress(ctx context.Context, now time.Time) {
 	go func() {
 		defer d.progressBusy.Store(false)
 		if p, diffs, err := d.gatherProgress(ctx, now); err == nil && ctx.Err() == nil {
-			d.saveDiffs(&p, diffs)
-			_ = store.SaveProgress(d.Dir, p) // 書けなくても割り当ては止めない (詳細に進捗が出ないだけ)
+			keep := d.saveDiffs(&p, diffs)
+			if store.SaveProgress(d.Dir, p) == nil { // 書けなくても割り当ては止めない (詳細に進捗が出ないだけ)
+				_ = store.PruneDiffs(d.Dir, keep) // 🚨 前の progress.json が指す本文は、新しい progress.json を書いてから消す (消せなくても次の回に消す)
+			}
 		}
 	}()
 }
 
-// saveDiffs は集めた差分の本文を store.DiffPath に書き、書けたカードの進捗に置き場を入れる。集めなかったカードの本文は消す。
+// saveDiffs は集めた差分の本文を store.DiffPath に書き、書けたカードの進捗に置き場を入れる。書けたカードの集まりを返す
+// (残す本文。それ以外は progress.json を書いた後に消す)。
 // 🚨 本文を先に書いてから progress.json を書く (画面が置き場を読んだときに本文がまだ無い、を作らない)。
-func (d *Dispatcher) saveDiffs(p *store.Progress, diffs map[string][]string) {
+func (d *Dispatcher) saveDiffs(p *store.Progress, diffs map[string][]string) map[string]bool {
 	keep := map[string]bool{}
 	for id, lines := range diffs {
 		cp, ok := p.Cards[id]
@@ -217,7 +244,7 @@ func (d *Dispatcher) saveDiffs(p *store.Progress, diffs map[string][]string) {
 		}
 		p.Cards[id] = cp
 	}
-	_ = store.PruneDiffs(d.Dir, keep) // 消せなくても次の回にまた消す
+	return keep
 }
 
 func joinErr(a, b string) string {

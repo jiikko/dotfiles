@@ -107,3 +107,33 @@ func TestDiffBoardRefusesWithoutDiffAndDropsLateLoad(t *testing.T) {
 		t.Fatal("差分の無いカードで板を開いた")
 	}
 }
+
+// 切った差分は、見出しと本文の末尾の両方で知らせる (末尾まで送れば知らせの行が見える)。取り込む先の名前は決め打ちしない。
+// 板を開いている間にカードが消えたら、板も閉じる。
+func TestDiffBoardCutNoticeBaseAndVanish(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n@@ -1 +1,200 @@\n")
+	for i := range 200 {
+		b.WriteString("+line " + itoa(i) + "\n")
+	}
+	m := diffModel(t)
+	if err := os.WriteFile(m.snap.Cards[0].Progress.Diff.Path, []byte(b.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.snap.Cards[0].Progress.Base = "origin/main"
+	m.snap.Cards[0].Progress.Diff.Cut = true
+	cmd := press(m, "D")
+	m.Update(cmd())
+	if s := screenText(m); !strings.Contains(s, "origin/main との merge-base") || !strings.Contains(s, "(5000 行で切った)") {
+		t.Fatalf("見出しに取り込む先の名前と切ったことを出さない:\n%s", s)
+	}
+	press(m, "G")
+	if s := screenText(m); !strings.Contains(s, "+line 199") || !strings.Contains(s, "git diff --merge-base origin/main") {
+		t.Fatalf("末尾まで送っても知らせの行が見えない:\n%s", s)
+	}
+	m.snap.Cards = m.snap.Cards[1:]
+	m.dropVanishedDrawer()
+	if m.diff.open {
+		t.Fatal("カードが消えても板が残った")
+	}
+}

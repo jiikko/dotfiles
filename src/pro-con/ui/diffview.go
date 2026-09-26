@@ -32,6 +32,7 @@ type diffView struct {
 	folded  []bool // files と同じ並び。true = 畳んでいる
 	cur     int    // 選んでいるファイル (見出しを反転。enter で畳む・J / K で送る)
 	sum     card.DiffSummary
+	base    string // 取り込む先の名前 (origin/master。repo によっては origin/main)
 	pager   listnav.Pager
 }
 
@@ -53,7 +54,7 @@ func (m *Model) openDiff() tea.Cmd {
 		m.refuse(c.ID + ": 差分がまだ無い (worktree が無いか、dispatcher がまだ集めていない)")
 		return nil
 	}
-	m.diff = diffView{open: true, cardID: c.ID, loading: true, sum: *c.Progress.Diff}
+	m.diff = diffView{open: true, cardID: c.ID, loading: true, sum: *c.Progress.Diff, base: c.Progress.Base}
 	path, id := c.Progress.Diff.Path, c.ID
 	return func() tea.Msg {
 		data, err := os.ReadFile(path)
@@ -172,6 +173,10 @@ func (m *Model) diffRows() ([]diffRow, []int) {
 			owner = append(owner, i)
 		}
 	}
+	if m.diff.sum.Cut && len(rows) > 0 { // キーの送りと描く行数を揃えるため、知らせも行に含める (末尾まで送れば見える)
+		rows = append(rows, diffRow{text: sgrYellow + fmt.Sprintf("  (%d 行で切った。続きは worktree で git diff --merge-base %s)", card.DiffMaxLines, m.diff.base) + sgrReset})
+		owner = append(owner, owner[len(owner)-1])
+	}
 	return rows, owner
 }
 
@@ -198,8 +203,13 @@ func (m *Model) overlayDiff(region []string) []string {
 	}
 	w := m.width
 	sum := m.diff.sum
-	title := fmt.Sprintf(" %s%s%s の差分  origin/master との merge-base から作業ツリーまで (未 commit を含む)  %s%d ファイル +%d -%d%s",
-		sgrBold, m.diff.cardID, sgrReset, sgrDim, sum.Files, sum.Add, sum.Del, sgrReset)
+	cut := ""
+	if sum.Cut {
+		cut = fmt.Sprintf("  %s(%d 行で切った)%s", sgrYellow, card.DiffMaxLines, sgrReset)
+	}
+	// 狭いと後ろから切れるので、数と切った印を説明より前に置く
+	title := fmt.Sprintf(" %s%s%s の差分  %d ファイル +%d -%d%s  %s%s との merge-base から作業ツリーまで (未 commit を含む)%s",
+		sgrBold, m.diff.cardID, sgrReset, sum.Files, sum.Add, sum.Del, cut, sgrDim, m.diff.base, sgrReset)
 	out := []string{fit(title, w), fg(240) + strings.Repeat("─", w) + sgrReset}
 	n := m.diffBodyRows()
 	var body []string
@@ -212,9 +222,6 @@ func (m *Model) overlayDiff(region []string) []string {
 		body = []string{sgrDim + "  取り込む先との差分は無い (未追跡のファイルは差分に入らない。名前は詳細の「未 commit の変更」)" + sgrReset}
 	default:
 		rows, _ := m.diffRows()
-		if sum.Cut {
-			rows = append(rows, diffRow{text: sgrYellow + fmt.Sprintf("  (%d 行で切った。続きは worktree で git diff --merge-base origin/master)", card.DiffMaxLines) + sgrReset})
-		}
 		m.diff.pager.Clamp(len(rows), n)
 		off := m.diff.pager.DrawOffset(len(rows), n)
 		win := make([]string, n)

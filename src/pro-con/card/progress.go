@@ -31,7 +31,7 @@ type DiffSummary struct {
 	Files int    `json:"files"`         // ファイルの数
 	Add   int    `json:"add"`           // 足した行
 	Del   int    `json:"del"`           // 消した行
-	Cut   bool   `json:"cut,omitempty"` // DiffMaxLines で切った (本文の最後の行が知らせ)
+	Cut   bool   `json:"cut,omitempty"` // DiffMaxLines で切った (板は本文の後ろに知らせの行を足す)
 }
 
 // DiffMaxLines は差分の本文の上限の行数 (glogx の diff の板の maxDiffLines と同じ。色付けは開くたびに裏で回す)。

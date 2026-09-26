@@ -190,6 +190,21 @@ func TestReadDiffLines(t *testing.T) {
 	if got, cut, _ := readDiffLines(strings.NewReader("a\nb"), 2); cut || len(got) != 2 {
 		t.Fatalf("ちょうど上限の本文を切ったと言う: %q cut=%v", got, cut)
 	}
+	// 1 行が巨大 (minify したファイル) でも先頭だけ持つ。ちょうど上限の長さの行は切らない。空行も 1 行
+	exact := strings.Repeat("x", diffLineBytes)
+	got, _, err = readDiffLines(strings.NewReader("+"+strings.Repeat("y", 1<<20)+"\n"+exact+"\n\nz"), 10)
+	if err != nil || len(got) != 4 || len(got[0]) != diffLineBytes+len(" …") || got[1] != exact || got[2] != "" || got[3] != "z" {
+		t.Fatalf("長い行の切り方: n=%d err=%v lens=%v", len(got), err, func() (ls []int) {
+			for _, l := range got {
+				ls = append(ls, len(l))
+			}
+			return
+		}())
+	}
+	// 空白を含む名前の後ろに git が付ける TAB を落とす (空白 4 つに化けて名前の一部にならない)
+	if got, _, _ := readDiffLines(strings.NewReader("+++ b/a b.txt\t\n+\tx\t\n"), 10); got[0] != "+++ b/a b.txt" || got[1] != "+    x    " {
+		t.Fatalf("got %q", got)
+	}
 }
 
 // git status -z: 名前を変えた変更は元の名前が続くので 1 つに数える。上限を越えた分は数だけ。
@@ -198,9 +213,14 @@ func TestParseStatusZ(t *testing.T) {
 	if n != 4 || strings.Join(files, "|") != "R  new.go| M a b.go|?? c" {
 		t.Fatalf("n=%d files=%q", n, files)
 	}
+	// 作業ツリー側の rename (mv して git add -N。実 git の出力の形)
+	if n, files := parseStatusZ(" R moved.txt\x00base.txt\x00 D old.txt\x00", 5); n != 2 || strings.Join(files, "|") != " R moved.txt| D old.txt" {
+		t.Fatalf("作業ツリー側の rename の元の名前を 1 件と数えた: n=%d files=%q", n, files)
+	}
 }
 
-// 差分の本文は置き場に書き、置き場を進捗に入れる。集めなかったカードの本文は消す。
+// 差分の本文は置き場に書き、置き場を進捗に入れ、残す本文を返す。前の本文を消すのは progress.json を書いた後 (collectProgress) なので、ここでは消さない
+// (前の progress.json が指す本文を先に消すと、画面が D で開いたときに無い)。
 func TestSaveDiffs(t *testing.T) {
 	dir := t.TempDir()
 	if err := store.SaveDiff(dir, "C-009", []byte("old")); err != nil {
@@ -208,7 +228,16 @@ func TestSaveDiffs(t *testing.T) {
 	}
 	d := &Dispatcher{Dir: dir}
 	p := store.Progress{Cards: map[string]card.Progress{"C-001": {Diff: &card.DiffSummary{Files: 1}}, "C-002": {}}}
-	d.saveDiffs(&p, map[string][]string{"C-001": {"diff --git a/x b/x", "+y"}})
+	keep := d.saveDiffs(&p, map[string][]string{"C-001": {"diff --git a/x b/x", "+y"}})
+	if !keep["C-001"] || keep["C-009"] {
+		t.Fatalf("残す本文を返さない: %v", keep)
+	}
+	if _, err := os.Stat(store.DiffPath(dir, "C-009")); err != nil {
+		t.Fatalf("progress.json を書く前に前の本文を消した: %v", err)
+	}
+	if err := store.PruneDiffs(dir, keep); err != nil {
+		t.Fatal(err)
+	}
 	if got := p.Cards["C-001"].Diff; got == nil || got.Path != store.DiffPath(dir, "C-001") {
 		t.Fatalf("置き場を入れない: %+v", got)
 	}
