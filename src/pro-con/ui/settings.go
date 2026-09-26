@@ -359,8 +359,6 @@ func (m *Model) settingsPanel(rows int) []string {
 	return append(head, body[min(m.set.offset, end):end]...)
 }
 
-const sgrReverse = "\x1b[7m"
-
 // configLines は設定のタブ (変える所と見る所の要約)。cur は選んでいる行の位置。
 func (m *Model) configLines(w int) ([]string, int) {
 	border := fg(51)

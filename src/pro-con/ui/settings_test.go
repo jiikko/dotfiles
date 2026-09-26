@@ -220,3 +220,18 @@ func TestQuitFromSettingsKeepsFrames(t *testing.T) {
 		t.Fatal("演出の tick を捨てた (framing が立ったまま残る)")
 	}
 }
+
+// 揺れの途中で設定画面を開いても、揺れたレーンが全幅の板の上 (ヘッダの行) にはみ出さない (揺れの帯はヘッダの上にも乗る。issue 436)。
+func TestSettingsCoversBump(t *testing.T) {
+	m, clk := cursorModel(t)
+	start := clk.t
+	lines := strings.Split(ansi.Strip(m.render()), "\n")
+	header := strings.Join(lines[:headerRows], "\n")
+	press(m, "k") // 端でぶつかって上へ揺れる
+	press(m, "s")
+	m.set.anim.Finish()
+	clk.t = start.Add(peak)
+	if got := strings.Join(strings.Split(ansi.Strip(m.render()), "\n")[:headerRows], "\n"); got != header {
+		t.Fatalf("設定画面を開いているのに、揺れたレーンがヘッダに乗った:\n%s\n---\n%s", got, header)
+	}
+}

@@ -19,6 +19,8 @@ const (
 	sgrReset = "\x1b[0m"
 	sgrBold  = "\x1b[1m"
 	sgrDim   = "\x1b[2m"
+	// 反転 (文字色と背景色を入れ替える)。端末の背景色を知らずに「上から塗る」ブロックを描くのに使う (bump.go)
+	sgrReverse = "\x1b[7m"
 	// 下線の開始と終了 (終了だけを戻すので、帯の背景色や太字を消さない)
 	sgrUnderline   = "\x1b[4m"
 	sgrNoUnderline = "\x1b[24m"
@@ -72,15 +74,24 @@ func (m *Model) render() string {
 	foot := m.footGroup()
 	room := m.height - len(header) - len(foot)
 	var region []string
+	board := 0 // ボードの行数 (揺れるレーンの帯の高さ)
 	if m.picker.open {
 		region = m.pickerBlock()
 	} else {
-		region = m.overlayBump(m.overlayMoves(m.overlayCursor(m.boardLines())), room-1)
+		region = m.overlayMoves(m.overlayCursor(m.boardLines()))
+		board = len(region)
 	}
 	region = layout.PadTo(region, max(len(region)+1, room))
 	m.inputRow = len(header) + len(region) + len(foot) - len(m.footLines()) // 入力欄は最下段の群の先頭 (caret が使う)
-	region = m.overlayToast(m.dimWhileTyping(m.overlaySettings(m.overlayDrawer(region))))
-	return strings.Join(m.overlayQuit(m.overlayLegend(append(append(header, region...), foot...))), "\n")
+	// 揺れは画面全体に重ねる (ボードの中だけで切ると、上へ揺れたレーンがヘッダの下に潜る)。
+	// 🚨 設定画面の板が見えている間は揺らさない: 揺れの帯はヘッダと下の群の上にも乗るので、全幅の板の上下からレーンがはみ出す
+	if m.settingsShown() {
+		board = 0
+	}
+	screen := m.overlayBump(append(append(header, region...), foot...), len(header), board)
+	head, rest := screen[:len(header):len(header)], screen[len(header):]
+	region = m.overlayToast(m.dimWhileTyping(m.overlaySettings(m.overlayDrawer(rest[:len(region)]))))
+	return strings.Join(m.overlayQuit(m.overlayLegend(append(append(head, region...), rest[len(region):]...))), "\n")
 }
 
 // limitWhyCells はゲージに出す絞りの理由の幅の上限。
