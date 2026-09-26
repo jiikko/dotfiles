@@ -110,6 +110,12 @@ func changeStat(ctx context.Context, dir string) string {
 }
 
 func gitOut(ctx context.Context, dir string, args ...string) (string, error) {
+	out, err := gitRaw(ctx, dir, args...)
+	return strings.TrimSpace(out), err
+}
+
+// gitRaw は出力を削らずに返す (git status の先頭の空白が意味を持つ)。
+func gitRaw(ctx context.Context, dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, diffTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir, "--no-optional-locks"}, args...)...) // status が index を書き直さない
@@ -120,7 +126,7 @@ func gitOut(ctx context.Context, dir string, args ...string) (string, error) {
 	if err := cmd.Run(); err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(out.String()), nil
+	return out.String(), nil
 }
 
 // summaryPrompt は要約と一次判定の prompt。

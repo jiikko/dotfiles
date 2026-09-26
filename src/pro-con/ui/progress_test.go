@@ -14,7 +14,7 @@ func TestDrawerShowsProgress(t *testing.T) {
 	be := newSpy()
 	now := be.snap.Now
 	be.snap.Cards = []card.Card{{ID: "C-011", State: card.Running, Since: now, Prompt: "469 を実装して",
-		Progress: &card.Progress{Base: "origin/master", Ahead: 1, Commits: []card.Commit{{Hash: "a1b2c3", Subject: "見本を決めた"}}, Dirty: 2,
+		Progress: &card.Progress{Worktree: "/r/.claude/worktrees/pc-c-011", Branch: "worktree-pc-c-011", Base: "origin/master", Ahead: 1, Commits: []card.Commit{{Hash: "a1b2c3", Subject: "見本を決めた"}}, Dirty: 2,
 			Issues: []card.IssueProgress{{Ref: "dotfiles#469", Done: 1, Total: 2, Left: []string{"実装"}}}},
 		ProgressAt: now,
 		LastRun:    &card.RunRecord{Command: "make test", Cwd: "/r/.claude/worktrees/pc-c-011/src/pro-con", Took: 17 * time.Second, At: now.Add(-time.Minute)},
@@ -22,8 +22,8 @@ func TestDrawerShowsProgress(t *testing.T) {
 	m := New(be, nil)
 	m.width, m.drawerCard = 200, "C-011"
 	body := strings.Join(m.drawerBody(), "\n")
-	for _, want := range []string{"PG への指示: 469 を実装して", "今の待ち: PG の turn の途中", "進捗", "commit: origin/master より 1 本先",
-		"a1b2c3 見本を決めた", "未 commit の変更: 2 ファイル", "issue dotfiles#469 の進捗: 済み 1 / 残り 1", "[ ] 実装",
+	for _, want := range []string{"PG への指示: 469 を実装して", "今の待ち: PG の turn の途中", "worktree", "  /r/.claude/worktrees/pc-c-011", "ブランチ worktree-pc-c-011", "進捗", "commit: origin/master より 1 本先",
+		sgrYellow + "a1b2c3" + sgrReset + " 見本を決めた", "未 commit の変更: 2 ファイル", "issue dotfiles#469 の進捗: 済み 1 / 残り 1", "[ ] 実装",
 		"rc=0 (所要 17秒", "src/pro-con で `make test`"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("詳細に %q が無い:\n%s", want, body)

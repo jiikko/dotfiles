@@ -30,3 +30,16 @@
 ## 関連
 
 - 469 (進捗の節) / 467 (活動) / 492 (worktree の片付け。片付けたカードは worktree が無い)
+
+## 進捗
+
+- 2026-09-26 (C-063): 見本 (`card attach` の sample.ans: 節の置き方 A/B/C と差分の板) からユーザーが選んだ形で実装した
+  - 選んだ形: **独立した「worktree」の節を「進捗」の前に置く** (B)・commit の時刻は**相対** (9分前)・上限は **commit 5 本・ファイル 5 つ**・差分は**詳細から `D` で開く全幅の板**
+  - 集め方: 469 の裏の収集 (dispatcher が 30 秒ごと) に載せた。progress.json に worktree の絶対パス・無いこと・ブランチ・commit ごとの時刻・
+    未 commit の `XY パス` (`git status -z`)・差分の数を足し、差分の本文 (`git diff --merge-base <origin/master>` = commit 済みと未 commit。未追跡は入らない) は
+    上限 5000 行・1 行 1000 バイトで `termsafe.PlainLine` を通して `live/diffs/<ID>.diff` に書く (同じ中身は書き直さない・集めなかったカードの本文は消す)。
+    画面は `D` で開いたときにだけ裏で読んで色を付ける (描くたびに git もファイルも読まない)。`--view` でも開ける
+  - 色付け: glogx の `HighlightDiff` を `tuikit/highlight` (`Diff` / `Code` / `Lang`) へ移し、glogx の diff の板・pro-con の差分の板・`tuikit/markdown` のフェンスコードが同じものを使う
+    (markdown が別に持っていた chroma の Format の経路はまとめて消した)
+  - 完了のカードは worktree の場所だけ出す (git は回さない。`store.Derived.Attach` が完了のカードに場所だけ足す)。まだ起動していない / 片付けた / 見つからないを言い分ける
+  - `D` は glogx では doctor の板。pro-con では小文字の `d` がカードの削除なので、diff を大文字へ逃がした (`docs/glogx-ui-guide.md` の pro-con の表に書いた)

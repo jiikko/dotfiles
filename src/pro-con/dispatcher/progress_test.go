@@ -79,27 +79,44 @@ func TestGatherProgress(t *testing.T) {
 	})
 	d := &Dispatcher{Dir: dir, Repos: map[string]string{"r": repo}, ProgressGit: ExecProgressGit{}}
 	now := time.Now()
-	p, err := d.gatherProgress(context.Background(), now)
+	p, diffs, err := d.gatherProgress(context.Background(), now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	c1 := p.Cards["C-001"]
-	if c1.Base != "origin/master" || c1.Ahead != 1 || len(c1.Commits) != 1 || c1.Commits[0].Subject != "見本を決めた" || c1.Dirty != 2 || c1.LastCommit.IsZero() {
+	if c1.Base != "origin/master" || c1.Ahead != 1 || len(c1.Commits) != 1 || c1.Commits[0].Subject != "見本を決めた" || c1.Commits[0].At.IsZero() ||
+		c1.Dirty != 2 || c1.LastCommit.IsZero() {
 		t.Fatalf("worktree の git を読まない: %+v", c1)
+	}
+	// worktree の場所・ブランチ・未 commit のファイルの名前 (issue 508)
+	if c1.Worktree != wt || c1.NoWorktree || c1.Branch != "worktree-pc-c-001" || strings.Join(c1.DirtyFiles, "|") != " M issues/042-old.md|?? a.go" {
+		t.Fatalf("worktree の場所・ブランチ・未 commit の名前を集めない: %+v", c1)
+	}
+	// 差分は merge-base から作業ツリーまで (commit 済みの 469 と、未 commit の 042。未追跡の a.go は入らない)
+	body := strings.Join(diffs["C-001"], "\n")
+	if c1.Diff == nil || c1.Diff.Files != 2 || c1.Diff.Cut || !strings.Contains(body, "+- [x] 見本") || !strings.Contains(body, "+書きかけ") || strings.Contains(body, "a.go") {
+		t.Fatalf("差分を集めない: %+v\n%s", c1.Diff, body)
 	}
 	if len(c1.Issues) != 1 || c1.Issues[0].Done != 1 || c1.Issues[0].Total != 2 || len(c1.Issues[0].Left) != 1 || c1.Issues[0].Left[0] != "実装" {
 		t.Fatalf("worktree の issue の進捗 (PG が書き足した分) を読まない: %+v", c1.Issues)
 	}
 	c2 := p.Cards["C-002"]
+	if !c2.NoWorktree || c2.Worktree != filepath.Join(repo, ".claude", "worktrees", "pc-c-002") || c2.Diff != nil || diffs["C-002"] != nil {
+		t.Fatalf("worktree の無いカードに、無いことと置くはずの場所を出さない: %+v", c2)
+	}
 	if c2.Base != "" || len(c2.Issues) != 1 || c2.Issues[0].Last != "2026-09-02 半分" || c2.Issues[0].Ref != "r#042" {
 		t.Fatalf("worktree の無いカードは repo の本文を読むはず: %+v", c2)
 	}
 	if c6 := p.Cards["C-006"]; !strings.Contains(c6.Err, "r#999") {
 		t.Fatalf("本文が無い issue を知らせない: %+v", c6)
 	}
-	for _, id := range []string{"C-003", "C-004", "C-005"} {
+	// 完了は worktree の場所だけ (git は回さない。worktree は片付けた)
+	if c3, ok := p.Cards["C-003"]; !ok || !c3.NoWorktree || c3.Base != "" || len(c3.Issues) > 0 {
+		t.Fatalf("完了のカードに場所だけを出さない: %+v", c3)
+	}
+	for _, id := range []string{"C-004", "C-005"} {
 		if _, ok := p.Cards[id]; ok {
-			t.Fatalf("%s の進捗を集めた (完了・依頼・設定に無い repo は集めない)", id)
+			t.Fatalf("%s の進捗を集めた (依頼・設定に無い repo は集めない)", id)
 		}
 	}
 }
@@ -155,5 +172,50 @@ func TestCollectProgressInterval(t *testing.T) {
 	d.collectProgress(context.Background(), t0.Add(progressEvery-time.Second))
 	if !d.progressAt.Equal(t0) {
 		t.Fatal("間隔の前に集め直した")
+	}
+}
+
+// 差分の本文は上限の行数で切り、1 行ずつ無害化する (端末を操作するエスケープを落とす・タブは空白・長すぎる行は切る)。
+func TestReadDiffLines(t *testing.T) {
+	long := strings.Repeat("あ", diffLineBytes) // 3 バイトずつ: 途中で切っても UTF-8 を壊さない
+	in := "+\tx\x1b]52;c;SGVsbG8=\x07\n-" + long + "\n c\n"
+	got, cut, err := readDiffLines(strings.NewReader(in), 10)
+	if err != nil || cut || len(got) != 3 || got[0] != "+    x" || !strings.HasSuffix(got[1], " …") || len(got[1]) > diffLineBytes+4 || got[2] != " c" {
+		t.Fatalf("got %q cut=%v err=%v", got, cut, err)
+	}
+	got, cut, _ = readDiffLines(strings.NewReader(in), 2)
+	if !cut || len(got) != 2 {
+		t.Fatalf("上限で切らない: %q cut=%v", got, cut)
+	}
+	if got, cut, _ := readDiffLines(strings.NewReader("a\nb"), 2); cut || len(got) != 2 {
+		t.Fatalf("ちょうど上限の本文を切ったと言う: %q cut=%v", got, cut)
+	}
+}
+
+// git status -z: 名前を変えた変更は元の名前が続くので 1 つに数える。上限を越えた分は数だけ。
+func TestParseStatusZ(t *testing.T) {
+	n, files := parseStatusZ("R  new.go\x00old.go\x00 M a b.go\x00?? c\x00?? d\x00", 3)
+	if n != 4 || strings.Join(files, "|") != "R  new.go| M a b.go|?? c" {
+		t.Fatalf("n=%d files=%q", n, files)
+	}
+}
+
+// 差分の本文は置き場に書き、置き場を進捗に入れる。集めなかったカードの本文は消す。
+func TestSaveDiffs(t *testing.T) {
+	dir := t.TempDir()
+	if err := store.SaveDiff(dir, "C-009", []byte("old")); err != nil {
+		t.Fatal(err)
+	}
+	d := &Dispatcher{Dir: dir}
+	p := store.Progress{Cards: map[string]card.Progress{"C-001": {Diff: &card.DiffSummary{Files: 1}}, "C-002": {}}}
+	d.saveDiffs(&p, map[string][]string{"C-001": {"diff --git a/x b/x", "+y"}})
+	if got := p.Cards["C-001"].Diff; got == nil || got.Path != store.DiffPath(dir, "C-001") {
+		t.Fatalf("置き場を入れない: %+v", got)
+	}
+	if b, err := os.ReadFile(store.DiffPath(dir, "C-001")); err != nil || string(b) != "diff --git a/x b/x\n+y" {
+		t.Fatalf("本文を書かない: %q %v", b, err)
+	}
+	if _, err := os.Stat(store.DiffPath(dir, "C-009")); !os.IsNotExist(err) {
+		t.Fatalf("集めなかったカードの本文を消さない: %v", err)
 	}
 }

@@ -21,6 +21,9 @@ import (
 // glogx の issues の引き出しと同じ寸法と所要 (glogx/issues_drawer.go。変えるなら両方の見え方を揃えて決める)。
 var drawerGeometry = layout.DrawerGeometry{Ratio: 0.8, Extra: 10, MinList: 8, MaxPeek: 18}
 
+// worktreePaint は worktree の節の色 (見本で決めた形。issue 508): hash は黄、時刻と「ほか」は暗く、index に入った変更は緑・作業ツリーだけの変更は赤。
+var worktreePaint = card.Paint{Hash: sgrYellow, Dim: sgrDim, Staged: fg(46), Unstaged: sgrRed, Reset: sgrReset}
+
 const (
 	drawerDuration = 112 * time.Millisecond
 	drawerHeadRows = 2 // 見出しと罫線。本文だけをスクロールする
@@ -63,6 +66,8 @@ func (m *Model) handleDrawerKey(k string) (cmd tea.Cmd, handled bool) {
 	case "q", "esc":
 		m.closeTop()
 		return m.startFrames(), true
+	case "D": // 取り込む先との差分の板 (issue 508。小文字の d はカードの削除なので大文字。docs/glogx-ui-guide.md の pro-con の表)
+		return m.openDiff(), true
 	case "J":
 		m.stepCard(1)
 		return nil, true
@@ -192,6 +197,13 @@ func (m *Model) drawerBody() []string {
 			st = "届いた"
 		}
 		add("", fmt.Sprintf("追加オーダー (%s・%s): %s", o.Kind.Label(), st, o.Text))
+	}
+	if ls := c.WorktreeLines(m.snap.Now, fmtDur, worktreePaint, sgrDim+"  (D で開く)"+sgrReset); len(ls) > 0 { // PG の worktree の場所と git (issue 508)
+		out = append(out, "")
+		add(sgrDim, card.WorktreeHead(c, m.snap.Now, fmtDur))
+		for _, l := range ls {
+			add("", "  "+l)
+		}
 	}
 	if ls := c.ProgressLines(m.snap.Now, fmtDur); len(ls) > 0 { // どこまで進んだか (issue 469。dispatcher と見張りが集めたもの)
 		out = append(out, "")
