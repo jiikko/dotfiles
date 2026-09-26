@@ -137,6 +137,53 @@ func TestCardList(t *testing.T) {
 	}
 }
 
+// list の --grep (画面の / と同じ一致) / --issue / --repo で絞れる。条件は --state と AND、--all の書庫にも効く (issue 532)。
+func TestCardListFilters(t *testing.T) {
+	env := viewFixture(t) // C-001 色を直す (dotfiles#415) / C-002 別件 (README) / C-003 片付け済み
+	mustSubmit(t, env.dir, store.Request{Kind: "add", Title: "obaket の色", Request: "色を揃えて", Repo: "obaket"})
+	mustApply(t, env.dir)
+	ids := func(args ...string) string {
+		t.Helper()
+		rc, out, errOut := viewCmd(t, env, append([]string{"list", "--json"}, args...)...)
+		var got []cardSummary
+		if rc != 0 || errOut != "" || json.Unmarshal([]byte(out), &got) != nil {
+			t.Fatalf("list %v: rc=%d out=%q err=%q", args, rc, out, errOut)
+		}
+		var s []string
+		for _, c := range got {
+			s = append(s, c.ID)
+		}
+		return strings.Join(s, ",")
+	}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--grep", "色"}, "C-004,C-001"},                 // 題名 (並びは画面と同じ列の順。C-004 は依頼の列)
+		{[]string{"--grep", "readme"}, "C-002"},                  // 依頼の原文 (大文字小文字を区別しない)
+		{[]string{"--grep", "c-002"}, "C-002"},                   // カード ID
+		{[]string{"--grep", "#415"}, "C-001"},                    // issue
+		{[]string{"--grep", "色 揃えて"}, "C-004"},                   // 語は AND
+		{[]string{"--grep", "色", "--state", "waiting"}, "C-001"}, // --state と AND
+		{[]string{"--grep", "片付け"}, ""},                          // 書庫は --all のときだけ
+		{[]string{"--grep", "片付け", "--all"}, "C-003"},
+		{[]string{"--issue", "dotfiles#415"}, "C-001"},
+		{[]string{"--issue", "#415"}, "C-001"},
+		{[]string{"--issue", "415"}, "C-001"},
+		{[]string{"--issue", "obaket#415"}, ""},
+		{[]string{"--repo", "obaket"}, "C-004"},
+	} {
+		if got := ids(tc.args...); got != tc.want {
+			t.Errorf("list %v = %q, want %q", tc.args, got, tc.want)
+		}
+	}
+	for _, bad := range []string{"x", "dotfiles#", "#0", "-1"} {
+		if rc, _, errOut := viewCmd(t, env, "list", "--issue", bad); rc != 2 || !strings.Contains(errOut, "--issue") {
+			t.Errorf("--issue %q は rc=2 で断る: rc=%d err=%q", bad, rc, errOut)
+		}
+	}
+}
+
 // 誰の番かは dispatcher が書いた起こさない役で決める (PM を起こさないなら、PG の質問と依頼は人の番)。
 func TestCardListMarksHumansTurn(t *testing.T) {
 	env := viewFixture(t)

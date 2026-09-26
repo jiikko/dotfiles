@@ -60,7 +60,7 @@ PM は dispatcher が起動し、依頼の列に新しいカードが来るた�
    (dispatcher が起こす別の Claude の session。issue 487。手順は `pro-con card guide --integrator` の指示書)。
    **見積もり (役目 3 の `--after`) は、取り込みの係が先に入ったカードとの組み合わせをテストで見るときに読む**ので、後のカードの issue の本文に残す
 6. **カードの様子は読む口で見る** (記録のファイルを直接読まない。どれも読むだけで、箱にも記録にも書かない)
-   `pro-con card list` (一覧。`--state <列>` で絞る) / `pro-con card show <カード>` (依頼の原文・履歴・質問・添付のパス・PG の出力の末尾) /
+   `pro-con card list` (一覧。`--state <列>` / `--grep <語>` / `--issue <repo>#<番号>` / `--repo <名前>` で絞る) / `pro-con card show <カード>` (依頼の原文・履歴・質問・添付のパス・PG の出力の末尾) /
    `pro-con card wait <カード> --until review` (その列に来るまで待つ。`--json` で機械が読む形)。
    dispatcher が何を判断したか (適用・起動・再開・止めた・削除・枠で待たせた・watchdog) は `pro-con log --card <カード>` で読む
    (`--since 10m` で絞る・`--follow` で出るたびに読む・`--json` で 1 行 1 出来事)

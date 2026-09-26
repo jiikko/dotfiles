@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -163,34 +164,84 @@ type viewEnv struct {
 	repos    func() (map[string]string, error) // 設定の repo の名前 → パス (card add / plan が repo を見る。nil なら見ない)
 }
 
-func runCardList(args []string, env viewEnv, stdout, stderr io.Writer) int {
+// listUsage は card list の使い方 (引数を誤ったときに出す)。
+const listUsage = "usage: pro-con card list [--state <列>] [--purpose work|question] [--grep <語>] [--issue [<repo>]#<番号>] [--repo <名前>] [--all] [--json]"
+
+// errListUsage は引数の形そのものが違う (知らないフラグ・位置引数)。使い方だけを出す。
+var errListUsage = errors.New("usage")
+
+// listFilter は card list の絞り込み (issue 532)。条件はすべて AND。
+type listFilter struct {
+	state     *card.State
+	purpose   *card.Purpose
+	grep      string // 画面の / と同じ一致 (card.Matches)
+	issueRepo string // --issue の repo (空なら番号だけで見る)
+	issueNum  int    // 0 = --issue なし
+	repo      string
+	all       bool // 書庫へ移した終えたカードも
+	asJSON    bool
+}
+
+func parseListFilter(args []string) (listFilter, error) {
+	var f listFilter
 	fs := flag.NewFlagSet("pro-con card list", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	stateArg := fs.String("state", "", "")
 	purposeArg := fs.String("purpose", "", "")
-	all := fs.Bool("all", false, "")
-	asJSON := fs.Bool("json", false, "")
+	issueArg := fs.String("issue", "", "")
+	fs.StringVar(&f.grep, "grep", "", "")
+	fs.StringVar(&f.repo, "repo", "", "")
+	fs.BoolVar(&f.all, "all", false, "")
+	fs.BoolVar(&f.asJSON, "json", false, "")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
-		_, _ = fmt.Fprintln(stderr, "usage: pro-con card list [--state <列>] [--purpose work|question] [--all] [--json]")
-		return 2
+		return f, errListUsage
 	}
-	var purpose *card.Purpose
 	if *purposeArg != "" {
 		p, err := card.ParsePurpose(*purposeArg)
 		if err != nil {
-			_, _ = fmt.Fprintln(stderr, "pro-con card list:", err)
-			return 2
+			return f, err
 		}
-		purpose = &p
+		f.purpose = &p
 	}
-	var want *card.State
 	if *stateArg != "" {
 		s, err := parseState(*stateArg)
 		if err != nil {
-			_, _ = fmt.Fprintln(stderr, "pro-con card list:", err)
-			return 2
+			return f, err
 		}
-		want = &s
+		f.state = &s
+	}
+	if *issueArg != "" {
+		repo, num, found := strings.Cut(*issueArg, "#")
+		if !found { // 番号だけ (532)
+			repo, num = "", *issueArg
+		}
+		n, err := strconv.Atoi(num)
+		if err != nil || n <= 0 {
+			return f, fmt.Errorf("--issue は <repo>#<番号> か番号 (例 dotfiles#532 / #532 / 532): %q", *issueArg)
+		}
+		f.issueRepo, f.issueNum = repo, n
+	}
+	return f, nil
+}
+
+// keep はカードが絞り込みに残るか。
+func (f listFilter) keep(c card.Card) bool {
+	return (!c.Archived || f.all) &&
+		(f.state == nil || c.State == *f.state) &&
+		(f.purpose == nil || c.Purpose == *f.purpose) &&
+		(f.repo == "" || c.Repo == f.repo) &&
+		(f.issueNum == 0 || c.HasIssue(f.issueRepo, f.issueNum)) &&
+		c.Matches(f.grep)
+}
+
+func runCardList(args []string, env viewEnv, stdout, stderr io.Writer) int {
+	f, err := parseListFilter(args)
+	if err != nil {
+		if !errors.Is(err, errListUsage) {
+			_, _ = fmt.Fprintln(stderr, "pro-con card list:", err)
+		}
+		_, _ = fmt.Fprintln(stderr, listUsage)
+		return 2
 	}
 	st, err := store.Load(env.dir)
 	if err != nil {
@@ -198,7 +249,7 @@ func runCardList(args []string, env viewEnv, stdout, stderr io.Writer) int {
 		return 1
 	}
 	cards := st.Cards
-	if *all { // 書庫へ移した終えたカードも (issue 478)。記録と書庫の両方にあれば記録を正とする (移す途中で落ちた形)
+	if f.all { // 書庫へ移した終えたカードも (issue 478)。記録と書庫の両方にあれば記録を正とする (移す途中で落ちた形)
 		arch, err := store.LoadArchive(env.dir)
 		if err != nil {
 			_, _ = fmt.Fprintln(stderr, "pro-con card list:", err)
@@ -212,12 +263,12 @@ func runCardList(args []string, env viewEnv, stdout, stderr io.Writer) int {
 	out := []cardSummary{}
 	view := viewDispatcher(env.dir, env.now())
 	for _, c := range cards {
-		if (c.Archived && !*all) || (want != nil && c.State != *want) || (purpose != nil && c.Purpose != *purpose) {
+		if !f.keep(c) {
 			continue
 		}
 		out = append(out, summarize(c, st.Cards, view))
 	}
-	if *asJSON {
+	if f.asJSON {
 		return writeJSON(stdout, stderr, out)
 	}
 	now := env.now()
