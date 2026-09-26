@@ -35,11 +35,11 @@
 
 ## 受け入れ条件
 
-- [ ] 画面のレーン・ヘッダ・`card list` / `card show` の列の名前が「着手待ち」
-- [ ] `?` のヘルプ・README・pm-guide・`pro-con help` の説明が「着手待ち」で、この列に居る理由 (空き待ち・枠待ち・順番待ち) が書かれている
-- [ ] `--state planned` は今までどおり使える
-- [ ] `pro-con ps` と設定画面のプロセスのタブで、再開を待つ PG の状態の欄に「再開待ち (…)」が出る (カードの列の名前を出さない)
-- [ ] production と文書に「分解済み」が残っていない (`git grep 分解済み -- src ':!src/pro-con/samples'` が 0 件。残すなら理由をその行に)
+- [x] 画面のレーン・ヘッダ・`card list` / `card show` の列の名前が「着手待ち」
+- [x] `?` のヘルプ・README・pm-guide・`pro-con help` の説明が「着手待ち」で、この列に居る理由 (空き待ち・枠待ち・順番待ち) が書かれている
+- [x] `--state planned` は今までどおり使える
+- [x] `pro-con ps` と設定画面のプロセスのタブで、再開を待つ PG の状態の欄に「再開待ち (…)」が出る (カードの列の名前を出さない)
+- [x] production と文書に「分解済み」が残っていない (`git grep 分解済み -- src ':!src/pro-con/samples'` が 0 件。残すなら理由をその行に)
 
 ## 関連
 
@@ -58,3 +58,9 @@
   src (samples を除く) と `_claude/skills/pro-con/SKILL.md` の「分解済み」を置き換え (`git grep 分解済み -- src ':!src/pro-con/samples'` 0 件)。
   `pro-con ps` / 設定画面のプロセスのタブは、着手待ちのカードの動いている PG に `pgState` で「再開待ち (利用枠)」(dispatcher の Cap < Limit) /
   「再開待ち (PG の空き待ち)」を出す。README・pm-guide・help/debug.md に追記
+
+## 確かめた (2026-09-27、ユーザーと話す Claude。実装は `7e82fbee` で master にある)
+
+- 名前は `card.State.Label` (Planned = 「着手待ち」) から出る。列に居る理由は `card.Meaning` にある。README・pm-guide・`pro-con help` (debug / usage) に「着手待ち」
+- `pro-con card list --state planned` は rc=0。`pro-con ps` の「再開待ち (…)」は `pscmd.go` と `pscmd_test.go` (設定画面のプロセスのタブも同じ集め方)。今は再開待ちの PG が居ないので実物では見ていない
+- 「分解済み」の残りは `src/pro-con/ui/frame_bench_test.go` のコメント 1 か所だけだった。直して `git grep 分解済み -- src ':!src/pro-con/samples'` が 0 件

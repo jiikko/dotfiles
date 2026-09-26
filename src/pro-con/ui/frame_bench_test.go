@@ -64,7 +64,7 @@ func BenchmarkFrameBump(b *testing.B) {
 	runFrames(b, m, clk, bumpDuration)
 }
 
-// 分解済みから作業中へ移ったカードが列のあいだを滑る (motion.go の splice)。
+// 着手待ちから作業中へ移ったカードが列のあいだを滑る (motion.go の splice)。
 func BenchmarkFrameMove(b *testing.B) {
 	m, be, clk := benchModel()
 	m.resetSlots()
