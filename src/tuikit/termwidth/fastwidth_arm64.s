@@ -135,7 +135,7 @@ lookup:
 	SUB	$1, R5, R5 // 表は幅 +1 を持つ (0 = 受理しない)
 	ADD	R5, R2
 	MOVD	R6, R0
-	B	loop
+	B	resume
 
 esc:
 	// SGR (ESC [ 数字と ; の並び m) だけを幅 0 として飛ばす
@@ -159,11 +159,23 @@ esc_params:
 	CMP	$0x6d, R5 // 'm'
 	BNE	fail      // SGR 以外の CSI
 	ADD	$1, R6, R0
-	B	loop
+	B	resume
 
 esc_next:
 	ADD	$1, R6
 	B	esc_params
+
+resume:
+	// 切れ目の直後は、次の 1 byte をスカラで見てから NEON に戻る。罫線のように記号が連続する行で
+	// 記号 1 字ごとに 16 byte の判定と位置計算を払わないため (払うと Go 版の 1.8 倍遅かった。
+	// macos-15 runner の BenchmarkFastDispWidth/box_120 実測 2026-09-26)
+	CMP	R1, R0
+	BHS	done
+	MOVBU	(R0), R4
+	SUB	$0x20, R4, R5
+	CMP	$0x5f, R5
+	BHS	special
+	B	loop
 
 done:
 	MOVD	R2, ret+16(FP)

@@ -51,10 +51,13 @@ jobs:
             (cd /tmp/base/src/glogx && /tmp/glogx_base.test -test.run '^$' -test.bench "$benches" -test.benchmem -test.count 1) >> /tmp/base.txt
             (cd src/glogx && /tmp/glogx_new.test -test.run '^$' -test.bench "$benches" -test.benchmem -test.count 1) >> /tmp/new.txt
           done
+          echo '--- base'; cat /tmp/base.txt
+          echo '--- new'; cat /tmp/new.txt
 
       - name: benchstat
         run: |
-          go install golang.org/x/perf/cmd/benchstat@latest
+          # 最新の benchstat は go 1.26 を要求する (setup-go が GOTOOLCHAIN=local にしている)
+          GOTOOLCHAIN=go1.26.0 go install golang.org/x/perf/cmd/benchstat@latest
           export PATH="$(go env GOPATH)/bin:$PATH"
           {
             echo '## micro: generic vs asm'
