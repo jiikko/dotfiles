@@ -272,6 +272,14 @@ type Card struct {
 	// 🚨 記録 (cards.json) には書かない: 書き手は dispatcher の Apply だけで、数秒で古くなる様子を記録の差分に混ぜない
 	Doing   []Doing   `json:"-"`
 	DoingAt time.Time `json:"-"`
+	// Progress は作業の進捗 (commit・未 commit・issue の進捗節)、ProgressAt は dispatcher がそれを集めた時刻 (issue 469。store.ProgressFile)。
+	// Conflicts は見張りが見た取り込みの衝突の文、ConflictsAt は見張りが見た時刻 (store.ConflictsFile)。どれも Doing と同じく記録には書かない
+	Progress    *Progress `json:"-"`
+	ProgressAt  time.Time `json:"-"`
+	Conflicts   []string  `json:"-"`
+	ConflictsAt time.Time `json:"-"`
+	// LastRun はテストの係が最後に返した結果 (issue 469。結果は Resume で PG に渡して消えるので、詳細に残す分)
+	LastRun *RunRecord `json:",omitempty"`
 	// Resume は次に PG を再開するときに渡す文 (質問への回答)。dispatcher が渡したら空にする (本物のモードだけ。426 の決定 2)
 	Resume string `json:",omitempty"`
 	// Launching は dispatcher が PG の起動・再開を始めて、結果をまだ確かめていない印 ("起動" / "再開")。起動の前に記録へ書く

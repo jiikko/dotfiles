@@ -68,6 +68,15 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
   (Bash のコマンド・裏の shell)・transcript の末尾の裏のサブエージェントと結果待ちの道具の呼び出し。テストの係に頼んだコマンドの
   順番待ち / 実行中はカードの記録から足す。🚨 PG の外へ抜けたプロセス (`nohup … &` で親が launchd に移ったもの) は出ない
   (cwd で拾うと、人が worktree で開いた shell まで PG のものとして出す)。1 分集め直されていなければ詳細は古いと添え、ボードには出さない
+- **進捗** (issue 469) も詳細と `card show` が読むだけで出す。集めるのは 3 か所:
+  - dispatcher が 30 秒ごとに裏で `…/live/progress.json` へ: PG の worktree の git (origin/master より先の commit の本数と subject・未 commit の
+    ファイルの数・最後の commit の時刻) と、カードの issue の本文の「進捗」節 (チェックボックスの済み / 残り。無ければ最後の項目。worktree が
+    あれば PG が書き足した worktree の本文)。git は読むだけ (`--no-optional-locks`)
+  - 見張りが見るたびに `…/live/conflicts.json` へ: 今見えている取り込みの衝突 (commit 済みの分。PG どうしの組は両方のカードに載せる)
+  - テストの係が結果を返すときに記録 (カードの `LastRun`) へ: コマンド・頼んだ場所 (worktree からの相対。`src/pro-con` の make test と
+    repo 全体を見分ける)・rc・所要・出力の末尾 3 行
+  - 「今の待ち」(PG の turn の途中 / テストの係 / 利用枠 / 順番 / PG の空き / 人の番とその理由) は記録だけから決める (`card.WaitingOn`。
+    誰の番かは 452 の `Turn` を読む)
 
 ## 画面と dispatcher のつながり (即時の割り振り・複数の画面・終了)
 

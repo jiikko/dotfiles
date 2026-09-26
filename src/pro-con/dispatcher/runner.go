@@ -25,6 +25,8 @@ import (
 	"syscall"
 	"time"
 
+	"termsafe"
+
 	"pro-con/card"
 	"pro-con/eventlog"
 	"pro-con/live"
@@ -330,11 +332,25 @@ func (d *Dispatcher) finishRun(now time.Time, job *runJob, r runResult) (eventlo
 		if cc.State != card.Running || cc.Run == "" { // 止められた等で、もう結果を待っていない
 			return
 		}
+		// 詳細の「進捗」に残す分 (Resume は PG に渡したら消える。issue 469)。頼んだ場所は DropRun の前に写す
+		cc.LastRun = &card.RunRecord{Command: job.command, Cwd: cc.RunCwd, RC: r.rc, Took: now.Sub(job.start).Round(time.Second), At: now,
+			Tail: lastLines(logTail(job.logPath), card.RunTailLines), Log: job.logPath}
 		cc.DropRun()
 		cc.State, cc.Since, cc.Resume = card.Planned, now, text
 		cc.History = append(cc.History, card.Event{At: now, Text: fmt.Sprintf("テストの係: rc=%d (%s)。結果を渡して PG を再開する", r.rc, clipLine(job.command))})
 	})
 	return ev(eventlog.KindRun, job.cardID, "", fmt.Sprintf("%s のコマンドが終わった: rc=%d", job.cardID, r.rc)), err
+}
+
+// lastLines は s の空でない最後の n 行 (色と制御文字を落とし、clipLine で切る。詳細にそのまま出す)。
+func lastLines(s string, n int) []string {
+	var out []string
+	for _, l := range strings.Split(s, "\n") {
+		if l = strings.TrimSpace(termsafe.PlainLine(l)); l != "" {
+			out = append(out, clipLine(l))
+		}
+	}
+	return out[max(len(out)-n, 0):]
 }
 
 func clipLine(s string) string {

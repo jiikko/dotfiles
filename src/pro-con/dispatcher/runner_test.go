@@ -323,8 +323,14 @@ func TestRunFromWorktreeSubdirectory(t *testing.T) {
 	}
 	fr.release <- 0
 	waitDone(t, r)
-	if c := states(t, r.dir)["C-001"]; c.RunCwd != "" {
+	c := states(t, r.dir)["C-001"]
+	if c.RunCwd != "" {
 		t.Fatalf("結果を渡した後も頼んだ場所の記録が残る: %q", c.RunCwd)
+	}
+	// 最後の結果は詳細の「進捗」に残す (頼んだ場所は worktree からの相対で読める。issue 469)
+	if lr := c.LastRun; lr == nil || lr.Cwd != sub || lr.RC != 0 || lr.Command != "go test ./..." || card.RunDir(c, lr.Cwd) != "src/pro-con" ||
+		len(lr.Tail) != 2 || lr.Tail[0] != "FAIL: TestFoo (0.01s)" || lr.Log == "" {
+		t.Fatalf("最後の結果を残さない: %+v", c.LastRun)
 	}
 }
 

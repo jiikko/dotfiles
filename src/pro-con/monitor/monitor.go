@@ -4,7 +4,8 @@
 //   - テストの順番の長さ: テストの係に頼まれてまだ始まっていない本数と、先頭の待ち時間
 //
 // 見張りは読むだけ (cards.json・各 PG の worktree の git)。見つけたことは受付の箱に置き (依頼の種類 store.KindMonitor)、
-// dispatcher が出来事の記録へ書く (書き手は dispatcher 1 つ = 426 の決定 1)。
+// dispatcher が出来事の記録へ書く (書き手は dispatcher 1 つ = 426 の決定 1)。記録の外に書くのは、今見えている衝突の写し
+// (store.ConflictsFile。カードの詳細が読む。issue 469) だけ。
 // 知らせるのは「現れた」「消えた」(と、衝突したファイルが変わった) ときだけ。前に知らせた結果はメモリだけに持つので、
 // 見張りを起こし直すと、残っている衝突をもう 1 度だけ知らせる。
 // 🚨 git fetch はしない (見張りは ref を動かさない)。origin/master は、取り込みの係が worktree から push するたびに手元で更新される。
@@ -86,6 +87,9 @@ func (m *Monitor) Check(ctx context.Context) (int, error) {
 		for k, f := range fs {
 			found[k] = f
 		}
+	}
+	if err := m.saveConflicts(now, found, keep); err != nil {
+		errs = append(errs, "今の衝突を書けない: "+err.Error())
 	}
 	if m.told == nil {
 		m.told = map[string]finding{}
@@ -300,6 +304,29 @@ func (m *Monitor) repoNames(cards []card.Card) []string {
 }
 
 func conflictPrefix(repo string) string { return "conflict:" + repo + ":" }
+
+// saveConflicts は今見えている衝突 (見つけた物と、見られずに前の結果を残す物) を store.ConflictsFile に書く (カードの詳細の「進捗」が
+// 読む。issue 469)。知らせたかどうか (told) には依らない: 受付の箱に置けなかった回も、詳細には今の結果を出す。
+func (m *Monitor) saveConflicts(now time.Time, found map[string]finding, keep unseen) error {
+	out := store.Conflicts{At: now, Cards: map[string][]string{}}
+	add := func(k string, f finding) {
+		if !strings.HasPrefix(k, "conflict:") {
+			return
+		}
+		for _, id := range strings.Split(k[strings.LastIndex(k, ":")+1:], "+") { // PG どうしの組は両方のカードに載せる
+			out.Cards[id] = append(out.Cards[id], f.note)
+		}
+	}
+	for _, k := range sortedKeys(found) {
+		add(k, found[k])
+	}
+	for _, k := range sortedKeys(m.told) {
+		if _, ok := found[k]; !ok && keep.has(k) {
+			add(k, m.told[k])
+		}
+	}
+	return store.SaveConflicts(m.Dir, out)
+}
 
 // unseen は見られなかった物の鍵: repo の頭 (conflict:<repo>:)・カード (conflict:<repo>:<id>)・組 (conflict:<repo>:<id>+<id>)。
 type unseen map[string]bool

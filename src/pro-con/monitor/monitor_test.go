@@ -371,3 +371,43 @@ func TestPairKeyIgnoresCardOrder(t *testing.T) {
 		t.Fatalf("並べ替えただけで知らせ直した:\n%s", notes(got))
 	}
 }
+
+// 今見えている衝突を ConflictsFile に写す (カードの詳細が読む。issue 469)。PG どうしの組は両方のカードに載せ、
+// 見られなかった回は前の結果を残し、直したら消す。
+func TestConflictsFileMirrorsCurrentFindings(t *testing.T) {
+	r := newRig(t)
+	r.card("C-001", card.Running)
+	r.card("C-002", card.Review)
+	r.commit("C-001", "g.txt", "one\n")
+	r.commit("C-002", "g.txt", "two\n")
+	r.check()
+	load := func() store.Conflicts {
+		t.Helper()
+		if _, err := os.Stat(filepath.Join(r.dir, store.ConflictsFile)); err != nil {
+			t.Fatal(err)
+		}
+		d, errs := store.LoadDerived(r.dir)
+		if len(errs) > 0 {
+			t.Fatal(errs)
+		}
+		return d.Conflicts
+	}
+	c := load()
+	for _, id := range []string{"C-001", "C-002"} {
+		if len(c.Cards[id]) != 1 || !strings.Contains(c.Cards[id][0], "C-001 と C-002 の commit 済みの分どうしが衝突する") {
+			t.Fatalf("%s に組の衝突が載らない: %+v", id, c.Cards)
+		}
+	}
+	base := r.git(r.repo, "rev-parse", "refs/remotes/origin/master")
+	r.git(r.repo, "update-ref", "-d", "refs/remotes/origin/master") // 見られない回: 前の結果を残す
+	_, _ = r.m.Check(context.Background())
+	if c := load(); len(c.Cards["C-001"]) != 1 || len(c.Cards["C-002"]) != 1 {
+		t.Fatalf("見られなかった回に衝突を消した: %+v", c.Cards)
+	}
+	r.git(r.repo, "update-ref", "refs/remotes/origin/master", base)
+	r.commit("C-002", "g.txt", "one\n") // 直した
+	r.check()
+	if c := load(); len(c.Cards) != 0 || c.At.IsZero() {
+		t.Fatalf("直した衝突が残る / 見た時刻が無い: %+v", c)
+	}
+}

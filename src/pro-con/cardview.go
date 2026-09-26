@@ -81,43 +81,27 @@ func rolesIn(dir string) card.Roles {
 	return ds.Roles
 }
 
-// waitingIn は waiting を、記録 (dir) の動いているカードで引く (書庫から読んだカードにも使える)。記録を読めなければ順番の待ちは出さない。
-func waitingIn(dir string, c card.Card) string {
+// waitingIn は waiting と「今の待ち」(card.WaitingOn) を、記録 (dir) の動いているカードで引く (書庫から読んだカードにも使える)。
+// 記録を読めなければ順番の待ちは出さない。
+func waitingIn(dir string, c card.Card) (waits, now string) {
 	var cards []card.Card
 	if c.State == card.Planned && len(c.After) > 0 {
 		if st, err := store.Load(dir); err == nil {
 			cards = st.Cards
 		}
 	}
-	return waiting(c, cards)
+	return waiting(c, cards), c.WaitingOn(cards, rolesIn(dir))
 }
 
-// waiting は何を待っているか。PG の待ち (waitLabel) が無ければ、順番の前のカード (issue 468)。
+// waiting は何を待っているか。PG の待ち (card.Wait.Label) が無ければ、順番の前のカード (issue 468)。
 func waiting(c card.Card, cards []card.Card) string {
-	if l := waitLabel(c.Wait); l != "" {
+	if l := c.Wait.Label(); l != "" {
 		return l
 	}
 	if c.State == card.Planned {
 		if b := card.Blockers(cards, c); len(b) > 0 {
 			return strings.Join(b, ", ") + " の後"
 		}
-	}
-	return ""
-}
-
-func waitLabel(w card.Wait) string {
-	switch w.Kind {
-	case card.WaitQuestion:
-		return "質問"
-	case card.WaitPermission:
-		return "権限の確認"
-	case card.WaitResource:
-		return fmt.Sprintf("%s の順番待ち (%d 番目)", w.Resource, w.Position)
-	case card.WaitQuota:
-		return "利用枠の回復待ち"
-	case card.WaitCrashed:
-		return "落ち続けたので止めた"
-	case card.WaitNone:
 	}
 	return ""
 }
@@ -129,8 +113,16 @@ type cardDetail struct {
 	// Doing は PG が今走らせているもの、DoingAt は dispatcher がそれを集めた時刻 (store.DoingFile。Card には記録の形 (json) で載らない)
 	Doing    []card.Doing `json:"doing"`
 	DoingAt  time.Time    `json:"doingAt,omitzero"`
-	DoingErr string       `json:"doingErr,omitempty"` // 集めた様子を読めなかった理由 (カードの詳細は出す)
+	DoingErr string       `json:"doingErr,omitempty"` // 集めた様子 (今走らせているもの・進捗・衝突) を読めなかった理由 (カードの詳細は出す)
 	Waiting  string       `json:"waiting,omitempty"`  // 何を待っているか (list と同じ。順番の前のカードは記録の全カードから引く)
+	// NowWaiting は「今の待ち」(card.WaitingOn。PG の turn の途中・テストの係・利用枠・順番・人の番。issue 469)
+	NowWaiting string `json:"nowWaiting,omitempty"`
+	// Progress は進捗 (dispatcher が集めた commit・未 commit・issue の進捗節)、Conflicts は見張りが見た取り込みの衝突 (store.ProgressFile /
+	// ConflictsFile。Card には記録の形で載らない)。テストの係の最後の結果は Card の LastRun
+	Progress    *card.Progress `json:"progress,omitempty"`
+	ProgressAt  time.Time      `json:"progressAt,omitzero"`
+	Conflicts   []string       `json:"conflicts,omitempty"`
+	ConflictsAt time.Time      `json:"conflictsAt,omitzero"`
 }
 
 // viewEnv は読む口が見る場所。
@@ -233,13 +225,15 @@ func loadDetail(env viewEnv, id string) (cardDetail, error) {
 		}
 		return cardDetail{}, fmt.Errorf("カード %q が無い", id)
 	}
-	d := cardDetail{Card: c, Log: pgLog(env, c), Doing: []card.Doing{}, Waiting: waitingIn(env.dir, c)}
-	if doing, err := store.LoadDoing(env.dir); err != nil {
+	d := cardDetail{Card: c, Log: pgLog(env, c), Doing: []card.Doing{}}
+	d.Waiting, d.NowWaiting = waitingIn(env.dir, c)
+	derived, errs := store.LoadDerived(env.dir)
+	if err := errors.Join(errs...); err != nil {
 		d.DoingErr = err.Error()
-	} else {
-		doing.Attach(&c)
-		d.Doing, d.DoingAt = append(d.Doing, c.Doing...), c.DoingAt
 	}
+	derived.Attach(&c)
+	d.Doing, d.DoingAt = append(d.Doing, c.Doing...), c.DoingAt
+	d.Progress, d.ProgressAt, d.Conflicts, d.ConflictsAt = c.Progress, c.ProgressAt, c.Conflicts, c.ConflictsAt
 	return d, nil
 }
 
@@ -294,7 +288,7 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 	p("issue: %s   親: %s", link, orDashCLI(c.ParentID))
 	p("依頼の原文: 「%s」", c.Request)
 	if c.Prompt != "" {
-		p("PM に渡した指示: %s", c.Prompt)
+		p("PG への指示: %s", c.Prompt)
 	}
 	if c.Deleting() {
 		p("削除中: %s が %s前に依頼した (PG の session を止めてから消える)", c.DeleteBy, fmtAge(now.Sub(c.DeleteAt)))
@@ -302,8 +296,8 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 	if len(c.After) > 0 {
 		p("順番: %s の後 (PM が付けた。完了するまで起動しない)", strings.Join(c.After, ", "))
 	}
-	if d.Waiting != "" {
-		p("待ち: %s", d.Waiting)
+	if d.NowWaiting != "" {
+		p("今の待ち: %s", d.NowWaiting)
 	}
 	if c.Wait.Question != "" {
 		p("質問: %s", c.Wait.Question)
@@ -316,12 +310,20 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 		p("追加オーダー (%s・%s): %s", o.Kind.Label(), st, o.Text)
 	}
 	c.Doing, c.DoingAt = d.Doing, d.DoingAt
-	if ls := c.DoingLines(now, fmtAge); len(ls) > 0 || d.DoingErr != "" {
+	c.Progress, c.ProgressAt, c.Conflicts, c.ConflictsAt = d.Progress, d.ProgressAt, d.Conflicts, d.ConflictsAt
+	if d.DoingErr != "" { // 進捗と今走っているものの両方に効くので、節の前に出す
+		p("dispatcher が集めた様子を読めない: %s", d.DoingErr)
+	}
+	if ls := c.ProgressLines(now, fmtAge); len(ls) > 0 { // どこまで進んだか (issue 469)
+		p("")
+		p("%s", card.ProgressHead(c, now, fmtAge))
+		for _, l := range ls {
+			p("  %s", l)
+		}
+	}
+	if ls := c.DoingLines(now, fmtAge); len(ls) > 0 {
 		p("")
 		p("%s", card.DoingHead(c, now, fmtAge))
-		if d.DoingErr != "" {
-			p("  dispatcher が集めた様子を読めない: %s", d.DoingErr)
-		}
 		for _, l := range ls {
 			p("  %s", l)
 		}
@@ -425,7 +427,7 @@ func runCardWait(args []string, env viewEnv, stdout, stderr io.Writer) int {
 	}
 	if *asJSON {
 		s := summarize(got, nil, rolesIn(env.dir))
-		s.Waiting = waitingIn(env.dir, got) // 書庫から読んだカードでも、順番の待ちは記録の動いているカードで引く
+		s.Waiting, _ = waitingIn(env.dir, got) // 書庫から読んだカードでも、順番の待ちは記録の動いているカードで引く
 		return writeJSON(stdout, stderr, s)
 	}
 	_, _ = fmt.Fprintf(stdout, "%s  %s → %s  %s\n", got.ID, first.State.Label(), got.State.Label(), got.Title)
