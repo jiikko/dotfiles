@@ -20,9 +20,9 @@
 - **git log**: 取り込む先 (origin/master) より先の commit を、新しい順に 1 行ずつ (短い hash・時刻・subject)。多ければ上限で切って「ほか N 本」
 - 未 commit の変更は、数に加えてファイルの名前を出す (多ければ上限)
 - **取り込む先との差分のコード** (2026-09-26 のユーザーの追加「コミットの一覧も欲しいのだが、base ブランチとの差分のコードが見たい」):
-  \`git diff <origin/master との merge-base>...HEAD\` (と未 commit の分) を、詳細の中で色つきの diff として読めるようにする (ファイルごとに畳める・スクロールできる)。
-  色付けは glogx の \`HighlightDiff\` (\`src/glogx/highlight.go\`。chroma) を使う。🚨 glogx の root は main パッケージで import できないので、
-  markdown の整形器 (486 → \`tuikit/markdown\`) と同じく tuikit へ移して glogx と pro-con の両方から使う。差分が大きいときの上限 (行数・ファイル数) を決める
+  `git diff <origin/master との merge-base>...HEAD` (と未 commit の分) を、詳細の中で色つきの diff として読めるようにする (ファイルごとに畳める・スクロールできる)。
+  色付けは glogx の `HighlightDiff` (`src/glogx/highlight.go`。chroma) を使う。🚨 glogx の root は main パッケージで import できないので、
+  markdown の整形器 (486 → `tuikit/markdown`) と同じく tuikit へ移して glogx と pro-con の両方から使う。差分が大きいときの上限 (行数・ファイル数) を決める
 - worktree が無い (片付けた・まだ起動していない) カードは、そう出す
 - 集め方は 469 の進捗と同じ裏の収集に載せる (画面が描くたびに git を叩かない)。`--view` でも見られる (読むだけ)
 - 見た目 (節の位置・長いときの畳み方) は本体に入れる前に見本を出して人に選んでもらう
