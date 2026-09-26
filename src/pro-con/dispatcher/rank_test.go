@@ -9,7 +9,7 @@ import (
 	"pro-con/store"
 )
 
-// 分解済みの列は上から起動する (人が並べ替えた優先度。issue 470)。並べ替えの依頼は同じ Tick の適用で当たる。
+// 着手待ちの列は上から起動する (人が並べ替えた優先度。issue 470)。並べ替えの依頼は同じ Tick の適用で当たる。
 func TestDispatchFollowsLaneOrder(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 3)

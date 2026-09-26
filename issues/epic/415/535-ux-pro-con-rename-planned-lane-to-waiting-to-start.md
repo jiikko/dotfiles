@@ -54,4 +54,7 @@
 
 ## 進捗
 
-(まだ無い)
+- 2026-09-27 (C-088): `card.State.Label` を「着手待ち」に、`Meaning` にこの列に居る理由 (空き待ち・枠待ち・順番待ち・↻ の再開待ち) を書いた。
+  src (samples を除く) と `_claude/skills/pro-con/SKILL.md` の「分解済み」を置き換え (`git grep 分解済み -- src ':!src/pro-con/samples'` 0 件)。
+  `pro-con ps` / 設定画面のプロセスのタブは、着手待ちのカードの動いている PG に `pgState` で「再開待ち (利用枠)」(dispatcher の Cap < Limit) /
+  「再開待ち (PG の空き待ち)」を出す。README・pm-guide・help/debug.md に追記

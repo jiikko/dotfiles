@@ -5,7 +5,7 @@
 ## 依頼を出す
 
 - 新しい作業: 画面の `n` (issue から選ぶなら `i`) か `pro-con card add --title <題名> --request <依頼の原文> --repo <repo>` (--repo は省いてよい)。
-  依頼の列に入り、PM が issue に分けて分解済みの列に積む。add は適用を待ってカード ID を出す (待てなければ依頼 ID を出して rc=3)
+  依頼の列に入り、PM が issue に分けて着手待ちの列に積む。add は適用を待ってカード ID を出す (待てなければ依頼 ID を出して rc=3)
 - 人に確かめるだけ (issue にするかを選んでもらう等): `card add --purpose question --title <題名> --request <何を聞いて、答えで何をするか>`。
   確認のカードになり、PM が人に聞いて、答えを受けて issue を書くか閉じる (PG は付かない)。`card list --purpose question` で絞れる
 - 動いているカードへの足し: 画面の `+` か `pro-con card order <カード> <本文>`。3 つを使い分ける:
@@ -46,5 +46,5 @@
 - 削除: 画面の `d` か `pro-con card delete <カード>`。依頼の列はすぐ消え、ほかは PG の session を止めてから消える。
   worktree とブランチは残る
 - 片付け: 画面の `x` で完了のレーンを書庫へ移す (完了から 24 時間で自動でも移る。1 週間で書庫からも消える)
-- PG の worktree: `pro-con worktree clean` で一覧を見て、`--yes` で消す (取り込み済みで中に誰も居ないものだけ)
+- PG の worktree: `pro-con worktree clean` で一覧を見て、`--yes` で消す (取り込み済みで中に誰も居ないものだけ)。`--remote` を付けると origin に残った PG のブランチも並べて消す (完了したカードで取り込み済みのものだけ)
 - ディスクの使用量は `pro-con du`

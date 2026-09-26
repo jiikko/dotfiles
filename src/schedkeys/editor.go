@@ -11,8 +11,8 @@ package main
 import (
 	"unicode"
 
-	"github.com/charmbracelet/x/ansi"
 	"github.com/rivo/uniseg"
+	"tuikit/termwidth"
 )
 
 type editor struct {
@@ -28,7 +28,7 @@ func (e *editor) setValue(s string) {
 }
 
 // cursorCol はカーソルまでの表示幅 (東アジア文字 = 2 セル)。描画側が本物のカーソルを置く列。
-func (e *editor) cursorCol() int { return ansi.StringWidth(string(e.runes[:e.pos])) }
+func (e *editor) cursorCol() int { return termwidth.Of(string(e.runes[:e.pos])) }
 
 // maxInput は 1 欄に入れられる文字数。🚨 上限が無いと、大きな貼り付け 1 回で 1 行 1MB を超える
 // 予約ができ、以後その一覧を読む側が壊れる (監査 2026-08-28)。コマンド 1 行としては十分に長い。
@@ -49,7 +49,7 @@ func (e *editor) insert(s string) {
 // 画面幅を超えないようにする: 超えると端末が折り返し、本物のカーソル位置 (= IME の未確定文字が
 // 出る場所) が行数分ずれる。
 //
-// 左右の切り出しは ansi.TruncateLeft / ansi.Truncate に任せる (書記素クラスタ単位で切るので、
+// 左右の切り出しは termwidth.SliceFrom / termwidth.Cut に任せる (書記素クラスタ単位で切るので、
 // 全角や結合文字を半端に割らない。自前で rune を数えると幅がずれ、ずれた分だけ無限に
 // スクロールしようとして返らなくなる)。
 func (e *editor) viewport(width int, focused bool) (string, int) {
@@ -66,9 +66,13 @@ func (e *editor) viewport(width int, focused bool) (string, int) {
 	if col > width-1 {
 		start = col - (width - 1)
 	}
-	shown := truncate(ansi.TruncateLeft(v, start, ""), width)
-	// TruncateLeft は書記素の途中では切らないので、実際に落ちた幅を測り直す
-	dropped := ansi.StringWidth(v) - ansi.StringWidth(ansi.TruncateLeft(v, start, ""))
+	tail := v
+	if start > 0 {
+		tail = termwidth.SliceFrom(v, start)
+	}
+	shown := truncate(tail, width)
+	// SliceFrom は書記素の途中では切らないので、実際に落ちた幅を測り直す
+	dropped := termwidth.Of(v) - termwidth.Of(tail)
 	cur := col - dropped
 	if cur < 0 {
 		cur = 0
@@ -80,27 +84,11 @@ func (e *editor) viewport(width int, focused bool) (string, int) {
 }
 
 // truncate は表示幅で切る (書記素クラスタ単位。全角や結合文字を半端に割らない)。
-func truncate(s string, width int) string { return fitWidth(s, width) }
-
-// fitWidth は「ansi.StringWidth で測って width 以内」を保証して切る。
 //
-// 🚨 ansi.Truncate だけに任せない。両者の数え方が一致しない書記素があり (キーキャップ 1️⃣ は
-// Truncate が 1、StringWidth が 2 と答える)、切ったつもりで倍の幅が残る。この UI は
-// StringWidth で測った幅で桁を組むので、そちらに合わせて確実に収める。要求幅を 1 ずつ下げて
-// 測り直す (装飾の切り方はライブラリに任せたまま、必ず収束する)。
-func fitWidth(s string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	if ansi.StringWidth(s) <= width {
-		return s
-	}
-	out := ansi.Truncate(s, width, "")
-	for w := width - 1; ansi.StringWidth(out) > width && w >= 0; w-- {
-		out = ansi.Truncate(s, w, "")
-	}
-	return out
-}
+// 🚨 ansi.Truncate だけに任せない。数え方が幅の計算と一致しない書記素があり (キーキャップ 1️⃣ は
+// Truncate が 1、幅の計算が 2 と答える)、切ったつもりで倍の幅が残る。この UI は termwidth.Of で
+// 測った幅で桁を組むので、そちらで width 以内を保証する termwidth.Cut に任せる。
+func truncate(s string, width int) string { return termwidth.Cut(s, width) }
 
 // isVariationSelector は U+FE00..FE0F と補助 (U+E0100..E01EF)。
 func isVariationSelector(r rune) bool {

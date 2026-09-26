@@ -263,7 +263,7 @@ func (s *Sim) stepProgress() {
 	}
 }
 
-// stepDispatch は枠が空いていれば分解済みのカードを上から順に PG へ渡す (模擬の dispatcher)。
+// stepDispatch は枠が空いていれば着手待ちのカードを上から順に PG へ渡す (模擬の dispatcher)。
 func (s *Sim) stepDispatch() {
 	// 本物の dispatcher と同じ順: 再開 (回答を受けたカード) が先、その中はレーンの並び (上ほど優先。issue 470)
 	var queue []card.Card
@@ -328,7 +328,7 @@ func (s *Sim) stepIntake() {
 		if c.State != card.Requested || s.now.Sub(c.Since) < 4*time.Minute {
 			continue
 		}
-		if len(c.Issues) > 0 { // issue から出した依頼: 新しい issue は作らず、その issue のまま分解済みへ
+		if len(c.Issues) > 0 { // issue から出した依頼: 新しい issue は作らず、その issue のまま着手待ちへ
 			c.Owner = "PM-A"
 			s.setState(c, card.Planned, fmt.Sprintf("PM-A が issue %03d のまま PG へ回す", c.Issues[0].Number))
 			return

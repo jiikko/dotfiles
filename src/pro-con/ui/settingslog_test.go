@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"pro-con/eventlog"
+	"termsafe"
 )
 
 // logSpy はログのタブが読む backend (backend.EventLog)。pending を次の Events で渡し、呼ばれた回数を数える。
@@ -36,7 +37,7 @@ func newLogSpy() *logSpy {
 	at := func(sec int) time.Time { return t0.Add(time.Duration(sec) * time.Second) }
 	s.pending = []eventlog.Event{
 		{At: at(0), Kind: eventlog.KindDispatcher, Reason: "dispatcher が起きた (pid 1・手で起動した)"},
-		{At: at(1), Kind: eventlog.KindApply, Card: "C-002", Reason: "C-002: 分解済みへ"},
+		{At: at(1), Kind: eventlog.KindApply, Card: "C-002", Reason: "C-002: 着手待ちへ"},
 		{At: at(10), Kind: eventlog.KindSupervisor, Reason: "dispatcher が落ちた (signal: killed。10m0s の間に 1 回目)。10s 後に起こし直す"},
 	}
 	for i := range 4 { // 3 秒ごとの同じ失敗 (1 行に畳まれる)
@@ -73,7 +74,7 @@ func TestSettingsLogTab(t *testing.T) {
 	if strings.Count(scr, "起動できない") != 1 || !strings.Contains(scr, "… ×4 回、最後") {
 		t.Fatalf("繰り返しを畳まない:\n%s", scr)
 	}
-	if strings.Contains(scr, "分解済みへ") {
+	if strings.Contains(scr, "着手待ちへ") {
 		t.Fatalf("カードの出来事を既定で出した:\n%s", scr)
 	}
 	for _, w := range []string{"supervisor", "C-003", "3 行 (畳む前 6 件)"} {
@@ -85,11 +86,11 @@ func TestSettingsLogTab(t *testing.T) {
 		t.Fatalf("開いたときに最新 (一番下) を選ばない: cursor=%d", m.set.cursor)
 	}
 	press(m, "c")
-	if scr := setScreen(m); !strings.Contains(scr, "分解済みへ") || !strings.Contains(scr, "c でプロセスの出来事だけにする") {
+	if scr := setScreen(m); !strings.Contains(scr, "着手待ちへ") || !strings.Contains(scr, "c でプロセスの出来事だけにする") {
 		t.Fatalf("c でカードの出来事を混ぜない:\n%s", scr)
 	}
 	press(m, "c")
-	if strings.Contains(setScreen(m), "分解済みへ") {
+	if strings.Contains(setScreen(m), "着手待ちへ") {
 		t.Fatal("もう一度 c でプロセスの出来事だけに戻らない")
 	}
 }
@@ -165,5 +166,37 @@ func TestSettingsLogToggleKeepsPosition(t *testing.T) {
 		if got := m.set.log.rows[m.set.cursor].Last.Reason; !strings.HasPrefix(got, "dispatcher が落ちた") {
 			t.Fatalf("c で見ていた位置が動いた: 選んでいる行 = %q (showCards=%v)", got, m.set.log.showCards)
 		}
+	}
+}
+
+// ログのタブ: 選んでいる行だけに下線を引き (途中の色の戻しの後も引き直す)、y は行を、Y は出来事の文だけを写す。
+func TestSettingsLogSelectedUnderlineAndYank(t *testing.T) {
+	s := newLogSpy()
+	m := openLogTab(t, s)
+	var copied []string
+	m.copy = func(v string) error { copied = append(copied, v); return nil }
+	f := m.set.log.rows[m.set.cursor] // 開いたときは最新 (畳んだ「起動できない」×4)
+	sel, other := m.logRow(f, true, 160), m.logRow(f, false, 160)
+	if !strings.Contains(sel, sgrUnderline) || strings.Contains(other, sgrUnderline) {
+		t.Fatalf("選んだ行だけに下線を引かない:\nsel=%q\nother=%q", sel, other)
+	}
+	if strings.Count(sel, sgrReset) != strings.Count(sel, sgrReset+sgrUnderline) {
+		t.Fatalf("色の戻しの後に下線を引き直さない: %q", sel)
+	}
+	press(m, "y", "Y")
+	if len(copied) != 2 {
+		t.Fatalf("y / Y で写さない: %q", copied)
+	}
+	reason := termsafe.PlainLine(f.Last.Reason)
+	if copied[1] != reason {
+		t.Fatalf("Y が出来事の文だけでない: %q (want %q)", copied[1], reason)
+	}
+	for _, w := range []string{f.Last.At.Local().Format("01-02 15:04:05"), f.Role, reason, "×4 回"} {
+		if !strings.Contains(copied[0], w) {
+			t.Fatalf("y の行に %q が無い: %q", w, copied[0])
+		}
+	}
+	if strings.Contains(copied[0], "\x1b") {
+		t.Fatalf("y の行に色の列が混ざる: %q", copied[0])
 	}
 }

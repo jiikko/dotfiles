@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// 担当は今手を動かす者。分解済みは記録の Owner (既定は PM) に関わらず PG 待ち。PM が手に取っていれば仕事の名前を添える (476)。
+// 担当は今手を動かす者。着手待ちは記録の Owner (既定は PM) に関わらず PG 待ち。PM が手に取っていれば仕事の名前を添える (476)。
 func TestAssignee(t *testing.T) {
 	t1 := time.Date(2026, 9, 26, 10, 0, 0, 0, time.UTC)
 	busy := []RoleState{{Name: PMName, Phase: RoleBusy, Cards: []string{"C-001", "C-002"}, Current: "C-001"}}
@@ -74,7 +74,7 @@ func TestRoleStep(t *testing.T) {
 		{"turn を終えたのに残っている", req("C-001"), Roles{}, pm(RoleIdle, ""), "PM 知らせた (手を止めた)"},
 		{"PM を起こさない (人の番)", req("C-001"), Roles{PMOff: true}, pm(RoleBusy, "C-001"), ""},
 		{"PM の様子が無い (古い dispatcher)", req("C-001"), Roles{}, nil, ""},
-		{"分解済みは役の番ではない", Card{ID: "C-001", State: Planned}, Roles{}, pm(RoleBusy, "C-001"), ""},
+		{"着手待ちは役の番ではない", Card{ID: "C-001", State: Planned}, Roles{}, pm(RoleBusy, "C-001"), ""},
 	}
 	for _, tc := range cases {
 		if got := tc.c.RoleStep(tc.r, tc.ss); got != tc.want {

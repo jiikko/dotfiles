@@ -145,7 +145,7 @@ func TestInitWaitsForChanges(t *testing.T) {
 	}
 }
 
-// 2 つ以上の画面が開いていればゲージに一覧を出し、終了の見出しは「この画面だけ閉じる」になる。
+// 2 つ以上の画面が開いていればゲージに一覧を出し、終了のダイアログは「この画面だけ閉じる」になる。
 func TestScreensShownAndQuitLabel(t *testing.T) {
 	be := &stopSpy{spy: newSpy()}
 	be.snap.Screens = []backend.Screen{{ID: "aaaaaa", Self: true}, {ID: "bbbbbb"}}
@@ -153,7 +153,7 @@ func TestScreensShownAndQuitLabel(t *testing.T) {
 	if g := ansi.Strip(m.gauge()); !strings.Contains(g, "aaaaaa 持ち主 (この画面)") || !strings.Contains(g, "bbbbbb 持ち主") {
 		t.Fatalf("画面の一覧を出さない: %q", g)
 	}
-	if l := m.quitLabel(); !strings.Contains(l, "ほかに 1 画面") || strings.Contains(l, "止めて閉じる") {
+	if l := quitText(m); !strings.Contains(l, "ほかに持ち主の画面が 1 開いている\nこの画面だけ閉じる") || strings.Contains(l, "止めて閉じる") {
 		t.Fatalf("ほかの画面が開いているのに止めると案内した: %q", l)
 	}
 	be.snap.DispatcherTick = be.snap.Now.Add(-dispatcherStale - time.Second)
@@ -165,7 +165,7 @@ func TestScreensShownAndQuitLabel(t *testing.T) {
 	if g := ansi.Strip(m.gauge()); strings.Contains(g, "画面 ") {
 		t.Fatalf("画面が 1 つなのに一覧を出した: %q", g)
 	}
-	if l := m.quitLabel(); !strings.Contains(l, "止めて閉じる") {
+	if l := quitText(m); !strings.Contains(l, "止めて閉じる") {
 		t.Fatalf("最後の画面なのに止めると案内しない: %q", l)
 	}
 }
@@ -198,7 +198,7 @@ func TestJoinScreensNotCountedAsOwners(t *testing.T) {
 	if g := ansi.Strip(m.gauge()); !strings.Contains(g, "bbbbbb join review") {
 		t.Fatalf("join の画面を見分けて出さない: %q", g)
 	}
-	if l := m.quitLabel(); !strings.Contains(l, "止めて閉じる") || !strings.Contains(l, "join の画面が 1 残り") {
+	if l := quitText(m); !strings.Contains(l, "止めて閉じる") || !strings.Contains(l, "join の画面は、止めた後は表示が止まる") {
 		t.Fatalf("最後の持ち主なのに止めると案内しない / join が残ることを出さない: %q", l)
 	}
 	for _, id := range []string{"cccccc", "dddddd"} {

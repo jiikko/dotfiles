@@ -35,6 +35,14 @@
 - 🚨 `tmux display-popup` / `bind-key` を本番の tmux サーバで試さない。確かめは隔離した tmux の `-L` サーバで。popup を閉じるキーを tmux に bind するなら、attach の間だけにして戻したら外す
 - attach から戻ったときに人間の発言をカードの履歴へ残す処理 (README の attach の項) は、popup でも同じく動くこと
 
+- **追加 (2026-09-27、ユーザー)**: 戻るキーに「ユーザーの tmux の prefix + d」も足す (普段のデタッチの手癖。ユーザーの prefix は `C-t`)。
+  prefix は外側の tmux から読む (`tmux show -gv prefix`)。popup の間は外側の tmux の bind が効かないので、外のセッションはデタッチされない (C-082 が隔離 tmux 3.7b で確かめた)。
+  入れ子のサーバの prefix をそれにすると、attach の間の `C-t` 1 回は Claude Code (Ctrl+T = タスクの一覧) に届かないが、普段 tmux の中で Claude Code を使うときと同じ
+  - **確かめた (2026-09-27、隔離した tmux 3.7b。`-L` の別サーバ 2 つ、pty で client を 1 つ attach。本番の tmux サーバは触っていない)**:
+    外側を `prefix C-t` + `bind d detach-client`、popup の中の入れ子を `prefix C-t` + `unbind -a` + `bind d kill-server` にして `C-t` `d` を送ると、
+    入れ子のサーバが閉じ (popup も閉じる)、**外側の client は attach したまま** (client 1 → 1)。
+    対照 (popup を開かずに同じ `C-t` `d`): 外側の client がデタッチされた (1 → 0)。popup の間だけ外側の bind が効かないことを、同じキーで両方向から見た
+
 ## アイディア (作り方は PG が決めてよい)
 
 - attach の直前に 1 画面の案内を出す: 「戻るには Ctrl+Z (← は Claude Code の一覧へ行くだけ)。PG は動き続ける」。Enter で attach へ進む (毎回出すか、初回だけかは見本で決める)

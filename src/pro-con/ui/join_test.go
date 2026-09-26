@@ -23,14 +23,14 @@ func (j *joinSpy) TakeRejected() []backend.Rejected {
 	return out
 }
 
-// join の画面 (issue 481): quit の見出しは「この画面だけ閉じる」。人が止めた dispatcher は起こさない (c を出さず、押すと理由つきで断る)。
+// join の画面 (issue 481): quit のダイアログは「この画面だけ閉じる」。人が止めた dispatcher は起こさない (c を出さず、押すと理由つきで断る)。
 // 止まっているときは起こし方を出す。
 func TestJoinScreenQuitAndNoResume(t *testing.T) {
 	be := &joinSpy{stopSpy: &stopSpy{spy: newSpy()}}
 	be.snap.Screens = []backend.Screen{{ID: "aaaaaa", Join: true, Self: true}}
 	be.snap.DispatcherHeld = true
 	m := New(be, nil)
-	if l := m.quitLabel(); !strings.Contains(l, "join の画面。この画面だけ閉じる") || strings.Contains(l, "止めて閉じる") {
+	if l := quitText(m); !strings.Contains(l, "join の画面 (--join)\nこの画面だけ閉じる") || strings.Contains(l, "止めて閉じる") {
 		t.Fatalf("join の画面の quit が止めると案内した: %q", l)
 	}
 	if g := ansi.Strip(m.gauge()); !strings.Contains(g, "join からは起こせない") || strings.Contains(g, "c で起こす") || !strings.Contains(g, "aaaaaa join (この画面)") {
@@ -54,7 +54,7 @@ func TestJoinScreenQuitAndNoResume(t *testing.T) {
 func TestRejectedRequestShownOnce(t *testing.T) {
 	be := &joinSpy{stopSpy: &stopSpy{spy: newSpy()}}
 	m := New(be, nil)
-	be.rejected = []backend.Rejected{{Kind: "answer", CardID: "W1", Why: "質問待ちではない (今は 分解済み。既に回答済みの可能性)"}}
+	be.rejected = []backend.Rejected{{Kind: "answer", CardID: "W1", Why: "質問待ちではない (今は 着手待ち。既に回答済みの可能性)"}}
 	m.poll()
 	if got := m.toasts.Text(); !strings.Contains(got, "W1 への answer") || !strings.Contains(got, "既に回答済みの可能性") {
 		t.Fatalf("除けた理由を出さない: %q", got)

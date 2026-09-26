@@ -34,7 +34,7 @@ func (m *Model) processing(c card.Card) bool {
 }
 
 // waiting は、PG が居るが止まって待っているカードか: 作業中の列でテストの係の結果を待っている (実行中も含む) /
-// 分解済みの列で再開を待っている (一度起動した = session がある)。まだ起動していない分解済みのカードは待ちに含めない (issue 455)。
+// 着手待ちの列で再開を待っている (一度起動した = session がある)。まだ起動していない着手待ちのカードは待ちに含めない (issue 455)。
 func waiting(c card.Card) bool {
 	switch c.State {
 	case card.Running:

@@ -31,7 +31,7 @@ func (s State) Meaning() string {
 	case Requested:
 		return "受付 PM がカードを作った直後。まだタスクに分けていない。PM は上から分ける"
 	case Planned:
-		return "タスクに分けてキューに積んだ。PG の空きを待っている。上から起動する (K / J で並べ替え。↻ の再開は先)"
+		return "PG が起こされるのを待っている: PG の空き待ち・利用枠の回復待ち・順番の前のカードの完了待ち (--after)。回答・結果・差し戻しを受けた PG の再開待ち (↻) もここ。上から起動する (K / J で並べ替え。↻ の再開は先)"
 	case Running:
 		return "PG が作業している。make test などの占有リソースの順番待ち・利用枠の回復待ちもここ"
 	case Waiting:
@@ -49,7 +49,7 @@ func (s State) Label() string {
 	case Requested:
 		return "依頼"
 	case Planned:
-		return "分解済み"
+		return "着手待ち"
 	case Running:
 		return "作業中"
 	case Waiting:
@@ -202,7 +202,7 @@ func (c Card) AwaitsRun() bool { return c.Run != "" || c.Exec.Active() }
 
 // HoldsPGSlot は作業中のカードが PG の枠 (--limit) を使っているか (issue 455)。枠は turn の途中の PG だけを数える:
 // テストの係の結果を待つ PG は turn を終えて idle で、トークンを使わない (重い処理はテストの係が 1 本ずつ回す) ので数えない。
-// idle と確かめられないうち (頼んだ直後で turn の途中 / 一覧に居ない) は数える。結果が届くと分解済みへ戻り、枠の空きを待って再開する (再開が先)。
+// idle と確かめられないうち (頼んだ直後で turn の途中 / 一覧に居ない) は数える。結果が届くと着手待ちへ戻り、枠の空きを待って再開する (再開が先)。
 // idle は、このカードの PG が一覧で idle と出ているか。
 // 入力待ちで止まった PG (WaitsOnPrompt) も数える: 答えられると再開の列を通らずに作業中へ戻る (数えないと、待つ間に別の PG を起こして上限を超える)
 func HoldsPGSlot(c Card, idle bool) bool {
@@ -393,7 +393,7 @@ func Children(cards []Card, id string) []string {
 }
 
 // Resumes は同じ session の再開を待っているか (回答・差し戻し・テストの結果・未達の追加オーダーを持つ。dispatcher はこれを
-// 新しい起動より先にする。画面は分解済みのレーンで印を出す)。
+// 新しい起動より先にする。画面は着手待ちのレーンで印を出す)。
 func (c Card) Resumes() bool { return (c.Resume != "" || len(c.Pending()) > 0) && c.Session != "" }
 
 // ResumesFirst は dispatcher がレーンの並びより先に起動するカードか (再開の初回。削除中は起動しない)。画面の ↻ の印も同じ判定を使う。

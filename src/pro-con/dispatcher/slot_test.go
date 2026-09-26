@@ -10,7 +10,7 @@ import (
 )
 
 // PG の枠は turn の途中の PG だけを数える (issue 455)。テストの係の結果を待って idle と一覧で確かめた PG は枠を使わないので、
-// 分解済みのカードを起動する。idle と確かめられない (まだ busy / 一覧に居ない) うちは数える。
+// 着手待ちのカードを起動する。idle と確かめられない (まだ busy / 一覧に居ない) うちは数える。
 func TestSlotSkipsIdlePGAwaitingRun(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -61,7 +61,7 @@ func TestSlotSkipsIdlePGAwaitingRun(t *testing.T) {
 	}
 }
 
-// 結果が届いて分解済みへ戻った PG は、枠が埋まっていれば空きを待つ (枠を超えて再開しない)。空いたら新しい起動より先に再開する。
+// 結果が届いて着手待ちへ戻った PG は、枠が埋まっていれば空きを待つ (枠を超えて再開しない)。空いたら新しい起動より先に再開する。
 func TestRunResultWaitsForSlotThenResumesFirst(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)

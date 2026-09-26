@@ -15,6 +15,7 @@ import (
 	"tuikit/highlight"
 	"tuikit/layout"
 	"tuikit/listnav"
+	"tuikit/termwidth"
 
 	"pro-con/card"
 )
@@ -227,7 +228,7 @@ func (m *Model) overlayDiff(region []string) []string {
 		win := make([]string, n)
 		for i := range win {
 			if off+i < len(rows) {
-				win[i] = " " + ansi.Truncate(rows[off+i].text, w-1-layout.ScrollbarWidth, "…")
+				win[i] = " " + termwidth.Truncate(rows[off+i].text, w-1-layout.ScrollbarWidth, "…")
 			}
 		}
 		body = layout.Scrollbar(win, w, len(rows), off, true)

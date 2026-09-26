@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/x/ansi"
+	"tuikit/termwidth"
 
 	"pro-con/card"
 )
@@ -79,10 +79,10 @@ func boxTop(border, title string, w int) string {
 	t := ""
 	if title != "" {
 		// 見出しは枠の内側に収める。はみ出すと、その行の右にある列がすべてずれる (狭い端末の「▶ 3 作業中 (2)」等)
-		title = ansi.Truncate(title, max(inner-3, 0), "…")
+		title = termwidth.Truncate(title, max(inner-3, 0), "…")
 		t = "─ " + title + border + " "
 	}
-	rest := max(0, inner-ansi.StringWidth(t))
+	rest := max(0, inner-termwidth.Of(t))
 	return border + "╭" + t + strings.Repeat("─", rest) + "╮" + sgrReset
 }
 

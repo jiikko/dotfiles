@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
+	"tuikit/termwidth"
 
 	"termsafe"
 
@@ -88,12 +88,12 @@ func (m *Model) attachmentLines(c card.Card, w int) []string {
 		if strings.TrimSpace(label) == "" {
 			label = a.Name
 		}
-		out = append(out, ansi.Truncate("  "+a.At.Local().Format("15:04")+" "+string(a.Kind)+"  "+termsafe.PlainLine(label), w, "…"))
+		out = append(out, termwidth.Truncate("  "+a.At.Local().Format("15:04")+" "+string(a.Kind)+"  "+termsafe.PlainLine(label), w, "…"))
 		if a.Kind != card.AttachText {
 			continue
 		}
 		for _, l := range m.attachText(a.Path) {
-			out = append(out, ansi.Truncate("    "+l, w, "…")+sgrReset)
+			out = append(out, termwidth.Truncate("    "+l, w, "…")+sgrReset)
 		}
 	}
 	return out

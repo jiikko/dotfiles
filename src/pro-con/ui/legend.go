@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"tuikit/layout"
 	"tuikit/sgr"
+	"tuikit/termwidth"
 
 	"pro-con/card"
 )
@@ -106,9 +107,9 @@ func legendTabBar(cur legendTab, inner int) string {
 		}
 	}
 	bar := strings.Join(tabs, "  ")
-	if hint := sgrDim + "   tab で切り替え" + sgrReset; ansi.StringWidth(bar+hint) <= inner {
+	if hint := sgrDim + "   tab で切り替え" + sgrReset; termwidth.Of(bar+hint) <= inner {
 		return bar + hint
-	} else if ansi.StringWidth(bar) <= inner {
+	} else if termwidth.Of(bar) <= inner {
 		return bar
 	}
 	return fmt.Sprintf("%s %s %d/%d  tab で次へ%s", settingsReverse+sgrBold, cur.label(), slices.Index(legendTabs, cur)+1, len(legendTabs), sgrReset)

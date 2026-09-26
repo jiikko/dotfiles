@@ -393,3 +393,11 @@ flock の印 (各画面が自分で持つ) に作り直した
   round 2 のレビューで、bash は trap が無くても HUP / TERM で死ぬときに EXIT trap を走らせる (bash 5.3.9 / 3.2.57 で実測: rc 129 / 143、EXIT trap は走る) と分かり、外した
 - テストも trap の有無を区別できない形だった (rc はどちらも 129、固まる位置は要求を置く前)。足す前に trap の無い版で 1 回走らせていれば、
   差が出ないことはその場で分かった
+
+## §0-B「旧実装を正解役にする」と §1「trap の中の `A && kill`」の起源 (obaket retro 965, 2026-09-27)
+
+- §0-B: obaket 632 で check-doc-links に code span / fence を取り除く helper を入れた。着手時に全 .md で取り除く前後のリンク件数が同じ (859 = 859) なのを
+  見て安心したが、repo に該当する書き方が無かっただけだった。敵対レビュー round 1〜3 で「本物のリンクを消す」形が 4 系統出た (ブロック境界を跨ぐ span、
+  手で折り返した span (repo に 114 箇所)、Unicode の空白、destination の途中の span)。どれも「旧実装で rc 1 / 新実装で rc 0」になる入力を作ると出た
+- §1: obaket 882 の self-test の cleanup が `[[ -n "$PID" ]] && kill "$PID"` で、先に pkill が止めていたので kill が失敗し、set -e が trap の中で
+  発火して rm -rf まで届かず rc 1 で抜けた。失敗した run の一時ディレクトリが 11 個残った。660 の self-test にも同じ形があった

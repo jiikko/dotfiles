@@ -66,7 +66,7 @@ func setState(t *testing.T, dir, id string, s card.State) {
 	}
 }
 
-// 依頼の流れ: add → plan → (dispatcher が作業中へ) → ask → answer (分解済みへ戻る) / review → close。どの時点でも不変条件を破らない。
+// 依頼の流れ: add → plan → (dispatcher が作業中へ) → ask → answer (着手待ちへ戻る) / review → close。どの時点でも不変条件を破らない。
 // 選択肢つきの ask は問いを記録に持ち、質問の文にも選択肢を並べる。回答で質問待ちを離れたら問いも消える。
 // 箱に手で置かれた誤った問い (選択肢 1 個) は記録に入れない (issue 493)。
 func TestAskWithChoicesKeepsQuestionsUntilAnswered(t *testing.T) {
@@ -117,7 +117,7 @@ func TestLifecycle(t *testing.T) {
 	submit(t, dir, Request{Kind: "answer", CardID: "C-001", Answer: "青", From: "人間"})
 	applyAll(t, dir)
 	if c := cardOf(t, dir, "C-001"); c.State != card.Planned || c.Wait.Kind != card.WaitNone {
-		t.Fatalf("answer の後は分解済みへ戻る (PG の空きで resume): %v", c.State)
+		t.Fatalf("answer の後は着手待ちへ戻る (PG の空きで resume): %v", c.State)
 	}
 	setState(t, dir, "C-001", card.Running)
 	submit(t, dir, Request{Kind: "review", CardID: "C-001"})
@@ -131,7 +131,7 @@ func TestLifecycle(t *testing.T) {
 	}
 }
 
-// 差し戻し (rework) はレビュー待ちから分解済みへ戻し、同じ session を再開する文を持たせる。履歴には直してほしい点を原文のまま残す。
+// 差し戻し (rework) はレビュー待ちから着手待ちへ戻し、同じ session を再開する文を持たせる。履歴には直してほしい点を原文のまま残す。
 func TestReworkReturnsReviewToPlanned(t *testing.T) {
 	dir := t.TempDir()
 	submit(t, dir, Request{Kind: "add", Title: "x"})

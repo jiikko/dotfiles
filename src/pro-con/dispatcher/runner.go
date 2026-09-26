@@ -300,7 +300,7 @@ func (d *Dispatcher) execute(ctx context.Context, job *runJob, dir string) {
 	job.done <- r
 }
 
-// finishRun は結果をカードに持たせ、分解済みへ戻す (dispatch が結果を渡して同じ session を再開する)。
+// finishRun は結果をカードに持たせ、着手待ちへ戻す (dispatch が結果を渡して同じ session を再開する)。
 func (d *Dispatcher) finishRun(now time.Time, job *runJob, r runResult) (eventlog.Event, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "テストの係の結果: `%s` rc=%d (所要 %s)\n", job.command, r.rc, now.Sub(job.start).Round(time.Second))

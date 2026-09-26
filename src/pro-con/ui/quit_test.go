@@ -5,10 +5,13 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/charmbracelet/x/ansi"
+
+	"pro-con/backend"
 )
 
 // quitBy は Q で終了の入力欄を開き、text を打って enter する。最後のコマンドを返す。
@@ -125,11 +128,120 @@ type viewSpy struct{ *spy }
 
 func (viewSpy) ReadOnly() {}
 
-// 見ているだけの画面の終了の見出しは、この画面を閉じるだけで何も止めないと案内する
+// 見ているだけの画面の終了のダイアログは、この画面を閉じるだけで何も止めないと案内する
 // (止める口が無いこと自体は live の TestViewOnlyBackend と main の TestWireLiveViewStopsAndStartsNothing が型で見る)。
 func TestViewOnlyQuitStopsNothing(t *testing.T) {
 	m := New(viewSpy{spy: newSpy()}, nil)
-	if l := m.quitLabel(); !strings.Contains(l, "見ているだけ") || strings.Contains(l, "止めて閉じる") {
+	if l := quitText(m); !strings.Contains(l, "見ているだけ") || strings.Contains(l, "止めて閉じる") {
 		t.Fatalf("見ているだけの画面で止めると案内した: %q", l)
+	}
+}
+
+// quitText は終了のダイアログの中身 (色を落として 1 つの文字列に)。
+func quitText(m *Model) string { return ansi.Strip(strings.Join(m.quitBody(), "\n")) }
+
+// paneSpy は端末を tmux の pane の名前に直す口を持つ backend (本物のモードの形)。
+type paneSpy struct {
+	*stopSpy
+	panes  map[string]string
+	during func() // 問い合わせの最中に呼ぶ (任意)
+}
+
+func (p *paneSpy) PaneNames(context.Context) map[string]string {
+	if p.during != nil {
+		p.during()
+	}
+	return p.panes
+}
+
+// openQuit は Q で終了の入力欄を開き、pane の名前を引くコマンドを走らせて画面に渡す。
+func openQuit(t *testing.T, m *Model) {
+	t.Helper()
+	if cmd := press(m, "Q"); cmd != nil {
+		m.Update(cmd())
+	}
+	if m.mode != modeInput || m.inputKind != inputQuit {
+		t.Fatalf("Q で終了の入力欄が開かない: mode=%v", m.mode)
+	}
+}
+
+// 持ち主が 2 つ: Q でダイアログが出て、「動いたまま」と、ほかの画面の居場所 (tmux の中なら pane の名前、外なら tty) が読める。
+// 閉じると何が起きるかは入力欄の見出しに書かない (ダイアログと 2 か所に持たない = issue 519)。
+func TestQuitDialogShowsOtherScreens(t *testing.T) {
+	be := &paneSpy{stopSpy: &stopSpy{spy: newSpy()}, panes: map[string]string{"/dev/ttys003": "main:2.1", "/dev/ttys007": "main:0.0"}}
+	now := be.snap.Now
+	be.snap.Screens = []backend.Screen{
+		{ID: "aaaaaa", TTY: "/dev/ttys003", Opened: now.Add(-time.Hour)},
+		{ID: "bbbbbb", TTY: "/dev/ttys007", Opened: now, Self: true},
+		{ID: "cccccc", Join: true, Label: "review", TTY: "/dev/ttys012", Opened: now},
+	}
+	m := New(be, nil)
+	openQuit(t, m)
+	lines := strings.Split(ansi.Strip(m.render()), "\n")
+	screen := strings.Join(lines, "\n")
+	for _, want := range []string{"ほかに持ち主の画面が 1 開いている", "この画面だけ閉じる。動いたまま", "dispatcher · supervisor · PM · 取り込みの係", "作業中 1 本・質問待ち 2 本",
+		"ほかに開いている画面", "main:2.1 (tmux)", "join review", "/dev/ttys012"} {
+		if !strings.Contains(screen, want) {
+			t.Fatalf("ダイアログに %q が無い:\n%s", want, screen)
+		}
+	}
+	if strings.Contains(screen, "main:0.0") {
+		t.Fatalf("この画面をほかの画面として出した:\n%s", screen)
+	}
+	head := lines[m.inputRow]
+	if !strings.Contains(head, "quit と打って enter") || strings.Contains(head, "動いたまま") || strings.Contains(head, "止め") {
+		t.Fatalf("入力欄の見出しが残っていない / ダイアログの中身を二重に書いた: %q", head)
+	}
+	typeText(m, "quit")
+	if !isQuit(runStop(t, m, press(m, "enter"))) {
+		t.Fatal("閉じ方 (quit と打って enter) が変わった")
+	}
+}
+
+// 最後の持ち主: 止めるもの (作業中・質問待ちの PG の本数と dispatcher) が並ぶ。join の画面だけが残るなら、止めた後に表示が止まると添える。
+// pane を引けない (tmux の外・引く口が無い) 端末は tty のまま出す。
+func TestQuitDialogLastOwnerListsWhatStops(t *testing.T) {
+	be := &stopSpy{spy: newSpy()}
+	be.snap.Screens = []backend.Screen{{ID: "aaaaaa", Self: true}, {ID: "cccccc", Join: true, TTY: "/dev/ttys012"}}
+	m := New(be, nil)
+	openQuit(t, m)
+	screen := ansi.Strip(m.render())
+	for _, want := range []string{"最後の持ち主の画面なので、止めて閉じる", "PG (作業中 1 本・質問待ち 2 本)", "dispatcher", "次に開くと続きから",
+		"/dev/ttys012", "join の画面は、止めた後は表示が止まる"} {
+		if !strings.Contains(screen, want) {
+			t.Fatalf("ダイアログに %q が無い:\n%s", want, screen)
+		}
+	}
+	be.snap.Screens = be.snap.Screens[:1]
+	if l := quitText(New(be, nil)); strings.Contains(l, "ほかに開いている画面") || strings.Contains(l, "表示が止まる") {
+		t.Fatalf("ほかに画面が無いのに一覧・join の注記を出した: %q", l)
+	}
+}
+
+// pane の名前は開くたびに引き直す (前に開いたときの表を使わない。pane は動く)。tmux が答えるまでは tty のまま出し、
+// 前の回の問い合わせが後から返っても新しい回の表を上書きしない。問い合わせは裏の処理として数える (入れ替え (ctrl+r) が待つ)。
+func TestQuitDialogRefreshesPanes(t *testing.T) {
+	be := &paneSpy{stopSpy: &stopSpy{spy: newSpy()}, panes: map[string]string{"/dev/ttys003": "main:2.1"}}
+	be.snap.Screens = []backend.Screen{{ID: "aaaaaa", TTY: "/dev/ttys003"}, {ID: "bbbbbb", Self: true}}
+	m := New(be, nil)
+	be.during = func() {
+		if n := m.children.Load(); n != 1 {
+			t.Errorf("pane の問い合わせを裏の処理として数えない: %d", n)
+		}
+	}
+	openQuit(t, m)
+	press(m, "esc")
+	be.panes = map[string]string{"/dev/ttys003": "work:1.0"}
+	stale := press(m, "Q")
+	if l := quitText(m); !strings.Contains(l, "/dev/ttys003") || strings.Contains(l, "main:2.1") {
+		t.Fatalf("前に開いたときの pane の名前を出した: %q", l)
+	}
+	staleMsg := stale()
+	press(m, "esc")
+	be.panes = map[string]string{"/dev/ttys003": "work:3.2"}
+	m.Update(press(m, "Q")())
+	m.Update(staleMsg) // 前の回が後から返る
+	if l := quitText(m); !strings.Contains(l, "work:3.2 (tmux)") {
+		t.Fatalf("pane の名前を引き直さない / 前の回の答えで上書きした: %q", l)
 	}
 }

@@ -15,6 +15,9 @@ import (
 // 確認の対象そのもの (宛先・パス) だと「実行前の唯一の確認画面」に何も出ない。
 const MaxWidth = 44
 
+// WideMaxWidth は WideDialog の板の幅の上限 (表のような揃えた行を並べる確認。pro-con の終了のダイアログ)。
+const WideMaxWidth = 64
+
 // 案内の定型。どのキーが取り消しになるかは IsYes / IsYesStrict のどちらで判定するかに合わせて選ぶ
 // (どちらも y と Enter 以外はすべて取り消し。HintYesNo は取り消しの代表キーを挙げているだけ)。
 const (
@@ -25,21 +28,34 @@ const (
 // Box は中央に浮かべる小さな板 (確認・通知)。幅は min(MaxWidth, width)、width が 0 以下なら 80 とみなす。
 // title は枠の上辺に載る (前後の空白は呼び出し側が付ける: " git push ")。
 func Box(title string, rows []string, width int, colored bool) []string {
+	return box(title, rows, MaxWidth, width, colored)
+}
+
+func box(title string, rows []string, maxWidth, width int, colored bool) []string {
 	if width <= 0 {
 		width = 80
 	}
-	return layout.Panel(title, rows, min(MaxWidth, width), colored,
+	return layout.Panel(title, rows, min(maxWidth, width), colored,
 		layout.PanelStyle{Border: layout.BorderLight, Color: sgr.Dim})
 }
 
 // Dialog は確認ダイアログの板: body の下に空行を 1 つ空けて hint を淡色で置く。
 func Dialog(title string, body []string, hint string, width int, colored bool) []string {
+	return dialog(title, body, hint, MaxWidth, width, colored)
+}
+
+// WideDialog は幅の上限を WideMaxWidth にした Dialog (揃えた行が MaxWidth では切れる確認)。
+func WideDialog(title string, body []string, hint string, width int, colored bool) []string {
+	return dialog(title, body, hint, WideMaxWidth, width, colored)
+}
+
+func dialog(title string, body []string, hint string, maxWidth, width int, colored bool) []string {
 	rows := make([]string, 0, len(body)+2)
 	rows = append(rows, body...)
 	if colored {
 		hint = sgr.Dim + hint + sgr.Reset
 	}
-	return Box(title, append(rows, "", hint), width, colored)
+	return box(title, append(rows, "", hint), maxWidth, width, colored)
 }
 
 // IsYes は確認の「実行」キーか: y / Y / Enter。それ以外はすべて取り消しとして扱う。

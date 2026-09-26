@@ -242,7 +242,7 @@ func (d *Dispatcher) roleWorktree(name string) string {
 }
 
 // roles は起こさない役 (画面・card list・知らせが人の番 = card.Turn を決めるのに使う)。PM の repo が空なら PM も取り込みの係も起こさない
-// (tellRole)。e2e モードの偽の PM (FakePM) は依頼を分けるだけなので数えない (依頼は次の Tick の頭で分解済みになる)。
+// (tellRole)。e2e モードの偽の PM (FakePM) は依頼を分けるだけなので数えない (依頼は次の Tick の頭で着手待ちになる)。
 func (d *Dispatcher) roles() card.Roles {
 	return card.Roles{PMOff: d.PMRepo == "" || d.PMOff, IntegratorOff: d.PMRepo == "" || d.IntegratorOff}
 }

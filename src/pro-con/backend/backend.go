@@ -163,6 +163,12 @@ type RejectReader interface{ TakeRejected() []Rejected }
 // Notifier は状態が変わったと知らせる backend (画面は tick を待たずに描き直す。任意)。
 type Notifier interface{ Changed() <-chan struct{} }
 
+// PaneNamer は端末 (tty) を tmux の pane の名前 (session:window.pane) に直す口 (任意。終了のダイアログがほかの画面の居場所を出す)。
+// tmux の外の端末は入らない。tmux に聞けなければ空。
+type PaneNamer interface {
+	PaneNames(ctx context.Context) map[string]string
+}
+
 // Describer はヘッダーに出す自分の説明を持つ backend (模擬か本物かを画面で見分けるため。任意)。
 type Describer interface{ Describe() string }
 

@@ -105,17 +105,19 @@ type Model struct {
 	prevSlots map[string]slot
 	moves     map[string]*move
 	// カードの詳細の引き出し (drawer.go)。drawerCard は閉じる途中も残す (逆再生で本文が見えている必要がある)
-	cursor     cursorGlide // 選択中のカードを囲む枠 (cursor.go)
-	bump       bump        // 選択が端でぶつかったときのレーンの揺れ (bump.go)
-	tops       map[int]int // レーンごとの先頭 (何枚目から見せるか。lanescroll.go)
-	stopping   bool        // 終了のために backend (dispatcher と PG) を止めている最中 (quit.go)
-	stopErr    error       // 止めきれなかった理由 (終了後に main が出す)
-	attaching  bool        // attach の照合を裏で待っている
-	legend     bool        // レーンの意味の表を出している (legend.go)
-	legendOff  int         // 表が画面より長いときの送り (legend.go)
-	legendTab  legendTab   // 表のどのタブを出しているか (legend.go)
-	diff       diffView    // 詳細から D で開く差分の板 (diffview.go。issue 508)
-	lane       laneFade    // 選んでいるレーンの枠の色の移り変わり (lanefade.go)
+	cursor     cursorGlide       // 選択中のカードを囲む枠 (cursor.go)
+	bump       bump              // 選択が端でぶつかったときのレーンの揺れ (bump.go)
+	tops       map[int]int       // レーンごとの先頭 (何枚目から見せるか。lanescroll.go)
+	stopping   bool              // 終了のために backend (dispatcher と PG) を止めている最中 (quit.go)
+	stopErr    error             // 止めきれなかった理由 (終了後に main が出す)
+	quitPanes  map[string]string // 終了のダイアログに出す、ほかの画面の端末の tmux の pane の名前 (Q のたびに引き直す。quit.go)
+	quitAsk    int               // pane の名前を問い合わせた回 (後から返った古い答えを捨てる)
+	attaching  bool              // attach の照合を裏で待っている
+	legend     bool              // レーンの意味の表を出している (legend.go)
+	legendOff  int               // 表が画面より長いときの送り (legend.go)
+	legendTab  legendTab         // 表のどのタブを出しているか (legend.go)
+	diff       diffView          // 詳細から D で開く差分の板 (diffview.go。issue 508)
+	lane       laneFade          // 選んでいるレーンの枠の色の移り変わり (lanefade.go)
 	drawer     anim.Transition
 	drawerCard string
 	pager      listnav.Pager
@@ -335,6 +337,11 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 	case stopDoneMsg:
 		m.stopping, m.stopErr = false, msg.err
 		return m, tea.Quit
+	case quitPanesMsg:
+		if msg.ask == m.quitAsk { // 古い回の答えで新しい回の表を上書きしない
+			m.quitPanes = msg.panes
+		}
+		return m, nil
 	case tea.KeyPressMsg:
 		if !m.fade.leaving.IsZero() { // 切り替えの暗転の間はキーを受けない (入れ替わる画面へ打った文字を迷子にしない)
 			return m, nil
