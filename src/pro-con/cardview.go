@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/x/ansi"
+	"tuikit/termwidth"
 
 	"pro-con/backend"
 	"pro-con/card"
@@ -212,11 +212,11 @@ func runCardList(args []string, env viewEnv, stdout, stderr io.Writer) int {
 	now := env.now()
 	colW := 0
 	for _, s := range card.Columns {
-		colW = max(colW, ansi.StringWidth(s.Label()))
+		colW = max(colW, termwidth.Of(s.Label()))
 	}
 	for _, s := range out {
 		// 列の見出しは全角なので、%-Ns (文字数) ではなく表示幅で揃える (全角は 2 セル)
-		col := s.State + strings.Repeat(" ", max(colW-ansi.StringWidth(s.State), 0))
+		col := s.State + strings.Repeat(" ", max(colW-termwidth.Of(s.State), 0))
 		line := fmt.Sprintf("%s  %s  %s  担当: %s  (%s)", s.ID, col, s.Title, orDashCLI(s.Assignee), fmtAge(now.Sub(s.Since)))
 		if s.Waiting != "" {
 			line += "  待ち: " + s.Waiting

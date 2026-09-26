@@ -15,6 +15,7 @@ import (
 	"tuikit/caret"
 	"tuikit/layout"
 	"tuikit/lineedit"
+	"tuikit/termwidth"
 
 	"pro-con/backend"
 	"pro-con/card"
@@ -312,10 +313,10 @@ func (f *answerForm) optionLines(q, j int, on bool, inner int) []formLine {
 		if f.other[q].Empty() && !on {
 			return []formLine{{text: line, caret: -1}}
 		}
-		room := inner - ansi.StringWidth(line) - 2
+		room := inner - termwidth.Of(line) - 2
 		if room >= formFieldMin {
 			s, c := fieldView(&f.other[q], room, on, "")
-			return []formLine{{text: line + "  " + s, cur: on, caret: caretIf(on, ansi.StringWidth(line)+2+c)}}
+			return []formLine{{text: line + "  " + s, cur: on, caret: caretIf(on, termwidth.Of(line)+2+c)}}
 		}
 		s, c := fieldView(&f.other[q], inner-formDescShift, on, "")
 		return []formLine{{text: line, cur: on, caret: -1}, {text: strings.Repeat(" ", formDescShift) + s, caret: caretIf(on, formDescShift+c)}}
@@ -323,7 +324,7 @@ func (f *answerForm) optionLines(q, j int, on bool, inner int) []formLine {
 	switch {
 	case desc == "":
 		out = append(out, formLine{text: line, cur: on, caret: -1})
-	case ansi.StringWidth(line)+4+ansi.StringWidth(desc) <= inner:
+	case termwidth.Of(line)+4+termwidth.Of(desc) <= inner:
 		out = append(out, formLine{text: line + fg(244) + "  — " + desc + sgrReset, cur: on, caret: -1})
 	default:
 		out = append(out, formLine{text: line, cur: on, caret: -1})
@@ -388,8 +389,8 @@ func (m *Model) overlayForm(region []string) []string {
 // formBox は角の丸いオレンジの罫線で囲む (見本の形)。
 func formBox(title string, lines []formLine, width, inner int) []string {
 	border := fg(202)
-	t := ansi.Truncate(title, width-4, "…")
-	out := []string{border + "╭─" + sgrBold + t + sgrReset + border + strings.Repeat("─", max(width-3-ansi.StringWidth(t), 0)) + "╮" + sgrReset}
+	t := termwidth.Truncate(title, width-4, "…")
+	out := []string{border + "╭─" + sgrBold + t + sgrReset + border + strings.Repeat("─", max(width-3-termwidth.Of(t), 0)) + "╮" + sgrReset}
 	for _, l := range lines {
 		out = append(out, border+"│"+sgrReset+" "+fit(l.text, inner)+sgrReset+" "+border+"│"+sgrReset)
 	}

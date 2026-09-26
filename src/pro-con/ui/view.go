@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"tuikit/caret"
 	"tuikit/layout"
+	"tuikit/termwidth"
 
 	"pro-con/backend"
 	"pro-con/card"
@@ -57,7 +58,7 @@ func (m *Model) caret() *tea.Cursor {
 		return m.formCaret()
 	case m.mode == modeInput:
 		head, _, col := m.inputField()
-		return caret.At(ansi.StringWidth(head)+col, m.inputRow, m.width, m.height) // inputRow は render が数えた入力欄の行
+		return caret.At(termwidth.Of(head)+col, m.inputRow, m.width, m.height) // inputRow は render が数えた入力欄の行
 	}
 	return nil
 }
@@ -110,7 +111,7 @@ func (m *Model) pgGauge() string {
 		g += fmt.Sprintf(" (上限 %d)", m.snap.LimitMax)
 	}
 	if w := m.snap.LimitWhy; w != "" { // 1 行に潰して短く切る (後ろに並ぶ停滞・不変条件の破れの警告を画面の外へ押し出さない)
-		g += " " + sgrYellow + ansi.Truncate(strings.Join(strings.Fields(w), " "), limitWhyCells, "…") + sgrFgReset
+		g += " " + sgrYellow + termwidth.Truncate(strings.Join(strings.Fields(w), " "), limitWhyCells, "…") + sgrFgReset
 	}
 	return g
 }
@@ -149,7 +150,7 @@ func (m *Model) pmGauge() string {
 		}
 	}
 	if w := s.Why; w != "" { // 起こせない・枠で起こさない理由 (PG の絞りの理由と同じく 1 行に潰して短く切る)
-		g += " " + sgrYellow + ansi.Truncate(strings.Join(strings.Fields(w), " "), limitWhyCells, "…") + sgrFgReset
+		g += " " + sgrYellow + termwidth.Truncate(strings.Join(strings.Fields(w), " "), limitWhyCells, "…") + sgrFgReset
 	}
 	return g
 }
@@ -407,13 +408,13 @@ func (m *Model) columnBlock(col int, s card.State, cs []*card.Card, w, shown int
 	if n := m.humansIn(cs); n > 0 {
 		mark = fmt.Sprintf(" %s %d", humanMark, n)
 	}
-	room := inner - 3 - ansi.StringWidth(head+tail+mark)
+	room := inner - 3 - termwidth.Of(head+tail+mark)
 	if room < 0 && mark != "" {
 		tail = ""
 	}
 	name := ""
 	if room > 0 {
-		name = ansi.Truncate(s.Label(), room, "…")
+		name = termwidth.Truncate(s.Label(), room, "…")
 	}
 	title := fg(stateColor(s)) + sgrBold + head + name + tail + sgrReset
 	if mark != "" {
@@ -502,7 +503,7 @@ func (m *Model) cardCell(c card.Card, w int) []string {
 	}
 	// 右上に見積もり (issue 490。2026-09-26 のユーザーの決定: ポイントだけを薄く)。タイトルの 1 行目を minTitleHead より短くするなら出さない
 	pts := card.PointsLabel(c)
-	if pts != "" && w-1-(ansi.StringWidth(pts)+1) < minTitleHead {
+	if pts != "" && w-1-(termwidth.Of(pts)+1) < minTitleHead {
 		pts = ""
 	}
 	var out []string
@@ -511,7 +512,7 @@ func (m *Model) cardCell(c card.Card, w int) []string {
 			l = pre + l + sgrNoUnderline
 		}
 		if i == 0 && pts != "" {
-			l = fit(l, w-2-ansi.StringWidth(pts)) + " " + sgrDim + pts + sgrReset + base
+			l = fit(l, w-2-termwidth.Of(pts)) + " " + sgrDim + pts + sgrReset + base
 		}
 		out = append(out, paint(base, " "+l, w))
 	}
@@ -526,8 +527,8 @@ func wrapTitle(s string, w int, right string) []string {
 	if right == "" {
 		return wrapLines(s, w, titleLines)
 	}
-	head := ansi.Truncate(s, w-ansi.StringWidth(right)-1, "") // 1 行目は … で切らずに続きを 2 行目へ回す (wrapLines と同じ切り方)
-	rest := strings.TrimLeft(ansi.Cut(s, ansi.StringWidth(head), ansi.StringWidth(s)), " ")
+	head, hw := termwidth.TruncateMeasure(s, w-termwidth.Of(right)-1, "") // 1 行目は … で切らずに続きを 2 行目へ回す (wrapLines と同じ切り方)
+	rest := strings.TrimLeft(termwidth.SliceFrom(s, hw), " ")
 	return append([]string{head}, wrapLines(rest, w, titleLines-1)...)
 }
 
@@ -539,12 +540,12 @@ func wrapLines(s string, w, n int) []string {
 			break
 		}
 		if i == n-1 {
-			out[i] = ansi.Truncate(s, w, "…")
+			out[i] = termwidth.Truncate(s, w, "…")
 			break
 		}
-		head := ansi.Truncate(s, w, "")
+		head, hw := termwidth.TruncateMeasure(s, w, "")
 		out[i] = head
-		s = strings.TrimLeft(ansi.Cut(s, ansi.StringWidth(head), ansi.StringWidth(s)), " ")
+		s = strings.TrimLeft(termwidth.SliceFrom(s, hw), " ")
 	}
 	return out
 }
@@ -722,7 +723,7 @@ func (m *Model) inputLabel() string {
 // キャレットは caret が端末のカーソルで出す)。
 func (m *Model) inputField() (head, text string, col int) {
 	head = m.inputHead()
-	text, col = m.line.Window(m.width - ansi.StringWidth(head))
+	text, col = m.line.Window(m.width - termwidth.Of(head))
 	return head, text, col
 }
 
@@ -747,11 +748,8 @@ func (m *Model) dimWhileTyping(region []string) []string {
 
 // fit は表示幅 w に切り詰め、足りなければ空白で埋める (全角を含む行を表示幅で揃える)。
 func fit(s string, w int) string {
-	s = ansi.Truncate(s, w, "…")
-	if pad := w - ansi.StringWidth(s); pad > 0 {
-		s += strings.Repeat(" ", pad)
-	}
-	return s
+	s, sw := termwidth.TruncateMeasure(s, w, "…") // 切った行の幅も受け取る (測り直さない。演出のコマでは全行で走る)
+	return s + termwidth.PadSpaces(w-sw)
 }
 
 func fmtDur(d time.Duration) string {
@@ -864,7 +862,7 @@ func hintLine(items []string, w int) string {
 	rest := items[:len(items)-1]
 	for {
 		line := " " + strings.Join(append(append([]string{}, rest...), last), "  ")
-		if ansi.StringWidth(line) <= w || len(rest) == 0 {
+		if termwidth.Of(line) <= w || len(rest) == 0 {
 			return line
 		}
 		rest = rest[:len(rest)-1]

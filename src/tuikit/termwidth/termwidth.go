@@ -232,26 +232,44 @@ func FirstCluster(s string) (cluster string, width int) {
 // 切り詰めの走査では幅 1、StringWidth では幅 2 と数える (x/ansi v0.11.7 の内部の食い違い。issue 416)。
 // はみ出したときは、Of で width に収まる最も長い切り方を探し直す (この層の幅は Of が正本)。
 func Truncate(s string, width int, tail string) string {
-	r, _ := truncateMeasure(s, width, tail)
+	r, _ := TruncateMeasure(s, width, tail)
 	return r
 }
 
-// truncateMeasure は Truncate の本体で、結果の表示幅も返す。測った幅を呼び出し側 (ClipMeasure /
-// CutMeasure) でも使い回し、同じ行を 2 回測らない (描画のたびに全行で走る)。
+// TruncateMeasure は Truncate と同じ切り詰めを行い、結果の表示幅も返す。切った行を呼び出し側で
+// もう一度測らない (「切ってから余りを空白で埋める」形が毎フレーム全行で走る)。
+//
+// width <= 0 の扱いも含めて ansi.Truncate と同じ (違うのは Truncate の doc にあるはみ出しの直しだけ)。
+// Clip / Cut の「width <= 0 なら空」の契約は持たない: ansi.Truncate から置き換える呼び出しの振る舞いを
+// 変えないため。
+func TruncateMeasure(s string, width int, tail string) (string, int) {
+	// 収まる行 (多数派) は速い道の 1 回で済ませる。ansi.Truncate は収まるかどうかを先頭で
+	// ansi.StringWidth (grapheme の走査) で確かめるので、任せると収まる行でも遅い走査が 1 回走る。
+	// 速い道に乗らない行は ansi.Truncate の中の 1 回に任せる (ここで Of を呼ぶと遅い走査が 2 回になる)
+	if w, ok := fastDispWidth(s); ok && w <= width {
+		return s, w
+	}
+	return truncateOver(s, width, tail)
+}
+
+// truncateOver は TruncateMeasure の本体 (速い道で収まると分からなかった行)。ansi.Truncate は収まる行を
+// そのまま返すので、収まる行が来ても結果は正しい。
 //
 // ほとんどの行は最初の 1 回で収まる。はみ出したときだけ、ansi へ渡す幅 t を二分探索して
 // 「Of(結果) <= width」を満たす最大の t を取る (結果の幅は t について単調)。🚨 比べる相手は常に
 // 要求された width で、t ではない: t と比べると、はみ出すたびに目標を詰めて削りすぎる
 // (`Cut("x1️⃣y", 3)` が "x" になった。敵対的レビューで実証)。1 字ずつ詰める形は、キーキャップの
 // 数だけ切り直すので長い行で遅い (O(はみ出し × 長さ))。二分探索なら O(長さ × log width)。
-func truncateMeasure(s string, width int, tail string) (string, int) {
+func truncateOver(s string, width int, tail string) (string, int) {
 	r := ansi.Truncate(s, width, tail)
 	w := Of(r)
 	if width <= 0 || w <= width {
 		return r, w
 	}
-	best, bestW := "", 0 // t = 0 の結果 (空) は必ず収まる
-	lo, hi := 1, width-1
+	// t = 0 も ansi に聞く (幅 0 の byte — SGR・タブ等 — を残すので "" と決め打ちしない)。t = 0 の結果は
+	// 幅 0 なので必ず収まり、ほかがすべて溢れても best は埋まる
+	best, bestW := "", 0
+	lo, hi := 0, width-1
 	for lo <= hi {
 		t := lo + (hi-lo)/2
 		c := ansi.Truncate(s, t, tail)
@@ -262,6 +280,53 @@ func truncateMeasure(s string, width int, tail string) (string, int) {
 		}
 	}
 	return best, bestW
+}
+
+// Slice は s の表示桁 [left, right) を切り出す (ansi.Cut と同じ。SGR は保持し、right <= left なら "")。
+// 右端は Cut と同じく全角を跨がない側で切り、左端は ansi.TruncateLeft と同じく跨いだ全角を残す。
+// ansi.Cut との違いは右端の切り方が Truncate の doc にあるはみ出しの直しを通ることだけ。
+func Slice(s string, left, right int) string {
+	if right <= left {
+		return ""
+	}
+	head, _ := TruncateMeasure(s, right, "")
+	if left <= 0 {
+		return head
+	}
+	return ansi.TruncateLeft(head, left, "")
+}
+
+// SliceFrom は s の表示桁 left から末尾までを返す (Slice(s, left, Of(s)) と同じ。left が末尾以降なら "")。
+func SliceFrom(s string, left int) string {
+	return sliceFromKnown(s, Of(s), left)
+}
+
+// sliceFromKnown は幅 sw が分かっている s の SliceFrom (同じ行を測り直さない)。
+func sliceFromKnown(s string, sw, left int) string {
+	switch {
+	case left >= sw:
+		return ""
+	case left <= 0:
+		return s
+	}
+	return ansi.TruncateLeft(s, left, "")
+}
+
+// SplitAround は s から表示桁 [x, x+w) を抜いた左右を返す。左は [0, x) で全角を跨がない側で切り (幅 leftW <= x)、
+// 右は x+w から末尾まで (Slice / SliceFrom と同じ切り方)。total は s の幅。x が [0, total) の外なら
+// 抜く所が無いので、左右は空で total だけを返す (呼び出し側は s をそのまま使う)。
+//
+// 行の途中に別の字を差し込む (移動中のカード・枠の辺) のに使う。Slice と SliceFrom を別々に呼ぶと、
+// 1 つの差し込みで同じ行の幅を 4 回測る (Slice の中・切った左・SliceFrom の中・呼び出し側の total)。
+func SplitAround(s string, x, w int) (left string, leftW int, right string, total int) {
+	total = Of(s)
+	if x < 0 || x >= total {
+		return "", 0, "", total
+	}
+	if x > 0 { // x == 0 の左は空 (Slice の right <= left と同じ)
+		left, leftW = truncateOver(s, x, "")
+	}
+	return left, leftW, sliceFromKnown(s, total, x+w), total
 }
 
 // Clip は表示幅 width を超える行を、末尾に `…` を付けて切り詰める。SGR は保持する。
@@ -377,7 +442,7 @@ func ClipMeasure(line string, width int) (string, int) {
 	if w <= width {
 		return line, w
 	}
-	return truncateMeasure(line, width, "…")
+	return truncateOver(line, width, "…")
 }
 
 // CutMeasure は Cut と同じ切り詰めを行い、結果の表示幅も返す (切った行をもう一度測らない)。
@@ -385,7 +450,7 @@ func CutMeasure(s string, width int) (string, int) {
 	if width <= 0 {
 		return "", 0
 	}
-	return truncateMeasure(s, width, "")
+	return TruncateMeasure(s, width, "")
 }
 
 // Cut は s を表示幅 width まで切る (SGR は保持)。Clip との違いは**末尾に `…` を付けないこと**だけ:

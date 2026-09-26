@@ -7,9 +7,9 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
 	"tuikit/anim"
 	"tuikit/layout"
+	"tuikit/termwidth"
 
 	"pro-con/backend"
 )
@@ -175,7 +175,7 @@ func (m *Model) overlaySwitchLabel(screen, label string, alpha float64, bg rgb) 
 	c := mixRGB(bg, rgb{r, g, b}, alpha)
 	col := "\x1b[0;1;38;2;" + strconv.Itoa(c.r) + ";" + strconv.Itoa(c.g) + ";" + strconv.Itoa(c.b) + "m"
 	body := " " + label + " "
-	w := ansi.StringWidth(body)
+	w := termwidth.Of(body)
 	box := []string{
 		col + "╭" + strings.Repeat("─", w) + "╮" + sgrReset,
 		col + "│" + body + "│" + sgrReset,

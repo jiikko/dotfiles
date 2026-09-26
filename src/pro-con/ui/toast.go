@@ -4,11 +4,10 @@ package ui
 // 成功 (✓ 緑)・失敗と断り (✗ 赤)・中立の知らせ (印なしのシアン。次の通知が来たら退く) の 3 つで積む。消すまで残す通知 (Notify / sticky) は下端の行のまま。
 
 import (
-	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
+	"tuikit/termwidth"
 	"tuikit/toast"
 )
 
@@ -49,11 +48,13 @@ func (m *Model) overlayToast(region []string) []string {
 		if pos >= len(out) {
 			break
 		}
-		rw := ansi.StringWidth(row)
+		rw := termwidth.Of(row)
 		keep := max(m.width-rw, 0)
-		left := ansi.Cut(out[pos], 0, keep)
-		pad := strings.Repeat(" ", max(keep-ansi.StringWidth(left), 0))
-		out[pos] = left + sgrReset + pad + row
+		left, lw := "", 0
+		if keep > 0 {
+			left, lw = termwidth.TruncateMeasure(out[pos], keep, "")
+		}
+		out[pos] = left + sgrReset + termwidth.PadSpaces(keep-lw) + row
 	}
 	return out
 }

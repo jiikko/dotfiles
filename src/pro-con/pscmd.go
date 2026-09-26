@@ -26,6 +26,8 @@ import (
 	"strings"
 	"time"
 
+	"tuikit/termwidth"
+
 	"pro-con/backend"
 	"pro-con/card"
 	"pro-con/dispatcher"
@@ -86,26 +88,39 @@ func runPS(args []string, dir string, now func() time.Time, list procLister, std
 		_, _ = fmt.Fprintln(stdout, string(data))
 	} else {
 		for _, p := range rows {
-			pid := "-"
-			if p.PID > 0 {
-				pid = strconv.Itoa(p.PID)
-			}
-			age := "-"
-			if p.Age > 0 {
-				age = p.Age.Round(time.Second).String()
-			}
-			state := p.State
-			if p.Mismatch != "" {
-				state = "食い違い: " + p.Mismatch
-			}
-			_, _ = fmt.Fprintf(stdout, "%-10s  %-7s  %-9s  %-14s  %-6s  %-12s  %s\n",
-				p.Role, pid, age, state, orDashCLI(p.Card), orDashCLI(p.Session), orDashCLI(p.Command))
+			_, _ = fmt.Fprintln(stdout, formatProcRow(p))
 		}
 	}
 	if len(warns) > 0 {
 		return 1
 	}
 	return 0
+}
+
+// formatProcRow は ps の表の 1 行。役と状態には全角 (見張り・動いている) が入るので、fmt の %-Ns (rune 数で詰める。
+// 全角 1 字を 1 桁と数えて列がずれる) ではなく表示幅で詰める (issue 524)。列の幅は表示の桁で、はみ出した値は後ろを押す
+func formatProcRow(p Proc) string {
+	pid := "-"
+	if p.PID > 0 {
+		pid = strconv.Itoa(p.PID)
+	}
+	age := "-"
+	if p.Age > 0 {
+		age = p.Age.Round(time.Second).String()
+	}
+	state := p.State
+	if p.Mismatch != "" {
+		state = "食い違い: " + p.Mismatch
+	}
+	var b strings.Builder
+	for _, c := range []struct {
+		s string
+		w int
+	}{{p.Role, 10}, {pid, 7}, {age, 9}, {state, 14}, {orDashCLI(p.Card), 6}, {orDashCLI(p.Session), 12}} {
+		b.WriteString(termwidth.FillRight(c.s, c.w) + "  ")
+	}
+	b.WriteString(orDashCLI(p.Command))
+	return b.String()
 }
 
 // collectProcs は状態の置き場と procs から役ごとの行を組む (読むだけ)。読めなかったものは warns に出す (0 本と区別する)。
