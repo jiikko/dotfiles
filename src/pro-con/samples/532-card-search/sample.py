@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """ボードの / の検索 (issue 532) の見本。使い捨て。本体 (src/pro-con) には入れていない。
+2026-09-27 にユーザーが案 A を選んだ (本体は ui/search.go)。
 
 使い方: python3 sample.py <案 A|B|C> <typing|done> > <案>-<段>.ans
   A = 検索の欄は最下段 (ほかの入力欄と同じ場所)。確定したら件数の行の頭に「/ glogx 3/11」の印。一致しないカードは隠す

@@ -126,6 +126,7 @@ type Model struct {
 	spinning   bool         // 処理中の印の tick が回っているか (spinner.go。二重に回さない)
 
 	picker picker // issue の一覧から依頼する画面 (picker.go)
+	search search // ボードの / の絞り込み (search.go。issue 532)
 
 	up   *upgrader  // ライブアップグレード (upgrade.go)。nil なら無効
 	fade switchFade // 新版への切り替えの暗転・明転 (switchfade.go)
@@ -336,7 +337,11 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 			m.line.Insert(msg.Content)
 		case modeForm:
 			m.pasteForm(msg.Content)
-		case modeBoard, modeConfirm:
+		case modeBoard:
+			if m.search.typing {
+				m.pasteSearch(msg.Content)
+			}
+		case modeConfirm:
 		}
 		return m, nil
 	case stopDoneMsg:
@@ -380,6 +385,9 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 			cmd := m.handleFormKey(msg)
 			return m, tea.Batch(cmd, m.trackMoves())
 		case modeBoard:
+		}
+		if m.search.typing { // / で打っている間 (板は開いていない: / はボードからしか始まらず、打っている間は板を開くキーも欄に取られる)
+			return m, m.handleSearchKey(msg)
 		}
 		if m.set.open {
 			return m, m.handleSettingsKey(msg.String())
@@ -505,6 +513,9 @@ func (m *Model) columns() [][]card.Card {
 func (m *Model) lanes() [][]*card.Card {
 	cols := make([][]*card.Card, len(card.Columns))
 	for c := range m.visible() {
+		if !m.search.keeps(c) { // / の絞り込みはレーンの並びにだけ効かせる (visible = タブの範囲は変えない。search.go)
+			continue
+		}
 		for k, st := range card.Columns {
 			if c.State == st {
 				cols[k] = append(cols[k], c)
@@ -634,6 +645,10 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		}
 		return nil
 	}
+	if why := m.searchRefusal(k.String()); why != "" {
+		m.refuse(why)
+		return nil
+	}
 	switch k.String() {
 	case "ctrl+c":
 		return m.requestQuit()
@@ -644,14 +659,24 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	case "q":
 		// q は「今の板を 1 段戻る」(docs/glogx-ui-guide.md §1) だけ。開いている板が無くても終了しない
 		// (2026-09-25 にユーザーの依頼で廃止。終了は Q → quit だけ。quit.go)
-		if !m.closeTop() {
+		switch {
+		case m.closeTop():
+		case m.search.active: // 板が無ければ絞り込みを 1 段戻る (search.go)
+			m.clearSearch()
+		default:
 			m.refuse("終了は Q を押して quit と打つ")
 			return nil
 		}
 	case "esc":
-		if !m.closeTop() {
-			m.sticky = "" // 閉じる板が無いときの esc は、残しておいた通知を消す
+		switch {
+		case m.closeTop():
+		case m.search.active:
+			m.clearSearch()
+		default:
+			m.sticky = "" // 閉じる板も絞り込みも無いときの esc は、残しておいた通知を消す
 		}
+	case "/": // 絞り込み (search.go。glogx の issues の / と同じ)
+		m.startSearch()
 	case "tab":
 		m.moveTab(1)
 	case "shift+tab":

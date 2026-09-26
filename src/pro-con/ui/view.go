@@ -61,6 +61,9 @@ func (m *Model) caret() *tea.Cursor {
 	case m.mode == modeInput:
 		head, _, col := m.inputField()
 		return caret.At(termwidth.Of(head)+col, m.inputRow, m.width, m.height) // inputRow は render が数えた入力欄の行
+	case m.mode == modeBoard && m.search.typing:
+		head, _, col := m.searchField()
+		return caret.At(termwidth.Of(head)+col, m.inputRow, m.width, m.height)
 	}
 	return nil
 }
@@ -244,7 +247,12 @@ func (m *Model) footLines() []string {
 		case m.send.back == modeInput: // 確認の枠は中央。入力欄は下に残す (取り消すとここへ戻る)
 			out = append(out, m.inputLine())
 		}
-	case modeBoard, modeForm: // 回答フォームは領域の中央に重ねる (overlayForm)
+	case modeBoard:
+		if m.search.typing { // / の検索の欄 (search.go)。ほかの入力欄と同じ最下段
+			head, text, _ := m.searchField()
+			out = append(out, paint(bg(236), head+text, m.width))
+		}
+	case modeForm: // 回答フォームは領域の中央に重ねる (overlayForm)
 	}
 	if m.sticky != "" {
 		out = append(out, sgrYellow+" "+m.sticky+sgrReset)
@@ -308,6 +316,9 @@ func (m *Model) gauge() string {
 	}
 	sep := fg(240) + " │ " + sgrFgReset
 	g := " " + strings.Join(parts, "  ")
+	if mk := m.searchMark(); mk != "" { // 絞っている印は行の頭 (件数はタブの全部のまま。search.go)
+		g = mk + sep + strings.TrimPrefix(g, " ")
+	}
 	if humans > 0 { // 列の件数のすぐ後 (人がやることを先に読ませる)
 		g += sep + humanTag(fmt.Sprintf("%sの番 %d", humanMark, humans))
 	}
@@ -399,6 +410,9 @@ func (m *Model) shownCards() int {
 func (m *Model) columnBlock(col int, s card.State, cs []*card.Card, w, shown int, focused bool) []string {
 	// 先頭の数字は 1〜6 でそのレーンへ飛ぶキー。狭いときは名前を削り、キーと枚数は残す (boxTop は後ろから切る)
 	head, tail := fmt.Sprintf("%d ", col+1), fmt.Sprintf(" (%d)", len(cs))
+	if m.search.active { // 絞っている間は (一致/全部)。search.go
+		tail = fmt.Sprintf(" (%d/%d)", len(cs), m.laneTotal(s))
+	}
 	if focused {
 		head = "▶ " + head
 	} else {
@@ -508,6 +522,7 @@ func (m *Model) cardCell(c card.Card, w int) []string {
 	if pts != "" && w-1-(termwidth.Of(pts)+1) < minTitleHead {
 		pts = ""
 	}
+	words := m.searchWords()
 	var out []string
 	for i, l := range wrapTitle(title, w-1, pts) { // 先頭の 1 桁は空白
 		if l != "" {
@@ -519,6 +534,7 @@ func (m *Model) cardCell(c card.Card, w int) []string {
 		if i == 0 && c.Purpose == card.ForQuestion { // 確認の印を色で浮かせる (折り返しで割れたら色を付けないだけ)
 			l = strings.Replace(l, card.QuestionMark, sgrPink+sgrBold+card.QuestionMark+sgrFgReset+pre, 1)
 		}
+		l = markHits(l, words, pre) // / で絞っている語 (search.go。折り返しで割れた語は浮かせないだけ)
 		out = append(out, paint(base, " "+l, w))
 	}
 	return append(out, paint(base, " "+badgePre+badge, w))
@@ -804,6 +820,9 @@ func (m *Model) hints() []string {
 	case modeForm:
 		return m.formHints()
 	case modeBoard:
+		if m.search.typing {
+			return searchHints()
+		}
 	}
 	if m.set.open {
 		return m.settingsHints()
@@ -845,11 +864,15 @@ func (m *Model) hints() []string {
 		return append(append([]string{"j / k スクロール", "J / K 隣のカード"}, cardOps...), "q / esc 閉じる")
 	}
 	back := "Q 終了"
-	h := append([]string{"hjkl 選択", "tab repo"}, offer(
+	h := []string{"hjkl 選択", "tab repo", "/ 検索"}
+	if m.search.active { // 絞っている間は抜け方を先に (search.go)
+		h = append(h, "esc 絞り込みをやめる")
+	}
+	h = append(h, offer(
 		hint{"n 新しい依頼", m.accepts(backend.OpNew), true}, hint{"i issue から", m.accepts(backend.OpNew), true}, hint{"enter 詳細", has, false},
-		hint{"K / J 優先度", has && m.accepts(backend.OpMove), true})...)
+		hint{"K / J 優先度", has && m.accepts(backend.OpMove) && !m.search.active, true})...)
 	h = append(h, cardOps...)
-	h = append(append(h, "s 設定"), offer(hint{"x 完了を片付け", m.doneInTab() > 0 && m.accepts(backend.OpClear), true})...)
+	h = append(append(h, "s 設定"), offer(hint{"x 完了を片付け", m.doneInTab() > 0 && m.accepts(backend.OpClear) && !m.search.active, true})...)
 	if m.snap.DispatcherHeld && !m.joined() { // 止めてあるときだけ出す (いつも出すと、暗い字が「状態が変われば押せる」以上の意味を持たない)。join は起こさない
 		h = append(h, offer(hint{"c dispatcher を起こす", m.accepts(backend.OpResume), true})...)
 	}
