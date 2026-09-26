@@ -31,13 +31,13 @@ func fastWidthBoundaryInputs() []string {
 	return out
 }
 
-// arch 版の fastDispWidth が Go 版 (受理規則の正本) と入力によらず一致すること。
+// arch の実装 (archKernel: arm64 ではアセンブリそのもの) が Go 版 (受理規則の正本) と入力によらず一致すること。
 // arm64 以外では同じ関数なので恒真だが、arm64 ではアセンブリを通る。
 func TestFastDispWidthMatchesGeneric(t *testing.T) {
 	inputs := fastWidthBoundaryInputs()
 	for _, s := range inputs {
 		gw, gok := fastDispWidthGeneric(s)
-		aw, aok := fastDispWidth(s)
+		aw, aok := archKernel(s)
 		if gw != aw || gok != aok {
 			t.Fatalf("arch=(%d,%v) generic=(%d,%v) for %q", aw, aok, gw, gok, s)
 		}
@@ -54,7 +54,7 @@ func FuzzFastDispWidthMatchesGeneric(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, s string) {
 		gw, gok := fastDispWidthGeneric(s)
-		aw, aok := fastDispWidth(s)
+		aw, aok := archKernel(s)
 		if gw != aw || gok != aok {
 			t.Fatalf("arch=(%d,%v) generic=(%d,%v) for %q", aw, aok, gw, gok, s)
 		}

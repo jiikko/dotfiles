@@ -11,7 +11,15 @@ package termwidth
 // glogx の 1 フレーム (BenchmarkViewSteady 等 6 本、master と交互に 8 回) は geomean -7.4% だが
 // 全項目 p>0.2 で**有意差なし** (runner のばらつき ±15〜50% に埋もれる)。フレームの支配項は幅計算の
 // 外にある。
+//
+// 16 byte 未満は Go 版へ回す: NEON の 1 ブロックに満たず、asm は呼び出しと定数の準備の分だけ
+// 負ける (上の short_ascii_8B)。🚨 この分岐があるので、production から Go 版 (と symbolWidth) へ
+// 到達する。無いと arm64 では Go 版がテスト専用になり、`make test-unused-excluding-tests`
+// (staticcheck -tests=false) が到達不能として落とす (PR 14 の unused job で実測)。
 func fastDispWidth(s string) (int, bool) {
+	if len(s) < 16 {
+		return fastDispWidthGeneric(s)
+	}
 	return fastDispWidthAsm(s)
 }
 
