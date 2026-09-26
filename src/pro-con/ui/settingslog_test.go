@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"pro-con/eventlog"
+	"termsafe"
 )
 
 // logSpy はログのタブが読む backend (backend.EventLog)。pending を次の Events で渡し、呼ばれた回数を数える。
@@ -165,5 +166,37 @@ func TestSettingsLogToggleKeepsPosition(t *testing.T) {
 		if got := m.set.log.rows[m.set.cursor].Last.Reason; !strings.HasPrefix(got, "dispatcher が落ちた") {
 			t.Fatalf("c で見ていた位置が動いた: 選んでいる行 = %q (showCards=%v)", got, m.set.log.showCards)
 		}
+	}
+}
+
+// ログのタブ: 選んでいる行だけに下線を引き (途中の色の戻しの後も引き直す)、y は行を、Y は出来事の文だけを写す。
+func TestSettingsLogSelectedUnderlineAndYank(t *testing.T) {
+	s := newLogSpy()
+	m := openLogTab(t, s)
+	var copied []string
+	m.copy = func(v string) error { copied = append(copied, v); return nil }
+	f := m.set.log.rows[m.set.cursor] // 開いたときは最新 (畳んだ「起動できない」×4)
+	sel, other := m.logRow(f, true, 160), m.logRow(f, false, 160)
+	if !strings.Contains(sel, sgrUnderline) || strings.Contains(other, sgrUnderline) {
+		t.Fatalf("選んだ行だけに下線を引かない:\nsel=%q\nother=%q", sel, other)
+	}
+	if strings.Count(sel, sgrReset) != strings.Count(sel, sgrReset+sgrUnderline) {
+		t.Fatalf("色の戻しの後に下線を引き直さない: %q", sel)
+	}
+	press(m, "y", "Y")
+	if len(copied) != 2 {
+		t.Fatalf("y / Y で写さない: %q", copied)
+	}
+	reason := termsafe.PlainLine(f.Last.Reason)
+	if copied[1] != reason {
+		t.Fatalf("Y が出来事の文だけでない: %q (want %q)", copied[1], reason)
+	}
+	for _, w := range []string{f.Last.At.Local().Format("01-02 15:04:05"), f.Role, reason, "×4 回"} {
+		if !strings.Contains(copied[0], w) {
+			t.Fatalf("y の行に %q が無い: %q", w, copied[0])
+		}
+	}
+	if strings.Contains(copied[0], "\x1b") {
+		t.Fatalf("y の行に色の列が混ざる: %q", copied[0])
 	}
 }

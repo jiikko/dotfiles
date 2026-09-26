@@ -142,7 +142,7 @@ func (d *Dispatcher) loadSettings() {
 // 🚨 利用枠の絞りは人の上限より優先する (上限を上げても枠を超えて起動しない)。
 func (d *Dispatcher) capacity(now time.Time) (int, string) {
 	lim, _ := d.limit()
-	if d.Usage == nil {
+	if d.Usage == nil || d.settings.UsageOff { // 人が枠で絞らないと決めた (pro-con config set usage off)。尽きた PG は 429 で止まり watchdog が拾う
 		return lim, ""
 	}
 	u := d.usage

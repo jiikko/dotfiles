@@ -247,3 +247,26 @@ func TestSettingsCoversBump(t *testing.T) {
 		t.Fatalf("設定画面を開いているのに、揺れたレーンがヘッダに乗った:\n%s\n---\n%s", got, header)
 	}
 }
+
+// 利用枠で絞るかはチェックボックス: Enter でも ← → でも入れ替え、on / off を受付の箱に置く (issue 536)。
+func TestSettingsTogglesUsageCheckbox(t *testing.T) {
+	be := newInspSpy()
+	m := openSettingsFor(t, be)
+	press(m, "j") // PG の枠の次の行
+	if !strings.Contains(setScreen(m), "[x]") {
+		t.Fatalf("既定 (絞る) でチェックが入っていない:\n%s", setScreen(m))
+	}
+	press(m, "enter")
+	be.snap.Config.UsageOff = true
+	m.setSnap(be.Snapshot())
+	press(m, "l")
+	var got []string
+	for _, c := range be.applied {
+		if sc, ok := c.(backend.SetConfig); ok {
+			got = append(got, sc.Key+"="+sc.Value)
+		}
+	}
+	if strings.Join(got, ",") != "usage=off,usage=on" {
+		t.Fatalf("置いた設定 = %v", got)
+	}
+}

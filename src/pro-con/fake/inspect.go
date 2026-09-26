@@ -48,6 +48,9 @@ func (s *Sim) setConfig(c backend.SetConfig) (string, error) {
 	if c.Key == backend.ConfigLimit && set.Limit > 0 {
 		s.limit = set.Limit
 	}
+	if c.Key == backend.ConfigUsage {
+		s.usageOff = set.UsageOff
+	}
 	return fmt.Sprintf("%s を %s にした (模擬)", c.Key, c.Value), nil
 }
 

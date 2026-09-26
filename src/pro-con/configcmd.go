@@ -14,6 +14,7 @@ import (
 
 const configUsage = `usage: pro-con config <操作> ...   (受付の箱に依頼を置く。適用は dispatcher の次の Tick。止めずに効く)
   set limit <n>      同時に動かす PG の上限 (1 以上。dispatcher の --limit より優先。利用枠の絞り 80% で 1 本 / 95% で 0 本はこれより優先)
+  set usage on|off   利用枠 (5 時間・週) を見て PG を絞るか (既定 on。off にすると枠が 80% を超えても上限まで起動する)
   set pm <n>         PM の数 (今は 1 だけ。2 以上は 415 の論点 6 が決まるまで受けない)
   unset <名前>       設定を消す (limit なら --limit / 既定 2 に戻る)
   show               今の値と出どころ (読むだけ)`
@@ -94,6 +95,11 @@ func showConfig(dir string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprint(stdout, " / dispatcher はまだ 1 度も回っていない")
 	}
 	_, _ = fmt.Fprintln(stdout)
+	usage := "on (枠で絞る。既定)"
+	if s.UsageOff {
+		usage = "off (枠で絞らない)"
+	}
+	_, _ = fmt.Fprintf(stdout, "usage  %s\n", usage)
 	_, _ = fmt.Fprintf(stdout, "pm     設定 %s / PM は 1 つで動く (2 以上は未対応なので、今は dispatcher が読まない)\n", set(s.PMs))
 	if _, n := store.PendingCounts(dir); n > 0 {
 		_, _ = fmt.Fprintf(stdout, "適用待ちの設定の依頼 %d 件 (dispatcher の次の Tick で使う。pro-con dispatcher が動いているか: pro-con ps)\n", n)

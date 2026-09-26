@@ -49,7 +49,7 @@ func (t settingsTab) label() string {
 const settingsReverse = "\x1b[7m"
 
 // 設定のタブの行 (選ぶ行の順)。
-var configKeys = []string{backend.ConfigLimit, backend.ConfigPM}
+var configKeys = []string{backend.ConfigLimit, backend.ConfigUsage, backend.ConfigPM}
 
 // diskItemsShown はディスクのタブで、置き場ごとに内訳を出す数 (Enter で開いた置き場は全部)。
 const diskItemsShown = 3
@@ -191,6 +191,11 @@ func (m *Model) handleSettingsKey(k string) tea.Cmd {
 		return m.requestUpgrade()
 	case "s", "q", "esc":
 		return m.closeSettings()
+	case "y", "Y": // ログのタブ: y = 選んでいる行 / Y = その行の出来事の文だけ (ほかのタブでは何もしない)
+		if s.tab == tabLog {
+			m.yankLog(k == "Y")
+		}
+		return nil
 	case "tab", "shift+tab":
 		tabs := m.settingsTabs()
 		i := 0
@@ -281,11 +286,18 @@ func (m *Model) stepConfig(delta int) tea.Cmd {
 	key := configKeys[s.cursor]
 	v, _ := m.configValue(key)
 	next := v + delta
+	value := strconv.Itoa(next)
+	if key == backend.ConfigUsage { // チェックボックス: ← → も Enter も入れ替える
+		next, value = 1-v, "on"
+		if next == 0 {
+			value = "off"
+		}
+	}
 	if key == backend.ConfigLimit && next < 1 {
 		m.refuse("PG の枠は 1 以上 (PG を止めるなら pro-con dispatcher --stop)")
 		return nil
 	}
-	res, err := m.be.Apply(backend.SetConfig{Key: key, Value: strconv.Itoa(next)})
+	res, err := m.be.Apply(backend.SetConfig{Key: key, Value: value})
 	if err != nil { // PM の 2 以上などは backend が置く前に断る (pro-con config と同じ検査)
 		m.refuse(err.Error())
 		return nil
@@ -303,12 +315,18 @@ func (m *Model) stepConfig(delta int) tea.Cmd {
 func (m *Model) configValue(key string) (int, bool) {
 	c := m.snap.Config
 	v := c.Limit
-	if key == backend.ConfigPM {
+	switch {
+	case key == backend.ConfigUsage:
+		v = 1
+		if c.UsageOff {
+			v = 0
+		}
+	case key == backend.ConfigPM:
 		v = c.PMs
 		if v == 0 {
 			v = 1 // 設定が無ければ 1 つで動く
 		}
-	} else if v == 0 {
+	case v == 0:
 		v = m.snap.LimitMax // 設定が無ければ dispatcher の --limit か既定
 	}
 	w, ok := m.set.want[key]
@@ -354,6 +372,10 @@ func (m *Model) toggleSettingsRow() {
 		return
 	}
 	switch s.tab {
+	case tabConfig:
+		if sel[s.cursor] == backend.ConfigUsage {
+			_ = m.stepConfig(0)
+		}
 	case tabProcs:
 		s.showStopped = !s.showStopped
 	case tabDisk:
@@ -362,7 +384,7 @@ func (m *Model) toggleSettingsRow() {
 		} else {
 			s.openGroup = sel[s.cursor]
 		}
-	case tabConfig, tabLog:
+	case tabLog:
 	}
 }
 
@@ -431,10 +453,16 @@ func (m *Model) configLines(w int) ([]string, int) {
 	for i, key := range configKeys {
 		v, waiting := m.configValue(key)
 		name, note := "PM の数", "今は 1 だけ (2 以上は 415 の論点 6 が決まってから)"
-		if key == backend.ConfigLimit {
-			name, note = "PG の枠 (同時に動かす PG の上限)", m.limitNote()
-		}
 		val := fmt.Sprintf(" ‹ %d › ", v)
+		switch key {
+		case backend.ConfigLimit:
+			name, note = "PG の枠 (同時に動かす PG の上限)", m.limitNote()
+		case backend.ConfigUsage:
+			name, note, val = "利用枠を見て PG を絞る", "80% で 1 本 / 95% で 0 本。外すと上限まで起動する (Enter か ← →)", " [ ] "
+			if v == 1 {
+				val = " [x] "
+			}
+		}
 		mark := "  "
 		if i == m.set.cursor {
 			val, mark, cur = settingsReverse+val+sgrReset, sgrCyan+"▸ "+sgrFgReset, len(out)
@@ -445,7 +473,7 @@ func (m *Model) configLines(w int) ([]string, int) {
 		out = append(out, boxLine(border, " "+mark+fit(name, 34)+val+"  "+sgrDim+note+sgrReset, w))
 	}
 	out = append(out, boxLine(border, "", w))
-	out = append(out, boxLine(border, sgrDim+"   ← → で変えると受付の箱に置き、dispatcher の次の Tick から効く (止めずに変わる)。利用枠の絞り (80% で 1 本 / 95% で 0 本) はこの上限より優先"+sgrReset, w))
+	out = append(out, boxLine(border, sgrDim+"   ← → で変えると受付の箱に置き、dispatcher の次の Tick から効く (止めずに変わる)。利用枠の絞り (80% で 1 本 / 95% で 0 本) は、チェックが入っている間この上限より優先"+sgrReset, w))
 	if e := m.snap.Config.Err; e != "" {
 		out = append(out, boxLine(border, sgrRed+"   設定のファイルを読めない (dispatcher は --limit で動く): "+e+sgrFgReset, w))
 	}

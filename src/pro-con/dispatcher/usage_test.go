@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -430,5 +432,19 @@ func TestChangedAfterFirstTick(t *testing.T) {
 	}
 	if changed != 1 {
 		t.Fatalf("何もしない Tick 3 回で %d 回知らせた (最初の 1 回だけのはず)", changed)
+	}
+}
+
+// 人が「枠で絞らない」と決めたら (pro-con config set usage off)、週の枠が 96% でも上限まで起動し、絞った理由を出さない (issue 536)。
+func TestUsageOffIgnoresUsage(t *testing.T) {
+	r := newUsageRig(t)
+	r.sess, r.pct = 23, 96
+	if err := os.WriteFile(filepath.Join(r.d.Dir, store.SettingsFile), []byte(`{"usage_off":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r.tick(t)
+	st, _, _ := store.LoadDispatcherState(r.d.Dir)
+	if len(r.l.starts) != 3 || st.Cap != 3 || st.Why != "" {
+		t.Fatalf("枠で絞らない設定なのに絞った: starts=%d %+v", len(r.l.starts), st)
 	}
 }
