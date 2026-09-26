@@ -251,7 +251,7 @@ type Card struct {
 	Request  string // 依頼の原文 (人間が書いたまま)
 	Prompt   string // PM に渡した指示の全文 (スコープの前置き + 原文)。TUI から出した依頼だけが持つ
 	Repo     string
-	Owner    string // 受付 PM / PM-A / PG-2 / 人間
+	Owner    string // 作った・受けた者 (受付 PM / PM-A / PG-2 / 人間)。今手を動かす者ではない: 画面と card list の担当は Assignee (issue 476)
 	Session  string // 担当 PG の session id (claude --bg の id)
 	State    State
 	Since    time.Time // 今の State に入った時刻

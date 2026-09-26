@@ -101,8 +101,47 @@ func (m *Model) pgGauge() string {
 	return g
 }
 
-// dispatcherStale はこれより長く回っていなければ dispatcher が止まっている疑いとして赤で出す (Tick は数秒ごと)。
-const dispatcherStale = 2 * time.Minute
+// pmCardsShown はゲージに PM が手元に持つカードを並べる枚数 (超えた分は「ほか N」)。
+const pmCardsShown = 2
+
+// pmGauge は PM の数 / 上限と様子 (issue 476。PG のゲージの隣に同じ書式で)。dispatcher が様子を書いていなければ (古い dispatcher) 出さない。
+// 止まった dispatcher の最後の様子は今の様子として出さない (PM の session は dispatcher と別に生きていることがある)。
+func (m *Model) pmGauge() string {
+	s, ok := card.FindRole(m.snap.RoleStates, card.PMName)
+	switch {
+	case !ok:
+		return ""
+	case s.Phase == card.RoleOff:
+		return sgrDim + "PM off (依頼は人が分ける)" + sgrReset
+	case m.dispatcherStopped():
+		return sgrDim + "PM 様子不明 (dispatcher が回っていない)" + sgrReset
+	}
+	n := 0
+	if s.Alive() {
+		n = 1
+	}
+	g := fmt.Sprintf("PM %d/%d %s", n, s.Max, s.Phase)
+	switch s.Phase {
+	case card.RoleAsking: // 人が attach して答えるまで動かない (人がやること = 黄)
+		g = humanTag(g + " (pro-con ps で session を見て attach)")
+	case card.RoleBlocked, card.RoleBroken:
+		g = sgrRed + g + sgrFgReset
+	default: // ほかの様子は色を付けない (人がやることでも危険でもない)
+	}
+	if cs := s.Cards; len(cs) > 0 && (s.Phase == card.RoleBusy || s.Phase == card.RoleLaunch) {
+		g += " " + strings.Join(cs[:min(len(cs), pmCardsShown)], " ")
+		if len(cs) > pmCardsShown {
+			g += fmt.Sprintf(" ほか %d", len(cs)-pmCardsShown)
+		}
+	}
+	if w := s.Why; w != "" { // 起こせない・枠で起こさない理由 (PG の絞りの理由と同じく 1 行に潰して短く切る)
+		g += " " + sgrYellow + ansi.Truncate(strings.Join(strings.Fields(w), " "), limitWhyCells, "…") + sgrFgReset
+	}
+	return g
+}
+
+// dispatcherStale はこれより長く回っていなければ dispatcher が止まっている疑いとして赤で出す (backend.DispatcherStale)。
+const dispatcherStale = backend.DispatcherStale
 
 // dispatcherStopped は dispatcher が人に止められている / 1 度も回っていない / dispatcherStale より長く回っていないか。
 func (m *Model) dispatcherStopped() bool {
@@ -253,8 +292,11 @@ func (m *Model) gauge() string {
 	if humans > 0 { // 列の件数のすぐ後 (人がやることを先に読ませる)
 		g += sep + humanTag(fmt.Sprintf("%sの番 %d", humanMark, humans))
 	}
-	g += sep + "最古の待ち " + fmtDur(oldest) + sep +
-		m.pgGauge() + sep + m.dispatcherGauge()
+	g += sep + "最古の待ち " + fmtDur(oldest) + sep + m.pgGauge()
+	if p := m.pmGauge(); p != "" {
+		g += sep + p
+	}
+	g += sep + m.dispatcherGauge()
 	if n := m.snap.Startup; n != "" && !m.dispatcherStopped() { // 起動時の確かめ (483)。止まった dispatcher の古い要約は出さない
 		if m.snap.StartupAlert {
 			g += sep + sgrYellow + n + sgrFgReset
@@ -488,8 +530,27 @@ func (m *Model) badgeColored(c card.Card) string {
 		return humanTag(humanMark+"の番") + " " + sgrYellow + b + sgrFgReset
 	case c.Ending == card.EndPendingIssue:
 		return sgrYellow + b + sgrFgReset
+	case m.handling(c) != "": // 役が手に取っている (暗く沈めない)
+		return sgrCyan + b + sgrFgReset
 	}
 	return sgrDim + b + sgrReset
+}
+
+// handling は役 (PM・取り込みの係) が今カードを手に取っていれば仕事の名前 (card.Handling)。止まった dispatcher の最後の様子では出さない。
+func (m *Model) handling(c card.Card) string {
+	if m.dispatcherStopped() {
+		return ""
+	}
+	return c.Handling(m.snap.Roles, m.snap.RoleStates)
+}
+
+// assignee は詳細に出す担当 (card.Assignee。止まった dispatcher の最後の様子では手に取っている印を付けない)。
+func (m *Model) assignee(c card.Card) string {
+	var ss []card.RoleState
+	if !m.dispatcherStopped() {
+		ss = m.snap.RoleStates
+	}
+	return orDash(c.Assignee(m.snap.Roles, ss))
 }
 
 // badge は待ちの理由と、issue との紐づき (要件 10)。
@@ -518,6 +579,9 @@ func (m *Model) badge(c card.Card) string {
 		parts = append(parts, "…"+m.blockedBy(c)+" の後")
 	case c.State == card.Planned && c.ResumesFirst(): // 並びより先に起動する (dispatcher は再開を新しい起動より先にする。issue 470)
 		parts = append(parts, "↻再開が先")
+	}
+	if h := m.handling(c); h != "" { // PM が今分けている依頼・答えている質問 (476)
+		parts = append(parts, c.Turn(m.snap.Roles).Label()+" "+h)
 	}
 	if e := c.Exec; e.Active() {
 		cmd := e.Command

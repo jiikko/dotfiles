@@ -177,6 +177,9 @@ func (d *Dispatcher) writeState(now time.Time) error {
 	lim, from := d.limit()
 	s := store.DispatcherState{Tick: now, Limit: lim, LimitFrom: from, Cap: c, Why: why,
 		Roles: d.roles()}
+	for _, r := range roles() {
+		s.RoleStates = append(s.RoleStates, d.roleState(r, now))
+	}
 	if u := d.usage; u != nil {
 		s.UsageSession, s.UsageWeek, s.UsageAt = u.Session, u.Week, u.At
 	}

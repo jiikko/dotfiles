@@ -153,7 +153,7 @@ func (m *Model) drawerBody() []string {
 		}
 	}
 	add("", fmt.Sprintf("状態: %s (%s)  担当: %s  repo: %s  session: %s", c.State.Label(), fmtDur(m.snap.Now.Sub(c.Since)),
-		c.Owner, c.Repo, orDash(c.Session)))
+		m.assignee(c), c.Repo, orDash(c.Session)))
 	var refs []string
 	for _, r := range c.Issues {
 		refs = append(refs, r.String()+" ("+r.Status+")")
