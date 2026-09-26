@@ -12,6 +12,7 @@ import (
 
 	"pro-con/dispatcher"
 	"pro-con/eventlog"
+	"pro-con/live"
 	"pro-con/store"
 	"pro-con/wake"
 )
@@ -183,5 +184,44 @@ func TestRealDispatcherRefusesWithoutClaude(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
 		t.Fatalf("状態の置き場に書いた: %v", entries)
+	}
+}
+
+// dispatcher の transcript の口は、同じ session を何度読んでも変わっていなければ 1 回しか読まない (1 回の tick で何か所からも読む。issue 503)。
+// 探すのは毎回なので、別の project に新しい transcript ができたら (別の cwd で再開した) そちらへ移る。
+func TestTranscriptReaderReusesUnchangedTranscript(t *testing.T) {
+	projects := t.TempDir()
+	reads := map[string]int{}
+	read := transcriptReader(projects, &live.TranscriptCache{Read: func(p string) (live.Transcript, error) {
+		reads[p]++
+		return live.Transcript{Title: p}, nil
+	}})
+	put := func(project string, mtime time.Time) string {
+		d := filepath.Join(projects, project)
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		p := filepath.Join(d, "sid.jsonl")
+		if err := os.WriteFile(p, []byte("{}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	t0 := time.Date(2026, 9, 26, 10, 0, 0, 0, time.UTC)
+	old := put("a", t0)
+	for range 4 {
+		if tr, err := read("sid"); err != nil || tr.Title != old {
+			t.Fatalf("読めない: %q %v", tr.Title, err)
+		}
+	}
+	if reads[old] != 1 {
+		t.Fatalf("変わっていない transcript を %d 回読んだ (期待 1)", reads[old])
+	}
+	moved := put("b", t0.Add(time.Minute))
+	if tr, _ := read("sid"); tr.Title != moved {
+		t.Fatalf("新しい方の transcript へ移らない: %q", tr.Title)
 	}
 }

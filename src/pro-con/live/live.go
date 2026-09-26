@@ -48,7 +48,7 @@ type Backend struct {
 	pending int  // 受付の箱の適用待ちの数 (dispatcher が動いていないと溜まる。ヘッダーに出す)
 	ready   bool // 最初の読み取りが済んだか
 	done    chan struct{}
-	cache   map[string]cached // transcript のパス → 大きさ・更新時刻と読んだ結果 (変わっていなければ読み直さない)
+	tcache  *TranscriptCache  // transcript の読み取り結果 (大きさ・更新時刻が変わっていなければ読み直さない)
 	paths   map[string]string // sessionId → transcript のパス
 	// ss / ssErr は最後に取った session の一覧 (dispatcher に知らされた読み直しは一覧を取り直さない。Refresh の goroutine だけが触る)
 	ss       []agents.Session
@@ -101,18 +101,12 @@ type cardActivity struct {
 // activityKeep は画面が 1 枚のカードについて持つ活動の上限 (古いものから捨てる。全部は pro-con card log で読める)。
 const activityKeep = 1000
 
-type cached struct {
-	size  int64
-	mtime time.Time
-	t     Transcript
-}
-
 // New は本物の claude と ~/.claude/projects を読む backend を作る。stateDir は本物のモードの状態の置き場 (記録はその下)。
 // Start で読み直しを始める。
 func New(repos []backend.Repo, home, stateDir string) *Backend {
 	projects := filepath.Join(home, ".claude", "projects")
 	now := time.Now()
-	return &Backend{
+	b := &Backend{
 		repos:     repos,
 		dir:       stateDir,
 		registry:  filepath.Join(stateDir, RegistryFile),
@@ -122,7 +116,6 @@ func New(repos []backend.Repo, home, stateDir string) *Backend {
 		findPath:  func(id string) (string, error) { return FindTranscript(projects, id) },
 		read:      ReadTail,
 		now:       time.Now,
-		cache:     map[string]cached{},
 		paths:     map[string]string{},
 		changed:   make(chan struct{}, 1),
 		logs:      map[string]*cardActivity{},
@@ -130,6 +123,8 @@ func New(repos []backend.Repo, home, stateDir string) *Backend {
 		interval:  Interval,
 		subscribe: func(ctx context.Context, s *wake.Subscriber) { s.Run(ctx) },
 	}
+	b.tcache = &TranscriptCache{Read: func(p string) (Transcript, error) { return b.read(p) }} // read はテストが差し替える
+	return b
 }
 
 // execList は本物の claude agents を読む。🚨 画面は PATH の claude を素の名前で呼ぶ (画面の cwd は 1 つなので repo ごとには変わらないが、
@@ -470,7 +465,7 @@ func (b *Backend) Start(ctx context.Context) {
 func (b *Backend) Wait() { <-b.done }
 
 // Refresh はカードの記録を読み、作業中のカードに pro-con が起動した session の様子を足して Snapshot を作り直す。
-// 🚨 1 つの goroutine からだけ呼ぶ (Start の中)。transcript のキャッシュ (cache / paths) は lock の外で触っている。
+// 🚨 1 つの goroutine からだけ呼ぶ (Start の中)。transcript のパス (paths) は lock の外で触っている。
 // 記録を読めなければ前の Snapshot を残して理由を出す (0 枚と区別する)。session の一覧を取れないときは、カードは出して理由を足す。
 func (b *Backend) Refresh(ctx context.Context) { b.refresh(ctx, true) }
 
@@ -524,7 +519,7 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 			continue // 記録に無い session (外のもの) の様子は足さない
 		}
 		if t := b.transcript(s.SessionID); len(t.Outputs) > 0 {
-			cards[i].Log = tail(t.Outputs, 3) // LastProgress は dispatcher の watchdog だけが書く (活動と進捗を分けて判定するため)
+			cards[i].Log = slices.Clip(tail(t.Outputs, 3)) // Outputs は transcript のキャッシュと共有 (append で書き込ませない) // LastProgress は dispatcher の watchdog だけが書く (活動と進捗を分けて判定するため)
 		}
 		if c.State == card.Running || c.WaitsOnPrompt() { // 入力待ちで止まった PG も生きていて枠を使う (dispatcher と同じ = card.HoldsPGSlot)
 			cons = append(cons, backend.Consumer{Session: s.ID, CardID: c.ID, Status: s.Status, PID: s.PID})
@@ -581,19 +576,11 @@ func (b *Backend) transcript(id string) Transcript {
 		}
 		b.paths[id] = p
 	}
-	st, err := os.Stat(p)
+	t, err := b.tcache.Get(p)
 	if err != nil {
-		delete(b.paths, id)
+		delete(b.paths, id) // 消えた・読めない: 次は探し直す
 		return Transcript{}
 	}
-	if c, ok := b.cache[p]; ok && c.size == st.Size() && c.mtime.Equal(st.ModTime()) {
-		return c.t
-	}
-	t, err := b.read(p)
-	if err != nil {
-		return Transcript{}
-	}
-	b.cache[p] = cached{size: st.Size(), mtime: st.ModTime(), t: t}
 	return t
 }
 

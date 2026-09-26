@@ -506,11 +506,17 @@ func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo stri
 		ListAll: func(ctx context.Context) ([]agents.Session, error) {
 			return agents.List(ctx, agents.ExecRunnerAll(cl.Path))
 		}, Now: time.Now,
-		Transcript: func(sessionID string) (live.Transcript, error) {
-			p, err := live.FindTranscript(projects, sessionID)
-			if err != nil {
-				return live.Transcript{}, err
-			}
-			return live.ReadTail(p)
-		}}
+		Transcript: transcriptReader(projects, &live.TranscriptCache{})}
+}
+
+// transcriptReader は dispatcher が session の transcript を読む口。1 回の tick で同じ session を何か所からも読む
+// (watch・進捗・役・btw) ので、読んだ結果を使い回す (issue 503)。探すのは毎回 (別の cwd で再開したら新しい方へ移る)。
+func transcriptReader(projects string, c *live.TranscriptCache) func(string) (live.Transcript, error) {
+	return func(sessionID string) (live.Transcript, error) {
+		p, err := live.FindTranscript(projects, sessionID)
+		if err != nil {
+			return live.Transcript{}, err
+		}
+		return c.Get(p)
+	}
 }

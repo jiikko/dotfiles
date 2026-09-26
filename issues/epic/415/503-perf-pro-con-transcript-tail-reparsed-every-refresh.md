@@ -39,4 +39,13 @@ dispatcher も同じ transcript を読んでいて、画面より条件が悪い
 
 - [x] 実測 (上の表)
 - [x] 反証レビュー (読み取り専用のサブエージェント 1 体): 画面側の主張は反証されず。dispatcher 側も読んでいる (上の節) を追記
-- [ ] 差分読みにする
+- [x] dispatcher の読み直しを 1 回にする (commit「pro-con: transcript の読み取り結果を画面と dispatcher で使い回す (503)」):
+  `live.TranscriptCache` (大きさと更新時刻が同じなら前の結果を返す。上限 64 件、一番長く使っていないものから捨てる。複数の goroutine から呼べる) を新設し、
+  画面の `Backend.transcript` の自前のキャッシュをこれに置き換え、dispatcher の `Transcript` (`dispatchercmd.go` の `transcriptReader`) も使う。
+  同じ session を 1 回の tick で何か所から読んでも、解析するのは transcript が変わったときの 1 回だけ (1 回 5.7 ms / 2.9 MB の実測の分)。
+  ファイルを探す `FindTranscript` (glob、2.2 ms。project 101 個) は毎回のまま (別の cwd で再開したら新しい方へ移る挙動を変えない)。
+  共有するスライスへ append させないよう、末尾を切り出す 2 か所 (`btw.go` の `tailOf`・画面の `Log`) は `slices.Clip` で返す。
+  テスト: `live/transcriptcache_test.go` の 3 本と `TestTranscriptReaderReusesUnchangedTranscript`。`bin/mutate-verify` で 6 本の変異
+  (キャッシュを当てない / 更新時刻を見ない / 失敗を覚える / 上限を外す / 使った順を更新しない / dispatcher がキャッシュを迂回する) が red
+- [ ] 画面が transcript を読まずに済むようにする (502 と一緒に、dispatcher が集めた直近の出力を画面が読む)
+- [ ] (見送り) 差分読み: 変わったときの 1 回の解析は残る。上の 2 つの後に測って要否を決める

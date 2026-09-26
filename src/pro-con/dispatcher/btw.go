@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -121,11 +122,12 @@ func (d *Dispatcher) pgOutputs(c card.Card) []string {
 	return tailOf(t.Outputs, btwOutputs)
 }
 
+// tailOf は xs の末尾 n 個。容量を切り詰めて返す (xs は transcript のキャッシュと共有しうるので、append で書き込ませない)。
 func tailOf(xs []string, n int) []string {
 	if len(xs) <= n {
-		return xs
+		return slices.Clip(xs)
 	}
-	return xs[len(xs)-n:]
+	return slices.Clip(xs[len(xs)-n:])
 }
 
 // localAnswer は記録だけから作る答え (PG の出力が無い / 答えを作る口が無い / 作れなかった)。
