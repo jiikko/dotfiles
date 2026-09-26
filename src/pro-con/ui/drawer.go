@@ -186,6 +186,13 @@ func (m *Model) drawerBody() []string {
 		}
 		add("", fmt.Sprintf("追加オーダー (%s・%s): %s", o.Kind.Label(), st, o.Text))
 	}
+	if ls := c.DoingLines(m.snap.Now, fmtDur); len(ls) > 0 { // PG が今走らせているもの (issue 473)
+		out = append(out, "")
+		add(sgrDim, card.DoingHead(c, m.snap.Now, fmtDur))
+		for _, l := range ls {
+			add("", "  "+l)
+		}
+	}
 	if len(c.Attachments) > 0 {
 		out = append(out, "")
 		add(sgrDim, "添付")
@@ -194,7 +201,11 @@ func (m *Model) drawerBody() []string {
 	out = append(out, "")
 	add(sgrDim, "履歴")
 	for _, e := range c.History {
-		add("", "  "+e.At.Local().Format("15:04")+" "+e.Text) // 記録の時刻の時間帯は書いた側による (transcript 由来は UTC)
+		line := "  " + e.At.Local().Format("15:04") + " " + e.Text // 記録の時刻の時間帯は書いた側による (transcript 由来は UTC)
+		if e.Screen != "" {
+			line += sgrDim + " (画面 " + e.Screen + ")" + sgrReset
+		}
+		add("", line)
 	}
 	out = append(out, "")
 	if m.activityReader() != nil {

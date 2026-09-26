@@ -64,13 +64,29 @@ type Backend struct {
 	leaving atomic.Bool
 	// viewOnly は読み取りだけで開く (pro-con --view)。画面の印を置かない (数えない) / ほかの画面へ知らせない
 	viewOnly bool
-	changed  chan struct{} // 読み直したら値が入る (画面が 1 秒の tick を待たずに描き直す。backend.Notifier)
+	// join は加わった画面で開く (pro-con --join。issue 481)。印は join として置き、quit で閉じても止めない (keeper・stopAll をつながない)
+	join bool
+	// label / tty は画面の印に書く見分け (--as <ラベル> と端末。空でよい)
+	label, tty string
+	// mine はこの画面が受付の箱に置いた依頼 (依頼 ID → 中身の要点)。dispatcher が除けたら理由をこの画面にだけ出す (issue 481)。mu で守る
+	mine     map[string]mineReq
+	rejected []backend.Rejected // 除けられて、まだ画面に渡していないもの。mu で守る
+	changed  chan struct{}      // 読み直したら値が入る (画面が 1 秒の tick を待たずに描き直す。backend.Notifier)
 	// refused は socket の逃がし先を使えないので購読をつながなかった理由 (空ならつながっている / まだ試していない)。画面の違反の行に 1 行出す。mu で守る
 	refused string
 	// logs はカード ID → 読んでいる活動 (Activity。画面が裏で呼ぶ。actMu で守る。Refresh の goroutine とは別)
 	actMu sync.Mutex
 	logs  map[string]*cardActivity
 }
+
+// mineReq はこの画面が置いた、まだ適用も除けもされていない依頼。
+type mineReq struct {
+	kind, cardID string
+	at           time.Time
+}
+
+// mineKeep は、適用も除けもされないまま置いておく依頼の上限の時間 (dispatcher が長く止まっていた等。過ぎたら知らせずに忘れる)。
+const mineKeep = 24 * time.Hour
 
 // cardActivity は 1 枚のカードの、読んだ活動 (末尾の activityKeep 件) と続きを読む位置。
 type cardActivity struct {
@@ -106,6 +122,7 @@ func New(repos []backend.Repo, home, stateDir string) *Backend {
 		paths:     map[string]string{},
 		changed:   make(chan struct{}, 1),
 		logs:      map[string]*cardActivity{},
+		mine:      map[string]mineReq{},
 		interval:  Interval,
 		subscribe: func(ctx context.Context, s *wake.Subscriber) { s.Run(ctx) },
 	}
@@ -154,6 +171,51 @@ func (v viewOnly) AttachCommand(string) (*exec.Cmd, error) { return nil, ErrView
 // ErrViewOnly は読み取りだけの画面で書く操作をしたとき。
 var ErrViewOnly = errors.New("見ているだけの画面 (pro-con --view) なので受けない")
 
+// Join は加わった画面 (pro-con --join) の backend を返す (Start の前に呼ぶ。issue 481)。依頼・回答・attach などは持ち主の画面と同じく
+// 受けるが、dispatcher を起こさない (c も受けない) し、quit で閉じても止めない。画面の印は join として置く (持ち主の「最後の画面か」の
+// 数えには入らないが、dispatcher の「画面が無ければ抜ける」の数えには入る)。
+// 🚨 SetStopper / SetKeeper をつながないこと (つながっていても join の StopAll は止めず、keeper は起こさない)
+func (b *Backend) Join() backend.Backend {
+	b.join = true
+	return joined{b}
+}
+
+// SetScreenInfo は画面の印に書く見分け (--as <ラベル> と端末) を渡す (Start の前に呼ぶ)。
+func (b *Backend) SetScreenInfo(label, tty string) { b.label, b.tty = label, tty }
+
+// joined は加わった画面の backend (backend.Joiner)。書く口は持ち主と同じで、dispatcher を起こす口 (c) だけ受けない。
+type joined struct{ *Backend }
+
+func (j joined) Joined() {}
+
+func (j joined) Accepts(op backend.Op) bool { return op != backend.OpResume }
+
+func (j joined) Describe() string {
+	return "join (読み書き・dispatcher を起こさない・quit で何も止めない) / " + j.Backend.Describe()
+}
+
+// ErrJoinNoResume は加わった画面で dispatcher を起こそうとしたとき (起こすのは持ち主の画面か、手で起動した dispatcher)。
+var ErrJoinNoResume = errors.New("join の画面からは dispatcher を起こさない (持ち主の画面の c か、手で pro-con dispatcher を起動する)")
+
+// Apply は持ち主と同じく受付の箱に置く。dispatcher が動いていなければ、箱で待っていると知らせる (join は起こさない)。
+func (j joined) Apply(cmd backend.Command) (string, error) {
+	if _, ok := cmd.(backend.ResumeDispatcher); ok {
+		return "", ErrJoinNoResume
+	}
+	msg, err := j.Backend.Apply(cmd)
+	if err == nil && msg != "" && j.dispatcherIdle() {
+		msg += " / dispatcher が動いていないので受付の箱で待っている (起こすのは持ち主の画面か pro-con dispatcher)"
+	}
+	return msg, err
+}
+
+// dispatcherIdle は dispatcher が人に止められている / 1 度も回っていない / keepAfter より長く回っていないか (最後に読んだ様子で)。
+func (b *Backend) dispatcherIdle() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.snap.DispatcherHeld || b.snap.DispatcherTick.IsZero() || b.now().Sub(b.snap.DispatcherTick) > keepAfter
+}
+
 // SetKeeper は dispatcher が居ないときに起こす口をつなぐ (Start の前に呼ぶ)。
 func (b *Backend) SetKeeper(f func() error) { b.keeper = f }
 
@@ -165,7 +227,7 @@ const keepAfter = 10 * time.Second
 // 🚨 開いている印 (presence) を置けなかった画面も起こさない: 画面が起こした dispatcher は、数えられる画面が無いと 1 分で PG を止めて抜けるので、
 // 起こし直すたびに PG の停止と再開を繰り返して枠を使う
 func (b *Backend) keep() {
-	if b.keeper == nil || b.leaving.Load() || b.screen == nil {
+	if b.keeper == nil || b.join || b.leaving.Load() || b.screen == nil { // join は起こさない (issue 481)
 		return
 	}
 	b.mu.Lock()
@@ -180,23 +242,39 @@ func (b *Backend) keep() {
 func (b *Backend) SetStopper(f func(context.Context) error) { b.stopAll = f }
 
 // StopAll は dispatcher と、pro-con が起動した PG を止める (backend.Stopper)。
-// ほかの画面が開いていれば止めずに backend.KeptRunning を返す (止めるのは最後に閉じる画面だけ。package presence が数えるので、
-// dispatcher が居なくても数えられる)。この画面の印を置けなかった・数えられなければ、最後の画面として止める。
+// ほかの持ち主の画面が開いていれば止めずに backend.KeptRunning を返す (止めるのは最後に閉じる持ち主の画面だけ。package presence が
+// 数えるので、dispatcher が居なくても数えられる。join の画面は数えない = join が残っていても止める。issue 481)。
+// この画面の印を置けなかった・数えられなければ、最後の画面として止める。join の画面は何も止めずに閉じる。
 func (b *Backend) StopAll(ctx context.Context) error {
+	b.leaving.Store(true) // この後は dispatcher を起こし直さない (最後の画面なら、これから止める)
+	if b.join {
+		left := "開いている印を置けなかった画面"
+		if b.screen != nil {
+			others, err := b.screen.Leave()
+			_ = wake.Notify(b.dir) // ほかの画面の一覧を直す
+			left = fmt.Sprintf("ほかに持ち主 %d・join %d 画面", others.Owners, others.Joins)
+			if err != nil {
+				left = "ほかの画面を数えられない: " + err.Error()
+			}
+		}
+		b.event("quit で閉じた: join の画面なので dispatcher と PG は止めない (" + left + ")")
+		return backend.KeptRunning{Join: true}
+	}
 	if b.stopAll == nil {
 		return errors.New("止める口がつながっていない")
 	}
-	b.leaving.Store(true) // この後は dispatcher を起こし直さない (最後の画面なら、これから止める)
 	why := "画面の印を置けなかったので最後の画面として"
 	if b.screen != nil {
 		others, err := b.screen.Leave()
-		_ = wake.Notify(b.dir) // ほかの画面の「画面 N」を直す
+		_ = wake.Notify(b.dir) // ほかの画面の一覧を直す
 		switch {
 		case err != nil:
 			why = "ほかの画面を数えられない (" + err.Error() + ") ので最後の画面として"
-		case others > 0:
-			b.event(fmt.Sprintf("quit で閉じた: ほかに %d 画面が開いているので dispatcher と PG は止めなかった", others))
-			return backend.KeptRunning{Others: others}
+		case others.Owners > 0:
+			b.event(fmt.Sprintf("quit で閉じた: ほかに持ち主の画面が %d 開いているので dispatcher と PG は止めなかった", others.Owners))
+			return backend.KeptRunning{Others: others.Owners}
+		case others.Joins > 0:
+			why = fmt.Sprintf("最後の持ち主の画面なので (join の画面 %d は残り、止めた後は表示が止まる)", others.Joins)
 		default:
 			why = "最後の画面なので"
 		}
@@ -215,7 +293,67 @@ func (b *Backend) StopAll(ctx context.Context) error {
 // (dispatcher の「画面が無い」の出来事 (screens) が代わりになる)。置けなくても画面の動きは変えない。
 // 🚨 --view の画面からは呼ばない (受付の箱にも書かない。Start は viewOnly なら呼ばず、StopAll は View の backend から呼べない)
 func (b *Backend) event(text string) {
-	_, _ = store.Submit(b.dir, store.Request{Kind: store.KindEvent, Note: fmt.Sprintf("画面 (pid %d): %s", os.Getpid(), text)})
+	who := "画面"
+	if n := b.screenName(); n != "" {
+		who += " " + n
+	}
+	_, _ = store.Submit(b.dir, store.Request{Kind: store.KindEvent, Note: fmt.Sprintf("%s (pid %d): %s", who, os.Getpid(), text)})
+}
+
+// screenName は依頼の履歴・出来事に残すこの画面の名前 (印を置けなければ空)。
+func (b *Backend) screenName() string {
+	if b.screen == nil {
+		return ""
+	}
+	return b.screen.Info().Name()
+}
+
+// submit は依頼を受付の箱に置き、除けられたら知らせるよう覚える (画面の出来事 = event は覚えない)。
+func (b *Backend) submit(r store.Request) error {
+	r.Screen = b.screenName()
+	id, err := store.Submit(b.dir, r)
+	if err != nil {
+		return err
+	}
+	b.mu.Lock()
+	b.mine[id] = mineReq{kind: r.Kind, cardID: r.CardID, at: b.now()}
+	b.mu.Unlock()
+	return nil
+}
+
+// settle は置いた依頼を記録と照らす: 適用された分は忘れ、除けられた分は理由 (dispatcher が書いたもの) を渡す分に移す。
+func (b *Backend) settle(st store.State) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.mine) == 0 {
+		return
+	}
+	why := make(map[string]string, len(st.Rejected))
+	for _, r := range st.Rejected {
+		why[r.ID] = r.Why
+	}
+	applied := make(map[string]bool, len(st.Applied))
+	for _, id := range st.Applied {
+		applied[id] = true
+	}
+	now := b.now()
+	for id, m := range b.mine {
+		if w, ok := why[id]; ok {
+			b.rejected = append(b.rejected, backend.Rejected{Kind: m.kind, CardID: m.cardID, Why: w})
+			delete(b.mine, id)
+		} else if applied[id] || now.Sub(m.at) > mineKeep {
+			delete(b.mine, id)
+		}
+	}
+}
+
+// TakeRejected は、この画面が置いて除けられた依頼を渡して忘れる (backend.RejectReader)。
+func (b *Backend) TakeRejected() []backend.Rejected {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := b.rejected
+	b.rejected = nil
+	return out
 }
 
 // FindTranscript は projects (~/.claude/projects) の下から sessionID の transcript を探す。
@@ -246,7 +384,11 @@ func (b *Backend) Start(ctx context.Context) {
 	subDone := make(chan struct{})
 	// 見ているだけの画面は数えない: 数えると、普通の画面が閉じるときに「ほかに画面が開いている」と見て、止めるべきものを止めない
 	if !b.viewOnly {
-		if sc, err := presence.Open(b.dir); err == nil { // 置けなければ、閉じるときは最後の画面として止める (StopAll)
+		mode := presence.Owner
+		if b.join {
+			mode = presence.Join
+		}
+		if sc, err := presence.OpenAs(b.dir, presence.Info{Mode: mode, Label: b.label, TTY: b.tty}); err == nil { // 置けなければ、閉じるときは最後の画面として止める (StopAll)
 			b.screen = sc
 			n, _ := presence.Count(b.dir)
 			b.event(fmt.Sprintf("開いた (開いている画面 %d)", n)) // ctrl+r の入れ替えでも新版が開き直すので出る
@@ -336,10 +478,15 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 			owned[s.ID] = s
 		}
 	}
+	doing, err := store.LoadDoing(b.dir) // PG が今走らせているもの (dispatcher が集める。画面は ps も transcript の全体も読まない = 473)
+	if err != nil {
+		extra = append(extra, card.Violation{Reason: "PG が今走らせているものを読めない: " + err.Error()})
+	}
 	cards := append([]card.Card(nil), st.Cards...)
 	var cons []backend.Consumer
 	for i, c := range cards {
 		cards[i].Request = clip(c.Request, requestRunes) // 貼り付けた巨大な依頼を、詳細の描画のたびに折り返さない
+		doing.Attach(&cards[i])
 		s, ok := owned[c.Session]
 		if c.Session == "" || !ok {
 			continue // 記録に無い session (外のもの) の様子は足さない
@@ -354,7 +501,13 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 	// 数えられなければ 0 (「画面 N」を出さず、終了は止める側の案内になる)。
 	// 数えるとき落ちた画面の印を消す (screens/ を書く)。--view の画面も消してよい: どの画面が数えても同じ後始末で、
 	// 画面・dispatcher・PG の状態を変えない (読むだけの例外 (b)。issue 445)
-	screens, _ := presence.Count(b.dir)
+	infos, _ := presence.List(b.dir)
+	screens := make([]backend.Screen, len(infos))
+	for i, in := range infos {
+		screens[i] = backend.Screen{ID: in.Short(), Join: in.Mode == presence.Join, Label: in.Label, TTY: in.TTY, PID: in.PID, Opened: in.Opened,
+			Self: b.screen != nil && in.ID == b.screen.Info().ID}
+	}
+	b.settle(st)
 
 	ds, _, err := store.LoadDispatcherState(b.dir) // 無ければ zero (dispatcher が 1 度も回っていない)
 	if err != nil {
@@ -366,7 +519,8 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 		extra = append(extra, card.Violation{Reason: b.refused})
 	}
 	b.snap = backend.Snapshot{Now: now, Cards: cards, Consumers: cons, Limit: ds.Cap, LimitMax: ds.Limit, LimitWhy: ds.Why,
-		DispatcherTick: ds.Tick, Screens: screens, DispatcherHeld: store.Held(b.dir), Violations: append(card.Check(cards), extra...)}
+		DispatcherTick: ds.Tick, Screens: screens, DispatcherHeld: store.Held(b.dir),
+		DispatcherGone: store.DispatcherGone(b.dir), Startup: ds.Startup, StartupAlert: ds.StartupAlert, Violations: append(card.Check(cards), extra...)}
 	b.pending, b.ready = pending, true
 	b.mu.Unlock()
 }
@@ -438,6 +592,9 @@ func (b *Backend) Apply(cmd backend.Command) (string, error) {
 		r = store.Request{Kind: "answer", CardID: c.CardID, Answer: c.Text, From: firstNonEmpty(c.From, "人間")}
 	case backend.DeleteCard:
 		r = store.Request{Kind: "delete", CardID: c.CardID, From: firstNonEmpty(c.From, "人間")}
+	case backend.MoveCard:
+		r = store.Request{Kind: "move", CardID: c.CardID, Repo: c.Repo, Delta: c.Delta, Seen: c.Seen}
+		done = "" // 動いたカードそのものが知らせ (押すたびに通知を重ねない)
 	case backend.AddOrder:
 		if strings.TrimSpace(c.Text) == "" {
 			return "", backend.ErrEmptyText
@@ -479,13 +636,32 @@ func (b *Backend) Apply(cmd backend.Command) (string, error) {
 	default:
 		return "", backend.ErrUnknownKind
 	}
-	if _, err := store.Submit(b.dir, r); err != nil {
+	if err := b.submit(r); err != nil {
 		return "", err
+	}
+	if r.Kind == "move" {
+		b.moveAhead(r)
 	}
 	if r.Kind == "delete" {
 		return r.CardID + " の削除を受け付けた (依頼の列ならすぐ、ほかは PG の session を止めてから消える)", nil
 	}
 	return done, nil
+}
+
+// moveAhead は箱に置いた並べ替えを、読んだ記録 (画面が見ている並び) にも先に当てる。dispatcher の適用 (約 130 ms) を待つ間に
+// 続けて押したキーが、古い並びの端の判定で断られたり、同じ隣を指したりしないように (押した回数だけ動く)。
+// 正本は dispatcher が書く記録で、次の読み直しで置き換わる。🚨 当てられなくても (端・列を移った) 何もしない: 判定は dispatcher が下す
+func (b *Backend) moveAhead(r store.Request) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	i := slices.IndexFunc(b.snap.Cards, func(c card.Card) bool { return c.ID == r.CardID })
+	if i < 0 || (!r.Seen.IsZero() && !r.Seen.Equal(b.snap.Cards[i].Since)) {
+		return
+	}
+	cards := slices.Clone(b.snap.Cards) // Snapshot で渡した slice を書き換えない
+	if _, err := card.Move(cards, r.CardID, r.Repo, r.Delta); err == nil {
+		b.snap.Cards = cards
+	}
 }
 
 // resume は人が止めた印を外して dispatcher を起こす (c。issue 459)。印が無くても、居なければ起こす。
@@ -573,7 +749,7 @@ func (b *Backend) RecordAttach(cardID, sessionID string, from, to time.Time) (in
 	for i, p := range ps {
 		said[i] = card.Event{At: p.At, Text: p.Text}
 	}
-	if _, err := store.Submit(b.dir, store.Request{Kind: "attach", CardID: cardID, Said: said}); err != nil {
+	if err := b.submit(store.Request{Kind: "attach", CardID: cardID, Said: said}); err != nil {
 		return 0, err
 	}
 	return len(ps), nil

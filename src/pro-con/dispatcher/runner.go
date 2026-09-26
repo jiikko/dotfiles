@@ -58,6 +58,11 @@ type runJob struct {
 	start                    time.Time
 	done                     chan runResult
 	cancel                   context.CancelFunc // 実行を取り消す (終了のとき)
+	// summarize は失敗したら要約するか (始めるときの枠で決める。triage.go) / recent は同じコマンドの最近の結果 (始めるときに写す)。
+	// どちらも Tick の中で決めて写す (実行の goroutine から dispatcher の欄を読まない)
+	summarize bool
+	recent    string
+	repo      string // カードの repo (最近の結果を repo で分ける)
 }
 
 type runResult struct {
@@ -94,6 +99,7 @@ func (d *Dispatcher) tickRuns(ctx context.Context, now time.Time) ([]eventlog.Ev
 				}
 				break
 			}
+			d.remember(d.active, r, now)
 			n, err := d.finishRun(now, d.active, r)
 			notes = append(notes, n)
 			d.active = nil
@@ -127,16 +133,27 @@ func (d *Dispatcher) tickRuns(ctx context.Context, now time.Time) ([]eventlog.Ev
 			continue
 		}
 		if c.Exec.Active() && (d.active == nil || d.active.cardID != c.ID) {
-			// 実行の途中で dispatcher が落ちた (この dispatcher は実行していない)。残ったコマンドを止めてから、結果が無いことを渡して PG を再開する
-			// (止めずに頼み直させると、同じ worktree で 2 本が重なる)
+			// 実行の途中で dispatcher が落ちた (この dispatcher は実行していない)。残ったコマンドを止めてから (止めずに始めると、同じ worktree で
+			// 2 本が重なる)、同じコマンドを 1 度だけ頼み直す (PG に rc=-1 を返して頼み直させると、再開 1 回ぶんを使う。483)。
+			// 頼み直した実行がまた中断したら、実行がマシンか dispatcher を落としている疑いがあるので、結果が無いことを渡して PG を再開する
 			killStaleFn(c.Exec.RunID)
-			n, err := d.finishRun(now, &runJob{cardID: c.ID, command: c.Run, start: c.Exec.Since},
-				runResult{rc: -1, err: errors.New("dispatcher が実行の途中で止まったので結果が無い。もう一度頼むこと")})
-			notes = append(notes, n)
-			if err != nil {
+			if c.RunRetried {
+				n, err := d.finishRun(now, &runJob{cardID: c.ID, command: c.Run, start: c.Exec.Since},
+					runResult{rc: -1, err: errors.New("dispatcher が実行の途中で止まったので結果が無い (頼み直した実行も中断した。実行がマシンか dispatcher を落としている疑い)")})
+				notes = append(notes, n)
+				if err != nil {
+					return notes, err
+				}
+				continue
+			}
+			if err := d.update(c.ID, func(cc *card.Card) {
+				cc.Exec, cc.RunRetried = card.Exec{}, true
+				cc.History = append(cc.History, card.Event{At: now, Text: "テストの係の実行が dispatcher の停止で中断した。同じコマンドを頼み直す: " + c.Run})
+			}); err != nil {
 				return notes, err
 			}
-			continue
+			notes = append(notes, ev(eventlog.KindRun, c.ID, c.Session, fmt.Sprintf("%s のコマンドが dispatcher の停止で中断した。頼み直す: %s", c.ID, c.Run)))
+			c.Exec, c.RunRetried = card.Exec{}, true
 		}
 		if !c.Exec.Active() {
 			queue = append(queue, c)
@@ -168,8 +185,10 @@ func (d *Dispatcher) tickRuns(ctx context.Context, now time.Time) ([]eventlog.Ev
 			}
 		default:
 			runCtx, cancel := context.WithCancel(ctx)
+			limit, _ := d.capacity(now)
 			job := &runJob{cardID: c.ID, command: c.Run, start: now, done: make(chan runResult, 1), cancel: cancel,
-				logPath: filepath.Join(d.Dir, RunsDir, fmt.Sprintf("%s-%d-%s.log", c.ID, now.Unix(), dirTag(d.Dir)))}
+				logPath:   filepath.Join(d.Dir, RunsDir, fmt.Sprintf("%s-%d-%s.log", c.ID, now.Unix(), dirTag(d.Dir))),
+				summarize: d.Summarize != nil && limit > 0, recent: d.recentRuns(c.ID, c.Repo, c.Run), repo: c.Repo}
 			if err := d.update(c.ID, func(cc *card.Card) {
 				cc.Exec = card.Exec{Command: c.Run, Resource: store.RunResource, Since: now, RunID: filepath.Base(job.logPath)} // 始める前に印を記録する
 				cc.Wait = card.Wait{}
@@ -270,8 +289,8 @@ func (d *Dispatcher) execute(ctx context.Context, job *runJob, dir string) {
 	defer job.cancel()
 	r.rc, r.err = d.Runner.Run(ctx, dir, job.command, job.logPath, filepath.Base(job.logPath))
 	// 出力が無ければ要約させない (空のログを渡すと、要約の代わりに「ログを貼って」と返ってくる = 427 の段階 4 の本物の確認で実測)
-	if tail := logTail(job.logPath); (r.rc != 0 || r.err != nil) && !errors.Is(r.err, errRunLockBusy) && d.Summarize != nil && strings.TrimSpace(tail) != "" {
-		if s, err := d.Summarize(ctx, tail); err == nil {
+	if tail := logTail(job.logPath); (r.rc != 0 || r.err != nil) && !errors.Is(r.err, errRunLockBusy) && job.summarize && strings.TrimSpace(tail) != "" {
+		if s, err := d.Summarize(ctx, SummaryInput{Tail: tail, Diff: changeStat(ctx, dir), Recent: job.recent}); err == nil {
 			r.summary = strings.TrimSpace(s)
 		}
 	}
@@ -292,7 +311,7 @@ func (d *Dispatcher) finishRun(now time.Time, job *runJob, r runResult) (eventlo
 			fmt.Fprintf(&b, "エラー: %v\n", r.err)
 		}
 		if r.summary != "" {
-			b.WriteString("要約:\n" + r.summary + "\n")
+			b.WriteString("要約 (haiku の一次判定。見込みで、証拠ではない):\n" + r.summary + "\n")
 		}
 		if tail := logTail(job.logPath); strings.TrimSpace(tail) != "" {
 			b.WriteString("ログの末尾:\n" + tail + "\n")
@@ -580,18 +599,6 @@ func killStale(runID string) {
 	}
 }
 
-// summarizeTimeout は要約の上限。
-const summarizeTimeout = 3 * time.Minute
-
-// HaikuSummarize は失敗したログの末尾を haiku に要約させる (426 の決定 5)。settings は HaikuSettings。
-func HaikuSummarize(claude, dir, settings string) func(ctx context.Context, tail string) (string, error) {
-	return func(ctx context.Context, tail string) (string, error) {
-		ctx, cancel := context.WithTimeout(ctx, summarizeTimeout)
-		defer cancel()
-		return haiku(ctx, claude, dir, settings, "次はテストかビルドのコマンドの失敗したログの末尾です。何が失敗したか (落ちたテスト名・エラーの場所と内容) を日本語で 5 行以内に要約してください。ログに書かれていないことは書かず、質問もしないこと。\n\n"+tail)
-	}
-}
-
 // HaikuAsk は btw の答えを haiku に作らせる (btw.go。上限は呼ぶ側が付ける)。
 func HaikuAsk(claude, dir, settings string) func(ctx context.Context, prompt string) (string, error) {
 	return func(ctx context.Context, prompt string) (string, error) {
@@ -602,7 +609,8 @@ func HaikuAsk(claude, dir, settings string) func(ctx context.Context, prompt str
 // haiku は prompt を安いモデルの claude -p に渡す (claude は実体の絶対パス)。状態の置き場で動かす (repo の hook・規約を読ませない)。
 // settings (HaikuSettings) で、それでも祖先から拾われる ~/.claude/CLAUDE.md と auto memory を外す (431)
 func haiku(ctx context.Context, claude, dir, settings, prompt string) (string, error) {
-	cmd := exec.CommandContext(ctx, claude, "-p", "--model", "haiku", "--setting-sources", "project,local", "--settings", settings)
+	// --no-session-persistence: 使い捨てなので transcript を残さない (460 の P3。1 回あたり約 200KB が ~/.claude/projects に残っていた)
+	cmd := exec.CommandContext(ctx, claude, "-p", "--model", "haiku", "--no-session-persistence", "--setting-sources", "project,local", "--settings", settings)
 	cmd.Dir = dir
 	cmd.Env = withoutTmux(os.Environ())
 	cmd.Stdin = strings.NewReader(prompt)

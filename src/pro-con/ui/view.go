@@ -106,21 +106,68 @@ const dispatcherStale = 2 * time.Minute
 
 // dispatcherStopped は dispatcher が人に止められている / 1 度も回っていない / dispatcherStale より長く回っていないか。
 func (m *Model) dispatcherStopped() bool {
-	return m.snap.DispatcherHeld || m.snap.DispatcherTick.IsZero() || m.snap.Now.Sub(m.snap.DispatcherTick) > dispatcherStale
+	return m.snap.DispatcherHeld || m.snap.DispatcherGone || m.snap.DispatcherTick.IsZero() || m.snap.Now.Sub(m.snap.DispatcherTick) > dispatcherStale
+}
+
+// screenGaugeMax はヘッダに画面を 1 つずつ並べる上限 (超えたら数だけにして、一覧は s の板に出す)。
+const screenGaugeMax = 3
+
+// screensGauge は開いている画面 (issue 481)。1 つだけの持ち主の画面なら出さない。少なければ 1 つずつ (「a1b2c3 持ち主 (この画面)」)、
+// 多ければ持ち主と join の数だけ出す。
+func (m *Model) screensGauge() string {
+	ss := m.snap.Screens
+	if len(ss) == 0 || (len(ss) == 1 && !ss[0].Join) {
+		return ""
+	}
+	if len(ss) > screenGaugeMax {
+		owners, joins := m.snap.ScreenTally()
+		return fmt.Sprintf("画面 %d (持ち主 %d・join %d。s で一覧)", len(ss), owners, joins)
+	}
+	parts := make([]string, len(ss))
+	for i, s := range ss {
+		parts[i] = s.ID + " " + screenMode(s)
+		if s.Self {
+			parts[i] += " (この画面)"
+		}
+	}
+	return "画面 " + strings.Join(parts, " · ")
+}
+
+// screenMode は画面のモードとラベル (「join review」)。
+func screenMode(s backend.Screen) string {
+	mode := "持ち主"
+	if s.Join {
+		mode = "join"
+	}
+	if s.Label != "" {
+		mode += " " + s.Label
+	}
+	return mode
 }
 
 // dispatcherGauge は dispatcher が最後に回ってからの時間。1 度も回っていない / 長く回っていなければ赤で出す。
-// 人が止めた (印がある) なら、止まっているのは意図どおりなので黄で「止めてある」と出す (画面は起こさない。issue 459)
+// 人が止めた (印がある) なら、止まっているのは意図どおりなので黄で「止めてある」と出す (画面は起こさない。issue 459)。
+// join の画面は dispatcher を起こさないので、止まっているときは起こし方を添える (issue 481)
 func (m *Model) dispatcherGauge() string {
 	if m.snap.DispatcherHeld {
+		if m.joined() {
+			return sgrYellow + "dispatcher 止めてある (join からは起こせない。持ち主の画面の c か pro-con dispatcher)" + sgrFgReset
+		}
 		return sgrYellow + "dispatcher 止めてある (c で起こす)" + sgrFgReset
 	}
+	wake := ""
+	if m.joined() {
+		wake = "。起こすのは持ち主の画面か pro-con dispatcher"
+	}
 	if m.snap.DispatcherTick.IsZero() {
-		return sgrRed + "dispatcher 未起動" + sgrFgReset
+		return sgrRed + "dispatcher 未起動" + wake + sgrFgReset
 	}
 	d := m.snap.Now.Sub(m.snap.DispatcherTick)
+	if m.snap.DispatcherGone { // プロセスが居ない: Tick の古さ (dispatcherStale) を待たずに出す (483。クラッシュの後の --view で気づけなかった)
+		return sgrRed + fmt.Sprintf("dispatcher が動いていない (最後の Tick %s前%s)", fmtDur(d), wake) + sgrFgReset
+	}
 	if d > dispatcherStale {
-		return sgrRed + fmt.Sprintf("dispatcher %s前 (止まっている?)", fmtDur(d)) + sgrFgReset
+		return sgrRed + fmt.Sprintf("dispatcher %s前 (止まっている?%s)", fmtDur(d), wake) + sgrFgReset
 	}
 	return fmt.Sprintf("dispatcher %s前", fmtDur(d))
 }
@@ -201,8 +248,15 @@ func (m *Model) gauge() string {
 	sep := fg(240) + " │ " + sgrFgReset
 	g := " " + strings.Join(parts, "  ") + sep + "最古の待ち " + fmtDur(oldest) + sep +
 		m.pgGauge() + sep + m.dispatcherGauge()
-	if n := m.snap.Screens; n > 1 { // 画面の数は package presence が数える (dispatcher が止まっていても正しい)
-		g += sep + fmt.Sprintf("画面 %d", n)
+	if n := m.snap.Startup; n != "" && !m.dispatcherStopped() { // 起動時の確かめ (483)。止まった dispatcher の古い要約は出さない
+		if m.snap.StartupAlert {
+			g += sep + sgrYellow + n + sgrFgReset
+		} else {
+			g += sep + sgrDim + n + sgrReset
+		}
+	}
+	if s := m.screensGauge(); s != "" { // 画面は package presence が数える (dispatcher が止まっていても正しい)
+		g += sep + s
 	}
 	if u := m.upgradeSummary(); u != "" {
 		g += sep + u
@@ -417,6 +471,8 @@ func (m *Model) badge(c card.Card) string {
 		parts = append(parts, "…枠待ち")
 	case m.blockedBy(c) != "":
 		parts = append(parts, "…"+m.blockedBy(c)+" の後")
+	case c.State == card.Planned && c.ResumesFirst(): // 並びより先に起動する (dispatcher は再開を新しい起動より先にする。issue 470)
+		parts = append(parts, "↻再開が先")
 	}
 	if e := c.Exec; e.Active() {
 		cmd := e.Command
@@ -426,6 +482,10 @@ func (m *Model) badge(c card.Card) string {
 		parts = append(parts, "▶ "+cmd+" "+fmtDur(m.snap.Now.Sub(e.Since)))
 	} else if c.State != card.Done {
 		parts = append(parts, fmtDur(m.snap.Now.Sub(c.Since)))
+		// PG が今走らせているもの (issue 473)。集め直されていない古い様子はボードには出さない (詳細は古いと添えて出す)
+		if label, since, ok := c.DoingHeadline(); ok && m.snap.Now.Sub(c.DoingAt) <= card.DoingStale {
+			parts = append(parts, "▸ "+label+" "+fmtDur(m.snap.Now.Sub(since)))
+		}
 	}
 	switch {
 	case len(c.Issues) > 0: // 番号は 1 行目 (issueTag) に出している
@@ -599,10 +659,11 @@ func (m *Model) hints() []string {
 		back = "q / esc 閉じる"
 	}
 	h := append([]string{"hjkl 選択", "tab repo"}, offer(
-		hint{"n 新しい依頼", m.accepts(backend.OpNew), true}, hint{"i issue から", m.accepts(backend.OpNew), true}, hint{"enter 詳細", has, false})...)
+		hint{"n 新しい依頼", m.accepts(backend.OpNew), true}, hint{"i issue から", m.accepts(backend.OpNew), true}, hint{"enter 詳細", has, false},
+		hint{"K / J 優先度", has && m.accepts(backend.OpMove), true})...)
 	h = append(h, cardOps...)
 	h = append(append(h, "s PG 一覧"), offer(hint{"x 完了を片付け", m.doneInTab() > 0 && m.accepts(backend.OpClear), true})...)
-	if m.snap.DispatcherHeld { // 止めてあるときだけ出す (いつも出すと、暗い字が「状態が変われば押せる」以上の意味を持たない)
+	if m.snap.DispatcherHeld && !m.joined() { // 止めてあるときだけ出す (いつも出すと、暗い字が「状態が変われば押せる」以上の意味を持たない)。join は起こさない
 		h = append(h, offer(hint{"c dispatcher を起こす", m.accepts(backend.OpResume), true})...)
 	}
 	return append(h, "? レーンの意味", back)
@@ -627,6 +688,12 @@ func hintLine(items []string, w int) string {
 		}
 		rest = rest[:len(rest)-1]
 	}
+}
+
+// joined はこの画面が加わった画面 (pro-con --join) か。
+func (m *Model) joined() bool {
+	_, ok := m.be.(backend.Joiner)
+	return ok
 }
 
 // accepts は backend が操作 op を受けるか (backend.Accepter を持たない backend は全部受ける)。

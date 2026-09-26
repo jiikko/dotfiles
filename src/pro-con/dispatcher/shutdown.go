@@ -53,7 +53,8 @@ func requeue(c *card.Card, now time.Time, resume string) {
 // gone は、作業中のカードの PG の session が一覧から消えて、restartWait を過ぎても戻らないか (Shutdown が「既に止まっていた」とする形と同じ判定)。
 // 消えたのを見た時刻 (DeadSince) が要る: 短い id が変わっただけで session は生きている形 (trackDead は生きていると見て外す) を消えたと読まない
 func (d *Dispatcher) gone(c card.Card, now time.Time, ss []agents.Session, reg []live.Owned) bool {
-	if c.State != card.Running || c.Launching != "" || c.DeadSince.IsZero() {
+	// テストの係の結果を待っているカードは戻さない (結果が出たら finishRun が分解済みへ戻して再開する。戻すと頼みを捨てる = 483)
+	if c.State != card.Running || c.Launching != "" || c.DeadSince.IsZero() || c.Run != "" {
 		return false
 	}
 	if _, ok := owned(c, reg); !ok {
@@ -494,7 +495,7 @@ func unregistered(c card.Card, repoPath string, ss []agents.Session, reg []live.
 	if has && c.Launching == "" {
 		return agents.Session{}, false, false // 記録の行で照らす (短い id を別の session が得た形には触らない)
 	}
-	wt := worktreePath(repoPath, c)
+	wt := card.WorktreePath(repoPath, c)
 	inWorktree := func(s agents.Session) bool { return wt != "" && samePath(s.Cwd, wt) }
 	var loose *agents.Session
 	for _, s := range ss {
@@ -508,7 +509,7 @@ func unregistered(c card.Card, repoPath string, ss []agents.Session, reg []live.
 		}
 		// 起動・再開の途中で、claude が返した id がまだカードに無い形。起動は名前 (-n) が手がかり。再開は名前を渡さないので
 		// worktree に居る対話でない session を名指しする (人間の対話の session を数えて、終了を永久に失敗させない)
-		if loose == nil && c.Launching != "" && inWorktree(s) && (s.Name == sessionName(c) || (c.Launching == "再開" && s.Kind != "interactive")) {
+		if loose == nil && c.Launching != "" && inWorktree(s) && (s.Name == card.SessionName(c) || (c.Launching == "再開" && s.Kind != "interactive")) {
 			loose = &s
 		}
 	}

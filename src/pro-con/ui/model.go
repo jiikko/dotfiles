@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os/exec"
 	"slices"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -152,6 +151,7 @@ func (m *Model) Notify(s string) {
 // poll は backend の今の状態を画面に取り込む。
 func (m *Model) poll() tea.Cmd {
 	m.setSnap(m.be.Poll())
+	m.showRejected()
 	tab := m.tab
 	m.ensureTab()
 	m.ensureSelection()
@@ -348,6 +348,21 @@ func (m *Model) moveTab(delta int) {
 }
 
 // visible は選んでいるタブに属するカード。global は全部 (config の外の repo のカードも含む)。
+// showRejected は、この画面が置いた依頼を dispatcher が除けた理由を出す (ほかの画面の依頼は出さない。issue 481)。
+func (m *Model) showRejected() {
+	rr, ok := m.be.(backend.RejectReader)
+	if !ok {
+		return
+	}
+	for _, r := range rr.TakeRejected() {
+		what := r.Kind
+		if r.CardID != "" {
+			what = r.CardID + " への " + r.Kind
+		}
+		m.refuse("打った依頼 (" + what + ") は dispatcher が除けた: " + r.Why)
+	}
+}
+
 // setSnap は backend の Snapshot を画面の状態にする。片付けたカード (Archived) はここで落とす
 // (タブの枚数・選択・カンバンのどれにも出さない。画面の読み手ごとに除外を書くと、1 か所の漏れで片付けたカードが戻る)。
 func (m *Model) setSnap(s backend.Snapshot) {
@@ -375,8 +390,8 @@ func (m *Model) visible() []card.Card {
 	return out
 }
 
-// columns は選んでいるタブのカードをカンバンの列に分ける。列の中は「その列に入った順」(Since、同時なら ID)。
-// 移ってきたカードは必ず列の末尾に着地するので、既存のカードの位置は動かない (Snapshot の並び順のままだと、
+// columns は選んでいるタブのカードをカンバンの列に分ける。列の中はレーンの並び (card.LaneCompare: 上ほど優先。K / J で入れ替えて
+// いなければ、その列に入った順)。移ってきたカードは必ず列の末尾に着地するので、既存のカードの位置は動かない (Snapshot の並び順のままだと、
 // 移ってきたカードが途中に割り込んで既存のカードが一斉にずれる)。
 func (m *Model) columns() [][]card.Card {
 	cols := make([][]card.Card, len(card.Columns))
@@ -388,12 +403,7 @@ func (m *Model) columns() [][]card.Card {
 		}
 	}
 	for _, cs := range cols {
-		slices.SortStableFunc(cs, func(a, b card.Card) int {
-			if c := a.Since.Compare(b.Since); c != 0 {
-				return c
-			}
-			return strings.Compare(a.ID, b.ID)
-		})
+		slices.SortStableFunc(cs, card.LaneCompare)
 	}
 	return cols
 }
@@ -494,7 +504,7 @@ func (m *Model) stepRow(delta int) tea.Cmd {
 
 // writeKeys は backend に書き込む操作を始めるキーと、その操作の種類。受けない backend では押した時点で断る
 // (案内の行も同じ種類で暗くする: view.go の hints)。
-var writeKeys = map[string]backend.Op{"n": backend.OpNew, "i": backend.OpNew, "r": backend.OpAnswer, "+": backend.OpOrder, "w": backend.OpBtw, "x": backend.OpClear, "d": backend.OpDelete, "c": backend.OpResume}
+var writeKeys = map[string]backend.Op{"n": backend.OpNew, "i": backend.OpNew, "r": backend.OpAnswer, "+": backend.OpOrder, "w": backend.OpBtw, "x": backend.OpClear, "d": backend.OpDelete, "K": backend.OpMove, "J": backend.OpMove, "c": backend.OpResume}
 
 func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	if m.showDetail {
@@ -504,7 +514,11 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 	}
 	if op, ok := writeKeys[k.String()]; ok && !m.accepts(op) {
 		// 入力欄を開いてから送った時点で断ると、書いた文が無駄になる (2026-09-24 の報告)。押した時点で断る
-		m.refuse("この画面では使えない操作 (見ているだけの画面 = pro-con --view は書き込まない)")
+		if m.joined() {
+			m.refuse("join の画面からは dispatcher を起こさない (持ち主の画面の c か、手で pro-con dispatcher を起動する)")
+		} else {
+			m.refuse("この画面では使えない操作 (見ているだけの画面 = pro-con --view は書き込まない)")
+		}
 		return nil
 	}
 	switch k.String() {
@@ -574,6 +588,10 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		m.askClearDone()
 	case "d": // カードを削除する (glogx の d = 削除。y/N 確認を挟む)
 		m.askDelete()
+	case "K": // 選んでいるカードを 1 つ上と入れ替える (優先度を上げる。j / k の強い版 = 選択ではなくカードを動かす。issue 470)
+		return m.moveCard(-1)
+	case "J": // 1 つ下と入れ替える (優先度を下げる)
+		return m.moveCard(1)
 	case "c": // 人が止めた dispatcher を起こす (continue。glogx で空いている字。PG が再開して利用枠を使うので y/N 確認を挟む)
 		m.askResume()
 	default:
@@ -583,6 +601,33 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		}
 		return m.moveByMotion(listnav.MotionOf(k.String()))
 	}
+	return nil
+}
+
+// moveCard は選んでいるカードをレーンの中で delta (-1 = 上 / +1 = 下) の隣と入れ替えるよう backend に頼む。選択はカードについていく
+// (選択は ID で持つ)。端では頼まずに止めて知らせる (巻かない)。隣は backend が適用の時点の並びで決めるので、速く続けて押しても押した回数だけ動く。
+func (m *Model) moveCard(delta int) tea.Cmd {
+	col, row, ok := m.position()
+	if !ok {
+		m.refuse("動かすカードを選んでいない")
+		return nil
+	}
+	if next := row + delta; next < 0 || next >= len(m.columns()[col]) {
+		if delta < 0 {
+			m.info("レーンの先頭なので、これより上げられない")
+		} else {
+			m.info("レーンの末尾なので、これより下げられない")
+		}
+		return m.startBump(0, delta)
+	}
+	c := m.columns()[col][row]
+	if res, err := m.be.Apply(backend.MoveCard{CardID: c.ID, Repo: m.tab, Delta: delta, Seen: c.Since}); err != nil {
+		m.fail("失敗: " + err.Error())
+	} else if res != "" {
+		m.done(res)
+	}
+	m.setSnap(m.be.Snapshot())
+	m.ensureSelection()
 	return nil
 }
 

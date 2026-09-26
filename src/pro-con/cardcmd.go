@@ -36,6 +36,7 @@ const cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を�
   handoff <カード> <理由> [--from <PM|取り込みの係>]  PG の質問 / レビュー待ちを人に回したことを履歴に残す (列は変えない)
   close <カード> [--ending answered|investigated|rejected|pending-issue] [--issue <repo>#<番号>]...
   delete <カード> [--from <人間|PM>]              カードを消す (依頼の列はすぐ。それ以外は PG の session を止めてから。worktree とブランチは残す)
+  move <カード> up|down [--repo <repo>]          レーンの中で 1 つ上 / 下のカードと入れ替える (上ほど優先。--repo ならその repo のカードの中の隣)
   guide                                          PM への指示書を出す (箱には何も置かない)
 読むだけ (箱にも記録にも書かない):
   list [--state <列>] [--all] [--json]           カードの一覧 (--all は片付けたものも)
@@ -213,6 +214,8 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 	case "close":
 		fs.Var(&issues, "issue", "")
 		fs.StringVar(&ending, "ending", "", "")
+	case "move":
+		fs.StringVar(&r.Repo, "repo", "", "")
 	case "ask", "review", "rework":
 	default:
 		return r, wait, fmt.Errorf("未知の操作 %q", op)
@@ -226,7 +229,7 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 		return r, wait, err
 	}
 	pos = append(pos, fs.Args()...)
-	need := map[string]int{"add": 0, "plan": 1, "review": 1, "close": 1, "delete": 1, "ask": 2, "answer": 2, "rework": 2, "handoff": 2}[op]
+	need := map[string]int{"add": 0, "plan": 1, "review": 1, "close": 1, "delete": 1, "ask": 2, "answer": 2, "rework": 2, "move": 2, "handoff": 2}[op]
 	if len(pos) != need {
 		return r, wait, fmt.Errorf("%s は位置引数が %d 個 (受け取ったのは %d 個)", op, need, len(pos))
 	}
@@ -244,6 +247,12 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 		r.Answer = pos[1]
 	case "rework":
 		r.Rework = pos[1]
+	case "move":
+		d, ok := map[string]int{"up": -1, "down": 1}[pos[1]]
+		if !ok {
+			return r, wait, fmt.Errorf("move の向きは up か down: %q", pos[1])
+		}
+		r.Delta = d
 	case "handoff":
 		r.Text = pos[1]
 	case "close":

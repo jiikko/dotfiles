@@ -187,7 +187,7 @@ func (d *Dispatcher) tellRole(ctx context.Context, now time.Time, ss []agents.Se
 		told[k] = true
 	}
 	pm.Told = nil
-	for _, c := range st.Cards {
+	for _, c := range card.Board(st.Cards) { // 上ほど優先 (人がレーンで並べ替えられる。issue 470)。役は上から扱う
 		k, ok := r.key(c)
 		if !ok {
 			continue
@@ -303,7 +303,8 @@ func (d *Dispatcher) prepareRole(r *role, row live.Owned, hasRow bool, cur agent
 			stop = cur.ID
 		}
 		return "再開", "", func(ctx context.Context) (string, error) {
-			return d.Launch.Resume(ctx, stop, row.SessionID, row.Cwd, notice)
+			// 名前は起動のときの -w / -n の名前で、worktree の名前と同じ (記録に名前の欄は無いので cwd から取る)
+			return d.Launch.Resume(ctx, stop, row.SessionID, row.Cwd, filepath.Base(row.Cwd), notice)
 		}, nil
 	}
 	if alive {

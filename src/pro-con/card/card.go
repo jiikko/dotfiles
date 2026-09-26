@@ -4,6 +4,7 @@ package card
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -28,9 +29,9 @@ var Columns = []State{Requested, Planned, Running, Waiting, Review, Done}
 func (s State) Meaning() string {
 	switch s {
 	case Requested:
-		return "受付 PM がカードを作った直後。まだタスクに分けていない"
+		return "受付 PM がカードを作った直後。まだタスクに分けていない。PM は上から分ける"
 	case Planned:
-		return "タスクに分けてキューに積んだ。PG の空きを待っている"
+		return "タスクに分けてキューに積んだ。PG の空きを待っている。上から起動する (K / J で並べ替え。↻ の再開は先)"
 	case Running:
 		return "PG が作業している。make test などの占有リソースの順番待ち・利用枠の回復待ちもここ"
 	case Waiting:
@@ -202,7 +203,7 @@ func HoldsPGSlot(c Card, idle bool) bool {
 // DropRun はテストの係への頼みと実行中の記録を取り下げる。作業中の列を離れるときは必ず呼ぶ
 // (残すと、後で届いた結果や「結果が無い」が、別の理由で再開した PG を止めて再開し直す)。
 func (c *Card) DropRun() {
-	c.Run, c.RunAt, c.RunCwd, c.Exec = "", time.Time{}, "", Exec{}
+	c.Run, c.RunAt, c.RunCwd, c.Exec, c.RunRetried = "", time.Time{}, "", Exec{}, false
 	if c.Wait.Kind == WaitResource {
 		c.Wait = Wait{}
 	}
@@ -218,8 +219,9 @@ func StallThreshold(c Card, base time.Duration) time.Duration {
 }
 
 type Event struct {
-	At   time.Time
-	Text string
+	At     time.Time
+	Text   string
+	Screen string `json:",omitempty"` // 打った画面 (画面から受付の箱に置いた依頼だけ。「a1b2c3 join review」。issue 481)
 }
 
 // AttachKind は添付の種類 (人間がどう見るかを決める。issue 453)。
@@ -253,17 +255,23 @@ type Card struct {
 	Session  string // 担当 PG の session id (claude --bg の id)
 	State    State
 	Since    time.Time // 今の State に入った時刻
-	Wait     Wait
-	Stalled  bool // watchdog が停滞と判定した
-	Exec     Exec // 今実行しているコマンド (作業中の列のまま。列は担当が変わるときだけ移る)
-	Issues   []IssueRef
-	Ending   Ending
-	Orders   []Order
-	Btws     []Btw `json:",omitempty"`
-	History  []Event
+	// Rank は人が入れ替えたレーンの中の並び (issue 470。rank.go)。Since が変わる (列を移る) と効かなくなる
+	Rank    Rank `json:",omitzero"`
+	Wait    Wait
+	Stalled bool // watchdog が停滞と判定した
+	Exec    Exec // 今実行しているコマンド (作業中の列のまま。列は担当が変わるときだけ移る)
+	Issues  []IssueRef
+	Ending  Ending
+	Orders  []Order
+	Btws    []Btw `json:",omitempty"`
+	History []Event
 	// Attachments は PG が `pro-con card attach` で付けた添付 (付けた順。issue 453)
 	Attachments []Attachment `json:",omitempty"`
 	Log         []string     // PG の出力の末尾 (本番は transcript から読む)
+	// Doing は PG が今走らせているもの、DoingAt は dispatcher がそれを集めた時刻 (issue 473)。読む側 (画面・card show) が store.DoingFile から足す。
+	// 🚨 記録 (cards.json) には書かない: 書き手は dispatcher の Apply だけで、数秒で古くなる様子を記録の差分に混ぜない
+	Doing   []Doing   `json:"-"`
+	DoingAt time.Time `json:"-"`
 	// Resume は次に PG を再開するときに渡す文 (質問への回答)。dispatcher が渡したら空にする (本物のモードだけ。426 の決定 2)
 	Resume string `json:",omitempty"`
 	// Launching は dispatcher が PG の起動・再開を始めて、結果をまだ確かめていない印 ("起動" / "再開")。起動の前に記録へ書く
@@ -296,6 +304,9 @@ type Card struct {
 	DeleteBy string    `json:",omitempty"`
 	// Stopped は pro-con の終了で dispatcher が PG を止めた印。次の再開は、落ちた PG の自動の再開を待たずに (止めずに) 行う。起動・再開で外す
 	Stopped bool `json:",omitempty"`
+	// Revived は、落ちた・消えた PG を人の判断なしに再開へ回した印 (458 の消えた PG・483 の再起動の復旧)。再開 (settle) で落ちた回数の
+	// 数え始め (CrashesFrom) を今に戻さない (戻すと、落ち続ける PG を上限に届かないまま再開し続ける)。再開と人の回答待ちへ送るときに外す
+	Revived bool `json:",omitempty"`
 	// Run は PG が `pro-con card run` で頼んだ、まだ結果を返していないコマンド (シェルの 1 行)。RunAt は頼んだ時刻 (順番の鍵)。
 	// dispatcher が順番に実行し、結果を持たせて PG を再開したら空にする
 	Run   string    `json:",omitempty"`
@@ -303,6 +314,9 @@ type Card struct {
 	// RunCwd は頼んだ側 (`pro-con card run` を打ったシェル) の作業ディレクトリ。dispatcher はそのカードの PG の worktree と一致するときだけ実行する
 	// (別のカードの名前で頼まれた実行を、そのカードの worktree で走らせない)
 	RunCwd string `json:",omitempty"`
+	// RunRetried は、実行の途中で dispatcher が止まった Run を 1 度頼み直した印 (issue 483)。また中断したら頼み直さずに rc=-1 を返す
+	// (実行そのものがマシンか dispatcher を落としている疑い)。Run を外すときに外す
+	RunRetried bool `json:",omitempty"`
 	// Archived は完了のレーンから片付けた (x・完了から 24 時間の自動)。ボードには出さない。dispatcher が記録から書庫へ移す (store.Archive)
 	Archived bool
 	// FromRequest はこのカードを作った受付の箱の依頼 (add) の ID。`pro-con card add` が、置いた依頼から振られたカード ID を引く (issue 442)
@@ -327,6 +341,14 @@ func Children(cards []Card, id string) []string {
 	}
 	return out
 }
+
+// Resumes は同じ session の再開を待っているか (回答・差し戻し・テストの結果・未達の追加オーダーを持つ。dispatcher はこれを
+// 新しい起動より先にする。画面は分解済みのレーンで印を出す)。
+func (c Card) Resumes() bool { return (c.Resume != "" || len(c.Pending()) > 0) && c.Session != "" }
+
+// ResumesFirst は dispatcher がレーンの並びより先に起動するカードか (再開の初回。削除中は起動しない)。画面の ↻ の印も同じ判定を使う。
+// 🚨 印の残った再試行 (Launching) は先にしない: 失敗し続ける再開が毎回先頭に並び、1 本の枠を永久に占めて他のカードを起動させなくなる
+func (c Card) ResumesFirst() bool { return c.Resumes() && c.Launching == "" && !c.Deleting() }
 
 // handoffMark は PM が PG の質問を人に回したときの履歴の文の印 (HandoffText が書き、HandedOff が読む)。
 const handoffMark = " が人に回した: "
@@ -384,4 +406,16 @@ func Check(cards []Card) []Violation {
 		}
 	}
 	return append(out, afterViolations(cards)...)
+}
+
+// SessionName は PG の session と worktree の名前 (claude --bg -w <name> -n <name>)。
+func SessionName(c Card) string { return "pc-" + strings.ToLower(c.ID) }
+
+// WorktreePath は claude --bg -w <name> が作る PG の worktree (427 の 3f で実測。dispatcher と見張り = package monitor が使う)。
+// repo の場所が分からなければ空 (呼び出し側が空を弾く)。
+func WorktreePath(repoPath string, c Card) string {
+	if repoPath == "" {
+		return ""
+	}
+	return filepath.Join(repoPath, ".claude", "worktrees", SessionName(c))
 }

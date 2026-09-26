@@ -140,3 +140,30 @@ func TestTickRecordsScreenEvents(t *testing.T) {
 		t.Fatalf("画面の出来事を書かない / 時刻が画面の置いた時刻でない: %+v", got)
 	}
 }
+
+// 見張りの知らせ (受付の箱の monitor) は、見張りの出来事 (monitor) としてカードの ID と見張りが置いた時刻のまま書く。
+func TestTickRecordsMonitorNotes(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Date(2026, 9, 26, 10, 0, 0, 0, time.UTC)
+	if _, err := store.Submit(dir, store.Request{Kind: store.KindMonitor, CardID: "C-001", Note: "C-001 が master と衝突する", At: at}); err != nil {
+		t.Fatal(err)
+	}
+	d := newDispatcher(t, dir, &fakeLauncher{}, nil)
+	var got []eventlog.Event
+	d.Record = func(evs []eventlog.Event) { got = append(got, evs...) }
+	if _, err := d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var mons []eventlog.Event
+	for _, e := range got {
+		switch e.Kind {
+		case eventlog.KindMonitor:
+			mons = append(mons, e)
+		case eventlog.KindApply:
+			t.Fatalf("見張りの知らせに適用の出来事を重ねた: %+v", e)
+		}
+	}
+	if len(mons) != 1 || mons[0].Reason != "C-001 が master と衝突する" || mons[0].Card != "C-001" || !mons[0].At.Equal(at) {
+		t.Fatalf("見張りの知らせを書かない / カード・時刻が違う: %+v", got)
+	}
+}

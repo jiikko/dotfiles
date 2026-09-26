@@ -150,6 +150,9 @@ func TestIntegratorRetoldAfterRework(t *testing.T) {
 	if len(got) != 1 || !strings.HasPrefix(got[0], "id-"+intName+":") || !strings.Contains(got[0], "レビュー待ち C-001") {
 		t.Fatalf("またレビューの列に来たカードを係に知らせていない: %v", got)
 	}
+	if names := r.l.resumeNames[len(r.l.resumeNames)-1:]; names[0] != intName { // 起動のときの名前に付け直す (488)
+		t.Fatalf("係の再開で session の名前を付け直していない: %v", names)
+	}
 }
 
 // 係が人に回した (handoff) カードは、またレビューの列に入り直すまで知らせる物から外れる (起こし直す理由にならない)。

@@ -52,6 +52,8 @@ func TestCardCommandRejectsBadUsage(t *testing.T) {
 		{"close", "C-001", "--ending", "done"},   // 未知の終わり方
 		{"review"},                               // カードが無い
 		{"delete"},                               // カードが無い
+		{"move", "C-001"},                        // 向きが無い
+		{"move", "C-001", "left"},                // 未知の向き
 	} {
 		dir := t.TempDir()
 		if rc, _, errOut := card_(t, dir, args...); rc != 2 || errOut == "" {
@@ -80,6 +82,22 @@ func TestCardCommandAskAnswer(t *testing.T) {
 		got, _, err := parseCardWait(tc.args)
 		if err != nil || got.Kind != tc.want.Kind || got.CardID != tc.want.CardID || got.Question != tc.want.Question ||
 			got.Answer != tc.want.Answer || got.Rework != tc.want.Rework || got.Text != tc.want.Text || got.From != tc.want.From && tc.want.From != "" || got.Ending != tc.want.Ending {
+			t.Fatalf("%q: %+v %v (期待 %+v)", tc.args, got, err, tc.want)
+		}
+	}
+}
+
+// move は向き (up / down) を位置引数で、画面のタブに当たる repo を --repo で受ける (issue 470)。
+func TestCardCommandMove(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want store.Request
+	}{
+		{[]string{"move", "C-001", "up"}, store.Request{Kind: "move", CardID: "C-001", Delta: -1}},
+		{[]string{"move", "C-001", "down", "--repo", "dotfiles"}, store.Request{Kind: "move", CardID: "C-001", Delta: 1, Repo: "dotfiles"}},
+	} {
+		got, _, err := parseCardWait(tc.args)
+		if err != nil || got.Kind != tc.want.Kind || got.CardID != tc.want.CardID || got.Delta != tc.want.Delta || got.Repo != tc.want.Repo {
 			t.Fatalf("%q: %+v %v (期待 %+v)", tc.args, got, err, tc.want)
 		}
 	}

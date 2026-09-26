@@ -30,3 +30,19 @@ PM (人間の代わりの Claude) が手で調べると、C-009 の PG は変異
 - 415 の要件 8 (「カードを選ぶと、履歴とそのタスクのログが見られる」) を満たす部品 (467 = ログ / 469 = 進捗 / 473 = 今走っているもの)
 
 - 467 (活動の履歴) / 469 (カードを開いたら進捗) / 471 (重い処理の直列化。今走っているものが見えると、並んでいる負荷も見える)
+
+## 進捗 (C-037 の PG, 2026-09-26)
+
+- [x] 実装 (branch `worktree-pc-c-037`): dispatcher が 10 秒ごとに集めて `…/live/doing.json` に書く (`dispatcher/doing.go`)。画面の詳細・`card show` (`--json` は `doing` / `doingAt`)・ボードのバッジ (`▸ mut.sh 13分`) は読むだけ
+  - 集めるもの: 一覧と記録で pid が一致した PG の session の**子孫のプロセス** (Claude Code の Bash の包み `zsh -c … eval '<コマンド>'` は中のコマンドで出す。caffeinate は除く)・transcript の末尾の**裏のサブエージェント** (起こした結果の `toolUseResult.isAsync/agentId` から、終わりの知らせ `<task-notification>` の status が running 以外で消す。`~/.claude/jobs/<短い id>/state.json` の `inFlight.kinds` に `local_agent` が無ければ出さない)・**結果待ちの道具の呼び出し** (Bash はプロセスとして出るので ps が読めたときは重ねない)。テストの係の順番待ち / 実行中はカードの記録から同じ節に足す
+  - 1 分集め直されていなければ、詳細は「N 分前に集めたまま。dispatcher が止まっている?」と添え、ボードには出さない
+- [x] 実測 (Claude Code 2.1.282): 自分の session (pid = 記録の worker `claude bg-spare`) の子孫を実物の ps で読ませ、包みの取り出し・子孫の木・jobs の種類が読めることを確かめた。ps は 1 回 0.04 秒
+- [x] make test rc=0。変異 5 本すべて想定のテストが red (pid の一致の検査を外す / assistant の行でも知らせを探す / ボードの古さの判定を外す / 包みの重複の畳みを外す / jobs の種類の判定を外す)
+
+### 分かっている穴 (やっていないこと)
+
+- PG の外へ抜けたプロセス (`nohup … &` / setsid で親が launchd に移ったもの) は出ない。issue の案の「cwd で拾う」は、人が worktree で開いた shell まで PG のものとして出すので採らなかった
+- 裏のサブエージェントは transcript の末尾 512KB で起こした記録を探す。それより前に起こしたものは名前なしで出す (jobs の state.json が走っていると言うとき)
+- 知らせの形 (queue-operation / attachment に載る) と state.json の形は 2.1.282 の実測。版で変わると、サブエージェントは state.json の判定だけに倒れる
+- 敵対的レビュー (読むだけのサブエージェント, 2026-09-26) で直したもの: ps を読む前に PG が落ちて pid が使い回されたら外のプロセスの木を出す (同じ ps の中で pid が claude かを確かめる) / 一覧と pid が合わない session の transcript の残り (道具・サブエージェント) を出していた / 完了した直後のカードに前の様子を足していた / ps に上限の時間が無かった (5 秒) / ps の行の区切りの数え方の食い違いで panic しうる
+- 記録だけにしたもの: サブエージェントが終わった直後、jobs の state.json が追いつくまでの最大 10 秒、「transcript の末尾に起こした記録が無い」と出る (次に集めたとき消える) / Bash の包みの `'\''` を文字列ごと置き換えるので、引数にその 4 文字を含むコマンドは表示が崩れる (表示だけ)

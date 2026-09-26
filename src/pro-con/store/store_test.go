@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -384,24 +385,50 @@ func TestSubmitPokesDispatcher(t *testing.T) {
 	}
 }
 
-// attach の間の指示は、どの列のカードにも原文と打った時刻で履歴に足す。状態は変えない。空の指示は受けない。
-func TestAttachAppendsSaidVerbatim(t *testing.T) {
+// attach の間の指示は、どの列のカードにも原文と打った時刻で履歴に残す。状態は変えない。空の指示・時刻の無い指示は受けない。
+// 後から届いても、打った時刻の位置へ差し込む (同じ時刻なら先に在る出来事の後ろ。issue 489)。
+func TestAttachInsertsSaidVerbatimByTime(t *testing.T) {
 	dir := t.TempDir()
 	submit(t, dir, Request{Kind: "add", Title: "x"})
 	applyAll(t, dir)
-	said := t0.Add(-time.Minute)
+	submit(t, dir, Request{Kind: "attach", CardID: "C-001", Said: []card.Event{{At: t0.Add(2 * time.Minute), Text: "b"}}})
+	if _, err := Apply(dir, t0.Add(3*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
 	long := strings.Repeat("長い指示", 50)
-	submit(t, dir, Request{Kind: "attach", CardID: "C-001", Said: []card.Event{{At: said, Text: "a"}, {At: said.Add(time.Second), Text: long}}})
+	submit(t, dir, Request{Kind: "attach", CardID: "C-001", Said: []card.Event{{At: t0, Text: "a"}, {At: t0.Add(time.Minute), Text: long}}})
 	submit(t, dir, Request{Kind: "attach", CardID: "C-001"})
-	submit(t, dir, Request{Kind: "attach", CardID: "C-001", Said: []card.Event{{At: said, Text: " "}}})
-	res := applyAll(t, dir)
-	if res[0].Err != "" || res[1].Err == "" || res[2].Err == "" {
-		t.Fatalf("指示を受けない / 空の指示を受けた: %+v", res)
+	submit(t, dir, Request{Kind: "attach", CardID: "C-001", Said: []card.Event{{At: t0, Text: " "}}})
+	submit(t, dir, Request{Kind: "attach", CardID: "C-001", Said: []card.Event{{At: t0, Text: "c"}, {Text: "時刻なし"}}})
+	res, err := Apply(dir, t0.Add(4*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res[0].Err != "" || res[1].Err == "" || res[2].Err == "" || res[3].Err == "" {
+		t.Fatalf("指示を受けない / 空の指示・時刻の無い指示を受けた: %+v", res)
 	}
 	c := cardOf(t, dir, "C-001")
-	h := c.History[len(c.History)-2:]
-	if c.State != card.Requested || h[0].Text != AttachPrefix+"a" || !h[0].At.Equal(said) || h[1].Text != AttachPrefix+long {
-		t.Fatalf("状態を変えた / 原文と打った時刻のまま残していない: %v %+v", c.State, h)
+	var got []string
+	for _, e := range c.History {
+		got = append(got, e.At.Sub(t0).String()+" "+e.Text)
+	}
+	want := []string{"0s " + c.History[0].Text, "0s " + AttachPrefix + "a", "1m0s " + AttachPrefix + long, "2m0s " + AttachPrefix + "b"}
+	if c.State != card.Requested || !slices.Equal(got, want) {
+		t.Fatalf("状態を変えた / 原文と打った時刻の順に並べていない: %v\n%q\nwant %q", c.State, got, want)
+	}
+}
+
+// 差し込んでも適用前の state の履歴は変えない (apply はカードを浅くコピーするので、配列に余りがあると同じ配列をずらしてしまう)。
+func TestAttachInsertKeepsPreviousState(t *testing.T) {
+	h := make([]card.Event, 2, 4)
+	h[0], h[1] = card.Event{At: t0, Text: "0"}, card.Event{At: t0.Add(2 * time.Minute), Text: "2"}
+	st := State{NextID: 2, Cards: []card.Card{{ID: "C-001", State: card.Requested, History: h}}}
+	next, _, _, err := apply(st, Request{Kind: "attach", CardID: "C-001", Said: []card.Event{{At: t0.Add(time.Minute), Text: "1"}}}, t0.Add(3*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := st.Cards[0].History; got[0].Text != "0" || got[1].Text != "2" || len(next.Cards[0].History) != 3 || next.Cards[0].History[1].Text != AttachPrefix+"1" {
+		t.Fatalf("適用前の履歴を書き換えた / 差し込んでいない: %+v / %+v", got, next.Cards[0].History)
 	}
 }
 
@@ -427,12 +454,35 @@ func TestEventRequestCarriesNoteAndTime(t *testing.T) {
 	}
 }
 
+// 見張りの知らせ (monitor) はカードを変えず、文・カード・見張りが置いた時刻を結果に載せる。片付けた後の (無い) カードの ID でも除けない。空の文は除ける。
+func TestMonitorRequestCarriesNoteCardAndTime(t *testing.T) {
+	dir := t.TempDir()
+	submit(t, dir, Request{Kind: "add", Title: "x"})
+	applyAll(t, dir)
+	before := cardOf(t, dir, "C-001")
+	at := t0.Add(-time.Hour)
+	submit(t, dir, Request{Kind: KindMonitor, CardID: "C-001", Note: "C-001 が master と衝突する (a.go)", At: at})
+	submit(t, dir, Request{Kind: KindMonitor, CardID: "C-099", Note: "C-099 と master の衝突は見えなくなった"})
+	submit(t, dir, Request{Kind: KindMonitor, Note: " "})
+	res := applyAll(t, dir)
+	if res[0].Err != "" || res[0].CardID != "C-001" || res[0].Note != "C-001 が master と衝突する (a.go)" || !res[0].At.Equal(at) {
+		t.Fatalf("知らせの文・カード・時刻を返さない: %+v", res[0])
+	}
+	if res[1].Err != "" || res[1].CardID != "C-099" || res[2].Err == "" {
+		t.Fatalf("無いカードの知らせを除けた / 空の文を受けた: %+v", res[1:])
+	}
+	if len(cardOf(t, dir, "C-001").History) != len(before.History) {
+		t.Fatal("見張りの知らせでカードが変わった")
+	}
+}
+
 // 適用待ちの数に画面の出来事 (event) は入れない (画面を開くたびに「dispatcher が動いていない?」と出さない)。壊れたファイルは数える。
 func TestPendingSkipsEvents(t *testing.T) {
 	dir := t.TempDir()
 	submit(t, dir, Request{Kind: KindEvent, Note: "画面 (pid 1): 開いた"})
+	submit(t, dir, Request{Kind: KindMonitor, Note: "テストの順番が長い"})
 	if n := Pending(dir); n != 0 {
-		t.Fatalf("画面の出来事を適用待ちに数えた: %d", n)
+		t.Fatalf("画面の出来事・見張りの知らせを適用待ちに数えた: %d", n)
 	}
 	submit(t, dir, Request{Kind: "add", Title: "x"})
 	if err := os.WriteFile(filepath.Join(dir, InboxDir, "broken.json"), []byte("{"), 0o600); err != nil {

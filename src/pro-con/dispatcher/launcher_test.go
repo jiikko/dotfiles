@@ -29,8 +29,8 @@ func TestLauncherArgsPassLanguageAndNoAutoMemory(t *testing.T) {
 	if !slices.Equal(start, want) {
 		t.Fatalf("起動の引数 = %q\nwant %q", start, want)
 	}
-	resume := l.resumeArgs("sid", "回答")
-	want = []string{"--bg", "--resume", "sid", "--setting-sources", "project,local", "--settings", settings, "回答"}
+	resume := l.resumeArgs("sid", "pg-1", "回答")
+	want = []string{"--bg", "--resume", "sid", "-n", "pg-1", "--setting-sources", "project,local", "--settings", settings, "回答"}
 	if !slices.Equal(resume, want) {
 		t.Fatalf("再開の引数 = %q\nwant %q", resume, want)
 	}
@@ -49,7 +49,7 @@ func TestLauncherArgsWithoutLanguageStillDisableAutoMemory(t *testing.T) {
 	}
 	for name, p := range cases {
 		l := ExecLauncher{UserSettings: p}
-		for kind, args := range map[string][]string{"起動": l.startArgs("n", "p"), "再開": l.resumeArgs("sid", "t")} {
+		for kind, args := range map[string][]string{"起動": l.startArgs("n", "p"), "再開": l.resumeArgs("sid", "n", "t")} {
 			i := slices.Index(args, "--settings")
 			if i < 0 || i+1 >= len(args) || args[i+1] != `{"autoMemoryEnabled":false}` {
 				t.Errorf("%s: %sの引数 = %q (--settings は auto memory の無効化だけのはず)", name, kind, args)
@@ -68,7 +68,7 @@ func TestHaikuSettings(t *testing.T) {
 	}
 }
 
-// haiku は --setting-sources project,local と --settings を付けて claude -p を呼ぶ (prompt は標準入力)。
+// haiku は --no-session-persistence (transcript を残さない。460 の P3) と --setting-sources project,local と --settings を付けて claude -p を呼ぶ (prompt は標準入力)。
 func TestHaikuPassesSettings(t *testing.T) {
 	bin := t.TempDir()
 	argsFile := filepath.Join(bin, "args")
@@ -82,7 +82,7 @@ func TestHaikuPassesSettings(t *testing.T) {
 		t.Fatalf("out = %q, err = %v", out, err)
 	}
 	b, _ := os.ReadFile(argsFile)
-	want := []string{"-p", "--model", "haiku", "--setting-sources", "project,local", "--settings", `{"x":1}`}
+	want := []string{"-p", "--model", "haiku", "--no-session-persistence", "--setting-sources", "project,local", "--settings", `{"x":1}`}
 	if got := strings.Split(strings.TrimSuffix(string(b), "\n"), "\n"); !slices.Equal(got, want) {
 		t.Fatalf("引数 = %q\nwant %q", got, want)
 	}
@@ -130,7 +130,7 @@ echo "backgrounded · ab12 · pc-c-001"
 func TestResumeTextStartingWithDashIsNotReadAsOption(t *testing.T) {
 	claude, argsFile := fakeClaude(t)
 	text := "- A にする\n- B はやめる"
-	id, err := ExecLauncher{Claude: claude}.Resume(context.Background(), "", "sid", t.TempDir(), text)
+	id, err := ExecLauncher{Claude: claude}.Resume(context.Background(), "", "sid", t.TempDir(), "pc-c-001", text)
 	if err != nil {
 		t.Fatalf("「-」で始まる本文で再開が失敗した: %v", err)
 	}
@@ -232,7 +232,7 @@ func TestLauncherUsesOneClaudeAcrossRepos(t *testing.T) {
 		if _, err := l.Start(context.Background(), repo, "pc-c-001", "x"); err != nil {
 			t.Fatalf("%s で起動できない: %v", repo, err)
 		}
-		if _, err := l.Resume(context.Background(), "", "sid", repo, "x"); err != nil {
+		if _, err := l.Resume(context.Background(), "", "sid", repo, "pc-c-001", "x"); err != nil {
 			t.Fatalf("%s で再開できない: %v", repo, err)
 		}
 	}

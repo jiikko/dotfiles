@@ -65,8 +65,8 @@ func runRig(t *testing.T, n int) (*crashRig, *fakeRunner, *[]string) {
 	fr := &fakeRunner{release: make(chan int, 1), started: make(chan struct{}, 4)}
 	var summarized []string
 	r.d.Runner = fr
-	r.d.Summarize = func(_ context.Context, tail string) (string, error) {
-		summarized = append(summarized, tail)
+	r.d.Summarize = func(_ context.Context, in SummaryInput) (string, error) {
+		summarized = append(summarized, in.Tail)
 		return "TestFoo が落ちた", nil
 	}
 	return r, fr, &summarized
@@ -133,7 +133,7 @@ func TestRunFailureIsSummarized(t *testing.T) {
 	for _, summarizeFails := range []bool{false, true} {
 		r, fr, _ := runRig(t, 1)
 		if summarizeFails {
-			r.d.Summarize = func(context.Context, string) (string, error) { return "", errors.New("haiku が落ちた") }
+			r.d.Summarize = func(context.Context, SummaryInput) (string, error) { return "", errors.New("haiku が落ちた") }
 		}
 		askRun(t, r.dir, "C-001", "make test", t0)
 		r.tick(t)
@@ -149,22 +149,52 @@ func TestRunFailureIsSummarized(t *testing.T) {
 	}
 }
 
-// 実行の途中で dispatcher が止まって (実行していない dispatcher が) 実行中の記録を見たら、残ったコマンドを止めてから、結果が無いことを渡して再開する。
-func TestInterruptedRunIsReported(t *testing.T) {
+// 実行の途中で dispatcher が止まって (実行していない dispatcher が) 実行中の記録を見たら、残ったコマンドを止めてから、同じコマンドを
+// 1 度だけ頼み直す (PG に rc=-1 を返して再開 1 回ぶんを使わない。483)。
+func TestInterruptedRunIsRetriedOnce(t *testing.T) {
 	r, fr, _ := runRig(t, 1)
 	var killed []string
 	old := killStaleFn
 	killStaleFn = func(runID string) { killed = append(killed, runID) }
 	t.Cleanup(func() { killStaleFn = old })
 	setCard(t, r.dir, "C-001", func(c *card.Card) {
-		c.Run, c.RunAt, c.Exec = "make test", t0, card.Exec{Command: "make test", Since: t0, RunID: "C-001-777.log"}
+		c.Run, c.RunAt, c.RunCwd = "make test", t0, "/w/dotfiles/.claude/worktrees/pc-c-001"
+		c.Exec = card.Exec{Command: "make test", Since: t0, RunID: "C-001-777.log"}
 	})
 	r.tick(t)
 	if len(killed) != 1 || killed[0] != "C-001-777.log" {
 		t.Fatalf("前の dispatcher が残した実行を止めにいかない: %v", killed)
 	}
+	fr.waitStarted(t)
+	if len(fr.commands) != 1 || fr.commands[0] != "make test" || len(r.l.resumes) != 0 {
+		t.Fatalf("途中で止まった実行を頼み直さない / 結果の無いまま再開した: commands=%v resumes=%v", fr.commands, r.l.resumes)
+	}
+	if c := states(t, r.dir)["C-001"]; !c.RunRetried || c.State != card.Running {
+		t.Fatalf("頼み直した印が無い / 作業中を離れた: %+v", c)
+	}
+	fr.release <- 0
+	waitDone(t, r)
+	if len(r.l.resumes) != 1 || !strings.Contains(r.l.resumes[0], "rc=0") {
+		t.Fatalf("頼み直した実行の結果を渡して再開しない: %v", r.l.resumes)
+	}
+	if c := states(t, r.dir)["C-001"]; c.RunRetried {
+		t.Fatal("結果を渡した後も頼み直した印が残っている (次の頼みが 1 度も頼み直されない)")
+	}
+}
+
+// 頼み直した実行がまた中断したら、もう頼み直さず、結果が無いことを渡して再開する (実行がマシンか dispatcher を落としている疑い)。
+func TestInterruptedRetryIsReported(t *testing.T) {
+	r, fr, _ := runRig(t, 1)
+	old := killStaleFn
+	killStaleFn = func(string) {}
+	t.Cleanup(func() { killStaleFn = old })
+	setCard(t, r.dir, "C-001", func(c *card.Card) {
+		c.Run, c.RunAt, c.RunCwd, c.RunRetried = "make test", t0, "/w/dotfiles/.claude/worktrees/pc-c-001", true
+		c.Exec = card.Exec{Command: "make test", Since: t0, RunID: "C-001-778.log"}
+	})
+	r.tick(t)
 	if len(fr.commands) != 0 || len(r.l.resumes) != 1 || !strings.Contains(r.l.resumes[0], "結果が無い") {
-		t.Fatalf("途中で止まった実行を知らせて再開しない: commands=%v resumes=%v", fr.commands, r.l.resumes)
+		t.Fatalf("2 度目の中断を知らせて再開しない: commands=%v resumes=%v", fr.commands, r.l.resumes)
 	}
 }
 

@@ -9,12 +9,13 @@ PM (producer) と PG (consumer) を分けて Claude Code を並列に回すた�
 bin/pro-con          # 本物: dispatcher が書くカードの記録を出す。依頼と回答は受付の箱へ (live。issue 424 / 427)
 bin/pro-con --mock   # 模擬: claude は起動しない。模擬の backend (fake) が状態を進める (動作確認用)
 bin/pro-con --view   # 見ているだけの画面: 動いている pro-con をそのまま映す。依頼・回答・attach を受けず (案内の行にも出さない)、dispatcher を起こさず、quit で閉じても何も止めない (画面の数にも入らない。epic 441)。書くのは画面の中継と、ctrl+r の引き継ぎ・落ちた画面の印の後始末だけ (issue 445)
+bin/pro-con --join [--as review]   # 加わる画面: 読み書きは普通の画面と同じ (依頼・回答・差し戻し・削除・attach)。dispatcher を起こさず (c も受けない)、quit で閉じても dispatcher と PG を止めない。--view / --mock とは組まない (issue 481)。--as は画面の一覧に出す名前 (普通の画面にも付けてよい)
 bin/pro-con dispatcher   # 割り振り係: 受付の箱の適用・PM と PG の起動と再開・テストの係・見張り (画面を開くと、居なければ画面が起こす。旧名 daemon)。2 つ起動しない。🚨 PG を起動するので利用枠を使う
                          # 同時に動かす PG は --limit (既定 2) まで。数えるのは turn の途中の PG だけで、テストの係の結果を待って idle の PG は数えない (issue 455。結果が届いたら枠の空きを待って再開する)。利用枠 (`claude -p /usage` を 5 分ごとに読む) の 5 時間と週の大きい方が 80% 以上なら 1 本、95% 以上なら新しく起動・再開しない (ゲージの「PG n/m」と理由)
 bin/pro-con config set limit 3 | set pm 1 | unset limit | show  # 止めずに PG の枠 (同時に動かす PG の上限) と PM の数を変える (issue 456)。受付の箱に置き、dispatcher が状態の置き場の settings.json に書いて次の Tick から使う (起動し直しても続く)
                          # 🚨 上限の優先: 利用枠の絞り (80% で 1 本 / 95% で 0 本) > 設定 (config set limit) > dispatcher の --limit > 既定 2。--limit は「設定が無いときの値」で、unset limit で戻る (画面が起こす dispatcher は --limit を付けない)
                          # PM の数は今は 1 だけを受ける (2 以上は 415 の論点 6 が決まるまで断る。今は 1 つで動くので dispatcher はまだ読まない。PM を起こさないのは --pm=off / config.toml の pm = "off")。settings.json が壊れていたら --limit で動き、理由をゲージに出す
-bin/pro-con ps [--json]  # pro-con が起動したプロセスを役ごとに出す (dispatcher / PM / PG / テストの係 / 画面。pid・経過・状態・カード・コマンド)。読むだけ: 状態の置き場に書かず、dispatcher の lock も画面の印 (presence) も触らない。生きているかは ps を 1 回読んで決める (busy / idle は出さない)。pro-con の外の session は出さない
+bin/pro-con ps [--json]  # pro-con が起動したプロセスを役ごとに出す (dispatcher / 見張り / PM / PG / テストの係 / 画面。pid・経過・状態・カード・コマンド)。読むだけ: 状態の置き場に書かず、dispatcher の lock も画面の印 (presence) も触らない。生きているかは ps を 1 回読んで決める (busy / idle は出さない)。pro-con の外の session は出さない
 bin/pro-con dispatcher --stop  # dispatcher と、pro-con が起動した PG を止める。作業中のカードは次に dispatcher を起動したら続きから再開する (画面の終了も同じことをする)
                                # 人が止めた印 (`dispatcher-held`) を置く: 開いている画面は dispatcher を起こし直さず、ゲージに「止めてある」と出す。外すのは画面の c か、次に手で `pro-con dispatcher` を起動したとき (issue 459)
 bin/pro-con card …   # PM / PG が使うカードの操作 (add / plan / ask / answer / handoff / review / rework / close / delete。plan --after は前のカードが完了するまで起動させない = issue 468。handoff は PM が PG の質問を人に回したことを履歴に残す。rework はレビュー待ちを直してほしい点つきで PG に戻す。delete は依頼の列ならすぐ消し、ほかは PG の session を止めてから消す = issue 451)。受付の箱に置くだけで、適用は dispatcher (issue 427)
@@ -24,12 +25,16 @@ bin/pro-con card attach C-001 shot.png --note "詳細の見た目"  # PG が作�
                                          # dispatcher が状態の置き場の attachments/<カード>/ (0700 / 0600) へ移して記録に載せる。1 件 20 MiB・1 枚に 50 件まで。
                                          # 人間は詳細 (enter) の「添付」で見て o で画像を Preview に開く (.txt / .ans の文字は詳細の中にそのまま出す)。card show にパス。
                                          # カードが記録から外れたら (削除・書庫へ移した) dispatcher が添付を消す
+bin/pro-con card move C-001 up   # レーンの中で 1 つ上 (down なら下) と入れ替える (画面の K / J と同じ。--repo でその repo の中の隣。issue 470)
 bin/pro-con card list | show C-001 | wait C-001 --until review  # カードを画面なしで読む (--json も)。読むだけで、箱にも記録にも socket の wake / notify にも書かない (issue 442)。add は適用を待ってカード ID を返す
 bin/pro-con card log C-001 [--follow] [--json]  # PG の活動 (応答の文と道具の呼び出し。例 `Bash: go test ./...` / `Edit: close.go`) を時刻の順に。再開で入れ替わった前の session から続けて出す。思考は Claude Code が中身を保存しないので出せず、道具の結果は長いので出さない。読むだけ (issue 467)
 bin/pro-con log [--card C-001] [--follow] [--since 10m] [--json]  # dispatcher の出来事 (適用・除けた・起動・再開・止めた・削除・枠・watchdog・画面の数・画面を開いた / quit で閉じた) を読む。画面の出来事は画面が受付の箱に置き dispatcher が書く (--view の画面は置かない。issue 445)。記録は状態の置き場の events.jsonl (1 MiB で events.1.jsonl へ回す)。読むだけ (issue 444)
+bin/pro-con monitor [--once] [--interval 1m]  # 見張り (issue 475)。dispatcher が子として起こし、落ちたら起こし直し (30 分に 3 回まで)、抜けるときに止める (手で起動しなくてよい。2 つ起動しない = monitor.lock)。
+                         # PG の commit 済みの分を git merge-tree で origin/master と・PG どうしで突き合わせた衝突と、テストの順番の長さ (3 本以上か先頭が 30 分以上) を見る。
+                         # 読むだけ (git fetch もしない) で、見つけた・消えたときだけ受付の箱に置き、dispatcher が出来事 (pro-con log の monitor) に書く。e2e モードと --once の dispatcher では起こさない
 bin/pro-con --e2e <dir>  # e2e モード: 画面・dispatcher・受付の箱・記録は本物、PG と PM だけ台本どおりの偽物 (claude を起動しない。利用枠を使わない)
 bin/pro-con e2e <start|keys|text|screen|wait|stop|scenario> <dir> ...  # Claude が e2e モードの画面を操作する口 (隔離した tmux サーバで動かす)
-bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンドを頼む。dispatcher が PG の worktree で 1 本ずつ順に実行し、結果を渡して PG を再開する (失敗は haiku が要約)。repo の lock (`<git の共通ディレクトリ>/pro-con-locks/test`) を `lockman with` で取って走らせ、外が持っていれば「pro-con の外が使用中」で待つ (issue 471)
+bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンドを頼む。dispatcher が PG の worktree で 1 本ずつ順に実行し、結果を渡して PG を再開する (失敗は haiku が要約し、1 行目に一次判定 = この変更のせい / 負荷・環境 / 前から / 判定できない を書く。見込みで証拠ではない。枠 95% 以上で始めた実行は要約しない。issue 475)。repo の lock (`<git の共通ディレクトリ>/pro-con-locks/test`) を `lockman with` で取って走らせ、外が持っていれば「pro-con の外が使用中」で待つ (issue 471)
                                          # -- の後ろは argv として 1 つずつ quote して記録する (引用はそのまま届く)。パイプや && を含む 1 行は `-- bash -c 'make test 2>&1 | tail'` で頼む (issue 463)
                                          # 🚨 PG に `pro-con card` を許すことは、その worktree で任意のコマンドを PG の permission の外で (dispatcher の権限で) 走らせるのを許すのと同じ。守っているのは「頼んだ場所がそのカードの PG の worktree」だけ
 ```
@@ -58,6 +63,11 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
   🚨 逆向き (外の shell から pro-con の session を attach / stop される) は Claude Code の側で止められない。検出は issue 427
 - PG の出力は transcript (`~/.claude/projects/*/<sessionId>.jsonl`) の末尾 512KB から読み、`claude agents --json` とあわせて 3 秒ごとに裏で読み直す
 - 詳細の「活動」(本物・`--view`) は、そのカードの session (起動の記録と `sessions-retired.json` の CardID で引く) の transcript を、読んだ位置の続きだけ 1 秒ごとに裏で読む (`live/activity.go`。画面が持つのは末尾 1000 件)。本文の末尾を見ていれば、足された活動を追って末尾に留まる
+- **PG が今走らせているもの** (issue 473) は dispatcher が 10 秒ごとに集めて `…/live/doing.json` に書き、詳細・`card show`・ボードのバッジ
+  (`▸ mut.sh 13分`) が読むだけで出す (画面は ps を回さない)。集めるのは、一覧と記録で pid が一致した PG の session の子孫のプロセス
+  (Bash のコマンド・裏の shell)・transcript の末尾の裏のサブエージェントと結果待ちの道具の呼び出し。テストの係に頼んだコマンドの
+  順番待ち / 実行中はカードの記録から足す。🚨 PG の外へ抜けたプロセス (`nohup … &` で親が launchd に移ったもの) は出ない
+  (cwd で拾うと、人が worktree で開いた shell まで PG のものとして出す)。1 分集め直されていなければ詳細は古いと添え、ボードには出さない
 
 ## 画面と dispatcher のつながり (即時の割り振り・複数の画面・終了)
 
@@ -66,8 +76,23 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
   (入力からカードが出るまで 約 4 秒 → 約 130 ms)。socket は速くするための口で、正しさは頼らない (届かなくても 3 秒のポーリングが拾う)。
   逃がし先 `/tmp/pro-con-<uid>/` の権限が緩ければ、直すのは dispatcher (listen する側) だけ。繋ぐ側 (画面・`card wait`・`log --follow`) は
   直さずにつながず、1 行知らせてポーリングで待つ (issue 445)
-- **同じ置き場で画面を複数開いてよい**: 画面は開いている間 `screens/<id>.lock` を flock で持つ (package `presence`)。2 つ以上開いていれば
-  ゲージに「画面 N」。Q → quit で閉じるとき、ほかに画面が開いていれば **この画面だけ閉じる** (dispatcher と PG は動いたまま)。最後の画面だけが止める
+- **同じ置き場で画面を複数開いてよい**: 画面は開いている間 `screens/<id>.lock` を flock で持つ (package `presence`)。印の中身に
+  モード (持ち主 / join)・`--as` の名前・端末・pid・開いた時刻を書き、2 つ以上開いていれば (または join なら) ゲージに一覧
+  (「a1b2c3 持ち主 (この画面) · d4e5f6 join review」。4 つ以上なら数だけにして、s の板の下段に一覧)。生きているかの正本は flock
+- **持ち主と join (issue 481)**: `--join` でない画面はすべて持ち主。Q → quit で閉じるとき、ほかに **持ち主の画面** が開いていれば
+  この画面だけ閉じる (dispatcher と PG は動いたまま)。**最後の持ち主の画面が止める** (join の画面が残っていても止める。確認の見出しに
+  「join の画面が N 残り、止めた後は表示が止まる」)。join の画面の quit は何も止めない。数え直しは quit の排他 (`quit.lock`) の中
+  - 止めている途中で止めるのをやめるのは **持ち主の画面が開いたときだけ** (join の画面が残っている・開いただけでは取り消さない。
+    join は dispatcher を起こさないので、取り消すと止めたはずの PG が動き続ける)
+  - 無画面で抜ける判定 (`--exit-without-screens`) は **持ち主と join を合わせて** 数える (持ち主が kill -9 で消えても、join が開いている間は
+    PG を止めない。join も閉じたら 1 分で止まる)。ただし dispatcher が SIGTERM / SIGHUP・Tick の失敗で**抜けるとき**は、持ち主の画面が
+    無ければ PG を止めてから抜ける (join は dispatcher を起こし直さないので、止めずに抜けると見張る者の居ない PG が残る)
+  - join の画面は dispatcher を起こさない: 居なければゲージに「起こすのは持ち主の画面か pro-con dispatcher」、打った依頼には
+    「受付の箱で待っている」と出す。人が止めた印があれば join からは外せない (c を案内に出さず、押すと理由つきで断る)
+- **どの画面から打ったか・除けた理由 (issue 481)**: 画面が受付の箱に置く依頼には画面の名前 (「a1b2c3 join review」) が付き、適用で
+  足された履歴の行 (詳細・`pro-con card show`) と出来事 (`pro-con log`) に残る。dispatcher が除けた依頼 (2 つの画面が同じカードへ
+  回答を重ねた後の方など) は、**置いた画面にだけ** dispatcher が書いた理由をトーストで出す (画面が覚えた依頼 ID と記録の `rejected` を
+  照らす。カードの変化から推測しない)。ctrl+r の入れ替えの前に置いた依頼の分は、入れ替えた後の画面には出ない
 - **終了で pro-con が起動した claude を確実に止める**: 最後の画面が閉じるとき、dispatcher は pro-con の起動の記録 (`sessions.json` と、
   再開で入れ替わった前の session の `sessions-retired.json`) にある session を止め、`claude agents --json --all` で全部が stopped になったかを
   確かめて、残れば止め直す。止まらない session はカードと短い id で名指しする。pro-con が起動していない session には触らない
@@ -79,6 +104,16 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
   画面が起こす dispatcher・画面の quit の停止には内部用の `--from-screen` が付き、印を置かない・外さない (最後の画面の quit で止めても、
   次に開いた画面は今までどおり起こす)。印を見てから起こすまでの間に `--stop` が来ても、起こされた dispatcher は印を見て回らずに抜ける。
   印がある間は、止めている途中で画面が開いても止めるのをやめない (issue 459)
+- **クラッシュ・再起動の後は、起動したときに自動で復旧する** (コマンドも引数も無い。画面が起こしても手で起動しても同じ。issue 483)。
+  dispatcher は一覧を取れた最初の Tick で 1 度だけ、記録にある作業中のカードの PG・PM・取り込みの係の session を調べる。
+  **マシンの起動時刻 (`kern.boottime`) より前に始まり、`claude agents --json --all` に pid 無し・止まった state で残る**ものだけを
+  待たずに再開する (作業中のカードは分解済みへ戻して同じ session を再開、テストの係の結果を待つカードは頼み直してから。落ちた回数に数え、上限なら人の番へ)。
+  🚨 それ以外 (再起動より後に始まった session が居ない・--all にも居ない・起動時刻を読めない) は判定できないので復旧せず、出すだけにする
+  (いつもの経路 = 自動の再開を 1 分待ってから戻す 458 に任せる。二重に起こさない)。結果は `pro-con log` (kind `recover`) に 1 行、
+  ヘッダーのゲージに起動から 10 分「起動時: 復旧 N / 判定できない M」。判定の表は 483 の本文
+- テストの係の実行の途中で dispatcher が止まった実行は、残ったプロセスを止めてから同じコマンドを 1 度だけ頼み直す
+  (また中断したら rc=-1 で PG に返す。実行がマシンか dispatcher を落としている疑い)。結果を待つカードは、PG が一覧から消えても戻さない
+- ヘッダーの「dispatcher が動いていない」は、lock のファイルの pid が居ないとき (Tick の古さの 2 分を待たずに出す。`--view` でも)
 
 ## 模擬 (ハリボテ) の中身
 
@@ -91,7 +126,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 | tab / shift+tab | repo タブの切り替え (global = 全 repo) |
 | n | 新しい依頼 (PM へ)。repo のタブで出すとその repo がスコープになる |
 | i | issue の一覧から選んで「これやって」と依頼する (repo のタブならその repo、global なら設定の全 repo。未完了だけ。epic は見出しの下に子)。Enter → 補足 (空でよい) → Enter |
-| s | PG (consumer) の一覧を開閉 (詳細と同じく下から生える。担当カード・状態・実行中のコマンド・経過・実体の pid (本物のモードは backend が照合した pid。模擬は「模擬」)。pro-con の外の session は名前も本数も出さない。画面は `claude agents` を自分で読まない) |
+| s | PG (consumer) の一覧を開閉 (詳細と同じく下から生える。担当カード・状態・実行中のコマンド・経過・実体の pid (本物のモードは backend が照合した pid。模擬は「模擬」)。pro-con の外の session は名前も本数も出さない。画面は `claude agents` を自分で読まない)。画面が 2 つ以上 (または join) なら下段に開いている画面の一覧 (モード・名前・開いた時刻・端末・pid) |
 | e | 選択中のカードの issue の md をエディタで開く ($VISUAL → $EDITOR → nvim。`tuikit/editor`) |
 | x | 完了のレーンを片付ける (y/N 確認。repo のタブではその repo の分だけ。カードは消さず Archived にする。本物のモードでは dispatcher が書庫へ移す) |
 | d | 選択中のカードを削除する (y/N 確認。依頼の列ならすぐ消える。ほかの列は「削除中」になり、dispatcher が PG の session を止めたのを確かめてから消える。1 分で止められなければカードを残して理由を履歴に書く。PG の worktree とブランチは消さない。消したことは dispatcher の記録に残る。issue 451) |
@@ -103,6 +138,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 | j / k / ↑ / ↓ / ctrl+n / ctrl+p | 列の中で 1 枚 |
 | ctrl+d / ctrl+u / space / f / pgdn / pgup | 半ページ |
 | g / G / home / end | 列の先頭 / 末尾 |
+| K / J | 選択中のカードを 1 つ上 / 下のカードと入れ替える (issue 470。レーンの中は上ほど優先度が高い)。選択はカードについていく。端では止めて知らせる (巻かない)。repo のタブではその repo のカードの中の隣と入れ替える。書くのは dispatcher (画面は受付の箱に置くだけ。速く続けて押しても、押した回数だけ動く)。分解済みの列は上から PG を起動する (回答・差し戻しを受けた再開は並びより先。バッジに ↻再開が先)。依頼の列は PM が上から分ける。`--after` の前のカードが終わっていなければ、上げても起動しない (履歴に理由)。詳細を開いている間の J / K は隣のカードへ送る |
 | enter | 詳細の開閉。右から引き出しが滑り込み、カンバンの左端を残して重なる (glogx の issues の本文と同じ `tuikit/layout.ComposeDrawer`)。開いている間は j / k / ctrl+d / ctrl+u / g / G で本文をスクロール、J / K で同じレーンの隣のカードへ送る。本物のモードでは末尾の節が PG の「活動」(応答の文と道具の呼び出し。末尾を見ていれば新しいものを追う)、模擬では「出力」(出力の末尾)。カードへの操作 (a / r / + / ? / e / o / y / Y / d) は開いたまま効き、レーンの移動やタブは効かない。q / esc / h / ← / enter で閉じる |
 | (入力中) | 入力欄・y/N 確認を出している間は、カンバンを暗い灰 1 色で描き、入力欄の行に地の色を敷く (キーは入力に取られ、カードは動かせない) |
 | (選択の枠) | 選択中のカードは赤 (196) の太字の二重線 (╔═╗ ║ ╚═╝) の枠で囲む (issue 472。字と色は `ui/cursor.go` の定数)。選択が移ると、枠が元の位置から行き先まで 180ms で滑る (レーンを跨いでも。Excel のセルのカーソルの見え方)。滑る途中も枠は丸ごと見える (途中で消えて見えるちらつきを避けた)。カードの字の上では線で置き換えず、字を残して色だけ変える (横の辺は赤の上線 / 下線、縦の辺は赤の背景。上線は端末と tmux によっては出ない。issue 472)。カードの上下には 1 行ずつ空きがあり、枠はそこに描くので隣のカードを隠さない |
@@ -118,7 +154,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 | + | 追加オーダー (tab で 追記 / 方針変更 / 別件)。**方針変更は y/N 確認** (y / enter だけが実行、他のキーは取り消し)。届いたかは詳細に「未達 / 届いた」で出る |
 | w | btw (PG を止めずに状況を聞く。what's up)。本物のモードでは答えがカードの履歴に出る |
 | ? | レーンの意味の表 (説明の正本は `card.State.Meaning`)。? / q / esc で閉じる |
-| c | 人が止めた dispatcher を起こす (continue。y/N 確認。作業中のカードの PG が再開して利用枠を使う)。`pro-con dispatcher --stop` で止めた印があるときだけ効き、案内にもそのときだけ出る (ゲージは「dispatcher 止めてある (c で起こす)」)。`--view` では受けない (issue 459) |
+| c | 人が止めた dispatcher を起こす (continue。y/N 確認。作業中のカードの PG が再開して利用枠を使う)。`pro-con dispatcher --stop` で止めた印があるときだけ効き、案内にもそのときだけ出る (ゲージは「dispatcher 止めてある (c で起こす)」)。`--view` と `--join` では受けない (issue 459 / 481) |
 
 入力欄 (n / r / + / ?) は readline の編集キーが効く (ctrl+h / ctrl+w / ctrl+u / ctrl+k / ctrl+a / ctrl+e / ctrl+b / ctrl+f …。
 `tuikit/lineedit`)。入力中は最下行の案内が入力欄のキーに替わる。
@@ -205,6 +241,7 @@ issue の読み方 (状態 = ファイルの位置、`epic/<name>/` の 2 段、
 | `backend` | UI と状態の持ち主の境界 (`Backend` interface / `Command` / `Snapshot`)。UI はここより下を知らない |
 | `fake` | 模擬 backend。本物に差し替えるときは `backend.Backend` を満たす実装を足し、`main.go` の 1 行を替える |
 | `ui` | bubbletea v2 の TUI。状態は持たない (Snapshot を描き、Command を送るだけ) |
+| `monitor` | 見張り (`pro-con monitor`。issue 475)。読むだけで、見つけたことは受付の箱に置く |
 
 - `fake` の dispatcher / watchdog / リソース列は**模擬**で、本番の判定ではない。本番の判定を育てるなら fake から切り出す
 - **見た目は B「枠」で合意** (2026-09-24。A 帯 / C カードと実物で見比べて選んだ)。列と詳細を角丸の罫線で囲み、選択中のカードがある列の枠だけを

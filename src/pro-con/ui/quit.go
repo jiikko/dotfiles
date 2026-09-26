@@ -80,11 +80,19 @@ func (m *Model) quitLabel() string {
 	if _, ok := m.be.(backend.ReadOnly); ok {
 		return "終了するには quit と打って enter (見ているだけ。dispatcher と PG は動いたまま)"
 	}
+	if m.joined() {
+		return "終了するには quit と打って enter (join の画面。この画面だけ閉じる。dispatcher と PG は動いたまま)"
+	}
 	if _, ok := m.be.(backend.Stopper); ok {
-		if n := m.snap.Screens - 1; n > 0 { // 最後に閉じる画面だけが止める (閉じる時点で dispatcher に聞き直す)
+		owners, joins := m.snap.ScreenTally()
+		if n := owners - 1; n > 0 { // 最後に閉じる持ち主の画面だけが止める (閉じる時点で数え直す。join の画面は数えない = issue 481)
 			return fmt.Sprintf("終了するには quit と打って enter (ほかに %d 画面が開いているので、この画面だけ閉じる。dispatcher と PG は動いたまま)", n)
 		}
-		return fmt.Sprintf("終了するには quit と打って enter (作業中 %d 本・質問待ち %d 本の PG と dispatcher を止めて閉じる。次に開くと続きから)", r, w)
+		l := fmt.Sprintf("終了するには quit と打って enter (作業中 %d 本・質問待ち %d 本の PG と dispatcher を止めて閉じる。次に開くと続きから", r, w)
+		if joins > 0 {
+			l += fmt.Sprintf("。join の画面が %d 残り、止めた後は表示が止まる", joins)
+		}
+		return l + ")"
 	}
 	return "終了するには quit と打って enter (模擬なので進み具合は消える)"
 }

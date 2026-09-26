@@ -69,28 +69,79 @@ type stateful interface {
 	Restore([]byte) error
 }
 
-func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	view := len(args) > 0 && args[0] == "--view" // 見ているだけの画面 (dispatcher を起こさない・止めない・受付の箱にも記録にも書かない。書くのは画面の中継 relay/ と、ctrl+r の引き継ぎ・落ちた画面の印の後始末だけ = issue 445)。--e2e と重ねてよい
-	if view {
+// screenFlags は画面の起動に付ける、画面の種類のフラグ (--view / --join / --as <ラベル>。サブコマンドの前には付けない)。
+type screenFlags struct {
+	// view は見ているだけの画面 (dispatcher を起こさない・止めない・受付の箱にも記録にも書かない。書くのは画面の中継 relay/ と、
+	// ctrl+r の引き継ぎ・落ちた画面の印の後始末だけ = issue 445)。--e2e と重ねてよい
+	view bool
+	// join は加わった画面 (読み書きするが、dispatcher を起こさず、quit で閉じても止めない。issue 481)。--e2e と重ねてよい
+	join bool
+	// label は画面の一覧に出す名前 (--as。任意。持ち主と join の画面だけ)
+	label string
+	args  []string // ライブアップグレードで新版に付け直す引数
+}
+
+// parseScreen は先頭の画面の種類のフラグを読む (順は問わない)。併用できない組は誤り。
+func parseScreen(args []string) (screenFlags, []string, error) {
+	var f screenFlags
+	for len(args) > 0 {
+		switch args[0] {
+		case "--view":
+			f.view = true
+		case "--join":
+			f.join = true
+		case "--as":
+			if len(args) < 2 || strings.TrimSpace(args[1]) == "" || strings.HasPrefix(args[1], "--") {
+				return f, nil, errors.New("--as には画面の名前を付ける (例 pro-con --join --as review)")
+			}
+			f.label = strings.TrimSpace(args[1])
+			f.args = append(f.args, args[0])
+			args = args[1:]
+		default:
+			return f, args, f.check()
+		}
+		f.args = append(f.args, args[0])
 		args = args[1:]
 	}
+	return f, args, f.check()
+}
+
+func (f screenFlags) check() error {
+	switch {
+	case f.view && f.join:
+		// 読むだけのつもりが書ける形を作らない (issue 481)
+		return errors.New("--join と --view は併用しない (--view は見るだけ、--join は読み書きする画面)")
+	case f.view && f.label != "":
+		return errors.New("--as は --view と組まない (見ているだけの画面は画面の一覧に入らない)")
+	}
+	return nil
+}
+
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	screen, args, err := parseScreen(args)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "pro-con:", err)
+		return 2
+	}
+	view := screen.view
 	mock, e2e, modeArgs, args, err := parseMode(args)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "pro-con:", err)
 		return 2
 	}
-	if view {
-		if mock {
-			_, _ = fmt.Fprintln(stderr, "pro-con: --view は本物のモード (と --e2e) で使う (模擬は見るだけにする必要が無い)")
-			return 2
-		}
-		modeArgs = append([]string{"--view"}, modeArgs...) // ライブアップグレードの後も --view のまま
+	if mock && view {
+		_, _ = fmt.Fprintln(stderr, "pro-con: --view は本物のモード (と --e2e) で使う (模擬は見るだけにする必要が無い)")
+		return 2
 	}
-	if len(args) > 0 && len(modeArgs) > 0 {
+	if mock && screen.join {
+		_, _ = fmt.Fprintln(stderr, "pro-con: --join は本物のモード (と --e2e) で使う (模擬には加わる dispatcher が無い)")
+		return 2
+	}
+	if first := append(append([]string(nil), screen.args...), modeArgs...); len(args) > 0 && len(first) > 0 {
 		// 🚨 --e2e / --mock は画面の起動にだけ付ける。サブコマンドの前に付くと、サブコマンドは本物の置き場で動いてしまう
 		// (`pro-con --e2e X dispatcher --stop` が本物の dispatcher と PG を止める)。dispatcher は `pro-con dispatcher --e2e <dir>`
 		_, _ = fmt.Fprintf(stderr, "pro-con: %s はサブコマンド (%s) の前には付けない (dispatcher なら pro-con dispatcher --e2e <dir>、画面なら pro-con %s)\n",
-			modeArgs[0], args[0], strings.Join(modeArgs, " "))
+			first[0], args[0], strings.Join(first, " "))
 		return 2
 	}
 	if len(args) > 0 {
@@ -152,18 +203,26 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				_, _ = fmt.Fprintln(stderr, "pro-con: 設定を読めない:", err)
 				return 1
 			}
-			repos, _ := config.Discover(cfg, home)
-			paths := map[string]string{}
-			for _, r := range repos {
-				paths[r.Name] = r.Path
-			}
+			paths := discoverPaths(cfg, home)
 			pmRepo, warn := cfg.PMRepoPath(home)
 			if warn != "" {
 				_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", warn)
 			}
 			return runDispatcher(args[1:], liveDir(home), filepath.Join(home, ".claude", "projects"), paths, pmConfig{Repo: pmRepo, Mode: cfg.PM, IntegratorMode: cfg.Integrator}, stdout, stderr)
+		case "monitor": // 見張り (dispatcher が子として起こす。読むだけで、見つけたことは受付の箱に置く。monitorcmd.go)
+			home, err := os.UserHomeDir()
+			if err != nil {
+				_, _ = fmt.Fprintln(stderr, "pro-con:", err)
+				return 1
+			}
+			paths, err := repoPaths(home)
+			if err != nil {
+				_, _ = fmt.Fprintln(stderr, "pro-con monitor:", err)
+				return 1
+			}
+			return runMonitor(args[1:], liveDir(home), paths, stdout, stderr)
 		case "-h", "--help":
-			_, _ = fmt.Fprintln(stdout, "usage: pro-con [--mock]   (既定は今の Claude Code の session を読み取り専用で出す。--mock は模擬データ)")
+			_, _ = fmt.Fprintln(stdout, "usage: pro-con [--view | --join] [--as <名前>] [--mock | --e2e <置き場>]   (--view は見るだけ、--join は加わる (閉じても止めない)。詳しくは README)")
 			return 0
 		default:
 			_, _ = fmt.Fprintf(stderr, "pro-con: 未知の引数 %q (pro-con --help)\n", args[0])
@@ -210,7 +269,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 		}
 		var more []string
-		be, more = wireLive(lb, view, dir, func(dir string) error { return spawnDispatcher(dir, dispatcherArgs) },
+		lb.SetScreenInfo(screen.label, ttyName(stdin))
+		be, more = wireLive(lb, screen, dir, func(dir string) error { return spawnDispatcher(dir, dispatcherArgs) },
 			func(ctx context.Context) error { return stopInChild(ctx, dir, dispatcherArgs) })
 		notes = append(notes, more...)
 		ctx, cancel := context.WithCancel(context.Background())
@@ -263,7 +323,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		rw = w
 		m.SetFrameSink(func(a string, width, height int, st map[string]string) {
-			w.Put(relay.Frame{View: view, At: time.Now(), Width: width, Height: height, ANSI: a, State: st})
+			w.Put(relay.Frame{View: view, Join: screen.join, Label: screen.label, At: time.Now(), Width: width, Height: height, ANSI: a, State: st})
 		})
 	}
 	closeRelay := func() {
@@ -302,8 +362,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 			return 0
 		}
-		closeRelay() // 新しい版へ exec すると defer が走らず、中継のファイルが落ちた画面の残りになる。戻ってきたら (失敗) 開き直す
-		p, err := switchToNew(m, be, append(append([]string(nil), modeArgs...), args...), dir, resumePath)
+		closeRelay()                                                                                                               // 新しい版へ exec すると defer が走らず、中継のファイルが落ちた画面の残りになる。戻ってきたら (失敗) 開き直す
+		p, err := switchToNew(m, be, append(append(append([]string(nil), screen.args...), modeArgs...), args...), dir, resumePath) // 新版も同じ種類の画面で開く
 		resumePath = p
 		m.UpgradeFailed(err)
 		openRelay()
@@ -329,11 +389,22 @@ func startDispatcherIfIdle(dir string, spawn func(dir string) error) (bool, erro
 }
 
 // wireLive は本物の画面の backend をつなぐ (Start の前)。view なら見ているだけ: 止める口・起こす口をつながず、dispatcher も起こさない。
+// join なら加わるだけ: 書く口は持つが、止める口・起こす口をつながず、dispatcher も起こさない (居なければ・止めてあればそう出す。issue 481)。
 // そうでなければ、画面を閉じるときに止める口 (stop) と、画面が開いている間 dispatcher を動かし続ける口 (spawn) をつなぎ、
 // 居なければ今 dispatcher を起こす。起動のときに画面へ出す知らせを返す。
-func wireLive(lb *live.Backend, view bool, dir string, spawn func(dir string) error, stop func(context.Context) error) (backend.Backend, []string) {
-	if view {
+func wireLive(lb *live.Backend, screen screenFlags, dir string, spawn func(dir string) error, stop func(context.Context) error) (backend.Backend, []string) {
+	if screen.view {
 		return lb.View(), []string{"見ているだけの画面 (--view): 依頼・回答・attach は受けない。quit で閉じても dispatcher と PG は止めない"}
+	}
+	if screen.join {
+		notes := []string{"加わった画面 (--join): 依頼・回答・attach は受ける。dispatcher は起こさず、quit で閉じても dispatcher と PG は止めない"}
+		if store.Held(dir) {
+			notes = append(notes, "dispatcher は人が止めてある (pro-con dispatcher --stop)。join の画面からは外せない (持ち主の画面の c か、手で pro-con dispatcher を起動する)")
+		} else if ds, _, err := store.LoadDispatcherState(dir); err == nil && (ds.Tick.IsZero() || time.Since(ds.Tick) > joinIdleAfter) {
+			// 🚨 dispatcher の lock で確かめない: 一瞬でも取ると、ちょうど起動した dispatcher が「動いている」と見て抜ける
+			notes = append(notes, "dispatcher が動いていない。起こすのは持ち主の画面か pro-con dispatcher (打った依頼は受付の箱で待つ)")
+		}
+		return lb.Join(), notes
 	}
 	var notes []string
 	lb.SetStopper(stop)
@@ -351,6 +422,29 @@ func wireLive(lb *live.Backend, view bool, dir string, spawn func(dir string) er
 		notes = append(notes, "dispatcher を起動した (ログ: "+filepath.Join(dir, "dispatcher.log")+")")
 	}
 	return lb, notes
+}
+
+// joinIdleAfter は、dispatcher がこれより長く回っていなければ join の画面が「動いていない」と出す (Tick は 3 秒ごと)。
+const joinIdleAfter = 10 * time.Second
+
+// ttyName は画面の端末 (画面の一覧に出す見分け。取れなければ空)。stdin が端末のときだけ tty(1) に聞く。
+func ttyName(stdin io.Reader) string {
+	f, ok := stdin.(*os.File)
+	if !ok {
+		return ""
+	}
+	if st, err := f.Stat(); err != nil || st.Mode()&os.ModeCharDevice == 0 {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "tty")
+	cmd.Stdin = f
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // dispatcherCmd は画面が起こす dispatcher のコマンド。画面が 1 つも無い状態が 1 分続いたら、PG を止めて抜ける
@@ -526,4 +620,23 @@ func fakeAttach(session string, stdin io.Reader, stdout io.Writer) int {
 	_, _ = fmt.Fprint(stdout, "\n  Enter で pro-con に戻る > ")
 	_, _ = bufio.NewReader(stdin).ReadString('\n')
 	return 0
+}
+
+// repoPaths は設定の repo の名前 → パス。
+func repoPaths(home string) (map[string]string, error) {
+	cfg, err := config.Load(config.DefaultPath(home))
+	if err != nil {
+		return nil, fmt.Errorf("設定を読めない: %w", err)
+	}
+	return discoverPaths(cfg, home), nil
+}
+
+// discoverPaths は設定の repo を見つけて、名前 → パスにする (見つからない repo は入れない)。
+func discoverPaths(cfg config.Config, home string) map[string]string {
+	repos, _ := config.Discover(cfg, home)
+	paths := map[string]string{}
+	for _, r := range repos {
+		paths[r.Name] = r.Path
+	}
+	return paths
 }

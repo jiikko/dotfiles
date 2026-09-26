@@ -73,7 +73,8 @@ func runCardLog(args []string, env viewEnv, stdout, stderr io.Writer) int {
 					return err
 				}
 			}
-			if _, err := fmt.Fprintf(stdout, "%s  %s\n", a.At.Local().Format("01-02 15:04:05"), a.Line()); err != nil {
+			// 応答の文は複数行になりうる (486): 2 行目からは時刻の幅だけ字下げする
+			if _, err := fmt.Fprintf(stdout, "%s  %s\n", a.At.Local().Format("01-02 15:04:05"), strings.ReplaceAll(a.Line(), "\n", "\n"+strings.Repeat(" ", 16))); err != nil {
 				return err
 			}
 		}

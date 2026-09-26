@@ -20,7 +20,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -37,8 +37,9 @@ type Launcher interface {
 	Start(ctx context.Context, repoPath, name, prompt string) (id string, err error)
 	// Resume は stopID の session を止めてから (空なら止めない) 同じ session を text を渡して再開し、claude --bg が返す短い id を返す
 	// (実行中の session に --resume するとコピーが起動するため。415 論点 11。再開で短い id が変わるかは未実測なので、返った id を使う)
-	// cwd は session の作業ディレクトリ (PG の worktree)。再開はそこで走らせる
-	Resume(ctx context.Context, stopID, sessionID, cwd, text string) (newID string, err error)
+	// cwd は session の作業ディレクトリ (PG の worktree)。再開はそこで走らせる。name は起動のときと同じ session の名前
+	// (渡さないと、再開の後の名前は AI の付けた題になる。488 で実測)
+	Resume(ctx context.Context, stopID, sessionID, cwd, name, text string) (newID string, err error)
 	// Stop は session を止める (落ち続けた PG。426 の決定 4)
 	Stop(ctx context.Context, id string) error
 }
@@ -83,9 +84,14 @@ type Dispatcher struct {
 	CrashWindow time.Duration
 	// Runner はテストの係の実行 / Summarize は失敗したログの要約 (runner.go)。Runner が nil ならテストの係を動かさない
 	Runner    Runner
-	Summarize func(ctx context.Context, tail string) (string, error)
+	Summarize func(ctx context.Context, in SummaryInput) (string, error)
 	active    *runJob   // 実行中の 1 本 (無ければ nil)
 	blocked   *runBlock // repo の lock を他が持っていて始められなかった頼み (runner.go の deferRun。無ければ nil)
+	// Procs はプロセスの一覧を読む (doing.go。PG が今走らせているもの)。nil なら集めない (e2e・テスト)。
+	// JobsDir は Claude Code が session ごとに様子を書く置き場 (~/.claude/jobs)。空ならサブエージェントを transcript だけで判じる
+	Procs   func(context.Context) ([]Proc, error)
+	JobsDir string
+	doingAt time.Time // 最後に集めた時刻
 	// Ask は btw の答えを作る (btw.go。本物は haiku)。nil なら記録だけから答える
 	Ask func(ctx context.Context, prompt string) (string, error)
 	btw *btwJob // 答えを作っている 1 本 (無ければ nil)
@@ -121,6 +127,7 @@ type Dispatcher struct {
 	IntegratorGuide string
 	IntegratorOff   bool
 	runs            map[string]*roleRun // 役ごとの、メモリだけに持つ様子 (role.go)
+	recent          []runRecord         // テストの係が実際に走らせた最近の結果 (失敗の一次判定の材料。triage.go)
 	// Exists は PM の作業ディレクトリが在るかを見る (nil なら os.Stat)。テストが差し替える
 	Exists func(dir string) bool
 
@@ -138,6 +145,10 @@ type Dispatcher struct {
 	notified    map[string]bool      // 通知した回答待ちのカード (待ちを抜けたら消す)
 	stopFrom    map[string]time.Time // 印の付いたカードを、この dispatcher が最初に止めに入った時刻 (close.go。諦めるまでの時間の起点)
 	unknownSeen map[string]bool      // 知らない state の警告を出した session id (unknownStateNote。止め直しの周・Tick ごとに重ねない)
+
+	// BootTime はマシンの起動時刻を読む (recover.go の起動時の確かめ。本物は kern.boottime)。nil なら読めない = 再起動で消えたと示せないので復旧しない
+	BootTime func() (time.Time, error)
+	started  *startupCheck // 起動時の確かめの結果 (nil ならまだ確かめていない)
 }
 
 // defaultStallAfter は停滞の通常の閾値の既定 (426: 既定値で始めて動かしながら直す)。
@@ -199,6 +210,13 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	if err := d.trackDead(now, ss); err != nil {
 		return notes, err
 	}
+	// 起動して一覧を取れた最初の Tick で 1 度だけ: マシンの再起動で消えたと示せる session を待たずに復旧する (483)。
+	// watchdog と 458 の経路より先 (戻したカードを停滞・消えた PG として重ねて扱わない)
+	checked, err := d.checkAtStart(ctx, now, ss)
+	notes = append(notes, checked...)
+	if err != nil {
+		return notes, err
+	}
 	// trackDead の後: 落ちたのを初めて見た Tick でも、自動の再開を待ってから消す (DeadSince が付いていないと待たずに消す)
 	closed, err := d.stopMarked(ctx, now, ss)
 	notes = append(notes, closed...)
@@ -252,6 +270,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	if err != nil {
 		return notes, err
 	}
+	d.collectDoing(ctx, now, ss)
 	return append(notes, d.announce()...), nil // 割り当ての結果まで含めて知らせる
 }
 
@@ -518,10 +537,24 @@ func (d *Dispatcher) recentCrashes(c card.Card, now time.Time) (recent, limit in
 	return recent, limit, window
 }
 
+// countCrash は落ちた・消えた時刻 at を 1 回数え、CrashWindow の間に CrashLimit 回に達したら人の回答待ちへ送って理由を返す
+// (再開し直さない。last は最後の落ち方)。達していなければ回数を書くだけで "" を返す (戻し方は呼び出し側)。
+// 458 の消えた PG と 483 の再起動の復旧が同じこれを通る (片方だけ上限を見ない形を作らない)
+func (d *Dispatcher) countCrash(c *card.Card, now, at time.Time, last string) string {
+	c.Crashes = append(c.Crashes, at)
+	recent, limit, window := d.recentCrashes(*c, now)
+	if recent < limit {
+		return ""
+	}
+	why := fmt.Sprintf("PG が %s の間に %d 回落ちた / 一覧から消えたので、再開し直さない (最後は%s)。回答すると同じ session を再開する", window, recent, last)
+	askAfterCrashes(c, now, why)
+	return why
+}
+
 // askAfterCrashes は、落ち続けた PG のカードを人間の回答待ちにする (回答が来たら同じ session を再開する)。
 func askAfterCrashes(c *card.Card, now time.Time, why string) {
-	c.DropRun() // 作業中の列を離れる (テストの係への頼みは取り下げる)
-	c.State, c.Since, c.Owner, c.StopWanted = card.Waiting, now, "人間", false
+	c.DropRun()                                                                                // 作業中の列を離れる (テストの係への頼みは取り下げる)
+	c.State, c.Since, c.Owner, c.StopWanted, c.Revived = card.Waiting, now, "人間", false, false // 回答での再開は人が決めた再開 (数え直す)
 	c.Wait = card.Wait{Kind: card.WaitCrashed, Question: why}
 	c.History = append(c.History, card.Event{At: now, Text: why})
 }
@@ -543,20 +576,15 @@ func (d *Dispatcher) requeueVanished(now time.Time, ss []agents.Session) ([]even
 		if !d.gone(c, now, ss, reg) {
 			continue
 		}
-		// 消えたのも落ちた回数に数える (消えたのを見た時刻で)。上限に達したら戻さずに人の番へ (上限の無い再開で利用枠を使い続けない)
-		c.Crashes = append(c.Crashes, c.DeadSince)
-		recent, limit, window := d.recentCrashes(c, now)
 		text := fmt.Sprintf("PG の session が一覧から消えて戻らない (%s 待った)。分解済みへ戻し、同じ session を再開する", restartWait)
-		if recent >= limit {
-			text = fmt.Sprintf("PG が %s の間に %d 回落ちた / 一覧から消えたので、再開し直さない (最後は一覧から消えて戻らない)。回答すると同じ session を再開する", window, recent)
-		}
 		if err := d.update(c.ID, func(cc *card.Card) {
-			cc.Crashes = c.Crashes
-			if recent >= limit {
-				askAfterCrashes(cc, now, text)
+			// 消えたのも落ちた回数に数える (消えたのを見た時刻で)。上限に達したら戻さずに人の番へ (上限の無い再開で利用枠を使い続けない)
+			if why := d.countCrash(cc, now, cc.DeadSince, "一覧から消えて戻らない"); why != "" {
+				text = why
 				return
 			}
 			requeue(cc, now, resumeAfterVanish)
+			cc.Revived = true
 			cc.History = append(cc.History, card.Event{At: now, Text: text})
 		}); err != nil {
 			return notes, err
@@ -637,7 +665,7 @@ func (d *Dispatcher) watch(now time.Time) ([]eventlog.Event, error) {
 }
 
 // dispatch は分解済みのカードに、枠を使うカード (card.HoldsPGSlot: turn の途中の PG) が上限 (利用枠で絞った数。usage.go) に達するまで
-// PG を割り当てる (再開が先、その中は古い順)。テストの係の結果を待って idle の PG は枠を使わない (issue 455)
+// PG を割り当てる (再開が先、その中はレーンの並び)。テストの係の結果を待って idle の PG は枠を使わない (issue 455)
 //   - 起動・再開の前に、印 (Launching) と時刻を記録に書く。結果が分かったら印を外して作業中にする
 //   - 前の Tick の起動・再開の結果が分からないまま (印が残っている) のカードは、一覧で確かめる。立っていれば取り込み、
 //     launchGrace を過ぎても出なければ起動し直す。待っている間は上限に数える
@@ -686,14 +714,16 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		case card.Requested, card.Waiting, card.Review, card.Done:
 		}
 	}
-	// 回答を受けた再開の初回を新しい起動より先に (途中まで進んだ作業と、その worktree を待たせない。枠で 1 本に絞ったときに効く)。その中は古い順。
-	// 🚨 印の残った再試行は先にしない: 失敗し続ける再開が毎回先頭に並び、1 本の枠を永久に占めて他のカードを起動させなくなる
-	first := func(c card.Card) bool { return resumes(c) && c.Launching == "" }
-	sort.SliceStable(queue, func(i, j int) bool {
-		if ri, rj := first(queue[i]), first(queue[j]); ri != rj {
-			return ri
+	// 回答を受けた再開の初回を新しい起動より先に (途中まで進んだ作業と、その worktree を待たせない。枠で 1 本に絞ったときに効く)。
+	// その中はレーンの並び (上ほど優先。人が入れ替えられる = issue 470。入れ替えていなければ列に入った順)。
+	slices.SortStableFunc(queue, func(a, b card.Card) int {
+		if ra, rb := a.ResumesFirst(), b.ResumesFirst(); ra != rb {
+			if ra {
+				return -1
+			}
+			return 1
 		}
-		return queue[i].Since.Before(queue[j].Since)
+		return card.LaneCompare(a, b)
 	})
 	// 印の残ったカード (前の起動・再開の結果が分からない) は、上限の判定より先に片付ける。上限の後ろに置くと、実際に立っている PG を
 	// 数えずに別のカードを起動する (上限を下げて起動し直したときも)
@@ -822,13 +852,10 @@ func lastAfterWait(c card.Card) string {
 	return ""
 }
 
-// resumes は同じ session を再開するカードか (回答・テストの結果・差し戻しを受けた / 追加オーダーを届ける)。
-func resumes(c card.Card) bool { return (c.Resume != "" || len(c.Pending()) > 0) && c.Session != "" }
-
 // prepare は起動・再開の前提を確かめて、実行する関数を返す。再開は、前の session が pro-con の記録にあり、
 // 今の一覧でその短い id が同じ session を指している (別の session を止めない) ときだけ。
 func (d *Dispatcher) prepare(c card.Card, now time.Time, ss []agents.Session, reg []live.Owned) (string, func(context.Context) (string, error), error) {
-	if resumes(c) {
+	if c.Resumes() {
 		o, ok := owned(c, reg)
 		if !ok {
 			return "再開", nil, fmt.Errorf("前の session (%s) が pro-con の記録に無い", c.Session)
@@ -856,7 +883,7 @@ func (d *Dispatcher) prepare(c card.Card, now time.Time, ss []agents.Session, re
 			return "再開", nil, errWait // Claude Code の自動の再開の途中かもしれない
 		}
 		return "再開", func(ctx context.Context) (string, error) {
-			return d.Launch.Resume(ctx, stop, o.SessionID, o.Cwd, resumeText(c))
+			return d.Launch.Resume(ctx, stop, o.SessionID, o.Cwd, card.SessionName(c), resumeText(c))
 		}, nil
 	}
 	path, ok := d.Repos[c.Repo]
@@ -864,11 +891,13 @@ func (d *Dispatcher) prepare(c card.Card, now time.Time, ss []agents.Session, re
 		return "起動", nil, fmt.Errorf("repo %q の場所が設定に無い", c.Repo)
 	}
 	if c.LaunchedAt.IsZero() { // 起動し直し (印を書いた後) なら、在る worktree はこのカードの前の起動が作ったもの
-		if err := leftoverWorktree(worktreePath(path, c)); err != nil {
+		if err := leftoverWorktree(card.WorktreePath(path, c)); err != nil {
 			return "起動", nil, err
 		}
 	}
-	return "起動", func(ctx context.Context) (string, error) { return d.Launch.Start(ctx, path, sessionName(c), Prompt(c)) }, nil
+	return "起動", func(ctx context.Context) (string, error) {
+		return d.Launch.Start(ctx, path, card.SessionName(c), Prompt(c))
+	}, nil
 }
 
 // needsHumanError は、起動・再開の前提が崩れていてやり直しても直らないので、人の番へ回す失敗 (文は理由)。
@@ -889,16 +918,6 @@ func leftoverWorktree(wt string) error {
 	}
 	return needsHumanError(fmt.Sprintf("worktree %s が既に在る (前の状態の置き場で同じカード ID が使った worktree かもしれない。claude -w はそのブランチの上で黙って作業を始める)。"+
 		"中身を確かめて片付けてから回答すると起動する", wt))
-}
-
-func sessionName(c card.Card) string { return "pc-" + strings.ToLower(c.ID) }
-
-// worktreePath は claude --bg -w <name> が作る PG の worktree (427 の 3f で実測)。repo の場所が分からなければ空 (呼び出し側が空を弾く)。
-func worktreePath(repoPath string, c card.Card) string {
-	if repoPath == "" {
-		return ""
-	}
-	return filepath.Join(repoPath, ".claude", "worktrees", sessionName(c))
 }
 
 // samePath は 2 つのパスが同じ場所か (symlink を解決して比べる。claude の一覧の cwd は解決済みのパスで出る見込みで、
@@ -935,7 +954,7 @@ func adopt(c card.Card, repoPath string, ss []agents.Session, reg []live.Owned) 
 		}
 		// 起動は、名前に加えて cwd がこのカードの repo の worktree そのもの (<repo>/.claude/worktrees/pc-<card>) のときだけ。
 		// 名前だけだと、別の状態の置き場で動く dispatcher が同じカード ID で立てた PG に当たる (カード ID は置き場ごとに C-001 から振られる)
-		if wt := worktreePath(repoPath, c); c.Launching == "起動" && wt != "" && s.Name == sessionName(c) && samePath(s.Cwd, wt) {
+		if wt := card.WorktreePath(repoPath, c); c.Launching == "起動" && wt != "" && s.Name == card.SessionName(c) && samePath(s.Cwd, wt) {
 			return s.ID, true
 		}
 		// 再開は別の session id の session を立てる (427 の 3f で実測) ので、同じ作業ディレクトリ (PG の worktree) で印の後に始まったものも取り込む
@@ -954,10 +973,10 @@ func (d *Dispatcher) mark(id string, now time.Time, how string) error {
 // settle は起動・再開が済んだカードを作業中にする。
 func (d *Dispatcher) settle(id string, now time.Time, how, session string) error {
 	return d.update(id, func(c *card.Card) {
-		if c.Resume != resumeAfterVanish { // 消えた PG の再開は人が決めた再開ではないので、落ちた回数を数え直さない
+		if !c.Revived { // 落ちた・消えた PG の再開は人が決めた再開ではないので、落ちた回数を数え直さない
 			c.CrashesFrom = now
 		}
-		c.State, c.Since, c.Owner, c.Session = card.Running, now, "PG", session
+		c.State, c.Since, c.Owner, c.Session, c.Revived = card.Running, now, "PG", session, false
 		c.LastProgress, c.Resume, c.Launching, c.Stalled, c.StopWanted, c.Stopped, c.Rejects = now, "", "", false, false, false, 0
 		// 消えたのを見た時刻は前の session のもの。残すと、再開が同じ短い id を返したとき (未実測)、一覧に出る前に消えたと読んで再開し直す
 		c.DeadSince = time.Time{}

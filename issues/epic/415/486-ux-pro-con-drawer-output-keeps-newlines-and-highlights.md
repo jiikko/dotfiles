@@ -57,3 +57,22 @@ PG の出力は見出し・箇条書き・コードブロックを含む markdow
 - 変える判断: 「`Outputs` の 1 件 = 1 行」という前提 (これを読む側すべてに効く)
 - 順番の理由: 467 (C-034) は同じ transcript を読んで PG の出力と道具の呼び出しを引き出しに出す。469 (C-035) は同じ `drawerBody` に進捗の節を足す。どちらも `Outputs` の形と引き出しの並びに乗るので、その 2 つが入ってから前提を変える (依頼の原文でも指定)。473 (C-037) も `drawerBody` に節を足すが、`Outputs` は読まないので順番は付けていない
 - 「決めること」(glogx の `issues.RenderBody` を import するか、`src/tuikit` へ移すか) は、PG が推測で決めずに質問する (依頼の原文)
+
+## 結果 (2026-09-26。ユーザーの「今やって」で、カード C-040 を待たずに session dotfiles-4c が入れた)
+
+- 467 (C-034) が入って、本物のモードの詳細は「出力」ではなく「活動」(応答の文と道具の呼び出し) を出す形になっていた。直したのはこの活動の側と、
+  出力 (`Outputs`) の側の両方
+- 読む段: 活動の応答の文 (`live/activity.go`) と `Transcript.Outputs` (`rawText`) は改行を残す。無害化は `termsafe.PlainBlock`
+  (制御文字を落とし、改行だけ残す。タブは空白へ展開)。`text()` (1 行) は変えていない (人間の発言・再開の文・watchdog の進捗の判定が 1 行の形に依存)
+- 描く段: 詳細の活動の応答の文を glogx の `issues.RenderBody` で markdown として整形する (コードブロックは chroma でハイライト)。道具の呼び出しは 1 行のまま。
+  `pro-con card log` と `card show` は 2 行目から字下げする
+- **決めること (import か tuikit へ移すか) は、今回は import にした** (pro-con は既に glogx を require している)。tuikit へ移すのは残り (下)
+- テスト: `TestDrawerRendersResponseAsMarkdown` (新設) と `TestActivitiesFromAssistantRecord` (約束を「改行を残す」に直し、応答の文の制御文字も見る)。
+  変異: 描く段を 1 行に戻す / 読む段で 1 行に潰す / 応答の文の無害化を外す — の 3 本すべて red
+- 実物: 隔離した tmux で `--view` の C-032 の詳細を開き、段落・箇条書きが行に分かれて出ること、色が付くことを見た
+
+## 残り
+
+- markdown の整形器 (`glogx/issues` の render / markdown / inline / wrap) を `src/tuikit` へ移して glogx と pro-con の両方から使う (今は pro-con が glogx を直に使う)
+- 未確認: 上の実物の画面の取り込み (tmux capture-pane) に、詳細の右端の手前でタブが 2 か所出た。描いた中身にタブが無いこと
+  (C-032 の最後の出力を同じ無害化と整形に通して、タブ 0・幅はみ出し 0) は確かめたので、描画側 (bubbletea) の桁送りの疑い。目で見てずれていたら起票する

@@ -44,6 +44,13 @@ const (
 // 🚨 --view の画面は置かない (受付の箱にも書かない = 読むだけ)
 const KindEvent = "event"
 
+// KindMonitor は見張り (pro-con monitor。issue 475) が見つけたこと (取り込みの衝突・テストの順番の長さ) の依頼の種類。
+// event と同じく記録 (カード) は変えず、dispatcher が出来事の記録へ書くだけ (見張りは読むだけ。書き手は dispatcher 1 つ = 426 の決定 1)
+const KindMonitor = "monitor"
+
+// noteOnly は記録を変えず、dispatcher が出来事の記録へ書くだけの依頼か (画面の出来事・見張りの知らせ)。
+func noteOnly(kind string) bool { return kind == KindEvent || kind == KindMonitor }
+
 // RunResource はテストの係 (dispatcher が直列に実行する列) のリソース名。今は 1 本の列だけ (426 の決定 5)。
 const RunResource = "テスト"
 
@@ -82,6 +89,9 @@ type Request struct {
 	Order    card.OrderKind `json:"order,omitempty"`    // order: 追記 / 方針変更 (別件は add + ParentID)
 	Text     string         `json:"text,omitempty"`     // order: 追加オーダーの本文 / handoff: 人に回す理由 (どちらも書いたまま)
 	Cards    []string       `json:"cards,omitempty"`    // clear: 片付ける完了のカード (画面が見ていたもの。適用までに完了になったカードを巻き込まない)
+	Seen     time.Time      `json:"seen,omitzero"`      // move: 頼んだ側が見ていたカードの Since (違えば列を移った後なので動かさない。空なら見ない)
+	Delta    int            `json:"delta,omitempty"`    // move: -1 = 1 つ上 / +1 = 1 つ下と入れ替える (Repo が空でなければ、その repo のカードの中の隣。issue 470)
+	Screen   string         `json:"screen,omitempty"`   // 置いた画面 (「a1b2c3 join review」。画面から置いた依頼だけ。履歴と出来事に残す。issue 481)
 	Key      string         `json:"key,omitempty"`      // config: 設定の名前 (settings.go)
 	Value    string         `json:"value,omitempty"`    // config: 設定の値 (空なら消す)
 	At       time.Time      `json:"at"`
@@ -107,6 +117,7 @@ type Rejected struct {
 // 画面の出来事 (event) の文)
 type Result struct {
 	ID, Kind, CardID string
+	Screen           string // 依頼を置いた画面 (Request.Screen。画面以外が置いた依頼は空)
 	Err              string
 	Note             string
 	At               time.Time // event: 画面が出来事を置いた時刻 (dispatcher が出来事の記録へ書く。適用した時刻ではない)
@@ -146,12 +157,12 @@ func submitWith(dir string, r Request, stage func(box, id string) error) (string
 	return r.ID, nil
 }
 
-// Pending は受付の箱の適用待ちの依頼の数 (画面の出来事 = event は数えない: 画面を開くたびに置くので、dispatcher の最初の Tick まで
-// 「適用待ち」が出て、dispatcher が止まっているように見える)。読めない・壊れたファイルは依頼として数える (除けられるまで待ちには違いない)。
+// Pending は受付の箱の適用待ちの依頼の数 (画面の出来事 = event と見張りの知らせ = monitor は数えない: 画面を開くたびに・見張りが見るたびに置くので、
+// dispatcher の最初の Tick まで「適用待ち」が出て、dispatcher が止まっているように見える)。読めない・壊れたファイルは依頼として数える (除けられるまで待ちには違いない)。
 func Pending(dir string) int {
 	n := 0
 	for _, r := range inbox(dir) {
-		if r.Kind != KindEvent {
+		if !noteOnly(r.Kind) {
 			n++
 		}
 	}
@@ -248,8 +259,8 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 		}
 		if err == nil {
 			r.ID = id // ファイル名が正本 (中身の id は信じない)
-			res.Kind, res.CardID = r.Kind, r.CardID
-			if r.Kind == KindEvent {
+			res.Kind, res.CardID, res.Screen = r.Kind, r.CardID, r.Screen
+			if noteOnly(r.Kind) {
 				res.At = r.At
 			}
 			if r.Kind == KindConfig {
@@ -278,6 +289,7 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 					err = adoptAttachment(staged, r.File)
 				}
 				if err == nil {
+					tagScreen(st, &next, r.Screen)
 					st = next
 				}
 			}
@@ -339,6 +351,41 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 		}
 	}
 	return results, nil
+}
+
+// tagScreen は依頼 1 件の適用で足された履歴の行に、依頼を置いた画面を付ける (screen が空なら何もしない)。
+// 足された行は、前の状態のそのカードの履歴に無い行 (attach の指示は時刻の位置に差し込まれるので、末尾の差では拾えない)。
+func tagScreen(before State, next *State, screen string) {
+	if screen == "" {
+		return
+	}
+	type key struct {
+		at   time.Time
+		text string
+	}
+	old := map[string]map[key]bool{}
+	for _, c := range before.Cards {
+		m := map[key]bool{}
+		for _, e := range c.History {
+			m[key{e.At, e.Text}] = true
+		}
+		old[c.ID] = m
+	}
+	for i, c := range next.Cards {
+		var hist []card.Event // 書き換えるカードだけ複製する (next.Cards は before と履歴の配列を共有している)
+		for j, e := range c.History {
+			if e.Screen != "" || old[c.ID][key{e.At, e.Text}] {
+				continue
+			}
+			if hist == nil {
+				hist = slices.Clone(c.History)
+			}
+			hist[j].Screen = screen
+		}
+		if hist != nil {
+			next.Cards[i].History = hist
+		}
+	}
 }
 
 // Update は dispatcher の中でカードを直接進める (PG の起動で作業中へ、など。箱を通さない dispatcher 自身の操作)。
@@ -410,11 +457,35 @@ func apply(st State, r Request, now time.Time) (State, string, string, error) {
 		if note, err = remove(&next, i, r, now); err != nil {
 			return st, id, "", fmt.Errorf("delete: %w", err)
 		}
+	case "move": // レーンの中の並び (= 優先度) を 1 つ上 / 下と入れ替える (issue 470)。隣は適用の時点の並びで決める (押した回数だけ動く)
+		i := indexOf(next.Cards, r.CardID)
+		if i < 0 {
+			return st, r.CardID, "", fmt.Errorf("move: カード %q が無い", r.CardID)
+		}
+		id = r.CardID
+		if !r.Seen.IsZero() && !r.Seen.Equal(next.Cards[i].Since) { // 見ていない列で入れ替えない (回答で分解済みへ移った・起動した後)
+			return st, id, "", fmt.Errorf("move: 押した後に %s の列へ移ったので動かさない", next.Cards[i].State.Label())
+		}
+		other, err := card.Move(next.Cards, r.CardID, r.Repo, r.Delta)
+		if err != nil {
+			return st, id, "", fmt.Errorf("move: %w", err)
+		}
+		c := &next.Cards[i]
+		how := card.MovedText(r.Delta, other)
+		if b := card.Blockers(next.Cards, *c); c.State == card.Planned && len(b) > 0 && c.Session == "" {
+			how += "。" + strings.Join(b, ", ") + " の完了を待つので、それまでは起動しない" // 並びより順番 (issue 468) が勝つ
+		}
+		c.History = append(c.History, card.Event{At: now, Text: how})
 	case KindEvent: // 画面の出来事。記録 (カード) は変えず、dispatcher が出来事の記録へ書くだけ (書き手を dispatcher 1 つに保つ。issue 445)
 		if strings.TrimSpace(r.Note) == "" {
 			return st, "", "", errors.New("event: 出来事の文が空")
 		}
 		return st, "", r.Note, nil
+	case KindMonitor: // 見張りの知らせ。カードの ID は出来事に付けるだけ (片付けた後のカードでも除けない = 知らせは記録に当てない)
+		if strings.TrimSpace(r.Note) == "" {
+			return st, "", "", errors.New("monitor: 知らせの文が空")
+		}
+		return st, r.CardID, r.Note, nil
 	case "clear": // 画面が完了のレーンを片付けた (x)。消さずに Archived にする。見ていた後に完了でなくなったカード・無いカードは飛ばす
 		if len(r.Cards) == 0 {
 			return st, "", "", errors.New("clear: 片付けるカードが無い")
@@ -587,8 +658,13 @@ func transition(c *card.Card, r Request, now time.Time) error {
 			if strings.TrimSpace(e.Text) == "" {
 				return errors.New("空の指示がある")
 			}
+			if e.At.IsZero() { // 時刻の位置へ差し込むので、時刻の無い指示は履歴の先頭へ行ってしまう
+				return errors.New("時刻の無い指示がある")
+			}
+		}
+		for _, e := range r.Said {
 			// 原文のまま残す (要約・切り詰めをしない)。時刻は打った時刻 (適用した時刻ではない)
-			c.History = append(c.History, card.Event{At: e.At, Text: AttachPrefix + e.Text})
+			c.History = insertByTime(c.History, card.Event{At: e.At, Text: AttachPrefix + e.Text})
 		}
 	case KindAttachment: // PG が作業の証拠を付けた (issue 453)。ファイルは Apply が移す。状態は変えない
 		if c.State == card.Done {
@@ -681,6 +757,18 @@ func firstNonEmpty(xs ...string) string {
 		}
 	}
 	return ""
+}
+
+// insertByTime は e を、時刻が e より後の出来事の直前へ差し込む (同じ時刻なら後ろへ。issue 489)。
+// 履歴は起きた順の記録で、attach の間の指示だけが過去の時刻 (打った時刻) で後から届く。末尾へ足すと、その間に足した
+// 出来事 (テストの係の結果・質問) より後ろに並び、表示の順と時刻が食い違う。後ろから探すのは、ふつうは末尾の数件で止まるため。
+// 🚨 apply はカードを浅くコピーするので、h の配列は適用前の state と共有している。Clip して、ずらす先を新しい配列にする
+func insertByTime(h []card.Event, e card.Event) []card.Event {
+	i := len(h)
+	for i > 0 && h[i-1].At.After(e.At) {
+		i--
+	}
+	return slices.Insert(slices.Clip(h), i, e)
 }
 
 func clip(s string, n int) string {
