@@ -73,7 +73,8 @@
 - [x] 各欄で全角の文字のキャレット・幅がずれず、貼り付けの改行で送られない (テスト。`ui/ime_test.go` の `TestCaretStaysAfterLastCharForLongText` / `TestPasteWithNewlineDoesNotSend`)
 - [x] キャレットを画面の座標に直す処理が `src/tuikit` の 1 か所にあり、pro-con の 2 か所と schedkeys がそれを使う (`tuikit/caret.At` と `lineedit.Line.Window`)
 - [x] 確認に送る中身が出る
-- [ ] 人が確かめる: ユーザーの端末 (tmux の中) で、新しい依頼と回答の欄で日本語を変換して確定する Enter で、確認も送信も起きない (機械では IME の確定を作れないため)
+- [x] 人が確かめる: ユーザーの端末 (tmux の中) で、新しい依頼と回答の欄で日本語を変換して確定する Enter で、確認も送信も起きない (機械では IME の確定を作れないため)。
+  2026-09-27 にユーザーが確かめた: 持ち主の画面を ctrl+r で新版にし、+ と r の欄で確定の Enter を押して「何も起きなかった」(カード C-092)
 
 ## 関連ファイル
 
