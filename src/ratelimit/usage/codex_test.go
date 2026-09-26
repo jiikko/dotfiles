@@ -203,6 +203,41 @@ func TestFetchCodexReturnsWhenDescendantHoldsStdout(t *testing.T) {
 	}
 }
 
+func TestFetchRunsClaudeOutsideCallerCwd(t *testing.T) {
+	dir := t.TempDir()
+	tmp := t.TempDir()
+	pwdFile := filepath.Join(dir, "pwd")
+	writeStub(t, dir, "claude", `case "$1" in --version) ;; *) pwd -P > `+pwdFile+`;; esac
+`+claudeStubOK)
+	t.Setenv("PATH", dir)
+	t.Setenv("TMPDIR", tmp)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := Fetch(ctx); err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	got, err := os.ReadFile(pwdFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := filepath.EvalSymlinks(tmp)
+	if strings.TrimSpace(string(got)) != want {
+		t.Fatalf("claude -p の cwd = %q, want 一時ディレクトリ %q (呼び出し元の repo にセッション記録を作る)", strings.TrimSpace(string(got)), want)
+	}
+}
+
+func TestFetchWorksWhenTempDirIsMissing(t *testing.T) {
+	dir := t.TempDir()
+	writeStub(t, dir, "claude", claudeStubOK)
+	t.Setenv("PATH", dir)
+	t.Setenv("TMPDIR", filepath.Join(dir, "missing")) // 存在しない一時ディレクトリ
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := Fetch(ctx); err != nil {
+		t.Fatalf("一時ディレクトリが無いだけで取得に失敗した: %v", err)
+	}
+}
+
 // claudeStubOK は claude CLI の /usage と --version を模す (Fetch の期待する JSON 形)。
 const claudeStubOK = `case "$1" in
 --version) printf '%s\n' "9.9.9 (Claude Code)";;

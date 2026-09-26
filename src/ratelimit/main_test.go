@@ -248,3 +248,60 @@ func TestJSONWithNoCLIIsUnknown(t *testing.T) {
 		t.Fatalf("見る出所が 0 件なのに rc = %d", rc)
 	}
 }
+
+func TestFetchDoesNotOverwriteNewerCache(t *testing.T) {
+	w, e, _, _ := newWorld(t)
+	// 自分 (e.now) より後に取得した値が既に書かれている = 後から始まった更新が先に書き終えた
+	seedCache(t, e, srcClaude, baseNow.Add(10*time.Second), win("5h", 50, 5*time.Hour, time.Hour))
+	w.fetchWs[srcClaude] = []usage.Window{win("5h", 10, 5*time.Hour, time.Hour)}
+	if _, err := fetchAndSave(e, srcClaude); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := loadCache(cachePath(e.cacheDir, srcClaude))
+	if !ok || got.Windows[0].Percent != 50 {
+		t.Fatalf("古い取得が新しいキャッシュを上書きした: %+v", got.Windows)
+	}
+}
+
+func TestCheckAllIsUnknownWhenOneSourceIsUnknown(t *testing.T) {
+	w, e, _, _ := newWorld(t)
+	w.fetchWs[srcClaude] = []usage.Window{win("5h", 10, 5*time.Hour, time.Hour)}
+	e.fetch = func(_ context.Context, s source) ([]usage.Window, error) {
+		if s == srcCodex {
+			return nil, errors.New("codex down")
+		}
+		return w.fetchWs[s], nil
+	}
+	if rc := run([]string{"-check"}, e); rc != rcUnknown {
+		t.Fatalf("codex が判定不能なのに rc = %d (claude の「超過なし」に隠れた)", rc)
+	}
+}
+
+func TestFetchOverwritesFutureDatedCache(t *testing.T) {
+	w, e, _, _ := newWorld(t)
+	// 時計の巻き戻しで残った未来時刻のキャッシュ。守ると、実時間が追い付くまで直らない
+	seedCache(t, e, srcClaude, baseNow.Add(time.Hour), win("5h", 50, 5*time.Hour, time.Hour))
+	w.fetchWs[srcClaude] = []usage.Window{win("5h", 10, 5*time.Hour, time.Hour)}
+	if _, err := fetchAndSave(e, srcClaude); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := loadCache(cachePath(e.cacheDir, srcClaude))
+	if !ok || got.Windows[0].Percent != 10 || !got.FetchedAt.Equal(baseNow) {
+		t.Fatalf("未来時刻のキャッシュを上書きしなかった: %+v", got)
+	}
+}
+
+func TestFormatAgeSeparatesRaceFromClockSkew(t *testing.T) {
+	for _, c := range []struct {
+		d    time.Duration
+		want string
+	}{
+		{-10 * time.Second, "今取得"},               // 後から始まった更新が先に書いた値を返した (正常)
+		{-fetchTimeout - time.Second, "取得時刻が未来"}, // 時計の巻き戻し
+		{3 * time.Minute, "3分前に取得"},
+	} {
+		if got := formatAge(c.d); got != c.want {
+			t.Errorf("formatAge(%v) = %q, want %q", c.d, got, c.want)
+		}
+	}
+}

@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -90,6 +91,14 @@ func Fetch(ctx context.Context) (*Snapshot, error) {
 	go func() { verCh <- FetchVersion(ctx) }()
 
 	cmd := subproc.CommandContext(ctx, "claude", "-p", "/usage", "--model", "haiku", "--output-format", "json")
+	// claude -p は cwd の project にセッション記録 (~/.claude/projects/<cwd>/*.jsonl) を作る (実測 2026-09-26)。
+	// 呼び出し元の cwd (glogx / hook ならユーザーの作業 repo) のままだと、その repo の --resume 一覧に
+	// /usage だけのセッションが取得のたびに溜まるので、一時ディレクトリで起こして 1 か所に寄せる。
+	// 一時ディレクトリが無い環境 (TMPDIR の指す先が消えた等) では起動自体が失敗するので、そのときは
+	// 呼び出し元の cwd のまま起こす (記録の寄せ先より取得の成功を優先する)。
+	if fi, err := os.Stat(os.TempDir()); err == nil && fi.IsDir() {
+		cmd.Dir = os.TempDir()
+	}
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("claude /usage 実行失敗: %w", err)

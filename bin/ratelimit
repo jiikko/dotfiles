@@ -10,8 +10,8 @@ source "${0:A:h}/lib/go_autobuild.zsh"
 # 全セッションの次のプロンプトが go build を待ち、ビルドが通らない間は毎回やり直す)。
 # (go_autobuild_exec は exec するので戻らない。呼び出しを変数で組まないのは、
 # tests/bin/test_go_autobuild_warmup.sh がこの行を字面で読むため)
-# 検出は `-cached` の字面だけ (`--cached` / `-cached=true` は同期のまま。hook はこの字面で呼ぶ)。
-if (( $@[(Ie)-cached] )); then
+# Go の flag が true と受ける表記 (-cached / --cached / =1 / =t / =true 等。strconv.ParseBool) をすべて拾う。
+if (( ${@[(I)(-|--)cached(|=(1|t|T|true|TRUE|True))]} )); then
   go_autobuild_exec --async "${0:A:h}/../src/ratelimit" ratelimit -- "$@"
 fi
 go_autobuild_exec "${0:A:h}/../src/ratelimit" ratelimit -- "$@"

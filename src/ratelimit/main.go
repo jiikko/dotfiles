@@ -230,6 +230,16 @@ func fetchAndSave(e env, s source) (cacheEntry, error) {
 		ws[i].Label = termsafe.PlainLine(ws[i].Label)
 	}
 	entry := cacheEntry{Windows: ws, FetchedAt: e.now}
+	// 裏の更新が 2 本並ぶと、後から書き終えた側が勝つ。先に始まった (= 古い) 取得で新しい値を
+	// 上書きしないよう、書く直前に読み直して、自分より新しければ書かずにそちらを返す。
+	// 「後から始まった更新」の取得時刻は自分の開始から fetchTimeout 以内にしか来ない。それより先の
+	// 時刻は時計の巻き戻しで残った壊れたキャッシュなので、守らずに上書きする (fresh と同じく未来を信用しない)。
+	// 既知のずれ: e.now は起動時に 1 回だけ決まるので、-source all の同期経路では 2 つ目の出所の実際の
+	// 開始が最大 fetchTimeout 遅れ、この判定もそのぶんずれる (鮮度差は数十秒。裏の更新は出所ごとに 1 本なので起きない)。
+	if cur, ok := loadCache(cachePath(e.cacheDir, s)); ok &&
+		cur.FetchedAt.After(entry.FetchedAt) && !cur.FetchedAt.After(entry.FetchedAt.Add(fetchTimeout)) {
+		return cur, nil
+	}
 	// 保存の失敗は取得結果を捨てる理由にしない (次回が取り直しになるだけ)。
 	if err := saveCache(e.cacheDir, s, entry); err != nil {
 		fmt.Fprintf(e.stderr, "ratelimit: %s: キャッシュを書けない: %v\n", s, err)
@@ -362,14 +372,16 @@ func overLimit(r sourceResult, now time.Time, warn5h, warn7d int) (out []usage.W
 }
 
 func printCheck(e env, results []sourceResult, warn5h, warn7d int) int {
-	over, known := false, false
+	// over は出所をまたいで OR、判定不能は出所ごと: どれか 1 つでも判定できない出所があれば、残りが
+	// 「超過なし」でも rc=3 (-source all で片方の判定不能がもう片方の緑に隠れないように)。
+	over, unknown := false, len(results) == 0
 	for _, r := range results {
 		if r.err != nil {
 			fmt.Fprintf(e.stderr, "ratelimit: %s: %v\n", r.src, r.err)
 		}
 		over1, judged := overLimit(r, e.now, warn5h, warn7d)
-		if judged > 0 {
-			known = true
+		if judged == 0 {
+			unknown = true
 		}
 		for _, w := range over1 {
 			over = true
@@ -377,15 +389,13 @@ func printCheck(e env, results []sourceResult, warn5h, warn7d int) int {
 				r.src, w.Label, w.Percent, formatReset(w.ResetAt, e.now))
 		}
 	}
-	// 🚨 出所をまたいで OR を取るので、-source all では片方の判定不能がもう片方の「超過なし」に
-	// 隠れる。呼び出し側 (hook = claude だけ / codex 系 skill = codex だけ) は出所を 1 つに絞って呼ぶ。
 	switch {
 	case over:
 		return rcOver
-	case known:
-		return rcOK
+	case unknown:
+		return rcUnknown
 	}
-	return rcUnknown
+	return rcOK
 }
 
 func printLine(e env, results []sourceResult) int {
@@ -473,8 +483,12 @@ func formatReset(t, now time.Time) string {
 
 func formatAge(d time.Duration) string {
 	switch {
-	case d < 0:
+	// 自分より少し後に始まった更新の値を返したとき (fetchAndSave の競合の守り) は、fetchTimeout 以内だけ
+	// 未来になる。それは正常なので「今取得」と出し、「未来」は時計の巻き戻しと言える幅に限る
+	case d < -fetchTimeout:
 		return "取得時刻が未来"
+	case d < 0:
+		return "今取得"
 	case d < time.Minute:
 		return "今取得"
 	case d < time.Hour:
