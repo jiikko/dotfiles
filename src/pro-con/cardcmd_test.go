@@ -61,6 +61,9 @@ func TestCardAddQuestionPurpose(t *testing.T) {
 	if rc != 0 || json.Unmarshal([]byte(out), &got) != nil || len(got) != 1 || got[0].ID != "C-001" || got[0].Purpose != "question" {
 		t.Fatalf("--purpose question: rc=%d %q", rc, out)
 	}
+	if _, out, _ := viewCmd(t, env, "list"); !strings.Contains(out, card.QuestionMark+" 確かめる") || strings.Contains(out, card.QuestionMark+" 作る") {
+		t.Fatalf("list の題名の頭に確認の印が出ない / 作業のカードに出た: %q", out)
+	}
 	if _, out, _ := viewCmd(t, env, "list", "--purpose", "work"); strings.Contains(out, "C-001") || !strings.Contains(out, "C-002") || !strings.Contains(out, "C-003") {
 		t.Fatalf("--purpose work: %q", out)
 	}

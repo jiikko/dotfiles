@@ -35,6 +35,10 @@ func (p Purpose) Name() string {
 	return fmt.Sprintf("purpose-%d", int(p))
 }
 
+// QuestionMark はボードのカードの 1 行目 (番号の後) と card list の題名の頭に付ける確認のカードの印 (2026-09-27 にユーザーが見本の案 A を選んだ)。
+// 🚨 幅の揺れる記号を使わない (no-mixed-width-columns-in-terminal-ui)
+const QuestionMark = "?確認"
+
 // QuestionPurposeText は詳細 (画面と card show) の「種類:」の行に出す、確認のカードの説明。
 var QuestionPurposeText = ForQuestion.Label() + " (人に確かめるだけ。PG は付かず、答えを受けた PM が閉じる)"
 

@@ -21,3 +21,11 @@
 ## 関連
 
 - 498 (PM が人に確かめる依頼を人の番にする) / 510 (外から動かす Claude 向けの入口) / 532 (カードの検索・絞り込み)
+
+## 進捗 (C-084 / 2026-09-27)
+
+- 種類の欄は `card.Purpose` (作業 `work` / 確認 `question`)。`Wait.Kind` と読み違えないよう Kind にしない
+- 口: `card add --purpose question` / `card list --purpose work|question` (`--json` に `purpose`) / `card show` と画面の詳細に「種類: 確認」
+- 確認のカードへの `plan` は適用で断る (PG を付けない)。PM は `card ask` で聞いて、答えのとおり `close --ending answered [--issue]` で閉じる (pm-guide 役目 2)
+- 見た目は見本 (`src/pro-con/samples/531-question-card/`) の案 A をユーザーが選んだ: カードの 1 行目の番号の後に桃色の太字で `?確認`。`card list` の題名の頭にも同じ印
+- 既存の「確認:」の題名のカードは種類を付け直していない (題名からの推測で記録を書き換えない。どれも閉じる手前)

@@ -228,7 +228,11 @@ func runCardList(args []string, env viewEnv, stdout, stderr io.Writer) int {
 	for _, s := range out {
 		// 列の見出しは全角なので、%-Ns (文字数) ではなく表示幅で揃える (全角は 2 セル)
 		col := s.State + strings.Repeat(" ", max(colW-ansi.StringWidth(s.State), 0))
-		line := fmt.Sprintf("%s  %s  %s  担当: %s  (%s)", s.ID, col, s.Title, orDashCLI(s.Assignee), fmtAge(now.Sub(s.Since)))
+		title := s.Title
+		if s.Purpose == card.ForQuestion.Name() { // 画面の 1 行目と同じ印 (issue 531)
+			title = card.QuestionMark + " " + title
+		}
+		line := fmt.Sprintf("%s  %s  %s  担当: %s  (%s)", s.ID, col, title, orDashCLI(s.Assignee), fmtAge(now.Sub(s.Since)))
 		if s.Waiting != "" {
 			line += "  待ち: " + s.Waiting
 		}
