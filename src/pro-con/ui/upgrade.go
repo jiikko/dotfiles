@@ -38,7 +38,9 @@ type upgrader struct {
 	run       upgrade.Runner
 	state     upgradeState
 	requested bool
-	checkErr  string // shim に尋ねられなかった / バイナリを見られなかった理由 (同じ理由は繰り返し通知しない。回復したら忘れる)
+	// keepScreen は終了の直前に呼ぶ (main が渡す upgrade.Screen.Keep。alt screen を抜けずに exec する: switchfade.go)
+	keepScreen func()
+	checkErr   string // shim に尋ねられなかった / バイナリを見られなかった理由 (同じ理由は繰り返し通知しない。回復したら忘れる)
 }
 
 type upgradeTickMsg struct{}
@@ -68,12 +70,23 @@ func (m *Model) EnableUpgrade(exe string, run upgrade.Runner) error {
 // UpgradeRequested は ctrl+r で切り替えを頼まれて終了したか (main がそれを見て exec する)。
 func (m *Model) UpgradeRequested() bool { return m.up != nil && m.up.requested }
 
+// OnSwitch は、切り替えのために終了する直前に呼ぶ関数を置く (main が upgrade.Screen.Keep を渡す)。
+func (m *Model) OnSwitch(f func()) {
+	if m.up != nil {
+		m.up.keepScreen = f
+	}
+}
+
 // UpgradeExe は切り替え先のバイナリ。
 func (m *Model) UpgradeExe() string { return m.up.src.Exe }
 
 // UpgradeFailed は切り替え (exec) が失敗して戻ってきたときに呼ぶ。旧版のまま続ける。
 func (m *Model) UpgradeFailed(err error) {
 	m.up.requested = false
+	m.cancelLeaving()
+	// 前の Program が予約していた tick (演出のコマ・処理中の印) は、終了で捨てられている。回っている印を下ろさないと、
+	// 起こし直した Program で二度と予約されない (2 回目の ctrl+r の暗転が進まず暗いまま止まった: issue 509 の実機確認)
+	m.framing, m.spinning = false, false
 	if err == nil {
 		err = errors.New("exec が戻ってきた")
 	}
@@ -137,7 +150,7 @@ func (m *Model) onUpgradeCheck(msg upgradeCheckMsg) tea.Cmd {
 	return upgradeTick()
 }
 
-// requestUpgrade は ctrl+r。新版があるときだけ終了して main に切り替えを任せる。
+// requestUpgrade は ctrl+r。新版があるときだけ、画面を暗くしてから終了して main に切り替えを任せる (switchfade.go の leaveDone)。
 func (m *Model) requestUpgrade() tea.Cmd {
 	switch {
 	case m.up == nil:
@@ -145,8 +158,7 @@ func (m *Model) requestUpgrade() tea.Cmd {
 	case m.up.state != upReady:
 		m.info("新版はまだ無い")
 	default:
-		m.up.requested = true
-		return tea.Quit
+		return m.startLeaving()
 	}
 	return nil
 }
@@ -241,13 +253,15 @@ type uiState struct {
 	Cursor       int                  `json:"cursor"`
 	Target       *backend.IssueTarget `json:"target,omitempty"`
 	TargetRepo   backend.Repo         `json:"targetRepo"`
+	// Frame は旧版が最後に描いた画面 (暗くなりきった 1 枚。新版は最初の読み込みまでこれを出してから明るく戻す: switchfade.go)
+	Frame string `json:"frame,omitempty"`
 }
 
 // ExportState は引き継ぐ UI の状態。
 func (m *Model) ExportState() ([]byte, error) {
 	return json.Marshal(uiState{Tab: m.tab, Col: m.col, Selected: m.selected, ShowDetail: m.showDetail, ShowSessions: m.set.open, SettingsTab: m.set.tab,
 		Input: m.mode == modeInput && m.inputKind != inputQuit, InputKind: m.inputKind, OrderKind: m.orderKind, Line: m.line.String(), Cursor: m.line.Cursor(),
-		Target: m.picker.target, TargetRepo: m.picker.repo})
+		Target: m.picker.target, TargetRepo: m.picker.repo, Frame: m.fade.lastView})
 }
 
 // ImportState は ExportState した UI の状態を戻す。読めなければ何も変えない (UI の状態を失うだけで、カードは backend にある)。
@@ -257,6 +271,9 @@ func (m *Model) ImportState(data []byte) error {
 		return err
 	}
 	m.tab, m.col, m.selected = st.Tab, st.Col, st.Selected
+	if st.Frame != "" {
+		m.startArriving(st.Frame)
+	}
 	m.showDetail = st.ShowDetail
 	if st.ShowSessions {
 		m.set.open, m.set.tab, m.set.anim = true, st.SettingsTab, anim.NewOpen()

@@ -30,7 +30,12 @@ const (
 
 func (m *Model) View() tea.View {
 	began := time.Now()
-	r := m.render()
+	r := m.applySwitchFade(m.render())
+	if m.firstView != nil {
+		f := m.firstView
+		m.firstView = nil
+		f()
+	}
 	m.flog.record(began, "View", time.Since(began))
 	if m.frameSink != nil {
 		m.frameSink(r, m.width, m.height, m.relayState())

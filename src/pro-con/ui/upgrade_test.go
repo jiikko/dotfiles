@@ -87,9 +87,20 @@ func TestUpgradeFlow(t *testing.T) {
 	if m.up.state != upReady || *calls != 1 {
 		t.Fatalf("差し替わったら新版ありで、もう shim には頼まない: state=%v calls=%d", m.up.state, *calls)
 	}
-	if !isQuit(m.pressCtrlR()) || !m.UpgradeRequested() {
-		t.Fatal("ctrl+r で切り替えを頼んで終了しない")
+	if isQuit(m.pressCtrlR()) || m.UpgradeRequested() {
+		t.Fatal("ctrl+r で暗転を挟まずに終了した (issue 509)")
 	}
+	if !isQuit(leaveFully(m)) || !m.UpgradeRequested() {
+		t.Fatal("暗くなりきったら切り替えを頼んで終了するはず")
+	}
+}
+
+// leaveFully は暗転の所要を過ぎたところまで時計を進めてコマを 1 つ送る (その Cmd を返す)。
+func leaveFully(m *Model) tea.Cmd {
+	at := m.now().Add(switchDuration)
+	m.now = func() time.Time { return at }
+	_, cmd := m.Update(frameMsg{})
+	return cmd
 }
 
 // ビルドが失敗した後も shim には尋ね続け、ソースを直して shim が再挑戦すればビルド中に戻る (2 周目 P1 の回帰)。

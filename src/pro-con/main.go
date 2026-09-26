@@ -26,6 +26,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -45,7 +46,70 @@ import (
 
 func main() {
 	dispatcher.GuardInheritedLock() // 入れ替え (505) で引き継いだ dispatcher の lock を、何かを起こす前に子へ渡らない形にする
-	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+	var stderr io.Writer = os.Stderr
+	if os.Getenv(upgrade.ResumeEnv) != "" { // ctrl+r で旧版から渡された: alt screen の中で起動している (issue 509)
+		inheritedAlt = &altGuard{w: os.Stderr, stop: upgrade.GuardAltScreen(os.Stdout)} // 画面を出す前の ctrl+c 等でも抜ける
+		stderr = inheritedAlt
+		defer func() {
+			if r := recover(); r != nil {
+				inheritedAlt.leave()
+				panic(r)
+			}
+		}()
+	}
+	code := run(os.Args[1:], os.Stdin, os.Stdout, stderr)
+	inheritedAlt.leave()
+	os.Exit(code)
+}
+
+// inheritedAlt は、旧版から alt screen のまま渡された新版が、画面を出す前に終わるときに alt screen を抜ける見張り (issue 509)。
+// nil なら渡されていない。
+var inheritedAlt *altGuard
+
+// altGuard は stderr を包み、画面を出す前の最初の書き込みの前に alt screen を抜ける (抜けないと、エラーの文が暗い画面に紛れ、
+// シェルへ戻っても alt screen に閉じ込められる)。画面を出した後は何もしない (bubbletea が終了のときに抜ける。
+// 抜けた後に重ねて抜けると、端末が保存したカーソルの位置へ戻ってプロンプトの位置がずれる)。
+type altGuard struct {
+	w     *os.File
+	stop  func() // シグナルの見張りを外す (upgrade.GuardAltScreen。nil なら置いていない)
+	mu    sync.Mutex
+	shown bool // 画面を出した (以後は bubbletea に任せる)
+	left  bool
+}
+
+// markShown は画面を出したときに呼ぶ (最初の View。bubbletea は描いた後なら終了のときに alt screen を抜ける。
+// Run の前に呼ぶと、Run が描く前に失敗したとき (端末を開けない等) に抜けないまま終わる)。
+func (g *altGuard) markShown() {
+	if g == nil {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.shown {
+		return
+	}
+	g.shown = true
+	if g.stop != nil {
+		g.stop()
+	}
+}
+
+func (g *altGuard) leave() {
+	if g == nil {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.shown || g.left {
+		return
+	}
+	g.left = true
+	upgrade.LeaveAltScreen(g.w)
+}
+
+func (g *altGuard) Write(p []byte) (int, error) {
+	g.leave()
+	return g.w.Write(p)
 }
 
 // parseMode は先頭の起動モードの引数 (--mock / --e2e <置き場>) を読む。modeArgs はライブアップグレードで新版に付け直す引数
@@ -352,6 +416,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if exe, err := os.Executable(); err == nil {
 		_ = m.EnableUpgrade(exe, upgrade.ExecRunner) // bin/pro-con 以外から起動していれば無効 (ctrl+r で理由を出す)
 	}
+	// 画面の出力。切り替えのときだけ alt screen を抜けずに終わる (新版へ exec する間にシェルの画面を見せない。issue 509)
+	scr := upgrade.NewScreen(os.Stdout)
+	m.OnSwitch(scr.Keep)
+	m.OnFirstView(inheritedAlt.markShown) // ここから先の alt screen は bubbletea が持つ
 	// 画面の中継 (issue 443。外の Claude が pro-con screen で読む)。本物のモードと e2e モードだけ (--view の画面も中継する)
 	var rw *relay.Writer
 	openRelay := func() {
@@ -378,7 +446,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	openRelay()
 	defer closeRelay()
 	for {
-		if _, err := tea.NewProgram(m).Run(); err != nil {
+		if _, err := tea.NewProgram(m, tea.WithOutput(scr)).Run(); err != nil {
 			_, _ = fmt.Fprintln(stderr, "pro-con:", err)
 			if resumePath != "" {
 				// 引き継いだ状態は残す (新版が起動直後に落ちた等。直したら同じ状態で起動し直せる)
@@ -407,6 +475,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		closeRelay()                                                                                                               // 新しい版へ exec すると defer が走らず、中継のファイルが落ちた画面の残りになる。戻ってきたら (失敗) 開き直す
 		p, err := switchToNew(m, be, append(append(append([]string(nil), screen.args...), modeArgs...), args...), dir, resumePath) // 新版も同じ種類の画面で開く
 		resumePath = p
+		scr.Release() // 旧版のまま続ける: 次の終了では alt screen を抜ける
 		m.UpgradeFailed(err)
 		openRelay()
 	}

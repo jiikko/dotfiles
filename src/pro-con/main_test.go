@@ -283,3 +283,31 @@ func TestWireLiveJoinWakesNothing(t *testing.T) {
 		}
 	}
 }
+
+// 旧版から alt screen のまま渡された新版は、画面を出す前の最初の書き込み (エラー) の前に alt screen を抜ける。
+// 画面を出した後は抜けない (bubbletea が抜ける。重ねるとカーソルの位置がずれる)。
+func TestAltGuardLeavesOnlyBeforeScreen(t *testing.T) {
+	f, err := os.Create(filepath.Join(t.TempDir(), "err"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := &altGuard{w: f}
+	_, _ = g.Write([]byte("boom\n"))
+	_, _ = g.Write([]byte("again\n"))
+	g.leave()
+	stopped := 0
+	h := &altGuard{w: f, stop: func() { stopped++ }}
+	h.markShown()
+	h.markShown()
+	_, _ = h.Write([]byte("after\n"))
+	h.leave()
+	if stopped != 1 {
+		t.Fatalf("画面を出したらシグナルの見張りを 1 度だけ外すはず: %d", stopped)
+	}
+	var nilGuard *altGuard
+	nilGuard.leave() // 渡されていない (nil) なら何もしない
+	b, _ := os.ReadFile(f.Name())
+	if want := "\x1b[0m\x1b[?25h\x1b[?1049lboom\nagain\nafter\n"; string(b) != want {
+		t.Fatalf("got %q\nwant %q", b, want)
+	}
+}

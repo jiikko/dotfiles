@@ -122,12 +122,15 @@ type Model struct {
 
 	picker picker // issue の一覧から依頼する画面 (picker.go)
 
-	up       *upgrader     // ライブアップグレード (upgrade.go)。nil なら無効
-	children *atomic.Int64 // 裏で外部コマンドを起こしている処理の数 (exec の前に 0 を待つ。upgrade.go の child)
+	up   *upgrader  // ライブアップグレード (upgrade.go)。nil なら無効
+	fade switchFade // 新版への切り替えの暗転・明転 (switchfade.go)
+	// firstView は最初の View で 1 度だけ呼ぶ (main が、旧版から受け取った alt screen を bubbletea に任せる印を付ける)
+	firstView func()
+	children  *atomic.Int64 // 裏で外部コマンドを起こしている処理の数 (exec の前に 0 を待つ。upgrade.go の child)
 
 	copy       func(string) error     // クリップボードへ入れる (既定は pbcopy。テストは差し替える)
 	openEditor func(string) *exec.Cmd // ファイルを開くエディタのコマンド (既定は tuikit/editor。テストは差し替える)
-	// execProcess は端末を明け渡して外のコマンドを走らせる (既定は tea.ExecProcess。テストは戻りの知らせを取り出すために差し替える)
+	// execProcess は端末を明け渡して外のコマンドを走らせる (既定は execOnTerminal。テストは戻りの知らせを取り出すために差し替える)
 	execProcess func(*exec.Cmd, tea.ExecCallback) tea.Cmd
 	openFiles   func([]string) error // 添付を外のアプリで開く (既定は open。テストは差し替える。attachments.go)
 	attachTexts map[string][]string  // 文字の添付の中身 (パスごとに 1 度だけ読む。attachments.go)
@@ -137,7 +140,7 @@ type Model struct {
 
 // New は repos (config から列挙した repo) をタブの候補にして画面を作る。nil なら global だけ。
 func New(be backend.Backend, repos []backend.Repo) *Model {
-	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, copy: pbcopy, children: &atomic.Int64{}, openEditor: func(p string) *exec.Cmd { return editor.Command(p, nil) }, execProcess: tea.ExecProcess, openFiles: openWithSystem}
+	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, copy: pbcopy, children: &atomic.Int64{}, openEditor: func(p string) *exec.Cmd { return editor.Command(p, nil) }, execProcess: execOnTerminal, openFiles: openWithSystem}
 	m.toasts = toast.Stack{Shadow: layout.ShadowNearBlack} // 落ち影は他の板と同じ近黒 (glogx と同じ)
 	m.setSnap(be.Poll())
 	m.focusFirst()
@@ -184,7 +187,8 @@ func (m *Model) waitChanged() tea.Cmd {
 }
 
 func (m *Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{tick(), m.waitChanged()}
+	// 端末の既定の色は切り替えの暗転・明転が使う (switchfade.go。答えない端末では暗い背景を前提にする)
+	cmds := []tea.Cmd{tick(), m.waitChanged(), tea.RequestForegroundColor, tea.RequestBackgroundColor, m.arriveCmd()}
 	if m.set.open { // ライブアップグレードで開いたまま引き継いだ設定画面は、見る所を読み直す
 		cmds = append(cmds, m.fetchProcs(), m.measureDisk())
 	}
@@ -197,9 +201,13 @@ func (m *Model) Init() tea.Cmd {
 func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 	began := time.Now() // 観測 (framelog.go) は実時間で測る (m.now はテストが差し替える)
 	defer func() { m.flog.record(began, msgKind(msg), time.Since(began)) }()
+	var arrive tea.Cmd
+	if _, ok := msg.(tea.KeyPressMsg); ok { // 新版が旧版の 1 枚を出して待っている間に打った: 待たずに明るく戻す (打った結果が見えないままにしない)
+		arrive = m.beginArrive()
+	}
 	defer func() { // 選択が動いたら (キーでも、カードの移動でも) 枠を滑らせる
 		m.followSelection() // 枠の行き先はレーンの先頭で決まるので、枠より先に
-		c := tea.Batch(m.trackCursor(), m.trackSpin(), m.trackActivity())
+		c := tea.Batch(m.trackCursor(), m.trackSpin(), m.trackActivity(), arrive)
 		if m.trackLane() {
 			c = tea.Batch(c, m.startFrames())
 		}
@@ -212,7 +220,15 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 		m.flog.check()
 		return m, tea.Batch(tick(), m.poll(), m.fetchActivity())
 	case changedMsg:
-		return m, tea.Batch(m.waitChanged(), m.poll(), m.fetchActivity())
+		return m, tea.Batch(m.waitChanged(), m.poll(), m.fetchActivity(), m.beginArrive()) // 最初の読み込みが届いた: 新版の明転を始める
+	case arriveGoMsg:
+		return m, m.beginArrive()
+	case tea.ForegroundColorMsg:
+		m.fade.fg = toRGB(msg.Color)
+		return m, nil
+	case tea.BackgroundColorMsg:
+		m.fade.bg = toRGB(msg.Color)
+		return m, nil
 	case activityMsg:
 		m.onActivity(msg)
 		return m, nil
@@ -255,7 +271,7 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 		}
 		// 照合を待つ間に入力欄を開いた・終了の確認を出した・別のカードを選んだなら、端末を明け渡さない (書いている途中の画面を奪わない)。
 		// 引き出し・? の表を開いているだけなら明け渡す (戻れば同じ画面に戻る)
-		if m.mode != modeBoard || m.selected != msg.cardID {
+		if m.mode != modeBoard || m.selected != msg.cardID || !m.fade.leaving.IsZero() { // 切り替えの暗転に入ったら端末を渡さない
 			m.info("attach を取りやめた (待っている間に画面が変わった)")
 			return m, nil
 		}
@@ -298,6 +314,9 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 		m.stopping, m.stopErr = false, msg.err
 		return m, tea.Quit
 	case tea.KeyPressMsg:
+		if !m.fade.leaving.IsZero() { // 切り替えの暗転の間はキーを受けない (入れ替わる画面へ打った文字を迷子にしない)
+			return m, nil
+		}
 		if m.stopping { // 止め終えるまで待つ。ctrl+c だけは待たずに閉じる (止める処理は別プロセスの pro-con dispatcher --stop が続ける)
 			if msg.String() == "ctrl+c" {
 				return m, tea.Quit
