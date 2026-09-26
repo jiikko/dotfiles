@@ -15,7 +15,7 @@ import (
 // submitted は受付の箱の依頼を適用し、その結果を返す (dispatcher の代わり)。
 func submitted(t *testing.T, b *Backend) []store.Result {
 	t.Helper()
-	res, err := store.Apply(b.dir, time.Now())
+	res, err := store.Apply(b.dir, time.Now(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

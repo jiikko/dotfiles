@@ -60,4 +60,12 @@ PM が `plan --issue dotfiles#510` を付けても、`c.Repo` が空でないの
 
 ## 進捗
 
-(まだ無い)
+- 2026-09-26 (C-069): 実装した
+  - `backend.IssueRequest` に issue からの依頼の題名 (番号なし)・原文 (「issue #NNN の本文に書かれていることを進める」+ 補足)・紐づける issue を集めた。
+    `live.Apply` と模擬 (`fake.newRequest`) が同じものを使う (模擬だけが issue を紐づけ、題名に番号を付けていた二重実装をやめた)
+  - `store` の add が `Request.Issues` をカードに載せる。plan / close で同じ issue (repo と番号) を重ねない (`addIssues`)
+  - repo の検査の正本は `store.CheckRepo`。`card add --repo` と `card plan --issue` は箱に置く前に rc=2 で断り、
+    箱に手で置かれた依頼は `store.Apply` (dispatcher が `d.Repos` を渡す) が除ける。見るのは repo を新しく決めた依頼 (add / plan) だけで、
+    前から設定に無い repo のカードへの回答・削除は受ける。`store.Apply` は `repos` を引数に取る (nil なら見ない。テストと設定を持たない呼び手)
+  - `pm-guide.md` の役目 1 に「issue から来た依頼は issue の本文が依頼そのもの」を足した
+  - 変異 10 件 (issue を載せない / 原文を空 / 題名に番号 / repo の検査を外す / 設定を毎回読む / issue を重ねる 等) がすべて red

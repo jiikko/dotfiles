@@ -89,7 +89,7 @@ func planned(t *testing.T, dir string, n int) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := store.Apply(dir, t0); err != nil {
+	if _, err := store.Apply(dir, t0, nil); err != nil {
 		t.Fatal(err)
 	}
 	st, _ := store.Load(dir)
@@ -98,7 +98,7 @@ func planned(t *testing.T, dir string, n int) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := store.Apply(dir, t0); err != nil {
+	if _, err := store.Apply(dir, t0, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -427,7 +427,7 @@ func TestRepeatedRejectedLaunchGoesToHuman(t *testing.T) {
 	if _, err := store.Submit(dir, store.Request{Kind: "answer", CardID: "C-001", Answer: "- 直した"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Apply(dir, at); err != nil {
+	if _, err := store.Apply(dir, at, nil); err != nil {
 		t.Fatal(err)
 	}
 	if c := states(t, dir)["C-001"]; c.State != card.Planned || c.Rejects != 0 {
@@ -474,7 +474,7 @@ func TestStartRefusesLeftoverWorktree(t *testing.T) {
 	if _, err := store.Submit(dir, store.Request{Kind: "answer", CardID: "C-001", Answer: "消した"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Apply(dir, t0); err != nil {
+	if _, err := store.Apply(dir, t0, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d.Tick(context.Background()); err != nil {

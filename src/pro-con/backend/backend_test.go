@@ -37,3 +37,19 @@ func TestIssuePrompt(t *testing.T) {
 		t.Fatalf("epic の指示が違う:\n%s", e)
 	}
 }
+
+// issue から出した依頼の原文は、補足が無くても「issue の本文を進める」の 1 文で空にしない。補足は書いたまま後ろに置く。
+// 題名に番号を付けず (紐づけた issue から出る。issue 491)、issue を紐づける。epic は親 issue を紐づける (issue 511)。
+func TestIssueRequest(t *testing.T) {
+	title, req, issues := IssueRequest("dotfiles", IssueTarget{Number: 505, Title: "入れ替わりを直す", Path: "/r/issues/505.md"}, "")
+	if title != "入れ替わりを直す" || req != "issue #505 の本文に書かれていることを進める" || len(issues) != 1 || issues[0].Repo != "dotfiles" || issues[0].Number != 505 {
+		t.Fatalf("issue の依頼: %q %q %+v", title, req, issues)
+	}
+	if _, req, _ := IssueRequest("dotfiles", IssueTarget{Number: 505}, "急ぎで\n2 行目"); req != "issue #505 の本文に書かれていることを進める\n急ぎで\n2 行目" {
+		t.Fatalf("補足を書いたまま後ろに置かない: %q", req)
+	}
+	title, req, issues = IssueRequest("dotfiles", IssueTarget{Number: 415, Title: "設計", Path: "/r/e/415.md", Epic: "415", Children: []string{"/r/e/416.md"}}, "")
+	if title != "設計" || !strings.Contains(req, "epic 415 (親 issue #415)") || len(issues) != 1 || issues[0].Number != 415 {
+		t.Fatalf("epic の依頼: %q %q %+v", title, req, issues)
+	}
+}

@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -241,7 +242,8 @@ func Load(dir string) (State, error) {
 }
 
 // Apply は受付の箱の依頼を置いた順に記録へ適用する (dispatcher だけが呼ぶ)。記録を書いてから箱のファイルを片付ける。
-func Apply(dir string, now time.Time) ([]Result, error) {
+// repos は設定の repo (名前 → パス)。カードの repo をそれ以外にする依頼 (add / plan) は除ける (CheckRepo。issue 511)。nil なら repo を見ない (設定を持たない呼び手)。
+func Apply(dir string, now time.Time, repos map[string]string) ([]Result, error) {
 	st, err := Load(dir)
 	if err != nil {
 		return nil, err
@@ -312,7 +314,7 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 				}
 				var next State
 				if err == nil {
-					next, res.CardID, res.Note, err = apply(st, r, now)
+					next, res.CardID, res.Note, err = apply(st, r, now, repos)
 				}
 				if err == nil && r.Kind == KindAttachment { // 記録に当てられると決まってから移す (無いカードの置き場を作らない)
 					err = adoptAttachment(staged, r.File)
@@ -455,7 +457,7 @@ func newViolation(before, after []card.Card) error {
 
 // apply は依頼 1 件を st に当てた次の状態と、対象のカード ID と、記録に残す出来事 (無ければ空) を返す。
 // 規則か不変条件に反したらエラー (st は変えない)。
-func apply(st State, r Request, now time.Time) (State, string, string, error) {
+func apply(st State, r Request, now time.Time, repos map[string]string) (State, string, string, error) {
 	next := st
 	next.Cards = append([]card.Card(nil), st.Cards...)
 	var id, note string
@@ -467,7 +469,7 @@ func apply(st State, r Request, now time.Time) (State, string, string, error) {
 		id = fmt.Sprintf("C-%03d", next.NextID)
 		next.NextID++
 		c := card.Card{ID: id, ParentID: r.ParentID, Title: firstNonEmpty(r.Title, clip(r.Request, 40)), Request: r.Request, Prompt: r.Prompt, Repo: r.Repo,
-			Owner: firstNonEmpty(r.Owner, "PM"), State: card.Requested, Since: now, FromRequest: r.ID,
+			Issues: r.Issues, Owner: firstNonEmpty(r.Owner, "PM"), State: card.Requested, Since: now, FromRequest: r.ID,
 			History: []card.Event{{At: now, Text: "依頼を受けた"}}}
 		if p := indexOf(next.Cards, r.ParentID); r.ParentID != "" { // 親が無ければ不変条件 (親カードが存在しない) が弾く
 			c.History[0].Text = r.ParentID + " の追加オーダー (別件) から分けた"
@@ -555,11 +557,38 @@ func apply(st State, r Request, now time.Time) (State, string, string, error) {
 		}
 		next.Cards[i] = c
 	}
+	// 箱に手で置かれた依頼もここで止める (cardcmd の検査を通らない)。設定に無い repo のカードは PG を起動できず、dispatcher が起動の失敗を出し続ける。
+	// 見るのは repo を決めた依頼 (add / plan) だけ: 前から設定に無い repo のカードも、回答・削除は受ける
+	if i, j := indexOf(next.Cards, id), indexOf(st.Cards, id); repos != nil && i >= 0 && (j < 0 || st.Cards[j].Repo != next.Cards[i].Repo) {
+		if err := CheckRepo(repos, next.Cards[i].Repo); err != nil {
+			return st, id, "", fmt.Errorf("%s: %w", r.Kind, err)
+		}
+	}
 	// 件数ではなく「新しく出た違反」で判定する (ある違反を消しつつ別の違反を作る依頼を通さない)
 	if err := newViolation(st.Cards, next.Cards); err != nil {
 		return st, id, "", fmt.Errorf("%s: %w", r.Kind, err)
 	}
 	return next, id, note, nil
+}
+
+// addIssues は issue をカードに紐づける。紐づいている issue (同じ repo と番号) は重ねない
+// (issue の一覧から足したカードは add の時点で紐づいていて、PM が plan で同じ issue を付け直す。issue 511)。
+func addIssues(c *card.Card, refs []card.IssueRef) {
+	for _, r := range refs {
+		if !slices.ContainsFunc(c.Issues, func(o card.IssueRef) bool { return o.Repo == r.Repo && o.Number == r.Number }) {
+			c.Issues = append(c.Issues, r)
+		}
+	}
+}
+
+// CheckRepo はカードの repo が設定の repo (repos の名前) かを見る (issue 511)。空 (repo 未指定。PM が plan で決める) は通す。
+// パスは名前ではないので通さない (設定の repo はパスの末尾の名前で呼ぶ)。
+func CheckRepo(repos map[string]string, name string) error {
+	if _, ok := repos[name]; name == "" || ok {
+		return nil
+	}
+	names := slices.Sorted(maps.Keys(repos))
+	return fmt.Errorf("repo %q は設定に無い (repo は名前で書く: %s)", name, strings.Join(names, " / "))
 }
 
 // remove は削除の依頼 (issue 451)。依頼の列のカード (PG が付いていない) はすぐ記録から外す。それ以外は印 (DeleteAt) を付けるだけで、
@@ -614,7 +643,7 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		if err := card.CheckPoints(r.Points); err != nil { // 箱に手で置かれた依頼もここで止める (cardcmd の検査を通らない)
 			return err
 		}
-		c.Issues = append(c.Issues, r.Issues...)
+		addIssues(c, r.Issues)
 		if c.Repo == "" && len(r.Issues) > 0 {
 			// global で受けた依頼は、PM が分けた issue の repo で作業する (付けないと、dispatcher が起動先を決められずに止まる)
 			c.Repo = r.Issues[0].Repo
@@ -765,7 +794,7 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		if n := len(c.Pending()); n > 0 { // 未達のまま完了に埋めない (dispatcher がレビュー待ちから PG へ戻して届ける。issue 438)
 			return fmt.Errorf("PG へ届いていない追加オーダーが %d 件ある (dispatcher が PG へ戻して届ける。届いてからもう一度閉じる)", n)
 		}
-		c.Issues = append(c.Issues, r.Issues...)
+		addIssues(c, r.Issues)
 		if r.Ending != card.EndNone {
 			c.Ending = r.Ending
 		}

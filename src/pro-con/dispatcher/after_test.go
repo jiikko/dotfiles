@@ -18,7 +18,7 @@ func planAfter(t *testing.T, dir string, after ...string) {
 	if _, err := store.Submit(dir, store.Request{Kind: "add", Title: "後", Repo: "dotfiles"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Apply(dir, t0); err != nil {
+	if _, err := store.Apply(dir, t0, nil); err != nil {
 		t.Fatal(err)
 	}
 	st, _ := store.Load(dir)
@@ -26,7 +26,7 @@ func planAfter(t *testing.T, dir string, after ...string) {
 	if _, err := store.Submit(dir, store.Request{Kind: "plan", CardID: id, After: after, Issues: []card.IssueRef{{Repo: "dotfiles", Number: 1, Status: "open"}}}); err != nil {
 		t.Fatal(err)
 	}
-	res, err := store.Apply(dir, t0)
+	res, err := store.Apply(dir, t0, nil)
 	if err != nil || len(res) != 1 || res[0].Err != "" {
 		t.Fatalf("plan --after を適用できない: %+v %v", res, err)
 	}
