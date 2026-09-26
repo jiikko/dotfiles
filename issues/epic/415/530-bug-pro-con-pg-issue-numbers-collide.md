@@ -29,3 +29,19 @@
 - 変える判断: PG が issue をどう起こし・書き戻すか
 - 順番の理由: 539 (C-093) が同じ `Prompt` と `integrator-guide.md` に「PG は受け入れ条件に印を付ける・取り込みの係が done へ移す」を足している最中。PG の issue の書き方の指示を 2 枚で別々に書かないよう、539 の後にする
 - 経緯: 530 は C-083 に付けて積んだが、C-083 は 530 を実装しないまま閉じられた (進捗も実装の commit も無い)。C-095 で改めて積んだ
+
+## 進捗 (C-095)
+
+選んだ形: **PG は番号なしの仮の名前で起票し、取り込みの係が push の直前に採番する**。番号を払い出す口 (`pro-con card issue-number`) は、
+pro-con の外で採番する人・session から予約が見えない (その人は master の最大 + 1 を取る) ので、衝突が残る。採番と push の間を縮める方が構造で潰せる。
+
+- [x] PG が master と重ならない番号を取れる — PG は番号を取らない。`Prompt` に「`issues/<置き場>/new-<type>-<slug>.md` で起票し、見出しは `# new (<type>):`、
+  ファイル名で参照し、next/ で claim しない」を全カードに書いた (`dispatcher.DraftIssueName`。`TestPromptAsksDraftIssueNames`。行を外す変異で red を確認)
+- [x] 取り込みの係が改番して回らなくてよい — `scripts/issue_number_drafts.sh` が working tree と origin/master の最大 + 1 から振り、`git mv`・見出し・ファイル名での参照の張り替えまでする。
+  止める形 (ref が無い / 同名 2 か所 / 形が違う / 仮の名前の claim) では何も動かさない (`tests/issues/test_issue_number_drafts.sh`)
+- [x] 起票のしかたを 1 か所から書く — 形の正本は `Prompt` (`DraftIssueName`)。`integrator-guide.md` の役目 2 はそれを指し、同じ形と script 名を書いていることを
+  `TestIntegratorGuideNumbersDraftIssues` が見る。dotfiles の採番の入口 (`issues/README.md`) に 1 行
+- 残り: 本物の取り込みで仮の名前の起票を採番したことは未観測 (次に PG が起票したカードで見る)
+- 1 回目の `make test-changed` で `test_issue_number_drafts.sh` が fixture の誤り (`reset --hard` で空の `epic/415/` が消える) で落ちたのを直した。
+  script から origin/master を数える段・参照を張り替える段を外す変異で、それぞれ red を確認。
+  同じ run の `test_issue_links_valid.sh` の赤 (539 の `415-design` へのリンク) はこの worktree の古い master 由来で、origin/master では直っている

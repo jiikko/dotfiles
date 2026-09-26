@@ -17,6 +17,8 @@ git fetch origin
 
 （`ls` でディレクトリを列挙しない: `epic/<name>/` の 2 段を数え漏らす）
 
+- **push しない書き手 (pro-con の PG) は番号を取らず `new-<type>-<slug>.md` で起票し、取り込む側が push の直前に
+  `scripts/issue_number_drafts.sh` で番号を付ける**（issue 530。手順は `src/pro-con/integrator-guide.md` の役目 2）
 - **番号の一意性は `tests/issues/test_issue_numbers_unique.sh` が検査する**（`make test` に自動発見で含まれる）。
   2026-08-28 に 127 と 133 が同時に衝突していたのを人手で見つけたのが起点
 - 並行セッションと同時に採番するときは、番号を取る前に一声かける。衝突したら**参照の少ない側を空き番号へ寄せる**
