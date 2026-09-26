@@ -103,6 +103,9 @@ pathspec 規律は「混入」は防ぐが、**履歴を書き換える操作は
   起点を変えるなら、先に新しい起点の hash へ rebase を済ませてから、その hash へ soft reset する (rebase の後に古い起点の hash を使い続けない)。
   commit の前に `git diff --cached --stat <同じ hash>` と差分を読み、自分の作業と無関係な変更が無いことを確かめる
 - **zsh に渡す reflog の参照は `'HEAD@{1}'` のように引用符で包む** (`brace_ccl` 等の設定で波括弧が展開され、戻したつもりで戻らない)
+- **zsh で refspec (`sha:ref`) を変数から組むときは `${SHA}:refs/heads/master` と波括弧で囲む**。`$SHA:r...` の `:r` は
+  履歴修飾子 (拡張子を落とす) に化け、`<sha>efs/heads/master` という refspec になる (obaket retro 967, 2026-09-27)。
+  `:h` `:t` `:e` `:l` `:u` も修飾子になる (全ての英字ではないが、どれが化けるかを覚えるより常に `${VAR}` にする)
 
 ## やること / やらないこと
 
