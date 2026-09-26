@@ -28,3 +28,14 @@
 ## 関連
 
 - 487 (取り込みの係) / 471 (重い処理の直列化) / 468 (`--after`)
+
+## 経過
+
+### 2026-09-27 C-091 (PG): 指示書の役目 2 を書き換えた
+
+- `src/pro-con/integrator-guide.md` の役目 2 を「差分のパスを渡した `make test-changed`、写像に無いパスで止まったら repo の `make test`」にした
+- pro-con の段は重ねない: test_changed.sh の `src/*/*` の腕が `make -C src/<proj> lint` と `test` を別々に回す (`scripts/test_changed.sh` の末尾) ので、`src/pro-con` の `make test` / `make lint` は差分に src/pro-con が入れば既に回る
+- 指示書は dotfiles 以外の repo にも使う。dotfiles の root には `make lint` のターゲットが無く、`make test-changed` も dotfiles だけにあるので、「`make test-changed` の無い repo では従来どおり」を残した
+- `--after` の先のカードのパスは、master の merge commit から取る (`git log --merges -1 --format=%H --grep="'<ブランチ>'" origin/master` → `git diff --name-only <merge>^1 <merge>`)。
+  取り込みの係の merge の件名は `Merge branch 'worktree-pc-c-086' into HEAD` の形で、C-086 の merge (33dd6906) で 9 パスが取れることを確かめた。`pro-con card show` の差分は作業中のカードにしか出ないので使えない
+- 🚨 未了: 変えた後の 1 枚あたりの時間はまだ測っていない (取り込みの係が新しい指示書で動いてから、上の実測と同じ数え方で測って書き足す)
