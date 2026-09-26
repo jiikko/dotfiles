@@ -44,6 +44,17 @@
 - 確認は 1 つの仕組みで全部の欄に付ける (欄ごとに別の確認を作らない)
 - 見直しで見つけた不備 (キャレット・幅・貼り付け) は同じカードで直す
 
+## 日本語入力の処理が分かれている所 (同日のユーザーの指示「分散しているなら dotfiles/src の下に lib として切り出して」)
+
+- 編集は既に共通: `src/tuikit/lineedit` (pro-con の `m.line` とフォームの欄が使う)。貼り付けの改行・タブは空白に置き換える (`Line.Insert`) ので、貼り付けでは送られない
+- **分かれているのは、変換中の文字を出す位置 (キャレット) を画面の座標に直して端末のカーソルに置く所**: `pro-con/ui/view.go` の `caret` /
+  `pro-con/ui/answerform.go` の `caretX`・`caretY` と `tea.NewCursor` / `schedkeys/layout.go` の `frame.render`。
+  どれも「キャレットの前の文字の表示幅 + 欄の左端」を別々に数え、`tea.CursorBar` を別々に付けている
+- → **`src/tuikit` に切り出す** (例: `lineedit` に「キャレットまでの表示幅」、描く側に「欄の位置からカーソルを作る」1 つの関数)。3 か所をそれに寄せる。
+  全角の幅の数え方もそこに 1 つにする (`ansi.StringWidth` か `tuikit/termwidth` のどちらかに揃える)
+- 1 回に何文字もまとめて届くキー (日本語の確定は「日本語」がまとめて 1 つのキーで届く): `lineedit.Line.Key` が text をそのまま差し込むので pro-con では問題ない。
+  glogx (`tui.go`) は入力欄を持たないので、まとまった文字を 1 文字ずつのキーに分けている (別の目的なので寄せない)
+
 ## 確かめ方
 
 - 機械で確かめられる所: 各欄で、全角の文字を打った後のキャレットの位置・幅 / 貼り付けに改行が入っても送らない / Enter で確認が出る (テスト)
@@ -60,11 +71,13 @@
 
 - [ ] 上の表の送る欄すべてで、Enter → 確認 → y で送られ、それ以外で入力に戻り、書いた中身が残る
 - [ ] 各欄で全角の文字のキャレット・幅がずれず、貼り付けの改行で送られない (テスト)
+- [ ] キャレットを画面の座標に直す処理が `src/tuikit` の 1 か所にあり、pro-con の 2 か所と schedkeys がそれを使う
 - [ ] 確認に送る中身が出る
 - [ ] 人が確かめる: ユーザーの端末 (tmux の中) で、新しい依頼と回答の欄で日本語を変換して確定する Enter で、確認も送信も起きない (機械では IME の確定を作れないため)
 
 ## 関連ファイル
 
+- `src/tuikit/lineedit/lineedit.go` / `src/schedkeys/layout.go` (`frame.render`)
 - `src/pro-con/ui/model.go` (`submit` / `askConfirm`) / `src/pro-con/ui/answerform.go` (`submitForm`) / `src/pro-con/ui/view.go` (`caret`)
 
 ## 進捗
