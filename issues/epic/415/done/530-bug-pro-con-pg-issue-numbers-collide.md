@@ -2,7 +2,7 @@
 
 起票日: 2026-09-27
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 
@@ -41,7 +41,7 @@ pro-con の外で採番する人・session から予約が見えない (その�
   止める形 (ref が無い / 同名 2 か所 / 形が違う / 仮の名前の claim) では何も動かさない (`tests/issues/test_issue_number_drafts.sh`)
 - [x] 起票のしかたを 1 か所から書く — 形の正本は `Prompt` (`DraftIssueName`)。`integrator-guide.md` の役目 2 はそれを指し、同じ形と script 名を書いていることを
   `TestIntegratorGuideNumbersDraftIssues` が見る。dotfiles の採番の入口 (`issues/README.md`) に 1 行
-- 残り: 本物の取り込みで仮の名前の起票を採番したことは未観測 (次に PG が起票したカードで見る)
+- ~~残り: 本物の取り込みで仮の名前の起票を採番したことは未観測~~ → 観測した (2026-09-27、C-101 の取り込み): PG が `new-research-pro-con-endconversation-gate-resume-cache.md` で起票し、取り込みの係が merge の直後に `scripts/issue_number_drafts.sh` を回して 546 に改名・見出しと 525 の中の参照も張り替わった (93744d83)。issue の検査も通った
 - 1 回目の `make test-changed` で `test_issue_number_drafts.sh` が fixture の誤り (`reset --hard` で空の `epic/415/` が消える) で落ちたのを直した。
   script から origin/master を数える段・参照を張り替える段を外す変異で、それぞれ red を確認。
   同じ run の `test_issue_links_valid.sh` の赤 (539 の `415-design` へのリンク) はこの worktree の古い master 由来で、origin/master では直っている
