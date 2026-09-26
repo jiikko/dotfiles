@@ -191,6 +191,11 @@ func (m *Model) handleSettingsKey(k string) tea.Cmd {
 		return m.requestUpgrade()
 	case "s", "q", "esc":
 		return m.closeSettings()
+	case "y", "Y": // ログのタブ: y = 選んでいる行 / Y = その行の出来事の文だけ (ほかのタブでは何もしない)
+		if s.tab == tabLog {
+			m.yankLog(k == "Y")
+		}
+		return nil
 	case "tab", "shift+tab":
 		tabs := m.settingsTabs()
 		i := 0
