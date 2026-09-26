@@ -56,4 +56,12 @@ pro-con を使って開発する Claude (カードを積む・質問に答える
 
 ## 進捗
 
-(まだ無い)
+- 2026-09-26 (C-068): `pro-con help` を足した (`src/pro-con/helpcmd.go`)。話題は `terms` (用語) / `usage` (使い方) / `debug` (デバッグ)。
+  日本語の別名でも引ける。本文の正本は `src/pro-con/help/*.md` (embed)。役・レーン・人の番は画面の `?` の表と同じ正本
+  (`ui.RoleMeanings` / `card.State.Meaning` / `ui.HumansTurnMeaning`) から差し込み、md に写さない。役の表に「要約の係」を足した (`?` の表にも出る)
+  - README は冒頭で `pro-con help` を正本として指すだけにし、同じ文を書かない。`--help` の 1 行からも案内する
+  - 検査: `helpcmd_test.go` (一覧・知らない話題で rc=2・全話題が引けて目印が残らない・terms が正本と一致・usage / debug に書いた
+    `pro-con card` / `pro-con log` がパーサに通る)。目印の置き換えを壊す / rc を 0 にする mutation で赤くなるのを確かめた
+- skill `_claude/skills/pro-con/SKILL.md` (38 行)。`_claude/CLAUDE.md` のスキルファイル参照の表に 1 行、README に 1 行
+- headless の A-B: master へ載る前なので、skill を project の `.claude/skills` に写した隔離 dir と写さない dir で比べる (結果は下に追記)。
+  master へ載った後の本番の A-B (`~/.claude/skills/pro-con` の link 経由) は取り込みの後に回す

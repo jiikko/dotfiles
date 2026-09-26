@@ -167,4 +167,5 @@ agent はこの表に一部しか載っていないので、**agent を探すと
 | codexに書かせて, codexメインで実装, codexに作らせて, 設計から実装まで codex に丸投げ, codex-drive | `~/.claude/skills/codex-drive/SKILL.md` |
 | cross-review, クロスレビュー, 複数視点レビュー | `~/.claude/skills/cross-review/SKILL.md` |
 | レビューループ, review-loop, make review | `~/.claude/skills/review-loop/SKILL.md` |
+| pro-con, カード, PM, PG, レーン, dispatcher, dogfooding (pro-con を外から動かす・調べる) | `~/.claude/skills/pro-con/SKILL.md` (正本は `pro-con help <話題>`) |
 | 視認性, 色被り, UXレビュー | `~/.claude/skills/ux-visibility-review/SKILL.md` |

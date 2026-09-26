@@ -4,6 +4,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -76,7 +77,7 @@ func legendRows(inner int) []string {
 		explain(s.Meaning())
 	}
 	rows = append(rows, "", humanTag(humanMark+"の番")) // 印の意味 (452)。どれが人の番かの正本は card.Turn
-	explain(humansTurnMeaning)
+	explain(HumansTurnMeaning)
 	rows = append(rows, "", sgrBold+"右上の 3pt = 見積もりのポイント"+sgrReset) // カードの右上の数 (490)。意味の正本は card.PointsMeaning
 	for _, m := range card.PointsMeaning {
 		explain(m)
@@ -89,6 +90,9 @@ func legendRows(inner int) []string {
 	return rows
 }
 
+// RoleMeanings は役と仕事の組の写し (pro-con help terms が並べる。正本は roleMeanings)。
+func RoleMeanings() [][2]string { return slices.Clone(roleMeanings) }
+
 // roleMeanings は pro-con のプロセスの役と、その仕事 (? の表に出す。役の名前は pro-con ps の Role と揃える)。
 var roleMeanings = [][2]string{
 	{"dispatcher", "書き手はこれだけ。受付の箱の依頼を記録に適用し、PG・PM・取り込みの係を起こす・再開する・止める。利用枠を見て PG の数を絞り、落ちた PG の見張り (watchdog) と、起動時の復旧もする。新版のビルドができたら区切りで自分を入れ替える (PG は止めない)"},
@@ -97,9 +101,11 @@ var roleMeanings = [][2]string{
 	{"PG", "カード 1 枚につき 1 つ。自分の worktree とブランチで実装し、時間のかかるコマンドはテストの係に頼み、終えたらレビューに出す。master へは push しない"},
 	{"取り込みの係", "レビューの列のカードの diff とテストを確かめ、よければ master へ取り込んで閉じる。衝突やテストの失敗は PG へ差し戻し、自分で片付けられないものは人に回す"},
 	{"見張り", "dispatcher とは別のプロセスで、読むだけ。PG のブランチどうし・master との取り込みの衝突と、テストの順番待ちの長さを見て、見つけたことを知らせる"},
-	{"テストの係", "dispatcher の中の係。PG が頼んだ make test などを PG の worktree で 1 本ずつ順に走らせ、結果を渡して PG を再開する (失敗は haiku が要約する)"},
+	{"テストの係", "dispatcher の中の係。PG が頼んだ make test などを PG の worktree で 1 本ずつ順に走らせ、結果を渡して PG を再開する (失敗は要約の係が要約する)"},
+	{"要約の係", "dispatcher がその場で起こす短い haiku。テストの係の失敗の要約と btw の答えを書く。印を持たないので pro-con ps には出ない"},
 	{"画面", "カードを映し、人の依頼・回答・差し戻しを受付の箱に置く。持ち主の画面の最後の 1 つを閉じると dispatcher と PG を止める (--join は止めない・--view は読むだけ)"},
 }
 
-const humansTurnMeaning = "人が操作しないと進まない (権限の確認・落ち続けて止めた PG・PM か取り込みの係が人に回したもの・" +
+// HumansTurnMeaning は人の番の意味 (? の表と pro-con help terms が出す)。
+const HumansTurnMeaning = "人が操作しないと進まない (権限の確認・落ち続けて止めた PG・PM か取り込みの係が人に回したもの・" +
 	"起こさない設定の役の仕事)。黄の字はこれだけに使う"
