@@ -39,7 +39,7 @@
 - [443](done/443-feat-pro-con-screen-relay.md) — 画面の中継 `pro-con screen` (人間の画面に今出ているものを外から読む)。**443 で解消** (2026-09-25)
 - [444](done/444-feat-pro-con-event-log.md) — 出来事の記録 `pro-con log` (dispatcher の判断を構造化して残し、外から読む)。**444 で解消** (2026-09-25。画面の側の出来事は 445 へ)
 - [481](done/481-feat-pro-con-shared-read-write-screen.md) — 共同で読み書きする画面 `pro-con --join` (閉じても dispatcher と PG を止めない)。**481 で解消** (2026-09-26。カード C-039)
-- [496](496-feat-pro-con-show-other-screens-selection.md) — ほかの画面が選んでいるカードを薄い印で出す (481 から切り出し。未着手)
+- [496](pending/496-feat-pro-con-show-other-screens-selection.md) — ほかの画面が選んでいるカードを薄い印で出す (481 から切り出し。保留: 使うのは人 1 人と Claude だけ)
 - [445](done/445-risk-pro-con-viewer-read-only-guarantee.md) — 読み取りだけであることの担保と、見せる範囲。**445 で解消** (2026-09-25。カード C-009: 画面の出来事を dispatcher 経由で events.jsonl へ・`--view` の案内から断る操作を外す・読む口は socket の逃がし先の権限を直さない)
 
 ## 関連
