@@ -108,8 +108,18 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 		}
 		return 0
 	}
-	// 🚨 lock は claude を引く (子を起こす) より先に受け取る。入れ替え (505) で引き継いだ lock は、受け取れなければ取り直す
-	// (別の dispatcher が取っていれば ErrRunning で抜ける = 2 つ立たない)
+	// SIGHUP: 端末・tmux のペインを閉じた (既定の動作で死ぬと実行を残す)。
+	// 🚨 claude を引くより先に受け口を作る: 入れ替え (505) の直後に来た信号で、PG を止める処理を通らずに死ぬ窓を狭める
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer stop()
+	// claude を引けなければ lock も取らない (状態の置き場に何も書かない)。入れ替えで引き継いだ lock の fd は main の頭
+	// (dispatcher.GuardInheritedLock) で exec で閉じる形に戻してあるので、ここで起こす子 (claude --version) へは渡らない
+	cl, err := resolveClaude(context.Background(), e2e)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", err)
+		return 1
+	}
+	// 入れ替え (505) で引き継いだ lock は、受け取れなければ取り直す (別の dispatcher が取っていれば ErrRunning で抜ける = 2 つ立たない)
 	lock, adoptErr := dispatcher.AdoptLock(dir)
 	if lock == nil {
 		if lock, err = dispatcher.TakeLock(dir); err != nil {
@@ -118,15 +128,6 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 		}
 	}
 	defer func() { lock.Release() }()
-	// SIGHUP: 端末・tmux のペインを閉じた (既定の動作で死ぬと実行を残す)。
-	// 🚨 claude を引くより先に受け口を作る: 入れ替え (505) の直後に来た信号で、PG を止める処理を通らずに死ぬ窓を狭める
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
-	defer stop()
-	cl, err := resolveClaude(context.Background(), e2e)
-	if err != nil {
-		_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", err)
-		return 1
-	}
 	// 入れ替えで起きた dispatcher は、止める印・人が止めた印を起動のときの形で扱わない (前のプロセス像の続き。
 	// 入れ替えの隙に --stop が置いた印を捨てると、頼んだ --stop が時間切れまで待つ・人が止めた印を外すと画面が起こし直す)
 	resumed := upgradedFrom != ""
