@@ -28,3 +28,10 @@ pro-con のもろい作りの監査 (460。issue 457〜466) と、ユーザー�
 - 17 秒で rc=0 の make test を、何が走ったかの出力で確かめた: `verify-execution-not-just-exit-code.md` どおりに機能した
 - 見張りのスクリプトが自分のカードの追加でも起きる: その場の道具の局所的な改善 (提案しない)
 - 3 (重い処理の直列化): 仕組みの issue (471) に切り出した。規範としては 1 と同じ形 (並べる前に共有する資源を数える) なので 1 に含める
+
+## 決着 (2026-09-26、カード C-076)
+
+ユーザーの決定: 「codex (gpt-6-astra) に聞いて、意義があると判断されたら追記を許可する」。判定と扱い:
+
+- 1 (並べる前に変える判断・不変条件を書き、同じものを変える組は順番に) → **採用**。`_claude/rules/parallel-write-agents-need-worktree-isolation.md` のルールに足した
+- 2 (既にある欄を使う前に受け側で意味を確かめる) → **採用**。`_claude/rules/survey-receiver-guards-before-passing-new-values.md` の発動点とルールに足した

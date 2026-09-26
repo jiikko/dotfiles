@@ -24,3 +24,12 @@ session dotfiles-4c。macOS のカーネルパニックの原因調査 (500) か
 - 3 → 却下: `~/.claude/CLAUDE.md`「Before deleting or overwriting, look at the target」が既にある。守れなかっただけ
 - 4 → 記憶に保存済み (delegate-implementation-details)。PM の段で止める pm-guide の書き換えは、ユーザーに提案中 (役目 4 の「どちらの案を採るか」が広い)
 - 5 → 却下: 局所 (スクリプトの検査が止めた)
+
+## 決着 (2026-09-26、カード C-076)
+
+ユーザーの決定: 提案 1・2 は「codex (gpt-6-astra) に聞いて、意義があると判断されたら追記を許可する」、提案 4 の pm-guide は「狭める」。
+
+- 1 (余裕・枯渇の時期も今のレートで言う) → **採用**。`_claude/rules/perf-claims-need-measurement.md` の発動点とルールに足した
+- 2 (squash / reset の起点を hash で固定する) → **採用**。435 の提案 1 とまとめて `_claude/rules/commit-with-pathspec.md` の履歴操作の節に足した
+- 4 (実装の選択を人に中継しない) → pm-guide の役目 4 を狭めた (「pro-con: pm-guide の役目 4 を狭める」の commit)。実装の選択は、依頼の原文か issue が名指ししていなければ PM が決めるか PG に任せる
+- 3・5 は起票時点で却下のまま
