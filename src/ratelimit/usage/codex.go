@@ -49,6 +49,12 @@ const codexRateLimitsID = 2
 // 処理中の要求への応答を捨てる (実測 2026-07-31。パイプで 3 行流して即 EOF にすると
 // initialize 応答すら返らない)。stdin を開いたまま stdout を待ち、応答受信後に ctx cancel で
 // プロセスを終了させる。
+//
+// 未確認リスク: ctx が timeout したとき kill されるのは app-server 本体だけで、その子孫は残りうる
+// (subproc.CommandContext はプロセスグループを作らない)。通常の経路では app-server は自分の子を
+// 片付けて終わる (実測 2026-09-26: 取得を 4 回回して孤児・残存とも 0)。timeout 経路で子孫が残る
+// 報告が出たら、subproc に「グループごと止める」起動口を足すことを検討する (git の対話入力のように
+// 端末の前景グループに居る必要があるコマンドには使えないので、全体の既定にはしない)。
 func FetchCodex(ctx context.Context) ([]Window, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -70,6 +76,11 @@ func FetchCodex(ctx context.Context) ([]Window, error) {
 		cancel()
 		_ = cmd.Wait()
 	}()
+	// ctx が終わったら読み口を閉じて Scan を返させる。WaitDelay がパイプを強制的に閉じるのは Wait の中
+	// だけで、Scan は Wait より前にいる。app-server の子孫が stdout の書き込み端を握ったまま応答しないと、
+	// kill しても Scan はその子孫が終わるまで返らなかった (実測: timeout 2 秒で 20 秒)。
+	stop := context.AfterFunc(ctx, func() { _ = stdout.Close() })
+	defer stop()
 	if _, err := io.WriteString(stdin, codexRequests); err != nil {
 		return nil, fmt.Errorf("codex app-server への書き込み失敗: %w", err)
 	}
@@ -81,6 +92,10 @@ func FetchCodex(ctx context.Context) ([]Window, error) {
 		if found {
 			return ws, err
 		}
+	}
+	// 読み口を閉じた (= ctx が終わった) ときの読み取りエラーは timeout として返す
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("codex app-server が応答しないまま打ち切った: %w", err)
 	}
 	if err := sc.Err(); err != nil {
 		return nil, fmt.Errorf("codex app-server 出力の読み取り失敗: %w", err)

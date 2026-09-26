@@ -2,9 +2,12 @@ package usage
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -169,6 +172,34 @@ func TestFetchCodexNoResponse(t *testing.T) {
 	defer cancel()
 	if _, err := FetchCodex(ctx); err == nil {
 		t.Error("無応答終了でエラーにならなかった")
+	}
+}
+
+func TestFetchCodexReturnsWhenDescendantHoldsStdout(t *testing.T) {
+	// 子孫が stdout の書き込み端を握ったまま応答しない server。ctx が終わったら、子孫の終了を
+	// 待たずに timeout として返ること (以前は子孫が終わるまで Scan が返らなかった)。
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "descendant.pid")
+	writeStub(t, dir, "codex", "/bin/sleep 60 &\necho $! > "+pidFile+"\nexec /bin/sleep 60\n")
+	t.Setenv("PATH", dir)
+	t.Cleanup(func() {
+		if b, err := os.ReadFile(pidFile); err == nil {
+			if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil {
+				_ = syscall.Kill(pid, syscall.SIGKILL)
+			}
+		}
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { _, err := FetchCodex(ctx); done <- err }()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("err = %v, want context.DeadlineExceeded を包んだエラー", err)
+		}
+	case <-time.After(30 * time.Second): // hang guard (子孫の sleep 60 より十分短い)
+		t.Fatal("ctx が終わっても FetchCodex が返らない (子孫が stdout を握っている)")
 	}
 }
 
