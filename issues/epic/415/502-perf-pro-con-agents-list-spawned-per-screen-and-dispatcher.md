@@ -53,4 +53,11 @@ session の一覧 `claude agents --json` (node のプロセス) を、dispatcher
   テスト: `TestRefreshUsesFreshSeenFromDispatcher` (新しい / 古い) と `TestTickPublishesSeenForScreens`。`bin/mutate-verify` で
   画面が記録を使わない / 古さを見ない / tick が書かない / 外の session の出力も載せる / 出力の末尾を切らない の 5 本が red
 - [ ] 実機で 15 秒間の起動数を測り直す (画面と dispatcher が新しいビルドで起動し直した後。見込みは dispatcher の分だけ = 画面の数によらず約 0.33 回/秒。未実測)
+- [x] 敵対的レビュー (opus、読み取り専用 1 体ずつ 3 周。502〜504 まとめて):
+  1 周目 P2 (中継: 書かない描き直しを「続いている」に数えて操作の中継が 1 秒遅れる) と P3 (seen.json の時刻が未来 / dispatcher が一覧を取れない tick で画面が前の一覧を
+  理由なしに使う / テストの差し替えの競合 / 一覧の出所を区別しないテスト / 取れない tick の検査が無い) を直した (commit「pro-con: 502〜504 の敵対的レビューの指摘を直す」)。
+  2 周目 P3 (知らせの読み直しは一覧を取り直さないので、記録が古くなっても前の一覧を使う / Seen の時刻が一覧を取る前の時刻) を直した
+  (commit「pro-con: 知らせの読み直しでも古くなった dispatcher の一覧を使い続けない (502)」)
+- 記録のみ (2 周目 P3。元からある形): dispatcher も画面も一覧を取れないと、画面は一覧を捨ててから取り直すので PG の様子が消えるのに、理由の文は
+  「PG の様子は古いまま」になる (`live.go` の `refresh`)。前は dispatcher の一覧で最長 15 秒埋まったが、今は dispatcher の失敗 1 回で入る
 - 残り: `AttachCommand` (attach の直前の照合) は今も画面が自分で一覧を取る (操作のたびの 1 回で、3 秒ごとではないので残す)

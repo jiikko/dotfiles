@@ -50,6 +50,7 @@ type Backend struct {
 	done    chan struct{}
 	tcache  *TranscriptCache  // transcript の読み取り結果 (大きさ・更新時刻が変わっていなければ読み直さない)
 	paths   map[string]string // sessionId → transcript のパス
+	ssSeen  bool              // 今の一覧 (ss) は dispatcher が書いた store.Seen から来た (Start の goroutine だけが触る)
 	// ss / ssErr は最後に取った session の一覧 (dispatcher に知らされた読み直しは一覧を取り直さない。Refresh の goroutine だけが触る)
 	ss       []agents.Session
 	ssErr    error
@@ -505,9 +506,9 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 	fresh := seenErr == nil && !seen.At.IsZero() && seen.Err == "" && age >= 0 && age <= seenFresh
 	switch {
 	case fresh:
-		b.ss, b.ssErr, b.listed = seen.Sessions, nil, true
-	case withList || !b.listed:
-		b.ss, b.ssErr, b.listed = nil, nil, true
+		b.ss, b.ssErr, b.listed, b.ssSeen = seen.Sessions, nil, true, true
+	case withList || !b.listed || b.ssSeen: // 持っている一覧が dispatcher の記録から来たものなら、古くなった時点で (知らせの読み直しでも) 取り直す
+		b.ss, b.ssErr, b.listed, b.ssSeen = nil, nil, true, false
 		b.ss, b.ssErr = b.list(ctx)
 	}
 	ss, err := b.ss, b.ssErr

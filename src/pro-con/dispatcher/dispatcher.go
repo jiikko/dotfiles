@@ -212,7 +212,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	}
 	ss, err := d.List(ctx)
 	if err != nil {
-		_ = store.SaveSeen(d.Dir, store.Seen{At: now, Err: err.Error()}) // 画面に前の一覧を使わせない (自分で読んで、取れなければ理由を出す)
+		_ = store.SaveSeen(d.Dir, store.Seen{At: d.Now(), Err: err.Error()}) // 画面に前の一覧を使わせない (自分で読んで、取れなければ理由を出す)
 		return append(notes, ev(eventlog.KindError, "", "", "session の一覧を取れない (登録と割り当ては次の Tick へ): "+err.Error())), nil
 	}
 	n, warn, err := d.register(now, ss)
@@ -223,7 +223,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 		notes = append(notes, ev(eventlog.KindRegister, "", "", fmt.Sprintf("PG の session を %d 本登録した", n)))
 	}
 	notes = append(notes, warn...)
-	d.publishSeen(now, ss) // 登録の後 (この tick で登録した PG の出力も載せる)
+	d.publishSeen(d.Now(), ss) // 登録の後 (この tick で登録した PG の出力も載せる)。時刻は書く時点 (一覧の取得は最長 10 秒かかり、tick の頭の時刻では書いた時点で古い)
 	if err := d.trackDead(now, ss); err != nil {
 		return notes, err
 	}

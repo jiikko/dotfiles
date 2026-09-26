@@ -1007,3 +1007,37 @@ func TestRefreshUsesFreshSeenFromDispatcher(t *testing.T) {
 		}
 	}
 }
+
+// dispatcher の記録から一覧を使っていた画面は、記録が古くなった (一覧を取れなかった印が書かれた) ら、知らせの読み直し
+// (一覧を取り直さない方) でも自分で取り直す。前の一覧を黙って使い続けない。
+func TestNotifiedRefreshRelistsWhenSeenGoesStale(t *testing.T) {
+	b, _ := testBackend(t, sessions[:1], nil)
+	lists := 0
+	b.list = func(context.Context) ([]agents.Session, error) {
+		lists++
+		return nil, errors.New("claude agents が終わらない")
+	}
+	runningCard(t, b, "C-001", "bbbbbbbb")
+	if err := store.SaveSeen(b.dir, store.Seen{At: b.now(), Sessions: sessions[:1]}); err != nil {
+		t.Fatal(err)
+	}
+	b.refresh(context.Background(), true)
+	if lists != 0 || len(b.Poll().Consumers) != 1 {
+		t.Fatalf("前提: dispatcher の一覧を使う (一覧 %d 回・PG %d)", lists, len(b.Poll().Consumers))
+	}
+	if err := store.SaveSeen(b.dir, store.Seen{At: b.now(), Err: "dispatcher も取れない"}); err != nil {
+		t.Fatal(err)
+	}
+	b.refresh(context.Background(), false) // dispatcher からの知らせの読み直し
+	s := b.Poll()
+	if lists != 1 {
+		t.Fatalf("記録が古くなったのに自分で取り直さない (一覧 %d 回)", lists)
+	}
+	found := false
+	for _, v := range s.Violations {
+		found = found || strings.Contains(v.Reason, "session の一覧を取れない")
+	}
+	if !found || len(s.Consumers) != 0 {
+		t.Fatalf("前の一覧を黙って使い続けた: PG %+v / 理由 %+v", s.Consumers, s.Violations)
+	}
+}
