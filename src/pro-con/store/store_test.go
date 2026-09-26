@@ -67,6 +67,31 @@ func setState(t *testing.T, dir, id string, s card.State) {
 }
 
 // 依頼の流れ: add → plan → (dispatcher が作業中へ) → ask → answer (分解済みへ戻る) / review → close。どの時点でも不変条件を破らない。
+// 選択肢つきの ask は問いを記録に持ち、質問の文にも選択肢を並べる。回答で質問待ちを離れたら問いも消える。
+// 箱に手で置かれた誤った問い (選択肢 1 個) は記録に入れない (issue 493)。
+func TestAskWithChoicesKeepsQuestionsUntilAnswered(t *testing.T) {
+	dir := t.TempDir()
+	submit(t, dir, Request{Kind: "add", Title: "色を直す"})
+	applyAll(t, dir)
+	setState(t, dir, "C-001", card.Running)
+	submit(t, dir, Request{Kind: "ask", CardID: "C-001", Questions: []card.Question{{Question: "色", Options: []card.Option{{Label: "赤"}}}}})
+	if res := applyAll(t, dir); len(res) != 1 || res[0].Err == "" {
+		t.Fatalf("選択肢 1 個の問いを通した: %+v", res)
+	}
+	qs := []card.Question{{Question: "色", Options: []card.Option{{Label: "赤", Recommended: true}, {Label: "青"}}}}
+	submit(t, dir, Request{Kind: "ask", CardID: "C-001", Question: "1 点", Questions: qs})
+	applyAll(t, dir)
+	c := cardOf(t, dir, "C-001")
+	if c.State != card.Waiting || len(c.Wait.Questions) != 1 || !strings.Contains(c.Wait.Question, "- 赤 (推奨)") {
+		t.Fatalf("ask の後: %v %q %+v", c.State, c.Wait.Question, c.Wait.Questions)
+	}
+	submit(t, dir, Request{Kind: "answer", CardID: "C-001", Answer: "1. 色: 青"})
+	applyAll(t, dir)
+	if c := cardOf(t, dir, "C-001"); c.Wait.Questions != nil || c.Resume != "1. 色: 青" {
+		t.Fatalf("回答の後に問いが残る / 回答が渡らない: %+v %q", c.Wait, c.Resume)
+	}
+}
+
 func TestLifecycle(t *testing.T) {
 	dir := t.TempDir()
 	submit(t, dir, Request{Kind: "add", Title: "色を直す", Request: "statusline の色が見えづらい", Repo: "dotfiles"})

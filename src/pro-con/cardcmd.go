@@ -6,6 +6,7 @@ package main
 
 import (
 	_ "embed"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -28,6 +29,9 @@ var cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を置
                                                  タスクに分けてキューに積んだ (--after のカードが完了するまで起動しない。--points は見積もり)
 ` + card.PointsMeaningText("                                                   ") + `
   ask <カード> <質問>                            PG が質問して turn を終える (AskUserQuestion は使わない)
+  ask <カード> [<前置き>] --json '{"questions":[...]}'
+                                                 選択肢つきの質問。形は AskUserQuestion と同じ (問い 1〜4 個・選択肢 2〜4 個。
+                                                 options に "recommended":true で推奨)。画面は radio / checkbox の回答フォームにする
   answer <カード> <回答> [--from <人間|PM>]      質問待ちのカードへの回答
   run <カード> -- <コマンド>...                  PG がテストの係にコマンドの実行を頼んで turn を終える (結果は再開のときに届く)
   attach <カード> <ファイル> [--note <一言>]      PG が作業の証拠 (画面の見た目・コマンドの出力) をカードに添付する
@@ -216,7 +220,7 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 	var r store.Request
 	r.Kind = op
 	var issues issueList
-	var ending string
+	var ending, askJSON string
 	switch op {
 	case "add":
 		fs.StringVar(&r.Title, "title", "", "")
@@ -237,7 +241,9 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 		fs.StringVar(&ending, "ending", "", "")
 	case "move":
 		fs.StringVar(&r.Repo, "repo", "", "")
-	case "ask", "review", "rework":
+	case "ask":
+		fs.StringVar(&askJSON, "json", "", "")
+	case "review", "rework":
 	default:
 		return r, wait, fmt.Errorf("未知の操作 %q", op)
 	}
@@ -251,6 +257,9 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 	}
 	pos = append(pos, fs.Args()...)
 	need := map[string]int{"add": 0, "plan": 1, "review": 1, "close": 1, "delete": 1, "ask": 2, "answer": 2, "rework": 2, "move": 2, "handoff": 2}[op]
+	if op == "ask" && askJSON != "" && len(pos) == 1 { // 選択肢つきなら前置きは省ける
+		pos = append(pos, "")
+	}
 	if len(pos) != need {
 		return r, wait, fmt.Errorf("%s は位置引数が %d 個 (受け取ったのは %d 個)", op, need, len(pos))
 	}
@@ -264,6 +273,13 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 		}
 	case "ask":
 		r.Question = pos[1]
+		if askJSON != "" {
+			qs, err := parseAskJSON(askJSON)
+			if err != nil {
+				return r, wait, err
+			}
+			r.Questions = qs
+		}
 	case "answer":
 		r.Answer = pos[1]
 	case "rework":
@@ -287,6 +303,18 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 	}
 	r.Issues = issues
 	return r, wait, nil
+}
+
+// parseAskJSON は ask --json の問い (AskUserQuestion の入力と同じ {"questions":[...]}) を読んで検査する。
+// 知らない項目 (AskUserQuestion の annotations 等) は無視する: PG が AskUserQuestion の形を写しても通す。
+func parseAskJSON(s string) ([]card.Question, error) {
+	var in struct {
+		Questions []card.Question `json:"questions"`
+	}
+	if err := json.Unmarshal([]byte(s), &in); err != nil {
+		return nil, fmt.Errorf("--json は {\"questions\":[...]} の JSON: %w", err)
+	}
+	return card.NormalizeQuestions(in.Questions)
 }
 
 // liveDir は本物のモードの状態の置き場 (store と、pro-con が起動した session の記録の置き場)。

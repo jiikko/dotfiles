@@ -46,14 +46,16 @@ func TestCardCommandRejectsBadUsage(t *testing.T) {
 	for _, args := range [][]string{
 		{},
 		{"nosuch"},
-		{"add"},                                  // 題名も原文も無い
-		{"ask", "C-001"},                         // 質問が無い
-		{"plan", "C-001", "--issue", "dotfiles"}, // 番号が無い
-		{"close", "C-001", "--ending", "done"},   // 未知の終わり方
-		{"review"},                               // カードが無い
-		{"delete"},                               // カードが無い
-		{"move", "C-001"},                        // 向きが無い
-		{"move", "C-001", "left"},                // 未知の向き
+		{"add"},                         // 題名も原文も無い
+		{"ask", "C-001"},                // 質問が無い
+		{"ask", "C-001", "--json", "{"}, // 読めない JSON
+		{"ask", "C-001", "--json", `{"questions":[{"question":"q","options":[{"label":"A"}]}]}`}, // 選択肢が 1 個
+		{"plan", "C-001", "--issue", "dotfiles"},                                                 // 番号が無い
+		{"close", "C-001", "--ending", "done"},                                                   // 未知の終わり方
+		{"review"},                                                                               // カードが無い
+		{"delete"},                                                                               // カードが無い
+		{"move", "C-001"},                                                                        // 向きが無い
+		{"move", "C-001", "left"},                                                                // 未知の向き
 	} {
 		dir := t.TempDir()
 		if rc, _, errOut := card_(t, dir, args...); rc != 2 || errOut == "" {
@@ -83,6 +85,27 @@ func TestCardCommandAskAnswer(t *testing.T) {
 		if err != nil || got.Kind != tc.want.Kind || got.CardID != tc.want.CardID || got.Question != tc.want.Question ||
 			got.Answer != tc.want.Answer || got.Rework != tc.want.Rework || got.Text != tc.want.Text || got.From != tc.want.From && tc.want.From != "" || got.Ending != tc.want.Ending {
 			t.Fatalf("%q: %+v %v (期待 %+v)", tc.args, got, err, tc.want)
+		}
+	}
+}
+
+// 選択肢つきの ask は --json で AskUserQuestion と同じ形を受ける。前置きは省ける。知らない項目は無視する (issue 493)。
+func TestCardCommandAskWithChoices(t *testing.T) {
+	js := `{"questions":[{"question":"形は","header":"形","multiSelect":true,"options":[{"label":"丸","recommended":true},{"label":"角","description":"四角"}]}],"annotations":{}}`
+	for _, tc := range []struct {
+		args []string
+		pre  string
+	}{
+		{[]string{"ask", "C-001", "--json", js}, ""},
+		{[]string{"ask", "C-001", "決めてください", "--json", js}, "決めてください"},
+	} {
+		got, _, err := parseCardWait(tc.args)
+		if err != nil || got.Question != tc.pre || len(got.Questions) != 1 {
+			t.Fatalf("%q: %+v %v", tc.args, got, err)
+		}
+		q := got.Questions[0]
+		if q.Header != "形" || !q.MultiSelect || len(q.Options) != 2 || !q.Options[0].Recommended || q.Options[1].Description != "四角" {
+			t.Fatalf("%q: 問いが読めていない: %+v", tc.args, q)
 		}
 	}
 }

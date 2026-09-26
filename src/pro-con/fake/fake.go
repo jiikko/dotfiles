@@ -30,6 +30,7 @@ type script struct {
 	lines    []string // 1 刻みに 1 行ずつ進捗として出る
 	then     string   // 台本を出し切った後: "review" / "question" / "" (何もしない = 進捗が止まる)
 	question string
+	choices  []card.Question // 選択肢つきの質問 (issue 493。画面の r で回答フォームが開く)
 	// exec があれば、lines はそのコマンドの出力として出る (最初の行の前に実行を始め、出し切ったら終える)
 	exec     card.Exec
 	execDone bool
@@ -122,7 +123,21 @@ func (s *Sim) seed() {
 	s.scripts["C-006"] = &script{lines: []string{"e2e: 12/40", "e2e: 26/40", "e2e: 40/40 ok"}, then: "review",
 		exec: card.Exec{Command: "make e2e-device", Resource: "device", Expected: 3 * time.Minute}}
 	s.scripts["C-003"] = &script{lines: []string{"Read bin/tmux-toast"}, then: "question",
-		question: "重なったときは縦に積みますか？ 古い方を消しますか？"}
+		question: "重なったときの出し方を決めてください。",
+		choices: []card.Question{
+			{Question: "toast が重なったときの出し方", Header: "重なり", Options: []card.Option{
+				{Label: "縦に積む", Description: "新しいものを下に足す。古いものは時間で消える", Recommended: true},
+				{Label: "古い方を消す", Description: "常に 1 つだけ出す"},
+			}},
+			{Question: "積むときに出す数の上限", Header: "上限", Options: []card.Option{
+				{Label: "3 つ", Recommended: true}, {Label: "5 つ"}, {Label: "上限なし", Description: "画面の高さまで積む"},
+			}},
+			{Question: "一緒に直すもの", Header: "範囲", MultiSelect: true, Options: []card.Option{
+				{Label: "表示の秒数を設定にする", Recommended: true},
+				{Label: "クリックで消す"},
+				{Label: "tmux の status line にも出す", Description: "toast を見逃したときのため"},
+			}},
+		}}
 	s.scripts["C-004"] = &script{lines: []string{"test: 120/480", "test: 480/480 ok"}, then: "review",
 		exec: card.Exec{Command: "make test", Expected: 2 * time.Minute}}
 	s.scripts["C-007"] = &script{lines: []string{"direnv を遅延ロードに変更", "zprof: 88ms"}, then: "review"}
@@ -235,7 +250,11 @@ func (s *Sim) stepProgress() {
 			s.releaseResources(c.ID)
 			s.setState(c, card.Review, "PG が終えてブランチへ push した。レビュー待ち")
 		case "question":
-			c.Wait = card.Wait{Kind: card.WaitQuestion, Question: sc.question}
+			w, err := card.AskWait(sc.question, sc.choices)
+			if err != nil { // 台本の誤り (テストが拾う)。質問の文だけで続ける
+				w = card.Wait{Kind: card.WaitQuestion, Question: sc.question + " (" + err.Error() + ")"}
+			}
+			c.Wait = w
 			c.Log = append(c.Log, "質問を書いて終了した")
 			sc.then = ""
 			s.setState(c, card.Waiting, "PG が質問した")

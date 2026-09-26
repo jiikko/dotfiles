@@ -16,6 +16,8 @@ func (m *Model) relayState() map[string]string {
 		mode = "input"
 	case modeConfirm:
 		mode = "confirm"
+	case modeForm:
+		mode = "form"
 	case modeBoard:
 	}
 	st := map[string]string{"mode": mode, "tab": m.tab, "selected": m.selected}
