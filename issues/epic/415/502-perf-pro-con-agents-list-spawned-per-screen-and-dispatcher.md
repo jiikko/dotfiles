@@ -60,4 +60,8 @@ session の一覧 `claude agents --json` (node のプロセス) を、dispatcher
   (commit「pro-con: 知らせの読み直しでも古くなった dispatcher の一覧を使い続けない (502)」)
 - 記録のみ (2 周目 P3。元からある形): dispatcher も画面も一覧を取れないと、画面は一覧を捨ててから取り直すので PG の様子が消えるのに、理由の文は
   「PG の様子は古いまま」になる (`live.go` の `refresh`)。前は dispatcher の一覧で最長 15 秒埋まったが、今は dispatcher の失敗 1 回で入る
+- [x] 敵対的レビュー 3 周目: P1 / P2 なし。P3-1 (Seen の時刻を書く時点にした変更をテストが守っていない) は `TestTickPublishesSeenAtWriteTime` で固定
+  (変異: tick の頭の時刻に戻す → red)。修正はテストだけなので周回はここで閉じた
+- 記録のみ (3 周目 P3-2。頻度は未確認): tick の後半の処理と次の tick の頭までの間が 15 秒を超えると、箱の依頼を適用した直後の知らせの読み直しで
+  記録がもう古く、画面が claude agents (最長 10 秒) を待ってからカードを出す。1 回で止まり、正しさは壊れない
 - 残り: `AttachCommand` (attach の直前の照合) は今も画面が自分で一覧を取る (操作のたびの 1 回で、3 秒ごとではないので残す)

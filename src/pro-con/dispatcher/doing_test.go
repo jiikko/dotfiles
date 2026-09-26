@@ -274,3 +274,21 @@ func TestTickPublishesSeenErrorWhenListFails(t *testing.T) {
 		t.Fatalf("取れなかった tick の記録: at %v / err %q / %d 本 (期待: 今の時刻・理由あり・0 本)", seen.At, seen.Err, len(seen.Sessions))
 	}
 }
+
+// Seen の時刻は書く時点 (tick の頭ではない)。一覧の取得は最長 10 秒かかるので、頭の時刻で書くと書いた時点で古い。
+func TestTickPublishesSeenAtWriteTime(t *testing.T) {
+	r := newDoingRig(t)
+	start := time.Date(2026, 9, 26, 10, 0, 0, 0, time.UTC)
+	calls := 0
+	r.d.Now = func() time.Time { calls++; return start.Add(time.Duration(calls) * time.Second) } // 呼ぶたびに 1 秒進む時計
+	if _, err := r.d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	seen, err := store.LoadSeen(r.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !seen.At.After(start.Add(time.Second)) { // tick の頭で読んだ 1 回目 (start+1s) より後
+		t.Fatalf("Seen の時刻 %v が tick の頭の時刻 (%v) のまま", seen.At, start.Add(time.Second))
+	}
+}
