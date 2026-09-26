@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -22,7 +23,7 @@ func TestCaretFollowsInputForIME(t *testing.T) {
 		t.Fatal("入力欄を開いてもカーソルを置かない")
 	}
 	row := ansi.Strip(lines[c.Y])
-	head, _, _ := m.inputParts()
+	head, _, _ := m.inputField()
 	if !strings.Contains(row, "日本語ab") || !strings.HasPrefix(row, ansi.Strip(head)) {
 		t.Fatalf("カーソルの行 %d が入力欄ではない: %q", c.Y, row)
 	}
@@ -37,5 +38,29 @@ func TestCaretFollowsInputForIME(t *testing.T) {
 	press(m, "esc")
 	if m.View().Cursor != nil {
 		t.Fatal("入力欄を閉じてもカーソルが残る")
+	}
+}
+
+// どの送る欄でも、全角の文字を欄の幅より長く書いても、端末のカーソルは画面の中で、書いた最後の文字の直後に居る
+// (前を切って欄に収める。カーソルが欄の外や文字とずれた所に居ると、IME の変換中の文字もそこに出る。issue 517)。
+func TestCaretStaysAfterLastCharForLongText(t *testing.T) {
+	for _, f := range sendFields() {
+		t.Run(f.name, func(t *testing.T) {
+			m, _ := f.open(t)
+			m.Update(tea.PasteMsg{Content: strings.Repeat("日本語の長い文", 30)})
+			typeText(m, "おわり")
+			v := m.View()
+			c := v.Cursor
+			if c == nil {
+				t.Fatal("書く欄に居るのに端末のカーソルが無い")
+			}
+			if c.X >= m.width {
+				t.Fatalf("カーソルが画面の外 (%d / 幅 %d)", c.X, m.width)
+			}
+			row := ansi.Strip(strings.Split(v.Content, "\n")[c.Y])
+			if before := ansi.Truncate(row, c.X, ""); !strings.HasSuffix(before, "おわり") {
+				t.Fatalf("カーソル (%d) の直前が書いた最後の文字でない: %q", c.X, before)
+			}
+		})
 	}
 }

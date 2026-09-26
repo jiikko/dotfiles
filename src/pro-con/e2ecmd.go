@@ -195,8 +195,8 @@ func e2eScenario(root string, stdout io.Writer) error {
 		return e2eTmux(root, append([]string{"send-keys", "-t", "0"}, keys...)...).Run()
 	}
 	text := func(s string) error { return e2eTmux(root, "send-keys", "-t", "0", "-l", s).Run() }
-	step("依頼を出す")
-	if err := errors.Join(send("n"), text("e2e の通しの確認"), send("Enter")); err != nil {
+	step("依頼を出す") // enter は送る前の確認を出し、y で送る (issue 517)
+	if err := errors.Join(send("n"), text("e2e の通しの確認"), send("Enter", "y")); err != nil {
 		return err
 	}
 	step("PG の質問を待つ")
@@ -204,7 +204,7 @@ func e2eScenario(root string, stdout io.Writer) error {
 		return err
 	}
 	step("回答する (選択はカードについて質問待ちの列へ移っている)")
-	if err := errors.Join(send("r"), text("続けてください"), send("Enter")); err != nil {
+	if err := errors.Join(send("r"), text("続けてください"), send("Enter", "y")); err != nil {
 		return err
 	}
 	step("テストの係の実行とレビューを待つ")
