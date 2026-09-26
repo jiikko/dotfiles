@@ -59,18 +59,24 @@ func (m *Model) trackMoves() tea.Cmd {
 	for c := range m.visible() {
 		byID[c.ID] = *c
 	}
+	var started []*move
 	for id, to := range cur {
 		from, ok := m.prevSlots[id]
 		if !ok || from.col == to.col {
 			continue
 		}
 		mv := &move{c: byID[id], from: from, to: to, start: now}
-		mv.fromX, mv.fromY = m.slotXY(from)
 		if old, ok := m.moves[id]; ok { // 着地前にまた動いた: 今いる位置から向かい直す
 			mv.fromX, mv.fromY = old.pos(m, now)
 			mv.from = old.from
+		} else {
+			started = append(started, mv)
 		}
 		m.moves[id] = mv
+	}
+	// 始点は移動元に残す点線の枠の位置。自分の枠が並びに入ってから数える (入る前だとレーンの枚数が 1 少なく、下端までスクロールしたレーンで 1 段ずれる)
+	for _, mv := range started {
+		mv.fromX, mv.fromY = m.itemXY(mv.from.col, mv.from.row)
 	}
 	m.prevSlots = cur
 	m.pruneMoves(now)
@@ -96,6 +102,7 @@ func (m *Model) resetSlots() {
 	m.cursor.valid = false // 配置が丸ごと変わった (タブの切り替え等): 枠は滑らせずに置き直す
 	m.lane.shown = -1      // レーンの色も移さずに点け直す
 	m.bump = bump{}        // 揺れていたレーンは別の配置のもの
+	m.tops = nil           // スクロールも別の配置のもの
 }
 
 func (m *Model) pruneMoves(now time.Time) {
@@ -126,8 +133,15 @@ func (m *Model) onFrame() tea.Cmd {
 
 // slotXY は slot の画面上の位置 (ボードの左上からの桁と行)。枠の内側の左上。
 func (m *Model) slotXY(s slot) (float64, float64) {
+	return m.itemXY(s.col, m.itemRow(s.col, len(m.lanes()[s.col]), s.row))
+}
+
+// itemXY はレーン col の並びの item 段目 (点線の枠も数える。lanescroll.go の laneOrder) の画面上の位置。スクロールした先頭を引く。
+// 移動元の点線の枠は、移動元の段 (from.row) に差し込まれるので item = from.row。
+func (m *Model) itemXY(col, item int) (float64, float64) {
 	w := m.colWidth()
-	return float64(s.col*(w+len(colSep)) + 1), float64(1 + cardGap + s.row*perCardLines)
+	row := item - m.laneTop(col, m.laneItems(col, len(m.lanes()[col])))
+	return float64(col*(w+len(colSep)) + 1), float64(1 + cardGap + row*perCardLines)
 }
 
 func (mv *move) pos(m *Model, now time.Time) (float64, float64) {
@@ -142,10 +156,11 @@ func (m *Model) overlayMoves(board []string) []string {
 		return board
 	}
 	now := m.now()
-	inner := m.colWidth() - 2
+	lanes := m.lanes()
 	for _, mv := range m.moves {
 		x, y := mv.pos(m, now)
 		col, row := int(x+0.5), int(y+0.5)
+		inner := m.cardWidth(m.laneItems(mv.to.col, len(lanes[mv.to.col]))) // 移動先で空けて待つ場所と同じ幅
 		for i, l := range m.cardCell(mv.c, inner) {
 			if r := row + i; r >= 0 && r < len(board) {
 				board[r] = splice(board[r], col, inner, l)

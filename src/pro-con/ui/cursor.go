@@ -85,7 +85,8 @@ func (m *Model) cursorGliding(now time.Time) bool {
 	return m.cursor.valid && !m.cursor.start.IsZero() && anim.Elapsed(m.cursor.start, now, cursorDuration) < 1
 }
 
-// overlayCursor はボードの行に枠を重ねる。行き先のカードが列の表示に収まっていない (「… 他 N 枚」の先) なら出さない。
+// overlayCursor はボードの行に枠を重ねる。行き先のカードがレーンの見えている範囲の外 (スクロールの先) なら出さない。
+// スクロールバーを出しているレーンでは枠をカードの幅まで狭め、バーを枠の外に残す (lanescroll.go)。
 func (m *Model) overlayCursor(board []string) []string {
 	if !m.cursor.valid {
 		return board
@@ -93,13 +94,14 @@ func (m *Model) overlayCursor(board []string) []string {
 	if _, ok := m.cursorTarget(); !ok {
 		return board
 	}
-	shown := m.shownCards()
-	if n := len(m.lanes()[m.cursor.to.col]); n > shown && m.cursor.to.row >= shown-1 {
+	lanes := m.lanes()
+	n := m.laneItems(m.cursor.to.col, len(lanes[m.cursor.to.col]))
+	if r := m.slotRow(m.cursor.to, lanes); r < 0 || r >= m.shownCards() {
 		return board
 	}
 	x, y := m.cursorPos(m.now())
 	left, row := int(x+0.5)-1, int(y+0.5) // slotXY は枠の内側の左上。枠は列の外枠に重ねる
-	w := m.colWidth()
+	w := m.cardWidth(n) + 2
 	border := fg(frameColor) + sgrBold
 	top, bottom := row-cardGap, row+cardLines
 	// 滑っている途中も枠を丸ごと描く (2026-09-25 にユーザーが見本 tmp/pro-con-cursor-sample.py の B を選んだ。空き行と外枠の上だけに描くと、途中で枠がほぼ消えてちらつく)。

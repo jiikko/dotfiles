@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -410,21 +409,21 @@ func (m *Model) columnBlock(col int, s card.State, cs []*card.Card, w, shown int
 		title += humanTag(mark)
 	}
 	out := []string{boxTop(border, title, w)}
-	cells, total := m.columnCells(col, cs, inner, shown)
+	total := m.laneItems(col, len(cs))
+	top := m.laneTop(col, total)
+	cells := m.columnCells(col, cs, m.cardWidth(total), top, shown)
 	// カードの上下に 1 行ずつ空ける (空行・カード・空行・…・空行)。選択の枠と移動中のカードの枠はこの空行の上に描くので、
 	// 隣のカードを隠さない (2026-09-24 のユーザー提案)
 	var body []string
-	for r := range cells {
+	for _, cell := range cells {
 		body = append(body, "")
-		if r == shown-1 && total > shown {
-			body = append(body, fit(sgrDim+fmt.Sprintf("… 他 %d 枚", total-shown+1)+sgrReset, inner))
-			break
-		}
-		body = append(body, cells[r]...)
+		body = append(body, cell...)
 	}
 	for len(body) < shown*perCardLines+cardGap {
 		body = append(body, "")
 	}
+	// 入り切らないレーンは右端にスクロールバー (lanescroll.go)。行で数えて渡す (1 枚 perCardLines 行、末尾の空き cardGap 行)
+	body = layout.Scrollbar(body, inner, total*perCardLines+cardGap, top*perCardLines, true)
 	for _, l := range body {
 		out = append(out, boxLine(border, l, w))
 	}
@@ -451,18 +450,11 @@ const (
 
 // columnCells は列の中身を 1 枚 cardLines 行のセルで並べる。移動中のカード (motion.go) は、移動先では空けて待ち、
 // 移動元には点線の枠を残す (どちらも着地まで。周りのカードが途中で詰まってずれないように)。
-// 組むのは先頭の limit 個だけで、total は点線の枠も含めた全体の数 (見えないカードの文字列を毎コマ組まない。issue 494)。
-func (m *Model) columnCells(col int, cs []*card.Card, inner, limit int) (cells [][]string, total int) {
-	items := make([]int, len(cs)) // cs の添字。-1 は移動元に残す点線の枠
-	for i := range items {
-		items[i] = i
-	}
-	for _, mv := range m.moves {
-		if mv.from.col == col {
-			items = slices.Insert(items, min(mv.from.row, len(items)), -1)
-		}
-	}
-	for _, i := range items[:min(limit, len(items))] {
+// 組むのは top 番目からの limit 個だけ (見えないカードの文字列を毎コマ組まない。issue 494)。並びは laneOrder (lanescroll.go)。
+func (m *Model) columnCells(col int, cs []*card.Card, inner, top, limit int) (cells [][]string) {
+	items := m.laneOrder(col, len(cs))
+	top = min(top, len(items))
+	for _, i := range items[top:min(top+limit, len(items))] {
 		if i < 0 {
 			cells = append(cells, ghostLines(inner))
 			continue
@@ -477,7 +469,7 @@ func (m *Model) columnCells(col int, cs []*card.Card, inner, limit int) (cells [
 		}
 		cells = append(cells, m.cardCell(*cs[i], inner))
 	}
-	return cells, len(items)
+	return cells
 }
 
 // cardCell はカード 1 枚 (タイトル titleLines 行 + バッジ 1 行)。地の色はカードごとに固有 (cardColor)。列を移っても同じ色なので目で追える。
