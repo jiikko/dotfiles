@@ -2,7 +2,10 @@
 
 起票日: 2026-09-26
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [523](523-design-asm-fast-paths.md) (2026-09-26 に 415 から移した)
+
+> **起点**: arm64 の NEON 版は remote の `claude/glogx-fastdispwidth-asm-7gv00g` に既にある (実測は 523 の本文)。一から書かず、これを起点にする。
+> Phase 1 (共通の境界へ寄せる) は [524](524-refactor-route-terminal-width-through-termwidth.md) に切り出した
 
 ## 背景
 
