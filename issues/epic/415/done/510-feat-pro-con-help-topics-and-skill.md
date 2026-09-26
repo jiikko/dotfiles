@@ -2,7 +2,7 @@
 
 起票日: 2026-09-26
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 
@@ -40,7 +40,7 @@ pro-con を使って開発する Claude (カードを積む・質問に答える
 - [x] `pro-con help` が話題の一覧を出し、各話題が引ける。知らない話題は一覧を出して rc≠0
 - [x] 用語・使い方・デバッグの中身が README と二重になっていない
 - [x] skill が 60 行以内で、コマンドの一覧・状態の置き場のパスを写していない (`pro-con help` を指す)
-- [ ] 新しいセッションで skill が読み込まれることを headless で確かめる (`claude -p --model haiku` に「pro-con の PG とは何か」を聞き、skill を読んだ答えが返るか。
+- [x] 新しいセッションで skill が読み込まれることを headless で確かめる (`claude -p --model haiku` に「pro-con の PG とは何か」を聞き、skill を読んだ答えが返るか。
       読み込まれない cwd でも 1 回回して A-B にする。dotfiles の `.claude/rules/worktree-per-session.md` の手順)
 - [x] `_claude/CLAUDE.md` の表と README に入口がある
 
@@ -68,4 +68,9 @@ pro-con を使って開発する Claude (カードを積む・質問に答える
   - 写した dir: `Skill {"skill":"pro-con"}` を呼び、「PM が分けたカード 1 枚ずつを自分の worktree で実装する役割」と答えた (`skill: pro-con`)
   - 写さない dir: 「定義が見当たらない」(`skill: なし`)
   - 🚨 `--allowedTools` は可変長で後ろの質問文を飲み込む (`Input must be provided …` で空振りした)。質問は stdin で渡す
-- 残り: master へ載った後の本番の A-B (`~/.claude/skills/pro-con` の link 経由)。取り込みの後に同じ質問で回す
+- 本番の A-B (2026-09-27、`~/.claude/skills/pro-con` の link 経由。空の一時 dir から `claude -p --model haiku --output-format stream-json`、質問は stdin):
+  - A (`--allowedTools Skill Read`) を 3 回: 2 回は `Skill` の道具を使わず `Read` で `~/.claude/skills/pro-con/SKILL.md` を読み、「カード 1 枚ずつを自分の worktree で実装する役割」と答えた。
+    1 回 (質問に「1 文で答えて」を付けた回) は読まずに「SKILL.md を見ないと答えられない。確認してよいか」と聞き返した
+  - B (`--disallowedTools Skill`、Read は可): 読まずに skill の説明文だけから推して「PG は Program / Project のマネージャー役」と誤った
+  - 記録だけ: A の 2 回とも PG を略語と思い込んで展開を作った (「Programmer」「Product Generator」)。役割の説明は合っている。skill に略語の説明は無い
+
