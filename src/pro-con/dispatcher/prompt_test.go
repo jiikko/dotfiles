@@ -109,8 +109,15 @@ func TestBusyAndIdlePGStayPGTurn(t *testing.T) {
 		r := newCrashRig(t)
 		r.be(t, name)
 		r.tick(t)
-		if c := states(t, r.dir)["C-001"]; c.State != card.Running || c.Turn(card.Roles{}) != card.TurnPG {
+		c := states(t, r.dir)["C-001"]
+		if c.State != card.Running || c.Turn(card.Roles{}) != card.TurnPG {
 			t.Fatalf("%s の PG の列を変えた: %v %+v", name, c.State, c.Wait)
+		}
+		// 最後の列だけでは足りない: 一度入って戻った形 (出来事と通知が出る) も弾く
+		for _, e := range c.History {
+			if strings.Contains(e.Text, "入力待ち") {
+				t.Fatalf("%s の PG を一度入力待ちへ移した: %q", name, e.Text)
+			}
 		}
 	}
 }
