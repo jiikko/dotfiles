@@ -158,3 +158,22 @@ func TestAnswerFormRendersAndPlacesCaret(t *testing.T) {
 		t.Fatalf("カーソルの行 %d が補足の欄でない: %q", c.Y, row)
 	}
 }
+
+// 「その他」に空白だけ書いても選んだことにしない: 印は付かず、1 つ選ぶ問いの選択も変えない (表示と送る答えを同じ基準で決める)。
+func TestAnswerFormBlankOtherIsNotChosen(t *testing.T) {
+	be := newFormSpy()
+	m := openForm(t, be)
+	pressForm(m, "j", "j") // 問 1 のその他
+	typeText(m, " ")
+	pressForm(m, "tab", "j", "j") // 問 2 のその他
+	typeText(m, "  ")
+	for _, l := range m.form.formLines(76) {
+		if s := ansi.Strip(l.text); strings.Contains(s, "その他") && (strings.Contains(s, "(•)") || strings.Contains(s, "[x]")) {
+			t.Fatalf("空白だけのその他に選んだ印が付いた: %q", s)
+		}
+	}
+	press(m, "enter")
+	if a := sentAnswer(t, be); a.Text != "1. 形: 丸\n2. 直すもの: 色" {
+		t.Fatalf("空白だけのその他で答えが変わった: %q", a.Text)
+	}
+}

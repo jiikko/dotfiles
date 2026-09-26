@@ -790,7 +790,10 @@ func insertByTime(h []card.Event, e card.Event) []card.Event {
 	return slices.Insert(slices.Clip(h), i, e)
 }
 
+// clip は履歴・題名に入れる 1 行にする: 改行と空白の並びを 1 つの空白に潰してから n 字で切る
+// (選択肢つきの質問・フォームの答えは複数行。そのまま入れると card show の履歴の行が崩れる。issue 493)。
 func clip(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
 	r := []rune(s)
 	if len(r) <= n {
 		return s

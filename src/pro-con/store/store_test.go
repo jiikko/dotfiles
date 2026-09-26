@@ -85,6 +85,11 @@ func TestAskWithChoicesKeepsQuestionsUntilAnswered(t *testing.T) {
 	if c.State != card.Waiting || len(c.Wait.Questions) != 1 || !strings.Contains(c.Wait.Question, "- 赤 (推奨)") {
 		t.Fatalf("ask の後: %v %q %+v", c.State, c.Wait.Question, c.Wait.Questions)
 	}
+	for _, e := range c.History { // 履歴は 1 行 (複数行の質問を入れると card show の履歴の行が崩れる)
+		if strings.Contains(e.Text, "\n") {
+			t.Fatalf("履歴に改行が入った: %q", e.Text)
+		}
+	}
 	submit(t, dir, Request{Kind: "answer", CardID: "C-001", Answer: "1. 色: 青"})
 	applyAll(t, dir)
 	if c := cardOf(t, dir, "C-001"); c.Wait.Questions != nil || c.Resume != "1. 色: 青" {

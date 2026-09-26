@@ -114,10 +114,14 @@ func (f *answerForm) toggle() {
 // typed は書く欄が変わった後。「その他」に書き始めたら、1 つ選ぶ問いではその他を選んだことにする。
 func (f *answerForm) typed() {
 	r := f.row()
-	if r.q < len(f.qs) && !f.qs[r.q].MultiSelect && !f.other[r.q].Empty() {
+	if r.q < len(f.qs) && !f.qs[r.q].MultiSelect && f.otherFilled(r.q) {
 		f.radio[r.q] = len(f.qs[r.q].Options)
 	}
 }
+
+// otherFilled は問い q の「その他」に書いてあるか (空白だけは書いていない)。選んだ印・送る答え・未回答の判定はどれもこれで決める
+// (表示と送る答えで基準がずれると、[x] に見えるのに答えから消える)。
+func (f *answerForm) otherFilled(q int) bool { return strings.TrimSpace(f.other[q].String()) != "" }
 
 func (f *answerForm) picks() []card.Pick {
 	out := make([]card.Pick, len(f.qs))
@@ -281,11 +285,7 @@ func (f *answerForm) optionLines(q, j int, on bool, inner int) []formLine {
 	var chosen, rec bool
 	if other {
 		name = "その他 (自由に書く)"
-		if f.qs[q].MultiSelect {
-			chosen = !f.other[q].Empty()
-		} else {
-			chosen = f.radio[q] == j
-		}
+		chosen = f.otherFilled(q) && (f.qs[q].MultiSelect || f.radio[q] == j)
 	} else {
 		name, desc, rec = opts[j].Label, opts[j].Description, opts[j].Recommended
 		if f.qs[q].MultiSelect {
