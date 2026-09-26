@@ -5,6 +5,7 @@ import (
 
 	"pro-con/diskuse"
 	"pro-con/eventlog"
+	"pro-con/store"
 )
 
 // 設定画面 (issue 456) の「見る所」と「変える所」の境界。
@@ -51,14 +52,22 @@ type Config struct {
 	LimitFrom string // dispatcher が使っている上限の出どころ ("設定" / "起動の引数"。1 度も回っていなければ空)
 	Pending   int    // 受付の箱で適用を待っている設定の依頼の数
 	Err       string // settings.json を読めない理由 (dispatcher は --limit で動く)
+	// Review は設定の敵対的レビューの担い手 (空なら設定なし)。ReviewNow / ReviewFrom は dispatcher が使っている担い手とその出どころ
+	// (設定なしなら config.toml か既定。1 度も回っていなければ空)。Codex / CodexErr は PG に渡す codex の実体と、解けなかった理由 (514)
+	Review, ReviewNow, ReviewFrom string
+	Codex, CodexErr               string
 }
 
-// 変える所の名前 (SetConfig.Key。store.SettingLimit / SettingPM と同じ語)。
+// 変える所の名前 (SetConfig.Key)。
 const (
-	ConfigLimit = "limit"
-	ConfigPM    = "pm"
-	ConfigUsage = "usage" // チェックボックス (1 = 枠で絞る / 0 = 絞らない。SetConfig の Value は on / off)
+	ConfigLimit  = store.SettingLimit
+	ConfigPM     = store.SettingPM
+	ConfigUsage  = store.SettingUsage // チェックボックス (1 = 枠で絞る / 0 = 絞らない。SetConfig の Value は on / off)
+	ConfigReview = store.SettingReview
 )
+
+// ReviewModes は review に置ける値 (先頭が既定)。
+var ReviewModes = store.ReviewModes
 
 // SetConfig は設定を変える依頼 (pro-con config set と同じ。受付の箱に置き、dispatcher の次の Tick から効く)。
 type SetConfig struct {

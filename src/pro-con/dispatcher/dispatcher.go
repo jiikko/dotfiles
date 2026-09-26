@@ -136,8 +136,16 @@ type Dispatcher struct {
 	// IntegratorOff は取り込みの係を起動も再開もしない (--integrator=off / 設定 integrator = "off")。レビューの列のカードはそのまま置く
 	IntegratorGuide string
 	IntegratorOff   bool
-	runs            map[string]*roleRun // 役ごとの、メモリだけに持つ様子 (role.go)
-	recent          []runRecord         // テストの係が実際に走らせた最近の結果 (失敗の一次判定の材料。triage.go)
+	// ReviewDefault は config.toml の review (issue 514。空なら claude)。設定 review が勝つ (review.go)
+	ReviewDefault string
+	// ResolveCodex は codex の実体を解く (本物は ResolveCodex)。担い手が初めて codex になった Tick に 1 回だけ呼ぶ (review.go)。nil なら解かない (e2e・テスト)
+	ResolveCodex func(context.Context) (Tool, error)
+	// Codex は解いた codex の実体。解けなければ zero で、CodexErr が理由 (PG は Claude で代わりに回す)。codexTried は 1 度解きに行った
+	Codex      Tool
+	CodexErr   string
+	codexTried bool
+	runs       map[string]*roleRun // 役ごとの、メモリだけに持つ様子 (role.go)
+	recent     []runRecord         // テストの係が実際に走らせた最近の結果 (失敗の一次判定の材料。triage.go)
 	// Exists は PM の作業ディレクトリが在るかを見る (nil なら os.Stat)。テストが差し替える
 	Exists func(dir string) bool
 
@@ -204,6 +212,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	notes = append(notes, applied(res)...)
 	notes = append(notes, d.forget(res)...)
 	d.loadSettings()
+	notes = append(notes, d.resolveCodex(ctx)...)
 	if len(res) > 0 && d.Changed != nil { // 箱の依頼を適用した直後に知らせる (一覧の取得 (最大 10 秒) を待たせずにカードを画面へ出す)
 		d.Changed()
 	}
@@ -928,7 +937,7 @@ func (d *Dispatcher) prepare(c card.Card, now time.Time, ss []agents.Session, re
 		}
 	}
 	return "起動", func(ctx context.Context) (string, error) {
-		return d.Launch.Start(ctx, path, card.SessionName(c), Prompt(c))
+		return d.Launch.Start(ctx, path, card.SessionName(c), Prompt(c, d.review()))
 	}, nil
 }
 
@@ -997,9 +1006,19 @@ func adopt(c card.Card, repoPath string, ss []agents.Session, reg []live.Owned) 
 	return "", false
 }
 
-// mark は起動・再開を始める印を記録に書く (結果を待つ前に)。
+// mark は起動・再開を始める印を記録に書く (結果を待つ前に)。起動なら、指示 (Prompt) に書く敵対的レビューの担い手も残す
+// (🚨 prepare の閉包と同じ Tick の中で呼ぶ = 同じ設定を読む。間で設定を読み直さない)。
 func (d *Dispatcher) mark(id string, now time.Time, how string) error {
-	return d.update(id, func(c *card.Card) { c.Launching, c.LaunchedAt = how, now })
+	by := ""
+	if how == "起動" {
+		by = d.review().Mode
+	}
+	return d.update(id, func(c *card.Card) {
+		c.Launching, c.LaunchedAt = how, now
+		if by != "" {
+			c.ReviewBy = by
+		}
+	})
 }
 
 // settle は起動・再開が済んだカードを作業中にする。
@@ -1043,7 +1062,8 @@ func (d *Dispatcher) update(id string, f func(*card.Card)) error {
 }
 
 // Prompt は PG に渡す最初の指示。PG の規律 (426 の決定 2・3) を前に置き、依頼の中身を後ろに置く。
-func Prompt(c card.Card) string {
+// rv は敵対的レビューの担い手 (issue 514。起動のときの値。起動した後に設定を変えても、動いている PG の指示は変わらない)。
+func Prompt(c card.Card, rv Review) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "あなたは pro-con の PG (作業担当) です。担当はカード %s「%s」。\n", c.ID, c.Title)
 	b.WriteString("規律:\n")
@@ -1058,6 +1078,7 @@ func Prompt(c card.Card) string {
 		"TUI は隔離した tmux (`-L`) で動かして `tmux capture-pane -e -p` を .ans に書く (色つきの文字)。画像が要るなら vhs の Screenshot で .png。"+
 		"`screencapture` は bg では壁紙しか写らないので使わない)\n", c.ID)
 	b.WriteString("- run を頼んだら、その結果が届くまで ask しない (質問は結果を受け取ってからにする。先に ask すると、頼んだ実行が取り消される)\n")
+	b.WriteString(rv.pgRule(c.ID))
 	fmt.Fprintf(&b, "- 終えたら `pro-con card review %s` を実行してから turn を終える\n", c.ID)
 	if len(c.Issues) > 0 {
 		var refs []string

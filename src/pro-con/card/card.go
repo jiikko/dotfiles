@@ -325,6 +325,9 @@ type Card struct {
 	Launching string `json:",omitempty"`
 	// LaunchedAt は dispatcher が最後に起動・再開を始めた時刻。これより前に始まった session は、このカードの PG として取り込まない
 	LaunchedAt time.Time `json:",omitzero"`
+	// ReviewBy は最後に PG を起動したときの敵対的レビューの担い手 (issue 514。store.ReviewModes)。PG の指示は起動のときに決まるので、
+	// 取り込みの係は今の設定ではなくこれで確かめる (claude で起動した PG を、後で codex に変えた設定で差し戻さない)
+	ReviewBy string `json:",omitempty"`
 	// Rejects は claude が起動・再開を受け付けなかった (rc≠0 がすぐ返った) のが続いた回数。起動・再開が済んだか、人の番へ回したら 0 に戻す (462)
 	Rejects int `json:",omitempty"`
 	// Crashes は PG のプロセスが落ちて Claude Code が自動で再開した時刻 (transcript の再開の文の時刻)。dispatcher が数えて、

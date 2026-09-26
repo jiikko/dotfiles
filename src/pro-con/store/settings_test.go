@@ -23,10 +23,12 @@ func TestApplyConfig(t *testing.T) {
 	submit(t, dir, Request{Kind: KindConfig, Key: SettingLimit, Value: "3"})
 	submit(t, dir, Request{Kind: KindConfig, Key: SettingPM, Value: "1"})
 	submit(t, dir, Request{Kind: KindConfig, Key: SettingLimit, Value: "4"})
+	submit(t, dir, Request{Kind: KindConfig, Key: SettingReview, Value: ReviewCodex})
 	for _, bad := range []Request{
-		{Kind: KindConfig, Key: SettingPM, Value: "2"},    // 415 の論点 6 まで受けない
-		{Kind: KindConfig, Key: SettingPM, Value: "0"},    // PM を止めるのは --pm=off
-		{Kind: KindConfig, Key: SettingLimit, Value: "0"}, // --limit と同じく 1 以上
+		{Kind: KindConfig, Key: SettingReview, Value: "opus"}, // 担い手は claude / codex だけ (514)
+		{Kind: KindConfig, Key: SettingPM, Value: "2"},        // 415 の論点 6 まで受けない
+		{Kind: KindConfig, Key: SettingPM, Value: "0"},        // PM を止めるのは --pm=off
+		{Kind: KindConfig, Key: SettingLimit, Value: "0"},     // --limit と同じく 1 以上
 		{Kind: KindConfig, Key: SettingLimit, Value: "x"},
 		{Kind: KindConfig, Key: "pg", Value: "3"},
 	} {
@@ -39,19 +41,19 @@ func TestApplyConfig(t *testing.T) {
 			errs = append(errs, r.Err)
 		}
 	}
-	if len(errs) != 5 || !strings.Contains(strings.Join(errs, "\n"), "論点 6") {
+	if len(errs) != 6 || !strings.Contains(strings.Join(errs, "\n"), "論点 6") || !strings.Contains(strings.Join(errs, "\n"), "review は") {
 		t.Fatalf("除けるべき依頼を通した / 理由が違う: %q", errs)
 	}
-	if s := loadSettings(t, dir); s.Limit != 4 || s.PMs != 1 {
+	if s := loadSettings(t, dir); s.Limit != 4 || s.PMs != 1 || s.Review != ReviewCodex {
 		t.Fatalf("置いた順に当たっていない: %+v", s)
 	}
-	if rj, _ := filepath.Glob(filepath.Join(dir, InboxDir, RejectedDir, "*.json")); len(rj) != 5 {
-		t.Fatalf("除けた依頼が rejected/ に %d 件 (5 件のはず)", len(rj))
+	if rj, _ := filepath.Glob(filepath.Join(dir, InboxDir, RejectedDir, "*.json")); len(rj) != 6 {
+		t.Fatalf("除けた依頼が rejected/ に %d 件 (6 件のはず)", len(rj))
 	}
 	// 消す (値が空) と既定に戻る
 	submit(t, dir, Request{Kind: KindConfig, Key: SettingLimit})
 	applyAll(t, dir)
-	if s := loadSettings(t, dir); s.Limit != 0 || s.PMs != 1 {
+	if s := loadSettings(t, dir); s.Limit != 0 || s.PMs != 1 || s.Review != ReviewCodex {
 		t.Fatalf("limit だけを消せない: %+v", s)
 	}
 }

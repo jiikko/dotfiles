@@ -270,3 +270,31 @@ func TestSettingsTogglesUsageCheckbox(t *testing.T) {
 		t.Fatalf("置いた設定 = %v", got)
 	}
 }
+
+// 敵対的レビューの担い手 (514) は ← → で claude / codex を巡り、受付の箱に置く。設定が無ければ dispatcher が使っている値 (config.toml) を出す。
+func TestSettingsStepsReview(t *testing.T) {
+	be := newInspSpy()
+	m := openSettingsFor(t, be) // dispatcher がまだ回っていない: config.toml の値は分からないので claude と出さない
+	if !strings.Contains(setScreen(m), "‹ ? ›") || !strings.Contains(setScreen(m), "dispatcher がまだ回っていない") {
+		t.Fatalf("分からない担い手を claude と出した:\n%s", setScreen(m))
+	}
+	be.snap.Config.ReviewNow, be.snap.Config.ReviewFrom = "codex", "config.toml"
+	m.setSnap(be.Snapshot())
+	if !strings.Contains(setScreen(m), "‹ codex ›") || !strings.Contains(setScreen(m), "設定なし (config.toml)") {
+		t.Fatalf("config.toml の担い手を出さない:\n%s", setScreen(m))
+	}
+	press(m, "j", "j", "j", "l", "l") // 枠 → 利用枠 → PM → 担い手
+	var got []string
+	for _, c := range be.applied {
+		if sc, ok := c.(backend.SetConfig); ok {
+			got = append(got, sc.Key+"="+sc.Value)
+		}
+	}
+	if strings.Join(got, ",") != "review=claude,review=codex" {
+		t.Fatalf("置いた設定 = %v", got)
+	}
+	press(m, "h")
+	if last := be.applied[len(be.applied)-1].(backend.SetConfig); last.Value != "claude" {
+		t.Fatalf("← で逆に巡らない: %+v", last)
+	}
+}

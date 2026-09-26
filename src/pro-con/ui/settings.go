@@ -2,12 +2,15 @@ package ui
 
 // 設定画面 (s で開閉。issue 456)。右から入ってくる全幅の板で、中を「設定 / プロセス / ディスク / ログ」のタブに分ける (tab で切り替え。
 // ログのタブは settingslog.go。issue 512)。
-// 変える所 (設定のタブ) は PG の枠と PM の数を ← → で 1 ずつ変え、受付の箱に置く (dispatcher の次の Tick から効く。止めずに変わる)。
+// 変える所 (設定のタブ) は PG の枠と PM の数を ← → で 1 ずつ・敵対的レビューの担い手 (514) を ← → で巡って変え、受付の箱に置く (dispatcher の次の Tick から効く。止めずに変わる)。
 // 見る所 (プロセス・ディスク) は backend.Inspector を裏で読むだけ。見ているだけの画面 (--view) は変える所 (設定のタブ) を出さない。
 // 🚨 見る所は描くたびに読まない (ディスクは数秒かかる)。開いたとき・プロセスのタブへ移ったとき・r で、裏で 1 回だけ読む。
 
 import (
+	"cmp"
+	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +19,7 @@ import (
 	"tuikit/anim"
 	"tuikit/layout"
 	"tuikit/listnav"
+	"tuikit/termwidth"
 
 	"pro-con/backend"
 	"pro-con/card"
@@ -49,7 +53,10 @@ func (t settingsTab) label() string {
 const settingsReverse = "\x1b[7m"
 
 // 設定のタブの行 (選ぶ行の順)。
-var configKeys = []string{backend.ConfigLimit, backend.ConfigUsage, backend.ConfigPM}
+var configKeys = []string{backend.ConfigLimit, backend.ConfigUsage, backend.ConfigPM, backend.ConfigReview}
+
+// configValueWidth は設定のタブの値の欄の幅 (「 ‹ claude › 」が入る)。
+const configValueWidth = 12
 
 // diskItemsShown はディスクのタブで、置き場ごとに内訳を出す数 (Enter で開いた置き場は全部)。
 const diskItemsShown = 3
@@ -76,7 +83,7 @@ type settings struct {
 	log eventLog // ログのタブ (settingslog.go)
 
 	// want は ← → で置いた値のうち、まだ Snapshot に出ていないもの (続けて押したときに前の値から数える)。wantAt は置いた時刻
-	want   map[string]int
+	want   map[string]string
 	wantAt time.Time
 }
 
@@ -285,25 +292,18 @@ func (m *Model) stepConfig(delta int) tea.Cmd {
 	}
 	key := configKeys[s.cursor]
 	v, _ := m.configValue(key)
-	next := v + delta
-	value := strconv.Itoa(next)
-	if key == backend.ConfigUsage { // チェックボックス: ← → も Enter も入れ替える
-		next, value = 1-v, "on"
-		if next == 0 {
-			value = "off"
-		}
-	}
-	if key == backend.ConfigLimit && next < 1 {
-		m.refuse("PG の枠は 1 以上 (PG を止めるなら pro-con dispatcher --stop)")
+	next, err := stepValue(key, v, delta)
+	if err != nil {
+		m.refuse(err.Error())
 		return nil
 	}
-	res, err := m.be.Apply(backend.SetConfig{Key: key, Value: value})
+	res, err := m.be.Apply(backend.SetConfig{Key: key, Value: next})
 	if err != nil { // PM の 2 以上などは backend が置く前に断る (pro-con config と同じ検査)
 		m.refuse(err.Error())
 		return nil
 	}
 	if s.want == nil {
-		s.want = map[string]int{}
+		s.want = map[string]string{}
 	}
 	s.want[key], s.wantAt = next, m.now()
 	m.done(res)
@@ -311,24 +311,47 @@ func (m *Model) stepConfig(delta int) tea.Cmd {
 	return nil
 }
 
-// configValue は key の今の値と、置いた値の適用を待っているか。置いた値が Snapshot に出たら (または dispatcher が除けたら) 待ちを外す。
-func (m *Model) configValue(key string) (int, bool) {
-	c := m.snap.Config
-	v := c.Limit
-	switch {
-	case key == backend.ConfigUsage:
-		v = 1
-		if c.UsageOff {
-			v = 0
+// stepValue は key の値 v を delta だけ動かした値。数の設定は 1 ずつ、usage (チェックボックス) は ← → とも入れ替え、review は ReviewModes を巡る。
+func stepValue(key, v string, delta int) (string, error) {
+	switch key {
+	case backend.ConfigUsage:
+		if v == "on" {
+			return "off", nil
 		}
-	case key == backend.ConfigPM:
-		v = c.PMs
-		if v == 0 {
-			v = 1 // 設定が無ければ 1 つで動く
-		}
-	case v == 0:
-		v = m.snap.LimitMax // 設定が無ければ dispatcher の --limit か既定
+		return "on", nil
+	case backend.ConfigReview:
+		i := max(slices.Index(backend.ReviewModes, v), 0)
+		n := len(backend.ReviewModes)
+		return backend.ReviewModes[((i+delta)%n+n)%n], nil
 	}
+	n, _ := strconv.Atoi(v)
+	if key == backend.ConfigLimit && n+delta < 1 {
+		return "", errors.New("PG の枠は 1 以上 (PG を止めるなら pro-con dispatcher --stop)")
+	}
+	return strconv.Itoa(n + delta), nil
+}
+
+// configNow は key の今の値 (設定が無ければ dispatcher が使っている値か既定)。
+func (m *Model) configNow(key string) string {
+	c := m.snap.Config
+	switch key {
+	case backend.ConfigUsage:
+		if c.UsageOff {
+			return "off"
+		}
+		return "on" // 既定は枠で絞る
+	case backend.ConfigPM:
+		return strconv.Itoa(cmp.Or(c.PMs, 1)) // 設定が無ければ 1 つで動く
+	case backend.ConfigReview:
+		return cmp.Or(c.Review, c.ReviewNow, "?") // 設定が無ければ dispatcher が使っている値 (config.toml か既定)。まだ回っていなければ分からない (claude と出すと config.toml の codex と食い違う)
+	}
+	return strconv.Itoa(cmp.Or(c.Limit, m.snap.LimitMax)) // 設定が無ければ dispatcher の --limit か既定
+}
+
+// configValue は key の今の値と、置いた値の適用を待っているか。置いた値が Snapshot に出たら (または dispatcher が除けたら) 待ちを外す。
+func (m *Model) configValue(key string) (string, bool) {
+	v := m.configNow(key)
+	c := m.snap.Config
 	w, ok := m.set.want[key]
 	if !ok {
 		return v, false
@@ -453,20 +476,25 @@ func (m *Model) configLines(w int) ([]string, int) {
 	for i, key := range configKeys {
 		v, waiting := m.configValue(key)
 		name, note := "PM の数", "今は 1 だけ (2 以上は 415 の論点 6 が決まってから)"
-		val := fmt.Sprintf(" ‹ %d › ", v)
 		switch key {
 		case backend.ConfigLimit:
 			name, note = "PG の枠 (同時に動かす PG の上限)", m.limitNote()
-		case backend.ConfigUsage:
+		case backend.ConfigReview:
+			name, note = "敵対的レビューの担い手", m.reviewNote()
+		}
+		val := fmt.Sprintf(" ‹ %s › ", v)
+		if key == backend.ConfigUsage {
 			name, note, val = "利用枠を見て PG を絞る", "80% で 1 本 / 95% で 0 本。外すと上限まで起動する (Enter か ← →)", " [ ] "
-			if v == 1 {
+			if v == "on" {
 				val = " [x] "
 			}
 		}
+		pad := strings.Repeat(" ", max(configValueWidth-termwidth.Of(val), 0)) // 値の長さ (数 / claude・codex / チェックボックス) が違っても右の説明の列を揃える。反転は値だけ
 		mark := "  "
 		if i == m.set.cursor {
 			val, mark, cur = settingsReverse+val+sgrReset, sgrCyan+"▸ "+sgrFgReset, len(out)
 		}
+		val += pad
 		if waiting {
 			note = sgrYellow + "適用待ち (dispatcher の次の Tick で効く)" + sgrFgReset + "  " + note
 		}
@@ -500,6 +528,22 @@ func (m *Model) limitNote() string {
 		note += " · " + m.snap.LimitWhy
 	}
 	return note
+}
+
+// reviewNote は敵対的レビューの担い手の出どころと、codex の実体 (codex のときの PG への渡し方)。
+func (m *Model) reviewNote() string {
+	c := m.snap.Config
+	from := "設定"
+	if c.Review == "" {
+		from = "設定なし (" + cmp.Or(c.ReviewFrom, "dispatcher がまだ回っていない。config.toml か既定") + ")"
+	}
+	switch {
+	case c.Codex != "":
+		from += " · codex " + c.Codex
+	case c.CodexErr != "":
+		from += " · codex を解けない (codex でも Claude で代わりに回す)"
+	}
+	return from + " · 起動済みの PG の指示は変わらない"
 }
 
 func (m *Model) procsSummary() string {

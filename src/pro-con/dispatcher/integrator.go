@@ -52,11 +52,14 @@ func integratorLabels(keys []string) string {
 func integratorNotice(d *Dispatcher, cards []card.Card, untold, pending []string) string {
 	var b strings.Builder
 	b.WriteString("pro-con: 次のカードを指示書のとおりに扱って。\n")
-	var rest []string
+	var rest, byCodex []string
 	for _, c := range card.Board(cards) { // 人がレーンで並べた順 (上ほど優先。issue 470)
 		k, ok := integratorKey(c)
 		if !ok || !slices.Contains(pending, k) {
 			continue
+		}
+		if c.ReviewBy == store.ReviewCodex {
+			byCodex = append(byCodex, c.ID)
 		}
 		if !slices.Contains(untold, k) {
 			rest = append(rest, c.ID)
@@ -72,5 +75,6 @@ func integratorNotice(d *Dispatcher, cards []card.Card, untold, pending []string
 		fmt.Fprintf(&b, "- まだレビューの列に残っている: %s\n", strings.Join(rest, ", "))
 	}
 	b.WriteString("中身は `pro-con card show <カード>` で読む。\n")
+	b.WriteString(codexReviewLine(byCodex)) // 今の設定ではなく、PG を起動したときの担い手で書く (card.Card.ReviewBy)
 	return b.String()
 }

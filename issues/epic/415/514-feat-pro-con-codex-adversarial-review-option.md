@@ -44,4 +44,20 @@
 
 ## 進捗
 
-(まだ無い)
+### 2026-09-26 C-072 (PG) で実装
+
+- **設定 `review`** (`store.SettingReview`。値は `store.ReviewModes` = claude / codex): 優先は **設定 (`pro-con config set review` / 設定画面) > config.toml の `review` > 既定 claude**
+  (`dispatcher/review.go` の `review()`。limit の「設定 > --limit > 既定」と同じ形)。config.toml の書き間違いは起動時に誤り、`config set` の書き間違いは箱に置く前に弾く
+- dispatcher は様子 (`dispatcher-state.json`) に担い手・出どころ・codex の実体を書き、`pro-con config show` と設定画面の「設定」のタブ (← → で巡る) がそれを出す
+- **誰が codex を呼ぶか: PG** (今の敵対的レビューの置き場に合わせた)。dispatcher が PG の起動の指示 (`Prompt(c, rv)`) に `rv.pgRule` を差し込む: codex の実体の絶対パス・作法の正本 (codex-review の SKILL.md。書き写さない)・
+  `ratelimit -source codex -check` が rc=1 / codex が rc≠0 なら Claude で代わりに回して `card attach` で履歴に残す・codex の出力も `card attach` で証拠にする
+- 取り込みの係には、知らせ (`integratorNotice`) に **codex の設定で起動した PG のカード** を挙げて「codex の証拠か代わりに回した添付があるかを確かめ、無ければ差し戻す」を足す (`codexReviewLine`)。
+  起動のときの担い手はカードの `ReviewBy` に残す (`mark`)。今の設定で決めると、claude で起動した PG を後で codex に変えた設定で差し戻す (敵対的レビューで指摘)
+- **PM の指示書には足さない**: PM はレビューに触らない (`pm-guide.md` の役目 5) ので、担い手を知らせても使い道が無い
+- codex の実体は、担い手が初めて codex になった Tick に 1 回だけ `ResolveCodex` で解く (claude のままなら解かない = 既定の起動を遅くしない。`ResolveClaude` を `resolveTool` に一般化。shim の辿り方は 464 と同じ)。
+  解けなくても dispatcher は止めず、PG には「見つけられなかった (理由)。Claude で代わりに回して残す」を渡す。🚨 1 度解いたら dispatcher を起こし直すまで解き直さない
+- 手で書き換えた settings.json の不正な review (`Codex` 等) は使わず、config.toml か既定で動いて理由を様子に出す
+- 既定 claude の PG の指示が 514 の前と同じことは、514 の前の版の出力 (`dispatcher/testdata/prompt-before-514.txt`) と比べて固定した
+- 🚨 **設定を変えても、起動済みの PG の指示は変わらない** (次に起動する PG から)。取り込みの係は知らせのたびに今の値を受ける
+- 設定画面の値の欄を固定幅にしたので、limit / pm の行の説明が 5 桁右へずれた (値の長さが違う行と揃えるため)。画面から review を「設定なし」に戻す口は無い (`pro-con config unset review`)
+- 未検証: 本物の PG が codex の設定で `codex exec` を回し添付を残すところ (実機の dispatcher を入れ替えて 1 枚回す必要がある)。偽の codex (`--version` が失敗) を解けたことにしないのは `TestResolveCodexRefusesBrokenBinary`

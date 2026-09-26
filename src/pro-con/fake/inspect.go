@@ -45,11 +45,13 @@ func (s *Sim) setConfig(c backend.SetConfig) (string, error) {
 	}
 	var set store.Settings
 	apply(&set)
-	if c.Key == backend.ConfigLimit && set.Limit > 0 {
+	switch {
+	case c.Key == backend.ConfigLimit && set.Limit > 0:
 		s.limit = set.Limit
-	}
-	if c.Key == backend.ConfigUsage {
+	case c.Key == backend.ConfigUsage:
 		s.usageOff = set.UsageOff
+	case c.Key == backend.ConfigReview:
+		s.review = set.Review
 	}
 	return fmt.Sprintf("%s を %s にした (模擬)", c.Key, c.Value), nil
 }

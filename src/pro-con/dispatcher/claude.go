@@ -10,11 +10,14 @@ import (
 	"time"
 )
 
-// Claude は dispatcher が使う claude の実体 (絶対パス) と、その版 (`--version` の最初の行)。
-type Claude struct {
+// Tool は dispatcher が使うコマンドの実体 (絶対パス) と、その版 (`--version` の最初の行)。
+type Tool struct {
 	Path    string
 	Version string
 }
+
+// Claude は claude の実体 (ResolveClaude)。
+type Claude = Tool
 
 // resolveTimeout は実体の解決 (`<版管理> which claude` と `claude --version`) が戻るまでの上限。
 const resolveTimeout = 30 * time.Second
@@ -27,28 +30,39 @@ const resolveTimeout = 30 * time.Second
 // 古い版を指すと全 repo をその版に固定する)。
 // 🚨 解決した symlink の先 (版つきのパス) には固定しない: native の自動更新が古い版を消すと、動き続けている dispatcher の起動がすべて失敗する
 func ResolveClaude(ctx context.Context, dir string) (Claude, error) {
+	return resolveTool(ctx, dir, "claude")
+}
+
+// ResolveCodex は codex の実体を ResolveClaude と同じ形で解決する (issue 514。敵対的レビューを codex に回す設定のとき PG に渡す)。
+// 🚨 対話シェルの codex は zsh の関数 (zshlib/_codex.zsh) で、PG の bash からは見えない。素の名前ではなくこの Path を渡す
+func ResolveCodex(ctx context.Context, dir string) (Tool, error) {
+	return resolveTool(ctx, dir, "codex")
+}
+
+// resolveTool は name の実体を PATH と版管理の shim から解き、`--version` が通ることまで確かめる。
+func resolveTool(ctx context.Context, dir, name string) (Tool, error) {
 	ctx, cancel := context.WithTimeout(ctx, resolveTimeout)
 	defer cancel()
-	p, err := exec.LookPath("claude")
+	p, err := exec.LookPath(name)
 	if err != nil {
-		return Claude{}, fmt.Errorf("claude が PATH に無い: %w", err)
+		return Tool{}, fmt.Errorf("%s が PATH に無い: %w", name, err)
 	}
 	if p, err = filepath.Abs(p); err != nil {
-		return Claude{}, err
+		return Tool{}, err
 	}
 	if shim, ok := shimOf(p); ok {
 		manager := strings.TrimPrefix(filepath.Base(filepath.Dir(filepath.Dir(shim))), ".")
-		cmd := exec.CommandContext(ctx, manager, "which", "claude")
+		cmd := exec.CommandContext(ctx, manager, "which", name)
 		cmd.Dir = dir
 		out, err := cmd.Output()
 		if err != nil {
-			return Claude{}, fmt.Errorf("claude (%s) は版を cwd で選ぶ shim で、%s で `%s which claude` が実体を返さない: %w", p, dir, manager, err)
+			return Tool{}, fmt.Errorf("%s (%s) は版を cwd で選ぶ shim で、%s で `%s which %s` が実体を返さない: %w", name, p, dir, manager, name, err)
 		}
 		if p = outLine(out); !filepath.IsAbs(p) {
-			return Claude{}, fmt.Errorf("`%s which claude` の結果が絶対パスでない: %q", manager, p)
+			return Tool{}, fmt.Errorf("`%s which %s` の結果が絶対パスでない: %q", manager, name, p)
 		}
 		if _, ok := shimOf(p); ok {
-			return Claude{}, fmt.Errorf("claude (%s) の実体が shim (%s) のまま", shim, p)
+			return Tool{}, fmt.Errorf("%s (%s) の実体が shim (%s) のまま", name, shim, p)
 		}
 	}
 	cmd := exec.CommandContext(ctx, p, "--version")
@@ -56,9 +70,9 @@ func ResolveClaude(ctx context.Context, dir string) (Claude, error) {
 	cmd.WaitDelay = time.Second
 	out, err := cmd.Output()
 	if err != nil {
-		return Claude{}, fmt.Errorf("%s --version: %w", p, err)
+		return Tool{}, fmt.Errorf("%s --version: %w", p, err)
 	}
-	return Claude{Path: p, Version: outLine(out)}, nil
+	return Tool{Path: p, Version: outLine(out)}, nil
 }
 
 // shimOf は path が版を cwd で選ぶ版管理の shim (<root>/shims の下) なら、その shim のパスを返す。symlink は 1 段ずつ辿って各段を見る

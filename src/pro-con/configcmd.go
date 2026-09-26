@@ -4,6 +4,7 @@ package main
 // 状態の置き場 (settings.json) へ書くのは dispatcher (store.Apply)。show は読むだけ。優先の順は store/settings.go の doc。
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"strconv"
@@ -16,6 +17,8 @@ const configUsage = `usage: pro-con config <操作> ...   (受付の箱に依頼
   set limit <n>      同時に動かす PG の上限 (1 以上。dispatcher の --limit より優先。利用枠の絞り 80% で 1 本 / 95% で 0 本はこれより優先)
   set usage on|off   利用枠 (5 時間・週) を見て PG を絞るか (既定 on。off にすると枠が 80% を超えても上限まで起動する)
   set pm <n>         PM の数 (今は 1 だけ。2 以上は 415 の論点 6 が決まるまで受けない)
+  set review claude|codex
+                     敵対的レビューの担い手 (既定 claude。~/.config/pro-con/config.toml の review より優先。起動済みの PG の指示は変わらない)
   unset <名前>       設定を消す (limit なら --limit / 既定 2 に戻る)
   show               今の値と出どころ (読むだけ)`
 
@@ -101,6 +104,19 @@ func showConfig(dir string, stdout, stderr io.Writer) int {
 	}
 	_, _ = fmt.Fprintf(stdout, "usage  %s\n", usage)
 	_, _ = fmt.Fprintf(stdout, "pm     設定 %s / PM は 1 つで動く (2 以上は未対応なので、今は dispatcher が読まない)\n", set(s.PMs))
+	_, _ = fmt.Fprintf(stdout, "review 設定 %s", cmp.Or(s.Review, "(設定なし)"))
+	if !ok || ds.Review == "" { // dispatcher が回る前・前の版の様子: config.toml の review は dispatcher が起動のときに読むので、ここでは分からない
+		_, _ = fmt.Fprint(stdout, " / dispatcher の担い手はまだ分からない (設定が無ければ config.toml の review か既定 claude)")
+	} else {
+		_, _ = fmt.Fprintf(stdout, " / dispatcher が使っている担い手 %s (%s)", ds.Review, ds.ReviewFrom)
+		switch {
+		case ds.Codex != "":
+			_, _ = fmt.Fprintf(stdout, " / codex %s", ds.Codex)
+		case ds.CodexErr != "":
+			_, _ = fmt.Fprintf(stdout, " / codex を解けない (codex の設定でも Claude で代わりに回す): %s", ds.CodexErr)
+		}
+	}
+	_, _ = fmt.Fprintln(stdout)
 	if _, n := store.PendingCounts(dir); n > 0 {
 		_, _ = fmt.Fprintf(stdout, "適用待ちの設定の依頼 %d 件 (dispatcher の次の Tick で使う。pro-con dispatcher が動いているか: pro-con ps)\n", n)
 	}

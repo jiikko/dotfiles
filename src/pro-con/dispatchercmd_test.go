@@ -190,6 +190,19 @@ func TestNewDispatcherPassesUserSettingsToLauncher(t *testing.T) {
 	}
 }
 
+// 本物の dispatcher は PM と取り込みの係の欄と codex の解き方 (514) を持つ。欄を落とすと、PM も取り込みの係も黙って起きない
+// (514 の最初の commit で、行末のコメントが PMRepo 以降の欄を飲み込んだ。テストは通り、lint の unparam だけが気づいた)。
+func TestNewDispatcherWiresRolesAndCodex(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	d := newDispatcherFor(t.TempDir(), t.TempDir(), nil, "/w/dotfiles", true, 1, dispatcher.Claude{Path: "/x/claude"}, nil)
+	if d.PMRepo != "/w/dotfiles" || !d.PMOff || d.PMGuide != pmGuide || d.IntegratorGuide != integratorGuide || d.PMGuide == "" || d.IntegratorGuide == "" {
+		t.Fatalf("役の欄を渡していない: PMRepo=%q PMOff=%v PMGuide=%d 字 IntegratorGuide=%d 字", d.PMRepo, d.PMOff, len(d.PMGuide), len(d.IntegratorGuide))
+	}
+	if d.ResolveCodex == nil {
+		t.Fatal("codex の解き方を渡していない (codex の設定でも PG に実体を渡せない)")
+	}
+}
+
 // claude の実体を解決できなければ、本物の dispatcher は起動しない (素の名前に倒すと repo ごとに別の版が動く。464)。lock も取らない。
 func TestRealDispatcherRefusesWithoutClaude(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())

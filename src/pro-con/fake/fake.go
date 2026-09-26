@@ -40,7 +40,8 @@ type Sim struct {
 	now      time.Time
 	cards    []card.Card
 	limit    int
-	usageOff bool // 利用枠で絞らない設定 (模擬は枠を読まないので、設定画面の表示だけ)
+	usageOff bool   // 利用枠で絞らない設定 (模擬は枠を読まないので、設定画面の表示だけ)
+	review   string // 設定の敵対的レビューの担い手 (空なら設定なし = 既定の claude)
 	scripts  map[string]*script
 	resource map[string][]string // リソース名 → 順番待ちのカード ID (先頭が占有中)
 	// externalUntil は pro-con の外 (人間が直接使っている session) の占有がいつ終わるか。リソース名 → 時刻
@@ -398,7 +399,7 @@ func (s *Sim) Snapshot() backend.Snapshot {
 		}
 	}
 	return backend.Snapshot{Now: s.now, Cards: cards, Consumers: cons, Limit: s.limit, LimitMax: s.limit, DispatcherTick: s.now,
-		RoleStates: []card.RoleState{s.pmState()}, Violations: card.Check(cards), Config: backend.Config{Limit: s.limit, PMs: 1, LimitFrom: "設定", UsageOff: s.usageOff}}
+		RoleStates: []card.RoleState{s.pmState()}, Violations: card.Check(cards), Config: s.config()}
 }
 
 // pmState は模擬の PM の様子 (依頼の列を全部知らせ済みで、stepIntake が次に仕分ける一番古いカードを扱っている最中。無ければ idle)。
@@ -641,4 +642,13 @@ func (s *Sim) AttachCommand(sessionID string) (*exec.Cmd, error) {
 		return nil, err
 	}
 	return exec.Command(self, "fake-attach", sessionID), nil
+}
+
+// config は模擬の変える所の値 (review は設定が無ければ既定の claude で動いている形)。
+func (s *Sim) config() backend.Config {
+	c := backend.Config{Limit: s.limit, PMs: 1, LimitFrom: "設定", UsageOff: s.usageOff, Review: s.review, ReviewNow: s.review, ReviewFrom: "設定", Codex: "/opt/homebrew/bin/codex"}
+	if s.review == "" {
+		c.ReviewNow, c.ReviewFrom = backend.ReviewModes[0], "既定"
+	}
+	return c
 }

@@ -41,8 +41,14 @@ type DispatcherState struct {
 	Limit int       `json:"limit"` // 同時に動かす PG の人の上限 (設定か --limit。LimitFrom)
 	// LimitFrom は Limit がどこから来たか ("設定" = pro-con config set / "起動の引数" = --limit か既定)
 	LimitFrom string `json:"limit_from,omitempty"`
-	Cap       int    `json:"cap"` // 今の同時に動かす数 (利用枠の残量で絞る。dispatcher/usage.go)
-	Why       string `json:"why"` // Cap を絞った / 枠を読めない理由
+	// Review は今の敵対的レビューの担い手 (issue 514。claude / codex)、ReviewFrom はその出どころ ("設定" / "config.toml" / "既定")
+	Review     string `json:"review,omitempty"`
+	ReviewFrom string `json:"review_from,omitempty"`
+	// Codex は PG に渡す codex の実体 (解決できなければ空で、CodexErr が理由)
+	Codex    string `json:"codex,omitempty"`
+	CodexErr string `json:"codex_err,omitempty"`
+	Cap      int    `json:"cap"` // 今の同時に動かす数 (利用枠の残量で絞る。dispatcher/usage.go)
+	Why      string `json:"why"` // Cap を絞った / 枠を読めない理由
 	// 最後に読めた利用枠の使用率 (%)。UsageAt が zero なら読めたことが無い
 	UsageSession int       `json:"usage_session"`
 	UsageWeek    int       `json:"usage_week"`

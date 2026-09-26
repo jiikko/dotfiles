@@ -5,6 +5,7 @@
 //	pm_repo    = "~/dotfiles"   # PM (依頼を受けてカードを分ける session) を起動する repo。PM はその下の worktree で動く (issue 437)
 //	pm         = "on"           # "off" なら dispatcher は PM を起こさない (人か外の Claude が PM をする運用)。dispatcher の --pm が勝つ
 //	integrator = "on"           # "off" なら dispatcher は取り込みの係 (issue 487) を起こさない。dispatcher の --integrator が勝つ
+//	review     = "claude"       # 敵対的レビューの担い手: "claude" (既定) / "codex" (issue 514)。pro-con config set review (設定画面) が勝つ
 package config
 
 import (
@@ -18,6 +19,8 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
+	"pro-con/store"
 )
 
 type Config struct {
@@ -27,6 +30,8 @@ type Config struct {
 	PM        string   `toml:"pm"`      // "on" / "off" / 空 (= on)
 	// Integrator は取り込みの係 (487) を起こすか: "on" / "off" / 空 (= on)
 	Integrator string `toml:"integrator"`
+	// Review は敵対的レビューの担い手 (store.ReviewModes / 空 = claude)。dispatcher の起動時に読む既定で、pro-con config set review が勝つ
+	Review string `toml:"review"`
 }
 
 // defaultPMRepo は pm_repo を書いていないときの PM の repo (pro-con の issue がある repo)。
@@ -76,13 +81,16 @@ func Load(path string) (Config, error) {
 		for i, k := range und {
 			keys[i] = k.String()
 		}
-		return Config{}, fmt.Errorf("%s: 知らないキー %s (使えるのは repo_roots / repos / pm_repo / pm / integrator)", path, strings.Join(keys, ", "))
+		return Config{}, fmt.Errorf("%s: 知らないキー %s (使えるのは repo_roots / repos / pm_repo / pm / integrator / review)", path, strings.Join(keys, ", "))
 	}
 	if c.PM != "" && c.PM != "on" && c.PM != "off" { // 書き間違いを on と読むと、止めたつもりの PM が起動して枠を使う
 		return Config{}, fmt.Errorf("%s: pm は \"on\" か \"off\" (%q)", path, c.PM)
 	}
 	if c.Integrator != "" && c.Integrator != "on" && c.Integrator != "off" { // 同じ理由。取り込みの係は master へ push するので PM より重い (487)
 		return Config{}, fmt.Errorf("%s: integrator は \"on\" か \"off\" (%q)", path, c.Integrator)
+	}
+	if err := store.CheckReview(c.Review); err != nil { // 書き間違いを claude と読むと、codex を選んだつもりで黙って Claude が回す
+		return Config{}, fmt.Errorf("%s: %w", path, err)
 	}
 	return c, nil
 }
