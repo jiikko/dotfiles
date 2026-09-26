@@ -14,13 +14,13 @@ pro-con を使って開発する Claude (カードを積む・質問に答える
 
 - `pro-con --help` は 1 行だけ (「詳しくは README」)
 - README (384 行) は人と実装者向けで、読み込ませるには長く、運用の判断 (どの場面で何を使うか・やってはいけないこと) がまとまっていない
-- `card guide` は PG / PM / 取り込みの係に渡す指示書で、外から動かす側向けではない
+- `card guide` は PM (既定) と取り込みの係 (`--integrator`) に渡す指示書で、外から動かす側向けではない (PG 向けの guide は無い)
 
 ## 決めたこと (2026-09-26、ユーザーと合意)
 
 - **正本は pro-con 側に置く**: `pro-con help <話題>` を足す。コマンド・状態の置き場はバイナリと同じ commit で直るので、skill に写すとずれる
 - **skill は薄い入口にする** (40 行前後): 読み込ませる条件 (description)・用語の 1 行の説明・やってはいけないこと・`pro-con help <話題>` への案内だけ
-- `card guide` (役に渡す指示書) は今のまま。skill はそれを置き換えない
+- `card guide` (PM・取り込みの係に渡す指示書) は今のまま。skill はそれを置き換えない
 
 ## 対応方針
 
@@ -48,6 +48,11 @@ pro-con を使って開発する Claude (カードを積む・質問に答える
 
 - `src/pro-con/main.go` (`--help` の 1 行) / `src/pro-con/README.md` / `src/pro-con/cardcmd.go` (`card guide`)
 - `_claude/skills/` / `_claude/CLAUDE.md` (スキルファイル参照の表) / `scripts/claude_links.sh` (skill の link)
+
+## 反証レビュー (2026-09-26、sonnet・読み取りのみ)
+
+- 採った: 「`card guide` は PG にも渡す」は誤り → PM と取り込みの係の 2 つだけに直した (`cardcmd.go` の `case "guide"`)
+- 反証できなかった: `--help` は 1 行だけ / README 384 行 / 質問待ちのカードの `card delete` で質問が受け付けられなくなる (`store.go` の `transition` が `Deleting()` を拒む) / cards.json を書くのは dispatcher だけ / `worktree clean` がある / skill は dir 単位で link される / 重なる issue は無い
 
 ## 進捗
 
