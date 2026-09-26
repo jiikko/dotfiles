@@ -53,7 +53,7 @@ func TestFold(t *testing.T) {
 		fail(4, 3, "C-002"), // 別のカード
 		{At: at(5), Kind: KindSupervisor, Reason: "dispatcher が落ちた"},
 		fail(6, 4, "C-001"),
-		fail(6+int(FoldGap/time.Second)+1, 5, "C-001"), // 間が空いた: 別の行
+		fail(6+int(FoldGap/time.Second)+1, 5, "C-001"),               // 間が空いた: 別の行
 		{At: at(2), Kind: KindDispatcher, Reason: "dispatcher が起きた"}, // 後から書かれた: 時刻の順へ
 	}
 	got := Fold(evs, Role)

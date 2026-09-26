@@ -151,3 +151,19 @@ func TestSettingsLogKeepsHeaderWhenScrolled(t *testing.T) {
 		t.Fatalf("最新の行を選んで出していない:\n%s", scr)
 	}
 }
+
+// 上へ送って見ている間に c で切り替えても、見ていた時刻の辺りから動かない (最新へ飛ばない)。
+func TestSettingsLogToggleKeepsPosition(t *testing.T) {
+	s := newLogSpy()
+	m := openLogTab(t, s)
+	press(m, "k") // 「dispatcher が落ちた」の行
+	if got := m.set.log.rows[m.set.cursor].Last.Reason; !strings.HasPrefix(got, "dispatcher が落ちた") {
+		t.Fatalf("前提: 選んでいる行 = %q", got)
+	}
+	for range 2 {
+		press(m, "c")
+		if got := m.set.log.rows[m.set.cursor].Last.Reason; !strings.HasPrefix(got, "dispatcher が落ちた") {
+			t.Fatalf("c で見ていた位置が動いた: 選んでいる行 = %q (showCards=%v)", got, m.set.log.showCards)
+		}
+	}
+}

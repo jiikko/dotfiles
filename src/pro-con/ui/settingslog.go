@@ -9,6 +9,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -70,9 +71,14 @@ func (m *Model) onEvents(msg eventsMsg) {
 	}
 }
 
-// refoldEvents は畳んだ行を組み直し、最新に付けているなら選んでいる行を一番下へ送る。
+// refoldEvents は畳んだ行を組み直す。最新に付けているなら一番下を選び、そうでなければ前に選んでいた行の時刻に近い行を選ぶ
+// (行の番号は組み直すと動く: c で出す出来事が変わる・受付の箱を経た出来事が途中に差し込まれる・畳みがつながる)。
 func (m *Model) refoldEvents() {
 	l := &m.set.log
+	var anchor time.Time // 選んでいた行の最後の時刻
+	if m.set.cursor < len(l.rows) {
+		anchor = l.rows[m.set.cursor].Last.At
+	}
 	role := eventlog.Role
 	if l.showCards {
 		role = eventlog.AnyRole
@@ -81,16 +87,23 @@ func (m *Model) refoldEvents() {
 	if m.set.tab != tabLog {
 		return
 	}
-	if l.follow {
-		m.set.cursor = max(len(l.rows)-1, 0)
+	last := max(len(l.rows)-1, 0)
+	if l.follow || anchor.IsZero() {
+		m.set.cursor = last
+		return
 	}
-	m.set.cursor = min(m.set.cursor, max(len(l.rows)-1, 0))
+	m.set.cursor = 0 // 時刻が anchor 以前の最後の行 (どれも後なら先頭)
+	for i, f := range l.rows {
+		if f.Last.At.After(anchor) {
+			break
+		}
+		m.set.cursor = i
+	}
 }
 
-// toggleCardEvents は c: カードの出来事を混ぜる / プロセスの出来事だけにする。
+// toggleCardEvents は c: カードの出来事を混ぜる / プロセスの出来事だけにする (見ていた位置は変えない)。
 func (m *Model) toggleCardEvents() {
-	l := &m.set.log
-	l.showCards, l.follow = !l.showCards, true
+	m.set.log.showCards = !m.set.log.showCards
 	m.refoldEvents()
 }
 
