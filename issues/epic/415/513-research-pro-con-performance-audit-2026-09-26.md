@@ -44,9 +44,9 @@ pro-con (`src/pro-con` と、それが使う `src/tuikit` / `src/procsup`) の�
 
 #### issue にしたもの
 
-- [527](527-perf-pro-con-tick-rereads-record-after-busy-day.md): 完了して 24 時間以内のカードが溜まる日は、Tick 1 回が 25ms・11.7MB (478 の見送りの前提が崩れた)。
+- [528](528-perf-pro-con-tick-rereads-record-after-busy-day.md): 完了して 24 時間以内のカードが溜まる日は、Tick 1 回が 25ms・11.7MB (478 の見送りの前提が崩れた)。
   「1 Tick で記録を十数回読む」「状態の変わったカードごとに `store.Update` が全体を読み書きする」の 2 候補をこの 1 件にまとめた
-- [526](526-perf-pro-con-diff-panel-rebuilds-all-rows-every-view.md): 差分の板は描くたびに全行 (最大 5000 行) を組み直す (1 描画 5.6ms・3.6MB。板を閉じた画面は 0.6ms)
+- [529](529-perf-pro-con-diff-panel-rebuilds-all-rows-every-view.md): 差分の板は描くたびに全行 (最大 5000 行) を組み直す (1 描画 5.6ms・3.6MB。板を閉じた画面は 0.6ms)
 
 #### 記録のみ (影響が小さい・意図した形・測れていない)
 
@@ -63,14 +63,14 @@ pro-con (`src/pro-con` と、それが使う `src/tuikit` / `src/procsup`) の�
   呼ぶのは `pro-con du` と設定画面を開いたとき (周期では呼ばない)
 - **dispatcher は 30 秒ごとに `zsh -c` で新しい版の有無を見る** (`dispupgrade.go` の `upgradeCheckEvery`)。1 回の所要は測っていない。カード数に依らない固定の費用
 - `pro-con screen --follow` は 200ms ごとに、追う 1 画面の生死を見るのに全画面の lock を開く (`screencmd.go` の `stillOpen` → `relay.List`)。画面は普段 1〜2 個
-- `register` のカード × session の二重ループ / `dispatch` の順番待ち (`card.HeldBy` の線形探索) / `tagScreen`: どれも 527 の Tick の bench の中に含まれ、単独では目立たない
+- `register` のカード × session の二重ループ / `dispatch` の順番待ち (`card.HeldBy` の線形探索) / `tagScreen`: どれも 528 の Tick の bench の中に含まれ、単独では目立たない
 - 進み具合の係の `findIssue` は `issues/` を毎回たどる (`dispatcher/progress.go`)。30 秒ごと・裏の goroutine で、Tick を止めない
 
 #### 却下
 
 - `wake.Broadcast`: 開いている画面へ 8 バイトを送るだけ
 
-既知の 478 / 494 / 502 / 503 / 504 は走査の前に除いた (候補に数えていない)。527 は 478 の見送りの再評価で、重ねた起票ではない。
+既知の 478 / 494 / 502 / 503 / 504 は走査の前に除いた (候補に数えていない)。528 は 478 の見送りの再評価で、重ねた起票ではない。
 
 ## 関連
 
