@@ -16,6 +16,12 @@
 | `ReadTail` 1 回 (手元の最近の transcript のうち最大の 8.5 MB のファイル、Go の benchmark) | 5.7 ms / 2.9 MB / 7,370 allocs |
 | 作業中の PG が N 体・画面 1 つのとき | 3 秒ごとに N × (5.7 ms / 2.9 MB)。4 体なら約 23 ms と 11.6 MB を 3 秒ごと (見積もり。N 体での実測はしていない) |
 
+## dispatcher 側 (反証レビューで判明)
+
+dispatcher も同じ transcript を読んでいて、画面より条件が悪い。`dispatchercmd.go` の `Transcript` は **毎回 `live.FindTranscript` (glob) から
+`live.ReadTail` までキャッシュなしで行い**、1 回の tick で同じ session について `dispatcher.go` の `watch` と 643 行付近・`role.go` の `roleTurn`・
+`doing.go` の `transcriptDoings`・`btw.go` の `pgOutputs` から別々に呼ばれうる (tick は 3 秒ごとと、依頼を置くたびの wake)。
+
 ## 対応方針 (案)
 
 - 前回読んだ位置 (offset) から後ろだけを読んで、`Transcript` を積み上げる (行の途中で切れた分は次回へ持ち越す)。ファイルが縮んだ・
@@ -32,4 +38,5 @@
 ## 進捗
 
 - [x] 実測 (上の表)
+- [x] 反証レビュー (読み取り専用のサブエージェント 1 体): 画面側の主張は反証されず。dispatcher 側も読んでいる (上の節) を追記
 - [ ] 差分読みにする

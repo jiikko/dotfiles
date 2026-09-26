@@ -29,8 +29,9 @@ session の一覧 `claude agents --json` (node のプロセス) を、dispatcher
 - dispatcher が取った一覧を、ほかの「集めた様子」と同じく派生の記録 (`store.LoadDerived` の仲間) に書き、画面はそれを読む
   (473 / 469 の「画面は ps も git も transcript の全体も読まない」と同じ向き)。画面が自分で `claude agents --json` を起動するのは
   dispatcher が回っていないときだけにする
-- 🚨 画面の一覧は dispatcher が止まっている・落ちているときの様子を出すのにも使っている (`dispatcherStopped` / 回っていない表示)。
-  寄せる前に、画面が自分で一覧を取らないと出せなくなる表示を列挙する
+- 画面が自分で一覧を取るのは `refresh` (3 秒ごと) と `AttachCommand` (attach の直前の照合。3 秒ごとではない) の 2 か所。
+  dispatcher が止まっている表示 (`ui/view.go` の `dispatcherStopped`) は一覧ではなく dispatcher の状態ファイルを見ている (反証レビューで確認)。
+  寄せた後も、派生の記録が古い (dispatcher が回っていない) ときは画面が自分で取る (正しさを dispatcher に預けない)
 - 効果は「15 秒間の起動数」と「画面プロセス + 子の CPU 時間」で before / after を測る
 
 ## 関連ファイル
@@ -43,4 +44,5 @@ session の一覧 `claude agents --json` (node のプロセス) を、dispatcher
 ## 進捗
 
 - [x] 実測 (上の表)
+- [x] 反証レビュー (読み取り専用のサブエージェント 1 体): 起動の経路と周期は反証されず。`dispatcherStopped` が一覧を使うという注記は誤りだったので直した
 - [ ] 対応方針の要否と形を決める
