@@ -11,8 +11,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
 	"tuikit/anim"
+	"tuikit/termwidth"
 )
 
 const bumpDuration = 1000 * time.Millisecond
@@ -82,7 +82,7 @@ func (m *Model) overlayBump(screen []string, top, h int) []string {
 	band := make([]string, h)
 	for r := range h { // ボードの行は先に画面の幅へ揃える (はみ出したボードの右端の「…」も帯と一緒に動く)
 		screen[top+r] = fit(screen[top+r], total)
-		band[r] = fit(ansi.Cut(screen[top+r], x0, x0+w), w)
+		band[r] = fit(termwidth.Slice(screen[top+r], x0, x0+w), w)
 	}
 	// 1 行につき差し替えは 1 回 (元の帯の位置と移り先を合わせた範囲に、空白と帯を並べて入れる)。行ごとに幅を何度も数え直すと、
 	// 揺れのコマの描画の大半をここが使っていた (issue 494)。触るのは揺れの届く行だけ
@@ -106,10 +106,10 @@ func (m *Model) overlayBump(screen []string, top, h int) []string {
 			continue
 		}
 		if x < 0 { // 左右の端の外は切る
-			s, width, x = ansi.Cut(s, -x, width), width+x, 0
+			s, width, x = termwidth.Slice(s, -x, width), width+x, 0
 		}
 		if x+width > total {
-			s, width = ansi.Cut(s, 0, total-x), total-x
+			s, width = termwidth.Slice(s, 0, total-x), total-x
 		}
 		l := screen[y]
 		if !inBoard { // ボードの行は上で揃えた

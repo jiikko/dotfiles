@@ -12,7 +12,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
+	"tuikit/termwidth"
 )
 
 // 欄の見出し幅。行頭の "> " (2) + 見出し (全角 3 文字 = 6) + 区切りの空白 (1)。
@@ -61,7 +61,7 @@ func (f *formState) view(label string, now time.Time, width, height int) (string
 // (bubbletea v2 の View.Cursor。これが無いと IME の未確定文字が別の場所に出る)。
 func (f *formState) addField(fr *frame, name string, ed *editor, focused bool, width int) {
 	prefix := fieldLabel(name, focused)
-	col := ansi.StringWidth(stripSGR(prefix))
+	col := termwidth.Of(stripSGR(prefix))
 	val, cur := ed.viewport(maxInt(width-col-1, 0), focused)
 	if focused {
 		fr.addAt(prefix+val, col+cur)
@@ -77,7 +77,7 @@ func fieldLabel(name string, focused bool) string {
 	if focused {
 		mark = sgr(fgAccent, "> ")
 	}
-	pad := labelCol - 2 - ansi.StringWidth(name)
+	pad := labelCol - 2 - termwidth.Of(name)
 	if pad < 0 {
 		pad = 0
 	}
@@ -97,7 +97,7 @@ func chips(sel int, focused bool, width int) string {
 	}
 	// 選択中の候補だけは必ず出す。それすら入らない幅なら候補名を切り詰める
 	// (切り詰めないと行が幅を超え、端末が折り返して行数が増える = カーソルがずれる)
-	if w := ansi.StringWidth(labels[sel]) + 2; w > width {
+	if w := termwidth.Of(labels[sel]) + 2; w > width {
 		labels[sel] = truncate(labels[sel], maxInt(width-2, 0))
 	}
 	lo, hi := chipRange(labels, sel, width)
@@ -132,7 +132,7 @@ func chips(sel int, focused bool, width int) string {
 func chipWidth(labels []string, lo, hi int) int {
 	w := 0
 	for i := lo; i <= hi; i++ {
-		w += ansi.StringWidth(labels[i]) + 2
+		w += termwidth.Of(labels[i]) + 2
 		if i < hi {
 			w++
 		}

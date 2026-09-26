@@ -18,7 +18,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
+	"tuikit/termwidth"
 )
 
 // toastFrames は滑り込みに使うフレーム数、toastTick は 1 フレームの間隔。
@@ -98,17 +98,17 @@ func (t *toast) overlay(lines []string, width, height int) []string {
 		return lines // これ以下の幅ではトーストを出さない (出すと行が幅を超える)
 	}
 	body := "  " + t.text + "  "
-	if w := ansi.StringWidth(body); w > width {
+	if w := termwidth.Of(body); w > width {
 		body = "  " + truncate(t.text, width-4) + "  "
 	}
-	full := ansi.StringWidth(body)
+	full := termwidth.Of(body)
 	shown := t.width(full)
 	if shown <= 0 {
 		return lines
 	}
 	// 箱の左 shown カラムだけを見せ、右端に寄せる = 右から滑り込んで見える
 	visible := truncate(body, shown)
-	pad := width - ansi.StringWidth(visible)
+	pad := width - termwidth.Of(visible)
 	if pad < 0 {
 		pad = 0
 	}

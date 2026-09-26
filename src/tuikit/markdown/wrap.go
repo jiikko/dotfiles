@@ -4,8 +4,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/charmbracelet/x/ansi"
-
 	"tuikit/termwidth"
 )
 
@@ -190,7 +188,7 @@ func truncSpans(spans []span, limit int, tail string) []span {
 	}
 	tw := termwidth.Of(tail)
 	if limit <= tw {
-		return []span{{Text: ansi.Truncate(tail, max(limit, 0), ""), Style: styleDim}}
+		return []span{{Text: termwidth.Truncate(tail, max(limit, 0), ""), Style: styleDim}}
 	}
 	w, cut := 0, 0
 	for i, c := range cells {
