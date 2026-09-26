@@ -71,19 +71,28 @@ func (m *Model) handleSearchKey(k tea.KeyPressMsg) tea.Cmd {
 	case "ctrl+c":
 		return m.requestQuit()
 	default:
-		before := m.search.query()
-		m.search.line.Key(k.String(), k.Text)
-		if m.search.query() != before {
-			m.afterSearchChange()
-		}
+		m.editSearch(func() { m.search.line.Key(k.String(), k.Text) })
 	}
 	return nil
 }
 
 // pasteSearch はペーストを検索語に入れる (改行とタブは lineedit が空白にする)。
 func (m *Model) pasteSearch(s string) {
-	m.search.line.Insert(s)
-	m.afterSearchChange()
+	m.editSearch(func() { m.search.line.Insert(s) })
+}
+
+// editSearch は検索語を edit で変え、変わったら選択とレーンを合わせる。
+// 🚨 変える前に今の選択の行を selRow に控える: ensureSelection は選んでいたカードが消えたら selRow の 1 つ上を選ぶが、
+// selRow を更新するのは setSnap だけなので、控えないと最後のスナップショットの頃の行で無関係なカードへ飛ぶ
+func (m *Model) editSearch(edit func()) {
+	before := m.search.query()
+	if _, row, ok := m.position(); ok {
+		m.selRow = row
+	}
+	edit()
+	if m.search.query() != before {
+		m.afterSearchChange()
+	}
 }
 
 // searchRefusal は絞っている間に断る操作の理由 (断らないなら "")。

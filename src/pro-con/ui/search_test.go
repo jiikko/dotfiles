@@ -149,3 +149,38 @@ func TestMarkHitsSkipsSGR(t *testing.T) {
 		t.Fatalf("SGR の外の語だけを浮かせるはず: %q", got)
 	}
 }
+
+// 選んでいたカードが隠れたら、隠れる直前の並びで 1 つ上のカードを選ぶ (最後のスナップショットの頃の行を使わない)。
+func TestSearchSelectsCardAboveHiddenOne(t *testing.T) {
+	be := searchSpy()
+	now := be.snap.Now
+	be.snap.Cards = []card.Card{
+		{ID: "P1", State: card.Planned, Since: now, Title: "alpha x"},
+		{ID: "P2", State: card.Planned, Since: now, Title: "beta x"},
+		{ID: "P3", State: card.Planned, Since: now, Title: "gamma x"},
+		{ID: "P4", State: card.Planned, Since: now, Title: "delta"},
+	}
+	m := New(be, nil)
+	press(m, "j", "j", "j")
+	if m.selected != "P4" {
+		t.Fatalf("前提: %q", m.selected)
+	}
+	press(m, "/")
+	typeText(m, "x")
+	if m.selected != "P3" {
+		t.Fatalf("隠れた P4 の 1 つ上 (P3) を選ぶはず: %q", m.selected)
+	}
+}
+
+// 一致の色は題名にだけ付き、右上の見積もり (Matches が見ない欄) には付かない。
+func TestSearchDoesNotMarkPoints(t *testing.T) {
+	be := searchSpy()
+	be.snap.Cards = []card.Card{{ID: "P1", State: card.Planned, Since: be.snap.Now, Title: "3 つ直す", Points: 3}}
+	m := New(be, nil)
+	press(m, "/")
+	typeText(m, "3")
+	cell := strings.Join(m.cardCell(be.snap.Cards[0], 24), "\n")
+	if !strings.Contains(cell, sgrHit+"3"+sgrFgReset) || strings.Contains(cell, sgrHit+"3pt") || !strings.Contains(cell, sgrDim+"3pt") {
+		t.Fatalf("見積もりが光った / 題名が光らない: %q", cell)
+	}
+}

@@ -526,7 +526,8 @@ func (m *Model) cardCell(c card.Card, w int) []string {
 	var out []string
 	for i, l := range wrapTitle(title, w-1, pts) { // 先頭の 1 桁は空白
 		if l != "" {
-			l = pre + l + sgrNoUnderline
+			// / で絞っている語 (search.go)。見積もりを足す前に塗る (Matches は見積もりを見ないので、3pt が光らないように)。折り返しで割れた語は浮かせないだけ
+			l = pre + markHits(l, words, pre) + sgrNoUnderline
 		}
 		if i == 0 && pts != "" {
 			l = fit(l, w-2-termwidth.Of(pts)) + " " + sgrDim + pts + sgrReset + base
@@ -534,7 +535,6 @@ func (m *Model) cardCell(c card.Card, w int) []string {
 		if i == 0 && c.Purpose == card.ForQuestion { // 確認の印を色で浮かせる (折り返しで割れたら色を付けないだけ)
 			l = strings.Replace(l, card.QuestionMark, sgrPink+sgrBold+card.QuestionMark+sgrFgReset+pre, 1)
 		}
-		l = markHits(l, words, pre) // / で絞っている語 (search.go。折り返しで割れた語は浮かせないだけ)
 		out = append(out, paint(base, " "+l, w))
 	}
 	return append(out, paint(base, " "+badgePre+badge, w))
