@@ -36,7 +36,8 @@ Apple Silicon (14 コア)、Go の benchmark と `tea.NewProgram` を出力先 =
 
 ## 対応方針 (案)
 
-1. **`columns()` を 1 回の Snapshot につき 1 回だけ作る**。`setSnap` / タブの切り替え / 並べ替え (K / J) で作り直し、コマの中では作らない。
+1. **`columns()` を 1 回の Snapshot につき 1 回だけ作る**。結果を変えるのは `m.snap` と `m.tab` だけで、書き換えるのは `setSnap`
+   (poll・起動・K / J の `moveCard`・`model.go` のもう 1 か所) と `ensureTab` / `moveTab` だけ (反証レビューで grep 確認)。ここで作り直し、コマの中では作らない。
    コピーするならカード本体ではなく添字か `*card.Card` にする。作り直しの契機を 1 か所へ寄せ、ほかから古い一覧を読めないようにする
    (`~/.claude/rules/survey-receiver-guards-before-passing-new-values.md` の「崩せる経路を全部挙げる」)
 2. 文字列の合成で、変わらない行を毎コマ作り直さない。例: ボードの行を Snapshot と選択の変化のときだけ組み、演出はその上に重ねるだけにする。
@@ -67,6 +68,8 @@ Apple Silicon (14 コア)、Go の benchmark と `tea.NewProgram` を出力先 =
 ## 進捗
 
 - [x] 実測と原因の切り分け (上の表)
+- [x] 反証レビュー (読み取り専用のサブエージェント 1 体): `columns` の 1 コマ 5 回・呼び元・カードのコピー・`claude agents --json` の最大 10 秒は反証されず。
+  指摘 P3 (K / J は `setSnap` に含まれるので別の契機ではない) を対応方針 1 に反映。数値は再計測されていない
 - [ ] 1: `columns()` を Snapshot ごとに 1 回にする
 - [ ] 3: before / after の計測
 - [ ] 2: 行の作り直しを減らす (1 の後に要否を判断)
