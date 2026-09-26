@@ -32,13 +32,16 @@ func hasSpin(s string) bool {
 	return false
 }
 
-// 裏で処理中のカード (PG の status が busy / テストの係が実行中) だけに回る印が出る。PG が待っている (waiting) カードには出さない。
+// PG が turn の途中 (status が busy) のカードだけに回る印が出る。PG が待っている (waiting) カードと、テストの係の結果を待つカード
+// (実行中の T1 / 頼んだ直後でまだ busy の B1) には出さない (issue 455)。
 func TestSpinnerOnlyOnProcessingCards(t *testing.T) {
 	m, _ := spinModel(t)
+	m.snap.Cards = append(m.snap.Cards, card.Card{ID: "B1", State: card.Running, Session: "s-b1", Run: "make test"})
+	m.snap.Consumers = append(m.snap.Consumers, backend.Consumer{Session: "s-b1", CardID: "B1", Status: "busy"})
 	for _, tc := range []struct {
 		id   string
 		want bool
-	}{{"R1", true}, {"T1", true}, {"W1", false}, {"W2", false}} {
+	}{{"R1", true}, {"T1", false}, {"B1", false}, {"W1", false}, {"W2", false}} {
 		var c card.Card
 		for _, cc := range m.snap.Cards {
 			if cc.ID == tc.id {

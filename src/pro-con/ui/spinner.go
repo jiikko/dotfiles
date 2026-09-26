@@ -1,6 +1,7 @@
 package ui
 
-// 裏で処理中のカード (PG の turn の途中・テストの係が実行中) のバッジの頭に、回る印 (ぐるぐる) を出す。2026-09-25 のユーザーの依頼。
+// PG が turn の途中のカードのバッジの頭に、回る印 (ぐるぐる) を出す。2026-09-25 のユーザーの依頼。
+// 待っているカード (テストの係の結果待ち・再開待ち) には出さず、地を暗くする (issue 455。2026-09-26 のユーザーの決定。view.go の cardCell)。
 // 回すカードがある間だけ spinInterval で描き直し、無くなったら止める (演出の frame と同じく、アイドルで CPU を使わない)。
 
 import (
@@ -18,16 +19,28 @@ const spinInterval = 100 * time.Millisecond
 
 type spinMsg struct{}
 
-// processing は、そのカードを裏で Claude かテストの係が処理している最中か。
-// PG の turn の途中 = そのカードの PG の status が busy (claude agents --json の語)。テストの係 = 実行中のコマンドがある。
+// processing は、そのカードの PG が turn の途中か (PG の status が busy。claude agents --json の語)。
+// 待っているカードは busy でも回さない (テストの係に頼んだ直後の turn の終わり際)。テストの係の実行中も「結果待ち」なので回さない (issue 455)。
 func (m *Model) processing(c card.Card) bool {
-	if c.Exec.Active() {
-		return true
+	if waiting(c) {
+		return false
 	}
 	for _, pg := range m.snap.Consumers {
 		if pg.CardID == c.ID && pg.Status == "busy" {
 			return true
 		}
+	}
+	return false
+}
+
+// waiting は、PG が居るが止まって待っているカードか: 作業中の列でテストの係の結果を待っている (実行中も含む) /
+// 分解済みの列で再開を待っている (一度起動した = session がある)。まだ起動していない分解済みのカードは待ちに含めない (issue 455)。
+func waiting(c card.Card) bool {
+	switch c.State {
+	case card.Running:
+		return c.AwaitsRun()
+	case card.Planned:
+		return c.Session != ""
 	}
 	return false
 }

@@ -341,6 +341,9 @@ func (m *Model) columnCells(col int, cs []card.Card, inner int) [][]string {
 // 地は塗り替えない (カード固有の色が消えると、列を移ったときに目で追えなくなる)。完了は文字を dim にする。
 func (m *Model) cardCell(c card.Card, w int) []string {
 	base := bg(cardColor(c.ID)) + fg(252)
+	if waiting(c) { // 待っているカードは、固有の色のまま明度を下げる (別の色に塗り替えない。spinner.go)
+		base = bgDim(cardColor(c.ID), waitDim) + fg(252)
+	}
 	title := c.ID + issueTag(c) + " " + c.Title // issue に紐づくカードは 1 行目に番号を出す (バッジ行は待ちの理由と時間)
 	badge := m.badgeColored(c)
 	pre, badgePre := "", ""
@@ -393,7 +396,7 @@ func (m *Model) badgeColored(c card.Card) string {
 // badge は待ちの理由と、issue との紐づき (要件 10)。
 func (m *Model) badge(c card.Card) string {
 	var parts []string
-	if m.processing(c) { // 裏で Claude かテストの係が処理している最中 (spinner.go)
+	if m.processing(c) { // PG が turn の途中 (spinner.go)
 		parts = append(parts, m.spinFrame())
 	}
 	if c.Deleting() {

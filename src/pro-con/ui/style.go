@@ -17,6 +17,17 @@ import (
 func fg(n int) string { return "\x1b[38;5;" + strconv.Itoa(n) + "m" }
 func bg(n int) string { return "\x1b[48;5;" + strconv.Itoa(n) + "m" }
 
+// waitDim は待っているカードの地の明度の倍率 (issue 455。2026-09-26 にユーザーが見本の ×0.55 / ×0.4 から選んだ)。
+const waitDim = 0.55
+
+// bgDim は 256 色の n を、色相を保ったまま明度を k 倍にした地 (RGB で出す)。cardPalette はどれも cube の最も暗い段なので、
+// 256 色のままでは色相を保って暗くできない。truecolor が通らない端末では近い 256 色に落ちる (ユーザー了承済み)。
+func bgDim(n int, k float64) string {
+	r, g, b := rgb256(n)
+	scale := func(v int) string { return strconv.Itoa(int(float64(v)*k + 0.5)) }
+	return "\x1b[48;2;" + scale(r) + ";" + scale(g) + ";" + scale(b) + "m"
+}
+
 const (
 	sgrSelected = "\x1b[48;5;202m\x1b[38;5;16m\x1b[1m" // 現在地 (蛍光オレンジ地に黒字)
 	sgrFgReset  = "\x1b[39m\x1b[22m"                   // 前景と太字だけを戻す (帯の背景色を消さない)
