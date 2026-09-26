@@ -4,7 +4,7 @@
 
 親: [523](523-design-asm-fast-paths.md) (2026-09-26 に 415 から移した)
 
-> **起点**: arm64 の NEON 版は remote の `claude/glogx-fastdispwidth-asm-7gv00g` に既にある (実測は 523 の本文)。一から書かず、これを起点にする。
+> **2026-09-26 に NEON 版が master へ入った** (PR #14、`a413f1ef`。実測は 523 の本文)。Phase 2 の実装はこれで済んでいる。残りは、実画面での効果を測って残すかを決めること。
 > Phase 1 (共通の境界へ寄せる) は [524](524-refactor-route-terminal-width-through-termwidth.md) に切り出した
 
 ## 背景
