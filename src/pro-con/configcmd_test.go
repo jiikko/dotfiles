@@ -71,7 +71,7 @@ func TestConfigReview(t *testing.T) {
 	if rc, _, e := configCmd(t, dir, "set", "review", "codex"); rc != 0 {
 		t.Fatalf("set review codex が rc=%d: %s", rc, e)
 	}
-	if _, err := store.Apply(dir, time.Now()); err != nil {
+	if _, err := store.Apply(dir, time.Now(), nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, out, _ := configCmd(t, dir, "show"); !strings.Contains(out, "review 設定 codex / dispatcher の担い手はまだ分からない") {
