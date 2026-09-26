@@ -15,12 +15,14 @@ on:
     branches: [master]
     paths:
       - 'src/schedkeys/**'
+      - 'src/tuikit/**'  # replace で取り込む共有 module (入力欄のキャレットを端末のカーソルにする caret)
       - .github/workflows/src_schedkeys.yml
       - .github/workflows/_go-project.yml
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
   pull_request:
     paths:
       - 'src/schedkeys/**'
+      - 'src/tuikit/**'  # replace で取り込む共有 module (入力欄のキャレットを端末のカーソルにする caret)
       - .github/workflows/src_schedkeys.yml
       - .github/workflows/_go-project.yml
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口

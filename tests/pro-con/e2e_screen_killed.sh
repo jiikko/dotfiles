@@ -14,7 +14,7 @@ TT_WAIT_TICKS=200 tt_wait_until e2e_dispatcher_alive || e2e_fail "画面を開�
 # 依頼を出す → 偽の PM が分解 → 偽の PG が起動して質問を置く
 tmx send-keys -t 0:0 n
 tmx send-keys -t 0:0 -l "画面が落ちたときの停止の確認"
-tmx send-keys -t 0:0 Enter
+tmx send-keys -t 0:0 Enter y  # enter で送る前の確認、y で送る (issue 517)
 TT_WAIT_TICKS=300 tt_wait_until e2e_screen_has 0 "質問待ち (1)" || e2e_fail "偽の PG が起動しない (質問待ちに来ない)"
 pg_running() { jq -e '[.sessions[] | select(.state != null and .state != "stopped")] | length > 0' "$state/e2e-sessions.json" > /dev/null 2>&1; }
 pg_running || e2e_fail "偽の PG の session が e2e-sessions.json に無い"

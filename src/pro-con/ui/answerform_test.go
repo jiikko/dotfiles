@@ -69,7 +69,7 @@ func sentAnswer(t *testing.T, be *spy) backend.Answer {
 func TestAnswerFormSendsRecommendedAsIs(t *testing.T) {
 	be := newFormSpy()
 	m := openForm(t, be)
-	press(m, "enter")
+	press(m, "enter", "y")
 	if a := sentAnswer(t, be); a.Text != "1. 形: 丸\n2. 直すもの: 色" || m.mode != modeBoard {
 		t.Fatalf("推奨のままの答えが違う: %q (mode=%v)", a.Text, m.mode)
 	}
@@ -86,7 +86,7 @@ func TestAnswerFormSelectsTypesAndSends(t *testing.T) {
 	typeText(m, "余白 j k")        // 書く欄では j / k / 空白も文字
 	pressForm(m, "tab")          // 補足
 	typeText(m, "急がない")
-	press(m, "enter")
+	press(m, "enter", "y")
 	if a := sentAnswer(t, be); a.Text != "1. 形: 角\n2. 直すもの: 幅 / その他: 余白 j k\n補足: 急がない" {
 		t.Fatalf("答えの文が違う: %q", a.Text)
 	}
@@ -98,7 +98,7 @@ func TestAnswerFormOtherReplacesRadioChoice(t *testing.T) {
 	m := openForm(t, be)
 	pressForm(m, "j", "j") // 問 1 のその他
 	typeText(m, "楕円")
-	press(m, "enter")
+	press(m, "enter", "y")
 	if a := sentAnswer(t, be); a.Text != "1. 形: その他: 楕円\n2. 直すもの: 色" {
 		t.Fatalf("その他が選ばれていない: %q", a.Text)
 	}
@@ -172,7 +172,7 @@ func TestAnswerFormBlankOtherIsNotChosen(t *testing.T) {
 			t.Fatalf("空白だけのその他に選んだ印が付いた: %q", s)
 		}
 	}
-	press(m, "enter")
+	press(m, "enter", "y")
 	if a := sentAnswer(t, be); a.Text != "1. 形: 丸\n2. 直すもの: 色" {
 		t.Fatalf("空白だけのその他で答えが変わった: %q", a.Text)
 	}

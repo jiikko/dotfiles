@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"tuikit/caret"
 	"tuikit/layout"
 
 	"pro-con/backend"
@@ -47,27 +48,18 @@ func (m *Model) View() tea.View {
 }
 
 // caret は入力欄のキャレットに置く端末のカーソル。入力欄が無ければ nil (カーソルを隠す)。
-// 🚨 IME は変換中の文字を端末のカーソルの位置に出す。カーソルを置かないと、描画の差分を書き終えた位置 (毎回変わる) に出て、
-// 日本語の変換中に入力欄から外れる。位置は render と同じ行の並び (ヘッダ + 領域 + 入力欄) から数える
+// 🚨 IME は変換中の文字を端末のカーソルの位置に出す (tuikit/caret)。位置は render と同じ行の並び (ヘッダ + 領域 + 入力欄) から数える
 func (m *Model) caret() *tea.Cursor {
-	if m.stopping {
+	switch {
+	case m.stopping:
 		return nil
-	}
-	if m.mode == modeForm {
+	case m.mode == modeForm:
 		return m.formCaret()
+	case m.mode == modeInput:
+		head, _, col := m.inputField()
+		return caret.At(ansi.StringWidth(head)+col, m.inputRow, m.width, m.height) // inputRow は render が数えた入力欄の行
 	}
-	if m.mode != modeInput {
-		return nil
-	}
-	y := m.inputRow // render が数えた入力欄の行
-	head, before, _ := m.inputParts()
-	x := min(ansi.StringWidth(head+before), m.width-1) // 幅は表示のセル数 (全角は 2)
-	if y < 0 || y >= m.height || x < 0 {
-		return nil
-	}
-	c := tea.NewCursor(x, y)
-	c.Shape = tea.CursorBar
-	return c
+	return nil
 }
 
 // headerRows はタイトル・タブ・ゲージ・罫線の行数。
@@ -101,7 +93,7 @@ func (m *Model) render() string {
 	}
 	screen := m.overlayBump(append(append(header, region...), foot...), len(header), board)
 	head, rest := screen[:len(header):len(header)], screen[len(header):]
-	region = m.overlayToast(m.overlayForm(m.dimWhileTyping(m.overlaySettings(m.overlayDiff(m.overlayDrawer(rest[:len(region)]))))))
+	region = m.overlayToast(m.overlaySend(m.overlayForm(m.dimWhileTyping(m.overlaySettings(m.overlayDiff(m.overlayDrawer(rest[:len(region)])))))))
 	return strings.Join(m.overlayQuit(m.overlayLegend(append(append(head, region...), rest[len(region):]...))), "\n")
 }
 
@@ -243,7 +235,12 @@ func (m *Model) footLines() []string {
 	case modeInput:
 		out = append(out, m.inputLine())
 	case modeConfirm:
-		out = append(out, " "+sgrBold+sgrYellow+m.confirmText+sgrReset)
+		switch {
+		case m.send == nil:
+			out = append(out, " "+sgrBold+sgrYellow+m.confirmText+sgrReset)
+		case m.send.back == modeInput: // 確認の枠は中央。入力欄は下に残す (取り消すとここへ戻る)
+			out = append(out, m.inputLine())
+		}
 	case modeBoard, modeForm: // 回答フォームは領域の中央に重ねる (overlayForm)
 	}
 	if m.sticky != "" {
@@ -681,12 +678,25 @@ func undelivered(c card.Card) int {
 }
 
 func (m *Model) inputHead() string {
+	label := m.inputLabel()
+	switch m.inputKind {
+	case inputOrder:
+		label += " (tab で種類を切り替え)"
+	case inputIssue:
+		label += " — 補足があれば (空のまま enter でよい)"
+	case inputAnswer, inputBtw, inputNew, inputQuit:
+	}
+	return " " + sgrBold + fg(202) + label + ": " + sgrReset + fg(231)
+}
+
+// inputLabel は入力欄が何を書く欄か (見出しと、送る前の確認の題に使う)。
+func (m *Model) inputLabel() string {
 	var label string
 	switch m.inputKind {
 	case inputAnswer:
 		label = m.selected + " へ回答"
 	case inputOrder:
-		label = fmt.Sprintf("%s へ追加オーダー [%s] (tab で種類を切り替え)", m.selected, m.orderKind.Label())
+		label = fmt.Sprintf("%s へ追加オーダー [%s]", m.selected, m.orderKind.Label())
 	case inputBtw:
 		label = m.selected + " に btw (PG は止めない)"
 	case inputIssue:
@@ -697,7 +707,6 @@ func (m *Model) inputHead() string {
 				label = fmt.Sprintf("epic %s (未完了の子 %d) をやる", t.Epic, len(t.Children))
 			}
 		}
-		label += " — 補足があれば (空のまま enter でよい)"
 	case inputQuit:
 		label = m.quitLabel()
 	case inputNew:
@@ -706,19 +715,21 @@ func (m *Model) inputHead() string {
 			label = "新しい依頼 (スコープ: " + r.Name + " の中だけ)"
 		}
 	}
-	return " " + sgrBold + fg(202) + label + ": " + sgrReset + fg(231)
+	return label
 }
 
-// inputParts は入力欄の見出し・キャレットの前・後 (キャレットは caret が端末のカーソルで出す)。
-func (m *Model) inputParts() (head, before, after string) {
-	s, cur := []rune(m.line.String()), m.line.Cursor()
-	return m.inputHead(), string(s[:cur]), string(s[cur:])
+// inputField は入力欄の見出しと、欄に出す文字列・その中のキャレットの桁 (長ければキャレットが見えるよう前を切る。
+// キャレットは caret が端末のカーソルで出す)。
+func (m *Model) inputField() (head, text string, col int) {
+	head = m.inputHead()
+	text, col = m.line.Window(m.width - ansi.StringWidth(head))
+	return head, text, col
 }
 
 func (m *Model) inputLine() string {
-	head, before, after := m.inputParts()
+	head, text, _ := m.inputField()
 	// 入力欄に居ることが一目で分かるよう、行の全幅に地の色を敷く (カンバンは dimWhileTyping で沈める)
-	return paint(bg(236), head+before+after, m.width)
+	return paint(bg(236), head+text, m.width)
 }
 
 // dimWhileTyping は入力欄・y/N 確認を出している間、カンバンの領域を色を抜いた暗い灰色で描く。
@@ -780,6 +791,9 @@ func (m *Model) hints() []string {
 		}
 		return append(h, "esc 取り消し")
 	case modeConfirm:
+		if m.send != nil {
+			return m.sendHints()
+		}
 		return []string{"y / enter 実行", "他のキー 取り消し"}
 	case modeForm:
 		return m.formHints()

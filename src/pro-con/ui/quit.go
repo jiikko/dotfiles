@@ -47,13 +47,27 @@ func (m *Model) busyCards() (running, waiting int) {
 // requestQuit は終了の入力欄を開く。閉じるのは、そこへ quit と打って enter したときだけ (2026-09-25 にユーザーが決めた形。
 // q や ctrl+c の 1 打で閉じない: 本物のモードの終了は dispatcher と PG を止めるので、打ち間違いで止めない)。
 func (m *Model) requestQuit() tea.Cmd {
-	if m.mode == modeForm || m.mode == modeInput && m.inputKind != inputQuit { // 書きかけの文・選んだ答えは消さない
+	if m.holdsDraft() { // 書きかけの文・選んだ答えは消さない
 		m.refuse("終了は Q を押して quit と打つ (書きかけの入力はそのまま)")
 		return nil
 	}
 	m.closeAll()
 	m.startInput(inputQuit)
 	return nil
+}
+
+// holdsDraft は書きかけの文・選んだ答えを持っている画面か (入力欄・回答フォームと、その送る前の確認)。
+func (m *Model) holdsDraft() bool {
+	switch m.mode {
+	case modeForm:
+		return true
+	case modeInput:
+		return m.inputKind != inputQuit
+	case modeConfirm:
+		return m.send != nil
+	case modeBoard:
+	}
+	return false
 }
 
 // closeAll は開いている板を全部閉じる (終了の入力欄を、何かの板の上ではなくボードの上で開く)。
