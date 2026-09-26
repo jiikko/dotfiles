@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"pro-con/card"
 )
@@ -168,5 +169,18 @@ func TestApplyForget(t *testing.T) {
 	after, _ := Load(dir)
 	if len(after.Cards) != len(before.Cards) || after.Cards[0].State != card.Done || len(after.Cards[0].History) != len(before.Cards[0].History) {
 		t.Error("forget で記録を変えた")
+	}
+}
+
+// 流れの説明 (card.AfterDone) の片付けの時間は、書庫へ移す時間と記録から消す時間の定数と合っている (定数を変えたら説明も直す)。
+func TestAfterDoneMatchesDurations(t *testing.T) {
+	text := strings.Join(card.AfterDone, "\n")
+	for _, c := range []struct {
+		said      string
+		got, want time.Duration
+	}{{"24 時間", AutoClearAfter, 24 * time.Hour}, {"1 週間", PurgeAfter, 7 * 24 * time.Hour}} {
+		if !strings.Contains(text, c.said) || c.got != c.want {
+			t.Errorf("説明は %q を含むか: %v / 定数 %s (説明の長さは %s): %s", c.said, strings.Contains(text, c.said), c.got, c.want, text)
+		}
 	}
 }
