@@ -360,11 +360,28 @@ func TestIssuesViewMultiSelectExtendAndClear(t *testing.T) {
 	if lo, hi, _ := v.selection(); lo != 2 || hi != 3 {
 		t.Fatalf("錨の下側へ伸ばせない: lo=%d hi=%d", lo, hi)
 	}
-	// J / K は範囲選択を伸ばさない (2026-09-27 のユーザーの決定で「塊の端へ」に回した。範囲選択は shift+矢印だけ)
-	byVim := newView()
-	byVim.handleKey("J", vp(10))
-	if _, _, ok := byVim.selection(); ok {
-		t.Fatal("J が範囲選択を伸ばした (塊の端へ移るだけのはず)")
+	// 矢印と j/k の 2 系統あるので伸張も両方から効く (ユーザー要望 2026-08-01)。
+	// 🚨 矢印だけだと、shift+矢印を通さない端末・tmux 設定で機能ごと沈黙する。
+	for _, tc := range []struct {
+		name           string
+		arrow, vimKey  string
+		wantLo, wantHi int
+	}{
+		{"下へ伸ばす", "shift+down", "J", 2, 4},
+		{"上へ縮める", "shift+up", "K", 2, 3},
+	} {
+		byArrow := newView()
+		byArrow.handleKey("shift+down", vp(10)) // 2..3 まで揃えてから
+		byArrow.handleKey(tc.arrow, vp(10))
+		byVim := newView()
+		byVim.handleKey("J", vp(10))
+		byVim.handleKey(tc.vimKey, vp(10))
+		aLo, aHi, _ := byArrow.selection()
+		vLo, vHi, _ := byVim.selection()
+		if aLo != vLo || aHi != vHi {
+			t.Fatalf("%s: 矢印と %s で範囲が違う (arrow=%d..%d vim=%d..%d)",
+				tc.name, tc.vimKey, aLo, aHi, vLo, vHi)
+		}
 	}
 
 	for _, tc := range []struct {
@@ -2155,8 +2172,8 @@ func TestIssuesLayoutAgreesBetweenKeysAndRender(t *testing.T) {
 // Claude Code が issue を書くたびに選択が消えて実用にならない。
 func TestIssuesViewKeepsSelectionAcrossRescan(t *testing.T) {
 	v := loadedView(sampleIssues()...)
-	v.handleKey("a", vp(20))          // pending も出して行を増やす
-	v.handleKey("shift+down", vp(20)) // 2 行選択 (錨 = 先頭行)
+	v.handleKey("a", vp(20)) // pending も出して行を増やす
+	v.handleKey("J", vp(20)) // 2 行選択 (錨 = 先頭行)
 	lo, hi, ok := v.selection()
 	if !ok || hi-lo != 1 {
 		t.Fatalf("前提が崩れた: lo=%d hi=%d ok=%v", lo, hi, ok)
