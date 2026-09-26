@@ -25,7 +25,7 @@
 ## attach から戻る
 
 - 画面の `a` で PG の session に attach する (`claude attach`)。attach の間に打った文は、戻るとカードの履歴に残る
-- tmux の中: attach は pro-con の画面の上の窓 (tmux の popup) で開く。窓の枠の見出しにあるキー (Ctrl+Z) で閉じて pro-con に戻る
+- tmux の中: attach は pro-con の画面の上の窓 (tmux の popup) で開く。窓の枠の見出しにあるキーで閉じて pro-con に戻る: tmux の prefix に続けて `d` (普段の detach と同じ手。外のセッションは detach されない) か Ctrl+Z。prefix のキーそのものを Claude Code に送るには prefix を 2 回
 - tmux の外: attach の前に戻り方の案内が出る (enter / y で進む)。Ctrl+Z で pro-con に戻る。`←` は Claude Code の一覧へ行くだけで戻らない
 - 戻れなくなったら、別の端末で `pro-con attach --leave`。pro-con の画面から開いた attach の接続だけを終わらせる
 - どの戻り方でも PG の session は動き続ける (終わるのは attach の接続だけ)

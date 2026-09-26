@@ -87,7 +87,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
   (要約しない。受付の箱経由で dispatcher が書く。issue 428)。
   attach の開き方 (issue 527): tmux の中は `tmux display-popup` の窓の中に pro-con 専用の入れ子の tmux サーバ
   (一時ディレクトリの socket・`-f` でユーザーの設定を読まない) を起こし、その中で `claude attach` を動かす。popup の中では外の tmux の
-  bind が効かない (キーは全部 popup の中身へ渡る) ので、戻るキーは入れ子のサーバの bind (`kill-server`) にしてある (`ui/attachpopup.go`)。
+  bind が効かない (キーは全部 popup の中身へ渡る) ので、戻るキー (外の tmux から読んだ prefix + `d` と Ctrl+Z) は入れ子のサーバの bind (`kill-server`) にしてある (`ui/attachpopup.go`)。
   本番の tmux サーバには bind を足さない。tmux の外は端末を渡す前に戻り方の案内を出す (`ui/attachguide.go`)。
   戻れなくなったときは `pro-con attach --leave` が ps から入れ子のサーバ・画面の子の `claude attach` を探して終わらせる (`leavecmd.go`)。
   使い方の正本は `pro-con help usage` の「attach から戻る」

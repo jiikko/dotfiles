@@ -12,28 +12,36 @@ import (
 // popup の中身は外の tmux サーバの環境で起きるので、attach の作業場所・環境を渡し、入れ子の tmux は TMUX を落として
 // 一時ディレクトリの socket と設定で起こす。窓の枠の見出しにカードの id と戻る操作を出す。
 func TestPopupCommand(t *testing.T) {
-	p := &PopupAttach{Tmux: "/bin/tmux", Title: " %s の PG に attach 中 ─ Ctrl+Z で pro-con に戻る ", Key: "C-z"}
+	p := &PopupAttach{Tmux: "/bin/tmux"}
 	c := exec.Command("/usr/bin/true", "attach", "abc123")
 	c.Dir, c.Env = "/work", []string{"PATH=/x"}
-	got := p.command(c, "C-082", "/tmp/pro-con-attach-1").Args
-	want := []string{"/bin/tmux", "display-popup", "-E", "-w", "90%", "-h", "90%", "-T", " C-082 の PG に attach 中 ─ Ctrl+Z で pro-con に戻る ",
+	got := p.command(c, "C-082", "C-t", "/tmp/pro-con-attach-1").Args
+	want := []string{"/bin/tmux", "display-popup", "-E", "-w", "90%", "-h", "90%", "-S", "fg=colour202",
+		"-T", " C-082 の PG に attach 中 ─ C-t d / Ctrl+Z で pro-con に戻る (PG は動き続ける) ",
 		"-d", "/work", "-e", "PATH=/x", "--", "/usr/bin/env", "-u", "TMUX", "-u", "TMUX_PANE",
 		"/bin/tmux", "-S", "/tmp/pro-con-attach-1/sock", "-f", "/tmp/pro-con-attach-1/conf", "new-session", "--", "/usr/bin/true", "attach", "abc123"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("popup のコマンドが違う:\n got  %q\n want %q", got, want)
 	}
+	if title := popupTitle("C-082", ""); !strings.Contains(title, "─ Ctrl+Z で pro-con に戻る") { // 外の prefix が無い (None)
+		t.Fatalf("prefix が無いのに prefix の戻り方を出した: %q", title)
+	}
 }
 
-// 入れ子の tmux のキーは戻るキーの 1 つだけ (prefix も外し、他のキーは全部 claude attach へ渡す)。戻るキーは入れ子のサーバを終わらせる。
-func TestPopupConfBindsOnlyLeaveKey(t *testing.T) {
-	conf := popupConf("C-z")
-	for _, want := range []string{"unbind -a", "set -g prefix None", "set -g prefix2 None", "bind -n C-z kill-server", "set -g destroy-unattached on"} {
+// 入れ子の tmux のキーは戻るキー (外の prefix + d・Ctrl+Z) と、prefix を 2 回で prefix を送るものだけ。他は全部 claude attach へ渡す。
+func TestPopupConfBindsOnlyLeaveKeys(t *testing.T) {
+	conf := popupConf("C-t")
+	for _, want := range []string{"unbind -a", "set -g prefix2 None", "bind -n C-z kill-server", "set -g prefix C-t", "bind d kill-server",
+		"bind C-t send-prefix", "set -g destroy-unattached on"} {
 		if !strings.Contains(conf, want) {
 			t.Fatalf("入れ子の tmux の設定に %q が無い:\n%s", want, conf)
 		}
 	}
-	if strings.Index(conf, "unbind -a") > strings.Index(conf, "bind -n") {
+	if strings.Index(conf, "unbind -a") > strings.Index(conf, "bind -n") || strings.Index(conf, "unbind -a") > strings.Index(conf, "bind d") {
 		t.Fatal("戻るキーを bind した後で全部を外している")
+	}
+	if conf := popupConf(""); strings.Contains(conf, "bind d") || strings.Contains(conf, "send-prefix") {
+		t.Fatalf("外の prefix が無いのに prefix の bind を足した:\n%s", conf)
 	}
 }
 
@@ -48,7 +56,7 @@ func TestTmuxPopupOnlyInTmux(t *testing.T) {
 // tmux の中 (popup を使う): 案内を出さず、端末も渡さず、裏の処理で popup を待つ。
 func TestAttachInPopupSkipsGuideAndTerminal(t *testing.T) {
 	m := New(newSpy(), nil)
-	m.UsePopupAttach(&PopupAttach{Tmux: "/nonexistent/tmux", Title: "%s", Key: "C-z"})
+	m.UsePopupAttach(&PopupAttach{Tmux: "/nonexistent/tmux"})
 	handed := false
 	m.execProcess = func(*exec.Cmd, tea.ExecCallback) tea.Cmd { handed = true; return nil }
 	press(m, "right") // W1

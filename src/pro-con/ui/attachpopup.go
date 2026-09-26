@@ -23,17 +23,18 @@ import (
 // PopupDirPrefix は入れ子のサーバの一時ディレクトリの名前の頭 (pro-con attach --leave が ps からこれで見つける)。
 const PopupDirPrefix = "pro-con-attach-"
 
-// 窓の枠の見出しと戻るキー (見本からユーザーが選ぶ)。
-const (
-	popupTitle = " %s の PG に attach 中 ─ Ctrl+Z で pro-con に戻る (PG は動き続ける) "
-	popupKey   = "C-z"
-)
+// 戻るキーは 2 つ (2026-09-26 にユーザーが選んだ): 外の tmux の prefix に続けて d (普段の detach の手癖) と Ctrl+Z (tmux の外と同じ)。
+// prefix は固定で書かず、attach のたびに外の tmux から読む (tmux show -gv prefix)。外の tmux の bind は popup の間効かないので、
+// prefix + d で外のセッションが detach されることはない (隔離 tmux で確かめた)。popup の中の Ctrl+Z は入れ子の tmux が受けるので、
+// claude attach には届かない (suspend の信号にもならない)。
+const popupLeaveKey = "C-z"
+
+// popupBorder は窓の枠の色 (pro-con の現在地の色 202。回答フォーム・送る前の確認の枠と揃える。見本からユーザーが選んだ)。
+const popupBorder = "fg=colour202"
 
 // PopupAttach は tmux の popup で attach を開く設定。
 type PopupAttach struct {
-	Tmux  string // tmux の実体のパス
-	Title string // 窓の枠の見出し (%s にカードの id)
-	Key   string // 戻るキー (tmux のキー名)
+	Tmux string // tmux の実体のパス
 }
 
 // TmuxPopup は tmux の中なら popup の設定を返す (外なら nil。端末を渡す今の attach を使う)。
@@ -45,15 +46,34 @@ func TmuxPopup() *PopupAttach {
 	if err != nil {
 		return nil
 	}
-	return &PopupAttach{Tmux: p, Title: popupTitle, Key: popupKey}
+	return &PopupAttach{Tmux: p}
+}
+
+// outerPrefix は外の tmux の prefix (tmux のキー名。読めない・None なら "")。
+func (p *PopupAttach) outerPrefix() string {
+	out, err := exec.Command(p.Tmux, "show", "-gv", "prefix").Output()
+	if k := strings.TrimSpace(string(out)); err == nil && k != "None" {
+		return k
+	}
+	return ""
+}
+
+// popupTitle は窓の枠の見出し (見本からユーザーが選んだ長い形)。prefix が "" なら Ctrl+Z だけを出す。
+func popupTitle(cardID, prefix string) string {
+	keys := "Ctrl+Z"
+	if prefix != "" {
+		keys = prefix + " d / Ctrl+Z"
+	}
+	return " " + cardID + " の PG に attach 中 ─ " + keys + " で pro-con に戻る (PG は動き続ける) "
 }
 
 // UsePopupAttach は tmux の中で attach を popup で開くようにする (nil なら端末を渡す)。
 func (m *Model) UsePopupAttach(p *PopupAttach) { m.popup = p }
 
-// popupConf は入れ子のサーバの設定。キーは戻るキーの 1 つだけにし (prefix も外す)、他は全部 claude attach へ渡す。
-func popupConf(key string) string {
-	return strings.Join([]string{
+// popupConf は入れ子のサーバの設定。キーは戻るキー (prefix + d・Ctrl+Z) だけにし、他は全部 claude attach へ渡す。
+// prefix を 2 回押すと prefix のキーそのものを claude へ送る (C-t は Claude Code も使う)。prefix が "" なら prefix を外す。
+func popupConf(prefix string) string {
+	lines := []string{
 		"set -g status off",
 		"set -g destroy-unattached on", // popup が外から閉じられても (client が消えても) attach を残さない
 		"set -g exit-empty on",
@@ -63,15 +83,18 @@ func popupConf(key string) string {
 		"set -g extended-keys on", // Shift+Enter などを claude へ渡す (外の tmux が送ってくる形を落とさない)
 		"set -g focus-events on",
 		"unbind -a",
-		"bind -n " + key + " kill-server",
-		"",
-	}, "\n")
+		"bind -n " + popupLeaveKey + " kill-server",
+	}
+	if prefix != "" {
+		lines = append(lines, "set -g prefix "+prefix, "bind d kill-server", "bind "+prefix+" send-prefix")
+	}
+	return strings.Join(append(lines, ""), "\n")
 }
 
 // command は c を popup の中の入れ子のサーバで走らせる tmux のコマンドを組む (dir は一時ディレクトリ)。
 // popup の中身は外の tmux サーバの環境で起きるので、c の作業場所と環境 (Env を決めていれば) を -d / -e で渡す。
-func (p *PopupAttach) command(c *exec.Cmd, cardID, dir string) *exec.Cmd {
-	args := []string{"display-popup", "-E", "-w", "90%", "-h", "90%", "-T", fmt.Sprintf(p.Title, cardID)}
+func (p *PopupAttach) command(c *exec.Cmd, cardID, prefix, dir string) *exec.Cmd {
+	args := []string{"display-popup", "-E", "-w", "90%", "-h", "90%", "-S", popupBorder, "-T", popupTitle(cardID, prefix)}
 	if c.Dir != "" {
 		args = append(args, "-d", c.Dir)
 	}
@@ -92,10 +115,11 @@ func (p *PopupAttach) run(c *exec.Cmd, cardID string) error {
 		return err
 	}
 	defer func() { _ = os.RemoveAll(dir) }() // tmux はサーバが終わっても socket を消さない
-	if err := os.WriteFile(filepath.Join(dir, "conf"), []byte(popupConf(p.Key)), 0o600); err != nil {
+	prefix := p.outerPrefix()
+	if err := os.WriteFile(filepath.Join(dir, "conf"), []byte(popupConf(prefix)), 0o600); err != nil {
 		return err
 	}
-	out, err := p.command(c, cardID, dir).CombinedOutput()
+	out, err := p.command(c, cardID, prefix, dir).CombinedOutput()
 	var exit *exec.ExitError
 	switch msg := strings.TrimSpace(string(out)); {
 	case err == nil:

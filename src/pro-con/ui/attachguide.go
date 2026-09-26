@@ -15,7 +15,7 @@ import (
 	"tuikit/layout"
 )
 
-// attachGuideOnce は案内をこの画面で初回だけ出すか (false = 毎回。見本からユーザーが選ぶ)。
+// attachGuideOnce は案内をこの画面で初回だけ出すか (false = 毎回。2026-09-26 にユーザーが毎回を選んだ)。
 const attachGuideOnce = false
 
 // attachGuideLines は案内の枠の中身 (装飾なし)。
@@ -27,7 +27,7 @@ var attachGuideLines = []string{
 
 // attachReturnHelp は ? の表 (流れのタブ) に出す戻り方。help/usage.md の「attach から戻る」と揃える。
 var attachReturnHelp = []string{
-	"tmux の中: attach は画面の上の窓で開く。窓の枠の見出しにあるキー (Ctrl+Z) で閉じて戻る",
+	"tmux の中: attach は画面の上の窓で開く。窓の枠の見出しにあるキー (tmux の prefix に続けて d か Ctrl+Z) で閉じて戻る",
 	"tmux の外: attach の前の案内のとおり Ctrl+Z で戻る (← は Claude Code の一覧へ行くだけ)",
 	"戻れなくなったら、別の端末で pro-con attach --leave (attach の接続だけを終わらせる)。どの戻り方でも PG は動き続ける",
 }
