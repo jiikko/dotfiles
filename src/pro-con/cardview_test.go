@@ -203,6 +203,13 @@ func TestCardListShowsAssignee(t *testing.T) {
 	if json.Unmarshal([]byte(out), &got) != nil || len(got) != 1 || got[0].Assignee != "PG 待ち" || got[0].Owner != "PM" {
 		t.Fatalf("--json の担当 (assignee) と記録の owner: %q", out)
 	}
+	if err := store.SaveDispatcherState(env.dir, store.DispatcherState{Tick: time.Now(), RoleStates: pm}); err != nil {
+		t.Fatal(err)
+	}
+	_, out, _ = viewCmd(t, env, "list", "--state", "requested", "--json") // 役の段階の鍵は roleStep (469 の進捗 progress と別。480)
+	if !strings.Contains(out, `"roleStep": "PM 分解中 ▸ Bash: pro-con card show C-002`) {
+		t.Fatalf("--json に役の段階 (roleStep) が無い: %q", out)
+	}
 }
 
 // show は画面の詳細と同じ中身 (依頼の原文・質問・履歴・PG の出力の末尾) を出す。出力の末尾は起動の記録と transcript から読む。
@@ -262,6 +269,42 @@ func TestCardShow(t *testing.T) {
 	}
 	if rc, _, errOut := viewCmd(t, env, "show", "C-999"); rc != 1 || !strings.Contains(errOut, "C-999") {
 		t.Fatalf("無いカード: rc=%d err=%q", rc, errOut)
+	}
+}
+
+// show は画面の詳細と同じ進捗 (dispatcher が集めた progress.json・見張りが見た conflicts.json・テストの係の最後の結果) と今の待ちを出す (issue 469)。
+func TestCardShowProgress(t *testing.T) {
+	env := viewFixture(t) // C-001 は質問待ち
+	now := time.Now()
+	if err := store.SaveProgress(env.dir, store.Progress{At: now, Cards: map[string]card.Progress{
+		"C-001": {Base: "origin/master", Ahead: 2, Commits: []card.Commit{{Hash: "a1b2c3", Subject: "見本"}}, Dirty: 1},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveConflicts(env.dir, store.Conflicts{At: now, Cards: map[string][]string{"C-001": {"C-001 と C-002 の commit 済みの分どうしが衝突する (g.txt)"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Update(env.dir, func(st *store.State) error {
+		st.Cards[0].LastRun = &card.RunRecord{Command: "make test", Cwd: "/r/.claude/worktrees/pc-c-001", RC: 2, Took: time.Minute, At: now, Tail: []string{"FAIL: TestFoo"}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rc, out, errOut := viewCmd(t, env, "show", "C-001")
+	for _, want := range []string{"今の待ち: PM が質問に答えるか人に回す", "\n進捗\n", "commit: origin/master より 2 本先", "a1b2c3 見本", "ほか 1 本",
+		"未 commit の変更: 1 ファイル", "テスト: 最後の結果 rc=2", "worktree の直下 で `make test`", "FAIL: TestFoo", "取り込み: C-001 と C-002 の commit 済みの分どうしが衝突する"} {
+		if rc != 0 || !strings.Contains(out, want) {
+			t.Fatalf("show に %q が無い: rc=%d out=%q err=%q", want, rc, out, errOut)
+		}
+	}
+	rc, out, _ = viewCmd(t, env, "show", "C-001", "--json")
+	var d cardDetail
+	if rc != 0 || json.Unmarshal([]byte(out), &d) != nil || d.Progress == nil || d.Progress.Ahead != 2 || len(d.Conflicts) != 1 || d.Card.LastRun == nil ||
+		d.NowWaiting == "" {
+		t.Fatalf("show --json に進捗が無い: rc=%d %q", rc, out)
+	}
+	if _, out, _ := viewCmd(t, env, "show", "C-002"); strings.Contains(out, "\n進捗") {
+		t.Fatalf("集めたものの無いカードに進捗の節を出した: %q", out)
 	}
 }
 

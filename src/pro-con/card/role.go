@@ -75,7 +75,7 @@ func (c Card) roleOf(r Roles, ss []RoleState) (RoleState, bool) {
 // PM は 1 回の turn で知らせた数枚を順に扱う (2026-09-25 22:12:16 は 3 枚まとめて知らせた。issue 480)。
 func (c Card) Handling(r Roles, ss []RoleState) string {
 	s, ok := c.roleOf(r, ss)
-	if !ok || s.Phase != RoleBusy || s.Current != c.ID { // 入力待ちの役は手を止めている (人が attach して答えるまで動かない。Progress が入力待ちと出す)
+	if !ok || s.Phase != RoleBusy || s.Current != c.ID { // 入力待ちの役は手を止めている (人が attach して答えるまで動かない。RoleStep が入力待ちと出す)
 		return ""
 	}
 	switch c.State {
@@ -90,7 +90,7 @@ func (c Card) Handling(r Roles, ss []RoleState) string {
 	return ""
 }
 
-// Progress は役の番のカードが役の側のどの段階にあるか (issue 480。依頼の列・質問待ち・レビュー待ちのバッジと card list)。
+// RoleStep は役の番のカードが役の側のどの段階にあるか (issue 480。依頼の列・質問待ち・レビュー待ちのバッジと card list)。
 //   - 知らせ待ち: 役がまだ知らない (知らせ済みの Cards に無い。役が落ちている・枠で起こさないときも。理由はゲージ)
 //   - 知らせた: 知らせを渡している最中か、役の turn に入ったがまだ扱っていない
 //   - 知らせた (手を止めた): 役が turn を終えたのにまだ列に残っている
@@ -98,7 +98,7 @@ func (c Card) Handling(r Roles, ss []RoleState) string {
 //   - 入力待ち: 扱っている最中に権限の確認か質問で止まった
 //
 // 積んだ・その場で答えて閉じたカードは役の列を離れるので、列の移動と出来事で分かる (ここでは出さない)。役の番でない・役を起こさないなら空。
-func (c Card) Progress(r Roles, ss []RoleState) string {
+func (c Card) RoleStep(r Roles, ss []RoleState) string {
 	s, ok := c.roleOf(r, ss)
 	if !ok || s.Phase == RoleOff {
 		return ""

@@ -556,7 +556,7 @@ func (m *Model) roleProgress(c card.Card) string {
 	if m.dispatcherStopped() {
 		return ""
 	}
-	p := c.Progress(m.snap.Roles, m.snap.RoleStates)
+	p := c.RoleStep(m.snap.Roles, m.snap.RoleStates)
 	if last, at, ok := c.LastCall(m.snap.Roles, m.snap.RoleStates); ok {
 		p += " ▸ " + last + " " + fmtDur(m.snap.Now.Sub(at))
 	}

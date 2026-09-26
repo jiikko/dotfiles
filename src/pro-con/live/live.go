@@ -478,15 +478,16 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 			owned[s.ID] = s
 		}
 	}
-	doing, err := store.LoadDoing(b.dir) // PG が今走らせているもの (dispatcher が集める。画面は ps も transcript の全体も読まない = 473)
-	if err != nil {
-		extra = append(extra, card.Violation{Reason: "PG が今走らせているものを読めない: " + err.Error()})
+	// PG が今走らせているもの・進捗・取り込みの衝突 (dispatcher と見張りが集める。画面は ps も git も transcript の全体も読まない = 473 / 469)
+	derived, errs := store.LoadDerived(b.dir)
+	for _, err := range errs {
+		extra = append(extra, card.Violation{Reason: "集めた様子を読めない: " + err.Error()})
 	}
 	cards := append([]card.Card(nil), st.Cards...)
 	var cons []backend.Consumer
 	for i, c := range cards {
 		cards[i].Request = clip(c.Request, requestRunes) // 貼り付けた巨大な依頼を、詳細の描画のたびに折り返さない
-		doing.Attach(&cards[i])
+		derived.Attach(&cards[i])
 		s, ok := owned[c.Session]
 		if c.Session == "" || !ok {
 			continue // 記録に無い session (外のもの) の様子は足さない

@@ -53,7 +53,7 @@ func TestHandling(t *testing.T) {
 }
 
 // 依頼の列のカードごとに PM の段階を出す: 知らせ待ち / 知らせた / 分解中 / 入力待ち / 手を止めた (480)。
-func TestProgress(t *testing.T) {
+func TestRoleStep(t *testing.T) {
 	req := func(id string) Card { return Card{ID: id, State: Requested} }
 	pm := func(p RolePhase, current string) []RoleState {
 		return []RoleState{{Name: PMName, Phase: p, Cards: []string{"C-001", "C-002"}, Current: current, Last: "Bash: pro-con card show C-001"}}
@@ -77,8 +77,8 @@ func TestProgress(t *testing.T) {
 		{"分解済みは役の番ではない", Card{ID: "C-001", State: Planned}, Roles{}, pm(RoleBusy, "C-001"), ""},
 	}
 	for _, tc := range cases {
-		if got := tc.c.Progress(tc.r, tc.ss); got != tc.want {
-			t.Errorf("%s: Progress = %q (want %q)", tc.name, got, tc.want)
+		if got := tc.c.RoleStep(tc.r, tc.ss); got != tc.want {
+			t.Errorf("%s: RoleStep = %q (want %q)", tc.name, got, tc.want)
 		}
 		last, _, ok := tc.c.LastCall(tc.r, tc.ss)
 		if want := tc.want == "PM 分解中"; ok != want || (ok && last != "Bash: pro-con card show C-001") {

@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"pro-con/agents"
@@ -92,6 +93,10 @@ type Dispatcher struct {
 	Procs   func(context.Context) ([]Proc, error)
 	JobsDir string
 	doingAt time.Time // 最後に集めた時刻
+	// ProgressGit は進捗 (progress.go。commit・未 commit・issue の進捗節) を集める git。nil なら集めない (e2e・テスト)
+	ProgressGit  ProgressGit
+	progressAt   time.Time   // 最後に集め始めた時刻
+	progressBusy atomic.Bool // 裏で集めている最中 (collectProgress だけが触る)
 	// Ask は btw の答えを作る (btw.go。本物は haiku)。nil なら記録だけから答える
 	Ask func(ctx context.Context, prompt string) (string, error)
 	btw *btwJob // 答えを作っている 1 本 (無ければ nil)
@@ -275,6 +280,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 		return notes, err
 	}
 	d.collectDoing(ctx, now, ss)
+	d.collectProgress(ctx, now)
 	return append(notes, d.announce()...), nil // 割り当ての結果まで含めて知らせる
 }
 
@@ -703,8 +709,8 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 				running++
 			}
 		case card.Planned:
-			// 順番 (issue 468) は初めての起動だけを止める。一度起動したカードの再開・起動の結果が分からないカードは止めない (立っているかもしれない)
-			if b := card.Blockers(st.Cards, c); len(b) > 0 && c.Session == "" && c.Launching == "" {
+			// 順番 (issue 468) は初めての起動だけを止める (card.HeldBy)
+			if b := card.HeldBy(st.Cards, c); len(b) > 0 {
 				text := afterWaitPrefix + strings.Join(b, ", ") + " の完了を待つ"
 				if lastAfterWait(c) != text { // 変わったときだけ書く (Tick ごとに記録を伸ばさない)
 					if err := d.update(c.ID, func(cc *card.Card) { cc.History = append(cc.History, card.Event{At: now, Text: text}) }); err != nil {

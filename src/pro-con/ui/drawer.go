@@ -168,13 +168,17 @@ func (m *Model) drawerBody() []string {
 	add("", "issue: "+link+"   親: "+orDash(c.ParentID))
 	add("", "依頼の原文: 「"+c.Request+"」")
 	if c.Prompt != "" {
-		add(sgrDim, "PM に渡した指示: "+c.Prompt)
+		add(sgrDim, "PG への指示: "+c.Prompt)
 	}
 	if len(c.After) > 0 {
 		add("", "順番: "+strings.Join(c.After, ", ")+" の後 (PM が付けた。完了するまで起動しない)")
 	}
-	if b := m.blockedBy(c); b != "" {
-		add(sgrYellow, "待ち: "+b+" の後")
+	if w := c.WaitingOn(m.snap.Cards, m.snap.Roles); w != "" { // 何を待っているか (issue 469。誰の番かは 452 の Turn を読む)
+		style := ""
+		if m.humansTurn(c) {
+			style = sgrYellow
+		}
+		add(style, "今の待ち: "+w)
 	}
 	if c.Wait.Question != "" {
 		add(sgrYellow, "質問: "+c.Wait.Question)
@@ -185,6 +189,13 @@ func (m *Model) drawerBody() []string {
 			st = "届いた"
 		}
 		add("", fmt.Sprintf("追加オーダー (%s・%s): %s", o.Kind.Label(), st, o.Text))
+	}
+	if ls := c.ProgressLines(m.snap.Now, fmtDur); len(ls) > 0 { // どこまで進んだか (issue 469。dispatcher と見張りが集めたもの)
+		out = append(out, "")
+		add(sgrDim, card.ProgressHead(c, m.snap.Now, fmtDur))
+		for _, l := range ls {
+			add("", "  "+l)
+		}
 	}
 	if ls := c.DoingLines(m.snap.Now, fmtDur); len(ls) > 0 { // PG が今走らせているもの (issue 473)
 		out = append(out, "")
