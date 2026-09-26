@@ -806,7 +806,7 @@ func (m *Model) hints() []string {
 		return []string{"j / k 選択", "enter これをやる", "i / q / esc 閉じる"}
 	}
 	c, has := m.selectedCard()
-	_, ro := m.be.(backend.ReadOnly)
+	ro := m.readOnly()
 	// hint は案内の 1 項目。acts は PG・記録へ働きかける操作 (attach・依頼・回答など)。見ているだけの画面 (--view) では出さない
 	// (押しても断るだけ。暗く出すと、状態が変われば押せるように読める)
 	type hint struct {
@@ -869,6 +869,12 @@ func hintLine(items []string, w int) string {
 		}
 		rest = rest[:len(rest)-1]
 	}
+}
+
+// readOnly はこの画面が見ているだけの画面 (pro-con --view) か。
+func (m *Model) readOnly() bool {
+	_, ok := m.be.(backend.ReadOnly)
+	return ok
 }
 
 // joined はこの画面が加わった画面 (pro-con --join) か。
