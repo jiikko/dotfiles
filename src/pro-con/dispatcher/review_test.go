@@ -31,17 +31,15 @@ func TestReviewPrecedence(t *testing.T) {
 	check(store.ReviewCodex, ReviewFromConfig)
 }
 
-// 既定 (claude) の PG への指示は 514 の前と同じ。testdata/prompt-before-514.txt は 514 を入れる前の master (86dd3ca3。PG は push しない) の Prompt が同じカードに出した文
-// (PG の規律を直したら、この比べ方では落ちる。そのときは 514 の前と同じかではなく、claude のとき codex の行が無いことだけを見る形へ直す)。
+// 既定 (claude) の PG への指示には codex の行が無く、担い手の出どころや codex の実体の有無で変わらない (514。
+// 以前は 514 の前の Prompt の文と丸ごと比べていたが、PG の規律を直すたびに落ちるので、539 でこの形へ直した)。
 func TestPromptClaudeUnchanged(t *testing.T) {
-	want, err := os.ReadFile(filepath.Join("testdata", "prompt-before-514.txt"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	c := card.Card{ID: "C-007", Title: "直す", Request: "色を直して", After: []string{"C-001"}, Issues: []card.IssueRef{{Repo: "dotfiles", Number: 514}}}
+	base := Prompt(c, Review{})
 	for _, rv := range []Review{{}, {Mode: store.ReviewClaude, From: ReviewFromDefault, Codex: "/opt/codex"}} {
-		if p := Prompt(c, rv); p != string(want) {
-			t.Fatalf("%+v: claude の指示が 514 の前と違う:\n%s\n--- 前:\n%s", rv, p, want)
+		p := Prompt(c, rv)
+		if p != base || strings.Contains(p, "codex") || strings.Contains(p, "敵対的レビュー") {
+			t.Fatalf("%+v: claude の指示に codex の行がある / 担い手の欄で変わった:\n%s", rv, p)
 		}
 	}
 }

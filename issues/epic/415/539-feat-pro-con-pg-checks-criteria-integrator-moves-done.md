@@ -30,3 +30,12 @@
 ## 関連
 
 - 487 (取り込みの係) / 511 (印が付いていなかった実例) / 538 (取り込みの係のテスト。同じ integrator-guide の役目 2 を触る)
+
+## 進捗
+
+- [x] PG: `Prompt` に、関わる issue があるカードだけ「review の前に確かめた受け入れ条件の印 (`- [x]`) と進捗を書いて commit する。確かめていない条件に印を付けない。done へは移さない」の行を足した (「終えたら review」の行の前)。
+  テスト `TestPromptAsksIssueCheckmarksOnlyWithIssues` (issue の無いカードには書かない・review 行より前)
+- [x] 取り込みの係: `integrator-guide.md` の役目 3 に、push の後に受け入れ条件を見て、全部に印があれば `scripts/issue_done.sh` で done へ移して push、残りがあれば本文に 1 行書いて open のまま、印は diff とテストで裏を取る、を足した
+- [x] 既存の `TestPromptClaudeUnchanged` は 514 の前の文と丸ごと比べていて PG の規律を足すと落ちるので、テストのコメントの指示どおり「claude のとき codex の行が無く、担い手の欄で変わらない」を見る形へ直した (commit「pro-con: claude の PG への指示のテストを 514 の前の文との丸ごと比較から codex の行が無いことを見る形へ」)。claude でも codex の行を出すように壊すと落ちることを確かめた
+- 実測: `make -C src/pro-con lint test` rc=0 (37s)
+- 残り: 指示の文が効くのは次に起動する PG / 取り込みの係から (動いている session の指示は変わらない)。実運用での観測は未検証
