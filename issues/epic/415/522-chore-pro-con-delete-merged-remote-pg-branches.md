@@ -38,3 +38,11 @@
 - 人が消すなら、`~/dotfiles` で `git fetch --prune` の後、1 本ずつ判定した先端を lease に指定して消す (判定の後に動いたブランチは消えずに失敗する):
   `git push --force-with-lease=refs/heads/<branch>:<sha> origin :refs/heads/<branch>`。sha は `git rev-parse origin/<branch>` で取り直し、
   判定は上の一覧を使う (取り直すなら inBase をもう一度回す)。消したら、消した一覧をここへ書き足す
+
+## remote の削除 (2026-09-27、ユーザーの「消していいよ」を受けて、ユーザーと話す Claude が実行)
+
+- PG の session からの削除は Claude Code の auto mode の分類器に止められていた (C-080 の 00:03 の履歴)。ユーザーが直接許可したので、外から実行した
+- 判定: master の祖先か、`git cherry origin/master <ブランチ>` に `+` が無い (中の変更が全部 master にある) もの = **56 本を `git push origin --delete` で消した** (56 本とも `[deleted]`、rc=0)
+- 残した 7 本 (master に無い変更が `git cherry` に見える): `worktree-pc-c-004` / `-009` / `-012` / `-020` / `-020-rebased` / `-023` / `-072` (作業中の C-072)。
+  rebase で中身が少し変わっただけのもの (020 は `a3ad028c` として master にある) もありうるので、492 の `inBase` で判定し直してから消す
+- ローカルの worktree・ブランチは触っていない (`pro-con worktree clean` が受け持つ)
