@@ -10,6 +10,7 @@ import (
 
 	"pro-con/agents"
 	"pro-con/card"
+	"pro-con/live"
 	"pro-con/store"
 )
 
@@ -96,5 +97,54 @@ func TestRoleStateBlockedAndOff(t *testing.T) {
 	r.tick(t)
 	if s := pmStateIn(t, r.dir); s.Phase != card.RoleOff || s.Why != "" {
 		t.Fatalf("起こさない設定の PM の様子: %+v", s)
+	}
+}
+
+// 1 回の turn で数枚知らせても、PM が今扱っているカードは transcript で最後に対象に ID が出た 1 枚 (480)。
+// 最後の起動・再開より前の呼び出し (再開した session が写した前の turn) と、知らせていないカードの ID は見ない。
+func TestRoleStateCurrentCard(t *testing.T) {
+	r := startedPM(t)
+	request(t, r.dir, "二つ目")
+	request(t, r.dir, "三つ目")
+	r.now = t0.Add(time.Minute)
+	r.tick(t) // idle の PM を再開して C-002 / C-003 を知らせた
+	if s := pmStateIn(t, r.dir); s.Phase != card.RoleLaunch || s.Current != "" {
+		t.Fatalf("知らせを渡した Tick に扱っているカードを決めた: %+v", s)
+	}
+	var uses []live.Call
+	var asked []string
+	r.d.Transcript = func(sid string) (live.Transcript, error) {
+		asked = append(asked, sid)
+		return live.Transcript{Uses: uses}, nil
+	}
+	use := func(sec int, name, text, target string) {
+		uses = append(uses, live.Call{Name: name, Text: text, Target: target, At: r.now.Add(time.Duration(sec) * time.Second)})
+	}
+	use(-30, "Bash", "pro-con card show C-003", "pro-con card show C-003") // 前の turn
+	r.ss = []agents.Session{pmSession("id-"+pmName, "P1", 60, "busy", t0.Add(time.Second))}
+	r.tick(t)
+	if s := pmStateIn(t, r.dir); s.Phase != card.RoleBusy || s.Current != "" || s.Last != "" {
+		t.Fatalf("前の turn の呼び出しで扱っているカードを決めた: %+v", s)
+	}
+	use(5, "Bash", "カードを読む", "pro-con card show C-002")
+	use(6, "Bash", "C-099 を足す", "pro-con card add C-099") // 知らせていないカード
+	use(7, "Read", "/w/dotfiles/issues/480.md", "/w/dotfiles/issues/480.md")
+	r.tick(t)
+	s := pmStateIn(t, r.dir)
+	if s.Current != "C-002" || s.Last != "Read: /w/dotfiles/issues/480.md" || !s.LastAt.Equal(r.now.Add(7*time.Second)) {
+		t.Fatalf("PM が扱っているカードと最後の道具の呼び出し: %+v", s)
+	}
+	if len(asked) == 0 || asked[len(asked)-1] != "P1" {
+		t.Fatalf("PM の今の session の transcript を読んでいない: %v", asked)
+	}
+	use(9, "Bash", "積む", "pro-con card plan C-003 --after C-002")
+	r.tick(t)
+	if s := pmStateIn(t, r.dir); s.Current != "C-003" {
+		t.Fatalf("次に扱ったカードへ移っていない: %+v", s)
+	}
+	r.ss[0].Status = "idle"
+	r.tick(t)
+	if s := pmStateIn(t, r.dir); s.Current != "" || s.Last != "" {
+		t.Fatalf("turn を終えた PM に扱っているカードを残した: %+v", s)
 	}
 }

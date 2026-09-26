@@ -70,26 +70,38 @@ type cardSummary struct {
 	Turn     string    `json:"turn,omitempty"`     // 今誰の番か (card.Turn の Label。人の番は "人")
 	// Assignee は担当 = 今手を動かす者 (card.Assignee。「PG 待ち」「PM 分解中」)。Owner は記録のまま (作った・受けた者。issue 476)
 	Assignee string `json:"assignee,omitempty"`
+	// Progress は役の番のカードの、役の側の段階 (「PM 知らせ待ち」「PM 分解中 ▸ Bash: …」。issue 480。画面のバッジと同じ中身)
+	Progress string `json:"progress,omitempty"`
 }
 
 // summarize は cards (記録の全カード) から、順番で待っている前のカードも引く。誰の番と担当は dispatcher の様子 v で決める。
 func summarize(c card.Card, cards []card.Card, v dispatcherView) cardSummary {
 	return cardSummary{ID: c.ID, State: c.State.Label(), Title: c.Title, Owner: c.Owner, Session: c.Session, Since: c.Since,
 		Waiting: waiting(c, cards), Question: c.Wait.Question, Archived: c.Archived, Deleting: c.Deleting(), Turn: c.Turn(v.roles).Label(),
-		Assignee: c.Assignee(v.roles, v.states)}
+		Assignee: c.Assignee(v.roles, v.states), Progress: v.progress(c)}
 }
 
 // dispatcherView は dispatcher が最後に書いた、起こさない役と役の様子。
 type dispatcherView struct {
 	roles  card.Roles
 	states []card.RoleState
+	now    time.Time
+}
+
+// progress は役の番のカードの、役の側の段階 (card.Progress) と、役が扱っているカードなら最後の道具の呼び出し (画面の roleProgress と同じ)。
+func (v dispatcherView) progress(c card.Card) string {
+	p := c.Progress(v.roles, v.states)
+	if last, at, ok := c.LastCall(v.roles, v.states); ok {
+		p += " ▸ " + last + " (" + fmtAge(v.now.Sub(at)) + "前)"
+	}
+	return p
 }
 
 // viewDispatcher は dispatcher の様子を読む (読めなければ「どちらも起こす」= 人の番を少なめに出す)。役の様子は dispatcher が回っているときだけ使う
 // (止まった dispatcher の最後の様子で「PM 分解中」と出さない。画面の pmGauge と同じ判定)。
 func viewDispatcher(dir string, now time.Time) dispatcherView {
 	ds, _, _ := store.LoadDispatcherState(dir)
-	v := dispatcherView{roles: ds.Roles}
+	v := dispatcherView{roles: ds.Roles, now: now}
 	if !store.Held(dir) && !store.DispatcherGone(dir) && !ds.Tick.IsZero() && now.Sub(ds.Tick) <= backend.DispatcherStale {
 		v.states = ds.RoleStates
 	}
@@ -147,6 +159,7 @@ type cardDetail struct {
 	DoingErr string       `json:"doingErr,omitempty"` // 集めた様子を読めなかった理由 (カードの詳細は出す)
 	Waiting  string       `json:"waiting,omitempty"`  // 何を待っているか (list と同じ。順番の前のカードは記録の全カードから引く)
 	Assignee string       `json:"assignee,omitempty"` // 担当 = 今手を動かす者 (list と同じ。card.Assignee)
+	Progress string       `json:"progress,omitempty"` // 役の番のカードの、役の側の段階 (list と同じ)
 }
 
 // viewEnv は読む口が見る場所。
@@ -218,6 +231,9 @@ func runCardList(args []string, env viewEnv, stdout, stderr io.Writer) int {
 		if s.Turn == card.TurnHuman.Label() {
 			line += "  人の番"
 		}
+		if s.Progress != "" {
+			line += "  " + s.Progress
+		}
 		_, _ = fmt.Fprintln(stdout, line)
 	}
 	return 0
@@ -250,7 +266,8 @@ func loadDetail(env viewEnv, id string) (cardDetail, error) {
 		return cardDetail{}, fmt.Errorf("カード %q が無い", id)
 	}
 	v := viewDispatcher(env.dir, env.now())
-	d := cardDetail{Card: c, Log: pgLog(env, c), Doing: []card.Doing{}, Waiting: waitingIn(env.dir, c), Assignee: c.Assignee(v.roles, v.states)}
+	d := cardDetail{Card: c, Log: pgLog(env, c), Doing: []card.Doing{}, Waiting: waitingIn(env.dir, c), Assignee: c.Assignee(v.roles, v.states),
+		Progress: v.progress(c)}
 	if doing, err := store.LoadDoing(env.dir); err != nil {
 		d.DoingErr = err.Error()
 	} else {
@@ -321,6 +338,9 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 	}
 	if d.Waiting != "" {
 		p("待ち: %s", d.Waiting)
+	}
+	if d.Progress != "" {
+		p("役の段階: %s", d.Progress)
 	}
 	if c.Wait.Question != "" {
 		p("質問: %s", c.Wait.Question)

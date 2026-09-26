@@ -164,7 +164,8 @@ func TestCardListShowsAssignee(t *testing.T) {
 	mustApply(t, env.dir)
 	mustSubmit(t, env.dir, store.Request{Kind: "plan", CardID: "C-004", Issues: []card.IssueRef{{Repo: "dotfiles", Number: 1, Status: "open"}}})
 	mustApply(t, env.dir)
-	pm := []card.RoleState{{Name: card.PMName, Phase: card.RoleBusy, Max: 1, Cards: []string{"C-002"}}}
+	pm := []card.RoleState{{Name: card.PMName, Phase: card.RoleBusy, Max: 1, Cards: []string{"C-002"}, Current: "C-002",
+		Last: "Bash: pro-con card show C-002", LastAt: time.Now()}}
 	line := func(out, id string) string {
 		for _, l := range strings.Split(out, "\n") {
 			if strings.HasPrefix(l, id+" ") {
@@ -188,8 +189,13 @@ func TestCardListShowsAssignee(t *testing.T) {
 		if l := line(out, "C-004"); !strings.Contains(l, "担当: PG 待ち") {
 			t.Errorf("分解済みの担当が PG 待ちでない: %q", l)
 		}
-		if _, out, _ := viewCmd(t, env, "show", "C-002"); strings.Contains(out, "担当: PM 分解中") != strings.Contains(tc.want, "分解中") {
-			t.Errorf("show の担当 (want %q): %q", tc.want, out)
+		fresh := strings.Contains(tc.want, "分解中")
+		if l := line(out, "C-002"); strings.Contains(l, "PM 分解中 ▸ Bash: pro-con card show C-002") != fresh { // 役の段階と最後の道具の呼び出し (480)
+			t.Errorf("Tick %s前: 依頼の行の役の段階: %q", time.Since(tc.tick).Round(time.Minute), l)
+		}
+		if _, out, _ := viewCmd(t, env, "show", "C-002"); strings.Contains(out, "担当: PM 分解中") != fresh ||
+			strings.Contains(out, "役の段階: PM 分解中 ▸ Bash: pro-con card show C-002") != fresh {
+			t.Errorf("show の担当と役の段階 (want %q): %q", tc.want, out)
 		}
 	}
 	_, out, _ := viewCmd(t, env, "list", "--state", "planned", "--json")

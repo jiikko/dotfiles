@@ -56,13 +56,13 @@ func TestGaugeShowsPM(t *testing.T) {
 
 // 止まった dispatcher の最後の様子は今の様子として出さない (ゲージ・カードの印・詳細の担当)。
 func TestPMStaleWhenDispatcherStopped(t *testing.T) {
-	m := pmSnap(t, card.RoleState{Phase: card.RoleBusy, Cards: []string{"Q1"}})
+	m := pmSnap(t, card.RoleState{Phase: card.RoleBusy, Cards: []string{"Q1"}, Current: "Q1", Last: "Bash: pro-con card show Q1"})
 	m.snap.DispatcherTick = m.snap.Now.Add(-dispatcherStale - time.Second)
 	if g := ansi.Strip(m.gauge()); !strings.Contains(g, "PM 様子不明") || strings.Contains(g, "Q1") {
 		t.Fatalf("止まった dispatcher の PM の様子を今のものとして出した: %q", g)
 	}
 	q1 := m.snap.Cards[0]
-	if b := m.badge(q1); strings.Contains(b, "分解中") {
+	if b := m.badge(q1); strings.Contains(b, "PM ") || strings.Contains(b, "▸") {
 		t.Fatalf("止まった dispatcher の様子でカードに分解中を付けた: %q", b)
 	}
 	if a := m.assignee(q1); a != "PM" {
@@ -70,22 +70,28 @@ func TestPMStaleWhenDispatcherStopped(t *testing.T) {
 	}
 }
 
-// 依頼の列のカードのうち PM が分けている最中のものに印を付ける。分解済みの担当は記録の Owner (PM) ではなく PG 待ち。
+// 依頼の列のカードごとに PM の段階を出す。1 回の turn で 2 枚知らせても、分解中と最後の道具の呼び出しは今扱っている 1 枚だけ (480)。
+// 分解済みの担当は記録の Owner (PM) ではなく PG 待ち (476)。
 func TestLaneShowsPMWork(t *testing.T) {
-	m := pmSnap(t, card.RoleState{Phase: card.RoleBusy, Cards: []string{"Q1"}})
+	m := pmSnap(t, card.RoleState{Phase: card.RoleBusy, Cards: []string{"Q1", "Q2"}, Current: "Q2",
+		Last: "Bash: pro-con card show Q2", LastAt: newSpy().snap.Now.Add(-5 * time.Second)})
 	byID := map[string]card.Card{}
 	for _, c := range m.snap.Cards {
 		byID[c.ID] = c
 	}
-	if b := ansi.Strip(m.badgeColored(byID["Q1"])); !strings.Contains(b, "PM 分解中") {
-		t.Fatalf("PM が分けているカードに印が無い: %q", b)
+	if b := ansi.Strip(m.badgeColored(byID["Q2"])); !strings.Contains(b, "PM 分解中 ▸ Bash: pro-con card show Q2 5秒") {
+		t.Fatalf("PM が扱っているカードに段階と最後の道具の呼び出しが無い: %q", b)
 	}
-	if b := m.badge(byID["Q2"]); strings.Contains(b, "分解中") {
-		t.Fatalf("PM がまだ手に取っていないカードに印を付けた: %q", b)
+	if b := m.badge(byID["Q1"]); !strings.Contains(b, "PM 知らせた") || strings.Contains(b, "分解中") || strings.Contains(b, "▸") {
+		t.Fatalf("同じ turn でまだ扱っていないカードの段階: %q", b)
 	}
-	for id, want := range map[string]string{"Q1": "PM 分解中", "Q2": "PM", "P1": "PG 待ち"} {
+	for id, want := range map[string]string{"Q1": "PM", "Q2": "PM 分解中", "P1": "PG 待ち"} {
 		if got := m.assignee(byID[id]); got != want {
 			t.Errorf("%s の担当 = %q (want %q)", id, got, want)
 		}
+	}
+	m.snap.RoleStates[0].Cards = []string{"Q2"} // Q1 はまだ PM に知らせていない
+	if b := m.badge(byID["Q1"]); !strings.Contains(b, "PM 知らせ待ち") {
+		t.Fatalf("まだ知らせていないカードの段階: %q", b)
 	}
 }

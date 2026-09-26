@@ -381,17 +381,21 @@ func (s *Sim) Snapshot() backend.Snapshot {
 		RoleStates: []card.RoleState{s.pmState()}, Violations: card.Check(cards)}
 }
 
-// pmState は模擬の PM の様子 (stepIntake が次に仕分ける、依頼の列の一番古いカードを分けている最中。無ければ idle)。
+// pmState は模擬の PM の様子 (依頼の列を全部知らせ済みで、stepIntake が次に仕分ける一番古いカードを扱っている最中。無ければ idle)。
 func (s *Sim) pmState() card.RoleState {
 	pm := card.RoleState{Name: card.PMName, Phase: card.RoleIdle, Max: 1, Session: "pm000001"}
 	var next *card.Card
 	for i := range s.cards {
-		if c := &s.cards[i]; c.State == card.Requested && (next == nil || c.Since.Before(next.Since)) {
-			next = c
+		if c := &s.cards[i]; c.State == card.Requested {
+			pm.Cards = append(pm.Cards, c.ID)
+			if next == nil || c.Since.Before(next.Since) {
+				next = c
+			}
 		}
 	}
 	if next != nil {
-		pm.Phase, pm.Cards = card.RoleBusy, []string{next.ID}
+		pm.Phase, pm.Current = card.RoleBusy, next.ID
+		pm.Last, pm.LastAt = "Bash: pro-con card show "+next.ID, next.Since
 	}
 	return pm
 }

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -65,6 +66,7 @@ type roleRun struct {
 	fresh    bool   // この Tick に一覧と照らした (Tick の頭で下ろす。照らせなかった Tick の alive / seen は前の Tick のもの)
 	alive    bool   // 今の session が生きている (一覧は起動・再開の前に取ったもの)
 	seen     string // 今の session の status
+	sid      string // 今の session の session id (transcript を引く。一覧に出ていなければ空)
 	launched bool   // この Tick に起動・再開した (alive / seen は起動・再開の前の session のもの)
 	blocked  string // この Tick に起こさなかった・起こせなかった理由
 }
@@ -123,7 +125,51 @@ func (d *Dispatcher) roleState(r *role, now time.Time) card.RoleState {
 	default:
 		s.Phase = card.RoleNone
 	}
+	if s.Working() {
+		s.Current, s.Last, s.LastAt = d.roleTurn(rr.sid, pm.LaunchedAt, s.Cards)
+	}
 	return s
+}
+
+// cardIDRe はカード ID (store が振る C-%03d)。
+var cardIDRe = regexp.MustCompile(`\bC-\d{3,}\b`)
+
+// roleTurn は turn の途中の役が今の turn (最後の起動・再開の後) で扱っているカードと、最後の道具の呼び出し (issue 480)。
+// 扱っているカードは、道具の呼び出しの対象 (コマンド・ファイル) に知らせ済みのカード (cards) の ID が出た最後のもの
+// (PM は `pro-con card show <カード>` で読み始め、`card plan` で積む)。まだどのカードの ID も出ていなければ、知らせ済みが 1 枚のときだけその 1 枚。
+// 🚨 最後の起動・再開より前の呼び出しは見ない (再開した session の transcript は前の session の記録を写して始まる = live.CardLog)。
+// transcript の末尾は Tick ごとに読む (役は 1 つずつで、PG の様子 (collectDoing) の 10 秒ごとより細かく「即時」に出す)。
+func (d *Dispatcher) roleTurn(sid string, since time.Time, cards []string) (current, last string, lastAt time.Time) {
+	if d.Transcript != nil && sid != "" {
+		if t, err := d.Transcript(sid); err == nil {
+			for i := len(t.Uses) - 1; i >= 0 && !t.Uses[i].At.Before(since); i-- {
+				u := t.Uses[i]
+				if last == "" {
+					last, lastAt = u.Name, u.At
+					if u.Text != "" {
+						last += ": " + u.Text
+					}
+				}
+				if id := mentioned(u.Target, cards); id != "" {
+					return id, last, lastAt
+				}
+			}
+		}
+	}
+	if len(cards) == 1 {
+		current = cards[0]
+	}
+	return current, last, lastAt
+}
+
+// mentioned は s に出るカード ID のうち cards にある最初のもの (`card plan C-018 --after C-017` の対象は先に出る C-018)。無ければ空。
+func mentioned(s string, cards []string) string {
+	for _, id := range cardIDRe.FindAllString(s, -1) {
+		if slices.Contains(cards, id) {
+			return id
+		}
+	}
+	return ""
 }
 
 // keyCards は知らせる物の鍵 (r.key: 「C-001」か「C-001@時刻」) のカード ID を、重ねずに並びのまま返す。
@@ -233,7 +279,7 @@ func (d *Dispatcher) tellRole(ctx context.Context, now time.Time, ss []agents.Se
 		}
 	}
 	alive := listed && cur.PID != 0
-	rr.fresh, rr.alive, rr.seen = true, alive, cur.Status
+	rr.fresh, rr.alive, rr.seen, rr.sid = true, alive, cur.Status, cur.SessionID
 	switch {
 	case alive:
 		pm.DeadSince = time.Time{}

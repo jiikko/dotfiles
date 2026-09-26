@@ -46,6 +46,22 @@ func TestParseTranscriptCallsAndAgents(t *testing.T) {
 	}
 }
 
+// PM が扱っているカード (issue 480): 結果が返った呼び出しも呼んだ順に残し、対象は説明ではなくコマンド・ファイルから取る
+// (説明には ID が無いことが多く、書く中身には別のカードの ID が並ぶ)。
+func TestParseTranscriptUses(t *testing.T) {
+	data := `{"type":"assistant","timestamp":"2026-09-26T01:00:00Z","message":{"content":[{"type":"tool_use","id":"u1","name":"Bash","input":{"description":"カードを読む","command":"pro-con card show C-018"}}]}}
+{"type":"user","timestamp":"2026-09-26T01:00:01Z","message":{"content":[{"type":"tool_result","tool_use_id":"u1","content":"..."}]}}
+{"type":"assistant","timestamp":"2026-09-26T01:00:02Z","message":{"content":[{"type":"tool_use","id":"u2","name":"Write","input":{"file_path":"/w/issues/480.md","content":"C-017 の後"}}]}}
+`
+	tr := parse([]byte(data))
+	if len(tr.Uses) != 2 || tr.Uses[0].Text != "カードを読む" || tr.Uses[0].Target != "pro-con card show C-018" || tr.Uses[1].Target != "/w/issues/480.md" {
+		t.Fatalf("道具の呼び出しすべてを呼んだ順に、対象つきで: %+v", tr.Uses)
+	}
+	if len(tr.Calls) != 1 || tr.Calls[0].ID != "u2" {
+		t.Fatalf("結果待ちの呼び出しは変わらない: %+v", tr.Calls)
+	}
+}
+
 // 画面は dispatcher が集めた様子 (store.DoingFile) を読んでカードに足すだけ。読めなければ理由を違反の行に出す (0 件と区別する)。
 func TestRefreshAttachesCollectedDoing(t *testing.T) {
 	b, _ := testBackend(t, sessions[:1], nil)

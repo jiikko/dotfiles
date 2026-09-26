@@ -536,21 +536,31 @@ func (m *Model) badgeColored(c card.Card) string {
 	return sgrDim + b + sgrReset
 }
 
-// handling は役 (PM・取り込みの係) が今カードを手に取っていれば仕事の名前 (card.Handling)。止まった dispatcher の最後の様子では出さない。
-func (m *Model) handling(c card.Card) string {
+// roleStates は今の役の様子。止まった dispatcher の最後の様子は今のものとして使わない (nil = 役はどのカードも扱っていない)。
+func (m *Model) roleStates() []card.RoleState {
+	if m.dispatcherStopped() {
+		return nil
+	}
+	return m.snap.RoleStates
+}
+
+// handling は役 (PM・取り込みの係) が今カードを扱っていれば仕事の名前 (card.Handling)。
+func (m *Model) handling(c card.Card) string { return c.Handling(m.snap.Roles, m.roleStates()) }
+
+// assignee は詳細に出す担当 (card.Assignee)。
+func (m *Model) assignee(c card.Card) string { return orDash(c.Assignee(m.snap.Roles, m.roleStates())) }
+
+// roleProgress は役の番のカードの、役の側の段階と今扱っているカードの最後の道具の呼び出し (issue 480)。
+// 止まった dispatcher では段階を決められないので出さない。
+func (m *Model) roleProgress(c card.Card) string {
 	if m.dispatcherStopped() {
 		return ""
 	}
-	return c.Handling(m.snap.Roles, m.snap.RoleStates)
-}
-
-// assignee は詳細に出す担当 (card.Assignee。止まった dispatcher の最後の様子では手に取っている印を付けない)。
-func (m *Model) assignee(c card.Card) string {
-	var ss []card.RoleState
-	if !m.dispatcherStopped() {
-		ss = m.snap.RoleStates
+	p := c.Progress(m.snap.Roles, m.snap.RoleStates)
+	if last, at, ok := c.LastCall(m.snap.Roles, m.snap.RoleStates); ok {
+		p += " ▸ " + last + " " + fmtDur(m.snap.Now.Sub(at))
 	}
-	return orDash(c.Assignee(m.snap.Roles, ss))
+	return p
 }
 
 // badge は待ちの理由と、issue との紐づき (要件 10)。
@@ -580,8 +590,8 @@ func (m *Model) badge(c card.Card) string {
 	case c.State == card.Planned && c.ResumesFirst(): // 並びより先に起動する (dispatcher は再開を新しい起動より先にする。issue 470)
 		parts = append(parts, "↻再開が先")
 	}
-	if h := m.handling(c); h != "" { // PM が今分けている依頼・答えている質問 (476)
-		parts = append(parts, c.Turn(m.snap.Roles).Label()+" "+h)
+	if p := m.roleProgress(c); p != "" { // 役の番のカード: 知らせ待ち / 知らせた / 分解中 ▸ 最後の道具の呼び出し (476 / 480)
+		parts = append(parts, p)
 	}
 	if e := c.Exec; e.Active() {
 		cmd := e.Command
