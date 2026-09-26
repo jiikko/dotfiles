@@ -10,7 +10,7 @@ on:
     branches: [master]
     paths:
       - 'src/pro-con/**'
-      - 'src/tuikit/**'  # replace で取り込む共有 module (演出の部品 anim)
+      - 'src/tuikit/**'  # replace で取り込む共有 module (演出の部品 anim・markdown の整形器)
       - 'src/termsafe/**'  # replace で取り込む共有 module (コピーする本文の無害化)
       - 'src/glogx/**'  # replace で取り込む (issue の読み方 glogx/issues)
       - 'src/doctor/**'  # glogx の依存 (replace は依存先から引き継がれないので pro-con にも要る)
@@ -22,7 +22,7 @@ on:
   pull_request:
     paths:
       - 'src/pro-con/**'
-      - 'src/tuikit/**'  # replace で取り込む共有 module (演出の部品 anim)
+      - 'src/tuikit/**'  # replace で取り込む共有 module (演出の部品 anim・markdown の整形器)
       - 'src/termsafe/**'  # replace で取り込む共有 module (コピーする本文の無害化)
       - 'src/glogx/**'  # replace で取り込む (issue の読み方 glogx/issues)
       - 'src/doctor/**'  # glogx の依存 (replace は依存先から引き継がれないので pro-con にも要る)

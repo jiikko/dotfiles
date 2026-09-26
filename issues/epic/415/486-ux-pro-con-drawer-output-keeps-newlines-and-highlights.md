@@ -73,6 +73,11 @@ PG の出力は見出し・箇条書き・コードブロックを含む markdow
 
 ## 残り
 
-- markdown の整形器 (`glogx/issues` の render / markdown / inline / wrap) を `src/tuikit` へ移して glogx と pro-con の両方から使う (今は pro-con が glogx を直に使う)
+- ~~markdown の整形器 (`glogx/issues` の render / markdown / inline / wrap) を `src/tuikit` へ移して glogx と pro-con の両方から使う~~
+  → 2026-09-26 (カード C-048) に移した。`src/tuikit/markdown` の `Render(src, width, colored)` (旧 `issues.RenderBody`)。
+  glogx の `issues.Body.Lines` と pro-con の `ui/activity.go` がここを使う。中身は逐語移動 (差分は package 名・関数名・コメントだけ) で、
+  テスト (`markdown_test.go` / `wrap_test.go`) も一緒に移した。見た目が変わらないことは、glogx の issue の表示のテスト (`issues_view_test.go` 等) と
+  pro-con の `TestDrawerRendersResponseAsMarkdown` が移す前と同じまま通ることで見る。tuikit の lint の depguard (フレームワーク非依存・純粋な層) に `markdown/` を足した。
+  pro-con は issue の読み方 (`ui/issues.go` / `ui/picker.go`) でまだ `glogx/issues` を使うので、glogx への依存は残る
 - 未確認: 上の実物の画面の取り込み (tmux capture-pane) に、詳細の右端の手前でタブが 2 か所出た。描いた中身にタブが無いこと
   (C-032 の最後の出力を同じ無害化と整形に通して、タブ 0・幅はみ出し 0) は確かめたので、描画側 (bubbletea) の桁送りの疑い。目で見てずれていたら起票する

@@ -588,7 +588,7 @@ func (iss *Issue) LoadMeta() error {
 	inFront, firstLine := false, true
 	for sc.Scan() {
 		// 読んだ直後に無害化する (この関数が拾う Title / Declared の共通の入口)。
-		// 一覧に出る文字列なので、renderMarkdown 側と同じ関門を通す。
+		// 一覧に出る文字列なので、tuikit/markdown 側と同じ関門を通す。
 		lineText := termsafe.PlainLine(strings.TrimRight(sc.Text(), "\r"))
 		switch {
 		case firstLine && strings.TrimSpace(lineText) == "---":

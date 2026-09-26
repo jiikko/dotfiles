@@ -6,7 +6,7 @@ import (
 )
 
 func TestBodyCachesPerWidth(t *testing.T) {
-	b := NewBody(sample)
+	b := NewBody("# 見出し\n\n- 箇条書きの項目\n\n本文の段落。\n")
 	first := b.Lines(60, false)
 	if b.renders != 1 {
 		t.Fatalf("初回で整形されていない: renders=%d", b.renders)
