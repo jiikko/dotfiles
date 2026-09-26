@@ -41,7 +41,7 @@ func (m *Model) View() tea.View {
 
 // caret は入力欄のキャレットに置く端末のカーソル。入力欄が無ければ nil (カーソルを隠す)。
 // 🚨 IME は変換中の文字を端末のカーソルの位置に出す。カーソルを置かないと、描画の差分を書き終えた位置 (毎回変わる) に出て、
-// 日本語の変換中に入力欄から外れる。位置は render と同じ行の並び (ヘッダ + 領域 + PG の一覧 + 入力欄) から数える
+// 日本語の変換中に入力欄から外れる。位置は render と同じ行の並び (ヘッダ + 領域 + 入力欄) から数える
 func (m *Model) caret() *tea.Cursor {
 	if m.mode != modeInput || m.stopping {
 		return nil
@@ -67,7 +67,7 @@ func (m *Model) render() string {
 		title += sgrDim + "  " + d.Describe() + sgrReset
 	}
 	header := []string{title, m.tabBar(), m.gauge(), fg(240) + strings.Repeat("─", w) + sgrReset}
-	// PG の一覧・入力欄・案内は画面の下端へ吸着させ、ボードとの間を空行で埋める (最低 1 行)。
+	// 入力欄・案内は画面の下端へ吸着させ、ボードとの間を空行で埋める (最低 1 行)。
 	// カードの詳細はこの領域 (ヘッダと下端の群のあいだ) に右から重ねる
 	foot := m.footGroup()
 	room := m.height - len(header) - len(foot)

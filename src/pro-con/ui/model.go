@@ -240,7 +240,7 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 			return m, nil
 		}
 		// 照合を待つ間に入力欄を開いた・終了の確認を出した・別のカードを選んだなら、端末を明け渡さない (書いている途中の画面を奪わない)。
-		// 引き出し・? の表・PG の一覧を開いているだけなら明け渡す (戻れば同じ画面に戻る)
+		// 引き出し・? の表を開いているだけなら明け渡す (戻れば同じ画面に戻る)
 		if m.mode != modeBoard || m.selected != msg.cardID {
 			m.info("attach を取りやめた (待っている間に画面が変わった)")
 			return m, nil
@@ -678,8 +678,9 @@ func (m *Model) moveByMotion(mo listnav.Motion) tea.Cmd {
 // closeTop は開いている板を手前から 1 つ閉じる (設定画面 → 詳細)。閉じたら true。
 func (m *Model) closeTop() bool {
 	switch {
-	case m.set.open:
-		m.closeSettings()
+	case m.set.open: // ここへ来るのは終了の入力欄を開くとき (closeAll) だけ: 開いている間の q / esc は設定画面が受ける。演出を待たずに閉じる
+		m.set.open = false
+		m.set.anim.Finish()
 	case m.showDetail:
 		m.closeDrawer()
 	default:

@@ -114,11 +114,11 @@ func worktrees(in Input, warn func(error)) Group {
 	card := map[string]string{} // worktree のパス → カード
 	parents := map[string]bool{}
 	for _, s := range in.Sessions {
-		i := strings.Index(s.Cwd, WorktreeMarker)
+		wt := filepath.Clean(s.Cwd) // 🚨 添字は整えた後のパスで取る (記録の cwd が ./ や .. や // を含むと、整える前の添字では範囲の外を切る)
+		i := strings.Index(wt, WorktreeMarker)
 		if i < 0 {
 			continue
 		}
-		wt := filepath.Clean(s.Cwd)
 		if rest := wt[i+len(WorktreeMarker):]; strings.Contains(rest, "/") { // worktree の中の下のディレクトリで動いた session
 			wt = wt[:i+len(WorktreeMarker)+strings.Index(rest, "/")]
 		}

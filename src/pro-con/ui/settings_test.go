@@ -92,9 +92,11 @@ func TestSettingsReadsOnOpenNotOnRender(t *testing.T) {
 	}
 	for range 5 {
 		_ = m.render()
+		m.Update(tickMsg{}) // 毎秒の読み直し・dispatcher の知らせでも読み始めない (読み始めると loading が立つ)
+		m.Update(changedMsg{})
 	}
-	if be.procCalls != 1 || be.diskCalls != 1 {
-		t.Fatalf("描き直しで読んだ: procs=%d disk=%d", be.procCalls, be.diskCalls)
+	if be.procCalls != 1 || be.diskCalls != 1 || m.set.procsLoading || m.set.diskLoading {
+		t.Fatalf("描き直し・tick で読んだ: procs=%d disk=%d loading=%v/%v", be.procCalls, be.diskCalls, m.set.procsLoading, m.set.diskLoading)
 	}
 	tabKey(m)
 	tabKey(m)
@@ -129,7 +131,13 @@ func TestSettingsStepsLimit(t *testing.T) {
 		t.Fatalf("置いた値を適用待ちとして出さない:\n%s", setScreen(m))
 	}
 	// dispatcher が適用した (Snapshot の設定が置いた値になった) ら、適用待ちを外す
-	be.snap.Config.Limit = 4
+	// 値が一致しても、依頼が残っている間は外さない (→ ← と続けて押すと、途中の値が出てから戻る)
+	be.snap.Config.Limit, be.snap.Config.Pending = 4, 1
+	m.setSnap(be.Snapshot())
+	if !strings.Contains(setScreen(m), "適用待ち") {
+		t.Fatal("依頼が残っているのに適用待ちを外した")
+	}
+	be.snap.Config.Pending = 0
 	m.setSnap(be.Snapshot())
 	if strings.Contains(setScreen(m), "適用待ち") {
 		t.Fatal("適用されたのに適用待ちのまま")
@@ -190,5 +198,19 @@ func TestSettingsDiskBreakdown(t *testing.T) {
 	press(m, "enter")
 	if out := setScreen(m); !strings.Contains(out, "pc-c-005") || strings.Contains(out, "ほか 2 個") {
 		t.Fatalf("enter で内訳を全部出さない:\n%s", out)
+	}
+}
+
+// 設定画面から Q で終了の入力欄を開いて取り消しても、演出の tick が止まったままにならない (閉じる演出の tick を捨てると framing が
+// 立ったまま残り、以後の演出がすべて止まっていた。敵対的レビュー 2026-09-26)。
+func TestQuitFromSettingsKeepsFrames(t *testing.T) {
+	m := openSettingsFor(t, newInspSpy())
+	m.framing = false // 開く演出の tick は終わった
+	cmd := press(m, "Q")
+	if m.set.open {
+		t.Fatal("終了の入力欄を開いても設定画面が開いたまま")
+	}
+	if m.framing && cmd == nil { // framing は「tick が 1 本飛んでいる」印。立てたのに tick を返さないと、以後 startFrames が何も返さない
+		t.Fatal("演出の tick を捨てた (framing が立ったまま残る)")
 	}
 }

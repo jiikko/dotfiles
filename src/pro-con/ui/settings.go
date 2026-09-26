@@ -148,10 +148,12 @@ func (m *Model) measureDisk() tea.Cmd {
 		return nil
 	}
 	m.set.diskLoading = true
-	return m.child(func() tea.Msg {
+	// 🚨 m.child に入れない: 外のコマンドを起こさない (ファイルを歩くだけ) ので、端末を明け渡す前に待つ必要が無い。入れると数秒の測定の間
+	// quit と ctrl+r (新版への切り替え) が待たされ、5 秒を超えると切り替えが断られる
+	return func() tea.Msg {
 		u, err := in.DiskUsage()
 		return diskMsg{u: u, err: err}
-	})
+	}
 }
 
 func (m *Model) handleSettingsKey(k string) tea.Cmd {
@@ -159,6 +161,8 @@ func (m *Model) handleSettingsKey(k string) tea.Cmd {
 	switch k {
 	case "ctrl+c", "Q":
 		return m.requestQuit()
+	case "ctrl+r": // 新版への切り替えは画面全体の操作 (どの板からも効く)
+		return m.requestUpgrade()
 	case "s", "q", "esc":
 		return m.closeSettings()
 	case "tab", "shift+tab":
@@ -257,8 +261,9 @@ func (m *Model) configValue(key string) (int, bool) {
 	if !ok {
 		return v, false
 	}
-	// 置いた後に読んだ Snapshot で、適用を待つ設定の依頼が無ければ、適用されたか除けられた (どちらも Snapshot の値が正しい)
-	if w == v || (c.Pending == 0 && m.snap.Now.After(m.set.wantAt)) {
+	// 適用を待つ設定の依頼が無く、置いた値が出た・置いた後に読んだ Snapshot なら、適用されたか除けられた (どちらも Snapshot の値が正しい)。
+	// 🚨 依頼が残っている間は、値が一致しても外さない (→ ← と続けて押すと、途中の値が出てから戻るまで待ちが続く)
+	if c.Pending == 0 && (w == v || m.snap.Now.After(m.set.wantAt)) {
 		delete(m.set.want, key)
 		return v, false
 	}
@@ -413,6 +418,8 @@ func (m *Model) procsSummary() string {
 		return sgrDim + "この画面では読めない" + sgrReset
 	case m.set.procsAt.IsZero():
 		return sgrDim + "読んでいる…" + sgrReset
+	case m.set.procsErr != nil && len(m.set.procs) == 0: // 読めなかったのを 0 本に見せない
+		return sgrYellow + "読めない: " + m.set.procsErr.Error() + sgrFgReset
 	}
 	live, stopped := splitProcs(m.set.procs)
 	return fmt.Sprintf("動いている %d・止まっている PG %d", len(live), len(stopped))
@@ -463,8 +470,9 @@ func (m *Model) procLines(w int) ([]string, int) {
 		}
 		out = append(out, boxLine(border, sgrDim+fit(" 役", 12)+fit("pid", 8)+fit("経過", 13)+fit("状態", procStateCells)+fit("カード", 8)+fit("session", 14)+"今のコマンド"+sgrReset, w))
 		live, stopped := splitProcs(s.procs)
+		screens := m.screensBlock(w)
 		for _, p := range live {
-			if p.Role == "画面" && len(m.snap.Screens) > 0 { // 画面は下の開いている画面の一覧 (モード・端末つき) で出す
+			if p.Role == "画面" && len(screens) > 0 { // 下に開いている画面の一覧 (モード・端末つき) を出すときは、そちらで出す
 				continue
 			}
 			out = append(out, boxLine(border, procRow(p, w), w))

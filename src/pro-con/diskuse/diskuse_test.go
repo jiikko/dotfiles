@@ -102,3 +102,15 @@ func TestHuman(t *testing.T) {
 		}
 	}
 }
+
+// 記録の cwd が整っていない (./ や .. や // を含む) と、整える前の添字で切って範囲の外になり、画面ごと落ちていた (敵対的レビュー 2026-09-26)。
+func TestMeasureUncleanCwd(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "repo", ".claude", "worktrees", "pc-a", "f"), 10)
+	for _, cwd := range []string{root + "/repo/./.claude/worktrees/pc-a", root + "/x/../repo/.claude/worktrees/pc-a", root + "/repo//.claude/worktrees/pc-a"} {
+		u := Measure(Input{Sessions: []Session{{CardID: "C-1", Cwd: cwd}}})
+		if g := group(t, u, GroupWorktrees); g.Count != 1 || g.Items[0].Card != "C-1" {
+			t.Fatalf("%s: worktree の内訳 = %+v", cwd, g.Items)
+		}
+	}
+}
