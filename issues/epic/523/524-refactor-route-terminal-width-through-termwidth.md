@@ -1,4 +1,4 @@
-# 524 (refactor): pro-con と schedkeys の端末文字列の幅・切り詰め・切り出しを tuikit/termwidth に寄せる
+# 524 (refactor): pro-con と schedkeys の端末文字列の幅・切り詰め・切り出しを tuikit/termwidth に寄せる (TUI の画面と CLI の出力の両方)
 
 起票日: 2026-09-26
 
@@ -9,10 +9,14 @@
 asm の速い道を入れる場所を 1 つにするため、`x/ansi` を直接呼んでいる所を `src/tuikit/termwidth` 経由にする (523 の段 1)。
 あわせて、同じ行を何度も先頭から走査している所を 1 回にする (520 の Phase 1)。pure Go だけで、asm は入れない。
 
+対象は TUI の画面に限らない (2026-09-26 のユーザーの確認「cui でも有効じゃないの」)。`termwidth` は描画の部品に依存しない関数で、
+端末に出す文字列ならどこでも同じ数え方が要る。CLI の出力 (`ratelimit` の `usage/render.go` など) は既に `termwidth` を通している。
+
 ## 対象 (2026-09-26 の数。`grep -rn 'ansi.StringWidth\|ansi.Cut\|ansi.Truncate' --include='*.go' src` の production)
 
 - pro-con 44 か所 (`ui/view.go` の `fit`・`ui/motion.go` の `splice`・`ui/cursor.go` の `cellsOf` が同じ行を何度も走査する)
 - schedkeys 25 か所
+- pro-con の CLI の出力: `cardview.go` (`card show` の表) が `ansi.StringWidth` を直接呼ぶ (上の 44 か所に含む)。`pscmd.go` など表を出すコマンドも見る
 - tuikit の中 22 か所・glogx 9 か所・ratelimit 1 か所も、寄せる価値があるかを見る (glogx は既に `termwidth.Of` を使う所がある)
 
 ## 対応方針
@@ -23,7 +27,7 @@ asm の速い道を入れる場所を 1 つにするため、`x/ansi` を直接�
 
 ## 受け入れ条件
 
-- [ ] pro-con と schedkeys の production から `ansi.StringWidth` / `Cut` / `Truncate` の直接の呼び出しが無くなる (残すなら理由をその行に書く)
+- [ ] pro-con (画面と CLI の両方) と schedkeys の production から `ansi.StringWidth` / `Cut` / `Truncate` の直接の呼び出しが無くなる (残すなら理由をその行に書く)
 - [ ] 表示が変わらない (既存のテストと、pro-con の見本の .ans の一致)
 - [ ] 寄せる前と後で、pro-con の演出のフレームと glogx の View の benchmark を測って記録する (523 の段 2 の材料)
 - [ ] `go test ./...` と `make lint` が通る (pro-con・schedkeys・tuikit)
