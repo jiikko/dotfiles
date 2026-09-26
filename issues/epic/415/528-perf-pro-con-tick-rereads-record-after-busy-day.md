@@ -83,3 +83,8 @@ bench は `BenchmarkLoadBusyDay` (store) / `BenchmarkTickBusyDay` (dispatcher) /
 - `src/pro-con/store/store.go` — `Load` / `Update`
 - `src/pro-con/store/archive.go` — `AutoClearAfter` (完了から 24 時間は記録に残る)
 - `issues/epic/415/done/478-perf-pro-con-cards-json-grows-and-is-reread-every-tick.md` — 見送りの決定と trigger
+
+## 決着 (2026-09-27)
+
+- ユーザーの判断で done (issue-sync)。直しの本体 (`8282a8cc`: Tick 36.9ms → 2.7ms / refresh 2.8ms → 0.28ms) は master にある。
+  上の「残り」の 2 つ (残りの 2.7ms は今の大きさでは見送り / 本物の session・PM が居るときの Tick は未計測) は見送りとして残す。記録がまた大きくなったら測り直す
