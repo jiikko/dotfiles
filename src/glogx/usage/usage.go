@@ -1,8 +1,7 @@
 // Package usage は Claude Code の `/usage` 出力と codex の rateLimits を取得・整形する。
 //
-// glogx / bubbletea には一切依存しない自己完結パッケージ。将来 単独コマンドへ
-// 切り出す場合は FetchAll + RenderLine を呼ぶだけの main を足せば済む (glogx 側の
-// コード移動は不要)。ユーザー要望 2026-07-21: 「切り離しやすく設計」。
+// glogx / bubbletea には一切依存しない自己完結パッケージ (ユーザー要望 2026-07-21: 「切り離しやすく設計」)。
+// glogx 本体のほか、単独コマンド cmd/ratelimit (bin/ratelimit) が使う。
 // codex 側のデータ源と経路選定の理由は codex.go 冒頭を参照。
 //
 // データ源の注意: `/usage` の % は「このマシンのローカルセッションに基づく近似」で、

@@ -410,7 +410,9 @@ go test -run '^$' -bench BenchmarkView -benchmem .
   各種オーバーレイ・モーダル (`diff_overlay.go` / `job_detail_overlay.go` /
   `usage_overlay.go` / `pr_status_overlay.go` / `action_modal.go`。右下の通知スタック (新しい通知は上に積まれ
   古い通知は下から抜ける。最大 3 枚) は tuikit の `toast`) /
-  `usage/` (Claude Code の /usage と codex rateLimits の取得・整形。単独コマンドへ切り出し可能) /
+  `usage/` (Claude Code の /usage と codex rateLimits の取得・整形) /
+  `cmd/ratelimit/` (`usage/` を使う単独コマンド `bin/ratelimit`。zsh・Claude Code の hook・codex 系 skill が
+  利用枠の超過を判定する。使い方はファイル冒頭。glogx 本体の TUI とはキャッシュも別) /
   `subproc/` (外部プロセス実行の安全弁 = WaitDelay と git の timeout。main / issues / usage の
   3 つが外部コマンドを起動するので、値を main に置くと下位から呼べず写しになる。
   **新しい外部コマンド実行は `subproc.CommandContext` を使う** — 素の `exec.CommandContext` は

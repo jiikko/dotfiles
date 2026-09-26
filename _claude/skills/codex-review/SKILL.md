@@ -6,6 +6,8 @@ description: codex exec review を基本に、必要なら codex exec を使っ�
 
 # Codex Review
 
+> **起動したら最初に codex の枠を見る** (`ratelimit -source codex -check`。rc=1 のときの扱いは `subagent-model-tiering.md` の「枠の残量」)。
+
 `codex exec review` を基本に、必要なら `codex exec` を fallback として使い、コード変更に対する Codex のレビューを取得する。
 
 ## 引数

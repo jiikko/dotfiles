@@ -6,6 +6,8 @@ description: codex を設計の壁打ちからメイン実装者まで主役に�
 
 # Codex Drive（Claude が操縦、codex がメイン実装）
 
+> **起動したら最初に codex の枠を見る** (`ratelimit -source codex -check`。rc=1 のときの扱いは `subagent-model-tiering.md` の「枠の残量」)。
+
 **設計の壁打ちから実装まで codex を主役にし (設計 read-only / 実装 write 権限)、Claude は「指示・検証・観測・反復・commit」に徹する**ワークフロー。
 codex-lead が「codex に設計をリードさせ Claude が実装」なのに対し、本 skill は**設計壁打ちも実装も codex** が担い、
 Claude は **orchestrator/verifier**。新規ライブラリ・大きめ機能・プロトコル実装・大量移植など、コード量が多く

@@ -170,6 +170,11 @@
             "command": "~/dotfiles/_claude/hooks/next-claim-unshared.sh",
             "timeout": 10,
             "type": "command"
+          },
+          {
+            "command": "~/dotfiles/_claude/hooks/ratelimit-warn.sh",
+            "timeout": 15,
+            "type": "command"
           }
         ]
       }
