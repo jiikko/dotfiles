@@ -11,6 +11,7 @@ package dispatcher
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha1"
 	"errors"
@@ -305,7 +306,7 @@ func (d *Dispatcher) finishRun(now time.Time, job *runJob, r runResult) (eventlo
 	var b strings.Builder
 	fmt.Fprintf(&b, "テストの係の結果: `%s` rc=%d (所要 %s)\n", job.command, r.rc, now.Sub(job.start).Round(time.Second))
 	switch {
-	case r.err != nil && r.rc == -1:
+	case r.err != nil && r.rc == -1 && !errors.Is(r.err, errRunStopped): // 止め直したのは走った後なので、ログの末尾を渡す (default)
 		fmt.Fprintf(&b, "実行できなかった: %v\n", r.err)
 	case r.rc == 0 && r.err == nil:
 		b.WriteString("成功\n")
@@ -344,7 +345,11 @@ func (d *Dispatcher) finishRun(now time.Time, job *runJob, r runResult) (eventlo
 		cc.History = append(cc.History, card.Event{At: now, Text: fmt.Sprintf("テストの係: rc=%d (%s)。結果を渡して PG を再開する", r.rc, clipLine(job.command))})
 		cc.Enter(card.Planned, now)
 	})
-	return ev(eventlog.KindRun, job.cardID, "", fmt.Sprintf("%s のコマンドが終わった: rc=%d", job.cardID, r.rc)), err
+	msg := fmt.Sprintf("%s のコマンドが終わった: rc=%d", job.cardID, r.rc)
+	if errors.Is(r.err, errRunStopped) {
+		msg = fmt.Sprintf("%s のコマンドが止まったまま (STAT T) 続かなかったので止め直した: %s", job.cardID, clipLine(job.command))
+	}
+	return ev(eventlog.KindRun, job.cardID, "", msg), err
 }
 
 // lastLines は s の空でない最後の n 行 (色と制御文字を落とし、clipLine で切る。詳細にそのまま出す)。
@@ -397,16 +402,30 @@ func logTail(path string) string {
 // runTimeout は 1 本の実行の上限 (長いテストでも超えない長さ。超えたら止めて失敗にする)。
 const runTimeout = time.Hour
 
+// errRunStopped は、実行のグループが止まったまま (全部 STAT T) 続かなかったので止め直したこと (issue 541)。
+var errRunStopped = errors.New("実行のグループが止まったまま (STAT T) 続かなかったので止め直した")
+
+// runStopGrace は止まった (全部 STAT T) グループが続くのを待つ間 / runStopPoll は止まっているかを見る間隔。
+// SIGSTOP / SIGTSTP / SIGTTIN で止まったグループには、別 session の親 (dispatcher) からは SIGCONT が来ないので、待っても runTimeout まで順番を塞ぐ
+const (
+	runStopGrace = 30 * time.Second
+	runStopPoll  = 5 * time.Second
+)
+
 // ExecRunner は本物のシェルで実行する。TMUX / TMUX_PANE は落とす (PG と同じ理由)。
 type ExecRunner struct {
 	// Lockman は lockman の実行ファイル (名前だけなら PATH から探す)。空でなければ repo の lock (runLockDir) を取ってからコマンドを走らせる
 	// (pro-con の外の session・人も同じ lock を取れば、重い処理が repo ごとに直列になる。471)。空なら lock を取らない (e2e・テスト)
 	Lockman string
+	// StopGrace / StopPoll は runStopGrace / runStopPoll の代わり (0 なら既定。テストで短くする)
+	StopGrace, StopPoll time.Duration
 }
 
 func (r ExecRunner) Run(ctx context.Context, dir, command, logPath, runID string) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, runTimeout)
 	defer cancel()
+	ctx, stop := context.WithCancelCause(ctx) // 止まったまま続かなければ errRunStopped を原因に取り消す (watchStopped)
+	defer stop(nil)
 	f, err := os.Create(logPath)
 	if err != nil {
 		return -1, err
@@ -420,6 +439,8 @@ func (r ExecRunner) Run(ctx context.Context, dir, command, logPath, runID string
 			return -1, err
 		}
 		pgidFile = logPath + ".pgid"
+		// 前の実行が残した値を、この実行の bash が書く前に読まない (止まっているかの見張りと取り消しが、別のグループを見て撃つ)
+		_ = os.Remove(pgidFile)
 		defer func() { _ = os.Remove(pgidFile) }()
 		cmd = withRunLock(ctx, cmd, r.Lockman, lockDir, pgidFile, runID)
 	}
@@ -437,6 +458,7 @@ func (r ExecRunner) Run(ctx context.Context, dir, command, logPath, runID string
 			// 🚨 lockman 本体を SIGKILL すると lock を解放できず、TTL (30 分) まで repo の次の実行を止める。
 			// SIGTERM を無視する子は、lockman ではなく bash のグループを後から SIGKILL する (子が死ねば lockman が解放して抜ける)
 			_ = syscall.Kill(-pgid, syscall.SIGTERM)
+			_ = syscall.Kill(-pgid, syscall.SIGCONT) // 止まった (STAT T) グループは、続けないと SIGTERM を受け取らない
 			go func() {
 				select {
 				case <-exited:
@@ -445,7 +467,9 @@ func (r ExecRunner) Run(ctx context.Context, dir, command, logPath, runID string
 				}
 			}()
 		}
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGCONT)
+		return err
 	}
 	cmd.WaitDelay = runKillGrace
 	if pgidFile != "" {
@@ -454,6 +478,10 @@ func (r ExecRunner) Run(ctx context.Context, dir, command, logPath, runID string
 	if err := cmd.Start(); err != nil {
 		return -1, err
 	}
+	// 見るのは頼まれたコマンドのグループ (lock を取るときは bash が書いた pgid)。それが居なくなった後は lockman のグループ
+	go watchStopped(ctx, stop, cmp.Or(r.StopGrace, runStopGrace), cmp.Or(r.StopPoll, runStopPoll), func() []int {
+		return []int{readPgid(pgidFile), cmd.Process.Pid}
+	})
 	// 終わった後も、SIGTERM を無視した子や bash が抜けた後に残った子を、プロセスグループごと止める (dispatcher の後に残さない)
 	defer func() {
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
@@ -482,11 +510,72 @@ func (r ExecRunner) Run(ctx context.Context, dir, command, logPath, runID string
 			return rc, errors.New("lockman の rc かもしれない (122 = 走行中に lock を失った / 125 = lock の解放に失敗。ログの lockman の行を見ること)")
 		}
 		return ee.ExitCode(), nil
+	case errors.Is(context.Cause(ctx), errRunStopped):
+		return -1, fmt.Errorf("%w (%s 待っても続かないので SIGTERM → SIGKILL した)", errRunStopped, cmp.Or(r.StopGrace, runStopGrace))
 	case ctx.Err() != nil:
 		return -1, fmt.Errorf("時間切れか中断 (%w)", ctx.Err())
 	default:
 		return -1, err
 	}
+}
+
+// watchStopped は、groups の先頭から見て最初に生きているプロセスが居るグループが、grace のあいだ続けて止まっていたら (groupStopped)、
+// errRunStopped を原因に実行を取り消す (cmd.Cancel が SIGTERM と SIGCONT を送り、WaitDelay の後に SIGKILL する)。ctx が終われば抜ける。
+func watchStopped(ctx context.Context, stop context.CancelCauseFunc, grace, poll time.Duration, groups func() []int) {
+	t := time.NewTicker(poll)
+	defer t.Stop()
+	var since time.Time // 止まっているのを最初に見た時刻 (続いているのを見たら戻す)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-t.C:
+			switch {
+			case !groupStopped(groups()):
+				since = time.Time{}
+			case since.IsZero():
+				since = now
+			case now.Sub(since) >= grace:
+				stop(errRunStopped)
+				return
+			}
+		}
+	}
+}
+
+// groupStopped は、pgids の先頭から見て最初に (ゾンビ以外の) プロセスが居るグループが、全部止まっている (STAT T) か。
+// 🚨 kill(pid, 0) では止まっているのが分からないので、ps の STAT で見る。一部だけ止まっている (親が子を止めて待つ等) のは止まっていない扱い。
+// ps が失敗したら止まっていない扱い (取り消さない)。
+func groupStopped(pgids []int) bool {
+	out, err := exec.Command("ps", "-A", "-o", "pgid=,stat=").Output()
+	if err != nil {
+		return false
+	}
+	return stoppedIn(string(out), pgids)
+}
+
+// stoppedIn は ps の出力 (`pgid stat` の行) で groupStopped を判定する。
+func stoppedIn(ps string, pgids []int) bool {
+	for _, g := range pgids {
+		if g <= 1 {
+			continue
+		}
+		live, stopped := 0, 0
+		for _, line := range strings.Split(ps, "\n") {
+			f := strings.Fields(line)
+			if len(f) < 2 || f[0] != strconv.Itoa(g) || strings.HasPrefix(f[1], "Z") {
+				continue
+			}
+			live++
+			if strings.HasPrefix(f[1], "T") {
+				stopped++
+			}
+		}
+		if live > 0 {
+			return stopped == live
+		}
+	}
+	return false
 }
 
 // `lockman with` の自分の終了コード (src/lockman/main.go の exitWith*): 121 = 他が保持中なので子を起こさなかった /
