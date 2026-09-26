@@ -93,3 +93,13 @@ func TestDialogLayout(t *testing.T) {
 		t.Errorf("案内が淡色で包まれていない: %q", colored[3])
 	}
 }
+
+// WideDialog は幅の上限だけが WideMaxWidth に広がる (狭い画面では画面幅に合わせる)。
+func TestWideDialogWidth(t *testing.T) {
+	for _, c := range []struct{ width, want int }{{200, WideMaxWidth}, {50, 50}} {
+		box := WideDialog(" t ", []string{"x"}, HintYesNo, c.width, false)
+		if got := termwidth.Of(box[0]); got != c.want {
+			t.Errorf("width=%d: 幅 = %d, want %d", c.width, got, c.want)
+		}
+	}
+}
