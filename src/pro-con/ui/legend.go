@@ -151,6 +151,10 @@ func legendRows(tab legendTab, inner int) []string {
 		for _, a := range card.AfterDone {
 			explain(a)
 		}
+		rows = append(rows, "", sgrBold+"attach から pro-con へ戻る"+sgrReset) // issue 527
+		for _, a := range attachReturnHelp {
+			explain(a)
+		}
 	case legendLanes:
 		for i, s := range card.Columns {
 			rows = append(rows, fg(stateColor(s))+sgrBold+fmt.Sprintf("%d %s", i+1, s.Label())+sgrReset)

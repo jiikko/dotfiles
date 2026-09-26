@@ -22,6 +22,14 @@
 - `?権限` (権限の確認・AskUserQuestion で止まった PG) は回答を受けない。人が画面の `a` で attach して答える
 - 答えの前に `pro-con card show <カード>` で質問の全文と履歴を読む
 
+## attach から戻る
+
+- 画面の `a` で PG の session に attach する (`claude attach`)。attach の間に打った文は、戻るとカードの履歴に残る
+- tmux の中: attach は pro-con の画面の上の窓 (tmux の popup) で開く。窓の枠の見出しにあるキー (Ctrl+Z) で閉じて pro-con に戻る
+- tmux の外: attach の前に戻り方の案内が出る (enter / y で進む)。Ctrl+Z で pro-con に戻る。`←` は Claude Code の一覧へ行くだけで戻らない
+- 戻れなくなったら、別の端末で `pro-con attach --leave`。pro-con の画面から開いた attach の接続だけを終わらせる
+- どの戻り方でも PG の session は動き続ける (終わるのは attach の接続だけ)
+
 ## 待つ・見る
 
 - `pro-con card list` / `pro-con card show <カード>` / `pro-con card log <カード>` (PG の活動。--follow で追う)

@@ -30,6 +30,7 @@ bin/pro-con card attach C-001 shot.png --note "詳細の見た目"  # PG が作�
                                          # 人間は詳細 (enter) の「添付」で見て o で画像を Preview に開く (.txt / .ans の文字は詳細の中にそのまま出す)。card show にパス。
                                          # カードが記録から外れたら (削除・書庫へ移した) dispatcher が添付を消す
 bin/pro-con card move C-001 up   # レーンの中で 1 つ上 (down なら下) と入れ替える (画面の K / J と同じ。--repo でその repo の中の隣。issue 470)
+bin/pro-con attach --leave  # 戻れなくなった attach の接続だけを外から終わらせる (画面の a で開いた attach。tmux の popup なら入れ子のサーバを、外なら画面の子の claude attach を。PG の session は動き続ける。issue 527)
 bin/pro-con card list | show C-001 | wait C-001 --until review  # カードを画面なしで読む (--json も)。読むだけで、箱にも記録にも socket の wake / notify にも書かない (issue 442)。add は適用を待ってカード ID を返す
 bin/pro-con card log C-001 [--follow] [--json]  # PG の活動 (応答の文と道具の呼び出し。例 `Bash: go test ./...` / `Edit: close.go`) を時刻の順に。再開で入れ替わった前の session から続けて出す。思考は Claude Code が中身を保存しないので出せず、道具の結果は長いので出さない。読むだけ (issue 467)
 bin/pro-con log [--card C-001] [--follow] [--since 10m] [--json]  # dispatcher の出来事 (適用・除けた・起動・再開・止めた・削除・枠・watchdog・画面の数・画面を開いた / quit で閉じた) を読む。画面の出来事は画面が受付の箱に置き dispatcher が書く (--view の画面は置かない。issue 445)。記録は状態の置き場の events.jsonl (1 MiB で events.1.jsonl へ回す)。読むだけ (issue 444)
@@ -84,6 +85,12 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
   attach は押した瞬間に一覧を取り直して照合し直してから撃つ。attach できるのは `claude --bg` の session だけ。
   attach から戻ると、その間に人間が打った文 (transcript の `origin.kind == "human"`) を原文のままカードの履歴へ残す
   (要約しない。受付の箱経由で dispatcher が書く。issue 428)。
+  attach の開き方 (issue 527): tmux の中は `tmux display-popup` の窓の中に pro-con 専用の入れ子の tmux サーバ
+  (一時ディレクトリの socket・`-f` でユーザーの設定を読まない) を起こし、その中で `claude attach` を動かす。popup の中では外の tmux の
+  bind が効かない (キーは全部 popup の中身へ渡る) ので、戻るキーは入れ子のサーバの bind (`kill-server`) にしてある (`ui/attachpopup.go`)。
+  本番の tmux サーバには bind を足さない。tmux の外は端末を渡す前に戻り方の案内を出す (`ui/attachguide.go`)。
+  戻れなくなったときは `pro-con attach --leave` が ps から入れ子のサーバ・画面の子の `claude attach` を探して終わらせる (`leavecmd.go`)。
+  使い方の正本は `pro-con help usage` の「attach から戻る」
   🚨 逆向き (外の shell から pro-con の session を attach / stop される) は Claude Code の側で止められない。検出は issue 427
 - PG の出力は transcript (`~/.claude/projects/*/<sessionId>.jsonl`) の末尾 512KB から読み、`claude agents --json` とあわせて 3 秒ごとに裏で読み直す
 - 詳細の「活動」(本物・`--view`) は、そのカードの session (起動の記録と `sessions-retired.json` の CardID で引く) の transcript を、読んだ位置の続きだけ 1 秒ごとに裏で読む (`live/activity.go`。画面が持つのは末尾 1000 件)。本文の末尾を見ていれば、足された活動を追って末尾に留まる
@@ -188,7 +195,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 ## 模擬 (ハリボテ) の中身
 
 - 1 秒ごとに `Poll` し、fake の模擬時間が 1 分進む (カードが列を進む・PG が質問する・watchdog が停滞を拾う・リソースの順番が回る)
-- attach (`a`) は本物の `claude attach` の代わりに `pro-con fake-attach <id>` を `tea.ExecProcess` で起動する。
+- attach (`a`) は本物の `claude attach` の代わりに `pro-con fake-attach <id>` を起動する (tmux の中は popup、外は `tea.ExecProcess`)。
   画面の明け渡しと戻りは本番と同じ経路を通る
 
 | キー | 動作 |

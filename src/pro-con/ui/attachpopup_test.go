@@ -1,0 +1,79 @@
+package ui
+
+import (
+	"os/exec"
+	"slices"
+	"strings"
+	"testing"
+
+	tea "charm.land/bubbletea/v2"
+)
+
+// popup の中身は外の tmux サーバの環境で起きるので、attach の作業場所・環境を渡し、入れ子の tmux は TMUX を落として
+// 一時ディレクトリの socket と設定で起こす。窓の枠の見出しにカードの id と戻る操作を出す。
+func TestPopupCommand(t *testing.T) {
+	p := &PopupAttach{Tmux: "/bin/tmux", Title: " %s の PG に attach 中 ─ Ctrl+Z で pro-con に戻る ", Key: "C-z"}
+	c := exec.Command("/usr/bin/true", "attach", "abc123")
+	c.Dir, c.Env = "/work", []string{"PATH=/x"}
+	got := p.command(c, "C-082", "/tmp/pro-con-attach-1").Args
+	want := []string{"/bin/tmux", "display-popup", "-E", "-w", "90%", "-h", "90%", "-T", " C-082 の PG に attach 中 ─ Ctrl+Z で pro-con に戻る ",
+		"-d", "/work", "-e", "PATH=/x", "--", "/usr/bin/env", "-u", "TMUX", "-u", "TMUX_PANE",
+		"/bin/tmux", "-S", "/tmp/pro-con-attach-1/sock", "-f", "/tmp/pro-con-attach-1/conf", "new-session", "--", "/usr/bin/true", "attach", "abc123"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("popup のコマンドが違う:\n got  %q\n want %q", got, want)
+	}
+}
+
+// 入れ子の tmux のキーは戻るキーの 1 つだけ (prefix も外し、他のキーは全部 claude attach へ渡す)。戻るキーは入れ子のサーバを終わらせる。
+func TestPopupConfBindsOnlyLeaveKey(t *testing.T) {
+	conf := popupConf("C-z")
+	for _, want := range []string{"unbind -a", "set -g prefix None", "set -g prefix2 None", "bind -n C-z kill-server", "set -g destroy-unattached on"} {
+		if !strings.Contains(conf, want) {
+			t.Fatalf("入れ子の tmux の設定に %q が無い:\n%s", want, conf)
+		}
+	}
+	if strings.Index(conf, "unbind -a") > strings.Index(conf, "bind -n") {
+		t.Fatal("戻るキーを bind した後で全部を外している")
+	}
+}
+
+// tmux の外では attach を popup で開かない。
+func TestTmuxPopupOnlyInTmux(t *testing.T) {
+	t.Setenv("TMUX", "")
+	if p := TmuxPopup(); p != nil {
+		t.Fatalf("tmux の外なのに popup を使う: %+v", p)
+	}
+}
+
+// tmux の中 (popup を使う): 案内を出さず、端末も渡さず、裏の処理で popup を待つ。
+func TestAttachInPopupSkipsGuideAndTerminal(t *testing.T) {
+	m := New(newSpy(), nil)
+	m.UsePopupAttach(&PopupAttach{Tmux: "/nonexistent/tmux", Title: "%s", Key: "C-z"})
+	handed := false
+	m.execProcess = func(*exec.Cmd, tea.ExecCallback) tea.Cmd { handed = true; return nil }
+	press(m, "right") // W1
+	_, cmd := m.Update(press(m, "a")())
+	if m.guide != nil || handed || cmd == nil {
+		t.Fatalf("popup なのに案内を出した / 端末を渡した / 待つ処理が無い: guide=%v handed=%v", m.guide != nil, handed)
+	}
+	done, ok := cmd().(attachDoneMsg) // tmux が無いので popup は開けず、失敗の知らせで戻る
+	if !ok || done.cardID != "W1" || done.session != "s-w1" || done.err == nil {
+		t.Fatalf("popup の戻りの知らせが違う: %+v", done)
+	}
+}
+
+// tmux の外: 案内でやめたら端末を渡さない。
+func TestAttachGuideCancel(t *testing.T) {
+	m := New(newSpy(), nil)
+	handed := false
+	m.execProcess = func(*exec.Cmd, tea.ExecCallback) tea.Cmd { handed = true; return nil }
+	press(m, "right")
+	m.Update(press(m, "a")())
+	if !strings.Contains(m.View().Content, "pro-con に戻るには Ctrl+Z") {
+		t.Fatal("案内に戻り方が出ていない")
+	}
+	press(m, "esc")
+	if handed || m.guide != nil {
+		t.Fatalf("案内でやめたのに端末を渡した (%v) / 案内が残った", handed)
+	}
+}
