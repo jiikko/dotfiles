@@ -367,7 +367,6 @@ func (m *Model) overlayForm(region []string) []string {
 	width, inner := formWidth(m.width)
 	lines := f.formLines(inner)
 	room := max(len(region)-2, 1) // 上下の罫線
-	top := 0
 	if len(lines) > room {
 		at := 0
 		for i, l := range lines {
@@ -376,7 +375,7 @@ func (m *Model) overlayForm(region []string) []string {
 			}
 		}
 		// カーソルの行と、その後ろ (折り返した説明・欄) が見えるように
-		top = min(max(at-room/2, 0), len(lines)-room)
+		top := min(max(at-room/2, 0), len(lines)-room)
 		lines = lines[top : top+room]
 	}
 	box := formBox(" "+f.cardID+" へ回答 ", lines, width, inner)
