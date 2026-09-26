@@ -10,6 +10,7 @@
 //	pro-con du           pro-con が作った物のディスクの使用量と内訳 (読むだけ。数秒かかる)
 //	pro-con worktree clean  閉じたカードの PG の worktree を片付ける (既定は一覧だけ。--yes で 1 個ずつ取り直して消す)
 //	pro-con dispatcher       本物のモードの dispatcher を常駐させる (PG を起動する。週の利用枠を使う)
+//	pro-con help [話題]  用語・使い方・デバッグの説明 (引数なしで話題の一覧)
 //	pro-con fake-attach  attach の代わりに TUI から起動される内部用のコマンド
 //
 // 設定は ~/.config/pro-con/config.toml (無ければ既定値。書式は config package の doc)。
@@ -324,8 +325,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				return 1
 			}
 			return runMonitor(args[1:], liveDir(home), paths, stdout, stderr)
+		case "help": // 話題ごとの説明 (用語・使い方・デバッグ。helpcmd.go)
+			return runHelp(args[1:], stdout, stderr)
 		case "-h", "--help":
-			_, _ = fmt.Fprintln(stdout, "usage: pro-con [--view | --join] [--as <名前>] [--mock | --e2e <置き場>]   (--view は見るだけ、--join は加わる (閉じても止めない)。詳しくは README)")
+			_, _ = fmt.Fprintln(stdout, "usage: pro-con [--view | --join] [--as <名前>] [--mock | --e2e <置き場>]   (--view は見るだけ、--join は加わる (閉じても止めない)。用語・使い方・デバッグは pro-con help)")
 			return 0
 		default:
 			_, _ = fmt.Fprintf(stderr, "pro-con: 未知の引数 %q (pro-con --help)\n", args[0])

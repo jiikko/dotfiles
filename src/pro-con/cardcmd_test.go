@@ -223,7 +223,7 @@ func guideCommandsParse(t *testing.T, guide string) {
 		if args[0] == "guide" {
 			continue
 		}
-		if args[0] == "list" || args[0] == "show" || args[0] == "wait" { // 読む口は parseCardWait を通らない。使い方の誤り (rc=2) にならないかを見る
+		if args[0] == "list" || args[0] == "show" || args[0] == "wait" || args[0] == "log" { // 読む口は parseCardWait を通らない。使い方の誤り (rc=2) にならないかを見る
 			if args[0] == "wait" {
 				args = append(args, "--timeout", "1ms") // 指示書の例のまま待たない (カードも無いのですぐ返る)
 			}

@@ -3,6 +3,9 @@
 PM (producer) と PG (consumer) を分けて Claude Code を並列に回すための TUI。
 **設計の正本は issue 415** (epic `issues/epic/415/` の親 issue。残タスクは同じディレクトリの子 issue)。ここには実装側の事情だけを書く。
 
+**用語・使い方 (どの場面で何を使うか)・デバッグ (状態の置き場の中身・止まったとき) は `pro-con help <話題>` が正本** (本文は `help/*.md`。
+引数なしで話題の一覧)。ここに同じ文を書かない。pro-con を外から動かす Claude には skill `pro-con` (`_claude/skills/pro-con/SKILL.md`) が入口になる。
+
 ## 起動のしかた: 本物と模擬
 
 ```sh
