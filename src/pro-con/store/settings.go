@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -27,15 +28,35 @@ const KindConfig = "config"
 const (
 	SettingLimit = "limit" // 同時に動かす PG の上限
 	SettingPM    = "pm"    // PM の数。🚨 受けるのは 1 だけなので dispatcher はまだ読まない (2 以上を受けるのは 415 の論点 6 の後。そのとき dispatcher に配線する)
+	// SettingReview は敵対的レビューの担い手 (ReviewModes。issue 514)。~/.config/pro-con/config.toml の review より勝つ
+	SettingReview = "review"
 )
 
 // SettingKeys は受け付ける設定の名前 (使い方の文と検査が引く)。
-var SettingKeys = []string{SettingLimit, SettingPM}
+var SettingKeys = []string{SettingLimit, SettingPM, SettingReview}
 
-// Settings は SettingsFile の中身。0 は「設定していない」(起動の引数・既定を使う)。
+// 敵対的レビューの担い手 (issue 514)。claude = PG が自分のサブエージェントで回す (既定。514 の前の動き) / codex = PG が codex exec で回す。
+const (
+	ReviewClaude = "claude"
+	ReviewCodex  = "codex"
+)
+
+// ReviewModes は review に書ける値 (設定・config.toml の検査と画面の ← → が引く。先頭が既定)。
+var ReviewModes = []string{ReviewClaude, ReviewCodex}
+
+// CheckReview は review の値を検査する (空 = 設定なし は通す)。
+func CheckReview(v string) error {
+	if v == "" || slices.Contains(ReviewModes, v) {
+		return nil
+	}
+	return fmt.Errorf("review は %s のどれか (%q)", strings.Join(ReviewModes, " / "), v)
+}
+
+// Settings は SettingsFile の中身。0 と空は「設定していない」(起動の引数・config.toml・既定を使う)。
 type Settings struct {
-	Limit int `json:"limit,omitempty"`
-	PMs   int `json:"pms,omitempty"`
+	Limit  int    `json:"limit,omitempty"`
+	PMs    int    `json:"pms,omitempty"`
+	Review string `json:"review,omitempty"`
 }
 
 // ErrSettingsBroken は SettingsFile が壊れているとき (読む側は起動の引数・既定で動き、理由を出す)。
@@ -94,6 +115,11 @@ func CheckSetting(key, value string) (func(*Settings), error) {
 			return nil, fmt.Errorf("PM は今は 1 つだけ (%d は受けない。2 以上は 415 の論点 6 = PM の数と役割が決まってから)", n)
 		}
 		return func(s *Settings) { s.PMs = n }, nil
+	case SettingReview:
+		if err := CheckReview(value); err != nil {
+			return nil, err
+		}
+		return func(s *Settings) { s.Review = value }, nil
 	}
 	return nil, fmt.Errorf("知らない設定 %q (%s)", key, strings.Join(SettingKeys, " / "))
 }

@@ -151,3 +151,16 @@ func TestLoadIntegratorMode(t *testing.T) {
 		t.Fatalf("integrator の書き間違いを誤りにしていない: %v", err)
 	}
 }
+
+// review は claude / codex だけ (514)。書き間違いを claude と読むと、codex を選んだつもりで黙って Claude が回す。
+func TestLoadReviewMode(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.toml")
+	write(t, p, "review = \"codex\"\n")
+	if c, err := Load(p); err != nil || c.Review != "codex" {
+		t.Fatalf("review = codex を読んでいない: %+v %v", c, err)
+	}
+	write(t, p, "review = \"codx\"\n")
+	if _, err := Load(p); err == nil || !strings.Contains(err.Error(), "review は") {
+		t.Fatalf("review の書き間違いを誤りにしていない: %v", err)
+	}
+}

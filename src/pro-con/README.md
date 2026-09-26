@@ -12,7 +12,7 @@ bin/pro-con --view   # 見ているだけの画面: 動いている pro-con を�
 bin/pro-con --join [--as review]   # 加わる画面: 読み書きは普通の画面と同じ (依頼・回答・差し戻し・削除・attach)。dispatcher を起こさず (c も受けない)、quit で閉じても dispatcher と PG を止めない。--view / --mock とは組まない (issue 481)。--as は画面の一覧に出す名前 (普通の画面にも付けてよい)
 bin/pro-con dispatcher   # 割り振り係: 受付の箱の適用・PM と PG の起動と再開・テストの係・見張り (画面を開くと、居なければ画面が起こす。旧名 daemon)。2 つ起動しない。🚨 PG を起動するので利用枠を使う
                          # 同時に動かす PG は --limit (既定 2) まで。数えるのは turn の途中の PG だけで、テストの係の結果を待って idle の PG は数えない (issue 455。結果が届いたら枠の空きを待って再開する)。利用枠 (`claude -p /usage` を 5 分ごとに読む) の 5 時間と週の大きい方が 80% 以上なら 1 本、95% 以上なら新しく起動・再開しない (ゲージの「PG n/m」と理由)
-bin/pro-con config set limit 3 | set pm 1 | unset limit | show  # 止めずに PG の枠 (同時に動かす PG の上限) と PM の数を変える (issue 456)。受付の箱に置き、dispatcher が状態の置き場の settings.json に書いて次の Tick から使う (起動し直しても続く)
+bin/pro-con config set limit 3 | set pm 1 | set review codex | unset limit | show  # 止めずに PG の枠 (同時に動かす PG の上限) と PM の数を変える (issue 456)。受付の箱に置き、dispatcher が状態の置き場の settings.json に書いて次の Tick から使う (起動し直しても続く)
                          # 🚨 上限の優先: 利用枠の絞り (80% で 1 本 / 95% で 0 本) > 設定 (config set limit) > dispatcher の --limit > 既定 2。--limit は「設定が無いときの値」で、unset limit で戻る (画面が起こす dispatcher は --limit を付けない)
                          # PM の数は今は 1 だけを受ける (2 以上は 415 の論点 6 が決まるまで断る。今は 1 つで動くので dispatcher はまだ読まない。PM を起こさないのは --pm=off / config.toml の pm = "off")。settings.json が壊れていたら --limit で動き、理由をゲージに出す
 bin/pro-con du [--json] [--all]  # pro-con が作った物のディスクの使用量と内訳 (PG・役の worktree `pc-*` / 起動した session の transcript の置き場 / 状態の置き場 / バイナリ。置き場ごとに大きい順、完了したカードに印)。読むだけ (消さない)。worktree を全部歩くので数秒かかる。数えるのは起動の記録にあるものと、その隣の `pc-*` だけ (issue 456)
@@ -185,7 +185,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 | tab / shift+tab | repo タブの切り替え (global = 全 repo) |
 | n | 新しい依頼 (PM へ)。repo のタブで出すとその repo がスコープになる |
 | i | issue の一覧から選んで「これやって」と依頼する (repo のタブならその repo、global なら設定の全 repo。未完了だけ。epic は見出しの下に子)。Enter → 補足 (空でよい) → Enter |
-| s | 設定画面を開閉 (issue 456)。右から全幅の板が入ってきて、中を「設定 / プロセス / ディスク」のタブに分ける (tab / shift+tab で切り替え、j / k で行を選ぶ、s / q / esc で閉じる)。**設定**: PG の枠 (同時に動かす PG の上限) と PM の数を ← → (h / l) で 1 ずつ変える。受付の箱に置き (`pro-con config set` と同じ)、dispatcher の次の Tick から効く (止めずに変わる)。適用されるまで「適用待ち」。利用枠の絞りはこの上限より優先。PM は今は 1 だけ。下に見る所の要約。**プロセス**: `pro-con ps` と同じ出どころの役ごとの一覧 (pid・経過・状態・カード・session・今のコマンド)。出すのは動いているものと、カードと食い違う PG (カードは作業中なのに session が止まっている / カードは完了なのに動いている。黄色の `!`) だけで、止まった PG (終わったカードのもの・質問待ち等) は出さず数えもしない (issue 497)。止まっている役 (PM・取り込み・テストの係) は 1 行に畳み、enter で開く。画面が 2 つ以上 (または join) なら下段に開いている画面の一覧 (モード・名前・開いた時刻・端末・pid)。**ディスク**: `pro-con du` と同じ、pro-con が作った物の使用量 (合計・置き場ごとの大きさと割合と数・大きい順の内訳 3 つ。enter でその置き場の内訳を全部。worktree と transcript は完了したカードに印)。🚨 見る所は描くたびに読まない (ディスクは数秒かかる): 開いたとき・プロセスのタブへ移ったとき・r で裏で 1 回読み、読んだ時刻を見出しに出す。`--view` では設定のタブを出さない (見る所だけ)。pro-con の外の session は名前も本数も出さない。画面は `claude agents` を自分で読まない |
+| s | 設定画面を開閉 (issue 456)。右から全幅の板が入ってきて、中を「設定 / プロセス / ディスク」のタブに分ける (tab / shift+tab で切り替え、j / k で行を選ぶ、s / q / esc で閉じる)。**設定**: PG の枠 (同時に動かす PG の上限) と PM の数を ← → (h / l) で 1 ずつ、敵対的レビューの担い手 (claude / codex。issue 514) を ← → で巡って変える。受付の箱に置き (`pro-con config set` と同じ)、dispatcher の次の Tick から効く (止めずに変わる)。適用されるまで「適用待ち」。利用枠の絞りはこの上限より優先。PM は今は 1 だけ。下に見る所の要約。**プロセス**: `pro-con ps` と同じ出どころの役ごとの一覧 (pid・経過・状態・カード・session・今のコマンド)。出すのは動いているものと、カードと食い違う PG (カードは作業中なのに session が止まっている / カードは完了なのに動いている。黄色の `!`) だけで、止まった PG (終わったカードのもの・質問待ち等) は出さず数えもしない (issue 497)。止まっている役 (PM・取り込み・テストの係) は 1 行に畳み、enter で開く。画面が 2 つ以上 (または join) なら下段に開いている画面の一覧 (モード・名前・開いた時刻・端末・pid)。**ディスク**: `pro-con du` と同じ、pro-con が作った物の使用量 (合計・置き場ごとの大きさと割合と数・大きい順の内訳 3 つ。enter でその置き場の内訳を全部。worktree と transcript は完了したカードに印)。🚨 見る所は描くたびに読まない (ディスクは数秒かかる): 開いたとき・プロセスのタブへ移ったとき・r で裏で 1 回読み、読んだ時刻を見出しに出す。`--view` では設定のタブを出さない (見る所だけ)。pro-con の外の session は名前も本数も出さない。画面は `claude agents` を自分で読まない |
 | e | 選択中のカードの issue の md をエディタで開く ($VISUAL → $EDITOR → nvim。`tuikit/editor`) |
 | x | 完了のレーンを片付ける (y/N 確認。repo のタブではその repo の分だけ。カードは消さず Archived にする。本物のモードでは dispatcher が書庫へ移す) |
 | d | 選択中のカードを削除する (y/N 確認。依頼の列ならすぐ消える。ほかの列は「削除中」になり、dispatcher が PG の session を止めたのを確かめてから消える。1 分で止められなければカードを残して理由を履歴に書く。PG の worktree とブランチは消さない。消したことは dispatcher の記録に残る。issue 451) |
@@ -235,7 +235,15 @@ repos      = ["~/dotfiles"] # root の外にある repo を個別に足す
 pm_repo    = "~/dotfiles"   # PM を起動する repo (PM はその下の worktree .claude/worktrees/pc-pm-<時刻> で動く。issue 437)
 integrator = "on"            # 取り込みの係 (issue 487) を起こすか。"off" なら起こさない (レビューの列は人か外の Claude が扱う)。dispatcher の --integrator=on|off が勝つ
 pm         = "on"           # "off" なら dispatcher は PM を起動も再開もしない (依頼の列のカードはそのまま置き、人か外の Claude が PM をする)
+review     = "claude"       # 敵対的レビューの担い手 (issue 514): "claude" (既定。PG が自分のサブエージェントで回す) / "codex" (PG が codex exec で回す)
 ```
+
+- **敵対的レビューの担い手 (`review`)** は `pro-con config set review claude|codex` と設定画面 (s) の「設定」のタブでも変えられ、そちらが config.toml より勝つ
+  (設定 > config.toml > 既定 claude。`pro-con config show` に今の値と出どころ・codex の実体が出る)。codex のとき dispatcher は PG の起動の指示に
+  codex の実体の絶対パス (担い手が初めて codex になった Tick に 1 回だけ解く。claude のままなら解かない) と作法 (`~/.claude/skills/codex-review/SKILL.md` の敵対的モード) を差し込む。
+  取り込みの係への知らせには、**codex の設定で起動した PG のカード** (カードの `ReviewBy`) について「codex の証拠の添付か、Claude で代わりに回した添付があるかを確かめる」を足す
+  (今の設定では決めない: claude で起動した PG を、後で codex に変えた設定で差し戻さない)。codex が使えない (実体が無い・`ratelimit -source codex -check` が rc≠0・
+  codex が rc≠0) ときは、PG は Claude のサブエージェントで代わりに回し、そのことを添付で履歴に残す。🚨 変えても、起動済みの PG の指示は変わらない (次に起動する PG から)
 
 - **PM を起こさない口は 2 つ: dispatcher の `--pm=off` と設定の `pm = "off"`。`--pm` (on / off) を書けば設定より勝つ** (起動ごとに明示した方を優先する。
   設定で off にしていても `pro-con dispatcher --pm=on` で 1 回だけ起こせる)。off で起動した dispatcher は、そのことを出来事 (`pro-con log`) と dispatcher のログに 1 行出す。

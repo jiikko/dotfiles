@@ -62,6 +62,38 @@ func TestConfigSetSubmits(t *testing.T) {
 	}
 }
 
+// review (514) も set で箱に置き、show に設定と dispatcher が使っている担い手・codex の実体を出す。claude / codex 以外は置く前に弾く。
+func TestConfigReview(t *testing.T) {
+	dir := t.TempDir()
+	if rc, _, _ := configCmd(t, dir, "set", "review", "opus"); rc != 2 {
+		t.Fatalf("review = opus を受けた (rc=%d)", rc)
+	}
+	if rc, _, e := configCmd(t, dir, "set", "review", "codex"); rc != 0 {
+		t.Fatalf("set review codex が rc=%d: %s", rc, e)
+	}
+	if _, err := store.Apply(dir, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, out, _ := configCmd(t, dir, "show"); !strings.Contains(out, "review 設定 codex / dispatcher の担い手はまだ分からない") {
+		t.Fatalf("dispatcher が回る前の review が違う:\n%s", out)
+	}
+	save := func(ds store.DispatcherState) {
+		t.Helper()
+		ds.Tick, ds.Review, ds.ReviewFrom = time.Now(), "codex", dispatcher.ReviewFromSetting
+		if err := store.SaveDispatcherState(dir, ds); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save(store.DispatcherState{Codex: "/opt/homebrew/bin/codex"})
+	if _, out, _ := configCmd(t, dir, "show"); !strings.Contains(out, "review 設定 codex / dispatcher が使っている担い手 codex (設定) / codex /opt/homebrew/bin/codex") {
+		t.Fatalf("show に review が出ない:\n%s", out)
+	}
+	save(store.DispatcherState{CodexErr: "codex が PATH に無い"})
+	if _, out, _ := configCmd(t, dir, "show"); !strings.Contains(out, "codex を解けない") || !strings.Contains(out, "codex が PATH に無い") {
+		t.Fatalf("解けない codex を show に出さない:\n%s", out)
+	}
+}
+
 // ps は pro-con が起動したものだけを役ごとに出し、状態の置き場に何も書かない。
 func TestPSListsOwnedRolesOnly(t *testing.T) {
 	root := t.TempDir()

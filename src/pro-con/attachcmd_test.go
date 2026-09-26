@@ -79,15 +79,24 @@ func TestCardAttachRejects(t *testing.T) {
 }
 
 // PG への指示 (dispatcher.Prompt) の attach のコマンドは、今のパーサに通る (指示だけが古くなる形を止める)。
+// 敵対的レビューを codex に回す設定 (514) で足す attach (証拠・代わりに回した記録) も同じ。
 func TestPromptAttachCommandParses(t *testing.T) {
-	p := dispatcher.Prompt(card.Card{ID: "C-007", Title: "t"})
-	m := regexp.MustCompile("`(pro-con card attach [^`]+)`").FindStringSubmatch(p)
-	if m == nil {
-		t.Fatalf("PG への指示に attach のコマンドが無い:\n%s", p)
-	}
-	line := regexp.MustCompile(`<[^>]*>`).ReplaceAllString(m[1], "x")
-	id, file, note, err := parseAttach(splitQuoted(strings.TrimPrefix(line, "pro-con card attach ")))
-	if err != nil || id != "C-007" || file != "x" || note != "x" {
-		t.Fatalf("%s → id=%q file=%q note=%q err=%v", m[1], id, file, note, err)
+	for _, rv := range []dispatcher.Review{
+		{},
+		{Mode: store.ReviewCodex, Codex: "/opt/codex"},
+		{Mode: store.ReviewCodex, CodexErr: "codex が PATH に無い"},
+	} {
+		p := dispatcher.Prompt(card.Card{ID: "C-007", Title: "t"}, rv)
+		ms := regexp.MustCompile("`(pro-con card attach [^`]+)`").FindAllStringSubmatch(p, -1)
+		if len(ms) == 0 {
+			t.Fatalf("PG への指示に attach のコマンドが無い:\n%s", p)
+		}
+		for _, m := range ms {
+			line := regexp.MustCompile(`<[^>]*>`).ReplaceAllString(m[1], "x")
+			id, file, note, err := parseAttach(splitQuoted(strings.TrimPrefix(line, "pro-con card attach ")))
+			if err != nil || id != "C-007" || file != "x" || note == "" {
+				t.Fatalf("%+v: %s → id=%q file=%q note=%q err=%v", rv, m[1], id, file, note, err)
+			}
+		}
 	}
 }

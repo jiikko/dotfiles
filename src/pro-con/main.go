@@ -310,7 +310,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			if warn != "" {
 				_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", warn)
 			}
-			return runDispatcher(args[1:], liveDir(home), filepath.Join(home, ".claude", "projects"), paths, pmConfig{Repo: pmRepo, Mode: cfg.PM, IntegratorMode: cfg.Integrator}, stdout, stderr)
+			return runDispatcher(args[1:], liveDir(home), filepath.Join(home, ".claude", "projects"), paths, pmConfig{Repo: pmRepo, Mode: cfg.PM, IntegratorMode: cfg.Integrator, Review: cfg.Review}, stdout, stderr)
 		case "monitor": // 見張り (dispatcher が子として起こす。読むだけで、見つけたことは受付の箱に置く。monitorcmd.go)
 			home, err := os.UserHomeDir()
 			if err != nil {

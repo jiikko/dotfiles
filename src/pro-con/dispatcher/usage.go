@@ -136,6 +136,10 @@ func (d *Dispatcher) loadSettings() {
 	if err != nil {
 		d.settingsErr = "設定を読めない (起動の引数で動く): " + err.Error()
 	}
+	if err := store.CheckReview(s.Review); err != nil { // 手で書き換えた値 (Codex 等) を担い手にしない (codex と見せて Claude が回す形になる)
+		d.settings.Review = ""
+		d.settingsErr = strings.TrimPrefix(d.settingsErr+" / 設定の review を使わない (config.toml か既定で動く): "+err.Error(), " / ")
+	}
 }
 
 // capacity は今の同時に動かす PG の数と、人の上限 (limit) より絞った理由 (絞っていなければ空)。
@@ -175,8 +179,9 @@ func (d *Dispatcher) writeState(now time.Time) error {
 		why = strings.TrimPrefix(why+" / "+d.settingsErr, " / ")
 	}
 	lim, from := d.limit()
+	rv := d.review()
 	s := store.DispatcherState{Tick: now, Limit: lim, LimitFrom: from, Cap: c, Why: why,
-		Roles: d.roles()}
+		Review: rv.Mode, ReviewFrom: rv.From, Codex: rv.Codex, CodexErr: rv.CodexErr, Roles: d.roles()}
 	for _, r := range roles() {
 		s.RoleStates = append(s.RoleStates, d.roleState(r, now))
 	}

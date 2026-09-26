@@ -111,7 +111,7 @@ func TestDeletedPredecessorReleasesSuccessor(t *testing.T) {
 
 // 起動の指示に、前に回したカードを書く (PG が前の変更を読んでから作る)。
 func TestPromptNamesPredecessors(t *testing.T) {
-	p := Prompt(card.Card{ID: "C-002", Title: "t", After: []string{"C-001"}})
+	p := Prompt(card.Card{ID: "C-002", Title: "t", After: []string{"C-001"}}, Review{})
 	if !strings.Contains(p, "C-001 の後") {
 		t.Fatalf("起動の指示に前のカードが無い: %s", p)
 	}

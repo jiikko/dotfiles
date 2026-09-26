@@ -556,11 +556,11 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 		extra = append(extra, card.Violation{Reason: "dispatcher の様子を読めない: " + err.Error()})
 	}
 	pending, configs := store.PendingCounts(b.dir)
-	cfg := backend.Config{LimitFrom: ds.LimitFrom, Pending: configs}
+	cfg := backend.Config{LimitFrom: ds.LimitFrom, Pending: configs, ReviewNow: ds.Review, ReviewFrom: ds.ReviewFrom, Codex: ds.Codex, CodexErr: ds.CodexErr}
 	if set, err := store.LoadSettings(b.dir); err != nil {
 		cfg.Err = err.Error()
 	} else {
-		cfg.Limit, cfg.PMs = set.Limit, set.PMs
+		cfg.Limit, cfg.PMs, cfg.Review = set.Limit, set.PMs, set.Review
 	}
 	b.mu.Lock()
 	if b.refused != "" {
