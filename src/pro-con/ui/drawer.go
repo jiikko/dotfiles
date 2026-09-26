@@ -166,6 +166,9 @@ func (m *Model) drawerBody() []string {
 		}
 	}
 	add("", "issue: "+link+"   親: "+orDash(c.ParentID))
+	if pts := card.PointsLabel(c); pts != "" {
+		add("", "見積もり: "+pts+" (PM が付けた)")
+	}
 	add("", "依頼の原文: 「"+c.Request+"」")
 	if c.Prompt != "" {
 		add(sgrDim, "PG への指示: "+c.Prompt)

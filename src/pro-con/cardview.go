@@ -319,6 +319,9 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 		}
 	}
 	p("issue: %s   親: %s", link, orDashCLI(c.ParentID))
+	if pts := card.PointsLabel(c); pts != "" {
+		p("見積もり: %s (PM が付けた)", pts)
+	}
 	p("依頼の原文: 「%s」", c.Request)
 	if c.Prompt != "" {
 		p("PG への指示: %s", c.Prompt)

@@ -21,11 +21,12 @@ import (
 	"pro-con/store"
 )
 
-const cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を置く。適用は dispatcher)
+var cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を置く。適用は dispatcher)
   add --title <題名> [--request <依頼の原文>] [--repo <repo>] [--prompt <PM に渡した指示>] [--wait <長さ>]
                                                  適用を待ってカード ID を出す (既定 10s。待てなければ依頼 ID を出して rc=3。0 なら待たずに依頼 ID)
-  plan <カード> [--issue <repo>#<番号>]... [--after <カード>]...
-                                                 タスクに分けてキューに積んだ (--after のカードが完了するまで起動しない)
+  plan <カード> [--issue <repo>#<番号>]... [--after <カード>]... [--points 1|2|3|5|8]
+                                                 タスクに分けてキューに積んだ (--after のカードが完了するまで起動しない。--points は見積もり)
+` + card.PointsMeaningText("                                                   ") + `
   ask <カード> <質問>                            PG が質問して turn を終える (AskUserQuestion は使わない)
   answer <カード> <回答> [--from <人間|PM>]      質問待ちのカードへの回答
   run <カード> -- <コマンド>...                  PG がテストの係にコマンドの実行を頼んで turn を終える (結果は再開のときに届く)
@@ -48,7 +49,13 @@ const cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を�
 // pmGuide は PM の session に渡す指示書。書いてあるコマンドは TestPMGuideCommandsParse がパーサに通して、ずれを止める。
 //
 //go:embed pm-guide.md
-var pmGuide string
+var pmGuideSrc string
+
+// pmGuide は pm-guide.md の目印の行 ({{ポイントの目安}}) を、ポイントの意味の正本 (card.PointsMeaning) で置き換えたもの。
+var pmGuide = strings.Replace(pmGuideSrc, pointsMark, card.PointsMeaningText("     - "), 1)
+
+// pointsMark は pm-guide.md でポイントの意味を差し込む行 (インデントも含めて行ごと置き換える)。
+const pointsMark = "     - {{ポイントの目安}}"
 
 // integratorGuide は取り込みの係 (487) の session に渡す指示書。書いてあるコマンドは TestIntegratorGuideCommandsParse がパーサに通す。
 //
@@ -166,6 +173,19 @@ func (l *afterList) Set(v string) error {
 	return nil
 }
 
+// pointsFlag は --points <1|2|3|5|8> (見積もり。issue 490)。付けなければ 0 = 見積もり無し。0 を含むほかの値は使い方の誤り。
+type pointsFlag int
+
+func (p *pointsFlag) String() string { return strconv.Itoa(int(*p)) }
+func (p *pointsFlag) Set(v string) error {
+	n, err := strconv.Atoi(v)
+	if err != nil || n == 0 || card.CheckPoints(n) != nil {
+		return fmt.Errorf("--points は %v のどれか: %q", card.PointScale, v)
+	}
+	*p = pointsFlag(n)
+	return nil
+}
+
 var endings = map[string]card.Ending{
 	"answered": card.EndAnswered, "investigated": card.EndResearchOnly, "rejected": card.EndRejected, "pending-issue": card.EndPendingIssue,
 }
@@ -207,6 +227,7 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 	case "plan":
 		fs.Var(&issues, "issue", "")
 		fs.Var((*afterList)(&r.After), "after", "")
+		fs.Var((*pointsFlag)(&r.Points), "points", "")
 	case "answer", "delete":
 		fs.StringVar(&r.From, "from", "人間", "")
 	case "handoff":

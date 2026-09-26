@@ -332,6 +332,8 @@ type Card struct {
 	// After はこのカードより先に完了させるカード (PM が `card plan --after` で付ける。issue 468)。dispatcher はこれらが完了するまで起動しない。
 	// 同じ判断・不変条件を変えるカードを並べない (並べると、合わせた結果が片方のテストでしか守られない)
 	After []string `json:",omitempty"`
+	// Points は見積もりのポイント (PM が `card plan --points` で付ける。PointScale のどれか。0 = 見積もり無し。issue 490)
+	Points int `json:",omitempty"`
 	// LastProgress は「実質的に進んだ」最後の時刻 (watchdog が見る。活動ではなく進捗)
 	LastProgress time.Time
 }

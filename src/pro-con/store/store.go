@@ -71,7 +71,8 @@ type Request struct {
 	Repo     string          `json:"repo,omitempty"`
 	Owner    string          `json:"owner,omitempty"`
 	Issues   []card.IssueRef `json:"issues,omitempty"`
-	After    []string        `json:"after,omitempty"` // plan: このカードより先に完了させるカード (issue 468)
+	After    []string        `json:"after,omitempty"`  // plan: このカードより先に完了させるカード (issue 468)
+	Points   int             `json:"points,omitempty"` // plan: 見積もりのポイント (card.PointScale のどれか。0 = 付けない。issue 490)
 	Question string          `json:"question,omitempty"`
 	Command  string          `json:"command,omitempty"` // run: テストの係に実行を頼むコマンド (シェルの 1 行)
 	Cwd      string          `json:"cwd,omitempty"`     // run: 頼んだシェルの作業ディレクトリ (dispatcher が PG の worktree と照らす)
@@ -569,6 +570,9 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		if c.State != card.Requested {
 			return fmt.Errorf("依頼の列に無い (今は %s)", c.State.Label())
 		}
+		if err := card.CheckPoints(r.Points); err != nil { // 箱に手で置かれた依頼もここで止める (cardcmd の検査を通らない)
+			return err
+		}
 		c.Issues = append(c.Issues, r.Issues...)
 		if c.Repo == "" && len(r.Issues) > 0 {
 			// global で受けた依頼は、PM が分けた issue の repo で作業する (付けないと、dispatcher が起動先を決められずに止まる)
@@ -581,6 +585,10 @@ func transition(c *card.Card, r Request, now time.Time) error {
 			}
 		}
 		why := "タスクに分けてキューに積んだ"
+		if r.Points != 0 {
+			c.Points = r.Points
+			why += fmt.Sprintf(" (見積もり %dpt)", r.Points)
+		}
 		if len(c.After) > 0 {
 			why += " (" + strings.Join(c.After, ", ") + " の後に起動する)"
 		}

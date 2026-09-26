@@ -1,6 +1,6 @@
 package ui
 
-// ? で出すレーンの意味の表。説明の正本は card.State.Meaning (ここは並べて見せるだけ)。
+// ? で出すレーンの意味の表。説明の正本は card.State.Meaning とポイントの card.PointsMeaning (ここは並べて見せるだけ)。
 
 import (
 	"fmt"
@@ -48,15 +48,21 @@ func legendSize(total int) (width, inner int) {
 // legendRows は表の中身の行 (どの行も幅 inner に収まるよう折り返す)。
 func legendRows(inner int) []string {
 	var rows []string
-	for i, s := range card.Columns {
-		rows = append(rows, fg(stateColor(s))+sgrBold+fmt.Sprintf("%d %s", i+1, s.Label())+sgrReset)
-		for _, l := range strings.Split(ansi.Hardwrap(s.Meaning(), max(inner-2, 10), true), "\n") {
+	// explain は説明の文を幅に収まるよう折り返し、見出しの下に 2 桁下げて足す
+	explain := func(text string) {
+		for _, l := range strings.Split(ansi.Hardwrap(text, max(inner-2, 10), true), "\n") {
 			rows = append(rows, "  "+l)
 		}
 	}
+	for i, s := range card.Columns {
+		rows = append(rows, fg(stateColor(s))+sgrBold+fmt.Sprintf("%d %s", i+1, s.Label())+sgrReset)
+		explain(s.Meaning())
+	}
 	rows = append(rows, "", humanTag(humanMark+"の番")) // 印の意味 (452)。どれが人の番かの正本は card.Turn
-	for _, l := range strings.Split(ansi.Hardwrap(humansTurnMeaning, max(inner-2, 10), true), "\n") {
-		rows = append(rows, "  "+l)
+	explain(humansTurnMeaning)
+	rows = append(rows, "", sgrBold+"右上の 3pt = 見積もりのポイント"+sgrReset) // カードの右上の数 (490)。意味の正本は card.PointsMeaning
+	for _, m := range card.PointsMeaning {
+		explain(m)
 	}
 	return rows
 }
