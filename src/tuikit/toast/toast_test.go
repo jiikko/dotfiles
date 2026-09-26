@@ -730,3 +730,22 @@ func TestToastHeightMatchesFullBox(t *testing.T) {
 		}
 	}
 }
+
+// 中立の知らせ (info) は行頭に印を付けない (枠のすぐ内側から文)。成功・失敗は印 + 空白。
+// 折り返しの幅も印の分を引かない (fullBox と height が同じ幅で折り返す)。
+func TestInfoToastHasNoMark(t *testing.T) {
+	info := &item{text: "受け付け済み", info: true}
+	ok := &item{text: "受け付け済み", ok: true}
+	if row := ansi.Strip(info.fullBox(false, 0, 1)[1]); !strings.HasPrefix(row, "│ 受け付け済み") {
+		t.Fatalf("info の行頭に印がある: %q", row)
+	}
+	if row := ansi.Strip(ok.fullBox(false, 0, 1)[1]); !strings.HasPrefix(row, "│ ✓ 受け付け済み") {
+		t.Fatalf("成功の行頭に ✓ が無い: %q", row)
+	}
+	for _, it := range []*item{{info: true}, {ok: true}} {
+		it.text = strings.Repeat("a", it.textWidth(30)*2) // ちょうど 2 行 (幅が 1 桁でも狭いと 3 行になる)
+		if got, want := len(it.fullBox(false, 30, MaxTextLines)), it.height(30, MaxTextLines); got != want || want != BoxHeight+1 {
+			t.Fatalf("info=%v: 箱の行数 %d と height %d が違う", it.info, got, want)
+		}
+	}
+}

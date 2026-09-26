@@ -3168,7 +3168,7 @@ func (m *browseModel) openPR() tea.Cmd {
 		return nil
 	}
 	m.prBusy[sha] = true
-	// 進行中トースト (…) は直後に届く prMsg の結果トーストで上書きされる。tick は呼び出し側
+	// 進行中トースト (印なしのシアン) は直後に届く prMsg の結果トーストで上書きされる。tick は呼び出し側
 	// (handleListKey/handlePanelKey の maybeTick) が回す。
 	m.toast.ShowInfo("PR を検索中...")
 	repo := m.repo
