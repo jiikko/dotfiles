@@ -32,4 +32,4 @@
 - [x] `wtclean/remote.go` / `remote_test.go` を丸ごと外した。`sortedRepos` (remote.go にあり `Scan` も使っていた) は `Scan` の中の並べ方に戻した
   - `src/pro-con/wtclean/` と `worktreecmd.go` / `worktreecmd_test.go` は 533 の直前 (b881272a^) と差分 0
 - [x] README / `help/usage.md` / `main.go` の冒頭のコメントから `--remote` を外した (`grep -rn -- --remote src/pro-con` で 0 件)
-- [ ] `make test` (pro-con) が緑
+- [x] `make -C src/pro-con lint test` が緑 (lint 0 issues・20 パッケージ ok・FAIL 0。テストの係の実行 C-094-1790442520)
