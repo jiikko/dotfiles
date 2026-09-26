@@ -138,7 +138,7 @@ func TestIntegratorRetoldAfterRework(t *testing.T) {
 	r := reviewedAndStarted(t)
 	r.now = t0.Add(time.Minute)
 	submit(t, r.dir, store.Request{Kind: "rework", CardID: "C-001", Rework: "テストを足す"})
-	r.tick(t) // 分解済みへ戻り、同じ PG を再開する
+	r.tick(t) // 着手待ちへ戻り、同じ PG を再開する
 	if c := states(t, r.dir)["C-001"]; c.State != card.Running {
 		t.Fatalf("前提: 差し戻したカードが作業中に戻らない: %v", c.State)
 	}

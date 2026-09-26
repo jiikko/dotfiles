@@ -44,10 +44,10 @@ const resumeAfterStop = "pro-con の終了で作業の途中で止めた。止�
 // resumeAfterVanish は、作業中に一覧から消えて戻らなかった PG を再開するときに渡す文 (requeueVanished)。
 const resumeAfterVanish = "PG の session が作業の途中で止まっていた (外から止められた / マシンの再起動など)。止まる前の続きから作業を再開して (規律は最初の指示のとおり)"
 
-// requeue は作業中 (と入力待ち = WaitsOnPrompt) のカードを分解済みへ戻し、次の割り当てで同じ session を resume の文で再開させる
+// requeue は作業中 (と入力待ち = WaitsOnPrompt) のカードを着手待ちへ戻し、次の割り当てで同じ session を resume の文で再開させる
 // (終了の Shutdown・消えた PG の requeueVanished・追加オーダーの deliverOrders)。
 func requeue(c *card.Card, now time.Time, resume string) {
-	if c.WaitsOnPrompt() { // 止めて再開するので問いは消える (分解済みに回答の要る待ちを残さない)
+	if c.WaitsOnPrompt() { // 止めて再開するので問いは消える (着手待ちに回答の要る待ちを残さない)
 		c.Wait = card.Wait{}
 	}
 	c.Resume = resume
@@ -58,7 +58,7 @@ func requeue(c *card.Card, now time.Time, resume string) {
 // gone は、作業中のカードの PG の session が一覧から消えて、restartWait を過ぎても戻らないか (Shutdown が「既に止まっていた」とする形と同じ判定)。
 // 消えたのを見た時刻 (DeadSince) が要る: 短い id が変わっただけで session は生きている形 (trackDead は生きていると見て外す) を消えたと読まない
 func (d *Dispatcher) gone(c card.Card, now time.Time, ss []agents.Session, reg []live.Owned) bool {
-	// テストの係の結果を待っているカードは戻さない (結果が出たら finishRun が分解済みへ戻して再開する。戻すと頼みを捨てる = 483)
+	// テストの係の結果を待っているカードは戻さない (結果が出たら finishRun が着手待ちへ戻して再開する。戻すと頼みを捨てる = 483)
 	if c.State != card.Running || c.Launching != "" || c.DeadSince.IsZero() || c.Run != "" {
 		return false
 	}
@@ -76,7 +76,7 @@ var ErrStopTimeout = errors.New("pro-con dispatcher が時間内に止まらな�
 var ErrStopperDied = errors.New("pro-con dispatcher が止め終える前に終わった (止めた結果が無い)")
 
 // Shutdown は pro-con が起動した PG の session を全部止め、カードを次の起動で続きから再開できる形にする:
-//   - 作業中と、入力待ちで止まった PG (card.WaitsOnPrompt) → 分解済みへ戻し、再開の文 (resumeAfterStop) を持たせる (次の dispatcher が --resume する)
+//   - 作業中と、入力待ちで止まった PG (card.WaitsOnPrompt) → 着手待ちへ戻し、再開の文 (resumeAfterStop) を持たせる (次の dispatcher が --resume する)
 //   - それ以外 (質問待ち・レビュー待ち等) → 列はそのまま
 //
 // 止めたカードには Stopped の印を付ける (再開のとき、落ちた PG の自動の再開を待つ restartWait を飛ばす)。
@@ -99,7 +99,7 @@ func (d *Dispatcher) Shutdown(ctx context.Context) (notes []eventlog.Event, err 
 	now := d.Now()
 	d.cancelRun(10 * time.Second) // テストの係の実行中の 1 本を取り消す (再開した PG は続きから頼み直す)
 	d.cancelBtw()                 // btw の答えは次の dispatcher が作り直す
-	// 止める直前に PG が置いた質問・完了の依頼を先に適用する (作業中のまま分解済みへ戻すと、次の起動で除けられて失われる)
+	// 止める直前に PG が置いた質問・完了の依頼を先に適用する (作業中のまま着手待ちへ戻すと、次の起動で除けられて失われる)
 	if res, err := store.Apply(d.Dir, now, d.Repos); err != nil {
 		notes = append(notes, ev(eventlog.KindError, "", "", "箱の依頼を適用できない (止めるのは続ける): "+err.Error()))
 	} else {

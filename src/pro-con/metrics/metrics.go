@@ -31,7 +31,7 @@ type Row struct {
 	Ending string   `json:"ending"`           // 終わり方 (card.Ending の名前 / EndIssue / EndDeleted)
 
 	RequestedAt time.Time `json:"requestedAt"`         // 依頼を受けた
-	PlannedAt   time.Time `json:"plannedAt,omitzero"`  // 最初に分けた (分解済みへ)
+	PlannedAt   time.Time `json:"plannedAt,omitzero"`  // 最初に分けた (着手待ちへ)
 	StartedAt   time.Time `json:"startedAt,omitzero"`  // 最初に PG が起きた (作業中へ)
 	ReviewAt    time.Time `json:"reviewAt,omitzero"`   // 最初にレビューに来た
 	ClosedAt    time.Time `json:"closedAt"`            // 閉じた (完了にした・削除した)

@@ -168,7 +168,7 @@ func (d *Dispatcher) checkAtStart(ctx context.Context, now time.Time, ss []agent
 				return
 			}
 			requeue(cc, now, resumeAfterReboot)
-			cc.History = append(cc.History, card.Event{At: now, Text: "起動時の確かめ: マシンの再起動で PG の session が止まっていた。分解済みへ戻し、待たずに同じ session を再開する"})
+			cc.History = append(cc.History, card.Event{At: now, Text: "起動時の確かめ: マシンの再起動で PG の session が止まっていた。着手待ちへ戻し、待たずに同じ session を再開する"})
 		}); err != nil {
 			return fail(err)
 		}

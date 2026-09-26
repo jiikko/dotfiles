@@ -203,7 +203,7 @@ func TestRedirectStopsPromptWaitingPG(t *testing.T) {
 	}
 }
 
-// 終了は入力待ちの PG も turn の途中として止め、次の起動で続きから再開する形 (分解済み・再開の文) にする。
+// 終了は入力待ちの PG も turn の途中として止め、次の起動で続きから再開する形 (着手待ち・再開の文) にする。
 func TestShutdownRequeuesPromptWaitingPG(t *testing.T) {
 	r := newCrashRig(t)
 	r.be(t, "権限の確認")

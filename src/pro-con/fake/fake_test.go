@@ -38,7 +38,7 @@ func TestAnswerIsCompareAndSet(t *testing.T) {
 		t.Fatalf("1 回目の回答が失敗した: %v", err)
 	}
 	if st := get(t, s, "C-007").State; st != card.Planned {
-		t.Fatalf("回答後は再開待ち (分解済み) のはず: %s", st.Label())
+		t.Fatalf("回答後は再開待ち (着手待ち) のはず: %s", st.Label())
 	}
 	_, err := s.Apply(backend.Answer{CardID: "C-007", Text: "外して", From: "PM-A"})
 	if !errors.Is(err, backend.ErrNotWaiting) {

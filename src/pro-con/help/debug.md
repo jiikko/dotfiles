@@ -2,7 +2,7 @@
 
 ## まず見るもの (どれも読むだけ)
 
-- `pro-con ps`: pro-con が起動したプロセスを役ごとに (pid・経過・状態・カード)。カードと session の食い違いは状態の列に「食い違い: 」
+- `pro-con ps`: pro-con が起動したプロセスを役ごとに (pid・経過・状態・カード)。カードと session の食い違いは状態の列に「食い違い: 」。着手待ちの列で再開を待つ PG は「再開待ち (PG の空き待ち / 利用枠)」
 - `pro-con log --since 30m`: dispatcher の出来事。`--card <カード>` で絞る。落ちた = kind `crash`、起動時の復旧 = `recover`、
   除けた依頼 = `reject`、入れ替え = `upgrade`、起こし直し = `supervisor`、書けない・取れない = `error`
 - `pro-con card show <カード>`: 履歴・質問・今の待ち・進捗・worktree のパス。PG が何をしたかは `pro-con card log <カード>`

@@ -203,7 +203,7 @@ func TestRedirectWaitsForInbox(t *testing.T) {
 	}
 }
 
-// 一覧から消えて戻らない PG (458) に積まれた追記は、分解済みへ戻した再開の文に添えて届く (消えた PG の再開と別に待たせない)。
+// 一覧から消えて戻らない PG (458) に積まれた追記は、着手待ちへ戻した再開の文に添えて届く (消えた PG の再開と別に待たせない)。
 func TestAppendRidesOnVanishedResume(t *testing.T) {
 	r := newCrashRig(t)
 	order(t, r.dir, "C-001", card.OrderAppend, "README も")

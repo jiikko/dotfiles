@@ -156,7 +156,7 @@ func TestCardListMarksHumansTurn(t *testing.T) {
 	}
 }
 
-// 担当は今手を動かす者 (issue 476): 分解済みは記録の Owner (PM) ではなく PG 待ち、PM が分けている依頼は「PM 分解中」。
+// 担当は今手を動かす者 (issue 476): 着手待ちは記録の Owner (PM) ではなく PG 待ち、PM が分けている依頼は「PM 分解中」。
 // 止まった dispatcher の最後の様子では分解中と出さない。
 func TestCardListShowsAssignee(t *testing.T) {
 	env := viewFixture(t)
@@ -187,7 +187,7 @@ func TestCardListShowsAssignee(t *testing.T) {
 			t.Errorf("Tick %s前: 依頼の担当 %q (want %q)", time.Since(tc.tick).Round(time.Minute), l, tc.want)
 		}
 		if l := line(out, "C-004"); !strings.Contains(l, "担当: PG 待ち") {
-			t.Errorf("分解済みの担当が PG 待ちでない: %q", l)
+			t.Errorf("着手待ちの担当が PG 待ちでない: %q", l)
 		}
 		fresh := strings.Contains(tc.want, "分解中")
 		if l := line(out, "C-002"); strings.Contains(l, "PM 分解中 ▸ Bash: pro-con card show C-002") != fresh { // 役の段階と最後の道具の呼び出し (480)
@@ -449,7 +449,7 @@ func TestCardWaitPollsAndTimesOut(t *testing.T) {
 	var out string
 	go func() {
 		var rc int
-		rc, out, _ = viewCmd(t, env, "wait", "C-002", "--until", "分解済み", "--timeout", "30s")
+		rc, out, _ = viewCmd(t, env, "wait", "C-002", "--until", "着手待ち", "--timeout", "30s")
 		ch <- rc
 	}()
 	<-read // wait が最初の列 (依頼) を読んでから変える (先に変えると 1 回目の読みで返り、ポーリングを通らない)
@@ -458,13 +458,13 @@ func TestCardWaitPollsAndTimesOut(t *testing.T) {
 	mustApply(t, env.dir)
 	select {
 	case rc := <-ch:
-		if rc != 0 || !strings.Contains(out, "依頼 → 分解済み") {
+		if rc != 0 || !strings.Contains(out, "依頼 → 着手待ち") {
 			t.Fatalf("wait (ポーリング): rc=%d out=%q", rc, out)
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("dispatcher が居ないと wait が返らない (ポーリングしていない)")
 	}
-	if rc, _, errOut := viewCmd(t, env, "wait", "C-002", "--timeout", "100ms"); rc != 1 || !strings.Contains(errOut, "分解済み のまま") {
+	if rc, _, errOut := viewCmd(t, env, "wait", "C-002", "--timeout", "100ms"); rc != 1 || !strings.Contains(errOut, "着手待ち のまま") {
 		t.Fatalf("時間切れ: rc=%d err=%q", rc, errOut)
 	}
 	if rc, _, _ := viewCmd(t, env, "wait", "C-999", "--timeout", "100ms"); rc != 1 {
@@ -484,14 +484,14 @@ func TestCardWaitWithoutUntilWaitsForChange(t *testing.T) {
 		_, out, _ := viewCmd(t, env, "wait", "C-002", "--timeout", "30s")
 		ch <- out
 	}()
-	// 購読したなら、wait は最初の列 (依頼) を読み終えている (読む前に変えると「最初から分解済み」になり、変化を待ち続ける)
+	// 購読したなら、wait は最初の列 (依頼) を読み終えている (読む前に変えると「最初から着手待ち」になり、変化を待ち続ける)
 	waitUntil(t, "wait が購読しない", f.subscribed)
 	mustSubmit(t, env.dir, store.Request{Kind: "plan", CardID: "C-002"})
 	mustApply(t, env.dir)
 	f.broadcast()
 	select {
 	case out := <-ch:
-		if !strings.Contains(out, "依頼 → 分解済み") {
+		if !strings.Contains(out, "依頼 → 着手待ち") {
 			t.Fatalf("wait: %q", out)
 		}
 	case <-time.After(10 * time.Second):

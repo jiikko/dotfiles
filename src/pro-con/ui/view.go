@@ -659,7 +659,7 @@ func (m *Model) badge(c card.Card) string {
 	return strings.Join(parts, " ")
 }
 
-// blockedBy は分解済みのカードが順番で待っている前のカード (完了していないもの。issue 468)。待っていなければ空。
+// blockedBy は着手待ちのカードが順番で待っている前のカード (完了していないもの。issue 468)。待っていなければ空。
 func (m *Model) blockedBy(c card.Card) string {
 	if c.State != card.Planned {
 		return ""

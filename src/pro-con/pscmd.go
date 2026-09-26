@@ -167,7 +167,7 @@ func collectProcs(dir string, now time.Time, procs map[int]string) (rows []Proc,
 		if alive(o.PID) && strings.Contains(procs[o.PID], "claude") { // pid が別のプロセスに使い回されたものを数えない (dispatcher の行と同じ)
 			p.State = "動いている"
 			if known {
-				p.State = c.State.Label()
+				p.State = pgState(c, ds)
 				if c.Exec.Active() {
 					p.Command = c.Exec.Command
 				}
@@ -211,6 +211,18 @@ func collectProcs(dir string, now time.Time, procs map[int]string) (rows []Proc,
 		}
 	}
 	return rows, warns
+}
+
+// pgState は session が動いている PG の状態の欄 (issue 535)。着手待ちの列のカードの PG は、回答・結果・差し戻しを受けて
+// 同じ session の再開を待っている。列の名前 (カードの欄で分かる) ではなく PG 自身の状態を、待っている訳と一緒に出す。
+func pgState(c card.Card, ds store.DispatcherState) string {
+	if c.State != card.Planned {
+		return c.State.Label()
+	}
+	if ds.Cap < ds.Limit { // 利用枠で同時に動かす数を絞っている (dispatcher/usage.go)
+		return "再開待ち (利用枠)"
+	}
+	return "再開待ち (PG の空き待ち)"
 }
 
 // mismatch はカードと PG の session の食い違いの文 (無ければ空)。known はカードが記録にあるか (無ければ完了して書庫へ移したか削除した)。

@@ -10,7 +10,7 @@ import (
 	"pro-con/card"
 )
 
-// 1 列 (分解済み) に P0..P4 の 5 枚、右の列 (作業中) に R0。高さは 1 列 4 枚が見える大きさ (半ページ = 2 枚)。
+// 1 列 (着手待ち) に P0..P4 の 5 枚、右の列 (作業中) に R0。高さは 1 列 4 枚が見える大きさ (半ページ = 2 枚)。
 func keysModel(t *testing.T) *Model {
 	t.Helper()
 	now := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
@@ -59,7 +59,7 @@ func TestMotionVocabulary(t *testing.T) {
 
 // 数字キーでレーンへ直接移る。空のレーンにもフォーカスが当たり (カードは選ばない)、h / l も空のレーンを飛ばさない。
 func TestLaneFocus(t *testing.T) {
-	m := keysModel(t) // 分解済み (2) に P0..P4、作業中 (3) に R0。他は空
+	m := keysModel(t) // 着手待ち (2) に P0..P4、作業中 (3) に R0。他は空
 	m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
 	if m.col != 2 || m.selected != "R0" {
 		t.Fatalf("3 で作業中の R0 に移るはず: col=%d sel=%q", m.col, m.selected)
@@ -78,7 +78,7 @@ func TestLaneFocus(t *testing.T) {
 	}
 	m.Update(tea.KeyPressMsg{Code: '2', Text: "2"})
 	if m.col != 1 || m.selected != "P0" {
-		t.Fatalf("2 で分解済みの先頭に移るはず: col=%d sel=%q", m.col, m.selected)
+		t.Fatalf("2 で着手待ちの先頭に移るはず: col=%d sel=%q", m.col, m.selected)
 	}
 }
 

@@ -53,7 +53,7 @@ func TestE2EFakePGScript(t *testing.T) {
 	}
 }
 
-// 偽の PM は依頼の列のカードを分解済みにする (e2e の repo の issue で)。
+// 偽の PM は依頼の列のカードを着手待ちにする (e2e の repo の issue で)。
 func TestE2EFakePM(t *testing.T) {
 	e := E2E{Root: t.TempDir()}
 	if _, err := store.Submit(e.StateDir(), store.Request{Kind: "add", Title: "x"}); err != nil {
@@ -70,6 +70,6 @@ func TestE2EFakePM(t *testing.T) {
 	}
 	st, _ := store.Load(e.StateDir())
 	if c := st.Cards[0]; c.State != card.Planned || c.Repo != E2ERepo {
-		t.Fatalf("偽の PM が分解済みにしない / repo が付かない: %v %q", c.State, c.Repo)
+		t.Fatalf("偽の PM が着手待ちにしない / repo が付かない: %v %q", c.State, c.Repo)
 	}
 }
