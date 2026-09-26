@@ -97,6 +97,12 @@ func (d *Dispatcher) roleWorktree(name string) string {
 	return filepath.Join(d.PMRepo, ".claude", "worktrees", name)
 }
 
+// roles は起こさない役 (画面・card list・知らせが人の番 = card.Turn を決めるのに使う)。PM の repo が空なら PM も取り込みの係も起こさない
+// (tellRole)。e2e モードの偽の PM (FakePM) は依頼を分けるだけなので数えない (依頼は次の Tick の頭で分解済みになる)。
+func (d *Dispatcher) roles() card.Roles {
+	return card.Roles{PMOff: d.PMRepo == "" || d.PMOff, IntegratorOff: d.PMRepo == "" || d.IntegratorOff}
+}
+
 // tellRole は役 r に知らせる物 (r.key) を知らせる。居なければ起動し、居れば (idle になってから) 再開して知らせる。
 // PMRepo が空 (e2e モード・設定で PM の repo が見つからない) か r.off なら何もしない。
 func (d *Dispatcher) tellRole(ctx context.Context, now time.Time, ss []agents.Session, r *role) ([]eventlog.Event, error) {

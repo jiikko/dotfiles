@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,21 +11,51 @@ import (
 	"pro-con/store"
 )
 
-// 件数の文: 回答待ち (質問・権限) / 停滞 / 落ちて止めた、を別に数える。何も無ければ空。
+// 件数の文: 人の番 (質問・権限・人に回したレビュー) / 停滞 / 落ちて止めた、を別に数える。PM が先に受ける質問は数えない。何も無ければ空。
 func TestStatusText(t *testing.T) {
 	cards := []card.Card{
 		{State: card.Waiting, Wait: card.Wait{Kind: card.WaitQuestion}},
 		{State: card.Waiting, Wait: card.Wait{Kind: card.WaitPermission}},
 		{State: card.Waiting, Wait: card.Wait{Kind: card.WaitCrashed}},
+		{State: card.Review, History: []card.Event{{Text: card.HandoffText("取り込みの係", "衝突")}}},
+		{State: card.Review},
 		{State: card.Running, Stalled: true},
 		{State: card.Running},
 		{State: card.Done},
 	}
-	if got := Status(cards); got != "pro-con ?2 停滞1 🚨落ちた1" {
+	if got := Status(cards, card.Roles{}); got != "pro-con ?2 停滞1 🚨落ちた1" {
 		t.Fatalf("件数の文: %q", got)
 	}
-	if got := Status([]card.Card{{State: card.Running}}); got != "" {
+	if got := Status(cards, card.Roles{PMOff: true, IntegratorOff: true}); got != "pro-con ?4 停滞1 🚨落ちた1" {
+		t.Fatalf("起こさない役の質問・レビューを人の番に数えない: %q", got)
+	}
+	if got := Status([]card.Card{{State: card.Running}, cards[0]}, card.Roles{}); got != "" {
 		t.Fatalf("知らせることが無いのに文を出した: %q", got)
+	}
+}
+
+// PM が居れば、PG の質問は PM が先に受けるので人に知らせない。PM が人に回したら知らせ、件数にも数える。
+func TestAnnounceOnlyHumansTurn(t *testing.T) {
+	r := startedPM(t)
+	var rec recorder
+	rec.rig(r.d)
+	last := func() string {
+		if len(rec.published) == 0 {
+			return ""
+		}
+		return rec.published[len(rec.published)-1]
+	}
+	asked(t, r.dir, "C-009", "赤か青か", t0)
+	r.tick(t)
+	if len(rec.notified) != 0 || strings.Contains(last(), "?") {
+		t.Fatalf("PM が先に受ける質問を人に知らせた: pub=%q notif=%v", rec.published, rec.notified)
+	}
+	if _, err := store.Submit(r.dir, store.Request{Kind: "handoff", CardID: "C-009", Text: "好みは人が決める", From: "PM"}); err != nil {
+		t.Fatal(err)
+	}
+	r.tick(t)
+	if len(rec.notified) != 1 || !strings.Contains(rec.notified[0], "赤か青か") || last() != "pro-con ?1" {
+		t.Fatalf("人に回した質問を知らせない: pub=%q notif=%v", rec.published, rec.notified)
 	}
 }
 

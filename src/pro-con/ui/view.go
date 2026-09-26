@@ -226,9 +226,12 @@ func (m *Model) tabBar() string {
 func (m *Model) gauge() string {
 	counts := map[card.State]int{}
 	var oldest time.Duration
-	pending, stalled := 0, 0
+	pending, stalled, humans := 0, 0, 0
 	for _, c := range m.visible() {
 		counts[c.State]++
+		if m.humansTurn(c) {
+			humans++
+		}
 		if c.State != card.Done && c.State != card.Running {
 			if d := m.snap.Now.Sub(c.Since); d > oldest {
 				oldest = d
@@ -246,7 +249,11 @@ func (m *Model) gauge() string {
 		parts = append(parts, fmt.Sprintf("%s%s %d%s", fg(stateColor(st)), st.Label(), counts[st], sgrFgReset))
 	}
 	sep := fg(240) + " │ " + sgrFgReset
-	g := " " + strings.Join(parts, "  ") + sep + "最古の待ち " + fmtDur(oldest) + sep +
+	g := " " + strings.Join(parts, "  ")
+	if humans > 0 { // 列の件数のすぐ後 (人がやることを先に読ませる)
+		g += sep + humanTag(fmt.Sprintf("%sの番 %d", humanMark, humans))
+	}
+	g += sep + "最古の待ち " + fmtDur(oldest) + sep +
 		m.pgGauge() + sep + m.dispatcherGauge()
 	if n := m.snap.Startup; n != "" && !m.dispatcherStopped() { // 起動時の確かめ (483)。止まった dispatcher の古い要約は出さない
 		if m.snap.StartupAlert {
@@ -334,9 +341,19 @@ func (m *Model) columnBlock(col int, s card.State, cs []card.Card, w, shown int,
 	}
 	border := fg(m.laneColor(col))
 	inner := w - 2
-	name := ansi.Truncate(s.Label(), max(inner-3-ansi.StringWidth(head+tail), 1), "…")
-	label := head + name + tail
-	out := []string{boxTop(border, fg(stateColor(s))+sgrBold+label+sgrReset, w)}
+	mark := "" // 人の番の枚数 (452)。狭いときも名前の方を削って印は残す
+	if n := m.humansIn(cs); n > 0 {
+		mark = fmt.Sprintf(" %s %d", humanMark, n)
+	}
+	name := "" // 名前の入る幅が無ければ名前を省く (キー・枚数・人の番の印を残す)
+	if room := inner - 3 - ansi.StringWidth(head+tail+mark); room > 0 {
+		name = ansi.Truncate(s.Label(), room, "…")
+	}
+	title := fg(stateColor(s)) + sgrBold + head + name + tail + sgrReset
+	if mark != "" {
+		title += humanTag(mark)
+	}
+	out := []string{boxTop(border, title, w)}
 	cells := m.columnCells(col, cs, inner)
 	// カードの上下に 1 行ずつ空ける (空行・カード・空行・…・空行)。選択の枠と移動中のカードの枠はこの空行の上に描くので、
 	// 隣のカードを隠さない (2026-09-24 のユーザー提案)
@@ -356,6 +373,17 @@ func (m *Model) columnBlock(col int, s card.State, cs []card.Card, w, shown int,
 		out = append(out, boxLine(border, l, w))
 	}
 	return append(out, boxBottom(border, w))
+}
+
+// humansIn は cs のうち人の番のカードの枚数 (列の見出しに出す)。
+func (m *Model) humansIn(cs []card.Card) int {
+	n := 0
+	for _, c := range cs {
+		if m.humansTurn(c) {
+			n++
+		}
+	}
+	return n
 }
 
 const (
@@ -432,13 +460,26 @@ func wrapLines(s string, w, n int) []string {
 	return out
 }
 
-// badgeColored は badge の待ちの理由に色を付ける (停滞 = 危険 / 質問 = 要対応 / issue 化待ち = 要対応)。
+// humanMark は人の番の印 (issue 452。カードのバッジ行の先頭・列の見出し・ゲージで同じ形。2026-09-26 に見本の案 C をユーザーが選んだ)。
+// 🚨 幅の揺れる記号 (⚠️ 等) を使わない (no-mixed-width-columns-in-terminal-ui)
+const humanMark = "!人"
+
+// humansTurn は今人の番か (判定は card.Turn。dispatcher が起こさない役は最後に回ったときの値)。
+func (m *Model) humansTurn(c card.Card) bool { return c.Turn(m.snap.Roles) == card.TurnHuman }
+
+// humanTag は人の番の印を黄の太字で出す (text は「!人の番 3」「!人 2」)。
+func humanTag(text string) string { return sgrYellow + sgrBold + text + sgrFgReset }
+
+// badgeColored は badge の待ちの理由に色を付ける (停滞 = 危険 / 人の番・issue 化待ち = 要対応)。人の番は先頭に印を付ける。
+// 黄は人がやることだけに使う (PM が先に受ける質問は暗く出す。2026-09-26 のユーザーの決定)
 func (m *Model) badgeColored(c card.Card) string {
 	b := m.badge(c)
 	switch {
 	case c.Stalled:
 		return sgrRed + sgrBold + b + sgrFgReset
-	case c.Wait.Kind.NeedsAnswer(), c.Ending == card.EndPendingIssue:
+	case m.humansTurn(c):
+		return humanTag(humanMark+"の番") + " " + sgrYellow + b + sgrFgReset
+	case c.Ending == card.EndPendingIssue:
 		return sgrYellow + b + sgrFgReset
 	}
 	return sgrDim + b + sgrReset

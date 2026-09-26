@@ -35,7 +35,7 @@ func (s State) Meaning() string {
 	case Running:
 		return "PG が作業している。make test などの占有リソースの順番待ち・利用枠の回復待ちもここ"
 	case Waiting:
-		return "人間か PM の回答が要る (PG の質問・権限の確認)。r で回答する"
+		return "PG の質問 (まず PM が受け、人に回すかを決める)・権限の確認・落ちて止めた PG。人の番のものは r で回答する"
 	case Review:
 		return "PG が作業を終えた。PM が diff と実行結果を読んでから完了にする"
 	case Done:

@@ -21,7 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"pro-con/card"
 	"pro-con/store"
 )
 
@@ -177,7 +176,7 @@ func (d *Dispatcher) writeState(now time.Time) error {
 	}
 	lim, from := d.limit()
 	s := store.DispatcherState{Tick: now, Limit: lim, LimitFrom: from, Cap: c, Why: why,
-		Roles: card.Roles{PMOff: d.PMOff, IntegratorOff: d.IntegratorOff}}
+		Roles: d.roles()}
 	if u := d.usage; u != nil {
 		s.UsageSession, s.UsageWeek, s.UsageAt = u.Session, u.Week, u.At
 	}
