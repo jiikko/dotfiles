@@ -45,3 +45,22 @@
 - PM の数は 1 だけ受ける (0 と 2 以上は除ける)。1 しか受けないので dispatcher はまだ読まない (415 の論点 6 の後で配線する)
 - `pro-con ps [--json]`: dispatcher (lock の pid) / PM・PG (起動の記録) / テストの係 (実行の印) / 画面 (relay の印)。`ps` を 1 回読むだけで、状態の置き場に書かない・dispatcher の lock も presence の印も触らない。busy / idle と要約の係 (haiku) はまだ出さない
 - 残り: 設定画面そのもの (見た目。取り込みの係)
+
+## 足す: このアプリが使っているディスクの使用量と内訳 (2026-09-26 のユーザーの依頼)
+
+「設定画面にこのアプリで使っているディスクの使用量と内訳を書いて欲しい」。設定画面の「見る所」に、合計と内訳を出す。
+
+2026-09-26 13:50 の実測 (`du -sh`):
+
+| 置き場 | 大きさ | 中身 |
+|---|---|---|
+| PG・役の worktree (`<repo>/.claude/worktrees/pc-*`) | 1.5GB | 48 個・1 個あたり 32〜38MB。カードを閉じても消さない (447) ので増え続ける |
+| pro-con が起動した session の transcript (`~/.claude/projects/*worktrees-pc-*`) | 408MB | 51 個 |
+| 状態の置き場 (`~/.local/state/pro-con`) | 5.2MB | うちテストの係のログ (`live/runs/`) 4.5MB・87 本、`cards.json` 236KB、`events.jsonl` 260KB |
+| pro-con のバイナリ (`src/pro-con/pro-con`) | 13MB | |
+
+- 数える対象は「pro-con が作った物」だけ (起動の記録・カードの worktree の名前 `pc-*`・状態の置き場)。repo の本体や、pro-con の外の session の transcript は数えない
+- 🚨 **集めるのは重い** (worktree 48 個の `du` で数秒)。画面が描くたびに走らせない: 設定画面を開いたときに裏で 1 回測り、測った時刻を添えて出す (手で測り直すキーを持つ)。
+  集める口は `pro-con ps` と同じく読むだけにして、`pro-con du [--json]` のような CLI でも出す (外の Claude・PM が読める)
+- 表示は置き場ごとの大きさと件数、合計、多い順。worktree はカードごとの内訳 (完了したカードの worktree がどれだけあるか) を引き出しで見られると、片付けの判断に使える
+- 片付け (完了したカードの worktree を消す) はこの issue の範囲外 (破壊的な操作なので別の issue で決める)。ここは見るだけ
