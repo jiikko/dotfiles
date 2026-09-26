@@ -12,7 +12,7 @@ on:
       - 'src/pro-con/**'
       - 'src/tuikit/**'  # replace で取り込む共有 module (演出の部品 anim・markdown の整形器)
       - 'src/termsafe/**'  # replace で取り込む共有 module (コピーする本文の無害化)
-      - 'src/procsup/**'  # replace で取り込む共有 module (supervisor・見張りの起こし直し。issue 506)
+      - 'src/process_supervisor/**'  # replace で取り込む共有 module (supervisor・見張りの起こし直し。issue 506)
       - 'src/glogx/**'  # replace で取り込む (issue の読み方 glogx/issues)
       - 'src/doctor/**'  # glogx の依存 (replace は依存先から引き継がれないので pro-con にも要る)
       - 'tests/pro-con/**'  # e2e の通し (下の e2e job)
@@ -25,7 +25,7 @@ on:
       - 'src/pro-con/**'
       - 'src/tuikit/**'  # replace で取り込む共有 module (演出の部品 anim・markdown の整形器)
       - 'src/termsafe/**'  # replace で取り込む共有 module (コピーする本文の無害化)
-      - 'src/procsup/**'  # replace で取り込む共有 module (supervisor・見張りの起こし直し。issue 506)
+      - 'src/process_supervisor/**'  # replace で取り込む共有 module (supervisor・見張りの起こし直し。issue 506)
       - 'src/glogx/**'  # replace で取り込む (issue の読み方 glogx/issues)
       - 'src/doctor/**'  # glogx の依存 (replace は依存先から引き継がれないので pro-con にも要る)
       - 'tests/pro-con/**'  # e2e の通し (下の e2e job)

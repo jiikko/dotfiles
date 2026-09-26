@@ -1,4 +1,4 @@
-// Package procsup は子プロセスを 1 つ起こして見張る (foreman / supervisord の 1 本ぶん。常駐の登録はしない = 呼んだプロセスが生きている間だけ)。
+// Package supervisor は子プロセスを 1 つ起こして見張る (foreman / supervisord の 1 本ぶん。常駐の登録はしない = 呼んだプロセスが生きている間だけ)。
 //
 // 行うこと:
 //   - 子を起こし、抜けたら間を空けて起こし直す
@@ -17,7 +17,7 @@
 //
 // 🚨 止める信号は子のプロセスだけに送る (プロセスグループには送らない)。子が孫を持つなら、子が自分で止める。
 // 🚨 親のファイル (lock 等) を子へ渡さない: Go の開くファイルは CLOEXEC なので、ExtraFiles に入れない限り渡らない。
-package procsup
+package supervisor
 
 import (
 	"context"

@@ -137,7 +137,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 - **画面は dispatcher を直接起こさず、ワンショットの supervisor (`pro-con supervise`。内部用。issue 506) を起こす**。supervisor は
   dispatcher を子として持ち、落ちたら 10 秒空けて起こし直し、10 分に 5 回を超えて落ちたら諦める (人が止めた印を置いて PG を止める。
   画面の c か、手で `pro-con dispatcher` を起動すると外れる)。dispatcher が自分の判断で抜けたら (rc=0 = 止める印・画面が無い状態が続いた・
-  信号・人が止めた印) supervisor も一緒に抜ける (常駐しない)。起こし直しの仕組みは `src/procsup` (独立した module)、止める条件は `supervise.go`
+  信号・人が止めた印) supervisor も一緒に抜ける (常駐しない)。起こし直しの仕組みは `src/process_supervisor` (独立した module)、止める条件は `supervise.go`
   - 起こし直す前に、人が止めた印がある・落ちた後に止め終えた (`stop-result` が落ちた時刻より新しい = 待ちの間に最後の持ち主の画面が quit した)
     なら起こさずに抜ける。持ち主の画面が無ければ PG を止めて抜ける (join は起こさない)
   - 別の dispatcher が lock を持っていて抜けた (rc=3) のは落ちたと数えず、10 秒ごとに起こし直して、その dispatcher が抜けたら引き継ぐ

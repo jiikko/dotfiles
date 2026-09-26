@@ -8,7 +8,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.7
 	glogx v0.0.0
 	golang.org/x/sys v0.47.0
-	procsup v0.0.0
+	process_supervisor v0.0.0
 	termsafe v0.0.0
 	tuikit v0.0.0
 )
@@ -34,7 +34,7 @@ require (
 replace (
 	doctor => ../doctor
 	glogx => ../glogx
-	procsup => ../procsup
+	process_supervisor => ../process_supervisor
 	termsafe => ../termsafe
 	tuikit => ../tuikit
 )

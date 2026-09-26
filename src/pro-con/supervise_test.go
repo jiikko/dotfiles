@@ -14,7 +14,7 @@ import (
 	"pro-con/dispatcher"
 	"pro-con/presence"
 	"pro-con/store"
-	"procsup"
+	supervisor "process_supervisor"
 )
 
 // supTest は supervisor を、sh の台本を dispatcher の代わりにして回す。scripts[i] が i 回目の起動 (足りなければ最後を繰り返す)。
@@ -26,8 +26,8 @@ type supTest struct {
 	out    bytes.Buffer
 }
 
-func (r *supTest) sup(dir string, scripts ...string) supervisor {
-	return supervisor{
+func (r *supTest) sup(dir string, scripts ...string) dispatcherSupervisor {
+	return dispatcherSupervisor{
 		dir: dir,
 		command: func() (*exec.Cmd, error) {
 			r.mu.Lock()
@@ -79,7 +79,7 @@ func TestSupervisorExitsWithDispatcher(t *testing.T) {
 	openOwner(t, dir)
 	r := &supTest{}
 	res := r.sup(dir, "exit 0").run(t.Context())
-	if res.Reason != procsup.ReasonDone || r.starts != 1 || r.stops != 0 || r.saidText() != "" {
+	if res.Reason != supervisor.ReasonDone || r.starts != 1 || r.stops != 0 || r.saidText() != "" {
 		t.Fatalf("rc=0 の dispatcher を起こし直した / PG を止めた: %+v starts=%d stops=%d said=%q", res, r.starts, r.stops, r.saidText())
 	}
 }
@@ -90,7 +90,7 @@ func TestSupervisorRestartsCrashedDispatcher(t *testing.T) {
 	openOwner(t, dir)
 	r := &supTest{}
 	res := r.sup(dir, "exit 1", "exit 0").run(t.Context())
-	if res.Reason != procsup.ReasonDone || r.starts != 2 || r.stops != 0 || !strings.Contains(r.saidText(), "dispatcher が落ちた (exit status 1") {
+	if res.Reason != supervisor.ReasonDone || r.starts != 2 || r.stops != 0 || !strings.Contains(r.saidText(), "dispatcher が落ちた (exit status 1") {
 		t.Fatalf("落ちた dispatcher を起こし直さない: %+v starts=%d stops=%d said=%q", res, r.starts, r.stops, r.saidText())
 	}
 }
@@ -101,7 +101,7 @@ func TestSupervisorGivesUpAndHolds(t *testing.T) {
 	openOwner(t, dir)
 	r := &supTest{}
 	res := r.sup(dir, "exit 1").run(t.Context())
-	if res.Reason != procsup.ReasonGaveUp || r.starts != 3 || r.stops != 1 || !store.Held(dir) {
+	if res.Reason != supervisor.ReasonGaveUp || r.starts != 3 || r.stops != 1 || !store.Held(dir) {
 		t.Fatalf("落ち続けても諦めない / 諦めて印を置かない・PG を止めない: %+v starts=%d stops=%d held=%v", res, r.starts, r.stops, store.Held(dir))
 	}
 	if said := r.saidText(); !strings.Contains(said, "3 回落ちた") || !strings.Contains(said, "人が止めた印を置いて PG を止める") {
@@ -127,7 +127,7 @@ func TestSupervisorHaltsOnHeld(t *testing.T) {
 		return inner()
 	}
 	res := s.run(t.Context())
-	if res.Reason != procsup.ReasonHalted || r.starts != 1 || r.stops != 0 || !strings.Contains(r.saidText(), "人が止めた印") {
+	if res.Reason != supervisor.ReasonHalted || r.starts != 1 || r.stops != 0 || !strings.Contains(r.saidText(), "人が止めた印") {
 		t.Fatalf("人が止めたのに起こし直した / PG を止め直した: %+v starts=%d stops=%d said=%q", res, r.starts, r.stops, r.saidText())
 	}
 }
@@ -164,10 +164,10 @@ func TestSupervisorHaltsWhenStoppedAfterCrash(t *testing.T) {
 			return time.Now().Add(-30 * time.Minute)
 		}
 		res := s.run(t.Context())
-		if c.halt && (res.Reason != procsup.ReasonHalted || r.starts != 1 || r.stops != 0) {
+		if c.halt && (res.Reason != supervisor.ReasonHalted || r.starts != 1 || r.stops != 0) {
 			t.Fatalf("%s: 落ちた後に止め終えたのに起こし直した: %+v starts=%d stops=%d", name, res, r.starts, r.stops)
 		}
-		if !c.halt && (res.Reason != procsup.ReasonDone || r.starts != 2) {
+		if !c.halt && (res.Reason != supervisor.ReasonDone || r.starts != 2) {
 			t.Fatalf("%s: 落ちる前の止めた結果を見て起こし直さない: %+v starts=%d said=%q", name, res, r.starts, r.saidText())
 		}
 	}
@@ -183,7 +183,7 @@ func TestSupervisorStopsPGsWithoutOwners(t *testing.T) {
 	defer scr.Close()
 	r := &supTest{}
 	res := r.sup(dir, "exit 1").run(t.Context())
-	if res.Reason != procsup.ReasonHalted || r.starts != 1 || r.stops != 1 || store.Held(dir) || !strings.Contains(r.saidText(), "持ち主の画面が無い") {
+	if res.Reason != supervisor.ReasonHalted || r.starts != 1 || r.stops != 1 || store.Held(dir) || !strings.Contains(r.saidText(), "持ち主の画面が無い") {
 		t.Fatalf("持ち主の画面が無いのに起こし直した / PG を止めない / 印を置いた: %+v starts=%d stops=%d held=%v said=%q", res, r.starts, r.stops, store.Held(dir), r.saidText())
 	}
 }
@@ -194,7 +194,7 @@ func TestSupervisorRetriesWhenLockFreed(t *testing.T) {
 	openOwner(t, dir)
 	r := &supTest{}
 	res := r.sup(dir, "exit 3", "exit 3", "exit 3", "exit 3", "exit 0").run(t.Context())
-	if res.Reason != procsup.ReasonDone || r.starts != 5 || strings.Contains(r.saidText(), "落ちた") {
+	if res.Reason != supervisor.ReasonDone || r.starts != 5 || strings.Contains(r.saidText(), "落ちた") {
 		t.Fatalf("lock を持たれていたのを落ちたと数えた: %+v starts=%d said=%q", res, r.starts, r.saidText())
 	}
 }
@@ -211,7 +211,7 @@ func TestSupervisorLeavesToAnotherDispatcher(t *testing.T) {
 	defer unlock()
 	r := &supTest{}
 	res := r.sup(dir, "exit 3").run(t.Context())
-	if res.Reason != procsup.ReasonHalted || r.starts != 1 || r.stops != 0 || !strings.Contains(r.saidText(), "別の dispatcher が動いている") {
+	if res.Reason != supervisor.ReasonHalted || r.starts != 1 || r.stops != 0 || !strings.Contains(r.saidText(), "別の dispatcher が動いている") {
 		t.Fatalf("別の dispatcher が居るのに起こし直した / PG を止めた: %+v starts=%d stops=%d said=%q", res, r.starts, r.stops, r.saidText())
 	}
 }
@@ -232,7 +232,7 @@ func TestSupervisorWaitsForOwnerDuringUpgrade(t *testing.T) {
 	if scr := <-opened; scr != nil {
 		defer scr.Close()
 	}
-	if res.Reason != procsup.ReasonDone || r.starts != 2 || r.stops != 0 {
+	if res.Reason != supervisor.ReasonDone || r.starts != 2 || r.stops != 0 {
 		t.Fatalf("ctrl+r の隙間で持ち主が居ないと決めた: %+v starts=%d stops=%d said=%q", res, r.starts, r.stops, r.saidText())
 	}
 }
@@ -245,7 +245,7 @@ func TestSupervisorStartFailureDoesNotHold(t *testing.T) {
 	s := r.sup(dir, "")
 	s.command = func() (*exec.Cmd, error) { return exec.Command("/nonexistent/pro-con"), nil }
 	res := s.run(t.Context())
-	if res.Reason != procsup.ReasonStartFailed || store.Held(dir) || r.stops != 0 || !strings.Contains(r.saidText(), "dispatcher を起こせない") {
+	if res.Reason != supervisor.ReasonStartFailed || store.Held(dir) || r.stops != 0 || !strings.Contains(r.saidText(), "dispatcher を起こせない") {
 		t.Fatalf("起こせないだけで印を置いた / PG を止めた: %+v held=%v stops=%d said=%q", res, store.Held(dir), r.stops, r.saidText())
 	}
 }
@@ -260,12 +260,12 @@ func TestSupervisorStopSignalsDispatcher(t *testing.T) {
 	s := r.sup(dir, `trap 'touch "`+mark+`"; exit 0' TERM; touch "`+ready+`"; while :; do sleep 0.01; done`)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	done := make(chan procsup.Result, 1)
+	done := make(chan supervisor.Result, 1)
 	go func() { done <- s.run(ctx) }()
 	eventually(t, "dispatcher が立たない", func() bool { _, err := os.Stat(ready); return err == nil })
 	cancel()
 	res := <-done
-	if _, err := os.Stat(mark); err != nil || res.Reason != procsup.ReasonStopped || r.stops != 0 || r.starts != 1 {
+	if _, err := os.Stat(mark); err != nil || res.Reason != supervisor.ReasonStopped || r.stops != 0 || r.starts != 1 {
 		t.Fatalf("止める合図を dispatcher に届けない / PG を止めた: %+v stops=%d starts=%d err=%v", res, r.stops, r.starts, err)
 	}
 }

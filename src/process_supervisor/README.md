@@ -1,14 +1,14 @@
-# procsup — 子プロセスを 1 つ起こして見張る (ワンショットの supervisor の部品)
+# process_supervisor — 子プロセスを 1 つ起こして見張る (ワンショットの supervisor の部品)
 
 foreman / supervisord の 1 本ぶん。**呼んだプロセスが生きている間だけ**見張る (launchd などへの常駐の登録はしない)。
-依存はゼロ (標準ライブラリのみ)。仕様と失敗モードの一次情報は `procsup.go` の doc コメント。
+依存はゼロ (標準ライブラリのみ)。仕様と失敗モードの一次情報は `supervisor.go` の doc コメント (パッケージ名は `supervisor`。import は `supervisor "process_supervisor"` と別名を明示する)。
 
 使っているところ: `src/pro-con` の supervisor (`supervise.go`。dispatcher を子に持つ。issue 506) と見張り (`monitorsup.go`。issue 475)。
-取り込むには go.mod に `require procsup v0.0.0` と `replace procsup => ../procsup`。
+取り込むには go.mod に `require process_supervisor v0.0.0` と `replace process_supervisor => ../process_supervisor`。
 
 ## すること / しないこと
 
-| procsup が持つ | 呼ぶ側が `Spec` の関数で決める |
+| process_supervisor が持つ | 呼ぶ側が `Spec` の関数で決める |
 |---|---|
 | 子を起こす・抜けたら `RestartWait` 空けて起こし直す | 子の終わり方の意味 (`Classify`: `Crash` 数えて起こし直す / `Retry` 数えずに起こし直す / `Done` 見張りを終える) |
 | `CrashWindow` に `CrashLimit` を超えて落ちたら諦める | 起こし直す前に続けてよいか (`Continue`。初回の起動の前は呼ばない) |
@@ -16,21 +16,21 @@ foreman / supervisord の 1 本ぶん。**呼んだプロセスが生きてい�
 | 生命線 (`Lifeline`): 子の stdin を親だけが書く側を持つパイプにする (親が kill -9 で死んでも子の stdin が EOF になる) | 子が stdin の EOF で抜けること (生命線は子が読んで初めて効く) |
 
 ```go
-res := procsup.Run(ctx, procsup.Spec{
+res := supervisor.Run(ctx, supervisor.Spec{
 	Command:  func() (*exec.Cmd, error) { return exec.Command("worker", "--until-stdin-closes"), nil },
 	Lifeline: true,
-	Classify: func(err error) procsup.Outcome {
-		if procsup.ExitCode(err) == 0 {
-			return procsup.Done
+	Classify: func(err error) supervisor.Outcome {
+		if supervisor.ExitCode(err) == 0 {
+			return supervisor.Done
 		}
-		return procsup.Crash
+		return supervisor.Crash
 	},
 	RestartWait: 10 * time.Second, CrashLimit: 3, CrashWindow: 10 * time.Minute, StopWait: 5 * time.Second,
 })
 // res.Reason: ReasonStopped / ReasonDone / ReasonHalted / ReasonGaveUp / ReasonStartFailed
 ```
 
-裏で回すなら `stop := procsup.Start(ctx, spec)` (返した関数で止めて結果を待つ。何度呼んでもよい)。
+裏で回すなら `stop := supervisor.Start(ctx, spec)` (返した関数で止めて結果を待つ。何度呼んでもよい)。
 
 ## 🚨 気をつけること
 

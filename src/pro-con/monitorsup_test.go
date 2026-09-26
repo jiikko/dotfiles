@@ -14,7 +14,7 @@ import (
 	"pro-con/dispatcher"
 	"pro-con/monitor"
 	"pro-con/store"
-	"procsup"
+	supervisor "process_supervisor"
 )
 
 // supRig は起こし直しの係を、sh の台本を見張りの代わりにして回す。
@@ -24,7 +24,7 @@ type supRig struct {
 	starts int
 }
 
-func (r *supRig) sup(script string) procsup.Spec {
+func (r *supRig) sup(script string) supervisor.Spec {
 	s := monitorSpec(func(text string) {
 		r.mu.Lock()
 		defer r.mu.Unlock()

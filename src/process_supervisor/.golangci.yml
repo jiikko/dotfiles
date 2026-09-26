@@ -1,4 +1,4 @@
-# golangci-lint v2 config for procsup.
+# golangci-lint v2 config for process_supervisor.
 # 既定の linter (errcheck / govet / ineffassign / staticcheck / unused) に加えて、
 # 低ノイズで自動修正できる衛生系だけを足す (他の src/* と同じ構成)。
 version: "2"

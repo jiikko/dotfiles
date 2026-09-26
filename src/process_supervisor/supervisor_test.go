@@ -1,4 +1,4 @@
-package procsup
+package supervisor
 
 import (
 	"context"
@@ -227,7 +227,7 @@ func TestLifelineSurvivesParentKill(t *testing.T) {
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "child.pid")
 	parent := exec.Command(os.Args[0], "-test.run=^TestHelperSupervisor$")
-	parent.Env = append(os.Environ(), "PROCSUP_HELPER="+pidFile)
+	parent.Env = append(os.Environ(), "PROCESS_SUPERVISOR_HELPER="+pidFile)
 	if err := parent.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -245,10 +245,10 @@ func TestLifelineSurvivesParentKill(t *testing.T) {
 	eventually(t, "見張る側が死んでも子が残った", func() bool { return syscall.Kill(child, 0) != nil })
 }
 
-// TestHelperSupervisor は TestLifelineSurvivesParentKill が起こす見張る側 (PROCSUP_HELPER が無ければ何もしない)。
+// TestHelperSupervisor は TestLifelineSurvivesParentKill が起こす見張る側 (PROCESS_SUPERVISOR_HELPER が無ければ何もしない)。
 // 子は SIGTERM を無視し、stdin の EOF でだけ抜ける。
 func TestHelperSupervisor(t *testing.T) {
-	pidFile := os.Getenv("PROCSUP_HELPER")
+	pidFile := os.Getenv("PROCESS_SUPERVISOR_HELPER")
 	if pidFile == "" {
 		return
 	}

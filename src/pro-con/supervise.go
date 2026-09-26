@@ -2,7 +2,7 @@ package main
 
 // pro-con supervise — 画面が起こすワンショットの supervisor (issue 506。内部用)。dispatcher を子として起こし、落ちたら間を空けて
 // 起こし直し、落ち続けたら諦めて PG を止める。dispatcher が自分の判断で抜けたら (rc=0) 一緒に抜ける (常駐しない = foreman の形)。
-// 起こし直しの仕組みは procsup、止める条件 (人が止めた印・画面の quit / --stop・持ち主の画面) はここに置く。
+// 起こし直しの仕組みは process_supervisor、止める条件 (人が止めた印・画面の quit / --stop・持ち主の画面) はここに置く。
 //
 // 子の終わり方:
 //   - rc=0: dispatcher が止める判断をした (止める印 = 最後の持ち主の画面の quit / --stop・画面が無い状態が続いた・信号・人が止めた印) → 一緒に抜ける
@@ -44,14 +44,14 @@ import (
 
 	"pro-con/dispatcher"
 	"pro-con/store"
-	"procsup"
+	supervisor "process_supervisor"
 )
 
 // superviseCmd は supervisor の内部用のサブコマンド (spawnSupervisor が spawnDetached を挟んで起こす)。
 const superviseCmd = "supervise"
 
-// supervisor は dispatcher の見張り方。
-type supervisor struct {
+// dispatcherSupervisor は dispatcher の見張り方。
+type dispatcherSupervisor struct {
 	dir     string
 	command func() (*exec.Cmd, error)   // dispatcher を 1 回ぶん作る
 	stop    func() error                // PG を止める (dispatcher --stop --from-screen。人が止めた印は置かない)
@@ -102,7 +102,7 @@ func runSupervise(args []string, dir string, stdout, stderr io.Writer) int {
 	}
 	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stopSignals()
-	s := supervisor{
+	s := dispatcherSupervisor{
 		dir: dir,
 		command: func() (*exec.Cmd, error) {
 			cmd := dispatcherCmd(exe, extra)
@@ -127,21 +127,21 @@ func runSupervise(args []string, dir string, stdout, stderr io.Writer) int {
 }
 
 // run は dispatcher を見張り、見張りを終えたら後始末 (諦めた・持ち主の画面が無いなら PG を止める) をして戻る。
-func (s supervisor) run(ctx context.Context) procsup.Result {
+func (s dispatcherSupervisor) run(ctx context.Context) supervisor.Result {
 	since := s.now() // 最後に落ちた時刻 (まだ落ちていなければ起動した時刻)。これより後に止め終えていたら起こし直さない
 	var halt string  // 起こし直さなかった理由
 	stopPGs := false // 起こし直さずに抜けるとき、PG を止めるか
-	res := procsup.Run(ctx, procsup.Spec{
+	res := supervisor.Run(ctx, supervisor.Spec{
 		Command: s.command,
-		Classify: func(err error) procsup.Outcome {
-			switch procsup.ExitCode(err) {
+		Classify: func(err error) supervisor.Outcome {
+			switch supervisor.ExitCode(err) {
 			case 0:
-				return procsup.Done
+				return supervisor.Done
 			case exitLockHeld:
-				return procsup.Retry
+				return supervisor.Retry
 			}
 			since = s.now()
-			return procsup.Crash
+			return supervisor.Crash
 		},
 		Continue: func() bool {
 			halt, stopPGs = s.haltReason(since)
@@ -153,29 +153,29 @@ func (s supervisor) run(ctx context.Context) procsup.Result {
 		Now: s.now,
 	})
 	switch res.Reason {
-	case procsup.ReasonStartFailed:
+	case supervisor.ReasonStartFailed:
 		s.say("supervisor も抜ける (人が止めた印は置かない。画面が開いていれば、その keeper が起こし直す)")
-	case procsup.ReasonGaveUp:
+	case supervisor.ReasonGaveUp:
 		if err := store.Hold(s.dir, s.now()); err != nil {
 			s.say("人が止めた印を置けない (開いている画面が supervisor を起こし直しうる): " + err.Error())
 		}
 		s.stopPGs("dispatcher を戻せないので、人が止めた印を置いて PG を止める (画面の c か、手で pro-con dispatcher を起動すると外れる)")
-	case procsup.ReasonHalted:
+	case supervisor.ReasonHalted:
 		if stopPGs {
 			s.stopPGs(halt + "。PG を止めて抜ける")
 		} else {
 			s.say(halt + "。supervisor も抜ける")
 		}
-	case procsup.ReasonDone:
+	case supervisor.ReasonDone:
 		_, _ = fmt.Fprintf(s.out, "%s supervisor: dispatcher が抜けた (%s) ので、supervisor も抜ける\n", s.now().Format("15:04:05"), exitText(res.Err))
-	case procsup.ReasonStopped:
+	case supervisor.ReasonStopped:
 		_, _ = fmt.Fprintf(s.out, "%s supervisor: 止める合図を受けたので、dispatcher を止めて抜ける (dispatcher は %s)\n", s.now().Format("15:04:05"), exitText(res.Err))
 	}
 	return res
 }
 
 // haltReason は、dispatcher を起こし直さない理由 (空なら起こし直す) と、そのとき PG を止めるか。
-func (s supervisor) haltReason(since time.Time) (string, bool) {
+func (s dispatcherSupervisor) haltReason(since time.Time) (string, bool) {
 	if store.Held(s.dir) {
 		return "人が止めた印 (dispatcher --stop) があるので、dispatcher を起こし直さない", false
 	}
@@ -209,28 +209,28 @@ func ownersAppear(dir string, grace time.Duration) bool {
 
 // stopPGs は出来事にしてから PG を止める (止めきれなくても抜ける。残りは dispatcher.log と stop-result)。
 // 止めるのは別のプロセス (dispatcher --stop) なので、supervisor が信号で抜ける途中でも続く。
-func (s supervisor) stopPGs(why string) {
+func (s dispatcherSupervisor) stopPGs(why string) {
 	s.say(why)
 	if err := s.stop(); err != nil {
 		s.say("PG を止めきれなかった: " + err.Error())
 	}
 }
 
-// event は procsup の出来事を supervisor の出来事の文にする。
-func (s supervisor) event(e procsup.Event) {
+// event は process_supervisor の出来事を supervisor の出来事の文にする。
+func (s dispatcherSupervisor) event(e supervisor.Event) {
 	switch e.Kind {
-	case procsup.EventCrashed:
+	case supervisor.EventCrashed:
 		s.say(fmt.Sprintf("dispatcher が落ちた (%s。%s の間に %d 回目)。%s 後に起こし直す", exitText(e.Err), s.crashWindow, e.Crashes, e.Wait))
-	case procsup.EventRetrying: // 起こし直す前の確かめ (haltReason) が、lock がまだ持たれていれば理由を書いて抜ける
-	case procsup.EventGaveUp:
+	case supervisor.EventRetrying: // 起こし直す前の確かめ (haltReason) が、lock がまだ持たれていれば理由を書いて抜ける
+	case supervisor.EventGaveUp:
 		s.say(fmt.Sprintf("dispatcher が %s の間に %d 回落ちたので、起こし直さない (最後: %s)", s.crashWindow, e.Crashes, exitText(e.Err)))
-	case procsup.EventStartFailed:
+	case supervisor.EventStartFailed:
 		s.say("dispatcher を起こせない: " + e.Err.Error())
 	}
 }
 
 // say は出来事を dispatcher.log へ時刻つきで出し、受付の箱に置く (events.jsonl の書き手は dispatcher だけ。次の dispatcher が書く)。
-func (s supervisor) say(text string) {
+func (s dispatcherSupervisor) say(text string) {
 	now := s.now()
 	_, _ = fmt.Fprintf(s.out, "%s supervisor: %s\n", now.Format("15:04:05"), text)
 	if err := s.submit(store.Request{Kind: store.KindSupervisor, Note: text, At: now}); err != nil {

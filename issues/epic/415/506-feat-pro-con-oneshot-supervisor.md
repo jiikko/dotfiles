@@ -62,11 +62,11 @@ launchd の LaunchAgent は「サービスとして登録するのは面倒」�
   最後の持ち主の画面が quit した) / 持ち主の画面が無い (PG を止めて抜ける。join は起こさない = 481)
 - [x] 出来事は見張りと同じく受付の箱 (store `supervisor`) → 次の dispatcher が events.jsonl (kind `supervisor`) に書く (書き手は dispatcher 1 つ)。
   dispatcher.log には時刻つきですぐ出る。`pro-con ps` に supervisor の行
-- [x] `src/procsup`: 独立した module (依存ゼロ)。monitorsup.go を載せ替えた。🚨 元のコメント「親が読む側を持つと EOF にならない」は誤り
+- [x] `src/process_supervisor`: 独立した module (依存ゼロ)。monitorsup.go を載せ替えた。🚨 元のコメント「親が読む側を持つと EOF にならない」は誤り
   (EOF を止めるのは書く側の複製)。本当の性質「親が kill -9 で死んでも子が抜ける」を `TestLifelineSurvivesParentKill` で固定した
 
-テスト (commit「pro-con: 画面はワンショットの supervisor を起こし…」): procsup 13 本・supervisor 11 本・keeper・spawn の親子 (dispatcher の親が
-supervisor、dispatcher が rc=0 で抜けたら supervisor も抜ける)・ps。mutation: procsup 4 本 / supervisor と keeper 11 本がすべて落ちる
+テスト (commit「pro-con: 画面はワンショットの supervisor を起こし…」): process_supervisor 13 本・supervisor 11 本・keeper・spawn の親子 (dispatcher の親が
+supervisor、dispatcher が rc=0 で抜けたら supervisor も抜ける)・ps。mutation: process_supervisor 4 本 / supervisor と keeper 11 本がすべて落ちる
 
 敵対的レビュー (最終ゲート。read-only のサブエージェント): 不変条件 (dispatcher / supervisor を 2 つ立てない・持ち主の画面がある間は起こし直し手が
 0 にならない・505 の exec と両立・lock が漏れない) は壊せず、P0 / P1 無し。P2 3 件は発火条件を確かめて直した
@@ -81,7 +81,7 @@ supervisor、dispatcher が rc=0 で抜けたら supervisor も抜ける)・ps�
 - 未確認リスク: 止める合図から 3 分で dispatcher へ SIGKILL (dispatcher のプロセスグループのテストの係の子が残りうる。止める処理は普通 1 分以内) /
   最後の持ち主の quit と起こし直しが µs〜ms の窓で重なると、--stop が「確かめた直後に別の dispatcher が起動した」で失敗しうる (実測していない) /
   諦めた原因が dispatcher の起動時の panic なら、--stop も同じ所で落ちて PG は止まらず印だけが残る
-- 直し方の一文: 見張りの (旧 monitorsup.go の) 「親が読む側を持つと EOF にならない」は誤りだったので procsup のコメントで直した
+- 訂正: 見張りの (旧 monitorsup.go の) 「親が読む側を持つと EOF にならない」は誤りだったので process_supervisor のコメントで直した
 
 ## 関連
 
