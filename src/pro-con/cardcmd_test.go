@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"os/exec"
 	"regexp"
@@ -41,12 +42,49 @@ func TestCardCommandRoundTrip(t *testing.T) {
 	}
 }
 
+// add --purpose question で確認のカード (問いだけ。issue 531) になり、card list --purpose で作業のカードと分けて読める。
+func TestCardAddQuestionPurpose(t *testing.T) {
+	dir := t.TempDir()
+	for _, args := range [][]string{
+		{"add", "--title", "確かめる", "--purpose", "question", "--wait", "0"},
+		{"add", "--title", "作る", "--wait", "0"},
+		{"add", "--title", "作る 2", "--purpose", "work", "--wait", "0"},
+	} {
+		if rc, _, e := card_(t, dir, args...); rc != 0 {
+			t.Fatalf("%q: rc=%d %s", args, rc, e)
+		}
+	}
+	mustApply(t, dir)
+	env := viewEnv{dir: dir, now: time.Now}
+	rc, out, _ := viewCmd(t, env, "list", "--purpose", "question", "--json")
+	var got []cardSummary
+	if rc != 0 || json.Unmarshal([]byte(out), &got) != nil || len(got) != 1 || got[0].ID != "C-001" || got[0].Purpose != "question" {
+		t.Fatalf("--purpose question: rc=%d %q", rc, out)
+	}
+	if _, out, _ := viewCmd(t, env, "list"); !strings.Contains(out, card.QuestionMark+" 確かめる") || strings.Contains(out, card.QuestionMark+" 作る") {
+		t.Fatalf("list の題名の頭に確認の印が出ない / 作業のカードに出た: %q", out)
+	}
+	if _, out, _ := viewCmd(t, env, "list", "--purpose", "work"); strings.Contains(out, "C-001") || !strings.Contains(out, "C-002") || !strings.Contains(out, "C-003") {
+		t.Fatalf("--purpose work: %q", out)
+	}
+	if rc, _, _ := viewCmd(t, env, "list", "--purpose", "nosuch"); rc != 2 {
+		t.Fatalf("未知の種類は rc=2: %d", rc)
+	}
+	if _, out, _ := viewCmd(t, env, "show", "C-001"); !strings.Contains(out, "種類: 確認") {
+		t.Fatalf("show に種類が出ない: %q", out)
+	}
+	if _, out, _ := viewCmd(t, env, "show", "C-002"); strings.Contains(out, "種類:") {
+		t.Fatalf("作業のカードにまで種類の行を出した: %q", out)
+	}
+}
+
 // 使い方の誤りは箱に置く前に rc=2 で止める (dispatcher で除けられるより早く気づける)。
 func TestCardCommandRejectsBadUsage(t *testing.T) {
 	for _, args := range [][]string{
 		{},
 		{"nosuch"},
-		{"add"},                         // 題名も原文も無い
+		{"add"}, // 題名も原文も無い
+		{"add", "--title", "t", "--purpose", "ask"}, // 未知の種類
 		{"ask", "C-001"},                // 質問が無い
 		{"ask", "C-001", "--json", "{"}, // 読めない JSON
 		{"ask", "C-001", "--json", `{"questions":[{"question":"q","options":[{"label":"A"}]}]}`}, // 選択肢が 1 個

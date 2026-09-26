@@ -115,7 +115,7 @@ func issueTag(c card.Card) string {
 
 // cardHeading はカードの 1 行目 (ID + issue 番号 + タイトル)。タイトルの頭が最初の issue の番号 + ": " (「452: …」。
 // 積む側が付けた形) なら、番号は issueTag に出ているので落とす (issue 491)。記録のタイトルは書き換えない。
-// 「437 の続き: …」のような形は番号だけ落とすと意味が崩れるので、そのまま出す。
+// 「437 の続き: …」のような形は番号だけ落とすと意味が崩れるので、そのまま出す。確認のカードは題名の頭に card.QuestionMark を付ける。
 func cardHeading(c card.Card) string {
 	title := c.Title
 	if len(c.Issues) > 0 {
@@ -124,6 +124,9 @@ func cardHeading(c card.Card) string {
 				title = rest
 			}
 		}
+	}
+	if c.Purpose == card.ForQuestion { // 確認のカードは番号の後に印 (issue 531)
+		title = card.QuestionMark + " " + title
 	}
 	return c.ID + issueTag(c) + " " + title
 }

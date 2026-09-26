@@ -74,7 +74,7 @@ func (s *Sim) seed() {
 		{ID: "C-001", Title: "glogx の diff で日本語ファイル名が化ける", Request: "glogx で diff 開いたら日本語のファイル名が化けてた。直せる？",
 			Repo: "dotfiles", Owner: "受付 PM", State: card.Requested, Since: s.ago(3 * time.Minute),
 			History: []card.Event{ev(3*time.Minute, "受付 PM がカードを作った")}},
-		{ID: "C-002", Title: "statusline の色が見えづらい件の状況", Request: "statusline の色の件どうなってる？",
+		{ID: "C-002", Title: "statusline の色を issue にするか", Purpose: card.ForQuestion, Request: "statusline の色が見えづらい件、issue にするか人に確かめる",
 			Repo: "dotfiles", Owner: "受付 PM", State: card.Requested, Since: s.ago(1 * time.Minute),
 			History: []card.Event{ev(1*time.Minute, "受付 PM がカードを作った")}},
 		{ID: "C-003", Title: "tmux-toast の通知が重なる", Request: "toast が 2 つ同時に出ると重なって読めない",
@@ -334,7 +334,7 @@ func (s *Sim) stepIntake() {
 			s.setState(c, card.Planned, fmt.Sprintf("PM-A が issue %03d のまま PG へ回す", c.Issues[0].Number))
 			return
 		}
-		if strings.Contains(c.Request, "どうなってる") {
+		if c.Purpose == card.ForQuestion || strings.Contains(c.Request, "どうなってる") { // 確認のカードは PG に回さない (issue 531)
 			c.Ending = card.EndAnswered
 			s.setState(c, card.Done, "受付 PM がその場で回答した")
 		} else {

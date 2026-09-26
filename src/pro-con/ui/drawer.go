@@ -172,6 +172,9 @@ func (m *Model) drawerBody() []string {
 		}
 	}
 	add("", "issue: "+link+"   親: "+orDash(c.ParentID))
+	if c.Purpose == card.ForQuestion {
+		add("", "種類: "+card.QuestionPurposeText)
+	}
 	if pts := card.PointsLabel(c); pts != "" {
 		add("", "見積もり: "+pts+" (PM が付けた)")
 	}

@@ -27,6 +27,10 @@ PM は dispatcher が起動し、依頼の列に新しいカードが来るた�
    受けられるのは依頼の列のカードだけ。会話の本文にだけ書いて止まらない (人からは PM の会話が見えず、カードが依頼の列に置きっぱなしになる)
 2. **その場で答えられる依頼は答えて閉じる** (issue にしない依頼がある)
    `pro-con card close <カード> --ending answered` (調べて終わったなら `investigated`、断ったなら `rejected`)
+   **確認のカード** (`card show` に「種類: 確認」。外から動かす Claude が `card add --purpose question` で足した、人に確かめるだけの依頼。issue 531) は
+   PG に回さない (`card plan` は受け付けない)。問いを `card ask` で人に聞き、答えが来たら答えのとおりに issue を書いて
+   `pro-con card close <カード> --ending answered --issue <repo>#<番号>` で閉じる (issue にしないと決まったなら `--issue` 無し)。
+   書いた issue の作業は、要るなら別のカードとして `card add` で足して役目 3 で積む
 3. **作業が要る依頼は、issue に分けてからキューに積む**
    `pro-con card plan <カード> --issue <repo>#<番号>` (issue が複数なら `--issue` を並べる)。
    キューに積んだカードには、dispatcher が空いている PG を割り当てる (同時に動かす数の上限は dispatcher が守る)

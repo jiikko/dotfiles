@@ -282,13 +282,15 @@ type Card struct {
 	ID       string
 	ParentID string // 1 つの依頼を分けたとき / 別件の追加オーダーの元
 	Title    string
-	Request  string // 依頼の原文 (人間が書いたまま)
-	Prompt   string // PM に渡した指示の全文 (スコープの前置き + 原文)。TUI から出した依頼だけが持つ
-	Repo     string
-	Owner    string // 作った・受けた者 (受付 PM / PM-A / PG-2 / 人間)。今手を動かす者ではない: 画面と card list の担当は Assignee (issue 476)
-	Session  string // 担当 PG の session id (claude --bg の id)
-	State    State
-	Since    time.Time // 今の State に入った時刻
+	// Purpose は作業か確認 (問いだけ) か (issue 531。purpose.go)
+	Purpose Purpose `json:",omitempty"`
+	Request string  // 依頼の原文 (人間が書いたまま)
+	Prompt  string  // PM に渡した指示の全文 (スコープの前置き + 原文)。TUI から出した依頼だけが持つ
+	Repo    string
+	Owner   string // 作った・受けた者 (受付 PM / PM-A / PG-2 / 人間)。今手を動かす者ではない: 画面と card list の担当は Assignee (issue 476)
+	Session string // 担当 PG の session id (claude --bg の id)
+	State   State
+	Since   time.Time // 今の State に入った時刻
 	// Rank は人が入れ替えたレーンの中の並び (issue 470。rank.go)。Since が変わる (列を移る) と効かなくなる
 	Rank    Rank `json:",omitzero"`
 	Wait    Wait

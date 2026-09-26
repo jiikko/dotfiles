@@ -74,3 +74,21 @@ func TestCardTitleWrapsOnBoard(t *testing.T) {
 		})
 	}
 }
+
+// 確認のカード (issue 531) は 1 行目の番号の後に印を色つきで出す。作業のカードには出さない。
+func TestQuestionCardMarkOnBoard(t *testing.T) {
+	be := newSpy()
+	be.snap.Cards = []card.Card{
+		{ID: "Q1", State: card.Requested, Since: be.snap.Now, Title: "issue にするか", Purpose: card.ForQuestion},
+		{ID: "W1", State: card.Requested, Since: be.snap.Now, Title: "直す"},
+	}
+	m := New(be, nil)
+	m.width, m.height = 120, 30
+	out := m.render()
+	if !strings.Contains(ansi.Strip(out), "Q1 "+card.QuestionMark+" issue") || !strings.Contains(out, sgrPink+sgrBold+card.QuestionMark) {
+		t.Fatalf("確認のカードに印が出ない: %q", ansi.Strip(out))
+	}
+	if strings.Contains(ansi.Strip(out), "W1 "+card.QuestionMark) {
+		t.Fatal("作業のカードに確認の印を出した")
+	}
+}

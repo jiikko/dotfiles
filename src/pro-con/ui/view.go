@@ -27,7 +27,9 @@ const (
 	sgrRed         = "\x1b[38;5;196m"
 	sgrYellow      = "\x1b[38;5;214m"
 	sgrCyan        = "\x1b[38;5;51m"
-	minColW        = 14
+	// sgrPink は確認のカードの印 (issue 531。2026-09-27 にユーザーが見本の案 A を選んだ)。状態の色・人の番の黄と紛れない色
+	sgrPink = "\x1b[38;5;213m"
+	minColW = 14
 )
 
 func (m *Model) View() tea.View {
@@ -513,6 +515,9 @@ func (m *Model) cardCell(c card.Card, w int) []string {
 		}
 		if i == 0 && pts != "" {
 			l = fit(l, w-2-termwidth.Of(pts)) + " " + sgrDim + pts + sgrReset + base
+		}
+		if i == 0 && c.Purpose == card.ForQuestion { // 確認の印を色で浮かせる (折り返しで割れたら色を付けないだけ)
+			l = strings.Replace(l, card.QuestionMark, sgrPink+sgrBold+card.QuestionMark+sgrFgReset+pre, 1)
 		}
 		out = append(out, paint(base, " "+l, w))
 	}
