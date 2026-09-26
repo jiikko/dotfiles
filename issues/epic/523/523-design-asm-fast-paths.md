@@ -39,6 +39,25 @@ asm の速い道を入れる場所は 1 つにしたい。そのために、端�
    - 効かない形 (asm にしない): pro-con の transcript (JSONL) の読み直し (JSON の読み解きと読み直しの回数が重い = 作りの話) /
      glogx の git・CI の取得と doctor の走査 (外のコマンドとファイルの待ち) / diff の色付け (049。正規表現と確保)
 
+### 2026-09-27 の実測の結果 (2 と 4 の termsafe)
+
+- **2 (実画面での割合)**: 520 の「Phase 0 の実測」節。glogx は NEON 版で geomean -8.5%・ViewWithDiff -12.4% (520 の条件 2 を 1 本で満たした)。
+  pro-con は差なし: NEON 版の入口 (`fastDispWidth`) は pro-con の CPU の約 2% しか無く、幅・切り詰めの 19〜22% の大半は
+  切り詰め・切り出し (`truncateOver` / `TruncateMeasure` / `SplitAround` / `CutMeasure` → `x/ansi` の書記素単位の走査)
+- **3 (520 の判断)**: 条件 1〜3 を満たしたので NEON 版は残す。実端末の frame cadence (条件 4) は未確認
+- **4 の termsafe: asm にしない (不採用)**。
+  - 単体 (`src/termsafe/termsafe_bench_test.go`。この Mac、`-count 6` の中央値): 無害化の要らない文字列の fast path は ASCII で約 670 MiB/s
+    (8KB の 1 行で 11.5µs、120B で 191ns)。重さはほぼ全部 `needsSanitize` (UTF-8 の検査 + `strings.ContainsFunc(s, mustStrip)`)。
+    `DropEmojiVS16` は 1% 未満。改行・タブを含む塊 (`*_block_8KB`) は fast path を通らず 31〜37µs
+  - 画面の中の割合: glogx ViewWithDiff・pro-con FrameBump・DiffBoardView の CPU profile で **0 サンプル** (termsafe の呼び出しは全部、読み込み・取り込み側
+    = issue の解析・dispatcher の進捗・PG の出力の取り込みにあり、フレームでは走らない)。読み込み側の glogx `BenchmarkIssueScan` (1.10ms/op) でも
+    **0%** (CPU の 47% はファイルを開くシステムコール)
+  - 再評価の trigger: 長い外部テキスト (数 MB の CI ログ等) の取り込みで待ちが目に見えると報告されたとき。まず pure Go の ASCII の速い道
+    (1 byte ずつの比較で `needsSanitize` の 2 回の走査を 1 回にする) を試し、asm はその後
+- **次の候補 (未着手)**: pro-con の切り詰め・切り出し (上の 19〜22%)。行の大半が ASCII + SGR なら、`termwidth` の `Truncate` / `Cut` に
+  `fastDispWidth` と同じ形の速い道 (書記素を 1 つずつ数えずに切る位置を求める) を pure Go で入れ、pro-con の FrameBump / DiffBoardView で測る。
+  asm はその後、10% に届かなかったときだけ (523 の方針どおり)
+
 - 寄せただけで十分速くなれば、asm は入れない (520 の方針どおり)
 - 新しい lib は立てない (`termwidth` に「切る・詰める」の API を足す)。別の lib が要ると分かったら、そのときに決める
 

@@ -6,6 +6,10 @@
 
 > **2026-09-26 に NEON 版が master へ入った** (PR #14、`a413f1ef`。実測は 523 の本文)。Phase 2 の実装はこれで済んでいる。残りは、実画面での効果を測って残すかを決めること。
 > Phase 1 (共通の境界へ寄せる) は [524](done/524-refactor-route-terminal-width-through-termwidth.md) に切り出した
+>
+> **2026-09-27 に Phase 0 を本物の Apple Silicon で測った** (下の「Phase 0 の実測」)。glogx の実画面は geomean -8.5% (有意)、ViewWithDiff は -12.4% で
+> 条件 2 を 1 本で満たした。pro-con は差なし (NEON 版が通る `Of` の速い道は pro-con の CPU の約 2% で、重いのは切り詰め・切り出し)。残す判断。
+> 残り: 実端末での frame cadence (条件 4) と `go test -race` / lint の確認
 
 ## 背景
 
@@ -130,17 +134,51 @@ assembly は mainline に残さない。
 - `chroma/regexp2` の syntax highlight (#049): allocation / tokenizer 構造が主因なので別問題
 - pro-con の cards / transcript / relay など I/O 系 perf issue
 
+## Phase 0 の実測 (2026-09-27)
+
+条件: この Mac (Apple M3 Max、darwin/arm64、go1.26.0 (go.mod は 1.25.0)。benchstat は goenv の 1.25.4)。同じ commit から
+NEON 版と Go 版 (`fastDispWidth` を常に `fastDispWidthGeneric` へ回す差し替えを worktree の中だけで当てた。commit していない) の
+テストバイナリを作り、1 回ずつ交互に 8 回 (`-benchtime 1s`)。計測中のロードアベレージは 5〜7 (他の session が動いていた。交互に回して打ち消した)。
+
+**実画面のフレーム (Go 版 → NEON 版、benchstat の中央値)**
+
+| benchmark | Go 版 | NEON 版 | 差 |
+|---|---|---|---|
+| glogx ViewSteady | 24.41µs | 22.09µs | -9.50% (p=0.000) |
+| glogx ViewWithPanel | 31.12µs | 28.35µs | -8.90% (p=0.010) |
+| glogx ViewWithPanelJA | 44.27µs | 41.68µs | ~ (p=0.065) |
+| glogx ViewSteadyJA | 37.23µs | 35.00µs | -6.00% (p=0.050) |
+| glogx ViewWithDiff | 34.79µs | 30.47µs | **-12.42%** (p=0.001) |
+| glogx ViewWithDiffJA | 45.48µs | 41.67µs | -8.37% (p=0.010) |
+| glogx geomean | 35.44µs | 32.41µs | -8.53% |
+| pro-con DiffBoardView/closed・open、FrameBump・Move・Glide | — | — | 全部 ~ (geomean +0.56%) |
+
+B/op・allocs/op はどれも変わらない (条件 3)。
+
+**CPU の中の割合 (NEON 版の CPU profile。`-benchtime 3s`。スタックのどこかにその関数を含むサンプルの割合。GC の裏の worker 込みの全サンプルが分母)**
+
+| profile | 幅・切り詰め (`tuikit/termwidth` + `x/ansi`) | うち `fastDispWidth` (NEON 版の入口) |
+|---|---|---|
+| glogx ViewWithDiff | 9.3% | 2.3% |
+| pro-con FrameBump | 21.7% | 1.5% |
+| pro-con DiffBoardView | 19.1% | 2.1% |
+
+- pro-con で NEON 版が効かないのは、重いのが `termwidth.truncateOver` / `TruncateMeasure` / `SplitAround` / `CutMeasure` (行を切る・詰める) で、
+  中身が `x/ansi` の書記素単位の走査 (`ansi.truncate` / `ansi.stringWidth` / `FirstGraphemeCluster`) だから。NEON 版は `Of` の速い道にしか入っていない
+- pro-con は Phase 0 の再開条件「対象の走査群が CPU の 20% 以上」をほぼ満たすが、対象は切り詰め・切り出しの方 (523 の本文に次の候補として書いた)
+
 ## 完了条件
 
-- [ ] Phase 0 の profile と benchmark を issue に記録
-- [ ] pro-con の重複走査を共通 scanner 境界へ寄せる
-- [ ] scalar reference を独立に保持
-- [ ] darwin/arm64 fast path を追加
-- [ ] fuzz / corpus で reference と不一致 0
-- [ ] scanner 単体 1.5x 以上
-- [ ] 実画面 benchmark 10% 以上
-- [ ] 条件を満たさない場合は assembly を revert / 不採用として理由を記録
-- [ ] `go test -race ./...` / lint green
+- [x] Phase 0 の profile と benchmark を issue に記録 (上の節。2026-09-27)
+- [x] pro-con の重複走査を共通 scanner 境界へ寄せる (524)
+- [x] scalar reference を独立に保持 (`fastDispWidthGeneric`)
+- [x] darwin/arm64 fast path を追加 (PR #14)
+- [x] fuzz / corpus で reference と不一致 0 (523 の本文の記録。PR #14 の時点)
+- [x] scanner 単体 1.5x 以上 (ascii_1KB -92% ほか。523 の本文)
+- [x] 実画面 benchmark 10% 以上 — glogx ViewWithDiff -12.4% の 1 本で満たした (glogx の geomean は -8.5%、pro-con は差なし)
+- [ ] 実端末で frame cadence を悪化させない (条件 4。未確認)
+- [ ] 条件を満たさない場合は assembly を revert / 不採用として理由を記録 — 満たしたので残す。条件 4 が悪化したら revert する
+- [ ] `go test -race ./...` / lint green (2026-09-27 は未実行)
 
 ## 関連
 
