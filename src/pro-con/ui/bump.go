@@ -1,7 +1,7 @@
 package ui
 
 // 選択が端でぶつかったときの演出 (issue 436)。それ以上動けない向きへ 1 枚 / 1 列だけ動くキーを押したら、
-// 選択中のカードのレーンごと、押した向きへ小さく揺らす (上下は 1 行、左右は 2 桁)。見た目は見本 C (1000 ms) で決めた。
+// 選択中のカードのレーンごと、押した向きへ小さく揺らす (上下は 2 行、左右は 2 桁)。見た目は見本 C (1000 ms) で決めた。
 // 描き方は、ボードを組んで枠と移動中のカードを重ねた後に、そのレーンの帯 (桁の範囲) を丸ごとずらすだけ。
 // 帯には選択の枠も入っているので枠も一緒に揺れ、cursor.go の描き方には手を入れない。
 
@@ -53,50 +53,76 @@ func bumpOffset(t float64) float64 {
 	return math.Cos(u*math.Pi*2.5) * math.Exp(-4.5*u)
 }
 
-// bumpShift は今のずれ (桁, 行)。見本と同じく偶数丸め (0.5 は 0 に寄せる)。
-func (m *Model) bumpShift(now time.Time) (int, int) {
+// bumpCols / bumpRows は出きった所のずれ (左右は桁、上下は行)。端末のマスは縦が横の約 2 倍なので、行で 2 は桁で 2 の倍の距離になる。
+// 上下を 1 行にすると丸めた後の値が 0 と 1 の 2 つしかなく、1 行跳ねて戻るだけに見えた (2026-09-26)。
+const (
+	bumpCols = 2
+	bumpRows = 2
+)
+
+// bumpShift は今のずれ。dx は桁、dy は行 (押した向きの符号)、eighths は壁の方へもう 1 行ぶん進んだ端数 (0..7、1/8 行単位)。
+// 文字は 1 行より細かくずらせないので、端数は帯の先 (壁の側) の 1 行に 1/8 ブロックの帯として描く (overlayBump)。
+// 見本と同じく偶数丸め (0.5 は 0 に寄せる)。
+func (m *Model) bumpShift(now time.Time) (dx, dy, eighths int) {
 	if !m.bumping(now) {
-		return 0, 0
+		return 0, 0, 0
 	}
 	off := bumpOffset(anim.Elapsed(m.bump.start, now, bumpDuration))
-	return int(math.RoundToEven(off * 2 * float64(m.bump.dx))), int(math.RoundToEven(off * float64(m.bump.dy)))
+	dx = int(math.RoundToEven(off * bumpCols * float64(m.bump.dx)))
+	if m.bump.dy == 0 {
+		return dx, 0, 0
+	}
+	p := int(math.RoundToEven(off * bumpRows * 8)) // 壁の方へ何 1/8 行か (跳ね返りでは負)
+	n := p / 8
+	if p%8 < 0 { // 負は床へ寄せる (帯は常に壁の側に置き、端数は 0..7 にする)
+		n--
+	}
+	return dx, n * m.bump.dy, p - n*8
 }
 
-// overlayBump は揺れているレーンの帯をずらす。はみ出した分は切る (左右の端の外・ボードの上端の外)。
-// 下へずれるときは、ボードが rows 行より短ければ 1 行伸ばして下枠を残す (rows を超えて伸ばすと画面が 1 行増える。
-// 画面が低いと shownCards の下限 1 枚でボードの下の空き行が無くなるので、そのときは下枠を切る)。
-func (m *Model) overlayBump(board []string, rows int) []string {
-	dx, dy := m.bumpShift(m.now())
-	if dx == 0 && dy == 0 {
-		return board
+// lowerEighths は下から k/8 を塗るブロック (k = 1..7)。
+var lowerEighths = []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇"}
+
+// overlayBump は揺れているレーンの帯をずらす。screen はヘッダから下端までの全行で、ボードは top 行目から h 行。
+// 帯はヘッダや下の群の上にも乗る (ボードの中で切るとヘッダの下に潜って見えた)。画面の外にはみ出した分は切る。
+func (m *Model) overlayBump(screen []string, top, h int) []string {
+	dx, dy, eighths := m.bumpShift(m.now())
+	if h == 0 || dx == 0 && dy == 0 && eighths == 0 {
+		return screen
 	}
 	w := m.colWidth()
 	x0 := m.bump.col * (w + len(colSep))
-	total := 0
-	for _, l := range board {
-		total = max(total, ansi.StringWidth(l))
-	}
-	if dy > 0 && len(board) < rows {
-		board = append(board, strings.Repeat(" ", total))
-	}
-	band := make([]string, len(board))
-	for r, l := range board {
+	total := m.width
+	band := make([]string, h)
+	for r := range h {
+		l := fit(screen[top+r], total)
 		band[r] = fit(ansi.Cut(l, x0, x0+w), w)
-		board[r] = splice(l, x0, w, strings.Repeat(" ", w))
+		screen[top+r] = splice(l, x0, w, strings.Repeat(" ", w))
 	}
-	for r := range board {
-		src := r - dy
-		if src < 0 || src >= len(band) {
+	for r, s := range band {
+		y, x := top+r+dy, x0+dx
+		if y < 0 || y >= len(screen) {
 			continue
 		}
-		s, x := band[src], x0+dx
 		if x < 0 {
 			s, x = ansi.Cut(s, -x, w), 0
 		}
 		if x+w > total {
 			s = ansi.Cut(s, 0, total-x)
 		}
-		board[r] = splice(board[r], x, ansi.StringWidth(s), s)
+		screen[y] = splice(fit(screen[y], total), x, ansi.StringWidth(s), s)
 	}
-	return board
+	if eighths == 0 {
+		return screen
+	}
+	// 端数の帯: 上へぶつかったら帯の上の行に下から、下へぶつかったら帯の下の行に上から塗る (上から塗る 1/8 ブロックは
+	// 無いので、下から (8-k)/8 のブロックを反転して描く)。幅は枠の角の内側、色はレーンの枠と同じ
+	y, bar := top+dy+h, sgrReverse+fg(m.laneColor(m.bump.col))+strings.Repeat(lowerEighths[7-eighths], w-2)
+	if m.bump.dy < 0 {
+		y, bar = top+dy-1, fg(m.laneColor(m.bump.col))+strings.Repeat(lowerEighths[eighths-1], w-2)
+	}
+	if y >= 0 && y < len(screen) {
+		screen[y] = splice(fit(screen[y], total), x0+1, w-2, bar)
+	}
+	return screen
 }
