@@ -44,7 +44,7 @@ pro-con (`src/pro-con` と、それが使う `src/tuikit` / `src/procsup`) の�
 
 #### issue にしたもの
 
-- [528](../528-perf-pro-con-tick-rereads-record-after-busy-day.md): 完了して 24 時間以内のカードが溜まる日は、Tick 1 回が 25ms・11.7MB (478 の見送りの前提が崩れた)。
+- [528](528-perf-pro-con-tick-rereads-record-after-busy-day.md): 完了して 24 時間以内のカードが溜まる日は、Tick 1 回が 25ms・11.7MB (478 の見送りの前提が崩れた)。
   「1 Tick で記録を十数回読む」「状態の変わったカードごとに `store.Update` が全体を読み書きする」の 2 候補をこの 1 件にまとめた
 - [529](529-perf-pro-con-diff-panel-rebuilds-all-rows-every-view.md): 差分の板は描くたびに全行 (最大 5000 行) を組み直す (1 描画 5.6ms・3.6MB。板を閉じた画面は 0.6ms)
 
