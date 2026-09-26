@@ -605,7 +605,7 @@ func TestCardAddWaitsForCardID(t *testing.T) {
 	// 2. 除けられる依頼 (題名も原文も空白だけ。parseCardWait は通らない形なので直接置く)
 	ch = run(func() (int, string, string) {
 		var o, e bytes.Buffer
-		rc := addAndWait(dir, store.Request{Kind: "add", Title: " "}, 10*time.Second, &o, &e)
+		rc := submitAndWait(dir, "add", func() (string, error) { return store.Submit(dir, store.Request{Kind: "add", Title: " "}) }, 10*time.Second, &o, &e)
 		return rc, o.String(), e.String()
 	})
 	waitUntil(t, "add が箱に置かない", func() bool { return inboxCount(dir) == 1 })

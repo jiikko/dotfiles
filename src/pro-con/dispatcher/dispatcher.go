@@ -1068,6 +1068,11 @@ const DraftIssueName = "new-<type>-<slug>.md"
 const draftIssueRule = "- issue を起票するときは番号を取らない (issue 規約の採番より優先する)。`issues/<置き場>/" + DraftIssueName + "` の名前で書き、" +
 	"見出しは `# new (<type>): <題>`、他のファイルや commit の subject からはこのファイル名で指す。next/ で claim しない (番号は取り込みの係が push の直前に付ける)\n"
 
+// CardRCRule は `pro-con card` の rc の読み方 (issue 542)。PG の指示と、PM・取り込みの係の指示書 (目印の行を置き換える) の正本。
+const CardRCRule = "`pro-con card` の箱に置く操作 (add / plan / ask / answer / run / attach / review / rework / order / close 等) は、dispatcher の適用を待って返る。" +
+	"rc=1 は dispatcher が除けた (stderr に「除けた: <理由>」。カードは変わっていない) か、受付の箱に置けなかった (「受付の箱に置けない」) ので、stderr を読んで扱う " +
+	"(`pro-con card show <カード>` で今の列を見る)。rc=3 は適用を確かめられなかった (まだ箱にあることも、もう適用されたこともある) ので、打ち直す前に `pro-con card show <カード>` で確かめる"
+
 // Prompt は PG に渡す最初の指示。PG の規律 (426 の決定 2・3) を前に置き、依頼の中身を後ろに置く。
 // rv は敵対的レビューの担い手 (issue 514。起動のときの値。起動した後に設定を変えても、動いている PG の指示は変わらない)。
 func Prompt(c card.Card, rv Review) string {
@@ -1092,6 +1097,7 @@ func Prompt(c card.Card, rv Review) string {
 	}
 	b.WriteString(draftIssueRule)
 	fmt.Fprintf(&b, "- 終えたら `pro-con card review %s` を実行してから turn を終える\n", c.ID)
+	b.WriteString("- " + CardRCRule + "\n")
 	if len(c.Issues) > 0 {
 		var refs []string
 		for _, r := range c.Issues {

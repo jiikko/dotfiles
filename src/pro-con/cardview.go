@@ -607,30 +607,27 @@ func watchDir(ctx context.Context, dir string, warn io.Writer, cond func() (bool
 	}
 }
 
-// addAndWait は add の依頼を置き、dispatcher が適用するまで待ってカード ID を返す。除けられた (記録の Rejected に載った) ら rc=1 で理由を返す。
+// submitAndWait は依頼を置き (submit)、dispatcher が適用するか除けるまで待つ (issue 542。add だけでなく、箱に置く操作はすべて)。
+// 適用されたら rc=0 で、add はこの依頼から作られたカードの ID、ほかの操作は依頼 ID を出す。除けられた (記録の Rejected に載った) ら rc=1 で理由を出す。
 // 🚨 待てなければ依頼 ID を返して rc=exitNotApplied (そう言う)。rc=0 にしない: `C=$(pro-con card add …)` を続けて `card plan "$C"` に
-// 渡すと、plan も箱には置けて (rc=0)、dispatcher が後で「カードが無い」と除けるまで誰も気づかない (敵対的レビュー 2026-09-25 P2)
-func addAndWait(dir string, req store.Request, timeout time.Duration, stdout, stderr io.Writer) int {
-	reqID, err := store.Submit(dir, req)
+// 渡すと、plan も箱には置けて (rc=0)、dispatcher が後で「カードが無い」と除けるまで誰も気づかない (敵対的レビュー 2026-09-25 P2)。
+// 列の合わない close も同じで、rc=0 で返すと打った側は log を見るまで除けられたと気づけない (542)。timeout が 0 なら待たずに依頼 ID (rc=0)
+func submitAndWait(dir, op string, submit func() (string, error), timeout time.Duration, stdout, stderr io.Writer) int {
+	reqID, err := submit()
 	if err != nil {
-		_, _ = fmt.Fprintln(stderr, "pro-con card: 受付の箱に置けない:", err)
+		_, _ = fmt.Fprintf(stderr, "pro-con card %s: 受付の箱に置けない: %v\n", op, err)
 		return 1
 	}
 	if timeout <= 0 {
 		_, _ = fmt.Fprintln(stdout, reqID)
 		return 0
 	}
+	var applied bool
 	var cardID, rejected string
 	err = waitFor(dir, timeout, stderr, func() (bool, error) {
 		st, err := store.Load(dir)
 		if err != nil {
 			return false, err
-		}
-		for _, c := range st.Cards {
-			if c.FromRequest == reqID {
-				cardID = c.ID
-				return true, nil
-			}
 		}
 		for _, r := range st.Rejected {
 			if r.ID == reqID {
@@ -638,28 +635,42 @@ func addAndWait(dir string, req store.Request, timeout time.Duration, stdout, st
 				return true, nil
 			}
 		}
-		return false, nil
+		if !slices.Contains(st.Applied, reqID) {
+			return false, nil
+		}
+		applied = true
+		for _, c := range st.Cards {
+			if c.FromRequest == reqID {
+				cardID = c.ID
+			}
+		}
+		return true, nil
 	})
 	switch {
 	case rejected != "":
-		_, _ = fmt.Fprintf(stderr, "pro-con card add: dispatcher が依頼 %s を除けた: %s\n", reqID, rejected)
+		_, _ = fmt.Fprintf(stderr, "pro-con card %s: dispatcher が依頼 %s を除けた: %s\n", op, reqID, rejected)
 		return 1
+	case applied && op != "add":
+		_, _ = fmt.Fprintln(stdout, reqID)
+		return 0
 	case cardID != "":
 		_, _ = fmt.Fprintln(stdout, cardID)
 		return 0
 	}
-	// 時間切れ・読めない: 依頼は箱に残っている (dispatcher が動けば後で適用される)。依頼 ID を返して、そう言う
-	// (カードに元の依頼 ID を書かない古い dispatcher が動いている間も、適用はされるがここは当たらない)
-	why := "dispatcher が動いていないか、元の依頼 ID をカードに書かない古い dispatcher が動いている (再起動すると直る)"
-	if err != nil && !errors.Is(err, errWaitTimeout) {
+	// 時間切れ・読めない: 依頼はまだ箱にあるか、読めない間に適用・除けされた。依頼 ID を返して、確かめられなかったと言う
+	why := "dispatcher が動いていない"
+	switch {
+	case applied: // add は適用されたが、カードに元の依頼 ID を書かない古い dispatcher が動いている
+		why = "カードに元の依頼 ID を書かない古い dispatcher が動いている (再起動すると直る)"
+	case err != nil && !errors.Is(err, errWaitTimeout):
 		why = err.Error()
 	}
-	_, _ = fmt.Fprintf(stderr, "pro-con card add: %v 待っても適用を確かめられないので、カード ID の代わりに依頼 ID を返す (rc=%d。%s。pro-con card list で確かめる)\n", timeout, exitNotApplied, why)
+	_, _ = fmt.Fprintf(stderr, "pro-con card %s: %v 待っても適用を確かめられないので、依頼 ID を返す (rc=%d。%s。pro-con card list で確かめる)\n", op, timeout, exitNotApplied, why)
 	_, _ = fmt.Fprintln(stdout, reqID)
 	return exitNotApplied
 }
 
-// exitNotApplied は add が適用を確かめられなかったときの rc (依頼は箱に置いた。使い方の誤り 2・失敗 1 と分ける)。
+// exitNotApplied は箱に置いた依頼の適用を確かめられなかったときの rc (依頼は箱に置いた。使い方の誤り 2・失敗 1 と分ける)。
 const exitNotApplied = 3
 
 func parseIDAndJSON(op string, args []string, stderr io.Writer) (string, bool, bool) {

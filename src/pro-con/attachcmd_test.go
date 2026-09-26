@@ -27,7 +27,7 @@ func TestCardAttachRoundTrip(t *testing.T) {
 	if err := os.WriteFile(shot, []byte("png"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if rc, out, e := card_(t, dir, "attach", "C-001", shot, "--note", "詳細の引き出し"); rc != 0 || strings.TrimSpace(out) == "" {
+	if rc, out, e := card_(t, dir, "attach", "C-001", shot, "--note", "詳細の引き出し", "--wait", "0"); rc != 0 || strings.TrimSpace(out) == "" {
 		t.Fatalf("attach: rc=%d out=%q err=%q", rc, out, e)
 	}
 	mustApply(t, dir)
@@ -93,7 +93,7 @@ func TestPromptAttachCommandParses(t *testing.T) {
 		}
 		for _, m := range ms {
 			line := regexp.MustCompile(`<[^>]*>`).ReplaceAllString(m[1], "x")
-			id, file, note, err := parseAttach(splitQuoted(strings.TrimPrefix(line, "pro-con card attach ")))
+			id, file, note, _, err := parseAttach(splitQuoted(strings.TrimPrefix(line, "pro-con card attach ")))
 			if err != nil || id != "C-007" || file != "x" || note == "" {
 				t.Fatalf("%+v: %s → id=%q file=%q note=%q err=%v", rv, m[1], id, file, note, err)
 			}
