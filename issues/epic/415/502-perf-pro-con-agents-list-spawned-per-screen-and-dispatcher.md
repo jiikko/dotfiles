@@ -45,4 +45,12 @@ session の一覧 `claude agents --json` (node のプロセス) を、dispatcher
 
 - [x] 実測 (上の表)
 - [x] 反証レビュー (読み取り専用のサブエージェント 1 体): 起動の経路と周期は反証されず。`dispatcherStopped` が一覧を使うという注記は誤りだったので直した
-- [ ] 対応方針の要否と形を決める
+- [x] 画面が dispatcher の一覧を使う (commit「pro-con: 画面は dispatcher が書いた一覧と出力の末尾を読む (502・503)」):
+  dispatcher は tick で一覧を取って登録した後に `store.Seen` (`seen.json`: 一覧と、pro-con が起動した session の出力の末尾) を書く
+  (`dispatcher/doing.go` の `publishSeen`)。画面の `refresh` は、これが `seenFresh` (15 秒 = tick 3 秒 + 一覧の上限 10 秒) より新しければ使い、
+  自分では `claude agents --json` も transcript も読まない。古い・無い (dispatcher が回っていない・一覧を取れない) ときは今までどおり自分で読む。
+  「pro-con が起動した session」の判定は `live.OwnedSessions` に寄せ、画面と dispatcher が同じものを使う。
+  テスト: `TestRefreshUsesFreshSeenFromDispatcher` (新しい / 古い) と `TestTickPublishesSeenForScreens`。`bin/mutate-verify` で
+  画面が記録を使わない / 古さを見ない / tick が書かない / 外の session の出力も載せる / 出力の末尾を切らない の 5 本が red
+- [ ] 実機で 15 秒間の起動数を測り直す (画面と dispatcher が新しいビルドで起動し直した後。見込みは dispatcher の分だけ = 画面の数によらず約 0.33 回/秒。未実測)
+- 残り: `AttachCommand` (attach の直前の照合) は今も画面が自分で一覧を取る (操作のたびの 1 回で、3 秒ごとではないので残す)

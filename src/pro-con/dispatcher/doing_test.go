@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -222,5 +223,30 @@ func TestParsePSTabSeparated(t *testing.T) {
 	ps := parsePS("101\t1\t01:02\tsleep 9\n")
 	if len(ps) != 1 || ps[0].PID != 101 || ps[0].Command != "sleep 9" {
 		t.Fatalf("タブ区切りの行: %+v", ps)
+	}
+}
+
+// tick は画面のために、取った一覧と pro-con が起動した session の出力の末尾 (新しい live.LogOutputs 個) を store.Seen に書く (issue 502 / 503)。
+// 外の session の出力は載せない (transcript も読まない。newDoingRig の Transcript が外の session を読んだら落とす)。
+func TestTickPublishesSeenForScreens(t *testing.T) {
+	r := newDoingRig(t)
+	r.tr = live.Transcript{Outputs: []string{"1", "2", "3", "4"}}
+	now := time.Date(2026, 9, 26, 10, 0, 0, 0, time.UTC)
+	r.d.Now = func() time.Time { return now }
+	if _, err := r.d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	seen, err := store.LoadSeen(r.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !seen.At.Equal(now) || len(seen.Sessions) != 2 {
+		t.Fatalf("一覧を書いていない: at %v / %d 本", seen.At, len(seen.Sessions))
+	}
+	if got := seen.Logs["s1"]; !slices.Equal(got, []string{"2", "3", "4"}) {
+		t.Fatalf("pro-con が起動した session の出力の末尾: %v (期待 [2 3 4])", got)
+	}
+	if _, ok := seen.Logs["s2"]; ok {
+		t.Fatalf("外の session の出力を載せた: %v", seen.Logs)
 	}
 }

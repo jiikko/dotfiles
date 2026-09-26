@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"pro-con/agents"
 )
 
 // RegistryFile は記録のファイル名 (本物のモードの状態の置き場の下。模擬とは別の場所)。
@@ -171,6 +173,18 @@ func writeRows(path string, cur []Owned) error {
 		return err
 	}
 	return nil
+}
+
+// OwnedSessions は一覧のうち pro-con が起動した session (短い id → session)。画面の読み直しと、dispatcher が画面のために書く
+// 出力の末尾 (store.Seen) が同じ判定を使う。
+func OwnedSessions(reg []Owned, ss []agents.Session) map[string]agents.Session {
+	out := map[string]agents.Session{}
+	for _, s := range ss {
+		if s.ID != "" && owns(reg, s.SessionID, s.ID, s.PID) {
+			out[s.ID] = s
+		}
+	}
+	return out
 }
 
 // owns は記録に session があるか。記録の 1 行にある欄 (SessionID / ID) が**全部**一致し、PID も一致したときだけ持っていると見なす

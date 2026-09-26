@@ -98,6 +98,13 @@ type cardActivity struct {
 	items []backend.Activity
 }
 
+// LogOutputs はカードに出す PG の出力の末尾の数 (画面が自分で読むときも、dispatcher が store.Seen に書くときも同じ)。
+const LogOutputs = 3
+
+// seenFresh は dispatcher が書いた一覧 (store.Seen) を今の様子として使う古さの上限。dispatcher の tick (3 秒) と、一覧の取得の上限
+// (agents.Timeout = 10 秒) を足した余裕。これより古ければ画面が自分で読む。
+const seenFresh = 15 * time.Second
+
 // activityKeep は画面が 1 枚のカードについて持つ活動の上限 (古いものから捨てる。全部は pro-con card log で読める)。
 const activityKeep = 1000
 
@@ -490,7 +497,14 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 	}
 	now := b.now()
 	var extra []card.Violation
-	if withList || !b.listed {
+	// dispatcher が書いた一覧と出力の末尾が新しければ使い、自分では claude agents も transcript も読まない (issue 502 / 503)。
+	// 古い・無い (dispatcher が回っていない・一覧を取れていない) ときだけ自分で読む (正しさを dispatcher に預けない)
+	seen, seenErr := store.LoadSeen(b.dir)
+	fresh := seenErr == nil && !seen.At.IsZero() && now.Sub(seen.At) <= seenFresh
+	switch {
+	case fresh:
+		b.ss, b.ssErr, b.listed = seen.Sessions, nil, true
+	case withList || !b.listed:
 		b.ss, b.ssErr, b.listed = nil, nil, true
 		b.ss, b.ssErr = b.list(ctx)
 	}
@@ -498,12 +512,7 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 	if err != nil {
 		extra = append(extra, card.Violation{Reason: "session の一覧を取れない (PG の様子は古いまま): " + err.Error()})
 	}
-	owned := map[string]agents.Session{} // 短い id → pro-con が起動した session
-	for _, s := range ss {
-		if s.ID != "" && owns(reg, s.SessionID, s.ID, s.PID) {
-			owned[s.ID] = s
-		}
-	}
+	owned := OwnedSessions(reg, ss)
 	// PG が今走らせているもの・進捗・取り込みの衝突 (dispatcher と見張りが集める。画面は ps も git も transcript の全体も読まない = 473 / 469)
 	derived, errs := store.LoadDerived(b.dir)
 	for _, err := range errs {
@@ -518,8 +527,11 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 		if c.Session == "" || !ok {
 			continue // 記録に無い session (外のもの) の様子は足さない
 		}
-		if t := b.transcript(s.SessionID); len(t.Outputs) > 0 {
-			cards[i].Log = slices.Clip(tail(t.Outputs, 3)) // Outputs は transcript のキャッシュと共有 (append で書き込ませない) // LastProgress は dispatcher の watchdog だけが書く (活動と進捗を分けて判定するため)
+		// LastProgress は dispatcher の watchdog だけが書く (活動と進捗を分けて判定するため)
+		if fresh {
+			cards[i].Log = seen.Logs[s.ID]
+		} else if t := b.transcript(s.SessionID); len(t.Outputs) > 0 {
+			cards[i].Log = slices.Clip(tail(t.Outputs, LogOutputs)) // Outputs は transcript のキャッシュと共有 (append で書き込ませない)
 		}
 		if c.State == card.Running || c.WaitsOnPrompt() { // 入力待ちで止まった PG も生きていて枠を使う (dispatcher と同じ = card.HoldsPGSlot)
 			cons = append(cons, backend.Consumer{Session: s.ID, CardID: c.ID, Status: s.Status, PID: s.PID})

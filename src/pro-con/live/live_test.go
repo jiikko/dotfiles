@@ -960,3 +960,34 @@ func TestResumeReleasesHoldThenStarts(t *testing.T) {
 		t.Fatalf("印を外したことを出来事に置かない: %q", got)
 	}
 }
+
+// dispatcher が書いた一覧と出力の末尾 (store.Seen) が新しければ、画面は自分で claude agents も transcript も読まない (issue 502 / 503)。
+// 古ければ (dispatcher が回っていない) 自分で読む。境目は seenFresh。
+func TestRefreshUsesFreshSeenFromDispatcher(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		age   time.Duration
+		fresh bool
+	}{{"新しい", seenFresh - time.Second, true}, {"古い", seenFresh + time.Second, false}} {
+		b, reads := testBackend(t, sessions[:1], nil) // bbbbbbbb が pro-con の記録にある
+		lists := 0
+		b.list = func(context.Context) ([]agents.Session, error) { lists++; return sessions[:1], nil }
+		runningCard(t, b, "C-001", "bbbbbbbb")
+		seen := store.Seen{At: b.now().Add(-tc.age), Sessions: sessions[:1], Logs: map[string][]string{"bbbbbbbb": {"dispatcher が読んだ出力"}}}
+		if err := store.SaveSeen(b.dir, seen); err != nil {
+			t.Fatal(err)
+		}
+		b.Refresh(context.Background())
+		s := b.Poll()
+		if got := lists > 0 || *reads > 0; got == tc.fresh {
+			t.Fatalf("%s: 一覧 %d 回・transcript %d 回読んだ (dispatcher の記録を使うはず = %v)", tc.name, lists, *reads, tc.fresh)
+		}
+		fromSeen := len(s.Cards) == 1 && len(s.Cards[0].Log) == 1 && s.Cards[0].Log[0] == "dispatcher が読んだ出力"
+		if fromSeen != tc.fresh {
+			t.Fatalf("%s: カードの出力の末尾 %v (dispatcher の記録から = %v)", tc.name, s.Cards[0].Log, tc.fresh)
+		}
+		if len(s.Consumers) != 1 || s.Consumers[0].PID != 102 {
+			t.Fatalf("%s: PG の一覧が出ない: %+v", tc.name, s.Consumers)
+		}
+	}
+}

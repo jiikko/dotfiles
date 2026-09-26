@@ -222,6 +222,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 		notes = append(notes, ev(eventlog.KindRegister, "", "", fmt.Sprintf("PG の session を %d 本登録した", n)))
 	}
 	notes = append(notes, warn...)
+	d.publishSeen(now, ss) // 登録の後 (この tick で登録した PG の出力も載せる)
 	if err := d.trackDead(now, ss); err != nil {
 		return notes, err
 	}

@@ -47,5 +47,5 @@ dispatcher も同じ transcript を読んでいて、画面より条件が悪い
   共有するスライスへ append させないよう、末尾を切り出す 2 か所 (`btw.go` の `tailOf`・画面の `Log`) は `slices.Clip` で返す。
   テスト: `live/transcriptcache_test.go` の 3 本と `TestTranscriptReaderReusesUnchangedTranscript`。`bin/mutate-verify` で 6 本の変異
   (キャッシュを当てない / 更新時刻を見ない / 失敗を覚える / 上限を外す / 使った順を更新しない / dispatcher がキャッシュを迂回する) が red
-- [ ] 画面が transcript を読まずに済むようにする (502 と一緒に、dispatcher が集めた直近の出力を画面が読む)
+- [x] 画面が transcript を読まずに済むようにする (502 と同じ commit。dispatcher が `store.Seen` に書いた出力の末尾を読む。dispatcher が回っていないときだけ画面が自分で読む)
 - [ ] (見送り) 差分読み: 変わったときの 1 回の解析は残る。上の 2 つの後に測って要否を決める
