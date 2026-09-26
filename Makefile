@@ -18,6 +18,7 @@ ZSH_SYNTAX_FILES := \
   bin/lib/go_autobuild.zsh \
   bin/lockman \
   bin/pro-con \
+  bin/ratelimit \
   bin/repair-mp4-timebase \
   bin/svcdoctor \
   bin/schedkeys \

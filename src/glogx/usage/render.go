@@ -35,11 +35,7 @@ func renderWindows(s *Snapshot) []Window {
 // RenderLine は Snapshot を 1 行のステータス文字列へ整形する。純関数 (テスト容易)。
 // 単独コマンドやコンパクト表示用。複数行モーダルには RenderRows を使う。
 //
-// 🚨 **production からの呼び出しは 0 件** (実測 2026-09-08 / issue 316)。生きているのは
-// `RenderTableGroups` (usage_overlay.go) と `RenderDashboard` (ratelimit_dashboard.go) の 2 本。
-// 消さないのは、①1 行整形は単独コマンド用の入口として意味がある ②消すとテストごと失われる
-// (`refuse-low-value-coverage.md`「テストの削除は守るものを減らす変更」) から。
-// **このクラス (テストからしか呼ばれない public) を機械で検出する話は issue 315** が持つ。
+// 単独コマンド cmd/ratelimit (bin/ratelimit) の表示に使う。glogx 本体は使わない。
 // 例: "5h:[▱▱▱▱▱▱▱▱▱▱]2%(残:4時間39分 / 7月22日03:09) 7d:[▰▰▰▱▱▱▱▱▱▱]28%(残:2日9時間 / 7月24日07:59)"
 func RenderLine(s *Snapshot, now time.Time, colored bool) string {
 	if s == nil {

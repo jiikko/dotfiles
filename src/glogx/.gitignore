@@ -6,3 +6,6 @@
 # go test -c / go test -o が置くテストバイナリ (17MB 級)。`go test` 単体では作られないが、
 # ベンチや個別実行で -c を使うと untracked で現れる (実際に glogx.test が残った 2026-08-13)。
 /*.test
+# go_autobuild が cmd/<name>/ に置く成果物と作業ファイル (bin/ratelimit)
+/cmd/ratelimit/ratelimit
+/cmd/*/.autobuild.*

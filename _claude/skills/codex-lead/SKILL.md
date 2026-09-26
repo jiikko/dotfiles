@@ -6,6 +6,8 @@ description: タスク着手時に codex にリードしてもらうワークフ
 
 # Codex Lead（codex に設計をリードさせる）
 
+> **起動したら最初に codex の枠を見る** (`ratelimit -source codex -check`。rc=1 のときの扱いは `subagent-model-tiering.md` の「枠の残量」)。
+
 タスク着手時に **codex に設計・方針をリード（主導）してもらい**、その方針に沿って Claude が実装し、実装後に codex でレビューするワークフロー。
 
 Claude が先に設計を決めるのではなく、**最初に codex に「どう設計・実装すべきか」を主導させる**のがこのスキルの本質。codex の方針を土台に実装を進める。
