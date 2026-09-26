@@ -39,7 +39,7 @@ bin/pro-con stats [--since 30d] [--by points|repo|week|all] [--json]  # 閉じ�
 bin/pro-con monitor [--once] [--interval 1m]  # 見張り (issue 475)。dispatcher が子として起こし、落ちたら起こし直し (30 分に 3 回まで)、抜けるときに止める (手で起動しなくてよい。2 つ起動しない = monitor.lock)。
                          # PG の commit 済みの分を git merge-tree で origin/master と・PG どうしで突き合わせた衝突と、テストの順番の長さ (3 本以上か先頭が 30 分以上) を見る。
                          # 読むだけ (git fetch もしない) で、見つけた・消えたときだけ受付の箱に置き、dispatcher が出来事 (pro-con log の monitor) に書く。e2e モードと --once の dispatcher では起こさない
-bin/pro-con worktree clean [--remote] [--yes]  # 閉じたカードの PG の worktree を片付ける (issue 492)。既定は一覧 (消してよい / 消さないと理由) を出すだけ。--yes で 1 個ずつ、記録・session・git を取り直して判定し直してから消す。
+bin/pro-con worktree clean [--yes]  # 閉じたカードの PG の worktree を片付ける (issue 492)。既定は一覧 (消してよい / 消さないと理由) を出すだけ。--yes で 1 個ずつ、記録・session・git を取り直して判定し直してから消す。
                          # 消すのは: カードが完了して PG を止め終え、その中に session もプロセス (lsof の cwd) も居らず、未 commit の変更・skip-worktree の印・下の worktree が無く、
                          # 無視されたファイルが空のディレクトリか autobuild の産物だけで、先端が origin/master (origin/HEAD は見ない) の祖先か、git cherry が全部 - で空白まで同じ patch (patch-id --verbatim) があるもの。
                          # reflog にしか無い取り込んでいない版は refs/pro-con/removed/<名前>/<sha> に残してから消す (git for-each-ref refs/pro-con/removed で見る)。
@@ -48,9 +48,6 @@ bin/pro-con worktree clean [--remote] [--yes]  # 閉じたカードの PG の wo
                          # (~/.claude/projects/*/<id>.jsonl と <id>/。中にその worktree を cwd にした記録があるものだけ)・claude の job (`claude rm <短い id>`。
                          # job の cwd・worktree・ブランチがカードのものだけ)・起動の記録の行と印 (受付の箱に forget を置き、dispatcher が消す)。自動では消さない
                          # master に無い commit があるもの・記録に無いもの・PM と取り込みの係の worktree・人が掛けた lock は消さない。Claude Code が残した lock は外して消す (消せなければ掛け直す)。判定は wtclean.Judge (設定画面 456 の内訳も同じ関数を呼ぶ)
-                         # --remote で origin の PG のブランチ (worktree-pc-<カード>。-r1 などの作り直した版は元のカード) も並べる (issue 533。git fetch --prune で取り直してから)。
-                         # 消すのは、完了して PG を止め終えたカードのブランチで、中身が origin/master にある (上と同じ inBase) ものだけ。--yes で 1 本ずつ fetch --prune で
-                         # 取り直して判定し直し、判定した先端を lease にして push で消し (`--force-with-lease=refs/heads/<b>:<sha>`)、ls-remote で消えたかを確かめる
 bin/pro-con --e2e <dir>  # e2e モード: 画面・dispatcher・受付の箱・記録は本物、PG と PM だけ台本どおりの偽物 (claude を起動しない。利用枠を使わない)
 bin/pro-con e2e <start|keys|text|screen|wait|stop|scenario> <dir> ...  # Claude が e2e モードの画面を操作する口 (隔離した tmux サーバで動かす)
 bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンドを頼む。dispatcher が PG の worktree で 1 本ずつ順に実行し、結果を渡して PG を再開する (失敗は haiku が要約し、1 行目に一次判定 = この変更のせい / 負荷・環境 / 前から / 判定できない を書く。見込みで証拠ではない。枠 95% 以上で始めた実行は要約しない。issue 475)。repo の lock (`<git の共通ディレクトリ>/pro-con-locks/test`) を `lockman with` で取って走らせ、外が持っていれば「pro-con の外が使用中」で待つ (issue 471)
@@ -379,7 +376,7 @@ issue の読み方 (状態 = ファイルの位置、`epic/<name>/` の 2 段、
 | `ui` | bubbletea v2 の TUI。状態は持たない (Snapshot を描き、Command を送るだけ) |
 | `monitor` | 見張り (`pro-con monitor`。issue 475)。読むだけで、見つけたことは受付の箱に置く |
 | `metrics` | 閉じたカード 1 枚の所要の行 (列ごとの時間・回数・PG の枠) と、束ねた集計 (`pro-con stats`。issue 516)。読み書きは `store/metrics.go` |
-| `wtclean` | 閉じたカードの PG の worktree と session の判定と片付け (`pro-con worktree clean`。issue 492 / 497。origin の PG のブランチは 533)。消す操作はここだけ |
+| `wtclean` | 閉じたカードの PG の worktree と session の判定と片付け (`pro-con worktree clean`。issue 492 / 497)。消す操作はここだけ |
 | `gitx` | git を呼ぶ共通の口 (継承した `GIT_DIR` などを外す。monitor と wtclean が使う) |
 
 - `fake` の dispatcher / watchdog / リソース列は**模擬**で、本番の判定ではない。本番の判定を育てるなら fake から切り出す

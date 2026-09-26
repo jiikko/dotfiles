@@ -25,3 +25,11 @@
 ## 関連
 
 - 533 (`--remote` を入れた) / 521 (PG は push しない) / 522 (remote の手での片付け) / 492 (ローカルの worktree の片付け)
+
+## 進捗 (2026-09-27, C-094)
+
+- [x] `--remote` の口・処理・一覧 (`printRemoteVerdicts` / `countRemovableRemote`) とテスト (`TestWorktreeCleanRemote`) を外した
+- [x] `wtclean/remote.go` / `remote_test.go` を丸ごと外した。`sortedRepos` (remote.go にあり `Scan` も使っていた) は `Scan` の中の並べ方に戻した
+  - `src/pro-con/wtclean/` と `worktreecmd.go` / `worktreecmd_test.go` は 533 の直前 (b881272a^) と差分 0
+- [x] README / `help/usage.md` / `main.go` の冒頭のコメントから `--remote` を外した (`grep -rn -- --remote src/pro-con` で 0 件)
+- [ ] `make test` (pro-con) が緑
