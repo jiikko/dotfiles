@@ -43,7 +43,7 @@
   `TestShutdownTreatsFailedWithoutPIDAsStopped` (Shutdown がエラーで返る) の 2 本が red。戻して green
 - [x] 敵対レビュー (opus 1 本): 壊せなかった。呼び出し元の全数で挙動が変わるのは `stoppable` 経由 (ensureStopped / stillAlive /
   unregistered) と pm.go / e2e.go の skip だけで、requeueVanished (gone → stopTarget) は `Stopped()` を見ないので変わらない
-- [ ] 本番の dispatcher を起動し直して、5 本の止め直しが止まることを確認
+- [x] 本番の dispatcher を起動し直して、5 本の止め直しが止まることを確認 (2026-09-26 01:47 の `pro-con dispatcher --stop`: rc=0 で 1 回で抜けた。クラッシュ前の failed の 5 本を止め直した出来事は 0 件。止めたのはその時に動いていた PG 4 本と PM)
 
 ## 未確認リスク (敵対レビューの P2。推測)
 
