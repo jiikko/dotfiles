@@ -29,7 +29,7 @@ func TestLegendShowsEveryLane(t *testing.T) {
 			t.Fatalf("表の下でカンバンが動いた: %s → %s", sel, m.selected)
 		}
 		press(m, closeKey)
-		if m.legend || strings.Contains(ansi.Strip(m.render()), "レーンの意味 ") {
+		if m.legend || strings.Contains(ansi.Strip(m.render()), "レーンと役の意味") {
 			t.Fatalf("%s で表が閉じない", closeKey)
 		}
 	}
@@ -65,5 +65,37 @@ func TestLegendRowsFitPanel(t *testing.T) {
 				t.Fatalf("画面の幅 %d で %s の説明が欠けた", total, s.Label())
 			}
 		}
+	}
+}
+
+// 表に役 (プロセス) ごとの仕事が出る。画面より長ければ j で送って全部を読め、題に送りの位置が出る。背の高い画面では送らずに全部が出る。
+func TestLegendShowsEveryRole(t *testing.T) {
+	m := New(newSpy(), nil)
+	m.width, m.height = 120, 30
+	press(m, "?")
+	first := ansi.Strip(m.render())
+	if !strings.Contains(first, "j / k で送る") {
+		t.Fatalf("画面より長い表で、送れることを題に出さない:\n%s", first)
+	}
+	seen := first
+	for range 60 {
+		press(m, "j")
+		seen += ansi.Strip(m.render())
+	}
+	for _, r := range roleMeanings {
+		if !strings.Contains(seen, r[0]) || !strings.Contains(seen, string([]rune(r[1])[:8])) {
+			t.Fatalf("表を送っても役 %s の仕事が出ない", r[0])
+		}
+	}
+	press(m, "g")
+	if got := ansi.Strip(m.render()); !strings.Contains(got, card.Columns[0].Label()) {
+		t.Fatalf("g で表の頭に戻らない:\n%s", got)
+	}
+	tall := New(newSpy(), nil)
+	tall.width, tall.height = 120, 120
+	press(tall, "?")
+	out := ansi.Strip(tall.render())
+	if strings.Contains(out, "j / k で送る") || !strings.Contains(out, roleMeanings[len(roleMeanings)-1][0]) {
+		t.Fatalf("背の高い画面で全部を出さない / 送りの案内を出す:\n%s", out)
 	}
 }
