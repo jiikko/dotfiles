@@ -8,6 +8,7 @@
 //	pro-con config …     止めずに PG の枠と PM の数を変える (受付の箱に置く。pro-con config で使い方)
 //	pro-con ps           pro-con が起動したプロセスを役ごとに出す (読むだけ)
 //	pro-con du           pro-con が作った物のディスクの使用量と内訳 (読むだけ。数秒かかる)
+//	pro-con worktree clean  閉じたカードの PG の worktree を片付ける (既定は一覧だけ。--yes で 1 個ずつ取り直して消す)
 //	pro-con dispatcher       本物のモードの dispatcher を常駐させる (PG を起動する。週の利用枠を使う)
 //	pro-con fake-attach  attach の代わりに TUI から起動される内部用のコマンド
 //
@@ -182,6 +183,21 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				return runPS(args[1:], liveDir(home), time.Now, execProcs, stdout, stderr)
 			}
 			return runConfig(args[1:], liveDir(home), stdout, stderr)
+		case "worktree": // 閉じたカードの PG の worktree を片付ける (issue 492。worktreecmd.go)
+			home, err := os.UserHomeDir()
+			if err != nil {
+				_, _ = fmt.Fprintln(stderr, "pro-con:", err)
+				return 1
+			}
+			if len(args) < 2 || args[1] != "clean" { // 使い方の誤りでは claude を解決しない
+				return runWorktree(args[1:], worktreeEnv{}, stdout, stderr)
+			}
+			env, err := realWorktreeEnv(home)
+			if err != nil {
+				_, _ = fmt.Fprintln(stderr, "pro-con worktree:", err)
+				return 1
+			}
+			return runWorktree(args[1:], env, stdout, stderr)
 		case "screen": // 人間の画面に今出ているものを外から読む (読むだけ。screencmd.go)
 			home, err := os.UserHomeDir()
 			if err != nil {

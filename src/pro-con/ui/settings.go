@@ -41,6 +41,9 @@ func (t settingsTab) label() string {
 	return ""
 }
 
+// settingsReverse は設定画面の選んだタブと値の反転 (設定画面だけで使うので ui の共通の定数にしない)。
+const settingsReverse = "\x1b[7m"
+
 // 設定のタブの行 (選ぶ行の順)。
 var configKeys = []string{backend.ConfigLimit, backend.ConfigPM}
 
@@ -337,7 +340,7 @@ func (m *Model) settingsPanel(rows int) []string {
 	var tabs []string
 	for _, t := range m.settingsTabs() {
 		if t == m.set.tab {
-			tabs = append(tabs, sgrReverse+sgrBold+" "+t.label()+" "+sgrReset)
+			tabs = append(tabs, settingsReverse+sgrBold+" "+t.label()+" "+sgrReset)
 		} else {
 			tabs = append(tabs, sgrDim+" "+t.label()+" "+sgrReset)
 		}
@@ -373,7 +376,7 @@ func (m *Model) configLines(w int) ([]string, int) {
 		val := fmt.Sprintf(" ‹ %d › ", v)
 		mark := "  "
 		if i == m.set.cursor {
-			val, mark, cur = sgrReverse+val+sgrReset, sgrCyan+"▸ "+sgrFgReset, len(out)
+			val, mark, cur = settingsReverse+val+sgrReset, sgrCyan+"▸ "+sgrFgReset, len(out)
 		}
 		if waiting {
 			note = sgrYellow + "適用待ち (dispatcher の次の Tick で効く)" + sgrFgReset + "  " + note

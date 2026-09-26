@@ -19,8 +19,6 @@ const (
 	sgrReset = "\x1b[0m"
 	sgrBold  = "\x1b[1m"
 	sgrDim   = "\x1b[2m"
-	// 反転 (文字色と背景色を入れ替える)。端末の背景色を知らずに「上から塗る」ブロックを描くのに使う (bump.go)
-	sgrReverse = "\x1b[7m"
 	// 下線の開始と終了 (終了だけを戻すので、帯の背景色や太字を消さない)
 	sgrUnderline   = "\x1b[4m"
 	sgrNoUnderline = "\x1b[24m"

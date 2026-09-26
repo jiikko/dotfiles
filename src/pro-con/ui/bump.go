@@ -60,34 +60,20 @@ const (
 	bumpRows = 2
 )
 
-// bumpShift は今のずれ。dx は桁、dy は行 (押した向きの符号)、eighths は壁の方へもう 1 行ぶん進んだ端数 (0..7、1/8 行単位)。
-// 文字は 1 行より細かくずらせないので、端数は帯の先 (壁の側) の 1 行に 1/8 ブロックの帯として描く (overlayBump)。
-// 見本と同じく偶数丸め (0.5 は 0 に寄せる)。
-func (m *Model) bumpShift(now time.Time) (dx, dy, eighths int) {
+// bumpShift は今のずれ (桁, 行)。見本と同じく偶数丸め (0.5 は 0 に寄せる)。
+func (m *Model) bumpShift(now time.Time) (int, int) {
 	if !m.bumping(now) {
-		return 0, 0, 0
+		return 0, 0
 	}
 	off := bumpOffset(anim.Elapsed(m.bump.start, now, bumpDuration))
-	dx = int(math.RoundToEven(off * bumpCols * float64(m.bump.dx)))
-	if m.bump.dy == 0 {
-		return dx, 0, 0
-	}
-	p := int(math.RoundToEven(off * bumpRows * 8)) // 壁の方へ何 1/8 行か (跳ね返りでは負)
-	n := p / 8
-	if p%8 < 0 { // 負は床へ寄せる (帯は常に壁の側に置き、端数は 0..7 にする)
-		n--
-	}
-	return dx, n * m.bump.dy, p - n*8
+	return int(math.RoundToEven(off * bumpCols * float64(m.bump.dx))), int(math.RoundToEven(off * bumpRows * float64(m.bump.dy)))
 }
-
-// lowerEighths は下から k/8 を塗るブロック (k = 1..7)。
-var lowerEighths = []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇"}
 
 // overlayBump は揺れているレーンの帯をずらす。screen はヘッダから下端までの全行で、ボードは top 行目から h 行。
 // 帯はヘッダや下の群の上にも乗る (ボードの中で切るとヘッダの下に潜って見えた)。画面の外にはみ出した分は切る。
 func (m *Model) overlayBump(screen []string, top, h int) []string {
-	dx, dy, eighths := m.bumpShift(m.now())
-	if h == 0 || dx == 0 && dy == 0 && eighths == 0 {
+	dx, dy := m.bumpShift(m.now())
+	if h == 0 || dx == 0 && dy == 0 {
 		return screen
 	}
 	w := m.colWidth()
@@ -111,18 +97,6 @@ func (m *Model) overlayBump(screen []string, top, h int) []string {
 			s = ansi.Cut(s, 0, total-x)
 		}
 		screen[y] = splice(fit(screen[y], total), x, ansi.StringWidth(s), s)
-	}
-	if eighths == 0 {
-		return screen
-	}
-	// 端数の帯: 上へぶつかったら帯の上の行に下から、下へぶつかったら帯の下の行に上から塗る (上から塗る 1/8 ブロックは
-	// 無いので、下から (8-k)/8 のブロックを反転して描く)。幅は枠の角の内側、色はレーンの枠と同じ
-	y, bar := top+dy+h, sgrReverse+fg(m.laneColor(m.bump.col))+strings.Repeat(lowerEighths[7-eighths], w-2)
-	if m.bump.dy < 0 {
-		y, bar = top+dy-1, fg(m.laneColor(m.bump.col))+strings.Repeat(lowerEighths[eighths-1], w-2)
-	}
-	if y >= 0 && y < len(screen) {
-		screen[y] = splice(fit(screen[y], total), x0+1, w-2, bar)
 	}
 	return screen
 }
