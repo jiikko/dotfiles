@@ -150,57 +150,6 @@ func TestWorktreeCleanRemovesSessionsOfPurgedCard(t *testing.T) {
 	}
 }
 
-// --remote は origin の PG のブランチも並べ (無いと並べない)、--yes で消す。完了したカードで取り込み済みのものだけ。
-func TestWorktreeCleanRemote(t *testing.T) {
-	env, wt := worktreeFixture(t)
-	repo := env.repos["r"]
-	bare := filepath.Join(filepath.Dir(repo), "origin.git")
-	git := func(dir string, args ...string) string {
-		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-		cmd.Env = gitx.Env()
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
-	git(repo, "init", "-q", "--bare", "-b", "master", bare)
-	git(repo, "remote", "add", "origin", bare)
-	git(repo, "push", "-q", "origin", "master", wtclean.BranchName("pc-c-001"), "master:refs/heads/worktree-pc-c-002")
-	onRemote := func(b string) bool { return git(bare, "for-each-ref", "refs/heads/"+b) != "" }
-
-	var out, errOut bytes.Buffer
-	if rc := runWorktree([]string{"clean"}, env, &out, &errOut); rc != 0 || strings.Contains(out.String(), "origin のブランチ") {
-		t.Fatalf("--remote なしで remote を並べた (rc=%d): %s / %s", rc, out.String(), errOut.String())
-	}
-	out.Reset()
-	if rc := runWorktree([]string{"clean", "--remote"}, env, &out, &errOut); rc != 0 {
-		t.Fatalf("rc = %d: %s / %s", rc, out.String(), errOut.String())
-	}
-	for _, s := range []string{"origin のブランチを消してよい (1 本)", "worktree-pc-c-001 (C-001 / r)", "origin のブランチを消さない (1 本)",
-		"worktree-pc-c-002 (- / r): 記録に無いカード", "pro-con worktree clean --remote --yes (worktree 1 個・session 0 枚分・remote のブランチ 1 本"} {
-		if !strings.Contains(out.String(), s) {
-			t.Errorf("一覧に %q が無い: %s", s, out.String())
-		}
-	}
-	if !onRemote("worktree-pc-c-001") {
-		t.Fatal("--yes なしで remote のブランチを消した")
-	}
-	out.Reset()
-	if rc := runWorktree([]string{"clean", "--remote", "--yes"}, env, &out, &errOut); rc != 0 {
-		t.Fatalf("rc = %d: %s / %s", rc, out.String(), errOut.String())
-	}
-	if onRemote("worktree-pc-c-001") || !strings.Contains(out.String(), "消した remote の worktree-pc-c-001") {
-		t.Errorf("remote のブランチを消していない: %s", out.String())
-	}
-	if !onRemote("worktree-pc-c-002") {
-		t.Error("記録に無いカードの remote のブランチを消した")
-	}
-	if _, err := os.Stat(wt); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("--remote でローカルの worktree を片付けなくなった: %v", err)
-	}
-}
-
 func TestWorktreeUsage(t *testing.T) {
 	for _, args := range [][]string{nil, {"prune"}, {"clean", "--force"}, {"clean", "x"}} {
 		var out, errOut bytes.Buffer

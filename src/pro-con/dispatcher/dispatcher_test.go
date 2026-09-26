@@ -262,6 +262,19 @@ func TestPromptCarriesDiscipline(t *testing.T) {
 	}
 }
 
+// 関わる issue があるカードの PG には、review の前に受け入れ条件の印と進捗を書かせ、done へは移させない (issue 539)。issue の無いカードには書かない。
+func TestPromptAsksIssueCheckmarksOnlyWithIssues(t *testing.T) {
+	const rule = "確かめた受け入れ条件の印"
+	p := Prompt(card.Card{ID: "C-007", Title: "t", Issues: []card.IssueRef{{Repo: "dotfiles", Number: 539}}}, Review{})
+	i, j := strings.Index(p, rule), strings.Index(p, "pro-con card review C-007")
+	if i < 0 || i > j || !strings.Contains(p, "done へは移さない") {
+		t.Fatalf("issue の印の行が無い / 「終えたら review」より後にある:\n%s", p)
+	}
+	if p := Prompt(card.Card{ID: "C-007", Title: "t"}, Review{}); strings.Contains(p, rule) {
+		t.Fatalf("issue の無いカードに印の行を書いた:\n%s", p)
+	}
+}
+
 // claude --bg の出力から短い id を読む。形が違えば読めないとエラーにする (空の id でカードを作業中にしない)。
 func TestParseBackgrounded(t *testing.T) {
 	if id, err := parseBackgrounded("backgrounded · 931e734d · m425-done\n  claude agents  list sessions\n"); err != nil || id != "931e734d" {

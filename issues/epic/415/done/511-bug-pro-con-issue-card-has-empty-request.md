@@ -2,7 +2,7 @@
 
 起票日: 2026-09-26
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 
@@ -40,10 +40,10 @@ PM が `plan --issue dotfiles#510` を付けても、`c.Repo` が空でないの
 
 ## 受け入れ条件
 
-- [ ] issue の一覧から補足なしで足したカードの `card show` に、原文 (意図の 1 文) と issue が出る。題名に番号が二重に出ない
-- [ ] epic を選んだときも親 issue が紐づく
-- [ ] 設定に無い repo の `card add` が rc≠0 で断られ、箱に置かれない。手で箱に置いた同じ依頼も Apply で断られる
-- [ ] 新しいテストは変異で red を確かめる (`Issues` を積まない / 原文を空のまま / repo の検査を外す)
+- [x] issue の一覧から補足なしで足したカードの `card show` に、原文 (意図の 1 文) と issue が出る。題名に番号が二重に出ない
+- [x] epic を選んだときも親 issue が紐づく
+- [x] 設定に無い repo の `card add` が rc≠0 で断られ、箱に置かれない。手で箱に置いた同じ依頼も Apply で断られる
+- [x] 新しいテストは変異で red を確かめる (`Issues` を積まない / 原文を空のまま / repo の検査を外す)
 
 ## 関連ファイル
 
@@ -69,3 +69,12 @@ PM が `plan --issue dotfiles#510` を付けても、`c.Repo` が空でないの
     前から設定に無い repo のカードへの回答・削除は受ける。`store.Apply` は `repos` を引数に取る (nil なら見ない。テストと設定を持たない呼び手)
   - `pm-guide.md` の役目 1 に「issue から来た依頼は issue の本文が依頼そのもの」を足した
   - 変異 10 件 (issue を載せない / 原文を空 / 題名に番号 / repo の検査を外す / 設定を毎回読む / issue を重ねる 等) がすべて red
+
+## 確かめた (2026-09-27、ユーザーと話す Claude。実装は `e294c8d9` で master にある。受け入れ条件の印だけが付いていなかった)
+
+- 受け入れ条件ごとのテスト: 原文・題名 (番号なし)・issue の紐づけ = `live/live_test.go` の `TestIssueRequestLinksCard` /
+  epic の親 issue = `backend/backend_test.go` の `TestIssueRequest` / 設定に無い repo = `store/repo_test.go` の `TestApplyRejectsUnknownRepo` (箱に手で置いた経路) と
+  `cardcmd_test.go` の `TestCardCommandRejectsUnknownRepo` (CLI の経路)
+- 変異 (使い捨ての worktree で当てて戻した): store の add で `Issues` を積まない → `TestIssueRequestLinksCard` が red (「issue が紐づかない」) /
+  `IssueRequest` の原文を空にする → 同じテストが red / `store.CheckRepo` を常に通す → `TestApplyRejectsUnknownRepo` と `TestCardCommandRejectsUnknownRepo` の両方が red
+- 受け入れ条件の印が付かなかった理由: どの役の指示書にも「受け入れ条件に印を付ける」が無かった (539 で PG の仕事にした)

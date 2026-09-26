@@ -70,10 +70,15 @@ func (d *Dispatcher) deliverOrders(now time.Time, ss []agents.Session) ([]eventl
 			if c.State == card.Review {
 				why = "レビュー待ちだが、PG へ届いていない追加オーダーがある。同じ session を再開して届ける"
 			}
+		case c.State == card.Review && !ownedAlive(o, ss): // レビュー待ちの間は PG を止める (issue 536。close.go)。止めた後に来たオーダーも届ける
+			why = "レビュー待ちの間に止めた PG へ、届いていない追加オーダーがある。同じ session を続きから再開して届ける"
 		default:
 			continue // busy / 問いで止まっている / 落ちている: 次の Tick で見直す
 		}
 		if err := d.update(c.ID, func(cc *card.Card) {
+			if cc.State == card.Review { // 止める途中の印を残すと、再開した PG を止める (close.go)
+				cc.StopAfterClose, cc.StopSent = false, false
+			}
 			requeue(cc, now, cc.Resume) // 再開の文は resumeText が未達のオーダーから組む (Resume は空のまま)
 			cc.Stalled = false
 			cc.History = append(cc.History, card.Event{At: now, Text: why})
@@ -103,6 +108,12 @@ func hasRedirect(orders []card.Order) bool {
 func idle(o live.Owned, ss []agents.Session) bool {
 	s, ok := ownedSession(o, ss)
 	return ok && s.Status == agents.StatusIdle
+}
+
+// ownedAlive は記録の session が一覧で生きている (pid 付き) か。
+func ownedAlive(o live.Owned, ss []agents.Session) bool {
+	_, ok := ownedSession(o, ss)
+	return ok
 }
 
 // ownedSession は記録の session (同じ session id・同じ pid) を一覧から引く。pid 無し (落ちて自動の再開を待つ) と pid の違うものは生きていないと読む。

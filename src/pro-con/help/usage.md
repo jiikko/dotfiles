@@ -31,6 +31,7 @@
 - tmux の外: attach の前に戻り方の案内が出る (enter / y で進む)。Ctrl+Z で pro-con に戻る。`←` は Claude Code の一覧へ行くだけで戻らない
 - 戻れなくなったら、別の端末で `pro-con attach --leave`。pro-con の画面から開いた attach の接続だけを終わらせる (画面を複数開いていれば、その全部の attach を終わらせる)
 - どの戻り方でも PG の session は動き続ける (終わるのは attach の接続だけ)
+- レビュー待ちのカードの PG は、turn を終えたら dispatcher が止める (issue 536)。止めた後は attach できない。話すなら `+` で追加オーダーを出す (同じ session を続きから再開して届ける)。差し戻し (`card rework`) も同じ session を続きから再開する
 
 ## 待つ・見る
 
@@ -55,5 +56,5 @@
 - 削除: 画面の `d` か `pro-con card delete <カード>`。依頼の列はすぐ消え、ほかは PG の session を止めてから消える。
   worktree とブランチは残る
 - 片付け: 画面の `x` で完了のレーンを書庫へ移す (完了から 24 時間で自動でも移る。1 週間で書庫からも消える)
-- PG の worktree: `pro-con worktree clean` で一覧を見て、`--yes` で消す (取り込み済みで中に誰も居ないものだけ)。`--remote` を付けると origin に残った PG のブランチも並べて消す (完了したカードで取り込み済みのものだけ)
+- PG の worktree: `pro-con worktree clean` で一覧を見て、`--yes` で消す (取り込み済みで中に誰も居ないものだけ)
 - ディスクの使用量は `pro-con du`

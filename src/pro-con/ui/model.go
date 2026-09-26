@@ -127,6 +127,8 @@ type Model struct {
 
 	picker picker // issue の一覧から依頼する画面 (picker.go)
 	search search // ボードの / の絞り込み (search.go。issue 532)
+	// issueCards は issue ごとに紐づいたカード (setSnap が片付けたカードを落とす前の記録から作る。picker.go の issueLinks)
+	issueCards map[issueKey][]linkedCard
 
 	up   *upgrader  // ライブアップグレード (upgrade.go)。nil なら無効
 	fade switchFade // 新版への切り替えの暗転・明転 (switchfade.go)
@@ -468,6 +470,7 @@ func (m *Model) showRejected() {
 // setSnap は backend の Snapshot を画面の状態にする。片付けたカード (Archived) はここで落とす
 // (タブの枚数・選択・カンバンのどれにも出さない。画面の読み手ごとに除外を書くと、1 か所の漏れで片付けたカードが戻る)。
 func (m *Model) setSnap(s backend.Snapshot) {
+	m.issueCards = issueLinks(s.Cards)
 	cards := make([]card.Card, 0, len(s.Cards))
 	for _, c := range s.Cards {
 		if !c.Archived {
@@ -993,6 +996,10 @@ func (m *Model) attach() tea.Cmd {
 	if !ok {
 		return nil
 	}
+	if c.State == card.Review && c.Stopped { // レビュー待ちの PG は dispatcher が止める (issue 536)。止まった session には attach できない
+		m.refuse(reviewStoppedAttach)
+		return nil
+	}
 	// backend は attach の前に照合し直すことがある (live は claude agents を呼ぶ。最大 3 秒)。キー処理の中で待たず裏で頼み、
 	// 結果 (attachReadyMsg) が届いてから画面を明け渡す
 	if m.attaching { // 照合の途中にもう一度押しても、2 回起動しない
@@ -1005,6 +1012,9 @@ func (m *Model) attach() tea.Cmd {
 		return attachReadyMsg{cardID: id, session: session, cmd: cmd, err: err}
 	})
 }
+
+// reviewStoppedAttach は、レビュー待ちで止めた PG へ a を押したときの案内 (話す手段は追加オーダー。deliverOrders が同じ session を再開して届ける)。
+const reviewStoppedAttach = "レビュー待ちの間は PG の session を止めている。話すなら + で追加オーダーを出す (同じ session を続きから再開して届ける)"
 
 // execAttach は msg の attach を開く。tmux の中は画面の上の窓 (popup。端末を渡さない。attachpopup.go)、外は端末を渡す。
 // 戻ったら attachDoneMsg を届ける (attach の間の指示をカードに残す処理は、どちらでも同じ)。

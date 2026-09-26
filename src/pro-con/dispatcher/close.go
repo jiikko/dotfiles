@@ -1,6 +1,8 @@
 package dispatcher
 
 // PG を止めてから片付けるカード: 閉じたカード (issue 447。StopAfterClose) と、削除の依頼を受けたカード (issue 451。DeleteAt)。
+// レビューの列に入ったカード (issue 536) も同じ印で止める (idle の PG を残しても、差し戻しの再開は止めてから --resume するので効かない)。
+// 止めたら Stopped を付ける (差し戻し・追加オーダーの再開が、落ちた PG の自動の再開を待たずに --resume する)。
 // 印は依頼の適用と同時に付き、dispatcher が Tick ごとに止める。止めた・止まったかの判定は終了のとき (shutdown.go の ensureStopped) と同じ部品を使う。
 // 🚨 PG の worktree とブランチは消さない (取り込みの係が merge で取り込む。削除しても取り込み前の作業が入っている)。
 
@@ -39,6 +41,14 @@ func (d *Dispatcher) stopMarked(ctx context.Context, now time.Time, ss []agents.
 	for _, c := range st.Cards {
 		deleting := c.Deleting()
 		if !c.StopAfterClose && !deleting {
+			continue
+		}
+		reviewing := c.State == card.Review && !deleting
+		if reviewing && reviewBusy(c, ss, reg) {
+			if d.stopFrom == nil {
+				d.stopFrom = map[string]time.Time{}
+			}
+			d.stopFrom[c.ID] = now // 諦めるまでの時間は、止めに入れる形になってから数える
 			continue
 		}
 		// 諦めるまでの時間は、この dispatcher が止めに入った時刻からも数える (落ちていた dispatcher が起動し直した最初の Tick で、1 度も待たずに諦めない)
@@ -82,11 +92,18 @@ func (d *Dispatcher) stopMarked(ctx context.Context, now time.Time, ss []agents.
 				continue
 			}
 			text := "閉じたので PG の session を止めた (worktree とブランチは残す)"
-			if !stopped {
+			switch {
+			case reviewing && stopped:
+				text = "レビュー待ちの間は PG の session を止めた (差し戻し・追加オーダーは同じ session を続きから再開する)"
+			case reviewing:
+				text = "レビュー待ちに入った後に確かめたら PG の session は既に止まっていた (差し戻し・追加オーダーは同じ session を続きから再開する)"
+			case !stopped && c.Stopped:
+				text = "閉じた (PG の session はレビュー待ちの間に止めてある)"
+			case !stopped:
 				text = "閉じた後に確かめたら PG の session は既に止まっていた"
 			}
 			notes = append(notes, ev(eventlog.KindStop, c.ID, c.Session, c.ID+": "+text))
-			if err := d.finishMarkedStop(c.ID, now, text); err != nil {
+			if err := d.finishMarkedStop(c.ID, now, text, reviewing); err != nil {
 				return notes, err
 			}
 			continue
@@ -111,11 +128,14 @@ func (d *Dispatcher) stopMarked(ctx context.Context, now time.Time, ss []agents.
 		reasons = append(reasons, unsure...)
 		why := strings.Join(reasons, " / ")
 		kind, text := eventlog.KindStop, fmt.Sprintf("閉じたが PG の session を止められない: %s (止める: claude stop <id>)", why)
-		if deleting {
+		switch {
+		case deleting:
 			kind, text = eventlog.KindDelete, fmt.Sprintf("削除できない: PG の session を止められない: %s (カードは残した。止めてからもう一度削除する: claude stop <id>)", why)
+		case reviewing:
+			text = fmt.Sprintf("レビュー待ちに入ったが PG の session を止められない: %s (止める: claude stop <id>。閉じるときにもう一度止める)", why)
 		}
 		notes = append(notes, ev(kind, c.ID, c.Session, c.ID+": "+text))
-		if err := d.finishMarkedStop(c.ID, now, text); err != nil {
+		if err := d.finishMarkedStop(c.ID, now, text, false); err != nil {
 			return notes, err
 		}
 	}
@@ -142,10 +162,29 @@ func (d *Dispatcher) deleteTargets(c card.Card, now time.Time, ss []agents.Sessi
 	return extra, plan.wait || c.AwaitsRun(), unsure
 }
 
+// reviewBusy はレビュー待ちのカードの PG が、まだ止めに入らない形か:
+//   - PG へ届いていない追加オーダーがある (deliverOrders が同じ session を再開して届ける。止めてすぐ起こし直さない)
+//   - 記録の session が生きていて turn を終えていない (`card review` の後の報告を書いている途中で切らない。Status が読めない形も待つ)
+func reviewBusy(c card.Card, ss []agents.Session, reg []live.Owned) bool {
+	if len(c.Pending()) > 0 {
+		return true
+	}
+	o, ok := owned(c, reg)
+	if !ok {
+		return false
+	}
+	s, alive := ownedSession(o, ss)
+	return alive && s.Status != agents.StatusIdle
+}
+
 // finishMarkedStop は印を外して履歴に書く (止め終えた / 諦めた)。削除の印も外す (諦めたカードは残り、もう一度削除を頼める)。
-func (d *Dispatcher) finishMarkedStop(id string, now time.Time, text string) error {
+// stopped はレビュー待ちの PG を止め終えた (Stopped を付けて、次の再開で自動の再開を待たない)。
+func (d *Dispatcher) finishMarkedStop(id string, now time.Time, text string, stopped bool) error {
 	return d.update(id, func(cc *card.Card) {
 		cc.StopAfterClose, cc.StopSent, cc.DeleteAt, cc.DeleteBy = false, false, time.Time{}, ""
+		if stopped {
+			cc.Stopped = true
+		}
 		cc.History = append(cc.History, card.Event{At: now, Text: text})
 	})
 }
@@ -166,5 +205,5 @@ func (d *Dispatcher) dropCard(c card.Card, now time.Time, stopped bool) (string,
 		return fmt.Sprintf("「%s」を削除した (%s が依頼。%s。worktree とブランチは残す)", c.Title, c.DeleteBy, how), nil
 	}
 	text := fmt.Sprintf("削除できない: %v (%s。カードは残した)", err, how)
-	return text, d.finishMarkedStop(c.ID, now, text)
+	return text, d.finishMarkedStop(c.ID, now, text, false)
 }

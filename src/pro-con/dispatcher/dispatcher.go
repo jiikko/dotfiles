@@ -1079,6 +1079,10 @@ func Prompt(c card.Card, rv Review) string {
 		"`screencapture` は bg では壁紙しか写らないので使わない)\n", c.ID)
 	b.WriteString("- run を頼んだら、その結果が届くまで ask しない (質問は結果を受け取ってからにする。先に ask すると、頼んだ実行が取り消される)\n")
 	b.WriteString(rv.pgRule(c.ID))
+	if len(c.Issues) > 0 { // 印は PG、done への移動は取り込みの係 (issue 539。integrator-guide.md の役目 3 と対)
+		b.WriteString("- review に出す前に、関わる issue の本文に、確かめた受け入れ条件の印 (`- [x]`) と進捗 (commit の subject・実測・残り) を書き、その commit も自分の worktree に入れる。" +
+			"確かめていない条件には印を付けない。done へは移さない (取り込みの係が印を見て移す)\n")
+	}
 	fmt.Fprintf(&b, "- 終えたら `pro-con card review %s` を実行してから turn を終える\n", c.ID)
 	if len(c.Issues) > 0 {
 		var refs []string

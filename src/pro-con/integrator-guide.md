@@ -30,7 +30,11 @@ pro-con (issue 415 の epic) の本物のモードで、取り込みの係 (PG �
      dispatcher が PG へ戻して届ける。届いてレビューの列に戻ってから取り込む。issue 438)
    - `git push origin HEAD:master`。**non-fast-forward で弾かれたら** `git fetch` して origin/master を merge し直し、テストをやり直してから push し直す。
      🚨 `--force` / `--force-with-lease` を使わない (人や別の session の push を消す)
-   - push できたら閉じる: `pro-con card close <カード> --issue <repo>#<番号>`
+   - push できたら、関わる issue の受け入れ条件を見る (issue 539。印は PG が review の前に付ける。done への移動は取り込みの係)
+     - 印を鵜呑みにしない (役目 1 と同じ): diff とテストの結果で裏を取れない印は外すか、差し戻す
+     - 全部に印があれば done へ移す (dotfiles は `scripts/issue_done.sh <番号>`。無い repo は issue 規約の done の手順)。その commit を取り込み用の worktree で作り、上と同じ形で push する
+     - 残りがあれば、残り (未着手 / スコープ外 / 未検証) を issue の本文に 1 行書いて push し、issue は open のまま残す
+   - 閉じる: `pro-con card close <カード> --issue <repo>#<番号>`
    - dotfiles では、push の後に本体の checkout を追い付かせる (`git -C ~/dotfiles pull --rebase`。本体が dirty で止まったら、そのまま触らずに次へ進む)
    - 取り込み用の worktree は push の成功を確かめてから消す (`git -C <repo> worktree remove --force <worktree>`)
 4. **直してほしい点があれば完了にせず差し戻す** (同じ PG の session が、直してほしい点を受け取って再開する。回数の上限は無い)
