@@ -21,8 +21,8 @@
 
 ## 受け入れ条件
 
-- [ ] まず取り込みの係の transcript で、同じ時刻に pull していたかを確かめ、本文に書く
-- [ ] 本体の checkout を pull する手順 (integrator-guide.md・dotfiles の `.claude/rules/worktree-per-session.md`) が同じ lock を取る
+- [x] まず取り込みの係の transcript で、同じ時刻に pull していたかを確かめ、本文に書く
+- [x] 本体の checkout を pull する手順 (integrator-guide.md・dotfiles の `.claude/rules/worktree-per-session.md`) が同じ lock を取る
 
 ## 関連
 
@@ -30,4 +30,15 @@
 
 ## 進捗
 
-(まだ無い)
+- 2026-09-27 (ユーザーと話す Claude):
+  - 経路 (transcript で時刻を突き合わせた): 失敗した pull は 16:43:46.75Z (外の Claude の session 9ebbcf5d)。その **1.2 秒前の 16:43:45.51Z に、別の外の Claude の session (c69e30bd) が
+    `git -C /Users/koji/dotfiles pull --rebase`** を打っていた。取り込みの係の pull はこの時間帯に無く、PM の pull は 5 分後 (16:48:54Z)。
+    → 相手は取り込みの係ではなく、本体を pull する session どうし (取り込みの係・PM・外の session のどれでも起きる)
+  - 直し: `scripts/pull_main_checkout.sh` を足した。本体の git の共通ディレクトリの `dotfiles-locks/pull-main` を `lockman with` で取ってから `git -C ~/dotfiles pull --rebase` する
+    (ほかが持っていれば 2 分まで待ち、取れなければ rc 121 で何もしない。止まったら rc と理由を出し、`git reset --hard` はしない)
+  - 手順書: `src/pro-con/integrator-guide.md` の役目 3 と `.claude/rules/worktree-per-session.md` を、このスクリプトを通す形に書き換えた
+    (PM は pm-guide に pull の手順が無く、dotfiles の session として worktree-per-session.md に従う)
+  - テスト: `tests/scripts/test_pull_main_checkout.sh` (一時的な origin と clone の上。lock を持たれている間は pull せず rc 121 / 空いていれば pull / checkout でない所は rc 2)。
+    変異: lock を取らずに直接 pull する → 1 つ目が red / checkout でない所の断りを外す → 3 つ目が red
+  - 敵対的レビューは省いた (lock を取ってから 1 コマンドを走らせるだけの薄いラッパーで、排他そのものは lockman が持つ)
+

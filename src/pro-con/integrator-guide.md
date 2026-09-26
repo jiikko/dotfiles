@@ -42,7 +42,8 @@ pro-con (issue 415 の epic) の本物のモードで、取り込みの係 (PG �
      - 全部に印があれば done へ移す (dotfiles は `scripts/issue_done.sh <番号>`。無い repo は issue 規約の done の手順)。その commit を取り込み用の worktree で作り、上と同じ形で push する
      - 残りがあれば、残り (未着手 / スコープ外 / 未検証) を issue の本文に 1 行書いて push し、issue は open のまま残す
    - 閉じる: `pro-con card close <カード> --issue <repo>#<番号>`
-   - dotfiles では、push の後に本体の checkout を追い付かせる (`git -C ~/dotfiles pull --rebase`。本体が dirty で止まったら、そのまま触らずに次へ進む)
+   - dotfiles では、push の後に本体の checkout を追い付かせる (`~/dotfiles/scripts/pull_main_checkout.sh`。ほかの session と同時に pull しないよう lock を取ってから `pull --rebase` する。issue 544)。
+     止まったら (本体が dirty・ほかが lock を持ったまま)、そのまま触らずに次へ進む (`git reset --hard` はしない)
    - 取り込み用の worktree は push の成功を確かめてから消す (`git -C <repo> worktree remove --force <worktree>`)
 4. **直してほしい点があれば完了にせず差し戻す** (同じ PG の session が、直してほしい点を受け取って再開する。回数の上限は無い)
    `pro-con card rework <カード> "<直してほしい点>"`

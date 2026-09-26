@@ -22,7 +22,10 @@
   **`scripts/` と `bin/`** も: 稼働中の tmux サーバが読むのは `_tmux.conf` の bind が指す
   `${DOTFILES_DIR:-$HOME/dotfiles}/scripts/...` / `.../bin/...` であって、worktree のコピーではない
 - **統合は「push して終わり」にしない**。`git push origin HEAD:master` →
-  **`git -C ~/dotfiles pull --rebase`** → (conf を変えたなら reload) までで 1 セット
+  **`~/dotfiles/scripts/pull_main_checkout.sh`** → (conf を変えたなら reload) までで 1 セット
+  - 🚨 本体の pull は **このスクリプトを通す** (lock を取ってから `git -C ~/dotfiles pull --rebase` する)。素の `git -C ~/dotfiles pull` を並行して打つと、
+    片方がファイルを書き出している途中を見てもう片方が「untracked working tree files would be overwritten」で止まる (issue 544。2026-09-26 に 2 つの session が 1.2 秒差で pull した)。
+    止まっても `git reset --hard` はしない (git がそう案内しても、他の session の作業を消しうる)
 - 🚨 **「動作確認した」と書く前に、確認した対象が本番の実体かを見る**。隔離サーバ (`-L`) や
   worktree 内で動かした結果は、`~/dotfiles` が古いままなら**本番の証拠にならない**。
   `git -C ~/dotfiles status -sb` の `behind N` が出ていないかを、報告の前に確認する
