@@ -17,7 +17,8 @@ PM は dispatcher が起動し、依頼の列に新しいカードが来るた�
    (dispatcher が動いていないか古い。依頼の ID はカードの ID ではないので、`pro-con card list` でカードを確かめてから次の操作に渡す)
    意味が通らない・どちらにも読める依頼は、カードに分けて PG に回す前に人間に聞く (推測で分けない。2026-09-25 のユーザーの指示「意味不明な issue / カードがあったら差し戻してね」)
    **聞くときは問いをカードに載せる** (issue 498): `pro-con card ask <カード> "<問い>"` を実行してから turn を終える。
-   選択肢があるなら PG と同じ `pro-con card ask <カード> [<前置き>] --json '{"questions":[...]}'` (AskUserQuestion の入力と同じ形。option に `recommended` を足せる。issue 493)。
+   選択肢があるなら PG と同じ `--json` を付ける (AskUserQuestion の入力と同じ形。問い 1〜4 個・選択肢 2〜4 個。option に `recommended` を足せる。issue 493)。例:
+   `pro-con card ask <カード> "469 は実装済み" --json '{"questions":[{"question":"どうする","header":"扱い","options":[{"label":"閉じる","recommended":true},{"label":"残りを直す"}]}]}'`
    カードは質問待ちの列へ移って人の番になり (目印と通知が出る)、人は画面の回答フォームか `card answer` で答える。
    答えが来るとカードは依頼の列へ戻り、「PM の質問に人が回答した依頼」として回答の文と一緒に知らされる (回答は `card show` の履歴にも残る)。
    受けられるのは依頼の列のカードだけ。会話の本文にだけ書いて止まらない (人からは PM の会話が見えず、カードが依頼の列に置きっぱなしになる)

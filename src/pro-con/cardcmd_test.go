@@ -199,11 +199,15 @@ func TestCardGuideOutputs(t *testing.T) {
 // splitQuoted は "..." を 1 つの引数として空白で分ける (指示書の例を引数にするだけの最小の分け方)。
 func splitQuoted(s string) []string {
 	var out []string
-	for _, m := range regexp.MustCompile(`"([^"]*)"|(\S+)`).FindAllStringSubmatch(s, -1) {
-		if m[2] != "" {
-			out = append(out, m[2])
-		} else {
+	// 一重引用符も読む (--json の JSON は '…' で囲んで渡す。中の " を崩さない)
+	for _, m := range regexp.MustCompile(`'([^']*)'|"([^"]*)"|(\S+)`).FindAllStringSubmatch(s, -1) {
+		switch {
+		case m[3] != "":
+			out = append(out, m[3])
+		case strings.HasPrefix(m[0], "'"):
 			out = append(out, m[1])
+		default:
+			out = append(out, m[2])
 		}
 	}
 	return out
