@@ -76,7 +76,13 @@ func (l *HeldLock) Exec(argv0 string, argv, env []string, execFn func(string, []
 	if _, err := unix.FcntlInt(uintptr(fd), unix.F_SETFD, 0); err != nil {
 		return fmt.Errorf("lock を引き継げる形にできない: %w", err)
 	}
+	// syscall.Exec は execve の前にファイルの数の上限 (RLIMIT_NOFILE) を起動時の値へ戻し、失敗しても上げ直さない。失敗したら戻す
+	var nofile syscall.Rlimit
+	rlimErr := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &nofile)
 	err := execFn(argv0, argv, append(append([]string(nil), env...), LockFDEnv+"="+strconv.Itoa(fd)))
+	if rlimErr == nil {
+		_ = syscall.Setrlimit(syscall.RLIMIT_NOFILE, &nofile)
+	}
 	syscall.CloseOnExec(fd)
 	if err == nil {
 		err = errors.New("exec が戻ってきた")

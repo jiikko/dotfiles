@@ -46,7 +46,7 @@ func newUpgradeRig(t *testing.T) *upgradeRig {
 		},
 		self:      func() error { return nil },
 		busy:      func() (string, error) { return r.busyWhy, nil },
-		switchTo:  func() error { r.switches++; return r.switchTo },
+		switchTo:  func(ctx context.Context) error { r.switches++; return cmpErr(ctx.Err(), r.switchTo) },
 		say:       func(kind, text string) { r.said = append(r.said, kind+": "+text) },
 		now:       func() time.Time { return r.now },
 		every:     30 * time.Second,
@@ -223,5 +223,36 @@ func TestDispUpgradeNoteAfterSwitch(t *testing.T) {
 	}
 	if n, _ := r.u.note(r.now.Add(upgradeNoteFor + time.Second)); n != "" {
 		t.Fatalf("時間が過ぎても出し続ける: %q", n)
+	}
+}
+
+func cmpErr(errs ...error) error {
+	for _, e := range errs {
+		if e != nil {
+			return e
+		}
+	}
+	return errors.New("exec が戻ってきた")
+}
+
+// 止める信号 (ctx の取り消し) の後は、入れ替えずに止める側へ返す。確かめが切られても、入れ替えを取り消しても、失敗として出来事にしない。
+func TestDispUpgradeCanceledIsNotAFailure(t *testing.T) {
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	r := newUpgradeRig(t)
+	r.checkErr = errors.New("signal: killed") // 確かめの子が ctx で殺された形
+	r.put("v2")
+	r.u.step(canceled)
+	if r.u.rejected != nil || len(r.said) != 0 {
+		t.Fatalf("止める途中に切られた確かめを新版の失敗にした: %v", r.said)
+	}
+	r.checkErr = nil
+	r.busyWhy = "進捗を集めている"
+	r.u.step(context.Background()) // 確かめ直して新版あり (区切り待ち)
+	r.busyWhy = ""
+	r.said = nil
+	r.u.step(canceled) // 入れ替えの直前に止める信号
+	if r.switches != 1 || r.u.rejected != nil || r.u.ready == nil || r.saidWith("切り替えられない") != 0 {
+		t.Fatalf("取り消しで入れ替えなかったのを失敗にした: switches=%d rejected=%v said=%v", r.switches, r.u.rejected != nil, r.said)
 	}
 }

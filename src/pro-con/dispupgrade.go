@@ -38,8 +38,10 @@ const (
 	preflightTimeout  = 30 * time.Second
 	// upgradedFromEnv は入れ替えの前の版の名前を新しいプロセス像へ渡す (出来事とゲージの「旧版 → 新版」。入れ替えで起きた印も兼ねる)
 	upgradedFromEnv = "PRO_CON_DISPATCHER_UPGRADED_FROM"
-	preflightFlag   = "preflight"
-	preflightOK     = "ok"
+	// notifiedEnv は人の番を知らせ済みの鍵 (dispatcher.Dispatcher.Notified。「,」区切り) を新しいプロセス像へ渡す
+	notifiedEnv   = "PRO_CON_DISPATCHER_NOTIFIED"
+	preflightFlag = "preflight"
+	preflightOK   = "ok"
 )
 
 // dispUpgrade は dispatcher の入れ替えの様子。serve の goroutine だけが触る (step と note は Tick と同じ goroutine から呼ぶ)。
@@ -51,8 +53,8 @@ type dispUpgrade struct {
 	// preflight は新版のバイナリに今の記録を読ませ、新版の名前を返す。self は旧版が同じ確かめを自分で行う (旧版でも読めないなら新版のせいにしない)
 	preflight func(ctx context.Context, exe string) (string, error)
 	self      func() error
-	busy      func() (string, error) // 今入れ替えてはいけない理由 (dispatcher.Busy)
-	switchTo  func() error           // 入れ替える。成功すると戻らない
+	busy      func() (string, error)          // 今入れ替えてはいけない理由 (dispatcher.Busy)
+	switchTo  func(ctx context.Context) error // 入れ替える。成功すると戻らない。ctx が取り消されていれば入れ替えずに ctx.Err() を返す
 	say       func(kind, text string)
 	now       func() time.Time
 	every     time.Duration
@@ -97,10 +99,14 @@ func newDispUpgrade(d *dispatcher.Dispatcher, dir string, args []string, start o
 		now:       time.Now, every: upgradeCheckEvery, waitWarn: upgradeWaitWarn,
 		lastSpawn: start.ModTime(), // 起動したバイナリより新しい失敗の記録 = 動いている版より新しいソースがビルドに落ちている
 	}
-	u.switchTo = func() error {
+	u.switchTo = func(ctx context.Context) error {
 		return pause(func() error {
+			if err := ctx.Err(); err != nil { // 見張りを止めている間に止める信号が来た: 入れ替えると新しいプロセス像はそれを知らない
+				return err
+			}
 			argv := append([]string{src.Exe, "dispatcher"}, args...)
-			return lock.Exec(src.Exe, argv, upgrade.Env(os.Environ(), upgradedFromEnv+"="+from), execFn)
+			env := upgrade.Env(os.Environ(), upgradedFromEnv+"="+from, notifiedEnv+"="+strings.Join(d.Notified(), ","))
+			return lock.Exec(src.Exe, argv, env, execFn)
 		})
 	}
 	return u, nil
@@ -122,7 +128,7 @@ func (u *dispUpgrade) step(ctx context.Context) {
 		u.look(ctx, now)
 	}
 	if u.ready != nil {
-		u.trySwitch(now)
+		u.trySwitch(ctx, now)
 	}
 }
 
@@ -142,6 +148,7 @@ func (u *dispUpgrade) look(ctx context.Context, now time.Time) {
 		defer cancel()
 		spawned, err := u.src.Spawn(sctx, u.run)
 		switch {
+		case ctx.Err() != nil: // 止める途中で尋ねるのを切られた (shim の失敗ではない)
 		case err != nil:
 			u.sayAskErr(err.Error())
 		case spawned:
@@ -159,6 +166,9 @@ func (u *dispUpgrade) look(ctx context.Context, now time.Time) {
 	pctx, cancel := context.WithTimeout(ctx, preflightTimeout)
 	defer cancel()
 	to, err := u.preflight(pctx, u.src.Exe)
+	if ctx.Err() != nil { // 止める途中で確かめを切られた (新版の失敗ではない)
+		return
+	}
 	if err != nil {
 		u.rejected = cur
 		why := "新版は今の記録を読めない・起動しない"
@@ -173,7 +183,7 @@ func (u *dispUpgrade) look(ctx context.Context, now time.Time) {
 }
 
 // trySwitch は区切りなら切り替える。区切りでなければ待つ (待ちすぎたら出来事にする)。
-func (u *dispUpgrade) trySwitch(now time.Time) {
+func (u *dispUpgrade) trySwitch(ctx context.Context, now time.Time) {
 	if cur, err := os.Stat(u.src.Exe); err != nil || !sameBinary(u.ready, cur) { // 確かめた後にまた差し替わった: 次の step で確かめ直す
 		u.ready = nil
 		return
@@ -191,7 +201,10 @@ func (u *dispUpgrade) trySwitch(now time.Time) {
 		return
 	}
 	u.say(eventlog.KindUpgrade, fmt.Sprintf("dispatcher を新版へ切り替える (%s → %s)。PG・PM・取り込みの係は止めない", u.from, u.to))
-	err = u.switchTo() // 戻ってきたら失敗
+	err = u.switchTo(ctx) // 戻ってきたら失敗
+	if ctx.Err() != nil { // 止める信号が来た: 入れ替えずに止める側 (serve) へ返す。新版のせいにしない
+		return
+	}
 	u.rejected, u.ready = u.ready, nil
 	u.say(eventlog.KindError, fmt.Sprintf("dispatcher を新版 (%s) へ切り替えられない (旧版のまま続ける。次のビルドでまた試す): %v", u.to, err))
 }
@@ -265,9 +278,13 @@ func runPreflight(ctx context.Context, exe string, args []string) (string, error
 	return strings.TrimPrefix(line, preflightOK+" "), nil
 }
 
-// takeUpgradedFrom は入れ替えの前の版の名前を取り、環境変数からは消す (子へ漏らさない)。入れ替えで起きたのでなければ ""。
-func takeUpgradedFrom() string {
-	v := os.Getenv(upgradedFromEnv)
+// takeUpgradedFrom は入れ替えの前の版の名前と知らせ済みの鍵を取り、環境変数からは消す (子へ漏らさない)。入れ替えで起きたのでなければ ""。
+func takeUpgradedFrom() (from string, notified []string) {
+	from, n := os.Getenv(upgradedFromEnv), os.Getenv(notifiedEnv)
 	_ = os.Unsetenv(upgradedFromEnv)
-	return v
+	_ = os.Unsetenv(notifiedEnv)
+	if n != "" {
+		notified = strings.Split(n, ",")
+	}
+	return from, notified
 }

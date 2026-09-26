@@ -8,6 +8,7 @@ package dispatcher
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"pro-con/live"
@@ -36,6 +37,30 @@ func Preflight(dir string) error {
 	return err
 }
 
+// Notified は人の番を macOS に知らせ済みの鍵 (入れ替えで新版へ渡す。渡さないと、切り替えのたびに人の番を全件知らせ直す)。
+func (d *Dispatcher) Notified() []string {
+	out := make([]string, 0, len(d.notified))
+	for k, ok := range d.notified {
+		if ok {
+			out = append(out, k)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// SeedNotified は入れ替えの前のプロセス像が知らせ済みだった鍵を戻す (最初の Tick の前に呼ぶ)。
+func (d *Dispatcher) SeedNotified(keys []string) {
+	if d.notified == nil {
+		d.notified = map[string]bool{}
+	}
+	for _, k := range keys {
+		if k != "" {
+			d.notified[k] = true
+		}
+	}
+}
+
 // Busy は今入れ替えてはいけない理由 ("" なら安全な区切り)。Tick と Tick の間 (serve の中) で呼ぶ。
 // 記録を読めなければエラー (区切りか分からないので、呼び出し側は待つ)。
 func (d *Dispatcher) Busy() (string, error) {
@@ -48,6 +73,9 @@ func (d *Dispatcher) Busy() (string, error) {
 	}
 	if d.progressBusy.Load() { // git の子を置き去りにする
 		why = append(why, "進捗を集めている")
+	}
+	if d.blocked != nil { // repo の lock 待ち: 諦めるまでの起点 (runLockGiveUp) と取り直しの時刻はメモリにある
+		why = append(why, d.blocked.cardID+" のテストの係が repo の lock を待っている")
 	}
 	if len(d.stopFrom) > 0 { // 諦めるまでの時間の起点はメモリにある (入れ替えるたびに数え直すと諦めない)
 		why = append(why, "閉じた・削除のカードの PG を止めている")

@@ -34,8 +34,8 @@ var dispatcherInterval = 3 * time.Second // テストが延ばす (Poke でだ�
 // projects は transcript の置き場 (~/.claude/projects。PG が落ちて自動で再開したかを読む)。
 // pm は PM の設定 (issue 437)。
 func runDispatcher(args []string, dir, projects string, repos map[string]string, pm pmConfig, stdout, stderr io.Writer) int {
-	upgradedFrom := takeUpgradedFrom() // 入れ替え (505) で起きたなら前の版の名前。lock は下の AdoptLock で受け取る
-	selfStart, selfErr := selfBinary() // 動いている版 (shim が差し替える前に取る)
+	upgradedFrom, notified := takeUpgradedFrom() // 入れ替え (505) で起きたなら前の版の名前と知らせ済みの鍵。lock は下の AdoptLock で受け取る
+	selfStart, selfErr := selfBinary()           // 動いている版 (shim が差し替える前に取る)
 	fs := flag.NewFlagSet("pro-con dispatcher", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	limit := fs.Int("limit", 2, "同時に動かす PG の上限 (415 の決定事項: 2 から始める)。pro-con config set limit があればそちらが勝つ (これは設定が無いときの値)")
@@ -118,6 +118,10 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 		}
 	}
 	defer func() { lock.Release() }()
+	// SIGHUP: 端末・tmux のペインを閉じた (既定の動作で死ぬと実行を残す)。
+	// 🚨 claude を引くより先に受け口を作る: 入れ替え (505) の直後に来た信号で、PG を止める処理を通らずに死ぬ窓を狭める
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer stop()
 	cl, err := resolveClaude(context.Background(), e2e)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", err)
@@ -131,6 +135,7 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 	}
 	d := newDispatcherFor(dir, projects, repos, pm.Repo, pmOff, *limit, cl, e2e)
 	d.Record = eventSink(dir, stdout, stderr)
+	d.SeedNotified(notified)
 	if resumed {
 		text := fmt.Sprintf("dispatcher が新版に切り替わった (%s → %s。PID %d のまま)", upgradedFrom, binaryLabel(selfStart), os.Getpid())
 		if adoptErr != nil {
@@ -158,10 +163,8 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 	if d.IntegratorOff {
 		say(d, eventlog.KindHold, "取り込みの係を起こさない ("+intWhy+")。レビューの列のカードはそのまま置く (取り込みは人か外の Claude が行う)")
 	}
-	defer d.CancelRun()                                                                                    // どの出口 (Tick のエラー・SIGTERM) でも、テストの係の実行を残して抜けない
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP) // SIGHUP: 端末・tmux のペインを閉じた (既定の動作で死ぬと実行を残す)
-	defer stop()
-	if e2e == nil { // e2e モードは本物の tmux の件数・macOS の通知に触らない
+	defer d.CancelRun() // どの出口 (Tick のエラー・SIGTERM) でも、テストの係の実行を残して抜けない
+	if e2e == nil {     // e2e モードは本物の tmux の件数・macOS の通知に触らない
 		d.Publish, d.Notify = dispatcher.TmuxPublish(ctx), dispatcher.MacNotify(ctx)
 		defer func() { _ = dispatcher.TmuxPublish(context.Background())("") }() // 止まるときに件数を消す (古い件数を出し続けない)
 	}
