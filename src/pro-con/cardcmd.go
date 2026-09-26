@@ -39,6 +39,9 @@ var cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を置
                                                  (.png などは画像、.txt / .ans は文字。1 件 20 MiB・1 枚に 50 件まで)
   review <カード>                                PG が終えた
   rework <カード> <直してほしい点>               レビュー待ちのカードを PG に差し戻す (同じ session を再開する)
+  order <カード> <本文> [--redirect] [--from <人間|PM>]
+                                                 追加オーダー (画面の + と同じ)。既定は追記 (PG の turn の区切りで届く)、
+                                                 --redirect は方針変更 (PG を止めて届ける)。完了のカードには出せない (別件は add で新しい依頼にする)
   handoff <カード> <理由> [--from <PM|取り込みの係>]  PG の質問 / レビュー待ちを人に回したことを履歴に残す (列は変えない)
   close <カード> [--ending answered|investigated|rejected|pending-issue] [--issue <repo>#<番号>]...
   delete <カード> [--from <人間|PM>]              カードを消す (依頼の列はすぐ。それ以外は PG の session を止めてから。worktree とブランチは残す)
@@ -222,6 +225,7 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 	r.Kind = op
 	var issues issueList
 	var ending, askJSON string
+	var redirect bool
 	switch op {
 	case "add":
 		fs.StringVar(&r.Title, "title", "", "")
@@ -234,6 +238,9 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 		fs.Var((*afterList)(&r.After), "after", "")
 		fs.Var((*pointsFlag)(&r.Points), "points", "")
 	case "answer", "delete":
+		fs.StringVar(&r.From, "from", "人間", "")
+	case "order":
+		fs.BoolVar(&redirect, "redirect", false, "")
 		fs.StringVar(&r.From, "from", "人間", "")
 	case "handoff":
 		fs.StringVar(&r.From, "from", "PM", "")
@@ -257,7 +264,7 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 		return r, wait, err
 	}
 	pos = append(pos, fs.Args()...)
-	need := map[string]int{"add": 0, "plan": 1, "review": 1, "close": 1, "delete": 1, "ask": 2, "answer": 2, "rework": 2, "move": 2, "handoff": 2}[op]
+	need := map[string]int{"add": 0, "plan": 1, "review": 1, "close": 1, "delete": 1, "ask": 2, "answer": 2, "rework": 2, "order": 2, "move": 2, "handoff": 2}[op]
 	if op == "ask" && askJSON != "" && len(pos) == 1 { // 選択肢つきなら前置きは省ける
 		pos = append(pos, "")
 	}
@@ -285,6 +292,11 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 		r.Answer = pos[1]
 	case "rework":
 		r.Rework = pos[1]
+	case "order": // 断る条件 (完了のカード・空の本文) は store の適用が正本。ここで弾くのは使い方の誤りだけ
+		r.Text = pos[1]
+		if redirect {
+			r.Order = card.OrderRedirect // 付けなければ零値の追記 (card.OrderAppend)
+		}
 	case "move":
 		d, ok := map[string]int{"up": -1, "down": 1}[pos[1]]
 		if !ok {
@@ -293,6 +305,9 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 		r.Delta = d
 	case "handoff":
 		r.Text = pos[1]
+		if redirect {
+			r.Order = card.OrderRedirect // 付けなければ零値の追記 (card.OrderAppend)
+		}
 	case "close":
 		if ending != "" {
 			e, ok := endings[ending]

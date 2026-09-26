@@ -26,6 +26,16 @@
 - `pro-con card` の使い方の文・README のコマンドの一覧・pm-guide (PM が人の追加の指示を PG に渡すとき) に載せる
 - 指示書のコマンドがパーサに通る検査 (`TestPMGuideCommandsParse` / `TestIntegratorGuideCommandsParse`) に載る形にする
 
+## 実装 (2026-09-26 / C-062)
+
+- `pro-con card order <カード> <本文> [--redirect] [--from <人間|PM>]` (`src/pro-con/cardcmd.go`)。`store.Request{Kind: "order"}` を箱に置いて依頼の ID を出す。
+  CLI で弾くのは使い方の誤り (位置引数の数・`--redirect` の値) だけ。完了のカード・空の本文は `store.go` の `case "order"` が画面の `+` と同じ規則で除ける
+- 出した人を残す: 適用の履歴を `<人間|PM> から追加オーダー (<種類>): <本文>` にした (既定は人間。画面の `+` は From を付けないので人間)。模擬 (`fake/fake.go`) の文も揃えた
+- 別件の口は作らない (`card add` で新しい依頼にする。画面の別件は子カードを作るが、CLI では PM が役目 1 で分ける)
+- 載せた先: `pro-con card` の使い方の文・README のコマンドの一覧・pm-guide の役目 8 (`TestPMGuideCommandsParse` がパーサに通す)
+- テスト: `TestCardCommandOrder` (追記 / 方針変更 / --from が履歴に残る / 完了・空の本文は rc=0 で箱に置き、適用が除ける)。
+  redirect を無視する・From を履歴に入れない の 2 つの壊し方で落ちるのを確かめた
+
 ## 関連
 
 - 438 (追加オーダー・btw・片付け) / 506 (C-061。CLI の口が無くて困った実例)
