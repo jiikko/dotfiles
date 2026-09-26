@@ -34,6 +34,14 @@
 - 別案: 完了のカードは記録の中でも履歴を持たない形にする (書庫と二重に持たない)
 - どれでも、効果はこの bench (本物の記録の写しでの Tick 1 回) の前後で測る
 
+## 進め方 (2026-09-27、ユーザー「refresh からしたほうがいいかな」)
+
+- 画面の `live.Backend.refresh` も dispatcher と同じ `store.Load` で記録を丸ごと読む (`live/live.go` の `refresh`)。
+  refresh は 3 秒ごと + 知らせのたびに走り、画面の動きを直接止める (画面が 2 つなら 2 倍)。**まだ測っていないので、最初に refresh も同じ本物の写しで測る**
+- 直す場所は `store.Load` を第一候補にする (上の別案: ファイルの大きさと更新時刻が同じなら前の結果を返す)。dispatcher の Tick と画面の refresh の両方に 1 か所で効く。
+  🚨 返した State を呼び手が書き換えないこと (複製を返すか、読むだけの呼び手に限る) を、書き換える変異で落ちるテストで固定する
+- 効果は Tick 1 回と refresh 1 回の両方で、before / after を実測して書く
+
 ## 関連ファイル
 
 - `src/pro-con/dispatcher/dispatcher.go` — `tick` と各段
