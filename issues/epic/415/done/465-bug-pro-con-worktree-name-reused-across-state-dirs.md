@@ -2,7 +2,7 @@
 
 起票日: 2026-09-25
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 
@@ -33,4 +33,5 @@
   片付けてから回答すると起動する。起動し直し (印の後) は自分の前の起動が作った worktree なので止めない。
   検査は `TestStartRefusesLeftoverWorktree` / `TestRestartAfterUnknownLaunchKeepsOwnWorktree` (偽の launcher と一時 repo。変異 2 本で red を確認)
   - 427 の「同時に 2 つの置き場」でも、後から起動する側の C-00N は同じ理由で止まる (起動の直前と claude -w の間の競合は残る)
-- 残り: 使い終わった PG の worktree とブランチの片付けの口 (人が判断する。pc-c-002〜010)
+- ~~残り: 使い終わった PG の worktree とブランチの片付けの口 (人が判断する。pc-c-002〜010)~~ → **492 (閉じたカードの PG の worktree を片付ける。カード C-053) で引き継ぐ** (2026-09-26。同じ口を 2 か所で作らない)
+- 2026-09-26: 不具合そのもの (初回の起動の前に同じ名前の worktree が在れば起動せず人の番へ) は C-025 で master に入った (取り込みは session dotfiles-4c)。残りが 492 に移ったので done へ

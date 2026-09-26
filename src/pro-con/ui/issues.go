@@ -112,3 +112,18 @@ func issueTag(c card.Card) string {
 	}
 	return t
 }
+
+// cardHeading はカードの 1 行目 (ID + issue 番号 + タイトル)。タイトルの頭が最初の issue の番号 + ": " (「452: …」。
+// 積む側が付けた形) なら、番号は issueTag に出ているので落とす (issue 491)。記録のタイトルは書き換えない。
+// 「437 の続き: …」のような形は番号だけ落とすと意味が崩れるので、そのまま出す。
+func cardHeading(c card.Card) string {
+	title := c.Title
+	if len(c.Issues) > 0 {
+		if num, rest, ok := strings.Cut(title, ": "); ok && num != "" && strings.Trim(num, "0123456789") == "" {
+			if n, _ := strconv.Atoi(num); n == c.Issues[0].Number {
+				title = rest
+			}
+		}
+	}
+	return c.ID + issueTag(c) + " " + title
+}

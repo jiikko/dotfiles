@@ -1,4 +1,4 @@
-package issues
+package markdown
 
 import (
 	"strings"
@@ -43,16 +43,16 @@ const sample = "---\n" +
 	"\n" +
 	"snake_case の識別子 no_provider_specific_branch は斜体にしない。\n"
 
-// renderLines は RenderBody の行だけを取るテスト用ヘルパー (行番号は別テストで見る)。
+// renderLines は Render の行だけを取るテスト用ヘルパー (行番号は別テストで見る)。
 func renderLines(src string, width int, colored bool) []string {
-	lines, _ := RenderBody(src, width, colored)
+	lines, _ := Render(src, width, colored)
 	return lines
 }
 
 // 🚨 幅は**全数掃く**こと。以前は {20,40,60,86,120} の離散点しか見ておらず、20 未満を一度も
 // 通していなかった。実測 2026-08-27: 幅 1 で 80 行・幅 3 で 42 行が溢れていた (幅 20 以上は 0 件)
 // = 「離散点で緑」は「その点では壊せなかった」でしかない (issue 116)。
-func TestRenderBodyNeverExceedsWidth(t *testing.T) {
+func TestRenderNeverExceedsWidth(t *testing.T) {
 	for width := 1; width <= 120; width++ {
 		for i, ln := range renderLines(sample, width, false) {
 			if w := termwidth.Of(ln); w > width {
@@ -62,7 +62,7 @@ func TestRenderBodyNeverExceedsWidth(t *testing.T) {
 	}
 }
 
-func TestRenderBodyPlainHasNoANSI(t *testing.T) {
+func TestRenderPlainHasNoANSI(t *testing.T) {
 	for i, ln := range renderLines(sample, 60, false) {
 		if strings.Contains(ln, "\x1b") {
 			t.Fatalf("colored=false なのに ANSI が出た (行 %d): %q", i, ln)
@@ -70,7 +70,7 @@ func TestRenderBodyPlainHasNoANSI(t *testing.T) {
 	}
 }
 
-func TestRenderBodyColoredResetsEveryStyle(t *testing.T) {
+func TestRenderColoredResetsEveryStyle(t *testing.T) {
 	// コードブロック以外の装飾は必ず reset で閉じる (色が次の行へ漏れない)
 	for i, ln := range renderLines(sample, 60, true) {
 		if strings.Contains(ln, "\x1b[1m") && !strings.Contains(ln, sgr.Reset) {
@@ -360,7 +360,7 @@ func TestEscapedMarkerIsLiteral(t *testing.T) {
 	}
 }
 
-func TestRenderBodyDropsVS16(t *testing.T) {
+func TestRenderDropsVS16(t *testing.T) {
 	vs16 := string(rune(0xfe0f))
 	body := strings.Join(renderLines("注意 ⚠"+vs16+" あり\n", 40, false), "\n")
 	if strings.Contains(body, vs16) {
@@ -408,7 +408,7 @@ func TestQuoteIsPrefixedOnEveryLine(t *testing.T) {
 // (ユーザー選定 2026-08-01)。🚨 段落は複数のソース行を畳み、折り返しは 1 行を複数行に割るので、
 // 番号はブロックの先頭の表示行にだけ出す。同じ番号を続き行にも並べると「その番号の行がそこに
 // ある」と読めてしまい、外 (nvim / Claude Code) へ持ち出したとき指す先がずれる。
-func TestRenderBodySrcLineNumbers(t *testing.T) {
+func TestRenderSrcLineNumbers(t *testing.T) {
 	src := "# 見出し\n" + // 1
 		"\n" + // 2
 		"段落の 1 行目で、これは折り返すくらい十分に長い日本語の文章にしてある。\n" + // 3
@@ -418,7 +418,7 @@ func TestRenderBodySrcLineNumbers(t *testing.T) {
 		"a := 1\n" + // 7
 		"b := 2\n" + // 8
 		"```\n" // 9
-	lines, nums := RenderBody(src, 30, false)
+	lines, nums := Render(src, 30, false)
 	if len(lines) != len(nums) {
 		t.Fatalf("行と行番号の本数が違う: %d vs %d", len(lines), len(nums))
 	}
@@ -453,12 +453,12 @@ func TestRenderBodySrcLineNumbers(t *testing.T) {
 }
 
 // front matter は本文に出さないぶん、行番号がその行数だけずれてはいけない。
-func TestRenderBodySrcLineNumbersSkipFrontMatter(t *testing.T) {
+func TestRenderSrcLineNumbersSkipFrontMatter(t *testing.T) {
 	src := "---\n" + // 1
 		"status: ongoing\n" + // 2
 		"---\n" + // 3
 		"# 見出し\n" // 4
-	_, nums := RenderBody(src, 40, false)
+	_, nums := Render(src, 40, false)
 	if len(nums) == 0 || nums[0] != 4 {
 		t.Fatalf("front matter のぶん行番号がずれている: %v (先頭は 4 のはず)", nums)
 	}
@@ -468,9 +468,9 @@ func TestRenderBodySrcLineNumbersSkipFrontMatter(t *testing.T) {
 //
 // 🚨 呼び出し側の「width - 固定列」が極小幅で 0 や負になることがある。そのまま返すと
 // 行が枠を突き破る (issue 053 が本体側で踏んだのと同じ形)。
-func TestRenderBodyAtZeroOrNegativeWidth(t *testing.T) {
+func TestRenderAtZeroOrNegativeWidth(t *testing.T) {
 	for _, w := range []int{0, -1, -80} {
-		lines, _ := RenderBody(sample, w, false)
+		lines, _ := Render(sample, w, false)
 		for i, ln := range lines {
 			if ln != "" {
 				t.Fatalf("width=%d: 行 %d が空でない (%q)", w, i, ln)
@@ -480,8 +480,8 @@ func TestRenderBodyAtZeroOrNegativeWidth(t *testing.T) {
 }
 
 // 色付きで切り詰めても色を開いたまま終わらない (次の行へ色が漏れない)。
-func TestRenderBodyClipDoesNotLeakColor(t *testing.T) {
-	lines, _ := RenderBody("- **太字の項目** と普通の文字がある長い行\n", 3, true)
+func TestRenderClipDoesNotLeakColor(t *testing.T) {
+	lines, _ := Render("- **太字の項目** と普通の文字がある長い行\n", 3, true)
 	for i, ln := range lines {
 		if !strings.Contains(ln, "\x1b[") {
 			continue // 色を含まない行は対象外

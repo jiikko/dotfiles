@@ -468,14 +468,14 @@ func (m *Model) procLines(w int) ([]string, int) {
 		if s.procsErr != nil {
 			out = append(out, boxLine(border, sgrYellow+" 読めないところがある: "+s.procsErr.Error()+sgrFgReset, w))
 		}
-		out = append(out, boxLine(border, sgrDim+fit(" 役", 12)+fit("pid", 8)+fit("経過", 13)+fit("状態", procStateCells)+fit("カード", 8)+fit("session", 14)+"今のコマンド"+sgrReset, w))
+		out = append(out, boxLine(border, sgrDim+fit(" 役", 12)+fit("pid", 8)+fit("経過", 13)+fit("状態", procStateCells)+fit("カード", procCardCells)+fit("session", 14)+"今のコマンド"+sgrReset, w))
 		live, stopped := splitProcs(s.procs)
 		screens := m.screensBlock(w)
 		for _, p := range live {
 			if p.Role == "画面" && len(screens) > 0 { // 下に開いている画面の一覧 (モード・端末つき) を出すときは、そちらで出す
 				continue
 			}
-			out = append(out, boxLine(border, procRow(p, w), w))
+			out = append(out, boxLine(border, m.procRow(p, w), w))
 		}
 		if len(stopped) > 0 {
 			mark, verb := "▸", "enter で開く"
@@ -492,7 +492,7 @@ func (m *Model) procLines(w int) ([]string, int) {
 			out = append(out, boxLine(border, row, w))
 			if s.showStopped {
 				for _, p := range stopped {
-					out = append(out, boxLine(border, fg(239)+procRow(p, w)+sgrFgReset, w))
+					out = append(out, boxLine(border, fg(239)+m.procRow(p, w)+sgrFgReset, w))
 				}
 			}
 		}
@@ -508,7 +508,9 @@ func procName(p backend.Proc) string {
 	return p.Role
 }
 
-func procRow(p backend.Proc, w int) string {
+// procRow はプロセスの 1 行。カードの列は、画面が知っているカードならタイトルまで出す (前の PG の一覧と同じ cardHeading。
+// タイトルの頭の issue 番号は落とす。issue 491)。
+func (m *Model) procRow(p backend.Proc, w int) string {
 	pid, age := "-", "-"
 	if p.PID > 0 {
 		pid = strconv.Itoa(p.PID)
@@ -524,14 +526,15 @@ func procRow(p backend.Proc, w int) string {
 		col = fg(46)
 	}
 	// 今のコマンドは残りの幅だけ (狭い端末では前の列を崩さずに切る)
-	return fit(" "+p.Role, 12) + fit(pid, 8) + fit(age, 13) + col + fit(p.State, procStateCells) + sgrFgReset + fit(orDash(p.Card), 8) +
+	return fit(" "+p.Role, 12) + fit(pid, 8) + fit(age, 13) + col + fit(p.State, procStateCells) + sgrFgReset + fit(m.procCard(p.Card), procCardCells) +
 		fit(orDash(p.Session), 14) + fit(orDash(p.Command), max(w-2-procFixedCells, 0))
 }
 
-// procStateCells は状態の列の幅 (「動いている (最後の Tick 12s 前)」が入る)。procFixedCells は今のコマンドより前の列の幅の和。
+// procStateCells は状態の列の幅 (「動いている (最後の Tick 12s 前)」が入る)。procCardCells はカードの列の幅 (ID と issue 番号とタイトルの頭)。procFixedCells は今のコマンドより前の列の幅の和。
 const (
 	procStateCells = 34
-	procFixedCells = 12 + 8 + 13 + procStateCells + 8 + 14
+	procCardCells  = 32
+	procFixedCells = 12 + 8 + 13 + procStateCells + procCardCells + 14
 )
 
 // diskGroupNames は置き場の見出しと、中身の数の単位。
@@ -632,4 +635,17 @@ func (m *Model) settingsHints() []string {
 		h = append(h, "enter 内訳", "r 測り直す")
 	}
 	return append(h, "s / q / esc 閉じる")
+}
+
+// procCard はカードの列の中身 (画面の知らないカード = 片付けた・別の repo のものは ID だけ)。
+func (m *Model) procCard(id string) string {
+	if id == "" {
+		return "-"
+	}
+	for _, c := range m.snap.Cards {
+		if c.ID == id {
+			return cardHeading(c)
+		}
+	}
+	return id
 }

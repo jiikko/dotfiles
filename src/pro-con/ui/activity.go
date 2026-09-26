@@ -10,7 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"glogx/issues"
+	"tuikit/markdown"
 
 	"pro-con/backend"
 )
@@ -116,7 +116,7 @@ func (m *Model) addActivity(add func(style, text string)) {
 			continue
 		}
 		// 応答の文は markdown として整形する (見出し・箇条書き・コードブロックのハイライト。486)。時刻の幅だけ字下げして並べる
-		body, _ := issues.RenderBody(a.Text, max(m.drawerTextWidth()-len(stamp), 10), true)
+		body, _ := markdown.Render(a.Text, max(m.drawerTextWidth()-len(stamp), 10), true)
 		for i, l := range body {
 			if i == 0 {
 				add("", stamp+l)

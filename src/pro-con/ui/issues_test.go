@@ -100,3 +100,39 @@ func TestCardShowsIssueNumber(t *testing.T) {
 		t.Fatalf("カードの 1 行目に issue 番号が無い:\n%s", out)
 	}
 }
+
+// 画面の 1 行目でも、タイトルの頭の番号は落ちる (記録のタイトルはそのまま)。
+func TestCardDropsDuplicateIssueNumberOnBoard(t *testing.T) {
+	m, _, _ := issueModel(t, []card.IssueRef{{Repo: "dotfiles", Number: 415}})
+	m.snap.Cards[0].Title = "415: 設計"
+	if out := ansi.Strip(m.render()); !strings.Contains(out, "C-001 #415 設計") || strings.Contains(out, "415: 設計") {
+		t.Fatalf("1 行目の番号が二重のまま:\n%s", out)
+	}
+	if m.snap.Cards[0].Title != "415: 設計" {
+		t.Fatalf("記録のタイトルを書き換えた: %q", m.snap.Cards[0].Title)
+	}
+}
+
+// タイトルの頭の「<最初の issue の番号>: 」はバッジと二重なので、1 行目では落とす (issue 491)。
+// 番号が違う・「の続き」のように番号に言葉が続く・issue が無い、ときはそのまま出す。
+func TestCardHeadingDropsDuplicateIssueNumber(t *testing.T) {
+	iss := []card.IssueRef{{Repo: "dotfiles", Number: 452}}
+	for _, tc := range []struct {
+		name, title string
+		issues      []card.IssueRef
+		want        string
+	}{
+		{"番号 + コロンは落とす", "452: 人間の操作待ち", iss, "C-032 #452 人間の操作待ち"},
+		{"0 埋めでも同じ番号なら落とす", "0452: 人間の操作待ち", iss, "C-032 #452 人間の操作待ち"},
+		{"別の番号は残す", "437: 別の話", iss, "C-032 #452 437: 別の話"},
+		{"番号に言葉が続く形は残す", "452 の続き: 残り", iss, "C-032 #452 452 の続き: 残り"},
+		{"符号付きは番号ではない", "+452: x", iss, "C-032 #452 +452: x"},
+		{"issue が無ければ残す", "452: 人間の操作待ち", nil, "C-032 452: 人間の操作待ち"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cardHeading(card.Card{ID: "C-032", Title: tc.title, Issues: tc.issues}); got != tc.want {
+				t.Fatalf("cardHeading = %q (期待 %q)", got, tc.want)
+			}
+		})
+	}
+}

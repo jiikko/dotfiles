@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"pro-con/backend"
+	"pro-con/card"
 	"pro-con/diskuse"
 )
 
@@ -168,9 +169,14 @@ func TestSettingsViewOnlyShowsInspectOnly(t *testing.T) {
 // 止まっている PM・PG は 1 行に畳み (本数だけ)、Enter で開く。
 func TestSettingsFoldsStoppedProcs(t *testing.T) {
 	be := newInspSpy()
+	be.snap.Cards[0].Title, be.snap.Cards[0].Issues = "491: 番号が二重に出る", []card.IssueRef{{Number: 491}} // R1
 	m := openSettingsFor(t, be)
 	tabKey(m)
 	out := setScreen(m)
+	// カードの列は前の PG の一覧と同じ cardHeading (タイトルの頭の issue 番号を落とす。issue 491)
+	if !strings.Contains(out, "R1 #491 番号が二重に出る") || strings.Contains(out, "491: ") {
+		t.Fatalf("カードの列がタイトルを出さない / issue 番号を二重に出す:\n%s", out)
+	}
 	if !strings.Contains(out, "止まっている PM・PG 8 本") || strings.Contains(out, "C-005") || !strings.Contains(out, "R1") {
 		t.Fatalf("止まっている行を畳まない / 動いている行が無い:\n%s", out)
 	}
