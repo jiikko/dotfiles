@@ -4,14 +4,12 @@ package monitor
 // merge-tree --write-tree は object database に tree を書くが、ref は動かさない (どこからも指されない object は後の gc で消える)。
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
-	"os/exec"
 	"slices"
 	"strings"
-	"time"
+
+	"pro-con/gitx"
 )
 
 // Git は見張りが使う git の読み取り (テストが差し替えられる)。
@@ -26,34 +24,15 @@ type Git interface {
 	MergeTree(ctx context.Context, repo, a, b string) (conflict bool, files []string, err error)
 }
 
-// gitTimeout は git 1 回の上限 (大きな repo の merge-tree でも数秒の見込み。固まった git で見張りを止めない)。
-const gitTimeout = 2 * time.Minute
-
-// ExecGit は本物の git。
+// ExecGit は本物の git (gitx 経由。継承した GIT_DIR 等を外して走らせる)。
 type ExecGit struct{}
 
 func (ExecGit) Base(ctx context.Context, repo string) (string, string, error) {
-	for _, ref := range []string{"refs/remotes/origin/HEAD", "refs/remotes/origin/master", "refs/remotes/origin/main"} {
-		out, rc, err := gitRun(ctx, repo, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
-		if err != nil {
-			return "", "", err
-		}
-		if rc != 0 {
-			continue
-		}
-		name := strings.TrimPrefix(ref, "refs/remotes/")
-		if ref == "refs/remotes/origin/HEAD" { // 人が読む名前は指している先 (origin/master)
-			if n, rc, err := gitRun(ctx, repo, "rev-parse", "--abbrev-ref", ref); err == nil && rc == 0 && strings.TrimSpace(n) != "" {
-				name = strings.TrimSpace(n)
-			}
-		}
-		return strings.TrimSpace(out), name, nil
-	}
-	return "", "", errors.New("取り込む先 (origin/HEAD・origin/master・origin/main) が無い")
+	return gitx.Base(ctx, repo)
 }
 
 func (ExecGit) Head(ctx context.Context, worktree string) (string, error) {
-	out, rc, err := gitRun(ctx, worktree, "rev-parse", "--verify", "HEAD")
+	out, rc, err := gitx.Run(ctx, worktree, "rev-parse", "--verify", "HEAD")
 	if err != nil {
 		return "", err
 	}
@@ -64,22 +43,13 @@ func (ExecGit) Head(ctx context.Context, worktree string) (string, error) {
 }
 
 func (ExecGit) IsAncestor(ctx context.Context, repo, a, b string) (bool, error) {
-	_, rc, err := gitRun(ctx, repo, "merge-base", "--is-ancestor", a, b)
-	switch {
-	case err != nil:
-		return false, err
-	case rc == 0:
-		return true, nil
-	case rc == 1:
-		return false, nil
-	}
-	return false, fmt.Errorf("git merge-base --is-ancestor が rc=%d", rc)
+	return gitx.IsAncestor(ctx, repo, a, b)
 }
 
 // MergeTree は `git merge-tree --write-tree --name-only --no-messages` (git 2.38 から)。rc 0 = 衝突なし / 1 = 衝突。
 // 出力の 1 行目は合わせた tree で、続く行が衝突したファイル (空行で終わる)。
 func (ExecGit) MergeTree(ctx context.Context, repo, a, b string) (bool, []string, error) {
-	out, rc, err := gitRun(ctx, repo, "merge-tree", "--write-tree", "--name-only", "--no-messages", a, b)
+	out, rc, err := gitx.Run(ctx, repo, "merge-tree", "--write-tree", "--name-only", "--no-messages", a, b)
 	if err != nil {
 		return false, nil, err
 	}
@@ -100,27 +70,4 @@ func (ExecGit) MergeTree(ctx context.Context, repo, a, b string) (bool, []string
 		return true, files, nil
 	}
 	return false, nil, fmt.Errorf("git merge-tree が rc=%d", rc)
-}
-
-// gitRun は git を dir で走らせ、stdout と rc を返す。起動できない・時間切れは err (rc で表せる失敗は err にしない)。
-func gitRun(ctx context.Context, dir string, args ...string) (string, int, error) {
-	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-	var out, errOut bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errOut
-	err := cmd.Run()
-	var exit *exec.ExitError
-	switch {
-	case ctx.Err() != nil:
-		return "", -1, fmt.Errorf("git %s: %w", args[0], ctx.Err())
-	case errors.As(err, &exit):
-		if exit.ExitCode() > 1 && args[0] != "rev-parse" { // rev-parse の rc は呼ぶ側が見る
-			return out.String(), exit.ExitCode(), fmt.Errorf("git %s: rc=%d: %s", args[0], exit.ExitCode(), strings.TrimSpace(errOut.String()))
-		}
-		return out.String(), exit.ExitCode(), nil
-	case err != nil:
-		return "", -1, fmt.Errorf("git %s: %w", args[0], err)
-	}
-	return out.String(), 0, nil
 }

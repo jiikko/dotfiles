@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"pro-con/agents"
@@ -92,6 +93,10 @@ type Dispatcher struct {
 	Procs   func(context.Context) ([]Proc, error)
 	JobsDir string
 	doingAt time.Time // 最後に集めた時刻
+	// ProgressGit は進捗 (progress.go。commit・未 commit・issue の進捗節) を集める git。nil なら集めない (e2e・テスト)
+	ProgressGit  ProgressGit
+	progressAt   time.Time   // 最後に集め始めた時刻
+	progressBusy atomic.Bool // 裏で集めている最中 (collectProgress だけが触る)
 	// Ask は btw の答えを作る (btw.go。本物は haiku)。nil なら記録だけから答える
 	Ask func(ctx context.Context, prompt string) (string, error)
 	btw *btwJob // 答えを作っている 1 本 (無ければ nil)
@@ -142,7 +147,7 @@ type Dispatcher struct {
 	lastStatus  string               // 最後に Publish した文
 	publishedAt time.Time            // 最後に Publish を試みた時刻
 	published   bool                 // 1 度でも Publish したか (起動の直後に空の文も書く。前の dispatcher が残した文を消す)
-	notified    map[string]bool      // 通知した回答待ちのカード (待ちを抜けたら消す)
+	notified    map[string]bool      // 通知した人の番 (カード ID@列に入った時刻。人の番を抜けたら消す)
 	stopFrom    map[string]time.Time // 印の付いたカードを、この dispatcher が最初に止めに入った時刻 (close.go。諦めるまでの時間の起点)
 	unknownSeen map[string]bool      // 知らない state の警告を出した session id (unknownStateNote。止め直しの周・Tick ごとに重ねない)
 
@@ -159,6 +164,9 @@ const defaultStallAfter = 15 * time.Minute
 // 別の session を止める)。
 // 回ったことは StatusFile に書く (途中で抜けた Tick も。画面が dispatcher の生存を見る)。
 func (d *Dispatcher) Tick(ctx context.Context) ([]eventlog.Event, error) {
+	for _, r := range roles() { // 役の様子は、この Tick に一覧と照らせたときだけ今のものとして書く (roleState)
+		d.roleRun(r).fresh = false
+	}
 	notes, err := d.tick(ctx)
 	if werr := d.writeState(d.Now()); werr != nil {
 		notes = append(notes, ev(eventlog.KindError, "", "", "dispatcher の様子を書けない: "+werr.Error()))
@@ -262,6 +270,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 		told, err := d.tellRole(ctx, now, ss, r)
 		notes = append(notes, told...)
 		if err != nil { // 役の壊れ (pm.json が読めない等) で PG の割り当てとほかの役まで止めない
+			d.roleRun(r).blocked = "扱えない: " + err.Error()
 			notes = append(notes, ev(eventlog.KindError, r.cardID, "", r.name+" を扱えない (PG の割り当ては続ける): "+err.Error()))
 		}
 	}
@@ -271,6 +280,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 		return notes, err
 	}
 	d.collectDoing(ctx, now, ss)
+	d.collectProgress(ctx, now)
 	return append(notes, d.announce()...), nil // 割り当ての結果まで含めて知らせる
 }
 
@@ -699,8 +709,8 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 				running++
 			}
 		case card.Planned:
-			// 順番 (issue 468) は初めての起動だけを止める。一度起動したカードの再開・起動の結果が分からないカードは止めない (立っているかもしれない)
-			if b := card.Blockers(st.Cards, c); len(b) > 0 && c.Session == "" && c.Launching == "" {
+			// 順番 (issue 468) は初めての起動だけを止める (card.HeldBy)
+			if b := card.HeldBy(st.Cards, c); len(b) > 0 {
 				text := afterWaitPrefix + strings.Join(b, ", ") + " の完了を待つ"
 				if lastAfterWait(c) != text { // 変わったときだけ書く (Tick ごとに記録を伸ばさない)
 					if err := d.update(c.ID, func(cc *card.Card) { cc.History = append(cc.History, card.Event{At: now, Text: text}) }); err != nil {

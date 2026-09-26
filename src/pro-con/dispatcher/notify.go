@@ -1,9 +1,11 @@
 package dispatcher
 
-// 知らせ (426 の決定 10): 件数を tmux のユーザー option に書き (status が読む)、質問待ちと落ちて止めた PG は macOS の通知でも知らせる。
+// 知らせ (426 の決定 10): 件数を tmux のユーザー option に書き (status が読む)、人の番 (card.Turn) になったカードは macOS の通知でも知らせる。
+// 数える・知らせるのは人の番だけ (PM が先に受ける質問・取り込みの係のレビューは人に知らせない。452 で 2026-09-26 にユーザーが決めた)
 // 🚨 status のどこにどう出すかは未配線 (見た目はユーザーと決める。issue 427 の 3c-2c)。option の名前は StatusOption
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os/exec"
@@ -21,17 +23,18 @@ const StatusOption = "@pro-con-status"
 // republishEvery は件数の文が変わらなくても書き直す間隔。
 const republishEvery = time.Minute
 
-// Status は tmux の status に出す短い文。知らせることが無ければ空。
-func Status(cards []card.Card) string {
+// Status は tmux の status に出す短い文 (?N は人の番のうち落ちて止めた PG 以外。r は起こさない役)。知らせることが無ければ空。
+func Status(cards []card.Card, r card.Roles) string {
 	var ask, crashed, stalled int
 	for _, c := range cards {
 		switch {
-		case c.State == card.Waiting && c.Wait.Kind == card.WaitCrashed:
-			crashed++
-		case c.State == card.Waiting:
-			ask++
 		case c.State == card.Running && c.Stalled:
 			stalled++
+		case c.Turn(r) != card.TurnHuman:
+		case c.Wait.Kind == card.WaitCrashed:
+			crashed++
+		default:
+			ask++
 		}
 	}
 	var parts []string
@@ -50,8 +53,8 @@ func Status(cards []card.Card) string {
 	return "pro-con " + strings.Join(parts, " ")
 }
 
-// announce は件数の文が変わったら Publish し、新しく人間の回答待ちになったカード (質問・権限・落ちて止めた) を Notify する。
-// 同じ待ちを 2 度知らせない (待ちを抜けたら忘れるので、次に待ちに入ったらまた知らせる。dispatcher が起動し直すと、待っているカードを 1 度ずつ知らせ直す)。
+// announce は件数の文が変わったら Publish し、新しく人の番になったカードを Notify する。
+// 同じ人の番を 2 度知らせない (抜けたら忘れるので、次に人の番になったらまた知らせる。dispatcher が起動し直すと、人の番のカードを 1 度ずつ知らせ直す)。
 func (d *Dispatcher) announce() []eventlog.Event {
 	st, err := store.Load(d.Dir)
 	if err != nil {
@@ -60,7 +63,7 @@ func (d *Dispatcher) announce() []eventlog.Event {
 	var notes []eventlog.Event
 	now := d.Now()
 	// 変わったときに加えて、republishEvery ごとにも書き直す (tmux サーバが作り直されて option が消えても戻る)
-	if s := Status(st.Cards); d.Publish != nil && (!d.published || s != d.lastStatus || now.Sub(d.publishedAt) >= republishEvery) {
+	if s := Status(st.Cards, d.roles()); d.Publish != nil && (!d.published || s != d.lastStatus || now.Sub(d.publishedAt) >= republishEvery) {
 		if err := d.Publish(s); err != nil { // 失敗しても次は文が変わるか republishEvery 後 (tmux の外で動かしたとき Tick ごとには言い続けない)
 			notes = append(notes, ev(eventlog.KindError, "", "", "知らせ: tmux に件数を書けない: "+err.Error()))
 		}
@@ -72,25 +75,28 @@ func (d *Dispatcher) announce() []eventlog.Event {
 	if d.notified == nil {
 		d.notified = map[string]bool{}
 	}
-	waiting := map[string]bool{}
+	// 鍵はカード ID と今の列に入った時刻 (質問待ちから人に回したレビューへ移ったら、人の番のままでも知らせ直す)
+	humans := map[string]bool{}
+	roles := d.roles()
 	for _, c := range st.Cards {
-		if c.State != card.Waiting {
+		if c.Turn(roles) != card.TurnHuman {
 			continue
 		}
-		waiting[c.ID] = true
-		if d.notified[c.ID] {
+		k := c.ID + "@" + c.Since.UTC().Format(time.RFC3339Nano)
+		humans[k] = true
+		if d.notified[k] {
 			continue
 		}
-		body := c.ID + " " + c.Title + ": " + c.Wait.Question
-		if err := d.Notify("pro-con: 回答待ち", body); err != nil {
+		body := c.ID + " " + c.Title + ": " + cmp.Or(c.Wait.Question, c.State.Label())
+		if err := d.Notify("pro-con: 人の番", body); err != nil {
 			notes = append(notes, ev(eventlog.KindError, c.ID, "", "知らせ: 通知を出せない: "+err.Error()))
 			continue // 次の Tick でまた出す
 		}
-		d.notified[c.ID] = true
+		d.notified[k] = true
 	}
-	for id := range d.notified {
-		if !waiting[id] {
-			delete(d.notified, id)
+	for k := range d.notified {
+		if !humans[k] {
+			delete(d.notified, k)
 		}
 	}
 	return notes

@@ -35,7 +35,7 @@ func (s State) Meaning() string {
 	case Running:
 		return "PG が作業している。make test などの占有リソースの順番待ち・利用枠の回復待ちもここ"
 	case Waiting:
-		return "人間か PM の回答が要る (PG の質問・権限の確認)。r で回答する"
+		return "PG の質問 (まず PM が受け、人に回すかを決める)・権限の確認・落ちて止めた PG。人の番のものは r で回答する"
 	case Review:
 		return "PG が作業を終えた。PM が diff と実行結果を読んでから完了にする"
 	case Done:
@@ -251,7 +251,7 @@ type Card struct {
 	Request  string // 依頼の原文 (人間が書いたまま)
 	Prompt   string // PM に渡した指示の全文 (スコープの前置き + 原文)。TUI から出した依頼だけが持つ
 	Repo     string
-	Owner    string // 受付 PM / PM-A / PG-2 / 人間
+	Owner    string // 作った・受けた者 (受付 PM / PM-A / PG-2 / 人間)。今手を動かす者ではない: 画面と card list の担当は Assignee (issue 476)
 	Session  string // 担当 PG の session id (claude --bg の id)
 	State    State
 	Since    time.Time // 今の State に入った時刻
@@ -272,6 +272,14 @@ type Card struct {
 	// 🚨 記録 (cards.json) には書かない: 書き手は dispatcher の Apply だけで、数秒で古くなる様子を記録の差分に混ぜない
 	Doing   []Doing   `json:"-"`
 	DoingAt time.Time `json:"-"`
+	// Progress は作業の進捗 (commit・未 commit・issue の進捗節)、ProgressAt は dispatcher がそれを集めた時刻 (issue 469。store.ProgressFile)。
+	// Conflicts は見張りが見た取り込みの衝突の文、ConflictsAt は見張りが見た時刻 (store.ConflictsFile)。どれも Doing と同じく記録には書かない
+	Progress    *Progress `json:"-"`
+	ProgressAt  time.Time `json:"-"`
+	Conflicts   []string  `json:"-"`
+	ConflictsAt time.Time `json:"-"`
+	// LastRun はテストの係が最後に返した結果 (issue 469。結果は Resume で PG に渡して消えるので、詳細に残す分)
+	LastRun *RunRecord `json:",omitempty"`
 	// Resume は次に PG を再開するときに渡す文 (質問への回答)。dispatcher が渡したら空にする (本物のモードだけ。426 の決定 2)
 	Resume string `json:",omitempty"`
 	// Launching は dispatcher が PG の起動・再開を始めて、結果をまだ確かめていない印 ("起動" / "再開")。起動の前に記録へ書く
@@ -358,7 +366,69 @@ const handoffMark = " が人に回した: "
 // HandoffText は質問を人に回したときに履歴へ残す文 (理由は原文のまま)。
 func HandoffText(by, why string) string { return by + handoffMark + why }
 
-// HandedOff は今の質問を人に回したか (質問待ちに入った後の履歴に HandoffText がある)。人の番の目印 (452) ができるまでは履歴から読む。
+// Turn はそのカードを今先へ進めるのが誰か (issue 452。画面の目印・`pro-con card list` が読む。判定はここだけに置く)。
+type Turn int
+
+const (
+	TurnNone       Turn = iota // 誰の番でもない (完了・片付けた・削除中)
+	TurnPG                     // PG かテストの係が動いている / PG の空き・前のカードを待っている
+	TurnPM                     // PM (依頼を分ける・PG の質問に答えるか人に回す)
+	TurnIntegrator             // 取り込みの係 (レビュー。487)
+	TurnHuman                  // 人間が操作しないと進まない
+)
+
+func (t Turn) Label() string {
+	switch t {
+	case TurnNone:
+		return ""
+	case TurnPG:
+		return "PG"
+	case TurnPM:
+		return "PM"
+	case TurnIntegrator:
+		return "取り込みの係"
+	case TurnHuman:
+		return "人"
+	}
+	return fmt.Sprintf("Turn(%d)", int(t))
+}
+
+// Roles は dispatcher が起こさない役 (設定 pm / integrator = "off")。起こさない役の番は人の番になる。ゼロ値は「どちらも起こす」。
+type Roles struct {
+	PMOff         bool `json:"pm_off,omitempty"`
+	IntegratorOff bool `json:"integrator_off,omitempty"`
+}
+
+// Turn は今誰の番か。人の番は、権限の確認 (PM には答えられない)・落ち続けて止めた PG・PM が人に回した質問とレビュー・
+// 起こさない役 (r) の仕事 (依頼・質問・レビュー)。
+func (c Card) Turn(r Roles) Turn {
+	if c.Archived || c.Deleting() {
+		return TurnNone
+	}
+	switch c.State {
+	case Requested:
+		if r.PMOff {
+			return TurnHuman
+		}
+		return TurnPM
+	case Planned, Running:
+		return TurnPG
+	case Waiting:
+		if c.Wait.Kind != WaitQuestion || c.HandedOff() || r.PMOff { // 権限の確認・落ちて止めた (Check は Waiting を NeedsAnswer の待ちに限る)
+			return TurnHuman
+		}
+		return TurnPM
+	case Review:
+		if c.HandedOff() || r.IntegratorOff {
+			return TurnHuman
+		}
+		return TurnIntegrator
+	case Done:
+	}
+	return TurnNone
+}
+
+// HandedOff は今の質問を人に回したか (質問待ちに入った後の履歴に HandoffText がある)。
 func (c Card) HandedOff() bool {
 	if (c.State != Waiting || c.Wait.Kind != WaitQuestion) && c.State != Review { // レビュー待ちは取り込みの係が人に回す (487)
 		return false

@@ -37,6 +37,8 @@ type Transcript struct {
 	// (task-notification) がまだ末尾に無いもの (起こした順)。どちらも issue 473 の「今走っているもの」
 	Calls  []Call
 	Agents []Call
+	// Uses は末尾にある道具の呼び出しすべて (結果が返ったものも。呼んだ順)。PM が今の turn でどのカードを扱っているか (issue 480)
+	Uses []Call
 }
 
 // Call は道具の呼び出し 1 つ。
@@ -44,7 +46,10 @@ type Call struct {
 	ID   string // tool_use の id (サブエージェントは agentId)
 	Name string // 道具の名前 (Bash / Agent / Read …)
 	Text string // 引数の要約 (1 行。Bash はコマンド、Agent は説明)
-	At   time.Time
+	// Target は引数のうち説明ではない対象 (コマンド・ファイル・URL・パターン。1 行)。扱っているカードの ID をここから拾う
+	// (説明には ID が無いことが多い。書く中身 (content) は拾わない: issue の本文に並ぶ別のカードの ID を扱っていると取り違える)
+	Target string
+	At     time.Time
 }
 
 // RestartNote は、プロセスが死んだ session を Claude Code が自動で再開したときに会話へ足す文の一部 (2.1.281 で実測。issue 425 結果 1)。
@@ -205,6 +210,7 @@ func parseFrom(rd io.Reader) Transcript {
 					c.At = at
 					pending[c.ID] = c
 					order = append(order, c.ID)
+					t.Uses = append(t.Uses, c)
 				}
 			}
 		}
@@ -296,7 +302,7 @@ func toolUses(raw json.RawMessage) []Call {
 	var cs []Call
 	for _, p := range parts(raw) {
 		if p.Type == "tool_use" && p.ID != "" {
-			cs = append(cs, Call{ID: p.ID, Name: p.Name, Text: callText(p.Input)})
+			cs = append(cs, Call{ID: p.ID, Name: p.Name, Text: callText(p.Input), Target: callTarget(p.Input)})
 		}
 	}
 	return cs
@@ -304,11 +310,28 @@ func toolUses(raw json.RawMessage) []Call {
 
 // callText は道具の引数の要約 (1 行)。説明 (description) があればそれ、無ければコマンド・ファイル・URL・パターンの順に最初にあるもの。
 func callText(input json.RawMessage) string {
+	return firstArg(input, "description", "command", "file_path", "url", "pattern", "prompt")
+}
+
+// callTarget は道具の引数のうち、説明ではない対象 (Call.Target)。コマンドは 1 行目だけ (heredoc の本文 = 書く中身を拾わない)。
+func callTarget(input json.RawMessage) string {
+	var in struct {
+		Command string `json:"command"`
+	}
+	if json.Unmarshal(input, &in) == nil && strings.TrimSpace(in.Command) != "" {
+		head, _, _ := strings.Cut(strings.TrimSpace(in.Command), "\n")
+		return oneLine(head)
+	}
+	return firstArg(input, "file_path", "url", "pattern")
+}
+
+// firstArg は道具の引数 keys のうち、最初にある空でない文字列 (1 行)。
+func firstArg(input json.RawMessage, keys ...string) string {
 	var in map[string]any
 	if json.Unmarshal(input, &in) != nil {
 		return ""
 	}
-	for _, k := range []string{"description", "command", "file_path", "url", "pattern", "prompt"} {
+	for _, k := range keys {
 		if s, ok := in[k].(string); ok && strings.TrimSpace(s) != "" {
 			return oneLine(s)
 		}

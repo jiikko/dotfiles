@@ -32,6 +32,12 @@ bin/pro-con log [--card C-001] [--follow] [--since 10m] [--json]  # dispatcher �
 bin/pro-con monitor [--once] [--interval 1m]  # 見張り (issue 475)。dispatcher が子として起こし、落ちたら起こし直し (30 分に 3 回まで)、抜けるときに止める (手で起動しなくてよい。2 つ起動しない = monitor.lock)。
                          # PG の commit 済みの分を git merge-tree で origin/master と・PG どうしで突き合わせた衝突と、テストの順番の長さ (3 本以上か先頭が 30 分以上) を見る。
                          # 読むだけ (git fetch もしない) で、見つけた・消えたときだけ受付の箱に置き、dispatcher が出来事 (pro-con log の monitor) に書く。e2e モードと --once の dispatcher では起こさない
+bin/pro-con worktree clean [--yes]  # 閉じたカードの PG の worktree を片付ける (issue 492)。既定は一覧 (消してよい / 消さないと理由) を出すだけ。--yes で 1 個ずつ、記録・session・git を取り直して判定し直してから消す。
+                         # 消すのは: カードが完了して PG を止め終え、その中に session もプロセス (lsof の cwd) も居らず、未 commit の変更・skip-worktree の印・下の worktree が無く、
+                         # 無視されたファイルが空のディレクトリか autobuild の産物だけで、先端が origin/master (origin/HEAD は見ない) の祖先か、git cherry が全部 - で空白まで同じ patch (patch-id --verbatim) があるもの。
+                         # reflog にしか無い取り込んでいない版は refs/pro-con/removed/<名前>/<sha> に残してから消す (git for-each-ref refs/pro-con/removed で見る)。
+                         # ブランチも消すのは名前が worktree-pc-<カード> でほかの worktree が使っていないときだけ (`git update-ref -d` に確かめた先端を渡す)。
+                         # master に無い commit があるもの・記録に無いもの・PM と取り込みの係の worktree・人が掛けた lock は消さない。Claude Code が残した lock は外して消す (消せなければ掛け直す)。判定は wtclean.Judge (設定画面 456 の内訳も同じ関数を呼ぶ)
 bin/pro-con --e2e <dir>  # e2e モード: 画面・dispatcher・受付の箱・記録は本物、PG と PM だけ台本どおりの偽物 (claude を起動しない。利用枠を使わない)
 bin/pro-con e2e <start|keys|text|screen|wait|stop|scenario> <dir> ...  # Claude が e2e モードの画面を操作する口 (隔離した tmux サーバで動かす)
 bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンドを頼む。dispatcher が PG の worktree で 1 本ずつ順に実行し、結果を渡して PG を再開する (失敗は haiku が要約し、1 行目に一次判定 = この変更のせい / 負荷・環境 / 前から / 判定できない を書く。見込みで証拠ではない。枠 95% 以上で始めた実行は要約しない。issue 475)。repo の lock (`<git の共通ディレクトリ>/pro-con-locks/test`) を `lockman with` で取って走らせ、外が持っていれば「pro-con の外が使用中」で待つ (issue 471)
@@ -68,6 +74,15 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
   (Bash のコマンド・裏の shell)・transcript の末尾の裏のサブエージェントと結果待ちの道具の呼び出し。テストの係に頼んだコマンドの
   順番待ち / 実行中はカードの記録から足す。🚨 PG の外へ抜けたプロセス (`nohup … &` で親が launchd に移ったもの) は出ない
   (cwd で拾うと、人が worktree で開いた shell まで PG のものとして出す)。1 分集め直されていなければ詳細は古いと添え、ボードには出さない
+- **進捗** (issue 469) も詳細と `card show` が読むだけで出す。集めるのは 3 か所:
+  - dispatcher が 30 秒ごとに裏で `…/live/progress.json` へ: PG の worktree の git (origin/master より先の commit の本数と subject・未 commit の
+    ファイルの数・最後の commit の時刻) と、カードの issue の本文の「進捗」節 (チェックボックスの済み / 残り。無ければ最後の項目。worktree が
+    あれば PG が書き足した worktree の本文)。git は読むだけ (`--no-optional-locks`)
+  - 見張りが見るたびに `…/live/conflicts.json` へ: 今見えている取り込みの衝突 (commit 済みの分。PG どうしの組は両方のカードに載せる)
+  - テストの係が結果を返すときに記録 (カードの `LastRun`) へ: コマンド・頼んだ場所 (worktree からの相対。`src/pro-con` の make test と
+    repo 全体を見分ける)・rc・所要・出力の末尾 3 行
+  - 「今の待ち」(PG の turn の途中 / テストの係 / 利用枠 / 順番 / PG の空き / 人の番とその理由) は記録だけから決める (`card.WaitingOn`。
+    誰の番かは 452 の `Turn` を読む)
 
 ## 画面と dispatcher のつながり (即時の割り振り・複数の画面・終了)
 
@@ -79,7 +94,17 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 - **同じ置き場で画面を複数開いてよい**: 画面は開いている間 `screens/<id>.lock` を flock で持つ (package `presence`)。印の中身に
   モード (持ち主 / join)・`--as` の名前・端末・pid・開いた時刻を書き、2 つ以上開いていれば (または join なら) ゲージに一覧
   (「a1b2c3 持ち主 (この画面) · d4e5f6 join review」。4 つ以上なら数だけにして、s の板の下段に一覧)。生きているかの正本は flock
-- **持ち主と join (issue 481)**: `--join` でない画面はすべて持ち主。Q → quit で閉じるとき、ほかに **持ち主の画面** が開いていれば
+- **持ち主と join (issue 481)**: 閉じたときに何が止まるか
+
+  | 閉じる画面 | quit したとき |
+  |---|---|
+  | join の画面 | その画面だけ閉じる。dispatcher と PG は動いたまま (何も止めない) |
+  | 持ち主の画面 (ほかに持ち主の画面が開いている) | その画面だけ閉じる。dispatcher と PG は動いたまま |
+  | 最後の持ち主の画面 | dispatcher と PG を止める。join の画面が残っていても止める (残った join は「止まっている」を映す) |
+  | quit を通らずに消えた (kill -9 等) | 持ち主と join を合わせて 1 つでも開いていれば止めない。全部閉じて 1 分で dispatcher が PG を止めて抜ける (画面が起こした dispatcher = `--exit-without-screens 1m` のとき。手で起動した `pro-con dispatcher` は画面が無くても抜けない) |
+
+  止まった後に動かし直すのは、持ち主の画面か `pro-con dispatcher` (join は dispatcher を起こさない)。詳しい決まりは次のとおり。
+  `--join` でない画面はすべて持ち主。Q → quit で閉じるとき、ほかに **持ち主の画面** が開いていれば
   この画面だけ閉じる (dispatcher と PG は動いたまま)。**最後の持ち主の画面が止める** (join の画面が残っていても止める。確認の見出しに
   「join の画面が N 残り、止めた後は表示が止まる」)。join の画面の quit は何も止めない。数え直しは quit の排他 (`quit.lock`) の中
   - 止めている途中で止めるのをやめるのは **持ち主の画面が開いたときだけ** (join の画面が残っている・開いただけでは取り消さない。
@@ -142,6 +167,8 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 | enter | 詳細の開閉。右から引き出しが滑り込み、カンバンの左端を残して重なる (glogx の issues の本文と同じ `tuikit/layout.ComposeDrawer`)。開いている間は j / k / ctrl+d / ctrl+u / g / G で本文をスクロール、J / K で同じレーンの隣のカードへ送る。本物のモードでは末尾の節が PG の「活動」(応答の文と道具の呼び出し。末尾を見ていれば新しいものを追う)、模擬では「出力」(出力の末尾)。カードへの操作 (a / r / + / ? / e / o / y / Y / d) は開いたまま効き、レーンの移動やタブは効かない。q / esc / h / ← / enter で閉じる |
 | (入力中) | 入力欄・y/N 確認を出している間は、カンバンを暗い灰 1 色で描き、入力欄の行に地の色を敷く (キーは入力に取られ、カードは動かせない) |
 | (選択の枠) | 選択中のカードは赤 (196) の太字の二重線 (╔═╗ ║ ╚═╝) の枠で囲む (issue 472。字と色は `ui/cursor.go` の定数)。選択が移ると、枠が元の位置から行き先まで 180ms で滑る (レーンを跨いでも。Excel のセルのカーソルの見え方)。滑る途中も枠は丸ごと見える (途中で消えて見えるちらつきを避けた)。カードの字の上では線で置き換えず、字を残して色だけ変える (横の辺は赤の上線 / 下線、縦の辺は赤の背景。上線は端末と tmux によっては出ない。issue 472)。カードの上下には 1 行ずつ空きがあり、枠はそこに描くので隣のカードを隠さない |
+| (人の番の印) | 人が操作しないと進まないカード (`card.Turn` が人の番と決めたもの: 権限の確認・落ち続けて止めた PG・PM か取り込みの係が人に回した質問とレビュー・`pm` / `integrator` = off の役の仕事) は、バッジ行の頭に黄の太字で `!人の番` を出す。列の見出し (`!人 2`) とゲージ (`!人の番 3`) にも同じ形で枚数を出す。黄の字は人の番だけ (PM が先に受ける質問は暗い)。狭い列では名前を削って印を残す。tmux の件数 (`?N`) と macOS の通知も人の番だけ (issue 452) |
+| (PM の様子) | ゲージの「PG n/m」の隣に `PM n/m` (動いている PM の数 / 上限。今は 1) と様子 (作業中 + 手元のカード・idle・入力待ち・起動中・起こせない + 理由・落ちた・止めた・未起動・off)。依頼の列・質問待ちの PM の番のカードには PM の段階を出す (issue 480): `PM 知らせ待ち` (PM がまだ知らない) / `PM 知らせた` (知らせを渡している最中か、同じ turn でまだ扱っていない) / `PM 分解中 ▸ <最後の道具の呼び出し> <経過>` (水色。今の turn で扱っている 1 枚だけ。質問待ちは `PM 回答中`) / `PM 入力待ち` / `PM 知らせた (手を止めた)` (turn を終えたのに残っている)。扱っているカードは、PM の transcript で最後の起動・再開の後に、道具の呼び出しの対象 (コマンド・ファイル) に知らせ済みのカードの ID が出た最後のもの。積んだ・その場で閉じたカードは列を離れる (`card list` / `card show` にも同じものを出す。`--json` の鍵は `roleStep`)。担当 (詳細・`card list` / `card show`) は記録の Owner ではなく今手を動かす者 (`card.Assignee`: 分解済みは `PG 待ち`)。様子は dispatcher が Tick ごとに `dispatcher-state.json` の `role_states` へ書き、止まった dispatcher の最後の様子は出さない (issue 476) |
 | (処理中の印) | PG が turn の途中のカード (PG の status が busy) は、バッジの頭に回る印 (⠋⠙⠹…) を出す。回すカードがある間だけ 100ms ごとに描き直す (`ui/spinner.go`) |
 | (待ちの地) | 待っているカード (作業中の列でテストの係の結果待ち = 実行中も含む / 分解済みの列で再開待ち) は回る印を出さず、地をそのカード固有の色のまま明度 ×0.55 に暗くする (RGB で出す。truecolor の通らない端末では近い 256 色に落ちる)。まだ起動していない分解済みのカードは暗くしない (issue 455) |
 | (通知) | 操作の結果の通知は、ボードの右下の toast (`tuikit/toast`。glogx と同じ) に出る。右から滑り込み、数秒止まって、また右へ引っ込む。成功は ✓ 緑・失敗は ✗ 赤・断りや案内は … シアン (`ui/toast.go` の done / fail / info)。起動時の警告のような消すまで残す通知だけは下端の行 (esc で消す) |
@@ -242,6 +269,8 @@ issue の読み方 (状態 = ファイルの位置、`epic/<name>/` の 2 段、
 | `fake` | 模擬 backend。本物に差し替えるときは `backend.Backend` を満たす実装を足し、`main.go` の 1 行を替える |
 | `ui` | bubbletea v2 の TUI。状態は持たない (Snapshot を描き、Command を送るだけ) |
 | `monitor` | 見張り (`pro-con monitor`。issue 475)。読むだけで、見つけたことは受付の箱に置く |
+| `wtclean` | 閉じたカードの PG の worktree の判定と片付け (`pro-con worktree clean`。issue 492)。消す操作はここだけ |
+| `gitx` | git を呼ぶ共通の口 (継承した `GIT_DIR` などを外す。monitor と wtclean が使う) |
 
 - `fake` の dispatcher / watchdog / リソース列は**模擬**で、本番の判定ではない。本番の判定を育てるなら fake から切り出す
 - **見た目は B「枠」で合意** (2026-09-24。A 帯 / C カードと実物で見比べて選んだ)。列と詳細を角丸の罫線で囲み、選択中のカードがある列の枠だけを

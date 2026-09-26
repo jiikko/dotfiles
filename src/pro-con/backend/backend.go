@@ -45,8 +45,14 @@ type Snapshot struct {
 	// Startup は dispatcher の起動時の確かめの要約 (起動から 10 分だけ。issue 483)。StartupAlert は復旧した・判定できないものがある
 	Startup      string
 	StartupAlert bool
+	Roles        card.Roles       // dispatcher が起こさない役 (最後に回ったときの値)。人の番の目印 (card.Turn) に使う
+	RoleStates   []card.RoleState // dispatcher が起こす役 (PM・取り込みの係) の最後に回ったときの様子。ゲージと依頼の列の印 (issue 476)
 	Violations   []card.Violation
 }
+
+// DispatcherStale はこれより長く回っていなければ dispatcher が止まっている疑いとする (Tick は数秒ごと)。
+// 止まった dispatcher の最後の様子 (役の様子・絞りの理由) は、画面も card list も今の様子として出さない。
+const DispatcherStale = 2 * time.Minute
 
 // Screen は開いている画面 1 つ (package presence の印。見ているだけの画面 = --view は入らない。issue 481)。
 type Screen struct {

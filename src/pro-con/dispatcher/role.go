@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -61,6 +62,13 @@ type roleRun struct {
 	rejects int    // claude が起動・再開を受け付けなかったのが続いた回数 (launchRejectLimit 回で起こさない)
 	// rejected は最後に受け付けなかった失敗
 	rejected string
+	// 画面に出す様子 (roleState)。どれも最後の tellRole の値で、held / failed (出来事を重ねないための前の値) と違い毎回決め直す
+	fresh    bool   // この Tick に一覧と照らした (Tick の頭で下ろす。照らせなかった Tick の alive / seen は前の Tick のもの)
+	alive    bool   // 今の session が生きている (一覧は起動・再開の前に取ったもの)
+	seen     string // 今の session の status
+	sid      string // 今の session の session id (transcript を引く。一覧に出ていなければ空)
+	launched bool   // この Tick に起動・再開した (alive / seen は起動・再開の前の session のもの)
+	blocked  string // この Tick に起こさなかった・起こせなかった理由
 }
 
 func (d *Dispatcher) roleRun(r *role) *roleRun {
@@ -71,6 +79,142 @@ func (d *Dispatcher) roleRun(r *role) *roleRun {
 		d.runs[r.cardID] = &roleRun{}
 	}
 	return d.runs[r.cardID]
+}
+
+// roleMax は同時に動かす役の数の上限 (PM も取り込みの係も 1 つ。415 の論点 6。数を変えられるようにするのは 456 の後)。
+const roleMax = 1
+
+// roleState は画面と card list に出す役 r の様子 (issue 476。writeState が Tick ごとに書く)。
+// 最後の tellRole の値と、役の様子のファイル (起動の印・知らせ済みのカード) から決める。
+// 起動・再開してから launchGrace の間は、一覧にまだ出ない / pid が無いのを「落ちた」と出さない (起動の直後によくある形)。
+func (d *Dispatcher) roleState(r *role, now time.Time) card.RoleState {
+	s := card.RoleState{Name: r.name, Max: roleMax}
+	if d.PMRepo == "" || r.off(d) {
+		s.Phase = card.RoleOff
+		return s
+	}
+	pm, err := store.LoadRole(d.Dir, r.file, r.name)
+	if err != nil {
+		s.Phase, s.Why = card.RoleBroken, err.Error()
+		return s
+	}
+	rr := d.roleRun(r)
+	s.Session, s.Cards, s.Why = pm.Session, keyCards(append(slices.Clone(pm.Telling), pm.Told...)), rr.blocked
+	switch {
+	case pm.Launching != "" || rr.launched:
+		s.Phase = card.RoleLaunch
+	case !rr.fresh: // 一覧を取れない・記録を読めない Tick は tellRole が照らす前に抜ける。前の Tick の様子を今のものとして出さない
+		s.Phase = card.RoleChecking
+		if s.Why == "" {
+			s.Why = "この Tick は session の一覧と照らせていない (dispatcher.log)"
+		}
+	case rr.alive && rr.seen == agents.StatusIdle:
+		s.Phase = card.RoleIdle
+	case rr.alive && rr.seen == "waiting":
+		s.Phase = card.RoleAsking
+	case rr.alive: // busy と知らない status (dispatcher は知らない値も turn の途中として扱う)
+		s.Phase = card.RoleBusy
+	case rr.blocked != "":
+		s.Phase = card.RoleBlocked
+	case pm.Session != "" && now.Sub(pm.LaunchedAt) < launchGrace:
+		s.Phase = card.RoleLaunch
+	case pm.Stopped:
+		s.Phase = card.RoleStopped
+	case !pm.DeadSince.IsZero():
+		s.Phase = card.RoleDead
+	default:
+		s.Phase = card.RoleNone
+	}
+	if s.Working() {
+		s.Current, s.Last, s.LastAt = d.roleTurn(rr.sid, pm.LaunchedAt, s.Cards)
+	}
+	return s
+}
+
+// cardIDRe はカード ID (store が振る C-%03d)。前の文字は mentioned が見る (\b だと `C-018_notes.md` を取りこぼす)。
+var cardIDRe = regexp.MustCompile(`C-\d{3,}`)
+
+// afterRe は `card plan` の順番の前のカード (--after <カード>)。扱っているカードではないので数えない。
+var afterRe = regexp.MustCompile(`--after[ =]C-\d{3,}`)
+
+// roleTurn は turn の途中の役が今の turn で扱っているカードと、最後の道具の呼び出し (issue 480)。
+// 今の turn = 最後の起動・再開 (since) か、その後の人の発言・自動の再開のうち最後のものより後 (人が attach して打った turn を、
+// 前の知らせの turn の続きと取り違えない)。🚨 それより前の呼び出しは見ない (再開した session の transcript は前の session の記録を写して始まる = live.CardLog)。
+// 扱っているカードは、呼び出しを新しい方から見て、対象 (コマンド・ファイル) に知らせ済みのカード (cards) が 1 枚だけ出た最初のもの
+// (PM は `pro-con card show <カード>` で読み始め、`card plan` で積む)。次の呼び出しで打ち切って空にする (どのカードとも言えない):
+//   - 知らせ済みが 2 枚以上出た (`card show C-001; card show C-002` / `for c in …`)
+//   - 知らせ済みでないカードだけが出た (積んで列を離れたカード・足したカード。最後の道具の呼び出しがそのカードのものになる)
+//
+// ID が出ていなければ空 (当て推量で 1 枚に決めない: 人の頼んだ別の仕事を「分解中」と出す)。
+// transcript の末尾は Tick ごとに読む (役は 1 つずつで、PG の様子 (collectDoing) の 10 秒ごとより細かく「即時」に出す)。
+func (d *Dispatcher) roleTurn(sid string, since time.Time, cards []string) (current, last string, lastAt time.Time) {
+	if d.Transcript == nil || sid == "" {
+		return "", "", time.Time{}
+	}
+	t, err := d.Transcript(sid)
+	if err != nil {
+		return "", "", time.Time{}
+	}
+	for _, p := range t.Prompts {
+		if p.At.After(since) {
+			since = p.At
+		}
+	}
+	for _, at := range t.Restarts {
+		if at.After(since) {
+			since = at
+		}
+	}
+	for i := len(t.Uses) - 1; i >= 0 && !t.Uses[i].At.Before(since); i-- {
+		u := t.Uses[i]
+		if last == "" {
+			last, lastAt = u.Name, u.At
+			if u.Text != "" {
+				last += ": " + u.Text
+			}
+		}
+		told, other := mentioned(u.Target, cards)
+		switch {
+		case len(told) == 1:
+			return told[0], last, lastAt
+		case len(told) > 1 || other:
+			return "", last, lastAt
+		}
+	}
+	return "", last, lastAt
+}
+
+// mentioned は s に出るカード ID のうち cards にあるもの (重ねない) と、cards に無いカードが出たか。`--after <カード>` は数えない。
+func mentioned(s string, cards []string) (told []string, other bool) {
+	s = afterRe.ReplaceAllString(s, "")
+	for _, ix := range cardIDRe.FindAllStringIndex(s, -1) {
+		if ix[0] > 0 && isIDChar(s[ix[0]-1]) { // `XC-001` / `pc-c-001` の一部
+			continue
+		}
+		switch id := s[ix[0]:ix[1]]; {
+		case !slices.Contains(cards, id):
+			other = true
+		case !slices.Contains(told, id):
+			told = append(told, id)
+		}
+	}
+	return told, other
+}
+
+func isIDChar(b byte) bool {
+	return b == '_' || b == '-' || b >= '0' && b <= '9' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
+}
+
+// keyCards は知らせる物の鍵 (r.key: 「C-001」か「C-001@時刻」) のカード ID を、重ねずに並びのまま返す。
+func keyCards(keys []string) []string {
+	var out []string
+	for _, k := range keys {
+		id, _, _ := strings.Cut(k, "@")
+		if !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // exists は PM の作業ディレクトリが在るか (Exists を差し替えられる。テストは本物のパスを持たない)。
@@ -97,10 +241,17 @@ func (d *Dispatcher) roleWorktree(name string) string {
 	return filepath.Join(d.PMRepo, ".claude", "worktrees", name)
 }
 
+// roles は起こさない役 (画面・card list・知らせが人の番 = card.Turn を決めるのに使う)。PM の repo が空なら PM も取り込みの係も起こさない
+// (tellRole)。e2e モードの偽の PM (FakePM) は依頼を分けるだけなので数えない (依頼は次の Tick の頭で分解済みになる)。
+func (d *Dispatcher) roles() card.Roles {
+	return card.Roles{PMOff: d.PMRepo == "" || d.PMOff, IntegratorOff: d.PMRepo == "" || d.IntegratorOff}
+}
+
 // tellRole は役 r に知らせる物 (r.key) を知らせる。居なければ起動し、居れば (idle になってから) 再開して知らせる。
 // PMRepo が空 (e2e モード・設定で PM の repo が見つからない) か r.off なら何もしない。
 func (d *Dispatcher) tellRole(ctx context.Context, now time.Time, ss []agents.Session, r *role) ([]eventlog.Event, error) {
 	rr := d.roleRun(r)
+	rr.blocked, rr.launched = "", false
 	if d.PMRepo == "" || r.off(d) {
 		return nil, nil
 	}
@@ -161,6 +312,7 @@ func (d *Dispatcher) tellRole(ctx context.Context, now time.Time, ss []agents.Se
 		}
 	}
 	alive := listed && cur.PID != 0
+	rr.fresh, rr.alive, rr.seen, rr.sid = true, alive, cur.Status, cur.SessionID
 	switch {
 	case alive:
 		pm.DeadSince = time.Time{}
@@ -219,6 +371,7 @@ func (d *Dispatcher) tellRole(ctx context.Context, now time.Time, ss []agents.Se
 	reviving := !alive && (hasRow || pm.Session != "") && !pm.Stopped
 	if reviving && len(pm.Revivals) >= pmReviveLimit {
 		why := fmt.Sprintf(r.name+" が %s の間に %d 回起こし直しても生きていない。窓が過ぎるまで起こさない (様子: pro-con の dispatcher.log / claude agents)", defaultCrashWindow, len(pm.Revivals))
+		rr.blocked = why
 		if rr.held != why {
 			rr.held = why
 			notes = append(notes, ev(eventlog.KindHold, r.cardID, pm.Session, why))
@@ -229,6 +382,7 @@ func (d *Dispatcher) tellRole(ctx context.Context, now time.Time, ss []agents.Se
 	// 終了で止めた PM には当たらない (462 の PM 版)
 	if rr.rejects >= launchRejectLimit {
 		why := fmt.Sprintf(r.name+" の起動・再開を claude が %d 回続けて受け付けなかったので、起こさない (最後: %s)。直してから dispatcher を起動し直すと、もう一度起こす", rr.rejects, rr.rejected)
+		rr.blocked = why
 		if rr.held != why {
 			rr.held = why
 			notes = append(notes, ev(eventlog.KindHold, r.cardID, pm.Session, why))
@@ -236,6 +390,7 @@ func (d *Dispatcher) tellRole(ctx context.Context, now time.Time, ss []agents.Se
 		return notes, save()
 	}
 	if limit, why := d.capacity(now); limit == 0 {
+		rr.blocked = why
 		if rr.held != why {
 			rr.held = why
 			notes = append(notes, ev(eventlog.KindHold, r.cardID, "", r.name+" を起こさない ("+why+")"))
@@ -245,6 +400,7 @@ func (d *Dispatcher) tellRole(ctx context.Context, now time.Time, ss []agents.Se
 	rr.held = ""
 	how, name, run, err := d.prepareRole(r, row, hasRow, cur, alive, now, st.Cards, untold, pending)
 	if err != nil {
+		rr.blocked = how + "できない: " + err.Error()
 		if rr.failed != err.Error() { // 理由が変わらないまま Tick ごとにログを埋めない
 			rr.failed = err.Error()
 			notes = append(notes, ev(eventlog.KindLaunch, r.cardID, "", r.name+" を"+how+"できない: "+err.Error()))
@@ -277,6 +433,7 @@ func (d *Dispatcher) tellRole(ctx context.Context, now time.Time, ss []agents.Se
 		return append(notes, ev(eventlog.KindLaunch, r.cardID, "", fmt.Sprintf(r.name+" の%sに失敗したと返った (立っているかもしれないので、一覧で確かめてから起こし直す): %v", how, launchErr))), nil
 	}
 	settleRole(&pm, id)
+	rr.launched = true
 	notes = append(notes, ev(eventlog.KindLaunch, r.cardID, id, fmt.Sprintf(r.name+" を%sして"+r.told+" (%s: %s)", how, id, r.labels(pending))))
 	return notes, save()
 }

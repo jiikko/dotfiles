@@ -31,13 +31,13 @@ func labelCol(m *Model, label string) int {
 // peak は揺れが壁の方へ出きっている時刻 (bumpOffset が 1 になる所)。
 const peak = bumpDuration * 15 / 100
 
-// 上端 (カード 1 枚のレーン) で ↑ / k を押すと、レーンごと 1 行上へずれ、枠も一緒に動く。下端の ↓ / j は 1 行下。
+// 上端 (カード 1 枚のレーン) で ↑ / k を押すと、レーンごと 2 行上へずれ、枠も一緒に動く。下端の ↓ / j は 2 行下。
 // 下へずれても下枠は切らない (ボードの下の空き行へ出す)。
 func TestBumpVerticalAtEdge(t *testing.T) {
 	for _, tc := range []struct {
 		key string
 		dy  int
-	}{{"k", -1}, {"j", 1}} {
+	}{{"k", -2}, {"j", 2}} {
 		m, clk := cursorModel(t) // 作業中のレーンは R1 の 1 枚だけ
 		x0, y0 := framePos(m)
 		corners := strings.Count(ansi.Strip(m.render()), "╰") // レーンの下枠の左の角 (6 本)
@@ -145,7 +145,7 @@ func TestBumpDownKeepsScreenHeight(t *testing.T) {
 
 // 連打の抑止は 500ms (ユーザーの指定。定数から時刻を作ると、定数を変えてもテストが一緒にずれて気づけないので数字で固定する):
 // 揺れを始めてから 490ms の同じ向きの押下では始め直さず、510ms の押下では始め直す。判定は枠の位置で見る
-// (始め直していれば、その押下の peak 後に 1 行上へ出きっている。始め直さなければ最初の揺れの続きで元の行)
+// (始め直していれば、その押下の peak 後に 2 行上へ出きっている。始め直さなければ最初の揺れの続きで元の行)
 func TestBumpIgnoresRepeatWithinGuard(t *testing.T) {
 	for _, tc := range []struct {
 		after   time.Duration
@@ -159,8 +159,32 @@ func TestBumpIgnoresRepeatWithinGuard(t *testing.T) {
 		press(m, "k")
 		clk.t = start.Add(tc.after + peak)
 		_, y := framePos(m)
-		if got := y == y0-1; got != tc.restart {
+		if got := y == y0-2; got != tc.restart {
 			t.Fatalf("%v 後の押下: 始め直した = %v (期待 %v。枠の行 %d・元の行 %d)", tc.after, got, tc.restart, y, y0)
 		}
+	}
+}
+
+// 上へ揺れたレーンはヘッダの上に乗る (ボードの中で切ると、レーンの上枠と見出しがヘッダの下に潜って消えた)。
+// 出きった所で、作業中のレーンの見出しはボードの 1 行目ではなくヘッダの罫線の 1 つ上 (2 行上) に描かれる。
+func TestBumpUpRidesOverHeader(t *testing.T) {
+	m, clk := cursorModel(t)
+	const label = "▶ 3 " // 選ばれているレーン (作業中 = 3 列目) の見出しの頭
+	row := func() int {
+		for r, l := range strings.Split(ansi.Strip(m.render()), "\n") {
+			if strings.Contains(l, label) {
+				return r
+			}
+		}
+		return -1
+	}
+	if got := row(); got != headerRows {
+		t.Fatalf("前提: 見出しはボードの 1 行目 (%d 行目) のはず: %d", headerRows, got)
+	}
+	start := clk.t
+	press(m, "k")
+	clk.t = start.Add(peak)
+	if got := row(); got != headerRows-2 {
+		t.Fatalf("出きった所で見出しが %d 行目 (期待 %d。ヘッダの上に乗る)", got, headerRows-2)
 	}
 }

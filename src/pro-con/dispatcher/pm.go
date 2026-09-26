@@ -22,7 +22,7 @@ const pmReviveLimit = 3
 
 // pmRole は PM の役。
 var pmRole = &role{
-	cardID: PMCardID, name: "PM", file: store.PMStateFile, prefix: "pc-pm-",
+	cardID: PMCardID, name: card.PMName, file: store.PMStateFile, prefix: "pc-pm-",
 	intro: "あなたは pro-con の PM です。次の指示書に従う (`pro-con card guide` でいつでも読み直せる)。",
 	told:  "依頼の列のカードと PG の質問を知らせた",
 	guide: func(d *Dispatcher) string { return d.PMGuide },

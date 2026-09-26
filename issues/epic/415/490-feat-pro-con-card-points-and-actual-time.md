@@ -39,3 +39,17 @@
 - 触る場所: `card.Card` の欄、`store/store.go` の `case "plan"` と列の移り変わり、`cardcmd.go` の `plan` の引数、`ui/view.go` の `cardCell` のタイトルの 1 行目の右端、`cardview.go`、`pm-guide.md` の役目 3
 - 変える判断: 「作業中」に居た時間として何を数えるか
 - 順番の理由: 455 (C-033) が「作業中」を、PG が動いている分と待っている分に分ける (枠の数え方は push 済みで、ボードの見た目は人の回答待ち)。同じ定義を 2 つのカードで別々に決めないよう、455 の後にする (依頼の原文でも指定)。452 (C-032) と 485 (C-043) も `cardCell` を触るが、触るのはバッジの行でこちらはタイトルの行なので、順番は付けていない
+
+## 見本の確認のコマンド (C-047 の PG の質問。2026-09-26)
+
+どのディレクトリからでも打てる (フルパス)。見本は PG の worktree の `tmp/` にあり、commit されていない。
+
+```sh
+# 色つきで再生する (案 A / B / C と、幅 20 の狭いとき)
+python3 /Users/koji/dotfiles/.claude/worktrees/pc-c-047/tmp/pro-con-490-effort-sample.py
+
+# 質問に添えた出力をそのまま見る
+cat /Users/koji/dotfiles/.claude/worktrees/pc-c-047/tmp/pro-con-490-effort-sample.ans
+```
+
+聞かれていること: 案 A「3pt 42分」/ 案 B「3pt 0:42」(PG の推し) / 案 C「3pt」と「0:42」を 2 段、と数え方の確認 4 点 (カード C-047 の質問。`/Users/koji/dotfiles/bin/pro-con card show C-047`)

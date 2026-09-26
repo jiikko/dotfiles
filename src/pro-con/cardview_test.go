@@ -118,6 +118,9 @@ func TestCardList(t *testing.T) {
 	if !strings.Contains(out, "待ち: 質問") {
 		t.Fatalf("質問待ちが一覧で見えない: %q", out)
 	}
+	if strings.Contains(out, "人の番") {
+		t.Fatalf("PM が先に受ける質問を人の番と出した: %q", out)
+	}
 	if _, out, _ := viewCmd(t, env, "list", "--all"); !strings.Contains(out, "C-003") {
 		t.Fatalf("--all で片付けたものが出ない: %q", out)
 	}
@@ -131,6 +134,81 @@ func TestCardList(t *testing.T) {
 	}
 	if rc, _, _ := viewCmd(t, env, "list", "--state", "nosuch"); rc != 2 {
 		t.Fatalf("未知の列は rc=2: %d", rc)
+	}
+}
+
+// 誰の番かは dispatcher が書いた起こさない役で決める (PM を起こさないなら、PG の質問と依頼は人の番)。
+func TestCardListMarksHumansTurn(t *testing.T) {
+	env := viewFixture(t)
+	if err := store.SaveDispatcherState(env.dir, store.DispatcherState{Tick: time.Now(), Roles: card.Roles{PMOff: true}}); err != nil {
+		t.Fatal(err)
+	}
+	_, out, _ := viewCmd(t, env, "list")
+	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+		if !strings.HasSuffix(l, "人の番") {
+			t.Fatalf("PM を起こさないのに人の番と出さない: %q", l)
+		}
+	}
+	rc, out, _ := viewCmd(t, env, "list", "--state", "waiting", "--json")
+	var got []cardSummary
+	if rc != 0 || json.Unmarshal([]byte(out), &got) != nil || len(got) != 1 || got[0].Turn != card.TurnHuman.Label() {
+		t.Fatalf("--json に人の番が出ない: rc=%d %q", rc, out)
+	}
+}
+
+// 担当は今手を動かす者 (issue 476): 分解済みは記録の Owner (PM) ではなく PG 待ち、PM が分けている依頼は「PM 分解中」。
+// 止まった dispatcher の最後の様子では分解中と出さない。
+func TestCardListShowsAssignee(t *testing.T) {
+	env := viewFixture(t)
+	mustSubmit(t, env.dir, store.Request{Kind: "add", Title: "分けたもの", Owner: "PM"})
+	mustApply(t, env.dir)
+	mustSubmit(t, env.dir, store.Request{Kind: "plan", CardID: "C-004", Issues: []card.IssueRef{{Repo: "dotfiles", Number: 1, Status: "open"}}})
+	mustApply(t, env.dir)
+	pm := []card.RoleState{{Name: card.PMName, Phase: card.RoleBusy, Max: 1, Cards: []string{"C-002"}, Current: "C-002",
+		Last: "Bash: pro-con card show C-002", LastAt: time.Now()}}
+	line := func(out, id string) string {
+		for _, l := range strings.Split(out, "\n") {
+			if strings.HasPrefix(l, id+" ") {
+				return l
+			}
+		}
+		t.Fatalf("%s の行が無い: %q", id, out)
+		return ""
+	}
+	for _, tc := range []struct {
+		tick time.Time
+		want string
+	}{{time.Now(), "担当: PM 分解中"}, {time.Now().Add(-time.Hour), "担当: PM  ("}} {
+		if err := store.SaveDispatcherState(env.dir, store.DispatcherState{Tick: tc.tick, RoleStates: pm}); err != nil {
+			t.Fatal(err)
+		}
+		_, out, _ := viewCmd(t, env, "list")
+		if l := line(out, "C-002"); !strings.Contains(l, tc.want) {
+			t.Errorf("Tick %s前: 依頼の担当 %q (want %q)", time.Since(tc.tick).Round(time.Minute), l, tc.want)
+		}
+		if l := line(out, "C-004"); !strings.Contains(l, "担当: PG 待ち") {
+			t.Errorf("分解済みの担当が PG 待ちでない: %q", l)
+		}
+		fresh := strings.Contains(tc.want, "分解中")
+		if l := line(out, "C-002"); strings.Contains(l, "PM 分解中 ▸ Bash: pro-con card show C-002") != fresh { // 役の段階と最後の道具の呼び出し (480)
+			t.Errorf("Tick %s前: 依頼の行の役の段階: %q", time.Since(tc.tick).Round(time.Minute), l)
+		}
+		if _, out, _ := viewCmd(t, env, "show", "C-002"); strings.Contains(out, "担当: PM 分解中") != fresh ||
+			strings.Contains(out, "役の段階: PM 分解中 ▸ Bash: pro-con card show C-002") != fresh {
+			t.Errorf("show の担当と役の段階 (want %q): %q", tc.want, out)
+		}
+	}
+	_, out, _ := viewCmd(t, env, "list", "--state", "planned", "--json")
+	var got []cardSummary
+	if json.Unmarshal([]byte(out), &got) != nil || len(got) != 1 || got[0].Assignee != "PG 待ち" || got[0].Owner != "PM" {
+		t.Fatalf("--json の担当 (assignee) と記録の owner: %q", out)
+	}
+	if err := store.SaveDispatcherState(env.dir, store.DispatcherState{Tick: time.Now(), RoleStates: pm}); err != nil {
+		t.Fatal(err)
+	}
+	_, out, _ = viewCmd(t, env, "list", "--state", "requested", "--json") // 役の段階の鍵は roleStep (469 の進捗 progress と別。480)
+	if !strings.Contains(out, `"roleStep": "PM 分解中 ▸ Bash: pro-con card show C-002`) {
+		t.Fatalf("--json に役の段階 (roleStep) が無い: %q", out)
 	}
 }
 
@@ -191,6 +269,42 @@ func TestCardShow(t *testing.T) {
 	}
 	if rc, _, errOut := viewCmd(t, env, "show", "C-999"); rc != 1 || !strings.Contains(errOut, "C-999") {
 		t.Fatalf("無いカード: rc=%d err=%q", rc, errOut)
+	}
+}
+
+// show は画面の詳細と同じ進捗 (dispatcher が集めた progress.json・見張りが見た conflicts.json・テストの係の最後の結果) と今の待ちを出す (issue 469)。
+func TestCardShowProgress(t *testing.T) {
+	env := viewFixture(t) // C-001 は質問待ち
+	now := time.Now()
+	if err := store.SaveProgress(env.dir, store.Progress{At: now, Cards: map[string]card.Progress{
+		"C-001": {Base: "origin/master", Ahead: 2, Commits: []card.Commit{{Hash: "a1b2c3", Subject: "見本"}}, Dirty: 1},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveConflicts(env.dir, store.Conflicts{At: now, Cards: map[string][]string{"C-001": {"C-001 と C-002 の commit 済みの分どうしが衝突する (g.txt)"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Update(env.dir, func(st *store.State) error {
+		st.Cards[0].LastRun = &card.RunRecord{Command: "make test", Cwd: "/r/.claude/worktrees/pc-c-001", RC: 2, Took: time.Minute, At: now, Tail: []string{"FAIL: TestFoo"}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rc, out, errOut := viewCmd(t, env, "show", "C-001")
+	for _, want := range []string{"今の待ち: PM が質問に答えるか人に回す", "\n進捗\n", "commit: origin/master より 2 本先", "a1b2c3 見本", "ほか 1 本",
+		"未 commit の変更: 1 ファイル", "テスト: 最後の結果 rc=2", "worktree の直下 で `make test`", "FAIL: TestFoo", "取り込み: C-001 と C-002 の commit 済みの分どうしが衝突する"} {
+		if rc != 0 || !strings.Contains(out, want) {
+			t.Fatalf("show に %q が無い: rc=%d out=%q err=%q", want, rc, out, errOut)
+		}
+	}
+	rc, out, _ = viewCmd(t, env, "show", "C-001", "--json")
+	var d cardDetail
+	if rc != 0 || json.Unmarshal([]byte(out), &d) != nil || d.Progress == nil || d.Progress.Ahead != 2 || len(d.Conflicts) != 1 || d.Card.LastRun == nil ||
+		d.NowWaiting == "" {
+		t.Fatalf("show --json に進捗が無い: rc=%d %q", rc, out)
+	}
+	if _, out, _ := viewCmd(t, env, "show", "C-002"); strings.Contains(out, "\n進捗") {
+		t.Fatalf("集めたものの無いカードに進捗の節を出した: %q", out)
 	}
 }
 

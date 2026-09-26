@@ -619,7 +619,7 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		}
 		c.Resume = ReworkPrefix + r.Rework + "\n直したら、もう一度 `pro-con card review " + c.ID + "` を実行してから turn を終える。"
 		move(card.Planned, "差し戻した: "+r.Rework) // 原文のまま残す (要約・切り詰めをしない)
-	case "handoff": // PM が PG の質問を / 取り込みの係がレビュー待ちを人に回した (487)。人の番の目印 (452) ができるまでは履歴に残すだけで、列も質問も変えない
+	case "handoff": // PM が PG の質問を / 取り込みの係がレビュー待ちを人に回した (487)。履歴に残すだけで、列も質問も変えない (人の番 = card.Turn はこの履歴の文で決まる。452)
 		if (c.State != card.Waiting || c.Wait.Kind != card.WaitQuestion) && c.State != card.Review {
 			return fmt.Errorf("PG の質問待ちでもレビュー待ちでもない (今は %s)", c.State.Label())
 		}

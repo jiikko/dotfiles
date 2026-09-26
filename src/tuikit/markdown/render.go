@@ -1,4 +1,7 @@
-package issues
+// Package markdown は markdown の本文を width 桁の端末行へ整形する (見出し・箇条書き・表・
+// フェンスコードの chroma ハイライト)。glogx の issues viewer の本文と、pro-con の詳細の
+// 応答の文が同じ整形器を使う (glogx/issues から移した。dotfiles issue 486)。
+package markdown
 
 import (
 	"strings"
@@ -22,12 +25,12 @@ var (
 	hlStyle     = styles.Get("gruvbox")
 )
 
-// RenderBody は issue 本文 (markdown) を width 桁の端末行へ整形する。
+// Render は markdown の本文 (issue 本文・PG の応答の文) を width 桁の端末行へ整形する。
 // colored=false なら ANSI を一切付けない (テストと非 TTY 出力のため)。
 //
 // 第 2 戻り値は各行に対応するソース (.md) の行番号 (0 = 出さない。理由は line.src の doc)。
 // 呼び出し側が左の溝に出す。
-func RenderBody(src string, width int, colored bool) (out []string, srcLines []int) {
+func Render(src string, width int, colored bool) (out []string, srcLines []int) {
 	lines := renderMarkdown(src, width)
 	out = make([]string, 0, len(lines))
 	srcLines = make([]int, 0, len(lines))
@@ -38,7 +41,7 @@ func RenderBody(src string, width int, colored bool) (out []string, srcLines []i
 	return out, srcLines
 }
 
-// clipToWidth は「出力は width 桁を超えない」という RenderBody の契約を、**出口 1 箇所で**
+// clipToWidth は「出力は width 桁を超えない」という Render の契約を、**出口 1 箇所で**
 // 無条件に守る (issue 116)。
 //
 // なぜ必要か: 整形 (renderMarkdown) は箇条書きの記号・番号・表の罫線・入れ子のインデントを
@@ -50,11 +53,11 @@ func RenderBody(src string, width int, colored bool) (out []string, srcLines []i
 // ことになり、ここで一律に切る方が契約が単純 (glogx 本体も同名の関数で同じことをしており、
 // 今日この溢れが表に出ていないのはその下流 clip が吸収していたから)。
 //
-// 🚨 ここは Body.Lines のキャッシュ越しなので毎フレームは走らない (width か colored が
+// 🚨 glogx は Body.Lines のキャッシュ越しに呼ぶので毎フレームは走らない (width か colored が
 // 変わったときだけ)。とはいえ ANSI 無しで byte 長が収まる行は最も多いので fast-path は残す。
 func clipToWidth(line string, width int) string {
 	if width <= 0 {
-		return "" // 幅 0 以下に収まる表示は空しかない (本体の clipToWidth と同じ契約)
+		return "" // 幅 0 以下に収まる表示は空しかない (glogx 本体の clipToWidth と同じ契約)
 	}
 	if len(line) <= width && strings.IndexByte(line, '\x1b') < 0 {
 		return line

@@ -48,18 +48,24 @@ func legendSize(total int) (width, inner int) {
 // legendRows は表の中身の行 (どの行も幅 inner に収まるよう折り返す)。
 func legendRows(inner int) []string {
 	var rows []string
-	for i, s := range card.Columns {
-		rows = append(rows, fg(stateColor(s))+sgrBold+fmt.Sprintf("%d %s", i+1, s.Label())+sgrReset)
-		for _, l := range strings.Split(ansi.Hardwrap(s.Meaning(), max(inner-2, 10), true), "\n") {
+	// explain は説明の文を幅に収まるよう折り返し、見出しの下に 2 桁下げて足す
+	explain := func(text string) {
+		for _, l := range strings.Split(ansi.Hardwrap(text, max(inner-2, 10), true), "\n") {
 			rows = append(rows, "  "+l)
 		}
 	}
-	// カードの右上の数 (issue 490)。意味の正本は card.PointsMeaning
-	rows = append(rows, "", sgrBold+"右上の 3pt = 見積もりのポイント"+sgrReset)
+	for i, s := range card.Columns {
+		rows = append(rows, fg(stateColor(s))+sgrBold+fmt.Sprintf("%d %s", i+1, s.Label())+sgrReset)
+		explain(s.Meaning())
+	}
+	rows = append(rows, "", humanTag(humanMark+"の番")) // 印の意味 (452)。どれが人の番かの正本は card.Turn
+	explain(humansTurnMeaning)
+	rows = append(rows, "", sgrBold+"右上の 3pt = 見積もりのポイント"+sgrReset) // カードの右上の数 (490)。意味の正本は card.PointsMeaning
 	for _, m := range card.PointsMeaning {
-		for _, l := range strings.Split(ansi.Hardwrap(m, max(inner-2, 10), true), "\n") {
-			rows = append(rows, "  "+l)
-		}
+		explain(m)
 	}
 	return rows
 }
+
+const humansTurnMeaning = "人が操作しないと進まない (権限の確認・落ち続けて止めた PG・PM か取り込みの係が人に回したもの・" +
+	"起こさない設定の役の仕事)。黄の字はこれだけに使う"
