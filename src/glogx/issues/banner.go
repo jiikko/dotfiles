@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"glogx/atomicfile"
+	"atomicfile"
 )
 
 // claim の担当者バナー (issue 本文冒頭の `> 🚨 **担当中: <誰>**（YYYY-MM-DD〜）`)。

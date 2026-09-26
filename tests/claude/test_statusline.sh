@@ -543,21 +543,21 @@ fi
 
 # --- glogx との pace ルールの乖離 (帯・状態語) -------------------------------------------
 #
-# statusline の pace_row と glogx (src/glogx/usage) は同じ判定を 2 言語で二重実装している。
+# statusline の pace_row と glogx (取得・判定は src/ratelimit/usage) は同じ判定を 2 言語で二重実装している。
 # 突き合わせは Go 側のテスト (usage/pace_drift_test.go) が持つが、**そこから叩くだけでは
 # この乖離は CI で守られない**:
-#   - .github/workflows/src_glogx.yml の paths は src/glogx/** だけなので、この shell を
-#     単独で変更した push では glogx の Go テストが 1 度も走らない
+#   - Go 側の workflow (.github/workflows/src_ratelimit.yml) の paths にもこの shell を入れてあるが、
+#     paths filter は定義を変えた瞬間に黙って外れる。こちらは filter の無い経路として残す
 #   - `go test` のキャッシュキーに外部ファイル (この shell) の内容は入らないので、Go ソースが
 #     無変更なら `(cached) ok` が返る (実測 2026-09-01)
 # よって **paths filter の無い tests.yml 側から `-count=1` つきで叩く**のがこの検査の本命の経路。
 echo "[test-statusline] glogx との pace ルールの乖離を検査"
 if command -v go >/dev/null 2>&1; then
-  if (cd "$ROOT_DIR/src/glogx" && go test ./usage/ -run '^TestPaceRulesMatchStatusline$' -count=1 >/dev/null 2>&1); then
+  if (cd "$ROOT_DIR/src/ratelimit" && go test ./usage/ -run '^TestPaceRulesMatchStatusline$' -count=1 >/dev/null 2>&1); then
     echo "✓ pace ルールが glogx と一致 (帯・状態語)"
   else
     echo "✗ pace ルールが glogx と乖離している。次で詳細を見る:"
-    echo "    cd src/glogx && go test ./usage/ -run TestPaceRulesMatchStatusline -count=1 -v"
+    echo "    cd src/ratelimit && go test ./usage/ -run TestPaceRulesMatchStatusline -count=1 -v"
     fails=$((fails + 1))
   fi
 else

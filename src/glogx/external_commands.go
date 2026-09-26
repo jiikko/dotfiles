@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"glogx/usage"
+	"ratelimit/usage"
 
-	"glogx/subproc"
+	"subproc"
 	"tuikit/editor"
 )
 

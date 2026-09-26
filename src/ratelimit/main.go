@@ -1,7 +1,6 @@
 // ratelimit — Claude Code / codex の利用枠 (5h / weekly) を表示・判定する単独コマンド。
 //
-// 取得と整形は glogx/usage をそのまま使う (usage.go の doc が想定していた「FetchAll + RenderLine
-// を呼ぶだけの main」の切り出し)。glogx 本体の TUI とは独立に、zsh・hook・skill から呼ぶ。
+// 取得と整形は同じ module の usage パッケージ (glogx の利用枠画面と共有)。zsh・hook・skill から呼ぶ。
 //
 // 使い方:
 //
@@ -31,10 +30,10 @@ import (
 	"syscall"
 	"time"
 
+	"atomicfile"
 	"doctor/cachedir"
-	"glogx/atomicfile"
-	"glogx/subproc"
-	"glogx/usage"
+	"ratelimit/usage"
+	"subproc"
 	"termsafe"
 
 	"golang.org/x/term"

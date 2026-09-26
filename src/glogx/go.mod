@@ -22,6 +22,7 @@ require (
 )
 
 require (
+	atomicfile v0.0.0
 	charm.land/bubbletea/v2 v2.0.8
 	doctor v0.0.0
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
@@ -32,11 +33,19 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sys v0.47.0 // indirect
+	ratelimit v0.0.0
+	subproc v0.0.0
 	termsafe v0.0.0
 	tuikit v0.0.0
 )
 
+replace atomicfile => ../atomicfile
+
 replace doctor => ../doctor
+
+replace ratelimit => ../ratelimit
+
+replace subproc => ../subproc
 
 replace termsafe => ../termsafe
 

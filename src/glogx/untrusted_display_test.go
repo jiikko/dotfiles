@@ -15,7 +15,7 @@ import (
 	"doctor/docker"
 	"doctor/svc"
 	"glogx/issues"
-	"glogx/usage"
+	"ratelimit/usage"
 )
 
 // 外部由来の文字列が「無害化を通らずに端末へ出る」sink が残っていないことを、sink ごとに固定する。

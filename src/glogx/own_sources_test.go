@@ -11,11 +11,12 @@ import (
 )
 
 // ownSourceRoots は「glogx の画面に出るコード」の置き場所。glogx 本体と、go.mod の replace で
-// 取り込む tuikit (幅の単一情報源 termwidth と、演出・合成の部品がそこにある)。
+// 取り込む tuikit (幅の単一情報源 termwidth と、演出・合成の部品がそこにある)・doctor・
+// ratelimit (利用枠の盤と表の描画 = usage パッケージ)。
 //
 // 🚨 表示の不変条件を走査で守る検査 (VS16 リテラル / 2 本目の幅エンジン) はここを回すこと。
 // "." だけを回すと、tuikit へ移した部品が黙って検査対象から外れる。
-var ownSourceRoots = []string{".", filepath.Join("..", "tuikit"), filepath.Join("..", "doctor")}
+var ownSourceRoots = []string{".", filepath.Join("..", "tuikit"), filepath.Join("..", "doctor"), filepath.Join("..", "ratelimit")}
 
 // walkOwnSources は ownSourceRoots を順に filepath.WalkDir し、各エントリで fn を呼ぶ。
 // どれかの根で .go を 1 つも見なかったら落とす (根が移動・改名されると、その根の検査が
@@ -43,7 +44,9 @@ func walkOwnSources(t *testing.T, fn fs.WalkDirFunc) error {
 // ownSourceExcluded は go.mod で replace しているが、表示の不変条件の走査に**入れない** module と
 // その理由。ここにも ownSourceRoots にも無い replace は TestOwnSourceRootsCoverLocalReplaces が落とす。
 var ownSourceExcluded = map[string]string{
-	"../termsafe": "VS16 の除去処理の実装そのもの (VS16 のリテラルを正当に含む)",
+	"../termsafe":   "VS16 の除去処理の実装そのもの (VS16 のリテラルを正当に含む)",
+	"../subproc":    "外部プロセス起動の安全弁だけで、画面に出す文字列を持たない",
+	"../atomicfile": "ファイルの atomic な置き換えだけで、画面に出す文字列を持たない",
 }
 
 // ownSourceRoots の正本は go.mod の replace (ローカルの module を取り込んだら、その module は

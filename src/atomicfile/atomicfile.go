@@ -1,5 +1,6 @@
 // Package atomicfile は「途中の状態を残さない」ファイル書き込みを 1 箇所に置く。
-// glogx の状態キャッシュ (cache.go の writeAtomic) と issues の本文書き換え (claim バナー) が共有する。
+// glogx の状態キャッシュ (cache.go の writeAtomic)・issues の本文書き換え (claim バナー)・
+// ratelimit の利用枠キャッシュが共有する。
 package atomicfile
 
 import (

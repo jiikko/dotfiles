@@ -15,6 +15,9 @@ on:
       - 'src/process_supervisor/**'  # replace で取り込む共有 module (supervisor・見張りの起こし直し。issue 506)
       - 'src/glogx/**'  # replace で取り込む (issue の読み方 glogx/issues)
       - 'src/doctor/**'  # glogx の依存 (replace は依存先から引き継がれないので pro-con にも要る)
+      - 'src/subproc/**'     # glogx の依存 (同上)
+      - 'src/atomicfile/**'  # glogx の依存 (同上)
+      - 'src/ratelimit/**'   # glogx の go.mod が require する (同上。module グラフの解決に要る)
       - 'tests/pro-con/**'  # e2e の通し (下の e2e job)
       - bin/pro-con
       - bin/lib/go_autobuild.zsh
@@ -29,6 +32,9 @@ on:
       - 'src/process_supervisor/**'  # replace で取り込む共有 module (supervisor・見張りの起こし直し。issue 506)
       - 'src/glogx/**'  # replace で取り込む (issue の読み方 glogx/issues)
       - 'src/doctor/**'  # glogx の依存 (replace は依存先から引き継がれないので pro-con にも要る)
+      - 'src/subproc/**'     # glogx の依存 (同上)
+      - 'src/atomicfile/**'  # glogx の依存 (同上)
+      - 'src/ratelimit/**'   # glogx の go.mod が require する (同上。module グラフの解決に要る)
       - 'tests/pro-con/**'  # e2e の通し (下の e2e job)
       - bin/pro-con
       - bin/lib/go_autobuild.zsh

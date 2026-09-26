@@ -24,8 +24,8 @@ func TestOwnStringLiteralsHaveNoVS16(t *testing.T) {
 	fset := token.NewFileSet()
 	found, checked := 0, 0
 	// 🚨 `parser.ParseDir` を使わないこと (issue 283)。あれは**非再帰**なので走査対象が
-	// `package main` だけになり、usage/ issues/ subproc/ sgr/ (と tuikit) が
-	// 黙って対象外になる (実測: usage/banner.go に VS16 を置いても緑、box.go だと赤)。
+	// `package main` だけになり、issues/ などのサブパッケージ (と tuikit / ratelimit) が
+	// 黙って対象外になる (実測: 当時 glogx 内にあった usage/banner.go に VS16 を置いても緑、box.go だと赤)。
 	// しかも `len(pkgs) == 0` の 0 件ガードは package main が常に在るので**構造的に発火しない**。
 	// width_test.go:TestNoSecondWidthEngine と同じ WalkDir + ParseFile へ揃える。
 	err := walkOwnSources(t, func(path string, d fs.DirEntry, err error) error {

@@ -1,0 +1,174 @@
+# golangci-lint v2 config for ratelimit (src/glogx/.golangci.yml から usage に効いていた規則を移した)。
+# The standard linters (errcheck, govet, ineffassign, staticcheck, unused) are
+# on by default; the extras below are low-noise, mostly auto-fixable hygiene
+# linters. Run `golangci-lint run --fix ./...` to apply the auto-fixes.
+version: "2"
+
+# 🚨 golangci-lint は既定で os.TempDir()/golangci-lint.lock に flock を取り、別インスタンスが
+# 走っていると 5 秒待って "parallel golangci-lint is running" で落ちる (v2.5.0 の
+# pkg/commands/run.go acquireFileLock を実測)。この lock はキャッシュ保護ではない
+# (キャッシュは Go の build cache の fork。内容アドレスなので競合する 2 プロセスは同一バイト列を
+# 書く。書き込み自体は temp+rename ではなく最終名への直接 write で、安全性の根拠は原子性ではなく
+# 内容アドレス) ので、外しても結果の正しさには影響しない。root の Makefile (run_go_projects) が 7 プロジェクトを並列に
+# 回すため、全プロジェクトでこれを true にする (1 つでも false が残ると、その 1 つが他の
+# 6 つの起動タイミング次第で落ちる)。issue 258
+run:
+  allow-parallel-runners: true
+
+linters:
+  enable:
+    - asasalint      # []any を ...any にそのまま渡す誤り
+    - bidichk        # 危険な Unicode 双方向制御文字 (コピペ由来の混入対策)
+    - bodyclose      # HTTP response body の close 漏れ (fd リーク。claude_version の registry 照会経路の退行防止)
+    - containedctx   # struct フィールドへの ctx 格納の検出 (ctx は関数引数で渡し、struct には cancel を持つ規律。issue 029 と同族)
+    - contextcheck   # ctx の非伝播・context.Background の握り込み検出 (issue 029 の cancel 系の再発防止)
+    - copyloopvar    # loop variables needlessly copied (Go 1.22+)
+    - durationcheck  # Duration 同士の乗算バグ (アニメ周期・タイムアウト計算が多い repo なので相性が良い)
+    - depguard       # アーキテクチャ不変条件: render.go は純粋描画層 (下の rules)
+    - dupl           # コピペ重複の検出 (runLog の 4 行 ×2 コピペを見逃した反省。閾値は下)
+    - errname        # sentinel error は Err 接頭辞・error 型は Error 接尾辞
+    - errorlint      # errors.Is/As を使わない比較・%w 漏れの検出
+    - exhaustive     # default なし switch の enum 網羅を強制 (settings 参照。網羅性の機械化)
+    - exptostd       # x/exp で書いたものの stdlib 昇格済み検出
+    - fatcontext     # ループ内で context を積み重ねるパターンの検出
+    - forbidigo      # stdout 直接出力の禁止 (下の forbid。main.go だけ除外)
+    - gocritic       # unlambda / singleCaseSwitch 等の診断 (試走 2 件のみ = 低ノイズを確認済み)
+    - intrange       # for i := 0; i < n; i++  ->  for i := range n
+    - makezero       # make([]T, n) への append で先頭にゼロ値が残るバグ
+    - mirror         # bytes/strings の鏡写し API の取り違え (無駄な変換 alloc。perf 文化と一致)
+    - misspell       # common English misspellings in comments/strings
+    - nilnesserr     # err != nil を確認したのに別の nil error を返すバグ
+    - nolintlint     # 説明なし nolint コメントの禁止
+    - perfsprint     # fmt.Sprintf that a faster stdlib call can replace
+    - prealloc       # 事前確保できる append ループの検出 (View/整形ホットパスの alloc 削減文化と一致)
+    - recvcheck      # value / pointer receiver の混在検出
+    - unconvert      # redundant type conversions
+    - usetesting     # テストの os.Chdir/MkdirTemp 等を t.Chdir/t.TempDir へ (cleanup 漏れの構造的防止)
+    - unparam        # 常に同値の引数・未使用戻り値 (テストは除外 = ヘルパーの汎用引数を許す)
+    - usestdlibvars  # hand-written constants that exist in the stdlib
+    - wastedassign   # assignments whose value is never read
+  settings:
+    dupl:
+      threshold: 120
+    exhaustive:
+      # default 付き switch は「残りは default で受ける」という意図表明なので網羅を要求しない。
+      # default なし switch にだけ enum 全 case を要求する (この repo の「網羅は実装で強制する」
+      # 文化の機械化。~/dotfiles の comment-no-restate-enforced ルールと同じ思想)
+      default-signifies-exhaustive: true
+    forbidigo:
+      # usage は glogx の TUI 層からも呼ばれるので stdout へ直接書かない。stdout への出力は main.go に限定
+      # (exclusions で許可)。
+      forbid:
+        - pattern: ^fmt\.Print(f|ln)?$
+          msg: stdout への直接出力は main.go に限定する (TUI 層は tea.Msg 経由で描画)
+        # 利用枠キャッシュへの書き込みは atomicfile.Write を通す (途中まで書けた JSON を残さない)。
+        # glogx の cache_write_discipline_test.go が src/glogx の下だけを歩くので、module を分けたときに
+        # 同じ規律を lint で張り直した (この module には os.WriteFile の正当な用途が無い)。
+        - pattern: ^os\.WriteFile$
+          msg: ファイルの書き込みは atomicfile.Write を通す (temp + rename)
+    depguard:
+      rules:
+        width-single-source:
+          # 幅計算の唯一の出典は termwidth.Of (= ansi.StringWidth。main では dispWidth の別名)。runewidth は
+          # East Asian ambiguous (罫線・ブロック・…) を locale 依存で 2 桁と数えるため、
+          # 混在すると枠計算とテストのアサートが実行環境依存でずれる (issue 027: LANG=ja_JP で
+          # テスト 12 件が落ちていた)。production/テストとも import を禁止して構造的に防ぐ。
+          files:
+            - "**/*.go"
+          deny:
+            - pkg: github.com/mattn/go-runewidth
+              desc: 幅は termwidth.Of (ansi.StringWidth) で測る (locale 非依存。main では dispWidth 別名)
+        # uniseg は本体から一切使わない。**幅だけでなく分割も** x/ansi に一本化したため
+        # (termwidth.FirstCluster。issue 124)。以前は「分割にだけ使う」として render.go /
+        # issues/wrap.go を除外していたが、分割器が 2 本ある限り列不変条件は閉じなかった
+        # (uniseg=Unicode 15 / x/ansi=16 の版差で 2-rune クラスタの走査に違反 744 件)。
+        # import 別名を使った持ち込みもここで止まる。シンボル名の走査は
+        # width_test.go:TestNoSecondWidthEngine が担当 (tuikit も走査範囲。own_sources_test.go)。両輪。
+        # termwidth は tuikit へ移ったので、fast-path の総当たり検証 (width_fast_test.go) の除外は
+        # tuikit/.golangci.yml が持つ。
+        uniseg-split-only:
+          files:
+            - "**/*.go"
+            - "!**/width_test.go"
+            # width-probe は「端末がどの幅モデルと一致するか」を測る道具で、3 モデル
+            # (ansi.StringWidth / ansi.StringWidthWc / uniseg.StringWidth) を並べるのが仕事。
+            # 本体からは参照しない (README の tools/ の項)。issue 124
+            - "!**/tools/width-probe/main.go"
+          deny:
+            - pkg: github.com/rivo/uniseg
+              desc: 分割も幅も termwidth に一本化した (termwidth.FirstCluster / dispWidth)。uniseg は使わない (issue 124)
+        render-pure:
+          # render.go は「状態 → 文字列」の純粋な描画層。I/O・プロセス起動・非同期を
+          # 持ち込むと TUI (毎フレーム呼ばれる) の性能とテスト容易性が壊れる
+          files:
+            - "**/render.go"
+          deny:
+            - pkg: os
+              desc: render.go は純粋描画層 (I/O 禁止)
+            - pkg: os/exec
+              desc: render.go は純粋描画層 (プロセス起動禁止)
+            - pkg: context
+              desc: render.go は純粋描画層 (非同期処理は tui.go へ)
+    gocritic:
+      # ruleguard: 単一 checker では書けない構文パターンの不変条件 (ルール本文と理由は
+      # ruleguard.rules.go が正本)。enabled-checks は既定の stable セットへの追加。
+      enabled-checks:
+        - ruleguard
+      settings:
+        ruleguard:
+          rules: gorules/rules.go
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    errcheck:
+      # Best-effort operations whose error is conventionally ignored in a CLI:
+      # writes to stderr/stdout, closing/removing temp files on error paths,
+      # and restoring the cwd in tests.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - os.Chdir
+        - os.Remove
+        - (*os.File).Close
+  exclusions:
+    rules:
+      # 空白連結の規律 (padViaPadSpaces) は production だけに掛ける。
+      # 🚨 テストは期待値の組み立てに strings.Repeat が要る (frame_alloc_test.go は
+      #   「PadSpaces ≡ strings.Repeat」の同値検証そのものを持っており、置換すると自己言及になる)。
+      - path: _test\.go
+        text: 空白の連結は
+        linters:
+          - gocritic
+      # main.go は静的出力の出口なので stdout 書き込みを許可。🚨 text で絞る: path だけで forbidigo ごと
+      # 外すと、キャッシュを書く本人 (main.go) に os.WriteFile の禁止が効かない
+      - path: main\.go
+        text: stdout への直接出力
+        linters:
+          - forbidigo
+      # テストのテーブル/フローの相似は仕様 (dupl の対象にしない)
+      - path: _test\.go
+        linters:
+          - dupl
+          - forbidigo
+          - unparam
+
+issues:
+  # 既定 (true) は 1 行 1 issue に重複除去するため、同一行に別 linter の指摘があると
+  # ruleguard のカスタム不変条件 (padViaPadSpaces 等) が無言で隠れる (導入時の変異検証で
+  # 実際に踏んだ: unused と同居した行で ruleguard の指摘が消えた)。せっかくの強制が
+  # 別 linter の陰で false green になるのを防ぐため、行内の全指摘を出す。
+  uniq-by-line: false
+
+  # 既定 (3) は同じ文面の指摘を 4 件目から落とす。一括退行 (例: timeNow シームを 20 箇所
+  # 戻す) のとき 3 件しか出ず、直しては再実行を繰り返すことになる (実測: 20 箇所の退行で
+  # 報告 3 件 → max-same-issues:0 で 20 件)。
+  # 🚨 これは false green ではない (除外は上限の**前**に適用されるので make lint は赤のまま
+  # 落ちる。実験で確認済み)。直すのは報告の不完全さだけ。issue 118
+  max-same-issues: 0
+  max-issues-per-linter: 0
+
+# gofmt を CI ゲートにする (v2 では formatter は linters と別枠。ここに無いと run が整形差分を見ない)
+formatters:
+  enable:
+    - gofmt

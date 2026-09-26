@@ -15,7 +15,7 @@ import (
 	"time"
 	"tuikit/layout"
 
-	"glogx/usage"
+	"ratelimit/usage"
 )
 
 // ratelimitDash は全画面ダッシュボードの表示状態。

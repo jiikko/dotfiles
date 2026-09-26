@@ -33,6 +33,8 @@ import (
 //	    免除機構を持つ以上これは原理的に閉じられない。
 //	(e) glogx 以外の module (doctor 等)。走査は src/glogx の下だけを歩く。
 //	    → doctor 側の事情は src/doctor/runner/runner.go の doc に書いてある。
+//	    → 規律の実装元 subproc は src/subproc の独立 module。利用枠の取得 (usage) は src/ratelimit へ
+//	      出したので、そちらは src/ratelimit/exec_boundary_test.go が「os/exec を import しない」で守る。
 //
 // ■ 上記を誰が見るか
 //
@@ -175,8 +177,8 @@ func walkGlogxSources(t *testing.T, fn func(path string, lines []string)) {
 			return err
 		}
 		if d.IsDir() {
-			// subproc 自身は規律の実装元。tools/ は本体から参照しない調査ツール。
-			if d.Name() == "subproc" || d.Name() == "tools" || d.Name() == "testdata" {
+			// tools/ は本体から参照しない調査ツール。
+			if d.Name() == "tools" || d.Name() == "testdata" {
 				return filepath.SkipDir
 			}
 			return nil

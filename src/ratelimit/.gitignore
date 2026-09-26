@@ -1,0 +1,3 @@
+# go_autobuild が置く成果物と作業ファイル (bin/ratelimit)
+/ratelimit
+/.autobuild.*

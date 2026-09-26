@@ -14,6 +14,7 @@ require (
 )
 
 require (
+	atomicfile v0.0.0 // indirect
 	github.com/alecthomas/chroma/v2 v2.27.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260803092147-8b693049ce2a // indirect
@@ -29,12 +30,16 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sync v0.22.0 // indirect
+	subproc v0.0.0 // indirect
 )
 
 replace (
+	atomicfile => ../atomicfile
 	doctor => ../doctor
 	glogx => ../glogx
 	process_supervisor => ../process_supervisor
+	ratelimit => ../ratelimit
+	subproc => ../subproc
 	termsafe => ../termsafe
 	tuikit => ../tuikit
 )

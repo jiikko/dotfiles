@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"time"
 
-	"glogx/usage"
+	"ratelimit/usage"
 )
 
 func main() {

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"glogx/usage"
+	"ratelimit/usage"
 )
 
 var baseNow = time.Date(2026, 9, 26, 12, 0, 0, 0, time.Local)

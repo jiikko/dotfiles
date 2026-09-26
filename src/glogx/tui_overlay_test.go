@@ -11,7 +11,7 @@ import (
 	"tuikit/layout"
 
 	"glogx/issues"
-	"glogx/usage"
+	"ratelimit/usage"
 
 	tea "charm.land/bubbletea/v2"
 )

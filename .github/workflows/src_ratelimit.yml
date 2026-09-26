@@ -1,0 +1,55 @@
+---
+# src/ratelimit (Claude Code / codex の利用枠の取得・整形 (usage) と bin/ratelimit。glogx も replace で取り込む) の CI。
+# lint + test の本体は再利用 workflow _go-project.yml に一元化し、ここは paths filter
+# (触れた変更のときだけ起動) と対象 dir の指定だけを持つ薄い caller。
+# 🚨 paths filter 付きの check を required check に登録しない (理由は _go-project.yml 参照)。
+name: src/ratelimit
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/ratelimit/**'
+      - 'src/subproc/**'     # replace で取り込む共有 module
+      - 'src/atomicfile/**'  # replace で取り込む共有 module
+      - 'src/termsafe/**'    # replace で取り込む共有 module (無害化の関門)
+      - 'src/tuikit/**'      # replace で取り込む共有 module (幅の単一情報源)
+      - 'src/doctor/**'      # replace で取り込む共有 module (cachedir)
+      # 🚨 statusline (shell) は usage と同じ pace ルールを二重実装しており、乖離を
+      # usage/pace_drift_test.go が検出する。これを含めないと「shell だけ変えた push」で
+      # 検査が 1 度も走らない (red team 指摘 2026-09-01)。tests.yml 側からも叩いている。
+      - _claude/statusline-command.sh
+      - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
+      - .github/workflows/src_ratelimit.yml
+      - .github/workflows/_go-project.yml
+  pull_request:
+    paths:
+      - 'src/ratelimit/**'
+      - 'src/subproc/**'     # replace で取り込む共有 module
+      - 'src/atomicfile/**'  # replace で取り込む共有 module
+      - 'src/termsafe/**'    # replace で取り込む共有 module (無害化の関門)
+      - 'src/tuikit/**'      # replace で取り込む共有 module (幅の単一情報源)
+      - 'src/doctor/**'      # replace で取り込む共有 module (cachedir)
+      # 🚨 statusline (shell) は usage と同じ pace ルールを二重実装しており、乖離を
+      # usage/pace_drift_test.go が検出する。これを含めないと「shell だけ変えた push」で
+      # 検査が 1 度も走らない (red team 指摘 2026-09-01)。tests.yml 側からも叩いている。
+      - _claude/statusline-command.sh
+      - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
+      - .github/workflows/src_ratelimit.yml
+      - .github/workflows/_go-project.yml
+  workflow_dispatch:  # GitHub UI からの手動再実行用
+
+permissions:
+  contents: read
+
+# 同一 ref の連続 push では古い run を打ち切る (旧コミットの結果に価値が無いため)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # job id はチェック名の識別子 (共有 workflow のため check 名が "<id> / lint" になり、全 caller で同一 id だと区別不能)。プロジェクト名にする。
+  ratelimit:
+    uses: ./.github/workflows/_go-project.yml
+    with:
+      dir: src/ratelimit

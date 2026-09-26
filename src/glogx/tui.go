@@ -19,7 +19,7 @@ import (
 
 	"doctor/disk"
 	"glogx/issues"
-	"glogx/subproc"
+	"subproc"
 
 	tea "charm.land/bubbletea/v2"
 )

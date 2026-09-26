@@ -5,7 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"glogx/usage"
+	"ratelimit/usage"
 )
 
 // codex CLI の新バージョン検出。仕組みは claude 側 (claude_version.go) の完全な鏡像で、

@@ -1,17 +1,17 @@
 #!/usr/bin/env zsh
 # ratelimit — Claude Code / codex の利用枠 (5h / weekly) を表示・判定する。
-# Go implementation at: ~/dotfiles/src/glogx/ (cmd/ratelimit が main。取得と整形は glogx/usage)
+# Go implementation at: ~/dotfiles/src/ratelimit/ (main.go。取得と整形は同じ module の usage/)
 # 使い方はそのファイル冒頭。hook (_claude/hooks/ratelimit-warn.sh) と codex 系 skill が呼ぶ。
 # 再ビルドは同期: 出力を hook / skill が判定に使うので、旧版の結果を出さない (-cached だけは下記)。
 set -u
 source "${0:A:h}/lib/go_autobuild.zsh"
 # -cached (hook) のときだけ --async: 古いバイナリで即答し、ビルドは裏で 1 本だけ (lock と失敗時の
-# backoff は --async 側にしか無い。同期のままだと glogx を編集するたびに全セッションの
-# 次のプロンプトが go build を待ち、ビルドが通らない間は毎回やり直す)。
+# backoff は --async 側にしか無い。同期のままだと src/ratelimit (と取り込む module) を編集するたびに
+# 全セッションの次のプロンプトが go build を待ち、ビルドが通らない間は毎回やり直す)。
 # (go_autobuild_exec は exec するので戻らない。呼び出しを変数で組まないのは、
 # tests/bin/test_go_autobuild_warmup.sh がこの行を字面で読むため)
 # 検出は `-cached` の字面だけ (`--cached` / `-cached=true` は同期のまま。hook はこの字面で呼ぶ)。
 if (( $@[(Ie)-cached] )); then
-  go_autobuild_exec --async --pkg cmd/ratelimit "${0:A:h}/../src/glogx" ratelimit -- "$@"
+  go_autobuild_exec --async "${0:A:h}/../src/ratelimit" ratelimit -- "$@"
 fi
-go_autobuild_exec --pkg cmd/ratelimit "${0:A:h}/../src/glogx" ratelimit -- "$@"
+go_autobuild_exec "${0:A:h}/../src/ratelimit" ratelimit -- "$@"

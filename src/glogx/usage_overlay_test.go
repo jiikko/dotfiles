@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"glogx/usage"
+	"ratelimit/usage"
 )
 
 // overlayBoxTopRight は box を右上へ右揃えで重ね、覆った各行の表示幅が width ちょうどに

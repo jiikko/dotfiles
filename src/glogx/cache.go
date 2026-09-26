@@ -3,8 +3,8 @@ package main
 import (
 	"doctor/cachedir"
 
+	"atomicfile"
 	"encoding/json"
-	"glogx/atomicfile"
 	"os"
 	"path/filepath"
 	"slices"

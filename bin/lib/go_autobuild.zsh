@@ -63,7 +63,7 @@ else
   _go_autobuild_self_pid() { REPLY=$$ }
 fi
 
-# ソース集合は再帰 glob で取る。サブパッケージ (usage/ ovba/ 等) を含めるため。
+# ソース集合は再帰 glob で取る。サブパッケージ (glogx の issues/、disassemble_excel の ovba/ 等) を含めるため。
 # *_test.go は go build の入力ではないので除外する (テスト編集で無用な再ビルドを起こさない)。
 # zsh の * は / を跨がないため **/*.go~*_test.go では usage/*_test.go を取りこぼす → ループ内で弾く。
 # module root と build 対象を解く。reply=(mod_dir pkg)。

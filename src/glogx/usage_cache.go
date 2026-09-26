@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"glogx/usage"
+	"ratelimit/usage"
 	"termsafe"
 )
 
@@ -85,7 +85,7 @@ func loadUsageCache(path string, now time.Time) (*usage.Snapshot, bool) {
 	//
 	// 🚨 **出口の数を数え上げないこと** (issue 317)。以前ここは
 	// 「RenderLine / RenderTableGroups / RenderDashboard の 3 経路」と列挙していたが、
-	// 列挙は経路が増減するたびに嘘になる (当時 `RenderLine` は呼び出し 0 件で、今は cmd/ratelimit が使う)。
+	// 列挙は経路が増減するたびに嘘になる (当時 `RenderLine` は呼び出し 0 件で、今は src/ratelimit の main が使う)。
 	// 守るべき規律は「**表示に載る文字列は入口で 1 回通す**」であって、出口の員数ではない。
 	for i := range entry.Snapshot.Windows {
 		entry.Snapshot.Windows[i].Label = termsafe.PlainLine(entry.Snapshot.Windows[i].Label)

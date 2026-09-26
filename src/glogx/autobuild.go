@@ -23,7 +23,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"glogx/subproc"
+	"subproc"
 )
 
 const (

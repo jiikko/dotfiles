@@ -10,7 +10,7 @@
 # - rc は常に 0。UserPromptSubmit の rc=2 はプロンプトを止めてしまう
 # - 🚨 既知の穴: ビルド済みのバイナリが無い初回 (新しいマシン / git clean の後) は、bin/ratelimit が
 #   --async でも同期でビルドし、失敗しても backoff が無い (bin/lib/go_autobuild.zsh の初回分岐)。
-#   glogx がビルドできない間は、毎プロンプト最大 timeout (15 秒) 待つ。直すなら初回分岐に失敗記録を持たせる
+#   src/ratelimit (と replace 先) がビルドできない間は、毎プロンプト最大 timeout (15 秒) 待つ。直すなら初回分岐に失敗記録を持たせる
 bin="$HOME/dotfiles/bin/ratelimit"
 [ -x "$bin" ] || exit 0
 out=$("$bin" -source claude -check -cached)

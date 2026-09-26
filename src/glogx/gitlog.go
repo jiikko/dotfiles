@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"glogx/subproc"
+	"subproc"
 	"tuikit/highlight"
 )
 

@@ -26,7 +26,7 @@ import (
 	"strings"
 	"time"
 
-	"glogx/subproc"
+	"subproc"
 )
 
 // SourceCodex は codex 由来の Window を示す Source 値 (空文字 = Claude Code)。

@@ -1,7 +1,7 @@
 // Package usage は Claude Code の `/usage` 出力と codex の rateLimits を取得・整形する。
 //
 // glogx / bubbletea には一切依存しない自己完結パッケージ (ユーザー要望 2026-07-21: 「切り離しやすく設計」)。
-// glogx 本体のほか、単独コマンド cmd/ratelimit (bin/ratelimit) が使う。
+// 消費者は glogx (利用枠のオーバーレイ・ダッシュボード) と、この module の main (bin/ratelimit)。
 // codex 側のデータ源と経路選定の理由は codex.go 冒頭を参照。
 //
 // データ源の注意: `/usage` の % は「このマシンのローカルセッションに基づく近似」で、
@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"glogx/subproc"
+	"subproc"
 )
 
 // Window は 1 つの利用枠 (5h セッション / weekly) の残量とリセット時刻。

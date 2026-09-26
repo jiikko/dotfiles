@@ -2,11 +2,11 @@ package issues
 
 import (
 	"context"
-	"glogx/subproc"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"subproc"
 )
 
 // issue ディレクトリの探索。

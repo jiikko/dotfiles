@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"glogx/usage"
+	"ratelimit/usage"
 )
 
 // usageSnapFixture は本物の /usage 出力を usage.Parse に通して作る。手組みの Snapshot だと

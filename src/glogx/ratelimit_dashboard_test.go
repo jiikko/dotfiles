@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"glogx/usage"
+	"ratelimit/usage"
 )
 
 func rlTestOpts(snap *usage.Snapshot, err error) ratelimitRenderOpts {

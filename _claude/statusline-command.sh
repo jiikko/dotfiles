@@ -185,8 +185,8 @@ bg_in="\033[42;30m"      # ペース行: 想定内の消化 (緑背景 + 黒文�
 bg_over="\033[41;30m"    # ペース行: 前借り (赤背景 + 黒文字)
 under_sgr="\033[4;1m"    # ペース行の当日 (背景色と反転は競合するので下線を使う)
 # ペース行: 使えるのに使っていない過去と「余裕」。シアン (36m) は緑背景と隣り合うと見分けが付かない
-# (glogx の盤でユーザー指摘 2026-09-01) ので明るい青にする。🚨 glogx/usage/pace.go の paceUnspent と
-# 同じ値にすること (乖離は src/glogx/usage/pace_drift_test.go の TestPaceColorsMatchStatusline が検出する)
+# (glogx の盤でユーザー指摘 2026-09-01) ので明るい青にする。🚨 src/ratelimit/usage/pace.go の paceUnspent と
+# 同じ値にすること (乖離は src/ratelimit/usage/pace_drift_test.go の TestPaceColorsMatchStatusline が検出する)
 unspent_fg="\033[94m"
 
 now=$(date +%s)
@@ -253,9 +253,9 @@ pace_gauge() {
 # 🚨 窓幅は API から取れないため種別ごとの定数。resets_at - now が窓幅を超える形で
 #   返ってきたら経過 0 に clamp する (負の経過で想定率がマイナスになるのを防ぐ)。
 # 🚨 この帯と下の状態語 (上限/超過/先行/適正/余裕/余剰) は **glogx が同じ値を持つ二重実装**で、
-#   乖離すると同じ枠が 2 画面で違う状態を名乗る。src/glogx/usage/pace_drift_test.go が
+#   乖離すると同じ枠が 2 画面で違う状態を名乗る。src/ratelimit/usage/pace_drift_test.go が
 #   突き合わせているので、ここを変えたら `bash tests/claude/test_statusline.sh` (または
-#   `cd src/glogx && go test ./usage/ -run TestPaceRulesMatchStatusline -count=1`) を通すこと。
+#   `cd src/ratelimit && go test ./usage/ -run TestPaceRulesMatchStatusline -count=1`) を通すこと。
 #   🚨 `-count=1` が必要: go test のキャッシュはこのファイルの変更を見ない (実測 2026-09-01)。
 # 🚨 想定帯 (band) は種別ごとに変える。5 時間窓は本質的にバースト的で、作業中は
 #   「1 時間目に 40% 使った」= +20pt が常態になる。7d と同じ ±10pt では赤が出続けて

@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"glogx/subproc"
+	"subproc"
 )
 
 // CIState はコミット単位に集約した CI 状態。

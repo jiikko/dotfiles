@@ -49,7 +49,7 @@ func statuslinePath(t *testing.T) string {
 		p := filepath.Join(dir, "_claude", "statusline-command.sh")
 		// 🚨 「見つかった」だけでは採らない。repo root であること (.git が隣にある) も確かめる。
 		// この repo の tmp/ 配下には過去の検証で作った古い複製が実在し (tmp/verify-tests/sbx/
-		// _claude/statusline-command.sh 等)、src/glogx を tmp へ丸ごとコピーして走らせると、
+		// _claude/statusline-command.sh 等)、module を tmp へ丸ごとコピーして走らせると、
 		// 本物より先にそれが見つかって**古い shell と比較して緑になる** (red team 指摘 2026-09-01)。
 		if _, err := os.Stat(p); err == nil {
 			if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {

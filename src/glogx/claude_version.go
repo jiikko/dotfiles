@@ -13,7 +13,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"glogx/usage"
+	"ratelimit/usage"
 )
 
 // Claude Code CLI の新バージョン検出 (issue 024)。起動時にバックグラウンドで最新公開バージョン

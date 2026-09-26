@@ -1,8 +1,9 @@
 // Package subproc は外部プロセス実行の安全弁を 1 箇所に集める。
 //
-// main / issues / usage の 3 パッケージが外部コマンドを起動する。main は他 2 つを import する
-// 側なので、共有したい値や規律を main に置くと下位パッケージから呼べず、**値だけを写す**運用に
-// なる (termsafe / widthenv が独立パッケージになっているのと同じ理由)。実際 issues/discover.go は
+// glogx (main / issues) と ratelimit (usage / main) が外部コマンドを起動する。glogx の main は他を
+// import する側なので、共有したい値や規律を main に置くと下位パッケージから呼べず、**値だけを写す**
+// 運用になる (termsafe / widthenv が独立パッケージになっているのと同じ理由)。ratelimit を glogx の外へ
+// 出したときに、同じ理由で subproc も独立 module (src/subproc) にした。実際 issues/discover.go は
 // 猶予の値を写せないまま WaitDelay を張り忘れており、repo で唯一の抜けになっていた (issue 105)。
 package subproc
 

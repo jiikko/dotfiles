@@ -12,8 +12,9 @@ src/glog の完全コピーから出発しており、当時 github.go / render.
 一本化 (分離不要のまま終わり) / 同じ修正を両方へ入れる事態が 2 回起きたら core を抽出」の
 二択で再評価すると決めていた。結果は前者: **glog は 2026-07-22 に退役済み (`40d4a28`) で、
 重複問題ごと消滅した**。glogx は flat な package main を維持する (サブパッケージを切る基準は
-「実在する第二消費者」か「明示的な分離要望」— issues/ usage/ subproc/ の前例。termsafe は
-`src/termsafe` の独立 module へ出した = doctor module も同じ関門を通すため。issue 228)。
+「実在する第二消費者」か「明示的な分離要望」— issues/ の前例。termsafe は
+`src/termsafe` の独立 module へ出した = doctor module も同じ関門を通すため。issue 228。usage / subproc /
+atomicfile も第二消費者 (bin/ratelimit) ができたので `src/ratelimit` / `src/subproc` / `src/atomicfile` へ出した)。
 
 GitHub Actions / GitHub Checks の結果をコミットごとに添える `git log` ラッパー。
 
@@ -76,7 +77,7 @@ Date:   Thu Jul 16 14:03:21 2026 +0900
   1 つも現れないケースだけは 2 分で打ち切る (workflow を持たない repo で回り続けないため)
 - 🚨 **pace 判定 (帯 25/10・超過/先行/適正/余裕/余剰) は `_claude/statusline-command.sh` と
   二重実装**。bash に浮動小数点が無いため shell 側は整数の切り捨てで判定するので、Go 側も
-  `paceElapsed` (切り捨て) を通してから判定・表示する。乖離は `usage/pace_drift_test.go` が
+  `paceElapsed` (切り捨て) を通してから判定・表示する。乖離は `../ratelimit/usage/pace_drift_test.go` が
   突き合わせる (経過率は 0.1 刻みで総当たり)。**shell だけ変えたときに走らせる経路は
   `tests/claude/test_statusline.sh`** — `go test` のキャッシュは外部ファイルの変更を見ないので
   `-count=1` が必要 (実測 2026-09-01)
@@ -100,7 +101,7 @@ Date:   Thu Jul 16 14:03:21 2026 +0900
 
 dotfiles 標準構成ならセットアップ不要。`~/dotfiles/bin` が PATH に入っており、
 `bin/glogx` (zsh shim) が初回実行時に Go バイナリを自動ビルドする。ソース更新時も
-shim が検知して再ビルドする (`usage/` 等のサブパッケージ変更も含む) ため、手動ビルドは不要。
+shim が検知して再ビルドする (`issues/` 等のサブパッケージと、go.mod の replace 先の module の変更も含む) ため、手動ビルドは不要。
 
 再ビルドするかは**ビルド入力の指紋**(各 `.go` / `go.mod` / `go.sum` の パス + mtime + サイズ) で
 決める。前回ビルドした指紋を `.autobuild.built` に残し、起動のたびに今の指紋と比べるだけ
@@ -400,7 +401,9 @@ go test -run '^$' -bench BenchmarkView -benchmem .
   `_go-project.yml` を呼び、lint と test を回す (src/glogx を触った push/PR のときだけ起動)
 - Bubble Tea は v2 (`charm.land/bubbletea/v2`)。移行で変えた点・採らなかった v2 機能・上げるときに
   測り直すこと (幅モデルの一致) は [`docs/glogx-bubbletea-v2.md`](../../docs/glogx-bubbletea-v2.md)
-- 実装は flat な `package main` (+ bubbletea 非依存の `usage/` / `subproc/` サブパッケージ)。主な境界:
+- 実装は flat な `package main` (+ `issues/` サブパッケージ)。利用枠の取得・整形 (`usage`) と外部プロセス起動の
+  安全弁 (`subproc`)・atomic 書き込み (`atomicfile`) は独立 module ([`../ratelimit`](../ratelimit/README.md) /
+  [`../subproc`](../subproc/README.md) / [`../atomicfile`](../atomicfile/README.md)) から replace で取り込む。主な境界:
   `options.go` (引数 allowlist) / `gitlog.go` (git 実行と %x1e/%x1f レコード解析) /
   `github.go` (repo 解決・GraphQL・集約) / `cache.go` (XDG キャッシュ) /
   `external_commands.go` (git/tmux/claude/browser/clipboard の外部プロセスラッパー) /
@@ -410,13 +413,8 @@ go test -run '^$' -bench BenchmarkView -benchmem .
   各種オーバーレイ・モーダル (`diff_overlay.go` / `job_detail_overlay.go` /
   `usage_overlay.go` / `pr_status_overlay.go` / `action_modal.go`。右下の通知スタック (新しい通知は上に積まれ
   古い通知は下から抜ける。最大 3 枚) は tuikit の `toast`) /
-  `usage/` (Claude Code の /usage と codex rateLimits の取得・整形) /
-  `cmd/ratelimit/` (`usage/` を使う単独コマンド `bin/ratelimit`。zsh・Claude Code の hook・codex 系 skill が
-  利用枠の超過を判定する。使い方はファイル冒頭。glogx 本体の TUI とはキャッシュも別) /
-  `subproc/` (外部プロセス実行の安全弁 = WaitDelay と git の timeout。main / issues / usage の
-  3 つが外部コマンドを起動するので、値を main に置くと下位から呼べず写しになる。
   **新しい外部コマンド実行は `subproc.CommandContext` を使う** — 素の `exec.CommandContext` は
-  `waitdelay_discipline_test.go` が落とす) /
+  `waitdelay_discipline_test.go` が落とす /
   `sgr/` (基本 ANSI 色。3 パッケージで別名の写しになっていたものを 1 箇所へ) / `main.go` (配線)
 - 表示幅の単一情報源 (`termwidth`) と、演出・画面合成の部品 (drawer の開閉 / glide / slide-in /
   窓の計算) は [`../tuikit`](../tuikit/README.md) にある (replace で取り込む。別の TUI でも使えるように

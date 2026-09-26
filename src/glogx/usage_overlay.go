@@ -6,7 +6,7 @@ import (
 	"time"
 	"tuikit/layout"
 
-	"glogx/usage"
+	"ratelimit/usage"
 
 	tea "charm.land/bubbletea/v2"
 )
