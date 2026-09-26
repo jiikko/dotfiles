@@ -37,6 +37,13 @@
 
 - `src/pro-con/ui/model.go` (`a`) / `src/pro-con/ui/switchfade.go` (`execOnTerminal`) / `src/pro-con/live/live.go` (`claude attach` を組む所) / 518
 
+## 順番の見積もり (PM, 2026-09-26。C-082 を C-078 の後に積んだ)
+
+- 触る場所: `ui/switchfade.go` の `execOnTerminal` (attach の前後)、`ui/model.go` の `a`、`live/live.go`、ヘルプと README
+- 変える判断: attach から戻ったとき (Ctrl+Z) に画面をどう取り戻すか
+- 順番の理由: 518 (C-078) が同じ `execOnTerminal` の前後と、止まった画面が fg で戻る経路を直している (レビュー中)。こちらの受け入れ条件「Ctrl+Z で戻って描き直される」は
+  518 の直し方の上でしか確かめられないので、518 の後にする (依頼の原文でも指定)。519 (C-079) も 518 の後で、終了の経路を触るが attach とは別の所なので、C-079 との順番は付けていない
+
 ## 進捗
 
 (まだ無い)
