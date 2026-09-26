@@ -116,3 +116,24 @@ func TestLaneScrollCountsGhostOfMovingCard(t *testing.T) {
 		t.Fatalf("点線の枠が手前に入ったら選択中の T29 が見えなくなった:\n%s", band)
 	}
 }
+
+// 下端までスクロールしたレーンの末尾のカードが出ていくとき、滑り出しの始点は移動元に残す点線の枠の段 (1 段ずれない)。
+func TestMoveStartsAtGhostInScrolledLane(t *testing.T) {
+	m := doneLaneModel(t, 30)
+	press(m, "G")
+	top := m.laneTop(slices.Index(card.Columns, card.Done), 30)
+	be := m.be.(*spy)
+	for i := range be.snap.Cards {
+		if be.snap.Cards[i].ID == "D29" {
+			be.snap.Cards[i].State = card.Planned
+		}
+	}
+	m.Update(tickMsg{})
+	mv, ok := m.moves["D29"]
+	if !ok {
+		t.Fatalf("前提: D29 の移動の演出が始まっていない")
+	}
+	if want := float64(1 + cardGap + (29-top)*perCardLines); mv.fromY != want {
+		t.Fatalf("滑り出しの始点の行 %v (期待 %v = 点線の枠の段)", mv.fromY, want)
+	}
+}

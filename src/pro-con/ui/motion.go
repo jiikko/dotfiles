@@ -59,18 +59,24 @@ func (m *Model) trackMoves() tea.Cmd {
 	for c := range m.visible() {
 		byID[c.ID] = *c
 	}
+	var started []*move
 	for id, to := range cur {
 		from, ok := m.prevSlots[id]
 		if !ok || from.col == to.col {
 			continue
 		}
 		mv := &move{c: byID[id], from: from, to: to, start: now}
-		mv.fromX, mv.fromY = m.slotXY(from)
 		if old, ok := m.moves[id]; ok { // 着地前にまた動いた: 今いる位置から向かい直す
 			mv.fromX, mv.fromY = old.pos(m, now)
 			mv.from = old.from
+		} else {
+			started = append(started, mv)
 		}
 		m.moves[id] = mv
+	}
+	// 始点は移動元に残す点線の枠の位置。自分の枠が並びに入ってから数える (入る前だとレーンの枚数が 1 少なく、下端までスクロールしたレーンで 1 段ずれる)
+	for _, mv := range started {
+		mv.fromX, mv.fromY = m.itemXY(mv.from.col, mv.from.row)
 	}
 	m.prevSlots = cur
 	m.pruneMoves(now)
@@ -127,9 +133,15 @@ func (m *Model) onFrame() tea.Cmd {
 
 // slotXY は slot の画面上の位置 (ボードの左上からの桁と行)。枠の内側の左上。
 func (m *Model) slotXY(s slot) (float64, float64) {
+	return m.itemXY(s.col, m.itemRow(s.col, len(m.lanes()[s.col]), s.row))
+}
+
+// itemXY はレーン col の並びの item 段目 (点線の枠も数える。lanescroll.go の laneOrder) の画面上の位置。スクロールした先頭を引く。
+// 移動元の点線の枠は、移動元の段 (from.row) に差し込まれるので item = from.row。
+func (m *Model) itemXY(col, item int) (float64, float64) {
 	w := m.colWidth()
-	row := m.slotRow(s, m.lanes()) // 点線の枠とスクロールを数えた、見えている段 (lanescroll.go)
-	return float64(s.col*(w+len(colSep)) + 1), float64(1 + cardGap + row*perCardLines)
+	row := item - m.laneTop(col, m.laneItems(col, len(m.lanes()[col])))
+	return float64(col*(w+len(colSep)) + 1), float64(1 + cardGap + row*perCardLines)
 }
 
 func (mv *move) pos(m *Model, now time.Time) (float64, float64) {
