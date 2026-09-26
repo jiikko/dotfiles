@@ -116,14 +116,9 @@ func isRole(name string) bool {
 // Scan は設定の全 repo の pro-con の worktree を判定する (repo の名前・worktree の名前の順)。
 // repo 1 個が読めなくても、ほかの repo は判定する (読めなかった repo はエラーにまとめる)。
 func Scan(ctx context.Context, in Inputs) ([]Verdict, error) {
-	names := make([]string, 0, len(in.Repos))
-	for n := range in.Repos {
-		names = append(names, n)
-	}
-	sort.Strings(names)
 	var out []Verdict
 	var errs []string
-	for _, n := range names {
+	for _, n := range sortedRepos(in) {
 		vs, err := scanRepo(ctx, in, n)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", n, err))

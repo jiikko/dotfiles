@@ -9,7 +9,7 @@
 //	pro-con config …     止めずに PG の枠と PM の数を変える (受付の箱に置く。pro-con config で使い方)
 //	pro-con ps           pro-con が起動したプロセスを役ごとに出す (読むだけ)
 //	pro-con du           pro-con が作った物のディスクの使用量と内訳 (読むだけ。数秒かかる)
-//	pro-con worktree clean  閉じたカードの PG の worktree を片付ける (既定は一覧だけ。--yes で 1 個ずつ取り直して消す)
+//	pro-con worktree clean  閉じたカードの PG の worktree を片付ける (既定は一覧だけ。--yes で 1 個ずつ取り直して消す。--remote で origin のブランチも)
 //	pro-con dispatcher       本物のモードの dispatcher を常駐させる (PG を起動する。週の利用枠を使う)
 //	pro-con help [話題]  用語・使い方・デバッグの説明 (引数なしで話題の一覧)
 //	pro-con fake-attach  attach の代わりに TUI から起動される内部用のコマンド
