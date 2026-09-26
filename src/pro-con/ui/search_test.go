@@ -184,3 +184,33 @@ func TestSearchDoesNotMarkPoints(t *testing.T) {
 		t.Fatalf("見積もりが光った / 題名が光らない: %q", cell)
 	}
 }
+
+// / で絞っていても、issue の一覧 (i) の札は隠れたカードも出す (札は記録の全カードから作る。issue 537 の issueCards)。
+// 一覧を閉じたら絞り込みは残り、絞っている間に届いたスナップショットでも札と絞り込みの両方が保たれる。
+func TestSearchKeepsPickerCardTags(t *testing.T) {
+	m, be := linkedPicker(t)
+	press(m, "esc") // 一覧を閉じる
+	press(m, "/")
+	typeText(m, "C-001")
+	press(m, "enter")
+	if got := flatLaneIDs(m); !slices.Equal(got, []string{"C-001"}) {
+		t.Fatalf("前提: C-001 だけに絞れていない: %v", got)
+	}
+	press(m, "i")
+	if !m.picker.open {
+		t.Fatal("絞っている間に i で issue の一覧が開かない")
+	}
+	if l := pickerLine(t, m, "#100"); !strings.Contains(l, "C-002 レビュー   C-003 作業中") {
+		t.Errorf("絞り込みで隠れたカードの札が一覧から消えた: %q", l)
+	}
+	be.snap.Cards = append(be.snap.Cards, card.Card{ID: "C-007", State: card.Planned, Repo: "dotfiles", Since: be.snap.Now,
+		Issues: []card.IssueRef{{Repo: "dotfiles", Number: 100, Status: "open"}}})
+	m.setSnap(be.snap)
+	if l := pickerLine(t, m, "#100"); !strings.Contains(l, "C-007 着手待ち") {
+		t.Errorf("絞っている間に届いたカードの札が出ない: %q", l)
+	}
+	press(m, "esc")
+	if m.picker.open || !m.search.active || m.search.query() != "C-001" || !slices.Equal(flatLaneIDs(m), []string{"C-001"}) {
+		t.Fatalf("一覧を閉じたら絞り込みは残るはず: picker=%v active=%v q=%q %v", m.picker.open, m.search.active, m.search.query(), flatLaneIDs(m))
+	}
+}
