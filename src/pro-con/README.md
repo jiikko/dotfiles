@@ -270,6 +270,19 @@ PG・PM・取り込みの係は Claude Code の bg の session で dispatcher �
   メモリだけに持つもの (役の起動を受け付けられなかった回数・最近のテストの結果・起動時の確かめ) は切り替えで初めからになる。
   人の番を知らせ済みの鍵だけは新版へ渡す (渡さないと切り替えのたびに全件知らせ直す)
 
+## 演出のカクつきを観測する (issue 494)
+
+画面の置き場 (既定 `~/.local/state/pro-con/live`) に `framelog.on` を置くと、次の tick (1 秒以内) から画面が `framelog.tsv` へ
+「時刻 (RFC3339Nano) \t メッセージの種類 \t Update の所要 (µs)」と「… \t View \t 描画の所要 (µs)」を追記する。消せば止まる
+(起動し直さなくてよい。20MB を超えたら書くのをやめる)。演出のコマ (`frameMsg`) は 33ms ごとに届くので、`frameMsg` どうしの間が大きく空いた所が
+ループの詰まり (端末・tmux への書き込みが詰まったときもここに出る)。実装は `ui/framelog.go`。
+
+```sh
+d=~/.local/state/pro-con/live; touch $d/framelog.on   # 演出を動かしてから
+rm $d/framelog.on
+awk -F'\t' '$2=="frameMsg"' $d/framelog.tsv | head   # 間隔は時刻の差で見る
+```
+
 ## テスト・lint の実行中
 
 PG がテストや lint を実行している間も、カードは**作業中の列のまま** (列を移るのは担当が変わるときだけ)。バッジに

@@ -73,6 +73,7 @@ type Model struct {
 	height int
 	// frameSink は画面の中継の受け口 (relay.go。nil なら中継しない)
 	frameSink FrameSink
+	flog      *frameLog // 演出のカクつきの観測 (framelog.go。nil なら観測しない)
 
 	// repos は config から列挙した repo。タブは global + 「ここに在り、カードも在る repo」。
 	repos []backend.Repo
@@ -193,6 +194,8 @@ func (m *Model) Init() tea.Cmd {
 }
 
 func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
+	began := time.Now() // 観測 (framelog.go) は実時間で測る (m.now はテストが差し替える)
+	defer func() { m.flog.record(began, msgKind(msg), time.Since(began)) }()
 	defer func() { // 選択が動いたら (キーでも、カードの移動でも) 枠を滑らせる
 		m.followSelection() // 枠の行き先はレーンの先頭で決まるので、枠より先に
 		c := tea.Batch(m.trackCursor(), m.trackSpin(), m.trackActivity())
@@ -205,6 +208,7 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 	}()
 	switch msg := msg.(type) {
 	case tickMsg:
+		m.flog.check()
 		return m, tea.Batch(tick(), m.poll(), m.fetchActivity())
 	case changedMsg:
 		return m, tea.Batch(m.waitChanged(), m.poll(), m.fetchActivity())

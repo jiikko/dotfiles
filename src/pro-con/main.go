@@ -328,6 +328,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 	m := ui.New(be, scopes)
+	if !mock {
+		m.SetFrameLog(dir) // 置き場に framelog.on を置いたあいだだけ、演出のコマの時刻と所要を記録する (issue 494)
+	}
 	if uiData != nil {
 		if err := m.ImportState(uiData); err != nil {
 			notes = append(notes, "UI の状態を引き継げなかった: "+err.Error())
