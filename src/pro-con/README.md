@@ -159,6 +159,9 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
   - supervisor 自身は新版へ入れ替わらない。dispatcher の入れ替え (505) は同じ PID の exec なので supervisor からは同じ子のまま見え、
     起こし直す dispatcher は `os.Executable` のパス (shim が差し替えた新しいビルド)。見張りは今までどおり dispatcher の子
     (手で起動した dispatcher にも付く)
+  - 🚨 supervisor は画面と別の session で起こす (`foreground.Detached` = `Setsid`。制御端末を持たせない)。別のプロセスグループだけでは、
+    子孫 (テストの係の make test の中の `zsh -i -c`) が画面の端末の前面を奪い、前面で端末を読む画面が SIGTTIN で止まる (issue 518)。
+    テストの係の実行も同じ理由で別の session (手で起動した dispatcher が端末を持っていても奪わせない)
 - 画面は開いている間、dispatcher が 10 秒以上回っていなければ supervisor を起こす (落ちた・前の画面が止めている最中に開いた)。
   **supervisor が居る間・supervisor の居ない dispatcher (手で起動した・kill -9 された前の supervisor の子) の lock がある間は起こさない**
   (dispatcher を起こし直すのは supervisor だけ = 二重に起こさない)。

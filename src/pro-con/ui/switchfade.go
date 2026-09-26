@@ -2,8 +2,6 @@ package ui
 
 import (
 	"image/color"
-	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -350,14 +348,4 @@ func extColor(i int, num func(int) (int, bool)) (rgb, int, bool) {
 		return rgb{r, g, b}, 4, true
 	}
 	return rgb{}, 0, false
-}
-
-// execOnTerminal は tea.ExecProcess の前に、子の Stdout を端末 (os.Stdout) に固定する。
-// 🚨 bubbletea は子の Stdout が空なら画面の出力を渡す。main は画面の出力を upgrade.Screen で包むので (*os.File でない)、
-// そのまま渡ると os/exec がパイプを挟み、attach の claude やエディタの stdout が端末でなくなる。
-func execOnTerminal(c *exec.Cmd, fn tea.ExecCallback) tea.Cmd {
-	if c.Stdout == nil {
-		c.Stdout = os.Stdout
-	}
-	return tea.ExecProcess(c, fn)
 }

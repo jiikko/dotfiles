@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"pro-con/foreground/ptytest"
 )
 
 // alive は pid のプロセスがまだ居るか (ゾンビは reap されるまで居る扱いになるので、上限つきで居なくなるのを待つ側で使う)。
@@ -161,5 +163,28 @@ func TestRunCommandKeepsMeaningAndExitCode(t *testing.T) {
 		if rc != tc.rc || err != nil || (tc.out != "" && string(out) != tc.out) {
 			t.Fatalf("%q: rc=%d err=%v 出力=%q (期待 rc=%d 出力=%q)", tc.command, rc, err, out, tc.rc, tc.out)
 		}
+	}
+}
+
+// runOnTerminal は擬似端末の上 (制御端末を持つ dispatcher と同じ立場) でテストの係の実行を走らせ、実行の中から端末を開けたかを返す。
+func runOnTerminal(string) string {
+	dir, err := os.MkdirTemp("", "runtty")
+	if err != nil {
+		return err.Error()
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	log := filepath.Join(dir, "log")
+	if _, err := (ExecRunner{}).Run(context.Background(), dir, `(exec 3</dev/tty) 2>/dev/null && echo tty-open || echo tty-closed`, log, "tty1"); err != nil {
+		return err.Error()
+	}
+	out, _ := os.ReadFile(log)
+	return strings.TrimSpace(string(out))
+}
+
+// テストの係の実行は制御端末を持たない: dispatcher が端末から起こされていても、make test の中の `zsh -i -c` 等に
+// 端末の前面を奪わせない (奪われると前面で端末を読む画面が SIGTTIN で止まる。issue 518)。
+func TestExecRunnerHasNoControllingTerminal(t *testing.T) {
+	if got := ptytest.Run(t, "run"); got != "tty-closed" {
+		t.Fatalf("実行の中から端末を開けた: %q", got)
 	}
 }

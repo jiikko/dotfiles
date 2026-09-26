@@ -133,6 +133,7 @@ type Model struct {
 	openEditor func(string) *exec.Cmd // ファイルを開くエディタのコマンド (既定は tuikit/editor。テストは差し替える)
 	// execProcess は端末を明け渡して外のコマンドを走らせる (既定は execOnTerminal。テストは戻りの知らせを取り出すために差し替える)
 	execProcess func(*exec.Cmd, tea.ExecCallback) tea.Cmd
+	onTermEvent func(string)         // 端末の前面が外れた・止められた後に入れ直した、を出来事に残す (terminal.go。nil なら残さない)
 	openFiles   func([]string) error // 添付を外のアプリで開く (既定は open。テストは差し替える。attachments.go)
 	attachTexts map[string][]string  // 文字の添付の中身 (パスごとに 1 度だけ読む。attachments.go)
 
@@ -253,6 +254,13 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 		return m, m.onSpin()
 	case editorDoneMsg:
 		m.onEditorDone(msg)
+		return m, nil
+	case termReturnMsg:
+		return m, m.onTermReturn(msg)
+	case Continued:
+		return m, m.onContinued()
+	case termResumedMsg:
+		m.onTermResumed(msg)
 		return m, nil
 	case openedMsg:
 		m.onOpened(msg)

@@ -48,17 +48,48 @@
 
 ## 受け入れ条件
 
-- [ ] 止まる経路が特定され、本文に書かれている (特定できないなら、観測を入れて「再発を待つ」と書く)
+- [x] 止まる経路が特定され、本文に書かれている (特定できないなら、観測を入れて「再発を待つ」と書く) → 下の「特定した経路」
 - [ ] 上の表の 3 通り (画面の中の ctrl+z / 外からの SIGTSTP / SIGTTIN) のどれで止めても、止まっている間のシェルの端末が普通に使え、`fg` で画面が描き直されてキーが効く
       (隔離した tmux の `-L` サーバで、3 通りそれぞれ止めて `fg` して確かめる。本番の tmux サーバでやらない)
-- [ ] `ExecProcess` から戻ったときに前面が外れていたら取り戻し、出来事に残る
-- [ ] 戻し方が `pro-con help` にある
+- [x] `ExecProcess` から戻ったときに前面が外れていたら取り戻し、出来事に残る
+- [x] 戻し方が `pro-con help` にある
 
 ## 関連ファイル
 
 - `src/pro-con/ui/switchfade.go` (`execOnTerminal`) / `src/pro-con/upgrade/screen.go` / `src/pro-con/main.go` (画面の起動・子の `Setpgid`)
 - `src/pro-con/presence/presence.go` (持ち主の数)
 
+## 特定した経路 (2026-09-26 21:39:29。観測で確定)
+
+**テストの係の実行 (C-071 の `verify.sh` = dotfiles の `make test` 全体) の中の `zsh -i -c` が、端末の前面を自分のグループへ移したまま終わった。**
+「関係は薄い」とした attach・エディタ (`ExecProcess`) ではなかった。
+
+- supervisor → dispatcher → テストの係の実行は、`Setpgid` で別のプロセスグループにしていたが、**持ち主の画面と同じ session (= 同じ制御端末 ttys061) のまま**だった
+- `tests/zshrc/av1ify/test_av1ify_clipboard.sh:212` の `zsh -i -c "…" < /dev/null` などの対話 zsh は、job control を入れるとき、
+  自分がグループの先頭でなければ `setpgrp` して `tcsetpgrp` で前面を取る (SIGTTOU を塞いだ上で。zsh の `acquire_pgrp`)。終わると前面は死んだグループのまま
+- 前面を外された画面が端末を読む → SIGTTIN で止まる → ログインシェル (zsh 4155) が止まったのを見て「suspended (tty input)」を出し、端末を取って cooked に戻した
+- 証拠:
+  - 実行のグループ (PGID 96616) が **21:39:29〜30 から丸ごと STAT `T`** のまま残っていた (`make test` の親まで。前面でないグループに SIGTTIN が配られた形)。
+    `test_av1ify_clipboard.sh` (21:39:28 開始) の子が 21:39:29 に defunct。実行の出力は 21:39 で止まり、「終わった」の出来事が無い
+  - 画面の最後の操作は 21:28:40 の回答 (C-070)。その後 attach・エディタの出来事は無い
+  - 同じ形を隔離した tmux で再現した: 前面で端末を読むプロセスが `Setpgid` の子に `sh -c 'zsh -f -i -c true </dev/null'` を走らせると
+    `zsh: suspended (tty input)`。子を `Setsid` にすると起きない。検査 `foreground_test.go` が擬似端末 (script(1)) の上で同じことを確かめる
+- 巻き添え: 止まった実行はテストの係の順番を塞ぎ続ける (dispatcher は別 session の親なので、グループは孤児扱いにならず SIGCONT も来ない)。
+  2026-09-26 22:00 時点で PGID 96616 が止まったまま残り、C-070 / C-072 / C-074 の実行が待っている。**人が `kill -CONT -96616` か `kill -TERM -96616` で外す**
+  (この PG は止めようとしたが、他のカードの実行なので権限で止められた)
+
 ## 進捗
 
-(まだ無い)
+- 2026-09-26 (本 commit): 直した
+  - 根本: 画面の外で走る処理を別の session で起こし、制御端末を持たせない (`foreground.Detached()` = `Setsid`)。
+    supervisor (`spawnDetached` の子。dispatcher・見張り・テストの係はその下)・画面の quit の `dispatcher --stop`・テストの係の実行 (dispatcher が端末から起こされたときの備え)。
+    グループの先頭は子自身のままなので、グループごと止める作法は変わらない。`Setsid` と `Setpgid` を一緒に立てると fork/exec が EPERM (実測)
+  - 止まっても戻れる: SIGCONT を受けたら (main の `notifyContinued`) 何も走らせない `tea.Exec` で bubbletea の手放し → 入れ直しを通し、描き直す。
+    外のコマンド (attach・エディタ) から戻ったとき、渡す前に前面を持っていて戻ったら外れていれば取り戻す (`foreground.Reclaim`)。
+    `tcsetpgrp` は使い捨ての子 (自分のバイナリを環境変数つきで起こす) が SIGTTOU を無視してやる。画面のプロセスで無視すると
+    `signal.Reset` で既定の動作に戻らず (Go の runtime が SIG_IGN を残す。敵対的レビューの指摘を隔離 tmux で実測)、以後は止まるべき所で止まらず、子へも引き継がれるため
+    どちらも画面の出来事 (`pro-con log` の kind `screen`) に残す (`ui/terminal.go`)。SIGCONT の出来事は、外のコマンドの中で ctrl+z → fg したときにも出る (画面ごと止まるので区別できない。文言にそう書いた)
+  - 手順書: `pro-con help debug` の「止まっている・動かない」に戻し方
+  - 確かめたこと: 隔離した tmux で模擬の画面を `kill -TTIN` → `fg`。直す前は崩れたまま `?` が効かない / 直した後は描き直して `?` で表が開く (カード C-078 に添付)。
+    新しい検査 3 か所 (foreground・テストの係・ui) は、直した箇所を戻す変異で落ちることを確かめた
+  - 残り: 本物の持ち主の画面での再発の有無は観測待ち (出来事の `screen` に「前面を取り戻した」「SIGCONT」が出たら経路を調べる)

@@ -291,7 +291,7 @@ func (b *Backend) StopAll(ctx context.Context) error {
 				left = "ほかの画面を数えられない: " + err.Error()
 			}
 		}
-		b.event("quit で閉じた: join の画面なので dispatcher と PG は止めない (" + left + ")")
+		b.Event("quit で閉じた: join の画面なので dispatcher と PG は止めない (" + left + ")")
 		return backend.KeptRunning{Join: true}
 	}
 	if b.stopAll == nil {
@@ -305,7 +305,7 @@ func (b *Backend) StopAll(ctx context.Context) error {
 		case err != nil:
 			why = "ほかの画面を数えられない (" + err.Error() + ") ので最後の画面として"
 		case others.Owners > 0:
-			b.event(fmt.Sprintf("quit で閉じた: ほかに持ち主の画面が %d 開いているので dispatcher と PG は止めなかった", others.Owners))
+			b.Event(fmt.Sprintf("quit で閉じた: ほかに持ち主の画面が %d 開いているので dispatcher と PG は止めなかった", others.Owners))
 			return backend.KeptRunning{Others: others.Owners}
 		case others.Joins > 0:
 			why = fmt.Sprintf("最後の持ち主の画面なので (join の画面 %d は残り、止めた後は表示が止まる)", others.Joins)
@@ -314,19 +314,19 @@ func (b *Backend) StopAll(ctx context.Context) error {
 		}
 	}
 	// 止める前に置く: 止める dispatcher が Shutdown の前に箱を適用するので、その dispatcher が書く
-	b.event("quit で閉じた: " + why + " dispatcher と PG を止める")
+	b.Event("quit で閉じた: " + why + " dispatcher と PG を止める")
 	err := b.stopAll(ctx)
 	if err != nil {
-		b.event("quit で止めきれなかった: " + err.Error()) // 止めた後なので、次に起動した dispatcher が書く
+		b.Event("quit で止めきれなかった: " + err.Error()) // 止めた後なので、次に起動した dispatcher が書く
 	}
 	return err
 }
 
-// event は画面の出来事を受付の箱に置く (出来事の記録 events.jsonl へ書くのは dispatcher。書き手を 1 つに保つ = issue 445)。
+// Event は画面の出来事を受付の箱に置く (出来事の記録 events.jsonl へ書くのは dispatcher。書き手を 1 つに保つ = issue 445)。
 // dispatcher が居なければ次に起動した dispatcher が書く。画面が quit を通らずに消えた (落ちた・端末を閉じた) ときは何も残らない
 // (dispatcher の「画面が無い」の出来事 (screens) が代わりになる)。置けなくても画面の動きは変えない。
 // 🚨 --view の画面からは呼ばない (受付の箱にも書かない。Start は viewOnly なら呼ばず、StopAll は View の backend から呼べない)
-func (b *Backend) event(text string) {
+func (b *Backend) Event(text string) {
 	who := "画面"
 	if n := b.screenName(); n != "" {
 		who += " " + n
@@ -425,10 +425,10 @@ func (b *Backend) Start(ctx context.Context) {
 		if sc, err := presence.OpenAs(b.dir, presence.Info{Mode: mode, Label: b.label, TTY: b.tty}); err == nil { // 置けなければ、閉じるときは最後の画面として止める (StopAll)
 			b.screen = sc
 			n, _ := presence.Count(b.dir)
-			b.event(fmt.Sprintf("開いた (開いている画面 %d)", n)) // ctrl+r の入れ替えでも新版が開き直すので出る
+			b.Event(fmt.Sprintf("開いた (開いている画面 %d)", n)) // ctrl+r の入れ替えでも新版が開き直すので出る
 			_ = wake.Notify(b.dir)                      // ほかの画面の「画面 N」を直す
 		} else {
-			b.event("開いた (開いている印を置けない: " + err.Error() + ")")
+			b.Event("開いた (開いている印を置けない: " + err.Error() + ")")
 		}
 	}
 	sub := wake.NewSubscriber(b.dir, func() {
@@ -718,7 +718,7 @@ func (b *Backend) resume() (string, error) {
 		return "", fmt.Errorf("人が止めた印を外せない: %w", err)
 	}
 	if released {
-		b.event("c で人が止めた印を外した (dispatcher を起こす)") // 起こす前に置く: 起きた dispatcher が箱を適用して書く
+		b.Event("c で人が止めた印を外した (dispatcher を起こす)") // 起こす前に置く: 起きた dispatcher が箱を適用して書く
 	}
 	if err := b.keeper(); err != nil {
 		return "", fmt.Errorf("印は外したが dispatcher を起こせない: %w", err)
