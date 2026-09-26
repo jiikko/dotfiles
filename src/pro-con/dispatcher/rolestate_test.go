@@ -151,6 +151,8 @@ func TestRoleStateCurrentCard(t *testing.T) {
 	want("", "")
 	use(12, "Bash", "見る", "pro-con card show C-001")
 	want("C-001", "Bash: 見る")
+	use(13, "Read", "外のチケット", "/w/notes/ABC-002.md") // 別の番号の一部 (C-002 ではない)
+	want("C-001", "Read: 外のチケット")
 	r.ss[0].Status = "idle"
 	want("", "")
 }
