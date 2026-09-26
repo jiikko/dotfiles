@@ -112,29 +112,29 @@ func runPS(args []string, dir string, now func() time.Time, list procLister, std
 func collectProcs(dir string, now time.Time, procs map[int]string) (rows []Proc, warns []string) {
 	alive := func(pid int) bool { _, ok := procs[pid]; return pid > 0 && ok }
 
-	// dispatcher: lock のファイルの pid (Lock が書く)。pid が生きていても別のプロセスかもしれないので、コマンド行に dispatcher を含むものだけ
 	ds, ticked, err := store.LoadDispatcherState(dir)
 	if err != nil {
 		warns = append(warns, "dispatcher の様子を読めない: "+err.Error())
 	}
-	d := Proc{Role: "dispatcher", State: backend.ProcStopped}
-	if b, err := os.ReadFile(filepath.Join(dir, dispatcher.LockFile)); err == nil {
-		if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && alive(pid) && strings.Contains(procs[pid], "dispatcher") {
-			d.PID, d.State, d.Command = pid, "動いている", procs[pid]
-			if ticked {
-				d.State += fmt.Sprintf(" (最後の Tick %s 前)", now.Sub(ds.Tick).Round(time.Second))
+	// lock のファイルの pid (lockAs が書く)。pid が生きていても別のプロセスかもしれないので、コマンド行に needle を含むものだけ
+	holder := func(role, lockFile, needle string) Proc {
+		p := Proc{Role: role, State: backend.ProcStopped}
+		if b, err := os.ReadFile(filepath.Join(dir, lockFile)); err == nil {
+			if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && alive(pid) && strings.Contains(procs[pid], needle) {
+				p.PID, p.State, p.Command = pid, "動いている", procs[pid]
 			}
 		}
+		return p
 	}
-	rows = append(rows, d)
-	// 見張り (issue 475): dispatcher と同じく、lock のファイルの pid でコマンド行に monitor を含むものだけ
-	mon := Proc{Role: "見張り", State: backend.ProcStopped}
-	if b, err := os.ReadFile(filepath.Join(dir, dispatcher.MonitorLockFile)); err == nil {
-		if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && alive(pid) && strings.Contains(procs[pid], " monitor") {
-			mon.PID, mon.State, mon.Command = pid, "動いている", procs[pid]
-		}
+	d := holder("dispatcher", dispatcher.LockFile, "dispatcher")
+	if d.PID != 0 && ticked {
+		d.State += fmt.Sprintf(" (最後の Tick %s 前)", now.Sub(ds.Tick).Round(time.Second))
 	}
-	rows = append(rows, mon)
+	rows = append(rows,
+		d,
+		holder("supervisor", dispatcher.SupervisorLockFile, " "+superviseCmd), // 画面が起こした dispatcher の親 (issue 506)
+		holder("見張り", dispatcher.MonitorLockFile, " monitor"),                 // issue 475
+	)
 
 	st, err := store.Load(dir)
 	cardsOK := err == nil // 読めなければ食い違いを付けない (どの PG も「片付け済みなのに動いている」に見える)

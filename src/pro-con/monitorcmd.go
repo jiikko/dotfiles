@@ -21,9 +21,10 @@ import (
 // monitorInterval は見張りの既定の間隔 (merge-tree と取り込み済みかの結果は commit の組で覚えるので、毎回呼ぶ git は取り込む先と各 worktree の HEAD を読む rev-parse だけ)。
 const monitorInterval = time.Minute
 
-// monitorExitHeld は、別の見張りが lock を持っていたので何もせずに抜けたときの終了コード
-// (起こした dispatcher は「落ちた」と数えず、間を空けて起こし直す。kill -9 された前の dispatcher の見張りがまだ抜けていない間)。
-const monitorExitHeld = 3
+// exitLockHeld は、別の実体が lock を持っていたので何もせずに抜けたときの終了コード (見張りと dispatcher が使う)。
+// 起こした側 (見張りなら dispatcher、dispatcher なら supervisor) は「落ちた」と数えず、間を空けて起こし直す
+// (kill -9 された前の dispatcher の見張り / 前の supervisor の dispatcher がまだ抜けていない間)。
+const exitLockHeld = 3
 
 // untilStdinClosesFlag は、stdin が閉じたら抜ける (内部用)。dispatcher が握るパイプの読む側を stdin に渡す:
 // dispatcher がどう死んでも (kill -9 でも) OS がパイプを閉じるので、見張りはすぐ抜ける (macOS には PDEATHSIG が無い)。
@@ -45,7 +46,7 @@ func runMonitor(args []string, dir string, repos map[string]string, stdout, stde
 	unlock, err := dispatcher.LockMonitor(dir)
 	if errors.Is(err, dispatcher.ErrMonitorRunning) {
 		_, _ = fmt.Fprintln(stderr, "pro-con monitor:", err)
-		return monitorExitHeld
+		return exitLockHeld
 	}
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "pro-con monitor:", err)

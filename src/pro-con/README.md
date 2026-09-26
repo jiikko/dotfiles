@@ -16,7 +16,7 @@ bin/pro-con config set limit 3 | set pm 1 | unset limit | show  # 止めずに P
                          # 🚨 上限の優先: 利用枠の絞り (80% で 1 本 / 95% で 0 本) > 設定 (config set limit) > dispatcher の --limit > 既定 2。--limit は「設定が無いときの値」で、unset limit で戻る (画面が起こす dispatcher は --limit を付けない)
                          # PM の数は今は 1 だけを受ける (2 以上は 415 の論点 6 が決まるまで断る。今は 1 つで動くので dispatcher はまだ読まない。PM を起こさないのは --pm=off / config.toml の pm = "off")。settings.json が壊れていたら --limit で動き、理由をゲージに出す
 bin/pro-con du [--json] [--all]  # pro-con が作った物のディスクの使用量と内訳 (PG・役の worktree `pc-*` / 起動した session の transcript の置き場 / 状態の置き場 / バイナリ。置き場ごとに大きい順、完了したカードに印)。読むだけ (消さない)。worktree を全部歩くので数秒かかる。数えるのは起動の記録にあるものと、その隣の `pc-*` だけ (issue 456)
-bin/pro-con ps [--json]  # pro-con が起動したプロセスを役ごとに出す (dispatcher / 見張り / PM / PG / テストの係 / 画面。pid・経過・状態・カード・コマンド。カードと session の食い違いは状態の列に「食い違い: 」で出す)。読むだけ: 状態の置き場に書かず、dispatcher の lock も画面の印 (presence) も触らない。生きているかは ps を 1 回読んで決める (busy / idle は出さない)。pro-con の外の session は出さない
+bin/pro-con ps [--json]  # pro-con が起動したプロセスを役ごとに出す (dispatcher / supervisor / 見張り / PM / PG / テストの係 / 画面。pid・経過・状態・カード・コマンド。カードと session の食い違いは状態の列に「食い違い: 」で出す)。読むだけ: 状態の置き場に書かず、dispatcher の lock も画面の印 (presence) も触らない。生きているかは ps を 1 回読んで決める (busy / idle は出さない)。pro-con の外の session は出さない
 bin/pro-con dispatcher --stop  # dispatcher と、pro-con が起動した PG を止める。作業中のカードは次に dispatcher を起動したら続きから再開する (画面の終了も同じことをする)
                                # 人が止めた印 (`dispatcher-held`) を置く: 開いている画面は dispatcher を起こし直さず、ゲージに「止めてある」と出す。外すのは画面の c か、次に手で `pro-con dispatcher` を起動したとき (issue 459)
 bin/pro-con card …   # PM / PG が使うカードの操作 (add / plan / ask / answer / handoff / review / rework / close / delete。plan --after は前のカードが完了するまで起動させない = issue 468。handoff は PM が PG の質問を人に回したことを履歴に残す。rework はレビュー待ちを直してほしい点つきで PG に戻す。delete は依頼の列ならすぐ消し、ほかは PG の session を止めてから消す = issue 451)。受付の箱に置くだけで、適用は dispatcher (issue 427)
@@ -134,7 +134,23 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 - 画面が起こした dispatcher (`--exit-without-screens 1m`) は、**画面が 1 つも無い状態が 1 分続いたら** PG を止めて抜ける (端末を閉じた・落ちた・
   kill -9 のように quit を通らずに消えても PG を残さない)。SIGTERM / SIGHUP でも、画面が消えていれば止めてから抜ける。
   手で起動した `pro-con dispatcher` (PM が CLI で使う形) は、`--stop` か最後の画面の quit まで動く
-- 画面は開いている間、dispatcher が 10 秒以上回っていなければ起こし直す (落ちた・前の画面が止めている最中に開いた)。
+- **画面は dispatcher を直接起こさず、ワンショットの supervisor (`pro-con supervise`。内部用。issue 506) を起こす**。supervisor は
+  dispatcher を子として持ち、落ちたら 10 秒空けて起こし直し、10 分に 5 回を超えて落ちたら諦める (人が止めた印を置いて PG を止める。
+  画面の c か、手で `pro-con dispatcher` を起動すると外れる)。dispatcher が自分の判断で抜けたら (rc=0 = 止める印・画面が無い状態が続いた・
+  信号・人が止めた印) supervisor も一緒に抜ける (常駐しない)。起こし直しの仕組みは `src/procsup` (独立した module)、止める条件は `supervise.go`
+  - 起こし直す前に、人が止めた印がある・落ちた後に止め終えた (`stop-result` が落ちた時刻より新しい = 待ちの間に最後の持ち主の画面が quit した)
+    なら起こさずに抜ける。持ち主の画面が無ければ PG を止めて抜ける (join は起こさない)
+  - 別の dispatcher が lock を持っていて抜けた (rc=3) のは落ちたと数えず、10 秒ごとに起こし直して、その dispatcher が抜けたら引き継ぐ
+  - supervisor は 2 つ立たない (`supervisor.lock`)。出来事は受付の箱に置き、次の dispatcher が `pro-con log` (kind `supervisor`) に書く
+    (events.jsonl の書き手は dispatcher だけ)。`dispatcher.log` には時刻つきですぐ出る
+  - 🚨 kill -9 で supervisor が死んだときに dispatcher と PG が残るのは受け入れる (ユーザーの決定)。dispatcher は自分の決まり
+    (画面が無い状態が 1 分で抜ける) で動き続け、画面の keeper はその dispatcher が抜けた後に supervisor を起こす
+  - supervisor 自身は新版へ入れ替わらない。dispatcher の入れ替え (505) は同じ PID の exec なので supervisor からは同じ子のまま見え、
+    起こし直す dispatcher は `os.Executable` のパス (shim が差し替えた新しいビルド)。見張りは今までどおり dispatcher の子
+    (手で起動した dispatcher にも付く)
+- 画面は開いている間、dispatcher が 10 秒以上回っていなければ supervisor を起こす (落ちた・前の画面が止めている最中に開いた)。
+  **supervisor が居る間・supervisor の居ない dispatcher (手で起動した・kill -9 された前の supervisor の子) の lock がある間は起こさない**
+  (dispatcher を起こし直すのは supervisor だけ = 二重に起こさない)。
   **人が `pro-con dispatcher --stop` で止めたときは起こさない** (状態の置き場の `dispatcher-held` が印。開いたときも起こさない)。
   画面が起こす dispatcher・画面の quit の停止には内部用の `--from-screen` が付き、印を置かない・外さない (最後の画面の quit で止めても、
   次に開いた画面は今までどおり起こす)。印を見てから起こすまでの間に `--stop` が来ても、起こされた dispatcher は印を見て回らずに抜ける。

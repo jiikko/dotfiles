@@ -124,6 +124,9 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 	if lock == nil {
 		if lock, err = dispatcher.TakeLock(dir); err != nil {
 			_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", err)
+			if errors.Is(err, dispatcher.ErrRunning) {
+				return exitLockHeld // 起こした supervisor は落ちたと数えず、間を空けて起こし直す (issue 506)
+			}
 			return 1
 		}
 	}
@@ -181,7 +184,7 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 	stopMonitor := func() {}
 	startMonitor := func() {
 		if e2e == nil && !*once {
-			stopMonitor = superviseMonitor(ctx, defaultMonitorSup(func(text string) { say(d, eventlog.KindMonitor, text) }, stdout, stderr))
+			stopMonitor = superviseMonitor(ctx, monitorSpec(func(text string) { say(d, eventlog.KindMonitor, text) }, stdout, stderr))
 		}
 	}
 	startMonitor()

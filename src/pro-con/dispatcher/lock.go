@@ -20,19 +20,21 @@ import (
 )
 
 // LockFile はロックのファイル名 (状態の置き場の下)。画面は pid だけを読む (store.DispatcherGone)。
-// MonitorLockFile は見張り (pro-con monitor。issue 475) のロック。
+// MonitorLockFile は見張り (pro-con monitor。issue 475) のロック。SupervisorLockFile は supervisor (pro-con supervise。issue 506) のロック。
 const (
-	LockFile        = store.DispatcherLockFile
-	MonitorLockFile = "monitor.lock"
+	LockFile           = store.DispatcherLockFile
+	MonitorLockFile    = "monitor.lock"
+	SupervisorLockFile = "supervisor.lock"
 )
 
 // LockFDEnv は入れ替え (HeldLock.Exec) が新しいプロセス像へ lock の fd の番号を渡す環境変数。
 const LockFDEnv = "PRO_CON_DISPATCHER_LOCK_FD"
 
-// ErrRunning は別の dispatcher が既に動いているとき。ErrMonitorRunning は別の見張りが既に動いているとき。
+// ErrRunning は別の dispatcher が既に動いているとき。ErrMonitorRunning は別の見張り、ErrSupervisorRunning は別の supervisor が既に動いているとき。
 var (
-	ErrRunning        = errors.New("pro-con dispatcher は既に動いている")
-	ErrMonitorRunning = errors.New("pro-con monitor は既に動いている")
+	ErrRunning           = errors.New("pro-con dispatcher は既に動いている")
+	ErrMonitorRunning    = errors.New("pro-con monitor は既に動いている")
+	ErrSupervisorRunning = errors.New("pro-con supervise は既に動いている")
 )
 
 // Lock は状態の置き場の dispatcher のロックを取る。取れなければ ErrRunning。返した関数で外す。
@@ -47,6 +49,15 @@ func Lock(dir string) (func(), error) {
 // LockMonitor は状態の置き場の見張りのロックを取る (見張りを 2 つ動かさない)。取れなければ ErrMonitorRunning。返した関数で外す。
 func LockMonitor(dir string) (func(), error) {
 	l, err := lockAs(dir, MonitorLockFile, ErrMonitorRunning, "monitor")
+	if err != nil {
+		return nil, err
+	}
+	return l.Release, nil
+}
+
+// LockSupervisor は状態の置き場の supervisor のロックを取る (supervisor を 2 つ動かさない)。取れなければ ErrSupervisorRunning。返した関数で外す。
+func LockSupervisor(dir string) (func(), error) {
+	l, err := lockAs(dir, SupervisorLockFile, ErrSupervisorRunning, "supervisor")
 	if err != nil {
 		return nil, err
 	}

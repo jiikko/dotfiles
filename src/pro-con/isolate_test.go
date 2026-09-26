@@ -17,11 +17,11 @@ const fakeDispatcherPidEnv = "PRO_CON_TEST_FAKE_DISPATCHER_PID"
 
 // 🚨 socket の逃がし先を本物の /tmp/pro-con-<uid> にしない (t.TempDir の置き場は長く、逃がし先へ倒れる)。
 func TestMain(m *testing.M) {
-	// spawnDispatcher は os.Executable (= このテストの二進) を起こす。中継は run を通して本物を走らせ、dispatcher は偽物にする
-	// (🚨 本物の dispatcher を走らせない: 本物の状態の置き場で PG を起こす)
+	// spawnSupervisor は os.Executable (= このテストの二進) を起こす。中継と supervisor は run を通して本物を走らせ、dispatcher は偽物にする
+	// (🚨 本物の dispatcher を走らせない: 本物の状態の置き場で PG を起こす。supervisor は偽物の印があるときだけ走らせる)
 	if len(os.Args) > 1 {
 		switch p := os.Getenv(fakeDispatcherPidEnv); {
-		case os.Args[1] == spawnDetachedCmd:
+		case os.Args[1] == spawnDetachedCmd, os.Args[1] == superviseCmd && p != "":
 			os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 		case os.Args[1] == "dispatcher" && p != "":
 			os.Exit(runFakeDispatcher(p))

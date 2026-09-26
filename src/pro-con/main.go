@@ -156,8 +156,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				return 2
 			}
 			return fakeAttach(args[1], stdin, stdout)
-		case spawnDetachedCmd: // spawnDispatcher が挟む中継 (内部用)
+		case spawnDetachedCmd: // spawnSupervisor が挟む中継 (内部用)
 			return spawnDetached(args[1:], stderr)
+		case superviseCmd: // 画面が起こすワンショットの supervisor (内部用。dispatcher を子として持つ。supervise.go)
+			home, err := os.UserHomeDir()
+			if err != nil {
+				_, _ = fmt.Fprintln(stderr, "pro-con:", err)
+				return 1
+			}
+			return runSupervise(args[1:], liveDir(home), stdout, stderr)
 		case "e2e": // Claude が e2e モードの画面を操作する口 (e2ecmd.go)
 			return runE2E(args[1:], stdout, stderr)
 		case "card": // PM / PG が使うカードの操作 (受付の箱に置くだけ。cardcmd.go)
@@ -302,7 +309,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		var more []string
 		lb.SetScreenInfo(screen.label, ttyName(stdin))
-		be, more = wireLive(lb, screen, dir, func(dir string) error { return spawnDispatcher(dir, dispatcherArgs) },
+		be, more = wireLive(lb, screen, dir, func(dir string) error { return spawnSupervisor(dir, dispatcherArgs) },
 			func(ctx context.Context) error { return stopInChild(ctx, dir, dispatcherArgs) })
 		notes = append(notes, more...)
 		ctx, cancel := context.WithCancel(context.Background())
@@ -402,13 +409,24 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 }
 
-// startDispatcherIfIdle は、dispatcher が動いていなければ spawn で起動する (動いていれば何もしない)。
-// 確かめてから起動するまでの間に別の画面が起動しても、2 つ目の dispatcher はロックを取れずに抜けるだけ。
+// startDispatcherIfIdle は、dispatcher も supervisor も動いていなければ spawn で supervisor を起動する (動いていれば何もしない)。
+// 確かめてから起動するまでの間に別の画面が起動しても、2 つ目の supervisor はロックを取れずに抜けるだけ。
 // 人が止めた印 (store.Held。issue 459) があれば起こさない。確かめてから起こすまでに印が置かれても、起こされた側 (--from-screen) が抜ける
 func startDispatcherIfIdle(dir string, spawn func(dir string) error) (bool, error) {
 	if store.Held(dir) {
 		return false, nil
 	}
+	// supervisor が居れば任せる (dispatcher を起こし直すのは supervisor だけ = 二重に起こさない。issue 506)
+	unlockSup, err := dispatcher.LockSupervisor(dir)
+	if errors.Is(err, dispatcher.ErrSupervisorRunning) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	unlockSup() // 起こす supervisor が取れるように外してから起こす
+	// supervisor の居ない dispatcher (手で起動した・kill -9 された前の supervisor の子) が動いていれば、それが抜けるまで待つ
+	// (起こした supervisor の dispatcher は lock を取れずに抜けて、起こし直しを繰り返すだけになる)
 	unlock, err := dispatcher.Lock(dir)
 	if errors.Is(err, dispatcher.ErrRunning) {
 		return false, nil
@@ -485,12 +503,13 @@ func dispatcherCmd(exe string, extra []string) *exec.Cmd {
 	return exec.Command(exe, append([]string{"dispatcher", "--" + fromScreenFlag, "--exit-without-screens", "1m"}, extra...)...)
 }
 
-// spawnDispatcher は `pro-con dispatcher` を画面とは別のプロセスグループで起動する (画面を閉じても、ctrl+c が届いても道連れにしない。
-// 止めるのは終了のときの `dispatcher --stop`)。出力は状態の置き場の dispatcher.log へ足す (画面より長く生きるのでパイプにしない)。
-// 🚨 画面の子にしない: 中継 (spawnDetached) を挟み、中継だけを待つ。dispatcher は launchd の子になり、抜けたら launchd が刈り取る
-// (画面の子のままだと、抜けた dispatcher が画面を閉じるまでゾンビで残り、keeper が起こし直すたびに溜まる。Wait の goroutine は
+// spawnSupervisor は supervisor (`pro-con supervise`。dispatcher を子として持つ。issue 506) を画面とは別のプロセスグループで起動する
+// (画面を閉じても、ctrl+c が届いても道連れにしない。止めるのは終了のときの `dispatcher --stop`。dispatcher が抜ければ supervisor も抜ける)。
+// 出力は状態の置き場の dispatcher.log へ足す (画面より長く生きるのでパイプにしない。supervisor の子の dispatcher も同じ先へ書く)。
+// 🚨 画面の子にしない: 中継 (spawnDetached) を挟み、中継だけを待つ。supervisor は launchd の子になり、抜けたら launchd が刈り取る
+// (画面の子のままだと、抜けた子が画面を閉じるまでゾンビで残り、keeper が起こし直すたびに溜まる。Wait の goroutine は
 // ctrl+r の exec で消えるので足りない。issue 477)。
-func spawnDispatcher(dir string, extra []string) error {
+func spawnSupervisor(dir string, extra []string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
@@ -501,21 +520,20 @@ func spawnDispatcher(dir string, extra []string) error {
 		return err
 	}
 	defer func() { _ = f.Close() }()
-	cmd := dispatcherCmd(exe, extra)
-	cmd.Args = append([]string{exe, spawnDetachedCmd}, cmd.Args[1:]...)
+	cmd := exec.Command(exe, append([]string{spawnDetachedCmd, superviseCmd}, extra...)...)
 	cmd.Stdout, cmd.Stderr = f, f
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("dispatcher を起動する中継が失敗した (%w。様子は %s)", err, logPath)
+		return fmt.Errorf("supervisor を起動する中継が失敗した (%w。様子は %s)", err, logPath)
 	}
 	return nil
 }
 
-// spawnDetachedCmd は spawnDispatcher が挟む中継の内部用のサブコマンド。
+// spawnDetachedCmd は spawnSupervisor が挟む中継の内部用のサブコマンド。
 const spawnDetachedCmd = "spawn-detached"
 
 // spawnDetached は中継: 自分のバイナリを args で別のプロセスグループに起動し、待たずに抜ける (起こした子は launchd の子になる)。
-// 子の出力は中継の stdout / stderr (spawnDispatcher が渡した dispatcher.log) をそのまま引き継ぐ。
+// 子の出力は中継の stdout / stderr (spawnSupervisor が渡した dispatcher.log) をそのまま引き継ぐ。
 func spawnDetached(args []string, stderr io.Writer) int {
 	exe, err := os.Executable()
 	if err != nil {

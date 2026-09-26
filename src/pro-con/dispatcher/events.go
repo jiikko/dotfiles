@@ -12,16 +12,20 @@ func ev(kind, cardID, session, text string) eventlog.Event {
 	return eventlog.Event{Kind: kind, Card: cardID, Session: session, Reason: text}
 }
 
+// noteKinds は、記録を変えずに出来事として書くだけの依頼の種類と、書く出来事の種類。
+var noteKinds = map[string]string{
+	store.KindEvent:      eventlog.KindScreen,
+	store.KindMonitor:    eventlog.KindMonitor,
+	store.KindSupervisor: eventlog.KindSupervisor,
+}
+
 // applied は箱の依頼を適用した・除けた結果を出来事にする。
 func applied(res []store.Result) []eventlog.Event {
 	var out []eventlog.Event
 	for _, r := range res {
-		if r.Kind == store.KindEvent && r.Err == "" { // 画面の出来事は、その出来事として書く (「依頼を適用した」を重ねない)
-			out = append(out, eventlog.Event{At: r.At, Kind: eventlog.KindScreen, Reason: r.Note})
-			continue
-		}
-		if r.Kind == store.KindMonitor && r.Err == "" { // 見張りの知らせも同じ (issue 475)
-			out = append(out, eventlog.Event{At: r.At, Kind: eventlog.KindMonitor, Card: r.CardID, Reason: r.Note})
+		// 画面の出来事・見張り (issue 475)・supervisor (issue 506) の知らせは、その出来事として書く (「依頼を適用した」を重ねない)
+		if kind, ok := noteKinds[r.Kind]; ok && r.Err == "" {
+			out = append(out, eventlog.Event{At: r.At, Kind: kind, Card: r.CardID, Reason: r.Note})
 			continue
 		}
 		from := "" // どの画面から置いた依頼か (issue 481)

@@ -14,6 +14,7 @@ import (
 	"pro-con/dispatcher"
 	"pro-con/monitor"
 	"pro-con/store"
+	"procsup"
 )
 
 // supRig は起こし直しの係を、sh の台本を見張りの代わりにして回す。
@@ -23,22 +24,20 @@ type supRig struct {
 	starts int
 }
 
-func (r *supRig) sup(script string) monitorSup {
-	return monitorSup{
-		command: func() (*exec.Cmd, error) {
-			r.mu.Lock()
-			r.starts++
-			r.mu.Unlock()
-			return exec.Command("sh", "-c", script), nil
-		},
-		say: func(s string) {
-			r.mu.Lock()
-			defer r.mu.Unlock()
-			r.said = append(r.said, s)
-		},
-		now: time.Now, restartWait: time.Millisecond, heldWait: time.Millisecond,
-		crashLimit: 2, crashWindow: time.Hour, stopWait: 5 * time.Second,
+func (r *supRig) sup(script string) procsup.Spec {
+	s := monitorSpec(func(text string) {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.said = append(r.said, text)
+	}, nil, nil)
+	s.Command = func() (*exec.Cmd, error) {
+		r.mu.Lock()
+		r.starts++
+		r.mu.Unlock()
+		return exec.Command("sh", "-c", script), nil
 	}
+	s.RestartWait, s.RetryWait, s.CrashLimit = time.Millisecond, time.Millisecond, 2
+	return s
 }
 
 func (r *supRig) snapshot() (int, []string) {
@@ -58,22 +57,24 @@ func eventually(t *testing.T, what string, cond func() bool) {
 	}
 }
 
-// 落ち続ける見張りは crashLimit 回まで起こし直し、超えたら起こし直さずに出来事にする。
+// 落ち続ける見張りは crashLimit 回まで起こし直し、超えたら起こし直さずに出来事にする。rc=0 で抜けたのも落ちたと数える。
 func TestMonitorCrashLoopStops(t *testing.T) {
-	r := &supRig{}
-	stop := superviseMonitor(context.Background(), r.sup("exit 1"))
-	defer stop()
-	eventually(t, "起こし直すのをやめない", func() bool {
-		_, said := r.snapshot()
-		return len(said) > 0 && strings.Contains(said[len(said)-1], "起こし直さない")
-	})
-	starts, said := r.snapshot()
-	if starts != 3 || len(said) != 3 || !strings.Contains(said[0], "見張りが抜けた (exit status 1)") {
-		t.Fatalf("起こし直しの回数 / 出来事が違う: starts=%d said=%v", starts, said)
+	for script, why := range map[string]string{"exit 1": "exit status 1", "exit 0": "rc=0"} {
+		r := &supRig{}
+		stop := superviseMonitor(context.Background(), r.sup(script))
+		eventually(t, "起こし直すのをやめない", func() bool {
+			_, said := r.snapshot()
+			return len(said) > 0 && strings.Contains(said[len(said)-1], "起こし直さない")
+		})
+		stop()
+		starts, said := r.snapshot()
+		if starts != 3 || len(said) != 3 || !strings.Contains(said[0], "見張りが抜けた ("+why+")") || !strings.Contains(said[2], "3 回抜けた") {
+			t.Fatalf("%s: 起こし直しの回数 / 出来事が違う: starts=%d said=%v", script, starts, said)
+		}
 	}
 }
 
-// 前の見張りが lock を持っていて抜けた (monitorExitHeld) のは落ちたと数えず、出来事も 1 度だけにして起こし直し続ける。
+// 前の見張りが lock を持っていて抜けた (exitLockHeld) のは落ちたと数えず、出来事も 1 度だけにして起こし直し続ける。
 func TestMonitorHeldIsNotCounted(t *testing.T) {
 	r := &supRig{}
 	stop := superviseMonitor(context.Background(), r.sup("exit 3"))
@@ -85,29 +86,10 @@ func TestMonitorHeldIsNotCounted(t *testing.T) {
 	}
 }
 
-// 止めるときは stdin (パイプ) を閉じる: SIGTERM を無視する見張りも EOF で抜ける。止めた後は起こし直さず、落ちたとも書かない。
-func TestMonitorStopClosesStdin(t *testing.T) {
-	r := &supRig{}
-	s := r.sup("")
-	ready := &syncBuffer{}
-	s.command = func() (*exec.Cmd, error) {
-		r.mu.Lock()
-		r.starts++
-		r.mu.Unlock()
-		cmd := exec.Command("sh", "-c", `trap "" TERM; echo ready; cat >/dev/null`)
-		cmd.Stdout = ready
-		return cmd, nil
-	}
-	stop := superviseMonitor(context.Background(), s)
-	eventually(t, "見張りが SIGTERM を無視する形で立たない", func() bool { return strings.Contains(ready.String(), "ready") }) // trap を入れた後
-	start := time.Now()
-	stop()
-	if d := time.Since(start); d >= 5*time.Second {
-		t.Fatalf("stdin を閉じず、kill まで待った (%s)", d)
-	}
-	starts, said := r.snapshot()
-	if starts != 1 || len(said) != 0 {
-		t.Fatalf("止めた後に起こし直した / 落ちたと書いた: starts=%d said=%v", starts, said)
+// 見張りは生命線の stdin を受け取る (dispatcher が死んだら抜ける = --until-stdin-closes と対)。
+func TestMonitorSpecUsesLifeline(t *testing.T) {
+	if s := monitorSpec(func(string) {}, nil, nil); !s.Lifeline {
+		t.Fatal("見張りに生命線を渡していない (dispatcher が kill -9 で死んでも見張りが残る)")
 	}
 }
 
@@ -115,7 +97,7 @@ func TestMonitorStopClosesStdin(t *testing.T) {
 func TestMonitorStartFailureIsReported(t *testing.T) {
 	r := &supRig{}
 	s := r.sup("")
-	s.command = func() (*exec.Cmd, error) { return exec.Command("/nonexistent/pro-con"), nil }
+	s.Command = func() (*exec.Cmd, error) { return exec.Command("/nonexistent/pro-con"), nil }
 	stop := superviseMonitor(context.Background(), s)
 	defer stop()
 	eventually(t, "起こせないと書かない", func() bool { _, said := r.snapshot(); return len(said) == 1 })
@@ -125,7 +107,7 @@ func TestMonitorStartFailureIsReported(t *testing.T) {
 	}
 }
 
-// 別の見張りが lock を持っていたら、何もせずに monitorExitHeld で抜ける (起こした dispatcher が落ちたと数えない印)。
+// 別の見張りが lock を持っていたら、何もせずに exitLockHeld で抜ける (起こした dispatcher が落ちたと数えない印)。
 func TestRunMonitorExitsHeldWhenLocked(t *testing.T) {
 	dir := t.TempDir()
 	unlock, err := dispatcher.LockMonitor(dir)
@@ -134,7 +116,7 @@ func TestRunMonitorExitsHeldWhenLocked(t *testing.T) {
 	}
 	defer unlock()
 	var out, errOut bytes.Buffer
-	if rc := runMonitor([]string{"--once"}, dir, nil, &out, &errOut); rc != monitorExitHeld {
+	if rc := runMonitor([]string{"--once"}, dir, nil, &out, &errOut); rc != exitLockHeld {
 		t.Fatalf("lock を持たれているのに rc=%d: %s", rc, errOut.String())
 	}
 	unlock()

@@ -64,6 +64,9 @@ const (
 	// KindMonitor は見張り (pro-con monitor。issue 475) の知らせ (取り込みの衝突・テストの順番の長さ) と、見張りを起こした・落ちた。
 	// 知らせは見張りが受付の箱に置き、dispatcher が書く (時刻は見張りが置いた時刻)
 	KindMonitor = "monitor"
+	// KindSupervisor は supervisor (pro-con supervise。issue 506) の知らせ (dispatcher が落ちた・起こし直す・諦めた)。
+	// supervisor が受付の箱に置き、次の dispatcher が書く (時刻は supervisor が置いた時刻)
+	KindSupervisor = "supervisor"
 	// KindUpgrade は dispatcher の新版への入れ替え (issue 505。新版ができた・区切りを待っている・切り替えた・切り替えられない)
 	KindUpgrade = "upgrade"
 )

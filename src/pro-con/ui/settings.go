@@ -313,14 +313,14 @@ func (m *Model) toggleSettingsRow() {
 	}
 }
 
-// splitProcs は動いているもの (と dispatcher・見張りの行・カードと食い違う PG) と、止まっている役 (PM・取り込み・テストの係) に分ける
+// splitProcs は動いているもの (と dispatcher・supervisor・見張りの行・カードと食い違う PG) と、止まっている役 (PM・取り込み・テストの係) に分ける
 // (止まっている行は 1 行に畳む)。🚨 止まった PG のうち食い違いの無いもの (終わったカードの止まった session) は出さず、数えもしない (issue 497)。
 func splitProcs(rows []backend.Proc) (live, stopped []backend.Proc) {
 	for _, p := range rows {
 		if p.Role == "PG" && p.State == backend.ProcStopped && p.Mismatch == "" {
 			continue
 		}
-		if p.State == backend.ProcStopped && p.Mismatch == "" && p.Role != "dispatcher" && p.Role != "見張り" {
+		if p.State == backend.ProcStopped && p.Mismatch == "" && p.Role != "dispatcher" && p.Role != "supervisor" && p.Role != "見張り" {
 			stopped = append(stopped, p)
 			continue
 		}

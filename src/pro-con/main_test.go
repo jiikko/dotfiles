@@ -101,7 +101,8 @@ func TestParseModeKeepsModeArgs(t *testing.T) {
 	}
 }
 
-// 画面を開いたとき、dispatcher が動いていなければ起動し、動いていれば起動しない。
+// 画面を開いたとき、dispatcher も supervisor も動いていなければ (supervisor を) 起動し、どちらかが動いていれば起動しない
+// (dispatcher を起こし直すのは supervisor だけ = keeper と二重に起こさない。issue 506)。
 func TestStartDispatcherIfIdle(t *testing.T) {
 	dir := t.TempDir()
 	spawned := 0
@@ -109,13 +110,18 @@ func TestStartDispatcherIfIdle(t *testing.T) {
 	if started, err := startDispatcherIfIdle(dir, spawn); !started || err != nil || spawned != 1 {
 		t.Fatalf("dispatcher が居ないのに起動しない: started=%v err=%v spawned=%d", started, err, spawned)
 	}
-	unlock, err := dispatcher.Lock(dir) // dispatcher が動いている形
-	if err != nil {
-		t.Fatal(err)
+	for name, lock := range map[string]func(string) (func(), error){"dispatcher": dispatcher.Lock, "supervisor": dispatcher.LockSupervisor} {
+		unlock, err := lock(dir) // 動いている形
+		if err != nil {
+			t.Fatal(err)
+		}
+		if started, err := startDispatcherIfIdle(dir, spawn); started || err != nil || spawned != 1 {
+			t.Fatalf("%s が動いているのに起動した: started=%v err=%v spawned=%d", name, started, err, spawned)
+		}
+		unlock()
 	}
-	defer unlock()
-	if started, err := startDispatcherIfIdle(dir, spawn); started || err != nil || spawned != 1 {
-		t.Fatalf("dispatcher が動いているのに起動した: started=%v err=%v spawned=%d", started, err, spawned)
+	if started, err := startDispatcherIfIdle(dir, spawn); !started || err != nil || spawned != 2 {
+		t.Fatalf("lock を外しても起動しない (確かめた lock を外し忘れた): started=%v err=%v spawned=%d", started, err, spawned)
 	}
 }
 
@@ -158,16 +164,21 @@ func TestWireLiveViewStopsAndStartsNothing(t *testing.T) {
 	}
 }
 
-// 画面が起こした dispatcher は画面の子にしない: spawn は dispatcher が居る間に戻り、dispatcher の親は画面ではなく、
-// 抜けても画面の子にゾンビで残らない (keeper が起こし直すたびに溜まる。goroutine で Wait する形は ctrl+r の exec で漏れる。issue 477)。
+// 画面が起こした supervisor と dispatcher は画面の子にしない: spawn は dispatcher が居る間に戻り、dispatcher の親は supervisor
+// (画面ではない) で、抜けても画面の子にゾンビで残らない (keeper が起こし直すたびに溜まる。goroutine で Wait する形は ctrl+r の exec で漏れる。issue 477)。
+// dispatcher が自分の判断で抜けたら (rc=0) supervisor も抜ける (ワンショット。issue 506)。
 func TestSpawnedDispatcherIsNotLeftAsZombie(t *testing.T) {
-	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", t.TempDir()) // supervisor は置き場を家から決める (本物の置き場の supervisor の lock を取らない)
+	dir := liveDir(t.TempDir())
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	pidFile := filepath.Join(dir, "dispatcher.pid")
 	release := func() { _ = os.WriteFile(pidFile+".release", nil, 0o600) }
 	t.Cleanup(release) // 途中で落ちても偽の dispatcher を残さない
 	t.Setenv(fakeDispatcherPidEnv, pidFile)
 	done := make(chan error, 1)
-	go func() { done <- spawnDispatcher(dir, nil) }()
+	go func() { done <- spawnSupervisor(dir, nil) }()
 	deadline := time.Now().Add(10 * time.Second) // 上限だけ (通る形は条件が揃った時点で進む)
 	pid := 0
 	for pid == 0 {
@@ -193,15 +204,28 @@ func TestSpawnedDispatcherIsNotLeftAsZombie(t *testing.T) {
 			t.Fatal(err)
 		}
 	case <-time.After(time.Until(deadline)):
-		t.Fatal("spawnDispatcher が dispatcher の生きている間に戻らない (中継が dispatcher を待っている)")
+		t.Fatal("spawnSupervisor が dispatcher の生きている間に戻らない (中継が supervisor を待っている)")
 	}
 	me := strconv.Itoa(os.Getpid())
+	sup := ""
+	if b, err := os.ReadFile(filepath.Join(dir, dispatcher.SupervisorLockFile)); err == nil {
+		sup = strings.TrimSpace(string(b))
+	}
 	if out, err := exec.Command("ps", "-o", "ppid=", "-p", strconv.Itoa(pid)).Output(); err != nil {
 		t.Fatalf("偽の dispatcher (pid %d) が release の前に居なくなった: %v", pid, err)
-	} else if strings.TrimSpace(string(out)) == me {
-		t.Fatalf("dispatcher (pid %d) の親が画面 (pid %s) のまま", pid, me)
+	} else if ppid := strings.TrimSpace(string(out)); ppid == me || ppid != sup {
+		t.Fatalf("dispatcher (pid %d) の親が supervisor (pid %q) でない: ppid=%s (画面は %s)", pid, sup, ppid, me)
+	}
+	if out, err := exec.Command("ps", "-o", "ppid=", "-p", sup).Output(); err != nil || strings.TrimSpace(string(out)) == me {
+		t.Fatalf("supervisor (pid %s) が居ない / 親が画面のまま: %q %v", sup, out, err)
 	}
 	release()
+	for exec.Command("kill", "-0", sup).Run() == nil { // dispatcher が rc=0 で抜けたら supervisor も抜ける
+		if time.Now().After(deadline) {
+			t.Fatalf("dispatcher が抜けたのに supervisor (pid %s) が残った", sup)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	for {
 		out, err := exec.Command("ps", "-o", "ppid=,stat=", "-p", strconv.Itoa(pid)).Output()
 		if err != nil { // 居ない = 刈り取られた

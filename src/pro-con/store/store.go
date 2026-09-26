@@ -49,13 +49,20 @@ const KindEvent = "event"
 // event と同じく記録 (カード) は変えず、dispatcher が出来事の記録へ書くだけ (見張りは読むだけ。書き手は dispatcher 1 つ = 426 の決定 1)
 const KindMonitor = "monitor"
 
+// KindSupervisor は supervisor (pro-con supervise。issue 506) の知らせ (dispatcher が落ちた・起こし直す・諦めた)。
+// 見張りと同じく記録 (カード) は変えず、dispatcher が出来事の記録へ書くだけ (書き手は dispatcher 1 つ = 426 の決定 1)。
+// 🚨 dispatcher が落ちている間に置くので、書かれるのは次の dispatcher が箱を読んだとき (時刻は supervisor が置いた時刻)
+const KindSupervisor = "supervisor"
+
 // KindForget は片付け (pro-con worktree clean --yes。issue 497) が worktree と transcript を消し終えたカードの、起動の記録の行と
 // 片付けの印を消す依頼の種類。記録 (カード) は変えない。起動の記録と印の書き手は dispatcher だけなので、片付けは箱に置いて頼む
 // (dispatcher/forget.go)。🚨 消すのは Sessions に挙げた session の行だけ (適用までに再開した session の行を巻き込まない)
 const KindForget = "forget"
 
 // noteOnly は記録を変えず、dispatcher が出来事の記録へ書くだけの依頼か (画面の出来事・見張りの知らせ)。
-func noteOnly(kind string) bool { return kind == KindEvent || kind == KindMonitor }
+func noteOnly(kind string) bool {
+	return kind == KindEvent || kind == KindMonitor || kind == KindSupervisor
+}
 
 // RunResource はテストの係 (dispatcher が直列に実行する列) のリソース名。今は 1 本の列だけ (426 の決定 5)。
 const RunResource = "テスト"
@@ -508,6 +515,11 @@ func apply(st State, r Request, now time.Time) (State, string, string, error) {
 			return st, "", "", errors.New("monitor: 知らせの文が空")
 		}
 		return st, r.CardID, r.Note, nil
+	case KindSupervisor: // supervisor の知らせ。記録は変えない
+		if strings.TrimSpace(r.Note) == "" {
+			return st, "", "", errors.New("supervisor: 知らせの文が空")
+		}
+		return st, "", r.Note, nil
 	case KindForget: // 片付けが済んだカードの起動の記録の行と印を消す。消すのは dispatcher (記録は変えない)
 		if !IsCardID(r.CardID) {
 			return st, "", "", fmt.Errorf("forget: PG のカードの ID ではない (%q)", r.CardID)
