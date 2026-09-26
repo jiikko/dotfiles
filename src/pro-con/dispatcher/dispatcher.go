@@ -1,6 +1,6 @@
 // Package dispatcher は本物のモードの dispatcher (issue 427 の段階 3c-1)。1 回の Tick で:
 //
-//  1. 受付の箱を記録へ適用する (store.Apply)。終えたカードを記録から書庫へ移す (store.Archive。issue 478)。完了から 1 週間たったカードを書庫から消す (store.Purge。issue 497)。記録に無いカードの添付を消す (issue 453)
+//  1. 受付の箱を記録へ適用する (store.Apply)。閉じたカードの所要を記録する (metrics.go。issue 516)。終えたカードを記録から書庫へ移す (store.Archive。issue 478)。完了から 1 週間たったカードを書庫から消す (store.Purge。issue 497)。記録に無いカードの添付を消す (issue 453)
 //  2. 起動した PG の session を pro-con の記録 (live.Register) に登録する (session id と pid が一覧に出てから)
 //  3. (落ちた PG を見張る trackDead の後に) 閉じたカード・削除の依頼を受けたカードの PG の session を止める (close.go。issue 447 / 451)。削除のカードは止まったら記録から外す
 //  4. 依頼の列のカードを PM に知らせる (pm.go。issue 437)。PM が居なければ起動し、居れば再開する
@@ -71,10 +71,13 @@ type Dispatcher struct {
 	Dir string // 本物のモードの状態の置き場 (記録・箱・pro-con が起動した session の記録)
 	// purgedAt は最後に書庫の古いカードを消しに行った時刻 (forget.go の purge)
 	purgedAt time.Time
-	Limit    int               // 同時に動かす PG の上限
-	Repos    map[string]string // repo の名前 → 絶対パス (カードの Repo から起動先を決める)
-	Launch   Launcher
-	List     func(context.Context) ([]agents.Session, error)
+	// TranscriptPath は session の transcript のパスを探す (所要の記録の枠を数える。metrics.go)。nil なら枠は「取れなかった」になる
+	TranscriptPath func(sessionID string) (string, error)
+	metered        map[string]string // 所要の記録に行を書いたカード → その行の終わり方 (metrics.go。nil ならまだ読んでいない)
+	Limit          int               // 同時に動かす PG の上限
+	Repos          map[string]string // repo の名前 → 絶対パス (カードの Repo から起動先を決める)
+	Launch         Launcher
+	List           func(context.Context) ([]agents.Session, error)
 	// ListAll は止めた session も出す一覧 (`claude agents --json --all`)。終了のとき、pro-con が起動した session がすべて止まったかを
 	// 確かめるのに使う (shutdown.go の ensureStopped)。nil なら List で確かめる (一覧に無い = 止まった、とみなす。テスト用)
 	ListAll func(context.Context) ([]agents.Session, error)
@@ -213,6 +216,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	if len(res) > 0 && d.Changed != nil { // 箱の依頼を適用した直後に知らせる (一覧の取得 (最大 10 秒) を待たせずにカードを画面へ出す)
 		d.Changed()
 	}
+	notes = append(notes, d.meter(now, res)...) // 書庫へ移す前 (issue 516)
 	notes = append(notes, d.archive(now)...)
 	notes = append(notes, d.purge(now)...)
 	// 書庫へ移した・削除したカードの添付を消す (記録を書いた後に消す。落ちても次の Tick が消し直す。issue 453)
@@ -589,10 +593,11 @@ func (d *Dispatcher) countCrash(c *card.Card, now, at time.Time, last string) st
 
 // askAfterCrashes は、落ち続けた PG のカードを人間の回答待ちにする (回答が来たら同じ session を再開する)。
 func askAfterCrashes(c *card.Card, now time.Time, why string) {
-	c.DropRun()                                                                                // 作業中の列を離れる (テストの係への頼みは取り下げる)
-	c.State, c.Since, c.Owner, c.StopWanted, c.Revived = card.Waiting, now, "人間", false, false // 回答での再開は人が決めた再開 (数え直す)
+	c.DropRun()                                           // 作業中の列を離れる (テストの係への頼みは取り下げる)
+	c.Owner, c.StopWanted, c.Revived = "人間", false, false // 回答での再開は人が決めた再開 (数え直す)
 	c.Wait = card.Wait{Kind: card.WaitCrashed, Question: why}
 	c.History = append(c.History, card.Event{At: now, Text: why})
+	c.Enter(card.Waiting, now)
 }
 
 // requeueVanished は、PG の session が自動の再開なしに一覧から消えた (外からの claude stop・マシンの再起動) 作業中のカードを
@@ -1022,11 +1027,12 @@ func (d *Dispatcher) settle(id string, now time.Time, how, session string) error
 		if !c.Revived { // 落ちた・消えた PG の再開は人が決めた再開ではないので、落ちた回数を数え直さない
 			c.CrashesFrom = now
 		}
-		c.State, c.Since, c.Owner, c.Session, c.Revived = card.Running, now, "PG", session, false
+		c.Owner, c.Session, c.Revived = "PG", session, false
 		c.LastProgress, c.Resume, c.Launching, c.Stalled, c.StopWanted, c.Stopped, c.Rejects = now, "", "", false, false, false, 0
 		// 消えたのを見た時刻は前の session のもの。残すと、再開が同じ短い id を返したとき (未実測)、一覧に出る前に消えたと読んで再開し直す
 		c.DeadSince = time.Time{}
-		c.History = append(c.History, card.Event{At: now, Text: "PG を" + how + "した (session " + session + ")"})
+		c.History = append(c.History, card.Event{At: now, Text: card.LaunchedText(how, session)})
+		c.Enter(card.Running, now)
 		if n := markDelivered(c); n > 0 {
 			c.History = append(c.History, card.Event{At: now, Text: deliveredNote(n)})
 		}

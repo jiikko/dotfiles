@@ -1,6 +1,6 @@
 package dispatcher
 
-// 完了から 1 週間たったカードを記録から消し (store.Purge)、片付けが済んだカードの起動の記録の行と片付けの印を消す (issue 497)。
+// 完了から 1 週間たったカードを記録から消し (store.Purge。その前に所要の記録を書き、90 日より古い所要の行を消す = metrics.go)、片付けが済んだカードの起動の記録の行と片付けの印を消す (issue 497)。
 // どちらも dispatcher が書き手 (書庫・印・起動の記録。426 の決定 1)。
 // 🚨 自動で消すのはカードの記録だけ。session・transcript・worktree・ブランチは消さない (人が pro-con worktree clean --yes で消す)。
 
@@ -26,11 +26,16 @@ func (d *Dispatcher) purge(now time.Time) []eventlog.Event {
 		return nil
 	}
 	d.purgedAt = now
+	notes := d.pruneMetrics(now)
+	metered, ok := d.meterArchive(now) // 消すカードの所要を先に書く (issue 516)
+	notes = append(notes, metered...)
+	if !ok {
+		return notes
+	}
 	gone, err := store.Purge(d.Dir, now, d.purgeMark)
 	if err != nil {
-		return []eventlog.Event{ev(eventlog.KindError, "", "", "完了から 1 週間たったカードを消せない (次の Tick で消し直す): "+err.Error())}
+		return append(notes, ev(eventlog.KindError, "", "", "完了から 1 週間たったカードを消せない (次の Tick で消し直す): "+err.Error()))
 	}
-	var notes []eventlog.Event
 	for _, c := range gone {
 		notes = append(notes, ev(eventlog.KindArchive, c.ID, "", c.ID+": "+store.PurgeText))
 	}

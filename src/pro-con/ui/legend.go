@@ -1,6 +1,8 @@
 package ui
 
-// ? で出すレーンの意味の表。説明の正本は card.State.Meaning とポイントの card.PointsMeaning (ここは並べて見せるだけ)。
+// ? で出すヘルプ。「流れ / レーン / 印とポイント / 役」のタブに分ける (tab で切り替え。設定画面 456 と同じキー。issue 515)。
+// 説明の正本は card の側 (流れ = card.MainFlow / card.FlowDetours / card.AfterDone、レーン = card.State.Meaning、
+// ポイント = card.PointsMeaning) と、この下の roleMeanings / HumansTurnMeaning (ここは並べて見せるだけ)。
 
 import (
 	"fmt"
@@ -15,12 +17,48 @@ import (
 	"pro-con/card"
 )
 
-// handleLegendKey は表を出している間のキー。? / q / esc で閉じ、ctrl+c は終了の手続きへ。それ以外は飲み込む
+// legendTab は ? のタブ。
+type legendTab int
+
+const (
+	legendFlow  legendTab = iota // カードの流れ (誰が・何で)
+	legendLanes                  // レーンごとの意味
+	legendMarks                  // 人の番の印と見積もりのポイント
+	legendRoles                  // 役 (プロセス) の仕事
+)
+
+// legendTabs はタブの並び (tab で右へ、端で回る)。個数の番兵を enum に混ぜない (switch の網羅の検査が番兵の case を求める)。
+var legendTabs = []legendTab{legendFlow, legendLanes, legendMarks, legendRoles}
+
+func (t legendTab) label() string {
+	switch t {
+	case legendFlow:
+		return "流れ"
+	case legendLanes:
+		return "レーン"
+	case legendMarks:
+		return "印とポイント"
+	case legendRoles:
+		return "役"
+	}
+	return ""
+}
+
+const legendTitle = " カードの流れと意味 "
+
+// handleLegendKey は表を出している間のキー。? / q / esc で閉じ、tab / shift+tab でタブを替え、ctrl+c は終了の手続きへ。それ以外は飲み込む
 // (表の下でカンバンが動くと、閉じたときに居場所が変わって見える)。
 func (m *Model) handleLegendKey(key string) tea.Cmd {
 	switch key {
 	case "?", "q", "esc":
 		m.legend, m.legendOff = false, 0
+	case "tab", "shift+tab":
+		n := len(legendTabs)
+		step := 1
+		if key == "shift+tab" {
+			step = n - 1
+		}
+		m.legendTab, m.legendOff = legendTabs[(slices.Index(legendTabs, m.legendTab)+step)%n], 0
 	case "j", "down":
 		m.legendOff++ // 下限・上限は描くとき (overlayLegend) に幅と高さから決める
 	case "k", "up":
@@ -36,24 +74,44 @@ func (m *Model) handleLegendKey(key string) tea.Cmd {
 	return nil
 }
 
-// overlayLegend は表を画面の中央に重ねる。
+// overlayLegend は表を画面の中央に重ねる。タブの行は送らずに頭に残す。
 func (m *Model) overlayLegend(screen []string) []string {
 	if !m.legend {
 		return screen
 	}
 	width, inner := legendSize(m.width)
-	rows := legendRows(inner)
-	title := " レーンと役の意味 "
+	head := []string{legendTabBar(m.legendTab, inner), ""}
+	body := legendRows(m.legendTab, inner)
+	title := legendTitle
 	// 画面より長いときは j / k で送る (板は上下の辺と影で 3 行使う。上下に 1 行ずつ空ける)
-	if avail := max(len(screen)-5, 3); len(rows) > avail {
-		m.legendOff = min(m.legendOff, len(rows)-avail)
-		rows = rows[m.legendOff : m.legendOff+avail]
-		title = fmt.Sprintf(" レーンと役の意味 (j / k で送る %d/%d) ", m.legendOff+avail, len(legendRows(inner)))
+	if avail := max(len(screen)-5-len(head), 3); len(body) > avail {
+		m.legendOff = min(m.legendOff, len(body)-avail)
+		title = fmt.Sprintf("%s(j / k で送る %d/%d) ", legendTitle, m.legendOff+avail, len(body))
+		body = body[m.legendOff : m.legendOff+avail]
 	} else {
 		m.legendOff = 0
 	}
-	box := layout.Panel(title, rows, width, true, layout.PanelStyle{Border: layout.BorderLight, Color: sgr.Dim})
+	box := layout.Panel(title, append(head, body...), width, true, layout.PanelStyle{Border: layout.BorderLight, Color: sgr.Dim})
 	return layout.OverlayCentered(screen, box, m.width, len(screen), true)
+}
+
+// legendTabBar はタブの行 (今のタブを反転)。幅 inner に収まらなければ、今のタブの名前と位置だけにする。
+func legendTabBar(cur legendTab, inner int) string {
+	var tabs []string
+	for _, t := range legendTabs {
+		if t == cur {
+			tabs = append(tabs, settingsReverse+sgrBold+" "+t.label()+" "+sgrReset)
+		} else {
+			tabs = append(tabs, sgrDim+" "+t.label()+" "+sgrReset)
+		}
+	}
+	bar := strings.Join(tabs, "  ")
+	if hint := sgrDim + "   tab で切り替え" + sgrReset; ansi.StringWidth(bar+hint) <= inner {
+		return bar + hint
+	} else if ansi.StringWidth(bar) <= inner {
+		return bar
+	}
+	return fmt.Sprintf("%s %s %d/%d  tab で次へ%s", settingsReverse+sgrBold, cur.label(), slices.Index(legendTabs, cur)+1, len(legendTabs), sgrReset)
 }
 
 // legendSize は画面の幅 total に対する表の板の幅と、中身の幅。
@@ -63,31 +121,69 @@ func legendSize(total int) (width, inner int) {
 	return width, layout.PanelInnerWidth(width - 1)
 }
 
-// legendRows は表の中身の行 (どの行も幅 inner に収まるよう折り返す)。
-func legendRows(inner int) []string {
+// legendRows はタブ tab の中身の行 (どの行も幅 inner に収まるよう折り返す)。
+func legendRows(tab legendTab, inner int) []string {
 	var rows []string
-	// explain は説明の文を幅に収まるよう折り返し、見出しの下に 2 桁下げて足す
-	explain := func(text string) {
-		for _, l := range strings.Split(ansi.Hardwrap(text, max(inner-2, 10), true), "\n") {
-			rows = append(rows, "  "+l)
+	// explain は説明の文を幅に収まるよう折り返し、見出しの下に indent 桁下げて足す
+	explainAt := func(indent int, text string) {
+		pad := strings.Repeat(" ", indent)
+		for _, l := range strings.Split(ansi.Hardwrap(text, max(inner-indent, 10), true), "\n") {
+			rows = append(rows, pad+l)
 		}
 	}
-	for i, s := range card.Columns {
-		rows = append(rows, fg(stateColor(s))+sgrBold+fmt.Sprintf("%d %s", i+1, s.Label())+sgrReset)
-		explain(s.Meaning())
-	}
-	rows = append(rows, "", humanTag(humanMark+"の番")) // 印の意味 (452)。どれが人の番かの正本は card.Turn
-	explain(HumansTurnMeaning)
-	rows = append(rows, "", sgrBold+"右上の 3pt = 見積もりのポイント"+sgrReset) // カードの右上の数 (490)。意味の正本は card.PointsMeaning
-	for _, m := range card.PointsMeaning {
-		explain(m)
-	}
-	rows = append(rows, "", sgrBold+"役 (プロセス) の仕事"+sgrReset) // 役の説明の正本はここ (roleMeanings)。pro-con ps / 設定画面のプロセスの名前と揃える
-	for _, r := range roleMeanings {
-		rows = append(rows, sgrBold+r[0]+sgrReset)
-		explain(r[1])
+	explain := func(text string) { explainAt(2, text) }
+	switch tab {
+	case legendFlow:
+		for i, sec := range []struct {
+			title string
+			steps []card.FlowStep
+		}{{"通常の流れ", card.MainFlow}, {"寄り道", card.FlowDetours}} {
+			if i > 0 {
+				rows = append(rows, "")
+			}
+			rows = append(rows, sgrBold+sec.title+sgrReset)
+			for _, st := range sec.steps {
+				rows = append(rows, flowHeading(st))
+				explainAt(4, st.Who+": "+st.How)
+			}
+		}
+		rows = append(rows, "", sgrBold+"完了の後"+sgrReset)
+		for _, a := range card.AfterDone {
+			explain(a)
+		}
+	case legendLanes:
+		for i, s := range card.Columns {
+			rows = append(rows, fg(stateColor(s))+sgrBold+fmt.Sprintf("%d %s", i+1, s.Label())+sgrReset)
+			explain(s.Meaning())
+		}
+	case legendMarks:
+		rows = append(rows, humanTag(humanMark+"の番")) // 印の意味 (452)。どれが人の番かの正本は card.Turn
+		explain(HumansTurnMeaning)
+		rows = append(rows, "", sgrBold+"右上の 3pt = 見積もりのポイント"+sgrReset) // カードの右上の数 (490)。意味の正本は card.PointsMeaning
+		for _, m := range card.PointsMeaning {
+			explain(m)
+		}
+	case legendRoles: // 役の説明の正本はここ (roleMeanings)。pro-con ps / 設定画面のプロセスの名前と揃える
+		for _, r := range roleMeanings {
+			rows = append(rows, sgrBold+r[0]+sgrReset)
+			explain(r[1])
+		}
 	}
 	return rows
+}
+
+// flowHeading は移り変わりの見出し (レーンはレーンの色。列を変えないものは「のまま」)。
+func flowHeading(st card.FlowStep) string {
+	end := func(e card.FlowEnd) string {
+		if e.Other != "" {
+			return sgrBold + e.Other + sgrReset
+		}
+		return fg(stateColor(e.Lane)) + sgrBold + fmt.Sprintf("%d %s", slices.Index(card.Columns, e.Lane)+1, e.Lane.Label()) + sgrReset
+	}
+	if st.Stays() {
+		return end(st.From) + sgrDim + "のまま" + sgrReset
+	}
+	return end(st.From) + sgrDim + " → " + sgrReset + end(st.To)
 }
 
 // RoleMeanings は役と仕事の組の写し (pro-con help terms が並べる。正本は roleMeanings)。

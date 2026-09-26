@@ -104,18 +104,24 @@ func appendArchive(dir string, cs []card.Card) error {
 // LoadArchive は書庫のカードを移した順に返す (同じ ID は後の行を正とする)。無ければ空。
 // 読めない行は飛ばし、読めた分と一緒にその数をエラーで返す (1 行の壊れで書庫の全部を読めなくしない)。
 func LoadArchive(dir string) ([]card.Card, error) {
-	var out []card.Card
+	return loadLatest(filepath.Join(dir, ArchiveFile), "書庫", func(c card.Card) string { return c.ID })
+}
+
+// loadLatest は JSONL を行の順に読み、同じ鍵 (key) の行は後の行を正とする (位置は最初の行のまま)。鍵が空・読めない行は飛ばし、
+// 読めた分と一緒にその数をエラーで返す (what はエラーに出すファイルの呼び名)。無ければ空。
+func loadLatest[T any](path, what string, key func(T) string) ([]T, error) {
+	var out []T
 	at := map[string]int{}
-	broken, err := eachLine(filepath.Join(dir, ArchiveFile), func(line []byte) bool {
-		var c card.Card
-		if json.Unmarshal(line, &c) != nil || c.ID == "" {
+	broken, err := eachLine(path, func(line []byte) bool {
+		var v T
+		if json.Unmarshal(line, &v) != nil || key(v) == "" {
 			return false
 		}
-		if i, ok := at[c.ID]; ok {
-			out[i] = c
+		if i, ok := at[key(v)]; ok {
+			out[i] = v
 		} else {
-			at[c.ID] = len(out)
-			out = append(out, c)
+			at[key(v)] = len(out)
+			out = append(out, v)
 		}
 		return true
 	})
@@ -123,7 +129,7 @@ func LoadArchive(dir string) ([]card.Card, error) {
 		return out, err
 	}
 	if broken > 0 {
-		return out, fmt.Errorf("書庫 (%s) に読めない行が %d 行ある (飛ばした)", filepath.Join(dir, ArchiveFile), broken)
+		return out, fmt.Errorf("%s (%s) に読めない行が %d 行ある (飛ばした)", what, path, broken)
 	}
 	return out, nil
 }

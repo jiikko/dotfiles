@@ -10,6 +10,7 @@ description: pro-con (PM と PG を分けて Claude Code を並列に回すカ�
 | 知りたいこと | 読む |
 |---|---|
 | 役・レーン・受付の箱・人の番の意味 | `pro-con help terms` |
+| カードがどの順にレーンを渡り、誰が何で動かすか | `pro-con help flow` |
 | 依頼の出し方・質問への答え方・画面の開き方・削除と片付け | `pro-con help usage` |
 | 状態の置き場の中身・止まったとき・クラッシュの後・ライブアップグレード | `pro-con help debug` |
 | 実装の事情・設計 | `src/pro-con/README.md` / issue 415 (`issues/epic/415/`) |

@@ -147,6 +147,13 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 		}
 		say(d, eventlog.KindUpgrade, text)
 	}
+	if !resumed && !*once { // 起きた・抜けたは設定画面のログのタブが出す (issue 512。新版への入れ替えは上の KindUpgrade)
+		how := "手で起動した"
+		if *fromScreen {
+			how = "画面か supervisor が起こした"
+		}
+		say(d, eventlog.KindDispatcher, fmt.Sprintf("dispatcher が起きた (pid %d・%s)", os.Getpid(), how))
+	}
 	// 🚨 lock を取ってから見る: 画面が印を見てから起こすまでの間に --stop が印を置いても、起こされた側が回らずに抜ける
 	if *fromScreen && !resumed && store.Held(dir) {
 		say(d, eventlog.KindStop, "人が止めた印 (dispatcher --stop) があるので、画面が起こした dispatcher は回らずに抜ける")
@@ -185,6 +192,7 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 	stopMonitor := func() {}
 	startMonitor := func() {
 		if e2e == nil && !*once {
+			say(d, eventlog.KindMonitor, "見張りを起こす")
 			stopMonitor = superviseMonitor(ctx, monitorSpec(func(text string) { say(d, eventlog.KindMonitor, text) }, stdout, stderr))
 		}
 	}
@@ -208,7 +216,20 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 			d.UpgradeNote, o.upgrade = u.note, u.step
 		}
 	}
-	return serve(ctx, d, dir, wakes, o, stderr)
+	rc := serve(ctx, d, dir, wakes, o, stderr)
+	if !*once {
+		say(d, eventlog.KindDispatcher, exitNote(ctx, rc))
+	}
+	return rc
+}
+
+// exitNote は dispatcher が抜けるときの出来事の文 (抜けた理由の出来事 = 止めた・画面が無い・Tick の失敗は serve がその前に書く)。
+func exitNote(ctx context.Context, rc int) string {
+	why := fmt.Sprintf("rc=%d", rc)
+	if ctx.Err() != nil {
+		why += "・止める合図 (信号) を受けた"
+	}
+	return fmt.Sprintf("dispatcher が抜ける (pid %d・%s)", os.Getpid(), why)
 }
 
 // serveOpts は serve の回し方。
@@ -515,7 +536,8 @@ func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo stri
 		ListAll: func(ctx context.Context) ([]agents.Session, error) {
 			return agents.List(ctx, agents.ExecRunnerAll(cl.Path))
 		}, Now: time.Now,
-		Transcript: transcriptReader(projects, &live.TranscriptCache{})}
+		Transcript:     transcriptReader(projects, &live.TranscriptCache{}),
+		TranscriptPath: func(sessionID string) (string, error) { return live.FindTranscript(projects, sessionID) }}
 }
 
 // transcriptReader は dispatcher が session の transcript を読む口。1 回の tick で同じ session を何か所からも読む

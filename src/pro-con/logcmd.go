@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -100,10 +101,13 @@ func formatEvent(e eventlog.Event) string {
 	return fmt.Sprintf("%s  %-8s  %-6s  %-12s  %s", e.At.Local().Format("01-02 15:04:05"), e.Kind, orDashCLI(e.Card), orDashCLI(e.Session), e.Reason)
 }
 
-// parseSince は --since の時刻を読む。時刻だけなら今日 (手元の時刻)、長さなら今からその分前。
+// parseSince は --since の時刻を読む。時刻だけなら今日 (手元の時刻)、長さなら今からその分前 (日数は 30d。pro-con stats も使う)。
 func parseSince(v string, now time.Time) (time.Time, error) {
 	if d, err := time.ParseDuration(v); err == nil {
 		return now.Add(-d), nil
+	}
+	if n, err := strconv.Atoi(strings.TrimSuffix(v, "d")); err == nil && strings.HasSuffix(v, "d") && n >= 0 {
+		return now.AddDate(0, 0, -n), nil
 	}
 	if t, err := time.Parse(time.RFC3339, v); err == nil {
 		return t, nil

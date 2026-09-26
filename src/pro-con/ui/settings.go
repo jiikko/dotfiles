@@ -1,6 +1,7 @@
 package ui
 
-// 設定画面 (s で開閉。issue 456)。右から入ってくる全幅の板で、中を「設定 / プロセス / ディスク」のタブに分ける (tab で切り替え)。
+// 設定画面 (s で開閉。issue 456)。右から入ってくる全幅の板で、中を「設定 / プロセス / ディスク / ログ」のタブに分ける (tab で切り替え。
+// ログのタブは settingslog.go。issue 512)。
 // 変える所 (設定のタブ) は PG の枠と PM の数を ← → で 1 ずつ・敵対的レビューの担い手 (514) を ← → で巡って変え、受付の箱に置く (dispatcher の次の Tick から効く。止めずに変わる)。
 // 見る所 (プロセス・ディスク) は backend.Inspector を裏で読むだけ。見ているだけの画面 (--view) は変える所 (設定のタブ) を出さない。
 // 🚨 見る所は描くたびに読まない (ディスクは数秒かかる)。開いたとき・プロセスのタブへ移ったとき・r で、裏で 1 回だけ読む。
@@ -31,6 +32,7 @@ const (
 	tabConfig settingsTab = iota // 変える所 (と見る所の要約)
 	tabProcs                     // 役ごとのプロセスの一覧 (pro-con ps と同じ出どころ)
 	tabDisk                      // ディスクの使用量と内訳 (pro-con du と同じ)
+	tabLog                       // プロセスの出来事 (pro-con log と同じ出どころ。settingslog.go)
 )
 
 func (t settingsTab) label() string {
@@ -41,6 +43,8 @@ func (t settingsTab) label() string {
 		return "プロセス"
 	case tabDisk:
 		return "ディスク"
+	case tabLog:
+		return "ログ"
 	}
 	return ""
 }
@@ -76,6 +80,8 @@ type settings struct {
 	diskErr     error
 	diskLoading bool
 
+	log eventLog // ログのタブ (settingslog.go)
+
 	// want は ← → で置いた値のうち、まだ Snapshot に出ていないもの (続けて押したときに前の値から数える)。wantAt は置いた時刻
 	want   map[string]string
 	wantAt time.Time
@@ -100,21 +106,38 @@ func (m *Model) inspector() backend.Inspector {
 // settingsTabs は出すタブ。変える所を受けない画面 (--view) は見る所だけ。
 func (m *Model) settingsTabs() []settingsTab {
 	if !m.accepts(backend.OpConfig) {
-		return []settingsTab{tabProcs, tabDisk}
+		return []settingsTab{tabProcs, tabDisk, tabLog}
 	}
-	return []settingsTab{tabConfig, tabProcs, tabDisk}
+	return []settingsTab{tabConfig, tabProcs, tabDisk, tabLog}
 }
 
 // openSettings は設定画面を開き、見る所を裏で読む。
 func (m *Model) openSettings() tea.Cmd {
 	s := &m.set
 	s.open = true
-	if tabs := m.settingsTabs(); !containsTab(tabs, s.tab) {
-		s.tab = tabs[0]
+	tab := s.tab
+	if tabs := m.settingsTabs(); !containsTab(tabs, tab) {
+		tab = tabs[0]
 	}
-	s.cursor, s.offset = 0, 0
+	enter := m.enterSettingsTab(tab)
 	s.anim.Open(m.now(), drawerDuration)
-	return tea.Batch(m.fetchProcs(), m.measureDisk(), m.startFrames())
+	return tea.Batch(m.fetchProcs(), m.measureDisk(), enter, m.startFrames())
+}
+
+// enterSettingsTab は t のタブへ移る (選ぶ行を先頭へ。ログのタブは最新 = 一番下)。移った先で読むものがあれば裏で読む。
+func (m *Model) enterSettingsTab(t settingsTab) tea.Cmd {
+	s := &m.set
+	s.tab, s.cursor, s.offset = t, 0, 0
+	switch t {
+	case tabProcs:
+		return m.fetchProcs()
+	case tabLog:
+		s.log.follow = true
+		s.cursor = max(len(s.log.rows)-1, 0)
+		return m.fetchEvents()
+	case tabConfig, tabDisk:
+	}
+	return nil
 }
 
 func (m *Model) closeSettings() tea.Cmd {
@@ -187,11 +210,7 @@ func (m *Model) handleSettingsKey(k string) tea.Cmd {
 		if k == "shift+tab" {
 			step = len(tabs) - 1
 		}
-		s.tab, s.cursor, s.offset = tabs[(i+step)%len(tabs)], 0, 0
-		if s.tab == tabProcs {
-			return m.fetchProcs()
-		}
-		return nil
+		return m.enterSettingsTab(tabs[(i+step)%len(tabs)])
 	case "left", "h", "ctrl+b":
 		return m.stepConfig(-1)
 	case "right", "l", "ctrl+f":
@@ -199,29 +218,61 @@ func (m *Model) handleSettingsKey(k string) tea.Cmd {
 	case "enter":
 		m.toggleSettingsRow()
 		return nil
+	case "c":
+		if s.tab == tabLog {
+			m.toggleCardEvents()
+		}
+		return nil
 	case "r":
 		switch s.tab {
 		case tabProcs:
 			return m.fetchProcs()
 		case tabDisk:
 			return m.measureDisk()
+		case tabLog:
+			return m.fetchEvents()
 		case tabConfig:
 		}
 		return tea.Batch(m.fetchProcs(), m.measureDisk())
 	}
-	n := len(m.settingsSelectable())
+	n := m.settingsRowCount()
+	half := 0 // 半ページの送り (短いタブは端まで。ログは長いので logHalfPage ずつ)
+	if s.tab == tabLog {
+		half = logHalfPage
+	}
 	switch listnav.MotionOf(k) {
 	case listnav.Down:
 		s.cursor = min(s.cursor+1, max(n-1, 0))
 	case listnav.Up:
 		s.cursor = max(s.cursor-1, 0)
-	case listnav.Top, listnav.HalfUp:
+	case listnav.HalfUp:
+		if half == 0 {
+			s.cursor = 0
+			break
+		}
+		s.cursor = max(s.cursor-half, 0)
+	case listnav.HalfDown:
+		if half == 0 {
+			s.cursor = max(n-1, 0)
+			break
+		}
+		s.cursor = min(s.cursor+half, max(n-1, 0))
+	case listnav.Top:
 		s.cursor = 0
-	case listnav.Bottom, listnav.HalfDown:
+	case listnav.Bottom:
 		s.cursor = max(n-1, 0)
 	case listnav.None:
 	}
+	s.log.follow = s.tab == tabLog && s.cursor >= n-1 // 一番下へ送ったら、また最新に付ける
 	return nil
+}
+
+// settingsRowCount は今のタブの選べる行の数 (ログのタブは畳んだ行ごとに選べる)。
+func (m *Model) settingsRowCount() int {
+	if m.set.tab == tabLog {
+		return len(m.set.log.rows)
+	}
+	return len(m.settingsSelectable())
 }
 
 // stepConfig は設定のタブで選んでいる値を delta だけ変えるよう受付の箱に置く (ほかのタブでは何もしない)。
@@ -298,7 +349,8 @@ func (m *Model) configValue(key string) (string, bool) {
 	return w, true
 }
 
-// settingsSelectable は今のタブの選べる行の鍵 (設定 = 設定の名前 / プロセス = 畳んだ行だけ / ディスク = 置き場の名前)。
+// settingsSelectable は今のタブの選べる行の鍵 (設定 = 設定の名前 / プロセス = 畳んだ行だけ / ディスク = 置き場の名前。
+// ログのタブは鍵を持たない = Enter で開くものが無い。選べる数は settingsRowCount)。
 func (m *Model) settingsSelectable() []string {
 	switch m.set.tab {
 	case tabConfig:
@@ -314,6 +366,7 @@ func (m *Model) settingsSelectable() []string {
 			out = append(out, g.Name)
 		}
 		return out
+	case tabLog:
 	}
 	return nil
 }
@@ -334,7 +387,7 @@ func (m *Model) toggleSettingsRow() {
 		} else {
 			s.openGroup = sel[s.cursor]
 		}
-	case tabConfig:
+	case tabConfig, tabLog:
 	}
 }
 
@@ -375,6 +428,10 @@ func (m *Model) settingsPanel(rows int) []string {
 		}
 	}
 	head := []string{" " + strings.Join(tabs, "  ") + sgrDim + "      tab で切り替え" + sgrReset, ""}
+	shown := max(rows-len(head), 1)
+	if m.set.tab == tabLog { // ログは長いので、枠の見出しと列の名前を残して行だけを送る (settingslog.go)
+		return append(head, m.logLines(w, shown)...)
+	}
 	var body []string
 	cur := 0
 	switch m.set.tab {
@@ -384,8 +441,8 @@ func (m *Model) settingsPanel(rows int) []string {
 		body, cur = m.procLines(w)
 	case tabDisk:
 		body, cur = m.diskLines(w)
+	case tabLog:
 	}
-	shown := max(rows-len(head), 1)
 	m.set.offset = listnav.WindowOffset(m.set.offset, cur, len(body), shown)
 	end := min(len(body), m.set.offset+shown)
 	return append(head, body[min(m.set.offset, end):end]...)
@@ -692,6 +749,12 @@ func (m *Model) settingsHints() []string {
 		h = append(h, avail("enter 止まっている役を開く / 畳む", len(m.settingsSelectable()) > 0), "r 読み直す")
 	case tabDisk:
 		h = append(h, "enter 内訳", "r 測り直す")
+	case tabLog:
+		verb := "c カードの出来事も出す"
+		if m.set.log.showCards {
+			verb = "c プロセスの出来事だけ"
+		}
+		h = append(h, verb, "G 最新へ")
 	}
 	return append(h, "s / q / esc 閉じる")
 }

@@ -53,7 +53,7 @@ const (
 	KindBtw      = "btw"      // btw に答えた (issue 438)
 	KindStop     = "stop"     // PG を止めた・止め直した・止められない (終了のとき・閉じたとき)
 	KindDelete   = "delete"   // カードを削除した / 削除の依頼を受けた / 削除できない (issue 451)
-	KindArchive  = "archive"  // 完了のカードを自動で片付けた (issue 478) / 完了から 1 週間で記録から消した・片付けの後に起動の記録と印を消した (issue 497)
+	KindArchive  = "archive"  // 完了のカードを自動で片付けた (issue 478) / 完了から 1 週間で記録から消した・片付けの後に起動の記録と印を消した (issue 497) / 所要の記録の 90 日より古い行を消す (issue 516)
 	KindConfig   = "config"   // 設定 (PG の枠・PM の数) を変えた (issue 456)
 	KindScreens  = "screens"  // 開いている画面の数で決めたこと (画面が無いので抜ける・画面が開いたので続ける)
 	KindRecover  = "recover"  // 起動時の確かめ (マシンの再起動で消えた session を待たずに復旧した / 判定できない。issue 483)
@@ -69,6 +69,8 @@ const (
 	KindSupervisor = "supervisor"
 	// KindUpgrade は dispatcher の新版への入れ替え (issue 505。新版ができた・区切りを待っている・切り替えた・切り替えられない)
 	KindUpgrade = "upgrade"
+	// KindDispatcher は dispatcher 自身が起きた・抜けた (issue 512。新版への入れ替えは KindUpgrade)
+	KindDispatcher = "dispatcher"
 )
 
 // Append は出来事を足す (1 回の write。読む側は改行で終わった行だけを読むので、書きかけを読まない)。

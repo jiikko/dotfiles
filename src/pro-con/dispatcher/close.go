@@ -68,6 +68,10 @@ func (d *Dispatcher) stopMarked(ctx context.Context, now time.Time, ss []agents.
 		if err == nil && len(remaining) == 0 && !wait && len(unsure) == 0 {
 			delete(d.stopFrom, c.ID)
 			if deleting {
+				if err := d.meterDeleted(c, now); err != nil { // 外す前に所要を書く (issue 516。外した後は書けない)
+					notes = append(notes, ev(eventlog.KindError, c.ID, c.Session, c.ID+": 所要の記録に書けないので、記録から外すのは次の Tick へ: "+err.Error()))
+					continue
+				}
 				n, err := d.dropCard(c, now, stopped)
 				if n != "" {
 					notes = append(notes, ev(eventlog.KindDelete, c.ID, c.Session, c.ID+": "+n))

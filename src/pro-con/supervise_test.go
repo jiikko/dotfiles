@@ -79,8 +79,8 @@ func TestSupervisorExitsWithDispatcher(t *testing.T) {
 	openOwner(t, dir)
 	r := &supTest{}
 	res := r.sup(dir, "exit 0").run(t.Context())
-	if res.Reason != supervisor.ReasonDone || r.starts != 1 || r.stops != 0 || r.saidText() != "" {
-		t.Fatalf("rc=0 の dispatcher を起こし直した / PG を止めた: %+v starts=%d stops=%d said=%q", res, r.starts, r.stops, r.saidText())
+	if res.Reason != supervisor.ReasonDone || r.starts != 1 || r.stops != 0 || r.saidText() != "dispatcher が抜けた (rc=0) ので、supervisor も抜ける" {
+		t.Fatalf("rc=0 の dispatcher を起こし直した / PG を止めた / 抜けたことを出来事にしない (issue 512): %+v starts=%d stops=%d said=%q", res, r.starts, r.stops, r.saidText())
 	}
 }
 
@@ -265,8 +265,9 @@ func TestSupervisorStopSignalsDispatcher(t *testing.T) {
 	eventually(t, "dispatcher が立たない", func() bool { _, err := os.Stat(ready); return err == nil })
 	cancel()
 	res := <-done
-	if _, err := os.Stat(mark); err != nil || res.Reason != supervisor.ReasonStopped || r.stops != 0 || r.starts != 1 {
-		t.Fatalf("止める合図を dispatcher に届けない / PG を止めた: %+v stops=%d starts=%d err=%v", res, r.stops, r.starts, err)
+	if _, err := os.Stat(mark); err != nil || res.Reason != supervisor.ReasonStopped || r.stops != 0 || r.starts != 1 ||
+		!strings.Contains(r.saidText(), "止める合図を受けたので、dispatcher を止めて抜ける") {
+		t.Fatalf("止める合図を dispatcher に届けない / PG を止めた / 抜けたことを出来事にしない: %+v stops=%d starts=%d err=%v said=%q", res, r.stops, r.starts, err, r.saidText())
 	}
 }
 
