@@ -6,6 +6,9 @@ package wtclean
 //   - worktree は `git worktree remove` を --force なしで呼ぶ (未 commit の変更・追跡していないファイルがあれば git が断る)。
 //     Claude Code が残した lock は、判定し直して外してよいと見た直後に外し、消せなければ同じ理由で掛け直す
 //   - ブランチは `git update-ref -d <ref> <確かめた先端>` で消す (取り直してから先端が動いていれば git が断る)
+// 消すと worktree の HEAD とブランチの reflog も消える。reflog にしか無い commit (PG が rebase・amend・reset で外した前の版) は、
+// 取り込む先から辿れなければ refs/pro-con/removed/<名前>/<sha> に残してから消す (2026-09-26 の実物では 50 個中 29 個にあった。
+// 残さないと、取り込んでいない版を辿る手段がなくなって gc で消える)。見るのは `git for-each-ref refs/pro-con/removed`
 
 import (
 	"context"
@@ -77,6 +80,9 @@ func cleanOne(ctx context.Context, in Inputs, t Verdict, opt Options) Result {
 	if err := allow(in, v, opt.StateDir); err != nil {
 		return Result{Verdict: v, Outcome: Failed, Detail: "消す前に拒否した: " + err.Error()}
 	}
+	if err := keepReflog(ctx, v); err != nil {
+		return Result{Verdict: v, Outcome: Failed, Detail: "reflog にしか無い commit を残せないので消さない: " + err.Error()}
+	}
 	if err := removeWorktree(ctx, v); err != nil {
 		return Result{Verdict: v, Outcome: Failed, Detail: err.Error()}
 	}
@@ -89,16 +95,77 @@ func cleanOne(ctx context.Context, in Inputs, t Verdict, opt Options) Result {
 	return Result{Verdict: v, Outcome: Removed, Detail: v.Why}
 }
 
+// run0 は消す側の git。rc が 0 でなければ失敗 (gitx.Run は rc 1 を結果の意味として返すので、そのまま使うと失敗を見落とす)。
+func run0(ctx context.Context, dir string, args ...string) (string, error) {
+	out, rc, err := gitx.Run(ctx, dir, args...)
+	if err == nil && rc != 0 {
+		err = fmt.Errorf("git %s: rc=%d", strings.Join(args, " "), rc)
+	}
+	return out, err
+}
+
+// keepReflog は worktree の HEAD とブランチの reflog にある commit のうち、取り込む先から辿れないものを
+// refs/pro-con/removed/<名前>/<sha> に残す (ref は増えるが、中身は取り込む先とほぼ同じ object なので重くない)。
+func keepReflog(ctx context.Context, v Verdict) error {
+	base, _, err := trunk(ctx, v.RepoPath)
+	if err != nil {
+		return err
+	}
+	shas, err := reflogCommits(ctx, v.Path, "HEAD")
+	if err != nil {
+		return err
+	}
+	if v.Branch != "" {
+		more, err := reflogCommits(ctx, v.RepoPath, "refs/heads/"+v.Branch)
+		if err != nil {
+			return err
+		}
+		shas = append(shas, more...)
+	}
+	seen := map[string]bool{}
+	for _, sha := range shas {
+		if seen[sha] {
+			continue
+		}
+		seen[sha] = true
+		anc, err := gitx.IsAncestor(ctx, v.RepoPath, sha, base)
+		if err != nil {
+			return err
+		}
+		if anc {
+			continue
+		}
+		if _, err := run0(ctx, v.RepoPath, "update-ref", "refs/pro-con/removed/"+v.Name+"/"+sha, sha, ""); err != nil {
+			if _, rc, _ := gitx.Run(ctx, v.RepoPath, "rev-parse", "--verify", "--quiet", "refs/pro-con/removed/"+v.Name+"/"+sha); rc != 0 {
+				return err // 既に残してある (前の実行が途中で止まった) なら続ける
+			}
+		}
+	}
+	return nil
+}
+
+// reflogCommits は ref の reflog にある commit (無い reflog は空)。
+func reflogCommits(ctx context.Context, dir, ref string) ([]string, error) {
+	out, rc, err := gitx.Run(ctx, dir, "reflog", "show", "--format=%H", ref, "--")
+	if err != nil {
+		return nil, err
+	}
+	if rc != 0 {
+		return nil, nil
+	}
+	return strings.Fields(out), nil
+}
+
 // removeWorktree は --force なしで worktree を外し、置き場が消えたかを確かめる。
 func removeWorktree(ctx context.Context, v Verdict) error {
 	if v.Lock != "" {
-		if _, _, err := gitx.Run(ctx, v.RepoPath, "worktree", "unlock", v.Path); err != nil {
+		if _, err := run0(ctx, v.RepoPath, "worktree", "unlock", v.Path); err != nil {
 			return fmt.Errorf("Claude Code の lock を外せない: %w", err)
 		}
 	}
-	if _, _, err := gitx.Run(ctx, v.RepoPath, "worktree", "remove", v.Path); err != nil {
+	if _, err := run0(ctx, v.RepoPath, "worktree", "remove", v.Path); err != nil {
 		if v.Lock != "" {
-			if _, _, lerr := gitx.Run(ctx, v.RepoPath, "worktree", "lock", "--reason", v.Lock, v.Path); lerr != nil {
+			if _, lerr := run0(ctx, v.RepoPath, "worktree", "lock", "--reason", v.Lock, v.Path); lerr != nil {
 				return fmt.Errorf("git worktree remove が断った: %w (外した lock を掛け直せない: %v)", err, lerr)
 			}
 		}
@@ -123,7 +190,7 @@ func deleteBranch(ctx context.Context, in Inputs, v Verdict, stateDir string) er
 		return fmt.Errorf("消す前に拒否した: %w", err)
 	}
 	ref := "refs/heads/" + v.Branch
-	if _, _, err := gitx.Run(ctx, v.RepoPath, "update-ref", "-d", ref, v.Head); err != nil {
+	if _, err := run0(ctx, v.RepoPath, "update-ref", "-d", ref, v.Head); err != nil {
 		return err
 	}
 	if _, rc, err := gitx.Run(ctx, v.RepoPath, "rev-parse", "--verify", "--quiet", ref); err != nil || rc == 0 {

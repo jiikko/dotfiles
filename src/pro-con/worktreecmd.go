@@ -9,6 +9,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"strings"
+	"time"
 
 	"pro-con/agents"
 	"pro-con/card"
@@ -28,6 +31,7 @@ type worktreeEnv struct {
 	dir      string            // 状態の置き場 (記録と書庫を読む。書かない)
 	repos    map[string]string // 設定の repo の名前 → パス
 	sessions func(ctx context.Context) ([]agents.Session, error)
+	procCwds func(ctx context.Context) ([]string, error) // 動いているプロセスの作業ディレクトリ (lsof)
 }
 
 func runWorktree(args []string, env worktreeEnv, stdout, stderr io.Writer) int {
@@ -96,8 +100,30 @@ func worktreeInputs(ctx context.Context, env worktreeEnv, stderr io.Writer) (wtc
 	if err != nil {
 		return wtclean.Inputs{}, fmt.Errorf("動いている session を読めない (読めないまま消さない): %w", err)
 	}
+	procs, err := env.procCwds(ctx)
+	if err != nil {
+		return wtclean.Inputs{}, fmt.Errorf("プロセスの作業ディレクトリを読めない (読めないまま消さない): %w", err)
+	}
 	cwd, _ := os.Getwd()
-	return wtclean.Inputs{Repos: env.repos, Cards: cards, Sessions: ss, Cwd: cwd}, nil
+	return wtclean.Inputs{Repos: env.repos, Cards: cards, Sessions: ss, Cwd: cwd, ProcCwds: procs}, nil
+}
+
+// lsofCwds は自分が見えるプロセスの作業ディレクトリを lsof で読む (実測 2026-09-26: 850 本で 0.2 秒)。
+// 出力の形は -F n の「n<パス>」の行。1 行も読めなければ失敗にする (0 本と読まない)。
+func lsofCwds(ctx context.Context) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "lsof", "-w", "-a", "-d", "cwd", "-F", "n").Output()
+	var cwds []string
+	for _, l := range strings.Split(string(out), "\n") {
+		if p, ok := strings.CutPrefix(l, "n"); ok && p != "" {
+			cwds = append(cwds, p)
+		}
+	}
+	if len(cwds) == 0 {
+		return nil, fmt.Errorf("lsof が作業ディレクトリを 1 つも返さない: %v", err)
+	}
+	return cwds, nil
 }
 
 func printVerdicts(w io.Writer, vs []wtclean.Verdict) {
@@ -156,5 +182,5 @@ func realWorktreeEnv(home string) (worktreeEnv, error) {
 	}
 	return worktreeEnv{dir: liveDir(home), repos: repos, sessions: func(ctx context.Context) ([]agents.Session, error) {
 		return agents.List(ctx, agents.ExecRunner(cl.Path))
-	}}, nil
+	}, procCwds: lsofCwds}, nil
 }

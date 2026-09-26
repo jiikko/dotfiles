@@ -6,12 +6,15 @@
 // 消してよいのは、次を全部満たす worktree だけ:
 //   - <repo>/.claude/worktrees/pc-<カード> で、git の worktree として登録されている (PM・取り込みの係の pc-pm-* / pc-int-* は除く)
 //   - そのカードが記録か書庫にあり、同じ repo のカードで、完了して PG を止め終えたもの (削除の途中でない)
-//   - その中 (かその下) を cwd にした session が動いていない。このコマンドもその中で走っていない
+//   - その中 (かその下) を cwd にした session もプロセス (人の shell・エディタ・テスト) も居ない。このコマンドもその中で走っていない
 //   - git worktree lock が無いか、Claude Code が session に掛けた lock (claude session pc-<カード> (pid N …)) で、その pid の claude が居ない。
 //     🚨 Claude Code はこの lock を session が終わっても外さず、pid も生きている session のものと一致しない (2.1.282 で実測 2026-09-26:
 //     動いている pc-c-053 の lock の pid が既に居なかった)。session が動いているかは lock ではなく claude agents の cwd で見る
-//   - 未 commit の変更・追跡していないファイルが無く、無視された tmp/ (Claude の成果物の置き場) も無い
-//   - 先端が取り込む先 (origin/master) の祖先か、`git cherry` が全部 - (rebase / cherry-pick で中身が入った)
+//   - 未 commit の変更・追跡していないファイル・skip-worktree / assume-unchanged の印が無く、その下に別の worktree も無い
+//   - 無視されたファイルは、中身の無いディレクトリか、作り直せる go_autobuild の産物 (.autobuild.* とその隣の実行ファイル) だけ
+//     (🚨 git worktree remove は --force なしでも無視されたファイルを黙って消す。tmp/ のレポート・.env・settings.local.json・入れ子の repo を失わない)
+//   - 先端が取り込む先 (origin/master。無ければ origin/main) の祖先か、`git cherry` が全部 - で、かつ空白まで同じ patch
+//     (git patch-id --verbatim) が取り込む先にある (rebase / cherry-pick で入った。🚨 git cherry の patch-id は空白の違いを無視する)
 //
 // ブランチを消すのはそのうえで、pro-con が作った名前 (worktree-pc-<カード>) で、ほかの worktree が使っていないときだけ。
 // master に無い commit があるものは worktree もブランチも消さない (人が見る)。
@@ -67,6 +70,7 @@ type Inputs struct {
 	Cards    map[string]card.Card // カードの ID → カード (記録と書庫。記録を正とする)
 	Sessions []agents.Session     // 動いている session (claude agents --json。対話の session も含む)
 	Cwd      string               // このコマンドを走らせた作業ディレクトリ
+	ProcCwds []string             // 今動いているプロセスの作業ディレクトリ (lsof。claude agents に出ない人の shell・エディタ・テスト)
 }
 
 // worktreesDir は pro-con の PG の worktree を置く所 (claude --bg -w pc-<カード> が作る。card.WorktreePath)。
@@ -200,17 +204,29 @@ func judge(ctx context.Context, in Inputs, repoName, repo string, w worktree, al
 	if in.Cwd != "" && within(in.Cwd, w.Path) {
 		return keep("このコマンドをその中で走らせている")
 	}
+	for _, p := range in.ProcCwds {
+		if within(p, w.Path) {
+			return keep("その中を作業ディレクトリにしたプロセスが居る (%s)", p)
+		}
+	}
+	for _, o := range all {
+		if o.Path != w.Path && within(o.Path, w.Path) {
+			return keep("その下に別の worktree がある (%s)", o.Path)
+		}
+	}
 	st, err := readStatus(ctx, w.Path)
 	if err != nil {
 		return keep("git status を読めない: %v", err)
 	}
-	if len(st.changes) > 0 {
+	switch {
+	case len(st.changes) > 0:
 		return keep("未 commit の変更・追跡していないファイルが %d 件 (%s)", len(st.changes), clip(st.changes))
+	case len(st.hidden) > 0:
+		return keep("skip-worktree / assume-unchanged の印が付いたファイルがある (git status に変更が出ない: %s)", clip(st.hidden))
+	case len(st.ignored) > 0:
+		return keep("消すと戻せない無視されたファイルがある (%s)", clip(st.ignored))
 	}
-	if len(st.workFiles) > 0 {
-		return keep("無視された tmp/ に作業の残りがある (%s)", clip(st.workFiles))
-	}
-	base, baseName, err := gitx.Base(ctx, repo)
+	base, baseName, err := trunk(ctx, repo)
 	if err != nil {
 		return keep("取り込む先を読めない: %v", err)
 	}
@@ -238,9 +254,27 @@ func judge(ctx context.Context, in Inputs, repoName, repo string, w worktree, al
 // BranchName は claude -w <name> が worktree に作るブランチの名前 (427 の 3f で実測: worktree-pc-c-053)。
 func BranchName(name string) string { return "worktree-" + name }
 
-// inBase は head の中身が取り込む先 base にあるか。祖先なら確か。祖先でなければ git cherry の patch の同一性で見る
-// (rebase / cherry-pick で入ったものは祖先にならない)。🚨 git cherry は merge commit を比べないので、base に無い merge commit が
-// 1 本でもあれば「示せない」側に倒す (merge の解決で足した中身を見落とさない)。
+// trunk は取り込む先 (origin/master、無ければ origin/main) の commit と名前。
+// 🚨 origin/HEAD は見ない: remote の既定のブランチが作業用のブランチを指していると、master に無いものを「取り込み済み」と読む
+// (gitx.Base は見張りの衝突の相手を決めるもので、消してよいかの根拠には使わない)
+func trunk(ctx context.Context, repo string) (string, string, error) {
+	for _, name := range []string{"origin/master", "origin/main"} {
+		out, rc, err := gitx.Run(ctx, repo, "rev-parse", "--verify", "--quiet", "refs/remotes/"+name+"^{commit}")
+		if err != nil {
+			return "", "", err
+		}
+		if rc == 0 {
+			return strings.TrimSpace(out), name, nil
+		}
+	}
+	return "", "", fmt.Errorf("取り込む先 (origin/master・origin/main) が無い")
+}
+
+// inBase は head の中身が取り込む先 base にあるか。祖先なら確か。祖先でなければ git cherry の patch の同一性で見て
+// (rebase / cherry-pick で入ったものは祖先にならない)、さらに空白まで同じ patch が base にあるかを確かめる (verbatimMissing)。
+// 🚨 head を base へ merge した tree と base の tree を比べる形にはしない: 取り込んだ後に master が同じ行をさらに変えていると衝突し、
+// 正しく取り込まれたものまで残す (2026-09-26 の実物で 36 個中 17 個)。🚨 git cherry は merge commit を比べないので、base に無い merge commit が 1 本でもあれば
+// 「示せない」側に倒す (merge の解決で足した中身を見落とさない)。
 func inBase(ctx context.Context, repo, base, baseName, head string) (bool, string, error) {
 	anc, err := gitx.IsAncestor(ctx, repo, head, base)
 	if err != nil {
@@ -266,20 +300,36 @@ func inBase(ctx context.Context, repo, base, baseName, head string) (bool, strin
 	if minus == 0 { // 祖先でないのに比べる commit が 0 本 (起きないはず)。示せていないので消さない
 		return false, fmt.Sprintf("%s の祖先ではないが、git cherry が commit を返さない", baseName), nil
 	}
-	return true, fmt.Sprintf("中身は全部 %s にある (git cherry の %d 本が全部 -)", baseName, minus), nil
+	missing, err := verbatimMissing(ctx, repo, base, head)
+	if err != nil {
+		return false, "", err
+	}
+	if missing > 0 {
+		return false, fmt.Sprintf("git cherry は全部 - だが、空白まで比べると %s に無い変更が %d 本ある", baseName, missing), nil
+	}
+	return true, fmt.Sprintf("中身は全部 %s にある (git cherry の %d 本が全部 - で、空白まで同じ)", baseName, minus), nil
 }
 
 func usedElsewhere(all []worktree, w worktree) bool {
 	return slices.ContainsFunc(all, func(o worktree) bool { return o.Path != w.Path && o.Branch == w.Branch })
 }
 
-// within は p が dir そのものかその下か (symlink を解いて比べる。解けなければ字面で)。
+// within は p が dir そのものかその下か。symlink を解いてから、大文字小文字を無視して比べる
+// (🚨 APFS は既定で大文字小文字を区別しないので、session の cwd が PC-C-001 と書かれていても同じ dir。区別する volume では
+// 別の dir も「その下」と読むが、消さない側に倒れるだけ)。
 func within(p, dir string) bool {
-	p, dir = resolve(p), resolve(dir)
+	p, dir = strings.ToLower(resolve(p)), strings.ToLower(resolve(dir))
 	return p == dir || strings.HasPrefix(p, dir+string(filepath.Separator))
 }
 
-func samePath(a, b string) bool { return resolve(a) == resolve(b) }
+func samePath(a, b string) bool {
+	ai, aerr := os.Stat(a)
+	bi, berr := os.Stat(b)
+	if aerr == nil && berr == nil {
+		return os.SameFile(ai, bi)
+	}
+	return resolve(a) == resolve(b)
+}
 
 func resolve(p string) string {
 	if r, err := filepath.EvalSymlinks(p); err == nil {

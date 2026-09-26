@@ -63,7 +63,19 @@
 
 - [x] `pro-con worktree clean [--yes]` (package `wtclean`。git の呼び出しは `gitx` にまとめ、継承した `GIT_DIR` 等を外す。monitor も同じ口を使う)
 - [x] テスト: テストの二進 (`testing.Testing`) では登録した sandbox の外を消す前に拒否する。変異 16 本を 1 本ずつ当てて全部 red を確認
-- [ ] 敵対的レビュー (最終ゲート)
+- [x] 敵対的レビュー (最終ゲート。2026-09-26、使い捨ての repo で消えるのを再現させた)。直したもの:
+  - [P0] `git worktree remove` は --force なしでも無視されたファイルを消す (tmp/ 以外の .env・settings.local.json・入れ子の repo・下の worktree)
+    → 無視されたファイルは空のディレクトリと go_autobuild の産物だけ通す。下に登録された worktree があれば残す
+  - [P1] `git cherry` の patch-id は空白を無視する → `git patch-id --verbatim` で比べ直す (merge した tree と比べる形は、
+    取り込んだ後に master が同じ行を変えていると衝突し、実物で 36 個中 17 個を残したのでやめた)
+  - [P1] 取り込む先を origin/HEAD から読んでいた → origin/master (無ければ origin/main) だけ
+  - [P1] session の cwd の大文字小文字違い (APFS) を見落とす → 大文字小文字を無視して比べる (消さない側に倒れる)
+  - [P2] skip-worktree / assume-unchanged の変更は git status に出ない → `git ls-files -v` の印で残す
+  - [P2] reflog にしか無い版を失う → 取り込む先から辿れないものを refs/pro-con/removed/<名前>/<sha> に残してから消す (実物で 29 個にあった)
+  - [P2] claude 以外のプロセス (人の shell・テスト) の cwd → lsof の cwd で残す
+  - [P2] rc 1 を成功と読む → 消す側の git は rc 0 以外を失敗にする (run0)
+  - 記録だけ: revert された commit も - になる (commit は master の歴史に残るので失わない)
+  - 変異 28 本を 1 本ずつ当てて全部 red。直した後の実物の一覧も 36 個 / 14 個
 - [ ] 取り込み後、本物で `pro-con worktree clean --yes` を人が回して、消した 36 個 / 残した 14 個を確かめる
 
 ## 関連

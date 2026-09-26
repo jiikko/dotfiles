@@ -33,7 +33,9 @@ bin/pro-con monitor [--once] [--interval 1m]  # 見張り (issue 475)。dispatch
                          # PG の commit 済みの分を git merge-tree で origin/master と・PG どうしで突き合わせた衝突と、テストの順番の長さ (3 本以上か先頭が 30 分以上) を見る。
                          # 読むだけ (git fetch もしない) で、見つけた・消えたときだけ受付の箱に置き、dispatcher が出来事 (pro-con log の monitor) に書く。e2e モードと --once の dispatcher では起こさない
 bin/pro-con worktree clean [--yes]  # 閉じたカードの PG の worktree を片付ける (issue 492)。既定は一覧 (消してよい / 消さないと理由) を出すだけ。--yes で 1 個ずつ、記録・session・git を取り直して判定し直してから消す。
-                         # 消すのは: カードが完了して PG を止め終え、その中に session が居らず、未 commit の変更も tmp/ のファイルも無く、先端が origin/master の祖先か git cherry が全部 - のもの。
+                         # 消すのは: カードが完了して PG を止め終え、その中に session もプロセス (lsof の cwd) も居らず、未 commit の変更・skip-worktree の印・下の worktree が無く、
+                         # 無視されたファイルが空のディレクトリか autobuild の産物だけで、先端が origin/master (origin/HEAD は見ない) の祖先か、git cherry が全部 - で空白まで同じ patch (patch-id --verbatim) があるもの。
+                         # reflog にしか無い取り込んでいない版は refs/pro-con/removed/<名前>/<sha> に残してから消す (git for-each-ref refs/pro-con/removed で見る)。
                          # ブランチも消すのは名前が worktree-pc-<カード> でほかの worktree が使っていないときだけ (`git update-ref -d` に確かめた先端を渡す)。
                          # master に無い commit があるもの・記録に無いもの・PM と取り込みの係の worktree・人が掛けた lock は消さない。Claude Code が残した lock は外して消す (消せなければ掛け直す)。判定は wtclean.Judge (設定画面 456 の内訳も同じ関数を呼ぶ)
 bin/pro-con --e2e <dir>  # e2e モード: 画面・dispatcher・受付の箱・記録は本物、PG と PM だけ台本どおりの偽物 (claude を起動しない。利用枠を使わない)

@@ -434,3 +434,104 @@ func TestLockHolderAlive(t *testing.T) {
 		t.Error("読めない理由を居ない側に倒した")
 	}
 }
+
+// 敵対的レビュー (2026-09-26) で消えるのを再現できた経路。どれも消さない (autobuild の産物だけは消してよい)。
+func TestJudgeKeepsWhatRemoveWouldLose(t *testing.T) {
+	f := newFixture(t, sandbox)
+	write(t, filepath.Join(f.repo, ".git", "info", "exclude"), ".env\nbuild/\n**/.claude/worktrees/\n")
+	env := f.add("C-001")
+	write(t, filepath.Join(env, ".env"), "SECRET=1\n")
+	nestedRepo := f.add("C-002")
+	git(t, filepath.Join(nestedRepo), "init", "-q", "build/proj")
+	autobuild := f.add("C-003")
+	write(t, filepath.Join(autobuild, "build", ".autobuild.built"), "x\n")
+	write(t, filepath.Join(autobuild, "build", ".autobuild.rev"), "x\n")
+	write(t, filepath.Join(autobuild, "build", "tool"), "#!/bin/sh\n")
+	if err := os.Chmod(filepath.Join(autobuild, "build", "tool"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	nestedWt := f.add("C-004")
+	git(t, f.repo, "worktree", "add", "-q", "-b", "nested", filepath.Join(nestedWt, ".claude", "worktrees", "inner"), "master")
+	// 空白だけ違う commit (patch-id は同じ) が master に入っている
+	ws := f.add("C-005")
+	write(t, filepath.Join(ws, "a.py"), "def f():\nz()\n")
+	git(t, ws, "add", "a.py")
+	git(t, ws, "commit", "-qm", "ws")
+	f.commit(f.repo, "unrelated-ws.txt")
+	write(t, filepath.Join(f.repo, "a.py"), "def f():\n    z()\n")
+	git(t, f.repo, "add", "a.py")
+	git(t, f.repo, "commit", "-qm", "ws")
+	git(t, f.repo, "update-ref", "refs/remotes/origin/master", "HEAD")
+	upper := f.add("C-006")
+	f.in.Sessions = []agents.Session{{Name: "pc-c-006", Cwd: strings.Replace(upper, "pc-c-006", "PC-C-006", 1) + "/src"}}
+	if err := os.MkdirAll(filepath.Join(upper, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skip := f.add("C-007")
+	git(t, skip, "update-index", "--skip-worktree", "a.txt")
+	write(t, filepath.Join(skip, "a.txt"), "changed\n")
+	busy := f.add("C-008")
+	f.in.ProcCwds = []string{filepath.Join(busy, "sub")}
+
+	got := f.scan()
+	for name, why := range map[string]string{
+		"pc-c-001": "無視されたファイルがある (.env)",
+		"pc-c-002": "無視されたファイルがある (build/proj/.git/",
+		"pc-c-004": "別の worktree",
+		"pc-c-005": "空白まで比べると origin/master に無い変更が 1 本",
+		"pc-c-007": "skip-worktree",
+		"pc-c-008": "プロセスが居る",
+	} {
+		if v := got[name]; v.Action != Keep || !strings.Contains(v.Why, why) {
+			t.Errorf("%s = %s / %q, want 消さない / %q を含む", name, v.Action, v.Why, why)
+		}
+	}
+	// 大文字小文字だけ違う cwd は、APFS (大文字小文字を区別しない) なら同じ dir。区別する volume では別の dir なので問わない
+	if _, err := os.Stat(strings.Replace(upper, "pc-c-006", "PC-C-006", 1)); err == nil {
+		if v := got["pc-c-006"]; v.Action != Keep || !strings.Contains(v.Why, "session が動いている") {
+			t.Errorf("pc-c-006 = %s / %q, want session が動いている", v.Action, v.Why)
+		}
+	}
+	if v := got["pc-c-003"]; v.Action != RemoveAll {
+		t.Errorf("autobuild の産物だけの pc-c-003 = %s / %q, want %s", v.Action, v.Why, RemoveAll)
+	}
+}
+
+// 取り込む先は origin/master。origin/HEAD が作業用のブランチを指していても、そこにあるだけのものは消さない。
+func TestJudgeIgnoresOriginHEAD(t *testing.T) {
+	f := newFixture(t, sandbox)
+	wt := f.add("C-001")
+	sha := f.commit(wt, "scratch.txt")
+	git(t, f.repo, "update-ref", "refs/remotes/origin/scratch", sha)
+	git(t, f.repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/scratch")
+	if v := f.scan()["pc-c-001"]; v.Action != Keep || !strings.Contains(v.Why, "origin/master に無い commit") {
+		t.Errorf("= %s / %q", v.Action, v.Why)
+	}
+}
+
+// reflog にしか無い取り込んでいない版 (amend で外した前の版) は、消す前に refs/pro-con/removed に残す。
+func TestCleanKeepsReflogOnlyCommits(t *testing.T) {
+	f := newFixture(t, sandbox)
+	wt := f.add("C-001")
+	old := f.commit(wt, "draft.txt")
+	write(t, filepath.Join(wt, "draft.txt"), "final\n")
+	git(t, wt, "commit", "-q", "-a", "--amend", "-m", "final")
+	f.land(git(t, wt, "rev-parse", "HEAD"), false)
+	res := f.clean(f.scan(), Options{})
+	if r := res["pc-c-001"]; r.Outcome != Removed {
+		t.Fatalf("= %s (%s)", r.Outcome, r.Detail)
+	}
+	if got := git(t, f.repo, "rev-parse", "refs/pro-con/removed/pc-c-001/"+old); got != old {
+		t.Errorf("amend で外した版が残っていない: %s", got)
+	}
+}
+
+// run0 は rc 1 も失敗にする (gitx.Run は rc 1 を結果として返す)。
+func TestRun0FailsOnRC1(t *testing.T) {
+	f := newFixture(t, sandbox)
+	wt := f.add("C-001")
+	sha := f.commit(wt, "x.txt")
+	if _, err := run0(context.Background(), f.repo, "merge-base", "--is-ancestor", sha, "master"); err == nil {
+		t.Error("rc 1 を成功と読んだ")
+	}
+}

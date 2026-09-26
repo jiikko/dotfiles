@@ -4,10 +4,12 @@ package wtclean
 // status は --no-optional-locks で走らせる (index を書き直さない)。
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -61,12 +63,11 @@ func listWorktrees(ctx context.Context, repo string) ([]worktree, error) {
 	return wts, nil
 }
 
-// status は worktree の未 commit の変更 (追跡していないファイルも) と、消すと失う無視されたファイルのうち作業の残り (tmp/ の下)。
-// 🚨 tmp/ は Claude のセッションの成果物の置き場 (~/.claude/CLAUDE.md「一時ファイルの配置」)。無視されているので git status の
-// 変更には出ないが、結論を issue へ移す前のレポートが残っているかもしれない。ほかの無視されたファイル (ビルドの産物) は作り直せるので見ない
+// status は worktree を消すと失うもの: 未 commit の変更 (追跡していないファイルも)・git status に出ない変更の印・無視されたファイル。
 type status struct {
-	changes   []string
-	workFiles []string
+	changes []string
+	hidden  []string // skip-worktree / assume-unchanged の印 (sparse-checkout も付ける)。変更しても git status に出ない
+	ignored []string // 無視されたファイルのうち、作り直せないもの (rebuildable でないもの)
 }
 
 func readStatus(ctx context.Context, wt string) (status, error) {
@@ -84,13 +85,13 @@ func readStatus(ctx context.Context, wt string) (status, error) {
 		xy, path := e[:2], e[3:]
 		switch {
 		case xy == "!!":
-			if hasSegment(path, "tmp") {
-				files, err := filesUnder(filepath.Join(wt, path))
-				if err != nil {
-					return status{}, err
-				}
-				for _, f := range files {
-					st.workFiles = append(st.workFiles, filepath.Join(path, f))
+			files, err := filesUnder(filepath.Join(wt, path))
+			if err != nil {
+				return status{}, err
+			}
+			for _, f := range files {
+				if rel := filepath.Join(path, f); !rebuildable(wt, rel) {
+					st.ignored = append(st.ignored, rel)
 				}
 			}
 		default:
@@ -100,11 +101,40 @@ func readStatus(ctx context.Context, wt string) (status, error) {
 			}
 		}
 	}
+	ls, _, err := gitx.Run(ctx, wt, "--no-optional-locks", "ls-files", "-v", "-z")
+	if err != nil {
+		return status{}, err
+	}
+	for _, e := range strings.Split(ls, "\x00") {
+		if len(e) < 3 {
+			continue
+		}
+		if tag := e[0]; tag == 'S' || (tag >= 'a' && tag <= 'z') {
+			st.hidden = append(st.hidden, e[2:])
+		}
+	}
 	return st, nil
 }
 
+// rebuildable は、消しても作り直せる無視されたファイルか: bin/lib/go_autobuild.zsh の作業ファイル (.autobuild.*) と、
+// .autobuild.built の隣に置いた実行ファイル (autobuild が作ったバイナリ)。それ以外 (tmp/ のレポート・.env・settings.local.json・
+// 入れ子の repo の中身) は作り直せないとみなす。
+func rebuildable(wt, rel string) bool {
+	base := filepath.Base(rel)
+	if strings.HasPrefix(base, ".autobuild.") {
+		return true
+	}
+	full := filepath.Join(wt, rel)
+	fi, err := os.Lstat(full)
+	if err != nil || !fi.Mode().IsRegular() || fi.Mode().Perm()&0o111 == 0 {
+		return false
+	}
+	_, err = os.Lstat(filepath.Join(filepath.Dir(full), ".autobuild.built"))
+	return err == nil
+}
+
 // filesUnder は p の下のファイル (ディレクトリでないもの。symlink も数える) を p からの相対で返す。p がファイルなら "." 。
-// 空のディレクトリは数えない (git は無視された空の tmp/ も !! で出す。2026-09-26 の実物では 40 個中 40 個が空)。
+// 空のディレクトリは数えない (git は無視された空の tmp/ も !! で出す。2026-09-26 の実物では 40 個中 34 個が空)。
 func filesUnder(p string) ([]string, error) {
 	var out []string
 	err := filepath.WalkDir(p, func(path string, d fs.DirEntry, err error) error {
@@ -120,15 +150,6 @@ func filesUnder(p string) ([]string, error) {
 	return out, err
 }
 
-func hasSegment(path, seg string) bool {
-	for _, s := range strings.Split(strings.TrimSuffix(path, "/"), "/") {
-		if s == seg {
-			return true
-		}
-	}
-	return false
-}
-
 func countMerges(ctx context.Context, repo, base, head string) (int, error) {
 	out, _, err := gitx.Run(ctx, repo, "rev-list", "--count", "--merges", base+".."+head)
 	if err != nil {
@@ -139,6 +160,61 @@ func countMerges(ctx context.Context, repo, base, head string) (int, error) {
 		return 0, fmt.Errorf("git rev-list --count の出力を読めない: %q", out)
 	}
 	return n, nil
+}
+
+// verbatimMissing は base..head の commit のうち、空白まで同じ patch (git patch-id --verbatim) が head..base に無いものの本数。
+// git cherry と同じ組を比べるが、🚨 git cherry の patch-id は空白の違いを落とすので、インデントだけ違う変更 (Python・YAML・Makefile では
+// 中身の違い) を「同じ」と読む。こちらで空白まで比べ直す。中身の無い commit (空の commit) は比べる patch が無いので数えない
+func verbatimMissing(ctx context.Context, repo, base, head string) (int, error) {
+	have, err := patchIDs(ctx, repo, head+".."+base)
+	if err != nil {
+		return 0, err
+	}
+	want, err := patchIDs(ctx, repo, base+".."+head)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for id := range want {
+		if !have[id] {
+			n++
+		}
+	}
+	return n, nil
+}
+
+// patchIDs は範囲の merge でない commit の patch-id (--verbatim) の集合。diff の形は設定に左右されないよう固定する。
+func patchIDs(ctx context.Context, repo, rng string) (map[string]bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, gitx.Timeout)
+	defer cancel()
+	log := exec.CommandContext(ctx, "git", "-C", repo, "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "log", "--no-merges", "-p",
+		"--no-renames", "--no-color", "--no-ext-diff", "--no-textconv", "--full-index", "--format=commit %H", rng, "--")
+	pid := exec.CommandContext(ctx, "git", "-C", repo, "patch-id", "--verbatim")
+	log.Env, pid.Env = gitx.Env(), gitx.Env()
+	pipe, err := log.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	pid.Stdin = pipe
+	var out bytes.Buffer
+	pid.Stdout = &out
+	if err := log.Start(); err != nil {
+		return nil, err
+	}
+	if err := pid.Run(); err != nil {
+		_ = log.Wait()
+		return nil, fmt.Errorf("git patch-id: %w", err)
+	}
+	if err := log.Wait(); err != nil {
+		return nil, fmt.Errorf("git log -p %s: %w", rng, err)
+	}
+	ids := map[string]bool{}
+	for _, l := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+		if id, _, ok := strings.Cut(l, " "); ok {
+			ids[id] = true
+		}
+	}
+	return ids, nil
 }
 
 // cherry は `git cherry base head` の + (base に無い) と - (同じ patch が base にある) の本数。

@@ -52,7 +52,8 @@ func worktreeFixture(t *testing.T) (env worktreeEnv, wt string) {
 	if err := os.WriteFile(filepath.Join(dir, store.StateFile), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return worktreeEnv{dir: dir, repos: map[string]string{"r": repo}, sessions: func(context.Context) ([]agents.Session, error) { return nil, nil }}, wt
+	return worktreeEnv{dir: dir, repos: map[string]string{"r": repo}, sessions: func(context.Context) ([]agents.Session, error) { return nil, nil },
+		procCwds: func(context.Context) ([]string, error) { return []string{"/"}, nil }}, wt
 }
 
 func TestWorktreeCleanListsWithoutYes(t *testing.T) {
