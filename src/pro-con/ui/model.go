@@ -108,6 +108,7 @@ type Model struct {
 	stopErr    error       // 止めきれなかった理由 (終了後に main が出す)
 	attaching  bool        // attach の照合を裏で待っている
 	legend     bool        // レーンの意味の表を出している (legend.go)
+	legendOff  int         // 表が画面より長いときの送り (legend.go)
 	lane       laneFade    // 選んでいるレーンの枠の色の移り変わり (lanefade.go)
 	drawer     anim.Transition
 	drawerCard string

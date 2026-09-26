@@ -19,7 +19,15 @@ import (
 func (m *Model) handleLegendKey(key string) tea.Cmd {
 	switch key {
 	case "?", "q", "esc":
-		m.legend = false
+		m.legend, m.legendOff = false, 0
+	case "j", "down":
+		m.legendOff++ // 下限・上限は描くとき (overlayLegend) に幅と高さから決める
+	case "k", "up":
+		m.legendOff = max(m.legendOff-1, 0)
+	case "g":
+		m.legendOff = 0
+	case "G":
+		m.legendOff = 1 << 20
 	case "ctrl+c":
 		m.legend = false
 		return m.requestQuit()
@@ -34,7 +42,16 @@ func (m *Model) overlayLegend(screen []string) []string {
 	}
 	width, inner := legendSize(m.width)
 	rows := legendRows(inner)
-	box := layout.Panel(" レーンの意味 ", rows, width, true, layout.PanelStyle{Border: layout.BorderLight, Color: sgr.Dim})
+	title := " レーンと役の意味 "
+	// 画面より長いときは j / k で送る (板は上下の辺と影で 3 行使う。上下に 1 行ずつ空ける)
+	if avail := max(len(screen)-5, 3); len(rows) > avail {
+		m.legendOff = min(m.legendOff, len(rows)-avail)
+		rows = rows[m.legendOff : m.legendOff+avail]
+		title = fmt.Sprintf(" レーンと役の意味 (j / k で送る %d/%d) ", m.legendOff+avail, len(legendRows(inner)))
+	} else {
+		m.legendOff = 0
+	}
+	box := layout.Panel(title, rows, width, true, layout.PanelStyle{Border: layout.BorderLight, Color: sgr.Dim})
 	return layout.OverlayCentered(screen, box, m.width, len(screen), true)
 }
 
@@ -64,7 +81,23 @@ func legendRows(inner int) []string {
 	for _, m := range card.PointsMeaning {
 		explain(m)
 	}
+	rows = append(rows, "", sgrBold+"役 (プロセス) の仕事"+sgrReset) // 役の説明の正本はここ (roleMeanings)。pro-con ps / 設定画面のプロセスの名前と揃える
+	for _, r := range roleMeanings {
+		rows = append(rows, sgrBold+r[0]+sgrReset)
+		explain(r[1])
+	}
 	return rows
+}
+
+// roleMeanings は pro-con のプロセスの役と、その仕事 (? の表に出す。役の名前は pro-con ps の Role と揃える)。
+var roleMeanings = [][2]string{
+	{"dispatcher", "書き手はこれだけ。受付の箱の依頼を記録に適用し、PG・PM・取り込みの係を起こす・再開する・止める。利用枠を見て PG の数を絞り、落ちた PG の見張り (watchdog) と、起動時の復旧もする"},
+	{"PM", "依頼の列のカードを読み、issue に分けてキューに積む (順番と見積もりのポイントも付ける)。PG の質問に答え、人の判断が要るものは人に回す。レビュー・取り込みはしない"},
+	{"PG", "カード 1 枚につき 1 つ。自分の worktree とブランチで実装し、時間のかかるコマンドはテストの係に頼み、終えたらレビューに出す。master へは push しない"},
+	{"取り込みの係", "レビューの列のカードの diff とテストを確かめ、よければ master へ取り込んで閉じる。衝突やテストの失敗は PG へ差し戻し、自分で片付けられないものは人に回す"},
+	{"見張り", "dispatcher とは別のプロセスで、読むだけ。PG のブランチどうし・master との取り込みの衝突と、テストの順番待ちの長さを見て、見つけたことを知らせる"},
+	{"テストの係", "dispatcher の中の係。PG が頼んだ make test などを PG の worktree で 1 本ずつ順に走らせ、結果を渡して PG を再開する (失敗は haiku が要約する)"},
+	{"画面", "カードを映し、人の依頼・回答・差し戻しを受付の箱に置く。持ち主の画面の最後の 1 つを閉じると dispatcher と PG を止める (--join は止めない・--view は読むだけ)"},
 }
 
 const humansTurnMeaning = "人が操作しないと進まない (権限の確認・落ち続けて止めた PG・PM か取り込みの係が人に回したもの・" +
