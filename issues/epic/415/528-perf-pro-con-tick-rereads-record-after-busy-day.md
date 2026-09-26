@@ -2,7 +2,7 @@
 
 起票日: 2026-09-26
 
-親: [415](415-design-claude-pm-worker-orchestration.md) / 見つけた監査: [513](513-research-pro-con-performance-audit-2026-09-26.md)
+親: [415](415-design-claude-pm-worker-orchestration.md) / 見つけた監査: [513](done/513-research-pro-con-performance-audit-2026-09-26.md)
 
 ## 概要
 

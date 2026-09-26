@@ -2,7 +2,7 @@
 
 起票日: 2026-09-26
 
-親: [523](523-design-asm-fast-paths.md)
+親: [523](../523-design-asm-fast-paths.md)
 
 ## 概要
 
