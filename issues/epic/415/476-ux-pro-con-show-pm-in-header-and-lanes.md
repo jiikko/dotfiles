@@ -34,3 +34,15 @@
 - 触る場所: `ui/view.go` の `gauge()` / `pgGauge()` に PM のゲージを足す。レーン (依頼の列・待ちの列) の担当の出し方、`store.go` の Owner の既定値
 - 変える判断: 「担当 = 今手を動かしている者」という表示の規則を作り直す。「人 / PM の番」の区分も使う
 - 順番の理由: 人 / PM の番の区分は 452 (C-032) が定義する。ゲージの行の「PG n/m」の意味は 455 (C-033) が決める。両方が決まる前に作ると、同じ行と同じ区分を 2 回作り直すことになる
+
+## 進捗 (C-038, 2026-09-26)
+
+- 決めたこと: **Owner の意味は変えず、表示だけ直す**。記録の Owner は「作った・受けた者」のまま (既定の PM も残す)。
+  担当は `card.Assignee` (452 の `card.Turn` から決める。分解済みは `PG 待ち`、役が手に取っていれば `PM 分解中` / `PM 回答中` / `取り込みの係 レビュー中`) を画面の詳細・`card list` / `card show` で出す。`card list --json` は `owner` (記録) を残して `assignee` を足した
+- 役の様子: dispatcher が Tick ごとに `card.RoleState` (様子・手元のカード・起こせない理由・上限) を `dispatcher-state.json` の `role_states` に書く (`dispatcher/role.go` の `roleState`)。
+  様子は最後の tellRole の値 (一覧の status・この Tick の保留 / 失敗・起動 / 再開) と `pm.json` から決め、起動・再開してから `launchGrace` の間は一覧に出ないのを「落ちた」と出さない
+- 画面: ゲージの `PG n/m` の隣に `PM n/m 様子` (作業中なら手元のカード 2 枚 + ほか N、入力待ちは黄、起こせないは赤 + 理由)。依頼の列 / 質問待ちで PM が手に取っているカードのバッジに水色で `PM 分解中` / `PM 回答中`。
+  止まった dispatcher の最後の様子は出さない (ゲージは「PM 様子不明」。card list も同じ判定 = `backend.DispatcherStale`)。`--view` と `screen` は同じ画面なので同じものが出る
+- 敵対レビューで直したこと: 一覧を取れない / 記録を読めない Tick は tellRole が照らす前に抜けるのに、dispatcher-state.json の Tick は進むので、前の Tick の「生きている」が今の様子として出続けた。
+  Tick の頭で「この Tick に照らしたか」を下ろし、照らせなかった Tick は `確かめ中` + 理由にした (`TestRoleStateNotStaleWhenListFails`)。人の番のカードに「分解中 / 回答中」を付けない判定は `card.Handling` の 1 か所にした (「pmKey が人に回した質問を外していない」という指摘は誤り: `pmKey` は `HandedOff` を外している)
+- 残り: PM の上限は 1 固定 (`roleMax`。456 で PM の数を配線するときに設定を読む)。取り込みの係の様子も `role_states` に書いているが、ヘッダには出していない (475 の monitor 役と一緒に決める)

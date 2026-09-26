@@ -21,6 +21,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"pro-con/backend"
 	"pro-con/card"
 	"pro-con/live"
 	"pro-con/store"
@@ -67,18 +68,32 @@ type cardSummary struct {
 	Archived bool      `json:"archived,omitempty"`
 	Deleting bool      `json:"deleting,omitempty"` // 削除の依頼を受けて、PG の session を止めてから消えるのを待っている
 	Turn     string    `json:"turn,omitempty"`     // 今誰の番か (card.Turn の Label。人の番は "人")
+	// Assignee は担当 = 今手を動かす者 (card.Assignee。「PG 待ち」「PM 分解中」)。Owner は記録のまま (作った・受けた者。issue 476)
+	Assignee string `json:"assignee,omitempty"`
 }
 
-// summarize は cards (記録の全カード) から、順番で待っている前のカードも引く。誰の番かは dispatcher が起こさない役 r で決める。
-func summarize(c card.Card, cards []card.Card, r card.Roles) cardSummary {
+// summarize は cards (記録の全カード) から、順番で待っている前のカードも引く。誰の番と担当は dispatcher の様子 v で決める。
+func summarize(c card.Card, cards []card.Card, v dispatcherView) cardSummary {
 	return cardSummary{ID: c.ID, State: c.State.Label(), Title: c.Title, Owner: c.Owner, Session: c.Session, Since: c.Since,
-		Waiting: waiting(c, cards), Question: c.Wait.Question, Archived: c.Archived, Deleting: c.Deleting(), Turn: c.Turn(r).Label()}
+		Waiting: waiting(c, cards), Question: c.Wait.Question, Archived: c.Archived, Deleting: c.Deleting(), Turn: c.Turn(v.roles).Label(),
+		Assignee: c.Assignee(v.roles, v.states)}
 }
 
-// rolesIn は dispatcher が最後に書いた、起こさない役 (読めなければ「どちらも起こす」= 人の番を少なめに出す)。
-func rolesIn(dir string) card.Roles {
+// dispatcherView は dispatcher が最後に書いた、起こさない役と役の様子。
+type dispatcherView struct {
+	roles  card.Roles
+	states []card.RoleState
+}
+
+// viewDispatcher は dispatcher の様子を読む (読めなければ「どちらも起こす」= 人の番を少なめに出す)。役の様子は dispatcher が回っているときだけ使う
+// (止まった dispatcher の最後の様子で「PM 分解中」と出さない。画面の pmGauge と同じ判定)。
+func viewDispatcher(dir string, now time.Time) dispatcherView {
 	ds, _, _ := store.LoadDispatcherState(dir)
-	return ds.Roles
+	v := dispatcherView{roles: ds.Roles}
+	if !store.Held(dir) && !store.DispatcherGone(dir) && !ds.Tick.IsZero() && now.Sub(ds.Tick) <= backend.DispatcherStale {
+		v.states = ds.RoleStates
+	}
+	return v
 }
 
 // waitingIn は waiting を、記録 (dir) の動いているカードで引く (書庫から読んだカードにも使える)。記録を読めなければ順番の待ちは出さない。
@@ -131,6 +146,7 @@ type cardDetail struct {
 	DoingAt  time.Time    `json:"doingAt,omitzero"`
 	DoingErr string       `json:"doingErr,omitempty"` // 集めた様子を読めなかった理由 (カードの詳細は出す)
 	Waiting  string       `json:"waiting,omitempty"`  // 何を待っているか (list と同じ。順番の前のカードは記録の全カードから引く)
+	Assignee string       `json:"assignee,omitempty"` // 担当 = 今手を動かす者 (list と同じ。card.Assignee)
 }
 
 // viewEnv は読む口が見る場所。
@@ -177,12 +193,12 @@ func runCardList(args []string, env viewEnv, stdout, stderr io.Writer) int {
 	// 列の順 (左から)、列の中はレーンの並び (上ほど優先。画面と同じ。issue 470)
 	cards = card.Board(cards)
 	out := []cardSummary{}
-	roles := rolesIn(env.dir)
+	view := viewDispatcher(env.dir, env.now())
 	for _, c := range cards {
 		if (c.Archived && !*all) || (want != nil && c.State != *want) {
 			continue
 		}
-		out = append(out, summarize(c, st.Cards, roles))
+		out = append(out, summarize(c, st.Cards, view))
 	}
 	if *asJSON {
 		return writeJSON(stdout, stderr, out)
@@ -195,7 +211,7 @@ func runCardList(args []string, env viewEnv, stdout, stderr io.Writer) int {
 	for _, s := range out {
 		// 列の見出しは全角なので、%-Ns (文字数) ではなく表示幅で揃える (全角は 2 セル)
 		col := s.State + strings.Repeat(" ", max(colW-ansi.StringWidth(s.State), 0))
-		line := fmt.Sprintf("%s  %s  %s  担当: %s  (%s)", s.ID, col, s.Title, orDashCLI(s.Owner), fmtAge(now.Sub(s.Since)))
+		line := fmt.Sprintf("%s  %s  %s  担当: %s  (%s)", s.ID, col, s.Title, orDashCLI(s.Assignee), fmtAge(now.Sub(s.Since)))
 		if s.Waiting != "" {
 			line += "  待ち: " + s.Waiting
 		}
@@ -233,7 +249,8 @@ func loadDetail(env viewEnv, id string) (cardDetail, error) {
 		}
 		return cardDetail{}, fmt.Errorf("カード %q が無い", id)
 	}
-	d := cardDetail{Card: c, Log: pgLog(env, c), Doing: []card.Doing{}, Waiting: waitingIn(env.dir, c)}
+	v := viewDispatcher(env.dir, env.now())
+	d := cardDetail{Card: c, Log: pgLog(env, c), Doing: []card.Doing{}, Waiting: waitingIn(env.dir, c), Assignee: c.Assignee(v.roles, v.states)}
 	if doing, err := store.LoadDoing(env.dir); err != nil {
 		d.DoingErr = err.Error()
 	} else {
@@ -279,7 +296,7 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 	c := d.Card
 	p := func(format string, a ...any) { _, _ = fmt.Fprintf(w, format+"\n", a...) }
 	p("%s  %s", c.ID, c.Title)
-	p("状態: %s (%s)  担当: %s  repo: %s  session: %s", c.State.Label(), fmtAge(now.Sub(c.Since)), orDashCLI(c.Owner), orDashCLI(c.Repo), orDashCLI(c.Session))
+	p("状態: %s (%s)  担当: %s  repo: %s  session: %s", c.State.Label(), fmtAge(now.Sub(c.Since)), orDashCLI(d.Assignee), orDashCLI(c.Repo), orDashCLI(c.Session))
 	var refs []string
 	for _, r := range c.Issues {
 		refs = append(refs, r.String()+" ("+r.Status+")")
@@ -424,7 +441,7 @@ func runCardWait(args []string, env viewEnv, stdout, stderr io.Writer) int {
 		return 1
 	}
 	if *asJSON {
-		s := summarize(got, nil, rolesIn(env.dir))
+		s := summarize(got, nil, viewDispatcher(env.dir, env.now()))
 		s.Waiting = waitingIn(env.dir, got) // 書庫から読んだカードでも、順番の待ちは記録の動いているカードで引く
 		return writeJSON(stdout, stderr, s)
 	}

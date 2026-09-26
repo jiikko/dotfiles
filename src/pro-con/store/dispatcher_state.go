@@ -52,6 +52,8 @@ type DispatcherState struct {
 	StartupAlert bool   `json:"startup_alert,omitempty"`
 	// Roles は dispatcher が起こさない役 (設定 pm / integrator = "off")。画面と card list が人の番 (card.Turn) を決めるのに読む
 	Roles card.Roles `json:"roles"`
+	// RoleStates は dispatcher が起こす役 (PM → 取り込みの係) の様子 (issue 476)。画面のゲージ・依頼の列の印と card list が読む
+	RoleStates []card.RoleState `json:"role_states,omitempty"`
 }
 
 // SaveDispatcherState は様子を書く (書きかけを読ませない)。

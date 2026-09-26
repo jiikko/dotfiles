@@ -377,7 +377,23 @@ func (s *Sim) Snapshot() backend.Snapshot {
 			cons = append(cons, backend.Consumer{Session: c.Session, CardID: c.ID, Status: st})
 		}
 	}
-	return backend.Snapshot{Now: s.now, Cards: cards, Consumers: cons, Limit: s.limit, LimitMax: s.limit, DispatcherTick: s.now, Violations: card.Check(cards)}
+	return backend.Snapshot{Now: s.now, Cards: cards, Consumers: cons, Limit: s.limit, LimitMax: s.limit, DispatcherTick: s.now,
+		RoleStates: []card.RoleState{s.pmState()}, Violations: card.Check(cards)}
+}
+
+// pmState は模擬の PM の様子 (stepIntake が次に仕分ける、依頼の列の一番古いカードを分けている最中。無ければ idle)。
+func (s *Sim) pmState() card.RoleState {
+	pm := card.RoleState{Name: card.PMName, Phase: card.RoleIdle, Max: 1, Session: "pm000001"}
+	var next *card.Card
+	for i := range s.cards {
+		if c := &s.cards[i]; c.State == card.Requested && (next == nil || c.Since.Before(next.Since)) {
+			next = c
+		}
+	}
+	if next != nil {
+		pm.Phase, pm.Cards = card.RoleBusy, []string{next.ID}
+	}
+	return pm
 }
 
 // Describe はヘッダーに出す説明 (backend.Describer)。

@@ -159,6 +159,9 @@ const defaultStallAfter = 15 * time.Minute
 // 別の session を止める)。
 // 回ったことは StatusFile に書く (途中で抜けた Tick も。画面が dispatcher の生存を見る)。
 func (d *Dispatcher) Tick(ctx context.Context) ([]eventlog.Event, error) {
+	for _, r := range roles() { // 役の様子は、この Tick に一覧と照らせたときだけ今のものとして書く (roleState)
+		d.roleRun(r).fresh = false
+	}
 	notes, err := d.tick(ctx)
 	if werr := d.writeState(d.Now()); werr != nil {
 		notes = append(notes, ev(eventlog.KindError, "", "", "dispatcher の様子を書けない: "+werr.Error()))
@@ -262,6 +265,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 		told, err := d.tellRole(ctx, now, ss, r)
 		notes = append(notes, told...)
 		if err != nil { // 役の壊れ (pm.json が読めない等) で PG の割り当てとほかの役まで止めない
+			d.roleRun(r).blocked = "扱えない: " + err.Error()
 			notes = append(notes, ev(eventlog.KindError, r.cardID, "", r.name+" を扱えない (PG の割り当ては続ける): "+err.Error()))
 		}
 	}

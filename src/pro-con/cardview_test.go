@@ -156,6 +156,49 @@ func TestCardListMarksHumansTurn(t *testing.T) {
 	}
 }
 
+// 担当は今手を動かす者 (issue 476): 分解済みは記録の Owner (PM) ではなく PG 待ち、PM が分けている依頼は「PM 分解中」。
+// 止まった dispatcher の最後の様子では分解中と出さない。
+func TestCardListShowsAssignee(t *testing.T) {
+	env := viewFixture(t)
+	mustSubmit(t, env.dir, store.Request{Kind: "add", Title: "分けたもの", Owner: "PM"})
+	mustApply(t, env.dir)
+	mustSubmit(t, env.dir, store.Request{Kind: "plan", CardID: "C-004", Issues: []card.IssueRef{{Repo: "dotfiles", Number: 1, Status: "open"}}})
+	mustApply(t, env.dir)
+	pm := []card.RoleState{{Name: card.PMName, Phase: card.RoleBusy, Max: 1, Cards: []string{"C-002"}}}
+	line := func(out, id string) string {
+		for _, l := range strings.Split(out, "\n") {
+			if strings.HasPrefix(l, id+" ") {
+				return l
+			}
+		}
+		t.Fatalf("%s の行が無い: %q", id, out)
+		return ""
+	}
+	for _, tc := range []struct {
+		tick time.Time
+		want string
+	}{{time.Now(), "担当: PM 分解中"}, {time.Now().Add(-time.Hour), "担当: PM  ("}} {
+		if err := store.SaveDispatcherState(env.dir, store.DispatcherState{Tick: tc.tick, RoleStates: pm}); err != nil {
+			t.Fatal(err)
+		}
+		_, out, _ := viewCmd(t, env, "list")
+		if l := line(out, "C-002"); !strings.Contains(l, tc.want) {
+			t.Errorf("Tick %s前: 依頼の担当 %q (want %q)", time.Since(tc.tick).Round(time.Minute), l, tc.want)
+		}
+		if l := line(out, "C-004"); !strings.Contains(l, "担当: PG 待ち") {
+			t.Errorf("分解済みの担当が PG 待ちでない: %q", l)
+		}
+		if _, out, _ := viewCmd(t, env, "show", "C-002"); strings.Contains(out, "担当: PM 分解中") != strings.Contains(tc.want, "分解中") {
+			t.Errorf("show の担当 (want %q): %q", tc.want, out)
+		}
+	}
+	_, out, _ := viewCmd(t, env, "list", "--state", "planned", "--json")
+	var got []cardSummary
+	if json.Unmarshal([]byte(out), &got) != nil || len(got) != 1 || got[0].Assignee != "PG 待ち" || got[0].Owner != "PM" {
+		t.Fatalf("--json の担当 (assignee) と記録の owner: %q", out)
+	}
+}
+
 // show は画面の詳細と同じ中身 (依頼の原文・質問・履歴・PG の出力の末尾) を出す。出力の末尾は起動の記録と transcript から読む。
 func TestCardShow(t *testing.T) {
 	env := viewFixture(t)
