@@ -243,7 +243,7 @@ func TestResumeBeforeOlderStart(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := store.Apply(dir, t0); err != nil {
+	if _, err := store.Apply(dir, t0, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, r := range []store.Request{
@@ -254,7 +254,7 @@ func TestResumeBeforeOlderStart(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := store.Apply(dir, t0); err != nil {
+	if _, err := store.Apply(dir, t0, nil); err != nil {
 		t.Fatal(err)
 	}
 	setCard(t, dir, "C-002", func(c *card.Card) { c.Since = t0.Add(-time.Hour) }) // 再開を待つ C-001 より古い
@@ -289,7 +289,7 @@ func TestFailingResumeDoesNotStarveOthers(t *testing.T) {
 	if _, err := store.Submit(dir, store.Request{Kind: "add", Title: "新", Repo: "dotfiles"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Apply(dir, now); err != nil {
+	if _, err := store.Apply(dir, now, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, r := range []store.Request{
@@ -300,7 +300,7 @@ func TestFailingResumeDoesNotStarveOthers(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := store.Apply(dir, now); err != nil {
+	if _, err := store.Apply(dir, now, nil); err != nil {
 		t.Fatal(err)
 	}
 	setCard(t, dir, "C-002", func(c *card.Card) { c.Since = t0.Add(-time.Hour) })

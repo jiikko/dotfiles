@@ -19,6 +19,9 @@ package lineedit
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
+
+	"tuikit/termwidth"
 )
 
 // Line は 1 行の入力。カーソルは rune の位置 (0 = 先頭、len = 末尾)。
@@ -34,6 +37,18 @@ func (l *Line) Reset()         { *l = Line{} }
 
 // View はカーソルの位置に mark を差し込んだ文字列 (描画用)。
 func (l *Line) View(mark string) string { return string(l.r[:l.cur]) + mark + string(l.r[l.cur:]) }
+
+// Window は幅 w の欄に出す文字列と、その中のキャレットの桁 (欄の頭から。全角は 2 と数える)。
+// キャレットが欄の中 (w-1 桁目まで) に収まるよう、長ければ前を切る。後ろは切らない (幅に収めるのは描く側)。
+// 🚨 キャレットを欄の外に置くと、IME の変換中の文字も欄の外に出る。桁は caret.At に「欄の左端 + 桁」で渡す。
+func (l *Line) Window(w int) (text string, col int) {
+	before, after := string(l.r[:l.cur]), string(l.r[l.cur:])
+	for before != "" && termwidth.Of(before) > w-1 {
+		_, size := utf8.DecodeRuneInString(before)
+		before = before[size:]
+	}
+	return before + after, termwidth.Of(before)
+}
 
 // Insert はカーソルの位置に s を入れる (打鍵とペースト)。1 行なので改行とタブは空白にし、他の制御文字は落とす。
 func (l *Line) Insert(s string) {

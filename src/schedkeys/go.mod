@@ -6,6 +6,7 @@ require (
 	charm.land/bubbletea/v2 v2.0.9
 	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/rivo/uniseg v0.4.7
+	tuikit v0.0.0
 )
 
 require (
@@ -23,3 +24,5 @@ require (
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 )
+
+replace tuikit => ../tuikit

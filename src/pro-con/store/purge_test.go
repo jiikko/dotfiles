@@ -148,7 +148,7 @@ func TestApplyForget(t *testing.T) {
 	notDone := submit(t, dir, Request{Kind: KindForget, CardID: "C-002", Sessions: []string{"s2"}})
 	role := submit(t, dir, Request{Kind: KindForget, CardID: "PM", Sessions: []string{"s3"}})
 	before, _ := Load(dir)
-	res, err := Apply(dir, t0)
+	res, err := Apply(dir, t0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

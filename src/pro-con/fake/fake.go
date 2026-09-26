@@ -575,14 +575,10 @@ func (s *Sim) addOrder(o backend.AddOrder) (string, error) {
 // newRequest は TUI からの新しい依頼を依頼の列に置く。PM に渡す指示にはスコープの前置きを付ける。
 func (s *Sim) newRequest(r backend.NewRequest) (string, error) {
 	request, prompt := r.Text, r.Text // 依頼の原文 (カードに残す) と、PM に渡す本文 (前置きの前)
+	title := firstLine(r.Text)
 	var issues []card.IssueRef
 	if t := r.Issue; t != nil { // issue を選んで出した依頼: カードは最初からその issue に紐づく。補足 (r.Text) は空でよい
-		issues = []card.IssueRef{{Repo: r.Repo.Name, Number: t.Number, Status: "open"}}
-		title := fmt.Sprintf("#%03d %s", t.Number, t.Title)
-		if t.Epic != "" {
-			title = "epic " + t.Epic + " (#" + fmt.Sprintf("%03d", t.Number) + ")"
-		}
-		request = strings.TrimSpace(title + " をやって\n" + r.Text)
+		title, request, issues = backend.IssueRequest(r.Repo.Name, *t, r.Text)
 		prompt = backend.IssuePrompt(*t, r.Text)
 	}
 	if strings.TrimSpace(request) == "" {
@@ -593,7 +589,7 @@ func (s *Sim) newRequest(r backend.NewRequest) (string, error) {
 	if r.Repo.Name != "" {
 		scope = "repo " + r.Repo.Name
 	}
-	c := card.Card{ID: fmt.Sprintf("C-%03d", s.nextID), Title: firstLine(request), Request: request,
+	c := card.Card{ID: fmt.Sprintf("C-%03d", s.nextID), Title: title, Request: request,
 		Prompt: backend.PMPrompt(r.Repo, prompt), Repo: r.Repo.Name, Owner: "受付 PM", State: card.Requested, Since: s.now,
 		Issues:  issues,
 		History: []card.Event{{At: s.now, Text: "人間が TUI から依頼した (スコープ: " + scope + ")"}}}

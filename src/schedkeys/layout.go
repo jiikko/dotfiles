@@ -13,6 +13,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"tuikit/caret"
 )
 
 type frame struct {
@@ -49,16 +50,7 @@ func (f *frame) addAt(s string, col int) {
 func (f *frame) render() (string, *tea.Cursor) {
 	var cur *tea.Cursor
 	if f.curRow >= 0 {
-		col := f.curCol
-		// 🚨 端末の最終列は width-1。width に置くと画面の外になり、そこへ IME の未確定文字が出る
-		//    (幅 9 のような極端に狭い端末で実際に起きた)
-		if col > f.width-1 {
-			col = f.width - 1
-		}
-		if col < 0 {
-			col = 0
-		}
-		cur = tea.NewCursor(col, f.curRow)
+		cur = caret.At(f.curCol, f.curRow, f.width, 0) // 高さに収めるのは fitHeight (縦はここで見ない)
 	}
 	return fitHeight(strings.Join(f.lines, "\n"), f.height, cur)
 }

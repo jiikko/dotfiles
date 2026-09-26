@@ -197,7 +197,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 			notes = append(notes, ev(eventlog.KindError, "", "", "e2e の偽の PM: "+err.Error()))
 		}
 	}
-	res, err := store.Apply(d.Dir, now)
+	res, err := store.Apply(d.Dir, now, d.Repos)
 	if err != nil {
 		return nil, err
 	}

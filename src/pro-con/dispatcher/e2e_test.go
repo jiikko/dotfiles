@@ -59,13 +59,13 @@ func TestE2EFakePM(t *testing.T) {
 	if _, err := store.Submit(e.StateDir(), store.Request{Kind: "add", Title: "x"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Apply(e.StateDir(), t0); err != nil {
+	if _, err := store.Apply(e.StateDir(), t0, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := e.FakePM(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Apply(e.StateDir(), t0); err != nil {
+	if _, err := store.Apply(e.StateDir(), t0, nil); err != nil {
 		t.Fatal(err)
 	}
 	st, _ := store.Load(e.StateDir())

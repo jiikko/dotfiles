@@ -618,13 +618,11 @@ func (b *Backend) Apply(cmd backend.Command) (string, error) {
 		if strings.TrimSpace(c.Text) == "" && c.Issue == nil {
 			return "", backend.ErrEmptyText
 		}
-		prompt := backend.PMPrompt(c.Repo, c.Text)
-		title := clip(firstLine(c.Text), 40)
+		r = store.Request{Kind: "add", Title: clip(firstLine(c.Text), 40), Request: c.Text, Prompt: backend.PMPrompt(c.Repo, c.Text), Repo: c.Repo.Name, Owner: "PM"}
 		if c.Issue != nil {
-			prompt = backend.PMPrompt(c.Repo, backend.IssuePrompt(*c.Issue, c.Text))
-			title = fmt.Sprintf("#%03d %s", c.Issue.Number, c.Issue.Title)
+			r.Title, r.Request, r.Issues = backend.IssueRequest(c.Repo.Name, *c.Issue, c.Text)
+			r.Prompt = backend.PMPrompt(c.Repo, backend.IssuePrompt(*c.Issue, c.Text))
 		}
-		r = store.Request{Kind: "add", Title: title, Request: c.Text, Prompt: prompt, Repo: c.Repo.Name, Owner: "PM"}
 	case backend.Answer:
 		if strings.TrimSpace(c.Text) == "" {
 			return "", backend.ErrEmptyText
