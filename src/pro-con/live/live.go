@@ -575,7 +575,7 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 	if set, err := store.LoadSettings(b.dir); err != nil {
 		cfg.Err = err.Error()
 	} else {
-		cfg.Limit, cfg.PMs = set.Limit, set.PMs
+		cfg.Limit, cfg.PMs, cfg.UsageOff = set.Limit, set.PMs, set.UsageOff
 	}
 	b.mu.Lock()
 	if b.refused != "" {

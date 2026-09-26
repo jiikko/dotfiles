@@ -47,6 +47,7 @@ type Inspector interface {
 type Config struct {
 	Limit     int    // 設定の PG の枠 (0 なら設定なし = dispatcher の --limit か既定)
 	PMs       int    // 設定の PM の数 (0 なら設定なし)
+	UsageOff  bool   // 利用枠で PG を絞らない設定 (既定は絞る)
 	LimitFrom string // dispatcher が使っている上限の出どころ ("設定" / "起動の引数"。1 度も回っていなければ空)
 	Pending   int    // 受付の箱で適用を待っている設定の依頼の数
 	Err       string // settings.json を読めない理由 (dispatcher は --limit で動く)
@@ -56,6 +57,7 @@ type Config struct {
 const (
 	ConfigLimit = "limit"
 	ConfigPM    = "pm"
+	ConfigUsage = "usage" // チェックボックス (1 = 枠で絞る / 0 = 絞らない。SetConfig の Value は on / off)
 )
 
 // SetConfig は設定を変える依頼 (pro-con config set と同じ。受付の箱に置き、dispatcher の次の Tick から効く)。

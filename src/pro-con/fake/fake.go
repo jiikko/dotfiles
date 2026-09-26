@@ -40,6 +40,7 @@ type Sim struct {
 	now      time.Time
 	cards    []card.Card
 	limit    int
+	usageOff bool // 利用枠で絞らない設定 (模擬は枠を読まないので、設定画面の表示だけ)
 	scripts  map[string]*script
 	resource map[string][]string // リソース名 → 順番待ちのカード ID (先頭が占有中)
 	// externalUntil は pro-con の外 (人間が直接使っている session) の占有がいつ終わるか。リソース名 → 時刻
@@ -397,7 +398,7 @@ func (s *Sim) Snapshot() backend.Snapshot {
 		}
 	}
 	return backend.Snapshot{Now: s.now, Cards: cards, Consumers: cons, Limit: s.limit, LimitMax: s.limit, DispatcherTick: s.now,
-		RoleStates: []card.RoleState{s.pmState()}, Violations: card.Check(cards), Config: backend.Config{Limit: s.limit, PMs: 1, LimitFrom: "設定"}}
+		RoleStates: []card.RoleState{s.pmState()}, Violations: card.Check(cards), Config: backend.Config{Limit: s.limit, PMs: 1, LimitFrom: "設定", UsageOff: s.usageOff}}
 }
 
 // pmState は模擬の PM の様子 (依頼の列を全部知らせ済みで、stepIntake が次に仕分ける一番古いカードを扱っている最中。無ければ idle)。
