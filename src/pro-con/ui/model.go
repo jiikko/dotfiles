@@ -104,6 +104,7 @@ type Model struct {
 	// カードの詳細の引き出し (drawer.go)。drawerCard は閉じる途中も残す (逆再生で本文が見えている必要がある)
 	cursor     cursorGlide // 選択中のカードを囲む枠 (cursor.go)
 	bump       bump        // 選択が端でぶつかったときのレーンの揺れ (bump.go)
+	tops       map[int]int // レーンごとの先頭 (何枚目から見せるか。lanescroll.go)
 	stopping   bool        // 終了のために backend (dispatcher と PG) を止めている最中 (quit.go)
 	stopErr    error       // 止めきれなかった理由 (終了後に main が出す)
 	attaching  bool        // attach の照合を裏で待っている
@@ -192,6 +193,7 @@ func (m *Model) Init() tea.Cmd {
 
 func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 	defer func() { // 選択が動いたら (キーでも、カードの移動でも) 枠を滑らせる
+		m.followSelection() // 枠の行き先はレーンの先頭で決まるので、枠より先に
 		c := tea.Batch(m.trackCursor(), m.trackSpin(), m.trackActivity())
 		if m.trackLane() {
 			c = tea.Batch(c, m.startFrames())

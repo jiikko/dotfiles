@@ -96,6 +96,7 @@ func (m *Model) resetSlots() {
 	m.cursor.valid = false // 配置が丸ごと変わった (タブの切り替え等): 枠は滑らせずに置き直す
 	m.lane.shown = -1      // レーンの色も移さずに点け直す
 	m.bump = bump{}        // 揺れていたレーンは別の配置のもの
+	m.tops = nil           // スクロールも別の配置のもの
 }
 
 func (m *Model) pruneMoves(now time.Time) {
@@ -127,7 +128,8 @@ func (m *Model) onFrame() tea.Cmd {
 // slotXY は slot の画面上の位置 (ボードの左上からの桁と行)。枠の内側の左上。
 func (m *Model) slotXY(s slot) (float64, float64) {
 	w := m.colWidth()
-	return float64(s.col*(w+len(colSep)) + 1), float64(1 + cardGap + s.row*perCardLines)
+	row := s.row - m.laneTopOf(s.col, m.lanes()) // スクロールしたレーンでは見えている位置 (lanescroll.go)
+	return float64(s.col*(w+len(colSep)) + 1), float64(1 + cardGap + row*perCardLines)
 }
 
 func (mv *move) pos(m *Model, now time.Time) (float64, float64) {
@@ -142,10 +144,11 @@ func (m *Model) overlayMoves(board []string) []string {
 		return board
 	}
 	now := m.now()
-	inner := m.colWidth() - 2
+	lanes := m.lanes()
 	for _, mv := range m.moves {
 		x, y := mv.pos(m, now)
 		col, row := int(x+0.5), int(y+0.5)
+		inner := m.cardWidth(m.laneItems(mv.to.col, len(lanes[mv.to.col]))) // 移動先で空けて待つ場所と同じ幅
 		for i, l := range m.cardCell(mv.c, inner) {
 			if r := row + i; r >= 0 && r < len(board) {
 				board[r] = splice(board[r], col, inner, l)
