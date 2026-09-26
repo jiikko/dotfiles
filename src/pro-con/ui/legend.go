@@ -25,8 +25,10 @@ const (
 	legendLanes                  // レーンごとの意味
 	legendMarks                  // 人の番の印と見積もりのポイント
 	legendRoles                  // 役 (プロセス) の仕事
-	legendTabCount
 )
+
+// legendTabs はタブの並び (tab で右へ、端で回る)。個数の番兵を enum に混ぜない (switch の網羅の検査が番兵の case を求める)。
+var legendTabs = []legendTab{legendFlow, legendLanes, legendMarks, legendRoles}
 
 func (t legendTab) label() string {
 	switch t {
@@ -51,11 +53,12 @@ func (m *Model) handleLegendKey(key string) tea.Cmd {
 	case "?", "q", "esc":
 		m.legend, m.legendOff = false, 0
 	case "tab", "shift+tab":
-		step := legendTab(1)
+		n := len(legendTabs)
+		step := 1
 		if key == "shift+tab" {
-			step = legendTabCount - 1
+			step = n - 1
 		}
-		m.legendTab, m.legendOff = (m.legendTab+step)%legendTabCount, 0
+		m.legendTab, m.legendOff = legendTabs[(slices.Index(legendTabs, m.legendTab)+step)%n], 0
 	case "j", "down":
 		m.legendOff++ // 下限・上限は描くとき (overlayLegend) に幅と高さから決める
 	case "k", "up":
@@ -95,7 +98,7 @@ func (m *Model) overlayLegend(screen []string) []string {
 // legendTabBar はタブの行 (今のタブを反転)。幅 inner に収まらなければ、今のタブの名前と位置だけにする。
 func legendTabBar(cur legendTab, inner int) string {
 	var tabs []string
-	for t := range legendTabCount {
+	for _, t := range legendTabs {
 		if t == cur {
 			tabs = append(tabs, settingsReverse+sgrBold+" "+t.label()+" "+sgrReset)
 		} else {
@@ -108,7 +111,7 @@ func legendTabBar(cur legendTab, inner int) string {
 	} else if ansi.StringWidth(bar) <= inner {
 		return bar
 	}
-	return fmt.Sprintf("%s %s %d/%d  tab で次へ%s", settingsReverse+sgrBold, cur.label(), int(cur)+1, int(legendTabCount), sgrReset)
+	return fmt.Sprintf("%s %s %d/%d  tab で次へ%s", settingsReverse+sgrBold, cur.label(), slices.Index(legendTabs, cur)+1, len(legendTabs), sgrReset)
 }
 
 // legendSize は画面の幅 total に対する表の板の幅と、中身の幅。

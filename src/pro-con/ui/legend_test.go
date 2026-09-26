@@ -50,7 +50,7 @@ func TestLegendRowsFitPanel(t *testing.T) {
 	for _, total := range []int{44, 120} {
 		width, inner := legendSize(total)
 		var text strings.Builder
-		for tab := range legendTabCount {
+		for _, tab := range legendTabs {
 			rows := append([]string{legendTabBar(tab, inner)}, legendRows(tab, inner)...)
 			box := layout.Panel(legendTitle, rows, width, false, layout.PanelStyle{Border: layout.BorderLight})
 			if joined := strings.Join(box, "\n"); strings.Contains(joined, "…") {
@@ -85,7 +85,7 @@ func TestLegendTabs(t *testing.T) {
 	press(m, "?")
 	tabOf := func() string {
 		out := ansi.Strip(m.render())
-		for tab := range legendTabCount {
+		for _, tab := range legendTabs {
 			if tab == m.legendTab && !strings.Contains(out, tab.label()) {
 				t.Fatalf("%s のタブの名前が出ない:\n%s", tab.label(), out)
 			}
@@ -96,7 +96,7 @@ func TestLegendTabs(t *testing.T) {
 		t.Fatalf("? で流れのタブが開かない (%s):\n%s", got, ansi.Strip(m.render()))
 	}
 	var seen []string
-	for range legendTabCount {
+	for range legendTabs {
 		press(m, "tab")
 		seen = append(seen, tabOf())
 	}
