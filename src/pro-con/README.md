@@ -19,7 +19,7 @@ bin/pro-con du [--json] [--all]  # pro-con が作った物のディスクの使�
 bin/pro-con ps [--json]  # pro-con が起動したプロセスを役ごとに出す (dispatcher / supervisor / 見張り / PM / PG / テストの係 / 画面。pid・経過・状態・カード・コマンド。カードと session の食い違いは状態の列に「食い違い: 」で出す)。読むだけ: 状態の置き場に書かず、dispatcher の lock も画面の印 (presence) も触らない。生きているかは ps を 1 回読んで決める (busy / idle は出さない)。pro-con の外の session は出さない
 bin/pro-con dispatcher --stop  # dispatcher と、pro-con が起動した PG を止める。作業中のカードは次に dispatcher を起動したら続きから再開する (画面の終了も同じことをする)
                                # 人が止めた印 (`dispatcher-held`) を置く: 開いている画面は dispatcher を起こし直さず、ゲージに「止めてある」と出す。外すのは画面の c か、次に手で `pro-con dispatcher` を起動したとき (issue 459)
-bin/pro-con card …   # PM / PG が使うカードの操作 (add / plan / ask / answer / handoff / review / rework / close / delete。plan --after は前のカードが完了するまで起動させない = issue 468。handoff は PM が PG の質問を人に回したことを履歴に残す。rework はレビュー待ちを直してほしい点つきで PG に戻す。delete は依頼の列ならすぐ消し、ほかは PG の session を止めてから消す = issue 451)。受付の箱に置くだけで、適用は dispatcher (issue 427)
+bin/pro-con card …   # PM / PG が使うカードの操作 (add / plan / ask / answer / handoff / review / rework / order / close / delete。plan --after は前のカードが完了するまで起動させない = issue 468。handoff は PM が PG の質問を人に回したことを履歴に残す。rework はレビュー待ちを直してほしい点つきで PG に戻す。order は画面の + と同じ追加オーダー (既定は追記、--redirect で方針変更、--from PM で PM が出した印。断る条件は画面と同じで適用の側が決める = issue 507)。delete は依頼の列ならすぐ消し、ほかは PG の session を止めてから消す = issue 451)。受付の箱に置くだけで、適用は dispatcher (issue 427)
 bin/pro-con card guide  # PM の session に渡す指示書 (src/pro-con/pm-guide.md) を出す。dispatcher は依頼の列にカードが来たら・PG が質問したら PM を起動 / 再開してこれと新しいカード・質問を渡す (issue 437。PM は 1 つ・--limit に数えない)
 bin/pro-con card guide --integrator  # 取り込みの係の session に渡す指示書 (src/pro-con/integrator-guide.md) を出す。dispatcher はカードがレビューの列に来たら取り込みの係を起動 / 再開してこれとカードを渡す。係はレビューし、master へ merge して push し閉じるか、差し戻す・人に回す (issue 487。1 つ・--limit に数えない)
 bin/pro-con card attach C-001 shot.png --note "詳細の見た目"  # PG が作業の証拠 (画面の見た目・コマンドの出力) をカードに添付する (issue 453)。ファイルを受付の箱の files/ に写して依頼を置き、
@@ -285,6 +285,19 @@ PG・PM・取り込みの係は Claude Code の bg の session で dispatcher �
   exec から新版が signal の受け口を作るまで (lock を受け取った直後に作る) の一瞬に SIGTERM / SIGHUP が来ると、PG を止める処理を通らずに死ぬ。
   メモリだけに持つもの (役の起動を受け付けられなかった回数・最近のテストの結果・起動時の確かめ) は切り替えで初めからになる。
   人の番を知らせ済みの鍵だけは新版へ渡す (渡さないと切り替えのたびに全件知らせ直す)
+
+## 演出のカクつきを観測する (issue 494)
+
+画面の置き場 (既定 `~/.local/state/pro-con/live`) に `framelog.on` を置くと、次の tick (1 秒以内) から画面が `framelog.tsv` へ
+「時刻 (RFC3339Nano) \t メッセージの種類 \t Update の所要 (µs)」と「… \t View \t 描画の所要 (µs)」を追記する。消せば止まる
+(起動し直さなくてよい。20MB を超えたら書くのをやめる)。演出のコマ (`frameMsg`) は 33ms ごとに届くので、`frameMsg` どうしの間が大きく空いた所が
+ループの詰まり (端末・tmux への書き込みが詰まったときもここに出る)。実装は `ui/framelog.go`。
+
+```sh
+d=~/.local/state/pro-con/live; touch $d/framelog.on   # 演出を動かしてから
+rm $d/framelog.on
+awk -F'\t' '$2=="frameMsg"' $d/framelog.tsv | head   # 間隔は時刻の差で見る
+```
 
 ## テスト・lint の実行中
 

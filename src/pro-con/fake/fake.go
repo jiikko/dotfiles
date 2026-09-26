@@ -567,7 +567,7 @@ func (s *Sim) addOrder(o backend.AddOrder) (string, error) {
 			msg = "方針変更を反映した (止めて差し替えて再開)"
 		}
 		c.Orders = append(c.Orders, ord)
-		c.History = append(c.History, card.Event{At: s.now, Text: "追加オーダー (" + o.Kind.Label() + "): " + o.Text})
+		c.History = append(c.History, card.Event{At: s.now, Text: "人間 から追加オーダー (" + o.Kind.Label() + "): " + o.Text}) // store の適用と同じ文 (画面の + は人間)
 		return msg, nil
 	}
 	return "", backend.ErrUnknownKind

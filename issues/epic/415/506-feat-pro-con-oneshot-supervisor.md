@@ -1,4 +1,4 @@
-# 506 (feat): pro-con を起動したら、foreman のようなワンショットの supervisor が dispatcher と見張りを子として持つ (src/procsup)
+# 506 (feat): pro-con を起動したら、foreman のようなワンショットの supervisor が dispatcher と見張りを子として持つ (src/process_supervisor)
 
 起票日: 2026-09-26
 
@@ -31,11 +31,15 @@ launchd の LaunchAgent は「サービスとして登録するのは面倒」�
 
 ## 作り
 
-- **汎用の部分は `src/procsup` に独立した Go の module として作る** (tuikit と同じく pro-con 以外からも使える部品):
+- **名前 (2026-09-26 のユーザーの決定「省略せずに process_supervisor で」)**: ディレクトリと Go の module は `src/process_supervisor`。
+  Go のパッケージ名は `supervisor` (パッケージ名にアンダースコアを使わない Go の慣習と lint に合わせる。使う側は `supervisor.X` と読める)。
+  動くプロセスは pro-con のサブコマンド (例 `pro-con supervise`)、`pro-con ps` の役の名前は「supervisor」
+
+- **汎用の部分は `src/process_supervisor` に独立した Go の module として作る** (tuikit と同じく pro-con 以外からも使える部品):
   子を起こす・落ちたら間を空けて起こし直す・落ち続けたら諦める・止める合図で子を止める (SIGTERM → 猶予 → SIGKILL)・
   親が死んだら子が抜ける生命線 (stdin のパイプ。今の見張りと同じ形)
 - **止める条件 (画面の数・人が止めた印・join) は pro-con 側に置く** (pro-con 固有の決まり)
-- 今の `monitorsup.go` を procsup の上に載せ替える (同じ処理を 2 つ持たない)
+- 今の `monitorsup.go` を process_supervisor の上に載せ替える (同じ処理を 2 つ持たない)
 - 505 (dispatcher が自分で新版へ切り替わる。PID はそのまま) と両立させる: 切り替えは子が自分で exec するので、supervisor からは同じ子のまま見える
 - 今の画面の keeper (dispatcher を起こし直す) と supervisor の起こし直しが二重にならないよう、どちらに寄せるかを決める
 

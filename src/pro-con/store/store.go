@@ -92,7 +92,7 @@ type Request struct {
 	Command   string          `json:"command,omitempty"` // run: テストの係に実行を頼むコマンド (シェルの 1 行)
 	Cwd       string          `json:"cwd,omitempty"`     // run: 頼んだシェルの作業ディレクトリ (dispatcher が PG の worktree と照らす)
 	Answer    string          `json:"answer,omitempty"`
-	From      string          `json:"from,omitempty"`   // 回答した人 / 削除を依頼した人 (人間 / PM)
+	From      string          `json:"from,omitempty"`   // 回答した人 / 削除を依頼した人 / 追加オーダーを出した人 (人間 / PM)
 	Rework    string          `json:"rework,omitempty"` // rework: レビューで直してほしい点 (書いたまま)
 	Ending    card.Ending     `json:"ending,omitempty"`
 	Said      []card.Event    `json:"said,omitempty"` // attach: attach の間に人間が打った指示 (原文と打った時刻)
@@ -705,7 +705,7 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		c.Run, c.RunAt, c.RunCwd = r.Command, now, r.Cwd
 		c.Wait = card.Wait{Kind: card.WaitResource, Resource: RunResource}
 		c.History = append(c.History, card.Event{At: now, Text: "テストの係に頼んだ: " + clip(r.Command, 80)})
-	case "order": // 人間が作業中のカードへ追加オーダーを出した (要件 15)。積むだけで、PG へ届けるのは dispatcher (orders.go)
+	case "order": // 人間 (画面の + / card order) か PM (card order --from PM) が作業中のカードへ追加オーダーを出した (要件 15。CLI は issue 507)。積むだけで、PG へ届けるのは dispatcher (orders.go)
 		if r.Order != card.OrderAppend && r.Order != card.OrderRedirect {
 			return fmt.Errorf("追記か方針変更ではない (%s。別件は新しい依頼にする)", r.Order.Label())
 		}
@@ -716,7 +716,7 @@ func transition(c *card.Card, r Request, now time.Time) error {
 			return errors.New("本文が空")
 		}
 		c.Orders = append(c.Orders, card.Order{Kind: r.Order, Text: r.Text, At: now})
-		c.History = append(c.History, card.Event{At: now, Text: "追加オーダー (" + r.Order.Label() + "): " + r.Text}) // 原文のまま
+		c.History = append(c.History, card.Event{At: now, Text: firstNonEmpty(r.From, "人間") + " から追加オーダー (" + r.Order.Label() + "): " + r.Text}) // 原文のまま
 	case "btw": // 人間が PG を止めずに状況を聞いた (要件 9)。答えるのは dispatcher (btw.go)。どの列でも受ける
 		if strings.TrimSpace(r.Question) == "" {
 			return errors.New("質問が空")
