@@ -2,7 +2,7 @@
 
 起票日: 2026-09-25
 
-親: [441](441-design-pro-con-viewer.md)
+親: [441](../441-design-pro-con-viewer.md)
 
 ## 概要
 
