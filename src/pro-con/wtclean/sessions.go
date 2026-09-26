@@ -268,7 +268,7 @@ func transcriptsOf(projects, sid, wt string) (paths []string, bytes int64, why s
 	}
 	for _, d := range dirs {
 		if !proven[filepath.Dir(d)] {
-			return nil, 0, fmt.Sprintf("%s の隣に確かめた transcript が無い", d), nil
+			return nil, 0, d + " の隣に確かめた transcript が無い", nil
 		}
 		n, _, err := diskuse.Size(d)
 		if err != nil {
