@@ -6,6 +6,8 @@
 
 - 新しい作業: 画面の `n` (issue から選ぶなら `i`) か `pro-con card add --title <題名> --request <依頼の原文> --repo <repo>` (--repo は省いてよい)。
   依頼の列に入り、PM が issue に分けて着手待ちの列に積む。add は適用を待ってカード ID を出す (待てなければ依頼 ID を出して rc=3)
+- `pro-con card` の箱に置く操作は、どれも dispatcher の適用を待って返る (issue 542)。除けられたら理由を stderr に出して rc=1 (列の合わない close 等)。
+  待てなければ依頼 ID を出して rc=3。`--wait 0` なら待たない
 - 人に確かめるだけ (issue にするかを選んでもらう等): `card add --purpose question --title <題名> --request <何を聞いて、答えで何をするか>`。
   確認のカードになり、PM が人に聞いて、答えを受けて issue を書くか閉じる (PG は付かない)。`card list --purpose question` で絞れる
 - 動いているカードへの足し: 画面の `+` か `pro-con card order <カード> <本文>`。3 つを使い分ける:

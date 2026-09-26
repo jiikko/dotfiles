@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -30,7 +34,7 @@ func TestCardCommandRoundTrip(t *testing.T) {
 	if rc != 0 || strings.TrimSpace(out) == "" || errOut != "" {
 		t.Fatalf("add: rc=%d out=%q err=%q", rc, out, errOut)
 	}
-	if rc, _, e := card_(t, dir, "plan", "C-001", "--issue", "dotfiles#415"); rc != 0 {
+	if rc, _, e := card_(t, dir, "plan", "C-001", "--issue", "dotfiles#415", "--wait", "0"); rc != 0 {
 		t.Fatalf("plan: rc=%d %s", rc, e)
 	}
 	res, err := store.Apply(dir, time.Now(), nil)
@@ -135,7 +139,7 @@ func TestCardCommandRejectsUnknownRepo(t *testing.T) {
 	for _, args := range [][]string{
 		{"add", "--title", "t", "--repo", "dotfiles", "--wait", "0"},
 		{"add", "--title", "t", "--wait", "0"},
-		{"plan", "C-001", "--issue", "dotfiles#3"},
+		{"plan", "C-001", "--issue", "dotfiles#3", "--wait", "0"},
 	} {
 		if rc := runCard(args, env(t.TempDir()), io.Discard, io.Discard); rc != 0 {
 			t.Fatalf("%q: 設定の repo / repo 無しを断った: rc=%d", args, rc)
@@ -169,7 +173,7 @@ func TestCardCommandAskAnswer(t *testing.T) {
 }
 
 // 追加オーダー (issue 507): 画面の + と同じ依頼を箱に置く。既定は人間の追記、--redirect で方針変更、--from で出した人。
-// 断るか (完了のカード・空の本文) は CLI では決めず、store の適用が画面と同じ規則で決める (箱には置いて rc=0)。
+// 断るか (完了のカード・空の本文) は CLI では決めず、store の適用が画面と同じ規則で決める (--wait 0 なら箱には置いて rc=0)。
 func TestCardCommandOrder(t *testing.T) {
 	dir := t.TempDir()
 	for _, title := range []string{"作業中", "閉じる"} {
@@ -177,7 +181,7 @@ func TestCardCommandOrder(t *testing.T) {
 			t.Fatalf("add: rc=%d %s", rc, e)
 		}
 	}
-	if rc, _, e := card_(t, dir, "close", "C-002", "--ending", "answered"); rc != 0 {
+	if rc, _, e := card_(t, dir, "close", "C-002", "--ending", "answered", "--wait", "0"); rc != 0 {
 		t.Fatalf("close: rc=%d %s", rc, e)
 	}
 	for _, args := range [][]string{
@@ -186,7 +190,7 @@ func TestCardCommandOrder(t *testing.T) {
 		{"order", "C-002", "x"}, // 完了のカード
 		{"order", "C-001", " "}, // 空の本文
 	} {
-		if rc, out, e := card_(t, dir, args...); rc != 0 || strings.TrimSpace(out) == "" {
+		if rc, out, e := card_(t, dir, append(args, "--wait", "0")...); rc != 0 || strings.TrimSpace(out) == "" {
 			t.Fatalf("%q: rc=%d out=%q err=%q (断るのは適用の側)", args, rc, out, e)
 		}
 	}
@@ -360,6 +364,94 @@ func TestCardRunParse(t *testing.T) {
 	for _, bad := range [][]string{{"run", "C-001"}, {"run", "C-001", "--"}, {"run", "--", "make"}, {"run", "C-001", "make"}, {"run", "C-001", "make", "--", "test"}} {
 		if _, _, err := parseCardWait(bad); err == nil {
 			t.Fatalf("形の違う run を読んだ: %v", bad)
+		}
+	}
+}
+
+// runApplied は pro-con card を裏で打ち、依頼が箱に置かれたら dispatcher の代わりに 1 回適用して、コマンドの結果を返す。
+func runApplied(t *testing.T, dir string, args ...string) (rc int, out, errOut string) {
+	t.Helper()
+	type result struct {
+		rc       int
+		out, err string
+	}
+	ch := make(chan result, 1)
+	go func() {
+		var o, e bytes.Buffer
+		rc := runCard(args, viewEnv{dir: dir, now: time.Now}, &o, &e)
+		ch <- result{rc, o.String(), e.String()}
+	}()
+	waitUntil(t, fmt.Sprintf("%q が箱に置かない", args), func() bool { return inboxCount(dir) == 1 })
+	if _, err := store.Apply(dir, time.Now(), nil); err != nil {
+		t.Fatal(err)
+	}
+	r := <-ch
+	return r.rc, r.out, r.err
+}
+
+// add 以外の操作も適用を待つ (issue 542): 除けられたら理由つきで rc=1、適用されたら依頼 ID を出して rc=0。
+// 実例 2026-09-27: 質問待ちのカードへの close が rc=0 で返り、打った側は log を見るまで除けられたと気づけなかった。
+func TestCardOperationsReportRejection(t *testing.T) {
+	dir := viewDir(t)
+	old := viewPoll
+	viewPoll = 20 * time.Millisecond
+	t.Cleanup(func() { viewPoll = old })
+	mustSubmit(t, dir, store.Request{Kind: "add", Title: "質問待ちのカード"})
+	mustApply(t, dir)
+	if err := store.Update(dir, func(st *store.State) error {
+		st.Cards[0].State, st.Cards[0].Wait = card.Waiting, card.Wait{Kind: card.WaitQuestion, Question: "どちら?"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rc, out, errOut := runApplied(t, dir, "close", "C-001", "--ending", "rejected")
+	if rc != 1 || out != "" || !strings.Contains(errOut, "除けた") || !strings.Contains(errOut, "レビューの列に無い (今は 質問待ち)") {
+		t.Fatalf("列の合わない close: rc=%d out=%q err=%q (理由つきで rc=1 にする)", rc, out, errOut)
+	}
+	shot := filepath.Join(t.TempDir(), "a.png")
+	if err := os.WriteFile(shot, []byte("png"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rc, _, errOut := runApplied(t, dir, "attach", "C-999", shot); rc != 1 || !strings.Contains(errOut, "除けた") {
+		t.Fatalf("無いカードへの attach: rc=%d err=%q", rc, errOut)
+	}
+	rc, out, errOut = runApplied(t, dir, "answer", "C-001", "A")
+	st, _ := store.Load(dir)
+	if id := strings.TrimSpace(out); rc != 0 || errOut != "" || !slices.Contains(st.Applied, id) {
+		t.Fatalf("適用された answer: rc=%d out=%q err=%q (適用済みの依頼 ID を出して rc=0)", rc, out, errOut)
+	}
+}
+
+// run の --wait は -- の前に置く (-- の後ろはコマンドの argv なので読まない)。
+func TestCardRunWaitFlag(t *testing.T) {
+	r, wait, err := parseCardWait([]string{"run", "C-001", "--wait", "0", "--", "make", "test", "--wait", "5s"})
+	if err != nil || wait != 0 || r.CardID != "C-001" || r.Command != "make test --wait 5s" {
+		t.Fatalf("run --wait: %+v wait=%v err=%v", r, wait, err)
+	}
+	if _, wait, err := parseCardWait([]string{"run", "C-001", "--", "make"}); err != nil || wait != addWait {
+		t.Fatalf("run の既定の待ち: wait=%v err=%v", wait, err)
+	}
+	for _, args := range [][]string{
+		{"run", "C-001", "x", "--", "make"},
+		{"run", "--", "make"},
+		{"run", "C-001", "--"},
+		{"run", "C-001", "--wait", "-1s", "--", "make"},
+	} {
+		if _, _, err := parseCardWait(args); err == nil {
+			t.Errorf("%q を通した", args)
+		}
+	}
+}
+
+// PM・取り込みの係・PG の指示は、rc の読み方 (除けられたら rc=1。issue 542) を同じ正本 (dispatcher.CardRCRule) から持つ。目印の行は残さない。
+func TestGuidesCarryCardRCRule(t *testing.T) {
+	for name, text := range map[string]string{
+		"PM の指示書":    pmGuide,
+		"取り込みの係の指示書": integratorGuide,
+		"PG の指示":     dispatcher.Prompt(card.Card{ID: "C-007", Title: "t"}, dispatcher.Review{}),
+	} {
+		if !strings.Contains(text, dispatcher.CardRCRule) || strings.Contains(text, "{{") {
+			t.Errorf("%s に rc の読み方が無いか、目印が残っている", name)
 		}
 	}
 }

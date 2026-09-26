@@ -1,7 +1,8 @@
 package main
 
 // pro-con card — PM / PG が使うカードの操作の口 (issue 427 の段階 3b)。受付の箱に依頼を置くだけで、記録への適用は dispatcher (store.Apply)。
-// 置いた依頼の ID を stdout に出す (add は適用を待ってカード ID を出す)。使い方の誤りは rc=2、箱に置けなかったら rc=1。
+// どの操作も既定で dispatcher の適用を待ち、置いた依頼の ID を stdout に出す (add はカード ID)。使い方の誤りは rc=2、箱に置けなかった・
+// dispatcher が除けたら rc=1 (除けた理由を stderr に出す)、待てなかったら依頼 ID を出して rc=3 (issue 542。submitAndWait)。
 // 読むだけの口 (list / show / wait) は cardview.go、log は cardlog.go。
 
 import (
@@ -19,12 +20,15 @@ import (
 	"time"
 
 	"pro-con/card"
+	"pro-con/dispatcher"
 	"pro-con/store"
 )
 
-var cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を置く。適用は dispatcher)
-  add --title <題名> [--request <依頼の原文>] [--repo <repo>] [--prompt <PM に渡した指示>] [--purpose work|question] [--wait <長さ>]
-                                                 適用を待ってカード ID を出す (既定 10s。待てなければ依頼 ID を出して rc=3。0 なら待たずに依頼 ID)
+var cardUsage = `usage: pro-con card <操作> ... [--wait <長さ>]   (受付の箱に依頼を置く。適用は dispatcher)
+                                                 どの操作も適用を待って依頼 ID を出す (既定 10s)。dispatcher が除けたら理由を出して rc=1。
+                                                 待てなければ依頼 ID を出して rc=3。--wait 0 なら待たずに依頼 ID (除けられても rc=0)
+  add --title <題名> [--request <依頼の原文>] [--repo <repo>] [--prompt <PM に渡した指示>] [--purpose work|question]
+                                                 適用を待ってカード ID を出す (待てなければ依頼 ID を出して rc=3)
                                                  --purpose question は人に確かめるだけのカード (確認。PG は付かず、答えを受けた PM が閉じる)
   plan <カード> [--issue <repo>#<番号>]... [--after <カード>]... [--points 1|2|3|5|8]
                                                  タスクに分けてキューに積んだ (--after のカードが完了するまで起動しない。--points は見積もり)
@@ -35,7 +39,7 @@ var cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を置
                                                  選択肢つきの質問。形は AskUserQuestion と同じ (問い 1〜4 個・選択肢 2〜4 個。
                                                  options に "recommended":true で推奨)。画面は radio / checkbox の回答フォームにする
   answer <カード> <回答> [--from <人間|PM>]      質問待ちのカードへの回答
-  run <カード> -- <コマンド>...                  PG がテストの係にコマンドの実行を頼んで turn を終える (結果は再開のときに届く)
+  run <カード> [--wait <長さ>] -- <コマンド>...                PG がテストの係にコマンドの実行を頼んで turn を終える (結果は再開のときに届く)
   attach <カード> <ファイル> [--note <一言>]      PG が作業の証拠 (画面の見た目・コマンドの出力) をカードに添付する
                                                  (.png などは画像、.txt / .ans は文字。1 件 20 MiB・1 枚に 50 件まで)
   review <カード>                                PG が終えた
@@ -61,18 +65,23 @@ var cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を置
 //go:embed pm-guide.md
 var pmGuideSrc string
 
-// pmGuide は pm-guide.md の目印の行 ({{ポイントの目安}}) を、ポイントの意味の正本 (card.PointsMeaning) で置き換えたもの。
-var pmGuide = strings.Replace(pmGuideSrc, pointsMark, card.PointsMeaningText("     - "), 1)
+// pmGuide は pm-guide.md の目印の行 ({{ポイントの目安}} / {{rc の読み方}}) を、ポイントの意味の正本 (card.PointsMeaning) と
+// rc の読み方の正本 (dispatcher.CardRCRule) で置き換えたもの。
+var pmGuide = strings.Replace(strings.Replace(pmGuideSrc, pointsMark, card.PointsMeaningText("     - "), 1), rcMark, dispatcher.CardRCRule+"。", 1)
 
 // pointsMark は pm-guide.md でポイントの意味を差し込む行 (インデントも含めて行ごと置き換える)。
 const pointsMark = "     - {{ポイントの目安}}"
 
-// integratorGuide は取り込みの係 (487) の session に渡す指示書。書いてあるコマンドは TestIntegratorGuideCommandsParse がパーサに通す。
-//
-//go:embed integrator-guide.md
-var integratorGuide string
+// rcMark は pm-guide.md / integrator-guide.md で rc の読み方 (dispatcher.CardRCRule) を差し込む行。
+const rcMark = "{{rc の読み方}}"
 
-// addWait は add が適用を待つ既定の長さ (dispatcher が動いていれば 1 秒かからない。427 の実測で約 130 ms)。
+// integratorGuide は取り込みの係 (487) の session に渡す指示書。書いてあるコマンドは TestIntegratorGuideCommandsParse がパーサに通す。
+var integratorGuide = strings.Replace(integratorGuideSrc, rcMark, dispatcher.CardRCRule+"。", 1)
+
+//go:embed integrator-guide.md
+var integratorGuideSrc string
+
+// addWait は箱に置く操作が適用を待つ既定の長さ (dispatcher が動いていれば 1 秒かからない。427 の実測で約 130 ms)。
 const addWait = 10 * time.Second
 
 // runCard は pro-con card の本体。env.dir は本物のモードの状態の置き場 (store の dir)。
@@ -105,6 +114,11 @@ func runCard(args []string, env viewEnv, stdout, stderr io.Writer) int {
 	if args[0] == "attach" {
 		return runCardAttach(args[1:], env.dir, stdout, stderr)
 	}
+	return runCardSubmit(args, env, stdout, stderr)
+}
+
+// runCardSubmit は操作を依頼にして受付の箱に置き、適用を待つ (submitAndWait)。
+func runCardSubmit(args []string, env viewEnv, stdout, stderr io.Writer) int {
 	req, wait, err := parseCardWait(args)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "pro-con card: %v\n%s\n", err, cardUsage)
@@ -114,17 +128,7 @@ func runCard(args []string, env viewEnv, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "pro-con card:", err)
 		return 2
 	}
-	if req.Kind == "add" {
-		return addAndWait(env.dir, req, wait, stdout, stderr)
-	}
-	dir := env.dir
-	id, err := store.Submit(dir, req)
-	if err != nil {
-		_, _ = fmt.Fprintln(stderr, "pro-con card: 受付の箱に置けない:", err)
-		return 1
-	}
-	_, _ = fmt.Fprintln(stdout, id)
-	return 0
+	return submitAndWait(env.dir, req.Kind, func() (string, error) { return store.Submit(env.dir, req) }, wait, stdout, stderr)
 }
 
 // checkCardRepos は add の --repo と plan の --issue の repo が設定の repo かを、受付の箱に置く前に見る (issue 511。正本は store.CheckRepo で、
@@ -156,37 +160,38 @@ func checkCardRepos(r store.Request, repos func() (map[string]string, error)) er
 
 // runCardAttach はファイルを受付の箱に写して添付の依頼を置く (移して記録に載せるのは dispatcher。issue 453)。
 func runCardAttach(args []string, dir string, stdout, stderr io.Writer) int {
-	id, file, note, err := parseAttach(args)
+	id, file, note, wait, err := parseAttach(args)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "pro-con card: %v\n%s\n", err, cardUsage)
 		return 2
 	}
-	reqID, err := store.SubmitAttachment(dir, id, file, note)
-	if err != nil {
-		_, _ = fmt.Fprintln(stderr, "pro-con card attach: 受付の箱に置けない:", err)
-		return 1
-	}
-	_, _ = fmt.Fprintln(stdout, reqID)
-	return 0
+	return submitAndWait(dir, "attach", func() (string, error) { return store.SubmitAttachment(dir, id, file, note) }, wait, stdout, stderr)
 }
 
-func parseAttach(args []string) (id, file, note string, err error) {
+func parseAttach(args []string) (id, file, note string, wait time.Duration, err error) {
 	fs := flag.NewFlagSet("pro-con card attach", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	fs.StringVar(&note, "note", "", "")
+	waitFlag(fs, &wait)
 	var pos []string // カードとファイルはフラグの前にも後にも置ける (parseCardArgs と同じ)
 	for len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		pos, args = append(pos, args[0]), args[1:]
 	}
 	if err := fs.Parse(args); err != nil {
-		return "", "", "", err
+		return "", "", "", 0, err
 	}
 	pos = append(pos, fs.Args()...)
 	if len(pos) != 2 {
-		return "", "", "", fmt.Errorf("attach は `attach <カード> <ファイル> [--note <一言>]` (位置引数は 2 個。受け取ったのは %d 個)", len(pos))
+		return "", "", "", 0, fmt.Errorf("attach は `attach <カード> <ファイル> [--note <一言>]` (位置引数は 2 個。受け取ったのは %d 個)", len(pos))
 	}
-	return pos[0], pos[1], note, nil
+	if wait < 0 {
+		return "", "", "", 0, fmt.Errorf("--wait は 0 以上の長さ: %v", wait)
+	}
+	return pos[0], pos[1], note, wait, nil
 }
+
+// waitFlag は箱に置く操作に共通の --wait (適用を待つ長さ。既定 addWait) を fs に足す。
+func waitFlag(fs *flag.FlagSet, wait *time.Duration) { fs.DurationVar(wait, "wait", addWait, "") }
 
 // issueList は --issue <repo>#<番号> を複数受ける。
 type issueList []card.IssueRef
@@ -231,7 +236,7 @@ var endings = map[string]card.Ending{
 	"answered": card.EndAnswered, "investigated": card.EndResearchOnly, "rejected": card.EndRejected, "pending-issue": card.EndPendingIssue,
 }
 
-// parseCardWait は引数を依頼と、add の --wait (適用を待つ長さ。既定 addWait、0 なら待たない) にする。操作ごとに要る引数が無ければエラー
+// parseCardWait は引数を依頼と --wait (適用を待つ長さ。既定 addWait、0 なら待たない) にする。操作ごとに要る引数が無ければエラー
 // (箱に置く前に止める。dispatcher で除けられるより早く気づける)。
 func parseCardWait(args []string) (store.Request, time.Duration, error) {
 	r, wait, err := parseCardArgs(args)
@@ -244,16 +249,17 @@ func parseCardWait(args []string) (store.Request, time.Duration, error) {
 func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 	wait := addWait
 	op, rest := args[0], args[1:]
-	if op == "run" { // pro-con card run C-001 -- make test (-- の後ろは argv。フラグとして読まない)
-		i := slices.Index(rest, "--")
-		if i != 1 || len(rest) < 3 {
-			return store.Request{}, wait, errors.New("run は `run <カード> -- <コマンド>...`")
-		}
-		cwd, _ := os.Getwd() // dispatcher が、頼んだのがそのカードの PG の worktree かを照らす
-		return store.Request{Kind: "run", CardID: rest[0], Command: shellJoin(rest[2:]), Cwd: cwd}, wait, nil
-	}
 	fs := flag.NewFlagSet("pro-con card "+op, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
+	waitFlag(fs, &wait)
+	if op == "run" { // pro-con card run C-001 [--wait 30s] -- make test (-- の後ろは argv。フラグとして読まない)
+		i := slices.Index(rest, "--")
+		if i < 1 || len(rest) < i+2 || fs.Parse(rest[1:i]) != nil || fs.NArg() != 0 {
+			return store.Request{}, wait, errors.New("run は `run <カード> [--wait <長さ>] -- <コマンド>...`")
+		}
+		cwd, _ := os.Getwd() // dispatcher が、頼んだのがそのカードの PG の worktree かを照らす
+		return store.Request{Kind: "run", CardID: rest[0], Command: shellJoin(rest[i+1:]), Cwd: cwd}, wait, nil
+	}
 	var r store.Request
 	r.Kind = op
 	var issues issueList
@@ -266,7 +272,6 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 		fs.StringVar(&r.Repo, "repo", "", "")
 		fs.StringVar(&r.Prompt, "prompt", "", "")
 		fs.StringVar(&purpose, "purpose", "", "")
-		fs.DurationVar(&wait, "wait", addWait, "")
 	case "plan":
 		fs.Var(&issues, "issue", "")
 		fs.Var((*afterList)(&r.After), "after", "")
