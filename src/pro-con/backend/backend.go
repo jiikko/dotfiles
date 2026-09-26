@@ -45,6 +45,7 @@ type Snapshot struct {
 	// Startup は dispatcher の起動時の確かめの要約 (起動から 10 分だけ。issue 483)。StartupAlert は復旧した・判定できないものがある
 	Startup      string
 	StartupAlert bool
+	Roles        card.Roles // dispatcher が起こさない役 (最後に回ったときの値)。人の番の目印 (card.Turn) に使う
 	Violations   []card.Violation
 }
 

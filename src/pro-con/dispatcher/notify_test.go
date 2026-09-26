@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,21 +11,51 @@ import (
 	"pro-con/store"
 )
 
-// 件数の文: 回答待ち (質問・権限) / 停滞 / 落ちて止めた、を別に数える。何も無ければ空。
+// 件数の文: 人の番 (質問・権限・人に回したレビュー) / 停滞 / 落ちて止めた、を別に数える。PM が先に受ける質問は数えない。何も無ければ空。
 func TestStatusText(t *testing.T) {
 	cards := []card.Card{
 		{State: card.Waiting, Wait: card.Wait{Kind: card.WaitQuestion}},
 		{State: card.Waiting, Wait: card.Wait{Kind: card.WaitPermission}},
 		{State: card.Waiting, Wait: card.Wait{Kind: card.WaitCrashed}},
+		{State: card.Review, History: []card.Event{{Text: card.HandoffText("取り込みの係", "衝突")}}},
+		{State: card.Review},
 		{State: card.Running, Stalled: true},
 		{State: card.Running},
 		{State: card.Done},
 	}
-	if got := Status(cards); got != "pro-con ?2 停滞1 🚨落ちた1" {
+	if got := Status(cards, card.Roles{}); got != "pro-con ?2 停滞1 🚨落ちた1" {
 		t.Fatalf("件数の文: %q", got)
 	}
-	if got := Status([]card.Card{{State: card.Running}}); got != "" {
+	if got := Status(cards, card.Roles{PMOff: true, IntegratorOff: true}); got != "pro-con ?4 停滞1 🚨落ちた1" {
+		t.Fatalf("起こさない役の質問・レビューを人の番に数えない: %q", got)
+	}
+	if got := Status([]card.Card{{State: card.Running}, cards[0]}, card.Roles{}); got != "" {
 		t.Fatalf("知らせることが無いのに文を出した: %q", got)
+	}
+}
+
+// PM が居れば、PG の質問は PM が先に受けるので人に知らせない。PM が人に回したら知らせ、件数にも数える。
+func TestAnnounceOnlyHumansTurn(t *testing.T) {
+	r := startedPM(t)
+	var rec recorder
+	rec.rig(r.d)
+	last := func() string {
+		if len(rec.published) == 0 {
+			return ""
+		}
+		return rec.published[len(rec.published)-1]
+	}
+	asked(t, r.dir, "C-009", "赤か青か", t0)
+	r.tick(t)
+	if len(rec.notified) != 0 || strings.Contains(last(), "?") {
+		t.Fatalf("PM が先に受ける質問を人に知らせた: pub=%q notif=%v", rec.published, rec.notified)
+	}
+	if _, err := store.Submit(r.dir, store.Request{Kind: "handoff", CardID: "C-009", Text: "好みは人が決める", From: "PM"}); err != nil {
+		t.Fatal(err)
+	}
+	r.tick(t)
+	if len(rec.notified) != 1 || !strings.Contains(rec.notified[0], "赤か青か") || last() != "pro-con ?1" {
+		t.Fatalf("人に回した質問を知らせない: pub=%q notif=%v", rec.published, rec.notified)
 	}
 }
 
@@ -131,5 +162,31 @@ func TestAnnounceRepublishesPeriodically(t *testing.T) {
 	}
 	if len(r.published) != 2 {
 		t.Fatalf("間隔ごとに書き直さない / 間隔の前に書き直した: %d 回", len(r.published))
+	}
+}
+
+// 人の番のまま列が変わったら知らせ直す (鍵はカード ID と列に入った時刻)。PM の repo が無ければ PG の質問も人の番で、
+// 質問の無いカードは列の名前を本文に出す。
+func TestAnnounceRenotifiesWhenHumansTurnMovesLane(t *testing.T) {
+	cr := newCrashRig(t) // PM の repo が無い (PM も取り込みの係も起こさない)
+	var r recorder
+	r.rig(cr.d)
+	if _, err := store.Submit(cr.dir, store.Request{Kind: "ask", CardID: "C-001", Question: "q1"}); err != nil {
+		t.Fatal(err)
+	}
+	cr.tick(t)
+	if len(r.notified) != 1 || !strings.Contains(r.notified[0], "q1") {
+		t.Fatalf("PM を起こさないのに PG の質問を人に知らせない: %v", r.notified)
+	}
+	if err := store.Update(cr.dir, func(st *store.State) error {
+		c := &st.Cards[0]
+		c.State, c.Since, c.Wait = card.Review, t0.Add(time.Minute), card.Wait{}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cr.tick(t)
+	if len(r.notified) != 2 || !strings.Contains(r.notified[1], card.Review.Label()) {
+		t.Fatalf("人の番のままレビューへ移ったのに知らせ直さない / 本文に列が無い: %v", r.notified)
 	}
 }

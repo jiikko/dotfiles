@@ -142,7 +142,7 @@ type Dispatcher struct {
 	lastStatus  string               // 最後に Publish した文
 	publishedAt time.Time            // 最後に Publish を試みた時刻
 	published   bool                 // 1 度でも Publish したか (起動の直後に空の文も書く。前の dispatcher が残した文を消す)
-	notified    map[string]bool      // 通知した回答待ちのカード (待ちを抜けたら消す)
+	notified    map[string]bool      // 通知した人の番 (カード ID@列に入った時刻。人の番を抜けたら消す)
 	stopFrom    map[string]time.Time // 印の付いたカードを、この dispatcher が最初に止めに入った時刻 (close.go。諦めるまでの時間の起点)
 	unknownSeen map[string]bool      // 知らない state の警告を出した session id (unknownStateNote。止め直しの周・Tick ごとに重ねない)
 

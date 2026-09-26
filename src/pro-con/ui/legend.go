@@ -54,5 +54,12 @@ func legendRows(inner int) []string {
 			rows = append(rows, "  "+l)
 		}
 	}
+	rows = append(rows, "", humanTag(humanMark+"の番")) // 印の意味 (452)。どれが人の番かの正本は card.Turn
+	for _, l := range strings.Split(ansi.Hardwrap(humansTurnMeaning, max(inner-2, 10), true), "\n") {
+		rows = append(rows, "  "+l)
+	}
 	return rows
 }
+
+const humansTurnMeaning = "人が操作しないと進まない (権限の確認・落ち続けて止めた PG・PM か取り込みの係が人に回したもの・" +
+	"起こさない設定の役の仕事)。黄の字はこれだけに使う"
