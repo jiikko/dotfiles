@@ -52,8 +52,8 @@ func (r *supTest) sup(dir string, scripts ...string) supervisor {
 			r.said = append(r.said, req.Note)
 			return nil
 		},
-		now:         time.Now,
-		restartWait: time.Millisecond, retryWait: time.Millisecond, crashLimit: 2, crashWindow: time.Hour, stopWait: 5 * time.Second,
+		now:        time.Now,
+		ownerGrace: time.Millisecond, restartWait: time.Millisecond, retryWait: time.Millisecond, crashLimit: 2, crashWindow: time.Hour, stopWait: 5 * time.Second,
 	}
 }
 
@@ -188,14 +188,65 @@ func TestSupervisorStopsPGsWithoutOwners(t *testing.T) {
 	}
 }
 
-// 別の dispatcher が lock を持っていて抜けた (exitLockHeld) のは落ちたと数えず、出来事は 1 度だけにして、空いたら引き継ぐ。
-func TestSupervisorRetriesWhileLockHeld(t *testing.T) {
+// dispatcher が exitLockHeld で抜けたのは落ちたと数えない (lock が空いていれば起こし直して引き継ぐ)。
+func TestSupervisorRetriesWhenLockFreed(t *testing.T) {
 	dir := t.TempDir()
 	openOwner(t, dir)
 	r := &supTest{}
 	res := r.sup(dir, "exit 3", "exit 3", "exit 3", "exit 3", "exit 0").run(t.Context())
-	if res.Reason != procsup.ReasonDone || r.starts != 5 || strings.Count(r.saidText(), "別の dispatcher が動いている") != 1 || strings.Contains(r.saidText(), "落ちた") {
-		t.Fatalf("lock を持たれていたのを落ちたと数えた / 何度も書いた: %+v starts=%d said=%q", res, r.starts, r.saidText())
+	if res.Reason != procsup.ReasonDone || r.starts != 5 || strings.Contains(r.saidText(), "落ちた") {
+		t.Fatalf("lock を持たれていたのを落ちたと数えた: %+v starts=%d said=%q", res, r.starts, r.saidText())
+	}
+}
+
+// 起こし直す前に別の dispatcher が lock を持っていれば、起こし直し続けずにそれに任せて抜ける (PG は止めない。
+// dispatcher は lock の前に claude --version を引くので、10 秒ごとに起こすと手で起動した dispatcher が動く間ずっと続く)。
+func TestSupervisorLeavesToAnotherDispatcher(t *testing.T) {
+	dir := t.TempDir()
+	openOwner(t, dir)
+	unlock, err := dispatcher.Lock(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	r := &supTest{}
+	res := r.sup(dir, "exit 3").run(t.Context())
+	if res.Reason != procsup.ReasonHalted || r.starts != 1 || r.stops != 0 || !strings.Contains(r.saidText(), "別の dispatcher が動いている") {
+		t.Fatalf("別の dispatcher が居るのに起こし直した / PG を止めた: %+v starts=%d stops=%d said=%q", res, r.starts, r.stops, r.saidText())
+	}
+}
+
+// 持ち主の画面が一瞬 0 に見えても (ctrl+r の exec の隙間)、猶予の間に戻れば PG を止めずに起こし直す。
+func TestSupervisorWaitsForOwnerDuringUpgrade(t *testing.T) {
+	dir := t.TempDir()
+	r := &supTest{}
+	s := r.sup(dir, "exit 1", "exit 0")
+	s.ownerGrace = 5 * time.Second
+	opened := make(chan *presence.Screen, 1)
+	go func() {
+		time.Sleep(200 * time.Millisecond) // 入れ替わった画面が印を置き直す
+		scr, _ := presence.Open(dir)
+		opened <- scr
+	}()
+	res := s.run(t.Context())
+	if scr := <-opened; scr != nil {
+		defer scr.Close()
+	}
+	if res.Reason != procsup.ReasonDone || r.starts != 2 || r.stops != 0 {
+		t.Fatalf("ctrl+r の隙間で持ち主が居ないと決めた: %+v starts=%d stops=%d said=%q", res, r.starts, r.stops, r.saidText())
+	}
+}
+
+// 起こせなかった (実行ファイルが消えた) ときは、人が止めた印を置かず PG も止めない (印は置き場で共有 = 別のバイナリの画面の keeper まで止める)。
+func TestSupervisorStartFailureDoesNotHold(t *testing.T) {
+	dir := t.TempDir()
+	openOwner(t, dir)
+	r := &supTest{}
+	s := r.sup(dir, "")
+	s.command = func() (*exec.Cmd, error) { return exec.Command("/nonexistent/pro-con"), nil }
+	res := s.run(t.Context())
+	if res.Reason != procsup.ReasonStartFailed || store.Held(dir) || r.stops != 0 || !strings.Contains(r.saidText(), "dispatcher を起こせない") {
+		t.Fatalf("起こせないだけで印を置いた / PG を止めた: %+v held=%v stops=%d said=%q", res, store.Held(dir), r.stops, r.saidText())
 	}
 }
 

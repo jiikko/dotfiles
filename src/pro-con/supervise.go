@@ -6,15 +6,22 @@ package main
 //
 // 子の終わり方:
 //   - rc=0: dispatcher が止める判断をした (止める印 = 最後の持ち主の画面の quit / --stop・画面が無い状態が続いた・信号・人が止めた印) → 一緒に抜ける
-//   - rc=exitLockHeld: 別の dispatcher が lock を持っている (kill -9 された前の supervisor の dispatcher・手で起動した dispatcher) → 数えずに間を空けて起こし直す
+//   - rc=exitLockHeld: 別の dispatcher が lock を持っている (kill -9 された前の supervisor の dispatcher・手で起動した dispatcher・--stop が止めている最中)
+//     → 落ちたと数えない。起こし直す前の確かめで lock がまだ持たれていれば、その dispatcher に任せて抜ける (下)
 //   - それ以外 (Tick の失敗・panic・kill -9): 落ちた → 間を空けて起こし直す。supCrashWindow の間に supCrashLimit を超えたら諦める
 //
 // 起こし直す前に見る止める条件 (dispatcher が居ない間は dispatcher が決められないので、ここで決める):
 //   - 人が止めた印 (store.Held) → 起こさずに抜ける (PG は --stop が止める)
 //   - 落ちた後に止め終えた (stop-result が落ちた時刻より新しい = 起こし直しの待ちの間に最後の持ち主の画面が quit した) → 起こさずに抜ける
-//   - 持ち主の画面が無い → PG を止めて抜ける (画面が起こした dispatcher が画面の無いときに抜ける形と同じ。join は起こさない = issue 481)
+//   - 別の dispatcher が lock を持っている → 起こさずに抜ける (その dispatcher が抜けたら画面の keeper が supervisor を起こす)。
+//     🚨 起こし直し続けない: dispatcher は lock を取る前に claude --version を引くので、10 秒ごとに起こすと手で起動した dispatcher が動く間ずっと続く
+//   - 持ち主の画面が ownerGrace の間ずっと無い → PG を止めて抜ける (画面が起こした dispatcher が画面の無いときに抜ける形と同じ。join は起こさない = issue 481)。
+//     一瞬で決めない: 画面の ctrl+r (exec) の間は、presence の flock が外れて持ち主が 0 に見える
 //
-// 諦めたとき: 人が止めた印を置いてから PG を止める (起こし直し続けて枠を使わない。印があるので画面の keeper も起こさない。
+// 起こせなかった (実行ファイルが消えた・fork の失敗) ときは、人が止めた印を置かずに抜ける (印は置き場で共有なので、別のバイナリで開いた
+// 画面の keeper まで止める。次の keeper が起こし直す = 前の形と同じ)。
+//
+// 落ち続けて諦めたとき: 人が止めた印を置いてから PG を止める (起こし直し続けて枠を使わない。印があるので画面の keeper も起こさない。
 // 画面の c か、手で pro-con dispatcher を起動すると外れる)。
 //
 // 🚨 kill -9 で supervisor が死んだときに dispatcher と PG が残るのは受け入れる (ユーザーの決定)。dispatcher は自分の決まり
@@ -52,6 +59,7 @@ type supervisor struct {
 	submit  func(r store.Request) error // 出来事を受付の箱に置く (次の dispatcher が events.jsonl に書く)
 	now     func() time.Time
 
+	ownerGrace                                    time.Duration // 持ち主の画面が無いと決めるまで待つ (ctrl+r の隙間を無いと数えない)
 	restartWait, retryWait, crashWindow, stopWait time.Duration
 	crashLimit                                    int
 }
@@ -111,7 +119,7 @@ func runSupervise(args []string, dir string, stdout, stderr io.Writer) int {
 		submit: func(r store.Request) error { _, err := store.Submit(dir, r); return err },
 		now:    time.Now,
 
-		restartWait: supRestartWait, retryWait: supRetryWait, crashLimit: supCrashLimit, crashWindow: supCrashWindow, stopWait: supStopWait,
+		ownerGrace: signalGrace, restartWait: supRestartWait, retryWait: supRetryWait, crashLimit: supCrashLimit, crashWindow: supCrashWindow, stopWait: supStopWait,
 	}
 	s.say(fmt.Sprintf("supervisor が dispatcher を起こす (pid %d)", os.Getpid()))
 	s.run(ctx)
@@ -145,7 +153,9 @@ func (s supervisor) run(ctx context.Context) procsup.Result {
 		Now: s.now,
 	})
 	switch res.Reason {
-	case procsup.ReasonGaveUp, procsup.ReasonStartFailed:
+	case procsup.ReasonStartFailed:
+		s.say("supervisor も抜ける (人が止めた印は置かない。画面が開いていれば、その keeper が起こし直す)")
+	case procsup.ReasonGaveUp:
 		if err := store.Hold(s.dir, s.now()); err != nil {
 			s.say("人が止めた印を置けない (開いている画面が supervisor を起こし直しうる): " + err.Error())
 		}
@@ -156,8 +166,10 @@ func (s supervisor) run(ctx context.Context) procsup.Result {
 		} else {
 			s.say(halt + "。supervisor も抜ける")
 		}
-	case procsup.ReasonDone, procsup.ReasonStopped:
+	case procsup.ReasonDone:
 		_, _ = fmt.Fprintf(s.out, "%s supervisor: dispatcher が抜けた (%s) ので、supervisor も抜ける\n", s.now().Format("15:04:05"), exitText(res.Err))
+	case procsup.ReasonStopped:
+		_, _ = fmt.Fprintf(s.out, "%s supervisor: 止める合図を受けたので、dispatcher を止めて抜ける (dispatcher は %s)\n", s.now().Format("15:04:05"), exitText(res.Err))
 	}
 	return res
 }
@@ -170,10 +182,29 @@ func (s supervisor) haltReason(since time.Time) (string, bool) {
 	if st, err := os.Stat(filepath.Join(s.dir, dispatcher.StopResultFile)); err == nil && st.ModTime().After(since) {
 		return "dispatcher が抜けた後に止め終えた (画面の quit か dispatcher --stop) ので、dispatcher を起こし直さない", false
 	}
-	if !ownersOpen(s.dir) {
+	if unlock, err := dispatcher.Lock(s.dir); errors.Is(err, dispatcher.ErrRunning) {
+		return "別の dispatcher が動いているので、それに任せて dispatcher を起こさない (抜けたら画面が supervisor を起こし直す)", false
+	} else if err == nil {
+		unlock()
+	}
+	if !ownersAppear(s.dir, s.ownerGrace) {
 		return "開いている持ち主の画面が無いので、dispatcher を起こし直さない", true
 	}
 	return "", false
+}
+
+// ownersAppear は、grace の間に 1 度でも持ち主の画面が開いているのを見たか (見たらすぐ真を返す)。
+func ownersAppear(dir string, grace time.Duration) bool {
+	deadline := time.Now().Add(grace)
+	for {
+		if ownersOpen(dir) {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 // stopPGs は出来事にしてから PG を止める (止めきれなくても抜ける。残りは dispatcher.log と stop-result)。
@@ -190,10 +221,7 @@ func (s supervisor) event(e procsup.Event) {
 	switch e.Kind {
 	case procsup.EventCrashed:
 		s.say(fmt.Sprintf("dispatcher が落ちた (%s。%s の間に %d 回目)。%s 後に起こし直す", exitText(e.Err), s.crashWindow, e.Crashes, e.Wait))
-	case procsup.EventRetrying:
-		if !e.Repeat {
-			s.say(fmt.Sprintf("別の dispatcher が動いているので、%s ごとに起こし直す (その dispatcher が抜けたら引き継ぐ)", e.Wait))
-		}
+	case procsup.EventRetrying: // 起こし直す前の確かめ (haltReason) が、lock がまだ持たれていれば理由を書いて抜ける
 	case procsup.EventGaveUp:
 		s.say(fmt.Sprintf("dispatcher が %s の間に %d 回落ちたので、起こし直さない (最後: %s)", s.crashWindow, e.Crashes, exitText(e.Err)))
 	case procsup.EventStartFailed:
