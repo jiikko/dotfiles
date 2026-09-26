@@ -44,11 +44,11 @@
 
 ## 受け入れ条件
 
-- [ ] tmux の中では、attach が pro-con の上の窓 (A) で開き、窓に pro-con が用意した戻る操作が出て、それで pro-con に戻る (見た目は人が見本から選ぶ)
-- [ ] tmux の外では、attach する前か間に、戻る操作 (Ctrl+Z) が画面に出る
-- [ ] Ctrl+Z で pro-con に戻り、画面が描き直されてキーが効く (隔離した tmux の `-L` サーバで確かめる。本番の tmux サーバでやらない)
-- [ ] 戻れなくなったときに、外から attach の接続だけを終わらせる手段があり、PG の session は動き続ける
-- [ ] ヘルプ・README・`pro-con help` に戻り方がある
+- [x] tmux の中では、attach が pro-con の上の窓 (A) で開き、窓に pro-con が用意した戻る操作が出て、それで pro-con に戻る (見た目は人が見本から選ぶ)
+- [x] tmux の外では、attach する前か間に、戻る操作 (Ctrl+Z) が画面に出る
+- [x] Ctrl+Z で pro-con に戻り、画面が描き直されてキーが効く (隔離した tmux の `-L` サーバで確かめる。本番の tmux サーバでやらない)
+- [x] 戻れなくなったときに、外から attach の接続だけを終わらせる手段があり、PG の session は動き続ける
+- [x] ヘルプ・README・`pro-con help` に戻り方がある
 
 ## 関連ファイル
 
@@ -63,4 +63,12 @@
 
 ## 進捗
 
-(まだ無い)
+- 2026-09-27 (C-082): 案 A で作った。見た目はユーザーが見本から選んだ (見出し=長い・枠=オレンジ・戻るキー=外の tmux の prefix + d と Ctrl+Z・tmux の外の案内=毎回)
+  - 🚨 popup の中では外の tmux の bind が効かない (root も prefix も、キーは全部 popup の中身へ渡る。隔離 tmux 3.7b で確かめた)。
+    そこで popup の中に pro-con 専用の入れ子の tmux サーバ (一時ディレクトリの socket・`-f` でユーザーの設定を読まない) を起こし、
+    戻るキーはそのサーバの bind (`kill-server`) にした。本番の tmux サーバには bind を足さない (`ui/attachpopup.go`)
+  - prefix は attach のたびに外の tmux から読む。prefix + d で外のセッションは detach されない・prefix 2 回で prefix のキーが中身へ届く、を隔離 tmux で確かめた
+  - 本物の `claude attach` は Ctrl+Z で rc=0 で終わる (止まらない)。使い捨ての bg session を popup で開いて戻るキーで閉じても、session は idle のまま残った
+  - tmux の外: 端末を渡す前に戻り方の案内の枠 (`ui/attachguide.go`)。戻り・キーが効くことを e2e の画面で確かめた
+  - 戻れなくなったとき: `pro-con attach --leave` (`leavecmd.go`)。`?` の表 (流れ)・`pro-con help usage`・README に戻り方
+  - 518 の懸念 (Ctrl+Z で戻ったとき描き直すか): tmux の中は端末を渡さないので `ExecProcess` を通らない。外は 518 の直しの上の経路のまま
