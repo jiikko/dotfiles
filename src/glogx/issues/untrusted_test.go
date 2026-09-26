@@ -114,7 +114,7 @@ func TestIssueC1ControlCharsAreDropped(t *testing.T) {
 // タブを一律 4 スペースへ潰すと、行頭以外のタブで桁がずれる (`ab<TAB>c` が `ab  c` ではなく
 // `ab    c` になる)。実際にこの実装を最初に入れたとき壊した箇所なので、経路ごと固定する。
 func TestBodyKeepsTabStopAlignment(t *testing.T) {
-	got := renderLines("```\nab\tc\n```\n", 40, false)
+	got := NewBody("```\nab\tc\n```\n").Lines(40, false)
 	joined := strings.Join(got, "\n")
 	if !strings.Contains(joined, "ab  c") {
 		t.Errorf("タブストップ揃えが崩れた (一律展開になっている): %q", joined)
