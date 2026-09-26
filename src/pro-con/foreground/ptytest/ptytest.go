@@ -23,9 +23,9 @@ func Helper(f func(mode string) string) {
 		return
 	}
 	if fg, mine, err := foreground.Owner(int(os.Stdin.Fd())); err != nil || fg != mine {
-		fmt.Printf("RESULT not-foreground fg=%d mine=%d err=%v\n", fg, mine, err)
+		_, _ = fmt.Fprintf(os.Stdout, "RESULT not-foreground fg=%d mine=%d err=%v\n", fg, mine, err)
 	} else {
-		fmt.Println("RESULT " + f(mode))
+		_, _ = fmt.Fprintln(os.Stdout, "RESULT "+f(mode)) // Run が script(1) の出力から読む
 	}
 	os.Exit(0)
 }

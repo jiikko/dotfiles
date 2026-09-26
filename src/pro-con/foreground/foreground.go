@@ -71,8 +71,12 @@ func Reclaim(fd int) (was int, err error) {
 	if err := c.Run(); err != nil {
 		return fail(fmt.Errorf("%w: %s", err, strings.TrimSpace(errOut.String())))
 	}
-	if now, _, err := Owner(fd); err != nil || now != mine {
-		return fail(fmt.Errorf("移した後の前面が %d (err=%v)", now, err))
+	now, _, err := Owner(fd)
+	if err != nil {
+		return fail(err)
+	}
+	if now != mine {
+		return fail(fmt.Errorf("移した後の前面が %d のまま", now))
 	}
 	return fg, nil
 }
