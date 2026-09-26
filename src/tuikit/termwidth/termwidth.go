@@ -261,7 +261,7 @@ func TruncateMeasure(s string, width int, tail string) (string, int) {
 // (`Cut("x1️⃣y", 3)` が "x" になった。敵対的レビューで実証)。1 字ずつ詰める形は、キーキャップの
 // 数だけ切り直すので長い行で遅い (O(はみ出し × 長さ))。二分探索なら O(長さ × log width)。
 func truncateOver(s string, width int, tail string) (string, int) {
-	r := ansi.Truncate(s, width, tail)
+	r := ansiTruncate(s, width, tail)
 	w := Of(r)
 	if width <= 0 || w <= width {
 		return r, w
@@ -272,7 +272,7 @@ func truncateOver(s string, width int, tail string) (string, int) {
 	lo, hi := 0, width-1
 	for lo <= hi {
 		t := lo + (hi-lo)/2
-		c := ansi.Truncate(s, t, tail)
+		c := ansiTruncate(s, t, tail)
 		if cw := Of(c); cw <= width {
 			best, bestW, lo = c, cw, t+1
 		} else {
@@ -293,7 +293,7 @@ func Slice(s string, left, right int) string {
 	if left <= 0 {
 		return head
 	}
-	return ansi.TruncateLeft(head, left, "")
+	return ansiTruncateLeft(head, left, "")
 }
 
 // SliceFrom は s の表示桁 left から末尾までを返す (Slice(s, left, Of(s)) と同じ。left が末尾以降なら "")。
@@ -309,7 +309,7 @@ func sliceFromKnown(s string, sw, left int) string {
 	case left <= 0:
 		return s
 	}
-	return ansi.TruncateLeft(s, left, "")
+	return ansiTruncateLeft(s, left, "")
 }
 
 // SplitAround は s から表示桁 [x, x+w) を抜いた左右を返す。左は [0, x) で全角を跨がない側で切り (幅 leftW <= x)、
@@ -367,7 +367,7 @@ func TruncateLeft(s string, width int, head string) string {
 	// それでも決まらなければ、収まる最小の drop を二分探索する (結果の幅は drop について単調)。
 	// どれも収まらなければ空を返す
 	fits := func(d int) (string, int, bool) {
-		r := ansi.TruncateLeft(s, d, head)
+		r := ansiTruncateLeft(s, d, head)
 		w := Of(r)
 		return r, w, w <= width
 	}

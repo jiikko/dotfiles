@@ -54,9 +54,32 @@ asm の速い道を入れる場所は 1 つにしたい。そのために、端�
     **0%** (CPU の 47% はファイルを開くシステムコール)
   - 再評価の trigger: 長い外部テキスト (数 MB の CI ログ等) の取り込みで待ちが目に見えると報告されたとき。まず pure Go の ASCII の速い道
     (1 byte ずつの比較で `needsSanitize` の 2 回の走査を 1 回にする) を試し、asm はその後
-- **次の候補 (未着手)**: pro-con の切り詰め・切り出し (上の 19〜22%)。行の大半が ASCII + SGR なら、`termwidth` の `Truncate` / `Cut` に
-  `fastDispWidth` と同じ形の速い道 (書記素を 1 つずつ数えずに切る位置を求める) を pure Go で入れ、pro-con の FrameBump / DiffBoardView で測る。
-  asm はその後、10% に届かなかったときだけ (523 の方針どおり)
+- **5. 切り詰め・切り出しの速い道 (2026-09-27、pure Go。asm は入れていない)**: `termwidth` が x/ansi の `Truncate` / `TruncateLeft` を
+  呼んでいた 5 か所を `ansiTruncate` / `ansiTruncateLeft` (`fasttrunc.go`) に替えた。行が `fastDispWidth` の受理集合 (印字可能 ASCII・SGR・
+  幅を表に持つ記号) だけなら、書記素を 1 つずつ走査せずに x/ansi と同じ規則で切る位置を求め、受理しない行は x/ansi に任せる。
+  - 一致: x/ansi 本体を正解役にした総当たり (`TestAnsiTruncateMatchesAnsi`: 部品 18 種を最大 4 個並べた全列 × 幅 -1〜9 × tail 5 通り × 左右) と
+    差分 fuzz (`FuzzAnsiTruncateMatchesAnsi`、60 秒・1,134 万 exec) で不一致 0。変異 3 本 (切った後ろの SGR を落とす / 境界を 1 ずらす /
+    左側の SGR を落とす) がそれぞれ red
+  - 実測 (この Mac、変更前と変更後のテストバイナリを交互に 8 回、benchstat の中央値。🚨 計測中のロードアベレージが 7〜14 で、ばらつきが ±30〜70% と大きい):
+
+    | benchmark | 変更前 | 変更後 | 差 |
+    |---|---|---|---|
+    | pro-con DiffBoardView/closed | 431.9µs | 294.5µs | -31.8% (p=0.028) |
+    | pro-con DiffBoardView/open | 479.6µs | 360.6µs | -24.8% (p=0.038) |
+    | pro-con FrameBump / FrameMove / FrameGlide | — | — | 3 本とも ~ (有意差なし) |
+    | glogx 6 本 (ViewSteady ほか) | geomean 35.04µs | 25.61µs | **-26.9%** (6 本とも p≤0.01) |
+
+    allocs/op は最大 -1.3%、B/op は最大 +1.7% (切った後ろに SGR がある行で SGR を並べ直す分)
+  - pro-con のアニメーション (Bump / Move / Glide) に効かない理由: 画面の 50 行中 12 行が受理集合の外で、12 行とも原因は日本語 (カードの
+    タイトルの漢字・ひらがな)。アニメーションで何度も切り貼りされるのがその行で、x/ansi へ回っている (変更後の FrameBump の profile で
+    `ansi.StringWidth` 12.8% + `ansi.Truncate` 7.5%)
+- **次の候補 (未着手)**: 受理集合に日本語 (CJK 統合漢字・ひらがな・カタカナ・全角形) を足す。幅は x/ansi から表に焼く (今の記号と同じ)。
+  足すと、幅の速い道・今回の切り詰めの速い道・NEON 版の 3 つが同時に日本語の行に効く。要るもの:
+  - 受理集合の不変条件 (どの字も単独で 1 書記素) を守る: ひらがなの結合用の濁点・半濁点 (U+3099 / U+309A) など、書記素を伸ばす字は除く。
+    `TestAcceptedSymbolsNeverCombineWithEachOther` を足した範囲に広げる
+  - 🚨 NEON 版 (`fastwidth_arm64.s`) は「3 byte の UTF-8 で表に届く先頭は 0xe0〜0xe2 だけ」と決め打ちしている。表の範囲と一緒に直し、
+    `FuzzFastDispWidthMatchesGeneric` で Go 版と突き合わせる
+  - 測り方は今回と同じ (pro-con の FrameBump / FrameMove / FrameGlide を主に)
 
 - 寄せただけで十分速くなれば、asm は入れない (520 の方針どおり)
 - 新しい lib は立てない (`termwidth` に「切る・詰める」の API を足す)。別の lib が要ると分かったら、そのときに決める
