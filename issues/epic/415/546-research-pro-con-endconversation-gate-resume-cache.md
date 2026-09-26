@@ -1,4 +1,4 @@
-# new (research): PG の再開がキャッシュを外す残りの原因 (system prompt の EndConversation の段が gate の起動時の値で揺れる)
+# 546 (research): PG の再開がキャッシュを外す残りの原因 (system prompt の EndConversation の段が gate の起動時の値で揺れる)
 
 起票日: 2026-09-27
 

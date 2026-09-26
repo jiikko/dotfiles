@@ -37,7 +37,7 @@
 - [x] PG を起こすとき (起動と再開の両方) に `SendFeedback` の有無を揃えた: `pro-con: PG・PM の --settings に feedbackDrafts: off を足し、起動と再開で SendFeedback の有無を揃える (525)`。
   `--disallowedTools` ではなく設定 `feedbackDrafts: "off"` にした (理由は下)。PM も同じ `sessionSettings` を使うので揃う。haiku (要約役・btw) は 1 回きりの `-p` で再開が無いので付けない
 - [x] テスト (偽の claude なし。引数を組む関数を直接): 起動と再開の `--settings` に同じ `"feedbackDrafts":"off"` が入る (`launcher_test.go` の 2 本)。旧コードに戻すと 2 本とも赤になるのを確かめた
-- [ ] 効いたかを、入れた後の本物の PG の再開で数え直す (取り込みの後)。🚨 **これだけでは外れは減らない見込み** (下の「実測」3)。続きは `new-research-pro-con-endconversation-gate-resume-cache.md`
+- [ ] 効いたかを、入れた後の本物の PG の再開で数え直す (取り込みの後)。🚨 **これだけでは外れは減らない見込み** (下の「実測」3)。続きは `546-research-pro-con-endconversation-gate-resume-cache.md`
 
 ### 実測 (claude 2.1.283)
 
