@@ -504,7 +504,9 @@ func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo stri
 	home, _ := os.UserHomeDir() // 分からなければ "" (言語と ~/.claude/CLAUDE.md の除外を渡さないだけで、起動は止めない)
 	haiku := dispatcher.HaikuSettings(home)
 	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{Claude: cl.Path, UserSettings: userSettingsPath(home)},
-		ResolveCodex: func(ctx context.Context) (dispatcher.Tool, error) { return dispatcher.ResolveCodex(ctx, home) }, // e2e の偽の PG は codex を呼ばないので上の形には渡さない PMRepo: pmRepo, PMGuide: pmGuide, PMOff: pmOff, IntegratorGuide: integratorGuide,
+		PMRepo: pmRepo, PMGuide: pmGuide, PMOff: pmOff, IntegratorGuide: integratorGuide,
+		// e2e の偽の PG は codex を呼ばないので、上の e2e の形には渡さない (514)
+		ResolveCodex: func(ctx context.Context) (dispatcher.Tool, error) { return dispatcher.ResolveCodex(ctx, home) },
 		Runner:       dispatcher.ExecRunner{Lockman: "lockman"}, Summarize: dispatcher.HaikuSummarize(cl.Path, dir, haiku), Ask: dispatcher.HaikuAsk(cl.Path, dir, haiku), Usage: dispatcher.ReadUsage(cl.Path, dir),
 		Procs: dispatcher.PSProcs, ProgressGit: dispatcher.ExecProgressGit{}, BootTime: dispatcher.KernBootTime, JobsDir: filepath.Join(filepath.Dir(projects), "jobs"),
 		List: func(ctx context.Context) ([]agents.Session, error) {
