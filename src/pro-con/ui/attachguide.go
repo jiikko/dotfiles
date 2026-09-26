@@ -15,9 +15,6 @@ import (
 	"tuikit/layout"
 )
 
-// attachGuideOnce は案内をこの画面で初回だけ出すか (false = 毎回。2026-09-26 にユーザーが毎回を選んだ)。
-const attachGuideOnce = false
-
 // attachGuideLines は案内の枠の中身 (装飾なし)。
 var attachGuideLines = []string{
 	"pro-con に戻るには Ctrl+Z",
@@ -53,7 +50,6 @@ func (m *Model) handleAttachGuideKey(k tea.KeyPressMsg) tea.Cmd {
 		m.info("attach を取りやめた (案内を出している間に画面が変わった)")
 		return nil
 	}
-	m.guideSeen = true
 	return m.execAttach(*g)
 }
 

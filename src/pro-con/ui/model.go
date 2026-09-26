@@ -141,7 +141,6 @@ type Model struct {
 	attachTexts map[string][]string  // 文字の添付の中身 (パスごとに 1 度だけ読む。attachments.go)
 	popup       *PopupAttach         // tmux の中の attach を開く popup (nil なら端末を渡す。attachpopup.go)
 	guide       *attachReadyMsg      // tmux の外で端末を渡す前の案内に載せている attach (nil = 出していない。attachguide.go)
-	guideSeen   bool                 // この画面で案内から attach へ進んだことがある (attachGuideOnce なら 2 回目から出さない)
 
 	set settings // s で開く設定画面 (settings.go)
 }
@@ -300,7 +299,7 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 			m.info("attach を取りやめた (待っている間に画面が変わった)")
 			return m, nil
 		}
-		if m.popup == nil && !(attachGuideOnce && m.guideSeen) { // tmux の外: 端末を渡す前に戻り方を出す (attachguide.go)
+		if m.popup == nil { // tmux の外: 端末を渡す前に毎回、戻り方を出す (attachguide.go。毎回はユーザーが選んだ)
 			m.askAttachGuide(msg)
 			return m, nil
 		}
