@@ -48,4 +48,8 @@ dispatcher も同じ transcript を読んでいて、画面より条件が悪い
   テスト: `live/transcriptcache_test.go` の 3 本と `TestTranscriptReaderReusesUnchangedTranscript`。`bin/mutate-verify` で 6 本の変異
   (キャッシュを当てない / 更新時刻を見ない / 失敗を覚える / 上限を外す / 使った順を更新しない / dispatcher がキャッシュを迂回する) が red
 - [x] 画面が transcript を読まずに済むようにする (502 と同じ commit。dispatcher が `store.Seen` に書いた出力の末尾を読む。dispatcher が回っていないときだけ画面が自分で読む)
-- [ ] (見送り) 差分読み: 変わったときの 1 回の解析は残る。上の 2 つの後に測って要否を決める
+- [x] 差分読みは採らない (2026-09-26 に判断): 上の 2 つの後、transcript を解析するのは dispatcher だけで、PG 1 体につき変化 1 回あたり 1 回
+  (5.7 ms / 2.9 MB。8.5 MB の transcript での実測)。tick は 3 秒ごとなので PG 1 体あたり CPU 約 0.2% の見積もり (実測ではない)。
+  しかも画面ではなく dispatcher のプロセスなので、描画の GC (494) には効かない。差分読みは行の途中で切れた分の持ち越し・ファイルの縮みと差し替え・
+  末尾 512KB (`tailBytes`) の窓の意味の保ち方を新しく持ち込むので、この量には見合わない。
+  再評価の trigger: 同時に走る PG が 10 体を超える / dispatcher の CPU が目に見える (`ps` で数 % 以上) / transcript がさらに大きくなって 1 回が 20 ms を超える
