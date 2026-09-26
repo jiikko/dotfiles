@@ -225,34 +225,19 @@ func inbox(dir string) []Request {
 	return out
 }
 
-// Load は記録を読む。無ければ空の記録。壊れていたらエラー (空と区別する)。
-func Load(dir string) (State, error) {
-	data, err := os.ReadFile(filepath.Join(dir, StateFile))
-	if errors.Is(err, os.ErrNotExist) {
-		return State{NextID: 1}, nil
-	}
-	if err != nil {
-		return State{}, err
-	}
-	var st State
-	if err := json.Unmarshal(data, &st); err != nil {
-		return State{}, fmt.Errorf("カードの記録 (%s) を読めない: %w", filepath.Join(dir, StateFile), err)
-	}
-	if st.NextID < 1 {
-		st.NextID = 1
-	}
-	return st, nil
-}
-
 // Apply は受付の箱の依頼を置いた順に記録へ適用する (dispatcher だけが呼ぶ)。記録を書いてから箱のファイルを片付ける。
 // repos は設定の repo (名前 → パス)。カードの repo をそれ以外にする依頼 (add / plan) は除ける (CheckRepo。issue 511)。nil なら repo を見ない (設定を持たない呼び手)。
 func Apply(dir string, now time.Time, repos map[string]string) ([]Result, error) {
-	st, err := Load(dir)
+	box := filepath.Join(dir, InboxDir)
+	names, err := filepath.Glob(filepath.Join(box, "*.json"))
 	if err != nil {
 		return nil, err
 	}
-	box := filepath.Join(dir, InboxDir)
-	names, err := filepath.Glob(filepath.Join(box, "*.json"))
+	if len(names) == 0 { // 箱が空なら書かない (Tick の大半)。記録が壊れていないかだけは、読み直さずに見る (issue 528)
+		_, err := Load(dir)
+		return nil, err
+	}
+	st, err := loadFresh(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -429,7 +414,7 @@ func tagScreen(before State, next *State, screen string) {
 // Update は dispatcher の中でカードを直接進める (PG の起動で作業中へ、など。箱を通さない dispatcher 自身の操作)。
 // f が st を書き換え、不変条件に新しい違反が出なければ記録を書く。🚨 呼ぶのは dispatcher だけ (Apply と同じ書き手)。
 func Update(dir string, f func(*State) error) error {
-	st, err := Load(dir)
+	st, err := loadFresh(dir)
 	if err != nil {
 		return err
 	}
