@@ -33,8 +33,14 @@ const AutoClearText = "完了から 24 時間たったので自動で片付け�
 // 移すのは完了のカードのうち、片付けた (x) か完了から AutoClearAfter たったもの。PG を止め終えていない・削除の途中・
 // 答えていない btw がある・記録に残る子カードの親 (外すと子が親を失う) は残す。自動で片付けたカードには印と履歴を付けてから移す。
 func Archive(dir string, now time.Time) ([]card.Card, error) {
-	st, err := Load(dir)
+	st, err := Load(dir) // 移すものが無い Tick が大半なので、判定は読み直さずに (issue 528)
 	if err != nil {
+		return nil, err
+	}
+	if len(movable(st.Cards, now)) == 0 {
+		return nil, nil
+	}
+	if st, err = loadFresh(dir); err != nil { // 書く前は必ず読み直して判定し直す
 		return nil, err
 	}
 	move := movable(st.Cards, now)

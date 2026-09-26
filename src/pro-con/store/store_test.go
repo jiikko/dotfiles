@@ -283,11 +283,20 @@ func TestAppliesInSubmitOrder(t *testing.T) {
 // 壊れた記録は空と区別する (空として扱うと、次の Apply が全部のカードを消して書き直す)。
 func TestBrokenStateIsAnError(t *testing.T) {
 	dir := t.TempDir()
+	if err := Update(dir, func(s *State) error { s.NextID = 3; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(dir); err != nil { // 読めた記録をキャッシュに置いてから壊す (前の結果を返さないこと)
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(dir, StateFile), []byte("{壊れた"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Load(dir); err == nil {
-		t.Fatal("壊れた記録を空として読んだ")
+		t.Fatal("壊れた記録を空として (または前に読めた記録として) 読んだ")
+	}
+	if _, err := Apply(dir, t0, nil); err == nil { // 箱が空でも黙らない
+		t.Fatal("箱が空の Apply が壊れた記録を見逃した")
 	}
 	submit(t, dir, Request{Kind: "add", Title: "x"})
 	if _, err := Apply(dir, t0, nil); err == nil {
