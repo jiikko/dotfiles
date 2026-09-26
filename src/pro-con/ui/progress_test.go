@@ -75,3 +75,19 @@ func TestHangWrapKeepsIndent(t *testing.T) {
 		}
 	}
 }
+
+// 入力待ちで止まった PG のカードで r を押すと、回答の入力欄を開かずに「a で attach して答える」と断る (issue 545)。
+func TestAnswerRefusesPromptWaitingCard(t *testing.T) {
+	be := newSpy()
+	be.snap.Cards = []card.Card{{ID: "C-001", State: card.Waiting, Since: be.snap.Now, Wait: card.Wait{Kind: card.WaitPermission, Question: "Bash を許す?"}}}
+	m := New(be, nil)
+	m.setSnap(be.Snapshot())
+	m.selected = "C-001"
+	press(m, "r")
+	if m.mode == modeInput || m.mode == modeForm {
+		t.Fatal("入力待ちのカードで回答の入力欄を開いた")
+	}
+	if !strings.Contains(m.toasts.Text(), "a で attach して答える") {
+		t.Fatalf("入力待ちの断りの文が出ない: %q", m.toasts.Text())
+	}
+}

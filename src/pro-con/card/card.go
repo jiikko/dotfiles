@@ -227,6 +227,7 @@ func (c *Card) EnterPrompt(now time.Time, what string) {
 	c.Stalled = false
 	c.Wait = Wait{Kind: WaitPermission, Question: PromptQuestion(what)}
 	c.History = append(c.History, Event{At: now, Text: "PG が入力待ち (" + what + ") で止まった。attach して答えると続きから動く"})
+	c.PromptLaneKey = c.LaneKey()
 	c.Enter(Waiting, now)
 }
 
@@ -241,6 +242,10 @@ func (c *Card) LeavePrompt(now time.Time, why string) {
 	c.Wait = Wait{}
 	c.History = append(c.History, Event{At: now, Text: why})
 	c.Enter(Running, now)
+	if !c.PromptLaneKey.IsZero() { // 入力待ちに入る前の位置へ戻す (人が並べた順も、入った順も)
+		c.Rank = Rank{Key: c.PromptLaneKey, For: c.Since}
+		c.PromptLaneKey = time.Time{}
+	}
 }
 
 // StallThreshold は watchdog が「進捗なし」を停滞とみなすまでの時間。コマンドの実行中は見込みの 2 倍と base の
@@ -292,15 +297,17 @@ type Card struct {
 	State   State
 	Since   time.Time // 今の State に入った時刻
 	// Rank は人が入れ替えたレーンの中の並び (issue 470。rank.go)。Since が変わる (列を移る) と効かなくなる
-	Rank    Rank `json:",omitzero"`
-	Wait    Wait
-	Stalled bool // watchdog が停滞と判定した
-	Exec    Exec // 今実行しているコマンド (作業中の列のまま。列は担当が変わるときだけ移る)
-	Issues  []IssueRef
-	Ending  Ending
-	Orders  []Order
-	Btws    []Btw `json:",omitempty"`
-	History []Event
+	Rank Rank `json:",omitzero"`
+	// PromptLaneKey は入力待ちに入る前の、作業中の列での位置 (LaneKey)。入力待ちの 1 往復で並べた順が外れないよう、戻るときに Rank を付け直す (issue 545)
+	PromptLaneKey time.Time `json:",omitzero"`
+	Wait          Wait
+	Stalled       bool // watchdog が停滞と判定した
+	Exec          Exec // 今実行しているコマンド (作業中の列のまま。列は担当が変わるときだけ移る)
+	Issues        []IssueRef
+	Ending        Ending
+	Orders        []Order
+	Btws          []Btw `json:",omitempty"`
+	History       []Event
 	// Trail は列を移った足跡 (issue 516。trail.go)。列を移すのは Enter だけ
 	Trail []Step `json:",omitempty"`
 	// Attachments は PG が `pro-con card attach` で付けた添付 (付けた順。issue 453)

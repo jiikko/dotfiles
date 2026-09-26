@@ -37,6 +37,9 @@ func (d *Dispatcher) trackPrompts(now time.Time, ss []agents.Session) ([]eventlo
 		}
 		switch {
 		// テストの係の結果を待つ PG は idle で入力待ちにならない。待ち (WaitResource) を上書きすると頼みを見失うので移さない
+		// 🚨 PG が card run の後も同じ turn で動き続けて入力待ちで止まると、ここでは人の番にならない (issue 545 で見送り)。
+		// 両方を持つには 1 枚のカードに待ちを 2 つ持たせる作りの変更が要り、PG の規律 (頼んだら turn を終える。dispatcher.go の Prompt) に頼る。
+		// レビューの列の PG は 536 で止めるので起きない。本番でこの形 (結果待ちのカードの PG が status waiting) が出たら見直す
 		case c.State == card.Running && c.Wait.Kind == card.WaitNone && !c.AwaitsRun() && ok && s.Waiting():
 			what := s.WaitingLabel()
 			if err := d.update(c.ID, func(cc *card.Card) { cc.EnterPrompt(now, what) }); err != nil {

@@ -3,6 +3,7 @@ package card
 import (
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -92,5 +93,43 @@ func TestMoveKeepsLaterArrivalsBelow(t *testing.T) {
 	cs = append(cs, Card{ID: "C-007", State: Planned, Since: t0}) // 同じ Apply (同じ now) で後から積まれた
 	if got := lane(cs, Planned, ""); !slices.Equal(got, []string{"C-006", "C-005", "C-007"}) {
 		t.Fatalf("後から来たカードは末尾のはず: %v", got)
+	}
+}
+
+// 入力待ちの 1 往復 (EnterPrompt → LeavePrompt) で、作業中の列の中の位置が変わらない。人が並べた順も、入った順も (issue 545)。
+func TestPromptRoundTripKeepsLanePosition(t *testing.T) {
+	t0 := time.Date(2026, 9, 27, 8, 0, 0, 0, time.UTC)
+	ids := func(cs []Card) string {
+		var out []string
+		for _, c := range Board(cs) {
+			if c.State == Running {
+				out = append(out, c.ID)
+			}
+		}
+		return strings.Join(out, ",")
+	}
+	// 入った順: A が先。A が入力待ちを 1 往復しても A が先のまま
+	cs := []Card{{ID: "C-001", State: Running, Since: t0}, {ID: "C-002", State: Running, Since: t0.Add(time.Minute)}}
+	cs[0].EnterPrompt(t0.Add(2*time.Minute), "Bash")
+	cs[0].LeavePrompt(t0.Add(3*time.Minute), "答えた")
+	if got := ids(cs); got != "C-001,C-002" {
+		t.Fatalf("入った順が入力待ちの往復で崩れた: %s", got)
+	}
+	// 人が並べた順: C-002 を C-001 の上へ動かしてから、C-002 が入力待ちを 1 往復しても C-002 が上のまま
+	cs = []Card{{ID: "C-001", State: Running, Since: t0}, {ID: "C-002", State: Running, Since: t0.Add(time.Minute)}}
+	if _, err := Move(cs, "C-002", "", -1); err != nil {
+		t.Fatal(err)
+	}
+	if got := ids(cs); got != "C-002,C-001" {
+		t.Fatalf("前提: 並べ替えが効いていない: %s", got)
+	}
+	for i := range cs {
+		if cs[i].ID == "C-002" {
+			cs[i].EnterPrompt(t0.Add(2*time.Minute), "Bash")
+			cs[i].LeavePrompt(t0.Add(3*time.Minute), "答えた")
+		}
+	}
+	if got := ids(cs); got != "C-002,C-001" {
+		t.Fatalf("人が並べた順が入力待ちの往復で崩れた: %s", got)
 	}
 }
