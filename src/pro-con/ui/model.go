@@ -141,6 +141,8 @@ type Model struct {
 	stops       *stopState           // 止まり方の見張り (WatchStops) と分け合う状態 (terminal.go)
 	openFiles   func([]string) error // 添付を外のアプリで開く (既定は open。テストは差し替える。attachments.go)
 	attachTexts map[string][]string  // 文字の添付の中身 (パスごとに 1 度だけ読む。attachments.go)
+	popup       *PopupAttach         // tmux の中の attach を開く popup (nil なら端末を渡す。attachpopup.go)
+	guide       *attachReadyMsg      // tmux の外で端末を渡す前の案内に載せている attach (nil = 出していない。attachguide.go)
 
 	set settings // s で開く設定画面 (settings.go)
 }
@@ -299,8 +301,11 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 			m.info("attach を取りやめた (待っている間に画面が変わった)")
 			return m, nil
 		}
-		done := attachDoneMsg{cardID: msg.cardID, session: msg.session, from: m.now()}
-		return m, m.execProcess(msg.cmd, func(err error) tea.Msg { done.err = err; return done })
+		if m.popup == nil { // tmux の外: 端末を渡す前に毎回、戻り方を出す (attachguide.go。毎回はユーザーが選んだ)
+			m.askAttachGuide(msg)
+			return m, nil
+		}
+		return m, m.execAttach(msg)
 	case attachDoneMsg:
 		if msg.err != nil {
 			m.fail("attach が失敗した: " + msg.err.Error())
@@ -354,6 +359,9 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 		}
 		if msg.String() == "ctrl+z" { // どの画面からでも裏に回す (シェルと同じ。書きかけの文などは画面の状態に残る)
 			return m, m.suspend()
+		}
+		if m.guide != nil {
+			return m, m.handleAttachGuideKey(msg)
 		}
 		if m.legend {
 			return m, m.handleLegendKey(msg.String())
@@ -971,6 +979,17 @@ func (m *Model) attach() tea.Cmd {
 		cmd, err := be.AttachCommand(session)
 		return attachReadyMsg{cardID: id, session: session, cmd: cmd, err: err}
 	})
+}
+
+// execAttach は msg の attach を開く。tmux の中は画面の上の窓 (popup。端末を渡さない。attachpopup.go)、外は端末を渡す。
+// 戻ったら attachDoneMsg を届ける (attach の間の指示をカードに残す処理は、どちらでも同じ)。
+func (m *Model) execAttach(msg attachReadyMsg) tea.Cmd {
+	done := attachDoneMsg{cardID: msg.cardID, session: msg.session, from: m.now()}
+	if p := m.popup; p != nil {
+		c := msg.cmd
+		return m.child(func() tea.Msg { done.err = p.run(c, done.cardID); return done })
+	}
+	return m.execProcess(msg.cmd, func(err error) tea.Msg { done.err = err; return done })
 }
 
 // attachReadyMsg は attach の準備 (backend の照合) が済んだ知らせ。

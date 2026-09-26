@@ -94,7 +94,7 @@ func (m *Model) render() string {
 	}
 	screen := m.overlayBump(append(append(header, region...), foot...), len(header), board)
 	head, rest := screen[:len(header):len(header)], screen[len(header):]
-	region = m.overlayToast(m.overlaySend(m.overlayForm(m.dimWhileTyping(m.overlaySettings(m.overlayDiff(m.overlayDrawer(rest[:len(region)])))))))
+	region = m.overlayToast(m.overlayAttachGuide(m.overlaySend(m.overlayForm(m.dimWhileTyping(m.overlaySettings(m.overlayDiff(m.overlayDrawer(rest[:len(region)]))))))))
 	return strings.Join(m.overlayQuit(m.overlayLegend(append(append(head, region...), rest[len(region):]...))), "\n")
 }
 
@@ -774,6 +774,9 @@ func orDash(s string) string {
 func (m *Model) hints() []string {
 	if m.stopping {
 		return []string{"ctrl+c 待たずに閉じる"}
+	}
+	if m.guide != nil {
+		return attachGuideHints()
 	}
 	if m.legend {
 		return []string{"? / q / esc 閉じる"}

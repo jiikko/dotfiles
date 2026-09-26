@@ -150,8 +150,11 @@ func TestAttachUsesSelectedSession(t *testing.T) {
 	if !ok {
 		t.Fatal("attach の準備の知らせが返らない")
 	}
-	if _, exec := m.Update(ready); exec == nil {
-		t.Fatal("準備が済んだのに画面を明け渡すコマンドが返らない")
+	if _, exec := m.Update(ready); exec != nil || m.guide == nil { // tmux の外: 端末を渡す前に戻り方の案内を出す (issue 527)
+		t.Fatal("端末を渡す前に戻り方の案内を出していない")
+	}
+	if exec := press(m, "enter"); exec == nil {
+		t.Fatal("案内で enter を押したのに画面を明け渡すコマンドが返らない")
 	}
 	if len(be.attached) != 1 || be.attached[0] != "s-w1" {
 		t.Fatalf("W1 の session で attach するはず: %v", be.attached)
@@ -390,6 +393,7 @@ func TestAttachDoneCarriesHandOverTime(t *testing.T) {
 	m.execProcess = func(_ *exec.Cmd, f tea.ExecCallback) tea.Cmd { back = f; return func() tea.Msg { return nil } }
 	press(m, "right") // W1
 	m.Update(press(m, "a")())
+	press(m, "enter") // 戻り方の案内から進む
 	if back == nil {
 		t.Fatal("端末を明け渡していない")
 	}

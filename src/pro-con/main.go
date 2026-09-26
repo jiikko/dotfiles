@@ -12,6 +12,7 @@
 //	pro-con worktree clean  閉じたカードの PG の worktree を片付ける (既定は一覧だけ。--yes で 1 個ずつ取り直して消す。--remote で origin のブランチも)
 //	pro-con dispatcher       本物のモードの dispatcher を常駐させる (PG を起動する。週の利用枠を使う)
 //	pro-con help [話題]  用語・使い方・デバッグの説明 (引数なしで話題の一覧)
+//	pro-con attach --leave  戻れなくなった attach の接続だけを外から終わらせる (PG の session は動き続ける)
 //	pro-con fake-attach  attach の代わりに TUI から起動される内部用のコマンド
 //
 // 設定は ~/.config/pro-con/config.toml (無ければ既定値。書式は config package の doc)。
@@ -334,6 +335,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				return 1
 			}
 			return runMonitor(args[1:], liveDir(home), paths, stdout, stderr)
+		case "attach": // 戻れなくなった attach の接続だけを外から終わらせる (issue 527。leavecmd.go)
+			return runAttach(args[1:], realLeaver(), stdout, stderr)
 		case "help": // 話題ごとの説明 (用語・使い方・デバッグ。helpcmd.go)
 			return runHelp(args[1:], stdout, stderr)
 		case "-h", "--help":
@@ -422,6 +425,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	m := ui.New(be, scopes)
 	m.OnTerminalEvent(termEvent)
+	m.UsePopupAttach(ui.TmuxPopup()) // tmux の中なら attach を画面の上の窓で開く (issue 527)
 	if !mock {
 		m.SetFrameLog(dir) // 置き場に framelog.on を置いたあいだだけ、演出のコマの時刻と所要を記録する (issue 494)
 	}
