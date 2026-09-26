@@ -37,12 +37,12 @@ pro-con を使って開発する Claude (カードを積む・質問に答える
 
 ## 受け入れ条件
 
-- [ ] `pro-con help` が話題の一覧を出し、各話題が引ける。知らない話題は一覧を出して rc≠0
-- [ ] 用語・使い方・デバッグの中身が README と二重になっていない
-- [ ] skill が 60 行以内で、コマンドの一覧・状態の置き場のパスを写していない (`pro-con help` を指す)
+- [x] `pro-con help` が話題の一覧を出し、各話題が引ける。知らない話題は一覧を出して rc≠0
+- [x] 用語・使い方・デバッグの中身が README と二重になっていない
+- [x] skill が 60 行以内で、コマンドの一覧・状態の置き場のパスを写していない (`pro-con help` を指す)
 - [ ] 新しいセッションで skill が読み込まれることを headless で確かめる (`claude -p --model haiku` に「pro-con の PG とは何か」を聞き、skill を読んだ答えが返るか。
       読み込まれない cwd でも 1 回回して A-B にする。dotfiles の `.claude/rules/worktree-per-session.md` の手順)
-- [ ] `_claude/CLAUDE.md` の表と README に入口がある
+- [x] `_claude/CLAUDE.md` の表と README に入口がある
 
 ## 関連ファイル
 
@@ -63,5 +63,9 @@ pro-con を使って開発する Claude (カードを積む・質問に答える
   - 検査: `helpcmd_test.go` (一覧・知らない話題で rc=2・全話題が引けて目印が残らない・terms が正本と一致・usage / debug に書いた
     `pro-con card` / `pro-con log` がパーサに通る)。目印の置き換えを壊す / rc を 0 にする mutation で赤くなるのを確かめた
 - skill `_claude/skills/pro-con/SKILL.md` (38 行)。`_claude/CLAUDE.md` のスキルファイル参照の表に 1 行、README に 1 行
-- headless の A-B: master へ載る前なので、skill を project の `.claude/skills` に写した隔離 dir と写さない dir で比べる (結果は下に追記)。
-  master へ載った後の本番の A-B (`~/.claude/skills/pro-con` の link 経由) は取り込みの後に回す
+- headless の A-B (2026-09-26、`claude -p --model haiku --allowedTools Skill Read`、「pro-con の PG とは何か」):
+  master へ載る前なので、skill を project の `.claude/skills` に写した隔離 dir と写さない dir で比べた
+  - 写した dir: `Skill {"skill":"pro-con"}` を呼び、「PM が分けたカード 1 枚ずつを自分の worktree で実装する役割」と答えた (`skill: pro-con`)
+  - 写さない dir: 「定義が見当たらない」(`skill: なし`)
+  - 🚨 `--allowedTools` は可変長で後ろの質問文を飲み込む (`Input must be provided …` で空振りした)。質問は stdin で渡す
+- 残り: master へ載った後の本番の A-B (`~/.claude/skills/pro-con` の link 経由)。取り込みの後に同じ質問で回す
