@@ -8,10 +8,11 @@
 #
 # ## なぜ go run をやめたか
 #
-# `go run` は起動のたびに実行ファイルを一時ディレクトリへ作り直す。macOS は初めて見る実行ファイルを起動前に
-# 検査する (syspolicyd → XprotectService。中身が同じでも別のファイルなら検査し直す) ので、lint のたびに
-# 作り直しと検査が乗っていた。実測 2026-09-26 (go1.26.0 / macOS 15.7): `--version` だけで go run は 0.73〜1.05 秒、
-# 決まった場所の同じ版は初回 0.51 秒・以後 0.05 秒。`make -C src/pro-con lint` 1 回は 1.22〜1.49 秒 → 0.70 秒前後。
+# `go run pkg@版` はビルドした実行ファイルを go のビルドキャッシュに取っておき、その決まった場所から起動する
+# (`go run -x` で確認。なので macOS の起動前の検査 (XprotectService) は初回だけで、毎回ではない)。遅かったのは起動のたびの
+# go コマンドの側 (モジュールの解決とビルドが最新かの確認) で、`--version` だけで 0.73〜1.05 秒かかっていた。
+# 決まった場所に置いたものを直接起動すると以後 0.05 秒。実測 2026-09-26 (go1.26.0 / macOS 15.7):
+# `make -C src/pro-con lint` 1 回は 1.22〜1.49 秒 → 0.70 秒前後。
 #
 # ## 置き場所と鍵
 #
@@ -35,12 +36,19 @@ case "$version" in
   *) echo "${0##*/}: 版は v で始める (${version})" >&2; exit 2 ;;
 esac
 
-read -r goroot key < <(go env GOROOT GOVERSION GOOS GOARCH CGO_ENABLED | paste -sd' ' - | awk '{print $1, $2"-"$3"-"$4"-"$5}')
+# go env は先に変数へ受ける (プロセス置換に流すと失敗が set -e に届かない)。1 行ずつ読む (GOROOT に空白があっても崩れない)
+envs=$(go env GOROOT GOVERSION GOOS GOARCH CGO_ENABLED)
+{ read -r goroot; read -r gover; read -r goos; read -r goarch; read -r cgo; } <<<"$envs"
+if [ -z "$goroot" ] || [ -z "$gover" ]; then
+  echo "${0##*/}: go env から GOROOT / GOVERSION を読めない" >&2
+  exit 1
+fi
+key="$gover-$goos-$goarch-$cgo"
 root=${DOTFILES_GO_TOOLS_CACHE:-${XDG_CACHE_HOME:-$HOME/Library/Caches}/dotfiles-go-tools}
 dir="$root/golangci-lint@$version-$key"
 bin="$dir/golangci-lint"
 
-if [ ! -x "$bin" ]; then
+if [ ! -x "$bin" ] || [ ! -s "$bin" ]; then # 空のファイルは作り直す (bash は空の実行ファイルを rc=0 で「実行」してしまう)
   mkdir -p "$dir"
   tmp=$(mktemp -d "$dir/.install.XXXXXX")
   trap 'rm -rf "$tmp"' EXIT

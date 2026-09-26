@@ -179,6 +179,10 @@ for p in "$@"; do
     # shell/zsh ソース。ディレクトリ前方一致に加え、置き場所を問わない *.sh /
     # zsh dotfile (_z*) も拾う (shellcheck/zsh -n の対象は discover_shell_scripts が
     # repo 全体から発見するため、ここも場所で絞らない)
+    # 全プロジェクトの make lint が通る共有の入口。変えたら Go の lint を全部回す (shell の lint だけでは本物の経路を通らない)
+    scripts/golangci_lint.sh)
+      add_shell_targets; add_target test-go-lint
+      add_test_dirs_referencing "$p" ;;
     bin/*|scripts/*|zshlib/*|*.sh|_z*)
       add_shell_targets
       add_test_dirs_referencing "$p" ;;

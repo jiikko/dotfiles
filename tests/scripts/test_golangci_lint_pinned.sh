@@ -21,6 +21,8 @@ cat > "$TMP_DIR/fakebin/go" <<'GO'
 #!/usr/bin/env bash
 case "$1" in
   env)
+    if [ -n "${FAKE_ENV_FAIL:-}" ]; then echo "go: go.mod requires go >= 9.9" >&2; exit 1; fi
+    if [ -n "${FAKE_ENV_EMPTY:-}" ]; then printf '\ngo1.26.0\ndarwin\narm64\n1\n'; exit 0; fi # rc=0 で GOROOT だけが空 (壊れた go。末尾が空なら read が止める)
     shift
     for v in "$@"; do
       case "$v" in
@@ -37,7 +39,7 @@ case "$1" in
     if [ -n "${FAKE_FAIL:-}" ]; then echo "fake go install: boom" >&2; exit 1; fi
     sleep "${FAKE_SLEEP:-0}"
     ver=${2##*@}
-    printf '#!/bin/sh\necho "ran:%s:$*"\necho "$PATH" > "$FAKE_PATH_SEEN"\n' "$ver" > "$GOBIN/golangci-lint"
+    printf '#!/bin/sh\necho "ran:%s:$*"\necho "$PATH" > "$FAKE_PATH_SEEN"\nexit "${FAKE_LINT_RC:-0}"\n' "$ver" > "$GOBIN/golangci-lint"
     chmod +x "$GOBIN/golangci-lint"
     ;;
   *) echo "fake go: unexpected $*" >&2; exit 99 ;;
@@ -60,6 +62,11 @@ if [ "$out" = "ran:v2.5.0:run ./..." ]; then note "初回は作ってから起�
 # 1b. go run と同じく、起動したプログラムの PATH の先頭は $GOROOT/bin (golangci-lint が中で呼ぶ go が shim を通らない)
 if [ "$(cut -d: -f1 < "$FAKE_PATH_SEEN")" = "/fake/goroot/bin" ]; then note "起動したプログラムの PATH の先頭は \$GOROOT/bin"; else bad "PATH の先頭が \$GOROOT/bin でない: $(cut -d: -f1 < "$FAKE_PATH_SEEN")"; fi
 
+# 1c. lint の失敗はそのまま exit code で返す (make lint を赤にする。ヘルパーで握りつぶさない)
+rc=0
+FAKE_LINT_RC=3 "$helper" v2.5.0 run >/dev/null 2>&1 || rc=$?
+if [ "$rc" = 3 ]; then note "lint の失敗の exit code をそのまま返す"; else bad "lint が rc=3 で落ちたのに rc=$rc"; fi
+
 # 2. 2 回目は作らない (決まった場所のものを起動する)
 out=$("$helper" v2.5.0 run ./x 2>&1) || bad "2 回目が失敗した: $out"
 if [ "$out" = "ran:v2.5.0:run ./x" ] && [ "$(installs)" = 1 ]; then note "2 回目は作らずに起動する"; else bad "2 回目: 出力 $out / install $(installs) 回"; fi
@@ -76,6 +83,23 @@ d="$DOTFILES_GO_TOOLS_CACHE/golangci-lint@v2.5.0-go1.28.0-darwin-arm64-1"
 left=$(find "$d" -mindepth 1 2>/dev/null | wc -l | tr -d ' ')
 if [ "$rc" != 0 ] && [ "$left" = 0 ]; then note "作るのに失敗したら非 0 で終わり、何も残さない"; else bad "失敗の扱い: rc=$rc / 残ったもの $left 個"; fi
 if FAKE_GOVERSION=go1.28.0 "$helper" v2.5.0 run >/dev/null 2>&1 && [ -x "$d/golangci-lint" ]; then note "失敗の後の回は作り直せる"; else bad "失敗の後に作り直せない"; fi
+
+# 4b. 置き場所のファイルが空 (壊れたキャッシュ) なら作り直す
+d="$DOTFILES_GO_TOOLS_CACHE/golangci-lint@v2.5.0-go1.26.0-darwin-arm64-1"
+: > "$d/golangci-lint"
+before=$(installs)
+out=$("$helper" v2.5.0 run 2>&1) || true
+if [ "$(installs)" = $((before + 1)) ] && [ "$out" = "ran:v2.5.0:run" ]; then note "空のキャッシュのバイナリは作り直す"; else bad "空のバイナリ: install $before → $(installs) / 出力 $out"; fi
+
+# 4c. go env が失敗したら非 0 で止まる (空の鍵のまま進まない)
+rc=0
+FAKE_ENV_FAIL=1 "$helper" v2.5.0 run >/dev/null 2>&1 || rc=$?
+if [ "$rc" != 0 ] && [ ! -e "$DOTFILES_GO_TOOLS_CACHE/golangci-lint@v2.5.0-" ]; then note "go env が失敗したら非 0 で止まる"; else bad "go env の失敗: rc=$rc / 空の鍵の置き場所 $(ls "$DOTFILES_GO_TOOLS_CACHE")"; fi
+
+# 4d. go env が rc=0 でも GOROOT が空なら止まる ($GOROOT/bin の無い PATH で起動しない)
+rc=0
+FAKE_ENV_EMPTY=1 "$helper" v2.5.0 run >/dev/null 2>&1 || rc=$?
+if [ "$rc" != 0 ]; then note "go env の GOROOT が空なら非 0 で止まる"; else bad "go env が空でも進んだ (rc=0)"; fi
 
 # 5. 版の書式が違えば使い方の誤り (rc=2)
 rc=0
