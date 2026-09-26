@@ -88,7 +88,11 @@ supervisor、dispatcher が rc=0 で抜けたら supervisor も抜ける)・ps�
 
 残り:
 
-- 未検証: 本番の画面から起こした supervisor が、実際に落ちた dispatcher を起こし直すところ (この変更が master に入り、画面を開き直すまでは古い keeper が dispatcher を直接起こす)
+- [x] 本番の画面から起こした supervisor が、落ちた dispatcher を起こし直すところ (2026-09-26 に確認):
+  持ち主の画面 (`pro-con`) を開くと supervisor 28062 (親 1) → dispatcher 28078 (親 28062) → 見張り 28151 (親 28078)。
+  人が `kill -9 28078` → `pro-con log` に「dispatcher が落ちた (signal: killed。10m0s の間に 1 回目)。10s 後に起こし直す」(21:06:26) →
+  dispatcher 37291 (親 28062) が 21:06:36 に起き、見張りも 37305 で起き直した。Tick は数秒で 3 秒ごとに戻った
+  - 確かめる途中で分かったこと: `--join` の画面しか開いていないと、dispatcher が抜けても誰も起こさない (481 の決定どおり。`live/live.go` の `keep` が join で返る)
 
 ## 関連
 
