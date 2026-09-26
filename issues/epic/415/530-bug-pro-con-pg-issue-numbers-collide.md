@@ -42,3 +42,6 @@ pro-con の外で採番する人・session から予約が見えない (その�
 - [x] 起票のしかたを 1 か所から書く — 形の正本は `Prompt` (`DraftIssueName`)。`integrator-guide.md` の役目 2 はそれを指し、同じ形と script 名を書いていることを
   `TestIntegratorGuideNumbersDraftIssues` が見る。dotfiles の採番の入口 (`issues/README.md`) に 1 行
 - 残り: 本物の取り込みで仮の名前の起票を採番したことは未観測 (次に PG が起票したカードで見る)
+- 1 回目の `make test-changed` で `test_issue_number_drafts.sh` が fixture の誤り (`reset --hard` で空の `epic/415/` が消える) で落ちたのを直した。
+  script から origin/master を数える段・参照を張り替える段を外す変異で、それぞれ red を確認。
+  同じ run の `test_issue_links_valid.sh` の赤 (539 の `415-design` へのリンク) はこの worktree の古い master 由来で、origin/master では直っている

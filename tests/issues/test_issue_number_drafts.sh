@@ -34,6 +34,7 @@ make_fixture() {
   g "$d" commit -qm other
   g "$d" update-ref refs/remotes/origin/master HEAD
   g "$d" reset -q --hard HEAD~1
+  mkdir -p "$d/issues/epic/415"  # reset で空になったディレクトリは消える
   cat > "$d/issues/epic/415/new-bug-first.md" <<'EOF'
 # new (bug): 1 本目
 
