@@ -28,7 +28,8 @@ var cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を置
   plan <カード> [--issue <repo>#<番号>]... [--after <カード>]... [--points 1|2|3|5|8]
                                                  タスクに分けてキューに積んだ (--after のカードが完了するまで起動しない。--points は見積もり)
 ` + card.PointsMeaningText("                                                   ") + `
-  ask <カード> <質問>                            PG が質問して turn を終える (AskUserQuestion は使わない)
+  ask <カード> <質問>                            PG が質問して turn を終える (AskUserQuestion は使わない)。
+                                                 依頼の列のカードなら PM が人に聞く (人の番。回答で依頼の列へ戻る)
   ask <カード> [<前置き>] --json '{"questions":[...]}'
                                                  選択肢つきの質問。形は AskUserQuestion と同じ (問い 1〜4 個・選択肢 2〜4 個。
                                                  options に "recommended":true で推奨)。画面は radio / checkbox の回答フォームにする

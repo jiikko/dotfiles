@@ -35,10 +35,11 @@ var pmRole = &role{
 
 // pmKey は PM に知らせる物の鍵。依頼の列のカードはカード ID、PG の質問はカード ID と質問待ちに入った時刻
 // (回答で列を離れてまた質問したら、離れたのを見ていなくても別の鍵になる = また知らせる)。
-// 権限の確認と落ちて止めた PG、PM が人に回した質問は PM には片付けられない (人の番。452) ので知らせない (残すと PM を起こす理由になり続ける)。
+// 権限の確認と落ちて止めた PG、PM が人に回した質問、PM 自身が人に聞いている問い (498) は PM には片付けられない (人の番。452) ので知らせない
+// (残すと PM を起こす理由になり続ける)。PM の問いに人が答えると依頼の列へ戻り、鍵はカード ID のまま知らせ直す (列を離れた間に知らせ済みから外れる)。
 func pmKey(c card.Card) (string, bool) {
 	switch {
-	case c.Archived || c.HandedOff():
+	case c.Archived || c.HandedOff() || c.Wait.FromPM():
 		return "", false
 	case c.State == card.Requested:
 		return c.ID, true
@@ -60,7 +61,7 @@ func pmLabels(keys []string) string {
 	return strings.Join(out, ", ")
 }
 
-// pmNotice は PM に渡す知らせ。新しい依頼を ID・題・repo で、新しい PG の質問をそれに質問の文を足して並べ、知らせ済みで残っているものは ID だけ添える。
+// pmNotice は PM に渡す知らせ。新しい依頼を ID・題・repo で、新しい PG の質問と PM の質問への人の回答 (498) をそれに文を足して並べ、知らせ済みで残っているものは ID だけ添える。
 // 指示は書かない (指示の正本は pm-guide.md)。
 func pmNotice(cards []card.Card, untold, pending []string) string {
 	var b strings.Builder
@@ -73,6 +74,8 @@ func pmNotice(cards []card.Card, untold, pending []string) string {
 		}
 		fresh := slices.Contains(untold, k)
 		switch {
+		case c.State == card.Requested && fresh && c.PMAnswer != "":
+			fmt.Fprintf(&b, "- PM の質問に人が回答した依頼 %s「%s」(repo: %s): %s\n", c.ID, c.Title, orNone(c.Repo), c.PMAnswer)
 		case c.State == card.Requested && fresh:
 			fmt.Fprintf(&b, "- 新しい依頼 %s「%s」(repo: %s)\n", c.ID, c.Title, orNone(c.Repo))
 		case c.State == card.Requested:

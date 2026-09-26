@@ -560,6 +560,9 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		if c.State == card.Running && to != card.Running {
 			c.DropRun() // 作業中の列を離れたら、テストの係への頼みは取り下げる
 		}
+		if c.State == card.Requested && to != card.Requested {
+			c.PMAnswer = "" // PM が受け取った後 (分けた・閉じた・また聞いた)。回答は履歴に残っている
+		}
 		c.State, c.Since = to, now
 		c.Stalled = false // 停滞は作業中の列でだけ意味を持つ (watchdog が作業中のカードだけを見る)。止める印 (StopWanted) は作業中へ戻る settle が外す
 		c.History = append(c.History, card.Event{At: now, Text: why})
@@ -600,16 +603,20 @@ func transition(c *card.Card, r Request, now time.Time) error {
 			why += " (" + strings.Join(c.After, ", ") + " の後に起動する)"
 		}
 		move(card.Planned, why)
-	case "ask": // PG が質問を書いて turn を終えた
-		if c.State != card.Running {
-			return fmt.Errorf("作業中の列に無い (今は %s)", c.State.Label())
+	case "ask": // PG が質問を書いて turn を終えた。依頼の列のカードなら PM が依頼について人に聞いた (issue 498。人の番の質問待ちにする)
+		if c.State != card.Running && c.State != card.Requested {
+			return fmt.Errorf("作業中の列にも依頼の列にも無い (今は %s)", c.State.Label())
 		}
 		w, err := card.AskWait(r.Question, r.Questions) // 箱に手で置かれた依頼もここで検査する (cardcmd を通らない)
 		if err != nil {
 			return err
 		}
+		why := "質問: "
+		if c.State == card.Requested {
+			w.AskedBy, why = card.PMName, "PM が人に質問した: "
+		}
 		c.Wait = w
-		move(card.Waiting, "質問: "+clip(w.Question, 80))
+		move(card.Waiting, why+clip(w.Question, 80))
 	case "answer": // 人間か PM の回答。まだ質問待ちのときだけ受ける (二重回答で 2 回 resume しない。415 論点 8)
 		if c.WaitsOnPrompt() {
 			return errors.New("PG の session が入力待ち (" + c.Wait.Label() + ") で止まっている。回答ではなく attach して答える")
@@ -619,6 +626,14 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		}
 		if strings.TrimSpace(r.Answer) == "" {
 			return errors.New("回答が空")
+		}
+		if c.Wait.FromPM() { // PM の問い (498): PG の session は無いので再開の文 (Resume) にせず、依頼の列へ戻して PM に回答ごと知らせる
+			if r.From == card.PMName {
+				return errors.New("PM が人に聞いている問いなので、PM は答えない (人が答える)")
+			}
+			c.Wait, c.PMAnswer = card.Wait{}, r.Answer
+			move(card.Requested, firstNonEmpty(r.From, "人間")+" が PM の質問に回答した: "+r.Answer) // 原文のまま (PM が card show で読む)
+			break
 		}
 		c.Wait = card.Wait{}
 		// dispatcher が同じ session を再開するときに渡す (426 の決定 2)。まだ渡せていない文 (再開を claude が受け付けずに人の番へ回った

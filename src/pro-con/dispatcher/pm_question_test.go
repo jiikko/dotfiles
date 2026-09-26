@@ -60,6 +60,34 @@ func TestPMToldOfSecondQuestion(t *testing.T) {
 	}
 }
 
+// PM が依頼の列のカードについて人に聞いた問い (issue 498) は PM 自身には知らせない (人の番)。人が答えると依頼の列へ戻り、回答の文を添えて PM に知らせる。
+func TestPMToldOfHumanAnswerToPMQuestion(t *testing.T) {
+	r := startedPM(t)
+	submitAndTick := func(req store.Request) {
+		t.Helper()
+		if _, err := store.Submit(r.dir, req); err != nil {
+			t.Fatal(err)
+		}
+		r.tick(t)
+	}
+	submitAndTick(store.Request{Kind: "ask", CardID: "C-001", Question: "閉じるか直すか"})
+	st, err := store.Load(r.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := st.Cards[0]; c.State != card.Waiting || !c.Wait.FromPM() || c.Turn(card.Roles{}) != card.TurnHuman {
+		t.Fatalf("PM の問いが人の番の質問待ちになっていない: %v %+v", c.State, c.Wait)
+	}
+	r.tick(t)
+	if len(r.l.resumes) != 0 {
+		t.Fatalf("PM 自身の問いで PM を起こした: %v", r.l.resumes)
+	}
+	submitAndTick(store.Request{Kind: "answer", CardID: "C-001", Answer: "残りのリスクを直す"})
+	if len(r.l.resumes) != 1 || !strings.Contains(r.l.resumes[0], "PM の質問に人が回答した依頼 C-001") || !strings.Contains(r.l.resumes[0], "残りのリスクを直す") {
+		t.Fatalf("回答を PM に知らせていない: %v", r.l.resumes)
+	}
+}
+
 // 権限の確認と落ちて止めた PG は PM には答えられない (人の番。452) ので知らせない。
 func TestPMNotToldOfPermissionOrCrash(t *testing.T) {
 	r := startedPM(t)

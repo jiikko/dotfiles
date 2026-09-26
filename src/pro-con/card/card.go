@@ -35,7 +35,7 @@ func (s State) Meaning() string {
 	case Running:
 		return "PG が作業している。make test などの占有リソースの順番待ち・利用枠の回復待ちもここ"
 	case Waiting:
-		return "PG の質問 (まず PM が受け、人に回すかを決める)・権限の確認・落ちて止めた PG。人の番のものは r で回答する"
+		return "PG の質問 (まず PM が受け、人に回すかを決める)・PM が依頼について人に聞いた問い・権限の確認・落ちて止めた PG。人の番のものは r で回答する"
 	case Review:
 		return "PG が作業を終えた。PM が diff と実行結果を読んでから完了にする"
 	case Done:
@@ -120,7 +120,12 @@ type Wait struct {
 	// Questions は選択肢つきの質問の問い (WaitQuestion のときだけ。issue 493)。Question には前置きと、問いを文にしたもの
 	// (QuestionsText) も入れる。回答で質問待ちを離れたら Wait ごと消える
 	Questions []Question `json:",omitempty"`
+	// AskedBy は質問した役 (WaitQuestion のときだけ)。空は PG、PMName は PM が依頼の列のカードについて人に聞いた問い (issue 498)
+	AskedBy string `json:",omitempty"`
 }
+
+// FromPM は PM が人に聞いている問いか (issue 498)。人の番で、回答すると依頼の列へ戻る (PG の session は無い)。
+func (w Wait) FromPM() bool { return w.Kind == WaitQuestion && w.AskedBy == PMName }
 
 // IssueRef は repo + 番号で issue を指す (パスで持たない。done への移動や改番で切れないように)。
 type IssueRef struct {
@@ -309,6 +314,8 @@ type Card struct {
 	LastRun *RunRecord `json:",omitempty"`
 	// Resume は次に PG を再開するときに渡す文 (質問への回答)。dispatcher が渡したら空にする (本物のモードだけ。426 の決定 2)
 	Resume string `json:",omitempty"`
+	// PMAnswer は PM の問い (Wait.FromPM) への人の回答 (issue 498)。依頼の列へ戻ったカードで PM に知らせ、依頼の列を離れたら空にする
+	PMAnswer string `json:",omitempty"`
 	// Launching は dispatcher が PG の起動・再開を始めて、結果をまだ確かめていない印 ("起動" / "再開")。起動の前に記録へ書く
 	// (claude が「失敗」と返しても session が立っていることがあり、dispatcher が途中で落ちることもある。次の Tick が一覧で確かめる)
 	Launching string `json:",omitempty"`
@@ -426,7 +433,7 @@ type Roles struct {
 	IntegratorOff bool `json:"integrator_off,omitempty"`
 }
 
-// Turn は今誰の番か。人の番は、権限の確認 (PM には答えられない)・落ち続けて止めた PG・PM が人に回した質問とレビュー・
+// Turn は今誰の番か。人の番は、権限の確認 (PM には答えられない)・落ち続けて止めた PG・PM が人に回した質問とレビュー・PM の問い (498)・
 // 起こさない役 (r) の仕事 (依頼・質問・レビュー)。
 func (c Card) Turn(r Roles) Turn {
 	if c.Archived || c.Deleting() {
@@ -441,7 +448,7 @@ func (c Card) Turn(r Roles) Turn {
 	case Planned, Running:
 		return TurnPG
 	case Waiting:
-		if c.Wait.Kind != WaitQuestion || c.HandedOff() || r.PMOff { // 権限の確認・落ちて止めた (Check は Waiting を NeedsAnswer の待ちに限る)
+		if c.Wait.Kind != WaitQuestion || c.Wait.FromPM() || c.HandedOff() || r.PMOff { // 権限の確認・落ちて止めた (Check は Waiting を NeedsAnswer の待ちに限る)・PM の問い
 			return TurnHuman
 		}
 		return TurnPM
