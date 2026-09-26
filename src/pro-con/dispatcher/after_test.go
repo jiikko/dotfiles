@@ -71,7 +71,7 @@ func TestDispatchWaitsForPredecessor(t *testing.T) {
 	if notes, err := d.Tick(context.Background()); err != nil || hasNote(notes, eventlog.KindHold, "C-001 の完了を待つ") {
 		t.Fatalf("別の出来事の後に同じ待ちを書き直した: %q %v", notes, err)
 	}
-	if err := store.Update(dir, func(s *store.State) error {
+	if err := store.Update(dir, time.Now(), func(s *store.State) error {
 		for i := range s.Cards {
 			if s.Cards[i].ID == "C-001" {
 				s.Cards[i].State, s.Cards[i].Ending = card.Done, card.EndAnswered
@@ -128,7 +128,7 @@ func TestArchivedPredecessorReleasesSuccessor(t *testing.T) {
 	if _, err := d.Tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Update(dir, func(s *store.State) error {
+	if err := store.Update(dir, time.Now(), func(s *store.State) error {
 		for i := range s.Cards {
 			if s.Cards[i].ID == "C-001" {
 				s.Cards[i].State, s.Cards[i].Ending, s.Cards[i].Since = card.Done, card.EndAnswered, t0

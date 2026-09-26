@@ -72,7 +72,7 @@ func TestApplyClearDoneListsShownCards(t *testing.T) {
 	if msg, err := b.Apply(backend.ClearDone{}); err != nil || !strings.Contains(msg, "無い") {
 		t.Fatalf("完了が無いのに片付けを頼んだ: %q %v", msg, err)
 	}
-	if err := store.Update(b.dir, func(st *store.State) error {
+	if err := store.Update(b.dir, time.Now(), func(st *store.State) error {
 		for i := range st.Cards[:2] {
 			st.Cards[i].State, st.Cards[i].Ending = card.Done, card.EndAnswered
 		}

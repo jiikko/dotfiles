@@ -13,7 +13,7 @@ import (
 // asked は id のカードを、since に q を質問した質問待ちにする (無ければ足す)。PG の session は持たせない (PM の知らせだけを見る)。
 func asked(t *testing.T, dir, id, q string, since time.Time) {
 	t.Helper()
-	err := store.Update(dir, func(st *store.State) error {
+	err := store.Update(dir, time.Now(), func(st *store.State) error {
 		c := card.Card{ID: id, Title: "質問する " + id, Repo: "dotfiles"}
 		i := slices.IndexFunc(st.Cards, func(c card.Card) bool { return c.ID == id })
 		if i >= 0 {
@@ -63,7 +63,7 @@ func TestPMToldOfSecondQuestion(t *testing.T) {
 // 権限の確認と落ちて止めた PG は PM には答えられない (人の番。452) ので知らせない。
 func TestPMNotToldOfPermissionOrCrash(t *testing.T) {
 	r := startedPM(t)
-	err := store.Update(r.dir, func(st *store.State) error {
+	err := store.Update(r.dir, time.Now(), func(st *store.State) error {
 		for i, k := range []card.WaitKind{card.WaitPermission, card.WaitCrashed} {
 			st.Cards = append(st.Cards, card.Card{ID: []string{"C-008", "C-009"}[i], Title: "t", Repo: "dotfiles", State: card.Waiting, Since: t0,
 				Wait: card.Wait{Kind: k, Question: "q"}})

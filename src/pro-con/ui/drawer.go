@@ -154,6 +154,9 @@ func (m *Model) drawerBody() []string {
 	}
 	add("", fmt.Sprintf("状態: %s (%s)  担当: %s  repo: %s  session: %s", c.State.Label(), fmtDur(m.snap.Now.Sub(c.Since)),
 		c.Owner, c.Repo, orDash(c.Session)))
+	if l := card.EffortLine(c, m.snap.Now, fmtDur); l != "" {
+		add("", l)
+	}
 	var refs []string
 	for _, r := range c.Issues {
 		refs = append(refs, r.String()+" ("+r.Status+")")

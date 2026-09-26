@@ -89,7 +89,7 @@ func TestRejectedReasonGoesOnlyToSubmittingScreen(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 同じカードへ 2 つの画面が回答を重ねた形: 先に来た a の回答で質問待ちでなくなり、後の b の回答は除けられる
-	if err := store.Update(a.dir, func(st *store.State) error {
+	if err := store.Update(a.dir, time.Now(), func(st *store.State) error {
 		st.Cards[0].State, st.Cards[0].Wait = card.Waiting, card.Wait{Kind: card.WaitQuestion, Question: "どちら?"}
 		return nil
 	}); err != nil {

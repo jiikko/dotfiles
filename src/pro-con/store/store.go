@@ -71,7 +71,8 @@ type Request struct {
 	Repo     string          `json:"repo,omitempty"`
 	Owner    string          `json:"owner,omitempty"`
 	Issues   []card.IssueRef `json:"issues,omitempty"`
-	After    []string        `json:"after,omitempty"` // plan: このカードより先に完了させるカード (issue 468)
+	After    []string        `json:"after,omitempty"`  // plan: このカードより先に完了させるカード (issue 468)
+	Points   int             `json:"points,omitempty"` // plan: 見積もりのポイント (card.PointScale のどれか。0 = 付けない。issue 490)
 	Question string          `json:"question,omitempty"`
 	Command  string          `json:"command,omitempty"` // run: テストの係に実行を頼むコマンド (シェルの 1 行)
 	Cwd      string          `json:"cwd,omitempty"`     // run: 頼んだシェルの作業ディレクトリ (dispatcher が PG の worktree と照らす)
@@ -317,6 +318,7 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 		}
 	}
 	if len(results) > 0 {
+		settleWork(st.Cards, now)
 		data, err := json.MarshalIndent(st, "", "  ")
 		if err != nil {
 			return nil, err
@@ -390,7 +392,8 @@ func tagScreen(before State, next *State, screen string) {
 
 // Update は dispatcher の中でカードを直接進める (PG の起動で作業中へ、など。箱を通さない dispatcher 自身の操作)。
 // f が st を書き換え、不変条件に新しい違反が出なければ記録を書く。🚨 呼ぶのは dispatcher だけ (Apply と同じ書き手)。
-func Update(dir string, f func(*State) error) error {
+// now は書く時刻 (作業中の時間の切り替わりをこの時刻で閉じる / 始める。settleWork)。
+func Update(dir string, now time.Time, f func(*State) error) error {
 	st, err := Load(dir)
 	if err != nil {
 		return err
@@ -403,11 +406,19 @@ func Update(dir string, f func(*State) error) error {
 	if err := newViolation(st.Cards, next.Cards); err != nil {
 		return err
 	}
+	settleWork(next.Cards, now)
 	data, err := json.MarshalIndent(next, "", "  ")
 	if err != nil {
 		return err
 	}
 	return writeAtomic(filepath.Join(dir, StateFile), data)
+}
+
+// settleWork は書く前に、作業中の時間の切り替わりを全カードへ反映する (列を動かした口に依らず、書き手の 2 か所で閉じる。issue 490)。
+func settleWork(cs []card.Card, now time.Time) {
+	for i := range cs {
+		cs[i].SettleWork(now)
+	}
 }
 
 // newViolation は before に無かった不変条件の違反が after に出たらエラー (件数ではなく中身で比べる)。
@@ -561,6 +572,9 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		if c.State != card.Requested {
 			return fmt.Errorf("依頼の列に無い (今は %s)", c.State.Label())
 		}
+		if err := card.CheckPoints(r.Points); err != nil { // 箱に手で置かれた依頼もここで止める (cardcmd の検査を通らない)
+			return err
+		}
 		c.Issues = append(c.Issues, r.Issues...)
 		if c.Repo == "" && len(r.Issues) > 0 {
 			// global で受けた依頼は、PM が分けた issue の repo で作業する (付けないと、dispatcher が起動先を決められずに止まる)
@@ -573,6 +587,10 @@ func transition(c *card.Card, r Request, now time.Time) error {
 			}
 		}
 		why := "タスクに分けてキューに積んだ"
+		if r.Points != 0 {
+			c.Points = r.Points
+			why += fmt.Sprintf(" (見積もり %dpt)", r.Points)
+		}
 		if len(c.After) > 0 {
 			why += " (" + strings.Join(c.After, ", ") + " の後に起動する)"
 		}

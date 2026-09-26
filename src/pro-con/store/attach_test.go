@@ -18,7 +18,7 @@ func attachRig(t *testing.T) (dir, work string) {
 	if _, err := Apply(dir, t0); err != nil {
 		t.Fatal(err)
 	}
-	if err := Update(dir, func(st *State) error { st.Cards[0].State = card.Running; return nil }); err != nil {
+	if err := Update(dir, time.Now(), func(st *State) error { st.Cards[0].State = card.Running; return nil }); err != nil {
 		t.Fatal(err)
 	}
 	return dir, work
@@ -154,7 +154,7 @@ func TestAttachmentRejectedRemovesStaged(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir, work := attachRig(t)
 			if tc.setup != nil {
-				if err := Update(dir, func(st *State) error { tc.setup(&st.Cards[0]); return nil }); err != nil {
+				if err := Update(dir, time.Now(), func(st *State) error { tc.setup(&st.Cards[0]); return nil }); err != nil {
 					t.Fatal(err)
 				}
 			}

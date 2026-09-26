@@ -20,7 +20,7 @@ func TestCardAttachRoundTrip(t *testing.T) {
 	dir, work := viewDir(t), t.TempDir()
 	mustSubmit(t, dir, store.Request{Kind: "add", Title: "見た目を直す"})
 	mustApply(t, dir)
-	if err := store.Update(dir, func(st *store.State) error { st.Cards[0].State = card.Running; return nil }); err != nil {
+	if err := store.Update(dir, time.Now(), func(st *store.State) error { st.Cards[0].State = card.Running; return nil }); err != nil {
 		t.Fatal(err)
 	}
 	shot := filepath.Join(work, "drawer.png")

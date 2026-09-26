@@ -154,7 +154,7 @@ func (d *Dispatcher) dropCard(c card.Card, now time.Time, stopped bool) (string,
 	if !stopped {
 		how = "PG の session は動いていなかった"
 	}
-	err := store.Update(d.Dir, func(s *store.State) error {
+	err := store.Update(d.Dir, now, func(s *store.State) error {
 		s.Cards = card.Drop(s.Cards, c.ID, now)
 		return nil
 	})

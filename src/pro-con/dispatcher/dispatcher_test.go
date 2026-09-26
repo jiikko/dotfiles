@@ -646,7 +646,7 @@ func TestLockIsExclusive(t *testing.T) {
 // setCard は記録のカードを直接書き換える (dispatcher の途中の状態を作る)。
 func setCard(t *testing.T, dir, id string, f func(*card.Card)) {
 	t.Helper()
-	if err := store.Update(dir, func(s *store.State) error {
+	if err := store.Update(dir, time.Now(), func(s *store.State) error {
 		for i := range s.Cards {
 			if s.Cards[i].ID == id {
 				f(&s.Cards[i])
