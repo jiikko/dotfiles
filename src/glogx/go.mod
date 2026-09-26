@@ -3,7 +3,6 @@ module glogx
 go 1.25.0
 
 require (
-	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/quasilyte/go-ruleguard/dsl v0.3.23
@@ -12,6 +11,7 @@ require (
 )
 
 require (
+	github.com/alecthomas/chroma/v2 v2.27.0 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260803092147-8b693049ce2a // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
 	github.com/charmbracelet/x/windows v0.2.2 // indirect

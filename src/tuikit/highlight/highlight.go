@@ -1,16 +1,14 @@
-package main
-
-// diff ポップアップのシンタックスハイライト (chroma)。
+// Package highlight は diff とコードの行へシンタックスハイライト (chroma) を付ける。glogx の diff の板と、
+// pro-con の詳細の差分の板 (dotfiles issue 508)、markdown のフェンスコード (tuikit/markdown) が同じ色付けを使う
+// (glogx の highlight.go から移した)。
 //
-// 🚨 実験的機能・切り捨てやすさ優先の構造: chroma への依存とハイライトのロジックは
-// このファイルに完全に閉じている。呼び出しは LoadCommitDiff (gitlog.go) の 1 箇所だけ
-// なので、遅い/表示が好みでない場合は「その 1 行を素通しに戻し、本ファイルと go.mod の
-// chroma を消す」だけで従来の git 配色相当へ戻せる (ユーザー了承済みの前提 2026-07-19)。
-//
-// 方式: git show は --color=never で受け、diff の構造色 (メタ行/hunk/追加/削除の記号) は
+// 方式: git は --color=never で受け、diff の構造色 (メタ行/hunk/追加/削除の記号) は
 // 自前で付け、コード本文だけを chroma でファイル拡張子ベースにハイライトする。
 // トークナイズは行単位 (複数行コメントなどの状態は行を跨いで持たない)。delta と同じ
 // 割り切りで、行単位でも実用上の見た目は十分。
+//
+// 入力は使う側で無害化 (termsafe) してから渡す。ここは色を足すだけで、制御文字は落とさない。
+package highlight
 
 import (
 	"strings"
@@ -20,6 +18,8 @@ import (
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
+
+	"tuikit/sgr"
 )
 
 // 256色主環境 (docs/theme-colors.md) なので formatter は terminal256、スタイルは
@@ -29,9 +29,9 @@ var (
 	hlStyle     = styles.Get("gruvbox")
 )
 
-// HighlightDiff は git show --color=never の出力へ diff 構造色 + シンタックス
-// ハイライトを付ける。失敗した行は素のまま返す (ハイライトは常に best-effort)。
-func HighlightDiff(lines []string) []string {
+// Diff は git show / git diff (--color=never) の出力へ diff 構造色 + シンタックス
+// ハイライトを付ける。失敗した行は素のまま返す (ハイライトは常に best-effort)。行数は変えない。
+func Diff(lines []string) []string {
 	out := make([]string, 0, len(lines))
 	var lex chroma.Lexer // 現在のファイルの lexer (nil = 言語不明で素通し)
 	inDiff := false      // 最初の "diff --git" 以降か (それ以前は commit ヘッダー/メッセージ)
@@ -45,30 +45,30 @@ func HighlightDiff(lines []string) []string {
 			inDiff = true
 			inHunk = false
 			lex = nil // 次の +++ で確定するまでリセット
-			out = append(out, ansiBold+line+ansiReset)
+			out = append(out, sgr.Bold+line+sgr.Reset)
 		case inDiff && !inHunk && strings.HasPrefix(line, "+++ "):
 			lex = lexerForDiffPath(strings.TrimPrefix(line, "+++ "))
-			out = append(out, ansiBold+line+ansiReset)
+			out = append(out, sgr.Bold+line+sgr.Reset)
 		case inDiff && !inHunk && strings.HasPrefix(line, "--- "):
-			out = append(out, ansiBold+line+ansiReset)
+			out = append(out, sgr.Bold+line+sgr.Reset)
 		case inDiff && strings.HasPrefix(line, "@@"):
 			// hunk ヘッダー。"@@ ... @@ 関数名" の関数名部分も含めてまとめてシアン
 			inHunk = true
-			out = append(out, ansiCyan+line+ansiReset)
+			out = append(out, sgr.Cyan+line+sgr.Reset)
 		case inDiff && !inHunk && (strings.HasPrefix(line, "index ") || strings.HasPrefix(line, "new file mode") ||
 			strings.HasPrefix(line, "deleted file mode") || strings.HasPrefix(line, "old mode") ||
 			strings.HasPrefix(line, "new mode") || strings.HasPrefix(line, "similarity index") ||
 			strings.HasPrefix(line, "rename from") || strings.HasPrefix(line, "rename to") ||
 			strings.HasPrefix(line, "Binary files")):
-			out = append(out, ansiDim+line+ansiReset)
+			out = append(out, sgr.Dim+line+sgr.Reset)
 		case inDiff && strings.HasPrefix(line, "+"):
-			out = append(out, ansiGreen+"+"+ansiReset+highlightCode(lex, line[1:]))
+			out = append(out, sgr.Green+"+"+sgr.Reset+Code(lex, line[1:]))
 		case inDiff && strings.HasPrefix(line, "-"):
-			out = append(out, ansiRed+"-"+ansiReset+highlightCode(lex, line[1:]))
+			out = append(out, sgr.Red+"-"+sgr.Reset+Code(lex, line[1:]))
 		case inDiff && strings.HasPrefix(line, " "):
-			out = append(out, " "+highlightCode(lex, line[1:]))
+			out = append(out, " "+Code(lex, line[1:]))
 		case !inDiff && strings.HasPrefix(line, "commit "):
-			out = append(out, ansiYellow+line+ansiReset)
+			out = append(out, sgr.Yellow+line+sgr.Reset)
 		default:
 			// commit メッセージ本文・--stat 部分・空行などは素のまま
 			out = append(out, line)
@@ -87,6 +87,15 @@ func lexerForDiffPath(path string) chroma.Lexer {
 		return nil
 	}
 	return lexers.Match(path)
+}
+
+// Lang はフェンスの言語名 (sh / zsh / golang 等。エイリアスの解決は chroma の表に委ねる) でコード 1 行を色付けする。
+// 未知の言語・空の言語名は素のまま返す。
+func Lang(lang, code string) string {
+	if lang == "" {
+		return code
+	}
+	return Code(lexers.Get(lang), code)
 }
 
 // hlEscCache はトークン種別 → ANSI エスケープ列 ("" = 装飾なし) のメモ。
@@ -116,14 +125,14 @@ func hlEscapeFor(t chroma.TokenType) string {
 	return esc
 }
 
-// highlightCode はコード 1 行を chroma でハイライトする。lexer 不明・トークナイズ
+// Code はコード 1 行を chroma でハイライトする。lexer 不明・トークナイズ
 // 失敗時は素のまま返す。
 //
 // トークンの整形は Format を使わず自前で行う (hlEscCache の doc)。出力形式は Format
 // (terminal256) と同一: 装飾ありトークンは esc + 本文 + リセット、なしは素のまま。
 // 入力は 1 行 (改行を含まない) なので、chroma が補う改行はトークン末尾にしか現れない。
 // Format は改行の手前でリセットするため、末尾で改行を落としてから閉じれば等価になる。
-func highlightCode(lex chroma.Lexer, code string) string {
+func Code(lex chroma.Lexer, code string) string {
 	if lex == nil || code == "" {
 		return code
 	}
@@ -141,7 +150,7 @@ func highlightCode(lex chroma.Lexer, code string) string {
 		if esc := hlEscapeFor(token.Type); esc != "" {
 			b.WriteString(esc)
 			b.WriteString(v)
-			b.WriteString(ansiReset)
+			b.WriteString(sgr.Reset)
 			continue
 		}
 		b.WriteString(v)

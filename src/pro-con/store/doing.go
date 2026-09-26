@@ -1,10 +1,13 @@
 package store
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"pro-con/card"
@@ -16,7 +19,45 @@ const (
 	DoingFile     = "doing.json"     // PG が今走らせているもの (issue 473)
 	ProgressFile  = "progress.json"  // 作業の進捗 (commit・未 commit・issue の進捗節。issue 469)
 	ConflictsFile = "conflicts.json" // 見張りが見た取り込みの衝突 (issue 469 / 475)
+	DiffDir       = "diffs"          // 取り込む先との差分の本文 (カードごとに <ID>.diff。書くのは dispatcher、読むのは画面の差分の板。issue 508)
 )
+
+// DiffPath はカード id の差分の本文の置き場。
+func DiffPath(dir, id string) string { return filepath.Join(dir, DiffDir, id+".diff") }
+
+// SaveDiff は差分の本文を書く。中身が前と同じなら書かない (30 秒ごとに数千行を書き直さない)。
+func SaveDiff(dir, id string, body []byte) error {
+	path := DiffPath(dir, id)
+	if old, err := os.ReadFile(path); err == nil && bytes.Equal(old, body) {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	return writeAtomic(path, body)
+}
+
+// PruneDiffs は keep に無いカードの差分の本文を消す (完了・削除・片付けたカード。置き場に溜めない)。
+func PruneDiffs(dir string, keep map[string]bool) error {
+	ents, err := os.ReadDir(filepath.Join(dir, DiffDir))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, e := range ents {
+		id, ok := strings.CutSuffix(e.Name(), ".diff")
+		if !ok || keep[id] {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, DiffDir, e.Name())); err != nil && !os.IsNotExist(err) {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
 
 // Doing は DoingFile の中身。
 type Doing struct {
@@ -82,9 +123,13 @@ func LoadDerived(dir string) (Derived, []error) {
 	return d, errs
 }
 
-// Attach は 3 つをカードに足す。完了したカードには足さない (取り込み済みの branch の進捗・衝突は古い)。
+// Attach は 3 つをカードに足す。完了したカードには worktree の場所だけ足す (取り込み済みの branch の進捗・衝突は古い。
+// 完了してから次に集めるまでの間も、前の回の commit を出さない)。
 func (d Derived) Attach(c *card.Card) {
 	if c.State == card.Done {
+		if p, ok := d.Progress.Cards[c.ID]; ok && p.Worktree != "" {
+			c.Progress, c.ProgressAt = &card.Progress{Worktree: p.Worktree, NoWorktree: p.NoWorktree}, d.Progress.At
+		}
 		return
 	}
 	d.Doing.Attach(c)

@@ -10,21 +10,43 @@ import (
 // Progress はカードの作業がどこまで進んだか (issue 469)。dispatcher が集めて store.ProgressFile に書き、画面と `pro-con card show` が読む
 // (記録 cards.json には入れない。Doing と同じく、画面が git やファイルを数秒ごとに重く読まない = 441)。
 type Progress struct {
-	Base       string          `json:"base,omitempty"`      // 突き合わせた取り込む先 (origin/master)。worktree が無ければ空
-	Ahead      int             `json:"ahead"`               // 取り込む先より先の commit の本数
-	Commits    []Commit        `json:"commits,omitempty"`   // 先の commit (新しい順。上限 ProgressCommits)
-	Dirty      int             `json:"dirty"`               // 未 commit の変更 (未追跡を含むファイルの数)
-	LastCommit time.Time       `json:"lastCommit,omitzero"` // HEAD の commit の時刻
-	Issues     []IssueProgress `json:"issues,omitempty"`    // カードの issue の「進捗」節
-	Err        string          `json:"err,omitempty"`       // 読めなかったもの (読めた分は出す)
+	Worktree   string          `json:"worktree,omitempty"`   // PG の worktree の絶対パス (issue 508。無くても置くはずの場所を入れる)
+	NoWorktree bool            `json:"noWorktree,omitempty"` // Worktree がまだ無い・片付けた
+	Branch     string          `json:"branch,omitempty"`     // worktree の HEAD のブランチ (detached なら空)
+	Base       string          `json:"base,omitempty"`       // 突き合わせた取り込む先 (origin/master)。worktree が無ければ空
+	Ahead      int             `json:"ahead"`                // 取り込む先より先の commit の本数
+	Commits    []Commit        `json:"commits,omitempty"`    // 先の commit (新しい順。上限 ProgressCommits)
+	Dirty      int             `json:"dirty"`                // 未 commit の変更 (未追跡を含むファイルの数)
+	DirtyFiles []string        `json:"dirtyFiles,omitempty"` // 未 commit の変更の `XY パス` (git status の形。上限 ProgressDirtyFiles)
+	LastCommit time.Time       `json:"lastCommit,omitzero"`  // HEAD の commit の時刻
+	Diff       *DiffSummary    `json:"diff,omitempty"`       // 取り込む先との差分 (本文は DiffSummary.Path のファイル)
+	Issues     []IssueProgress `json:"issues,omitempty"`     // カードの issue の「進捗」節
+	Err        string          `json:"err,omitempty"`        // 読めなかったもの (読めた分は出す)
 }
+
+// DiffSummary は取り込む先との差分 (merge-base から作業ツリーまで = commit 済みと未 commit の分。issue 508) の数と、本文の置き場。
+// 本文は大きいので progress.json には入れず、dispatcher が store.DiffPath に書く (画面は開いたときにだけ読む)。
+type DiffSummary struct {
+	Path  string `json:"path"`          // 本文 (git diff --no-color の出力を無害化したもの)
+	Files int    `json:"files"`         // ファイルの数
+	Add   int    `json:"add"`           // 足した行
+	Del   int    `json:"del"`           // 消した行
+	Cut   bool   `json:"cut,omitempty"` // DiffMaxLines で切った (板は本文の後ろに知らせの行を足す)
+}
+
+// DiffMaxLines は差分の本文の上限の行数 (glogx の diff の板の maxDiffLines と同じ。色付けは開くたびに裏で回す)。
+const DiffMaxLines = 5000
 
 // ProgressCommits は詳細に並べる commit の上限 (残りは本数だけ)。
 const ProgressCommits = 5
 
+// ProgressDirtyFiles は詳細に並べる未 commit のファイルの上限 (残りは数だけ)。
+const ProgressDirtyFiles = 5
+
 type Commit struct {
-	Hash    string `json:"hash"`
-	Subject string `json:"subject"`
+	Hash    string    `json:"hash"`
+	At      time.Time `json:"at,omitzero"` // commit の時刻 (committer)
+	Subject string    `json:"subject"`
 }
 
 // IssueProgress は issue の本文の「進捗」節 (見出しに「進捗」を含む節)。チェックボックスがあれば済み / 残りを数え、
@@ -73,23 +95,10 @@ func RunDir(c Card, cwd string) string {
 }
 
 // ProgressLines は詳細 (画面の引き出しと card show) に出す「進捗」の行。見出しは ProgressHead。何も無ければ nil。
+// worktree の場所・commit・未 commit は WorktreeLines (別の節)。
 func (c Card) ProgressLines(now time.Time, dur func(time.Duration) string) []string {
 	var out []string
 	if p := c.Progress; p != nil {
-		if p.Base != "" {
-			line := fmt.Sprintf("commit: %s より %d 本先", p.Base, p.Ahead)
-			if !p.LastCommit.IsZero() {
-				line += " (最後の commit " + dur(now.Sub(p.LastCommit)) + "前)"
-			}
-			out = append(out, line)
-			for _, cm := range p.Commits {
-				out = append(out, "  "+cm.Hash+" "+cm.Subject)
-			}
-			if n := p.Ahead - len(p.Commits); n > 0 && len(p.Commits) > 0 {
-				out = append(out, fmt.Sprintf("  ほか %d 本", n))
-			}
-			out = append(out, fmt.Sprintf("未 commit の変更: %d ファイル", p.Dirty))
-		}
 		for _, ip := range p.Issues {
 			switch {
 			case ip.Total > 0:
@@ -135,10 +144,155 @@ func (c Card) ProgressLines(now time.Time, dur func(time.Duration) string) []str
 
 // ProgressHead は「進捗」の見出し (集めた時刻が古ければそう言う)。
 func ProgressHead(c Card, now time.Time, dur func(time.Duration) string) string {
+	return "進捗" + progressStale(c, now, dur)
+}
+
+// WorktreeHead は「worktree」の見出し (進捗と同じ回に集めるので、古さも同じに言う)。
+func WorktreeHead(c Card, now time.Time, dur func(time.Duration) string) string {
+	return "worktree" + progressStale(c, now, dur)
+}
+
+func progressStale(c Card, now time.Time, dur func(time.Duration) string) string {
 	if !c.ProgressAt.IsZero() && now.Sub(c.ProgressAt) > ProgressStale {
-		return "進捗 (" + dur(now.Sub(c.ProgressAt)) + "前に集めたまま。dispatcher が止まっている?)"
+		return " (" + dur(now.Sub(c.ProgressAt)) + "前に集めたまま。dispatcher が止まっている?)"
 	}
-	return "進捗"
+	return ""
+}
+
+// Paint は WorktreeLines の色 (画面は SGR を渡し、card show は zero で素の文字にする)。
+type Paint struct {
+	Hash, Dim, Staged, Unstaged, Reset string
+}
+
+func (pt Paint) wrap(style, s string) string {
+	if style == "" {
+		return s
+	}
+	return style + s + pt.Reset
+}
+
+// WorktreeLines は「worktree」の節の行 (issue 508): 絶対パス (コピーしてそのまま cd できるよう 1 行に単独で置く)・ブランチ・
+// 取り込む先より先の commit (新しい順・相対の時刻)・未 commit のファイル・差分の数。diffHint は差分の行の後ろに足す文 (開き方)。
+// 集めていなければ nil。
+func (c Card) WorktreeLines(now time.Time, dur func(time.Duration) string, pt Paint, diffHint string) []string {
+	p := c.Progress
+	if p == nil || p.Worktree == "" {
+		return nil
+	}
+	out := []string{p.Worktree}
+	if p.NoWorktree {
+		switch {
+		case c.State == Done:
+			out = append(out, pt.wrap(pt.Dim, "片付けた (取り込みの後に消した)"))
+		case c.State == Planned && c.Session == "":
+			out = append(out, pt.wrap(pt.Dim, "まだ無い (PG をまだ起動していない)"))
+		default:
+			out = append(out, pt.wrap(pt.Dim, "見つからない (PG が作る前か、消された)"))
+		}
+		return out
+	}
+	if p.Base == "" { // Done (場所だけ集める) か、git を読めなかった (理由は進捗の「読めなかったもの」)
+		return out
+	}
+	branch := p.Branch
+	if branch == "" {
+		branch = "(ブランチに居ない: detached HEAD)"
+	}
+	out = append(out, "ブランチ "+branch)
+	line := fmt.Sprintf("commit: %s より %d 本先", p.Base, p.Ahead)
+	if !p.LastCommit.IsZero() {
+		line += " (最後の commit " + dur(now.Sub(p.LastCommit)) + "前)"
+	}
+	out = append(out, line)
+	for _, cm := range p.Commits {
+		l := "  " + pt.wrap(pt.Hash, cm.Hash)
+		if !cm.At.IsZero() {
+			l += " " + pt.wrap(pt.Dim, dur(now.Sub(cm.At))+"前")
+		}
+		out = append(out, l+" "+cm.Subject)
+	}
+	if n := p.Ahead - len(p.Commits); n > 0 && len(p.Commits) > 0 {
+		out = append(out, pt.wrap(pt.Dim, fmt.Sprintf("  ほか %d 本", n)))
+	}
+	out = append(out, fmt.Sprintf("未 commit の変更: %d ファイル", p.Dirty))
+	for _, f := range p.DirtyFiles {
+		out = append(out, "  "+pt.statusCode(f))
+	}
+	if n := p.Dirty - len(p.DirtyFiles); n > 0 && len(p.DirtyFiles) > 0 {
+		out = append(out, pt.wrap(pt.Dim, fmt.Sprintf("  ほか %d ファイル", n)))
+	}
+	if d := p.Diff; d != nil {
+		l := fmt.Sprintf("差分: %d ファイル +%d -%d", d.Files, d.Add, d.Del)
+		if d.Cut {
+			l += fmt.Sprintf(" (%d 行で切った)", DiffMaxLines)
+		}
+		out = append(out, l+diffHint)
+	}
+	return out
+}
+
+// statusCode は `XY パス` の XY に色を付ける (index に入った変更 = Staged、作業ツリーだけ = Unstaged、未追跡 = Dim)。
+func (pt Paint) statusCode(f string) string {
+	if len(f) < 3 {
+		return f
+	}
+	xy, rest := f[:2], f[2:]
+	switch {
+	case xy == "??":
+		return pt.wrap(pt.Dim, xy) + rest
+	case xy[0] != ' ':
+		return pt.wrap(pt.Staged, xy) + rest
+	}
+	return pt.wrap(pt.Unstaged, xy) + rest
+}
+
+// DiffFile は差分の本文の 1 ファイル分 (lines[Start:End]。Start は `diff --git` の行)。
+type DiffFile struct {
+	Path       string
+	Start, End int
+	Add, Del   int
+}
+
+// SplitDiff は `git diff` の本文をファイルごとに分ける (最初の `diff --git` より前の行は、どのファイルにも入れない)。
+// hunk の中の `+++` / `---` で始まる行は、ヘッダではなく足した / 消した行として数える。
+func SplitDiff(lines []string) []DiffFile {
+	var out []DiffFile
+	inHunk := false
+	for i, l := range lines {
+		if strings.HasPrefix(l, "diff --git ") {
+			if n := len(out); n > 0 {
+				out[n-1].End = i
+			}
+			out = append(out, DiffFile{Path: diffPath(l), Start: i, End: len(lines)})
+			inHunk = false
+			continue
+		}
+		if len(out) == 0 {
+			continue
+		}
+		f := &out[len(out)-1]
+		switch {
+		case strings.HasPrefix(l, "@@"):
+			inHunk = true
+		case !inHunk && strings.HasPrefix(l, "+++ ") && l != "+++ /dev/null":
+			f.Path = strings.TrimPrefix(strings.TrimPrefix(l, "+++ "), "b/") // 空白を含む名前も、ここは引用されずに正しく取れる
+		case !inHunk:
+		case strings.HasPrefix(l, "+"):
+			f.Add++
+		case strings.HasPrefix(l, "-"):
+			f.Del++
+		}
+	}
+	return out
+}
+
+// diffPath は `diff --git a/x b/x` の b 側の名前 (+++ の行が無いファイル = バイナリ・mode だけの変更・消したファイル の名前)。
+func diffPath(l string) string {
+	rest := strings.TrimPrefix(l, "diff --git ")
+	if i := strings.LastIndex(rest, " b/"); i >= 0 {
+		return rest[i+3:]
+	}
+	return rest
 }
 
 // Label は PG の待ちの短い名前 (card list の「待ち」)。待ちが無ければ空。

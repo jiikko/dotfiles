@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"glogx/subproc"
+	"tuikit/highlight"
 )
 
 // コミット境界の識別は人間向け出力の正規表現ではなく制御文字レコードで行う (issue の設計)。
@@ -397,8 +398,8 @@ const maxDiffLines = 5000
 
 // LoadCommitDiff は d キーの diff ポップアップ本文 (git show --stat --patch) を取得する。
 // 行は sanitizeDetailLine で無害化する (SGR 色は残しタブ/制御文字は枠描画を壊すため潰す)。
-// 色は git に任せず --color=never で受けて HighlightDiff が付ける (diff 構造色 +
-// chroma のシンタックスハイライト。切り捨て方は highlight.go 冒頭コメント参照)。
+// 色は git に任せず --color=never で受けて tuikit/highlight.Diff が付ける (diff 構造色 +
+// chroma のシンタックスハイライト。方式は tuikit/highlight の冒頭)。
 func LoadCommitDiff(sha string, colored bool) ([]string, error) {
 	// TUI 対話中の非同期経路 (d キー) なので timeout 付き (runGitTimeout の doc 参照)
 	out, err := runGitTimeout("show", "--stat", "--patch", "--color=never", sha)
@@ -414,7 +415,7 @@ func LoadCommitDiff(sha string, colored bool) ([]string, error) {
 		lines = append(lines, sanitizeDetailLine(line))
 	}
 	if colored {
-		lines = HighlightDiff(lines)
+		lines = highlight.Diff(lines)
 	}
 	return lines, nil
 }

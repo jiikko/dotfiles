@@ -277,7 +277,9 @@ func TestCardShowProgress(t *testing.T) {
 	env := viewFixture(t) // C-001 は質問待ち
 	now := time.Now()
 	if err := store.SaveProgress(env.dir, store.Progress{At: now, Cards: map[string]card.Progress{
-		"C-001": {Base: "origin/master", Ahead: 2, Commits: []card.Commit{{Hash: "a1b2c3", Subject: "見本"}}, Dirty: 1},
+		"C-001": {Worktree: "/r/.claude/worktrees/pc-c-001", Branch: "worktree-pc-c-001", Base: "origin/master", Ahead: 2,
+			Commits: []card.Commit{{Hash: "a1b2c3", Subject: "見本"}}, Dirty: 1, DirtyFiles: []string{" M a.go"},
+			Diff: &card.DiffSummary{Path: "/s/diffs/C-001.diff", Files: 1, Add: 3, Del: 1}},
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -291,8 +293,9 @@ func TestCardShowProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 	rc, out, errOut := viewCmd(t, env, "show", "C-001")
-	for _, want := range []string{"今の待ち: PM が質問に答えるか人に回す", "\n進捗\n", "commit: origin/master より 2 本先", "a1b2c3 見本", "ほか 1 本",
-		"未 commit の変更: 1 ファイル", "テスト: 最後の結果 rc=2", "worktree の直下 で `make test`", "FAIL: TestFoo", "取り込み: C-001 と C-002 の commit 済みの分どうしが衝突する"} {
+	for _, want := range []string{"今の待ち: PM が質問に答えるか人に回す", "\nworktree\n  /r/.claude/worktrees/pc-c-001\n  ブランチ worktree-pc-c-001\n",
+		"\n進捗\n", "commit: origin/master より 2 本先", "a1b2c3 見本", "ほか 1 本",
+		"未 commit の変更: 1 ファイル", "   M a.go", "差分: 1 ファイル +3 -1\n", "差分の本文: /s/diffs/C-001.diff", "テスト: 最後の結果 rc=2", "worktree の直下 で `make test`", "FAIL: TestFoo", "取り込み: C-001 と C-002 の commit 済みの分どうしが衝突する"} {
 		if rc != 0 || !strings.Contains(out, want) {
 			t.Fatalf("show に %q が無い: rc=%d out=%q err=%q", want, rc, out, errOut)
 		}
@@ -303,7 +306,10 @@ func TestCardShowProgress(t *testing.T) {
 		d.NowWaiting == "" {
 		t.Fatalf("show --json に進捗が無い: rc=%d %q", rc, out)
 	}
-	if _, out, _ := viewCmd(t, env, "show", "C-002"); strings.Contains(out, "\n進捗") {
+	if strings.Contains(out, "\x1b") {
+		t.Fatalf("show に色を出した: %q", out)
+	}
+	if _, out, _ := viewCmd(t, env, "show", "C-002"); strings.Contains(out, "\n進捗") || strings.Contains(out, "\nworktree") {
 		t.Fatalf("集めたものの無いカードに進捗の節を出した: %q", out)
 	}
 }

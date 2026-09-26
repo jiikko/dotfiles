@@ -22,6 +22,7 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 | `editor` | 実ファイルを 1 つエディタで開くコマンド ($VISUAL → $EDITOR → nvim、空白で語分割、quote は解釈しない) | glogx と pro-con の共通。tea.ExecProcess で待つ前提 (GUI エディタは -w) |
 | `toast` | 右下に数秒だけ出る通知のスタック: `Stack` (`Show` 成功 ✓緑・失敗 ✗赤 / `ShowInfo` 進行中 …シアン / `Advance` / `StartLeaving` / `BoxLines`)。右外から滑り込み、`Hold` (3 秒) 止まって、右へ滑り出る。`BoxLines` には重ねる窓の幅を渡す: 収まらない文は箱の中で折り返し (最大 `MaxTextLines` 行。超えた分は末尾を … にする)、窓の右端で切れない。新しい通知は上に積み、古い通知は下から抜ける (最大 3 枚。溢れたら成功・進行中から捨て、警告は残す)。タイマーは張らず `Timer` として返す | 操作の結果を画面の邪魔をせずに知らせる (glogx の push / pull の結果など)。デモの gif は下の「デモ」 |
 | `markdown` | markdown の本文を幅で整形する `Render(src, width, colored)` (見出し・箇条書き・チェックボックス・引用・表・水平線・フェンスコードの chroma ハイライト。行ごとのソース行番号も返す)。出力は width 桁を超えず、`colored=false` なら ANSI を出さない。本文の制御文字は termsafe で落とす | issue の本文 (glogx) と PG の応答の文 (pro-con の詳細) を同じ見た目で出す |
+| `highlight` | `Diff(lines)` (git の `--color=never` の diff に構造色 + chroma のシンタックスハイライト。行数は変えない) / `Code(lexer, 1 行)` / `Lang(言語名, 1 行)`。入力の無害化は使う側 (termsafe) | glogx の diff の板・pro-con の差分の板・markdown のフェンスコードで同じ色付けを使う |
 | `listnav` | `MotionOf` (キー → 移動の語彙) / `List` (一覧のカーソル + 窓 + 半ページの滑走) / `Pager` (本文のスクロール) / `Scroll` / `WindowOffset` / `ClampOffset` (窓の計算) | 一覧・本文の移動を毎回書かない |
 
 ## 遷移のパターン

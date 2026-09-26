@@ -21,6 +21,9 @@ import (
 // glogx の issues の引き出しと同じ寸法と所要 (glogx/issues_drawer.go。変えるなら両方の見え方を揃えて決める)。
 var drawerGeometry = layout.DrawerGeometry{Ratio: 0.8, Extra: 10, MinList: 8, MaxPeek: 18}
 
+// worktreePaint は worktree の節の色 (見本で決めた形。issue 508): hash は黄、時刻と「ほか」は暗く、index に入った変更は緑・作業ツリーだけの変更は赤。
+var worktreePaint = card.Paint{Hash: sgrYellow, Dim: sgrDim, Staged: fg(46), Unstaged: sgrRed, Reset: sgrReset}
+
 const (
 	drawerDuration = 112 * time.Millisecond
 	drawerHeadRows = 2 // 見出しと罫線。本文だけをスクロールする
@@ -63,6 +66,8 @@ func (m *Model) handleDrawerKey(k string) (cmd tea.Cmd, handled bool) {
 	case "q", "esc":
 		m.closeTop()
 		return m.startFrames(), true
+	case "D": // 取り込む先との差分の板 (issue 508。小文字の d はカードの削除なので大文字。docs/glogx-ui-guide.md の pro-con の表)
+		return m.openDiff(), true
 	case "J":
 		m.stepCard(1)
 		return nil, true
@@ -108,6 +113,7 @@ func (m *Model) dropVanishedDrawer() {
 	}
 	if _, ok := m.drawerCardData(); !ok {
 		m.showDetail, m.drawerCard = false, ""
+		m.diff = diffView{} // 差分の板もそのカードのもの
 		m.drawer = anim.Transition{}
 	}
 }
@@ -193,6 +199,13 @@ func (m *Model) drawerBody() []string {
 		}
 		add("", fmt.Sprintf("追加オーダー (%s・%s): %s", o.Kind.Label(), st, o.Text))
 	}
+	if ls := c.WorktreeLines(m.snap.Now, fmtDur, worktreePaint, sgrDim+"  (D で開く)"+sgrReset); len(ls) > 0 { // PG の worktree の場所と git (issue 508)
+		out = append(out, "")
+		add(sgrDim, card.WorktreeHead(c, m.snap.Now, fmtDur))
+		for _, l := range ls {
+			out = append(out, hangWrap("  "+l, w)...)
+		}
+	}
 	if ls := c.ProgressLines(m.snap.Now, fmtDur); len(ls) > 0 { // どこまで進んだか (issue 469。dispatcher と見張りが集めたもの)
 		out = append(out, "")
 		add(sgrDim, card.ProgressHead(c, m.snap.Now, fmtDur))
@@ -262,4 +275,19 @@ func (m *Model) overlayDrawer(region []string) []string {
 	}
 	w := layout.DrawerWidth(drawerGeometry.Target(m.width), m.drawer.Openness(m.now(), anim.EaseOutCubic))
 	return layout.ComposeDrawer(region, m.drawerPanel(), w, m.width, true)
+}
+
+// hangWrap は行頭の字下げを保って幅 w で折り返す (続きの行は 2 桁深く下げる。commit の subject が行頭へ戻って hash の列が崩れない)。
+func hangWrap(text string, w int) []string {
+	body := strings.TrimLeft(text, " ")
+	lead := strings.Repeat(" ", len(text)-len(body))
+	lines := strings.Split(ansi.Hardwrap(body, max(w-len(lead)-2, 10), true), "\n")
+	for i, l := range lines {
+		if i == 0 {
+			lines[i] = lead + l
+		} else {
+			lines[i] = lead + "  " + strings.TrimLeft(l, " ") // 折り返した位置の空白を続きの行の頭に残さない
+		}
+	}
+	return lines
 }

@@ -111,6 +111,7 @@ type Model struct {
 	attaching  bool        // attach の照合を裏で待っている
 	legend     bool        // レーンの意味の表を出している (legend.go)
 	legendOff  int         // 表が画面より長いときの送り (legend.go)
+	diff       diffView    // 詳細から D で開く差分の板 (diffview.go。issue 508)
 	lane       laneFade    // 選んでいるレーンの枠の色の移り変わり (lanefade.go)
 	drawer     anim.Transition
 	drawerCard string
@@ -215,6 +216,9 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 	case activityMsg:
 		m.onActivity(msg)
 		return m, nil
+	case diffLoadedMsg:
+		m.onDiffLoaded(msg)
+		return m, nil
 	case procsMsg:
 		m.set.procs, m.set.procsErr, m.set.procsAt, m.set.procsLoading = msg.rows, msg.err, msg.at, false
 		m.set.cursor = min(m.set.cursor, max(len(m.settingsSelectable())-1, 0))
@@ -302,6 +306,9 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 		}
 		if m.legend {
 			return m, m.handleLegendKey(msg.String())
+		}
+		if m.diff.open {
+			return m, m.handleDiffKey(msg.String())
 		}
 		switch m.mode {
 		case modeInput:

@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"glogx/issues"
+	"tuikit/highlight"
 )
 
 // 作業ツリーの状態 (git status) の読み取りとセクション分類。status viewer (status_view.go) が
@@ -203,7 +204,7 @@ var loadWorktreeDiff = func(paths []string, staged, colored bool) ([]string, err
 }
 
 // diffLines は git diff の生出力を表示行へ整える (行数上限・幅の正規化・色付け)。
-// LoadCommitDiff と同じ整形なので、揃えるためにここも sanitizeDetailLine + HighlightDiff を通す。
+// LoadCommitDiff と同じ整形なので、揃えるためにここも sanitizeDetailLine + highlight.Diff を通す。
 func diffLines(out string, colored bool) []string {
 	trimmed := strings.TrimRight(out, "\n")
 	if trimmed == "" {
@@ -218,7 +219,7 @@ func diffLines(out string, colored bool) []string {
 		lines = append(lines, sanitizeDetailLine(line))
 	}
 	if colored {
-		lines = HighlightDiff(lines)
+		lines = highlight.Diff(lines)
 	}
 	return lines
 }

@@ -353,6 +353,16 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 	if d.DoingErr != "" { // 進捗と今走っているものの両方に効くので、節の前に出す
 		p("dispatcher が集めた様子を読めない: %s", d.DoingErr)
 	}
+	if ls := c.WorktreeLines(now, fmtAge, card.Paint{}, ""); len(ls) > 0 { // PG の worktree の場所と git (issue 508)
+		p("")
+		p("%s", card.WorktreeHead(c, now, fmtAge))
+		for _, l := range ls {
+			p("  %s", l)
+		}
+		if d := c.Progress.Diff; d != nil && d.Path != "" {
+			p("  差分の本文: %s", d.Path)
+		}
+	}
 	if ls := c.ProgressLines(now, fmtAge); len(ls) > 0 { // どこまで進んだか (issue 469)
 		p("")
 		p("%s", card.ProgressHead(c, now, fmtAge))

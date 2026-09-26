@@ -93,7 +93,7 @@ func (m *Model) startFrames() tea.Cmd {
 }
 
 func (m *Model) animating() bool {
-	return len(m.moves) > 0 || m.drawer.Animating(m.now()) || m.set.anim.Animating(m.now()) || m.pager.Animating() || m.cursorGliding(m.now()) || m.laneFading(m.now()) || m.bumping(m.now()) || m.toasts.Animating()
+	return len(m.moves) > 0 || m.drawer.Animating(m.now()) || m.set.anim.Animating(m.now()) || m.pager.Animating() || m.diff.pager.Animating() || m.cursorGliding(m.now()) || m.laneFading(m.now()) || m.bumping(m.now()) || m.toasts.Animating()
 }
 
 func (m *Model) resetSlots() {
@@ -120,6 +120,7 @@ func (m *Model) onFrame() tea.Cmd {
 	m.set.anim.Settle(m.now())
 	m.settleDrawer(m.now())
 	m.pager.Advance()
+	m.diff.pager.Advance()
 	var hold tea.Cmd
 	if m.toasts.Animating() {
 		hold = toastTimers(m.toasts.Advance()) // 滑り込み終えた toast の「静止の後に引っ込む」合図

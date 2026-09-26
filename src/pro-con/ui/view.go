@@ -96,7 +96,7 @@ func (m *Model) render() string {
 	}
 	screen := m.overlayBump(append(append(header, region...), foot...), len(header), board)
 	head, rest := screen[:len(header):len(header)], screen[len(header):]
-	region = m.overlayToast(m.overlayForm(m.dimWhileTyping(m.overlaySettings(m.overlayDrawer(rest[:len(region)])))))
+	region = m.overlayToast(m.overlayForm(m.dimWhileTyping(m.overlaySettings(m.overlayDiff(m.overlayDrawer(rest[:len(region)]))))))
 	return strings.Join(m.overlayQuit(m.overlayLegend(append(append(head, region...), rest[len(region):]...))), "\n")
 }
 
@@ -763,6 +763,9 @@ func (m *Model) hints() []string {
 	}
 	if m.legend {
 		return []string{"? / q / esc 閉じる"}
+	}
+	if m.diff.open {
+		return []string{"j / k 行", "space / b 半ページ", "J / K ファイル", "enter 畳む / 開く", "z 全部畳む / 開く", "D / q 閉じる"}
 	}
 	switch m.mode {
 	case modeInput:
