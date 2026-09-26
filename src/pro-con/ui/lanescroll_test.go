@@ -96,3 +96,23 @@ func TestDoneLaneScrollbarOnlyWhenOverflowing(t *testing.T) {
 		t.Fatalf("入り切るレーンにスクロールバーが出ている: %q", col)
 	}
 }
+
+// 選択より手前のカードが別のレーンへ移っている途中は、移動元に点線の枠が残って並びが 1 段ずれる。追従はその段で数える
+// (カードの添字で数えると、末尾まで進めた選択中のカードが見える範囲の 1 段下に落ちる)。
+func TestLaneScrollCountsGhostOfMovingCard(t *testing.T) {
+	m := doneLaneModel(t, 30)
+	be := m.be.(*spy)
+	for i := range be.snap.Cards {
+		if be.snap.Cards[i].ID == "D05" {
+			be.snap.Cards[i].State = card.Planned
+		}
+	}
+	m.Update(tickMsg{})
+	if len(m.moves) != 1 {
+		t.Fatalf("前提: D05 の移動の演出が始まっていない (moves=%d)", len(m.moves))
+	}
+	press(m, "G") // 演出の途中 (時計は止めてある) で末尾へ
+	if band := strings.Join(doneLaneRows(m), "\n"); !strings.Contains(band, "T29") {
+		t.Fatalf("点線の枠が手前に入ったら選択中の T29 が見えなくなった:\n%s", band)
+	}
+}

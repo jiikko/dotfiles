@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"slices"
+
 	"tuikit/layout"
 
 	"pro-con/card"
@@ -16,7 +18,28 @@ func (m *Model) laneTop(col, n int) int {
 	return max(0, min(m.tops[col], n-m.shownCards()))
 }
 
-// laneItems はレーン col に並ぶ枚数。cards はレーンのカードの枚数で、移動元に残す点線の枠も数える (columnCells の total と同じ)。
+// laneOrder はレーン col に並ぶものの順。値はレーンのカード (枚数 cards) の添字で、-1 は移動元に残す点線の枠 (motion.go)。
+// 描く側 (columnCells) と位置を数える側 (slotRow / followSelection) が同じ並びを使う (点線の枠の手前のカードと後ろのカードで段が 1 つずれる)。
+// 枠は移動元の段の小さい順に差し込む (m.moves は map なので、順を決めないと呼ぶたびに並びが変わる)。
+func (m *Model) laneOrder(col, cards int) []int {
+	items := make([]int, cards)
+	for i := range items {
+		items[i] = i
+	}
+	var ghosts []int
+	for _, mv := range m.moves {
+		if mv.from.col == col {
+			ghosts = append(ghosts, mv.from.row)
+		}
+	}
+	slices.Sort(ghosts)
+	for _, r := range ghosts {
+		items = slices.Insert(items, min(r, len(items)), -1)
+	}
+	return items
+}
+
+// laneItems はレーン col に並ぶ枚数 (len(laneOrder) と同じ。並びを組まずに数える)。
 func (m *Model) laneItems(col, cards int) int {
 	n := cards
 	for _, mv := range m.moves {
@@ -27,9 +50,19 @@ func (m *Model) laneItems(col, cards int) int {
 	return n
 }
 
-// laneTopOf は今の配置でのレーン col の先頭 (枠と移動中のカードの位置を出す側が使う)。
-func (m *Model) laneTopOf(col int, lanes [][]*card.Card) int {
-	return m.laneTop(col, m.laneItems(col, len(lanes[col])))
+// itemRow はレーン col の row 枚目のカードが並びの何段目か (点線の枠も数える)。そのカードが無ければ row のまま
+// (移動を始めたカードの移動元の slot: 抜けたカードの段は、後ろのカードが詰めずに待つので row のままで合う)。
+func (m *Model) itemRow(col, cards, row int) int {
+	if i := slices.Index(m.laneOrder(col, cards), row); i >= 0 {
+		return i
+	}
+	return row
+}
+
+// slotRow は slot の見えている段 (レーンの見えている先頭から何段目)。見える範囲の外なら 0 未満か shownCards 以上になる。
+func (m *Model) slotRow(s slot, lanes [][]*card.Card) int {
+	n := len(lanes[s.col])
+	return m.itemRow(s.col, n, s.row) - m.laneTop(s.col, m.laneItems(s.col, n))
 }
 
 // cardWidth は枚数 n のレーンでカードを組む幅。スクロールバーを出すレーンはその分を先に引く (layout.ScrollbarWidth の注意)。
@@ -49,8 +82,9 @@ func (m *Model) followSelection() {
 	if !ok {
 		return
 	}
-	top := m.laneTopOf(col, lanes)
-	top = max(min(top, row), row-m.shownCards()+1)
+	n := len(lanes[col])
+	top, item := m.laneTop(col, m.laneItems(col, n)), m.itemRow(col, n, row)
+	top = max(min(top, item), item-m.shownCards()+1)
 	if m.tops == nil {
 		m.tops = map[int]int{}
 	}

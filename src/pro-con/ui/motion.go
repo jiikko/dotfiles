@@ -128,7 +128,7 @@ func (m *Model) onFrame() tea.Cmd {
 // slotXY は slot の画面上の位置 (ボードの左上からの桁と行)。枠の内側の左上。
 func (m *Model) slotXY(s slot) (float64, float64) {
 	w := m.colWidth()
-	row := s.row - m.laneTopOf(s.col, m.lanes()) // スクロールしたレーンでは見えている位置 (lanescroll.go)
+	row := m.slotRow(s, m.lanes()) // 点線の枠とスクロールを数えた、見えている段 (lanescroll.go)
 	return float64(s.col*(w+len(colSep)) + 1), float64(1 + cardGap + row*perCardLines)
 }
 

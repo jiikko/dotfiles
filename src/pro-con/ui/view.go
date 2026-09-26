@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -451,17 +450,9 @@ const (
 
 // columnCells は列の中身を 1 枚 cardLines 行のセルで並べる。移動中のカード (motion.go) は、移動先では空けて待ち、
 // 移動元には点線の枠を残す (どちらも着地まで。周りのカードが途中で詰まってずれないように)。
-// 組むのは top 番目からの limit 個だけ (見えないカードの文字列を毎コマ組まない。issue 494)。並びの数え方は laneItems と同じ。
+// 組むのは top 番目からの limit 個だけ (見えないカードの文字列を毎コマ組まない。issue 494)。並びは laneOrder (lanescroll.go)。
 func (m *Model) columnCells(col int, cs []*card.Card, inner, top, limit int) (cells [][]string) {
-	items := make([]int, len(cs)) // cs の添字。-1 は移動元に残す点線の枠
-	for i := range items {
-		items[i] = i
-	}
-	for _, mv := range m.moves {
-		if mv.from.col == col {
-			items = slices.Insert(items, min(mv.from.row, len(items)), -1)
-		}
-	}
+	items := m.laneOrder(col, len(cs))
 	top = min(top, len(items))
 	for _, i := range items[top:min(top+limit, len(items))] {
 		if i < 0 {
