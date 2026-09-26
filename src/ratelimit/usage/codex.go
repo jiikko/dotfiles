@@ -95,7 +95,8 @@ func FetchCodex(ctx context.Context) ([]Window, error) {
 	}
 	// 読み口を閉じた (= ctx が終わった) ときの読み取りエラーは timeout として返す
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("codex app-server が応答しないまま打ち切った: %w", err)
+		// 包む err が deadline (timeout) か canceled (呼び出し側の中断) かを区別する
+		return nil, fmt.Errorf("codex app-server の応答を待つあいだに打ち切られた: %w", err)
 	}
 	if err := sc.Err(); err != nil {
 		return nil, fmt.Errorf("codex app-server 出力の読み取り失敗: %w", err)

@@ -139,7 +139,13 @@ for p in "$@"; do
       case "$proj" in
         ''|.|..|-*)
           echo "✗ 不正な src プロジェクト名: $p" >&2; fail=1 ;;
-        *) add_go_dir "src/$proj" ;;
+        *)
+          add_go_dir "src/$proj"
+          # 共有 module (subproc / termsafe 等) を変えたら、replace で取り込む module も回す。
+          # Go は replace を取り込む側の go.mod にも要求するので、推移的な利用者もここで拾える
+          for _mod in src/*/go.mod; do
+            grep -qE "=> \.\./${proj}[[:space:]]*\$" "$_mod" && add_go_dir "$(dirname "$_mod")"
+          done ;;
       esac ;;
     .github/*)
       add_target test-actionlint; add_target test-yaml ;;
