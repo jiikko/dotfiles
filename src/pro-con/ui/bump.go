@@ -80,23 +80,42 @@ func (m *Model) overlayBump(screen []string, top, h int) []string {
 	x0 := m.bump.col * (w + len(colSep))
 	total := m.width
 	band := make([]string, h)
-	for r := range h {
-		l := fit(screen[top+r], total)
-		band[r] = fit(ansi.Cut(l, x0, x0+w), w)
-		screen[top+r] = splice(l, x0, w, strings.Repeat(" ", w))
+	for r := range h { // ボードの行は先に画面の幅へ揃える (はみ出したボードの右端の「…」も帯と一緒に動く)
+		screen[top+r] = fit(screen[top+r], total)
+		band[r] = fit(ansi.Cut(screen[top+r], x0, x0+w), w)
 	}
-	for r, s := range band {
-		y, x := top+r+dy, x0+dx
-		if y < 0 || y >= len(screen) {
+	// 1 行につき差し替えは 1 回 (元の帯の位置と移り先を合わせた範囲に、空白と帯を並べて入れる)。行ごとに幅を何度も数え直すと、
+	// 揺れのコマの描画の大半をここが使っていた (issue 494)。触るのは揺れの届く行だけ
+	blank := func(n int) string { return strings.Repeat(" ", n) }
+	for y := max(top+min(0, dy), 0); y < min(top+h+max(0, dy), len(screen)); y++ {
+		inBoard := y >= top && y < top+h
+		src := y - top - dy
+		hasBand := src >= 0 && src < h
+		var x, width int
+		var s string
+		switch {
+		case hasBand && inBoard && dx >= 0: // 空けた分の空白 + 帯
+			x, width, s = x0, w+dx, blank(dx)+band[src]
+		case hasBand && inBoard: // 帯 + 空けた分の空白
+			x, width, s = x0+dx, w-dx, band[src]+blank(-dx)
+		case hasBand: // ボードの外 (ヘッダ・下の群) へ乗る帯
+			x, width, s = x0+dx, w, band[src]
+		case inBoard: // 帯が出ていった行
+			x, width, s = x0, w, blank(w)
+		default:
 			continue
 		}
-		if x < 0 {
-			s, x = ansi.Cut(s, -x, w), 0
+		if x < 0 { // 左右の端の外は切る
+			s, width, x = ansi.Cut(s, -x, width), width+x, 0
 		}
-		if x+w > total {
-			s = ansi.Cut(s, 0, total-x)
+		if x+width > total {
+			s, width = ansi.Cut(s, 0, total-x), total-x
 		}
-		screen[y] = splice(fit(screen[y], total), x, ansi.StringWidth(s), s)
+		l := screen[y]
+		if !inBoard { // ボードの行は上で揃えた
+			l = fit(l, total)
+		}
+		screen[y] = splice(l, x, width, s)
 	}
 	return screen
 }
