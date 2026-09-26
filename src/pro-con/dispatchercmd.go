@@ -34,6 +34,8 @@ var dispatcherInterval = 3 * time.Second // テストが延ばす (Poke でだ�
 // projects は transcript の置き場 (~/.claude/projects。PG が落ちて自動で再開したかを読む)。
 // pm は PM の設定 (issue 437)。
 func runDispatcher(args []string, dir, projects string, repos map[string]string, pm pmConfig, stdout, stderr io.Writer) int {
+	upgradedFrom := takeUpgradedFrom() // 入れ替え (505) で起きたなら前の版の名前。lock は下の AdoptLock で受け取る
+	selfStart, selfErr := selfBinary() // 動いている版 (shim が差し替える前に取る)
 	fs := flag.NewFlagSet("pro-con dispatcher", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	limit := fs.Int("limit", 2, "同時に動かす PG の上限 (415 の決定事項: 2 から始める)。pro-con config set limit があればそちらが勝つ (これは設定が無いときの値)")
@@ -44,6 +46,7 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 	intFlag := fs.String("integrator", "", `"off" なら取り込みの係を起動も再開もしない (レビューの列のカードはそのまま置く)。"on" / "off" を書けば設定の integrator より勝つ`)
 	alone := fs.Duration("exit-without-screens", 0, "開いている画面が 1 つも無い状態がこの長さ続いたら、PG を止めて抜ける (画面が起こすときに付ける。0 なら抜けない)")
 	fromScreen := fs.Bool(fromScreenFlag, false, "画面が起こす / 止める (内部用。人が止めた印を --stop で置かず、起動で外さない。印があれば起動せずに抜ける)")
+	preflight := fs.Bool(preflightFlag, false, "記録を読めるかだけ確かめて抜ける (内部用。動いている dispatcher が新版へ入れ替える前に、新版のバイナリに走らせる。issue 505)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -69,6 +72,14 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 			_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", err)
 			return 1
 		}
+	}
+	if *preflight { // 書かない・lock を取らない
+		if err := dispatcher.Preflight(dir); err != nil {
+			_, _ = fmt.Fprintln(stderr, "pro-con dispatcher --preflight:", err)
+			return 1
+		}
+		_, _ = fmt.Fprintln(stdout, preflightOK, binaryLabel(selfStart))
+		return 0
 	}
 	if *stopAll {
 		if !*fromScreen { // 人が止めた: 印を置く (画面の keeper が起こし直さない。issue 459)。止める前に置く (止め終えた直後の keeper に先を越されない)
@@ -97,26 +108,42 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 		}
 		return 0
 	}
+	// 🚨 lock は claude を引く (子を起こす) より先に受け取る。入れ替え (505) で引き継いだ lock は、受け取れなければ取り直す
+	// (別の dispatcher が取っていれば ErrRunning で抜ける = 2 つ立たない)
+	lock, adoptErr := dispatcher.AdoptLock(dir)
+	if lock == nil {
+		if lock, err = dispatcher.TakeLock(dir); err != nil {
+			_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", err)
+			return 1
+		}
+	}
+	defer func() { lock.Release() }()
 	cl, err := resolveClaude(context.Background(), e2e)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", err)
 		return 1
 	}
-	unlock, err := dispatcher.Lock(dir)
-	if err != nil {
-		_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", err)
-		return 1
+	// 入れ替えで起きた dispatcher は、止める印・人が止めた印を起動のときの形で扱わない (前のプロセス像の続き。
+	// 入れ替えの隙に --stop が置いた印を捨てると、頼んだ --stop が時間切れまで待つ・人が止めた印を外すと画面が起こし直す)
+	resumed := upgradedFrom != ""
+	if !resumed {
+		_ = dispatcher.StopRequested(dir) // 前の --stop が dispatcher の居ない間に置いた印は捨てる (起動した途端に止まらないように)
 	}
-	defer unlock()
-	_ = dispatcher.StopRequested(dir) // 前の --stop が dispatcher の居ない間に置いた印は捨てる (起動した途端に止まらないように)
 	d := newDispatcherFor(dir, projects, repos, pm.Repo, pmOff, *limit, cl, e2e)
 	d.Record = eventSink(dir, stdout, stderr)
+	if resumed {
+		text := fmt.Sprintf("dispatcher が新版に切り替わった (%s → %s。PID %d のまま)", upgradedFrom, binaryLabel(selfStart), os.Getpid())
+		if adoptErr != nil {
+			text += "。lock は引き継げず取り直した: " + adoptErr.Error()
+		}
+		say(d, eventlog.KindUpgrade, text)
+	}
 	// 🚨 lock を取ってから見る: 画面が印を見てから起こすまでの間に --stop が印を置いても、起こされた側が回らずに抜ける
-	if *fromScreen && store.Held(dir) {
+	if *fromScreen && !resumed && store.Held(dir) {
 		say(d, eventlog.KindStop, "人が止めた印 (dispatcher --stop) があるので、画面が起こした dispatcher は回らずに抜ける")
 		return 0
 	}
-	if !*fromScreen {
+	if !*fromScreen && !resumed {
 		if released, err := store.Release(dir); err != nil {
 			say(d, eventlog.KindError, "人が止めた印を外せない (開いている画面は、この dispatcher が抜けた後に起こし直さない): "+err.Error())
 		} else if released {
@@ -147,11 +174,33 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 	}
 	// 見張り (issue 475)。e2e モードの偽の worktree と、1 回だけの dispatcher では起こさない。
 	// 🚨 d の欄 (Record / Changed) を書き終えてから起こす (起こし直しの goroutine が say で読む)
-	if e2e == nil && !*once {
-		stopMonitor := superviseMonitor(ctx, defaultMonitorSup(func(text string) { say(d, eventlog.KindMonitor, text) }, stdout, stderr))
-		defer stopMonitor() // unlock より先に走る (見張りを止めてから dispatcher の lock を外す)
+	stopMonitor := func() {}
+	startMonitor := func() {
+		if e2e == nil && !*once {
+			stopMonitor = superviseMonitor(ctx, defaultMonitorSup(func(text string) { say(d, eventlog.KindMonitor, text) }, stdout, stderr))
+		}
 	}
-	return serve(ctx, d, dir, wakes, serveOpts{interval: dispatcherInterval, once: *once, alone: *alone}, stderr)
+	startMonitor()
+	defer func() { stopMonitor() }() // unlock より先に走る (見張りを止めてから dispatcher の lock を外す)
+	o := serveOpts{interval: dispatcherInterval, once: *once, alone: *alone}
+	// 新版への入れ替え (505)。e2e モード (偽の PG の e2e がソースの編集で入れ替わらない) と 1 回だけの dispatcher では行わない
+	if e2e == nil && !*once {
+		u, err := newDispUpgrade(d, dir, args, selfStart, selfErr, lock, func(switchTo func() error) error {
+			stopMonitor() // 見張りは子なので、入れ替えの前に止める (exec で置き去りにしない)。新版が起こし直す
+			err := switchTo()
+			startMonitor() // 戻ってきた = 失敗。旧版のまま見張りも起こし直す
+			return err
+		})
+		if err != nil {
+			say(d, eventlog.KindUpgrade, "dispatcher の新版への入れ替えは無効 ("+err.Error()+")。新版は手で起動し直すまで効かない")
+		} else {
+			if resumed {
+				u.switched, u.switchedAt = upgradedFrom+" → "+u.from, time.Now()
+			}
+			d.UpgradeNote, o.upgrade = u.note, u.step
+		}
+	}
+	return serve(ctx, d, dir, wakes, o, stderr)
 }
 
 // serveOpts は serve の回し方。
@@ -166,6 +215,8 @@ type serveOpts struct {
 	now func() time.Time
 	// retries は stopUntilDone の止め直しの上限 (0 なら止まるまで)
 	retries int
+	// upgrade は Tick の後に呼ぶ新版への入れ替え (dispupgrade.go。成功すると戻らない)。nil なら入れ替えない
+	upgrade func(ctx context.Context)
 }
 
 // serve は dispatcher を回す。Tick の後は interval か、依頼を置いた側に起こされる (wakes) まで待つ。
@@ -203,6 +254,9 @@ func serve(ctx context.Context, d *dispatcher.Dispatcher, dir string, wakes <-ch
 		}
 		if o.once {
 			return 0
+		}
+		if o.upgrade != nil && ctx.Err() == nil {
+			o.upgrade(ctx)
 		}
 		select {
 		case <-ctx.Done():

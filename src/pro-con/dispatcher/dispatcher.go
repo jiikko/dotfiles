@@ -151,6 +151,9 @@ type Dispatcher struct {
 	stopFrom    map[string]time.Time // 印の付いたカードを、この dispatcher が最初に止めに入った時刻 (close.go。諦めるまでの時間の起点)
 	unknownSeen map[string]bool      // 知らない state の警告を出した session id (unknownStateNote。止め直しの周・Tick ごとに重ねない)
 
+	// UpgradeNote は新版への入れ替えの様子 (issue 505。dispupgrade.go が持つ)。Tick ごとに dispatcher-state.json へ書く。nil なら書かない
+	UpgradeNote func(now time.Time) (string, bool)
+
 	// BootTime はマシンの起動時刻を読む (recover.go の起動時の確かめ。本物は kern.boottime)。nil なら読めない = 再起動で消えたと示せないので復旧しない
 	BootTime func() (time.Time, error)
 	started  *startupCheck // 起動時の確かめの結果 (nil ならまだ確かめていない)

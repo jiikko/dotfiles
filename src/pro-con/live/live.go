@@ -558,7 +558,7 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 	}
 	b.snap = backend.Snapshot{Now: now, Cards: cards, Consumers: cons, Limit: ds.Cap, LimitMax: ds.Limit, LimitWhy: ds.Why,
 		DispatcherTick: ds.Tick, Screens: screens, DispatcherHeld: store.Held(b.dir),
-		DispatcherGone: store.DispatcherGone(b.dir), Startup: ds.Startup, StartupAlert: ds.StartupAlert, Roles: ds.Roles, RoleStates: ds.RoleStates, Violations: append(card.Check(cards), extra...), Config: cfg}
+		DispatcherGone: store.DispatcherGone(b.dir), Startup: ds.Startup, StartupAlert: ds.StartupAlert, Upgrade: ds.Upgrade, UpgradeAlert: ds.UpgradeAlert, Roles: ds.Roles, RoleStates: ds.RoleStates, Violations: append(card.Check(cards), extra...), Config: cfg}
 	b.pending, b.ready = pending, true
 	b.mu.Unlock()
 }

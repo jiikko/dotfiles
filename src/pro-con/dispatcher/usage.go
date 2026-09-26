@@ -184,6 +184,9 @@ func (d *Dispatcher) writeState(now time.Time) error {
 		s.UsageSession, s.UsageWeek, s.UsageAt = u.Session, u.Week, u.At
 	}
 	s.Startup, s.StartupAlert = d.startupNote(now)
+	if d.UpgradeNote != nil {
+		s.Upgrade, s.UpgradeAlert = d.UpgradeNote(now)
+	}
 	return store.SaveDispatcherState(d.Dir, s)
 }
 
