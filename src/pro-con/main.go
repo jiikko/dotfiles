@@ -46,6 +46,11 @@ import (
 
 func main() {
 	dispatcher.GuardInheritedLock() // 入れ替え (505) で引き継いだ dispatcher の lock を、何かを起こす前に子へ渡らない形にする
+	os.Exit(runInherited())
+}
+
+// runInherited は run を、旧版から alt screen のまま渡されたときの見張りで包む (defer を os.Exit より内側に置く)。
+func runInherited() int {
 	var stderr io.Writer = os.Stderr
 	if os.Getenv(upgrade.ResumeEnv) != "" { // ctrl+r で旧版から渡された: alt screen の中で起動している (issue 509)
 		inheritedAlt = &altGuard{w: os.Stderr, stop: upgrade.GuardAltScreen(os.Stdout)} // 画面を出す前の ctrl+c 等でも抜ける
@@ -59,7 +64,7 @@ func main() {
 	}
 	code := run(os.Args[1:], os.Stdin, os.Stdout, stderr)
 	inheritedAlt.leave()
-	os.Exit(code)
+	return code
 }
 
 // inheritedAlt は、旧版から alt screen のまま渡された新版が、画面を出す前に終わるときに alt screen を抜ける見張り (issue 509)。

@@ -100,5 +100,5 @@ func (s *Screen) Write(p []byte) (int, error) {
 // LeaveAltScreen は、旧版から alt screen のまま受け取った新版が、画面を出せずに終わるときに書く (issue 509)。
 // 書かないと、シェルへ戻っても alt screen に閉じ込められ、エラーの文も暗い画面の上に紛れる。
 func LeaveAltScreen(f *os.File) {
-	_, _ = f.Write([]byte("\x1b[0m" + string(showCursor) + string(leaveAltScreen)))
+	_, _ = f.WriteString("\x1b[0m" + string(showCursor) + string(leaveAltScreen))
 }

@@ -293,7 +293,7 @@ func (st *sgrState) read(params string) string {
 			st.fg, st.bg = nil, nil
 			keep = append(keep, "0")
 		case p == 38 || p == 48:
-			c, n, ok := extColor(ps, i, num)
+			c, n, ok := extColor(i, num)
 			if !ok { // 読めない色 (引数の足りない 38;5 など) は残さない: 残すと後ろに足す暗い色の引数と繋がって別の色に読まれる
 				i = len(ps)
 				continue
@@ -327,8 +327,8 @@ func (st *sgrState) read(params string) string {
 	return strings.Join(keep, ";")
 }
 
-// extColor は ps[i] (38 / 48) に続く色 (5;n か 2;r;g;b) を読む。読んだ引数の数 (38 / 48 を除く) を返す。
-func extColor(ps []string, i int, num func(int) (int, bool)) (rgb, int, bool) {
+// extColor は i 番目の引数 (38 / 48) に続く色 (5;n か 2;r;g;b) を読む。読んだ引数の数 (38 / 48 を除く) を返す。
+func extColor(i int, num func(int) (int, bool)) (rgb, int, bool) {
 	kind, ok := num(i + 1)
 	if !ok {
 		return rgb{}, 0, false
