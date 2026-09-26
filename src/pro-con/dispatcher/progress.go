@@ -14,6 +14,7 @@ package dispatcher
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -154,7 +155,7 @@ func readDiffLines(r io.Reader, limit int) ([]string, bool, error) {
 			}
 			lines = append(lines, termsafe.PlainLine(l))
 		}
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return lines, false, nil
 		}
 		if err != nil {
@@ -177,7 +178,7 @@ func readCappedLine(br *bufio.Reader) (string, bool, error) {
 		} else {
 			b = append(b, frag...)
 		}
-		if err == bufio.ErrBufferFull {
+		if errors.Is(err, bufio.ErrBufferFull) {
 			continue
 		}
 		return string(b), long, err

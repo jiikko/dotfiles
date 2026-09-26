@@ -118,14 +118,14 @@ func (m *Model) handleDiffKey(k string) tea.Cmd {
 		n := m.diffBodyRows()
 		m.diff.pager.Move(mo, len(rows), n, glideFrames)
 		m.diff.pager.Clamp(len(rows), n)
-		m.followScroll(rows, owner, n)
+		m.followScroll(owner, n)
 		return m.startFrames()
 	}
 	return nil
 }
 
 // followScroll は、選んでいるファイルの行が窓から外れたら、上端の行のファイルを選び直す (送った先で enter が効く)。
-func (m *Model) followScroll(rows []diffRow, owner []int, n int) {
+func (m *Model) followScroll(owner []int, n int) {
 	off := m.diff.pager.Offset
 	for i := off; i < min(off+n, len(owner)); i++ {
 		if owner[i] == m.diff.cur {
