@@ -2,7 +2,10 @@
 
 起票日: 2026-09-26
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+> ⏸ **保留 (2026-09-26〜)**: ユーザーの指示「一旦 pending にして」。**再開の条件**: ユーザーが下の見本 (案 1A〜6。C-051 の PG が本物の記録から描いた) から採る案を選んだとき。
+> 選ばれた案の実装は新しいカードにする。見本は `src/pro-con/samples/485-dependency-view/` (下の「見本」の節)
+
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 
@@ -62,22 +65,22 @@ C-027 (レビュー) ──→ C-039 (分解済み)
 
 ## 見本 (C-051 の PG。2026-09-26)
 
-どのディレクトリからでも打てる (フルパス)。見本は PG の worktree の `tmp/` にあり、commit されていない。
+どのディレクトリからでも打てる (フルパス)。見本は `src/pro-con/samples/485-dependency-view/` に置いた (C-051 の PG の worktree の tmp/ から移した)。🚨 スクリプトは今の `cards.json` を読んで描くので、カードが書庫へ片付くと同じ絵は描けない。`.ans` は 2026-09-26 に撮った出力 (`less -R` で見る)
 C-043 の見本 (架空の 11 枚) は使わず、**本物の記録 (`~/.local/state/pro-con/live/cards.json`) の After と ParentID** を読んで描き直した
 (2A / 2B / 2C・3A / 3B の形は C-043 の見本から引き継いだ)。
 `--at HH:MM` を付けると、各カードの History の文から列を巻き戻して、その時刻のボードと依存を描く。
 
 ```sh
 # 色つきで再生する (案 1A 1B 2 3 4 5 6 を全部。--at を省くと今)
-python3 /Users/koji/dotfiles/.claude/worktrees/pc-c-051/tmp/pro-con-485-sample.py --at 01:05
-python3 /Users/koji/dotfiles/.claude/worktrees/pc-c-051/tmp/pro-con-485-sample.py --at 07:50   # 鎖の先頭が 2 本とも人の番
-python3 /Users/koji/dotfiles/.claude/worktrees/pc-c-051/tmp/pro-con-485-sample.py --at 10:05   # 完了を残すかで見え方が変わる
+python3 /Users/koji/dotfiles/src/pro-con/samples/485-dependency-view/pro-con-485-sample.py --at 01:05
+python3 /Users/koji/dotfiles/src/pro-con/samples/485-dependency-view/pro-con-485-sample.py --at 07:50   # 鎖の先頭が 2 本とも人の番
+python3 /Users/koji/dotfiles/src/pro-con/samples/485-dependency-view/pro-con-485-sample.py --at 10:05   # 完了を残すかで見え方が変わる
 
 # 案を絞る / 選択中のカード / レーンの中の幅を変える
-python3 /Users/koji/dotfiles/.claude/worktrees/pc-c-051/tmp/pro-con-485-sample.py --at 07:50 --sel C-032 --width 30 2 3
+python3 /Users/koji/dotfiles/src/pro-con/samples/485-dependency-view/pro-con-485-sample.py --at 07:50 --sel C-032 --width 30 2 3
 
 # 質問に添えた出力をそのまま見る (13:43 に書き出したもの)
-less -R /Users/koji/dotfiles/.claude/worktrees/pc-c-051/tmp/pro-con-485-sample-0750.ans   # -0105 / -1005 / -now もある
+less -R /Users/koji/dotfiles/src/pro-con/samples/485-dependency-view/pro-con-485-sample-0750.ans   # -0105 / -1005 / -now もある
 ```
 
 見本が再現していないもの: 過去の時刻の列は History の文からの推定 (人の番は「PM が人に回した」の後だけ。レビュー列の人の番は出ない)。
