@@ -30,7 +30,7 @@
 | B. 中継して下に案内の行 | pro-con が端末と Claude Code の間に入り、Claude Code の画面の下に pro-con の案内の 1 行を常に出す | pro-con が拾うキー (例: `Ctrl+]`) で attach の接続を切る | 重い (端末の表示を組み立て直す部品が要る) |
 | C. tmux の pane を分ける | 左右に pro-con と Claude Code | pro-con の側のキー / pane を閉じる | 軽い。tmux の中だけ・狭くなる |
 
-- **A を第一候補にする** (ユーザーの pro-con はいつも tmux の中)。tmux の外では、下の「アイディア」の案内 (attach の前の案内・Ctrl+Z) に戻る
+- **決定 (2026-09-26、ユーザー「A でお願いします」): A (tmux の popup) で作る** (ユーザーの pro-con はいつも tmux の中)。B・C は作らない。tmux の外では、下の「アイディア」の案内 (attach の前の案内・Ctrl+Z) に戻る
 - 🚨 popup の中で `claude attach` を起こすと、pro-con の `ExecProcess` を通らない (端末を渡さない) ので、518 の「前面が外れる」経路も避けられる見込み (未確認)
 - 🚨 `tmux display-popup` / `bind-key` を本番の tmux サーバで試さない。確かめは隔離した tmux の `-L` サーバで。popup を閉じるキーを tmux に bind するなら、attach の間だけにして戻したら外す
 - attach から戻ったときに人間の発言をカードの履歴へ残す処理 (README の attach の項) は、popup でも同じく動くこと
