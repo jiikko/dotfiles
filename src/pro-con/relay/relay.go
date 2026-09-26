@@ -36,6 +36,10 @@ const Dir = "relay"
 // minInterval は書き出しの最短の間隔 (演出の 1 コマごとには書かない。最後の 1 枚は必ず書く)。
 var minInterval = 100 * time.Millisecond
 
+// busyInterval は変化が続いているあいだ (作業中の PG のスピナーは 100ms ごとに画面を変える・演出の途中) の書き出しの間隔。
+// minInterval のままだと、見る人がいなくても 83KB の 1 枚を毎秒約 8 回書き直していた (issue 504)。1 回きりの変化 (操作) は待たずに書く。
+var busyInterval = time.Second
+
 // Frame は画面 1 枚。
 type Frame struct {
 	ID     string    `json:"id"`
@@ -58,6 +62,8 @@ type Writer struct {
 	lock     *os.File
 	lockPath string
 	write    func(path string, data []byte) error // テストが差し替える (書き出しが詰まっても Put が待たないことを見る)
+	after    func(time.Duration) <-chan time.Time // 書き出しの後に空ける時間 (テストが差し替えて、空けた間隔の並びを見る)
+	idle     func()                               // 次の描き直しを待ち始めるときに呼ぶ (テストが待ち合わせに使う。nil なら呼ばない)
 
 	mu      sync.Mutex
 	latest  *Frame
@@ -101,7 +107,7 @@ func Open(dir string) (*Writer, error) {
 		return nil, err
 	}
 	sweep(d)
-	w := &Writer{dir: d, id: id, lock: f, lockPath: lock, write: writeAtomic, wake: make(chan struct{}, 1), done: make(chan struct{})}
+	w := &Writer{dir: d, id: id, lock: f, lockPath: lock, write: writeAtomic, after: time.After, wake: make(chan struct{}, 1), done: make(chan struct{})}
 	w.wg.Add(1)
 	go w.loop()
 	return w, nil
@@ -128,7 +134,14 @@ func (w *Writer) Put(f Frame) {
 
 func (w *Writer) loop() {
 	defer w.wg.Done()
+	gap := minInterval
 	for {
+		w.mu.Lock()
+		idle, after := w.idle, w.after // テストが Open の後に差し替える (書き出しの goroutine はもう回っている)
+		w.mu.Unlock()
+		if idle != nil {
+			idle()
+		}
 		select {
 		case <-w.done:
 			return
@@ -152,7 +165,16 @@ func (w *Writer) loop() {
 		select {
 		case <-w.done:
 			return
-		case <-time.After(minInterval):
+		case <-after(gap):
+		}
+		// 空けている間に次の描き直しが来ていれば、変化が続いている (スピナー・演出): 次からは busyInterval ごとにまとめる。
+		// 来ていなければ、次の変化 (操作) は待たずに書く
+		w.mu.Lock()
+		busy := w.latest != nil
+		w.mu.Unlock()
+		gap = minInterval
+		if busy {
+			gap = busyInterval
 		}
 	}
 }

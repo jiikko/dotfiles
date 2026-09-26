@@ -23,9 +23,9 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 }
 
 func fastInterval(t *testing.T) {
-	old := minInterval
-	minInterval = time.Millisecond
-	t.Cleanup(func() { minInterval = old })
+	oldMin, oldBusy := minInterval, busyInterval
+	minInterval, busyInterval = time.Millisecond, time.Millisecond
+	t.Cleanup(func() { minInterval, busyInterval = oldMin, oldBusy })
 }
 
 // 🚨 描画を待たせない: 書き出しが詰まっていても Put は戻る。詰まりが解けたら、途中の枚は捨てて最後の 1 枚を書く。
@@ -256,5 +256,61 @@ func TestListSkipsNonRegularLock(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("FIFO の印を開いて一覧が止まった")
+	}
+}
+
+// 書き出しの後に空ける時間: 1 回きりの変化の後は minInterval (次の操作もすぐ出る)。空けている間に次の描き直しが来ていたら
+// (スピナー・演出で変化が続いている) busyInterval ごとにまとめる。変化が止まれば minInterval に戻る (issue 504)。
+// 空けた時間は差し替えた after が受け取った間隔で見る (壁時計で測らない)。
+func TestWriterSpacesWritesWhileChangesContinue(t *testing.T) {
+	dir := t.TempDir()
+	w, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	gaps := make(chan time.Duration, 8)
+	release := make(chan time.Time)
+	idle := make(chan struct{}, 8)
+	w.mu.Lock() // 書き出しの goroutine はもう回っている
+	w.after = func(d time.Duration) <-chan time.Time { gaps <- d; return release }
+	w.idle = func() { idle <- struct{}{} }
+	w.mu.Unlock()
+	var writes atomic.Int32
+	w.write = func(p string, data []byte) error { writes.Add(1); return writeAtomic(p, data) }
+	gap := func(what string) time.Duration {
+		t.Helper()
+		select {
+		case d := <-gaps:
+			return d
+		case <-time.After(10 * time.Second): // ハングの安全網 (合否の基準ではない)
+			t.Fatal(what)
+			return 0
+		}
+	}
+	w.Put(Frame{ANSI: "1"}) // 1 回きりの変化
+	if d := gap("1 枚目の後に空けない"); d != minInterval {
+		t.Fatalf("1 回きりの変化の後に %v 空けた (期待 minInterval = %v)", d, minInterval)
+	}
+	w.Put(Frame{ANSI: "2"}) // 空けている間に次が来た (続いている)
+	release <- time.Time{}
+	if d := gap("2 枚目の後に空けない"); d != busyInterval {
+		t.Fatalf("変化が続いているのに %v しか空けない (期待 busyInterval = %v)", d, busyInterval)
+	}
+	for len(idle) > 0 { // ここまでに待ち始めた印は読み捨てる
+		<-idle
+	}
+	release <- time.Time{} // 空けている間に何も来なかった (止まった)
+	select {               // ループが次の描き直しを待ち始めてから置く (待ち始める前に置くと「空けている間に来た」になる)
+	case <-idle:
+	case <-time.After(10 * time.Second): // ハングの安全網
+		t.Fatal("変化が止まった後に次の描き直しを待ち始めない")
+	}
+	w.Put(Frame{ANSI: "3"})
+	if d := gap("3 枚目の後に空けない"); d != minInterval {
+		t.Fatalf("変化が止まった後の 1 回きりの変化なのに %v 空けた (期待 minInterval = %v)", d, minInterval)
+	}
+	if n := writes.Load(); n != 3 {
+		t.Fatalf("書き出し %d 回 (期待 3。どの枚も捨てずに書く)", n)
 	}
 }
