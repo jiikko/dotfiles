@@ -94,8 +94,12 @@ func runPS(args []string, dir string, now func() time.Time, list procLister, std
 			if p.Age > 0 {
 				age = p.Age.Round(time.Second).String()
 			}
+			state := p.State
+			if p.Mismatch != "" {
+				state = "食い違い: " + p.Mismatch
+			}
 			_, _ = fmt.Fprintf(stdout, "%-10s  %-7s  %-9s  %-14s  %-6s  %-12s  %s\n",
-				p.Role, pid, age, p.State, orDashCLI(p.Card), orDashCLI(p.Session), orDashCLI(p.Command))
+				p.Role, pid, age, state, orDashCLI(p.Card), orDashCLI(p.Session), orDashCLI(p.Command))
 		}
 	}
 	if len(warns) > 0 {
@@ -133,6 +137,7 @@ func collectProcs(dir string, now time.Time, procs map[int]string) (rows []Proc,
 	rows = append(rows, mon)
 
 	st, err := store.Load(dir)
+	cardsOK := err == nil // 読めなければ食い違いを付けない (どの PG も「片付け済みなのに動いている」に見える)
 	if err != nil {
 		warns = append(warns, "カードの記録を読めない: "+err.Error())
 	}
@@ -158,14 +163,18 @@ func collectProcs(dir string, now time.Time, procs map[int]string) (rows []Proc,
 		case dispatcher.IntegratorCardID:
 			p.Role, p.Card = "取り込み", ""
 		}
+		c, known := cards[o.CardID]
 		if alive(o.PID) && strings.Contains(procs[o.PID], "claude") { // pid が別のプロセスに使い回されたものを数えない (dispatcher の行と同じ)
 			p.State = "動いている"
-			if c, ok := cards[o.CardID]; ok {
+			if known {
 				p.State = c.State.Label()
 				if c.Exec.Active() {
 					p.Command = c.Exec.Command
 				}
 			}
+		}
+		if p.Role == "PG" && cardsOK {
+			p.Mismatch = mismatch(p.State != backend.ProcStopped, c, known)
 		}
 		rows = append(rows, p)
 	}
@@ -202,6 +211,21 @@ func collectProcs(dir string, now time.Time, procs map[int]string) (rows []Proc,
 		}
 	}
 	return rows, warns
+}
+
+// mismatch はカードと PG の session の食い違いの文 (無ければ空)。known はカードが記録にあるか (無ければ完了して書庫へ移したか削除した)。
+// 食い違いは issue 497 の 2 つだけ: 作業中なのに止まっている / 完了 (か片付け済み) なのに動いている。
+// 質問待ち・レビュー待ちなどで止まっているのは食い違いにしない (dispatcher を止めた後に全部が並ぶと、497 が消したい雑音に戻る)。
+func mismatch(alive bool, c card.Card, known bool) string {
+	switch {
+	case alive && !known:
+		return "動いている (カードは片付け済み)"
+	case alive && c.State == card.Done:
+		return "動いている (カードは完了)"
+	case !alive && known && c.State == card.Running:
+		return "止まっている (カードは" + c.State.Label() + ")"
+	}
+	return ""
 }
 
 // roleOrder は一覧の並び (PM → 取り込みの係 → PG)。

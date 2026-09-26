@@ -16,7 +16,7 @@ bin/pro-con config set limit 3 | set pm 1 | unset limit | show  # 止めずに P
                          # 🚨 上限の優先: 利用枠の絞り (80% で 1 本 / 95% で 0 本) > 設定 (config set limit) > dispatcher の --limit > 既定 2。--limit は「設定が無いときの値」で、unset limit で戻る (画面が起こす dispatcher は --limit を付けない)
                          # PM の数は今は 1 だけを受ける (2 以上は 415 の論点 6 が決まるまで断る。今は 1 つで動くので dispatcher はまだ読まない。PM を起こさないのは --pm=off / config.toml の pm = "off")。settings.json が壊れていたら --limit で動き、理由をゲージに出す
 bin/pro-con du [--json] [--all]  # pro-con が作った物のディスクの使用量と内訳 (PG・役の worktree `pc-*` / 起動した session の transcript の置き場 / 状態の置き場 / バイナリ。置き場ごとに大きい順、完了したカードに印)。読むだけ (消さない)。worktree を全部歩くので数秒かかる。数えるのは起動の記録にあるものと、その隣の `pc-*` だけ (issue 456)
-bin/pro-con ps [--json]  # pro-con が起動したプロセスを役ごとに出す (dispatcher / 見張り / PM / PG / テストの係 / 画面。pid・経過・状態・カード・コマンド)。読むだけ: 状態の置き場に書かず、dispatcher の lock も画面の印 (presence) も触らない。生きているかは ps を 1 回読んで決める (busy / idle は出さない)。pro-con の外の session は出さない
+bin/pro-con ps [--json]  # pro-con が起動したプロセスを役ごとに出す (dispatcher / 見張り / PM / PG / テストの係 / 画面。pid・経過・状態・カード・コマンド。カードと session の食い違いは状態の列に「食い違い: 」で出す)。読むだけ: 状態の置き場に書かず、dispatcher の lock も画面の印 (presence) も触らない。生きているかは ps を 1 回読んで決める (busy / idle は出さない)。pro-con の外の session は出さない
 bin/pro-con dispatcher --stop  # dispatcher と、pro-con が起動した PG を止める。作業中のカードは次に dispatcher を起動したら続きから再開する (画面の終了も同じことをする)
                                # 人が止めた印 (`dispatcher-held`) を置く: 開いている画面は dispatcher を起こし直さず、ゲージに「止めてある」と出す。外すのは画面の c か、次に手で `pro-con dispatcher` を起動したとき (issue 459)
 bin/pro-con card …   # PM / PG が使うカードの操作 (add / plan / ask / answer / handoff / review / rework / close / delete。plan --after は前のカードが完了するまで起動させない = issue 468。handoff は PM が PG の質問を人に回したことを履歴に残す。rework はレビュー待ちを直してほしい点つきで PG に戻す。delete は依頼の列ならすぐ消し、ほかは PG の session を止めてから消す = issue 451)。受付の箱に置くだけで、適用は dispatcher (issue 427)
@@ -38,6 +38,9 @@ bin/pro-con worktree clean [--yes]  # 閉じたカードの PG の worktree を�
                          # 無視されたファイルが空のディレクトリか autobuild の産物だけで、先端が origin/master (origin/HEAD は見ない) の祖先か、git cherry が全部 - で空白まで同じ patch (patch-id --verbatim) があるもの。
                          # reflog にしか無い取り込んでいない版は refs/pro-con/removed/<名前>/<sha> に残してから消す (git for-each-ref refs/pro-con/removed で見る)。
                          # ブランチも消すのは名前が worktree-pc-<カード> でほかの worktree が使っていないときだけ (`git update-ref -d` に確かめた先端を渡す)。
+                         # worktree とブランチが消えたカードは session も消す (issue 497): 起動の記録か片付けの印にある session の transcript
+                         # (~/.claude/projects/*/<id>.jsonl と <id>/。中にその worktree を cwd にした記録があるものだけ)・claude の job (`claude rm <短い id>`。
+                         # job の cwd・worktree・ブランチがカードのものだけ)・起動の記録の行と印 (受付の箱に forget を置き、dispatcher が消す)。自動では消さない
                          # master に無い commit があるもの・記録に無いもの・PM と取り込みの係の worktree・人が掛けた lock は消さない。Claude Code が残した lock は外して消す (消せなければ掛け直す)。判定は wtclean.Judge (設定画面 456 の内訳も同じ関数を呼ぶ)
 bin/pro-con --e2e <dir>  # e2e モード: 画面・dispatcher・受付の箱・記録は本物、PG と PM だけ台本どおりの偽物 (claude を起動しない。利用枠を使わない)
 bin/pro-con e2e <start|keys|text|screen|wait|stop|scenario> <dir> ...  # Claude が e2e モードの画面を操作する口 (隔離した tmux サーバで動かす)
@@ -62,8 +65,11 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
   - **btw** は PG に届けない (止めない・文脈を汚さない。415 要件 9)。dispatcher が PG の出力の末尾とカードの記録から haiku で答え、
     答えはカードの履歴に出る (PG の出力が無ければ記録だけから答える)
   - **片付け**は画面が見ていた完了のカードだけを Archived にする。完了から 24 時間たったカードは dispatcher が自動で片付ける。
-    片付けたカードは次の Tick で記録から書庫 (`…/live/cards-archive.jsonl`。足していくだけ) へ移す (issue 478: 記録を読む費用を
-    作ったカードの総数に比例させない)。書庫は `card show` / `card list --all` / `card wait` が読む (画面と dispatcher は読まない)
+    片付けたカードは次の Tick で記録から書庫 (`…/live/cards-archive.jsonl`) へ移す (issue 478: 記録を読む費用を
+    作ったカードの総数に比例させない)。書庫は `card show` / `card list --all` / `card wait` が読む (画面は読まない。dispatcher は 1 時間に 1 回、古いカードを消すときだけ読む)。
+    完了から 1 週間たったカードは dispatcher が書庫からも消す (issue 497。ID は使い回さない)。消す前に片付けの印
+    (`…/live/cards-purged.jsonl`。カード ID・完了の時刻・session・worktree・ブランチ) を残し、`worktree clean` がそれで片付ける。
+    session・transcript・worktree・ブランチは自動では消さない (人が `pro-con worktree clean --yes` を打ったときだけ)
 - 作業中のカードには、**pro-con が起動した session だけ** (記録 `…/live/sessions.json` にあるもの) の様子 (PG の出力の末尾・pid) を足す。
   照合は記録の行の session id・短い id・pid が全部一致したときだけ (pid が違う = 外の shell で同じ session を再開したもの、は外れる)。
   Desktop や他の shell の session は出さず、選べない (選べると pro-con の外の session に入力・停止できてしまう)。
@@ -155,7 +161,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 | tab / shift+tab | repo タブの切り替え (global = 全 repo) |
 | n | 新しい依頼 (PM へ)。repo のタブで出すとその repo がスコープになる |
 | i | issue の一覧から選んで「これやって」と依頼する (repo のタブならその repo、global なら設定の全 repo。未完了だけ。epic は見出しの下に子)。Enter → 補足 (空でよい) → Enter |
-| s | 設定画面を開閉 (issue 456)。右から全幅の板が入ってきて、中を「設定 / プロセス / ディスク」のタブに分ける (tab / shift+tab で切り替え、j / k で行を選ぶ、s / q / esc で閉じる)。**設定**: PG の枠 (同時に動かす PG の上限) と PM の数を ← → (h / l) で 1 ずつ変える。受付の箱に置き (`pro-con config set` と同じ)、dispatcher の次の Tick から効く (止めずに変わる)。適用されるまで「適用待ち」。利用枠の絞りはこの上限より優先。PM は今は 1 だけ。下に見る所の要約。**プロセス**: `pro-con ps` と同じ出どころの役ごとの一覧 (pid・経過・状態・カード・session・今のコマンド)。止まっている PM・PG は 1 行に畳み、enter で開く。画面が 2 つ以上 (または join) なら下段に開いている画面の一覧 (モード・名前・開いた時刻・端末・pid)。**ディスク**: `pro-con du` と同じ、pro-con が作った物の使用量 (合計・置き場ごとの大きさと割合と数・大きい順の内訳 3 つ。enter でその置き場の内訳を全部。worktree と transcript は完了したカードに印)。🚨 見る所は描くたびに読まない (ディスクは数秒かかる): 開いたとき・プロセスのタブへ移ったとき・r で裏で 1 回読み、読んだ時刻を見出しに出す。`--view` では設定のタブを出さない (見る所だけ)。pro-con の外の session は名前も本数も出さない。画面は `claude agents` を自分で読まない |
+| s | 設定画面を開閉 (issue 456)。右から全幅の板が入ってきて、中を「設定 / プロセス / ディスク」のタブに分ける (tab / shift+tab で切り替え、j / k で行を選ぶ、s / q / esc で閉じる)。**設定**: PG の枠 (同時に動かす PG の上限) と PM の数を ← → (h / l) で 1 ずつ変える。受付の箱に置き (`pro-con config set` と同じ)、dispatcher の次の Tick から効く (止めずに変わる)。適用されるまで「適用待ち」。利用枠の絞りはこの上限より優先。PM は今は 1 だけ。下に見る所の要約。**プロセス**: `pro-con ps` と同じ出どころの役ごとの一覧 (pid・経過・状態・カード・session・今のコマンド)。出すのは動いているものと、カードと食い違う PG (カードは作業中なのに session が止まっている / カードは完了なのに動いている。黄色の `!`) だけで、止まった PG (終わったカードのもの・質問待ち等) は出さず数えもしない (issue 497)。止まっている役 (PM・取り込み・テストの係) は 1 行に畳み、enter で開く。画面が 2 つ以上 (または join) なら下段に開いている画面の一覧 (モード・名前・開いた時刻・端末・pid)。**ディスク**: `pro-con du` と同じ、pro-con が作った物の使用量 (合計・置き場ごとの大きさと割合と数・大きい順の内訳 3 つ。enter でその置き場の内訳を全部。worktree と transcript は完了したカードに印)。🚨 見る所は描くたびに読まない (ディスクは数秒かかる): 開いたとき・プロセスのタブへ移ったとき・r で裏で 1 回読み、読んだ時刻を見出しに出す。`--view` では設定のタブを出さない (見る所だけ)。pro-con の外の session は名前も本数も出さない。画面は `claude agents` を自分で読まない |
 | e | 選択中のカードの issue の md をエディタで開く ($VISUAL → $EDITOR → nvim。`tuikit/editor`) |
 | x | 完了のレーンを片付ける (y/N 確認。repo のタブではその repo の分だけ。カードは消さず Archived にする。本物のモードでは dispatcher が書庫へ移す) |
 | d | 選択中のカードを削除する (y/N 確認。依頼の列ならすぐ消える。ほかの列は「削除中」になり、dispatcher が PG の session を止めたのを確かめてから消える。1 分で止められなければカードを残して理由を履歴に書く。PG の worktree とブランチは消さない。消したことは dispatcher の記録に残る。issue 451) |
@@ -273,7 +279,7 @@ issue の読み方 (状態 = ファイルの位置、`epic/<name>/` の 2 段、
 | `fake` | 模擬 backend。本物に差し替えるときは `backend.Backend` を満たす実装を足し、`main.go` の 1 行を替える |
 | `ui` | bubbletea v2 の TUI。状態は持たない (Snapshot を描き、Command を送るだけ) |
 | `monitor` | 見張り (`pro-con monitor`。issue 475)。読むだけで、見つけたことは受付の箱に置く |
-| `wtclean` | 閉じたカードの PG の worktree の判定と片付け (`pro-con worktree clean`。issue 492)。消す操作はここだけ |
+| `wtclean` | 閉じたカードの PG の worktree と session の判定と片付け (`pro-con worktree clean`。issue 492 / 497)。消す操作はここだけ |
 | `gitx` | git を呼ぶ共通の口 (継承した `GIT_DIR` などを外す。monitor と wtclean が使う) |
 
 - `fake` の dispatcher / watchdog / リソース列は**模擬**で、本番の判定ではない。本番の判定を育てるなら fake から切り出す

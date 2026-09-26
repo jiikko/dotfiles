@@ -91,7 +91,7 @@ func Measure(in Input) Usage {
 		stateDir(in.StateDir, warn),
 	}
 	if in.Binary != "" {
-		if b, n, err := size(in.Binary); err == nil {
+		if b, n, err := Size(in.Binary); err == nil {
 			groups = append(groups, Group{Name: GroupBinary, Bytes: b, Count: n, Items: []Item{{Name: filepath.Base(in.Binary), Path: in.Binary, Bytes: b, Files: n}}})
 		} else {
 			warn(err)
@@ -139,7 +139,7 @@ func worktrees(in Input, warn func(error)) Group {
 	}
 	g := Group{Name: GroupWorktrees}
 	for p := range paths {
-		b, n, err := size(p)
+		b, n, err := Size(p)
 		if errors.Is(err, fs.ErrNotExist) { // 記録にあるが消えた worktree (人が消した等) は数えない
 			continue
 		}
@@ -176,7 +176,7 @@ func transcripts(in Input, warn func(error)) Group {
 		}
 	}
 	for d, c := range card {
-		b, n, err := size(d)
+		b, n, err := Size(d)
 		if err != nil {
 			warn(err)
 		}
@@ -209,7 +209,7 @@ func stateDir(dir string, warn func(error)) Group {
 				walk(p, "live/")
 				continue
 			}
-			b, n, err := size(p)
+			b, n, err := Size(p)
 			if err != nil {
 				warn(err)
 			}
@@ -226,9 +226,9 @@ func stateDir(dir string, warn func(error)) Group {
 	return g
 }
 
-// size は p の下のファイルが使っているディスクの量 (du と同じくブロックで数える) とファイルの数。symlink は辿らない。
+// Size は p の下のファイルが使っているディスクの量 (du と同じくブロックで数える) とファイルの数。symlink は辿らない。
 // 途中で読めない所があっても、読めた分は返す (エラーは最初の 1 つ)。
-func size(p string) (int64, int, error) {
+func Size(p string) (int64, int, error) {
 	var total int64
 	files := 0
 	var first error

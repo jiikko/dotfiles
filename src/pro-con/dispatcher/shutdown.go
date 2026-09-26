@@ -103,6 +103,7 @@ func (d *Dispatcher) Shutdown(ctx context.Context) (notes []eventlog.Event, err 
 		notes = append(notes, ev(eventlog.KindError, "", "", "箱の依頼を適用できない (止めるのは続ける): "+err.Error()))
 	} else {
 		notes = append(notes, applied(res)...)
+		notes = append(notes, d.forget(res)...) // 片付けの依頼も当てる (箱から消えるので、ここで当てないと取りこぼす)
 	}
 	failed, tried := d.stopCards(ctx, &notes)
 	if d.Publish != nil {

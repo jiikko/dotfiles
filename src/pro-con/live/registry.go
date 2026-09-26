@@ -107,6 +107,38 @@ func write(path string, o Owned, dropCard bool) error {
 	return writeRows(path, append(next, o))
 }
 
+// Forget は cardID のカードの行のうち、session id が sessionIDs にあるものを記録 (今の分と退いた分) から消し、消した本数を返す
+// (片付けが transcript を消した session。issue 497)。🚨 書き手は dispatcher だけ (Register と同じ)。
+// 挙げていない session の行 (片付けの後に再開した session) と、ほかのカードの行は残す。
+func Forget(path, cardID string, sessionIDs []string) (int, error) {
+	drop := map[string]bool{}
+	for _, s := range sessionIDs {
+		drop[s] = s != ""
+	}
+	n := 0
+	for _, p := range []string{filepath.Join(filepath.Dir(path), RetiredFile), path} {
+		cur, err := LoadRegistry(p)
+		if err != nil {
+			return n, err
+		}
+		next := cur[:0:0]
+		for _, o := range cur {
+			if cardID != "" && o.CardID == cardID && drop[o.SessionID] {
+				n++
+				continue
+			}
+			next = append(next, o)
+		}
+		if len(next) == len(cur) {
+			continue
+		}
+		if err := writeRows(p, next); err != nil {
+			return n, err
+		}
+	}
+	return n, nil
+}
+
 // LoadRetired は、再開で入れ替わって記録から外した前の session を読む (RetiredFile)。
 func LoadRetired(registryPath string) ([]Owned, error) {
 	return LoadRegistry(filepath.Join(filepath.Dir(registryPath), RetiredFile))

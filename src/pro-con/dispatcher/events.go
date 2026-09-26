@@ -36,6 +36,7 @@ func applied(res []store.Result) []eventlog.Event {
 		switch {
 		case r.Kind == store.KindConfig:
 			out = append(out, ev(eventlog.KindConfig, "", "", r.Note))
+		case r.Kind == store.KindForget: // 消した結果は forget が出来事にする
 		case r.Note != "": // 記録から外したカードは履歴に残せないので、出来事にだけ残る
 			out = append(out, ev(eventlog.KindDelete, r.CardID, "", r.CardID+": "+r.Note))
 		}
