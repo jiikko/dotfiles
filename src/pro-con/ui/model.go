@@ -93,6 +93,7 @@ type Model struct {
 	line        lineedit.Line   // 入力欄 (編集キーは tuikit/lineedit。docs/glogx-ui-guide.md「入力欄の編集キー」)
 	pending     backend.Command // modeConfirm で確認している操作
 	confirmText string          // modeConfirm の確認の行に出す文
+	send        *sendConfirm    // modeConfirm が送る前の確認のとき、その中身 (nil = 破壊的な操作の y/N。sendconfirm.go)
 	inputKind   inputKind
 	orderKind   card.OrderKind
 
@@ -793,7 +794,7 @@ func (m *Model) handleInputKey(k tea.KeyPressMsg) tea.Cmd {
 // handleConfirmKey は y/N 確認。y と Enter だけが実行で、知らないキーはすべて取り消し (docs/glogx-ui-guide.md §4)。
 // askConfirm は cmd を y/N 確認に載せる (docs/glogx-ui-guide.md §4)。question は確認の行に出す文。
 func (m *Model) askConfirm(cmd backend.Command, question string) {
-	m.pending = cmd
+	m.pending, m.send = cmd, nil
 	m.confirmText = question
 	m.mode = modeConfirm
 }
@@ -857,15 +858,26 @@ func (m *Model) askDelete() {
 func (m *Model) handleConfirmKey(k tea.KeyPressMsg) tea.Cmd {
 	switch key := k.String(); {
 	case key == "ctrl+c":
-		return m.requestQuit()
+		cmd := m.requestQuit() // 送る前の確認なら断る (書いた中身を持っている)。確認を閉じたときだけ忘れる
+		if m.mode != modeConfirm {
+			m.pending, m.send = nil, nil
+		}
+		return cmd
 	case confirm.IsYesStrict(key):
-		m.apply(m.pending)
+		cmd := m.pending
+		m.pending, m.send = nil, nil
+		m.apply(cmd)
 	default:
-		m.info("取り消した (実行していない)")
-		m.mode = modeBoard
-		m.line.Reset()
+		if s := m.send; s != nil {
+			m.mode = s.back
+			m.info("送っていない (書いた中身はそのまま)")
+		} else {
+			m.info("取り消した (実行していない)")
+			m.mode = modeBoard
+			m.line.Reset()
+		}
+		m.pending, m.send = nil, nil
 	}
-	m.pending = nil
 	return nil
 }
 
@@ -886,12 +898,12 @@ func (m *Model) submit() {
 	case inputQuit: // enter は submitQuit が受ける (ここへは来ない)
 		return
 	}
-	// 方針変更は PG を止めて指示を差し替える (途中の作業を止める) ので、送る前に確認する
+	s := sendConfirm{title: m.inputLabel(), body: []string{text}}
+	// 方針変更は PG を止めて指示を差し替える (途中の作業を止める) ので、確認でそう知らせる (空なら backend が断るので知らせない)
 	if o, ok := cmd.(backend.AddOrder); ok && o.Kind == card.OrderRedirect && text != "" {
-		m.askConfirm(cmd, "方針変更: PG を止めて、指示を差し替えて再開します。よいですか? [y/N]")
-		return
+		s.warn = "方針変更: PG を止めて、指示を差し替えて再開します"
 	}
-	m.apply(cmd)
+	m.askSend(cmd, s)
 }
 
 // apply は操作を backend へ送る。空の本文で拒否されたら入力欄を開いたままにする (書き直させる)。

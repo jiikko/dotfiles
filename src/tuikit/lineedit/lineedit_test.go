@@ -92,3 +92,37 @@ func TestInsertIsOneLine(t *testing.T) {
 		t.Fatalf("View が違う: %q", v)
 	}
 }
+
+// 窓: 収まるならそのまま、キャレットの桁は前の表示幅 (全角 2)。長ければキャレットが最終桁 (w-1) までに入るよう前を切る。
+// 全角を半端に割らない (切った後の桁は w-1 以下で、w-2 になることがある)。
+func TestWindow(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		in       string
+		left, w  int
+		wantText string
+		wantCol  int
+	}{
+		{name: "収まる", in: "日本語ab", w: 20, wantText: "日本語ab", wantCol: 8},
+		{name: "キャレットを戻した", in: "日本語ab", left: 3, w: 20, wantText: "日本語ab", wantCol: 4},
+		{name: "長いので前を切る", in: "abcdefghij", w: 5, wantText: "ghij", wantCol: 4},
+		{name: "全角を割らない", in: "あいうえお", w: 6, wantText: "えお", wantCol: 4},
+		{name: "後ろは切らない", in: "abcdefghij", left: 8, w: 5, wantText: "abcdefghij", wantCol: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			l := run(typed(tc.in), keys(repeat("left", tc.left)...))
+			text, col := l.Window(tc.w)
+			if text != tc.wantText || col != tc.wantCol {
+				t.Fatalf("Window(%d) = %q, %d、欲しいのは %q, %d", tc.w, text, col, tc.wantText, tc.wantCol)
+			}
+		})
+	}
+}
+
+func repeat(k string, n int) []string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = k
+	}
+	return out
+}

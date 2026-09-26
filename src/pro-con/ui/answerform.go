@@ -9,10 +9,10 @@ import (
 	"errors"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"tuikit/caret"
 	"tuikit/layout"
 	"tuikit/lineedit"
 
@@ -208,7 +208,7 @@ func (m *Model) pasteForm(s string) {
 	}
 }
 
-// submitForm は答えを自由文にして送る。答えていない問いがあれば送らず、その問いへカーソルを移す。
+// submitForm は答えを自由文にして、送る前の確認に載せる (sendconfirm.go)。答えていない問いがあれば送らず、その問いへカーソルを移す。
 func (m *Model) submitForm() {
 	f := &m.form
 	text, err := card.FormatAnswer(f.qs, f.picks(), f.note.String())
@@ -222,7 +222,7 @@ func (m *Model) submitForm() {
 		m.refuse(err.Error())
 		return
 	}
-	m.apply(backend.Answer{CardID: f.cardID, Text: text, From: "人間"})
+	m.askSend(backend.Answer{CardID: f.cardID, Text: text, From: "人間"}, sendConfirm{title: f.cardID + " へ回答", body: strings.Split(text, "\n")})
 }
 
 // formHints は回答フォームの案内 (今の行で効くキーだけ)。
@@ -344,18 +344,11 @@ func caretIf(on bool, c int) int {
 // fieldView は書く欄を幅 w で描き、キャレットの桁 (欄の頭から) を返す。キャレットが見えるよう、長ければ前を切る。
 func fieldView(l *lineedit.Line, w int, on bool, placeholder string) (string, int) {
 	w = max(w, 4)
-	s, cur := []rune(l.String()), l.Cursor()
-	before, after := string(s[:cur]), string(s[cur:])
-	for ansi.StringWidth(before) > w-2 {
-		_, size := utf8.DecodeRuneInString(before)
-		before = before[size:]
-	}
-	text := before + after
-	caret := 1 + ansi.StringWidth(before)
+	text, col := l.Window(w - 1) // 頭の空白 1 桁のぶん
 	if l.Empty() && !on && placeholder != "" {
-		return bg(236) + fg(244) + fit(" "+placeholder, w) + sgrReset, caret
+		return bg(236) + fg(244) + fit(" "+placeholder, w) + sgrReset, 1 + col
 	}
-	return bg(236) + fg(231) + fit(" "+text, w) + sgrReset, caret
+	return bg(236) + fg(231) + fit(" "+text, w) + sgrReset, 1 + col
 }
 
 // overlayForm は回答フォームの枠を領域の中央に重ねる。入り切らなければ、カーソルの行が見えるよう中身をずらす。
@@ -405,11 +398,8 @@ func formBox(title string, lines []formLine, width, inner int) []string {
 
 // formCaret は回答フォームの書く欄に置く端末のカーソル (書く欄の行でなければ nil)。
 func (m *Model) formCaret() *tea.Cursor {
-	f := &m.form
-	if !f.caretOK || f.caretY >= m.height || f.caretX >= m.width {
+	if !m.form.caretOK {
 		return nil
 	}
-	c := tea.NewCursor(f.caretX, f.caretY)
-	c.Shape = tea.CursorBar
-	return c
+	return caret.At(m.form.caretX, m.form.caretY, m.width, m.height)
 }

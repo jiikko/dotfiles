@@ -23,6 +23,7 @@ func TestInputEditKeysReachSubmittedText(t *testing.T) {
 	typeText(m, "zsh の ")                         // zsh の 遅延ロード
 	m.Update(ctrl('e'))                           // 末尾へ
 	typeText(m, "にして")                            // zsh の 遅延ロードにして
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // 送る前の確認
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // 送信
 	r, ok := be.applied[len(be.applied)-1].(backend.NewRequest)
 	if !ok || r.Text != "zsh の 遅延ロードにして" {
@@ -30,7 +31,7 @@ func TestInputEditKeysReachSubmittedText(t *testing.T) {
 	}
 }
 
-// 方針変更は y / Enter でだけ送る。知らないキーは取り消し (§4)。
+// 方針変更は y / Enter でだけ送る。知らないキーは取り消しで、書いた文のまま入力欄へ戻る (§4。issue 517)。
 func TestRedirectNeedsConfirmation(t *testing.T) {
 	for _, tc := range []struct {
 		key  tea.KeyPressMsg
@@ -54,8 +55,11 @@ func TestRedirectNeedsConfirmation(t *testing.T) {
 		if got := len(be.applied) == 1; got != tc.sent {
 			t.Fatalf("%q の後: 送られた=%v 期待=%v", tc.key.String(), got, tc.sent)
 		}
-		if m.mode != modeBoard {
+		if tc.sent && m.mode != modeBoard {
 			t.Fatalf("%q の後にボードへ戻っていない", tc.key.String())
+		}
+		if !tc.sent && (m.mode != modeInput || m.line.String() != "B 案で") {
+			t.Fatalf("%q の後に書いた文のまま入力欄へ戻っていない: mode=%v %q", tc.key.String(), m.mode, m.line.String())
 		}
 	}
 }

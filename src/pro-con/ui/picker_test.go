@@ -6,8 +6,6 @@ import (
 	"slices"
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
-
 	"pro-con/backend"
 	"pro-con/card"
 )
@@ -98,7 +96,7 @@ func TestPickIssueSendsLinkedRequest(t *testing.T) {
 		t.Fatal("補足の入力欄が開かない")
 	}
 	typeText(m, "急ぎで")
-	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	press(m, "enter", "y")
 	r, ok := be.applied[len(be.applied)-1].(backend.NewRequest)
 	if !ok || r.Issue == nil {
 		t.Fatalf("issue 付きの依頼が届いていない: %#v", be.applied)
@@ -112,7 +110,7 @@ func TestPickIssueSendsLinkedRequest(t *testing.T) {
 func TestPickEpicSendsChildren(t *testing.T) {
 	m, be, _ := pickerModel(t)
 	press(m, "i", "enter")
-	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // 補足なし
+	press(m, "enter", "y") // 補足なし
 	r, ok := be.applied[len(be.applied)-1].(backend.NewRequest)
 	if !ok || r.Issue == nil || r.Issue.Epic != "200" || r.Issue.Number != 200 || len(r.Issue.Children) != 1 {
 		t.Fatalf("epic の依頼が違う: %#v", be.applied)
