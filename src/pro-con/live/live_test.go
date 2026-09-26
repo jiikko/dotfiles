@@ -967,13 +967,25 @@ func TestRefreshUsesFreshSeenFromDispatcher(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		age   time.Duration
+		err   string
 		fresh bool
-	}{{"新しい", seenFresh - time.Second, true}, {"古い", seenFresh + time.Second, false}} {
-		b, reads := testBackend(t, sessions[:1], nil) // bbbbbbbb が pro-con の記録にある
+	}{
+		{"新しい", seenFresh - time.Second, "", true},
+		{"古い", seenFresh + time.Second, "", false},
+		{"未来 (時計が戻った)", -time.Minute, "", false},
+		{"dispatcher が一覧を取れなかった", time.Second, "claude agents が終わらない", false},
+	} {
+		b, reads := testBackend(t, sessions[:1], nil) // bbbbbbbb (pid 102) が pro-con の記録にある
 		lists := 0
 		b.list = func(context.Context) ([]agents.Session, error) { lists++; return sessions[:1], nil }
 		runningCard(t, b, "C-001", "bbbbbbbb")
-		seen := store.Seen{At: b.now().Add(-tc.age), Sessions: sessions[:1], Logs: map[string][]string{"bbbbbbbb": {"dispatcher が読んだ出力"}}}
+		// dispatcher の一覧は status だけ変えて置く (Consumers の status でどちらの一覧を使ったかを見分ける)
+		fromDispatcher := sessions[0]
+		fromDispatcher.Status = "idle"
+		seen := store.Seen{At: b.now().Add(-tc.age), Sessions: []agents.Session{fromDispatcher}, Err: tc.err, Logs: map[string][]string{"bbbbbbbb": {"dispatcher が読んだ出力"}}}
+		if tc.err != "" {
+			seen.Sessions, seen.Logs = nil, nil
+		}
 		if err := store.SaveSeen(b.dir, seen); err != nil {
 			t.Fatal(err)
 		}
@@ -986,8 +998,12 @@ func TestRefreshUsesFreshSeenFromDispatcher(t *testing.T) {
 		if fromSeen != tc.fresh {
 			t.Fatalf("%s: カードの出力の末尾 %v (dispatcher の記録から = %v)", tc.name, s.Cards[0].Log, tc.fresh)
 		}
-		if len(s.Consumers) != 1 || s.Consumers[0].PID != 102 {
-			t.Fatalf("%s: PG の一覧が出ない: %+v", tc.name, s.Consumers)
+		want := sessions[0].Status // 自分で取った一覧 (busy)
+		if tc.fresh {
+			want = "idle"
+		}
+		if len(s.Consumers) != 1 || s.Consumers[0].Status != want {
+			t.Fatalf("%s: PG の一覧 %+v (期待 status %s)", tc.name, s.Consumers, want)
 		}
 	}
 }

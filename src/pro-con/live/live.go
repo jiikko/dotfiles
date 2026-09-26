@@ -499,8 +499,10 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 	var extra []card.Violation
 	// dispatcher が書いた一覧と出力の末尾が新しければ使い、自分では claude agents も transcript も読まない (issue 502 / 503)。
 	// 古い・無い (dispatcher が回っていない・一覧を取れていない) ときだけ自分で読む (正しさを dispatcher に預けない)
+	// 未来の時刻 (時計が戻った) と、dispatcher が一覧を取れなかった印 (Err) は古いとみなす
 	seen, seenErr := store.LoadSeen(b.dir)
-	fresh := seenErr == nil && !seen.At.IsZero() && now.Sub(seen.At) <= seenFresh
+	age := now.Sub(seen.At)
+	fresh := seenErr == nil && !seen.At.IsZero() && seen.Err == "" && age >= 0 && age <= seenFresh
 	switch {
 	case fresh:
 		b.ss, b.ssErr, b.listed = seen.Sessions, nil, true

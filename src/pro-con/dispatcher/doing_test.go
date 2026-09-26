@@ -250,3 +250,27 @@ func TestTickPublishesSeenForScreens(t *testing.T) {
 		t.Fatalf("外の session の出力を載せた: %v", seen.Logs)
 	}
 }
+
+// 一覧を取れなかった tick は、一覧を空にして理由だけを書く (画面に前の一覧を今の様子として使わせない。画面は自分で読む)。
+func TestTickPublishesSeenErrorWhenListFails(t *testing.T) {
+	r := newDoingRig(t)
+	now := time.Date(2026, 9, 26, 10, 0, 0, 0, time.UTC)
+	r.d.Now = func() time.Time { return now }
+	if _, err := r.d.Tick(context.Background()); err != nil { // 1 回目は取れる (前の一覧が残る状態を作る)
+		t.Fatal(err)
+	}
+	r.d.List = func(context.Context) ([]agents.Session, error) {
+		return nil, errors.New("claude agents が終わらない")
+	}
+	now = now.Add(3 * time.Second)
+	if _, err := r.d.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	seen, err := store.LoadSeen(r.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seen.Err == "" || len(seen.Sessions) != 0 || !seen.At.Equal(now) {
+		t.Fatalf("取れなかった tick の記録: at %v / err %q / %d 本 (期待: 今の時刻・理由あり・0 本)", seen.At, seen.Err, len(seen.Sessions))
+	}
+}

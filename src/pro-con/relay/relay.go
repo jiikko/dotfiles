@@ -137,7 +137,7 @@ func (w *Writer) loop() {
 	gap := minInterval
 	for {
 		w.mu.Lock()
-		idle, after := w.idle, w.after // テストが Open の後に差し替える (書き出しの goroutine はもう回っている)
+		idle := w.idle // テストが Open の後に差し替える (書き出しの goroutine はもう回っている)
 		w.mu.Unlock()
 		if idle != nil {
 			idle()
@@ -162,15 +162,18 @@ func (w *Writer) loop() {
 				w.written = f
 			} // 書けなくても画面は止めない (中継は見るための口。次の描き直しで書き直す)
 		}
+		w.mu.Lock()
+		after := w.after // 使う直前に読む (描き直しを受けた後なので、Open の後の差し替えが必ず見える)
+		w.mu.Unlock()
 		select {
 		case <-w.done:
 			return
 		case <-after(gap):
 		}
-		// 空けている間に次の描き直しが来ていれば、変化が続いている (スピナー・演出): 次からは busyInterval ごとにまとめる。
-		// 来ていなければ、次の変化 (操作) は待たずに書く
+		// 空けている間に中身の違う描き直しが来ていれば、変化が続いている (スピナー・演出): 次からは busyInterval ごとにまとめる。
+		// 来ていない・中身が同じ (書かない描き直し。スピナーの見えない板を開いていても 100ms ごとに来る) なら、次の変化 (操作) は待たずに書く
 		w.mu.Lock()
-		busy := w.latest != nil
+		busy := w.latest != nil && (w.written == nil || !sameContent(*w.latest, *w.written))
 		w.mu.Unlock()
 		gap = minInterval
 		if busy {

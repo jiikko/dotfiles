@@ -212,6 +212,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	}
 	ss, err := d.List(ctx)
 	if err != nil {
+		_ = store.SaveSeen(d.Dir, store.Seen{At: now, Err: err.Error()}) // 画面に前の一覧を使わせない (自分で読んで、取れなければ理由を出す)
 		return append(notes, ev(eventlog.KindError, "", "", "session の一覧を取れない (登録と割り当ては次の Tick へ): "+err.Error())), nil
 	}
 	n, warn, err := d.register(now, ss)

@@ -15,6 +15,8 @@ type Seen struct {
 	At       time.Time           `json:"at"` // 一覧を取った時刻
 	Sessions []agents.Session    `json:"sessions"`
 	Logs     map[string][]string `json:"logs,omitempty"` // 短い session id → PG の出力の末尾 (古い順)
+	// Err は dispatcher が一覧を取れなかった理由 (空でなければ Sessions は空。画面は使わずに自分で読み、取れなければその理由を出す)
+	Err string `json:"err,omitempty"`
 }
 
 func SaveSeen(dir string, s Seen) error { return saveJSON(dir, SeenFile, s) }

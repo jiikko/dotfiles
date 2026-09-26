@@ -310,7 +310,12 @@ func TestWriterSpacesWritesWhileChangesContinue(t *testing.T) {
 	if d := gap("3 枚目の後に空けない"); d != minInterval {
 		t.Fatalf("変化が止まった後の 1 回きりの変化なのに %v 空けた (期待 minInterval = %v)", d, minInterval)
 	}
+	w.Put(Frame{ANSI: "3"}) // 空けている間に来たが、中身が同じ (書かない描き直し。スピナーの見えない板を開いているとき)
+	release <- time.Time{}
+	if d := gap("中身が同じ描き直しの後に空けない"); d != minInterval {
+		t.Fatalf("書かない描き直ししか来ていないのに %v 空けた (期待 minInterval = %v。次の操作を遅らせない)", d, minInterval)
+	}
 	if n := writes.Load(); n != 3 {
-		t.Fatalf("書き出し %d 回 (期待 3。どの枚も捨てずに書く)", n)
+		t.Fatalf("書き出し %d 回 (期待 3。どの枚も捨てずに書き、同じ中身は書かない)", n)
 	}
 }
