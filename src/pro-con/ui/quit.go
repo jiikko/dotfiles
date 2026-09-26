@@ -35,7 +35,9 @@ func (m *Model) busyCards() (running, waiting int) {
 		case card.Running:
 			running++
 		case card.Waiting:
-			waiting++
+			if !c.Wait.FromPM() { // PM の問い (498) は PG を持たない
+				waiting++
+			}
 		case card.Requested, card.Planned, card.Review, card.Done:
 		}
 	}

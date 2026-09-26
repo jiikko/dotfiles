@@ -222,6 +222,8 @@ func (c Card) humanWhy(r Roles) string {
 		return "権限の確認に答える (a で attach して答える。r の回答では答えられない)"
 	case c.Wait.Kind == WaitCrashed:
 		return "落ち続けたので止めた PG (r で回答すると同じ session を再開する)"
+	case c.Wait.FromPM():
+		return "PM の質問に答える (r で回答すると依頼の列へ戻り、PM が続きを分ける)"
 	case c.HandedOff():
 		return "質問に答える (PM が人に回した)"
 	case r.PMOff:
