@@ -14,6 +14,7 @@ import (
 	"pro-con/agents"
 	"pro-con/card"
 	"pro-con/gitx"
+	"pro-con/live"
 	"pro-con/store"
 	"pro-con/wtclean"
 )
@@ -91,6 +92,61 @@ func TestWorktreeCleanStopsWhenSessionsUnreadable(t *testing.T) {
 	}
 	if _, err := os.Stat(wt); err != nil {
 		t.Errorf("消した: %v", err)
+	}
+}
+
+// 1 週間で記録から消したカード (片付けの印だけがある) を --yes で片付ける: worktree とブランチを消した後、pro-con が起動した
+// session の transcript と claude の job を消し、起動の記録の行と印を消す依頼 (forget) を受付の箱に置く。--yes なしでは全部並べるだけ。
+func TestWorktreeCleanRemovesSessionsOfPurgedCard(t *testing.T) {
+	env, wt := worktreeFixture(t)
+	const sid = "11111111-1111-4111-8111-111111111111"
+	if err := store.Update(env.dir, func(s *store.State) error { s.Cards, s.NextID = nil, 2; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	mark, _ := json.Marshal(store.Purged{CardID: "C-001", Repo: "r", Worktree: wt, Sessions: []store.PurgedSession{{ID: "aaaa0001", SessionID: sid}}})
+	if err := os.WriteFile(filepath.Join(env.dir, store.PurgeFile), append(mark, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := live.Register(filepath.Join(env.dir, live.RegistryFile), live.Owned{ID: "aaaa0001", SessionID: sid, PID: 1, CardID: "C-001"}); err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Dir(env.dir)
+	env.projects, env.jobsDir = filepath.Join(home, "projects"), filepath.Join(home, "jobs")
+	tr := filepath.Join(env.projects, "-x-pc-c-001", sid+".jsonl")
+	cwd, _ := json.Marshal(wt)
+	for p, s := range map[string]string{tr: `{"cwd":` + string(cwd) + "}\n", filepath.Join(env.jobsDir, "aaaa0001", "state.json"): `{"sessionId":"` + sid + `","cwd":` + string(cwd) + "}"} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(s), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var removed []string
+	env.removeJob = func(_ context.Context, id string) error {
+		removed = append(removed, id)
+		return os.RemoveAll(filepath.Join(env.jobsDir, id))
+	}
+	var out, errOut bytes.Buffer
+	if rc := runWorktree([]string{"clean"}, env, &out, &errOut); rc != 0 || !strings.Contains(out.String(), "C-001 (r・記録から消したカード): session 1 本・transcript 1 個") {
+		t.Fatalf("一覧 (rc=%d) = %s / %s", rc, out.String(), errOut.String())
+	}
+	if _, err := os.Stat(tr); err != nil || len(removed) > 0 {
+		t.Fatalf("--yes なしで消した: %v %v", err, removed)
+	}
+	out.Reset()
+	if rc := runWorktree([]string{"clean", "--yes"}, env, &out, &errOut); rc != 0 {
+		t.Fatalf("rc = %d: %s / %s", rc, out.String(), errOut.String())
+	}
+	if _, err := os.Stat(wt); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("worktree を消していない: %s", out.String())
+	}
+	if _, err := os.Stat(tr); !errors.Is(err, os.ErrNotExist) || len(removed) != 1 {
+		t.Fatalf("transcript / job を消していない: %v %v\n%s", err, removed, out.String())
+	}
+	reqs := store.PendingRequests(env.dir)
+	if len(reqs) != 1 || reqs[0].Kind != store.KindForget || reqs[0].CardID != "C-001" || len(reqs[0].Sessions) != 1 || reqs[0].Sessions[0] != sid {
+		t.Fatalf("forget の依頼 = %+v", reqs)
 	}
 }
 

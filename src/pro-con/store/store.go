@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -47,6 +48,11 @@ const KindEvent = "event"
 // KindMonitor は見張り (pro-con monitor。issue 475) が見つけたこと (取り込みの衝突・テストの順番の長さ) の依頼の種類。
 // event と同じく記録 (カード) は変えず、dispatcher が出来事の記録へ書くだけ (見張りは読むだけ。書き手は dispatcher 1 つ = 426 の決定 1)
 const KindMonitor = "monitor"
+
+// KindForget は片付け (pro-con worktree clean --yes。issue 497) が worktree と transcript を消し終えたカードの、起動の記録の行と
+// 片付けの印を消す依頼の種類。記録 (カード) は変えない。起動の記録と印の書き手は dispatcher だけなので、片付けは箱に置いて頼む
+// (dispatcher/forget.go)。🚨 消すのは Sessions に挙げた session の行だけ (適用までに再開した session の行を巻き込まない)
+const KindForget = "forget"
 
 // noteOnly は記録を変えず、dispatcher が出来事の記録へ書くだけの依頼か (画面の出来事・見張りの知らせ)。
 func noteOnly(kind string) bool { return kind == KindEvent || kind == KindMonitor }
@@ -97,6 +103,7 @@ type Request struct {
 	Screen   string         `json:"screen,omitempty"`   // 置いた画面 (「a1b2c3 join review」。画面から置いた依頼だけ。履歴と出来事に残す。issue 481)
 	Key      string         `json:"key,omitempty"`      // config: 設定の名前 (settings.go)
 	Value    string         `json:"value,omitempty"`    // config: 設定の値 (空なら消す)
+	Sessions []string       `json:"sessions,omitempty"` // forget: 起動の記録から消す session id (片付けが transcript を消したもの)
 	At       time.Time      `json:"at"`
 }
 
@@ -124,6 +131,7 @@ type Result struct {
 	Err              string
 	Note             string
 	At               time.Time // event: 画面が出来事を置いた時刻 (dispatcher が出来事の記録へ書く。適用した時刻ではない)
+	Sessions         []string  // forget: 起動の記録から消す session id (dispatcher が消す)
 }
 
 // Submit は依頼を受付の箱に置き、依頼の ID を返す。どのプロセスから呼んでもよい。
@@ -271,6 +279,9 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 		if err == nil {
 			r.ID = id // ファイル名が正本 (中身の id は信じない)
 			res.Kind, res.CardID, res.Screen = r.Kind, r.CardID, r.Screen
+			if r.Kind == KindForget {
+				res.Sessions = r.Sessions
+			}
 			if noteOnly(r.Kind) {
 				res.At = r.At
 			}
@@ -497,6 +508,14 @@ func apply(st State, r Request, now time.Time) (State, string, string, error) {
 			return st, "", "", errors.New("monitor: 知らせの文が空")
 		}
 		return st, r.CardID, r.Note, nil
+	case KindForget: // 片付けが済んだカードの起動の記録の行と印を消す。消すのは dispatcher (記録は変えない)
+		if !IsCardID(r.CardID) {
+			return st, "", "", fmt.Errorf("forget: PG のカードの ID ではない (%q)", r.CardID)
+		}
+		if i := indexOf(st.Cards, r.CardID); i >= 0 && st.Cards[i].State != card.Done {
+			return st, r.CardID, "", fmt.Errorf("forget: %s は完了していない (%s)", r.CardID, st.Cards[i].State.Label())
+		}
+		return st, r.CardID, fmt.Sprintf("片付けが済んだので、起動の記録の行 (%d 本) と片付けの印を消す", len(r.Sessions)), nil
 	case "clear": // 画面が完了のレーンを片付けた (x)。消さずに Archived にする。見ていた後に完了でなくなったカード・無いカードは飛ばす
 		if len(r.Cards) == 0 {
 			return st, "", "", errors.New("clear: 片付けるカードが無い")
@@ -760,6 +779,12 @@ func checkAfter(st State, after []string) error {
 	}
 	return nil
 }
+
+// cardIDPattern は add が振るカードの ID の形 (役の PM・INT は含まない)。
+var cardIDPattern = regexp.MustCompile(`^C-[0-9]{3,}$`)
+
+// IsCardID は id が add の振った PG のカードの ID か (役の PM・INT ではない)。
+func IsCardID(id string) bool { return cardIDPattern.MatchString(id) }
 
 func indexOf(cs []card.Card, id string) int {
 	for i, c := range cs {

@@ -5,7 +5,8 @@
 //
 // 消してよいのは、次を全部満たす worktree だけ:
 //   - <repo>/.claude/worktrees/pc-<カード> で、git の worktree として登録されている (PM・取り込みの係の pc-pm-* / pc-int-* は除く)
-//   - そのカードが記録か書庫にあり、同じ repo のカードで、完了して PG を止め終えたもの (削除の途中でない)
+//   - そのカードが記録か書庫にあり、同じ repo のカードで、完了して PG を止め終えたもの (削除の途中でない)。
+//     完了から 1 週間で記録から消したカードは、片付けの印 (store.Purged。issue 497) にあれば完了したカードと見る
 //   - その中 (かその下) を cwd にした session もプロセス (人の shell・エディタ・テスト) も居ない。このコマンドもその中で走っていない
 //   - git worktree lock が無いか、Claude Code が session に掛けた lock (claude session pc-<カード> (pid N …)) で、その pid の claude が居ない。
 //     🚨 Claude Code はこの lock を session が終わっても外さず、pid も生きている session のものと一致しない (2.1.282 で実測 2026-09-26:
@@ -18,6 +19,8 @@
 //
 // ブランチを消すのはそのうえで、pro-con が作った名前 (worktree-pc-<カード>) で、ほかの worktree が使っていないときだけ。
 // master に無い commit があるものは worktree もブランチも消さない (人が見る)。
+//
+// worktree とブランチを消した後のカードは、pro-con が起動した session (起動の記録の行・transcript・claude の job) も消す (sessions.go)。
 package wtclean
 
 import (
@@ -33,6 +36,7 @@ import (
 	"pro-con/agents"
 	"pro-con/card"
 	"pro-con/gitx"
+	"pro-con/store"
 )
 
 // Action は 1 個の worktree をどうするか。
@@ -72,6 +76,31 @@ type Inputs struct {
 	Sessions []agents.Session     // 動いている session (claude agents --json。対話の session も含む)
 	Cwd      string               // このコマンドを走らせた作業ディレクトリ
 	ProcCwds []string             // 今動いているプロセスの作業ディレクトリ (lsof。claude agents に出ない人の shell・エディタ・テスト)
+	// Purged は完了から 1 週間で記録から消したカードの片付けの印 (カード ID → 印)
+	Purged map[string]store.Purged
+	// Owned は pro-con が起動した session (起動の記録の今の分と退いた分)。session の片付けはここにある session だけを扱う
+	Owned []Owned
+	// Projects は transcript の置き場 (~/.claude/projects)。JobsDir は claude の job の置き場 (~/.claude/jobs。空なら job を見ない)
+	Projects string
+	JobsDir  string
+}
+
+// Owned は起動の記録の 1 行のうち、片付けに要る欄 (live.Owned から作る。この package は live を知らない)。
+type Owned struct {
+	ID        string // claude の短い id (claude rm に渡す)
+	SessionID string
+	CardID    string
+}
+
+// cardOf は判定に使うカード。記録か書庫にあればそれ (記録を正とする)、無ければ片付けの印から完了したカードとして組む。
+func cardOf(in Inputs, id string) (card.Card, bool) {
+	if c, ok := in.Cards[id]; ok {
+		return c, true
+	}
+	if m, ok := in.Purged[id]; ok && m.CardID == id {
+		return card.Card{ID: m.CardID, Repo: m.Repo, State: card.Done}, true
+	}
+	return card.Card{}, false
 }
 
 // worktreesDir は pro-con の PG の worktree を置く所 (claude --bg -w pc-<カード> が作る。card.WorktreePath)。
@@ -181,7 +210,7 @@ func judge(ctx context.Context, in Inputs, repoName, repo string, w worktree, al
 		return keep("HEAD を読めない")
 	}
 	id := strings.ToUpper(strings.TrimPrefix(name, "pc-"))
-	c, ok := in.Cards[id]
+	c, ok := cardOf(in, id)
 	if !ok || card.SessionName(c) != name {
 		return keep("記録に無いカードの worktree")
 	}

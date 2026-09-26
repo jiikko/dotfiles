@@ -1,6 +1,6 @@
 // Package dispatcher は本物のモードの dispatcher (issue 427 の段階 3c-1)。1 回の Tick で:
 //
-//  1. 受付の箱を記録へ適用する (store.Apply)。終えたカードを記録から書庫へ移す (store.Archive。issue 478)。記録に無いカードの添付を消す (issue 453)
+//  1. 受付の箱を記録へ適用する (store.Apply)。終えたカードを記録から書庫へ移す (store.Archive。issue 478)。完了から 1 週間たったカードを書庫から消す (store.Purge。issue 497)。記録に無いカードの添付を消す (issue 453)
 //  2. 起動した PG の session を pro-con の記録 (live.Register) に登録する (session id と pid が一覧に出てから)
 //  3. (落ちた PG を見張る trackDead の後に) 閉じたカード・削除の依頼を受けたカードの PG の session を止める (close.go。issue 447 / 451)。削除のカードは止まったら記録から外す
 //  4. 依頼の列のカードを PM に知らせる (pm.go。issue 437)。PM が居なければ起動し、居れば再開する
@@ -68,11 +68,13 @@ var errWait = errors.New("待つ")
 
 // Dispatcher は dispatcher の 1 つ。
 type Dispatcher struct {
-	Dir    string            // 本物のモードの状態の置き場 (記録・箱・pro-con が起動した session の記録)
-	Limit  int               // 同時に動かす PG の上限
-	Repos  map[string]string // repo の名前 → 絶対パス (カードの Repo から起動先を決める)
-	Launch Launcher
-	List   func(context.Context) ([]agents.Session, error)
+	Dir string // 本物のモードの状態の置き場 (記録・箱・pro-con が起動した session の記録)
+	// purgedAt は最後に書庫の古いカードを消しに行った時刻 (forget.go の purge)
+	purgedAt time.Time
+	Limit    int               // 同時に動かす PG の上限
+	Repos    map[string]string // repo の名前 → 絶対パス (カードの Repo から起動先を決める)
+	Launch   Launcher
+	List     func(context.Context) ([]agents.Session, error)
 	// ListAll は止めた session も出す一覧 (`claude agents --json --all`)。終了のとき、pro-con が起動した session がすべて止まったかを
 	// 確かめるのに使う (shutdown.go の ensureStopped)。nil なら List で確かめる (一覧に無い = 止まった、とみなす。テスト用)
 	ListAll func(context.Context) ([]agents.Session, error)
@@ -194,11 +196,13 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 		return nil, err
 	}
 	notes = append(notes, applied(res)...)
+	notes = append(notes, d.forget(res)...)
 	d.loadSettings()
 	if len(res) > 0 && d.Changed != nil { // 箱の依頼を適用した直後に知らせる (一覧の取得 (最大 10 秒) を待たせずにカードを画面へ出す)
 		d.Changed()
 	}
 	notes = append(notes, d.archive(now)...)
+	notes = append(notes, d.purge(now)...)
 	// 書庫へ移した・削除したカードの添付を消す (記録を書いた後に消す。落ちても次の Tick が消し直す。issue 453)
 	if _, err := store.SweepAttachments(d.Dir, now); err != nil {
 		notes = append(notes, ev(eventlog.KindError, "", "", "添付を片付けられない (次の Tick で消し直す): "+err.Error()))

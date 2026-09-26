@@ -57,7 +57,7 @@ type settings struct {
 	cursor int // 今のタブの選べる行の添字
 	offset int // 表示の窓の先頭 (行)
 
-	showStopped bool   // プロセスのタブで、止まっている PG の畳んだ行を開いた
+	showStopped bool   // プロセスのタブで、止まっている役の畳んだ行を開いた
 	openGroup   string // ディスクのタブで、内訳を全部出している置き場 (diskuse.Group.Name。空なら閉じている)
 
 	procs        []backend.Proc
@@ -293,7 +293,7 @@ func (m *Model) settingsSelectable() []string {
 	return nil
 }
 
-// toggleSettingsRow は Enter: 止まっている PG の畳んだ行を開閉する / 置き場の内訳を全部出す・戻す。
+// toggleSettingsRow は Enter: 止まっている役の畳んだ行を開閉する / 置き場の内訳を全部出す・戻す。
 func (m *Model) toggleSettingsRow() {
 	s := &m.set
 	sel := m.settingsSelectable()
@@ -313,10 +313,14 @@ func (m *Model) toggleSettingsRow() {
 	}
 }
 
-// splitProcs は動いているもの (と dispatcher・見張りの行) と、止まっている PM・PG に分ける (止まっている行は 1 行に畳む)。
+// splitProcs は動いているもの (と dispatcher・見張りの行・カードと食い違う PG) と、止まっている役 (PM・取り込み・テストの係) に分ける
+// (止まっている行は 1 行に畳む)。🚨 止まった PG のうち食い違いの無いもの (終わったカードの止まった session) は出さず、数えもしない (issue 497)。
 func splitProcs(rows []backend.Proc) (live, stopped []backend.Proc) {
 	for _, p := range rows {
-		if p.State == backend.ProcStopped && p.Role != "dispatcher" && p.Role != "見張り" {
+		if p.Role == "PG" && p.State == backend.ProcStopped && p.Mismatch == "" {
+			continue
+		}
+		if p.State == backend.ProcStopped && p.Mismatch == "" && p.Role != "dispatcher" && p.Role != "見張り" {
 			stopped = append(stopped, p)
 			continue
 		}
@@ -422,8 +426,14 @@ func (m *Model) procsSummary() string {
 	case m.set.procsErr != nil && len(m.set.procs) == 0: // 読めなかったのを 0 本に見せない
 		return sgrYellow + "読めない: " + m.set.procsErr.Error() + sgrFgReset
 	}
-	live, stopped := splitProcs(m.set.procs)
-	return fmt.Sprintf("動いている %d・止まっている PG %d", len(live), len(stopped))
+	live, _ := splitProcs(m.set.procs)
+	odd := 0
+	for _, p := range live {
+		if p.Mismatch != "" {
+			odd++
+		}
+	}
+	return fmt.Sprintf("動いている %d・食い違い %d", len(live)-odd, odd)
 }
 
 func (m *Model) diskSummary() string {
@@ -450,7 +460,7 @@ func (m *Model) measuredNote() string {
 
 func fmtSec(d time.Duration) string { return strconv.FormatFloat(d.Seconds(), 'f', 1, 64) + " 秒" }
 
-// procLines はプロセスのタブ。止まっている PM・PG は 1 行に畳み、Enter で開く。下に開いている画面の一覧 (presence の印) を添える。
+// procLines はプロセスのタブ。動いているものとカードと食い違う PG を出し、止まっている役は 1 行に畳んで Enter で開く。下に開いている画面の一覧 (presence の印) を添える。
 func (m *Model) procLines(w int) ([]string, int) {
 	border := fg(51)
 	s := &m.set
@@ -483,7 +493,7 @@ func (m *Model) procLines(w int) ([]string, int) {
 			if s.showStopped {
 				mark, verb = "▾", "enter で畳む"
 			}
-			row := fmt.Sprintf(" %s 止まっている PM・PG %d 本 (%s … %s。%s)", mark, len(stopped), procName(stopped[0]), procName(stopped[len(stopped)-1]), verb)
+			row := fmt.Sprintf(" %s 止まっている役 %d 本 (%s … %s。%s)", mark, len(stopped), procName(stopped[0]), procName(stopped[len(stopped)-1]), verb)
 			cur = len(out)
 			if s.cursor == 0 {
 				row = sgrCyan + "▌" + sgrFgReset + sgrBold + strings.TrimPrefix(row, " ") + sgrReset
@@ -519,15 +529,17 @@ func (m *Model) procRow(p backend.Proc, w int) string {
 	if p.Age > 0 {
 		age = fmtDur(p.Age)
 	}
-	col := ""
+	col, state := "", p.State
 	switch {
+	case p.Mismatch != "":
+		col, state = sgrYellow, "! "+p.Mismatch // 食い違い (幅の揺れる ⚠ は列を崩すので使わない)
 	case p.State == backend.ProcStopped:
 		col = fg(239)
 	case strings.HasPrefix(p.State, "動いている"), strings.HasPrefix(p.State, "実行中"), strings.HasPrefix(p.State, "開いている"):
 		col = fg(46)
 	}
 	// 今のコマンドは残りの幅だけ (狭い端末では前の列を崩さずに切る)
-	return fit(" "+p.Role, 12) + fit(pid, 8) + fit(age, 13) + col + fit(p.State, procStateCells) + sgrFgReset + fit(m.procCard(p.Card), procCardCells) +
+	return fit(" "+p.Role, 12) + fit(pid, 8) + fit(age, 13) + col + fit(state, procStateCells) + sgrFgReset + fit(m.procCard(p.Card), procCardCells) +
 		fit(orDash(p.Session), 14) + fit(orDash(p.Command), max(w-2-procFixedCells, 0))
 }
 
@@ -631,7 +643,7 @@ func (m *Model) settingsHints() []string {
 	case tabConfig:
 		h = append(h, "← → 値を変える", "r 測り直す")
 	case tabProcs:
-		h = append(h, avail("enter 止まっている PG を開く / 畳む", len(m.settingsSelectable()) > 0), "r 読み直す")
+		h = append(h, avail("enter 止まっている役を開く / 畳む", len(m.settingsSelectable()) > 0), "r 読み直す")
 	case tabDisk:
 		h = append(h, "enter 内訳", "r 測り直す")
 	}

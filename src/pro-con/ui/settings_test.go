@@ -166,10 +166,14 @@ func TestSettingsViewOnlyShowsInspectOnly(t *testing.T) {
 	}
 }
 
-// 止まっている PM・PG は 1 行に畳み (本数だけ)、Enter で開く。
-func TestSettingsFoldsStoppedProcs(t *testing.T) {
+// 終わったカードの止まった PG は出さず数えもしない。カードと食い違う PG は出し、止まっている役は 1 行に畳んで Enter で開く (issue 497)。
+func TestSettingsProcsShowOnlyLiveAndMismatch(t *testing.T) {
 	be := newInspSpy()
 	be.snap.Cards[0].Title, be.snap.Cards[0].Issues = "491: 番号が二重に出る", []card.IssueRef{{Number: 491}} // R1
+	be.procs = append(be.procs,
+		backend.Proc{Role: "PG", PID: 301, State: backend.ProcStopped, Card: "C-021", Mismatch: "止まっている (カードは作業中)"},
+		backend.Proc{Role: "PG", PID: 302, State: "動いている", Card: "C-022", Mismatch: "動いている (カードは完了)"},
+		backend.Proc{Role: "取り込み", PID: 303, State: backend.ProcStopped})
 	m := openSettingsFor(t, be)
 	tabKey(m)
 	out := setScreen(m)
@@ -177,12 +181,20 @@ func TestSettingsFoldsStoppedProcs(t *testing.T) {
 	if !strings.Contains(out, "R1 #491 番号が二重に出る") || strings.Contains(out, "491: ") {
 		t.Fatalf("カードの列がタイトルを出さない / issue 番号を二重に出す:\n%s", out)
 	}
-	if !strings.Contains(out, "止まっている PM・PG 8 本") || strings.Contains(out, "C-005") || !strings.Contains(out, "R1") {
-		t.Fatalf("止まっている行を畳まない / 動いている行が無い:\n%s", out)
+	for _, want := range []string{"! 止まっている (カードは作業中)", "C-021", "! 動いている (カードは完了)", "C-022", "止まっている役 1 本"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("%q が無い:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "C-005") || strings.Contains(out, "8 本") {
+		t.Fatalf("終わったカードの止まった PG を出した / 数えた:\n%s", out)
 	}
 	press(m, "enter")
-	if out := setScreen(m); !strings.Contains(out, "C-005") {
-		t.Fatalf("enter で止まっている行を開かない:\n%s", out)
+	if out := setScreen(m); !strings.Contains(out, "取り込み") || strings.Contains(out, "C-005") {
+		t.Fatalf("enter で止まっている役を開かない / 止まった PG まで開いた:\n%s", out)
+	}
+	if got := m.procsSummary(); got != "動いている 3・食い違い 2" {
+		t.Errorf("要約 = %q", got)
 	}
 }
 

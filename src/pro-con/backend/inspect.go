@@ -17,6 +17,9 @@ type Proc struct {
 	Card    string        `json:"card,omitempty"`
 	Session string        `json:"session,omitempty"`
 	Command string        `json:"command,omitempty"`
+	// Mismatch はカードと PG の session の食い違い (カードは作業中なのに session が止まっている / カードは完了なのに動いている。issue 497)。
+	// 空なら食い違いは無い。設定画面は、止まった PG の行のうち食い違いのあるものだけを出す
+	Mismatch string `json:"mismatch,omitempty"`
 }
 
 // ProcStopped は Proc.State の「止まっている」(設定画面はこの行を 1 行に畳む)。
