@@ -35,3 +35,31 @@
 
 - `src/pro-con/ui/diffview.go` — `diffRows` / `overlayDiff` / `diffJumpTo` / `onDiffLoaded`
 - `src/pro-con/card/progress.go` — `DiffMaxLines`
+
+## 対応 (2026-09-27、C-096)
+
+方針の 1 つ目の形で直した (`ui/diffview.go`)。
+
+- 本文の行の組み立て (`ansi.Strip` での見出しの行の判定・字下げ) は、読むときの裏の tea.Cmd (`diffBody`) で 1 回だけにした
+- 全行を並べた列は持たない。各ファイルの見出しの行の位置 (`starts`) と行数 (`total`) だけを持ち、作り直すのは畳みが変わったとき (`relayout`。O(ファイル数)) だけ
+- 描くときは窓の行だけを位置から引く (`rowText` / `fileAt`)。見出しの行は選んでいるファイルと畳みで変わるので、描くときに作る
+- キー処理 (`handleDiffKey` / `diffJumpTo` / `followScroll`) も全行を組み立てない
+
+検査 (`ui/diffview_perf_test.go` / `ui/diffview_rows_test.go`):
+
+- `TestDiffBoardViewAllocDoesNotGrowWithLines`: 本文を 500 行から 5000 行にしても 1 描画の確保量が 1.3 倍を超えない。直す前のコードでは 4.38 倍で赤
+- `TestDiffBoardRowsMatchFoldsAndCut`: 畳みの全組み合わせで、全行を並べた列と行の文字・ファイルが一致する (最後のファイルを畳んだときの切った知らせの行を含む)。変異 2 本 (畳みの判定を外す / 行の位置をずらす) で赤
+- `BenchmarkDiffBoardView`: 下の実測
+
+### 実測 (before / after)
+
+`go test -run '^$' -bench BenchmarkDiffBoardView -benchmem -count 10 ./ui/` を benchstat で比べた (Apple M3 Max)。
+本文は作った 82 ファイル・5000 行の差分 (色付けを通る形)、画面は 200x50。起票時の実測 (本物の差分と cards.json の写し) とは本文も画面も違うので、絶対値は比べられない。
+
+| 何を | before | after | |
+|---|---:|---:|---:|
+| 板を開いた画面の View | 2.64 ms / 2.01 MB / 16,984 allocs | 0.48 ms / 345 KB / 1,453 allocs | -82% / -83% / -91% |
+| 板を閉じた画面の View (参考) | 0.39 ms / 334 KB / 1,386 allocs | 0.40 ms / 334 KB / 1,386 allocs | 変えていない経路 (時間の +2.8% は揺れの範囲) |
+
+- 板を開いた画面は、閉じた画面より 0.08 ms / 11 KB 重いだけになった (窓の行の切り詰めの分)
+- スピナーで毎秒 10 回描いても約 0.5% のコア、スクロールの滑り (33ms ごと) でも約 1.5%

@@ -28,11 +28,14 @@ index 3..4 100644
 +新しい`
 
 // diffModel は差分の本文を置いたカードの詳細を開いた画面。
-func diffModel(t *testing.T) *Model {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "C-011.diff")
-	if err := os.WriteFile(path, []byte(sampleDiff), 0o600); err != nil {
-		t.Fatal(err)
+func diffModel(t *testing.T) *Model { return diffModelWith(t, sampleDiff) }
+
+// diffModelWith は本文 text を置いたカードの詳細を開いた画面 (bench からも使う)。
+func diffModelWith(tb testing.TB, text string) *Model {
+	tb.Helper()
+	path := filepath.Join(tb.TempDir(), "C-011.diff")
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		tb.Fatal(err)
 	}
 	be := newSpy()
 	be.snap.Cards = []card.Card{{ID: "C-011", State: card.Running, Since: be.snap.Now, Progress: &card.Progress{Worktree: "/r/.claude/worktrees/pc-c-011",
@@ -98,7 +101,7 @@ func TestDiffBoardRefusesWithoutDiffAndDropsLateLoad(t *testing.T) {
 	cmd := press(m, "D")
 	press(m, "q")
 	m.Update(cmd())
-	if m.diff.open || m.diff.lines != nil {
+	if m.diff.open || m.diff.files != nil {
 		t.Fatal("閉じた後に届いた本文で板を開き直した")
 	}
 	m.selected = "C-012"
