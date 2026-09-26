@@ -80,6 +80,7 @@ type Request struct {
 	Kind     string          `json:"kind"`
 	CardID   string          `json:"cardId,omitempty"`
 	Title    string          `json:"title,omitempty"`
+	Purpose  card.Purpose    `json:"purpose,omitempty"` // add: カードの種類 (issue 531)
 	Request  string          `json:"request,omitempty"` // 依頼の原文 (人間が書いたまま)
 	Prompt   string          `json:"prompt,omitempty"`  // PM に渡した指示の全文
 	Repo     string          `json:"repo,omitempty"`
@@ -472,9 +473,12 @@ func apply(st State, r Request, now time.Time, repos map[string]string) (State, 
 		if strings.TrimSpace(r.Title) == "" && strings.TrimSpace(r.Request) == "" {
 			return st, "", "", errors.New("add: 題名も依頼の原文も空")
 		}
+		if err := card.CheckPurpose(r.Purpose); err != nil {
+			return st, "", "", fmt.Errorf("add: %w", err)
+		}
 		id = fmt.Sprintf("C-%03d", next.NextID)
 		next.NextID++
-		c := card.Card{ID: id, ParentID: r.ParentID, Title: firstNonEmpty(r.Title, clip(r.Request, 40)), Request: r.Request, Prompt: r.Prompt, Repo: r.Repo,
+		c := card.Card{ID: id, ParentID: r.ParentID, Title: firstNonEmpty(r.Title, clip(r.Request, 40)), Purpose: r.Purpose, Request: r.Request, Prompt: r.Prompt, Repo: r.Repo,
 			Issues: r.Issues, Owner: firstNonEmpty(r.Owner, "PM"), State: card.Requested, Since: now, FromRequest: r.ID,
 			History: []card.Event{{At: now, Text: "依頼を受けた"}}}
 		// 足跡の最初 (依頼の列に入った時刻。issue 516)
@@ -647,6 +651,9 @@ func transition(c *card.Card, r Request, now time.Time) error {
 	case "plan": // PM がタスクに分けてキューに積んだ
 		if c.State != card.Requested {
 			return fmt.Errorf("依頼の列に無い (今は %s)", c.State.Label())
+		}
+		if c.Purpose == card.ForQuestion { // 問いだけのカードに PG は付けない (issue 531)
+			return errors.New("確認のカード (問いだけ) には PG を付けない。答えを受けたら close する (作業が要るなら issue を書いて close --issue で紐づけ、作業のカードを card add で足す)")
 		}
 		if err := card.CheckPoints(r.Points); err != nil { // 箱に手で置かれた依頼もここで止める (cardcmd の検査を通らない)
 			return err

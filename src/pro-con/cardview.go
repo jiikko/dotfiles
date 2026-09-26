@@ -60,6 +60,7 @@ type cardSummary struct {
 	ID       string    `json:"id"`
 	State    string    `json:"state"`
 	Title    string    `json:"title"`
+	Purpose  string    `json:"purpose"` // work (作業) / question (確認。問いだけ。issue 531)
 	Owner    string    `json:"owner"`
 	Session  string    `json:"session,omitempty"`
 	Since    time.Time `json:"since"`
@@ -76,7 +77,7 @@ type cardSummary struct {
 
 // summarize は cards (記録の全カード) から、順番で待っている前のカードも引く。誰の番と担当は dispatcher の様子 v で決める。
 func summarize(c card.Card, cards []card.Card, v dispatcherView) cardSummary {
-	return cardSummary{ID: c.ID, State: c.State.Label(), Title: c.Title, Owner: c.Owner, Session: c.Session, Since: c.Since,
+	return cardSummary{ID: c.ID, State: c.State.Label(), Title: c.Title, Purpose: c.Purpose.Name(), Owner: c.Owner, Session: c.Session, Since: c.Since,
 		Waiting: waiting(c, cards), Question: c.Wait.Question, Archived: c.Archived, Deleting: c.Deleting(), Turn: c.Turn(v.roles).Label(),
 		Assignee: c.Assignee(v.roles, v.states), RoleStep: v.roleStep(c)}
 }
@@ -166,11 +167,21 @@ func runCardList(args []string, env viewEnv, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("pro-con card list", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	stateArg := fs.String("state", "", "")
+	purposeArg := fs.String("purpose", "", "")
 	all := fs.Bool("all", false, "")
 	asJSON := fs.Bool("json", false, "")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
-		_, _ = fmt.Fprintln(stderr, "usage: pro-con card list [--state <列>] [--all] [--json]")
+		_, _ = fmt.Fprintln(stderr, "usage: pro-con card list [--state <列>] [--purpose work|question] [--all] [--json]")
 		return 2
+	}
+	var purpose *card.Purpose
+	if *purposeArg != "" {
+		p, err := card.ParsePurpose(*purposeArg)
+		if err != nil {
+			_, _ = fmt.Fprintln(stderr, "pro-con card list:", err)
+			return 2
+		}
+		purpose = &p
 	}
 	var want *card.State
 	if *stateArg != "" {
@@ -201,7 +212,7 @@ func runCardList(args []string, env viewEnv, stdout, stderr io.Writer) int {
 	out := []cardSummary{}
 	view := viewDispatcher(env.dir, env.now())
 	for _, c := range cards {
-		if (c.Archived && !*all) || (want != nil && c.State != *want) {
+		if (c.Archived && !*all) || (want != nil && c.State != *want) || (purpose != nil && c.Purpose != *purpose) {
 			continue
 		}
 		out = append(out, summarize(c, st.Cards, view))
@@ -320,6 +331,9 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 		}
 	}
 	p("issue: %s   親: %s", link, orDashCLI(c.ParentID))
+	if c.Purpose == card.ForQuestion {
+		p("種類: %s", card.QuestionPurposeText)
+	}
 	if pts := card.PointsLabel(c); pts != "" {
 		p("見積もり: %s (PM が付けた)", pts)
 	}

@@ -23,8 +23,9 @@ import (
 )
 
 var cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を置く。適用は dispatcher)
-  add --title <題名> [--request <依頼の原文>] [--repo <repo>] [--prompt <PM に渡した指示>] [--wait <長さ>]
+  add --title <題名> [--request <依頼の原文>] [--repo <repo>] [--prompt <PM に渡した指示>] [--purpose work|question] [--wait <長さ>]
                                                  適用を待ってカード ID を出す (既定 10s。待てなければ依頼 ID を出して rc=3。0 なら待たずに依頼 ID)
+                                                 --purpose question は人に確かめるだけのカード (確認。PG は付かず、答えを受けた PM が閉じる)
   plan <カード> [--issue <repo>#<番号>]... [--after <カード>]... [--points 1|2|3|5|8]
                                                  タスクに分けてキューに積んだ (--after のカードが完了するまで起動しない。--points は見積もり)
 ` + card.PointsMeaningText("                                                   ") + `
@@ -48,7 +49,8 @@ var cardUsage = `usage: pro-con card <操作> ...   (受付の箱に依頼を置
   move <カード> up|down [--repo <repo>]          レーンの中で 1 つ上 / 下のカードと入れ替える (上ほど優先。--repo ならその repo のカードの中の隣)
   guide                                          PM への指示書を出す (箱には何も置かない)
 読むだけ (箱にも記録にも書かない):
-  list [--state <列>] [--all] [--json]           カードの一覧 (--all は片付けたものも)
+  list [--state <列>] [--purpose work|question] [--all] [--json]
+                                                 カードの一覧 (--all は片付けたものも。--purpose で作業 / 確認に絞る)
   show <カード> [--json]                         依頼の原文・履歴・質問・PG の出力の末尾 (画面の詳細と同じ中身)
   wait <カード> [--until <列>] [--timeout <長さ>] [--json]
                                                  列が変わる (--until ならその列に居る) まで待つ (既定 10m。時間切れは rc=1)
@@ -255,7 +257,7 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 	var r store.Request
 	r.Kind = op
 	var issues issueList
-	var ending, askJSON string
+	var ending, askJSON, purpose string
 	var redirect bool
 	switch op {
 	case "add":
@@ -263,6 +265,7 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 		fs.StringVar(&r.Request, "request", "", "")
 		fs.StringVar(&r.Repo, "repo", "", "")
 		fs.StringVar(&r.Prompt, "prompt", "", "")
+		fs.StringVar(&purpose, "purpose", "", "")
 		fs.DurationVar(&wait, "wait", addWait, "")
 	case "plan":
 		fs.Var(&issues, "issue", "")
@@ -309,6 +312,13 @@ func parseCardArgs(args []string) (store.Request, time.Duration, error) {
 	case "add":
 		if strings.TrimSpace(r.Title) == "" && strings.TrimSpace(r.Request) == "" {
 			return r, wait, errors.New("add には --title か --request が要る")
+		}
+		if purpose != "" {
+			p, err := card.ParsePurpose(purpose)
+			if err != nil {
+				return r, wait, err
+			}
+			r.Purpose = p
 		}
 	case "ask":
 		r.Question = pos[1]
