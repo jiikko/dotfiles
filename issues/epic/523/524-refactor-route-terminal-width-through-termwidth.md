@@ -32,6 +32,14 @@ asm の速い道を入れる場所を 1 つにするため、`x/ansi` を直接�
 
 - `src/tuikit/termwidth/termwidth.go` / `src/pro-con/ui/view.go` / `src/pro-con/ui/motion.go` / `src/pro-con/ui/cursor.go` / `src/schedkeys/`
 
+## 順番の見積もり (PM, 2026-09-26。C-081 は順番を付けずに積んだ)
+
+- 触る場所: pro-con の `ui/` の広い範囲 (`fit` / `splice` / `cellsOf` と `ansi.*` の直接の呼び出し 44 か所)、schedkeys、`tuikit/termwidth`
+- 変える判断: 「端末の文字列の幅・切り詰め・切り出しは `termwidth` を通す」という約束 (振る舞いは変えない)
+- 順番を付けなかった理由: 画面を触るカードで未着手なのは C-079 (519。C-078 と見た目の選択を待つ) だけで、すぐには動かない。レビュー中のカード (C-072 / C-074 / C-078 / C-080) は先に入る見込み
+- 🚨 並べた代わりに: 後から入るカードが `x/ansi` の直接の呼び出しを持ち込むと、受け入れ条件 (直接の呼び出しが無い) が黙って崩れる。
+  **「直接の呼び出しを増やさない検査」(対応方針の 3 つ目) を入れる方に倒す**と、後のカードもそこで止まる。review の前に origin/master へ rebase して、数え直してから出す
+
 ## 進捗
 
 (まだ無い)
