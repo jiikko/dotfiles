@@ -25,10 +25,14 @@ PM が `plan --issue dotfiles#510` を付けても、`c.Repo` が空でないの
 
 ## 対応方針
 
+- **模擬 (`fake/fake.go` の `newRequest`) は既にこの形**: 足した時点で `Issues` を積み、原文に「#NNN <題> をやって」+ 補足を入れる。
+  本物 (`live`) をこれに揃え、**依頼の原文・題名・紐づける issue を組み立てる所を `backend` の 1 つの関数に寄せて、模擬と本物の両方がそれを呼ぶ**
+  (2 か所で同じ組み立てを持つと、今回のように片方だけ食い違う)
 - issue から足した依頼は、**足した時点でカードに issue を紐づける** (`store.Request` の add に `Issues` を載せ、`Apply` で `c.Issues` に入れる)。
   epic を選んだときは親 issue を紐づける
 - **依頼の原文に意図を入れる**: 補足が無ければ「issue #NNN の本文に書かれていることを進める」、補足があればその後ろに補足。人が書いた文は言い換えない
-- 題名は issue 491 に合わせて番号を付けない (`Issue.Title` だけ)
+- 題名は issue 491 に合わせて番号を付けない (`Issue.Title` だけ)。🚨 足した時点で issue を紐づけると `issueTag` の番号も出るので、
+  題名に `#505 (feat): ` を残すと二重に出る (`ui/issues.go` の `cardHeading` が落とすのは「数字 + `: `」で始まる形だけ)。模擬の題名も同じく直す
 - `pm-guide.md` に 1 項: issue から来た依頼 (カードに issue が紐づいている) は issue の本文が依頼そのもの。残りが確認作業だけでも、それを進める
   (PG に回す / 確かめて書き戻す)。聞くのは本文から決まらないことだけ
 - `card add --repo` は、設定に無い repo を受付の箱に置く前に断る (`card plan --issue` の repo も同じ検査を通るか確かめる)。
@@ -45,7 +49,14 @@ PM が `plan --issue dotfiles#510` を付けても、`c.Repo` が空でないの
 
 - `src/pro-con/live/live.go` (`Apply` の `NewRequest`) / `src/pro-con/backend/backend.go` (`IssuePrompt`・`PMPrompt`)
 - `src/pro-con/store/store.go` (add / plan の適用) / `src/pro-con/cardcmd.go` (`card add`) / `src/pro-con/pm-guide.md`
-- `src/pro-con/fake/fake.go` (模擬も同じ形で `IssuePrompt` を使う)
+- `src/pro-con/fake/fake.go` (`newRequest`。模擬は既に足した時点で issue を紐づけている = 揃える先)
+
+## 反証レビュー (2026-09-26、sonnet・読み取りのみ)
+
+- 採った: 模擬は既に足した時点で issue を紐づけている → 対応方針を「模擬に揃え、組み立てを 1 つの関数に寄せる」に直した /
+  issue を紐づけると題名の番号が `issueTag` と二重に出る → 題名の項に追記
+- 反証できなかった: `Request: c.Text` / add は `r.Issues` を読まない / `card show` の「issue: なし」/ pm-guide の役目 4 の文言 /
+  `card add --repo` に設定との突き合わせが無い (検査は起動時の `dispatcher.go` だけ) / 491 の決まり / 重なる issue は無い
 
 ## 進捗
 
