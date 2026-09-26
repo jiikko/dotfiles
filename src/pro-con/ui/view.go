@@ -341,12 +341,16 @@ func (m *Model) columnBlock(col int, s card.State, cs []card.Card, w, shown int,
 	}
 	border := fg(m.laneColor(col))
 	inner := w - 2
-	mark := "" // 人の番の枚数 (452)。狭いときも名前の方を削って印は残す
+	mark := "" // 人の番の枚数 (452)。狭いときは名前、次に列の枚数を削って印は残す
 	if n := m.humansIn(cs); n > 0 {
 		mark = fmt.Sprintf(" %s %d", humanMark, n)
 	}
-	name := "" // 名前の入る幅が無ければ名前を省く (キー・枚数・人の番の印を残す)
-	if room := inner - 3 - ansi.StringWidth(head+tail+mark); room > 0 {
+	room := inner - 3 - ansi.StringWidth(head+tail+mark)
+	if room < 0 && mark != "" {
+		tail = ""
+	}
+	name := ""
+	if room > 0 {
 		name = ansi.Truncate(s.Label(), room, "…")
 	}
 	title := fg(stateColor(s)) + sgrBold + head + name + tail + sgrReset

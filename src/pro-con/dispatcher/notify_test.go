@@ -164,3 +164,29 @@ func TestAnnounceRepublishesPeriodically(t *testing.T) {
 		t.Fatalf("間隔ごとに書き直さない / 間隔の前に書き直した: %d 回", len(r.published))
 	}
 }
+
+// 人の番のまま列が変わったら知らせ直す (鍵はカード ID と列に入った時刻)。PM の repo が無ければ PG の質問も人の番で、
+// 質問の無いカードは列の名前を本文に出す。
+func TestAnnounceRenotifiesWhenHumansTurnMovesLane(t *testing.T) {
+	cr := newCrashRig(t) // PM の repo が無い (PM も取り込みの係も起こさない)
+	var r recorder
+	r.rig(cr.d)
+	if _, err := store.Submit(cr.dir, store.Request{Kind: "ask", CardID: "C-001", Question: "q1"}); err != nil {
+		t.Fatal(err)
+	}
+	cr.tick(t)
+	if len(r.notified) != 1 || !strings.Contains(r.notified[0], "q1") {
+		t.Fatalf("PM を起こさないのに PG の質問を人に知らせない: %v", r.notified)
+	}
+	if err := store.Update(cr.dir, func(st *store.State) error {
+		c := &st.Cards[0]
+		c.State, c.Since, c.Wait = card.Review, t0.Add(time.Minute), card.Wait{}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cr.tick(t)
+	if len(r.notified) != 2 || !strings.Contains(r.notified[1], card.Review.Label()) {
+		t.Fatalf("人の番のままレビューへ移ったのに知らせ直さない / 本文に列が無い: %v", r.notified)
+	}
+}

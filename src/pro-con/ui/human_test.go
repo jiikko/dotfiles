@@ -71,4 +71,11 @@ func TestHeaderKeepsHumanMarkWhenNarrow(t *testing.T) {
 	if h := ansi.Strip(m.columnBlock(i, card.Waiting, m.columns()[i], 19, 1, false)[0]); !strings.Contains(h, "!人 1") {
 		t.Fatalf("狭い列で人の番の印が切れた: %q", h)
 	}
+	var many []card.Card // 人の番が 2 桁でも、列の枚数を削って印を残す
+	for range 12 {
+		many = append(many, m.snap.Cards[1])
+	}
+	if h := ansi.Strip(m.columnBlock(i, card.Waiting, many, 19, 1, false)[0]); !strings.Contains(h, "!人 12") {
+		t.Fatalf("人の番が 2 桁で印が切れた: %q", h)
+	}
 }
