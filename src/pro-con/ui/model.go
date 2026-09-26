@@ -84,6 +84,7 @@ type Model struct {
 	// (selected = "")。カードは位置ではなく ID で持つ (安定キー)。カードが列を移ったらレーンのフォーカスも付いていく。
 	col        int
 	selected   string
+	selRow     int // 最後のスナップショットでの selected の行 (setSnap が差し替えの直前に控える)。消えたカードの 1 つ上を選ぶのに使う
 	showDetail bool
 
 	mode        mode
@@ -427,6 +428,9 @@ func (m *Model) setSnap(s backend.Snapshot) {
 		}
 	}
 	s.Cards = cards
+	if _, row, ok := m.position(); ok {
+		m.selRow = row
+	}
 	m.snap = s
 	m.dropVanishedDrawer()
 }
@@ -489,13 +493,17 @@ func (m *Model) positionOf(id string) (col, row int, ok bool) {
 }
 
 // ensureSelection は状態が変わった後にフォーカスを直す。選んでいたカードが別のレーンへ移ったらレーンも付いていく。
-// カードが消えたら同じレーンの先頭のカード (無ければレーンだけにフォーカス)。
+// カードが消えたら (削除・片付け) 同じレーンで 1 つ上に居たカード。先頭のカードが消えたら新しい先頭 (無ければレーンだけにフォーカス)。
 func (m *Model) ensureSelection() {
 	if col, _, ok := m.position(); ok {
 		m.col = col
 		return
 	}
-	m.focusLane(m.col, 0)
+	row := 0 // 空のレーンに居た (selected = "") ならカードは消えていない。来たカードの先頭を選ぶ
+	if m.selected != "" {
+		row = m.selRow - 1
+	}
+	m.focusLane(m.col, row)
 }
 
 // focusFirst はカードのある最初のレーンにフォーカスする (起動時とタブの切り替え)。どのレーンも空なら先頭のレーン。

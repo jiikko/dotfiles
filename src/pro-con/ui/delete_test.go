@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -73,5 +74,41 @@ func TestDeleteRunningCardStopsPGFirst(t *testing.T) {
 	m.setSnap(be.Snapshot())
 	if shown(m, "C-005") {
 		t.Fatal("PG を止めた後に消えない")
+	}
+}
+
+// カードを削除したら、同じレーンで 1 つ上に居たカードを選ぶ (先頭へ戻さない)。レーンの最後の 1 枚を消したらレーンだけにフォーカス。
+// 完了の列は PG を止めてから消え (刻みの後の poll で消えたのを知る)、依頼の列はすぐ消える。両方の経路で見る。
+func TestDeleteSelectsCardAbove(t *testing.T) {
+	be := fake.New(time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC))
+	m := New(be, []backend.Repo{{Name: "dotfiles"}})
+	m.tab = "dotfiles"
+	lane := func(st card.State) []card.Card { return m.columns()[slices.Index(card.Columns, st)] }
+	del := func(st card.State, id string) {
+		m.selected, m.col = id, slices.Index(card.Columns, st)
+		press(m, "d")
+		m.Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
+		be.Step()
+		m.poll()
+		if shown(m, id) {
+			t.Fatalf("%s が消えていない: toast=%q", id, m.toasts.Text())
+		}
+	}
+	if req := lane(card.Requested); len(req) != 1 {
+		t.Fatalf("見本の依頼の列は 1 枚の前提: %d", len(req))
+	} else if del(card.Requested, req[0].ID); m.selected != "" || m.col != slices.Index(card.Columns, card.Requested) {
+		t.Fatalf("最後の 1 枚を消した後: selected=%q col=%d, want 空の依頼の列", m.selected, m.col)
+	}
+	done := lane(card.Done) // 先頭 (C-010) は子カードの親なので消せない。末尾と中ほどを消す
+	if len(done) < 4 {
+		t.Fatalf("見本に完了のカードが 4 枚要る: %d", len(done))
+	}
+	del(card.Done, done[3].ID)
+	if m.selected != done[2].ID {
+		t.Fatalf("末尾を消した後の選択 = %q, want 1 つ上の %q", m.selected, done[2].ID)
+	}
+	del(card.Done, done[1].ID)
+	if m.selected != done[0].ID {
+		t.Fatalf("中ほどを消した後の選択 = %q, want 1 つ上の %q", m.selected, done[0].ID)
 	}
 }
