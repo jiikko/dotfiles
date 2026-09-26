@@ -136,6 +136,24 @@ func TestOnlyOwnedSessionsShowActivity(t *testing.T) {
 	}
 }
 
+// 入力待ちで止まった PG (質問待ちの列の WaitPermission) も、生きていて枠を使う PG として出す (dispatcher の枠の数えと揃える。C-054)。
+func TestPromptWaitingPGIsConsumer(t *testing.T) {
+	b, _ := testBackend(t, sessions[:1], nil)
+	b.list = func(context.Context) ([]agents.Session, error) { return sessions, nil }
+	runningCard(t, b, "C-001", "bbbbbbbb")
+	if err := store.Update(b.dir, func(st *store.State) error {
+		st.Cards[0].State, st.Cards[0].Wait = card.Waiting, card.Wait{Kind: card.WaitPermission, Question: "権限の確認"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b.Refresh(context.Background())
+	s := b.Poll()
+	if len(s.Consumers) != 1 || s.Consumers[0].CardID != "C-001" || s.SlotsUsed() != 1 {
+		t.Fatalf("入力待ちの PG を枠に数えていない: %+v used=%d", s.Consumers, s.SlotsUsed())
+	}
+}
+
 // 記録を読めなければ前のカードを残し、理由を出す (0 枚と区別する)。session の一覧を取れないときは、カードは出して理由を足す。
 func TestReadFailures(t *testing.T) {
 	b, _ := testBackend(t, sessions[:1], nil)

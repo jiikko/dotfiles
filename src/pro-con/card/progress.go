@@ -219,7 +219,7 @@ func (c Card) humanWhy(r Roles) string {
 		}
 		return "レビュー (取り込みの係を起こさない設定)"
 	case c.Wait.Kind == WaitPermission:
-		return "権限の確認に答える"
+		return "権限の確認に答える (a で attach して答える。r の回答では答えられない)"
 	case c.Wait.Kind == WaitCrashed:
 		return "落ち続けたので止めた PG (r で回答すると同じ session を再開する)"
 	case c.HandedOff():

@@ -48,7 +48,7 @@
 - `pro-con card list` は人の番の行に「人の番」、`--json` に `turn` (PG / PM / 取り込みの係 / 人) を出す
 - 狭い列 (120 桁の端末で列幅 19) では、人の番がある列の見出しは名前、次に列の枚数を省いて印を残す
 - 残り (敵対レビューで確かめた):
-  - 🚨 **権限の確認は本番では人の番にならない** (452 より前からの穴)。`WaitPermission` を代入する production のコードが無く
+  - ✅ (C-054 で対応。下の「残りの 1 つ目の決定と実装」) 🚨 **権限の確認は本番では人の番にならない** (452 より前からの穴)。`WaitPermission` を代入する production のコードが無く
     (`agents.go` の `WaitingFor` もどこからも読まれていない)、権限プロンプトで止まった PG は作業中 = PG の番のまま。
     判定 (`Turn`) と表示は `WaitPermission` を人の番に扱うので、dispatcher が `waitingFor` を読んで質問待ちへ移せば印も通知も出る
   - PM を起こせない (起こし直しの上限) ときや dispatcher が止まっている間は、最後に書かれた設定のまま判定する (人の番に倒していない)。
@@ -60,3 +60,35 @@
 - 触る場所: dispatcher が PG の session の様子 (`claude agents` の status / waitingFor) を読む所 (`agents.go` の `WaitingFor`)、作業中 ↔ 質問待ち (`WaitPermission`) の遷移、`dispatcher/role.go` の `rr.waiting` との揃え
 - 変える判断: 「作業中」から出て戻る遷移を dispatcher が新しく起こす
 - 順番の理由: 490 (C-047) は「作業中だった時間」を列の移り変わりで足し込み、質問待ちの時間は数えない。新しい遷移がその足し込みを通るかは、2 つを合わせないと確かめられない。迷ったので 490 の後にした
+
+## 残りの 1 つ目の決定と実装 (C-054, 2026-09-26)
+
+- **実測** (Claude Code 2.1.283。haiku の bg session を権限の確認と AskUserQuestion で止め、pty の attach で答えて `claude agents --json --all` を採った):
+
+  | 形 | status | state | waitingFor | pid |
+  |---|---|---|---|---|
+  | 起動の直後 | なし | working | なし | なし |
+  | 作業中 | busy | working | なし | あり |
+  | 権限の確認 | waiting | blocked | `permission prompt` | あり |
+  | AskUserQuestion | waiting | blocked | `input needed` | あり |
+  | attach して答えた直後 | busy | working | なし | あり |
+  | turn を終えた | idle | done | なし | あり |
+
+  🚨 state は版で変わった (425 の 2.1.281 では turn を終えると `blocked`) ので、入力待ちは **status だけ**で判じる (`agents.Session.Waiting`)。
+  waitingFor は文面 (`WaitingLabel`) にだけ使う。役 (PM / 取り込みの係) の入力待ち (`dispatcher/role.go` の `rr.waiting`) も同じ述語にした
+- **遷移** (`dispatcher/prompt.go` の `trackPrompts`。Tick の `trackDead` の直後): 作業中で待ちの無いカードの PG (記録と同じ session id・pid) が
+  入力待ちなら質問待ち (`WaitPermission`) へ移し、出来事を 1 度出す (人の番の通知は既存の announce が 1 度)。入力待ちでなくなった
+  (busy / idle / 知らない値) か session が生きていない (pid 無し・一覧に無い) なら作業中へ戻す (落ちた PG は作業中の側の経路が扱う)。
+  AskUserQuestion も attach しないと答えられない (425 の結果 4) ので同じく人の番。テストの係の結果を待つカードは移さない
+- **作業中を前提にしていた経路を揃えた**: 待つ間も PG の枠に数える (`card.HoldsPGSlot`・画面の Consumers。答えられると再開の列を通らずに戻るため) /
+  停滞に数えず、戻ったら watchdog を数え直す / 方針変更は待たずに止めて再開 / 終了 (Shutdown) は作業中と同じく分解済みへ戻す /
+  PG の `ask` / `run` / `review` が入力待ちのカードに届いたら先に作業中へ戻して受ける (一覧で戻すより先に届く) / `r` の回答は受けない (attach して答える)
+- 490 (C-047) との合わせ: 490 は作業中の時間の足し込みを外した (f6e31223) ので、この遷移が通る足し込みは無い
+- テスト: `dispatcher/prompt_test.go` (fake は上の実測の表から作る) / `live/live_test.go` の `TestPromptWaitingPGIsConsumer`
+- 敵対レビューで直したもの: 入力待ちのまま落ちて自動の再開で入力待ちへ戻るのを繰り返す PG を、落ちた回数の上限で止める (`stopCrashing` が入力待ちも見る) /
+  入力待ちのまま中身が変わったら文面だけ直す (知らせ直さない)
+- 残り (敵対レビューで見つけた。この変更より前からの穴か、判断が要るもの):
+  - PG が `card run` / `card review` の後も同じ turn で動き続けて入力待ちで止まると、人の番にならない (テストの係の結果待ちは待ちを上書きしないので移さない /
+    レビュー待ちの列は見ていない)。テストの結果を渡す再開はその問いを殺す。PG の規律 (頼んだら turn を終える) に頼っている
+  - 入力待ちに出入りするたびに `Since` が変わり、人が並べ替えたレーンの順 (`card/rank.go`) が既定へ戻る。問いのたびに履歴 2 行・出来事 1 つ・通知 1 回
+  - 画面の `r` を入力待ちで断る分岐 (`ui/model.go`) にテストが無い

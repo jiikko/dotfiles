@@ -95,7 +95,7 @@ type WaitKind int
 const (
 	WaitNone       WaitKind = iota
 	WaitQuestion            // PG が質問した (Waiting 列)
-	WaitPermission          // 権限プロンプトで止まった (Waiting 列。claude agents --json の waitingFor)
+	WaitPermission          // PG の session が入力待ちで止まった (Waiting 列。claude agents --json の status: waiting。権限の確認が主で、AskUserQuestion も同じ。attach して答える)
 	WaitResource            // 占有リソースの順番待ち (要件 12。Running 列のまま)
 	WaitQuota               // 利用枠の回復待ち (Running 列のまま)
 	WaitCrashed             // PG が短い間に何度も落ちたので dispatcher が止めた (Waiting 列。人間が回答すると同じ session を再開する。426 の決定 4)
@@ -196,8 +196,9 @@ func (c Card) AwaitsRun() bool { return c.Run != "" || c.Exec.Active() }
 // テストの係の結果を待つ PG は turn を終えて idle で、トークンを使わない (重い処理はテストの係が 1 本ずつ回す) ので数えない。
 // idle と確かめられないうち (頼んだ直後で turn の途中 / 一覧に居ない) は数える。結果が届くと分解済みへ戻り、枠の空きを待って再開する (再開が先)。
 // idle は、このカードの PG が一覧で idle と出ているか。
+// 入力待ちで止まった PG (WaitsOnPrompt) も数える: 答えられると再開の列を通らずに作業中へ戻る (数えないと、待つ間に別の PG を起こして上限を超える)
 func HoldsPGSlot(c Card, idle bool) bool {
-	return c.State == Running && (!c.AwaitsRun() || !idle)
+	return c.State == Running && (!c.AwaitsRun() || !idle) || c.WaitsOnPrompt()
 }
 
 // DropRun はテストの係への頼みと実行中の記録を取り下げる。作業中の列を離れるときは必ず呼ぶ
@@ -207,6 +208,29 @@ func (c *Card) DropRun() {
 	if c.Wait.Kind == WaitResource {
 		c.Wait = Wait{}
 	}
+}
+
+// WaitsOnPrompt は PG の session が入力待ち (権限の確認 / AskUserQuestion) で止まり、質問待ちの列に居るか (C-054)。
+// PG の session は生きていて、人が attach して答えると同じ turn の続きから動き出す (dispatcher が作業中へ戻す)
+func (c Card) WaitsOnPrompt() bool { return c.State == Waiting && c.Wait.Kind == WaitPermission }
+
+// EnterPrompt は作業中のカードを、PG の session の入力待ち (what は中身の短い名前) で質問待ちへ移す (dispatcher が一覧の status で決める)。
+func (c *Card) EnterPrompt(now time.Time, what string) {
+	c.State, c.Since, c.Stalled = Waiting, now, false
+	c.Wait = Wait{Kind: WaitPermission, Question: PromptQuestion(what)}
+	c.History = append(c.History, Event{At: now, Text: "PG が入力待ち (" + what + ") で止まった。attach して答えると続きから動く"})
+}
+
+// PromptQuestion は入力待ちのカードの質問の欄の文 (what は中身の短い名前)。
+func PromptQuestion(what string) string {
+	return "PG の session が入力待ち (" + what + ")。attach して答える"
+}
+
+// LeavePrompt は入力待ちのカードを作業中へ戻す (why は戻した理由)。待っていた間は進捗なしに数えない (watchdog を今から数え直す)。
+func (c *Card) LeavePrompt(now time.Time, why string) {
+	c.State, c.Since, c.LastProgress = Running, now, now
+	c.Wait = Wait{}
+	c.History = append(c.History, Event{At: now, Text: why})
 }
 
 // StallThreshold は watchdog が「進捗なし」を停滞とみなすまでの時間。コマンドの実行中は見込みの 2 倍と base の
@@ -442,7 +466,8 @@ func (c Card) HandedOff() bool {
 }
 
 // Answerable は回答を受け付けるか (質問待ちの列に居る)。backend の回答・TUI の r・案内の色がこれを見る。
-func (c Card) Answerable() bool { return c.State == Waiting }
+// 入力待ち (WaitsOnPrompt) は受けない: 答えは attach して session の問いに返す (回答で再開すると、問いを殺して別の turn を始める)。
+func (c Card) Answerable() bool { return c.State == Waiting && !c.WaitsOnPrompt() }
 
 // Violation は不変条件の破れ。UI は件数を出し、0 件でないことを隠さない。
 type Violation struct {

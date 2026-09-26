@@ -526,7 +526,7 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 		if t := b.transcript(s.SessionID); len(t.Outputs) > 0 {
 			cards[i].Log = tail(t.Outputs, 3) // LastProgress は dispatcher の watchdog だけが書く (活動と進捗を分けて判定するため)
 		}
-		if c.State == card.Running {
+		if c.State == card.Running || c.WaitsOnPrompt() { // 入力待ちで止まった PG も生きていて枠を使う (dispatcher と同じ = card.HoldsPGSlot)
 			cons = append(cons, backend.Consumer{Session: s.ID, CardID: c.ID, Status: s.Status, PID: s.PID})
 		}
 	}

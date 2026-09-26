@@ -218,6 +218,13 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	if err := d.trackDead(now, ss); err != nil {
 		return notes, err
 	}
+	// 作業中の側の経路 (再起動の復旧・落ち続けた PG・消えた PG・watchdog・割り当て) より先: 生きていない入力待ちの PG を作業中へ戻してから扱わせ、
+	// 入力待ちで止まった PG を停滞と読ませない
+	prompts, err := d.trackPrompts(now, ss)
+	notes = append(notes, prompts...)
+	if err != nil {
+		return notes, err
+	}
 	// 起動して一覧を取れた最初の Tick で 1 度だけ: マシンの再起動で消えたと示せる session を待たずに復旧する (483)。
 	// watchdog と 458 の経路より先 (戻したカードを停滞・消えた PG として重ねて扱わない)
 	checked, err := d.checkAtStart(ctx, now, ss)
@@ -471,7 +478,8 @@ func (d *Dispatcher) stopCrashing(ctx context.Context, now time.Time, ss []agent
 	}
 	var notes []eventlog.Event
 	for _, c := range st.Cards {
-		if c.State != card.Running || c.Session == "" {
+		// 入力待ちで止まった PG も見る: 落ちて自動の再開で入力待ちへ戻るのを繰り返すと、作業中の列を通る Tick で数えても止め損ねる (C-054)
+		if (c.State != card.Running && !c.WaitsOnPrompt()) || c.Session == "" {
 			continue
 		}
 		recent, limit, window := d.recentCrashes(c, now)
@@ -704,7 +712,7 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 			continue
 		}
 		switch c.State {
-		case card.Running:
+		case card.Running, card.Waiting: // 質問待ちの列では、入力待ちで止まった PG だけが枠を使う (card.HoldsPGSlot)
 			if holds(c) {
 				running++
 			}
@@ -721,7 +729,7 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 				continue
 			}
 			queue = append(queue, c)
-		case card.Requested, card.Waiting, card.Review, card.Done:
+		case card.Requested, card.Review, card.Done:
 		}
 	}
 	// 回答を受けた再開の初回を新しい起動より先に (途中まで進んだ作業と、その worktree を待たせない。枠で 1 本に絞ったときに効く)。
