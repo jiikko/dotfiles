@@ -18,8 +18,8 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
