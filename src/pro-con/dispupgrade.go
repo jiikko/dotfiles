@@ -18,6 +18,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"context"
 	"fmt"
 	"os"
@@ -273,7 +274,10 @@ func runPreflight(ctx context.Context, exe string, args []string) (string, error
 		if msg == "" {
 			msg = line
 		}
-		return "", fmt.Errorf("%s --%s: %v (%s)", exe, preflightFlag, err, msg)
+		if err == nil { // rc=0 でも ok の行を出さない (--preflight を知らない版・壊れた出力)
+			err = errors.New(preflightOK + " の行が無い")
+		}
+		return "", fmt.Errorf("%s --%s: %w (%s)", exe, preflightFlag, err, msg)
 	}
 	return strings.TrimPrefix(line, preflightOK+" "), nil
 }
