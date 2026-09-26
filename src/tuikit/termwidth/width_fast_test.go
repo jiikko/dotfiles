@@ -47,7 +47,7 @@ func TestSymbolWidthTableMatchesLibrary(t *testing.T) {
 // への対処で、範囲の外側は BMP 外まで含めて 0 であることを主張する。
 func TestSymbolWidthRejectsOutsideTable(t *testing.T) {
 	for _, r := range []rune{0, 0x20, 0x7e, 0x7f, symTableLo - 1, symTableHi + 1,
-		0x3000, 0x4E00, 0xFFFD, 0xFFFE, 0xFFFF, 0x1F680, 0x1F1EF, 0x10FFFF, -1} {
+		0x3099, 0x309A, 0x302A, 0x302F, 0xFF9E, 0xFF9F, 0xAC00, 0xD800, 0xDFFF, 0xFFFD, 0xFFFE, 0xFFFF, 0x1F680, 0x1F1EF, 0x10FFFF, -1} {
 		if w := symbolWidth(r); w != 0 {
 			t.Errorf("U+%04X を受理してしまった (w=%d)", r, w)
 		}
@@ -69,10 +69,28 @@ func TestSymbolWidthRejectsOutsideTable(t *testing.T) {
 // 「クラスタ数 = 2」かつ「fast の幅 = ansi の幅」を確かめて初めて言える。
 func TestAcceptedSymbolsNeverCombineWithEachOther(t *testing.T) {
 	syms := acceptedSymbols(t)
-	// ASCII 代表も混ぜる (Prepend が ASCII を飲むケースを塞ぐため)
-	probes := append([]rune{'a', '0', ' ', '~', '!'}, syms...)
+	// 相手 (後ろに置く字) は、ASCII の代表 + 日本語以外の受理字すべて + 日本語の見本。🚨 日本語を全部相手にすると
+	// 約 3 万 × 3 万で 140 秒かかる (2026-09-27 に 1 度だけ全部を回して結合 0 を確かめた)。日本語の受理字はどれも
+	// Grapheme_Cluster_Break が Other で結合の規則上は区別が無いので、各範囲の端と一定間隔の見本で足りる。
+	// 前に置く字 (a) は受理字すべて (範囲の中に Extend が紛れ込んでいたら、ここで ASCII の相手と組んで落ちる)
+	probes := []rune{'a', '0', ' ', '~', '!'} // ASCII 代表も混ぜる (Prepend が ASCII を飲むケースを塞ぐため)
+	for i, r := range syms {
+		if !acceptCJK(r) || i%97 == 0 || !acceptCJK(r-1) || !acceptCJK(r+1) {
+			probes = append(probes, r)
+		}
+	}
 	pairs := 0
 	for _, a := range syms {
+		// 🚨 書記素を伸ばす字 (Extend 等) は先頭に置くと単独で 1 書記素になるので、「前に置く字」として試すだけでは見逃す。
+		// 受理した字はすべて「ASCII の後ろ」と「同じ字の後ろ」にも置く (相手を見本に絞ったぶん、ここは全字で確かめる)
+		for _, s := range []string{"x" + string(a), string(a) + string(a)} {
+			if n := uniseg.GraphemeClusterCount(s); n != 2 {
+				t.Fatalf("%q (U+%04X) が %d クラスタに結合した", s, a, n)
+			}
+			if w, ok := fastDispWidth(s); !ok || w != ansi.StringWidth(s) {
+				t.Fatalf("%q (U+%04X): fast=(%d,%v) ansi=%d", s, a, w, ok, ansi.StringWidth(s))
+			}
+		}
 		for _, b := range probes {
 			s := string(a) + string(b)
 			// ⚠️ uniseg は Unicode 15、本番の分割器 (x/ansi) は 16 で**判断が割れる**
@@ -93,7 +111,7 @@ func TestAcceptedSymbolsNeverCombineWithEachOther(t *testing.T) {
 			pairs++
 		}
 	}
-	t.Logf("%d ペアで結合なし・幅一致を確認", pairs)
+	t.Logf("%d ペアで結合なし・幅一致を確認 (前 %d 字 × 相手 %d 字)", pairs, len(syms), len(probes))
 }
 
 // RUNEWIDTH_EASTASIAN=1 の子プロセスでも dispWidth が ansi と一致すること。
@@ -204,8 +222,13 @@ func TestFastDispWidthRejectsCombining(t *testing.T) {
 		{"regional indicator (国旗)", "\U0001f1ef\U0001f1f5"},
 		{"結合ダイアクリティカル", "é"},
 		{"keycap", "1\ufe0f\u20e3"},
-		{"CJK", "漢字"},
-		{"全角スペース", "\u3000"},
+		// 日本語は受理する (acceptCJK)。受理しないのは書記素を伸ばす字と、表の外の字
+		{"ひらがな + 結合用の濁点", "か\u3099"},
+		{"半角カナ + 半角の濁点", "ｶ\uff9e"},
+		{"声調記号", "\u302a"},
+		{"ハングル (字母が組み合わさる)", "한"},
+		{"CJK 拡張 B (4 byte)", "\U0002000b"},
+		{"サロゲートの符号 (不正な UTF-8)", "a\xed\xa0\x80b"},
 		{"ZWSP", "a\u200bb"},
 		{"soft hyphen", "a\u00adb"},
 		{"Prepend (先行が飲む)", "\u0600─"},
@@ -248,6 +271,9 @@ func TestFastDispWidthMatchesLibrary(t *testing.T) {
 		"a·b•c‥d…e‹f›g",
 		"\x1b[1m┃\x1b[0m ▰▰▱▱▱ 40%",
 		"→ ← ↑ ↓ ▶ ▸ ◐ ◦ ○ ■ ☐ ☑ ⚠ ❯ ⏸ █▓▒░▏▌",
+		"カードの詳細を開いて差分を確かめる。", // pro-con のカードのタイトルの形
+		"\x1b[1m依頼 3\x1b[0m  作業中 1 │ 質問待ち 2 ─ ＰＧ　２／２「完了」",
+		"見ているだけの画面なので、カードの作成は別のターミナルで行う (C-051)",
 	}
 	for _, s := range cases {
 		lib := ansi.StringWidth(s)

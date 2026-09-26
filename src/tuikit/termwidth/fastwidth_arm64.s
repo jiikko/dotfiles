@@ -87,9 +87,10 @@ special:
 	BLO	fail
 	CMP	$0xe0, R4
 	BLO	utf8_2
-	// 3 byte 列で表 (上限 symTableHi = 0x28ff) に届く先頭は 0xe0..0xe2 だけ。
-	// 0xe3 以上と 4 byte 列は表の外なので受理しない
-	CMP	$0xe2, R4
+	// 3 byte 列 (先頭 0xe0..0xef) は全部表の範囲に届きうる (上限 symTableHi = 0xffef)。受理するかは表が決める。
+	// 4 byte 列 (先頭 0xf0 以上) は表の外なので受理しない。サロゲート (0xed 0xa0..) は復号すると U+D800..U+DFFF になり、
+	// 表の値が 0 (acceptSymbol が受理しない) なので落ちる (Go 版の utf8.DecodeRuneInString が RuneError にするのと同じ結果)
+	CMP	$0xef, R4
 	BHI	fail
 	ADD	$3, R0, R6
 	CMP	R1, R6

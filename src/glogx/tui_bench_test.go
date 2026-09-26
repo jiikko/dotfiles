@@ -29,9 +29,9 @@ func benchBrowse(tb testing.TB, n, w, h int) *browseModel {
 
 // benchBrowseSubjects は benchBrowse の本体。ja=true で commit subject を日本語混在にする。
 //
-// 🚨 日本語を別に測る理由: 幅計算の fast-path (termwidth の fastDispWidth) は CJK を
-// 受理せず ansi へ委ねるので、**日本語の subject を含む行はフレームの中で唯一 fast-path を
-// 通れない行**になる。ASCII 固定のフィクスチャだけで測ると fast-path の効果を過大評価する
+// 🚨 日本語を別に測る理由: 幅計算の fast-path (termwidth の fastDispWidth) は、日本語を 2026-09-27 まで受理せず
+// ansi へ委ねていた (今は受理する。acceptCJK)。日本語の行は ASCII の行と通る経路 (NEON が効かない 3 byte の字の
+// スカラの処理) が違うので、ASCII 固定のフィクスチャだけで測ると効果を見誤る
 // (この repo 自身の commit message は日本語なので、実運用は ja=true 側に近い)。
 // 2026-08-14 の敵対的レビュー R2 の指摘で追加。
 func benchBrowseSubjects(tb testing.TB, n, w, h int, ja bool) *browseModel {

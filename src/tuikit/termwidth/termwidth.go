@@ -62,7 +62,8 @@ import (
 // CI 状態の ✓✗●⊘↑・枠線 ─│・切り詰めの …・スピナー ⠋ — が混ざる)。
 // そのため fast-path は下記 3 種を扱う: 印字可能 ASCII / SGR / 幅を表に持っている記号。
 // この形で slow-path の 97.6〜98.8% を拾い、ansi.StringWidth との幅の不一致は 0 件だった
-// (詳細は issue 046)。
+// (詳細は issue 046)。表の記号には日本語 (acceptCJK) も入っている: pro-con のカードのタイトルのような
+// 日本語の行が ansi へ落ちていた (epic 523。2026-09-27)。
 func Of(s string) int {
 	if w, ok := fastDispWidth(s); ok {
 		return w
@@ -130,7 +131,7 @@ func fastDispWidthGeneric(s string) (int, bool) {
 // 上限より大きい rune が受理されることは構造的に起こらない。
 const (
 	symTableLo = 0x00B7 // 受理する最小の rune (·)
-	symTableHi = 0x28FF // Braille の末尾
+	symTableHi = 0xFFEF // 全角形 (Halfwidth and Fullwidth Forms) の末尾
 )
 
 // symWidthTable は受理する記号の表示幅 +1 を引く表 (0 = 受理しない)。
@@ -151,11 +152,21 @@ var symWidthTable [symTableHi - symTableLo + 1]uint8
 // init は受理集合の幅をライブラリから引いて表に焼く。x/ansi の init は import 順で
 // 先に走るので、env 由来の設定はこの時点で確定している。
 func init() {
+	// 受理する字を 1 本の文字列に並べ、部分文字列で 1 字ずつ測る。🚨 1 字ごとに string(r) を作ると、日本語を足した表
+	// (約 3 万字) で起動のたびに 3 万回確保する (inittrace で 29,276 allocs・1.4〜2.9 ms。2026-09-27)。この形で 6 allocs・約 1.1 ms
+	// (日本語を足す前は 816 allocs・約 0.07 ms。残りは 3 万字を ansi.StringWidth で測る時間。区間ごとに 1 字で済ませると、
+	// 区間の中の幅 1 の字 (U+303F 等) を取り違える)
+	buf := make([]byte, 0, 3*(symTableHi-symTableLo+1))
 	for r := rune(symTableLo); r <= symTableHi; r++ {
-		if !acceptSymbol(r) {
-			continue
+		if acceptSymbol(r) {
+			buf = utf8.AppendRune(buf, r)
 		}
-		w := ansi.StringWidth(string(r))
+	}
+	all := string(buf)
+	for i := 0; i < len(all); {
+		r, n := utf8.DecodeRuneInString(all[i:])
+		w := ansi.StringWidth(all[i : i+n])
+		i += n
 		if w <= 0 || w > 2 {
 			continue // 想定外の幅は受理しない (0 のままにして ansi へ委ねる)
 		}
@@ -189,6 +200,8 @@ func acceptSymbol(r rune) bool {
 		return true
 	case r >= 0x2800 && r <= 0x28FF: // Braille (スピナー)
 		return true
+	case acceptCJK(r):
+		return true
 	}
 	switch r {
 	case '·', '–', '—', '‘', '’', '“', '”', '•', '‥', '…', '‹', '›', // General Punctuation ほか
@@ -196,6 +209,27 @@ func acceptSymbol(r rune) bool {
 		'■', '▰', '▱', '▶', '▸', '○', '●', '◐', '◦', // Geometric Shapes
 		'☐', '☑', '⚠', // Miscellaneous Symbols
 		'✓', '✗', '❯': // Dingbats
+		return true
+	}
+	return false
+}
+
+// acceptCJK は日本語の行に出る字のうち、単独で 1 書記素になるもの (pro-con のカードのタイトル・glogx の issue の題。
+// 日本語の行が受理集合の外だと、幅・切り詰め・切り出しが x/ansi の書記素の走査に落ちる。epic 523 の実測)。
+// 🚨 書記素を伸ばす字 (Grapheme_Cluster_Break = Extend) は入れない: 結合用の濁点・半濁点 U+3099 / U+309A、
+// 半角カナの濁点・半濁点 U+FF9E / U+FF9F、声調記号 U+302A..U+302F。ハングルは字母が組み合わさる (L / V / T) ので入れない。
+// 受理した字どうしが結合しないことは TestAcceptedSymbolsNeverCombineWithEachOther が確かめる
+func acceptCJK(r rune) bool {
+	switch {
+	case r >= 0x3000 && r <= 0x3029, r >= 0x3030 && r <= 0x303F: // CJK の記号と句読点 (声調記号を除く)
+		return true
+	case r >= 0x3041 && r <= 0x3096, r >= 0x309B && r <= 0x309F: // ひらがな (結合用の濁点・半濁点を除く)
+		return true
+	case r >= 0x30A0 && r <= 0x30FF, r >= 0x31F0 && r <= 0x31FF: // カタカナ・カタカナ拡張
+		return true
+	case r >= 0x3400 && r <= 0x4DBF, r >= 0x4E00 && r <= 0x9FFF, r >= 0xF900 && r <= 0xFAFF: // 漢字 (拡張 A・統合・互換)
+		return true
+	case r >= 0xFF01 && r <= 0xFF60, r >= 0xFFE0 && r <= 0xFFE6: // 全角の英数・記号 (半角カナは濁点が結合するので除く)
 		return true
 	}
 	return false

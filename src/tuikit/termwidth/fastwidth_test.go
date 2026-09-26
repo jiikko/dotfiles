@@ -14,10 +14,14 @@ func fastWidthBoundaryInputs() []string {
 		"─", "·", "⠋", "✓", "…", // 表にある記号 (2 byte / 3 byte)
 		"\x1b[2K", "\x1b[38;5;", "\x1b", "\x1bX", // SGR 以外・途中で切れた列 (棄却)
 		"\t", "\x7f", "\x00", "\x1f", // C0 / DEL (棄却)
-		"é", "漢", "　", "⚠️", "\U0001f680", // 表の外・結合 (棄却)
+		"é", "⚠️", "\U0001f680", // 表の外・結合 (棄却)
+		"漢", "　", "あ", "ア", "Ａ", "、", // 日本語 (受理。3 byte の先頭 0xe3..0xef)
+		"\xe3\x82\x99", "\xef\xbe\x9e", "\xe3\x80\xaa", "\xea\xb0\x80", "\xe3\x81", // 結合用の濁点・半角の濁点・声調記号・ハングル (棄却)・途中で切れた 3 byte
 		"\xff", "\xc0\x80", "\xc1\xbf", "\xe0\x82\xb7", "\xe2\x94", "\xc2", "\x80", // 不正な UTF-8 (棄却)
-		"\xed\xa0\x80", "\xe3\x80\x80", "\xf0\x9f\x9a\x80", // サロゲート・表の上限超え・4 byte
-		"\xc2\xb7", "\xc2\xb6", "\xe2\xa3\xbf", "\xe2\xa4\x80", // 表の下限・その 1 つ下・上限・その 1 つ上
+		"\xed\xa0\x80", "\xed\xbf\xbf", "\xf0\x9f\x9a\x80", "\xf0\xa0\x80\x8b", // サロゲート (両端)・4 byte (絵文字・CJK 拡張 B)
+		"\xc2\xb7", "\xc2\xb6", "\xe2\xa3\xbf", "\xe2\xa4\x80", // 表の下限・その 1 つ下・Braille の上限・その 1 つ上 (棄却)
+		"\xe9\xbf\xbf", "\xef\xbf\xa6", "\xef\xbf\xa7", "\xef\xbf\xaf", "\xef\xbf\xb0", // 漢字の上限・全角記号の上限・その 1 つ上 (棄却)・表の上限 (棄却)・その 1 つ上
+		"\xe0\xa0\x80", "\xef\xbf\xbf", // 3 byte の最小 (U+0800)・最大 (U+FFFF)
 	}
 	var out []string
 	for _, sp := range specials {
@@ -75,8 +79,8 @@ var fastWidthBenchCases = []struct {
 	{"status_row", "│ \x1b[32m✓\x1b[0m 2270ab5 \x1b[2m3 hours ago\x1b[0m  docs(rules): measure perf before fixing it  \x1b[31m✗\x1b[0m lint │"},
 	// 罫線だけ (記号が連続し ASCII の連なりが無い = NEON が効かない側)
 	{"box_120", "┌" + strings.Repeat("─", 118) + "┐"},
-	// 日本語の subject: 途中で棄却されて ansi へ落ちる行 (棄却までのコスト)
-	{"cjk_reject", "│ \x1b[32m✓\x1b[0m 2270ab5 fix(glogx): 請求計算の境界条件を是正し、回帰を実測で固定する"},
+	// 日本語の subject (acceptCJK で受理する。以前は途中で棄却されて ansi へ落ちていた)
+	{"cjk_subject", "│ \x1b[32m✓\x1b[0m 2270ab5 fix(glogx): 請求計算の境界条件を是正し、回帰を実測で固定する"},
 }
 
 // Go 版とアーキ版 (arm64 ではアセンブリ) を同じ入力で並べて測る。
