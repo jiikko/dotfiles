@@ -21,6 +21,7 @@ type fakeRunner struct {
 	started  chan struct{} // 実行を始めた (記録を足した) 知らせ。テストはこれを待ってから dirs / commands を読む (別の goroutine で走るため)
 	canceled bool          // 取り消し (ctx.Done) を見た
 	busy     int           // 残り何回、repo の lock を他が持っている (始めずに errRunLockBusy を返す) 形にするか
+	relErr   error         // release の終了コードと一緒に返すエラー (release に送る前に書く)
 }
 
 // waitStarted は n 本目の実行が始まるまで待つ (上限 5 秒)。
@@ -43,7 +44,7 @@ func (f *fakeRunner) Run(ctx context.Context, dir, command, logPath, _ string) (
 	}
 	select {
 	case rc := <-f.release:
-		return rc, nil
+		return rc, f.relErr
 	case <-ctx.Done():
 		f.canceled = true
 		return -1, ctx.Err()

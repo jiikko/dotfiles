@@ -50,7 +50,7 @@ bin/pro-con worktree clean [--yes]  # 閉じたカードの PG の worktree を�
                          # master に無い commit があるもの・記録に無いもの・PM と取り込みの係の worktree・人が掛けた lock は消さない。Claude Code が残した lock は外して消す (消せなければ掛け直す)。判定は wtclean.Judge (設定画面 456 の内訳も同じ関数を呼ぶ)
 bin/pro-con --e2e <dir>  # e2e モード: 画面・dispatcher・受付の箱・記録は本物、PG と PM だけ台本どおりの偽物 (claude を起動しない。利用枠を使わない)
 bin/pro-con e2e <start|keys|text|screen|wait|stop|scenario> <dir> ...  # Claude が e2e モードの画面を操作する口 (隔離した tmux サーバで動かす)
-bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンドを頼む。dispatcher が PG の worktree で 1 本ずつ順に実行し、結果を渡して PG を再開する (失敗は haiku が要約し、1 行目に一次判定 = この変更のせい / 負荷・環境 / 前から / 判定できない を書く。見込みで証拠ではない。枠 95% 以上で始めた実行は要約しない。issue 475)。repo の lock (`<git の共通ディレクトリ>/pro-con-locks/test`) を `lockman with` で取って走らせ、外が持っていれば「pro-con の外が使用中」で待つ (issue 471)
+bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンドを頼む。dispatcher が PG の worktree で 1 本ずつ順に実行し、結果を渡して PG を再開する (失敗は haiku が要約し、1 行目に一次判定 = この変更のせい / 負荷・環境 / 前から / 判定できない を書く。見込みで証拠ではない。枠 95% 以上で始めた実行は要約しない。issue 475)。repo の lock (`<git の共通ディレクトリ>/pro-con-locks/test`) を `lockman with` で取って走らせ、外が持っていれば「pro-con の外が使用中」で待つ (issue 471)。実行のグループが止まったまま (全部 STAT T) 30 秒続かなければ、1 時間の上限を待たずに止め直して失敗として返す (issue 541)
                                          # -- の後ろは argv として 1 つずつ quote して記録する (引用はそのまま届く)。パイプや && を含む 1 行は `-- bash -c 'make test 2>&1 | tail'` で頼む (issue 463)
                                          # 🚨 PG に `pro-con card` を許すことは、その worktree で任意のコマンドを PG の permission の外で (dispatcher の権限で) 走らせるのを許すのと同じ。守っているのは「頼んだ場所がそのカードの PG の worktree」だけ
 ```
