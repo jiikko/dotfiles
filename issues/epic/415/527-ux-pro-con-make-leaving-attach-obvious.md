@@ -35,6 +35,10 @@
 - 🚨 `tmux display-popup` / `bind-key` を本番の tmux サーバで試さない。確かめは隔離した tmux の `-L` サーバで。popup を閉じるキーを tmux に bind するなら、attach の間だけにして戻したら外す
 - attach から戻ったときに人間の発言をカードの履歴へ残す処理 (README の attach の項) は、popup でも同じく動くこと
 
+- **追加 (2026-09-27、ユーザー)**: 戻るキーに「ユーザーの tmux の prefix + d」も足す (普段のデタッチの手癖。ユーザーの prefix は `C-t`)。
+  prefix は外側の tmux から読む (`tmux show -gv prefix`)。popup の間は外側の tmux の bind が効かないので、外のセッションはデタッチされない (C-082 が隔離 tmux 3.7b で確かめた)。
+  入れ子のサーバの prefix をそれにすると、attach の間の `C-t` 1 回は Claude Code (Ctrl+T = タスクの一覧) に届かないが、普段 tmux の中で Claude Code を使うときと同じ
+
 ## アイディア (作り方は PG が決めてよい)
 
 - attach の直前に 1 画面の案内を出す: 「戻るには Ctrl+Z (← は Claude Code の一覧へ行くだけ)。PG は動き続ける」。Enter で attach へ進む (毎回出すか、初回だけかは見本で決める)
