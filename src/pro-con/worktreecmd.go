@@ -25,12 +25,14 @@ import (
 	"pro-con/wtclean"
 )
 
-const worktreeUsage = `usage: pro-con worktree clean [--yes]
+const worktreeUsage = `usage: pro-con worktree clean [--remote] [--yes]
   閉じたカードの PG の worktree (<repo>/.claude/worktrees/pc-<カード>) と session を片付ける。既定は一覧を出すだけ。
   --yes で、消してよいものを 1 個ずつ取り直して消す (未 commit の変更・動いている session・master との比較を消す直前に見直す)。
   ブランチも消すのは、中身が master にあり (祖先か git cherry が全部 -)、名前が worktree-pc-<カード> のときだけ。
   worktree とブランチが消えたカードは、pro-con が起動した session の transcript・claude の job (claude rm)・起動の記録の行も消す。
-  master に無い commit があるもの・記録に無いもの・session が動いているものは消さず、理由を並べる。`
+  master に無い commit があるもの・記録に無いもの・session が動いているものは消さず、理由を並べる。
+  --remote で origin の PG のブランチ (worktree-pc-<カード>) も並べる (git fetch --prune で取り直してから)。消すのは、完了したカードの
+  ブランチで中身が origin/master にあるものだけ。--yes では 1 本ずつ取り直して判定し直し、判定した先端を lease にして push で消す。`
 
 // worktreeEnv は worktree clean が外から受け取るもの (テストが差し替える)。
 type worktreeEnv struct {
@@ -52,6 +54,7 @@ func runWorktree(args []string, env worktreeEnv, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("pro-con worktree clean", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	yes := fs.Bool("yes", false, "")
+	remote := fs.Bool("remote", false, "")
 	if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 0 {
 		_, _ = fmt.Fprintln(stderr, worktreeUsage)
 		return 2
@@ -76,13 +79,26 @@ func runWorktree(args []string, env worktreeEnv, stdout, stderr io.Writer) int {
 	}
 	svs := wtclean.ScanSessions(ctx, in, removing)
 	printSessionVerdicts(stdout, svs)
-	if !*yes {
-		if n, m := countRemovable(vs), countRemovableSessions(svs); n+m > 0 {
-			_, _ = fmt.Fprintf(stdout, "\n消すには: pro-con worktree clean --yes (worktree %d 個・session %d 枚分を 1 つずつ取り直して消す)\n", n, m)
+	var rvs []wtclean.RemoteVerdict
+	var remoteErr error
+	if *remote {
+		rvs, remoteErr = wtclean.ScanRemote(ctx, in)
+		printRemoteVerdicts(stdout, rvs)
+		if remoteErr != nil {
+			_, _ = fmt.Fprintln(stderr, "pro-con worktree clean:", remoteErr)
 		}
-		return exitOf(scanErr)
 	}
-	rc := exitOf(scanErr)
+	rc := max(exitOf(scanErr), exitOf(remoteErr))
+	if !*yes {
+		if n, m, r := countRemovable(vs), countRemovableSessions(svs), countRemovableRemote(rvs); n+m+r > 0 {
+			hint := fmt.Sprintf("pro-con worktree clean --yes (worktree %d 個・session %d 枚分", n, m)
+			if *remote {
+				hint = fmt.Sprintf("pro-con worktree clean --remote --yes (worktree %d 個・session %d 枚分・remote のブランチ %d 本", n, m, r)
+			}
+			_, _ = fmt.Fprintf(stdout, "\n消すには: %sを 1 つずつ取り直して消す)\n", hint)
+		}
+		return rc
+	}
 	_, _ = fmt.Fprintln(stdout)
 	err = wtclean.Clean(ctx, vs, wtclean.Options{StateDir: env.dir, Fresh: fresh}, func(r wtclean.Result) {
 		_, _ = fmt.Fprintf(stdout, "%s %s: %s\n", r.Outcome, r.Verdict.Name, r.Detail)
@@ -94,11 +110,33 @@ func runWorktree(args []string, env worktreeEnv, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "pro-con worktree clean:", err)
 		return 1
 	}
-	if env.removeJob == nil {
-		return rc
+	if env.removeJob != nil {
+		if code := cleanWorktreeSessions(ctx, env, fresh, svs, stdout, stderr); code > rc {
+			rc = code
+		}
 	}
+	if *remote {
+		err = wtclean.CleanRemote(ctx, rvs, wtclean.Options{StateDir: env.dir, Fresh: fresh}, func(r wtclean.RemoteResult) {
+			_, _ = fmt.Fprintf(stdout, "%s remote の %s: %s\n", r.Outcome, r.Verdict.Branch, r.Detail)
+			if r.Outcome == wtclean.Failed {
+				rc = 1
+			}
+		})
+		if err != nil {
+			_, _ = fmt.Fprintln(stderr, "pro-con worktree clean:", err)
+			return 1
+		}
+	}
+	return rc
+}
+
+// cleanWorktreeSessions は worktree とブランチを消し終えたカードの session を消す (svs は一覧で出した判定)。
+func cleanWorktreeSessions(ctx context.Context, env worktreeEnv, fresh func(context.Context) (wtclean.Inputs, error),
+	svs []wtclean.SessionVerdict, stdout, stderr io.Writer) int {
+	rc := 0
 	// worktree を消し終えてから材料を取り直して session を判定する (消せなかった worktree のカードの session は消さない)
-	if in, err = fresh(ctx); err != nil {
+	in, err := fresh(ctx)
+	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "pro-con worktree clean:", err)
 		return 1
 	}
@@ -244,6 +282,36 @@ func printSessionVerdicts(w io.Writer, vs []wtclean.SessionVerdict) {
 	for _, v := range keep {
 		_, _ = fmt.Fprintf(w, "  %s (%s): %s\n", v.CardID, orDashCLI(v.Repo), v.Why)
 	}
+}
+
+// printRemoteVerdicts は origin の PG のブランチの片付けの一覧。
+func printRemoteVerdicts(w io.Writer, vs []wtclean.RemoteVerdict) {
+	var rm, keep []wtclean.RemoteVerdict
+	for _, v := range vs {
+		if v.Remove {
+			rm = append(rm, v)
+		} else {
+			keep = append(keep, v)
+		}
+	}
+	_, _ = fmt.Fprintf(w, "\n%s のブランチを消してよい (%d 本):\n", wtclean.Remote, len(rm))
+	for _, v := range rm {
+		_, _ = fmt.Fprintf(w, "  %s (%s / %s): %s\n", v.Branch, v.CardID, v.Repo, v.Why)
+	}
+	_, _ = fmt.Fprintf(w, "%s のブランチを消さない (%d 本):\n", wtclean.Remote, len(keep))
+	for _, v := range keep {
+		_, _ = fmt.Fprintf(w, "  %s (%s / %s): %s\n", v.Branch, orDashCLI(v.CardID), v.Repo, v.Why)
+	}
+}
+
+func countRemovableRemote(vs []wtclean.RemoteVerdict) int {
+	n := 0
+	for _, v := range vs {
+		if v.Remove {
+			n++
+		}
+	}
+	return n
 }
 
 func countRemovableSessions(vs []wtclean.SessionVerdict) int {
