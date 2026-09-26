@@ -15,7 +15,7 @@ func attachRig(t *testing.T) (dir, work string) {
 	t.Helper()
 	dir, work = t.TempDir(), t.TempDir()
 	submit(t, dir, Request{Kind: "add", Title: "t"})
-	if _, err := Apply(dir, t0); err != nil {
+	if _, err := Apply(dir, t0, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := Update(dir, func(st *State) error { st.Cards[0].State = card.Running; return nil }); err != nil {
@@ -34,7 +34,7 @@ func writeFile(t *testing.T, path, body string) string {
 
 func applyOne(t *testing.T, dir string) Result {
 	t.Helper()
-	res, err := Apply(dir, t0)
+	res, err := Apply(dir, t0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

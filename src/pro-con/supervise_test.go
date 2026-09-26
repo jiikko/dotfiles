@@ -307,7 +307,7 @@ func TestSupervisorNoteBecomesEvent(t *testing.T) {
 	if _, err := store.Submit(dir, store.Request{Kind: store.KindSupervisor, Note: " "}); err != nil {
 		t.Fatal(err)
 	}
-	res, err := store.Apply(dir, time.Now())
+	res, err := store.Apply(dir, time.Now(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

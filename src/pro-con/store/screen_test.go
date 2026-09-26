@@ -17,7 +17,7 @@ func TestAppliedHistoryRemembersScreen(t *testing.T) {
 		if _, err := Submit(dir, r); err != nil {
 			t.Fatal(err)
 		}
-		res, err := Apply(dir, t0.Add(time.Hour))
+		res, err := Apply(dir, t0.Add(time.Hour), nil)
 		if err != nil || len(res) != 1 || res[0].Err != "" || res[0].Screen != r.Screen {
 			t.Fatalf("%s を適用できない / 結果に画面が無い: %+v %v", r.Kind, res, err)
 		}

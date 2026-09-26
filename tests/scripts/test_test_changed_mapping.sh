@@ -37,6 +37,10 @@ expect "_claude/statusline-command.sh -> shell lint + tests/claude" 'test-shellc
 
 # 主要な腕の代表 1 例ずつ
 expect "src/<proj> -> go lint+test" 'go: .*src/glogx' src/glogx/tui.go
+# 共有 module の変更は、replace で取り込む module (直接 + 推移) も回す
+expect "src/subproc -> 取り込む glogx も" 'go: .*src/glogx' src/subproc/subproc.go
+expect "src/subproc -> 取り込む ratelimit も" 'go: .*src/ratelimit' src/subproc/subproc.go
+expect "src/subproc -> glogx 経由の pro-con も" 'go: .*src/pro-con' src/subproc/subproc.go
 
 # shell スクリプトは「名前で参照しているテストディレクトリ」まで届くこと (監査 071)。
 # 以前は lint 4 種 (test-syntax/shellcheck/zsh-syntax/zshrc) へ潰れ、tests/tmux などに

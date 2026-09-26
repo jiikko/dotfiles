@@ -51,6 +51,7 @@ glogx の画面のうち、**複数 repo をこの規約に寄せる** / **書�
 |---|---|---|
 | [`nvim-plugins.md`](nvim-plugins.md) | 2026-08 | プラグイン単位の棚卸し。カテゴリごとのデファクト候補と乗り換え可否 |
 | [`nvim-trends-2026-08.md`](nvim-trends-2026-08.md) | 2026-08 | Neovim 生態系の流れ (0.12 / vim.pack / treesitter main / ACP) と、この設定の立ち位置 |
+| [`pro-con-vs-parallel-sessions-2026-09-26.md`](pro-con-vs-parallel-sessions-2026-09-26.md) | 2026-09-26 | pro-con 経由で作業させるか、Claude を何本も立ち上げてチャットで指示するかのトレードオフ (2 日の dogfooding の実測つき) |
 | [`feedback-nvim-tmux-2026-07-29.md`](feedback-nvim-tmux-2026-07-29.md) | 2026-07-29 | nvim 約 2,000 行 + tmux 約 2,600 行の全読レビュー (実測つき) |
 
 ## ここに置かないもの
