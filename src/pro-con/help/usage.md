@@ -29,6 +29,7 @@
 - tmux の外: attach の前に戻り方の案内が出る (enter / y で進む)。Ctrl+Z で pro-con に戻る。`←` は Claude Code の一覧へ行くだけで戻らない
 - 戻れなくなったら、別の端末で `pro-con attach --leave`。pro-con の画面から開いた attach の接続だけを終わらせる (画面を複数開いていれば、その全部の attach を終わらせる)
 - どの戻り方でも PG の session は動き続ける (終わるのは attach の接続だけ)
+- レビュー待ちのカードの PG は、turn を終えたら dispatcher が止める (issue 536)。止めた後は attach できない。話すなら `+` で追加オーダーを出す (同じ session を続きから再開して届ける)。差し戻し (`card rework`) も同じ session を続きから再開する
 
 ## 待つ・見る
 

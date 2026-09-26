@@ -105,7 +105,7 @@ func (s *Sim) seed() {
 			Log:     []string{"zprof: direnv hook 312ms", "質問を書いて終了した"},
 			History: []card.Event{ev(30*time.Minute, "PG が着手した"), ev(9*time.Minute, "PG が質問した")}},
 		{ID: "C-008", Title: "glogx の起動時間短縮", Request: "glogx 開くのちょっと遅い",
-			Repo: "dotfiles", Owner: "PM-A", Session: "3feb5f02", State: card.Review, Since: s.ago(25 * time.Minute), Points: 8,
+			Repo: "dotfiles", Owner: "PM-A", Session: "3feb5f02", State: card.Review, Since: s.ago(25 * time.Minute), Points: 8, Stopped: true, // レビュー待ちの PG は dispatcher が止める (issue 536)
 			Issues:  []card.IssueRef{{Repo: "dotfiles", Number: 924, Status: "next"}},
 			Log:     []string{"make -C src/glogx test: ok", "push: worktree-pg-924"},
 			History: []card.Event{ev(25*time.Minute, "PG が終えてブランチへ push した。レビュー待ち")}},
@@ -250,6 +250,7 @@ func (s *Sim) stepProgress() {
 		switch sc.then {
 		case "review":
 			s.releaseResources(c.ID)
+			c.Stopped = true // レビュー待ちの PG は dispatcher が止める (issue 536。a は attach せずに案内を出す)
 			s.setState(c, card.Review, "PG が終えてブランチへ push した。レビュー待ち")
 		case "question":
 			w, err := card.AskWait(sc.question, sc.choices)

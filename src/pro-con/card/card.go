@@ -341,8 +341,9 @@ type Card struct {
 	// DeadSince は dispatcher が、このカードの PG の session が一覧に無い / pid 無し (落ちて自動の再開を待っている) のを最初に見た時刻。
 	// 生きているのを見たら外す。止める・再開する前の待ち (restartWait) はここから数える
 	DeadSince time.Time `json:",omitzero"`
-	// StopAfterClose はカードを閉じた (close) が、dispatcher がまだ PG の session を止め終えていない印 (close の適用と同時に付く。
-	// dispatcher が落ちても次の Tick で止める)。止まったのを確かめたか、closeStopWait を過ぎて諦めたら外す
+	// StopAfterClose はカードを閉じた (close) かレビューの列に入った (review。issue 536) が、dispatcher がまだ PG の session を止め終えていない印
+	// (適用と同時に付く。dispatcher が落ちても次の Tick で止める)。止まったのを確かめたか、closeStopWait を過ぎて諦めたら外す。
+	// 差し戻し (rework) でも外す。🚨 記録の名前は 447 のときのまま (動いている記録を読めるように)
 	StopAfterClose bool `json:",omitempty"`
 	// StopSent は StopAfterClose / DeleteAt の間に、dispatcher が PG の session へ止める要求を出した印 (止まったのを後の Tick で見たとき、
 	// 「止めた」と「既に止まっていた」を取り違えない)。印と一緒に外す。🚨 記録の名前は 447 のときのまま (動いている記録を読めるように)
@@ -351,7 +352,7 @@ type Card struct {
 	// PG の session が止まったのを確かめてからカードを記録から外す。止められずに諦めたら外す (カードは残る)。DeleteBy は依頼した人
 	DeleteAt time.Time `json:",omitzero"`
 	DeleteBy string    `json:",omitempty"`
-	// Stopped は pro-con の終了で dispatcher が PG を止めた印。次の再開は、落ちた PG の自動の再開を待たずに (止めずに) 行う。起動・再開で外す
+	// Stopped は pro-con の終了か、レビューの列に入ったこと (issue 536) で dispatcher が PG を止めた印。次の再開は、落ちた PG の自動の再開を待たずに (止めずに) 行う。起動・再開で外す
 	Stopped bool `json:",omitempty"`
 	// Revived は、落ちた・消えた PG を人の判断なしに再開へ回した印 (458 の消えた PG・483 の再起動の復旧)。再開 (settle) で落ちた回数の
 	// 数え始め (CrashesFrom) を今に戻さない (戻すと、落ち続ける PG を上限に届かないまま再開し続ける)。再開と人の回答待ちへ送るときに外す

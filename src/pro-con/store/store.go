@@ -719,6 +719,7 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		if strings.TrimSpace(r.Rework) == "" {
 			return errors.New("直してほしい点が空")
 		}
+		c.StopAfterClose, c.StopSent = false, false // 止め終える前の差し戻し: 再開 (prepare) が生きている session を止めてから起こす。印を残すと再開した PG を止める
 		c.Resume = ReworkPrefix + r.Rework + "\n直したら、もう一度 `pro-con card review " + c.ID + "` を実行してから turn を終える。"
 		move(card.Planned, card.ReworkedPrefix+r.Rework) // 原文のまま残す (要約・切り詰めをしない)
 	case "handoff": // PM が PG の質問を / 取り込みの係がレビュー待ちを人に回した (487)。履歴に残すだけで、列も質問も変えない (人の番 = card.Turn はこの履歴の文で決まる。452)
@@ -796,6 +797,8 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		if c.State != card.Running {
 			return fmt.Errorf("作業中の列に無い (今は %s)", c.State.Label())
 		}
+		// PG の session は dispatcher が止める (issue 536。閉じたときと同じ印。差し戻し・追加オーダーは同じ session を --resume で続きから起こす)
+		c.StopAfterClose = c.Session != ""
 		move(card.Review, "PG が終えた。レビュー待ち")
 	case "close": // 取り込みの係 (487) がレビューを通して完了にした。PM は依頼の列からも閉じられる (その場で回答した・却下した。Ending を付ける)
 		if c.State != card.Review && c.State != card.Requested {
