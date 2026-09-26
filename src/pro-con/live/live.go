@@ -23,6 +23,7 @@ import (
 	"pro-con/backend"
 	"pro-con/card"
 	"pro-con/diskuse"
+	"pro-con/eventlog"
 	"pro-con/presence"
 	"pro-con/store"
 	"pro-con/wake"
@@ -80,8 +81,11 @@ type Backend struct {
 	// procs / disk は設定画面の見る所を読む口 (SetInspector。main がつなぐ)
 	procs func() ([]backend.Proc, error)
 	disk  func() (diskuse.Usage, error)
-	actMu sync.Mutex
-	logs  map[string]*cardActivity
+	// events は設定画面のログのタブが読み進める記録 (Events。evMu で守る。最初に呼ばれたときに作る)
+	evMu   sync.Mutex
+	events *eventlog.Follower
+	actMu  sync.Mutex
+	logs   map[string]*cardActivity
 }
 
 // mineReq はこの画面が置いた、まだ適用も除けもされていない依頼。
@@ -172,6 +176,16 @@ func (b *Backend) DiskUsage() (diskuse.Usage, error) {
 	return b.disk()
 }
 
+// Events は前に呼んだ後に events.jsonl へ足された出来事を返す (backend.EventLog。最初は全部。読むだけ)。
+func (b *Backend) Events() ([]eventlog.Event, error) {
+	b.evMu.Lock()
+	defer b.evMu.Unlock()
+	if b.events == nil {
+		b.events = eventlog.NewFollower(b.dir)
+	}
+	return b.events.Next()
+}
+
 // SetAttach は attach のコマンドを差し替える (e2e モードは本物の claude を起動しない)。
 func (b *Backend) SetAttach(f func(sessionID string) *exec.Cmd) { b.attach = f }
 
@@ -199,6 +213,7 @@ func (v viewOnly) Activity(cardID string) ([]backend.Activity, error) {
 }
 func (v viewOnly) Procs() ([]backend.Proc, error)          { return v.b.Procs() }     // 読むだけ (ps と記録)
 func (v viewOnly) DiskUsage() (diskuse.Usage, error)       { return v.b.DiskUsage() } // 読むだけ (測るだけ)
+func (v viewOnly) Events() ([]eventlog.Event, error)       { return v.b.Events() }    // 読むだけ (events.jsonl)
 func (v viewOnly) Apply(backend.Command) (string, error)   { return "", ErrViewOnly }
 func (v viewOnly) AttachCommand(string) (*exec.Cmd, error) { return nil, ErrViewOnly }
 

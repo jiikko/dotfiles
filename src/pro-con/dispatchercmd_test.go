@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,6 +91,18 @@ func TestRunDispatcherWiresSocket(t *testing.T) {
 	if r := <-rc; r != 0 {
 		t.Fatalf("rc=%d\n%s", r, errOut.String())
 	}
+	// dispatcher 自身が起きた・抜けたも出来事に残る (設定画面のログのタブが出す。issue 512)
+	evs, _ := eventlog.Read(dir)
+	var life []string
+	for _, e := range evs {
+		if e.Kind == eventlog.KindDispatcher {
+			life = append(life, e.Reason)
+		}
+	}
+	pid := fmt.Sprintf("pid %d", os.Getpid())
+	if len(life) != 2 || !strings.HasPrefix(life[0], "dispatcher が起きた ("+pid+"・手で起動した)") || life[1] != "dispatcher が抜ける ("+pid+"・rc=0)" {
+		t.Fatalf("dispatcher の起きた・抜けたの出来事: %q", life)
+	}
 }
 
 // dispatcher の --pm が設定の pm に勝つ。書き間違いは誤りにする (on と読むと止めたつもりの PM が起動する)。
@@ -142,6 +155,9 @@ func TestRunDispatcherAnnouncesPMOff(t *testing.T) {
 		}
 		n := 0
 		for _, e := range evs {
+			if e.Kind == eventlog.KindDispatcher { // 1 回だけの dispatcher は起きた・抜けたを書かない (手で様子を見る用。ログのタブを埋めない)
+				t.Errorf("%v: --once で起きた・抜けたを書いた: %q", tc.args, e.Reason)
+			}
 			if strings.Contains(e.Reason, "PM を起こさない") {
 				n++
 				if !strings.Contains(e.Reason, tc.want) || tc.want == "" {

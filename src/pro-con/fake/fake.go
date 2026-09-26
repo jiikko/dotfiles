@@ -47,6 +47,7 @@ type Sim struct {
 	nextID        int
 	nextIssue     int // 模擬の PM が振る issue 番号 (見本の番号と重ならない帯から)
 	nextSess      int
+	eventsSent    bool // ログのタブの模擬の出来事を返した (inspect.go の Events)
 }
 
 var _ backend.Backend = (*Sim)(nil)

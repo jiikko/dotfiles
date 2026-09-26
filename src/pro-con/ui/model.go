@@ -193,7 +193,7 @@ func (m *Model) Init() tea.Cmd {
 	// 端末の既定の色は切り替えの暗転・明転が使う (switchfade.go。答えない端末では暗い背景を前提にする)
 	cmds := []tea.Cmd{tick(), m.waitChanged(), tea.RequestForegroundColor, tea.RequestBackgroundColor, m.arriveCmd()}
 	if m.set.open { // ライブアップグレードで開いたまま引き継いだ設定画面は、見る所を読み直す
-		cmds = append(cmds, m.fetchProcs(), m.measureDisk())
+		cmds = append(cmds, m.fetchProcs(), m.measureDisk(), m.fetchEventsIfShown())
 	}
 	if m.up != nil {
 		cmds = append(cmds, m.checkUpgrade())
@@ -221,9 +221,13 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 	switch msg := msg.(type) {
 	case tickMsg:
 		m.flog.check()
-		return m, tea.Batch(tick(), m.poll(), m.fetchActivity())
-	case changedMsg:
-		return m, tea.Batch(m.waitChanged(), m.poll(), m.fetchActivity(), m.beginArrive()) // 最初の読み込みが届いた: 新版の明転を始める
+		var events tea.Cmd
+		if _, ok := m.be.(backend.Notifier); !ok { // 変化を知らせない backend (模擬) は、ログのタブを tick で読み進める
+			events = m.fetchEventsIfShown()
+		}
+		return m, tea.Batch(tick(), m.poll(), m.fetchActivity(), events)
+	case changedMsg: // ログのタブは、開いている間に足された出来事をこの知らせで読み進める (issue 512)
+		return m, tea.Batch(m.waitChanged(), m.poll(), m.fetchActivity(), m.fetchEventsIfShown(), m.beginArrive()) // 最初の読み込みが届いた: 新版の明転を始める
 	case arriveGoMsg:
 		return m, m.beginArrive()
 	case tea.ForegroundColorMsg:
@@ -240,11 +244,14 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 		return m, nil
 	case procsMsg:
 		m.set.procs, m.set.procsErr, m.set.procsAt, m.set.procsLoading = msg.rows, msg.err, msg.at, false
-		m.set.cursor = min(m.set.cursor, max(len(m.settingsSelectable())-1, 0))
+		m.set.cursor = min(m.set.cursor, max(m.settingsRowCount()-1, 0))
+		return m, nil
+	case eventsMsg:
+		m.onEvents(msg)
 		return m, nil
 	case diskMsg:
 		m.set.disk, m.set.diskErr, m.set.diskLoading = msg.u, msg.err, false
-		m.set.cursor = min(m.set.cursor, max(len(m.settingsSelectable())-1, 0))
+		m.set.cursor = min(m.set.cursor, max(m.settingsRowCount()-1, 0))
 		return m, nil
 	case frameMsg:
 		return m, m.onFrame()

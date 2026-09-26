@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"pro-con/diskuse"
+	"pro-con/eventlog"
 )
 
 // 設定画面 (issue 456) の「見る所」と「変える所」の境界。
@@ -20,6 +21,13 @@ type Proc struct {
 	// Mismatch はカードと PG の session の食い違い (カードは作業中なのに session が止まっている / カードは完了なのに動いている。issue 497)。
 	// 空なら食い違いは無い。設定画面は、止まった PG の行のうち食い違いのあるものだけを出す
 	Mismatch string `json:"mismatch,omitempty"`
+}
+
+// EventLog は設定画面のログのタブが読む backend (任意。持たない backend はタブに「読めない」と出す。issue 512)。
+// Events は前に呼んだ後に足された出来事を返す (最初の 1 回は全部)。出どころは pro-con log と同じ (eventlog.Follower)。
+// 🚨 読むだけ (--view でも使う)。画面は描くたびに呼ばず、変化の知らせ (Notifier) で裏で呼ぶ。
+type EventLog interface {
+	Events() ([]eventlog.Event, error)
 }
 
 // ProcStopped は Proc.State の「止まっている」(設定画面はこの行を 1 行に畳む)。
