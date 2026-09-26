@@ -40,6 +40,7 @@ type Sim struct {
 	now      time.Time
 	cards    []card.Card
 	limit    int
+	usageOff bool   // 利用枠で絞らない設定 (模擬は枠を読まないので、設定画面の表示だけ)
 	review   string // 設定の敵対的レビューの担い手 (空なら設定なし = 既定の claude)
 	scripts  map[string]*script
 	resource map[string][]string // リソース名 → 順番待ちのカード ID (先頭が占有中)
@@ -645,7 +646,7 @@ func (s *Sim) AttachCommand(sessionID string) (*exec.Cmd, error) {
 
 // config は模擬の変える所の値 (review は設定が無ければ既定の claude で動いている形)。
 func (s *Sim) config() backend.Config {
-	c := backend.Config{Limit: s.limit, PMs: 1, LimitFrom: "設定", Review: s.review, ReviewNow: s.review, ReviewFrom: "設定", Codex: "/opt/homebrew/bin/codex"}
+	c := backend.Config{Limit: s.limit, PMs: 1, LimitFrom: "設定", UsageOff: s.usageOff, Review: s.review, ReviewNow: s.review, ReviewFrom: "設定", Codex: "/opt/homebrew/bin/codex"}
 	if s.review == "" {
 		c.ReviewNow, c.ReviewFrom = backend.ReviewModes[0], "既定"
 	}

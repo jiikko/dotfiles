@@ -48,6 +48,8 @@ func (s *Sim) setConfig(c backend.SetConfig) (string, error) {
 	switch {
 	case c.Key == backend.ConfigLimit && set.Limit > 0:
 		s.limit = set.Limit
+	case c.Key == backend.ConfigUsage:
+		s.usageOff = set.UsageOff
 	case c.Key == backend.ConfigReview:
 		s.review = set.Review
 	}

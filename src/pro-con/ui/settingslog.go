@@ -206,7 +206,44 @@ func (m *Model) logRow(f eventlog.Folded, selected bool, w int) string {
 		reason = c + reason + sgrFgReset
 	}
 	rest := max(w-2-1-logTimeCells-logRoleCells-logCardCells-ansi.StringWidth(tail), 10)
-	return lead + fit(f.Last.At.Local().Format("01-02 15:04:05"), logTimeCells) + role + fit(logCard(f), logCardCells) + fit(reason, rest) + tail
+	row := fit(f.Last.At.Local().Format("01-02 15:04:05"), logTimeCells) + role + fit(logCard(f), logCardCells) + fit(reason, rest) + tail
+	if selected { // 選んでいる行に下線 (途中の色の戻し \x1b[0m で下線も消えるので、戻すたびに引き直す)
+		row = sgrUnderline + strings.ReplaceAll(row, sgrReset, sgrReset+sgrUnderline) + sgrNoUnderline
+	}
+	return lead + row
+}
+
+// logText は 1 行をクリップボードへ写す文 (色なし。時刻・役・カード・出来事・畳んだ回数)。
+func logText(f eventlog.Folded) string {
+	parts := []string{f.Last.At.Local().Format("01-02 15:04:05"), f.Role}
+	if c := logCard(f); c != "" {
+		parts = append(parts, c)
+	}
+	parts = append(parts, termsafe.PlainLine(f.Last.Reason))
+	s := strings.Join(parts, "  ")
+	if f.N > 1 {
+		s += fmt.Sprintf("  (×%d 回、最後 %s・最初 %s)", f.N, f.Last.At.Local().Format("15:04"), f.First.Local().Format("15:04"))
+	}
+	return s
+}
+
+// yankLog は選んでいるログの行をクリップボードへ写す。body なら出来事の文だけ (y = 行 / Y = 本文)。
+func (m *Model) yankLog(body bool) {
+	l := &m.set.log
+	if m.set.cursor < 0 || m.set.cursor >= len(l.rows) {
+		m.refuse("コピーするログの行が無い")
+		return
+	}
+	f := l.rows[m.set.cursor]
+	text, what := logText(f), "ログの行"
+	if body {
+		text, what = termsafe.PlainLine(f.Last.Reason), "ログの本文"
+	}
+	if err := m.copy(text); err != nil {
+		m.fail("コピーに失敗した: " + err.Error())
+		return
+	}
+	m.done(what + "をクリップボードへコピーした")
 }
 
 // logCard はカードの列 (PM・取り込みの係のカードの欄 = PM / INT は役の列で分かるので出さない)。

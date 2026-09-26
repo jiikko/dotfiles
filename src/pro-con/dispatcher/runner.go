@@ -29,6 +29,7 @@ import (
 
 	"pro-con/card"
 	"pro-con/eventlog"
+	"pro-con/foreground"
 	"pro-con/live"
 	"pro-con/store"
 )
@@ -427,7 +428,9 @@ func (r ExecRunner) Run(ctx context.Context, dir, command, logPath, runID string
 	// make test などは子プロセスを起こすので、取り消し・時間切れはプロセスグループごと止める (bash だけ止めると子が残る)。
 	// 🚨 lockman は子を別のグループに置く (lease を失ったときに止めるため) ので、lockman のグループを撃っても bash の子には届かない。
 	// bash が自分の pgid を書いた pgidFile から、そのグループも撃つ
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// 別の session にする (グループの先頭は bash 自身なので、グループごと止めるのは同じ)。dispatcher が端末から起こされていても、
+	// make test の中の `zsh -i -c` 等に端末の前面を奪わせない (奪われると前面で端末を読む画面が SIGTTIN で止まる。issue 518)
+	cmd.SysProcAttr = foreground.Detached()
 	exited := make(chan struct{})
 	cmd.Cancel = func() error {
 		if pgid := readPgid(pgidFile); pgid > 1 {

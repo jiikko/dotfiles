@@ -53,7 +53,7 @@ func (t settingsTab) label() string {
 const settingsReverse = "\x1b[7m"
 
 // 設定のタブの行 (選ぶ行の順)。
-var configKeys = []string{backend.ConfigLimit, backend.ConfigPM, backend.ConfigReview}
+var configKeys = []string{backend.ConfigLimit, backend.ConfigUsage, backend.ConfigPM, backend.ConfigReview}
 
 // configValueWidth は設定のタブの値の欄の幅 (「 ‹ claude › 」が入る)。
 const configValueWidth = 12
@@ -198,6 +198,11 @@ func (m *Model) handleSettingsKey(k string) tea.Cmd {
 		return m.requestUpgrade()
 	case "s", "q", "esc":
 		return m.closeSettings()
+	case "y", "Y": // ログのタブ: y = 選んでいる行 / Y = その行の出来事の文だけ (ほかのタブでは何もしない)
+		if s.tab == tabLog {
+			m.yankLog(k == "Y")
+		}
+		return nil
 	case "tab", "shift+tab":
 		tabs := m.settingsTabs()
 		i := 0
@@ -306,9 +311,15 @@ func (m *Model) stepConfig(delta int) tea.Cmd {
 	return nil
 }
 
-// stepValue は key の値 v を delta だけ動かした値。数の設定は 1 ずつ、review は ReviewModes を巡る。
+// stepValue は key の値 v を delta だけ動かした値。数の設定は 1 ずつ、usage (チェックボックス) は ← → とも入れ替え、review は ReviewModes を巡る。
 func stepValue(key, v string, delta int) (string, error) {
-	if key == backend.ConfigReview {
+	switch key {
+	case backend.ConfigUsage:
+		if v == "on" {
+			return "off", nil
+		}
+		return "on", nil
+	case backend.ConfigReview:
 		i := max(slices.Index(backend.ReviewModes, v), 0)
 		n := len(backend.ReviewModes)
 		return backend.ReviewModes[((i+delta)%n+n)%n], nil
@@ -324,6 +335,11 @@ func stepValue(key, v string, delta int) (string, error) {
 func (m *Model) configNow(key string) string {
 	c := m.snap.Config
 	switch key {
+	case backend.ConfigUsage:
+		if c.UsageOff {
+			return "off"
+		}
+		return "on" // 既定は枠で絞る
 	case backend.ConfigPM:
 		return strconv.Itoa(cmp.Or(c.PMs, 1)) // 設定が無ければ 1 つで動く
 	case backend.ConfigReview:
@@ -379,6 +395,10 @@ func (m *Model) toggleSettingsRow() {
 		return
 	}
 	switch s.tab {
+	case tabConfig:
+		if sel[s.cursor] == backend.ConfigUsage {
+			_ = m.stepConfig(0)
+		}
 	case tabProcs:
 		s.showStopped = !s.showStopped
 	case tabDisk:
@@ -387,7 +407,7 @@ func (m *Model) toggleSettingsRow() {
 		} else {
 			s.openGroup = sel[s.cursor]
 		}
-	case tabConfig, tabLog:
+	case tabLog:
 	}
 }
 
@@ -463,7 +483,13 @@ func (m *Model) configLines(w int) ([]string, int) {
 			name, note = "敵対的レビューの担い手", m.reviewNote()
 		}
 		val := fmt.Sprintf(" ‹ %s › ", v)
-		pad := strings.Repeat(" ", max(configValueWidth-ansi.StringWidth(val), 0)) // 値の長さ (数 / claude・codex) が違っても右の説明の列を揃える。反転は値だけ
+		if key == backend.ConfigUsage {
+			name, note, val = "利用枠を見て PG を絞る", "80% で 1 本 / 95% で 0 本。外すと上限まで起動する (Enter か ← →)", " [ ] "
+			if v == "on" {
+				val = " [x] "
+			}
+		}
+		pad := strings.Repeat(" ", max(configValueWidth-ansi.StringWidth(val), 0)) // 値の長さ (数 / claude・codex / チェックボックス) が違っても右の説明の列を揃える。反転は値だけ
 		mark := "  "
 		if i == m.set.cursor {
 			val, mark, cur = settingsReverse+val+sgrReset, sgrCyan+"▸ "+sgrFgReset, len(out)
@@ -475,7 +501,7 @@ func (m *Model) configLines(w int) ([]string, int) {
 		out = append(out, boxLine(border, " "+mark+fit(name, 34)+val+"  "+sgrDim+note+sgrReset, w))
 	}
 	out = append(out, boxLine(border, "", w))
-	out = append(out, boxLine(border, sgrDim+"   ← → で変えると受付の箱に置き、dispatcher の次の Tick から効く (止めずに変わる)。利用枠の絞り (80% で 1 本 / 95% で 0 本) はこの上限より優先"+sgrReset, w))
+	out = append(out, boxLine(border, sgrDim+"   ← → で変えると受付の箱に置き、dispatcher の次の Tick から効く (止めずに変わる)。利用枠の絞り (80% で 1 本 / 95% で 0 本) は、チェックが入っている間この上限より優先"+sgrReset, w))
 	if e := m.snap.Config.Err; e != "" {
 		out = append(out, boxLine(border, sgrRed+"   設定のファイルを読めない (dispatcher は --limit で動く): "+e+sgrFgReset, w))
 	}

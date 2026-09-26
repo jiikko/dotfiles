@@ -73,7 +73,7 @@ const (
 type item struct {
 	text   string
 	ok     bool // true=成功 (✓緑) / false=失敗 (✗赤)。info=true のときは無視される
-	info   bool // true=進行中/中立 (…シアン)。ok より優先し、完了/失敗どちらでもない状態を表す
+	info   bool // true=進行中/中立 (シアン)。ok より優先し、完了/失敗どちらでもない状態を表す
 	seq    int  // 世代: 退場タイマーの有効性判定 + 再表示リセット
 	phase  Phase
 	shadow string // 落ち影の SGR 色 (積んだときの Stack.Shadow)
@@ -134,20 +134,20 @@ func (t *item) startLeaving(msg Msg) {
 // maxWidth は箱 (影込み) に使ってよい表示幅 (0 以下は上限なし)。収まらない文は箱の中で折り返す (wrapText)。
 // textLines は折り返してよい行数 (1..MaxTextLines。低い窓では BoxLines が減らす)。
 func (t *item) fullBox(colored bool, maxWidth, textLines int) []string {
-	mark, color := "✓", sgr.Green
+	mark, color := "✓ ", sgr.Green
 	switch {
 	case t.info:
-		mark, color = "…", sgr.Cyan
+		mark, color = "", sgr.Cyan // 中立の知らせは印を付けず色だけ (… だと文が切れた印に見える。2026-09-27 のユーザーの指定)
 	case !t.ok:
-		mark, color = "✗", sgr.Red
+		mark, color = "✗ ", sgr.Red
 	}
-	lines := wrapText(t.text, textWidth(maxWidth), textLines)
+	lines := wrapText(t.text, t.textWidth(maxWidth), textLines)
 	rows := make([]string, len(lines))
 	contentW := 0
 	for i, l := range lines {
-		lead := mark + " "
+		lead := mark
 		if i > 0 {
-			lead = termwidth.PadSpaces(markWidth) // 2 行目以降は印の下を空けて文の頭を揃える
+			lead = termwidth.PadSpaces(t.markWidth()) // 2 行目以降は印の下を空けて文の頭を揃える
 		}
 		rows[i] = lead + l
 		contentW = max(contentW, termwidth.Of(rows[i]))
@@ -159,23 +159,28 @@ func (t *item) fullBox(colored bool, maxWidth, textLines int) []string {
 	return layout.Panel("", rows, contentW+layout.PanelChrome, colored, layout.PanelStyle{Border: layout.BorderLight, Color: color, Shadow: t.shadow})
 }
 
-// textWidth は箱の幅の上限 maxWidth のうち文に使える幅 (0 = 折り返さない)。印 + 空白の 2 桁と枠 (PanelChrome) を
+// textWidth は箱の幅の上限 maxWidth のうち文に使える幅 (0 = 折り返さない)。印 + 空白 (markWidth) と枠 (PanelChrome) を
 // 引いた残り。🚨 下限は Panel の最小幅から導く (狭すぎる窓で 0 以下になると 1 字も置けず、wrapText が進まない)
-func textWidth(maxWidth int) int {
+func (t *item) textWidth(maxWidth int) int {
 	if maxWidth <= 0 {
 		return 0
 	}
-	return max(maxWidth, layout.PanelMinWidth) - layout.PanelChrome - markWidth
+	return max(maxWidth, layout.PanelMinWidth) - layout.PanelChrome - t.markWidth()
 }
 
 // height は fullBox が組む箱の行数 (Panel は内容の行数 + 上辺・下辺・影の 3 行)。箱を組まずに求める
 // (ReservedHeight が描画のたびに呼ぶので、枠と影の文字列まで作ると 1 フレームの確保が増える)。
 func (t *item) height(maxWidth, textLines int) int {
-	return BoxHeight - 1 + len(wrapText(t.text, textWidth(maxWidth), textLines))
+	return BoxHeight - 1 + len(wrapText(t.text, t.textWidth(maxWidth), textLines))
 }
 
-// markWidth は行頭の印と空白 ("✓ ") の表示幅。
-const markWidth = 2
+// markWidth は行頭の印と空白 ("✓ ") の表示幅。中立の知らせは印を付けないので 0。
+func (t *item) markWidth() int {
+	if t.info {
+		return 0
+	}
+	return 2
+}
 
 // MaxTextLines は 1 枚の通知が折り返してよい行数の上限。🚨 上限が無いと長いエラー出力 (gh / git の
 // stderr を埋め込む通知がある) が 1 枚で画面を覆う。超えた分は最終行の末尾を … にして、切ったことを見せる。
@@ -311,7 +316,7 @@ type Stack struct {
 // Show は新しい通知を最上段に積む (ok=true は成功 ✓緑、false は失敗 ✗赤)。呼び出し側で tick を回すこと (Animating)。
 func (s *Stack) Show(text string, ok bool) { s.push(text, ok, false) }
 
-// ShowInfo は進行中/中立の通知 (…シアン) を積む。次の通知が来たら退く。
+// ShowInfo は進行中/中立の通知 (シアン) を積む。次の通知が来たら退く。
 func (s *Stack) ShowInfo(text string) { s.push(text, false, true) }
 
 func (s *Stack) push(text string, ok, info bool) {
@@ -320,7 +325,7 @@ func (s *Stack) push(text string, ok, info bool) {
 	// 呼び出しごとに包むと必ずどこかが漏れる。status_view / issues_view の setNotice と同じ規律。
 	text = termsafe.PlainLine(text)
 	s.seqGen++
-	// 進行中トースト (…シアン) は「結果が出たら用済み」なので、新しい通知が来たら退かせる。
+	// 進行中トースト (シアン) は「結果が出たら用済み」なので、新しい通知が来たら退かせる。
 	// 🚨 積んだままにすると「PR を検索中...」の下に「PR #123 を開きます」が並び、終わったのに
 	// 検索中と書いてある状態が数秒残る (実測 2026-07-31)。1 枠時代は上書きで自然に消えていた。
 	s.dropInfo()

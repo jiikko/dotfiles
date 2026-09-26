@@ -46,21 +46,23 @@ type Inspector interface {
 
 // Config は変える所の今の値 (Snapshot に載せる。dispatcher が書いた settings.json と様子から)。
 type Config struct {
-	Limit int // 設定の PG の枠 (0 なら設定なし = dispatcher の --limit か既定)
-	PMs   int // 設定の PM の数 (0 なら設定なし)
+	Limit     int    // 設定の PG の枠 (0 なら設定なし = dispatcher の --limit か既定)
+	PMs       int    // 設定の PM の数 (0 なら設定なし)
+	UsageOff  bool   // 利用枠で PG を絞らない設定 (既定は絞る)
+	LimitFrom string // dispatcher が使っている上限の出どころ ("設定" / "起動の引数"。1 度も回っていなければ空)
+	Pending   int    // 受付の箱で適用を待っている設定の依頼の数
+	Err       string // settings.json を読めない理由 (dispatcher は --limit で動く)
 	// Review は設定の敵対的レビューの担い手 (空なら設定なし)。ReviewNow / ReviewFrom は dispatcher が使っている担い手とその出どころ
 	// (設定なしなら config.toml か既定。1 度も回っていなければ空)。Codex / CodexErr は PG に渡す codex の実体と、解けなかった理由 (514)
 	Review, ReviewNow, ReviewFrom string
 	Codex, CodexErr               string
-	LimitFrom                     string // dispatcher が使っている上限の出どころ ("設定" / "起動の引数"。1 度も回っていなければ空)
-	Pending                       int    // 受付の箱で適用を待っている設定の依頼の数
-	Err                           string // settings.json を読めない理由 (dispatcher は --limit で動く)
 }
 
 // 変える所の名前 (SetConfig.Key)。
 const (
 	ConfigLimit  = store.SettingLimit
 	ConfigPM     = store.SettingPM
+	ConfigUsage  = store.SettingUsage // チェックボックス (1 = 枠で絞る / 0 = 絞らない。SetConfig の Value は on / off)
 	ConfigReview = store.SettingReview
 )
 

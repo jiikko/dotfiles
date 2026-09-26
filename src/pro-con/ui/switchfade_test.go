@@ -166,7 +166,7 @@ func TestDimANSI(t *testing.T) {
 // 子 (attach・エディタ) の stdout は端末のまま (画面の出力を包んでも、パイプを挟ませない)。
 func TestExecOnTerminalKeepsStdout(t *testing.T) {
 	c := exec.Command("true")
-	_ = execOnTerminal(c, func(error) tea.Msg { return nil })
+	_ = New(newSpy(), nil).execOnTerminal(c, func(error) tea.Msg { return nil })
 	if c.Stdout != os.Stdout {
 		t.Fatalf("stdout が端末でない: %T", c.Stdout)
 	}

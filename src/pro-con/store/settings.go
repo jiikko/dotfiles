@@ -27,13 +27,14 @@ const KindConfig = "config"
 // 設定の名前。
 const (
 	SettingLimit = "limit" // 同時に動かす PG の上限
+	SettingUsage = "usage" // 利用枠 (5 時間・週) を見て同時に動かす PG を絞るか (on = 既定 / off)
 	SettingPM    = "pm"    // PM の数。🚨 受けるのは 1 だけなので dispatcher はまだ読まない (2 以上を受けるのは 415 の論点 6 の後。そのとき dispatcher に配線する)
 	// SettingReview は敵対的レビューの担い手 (ReviewModes。issue 514)。~/.config/pro-con/config.toml の review より勝つ
 	SettingReview = "review"
 )
 
 // SettingKeys は受け付ける設定の名前 (使い方の文と検査が引く)。
-var SettingKeys = []string{SettingLimit, SettingPM, SettingReview}
+var SettingKeys = []string{SettingLimit, SettingUsage, SettingPM, SettingReview}
 
 // 敵対的レビューの担い手 (issue 514)。claude = PG が自分のサブエージェントで回す (既定。514 の前の動き) / codex = PG が codex exec で回す。
 const (
@@ -54,8 +55,11 @@ func CheckReview(v string) error {
 
 // Settings は SettingsFile の中身。0 と空は「設定していない」(起動の引数・config.toml・既定を使う)。
 type Settings struct {
-	Limit  int    `json:"limit,omitempty"`
-	PMs    int    `json:"pms,omitempty"`
+	Limit int `json:"limit,omitempty"`
+	PMs   int `json:"pms,omitempty"`
+	// UsageOff は利用枠で絞らない (人が「枠を気にせず使う」と決めたとき。既定の false = 絞る)。
+	UsageOff bool `json:"usage_off,omitempty"`
+	// Review は敵対的レビューの担い手 (issue 514。空 = 設定なし = config.toml か既定)
 	Review string `json:"review,omitempty"`
 }
 
@@ -101,6 +105,14 @@ func CheckSetting(key, value string) (func(*Settings), error) {
 			return nil, fmt.Errorf("limit は 1 以上の整数 (%q)", value)
 		}
 		return func(s *Settings) { s.Limit = n }, nil
+	case SettingUsage:
+		switch value {
+		case "", "on":
+			return func(s *Settings) { s.UsageOff = false }, nil
+		case "off":
+			return func(s *Settings) { s.UsageOff = true }, nil
+		}
+		return nil, fmt.Errorf("usage は on か off (%q)", value)
 	case SettingPM:
 		if value == "" {
 			return func(s *Settings) { s.PMs = 0 }, nil

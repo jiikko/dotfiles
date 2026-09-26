@@ -248,6 +248,29 @@ func TestSettingsCoversBump(t *testing.T) {
 	}
 }
 
+// 利用枠で絞るかはチェックボックス: Enter でも ← → でも入れ替え、on / off を受付の箱に置く (issue 536)。
+func TestSettingsTogglesUsageCheckbox(t *testing.T) {
+	be := newInspSpy()
+	m := openSettingsFor(t, be)
+	press(m, "j") // PG の枠の次の行
+	if !strings.Contains(setScreen(m), "[x]") {
+		t.Fatalf("既定 (絞る) でチェックが入っていない:\n%s", setScreen(m))
+	}
+	press(m, "enter")
+	be.snap.Config.UsageOff = true
+	m.setSnap(be.Snapshot())
+	press(m, "l")
+	var got []string
+	for _, c := range be.applied {
+		if sc, ok := c.(backend.SetConfig); ok {
+			got = append(got, sc.Key+"="+sc.Value)
+		}
+	}
+	if strings.Join(got, ",") != "usage=off,usage=on" {
+		t.Fatalf("置いた設定 = %v", got)
+	}
+}
+
 // 敵対的レビューの担い手 (514) は ← → で claude / codex を巡り、受付の箱に置く。設定が無ければ dispatcher が使っている値 (config.toml) を出す。
 func TestSettingsStepsReview(t *testing.T) {
 	be := newInspSpy()
@@ -260,7 +283,7 @@ func TestSettingsStepsReview(t *testing.T) {
 	if !strings.Contains(setScreen(m), "‹ codex ›") || !strings.Contains(setScreen(m), "設定なし (config.toml)") {
 		t.Fatalf("config.toml の担い手を出さない:\n%s", setScreen(m))
 	}
-	press(m, "j", "j", "l", "l")
+	press(m, "j", "j", "j", "l", "l") // 枠 → 利用枠 → PM → 担い手
 	var got []string
 	for _, c := range be.applied {
 		if sc, ok := c.(backend.SetConfig); ok {

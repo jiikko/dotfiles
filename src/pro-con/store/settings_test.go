@@ -92,3 +92,25 @@ func TestApplyConfigRejectKeepsBroken(t *testing.T) {
 		t.Fatalf("除けた依頼で settings.json を書き直した: %q", b)
 	}
 }
+
+// usage は on / off (空は on に戻す)。それ以外は断る (issue 536)。
+func TestCheckSettingUsage(t *testing.T) {
+	for _, tc := range []struct {
+		v   string
+		off bool
+		ok  bool
+	}{{"off", true, true}, {"on", false, true}, {"", false, true}, {"no", false, false}} {
+		apply, err := CheckSetting(SettingUsage, tc.v)
+		if (err == nil) != tc.ok {
+			t.Fatalf("usage=%q の検査が違う: %v", tc.v, err)
+		}
+		if err != nil {
+			continue
+		}
+		s := Settings{UsageOff: !tc.off}
+		apply(&s)
+		if s.UsageOff != tc.off {
+			t.Fatalf("usage=%q で UsageOff=%v", tc.v, s.UsageOff)
+		}
+	}
+}

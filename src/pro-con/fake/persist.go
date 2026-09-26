@@ -23,6 +23,7 @@ type simState struct {
 	Now           time.Time              `json:"now"`
 	Cards         []card.Card            `json:"cards"`
 	Limit         int                    `json:"limit"`
+	UsageOff      bool                   `json:"usage_off,omitempty"`
 	Review        string                 `json:"review,omitempty"`
 	Scripts       map[string]scriptState `json:"scripts"`
 	Resource      map[string][]string    `json:"resource"`
@@ -37,7 +38,7 @@ type simState struct {
 
 // Save は模擬の状態を書き出す。
 func (s *Sim) Save() ([]byte, error) {
-	st := simState{Now: s.now, Cards: s.cards, Limit: s.limit, Review: s.review, Scripts: map[string]scriptState{}, Resource: s.resource,
+	st := simState{Now: s.now, Cards: s.cards, Limit: s.limit, UsageOff: s.usageOff, Review: s.review, Scripts: map[string]scriptState{}, Resource: s.resource,
 		ExternalUntil: s.externalUntil, NextID: s.nextID, NextIssue: s.nextIssue, NextSess: s.nextSess}
 	for id, sc := range s.scripts {
 		st.Scripts[id] = scriptState{Lines: sc.lines, Then: sc.then, Question: sc.question, Choices: sc.choices, Exec: sc.exec, ExecDone: sc.execDone}
@@ -55,7 +56,7 @@ func (s *Sim) Restore(data []byte) error {
 	for id, sc := range st.Scripts {
 		scripts[id] = &script{lines: sc.Lines, then: sc.Then, question: sc.Question, choices: sc.Choices, exec: sc.Exec, execDone: sc.ExecDone}
 	}
-	*s = Sim{now: st.Now, cards: st.Cards, limit: st.Limit, review: st.Review, scripts: scripts, resource: st.Resource,
+	*s = Sim{now: st.Now, cards: st.Cards, limit: st.Limit, usageOff: st.UsageOff, review: st.Review, scripts: scripts, resource: st.Resource,
 		externalUntil: st.ExternalUntil, nextID: st.NextID, nextIssue: st.NextIssue, nextSess: st.NextSess}
 	if s.resource == nil {
 		s.resource = map[string][]string{}

@@ -39,6 +39,7 @@ import (
 	"pro-con/diskuse"
 	"pro-con/dispatcher"
 	"pro-con/fake"
+	"pro-con/foreground"
 	"pro-con/live"
 	"pro-con/relay"
 	"pro-con/store"
@@ -366,6 +367,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var notes []string // 起動時に画面へ出す知らせ
 	// 模擬と本物で状態ファイルの置き場所を分ける (模擬のカードが本物の記録に混ざらないように。issue 424)
 	var be backend.Backend
+	var termEvent func(string) // 端末の前面が外れた・止められた後に入れ直した、を出来事に残す (issue 518。--view と模擬は残さない)
 	dir := liveDir(home)
 	if mock {
 		be = fake.New(time.Now().Truncate(time.Minute)) // 模擬時間の起点は今 (時刻の表示が今に近い方が見本として読みやすい)
@@ -376,6 +378,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			dir, dispatcherArgs = e2e.StateDir(), modeArgs
 		}
 		lb := live.New(scopes, home, dir)
+		if !screen.view {
+			termEvent = lb.Event
+		}
 		root := stateDir(home) // 本物のモードの置き場の根。e2e モードは置き場そのものだけを測る (本物の記録を数えない)
 		if e2e != nil {
 			root = dir
@@ -416,6 +421,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 	m := ui.New(be, scopes)
+	m.OnTerminalEvent(termEvent)
 	if !mock {
 		m.SetFrameLog(dir) // 置き場に framelog.on を置いたあいだだけ、演出のコマの時刻と所要を記録する (issue 494)
 	}
@@ -462,8 +468,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	openRelay()
 	defer closeRelay()
+	stops := m.WatchStops() // 裏に回されても壊れない (ctrl+z・SIGTSTP・SIGTTIN の後の fg。issue 518)
 	for {
-		if _, err := tea.NewProgram(m, tea.WithOutput(scr)).Run(); err != nil {
+		prog := tea.NewProgram(m, tea.WithOutput(scr))
+		stops.Attach(prog)
+		_, err := prog.Run()
+		stops.Detach()
+		if err != nil {
 			_, _ = fmt.Fprintln(stderr, "pro-con:", err)
 			if resumePath != "" {
 				// 引き継いだ状態は残す (新版が起動直後に落ちた等。直したら同じ状態で起動し直せる)
@@ -592,7 +603,7 @@ func dispatcherCmd(exe string, extra []string) *exec.Cmd {
 	return exec.Command(exe, append([]string{"dispatcher", "--" + fromScreenFlag, "--exit-without-screens", "1m"}, extra...)...)
 }
 
-// spawnSupervisor は supervisor (`pro-con supervise`。dispatcher を子として持つ。issue 506) を画面とは別のプロセスグループで起動する
+// spawnSupervisor は supervisor (`pro-con supervise`。dispatcher を子として持つ。issue 506) を画面とは別の session で起動する (制御端末を持たせない。spawnDetached)
 // (画面を閉じても、ctrl+c が届いても道連れにしない。止めるのは終了のときの `dispatcher --stop`。dispatcher が抜ければ supervisor も抜ける)。
 // 出力は状態の置き場の dispatcher.log へ足す (画面より長く生きるのでパイプにしない。supervisor の子の dispatcher も同じ先へ書く)。
 // 🚨 画面の子にしない: 中継 (spawnDetached) を挟み、中継だけを待つ。supervisor は launchd の子になり、抜けたら launchd が刈り取る
@@ -621,8 +632,10 @@ func spawnSupervisor(dir string, extra []string) error {
 // spawnDetachedCmd は spawnSupervisor が挟む中継の内部用のサブコマンド。
 const spawnDetachedCmd = "spawn-detached"
 
-// spawnDetached は中継: 自分のバイナリを args で別のプロセスグループに起動し、待たずに抜ける (起こした子は launchd の子になる)。
+// spawnDetached は中継: 自分のバイナリを args で別の session に起動し、待たずに抜ける (起こした子は launchd の子になる)。
 // 子の出力は中継の stdout / stderr (spawnSupervisor が渡した dispatcher.log) をそのまま引き継ぐ。
+// 🚨 別のプロセスグループでは足りない: 同じ session のままだと子孫 (テストの係の make test の中の `zsh -i -c` 等) が
+// 画面の端末の前面を奪い、前面で端末を読む画面が SIGTTIN で止まる (issue 518)。session を分けて制御端末を持たせない
 func spawnDetached(args []string, stderr io.Writer) int {
 	exe, err := os.Executable()
 	if err != nil {
@@ -631,7 +644,7 @@ func spawnDetached(args []string, stderr io.Writer) int {
 	}
 	cmd := exec.Command(exe, args...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = foreground.Detached()
 	if err := cmd.Start(); err != nil {
 		_, _ = fmt.Fprintln(stderr, "pro-con spawn-detached:", err)
 		return 1
@@ -664,7 +677,7 @@ func stopInChild(ctx context.Context, dir string, extra []string) error {
 	}
 	cmd := stopCmd(exe, extra)
 	cmd.Stdout, cmd.Stderr = f, f
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // 端末の割り込みを子へ届けない
+	cmd.SysProcAttr = foreground.Detached() // 端末の割り込みを子へ届けない・子孫に端末を触らせない (issue 518)
 	if err := cmd.Start(); err != nil {
 		_ = f.Close()
 		return err
