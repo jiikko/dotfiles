@@ -318,7 +318,6 @@ func Apply(dir string, now time.Time) ([]Result, error) {
 		}
 	}
 	if len(results) > 0 {
-		settleWork(st.Cards, now)
 		data, err := json.MarshalIndent(st, "", "  ")
 		if err != nil {
 			return nil, err
@@ -392,8 +391,7 @@ func tagScreen(before State, next *State, screen string) {
 
 // Update は dispatcher の中でカードを直接進める (PG の起動で作業中へ、など。箱を通さない dispatcher 自身の操作)。
 // f が st を書き換え、不変条件に新しい違反が出なければ記録を書く。🚨 呼ぶのは dispatcher だけ (Apply と同じ書き手)。
-// now は書く時刻 (作業中の時間の切り替わりをこの時刻で閉じる / 始める。settleWork)。
-func Update(dir string, now time.Time, f func(*State) error) error {
+func Update(dir string, f func(*State) error) error {
 	st, err := Load(dir)
 	if err != nil {
 		return err
@@ -406,19 +404,11 @@ func Update(dir string, now time.Time, f func(*State) error) error {
 	if err := newViolation(st.Cards, next.Cards); err != nil {
 		return err
 	}
-	settleWork(next.Cards, now)
 	data, err := json.MarshalIndent(next, "", "  ")
 	if err != nil {
 		return err
 	}
 	return writeAtomic(filepath.Join(dir, StateFile), data)
-}
-
-// settleWork は書く前に、作業中の時間の切り替わりを全カードへ反映する (列を動かした口に依らず、書き手の 2 か所で閉じる。issue 490)。
-func settleWork(cs []card.Card, now time.Time) {
-	for i := range cs {
-		cs[i].SettleWork(now)
-	}
 }
 
 // newViolation は before に無かった不変条件の違反が after に出たらエラー (件数ではなく中身で比べる)。

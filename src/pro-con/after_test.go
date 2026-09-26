@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"pro-con/card"
 	"pro-con/store"
@@ -38,7 +37,7 @@ func TestCardListShowsAfter(t *testing.T) {
 	if _, out, _ := viewCmd(t, env, "show", "C-002"); !strings.Contains(out, "順番: C-001 の後") || !strings.Contains(out, "待ち: C-001 の後") {
 		t.Fatalf("詳細に順番が無い: %q", out)
 	}
-	if err := store.Update(env.dir, time.Now(), func(st *store.State) error {
+	if err := store.Update(env.dir, func(st *store.State) error {
 		for i := range st.Cards {
 			if st.Cards[i].ID == "C-001" {
 				st.Cards[i].State, st.Cards[i].Wait, st.Cards[i].Ending = card.Done, card.Wait{}, card.EndAnswered

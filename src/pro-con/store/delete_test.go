@@ -60,7 +60,7 @@ func TestDeleteRefusesParent(t *testing.T) {
 	submit(t, dir, Request{Kind: "add", Title: "親"})
 	submit(t, dir, Request{Kind: "add", Title: "子"})
 	applyAll(t, dir)
-	if err := Update(dir, time.Now(), func(s *State) error { s.Cards[1].ParentID = "C-001"; return nil }); err != nil {
+	if err := Update(dir, func(s *State) error { s.Cards[1].ParentID = "C-001"; return nil }); err != nil {
 		t.Fatal(err)
 	}
 	for _, s := range []card.State{card.Requested, card.Running} {

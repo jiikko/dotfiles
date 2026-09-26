@@ -154,9 +154,6 @@ func (m *Model) drawerBody() []string {
 	}
 	add("", fmt.Sprintf("状態: %s (%s)  担当: %s  repo: %s  session: %s", c.State.Label(), fmtDur(m.snap.Now.Sub(c.Since)),
 		c.Owner, c.Repo, orDash(c.Session)))
-	if l := card.EffortLine(c, m.snap.Now, fmtDur); l != "" {
-		add("", l)
-	}
 	var refs []string
 	for _, r := range c.Issues {
 		refs = append(refs, r.String()+" ("+r.Status+")")
@@ -169,6 +166,9 @@ func (m *Model) drawerBody() []string {
 		}
 	}
 	add("", "issue: "+link+"   親: "+orDash(c.ParentID))
+	if pts := card.PointsLabel(c); pts != "" {
+		add("", "見積もり: "+pts+" (PM が付けた)")
+	}
 	add("", "依頼の原文: 「"+c.Request+"」")
 	if c.Prompt != "" {
 		add(sgrDim, "PM に渡した指示: "+c.Prompt)

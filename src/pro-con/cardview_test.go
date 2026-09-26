@@ -73,7 +73,7 @@ func viewFixtureIn(t *testing.T, dir string) viewEnv {
 	mustSubmit(t, dir, store.Request{Kind: "plan", CardID: "C-001", Issues: []card.IssueRef{{Repo: "dotfiles", Number: 415, Status: "open"}}})
 	mustSubmit(t, dir, store.Request{Kind: "close", CardID: "C-003", Ending: card.EndAnswered})
 	mustApply(t, dir)
-	if err := store.Update(dir, time.Now(), func(st *store.State) error {
+	if err := store.Update(dir, func(st *store.State) error {
 		for i := range st.Cards {
 			switch st.Cards[i].ID {
 			case "C-001":
@@ -295,7 +295,7 @@ func TestCardWaitWakesOnNotification(t *testing.T) {
 	mustSubmit(t, env.dir, store.Request{Kind: "answer", CardID: "C-001", Answer: "青", From: "PM"})
 	mustApply(t, env.dir) // 質問待ち → 作業中 (--until review なので、まだ返らない)
 	f.broadcast()
-	if err := store.Update(env.dir, time.Now(), func(st *store.State) error {
+	if err := store.Update(env.dir, func(st *store.State) error {
 		st.Cards[0].State = card.Running // 回答で作業中へ (dispatcher の再開を模す)
 		return nil
 	}); err != nil {
@@ -613,7 +613,7 @@ func TestCardViewReadsArchive(t *testing.T) {
 	if _, out, _ := viewCmd(t, env, "list", "--all"); strings.Count(out, "C-003") != 1 {
 		t.Fatalf("--all で書庫のカードを出していない: %q", out)
 	}
-	if err := store.Update(env.dir, time.Now(), func(st *store.State) error { // 書庫に足した後、記録から外す前に落ちた形
+	if err := store.Update(env.dir, func(st *store.State) error { // 書庫に足した後、記録から外す前に落ちた形
 		st.Cards = append(st.Cards, card.Card{ID: "C-003", Title: "終わったもの", State: card.Done, Ending: card.EndAnswered, Archived: true})
 		return nil
 	}); err != nil {

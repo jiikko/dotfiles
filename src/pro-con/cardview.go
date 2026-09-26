@@ -124,8 +124,6 @@ type cardDetail struct {
 	DoingAt  time.Time    `json:"doingAt,omitzero"`
 	DoingErr string       `json:"doingErr,omitempty"` // 集めた様子を読めなかった理由 (カードの詳細は出す)
 	Waiting  string       `json:"waiting,omitempty"`  // 何を待っているか (list と同じ。順番の前のカードは記録の全カードから引く)
-	// WorkedSeconds は作業中だった時間の合計 (今作業中なら今の分も含む。Card.Worked は閉じた分だけ。issue 490)
-	WorkedSeconds int64 `json:"workedSeconds"`
 }
 
 // viewEnv は読む口が見る場所。
@@ -209,7 +207,6 @@ func runCardShow(args []string, env viewEnv, stdout, stderr io.Writer) int {
 		return 1
 	}
 	if asJSON {
-		d.WorkedSeconds = int64(d.Card.WorkedAt(env.now()) / time.Second)
 		return writeJSON(stdout, stderr, d)
 	}
 	writeDetail(stdout, d, env.now())
@@ -272,9 +269,6 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 	p := func(format string, a ...any) { _, _ = fmt.Fprintf(w, format+"\n", a...) }
 	p("%s  %s", c.ID, c.Title)
 	p("状態: %s (%s)  担当: %s  repo: %s  session: %s", c.State.Label(), fmtAge(now.Sub(c.Since)), orDashCLI(c.Owner), orDashCLI(c.Repo), orDashCLI(c.Session))
-	if l := card.EffortLine(c, now, fmtAge); l != "" {
-		p("%s", l)
-	}
 	var refs []string
 	for _, r := range c.Issues {
 		refs = append(refs, r.String()+" ("+r.Status+")")
@@ -287,6 +281,9 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 		}
 	}
 	p("issue: %s   親: %s", link, orDashCLI(c.ParentID))
+	if pts := card.PointsLabel(c); pts != "" {
+		p("見積もり: %s (PM が付けた)", pts)
+	}
 	p("依頼の原文: 「%s」", c.Request)
 	if c.Prompt != "" {
 		p("PM に渡した指示: %s", c.Prompt)

@@ -326,10 +326,6 @@ type Card struct {
 	After []string `json:",omitempty"`
 	// Points は見積もりのポイント (PM が `card plan --points` で付ける。PointScale のどれか。0 = 見積もり無し。issue 490)
 	Points int `json:",omitempty"`
-	// Worked は作業中だった時間のうち閉じた分の合計、WorkFrom は今の作業中が始まった時刻 (作業中でなければ zero)。
-	// どちらも SettleWork だけが書く。読むときは WorkedAt (issue 490。effort.go)
-	Worked   time.Duration `json:",omitempty"`
-	WorkFrom time.Time     `json:",omitzero"`
 	// LastProgress は「実質的に進んだ」最後の時刻 (watchdog が見る。活動ではなく進捗)
 	LastProgress time.Time
 }

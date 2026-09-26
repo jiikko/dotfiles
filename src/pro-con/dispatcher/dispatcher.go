@@ -999,7 +999,7 @@ func (d *Dispatcher) noteOnce(id string, now time.Time, text string) error {
 }
 
 func (d *Dispatcher) update(id string, f func(*card.Card)) error {
-	return store.Update(d.Dir, d.Now(), func(s *store.State) error {
+	return store.Update(d.Dir, func(s *store.State) error {
 		for i := range s.Cards {
 			if s.Cards[i].ID == id {
 				f(&s.Cards[i])

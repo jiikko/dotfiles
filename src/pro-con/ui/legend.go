@@ -1,6 +1,6 @@
 package ui
 
-// ? で出すレーンの意味の表。説明の正本は card.State.Meaning (ここは並べて見せるだけ)。
+// ? で出すレーンの意味の表。説明の正本は card.State.Meaning とポイントの card.PointsMeaning (ここは並べて見せるだけ)。
 
 import (
 	"fmt"
@@ -51,6 +51,13 @@ func legendRows(inner int) []string {
 	for i, s := range card.Columns {
 		rows = append(rows, fg(stateColor(s))+sgrBold+fmt.Sprintf("%d %s", i+1, s.Label())+sgrReset)
 		for _, l := range strings.Split(ansi.Hardwrap(s.Meaning(), max(inner-2, 10), true), "\n") {
+			rows = append(rows, "  "+l)
+		}
+	}
+	// カードの右上の数 (issue 490)。意味の正本は card.PointsMeaning
+	rows = append(rows, "", sgrBold+"右上の 3pt = 見積もりのポイント"+sgrReset)
+	for _, m := range card.PointsMeaning {
+		for _, l := range strings.Split(ansi.Hardwrap(m, max(inner-2, 10), true), "\n") {
 			rows = append(rows, "  "+l)
 		}
 	}

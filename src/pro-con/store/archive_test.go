@@ -16,7 +16,7 @@ func doneCard(id string, since time.Time) card.Card {
 
 func putCards(t *testing.T, dir string, cs ...card.Card) {
 	t.Helper()
-	if err := Update(dir, time.Now(), func(s *State) error { s.Cards, s.NextID = cs, len(cs)+1; return nil }); err != nil {
+	if err := Update(dir, func(s *State) error { s.Cards, s.NextID = cs, len(cs)+1; return nil }); err != nil {
 		t.Fatal(err)
 	}
 }

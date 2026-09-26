@@ -407,14 +407,35 @@ func (m *Model) cardCell(c card.Card, w int) []string {
 	case c.State == card.Done:
 		pre, badgePre, badge = sgrDim, sgrDim, m.badge(c)
 	}
+	// 右上に見積もり (issue 490。2026-09-26 のユーザーの決定: ポイントだけを薄く)。タイトルの 1 行目を minTitleHead より短くするなら出さない
+	pts := card.PointsLabel(c)
+	if pts != "" && w-1-(ansi.StringWidth(pts)+1) < minTitleHead {
+		pts = ""
+	}
 	var out []string
-	for _, l := range wrapLines(title, w-1, titleLines) { // 先頭の 1 桁は空白
+	for i, l := range wrapTitle(title, w-1, pts) { // 先頭の 1 桁は空白
 		if l != "" {
 			l = pre + l + sgrNoUnderline
+		}
+		if i == 0 && pts != "" {
+			l = fit(l, w-2-ansi.StringWidth(pts)) + " " + sgrDim + pts + sgrReset + base
 		}
 		out = append(out, paint(base, " "+l, w))
 	}
 	return append(out, paint(base, " "+badgePre+badge, w))
+}
+
+// minTitleHead は右上に見積もりを出すときに残すタイトルの 1 行目の最小の幅 (これより狭いなら見積もりを出さない)。
+const minTitleHead = 8
+
+// wrapTitle はタイトルを titleLines 行に折り返す。right (右上の見積もり) があれば、1 行目だけその幅と空白 1 桁を空けて折り返す。
+func wrapTitle(s string, w int, right string) []string {
+	if right == "" {
+		return wrapLines(s, w, titleLines)
+	}
+	head := ansi.Truncate(s, w-ansi.StringWidth(right)-1, "") // 1 行目は … で切らずに続きを 2 行目へ回す (wrapLines と同じ切り方)
+	rest := strings.TrimLeft(ansi.Cut(s, ansi.StringWidth(head), ansi.StringWidth(s)), " ")
+	return append([]string{head}, wrapLines(rest, w, titleLines-1)...)
 }
 
 // wrapLines は SGR を含まない s を表示幅 w で n 行に折り返す (全角の途中では切らない)。足りない行は空、収まらない分は最後の行の末尾を … で切る。

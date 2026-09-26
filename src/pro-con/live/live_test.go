@@ -104,7 +104,7 @@ func runningCard(t *testing.T, b *Backend, id, session string) {
 	if _, err := store.Apply(b.dir, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Update(b.dir, time.Now(), func(st *store.State) error {
+	if err := store.Update(b.dir, func(st *store.State) error {
 		for i := range st.Cards {
 			if st.Cards[i].ID == id {
 				st.Cards[i].State, st.Cards[i].Session = card.Running, session

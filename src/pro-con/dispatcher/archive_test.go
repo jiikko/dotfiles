@@ -28,7 +28,7 @@ func finishedRecord(t *testing.T, dir string) {
 	parent := done("C-005", t0.Add(-store.AutoClearAfter-time.Minute))
 	parent.Archived = true
 	child := card.Card{ID: "C-006", ParentID: "C-005", Title: "子", Repo: "dotfiles", State: card.Requested, Since: t0}
-	if err := store.Update(dir, time.Now(), func(s *store.State) error {
+	if err := store.Update(dir, func(s *store.State) error {
 		s.NextID = 7
 		s.Cards = []card.Card{cleared, old, recent, stopping, parent, child}
 		return nil
@@ -91,7 +91,7 @@ func BenchmarkTickWithFinishedCards(b *testing.B) {
 		cs = append(cs, card.Card{ID: fmt.Sprintf("C-%03d", i+1), Title: "終えた", Repo: "dotfiles", State: card.Done, Ending: card.EndAnswered,
 			Since: t0, Archived: true, History: hist})
 	}
-	if err := store.Update(dir, time.Now(), func(s *store.State) error { s.Cards, s.NextID = cs, len(cs)+1; return nil }); err != nil {
+	if err := store.Update(dir, func(s *store.State) error { s.Cards, s.NextID = cs, len(cs)+1; return nil }); err != nil {
 		b.Fatal(err)
 	}
 	d := &Dispatcher{Dir: dir, Limit: 2, Launch: &fakeLauncher{}, PMOff: true,

@@ -3,7 +3,6 @@ package store
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"pro-con/card"
 )
@@ -11,7 +10,7 @@ import (
 // setDone は記録のカードを完了にする (その場で回答した形。完了への遷移は PM の close で、ここでは経緯を問わない)。
 func setDone(t *testing.T, dir, id string) {
 	t.Helper()
-	if err := Update(dir, time.Now(), func(st *State) error {
+	if err := Update(dir, func(st *State) error {
 		for i := range st.Cards {
 			if st.Cards[i].ID == id {
 				st.Cards[i].State, st.Cards[i].Ending = card.Done, card.EndAnswered
