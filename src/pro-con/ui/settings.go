@@ -16,10 +16,10 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
 	"tuikit/anim"
 	"tuikit/layout"
 	"tuikit/listnav"
+	"tuikit/termwidth"
 
 	"pro-con/backend"
 	"pro-con/card"
@@ -489,7 +489,7 @@ func (m *Model) configLines(w int) ([]string, int) {
 				val = " [x] "
 			}
 		}
-		pad := strings.Repeat(" ", max(configValueWidth-ansi.StringWidth(val), 0)) // 値の長さ (数 / claude・codex / チェックボックス) が違っても右の説明の列を揃える。反転は値だけ
+		pad := strings.Repeat(" ", max(configValueWidth-termwidth.Of(val), 0)) // 値の長さ (数 / claude・codex / チェックボックス) が違っても右の説明の列を揃える。反転は値だけ
 		mark := "  "
 		if i == m.set.cursor {
 			val, mark, cur = settingsReverse+val+sgrReset, sgrCyan+"▸ "+sgrFgReset, len(out)
