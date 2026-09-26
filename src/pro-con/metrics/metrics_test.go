@@ -24,7 +24,7 @@ func walk(t *testing.T) card.Card {
 		if _, err := store.Submit(dir, r); err != nil {
 			t.Fatal(err)
 		}
-		res, err := store.Apply(dir, at)
+		res, err := store.Apply(dir, at, nil)
 		if err != nil || len(res) != 1 || res[0].Err != "" {
 			t.Fatalf("%s を当てられない: %+v %v", r.Kind, res, err)
 		}
