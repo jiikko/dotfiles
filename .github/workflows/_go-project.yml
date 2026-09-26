@@ -46,7 +46,7 @@ jobs:
     # 対象は macOS のみ (issue 133)。Linux はサポート対象外なので CI もそちらへ揃える。
     # 🚨 `macos-latest` にしない (ラベルの移動で環境が黙って変わる)。開発機が darwin24 = macOS 15。
     runs-on: macos-15
-    # make lint は golangci-lint を `go run @version` でソースからビルドする。build cache が warm
+    # make lint は golangci-lint を scripts/golangci_lint.sh がソースからビルドする (runner では毎回初回)。build cache が warm
     # なら ~3-5 分だが、cold だと 15 分を超えることがある (ubuntu-slim で実測。macOS runner は
     # さらに遅い可能性があるので、移行後に実測して詰めること)。timeout でジョブが
     # cancel されると post-step の cache-save が走らず、次回も cold → また cancel、の悪循環になる

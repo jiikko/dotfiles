@@ -32,7 +32,7 @@ shim は残るので `command -v` は成功し続ける (405 のバグの原因)
 | `staticcheck` | `scripts/check_unused_excluding_tests.sh` / CI | **持ち主なし** (手動 `go install`。CI だけ `v0.7.0` を pin) | **入れ直した** (405 で現行版へ) |
 | `goimports` | `_nviminit.lua` の conform (Go の保存時整形) | **mason** (`ensure_installed`) | **入れ直した** (mason 経由。下記) |
 | `gopls` | `nvim/lua/dotfiles/lsp.lua` | **mason** | 対応不要 (mason にあった) |
-| `golangci-lint` | 各 module の Makefile | **`go run …@v2.5.0`** (都度取る) | 対応不要 (版上げの影響を受けない) |
+| `golangci-lint` | 各 module の Makefile | **`go run …@v2.5.0`** (都度取る)。2026-09-26 から `scripts/golangci_lint.sh` が版ごとの決まった場所 (`~/Library/Caches/dotfiles-go-tools`) へ一度だけビルドする (go の版を鍵に含むので、版を上げると自分で作り直す) | 対応不要 (版上げの影響を受けない) |
 | `errcheck` | `.golangci.yml` に**名前**が出るだけ | golangci-lint が内蔵 | 対応不要 (単体のバイナリは不要) |
 | 残り 12 本 (`asmfmt` / `benchstat` / `deadcode` / `dlv` / `fillstruct` / `godef` / `gomodifytags` / `gotags` / `iferr` / `impl` / `motion` / `revive`) | **0 件** | — | **入れ直さない** |
 

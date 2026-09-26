@@ -381,7 +381,7 @@ bare 記号なら全層で 1 に一致するため。割れる文字を出すと
 
 ```bash
 make test   # go test ./... (unit + 一時 git リポジトリでの integration。外部通信なし)
-make lint   # golangci-lint (go run 経由・バージョン固定、設定は .golangci.yml)
+make lint   # golangci-lint (scripts/golangci_lint.sh 経由・バージョン固定、設定は .golangci.yml)
 
 # 幅ズレ調査用 (要 TTY。tmux の内と外で走らせて比べる)
 go run ./tools/width-probe

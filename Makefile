@@ -99,8 +99,8 @@ pull:
 
 # test-src (= go lint + test) を含める。かつては test-go (テストのみ) だったが、
 # CI (_go-project.yml) と test-changed の src 腕は lint + test を回すため、部分実行の
-# 方が全体実行より厳しいねじれがあった。golangci-lint は各 src Makefile が go run 経由・
-# バージョン固定で自己完結しており、追加のツールインストールは不要
+# 方が全体実行より厳しいねじれがあった。golangci-lint は各 src Makefile が scripts/golangci_lint.sh 経由で
+# 版を固定して呼ぶ (初回に版ごとの決まった場所へビルドする) ので、追加のツールインストールは不要
 # 🚨 **集約にする** (issue 130)。prerequisite に並べる形 (`test: a b c`) だと、lint が 1 つ
 #   落ちた日は **テストが 1 本も走らないまま赤を見る**。コミット前ゲートとして常用する入口なので、
 #   全部走らせてから失敗をまとめて返す (所要時間より「その日の全ての赤が 1 回で見える」を採る)。

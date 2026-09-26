@@ -27,7 +27,7 @@
   `scripts/discover_shell_scripts.sh` が shebang で拾い、登録漏れは **shellcheck の SC1071 で
   `make test` 全体が落ちる** (bin/schedkeys 追加時に実際に落とした 2026-08-27)
 - `.golangci.yml` は任意（無ければ既定 linter で運用。カスタム lint の実例は glogx を参照）
-- golangci-lint はインストール不要（Makefile が `go run` 経由でバージョン固定実行）
+- golangci-lint はインストール不要（Makefile が `scripts/golangci_lint.sh` 経由で版を固定して実行。初回に版ごとの決まった場所へビルドし、以後はそれを起動する）
 - テストが「重い / 環境依存」に思えても、CI から除外する前に**実測**すること（parallel-each は「TUI 依存で重い」とされていたが実測 8.7s で CI 投入できた。
   この repo からは 2026-09-08 に出たが、判断の作法として残す）
 
@@ -40,13 +40,13 @@
 ```make
 # <name> (Go) の静的解析とテスト。root Makefile の test-go-lint / test-go と CI
 # (.github/workflows/src_<name>.yml) から `make -C src/<name> lint|test` として呼ばれる
-# 自己完結ターゲット。golangci-lint はインストール不要で go run 経由・バージョン固定。
+# 自己完結ターゲット。golangci-lint はインストール不要で、scripts/golangci_lint.sh が版を固定して一度だけビルドし起動する。
 GOLANGCI_LINT_VERSION := v2.5.0
 
 .PHONY: lint test
 
 lint:
-	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) run ./...
+	../../scripts/golangci_lint.sh $(GOLANGCI_LINT_VERSION) run ./...
 
 test:
 	go test ./...
@@ -82,7 +82,7 @@ jobs:
   # lint と test は独立 job: 並列実行 + 片方だけの再実行が可能
   lint:
     runs-on: ubuntu-slim
-    # 初回は golangci-lint を go run でソースからビルドするため余裕を持たせる (以降は cache)
+    # 初回は golangci-lint をソースからビルドするため余裕を持たせる (以降は cache)
     timeout-minutes: 15
     steps:
       - name: Silence git init.defaultBranch hint

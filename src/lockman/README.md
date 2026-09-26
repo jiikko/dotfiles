@@ -63,7 +63,7 @@ Linux / Samba も想定しない。**CI も macOS runner で回る** (issue 133 
 ## 開発
 
 ```sh
-make -C src/lockman lint   # golangci-lint (go run 経由・バージョン固定)
+make -C src/lockman lint   # golangci-lint (scripts/golangci_lint.sh 経由・バージョン固定)
 make -C src/lockman test   # go test -race
 ```
 
