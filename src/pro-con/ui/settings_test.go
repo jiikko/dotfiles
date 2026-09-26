@@ -64,7 +64,7 @@ func run(m *Model, cmd tea.Cmd) {
 		for _, c := range msg {
 			run(m, c)
 		}
-	case procsMsg, diskMsg:
+	case procsMsg, diskMsg, eventsMsg:
 		m.Update(msg)
 	}
 }

@@ -69,6 +69,8 @@ const (
 	KindSupervisor = "supervisor"
 	// KindUpgrade は dispatcher の新版への入れ替え (issue 505。新版ができた・区切りを待っている・切り替えた・切り替えられない)
 	KindUpgrade = "upgrade"
+	// KindDispatcher は dispatcher 自身が起きた・抜けた (issue 512。新版への入れ替えは KindUpgrade)
+	KindDispatcher = "dispatcher"
 )
 
 // Append は出来事を足す (1 回の write。読む側は改行で終わった行だけを読むので、書きかけを読まない)。
