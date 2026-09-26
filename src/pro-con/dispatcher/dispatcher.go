@@ -1061,6 +1061,13 @@ func (d *Dispatcher) update(id string, f func(*card.Card)) error {
 	})
 }
 
+// DraftIssueName は PG が起票する issue の仮の名前 (issue 530)。PG は push しないので、PG が採った番号は取り込まれるまで master から見えず衝突する。
+// 番号は取り込みの係が push の直前に scripts/issue_number_drafts.sh で付ける (integrator-guide.md の役目 2。同じ形を書いていることを TestIntegratorGuideNumbersDraftIssues が見る)。
+const DraftIssueName = "new-<type>-<slug>.md"
+
+const draftIssueRule = "- issue を起票するときは番号を取らない (issue 規約の採番より優先する)。`issues/<置き場>/" + DraftIssueName + "` の名前で書き、" +
+	"見出しは `# new (<type>): <題>`、他のファイルや commit の subject からはこのファイル名で指す。next/ で claim しない (番号は取り込みの係が push の直前に付ける)\n"
+
 // Prompt は PG に渡す最初の指示。PG の規律 (426 の決定 2・3) を前に置き、依頼の中身を後ろに置く。
 // rv は敵対的レビューの担い手 (issue 514。起動のときの値。起動した後に設定を変えても、動いている PG の指示は変わらない)。
 func Prompt(c card.Card, rv Review) string {
@@ -1083,6 +1090,7 @@ func Prompt(c card.Card, rv Review) string {
 		b.WriteString("- review に出す前に、関わる issue の本文に、確かめた受け入れ条件の印 (`- [x]`) と進捗 (commit の subject・実測・残り) を書き、その commit も自分の worktree に入れる。" +
 			"確かめていない条件には印を付けない。done へは移さない (取り込みの係が印を見て移す)\n")
 	}
+	b.WriteString(draftIssueRule)
 	fmt.Fprintf(&b, "- 終えたら `pro-con card review %s` を実行してから turn を終える\n", c.ID)
 	if len(c.Issues) > 0 {
 		var refs []string

@@ -17,6 +17,13 @@ pro-con (issue 415 の epic) の本物のモードで、取り込みの係 (PG �
    - origin/master から取り込み用の worktree を作り、そこで merge する (`git -C <repo> worktree add --detach <repo>/../merge-<時刻> origin/master`。
      名前を `pc-` で始めない: dispatcher は `.claude/worktrees/pc-` の下を PG と役の場所として扱う)
    - `git merge --no-edit <PG のブランチ>` → `git diff origin/master...HEAD` を読む → テストと lint を回す (下)
+   - **PG が起票した issue に番号を付ける** (issue 530)。PG は push しないので番号を取らず、`issues/<置き場>/new-<type>-<slug>.md` の仮の名前で起票する
+     (起票のしかたの正本は PG への指示 = `dispatcher.go` の `Prompt`)。merge の直後、テストの前に付ける
+     - dotfiles は `scripts/issue_number_drafts.sh` (working tree と origin/master の最大 + 1 から振り、改名・見出し・ファイル名での参照の張り替えまでする。仮の名前が無ければ何もしない)。
+       変わったら `git add -A && git commit -m "issues: <カード> の起票に番号を付ける"` (参照を張り替えた issues/ の外のファイルも入れる。merge の直後なので、ほかの変更は無い)
+     - script の無い repo は、issue 規約の採番で手で改名し、仮の名前での参照を張り替える
+     - push が弾かれて merge し直すと、その間に同じ番号が master に入っていることがある (dotfiles は `tests/issues/test_issue_numbers_unique.sh` が落ちる)。
+       そのときは取り込み用の worktree を作り直し、merge から付け直す
    - **テストは差分に関係する分だけ回す** (538。repo 全体を回すと 1 枚約 6 分かかり、1 枚ずつ順なので列が詰まる)
      - repo に `make test-changed` があれば (dotfiles)、差分のパスを渡してそれだけを回す: `make test-changed PATHS="$(git diff --name-only origin/master...HEAD | tr '\n' ' ')"`。
        `src/<proj>/` のパスは `make -C src/<proj> lint test` に写るので、pro-con の `src/pro-con` の段を別に回さない

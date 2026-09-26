@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"pro-con/card"
+	"pro-con/dispatcher"
 	"pro-con/store"
 )
 
@@ -249,6 +250,15 @@ func TestPMGuideCommandsParse(t *testing.T) { guideCommandsParse(t, pmGuide) }
 
 // 取り込みの係の指示書 (487) も同じ: 書いてあるコマンドがパーサに通る。
 func TestIntegratorGuideCommandsParse(t *testing.T) { guideCommandsParse(t, integratorGuide) }
+
+// PG への指示が書く仮の名前 (dispatcher.DraftIssueName) に、取り込みの係の指示書が番号を付ける (issue 530)。形を 2 か所で別々に変えない。
+func TestIntegratorGuideNumbersDraftIssues(t *testing.T) {
+	for _, want := range []string{dispatcher.DraftIssueName, "scripts/issue_number_drafts.sh"} {
+		if !strings.Contains(integratorGuide, want) {
+			t.Fatalf("取り込みの係の指示書に %q が無い", want)
+		}
+	}
+}
 
 func guideCommandsParse(t *testing.T, guide string) {
 	t.Helper()

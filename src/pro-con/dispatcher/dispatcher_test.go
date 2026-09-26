@@ -275,6 +275,16 @@ func TestPromptAsksIssueCheckmarksOnlyWithIssues(t *testing.T) {
 	}
 }
 
+// PG は issue に番号を取らず仮の名前で起票する (issue 530)。関わる issue の無いカードでも起票はするので、どのカードにも書く。
+func TestPromptAsksDraftIssueNames(t *testing.T) {
+	for _, c := range []card.Card{{ID: "C-007", Title: "t"}, {ID: "C-007", Title: "t", Issues: []card.IssueRef{{Repo: "dotfiles", Number: 530}}}} {
+		p := Prompt(c, Review{})
+		if i, j := strings.Index(p, DraftIssueName), strings.Index(p, "pro-con card review C-007"); i < 0 || i > j || !strings.Contains(p, "番号を取らない") {
+			t.Fatalf("仮の名前で起票させる行が無い / 「終えたら review」より後にある:\n%s", p)
+		}
+	}
+}
+
 // claude --bg の出力から短い id を読む。形が違えば読めないとエラーにする (空の id でカードを作業中にしない)。
 func TestParseBackgrounded(t *testing.T) {
 	if id, err := parseBackgrounded("backgrounded · 931e734d · m425-done\n  claude agents  list sessions\n"); err != nil || id != "931e734d" {
