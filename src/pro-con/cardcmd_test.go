@@ -56,6 +56,8 @@ func TestCardCommandRejectsBadUsage(t *testing.T) {
 		{"delete"},                                                                               // カードが無い
 		{"move", "C-001"},                                                                        // 向きが無い
 		{"move", "C-001", "left"},                                                                // 未知の向き
+		{"order", "C-001"},                                                                       // 本文が無い
+		{"order", "C-001", "x", "--redirect=maybe"},                                              // 真偽でない
 	} {
 		dir := t.TempDir()
 		if rc, _, errOut := card_(t, dir, args...); rc != 2 || errOut == "" {
@@ -86,6 +88,46 @@ func TestCardCommandAskAnswer(t *testing.T) {
 			got.Answer != tc.want.Answer || got.Rework != tc.want.Rework || got.Text != tc.want.Text || got.From != tc.want.From && tc.want.From != "" || got.Ending != tc.want.Ending {
 			t.Fatalf("%q: %+v %v (期待 %+v)", tc.args, got, err, tc.want)
 		}
+	}
+}
+
+// 追加オーダー (issue 507): 画面の + と同じ依頼を箱に置く。既定は人間の追記、--redirect で方針変更、--from で出した人。
+// 断るか (完了のカード・空の本文) は CLI では決めず、store の適用が画面と同じ規則で決める (箱には置いて rc=0)。
+func TestCardCommandOrder(t *testing.T) {
+	dir := t.TempDir()
+	for _, title := range []string{"作業中", "閉じる"} {
+		if rc, _, e := card_(t, dir, "add", "--title", title, "--wait", "0"); rc != 0 {
+			t.Fatalf("add: rc=%d %s", rc, e)
+		}
+	}
+	if rc, _, e := card_(t, dir, "close", "C-002", "--ending", "answered"); rc != 0 {
+		t.Fatalf("close: rc=%d %s", rc, e)
+	}
+	for _, args := range [][]string{
+		{"order", "C-001", "README も"},
+		{"order", "C-001", "青にして", "--redirect", "--from", "PM"},
+		{"order", "C-002", "x"}, // 完了のカード
+		{"order", "C-001", " "}, // 空の本文
+	} {
+		if rc, out, e := card_(t, dir, args...); rc != 0 || strings.TrimSpace(out) == "" {
+			t.Fatalf("%q: rc=%d out=%q err=%q (断るのは適用の側)", args, rc, out, e)
+		}
+	}
+	res, err := store.Apply(dir, time.Now())
+	if err != nil || len(res) != 7 {
+		t.Fatalf("適用: %+v %v", res, err)
+	}
+	if o := res[3:]; o[0].Err != "" || o[1].Err != "" || !strings.Contains(o[2].Err, "完了") || !strings.Contains(o[3].Err, "空") {
+		t.Fatalf("受ける / 断るの振り分けが画面の + と違う: %+v", o)
+	}
+	st, _ := store.Load(dir)
+	c := st.Cards[0]
+	if len(c.Orders) != 2 || c.Orders[0].Kind != card.OrderAppend || c.Orders[0].Text != "README も" || c.Orders[1].Kind != card.OrderRedirect || c.Orders[1].Delivered {
+		t.Fatalf("追加オーダーが積まれていない: %+v", c.Orders)
+	}
+	h := c.History[len(c.History)-2:]
+	if h[0].Text != "人間 から追加オーダー (追記): README も" || h[1].Text != "PM から追加オーダー (方針変更): 青にして" {
+		t.Fatalf("出した人と本文が履歴に残っていない: %+v", h)
 	}
 }
 
