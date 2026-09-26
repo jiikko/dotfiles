@@ -31,11 +31,12 @@ remote の `worktree-pc-c-*` は 2026-09-26 に 61 本 (C-080 の起票の時点
 
 ## 進捗 (2026-09-26, C-080)
 
-- **出どころは PG への指示そのものだった** (上の「詳細」の 1 項目と見込みは誤り)。86dd3ca3 より前の `Prompt` は
-  「commit は自分のブランチまで push する (master へは push しない)」と書いていた (415 の旧い規律)。
-  bg の session の既定の指示 (「worktree で変更したら commit し、remote があれば push する — task・CLAUDE.md が git を留保していればそちらに従う」) も同じ向きに押すが、留保の但し書きがあるので指示で止まる
-- **修正は 86dd3ca3** で入った: 「commit までにする。push しない (master にも自分のブランチにも)。~/.claude/CLAUDE.md の push するまでが担当より優先する」。
-  `TestPromptCarriesDiscipline` が旧い文へ戻すと red
-- **本物の PG で 1 回確かめた**: C-072 (session 159835b1) は修正の後に aa459113 (merge) を commit したが、`origin/worktree-pc-c-072` は 4ab063e9 (22:45) のまま載っていない。
-  C-080 (この session、修正後の指示で起動) も push していない。`--settings` で push を止める案は、指示で止まったので採らない
-- 残り: 修正の前に起動して動いている PG (C-070 / C-074 / C-078 など) は旧い指示のまま走るので、その分は 522 と同じ手で後から片付ける
+- **起票の前に push させていたのは、旧い PG への指示そのものだった**。86dd3ca3 より前の `Prompt` は「commit は自分のブランチまで push する (master へは push しない)」と書いていた
+  (上の「詳細」の 1 項目目「push させる文は無い」は、86dd3ca3 の後の状態のこと)
+- **効いたかの確認 (transcript)**: 86dd3ca3 (2026-09-26 23:07:18 +0900 = 14:07:18Z) の後に更新された PG の transcript (`~/.claude/projects/*pc-c-0*/*.jsonl`) から、
+  Bash の tool_use の command に `git push` があるものを jq で抜いた (本文への言及は数えない)
+  - **修正の後に新しく起動した PG**は C-080 (14:16Z 起動) だけで、`git push` は **0 回**。起動の指示に「push しない」が届いていることも transcript で見えた
+  - C-078 (12:48Z 起動の session を再開) は修正の後の 14:11Z に `git push --force-with-lease origin HEAD:worktree-pc-c-078` などを打った。
+    **再開した古い session は旧い指示のまま**、という上の見込みどおりで、指示が効かない実例ではない
+  - C-072 / C-073 / C-074 は修正の後に push していない (C-072 の最後の push は 12:44Z)
+- 残り: 新しく起動した PG の実例がまだ 1 本 (C-080) だけ。次に起動する PG でも 0 回かを見る。指示だけで止まらない実例が出たら `--settings` の deny を試す

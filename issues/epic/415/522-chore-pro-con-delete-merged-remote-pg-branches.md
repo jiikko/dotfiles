@@ -22,3 +22,19 @@
 ## 関連
 
 - 521 (PG に push させない。先に入れないとまた溜まる) / 492 (ローカルの worktree とブランチの片付け)
+
+## 進捗 (2026-09-26, C-080)
+
+- ユーザーの回答は「PG が消してよい」。判定は `inBase` (`src/pro-con/wtclean/judge.go`) を同じ package の一時のテストから呼んで取った (`git fetch --prune` の直後。一時のファイルは消した・commit していない)
+- **取り込み済み 52 本** (先端が origin/master の祖先 33 / git cherry が全部 - で空白まで同じ 19): 以下は `worktree-pc-c-` の後ろ
+  `002 003 005 006 007 008 010 011 013 014 016 017 018 019 021 022 024 025 025-r1 025-r2 026 027 029 030 031 032 033 034 035 036 037 038 039 041 042 044 045 046 047 048 049 051 052 053 054 055 057 058 059 060 061 062`
+- **残す 9 本** (理由は inBase の出力):
+  - 004 / 009: origin/master に無い commit が 1 本
+  - 012: origin/master に無い merge commit が 2 本 (git cherry で比べられない)
+  - 020 / 023: 無い commit が 2 本。020-rebased: 3 本
+  - 070 / 078: 無い commit が 3 本 (カードがレビュー中)。072: 無い merge commit が 1 本 (カードが作業中)
+- 完了していないカード (C-070〜C-075・C-078〜C-080) のブランチは、取り込み済みの 52 本に入っていない
+- 🚨 **まだ消していない**。PG の session から消そうとしたところ、Claude Code の auto mode の分類器に止められた (Unverifiable Deletion Scope)。remote は 61 本のまま
+- 人が消すなら、`~/dotfiles` で `git fetch --prune` の後、1 本ずつ判定した先端を lease に指定して消す (判定の後に動いたブランチは消えずに失敗する):
+  `git push --force-with-lease=refs/heads/<branch>:<sha> origin :refs/heads/<branch>`。sha は `git rev-parse origin/<branch>` で取り直し、
+  判定は上の一覧を使う (取り直すなら inBase をもう一度回す)。消したら、消した一覧をここへ書き足す
