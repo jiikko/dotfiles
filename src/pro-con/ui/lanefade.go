@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"tuikit/anim"
+
+	"pro-con/card"
 )
 
 const (
@@ -27,7 +29,7 @@ type laneFade struct {
 // trackLane はフォーカスの移動を見て色の遷移を始める。Update の出口 (trackCursor と同じ所) から呼ぶ。
 // 連打で途中から向きが変わっても、各レーンの今の度合いから向かい直す。
 func (m *Model) trackLane() bool {
-	n := len(m.columns())
+	n := len(card.Columns)
 	if m.lane.shown < 0 || len(m.lane.to) != n { // 初めて / 置き直す (タブの切り替え等): 移さずに点ける
 		m.lane = laneFade{shown: m.col, from: litOnly(n, m.col), to: litOnly(n, m.col)}
 		return false

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -278,9 +279,9 @@ func (m *Model) gauge() string {
 	counts := map[card.State]int{}
 	var oldest time.Duration
 	pending, stalled, humans := 0, 0, 0
-	for _, c := range m.visible() {
+	for c := range m.visible() {
 		counts[c.State]++
-		if m.humansTurn(c) {
+		if m.humansTurn(*c) {
 			humans++
 		}
 		if c.State != card.Done && c.State != card.Running {
@@ -345,7 +346,7 @@ const colSep = " "
 // boardLines はカンバン。列ごとに枠つきの行を組んでから横に並べる。
 func (m *Model) boardLines() []string {
 	w := m.colWidth()
-	cols := m.columns()
+	cols := m.lanes()
 	selCol := m.col
 
 	shown := m.shownCards()
@@ -382,7 +383,7 @@ func (m *Model) shownCards() int {
 }
 
 // columnBlock は 1 列分の行 (上枠に見出し + カード + 下枠)。列の高さは shown で揃える。
-func (m *Model) columnBlock(col int, s card.State, cs []card.Card, w, shown int, focused bool) []string {
+func (m *Model) columnBlock(col int, s card.State, cs []*card.Card, w, shown int, focused bool) []string {
 	// 先頭の数字は 1〜6 でそのレーンへ飛ぶキー。狭いときは名前を削り、キーと枚数は残す (boxTop は後ろから切る)
 	head, tail := fmt.Sprintf("%d ", col+1), fmt.Sprintf(" (%d)", len(cs))
 	if focused {
@@ -409,14 +410,14 @@ func (m *Model) columnBlock(col int, s card.State, cs []card.Card, w, shown int,
 		title += humanTag(mark)
 	}
 	out := []string{boxTop(border, title, w)}
-	cells := m.columnCells(col, cs, inner)
+	cells, total := m.columnCells(col, cs, inner, shown)
 	// カードの上下に 1 行ずつ空ける (空行・カード・空行・…・空行)。選択の枠と移動中のカードの枠はこの空行の上に描くので、
 	// 隣のカードを隠さない (2026-09-24 のユーザー提案)
 	var body []string
-	for r := range min(shown, len(cells)) {
+	for r := range cells {
 		body = append(body, "")
-		if r == shown-1 && len(cells) > shown {
-			body = append(body, fit(sgrDim+fmt.Sprintf("… 他 %d 枚", len(cells)-shown+1)+sgrReset, inner))
+		if r == shown-1 && total > shown {
+			body = append(body, fit(sgrDim+fmt.Sprintf("… 他 %d 枚", total-shown+1)+sgrReset, inner))
 			break
 		}
 		body = append(body, cells[r]...)
@@ -431,10 +432,10 @@ func (m *Model) columnBlock(col int, s card.State, cs []card.Card, w, shown int,
 }
 
 // humansIn は cs のうち人の番のカードの枚数 (列の見出しに出す)。
-func (m *Model) humansIn(cs []card.Card) int {
+func (m *Model) humansIn(cs []*card.Card) int {
 	n := 0
 	for _, c := range cs {
-		if m.humansTurn(c) {
+		if m.humansTurn(*c) {
 			n++
 		}
 	}
@@ -450,27 +451,33 @@ const (
 
 // columnCells は列の中身を 1 枚 cardLines 行のセルで並べる。移動中のカード (motion.go) は、移動先では空けて待ち、
 // 移動元には点線の枠を残す (どちらも着地まで。周りのカードが途中で詰まってずれないように)。
-func (m *Model) columnCells(col int, cs []card.Card, inner int) [][]string {
-	var cells [][]string
-	for _, c := range cs {
-		if mv, ok := m.moves[c.ID]; ok && mv.to.col == col {
+// 組むのは先頭の limit 個だけで、total は点線の枠も含めた全体の数 (見えないカードの文字列を毎コマ組まない。issue 494)。
+func (m *Model) columnCells(col int, cs []*card.Card, inner, limit int) (cells [][]string, total int) {
+	items := make([]int, len(cs)) // cs の添字。-1 は移動元に残す点線の枠
+	for i := range items {
+		items[i] = i
+	}
+	for _, mv := range m.moves {
+		if mv.from.col == col {
+			items = slices.Insert(items, min(mv.from.row, len(items)), -1)
+		}
+	}
+	for _, i := range items[:min(limit, len(items))] {
+		if i < 0 {
+			cells = append(cells, ghostLines(inner))
+			continue
+		}
+		if mv, ok := m.moves[cs[i].ID]; ok && mv.to.col == col {
 			blank := make([]string, cardLines)
-			for i := range blank {
-				blank[i] = fit("", inner)
+			for k := range blank {
+				blank[k] = fit("", inner)
 			}
 			cells = append(cells, blank)
 			continue
 		}
-		cells = append(cells, m.cardCell(c, inner))
+		cells = append(cells, m.cardCell(*cs[i], inner))
 	}
-	for _, mv := range m.moves {
-		if mv.from.col != col {
-			continue
-		}
-		at := min(mv.from.row, len(cells))
-		cells = append(cells[:at], append([][]string{ghostLines(inner)}, cells[at:]...)...)
-	}
-	return cells
+	return cells, len(items)
 }
 
 // cardCell はカード 1 枚 (タイトル titleLines 行 + バッジ 1 行)。地の色はカードごとに固有 (cardColor)。列を移っても同じ色なので目で追える。

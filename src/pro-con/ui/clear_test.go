@@ -15,7 +15,7 @@ import (
 
 func doneCount(m *Model) int {
 	n := 0
-	for _, c := range m.visible() {
+	for c := range m.visible() {
 		if c.State == card.Done {
 			n++
 		}

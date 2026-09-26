@@ -94,7 +94,7 @@ func (m *Model) overlayCursor(board []string) []string {
 		return board
 	}
 	shown := m.shownCards()
-	if n := len(m.columns()[m.cursor.to.col]); n > shown && m.cursor.to.row >= shown-1 {
+	if n := len(m.lanes()[m.cursor.to.col]); n > shown && m.cursor.to.row >= shown-1 {
 		return board
 	}
 	x, y := m.cursorPos(m.now())
