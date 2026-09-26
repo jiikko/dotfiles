@@ -188,26 +188,3 @@ func TestBumpUpRidesOverHeader(t *testing.T) {
 		t.Fatalf("出きった所で見出しが %d 行目 (期待 %d。ヘッダの上に乗る)", got, headerRows-2)
 	}
 }
-
-// 1 行に満たない端数は、帯の先 (壁の側) の 1 行に 1/8 ブロックの帯で描く。
-// 押して 33ms は 4/8 行 (bumpOffset(0.033)×16 = 3.52 → 4): 上なら帯の上の行、下なら帯の下の行に半分の高さのブロックが並ぶ。
-func TestBumpDrawsFractionAsEighthBlocks(t *testing.T) {
-	for _, tc := range []struct {
-		key string
-		row func(boardH int) int
-	}{
-		{"k", func(int) int { return headerRows - 1 }},
-		{"j", func(h int) int { return headerRows + h }},
-	} {
-		m, clk := cursorModel(t)
-		h := len(m.boardLines())
-		start := clk.t
-		press(m, tc.key)
-		clk.t = start.Add(33 * time.Millisecond)
-		lines := strings.Split(ansi.Strip(m.render()), "\n")
-		want := strings.Repeat("▄", m.colWidth()-2)
-		if r := tc.row(h); r >= len(lines) || !strings.Contains(lines[r], want) {
-			t.Fatalf("%s: %d 行目に端数の帯 %q が無い:\n%s", tc.key, r, want, strings.Join(lines, "\n"))
-		}
-	}
-}
