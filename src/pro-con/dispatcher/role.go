@@ -131,45 +131,78 @@ func (d *Dispatcher) roleState(r *role, now time.Time) card.RoleState {
 	return s
 }
 
-// cardIDRe はカード ID (store が振る C-%03d)。
-var cardIDRe = regexp.MustCompile(`\bC-\d{3,}\b`)
+// cardIDRe はカード ID (store が振る C-%03d)。前の文字は mentioned が見る (\b だと `C-018_notes.md` を取りこぼす)。
+var cardIDRe = regexp.MustCompile(`C-\d{3,}`)
 
-// roleTurn は turn の途中の役が今の turn (最後の起動・再開の後) で扱っているカードと、最後の道具の呼び出し (issue 480)。
-// 扱っているカードは、道具の呼び出しの対象 (コマンド・ファイル) に知らせ済みのカード (cards) の ID が出た最後のもの
-// (PM は `pro-con card show <カード>` で読み始め、`card plan` で積む)。まだどのカードの ID も出ていなければ、知らせ済みが 1 枚のときだけその 1 枚。
-// 🚨 最後の起動・再開より前の呼び出しは見ない (再開した session の transcript は前の session の記録を写して始まる = live.CardLog)。
+// afterRe は `card plan` の順番の前のカード (--after <カード>)。扱っているカードではないので数えない。
+var afterRe = regexp.MustCompile(`--after[ =]C-\d{3,}`)
+
+// roleTurn は turn の途中の役が今の turn で扱っているカードと、最後の道具の呼び出し (issue 480)。
+// 今の turn = 最後の起動・再開 (since) か、その後の人の発言・自動の再開のうち最後のものより後 (人が attach して打った turn を、
+// 前の知らせの turn の続きと取り違えない)。🚨 それより前の呼び出しは見ない (再開した session の transcript は前の session の記録を写して始まる = live.CardLog)。
+// 扱っているカードは、呼び出しを新しい方から見て、対象 (コマンド・ファイル) に知らせ済みのカード (cards) が 1 枚だけ出た最初のもの
+// (PM は `pro-con card show <カード>` で読み始め、`card plan` で積む)。次の呼び出しで打ち切って空にする (どのカードとも言えない):
+//   - 知らせ済みが 2 枚以上出た (`card show C-001; card show C-002` / `for c in …`)
+//   - 知らせ済みでないカードだけが出た (積んで列を離れたカード・足したカード。最後の道具の呼び出しがそのカードのものになる)
+//
+// ID が出ていなければ空 (当て推量で 1 枚に決めない: 人の頼んだ別の仕事を「分解中」と出す)。
 // transcript の末尾は Tick ごとに読む (役は 1 つずつで、PG の様子 (collectDoing) の 10 秒ごとより細かく「即時」に出す)。
 func (d *Dispatcher) roleTurn(sid string, since time.Time, cards []string) (current, last string, lastAt time.Time) {
-	if d.Transcript != nil && sid != "" {
-		if t, err := d.Transcript(sid); err == nil {
-			for i := len(t.Uses) - 1; i >= 0 && !t.Uses[i].At.Before(since); i-- {
-				u := t.Uses[i]
-				if last == "" {
-					last, lastAt = u.Name, u.At
-					if u.Text != "" {
-						last += ": " + u.Text
-					}
-				}
-				if id := mentioned(u.Target, cards); id != "" {
-					return id, last, lastAt
-				}
+	if d.Transcript == nil || sid == "" {
+		return "", "", time.Time{}
+	}
+	t, err := d.Transcript(sid)
+	if err != nil {
+		return "", "", time.Time{}
+	}
+	for _, p := range t.Prompts {
+		if p.At.After(since) {
+			since = p.At
+		}
+	}
+	for _, at := range t.Restarts {
+		if at.After(since) {
+			since = at
+		}
+	}
+	for i := len(t.Uses) - 1; i >= 0 && !t.Uses[i].At.Before(since); i-- {
+		u := t.Uses[i]
+		if last == "" {
+			last, lastAt = u.Name, u.At
+			if u.Text != "" {
+				last += ": " + u.Text
 			}
 		}
-	}
-	if len(cards) == 1 {
-		current = cards[0]
-	}
-	return current, last, lastAt
-}
-
-// mentioned は s に出るカード ID のうち cards にある最初のもの (`card plan C-018 --after C-017` の対象は先に出る C-018)。無ければ空。
-func mentioned(s string, cards []string) string {
-	for _, id := range cardIDRe.FindAllString(s, -1) {
-		if slices.Contains(cards, id) {
-			return id
+		told, other := mentioned(u.Target, cards)
+		switch {
+		case len(told) == 1:
+			return told[0], last, lastAt
+		case len(told) > 1 || other:
+			return "", last, lastAt
 		}
 	}
-	return ""
+	return "", last, lastAt
+}
+
+// mentioned は s に出るカード ID のうち cards にあるもの (重ねない) と、cards に無いカードが出たか。`--after <カード>` は数えない。
+func mentioned(s string, cards []string) (told []string, other bool) {
+	s = afterRe.ReplaceAllString(s, "")
+	for _, ix := range cardIDRe.FindAllStringIndex(s, -1) {
+		if ix[0] > 0 && isIDChar(s[ix[0]-1]) { // `XC-001` / `pc-c-001` の一部
+			continue
+		}
+		switch id := s[ix[0]:ix[1]]; {
+		case !slices.Contains(cards, id):
+			other = true
+		case !slices.Contains(told, id):
+			told = append(told, id)
+		}
+	}
+	return told, other
+}
+
+func isIDChar(b byte) bool {
+	return b == '_' || b == '-' || b >= '0' && b <= '9' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
 }
 
 // keyCards は知らせる物の鍵 (r.key: 「C-001」か「C-001@時刻」) のカード ID を、重ねずに並びのまま返す。

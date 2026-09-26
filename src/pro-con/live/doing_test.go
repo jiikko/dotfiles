@@ -52,12 +52,15 @@ func TestParseTranscriptUses(t *testing.T) {
 	data := `{"type":"assistant","timestamp":"2026-09-26T01:00:00Z","message":{"content":[{"type":"tool_use","id":"u1","name":"Bash","input":{"description":"カードを読む","command":"pro-con card show C-018"}}]}}
 {"type":"user","timestamp":"2026-09-26T01:00:01Z","message":{"content":[{"type":"tool_result","tool_use_id":"u1","content":"..."}]}}
 {"type":"assistant","timestamp":"2026-09-26T01:00:02Z","message":{"content":[{"type":"tool_use","id":"u2","name":"Write","input":{"file_path":"/w/issues/480.md","content":"C-017 の後"}}]}}
+{"type":"user","timestamp":"2026-09-26T01:00:03Z","message":{"content":[{"type":"tool_result","tool_use_id":"u2","content":"ok"}]}}
+{"type":"assistant","timestamp":"2026-09-26T01:00:04Z","message":{"content":[{"type":"tool_use","id":"u3","name":"Bash","input":{"command":"cat > /w/9.md <<'EOF'\nC-017 と重なる\nEOF"}}]}}
 `
 	tr := parse([]byte(data))
-	if len(tr.Uses) != 2 || tr.Uses[0].Text != "カードを読む" || tr.Uses[0].Target != "pro-con card show C-018" || tr.Uses[1].Target != "/w/issues/480.md" {
-		t.Fatalf("道具の呼び出しすべてを呼んだ順に、対象つきで: %+v", tr.Uses)
+	if len(tr.Uses) != 3 || tr.Uses[0].Text != "カードを読む" || tr.Uses[0].Target != "pro-con card show C-018" || tr.Uses[1].Target != "/w/issues/480.md" ||
+		tr.Uses[2].Target != "cat > /w/9.md <<'EOF'" {
+		t.Fatalf("道具の呼び出しすべてを呼んだ順に、対象 (コマンドは heredoc の本文の前の 1 行目) つきで: %+v", tr.Uses)
 	}
-	if len(tr.Calls) != 1 || tr.Calls[0].ID != "u2" {
+	if len(tr.Calls) != 1 || tr.Calls[0].ID != "u3" {
 		t.Fatalf("結果待ちの呼び出しは変わらない: %+v", tr.Calls)
 	}
 }

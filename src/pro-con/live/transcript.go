@@ -313,9 +313,16 @@ func callText(input json.RawMessage) string {
 	return firstArg(input, "description", "command", "file_path", "url", "pattern", "prompt")
 }
 
-// callTarget は道具の引数のうち、説明ではない対象 (Call.Target)。
+// callTarget は道具の引数のうち、説明ではない対象 (Call.Target)。コマンドは 1 行目だけ (heredoc の本文 = 書く中身を拾わない)。
 func callTarget(input json.RawMessage) string {
-	return firstArg(input, "command", "file_path", "url", "pattern")
+	var in struct {
+		Command string `json:"command"`
+	}
+	if json.Unmarshal(input, &in) == nil && strings.TrimSpace(in.Command) != "" {
+		head, _, _ := strings.Cut(strings.TrimSpace(in.Command), "\n")
+		return oneLine(head)
+	}
+	return firstArg(input, "file_path", "url", "pattern")
 }
 
 // firstArg は道具の引数 keys のうち、最初にある空でない文字列 (1 行)。
