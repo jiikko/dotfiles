@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"pro-con/wake"
+	"pro-con/wtclean"
 )
 
 // fakeDispatcherPidEnv が付いていると、テストの二進は dispatcher として起こされたときに偽物になる: 自分の pid をこのパスへ書き、
@@ -26,8 +27,20 @@ func TestMain(m *testing.M) {
 			os.Exit(runFakeDispatcher(p))
 		}
 	}
-	os.Exit(wake.RunIsolated(m.Run))
+	// worktree clean のテストの fixture はこの下に作る。wtclean はテストの二進ではこの外を消す前に拒否する (issue 492)
+	root, err := os.MkdirTemp("", "pro-con-wtclean")
+	if err != nil {
+		panic(err)
+	}
+	worktreeSandbox = root
+	wtclean.SetTestSandbox(root)
+	code := wake.RunIsolated(m.Run)
+	_ = os.RemoveAll(root)
+	os.Exit(code)
 }
+
+// worktreeSandbox は worktree clean のテストの fixture の置き場 (TestMain が作る)。
+var worktreeSandbox string
 
 func runFakeDispatcher(pidPath string) int {
 	tmp := pidPath + ".tmp" // 書きかけを読ませない
