@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"pro-con/card"
 )
 
@@ -58,5 +60,18 @@ func TestDrawerWaitingOnHighlightsHumansTurn(t *testing.T) {
 	}
 	if l := line("C-002"); strings.HasPrefix(l, sgrYellow) {
 		t.Fatalf("PG の番の待ちを人の番と同じ色で出した: %q", l)
+	}
+}
+
+// worktree の節は字下げを保って折り返す (続きの行が行頭へ戻らない。issue 508)。
+func TestHangWrapKeepsIndent(t *testing.T) {
+	got := hangWrap("    a1 2分前 "+strings.Repeat("あ", 20), 24)
+	if len(got) < 2 || !strings.HasPrefix(got[0], "    a1") || !strings.HasPrefix(got[1], "      あ") {
+		t.Fatalf("字下げを保たない: %q", got)
+	}
+	for _, l := range got {
+		if ansi.StringWidth(l) > 24 {
+			t.Fatalf("幅を越えた: %q", l)
+		}
 	}
 }

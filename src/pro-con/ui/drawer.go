@@ -202,7 +202,7 @@ func (m *Model) drawerBody() []string {
 		out = append(out, "")
 		add(sgrDim, card.WorktreeHead(c, m.snap.Now, fmtDur))
 		for _, l := range ls {
-			add("", "  "+l)
+			out = append(out, hangWrap("  "+l, w)...)
 		}
 	}
 	if ls := c.ProgressLines(m.snap.Now, fmtDur); len(ls) > 0 { // どこまで進んだか (issue 469。dispatcher と見張りが集めたもの)
@@ -274,4 +274,19 @@ func (m *Model) overlayDrawer(region []string) []string {
 	}
 	w := layout.DrawerWidth(drawerGeometry.Target(m.width), m.drawer.Openness(m.now(), anim.EaseOutCubic))
 	return layout.ComposeDrawer(region, m.drawerPanel(), w, m.width, true)
+}
+
+// hangWrap は行頭の字下げを保って幅 w で折り返す (続きの行は 2 桁深く下げる。commit の subject が行頭へ戻って hash の列が崩れない)。
+func hangWrap(text string, w int) []string {
+	body := strings.TrimLeft(text, " ")
+	lead := strings.Repeat(" ", len(text)-len(body))
+	lines := strings.Split(ansi.Hardwrap(body, max(w-len(lead)-2, 10), true), "\n")
+	for i, l := range lines {
+		if i == 0 {
+			lines[i] = lead + l
+		} else {
+			lines[i] = lead + "  " + strings.TrimLeft(l, " ") // 折り返した位置の空白を続きの行の頭に残さない
+		}
+	}
+	return lines
 }
