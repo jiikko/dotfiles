@@ -126,6 +126,8 @@ type Model struct {
 	spinning   bool         // 処理中の印の tick が回っているか (spinner.go。二重に回さない)
 
 	picker picker // issue の一覧から依頼する画面 (picker.go)
+	// issueCards は issue ごとに紐づいたカード (setSnap が片付けたカードを落とす前の記録から作る。picker.go の issueLinks)
+	issueCards map[issueKey][]linkedCard
 
 	up   *upgrader  // ライブアップグレード (upgrade.go)。nil なら無効
 	fade switchFade // 新版への切り替えの暗転・明転 (switchfade.go)
@@ -452,6 +454,7 @@ func (m *Model) showRejected() {
 // setSnap は backend の Snapshot を画面の状態にする。片付けたカード (Archived) はここで落とす
 // (タブの枚数・選択・カンバンのどれにも出さない。画面の読み手ごとに除外を書くと、1 か所の漏れで片付けたカードが戻る)。
 func (m *Model) setSnap(s backend.Snapshot) {
+	m.issueCards = issueLinks(s.Cards)
 	cards := make([]card.Card, 0, len(s.Cards))
 	for _, c := range s.Cards {
 		if !c.Archived {
