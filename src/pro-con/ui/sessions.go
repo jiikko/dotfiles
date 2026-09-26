@@ -43,7 +43,7 @@ func (m *Model) pgBlock() []string {
 		if pg.PID > 0 {
 			real = fmt.Sprintf("pid %d", pg.PID)
 		}
-		row := fit(" "+pg.Session, 11) + col + fit(status, 18) + sgrFgReset + fit(c.ID+issueTag(c)+" "+c.Title, 36) +
+		row := fit(" "+pg.Session, 11) + col + fit(status, 18) + sgrFgReset + fit(cardHeading(c), 36) +
 			fit(run, 30) + fit(fmtDur(m.snap.Now.Sub(c.Since)), 9) + real
 		out = append(out, boxLine(border, row, w))
 	}

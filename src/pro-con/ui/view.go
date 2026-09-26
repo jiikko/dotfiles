@@ -472,7 +472,7 @@ func (m *Model) cardCell(c card.Card, w int) []string {
 	if waiting(c) { // 待っているカードは、固有の色のまま明度を下げる (別の色に塗り替えない。spinner.go)
 		base = bgDim(cardColor(c.ID), waitDim) + fg(252)
 	}
-	title := c.ID + issueTag(c) + " " + c.Title // issue に紐づくカードは 1 行目に番号を出す (バッジ行は待ちの理由と時間)
+	title := cardHeading(c) // issue に紐づくカードは 1 行目に番号を出す (バッジ行は待ちの理由と時間)
 	badge := m.badgeColored(c)
 	pre, badgePre := "", ""
 	switch {
