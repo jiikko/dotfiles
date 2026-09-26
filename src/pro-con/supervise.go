@@ -167,9 +167,9 @@ func (s dispatcherSupervisor) run(ctx context.Context) supervisor.Result {
 			s.say(halt + "。supervisor も抜ける")
 		}
 	case supervisor.ReasonDone:
-		_, _ = fmt.Fprintf(s.out, "%s supervisor: dispatcher が抜けた (%s) ので、supervisor も抜ける\n", s.now().Format("15:04:05"), exitText(res.Err))
+		s.say(fmt.Sprintf("dispatcher が抜けた (%s) ので、supervisor も抜ける", exitText(res.Err)))
 	case supervisor.ReasonStopped:
-		_, _ = fmt.Fprintf(s.out, "%s supervisor: 止める合図を受けたので、dispatcher を止めて抜ける (dispatcher は %s)\n", s.now().Format("15:04:05"), exitText(res.Err))
+		s.say(fmt.Sprintf("止める合図を受けたので、dispatcher を止めて抜ける (dispatcher は %s)", exitText(res.Err)))
 	}
 	return res
 }

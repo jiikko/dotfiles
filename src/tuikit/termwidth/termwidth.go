@@ -83,7 +83,11 @@ func Of(s string) int {
 // 1 クラスタ・幅 0 になる)。受理 5 ブロックに Prepend / Linker は 1 つも無いことを
 // TestAcceptedSymbolsNeverCombineWithEachOther が総当たりで確かめている。
 // ⚠️+VS16 のような組み合わせは VS16 の時点で受理に失敗し、全体が ansi へ落ちる。
-func fastDispWidth(s string) (int, bool) {
+//
+// 実体は arch ごとに選ぶ (fastwidth_arm64.go / fastwidth_other.go)。arm64 は同じ受理規則を
+// アセンブリで持ち、印字可能 ASCII を 16 byte ずつ NEON で数える。ここにある Go 版が
+// 受理規則の正本で、arm64 版はこれとの一致を差分 fuzz (FuzzFastDispWidthMatchesGeneric) で守る。
+func fastDispWidthGeneric(s string) (int, bool) {
 	w := 0
 	for i := 0; i < len(s); {
 		c := s[i]

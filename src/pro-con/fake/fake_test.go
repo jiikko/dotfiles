@@ -362,3 +362,25 @@ func TestClearDoneArchivesOnlyDoneInRepo(t *testing.T) {
 		t.Fatalf("復元後の片付け済み %d 枚 (期待 %d)", n, doneHere)
 	}
 }
+
+// 模擬のログの出来事は 1 度だけ返し、入れ替え (Save / Restore) の後はもう 1 度返す (新しい画面はログを空から読む。issue 512)。
+func TestSimEventsOnceAndAgainAfterRestore(t *testing.T) {
+	a := New(time.Date(2026, 9, 26, 10, 0, 0, 0, time.UTC))
+	if evs, _ := a.Events(); len(evs) == 0 {
+		t.Fatal("模擬の出来事を返さない")
+	}
+	if evs, _ := a.Events(); len(evs) != 0 {
+		t.Fatalf("2 回目にも返した (%d 件。ログのタブで二重に出る)", len(evs))
+	}
+	data, err := a.Save()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := New(time.Now())
+	if err := b.Restore(data); err != nil {
+		t.Fatal(err)
+	}
+	if evs, _ := b.Events(); len(evs) == 0 {
+		t.Fatal("入れ替えた後に返さない (新しい画面のログのタブが空になる)")
+	}
+}
