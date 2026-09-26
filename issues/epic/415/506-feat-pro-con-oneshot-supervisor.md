@@ -83,6 +83,13 @@ supervisor、dispatcher が rc=0 で抜けたら supervisor も抜ける)・ps�
   諦めた原因が dispatcher の起動時の panic なら、--stop も同じ所で落ちて PG は止まらず印だけが残る
 - 訂正: 見張りの (旧 monitorsup.go の) 「親が読む側を持つと EOF にならない」は誤りだったので process_supervisor のコメントで直した
 
+検証: 名前を process_supervisor にした後 (origin/master を merge 済み) に `make -C src/process_supervisor lint test`・`make -C src/pro-con lint test`・
+`tests/pro-con/test_*.sh` と `e2e_screen_killed.sh` がすべて緑 (テストの係 rc=0、2m4s)。
+
+残り:
+
+- 未検証: 本番の画面から起こした supervisor が、実際に落ちた dispatcher を起こし直すところ (この変更が master に入り、画面を開き直すまでは古い keeper が dispatcher を直接起こす)
+
 ## 関連
 
 - 475 (見張り。monitorsup.go) / 483 (起動時の復旧) / 505 (dispatcher の自分での切り替え) / 481 (画面の持ち主と join)
