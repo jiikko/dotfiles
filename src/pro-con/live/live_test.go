@@ -101,7 +101,7 @@ func runningCard(t *testing.T, b *Backend, id, session string) {
 	if _, err := store.Submit(b.dir, store.Request{Kind: "add", Title: "t-" + id, Repo: "dotfiles"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Apply(b.dir, time.Now()); err != nil {
+	if _, err := store.Apply(b.dir, time.Now(), nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Update(b.dir, func(st *store.State) error {
@@ -196,7 +196,7 @@ func TestApplySubmitsToInbox(t *testing.T) {
 	if _, err := b.Apply(backend.NewRequest{Text: " "}); !errors.Is(err, backend.ErrEmptyText) {
 		t.Fatalf("空の依頼を置いた: %v", err)
 	}
-	res, err := store.Apply(b.dir, time.Now())
+	res, err := store.Apply(b.dir, time.Now(), nil)
 	if err != nil || len(res) != 2 || res[0].Kind != "add" || res[1].Kind != "answer" {
 		t.Fatalf("箱に新しい依頼と回答が置かれていない: %+v %v", res, err)
 	}
@@ -207,7 +207,7 @@ func TestApplySubmitsToInbox(t *testing.T) {
 	if _, err := b.Apply(backend.DeleteCard{CardID: "C-001"}); err != nil {
 		t.Fatal(err)
 	}
-	if res, err := store.Apply(b.dir, time.Now()); err != nil || len(res) != 1 || res[0].Kind != "delete" || res[0].Err != "" {
+	if res, err := store.Apply(b.dir, time.Now(), nil); err != nil || len(res) != 1 || res[0].Kind != "delete" || res[0].Err != "" {
 		t.Fatalf("箱に削除の依頼が置かれていない: %+v %v", res, err)
 	}
 	if st, _ := store.Load(b.dir); len(st.Cards) != 0 {
@@ -221,6 +221,26 @@ func TestApplySubmitsToInbox(t *testing.T) {
 	}
 	if cmd, err := b.AttachCommand("bbbbbbbb"); err != nil || strings.Join(cmd.Args, " ") != "claude attach bbbbbbbb" {
 		t.Fatalf("裏の session の attach: %v %v", cmd, err)
+	}
+}
+
+// issue の一覧から補足なしで足した依頼は、カードに原文 (意図の 1 文) と issue が載り、題名に番号が付かない (issue 511)。
+func TestIssueRequestLinksCard(t *testing.T) {
+	b, _ := testBackend(t, nil, nil)
+	target := &backend.IssueTarget{Number: 505, Title: "入れ替わりを直す", Path: "/w/dotfiles/issues/505.md"}
+	if _, err := b.Apply(backend.NewRequest{Repo: backend.Repo{Name: "dotfiles", Path: "/w/dotfiles"}, Issue: target}); err != nil {
+		t.Fatal(err)
+	}
+	if res, err := store.Apply(b.dir, time.Now(), map[string]string{"dotfiles": "/w/dotfiles"}); err != nil || len(res) != 1 || res[0].Err != "" {
+		t.Fatalf("適用: %+v %v", res, err)
+	}
+	st, _ := store.Load(b.dir)
+	c := st.Cards[0]
+	if c.Title != "入れ替わりを直す" || c.Request != "issue #505 の本文に書かれていることを進める" || !strings.Contains(c.Prompt, "/w/dotfiles/issues/505.md") {
+		t.Fatalf("題名・原文・指示: %+v", c)
+	}
+	if len(c.Issues) != 1 || c.Issues[0] != (card.IssueRef{Repo: "dotfiles", Number: 505, Status: "open"}) {
+		t.Fatalf("issue が紐づかない: %+v", c.Issues)
 	}
 }
 
@@ -784,7 +804,7 @@ func TestRecordAttachSubmitsHumanPromptsInWindow(t *testing.T) {
 	if err != nil || n != 2 || looked != "bbbbbbbb-2" {
 		t.Fatalf("窓の中の人間の発言 2 件を、記録の session id の transcript から拾うはず: n=%d err=%v 引いた id=%q", n, err, looked)
 	}
-	if _, err := store.Apply(b.dir, time.Now()); err != nil {
+	if _, err := store.Apply(b.dir, time.Now(), nil); err != nil {
 		t.Fatal(err)
 	}
 	st, err := store.Load(b.dir)

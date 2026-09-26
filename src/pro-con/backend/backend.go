@@ -266,6 +266,20 @@ func IssuePrompt(t IssueTarget, extra string) string {
 	return b.String()
 }
 
+// IssueRequest は issue を選んで出した依頼のカードの題名・依頼の原文・紐づける issue (issue 511)。
+// 原文は「issue の本文に書かれていることを進める」の 1 文 (補足があれば人間が書いたまま後ろに置く)。PM は原文と紐づいた issue を依頼として読むので、
+// 補足が無くても原文を空にしない。題名に番号を付けない (番号は紐づけた issue から出る。issue 491)。epic は親 issue を紐づける。
+func IssueRequest(repo string, t IssueTarget, extra string) (title, request string, issues []card.IssueRef) {
+	request = fmt.Sprintf("issue #%03d の本文に書かれていることを進める", t.Number)
+	if t.Epic != "" {
+		request = fmt.Sprintf("epic %s (親 issue #%03d) の本文に書かれていることを進める", t.Epic, t.Number)
+	}
+	if strings.TrimSpace(extra) != "" {
+		request += "\n" + extra
+	}
+	return t.Title, request, []card.IssueRef{{Repo: repo, Number: t.Number, Status: "open"}}
+}
+
 // PMPrompt は PM に渡す指示の全文。repo のタブから出した依頼には、その repo の中だけが対象である旨を前置きする。
 // 本文は人間が書いたまま末尾に置く (前置きで言い換えない)。
 func PMPrompt(r Repo, text string) string {

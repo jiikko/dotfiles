@@ -26,7 +26,7 @@ func submit(t *testing.T, dir string, r Request) string {
 
 func applyAll(t *testing.T, dir string) []Result {
 	t.Helper()
-	res, err := Apply(dir, t0)
+	res, err := Apply(dir, t0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +290,7 @@ func TestBrokenStateIsAnError(t *testing.T) {
 		t.Fatal("壊れた記録を空として読んだ")
 	}
 	submit(t, dir, Request{Kind: "add", Title: "x"})
-	if _, err := Apply(dir, t0); err == nil {
+	if _, err := Apply(dir, t0, nil); err == nil {
 		t.Fatal("壊れた記録の上に適用した")
 	}
 }
@@ -422,7 +422,7 @@ func TestAttachInsertsSaidVerbatimByTime(t *testing.T) {
 	submit(t, dir, Request{Kind: "add", Title: "x"})
 	applyAll(t, dir)
 	submit(t, dir, Request{Kind: "attach", CardID: "C-001", Said: []card.Event{{At: t0.Add(2 * time.Minute), Text: "b"}}})
-	if _, err := Apply(dir, t0.Add(3*time.Minute)); err != nil {
+	if _, err := Apply(dir, t0.Add(3*time.Minute), nil); err != nil {
 		t.Fatal(err)
 	}
 	long := strings.Repeat("長い指示", 50)
@@ -430,7 +430,7 @@ func TestAttachInsertsSaidVerbatimByTime(t *testing.T) {
 	submit(t, dir, Request{Kind: "attach", CardID: "C-001"})
 	submit(t, dir, Request{Kind: "attach", CardID: "C-001", Said: []card.Event{{At: t0, Text: " "}}})
 	submit(t, dir, Request{Kind: "attach", CardID: "C-001", Said: []card.Event{{At: t0, Text: "c"}, {Text: "時刻なし"}}})
-	res, err := Apply(dir, t0.Add(4*time.Minute))
+	res, err := Apply(dir, t0.Add(4*time.Minute), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -453,7 +453,7 @@ func TestAttachInsertKeepsPreviousState(t *testing.T) {
 	h := make([]card.Event, 2, 4)
 	h[0], h[1] = card.Event{At: t0, Text: "0"}, card.Event{At: t0.Add(2 * time.Minute), Text: "2"}
 	st := State{NextID: 2, Cards: []card.Card{{ID: "C-001", State: card.Requested, History: h}}}
-	next, _, _, err := apply(st, Request{Kind: "attach", CardID: "C-001", Said: []card.Event{{At: t0.Add(time.Minute), Text: "1"}}}, t0.Add(3*time.Minute))
+	next, _, _, err := apply(st, Request{Kind: "attach", CardID: "C-001", Said: []card.Event{{At: t0.Add(time.Minute), Text: "1"}}}, t0.Add(3*time.Minute), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

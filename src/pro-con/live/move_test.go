@@ -30,7 +30,7 @@ func TestMoveAheadBeforeDispatcherApplies(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := store.Apply(b.dir, time.Now()); err != nil {
+	if _, err := store.Apply(b.dir, time.Now(), nil); err != nil {
 		t.Fatal(err)
 	}
 	b.refresh(context.Background(), false)
@@ -45,7 +45,7 @@ func TestMoveAheadBeforeDispatcherApplies(t *testing.T) {
 	if got := laneOf(b.Snapshot().Cards); !slices.Equal(got, want) {
 		t.Fatalf("適用の前に画面の並びへ当たっていない: %v", got)
 	}
-	res, err := store.Apply(b.dir, time.Now())
+	res, err := store.Apply(b.dir, time.Now(), nil)
 	if err != nil || len(res) != 2 || res[0].Err != "" || res[1].Err != "" {
 		t.Fatalf("dispatcher の適用: %+v %v", res, err)
 	}

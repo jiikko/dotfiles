@@ -60,7 +60,7 @@ func TestDeleteDoesNotGiveUpOnFirstTickAfterRestart(t *testing.T) {
 	r := newCrashRig(t)
 	r.d.ListAll = func(ctx context.Context) ([]agents.Session, error) { return r.d.List(ctx) } // 止めても一覧がすぐには変わらない
 	deleteCard(t, r.dir, "C-001")
-	if _, err := store.Apply(r.dir, t0); err != nil { // 前の dispatcher が適用して落ちた
+	if _, err := store.Apply(r.dir, t0, nil); err != nil { // 前の dispatcher が適用して落ちた
 		t.Fatal(err)
 	}
 	now := t0.Add(5 * time.Minute)

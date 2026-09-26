@@ -159,6 +159,7 @@ type viewEnv struct {
 	dir      string // 本物のモードの状態の置き場 (store と起動の記録)
 	projects string // ~/.claude/projects (PG の transcript)
 	now      func() time.Time
+	repos    func() (map[string]string, error) // 設定の repo の名前 → パス (card add / plan が repo を見る。nil なら見ない)
 }
 
 func runCardList(args []string, env viewEnv, stdout, stderr io.Writer) int {
