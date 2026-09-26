@@ -309,11 +309,18 @@ func (m *Model) gauge() string {
 		g += sep + p
 	}
 	g += sep + m.dispatcherGauge()
-	if n := m.snap.Startup; n != "" && !m.dispatcherStopped() { // 起動時の確かめ (483)。止まった dispatcher の古い要約は出さない
-		if m.snap.StartupAlert {
-			g += sep + sgrYellow + n + sgrFgReset
-		} else {
-			g += sep + sgrDim + n + sgrReset
+	if !m.dispatcherStopped() { // 止まった dispatcher の古い要約は出さない
+		for _, n := range []struct {
+			text  string
+			alert bool
+		}{{m.snap.Startup, m.snap.StartupAlert}, {m.snap.Upgrade, m.snap.UpgradeAlert}} { // 起動時の確かめ (483) / 新版への入れ替え (505)
+			switch {
+			case n.text == "":
+			case n.alert:
+				g += sep + sgrYellow + n.text + sgrFgReset
+			default:
+				g += sep + sgrDim + n.text + sgrReset
+			}
 		}
 	}
 	if s := m.screensGauge(); s != "" { // 画面は package presence が数える (dispatcher が止まっていても正しい)

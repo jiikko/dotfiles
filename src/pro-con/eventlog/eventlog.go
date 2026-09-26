@@ -64,6 +64,8 @@ const (
 	// KindMonitor は見張り (pro-con monitor。issue 475) の知らせ (取り込みの衝突・テストの順番の長さ) と、見張りを起こした・落ちた。
 	// 知らせは見張りが受付の箱に置き、dispatcher が書く (時刻は見張りが置いた時刻)
 	KindMonitor = "monitor"
+	// KindUpgrade は dispatcher の新版への入れ替え (issue 505。新版ができた・区切りを待っている・切り替えた・切り替えられない)
+	KindUpgrade = "upgrade"
 )
 
 // Append は出来事を足す (1 回の write。読む側は改行で終わった行だけを読むので、書きかけを読まない)。

@@ -45,6 +45,9 @@ type Snapshot struct {
 	// Startup は dispatcher の起動時の確かめの要約 (起動から 10 分だけ。issue 483)。StartupAlert は復旧した・判定できないものがある
 	Startup      string
 	StartupAlert bool
+	// Upgrade は dispatcher の新版への入れ替えの様子 (issue 505。無ければ空)。UpgradeAlert は切り替えられない・待ちすぎ
+	Upgrade      string
+	UpgradeAlert bool
 	Roles        card.Roles       // dispatcher が起こさない役 (最後に回ったときの値)。人の番の目印 (card.Turn) に使う
 	RoleStates   []card.RoleState // dispatcher が起こす役 (PM・取り込みの係) の最後に回ったときの様子。ゲージと依頼の列の印 (issue 476)
 	Violations   []card.Violation

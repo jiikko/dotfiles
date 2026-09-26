@@ -44,6 +44,7 @@ import (
 )
 
 func main() {
+	dispatcher.GuardInheritedLock() // 入れ替え (505) で引き継いだ dispatcher の lock を、何かを起こす前に子へ渡らない形にする
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 

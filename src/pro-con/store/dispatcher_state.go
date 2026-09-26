@@ -50,6 +50,9 @@ type DispatcherState struct {
 	// Startup は起動時の確かめの要約 (issue 483。起動から 10 分だけ。無ければ空)。StartupAlert は復旧した・判定できないものがある
 	Startup      string `json:"startup,omitempty"`
 	StartupAlert bool   `json:"startup_alert,omitempty"`
+	// Upgrade は新版への入れ替えの様子 (issue 505。切り替えた旧版 → 新版 / 区切りを待っている / 切り替えられない。無ければ空)。UpgradeAlert は知らせるべきもの
+	Upgrade      string `json:"upgrade,omitempty"`
+	UpgradeAlert bool   `json:"upgrade_alert,omitempty"`
 	// Roles は dispatcher が起こさない役 (設定 pm / integrator = "off")。画面と card list が人の番 (card.Turn) を決めるのに読む
 	Roles card.Roles `json:"roles"`
 	// RoleStates は dispatcher が起こす役 (PM → 取り込みの係) の様子 (issue 476)。画面のゲージ・依頼の列の印と card list が読む

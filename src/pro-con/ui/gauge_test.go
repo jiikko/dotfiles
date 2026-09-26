@@ -61,6 +61,21 @@ func TestGaugeStoppedDispatcherShowsMax(t *testing.T) {
 	}
 }
 
+// dispatcher の新版への入れ替え (505) と起動時の確かめ (483) は、回っている dispatcher の間だけゲージに出す (止まった dispatcher の古い様子は出さない)。
+func TestGaugeShowsDispatcherUpgrade(t *testing.T) {
+	be := newSpy()
+	be.snap.Startup, be.snap.Upgrade = "起動時: 復旧は要らない", "dispatcher 新版 abc1234 09-26 08:02 → def5678 09-26 16:51"
+	m := New(be, nil)
+	if g := ansi.Strip(m.gauge()); !strings.Contains(g, "起動時: 復旧は要らない │ dispatcher 新版 abc1234 09-26 08:02 → def5678") {
+		t.Fatalf("入れ替えを出さない: %q", g)
+	}
+	be.snap.DispatcherTick = be.snap.Now.Add(-dispatcherStale - time.Second)
+	m.snap = be.snap
+	if g := ansi.Strip(m.gauge()); strings.Contains(g, "新版") || strings.Contains(g, "起動時") {
+		t.Fatalf("止まった dispatcher の古い様子を出した: %q", g)
+	}
+}
+
 // 絞りの理由は 1 行に潰して limitWhyCells で切る (長い理由・改行でゲージの後ろの警告を押し出さない / ヘッダの行を増やさない)。
 func TestGaugeBoundsLimitWhy(t *testing.T) {
 	be := newSpy()
