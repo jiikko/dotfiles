@@ -134,6 +134,7 @@ type Model struct {
 	// execProcess は端末を明け渡して外のコマンドを走らせる (既定は execOnTerminal。テストは戻りの知らせを取り出すために差し替える)
 	execProcess func(*exec.Cmd, tea.ExecCallback) tea.Cmd
 	onTermEvent func(string)         // 端末の前面が外れた・止められた後に入れ直した、を出来事に残す (terminal.go。nil なら残さない)
+	stops       *stopState           // 止まり方の見張り (WatchStops) と分け合う状態 (terminal.go)
 	openFiles   func([]string) error // 添付を外のアプリで開く (既定は open。テストは差し替える。attachments.go)
 	attachTexts map[string][]string  // 文字の添付の中身 (パスごとに 1 度だけ読む。attachments.go)
 
@@ -142,7 +143,8 @@ type Model struct {
 
 // New は repos (config から列挙した repo) をタブの候補にして画面を作る。nil なら global だけ。
 func New(be backend.Backend, repos []backend.Repo) *Model {
-	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, copy: pbcopy, children: &atomic.Int64{}, openEditor: func(p string) *exec.Cmd { return editor.Command(p, nil) }, execProcess: execOnTerminal, openFiles: openWithSystem}
+	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, copy: pbcopy, children: &atomic.Int64{}, openEditor: func(p string) *exec.Cmd { return editor.Command(p, nil) }, openFiles: openWithSystem, stops: &stopState{}}
+	m.execProcess = m.execOnTerminal
 	m.toasts = toast.Stack{Shadow: layout.ShadowNearBlack} // 落ち影は他の板と同じ近黒 (glogx と同じ)
 	m.setSnap(be.Poll())
 	m.focusFirst()
@@ -259,6 +261,8 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 		return m, m.onTermReturn(msg)
 	case Continued:
 		return m, m.onContinued()
+	case suspendMsg:
+		return m, m.suspend()
 	case termResumedMsg:
 		m.onTermResumed(msg)
 		return m, nil
@@ -331,6 +335,9 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 				return m, tea.Quit
 			}
 			return m, nil
+		}
+		if msg.String() == "ctrl+z" { // どの画面からでも裏に回す (シェルと同じ。書きかけの文などは画面の状態に残る)
+			return m, m.suspend()
 		}
 		if m.legend {
 			return m, m.handleLegendKey(msg.String())

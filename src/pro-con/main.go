@@ -460,11 +460,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	openRelay()
 	defer closeRelay()
+	stops := m.WatchStops() // 裏に回されても壊れない (ctrl+z・SIGTSTP・SIGTTIN の後の fg。issue 518)
 	for {
 		prog := tea.NewProgram(m, tea.WithOutput(scr))
-		stopCont := notifyContinued(prog)
+		stops.Attach(prog)
 		_, err := prog.Run()
-		stopCont()
+		stops.Detach()
 		if err != nil {
 			_, _ = fmt.Fprintln(stderr, "pro-con:", err)
 			if resumePath != "" {
@@ -498,25 +499,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		m.UpgradeFailed(err)
 		openRelay()
 	}
-}
-
-// notifyContinued は、画面が止められた後に続けられたら (SIGCONT。fg) 画面へ知らせる。画面は端末を入れ直して描き直す (issue 518)。
-// 🚨 止められている間にシェルが端末を cooked に戻すので、知らせないと fg しても描き直されず、キーも効かない。戻り値で見張りを外す。
-func notifyContinued(p *tea.Program) (stop func()) {
-	ch := make(chan os.Signal, 1)
-	done := make(chan struct{})
-	signal.Notify(ch, syscall.SIGCONT)
-	go func() {
-		for {
-			select {
-			case <-ch:
-				p.Send(ui.Continued{})
-			case <-done:
-				return
-			}
-		}
-	}()
-	return func() { signal.Stop(ch); close(done) }
 }
 
 // startDispatcherIfIdle は、dispatcher も supervisor も動いていなければ spawn で supervisor を起動する (動いていれば何もしない)。

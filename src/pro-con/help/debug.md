@@ -35,7 +35,8 @@
 - supervisor が起こし直しを諦めた (10 分に 5 回を超えて落ちた) ときも人が止めた印が付く。`dispatcher.log` で落ちた理由を直してから起こす
 - 依頼が適用されない: dispatcher が居るか (`pro-con ps`) と `pro-con log` の `reject` を見る
 - PG が進まない: `pro-con card show <カード>` の「今の待ち」(利用枠・順番・テストの係・人の番) を読む
-- 画面が止まった (シェルに `suspended (tty input)` 等が出た): その pane で `fg`。画面は端末を入れ直して描き直す。
+- 画面が止まった (シェルに `suspended` が出た。ctrl+z・外からの SIGTSTP・端末の前面を外された SIGTTIN): その pane で `fg`。画面は端末を入れ直して描き直す。
+  止まっている間も dispatcher と PG は別のプロセスで動き続け、止まっている持ち主の画面も持ち主として数える (閉じた扱いにならない)。
   `fg` でも戻らなければ、**先に別の pane で持ち主の画面を開いてから**止まった pane を閉じる (持ち主の画面が 0 のまま 1 分たつと PG を止める)。
   pane を閉じずに止まった画面だけ終わらせた (`kill %1` 等) なら、その pane で `reset` (端末の設定が画面のまま残る)。止まった・前面を取り戻したことは `pro-con log` の kind `screen` に残る (issue 518)
 
