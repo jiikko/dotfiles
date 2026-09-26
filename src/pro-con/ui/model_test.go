@@ -161,6 +161,26 @@ func TestAttachUsesSelectedSession(t *testing.T) {
 	}
 }
 
+// レビュー待ちで止めた PG (issue 536) には attach を頼まず、追加オーダーで話す案内を出す。止めていなければ今までどおり attach する。
+func TestAttachRefusesStoppedReviewPG(t *testing.T) {
+	be := newSpy()
+	m := New(be, nil)
+	press(m, "right") // W1
+	be.snap.Cards[1].State, be.snap.Cards[1].Wait, be.snap.Cards[1].Stopped = card.Review, card.Wait{}, true
+	m.Update(tickMsg{})
+	if cmd := press(m, "a"); cmd != nil || m.attaching {
+		t.Fatal("止めた PG の attach を backend に頼んだ")
+	}
+	if !strings.Contains(m.toasts.Text(), "追加オーダー") {
+		t.Fatalf("追加オーダーで話す案内が出ない: %q", m.toasts.Text())
+	}
+	be.snap.Cards[1].Stopped = false // 止める前 (止め終えていない) は attach できる
+	m.Update(tickMsg{})
+	if cmd := press(m, "a"); cmd == nil {
+		t.Fatal("止めていないレビュー待ちの PG へ attach しない")
+	}
+}
+
 // 選択はカード ID で持つので、カードが列を移っても同じカードを指し続ける。
 func TestSelectionFollowsCardAcrossColumns(t *testing.T) {
 	be := newSpy()
