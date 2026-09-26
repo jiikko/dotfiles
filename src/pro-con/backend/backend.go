@@ -48,6 +48,7 @@ type Snapshot struct {
 	Roles        card.Roles       // dispatcher が起こさない役 (最後に回ったときの値)。人の番の目印 (card.Turn) に使う
 	RoleStates   []card.RoleState // dispatcher が起こす役 (PM・取り込みの係) の最後に回ったときの様子。ゲージと依頼の列の印 (issue 476)
 	Violations   []card.Violation
+	Config       Config // 設定画面の変える所の今の値 (issue 456)
 }
 
 // DispatcherStale はこれより長く回っていなければ dispatcher が止まっている疑いとする (Tick は数秒ごと)。

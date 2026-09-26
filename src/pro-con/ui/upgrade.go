@@ -232,7 +232,8 @@ type uiState struct {
 	Col          int                  `json:"col"`
 	Selected     string               `json:"selected"`
 	ShowDetail   bool                 `json:"showDetail"`
-	ShowSessions bool                 `json:"showSessions"`
+	ShowSessions bool                 `json:"showSessions"` // 設定画面を開いている (前は PG の一覧の板。同じ s の板なので名前を残す)
+	SettingsTab  settingsTab          `json:"settingsTab"`
 	Input        bool                 `json:"input"`
 	InputKind    inputKind            `json:"inputKind"`
 	OrderKind    card.OrderKind       `json:"orderKind"`
@@ -244,7 +245,7 @@ type uiState struct {
 
 // ExportState は引き継ぐ UI の状態。
 func (m *Model) ExportState() ([]byte, error) {
-	return json.Marshal(uiState{Tab: m.tab, Col: m.col, Selected: m.selected, ShowDetail: m.showDetail, ShowSessions: m.showSessions,
+	return json.Marshal(uiState{Tab: m.tab, Col: m.col, Selected: m.selected, ShowDetail: m.showDetail, ShowSessions: m.set.open, SettingsTab: m.set.tab,
 		Input: m.mode == modeInput && m.inputKind != inputQuit, InputKind: m.inputKind, OrderKind: m.orderKind, Line: m.line.String(), Cursor: m.line.Cursor(),
 		Target: m.picker.target, TargetRepo: m.picker.repo})
 }
@@ -256,7 +257,13 @@ func (m *Model) ImportState(data []byte) error {
 		return err
 	}
 	m.tab, m.col, m.selected = st.Tab, st.Col, st.Selected
-	m.showDetail, m.showSessions = st.ShowDetail, st.ShowSessions
+	m.showDetail = st.ShowDetail
+	if st.ShowSessions {
+		m.set.open, m.set.tab, m.set.anim = true, st.SettingsTab, anim.NewOpen()
+		if !containsTab(m.settingsTabs(), m.set.tab) {
+			m.set.tab = m.settingsTabs()[0]
+		}
+	}
 	if m.showDetail { // 引き出しは開いた状態から (切り替えの前後で演出を挟まない)
 		m.drawer, m.drawerCard = anim.NewOpen(), m.selected
 	}

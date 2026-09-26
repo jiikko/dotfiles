@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -25,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"pro-con/backend"
 	"pro-con/card"
 	"pro-con/dispatcher"
 	"pro-con/live"
@@ -34,16 +36,8 @@ import (
 
 const psUsage = `usage: pro-con ps [--json]   (pro-con が起動したプロセスを役ごとに出す。読むだけ)`
 
-// Proc は一覧の 1 行。
-type Proc struct {
-	Role    string        `json:"role"` // dispatcher / 見張り / PM / PG / テストの係 / 画面 (Session に画面の id)
-	PID     int           `json:"pid,omitempty"`
-	Age     time.Duration `json:"age,omitempty"` // 起動からの経過 (分からなければ 0)
-	State   string        `json:"state"`         // 動いている / 止まっている / 作業中 など
-	Card    string        `json:"card,omitempty"`
-	Session string        `json:"session,omitempty"`
-	Command string        `json:"command,omitempty"`
-}
+// Proc は一覧の 1 行 (設定画面のプロセスのタブと同じ型)。
+type Proc = backend.Proc
 
 // procLister は動いているプロセスの pid → コマンド行 (ps を 1 回。テストが差し替える)。
 type procLister func(ctx context.Context) (map[int]string, error)
@@ -119,7 +113,7 @@ func collectProcs(dir string, now time.Time, procs map[int]string) (rows []Proc,
 	if err != nil {
 		warns = append(warns, "dispatcher の様子を読めない: "+err.Error())
 	}
-	d := Proc{Role: "dispatcher", State: "止まっている"}
+	d := Proc{Role: "dispatcher", State: backend.ProcStopped}
 	if b, err := os.ReadFile(filepath.Join(dir, dispatcher.LockFile)); err == nil {
 		if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && alive(pid) && strings.Contains(procs[pid], "dispatcher") {
 			d.PID, d.State, d.Command = pid, "動いている", procs[pid]
@@ -130,7 +124,7 @@ func collectProcs(dir string, now time.Time, procs map[int]string) (rows []Proc,
 	}
 	rows = append(rows, d)
 	// 見張り (issue 475): dispatcher と同じく、lock のファイルの pid でコマンド行に monitor を含むものだけ
-	mon := Proc{Role: "見張り", State: "止まっている"}
+	mon := Proc{Role: "見張り", State: backend.ProcStopped}
 	if b, err := os.ReadFile(filepath.Join(dir, dispatcher.MonitorLockFile)); err == nil {
 		if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && alive(pid) && strings.Contains(procs[pid], " monitor") {
 			mon.PID, mon.State, mon.Command = pid, "動いている", procs[pid]
@@ -154,7 +148,7 @@ func collectProcs(dir string, now time.Time, procs map[int]string) (rows []Proc,
 		return roleOrder(reg[i].CardID) < roleOrder(reg[j].CardID)
 	})
 	for _, o := range reg {
-		p := Proc{Role: "PG", PID: o.PID, Card: o.CardID, Session: o.ID, State: "止まっている"}
+		p := Proc{Role: "PG", PID: o.PID, Card: o.CardID, Session: o.ID, State: backend.ProcStopped}
 		if !o.StartedAt.IsZero() {
 			p.Age = now.Sub(o.StartedAt)
 		}
@@ -182,7 +176,7 @@ func collectProcs(dir string, now time.Time, procs map[int]string) (rows []Proc,
 		if !e.Active() {
 			continue
 		}
-		p := Proc{Role: "テストの係", Card: c.ID, Command: e.Command, State: "止まっている"}
+		p := Proc{Role: "テストの係", Card: c.ID, Command: e.Command, State: backend.ProcStopped}
 		if !e.Since.IsZero() {
 			p.Age = now.Sub(e.Since)
 		}
@@ -219,4 +213,19 @@ func roleOrder(cardID string) int {
 		return 1
 	}
 	return 2
+}
+
+// inspectProcs は画面のプロセスのタブの読み方 (pro-con ps と同じ出どころ・同じ集め方。読むだけ)。読めなかったものは err にまとめ、読めた分も返す。
+func inspectProcs(dir string, now func() time.Time, list procLister) ([]Proc, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	procs, err := list(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, warns := collectProcs(dir, now(), procs)
+	if len(warns) > 0 {
+		return rows, errors.New(strings.Join(warns, " / "))
+	}
+	return rows, nil
 }

@@ -22,6 +22,7 @@ import (
 	"pro-con/agents"
 	"pro-con/backend"
 	"pro-con/card"
+	"pro-con/diskuse"
 	"pro-con/presence"
 	"pro-con/store"
 	"pro-con/wake"
@@ -75,6 +76,9 @@ type Backend struct {
 	// refused は socket の逃がし先を使えないので購読をつながなかった理由 (空ならつながっている / まだ試していない)。画面の違反の行に 1 行出す。mu で守る
 	refused string
 	// logs はカード ID → 読んでいる活動 (Activity。画面が裏で呼ぶ。actMu で守る。Refresh の goroutine とは別)
+	// procs / disk は設定画面の見る所を読む口 (SetInspector。main がつなぐ)
+	procs func() ([]backend.Proc, error)
+	disk  func() (diskuse.Usage, error)
 	actMu sync.Mutex
 	logs  map[string]*cardActivity
 }
@@ -140,6 +144,31 @@ func (b *Backend) Changed() <-chan struct{} { return b.changed }
 // SetList は session の一覧の読み方を差し替える (e2e モードは偽の一覧を読む)。Start の前に呼ぶ。
 func (b *Backend) SetList(f func(context.Context) ([]agents.Session, error)) { b.list = f }
 
+// SetInspector は設定画面の見る所を読む口をつなぐ (Start の前に呼ぶ)。procs は pro-con ps と同じ集め方 (main が持つ。
+// dispatcher の定数を使うので live からは組めない)。つながなければ Procs / DiskUsage は ErrNoInspector を返す。
+func (b *Backend) SetInspector(procs func() ([]backend.Proc, error), disk func() (diskuse.Usage, error)) {
+	b.procs, b.disk = procs, disk
+}
+
+// ErrNoInspector は見る所を読む口がつながっていないとき。
+var ErrNoInspector = errors.New("この画面には見る所を読む口が無い")
+
+// Procs は pro-con が起動したプロセスを役ごとに返す (backend.Inspector。読むだけ)。
+func (b *Backend) Procs() ([]backend.Proc, error) {
+	if b.procs == nil {
+		return nil, ErrNoInspector
+	}
+	return b.procs()
+}
+
+// DiskUsage は pro-con が作った物のディスクの使用量と内訳を測る (backend.Inspector。読むだけ。数秒かかる)。
+func (b *Backend) DiskUsage() (diskuse.Usage, error) {
+	if b.disk == nil {
+		return diskuse.Usage{}, ErrNoInspector
+	}
+	return b.disk()
+}
+
 // SetAttach は attach のコマンドを差し替える (e2e モードは本物の claude を起動しない)。
 func (b *Backend) SetAttach(f func(sessionID string) *exec.Cmd) { b.attach = f }
 
@@ -165,6 +194,8 @@ func (v viewOnly) Describe() string {
 func (v viewOnly) Activity(cardID string) ([]backend.Activity, error) {
 	return v.b.Activity(cardID) // 読むだけ (transcript と起動の記録を開いて読む)
 }
+func (v viewOnly) Procs() ([]backend.Proc, error)          { return v.b.Procs() }     // 読むだけ (ps と記録)
+func (v viewOnly) DiskUsage() (diskuse.Usage, error)       { return v.b.DiskUsage() } // 読むだけ (測るだけ)
 func (v viewOnly) Apply(backend.Command) (string, error)   { return "", ErrViewOnly }
 func (v viewOnly) AttachCommand(string) (*exec.Cmd, error) { return nil, ErrViewOnly }
 
@@ -514,14 +545,20 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 	if err != nil {
 		extra = append(extra, card.Violation{Reason: "dispatcher の様子を読めない: " + err.Error()})
 	}
-	pending := store.Pending(b.dir)
+	pending, configs := store.PendingCounts(b.dir)
+	cfg := backend.Config{LimitFrom: ds.LimitFrom, Pending: configs}
+	if set, err := store.LoadSettings(b.dir); err != nil {
+		cfg.Err = err.Error()
+	} else {
+		cfg.Limit, cfg.PMs = set.Limit, set.PMs
+	}
 	b.mu.Lock()
 	if b.refused != "" {
 		extra = append(extra, card.Violation{Reason: b.refused})
 	}
 	b.snap = backend.Snapshot{Now: now, Cards: cards, Consumers: cons, Limit: ds.Cap, LimitMax: ds.Limit, LimitWhy: ds.Why,
 		DispatcherTick: ds.Tick, Screens: screens, DispatcherHeld: store.Held(b.dir),
-		DispatcherGone: store.DispatcherGone(b.dir), Startup: ds.Startup, StartupAlert: ds.StartupAlert, Roles: ds.Roles, RoleStates: ds.RoleStates, Violations: append(card.Check(cards), extra...)}
+		DispatcherGone: store.DispatcherGone(b.dir), Startup: ds.Startup, StartupAlert: ds.StartupAlert, Roles: ds.Roles, RoleStates: ds.RoleStates, Violations: append(card.Check(cards), extra...), Config: cfg}
 	b.pending, b.ready = pending, true
 	b.mu.Unlock()
 }
@@ -622,6 +659,12 @@ func (b *Backend) Apply(cmd backend.Command) (string, error) {
 		done = "btw を受け付けた (PG は止めない。答えはカードの履歴に出る)"
 	case backend.ResumeDispatcher:
 		return b.resume()
+	case backend.SetConfig:
+		if _, err := store.CheckSetting(c.Key, c.Value); err != nil { // 置く前に弾く (pro-con config と同じ検査。dispatcher も同じ検査で除ける)
+			return "", err
+		}
+		r = store.Request{Kind: store.KindConfig, Key: c.Key, Value: c.Value}
+		done = fmt.Sprintf("%s を %s にするよう受け付けた (dispatcher の次の Tick から効く)", c.Key, c.Value)
 	case backend.ClearDone:
 		var ids []string
 		for _, cc := range b.Snapshot().Cards { // 画面が見ている完了のカードだけ (適用までに完了になったカードを巻き込まない)

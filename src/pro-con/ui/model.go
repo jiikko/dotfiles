@@ -98,7 +98,6 @@ type Model struct {
 	now       func() time.Time
 	prevSlots map[string]slot
 	moves     map[string]*move
-	slides    map[panel]*slide // 下端の板の開閉の演出 (slide.go)
 	// カードの詳細の引き出し (drawer.go)。drawerCard は閉じる途中も残す (逆再生で本文が見えている必要がある)
 	cursor     cursorGlide // 選択中のカードを囲む枠 (cursor.go)
 	bump       bump        // 選択が端でぶつかったときのレーンの揺れ (bump.go)
@@ -126,12 +125,12 @@ type Model struct {
 	openFiles   func([]string) error // 添付を外のアプリで開く (既定は open。テストは差し替える。attachments.go)
 	attachTexts map[string][]string  // 文字の添付の中身 (パスごとに 1 度だけ読む。attachments.go)
 
-	showSessions bool // s で開く PG の一覧 (sessions.go)
+	set settings // s で開く設定画面 (settings.go)
 }
 
 // New は repos (config から列挙した repo) をタブの候補にして画面を作る。nil なら global だけ。
 func New(be backend.Backend, repos []backend.Repo) *Model {
-	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, slides: map[panel]*slide{}, copy: pbcopy, children: &atomic.Int64{}, openEditor: func(p string) *exec.Cmd { return editor.Command(p, nil) }, execProcess: tea.ExecProcess, openFiles: openWithSystem}
+	m := &Model{be: be, repos: repos, width: 120, height: 40, now: time.Now, copy: pbcopy, children: &atomic.Int64{}, openEditor: func(p string) *exec.Cmd { return editor.Command(p, nil) }, execProcess: tea.ExecProcess, openFiles: openWithSystem}
 	m.toasts = toast.Stack{Shadow: layout.ShadowNearBlack} // 落ち影は他の板と同じ近黒 (glogx と同じ)
 	m.setSnap(be.Poll())
 	m.focusFirst()
@@ -179,6 +178,9 @@ func (m *Model) waitChanged() tea.Cmd {
 
 func (m *Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{tick(), m.waitChanged()}
+	if m.set.open { // ライブアップグレードで開いたまま引き継いだ設定画面は、見る所を読み直す
+		cmds = append(cmds, m.fetchProcs(), m.measureDisk())
+	}
 	if m.up != nil {
 		cmds = append(cmds, m.checkUpgrade())
 	}
@@ -202,6 +204,14 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 		return m, tea.Batch(m.waitChanged(), m.poll(), m.fetchActivity())
 	case activityMsg:
 		m.onActivity(msg)
+		return m, nil
+	case procsMsg:
+		m.set.procs, m.set.procsErr, m.set.procsAt, m.set.procsLoading = msg.rows, msg.err, msg.at, false
+		m.set.cursor = min(m.set.cursor, max(len(m.settingsSelectable())-1, 0))
+		return m, nil
+	case diskMsg:
+		m.set.disk, m.set.diskErr, m.set.diskLoading = msg.u, msg.err, false
+		m.set.cursor = min(m.set.cursor, max(len(m.settingsSelectable())-1, 0))
 		return m, nil
 	case frameMsg:
 		return m, m.onFrame()
@@ -288,12 +298,13 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 			return m, tea.Batch(cmd, m.trackMoves())
 		case modeBoard:
 		}
+		if m.set.open {
+			return m, m.handleSettingsKey(msg.String())
+		}
 		if m.picker.open {
 			return m, m.handlePickerKey(msg)
 		}
-		before := m.panelState()
-		cmd := m.handleBoardKey(msg)
-		return m, tea.Batch(cmd, m.trackPanels(before))
+		return m, m.handleBoardKey(msg)
 	}
 	return m, nil
 }
@@ -582,8 +593,8 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		return m.openAttachments()
 	case "i": // issue の一覧から選んで依頼する (docs/glogx-ui-guide.md の i = issues の板)
 		m.loadPicker()
-	case "s":
-		m.showSessions = !m.showSessions
+	case "s": // 設定画面 (PG の枠・PM の数 / プロセス / ディスク。issue 456)
+		return m.openSettings()
 	case "x": // 完了のレーンを片付ける (glogx の X = 捨てる の弱い版。y/N 確認を挟む)
 		m.askClearDone()
 	case "d": // カードを削除する (glogx の d = 削除。y/N 確認を挟む)
@@ -664,11 +675,11 @@ func (m *Model) moveByMotion(mo listnav.Motion) tea.Cmd {
 	return nil
 }
 
-// closeTop は開いている板を手前から 1 つ閉じる (session の一覧 → 詳細)。閉じたら true。
+// closeTop は開いている板を手前から 1 つ閉じる (設定画面 → 詳細)。閉じたら true。
 func (m *Model) closeTop() bool {
 	switch {
-	case m.showSessions:
-		m.showSessions = false
+	case m.set.open:
+		m.closeSettings()
 	case m.showDetail:
 		m.closeDrawer()
 	default:

@@ -95,19 +95,8 @@ func showConfig(dir string, stdout, stderr io.Writer) int {
 	}
 	_, _ = fmt.Fprintln(stdout)
 	_, _ = fmt.Fprintf(stdout, "pm     設定 %s / PM は 1 つで動く (2 以上は未対応なので、今は dispatcher が読まない)\n", set(s.PMs))
-	if n := pendingConfigs(dir); n > 0 {
+	if _, n := store.PendingCounts(dir); n > 0 {
 		_, _ = fmt.Fprintf(stdout, "適用待ちの設定の依頼 %d 件 (dispatcher の次の Tick で使う。pro-con dispatcher が動いているか: pro-con ps)\n", n)
 	}
 	return rc
-}
-
-// pendingConfigs は受付の箱の適用待ちの設定の依頼の数。
-func pendingConfigs(dir string) int {
-	n := 0
-	for _, r := range store.PendingRequests(dir) {
-		if r.Kind == store.KindConfig {
-			n++
-		}
-	}
-	return n
 }

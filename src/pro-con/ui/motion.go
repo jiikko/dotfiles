@@ -87,7 +87,7 @@ func (m *Model) startFrames() tea.Cmd {
 }
 
 func (m *Model) animating() bool {
-	return len(m.moves) > 0 || len(m.slides) > 0 || m.drawer.Animating(m.now()) || m.pager.Animating() || m.cursorGliding(m.now()) || m.laneFading(m.now()) || m.bumping(m.now()) || m.toasts.Animating()
+	return len(m.moves) > 0 || m.drawer.Animating(m.now()) || m.set.anim.Animating(m.now()) || m.pager.Animating() || m.cursorGliding(m.now()) || m.laneFading(m.now()) || m.bumping(m.now()) || m.toasts.Animating()
 }
 
 func (m *Model) resetSlots() {
@@ -110,7 +110,7 @@ func (m *Model) pruneMoves(now time.Time) {
 // onFrame は演出の 1 コマ。動くものが残っていれば次のコマを予約し、無ければ止める。
 func (m *Model) onFrame() tea.Cmd {
 	m.pruneMoves(m.now())
-	m.pruneSlides(m.now())
+	m.set.anim.Settle(m.now())
 	m.settleDrawer(m.now())
 	m.pager.Advance()
 	var hold tea.Cmd

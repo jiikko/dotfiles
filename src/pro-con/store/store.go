@@ -160,13 +160,21 @@ func submitWith(dir string, r Request, stage func(box, id string) error) (string
 // Pending は受付の箱の適用待ちの依頼の数 (画面の出来事 = event と見張りの知らせ = monitor は数えない: 画面を開くたびに・見張りが見るたびに置くので、
 // dispatcher の最初の Tick まで「適用待ち」が出て、dispatcher が止まっているように見える)。読めない・壊れたファイルは依頼として数える (除けられるまで待ちには違いない)。
 func Pending(dir string) int {
-	n := 0
+	n, _ := PendingCounts(dir)
+	return n
+}
+
+// PendingCounts は Pending と、そのうちの設定の依頼 (KindConfig) の数を、箱を 1 回読んで返す (画面は毎秒読むので 2 回読まない)。
+func PendingCounts(dir string) (n, configs int) {
 	for _, r := range inbox(dir) {
 		if !noteOnly(r.Kind) {
 			n++
 		}
+		if r.Kind == KindConfig {
+			configs++
+		}
 	}
-	return n
+	return n, configs
 }
 
 // PendingRequests は受付の箱の適用待ちの依頼 (読めないものは除く。読むだけ)。

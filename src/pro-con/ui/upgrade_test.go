@@ -171,7 +171,7 @@ func TestWaitChildren(t *testing.T) {
 // UI の状態 (タブ・レーン・選択・開いている板・書きかけの入力とカーソル) は引き継ぐ。確認中 (y/N) は引き継がない。
 func TestUIStateRoundTrip(t *testing.T) {
 	a := New(newSpy(), nil)
-	press(a, "right", "enter", "s")
+	press(a, "right", "enter")
 	press(a, "+")
 	typeText(a, "abcd")
 	a.Update(ctrl('b'))
@@ -184,11 +184,20 @@ func TestUIStateRoundTrip(t *testing.T) {
 	if err := b.ImportState(data); err != nil {
 		t.Fatal(err)
 	}
-	if b.selected != a.selected || b.col != a.col || !b.showDetail || !b.showSessions {
-		t.Fatalf("選択か開いている板が戻らない: %q/%d detail=%v sessions=%v", b.selected, b.col, b.showDetail, b.showSessions)
+	if b.selected != a.selected || b.col != a.col || !b.showDetail {
+		t.Fatalf("選択か開いている板が戻らない: %q/%d detail=%v", b.selected, b.col, b.showDetail)
 	}
 	if b.mode != modeInput || b.inputKind != inputOrder || b.line.String() != "abcd" || b.line.Cursor() != 2 {
 		t.Fatalf("書きかけの入力が戻らない: mode=%v kind=%v %q cur=%d", b.mode, b.inputKind, b.line.String(), b.line.Cursor())
+	}
+	// 設定画面は開いたまま、同じタブで戻る (入力欄とは同時に開かない: 設定画面はキーを全部受ける)
+	e := New(newSpy(), nil)
+	press(e, "s")
+	e.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	data, _ = e.ExportState()
+	f := New(newSpy(), nil)
+	if err := f.ImportState(data); err != nil || !f.set.open || f.set.tab != e.set.tab || f.set.tab != tabProcs {
+		t.Fatalf("設定画面が戻らない: err=%v open=%v tab=%v (元 %v)", err, f.set.open, f.set.tab, e.set.tab)
 	}
 	c := New(newSpy(), nil)
 	press(c, "+")

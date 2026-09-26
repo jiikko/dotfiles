@@ -126,7 +126,7 @@ func TestHintsOmitActionsOnViewOnly(t *testing.T) {
 		}
 	}
 	check("ボード")
-	for _, h := range []string{"enter 詳細", "s PG 一覧", "Q 終了"} {
+	for _, h := range []string{"enter 詳細", "s 設定", "Q 終了"} {
 		if !strings.Contains(strings.Join(m.hints(), "  "), h) {
 			t.Fatalf("ボードの %q まで消した: %q", h, m.hints())
 		}

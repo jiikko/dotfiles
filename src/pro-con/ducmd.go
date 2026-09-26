@@ -28,10 +28,7 @@ func runDU(args []string, home string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, duUsage)
 		return 2
 	}
-	bin, _ := os.Executable()
-	in, warns := live.DiskInput(stateDir(home), liveDir(home), filepath.Join(home, ".claude", "projects"), bin)
-	u := diskuse.Measure(in)
-	u.Warnings = append(warns, u.Warnings...)
+	u := measureDisk(home, stateDir(home), liveDir(home))
 	for _, w := range u.Warnings {
 		_, _ = fmt.Fprintln(stderr, "pro-con du:", w)
 	}
@@ -67,4 +64,13 @@ func writeDU(w io.Writer, u diskuse.Usage, all bool) {
 			_, _ = fmt.Fprintf(w, "  %-6s  %s%s\n", diskuse.Human(it.Bytes), it.Name, note)
 		}
 	}
+}
+
+// measureDisk は root (状態の置き場の根) と dir (その下の本物のモードの置き場) の pro-con が作った物を測る (pro-con du と画面のディスクのタブ)。
+func measureDisk(home, root, dir string) diskuse.Usage {
+	bin, _ := os.Executable()
+	in, warns := live.DiskInput(root, dir, filepath.Join(home, ".claude", "projects"), bin)
+	u := diskuse.Measure(in)
+	u.Warnings = append(warns, u.Warnings...)
+	return u
 }

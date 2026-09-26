@@ -32,6 +32,7 @@ import (
 
 	"pro-con/backend"
 	"pro-con/config"
+	"pro-con/diskuse"
 	"pro-con/dispatcher"
 	"pro-con/fake"
 	"pro-con/live"
@@ -270,6 +271,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			dir, dispatcherArgs = e2e.StateDir(), modeArgs
 		}
 		lb := live.New(scopes, home, dir)
+		root := stateDir(home) // 本物のモードの置き場の根。e2e モードは置き場そのものだけを測る (本物の記録を数えない)
+		if e2e != nil {
+			root = dir
+		}
+		lb.SetInspector(func() ([]backend.Proc, error) { return inspectProcs(dir, time.Now, execProcs) },
+			func() (diskuse.Usage, error) { return measureDisk(home, root, dir), nil })
 		if e2e != nil {
 			lb.SetList(e2e.List) // 偽の session の一覧 (本物の claude agents を読まない)
 			if exe, err := os.Executable(); err == nil {
