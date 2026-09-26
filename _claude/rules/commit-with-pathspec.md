@@ -98,6 +98,11 @@ pathspec 規律は「混入」は防ぐが、**履歴を書き換える操作は
   無関係な相手へ確認に行く。分からないなら「分からない」と言い、
   `ListAgents` + `SendMessage` で**本人に聞く**
 - 副次の注意: **`git mv` は即座に stage される**。stage された変更は共有 index 上で「他セッションの pathspec なし commit / reset に拾われ得る」状態になるため、stage から commit までの間隔を最小にする
+- 🚨 **squash / 付け替えの soft reset の起点は、共有の ref (`origin/master` 等) ではなく自分の変更を積んだ起点の commit を hash で固定する**。
+  共有の ref は別の worktree の fetch で黙って進み、`reset --soft` した index が「他の session の変更を打ち消す差分」になる。
+  起点を変えるなら、先に新しい起点の hash へ rebase を済ませてから、その hash へ soft reset する (rebase の後に古い起点の hash を使い続けない)。
+  commit の前に `git diff --cached --stat <同じ hash>` と差分を読み、自分の作業と無関係な変更が無いことを確かめる
+- **zsh に渡す reflog の参照は `'HEAD@{1}'` のように引用符で包む** (`brace_ccl` 等の設定で波括弧が展開され、戻したつもりで戻らない)
 
 ## やること / やらないこと
 

@@ -34,3 +34,11 @@
 
 - `tmux kill-server` の後に socket が残る件は既存のルール (tmux-probe) どおりに控えたパスだけを消した
 - `ps` に他のプロセスの環境が出ない (この macOS) ので、実行の印は環境変数でなく argv に載せた (427 に記録)
+
+## 決着 (2026-09-26、カード C-076)
+
+ユーザーの決定: 「codex (gpt-6-astra) に聞いて、意義があると判断されたら追記を許可する」。判定と扱い:
+
+- 1 (soft reset は rebase を済ませてから) → **採用**。501 の提案 2 とまとめ、`_claude/rules/commit-with-pathspec.md` の履歴操作の節に「squash / soft reset の起点は自分の起点の commit を hash で固定し、`git diff --cached --stat <同じ hash>` で確かめる」を足した
+- 2 (検証 → commit → push を `;` で繋がない) → **却下: codex が既存の文で足りると判定** (`verify-execution-not-just-exit-code.md` に「検証の手順は `&&` で繋ぎ、`;` で繋がない」が既にある)
+- 3 (zsh の reflog 参照を引用する) → **採用**。同じ節に 1 行足した (codex が `_zshrc` の `brace_ccl` で `HEAD@{1}` → `HEAD@1` を再現した)

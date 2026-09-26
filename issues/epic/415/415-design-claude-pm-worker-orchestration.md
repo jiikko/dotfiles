@@ -231,7 +231,8 @@ Claude Code の使い方を「session を立ち上げてそこで作業する」
 
 ### 決定事項 (2026-09-24)
 
-- **PG は master へ直接 push しない**。PG は自分の worktree で commit し、自分のブランチまで push する。PM がレビューを通してから master へ載せる
+- **PG は push しない** (2026-09-26 のユーザーの決定で変えた。前は「自分のブランチまで push」)。PG は自分の worktree で commit までにし、master へは取り込みの係 (487) が
+  その worktree のブランチから取り込んで push する。自分のブランチを push させると remote に使われないブランチが溜まった (2 日で `worktree-pc-c-*` が 71 本)
 - **PG の権限**: 自分の worktree の中での編集・テスト・commit は許可する。push は自分のブランチまで。外部への送信 (PR 作成・API) と削除系は PM を経由する
 - **依頼のカード化は PM の規律に任せる** (機械で強制しない)
 - **複数 repo に対応する**。カードは repo 横断で持ち、タスクは各 repo の `issues/` に置く (論点 3)。最初に流すのは dotfiles の件だけの見込み

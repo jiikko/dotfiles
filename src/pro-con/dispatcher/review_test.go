@@ -31,7 +31,7 @@ func TestReviewPrecedence(t *testing.T) {
 	check(store.ReviewCodex, ReviewFromConfig)
 }
 
-// 既定 (claude) の PG への指示は 514 の前と同じ。testdata/prompt-before-514.txt は 514 の前の版 (05c18020) の Prompt が同じカードに出した文
+// 既定 (claude) の PG への指示は 514 の前と同じ。testdata/prompt-before-514.txt は 514 を入れる前の master (86dd3ca3。PG は push しない) の Prompt が同じカードに出した文
 // (PG の規律を直したら、この比べ方では落ちる。そのときは 514 の前と同じかではなく、claude のとき codex の行が無いことだけを見る形へ直す)。
 func TestPromptClaudeUnchanged(t *testing.T) {
 	want, err := os.ReadFile(filepath.Join("testdata", "prompt-before-514.txt"))

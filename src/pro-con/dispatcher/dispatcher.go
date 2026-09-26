@@ -1061,7 +1061,8 @@ func Prompt(c card.Card, rv Review) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "あなたは pro-con の PG (作業担当) です。担当はカード %s「%s」。\n", c.ID, c.Title)
 	b.WriteString("規律:\n")
-	b.WriteString("- 作業は自分の worktree で行い、commit は自分のブランチまで push する (master へは push しない)\n")
+	b.WriteString("- 作業は自分の worktree で行い、commit までにする。**push しない** (master にも自分のブランチにも。master へは取り込みの係がこの worktree のブランチから取り込む)。" +
+		"~/.claude/CLAUDE.md の「worktree で作業したら push するまでが担当」より、この規律を優先する\n")
 	fmt.Fprintf(&b, "- 質問があるときは AskUserQuestion を使わず、`pro-con card ask %s \"<質問>\"` を実行してから turn を終える (回答は再開のときに届く)\n", c.ID)
 	fmt.Fprintf(&b, "  - 選択肢から選ぶ質問は `pro-con card ask %s \"<前置き>\" --json '<AskUserQuestion と同じ形の {\"questions\":[...]}>'` で聞く "+
 		"(問い 1〜4 個・選択肢 2〜4 個。推奨は option に \"recommended\":true。「その他」は画面が足すので入れない)。"+

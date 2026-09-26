@@ -76,3 +76,9 @@ issue 番号 309 の衝突を調べていて、**timestamp だけを根拠に「
 
 `for …; do git push …; [ ok ] && break; git pull --rebase; done` で、rebase が衝突で止まったまま次の push が
 「Everything up-to-date」(rc=0) を返し、push できていないのに成功と読みかけた
+
+## squash の起点を hash で固定する / reflog の参照を引用する (retro 435・501)
+
+- retro 435 (2026-09-25): origin の新しい commit を取り込む前に `git reset --soft origin/master` をして、並行セッションの commit を打ち消す差分を作りかけた (push の前に staged の一覧で気づいた)。戻そうとした `git reset --soft HEAD@{1}` は zsh が波括弧を展開して効かなかった
+- retro 501 (2026-09-26): worktree で WIP をまとめるのに `git reset --soft origin/master` を打ったら、別の worktree の fetch で origin/master が進んでいて、他の session の変更を取り消す差分が index に並んだ (commit 前に気づいて reflog で戻した)
+- 追記の要否は codex (gpt-6-astra) に判定させ、「対象コミットが自分のものか確認する」では確認の後に動く共有の ref を防げないとして採った

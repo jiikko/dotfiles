@@ -75,7 +75,7 @@ func typeText(m *Model, s string) {
 	}
 }
 
-// 回答の経路: 質問待ちのカードで r → 入力 → enter で、そのカード宛ての Answer が 1 つだけ backend に届く。
+// 回答の経路: 質問待ちのカードで r → 入力 → enter → 確認で y で、そのカード宛ての Answer が 1 つだけ backend に届く。
 func TestAnswerReachesBackendForSelectedCard(t *testing.T) {
 	be := newSpy()
 	m := New(be, nil)
@@ -85,7 +85,7 @@ func TestAnswerReachesBackendForSelectedCard(t *testing.T) {
 	}
 	press(m, "r")
 	typeText(m, "遅延ロードで")
-	press(m, "enter")
+	press(m, "enter", "y") // enter で送る前の確認、y で送る (issue 517)
 	if len(be.applied) != 1 {
 		t.Fatalf("backend に届いた操作は 1 つのはず: %d", len(be.applied))
 	}
@@ -198,12 +198,12 @@ func TestPasteOnBoardDoesNothing(t *testing.T) {
 func TestEmptySubmitKeepsInputOpen(t *testing.T) {
 	be := newSpy()
 	m := New(be, nil)
-	press(m, "right", "r", "enter")
+	press(m, "right", "r", "enter", "y")
 	if m.mode != modeInput {
 		t.Fatal("空の本文で拒否されたのに入力欄が閉じた")
 	}
 	typeText(m, "やっぱり遅延ロードで")
-	press(m, "enter")
+	press(m, "enter", "y")
 	if len(be.applied) != 2 {
 		t.Fatalf("拒否された 1 回と書き直した 1 回の 2 回届くはず: %d", len(be.applied))
 	}
@@ -297,7 +297,7 @@ func TestNewRequestInRepoTabCarriesScope(t *testing.T) {
 	m.Update(keyTab()) // dotfiles
 	press(m, "n")
 	typeText(m, "検索を足して")
-	press(m, "enter")
+	press(m, "enter", "y")
 	r, ok := be.applied[len(be.applied)-1].(backend.NewRequest)
 	if !ok || r.Repo != (backend.Repo{Name: "dotfiles", Path: "/src/dotfiles"}) || r.Text != "検索を足して" {
 		t.Fatalf("dotfiles をスコープにした依頼として届くはず: %#v", be.applied)
@@ -310,7 +310,7 @@ func TestNewRequestInGlobalTabHasNoScope(t *testing.T) {
 	m := New(be, repos("dotfiles"))
 	press(m, "n")
 	typeText(m, "どこかの件")
-	press(m, "enter")
+	press(m, "enter", "y")
 	r, ok := be.applied[len(be.applied)-1].(backend.NewRequest)
 	if !ok || r.Repo != (backend.Repo{}) {
 		t.Fatalf("global の依頼は repo を持たないはず: %#v", be.applied)
