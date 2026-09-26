@@ -50,8 +50,9 @@ func requeue(c *card.Card, now time.Time, resume string) {
 	if c.WaitsOnPrompt() { // 止めて再開するので問いは消える (分解済みに回答の要る待ちを残さない)
 		c.Wait = card.Wait{}
 	}
-	c.State, c.Since, c.Resume = card.Planned, now, resume
+	c.Resume = resume
 	c.DropRun() // テストの係への頼みも取り下げる (続きから頼み直す)
+	c.Enter(card.Planned, now)
 }
 
 // gone は、作業中のカードの PG の session が一覧から消えて、restartWait を過ぎても戻らないか (Shutdown が「既に止まっていた」とする形と同じ判定)。

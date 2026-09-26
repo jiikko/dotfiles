@@ -30,6 +30,7 @@ bin/pro-con card move C-001 up   # レーンの中で 1 つ上 (down なら下) 
 bin/pro-con card list | show C-001 | wait C-001 --until review  # カードを画面なしで読む (--json も)。読むだけで、箱にも記録にも socket の wake / notify にも書かない (issue 442)。add は適用を待ってカード ID を返す
 bin/pro-con card log C-001 [--follow] [--json]  # PG の活動 (応答の文と道具の呼び出し。例 `Bash: go test ./...` / `Edit: close.go`) を時刻の順に。再開で入れ替わった前の session から続けて出す。思考は Claude Code が中身を保存しないので出せず、道具の結果は長いので出さない。読むだけ (issue 467)
 bin/pro-con log [--card C-001] [--follow] [--since 10m] [--json]  # dispatcher の出来事 (適用・除けた・起動・再開・止めた・削除・枠・watchdog・画面の数・画面を開いた / quit で閉じた) を読む。画面の出来事は画面が受付の箱に置き dispatcher が書く (--view の画面は置かない。issue 445)。記録は状態の置き場の events.jsonl (1 MiB で events.1.jsonl へ回す)。読むだけ (issue 444)
+bin/pro-con stats [--since 30d] [--by points|repo|week|all] [--json]  # 閉じたカードの所要を束ねて比べる (件数・所要 / 作業中 / 人の番の中央値と最大・PG の枠の API 料金換算と 5 時間枠の %)。既定は見積もりのポイントごと。記録は状態の置き場の metrics.jsonl (閉じたカード 1 枚 = 1 行。90 日で消す)。読むだけ (issue 516)
 bin/pro-con monitor [--once] [--interval 1m]  # 見張り (issue 475)。dispatcher が子として起こし、落ちたら起こし直し (30 分に 3 回まで)、抜けるときに止める (手で起動しなくてよい。2 つ起動しない = monitor.lock)。
                          # PG の commit 済みの分を git merge-tree で origin/master と・PG どうしで突き合わせた衝突と、テストの順番の長さ (3 本以上か先頭が 30 分以上) を見る。
                          # 読むだけ (git fetch もしない) で、見つけた・消えたときだけ受付の箱に置き、dispatcher が出来事 (pro-con log の monitor) に書く。e2e モードと --once の dispatcher では起こさない
@@ -70,6 +71,10 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
     完了から 1 週間たったカードは dispatcher が書庫からも消す (issue 497。ID は使い回さない)。消す前に片付けの印
     (`…/live/cards-purged.jsonl`。カード ID・完了の時刻・session・worktree・ブランチ) を残し、`worktree clean` がそれで片付ける。
     session・transcript・worktree・ブランチは自動では消さない (人が `pro-con worktree clean --yes` を打ったときだけ)
+  - **所要の記録** (issue 516): カードを閉じたら (完了は PG を止め終えてから・削除は記録から外す前)、dispatcher が 1 行を `…/live/metrics.jsonl` に書く
+    (ID・題名・repo・issue・ポイント・終わり方・時刻・列ごとに居た秒数とそのうち人の番だった秒数・回数・PG の枠)。1 週間の削除では消さず、閉じてから 90 日で消す
+    (1 時間に 1 回。消す前に件数を出来事に書く)。列ごとの時間はカードの足跡 (`card.Trail`。列を移すのは `Card.Enter` だけ) から、回数は履歴の文から出す。
+    枠は pro-con が起動した session の transcript から数え (449 の数え方)、取れなければ 0 ではなく理由 (`usageMissing`) を書く。`pro-con stats` が読む
 - 作業中のカードには、**pro-con が起動した session だけ** (記録 `…/live/sessions.json` にあるもの) の様子 (PG の出力の末尾・pid) を足す。
   照合は記録の行の session id・短い id・pid が全部一致したときだけ (pid が違う = 外の shell で同じ session を再開したもの、は外れる)。
   Desktop や他の shell の session は出さず、選べない (選べると pro-con の外の session に入力・停止できてしまう)。
@@ -346,6 +351,7 @@ issue の読み方 (状態 = ファイルの位置、`epic/<name>/` の 2 段、
 | `fake` | 模擬 backend。本物に差し替えるときは `backend.Backend` を満たす実装を足し、`main.go` の 1 行を替える |
 | `ui` | bubbletea v2 の TUI。状態は持たない (Snapshot を描き、Command を送るだけ) |
 | `monitor` | 見張り (`pro-con monitor`。issue 475)。読むだけで、見つけたことは受付の箱に置く |
+| `metrics` | 閉じたカード 1 枚の所要の行 (列ごとの時間・回数・PG の枠) と、束ねた集計 (`pro-con stats`。issue 516)。読み書きは `store/metrics.go` |
 | `wtclean` | 閉じたカードの PG の worktree と session の判定と片付け (`pro-con worktree clean`。issue 492 / 497)。消す操作はここだけ |
 | `gitx` | git を呼ぶ共通の口 (継承した `GIT_DIR` などを外す。monitor と wtclean が使う) |
 
