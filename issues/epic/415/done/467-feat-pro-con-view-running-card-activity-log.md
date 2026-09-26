@@ -2,7 +2,7 @@
 
 起票日: 2026-09-25
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 
@@ -54,3 +54,5 @@
 - 後から見つかった前の session の分は画面の側で時刻の位置へ差し込む / transcript が消えたら探し直して頭から、短く書き直されたら頭から (uuid で重ねない)
 - `--follow` は 1 本の transcript が読めなくても止めず、理由を 1 度だけ stderr に出して追い続ける
 - 画面: 開き直したら前の活動を出さずに読み直す / 途中を読んでいる間に上限 (1000 件) で頭が捨てられても位置を保つ
+- 2026-09-26 01:41: C-034 を取り込みの係の代わりに session dotfiles-4c が手で master へ取り込んだ (acee57d5 の merge。make test rc=0)。
+  その後、応答の文を改行を残した markdown で詳細に出す直しを 486 で入れた (dd9b8a61)

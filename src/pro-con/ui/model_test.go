@@ -224,7 +224,7 @@ func newRepoSpy() *spy {
 
 func visibleIDs(m *Model) []string {
 	var ids []string
-	for _, c := range m.visible() {
+	for c := range m.visible() {
 		ids = append(ids, c.ID)
 	}
 	return ids

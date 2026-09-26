@@ -44,7 +44,7 @@ func TestGaugeAndHeaderCountHumansTurn(t *testing.T) {
 	if g := ansi.Strip(m.gauge()); !strings.Contains(g, "!人の番 2") {
 		t.Fatalf("ゲージに人の番の枚数が無い: %q", g)
 	}
-	cols := m.columns()
+	cols := m.lanes()
 	head := func(s card.State) string {
 		i := slices.Index(card.Columns, s)
 		return ansi.Strip(m.columnBlock(i, s, cols[i], 40, 1, false)[0])
@@ -68,12 +68,12 @@ func TestGaugeAndHeaderCountHumansTurn(t *testing.T) {
 func TestHeaderKeepsHumanMarkWhenNarrow(t *testing.T) {
 	m := humanSnap(t)
 	i := slices.Index(card.Columns, card.Waiting)
-	if h := ansi.Strip(m.columnBlock(i, card.Waiting, m.columns()[i], 19, 1, false)[0]); !strings.Contains(h, "!人 1") {
+	if h := ansi.Strip(m.columnBlock(i, card.Waiting, m.lanes()[i], 19, 1, false)[0]); !strings.Contains(h, "!人 1") {
 		t.Fatalf("狭い列で人の番の印が切れた: %q", h)
 	}
-	var many []card.Card // 人の番が 2 桁でも、列の枚数を削って印を残す
+	var many []*card.Card // 人の番が 2 桁でも、列の枚数を削って印を残す
 	for range 12 {
-		many = append(many, m.snap.Cards[1])
+		many = append(many, &m.snap.Cards[1])
 	}
 	if h := ansi.Strip(m.columnBlock(i, card.Waiting, many, 19, 1, false)[0]); !strings.Contains(h, "!人 12") {
 		t.Fatalf("人の番が 2 桁で印が切れた: %q", h)

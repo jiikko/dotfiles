@@ -114,3 +114,5 @@ worktree `pc-c-031` から。「Memory files」は `/context` の見積もり:
 - [x] 役割ごとの `--settings` (feat(pro-con): PG・PM と haiku に役割ごとの --settings を渡す)。433 は不要として閉じた
 - [ ] **残り (未決)**: PG に `~/.claude/rules/` の一部を効かせるか (上の「今の PG は読んでいない」節)
 - [ ] 未実測: 本物の session での起動時の token (今回の変更の後)
+- 2026-09-26 01:41: C-031 を取り込みの係の代わりに session dotfiles-4c が手で master へ取り込んだ (acee57d5 の merge。C-025・C-034 と一緒に。pro-con の make test と
+  dotfiles の make test が rc=0)。質問 (規約をどこまで PG に効かせるか) は人間の決定として「1 で進める」を回答した

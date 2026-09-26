@@ -42,7 +42,7 @@ func frame() tea.Cmd { return tea.Tick(frameInterval, func(time.Time) tea.Msg { 
 // slots は今のタブで、各カードがどこに居るか。
 func (m *Model) slots() map[string]slot {
 	out := map[string]slot{}
-	for i, cs := range m.columns() {
+	for i, cs := range m.lanes() {
 		for j, c := range cs {
 			out[c.ID] = slot{i, j}
 		}
@@ -56,8 +56,8 @@ func (m *Model) trackMoves() tea.Cmd {
 	now := m.now()
 	cur := m.slots()
 	byID := map[string]card.Card{}
-	for _, c := range m.visible() {
-		byID[c.ID] = c
+	for c := range m.visible() {
+		byID[c.ID] = *c
 	}
 	for id, to := range cur {
 		from, ok := m.prevSlots[id]

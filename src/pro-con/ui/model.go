@@ -5,6 +5,7 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"iter"
 	"os/exec"
 	"slices"
 	"sync/atomic"
@@ -397,33 +398,45 @@ func (m *Model) setSnap(s backend.Snapshot) {
 	m.dropVanishedDrawer()
 }
 
-func (m *Model) visible() []card.Card {
-	if m.tab == "" {
-		return m.snap.Cards
-	}
-	var out []card.Card
-	for _, c := range m.snap.Cards {
-		if c.Repo == m.tab {
-			out = append(out, c)
+// カードは複製せず m.snap.Cards の中を指して渡す (描くたびに呼ぶので、1 枚 960 バイトを複製すると GC が回り続けた。issue 494)。
+// 🚨 指す先は今の m.snap.Cards なので、setSnap をまたいで持ち越さず、書き換えない
+func (m *Model) visible() iter.Seq[*card.Card] {
+	return func(yield func(*card.Card) bool) {
+		for i := range m.snap.Cards {
+			if c := &m.snap.Cards[i]; (m.tab == "" || c.Repo == m.tab) && !yield(c) {
+				return
+			}
 		}
 	}
-	return out
 }
 
 // columns は選んでいるタブのカードをカンバンの列に分ける。列の中はレーンの並び (card.LaneCompare: 上ほど優先。K / J で入れ替えて
 // いなければ、その列に入った順)。移ってきたカードは必ず列の末尾に着地するので、既存のカードの位置は動かない (Snapshot の並び順のままだと、
 // 移ってきたカードが途中に割り込んで既存のカードが一斉にずれる)。
 func (m *Model) columns() [][]card.Card {
-	cols := make([][]card.Card, len(card.Columns))
-	for _, c := range m.visible() {
-		for i, st := range card.Columns {
+	lanes := m.lanes()
+	cols := make([][]card.Card, len(lanes))
+	for i, cs := range lanes {
+		cols[i] = make([]card.Card, len(cs))
+		for j, c := range cs {
+			cols[i][j] = *c
+		}
+	}
+	return cols
+}
+
+// lanes は columns と同じ並びを、カードの複製ではなく m.snap.Cards の中を指すポインタで返す (毎コマ描く経路はこちら。visible と同じ注意)。
+func (m *Model) lanes() [][]*card.Card {
+	cols := make([][]*card.Card, len(card.Columns))
+	for c := range m.visible() {
+		for k, st := range card.Columns {
 			if c.State == st {
-				cols[i] = append(cols[i], c)
+				cols[k] = append(cols[k], c)
 			}
 		}
 	}
 	for _, cs := range cols {
-		slices.SortStableFunc(cs, card.LaneCompare)
+		slices.SortStableFunc(cs, func(a, b *card.Card) int { return card.LaneCompare(*a, *b) })
 	}
 	return cols
 }
@@ -432,7 +445,7 @@ func (m *Model) columns() [][]card.Card {
 func (m *Model) position() (col, row int, ok bool) { return m.positionOf(m.selected) }
 
 func (m *Model) positionOf(id string) (col, row int, ok bool) {
-	for i, cs := range m.columns() {
+	for i, cs := range m.lanes() {
 		for j, c := range cs {
 			if c.ID == id {
 				return i, j, true
@@ -758,7 +771,7 @@ func (m *Model) askResume() {
 // doneInTab は今のタブの完了のカードの枚数 (x で片付ける対象)。
 func (m *Model) doneInTab() int {
 	n := 0
-	for _, c := range m.visible() {
+	for c := range m.visible() {
 		if c.State == card.Done {
 			n++
 		}

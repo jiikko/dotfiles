@@ -92,14 +92,17 @@ func (c Consumer) Idle() bool { return c.Status == agents.StatusIdle }
 // SlotsUsed は一覧 (Consumers) の PG のうち枠を使っている数 (dispatcher と同じ判定 card.HoldsPGSlot。issue 455)。
 // テストの係の結果を待って idle の PG は、一覧には居るが数えない。
 // 🚨 母数は dispatcher と違う: dispatcher は一覧に居ない作業中の PG と、起動の結果が分からない (Launching) カードも数える
+// 画面が描くたびに呼ぶので、カード (1 枚 960 バイト) を map に複製しない (issue 494)。PG は数体なので、PG ごとに探す。
 func (s Snapshot) SlotsUsed() int {
-	cards := map[string]card.Card{}
-	for _, c := range s.Cards {
-		cards[c.ID] = c
-	}
 	n := 0
 	for _, pg := range s.Consumers {
-		if card.HoldsPGSlot(cards[pg.CardID], pg.Idle()) {
+		c := &card.Card{} // 一覧に無いカードの PG は zero の Card で判定する (以前の map の引き損ねと同じ)
+		for i := range s.Cards {
+			if s.Cards[i].ID == pg.CardID {
+				c = &s.Cards[i]
+			}
+		}
+		if card.HoldsPGSlot(*c, pg.Idle()) {
 			n++
 		}
 	}
