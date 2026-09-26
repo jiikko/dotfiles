@@ -28,3 +28,14 @@ remote の `worktree-pc-c-*` は 2026-09-26 に 61 本 (C-080 の起票の時点
 ## 関連
 
 - 522 (取り込み済みの remote のブランチを消す) / 492 (ローカルの worktree の片付け) / 487 (取り込みの係)
+
+## 進捗 (2026-09-26, C-080)
+
+- **出どころは PG への指示そのものだった** (上の「詳細」の 1 項目と見込みは誤り)。86dd3ca3 より前の `Prompt` は
+  「commit は自分のブランチまで push する (master へは push しない)」と書いていた (415 の旧い規律)。
+  bg の session の既定の指示 (「worktree で変更したら commit し、remote があれば push する — task・CLAUDE.md が git を留保していればそちらに従う」) も同じ向きに押すが、留保の但し書きがあるので指示で止まる
+- **修正は 86dd3ca3** で入った: 「commit までにする。push しない (master にも自分のブランチにも)。~/.claude/CLAUDE.md の push するまでが担当より優先する」。
+  `TestPromptCarriesDiscipline` が旧い文へ戻すと red
+- **本物の PG で 1 回確かめた**: C-072 (session 159835b1) は修正の後に aa459113 (merge) を commit したが、`origin/worktree-pc-c-072` は 4ab063e9 (22:45) のまま載っていない。
+  C-080 (この session、修正後の指示で起動) も push していない。`--settings` で push を止める案は、指示で止まったので採らない
+- 残り: 修正の前に起動して動いている PG (C-070 / C-074 / C-078 など) は旧い指示のまま走るので、その分は 522 と同じ手で後から片付ける
