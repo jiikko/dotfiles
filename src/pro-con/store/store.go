@@ -140,6 +140,8 @@ type Result struct {
 	Note             string
 	At               time.Time // event: 画面が出来事を置いた時刻 (dispatcher が出来事の記録へ書く。適用した時刻ではない)
 	Sessions         []string  // forget: 起動の記録から消す session id (dispatcher が消す)
+	// Dropped は delete ですぐ記録から外したカード (依頼の列。外す前の姿)。dispatcher が所要の記録に 1 行書く (issue 516)
+	Dropped *card.Card
 }
 
 // Submit は依頼を受付の箱に置き、依頼の ID を返す。どのプロセスから呼んでもよい。
@@ -321,6 +323,10 @@ func Apply(dir string, now time.Time, repos map[string]string) ([]Result, error)
 				}
 				if err == nil {
 					tagScreen(st, &next, r.Screen)
+					if i := indexOf(st.Cards, res.CardID); r.Kind == "delete" && i >= 0 && indexOf(next.Cards, res.CardID) < 0 {
+						c := st.Cards[i]
+						res.Dropped = &c
+					}
 					st = next
 				}
 			}
@@ -471,6 +477,8 @@ func apply(st State, r Request, now time.Time, repos map[string]string) (State, 
 		c := card.Card{ID: id, ParentID: r.ParentID, Title: firstNonEmpty(r.Title, clip(r.Request, 40)), Request: r.Request, Prompt: r.Prompt, Repo: r.Repo,
 			Issues: r.Issues, Owner: firstNonEmpty(r.Owner, "PM"), State: card.Requested, Since: now, FromRequest: r.ID,
 			History: []card.Event{{At: now, Text: "依頼を受けた"}}}
+		// 足跡の最初 (依頼の列に入った時刻。issue 516)
+		c.Mark(now)
 		if p := indexOf(next.Cards, r.ParentID); r.ParentID != "" { // 親が無ければ不変条件 (親カードが存在しない) が弾く
 			c.History[0].Text = r.ParentID + " の追加オーダー (別件) から分けた"
 			if p >= 0 {
@@ -623,9 +631,9 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		if c.State == card.Requested && to != card.Requested {
 			c.PMAnswer = "" // PM が受け取った後 (分けた・閉じた・また聞いた)。回答は履歴に残っている
 		}
-		c.State, c.Since = to, now
 		c.Stalled = false // 停滞は作業中の列でだけ意味を持つ (watchdog が作業中のカードだけを見る)。止める印 (StopWanted) は作業中へ戻る settle が外す
 		c.History = append(c.History, card.Event{At: now, Text: why})
+		c.Enter(to, now)
 	}
 	if c.Deleting() { // PG を止めて消すのを待っている。質問・完了・実行の頼みで列を動かさない (動かすと再開・実行の口が開く)
 		return errors.New("削除の依頼を受けている")
@@ -671,9 +679,9 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		if err != nil {
 			return err
 		}
-		why := "質問: "
+		why := card.AskedPrefix
 		if c.State == card.Requested {
-			w.AskedBy, why = card.PMName, "PM が人に質問した: "
+			w.AskedBy, why = card.PMName, card.PMAskedPrefix
 		}
 		c.Wait = w
 		move(card.Waiting, why+clip(w.Question, 80))
@@ -703,7 +711,7 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		} else {
 			c.Resume = r.Answer
 		}
-		move(card.Planned, firstNonEmpty(r.From, "人間")+" が回答した: "+clip(r.Answer, 80)+" (PG の空きが出たら同じ session を resume)")
+		move(card.Planned, firstNonEmpty(r.From, "人間")+card.AnsweredMark+clip(r.Answer, 80)+" (PG の空きが出たら同じ session を resume)")
 	case "rework": // 取り込みの係 (487) がレビューで差し戻した (issue 446)。回答と同じく分解済みへ戻し、dispatcher が同じ session を再開する
 		if c.State != card.Review {
 			return fmt.Errorf("レビュー待ちではない (今は %s)", c.State.Label())
@@ -712,7 +720,7 @@ func transition(c *card.Card, r Request, now time.Time) error {
 			return errors.New("直してほしい点が空")
 		}
 		c.Resume = ReworkPrefix + r.Rework + "\n直したら、もう一度 `pro-con card review " + c.ID + "` を実行してから turn を終える。"
-		move(card.Planned, "差し戻した: "+r.Rework) // 原文のまま残す (要約・切り詰めをしない)
+		move(card.Planned, card.ReworkedPrefix+r.Rework) // 原文のまま残す (要約・切り詰めをしない)
 	case "handoff": // PM が PG の質問を / 取り込みの係がレビュー待ちを人に回した (487)。履歴に残すだけで、列も質問も変えない (人の番 = card.Turn はこの履歴の文で決まる。452)
 		if (c.State != card.Waiting || c.Wait.Kind != card.WaitQuestion) && c.State != card.Review {
 			return fmt.Errorf("PG の質問待ちでもレビュー待ちでもない (今は %s)", c.State.Label())
@@ -721,6 +729,8 @@ func transition(c *card.Card, r Request, now time.Time) error {
 			return errors.New("人に回す理由が空")
 		}
 		c.History = append(c.History, card.Event{At: now, Text: card.HandoffText(firstNonEmpty(r.From, "PM"), r.Text)}) // 原文のまま
+		// 人の番へ移った足跡 (issue 516)
+		c.Mark(now)
 	case "run": // PG がテストの係にコマンドの実行を頼んで turn を終えた (426 の決定 5)。結果は dispatcher が再開のときに渡す
 		if c.State != card.Running {
 			return fmt.Errorf("作業中の列に無い (今は %s)", c.State.Label())
@@ -733,7 +743,7 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		}
 		c.Run, c.RunAt, c.RunCwd = r.Command, now, r.Cwd
 		c.Wait = card.Wait{Kind: card.WaitResource, Resource: RunResource}
-		c.History = append(c.History, card.Event{At: now, Text: "テストの係に頼んだ: " + clip(r.Command, 80)})
+		c.History = append(c.History, card.Event{At: now, Text: card.RunAskedPrefix + clip(r.Command, 80)})
 	case "order": // 人間 (画面の + / card order) か PM (card order --from PM) が作業中のカードへ追加オーダーを出した (要件 15。CLI は issue 507)。積むだけで、PG へ届けるのは dispatcher (orders.go)
 		if r.Order != card.OrderAppend && r.Order != card.OrderRedirect {
 			return fmt.Errorf("追記か方針変更ではない (%s。別件は新しい依頼にする)", r.Order.Label())

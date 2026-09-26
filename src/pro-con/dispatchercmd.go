@@ -530,7 +530,8 @@ func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo stri
 		ListAll: func(ctx context.Context) ([]agents.Session, error) {
 			return agents.List(ctx, agents.ExecRunnerAll(cl.Path))
 		}, Now: time.Now,
-		Transcript: transcriptReader(projects, &live.TranscriptCache{})}
+		Transcript:     transcriptReader(projects, &live.TranscriptCache{}),
+		TranscriptPath: func(sessionID string) (string, error) { return live.FindTranscript(projects, sessionID) }}
 }
 
 // transcriptReader は dispatcher が session の transcript を読む口。1 回の tick で同じ session を何か所からも読む

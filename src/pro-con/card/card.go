@@ -224,9 +224,10 @@ func (c Card) WaitsOnPrompt() bool { return c.State == Waiting && c.Wait.Kind ==
 
 // EnterPrompt は作業中のカードを、PG の session の入力待ち (what は中身の短い名前) で質問待ちへ移す (dispatcher が一覧の status で決める)。
 func (c *Card) EnterPrompt(now time.Time, what string) {
-	c.State, c.Since, c.Stalled = Waiting, now, false
+	c.Stalled = false
 	c.Wait = Wait{Kind: WaitPermission, Question: PromptQuestion(what)}
 	c.History = append(c.History, Event{At: now, Text: "PG が入力待ち (" + what + ") で止まった。attach して答えると続きから動く"})
+	c.Enter(Waiting, now)
 }
 
 // PromptQuestion は入力待ちのカードの質問の欄の文 (what は中身の短い名前)。
@@ -236,9 +237,10 @@ func PromptQuestion(what string) string {
 
 // LeavePrompt は入力待ちのカードを作業中へ戻す (why は戻した理由)。待っていた間は進捗なしに数えない (watchdog を今から数え直す)。
 func (c *Card) LeavePrompt(now time.Time, why string) {
-	c.State, c.Since, c.LastProgress = Running, now, now
+	c.LastProgress = now
 	c.Wait = Wait{}
 	c.History = append(c.History, Event{At: now, Text: why})
+	c.Enter(Running, now)
 }
 
 // StallThreshold は watchdog が「進捗なし」を停滞とみなすまでの時間。コマンドの実行中は見込みの 2 倍と base の
@@ -297,6 +299,8 @@ type Card struct {
 	Orders  []Order
 	Btws    []Btw `json:",omitempty"`
 	History []Event
+	// Trail は列を移った足跡 (issue 516。trail.go)。列を移すのは Enter だけ
+	Trail []Step `json:",omitempty"`
 	// Attachments は PG が `pro-con card attach` で付けた添付 (付けた順。issue 453)
 	Attachments []Attachment `json:",omitempty"`
 	Log         []string     // PG の出力の末尾 (本番は transcript から読む)

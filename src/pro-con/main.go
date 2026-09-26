@@ -5,6 +5,7 @@
 //	pro-con --mock       模擬データで起動する (claude は起動しない。動作確認用)
 //	pro-con card …       PM / PG が使うカードの操作 (受付の箱に置く。pro-con card で使い方)
 //	pro-con log          dispatcher の出来事の記録を読む (読むだけ。pro-con log --help)
+//	pro-con stats        閉じたカードの所要を束ねて比べる (読むだけ。pro-con stats --help)
 //	pro-con config …     止めずに PG の枠と PM の数を変える (受付の箱に置く。pro-con config で使い方)
 //	pro-con ps           pro-con が起動したプロセスを役ごとに出す (読むだけ)
 //	pro-con du           pro-con が作った物のディスクの使用量と内訳 (読むだけ。数秒かかる)
@@ -293,6 +294,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM) // --follow は ctrl+c で終わる (rc=0)
 			defer stop()
 			return runLog(ctx, args[1:], liveDir(home), time.Now, stdout, stderr)
+		case "stats": // 閉じたカードの所要の記録を束ねて比べる (読むだけ。statscmd.go。issue 516)
+			home, err := os.UserHomeDir()
+			if err != nil {
+				_, _ = fmt.Fprintln(stderr, "pro-con:", err)
+				return 1
+			}
+			return runStats(args[1:], liveDir(home), time.Now, stdout, stderr)
 		case "dispatcher", "daemon": // 本物のモードの dispatcher を常駐させる (dispatchercmd.go)。daemon は 2026-09-25 に dispatcher へ改名する前の名前 (別名として残す)
 			if args[0] == "daemon" {
 				_, _ = fmt.Fprintln(stderr, "pro-con: daemon は dispatcher に改名した (pro-con dispatcher)")

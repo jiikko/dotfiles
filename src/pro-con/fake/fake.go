@@ -154,9 +154,8 @@ func (s *Sim) find(id string) *card.Card {
 }
 
 func (s *Sim) setState(c *card.Card, st card.State, why string) {
-	c.State = st
-	c.Since = s.now
 	c.History = append(c.History, card.Event{At: s.now, Text: why})
+	c.Enter(st, s.now)
 }
 
 // busyConsumers は PG の枠を使っているカード (作業中の列に居るもの) の数。

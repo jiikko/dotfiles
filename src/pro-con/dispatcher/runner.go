@@ -339,8 +339,9 @@ func (d *Dispatcher) finishRun(now time.Time, job *runJob, r runResult) (eventlo
 			cc.LastRun.Err = card.ClipRunes(termsafe.PlainLine(r.err.Error()), 200) // 理由は末尾にあることが多いので clipLine (60 字) より長く残す
 		}
 		cc.DropRun()
-		cc.State, cc.Since, cc.Resume = card.Planned, now, text
+		cc.Resume = text
 		cc.History = append(cc.History, card.Event{At: now, Text: fmt.Sprintf("テストの係: rc=%d (%s)。結果を渡して PG を再開する", r.rc, clipLine(job.command))})
+		cc.Enter(card.Planned, now)
 	})
 	return ev(eventlog.KindRun, job.cardID, "", fmt.Sprintf("%s のコマンドが終わった: rc=%d", job.cardID, r.rc)), err
 }
