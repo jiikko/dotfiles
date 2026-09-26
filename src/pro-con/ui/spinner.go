@@ -41,6 +41,7 @@ func waiting(c card.Card) bool {
 		return c.AwaitsRun()
 	case card.Planned:
 		return c.Session != ""
+	case card.Requested, card.Waiting, card.Review, card.Done:
 	}
 	return false
 }
