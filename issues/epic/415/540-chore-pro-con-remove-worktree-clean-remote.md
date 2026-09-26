@@ -16,9 +16,11 @@
 ## やること
 
 - `worktree clean` から `--remote` の口と、その処理・テストを外す (`src/pro-con/worktreecmd.go` / `worktreecmd_test.go`)。ローカルの片付け (492) はそのまま
-- `README.md` と `pro-con help usage` (`help/usage.md`) から `--remote` の記述を外す
+- `README.md` と `pro-con help usage` (`help/usage.md`) と `main.go` の冒頭のコメント (「--remote で origin のブランチも」) から `--remote` の記述を外す
 - remote に残っている 7 本は消さない (消すのも remote への push になる。ユーザーの決定)
-- 判定の部品 (`wtclean/judge.go` の `inBase`) は 492 のローカルの片付けが使うので残す。`--remote` だけが使っていた部品があれば一緒に外す
+- 判定の部品 (`wtclean/judge.go` の `inBase`) は 492 のローカルの片付けが使うので残す
+- `--remote` だけが使っている部品は丸ごと外す: `src/pro-con/wtclean/remote.go` (`ScanRemote` / `CleanRemote` / `JudgeRemote` / `RemoteVerdict` / `RemoteResult`) と `remote_test.go`。
+  呼ぶのは `worktreecmd.go` の `--remote` の分岐だけ (2026-09-27 に grep で確かめた)
 
 ## 関連
 
