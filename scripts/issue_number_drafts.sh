@@ -44,7 +44,7 @@ case "${1:-}" in -h|--help) usage; exit 0 ;; esac
 ref="${1:-origin/master}"
 
 root="$(git rev-parse --show-toplevel)"
-cd "$root"
+cd "$root" || exit 1
 
 fail() { printf '✗ %s\n' "$1" >&2; exit 1; }
 
