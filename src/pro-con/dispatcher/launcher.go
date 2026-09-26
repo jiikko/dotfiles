@@ -8,7 +8,8 @@ package dispatcher
 //   - TMUX / TMUX_PANE を落とす (PG が起動元の pane の状態のバッジを上書きしないように。415 論点 5)
 //   - 再開は stop してから `claude --bg --resume <session-id> -n <name> <text>` (実行中の session に --resume するとコピーが起動する。415 論点 11)
 //   - 起動・再開とも --settings で sessionSettings (rolesettings.go) を渡す: ユーザーの settings.json の language (461。-p では
-//     --setting-sources に user を入れても language が効かず、--settings で渡したときだけ効いた。440 の 7d) と、auto memory を外す (431)
+//     --setting-sources に user を入れても language が効かず、--settings で渡したときだけ効いた。440 の 7d) と、auto memory を外す (431) と、
+//     SendFeedback を外す (525。起動と再開で tools の並びを揃える)
 
 import (
 	"bytes"
