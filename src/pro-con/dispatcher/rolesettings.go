@@ -4,6 +4,10 @@ package dispatcher
 // (ユーザーの settings.json の hook・許可・~/.claude/rules はそれで外れる。2.1.282 の /context で実測)。
 // ここで外すのは --setting-sources では外れない残り:
 //   - auto memory (~/.claude/projects/<repo>/memory/MEMORY.md)。どの役割も外す
+//   - SendFeedback (feedbackDrafts: "off")。PG・PM だけ (再開があるのはこの 2 つ)。tools に入るかが GrowthBook の gate
+//     (tengu_juniper_relay) の起動時の値で揺れ、起動と再開で tools の並びが食い違うとキャッシュを先頭から外す (525)。
+//     "off" なら gate と関係なく外れる (2.1.283 の実体: isEnabled = feedbackDrafts !== "off" && gate。--settings の値も読む)。
+//     🚨 これだけでは再開の外れは止まらない: system prompt の EndConversation の段も別の gate で揺れ、設定では外せない (525)
 //   - ~/.claude/CLAUDE.md。cwd の祖先 (家) の .claude/CLAUDE.md として Project 扱いで拾われる。
 //     PG・PM は残す (git の禁止操作・レビュー方針が要る)。haiku (要約役・btw) は外す
 // 🚨 hook・許可をここへ足さない (--setting-sources で外した意味が崩れる)。PG に ~/.claude/rules の一部を戻すかは別の判断 (431)
@@ -17,7 +21,7 @@ import (
 
 // sessionSettings は PG・PM の --settings。language はユーザーの settings.json (userSettings) から写す (461)。
 func sessionSettings(userSettings string) string {
-	s := map[string]any{"autoMemoryEnabled": false}
+	s := map[string]any{"autoMemoryEnabled": false, "feedbackDrafts": "off"}
 	if lang := userLanguage(userSettings); lang != "" {
 		s["language"] = lang
 	}

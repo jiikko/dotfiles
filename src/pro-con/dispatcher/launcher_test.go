@@ -19,10 +19,11 @@ func writeSettings(t *testing.T, body string) string {
 	return p
 }
 
-// 起動・再開の引数に、ユーザーの settings.json の language と auto memory の無効化だけを --settings で渡す (461 / 431。hook・許可は持ち込まない)。
+// 起動・再開の引数に、ユーザーの settings.json の language と auto memory・SendFeedback の無効化だけを --settings で渡す
+// (461 / 431 / 525。hook・許可は持ち込まない。起動と再開で同じ値 = tools の並びが揃う)。
 func TestLauncherArgsPassLanguageAndNoAutoMemory(t *testing.T) {
 	p := writeSettings(t, `{"language": "日本語", "hooks": {"Stop": []}, "permissions": {"allow": ["Bash"]}, "model": "opus"}`)
-	const settings = `{"autoMemoryEnabled":false,"language":"日本語"}`
+	const settings = `{"autoMemoryEnabled":false,"feedbackDrafts":"off","language":"日本語"}`
 	l := ExecLauncher{UserSettings: p}
 	start := l.startArgs("pg-1", "依頼")
 	want := []string{"--bg", "-w", "pg-1", "-n", "pg-1", "--setting-sources", "project,local", "--settings", settings, "依頼"}
@@ -37,7 +38,7 @@ func TestLauncherArgsPassLanguageAndNoAutoMemory(t *testing.T) {
 }
 
 // 読めない・壊れている・language が無い / 文字列でない / 空なら language を渡さない (起動は止めない。値を固定で補わない)。
-// auto memory の無効化は language と関係なく渡す。~/.claude/CLAUDE.md は PG・PM には残す (431)。
+// auto memory・SendFeedback の無効化は language と関係なく渡す。~/.claude/CLAUDE.md は PG・PM には残す (431)。
 func TestLauncherArgsWithoutLanguageStillDisableAutoMemory(t *testing.T) {
 	cases := map[string]string{
 		"パスが空":        "",
@@ -51,8 +52,8 @@ func TestLauncherArgsWithoutLanguageStillDisableAutoMemory(t *testing.T) {
 		l := ExecLauncher{UserSettings: p}
 		for kind, args := range map[string][]string{"起動": l.startArgs("n", "p"), "再開": l.resumeArgs("sid", "n", "t")} {
 			i := slices.Index(args, "--settings")
-			if i < 0 || i+1 >= len(args) || args[i+1] != `{"autoMemoryEnabled":false}` {
-				t.Errorf("%s: %sの引数 = %q (--settings は auto memory の無効化だけのはず)", name, kind, args)
+			if i < 0 || i+1 >= len(args) || args[i+1] != `{"autoMemoryEnabled":false,"feedbackDrafts":"off"}` {
+				t.Errorf("%s: %sの引数 = %q (--settings は auto memory・SendFeedback の無効化だけのはず)", name, kind, args)
 			}
 		}
 	}
