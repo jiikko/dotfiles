@@ -265,6 +265,10 @@ func TestRunRefusesRequestFromOtherWorktree(t *testing.T) {
 	if len(fr.commands) != 0 || len(r.l.resumes) != 1 || !strings.Contains(r.l.resumes[0], "worktree ではない") {
 		t.Fatalf("別の worktree からの頼みを実行した / 断ったことを渡さない: %v %v", fr.commands, r.l.resumes)
 	}
+	// 断った理由は詳細の「進捗」にも残す (Resume は PG に渡したら消え、ログも無い。issue 469)
+	if lr := states(t, r.dir)["C-001"].LastRun; lr == nil || lr.RC != -1 || !strings.Contains(lr.Err, "worktree ではない") {
+		t.Fatalf("断った理由を最後の結果に残さない: %+v", lr)
+	}
 }
 
 // 出力の無い失敗は要約させず、出力が無かったことを渡す (空のログを要約させると、要約の代わりに問い返しが入る)。

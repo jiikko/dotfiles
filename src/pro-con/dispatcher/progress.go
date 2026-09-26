@@ -152,9 +152,10 @@ func (d *Dispatcher) gatherProgress(ctx context.Context, now time.Time) (store.P
 			ip, err := issueProgress(dir, r)
 			if err != nil {
 				errs = append(errs, r.String()+": "+err.Error())
-				continue
 			}
-			p.Issues = append(p.Issues, ip)
+			if ip.Total > 0 || ip.Last != "" || err == nil { // 途中で読めなくなった本文 (長すぎる行) も、読めた分は出す
+				p.Issues = append(p.Issues, ip)
+			}
 		}
 		p.Err = strings.Join(errs, " / ")
 		if p.Base != "" || len(p.Issues) > 0 || p.Err != "" {
@@ -241,10 +242,13 @@ func parseProgress(ip card.IssueProgress, sc *bufio.Scanner) (card.IssueProgress
 			continue
 		}
 		if m := headingRe.FindStringSubmatch(line); m != nil {
+			// H1 は issue の題 (「…進捗…を確かめられる」のように題に入ることがある) なので節にしない。節の中の深い見出しは
+			// 「進捗」を含んでも節を縮めない (### 進捗メモ の後の ### 次 で ## 進捗 を閉じない)
 			switch l := len(m[1]); {
-			case strings.Contains(m[2], "進捗"):
+			case level > 0 && l > level:
+			case l >= 2 && strings.Contains(m[2], "進捗"):
 				level = l
-			case level > 0 && l <= level:
+			case level > 0:
 				level = 0
 			}
 			continue
@@ -256,7 +260,7 @@ func parseProgress(ip card.IssueProgress, sc *bufio.Scanner) (card.IssueProgress
 			ip.Total++
 			if m[1] == " " {
 				if len(ip.Left) < progressLeftMax {
-					ip.Left = append(ip.Left, m[2])
+					ip.Left = append(ip.Left, card.ClipRunes(m[2], progressLastRunes))
 				}
 			} else {
 				ip.Done++
@@ -264,10 +268,7 @@ func parseProgress(ip card.IssueProgress, sc *bufio.Scanner) (card.IssueProgress
 			continue
 		}
 		if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") { // 字下げの無い項目 (続きの行と子の項目は数えない)
-			ip.Last = strings.TrimSpace(line[2:])
-			if r := []rune(ip.Last); len(r) > progressLastRunes {
-				ip.Last = string(r[:progressLastRunes]) + "…"
-			}
+			ip.Last = card.ClipRunes(strings.TrimSpace(line[2:]), progressLastRunes)
 		}
 	}
 	if ip.Total > 0 {

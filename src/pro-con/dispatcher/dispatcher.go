@@ -705,8 +705,8 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 				running++
 			}
 		case card.Planned:
-			// 順番 (issue 468) は初めての起動だけを止める。一度起動したカードの再開・起動の結果が分からないカードは止めない (立っているかもしれない)
-			if b := card.Blockers(st.Cards, c); len(b) > 0 && c.Session == "" && c.Launching == "" {
+			// 順番 (issue 468) は初めての起動だけを止める (card.HeldBy)
+			if b := card.HeldBy(st.Cards, c); len(b) > 0 {
 				text := afterWaitPrefix + strings.Join(b, ", ") + " の完了を待つ"
 				if lastAfterWait(c) != text { // 変わったときだけ書く (Tick ごとに記録を伸ばさない)
 					if err := d.update(c.ID, func(cc *card.Card) { cc.History = append(cc.History, card.Event{At: now, Text: text}) }); err != nil {

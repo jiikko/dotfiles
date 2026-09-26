@@ -18,6 +18,15 @@ func Blockers(cards []Card, c Card) []string {
 	return out
 }
 
+// HeldBy は順番が今 c の起動を止めている前のカード (dispatcher の割り当てと詳細の「今の待ち」が読む)。順番が止めるのは初めての起動だけで、
+// 一度起動したカードの再開・起動の結果が分からないカード (立っているかもしれない) は止めない。
+func HeldBy(cards []Card, c Card) []string {
+	if c.Session != "" || c.Launching != "" {
+		return nil
+	}
+	return Blockers(cards, c)
+}
+
 // Drop は id のカードを外した集合を返す。そのカードを前に持つカードの After からも外し、履歴に残す
 // (削除は完了と同じく待ちを解く。外さないと相手の無い順番が残り、不変条件の違反で以後の適用が止まる)。cards は書き換えない。
 func Drop(cards []Card, id string, now time.Time) []Card {

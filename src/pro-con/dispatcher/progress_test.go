@@ -69,7 +69,8 @@ func TestGatherProgress(t *testing.T) {
 
 	ref := func(n int) []card.IssueRef { return []card.IssueRef{{Repo: "r", Number: n}} }
 	saveCards(t, dir, []card.Card{
-		{ID: "C-001", Repo: "r", State: card.Running, Issues: append(ref(469), card.IssueRef{Repo: "x", Number: 469})}, // 別の repo の issue は読まない
+		// 別の repo (x) の issue は読まない
+		{ID: "C-001", Repo: "r", State: card.Running, Issues: append(ref(469), card.IssueRef{Repo: "x", Number: 469})},
 		{ID: "C-002", Repo: "r", State: card.Planned, Issues: ref(42)}, // worktree がまだ無い
 		{ID: "C-003", Repo: "r", State: card.Done, Issues: ref(469)},
 		{ID: "C-004", Repo: "r", State: card.Requested, Issues: ref(469)},
@@ -116,6 +117,10 @@ func TestParseProgress(t *testing.T) {
 			done: 2, total: 4, left: []string{"二", "三"}},
 		{name: "bullets", body: "# t\n## 進捗（2026-09-09）\n- 起票\n  続きの行\n- 段階 1\n  - 子の項目\n## 次\n- 別の節\n", last: "段階 1"},
 		{name: "none", body: "# t\n## 概要\n- [ ] 進捗の節ではない\n"},
+		// 題 (H1) に「進捗」があっても節にしない (issue 469 自身の題がこの形)
+		{name: "title", body: "# 469: 作業の進捗を確かめられる\n## 概要\n- [ ] 概要の項目\n## 関連\n- 関連の項目\n## 進捗\n"},
+		// 節の中の深い見出しが「進捗」を含んでも節を縮めない
+		{name: "nested", body: "## 進捗\n### 進捗メモ\n- [ ] a\n### 次\n- [ ] b\n## 関連\n- [ ] c\n", total: 2, left: []string{"a", "b"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ip, err := parseProgress(card.IssueProgress{}, bufio.NewScanner(strings.NewReader(tc.body)))

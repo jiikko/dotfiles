@@ -44,6 +44,9 @@ func SaveConflicts(dir string, c Conflicts) error { return saveJSON(dir, Conflic
 // LoadDoing は様子を読む。無ければ zero (dispatcher がまだ集めていない)。
 func LoadDoing(dir string) (Doing, error) { return loadJSON[Doing](dir, DoingFile) }
 
+// LoadConflicts は見張りが前に書いた衝突を読む (見張りが見られなかった回に前の結果を残す)。
+func LoadConflicts(dir string) (Conflicts, error) { return loadJSON[Conflicts](dir, ConflictsFile) }
+
 // Attach は c に集めた様子を足す (DoingFile の中身。無ければ何もしない)。
 // 完了したカードには足さない (dispatcher は完了のカードを集めないが、完了してから次に集めるまで最大 10 秒は前の様子が残る)。
 func (d Doing) Attach(c *card.Card) {
@@ -73,7 +76,7 @@ func LoadDerived(dir string) (Derived, []error) {
 	if d.Progress, err = loadJSON[Progress](dir, ProgressFile); err != nil {
 		errs = append(errs, fmt.Errorf("進捗: %w", err))
 	}
-	if d.Conflicts, err = loadJSON[Conflicts](dir, ConflictsFile); err != nil {
+	if d.Conflicts, err = LoadConflicts(dir); err != nil {
 		errs = append(errs, fmt.Errorf("取り込みの衝突: %w", err))
 	}
 	return d, errs

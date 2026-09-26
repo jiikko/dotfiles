@@ -20,6 +20,10 @@ func TestWaitingOn(t *testing.T) {
 		{"PM を起こさないなら人が分ける", Card{State: Requested}, Roles{PMOff: true}, "人の番: 依頼を分ける"},
 		{"順番の前が終わっていない", Card{State: Planned, After: []string{"C-001"}}, Roles{}, "C-001 の後"},
 		{"再開を待つ", Card{State: Planned, Session: "s", Resume: "答え"}, Roles{}, "PG の空き (同じ session の再開"},
+		// 順番が止めるのは初めての起動だけ (dispatcher と同じ card.HeldBy)。一度起動したカードの再開は前のカードを待たない
+		{"起動済みの再開は順番で止めない", Card{State: Planned, Session: "s", Resume: "答え", After: []string{"C-001"}}, Roles{}, "PG の空き (同じ session の再開"},
+		{"起動を確かめている", Card{State: Planned, Launching: "再開", After: []string{"C-001"}}, Roles{}, "dispatcher が PG の再開を確かめている"},
+		{"停滞の印を添える", Card{State: Running, Stalled: true}, Roles{}, "PG の turn の途中 (watchdog が停滞と判定した)"},
 		{"起動を待つ", Card{State: Planned}, Roles{}, "PG の空き"},
 		{"PG の turn の途中", Card{State: Running}, Roles{}, "PG の turn の途中"},
 		{"テストの係の実行", Card{State: Running, Run: "make test", Exec: Exec{Command: "make test", Since: now}}, Roles{}, "テストの係の実行"},
@@ -91,6 +95,14 @@ func TestProgressLines(t *testing.T) {
 	}
 	if got := (Card{}).ProgressLines(now, dur); got != nil {
 		t.Fatalf("何も無いカードに行を出した: %q", got)
+	}
+	c.Conflicts, c.ConflictsAt = []string{"衝突する"}, now.Add(-ConflictsStale-time.Second) // 見張りが止まって残った衝突
+	if got := strings.Join(c.ProgressLines(now, dur), "\n"); !strings.Contains(got, "取り込み: 衝突する (見張りが 5m1s前に見たまま。見張りが止まっている?)") {
+		t.Fatalf("古い衝突をそう言わない:\n%s", got)
+	}
+	c.LastRun = &RunRecord{Command: "make test", RC: -1, At: now, Err: "PG の作業ディレクトリが記録に無いので実行できない"} // 実行せずに返した
+	if got := strings.Join(c.ProgressLines(now, dur), "\n"); !strings.Contains(got, "(頼んだ場所が記録に無い) で `make test`") || !strings.Contains(got, "  PG の作業ディレクトリが記録に無い") {
+		t.Fatalf("実行できなかった理由・場所の無いことを言わない:\n%s", got)
 	}
 	c.ProgressAt = now.Add(-ProgressStale - time.Second)
 	if h := ProgressHead(c, now, dur); !strings.Contains(h, "集めたまま") {

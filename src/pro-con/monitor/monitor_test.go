@@ -404,6 +404,12 @@ func TestConflictsFileMirrorsCurrentFindings(t *testing.T) {
 	if c := load(); len(c.Cards["C-001"]) != 1 || len(c.Cards["C-002"]) != 1 {
 		t.Fatalf("見られなかった回に衝突を消した: %+v", c.Cards)
 	}
+	// 見張りを起こし直した直後 (知らせた物をメモリに持たない) に見られない回も、前に書いた結果を残す
+	r.m = &Monitor{Dir: r.dir, Repos: r.m.Repos, Now: r.m.Now, Submit: r.m.Submit}
+	_, _ = r.m.Check(context.Background())
+	if c := load(); len(c.Cards["C-001"]) != 1 || len(c.Cards["C-002"]) != 1 {
+		t.Fatalf("起こし直した直後の見られなかった回に衝突を消した: %+v", c.Cards)
+	}
 	r.git(r.repo, "update-ref", "refs/remotes/origin/master", base)
 	r.commit("C-002", "g.txt", "one\n") // 直した
 	r.check()

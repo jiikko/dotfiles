@@ -80,20 +80,20 @@ func (c Card) DoingHeadline() (label string, since time.Time, ok bool) {
 // 下位のコマンドの名前が続けば 2 語まで)。ほかは説明の先頭。
 func ShortLabel(d Doing) string {
 	if d.Kind != DoingProcess {
-		return clipRunes(d.Text, 20)
+		return ClipRunes(d.Text, 20)
 	}
 	f := strings.Fields(d.Text)
 	for len(f) > 0 && (isShell(filepath.Base(f[0])) || strings.HasPrefix(f[0], "-") || strings.Contains(f[0], "=")) {
 		f = f[1:]
 	}
 	if len(f) == 0 {
-		return clipRunes(d.Text, 20)
+		return ClipRunes(d.Text, 20)
 	}
 	name := filepath.Base(f[0])
 	if len(f) > 1 && isWord(f[1]) {
 		name += " " + f[1]
 	}
-	return clipRunes(name, 20)
+	return ClipRunes(name, 20)
 }
 
 func isShell(s string) bool {
@@ -117,7 +117,7 @@ func isWord(s string) bool {
 	return true
 }
 
-func clipRunes(s string, n int) string {
+func ClipRunes(s string, n int) string {
 	if r := []rune(s); len(r) > n {
 		return string(r[:n]) + "…"
 	}

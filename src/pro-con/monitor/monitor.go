@@ -88,7 +88,7 @@ func (m *Monitor) Check(ctx context.Context) (int, error) {
 			found[k] = f
 		}
 	}
-	if err := m.saveConflicts(now, found, keep); err != nil {
+	if err := m.saveConflicts(now, st.Cards, found, keep); err != nil {
 		errs = append(errs, "今の衝突を書けない: "+err.Error())
 	}
 	if m.told == nil {
@@ -307,7 +307,9 @@ func conflictPrefix(repo string) string { return "conflict:" + repo + ":" }
 
 // saveConflicts は今見えている衝突 (見つけた物と、見られずに前の結果を残す物) を store.ConflictsFile に書く (カードの詳細の「進捗」が
 // 読む。issue 469)。知らせたかどうか (told) には依らない: 受付の箱に置けなかった回も、詳細には今の結果を出す。
-func (m *Monitor) saveConflicts(now time.Time, found map[string]finding, keep unseen) error {
+// 見られなかったカードの前の結果は、知らせた物 (told) と前に書いたファイルの両方から残す (見張りを起こし直した直後は told が空。
+// 受付の箱に置けなかった衝突も told に入っていない)。
+func (m *Monitor) saveConflicts(now time.Time, cards []card.Card, found map[string]finding, keep unseen) error {
 	out := store.Conflicts{At: now, Cards: map[string][]string{}}
 	add := func(k string, f finding) {
 		if !strings.HasPrefix(k, "conflict:") {
@@ -323,6 +325,13 @@ func (m *Monitor) saveConflicts(now time.Time, found map[string]finding, keep un
 	for _, k := range sortedKeys(m.told) {
 		if _, ok := found[k]; !ok && keep.has(k) {
 			add(k, m.told[k])
+		}
+	}
+	if prev, err := store.LoadConflicts(m.Dir); err == nil {
+		for _, c := range cards {
+			if _, ok := out.Cards[c.ID]; !ok && len(prev.Cards[c.ID]) > 0 && keep.has(conflictPrefix(c.Repo)+c.ID) {
+				out.Cards[c.ID] = prev.Cards[c.ID]
+			}
 		}
 	}
 	return store.SaveConflicts(m.Dir, out)

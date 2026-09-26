@@ -43,7 +43,8 @@ type RunRecord struct {
 	Cwd     string        `json:"cwd"` // 頼んだ場所 (PG の worktree かその下)
 	RC      int           `json:"rc"`
 	Took    time.Duration `json:"took"`
-	At      time.Time     `json:"at"` // 終わった時刻
+	At      time.Time     `json:"at"`            // 終わった時刻
+	Err     string        `json:"err,omitempty"` // 実行できなかった・止めた理由 (ログが無いときはこれだけが手がかり)
 	Tail    []string      `json:"tail,omitempty"`
 	Log     string        `json:"log,omitempty"` // 全体のログのパス
 }
@@ -53,6 +54,9 @@ const RunTailLines = 3
 
 // ProgressStale を過ぎて集め直されていない進捗は古いと出す (dispatcher は progressEvery ごとに集める)。
 const ProgressStale = 3 * time.Minute
+
+// ConflictsStale を過ぎて見直されていない衝突は古いと出す (見張りは既定で 1 分ごとに見る。別のプロセスなので止まっても dispatcher は動く)。
+const ConflictsStale = 5 * time.Minute
 
 // RunDir は頼んだ場所を PG の worktree からの相対で書く (repo 全体の make test と src/pro-con の make test を見分ける)。
 func RunDir(c Card, cwd string) string {
@@ -104,16 +108,27 @@ func (c Card) ProgressLines(now time.Time, dur func(time.Duration) string) []str
 		}
 	}
 	if r := c.LastRun; r != nil {
-		out = append(out, fmt.Sprintf("テスト: 最後の結果 rc=%d (所要 %s・%s前) %s で `%s`", r.RC, dur(r.Took), dur(now.Sub(r.At)), RunDir(c, r.Cwd), r.Command))
+		where := RunDir(c, r.Cwd)
+		if where == "" {
+			where = "(頼んだ場所が記録に無い)"
+		}
+		out = append(out, fmt.Sprintf("テスト: 最後の結果 rc=%d (所要 %s・%s前) %s で `%s`", r.RC, dur(r.Took), dur(now.Sub(r.At)), where, r.Command))
+		if r.Err != "" {
+			out = append(out, "  "+r.Err)
+		}
 		for _, l := range r.Tail {
 			out = append(out, "  "+l)
 		}
 	}
+	seen := "見張りが " + dur(now.Sub(c.ConflictsAt)) + "前に見た"
+	if now.Sub(c.ConflictsAt) > ConflictsStale {
+		seen = "見張りが " + dur(now.Sub(c.ConflictsAt)) + "前に見たまま。見張りが止まっている?"
+	}
 	for _, n := range c.Conflicts {
-		out = append(out, "取り込み: "+n)
+		out = append(out, "取り込み: "+n+" ("+seen+")")
 	}
 	if !c.ConflictsAt.IsZero() && len(c.Conflicts) == 0 && c.Progress != nil && c.Progress.Ahead > 0 {
-		out = append(out, "取り込み: 衝突は見えていない (見張りが "+dur(now.Sub(c.ConflictsAt))+"前に見た。commit 済みの分だけ)")
+		out = append(out, "取り込み: 衝突は見えていない ("+seen+"。commit 済みの分だけ)")
 	}
 	return out
 }
@@ -164,9 +179,20 @@ func (c Card) WaitingOn(cards []Card, r Roles) string {
 		return "取り込みの係のレビュー"
 	case TurnPG:
 	}
+	w := c.pgWait(cards)
+	if c.Stalled && c.State == Running {
+		w += " (watchdog が停滞と判定した)"
+	}
+	return w
+}
+
+// pgWait は PG の番のカードの待ち。
+func (c Card) pgWait(cards []Card) string {
 	switch {
-	case c.State == Planned && len(Blockers(cards, c)) > 0:
-		return strings.Join(Blockers(cards, c), ", ") + " の後 (順番。前のカードが完了するまで起動しない)"
+	case c.Launching != "":
+		return "dispatcher が PG の" + c.Launching + "を確かめている"
+	case c.State == Planned && len(HeldBy(cards, c)) > 0:
+		return strings.Join(HeldBy(cards, c), ", ") + " の後 (順番。前のカードが完了するまで起動しない)"
 	case c.State == Planned && c.Resumes():
 		return "PG の空き (同じ session の再開。新しい起動より先)"
 	case c.State == Planned:
