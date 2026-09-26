@@ -12,9 +12,9 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
 	"termsafe"
 	"tuikit/listnav"
+	"tuikit/termwidth"
 
 	"pro-con/backend"
 	"pro-con/eventlog"
@@ -205,7 +205,7 @@ func (m *Model) logRow(f eventlog.Folded, selected bool, w int) string {
 	if c := logReasonColor(f.Last); c != "" {
 		reason = c + reason + sgrFgReset
 	}
-	rest := max(w-2-1-logTimeCells-logRoleCells-logCardCells-ansi.StringWidth(tail), 10)
+	rest := max(w-2-1-logTimeCells-logRoleCells-logCardCells-termwidth.Of(tail), 10)
 	row := fit(f.Last.At.Local().Format("01-02 15:04:05"), logTimeCells) + role + fit(logCard(f), logCardCells) + fit(reason, rest) + tail
 	if selected { // 選んでいる行に下線 (途中の色の戻し \x1b[0m で下線も消えるので、戻すたびに引き直す)
 		row = sgrUnderline + strings.ReplaceAll(row, sgrReset, sgrReset+sgrUnderline) + sgrNoUnderline

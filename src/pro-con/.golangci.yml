@@ -64,6 +64,10 @@ linters:
       forbid:
         - pattern: ^fmt\.Print(f|ln)?$
           msg: stdout への直接出力はしない (CLI の口は io.Writer で受けて書く。画面は bubbletea の描画だけ)
+        # 端末の幅・切り詰め・切り出しは tuikit/termwidth を通す (issue 524)。速い道 (と、入れるなら arm64 の実装) を
+        # 置く場所を termwidth の 1 か所にするため。字面で見るので、別名の import・変数経由の呼び出しは検出しない
+        - pattern: ^ansi\.(StringWidth|Cut|Truncate|TruncateLeft)$
+          msg: 幅は termwidth.Of、切り詰め・切り出しは termwidth.Truncate / Cut / Slice / SliceFrom / SplitAround を使う (issue 524)
     depguard:
       rules:
         card-pure:
@@ -103,6 +107,11 @@ linters:
           - dupl
           - errname
           - unparam
+      # テストは画面の出力を x/ansi で測って確かめてよい (測る側を termwidth にすると、測られる側と同じ実装で答え合わせになる)
+      - path: _test\.go
+        text: issue 524
+        linters:
+          - forbidigo
 
 issues:
   # 既定 (true) は 1 行 1 issue に重複除去するので、同じ行の別 linter の指摘が隠れる (glogx の注記と同じ)

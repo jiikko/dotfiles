@@ -8,8 +8,6 @@ import (
 
 	"termsafe"
 
-	"github.com/charmbracelet/x/ansi"
-
 	"tuikit/termwidth"
 )
 
@@ -430,9 +428,7 @@ func renderCode(b block, width int) []line {
 	out := make([]line, 0, len(b.raw))
 	for i, raw := range b.raw {
 		txt := expandTabs(raw)
-		if termwidth.Of(txt) > avail {
-			txt = ansi.Truncate(txt, avail, "…")
-		}
+		txt = termwidth.Truncate(txt, avail, "…") // 収まる行はそのまま返る
 		// コードは折り返さないのでソース行と 1:1。b.src は開きフェンスの行なので中身は +1 から
 		src := 0
 		if b.src > 0 {

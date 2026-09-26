@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"tuikit/termwidth"
+
 	"pro-con/card"
 	"pro-con/dispatcher"
 	"pro-con/live"
@@ -60,6 +62,26 @@ func TestPSMarksMismatch(t *testing.T) {
 	}
 }
 
+// 着手待ちの列で再開を待つ PG の状態の欄は、列の名前ではなく「再開待ち (訳)」(issue 535)。
+// 利用枠で同時に動かす数を絞っているなら枠のせい、そうでなければ PG の空き待ち。ほかの列は列の名前のまま。
+func TestPGStateShowsResumeWait(t *testing.T) {
+	planned := card.Card{State: card.Planned}
+	for _, tc := range []struct {
+		name string
+		c    card.Card
+		ds   store.DispatcherState
+		want string
+	}{
+		{"空き待ち", planned, store.DispatcherState{Limit: 3, Cap: 3}, "再開待ち (PG の空き待ち)"},
+		{"利用枠", planned, store.DispatcherState{Limit: 3, Cap: 1, Why: "枠 85%: 同時に 1 本まで"}, "再開待ち (利用枠)"},
+		{"作業中", card.Card{State: card.Running}, store.DispatcherState{Limit: 3, Cap: 1}, "作業中"},
+	} {
+		if got := pgState(tc.c, tc.ds); got != tc.want {
+			t.Errorf("%s: pgState = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
 // 見張り・supervisor の行は、lock の pid が生きていてコマンド行がその役のときだけ「動いている」(pid の使い回しで別のプロセスをその役と出さない)。
 func TestPSShowsMonitor(t *testing.T) {
 	for role, c := range map[string]struct{ lock, cmd string }{
@@ -86,6 +108,20 @@ func TestPSShowsMonitor(t *testing.T) {
 		}
 		if p := row(map[int]string{77: "/usr/bin/vim notes"}); p.PID != 0 || p.State != "止まっている" {
 			t.Fatalf("pid を使い回した別のプロセスを%sと出した: %+v", role, p)
+		}
+	}
+}
+
+// 表の列は表示幅で揃う: 役が全角 (見張り) の行と ASCII (supervisor) の行で、後ろの列が同じ桁から始まる。
+// fmt の %-10s は rune 数で詰めるので、全角の行だけが 3 桁右へずれていた (issue 524)。
+func TestPSRowsAlignByDisplayWidth(t *testing.T) {
+	var rows []string
+	for _, role := range []string{"見張り", "supervisor", "dispatcher"} {
+		rows = append(rows, formatProcRow(Proc{Role: role, PID: 77, State: "動いている", Card: "C-1", Session: "s-1", Command: "pro-con"}))
+	}
+	for _, r := range rows[1:] {
+		if termwidth.Of(r) != termwidth.Of(rows[0]) {
+			t.Fatalf("行の幅が揃わない (列がずれた):\n%s\n%s", rows[0], r)
 		}
 	}
 }

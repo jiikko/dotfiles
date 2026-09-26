@@ -88,7 +88,7 @@ func TestDeleteGivesUpAndKeepsCard(t *testing.T) {
 	}
 }
 
-// 削除の依頼を受けたカードは、回答で分解済みへ戻っていても PG を再開しない (止まるのを待つ間も)。止まったら消す。
+// 削除の依頼を受けたカードは、回答で着手待ちへ戻っていても PG を再開しない (止まるのを待つ間も)。止まったら消す。
 func TestDeleteDoesNotResume(t *testing.T) {
 	r := newCrashRig(t)
 	r.d.ListAll = func(ctx context.Context) ([]agents.Session, error) { return r.d.List(ctx) } // 止めても一覧がすぐには変わらない
@@ -183,7 +183,7 @@ func TestDeleteKillsStaleRun(t *testing.T) {
 	}
 }
 
-// PG を起動していない分解済みのカードは、止めるものが無いのでその Tick で消える (起動もしない)。
+// PG を起動していない着手待ちのカードは、止めるものが無いのでその Tick で消える (起動もしない)。
 func TestDeletePlannedWithoutPG(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
@@ -195,7 +195,7 @@ func TestDeletePlannedWithoutPG(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, ok := states(t, dir)["C-001"]; ok || len(l.starts) != 0 || len(l.stopTries) != 0 || !hasNote(notes, eventlog.KindDelete, "PG の session は動いていなかった") {
-		t.Fatalf("PG の無い分解済みのカードの削除: starts=%v stops=%v notes=%q", l.starts, l.stopTries, notes)
+		t.Fatalf("PG の無い着手待ちのカードの削除: starts=%v stops=%v notes=%q", l.starts, l.stopTries, notes)
 	}
 }
 

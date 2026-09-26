@@ -5,8 +5,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
 	"tuikit/anim"
+	"tuikit/termwidth"
 
 	"pro-con/card"
 )
@@ -176,16 +176,11 @@ func (m *Model) overlayMoves(board []string) []string {
 
 // splice は line の表示桁 x から幅 w を s で置き換える。s の前後で SGR を戻す (移動中のカードの色を周りへ漏らさない)。
 func splice(line string, x, w int, s string) string {
-	total := ansi.StringWidth(line)
+	left, lw, right, total := termwidth.SplitAround(line, x, w) // 左右の切り出しと幅を 1 回で (行の幅を測り直さない)
 	if x < 0 || x >= total {
 		return line
 	}
-	left := fit(ansi.Cut(line, 0, x), x)
-	right := ""
-	if x+w < total {
-		right = ansi.Cut(line, x+w, total)
-	}
-	return left + sgrReset + s + sgrReset + right
+	return left + termwidth.PadSpaces(x-lw) + sgrReset + s + sgrReset + right
 }
 
 // ghostLines は元の場所に一瞬残す点線の枠 (cardLines 行)。

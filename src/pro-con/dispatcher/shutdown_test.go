@@ -17,7 +17,7 @@ import (
 	"slices"
 )
 
-// 終了で止めるとき: 作業中のカードは PG を止めて分解済みへ戻し、続きから再開する文を持たせる。質問待ちは列をそのまま残して止める。
+// 終了で止めるとき: 作業中のカードは PG を止めて着手待ちへ戻し、続きから再開する文を持たせる。質問待ちは列をそのまま残して止める。
 func TestShutdownStopsOwnPGsAndMakesThemResumable(t *testing.T) {
 	r := newCrashRig(t) // C-001 が作業中・登録済み
 	planned(t, r.dir, 1)
@@ -179,7 +179,7 @@ func TestShutdownStopsJustLaunchedPG(t *testing.T) {
 	}
 }
 
-// 止める直前に PG が置いた質問は、止める前に適用する (作業中のまま分解済みへ戻して、次の起動で除けて失わない)。
+// 止める直前に PG が置いた質問は、止める前に適用する (作業中のまま着手待ちへ戻して、次の起動で除けて失わない)。
 func TestShutdownAppliesPendingRequests(t *testing.T) {
 	r := newCrashRig(t)
 	if _, err := store.Submit(r.dir, store.Request{Kind: "ask", CardID: "C-001", Question: "赤か青か"}); err != nil {

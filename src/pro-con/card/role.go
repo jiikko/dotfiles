@@ -127,7 +127,7 @@ func (c Card) LastCall(r Roles, ss []RoleState) (string, time.Time, bool) {
 }
 
 // Assignee はカードの担当 = 今そのカードで手を動かす者 (Turn から決め、役が手に取っていれば仕事の名前を添える。誰の番でもなければ空)。
-// 🚨 記録の Owner は作った・受けた者で、分解済みでも「PM」のまま残る。担当として出さない (2026-09-25 のボードで C-013〜C-016 が「分解済み 担当: PM」)
+// 🚨 記録の Owner は作った・受けた者で、着手待ちでも「PM」のまま残る。担当として出さない (2026-09-25 のボードで C-013〜C-016 が「着手待ち 担当: PM」)
 func (c Card) Assignee(r Roles, ss []RoleState) string {
 	t := c.Turn(r)
 	if t == TurnPG && c.State == Planned {

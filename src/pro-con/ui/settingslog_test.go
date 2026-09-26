@@ -37,7 +37,7 @@ func newLogSpy() *logSpy {
 	at := func(sec int) time.Time { return t0.Add(time.Duration(sec) * time.Second) }
 	s.pending = []eventlog.Event{
 		{At: at(0), Kind: eventlog.KindDispatcher, Reason: "dispatcher が起きた (pid 1・手で起動した)"},
-		{At: at(1), Kind: eventlog.KindApply, Card: "C-002", Reason: "C-002: 分解済みへ"},
+		{At: at(1), Kind: eventlog.KindApply, Card: "C-002", Reason: "C-002: 着手待ちへ"},
 		{At: at(10), Kind: eventlog.KindSupervisor, Reason: "dispatcher が落ちた (signal: killed。10m0s の間に 1 回目)。10s 後に起こし直す"},
 	}
 	for i := range 4 { // 3 秒ごとの同じ失敗 (1 行に畳まれる)
@@ -74,7 +74,7 @@ func TestSettingsLogTab(t *testing.T) {
 	if strings.Count(scr, "起動できない") != 1 || !strings.Contains(scr, "… ×4 回、最後") {
 		t.Fatalf("繰り返しを畳まない:\n%s", scr)
 	}
-	if strings.Contains(scr, "分解済みへ") {
+	if strings.Contains(scr, "着手待ちへ") {
 		t.Fatalf("カードの出来事を既定で出した:\n%s", scr)
 	}
 	for _, w := range []string{"supervisor", "C-003", "3 行 (畳む前 6 件)"} {
@@ -86,11 +86,11 @@ func TestSettingsLogTab(t *testing.T) {
 		t.Fatalf("開いたときに最新 (一番下) を選ばない: cursor=%d", m.set.cursor)
 	}
 	press(m, "c")
-	if scr := setScreen(m); !strings.Contains(scr, "分解済みへ") || !strings.Contains(scr, "c でプロセスの出来事だけにする") {
+	if scr := setScreen(m); !strings.Contains(scr, "着手待ちへ") || !strings.Contains(scr, "c でプロセスの出来事だけにする") {
 		t.Fatalf("c でカードの出来事を混ぜない:\n%s", scr)
 	}
 	press(m, "c")
-	if strings.Contains(setScreen(m), "分解済みへ") {
+	if strings.Contains(setScreen(m), "着手待ちへ") {
 		t.Fatal("もう一度 c でプロセスの出来事だけに戻らない")
 	}
 }

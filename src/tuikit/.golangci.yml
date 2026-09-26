@@ -100,6 +100,9 @@ linters:
         # depguard はパッケージ単位でしか止められず、同じ x/ansi の 2 本目の幅モデルを止められない
         - pattern: ^ansi\.StringWidthWc$
           msg: 幅は termwidth.Of (GraphemeWidth) の 1 系統だけ (glogx issue 112 / 124)
+        # 幅・切り詰め・切り出しは termwidth を通す (速い道を置く場所を 1 か所にする。issue 524)。termwidth 自身は下で除外
+        - pattern: ^ansi\.(StringWidth|Cut|Truncate|TruncateLeft)$
+          msg: 幅は termwidth.Of、切り詰め・切り出しは termwidth.Truncate / Cut / Slice / SliceFrom / SplitAround を使う (issue 524)
         # 部品は時刻を引数 (now) で受け取る。中で取ると、使う側のテストが時刻を固定できない
         - pattern: ^time\.(Now|Since)$
           msg: 部品は時刻を引数で受け取る (使う側のテストで固定できるように)
@@ -109,6 +112,11 @@ linters:
       - path: _test\.go
         linters:
           - unparam
+      # termwidth は x/ansi を包む層そのもの。テストは x/ansi を正本にして答え合わせをする
+      - path: (termwidth/|_test\.go)
+        text: issue 524
+        linters:
+          - forbidigo
       # デモは実時間で動かす本物のアプリ
       - path: examples/
         text: 部品は時刻を引数で受け取る

@@ -71,7 +71,7 @@ func (s *Sim) Events() ([]eventlog.Event, error) {
 		ev(40*time.Minute, eventlog.KindDispatcher, "", "dispatcher が起きた (pid 0・画面か supervisor が起こした) (模擬)"),
 		ev(40*time.Minute, eventlog.KindMonitor, "", "見張りを起こす (模擬)"),
 		ev(39*time.Minute, eventlog.KindLaunch, "PM", "PM を再開して依頼の列のカードと PG の質問を知らせた (pm000001: C-011) (模擬)"),
-		ev(38*time.Minute, eventlog.KindApply, "C-011", "C-011: 分解済みへ (模擬)"),
+		ev(38*time.Minute, eventlog.KindApply, "C-011", "C-011: 着手待ちへ (模擬)"),
 		ev(37*time.Minute, eventlog.KindLaunch, "C-005", "C-005 に PG を起動した (3feb6001) (模擬)"),
 		ev(37*time.Minute, eventlog.KindRegister, "", "PG の session を 1 本登録した (模擬)"),
 	}

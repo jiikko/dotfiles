@@ -26,7 +26,7 @@ func TestMoveCardWithKJ(t *testing.T) {
 	m.jumpCol(slices.Index(card.Columns, card.Planned))
 	before := laneIDs(m)
 	if len(before) < 2 {
-		t.Fatalf("見本の分解済みのレーンに 2 枚以上要る: %v", before)
+		t.Fatalf("見本の着手待ちのレーンに 2 枚以上要る: %v", before)
 	}
 	m.selected = before[1]
 	press(m, "K")

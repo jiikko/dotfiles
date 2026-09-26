@@ -55,7 +55,7 @@ func TestMoveBlockedCardSaysItWaits(t *testing.T) {
 	}
 }
 
-// 押した後に列を移ったカード (回答で分解済みへ・起動して作業中へ) は、見ていない列で入れ替えない。
+// 押した後に列を移ったカード (回答で着手待ちへ・起動して作業中へ) は、見ていない列で入れ替えない。
 func TestMoveRejectsAfterLaneChange(t *testing.T) {
 	dir := t.TempDir()
 	submit(t, dir, Request{Kind: "add", Title: "a"})
@@ -63,7 +63,7 @@ func TestMoveRejectsAfterLaneChange(t *testing.T) {
 	applyAll(t, dir)
 	seen := cardOf(t, dir, "C-002").Since
 	submit(t, dir, Request{Kind: "plan", CardID: "C-001"})
-	submit(t, dir, Request{Kind: "plan", CardID: "C-002"}) // 押した後に分解済みへ移った
+	submit(t, dir, Request{Kind: "plan", CardID: "C-002"}) // 押した後に着手待ちへ移った
 	submit(t, dir, Request{Kind: "move", CardID: "C-002", Delta: -1, Seen: seen})
 	res, err := Apply(dir, t0.Add(time.Minute), nil) // 押した時刻より後の Tick で適用する
 	if err != nil || !strings.Contains(res[2].Err, "列へ移った") {

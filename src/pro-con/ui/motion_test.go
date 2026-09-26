@@ -15,7 +15,7 @@ type clock struct{ t time.Time }
 
 func (c *clock) now() time.Time { return c.t }
 
-// movingModel は M1 が「分解済み」にある状態から始め、Snapshot 上で「作業中」へ移して tick を 1 回送る。
+// movingModel は M1 が「着手待ち」にある状態から始め、Snapshot 上で「作業中」へ移して tick を 1 回送る。
 func movingModel(t *testing.T) (*Model, *spy, *clock) {
 	t.Helper()
 	be := newSpy()
@@ -92,7 +92,7 @@ func TestMotionEndsAndFramesStop(t *testing.T) {
 // 移動中のカードは、そのカードの無いタブへ切り替えたら描かない (別の repo のカードが画面を横切らない)。
 func TestTabSwitchDropsMotionOfHiddenCard(t *testing.T) {
 	be := newRepoSpy()
-	be.snap.Cards[1].State = card.Planned // O1 (obaket) を分解済みから始める
+	be.snap.Cards[1].State = card.Planned // O1 (obaket) を着手待ちから始める
 	clk := &clock{t: be.snap.Now}
 	m := New(be, repos("dotfiles", "obaket"))
 	m.now = clk.now

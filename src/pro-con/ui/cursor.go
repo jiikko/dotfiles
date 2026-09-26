@@ -6,10 +6,12 @@ package ui
 import (
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"tuikit/anim"
+	"tuikit/termwidth"
 )
 
 // 選択の枠の文字と色 (issue 472: 赤い二重線。ユーザーの指定)。赤は docs/theme-colors.md の 196 (sync の枠と同じ番号。
@@ -140,9 +142,15 @@ type frameCell struct {
 // cellsOf は行の字を表示の桁ごとに並べる (色の指定は落とす)。幅 0 の字 (結合文字) は前の字に付ける。
 func cellsOf(line string) []frameCell {
 	var cs []frameCell
-	for _, ru := range ansi.Strip(line) {
-		s := string(ru)
-		switch w := ansi.StringWidth(s); w {
+	plain := ansi.Strip(line)
+	for i := 0; i < len(plain); {
+		ru, n := utf8.DecodeRuneInString(plain[i:])
+		s := plain[i : i+n] // 字ごとに string(rune) を作らない (演出のコマでは枠の辺の行ごとに全桁を並べる)
+		if ru == utf8.RuneError && n == 1 {
+			s = string(utf8.RuneError) // 不正な byte は U+FFFD の字として並べる (range で回したときと同じ)
+		}
+		i += n
+		switch w := termwidth.Of(s); w {
 		case 0:
 			if n := len(cs); n > 0 {
 				cs[n-1].r += s
@@ -184,7 +192,7 @@ func softEdge(line string, left, w int, l, mid, r, border, style string) string 
 			continue
 		}
 		c := cs[x]
-		cw := ansi.StringWidth(c.r)
+		cw := termwidth.Of(c.r)
 		switch {
 		case !c.start && x != left: // 全角の後半 (前半で書いた)
 		case !c.start || x+cw > left+w: // 前半が辺の外 / 後半が辺の外
@@ -206,5 +214,5 @@ func softSide(line string, x int, border, bgStyle string) string {
 	if !c.start {
 		at = x - 1
 	}
-	return splice(line, at, ansi.StringWidth(c.r), bgStyle+c.r)
+	return splice(line, at, termwidth.Of(c.r), bgStyle+c.r)
 }

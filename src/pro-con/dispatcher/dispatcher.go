@@ -5,7 +5,7 @@
 //  3. (落ちた PG を見張る trackDead の後に) 閉じたカード・削除の依頼を受けたカードの PG の session を止める (close.go。issue 447 / 451)。削除のカードは止まったら記録から外す
 //  4. 依頼の列のカードを PM に知らせる (pm.go。issue 437)。PM が居なければ起動し、居れば再開する
 //  5. 追加オーダーを届けるカードを再開の列へ戻し (orders.go)、btw に答える (btw.go)
-//  6. 分解済みのカードに、上限まで PG を割り当てる。回答を受けたカード (Resume が有る) と追加オーダーを届けるカードは同じ session を再開し、
+//  6. 着手待ちのカードに、上限まで PG を割り当てる。回答を受けたカード (Resume が有る) と追加オーダーを届けるカードは同じ session を再開し、
 //     それ以外は新しく起動する
 //
 // 書き手は dispatcher だけ (426 の決定 1)。PG の起動と再開は Launcher に任せ、テストでは偽物に差し替える。
@@ -601,7 +601,7 @@ func askAfterCrashes(c *card.Card, now time.Time, why string) {
 }
 
 // requeueVanished は、PG の session が自動の再開なしに一覧から消えた (外からの claude stop・マシンの再起動) 作業中のカードを
-// 分解済みへ戻す。同じ Tick の割り当て (dispatch) が同じ session を再開する (一覧に無いので止めずに)。
+// 着手待ちへ戻す。同じ Tick の割り当て (dispatch) が同じ session を再開する (一覧に無いので止めずに)。
 // 戻さないと作業中のまま枠を占め続け、回答・差し戻し・閉じるのどれも作業中では受けないので、人も PM も動かせない (458)。
 func (d *Dispatcher) requeueVanished(now time.Time, ss []agents.Session) ([]eventlog.Event, error) {
 	st, err := store.Load(d.Dir)
@@ -617,7 +617,7 @@ func (d *Dispatcher) requeueVanished(now time.Time, ss []agents.Session) ([]even
 		if !d.gone(c, now, ss, reg) {
 			continue
 		}
-		text := fmt.Sprintf("PG の session が一覧から消えて戻らない (%s 待った)。分解済みへ戻し、同じ session を再開する", restartWait)
+		text := fmt.Sprintf("PG の session が一覧から消えて戻らない (%s 待った)。着手待ちへ戻し、同じ session を再開する", restartWait)
 		if err := d.update(c.ID, func(cc *card.Card) {
 			// 消えたのも落ちた回数に数える (消えたのを見た時刻で)。上限に達したら戻さずに人の番へ (上限の無い再開で利用枠を使い続けない)
 			if why := d.countCrash(cc, now, cc.DeadSince, "一覧から消えて戻らない"); why != "" {
@@ -705,7 +705,7 @@ func (d *Dispatcher) watch(now time.Time) ([]eventlog.Event, error) {
 	return notes, nil
 }
 
-// dispatch は分解済みのカードに、枠を使うカード (card.HoldsPGSlot: turn の途中の PG) が上限 (利用枠で絞った数。usage.go) に達するまで
+// dispatch は着手待ちのカードに、枠を使うカード (card.HoldsPGSlot: turn の途中の PG) が上限 (利用枠で絞った数。usage.go) に達するまで
 // PG を割り当てる (再開が先、その中はレーンの並び)。テストの係の結果を待って idle の PG は枠を使わない (issue 455)
 //   - 起動・再開の前に、印 (Launching) と時刻を記録に書く。結果が分かったら印を外して作業中にする
 //   - 前の Tick の起動・再開の結果が分からないまま (印が残っている) のカードは、一覧で確かめる。立っていれば取り込み、
@@ -794,7 +794,7 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 	for i, c := range fresh {
 		if running >= limit {
 			if running < lim { // 枠で絞らなくても止まっていたなら、枠のせいにしない
-				held = fmt.Sprintf("分解済みの %d 枚を起動・再開しない (%s)", len(fresh)-i, why)
+				held = fmt.Sprintf("着手待ちの %d 枚を起動・再開しない (%s)", len(fresh)-i, why)
 			}
 			break
 		}

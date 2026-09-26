@@ -12,7 +12,7 @@ import (
 	"pro-con/store"
 )
 
-// planAfter は依頼の列にカードを 1 枚足し、前のカード after の後に回して分解済みにする (issue 468)。
+// planAfter は依頼の列にカードを 1 枚足し、前のカード after の後に回して着手待ちにする (issue 468)。
 func planAfter(t *testing.T, dir string, after ...string) {
 	t.Helper()
 	if _, err := store.Submit(dir, store.Request{Kind: "add", Title: "後", Repo: "dotfiles"}); err != nil {

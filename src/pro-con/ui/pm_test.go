@@ -10,7 +10,7 @@ import (
 	"pro-con/card"
 )
 
-// pmSnap は依頼の列に 2 枚 (R1 は PM が分けている最中)・分解済みに記録の担当が PM のまま 1 枚を置いた画面 (issue 476)。
+// pmSnap は依頼の列に 2 枚 (R1 は PM が分けている最中)・着手待ちに記録の担当が PM のまま 1 枚を置いた画面 (issue 476)。
 func pmSnap(t *testing.T, pm card.RoleState) *Model {
 	t.Helper()
 	be := newSpy()
@@ -71,7 +71,7 @@ func TestPMStaleWhenDispatcherStopped(t *testing.T) {
 }
 
 // 依頼の列のカードごとに PM の段階を出す。1 回の turn で 2 枚知らせても、分解中と最後の道具の呼び出しは今扱っている 1 枚だけ (480)。
-// 分解済みの担当は記録の Owner (PM) ではなく PG 待ち (476)。
+// 着手待ちの担当は記録の Owner (PM) ではなく PG 待ち (476)。
 func TestLaneShowsPMWork(t *testing.T) {
 	m := pmSnap(t, card.RoleState{Phase: card.RoleBusy, Cards: []string{"Q1", "Q2"}, Current: "Q2",
 		Last: "Bash: pro-con card show Q2", LastAt: newSpy().snap.Now.Add(-5 * time.Second)})

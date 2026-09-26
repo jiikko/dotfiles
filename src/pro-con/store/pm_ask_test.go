@@ -9,7 +9,7 @@ import (
 
 // PM は依頼の列のカードについて人に聞ける (issue 498): 質問待ちの列の人の番になり、PM は自分の問いに答えられない。
 // 人の回答は PG の再開の文 (Resume) にせず、依頼の列へ戻して PMAnswer と履歴に原文で残す。分けたら PMAnswer は消える。
-// 分解済みの列のカードには聞けない (PM が聞くのは分ける前。作業の後は PG が聞く)。
+// 着手待ちの列のカードには聞けない (PM が聞くのは分ける前。作業の後は PG が聞く)。
 func TestPMAsksOnRequestedCard(t *testing.T) {
 	dir := t.TempDir()
 	submit(t, dir, Request{Kind: "add", Title: "469 の続き"})
@@ -45,6 +45,6 @@ func TestPMAsksOnRequestedCard(t *testing.T) {
 	}
 	submit(t, dir, Request{Kind: "ask", CardID: "C-001", Question: "もう一度"})
 	if res := applyAll(t, dir); len(res) != 1 || res[0].Err == "" {
-		t.Fatalf("分解済みのカードで ask を受けた: %+v", res)
+		t.Fatalf("着手待ちのカードで ask を受けた: %+v", res)
 	}
 }

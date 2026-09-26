@@ -9,7 +9,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
+	"tuikit/termwidth"
 )
 
 type screen int
@@ -299,8 +299,8 @@ func (m *model) viewPick() string {
 	f.add("")
 	remW, labelW := 0, 0
 	for _, j := range m.jobs {
-		remW = max(remW, ansi.StringWidth(formatRemaining(j.at.Sub(m.now))))
-		labelW = max(labelW, ansi.StringWidth(j.label))
+		remW = max(remW, termwidth.Of(formatRemaining(j.at.Sub(m.now))))
+		labelW = max(labelW, termwidth.Of(j.label))
 	}
 	// 🚨 送り先の表示名は #{window_name} で、長さに上限が無い。桁揃えに使うと 1 件の長い名前が
 	//    全行を押し出し、文字列の列が画面外へ消える (= 何を取り消すか読めないまま確認へ進む)
@@ -308,8 +308,8 @@ func (m *model) viewPick() string {
 	textW := maxInt(m.width-2-remW-labelW-4, 4)
 	for i, j := range m.jobs {
 		line := fmt.Sprintf("%s  %s  %s",
-			pad(formatRemaining(j.at.Sub(m.now)), remW),
-			pad(truncate(j.label, labelW), labelW),
+			termwidth.FillRight(formatRemaining(j.at.Sub(m.now)), remW), // byte 数で詰めると日本語で崩れる
+			termwidth.FillRight(truncate(j.label, labelW), labelW),
 			truncate(j.text, textW))
 		f.add(row(i == m.pickIdx, false, line))
 	}

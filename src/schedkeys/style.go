@@ -1,5 +1,5 @@
 // 端末装飾 (SGR) の最小限のヘルパー。lipgloss は使わない: 依存を増やさずに済む量で、
-// 幅計算は ansi.StringWidth に任せるため。
+// 幅計算は termwidth.Of (tuikit) に任せるため。
 //
 // 🚨 表示文字列に絵文字・曖昧幅の記号を混ぜない (端末と描画側の幅計算が食い違い、行ごとに
 //
@@ -28,7 +28,7 @@ func sgr(style, s string) string {
 	return "\x1b[" + style + "m" + s + "\x1b[0m"
 }
 
-// stripSGR は幅を測るために装飾を落とす (ansi.StringWidth は装飾を無視するが、
+// stripSGR は幅を測るために装飾を落とす (termwidth.Of は装飾を無視するが、
 // 自前で桁を数える箇所では素の文字列が要る)。
 func stripSGR(s string) string {
 	var b strings.Builder

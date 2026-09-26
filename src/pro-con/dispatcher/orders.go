@@ -29,7 +29,7 @@ import (
 	"pro-con/store"
 )
 
-// deliverOrders は未達の追加オーダーを持つ作業中のカードを、再開の列 (分解済み) へ戻す (dispatch が同じ session を再開して届ける)。
+// deliverOrders は未達の追加オーダーを持つ作業中のカードを、再開の列 (着手待ち) へ戻す (dispatch が同じ session を再開して届ける)。
 func (d *Dispatcher) deliverOrders(now time.Time, ss []agents.Session) ([]eventlog.Event, error) {
 	st, err := store.Load(d.Dir)
 	if err != nil {

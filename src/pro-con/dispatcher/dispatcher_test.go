@@ -81,7 +81,7 @@ func (f *fakeLauncher) Stop(_ context.Context, id string) error {
 	return nil
 }
 
-// planned は分解済みのカードを n 枚積んだ記録を作る (箱から add → plan を通す)。
+// planned は着手待ちのカードを n 枚積んだ記録を作る (箱から add → plan を通す)。
 func planned(t *testing.T, dir string, n int) {
 	t.Helper()
 	for i := range n {
@@ -142,7 +142,7 @@ func states(t *testing.T, dir string) map[string]card.Card {
 	return out
 }
 
-// 分解済みのカードに上限まで PG を起動し、古い順に割り当てる。
+// 着手待ちのカードに上限まで PG を起動し、古い順に割り当てる。
 func TestDispatchRespectsLimit(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 3)
@@ -238,7 +238,7 @@ func TestReworkedCardResumesSameSession(t *testing.T) {
 	}
 }
 
-// 起動に失敗したカードは分解済みのまま残し、失敗を履歴に書く (作業中にしない)。
+// 起動に失敗したカードは着手待ちのまま残し、失敗を履歴に書く (作業中にしない)。
 func TestLaunchFailureKeepsCardPlanned(t *testing.T) {
 	dir := t.TempDir()
 	planned(t, dir, 1)
@@ -392,7 +392,7 @@ func TestUnconfirmedLaunchWaitsGraceThenRetries(t *testing.T) {
 	}
 }
 
-// claude が起動・再開を受け付けない (rc≠0 がすぐ返る) 失敗が launchRejectLimit 回続いたら、分解済みで回し続けず人の番へ回して理由を書く (462)。
+// claude が起動・再開を受け付けない (rc≠0 がすぐ返る) 失敗が launchRejectLimit 回続いたら、着手待ちで回し続けず人の番へ回して理由を書く (462)。
 // 回答すると同じカードをもう一度起動・再開する。立っているかもしれない失敗 (fail) は数えない (取り込む前に人の番へ回さない)。
 func TestRepeatedRejectedLaunchGoesToHuman(t *testing.T) {
 	dir := t.TempDir()
@@ -431,7 +431,7 @@ func TestRepeatedRejectedLaunchGoesToHuman(t *testing.T) {
 		t.Fatal(err)
 	}
 	if c := states(t, dir)["C-001"]; c.State != card.Planned || c.Rejects != 0 {
-		t.Fatalf("回答で分解済みへ戻らない / 回数が残った: %v Rejects=%d", c.State, c.Rejects)
+		t.Fatalf("回答で着手待ちへ戻らない / 回数が残った: %v Rejects=%d", c.State, c.Rejects)
 	}
 
 	dir = t.TempDir()
@@ -1467,7 +1467,7 @@ func TestResumeWaitsFromDeathNotAnswer(t *testing.T) {
 	r.d.Limit = 0
 	r.tick(t) // 回答 (Since = t0)。上限で再開は待たされる
 	if c := states(t, r.dir)["C-001"]; c.State != card.Planned || len(r.l.resumes) != 0 {
-		t.Fatalf("前提: 回答で分解済みに戻り、まだ再開していない: %v %v", c.State, r.l.resumes)
+		t.Fatalf("前提: 回答で着手待ちに戻り、まだ再開していない: %v %v", c.State, r.l.resumes)
 	}
 	r.d.Limit = 2
 	r.ss[0].PID = 0 // 回答から 2 分後、前の session が落ちている
@@ -1526,7 +1526,7 @@ func TestDeadSinceClearedWhenAlive(t *testing.T) {
 }
 
 // 作業中の PG の session が自動の再開なしに一覧から消えたら (外からの claude stop・再起動)、消えたのを見てから restartWait は待ち、
-// 過ぎても戻らなければ分解済みへ戻して同じ session を再開する (作業中のまま枠を占め続けない = 458)。戻したことは履歴と出来事に書く。
+// 過ぎても戻らなければ着手待ちへ戻して同じ session を再開する (作業中のまま枠を占め続けない = 458)。戻したことは履歴と出来事に書く。
 func TestVanishedRunningCardResumes(t *testing.T) {
 	r := newCrashRig(t)
 	r.ss = nil // 一覧から消えた (再開の文は出ない)
@@ -1541,7 +1541,7 @@ func TestVanishedRunningCardResumes(t *testing.T) {
 	notes := r.tick(t)
 	c := states(t, r.dir)["C-001"]
 	if len(r.l.resumes) != 1 || r.l.resumes[0] != ":"+resumeAfterVanish || len(r.l.stops) != 0 || c.State != card.Running {
-		t.Fatalf("消えた PG を分解済みへ戻して同じ session を止めずに再開しない: resumes=%v stops=%v %v", r.l.resumes, r.l.stops, c.State)
+		t.Fatalf("消えた PG を着手待ちへ戻して同じ session を止めずに再開しない: resumes=%v stops=%v %v", r.l.resumes, r.l.stops, c.State)
 	}
 	found := false
 	for _, h := range c.History {
@@ -1626,7 +1626,7 @@ func (r *crashRig) vanish(t *testing.T, at time.Time, next string) {
 }
 
 // 消える → 再開 → また消える、を繰り返す PG は、落ちた回数と同じ上限 (CrashWindow の間に CrashLimit 回) で止め、
-// 分解済みへ戻さずに回答待ち (人の番) へ送って理由を書く (上限の無い再開で利用枠を使い続けない)。
+// 着手待ちへ戻さずに回答待ち (人の番) へ送って理由を書く (上限の無い再開で利用枠を使い続けない)。
 func TestVanishingRepeatedlyAsksHuman(t *testing.T) {
 	r := newCrashRig(t)
 	r.l.resumeID = "id-r1"
