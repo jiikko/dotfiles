@@ -809,6 +809,9 @@ func (m *Model) hints() []string {
 		return m.settingsHints()
 	}
 	if m.picker.open {
+		if m.picker.dupe != "" {
+			return []string{"y 足す (補足の入力へ)", "他のキー 一覧に戻る"}
+		}
 		return []string{"j / k 選択", "enter これをやる", "i / q / esc 閉じる"}
 	}
 	c, has := m.selectedCard()
