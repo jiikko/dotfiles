@@ -52,7 +52,9 @@ session の一覧 `claude agents --json` (node のプロセス) を、dispatcher
   「pro-con が起動した session」の判定は `live.OwnedSessions` に寄せ、画面と dispatcher が同じものを使う。
   テスト: `TestRefreshUsesFreshSeenFromDispatcher` (新しい / 古い) と `TestTickPublishesSeenForScreens`。`bin/mutate-verify` で
   画面が記録を使わない / 古さを見ない / tick が書かない / 外の session の出力も載せる / 出力の末尾を切らない の 5 本が red
-- [ ] 実機で 15 秒間の起動数を測り直す (画面と dispatcher が新しいビルドで起動し直した後。見込みは dispatcher の分だけ = 画面の数によらず約 0.33 回/秒。未実測)
+- [ ] 実機で 15 秒間の起動数を測り直す。**dispatcher の側は測った** (2026-09-26 17:51、dispatcher を修正の入ったビルドで 17:49 に起動し直した後):
+  `seen.json` は 3 秒ごとに更新され (4 回読んで時刻が 3 秒ずつ進んだ)、15 秒間の `claude agents --json` の起動は dispatcher 4 回 (約 0.27 回/秒)。
+  画面 (`pro-con --join`、15:56 起動の旧版) はまだ自分で 5 回起動していた。**残り: 画面を新版に入れ替えた (`ctrl+r`) 後に、画面の起動が 0 回になるのを見る**
 - [x] 敵対的レビュー (opus、読み取り専用 1 体ずつ 3 周。502〜504 まとめて):
   1 周目 P2 (中継: 書かない描き直しを「続いている」に数えて操作の中継が 1 秒遅れる) と P3 (seen.json の時刻が未来 / dispatcher が一覧を取れない tick で画面が前の一覧を
   理由なしに使う / テストの差し替えの競合 / 一覧の出所を区別しないテスト / 取れない tick の検査が無い) を直した (commit「pro-con: 502〜504 の敵対的レビューの指摘を直す」)。
