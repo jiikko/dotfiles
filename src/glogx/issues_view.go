@@ -1446,17 +1446,13 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 	case "/":
 		v.numFilter.start() // 絞り込み中なら続きから打てる (行集合は変わらないので refresh 不要)
 	// 範囲選択 (ユーザー要望 2026-08-01)。y / p / Y が選択範囲へ効く。
-	// 🚨 shift+矢印は端末・多重化 (tmux) の設定次第でアプリまで届かないことがあり、そのとき範囲選択ごと沈黙する。
-	// 2026-09-27 のユーザーの決定で、確実に届く J / K は「塊の端へ」に回し、範囲選択は shift+矢印だけにした (承知の上)
-	case "shift+up":
+	// 移動が矢印と j/k の 2 系統あるので、伸張も両方に付ける (K = shift+k、J = shift+j)。
+	// 🚨 矢印だけにしない: shift+矢印は端末・多重化 (tmux) の設定次第でアプリまで届かないことが
+	// あり、そのとき機能ごと沈黙する。素の大文字は必ず届くので、確実に動く経路を必ず 1 本持たせる。
+	case "shift+up", "K":
 		v.extendMark(-1, rows)
-	case "shift+down":
+	case "shift+down", "J":
 		v.extendMark(1, rows)
-	// 今いる塊 (epic の子の並び / epic に入っていない issue の並び) の一番下 / 一番上へ (ユーザー要望 2026-09-27)
-	case "J":
-		v.jumpBlockEdge(1, rows)
-	case "K":
-		v.jumpBlockEdge(-1, rows)
 	case " ":
 		// group 親行の Space は開閉 (それ以外の行では移動の語彙どおり半ページ)
 		if !v.toggleGroupAtCursor() {
@@ -1691,59 +1687,6 @@ func (v *issuesView) setCursor(i, rows int) {
 	v.ensureDisplayRows()
 	v.cursor = clampIdx(i, len(v.displayRows))
 	v.scrollToCursor(rows)
-}
-
-// blockOf は i の行が属する塊の範囲 [lo, hi] と、それが epic の子の並びか。塊は、epic の子 (inGroup) の続き、
-// または epic に入っていない issue (inGroup でも親行でもない) の続き。epic の親行は、その直下の子の並びを塊とする (子が無ければ ok = false)。
-func (v *issuesView) blockOf(i int) (lo, hi int, epic, ok bool) {
-	rs := v.displayRows
-	if i < 0 || i >= len(rs) {
-		return 0, 0, false, false
-	}
-	flat := func(r displayRow) bool { return r.kind == displayRowIssue && !r.inGroup && !r.groupHead }
-	child := func(r displayRow) bool { return r.inGroup }
-	same := flat
-	switch {
-	case child(rs[i]):
-		same, epic = child, true
-	case !flat(rs[i]): // epic の親行: 直下の子の並び
-		if i+1 >= len(rs) || !child(rs[i+1]) {
-			return 0, 0, true, false
-		}
-		i, same, epic = i+1, child, true
-	}
-	lo, hi = i, i
-	for lo > 0 && same(rs[lo-1]) {
-		lo--
-	}
-	for hi+1 < len(rs) && same(rs[hi+1]) {
-		hi++
-	}
-	return lo, hi, epic, true
-}
-
-// jumpBlockEdge は J (dir = 1: 一番下) / K (dir = -1: 一番上) で、今いる塊の端の行へ移る。端に居たら動かずに案内する。
-func (v *issuesView) jumpBlockEdge(dir, rows int) {
-	v.ensureDisplayRows()
-	lo, hi, epic, ok := v.blockOf(v.cursor)
-	where := " epic に入っていない issue " // 案内は「これが<where>の最初 / 最後です」
-	if epic {
-		where = "この epic "
-	}
-	if !ok {
-		v.setNotice("この epic は開いていないか、子がありません", false)
-		return
-	}
-	to, edge := hi, "最後"
-	if dir < 0 {
-		to, edge = lo, "最初"
-	}
-	if to == v.cursor || (dir < 0 && v.cursor < lo) { // 端に居る (epic の親行で K は、親行が一番上)
-		v.setNotice("これが"+where+"の"+edge+"です", false)
-		return
-	}
-	v.clearMark() // g / G と同じく、塊の端へ飛ぶ移動は選択を畳む (残すと錨からの範囲が黙って広がる)
-	v.setCursor(to, rows)
 }
 
 // extendMark は shift+↑/↓ の伸張。初回は今の行を錨にしてから動くので、1 回押すと

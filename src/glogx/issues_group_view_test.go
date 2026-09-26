@@ -302,9 +302,9 @@ func TestIssuesViewMoveReanchorsCursorAndMarkToReturnedPaths(t *testing.T) {
 	}
 	v := loadedView(old...)
 	v.cwd = dir
-	v.handleKey("enter", vp(10))      // group を展開
-	v.handleKey("j", vp(10))          // 002
-	v.handleKey("shift+down", vp(10)) // 002..001 を選択
+	v.handleKey("enter", vp(10)) // group を展開
+	v.handleKey("j", vp(10))     // 002
+	v.handleKey("J", vp(10))     // 002..001 を選択
 	if len(v.selectedRows()) != 2 {
 		t.Fatal("前提: 2 件の選択が作れていない")
 	}
@@ -873,62 +873,4 @@ func TestIssuesViewHidesClosedEpicFromListAndCounts(t *testing.T) {
 	if out = strings.Join(v.listLines(renderOpts(10)), "\n"); !strings.Contains(out, "zeta (2 ✓2)") {
 		t.Fatalf("a を全開にしても終わった epic が出ない:\n%s", out)
 	}
-}
-
-// J / K は今いる塊 (epic の子の並び / epic に入っていない issue の並び) の一番下 / 一番上へ移る。端では動かずに案内する (ユーザー要望 2026-09-27)。
-func TestIssuesViewJKJumpToBlockEdge(t *testing.T) {
-	list := make([]*issues.Issue, 0, 6)
-	for _, n := range []string{"720", "719", "718"} {
-		list = append(list, fakeIssue(n, "feat", "flat-"+n, issues.StatusOpen))
-	}
-	for _, n := range []string{"700", "699", "698"} {
-		list = append(list, fakeEpicIssue("/repo/issues", "grp", n, "child-"+n, issues.StatusOpen))
-	}
-	v := loadedView(list...)
-	head := -1
-	for i, r := range v.displayRows {
-		if r.kind == displayRowGroup {
-			head = i
-		}
-	}
-	if head < 0 {
-		t.Fatal("前提: epic の親行が無い")
-	}
-	v.setCursor(head, 20)
-	v.handleKey("enter", vp(20)) // 開く
-	var flat, kids []int
-	for i, r := range v.displayRows {
-		switch {
-		case r.inGroup:
-			kids = append(kids, i)
-		case r.kind == displayRowIssue && !r.groupHead:
-			flat = append(flat, i)
-		}
-	}
-	if len(flat) != 3 || len(kids) != 3 || flat[2]-flat[0] != 2 || kids[2]-kids[0] != 2 {
-		t.Fatalf("前提: epic に入っていない 3 行と子 3 行が続いて並んでいない: flat=%v kids=%v", flat, kids)
-	}
-	step := func(start int, key string, want int, notice string) {
-		t.Helper()
-		v.setCursor(start, 20)
-		v.takeNotice()
-		v.handleKey(key, vp(20))
-		if v.cursor != want {
-			t.Fatalf("%d 行目で %s: cursor=%d (want %d)", start, key, v.cursor, want)
-		}
-		if got, _ := v.takeNotice(); !strings.Contains(got, notice) {
-			t.Fatalf("%d 行目で %s の案内が違う: %q (want %q)", start, key, got, notice)
-		}
-		if _, _, ok := v.selection(); ok {
-			t.Fatalf("%d 行目で %s が範囲選択を作った", start, key)
-		}
-	}
-	step(flat[1], "J", flat[2], "")
-	step(flat[1], "K", flat[0], "")
-	step(kids[1], "J", kids[2], "")
-	step(kids[1], "K", kids[0], "")
-	step(kids[2], "J", kids[2], "これがこの epic の最後です")
-	step(flat[0], "K", flat[0], "これが epic に入っていない issue の最初です")
-	step(head, "J", kids[2], "")
-	step(head, "K", head, "これがこの epic の最初です")
 }
