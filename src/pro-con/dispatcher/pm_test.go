@@ -216,7 +216,7 @@ func TestPMNotStartedTwiceWhileUnconfirmed(t *testing.T) {
 func TestPMAdoptedAfterDispatcherCrash(t *testing.T) {
 	r := newPMRig(t)
 	request(t, r.dir, "一つ目")
-	if _, err := store.Apply(r.dir, t0); err != nil {
+	if _, err := store.Apply(r.dir, t0, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.SavePM(r.dir, store.PMState{Name: pmName, Launching: "起動", LaunchedAt: t0, Telling: []string{"C-001"}}); err != nil {

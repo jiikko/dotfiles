@@ -85,7 +85,7 @@ func TestRejectedReasonGoesOnlyToSubmittingScreen(t *testing.T) {
 	if _, err := jb.Apply(backend.NewRequest{Text: "調べて"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Apply(a.dir, time.Now()); err != nil { // dispatcher の代わり
+	if _, err := store.Apply(a.dir, time.Now(), nil); err != nil { // dispatcher の代わり
 		t.Fatal(err)
 	}
 	// 同じカードへ 2 つの画面が回答を重ねた形: 先に来た a の回答で質問待ちでなくなり、後の b の回答は除けられる
@@ -101,7 +101,7 @@ func TestRejectedReasonGoesOnlyToSubmittingScreen(t *testing.T) {
 	if _, err := jb.Apply(backend.Answer{CardID: "C-001", Text: "B"}); err != nil {
 		t.Fatal(err)
 	}
-	res, err := store.Apply(a.dir, time.Now())
+	res, err := store.Apply(a.dir, time.Now(), nil)
 	if err != nil || len(res) != 2 || res[0].Err != "" || res[1].Err == "" {
 		t.Fatalf("後から来た回答を除けない: %+v %v", res, err)
 	}

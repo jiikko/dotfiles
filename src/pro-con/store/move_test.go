@@ -65,7 +65,7 @@ func TestMoveRejectsAfterLaneChange(t *testing.T) {
 	submit(t, dir, Request{Kind: "plan", CardID: "C-001"})
 	submit(t, dir, Request{Kind: "plan", CardID: "C-002"}) // 押した後に分解済みへ移った
 	submit(t, dir, Request{Kind: "move", CardID: "C-002", Delta: -1, Seen: seen})
-	res, err := Apply(dir, t0.Add(time.Minute)) // 押した時刻より後の Tick で適用する
+	res, err := Apply(dir, t0.Add(time.Minute), nil) // 押した時刻より後の Tick で適用する
 	if err != nil || !strings.Contains(res[2].Err, "列へ移った") {
 		t.Fatalf("見ていない列で入れ替えた: %+v", res)
 	}

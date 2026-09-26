@@ -242,7 +242,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				_, _ = fmt.Fprintln(stderr, "pro-con:", err)
 				return 1
 			}
-			return runCard(args[1:], viewEnv{dir: liveDir(home), projects: filepath.Join(home, ".claude", "projects"), now: time.Now}, stdout, stderr)
+			return runCard(args[1:], viewEnv{dir: liveDir(home), projects: filepath.Join(home, ".claude", "projects"), now: time.Now,
+				repos: func() (map[string]string, error) { return repoPaths(home) }}, stdout, stderr)
 		case "du": // pro-con が作った物のディスクの使用量と内訳 (読むだけ。ducmd.go)
 			home, err := os.UserHomeDir()
 			if err != nil {

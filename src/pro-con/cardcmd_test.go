@@ -31,7 +31,7 @@ func TestCardCommandRoundTrip(t *testing.T) {
 	if rc, _, e := card_(t, dir, "plan", "C-001", "--issue", "dotfiles#415"); rc != 0 {
 		t.Fatalf("plan: rc=%d %s", rc, e)
 	}
-	res, err := store.Apply(dir, time.Now())
+	res, err := store.Apply(dir, time.Now(), nil)
 	if err != nil || len(res) != 2 || res[0].Err != "" || res[1].Err != "" {
 		t.Fatalf("適用: %+v %v", res, err)
 	}
@@ -63,9 +63,47 @@ func TestCardCommandRejectsBadUsage(t *testing.T) {
 		if rc, _, errOut := card_(t, dir, args...); rc != 2 || errOut == "" {
 			t.Fatalf("%q: rc=%d (期待 2) err=%q", args, rc, errOut)
 		}
-		if res, _ := store.Apply(dir, time.Now()); len(res) != 0 {
+		if res, _ := store.Apply(dir, time.Now(), nil); len(res) != 0 {
 			t.Fatalf("%q: 誤った使い方の依頼が箱に置かれた: %+v", args, res)
 		}
+	}
+}
+
+// 設定に無い repo (パスで書いた・知らない名前) の add と plan --issue は、箱に置く前に rc≠0 で断る (issue 511)。設定は repo を書いた依頼のときだけ読む。
+func TestCardCommandRejectsUnknownRepo(t *testing.T) {
+	reads := 0
+	env := func(dir string) viewEnv {
+		return viewEnv{dir: dir, now: time.Now, repos: func() (map[string]string, error) {
+			reads++
+			return map[string]string{"dotfiles": "/Users/k/dotfiles"}, nil
+		}}
+	}
+	for _, args := range [][]string{
+		{"add", "--title", "t", "--repo", "/Users/k/dotfiles", "--wait", "0"},
+		{"add", "--title", "t", "--repo", "glogx", "--wait", "0"},
+		{"plan", "C-001", "--issue", "glogx#3"},
+	} {
+		dir := t.TempDir()
+		var e bytes.Buffer
+		if rc := runCard(args, env(dir), io.Discard, &e); rc == 0 || !strings.Contains(e.String(), "は設定に無い") {
+			t.Fatalf("%q: rc=%d err=%q", args, rc, e.String())
+		}
+		if n := store.Pending(dir); n != 0 {
+			t.Fatalf("%q: 設定に無い repo の依頼が箱に置かれた (%d 件)", args, n)
+		}
+	}
+	reads = 0
+	for _, args := range [][]string{
+		{"add", "--title", "t", "--repo", "dotfiles", "--wait", "0"},
+		{"add", "--title", "t", "--wait", "0"},
+		{"plan", "C-001", "--issue", "dotfiles#3"},
+	} {
+		if rc := runCard(args, env(t.TempDir()), io.Discard, io.Discard); rc != 0 {
+			t.Fatalf("%q: 設定の repo / repo 無しを断った: rc=%d", args, rc)
+		}
+	}
+	if reads != 2 {
+		t.Fatalf("設定を読んだ回数 %d (repo を書いた 2 件だけ読む)", reads)
 	}
 }
 
@@ -113,7 +151,7 @@ func TestCardCommandOrder(t *testing.T) {
 			t.Fatalf("%q: rc=%d out=%q err=%q (断るのは適用の側)", args, rc, out, e)
 		}
 	}
-	res, err := store.Apply(dir, time.Now())
+	res, err := store.Apply(dir, time.Now(), nil)
 	if err != nil || len(res) != 7 {
 		t.Fatalf("適用: %+v %v", res, err)
 	}

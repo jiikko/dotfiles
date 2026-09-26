@@ -108,6 +108,10 @@ func runCard(args []string, env viewEnv, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "pro-con card: %v\n%s\n", err, cardUsage)
 		return 2
 	}
+	if err := checkCardRepos(req, env.repos); err != nil {
+		_, _ = fmt.Fprintln(stderr, "pro-con card:", err)
+		return 2
+	}
 	if req.Kind == "add" {
 		return addAndWait(env.dir, req, wait, stdout, stderr)
 	}
@@ -119,6 +123,33 @@ func runCard(args []string, env viewEnv, stdout, stderr io.Writer) int {
 	}
 	_, _ = fmt.Fprintln(stdout, id)
 	return 0
+}
+
+// checkCardRepos は add の --repo と plan の --issue の repo が設定の repo かを、受付の箱に置く前に見る (issue 511。正本は store.CheckRepo で、
+// 箱に手で置かれた依頼は dispatcher の適用が同じ検査で除ける)。repos が nil なら見ない (設定を持たない呼び手)。設定は repo を書いた依頼のときだけ読む。
+func checkCardRepos(r store.Request, repos func() (map[string]string, error)) error {
+	var names []string
+	switch r.Kind {
+	case "add":
+		names = []string{r.Repo}
+	case "plan":
+		for _, i := range r.Issues {
+			names = append(names, i.Repo)
+		}
+	}
+	if repos == nil || !slices.ContainsFunc(names, func(n string) bool { return n != "" }) {
+		return nil
+	}
+	known, err := repos()
+	if err != nil {
+		return err
+	}
+	for _, n := range names {
+		if err := store.CheckRepo(known, n); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // runCardAttach はファイルを受付の箱に写して添付の依頼を置く (移して記録に載せるのは dispatcher。issue 453)。

@@ -46,11 +46,11 @@ func TestConfigSetSubmits(t *testing.T) {
 		t.Fatalf("CLI が設定のファイルを書いた (書き手は dispatcher だけ): %v", err)
 	}
 	// dispatcher が適用すると show に出る
-	if _, err := store.Apply(dir, time.Now()); err != nil {
+	if _, err := store.Apply(dir, time.Now(), nil); err != nil {
 		t.Fatal(err)
 	}
 	configCmd(t, dir, "set", "limit", "4")
-	if _, err := store.Apply(dir, time.Now()); err != nil {
+	if _, err := store.Apply(dir, time.Now(), nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.SaveDispatcherState(dir, store.DispatcherState{Tick: time.Now(), Limit: 4, LimitFrom: dispatcher.LimitFromSetting, Cap: 1, Why: "枠 80%: 同時に 1 本まで"}); err != nil {

@@ -48,7 +48,7 @@ func mustSubmit(t *testing.T, dir string, r store.Request) {
 
 func mustApply(t *testing.T, dir string) {
 	t.Helper()
-	res, err := store.Apply(dir, time.Now())
+	res, err := store.Apply(dir, time.Now(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -532,7 +532,7 @@ func TestCardAddWaitsForCardID(t *testing.T) {
 	t.Cleanup(func() { viewPoll = old })
 	mustSubmit(t, dir, store.Request{Kind: "add", Title: "先のカード"})
 	mustSubmit(t, dir, store.Request{Kind: "plan", CardID: "C-999"}) // 別の依頼が先に除けられている (理由は「カードが無い」)
-	if _, err := store.Apply(dir, time.Now()); err != nil {
+	if _, err := store.Apply(dir, time.Now(), nil); err != nil {
 		t.Fatal(err)
 	}
 	env := viewEnv{dir: dir, now: time.Now}
@@ -562,7 +562,7 @@ func TestCardAddWaitsForCardID(t *testing.T) {
 		return rc, o.String(), e.String()
 	})
 	waitUntil(t, "add が箱に置かない", func() bool { return inboxCount(dir) == 1 })
-	if _, err := store.Apply(dir, time.Now()); err != nil {
+	if _, err := store.Apply(dir, time.Now(), nil); err != nil {
 		t.Fatal(err)
 	}
 	if r := <-ch; r.rc != 1 || !strings.Contains(r.err, "題名も依頼の原文も空") {
