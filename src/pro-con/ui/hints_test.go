@@ -105,7 +105,7 @@ func TestReadOnlyRefusesWriteKeysImmediately(t *testing.T) {
 }
 
 // 見ているだけの画面の案内の行には、押すと断る操作 (attach・依頼・回答・追加オーダー・btw・片付け) を出さない (暗くもしない。issue 445)。
-// 読むだけの操作 (詳細・issue を開く・コピー・PG 一覧) と抜ける手段は残す。viewSpy は Accepter を持たない (出さないのは ReadOnly だから)。
+// 読むだけの操作 (詳細・issue を開く・コピー・設定画面) と抜ける手段は残す。viewSpy は Accepter を持たない (出さないのは ReadOnly だから)。
 func TestHintsOmitActionsOnViewOnly(t *testing.T) {
 	be := viewSpy{spy: newSpy()}
 	be.snap.Cards = append(be.snap.Cards, card.Card{ID: "D1", State: card.Done, Ending: card.EndAnswered})
@@ -126,7 +126,7 @@ func TestHintsOmitActionsOnViewOnly(t *testing.T) {
 		}
 	}
 	check("ボード")
-	for _, h := range []string{"enter 詳細", "s PG 一覧", "Q 終了"} {
+	for _, h := range []string{"enter 詳細", "s 設定", "Q 終了"} {
 		if !strings.Contains(strings.Join(m.hints(), "  "), h) {
 			t.Fatalf("ボードの %q まで消した: %q", h, m.hints())
 		}

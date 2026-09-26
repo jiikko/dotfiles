@@ -41,7 +41,7 @@ func (m *Model) View() tea.View {
 
 // caret は入力欄のキャレットに置く端末のカーソル。入力欄が無ければ nil (カーソルを隠す)。
 // 🚨 IME は変換中の文字を端末のカーソルの位置に出す。カーソルを置かないと、描画の差分を書き終えた位置 (毎回変わる) に出て、
-// 日本語の変換中に入力欄から外れる。位置は render と同じ行の並び (ヘッダ + 領域 + PG の一覧 + 入力欄) から数える
+// 日本語の変換中に入力欄から外れる。位置は render と同じ行の並び (ヘッダ + 領域 + 入力欄) から数える
 func (m *Model) caret() *tea.Cursor {
 	if m.mode != modeInput || m.stopping {
 		return nil
@@ -67,7 +67,7 @@ func (m *Model) render() string {
 		title += sgrDim + "  " + d.Describe() + sgrReset
 	}
 	header := []string{title, m.tabBar(), m.gauge(), fg(240) + strings.Repeat("─", w) + sgrReset}
-	// PG の一覧・入力欄・案内は画面の下端へ吸着させ、ボードとの間を空行で埋める (最低 1 行)。
+	// 入力欄・案内は画面の下端へ吸着させ、ボードとの間を空行で埋める (最低 1 行)。
 	// カードの詳細はこの領域 (ヘッダと下端の群のあいだ) に右から重ねる
 	foot := m.footGroup()
 	room := m.height - len(header) - len(foot)
@@ -81,10 +81,14 @@ func (m *Model) render() string {
 	}
 	region = layout.PadTo(region, max(len(region)+1, room))
 	m.inputRow = len(header) + len(region) + len(foot) - len(m.footLines()) // 入力欄は最下段の群の先頭 (caret が使う)
-	// 揺れは画面全体に重ねる (ボードの中だけで切ると、上へ揺れたレーンがヘッダの下に潜る)
+	// 揺れは画面全体に重ねる (ボードの中だけで切ると、上へ揺れたレーンがヘッダの下に潜る)。
+	// 🚨 設定画面の板が見えている間は揺らさない: 揺れの帯はヘッダと下の群の上にも乗るので、全幅の板の上下からレーンがはみ出す
+	if m.settingsShown() {
+		board = 0
+	}
 	screen := m.overlayBump(append(append(header, region...), foot...), len(header), board)
 	head, rest := screen[:len(header):len(header)], screen[len(header):]
-	region = m.overlayToast(m.dimWhileTyping(m.overlayDrawer(rest[:len(region)])))
+	region = m.overlayToast(m.dimWhileTyping(m.overlaySettings(m.overlayDrawer(rest[:len(region)]))))
 	return strings.Join(m.overlayQuit(m.overlayLegend(append(append(head, region...), rest[len(region):]...))), "\n")
 }
 
@@ -216,11 +220,8 @@ func (m *Model) dispatcherGauge() string {
 	return fmt.Sprintf("dispatcher %s前", fmtDur(d))
 }
 
-// footGroup は下端に吸着させる群 (PG の一覧 + 最下段)。
-func (m *Model) footGroup() []string {
-	foot := m.panelLines(panelPG, m.pgBlock)
-	return append(foot, m.footLines()...)
-}
+// footGroup は下端に吸着させる群 (最下段)。
+func (m *Model) footGroup() []string { return m.footLines() }
 
 // footLines は画面の最下段の群 (入力欄・確認・sticky・案内) を返す。操作の結果の通知は右下の toast (toast.go)。
 func (m *Model) footLines() []string {
@@ -371,9 +372,6 @@ func (m *Model) boardLines() []string {
 func (m *Model) shownCards() int {
 	const headLines = 2 // 上枠 + 下枠
 	room := m.height - 9 - headLines
-	if m.reserved(panelPG) {
-		room -= len(m.snap.Consumers) + 5 // 上下の枠・見出し・ほかの session の行・空行
-	}
 	return max(1, (room-cardGap)/perCardLines) // 末尾の空き 1 行を引いてから割る
 }
 
@@ -742,6 +740,9 @@ func (m *Model) hints() []string {
 		return []string{"y / enter 実行", "他のキー 取り消し"}
 	case modeBoard:
 	}
+	if m.set.open {
+		return m.settingsHints()
+	}
 	if m.picker.open {
 		return []string{"j / k 選択", "enter これをやる", "i / q / esc 閉じる"}
 	}
@@ -779,14 +780,11 @@ func (m *Model) hints() []string {
 		return append(append([]string{"j / k スクロール", "J / K 隣のカード"}, cardOps...), "q / esc 閉じる")
 	}
 	back := "Q 終了"
-	if m.showSessions {
-		back = "q / esc 閉じる"
-	}
 	h := append([]string{"hjkl 選択", "tab repo"}, offer(
 		hint{"n 新しい依頼", m.accepts(backend.OpNew), true}, hint{"i issue から", m.accepts(backend.OpNew), true}, hint{"enter 詳細", has, false},
 		hint{"K / J 優先度", has && m.accepts(backend.OpMove), true})...)
 	h = append(h, cardOps...)
-	h = append(append(h, "s PG 一覧"), offer(hint{"x 完了を片付け", m.doneInTab() > 0 && m.accepts(backend.OpClear), true})...)
+	h = append(append(h, "s 設定"), offer(hint{"x 完了を片付け", m.doneInTab() > 0 && m.accepts(backend.OpClear), true})...)
 	if m.snap.DispatcherHeld && !m.joined() { // 止めてあるときだけ出す (いつも出すと、暗い字が「状態が変われば押せる」以上の意味を持たない)。join は起こさない
 		h = append(h, offer(hint{"c dispatcher を起こす", m.accepts(backend.OpResume), true})...)
 	}

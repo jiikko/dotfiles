@@ -172,9 +172,6 @@ func TestGaugeCountsOnlyPGsHoldingSlot(t *testing.T) {
 	if g := ansi.Strip(m.gauge()); !strings.Contains(g, "PG 2/2") {
 		t.Fatalf("枠を使っていない PG を数えた: %q", g)
 	}
-	if b := ansi.Strip(strings.Join(m.pgBlock(), "\n")); !strings.Contains(b, "PG (consumer) 2/2") || !strings.Contains(b, "R2") {
-		t.Fatalf("一覧の見出しの数がゲージと違う / 結果待ちの PG を一覧から落とした: %q", b)
-	}
 }
 
 // join の画面は持ち主の数に入れない: 最後の持ち主の quit は、join が残っていても止めると案内し、join が残ることを添える (issue 481)。

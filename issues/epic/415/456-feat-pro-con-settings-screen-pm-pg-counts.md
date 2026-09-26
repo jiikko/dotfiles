@@ -64,3 +64,12 @@
   集める口は `pro-con ps` と同じく読むだけにして、`pro-con du [--json]` のような CLI でも出す (外の Claude・PM が読める)
 - 表示は置き場ごとの大きさと件数、合計、多い順。worktree はカードごとの内訳 (完了したカードの worktree がどれだけあるか) を引き出しで見られると、片付けの判断に使える
 - 片付け (完了したカードの worktree を消す) はこの issue の範囲外 (破壊的な操作なので別の issue で決める)。ここは見るだけ
+
+## 進捗: 設定画面 (C-052。2026-09-26)
+
+- 見本 (3 案) から人間が **案 B** を選んだ: `s` で右から全幅の板が入り、中を「設定 / プロセス / ディスク」のタブに分ける (tab で切り替え)。共通の 5 点も PG の案どおり
+- 設定のタブ: PG の枠と PM の数を j / k で選んで ← → で 1 ずつ変える。受付の箱に `backend.SetConfig` を置く (`pro-con config set` と同じ検査 `store.CheckSetting`)。Snapshot に値が出るまで「適用待ち」。PM は 2 以上を backend が断る
+- プロセスのタブ: `pro-con ps` と同じ集め方 (`collectProcs`) を main が live につなぐ (`SetInspector`。dispatcher の定数を使うので live からは組めない)。止まっている PM・PG は 1 行に畳み Enter で開く。下段に開いている画面の一覧 (481)
+- ディスクのタブ: `pro-con du [--json] [--all]` と同じ `package diskuse`。置き場ごとに大きい順の 3 つ、Enter で全部 (完了したカードに印)
+- 🚨 見る所は描くたびに読まない: 開いたとき・プロセスのタブへ移ったとき・r で裏で 1 回 (`backend.Inspector`)。`--view` は設定のタブを出さない
+- 前の `s` の板 (下端の PG の一覧・下から生える演出 `ui/slide.go`) はプロセスのタブに吸収して消した

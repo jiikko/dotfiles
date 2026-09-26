@@ -7,6 +7,7 @@
 //	pro-con log          dispatcher の出来事の記録を読む (読むだけ。pro-con log --help)
 //	pro-con config …     止めずに PG の枠と PM の数を変える (受付の箱に置く。pro-con config で使い方)
 //	pro-con ps           pro-con が起動したプロセスを役ごとに出す (読むだけ)
+//	pro-con du           pro-con が作った物のディスクの使用量と内訳 (読むだけ。数秒かかる)
 //	pro-con worktree clean  閉じたカードの PG の worktree を片付ける (既定は一覧だけ。--yes で 1 個ずつ取り直して消す)
 //	pro-con dispatcher       本物のモードの dispatcher を常駐させる (PG を起動する。週の利用枠を使う)
 //	pro-con fake-attach  attach の代わりに TUI から起動される内部用のコマンド
@@ -32,6 +33,7 @@ import (
 
 	"pro-con/backend"
 	"pro-con/config"
+	"pro-con/diskuse"
 	"pro-con/dispatcher"
 	"pro-con/fake"
 	"pro-con/live"
@@ -164,6 +166,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				return 1
 			}
 			return runCard(args[1:], viewEnv{dir: liveDir(home), projects: filepath.Join(home, ".claude", "projects"), now: time.Now}, stdout, stderr)
+		case "du": // pro-con が作った物のディスクの使用量と内訳 (読むだけ。ducmd.go)
+			home, err := os.UserHomeDir()
+			if err != nil {
+				_, _ = fmt.Fprintln(stderr, "pro-con:", err)
+				return 1
+			}
+			return runDU(args[1:], home, stdout, stderr)
 		case "config", "ps": // 止めずに PG の枠・PM の数を変える口 (configcmd.go) / 役ごとのプロセスの一覧 (読むだけ。pscmd.go)
 			home, err := os.UserHomeDir()
 			if err != nil {
@@ -278,6 +287,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			dir, dispatcherArgs = e2e.StateDir(), modeArgs
 		}
 		lb := live.New(scopes, home, dir)
+		root := stateDir(home) // 本物のモードの置き場の根。e2e モードは置き場そのものだけを測る (本物の記録を数えない)
+		if e2e != nil {
+			root = dir
+		}
+		lb.SetInspector(func() ([]backend.Proc, error) { return inspectProcs(dir, time.Now, execProcs) },
+			func() (diskuse.Usage, error) { return measureDisk(home, root, dir), nil })
 		if e2e != nil {
 			lb.SetList(e2e.List) // 偽の session の一覧 (本物の claude agents を読まない)
 			if exe, err := os.Executable(); err == nil {

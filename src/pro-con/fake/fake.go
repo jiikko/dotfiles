@@ -378,7 +378,7 @@ func (s *Sim) Snapshot() backend.Snapshot {
 		}
 	}
 	return backend.Snapshot{Now: s.now, Cards: cards, Consumers: cons, Limit: s.limit, LimitMax: s.limit, DispatcherTick: s.now,
-		RoleStates: []card.RoleState{s.pmState()}, Violations: card.Check(cards)}
+		RoleStates: []card.RoleState{s.pmState()}, Violations: card.Check(cards), Config: backend.Config{Limit: s.limit, PMs: 1, LimitFrom: "設定"}}
 }
 
 // pmState は模擬の PM の様子 (依頼の列を全部知らせ済みで、stepIntake が次に仕分ける一番古いカードを扱っている最中。無ければ idle)。
@@ -417,6 +417,8 @@ func (s *Sim) Apply(cmd backend.Command) (string, error) {
 		return s.clearDone(c)
 	case backend.DeleteCard:
 		return s.deleteCard(c)
+	case backend.SetConfig:
+		return s.setConfig(c)
 	case backend.MoveCard:
 		if mc := s.find(c.CardID); mc != nil && !c.Seen.IsZero() && !c.Seen.Equal(mc.Since) {
 			return "", fmt.Errorf("押した後に %s の列へ移ったので動かさない", mc.State.Label())

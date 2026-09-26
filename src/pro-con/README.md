@@ -15,6 +15,7 @@ bin/pro-con dispatcher   # 割り振り係: 受付の箱の適用・PM と PG �
 bin/pro-con config set limit 3 | set pm 1 | unset limit | show  # 止めずに PG の枠 (同時に動かす PG の上限) と PM の数を変える (issue 456)。受付の箱に置き、dispatcher が状態の置き場の settings.json に書いて次の Tick から使う (起動し直しても続く)
                          # 🚨 上限の優先: 利用枠の絞り (80% で 1 本 / 95% で 0 本) > 設定 (config set limit) > dispatcher の --limit > 既定 2。--limit は「設定が無いときの値」で、unset limit で戻る (画面が起こす dispatcher は --limit を付けない)
                          # PM の数は今は 1 だけを受ける (2 以上は 415 の論点 6 が決まるまで断る。今は 1 つで動くので dispatcher はまだ読まない。PM を起こさないのは --pm=off / config.toml の pm = "off")。settings.json が壊れていたら --limit で動き、理由をゲージに出す
+bin/pro-con du [--json] [--all]  # pro-con が作った物のディスクの使用量と内訳 (PG・役の worktree `pc-*` / 起動した session の transcript の置き場 / 状態の置き場 / バイナリ。置き場ごとに大きい順、完了したカードに印)。読むだけ (消さない)。worktree を全部歩くので数秒かかる。数えるのは起動の記録にあるものと、その隣の `pc-*` だけ (issue 456)
 bin/pro-con ps [--json]  # pro-con が起動したプロセスを役ごとに出す (dispatcher / 見張り / PM / PG / テストの係 / 画面。pid・経過・状態・カード・コマンド)。読むだけ: 状態の置き場に書かず、dispatcher の lock も画面の印 (presence) も触らない。生きているかは ps を 1 回読んで決める (busy / idle は出さない)。pro-con の外の session は出さない
 bin/pro-con dispatcher --stop  # dispatcher と、pro-con が起動した PG を止める。作業中のカードは次に dispatcher を起動したら続きから再開する (画面の終了も同じことをする)
                                # 人が止めた印 (`dispatcher-held`) を置く: 開いている画面は dispatcher を起こし直さず、ゲージに「止めてある」と出す。外すのは画面の c か、次に手で `pro-con dispatcher` を起動したとき (issue 459)
@@ -151,7 +152,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 | tab / shift+tab | repo タブの切り替え (global = 全 repo) |
 | n | 新しい依頼 (PM へ)。repo のタブで出すとその repo がスコープになる |
 | i | issue の一覧から選んで「これやって」と依頼する (repo のタブならその repo、global なら設定の全 repo。未完了だけ。epic は見出しの下に子)。Enter → 補足 (空でよい) → Enter |
-| s | PG (consumer) の一覧を開閉 (詳細と同じく下から生える。担当カード・状態・実行中のコマンド・経過・実体の pid (本物のモードは backend が照合した pid。模擬は「模擬」)。pro-con の外の session は名前も本数も出さない。画面は `claude agents` を自分で読まない)。画面が 2 つ以上 (または join) なら下段に開いている画面の一覧 (モード・名前・開いた時刻・端末・pid) |
+| s | 設定画面を開閉 (issue 456)。右から全幅の板が入ってきて、中を「設定 / プロセス / ディスク」のタブに分ける (tab / shift+tab で切り替え、j / k で行を選ぶ、s / q / esc で閉じる)。**設定**: PG の枠 (同時に動かす PG の上限) と PM の数を ← → (h / l) で 1 ずつ変える。受付の箱に置き (`pro-con config set` と同じ)、dispatcher の次の Tick から効く (止めずに変わる)。適用されるまで「適用待ち」。利用枠の絞りはこの上限より優先。PM は今は 1 だけ。下に見る所の要約。**プロセス**: `pro-con ps` と同じ出どころの役ごとの一覧 (pid・経過・状態・カード・session・今のコマンド)。止まっている PM・PG は 1 行に畳み、enter で開く。画面が 2 つ以上 (または join) なら下段に開いている画面の一覧 (モード・名前・開いた時刻・端末・pid)。**ディスク**: `pro-con du` と同じ、pro-con が作った物の使用量 (合計・置き場ごとの大きさと割合と数・大きい順の内訳 3 つ。enter でその置き場の内訳を全部。worktree と transcript は完了したカードに印)。🚨 見る所は描くたびに読まない (ディスクは数秒かかる): 開いたとき・プロセスのタブへ移ったとき・r で裏で 1 回読み、読んだ時刻を見出しに出す。`--view` では設定のタブを出さない (見る所だけ)。pro-con の外の session は名前も本数も出さない。画面は `claude agents` を自分で読まない |
 | e | 選択中のカードの issue の md をエディタで開く ($VISUAL → $EDITOR → nvim。`tuikit/editor`) |
 | x | 完了のレーンを片付ける (y/N 確認。repo のタブではその repo の分だけ。カードは消さず Archived にする。本物のモードでは dispatcher が書庫へ移す) |
 | d | 選択中のカードを削除する (y/N 確認。依頼の列ならすぐ消える。ほかの列は「削除中」になり、dispatcher が PG の session を止めたのを確かめてから消える。1 分で止められなければカードを残して理由を履歴に書く。PG の worktree とブランチは消さない。消したことは dispatcher の記録に残る。issue 451) |
@@ -174,7 +175,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 | (通知) | 操作の結果の通知は、ボードの右下の toast (`tuikit/toast`。glogx と同じ) に出る。右から滑り込み、数秒止まって、また右へ引っ込む。成功は ✓ 緑・失敗は ✗ 赤・断りや案内は … シアン (`ui/toast.go` の done / fail / info)。起動時の警告のような消すまで残す通知だけは下端の行 (esc で消す) |
 | (案内の行) | カードへの操作と x は、選んでいるカードで効くときだけ明るく、効かないときは暗く出す (r は質問待ちだけ、a は session のあるカードだけ、e / y は issue の紐づいたカードだけ)。見ているだけの画面 (`--view`) では、押すと断る操作 (a / r / + / w / d / n / i / x / c) を出さない |
 | ctrl+r | 新版へ切り替える (ライブアップグレード。「新版あり」のときだけ) |
-| q / esc | 開いている板を 1 つ閉じる (PG の一覧 → 詳細)。何も開いていなくても終了しない (2026-09-25 に廃止) |
+| q / esc | 開いている板を 1 つ閉じる (設定画面 → 詳細)。何も開いていなくても終了しない (2026-09-25 に廃止) |
 | Q | 終了の入力欄を開く。`quit` と打って enter したときだけ閉じる (本物のモードでは dispatcher と PG を止めてから閉じる。次に開くと続きから再開。ほかに画面が開いていれば、この画面だけ閉じる)。ctrl+c も同じ入力欄を開く (1 打では閉じない) |
 | a | PG の session を開く (今は模擬) |
 | r | 質問待ちのカードに回答する |
@@ -189,7 +190,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 **キーの語彙は [`docs/glogx-ui-guide.md`](../../docs/glogx-ui-guide.md) の 3 層 (vim / emacs 別名 / 動作) に従う**。
 上下の移動は `tuikit/listnav.MotionOf` に渡す (glogx と同じ語彙を 1 か所で持つ)。画面固有の動作キーは先に捌く。
 
-glogx と意味を変えている字 (`a` attach / `r` 回答 / `n` 新しい依頼 / `s` session の一覧) とその理由はガイドの §8。
+glogx と意味を変えている字 (`a` attach / `r` 回答 / `n` 新しい依頼 / `s` 設定画面) とその理由はガイドの §8。
 `o` はガイドの「外で開く」の意味で、添付を `open` に渡す (issue 453)。`b` (半ページ上) はガイドの意味のために空けてあり、追加オーダーは `+`、btw は `w`、`?` はレーンの意味の表。
 
 ## 設定 (`~/.config/pro-con/config.toml`)

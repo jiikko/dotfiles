@@ -71,9 +71,9 @@ func isQuit(cmd tea.Cmd) bool {
 // q は開いている板を手前から 1 つずつ閉じ、何も開いていなくても終了しない (終了は Q → quit だけ)。esc は閉じるだけで終了しない (§1 / §3)。
 func TestQClosesBoardsBeforeQuitting(t *testing.T) {
 	m := New(newSpy(), nil)
-	press(m, "enter", "s") // 詳細と session の一覧を開く
-	if isQuit(press(m, "q")) || m.showSessions || !m.showDetail {
-		t.Fatalf("1 回目の q は session の一覧だけを閉じるはず: sessions=%v detail=%v", m.showSessions, m.showDetail)
+	press(m, "enter", "s") // 詳細と設定画面を開く
+	if isQuit(press(m, "q")) || m.set.open || !m.showDetail {
+		t.Fatalf("1 回目の q は設定画面だけを閉じるはず: settings=%v detail=%v", m.set.open, m.showDetail)
 	}
 	if isQuit(press(m, "q")) || m.showDetail {
 		t.Fatal("2 回目の q は詳細を閉じるはず")
