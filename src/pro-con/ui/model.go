@@ -565,6 +565,10 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		return m.attach()
 	case "r":
 		c, ok := m.selectedCard()
+		if ok && c.WaitsOnPrompt() {
+			m.refuse("PG の session が入力待ちで止まっている。a で attach して答える")
+			return nil
+		}
 		if !ok || !c.Answerable() {
 			m.refuse("回答できるのは質問待ちのカードだけ")
 			return nil

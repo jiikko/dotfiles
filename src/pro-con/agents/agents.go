@@ -67,6 +67,38 @@ func List(ctx context.Context, run Runner) ([]Session, error) {
 // StatusIdle は turn を終えて次の入力を待つ session の Status (425 の実測: 正常に終えた turn / API エラーで落ちた turn)。
 const StatusIdle = "idle"
 
+// StatusBusy は turn の途中の session の Status。
+const StatusBusy = "busy"
+
+// StatusWaiting は turn の途中で人の入力を待って止まった session の Status (権限の確認 / AskUserQuestion)。
+// 2.1.283 で実測 (2026-09-26。C-054): 起動の直後 = status なし・pid なし・working / 作業中 = busy・working・waitingFor なし /
+// 権限の確認 = waiting・blocked・"permission prompt" / AskUserQuestion = waiting・blocked・"input needed" /
+// attach して答えた直後 = busy・working・waitingFor なし / turn を終えた = idle・done・waitingFor なし。
+// 🚨 state で判じない: turn を終えた session の state は版で変わった (2.1.281 = blocked、2.1.283 = done) ので、入力待ちの印にならない
+const StatusWaiting = "waiting"
+
+// Waiting は人の入力を待って止まっているか (attach して答えるまで動かない)。PG と役 (PM / 取り込みの係) の入力待ちはこれだけで判じる。
+func (s Session) Waiting() bool { return s.Status == StatusWaiting }
+
+// waitingFor の実測の値 (StatusWaiting の実測を見る)。
+const (
+	waitingPermission = "permission prompt"
+	waitingInput      = "input needed"
+)
+
+// WaitingLabel は入力待ちの中身の短い名前 (waitingFor から。知らない値はそのまま添える)。判定には使わない (文面だけ)。
+func (s Session) WaitingLabel() string {
+	switch s.WaitingFor {
+	case waitingPermission:
+		return "権限の確認"
+	case waitingInput:
+		return "AskUserQuestion の質問"
+	case "":
+		return "入力待ち"
+	}
+	return "入力待ち: " + s.WaitingFor
+}
+
 // StateStopped は `claude stop` で止めた session の State。
 const StateStopped = "stopped"
 

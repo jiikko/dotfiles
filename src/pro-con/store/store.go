@@ -565,6 +565,11 @@ func transition(c *card.Card, r Request, now time.Time) error {
 	if c.Deleting() { // PG を止めて消すのを待っている。質問・完了・実行の頼みで列を動かさない (動かすと再開・実行の口が開く)
 		return errors.New("削除の依頼を受けている")
 	}
+	// PG の session の入力待ちで質問待ちへ移したカードに、PG からの依頼が来た: 問いには答えられて動いている (依頼を出すには turn が進む)。
+	// dispatcher が一覧で戻すより先に届くことがある (同じ Tick の頭の Apply) ので、ここで作業中へ戻してから受ける (受け損ねると PG の review が消える)
+	if c.WaitsOnPrompt() && (r.Kind == "ask" || r.Kind == "run" || r.Kind == "review") {
+		c.LeavePrompt(now, "PG が "+r.Kind+" を出した (入力待ちに答えられて動いていた)。作業中へ戻した")
+	}
 	switch r.Kind {
 	case "plan": // PM がタスクに分けてキューに積んだ
 		if c.State != card.Requested {
@@ -603,6 +608,9 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		c.Wait = card.Wait{Kind: card.WaitQuestion, Question: r.Question}
 		move(card.Waiting, "質問: "+clip(r.Question, 80))
 	case "answer": // 人間か PM の回答。まだ質問待ちのときだけ受ける (二重回答で 2 回 resume しない。415 論点 8)
+		if c.WaitsOnPrompt() {
+			return errors.New("PG の session が入力待ち (" + c.Wait.Label() + ") で止まっている。回答ではなく attach して答える")
+		}
 		if !c.Answerable() {
 			return fmt.Errorf("質問待ちではない (今は %s。既に回答済みの可能性)", c.State.Label())
 		}

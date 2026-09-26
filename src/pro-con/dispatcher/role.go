@@ -110,7 +110,7 @@ func (d *Dispatcher) roleState(r *role, now time.Time) card.RoleState {
 		}
 	case rr.alive && rr.seen == agents.StatusIdle:
 		s.Phase = card.RoleIdle
-	case rr.alive && rr.seen == "waiting":
+	case rr.alive && rr.seen == agents.StatusWaiting:
 		s.Phase = card.RoleAsking
 	case rr.alive: // busy と知らない status (dispatcher は知らない値も turn の途中として扱う)
 		s.Phase = card.RoleBusy
@@ -316,12 +316,12 @@ func (d *Dispatcher) tellRole(ctx context.Context, now time.Time, ss []agents.Se
 	switch {
 	case alive:
 		pm.DeadSince = time.Time{}
-		// 権限の確認か質問で止まっている。人が attach して答えるまで動かないので、入るたびに 1 度だけ出来事にする (487)。
+		// 権限の確認か質問で止まっている。人が attach して答えるまで動かないので、入るたびに 1 度だけ出来事にする (487)。PG の入力待ち (prompt.go) と同じ判定 (Session.Waiting)
 		// 知らせる物の有無で決めない (知らせる物が無いときに止まるのが一番よくある形: 手元のカードの push の確認)
-		switch waiting := cur.Status == "waiting"; {
+		switch waiting := cur.Waiting(); {
 		case waiting && !rr.waiting:
 			rr.waiting = true
-			notes = append(notes, ev(eventlog.KindHold, r.cardID, cur.ID, r.name+" が入力待ち (権限の確認か質問) で止まっている。pro-con ps で session を見て attach して答える"))
+			notes = append(notes, ev(eventlog.KindHold, r.cardID, cur.ID, r.name+" が入力待ち ("+cur.WaitingLabel()+") で止まっている。pro-con ps で session を見て attach して答える"))
 		case !waiting:
 			rr.waiting = false
 		}
@@ -356,8 +356,8 @@ func (d *Dispatcher) tellRole(ctx context.Context, now time.Time, ss []agents.Se
 		return notes, save()
 	}
 	switch {
-	case alive && cur.Status != "idle": // 止めて再開すると作業中の turn・権限の確認を殺す。idle になってから知らせる (知らない値も殺さない側に倒す)
-		if w := cur.Status; w != "busy" && w != "waiting" && rr.status != w {
+	case alive && cur.Status != agents.StatusIdle: // 止めて再開すると作業中の turn・権限の確認を殺す。idle になってから知らせる (知らない値も殺さない側に倒す)
+		if w := cur.Status; w != agents.StatusBusy && w != agents.StatusWaiting && rr.status != w {
 			rr.status = w
 			notes = append(notes, ev(eventlog.KindSuspect, r.cardID, cur.ID, fmt.Sprintf(r.name+" の status が %q (idle / busy / waiting のどれでもない)。idle になるまで知らせない (claude の版で値が変わった?)", w)))
 		}

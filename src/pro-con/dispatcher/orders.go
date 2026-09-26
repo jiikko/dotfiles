@@ -43,7 +43,8 @@ func (d *Dispatcher) deliverOrders(now time.Time, ss []agents.Session) ([]eventl
 	for _, c := range st.Cards {
 		pending := c.Pending()
 		// 削除の依頼を受けたカードは戻さない (PG を止めて消すのを待っている。issue 451)
-		if (c.State != card.Running && c.State != card.Review) || c.Launching != "" || c.Deleting() || len(pending) == 0 {
+		// 入力待ちで質問待ちへ移したカード (WaitsOnPrompt) も見る: 方針変更は問いを待たずに止めて再開する (作業中のまま入力待ちだった頃と同じ)
+		if (c.State != card.Running && c.State != card.Review && !c.WaitsOnPrompt()) || c.Launching != "" || c.Deleting() || len(pending) == 0 {
 			continue
 		}
 		o, ok := owned(c, reg)
@@ -100,12 +101,18 @@ func hasRedirect(orders []card.Order) bool {
 
 // idle は記録の session (同じ session id・同じ pid) が一覧で turn を終えている (status idle) か。
 func idle(o live.Owned, ss []agents.Session) bool {
+	s, ok := ownedSession(o, ss)
+	return ok && s.Status == agents.StatusIdle
+}
+
+// ownedSession は記録の session (同じ session id・同じ pid) を一覧から引く。pid 無し (落ちて自動の再開を待つ) と pid の違うものは生きていないと読む。
+func ownedSession(o live.Owned, ss []agents.Session) (agents.Session, bool) {
 	for _, s := range ss {
 		if s.SessionID == o.SessionID && s.PID != 0 && s.PID == o.PID {
-			return s.Status == agents.StatusIdle
+			return s, true
 		}
 	}
-	return false
+	return agents.Session{}, false
 }
 
 // ordersText は未達の追加オーダーを PG へ渡す文にする (原文のまま。空なら空)。

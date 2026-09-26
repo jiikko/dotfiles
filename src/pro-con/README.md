@@ -55,6 +55,9 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
     busy の間は積んで待ち、作業中のまま idle になったら再開する。`card ask` / `run` / `review` で turn を終えたら、その先の再開
     (回答・テストの結果・差し戻し) に添えて届ける。レビュー待ちに未達が残っていたら PG へ戻す。AskUserQuestion / 権限の確認で
     止まっている PG・落ちている PG には届けない (未達のままカードに見える)
+  - **PG の入力待ち**: PG の session が権限の確認 / AskUserQuestion で止まる (`claude agents --json` の `status: waiting`) と、
+    dispatcher はカードを作業中から質問待ち (`?権限`。人の番) へ移す。`a` で attach して答えると (`waiting` でなくなると) 作業中へ戻る。
+    `r` の回答は受けない (回答で再開すると問いを殺す)。待つ間も PG の枠に数え、停滞には数えない (C-054)
   - **方針変更**は待たずに PG を止めて、指示を差し替えて同じ session を再開する (worktree の途中の変更は残る)。**別件**は元のカードの子の新しい依頼
   - **btw** は PG に届けない (止めない・文脈を汚さない。415 要件 9)。dispatcher が PG の出力の末尾とカードの記録から haiku で答え、
     答えはカードの履歴に出る (PG の出力が無ければ記録だけから答える)
