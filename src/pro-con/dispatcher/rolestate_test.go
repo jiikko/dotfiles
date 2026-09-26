@@ -74,7 +74,9 @@ func TestRoleStateNotStaleWhenListFails(t *testing.T) {
 	if s := pmStateIn(t, r.dir); s.Phase != card.RoleIdle {
 		t.Fatalf("前提: 一覧に idle で出た PM の様子 = %s", s.Phase)
 	}
-	r.d.List = func(context.Context) ([]agents.Session, error) { return nil, errors.New("claude agents が返らない") }
+	r.d.List = func(context.Context) ([]agents.Session, error) {
+		return nil, errors.New("claude agents が返らない")
+	}
 	r.tick(t)
 	if s := pmStateIn(t, r.dir); s.Phase != card.RoleChecking || s.Alive() || s.Why == "" {
 		t.Fatalf("一覧を取れない Tick の PM の様子: %+v", s)
