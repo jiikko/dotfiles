@@ -502,7 +502,7 @@ func apply(st State, r Request, now time.Time, repos map[string]string) (State, 
 			return st, r.CardID, "", fmt.Errorf("move: カード %q が無い", r.CardID)
 		}
 		id = r.CardID
-		if !r.Seen.IsZero() && !r.Seen.Equal(next.Cards[i].Since) { // 見ていない列で入れ替えない (回答で分解済みへ移った・起動した後)
+		if !r.Seen.IsZero() && !r.Seen.Equal(next.Cards[i].Since) { // 見ていない列で入れ替えない (回答で着手待ちへ移った・起動した後)
 			return st, id, "", fmt.Errorf("move: 押した後に %s の列へ移ったので動かさない", next.Cards[i].State.Label())
 		}
 		other, err := card.Move(next.Cards, r.CardID, r.Repo, r.Delta)
@@ -712,7 +712,7 @@ func transition(c *card.Card, r Request, now time.Time) error {
 			c.Resume = r.Answer
 		}
 		move(card.Planned, firstNonEmpty(r.From, "人間")+card.AnsweredMark+clip(r.Answer, 80)+" (PG の空きが出たら同じ session を resume)")
-	case "rework": // 取り込みの係 (487) がレビューで差し戻した (issue 446)。回答と同じく分解済みへ戻し、dispatcher が同じ session を再開する
+	case "rework": // 取り込みの係 (487) がレビューで差し戻した (issue 446)。回答と同じく着手待ちへ戻し、dispatcher が同じ session を再開する
 		if c.State != card.Review {
 			return fmt.Errorf("レビュー待ちではない (今は %s)", c.State.Label())
 		}

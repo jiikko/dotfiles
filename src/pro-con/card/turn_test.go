@@ -22,7 +22,7 @@ func TestTurn(t *testing.T) {
 	}{
 		{"依頼は PM", Card{State: Requested}, on, TurnPM},
 		{"PM を起こさないなら依頼は人", Card{State: Requested}, pmOff, TurnHuman},
-		{"分解済みは PG", Card{State: Planned}, pmOff, TurnPG},
+		{"着手待ちは PG", Card{State: Planned}, pmOff, TurnPG},
 		{"作業中は PG", Card{State: Running, Wait: Wait{Kind: WaitResource}}, on, TurnPG},
 		{"質問はまず PM", q(nil), on, TurnPM},
 		{"前の質問を回した記録は今の質問に効かない", q(stale), on, TurnPM},

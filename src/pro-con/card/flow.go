@@ -26,7 +26,7 @@ type FlowStep struct {
 // Stays は列を変えない移り変わり (人に回すだけ)。
 func (s FlowStep) Stays() bool { return s.From == s.To }
 
-// Heading は移り変わりの見出しの素の文 (「依頼 → 分解済み」。列を変えないものは「質問待ちのまま」)。画面は色を付けて同じ形に組む。
+// Heading は移り変わりの見出しの素の文 (「依頼 → 着手待ち」。列を変えないものは「質問待ちのまま」)。画面は色を付けて同じ形に組む。
 func (s FlowStep) Heading() string {
 	if s.Stays() {
 		return s.From.Label() + "のまま"

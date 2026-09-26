@@ -3,7 +3,7 @@ package dispatcher
 // e2e モード (2026-09-25 にユーザーが依頼): 画面・dispatcher・受付の箱・記録は本物のまま、PG の claude だけを台本どおりに動く偽物にする
 // (利用枠を使わない)。Claude が `pro-con e2e` で画面を操作して、質問 → 回答 → テストの係 → レビュー → 終了を通しで確かめるため。
 //
-// 偽の PM (FakePM) が依頼の列のカードを、その場で分解済みにする (本物では PM の Claude の仕事)。
+// 偽の PM (FakePM) が依頼の列のカードを、その場で着手待ちにする (本物では PM の Claude の仕事)。
 // 置き場 (Root) の中身: state/ (本物のモードの状態の置き場) / repo/ (偽の repo。PG の worktree はその下) / state/e2e-sessions.json (偽の session の一覧)。
 // 偽の PG の台本 (1 つだけ):
 //  1. 起動されたら「続けてよいですか」と質問する
@@ -80,7 +80,7 @@ func (e E2E) save(f e2eFile) error {
 	return os.Rename(tmp, e.sessionsPath()) // 画面が書きかけを読まない
 }
 
-// FakePM は偽の PM: 依頼の列のカードを、その場で分解済みにする (本物では PM の Claude が issue に分けてキューに積む)。
+// FakePM は偽の PM: 依頼の列のカードを、その場で着手待ちにする (本物では PM の Claude が issue に分けてキューに積む)。
 // dispatcher の Tick の頭で呼ぶ (箱に置いた plan は同じ Tick の Apply で入る)。
 func (e E2E) FakePM() error {
 	st, err := store.Load(e.StateDir())

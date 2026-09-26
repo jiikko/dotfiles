@@ -52,7 +52,7 @@ func parseState(v string) (card.State, error) {
 	if s, ok := stateNames[strings.ToLower(v)]; ok {
 		return s, nil
 	}
-	return 0, fmt.Errorf("列の名前が違う: %q (依頼 / 分解済み / 作業中 / 質問待ち / レビュー / 完了、または requested / planned / running / waiting / review / done)", v)
+	return 0, fmt.Errorf("列の名前が違う: %q (依頼 / 着手待ち / 作業中 / 質問待ち / レビュー / 完了、または requested / planned / running / waiting / review / done)", v)
 }
 
 // cardSummary は list の 1 行 (--json の形)。

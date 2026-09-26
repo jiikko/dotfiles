@@ -53,7 +53,7 @@ func TestParseUsage(t *testing.T) {
 	}
 }
 
-// usageRig は使用率を差し替えられる dispatcher (上限 3、分解済みのカード 3 枚)。
+// usageRig は使用率を差し替えられる dispatcher (上限 3、着手待ちのカード 3 枚)。
 type usageRig struct {
 	d     *Dispatcher
 	l     *fakeLauncher
@@ -261,7 +261,7 @@ func TestResumeBeforeOlderStart(t *testing.T) {
 	}
 	setCard(t, dir, "C-002", func(c *card.Card) { c.Since = t0.Add(-time.Hour) }) // 再開を待つ C-001 より古い
 	if c := states(t, dir); c["C-001"].State != card.Planned || !c["C-001"].Resumes() || c["C-002"].State != card.Planned {
-		t.Fatalf("前提: 両方とも分解済みで C-001 は再開待ちのはず: %+v", c)
+		t.Fatalf("前提: 両方とも着手待ちで C-001 は再開待ちのはず: %+v", c)
 	}
 	if _, err := d.Tick(context.Background()); err != nil {
 		t.Fatal(err)

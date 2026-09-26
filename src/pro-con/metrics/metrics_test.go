@@ -14,8 +14,8 @@ var t0 = time.Date(2026, 9, 25, 1, 0, 0, 0, time.UTC)
 func at(n int) time.Time { return t0.Add(time.Duration(n) * time.Minute) }
 
 // walk は 1 枚のカードを本物の遷移 (store.Apply と、dispatcher が使う card の口) で動かし、閉じたカードを返す。
-// 依頼 10 分 → 分解済み 5 分 → 作業中 15 分 → 質問待ち 20 分 (うち 5 分目に PM が人に回した) → 分解済み 5 分 → 作業中 15 分 →
-// レビュー 10 分 → 差し戻しで分解済み 5 分 → 作業中 15 分 (途中でテストの係に頼む) → レビュー 10 分 → 完了。
+// 依頼 10 分 → 着手待ち 5 分 → 作業中 15 分 → 質問待ち 20 分 (うち 5 分目に PM が人に回した) → 着手待ち 5 分 → 作業中 15 分 →
+// レビュー 10 分 → 差し戻しで着手待ち 5 分 → 作業中 15 分 (途中でテストの係に頼む) → レビュー 10 分 → 完了。
 func walk(t *testing.T) card.Card {
 	t.Helper()
 	dir := t.TempDir()
