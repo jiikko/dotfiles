@@ -22,6 +22,7 @@ package wtclean
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -267,7 +268,7 @@ func trunk(ctx context.Context, repo string) (string, string, error) {
 			return strings.TrimSpace(out), name, nil
 		}
 	}
-	return "", "", fmt.Errorf("取り込む先 (origin/master・origin/main) が無い")
+	return "", "", errors.New("取り込む先 (origin/master・origin/main) が無い")
 }
 
 // inBase は head の中身が取り込む先 base にあるか。祖先なら確か。祖先でなければ git cherry の patch の同一性で見て
@@ -298,7 +299,7 @@ func inBase(ctx context.Context, repo, base, baseName, head string) (bool, strin
 		return false, fmt.Sprintf("%s に無い commit が %d 本ある", baseName, plus), nil
 	}
 	if minus == 0 { // 祖先でないのに比べる commit が 0 本 (起きないはず)。示せていないので消さない
-		return false, fmt.Sprintf("%s の祖先ではないが、git cherry が commit を返さない", baseName), nil
+		return false, baseName + " の祖先ではないが、git cherry が commit を返さない", nil
 	}
 	missing, err := verbatimMissing(ctx, repo, base, head)
 	if err != nil {

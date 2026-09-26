@@ -442,7 +442,7 @@ func TestJudgeKeepsWhatRemoveWouldLose(t *testing.T) {
 	env := f.add("C-001")
 	write(t, filepath.Join(env, ".env"), "SECRET=1\n")
 	nestedRepo := f.add("C-002")
-	git(t, filepath.Join(nestedRepo), "init", "-q", "build/proj")
+	git(t, nestedRepo, "init", "-q", "build/proj")
 	autobuild := f.add("C-003")
 	write(t, filepath.Join(autobuild, "build", ".autobuild.built"), "x\n")
 	write(t, filepath.Join(autobuild, "build", ".autobuild.rev"), "x\n")
@@ -531,7 +531,7 @@ func TestRun0FailsOnRC1(t *testing.T) {
 	f := newFixture(t, sandbox)
 	wt := f.add("C-001")
 	sha := f.commit(wt, "x.txt")
-	if _, err := run0(context.Background(), f.repo, "merge-base", "--is-ancestor", sha, "master"); err == nil {
+	if err := run0(context.Background(), f.repo, "merge-base", "--is-ancestor", sha, "master"); err == nil {
 		t.Error("rc 1 を成功と読んだ")
 	}
 }

@@ -96,12 +96,12 @@ func cleanOne(ctx context.Context, in Inputs, t Verdict, opt Options) Result {
 }
 
 // run0 は消す側の git。rc が 0 でなければ失敗 (gitx.Run は rc 1 を結果の意味として返すので、そのまま使うと失敗を見落とす)。
-func run0(ctx context.Context, dir string, args ...string) (string, error) {
-	out, rc, err := gitx.Run(ctx, dir, args...)
+func run0(ctx context.Context, dir string, args ...string) error {
+	_, rc, err := gitx.Run(ctx, dir, args...)
 	if err == nil && rc != 0 {
 		err = fmt.Errorf("git %s: rc=%d", strings.Join(args, " "), rc)
 	}
-	return out, err
+	return err
 }
 
 // keepReflog は worktree の HEAD とブランチの reflog にある commit のうち、取り込む先から辿れないものを
@@ -135,7 +135,7 @@ func keepReflog(ctx context.Context, v Verdict) error {
 		if anc {
 			continue
 		}
-		if _, err := run0(ctx, v.RepoPath, "update-ref", "refs/pro-con/removed/"+v.Name+"/"+sha, sha, ""); err != nil {
+		if err := run0(ctx, v.RepoPath, "update-ref", "refs/pro-con/removed/"+v.Name+"/"+sha, sha, ""); err != nil {
 			if _, rc, _ := gitx.Run(ctx, v.RepoPath, "rev-parse", "--verify", "--quiet", "refs/pro-con/removed/"+v.Name+"/"+sha); rc != 0 {
 				return err // 既に残してある (前の実行が途中で止まった) なら続ける
 			}
@@ -159,14 +159,14 @@ func reflogCommits(ctx context.Context, dir, ref string) ([]string, error) {
 // removeWorktree は --force なしで worktree を外し、置き場が消えたかを確かめる。
 func removeWorktree(ctx context.Context, v Verdict) error {
 	if v.Lock != "" {
-		if _, err := run0(ctx, v.RepoPath, "worktree", "unlock", v.Path); err != nil {
-			return fmt.Errorf("Claude Code の lock を外せない: %w", err)
+		if err := run0(ctx, v.RepoPath, "worktree", "unlock", v.Path); err != nil {
+			return fmt.Errorf("claude の lock を外せない: %w", err)
 		}
 	}
-	if _, err := run0(ctx, v.RepoPath, "worktree", "remove", v.Path); err != nil {
+	if err := run0(ctx, v.RepoPath, "worktree", "remove", v.Path); err != nil {
 		if v.Lock != "" {
-			if _, lerr := run0(ctx, v.RepoPath, "worktree", "lock", "--reason", v.Lock, v.Path); lerr != nil {
-				return fmt.Errorf("git worktree remove が断った: %w (外した lock を掛け直せない: %v)", err, lerr)
+			if lerr := run0(ctx, v.RepoPath, "worktree", "lock", "--reason", v.Lock, v.Path); lerr != nil {
+				return fmt.Errorf("git worktree remove が断った: %w (外した lock を掛け直せない: %w)", err, lerr)
 			}
 		}
 		return fmt.Errorf("git worktree remove が断った: %w", err)
@@ -190,7 +190,7 @@ func deleteBranch(ctx context.Context, in Inputs, v Verdict, stateDir string) er
 		return fmt.Errorf("消す前に拒否した: %w", err)
 	}
 	ref := "refs/heads/" + v.Branch
-	if _, err := run0(ctx, v.RepoPath, "update-ref", "-d", ref, v.Head); err != nil {
+	if err := run0(ctx, v.RepoPath, "update-ref", "-d", ref, v.Head); err != nil {
 		return err
 	}
 	if _, rc, err := gitx.Run(ctx, v.RepoPath, "rev-parse", "--verify", "--quiet", ref); err != nil || rc == 0 {

@@ -121,7 +121,7 @@ func lsofCwds(ctx context.Context) ([]string, error) {
 		}
 	}
 	if len(cwds) == 0 {
-		return nil, fmt.Errorf("lsof が作業ディレクトリを 1 つも返さない: %v", err)
+		return nil, fmt.Errorf("lsof が作業ディレクトリを 1 つも返さない: %w", err)
 	}
 	return cwds, nil
 }

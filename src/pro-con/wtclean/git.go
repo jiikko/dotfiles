@@ -83,8 +83,8 @@ func readStatus(ctx context.Context, wt string) (status, error) {
 			continue
 		}
 		xy, path := e[:2], e[3:]
-		switch {
-		case xy == "!!":
+		switch xy {
+		case "!!":
 			files, err := filesUnder(filepath.Join(wt, path))
 			if err != nil {
 				return status{}, err
