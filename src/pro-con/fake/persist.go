@@ -11,11 +11,12 @@ import (
 // 持つので要らないが、模擬はメモリに持つので、入れ替えるたびに最初からになる (本番と同じ「入れ替えても続く」をハリボテで見せる)。
 
 type scriptState struct {
-	Lines    []string  `json:"lines"`
-	Then     string    `json:"then"`
-	Question string    `json:"question"`
-	Exec     card.Exec `json:"exec"`
-	ExecDone bool      `json:"execDone"`
+	Lines    []string        `json:"lines"`
+	Then     string          `json:"then"`
+	Question string          `json:"question"`
+	Choices  []card.Question `json:"choices,omitempty"` // 選択肢つきの質問 (issue 493)
+	Exec     card.Exec       `json:"exec"`
+	ExecDone bool            `json:"execDone"`
 }
 
 type simState struct {
@@ -35,7 +36,7 @@ func (s *Sim) Save() ([]byte, error) {
 	st := simState{Now: s.now, Cards: s.cards, Limit: s.limit, Scripts: map[string]scriptState{}, Resource: s.resource,
 		ExternalUntil: s.externalUntil, NextID: s.nextID, NextIssue: s.nextIssue, NextSess: s.nextSess}
 	for id, sc := range s.scripts {
-		st.Scripts[id] = scriptState{Lines: sc.lines, Then: sc.then, Question: sc.question, Exec: sc.exec, ExecDone: sc.execDone}
+		st.Scripts[id] = scriptState{Lines: sc.lines, Then: sc.then, Question: sc.question, Choices: sc.choices, Exec: sc.exec, ExecDone: sc.execDone}
 	}
 	return json.Marshal(st)
 }
@@ -48,7 +49,7 @@ func (s *Sim) Restore(data []byte) error {
 	}
 	scripts := make(map[string]*script, len(st.Scripts))
 	for id, sc := range st.Scripts {
-		scripts[id] = &script{lines: sc.Lines, then: sc.Then, question: sc.Question, exec: sc.Exec, execDone: sc.ExecDone}
+		scripts[id] = &script{lines: sc.Lines, then: sc.Then, question: sc.Question, choices: sc.Choices, exec: sc.Exec, execDone: sc.ExecDone}
 	}
 	*s = Sim{now: st.Now, cards: st.Cards, limit: st.Limit, scripts: scripts, resource: st.Resource,
 		externalUntil: st.ExternalUntil, nextID: st.NextID, nextIssue: st.NextIssue, nextSess: st.NextSess}

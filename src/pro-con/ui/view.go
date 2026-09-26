@@ -43,7 +43,13 @@ func (m *Model) View() tea.View {
 // 🚨 IME は変換中の文字を端末のカーソルの位置に出す。カーソルを置かないと、描画の差分を書き終えた位置 (毎回変わる) に出て、
 // 日本語の変換中に入力欄から外れる。位置は render と同じ行の並び (ヘッダ + 領域 + 入力欄) から数える
 func (m *Model) caret() *tea.Cursor {
-	if m.mode != modeInput || m.stopping {
+	if m.stopping {
+		return nil
+	}
+	if m.mode == modeForm {
+		return m.formCaret()
+	}
+	if m.mode != modeInput {
 		return nil
 	}
 	y := m.inputRow // render が数えた入力欄の行
@@ -88,7 +94,7 @@ func (m *Model) render() string {
 	}
 	screen := m.overlayBump(append(append(header, region...), foot...), len(header), board)
 	head, rest := screen[:len(header):len(header)], screen[len(header):]
-	region = m.overlayToast(m.dimWhileTyping(m.overlaySettings(m.overlayDrawer(rest[:len(region)]))))
+	region = m.overlayToast(m.overlayForm(m.dimWhileTyping(m.overlaySettings(m.overlayDrawer(rest[:len(region)])))))
 	return strings.Join(m.overlayQuit(m.overlayLegend(append(append(head, region...), rest[len(region):]...))), "\n")
 }
 
@@ -231,7 +237,7 @@ func (m *Model) footLines() []string {
 		out = append(out, m.inputLine())
 	case modeConfirm:
 		out = append(out, " "+sgrBold+sgrYellow+m.confirmText+sgrReset)
-	case modeBoard:
+	case modeBoard, modeForm: // 回答フォームは領域の中央に重ねる (overlayForm)
 	}
 	if m.sticky != "" {
 		out = append(out, sgrYellow+" "+m.sticky+sgrReset)
@@ -759,6 +765,8 @@ func (m *Model) hints() []string {
 		return append(h, "esc 取り消し")
 	case modeConfirm:
 		return []string{"y / enter 実行", "他のキー 取り消し"}
+	case modeForm:
+		return m.formHints()
 	case modeBoard:
 	}
 	if m.set.open {

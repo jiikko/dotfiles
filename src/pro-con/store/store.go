@@ -74,15 +74,17 @@ type Request struct {
 	After    []string        `json:"after,omitempty"`  // plan: このカードより先に完了させるカード (issue 468)
 	Points   int             `json:"points,omitempty"` // plan: 見積もりのポイント (card.PointScale のどれか。0 = 付けない。issue 490)
 	Question string          `json:"question,omitempty"`
-	Command  string          `json:"command,omitempty"` // run: テストの係に実行を頼むコマンド (シェルの 1 行)
-	Cwd      string          `json:"cwd,omitempty"`     // run: 頼んだシェルの作業ディレクトリ (dispatcher が PG の worktree と照らす)
-	Answer   string          `json:"answer,omitempty"`
-	From     string          `json:"from,omitempty"`   // 回答した人 / 削除を依頼した人 (人間 / PM)
-	Rework   string          `json:"rework,omitempty"` // rework: レビューで直してほしい点 (書いたまま)
-	Ending   card.Ending     `json:"ending,omitempty"`
-	Said     []card.Event    `json:"said,omitempty"` // attach: attach の間に人間が打った指示 (原文と打った時刻)
-	Note     string          `json:"note,omitempty"` // event: 画面の出来事 (人が読む 1 文。dispatcher が出来事の記録へ書く) / attachment: 添付の一言
-	Name     string          `json:"name,omitempty"` // attachment: 元のファイル名 (置き場の名前は依頼の ID と拡張子で決める)
+	// Questions は ask: 選択肢つきの問い (issue 493。`card ask --json`)。Question はその前置き (空でよい)
+	Questions []card.Question `json:"questions,omitempty"`
+	Command   string          `json:"command,omitempty"` // run: テストの係に実行を頼むコマンド (シェルの 1 行)
+	Cwd       string          `json:"cwd,omitempty"`     // run: 頼んだシェルの作業ディレクトリ (dispatcher が PG の worktree と照らす)
+	Answer    string          `json:"answer,omitempty"`
+	From      string          `json:"from,omitempty"`   // 回答した人 / 削除を依頼した人 (人間 / PM)
+	Rework    string          `json:"rework,omitempty"` // rework: レビューで直してほしい点 (書いたまま)
+	Ending    card.Ending     `json:"ending,omitempty"`
+	Said      []card.Event    `json:"said,omitempty"` // attach: attach の間に人間が打った指示 (原文と打った時刻)
+	Note      string          `json:"note,omitempty"` // event: 画面の出来事 (人が読む 1 文。dispatcher が出来事の記録へ書く) / attachment: 添付の一言
+	Name      string          `json:"name,omitempty"` // attachment: 元のファイル名 (置き場の名前は依頼の ID と拡張子で決める)
 	// File / Size は attachment の移し先の絶対パスと大きさ。Apply が箱のファイルから入れる (依頼に書かれた値は使わない)
 	File     string         `json:"-"`
 	Size     int64          `json:"-"`
@@ -602,11 +604,12 @@ func transition(c *card.Card, r Request, now time.Time) error {
 		if c.State != card.Running {
 			return fmt.Errorf("作業中の列に無い (今は %s)", c.State.Label())
 		}
-		if strings.TrimSpace(r.Question) == "" {
-			return errors.New("質問が空")
+		w, err := card.AskWait(r.Question, r.Questions) // 箱に手で置かれた依頼もここで検査する (cardcmd を通らない)
+		if err != nil {
+			return err
 		}
-		c.Wait = card.Wait{Kind: card.WaitQuestion, Question: r.Question}
-		move(card.Waiting, "質問: "+clip(r.Question, 80))
+		c.Wait = w
+		move(card.Waiting, "質問: "+clip(w.Question, 80))
 	case "answer": // 人間か PM の回答。まだ質問待ちのときだけ受ける (二重回答で 2 回 resume しない。415 論点 8)
 		if c.WaitsOnPrompt() {
 			return errors.New("PG の session が入力待ち (" + c.Wait.Label() + ") で止まっている。回答ではなく attach して答える")
@@ -795,7 +798,10 @@ func insertByTime(h []card.Event, e card.Event) []card.Event {
 	return slices.Insert(slices.Clip(h), i, e)
 }
 
+// clip は履歴・題名に入れる 1 行にする: 改行と空白の並びを 1 つの空白に潰してから n 字で切る
+// (選択肢つきの質問・フォームの答えは複数行。そのまま入れると card show の履歴の行が崩れる。issue 493)。
 func clip(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
 	r := []rune(s)
 	if len(r) <= n {
 		return s

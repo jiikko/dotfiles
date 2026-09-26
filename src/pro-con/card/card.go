@@ -117,6 +117,9 @@ type Wait struct {
 	Resource string // WaitResource のときのリソース名 (device / xcode 等)
 	Position int    // WaitResource のときの列の順番 (1 始まり)
 	Question string // WaitQuestion / WaitPermission のときの質問文。WaitCrashed のときは止めた理由
+	// Questions は選択肢つきの質問の問い (WaitQuestion のときだけ。issue 493)。Question には前置きと、問いを文にしたもの
+	// (QuestionsText) も入れる。回答で質問待ちを離れたら Wait ごと消える
+	Questions []Question `json:",omitempty"`
 }
 
 // IssueRef は repo + 番号で issue を指す (パスで持たない。done への移動や改番で切れないように)。

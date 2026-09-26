@@ -33,6 +33,7 @@ const (
 	modeBoard mode = iota
 	modeInput
 	modeConfirm // 破壊的な操作の y/N 確認 (docs/glogx-ui-guide.md §4)
+	modeForm    // 選択肢つきの質問の回答フォーム (answerform.go。issue 493)
 )
 
 type inputKind int
@@ -85,6 +86,7 @@ type Model struct {
 
 	mode        mode
 	inputRow    int             // 最後の render で入力欄を置いた行 (view.go の caret)
+	form        answerForm      // modeForm で開いている回答フォーム
 	line        lineedit.Line   // 入力欄 (編集キーは tuikit/lineedit。docs/glogx-ui-guide.md「入力欄の編集キー」)
 	pending     backend.Command // modeConfirm で確認している操作
 	confirmText string          // modeConfirm の確認の行に出す文
@@ -272,8 +274,12 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 		return m, nil
 	case tea.PasteMsg:
 		// ペーストは入力欄にだけ入れる。ボードではキー操作として解釈しない
-		if m.mode == modeInput {
+		switch m.mode {
+		case modeInput:
 			m.line.Insert(msg.Content)
+		case modeForm:
+			m.pasteForm(msg.Content)
+		case modeBoard, modeConfirm:
 		}
 		return m, nil
 	case stopDoneMsg:
@@ -295,6 +301,9 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 			return m, tea.Batch(cmd, m.trackMoves()) // 回答などで列が変わったら演出する
 		case modeConfirm:
 			cmd := m.handleConfirmKey(msg)
+			return m, tea.Batch(cmd, m.trackMoves())
+		case modeForm:
+			cmd := m.handleFormKey(msg)
 			return m, tea.Batch(cmd, m.trackMoves())
 		case modeBoard:
 		}
@@ -571,6 +580,10 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		}
 		if !ok || !c.Answerable() {
 			m.refuse("回答できるのは質問待ちのカードだけ")
+			return nil
+		}
+		if len(c.Wait.Questions) > 0 { // 選択肢つきの質問は radio / checkbox のフォームで答える
+			m.openAnswerForm(c)
 			return nil
 		}
 		m.startInput(inputAnswer)

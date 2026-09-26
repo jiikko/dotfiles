@@ -45,7 +45,7 @@ func (m *Model) busyCards() (running, waiting int) {
 // requestQuit は終了の入力欄を開く。閉じるのは、そこへ quit と打って enter したときだけ (2026-09-25 にユーザーが決めた形。
 // q や ctrl+c の 1 打で閉じない: 本物のモードの終了は dispatcher と PG を止めるので、打ち間違いで止めない)。
 func (m *Model) requestQuit() tea.Cmd {
-	if m.mode == modeInput && m.inputKind != inputQuit { // 書きかけの文は消さない
+	if m.mode == modeForm || m.mode == modeInput && m.inputKind != inputQuit { // 書きかけの文・選んだ答えは消さない
 		m.refuse("終了は Q を押して quit と打つ (書きかけの入力はそのまま)")
 		return nil
 	}
