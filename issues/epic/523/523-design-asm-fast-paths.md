@@ -24,7 +24,10 @@ asm の速い道を入れる場所は 1 つにしたい。そのために、端�
 ## 進め方 (子 issue)
 
 1. [524](524-refactor-route-terminal-width-through-termwidth.md): pro-con と schedkeys の幅・切り詰め・切り出しを `termwidth` に寄せ、同じ行を何度も走査している所を 1 回にする (pure Go。asm は入れない)
-2. 測り直す: 1 の後で、glogx と pro-con の実画面のフレームで、`termwidth` の走査が CPU の何 % かを見る (520 の Phase 0)
+2. 測り直す: 1 の後で、glogx と pro-con の実画面のフレームで、`termwidth` の走査が CPU の何 % かを見る (520 の Phase 0)。
+   **pro-con のアニメーションのコマ** (揺れ・カードの移動・カーソルの移動。494 と同じ測り方) も対象に入れる (2026-09-26 のユーザーの質問「アニメーションの箇所も asm で速くできない?」)
+   - アニメーションのコマの約 6 割は幅の走査 (`fit` / `splice` / `ansi.Cut` / `cellsOf`。494) で、1 で `termwidth` を通るようになれば NEON 版がそのまま効く。asm を別に書かない
+   - 残りの確保と GC (494 で揺れ 1 回の GC 15 → 4 回) と動きの計算 (イージング・色の補間) は、asm では減らない。494 の後の揺れの 1 コマは約 1.4 ms (1 コマの枠 33 ms の約 5%)
 3. [520](520-perf-arm64-terminal-line-scanner.md): NEON 版は既に入っているので、2 の実測で残す価値を判断する (実画面で 10% 以上短くならなければ、520 の方針どおり外すか、
    残すなら理由を書く)。524 で pro-con・schedkeys が `termwidth` を通るようになると、NEON 版がそこにも効く
 
