@@ -2,7 +2,8 @@ package main
 
 // pro-con help — pro-con を外から動かす人と Claude 向けの話題ごとの説明 (issue 510)。
 // 本文は help/<話題>.md が正本 (README は実装側の事情だけを持ち、使い方はここを指す)。
-// 役・レーン・人の番の説明は画面の ? の表と同じ正本 (ui.RoleMeanings / card.State.Meaning / ui.HumansTurnMeaning) から差し込む。
+// 役・レーン・人の番・流れの説明は画面の ? の表と同じ正本 (ui.RoleMeanings / card.State.Meaning / ui.HumansTurnMeaning /
+// card.MainFlow・card.FlowDetours・card.AfterDone) から差し込む。
 
 import (
 	"embed"
@@ -25,6 +26,7 @@ type helpTopic struct {
 
 var helpTopics = []helpTopic{
 	{[]string{"terms", "用語"}, "役 (PM・PG・取り込みの係・見張り・dispatcher…)・受付の箱・レーン・人の番"},
+	{[]string{"flow", "流れ"}, "カードがどの順にレーンを渡り、誰が何で動かすか (寄り道・完了の後も)"},
 	{[]string{"usage", "使い方"}, "依頼の出し方・質問への答え方・画面の開き方 (--join / --view)・削除と片付け"},
 	{[]string{"debug", "デバッグ"}, "状態の置き場の中身・ps / log / card show・止まったとき・クラッシュの後・ライブアップグレード"},
 }
@@ -66,7 +68,7 @@ func helpIndex() string {
 	return b.String()
 }
 
-// helpText は話題の本文。terms の目印の行は正本から作った説明に置き換える。
+// helpText は話題の本文。目印の行 ({{…}}) は正本から作った説明に置き換える。
 func helpText(t helpTopic) string {
 	src, err := helpFS.ReadFile("help/" + t.names[0] + ".md")
 	if err != nil {
@@ -79,9 +81,25 @@ func helpText(t helpTopic) string {
 	for i, s := range card.Columns {
 		fmt.Fprintf(&lanes, "%d. **%s**: %s\n", i+1, s.Label(), s.Meaning())
 	}
+	var after strings.Builder
+	for _, a := range card.AfterDone {
+		fmt.Fprintf(&after, "- %s\n", a)
+	}
 	return strings.NewReplacer(
 		"{{役}}\n", roles.String(),
 		"{{レーン}}\n", lanes.String(),
 		"{{人の番}}\n", ui.HumansTurnMeaning+"。\n",
+		"{{通常の流れ}}\n", flowMarkdown(card.MainFlow),
+		"{{寄り道}}\n", flowMarkdown(card.FlowDetours),
+		"{{完了の後}}\n", after.String(),
 	).Replace(string(src))
+}
+
+// flowMarkdown は移り変わりを 1 行ずつの箇条にする (画面の ? の流れのタブと同じ順・同じ文)。
+func flowMarkdown(steps []card.FlowStep) string {
+	var b strings.Builder
+	for _, st := range steps {
+		fmt.Fprintf(&b, "- **%s** — %s: %s\n", st.Heading(), st.Who, st.How)
+	}
+	return b.String()
 }

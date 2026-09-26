@@ -113,6 +113,7 @@ type Model struct {
 	attaching  bool        // attach の照合を裏で待っている
 	legend     bool        // レーンの意味の表を出している (legend.go)
 	legendOff  int         // 表が画面より長いときの送り (legend.go)
+	legendTab  legendTab   // 表のどのタブを出しているか (legend.go)
 	diff       diffView    // 詳細から D で開く差分の板 (diffview.go。issue 508)
 	lane       laneFade    // 選んでいるレーンの枠の色の移り変わり (lanefade.go)
 	drawer     anim.Transition
@@ -647,8 +648,8 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 			m.orderKind = card.OrderAppend
 			m.startInput(inputOrder)
 		}
-	case "?": // レーンの意味の表 (legend.go)
-		m.legend = true
+	case "?": // ヘルプの表 (legend.go)。開くたびに流れのタブの頭から
+		m.legend, m.legendTab, m.legendOff = true, legendFlow, 0
 	case "w": // btw = 「今どうなってる?」(what's up。b は移動の語彙で半ページ上なので使わない)
 		if _, ok := m.selectedCard(); ok {
 			m.startInput(inputBtw)

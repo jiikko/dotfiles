@@ -37,7 +37,7 @@ func (s State) Meaning() string {
 	case Waiting:
 		return "PG の質問 (まず PM が受け、人に回すかを決める)・PM が依頼について人に聞いた問い・権限の確認・落ちて止めた PG。人の番のものは r で回答する"
 	case Review:
-		return "PG が作業を終えた。PM が diff と実行結果を読んでから完了にする"
+		return "PG が作業を終えた。取り込みの係が diff とテストを確かめて master へ取り込み、完了にする (直す点があれば差し戻す)"
 	case Done:
 		return "終わった (issue で完了・その場で回答・調査のみ・却下・issue 化待ち)。x で片付ける"
 	}

@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"io/fs"
+	"slices"
 	"strings"
 	"testing"
 
@@ -69,6 +70,26 @@ func TestHelpTermsFromCanonicalSources(t *testing.T) {
 	}
 	if !strings.Contains(got, ui.HumansTurnMeaning) {
 		t.Error("人の番の説明が無い")
+	}
+}
+
+// flow は流れを正本 (card.MainFlow / card.FlowDetours / card.AfterDone) から、画面の ? と同じ順で出す (issue 515)。
+func TestHelpFlowFromCanonicalSources(t *testing.T) {
+	var out strings.Builder
+	runHelp([]string{"流れ"}, &out, io.Discard)
+	got, pos := out.String(), 0
+	for _, st := range slices.Concat(card.MainFlow, card.FlowDetours) {
+		line := "- **" + st.Heading() + "** — " + st.Who + ": " + st.How + "\n"
+		i := strings.Index(got[pos:], line)
+		if i < 0 {
+			t.Fatalf("流れの %q が無いか順が違う:\n%s", line, got)
+		}
+		pos += i + len(line)
+	}
+	for _, a := range card.AfterDone {
+		if !strings.Contains(got, "- "+a+"\n") {
+			t.Errorf("完了の後の %q が無い", a)
+		}
 	}
 }
 

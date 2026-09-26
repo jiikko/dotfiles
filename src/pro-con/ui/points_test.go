@@ -37,9 +37,9 @@ func TestCardCellPoints(t *testing.T) {
 	}
 }
 
-// ? の表にポイントの意味が全行出る (正本は card.PointsMeaning)。
+// ? の印とポイントのタブにポイントの意味が全行出る (正本は card.PointsMeaning)。
 func TestLegendHasPointsMeaning(t *testing.T) {
-	text := ansi.Strip(strings.Join(legendRows(200), "\n"))
+	text := ansi.Strip(strings.Join(legendRows(legendMarks, 200), "\n"))
 	for _, m := range card.PointsMeaning {
 		if !strings.Contains(text, m) {
 			t.Errorf("? の表に無い: %q", m)
