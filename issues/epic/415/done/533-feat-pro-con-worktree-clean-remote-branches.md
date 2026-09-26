@@ -36,7 +36,7 @@ remote の `worktree-pc-c-*` は 522 で一度だけ手で片付けた。PG は 
   - [P3] origin の無い repo が設定にあると毎回 rc=1 → 飛ばす
   - [P3] テストの守りが push にしか掛かっていない → fetch の前にも掛ける
   - 記録だけ: fetch の refspec が狭い repo (single-branch clone) では、refspec の外の追跡 ref が古いまま残り、消そうとして lease で断られて毎回「失敗」になる (消す事故にはならない。dotfiles は既定の refspec)
-- [ ] 取り込み後、本物で `pro-con worktree clean --remote` の一覧を人が見てから `--yes` (522 の 52 本 / 9 本と照らす。-r1 等は 522 と同じく元のカードで見る)
+- [-] ~~取り込み後、本物で `pro-con worktree clean --remote` の一覧を人が見てから `--yes`~~ → やらない (下の決着。`--remote` は 540 で外す)
 
 ## 決着 (2026-09-27、カード C-094)
 
