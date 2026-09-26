@@ -127,10 +127,15 @@ worktree が要らない) は、別プロセスにする決定でもそのまま
   - 記録だけ (未確認リスク): 見張りの起こし直しの間に直った衝突は「消えた」を知らせない (知らせた物をメモリだけに持つ割り切り。残っている衝突はもう 1 度知らせる) /
     ctrl+c でプロセスグループに信号が届いたとき、dispatcher の ctx が取り消される前に見張りが抜けると「見張りが抜けた」が 1 行余分に出うる (推測。再現していない)
 - [x] `make test` / `make lint` 緑 (テストの係。lint の depguard で PG の worktree のパスの関数を dispatcher から `card.SessionName` / `card.WorktreePath` へ移した = 見張りは dispatcher を import しない)
-- [ ] 本番の dispatcher で、見張りが起き、衝突が出来事 (`pro-con log`) に出ることを確かめる
+- [x] 本番の dispatcher で、見張りが起き、衝突が出来事 (`pro-con log`) に出ることを確かめる
 - 未テスト: dispatcher を kill -9 したときに見張りが抜けること (パイプの EOF。起こし直しの係のテストは「止めるときに stdin を閉じる」まで) /
   `IsAncestor` で commit の無い・取り込み済みのカードを飛ばすこと (飛ばさなくても merge-tree は衝突なしを返すので、結果は変わらない。git の呼び出しを減らすだけ)
 
 ## 関連
 
 - 426 (決定 5・6: テストの係と要約役・役割) / 444 (出来事の記録) / 449 (起動のコスト) / 455・467・469・473 (見せる中身) / 468 (順番) / 471 (負荷)
+
+## 本番で確かめた (2026-09-27、ユーザーと話す Claude が本番の記録 `~/.local/state/pro-con/live/events.jsonl` で確かめた)
+
+- kind `monitor` の衝突の出来事が本番で 35 件。例: 「C-085 の commit 済みの分が origin/master と衝突する (src/pro-con/ui/model.go)」(01:55) →
+  「C-085 と origin/master の衝突は見えなくなった」(02:18)。カードどうしの衝突も出ている (「C-084 と C-088 の commit 済みの分どうしが衝突する (help/usage.md)」)

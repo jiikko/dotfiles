@@ -45,3 +45,7 @@ pro-con の外で採番する人・session から予約が見えない (その�
 - 1 回目の `make test-changed` で `test_issue_number_drafts.sh` が fixture の誤り (`reset --hard` で空の `epic/415/` が消える) で落ちたのを直した。
   script から origin/master を数える段・参照を張り替える段を外す変異で、それぞれ red を確認。
   同じ run の `test_issue_links_valid.sh` の赤 (539 の `415-design` へのリンク) はこの worktree の古い master 由来で、origin/master では直っている
+
+## 本番の様子 (2026-09-27)
+
+- 直し (`1e86b0ac`、02:16) の後、PG が issue を起票したカードはまだ無い (取り込みの係が仮の名前を採番した commit が無い)。次に PG が起票したら見る

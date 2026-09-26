@@ -61,3 +61,8 @@
 - 🚨 **設定を変えても、起動済みの PG の指示は変わらない** (次に起動する PG から)。取り込みの係は知らせのたびに今の値を受ける
 - 設定画面の値の欄を固定幅にしたので、limit / pm の行の説明が 5 桁右へずれた (値の長さが違う行と揃えるため)。画面から review を「設定なし」に戻す口は無い (`pro-con config unset review`)
 - 未検証: 本物の PG が codex の設定で `codex exec` を回し添付を残すところ (実機の dispatcher を入れ替えて 1 枚回す必要がある)。偽の codex (`--version` が失敗) を解けたことにしないのは `TestResolveCodexRefusesBrokenBinary`
+
+## 本番の様子 (2026-09-27)
+
+- 設定は 07:47 に `review = codex` になった (kind `config`「設定 review を codex にした」)。その後に起動した PG はまだ無いので、本物の PG が `codex exec` を回すところは見ていない。
+  次に PG が起動したら transcript の `codex exec` と、カードの履歴・添付で確かめる
