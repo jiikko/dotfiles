@@ -2,7 +2,7 @@
 
 起票日: 2026-09-25
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 
@@ -15,8 +15,8 @@
 
 ## 観点 1 の結果: 生存 8 (issue 化 3 / 記録 5)
 
-- P1 → [457](457-bug-pro-con-unregistered-pg-not-stopped-reported-stopped.md): 記録に載らなかった PG を終了・閉じるで止めず「既に止まっていた」と書く (プローブで再現)
-- P2 → [458](done/458-bug-pro-con-running-card-whose-pg-vanished-holds-slot.md): 一覧から消えた PG の作業中のカードが枠を占め続ける (プローブで再現)
+- P1 → [457](../457-bug-pro-con-unregistered-pg-not-stopped-reported-stopped.md): 記録に載らなかった PG を終了・閉じるで止めず「既に止まっていた」と書く (プローブで再現)
+- P2 → [458](458-bug-pro-con-running-card-whose-pg-vanished-holds-slot.md): 一覧から消えた PG の作業中のカードが枠を占め続ける (プローブで再現)
 - P2 → [459](459-design-pro-con-manual-stop-undone-by-open-screen.md): 画面が開いていると手の `--stop` を keeper が取り消す (コードを読んだだけ)
 - P2 (記録): **記録の JSON が壊れると、終了で PG を 1 本も止めない / dispatcher が落ち続ける**。`shutdown.go` の `stopCards` / `ensureStopped` は
   記録を読めないと即エラー、`store.writeAtomic` と `live.writeRows` は rename だが fsync が無い。壊れうるのは電源断か手での編集 (壊れ方そのものは未確認。
@@ -41,11 +41,11 @@ stop-request と stop-result の往復。「書き手は dispatcher だけ」は
 実行したのは読むだけのコマンド (`claude --version` / `claude agents --json [--all]` / `ps eww`) と、隔離した cwd での `claude -p --no-session-persistence` 3 回。
 PM がコードで確かめたもの: `card run` の `strings.Join` / `runClaude` の素の `claude` / 再開の本文を位置引数で渡す / projects の置き場の決め打ち (3 か所) / `Stopped()` の定義。
 
-- P2 → [462](done/462-bug-pro-con-resume-text-starting-with-dash-loops-forever.md): 回答が「-」で始まると再開が必ず失敗し、上限なく繰り返して枠を占める (実測)
-- P2 → [463](done/463-bug-pro-con-card-run-joins-argv-and-evals.md): `card run` が argv を空白で繋いで eval し、引用が壊れて別のコマンドになる (再現)
-- P2 → [464](done/464-bug-pro-con-claude-resolved-from-path-per-repo.md): claude を PATH の素の名前で引き、nodenv の shim が repo ごとに別の版を選ぶ (実測)
-- P2 → [465](done/465-bug-pro-con-worktree-name-reused-across-state-dirs.md): `-w` が同名の worktree を再利用し、置き場を作り直すと前の世代の上で作業する (実測)
-- P1 (潜在) → [466](done/466-bug-pro-con-session-stopped-reads-unknown-state-as-stopped.md): `Stopped()` が知らない state を止まったと読む (読んだだけ。457 の後に着手)
+- P2 → [462](462-bug-pro-con-resume-text-starting-with-dash-loops-forever.md): 回答が「-」で始まると再開が必ず失敗し、上限なく繰り返して枠を占める (実測)
+- P2 → [463](463-bug-pro-con-card-run-joins-argv-and-evals.md): `card run` が argv を空白で繋いで eval し、引用が壊れて別のコマンドになる (再現)
+- P2 → [464](464-bug-pro-con-claude-resolved-from-path-per-repo.md): claude を PATH の素の名前で引き、nodenv の shim が repo ごとに別の版を選ぶ (実測)
+- P2 → [465](465-bug-pro-con-worktree-name-reused-across-state-dirs.md): `-w` が同名の worktree を再利用し、置き場を作り直すと前の世代の上で作業する (実測)
+- P1 (潜在) → [466](466-bug-pro-con-session-stopped-reads-unknown-state-as-stopped.md): `Stopped()` が知らない state を止まったと読む (読んだだけ。457 の後に着手)
 - P1 (潜在) → 431 へ: transcript の置き場を `~/.claude/projects` に決め打ち (`main.go` 2 か所・`live.New`)。`CLAUDE_CONFIG_DIR` を渡すと (431 / 433 の次の手) 見張り・落ちた回数・
   カードの表示が黙って止まる。`usage.go` には合わせる注意があるが transcript の側には無い
   - 2026-09-26: 431 は `CLAUDE_CONFIG_DIR` を採らず (433 は解消)、この P1 は今は起きない。使うようになったら再び当たる
