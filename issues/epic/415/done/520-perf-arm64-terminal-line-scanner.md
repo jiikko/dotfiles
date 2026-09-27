@@ -2,10 +2,10 @@
 
 起票日: 2026-09-26
 
-親: [523](523-design-asm-fast-paths.md) (2026-09-26 に 415 から移した)
+親: [523](../523-design-asm-fast-paths.md) (2026-09-26 に 415 から移した)
 
 > **2026-09-26 に NEON 版が master へ入った** (PR #14、`a413f1ef`。実測は 523 の本文)。Phase 2 の実装はこれで済んでいる。残りは、実画面での効果を測って残すかを決めること。
-> Phase 1 (共通の境界へ寄せる) は [524](done/524-refactor-route-terminal-width-through-termwidth.md) に切り出した
+> Phase 1 (共通の境界へ寄せる) は [524](524-refactor-route-terminal-width-through-termwidth.md) に切り出した
 >
 > **2026-09-27 に Phase 0 を本物の Apple Silicon で測った** (下の「Phase 0 の実測」)。glogx の実画面は geomean -8.5% (有意)、ViewWithDiff は -12.4% で
 > 条件 2 を 1 本で満たした。pro-con は差なし (NEON 版が通る `Of` の速い道は pro-con の CPU の約 2% で、重いのは切り詰め・切り出し)。残す判断。
@@ -176,9 +176,9 @@ B/op・allocs/op はどれも変わらない (条件 3)。
 - [x] fuzz / corpus で reference と不一致 0 (523 の本文の記録。PR #14 の時点)
 - [x] scanner 単体 1.5x 以上 (ascii_1KB -92% ほか。523 の本文)
 - [x] 実画面 benchmark 10% 以上 — glogx ViewWithDiff -12.4% の 1 本で満たした (glogx の geomean は -8.5%、pro-con は差なし)
-- [ ] 実端末で frame cadence を悪化させない (条件 4。未確認)
-- [ ] 条件を満たさない場合は assembly を revert / 不採用として理由を記録 — 満たしたので残す。条件 4 が悪化したら revert する
-- [ ] `go test -race ./...` / lint green (2026-09-27 は未実行)
+- [x] 実端末で frame cadence を悪化させない (条件 4) — 2026-09-27 にユーザーが glogx と pro-con を実端末で目視し「よさそう」 (日本語の行の揃い・アニメーション・通知。日本語の速い道と切り詰めの速い道を入れた後の版で)
+- [x] 条件を満たさない場合は assembly を revert / 不採用として理由を記録 — 条件 1〜4 を満たしたので残す (NEON 版は 2026-09-27 に日本語も受け付けるよう広げた。523 の 6)
+- [x] `go test -race` / lint green — 2026-09-27、NEON 版と日本語の変更の後で `go test -race ./termwidth` rc=0 (247 秒)、tuikit / glogx / pro-con の `make lint` 0 issues
 
 ## 関連
 

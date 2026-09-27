@@ -132,7 +132,7 @@ func (m *Model) drawerCardData() (card.Card, bool) {
 }
 
 // drawerRegionRows は引き出しを重ねる領域 (ヘッダと下端の群のあいだ) の行数。
-func (m *Model) drawerRegionRows() int { return max(m.height-headerRows-len(m.footGroup()), 1) }
+func (m *Model) drawerRegionRows() int { return max(m.height-m.headerRows()-len(m.footGroup()), 1) }
 
 func (m *Model) drawerBodyRows() int { return max(m.drawerRegionRows()-drawerHeadRows, 1) }
 

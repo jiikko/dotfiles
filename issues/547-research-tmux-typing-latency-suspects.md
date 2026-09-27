@@ -1,4 +1,4 @@
-# research: tmux 上のタイピングが時々もっさりする原因を層ごとに切り分ける
+# 547 (research): tmux 上のタイピングが時々もっさりする原因を層ごとに切り分ける
 
 起票日: 2026-09-27
 カテゴリ: research / performance

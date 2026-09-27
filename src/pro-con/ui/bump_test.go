@@ -178,13 +178,13 @@ func TestBumpUpRidesOverHeader(t *testing.T) {
 		}
 		return -1
 	}
-	if got := row(); got != headerRows {
-		t.Fatalf("前提: 見出しはボードの 1 行目 (%d 行目) のはず: %d", headerRows, got)
+	if got := row(); got != m.headerRows() {
+		t.Fatalf("前提: 見出しはボードの 1 行目 (%d 行目) のはず: %d", m.headerRows(), got)
 	}
 	start := clk.t
 	press(m, "k")
 	clk.t = start.Add(peak)
-	if got := row(); got != headerRows-2 {
-		t.Fatalf("出きった所で見出しが %d 行目 (期待 %d。ヘッダの上に乗る)", got, headerRows-2)
+	if got := row(); got != m.headerRows()-2 {
+		t.Fatalf("出きった所で見出しが %d 行目 (期待 %d。ヘッダの上に乗る)", got, m.headerRows()-2)
 	}
 }
