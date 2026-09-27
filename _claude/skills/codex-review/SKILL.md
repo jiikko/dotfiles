@@ -110,32 +110,32 @@ review_out="./tmp/codex-review.$stamp.md"
 # 🚨 全パターンで `</dev/null` 必須（理由は下記「ルール」参照）
 
 # パターン A: デフォルトの未コミットレビュー
-command codex exec review --uncommitted --ephemeral -o "$review_out" </dev/null
+command codex exec review -m gpt-6-luna --uncommitted --ephemeral -o "$review_out" </dev/null
 
 # パターン B: プロンプト付きの未コミットレビュー
-command codex exec review --ephemeral -o "$review_out" </dev/null \
+command codex exec review -m gpt-6-luna --ephemeral -o "$review_out" </dev/null \
   'コードレビューして。バグ、リグレッション、仕様逸脱、テスト不足を優先。問題があるものだけを重要度順に列挙し、各項目に file:line、理由、最小修正案を書く。要約や称賛は不要。'
 
 # パターン C: 特定コミットのデフォルトレビュー
-command codex exec review --commit {sha} --ephemeral -o "$review_out" </dev/null
+command codex exec review -m gpt-6-luna --commit {sha} --ephemeral -o "$review_out" </dev/null
 
 # パターン D: 現在の HEAD に対する差分のデフォルトレビュー
-command codex exec review --base {base} --ephemeral -o "$review_out" </dev/null
+command codex exec review -m gpt-6-luna --base {base} --ephemeral -o "$review_out" </dev/null
 
 # パターン E: 特定コミットを重点レビューする fallback
-command codex exec -s read-only --ephemeral -o "$review_out" </dev/null \
+command codex exec -s read-only -m gpt-6-luna --ephemeral -o "$review_out" </dev/null \
   'commit {sha} をコードレビューして。重点観点: {custom_instruction}。最初に `git show --stat --oneline {sha}` と必要な diff を確認してからレビューする。バグ、リグレッション、仕様逸脱、テスト不足を優先し、問題があるものだけを重要度順に列挙し、各項目に file:line、理由、最小修正案を書く。要約や称賛は不要。'
 
 # パターン F: 基点付き差分を重点レビューする fallback
-command codex exec -s read-only --ephemeral -o "$review_out" </dev/null \
+command codex exec -s read-only -m gpt-6-luna --ephemeral -o "$review_out" </dev/null \
   '{base}..HEAD の差分をコードレビューして。重点観点: {custom_instruction}。最初に `git diff --stat {base}..HEAD` と必要な diff を確認してからレビューする。バグ、リグレッション、仕様逸脱、テスト不足を優先し、問題があるものだけを重要度順に列挙し、各項目に file:line、理由、最小修正案を書く。要約や称賛は不要。'
 
 # パターン G: 未コミット変更の敵対的レビュー（selector なし・プロンプト付きモード）
-command codex exec review --ephemeral -o "$review_out" </dev/null \
+command codex exec review -m gpt-6-luna --ephemeral -o "$review_out" </dev/null \
   '<上記「敵対的モード」テンプレート全文>'
 
 # パターン H: 特定コミット / 基点付き差分の敵対的レビュー（selector 併用なので fallback）
-command codex exec -s read-only --ephemeral -o "$review_out" </dev/null \
+command codex exec -s read-only -m gpt-6-luna --ephemeral -o "$review_out" </dev/null \
   'commit {sha}（または {base}..HEAD の差分）を対象に、<上記「敵対的モード」テンプレート全文>。最初に `git show --stat --oneline {sha}`（または `git diff --stat {base}..HEAD`）と必要な diff を確認してから始める。'
 ```
 
@@ -206,6 +206,7 @@ Codex はリポジトリ内のコンテキストをある程度拾えるが、�
 - **全ての `command codex exec` 呼び出しに `</dev/null` を必ず付ける**。Claude Code の Bash ツールの stdin は非TTYのパイプ（書き込み側が開いたまま EOF が来ない）なので、prompt を引数で渡しても codex が「Reading additional input from stdin...」で stdin の EOF を待ち続け、コマンドがタイムアウトまでハングする。`</dev/null` で stdin を即 EOF にすると解消する（[openai/codex#20919](https://github.com/openai/codex/issues/20919)）。selector モード・プロンプトモードのどちらでも必要。codex 側が stdin チェックにタイムアウトを実装する等で修正されたら本対処は不要になる
 - 常に `--ephemeral -o "$review_out"` を付与する。sandbox は `-s read-only` を明示する（`--full-auto` は付けない。codex-cli 0.152.1 で削除済みで、渡すと未知の引数として即エラーになる。かつては `--sandbox workspace-write` の deprecated alias で、`-s read-only` と併用すると後勝ちで書き込み可能になった）
 - `codex exec` fallback を使う時は `-s read-only` を付ける
+- **モデルは `-m gpt-6-luna` で明示する**。省略すると `~/.codex/config.toml` の既定 (対話 TUI 側の都合で変わる。2026-09-27 時点は `gpt-5.6-luna` / effort `low`) を拾い、実行ごとにモデルが変わる。codex-drive と同じモデルに揃える
 - レビュー結果はそのままユーザーに見せる（要約しすぎない）
 - `/tmp` は使わず、出力ファイルは必ず `./tmp` に置く
 - `codex exec review` と `codex exec -s read-only` はレビュー用途として使い、コードを変更しない
