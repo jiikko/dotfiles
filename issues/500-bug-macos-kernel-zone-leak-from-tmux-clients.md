@@ -165,6 +165,33 @@ attach が無ければほぼ漏れない。何が漏らしているか (tmux の
   上の節の `kalloc-watch` の記述も新しい名前に置き換えた。記録先は `~/.cache/kernel-alloc-watch/` になり、旧名の記録
   (`~/.cache/kalloc-watch/`) は引き継がない (ユーザーの判断。要らなければ手で消す)
 
+### 2026-09-27 15:10〜15:50 KOJIm2-MacBook-Air: pro-con が漏らしていないかを調べた (macOS 27 では漏れない。容疑は dispatcher の `claude agents --json`)
+
+- 環境: 上の 12:20 の節と同じマシン (macOS 27.0 / Mac14,2 / claude 2.1.283)。ユーザーの依頼「bin/pro-con に kernel のメモリリークの疑いがないか調べて」
+- **コードで数えた外部コマンドの頻度** (_test.go を除く。間隔の定数は実物で確かめた):
+  - dispatcher が **tick (3 秒。`dispatchercmd.go` の `dispatcherInterval`) ごとに条件なしで `claude agents --json`** を起こす
+    (`dispatcher/dispatcher.go` の Tick → `agents.List` → `agents/agents.go` の `execAgents`)。何もしていなくても **claude 本体のプロセスが 1 分 20 回・1 日 約 2.9 万回**
+  - そのほか: `ps -A` 10 秒ごと (`doingEvery`) / 進捗の git 30 秒ごと (`progressEvery`、カードごとに数回) / 見張りの git 1 分ごと (`monitorInterval`) /
+    本番の tmux への `set-option -g` は状態が変わったときと 1 分ごと (`republishEvery`、`TmuxPublish`) / `claude -p /usage` 5 分ごと (`usageEvery`)
+  - 画面 (TUI) は dispatcher の一覧が 15 秒以内なら自分では claude を呼ばない (`live/live.go` の `seenFresh`)。fsnotify / kqueue / pty は使っていない
+- **ブラックボックスの計測** (data.kalloc.1024 の差。基準は同じ長さの何もしない時間):
+  - 何もしない 180 秒: -17 / -27
+  - `pro-con e2e` (画面・dispatcher・受付の箱は本物、PG / PM は偽物、隔離した tmux) を起動して 300 秒放置: +53
+  - `pro-con e2e scenario` を 5 回 (依頼 → 質問 → 回答 → テストの係 → レビュー): +8
+  - **`claude agents --json` を 1,000 回 (128 秒): -113 / -153** (同じ長さの何もしない時間は +153 / +113)。`--all` 付き 300 回: -114
+  - ほかの zone も、e2e のプロセスが終わった後に残って増えたものは無い (VM.map.entries が +1.2 万残ったが、e2e のプロセスは全部終わっていたので、ほかのプロセスの分)
+- 結論: **このマシン (macOS 27) では pro-con のどの経路でも漏れない**。ただしこのマシンでは claude を動かしても漏れないので、漏れているマシンの疑いは晴れない
+- 漏れているマシンでの容疑: 上流の報告 (#44824 / #66020) は「claude.exe のプロセスがあると漏れ、全部止めると止まる」。
+  pro-con の dispatcher は何もしていないときでも claude を 1 分 20 回起こすので、**1 回あたり約 18 個漏れれば、何もしていない時間の約 2.2 万個 / 時をそれだけで説明できる** (計算上の話で、未検証)
+- **漏れているマシンで 1 回で白黒つける手順** (本番の tmux も pro-con の状態も触らない。5 分ほど):
+  ```sh
+  kernel-alloc-watch; sleep 130; kernel-alloc-watch                                            # 何もしない 130 秒の差
+  kernel-alloc-watch; for _ in $(seq 1000); do claude agents --json >/dev/null 2>&1; done; kernel-alloc-watch  # 1,000 回の差
+  kernel-alloc-watch list
+  ```
+  1,000 回の差が何もしない時間より数千以上大きければ、`claude agents --json` の 1 回ごとに漏れている (同じ測定を 2 回して同じ向きに出たら確定)。
+  そうなら手当ては dispatcher の一覧の取り方 (3 秒ごとに claude を起こさない形) の見直しで、pro-con の issue として切り出す
+
 ## 別のマシンで検証する手順 (2026-09-27)
 
 再起動しやすい別のマシンで続ける。🚨 本番の tmux サーバは触らない (測るのは隔離した `-L` のサーバだけ。kill するのも自分が立てたものだけ)。
