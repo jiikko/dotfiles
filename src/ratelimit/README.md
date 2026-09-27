@@ -5,7 +5,7 @@ Claude Code (`/usage`) と codex (app-server の rateLimits) の利用枠 (5h / 
 
 - `usage/` — 取得 (`Fetch` / `FetchCodex` / `FetchAll`) と整形 (1 行・表・全画面ダッシュボード)。
   glogx の利用枠オーバーレイ (`U`) とダッシュボード (`R`) も replace でこれを取り込む
-- `main.go` — `bin/ratelimit`。表示・閾値判定 (`-check`)・JSON。使い方はファイル冒頭
+- `main.go` — `bin/ratelimit`。表示・閾値判定 (`-check`。5h 枠だけを見る)・JSON。使い方はファイル冒頭
   - Claude Code の UserPromptSubmit hook (`_claude/hooks/ratelimit-warn.sh`) が Claude の枠を、
     codex 系 skill (codex-drive / codex-lead / codex-review / cross-review) が起動時に codex の枠を見る。
     注入を受けたときの判断基準は `_claude/rules/subagent-model-tiering.md` の「枠の残量」

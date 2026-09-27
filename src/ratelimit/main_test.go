@@ -68,24 +68,43 @@ func TestCacheFreshRejectsFutureTimestamp(t *testing.T) {
 
 func TestOverLimitThresholdsAndSkips(t *testing.T) {
 	r := sourceResult{windows: []usage.Window{
-		win("5h", 80, 5*time.Hour, time.Hour),          // 閾値ちょうど → 超過
-		win("7d", 84, 7*24*time.Hour, 24*time.Hour),    // 閾値未満
-		win("7d(X)", 90, 7*24*time.Hour, -time.Minute), // リセット済み → 判定しない
-		{Label: "cx5h", Percent: 99, WindowMins: 300, Unused: true},
-		win("??", 99, 0, time.Hour), // 長さ不明 → 判定しない
-		win("cx7d", 85, 7*24*time.Hour, time.Hour),
+		win("5h", 80, 5*time.Hour, time.Hour),                      // 閾値ちょうど → 超過
+		win("cx5h", 79, 5*time.Hour, time.Hour),                    // 閾値未満
+		win("5h(X)", 90, 5*time.Hour, -time.Minute),                // リセット済み → 判定しない
+		{Label: "cx5h", Percent: 0, WindowMins: 300, Unused: true}, // 未消費 → 判定済み・超過なし
+		win("??", 99, 0, time.Hour),                                // 長さ不明 → 判定しない
+		win("7d", 99, 7*24*time.Hour, time.Hour),                   // weekly → 判定しない
+		win("cx7d", 99, 7*24*time.Hour, time.Hour),                 // weekly → 判定しない
 	}}
-	got, judged := overLimit(r, baseNow, 80, 85)
+	got, judged := overLimit(r, baseNow, 80)
 	if judged != 3 {
-		t.Fatalf("判定できた枠 = %d, want 3 (5h / 7d / cx7d)", judged)
+		t.Fatalf("判定できた枠 = %d, want 3 (5h / cx5h / 未消費の cx5h)", judged)
 	}
 	labels := make([]string, 0, len(got))
 	for _, w := range got {
 		labels = append(labels, w.Label)
 	}
-	if strings.Join(labels, ",") != "5h,cx7d" {
-		t.Fatalf("超過判定 = %v, want [5h cx7d]", labels)
+	if strings.Join(labels, ",") != "5h" {
+		t.Fatalf("超過判定 = %v, want [5h]", labels)
 	}
+}
+
+func TestCheckIgnoresWeekly(t *testing.T) {
+	t.Run("weekly だけが超過しても rc=0", func(t *testing.T) {
+		_, e, out, _ := newWorld(t)
+		seedCache(t, e, srcClaude, baseNow,
+			win("5h", 10, 5*time.Hour, time.Hour), win("7d", 99, 7*24*time.Hour, time.Hour))
+		if rc := run([]string{"-source", "claude", "-check"}, e); rc != rcOK || out.Len() != 0 {
+			t.Fatalf("rc = %d, out = %q, want rc=%d / 無出力", rc, out.String(), rcOK)
+		}
+	})
+	t.Run("5h が未消費なら weekly が無くても判定できる", func(t *testing.T) {
+		_, e, _, _ := newWorld(t)
+		seedCache(t, e, srcCodex, baseNow, usage.Window{Label: "5h", WindowMins: 300, Unused: true})
+		if rc := run([]string{"-source", "codex", "-check"}, e); rc != rcOK {
+			t.Fatalf("rc = %d, want %d", rc, rcOK)
+		}
+	})
 }
 
 func TestCheckExitCodes(t *testing.T) {

@@ -13,12 +13,13 @@
 - **数回のツール呼び出しで自分が終わらせられる作業は委譲しない**。委譲の起動・指示文・成果物の検閲を合わせたコストが、自分でやるコストを上回る
 - **その場の思いつきで「確認用サブエージェント」を足さない**（現行モデルは指示なしでも自己修正する。CLAUDE.md「応答・成果物の長さとスコープ」の最終項が一次情報）
   - **既定のルールや skill が定めるレビュー工程は対象外で、要求どおり起動する**: CLAUDE.md「レビュー方針」の codex / 敵対的レビュー、[`verify-design-intent-before-refactor.md`](verify-design-intent-before-refactor.md) の refactor 提案の外部レビュー、[`escalate-to-forge-after-failed-tries.md`](escalate-to-forge-after-failed-tries.md) の forge エスカレーション、forge / cross-review の必須クロスレビュー Phase。抑制するのは「規定になく、自分が今思いついた念のための二重チェック」だけ
-- **枠 (5h / weekly) の残量が少ないときは並列数を絞る**。残量を見ずに複数体を起動すると
+- **5h 枠の残量が少ないときは並列数を絞る**。残量を見ずに複数体を起動すると
   **全体が途中で 429 で死ぬ**。枠が開いた直後に起動する方が、同じ体数でも生存率が高い
   - 残量は `ratelimit` (`bin/ratelimit`。Claude と codex の 5h / weekly。`-source` / `-check` / `-json`) で読む
     (モデルを呼ばずに返る)。**本物の session を起こす計測や上位モデルのレビューを重ねる前に見る**
-    (実測 2026-09-24: 見ずに重ねて週の枠を 96% まで使い、計測の直前に気づいた)
-  - **UserPromptSubmit hook (`ratelimit-warn.sh`) が「Claude の利用枠が閾値を超えている」と注入したら、大きな作業に
+  - 🚨 **weekly 枠はユーザーが自分で把握しているので、判断材料にしない** (提案も控えもしない)。
+    `-check` と hook が見るのは 5h 枠だけで、表示 (`ratelimit` 素の実行) には weekly も出るが、それを理由に作業を止めない
+  - **UserPromptSubmit hook (`ratelimit-warn.sh`) が「Claude の 5h 枠が閾値を超えている」と注入したら、大きな作業に
     入る前にユーザーへ提案して判断を仰ぐ**: 控える / 縮小する (体数・周回・モデルを下げる) / リセット後に回す。
     大きな作業 = 複数のサブエージェント・workflow・forge / cross-review・本物の session を起こす計測・長い実装。
     小さな作業と、ユーザーが既に続行を指示した作業は止めない

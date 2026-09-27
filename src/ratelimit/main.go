@@ -4,10 +4,11 @@
 //
 // 使い方:
 //
-//	ratelimit [-source claude|codex|all] [-json] [-check] [-cached] [-warn-5h N] [-warn-7d N]
+//	ratelimit [-source claude|codex|all] [-json] [-check] [-cached] [-warn-5h N]
 //
 //	-source   見る出所 (既定 all)。hook は claude だけ、codex 系 skill は codex だけを見る
-//	-check    閾値を超えた枠だけを 1 行ずつ出す。rc: 0 = 超過なし / 1 = 超過あり / 3 = 判定不能
+//	-check    閾値を超えた 5h 枠だけを 1 行ずつ出す。rc: 0 = 超過なし / 1 = 超過あり / 3 = 判定不能。
+//	          weekly は判定しない (ユーザーが自分で把握している。見落とすのは 5h なので、そこだけを見張る)
 //	-cached   取得で待たない。キャッシュが古ければ裏で更新を起こし、手元の値で答える (hook 用)
 //	-json     枠を JSON で出す
 //
@@ -122,10 +123,9 @@ func run(args []string, e env) int {
 	fs.SetOutput(e.stderr)
 	srcFlag := fs.String("source", "all", "claude | codex | all")
 	jsonOut := fs.Bool("json", false, "枠を JSON で出す")
-	check := fs.Bool("check", false, "閾値を超えた枠だけを出す (rc 0=なし 1=あり 3=判定不能)")
+	check := fs.Bool("check", false, "閾値を超えた 5h 枠だけを出す (rc 0=なし 1=あり 3=判定不能)")
 	cached := fs.Bool("cached", false, "取得で待たない (古ければ裏で更新)")
 	warn5h := fs.Int("warn-5h", 80, "5h 枠の警告閾値 (%)")
-	warn7d := fs.Int("warn-7d", 85, "weekly 枠の警告閾値 (%)")
 	refresh := fs.Bool("refresh", false, "(内部用) 取得してキャッシュへ書くだけ")
 	if err := fs.Parse(args); err != nil {
 		return rcUsage
@@ -176,7 +176,7 @@ func run(args []string, e env) int {
 	case *jsonOut:
 		return printJSON(e, results)
 	case *check:
-		return printCheck(e, results, *warn5h, *warn7d)
+		return printCheck(e, results, *warn5h)
 	default:
 		return printLine(e, results)
 	}
@@ -347,31 +347,31 @@ func hasBin(name string) bool {
 	return false
 }
 
-// overLimit は閾値を超えた枠と、判定できた枠の数を返す。リセット済み (キャッシュ後に境界を
-// 跨いだ) の枠・未消費の枠・長さの分からない枠は判定しない。
-func overLimit(r sourceResult, now time.Time, warn5h, warn7d int) (out []usage.Window, judged int) {
+// overLimit は閾値を超えた 5h 枠と、判定できた 5h 枠の数を返す。weekly・長さの分からない枠・
+// リセット済み (キャッシュ後に境界を跨いだ) の枠は判定しない。未消費 (Unused) の 5h 枠は
+// 「0% で超過なし」と判定済みに数える: weekly を見なくなったので、ここを外すと 5h を使っていない
+// 時間帯に判定できた枠が 0 になり、rc=3 (判定不能) へ落ちる。
+func overLimit(r sourceResult, now time.Time, warn5h int) (out []usage.Window, judged int) {
 	for _, w := range r.windows {
-		if w.Unused || !w.ResetAt.After(now) {
+		if w.Span() != 5*time.Hour {
 			continue
 		}
-		var limit int
-		switch w.Span() {
-		case 5 * time.Hour:
-			limit = warn5h
-		case 7 * 24 * time.Hour:
-			limit = warn7d
-		default:
+		if w.Unused {
+			judged++
+			continue
+		}
+		if !w.ResetAt.After(now) {
 			continue
 		}
 		judged++
-		if w.Percent >= limit {
+		if w.Percent >= warn5h {
 			out = append(out, w)
 		}
 	}
 	return out, judged
 }
 
-func printCheck(e env, results []sourceResult, warn5h, warn7d int) int {
+func printCheck(e env, results []sourceResult, warn5h int) int {
 	// over は出所をまたいで OR、判定不能は出所ごと: どれか 1 つでも判定できない出所があれば、残りが
 	// 「超過なし」でも rc=3 (-source all で片方の判定不能がもう片方の緑に隠れないように)。
 	over, unknown := false, len(results) == 0
@@ -379,7 +379,7 @@ func printCheck(e env, results []sourceResult, warn5h, warn7d int) int {
 		if r.err != nil {
 			fmt.Fprintf(e.stderr, "ratelimit: %s: %v\n", r.src, r.err)
 		}
-		over1, judged := overLimit(r, e.now, warn5h, warn7d)
+		over1, judged := overLimit(r, e.now, warn5h)
 		if judged == 0 {
 			unknown = true
 		}

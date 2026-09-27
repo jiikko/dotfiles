@@ -1,5 +1,6 @@
 #!/bin/bash
-# UserPromptSubmit: Claude の利用枠 (5h / weekly) が閾値を超えていたら、1 行だけ注入する。
+# UserPromptSubmit: Claude の 5h 枠が閾値を超えていたら、1 行だけ注入する。
+# weekly は見ない (`ratelimit -check` が 5h だけを判定する。理由は src/ratelimit/main.go 冒頭)。
 # 何を「大きな作業」とみなして控えるかは _claude/rules/subagent-model-tiering.md が持つ。
 #
 # - キャッシュだけを読む (-cached)。古ければ bin/ratelimit が裏で取り直し、この回は手元の値で答える
@@ -16,6 +17,6 @@ bin="$HOME/dotfiles/bin/ratelimit"
 out=$("$bin" -source claude -check -cached)
 rc=$?
 if [ "$rc" -eq 1 ] && [ -n "$out" ]; then
-  printf '🚨 Claude の利用枠が閾値を超えている:\n%s\n大きな作業に入る前に、控える・縮小する・リセット後に回す案をユーザーへ提案すること (基準は subagent-model-tiering.md の「枠の残量」)。\n' "$out"
+  printf '🚨 Claude の 5h 枠が閾値を超えている:\n%s\n大きな作業に入る前に、控える・縮小する・リセット後に回す案をユーザーへ提案すること (基準は subagent-model-tiering.md の「枠の残量」)。\n' "$out"
 fi
 exit 0
