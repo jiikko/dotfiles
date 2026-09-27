@@ -443,6 +443,16 @@ func TestCardRunWaitFlag(t *testing.T) {
 	}
 }
 
+// PM は人に聞く前に、問題が起きない形を問い、見た目・好みの質問には答えるための基準を添える (issue 561)。
+// 人に聞く 2 つの場面 (card ask / card handoff) の両方から、規律の 1 か所を指す。
+func TestPMGuideCarriesQuestionDiscipline(t *testing.T) {
+	for _, want := range []string{"その問題がそもそも起きない形", "答えるための基準", "問いは規律の「人に聞く前に」に沿って立てる", "規律の「人に聞く前に」に沿って問いを立て直す"} {
+		if !strings.Contains(pmGuide, want) {
+			t.Errorf("PM の指示書に %q が無い", want)
+		}
+	}
+}
+
 // PM・取り込みの係・PG の指示は、rc の読み方 (除けられたら rc=1。issue 542) を同じ正本 (dispatcher.CardRCRule) から持つ。目印の行は残さない。
 func TestGuidesCarryCardRCRule(t *testing.T) {
 	for name, text := range map[string]string{
