@@ -39,6 +39,8 @@
 # GO_AUTOBUILD_SYNC=1 で --async を打ち消して同期ビルドにする (「今すぐ新版が欲しい」用)。
 # GO_AUTOBUILD_LOCK_TIMEOUT (秒, 既定 1800) を超えた lock は死んでいるものとして奪う。
 # GO_AUTOBUILD_FAILED_TTL (秒, 既定 600) を超えた失敗記録は無視して再挑戦する (下記)。
+# SDKROOT が未設定なら、go build の間だけ選択中の開発ディレクトリの macOS SDK を渡す
+# (_go_autobuild_toolchain_sdk。Xcode と CLT の版ずれで cgo のリンクが全滅するのを防ぐ)。
 #
 # src_dir に置く作業ファイル (いずれも .gitignore 済み):
 #   .autobuild.built  前回ビルドした入力の指紋 (再ビルド判定の基準)
@@ -311,6 +313,28 @@ _go_autobuild_hold_if_tty() {
   read -k1 -s
 }
 
+# 選択中の開発ディレクトリ (xcode-select) の macOS SDK を REPLY で返す。取れなければ 1。
+# cgo のリンクは「リンカ = 選択中の開発ディレクトリの ld」「SDK = xcrun の既定」で決まり、両者は
+# 別の場所から来うる。xcrun の既定 SDK は OS に合う CLT 側を選ぶことがあり、Xcode が OS より
+# 古いと、古い ld が新しい SDK の .tbd を読めずに全リンクが落ちる (実測 2026-09-27: macOS 27 /
+# CLT 27 / Xcode 26.4 で `unknown architecture arm64e.x1-macos` → `tapi error: malformed file`。
+# glogx は 9/6 の版に 3 週間固定された)。`--sdk macosx` なら SDK も選択中の開発ディレクトリから
+# 取るので、ld と同じ出どころに揃う。Xcode を上げた後も同じ式がそのまま正しい SDK を返す。
+# 🚨 zshrc で SDKROOT を export する形にしない: xcodebuild も SDKROOT を読み、iOS のビルドに
+# macOS SDK を渡して壊す。go build の間だけに閉じる。
+# 🚨 xcode-select -p を先に見る: 開発ツールが無い Mac で /usr/bin/xcrun を叩くとインストールの
+# ダイアログが出る (popup 起点の非同期ビルドから GUI を起こさない)。
+_go_autobuild_toolchain_sdk() {
+  REPLY=
+  [[ "$OSTYPE" == darwin* ]] || return 1
+  xcode-select -p >/dev/null 2>&1 || return 1
+  # `$(...)` の中なので _go_autobuild_spawn の HUP 無視は届かない (popup を閉じた瞬間に当たると
+  # SDKROOT 無しでビルドして失敗記録が残る)。xcrun は実測 0.00s で窓はほぼ無く、上の `go env` も
+  # 同じ条件で走っているので現状より悪化はしない。ここが実害になったら go build と同じく foreground へ。
+  REPLY=$(xcrun --sdk macosx --show-sdk-path 2>/dev/null) || { REPLY=; return 1 }
+  [[ -n "$REPLY" && -d "$REPLY" ]] || { REPLY=; return 1 }
+}
+
 # 一時ファイルへビルドしてから rename する。実行中バイナリを直接上書きしないため、
 # ビルドが途中で死んでも旧版は壊れない (= 途中死が無害になる = async の前提)。
 _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自分の pid (省略可)
@@ -344,7 +368,14 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
     return 1
   fi
   : ${local_go:=unknown}
-  print -u2 -- "$name: building... (go=${local_go:-unknown} / go.mod=${required_go:-?})"
+  # 呼び出し側が SDKROOT を渡していればそれを尊重する (_go_autobuild_toolchain_sdk の doc)。
+  # 取れなければ触らない (空の SDKROOT を export すると clang の既定とも違う挙動になる)。
+  local sdk_note="${SDKROOT:+ / sdk=${SDKROOT:t} (呼び出し側)}"
+  if [[ -z "${SDKROOT-}" ]] && _go_autobuild_toolchain_sdk; then
+    local -x SDKROOT="$REPLY"
+    sdk_note=" / sdk=${REPLY:t}"
+  fi
+  print -u2 -- "$name: building... (go=${local_go:-unknown} / go.mod=${required_go:-?}${sdk_note})"
   # GOTOOLCHAIN は既定 (auto) のまま。local に固定すると go.mod の要求版に足りない環境で
   # 「go.mod requires go >= X」で失敗して手動対応が必要になる。auto なら toolchain (~90MB) を
   # DL して通るので、初回だけ遅い代わりに人手が要らない。

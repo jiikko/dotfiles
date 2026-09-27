@@ -18,8 +18,14 @@ dogfooding (2026-09-27) でユーザーが「PG の枠は設定画面では 2 �
 
 - `pro-con ps` と設定画面のプロセスのタブで、PG を「作業中 (枠を使う)」と「待機中 (枠を使わない)」の 2 つのセクションに分ける。待機中の行には待っている訳を出す (今の `pgState` の訳を使う)
 - 要約を「PG 作業中 2 / 枠 2 · 待機 1」の形にし、設定の枠と比べられる数を出す
-- 🚨 枠に数えるかの判定は dispatcher と同じ `card.HoldsPGSlot` の 1 か所から取る (一覧の側で近似を書かない。2 つに分けると、また数が食い違う)。
-  dispatcher は「入力待ちで止まった PG」を idle の判定 (`owned` + `idle`) で見ているので、一覧もその判定を通す
+- 🚨 **枠に数えたカードは dispatcher が決めて書き、一覧はそれを読むだけにする**。dispatcher は tick ごとに `dispatch` で数えた
+  (`card.HoldsPGSlot` を通した) カードの ID を `dispatcher-state.json` (`store/dispatcher_state.go`) に書き、`pro-con ps`・設定画面のプロセスのタブ・
+  ヘッダの「PG n/枠」(`ui/view.go`) がそれを読む
+  - 一覧の側で同じ判定を組み直さない理由: `card.HoldsPGSlot` に要る idle は `claude agents` の一覧 (`dispatcher/orders.go` の `idle`) から決まるが、
+    `pro-con ps` (`collectProcs`) は「claude agents は最大 10 秒かかり本物の claude を起こすので読まない」作り (`pscmd.go` 冒頭)。
+    画面の `Snapshot.SlotsUsed` (`backend/backend.go`) は判定を通しているが、コメントのとおり母数が dispatcher と違う (一覧に居ない作業中の PG と
+    Launching のカードを数えない)。dispatcher の書いた値に寄せると、このずれも一緒に消える
+  - dispatcher が止まっている・古い (最後の Tick が古い) ときは、分けずに「判定できない」と出す (読めないのを 0 に見せない)
 
 ## スコープ外
 
@@ -30,7 +36,8 @@ dogfooding (2026-09-27) でユーザーが「PG の枠は設定画面では 2 �
 
 - [ ] `pro-con ps` で、枠を使っている PG と待機中の PG が別のセクションに出る。待機中の行に待っている訳が出る
 - [ ] 設定画面のプロセスのタブも同じく分かれ、要約で「作業中の数 / 枠」と「待機の数」が読める
-- [ ] 枠に数えるかは `card.HoldsPGSlot` と同じ判定を通す (一覧と dispatcher が同じ PG を枠に数えることをテストで固定する)
+- [ ] 一覧とヘッダは dispatcher が書いた「枠に数えたカード」を読むだけにする (一覧の側に判定を書かない。`Snapshot.SlotsUsed` の母数のずれも消える)
+- [ ] dispatcher が止まっている・古いときは「判定できない」と出る
 
 ## 関連
 
