@@ -27,3 +27,9 @@ upload の宛先重複を `stat` で事前確認する preflight があった。
 eager proxy を lazy wrapper に置き換えたとき、旧実装の `onTermination { consumer.cancel() }` を引き継がず、
 push 型 source の producer Task が生き残った。「外す」と自覚していなかった (置換のつもり) ので本ルールが発動せず、
 変異 4 本 all red の後に敵対レビューが出した。
+
+## 「統合・移設で comment を書き換えるとき」を足した起源 (obaket 831 / retro 984, 2026-09-27)
+
+4 target の copy を正本 1 つに統合したとき、codex が comment を要約して書き直し、3 ファイルで「なぜそうしないか」が消えた
+(「共有 stub を『書けるが何も起きない』形に拡張しない (God 化する)」「`executorPreference` を渡すのは Core の決定論 harness だけ」
+「この default は production module のコンパイル時の強制を弱めない」)。lint もテストも緑で、削除側と並べた diff の精読でしか見つからなかった。
