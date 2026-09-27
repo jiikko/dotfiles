@@ -390,6 +390,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		lb.SetInspector(func() ([]backend.Proc, error) { return inspectProcs(dir, time.Now, execProcs) },
 			func() (diskuse.Usage, error) { return measureDisk(home, root, dir), nil })
+		if e2e == nil { // 残した worktree の受け皿 (issue 553)。e2e モードの偽の worktree は読まない
+			wt := &lazyWorktreeOps{home: home}
+			lb.SetWorktrees(wt.Scan, wt.Decide)
+		}
 		if e2e != nil {
 			lb.SetList(e2e.List) // 偽の session の一覧 (本物の claude agents を読まない)
 			if exe, err := os.Executable(); err == nil {

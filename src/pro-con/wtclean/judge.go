@@ -18,7 +18,8 @@
 //     (git patch-id --verbatim) が取り込む先にある (rebase / cherry-pick で入った。🚨 git cherry の patch-id は空白の違いを無視する)
 //
 // ブランチを消すのはそのうえで、pro-con が作った名前 (worktree-pc-<カード>) で、ほかの worktree が使っていないときだけ。
-// master に無い commit があるものは worktree もブランチも消さない (人が見る)。
+// master に無い commit があるもの・記録に無いカードのものは worktree もブランチも消さない。ほかの止め具を全部通っていれば
+// Verdict.Ask を立て、人が設定画面で「消す」「残す」を決める (decide.go。issue 553)。
 //
 // worktree とブランチを消した後のカードは、pro-con が起動した session (起動の記録の行・transcript・claude の job) も消す (sessions.go)。
 package wtclean
@@ -64,6 +65,9 @@ type Verdict struct {
 	BranchWhy string `json:"branchWhy,omitempty"`
 	// Lock は Claude Code が掛けたまま残した lock の理由 (消すときに外す。外した後に消せなければ掛け直す)
 	Lock string `json:"lock,omitempty"`
+	// Ask は、自動では消さないが人が「消す」(Discard)・「残す」(Hold) を決められるもの (issue 553)。消さない理由が
+	// 「取り込む先に無い commit がある」か「記録に無いカード」だけで、ほかの止め具 (session・プロセス・未 commit の変更・lock 等) を全部通ったもの
+	Ask bool `json:"ask,omitempty"`
 }
 
 // Removable は worktree を消してよいか。
@@ -200,6 +204,8 @@ func judge(ctx context.Context, in Inputs, repoName, repo string, w worktree, al
 	switch {
 	case isRole(name):
 		return keep("PM・取り込みの係の worktree (役が次の知らせをそこで再開する)")
+	case w.Locked && strings.HasPrefix(w.LockReason, holdPrefix):
+		return keep("%s (やめるなら git worktree unlock %s)", w.LockReason, w.Path)
 	case w.Locked && !claudeLock(w.LockReason, name):
 		return keep("git worktree lock されている (%s)", firstNonEmpty(w.LockReason, "理由なし"))
 	case w.Locked && lockHolderAlive(w.LockReason):
@@ -209,22 +215,23 @@ func judge(ctx context.Context, in Inputs, repoName, repo string, w worktree, al
 	case w.Head == "":
 		return keep("HEAD を読めない")
 	}
+	// 記録に無いカード (削除したカード。card delete は片付けの印を書かない) は自動では消さないが、ほかの止め具を通れば人が決められる
 	id := strings.ToUpper(strings.TrimPrefix(name, "pc-"))
 	c, ok := cardOf(in, id)
-	if !ok || card.SessionName(c) != name {
-		return keep("記録に無いカードの worktree")
-	}
-	v.CardID = c.ID
-	if p, ok := in.Repos[c.Repo]; !ok || !samePath(p, repo) {
-		return keep("カードの repo (%s) の worktree ではない", c.Repo)
-	}
-	switch {
-	case c.State != card.Done:
-		return keep("カードが完了していない (%s)", c.State.Label())
-	case c.StopAfterClose:
-		return keep("閉じたカードの PG をまだ止め終えていない")
-	case c.Deleting():
-		return keep("カードの削除の途中")
+	orphan := !ok || card.SessionName(c) != name
+	if !orphan {
+		v.CardID = c.ID
+		if p, ok := in.Repos[c.Repo]; !ok || !samePath(p, repo) {
+			return keep("カードの repo (%s) の worktree ではない", c.Repo)
+		}
+		switch {
+		case c.State != card.Done:
+			return keep("カードが完了していない (%s)", c.State.Label())
+		case c.StopAfterClose:
+			return keep("閉じたカードの PG をまだ止め終えていない")
+		case c.Deleting():
+			return keep("カードの削除の途中")
+		}
 	}
 	for _, s := range in.Sessions {
 		if s.Cwd != "" && within(s.Cwd, w.Path) {
@@ -264,7 +271,12 @@ func judge(ctx context.Context, in Inputs, repoName, repo string, w worktree, al
 	if err != nil {
 		return keep("%s との比較に失敗した: %v", baseName, err)
 	}
-	if !merged {
+	switch {
+	case orphan:
+		v.Ask = true
+		return keep("%s (%s)", orphanWhy, why)
+	case !merged:
+		v.Ask = true
 		return keep("%s", why)
 	}
 	v.Why = why

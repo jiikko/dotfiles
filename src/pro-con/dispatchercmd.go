@@ -534,15 +534,18 @@ func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo stri
 	home, _ := os.UserHomeDir()                           // 分からなければ "" (言語と ~/.claude/CLAUDE.md の除外を渡さないだけで、起動は止めない)
 	jobs := filepath.Join(filepath.Dir(projects), "jobs") // Claude Code が session ごとに様子を書く置き場 (~/.claude/jobs)
 	haiku := dispatcher.HaikuSettings(home)
+	list := func(ctx context.Context) ([]agents.Session, error) {
+		return agents.List(ctx, agents.ExecRunner(cl.Path), jobs)
+	}
+	// 閉じた・削除したカードの worktree を見る・片付ける口 (issue 553)。材料は pro-con worktree clean と同じ集め方
+	wt := worktreeOps{worktreeEnv{dir: dir, repos: repos, sessions: list, procCwds: lsofCwds, projects: projects, jobsDir: jobs}}
 	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{Claude: cl.Path, UserSettings: userSettingsPath(home)},
 		PMRepo: pmRepo, PMGuide: pmGuide, PMOff: pmOff, IntegratorGuide: integratorGuide,
 		// e2e の偽の PG は codex を呼ばないので、上の e2e の形には渡さない (514)
 		ResolveCodex: func(ctx context.Context) (dispatcher.Tool, error) { return dispatcher.ResolveCodex(ctx, home) },
 		Runner:       dispatcher.ExecRunner{Lockman: "lockman"}, Summarize: dispatcher.HaikuSummarize(cl.Path, dir, haiku), Ask: dispatcher.HaikuAsk(cl.Path, dir, haiku), Usage: dispatcher.ReadUsage(cl.Path, dir),
 		Procs: dispatcher.PSProcs, ProgressGit: dispatcher.ExecProgressGit{}, BootTime: dispatcher.KernBootTime, JobsDir: jobs,
-		List: func(ctx context.Context) ([]agents.Session, error) {
-			return agents.List(ctx, agents.ExecRunner(cl.Path), jobs)
-		},
+		List: list, Worktrees: wt,
 		ListAll: func(ctx context.Context) ([]agents.Session, error) {
 			return agents.List(ctx, agents.ExecRunnerAll(cl.Path), jobs)
 		}, Now: time.Now,

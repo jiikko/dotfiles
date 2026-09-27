@@ -228,6 +228,16 @@ func inbox(dir string) []Request {
 // Apply は受付の箱の依頼を置いた順に記録へ適用する (dispatcher だけが呼ぶ)。記録を書いてから箱のファイルを片付ける。
 // repos は設定の repo (名前 → パス)。カードの repo をそれ以外にする依頼 (add / plan) は除ける (CheckRepo。issue 511)。nil なら repo を見ない (設定を持たない呼び手)。
 func Apply(dir string, now time.Time, repos map[string]string) ([]Result, error) {
+	return ApplyChecked(dir, now, repos, nil)
+}
+
+// Check は依頼を記録へ当てる直前の、記録の外 (git など) を見る検査 (dispatcher が持つ。err なら除ける)。
+// st は当てる前の記録 (同じ箱の前の依頼を当てた後)。
+type Check func(st State, r Request) error
+
+// ApplyChecked は Apply に、当てる直前の検査 check (nil なら検査しない) を足したもの
+// (issue 553: 取り込み先に無い commit のあるカードを、取り込まない終わり方を付けずに閉じない)。
+func ApplyChecked(dir string, now time.Time, repos map[string]string, check Check) ([]Result, error) {
 	box := filepath.Join(dir, InboxDir)
 	names, err := filepath.Glob(filepath.Join(box, "*.json"))
 	if err != nil {
@@ -301,6 +311,9 @@ func Apply(dir string, now time.Time, repos map[string]string) ([]Result, error)
 					staged, err = stageAttachment(dir, &r)
 				}
 				var next State
+				if err == nil && check != nil {
+					err = check(st, r)
+				}
 				if err == nil {
 					next, res.CardID, res.Note, err = apply(st, r, now, repos)
 				}

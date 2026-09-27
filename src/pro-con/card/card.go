@@ -73,6 +73,12 @@ const (
 	EndPendingIssue        // issue 化待ち (放置されると行方不明になる典型なので UI で目立たせる)
 )
 
+// Discards は、PG の作業を取り込まずに閉じると明示した終わり方か (issue 553)。これで閉じたカードは、取り込み先に無い commit を
+// refs/pro-con/removed/ に残してから worktree とブランチを消す。issue 化待ちは後で取り込むかもしれないので含めない。
+func (e Ending) Discards() bool {
+	return e == EndAnswered || e == EndResearchOnly || e == EndRejected
+}
+
 func (e Ending) Label() string {
 	switch e {
 	case EndNone:

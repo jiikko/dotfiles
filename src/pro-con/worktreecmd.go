@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"pro-con/agents"
@@ -140,7 +141,7 @@ func (s *cleanSummary) tree(o wtclean.Outcome) {
 	switch o {
 	case wtclean.Removed, wtclean.TreeRemoved:
 		s.removed++
-	case wtclean.Skipped:
+	case wtclean.Skipped, wtclean.Held:
 		s.kept++
 	case wtclean.Failed:
 		s.failed++
@@ -154,7 +155,7 @@ func (s *cleanSummary) session(o wtclean.Outcome) {
 		s.sessRemoved++
 	case wtclean.Failed:
 		s.sessFailed++
-	case wtclean.Skipped: // 取り直したら残すカード (worktree を消せなかった等)。数に入れない
+	case wtclean.Skipped, wtclean.Held: // 取り直したら残すカード (worktree を消せなかった等)。数に入れない
 	}
 }
 
@@ -360,4 +361,94 @@ func realWorktreeEnv(home string) (worktreeEnv, error) {
 	return worktreeEnv{dir: liveDir(home), repos: repos, sessions: func(ctx context.Context) ([]agents.Session, error) {
 		return agents.List(ctx, agents.ExecRunner(cl.Path), jobs)
 	}, procCwds: lsofCwds, projects: filepath.Join(home, ".claude", "projects"), jobsDir: jobs, removeJob: wtclean.ClaudeRemover(cl.Path, jobs)}, nil
+}
+
+// worktreeOps は dispatcher が閉じた・削除したカードの PG の worktree を見る・片付ける口 (dispatcher.WorktreeOps。issue 553)。
+// 判定の材料は pro-con worktree clean と同じ集め方 (worktreeInputs)。
+type worktreeOps struct{ env worktreeEnv }
+
+func (o worktreeOps) Unlanded(ctx context.Context, repoPath string, c card.Card) (string, error) {
+	return wtclean.Unlanded(ctx, repoPath, card.SessionName(c))
+}
+
+// Settle は worktree-clean.lock を取ってから片付ける (予定の worktree clean --yes と重ねない。取れなければ片付けず理由を返す)。
+func (o worktreeOps) Settle(ctx context.Context, repoName string, c card.Card) wtclean.Result {
+	path := card.WorktreePath(o.env.repos[repoName], c)
+	if path == "" {
+		return wtclean.Result{Outcome: wtclean.Skipped, Detail: wtclean.NoWorktree}
+	}
+	unlock, err := dispatcher.LockWorktreeClean(o.env.dir)
+	if err != nil {
+		return wtclean.Result{Verdict: wtclean.Verdict{Repo: repoName, Path: path, Name: filepath.Base(path)}, Outcome: wtclean.Failed,
+			Detail: "pro-con worktree clean と重なるので片付けない: " + err.Error()}
+	}
+	defer unlock()
+	return wtclean.Settle(ctx, repoName, path, o.options())
+}
+
+// Decide は人が設定画面で決めた worktree を消す (remove) か残す (issue 553 の受け皿)。worktree-clean.lock を取ってから動かす。
+func (o worktreeOps) Decide(v wtclean.Verdict, remove bool) (wtclean.Result, error) {
+	unlock, err := dispatcher.LockWorktreeClean(o.env.dir)
+	if err != nil {
+		return wtclean.Result{}, fmt.Errorf("pro-con worktree clean と重なるので動かさない: %w", err)
+	}
+	defer unlock()
+	ctx := context.Background()
+	if remove {
+		return wtclean.Discard(ctx, v, o.options()), nil
+	}
+	return wtclean.Hold(ctx, v, o.options(), time.Now()), nil
+}
+
+// Scan は残した worktree と理由の一覧 (pro-con worktree clean の一覧と同じ)。
+func (o worktreeOps) Scan() ([]wtclean.Verdict, error) {
+	ctx := context.Background()
+	in, err := worktreeInputs(ctx, o.env, io.Discard)
+	if err != nil {
+		return nil, err
+	}
+	return wtclean.Scan(ctx, in)
+}
+
+func (o worktreeOps) options() wtclean.Options {
+	return wtclean.Options{StateDir: o.env.dir, Fresh: func(ctx context.Context) (wtclean.Inputs, error) {
+		return worktreeInputs(ctx, o.env, io.Discard)
+	}}
+}
+
+// lazyWorktreeOps は画面の設定画面が使う worktreeOps を、初めて使うときに組む (realWorktreeEnv は claude の実体の解決で
+// 数秒〜30 秒かかるので、画面の起動を待たせない)。組めなければ次に使うときに組み直す。
+type lazyWorktreeOps struct {
+	home string
+	mu   sync.Mutex
+	ops  *worktreeOps
+}
+
+func (l *lazyWorktreeOps) get() (worktreeOps, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.ops == nil {
+		env, err := realWorktreeEnv(l.home)
+		if err != nil {
+			return worktreeOps{}, err
+		}
+		l.ops = &worktreeOps{env}
+	}
+	return *l.ops, nil
+}
+
+func (l *lazyWorktreeOps) Scan() ([]wtclean.Verdict, error) {
+	o, err := l.get()
+	if err != nil {
+		return nil, err
+	}
+	return o.Scan()
+}
+
+func (l *lazyWorktreeOps) Decide(v wtclean.Verdict, remove bool) (wtclean.Result, error) {
+	o, err := l.get()
+	if err != nil {
+		return wtclean.Result{}, err
+	}
+	return o.Decide(v, remove)
 }

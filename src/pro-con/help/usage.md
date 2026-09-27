@@ -57,7 +57,12 @@
 ## 消す・片付ける
 
 - 削除: 画面の `d` か `pro-con card delete <カード>`。依頼の列はすぐ消え、ほかは PG の session を止めてから消える。
-  worktree とブランチは残る
+  消した直後に PG の worktree とブランチも消す (master に無い commit は `refs/pro-con/removed/pc-<カード>/<sha>` に残してから。
+  `git for-each-ref refs/pro-con/removed` で見る)。未 commit の変更がある・中に誰か居る worktree は消さずに残す (issue 553)
+- 閉じる: PG のブランチに master に無い commit があるカードは閉じられない (dispatcher が理由を出して除ける)。取り込まずに閉じるなら
+  `--ending rejected` (か `answered` / `investigated`) を付ける。そのときは削除と同じく commit を残してから worktree とブランチを消す
+- それでも残った worktree (前からの残り物・消すのに失敗したもの) は、設定画面 `s` のディスクのタブの「残した worktree」に理由つきで出る。
+  明るい行は `D` を 2 回で消す (commit を残してから)・`L` で残す (git worktree lock。やめるのは `git worktree unlock`)
 - 片付け: 画面の `x` で完了のレーンを書庫へ移す (完了から 24 時間で自動でも移る。1 週間で書庫からも消える)
 - PG の worktree: `pro-con worktree clean` で一覧を見て、`--yes` で消す (取り込み済みで中に誰も居ないものだけ)。
   dispatcher の予定が毎日 04:00 に `--yes` を回す (設定画面 s の「スケジューラージョブ」のタブと `pro-con config show` に出る。止めるのは `pro-con config set schedule off`)

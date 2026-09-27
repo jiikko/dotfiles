@@ -66,7 +66,7 @@ PM は dispatcher が起動し、依頼の列に新しいカードが来るた�
    dispatcher が何を判断したか (適用・起動・再開・止めた・削除・枠で待たせた・watchdog) は `pro-con log --card <カード>` で読む
    (`--since 10m` で絞る・`--follow` で出るたびに読む・`--json` で 1 行 1 出来事)
 7. **人間が取り下げた依頼のカードは消す** (人間が消す・やめると言ったカードだけ。PM の判断で消さない。記録から消える)
-   `pro-con card delete <カード> --from PM` (依頼の列ならすぐ消え、ほかの列は PG の session を止めてから消える。PG の worktree とブランチは残る)
+   `pro-con card delete <カード> --from PM` (依頼の列ならすぐ消え、ほかの列は PG の session を止めてから消える。PG の worktree とブランチも、master に無い commit を `refs/pro-con/removed/` に残してから消える)
 8. **人間が作業中のカードに指示を足したら、追加オーダーで PG に渡す** (issue 507。画面の `+` と同じ依頼になる。PG に直接送らない)
    `pro-con card order <カード> "<追加の指示 (人間が書いたまま)>" --from PM` (追記: 同じ範囲の小さな追加。PG の turn の区切りで届く)。
    指示を差し替えるなら `pro-con card order <カード> "<新しい方針>" --redirect --from PM` (方針変更: PG を止めて届ける)。

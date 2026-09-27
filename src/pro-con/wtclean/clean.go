@@ -30,6 +30,7 @@ const (
 	Removed     Outcome = "消した"
 	TreeRemoved Outcome = "worktree だけ消した"
 	Skipped     Outcome = "取り直したら消さない"
+	Held        Outcome = "残した" // 人が「残す」と決めて lock を掛けた (Hold。issue 553)
 	Failed      Outcome = "失敗"
 )
 
@@ -106,7 +107,7 @@ func run0(ctx context.Context, dir string, args ...string) error {
 
 // keepReflog は worktree の HEAD とブランチの reflog にある commit のうち、取り込む先から辿れないものを
 // refs/pro-con/removed/<名前>/<sha> に残す (ref は増えるが、中身は取り込む先とほぼ同じ object なので重くない)。
-func keepReflog(ctx context.Context, v Verdict) error {
+func keepReflog(ctx context.Context, v Verdict, extra ...string) error {
 	base, _, err := trunk(ctx, v.RepoPath)
 	if err != nil {
 		return err
@@ -115,6 +116,7 @@ func keepReflog(ctx context.Context, v Verdict) error {
 	if err != nil {
 		return err
 	}
+	shas = append(shas, extra...)
 	if v.Branch != "" {
 		more, err := reflogCommits(ctx, v.RepoPath, "refs/heads/"+v.Branch)
 		if err != nil {
