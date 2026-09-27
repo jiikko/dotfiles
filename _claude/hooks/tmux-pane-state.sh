@@ -60,18 +60,28 @@ command -v tmux >/dev/null 2>&1 || exit 0
 # ジャンプ (scripts/tmux_agent_panel.sh / tmux_agent_jump.sh) が経過時間表示に使う。
 # mark-seen の input→seen 降格では更新しない (「🔕 seen 12m = 12 分前に入力待ちに
 # なった (見たが未応答)」の方が放置時間として有用なため。意図的)
+#
+# 🚨 書き込みは 1 回の hook で **tmux の起動 1 回** (`\;` で繋ぐ) にまとめる (issue 501)。
+# tmux の set-option は 1 回ごとに attach 中の全クライアントを全面再描画させる
+# (options_push_changes → server_redraw_client。status の format 展開込み) ので、
+# 別プロセスで 3 回書くと、PostToolUse (ツール 1 回ごと) のたびに再描画も 3 回になっていた。
+# 同じコマンド列の中なら再描画は 1 回に畳まれる。
+# set_state <状態> [bg 件数]: bg 件数を渡したときだけ @claude_bg も同じ起動で書く
+# (1 以上 = 立てる / 0 = 消す)。
+# 🚨 bg の unset は列の最後に置く: tmux は `;` の列の途中でエラーになると残りを捨てるので、
+# 前に置くと、unset が失敗する版では状態が書かれなくなる。
 set_state() {
-  tmux set -p -t "$TMUX_PANE" @claude_state "$1" 2>/dev/null
-  tmux set -p -t "$TMUX_PANE" @claude_state_since "$(date +%s)" 2>/dev/null
-}
-
-# bg 待機フラグの書き / 読み。0 を渡すと消す (unset)。
-set_bg() {
-  if [ "${1:-0}" -gt 0 ] 2>/dev/null; then
-    tmux set -p -t "$TMUX_PANE" @claude_bg "$1" 2>/dev/null
-  else
-    tmux set -p -u -t "$TMUX_PANE" @claude_bg 2>/dev/null
+  local args
+  args=(set -p -t "$TMUX_PANE" @claude_state "$1"
+        \; set -p -t "$TMUX_PANE" @claude_state_since "$(date +%s)")
+  if [ -n "${2:-}" ]; then
+    if [ "$2" -gt 0 ] 2>/dev/null; then
+      args+=(\; set -p -t "$TMUX_PANE" @claude_bg "$2")
+    else
+      args+=(\; set -p -u -t "$TMUX_PANE" @claude_bg)
+    fi
   fi
+  tmux "${args[@]}" 2>/dev/null
 }
 
 # 🚨 数字判定は範囲式 [0-9] でなく明示列挙で書く (ja_JP.UTF-8 では [0-9] が全角数字を
@@ -133,7 +143,7 @@ ring_bell() {
 }
 
 case "${1:-}" in
-  working) set_state "⚙ working"; set_bg 0 ;;
+  working) set_state "⚙ working" 0 ;;
   input)
     # Notification hook は入力待ち以外の種別 (auth_success / agent_completed 等) でも
     # 発火する。stdin JSON の notification_type
@@ -189,19 +199,18 @@ case "${1:-}" in
       pending=$(jq -r '[.background_tasks[]? | select(.status == "completed" or .status == "failed" or .status == "killed" | not)] | length' 2>/dev/null) || pending=0
       case "$pending" in ''|*[!0-9]*) pending=0 ;; esac
     fi
-    set_bg "$pending"
     if [ "$pending" -gt 0 ]; then
-      set_state "⚙ working (bg:$pending)"
+      set_state "⚙ working (bg:$pending)" "$pending"
     else
-      set_state "✓ idle"
+      set_state "✓ idle" 0
       ring_bell
       notify_if_hidden "✓ 応答完了"
     fi
     ;;
-  start)   set_state "✓ idle"; set_bg 0 ;;
-  clear)   tmux set -p -u -t "$TMUX_PANE" @claude_state 2>/dev/null
-           tmux set -p -u -t "$TMUX_PANE" @claude_state_since 2>/dev/null
-           set_bg 0 ;;
+  start)   set_state "✓ idle" 0 ;;
+  clear)   tmux set -p -u -t "$TMUX_PANE" @claude_state \; \
+                set -p -u -t "$TMUX_PANE" @claude_state_since \; \
+                set -p -u -t "$TMUX_PANE" @claude_bg 2>/dev/null ;;
 esac
 
 # hook が状態を返さないよう常に成功で抜ける (Stop/UserPromptSubmit を block しない)
