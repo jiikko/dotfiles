@@ -378,7 +378,7 @@ func (m *Model) overlayForm(region []string) []string {
 	f.caretOK = false
 	for i, l := range lines {
 		if l.caret >= 0 {
-			f.caretX, f.caretY, f.caretOK = left+2+l.caret, headerRows+start+1+i, true
+			f.caretX, f.caretY, f.caretOK = left+2+l.caret, m.headerRows()+start+1+i, true
 		}
 	}
 	out := make([]string, len(region))

@@ -22,7 +22,7 @@ type sendField struct {
 
 // confirmBox は送る前の確認の枠だけを描いた行 (下に残る入力欄・案内の行・カンバンを混ぜずに、枠の中を見る)。
 func confirmBox(m *Model) []string {
-	region := make([]string, m.height-headerRows-2)
+	region := make([]string, m.height-m.headerRows()-2)
 	for i := range region {
 		region[i] = strings.Repeat(" ", m.width)
 	}

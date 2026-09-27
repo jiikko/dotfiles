@@ -201,7 +201,7 @@ func TestBoxTopFitsWidth(t *testing.T) {
 func TestLaneLabelKeepsKeyAndCount(t *testing.T) {
 	m, _ := cursorModel(t)
 	m.width = 110 // 列の幅 17。「▶ 3 作業中 (1)」がそのままでは入らない
-	head := strings.Split(ansi.Strip(m.render()), "\n")[headerRows]
+	head := strings.Split(ansi.Strip(m.render()), "\n")[m.headerRows()]
 	for _, want := range []string{"3 作", "(1)", "4 質", "(2)"} {
 		if !strings.Contains(head, want) {
 			t.Fatalf("見出しに %q が無い: %q", want, head)
@@ -213,7 +213,7 @@ func TestLaneLabelKeepsKeyAndCount(t *testing.T) {
 func TestLaneLabelDoesNotShift(t *testing.T) {
 	m, _ := cursorModel(t)
 	col := func() int {
-		head := strings.Split(ansi.Strip(m.render()), "\n")[headerRows]
+		head := strings.Split(ansi.Strip(m.render()), "\n")[m.headerRows()]
 		i := strings.Index(head, "作業中")
 		if i < 0 {
 			t.Fatalf("見出しに 作業中 が無い: %q", head)
