@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -326,6 +327,77 @@ func TestShutdownReportsSessionsThatDoNotStop(t *testing.T) {
 	}
 	if n := len(r.l.stops); n < 1+ensurePolls { // カードの側で 1 回 + 確かめの周ごとに 1 回
 		t.Fatalf("止まっていない PG を期限まで止め直さない: %d 回", n)
+	}
+}
+
+// 止め直しの出来事は PG ごとに 1 行 (周ごとに積むと、同じ行が同じ時刻で周の数だけ並ぶ = issue 555 の 14 行)。
+// 止まらなかったときの名指しには、pid の有無と一覧の state を添える。
+func TestShutdownRestopNoteIsOneLinePerPG(t *testing.T) {
+	r := newCrashRig(t)
+	r.ss[0].State = "working"
+	r.d.ListAll = func(ctx context.Context) ([]agents.Session, error) { return r.d.List(ctx) } // 止めても一覧が変わらない
+	notes, err := r.d.Shutdown(context.Background())
+	var restops []string
+	for _, n := range notes {
+		if n.Session == "id-pc-c-001" && strings.Contains(n.Reason, "止め直") {
+			restops = append(restops, n.Reason)
+		}
+	}
+	want := fmt.Sprintf("C-001 の PG (id-pc-c-001) を %d 回止め直したが、一覧で止まったと確かめられない", ensurePolls+1)
+	if len(restops) != 1 || restops[0] != want {
+		t.Fatalf("止め直しの記録が 1 行でない / 回数が違う: %q", restops)
+	}
+	if err == nil || !strings.Contains(err.Error(), "C-001 (id-pc-c-001) [pid 42・一覧 working: プロセスが居る]") {
+		t.Fatalf("止まらなかった PG に pid と一覧の state を添えない: %v", err)
+	}
+}
+
+// 止まらなかったときの案内は、そのとき見えている様子 (pid の有無・一覧・記録の state) を添え、その様子で効く操作だけを挙げる (issue 555)。
+func TestShutdownAdviceFollowsSessionState(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		pid      int
+		job      string
+		stopFail bool
+		want     []string
+		not      []string
+	}{
+		{name: "プロセスが無く記録も止まった形でない (C-089 の形)", job: "",
+			want: []string{"C-001 (id-pc-c-001) [pid 無し・一覧 working・記録 無し: プロセスは居ない]", "kill・再起動は要らない"},
+			not:  []string{"claude stop <id>", "dispatcher --stop"}},
+		{name: "自動の再開の途中", job: "resuming",
+			want: []string{"[pid 無し・一覧 working・記録 resuming: 自動の再開の途中]", "再開を待ってから pro-con dispatcher --stop"},
+			not:  []string{"claude stop <id>", "kill・再起動は要らない"}},
+		{name: "止める要求が通らない", pid: 42, stopFail: true,
+			want: []string{"[pid 42・一覧 working: プロセスが居る]", "止める要求が通らなかったもの: claude stop <id>"},
+			not:  []string{"kill・再起動は要らない"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newCrashRig(t)
+			r.l.stopFail = tc.stopFail
+			r.d.ListAll = func(ctx context.Context) ([]agents.Session, error) {
+				ss, err := r.d.List(ctx)
+				out := slices.Clone(ss)
+				for i := range out {
+					out[i].PID, out[i].State, out[i].JobState = tc.pid, "working", tc.job
+				}
+				return out, err
+			}
+			_, err := r.d.Shutdown(context.Background())
+			if err == nil {
+				t.Fatal("止まらない PG を止めたとした")
+			}
+			for _, w := range tc.want {
+				if !strings.Contains(err.Error(), w) {
+					t.Errorf("案内に %q が無い: %v", w, err)
+				}
+			}
+			for _, n := range tc.not {
+				if strings.Contains(err.Error(), n) {
+					t.Errorf("その様子で効かない / 言えない %q を案内した: %v", n, err)
+				}
+			}
+		})
 	}
 }
 

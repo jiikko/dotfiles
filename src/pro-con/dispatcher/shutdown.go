@@ -114,14 +114,13 @@ func (d *Dispatcher) Shutdown(ctx context.Context) (notes []eventlog.Event, err 
 	// 止めた session も出す一覧で確かめ、残っていれば止め直す (カードが完了した後も生きている PG も止める)
 	ectx, ecancel := context.WithTimeout(base, ensureBudget) // 確かめる段は別の上限 (前の段が上限を使い切っても、最後の確かめまで届く)
 	defer ecancel()
-	more, remaining, _, err := d.ensureStopped(ectx, tried, nil, ensurePolls)
+	more, left, _, err := d.ensureStopped(ectx, tried, nil, ensurePolls)
 	notes = append(notes, more...)
 	if err != nil {
 		return notes, err
 	}
-	if len(remaining) > 0 {
-		return notes, fmt.Errorf("pro-con が起動した PG のうち %d 本が止まっていない: %s (止める: pro-con dispatcher --stop / claude stop <id>)",
-			len(remaining), strings.Join(remaining, ", "))
+	if names := left.names(); len(names) > 0 {
+		return notes, fmt.Errorf("pro-con が起動した PG のうち %d 本が止まっていない: %s%s", len(names), strings.Join(names, ", "), left.advice())
 	}
 	if failed > 0 { // カードの側で止めきれなかったと書いたものも、記録にある session は確かめた結果止まっている (列を変えなかっただけ)
 		notes = append(notes, ev(eventlog.KindStop, "", "", fmt.Sprintf("%d 枚のカードは列を変えずに残した (記録にある session は止まっていることを確かめた)", failed)))
@@ -279,7 +278,7 @@ func (d *Dispatcher) stopCards(ctx context.Context, notes *[]eventlog.Event) (in
 const ensurePolls = 15
 
 // ensureStopped は、pro-con の記録にある session (pro-con が起動したもの) がすべて止まった (state: stopped か、一覧から消えた) かを
-// 確かめ、生きているものを止め直す。止まらなかった session を「カード (短い id)」で返す。記録に無い session で触るのは、
+// 確かめ、生きているものを止め直す。止まらなかった session を left で返す。記録に無い session で触るのは、
 // unregistered が pro-con の PG と示したものだけ (示せない生きているものは止めずに、止まらなかったものとして名指しする)。
 //
 // 照合は session id だけで、記録の pid と kind は見ない: 同じ session id で pid だけ違うのは Claude Code の自動の再開 (pro-con の PG そのもの)。
@@ -289,16 +288,19 @@ const ensurePolls = 15
 // cards が nil でなければ、そのカードの session だけを確かめる (閉じたカードの PG を止める = close.go)。
 // polls は止め直しの周の数 (周の間は shutdownPoll 待つ)。0 なら待たずに 1 周だけ止めて、もう 1 度だけ見る。
 // sent は止める要求が通った回数 (「pro-con が止めた」と「既に止まっていた」を区別する = close.go)。
-func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string, cards map[string]bool, polls int) (notes []eventlog.Event, remaining []string, sent int, err error) {
+// 止め直しの出来事は session ごとに 1 行にまとめて最後に出す (周ごとに積むと、同じ行が同じ時刻で周の数だけ並ぶ = issue 555)。
+func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string, cards map[string]bool, polls int) (notes []eventlog.Event, left stopLeft, sent int, err error) {
 	list := d.ListAll
 	if list == nil {
 		list = d.List
 	}
 	regPath := filepath.Join(d.Dir, live.RegistryFile)
+	var tally restops
+	defer func() { notes = append(notes, tally.notes(left)...) }()
 	for attempt := 0; ; attempt++ {
 		reg, err := live.LoadRegistry(regPath)
 		if err != nil {
-			return notes, nil, sent, fmt.Errorf("pro-con が起動した session の記録を読めないので、止まったかを確かめられない: %w", err)
+			return notes, stopLeft{}, sent, fmt.Errorf("pro-con が起動した session の記録を読めないので、止まったかを確かめられない: %w", err)
 		}
 		// 入れ替わった前の session の記録が読めなくても、記録にある session は止める (読めない分は知らせる)
 		if retired, err := live.LoadRetired(regPath); err != nil {
@@ -317,48 +319,195 @@ func (d *Dispatcher) ensureStopped(ctx context.Context, extra map[string]string,
 		cancel()
 		if err != nil {
 			if attempt >= polls || ctx.Err() != nil {
-				return notes, nil, sent, fmt.Errorf("止まったかを確かめる一覧を取れない: %w", err)
+				return notes, stopLeft{}, sent, fmt.Errorf("止まったかを確かめる一覧を取れない: %w", err)
 			}
 			d.sleep(shutdownPoll)
 			continue
 		}
 		targets, stray, unproven := d.checkTargets(reg, all, extra, cards, ss)
-		var remaining []string
+		var alive []aliveSession
 		for _, o := range targets {
 			for _, s := range ss {
 				if s.SessionID != o.SessionID || !stoppable(s) {
 					continue
 				}
-				remaining = append(remaining, fmt.Sprintf("%s (%s)", o.CardID, s.ID))
+				alive = append(alive, aliveSession{cardID: o.CardID, s: s})
 				notes = append(notes, d.unknownStateNote(o.CardID, stopName(o.CardID), s)...)
 				sctx, cancel := context.WithTimeout(ctx, stopCallTimeout)
 				err := d.Launch.Stop(sctx, s.ID)
 				cancel()
-				switch {
-				case err != nil:
-					notes = append(notes, ev(eventlog.KindStop, o.CardID, s.ID, fmt.Sprintf("%s の PG (%s) を止め直せない: %v", o.CardID, s.ID, err)))
-				case stray[s.SessionID]:
+				if err == nil {
 					sent++
-					notes = append(notes, ev(eventlog.KindStop, o.CardID, s.ID, strayStopped(o.CardID, s.ID)))
-				default:
-					sent++
-					notes = append(notes, ev(eventlog.KindStop, o.CardID, s.ID, fmt.Sprintf("%s の PG (%s) がまだ動いていたので止め直した", o.CardID, s.ID)))
 				}
+				tally.add(o.CardID, s.ID, stray[s.SessionID], err)
 			}
 		}
-		if len(remaining) == 0 || attempt >= polls || ctx.Err() != nil {
-			if len(remaining) > 0 { // 最後の周で止め直したものがあるかもしれないので、もう 1 度だけ見る
+		if len(alive) == 0 || attempt >= polls || ctx.Err() != nil {
+			if len(alive) > 0 { // 最後の周で止め直したものがあるかもしれないので、もう 1 度だけ見る
 				lctx, cancel := context.WithTimeout(ctx, stopCallTimeout)
 				if ss, err := list(lctx); err == nil {
-					remaining = stillAlive(targets, ss)
+					alive = stillAlive(targets, ss)
 				}
 				cancel()
 			}
+			for i := range alive {
+				alive[i].sent = tally.sent(alive[i].s.ID)
+			}
 			// 示せない session は止めていないので待たない (止め直しの周を使わない)。止まったとは数えず名指しする
-			return notes, append(remaining, unproven...), sent, nil
+			return notes, stopLeft{alive: alive, unproven: unproven}, sent, nil
 		}
 		d.sleep(shutdownPoll)
 	}
+}
+
+// restop は、確かめる段で 1 本の session を止め直した回数と結果 (出来事を session ごとに 1 行にまとめる)。
+type restop struct {
+	cardID, id string
+	stray      bool  // 記録に無かったが pro-con の PG と示せた session (strayStopped の文)
+	sent       int   // 止める要求が通った回数
+	failed     int   // 止める要求が失敗した回数
+	lastErr    error // 最後の失敗
+}
+
+// restops は確かめる段の止め直しを、止めた順に session ごとに数える。
+type restops []*restop
+
+func (t *restops) add(cardID, id string, stray bool, err error) {
+	i := slices.IndexFunc(*t, func(r *restop) bool { return r.id == id })
+	if i < 0 {
+		*t = append(*t, &restop{cardID: cardID, id: id})
+		i = len(*t) - 1
+	}
+	r := (*t)[i]
+	r.stray = r.stray || stray
+	if err != nil {
+		r.failed++
+		r.lastErr = err
+		return
+	}
+	r.sent++
+}
+
+// sent は id の session へ止める要求が通った回数。
+func (t restops) sent(id string) int {
+	if i := slices.IndexFunc(t, func(r *restop) bool { return r.id == id }); i >= 0 {
+		return t[i].sent
+	}
+	return 0
+}
+
+// notes は止め直しの出来事 (session ごとに、止めた回数と、止まらなかったかを 1 行ずつ)。left は止まらなかった session。
+func (t restops) notes(left stopLeft) []eventlog.Event {
+	var out []eventlog.Event
+	for _, r := range t {
+		still := slices.ContainsFunc(left.alive, func(a aliveSession) bool { return a.s.ID == r.id })
+		if r.sent > 0 {
+			var text string
+			switch {
+			case still:
+				text = fmt.Sprintf("%s の PG (%s) を %d 回止め直したが、一覧で止まったと確かめられない", r.cardID, r.id, r.sent)
+			case r.stray:
+				text = strayStopped(r.cardID, r.id) + times(r.sent)
+			default:
+				text = fmt.Sprintf("%s の PG (%s) がまだ動いていたので止め直した", r.cardID, r.id) + times(r.sent)
+			}
+			out = append(out, ev(eventlog.KindStop, r.cardID, r.id, text))
+		}
+		if r.failed > 0 {
+			text := fmt.Sprintf("%s の PG (%s) を止め直せない: %v", r.cardID, r.id, r.lastErr)
+			if r.failed > 1 {
+				text += fmt.Sprintf(" (%d 回失敗。最後の失敗)", r.failed)
+			}
+			out = append(out, ev(eventlog.KindStop, r.cardID, r.id, text))
+		}
+	}
+	return out
+}
+
+// times は回数の添え書き (1 回なら無し)。
+func times(n int) string {
+	if n <= 1 {
+		return ""
+	}
+	return fmt.Sprintf(" (%d 回)", n)
+}
+
+// aliveSession は確かめる段で止まらなかった session (止めきれなかったときの名指しと案内に使う)。
+type aliveSession struct {
+	cardID string
+	s      agents.Session
+	sent   int // 確かめる段で止める要求が通った回数 (0 なら pro-con の claude stop は 1 度も通っていない)
+}
+
+// restarting は、Claude Code が落ちた session を自動で再開している途中か (記録が crashed → resuming。issue 551 の実測)。
+func (a aliveSession) restarting() bool {
+	return a.s.PID == 0 && (a.s.JobState == "crashed" || a.s.JobState == "resuming")
+}
+
+// String は、名指しに、そのとき見えている様子 (pid の有無・一覧の state・Claude Code の記録の state) を添えた文
+// (次に読む人が「プロセスは居ない」と分かれば、kill や再起動に進まずに済む = issue 555)。
+func (a aliveSession) String() string {
+	s := a.s
+	if s.PID != 0 {
+		return fmt.Sprintf("%s (%s) [pid %d・一覧 %s: プロセスが居る]", a.cardID, s.ID, s.PID, stateOrNone(s.State))
+	}
+	why := "プロセスは居ない"
+	if a.restarting() {
+		why = "自動の再開の途中"
+	}
+	return fmt.Sprintf("%s (%s) [pid 無し・一覧 %s・記録 %s: %s]", a.cardID, s.ID, stateOrNone(s.State), stateOrNone(s.JobState), why)
+}
+
+// stateOrNone は state の表示 (欄が無い・記録を読めないなら「無し」)。
+func stateOrNone(v string) string {
+	if v == "" {
+		return "無し"
+	}
+	return v
+}
+
+// stopLeft は確かめる段で止まらなかったもの: 止め直しても止まらなかった session と、示せないので止めていない session の名指し。
+type stopLeft struct {
+	alive    []aliveSession
+	unproven []string
+}
+
+// names は止まらなかったものの名指し (様子を添える)。
+func (l stopLeft) names() []string {
+	out := make([]string, 0, len(l.alive)+len(l.unproven))
+	for _, a := range l.alive {
+		out = append(out, a.String())
+	}
+	return append(out, l.unproven...)
+}
+
+// advice は、終了で止めきれなかったときの案内。その様子で効く操作だけを挙げる (効かないと分かっている claude stop を並べない = issue 555)。
+func (l stopLeft) advice() string {
+	var out []string
+	add := func(s string) {
+		if !slices.Contains(out, s) {
+			out = append(out, s)
+		}
+	}
+	for _, a := range l.alive {
+		switch {
+		case a.sent == 0: // pro-con の止める要求が 1 度も通らなかった (claude stop の失敗・時間切れ)
+			add("止める要求が通らなかったもの: claude stop <id>")
+		case a.restarting():
+			add("自動の再開の途中のもの: 再開を待ってから pro-con dispatcher --stop をもう一度")
+		case a.s.PID == 0:
+			add("プロセスの居ないもの: 一覧の表示だけが残っている (claude stop を送っても変わらなかった。kill・再起動は要らない)")
+		default:
+			add("プロセスの居るもの: claude stop を送っても止まらなかった (ps -p <pid> で様子を確かめる)")
+		}
+	}
+	if len(l.unproven) > 0 {
+		add("記録に無い session: pro-con の PG と確かめてから claude stop <id>")
+	}
+	if len(out) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(out, " / ") + ")"
 }
 
 // checkTargets は、止まったかを確かめる行 (記録の行 reg + カードの側で止めようとした extra + 記録に無いカードの PG = unregistered) と、
@@ -403,12 +552,12 @@ func withExtra(reg []live.Owned, extra map[string]string, ss []agents.Session) [
 }
 
 // stillAlive は記録にある session のうち、一覧で止まっていないもの。
-func stillAlive(reg []live.Owned, ss []agents.Session) []string {
-	var out []string
+func stillAlive(reg []live.Owned, ss []agents.Session) []aliveSession {
+	var out []aliveSession
 	for _, o := range reg {
 		for _, s := range ss {
 			if s.SessionID == o.SessionID && stoppable(s) {
-				out = append(out, fmt.Sprintf("%s (%s)", o.CardID, s.ID))
+				out = append(out, aliveSession{cardID: o.CardID, s: s})
 			}
 		}
 	}
