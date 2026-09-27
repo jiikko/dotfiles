@@ -116,21 +116,24 @@ attach が無ければほぼ漏れない。何が漏らしているか (tmux の
 2. パニックの報告 (`/Library/Logs/DiagnosticReports/*.panic` か `panic-full-2026-09-25-*.panic`) のバックトレースに `com.apple.iokit.EndpointSecurity` / `AppleMobileFileIntegrity` / `Sandbox` のどれが載っているかを本文に写す (上流と同じ経路かの照合)
 3. 確定したら: 当面は在庫を毎日見て 1,500 万個を越える前に再起動。恒久策は **macOS を上げる** (このマシンの macOS 27.0 では再現しない。ただし 27 で直ったのか、負荷が足りないだけかは未確認) か、上流 (#66020 / Apple Feedback) に 500 の数字を足す
 
-### 2026-09-27 13:10: 在庫を記録する道具 `bin/kalloc-watch` を足した
+### 2026-09-27 13:10: 在庫を記録する道具 `bin/kernel-alloc-watch` を足した
 
-- `kalloc-watch` (引数なし = record) で `~/.cache/kalloc-watch/log.tsv` に 1 行、7 日より古い行はそのとき落とす。`kalloc-watch list` で一覧 (前の行との差つき)。
+- `kernel-alloc-watch` (引数なし = record) で `~/.cache/kernel-alloc-watch/log.tsv` に 1 行、7 日より古い行はそのとき落とす。`kernel-alloc-watch list` で一覧 (前の行との差つき)。
   定期実行の仕組み (launchd 等) はまだ無い。漏れているマシンで日をまたいで在庫を追うときに使う
 - 13:30: 各行に claude のプロセス数と tmux のクライアント数も残すようにした (`list` の claude / tmux 列)。「claude を全部止めたら差が止まるか」の A-B と、増えた時間帯の突き合わせに使う。
   zprint は引数なしで読む (漏れているマシンで実績があるのは issue の測定と同じ `zprint | awk '$1=="data.kalloc.1024"{print $7}'` の形だけ)。
-  **漏れているマシン (macOS 15.7.7) での動作は未確認**。書式が違えば記録せずにエラーで止まるので、初回は `kalloc-watch; kalloc-watch list` の出力を見て確かめる
-- 13:40: 判定を足した。`kalloc-watch` (人向け) は在庫・増え方 (今回の起動以降の記録から)・判定・再起動の目安までの時間を出し、
-  `kalloc-watch snapshot` は同じ判定を JSON 1 行で出す (Claude が状況を撮る用。verdict = ok / watch / suspect / leaking / critical)。
+  **漏れているマシン (macOS 15.7.7) での動作は未確認**。書式が違えば記録せずにエラーで止まるので、初回は `kernel-alloc-watch; kernel-alloc-watch list` の出力を見て確かめる
+- 13:40: 判定を足した。`kernel-alloc-watch` (人向け) は在庫・増え方 (今回の起動以降の記録から)・判定・再起動の目安までの時間を出し、
+  `kernel-alloc-watch snapshot` は同じ判定を JSON 1 行で出す (Claude が状況を撮る用。verdict = ok / watch / suspect / leaking / critical)。
   閾値は 20,000 (要観察) / 100,000 (漏れている) / 5,000 個/時 (2 万個以上でこれより速いと漏れの疑い) / 15,000,000 (危険)。
-  根拠は上の実測 (健全: 起動 9 日で約 1,200・make test 直後で約 2,200、一時的に約 3,000 個/時 / 漏れ: 17 時間で約 160 万) で、`bin/kalloc-watch` 冒頭のコメントに置いた
+  根拠は上の実測 (健全: 起動 9 日で約 1,200・make test 直後で約 2,200、一時的に約 3,000 個/時 / 漏れ: 17 時間で約 160 万) で、`bin/kernel-alloc-watch` 冒頭のコメントに置いた
   増え方は直近 6 時間の最初の記録から (幅が 10 分未満なら、それより前で最も新しい記録から) の平均。
   敵対的レビュー 5 周 (P1 1 件「ログを読めないと既存の記録が全部消えて rc=0」を含め、採用した指摘は全部直して変異で固定した)。
   **未確認のリスク**: make test の 10 分単位の増え方は測っていない。2 万個以上の健全なマシンで 5,000 個/時を越えると、漏れの疑いと誤って出る
-  (健全なら 2 万個に届かないので、実際には起きにくい)。誤報が出たら、そのときの `kalloc-watch list` を添えてこの閾値を見直す
+  (健全なら 2 万個に届かないので、実際には起きにくい)。誤報が出たら、そのときの `kernel-alloc-watch list` を添えてこの閾値を見直す
+- 14:00: `kalloc-watch` を `kernel-alloc-watch` に改名した (kalloc は XNU の kalloc() = kernel alloc。名前から中身が分かる方にした)。
+  上の節の `kalloc-watch` の記述も新しい名前に置き換えた。記録先は `~/.cache/kernel-alloc-watch/` になり、旧名の記録
+  (`~/.cache/kalloc-watch/`) は引き継がない (ユーザーの判断。要らなければ手で消す)
 
 ## 別のマシンで検証する手順 (2026-09-27)
 
@@ -146,7 +149,7 @@ attach が無ければほぼ漏れない。何が漏らしているか (tmux の
 - 結論: 揺れの範囲 / 漏れた (1 回あたり約 N 個) / 判定できない (理由)
 ```
 
-- 在庫は `zprint | awk '$1=="data.kalloc.1024"{print $7}'` (7 列目 = inuse)。日をまたいだ推移は `kalloc-watch` (`bin/kalloc-watch`。実行ごとに `~/.cache/kalloc-watch/log.tsv` へ 1 行、`kalloc-watch list` で一覧。README の「カーネルメモリの漏れの記録」) で残す。10 秒で ±100 程度揺れるので、**差は必ず「何もしない同じ長さの時間」の差と並べる**
+- 在庫は `zprint | awk '$1=="data.kalloc.1024"{print $7}'` (7 列目 = inuse)。日をまたいだ推移は `kernel-alloc-watch` (`bin/kernel-alloc-watch`。実行ごとに `~/.cache/kernel-alloc-watch/log.tsv` へ 1 行、`kernel-alloc-watch list` で一覧。README の「カーネルメモリの漏れの記録」) で残す。10 秒で ±100 程度揺れるので、**差は必ず「何もしない同じ長さの時間」の差と並べる**
 - 「漏れた」と書くのは、差が揺れの幅の数倍あり、同じ測定を 2 回以上して同じ向きに出たときだけ
 
 ### 1. 何もしない時間の増え方 (揺れの幅と、放っておいても漏れるか)

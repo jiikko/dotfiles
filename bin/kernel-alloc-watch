@@ -1,16 +1,16 @@
 #!/bin/bash
-# kalloc-watch — カーネルの zone data.kalloc.1024 の在庫 (inuse) を記録・一覧する (issue 500)
+# kernel-alloc-watch — カーネルの zone data.kalloc.1024 の在庫 (inuse) を記録・一覧する (issue 500)
 #
 # data.kalloc.1024 はカーネルのメモリなので、アクティビティモニタや ps ではどのプロセスの分かが見えない。
 # 健全なら数千個で頭打ちになり、漏れていると再起動するまで単調に増える (パニックは約 2,100 万個)。
 # 絶対値より「減るか・増え続けるか」を見るための記録。
 #
-# 使い方・列の意味・見方は `kalloc-watch --help` (help_text) が正本。
+# 使い方・列の意味・見方は `kernel-alloc-watch --help` (help_text) が正本。
 #
 # 記録の 1 行 = <epoch>\t<YYYY-MM-DD HH:MM:SS>\t<inuse>\t<claude のプロセス数>\t<tmux のクライアント数>
 #   数えられなかった値は "-" (0 と区別する)。2026-09-27 13:30 より前の行は 3 列しかない
-# テスト用: KALLOC_WATCH_ZPRINT / KALLOC_WATCH_PS / KALLOC_WATCH_TMUX / KALLOC_WATCH_SYSCTL (それぞれの代わりに呼ぶコマンド)
-#   / KALLOC_WATCH_NOW (現在の epoch)
+# テスト用: KERNEL_ALLOC_WATCH_ZPRINT / KERNEL_ALLOC_WATCH_PS / KERNEL_ALLOC_WATCH_TMUX / KERNEL_ALLOC_WATCH_SYSCTL (それぞれの代わりに呼ぶコマンド)
+#   / KERNEL_ALLOC_WATCH_NOW (現在の epoch)
 set -euo pipefail
 
 ZONE=data.kalloc.1024
@@ -25,19 +25,19 @@ LEAK_RATE=5000           # 1 時間あたりこれ以上増えていて WATCH_LE
 RESTART_LEVEL=15000000   # 再起動の目安 (パニックの約 2,100 万個の手前)
 MIN_SPAN=600             # 増え方を出すのに要る記録の幅 (秒)。短いと ±100 の揺れで速さが暴れる
 RECENT_WINDOW=$((6 * 3600))  # 増え方は直近この時間の記録から出す (起動以降の平均だと、日をまたいで急に漏れ始めたのが薄まる)
-DIR=${KALLOC_WATCH_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/kalloc-watch}
+DIR=${KERNEL_ALLOC_WATCH_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/kernel-alloc-watch}
 LOG=$DIR/log.tsv
 SELF=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")
 
 help_text() {
   cat <<EOF
-kalloc-watch — カーネルの zone data.kalloc.1024 の在庫を記録し、漏れているかを判定する (dotfiles issue 500)
+kernel-alloc-watch — カーネルの zone data.kalloc.1024 の在庫を記録し、漏れているかを判定する (dotfiles issue 500)
 
 使い方:
-  kalloc-watch [check]       人が叩く形。1 行記録して、今の在庫・増え方・判定を出す (record も同じ)
-  kalloc-watch snapshot      Claude やスクリプトが叩く形。1 行記録して、判定を JSON 1 行で出す
-  kalloc-watch list          記録を古い順に出す
-  kalloc-watch -h | --help   このヘルプ
+  kernel-alloc-watch [check]       人が叩く形。1 行記録して、今の在庫・増え方・判定を出す (record も同じ)
+  kernel-alloc-watch snapshot      Claude やスクリプトが叩く形。1 行記録して、判定を JSON 1 行で出す
+  kernel-alloc-watch list          記録を古い順に出す
+  kernel-alloc-watch -h | --help   このヘルプ
   どの形でも、記録するときに 7 日より古い行を落とす
 
 何を測るか:
@@ -78,7 +78,7 @@ snapshot の JSON (1 行。値が出せないものは null):
   止めている間だけ diff が止まれば claude 起因 (list の claude 列で区間が分かる)
 
 記録先:
-  \${KALLOC_WATCH_DIR:-\${XDG_CACHE_HOME:-~/.cache}/kalloc-watch}/log.tsv  (今は $LOG)
+  \${KERNEL_ALLOC_WATCH_DIR:-\${XDG_CACHE_HOME:-~/.cache}/kernel-alloc-watch}/log.tsv  (今は $LOG)
   1 行 = epoch / 時刻 / inuse / claude / tmux (タブ区切り)
 
 終了コード:
@@ -91,8 +91,8 @@ EOF
 }
 
 usage_error() {
-  echo "kalloc-watch: $1" >&2
-  echo "使い方: kalloc-watch [check] | snapshot | list | --help" >&2
+  echo "kernel-alloc-watch: $1" >&2
+  echo "使い方: kernel-alloc-watch [check] | snapshot | list | --help" >&2
   exit 2
 }
 
@@ -102,14 +102,14 @@ usage_error() {
 # (issue 500 の測定。`-L <zone 名>` は macOS 27 でしか確かめていない)
 read_inuse() {
   local out
-  out=$(${KALLOC_WATCH_ZPRINT:-zprint}) || { echo "kalloc-watch: zprint が失敗した" >&2; return 1; }
+  out=$(${KERNEL_ALLOC_WATCH_ZPRINT:-zprint}) || { echo "kernel-alloc-watch: zprint が失敗した" >&2; return 1; }
   # 見出しの 2 行目は "zone name ... inuse ..." で、"zone name" が 2 語なので inuse は 8 語目、値の行では 7 列目
   awk -v z="$ZONE" '
     $1 == "zone" && $2 == "name" { hdr = ($8 == "inuse") }
     $1 == z { v = $7 }
     END {
-      if (!hdr) { print "kalloc-watch: zprint の見出しに inuse の列が見つからない (書式が変わった?)" > "/dev/stderr"; exit 1 }
-      if (v !~ /^[0-9]+$/) { print "kalloc-watch: zone " z " の inuse が読めない" > "/dev/stderr"; exit 1 }
+      if (!hdr) { print "kernel-alloc-watch: zprint の見出しに inuse の列が見つからない (書式が変わった?)" > "/dev/stderr"; exit 1 }
+      if (v !~ /^[0-9]+$/) { print "kernel-alloc-watch: zone " z " の inuse が読めない" > "/dev/stderr"; exit 1 }
       print v + 0   # 先頭の 0 を落とす (JSON の数値に 007 は書けない)
     }' <<<"$out"
 }
@@ -119,7 +119,7 @@ read_inuse() {
 # 版のディレクトリの実体 (~/.local/share/claude/versions/<版>) を直接 exec したものは comm が版番号になり数えない
 count_claude() {
   local out
-  out=$(${KALLOC_WATCH_PS:-ps} -Axo comm=) || { echo -; return 0; }
+  out=$(${KERNEL_ALLOC_WATCH_PS:-ps} -Axo comm=) || { echo -; return 0; }
   awk '{ n = $0; sub(/.*\//, "", n) } n == "claude" || n == "claude.exe" { c++ } END { print c + 0 }' <<<"$out"
 }
 
@@ -128,7 +128,7 @@ count_claude() {
 # サーバが固まって返らないと、その回の record は終わらない (timeout は無い。定期実行を足すならそこで上限を持つ)
 count_tmux_clients() {
   local out
-  out=$(${KALLOC_WATCH_TMUX:-tmux} list-clients -F x 2>/dev/null) || { echo -; return 0; }
+  out=$(${KERNEL_ALLOC_WATCH_TMUX:-tmux} list-clients -F x 2>/dev/null) || { echo -; return 0; }
   awk 'NF { c++ } END { print c + 0 }' <<<"$out"
 }
 
@@ -141,7 +141,7 @@ count_tmux_clients() {
 record_locked() {
   local inuse=${KW_INUSE:-} claude=${KW_CLAUDE:-} tmuxc=${KW_TMUX:-} now=${KW_NOW:-} cutoff stamp
   [[ $inuse =~ ^[0-9]+$ && $claude =~ ^([0-9]+|-)$ && $tmuxc =~ ^([0-9]+|-)$ && $now =~ ^(0|[1-9][0-9]{0,11})$ ]] ||
-    { echo "kalloc-watch: 計測の値が無い・壊れている (check / snapshot から呼ぶこと): inuse=$inuse claude=$claude tmux=$tmuxc now=$now" >&2; return 1; }
+    { echo "kernel-alloc-watch: 計測の値が無い・壊れている (check / snapshot から呼ぶこと): inuse=$inuse claude=$claude tmux=$tmuxc now=$now" >&2; return 1; }
   cutoff=$((now - KEEP_SECONDS))
   stamp=$(date -r "$now" '+%Y-%m-%d %H:%M:%S')
   TMP_LOG=$(mktemp "$DIR/.log.tsv.XXXXXX")
@@ -149,7 +149,7 @@ record_locked() {
   if [[ -e $LOG ]]; then
     # 期限切れと判定できる行だけ落とす (epoch が数字でない行は残す。読めない行を黙って消さない)
     awk -F '\t' -v c="$cutoff" '!($1 ~ /^[0-9]+$/ && $1 < c)' "$LOG" > "$TMP_LOG" ||
-      { echo "kalloc-watch: 記録を読めない: $LOG" >&2; exit 1; }   # awk の rc (2) を使い方の誤りと混ぜない
+      { echo "kernel-alloc-watch: 記録を読めない: $LOG" >&2; exit 1; }   # awk の rc (2) を使い方の誤りと混ぜない
   fi
   printf '%s\t%s\t%s\t%s\t%s\n' "$now" "$stamp" "$inuse" "$claude" "$tmuxc" >> "$TMP_LOG"
   mv -f "$TMP_LOG" "$LOG"
@@ -161,7 +161,7 @@ boot_epoch() {
   # 書式は "{ sec = 1789694296, usec = 666590 } Fri Sep 18 10:18:16 2026" (macOS 27 で実測)
   # 出力を先に受ける (パイプに || を付けると、値を出した後に rc≠0 で終わったとき値と 0 の 2 行になる)
   local out v
-  out=$(${KALLOC_WATCH_SYSCTL:-sysctl} -n kern.boottime 2>/dev/null) || true
+  out=$(${KERNEL_ALLOC_WATCH_SYSCTL:-sysctl} -n kern.boottime 2>/dev/null) || true
   v=$(sed -n '1s/^{ sec = \([1-9][0-9]*\),.*/\1/p' <<<"$out")
   echo "${v:-0}"
 }
@@ -205,8 +205,8 @@ json_num() { [[ $1 =~ ^-?[0-9]+(\.[0-9]+)?$ ]] && printf '%s' "$1" || printf 'nu
 # 記録して判定を出す。$1=human (check) / json (snapshot)
 record_and_report() {
   local mode=$1 now boot res verdict rate basis base_e base_i eta stamp rc
-  now=${KALLOC_WATCH_NOW:-$(date +%s)}
-  [[ $now =~ ^(0|[1-9][0-9]{0,11})$ ]] || { echo "kalloc-watch: 現在時刻が epoch の数字でない: $now" >&2; exit 1; }
+  now=${KERNEL_ALLOC_WATCH_NOW:-$(date +%s)}
+  [[ $now =~ ^(0|[1-9][0-9]{0,11})$ ]] || { echo "kernel-alloc-watch: 現在時刻が epoch の数字でない: $now" >&2; exit 1; }
   KW_INUSE=$(read_inuse)
   KW_CLAUDE=$(count_claude)
   KW_TMUX=$(count_tmux_clients)
@@ -259,7 +259,7 @@ record_and_report() {
 
 cmd_list() {
   if [[ ! -s $LOG ]]; then
-    echo "kalloc-watch: まだ記録が無い ($LOG)。kalloc-watch で記録する" >&2
+    echo "kernel-alloc-watch: まだ記録が無い ($LOG)。kernel-alloc-watch で記録する" >&2
     return 1
   fi
   local out
@@ -272,7 +272,7 @@ cmd_list() {
     }
     END { if (!n) exit 3 }' "$LOG") || {
     local rc=$?
-    ((rc == 3)) && echo "kalloc-watch: 読める行がまだ無い ($LOG)" >&2 || echo "kalloc-watch: 記録を読めない: $LOG" >&2
+    ((rc == 3)) && echo "kernel-alloc-watch: 読める行がまだ無い ($LOG)" >&2 || echo "kernel-alloc-watch: 記録を読めない: $LOG" >&2
     return 1
   }
   printf '%s\n' "$out"

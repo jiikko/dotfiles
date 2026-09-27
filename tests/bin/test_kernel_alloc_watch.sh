@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# bin/kalloc-watch のテスト (issue 500)。実 zprint は使わず、偽の zprint で在庫の値と書式を注入する。
-# 現在時刻は KALLOC_WATCH_NOW で固定する (7 日の境界を壁時計に依存させない)。
+# bin/kernel-alloc-watch のテスト (issue 500)。実 zprint は使わず、偽の zprint で在庫の値と書式を注入する。
+# 現在時刻は KERNEL_ALLOC_WATCH_NOW で固定する (7 日の境界を壁時計に依存させない)。
 # pin したいもの:
 #   - record が zprint の inuse (7 列目) を記録する
 #   - 7 日より古い行だけを落とす (境界ちょうどは残す / epoch の読めない行は消さない)
@@ -12,9 +12,12 @@ set -euo pipefail
 unset CDPATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-BIN="$ROOT_DIR/bin/kalloc-watch"
+BIN="$ROOT_DIR/bin/kernel-alloc-watch"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
+# 既定の記録先も一時 dir の下へ向ける (KERNEL_ALLOC_WATCH_DIR を渡し忘れたケースが本物の ~/.cache に書かないように)
+export XDG_CACHE_HOME="$TMP_DIR/xdg"
+unset KERNEL_ALLOC_WATCH_DIR
 
 fail=0
 pass() { printf '✓ %s\n' "$1"; }
@@ -68,10 +71,10 @@ chmod +x "$TMP_DIR/ps" "$TMP_DIR/tmux" "$TMP_DIR/sysctl"
 
 NOW=2000000000
 DAY=86400
-run() {  # $1=記録先 dir, 残り=kalloc-watch の引数
+run() {  # $1=記録先 dir, 残り=kernel-alloc-watch の引数
   local d=$1; shift
-  KALLOC_WATCH_DIR="$d" KALLOC_WATCH_ZPRINT="$TMP_DIR/zprint" KALLOC_WATCH_PS="$TMP_DIR/ps" KALLOC_WATCH_TMUX="$TMP_DIR/tmux" \
-    KALLOC_WATCH_SYSCTL="$TMP_DIR/sysctl" KALLOC_WATCH_NOW="$NOW" FAKE_BOOT="${BOOT:-1}" "$BIN" "$@"
+  KERNEL_ALLOC_WATCH_DIR="$d" KERNEL_ALLOC_WATCH_ZPRINT="$TMP_DIR/zprint" KERNEL_ALLOC_WATCH_PS="$TMP_DIR/ps" KERNEL_ALLOC_WATCH_TMUX="$TMP_DIR/tmux" \
+    KERNEL_ALLOC_WATCH_SYSCTL="$TMP_DIR/sysctl" KERNEL_ALLOC_WATCH_NOW="$NOW" FAKE_BOOT="${BOOT:-1}" "$BIN" "$@"
 }
 
 # 1. record が inuse を記録する
@@ -134,8 +137,8 @@ for mode in unreadable badnow; do
   now=$NOW
   # badnow は算術評価でコマンドが走る形 (定義済みの変数の subscript。未定義だと set -u で先に止まる。数字の検査が無いと $((now - …)) が touch を実行する)
   case $mode in unreadable) chmod 000 "$d/log.tsv" ;; badnow) now="PPID[\$(touch $d/pwned)]" ;; esac
-  rc=0; KALLOC_WATCH_DIR="$d" KALLOC_WATCH_ZPRINT="$TMP_DIR/zprint" KALLOC_WATCH_PS="$TMP_DIR/ps" KALLOC_WATCH_TMUX="$TMP_DIR/tmux" \
-    KALLOC_WATCH_NOW="$now" "$BIN" >/dev/null 2>"$d/err" || rc=$?
+  rc=0; KERNEL_ALLOC_WATCH_DIR="$d" KERNEL_ALLOC_WATCH_ZPRINT="$TMP_DIR/zprint" KERNEL_ALLOC_WATCH_PS="$TMP_DIR/ps" KERNEL_ALLOC_WATCH_TMUX="$TMP_DIR/tmux" \
+    KERNEL_ALLOC_WATCH_NOW="$now" "$BIN" >/dev/null 2>"$d/err" || rc=$?
   chmod 600 "$d/log.tsv"
   if [[ $rc -eq 0 ]]; then
     ng "$mode で rc=0 を返した"
@@ -156,7 +159,7 @@ done
 d="$TMP_DIR/t3c"; mkdir -p "$d"
 printf '%s\tkeep\t9\n' "$NOW" > "$d/log.tsv"
 before=$(cat "$d/log.tsv")
-if env -u KW_INUSE -u KW_CLAUDE -u KW_TMUX KALLOC_WATCH_DIR="$d" KALLOC_WATCH_NOW="$NOW" "$BIN" __record_locked >/dev/null 2>&1; then
+if env -u KW_INUSE -u KW_CLAUDE -u KW_TMUX KERNEL_ALLOC_WATCH_DIR="$d" KERNEL_ALLOC_WATCH_NOW="$NOW" "$BIN" __record_locked >/dev/null 2>&1; then
   ng "計測の値なしの __record_locked が rc=0 を返した"
 elif [[ "$(cat "$d/log.tsv")" != "$before" ]]; then
   ng "計測の値なしの __record_locked で記録が変わった"
@@ -251,10 +254,10 @@ printf '%s\tfirst\t300000\n' $((NOW - 3600)) > "$d/log.tsv"
 out=$(BOOT=$((NOW - 7200)) FAKE_INUSE=50000 run "$d")
 if [[ "$out" == *"1 時間あたり -250,000 個"* ]]; then pass "check は減った増え方を -250,000 と出す"; else ng "減ったときの表示が違う: $out"; fi
 # 起動時刻が読めないときは、起動より前の記録も混ざる旨を出し、JSON の boot_epoch は null
-out=$(FAKE_BOOT=fail FAKE_INUSE=50000 KALLOC_WATCH_DIR="$d" KALLOC_WATCH_ZPRINT="$TMP_DIR/zprint" KALLOC_WATCH_PS="$TMP_DIR/ps" \
-  KALLOC_WATCH_TMUX="$TMP_DIR/tmux" KALLOC_WATCH_SYSCTL="$TMP_DIR/sysctl" KALLOC_WATCH_NOW="$NOW" "$BIN")
-js=$(FAKE_BOOT=fail FAKE_INUSE=50000 KALLOC_WATCH_DIR="$d" KALLOC_WATCH_ZPRINT="$TMP_DIR/zprint" KALLOC_WATCH_PS="$TMP_DIR/ps" \
-  KALLOC_WATCH_TMUX="$TMP_DIR/tmux" KALLOC_WATCH_SYSCTL="$TMP_DIR/sysctl" KALLOC_WATCH_NOW="$NOW" "$BIN" snapshot | jfield boot_epoch)
+out=$(FAKE_BOOT=fail FAKE_INUSE=50000 KERNEL_ALLOC_WATCH_DIR="$d" KERNEL_ALLOC_WATCH_ZPRINT="$TMP_DIR/zprint" KERNEL_ALLOC_WATCH_PS="$TMP_DIR/ps" \
+  KERNEL_ALLOC_WATCH_TMUX="$TMP_DIR/tmux" KERNEL_ALLOC_WATCH_SYSCTL="$TMP_DIR/sysctl" KERNEL_ALLOC_WATCH_NOW="$NOW" "$BIN")
+js=$(FAKE_BOOT=fail FAKE_INUSE=50000 KERNEL_ALLOC_WATCH_DIR="$d" KERNEL_ALLOC_WATCH_ZPRINT="$TMP_DIR/zprint" KERNEL_ALLOC_WATCH_PS="$TMP_DIR/ps" \
+  KERNEL_ALLOC_WATCH_TMUX="$TMP_DIR/tmux" KERNEL_ALLOC_WATCH_SYSCTL="$TMP_DIR/sysctl" KERNEL_ALLOC_WATCH_NOW="$NOW" "$BIN" snapshot | jfield boot_epoch)
 if [[ "$out" == *"注意: 起動時刻を読めなかった"* && "$js" == null ]]; then
   pass "起動時刻が読めないときは注意を出し、boot_epoch は null"
 else
