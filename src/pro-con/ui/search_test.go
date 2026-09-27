@@ -59,8 +59,8 @@ func TestSearchFiltersLanesWhileTyping(t *testing.T) {
 	}
 }
 
-// enter で確定したら絞り込みは残り、ボードのキーが絞った結果に効く。件数の行の頭に印、レーンの見出しに (一致/全部)。
-// 件数の行の列ごとの枚数と x の対象 (visible) は絞る前のまま。
+// enter で確定したら絞り込みは残り、ボードのキーが絞った結果に効く。ゲージの行の頭に印、レーンの見出しに (一致/全部)。
+// x の対象 (visible) は絞る前のまま。
 func TestSearchConfirmKeepsFilterAndMarks(t *testing.T) {
 	m := New(searchSpy(), nil)
 	m.width, m.height = 160, 30
@@ -71,10 +71,13 @@ func TestSearchConfirmKeepsFilterAndMarks(t *testing.T) {
 		t.Fatalf("確定後: active=%v typing=%v selected=%q", m.search.active, m.search.typing, m.selected)
 	}
 	screen := ansi.Strip(m.render())
-	for _, want := range []string{"/ #931 1/4 枚", "着手待ち (1/2)", "完了 (0/2)", "着手待ち 2", "完了 2", "esc 絞り込みをやめる"} {
+	for _, want := range []string{"着手待ち (1/2)", "完了 (0/2)", "esc 絞り込みをやめる"} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("画面に %q が無い:\n%s", want, screen)
 		}
+	}
+	if g := ansi.Strip(m.gauge()); !strings.HasPrefix(g, " / #931 1/4 枚 │ ") {
+		t.Errorf("絞り込みの印がゲージの行の頭に無い: %q", g)
 	}
 	if m.doneInTab() != 2 {
 		t.Fatalf("x の対象を絞り込みで減らした: %d", m.doneInTab())

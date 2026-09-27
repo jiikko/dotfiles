@@ -334,13 +334,12 @@ func (m *Model) tabBar() string {
 	return bar
 }
 
-// gauge は溜まり具合の 1 行 (要件 4)。件数は選んでいるタブの分、PG の数と上限は全体。
+// gauge は溜まり具合の 1 行 (要件 4)。人の番・待ちは選んでいるタブの分、PG の数と上限は全体。
+// レーンごとの枚数は出さない (枠の見出し「3 作業中 (2)」と同じ数。issue 558)。
 func (m *Model) gauge() string {
-	counts := map[card.State]int{}
 	var oldest time.Duration
 	pending, stalled, humans := 0, 0, 0
 	for c := range m.visible() {
-		counts[c.State]++
 		if m.humansTurn(*c) {
 			humans++
 		}
@@ -356,23 +355,19 @@ func (m *Model) gauge() string {
 			stalled++
 		}
 	}
-	var parts []string
-	for _, st := range card.Columns {
-		parts = append(parts, fmt.Sprintf("%s%s %d%s", fg(stateColor(st)), st.Label(), counts[st], sgrFgReset))
+	// 項目を集めてから区切りで繋ぐ (どれが先頭でも頭に余分な │ が付かない)
+	var items []string
+	if mk := m.searchMark(); mk != "" { // 絞っている印は行の頭 (search.go)
+		items = append(items, mk)
 	}
-	sep := fg(240) + " │ " + sgrFgReset
-	g := " " + strings.Join(parts, "  ")
-	if mk := m.searchMark(); mk != "" { // 絞っている印は行の頭 (件数はタブの全部のまま。search.go)
-		g = mk + sep + strings.TrimPrefix(g, " ")
+	if humans > 0 { // 人がやることを先に読ませる
+		items = append(items, humanTag(fmt.Sprintf("%sの番 %d", humanMark, humans)))
 	}
-	if humans > 0 { // 列の件数のすぐ後 (人がやることを先に読ませる)
-		g += sep + humanTag(fmt.Sprintf("%sの番 %d", humanMark, humans))
-	}
-	g += sep + "最古の待ち " + fmtDur(oldest) + sep + m.pgGauge()
+	items = append(items, "最古の待ち "+fmtDur(oldest), m.pgGauge())
 	if p := m.pmGauge(); p != "" {
-		g += sep + p
+		items = append(items, p)
 	}
-	g += sep + m.dispatcherGauge()
+	items = append(items, m.dispatcherGauge())
 	if !m.dispatcherStopped() { // 止まった dispatcher の古い要約は出さない
 		for _, n := range []struct {
 			text  string
@@ -381,28 +376,28 @@ func (m *Model) gauge() string {
 			switch {
 			case n.text == "":
 			case n.alert:
-				g += sep + sgrYellow + n.text + sgrFgReset
+				items = append(items, sgrYellow+n.text+sgrFgReset)
 			default:
-				g += sep + sgrDim + n.text + sgrReset
+				items = append(items, sgrDim+n.text+sgrReset)
 			}
 		}
 	}
 	if s := m.screensGauge(); s != "" { // 画面は package presence が数える (dispatcher が止まっていても正しい)
-		g += sep + s
+		items = append(items, s)
 	}
 	if u := m.upgradeSummary(); u != "" {
-		g += sep + u
+		items = append(items, u)
 	}
 	if pending > 0 {
-		g += sep + sgrYellow + fmt.Sprintf("⚠ issue 化待ち %d", pending) + sgrFgReset
+		items = append(items, sgrYellow+fmt.Sprintf("⚠ issue 化待ち %d", pending)+sgrFgReset)
 	}
 	if stalled > 0 {
-		g += sep + sgrRed + sgrBold + fmt.Sprintf("🚨 停滞 %d", stalled) + sgrFgReset
+		items = append(items, sgrRed+sgrBold+fmt.Sprintf("🚨 停滞 %d", stalled)+sgrFgReset)
 	}
 	if n := len(m.snap.Violations); n > 0 {
-		g += sep + sgrRed + fmt.Sprintf("不変条件の破れ %d", n) + sgrFgReset
+		items = append(items, sgrRed+fmt.Sprintf("不変条件の破れ %d", n)+sgrFgReset)
 	}
-	return g
+	return " " + strings.Join(items, fg(240)+" │ "+sgrFgReset)
 }
 
 func (m *Model) colWidth() int {
