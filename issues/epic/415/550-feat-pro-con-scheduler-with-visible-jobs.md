@@ -19,9 +19,19 @@
 
 ## 今の形 (2026-09-27 にコードで確かめた)
 
-- 時刻で回す仕組みは無い。dispatcher の Tick (`dispatcher/runner.go` の `time.NewTicker(poll)`) の中で、
-  経過時間を見て回している処理が 1 つだけある: 書庫の古いカードを消す `purge` (`dispatcher/forget.go`。`purgeEvery = time.Hour`。
-  起動して最初の Tick と、その後 1 時間ごと)。**これは設定画面にもどこにも出ていない**
+- 時刻 (毎日 HH:MM) で回す仕組みは無い。dispatcher の Tick (`dispatcher/runner.go` の `time.NewTicker(poll)`) の中で、
+  **起動からの経過時間**を見て回している処理が 5 つある。どれも `xxxEvery` の定数と `now.Sub(d.xxxAt) < xxxEvery` の同じ形:
+
+  | 処理 | 間隔 | 何をするか |
+  |---|---|---|
+  | `purge` (`dispatcher/forget.go`) | 1 時間 | 完了から 1 週間たったカードを書庫から消す (497) |
+  | `refreshUsage` (`dispatcher/usage.go`) | 5 分 | `/usage` を読み直す (子プロセスを起こす。1 回 約 4 秒) |
+  | `announce` (`dispatcher/notify.go`) | 1 分 | tmux へ出し直す |
+  | `collectProgress` (`dispatcher/progress.go`) | 30 秒 | PG の git の進捗を集める |
+  | `collectDoing` (`dispatcher/doing.go`) | 10 秒 | PG の実行中のコマンドを集める |
+
+  **どれも設定画面に予定としては出ていない** (purge は eventlog に `KindArchive` で残るが、ログのタブの既定の表示には出ない。
+  `c` で全部を出したときに見えるかは未確認)
 - 設定画面 (`ui/settings.go`。`s` で開閉) のタブは「設定 / プロセス / ディスク / ログ」
 - `src/schedkeys` は tmux のペインへ指定の時刻にキーを送る別の道具で、pro-con とは関係しない (名前が似ているだけ)
 
@@ -35,7 +45,10 @@
 2. **表示**: 設定画面に「予定」のタブ (か、設定のタブの節) を足す。行ごとに、いつ・コマンドの字面・前回の実行時刻と結果・次回の時刻。
    CLI からも同じものを見られるようにする (`pro-con config` の出力に足すか、`pro-con schedule`)
    - 見た目は先に試作 (`src/pro-con/samples/`) で決める (`decide-layout-in-sample-renderer-first.md`)
-3. **既にある暗黙の定期処理 (purge の 1 時間ごと) も同じ表に載せる**か決める。載せれば「pro-con が勝手に何をいつ消すか」が 1 か所で見える
+3. **既にある経過時間の処理 (上の表の 5 つ) のうち、どれを同じ表に載せるか**決める。
+   少なくとも purge (消す) は載せる候補: 載せれば「pro-con が勝手に何をいつ消すか」が 1 か所で見える。
+   10 秒〜1 分の収集・出し直しは内部の見張りで、人が知る必要は薄い (載せると一覧が埋もれる)。
+   `refreshUsage` は「決まった間隔で子プロセスを起こす」先例なので、実行の作り (子プロセスの起こし方・timeout・失敗の扱い) はここに揃えられるか見る
 4. **時刻の変更**: 最初は既定の時刻で固定してよい (例: 毎日 04:00)。変える口は `pro-con config set` と設定のタブに後から足す
 5. **dispatcher が止まっていた間の予定**: 次に起動したとき、遅れた予定を 1 回だけ回す (溜まった回数ぶんは回さない)。
    どちらにするかを決めて画面に出す
@@ -74,4 +87,9 @@ reflog にしか無い版は `refs/pro-con/removed/` に退避) が、人が一�
 
 ## 進捗
 
-- 起票のみ
+- 起票 (2026-09-27)
+- 反証レビュー (sonnet 1 体、2026-09-27):
+  - [P1] 採用: 「経過時間で回す処理は purge だけ」は誤り。5 つある (今の形の表と対応方針 3 を直した)
+  - 反証できなかった: 時刻で回す仕組みは無い / worktree clean を呼ぶのは CLI の入口 (`worktreecmd.go`) だけ / 設定画面のタブ構成 / 関連 issue の要約 / 同種の issue は無い
+  - 自己参照の罠 (dispatcher が子で worktree clean を起こすと、自分や PM が「動いている」と判定されて全部残る): 判定のコード上は見当たらない
+    (dispatcher は claude の session ではなく、cwd も PG の worktree の外)。ただし dispatcher の cwd が worktree の中になる場合が無いかは、実装のときに実測する
