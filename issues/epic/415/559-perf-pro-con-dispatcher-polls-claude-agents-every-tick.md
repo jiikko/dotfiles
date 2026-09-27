@@ -31,3 +31,12 @@ dispatcher の Tick (3 秒。`dispatchercmd.go` の `dispatcherInterval`) は、
 
 - [502](done/502-perf-pro-con-agents-list-spawned-per-screen-and-dispatcher.md) (画面と dispatcher がそれぞれ 3 秒ごとに起動していた。画面の側は 502 で直り、dispatcher 自身の常時の呼び出しが残りの論点として残っていた。559 はその続き)
 - 500 (カーネルのメモリの漏れ) / 455 / 535
+
+## 進捗
+
+- 2026-09-27 着手 (dotfiles-01)。まだ実装していない。分かったこと:
+  - 実機の状態 (`~/.local/state/pro-con/live`): カード 48 枚が全部完了・PM は `stopped`。この「暇」の状態でも 3 秒ごとに一覧を取っている
+  - 一覧を使わない処理 (`watch` / `tickRuns` / `tickBtws` / `refreshUsage` / `collectProgress`) は暇でも仕事がある (完了したカードへの btw の回答など)。間引くのは一覧の取得と、それを使う処理だけにする
+  - 画面は `seen.json` が `seenFresh` (15 秒) より古いと自分で `claude agents` を叩く (`live/live.go`)。間引くなら、この鮮度の閾値も揃える (`seen.json` に「いつまで使ってよいか」を書く案)
+  - 役の様子は、一覧と照らせなかった Tick を「確かめ中」(`RoleChecking`) と出す (`dispatcher/role.go` の `roleState`)。一覧を飛ばす Tick で、この表示が出っぱなしにならないようにする
+- 次の一手: pro-con 全体のポーリングを通知で動く形に置き換えられるかを調べている (`~/.claude/jobs` の変化の監視で一覧を取り直せるなら、間引くより筋が良い)。結果を見てから方式を決める
