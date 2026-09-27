@@ -18,3 +18,7 @@ Brewfile.lock.json
 # (3153a67 で _claude/ 側だけ除外され、こちらが漏れていた)。
 _claude/settings.local.json
 .claude/settings.local.json
+
+# `claude -w <name>` (pro-con の PG / PM / 取り込みの係など) が作る git worktree の置き場。
+# 各 worktree は自分のブランチで commit するので、本体から追跡する対象ではない。
+.claude/worktrees/
