@@ -68,8 +68,13 @@ func (m *Model) caret() *tea.Cursor {
 	return nil
 }
 
-// headerRows はタイトル・タブ・ゲージ・罫線の行数。
-const headerRows = 4
+// headerRows はタイトル・タブ・ゲージ・(持ち主の居ない join の帯)・罫線の行数。
+func (m *Model) headerRows() int {
+	if m.ownerlessBand() != "" {
+		return 5
+	}
+	return 4
+}
 
 func (m *Model) render() string {
 	w := m.width
@@ -77,7 +82,11 @@ func (m *Model) render() string {
 	if d, ok := m.be.(backend.Describer); ok {
 		title += sgrDim + "  " + d.Describe() + sgrReset
 	}
-	header := []string{title, m.tabBar(), m.gauge(), fg(240) + strings.Repeat("─", w) + sgrReset}
+	header := []string{title, m.tabBar(), m.gauge()}
+	if b := m.ownerlessBand(); b != "" { // 罫線の上 (2026-09-27 にユーザーが見本の案 A を選んだ。issue 543)
+		header = append(header, b)
+	}
+	header = append(header, fg(240)+strings.Repeat("─", w)+sgrReset)
 	// 入力欄・案内は画面の下端へ吸着させ、ボードとの間を空行で埋める (最低 1 行)。
 	// カードの詳細はこの領域 (ヘッダと下端の群のあいだ) に右から重ねる
 	foot := m.footGroup()
@@ -229,6 +238,37 @@ func (m *Model) dispatcherGauge() string {
 		return sgrRed + fmt.Sprintf("dispatcher %s前 (止まっている?%s)", fmtDur(d), wake) + sgrFgReset
 	}
 	return fmt.Sprintf("dispatcher %s前", fmtDur(d))
+}
+
+// ownerlessBand は、持ち主の画面が 1 つも無い join の画面に出す全幅の帯 (issue 543。無ければ空)。
+// 持ち主が居ないと、dispatcher が止まったとき (落ちた・人が止めた) 誰も起こし直さない: join は起こさず (issue 481)、supervisor も
+// 持ち主が居なければ起こし直さずに PG を止めて抜ける (supervise.go の haltReason)。動いている間は黄で、止まったら赤で出す。
+// 画面を数えられない (Screens が空) ときは出さない (持ち主が居ないと言い切れない)。
+func (m *Model) ownerlessBand() string {
+	if !m.joined() || len(m.snap.Screens) == 0 {
+		return ""
+	}
+	if owners, _ := m.snap.ScreenTally(); owners > 0 {
+		return ""
+	}
+	const join = "この画面 (join) からは起こせない"
+	var text string
+	switch {
+	case m.snap.DispatcherHeld: // 持ち主の画面を開いても、人が止めた印があれば起こさない (c で外す)
+		text = " ■ カードは進まない — dispatcher は人が止めてある。持ち主の画面 (pro-con) を開いて c で起こす。" + join
+	case m.snap.DispatcherTick.IsZero():
+		text = " ■ カードは進まない — dispatcher が 1 度も回っていない。持ち主の画面 (pro-con) を開くと起きる。" + join
+	case m.snap.DispatcherGone:
+		text = fmt.Sprintf(" ■ カードは進まない — dispatcher が止まっている (最後の Tick %s前)。持ち主の画面が無いので誰も起こさない。持ち主の画面 (pro-con) を開くと起きる。%s",
+			fmtDur(m.snap.Now.Sub(m.snap.DispatcherTick)), join)
+	case m.dispatcherStopped():
+		// プロセスは居るのに回っていない (固まった): lock を持ったままなので、持ち主の画面を開いても起こさない (main.go の startDispatcherIfIdle)
+		text = fmt.Sprintf(" ■ カードは進まない — dispatcher のプロセスは居るが %s前から回っていない (固まっている?)。持ち主の画面を開いても、それが抜けるまでは起きない。pro-con ps で確かめる",
+			fmtDur(m.snap.Now.Sub(m.snap.DispatcherTick)))
+	default:
+		return paint(bg(214)+fg(16)+sgrBold, " ⚠ 持ち主の画面が無い — dispatcher は今は動いているが、止まっても誰も (supervisor も) 起こし直さない。持ち主の画面 (pro-con) を開くと見張りが戻る。"+join, m.width)
+	}
+	return paint(bg(196)+fg(231)+sgrBold, text, m.width)
 }
 
 // footGroup は下端に吸着させる群 (最下段)。

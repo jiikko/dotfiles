@@ -137,6 +137,8 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
   | 最後の持ち主の画面 | dispatcher と PG を止める。join の画面が残っていても止める (残った join は「止まっている」を映す) |
   | quit を通らずに消えた (kill -9 等) | 持ち主と join を合わせて 1 つでも開いていれば止めない。全部閉じて 1 分で dispatcher が PG を止めて抜ける (画面が起こした dispatcher = `--exit-without-screens 1m` のとき。手で起動した `pro-con dispatcher` は画面が無くても抜けない) |
 
+  持ち主の画面が 1 つも無い間、join の画面は罫線の上に帯を出す (issue 543。黄 = dispatcher は動いているが、止まっても join も supervisor も
+  起こし直さない / 赤 = 止まっていてカードは進まない)。
   止まった後に動かし直すのは、持ち主の画面か `pro-con dispatcher` (join は dispatcher を起こさない)。詳しい決まりは次のとおり。
   `--join` でない画面はすべて持ち主。Q → quit で閉じるとき、ほかに **持ち主の画面** が開いていれば
   この画面だけ閉じる (dispatcher と PG は動いたまま)。**最後の持ち主の画面が止める** (join の画面が残っていても止める。確認の見出しに

@@ -238,12 +238,12 @@ func TestSettingsCoversBump(t *testing.T) {
 	m, clk := cursorModel(t)
 	start := clk.t
 	lines := strings.Split(ansi.Strip(m.render()), "\n")
-	header := strings.Join(lines[:headerRows], "\n")
+	header := strings.Join(lines[:m.headerRows()], "\n")
 	press(m, "k") // 端でぶつかって上へ揺れる
 	press(m, "s")
 	m.set.anim.Finish()
 	clk.t = start.Add(peak)
-	if got := strings.Join(strings.Split(ansi.Strip(m.render()), "\n")[:headerRows], "\n"); got != header {
+	if got := strings.Join(strings.Split(ansi.Strip(m.render()), "\n")[:m.headerRows()], "\n"); got != header {
 		t.Fatalf("設定画面を開いているのに、揺れたレーンがヘッダに乗った:\n%s\n---\n%s", got, header)
 	}
 }

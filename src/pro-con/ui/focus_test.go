@@ -15,7 +15,7 @@ func TestBoardDimsWhileTyping(t *testing.T) {
 			if !strings.Contains(l, "\x1b[48;5;") {
 				continue
 			}
-			if i >= headerRows && i < len(lines)-len(m.footGroup()) {
+			if i >= m.headerRows() && i < len(lines)-len(m.footGroup()) {
 				board++
 			} else if strings.Contains(l, bg(236)) {
 				input++

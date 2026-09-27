@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -61,5 +62,67 @@ func TestRejectedRequestShownOnce(t *testing.T) {
 	}
 	if len(be.rejected) != 0 {
 		t.Fatal("渡した分を取らない")
+	}
+}
+
+// 持ち主の画面が無い join の画面 (issue 543): 罫線の上に全幅の帯を出す。dispatcher が動いている間は「止まっても誰も起こさない」、
+// 止まったら「カードは進まない」。持ち主が居る・画面を数えられない・持ち主の画面では出さない。
+func TestOwnerlessJoinBand(t *testing.T) {
+	be := &joinSpy{stopSpy: &stopSpy{spy: newSpy()}}
+	be.snap.Screens = []backend.Screen{{ID: "aaaaaa", Join: true, Self: true}, {ID: "bbbbbb", Join: true}}
+	band := func(m *Model) string {
+		m.width, m.height = 200, 30
+		lines := strings.Split(ansi.Strip(m.render()), "\n")
+		if len(lines) != m.height {
+			t.Fatalf("帯を足して画面の高さが %d 行 (期待 %d)", len(lines), m.height)
+		}
+		if !strings.HasPrefix(lines[m.headerRows()-1], "───") {
+			t.Fatalf("ヘッダの最後の行が罫線でない: %q", lines[m.headerRows()-1])
+		}
+		if m.headerRows() == 4 {
+			return ""
+		}
+		return lines[3]
+	}
+	cases := []struct {
+		name  string
+		setup func()
+		want  []string // 空なら帯を出さない
+	}{
+		{"動いている", func() {}, []string{"⚠ 持ち主の画面が無い", "止まっても誰も (supervisor も) 起こし直さない", "持ち主の画面 (pro-con) を開くと見張りが戻る"}},
+		{"落ちた", func() { be.snap.DispatcherTick, be.snap.DispatcherGone = be.snap.Now.Add(-3*time.Minute), true }, []string{"■ カードは進まない", "止まっている (最後の Tick 3分前)", "開くと起きる"}},
+		// プロセスは居るのに回っていない: lock を持ったままなので、持ち主の画面を開いても起きない (「開くと起きる」と言わない)
+		{"固まった", func() { be.snap.DispatcherTick = be.snap.Now.Add(-3 * time.Minute) }, []string{"■ カードは進まない", "3分前から回っていない", "抜けるまでは起きない"}},
+		{"1 度も回っていない", func() { be.snap.DispatcherTick = time.Time{} }, []string{"■ カードは進まない", "1 度も回っていない"}},
+		{"人が止めた", func() { be.snap.DispatcherHeld = true }, []string{"■ カードは進まない", "人が止めてある", "c で起こす"}},
+		{"持ち主が居る", func() {
+			be.snap.DispatcherTick = be.snap.Now.Add(-3 * time.Minute)
+			be.snap.Screens = append(be.snap.Screens, backend.Screen{ID: "cccccc"})
+		}, nil},
+		{"数えられない", func() { be.snap.DispatcherTick, be.snap.Screens = be.snap.Now.Add(-3*time.Minute), nil }, nil},
+	}
+	base := be.snap
+	for _, c := range cases {
+		be.snap = base
+		be.snap.Screens = append([]backend.Screen(nil), base.Screens...)
+		c.setup()
+		got := band(New(be, nil))
+		if c.want == nil && got != "" {
+			t.Fatalf("%s: 帯を出した: %q", c.name, got)
+		}
+		if c.name == "固まった" && strings.Contains(got, "開くと起きる") {
+			t.Fatalf("固まった dispatcher を「開くと起きる」と案内した: %q", got)
+		}
+		for _, w := range c.want {
+			if !strings.Contains(got, w) {
+				t.Fatalf("%s: 帯に %q が無い: %q", c.name, w, got)
+			}
+		}
+	}
+	// 持ち主の画面 (join でない backend) は、join の画面しか数えられなくても出さない (持ち主の画面そのものは数えに入っている)
+	owner := newSpy()
+	owner.snap.Screens = base.Screens
+	if got := band(New(owner, nil)); got != "" {
+		t.Fatalf("持ち主の画面に帯を出した: %q", got)
 	}
 }
