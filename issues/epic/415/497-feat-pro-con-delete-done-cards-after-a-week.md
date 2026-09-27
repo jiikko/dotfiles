@@ -1,5 +1,7 @@
 # 497 (feat): 完了から 1 週間たったカードを自動で消し、session と worktree は人が明示したときだけ消す
 
+> 🚨 **担当中: dotfiles-04 (1 週間の削除を予定の表へ移す)**（2026-09-28〜）
+
 起票日: 2026-09-26
 
 親: [415](415-design-claude-pm-worker-orchestration.md)
