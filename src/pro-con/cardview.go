@@ -73,12 +73,13 @@ type cardSummary struct {
 	// Assignee は担当 = 今手を動かす者 (card.Assignee。「PG 待ち」「PM 分解中」)。Owner は記録のまま (作った・受けた者。issue 476)
 	Assignee string `json:"assignee,omitempty"`
 	// RoleStep は役の番のカードの、役の側の段階 (「PM 知らせ待ち」「PM 分解中 ▸ Bash: …」。issue 480。画面のバッジと同じ中身)
-	RoleStep string `json:"roleStep,omitempty"`
+	RoleStep string     `json:"roleStep,omitempty"`
+	state    card.State // 経過の語 (State.SinceText) に使う。JSON には State のラベルを出す
 }
 
 // summarize は cards (記録の全カード) から、順番で待っている前のカードも引く。誰の番と担当は dispatcher の様子 v で決める。
 func summarize(c card.Card, cards []card.Card, v dispatcherView) cardSummary {
-	return cardSummary{ID: c.ID, State: c.State.Label(), Title: c.Title, Purpose: c.Purpose.Name(), Owner: c.Owner, Session: c.Session, Since: c.Since,
+	return cardSummary{ID: c.ID, State: c.State.Label(), state: c.State, Title: c.Title, Purpose: c.Purpose.Name(), Owner: c.Owner, Session: c.Session, Since: c.Since,
 		Waiting: waiting(c, cards), Question: c.Wait.Question, Archived: c.Archived, Deleting: c.Deleting(), Turn: c.Turn(v.roles).Label(),
 		Assignee: c.Assignee(v.roles, v.states), RoleStep: v.roleStep(c)}
 }
@@ -283,7 +284,7 @@ func runCardList(args []string, env viewEnv, stdout, stderr io.Writer) int {
 		if s.Purpose == card.ForQuestion.Name() { // 画面の 1 行目と同じ印 (issue 531)
 			title = card.QuestionMark + " " + title
 		}
-		line := fmt.Sprintf("%s  %s  %s  担当: %s  (%s)", s.ID, col, title, orDashCLI(s.Assignee), fmtAge(now.Sub(s.Since)))
+		line := fmt.Sprintf("%s  %s  %s  担当: %s  (%s)", s.ID, col, title, orDashCLI(s.Assignee), s.state.SinceText(fmtAge(now.Sub(s.Since))))
 		if s.Waiting != "" {
 			line += "  待ち: " + s.Waiting
 		}
@@ -373,7 +374,7 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 	c := d.Card
 	p := func(format string, a ...any) { _, _ = fmt.Fprintf(w, format+"\n", a...) }
 	p("%s  %s", c.ID, c.Title)
-	p("状態: %s (%s)  担当: %s  repo: %s  session: %s", c.State.Label(), fmtAge(now.Sub(c.Since)), orDashCLI(d.Assignee), orDashCLI(c.Repo), orDashCLI(c.Session))
+	p("状態: %s  担当: %s  repo: %s  session: %s", c.State.SinceText(fmtAge(now.Sub(c.Since))), orDashCLI(d.Assignee), orDashCLI(c.Repo), orDashCLI(c.Session))
 	var refs []string
 	for _, r := range c.Issues {
 		refs = append(refs, r.String()+" ("+r.Status+")")

@@ -790,3 +790,24 @@ func TestCardViewReadsArchive(t *testing.T) {
 		t.Fatalf("--all で記録と書庫の両方にあるカードを 1 枚として出していない: %q", out)
 	}
 }
+
+// list と show の経過は、何の経過かを語で添える (issue 562)。裸の「(17 分)」は、完了のカードで依頼から完了までの所要と読み違えられた。
+func TestCardListAgeSaysWhatItMeasures(t *testing.T) {
+	env := viewFixture(t)
+	env.now = func() time.Time { return time.Now().Add(17 * time.Minute) }
+	_, out, _ := viewCmd(t, env, "list", "--all")
+	for id, want := range map[string]string{"C-001": "(質問待ち 17 分)", "C-002": "(依頼から 17 分)", "C-003": "(完了から 17 分)"} {
+		found := false
+		for _, l := range strings.Split(out, "\n") {
+			if strings.HasPrefix(l, id+" ") {
+				found = strings.Contains(l, want)
+			}
+		}
+		if !found {
+			t.Errorf("%s の行に %q が無い: %q", id, want, out)
+		}
+	}
+	if _, out, _ := viewCmd(t, env, "show", "C-003"); !strings.Contains(out, "状態: 完了から 17 分  担当: ") {
+		t.Errorf("show の状態に経過の起点が無い: %q", out)
+	}
+}

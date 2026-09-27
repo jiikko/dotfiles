@@ -181,3 +181,14 @@ func TestDrawerClosesWhenCardVanishes(t *testing.T) {
 		t.Fatalf("消えたカードの詳細が開いたまま: showDetail=%v drawerCard=%q", m.showDetail, m.drawerCard)
 	}
 }
+
+// 詳細の状態の経過は、何の経過かを語で添える (issue 562。card list / show と同じ State.SinceText)。
+func TestDrawerStateAgeSaysWhatItMeasures(t *testing.T) {
+	be := newSpy()
+	be.snap.Cards = []card.Card{{ID: "C-001", State: card.Done, Since: be.snap.Now.Add(-17 * time.Minute)}}
+	m := New(be, nil)
+	m.width, m.drawerCard = 200, "C-001"
+	if body := ansi.Strip(strings.Join(m.drawerBody(), "\n")); !strings.Contains(body, "状態: 完了から 17分  担当: ") {
+		t.Fatalf("詳細の状態に経過の起点が無い:\n%s", body)
+	}
+}

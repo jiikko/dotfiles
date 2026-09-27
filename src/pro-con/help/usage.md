@@ -38,6 +38,7 @@
 ## 待つ・見る
 
 - `pro-con card list` / `pro-con card show <カード>` / `pro-con card log <カード>` (PG の活動。--follow で追う)
+- `card list` の行末と `card show` の状態の経過は、今の列に入ってからのもの (`完了から 17 分` / `作業中 6 分`)。依頼から完了までの所要ではない (所要は `card show` の履歴の時刻から数える。issue 562)
 - `pro-con card list` の絞り込み (どれも AND): `--state <列>` / `--purpose work|question` / `--grep <語>` (題名・カード ID・issue 番号・依頼の原文。空白で区切ると全部を含むもの。画面の `/` と同じ一致) / `--issue dotfiles#532` (`#532` や `532` は repo を問わない) / `--repo <名前>` / `--all` (書庫へ移したものも)
 - `pro-con card wait <カード> --until review` (その列に来るまで待つ。既定 10 分で時間切れは rc=1)
 - `pro-con screen` で人の画面に今出ているものを読む (読むだけ)

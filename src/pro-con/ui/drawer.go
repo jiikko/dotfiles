@@ -158,7 +158,7 @@ func (m *Model) drawerBody() []string {
 			out = append(out, l)
 		}
 	}
-	add("", fmt.Sprintf("状態: %s (%s)  担当: %s  repo: %s  session: %s", c.State.Label(), fmtDur(m.snap.Now.Sub(c.Since)),
+	add("", fmt.Sprintf("状態: %s  担当: %s  repo: %s  session: %s", c.State.SinceText(fmtDur(m.snap.Now.Sub(c.Since))),
 		m.assignee(c), c.Repo, orDash(c.Session)))
 	var refs []string
 	for _, r := range c.Issues {
