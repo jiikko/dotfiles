@@ -15,7 +15,7 @@ import (
 // claim の担当者バナー (issue 本文冒頭の `> 🚨 **担当中: <誰>**（YYYY-MM-DD〜）`)。
 //
 // なぜ viewer が書くか: next/ の目印は next/ を見る入口にしか届かないので、claim ルール
-// (_claude/rules/claim-issue-in-next-and-push.md) は本文冒頭にもバナーを要求し、CI
+// (_claude/issue-rules.d/claim-issue-in-next-and-push.md) は本文冒頭にもバナーを要求し、CI
 // (tests/issues/test_next_claims_have_banner.sh) がバナーの無い claim を落とす。`n` が目印だけを
 // 置くと、`n` で付けた claim は必ず CI で赤になる (dotfiles issue 403 の残タスク)。
 //

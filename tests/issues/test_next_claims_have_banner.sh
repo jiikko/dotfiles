@@ -4,7 +4,7 @@
 #
 # なぜ: `next/` の目印は next/ を見る入口にしか届かない。issue ファイルを直接開く / 別経路から照会する
 # 相手には claim が存在しないのと同じで、2026-09-11 に照会の往復と推測による誤帰属を生んだ (retro 361)。
-# claim ルール (_claude/rules/claim-issue-in-next-and-push.md) は本文にも書けと要求しているが、
+# claim ルール (_claude/issue-rules.d/claim-issue-in-next-and-push.md) は本文にも書けと要求しているが、
 # next/ への push は hook が促す一方バナーには促す仕掛けが無く、push した時点で claim が閉じたように感じて落ちる。
 # glogx の `n` も symlink だけを作るので hook では捕まらない。ここ (CI) で止める。issue 403。
 #
