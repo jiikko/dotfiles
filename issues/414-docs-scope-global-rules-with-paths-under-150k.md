@@ -95,7 +95,7 @@ glob の候補は `**/*.swift` / `**/project.yml` / `**/Package.swift` / `**/*.x
 - [x] `~/.claude/CLAUDE.md` の索引表で、`paths:` 付きにした rule の発動点を「読み込まれないときは直接 Read する」に揃える
 - [x] 採った glob で実際に読み込まれることを確かめる（`claude -p --model haiku --settings '{"disableAllHooks":true}' --allowedTools=Read`
       でテストファイルを Read させる / 何も Read させない、の 2 通り。hook を切らないと Stop hook が応答を上書きする）
-- [ ] obaket のセッションの常時読み込み合計を測り直し、結果をこの issue に書く
+- [x] obaket のセッションの常時読み込み合計を測り直し、結果をこの issue に書く (143.3k。下の「obaket の実測」)
 
 ## 関連ファイル
 
@@ -187,8 +187,26 @@ Read なしでも YES になった（索引を見て答えていた）。rule �
   `tests/nvim/test_cheatsheet.sh` (このマシンに tree-sitter の parser が揃っておらず、実行のたびにダウンロードの表示が混ざる)
 ### 残タスク
 
-- [ ] obaket のセッションの常時読み込み合計の実測（このマシンに my-products の checkout が無く測れなかった。上の 141.8k は
-      起票時の repo 層の値を足した見積もり）。受け入れ条件の最後の項目。obaket のあるマシンのセッションで `wc -m` を取り直す
+- [x] obaket のセッションの常時読み込み合計の実測 (2026-09-28。下の「obaket の実測」)
 - 2026-09-25（dotfiles-7d）: A を戻した（commit「docs(claude): mutation-verify の paths: を外し、無条件の読み込みに戻す (issue 414)」）。
   B だけでは obaket の見積もりが 141.8k で、上限までの余裕は約 8k しか戻っていない。D（issue 運用の 3 本 9.5k を hook 注入へ寄せる）を
   検討する時期は近い
+
+### obaket の実測 (2026-09-28)
+
+checkout が無くても測れる: `gh api repos/jiikko/<repo>/contents/<path>?ref=<sha>` で `CLAUDE.md` と `.claude/rules/*.md` を取り、
+`paths:` の無いファイルだけを `LC_ALL=en_US.UTF-8 wc -m` で数えた (clone はしていない)。my-products は master `6223aac0`、
+obaket はその submodule の commit `92c83eb`。
+
+| 層 | 字数 |
+|---|---|
+| global (`_claude/rules` 34 本中 `paths:` 無しの 30 本 + `~/.claude/CLAUDE.md`。dotfiles `cace043a`) | 116.4k |
+| my-products umbrella (`CLAUDE.md` + `.claude/rules` 13 本中 `paths:` 無しの 5 本) | 13.6k |
+| obaket (`CLAUDE.md` + `.claude/rules` 19 本中 `paths:` 無しの 4 本) | 13.3k |
+| **obaket のセッション** | **143.3k** (上限 150k まで約 6.7k) |
+
+- 見積もり (141.1k) より repo 層が 2.2k 多い (起票時は 24.7k、今は 26.9k)
+- `wc -m` の合計であって、Claude Code の警告の値そのものではない (起票時は警告の値と `paths:` 無しの合計がほぼ一致した)
+- 余裕は約 6.7k で、global の流入は 3 日で約 9k だった (9/25 の 117.1k → 9/27 の 126.0k)。**再開の trigger**: obaket の起動で
+  上限超えの警告が再び出たとき、または global が 123k を超えたとき
+
