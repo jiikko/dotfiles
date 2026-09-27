@@ -37,8 +37,8 @@ concat — 複数の動画ファイルを無劣化で結合します。
     # 元ファイルを残す
     concat --keep video_001.mp4 video_002.mp4
 
-    # 数字直後の英大文字も連番として扱う (A, B, C …。共通の末尾は出力名から外れる)
-    concat lecture_03A-enc.mp4 lecture_03B-enc.mp4 lecture_03C-enc.mp4   # → lecture_03.mp4
+    # 数字直後の英大文字も連番として扱う (A, B, C …。共通の末尾は出力名に残る)
+    concat lecture_03A-enc.mp4 lecture_03B-enc.mp4 lecture_03C-enc.mp4   # → lecture_03-enc.mp4
 
     # 複数グループを自動検出して結合
     concat clip_01.mp4 clip_02.mp4 scene_1.mp4 scene_2.mp4
@@ -479,6 +479,11 @@ EOF
   clean_prefix="${clean_prefix%[-_]}"
   if (( ${#clean_prefix} >= 3 )); then
     output_name="${clean_prefix}.mp4"
+    # 英字連番は外した共通サフィックスを出力名に残す (lecture_03A-enc … → lecture_03-enc.mp4)。
+    # 数字連番は従来どおり外す (既存の出力名を変えないため)
+    if (( letter_mode && use_stripped_stems )); then
+      output_name="${clean_prefix}${detected_common_suffix}.mp4"
+    fi
   else
     output_name="output.mp4"
   fi

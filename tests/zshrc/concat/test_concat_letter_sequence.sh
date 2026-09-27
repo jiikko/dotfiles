@@ -20,7 +20,7 @@ output=$(concat --keep "$TEST_DIR/lecture_03C-aac96k-enc.mp4" "$TEST_DIR/lecture
 exit_code=$?
 setopt err_exit
 assert_exit_code "0" "$exit_code" "Letter sequence concat succeeds"
-assert_file_exists "$TEST_DIR/lecture_03.mp4" "Output name drops the letter and common suffix"
+assert_file_exists "$TEST_DIR/lecture_03-aac96k-enc.mp4" "Output name drops the letter and keeps the common suffix"
 assert_not_contains "$output" "スキップしました" "No false 'skipped' warning on single-group fallthrough"
 order=$(print -r -- "$output" | grep -E '^   [0-9]+\. ' | sed -E 's/^   [0-9]+\. //' | tr '\n' ' ' || true)
 if [[ "$order" == "lecture_03A-aac96k-enc.mp4 lecture_03B-aac96k-enc.mp4 lecture_03C-aac96k-enc.mp4 " ]]; then
