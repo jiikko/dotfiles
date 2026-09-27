@@ -2,7 +2,7 @@
 
 起票日: 2026-09-26
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 
@@ -76,9 +76,11 @@
   - [P2] rc 1 を成功と読む → 消す側の git は rc 0 以外を失敗にする (run0)
   - 記録だけ: revert された commit も - になる (commit は master の歴史に残るので失わない)
   - 変異 28 本を 1 本ずつ当てて全部 red。直した後の実物の一覧も 36 個 / 14 個
-- [ ] 取り込み後、本物で `pro-con worktree clean --yes` を人が回して、消した 36 個 / 残した 14 個を確かめる
+- [x] 取り込み後、本物で `pro-con worktree clean --yes` を回して、消した数と残した数を確かめる
   - 550 (2026-09-27) で dispatcher の予定が毎日 04:00 にこの `--yes` を回すようにした。人が回す代わりに、550 の初回の予定の結果
     (`pro-con config show` の前回・`…/live/schedule/worktree-clean.out`) で確かめる。数は 2026-09-27 に数え直すと 92 個中 66 個が消してよい・26 個が残す
+  - 確認 (2026-09-27 13:39〜13:43、550 の初回の予定): rc=0・worktree 消した 66・残した 26・失敗 0 / session 消した 63 枚。一覧だけのモードの 66 / 26 と一致。
+    `.claude/worktrees` 2.9GB → 936MB、`refs/pro-con/removed/` に 190 個退避
 
 ## 関連
 

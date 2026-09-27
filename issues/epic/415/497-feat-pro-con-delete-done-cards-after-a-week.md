@@ -23,7 +23,7 @@
 
 1. **カードの自動削除**: 完了にした時刻から 1 週間たったカードを、dispatcher が書庫から消す (記録から書庫へ移すのは今どおり 24 時間)。
    消すのは「完了」のカードだけ (削除の途中・PG を止め終えていない・人の番のカードは消さない)。1 週間は定数にして、設定で変えるかは決める
-2. **session と worktree は人が明示したときだけ消す**: `pro-con worktree clean` (492) を広げ、`--yes` のときに、消せる条件を満たすカードの
+2. **session と worktree は人が明示したときだけ消す** (→ 550 (2026-09-27) で更新: dispatcher の予定が毎日 04:00 に `pro-con worktree clean --yes` を回す。止めるのは `pro-con config set schedule off`): `pro-con worktree clean` (492) を広げ、`--yes` のときに、消せる条件を満たすカードの
    worktree とブランチ (今どおり) に加えて、**そのカードの起動の記録の行と session の transcript も消す**。既定 (一覧だけ) では消す物を全部並べる
    - transcript は Claude Code の持ち物で消すと戻せない。消すのは、pro-con が起動したと記録で示せる session のものだけ (外の session の transcript に触らない)
 3. 🚨 **1 と 2 の食い違いを埋める**: 今の `worktree clean` は、カードが記録にも書庫にも無い worktree を「記録に無い」として消さない。

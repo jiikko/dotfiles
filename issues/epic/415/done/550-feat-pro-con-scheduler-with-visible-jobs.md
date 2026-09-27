@@ -1,10 +1,9 @@
 # 550 (feat): 決まった時刻に決まったコマンドを pro-con が回すスケジューラ (設定画面で「何時に何が呼ばれるか」を見られる)
 
-> 🚨 **担当中: dotfiles の issue 550 を実装しているセッション (worktree wt-550-sched)**（2026-09-27〜）
 
 起票日: 2026-09-27
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 
@@ -104,7 +103,7 @@ reflog にしか無い版は `refs/pro-con/removed/` に退避) が、人が一�
 - [x] dispatcher が止まっていた間に過ぎた予定の扱いが決まっていて、画面に出ている (1 回だけ回す。「次回」に出す)
 - [x] 人の手の実行と重ならない (`worktree-clean.lock`。`TestWorktreeCleanYesRefusesWhileLocked`)
 - [x] 「自動で消してよいか」の結論と理由を本文に書く (上の節)
-- [ ] 取り込み後、本物の dispatcher で初回の予定が回ったことを確かめる (下の残り)
+- [x] 取り込み後、本物の dispatcher で初回の予定が回ったことを確かめる (下の「本物での確認」)
 
 ## 関連ファイル
 
@@ -142,11 +141,9 @@ reflog にしか無い版は `refs/pro-con/removed/` に退避) が、人が一�
     字面は「pro-con …」だが起こすのは os.Executable() の実体
   - 変異 (bin/mutate-verify): 実装 13 本・1 周目の修正 18 本 (うち 3 本はコンパイルできない形だったので当て直し)・2 周目の修正 6 本 (うち 2 本は当て直し。1 本は結果の行が rc を持つことを見るテストが無く、足してから red)・3 周目の修正 2 本、すべて狙ったテストが red。
     1 周目で緑だった「記録を読めないなら回さない」は、次の書き込みの失敗が同じ結果を出していたため。テストに理由の文面まで見させて red にした
-- 残り:
-  - [ ] 取り込み後、本物の dispatcher で初回の予定が回ったこと (`pro-con config show` の前回・`…/live/schedule/worktree-clean.out`) を確かめる。
-    初回は記録が無いので、新版の dispatcher が起きた最初の Tick で回る (492 の一覧で「消してよい」66 個が対象)
-- 反証レビュー (sonnet 1 体、2026-09-27):
-  - [P1] 採用: 「経過時間で回す処理は purge だけ」は誤り。5 つある (今の形の表と対応方針 3 を直した)
-  - 反証できなかった: 時刻で回す仕組みは無い / worktree clean を呼ぶのは CLI の入口 (`worktreecmd.go`) だけ / 設定画面のタブ構成 / 関連 issue の要約 / 同種の issue は無い
-  - 自己参照の罠 (dispatcher が子で worktree clean を起こすと、自分や PM が「動いている」と判定されて全部残る): 判定のコード上は見当たらない
-    (dispatcher は claude の session ではなく、cwd も PG の worktree の外)。ただし dispatcher の cwd が worktree の中になる場合が無いかは、実装のときに実測する
+- 本物での確認 (2026-09-27): push と ~/dotfiles の pull の後、動いていた dispatcher が新版へ入れ替わり、最初の Tick (13:39:02) で初回の予定を起こした
+  (記録が無いので即回る = 設計どおり)。13:43:16 に rc=0 で終わった: 「結果: worktree 消した 66・残した 26・失敗 0 / session 消した 63 枚・失敗 0 枚 (rc=0)」
+  (492 の一覧だけのモードで同じ日に数えた 66 / 26 と一致)。`.claude/worktrees` は 2.9GB → 936MB。reflog にしか無い版を `refs/pro-con/removed/` に 190 個退避。
+  `pro-con config show` の前回・次回 (09-28 04:00) と、出来事 (`pro-con log` の schedule: 起こした / 終わった) も出た。
+  設定画面の予定のタブは実画面では見ていない (描画はテストと試しの描画で確かめた)
+- 残り: なし (時刻の変更・既存の経過時間の処理を表に載せる、は範囲外として起票しない。要るときに起票する)
