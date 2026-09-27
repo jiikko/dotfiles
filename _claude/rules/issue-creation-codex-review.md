@@ -37,7 +37,7 @@ issue のレビュー依頼。この issue の記述は間違っているとい�
 ---
 EOF
 cat issues/NNN-*.md >> tmp/codex_review/prompt_issue_NNN.md   # 必要なら関連コードも
-cat tmp/codex_review/prompt_issue_NNN.md | codex exec --skip-git-repo-check --color never -
+cat tmp/codex_review/prompt_issue_NNN.md | codex exec -m gpt-6-luna -s read-only --skip-git-repo-check --color never -
 
 # 3. 指摘を反映して issue を訂正してから commit
 ```

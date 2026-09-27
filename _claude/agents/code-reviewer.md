@@ -149,14 +149,15 @@ Step 5 まで完了したら、二段階目として Codex によるレビュー
 
 ## 手順
 
-以下のコマンドで Codex にレビューさせる（`command` プレフィックス必須）:
+以下のコマンドで Codex にレビューさせる（`command` プレフィックス必須。モデルの明示と `</dev/null` の理由は
+`~/.claude/skills/codex-review/SKILL.md` の「ルール」が正本。トップレベルの `codex review` は `-m` を受け付けないので `codex exec review` を使う）:
 
 ```bash
 # 未コミット変更がある場合
-command codex review --uncommitted
+command codex exec review -m gpt-6-luna --uncommitted </dev/null
 
 # コミット済みの場合
-command codex review --commit {sha}
+command codex exec review -m gpt-6-luna --commit {sha} </dev/null
 ```
 
 タイムアウトは 300秒に設定する。
