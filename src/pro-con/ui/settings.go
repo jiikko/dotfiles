@@ -890,7 +890,7 @@ func (m *Model) scheduleLines(w int) []string {
 			boxLine(border, " "+sgrBold+r.When+"  "+r.Command+sgrReset, w),
 			boxLine(border, "   前回  "+last, w),
 			boxLine(border, "   次回  "+r.Next, w),
-			boxLine(border, sgrDim+"   出力  "+r.Out+" / .err"+sgrReset, w))
+			boxLine(border, sgrDim+"   出力  "+r.OutText()+sgrReset, w))
 	}
 	if s.scheduleErr != nil {
 		out = append(out, boxLine(border, sgrRed+" スケジューラージョブの記録を読めない: "+s.scheduleErr.Error()+sgrFgReset, w))

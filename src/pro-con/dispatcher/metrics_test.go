@@ -12,6 +12,7 @@ import (
 	"pro-con/eventlog"
 	"pro-con/live"
 	"pro-con/metrics"
+	"pro-con/schedule"
 	"pro-con/store"
 )
 
@@ -47,9 +48,16 @@ func TestClosedCardMetricsOutliveWeekPurgeAndExpireAt90Days(t *testing.T) {
 	var recorded []eventlog.Event
 	d := newDispatcher(t, dir, &fakeLauncher{}, nil)
 	d.PMOff, d.Now, d.Record = true, func() time.Time { return now }, func(evs []eventlog.Event) { recorded = append(recorded, evs...) }
+	d.Scheduled = []schedule.Job{purgeJob(t)}
 	tick := func() {
 		t.Helper()
 		if _, err := d.Tick(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	forcePurge := func() { // 予定の記録を消して、次の Tick で 1 週間の削除の予定を回させる (時計の枠を待たない)
+		t.Helper()
+		if err := os.Remove(filepath.Join(dir, store.ScheduleFile)); err != nil && !os.IsNotExist(err) {
 			t.Fatal(err)
 		}
 	}
@@ -67,9 +75,9 @@ func TestClosedCardMetricsOutliveWeekPurgeAndExpireAt90Days(t *testing.T) {
 	}
 
 	now = t0.Add(store.PurgeAfter + 2*time.Hour) // 書庫へ移り、1 週間の削除で書庫からも消える
-	d.purgedAt = time.Time{}
+	forcePurge()
 	tick()
-	d.purgedAt = time.Time{}
+	forcePurge()
 	tick()
 	if _, found, _ := store.Find(dir, "C-001"); found {
 		t.Fatal("1 週間たってもカードが残っている (前提が崩れた)")
@@ -79,7 +87,7 @@ func TestClosedCardMetricsOutliveWeekPurgeAndExpireAt90Days(t *testing.T) {
 	}
 
 	now = r.ClosedAt.Add(store.MetricsKeep)
-	d.purgedAt = time.Time{}
+	forcePurge()
 	recorded = nil
 	tick()
 	if _, ok := metricRows(t, dir)["C-001"]; ok {
@@ -207,7 +215,7 @@ func TestArchiveBackfilledBeforePurge(t *testing.T) {
 		t.Fatalf("書庫へ移せない: %v %v", moved, err)
 	}
 	d := newDispatcher(t, dir, &fakeLauncher{}, nil)
-	d.PMOff = true
+	d.PMOff, d.Scheduled = true, []schedule.Job{purgeJob(t)}
 	if _, err := d.Tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}

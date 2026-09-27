@@ -65,9 +65,14 @@ func (s *Sim) Schedule() ([]backend.ScheduleRow, error) {
 	var rows []backend.ScheduleRow
 	for _, j := range schedule.Jobs {
 		start := j.Slot(s.now)
-		rows = append(rows, backend.ScheduleRow{When: j.When(), Command: j.Command(), Next: j.Next(s.now).Format("01-02 15:04") + " (模擬)", Out: "(模擬は出力を書かない)",
+		row := backend.ScheduleRow{When: j.When(), Command: j.Command(), Next: j.Next(s.now).Format("01-02 15:04") + " (模擬)", Out: "(模擬は出力を書かない)",
 			Last: start.Format("01-02 15:04:05") + "〜" + start.Add(72*time.Second).Format("15:04:05") +
-				" rc=0 結果: worktree 消した 66・残した 26・失敗 0 / session 消した 62 枚・失敗 0 枚 (模擬)"})
+				" rc=0 結果: worktree 消した 66・残した 26・失敗 0 / session 消した 62 枚・失敗 0 枚 (模擬)"}
+		if j.Internal != "" { // 中で回す行は出力のファイルを持たない (本物の ScheduleRows と同じ)
+			row.Out = ""
+			row.Last = start.Format("01-02 15:04:05") + "〜" + start.Format("15:04:05") + " rc=0 結果: 書庫から消した 3 枚 (rc=0) (模擬)"
+		}
+		rows = append(rows, row)
 	}
 	return rows, nil
 }

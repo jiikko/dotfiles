@@ -1,6 +1,7 @@
 package dispatcher
 
 // 予定 (package schedule。issue 550): 決まった時刻に、表 (schedule.Jobs) の argv どおりに pro-con を子として起こす。
+// 中で回す行 (schedule.Job.Internal。issue 497 の書庫の削除) は子を起こさず、この Tick の中で回して同じ記録に書く (runInternal)。
 //
 // 起こす前に始めた時刻を記録 (store.ScheduleFile) に書く (途中で落ちて起き直しても、同じ枠で 2 回回さない)。記録を書けない・読めないなら回さない。
 // 子は裏の goroutine で待ち、結果は次の Tick で記録と出来事にする (出来事と記録の書き手を Tick の goroutine だけにする)。
@@ -43,21 +44,22 @@ type scheduleDone struct {
 
 // tickSchedule は終わった予定を記録し、回す時刻を過ぎた予定があれば 1 つだけ起こす (同時に走らせるのは 1 つまで)。
 func (d *Dispatcher) tickSchedule(ctx context.Context, now time.Time) []eventlog.Event {
-	if d.RunScheduled == nil {
+	if len(d.Scheduled) == 0 {
 		return nil
 	}
 	d.schedErrsNow = map[string]bool{}
 	defer func() { d.schedErrs = d.schedErrsNow }() // この Tick に出なかった理由は外す (一度直って同じ理由で再発したら、また出す)
 	// 🚨 busy を先に見る: goroutine は結果を置いてから busy を下ろすので、下りていれば結果は必ず置かれている
 	// (逆の順に読むと、2 手の間に終わった自分の予定を「待てなかった」と読む)
-	if d.schedBusy.Load() {
-		if now.Sub(d.schedStart) > scheduleStuckAfter { // 子が戻らない (git・claude rm が止まった等)。殺さずに知らせる
-			return d.scheduleErr(fmt.Sprintf("予定の子が %s に起こしてから戻らない (終わるまで次の予定を回さない。ps で worktree clean を見る)", d.schedStart.Local().Format("01-02 15:04")))
-		}
-		return nil
-	}
+	// 子を待っている間 (busy) は、子の行を新しく起こさず、中で回す行は進める
+	// (子が戻らなくても 1 週間の削除は止めない。以前の purge も子と関係なく回っていた = 子と同時に走るのは今までどおり。issue 497)
 	var notes []eventlog.Event
-	if r := d.schedDone.Swap(nil); r != nil {
+	busy := d.schedBusy.Load()
+	if busy {
+		if now.Sub(d.schedStart) > scheduleStuckAfter { // 子が戻らない (git・claude rm が止まった等)。殺さずに知らせる
+			notes = d.scheduleErr(fmt.Sprintf("予定の子が %s に起こしてから戻らない (終わるまで子の予定を回さない。ps で worktree clean を見る)", d.schedStart.Local().Format("01-02 15:04")))
+		}
+	} else if r := d.schedDone.Swap(nil); r != nil {
 		notes = append(notes, d.finishScheduled(*r)...)
 	}
 	rec, err := store.LoadSchedule(d.Dir)
@@ -80,12 +82,20 @@ func (d *Dispatcher) tickSchedule(ctx context.Context, now time.Time) []eventlog
 	}
 	for _, j := range d.Scheduled {
 		prev := rec[j.Name]
-		if running[j.Name] || !j.Due(prev.Start, now) {
+		if running[j.Name] || !j.Due(prev.Start, now) || busy && j.Internal == "" {
+			continue
+		}
+		if j.Internal == "" && d.RunScheduled == nil { // 子を起こす口が無い (起動時に理由を出した。中で回す行だけは回す)
 			continue
 		}
 		start := store.ScheduleRun{Start: now, RC: -1, Locked: prev.Locked}
 		if err := store.SaveScheduleRun(d.Dir, j.Name, start); err != nil {
 			return append(notes, d.scheduleErr("予定の記録を書けない (書けるまで予定を回さない): "+err.Error())...)
+		}
+		if j.Internal != "" { // 子を起こさず、この Tick の中で回す (始めた記録は上で書いた = 途中で落ちても同じ枠で 2 回回さない)
+			rc, note, evs := d.runInternal(j, now)
+			notes = append(notes, evs...)
+			return append(notes, d.finishScheduled(scheduleDone{job: j, run: store.ScheduleRun{Start: now, End: d.Now(), RC: rc, Note: note}})...)
 		}
 		d.schedBusy.Store(true) // 🚨 goroutine を起こす前に立てる (Tick の後の入れ替えが、子を起こす前の隙に exec しない)
 		d.schedStart = now
@@ -109,6 +119,14 @@ func (d *Dispatcher) tickSchedule(ctx context.Context, now time.Time) []eventlog
 // 既知の穴: 子を起こしてから子が lock を取るまでの間 (worktree clean は lock を設定の読み込みより前に取る) に dispatcher が落ちると、
 // 走っている子を「終わった」と読む (記録の文が違うだけで、何も消さず、同じ枠で回し直しもしない)。
 func (d *Dispatcher) settleOrphan(j schedule.Job, r store.ScheduleRun, now time.Time) (held bool, notes []eventlog.Event) {
+	if j.Internal != "" { // 中で回す行は Tick の中で締めるので、終わりの記録が無いのは回している途中で dispatcher が落ちたとき
+		r.End, r.RC, r.Locked = now, schedule.RCUnknown, 0
+		r.Note = "終わりの記録が無い (dispatcher の中で回している途中で dispatcher が止まったか、終わりを記録に書けなかった。どこまで進んだかは出来事を見る。次の枠で回し直す)"
+		if err := store.SaveScheduleRun(d.Dir, j.Name, r); err != nil {
+			return false, d.scheduleErr("予定の結果を記録に書けない: " + err.Error())
+		}
+		return false, []eventlog.Event{ev(eventlog.KindError, "", "", fmt.Sprintf("予定の %s: %s", j.Command(), r.Note))}
+	}
 	if j.Lock == "" {
 		return false, nil
 	}
@@ -139,6 +157,14 @@ func (d *Dispatcher) settleOrphan(j schedule.Job, r store.ScheduleRun, now time.
 		kind = eventlog.KindError
 	}
 	return false, []eventlog.Event{ev(kind, "", "", fmt.Sprintf("予定の %s: %s", j.Command(), r.Note))}
+}
+
+// runInternal は中で回す予定 (schedule.Job.Internal) を回し、記録に書く rc と結果の 1 行を返す。どの処理を呼ぶかは予定の名前で決まる。
+func (d *Dispatcher) runInternal(j schedule.Job, now time.Time) (rc int, note string, notes []eventlog.Event) {
+	if j.Name == schedule.CardPurge {
+		return d.purge(now)
+	}
+	return 1, "dispatcher が知らない中の予定 (" + j.Name + "。schedule.Jobs と dispatcher の版がずれている)", nil
 }
 
 // errScheduleRunning は予定のコマンドがまだ lock を持っている (settleOrphan の中だけで使う)。

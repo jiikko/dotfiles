@@ -42,12 +42,15 @@ const RCUnknown = -2
 // LockedAlarm は ExitLocked が何回続いたら失敗として出すか (1 回なら人の手の実行と重なっただけ)。
 const LockedAlarm = 2
 
-// Job は予定の 1 行: 毎日 Hour:Min (ローカル時刻) に `pro-con <Args...>` を回す。
+// Job は予定の 1 行: 毎日 Hour:Min (ローカル時刻) に `pro-con <Args...>` を子として回すか、Internal の処理を dispatcher の中で回す。
 type Job struct {
-	Name string   // 記録と出力の鍵 (schedule.json・schedule/<Name>.out / .err)
+	Name string   // 記録と出力の鍵 (schedule.json・schedule/<Name>.out / .err)。中で回す行は、どの処理を呼ぶかもこれで決まる
 	Hour int      // 0〜23
 	Min  int      // 0〜59
-	Args []string // pro-con に渡す引数 (argv[1:])
+	Args []string // pro-con に渡す引数 (argv[1:])。中で回す行は持たない
+	// Internal は子を起こさずに dispatcher が中で回す処理の説明 (画面の字面)。書き手を dispatcher 1 つに保つ処理 (426) に使う:
+	// 子に書庫を書かせると書き手が 2 つになり、子から受付の箱で頼むと、箱の「適用した」が消し終えたことを意味しない (issue 497)
+	Internal string
 	// Lock はコマンドが走っている間 flock で持つファイル (状態の置き場の下)。dispatcher が待てなかった実行 (抜けた・入れ替わった) の
 	// 終わりを、次の dispatcher がこの lock が空いたことで知る
 	Lock string
@@ -56,14 +59,24 @@ type Job struct {
 // WorktreeCleanLock は pro-con worktree clean --yes が持つ lock (dispatcher の予定と人の手の実行を重ねない)。
 const WorktreeCleanLock = "worktree-clean.lock"
 
-// Jobs は dispatcher が回す予定。
+// CardPurge は完了から 1 週間たったカードを書庫から消す、dispatcher の中で回す予定の名前 (dispatcher/forget.go の purge。issue 497)。
+const CardPurge = "card-purge"
+
+// Jobs は dispatcher が回す予定 (同じ Tick に回すのは 1 つだけなので、並びの順に回る)。
 var Jobs = []Job{
+	// 書庫のカードを消す (session・worktree は消さない。片付けの印を残し、04:00 の worktree clean がそれを読んで片付ける)
+	{Name: CardPurge, Hour: 3, Min: 30, Internal: "完了から 1 週間たったカードを書庫から消す"},
 	// 閉じたカードの PG の worktree・ブランチ・session を片付ける (issue 492)。消す判定は worktree clean が 1 個ずつ取り直してする
 	{Name: "worktree-clean", Hour: 4, Min: 0, Args: []string{"worktree", "clean", "--yes"}, Lock: WorktreeCleanLock},
 }
 
-// Command は画面に出す字面 (dispatcher が起こすものと同じ引数)。
-func (j Job) Command() string { return "pro-con " + strings.Join(j.Args, " ") }
+// Command は画面に出す字面 (dispatcher が起こすものと同じ引数。中で回す行は、そう分かる印を付けた説明)。
+func (j Job) Command() string {
+	if j.Internal != "" {
+		return "(dispatcher の中) " + j.Internal
+	}
+	return "pro-con " + strings.Join(j.Args, " ")
+}
 
 // When は「いつ」の字面。
 func (j Job) When() string { return fmt.Sprintf("毎日 %02d:%02d", j.Hour, j.Min) }

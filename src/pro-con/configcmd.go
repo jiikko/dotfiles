@@ -84,7 +84,7 @@ func showSchedule(dir string, s store.Settings, serr error, now time.Time, w io.
 	}
 	_, _ = fmt.Fprintf(w, "schedule %s\n", state)
 	for _, r := range rows {
-		_, _ = fmt.Fprintf(w, "  %s  %s\n    前回 %s\n    次回 %s\n    出力 %s / .err\n", r.When, r.Command, r.Last, r.Next, r.Out)
+		_, _ = fmt.Fprintf(w, "  %s  %s\n    前回 %s\n    次回 %s\n    出力 %s\n", r.When, r.Command, r.Last, r.Next, r.OutText())
 	}
 	return err
 }

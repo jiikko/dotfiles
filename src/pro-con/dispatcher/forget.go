@@ -3,6 +3,7 @@ package dispatcher
 // 完了から 1 週間たったカードを記録から消し (store.Purge。その前に所要の記録を書き、90 日より古い所要の行を消す = metrics.go)、片付けが済んだカードの起動の記録の行と片付けの印を消す (issue 497)。
 // どちらも dispatcher が書き手 (書庫・印・起動の記録。426 の決定 1)。
 // 🚨 ここで消すのはカードの記録だけ。session・transcript・worktree・ブランチは pro-con worktree clean --yes が消す (schedule.go の予定が毎日回す。issue 550)。
+// 書庫を消すのも予定の 1 行 (schedule.CardPurge。毎日 03:30。dispatcher の中で回す)。予定のタブに出て、schedule off で止まる。
 
 import (
 	"fmt"
@@ -12,34 +13,35 @@ import (
 	"pro-con/card"
 	"pro-con/eventlog"
 	"pro-con/live"
+	"pro-con/schedule"
 	"pro-con/store"
 	"pro-con/wtclean"
 )
 
-// purgeEvery は書庫の古いカードを消しに行く間隔 (Tick ごとに書庫を読まない。消すのは 1 週間の単位なので 1 時間遅れてよい)。
-const purgeEvery = time.Hour
-
-// purge は書庫の古いカードを消す (起動して最初の Tick と、その後 purgeEvery ごと)。消せなくても Tick は続ける
-// (書庫が大きいままになるだけ。同じ失敗を Tick ごとに出来事へ書かない)。
-func (d *Dispatcher) purge(now time.Time) []eventlog.Event {
-	if !d.purgedAt.IsZero() && now.Sub(d.purgedAt) < purgeEvery {
-		return nil
-	}
-	d.purgedAt = now
-	notes := d.pruneMetrics(now)
+// purge は予定 (schedule.CardPurge。schedule.go の runInternal から) で書庫の古いカードを消し、予定の記録に書く rc と結果の 1 行を返す。
+// 消せなくても Tick は続ける (書庫が大きいままになるだけ。次の予定で消し直す)。
+func (d *Dispatcher) purge(now time.Time) (rc int, note string, notes []eventlog.Event) {
+	notes = d.pruneMetrics(now)
+	pruned := len(notes) == 0
 	metered, ok := d.meterArchive(now) // 消すカードの所要を先に書く (issue 516)
 	notes = append(notes, metered...)
 	if !ok {
-		return notes
+		return 1, "消すカードの所要の記録を書けないので、書庫から消さなかった (出来事の error を見る)", notes
 	}
 	gone, err := store.Purge(d.Dir, now, d.purgeMark)
 	if err != nil {
-		return append(notes, ev(eventlog.KindError, "", "", "完了から 1 週間たったカードを消せない (次の Tick で消し直す): "+err.Error()))
+		notes = append(notes, ev(eventlog.KindError, "", "", "完了から 1 週間たったカードを消せない (次の予定で消し直す): "+err.Error()))
+		return 1, "書庫から消せない: " + err.Error(), notes
 	}
 	for _, c := range gone {
 		notes = append(notes, ev(eventlog.KindArchive, c.ID, "", c.ID+": "+store.PurgeText))
 	}
-	return notes
+	body := fmt.Sprintf("書庫から消した %d 枚", len(gone))
+	if !pruned { // 書庫からは消せたが、所要の記録の古い行は消せなかった (出来事に理由がある)
+		body += "・所要の記録の古い行は消せない"
+		rc = 1
+	}
+	return rc, schedule.ResultLine(body, rc), notes
 }
 
 // purgeMark は消すカードの片付けの印 (worktree・ブランチ・pro-con が起動した session)。起動の記録を読めなければ失敗 (印の無いまま消さない)。

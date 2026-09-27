@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -14,6 +16,7 @@ import (
 	"pro-con/dispatcher"
 	"pro-con/eventlog"
 	"pro-con/live"
+	"pro-con/schedule"
 	"pro-con/store"
 	"pro-con/wake"
 )
@@ -256,5 +259,16 @@ func TestTranscriptReaderReusesUnchangedTranscript(t *testing.T) {
 	moved := put("b", t0.Add(time.Minute))
 	if tr, _ := read("sid"); tr.Title != moved {
 		t.Fatalf("新しい方の transcript へ移らない: %q", tr.Title)
+	}
+}
+
+// 動いている pro-con の置き場を読めなくても予定の表は持たせる (中で回す 1 週間の削除は子を起こさないので回せる)。子を起こす口だけが無い。
+func TestScheduleForKeepsInternalWithoutExe(t *testing.T) {
+	jobs, run, warn := scheduleFor(t.TempDir(), "", errors.New("読めない"))
+	if run != nil || warn == "" || !slices.ContainsFunc(jobs, func(j schedule.Job) bool { return j.Name == schedule.CardPurge }) {
+		t.Fatalf("置き場を読めないときの予定 = %d 行 run=%v warn=%q", len(jobs), run != nil, warn)
+	}
+	if jobs, run, warn := scheduleFor(t.TempDir(), "/bin/pro-con", nil); run == nil || warn != "" || len(jobs) != len(schedule.Jobs) {
+		t.Fatalf("読めたときの予定 = %d 行 run=%v warn=%q", len(jobs), run != nil, warn)
 	}
 }

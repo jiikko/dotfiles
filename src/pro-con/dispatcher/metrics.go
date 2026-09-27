@@ -2,11 +2,11 @@ package dispatcher
 
 // 所要の記録 (issue 516)。閉じたカード 1 枚ごとに 1 行を store の metrics.jsonl へ書き、90 日より古い行を消す。書き手は dispatcher だけ。
 //
-// いつ書くか (どれも「書いていないカードを見つけたら書く」形。落ちても次の Tick / 次の 1 時間が書き直す):
+// いつ書くか (どれも「書いていないカードを見つけたら書く」形。落ちても次の Tick / 次の予定が書き直す):
 //   - 完了のカード: Apply の直後に記録を見て、PG を止め終えたもの (StopAfterClose が外れた) を書く。書庫へ移す (Archive) より先
 //   - 依頼の列ですぐ消した削除 (store.Result.Dropped): Apply の直後に書く。🚨 書けなかったら取り戻せない (カードはもう無い)
 //   - PG を止めてから消す削除: 記録から外す (dropCard) 前に書く。書けなければ外さない (次の Tick で書き直してから外す)
-//   - 書庫のカード: 1 時間ごとの片付け (purge) で、1 週間の削除 (store.Purge) より先に書く。書けなければ消さない。
+//   - 書庫のカード: 1 週間の削除の予定 (purge。schedule.CardPurge) で、削除 (store.Purge) より先に書く。書けなければ消さない。
 //     この issue より前に閉じたカードも、書庫に残っている分はここで埋め戻る
 //
 // 書いたカードは metered に終わり方と一緒に持つ (起動して最初に使うときにファイルから読む)。同じカードを 2 度書いても、読む側は後の行を正とする。
@@ -102,9 +102,9 @@ func (d *Dispatcher) meterArchive(now time.Time) ([]eventlog.Event, bool) {
 	d.loadMetered()
 	arch, err := store.LoadArchive(d.Dir)
 	if err != nil && arch == nil {
-		return []eventlog.Event{ev(eventlog.KindError, "", "", "所要の記録を埋めるために書庫を読めない (1 週間の削除も次の 1 時間へ): "+err.Error())}, false
+		return []eventlog.Event{ev(eventlog.KindError, "", "", "所要の記録を埋めるために書庫を読めない (1 週間の削除も次の予定へ): "+err.Error())}, false
 	}
-	notes := d.writeMetrics(d.unmetered(arch, now), "1 週間の削除も次の 1 時間へ。")
+	notes := d.writeMetrics(d.unmetered(arch, now), "1 週間の削除も次の予定へ。")
 	return notes, len(notes) == 0
 }
 
@@ -116,7 +116,7 @@ func (d *Dispatcher) pruneMetrics(now time.Time) []eventlog.Event {
 		err = store.PruneMetrics(d.Dir, now)
 	}
 	if err != nil {
-		return []eventlog.Event{ev(eventlog.KindError, "", "", "所要の記録の古い行を消せない (次の 1 時間で消し直す): "+err.Error())}
+		return []eventlog.Event{ev(eventlog.KindError, "", "", "所要の記録の古い行を消せない (次の予定で消し直す): "+err.Error())}
 	}
 	return nil
 }

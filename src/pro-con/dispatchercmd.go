@@ -143,10 +143,11 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 	d.Record = eventSink(dir, stdout, stderr)
 	// 予定 (issue 550)。e2e モードの偽の置き場と、1 回だけの dispatcher では回さない (--once の後に子を置き去りにする)
 	if e2e == nil && !*once {
-		if exe, err := os.Executable(); err != nil {
-			say(d, eventlog.KindError, "予定を回せない (動いている pro-con の置き場を読めない): "+err.Error())
-		} else {
-			d.Scheduled, d.RunScheduled = schedule.Jobs, dispatcher.ExecScheduled(exe, dir)
+		exe, err := os.Executable()
+		var warn string
+		d.Scheduled, d.RunScheduled, warn = scheduleFor(dir, exe, err)
+		if warn != "" {
+			say(d, eventlog.KindError, warn)
 		}
 	}
 	d.SeedNotified(notified)
@@ -568,4 +569,13 @@ func transcriptReader(projects string, c *live.TranscriptCache) func(string) (li
 		}
 		return c.Get(p)
 	}
+}
+
+// scheduleFor は dispatcher に持たせる予定の表と、子を起こす口を決める (動いている pro-con の置き場 exe を読めたか = exeErr)。
+// 読めなくても表は持たせる: 中で回す行 (1 週間の削除) は子を起こさないので回せる。読めなければ子を起こす口は nil で、理由を返す。
+func scheduleFor(dir, exe string, exeErr error) ([]schedule.Job, dispatcher.ScheduleRunner, string) {
+	if exeErr != nil {
+		return schedule.Jobs, nil, "子を起こす予定を回せない (動いている pro-con の置き場を読めない。dispatcher の中で回す予定だけ回す): " + exeErr.Error()
+	}
+	return schedule.Jobs, dispatcher.ExecScheduled(exe, dir), ""
 }

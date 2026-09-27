@@ -6,15 +6,27 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"pro-con/card"
 	"pro-con/eventlog"
 	"pro-con/live"
+	"pro-con/schedule"
 	"pro-con/store"
 )
 
-// 完了から 1 週間たったカードは、Tick が書庫から消し、片付けの印 (worktree・ブランチ・起動の記録の今の分と退いた分の session) を残す。
-// session・worktree は自動では消さない (起動の記録の行は残る)。
+// purgeJob は予定の表 (schedule.Jobs) の本物の 1 週間の削除の行 (表と dispatcher の配線ごと試す)。
+func purgeJob(t *testing.T) schedule.Job {
+	t.Helper()
+	i := slices.IndexFunc(schedule.Jobs, func(j schedule.Job) bool { return j.Name == schedule.CardPurge })
+	if i < 0 {
+		t.Fatal("予定の表に card-purge が無い")
+	}
+	return schedule.Jobs[i]
+}
+
+// 完了から 1 週間たったカードは、予定 (card-purge) の枠が来た Tick が書庫から消し、片付けの印 (worktree・ブランチ・
+// 起動の記録の今の分と退いた分の session) を残す。枠の前は書庫を読みに行かない。session・worktree は自動では消さない (起動の記録の行は残る)。
 func TestTickPurgesWeekOldCardsWithMark(t *testing.T) {
 	dir := t.TempDir()
 	old := card.Card{ID: "C-001", Title: "t", Repo: "dotfiles", State: card.Done, Ending: card.EndAnswered, Since: t0.Add(-store.PurgeAfter), Archived: true}
@@ -29,14 +41,21 @@ func TestTickPurgesWeekOldCardsWithMark(t *testing.T) {
 	}
 	d := newDispatcher(t, dir, &fakeLauncher{}, nil)
 	d.PMOff = true
-	d.purgedAt = t0.Add(-purgeEvery / 2) // 1 時間たつまでは書庫を読みに行かない
+	j := purgeJob(t)
+	d.Scheduled = []schedule.Job{j} // 子を起こす口 (RunScheduled) は持たない: 中で回す行はそれでも回る
+	slot := j.Slot(t0)
+	if err := store.SaveScheduleRun(dir, j.Name, store.ScheduleRun{Start: slot.Add(time.Minute), End: slot.Add(time.Minute), RC: 0}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := d.Tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if arch, _ := store.LoadArchive(dir); len(arch) != 1 {
-		t.Fatalf("1 時間たたないうちに消しに行った: 書庫 %d 枚", len(arch))
+		t.Fatalf("この枠で回し済みなのに消しに行った: 書庫 %d 枚", len(arch))
 	}
-	d.purgedAt = t0.Add(-purgeEvery)
+	if err := store.SaveScheduleRun(dir, j.Name, store.ScheduleRun{Start: slot.Add(-time.Minute), End: slot.Add(-time.Minute), RC: 0}); err != nil {
+		t.Fatal(err)
+	}
 	notes, err := d.Tick(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -56,6 +75,10 @@ func TestTickPurgesWeekOldCardsWithMark(t *testing.T) {
 	}
 	if !hasNote(notes, eventlog.KindArchive, "C-001: "+store.PurgeText) {
 		t.Fatalf("消したことを出来事に出さない: %v", notes)
+	}
+	if rec, err := store.LoadSchedule(dir); err != nil || rec[j.Name].RC != 0 || !rec[j.Name].Start.Equal(t0) || rec[j.Name].End.IsZero() ||
+		rec[j.Name].Note != schedule.ResultLine("書庫から消した 1 枚", 0) {
+		t.Fatalf("予定の記録 = %+v %v", rec[j.Name], err)
 	}
 	now, _ := live.LoadRegistry(reg)
 	retired, _ := live.LoadRetired(reg)

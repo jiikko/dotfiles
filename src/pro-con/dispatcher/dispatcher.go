@@ -70,8 +70,6 @@ var errWait = errors.New("待つ")
 // Dispatcher は dispatcher の 1 つ。
 type Dispatcher struct {
 	Dir string // 本物のモードの状態の置き場 (記録・箱・pro-con が起動した session の記録)
-	// purgedAt は最後に書庫の古いカードを消しに行った時刻 (forget.go の purge)
-	purgedAt time.Time
 	// TranscriptPath は session の transcript のパスを探す (所要の記録の枠を数える。metrics.go)。nil なら枠は「取れなかった」になる
 	TranscriptPath func(sessionID string) (string, error)
 	metered        map[string]string // 所要の記録に行を書いたカード → その行の終わり方 (metrics.go。nil ならまだ読んでいない)
@@ -178,8 +176,8 @@ type Dispatcher struct {
 	stopFrom    map[string]time.Time // 印の付いたカードを、この dispatcher が最初に止めに入った時刻 (close.go。諦めるまでの時間の起点)
 	unknownSeen map[string]bool      // 知らない state の警告を出した session id (unknownStateNote。止め直しの周・Tick ごとに重ねない)
 
-	// Scheduled は回す予定 (schedule.Jobs) / RunScheduled は予定を起こす口 (本物は ExecScheduled)。RunScheduled が nil なら予定を回さない
-	// (e2e モード・--once・テスト)。schedBusy は予定の子を待っている間、schedDone は終わった結果 (次の Tick が記録する)、
+	// Scheduled は回す予定 (schedule.Jobs。空なら予定を回さない = e2e モード・--once・テスト) / RunScheduled は子を起こす口
+	// (本物は ExecScheduled。nil なら子を起こす行は回さず、中で回す行 (Internal) だけ回す)。schedBusy は予定の子を待っている間、schedDone は終わった結果 (次の Tick が記録する)、
 	// schedErrs は前の Tick に出した回せない理由 / schedErrsNow はこの Tick に出した理由 (Tick の終わりに入れ替える = 出なくなった理由は外れる)
 	Scheduled    []schedule.Job
 	RunScheduled ScheduleRunner
@@ -251,7 +249,6 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	}
 	notes = append(notes, d.meter(now, res)...) // 書庫へ移す前 (issue 516)
 	notes = append(notes, d.archive(now)...)
-	notes = append(notes, d.purge(now)...)
 	notes = append(notes, d.tickSchedule(ctx, now)...) // 一覧の取得より先 (claude の一覧を取れない Tick でも予定は回す。子が自分で読んで失敗を返す)
 	// 書庫へ移した・削除したカードの添付を消す (記録を書いた後に消す。落ちても次の Tick が消し直す。issue 453)
 	if _, err := store.SweepAttachments(d.Dir, now); err != nil {

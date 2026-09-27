@@ -79,13 +79,13 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
     答えはカードの履歴に出る (PG の出力が無ければ記録だけから答える)
   - **片付け**は画面が見ていた完了のカードだけを Archived にする。完了から 24 時間たったカードは dispatcher が自動で片付ける。
     片付けたカードは次の Tick で記録から書庫 (`…/live/cards-archive.jsonl`) へ移す (issue 478: 記録を読む費用を
-    作ったカードの総数に比例させない)。書庫は `card show` / `card list --all` / `card wait` が読む (画面は読まない。dispatcher は 1 時間に 1 回、古いカードを消すときだけ読む)。
-    完了から 1 週間たったカードは dispatcher が書庫からも消す (issue 497。ID は使い回さない)。消す前に片付けの印
+    作ったカードの総数に比例させない)。書庫は `card show` / `card list --all` / `card wait` が読む (画面は読まない。dispatcher は 1 日に 1 回、古いカードを消す予定のときだけ読む)。
+    完了から 1 週間たったカードは dispatcher が書庫からも消す (issue 497。ID は使い回さない。予定の 1 行 `card-purge` = 毎日 03:30 に dispatcher の中で回す。下の「予定」)。消す前に片付けの印
     (`…/live/cards-purged.jsonl`。カード ID・完了の時刻・session・worktree・ブランチ) を残し、`worktree clean` がそれで片付ける。
     session・transcript・worktree・ブランチは `pro-con worktree clean --yes` が消す (dispatcher の予定が毎日 04:00 に回す。下の「予定」)
   - **所要の記録** (issue 516): カードを閉じたら (完了は PG を止め終えてから・削除は記録から外す前)、dispatcher が 1 行を `…/live/metrics.jsonl` に書く
     (ID・題名・repo・issue・ポイント・終わり方・時刻・列ごとに居た秒数とそのうち人の番だった秒数・回数・PG の枠)。1 週間の削除では消さず、閉じてから 90 日で消す
-    (1 時間に 1 回。消す前に件数を出来事に書く)。列ごとの時間はカードの足跡 (`card.Trail`。列を移すのは `Card.Enter` だけ) から、回数は履歴の文から出す。
+    (1 週間の削除の予定と同じ回。消す前に件数を出来事に書く)。列ごとの時間はカードの足跡 (`card.Trail`。列を移すのは `Card.Enter` だけ) から、回数は履歴の文から出す。
     枠は pro-con が起動した session の transcript から数え (449 の数え方)、取れなければ 0 ではなく理由 (`usageMissing`) を書く。`pro-con stats` が読む
 - 作業中のカードには、**pro-con が起動した session だけ** (記録 `…/live/sessions.json` にあるもの) の様子 (PG の出力の末尾・pid) を足す。
   照合は記録の行の session id・短い id・pid が全部一致したときだけ (pid が違う = 外の shell で同じ session を再開したもの、は外れる)。
@@ -260,11 +260,16 @@ glogx と意味を変えている字 (`a` attach / `r` 回答 / `n` 新しい依
 
 ## 予定 (issue 550。決まった時刻に dispatcher が回すコマンド)
 
-- 表は `schedule.Jobs` (src/pro-con/schedule) だけ。今は「毎日 04:00 に `pro-con worktree clean --yes`」の 1 つ。画面と `pro-con config show` に出す字面と、
-  dispatcher が起こす argv は同じ表の `Args` から作る (字面を別に持たない)
+- 表は `schedule.Jobs` (src/pro-con/schedule) だけ。今は 2 つ: 「毎日 03:30 に完了から 1 週間たったカードを書庫から消す」(`card-purge`) と
+  「毎日 04:00 に `pro-con worktree clean --yes`」。画面と `pro-con config show` に出す字面と、dispatcher が起こす argv は同じ表の `Args` から作る (字面を別に持たない)
+- **中で回す行** (`Internal`。今は `card-purge` だけ): 子を起こさず dispatcher が Tick の中で回す。字面は「(dispatcher の中) <説明>」。
+  書庫・片付けの印・所要の記録の書き手を dispatcher 1 つに保つため (426)。結果は子の行と同じく `schedule.json` と出来事に残る (出力のファイルは無い)
 - **見る所**: 設定画面 (s) の「スケジューラージョブ」のタブと `pro-con config show` (いつ・コマンド・前回の時刻 / rc / 結果の 1 行・次回・出力の置き場)。起こした・終わった・失敗は
   出来事 (`pro-con log` の `schedule` / `error`。ログのタブにも出る)
-- **止める**: `pro-con config set schedule off` か、設定のタブの「スケジューラージョブを回す」(既定 on)
+- **止める**: `pro-con config set schedule off` か、設定のタブの「スケジューラージョブを回す」(既定 on)。1 週間の削除 (`card-purge`) も止まる
+  - 設定を読めない・予定の記録 (`schedule.json`) を読めない / 書けないときも回さない (判定できないときは回さない側。出来事に error が 1 度出る)。
+    子の予定 (worktree clean) が戻らない間も、中で回す行 (1 週間の削除) は回る
+  - 失敗した枠は回し直さず、次の枠 (翌日) に回す
 - 回し方: dispatcher の Tick で、前回に始めた時刻がその日の予定の時刻より前なら、子として `pro-con <Args>` を起こす (cwd は状態の置き場、
   自分のプロセスグループ、stdout / stderr は `…/live/schedule/<名前>.out` / `.err` に毎回上書き)。起こす前に始めた時刻を `…/live/schedule.json` に書く
   (記録を読めない・書けないなら回さない)。dispatcher が止まっていた・マシンが寝ていた間の予定は、次に起きた最初の Tick で **1 回だけ** 回す
@@ -272,7 +277,7 @@ glogx と意味を変えている字 (`a` attach / `r` 回答 / `n` 新しい依
 - 🚨 子は殺さない (worktree remove とブランチの削除の間で殺すと、ブランチだけが残って二度と片付かない)。dispatcher が先に抜けた・入れ替わった実行は、
   次の dispatcher が子の lock (`worktree-clean.lock`) が空いたことで終わりを知り、出力のファイルから結果の行を読んで記録する (rc は分からない)。
   入れ替え (505) は予定の子を 30 分まで待つ
-- e2e モードと `--once` の dispatcher では回さない
+- e2e モードと `--once` の dispatcher では回さない (1 週間の削除も回らない)
 
 ## 設定 (`~/.config/pro-con/config.toml`)
 

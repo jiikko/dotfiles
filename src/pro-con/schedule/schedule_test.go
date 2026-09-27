@@ -63,10 +63,23 @@ func TestJobsCommandMatchesArgs(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	for _, j := range Jobs {
-		if j.Name == "" || seen[j.Name] || j.Hour < 0 || j.Hour > 23 || j.Min < 0 || j.Min > 59 || len(j.Args) == 0 {
+		// 子を起こす行 (Args) か中で回す行 (Internal) のどちらか一方だけ (両方あると、画面の字面と回すものがずれる)
+		if j.Name == "" || seen[j.Name] || j.Hour < 0 || j.Hour > 23 || j.Min < 0 || j.Min > 59 || (len(j.Args) == 0) == (j.Internal == "") {
 			t.Errorf("予定の行が不正: %+v", j)
 		}
 		seen[j.Name] = true
+	}
+}
+
+// 1 週間の削除は dispatcher の中で回す行で、画面にはそう分かる字面で出る (子を起こすコマンドに見せない。issue 497)。
+func TestJobsCardPurgeIsInternal(t *testing.T) {
+	i := slices.IndexFunc(Jobs, func(j Job) bool { return j.Name == CardPurge })
+	if i < 0 {
+		t.Fatal("card-purge の予定が無い")
+	}
+	j := Jobs[i]
+	if len(j.Args) != 0 || j.Command() != "(dispatcher の中) 完了から 1 週間たったカードを書庫から消す" || j.When() != "毎日 03:30" {
+		t.Errorf("card-purge = %+v / %q / %q", j, j.Command(), j.When())
 	}
 }
 

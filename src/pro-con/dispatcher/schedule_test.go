@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"pro-con/eventlog"
+	"pro-con/metrics"
 	"pro-con/schedule"
 	"pro-con/store"
 )
@@ -472,5 +473,144 @@ func TestScheduleErrTwoReasons(t *testing.T) {
 	}
 	if evs := d.tickSchedule(context.Background(), now.Add(time.Second)); len(evs) != 0 {
 		t.Errorf("2 回目に重ねた: %v", kinds(evs))
+	}
+}
+
+// 中で回す行 (1 週間の削除) は、子を起こす口 (RunScheduled) が無くてもこの Tick の中で回して記録を締める。子を起こす行は回さない。
+func TestTickScheduleInternalRunsWithoutRunner(t *testing.T) {
+	now := time.Date(2026, 9, 27, 9, 0, 0, 0, time.Local)
+	d := &Dispatcher{Dir: t.TempDir(), Now: func() time.Time { return now }, Scheduled: []schedule.Job{purgeJob(t), testJob}}
+	notes := d.tickSchedule(context.Background(), now)
+	rec, err := store.LoadSchedule(d.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := rec[schedule.CardPurge]
+	if !r.Start.Equal(now) || r.End.IsZero() || r.RC != 0 || r.Note != schedule.ResultLine("書庫から消した 0 枚", 0) {
+		t.Fatalf("中で回す行の記録 = %+v", r)
+	}
+	if !hasNote(notes, eventlog.KindSchedule, "予定の (dispatcher の中) 完了から 1 週間たったカードを書庫から消す が終わった: "+r.Note) {
+		t.Fatalf("終わったことを出来事に出さない: %v", notes)
+	}
+	d.tickSchedule(context.Background(), now) // 同じ枠では回し直さず、子の行も (口が無いので) 起こさない
+	rec, _ = store.LoadSchedule(d.Dir)
+	if _, ok := rec[testJob.Name]; ok || !rec[schedule.CardPurge].Start.Equal(now) {
+		t.Fatalf("口の無い子の行を起こした / 同じ枠で回し直した: %+v", rec)
+	}
+}
+
+// schedule off は中で回す行 (1 週間の削除) も止める (「pro-con が勝手に何をいつ消すか」を 1 つのスイッチで止める)。
+func TestTickScheduleOffStopsInternal(t *testing.T) {
+	now := time.Date(2026, 9, 27, 9, 0, 0, 0, time.Local)
+	d := &Dispatcher{Dir: t.TempDir(), Now: func() time.Time { return now }, Scheduled: []schedule.Job{purgeJob(t)}}
+	d.settings.ScheduleOff = true
+	d.tickSchedule(context.Background(), now)
+	if rec, _ := store.LoadSchedule(d.Dir); len(rec) != 0 {
+		t.Fatalf("schedule off なのに回した: %+v", rec)
+	}
+}
+
+// 中で回している途中で dispatcher が落ちた記録 (始めた記録だけ) は、次の dispatcher が締めて失敗として出し、同じ枠では回し直さない。
+func TestTickScheduleSettlesInterruptedInternal(t *testing.T) {
+	now := time.Date(2026, 9, 27, 9, 0, 0, 0, time.Local)
+	j := purgeJob(t)
+	d := &Dispatcher{Dir: t.TempDir(), Now: func() time.Time { return now }, Scheduled: []schedule.Job{j}}
+	started := j.Slot(now).Add(time.Minute)
+	if err := store.SaveScheduleRun(d.Dir, j.Name, store.ScheduleRun{Start: started, RC: -1}); err != nil {
+		t.Fatal(err)
+	}
+	notes := d.tickSchedule(context.Background(), now)
+	rec, _ := store.LoadSchedule(d.Dir)
+	r := rec[j.Name]
+	if !r.Start.Equal(started) || r.End.IsZero() || r.RC != schedule.RCUnknown || !r.Failed() || !strings.Contains(r.Note, "途中で dispatcher が止まった") {
+		t.Fatalf("途中で落ちた記録を締めない / 回し直した: %+v", r)
+	}
+	if !hasNote(notes, eventlog.KindError, "予定の (dispatcher の中) 完了から 1 週間たったカードを書庫から消す: "+r.Note) {
+		t.Fatalf("途中で落ちたことを出来事に出さない: %v", notes)
+	}
+}
+
+// 中で回す行が失敗したら (書庫を読めない) rc=1 を記録し、失敗として出す (黙って成功に畳まない)。
+func TestTickScheduleInternalFailure(t *testing.T) {
+	now := time.Date(2026, 9, 27, 9, 0, 0, 0, time.Local)
+	d := &Dispatcher{Dir: t.TempDir(), Now: func() time.Time { return now }, Scheduled: []schedule.Job{purgeJob(t)}}
+	if err := os.MkdirAll(filepath.Join(d.Dir, store.ArchiveFile), 0o700); err != nil { // 書庫の置き場がディレクトリ = 読めない
+		t.Fatal(err)
+	}
+	notes := d.tickSchedule(context.Background(), now)
+	rec, _ := store.LoadSchedule(d.Dir)
+	r := rec[schedule.CardPurge]
+	if r.RC != 1 || !r.Failed() || r.End.IsZero() {
+		t.Fatalf("失敗を記録しない: %+v", r)
+	}
+	if !hasNote(notes, eventlog.KindError, "予定の (dispatcher の中) 完了から 1 週間たったカードを書庫から消す が失敗した (rc=1): "+r.Note) {
+		t.Fatalf("失敗を出来事に出さない: %v", notes)
+	}
+}
+
+// dispatcher が知らない中の予定 (表と dispatcher の版がずれた) は rc=1 で失敗として残す (黙って成功にしない)。
+func TestRunInternalUnknownJob(t *testing.T) {
+	d := &Dispatcher{Dir: t.TempDir()}
+	if rc, note, _ := d.runInternal(schedule.Job{Name: "nope", Internal: "x"}, time.Now()); rc != 1 || !strings.Contains(note, "知らない中の予定") {
+		t.Fatalf("rc=%d note=%q", rc, note)
+	}
+}
+
+// 書庫からは消せたが所要の記録の古い行を消せない (所要の記録を読めない) なら、rc=1 で失敗として残す (出来事の error だけにしない)。
+func TestTickScheduleInternalPruneFailure(t *testing.T) {
+	now := time.Date(2026, 9, 27, 9, 0, 0, 0, time.Local)
+	d := &Dispatcher{Dir: t.TempDir(), Now: func() time.Time { return now }, Scheduled: []schedule.Job{purgeJob(t)}}
+	if err := os.MkdirAll(filepath.Join(d.Dir, store.MetricsFile), 0o700); err != nil { // 所要の記録の置き場がディレクトリ = 読めない
+		t.Fatal(err)
+	}
+	d.tickSchedule(context.Background(), now)
+	rec, _ := store.LoadSchedule(d.Dir)
+	if r := rec[schedule.CardPurge]; r.RC != 1 || !r.Failed() || r.Note != schedule.ResultLine("書庫から消した 0 枚・所要の記録の古い行は消せない", 1) {
+		t.Fatalf("所要の記録の古い行を消せないのに成功にした: %+v", r)
+	}
+}
+
+// 中で回す処理は、始めた記録を書いた後に走る (回してから書くと、途中で落ちたときに同じ枠で 2 回回す。書けなければ回さない)。
+// 回している最中の記録は、purge が所要の記録の古い行を消す前に出来事を書く口 (d.Record) で読む。
+func TestTickScheduleInternalRunsAfterStartRecord(t *testing.T) {
+	now := time.Date(2026, 9, 27, 9, 0, 0, 0, time.Local)
+	d := &Dispatcher{Dir: t.TempDir(), Now: func() time.Time { return now }, Scheduled: []schedule.Job{purgeJob(t)}}
+	if err := store.AppendMetrics(d.Dir, []metrics.Row{{Card: "C-001", Ending: "回答済み", ClosedAt: now.Add(-store.MetricsKeep - time.Hour)}}); err != nil {
+		t.Fatal(err)
+	}
+	var during *store.ScheduleRun
+	d.Record = func([]eventlog.Event) {
+		rec, err := store.LoadSchedule(d.Dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := rec[schedule.CardPurge]
+		during = &r
+	}
+	d.tickSchedule(context.Background(), now)
+	if during == nil {
+		t.Fatal("前提: purge が所要の記録の古い行を消す前に出来事を書かなかった")
+	}
+	if !during.Start.Equal(now) || !during.End.IsZero() {
+		t.Fatalf("回している最中の予定の記録 = %+v (始めた記録を書く前に回した)", *during)
+	}
+}
+
+// 子の予定を待っている間 (子が戻らない) も、中で回す行 (1 週間の削除) は回る。子の行は起こさない。
+func TestTickScheduleInternalRunsWhileChildBusy(t *testing.T) {
+	d, calls, now := schedFixture(t, 0, "")
+	d.Scheduled = []schedule.Job{testJob, purgeJob(t)}
+	d.schedBusy.Store(true)
+	d.schedStart = now.Add(-7 * time.Hour) // 6 時間を過ぎても戻らない
+	evs := d.tickSchedule(context.Background(), *now)
+	rec, _ := store.LoadSchedule(d.Dir)
+	if r := rec[schedule.CardPurge]; r.RC != 0 || r.End.IsZero() {
+		t.Fatalf("子を待っている間に中で回す行を回さない: %+v", r)
+	}
+	if _, ok := rec[testJob.Name]; ok || calls.Load() != 0 {
+		t.Fatalf("子を待っている間に子の行を起こした: %+v calls=%d", rec, calls.Load())
+	}
+	if !hasNote(evs, eventlog.KindError, "戻らない") {
+		t.Fatalf("戻らない子を知らせない: %v", kinds(evs))
 	}
 }
