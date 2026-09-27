@@ -38,6 +38,7 @@
   `--disallowedTools` ではなく設定 `feedbackDrafts: "off"` にした (理由は下)。PM も同じ `sessionSettings` を使うので揃う。haiku (要約役・btw) は 1 回きりの `-p` で再開が無いので付けない
 - [x] テスト (偽の claude なし。引数を組む関数を直接): 起動と再開の `--settings` に同じ `"feedbackDrafts":"off"` が入る (`launcher_test.go` の 2 本)。旧コードに戻すと 2 本とも赤になるのを確かめた
 - [ ] 効いたかを、入れた後の本物の PG の再開で数え直す (取り込みの後)。🚨 **これだけでは外れは減らない見込み** (下の「実測」3)。続きは `546-research-pro-con-endconversation-gate-resume-cache.md`
+  - 2026-09-27 (546): gate (`EndConversation` の段) を揃えても、実験の再開は同じ形で外れた。実測 3 の外れは段が原因ではなかった見込みが高い。原因は未確認 (546 の「進捗」)
 
 ### 実測 (claude 2.1.283)
 
