@@ -52,7 +52,7 @@ func (d *Dispatcher) checkClose(ctx context.Context, st store.State, r store.Req
 	}
 	why, err := d.Worktrees.Unlanded(ctx, repo, c)
 	if err != nil {
-		return fmt.Errorf("PG の作業が取り込み先に入っているか確かめられない: %v (確かめられるようにしてから閉じ直す。取り込まずに閉じるなら --ending rejected)", err)
+		return fmt.Errorf("PG の作業が取り込み先に入っているか確かめられない: %w (確かめられるようにしてから閉じ直す。取り込まずに閉じるなら --ending rejected)", err)
 	}
 	if why != "" {
 		return fmt.Errorf("PG の作業が取り込まれていない: %s (取り込んで push してから閉じる。取り込まずに閉じるなら --ending rejected / answered / investigated を付ける = commit を %s に残して worktree とブランチを消す)",
