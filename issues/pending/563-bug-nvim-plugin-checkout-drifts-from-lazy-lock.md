@@ -2,6 +2,11 @@
 
 起票日: 2026-09-27
 
+> **pending (2026-09-27)**: 再開のきっかけ = KOJIm2-MacBook-Air で作業するとき。そこで下の「直し方」を打ち、`make test-nvim` が通れば done へ移す。
+> 受け入れ条件 2 (ずれの検出) は採らない。kojiM3MBP も実体 `3d3321b5` (2026-08-05, main) で lock `5a7e5638` とずれているが、
+> `install()` はあって正常に動く。lazy.nvim は勝手に lock へ戻さないのでずれはよく起き、commit の不一致を検出すると正常な状態でも鳴る。
+> 壊れた場合は起動時に config エラーとして出る。再び検討するなら、lock と実体の **branch** の不一致だけに絞る。
+
 ## 概要
 
 2026-09-27 に KOJIm2-MacBook-Air で `make test-nvim` を回すと、`tests/nvim/test_nvim.sh` が落ちた:
