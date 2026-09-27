@@ -6,6 +6,8 @@
 #   - 7 日より古い行だけを落とす (境界ちょうどは残す / epoch の読めない行は消さない)
 #   - zprint が失敗する・書式が変わったときは記録せずに失敗する (空や別の列を記録しない)
 #   - 並行した record の行を落とさない (lockf の下で書き換える)
+#   - claude のプロセス数と tmux のクライアント数を一緒に記録する。数えられなければ "-" (0 と区別) で、inuse は記録する
+#   - check / snapshot の判定 (閾値・増え方は今回の起動以降の記録だけから出す・記録の幅が短いと増え方を出さない)
 set -euo pipefail
 unset CDPATH
 
@@ -20,8 +22,10 @@ ng() { printf '✗ %s\n' "$1"; fail=1; }
 
 # 偽 zprint: FAKE_INUSE を data.kalloc.1024 の inuse に出す。FAKE_MODE=fail で失敗、noinuse で見出しを変える。
 # 実物の `zprint -L <名前>` は部分一致なので、名前の似た zone (前後に 1 行ずつ) も混ぜて完全一致を pin する
+# 引数を渡されたら失敗する: 漏れているマシン (macOS 15.7.7) で実績があるのは引数なしの zprint だけ
 cat > "$TMP_DIR/zprint" <<'EOF'
 #!/bin/bash
+[[ $# -eq 0 ]] || exit 4
 [[ ${FAKE_MODE:-} == fail ]] && exit 3
 h=inuse; [[ ${FAKE_MODE:-} == noinuse ]] && h=other
 cat <<Z
@@ -35,11 +39,39 @@ Z
 EOF
 chmod +x "$TMP_DIR/zprint"
 
+# 偽 ps: claude が 3 つ (パス付き / 素の名前 / claude.exe)。claudette と node は数えない。FAKE_PS=fail で失敗
+cat > "$TMP_DIR/ps" <<'EOF'
+#!/bin/bash
+[[ ${FAKE_PS:-} == fail ]] && exit 1
+[[ "$*" == "-Axo comm=" ]] || exit 5
+printf '%s\n' /Users/x/.local/bin/claude claude claude.exe /usr/bin/claudette node
+EOF
+# 偽 tmux: attach しているクライアントが 2 つ。FAKE_TMUX=fail でサーバ無し (rc=1)、
+# hang で固まったサーバ (自分の pid を FAKE_MARK に書いて止まる)
+cat > "$TMP_DIR/tmux" <<'EOF'
+#!/bin/bash
+[[ ${FAKE_TMUX:-} == fail ]] && { echo "no server running" >&2; exit 1; }
+[[ ${FAKE_TMUX:-} == none ]] && exit 0   # attach しているクライアントが 0 (何も出さず rc=0)
+[[ ${FAKE_TMUX:-} == hang ]] && { echo $$ > "$FAKE_MARK"; exec sleep 60; }
+[[ $1 == list-clients ]] || exit 5
+printf 'x\nx\n'
+EOF
+# 偽 sysctl: kern.boottime を実機 (macOS 27) と同じ書式で出す。FAKE_BOOT=fail で失敗
+cat > "$TMP_DIR/sysctl" <<'EOF'
+#!/bin/bash
+[[ ${FAKE_BOOT:-} == fail ]] && exit 1
+[[ "$*" == "-n kern.boottime" ]] || exit 5
+printf '{ sec = %s, usec = 666590 } Fri Sep 18 10:18:16 2026\n' "${FAKE_BOOT:-1}"
+exit "${FAKE_BOOT_RC:-0}"   # 値を出してから失敗する形も作れる
+EOF
+chmod +x "$TMP_DIR/ps" "$TMP_DIR/tmux" "$TMP_DIR/sysctl"
+
 NOW=2000000000
 DAY=86400
 run() {  # $1=記録先 dir, 残り=kalloc-watch の引数
   local d=$1; shift
-  KALLOC_WATCH_DIR="$d" KALLOC_WATCH_ZPRINT="$TMP_DIR/zprint" KALLOC_WATCH_NOW="$NOW" "$BIN" "$@"
+  KALLOC_WATCH_DIR="$d" KALLOC_WATCH_ZPRINT="$TMP_DIR/zprint" KALLOC_WATCH_PS="$TMP_DIR/ps" KALLOC_WATCH_TMUX="$TMP_DIR/tmux" \
+    KALLOC_WATCH_SYSCTL="$TMP_DIR/sysctl" KALLOC_WATCH_NOW="$NOW" FAKE_BOOT="${BOOT:-1}" "$BIN" "$@"
 }
 
 # 1. record が inuse を記録する
@@ -49,6 +81,21 @@ if FAKE_INUSE=4321 run "$d" >/dev/null && [[ "$(cut -f1,3 "$d/log.tsv")" == "$NO
 else
   ng "record の記録内容が違う: $(cat "$d/log.tsv" 2>/dev/null)"
 fi
+
+# 1a. inuse は数値に正規化して記録する (先頭の 0 が JSON の数値を壊さないように)
+d="$TMP_DIR/t1a"
+if FAKE_INUSE=0077 run "$d" >/dev/null && [[ "$(cut -f3 "$d/log.tsv")" == 77 ]]; then pass "inuse の先頭の 0 を落として記録する"; else ng "inuse の正規化: $(cat "$d/log.tsv" 2>/dev/null)"; fi
+
+# 1b. claude の数と tmux のクライアント数を一緒に記録する。数えられなければ "-" で、inuse は記録する
+for c in "ok|||3	2" "psfail|fail||-	2" "tmuxfail||fail|3	-" "tmux0||none|3	0"; do
+  IFS='|' read -r name ps tm want <<<"$c"
+  d="$TMP_DIR/t1b-$name"
+  if FAKE_PS=$ps FAKE_TMUX=$tm FAKE_INUSE=77 run "$d" >/dev/null && [[ "$(cut -f3- "$d/log.tsv")" == "77	$want" ]]; then
+    pass "$name: inuse と一緒に claude / tmux の数を記録する ($want)"
+  else
+    ng "$name: 記録内容が違う: [$(cut -f3- "$d/log.tsv" 2>/dev/null)] want=[77	$want]"
+  fi
+done
 
 # 2. 7 日より古い行だけを落とす
 d="$TMP_DIR/t2"; mkdir -p "$d"
@@ -87,7 +134,8 @@ for mode in unreadable badnow; do
   now=$NOW
   # badnow は算術評価でコマンドが走る形 (定義済みの変数の subscript。未定義だと set -u で先に止まる。数字の検査が無いと $((now - …)) が touch を実行する)
   case $mode in unreadable) chmod 000 "$d/log.tsv" ;; badnow) now="PPID[\$(touch $d/pwned)]" ;; esac
-  rc=0; KALLOC_WATCH_DIR="$d" KALLOC_WATCH_ZPRINT="$TMP_DIR/zprint" KALLOC_WATCH_NOW="$now" "$BIN" >/dev/null 2>"$d/err" || rc=$?
+  rc=0; KALLOC_WATCH_DIR="$d" KALLOC_WATCH_ZPRINT="$TMP_DIR/zprint" KALLOC_WATCH_PS="$TMP_DIR/ps" KALLOC_WATCH_TMUX="$TMP_DIR/tmux" \
+    KALLOC_WATCH_NOW="$now" "$BIN" >/dev/null 2>"$d/err" || rc=$?
   chmod 600 "$d/log.tsv"
   if [[ $rc -eq 0 ]]; then
     ng "$mode で rc=0 を返した"
@@ -95,6 +143,8 @@ for mode in unreadable badnow; do
     ng "$mode で既存の記録が変わった: $(cat "$d/log.tsv")"
   elif compgen -G "$d/.log.tsv.*" >/dev/null; then
     ng "$mode で一時ファイルが残った"
+  elif [[ $rc -ne 1 ]]; then
+    ng "$mode の rc が 1 でない (${rc}。2 は使い方の誤りと区別できない)"
   elif [[ -e $d/pwned ]]; then
     ng "$mode で現在時刻の値がコマンドとして実行された"
   else
@@ -102,15 +152,36 @@ for mode in unreadable badnow; do
   fi
 done
 
+# 3c. ロックの中の段 (__record_locked) を計測の値なしで直接呼んでも、記録しない
+d="$TMP_DIR/t3c"; mkdir -p "$d"
+printf '%s\tkeep\t9\n' "$NOW" > "$d/log.tsv"
+before=$(cat "$d/log.tsv")
+if env -u KW_INUSE -u KW_CLAUDE -u KW_TMUX KALLOC_WATCH_DIR="$d" KALLOC_WATCH_NOW="$NOW" "$BIN" __record_locked >/dev/null 2>&1; then
+  ng "計測の値なしの __record_locked が rc=0 を返した"
+elif [[ "$(cat "$d/log.tsv")" != "$before" ]]; then
+  ng "計測の値なしの __record_locked で記録が変わった"
+else
+  pass "計測の値なしの __record_locked は記録せずに失敗する"
+fi
+
 # 4. list: 記録が無ければ失敗、あれば前の行との差を出す
 d="$TMP_DIR/t4"
 if run "$d" list >/dev/null 2>&1; then ng "記録が無いのに list が rc=0"; else pass "記録が無ければ list は失敗する"; fi
 FAKE_INUSE=100 run "$d" >/dev/null; FAKE_INUSE=250 run "$d" >/dev/null
-last=$(run "$d" list | tail -1)
-if [[ "$last" == *" 250 "* && "$last" == *"+150" ]]; then
-  pass "list が inuse と前の行との差を出す"
+out=$(run "$d" list)
+last=$(tail -1 <<<"$out")
+if [[ "$(awk '{print $3, $5, $6, $7}' <<<"$last")" == "250 +150 3 2" ]]; then
+  pass "list が inuse と前の行との差と claude / tmux の数を出す"
 else
   ng "list の出力が違う: [$last]"
+fi
+# 3 列しかない古い行は claude / tmux を "-" で出す
+printf '%s\told\t5\n' "$NOW" > "$d/log.tsv"
+last=$(run "$d" list | tail -1)
+if [[ "$(awk '{print $2, $5, $6}' <<<"$last")" == "5 - -" ]]; then
+  pass "3 列の古い行は claude / tmux を - で出す"
+else
+  ng "古い行の list が違う: [$last]"
 fi
 
 # 5. 並行した record の行を落とさない
@@ -124,5 +195,111 @@ if [[ $rcs -eq 0 && $n -eq 20 ]]; then
 else
   ng "並行した record: 失敗 $rcs 本 / 行 $n (期待 20)"
 fi
+
+# 7. snapshot の判定。記録を並べてから、今の在庫で snapshot を撮る。起動は 3 時間前 (7 日前の行を使うケースは 7 日前)
+#    列: 名前 | 起動 (何秒前) | 置く行 ("何秒前:inuse" を空白区切り。inuse に abc などの壊れた値も置ける) | 今の inuse
+#        | 期待 (verdict rate_per_hour rate_basis base_inuse)
+jfield() { python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); print(" ".join("null" if d[k] is None else str(d[k]) for k in sys.argv[1:]))' "$@"; }
+while IFS='|' read -r name bootago rows cur want; do
+  d="$TMP_DIR/t7-$name"; mkdir -p "$d"
+  : > "$d/log.tsv"
+  for r in $rows; do printf '%s\trow\t%s\n' $((NOW - ${r%%:*})) "${r#*:}" >> "$d/log.tsv"; done
+  out=$(BOOT=$((NOW - bootago)) FAKE_INUSE=$cur run "$d" snapshot) || { ng "$name: snapshot が失敗した"; continue; }
+  got=$(jfield verdict rate_per_hour rate_basis base_inuse <<<"$out" 2>&1)
+  if [[ "$got" == "$want" ]]; then pass "snapshot の判定 $name: $got"; else ng "snapshot の判定 $name: got=[$got] want=[$want] ($out)"; fi
+done <<'CASES'
+fresh-ok|10800||1000|ok null null null
+short-span|10800|599:30000|90000|watch null null null
+span-edge|10800|600:30000|30100|watch 600 recent 30000
+watch-slow|10800|3600:25000|26000|watch 1000 recent 25000
+suspect|10800|3600:30000|40000|suspect 10000 recent 30000
+suspect-edge|10800|3600:30000|35000|suspect 5000 recent 30000
+below-rate|10800|3600:30000|34999|watch 4999 recent 30000
+healthy-burst|10800|3600:1000|7000|ok 6000 recent 1000
+leaking|10800||100000|leaking null null null
+critical|10800|3600:14000000|15000000|critical 1000000 recent 14000000
+ignore-preboot|10800|10860:5000000 3600:1000|1200|ok 200 recent 1000
+unsorted|10800|1800:20000 3600:10000|30000|suspect 20000 recent 10000
+ignore-future|10800|-600:1 3600:30000|40000|suspect 10000 recent 30000
+ignore-broken|10800|7200:abc 3600:30000|40000|suspect 10000 recent 30000
+recent-not-diluted|604800|518400:1200 3600:50000|60000|suspect 10000 recent 50000
+before-window|604800|518400:1200|60000|watch 408 before_window 1200
+gap-then-burst|604800|518400:1000 21660:1000 300:39000|40000|suspect 6482 before_window 1000
+decrease|10800|3600:30000|29999|watch -1 recent 30000
+CASES
+BOOT=1
+
+# 7b. check (人の形) は判定と、再起動の目安までの時間を日本語で出す
+d="$TMP_DIR/t7b"; mkdir -p "$d"
+printf '%s\tfirst\t30000\n' $((NOW - 3600)) > "$d/log.tsv"
+out=$(BOOT=$((NOW - 7200)) FAKE_INUSE=40000 run "$d")
+if [[ "$out" == *"判定: 漏れの疑い"* && "$out" == *"1 時間あたり +10,000 個 (直近 6 時間の最初の記録 30,000 個から、1.0 時間の平均)"* \
+   && "$out" == *"再起動の目安 (15,000,000 個) まで: 約 62.3 日"* && "$out" != *"注意"* ]]; then
+  pass "check が判定・増え方・再起動の目安を出す"
+else
+  ng "check の出力が違う: $out"
+fi
+# 残り 48 時間未満は時間で出す。正常なときは目安の行を出さない
+printf '%s\tfirst\t14000000\n' $((NOW - 3600)) > "$d/log.tsv"
+out=$(BOOT=$((NOW - 7200)) FAKE_INUSE=14500000 run "$d")
+if [[ "$out" == *"まで: 約 1.0 時間"* ]]; then pass "残り 48 時間未満は時間で出す"; else ng "残りの時間の表示が違う: $out"; fi
+printf '%s\tfirst\t1000\n' $((NOW - 3600)) > "$d/log.tsv"
+out=$(BOOT=$((NOW - 7200)) FAKE_INUSE=1100 run "$d")
+if [[ "$out" != *"再起動の目安"* ]]; then pass "正常なときは再起動の目安を出さない"; else ng "正常なのに再起動の目安を出した: $out"; fi
+# 減ったときは符号と 3 桁区切りをそのまま出す (+- にしない)
+printf '%s\tfirst\t300000\n' $((NOW - 3600)) > "$d/log.tsv"
+out=$(BOOT=$((NOW - 7200)) FAKE_INUSE=50000 run "$d")
+if [[ "$out" == *"1 時間あたり -250,000 個"* ]]; then pass "check は減った増え方を -250,000 と出す"; else ng "減ったときの表示が違う: $out"; fi
+# 起動時刻が読めないときは、起動より前の記録も混ざる旨を出し、JSON の boot_epoch は null
+out=$(FAKE_BOOT=fail FAKE_INUSE=50000 KALLOC_WATCH_DIR="$d" KALLOC_WATCH_ZPRINT="$TMP_DIR/zprint" KALLOC_WATCH_PS="$TMP_DIR/ps" \
+  KALLOC_WATCH_TMUX="$TMP_DIR/tmux" KALLOC_WATCH_SYSCTL="$TMP_DIR/sysctl" KALLOC_WATCH_NOW="$NOW" "$BIN")
+js=$(FAKE_BOOT=fail FAKE_INUSE=50000 KALLOC_WATCH_DIR="$d" KALLOC_WATCH_ZPRINT="$TMP_DIR/zprint" KALLOC_WATCH_PS="$TMP_DIR/ps" \
+  KALLOC_WATCH_TMUX="$TMP_DIR/tmux" KALLOC_WATCH_SYSCTL="$TMP_DIR/sysctl" KALLOC_WATCH_NOW="$NOW" "$BIN" snapshot | jfield boot_epoch)
+if [[ "$out" == *"注意: 起動時刻を読めなかった"* && "$js" == null ]]; then
+  pass "起動時刻が読めないときは注意を出し、boot_epoch は null"
+else
+  ng "起動時刻が読めないときの出力が違う: [$js] $out"
+fi
+
+# 7c2. sysctl が値を出してから rc≠0 で終わっても、起動時刻は 1 つに読めて snapshot は壊れない
+d="$TMP_DIR/t7c2"; mkdir -p "$d"
+printf '%s\trow\t30000\n' $((NOW - 3600)) > "$d/log.tsv"
+out=$(FAKE_BOOT_RC=1 BOOT=$((NOW - 7200)) FAKE_INUSE=40000 run "$d" snapshot 2>&1) && got=$(jfield boot_epoch verdict <<<"$out" 2>&1) || got="rc≠0: $out"
+if [[ "$got" == "$((NOW - 7200)) suspect" ]]; then pass "sysctl が値の後に失敗しても起動時刻を 1 つに読む"; else ng "sysctl が値の後に失敗したとき: $got"; fi
+
+# 7d. 終了コードはヘルプの記述どおり: ロックを開けない・記録を読めない list・読める行が無い list はどれも 1
+d="$TMP_DIR/t7d"; mkdir -p "$d"; : > "$d/.lock"; chmod 000 "$d/.lock"
+rc=0; run "$d" >/dev/null 2>&1 || rc=$?
+chmod 600 "$d/.lock"
+if [[ $rc -eq 1 ]]; then pass "ロックを開けないときは rc=1"; else ng "ロックを開けないときの rc=$rc"; fi
+printf 'x\n' > "$d/log.tsv"
+rc=0; run "$d" list >/dev/null 2>&1 || rc=$?
+if [[ $rc -eq 1 ]]; then pass "読める行が無い list は rc=1"; else ng "読める行が無い list の rc=$rc"; fi
+chmod 000 "$d/log.tsv"
+rc=0; run "$d" list >/dev/null 2>&1 || rc=$?
+chmod 600 "$d/log.tsv"
+if [[ $rc -eq 1 ]]; then pass "記録を読めない list は rc=1"; else ng "記録を読めない list の rc=$rc"; fi
+
+# 7c. --help は rc=0 で標準出力に、使い方の誤りは rc=2
+if "$BIN" --help | grep -q 'snapshot'; then pass "--help が snapshot を案内する"; else ng "--help に snapshot が無い"; fi
+rc=0; "$BIN" nosuch >/dev/null 2>&1 || rc=$?
+if [[ $rc -eq 2 ]]; then pass "不明なサブコマンドは rc=2"; else ng "不明なサブコマンドの rc=$rc"; fi
+
+# 6. tmux が固まっても、ほかの record はロックで待たされずに記録できる (計測をロックの外で済ませている)
+d="$TMP_DIR/t6"; mark="$TMP_DIR/t6.hang"
+FAKE_TMUX=hang FAKE_MARK=$mark FAKE_INUSE=1 run "$d" >/dev/null 2>&1 & hung=$!
+for _ in $(seq 200); do [[ -s $mark ]] && break; sleep 0.05; done
+if [[ ! -s $mark ]]; then
+  ng "固まる tmux が 10 秒たっても呼ばれない (判定できない)"
+else
+  rc=0; FAKE_INUSE=2 run "$d" >/dev/null 2>"$d.err" || rc=$?
+  if [[ $rc -eq 0 && "$(cut -f3 "$d/log.tsv" 2>/dev/null)" == 2 ]]; then
+    pass "tmux が固まっている間も、ほかの record は記録できる"
+  else
+    ng "tmux が固まっている間に record が失敗した: rc=$rc $(head -1 "$d.err")"
+  fi
+fi
+[[ -s $mark ]] && kill "$(cat "$mark")" 2>/dev/null || true
+wait "$hung" 2>/dev/null || true
 
 exit "$fail"

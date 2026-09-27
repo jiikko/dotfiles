@@ -258,12 +258,15 @@ live 設定の丸ごとコピーなので、JIS マシンで実行すると ANSI
 カーネルの zone `data.kalloc.1024` の在庫を記録する (issue 500。漏れるとパニックする。プロセス一覧には出ない)。
 
 ```bash
-kalloc-watch          # 1 行記録する (= kalloc-watch record)。7 日より古い行はこのとき落とす
-kalloc-watch list     # 記録を古い順に出す (時刻 / inuse / MiB / 前の行との差)
+kalloc-watch            # 人が叩く形: 1 行記録して、在庫・増え方・判定 (正常 / 要観察 / 漏れの疑い / 漏れている / 危険) を出す
+kalloc-watch snapshot   # Claude やスクリプトが叩く形: 1 行記録して、判定を JSON 1 行で出す
+kalloc-watch list       # 記録を古い順に出す (時刻 / inuse / MiB / 前の行との差 / claude の数 / tmux のクライアント数)
+kalloc-watch --help     # 判定の閾値・列の意味・JSON の項目・終了コード
 ```
 
-- 記録先は `~/.cache/kalloc-watch/log.tsv` (`KALLOC_WATCH_DIR` で変更)
-- 健全なら数千個で頭打ち。数万個を越えて増え続けるなら漏れを疑い、約 1,500 万個を越える前に再起動する
+- 記録先は `~/.cache/kalloc-watch/log.tsv` (`KALLOC_WATCH_DIR` で変更)。記録のたびに 7 日より古い行を落とす
+- 増え方は今回の起動以降の記録から出す (10 分以上あけて 2 回目を叩くと出る)
+- claude の数と tmux のクライアント数は、増えた時間帯に何が動いていたかを突き合わせるための手がかり (数えられないときは `-`)
 
 ### Finder Quick Actions
 

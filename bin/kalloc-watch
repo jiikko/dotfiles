@@ -5,31 +5,104 @@
 # 健全なら数千個で頭打ちになり、漏れていると再起動するまで単調に増える (パニックは約 2,100 万個)。
 # 絶対値より「減るか・増え続けるか」を見るための記録。
 #
-# 使い方:
-#   kalloc-watch [record]   在庫を 1 行記録し、7 日より古い行を落とす
-#   kalloc-watch list       記録を古い順に出す (時刻 / inuse / MiB / 前の行との差)
+# 使い方・列の意味・見方は `kalloc-watch --help` (help_text) が正本。
 #
-# 記録先: ${KALLOC_WATCH_DIR:-${XDG_CACHE_HOME:-~/.cache}/kalloc-watch}/log.tsv
-#   1 行 = <epoch>\t<YYYY-MM-DD HH:MM:SS>\t<inuse>
-# テスト用: KALLOC_WATCH_ZPRINT (zprint の代わりに呼ぶコマンド) / KALLOC_WATCH_NOW (現在の epoch)
+# 記録の 1 行 = <epoch>\t<YYYY-MM-DD HH:MM:SS>\t<inuse>\t<claude のプロセス数>\t<tmux のクライアント数>
+#   数えられなかった値は "-" (0 と区別する)。2026-09-27 13:30 より前の行は 3 列しかない
+# テスト用: KALLOC_WATCH_ZPRINT / KALLOC_WATCH_PS / KALLOC_WATCH_TMUX / KALLOC_WATCH_SYSCTL (それぞれの代わりに呼ぶコマンド)
+#   / KALLOC_WATCH_NOW (現在の epoch)
 set -euo pipefail
 
 ZONE=data.kalloc.1024
 KEEP_SECONDS=$((7 * 24 * 60 * 60))
+# 判定の閾値 (issue 500 の実測から置いた):
+#   健全なマシン (macOS 27) は起動 9 日で約 1,200、make test を全部回した直後でも約 2,200。make test の間だけ一時的に
+#   約 3,000 個/時の速さで増える。漏れているマシン (macOS 15.7.7) は再起動後 17 時間で約 160 万、平均 約 2 万〜10 万個/時。
+#   パニックは約 2,100 万個。健全と漏れの間は 3 桁あるので、閾値は両方から 1 桁ずつ離して置く
+WATCH_LEVEL=20000        # これ以上は健全な範囲を外れている (要観察)
+LEAK_LEVEL=100000        # これ以上は漏れている (健全なら数千)
+LEAK_RATE=5000           # 1 時間あたりこれ以上増えていて WATCH_LEVEL 以上なら漏れの疑い (make test の一時的な増え方より上)
+RESTART_LEVEL=15000000   # 再起動の目安 (パニックの約 2,100 万個の手前)
+MIN_SPAN=600             # 増え方を出すのに要る記録の幅 (秒)。短いと ±100 の揺れで速さが暴れる
+RECENT_WINDOW=$((6 * 3600))  # 増え方は直近この時間の記録から出す (起動以降の平均だと、日をまたいで急に漏れ始めたのが薄まる)
 DIR=${KALLOC_WATCH_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/kalloc-watch}
 LOG=$DIR/log.tsv
 SELF=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")
 
-usage() {
-  sed -n '8,10p' "$SELF" | sed 's/^# \{0,1\}//' >&2
+help_text() {
+  cat <<EOF
+kalloc-watch — カーネルの zone data.kalloc.1024 の在庫を記録し、漏れているかを判定する (dotfiles issue 500)
+
+使い方:
+  kalloc-watch [check]       人が叩く形。1 行記録して、今の在庫・増え方・判定を出す (record も同じ)
+  kalloc-watch snapshot      Claude やスクリプトが叩く形。1 行記録して、判定を JSON 1 行で出す
+  kalloc-watch list          記録を古い順に出す
+  kalloc-watch -h | --help   このヘルプ
+  どの形でも、記録するときに 7 日より古い行を落とす
+
+何を測るか:
+  data.kalloc.1024 はカーネルの 1KB 単位の割り当て。カーネルのメモリなので、アクティビティモニタや
+  ps のどのプロセスの分にも出ない (増えると wired が増える)。漏れると再起動するまで戻らず、
+  約 2,100 万個 (約 20GB) で "zone map exhausted" のカーネルパニックになる。
+  内訳 (誰が漏らしているか) は分からない。分かるのは合計と、その時に何が動いていたかだけ。
+
+判定 (check / snapshot。snapshot の verdict の値を括弧に書く):
+  正常 (ok)          $(fmt_n $WATCH_LEVEL) 個未満。健全なら数千個で頭打ちになる
+  要観察 (watch)     $(fmt_n $WATCH_LEVEL) 個以上。増え方がまだ小さいか、測れていない
+  漏れの疑い (suspect) $(fmt_n $WATCH_LEVEL) 個以上で、1 時間に $(fmt_n $LEAK_RATE) 個以上増えている
+  漏れている (leaking) $(fmt_n $LEAK_LEVEL) 個以上
+  危険 (critical)    $(fmt_n $RESTART_LEVEL) 個以上。再起動する (パニックは約 2,100 万個)
+  増え方は、直近 $((RECENT_WINDOW / 3600)) 時間の最初の記録から今までの平均。直近の記録の幅が $((MIN_SPAN / 60)) 分に満たなければ、
+  直近 $((RECENT_WINDOW / 3600)) 時間より前で最も新しい記録からの平均に倒す (間が空くほど平均は薄まるので、どちらで出したかを一緒に出す)。
+  どちらも無ければ出さない。再起動すると在庫は戻るので、起動より前の記録は使わない。
+  閾値の根拠はスクリプト冒頭のコメント
+
+list の列:
+  time     記録した時刻
+  inuse    data.kalloc.1024 の使用中の個数 (zprint の inuse)
+  MiB      inuse × 1KB
+  diff     前の行との差。記録の間隔がそろっていないと比べにくいので、時刻の差と一緒に読む
+  claude   claude / claude.exe のプロセス数 (Chrome 拡張の常駐も 1 本と数える)
+  tmux     今の (無ければ既定の) tmux サーバに attach しているクライアント数
+           claude / tmux は数えられなかったとき "-"。古い版で記録した行も "-"
+
+snapshot の JSON (1 行。値が出せないものは null):
+  {"time","epoch","inuse","claude","tmux","boot_epoch","rate_basis","base_epoch","base_inuse",
+   "rate_per_hour","hours_to_restart_level","verdict"}
+  rate_basis は recent (直近 $((RECENT_WINDOW / 3600)) 時間の最初の記録) / before_window (それより前で最も新しい記録)
+  / null (記録が足りず出せない)
+  verdict は ok / watch / suspect / leaking / critical のどれか。判定で終了コードは変わらない
+
+原因の切り分け:
+  claude を全部止めて 10 分、1 分おきに記録 → claude を 1 本だけ起こして 10 分、同じく記録。
+  止めている間だけ diff が止まれば claude 起因 (list の claude 列で区間が分かる)
+
+記録先:
+  \${KALLOC_WATCH_DIR:-\${XDG_CACHE_HOME:-~/.cache}/kalloc-watch}/log.tsv  (今は $LOG)
+  1 行 = epoch / 時刻 / inuse / claude / tmux (タブ区切り)
+
+終了コード:
+  0  記録した / 一覧を出した (判定の結果によらない)
+  1  記録できなかった (zprint が失敗した・書式が変わって inuse が読めない・記録を読めない・ロックを開けない)。
+     このとき既存の記録は触らない。list で記録を読めない・読める行がまだ無いときも 1
+  2  使い方の誤り
+  75 ほかの記録がロックを 10 秒以上握っていた (その回は記録しない)
+EOF
+}
+
+usage_error() {
+  echo "kalloc-watch: $1" >&2
+  echo "使い方: kalloc-watch [check] | snapshot | list | --help" >&2
   exit 2
 }
 
 # zprint から inuse を読む。書式が変わって読めないときは記録せずに失敗する
-# (空や別の列を記録すると、漏れていないように見える記録が残る)
+# (空や別の列を記録すると、漏れていないように見える記録が残る)。
+# 引数なしの zprint を読むのは、漏れているマシン (macOS 15.7.7) で実績がある形がこれだけのため
+# (issue 500 の測定。`-L <zone 名>` は macOS 27 でしか確かめていない)
 read_inuse() {
   local out
-  out=$(${KALLOC_WATCH_ZPRINT:-zprint} -L "$ZONE") || { echo "kalloc-watch: zprint が失敗した" >&2; return 1; }
+  out=$(${KALLOC_WATCH_ZPRINT:-zprint}) || { echo "kalloc-watch: zprint が失敗した" >&2; return 1; }
   # 見出しの 2 行目は "zone name ... inuse ..." で、"zone name" が 2 語なので inuse は 8 語目、値の行では 7 列目
   awk -v z="$ZONE" '
     $1 == "zone" && $2 == "name" { hdr = ($8 == "inuse") }
@@ -37,55 +110,176 @@ read_inuse() {
     END {
       if (!hdr) { print "kalloc-watch: zprint の見出しに inuse の列が見つからない (書式が変わった?)" > "/dev/stderr"; exit 1 }
       if (v !~ /^[0-9]+$/) { print "kalloc-watch: zone " z " の inuse が読めない" > "/dev/stderr"; exit 1 }
-      print v
+      print v + 0   # 先頭の 0 を落とす (JSON の数値に 007 は書けない)
     }' <<<"$out"
 }
 
-# lockf の下で呼ばれる。追記と古い行の除去を 1 つの書き換えで行う (並行した record の行を落とさないため)。
+# claude (Claude Code) のプロセス数。実行ファイル名が claude / claude.exe のものを数える (上流の報告では claude.exe)。
+# Chrome 拡張の常駐 (`claude --chrome-native-host`) も 1 本と数える (常に居るので差を見る分には一定のずれ)。
+# 版のディレクトリの実体 (~/.local/share/claude/versions/<版>) を直接 exec したものは comm が版番号になり数えない
+count_claude() {
+  local out
+  out=$(${KALLOC_WATCH_PS:-ps} -Axo comm=) || { echo -; return 0; }
+  awk '{ n = $0; sub(/.*\//, "", n) } n == "claude" || n == "claude.exe" { c++ } END { print c + 0 }' <<<"$out"
+}
+
+# 今いる (無ければ既定の) tmux サーバに attach しているクライアント数。サーバが無い・tmux が無いときは "-"。
+# 空でない行を数える (here-string は空の出力にも改行を足すので、NR だとクライアント 0 を 1 と数える)。
+# サーバが固まって返らないと、その回の record は終わらない (timeout は無い。定期実行を足すならそこで上限を持つ)
+count_tmux_clients() {
+  local out
+  out=$(${KALLOC_WATCH_TMUX:-tmux} list-clients -F x 2>/dev/null) || { echo -; return 0; }
+  awk 'NF { c++ } END { print c + 0 }' <<<"$out"
+}
+
+# lockf の下で呼ばれる。計測の値と時刻は呼び出し側 (record_and_report) がロックの外で測って環境変数で渡す
+# (tmux のサーバが固まって list-clients が返らないとき、ロックを握ったまま止まって以後の記録を全部落とさないため)。
+# 追記と古い行の除去を 1 つの書き換えで行う (並行した record の行を落とさないため)。
 # 🚨 各段を set -e で止まる形に置く (`{ ... } > tmp || ...` に包むと中の awk の失敗が握り潰され、
 # ログを読めないときに中身の欠けた tmp で既存の記録を上書きしていた)
 # 古さは記録時の現在時刻で決めるので、時計が先へ跳ぶとそれより 7 日前の記録は落ちる (NTP の異常は想定外として受ける)
 record_locked() {
-  local inuse now cutoff stamp
-  inuse=$(read_inuse)
-  now=${KALLOC_WATCH_NOW:-$(date +%s)}
-  [[ $now =~ ^[0-9]{1,12}$ ]] || { echo "kalloc-watch: 現在時刻が epoch の数字でない: $now" >&2; return 1; }
+  local inuse=${KW_INUSE:-} claude=${KW_CLAUDE:-} tmuxc=${KW_TMUX:-} now=${KW_NOW:-} cutoff stamp
+  [[ $inuse =~ ^[0-9]+$ && $claude =~ ^([0-9]+|-)$ && $tmuxc =~ ^([0-9]+|-)$ && $now =~ ^(0|[1-9][0-9]{0,11})$ ]] ||
+    { echo "kalloc-watch: 計測の値が無い・壊れている (check / snapshot から呼ぶこと): inuse=$inuse claude=$claude tmux=$tmuxc now=$now" >&2; return 1; }
   cutoff=$((now - KEEP_SECONDS))
   stamp=$(date -r "$now" '+%Y-%m-%d %H:%M:%S')
   TMP_LOG=$(mktemp "$DIR/.log.tsv.XXXXXX")
   trap 'rm -f "$TMP_LOG"' EXIT
   if [[ -e $LOG ]]; then
     # 期限切れと判定できる行だけ落とす (epoch が数字でない行は残す。読めない行を黙って消さない)
-    awk -F '\t' -v c="$cutoff" '!($1 ~ /^[0-9]+$/ && $1 < c)' "$LOG" > "$TMP_LOG"
+    awk -F '\t' -v c="$cutoff" '!($1 ~ /^[0-9]+$/ && $1 < c)' "$LOG" > "$TMP_LOG" ||
+      { echo "kalloc-watch: 記録を読めない: $LOG" >&2; exit 1; }   # awk の rc (2) を使い方の誤りと混ぜない
   fi
-  printf '%s\t%s\t%s\n' "$now" "$stamp" "$inuse" >> "$TMP_LOG"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$now" "$stamp" "$inuse" "$claude" "$tmuxc" >> "$TMP_LOG"
   mv -f "$TMP_LOG" "$LOG"
   trap - EXIT
-  printf '%s %s\n' "$stamp" "$inuse"
+}
+
+# 今回の起動時刻 (epoch)。取れなければ 0 (起動より前の記録も増え方に混ざる。check はその旨を出す)
+boot_epoch() {
+  # 書式は "{ sec = 1789694296, usec = 666590 } Fri Sep 18 10:18:16 2026" (macOS 27 で実測)
+  # 出力を先に受ける (パイプに || を付けると、値を出した後に rc≠0 で終わったとき値と 0 の 2 行になる)
+  local out v
+  out=$(${KALLOC_WATCH_SYSCTL:-sysctl} -n kern.boottime 2>/dev/null) || true
+  v=$(sed -n '1s/^{ sec = \([1-9][0-9]*\),.*/\1/p' <<<"$out")
+  echo "${v:-0}"
+}
+
+# 記録から判定する。出力 (空白区切り 1 行): verdict rate basis base_epoch base_inuse hours_to_restart (出せない値は "-")
+# 基点: 直近の窓の最も古い行 (幅が MIN_SPAN 以上のとき)。足りなければ窓より前で最も新しい行
+# (起動以降の最も古い行まで遡ると、間が空いた後の急な漏れが日単位の平均に薄まる)
+# 使う行: epoch と inuse が数字で、今回の起動以降のもの。基点は最も古い行なので、時計の巻き戻りで今より未来に見える行は
+# 基点にならない (未来の行しか無ければ幅が負になり、増え方は出さない)
+analyze() {  # $1=now $2=inuse $3=boot
+  awk -F '\t' -v now="$1" -v cur="$2" -v boot="$3" -v wl="$WATCH_LEVEL" -v ll="$LEAK_LEVEL" -v lr="$LEAK_RATE" \
+      -v rl="$RESTART_LEVEL" -v ms="$MIN_SPAN" -v rw="$RECENT_WINDOW" '
+    $1 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ && $1 + 0 >= boot + 0 {
+      e = $1 + 0
+      if (e >= now - rw) { if (!nr++ || e < re) { re = e; ri = $3 + 0 } }   # 直近の窓の最も古い行
+      else if (!no++ || e > oe) { oe = e; oi = $3 + 0 }                     # 窓より前で最も新しい行
+    }
+    END {
+      if (nr && now - re >= ms) { basis = "recent"; e0 = re; i0 = ri }
+      else if (no) { basis = "before_window"; e0 = oe; i0 = oi }
+      else basis = "-"
+      has = (basis != "-")
+      rate = has ? int((cur - i0) * 3600 / (now - e0) + (cur >= i0 ? 0.5 : -0.5)) : 0
+      if (cur >= rl) v = "critical"
+      else if (cur >= ll) v = "leaking"
+      else if (cur >= wl && has && rate >= lr) v = "suspect"
+      else if (cur >= wl) v = "watch"
+      else v = "ok"
+      eta = (has && rate > 0 && cur < rl) ? sprintf("%.1f", (rl - cur) / rate) : "-"
+      printf "%s %s %s %s %s %s\n", v, (has ? rate : "-"), basis, (has ? e0 : "-"), (has ? i0 : "-"), eta
+    }' "$LOG"
+}
+
+fmt_n() {  # 3 桁区切り (負の数も)
+  printf '%s' "$1" | awk '{ s = $0; g = ""; if (s ~ /^-/) { g = "-"; s = substr(s, 2) }
+    o = ""; while (length(s) > 3) { o = "," substr(s, length(s) - 2) o; s = substr(s, 1, length(s) - 3) } print g s o }'
+}
+
+json_num() { [[ $1 =~ ^-?[0-9]+(\.[0-9]+)?$ ]] && printf '%s' "$1" || printf 'null'; }
+
+# 記録して判定を出す。$1=human (check) / json (snapshot)
+record_and_report() {
+  local mode=$1 now boot res verdict rate basis base_e base_i eta stamp rc
+  now=${KALLOC_WATCH_NOW:-$(date +%s)}
+  [[ $now =~ ^(0|[1-9][0-9]{0,11})$ ]] || { echo "kalloc-watch: 現在時刻が epoch の数字でない: $now" >&2; exit 1; }
+  KW_INUSE=$(read_inuse)
+  KW_CLAUDE=$(count_claude)
+  KW_TMUX=$(count_tmux_clients)
+  KW_NOW=$now
+  export KW_INUSE KW_CLAUDE KW_TMUX KW_NOW
+  mkdir -p "$DIR"
+  # ロック待ちが 10 秒を越えたら lockf が rc=75 で止まり、その回は記録しない (既存の記録は触らない)。
+  # lockf 本体へのシグナルは子へ届かないので、中断したつもりでも記録は 1 行増えることがある (失うものは無い)
+  # rc: 75 = ロック待ちの時間切れ、73 = ロックのファイルを開けない (lockf 自身)、1 = 子の記録の失敗。75 以外は 1 に揃える
+  rc=0; /usr/bin/lockf -k -t 10 "$DIR/.lock" "$SELF" __record_locked || rc=$?
+  if ((rc == 75)); then exit 75; elif ((rc != 0)); then exit 1; fi
+  boot=$(boot_epoch)
+  res=$(analyze "$now" "$KW_INUSE" "$boot")
+  read -r verdict rate basis base_e base_i eta <<<"$res"
+  stamp=$(date -r "$now" '+%Y-%m-%d %H:%M:%S')
+  if [[ $mode == json ]]; then
+    printf '{"time":"%s","epoch":%s,"inuse":%s,"claude":%s,"tmux":%s,"boot_epoch":%s,"rate_basis":%s,"base_epoch":%s,"base_inuse":%s,"rate_per_hour":%s,"hours_to_restart_level":%s,"verdict":"%s"}\n' \
+      "$stamp" "$now" "$KW_INUSE" "$(json_num "$KW_CLAUDE")" "$(json_num "$KW_TMUX")" "$(json_num "$([[ $boot == 0 ]] && echo - || echo "$boot")")" \
+      "$([[ $basis == - ]] && echo null || echo "\"$basis\"")" "$(json_num "$base_e")" "$(json_num "$base_i")" "$(json_num "$rate")" "$(json_num "$eta")" "$verdict"
+    return
+  fi
+  printf '%s  data.kalloc.1024 = %s 個 (%s MiB)  claude %s / tmux のクライアント %s\n' \
+    "$stamp" "$(fmt_n "$KW_INUSE")" "$(awk -v n="$KW_INUSE" 'BEGIN { printf "%.1f", n / 1024 }')" "$KW_CLAUDE" "$KW_TMUX"
+  case $verdict in
+    ok)       echo "判定: 正常 ($(fmt_n "$WATCH_LEVEL") 個未満。健全なら数千個で頭打ちになる)" ;;
+    watch)    echo "判定: 要観察 ($(fmt_n "$WATCH_LEVEL") 個以上。健全な範囲を外れている。増え方を見て判断する)" ;;
+    suspect)  echo "判定: 漏れの疑い ($(fmt_n "$WATCH_LEVEL") 個以上で、1 時間に $(fmt_n "$LEAK_RATE") 個以上増えている)" ;;
+    leaking)  echo "判定: 漏れている ($(fmt_n "$LEAK_LEVEL") 個以上。健全なら数千個)" ;;
+    critical) echo "判定: 危険 ($(fmt_n "$RESTART_LEVEL") 個以上。パニックは約 2,100 万個。再起動する)" ;;
+  esac
+  if [[ $rate == - ]]; then
+    echo "増え方: まだ出せない (今回の起動以降の記録の幅が $((MIN_SPAN / 60)) 分に満たないか、時計が戻って記録が今より未来にある。$((MIN_SPAN / 60)) 分以上あけてもう一度叩く)"
+  else
+    printf '増え方: 1 時間あたり %s 個 (%s記録 %s 個から、%s 時間の平均)\n' \
+      "$( ((rate > 0)) && echo "+$(fmt_n "$rate")" || fmt_n "$rate")" \
+      "$([[ $basis == recent ]] && echo "直近 $((RECENT_WINDOW / 3600)) 時間の最初の" || echo "直近 $((RECENT_WINDOW / 3600)) 時間より前で最も新しい")" \
+      "$(fmt_n "$base_i")" "$(awk -v s=$((now - base_e)) 'BEGIN { printf "%.1f", s / 3600 }')"
+  fi
+  # 正常なときの残り時間は桁が大きいだけで役に立たないので出さない (JSON には出す)
+  if [[ $eta != - && $verdict != ok ]]; then
+    printf '再起動の目安 (%s 個) まで: 約 %s (この増え方が続く場合)\n' "$(fmt_n "$RESTART_LEVEL")" \
+      "$(awk -v h="$eta" 'BEGIN { if (h >= 48) printf "%.1f 日", h / 24; else printf "%.1f 時間", h }')"
+  fi
+  [[ $boot == 0 ]] && echo "注意: 起動時刻を読めなかったので、起動より前の記録も増え方に混ざっている"
+  return 0
 }
 
 cmd_list() {
   if [[ ! -s $LOG ]]; then
-    echo "kalloc-watch: まだ記録が無い ($LOG)。kalloc-watch record で記録する" >&2
+    echo "kalloc-watch: まだ記録が無い ($LOG)。kalloc-watch で記録する" >&2
     return 1
   fi
-  awk -F '\t' '
-    BEGIN { printf "%-19s  %10s  %9s  %10s\n", "time", "inuse", "MiB", "diff" }
+  local out
+  out=$(awk -F '\t' '
+    BEGIN { printf "%-19s  %10s  %9s  %10s  %6s  %6s\n", "time", "inuse", "MiB", "diff", "claude", "tmux" }
     $3 ~ /^[0-9]+$/ {
       d = (n++ ? sprintf("%+d", $3 - prev) : "-")
-      printf "%-19s  %10d  %9.1f  %10s\n", $2, $3, $3 * 1024 / 1048576, d
+      printf "%-19s  %10d  %9.1f  %10s  %6s  %6s\n", $2, $3, $3 * 1024 / 1048576, d, ($4 == "" ? "-" : $4), ($5 == "" ? "-" : $5)
       prev = $3
-    }' "$LOG"
+    }
+    END { if (!n) exit 3 }' "$LOG") || {
+    local rc=$?
+    ((rc == 3)) && echo "kalloc-watch: 読める行がまだ無い ($LOG)" >&2 || echo "kalloc-watch: 記録を読めない: $LOG" >&2
+    return 1
+  }
+  printf '%s\n' "$out"
 }
 
-case "${1:-record}" in
-  record)
-    # ロック待ちが 10 秒を越えたら lockf が rc=75 で止まり、その回は記録しない (既存の記録は触らない)。
-    # lockf 本体へのシグナルは子へ届かないので、中断したつもりでも記録は 1 行増えることがある (失うものは無い)
-    mkdir -p "$DIR"
-    exec /usr/bin/lockf -k -t 10 "$DIR/.lock" "$SELF" __record_locked ;;
+case "${1:-check}" in
+  check|record) record_and_report human ;;
+  snapshot) record_and_report json ;;
   __record_locked) record_locked ;;
   list) cmd_list ;;
-  -h|--help|help) usage ;;
-  *) echo "kalloc-watch: 不明なサブコマンド: $1" >&2; usage ;;
+  -h|--help|help) help_text ;;
+  *) usage_error "不明なサブコマンド: $1" ;;
 esac
