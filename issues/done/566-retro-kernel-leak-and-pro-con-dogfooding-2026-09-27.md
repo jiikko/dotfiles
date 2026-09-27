@@ -29,4 +29,4 @@
 
 ## 残課題
 
-- [ ] 上の 2 件の追記を入れるか、ユーザーの判断を待つ
+- [x] 上の 2 件の追記を入れる (2026-09-27 ユーザー承認): 1・2 は `_claude/rules/mutation-verify-new-tests.md` の「platform / シェル」節へ、3 は `_claude/rules/perf-claims-need-measurement.md` の「数えたものの母集合」の項へ追記した
