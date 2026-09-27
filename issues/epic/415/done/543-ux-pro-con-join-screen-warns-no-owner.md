@@ -2,7 +2,7 @@
 
 起票日: 2026-09-27
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 
@@ -29,7 +29,7 @@ PM と取り込みの係は動いたまま、カードは進まない状態に�
 ## 進捗
 
 - 2026-09-27 (C-102): `feat(pro-con): 持ち主の画面が無い join の画面に、罫線の上の帯で dispatcher の状態を出す (issue 543)`
-  - 見本 (`src/pro-con/samples/543-join-no-owner/`) の案 A / B / C からユーザーが **案 A (罫線の上に全幅の帯 1 行)** を選んだ。任意の「1 キーで持ち主の画面に切り替え」は「今回は作らない」と決まり、[new-ux-pro-con-join-switch-to-owner](548-ux-pro-con-join-switch-to-owner.md) へ分けた
+  - 見本 (`src/pro-con/samples/543-join-no-owner/`) の案 A / B / C からユーザーが **案 A (罫線の上に全幅の帯 1 行)** を選んだ。任意の「1 キーで持ち主の画面に切り替え」は「今回は作らない」と決まり、[new-ux-pro-con-join-switch-to-owner](../548-ux-pro-con-join-switch-to-owner.md) へ分けた
   - 帯は 4 通り: 黄 = dispatcher は動いているが止まっても誰も (supervisor も) 起こし直さない / 赤 = 落ちた (持ち主の画面を開くと起きる)・1 度も回っていない・人が止めた (持ち主の画面の c) / 赤 = プロセスは居るが回っていない (固まった。lock を持つので持ち主の画面を開いても起きない)。画面を数えられない・持ち主が居る・持ち主の画面では出さない (`ui/view.go` の `ownerlessBand`。ヘッダの行数は `headerRows()` で 4 / 5)
   - 🚨 概要の「join の画面はこの数に入らない」は `--exit-without-screens` については違う: dispatcher の `screensOpen` は join も数えるので、join が開いている間 dispatcher は無画面で抜けない。困るのは「止まったら誰も起こし直さない」(join は起こさない・supervisor は持ち主が居なければ起こし直さずに PG を止めて抜ける = `supervise.go` の `haltReason`) 方で、帯はこちらを出す
   - 実測: 隔離 HOME + tmux (-L) の本物の `--join` の画面で、dispatcher 未起動 → 赤の帯、持ち主の画面を開く → 帯が消える、持ち主の画面を kill → 黄の帯 (3 枚をカードに添付)。`TestOwnerlessJoinBand` (変異 4 つで落ちるのを確認)。`make test-changed` (src/pro-con + tests/issues) 緑
