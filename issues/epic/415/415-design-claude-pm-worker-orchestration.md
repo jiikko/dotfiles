@@ -3,7 +3,7 @@
 起票日: 2026-09-24
 
 > 2026-09-27、ユーザーの判断で pro-con に関わる epic をこの epic にまとめた: epic 441 (viewer。親 [441](441-design-pro-con-viewer.md)) と
-> epic 523 (asm 対応。親 [523](523-design-asm-fast-paths.md)) の issue をこのディレクトリへ移した。441 と 523 はこの epic の子の issue として残す。
+> epic 523 (asm 対応。親 [523](done/523-design-asm-fast-paths.md)) の issue をこのディレクトリへ移した。441 と 523 はこの epic の子の issue として残す。
 > ディレクトリは `epic/415` のまま (「epic の名前 = 親 issue の番号」の決まり。viewer の見出しの行はこの見出しから出る)
 
 > 🚨 2026-09-25 に `pro-con daemon` を役割どおり **`pro-con dispatcher`** (割り振り係) に改名した (コード・コマンド・画面・状態のファイル名)。

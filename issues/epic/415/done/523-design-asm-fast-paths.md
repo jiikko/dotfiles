@@ -2,7 +2,7 @@
 
 起票日: 2026-09-26
 
-親: [415](415-design-claude-pm-worker-orchestration.md) (2026-09-27 に epic 523 を epic 415 へまとめた。子は 520・524)
+親: [415](../415-design-claude-pm-worker-orchestration.md) (2026-09-27 に epic 523 を epic 415 へまとめた。子は 520・524)
 
 ## 概要
 
@@ -25,12 +25,12 @@ asm の速い道を入れる場所は 1 つにしたい。そのために、端�
 
 ## 進め方 (子 issue)
 
-1. [524](done/524-refactor-route-terminal-width-through-termwidth.md): pro-con と schedkeys の幅・切り詰め・切り出しを `termwidth` に寄せ、同じ行を何度も走査している所を 1 回にする (pure Go。asm は入れない)
+1. [524](524-refactor-route-terminal-width-through-termwidth.md): pro-con と schedkeys の幅・切り詰め・切り出しを `termwidth` に寄せ、同じ行を何度も走査している所を 1 回にする (pure Go。asm は入れない)
 2. 測り直す: 1 の後で、glogx と pro-con の実画面のフレームで、`termwidth` の走査が CPU の何 % かを見る (520 の Phase 0)。
    **pro-con のアニメーションのコマ** (揺れ・カードの移動・カーソルの移動。494 と同じ測り方) も対象に入れる (2026-09-26 のユーザーの質問「アニメーションの箇所も asm で速くできない?」)
    - アニメーションのコマの約 6 割は幅の走査 (`fit` / `splice` / `ansi.Cut` / `cellsOf`。494) で、1 で `termwidth` を通るようになれば NEON 版がそのまま効く。asm を別に書かない
    - 残りの確保と GC (494 で揺れ 1 回の GC 15 → 4 回) と動きの計算 (イージング・色の補間) は、asm では減らない。494 の後の揺れの 1 コマは約 1.4 ms (1 コマの枠 33 ms の約 5%)
-3. [520](done/520-perf-arm64-terminal-line-scanner.md): NEON 版は既に入っているので、2 の実測で残す価値を判断する (実画面で 10% 以上短くならなければ、520 の方針どおり外すか、
+3. [520](520-perf-arm64-terminal-line-scanner.md): NEON 版は既に入っているので、2 の実測で残す価値を判断する (実画面で 10% 以上短くならなければ、520 の方針どおり外すか、
    残すなら理由を書く)。524 で pro-con・schedkeys が `termwidth` を通るようになると、NEON 版がそこにも効く
 
 4. **ほかの候補 (2026-09-27 に形で洗った。未実測)**: asm (SIMD) が効くのは「大量のバイトを 1 つずつ見て、ほとんどが素通り」の形だけ
@@ -101,7 +101,20 @@ asm の速い道を入れる場所は 1 つにしたい。そのために、端�
       (ユーザーの指摘「起動は遅くなって、描画で速くなる?」。描画をほとんどしないコマンドでは純粋な退行だった)
   - 範囲に未割当の字 (U+FA6E / U+FA6F / U+FADA..U+FAFF 等) が入っている。幅は x/ansi から焼くので今の版とは一致する。
     依存を上げたら上の検査を回し直す
-- **次の候補 (未着手)**: pro-con / glogx のフレームで、幅・切り詰めがまだ CPU の何 % かを profile で測り直す (asm を切り詰め側にも入れる価値があるか)
+- **7. 測り直し (2026-09-27、master 8217d311。この Mac、各 `-benchtime 3s` の CPU profile。ロードアベレージ 5〜7)**: 切り詰め側にも asm を入れる価値は無い。**asm はここで打ち止め**
+
+  | profile | 壁時計に対する幅・切り詰め (`tuikit/termwidth` + `x/ansi`) | 描画 (`View`) の CPU に対する割合 | x/ansi の遅い道 |
+  |---|---|---|---|
+  | pro-con FrameBump | 11.3% (0.42s / 3.71s) | 58% | 0% |
+  | pro-con FrameMove | 2.2% | 10% | 0% |
+  | pro-con DiffBoardView | 9.8% | 57% | 1.7% |
+  | glogx ViewWithDiffJA | 4.2% | 38% | 0% |
+  | glogx ViewSteadyJA | 5.4% | 32% | 0% |
+
+  - 520 の基準 (実画面で 10% 以上) は壁時計で見る。幅・切り詰めを丸ごと 0 にしても最大 11% (FrameBump)、asm で半分にして約 5% で届かない
+  - 描画の CPU の中では最大 58% と大きいが、絶対値は 1 コマあたり数十 µs (30fps で CPU の約 0.1%)
+  - 1 コマの時間の大半は GC: `runtime.gcStart` → `startTheWorldWithSema` → `kevent` が全サンプルの約 28%。ベンチマークは 1 コマあたり約 340KB を確保する
+    (FrameBump 342KB・1.35k allocs)。**次に効くのは確保を減らすこと (asm では減らない)**。494 (pro-con の演出の確保と GC) の続きの形
 
 - 寄せただけで十分速くなれば、asm は入れない (520 の方針どおり)
 - 新しい lib は立てない (`termwidth` に「切る・詰める」の API を足す)。別の lib が要ると分かったら、そのときに決める

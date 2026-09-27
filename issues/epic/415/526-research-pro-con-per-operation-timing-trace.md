@@ -43,6 +43,7 @@
 ## 関連
 
 - 494 (演出のコマの計測・`framelog.tsv`) / 516 (カードごとの所要の記録) / 512 (設定画面のログのタブ) / 523 (asm 対応。測り直しの材料になる)
+  - 523 は 2026-09-27 に done (asm は打ち止め)。その時点の測り直しで、pro-con の 1 コマの時間の大半は GC (`gcStart` → stop-the-world、全サンプルの約 28%) で、幅・切り詰めは壁時計の 2〜11%。操作ごとの計測を足すなら、確保と GC が見える形にすると次の判断に使える
 - `src/pro-con/ui/framelog.go` / `src/pro-con/eventlog/eventlog.go` / `src/pro-con/store/` (受付の箱)
 
 ## 進捗
