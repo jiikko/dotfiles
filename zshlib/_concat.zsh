@@ -37,6 +37,9 @@ concat — 複数の動画ファイルを無劣化で結合します。
     # 元ファイルを残す
     concat --keep video_001.mp4 video_002.mp4
 
+    # 数字直後の英大文字も連番として扱う (A, B, C …。共通の末尾は出力名から外れる)
+    concat lecture_03A-enc.mp4 lecture_03B-enc.mp4 lecture_03C-enc.mp4   # → lecture_03.mp4
+
     # 複数グループを自動検出して結合
     concat clip_01.mp4 clip_02.mp4 scene_1.mp4 scene_2.mp4
 
@@ -221,6 +224,7 @@ EOF
   local first_suffix="$__CONCAT_R_FIRST_SUFFIX"
   local use_stripped_stems=$__CONCAT_R_USE_STRIPPED
   local detected_common_suffix="$__CONCAT_R_COMMON_SUFFIX"
+  local letter_mode=$__CONCAT_R_LETTER
 
   if (( ${#common_prefix} < 3 )); then
     print -r -- "エラー: ファイル名に連続性がありません: 共通プレフィックスが3文字未満です" >&2
@@ -277,8 +281,11 @@ EOF
       remaining="${remaining%$first_suffix}"
     fi
 
-    # 残りが [separator?][number] のパターンに一致するか
-    if [[ "$remaining" =~ '^[-_]?[0-9]+$' ]] || \
+    # 残りが [separator?][number] のパターンに一致するか。英字連番なら英字 1 文字だけを見る
+    # (prefix が数字で終わるので、ep1A に対する ep10 の "0" を兄弟と読んでしまう)
+    if (( letter_mode )); then
+      [[ "$remaining" =~ '^[A-Z]$' ]] && missing_files+=("${f:t}")
+    elif [[ "$remaining" =~ '^[-_]?[0-9]+$' ]] || \
        [[ "$remaining" =~ '^part[0-9]+$' ]] || \
        [[ "$remaining" =~ '^\([0-9]+\)$' ]]; then
       missing_files+=("${f:t}")

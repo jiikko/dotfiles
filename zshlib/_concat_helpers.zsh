@@ -192,16 +192,21 @@ __concat_validate_sequence() {
 typeset -gA __CONCAT_GROUP_KEY_OF   # 絶対パス → グループキー (prefix::suffix)
 typeset -ga __CONCAT_GROUP_KEYS     # 検出順のユニークキー一覧
 typeset -gi __CONCAT_GROUP_VIABLE   # 2 ファイル以上のグループ数
+typeset -ga __CONCAT_GROUP_SKIPPED  # 連番パターンに一致せずグループから外したファイル名
 
 # 内部補助: ファイル群を連番パターンでグルーピングする
 # 引数: ファイルパス (位置引数)
-# 出力: 上記グローバル 3 つ。連番パターンに一致しないファイルは stderr に警告してスキップ
+# 出力: 上記グローバル 4 つ。連番パターンに一致しないファイルは __CONCAT_GROUP_SKIPPED に積む。
+#       警告は __concat_run_groups が出す (マルチグループ検出で 1 グループと分かり単一グループの
+#       処理へフォールスルーするときは、共通サフィックスを外せば連番になるファイルまで
+#       「スキップ」と誤って報告してしまうため、ここでは出さない)
 __concat_group_files() {
   __CONCAT_GROUP_KEY_OF=()
   __CONCAT_GROUP_KEYS=()
   __CONCAT_GROUP_VIABLE=0
+  __CONCAT_GROUP_SKIPPED=()
   local f stem rest suffix prefix key
-  local -a skipped=() all_keys=()
+  local -a all_keys=()
   for f in "$@"; do
     stem=$(__concat_get_stem "$f")
     if __concat_extract_number "$stem"; then
@@ -212,12 +217,9 @@ __concat_group_files() {
       __CONCAT_GROUP_KEY_OF[${f:A}]="$key"
       all_keys+=("$key")
     else
-      skipped+=("${f:t}")
+      __CONCAT_GROUP_SKIPPED+=("${f:t}")
     fi
   done
-  if (( ${#skipped[@]} > 0 )); then
-    print -r -- "🚨  連番パターンに一致しないファイルをスキップしました: ${(j:, :)skipped}" >&2
-  fi
   __CONCAT_GROUP_KEYS=("${(u)all_keys[@]}")
   local k count
   for k in "${__CONCAT_GROUP_KEYS[@]}"; do
@@ -231,7 +233,7 @@ __concat_group_files() {
 
 # 内部補助: グルーピング済みファイル群をグループごとに concat へ流し、サマリを出す
 # 前提: 直前に __concat_group_files を呼んでグローバルが populate 済みであること
-#       (ここで再グルーピングすると skip 警告が二重に出るため、敢えて分離している)
+#       (ここで再グルーピングせず、呼び出し側が判定に使った結果をそのまま使う)
 # 引数: $1 = オプション個数 N, $2..$(N+1) = concat へ渡すオプション, 残り = ファイルパス
 # 戻り値: 0=全グループ成功 (結合可能グループなしを含む), 1=失敗グループあり
 __concat_run_groups() {
@@ -247,6 +249,10 @@ __concat_run_groups() {
   # グローバルを直接参照し続けると後続グループが silent にスキップされる (codex P1)。
   local -a keys=( "${__CONCAT_GROUP_KEYS[@]}" )
   local -A key_of=( "${(kv)__CONCAT_GROUP_KEY_OF[@]}" )
+
+  if (( ${#__CONCAT_GROUP_SKIPPED[@]} > 0 )); then
+    print -r -- "🚨  連番パターンに一致しないファイルをスキップしました: ${(j:, :)__CONCAT_GROUP_SKIPPED}" >&2
+  fi
 
   local _key _f _total=0 _ok=0 _fail=0
   local -a group_files sorted_group
@@ -602,6 +608,7 @@ __concat_verify_frame_order() {
   local -a sorted_files=()
   local -A num_map  # ファイルパス → 抽出された連番
   local f basename num
+  local -i used_letter=0
 
   for f in "${raw_files[@]}"; do
     basename="${f:t:r}"  # 拡張子なしのファイル名
@@ -618,6 +625,11 @@ __concat_verify_frame_order() {
     elif [[ "$basename" =~ '([0-9]+)$' ]]; then
       # フォールバック: 末尾の数値
       num="${match[1]}"
+    elif [[ "$basename" =~ '[0-9]([A-Z])([-_].*)?$' ]]; then
+      # 数字直後の英大文字 1 文字 (lecture_03A-enc)。A=1, B=2 …
+      local letter="${match[1]}"
+      num=$(( #letter - 64 ))
+      used_letter=1
     fi
     if [[ -z "$num" ]]; then
       # 連番を抽出できない場合は検証をスキップ（メインと同一ソートでは検証の意味がない）
@@ -627,6 +639,14 @@ __concat_verify_frame_order() {
     # 先頭ゼロを除去して数値化
     num_map[$f]=$((10#$num))
   done
+
+  # 英字から取った番号が重なる (clip9A と clip10A はどちらも A=1) なら、英字は連番ではなく共通の
+  # 末尾。同点の並びは sort がパス名の文字列順で決め、clip10A を先にして正しい出力を不一致と判定するので、
+  # 英字を使う前 (数字を読めず skip) と同じく検証しない
+  if (( used_letter )) && (( ${#${(u)num_map[@]}} < ${#num_map} )); then
+    REPLY=""
+    return 0
+  fi
 
   if (( ${#num_map} > 0 )); then
     # 連番の数値昇順でソート
@@ -765,6 +785,54 @@ __concat_trash() {
   return 1
 }
 
+# --- 英字連番 (lecture_03A / lecture_03B / lecture_03C) ------------------------
+# 🚨 __concat_extract_number (グルーピングと共用) には入れない。入れると、ディレクトリモードで
+# episode_02A のような単独の追補が単独グループになって警告なしに取り残される / 英字と数字の連番
+# (lecture_03A と lecture_03_1) が同じキーに入って番号が重なったまま結合される / interview_01A・01B
+# (カメラ違い) が確認なしに結合される (敵対レビュー 2026-09-27)。そのため英字連番は、ファイルを
+# 明示的に渡した単一グループの判定でだけ、次の条件をすべて満たすときに限って受け付ける:
+#   - 全 stem が「数字 + 英大文字 1 文字」で終わる (共通サフィックスは外してよい)。小文字 (1080p / 4k) は対象外
+#   - 英字の前 (prefix) が全ファイルで同じ
+#   - A から始まる (1080P / 1080Q のような「版」の命名を連番と読まない)
+# 戻り値: 0=英字連番で解決 (結果は __CONCAT_R_*) / 1=英字連番の形ではない / 2=形は英字連番だが不正 (出力済み)
+__concat_resolve_letter_sequence() {
+  local -a stems=("$@") core=()
+  local common_suffix="" stem
+  __concat_find_common_suffix "${stems[@]}"
+  # 共通サフィックスが英字まで食い込む (lecture_03A と lecture_04A の "A") ときは外さない
+  [[ "$REPLY" == [-_]* ]] && common_suffix="$REPLY"
+  for stem in "${stems[@]}"; do
+    core+=("${stem%$common_suffix}")
+  done
+
+  local prefix="" letter
+  local -a numbers=()
+  for stem in "${core[@]}"; do
+    [[ "$stem" =~ '^(.*[0-9])([A-Z])$' ]] || return 1
+    if [[ -z "$prefix" ]]; then
+      prefix="${match[1]}"
+    elif [[ "${match[1]}" != "$prefix" ]]; then
+      return 1
+    fi
+    letter="${match[2]}"
+    numbers+=($(( #letter - 64 )))
+  done
+
+  local -a sorted_numbers=("${(on)numbers[@]}")
+  if (( sorted_numbers[1] != 1 )); then
+    print -r -- "エラー: 英字の連番が A から始まっていません: ${(j:, :)core}" >&2
+    return 2
+  fi
+
+  __CONCAT_R_NUMBERS=("${numbers[@]}")
+  __CONCAT_R_COMMON_PREFIX="$prefix"
+  __CONCAT_R_FIRST_SUFFIX=""
+  __CONCAT_R_USE_STRIPPED=$(( ${#common_suffix} > 0 ))
+  __CONCAT_R_COMMON_SUFFIX="$common_suffix"
+  __CONCAT_R_LETTER=1
+  return 0
+}
+
 # --- 連番解決 (stems → 連番リスト + 命名部品) -----------------------------------
 # 3 段リトライの状態機械:
 #   1. 通常 stem で連番抽出 (prefix/suffix 一致を要求)
@@ -778,6 +846,7 @@ typeset -g  __CONCAT_R_COMMON_PREFIX  # 共通プレフィックス
 typeset -g  __CONCAT_R_FIRST_SUFFIX   # 共通サフィックス (番号より後ろ, 無ければ空)
 typeset -gi __CONCAT_R_USE_STRIPPED   # 1=共通サフィックス除去で解決した
 typeset -g  __CONCAT_R_COMMON_SUFFIX  # 除去した共通サフィックス (USE_STRIPPED=1 のとき)
+typeset -gi __CONCAT_R_LETTER         # 1=英字連番 (lecture_03A / B / C) で解決した
 __concat_resolve_sequence() {
   local -a stems=("$@")
   __CONCAT_R_NUMBERS=()
@@ -785,6 +854,14 @@ __concat_resolve_sequence() {
   __CONCAT_R_FIRST_SUFFIX=""
   __CONCAT_R_USE_STRIPPED=0
   __CONCAT_R_COMMON_SUFFIX=""
+  __CONCAT_R_LETTER=0
+
+  # 0. 英字連番 (数字の直後の英大文字 1 文字)。成立すればここで確定、形が違えば数字連番の段へ進む
+  local _letter_rc
+  __concat_resolve_letter_sequence "${stems[@]}"
+  _letter_rc=$?
+  (( _letter_rc == 0 )) && return 0
+  (( _letter_rc == 2 )) && return 1
 
   local -a numbers=()
   local first_suffix="" first_prefix=""
