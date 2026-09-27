@@ -55,6 +55,8 @@ nvim が受け取るフォーカスの通知 (FocusGained / FocusLost) への反
   `src/glogx/tui.go` の spinnerActive のコメントと `docs/glogx-bubbletea-v2.md` の表を直した
 - [x] 実測 (上と同じ隔離サーバ、設定の上書きなし): nvim の pane の出入り 27ms → **11ms** (中央値、n=30)、1 回 68KB → 45KB
 
+- [x] 本番で確認: 2026-09-28 ユーザーの体感「早くなった気がする」。buffer の読み直しの遅れも「リアルタイムである必要はない」で許容
+
 ## 受け入れた代償 (洗い出し 2026-09-28)
 
 - nvim の FocusGained の checktime が効かない。外で書き換えられたファイルは、キーを押して 0.5 秒止まる (CursorHold) か
