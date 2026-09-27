@@ -58,7 +58,7 @@
   未 push) があれば「push してよいか」をユーザーへ伺わせる (glogx の `n` で付けた claim もここで拾う)。
   自動 push は採らない (他の未 push commit も飛ぶため)
 - hook は注意を出すだけで、jq が無いと無音で死に、宛先が変数・相対パスの移動は検出できない。
-  **規律の正本はこの md** ([`comment-no-restate-enforced.md`](comment-no-restate-enforced.md) の区分)
+  **規律の正本はこの md** ([`comment-no-restate-enforced.md`](../rules/comment-no-restate-enforced.md) の区分)
 - 🚨 **照会に答えられないセッションがある** (`to` を取る `SendMessage` を持たず `ccd_session_mgmt` しか無いセッションは原理的に返信できない)。
   沈黙は「空いている」と読まれるので、返信できないと分かったらユーザーへ上げる
 
@@ -69,7 +69,7 @@
 
 ## 関連
 
-- [`commit-with-pathspec.md`](commit-with-pathspec.md) — 「claim だけを commit する」ための pathspec 規律
-- [`parallel-write-agents-need-worktree-isolation.md`](parallel-write-agents-need-worktree-isolation.md) —
+- [`commit-with-pathspec.md`](../rules/commit-with-pathspec.md) — 「claim だけを commit する」ための pathspec 規律
+- [`parallel-write-agents-need-worktree-isolation.md`](../rules/parallel-write-agents-need-worktree-isolation.md) —
   同じ working tree を複数主体が書く問題。本ルールは同じ issue 列を複数マシンが処理する問題
 - `docs/issues-viewer-spec.md` — `next/` の元々の意味 (glogx の `n` が付ける「次にやる」目印)

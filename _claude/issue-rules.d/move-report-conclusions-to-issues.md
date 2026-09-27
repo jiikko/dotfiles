@@ -15,10 +15,10 @@
   resource-leaks の却下理由を issue へ書いてから後続 3 タイプを回したところ、
   同じ指摘の再提出が 2 件止まった)
 - **移し先の使い分け**: 着手する残債は `issues/` の新規 issue へ / 「対応しない」と決めた指摘は
-  該当コードの直近コメントへ ([`pending-issue-rationale-in-code.md`](pending-issue-rationale-in-code.md)) /
+  該当コードの直近コメントへ ([`pending-issue-rationale-in-code.md`](../rules/pending-issue-rationale-in-code.md)) /
   出典の監査 issue が残っているなら、そこに「反証・対応の結果」節を足して全数勘定を書く
 - **レポート本体を `docs/` に commit して残すのは採らない**。レポートはその時点のスナップショット
-  であり、コードが動けば嘘になる ([`claude-md-maintenance.md`](claude-md-maintenance.md) の
+  であり、コードが動けば嘘になる ([`claude-md-maintenance.md`](../rules/claude-md-maintenance.md) の
   「What はコードが真の出典」と同型)。残すのは結論と判断理由だけ
 
 ## 同型: issue が `tmp/` のスクリプトの実行を指示していないか
@@ -85,9 +85,9 @@ node tmp/probe-dex6.js   # atob 2 段目の入力を観測
 
 ## 関連
 
-- [`pending-issue-rationale-in-code.md`](pending-issue-rationale-in-code.md) — 「却下した指摘の理由を
+- [`pending-issue-rationale-in-code.md`](../rules/pending-issue-rationale-in-code.md) — 「却下した指摘の理由を
   コード直近に残す」。本ルールはその**レポート版**で、issue 側へ移す動線を担当する
-- [`claude-md-maintenance.md`](claude-md-maintenance.md) — 「ドキュメントは Why を保存する」
-- [`perf-claims-need-measurement.md`](perf-claims-need-measurement.md) — 「主張するなら実測値か
+- [`claude-md-maintenance.md`](../rules/claude-md-maintenance.md) — 「ドキュメントは Why を保存する」
+- [`perf-claims-need-measurement.md`](../rules/perf-claims-need-measurement.md) — 「主張するなら実測値か
   『未実測 + trigger』を残す」。本ルールの追加節はそれを**issue を閉じるときの環境値**へ広げたもの
 - issue 070 の「反証・対応の結果」節 — 手作業で移した実例

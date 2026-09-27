@@ -1,6 +1,6 @@
 # 検証レポートを `./tmp` に出したら、結論と却下理由を issue へ移すまでが 1 セット — なぜ・実例
 
-ルール本文: `~/dotfiles/_claude/rules/move-report-conclusions-to-issues.md`（`~/.claude/rules/` に link され、毎セッション起動時に読まれる）。
+ルール本文: `~/dotfiles/_claude/issue-rules.d/move-report-conclusions-to-issues.md`（issues/ を持つ repo のセッションにだけ SessionStart hook `issue-rules-inject.sh` が注入する。issue 414）。
 この文書は起動時には読まれない。ルールの根拠・起源・実例を保存し、ルールを疑う・改訂する・却下するときに読む。
 
 ## なぜ (起源: 2026-08-21 の実例)

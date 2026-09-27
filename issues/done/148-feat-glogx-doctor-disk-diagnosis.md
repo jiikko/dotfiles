@@ -1523,7 +1523,7 @@ Partial と exit code の整合 / キャンセル済み ctx での Start / CI �
   見た目は **`bin/glogx` を起動して `D`** を押せば実物が見える (端末幅を変えて 120 / 80 / 走査中を見る)。
   テストは見た目を pin していない (行数・幅・文言の有無だけ) ので、判断は実物を見て行う。
   🚨 以前は `tmp/doctor_sample.txt` を指していたが、`tmp/` は gitignore なので**残らない**
-  (`_claude/rules/move-report-conclusions-to-issues.md`)。生成方法も記録されていなかったため、
+  (`_claude/issue-rules.d/move-report-conclusions-to-issues.md`)。生成方法も記録されていなかったため、
   参照を実物の出し方に置き換えた
 - テスト: `doctor_view_test.go` (page 行の契約 / キャッシュの完了・partial / 世代 / キー / browseModel 配線 /
   トースト判定 / 壊れたキャッシュ / atomic / brew doctor のパース)

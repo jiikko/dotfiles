@@ -33,7 +33,7 @@
 issue 075 を done へ送るとき、決着節に現在の設定値を実測せずに書いて commit した
 (`44c95fc` → `ed7bfa7` で訂正)。
 
-- 切り出し先: **`_claude/rules/move-report-conclusions-to-issues.md` へ追記済み**
+- 切り出し先: **`_claude/issue-rules.d/move-report-conclusions-to-issues.md` へ追記済み**
   (「同型: issue を `done/` へ送るときは、本文が前提にしている『現状』を実測する」)。
   規範はそちらが正本で、経緯と実例は同名の `rules-rationale/` に置いた
 

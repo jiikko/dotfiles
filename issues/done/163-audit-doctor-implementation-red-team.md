@@ -18,7 +18,7 @@ Setpgid / partial 保存の規律 / 案 A レイアウト + カーソル + Enter
 ## 走らせ方
 
 read-only のサブエージェント 6 体を並行で (体 4・5・6 は実測 / 偽環境の実験を伴うので、計測コマンドと一時ディレクトリでの実験は許可する。repo のファイル編集は不可。体 6 の「1 つ足す試行」は使い捨て worktree で)。**「レビューして」ではなく「壊す手順を見つけろ。壊せなければ壊せなかったと明記しろ」**
-で投げる (`_claude/rules/issue-creation-codex-review.md` の反証の作法)。走行中は対象ファイルを編集しない
+で投げる (`_claude/issue-rules.d/issue-creation-codex-review.md` の反証の作法)。走行中は対象ファイルを編集しない
 (`parallel-write-agents-need-worktree-isolation.md`)。5h 枠の残量が少ないと途中で落ちるので (2026-09-02 に 3 体とも
 session limit で死んだ実例)、**枠が開いた直後に起動する**。報告は各 2000 字以内を指定する。
 

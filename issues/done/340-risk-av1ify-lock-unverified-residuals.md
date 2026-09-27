@@ -127,7 +127,7 @@ kill する。列挙と kill の間に子が入れ替わる / 終了済み PID �
 > 引き合いに出した 318 / 324 は**どちらも `issues/done/` に在る**。
 
 🚨 **却下した 5 を消さずに残す**のが要点。消すと次の監査が同じ指摘を再生成する
-（[`move-report-conclusions-to-issues.md`](../../_claude/rules/move-report-conclusions-to-issues.md)）。
+（[`move-report-conclusions-to-issues.md`](../../_claude/issue-rules.d/move-report-conclusions-to-issues.md)）。
 
 ## 追記 2026-09-10: 理由を**コード側にも**残した（issue だけでは届かない）
 

@@ -67,4 +67,4 @@
 ## 関連
 
 - `~/.claude/CLAUDE.md`「コード変更時の自律改善」— 本ルールが制約する逆方向
-- [`issue-creation-codex-review.md`](issue-creation-codex-review.md) — refactor 提案も外部レビューに通す
+- `~/.claude/CLAUDE.md`「レビュー方針」 — refactor 提案も外部レビューに通す

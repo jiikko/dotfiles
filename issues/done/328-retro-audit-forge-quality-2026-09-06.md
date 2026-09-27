@@ -43,7 +43,7 @@ resource-leaks の結果を issue 308 に「却下した指摘とその理由」
 `move-report-conclusions-to-issues.md` は「次の audit が同じ指摘を再生成する」を防ぐ目的で
 書かれているが、効くのは次のセッションだけではなく**同じセッションの後続監査**にも効く。
 
-- **切り出し先: `_claude/rules/move-report-conclusions-to-issues.md` へ 1 行追記**
+- **切り出し先: `_claude/issue-rules.d/move-report-conclusions-to-issues.md` へ 1 行追記**
   （「同一セッションで複数の監査を回すなら、次を起こす前に却下理由を書く」）
 
 ---

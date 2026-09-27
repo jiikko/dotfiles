@@ -94,7 +94,7 @@ done/164 に「6 体並行で全滅した実例も出た」として記録済み
 **自分は最後まで使っていなかった**。使っていれば番号衝突の一部は防げた。
 
 **切り出し先案**: 却下でよい。規範は
-[`claim-issue-in-next-and-push.md`](../../_claude/rules/claim-issue-in-next-and-push.md) に既にあり、
+[`claim-issue-in-next-and-push.md`](../../_claude/issue-rules.d/claim-issue-in-next-and-push.md) に既にあり、
 今日から hook も動いている。**次のセッションで実際に使うかどうかの問題**で、ルールを足す話ではない。
 ただし「番号の採番も claim と同じ問題を持つ (起票時点の最大 + 1 は競合する)」のは規範に無い。
 気になるなら別 issue。

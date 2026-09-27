@@ -77,7 +77,7 @@
 - 取りこぼしは Stop hook（`issue-progress-check.sh`）が差し戻す。ただし hook が見るのは構造までで、本文の正しさは書く側の責任
 - **issue の記述を鵜呑みにしない**。着手前に実コードと git 履歴で検証する。特に「〜は存在しない」「呼び出しは 0 件」
   のような不在の主張は数え直し、結果を本文へ書き戻す
-- 新規作成・大幅改訂は commit 前に反証レビューへ通す（`~/.claude/rules/issue-creation-codex-review.md`）
+- 新規作成・大幅改訂は commit 前に反証レビューへ通す（`issue-rules.d/issue-creation-codex-review.md`。同じ hook が別に注入する）
 - `./tmp` に出した検証レポートの結論・全数勘定・却下理由は issue へ移すまでが 1 セット
 
 ## `期限:`

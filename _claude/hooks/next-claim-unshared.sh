@@ -6,7 +6,7 @@
 # 「push してよいか」をユーザーへ伺わせる。
 #
 # なぜ: claim は push されて初めて他マシンから見える (規範:
-# _claude/rules/claim-issue-in-next-and-push.md)。Claude 自身が Bash で移した場合は
+# _claude/issue-rules.d/claim-issue-in-next-and-push.md)。Claude 自身が Bash で移した場合は
 # next-claim-push.sh (PostToolUse) が拾うが、**人が glogx の issues viewer で `n` を押した
 # 移動は Go 側の rename なので Bash を通らず、どの hook にも見えない**。その claim は
 # 誰も push しないまま寝てしまい、他マシンから見て「未着手の issue」に見え続ける。

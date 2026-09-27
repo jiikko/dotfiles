@@ -71,7 +71,7 @@
 構造は 1 つで、**「claim を push するまでの窓」と「fetch から着手までの窓」**。hook
 (`next-claim-push.sh`) は Bash 経由の移動しか見えず、`git fetch` の鮮度は誰も強制していない。
 
-**切り出し先の提案**: 既存 [`claim-issue-in-next-and-push.md`](../../_claude/rules/claim-issue-in-next-and-push.md)
+**切り出し先の提案**: 既存 [`claim-issue-in-next-and-push.md`](../../_claude/issue-rules.d/claim-issue-in-next-and-push.md)
 に **「着手直前にもう一度 `git fetch` する」** と **「`ListAgents` に他セッションが居るなら、
 next だけでなく本人へ 1 回聞く」** を足す。next は「push されるまで見えない」ので、
 生きているセッションへの照会が唯一の即時性のある手段。

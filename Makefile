@@ -60,7 +60,7 @@ KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/ka
 # 2026-09-02 時点で 309 エントリ / 831MB あった (最古は 7 月)。
 #
 # 🚨 **消す前に、その中身の結論が issue かコードへ移っているか確かめる**
-# (`_claude/rules/move-report-conclusions-to-issues.md`)。レポート本体は消えてよいが、
+# (`_claude/issue-rules.d/move-report-conclusions-to-issues.md`)。レポート本体は消えてよいが、
 # 却下理由と全数勘定が tmp にしか無い状態で消すと、次の audit が同じ指摘を再生成する。
 #
 # 🚨 **issue やドキュメントが指している tmp のパスは消すと参照が切れる**。DAYS を絞るだけでは

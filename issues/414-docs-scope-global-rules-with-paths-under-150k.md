@@ -122,6 +122,9 @@ glob の候補は `**/*.swift` / `**/project.yml` / `**/Package.swift` / `**/*.x
 - **D 見送り**: 発動点が行動（着手・作成・書き出し）で、`paths:` は Read でしか発火しない（Write / Edit では発火しないことは
   dotfiles の `CLAUDE.md` に実測つきで注記済み）。`_claude/issue-rules.md` の hook 注入へ寄せる手は、拘束力（system-reminder）と
   link の張り方が変わるので今回はやらない。**再開の trigger**: B の後でも常時読み込みが再び 140k を超えたとき
+- **D 採用 (2026-09-27、再開の trigger を満たしたため)**: global が 3 日で 117.1k → 126.0k に増え、obaket の見積もりが約 150.3k に達した。
+  `paths:` ではなく hook の注入へ移した: 3 本を `_claude/rules/` から `_claude/issue-rules.d/` へ `git mv` し、SessionStart hook
+  `issue-rules-inject.sh` が 1 本ずつ注入する (issues/ を持つ repo だけ)。詳細は下の「D の実施」
 
 ### 結果（`wc -m`、`paths:` の無いファイルだけ）
 
@@ -149,6 +152,32 @@ A を戻した後の値（`wc -m`、2026-09-25）。A を入れていた間は g
 較正: 常時読み込みの rule の文は Read なしで YES、存在しない文は NO。🚨 最初は問いの文が索引に足した説明と重なっていて、
 Read なしでも YES になった（索引を見て答えていた）。rule の本文にしか無い文へ替えて測り直した
 
+
+### D の実施 (2026-09-27)
+
+- 🚨 **hook 1 本の注入は約 10k 字で末尾が黙って落ちる** (実測: haiku に末尾の目印を答えさせた。9,525 字は届き、11,925 字は先頭の目印だけ。
+  9.5k 字の hook 2 本は両方届いた = 上限は呼び出しごと)。issue-rules.md (4.8k) に 3 本 (9.6k) を足すと 1 本では届かないので、
+  `issue-rules-inject.sh issue-rules.d/<x>.md` の形で 1 ファイル 1 呼び出しにし、settings.json に 3 本足した。
+  本文が 9,500 字を超えたら先頭に「Read せよ」の警告を出す (先頭は打ち切られない)
+- `~/.claude/CLAUDE.md`「レビュー方針」が一般のレビューの作法を `issue-creation-codex-review.md` の代替節に預けていた
+  (issues/ の無い repo でも使う) ので、作法 (観点を分けて反証させる) を「レビュー方針」へ移し、issue 側は参照だけにした
+- 常時読み込みの rule から 3 本を指していたリンク (verify-design-intent / codex-drive / hook のコメント / Makefile / rationale) を張り直した
+- 検査: `tests/claude/test_issue_rules_inject.sh` に ① 各ファイルが引数で全文注入される ② 上限を超えない ③ settings.json の配線と
+  `issue-rules.d/` が 1 対 1 ④ 上限超えで先頭に警告、を足した。変異で red を確認: 配線を 1 本消す / 警告の if を外す /
+  引数を無視する / 上限を 3,000 字に下げる (2 本が NG)
+- 字数 (`wc -m`、`paths:` の無いファイルだけ、UTF-8):
+
+| | 前 (今日の master) | 後 |
+|---|---|---|
+| global の rule | 113.2k | 103.6k |
+| `~/.claude/CLAUDE.md` | 12.8k | 12.8k |
+| global 計 | 126.0k | **116.4k** |
+| dotfiles のセッション (repo 層 8.5k) | 134.5k | **124.9k** |
+| obaket のセッション (repo 層は起票時の 24.7k。見積もり) | 150.7k | **141.1k** |
+
+- 取りこぼし: `move-report-conclusions-to-issues.md` の発動点 (`./tmp` にレポートを書き出した) は issues/ の無い repo でも起きるが、
+  そこでは届かなくなる。移し先の半分 (コードのコメント) は常時読み込みの `pending-issue-rationale-in-code.md` と
+  CLAUDE.md「一時ファイルの配置」が持っているので受け入れた
 ### 残タスク
 
 - [ ] obaket のセッションの常時読み込み合計の実測（このマシンに my-products の checkout が無く測れなかった。上の 141.8k は

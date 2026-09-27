@@ -125,6 +125,21 @@
             "type": "command"
           },
           {
+            "command": "~/dotfiles/_claude/hooks/issue-rules-inject.sh issue-rules.d/claim-issue-in-next-and-push.md",
+            "timeout": 10,
+            "type": "command"
+          },
+          {
+            "command": "~/dotfiles/_claude/hooks/issue-rules-inject.sh issue-rules.d/issue-creation-codex-review.md",
+            "timeout": 10,
+            "type": "command"
+          },
+          {
+            "command": "~/dotfiles/_claude/hooks/issue-rules-inject.sh issue-rules.d/move-report-conclusions-to-issues.md",
+            "timeout": 10,
+            "type": "command"
+          },
+          {
             "command": "~/dotfiles/_claude/hooks/claude-links-sync.sh",
             "timeout": 10,
             "type": "command"

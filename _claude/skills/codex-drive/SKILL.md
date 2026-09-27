@@ -1113,7 +1113,7 @@ EOF
   完了時のチェックリストが**起票時の (古い) 条件だけ**になり、敵対レビューが足した条件が
   誰にも検証されないまま done になる (実測 2026-09-07 obaket 740: D3 が足した 5 条件を設計ファイルに
   だけ書き、done へ移す直前に気づいて移した)。移すのは条件そのものと、それが足された理由 1 行
-  ([`move-report-conclusions-to-issues.md`](../../rules/move-report-conclusions-to-issues.md))。
+  ([`move-report-conclusions-to-issues.md`](../../issue-rules.d/move-report-conclusions-to-issues.md))。
 - 🚨 **codex に issue へ記録させたら、commit 前に `grep -n 'tmp/' <issue>` で
   gitignore 配下への参照が無いか見る**。codex は生出力のパスをそのまま
   markdown リンクで書く。**手元には実体があるのでリンク検査は通り、新品チェックアウトと

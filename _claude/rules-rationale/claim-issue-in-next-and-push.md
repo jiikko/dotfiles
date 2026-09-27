@@ -1,6 +1,6 @@
 # issue に着手するときは `issues/next/` へ移して claim し、即 push する — なぜ・実例
 
-ルール本文: `~/dotfiles/_claude/rules/claim-issue-in-next-and-push.md`（`~/.claude/rules/` に link され、毎セッション起動時に読まれる）。
+ルール本文: `~/dotfiles/_claude/issue-rules.d/claim-issue-in-next-and-push.md`（issues/ を持つ repo のセッションにだけ SessionStart hook `issue-rules-inject.sh` が注入する。issue 414）。
 この文書は起動時には読まれない。ルールの根拠・起源・実例を保存し、ルールを疑う・改訂する・却下するときに読む。
 
 ## 2026-09-02 — 同じ retro の切り出しを 2 マシンが同時にやった

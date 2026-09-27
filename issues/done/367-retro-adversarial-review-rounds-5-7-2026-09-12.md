@@ -68,7 +68,7 @@ production 3 commit + テスト 2 commit、新規 issue 5 本（362 / 363 / 364 
 （あちらは「空けた」の連絡、こちらは「これから取る」の合意）。
 どちらも **push されるまでは誰の物でもない**。相手も同じ結論を自分から述べている。
 
-- 切り出し先候補: [`claim-issue-in-next-and-push.md`](../../_claude/rules/claim-issue-in-next-and-push.md)
+- 切り出し先候補: [`claim-issue-in-next-and-push.md`](../../_claude/issue-rules.d/claim-issue-in-next-and-push.md)
   の「🚨 fetch は着手を決めた直前にもう一度打つ」の並びへ、
   **「採番も同じ。予約の合意があっても、採番の直前に `git fetch` して最大番号を取り直す」**を 1 行。
   361 の残課題とまとめて扱うのが自然

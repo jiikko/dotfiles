@@ -40,7 +40,7 @@ A (glogx) + C (規律) で Claude / 人の両経路を覆う。B は gate の解
 ## 関連
 
 - obaket `issues/721-retro-634-635-codex-drive-2026-09-05.md` 反省 7
-- `_claude/rules/claim-issue-in-next-and-push.md` / `src/glogx/issues/move.go`
+- `_claude/issue-rules.d/claim-issue-in-next-and-push.md` / `src/glogx/issues/move.go`
 
 ## 決着 (2026-09-05): 案 A/B/C のどれでもなく「symlink の目印」で解決
 

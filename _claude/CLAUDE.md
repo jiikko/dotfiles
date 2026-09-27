@@ -67,7 +67,7 @@
 
 - **`issues/` (または `issue/`) を持つ repo では、SessionStart hook (`_claude/hooks/issue-rules-inject.sh`) が issue 運用規約を注入する。この CLAUDE.md と同じ拘束力で従う**。正本は `~/dotfiles/_claude/issue-rules.md`、repo 固有の事項は各 repo の `issues/README.md`。issues/ を持たない repo には適用しない
 - issues/ がある repo なのに注入が見当たらないときは、issue を触る前に正本を Read する
-- claim の手順は [`claim-issue-in-next-and-push.md`](rules/claim-issue-in-next-and-push.md)、検証レポートを issue へ移す手順は [`move-report-conclusions-to-issues.md`](rules/move-report-conclusions-to-issues.md)
+- claim の手順・検証レポートを issue へ移す手順・issue の反証レビューは `issue-rules.d/` の rule が正本で、同じ hook が 1 本ずつ注入する (常時読み込みから外した。issue 414)。注入が見当たらなければ `~/dotfiles/_claude/issue-rules.d/` を Read する
 
 ## 設計方針
 
@@ -130,7 +130,7 @@
 
 ## レビュー方針
 
-- **重要なコード変更・バグ修正は、設計と実装の両方を外部レビューに通す** (設計 → レビュー → 実装 → テスト → レビュー)。codex が許可されている環境では codex (`codex-review` / `cross-review` / `review-loop` / `codex-lead` / `codex-drive`)、それ以外では観点を分けた read-only サブエージェント (作法は [`issue-creation-codex-review.md`](rules/issue-creation-codex-review.md) の代替節)。typo・数行の chore は対象外。codex を使わない環境では観点を分けたサブエージェントを直接起動する (`cross-review` skill は codex を含むため丸ごとは使えない)
+- **重要なコード変更・バグ修正は、設計と実装の両方を外部レビューに通す** (設計 → レビュー → 実装 → テスト → レビュー)。codex が許可されている環境では codex (`codex-review` / `cross-review` / `review-loop` / `codex-lead` / `codex-drive`)、それ以外では観点を分けた read-only サブエージェント (1 体に全部見せず、①壊す ②素通り (false green) ③回帰 のように観点を分けて**反証**させる。「レビューして」と頼むと追認が返る)。typo・数行の chore は対象外。codex を使わない環境では観点を分けたサブエージェントを直接起動する (`cross-review` skill は codex を含むため丸ごとは使えない)
 - 指摘は無視せず、根拠の弱い断定・false positive を訂正してから commit する
 - **壊しにいくパス (敵対的レビュー / red team) を 1 本混ぜる**。判断ロジック・境界・状態遷移・外部 I/O が動いた変更では commit 前の最終ゲートにする (機械的置換・設定値変更だけなら省略してよいが、省略したと明示する)
 - **「指摘なし」は「その探し方では壊せなかった」**。不変条件はテスト・型・設計で固定して初めて閉じる

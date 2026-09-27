@@ -9,7 +9,7 @@
 監査タイプ: `resource-leaks` / `performance` (どちらも direct 実行)
 対象スコープ: `src/lockman/` に絞る指定 (ユーザー指示)
 
-この issue は `_claude/rules/move-report-conclusions-to-issues.md` に従って、
+この issue は `_claude/issue-rules.d/move-report-conclusions-to-issues.md` に従って、
 **全数勘定・却下した指摘とその理由**を残すためのもの。却下理由を残さないと次の監査が
 同じ指摘を再生成する。
 
@@ -220,7 +220,7 @@ goroutine 蓄積に上限を置くか、renew を専用の goroutine 1 本に固
 
 ## 反証レビュー 1 周の結果 — 自分の主張が 6 件崩れた
 
-`_claude/rules/issue-creation-codex-review.md` の代替節 (codex を使わない環境では観点を
+`_claude/issue-rules.d/issue-creation-codex-review.md` の代替節 (codex を使わない環境では観点を
 分けた read-only サブエージェントの反証レビュー) に従って 1 周通した。**追認ではなく
 実際に崩れた**ので記録する:
 

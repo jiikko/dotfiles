@@ -8,7 +8,7 @@
 # 留まっている間、他マシンからは「誰も着手していない issue」に見えるため、同じ issue を
 # 2 人が同時に片付ける二重作業が起きる (実例 2026-09-02: retro 164 の切り出しを別マシンと
 # 同時にやり、ルール追記が衝突した)。claim は **push されて初めて claim になる**。
-# 規範: _claude/rules/claim-issue-in-next-and-push.md
+# 規範: _claude/issue-rules.d/claim-issue-in-next-and-push.md
 #
 # 入力: PostToolUse の hook JSON を stdin (.tool_input.command を見る)
 # 出力: issues/next/ または issues/epic/<name>/next/ への移動を含むコマンドのときだけ
@@ -108,7 +108,7 @@ jq -n --arg ctx "$state" '{
     hookEventName: "PostToolUse",
     additionalContext: (
       "issues/next/ または issues/epic/<name>/next/ への移動 (= 着手の claim) を検出した。claim は push されて初めて他マシンから見える。\n" +
-      "次の順で閉じること (規範: _claude/rules/claim-issue-in-next-and-push.md):\n" +
+      "次の順で閉じること (規範: _claude/issue-rules.d/claim-issue-in-next-and-push.md):\n" +
       "  1. この移動**だけ**を pathspec で commit する (git mv は旧パスと新パスの両方を書く)\n" +
       "  2. 他に未 push の commit や無関係な変更が無ければ、そのまま push する\n" +
       "  3. push できない状況 (remote が進んでいる / 他の作業が混ざっている) なら、その理由を\n" +

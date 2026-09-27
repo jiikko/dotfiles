@@ -71,7 +71,7 @@ false positive の issue を取り下げたとき、並行セッションへ「2
 初めて claim になる」と同じ構造で、**解放の側にも同じ非対称がある**（解放は宣言した瞬間に効くが、
 再取得も宣言では効かない）。
 
-- 切り出し先の提案: **`_claude/rules/claim-issue-in-next-and-push.md` への 1 行追記**。
+- 切り出し先の提案: **`_claude/issue-rules.d/claim-issue-in-next-and-push.md` への 1 行追記**。
   「番号や issue を『空きへ戻す』と他セッションへ伝えたら、**自分が取り直すときも fetch して
   取り直しを宣言する**（解放を信じた相手が先に取っている可能性がある）」。新規ルールは立てない
   （発動点は同じ「番号の採番と claim」）。**1 行に留める** — `push` が non-fast-forward で弾くので

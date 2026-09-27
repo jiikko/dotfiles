@@ -5,7 +5,7 @@
 #
 # なぜ: この hook は「別マシンと同じ issue を二重に着手する」事故 (2026-09-02 に実際に発生) を
 # harness 側で減らす装置。判定式が壊れると **無言で発火しなくなる** = 防御がゼロに戻る。
-# 規範: _claude/rules/claim-issue-in-next-and-push.md
+# 規範: _claude/issue-rules.d/claim-issue-in-next-and-push.md
 set -euo pipefail
 unset CDPATH
 

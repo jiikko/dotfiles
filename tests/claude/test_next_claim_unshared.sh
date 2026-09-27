@@ -6,7 +6,7 @@
 # なぜ: この hook は「人が glogx の `n` で付けた claim が push されないまま寝る」事故を拾う
 # 唯一の装置 (Go の rename は Bash を通らないので PostToolUse 側では見えない)。判定式が
 # 壊れると **無言で発火しなくなる** = 防御がゼロに戻る。
-# 規範: _claude/rules/claim-issue-in-next-and-push.md
+# 規範: _claude/issue-rules.d/claim-issue-in-next-and-push.md
 set -euo pipefail
 unset CDPATH
 

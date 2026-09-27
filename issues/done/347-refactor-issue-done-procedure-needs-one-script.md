@@ -173,7 +173,7 @@ awk を no-op にする（canary が触る前に落とす）。
 
 ## 関連
 
-- [`claim-issue-in-next-and-push.md`](../../_claude/rules/claim-issue-in-next-and-push.md) — ②の規範
+- [`claim-issue-in-next-and-push.md`](../../_claude/issue-rules.d/claim-issue-in-next-and-push.md) — ②の規範
 - [retro 345](345-retro-issue-backlog-consumption-2026-09-09.md) — 出典（実測 4 回の取りこぼし）
 
 ## 追記 2026-09-10: 2 周目の敵対的レビューで P1 を 2 件塞いだ

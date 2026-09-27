@@ -54,7 +54,7 @@ link が無くても動く ([142](142-research-claude-hooks-link-unreferenced.md
 ## 反証レビューの結果 (2026-09-02) — 案 A は推しから降ろす
 
 観点を分けた 2 体の read-only 反証レビューを通した (codex は使わない設定のため
-[`issue-creation-codex-review.md`](../../_claude/rules/issue-creation-codex-review.md) の代替手順)。
+[`issue-creation-codex-review.md`](../../_claude/issue-rules.d/issue-creation-codex-review.md) の代替手順)。
 **事実観点は反証 0 件**。設計観点は案 A に P1 級の穴を 3 つ出した (いずれも実コードで裏取り済み):
 
 1. **素通り経路**: PostToolUse の matcher `Write|Edit` は **Claude Code の Write/Edit ツールしか

@@ -14,7 +14,7 @@
 
 この issue は**却下した指摘とその理由**を残すためのもの。残さないと次の audit が同じ指摘を
 再生成して、反証コストを丸ごと払い直すことになる
-（[`move-report-conclusions-to-issues.md`](../../_claude/rules/move-report-conclusions-to-issues.md)）。
+（[`move-report-conclusions-to-issues.md`](../../_claude/issue-rules.d/move-report-conclusions-to-issues.md)）。
 
 ## 全数勘定
 

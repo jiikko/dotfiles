@@ -1,6 +1,6 @@
 # 新規 issue を作成したら codex に通すこと — なぜ・実例
 
-ルール本文: `~/dotfiles/_claude/rules/issue-creation-codex-review.md`（`~/.claude/rules/` に link され、毎セッション起動時に読まれる）。
+ルール本文: `~/dotfiles/_claude/issue-rules.d/issue-creation-codex-review.md`（issues/ を持つ repo のセッションにだけ SessionStart hook `issue-rules-inject.sh` が注入する。issue 414）。
 この文書は起動時には読まれない。ルールの根拠・起源・実例を保存し、ルールを疑う・改訂する・却下するときに読む。
 
 ## なぜ
