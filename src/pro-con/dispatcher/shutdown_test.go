@@ -57,11 +57,16 @@ func TestShutdownTouchesOnlyOwnSessions(t *testing.T) {
 	}
 	r2 := newCrashRig(t)
 	r2.ss[0].SessionID = "OTHER" // 短い id を別の session が得た
-	if _, err := r2.d.Shutdown(context.Background()); err != nil {
-		t.Fatal(err)
+	_, err := r2.d.Shutdown(context.Background())
+	if len(r2.l.stopTries) != 0 {
+		t.Fatalf("別の session id の session を止めた: %v", r2.l.stopTries)
 	}
-	if len(r2.l.stops) != 0 {
-		t.Fatalf("別の session id の session を止めた: %v", r2.l.stops)
+	// 記録の session が一覧に無くても、カードの短い id で別の session が生きていれば「止まっている」と読まず名指しする (issue 457)
+	if err == nil || !strings.Contains(err.Error(), "C-001 (id-pc-c-001") {
+		t.Fatalf("短い id が別の session を指す形を名指ししない: %v", err)
+	}
+	if h := lastHistory(states(t, r2.dir)["C-001"]); strings.Contains(h, "既に止まっていた") {
+		t.Fatalf("止めていないのに既に止まっていたと書いた: %q", h)
 	}
 }
 
@@ -232,7 +237,7 @@ func TestShutdownStopsUnconfirmedResume(t *testing.T) {
 	t1 := t0.Add(time.Minute)
 	r.d.Now = func() time.Time { return t1 }
 	r.tick(t) // 再開が失敗と返る (印が残る)
-	r.ss = []agents.Session{{ID: "db1e", SessionID: "S2", PID: 60, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t1.Add(time.Second).UnixMilli()}}
+	r.ss = []agents.Session{{ID: "db1e", SessionID: "S2", PID: 60, Kind: "background", Name: "pc-c-001", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t1.Add(time.Second).UnixMilli()}}
 	if _, err := r.d.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -611,7 +616,7 @@ func TestRecordedCardStillStopsLiveSessionAndClearsMark(t *testing.T) {
 		c.State, c.Stopped, c.Launching, c.LaunchedAt = card.Planned, true, "再開", t0.Add(1500*time.Millisecond)
 	})
 	r.ss[0].PID = 0 // 前の session は止まっている (一覧で pid 無し)
-	r.ss = append(r.ss, agents.Session{ID: "id-fresh", SessionID: "SF", PID: 77, Kind: "background",
+	r.ss = append(r.ss, agents.Session{ID: "id-fresh", SessionID: "SF", PID: 77, Kind: "background", Name: "pc-c-001",
 		Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t0.Add(2 * time.Second).UnixMilli()})
 	n := len(states(t, r.dir)["C-001"].History)
 	notes, err := r.d.Shutdown(context.Background())
@@ -636,7 +641,7 @@ func TestShutdownVerifiesAdoptedSession(t *testing.T) {
 	r := newCrashRig(t)
 	setCard(t, r.dir, "C-001", func(c *card.Card) { c.Launching, c.LaunchedAt = "再開", t0.Add(1500*time.Millisecond) })
 	r.ss[0].PID = 0
-	r.ss = append(r.ss, agents.Session{ID: "id-fresh", SessionID: "SF", PID: 77, Kind: "background",
+	r.ss = append(r.ss, agents.Session{ID: "id-fresh", SessionID: "SF", PID: 77, Kind: "background", Name: "pc-c-001",
 		Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t0.Add(2 * time.Second).UnixMilli()})
 	r.l.stopFail = true // 止めると失敗が返る (claude stop の時間切れ等)
 	_, err := r.d.Shutdown(context.Background())

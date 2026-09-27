@@ -1158,7 +1158,7 @@ func TestResumeWithNewSessionReplacesRow(t *testing.T) {
 	t1 := t0.Add(time.Minute)
 	r.d.Now = func() time.Time { return t1 }
 	r.tick(t) // 再開
-	r.ss = []agents.Session{{ID: "db1e", SessionID: "S2", PID: 60, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t1.Add(time.Second).UnixMilli()}}
+	r.ss = []agents.Session{{ID: "db1e", SessionID: "S2", PID: 60, Kind: "background", Name: "pc-c-001", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t1.Add(time.Second).UnixMilli()}}
 	r.tick(t)
 	reg, _ := live.LoadRegistry(filepath.Join(r.dir, live.RegistryFile))
 	if c := states(t, r.dir)["C-001"]; len(reg) != 1 || reg[0].SessionID != "S2" || reg[0].ID != "db1e" || c.Session != "db1e" {
@@ -1166,7 +1166,8 @@ func TestResumeWithNewSessionReplacesRow(t *testing.T) {
 	}
 }
 
-// 再開に「失敗」と返っても、同じ作業ディレクトリで印の後に始まった session が立っていれば取り込む (再開は別の session id になる)。
+// 再開に「失敗」と返っても、同じ作業ディレクトリで印の後に始まった同じ名前の session が立っていれば取り込む (再開は別の session id になる)。
+// 名前の違う session (PG の worktree で人間が立てた bg の session) は取り込まない (issue 457)。
 func TestFailedResumeAdoptsNewSessionByCwd(t *testing.T) {
 	r := newCrashRig(t)
 	r.l.resumeFail = true
@@ -1178,7 +1179,13 @@ func TestFailedResumeAdoptsNewSessionByCwd(t *testing.T) {
 	t1 := t0.Add(time.Minute)
 	r.d.Now = func() time.Time { return t1 }
 	r.tick(t)
-	r.ss = []agents.Session{{ID: "db1e", SessionID: "S2", PID: 60, Kind: "background", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t1.Add(time.Second).UnixMilli()}}
+	hum := agents.Session{ID: "hum1", SessionID: "H1", PID: 90, Kind: "background", Name: "my-review", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t1.Add(time.Second).UnixMilli()}
+	r.ss = []agents.Session{hum}
+	r.tick(t)
+	if c := states(t, r.dir)["C-001"]; c.Session == "hum1" || c.Launching != "再開" {
+		t.Fatalf("名前の違う session を再開の結果として取り込んだ: %q Launching=%q", c.Session, c.Launching)
+	}
+	r.ss = []agents.Session{hum, {ID: "db1e", SessionID: "S2", PID: 60, Kind: "background", Name: "pc-c-001", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t1.Add(time.Second).UnixMilli()}}
 	r.d.Now = func() time.Time { return t1.Add(launchGrace + time.Second) }
 	r.tick(t)
 	if c := states(t, r.dir)["C-001"]; len(r.l.resumes) != 1 || c.State != card.Running || c.Session != "db1e" {

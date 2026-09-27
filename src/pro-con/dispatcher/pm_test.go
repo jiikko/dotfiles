@@ -587,3 +587,20 @@ func TestPMRejectCountResetsOnOtherOutcomes(t *testing.T) {
 		t.Fatalf("起動できたのに回数を 0 に戻していない: %d %+v", r.d.roleRun(pmRole).rejects, loadPM(t, r.dir))
 	}
 }
+
+// 結果の分からない PM の再開は、同じ作業ディレクトリでも名前の違う session (役の worktree で人間が立てた bg の session) を取り込まない
+// (再開も worktree の名前を渡す = 488。取り込むと終了で人間の session を止める = issue 457)。
+func TestPMResumeAdoptNeedsName(t *testing.T) {
+	d := newDispatcher(t, t.TempDir(), &fakeLauncher{}, nil)
+	pm := store.PMState{Launching: "再開", LaunchedAt: t0}
+	row := live.Owned{SessionID: "P1", Cwd: "/w/dotfiles/.claude/worktrees/" + pmName}
+	hum := pmSession("hum1", "H1", 90, "idle", t0.Add(time.Second))
+	hum.Name = "my-review"
+	if id, ok := d.adopt(pm, row, true, []agents.Session{hum}); ok {
+		t.Fatalf("名前の違う session を PM の再開として取り込んだ: %q", id)
+	}
+	fresh := pmSession("id-new", "P2", 61, "idle", t0.Add(time.Second))
+	if id, ok := d.adopt(pm, row, true, []agents.Session{hum, fresh}); !ok || id != "id-new" {
+		t.Fatalf("同じ名前・作業ディレクトリで立った PM の再開を取り込まない: %q %v", id, ok)
+	}
+}

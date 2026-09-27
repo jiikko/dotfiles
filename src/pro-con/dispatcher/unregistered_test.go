@@ -146,14 +146,32 @@ func TestShutdownNamesUnadoptedResume(t *testing.T) {
 	if c := states(t, r.dir)["C-001"]; c.Launching != "再開" {
 		t.Fatalf("前提が違う: Launching=%q", c.Launching)
 	}
-	r.ss = []agents.Session{{ID: "db1e", SessionID: "S2", PID: 60, Kind: "bg", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t1.Add(time.Second).UnixMilli()}}
+	// worktree に人間の bg session (名前が違う) も居る: 再開も起動と同じ名前を渡す (488) ので、名前で絞って数えない
+	r.ss = []agents.Session{
+		{ID: "hum1", SessionID: "H1", PID: 90, Kind: "background", Name: "my-review", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t1.Add(time.Second).UnixMilli()},
+		{ID: "db1e", SessionID: "S2", PID: 60, Kind: "bg", Name: "pc-c-001", Cwd: "/w/dotfiles/.claude/worktrees/pc-c-001", StartedAt: t1.Add(time.Second).UnixMilli()},
+	}
 	r.d.Now = func() time.Time { return t1.Add(launchGrace + time.Minute) }
 	_, err := r.d.Shutdown(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "C-001 (db1e") {
-		t.Fatalf("再開が立てた生きている PG を名指ししない: %v stops=%v", err, r.l.stops)
+	if err == nil || !strings.Contains(err.Error(), "C-001 (db1e") || strings.Contains(err.Error(), "hum1") || len(r.l.stopTries) != 0 {
+		t.Fatalf("再開が立てた生きている PG だけを止めずに名指ししない: %v tries=%v", err, r.l.stopTries)
 	}
 	if h := lastHistory(states(t, r.dir)["C-001"]); strings.Contains(h, "既に止まっていた") {
 		t.Fatalf("止めていないのに既に止まっていたと書いた: %q", h)
+	}
+}
+
+// 記録の行はあるが、カードの短い id が記録に無い別の session を指して生きている形は、閉じても止めず、「既に止まっていた」とも書かない。
+func TestCloseNamesShortIDPointingElsewhere(t *testing.T) {
+	r := newCrashRig(t)
+	r.ss[0].SessionID = "OTHER"
+	closeCard(t, r.dir, "C-001")
+	r.tick(t)
+	r.d.Now = func() time.Time { return t0.Add(closeStopWait + time.Minute) }
+	r.tick(t)
+	c := states(t, r.dir)["C-001"]
+	if len(r.l.stopTries) != 0 || !strings.Contains(lastHistory(c), "止められない") || !strings.Contains(lastHistory(c), "id-pc-c-001") {
+		t.Fatalf("短い id が別の session を指す形の扱いが違う: tries=%v 履歴=%q", r.l.stopTries, lastHistory(c))
 	}
 }
 

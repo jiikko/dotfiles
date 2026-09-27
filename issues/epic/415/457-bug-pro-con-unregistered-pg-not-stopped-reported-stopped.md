@@ -90,3 +90,30 @@ PG の session が pro-con の記録 (sessions.json) に取り込まれなかっ
 - 「再開の新しい session の名前が引き継がれるか」は測れるなら測り、引き継がれるなら再開の途中の名指しを名前で絞る (人間の bg session で終了が失敗し続ける形を減らす)
 - それ以外の残り (kind も時刻も崩れて cwd も repo root の落ちた PG / 2 つの状態の置き場で worktree がぶつかる) は、直せる根拠が無ければ「未確認のリスク」として残してよい
 - 並行するカードとの衝突: C-003 (555。`shutdown.go` の止め直しの記録) は完了済み。C-006 (552。wtclean) / C-007 (557。dispatcher-state と一覧) とは重ならない
+
+## 進捗 (2026-09-27、pro-con カード C-009)
+
+- [x] **短い id が別の session を指す形を名指しに回した** (PM の判断どおり)。`unregistered` の「記録の行がある」枝で、カードの短い id が
+  記録に無い別の session id を指して生きていれば proven=false で返す。終了 (`stopTarget` の記録の枝の末尾 → `strayPlan`) と
+  確かめる段 (`ensureStopped` → `checkTargets`。閉じる 447・削除 451 も通る) の両方がこれで名指しし、止めない (外の session に触らない、は変えない)
+  - 自動の再開を待つ間 (DeadSince から restartWait 以内) は従来どおり待ちを先にする (記録の session が戻れば止める)
+  - `gone` (Tick の消えた PG) は従来どおり true を返す (再開は `prepare` が「短い id が今は別の session を指している」で拒むので、その session には触らない)。コメントだけ直した
+  - `TestShutdownTouchesOnlyOwnSessions` の後半をこの判断に合わせて直した (stop は 0 本のまま、Shutdown はエラーで `C-001 (id-pc-c-001` を名指し、履歴に「既に止まっていた」を書かない)。
+    閉じたときの形は `TestCloseNamesShortIDPointingElsewhere`
+- [x] **再開の名前は引き継がれる (測定済み)**: 488 (2026-09-26、C-045) で `--bg --resume` が `-n` を受けて名前がそろうことを A-B で実測し、
+  pro-con の再開は PG に `pc-<card>`・役に worktree の名前を渡している (`launcher.go` の `resumeArgs`)。新たには測っていない
+  - これで再開の途中の名指し (`unregistered` の loose) を、起動と同じく worktree + 名前 (`pc-<card>`) に絞った (前は worktree に居る対話でない session すべて)
+  - 🚨 同じ仕組みの穴が取り込みにもあった: 結果の分からない再開を取り込む `adopt` (カード: `dispatcher.go` / 役: `role.go`) が、
+    記録の作業ディレクトリに居て印の後に始まった bg の session を**名前を見ずに**取り込んでいた = PG / 役の worktree で人間が立てた bg の session を
+    カードの session にし、終了で止める。どちらも名前の一致を要るようにした (`TestFailedResumeAdoptsNewSessionByCwd` の前半 / `TestShutdownNamesUnadoptedResume` / `TestPMResumeAdoptNeedsName`)
+- [x] 確かめたこと: `go test ./dispatcher/` ok・`go vet` / `gofmt` 0 件。変異 5 本 (`bin/mutate-verify`) がすべて想定のテストで red:
+  短い id が別の session を指す名指しを殺す (`TestCloseNamesShortIDPointingElsewhere`) / 終了のカードの段で strayPlan を見ない (`TestShutdownTouchesOnlyOwnSessions`) /
+  カードの adopt の名前を外す (`TestFailedResumeAdoptsNewSessionByCwd`) / 役の adopt の名前を外す (`TestPMResumeAdoptNeedsName`) / loose を前の形に戻す (`TestShutdownNamesUnadoptedResume`)
+- [x] codex (gpt-6-luna, effort high) の敵対的レビュー: 具体的な発火条件のある指摘なし。未確認リスクとして「再開の `-n` が本物の一覧の name に出るか」は
+  偽の一覧でしか見ていない (488 の実測に依る) を挙げた
+- [x] make test (`pro-con card run`、d3e01494): rc=0。依頼したときの cwd が `src/pro-con` だったので走ったのは pro-con の `make test`
+  (= `go test -race ./...`) で、23 パッケージすべて ok (dispatcher 27s)。repo 全体の `make test` (lint / runtime / 他の src) は走らせていない (変更は pro-con の Go だけ)
+- 未確認のリスクとして残すもの (直す根拠が無い)
+  - 短い id が別の session を指す形は、その session が生きている間は終了・閉じるが名指しで失敗し続け、カードも再開できない (fail closed。人が確かめて claude stop するまで)
+  - 488 より前の版の dispatcher が始めた再開 (名前を渡していない) の結果を、この版が取り込む形は名前で当たらない (dispatcher の入れ替え 505 の途中だけ。名指しに回る)
+  - kind も時刻も崩れて cwd も repo root の落ちた PG は、戻るまで名指しだけになる / 2 つの状態の置き場で worktree がぶつかる形は未確認のまま

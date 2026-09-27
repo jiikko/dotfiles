@@ -1008,7 +1008,7 @@ func owned(c card.Card, reg []live.Owned) (live.Owned, bool) {
 }
 
 // adopt は結果の分からない起動・再開の session が一覧に出ているかを見る。印を書いた後 (LaunchedAt 以降) に始まったものだけ:
-// 起動はこのカードの session の名前、再開は前の session と同じ session id。
+// 起動はこのカードの session の名前と worktree、再開は前の session と同じ session id か、名前と前の作業ディレクトリ。
 func adopt(c card.Card, repoPath string, ss []agents.Session, reg []live.Owned) (string, bool) {
 	o, hasOwned := owned(c, reg)
 	for _, s := range ss {
@@ -1020,8 +1020,9 @@ func adopt(c card.Card, repoPath string, ss []agents.Session, reg []live.Owned) 
 		if wt := card.WorktreePath(repoPath, c); c.Launching == "起動" && wt != "" && s.Name == card.SessionName(c) && samePath(s.Cwd, wt) {
 			return s.ID, true
 		}
-		// 再開は別の session id の session を立てる (427 の 3f で実測) ので、同じ作業ディレクトリ (PG の worktree) で印の後に始まったものも取り込む
-		if c.Launching == "再開" && hasOwned && (s.SessionID == o.SessionID || (strings.Contains(o.Cwd, worktreeMarker) && s.Cwd == o.Cwd)) {
+		// 再開は別の session id の session を立てる (427 の 3f で実測) ので、同じ作業ディレクトリ (PG の worktree) で印の後に始まったものも取り込む。
+		// 名前も要る: 再開も起動と同じ名前を渡す (488 で実測)。cwd だけだと、PG の worktree で人間が立てた bg の session を取り込んで止める (issue 457)
+		if c.Launching == "再開" && hasOwned && (s.SessionID == o.SessionID || (strings.Contains(o.Cwd, worktreeMarker) && s.Cwd == o.Cwd && s.Name == card.SessionName(c))) {
 			return s.ID, true
 		}
 	}
