@@ -60,5 +60,5 @@
   worktree とブランチは残る
 - 片付け: 画面の `x` で完了のレーンを書庫へ移す (完了から 24 時間で自動でも移る。1 週間で書庫からも消える)
 - PG の worktree: `pro-con worktree clean` で一覧を見て、`--yes` で消す (取り込み済みで中に誰も居ないものだけ)。
-  dispatcher の予定が毎日 04:00 に `--yes` を回す (設定画面 s の「予定」のタブと `pro-con config show` に出る。止めるのは `pro-con config set schedule off`)
+  dispatcher の予定が毎日 04:00 に `--yes` を回す (設定画面 s の「スケジューラージョブ」のタブと `pro-con config show` に出る。止めるのは `pro-con config set schedule off`)
 - ディスクの使用量は `pro-con du`

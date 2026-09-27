@@ -256,9 +256,9 @@ glogx と意味を変えている字 (`a` attach / `r` 回答 / `n` 新しい依
 
 - 表は `schedule.Jobs` (src/pro-con/schedule) だけ。今は「毎日 04:00 に `pro-con worktree clean --yes`」の 1 つ。画面と `pro-con config show` に出す字面と、
   dispatcher が起こす argv は同じ表の `Args` から作る (字面を別に持たない)
-- **見る所**: 設定画面 (s) の「予定」のタブと `pro-con config show` (いつ・コマンド・前回の時刻 / rc / 結果の 1 行・次回・出力の置き場)。起こした・終わった・失敗は
+- **見る所**: 設定画面 (s) の「スケジューラージョブ」のタブと `pro-con config show` (いつ・コマンド・前回の時刻 / rc / 結果の 1 行・次回・出力の置き場)。起こした・終わった・失敗は
   出来事 (`pro-con log` の `schedule` / `error`。ログのタブにも出る)
-- **止める**: `pro-con config set schedule off` か、設定のタブの「予定を回す」(既定 on)
+- **止める**: `pro-con config set schedule off` か、設定のタブの「スケジューラージョブを回す」(既定 on)
 - 回し方: dispatcher の Tick で、前回に始めた時刻がその日の予定の時刻より前なら、子として `pro-con <Args>` を起こす (cwd は状態の置き場、
   自分のプロセスグループ、stdout / stderr は `…/live/schedule/<名前>.out` / `.err` に毎回上書き)。起こす前に始めた時刻を `…/live/schedule.json` に書く
   (記録を読めない・書けないなら回さない)。dispatcher が止まっていた・マシンが寝ていた間の予定は、次に起きた最初の Tick で **1 回だけ** 回す

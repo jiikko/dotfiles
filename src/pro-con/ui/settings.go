@@ -47,7 +47,7 @@ func (t settingsTab) label() string {
 	case tabLog:
 		return "ログ"
 	case tabSchedule:
-		return "予定"
+		return "スケジューラージョブ"
 	}
 	return ""
 }
@@ -523,7 +523,7 @@ func (m *Model) configLines(w int) ([]string, int) {
 		if slices.Contains(checkboxKeys, key) {
 			name, note = "利用枠を見て PG を絞る", "80% で 1 本 / 95% で 0 本。外すと上限まで起動する (Enter か ← →)"
 			if key == backend.ConfigSchedule {
-				name, note = "予定を回す", "決まった時刻に dispatcher がコマンドを回す (中身は予定のタブ。Enter か ← →)"
+				name, note = "スケジューラージョブを回す", "決まった時刻に dispatcher がコマンドを回す (中身は隣のタブ。Enter か ← →)"
 			}
 			val = " [ ] "
 			if v == "on" {
@@ -811,12 +811,12 @@ func clipLeft(s string, n int) string {
 func (m *Model) scheduleLines(w int) []string {
 	border := fg(51)
 	s := &m.set
-	title := sgrBold + "予定" + sgrReset + sgrDim + "  dispatcher が決まった時刻に回すコマンド · r で読み直す" + sgrReset
+	title := sgrBold + "スケジューラージョブ" + sgrReset + sgrDim + "  dispatcher が決まった時刻に回すコマンド · r で読み直す" + sgrReset
 	switch {
 	case m.snap.Config.Err != "":
 		title += "  " + sgrRed + "設定を読めないので回さない" + sgrFgReset
 	case m.snap.Config.ScheduleOff:
-		title += "  " + sgrYellow + "止めている (設定のタブの「予定を回す」で戻す)" + sgrFgReset
+		title += "  " + sgrYellow + "止めている (設定のタブの「スケジューラージョブを回す」で戻す)" + sgrFgReset
 	}
 	out := []string{boxTop(border, title, w)}
 	_, readable := m.be.(backend.ScheduleReader)
@@ -841,7 +841,7 @@ func (m *Model) scheduleLines(w int) []string {
 			boxLine(border, sgrDim+"   出力  "+r.Out+" / .err"+sgrReset, w))
 	}
 	if s.scheduleErr != nil {
-		out = append(out, boxLine(border, sgrRed+" 予定の記録を読めない: "+s.scheduleErr.Error()+sgrFgReset, w))
+		out = append(out, boxLine(border, sgrRed+" スケジューラージョブの記録を読めない: "+s.scheduleErr.Error()+sgrFgReset, w))
 	}
 	return append(out, boxBottom(border, w))
 }

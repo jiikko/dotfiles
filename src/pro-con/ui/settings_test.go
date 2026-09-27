@@ -340,7 +340,7 @@ func TestSettingsScheduleTab(t *testing.T) {
 	}
 	calls := be.calls
 	out := setScreen(m)
-	for _, want := range []string{" 予定 ", "毎日 04:00  pro-con worktree clean --yes", "前回  09-27 04:00:03〜04:01:15 rc=0 結果: worktree 消した 66", "次回  09-28 04:00", "出力  /state/schedule/worktree-clean.out / .err"} {
+	for _, want := range []string{" スケジューラージョブ ", "毎日 04:00  pro-con worktree clean --yes", "前回  09-27 04:00:03〜04:01:15 rc=0 結果: worktree 消した 66", "次回  09-28 04:00", "出力  /state/schedule/worktree-clean.out / .err"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("予定のタブに %q が無い:\n%s", want, out)
 		}
@@ -372,15 +372,15 @@ func TestSettingsTogglesScheduleCheckbox(t *testing.T) {
 	for m.set.cursor < len(configKeys)-1 && configKeys[m.set.cursor] != backend.ConfigSchedule {
 		press(m, "j")
 	}
-	if configKeys[m.set.cursor] != backend.ConfigSchedule || !strings.Contains(setScreen(m), "予定を回す") {
-		t.Fatalf("予定を回す の行が無い:\n%s", setScreen(m))
+	if configKeys[m.set.cursor] != backend.ConfigSchedule || !strings.Contains(setScreen(m), "スケジューラージョブを回す") {
+		t.Fatalf("スケジューラージョブを回す の行が無い:\n%s", setScreen(m))
 	}
 	press(m, "enter")
 	be.snap.Config.ScheduleOff = true
 	m.setSnap(be.Snapshot())
 	delete(m.set.want, backend.ConfigSchedule) // 適用を待つ値ではなく Snapshot の値を描かせる
 	for _, l := range strings.Split(setScreen(m), "\n") {
-		if strings.Contains(l, "予定を回す") && !strings.Contains(l, "[ ]") {
+		if strings.Contains(l, "スケジューラージョブを回す") && !strings.Contains(l, "[ ]") {
 			t.Errorf("off なのにチェックが入っている: %q", l)
 		}
 	}
