@@ -490,3 +490,87 @@ func TestBrowseStartupShowsCLIHealthWarningsInView(t *testing.T) {
 		t.Fatalf("lastWarning = %q", m.lastWarning)
 	}
 }
+
+// findCLIHealthMsg は cmd のツリー (BatchMsg は展開する) を走らせて cliHealthMsg を探す。
+// 葉は 250ms で見切る (tick など長く待つ Cmd を待たない)。
+func findCLIHealthMsg(cmd tea.Cmd) bool {
+	if cmd == nil {
+		return false
+	}
+	result := make(chan tea.Msg, 1)
+	go func() { result <- cmd() }()
+	var msg tea.Msg
+	select {
+	case msg = <-result:
+	case <-time.After(250 * time.Millisecond):
+		return false
+	}
+	switch msg := msg.(type) {
+	case cliHealthMsg:
+		return true
+	case tea.BatchMsg:
+		for _, child := range msg {
+			if findCLIHealthMsg(child) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// 起動時の CI 取得がある間は、usage・バージョン・ログイン検査 (node の claude / codex を起こす) を
+// 預け、取得が終わってから投げる (issue 570)。放すのは「取得中でなくなった」状態で見るので、
+// 最後のチャンクの結果でも、結果を経ずに取得をやめる経路 (pull の後の pendingFetches = 0) でも放す。
+func TestBrowseStartupChecksWaitForCIFetch(t *testing.T) {
+	origLookPath, origRunner := lookPathFn, cliHealthRunner
+	origLatestClaude, origLatestCodex := fetchLatestClaudeVersion, fetchLatestCodexVersion
+	origTmuxPrefix := loadTmuxPrefix
+	t.Cleanup(func() {
+		lookPathFn, cliHealthRunner = origLookPath, origRunner
+		fetchLatestClaudeVersion, fetchLatestCodexVersion = origLatestClaude, origLatestCodex
+		loadTmuxPrefix = origTmuxPrefix
+	})
+	lookPathFn = func(name string) (string, error) { return "", exec.ErrNotFound }
+	cliHealthRunner = func(context.Context, string, ...string) ([]byte, []byte, error) { return nil, nil, nil }
+	fetchLatestClaudeVersion = func(context.Context) string { return "" }
+	fetchLatestCodexVersion = func(context.Context) string { return "" }
+	loadTmuxPrefix = func() string { return "" }
+
+	start := func(t *testing.T) *browseModel {
+		t.Helper()
+		commits := []string{strings.Repeat("a", 40), strings.Repeat("b", 40)}
+		m := newTestBrowse(t, 2, map[string]CIState{}, commits)
+		m.usageOv.inFlight = true // usage は本物の claude を起こすので作らせない (預け方は検査と同じ)
+		m.ticking = true
+		m.fetch = func() tea.Msg { return nil } // 本物の gh を起こさない
+		m.pendingFetches = 2                    // チャンク 2 つ: 途中では放さないことを見る
+		if findCLIHealthMsg(m.Init()) {
+			t.Fatal("CI の取得中なのに、Init がログイン検査を直接投げた")
+		}
+		return m
+	}
+	chunk := func(m *browseModel, sha string) tea.Cmd {
+		_, cmd := m.Update(ciResultMsg{shas: []string{sha}, epoch: m.fetchEpoch})
+		return cmd
+	}
+
+	t.Run("最後のチャンクで放す", func(t *testing.T) {
+		m := start(t)
+		if findCLIHealthMsg(chunk(m, strings.Repeat("a", 40))) {
+			t.Fatal("チャンクが 1 つ残っているのに検査を放した")
+		}
+		if !findCLIHealthMsg(chunk(m, strings.Repeat("b", 40))) {
+			t.Fatal("最後のチャンクを受けても検査を放さない")
+		}
+		if _, cmd := m.Update(tea.WindowSizeMsg{Width: 80, Height: 10}); findCLIHealthMsg(cmd) {
+			t.Fatal("検査を 2 回放した")
+		}
+	})
+	t.Run("結果を経ずに取得をやめても放す", func(t *testing.T) {
+		m := start(t)
+		m.pendingFetches = 0 // reloadAfterPull が取得を始めないときと同じ下ろし方
+		if _, cmd := m.Update(tea.WindowSizeMsg{Width: 80, Height: 10}); !findCLIHealthMsg(cmd) {
+			t.Fatal("取得中でなくなったのに検査を放さない")
+		}
+	})
+}

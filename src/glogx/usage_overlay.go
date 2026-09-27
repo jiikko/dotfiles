@@ -60,13 +60,17 @@ func (o *usageOverlay) fetchCmd(useCache bool) tea.Cmd {
 		return nil // 走行中の fetch がある: overlap させない (inFlight フィールドの doc)
 	}
 	o.inFlight = true
-	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+	// 取り消し (stop) は今持つが、timeout の時計は走り出してから刻む: 起動時の取得は CI の取得が終わるまで
+	// 預けられる (issue 570) ので、ここで刻み始めると預けている間に持ち時間を失う
+	parent, cancel := context.WithCancel(context.Background())
 	o.cancel = cancel
 	// last-good 補完用の前回結果。closure の生成は UI スレッドなのでここで束縛する
 	// (goroutine から o.snap を読むとデータレース)。
 	prev := o.snap
 	return func() tea.Msg {
 		defer cancel()
+		ctx, cancelTimeout := context.WithTimeout(parent, fetchTimeout)
+		defer cancelTimeout()
 		// キャッシュ経路の失敗 (path 解決不能・破損・TTL 切れ) はすべて「キャッシュなし」に
 		// 落として通常取得へ進む (キャッシュ都合で usage 表示を失わない)
 		path, pathErr := usageCachePath()

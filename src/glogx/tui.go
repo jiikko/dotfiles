@@ -372,6 +372,10 @@ type browseModel struct {
 	done       bool
 	fetch      tea.Cmd
 	cancel     context.CancelFunc
+	// deferredStartup は起動時の CI 取得が終わるまで預ける検査 (usage・バージョン・ログイン)。
+	// どれも node の claude / codex を起こすので、CI 取得と開いた直後の描画から CPU を奪わないよう後ろへ回す
+	// (issue 570)。放すのは Update の 1 か所だけ (releaseStartupChecks)
+	deferredStartup tea.Cmd
 
 	// lines() のメモ化。行リストの再構築は O(出力全行数) で、-p の巨大 patch では
 	// キー 1 打ごとに数万行を組み直すことになるためキャッシュする。行内容を変えうる
@@ -447,6 +451,7 @@ func (m *browseModel) Init() tea.Cmd {
 	prefix := func() tea.Msg { return prefixMsg{key: loadTmuxPrefix()} }
 	// 起動時はディスクキャッシュ可 (連続起動のたびに claude subprocess を起こさない)
 	u := m.usageOv.fetchCmd(true)
+	// 🚨 fetchCmd は呼んだ時点で inFlight を立てるので、預けている間の usageRefreshMsg は重ねて取得しない
 	// usage を起動時に取得するため tick を常に起動する (取得中スピナーを回す。取得完了で
 	// spinnerActive が false になり tick は自然に止まる)。CI fetch の有無に依らず起動する。
 	// usageRefreshTick で 1 分ごとのバックグラウンド再取得チェーンも起動する (ユーザー要望)。
@@ -520,9 +525,22 @@ func (m *browseModel) Init() tea.Cmd {
 	// git を叩くので非同期にし、保険のポーリングだけ先に張る (イベント待ちは解決後に張る)。
 	logWatch := tea.Batch(gitLogWatchDirsCmd(), m.gitLogPollCmd())
 	if m.fetching() {
-		return tea.Batch(m.fetch, prefix, u, ver, cliHealth, ab, restore, rlRestore, doctorRestore, poll, logWatch, m.maybeTick(), usageRefreshTick())
+		m.deferredStartup = tea.Batch(u, ver, cliHealth)
+		return tea.Batch(m.fetch, prefix, ab, restore, rlRestore, doctorRestore, poll, logWatch, m.maybeTick(), usageRefreshTick())
 	}
-	return tea.Batch(prefix, u, ver, cliHealth, ab, restore, rlRestore, doctorRestore, poll, logWatch, m.maybeTick(), usageRefreshTick())
+	return tea.Batch(u, ver, cliHealth, prefix, ab, restore, rlRestore, doctorRestore, poll, logWatch, m.maybeTick(), usageRefreshTick())
+}
+
+// releaseStartupChecks は、起動時の CI 取得が終わっていれば預けた検査を 1 回だけ放す (issue 570)。
+// 取得が終わる経路は ciResultMsg の最後のチャンクだけでなく、pull の後に取得を始めない分岐
+// (pendingFetches を直接 0 にする) もあるので、出来事ではなく状態 (fetching) で見る。
+func (m *browseModel) releaseStartupChecks() tea.Cmd {
+	if m.deferredStartup == nil || m.fetching() || m.done {
+		return nil
+	}
+	cmd := m.deferredStartup
+	m.deferredStartup = nil
+	return cmd
 }
 
 // issuesRestoreCmd は記憶した画面が今の repo のものか確かめる (別 repo で開いた glogx に
@@ -740,6 +758,11 @@ func (m *browseModel) showClaudeUpdate(latest string) tea.Cmd {
 }
 
 func (m *browseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	model, cmd := m.update(msg)
+	return model, tea.Batch(cmd, m.releaseStartupChecks())
+}
+
+func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.done {
 		// 終了確定後に届く残メッセージは無視する (q での取得中断が
 		// 「context canceled」警告として出るのを防ぐ)
