@@ -33,7 +33,7 @@ func TestWaitingCardDimsOwnColor(t *testing.T) {
 			n := cardColor(tc.c.ID)
 			r, g, b := rgb256(n)
 			dimmed := fmt.Sprintf("\x1b[48;2;%d;%d;%dm", int(float64(r)*waitDim+0.5), int(float64(g)*waitDim+0.5), int(float64(b)*waitDim+0.5))
-			own := fmt.Sprintf("\x1b[48;5;%dm", n)
+			own := fmt.Sprintf("\x1b[48;2;%d;%d;%dm", r, g, b) // 普段の地も RGB (issue 556)
 			if got := strings.HasPrefix(line, dimmed); got != tc.dim {
 				t.Fatalf("%s (選択中=%v): 固有の色を暗くした地 = %v (期待 %v): %q", tc.name, sel, got, tc.dim, line)
 			}
