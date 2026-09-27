@@ -54,6 +54,8 @@ cat > "$TMP_DIR/bin/go" <<'EOS'
 #!/bin/sh
 if [ "$1" = "env" ]; then printf '%s\n' "${FAKE_GO_VERSION:-go1.99.0}"; exit 0; fi
 echo "build" >> "$FAKE_GO_CALLS"
+# go build が受け取った SDKROOT を記録する (未設定と空を区別する)
+[ -n "${FAKE_GO_SDKLOG:-}" ] && printf '%s\n' "${SDKROOT-<unset>}" >> "$FAKE_GO_SDKLOG"
 [ -n "${FAKE_GO_PIDFILE:-}" ] && echo $$ > "$FAKE_GO_PIDFILE"
 # 実 go と同じ -C の契約を守る: 最初のフラグでなければ使用法エラー (rc=2)、あれば chdir する。
 # 🚨 これが無いと -C の意味論がテストの盲点になる: 引数順を崩す変更 (-trimpath 等を先頭に足す)
@@ -77,7 +79,8 @@ done
 # 先に書いても「ビルド中は旧版のまま」という他テストの前提は変わらない。
 # 🚨 記録行は echo より前に置く。binary_mark が tail -1 の最後の語を mark として読むので、
 # 後ろに足すとバイナリ判定側のテストが全部壊れる。
-printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\necho %s\n' "${FAKE_BIN_CALLS:-/dev/null}" "$FAKE_GO_MARK" > "$out"
+# 生成したバイナリは、起動時に受け取った SDKROOT も記録する (go build の外へ漏れていないかを見るため)。
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\n[ -n "${FAKE_BIN_SDKLOG:-}" ] && printf "%%s\\n" "${SDKROOT-<unset>}" >> "$FAKE_BIN_SDKLOG"\necho %s\n' "${FAKE_BIN_CALLS:-/dev/null}" "$FAKE_GO_MARK" > "$out"
 chmod +x "$out"
 # 「ビルドが走行中」の窓を**時間ではなくイベント**で開ける。テストが release を置くまで待つ。
 # 固定 sleep だと窓の長さが当て推量になり (「4 秒あれば足りるだろう」)、遅いマシンでは
@@ -99,6 +102,22 @@ if [ -n "${FAKE_GO_FAIL:-}" ]; then rm -f "$out"; echo "fake build error" >&2; e
 exit 0
 EOS
 chmod +x "$TMP_DIR/bin/go"
+
+# 偽 xcrun / xcode-select。本物の開発ツールの状態にテストを依存させない。
+# 既定 (FAKE_SDK_DIR 未設定) は「SDK が取れない」なので、他のテストの go build は SDKROOT を受け取らない。
+cat > "$TMP_DIR/bin/xcrun" <<'EOS'
+#!/bin/sh
+[ -n "${FAKE_XCRUN_CALLS:-}" ] && printf '%s\n' "$*" >> "$FAKE_XCRUN_CALLS"
+[ "$*" = "--sdk macosx --show-sdk-path" ] || exit 64
+[ -n "${FAKE_SDK_DIR:-}" ] || exit 1
+printf '%s\n' "$FAKE_SDK_DIR"
+EOS
+cat > "$TMP_DIR/bin/xcode-select" <<'EOS'
+#!/bin/sh
+[ -n "${FAKE_NO_DEVTOOLS:-}" ] && exit 2
+echo /Applications/Xcode.app/Contents/Developer
+EOS
+chmod +x "$TMP_DIR/bin/xcrun" "$TMP_DIR/bin/xcode-select"
 
 mtime_at() {  # $1=何分前, 残り=対象ファイル
   local m="$1"; shift
@@ -1000,6 +1019,68 @@ AUTOBUILD_ARGS=--async run_tool "$ROOT" >/dev/null
 [[ "$(fp_trace "$ROOT")" == "FI" ]] || \
   fail "初回ビルドの起動で指紋を 1 回より多く取っている (期待 FI / 実測 $(fp_trace "$ROOT"))"
 ok "初回ビルド (バイナリ不在) でもビルド入力を走査するのは 1 回だけ"
+
+printf '\n## SDKROOT: go build に選択中の開発ディレクトリの SDK を渡す\n'
+# 起源: macOS 27 / CLT 27 / Xcode 26.4 で、xcrun の既定 SDK (CLT 27) を Xcode 26.4 の ld が読めず
+# cgo のリンクが全滅した (2026-09-27)。`--sdk macosx` の SDK は ld と同じ出どころなので、それを渡す。
+SDK_DIR="$TMP_DIR/sdk/MacOSX99.0.sdk"
+mkdir -p "$SDK_DIR"
+sdk_case() {  # $1=プロジェクト名, 残り=NAME=VALUE → $REPLY に go build が受け取った SDKROOT (最後の 1 回)
+  local root
+  root="$(new_project "$1")"; shift
+  (
+    unset SDKROOT FAKE_SDK_DIR FAKE_NO_DEVTOOLS
+    [[ $# -gt 0 ]] && export "$@"
+    FAKE_GO_SDKLOG="$root/sdklog" FAKE_XCRUN_CALLS="$root/xcrun-calls" FAKE_BIN_SDKLOG="$root/bin-sdklog" \
+      run_tool "$root" >/dev/null
+  )
+  SDK_ROOT_DIR="$root"
+  [[ -s "$root/sdklog" ]] || fail "$root: go build が呼ばれていない (sdklog が空)"
+  REPLY="$(tail -1 "$root/sdklog")"
+}
+
+sdk_case sdk-default "FAKE_SDK_DIR=$SDK_DIR"
+[[ "$REPLY" == "$SDK_DIR" ]] || fail "SDKROOT 未設定のとき、選択中の開発ディレクトリの SDK が渡されない (got: $REPLY)"
+grep -q -- 'sdk=MacOSX99.0.sdk)' "$SDK_ROOT_DIR/stderr" || fail "building の行にどの SDK を渡したかが出ない: $(cat "$SDK_ROOT_DIR/stderr")"
+ok "SDKROOT 未設定なら xcrun --sdk macosx の SDK を go build に渡し、building の行に出す"
+# 同期ビルドの後、ラッパーは同じシェルからツールを exec する。SDKROOT がそこへ漏れると、ツールと
+# その子 (xcodebuild を含む) に macOS SDK が渡り、iOS のビルドを壊す (_go_autobuild_toolchain_sdk の doc)。
+[[ -s "$SDK_ROOT_DIR/bin-sdklog" ]] || fail "前提が崩れている: ビルド後のツールが起動されていない"
+[[ "$(tail -1 "$SDK_ROOT_DIR/bin-sdklog")" == "<unset>" ]] || \
+  fail "go build に渡した SDKROOT が exec したツールへ漏れた (got: $(tail -1 "$SDK_ROOT_DIR/bin-sdklog"))"
+ok "go build に渡した SDKROOT を、その後 exec するツールへ漏らさない"
+
+sdk_case sdk-caller "FAKE_SDK_DIR=$SDK_DIR" "SDKROOT=/caller/MacOSX1.sdk"
+[[ "$REPLY" == "/caller/MacOSX1.sdk" ]] || fail "呼び出し側の SDKROOT が上書きされた (got: $REPLY)"
+[[ ! -s "$SDK_ROOT_DIR/xcrun-calls" ]] || fail "呼び出し側が SDKROOT を渡しているのに xcrun を呼んだ"
+ok "呼び出し側の SDKROOT はそのまま使う (xcrun も呼ばない)"
+
+sdk_case sdk-xcrun-fails
+[[ "$REPLY" == "<unset>" ]] || fail "xcrun が失敗したのに SDKROOT が設定された (got: $REPLY)"
+ok "xcrun が SDK を返さなければ SDKROOT に触らない"
+
+sdk_case sdk-missing-dir "FAKE_SDK_DIR=$TMP_DIR/sdk/absent.sdk"
+[[ "$REPLY" == "<unset>" ]] || fail "存在しない SDK のパスを SDKROOT に渡した (got: $REPLY)"
+ok "xcrun が返したパスが存在しなければ SDKROOT に触らない"
+
+sdk_case sdk-no-devtools "FAKE_SDK_DIR=$SDK_DIR" FAKE_NO_DEVTOOLS=1
+[[ "$REPLY" == "<unset>" ]] || fail "開発ツールが無いのに SDKROOT が設定された (got: $REPLY)"
+[[ ! -s "$SDK_ROOT_DIR/xcrun-calls" ]] || fail "開発ツールが無いのに xcrun を呼んだ (インストールのダイアログを起こす)"
+ok "開発ツールが無ければ xcrun を呼ばない"
+
+# 本番の glogx は --async の裏のビルド (_go_autobuild_spawn) で建つので、その経路でも渡ることを見る
+sdk_case sdk-async "FAKE_SDK_DIR=$SDK_DIR"
+freeze "$SDK_ROOT_DIR"
+bump "$SDK_ROOT_DIR/src/tool/main.go"
+(
+  unset SDKROOT FAKE_NO_DEVTOOLS
+  export FAKE_SDK_DIR="$SDK_DIR"
+  AUTOBUILD_ARGS=--async FAKE_GO_MARK=v2 FAKE_GO_SDKLOG="$SDK_ROOT_DIR/sdklog" run_tool "$SDK_ROOT_DIR" >/dev/null
+)
+sdk_async_done() { [[ "$(wc -l < "$SDK_ROOT_DIR/sdklog" | tr -d ' ')" == 2 ]] && builder_done "$SDK_ROOT_DIR"; }
+wait_for "--async の裏のビルドが終わらない" sdk_async_done
+[[ "$(tail -1 "$SDK_ROOT_DIR/sdklog")" == "$SDK_DIR" ]] || fail "--async の裏のビルドに SDK が渡されない (got: $(tail -1 "$SDK_ROOT_DIR/sdklog"))"
+ok "--async の裏のビルドにも SDK を渡す"
 
 printf '\n## 作業ファイル / lock を残さない\n'
 # 🚨 「いずれ消える」で判定する。builder は非同期なので、バイナリが入った瞬間にはまだ lock の
