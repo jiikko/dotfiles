@@ -538,7 +538,7 @@ zsh側が主因なら:
 - `_zshrc`
 - `issues/done/322-perf-precmd-cost-is-dominated-by-third-party-hooks.md`
 - `issues/338-human-zsh-precmd-verification-and-direnv-decision.md`
-- `issues/500-bug-macos-kernel-zone-leak-from-tmux-clients.md`
+- `issues/done/500-bug-macos-kernel-zone-leak-from-tmux-clients.md`
 
 ---
 
