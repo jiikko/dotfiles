@@ -20,6 +20,7 @@ import (
 
 	"pro-con/agents"
 	"pro-con/card"
+	"pro-con/config"
 	"pro-con/diskuse"
 	"pro-con/dispatcher"
 	"pro-con/live"
@@ -33,16 +34,20 @@ const worktreeUsage = `usage: pro-con worktree clean [--yes]
   --yes で、消してよいものを 1 個ずつ取り直して消す (未 commit の変更・動いている session・master との比較を消す直前に見直す)。
   ブランチも消すのは、中身が master にあり (祖先か git cherry が全部 -)、名前が worktree-pc-<カード> のときだけ。
   worktree とブランチが消えたカードは、pro-con が起動した session の transcript・claude の job (claude rm)・起動の記録の行も消す。
-  master に無い commit があるもの・記録に無いもの・session が動いているものは消さず、理由を並べる。`
+  master に無い commit があるもの・記録に無いもの・session が動いているものは消さず、理由を並べる。
+  設定の disposable_tmp の repo (書かなければ ~/dotfiles) では、worktree の直下の tmp/ の無視されたファイルは残す理由にせず、
+  状態の置き場の wtclean-tmp/<repo>/<名前>/ へ退避してから消す。--yes は 30 日を過ぎた退避も消す。`
 
 // worktreeEnv は worktree clean が外から受け取るもの (テストが差し替える)。
 type worktreeEnv struct {
-	dir      string            // 状態の置き場 (記録・書庫・片付けの印・起動の記録を読む。書くのは受付の箱の forget だけ)
-	repos    map[string]string // 設定の repo の名前 → パス
-	sessions func(ctx context.Context) ([]agents.Session, error)
-	procCwds func(ctx context.Context) ([]string, error) // 動いているプロセスの作業ディレクトリ (lsof)
-	projects string                                      // transcript の置き場 (~/.claude/projects)
-	jobsDir  string                                      // claude の job の置き場 (~/.claude/jobs。空なら job を見ない)
+	dir   string            // 状態の置き場 (記録・書庫・片付けの印・起動の記録を読む。書くのは受付の箱の forget だけ)
+	repos map[string]string // 設定の repo の名前 → パス
+	// disposableTmp は worktree の直下の tmp/ の無視されたファイルを退避してから消してよい repo の名前 (設定の disposable_tmp。issue 552)
+	disposableTmp map[string]bool
+	sessions      func(ctx context.Context) ([]agents.Session, error)
+	procCwds      func(ctx context.Context) ([]string, error) // 動いているプロセスの作業ディレクトリ (lsof)
+	projects      string                                      // transcript の置き場 (~/.claude/projects)
+	jobsDir       string                                      // claude の job の置き場 (~/.claude/jobs。空なら job を見ない)
 	// removeJob は claude の job を消す (本物は claude rm)。nil なら session を消さない (一覧には出す)
 	removeJob func(ctx context.Context, id string) error
 	// load は残りの欄を埋める (本物は realWorktreeEnv。設定の読み込みと claude の実体の解決で数秒〜30 秒かかる)。nil なら埋まっている。
@@ -125,6 +130,14 @@ func runWorktree(args []string, env worktreeEnv, stdout, stderr io.Writer) int {
 		if code := cleanWorktreeSessions(ctx, env, fresh, svs, &sum, stdout, stderr); code > rc {
 			rc = code
 		}
+	}
+	gone, err := wtclean.PruneTmpStash(env.dir, time.Now())
+	for _, p := range gone {
+		_, _ = fmt.Fprintf(stdout, "tmp/ の退避を消した (%d 日を過ぎた): %s\n", int(wtclean.TmpKeep/(24*time.Hour)), p)
+	}
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "pro-con worktree clean: tmp/ の退避を消せない:", err)
+		rc = max(rc, 1)
 	}
 	_, _ = fmt.Fprintln(stdout, sum.line(rc))
 	return rc
@@ -241,7 +254,7 @@ func worktreeInputs(ctx context.Context, env worktreeEnv, stderr io.Writer) (wtc
 	}
 	cwd, _ := os.Getwd()
 	return wtclean.Inputs{Repos: env.repos, Cards: cards, Sessions: ss, Cwd: cwd, ProcCwds: procs,
-		Purged: purged, Owned: owned, Projects: env.projects, JobsDir: env.jobsDir}, nil
+		Purged: purged, Owned: owned, Projects: env.projects, JobsDir: env.jobsDir, DisposableTmp: env.disposableTmp}, nil
 }
 
 // lsofCwds は自分が見えるプロセスの作業ディレクトリを lsof で読む (実測 2026-09-26: 850 本で 0.2 秒)。
@@ -349,16 +362,17 @@ func exitOf(err error) int {
 
 // realWorktreeEnv は本物の置き場・設定の repo・claude の実体で読む session。
 func realWorktreeEnv(home string) (worktreeEnv, error) {
-	repos, err := repoPaths(home)
+	cfg, err := config.Load(config.DefaultPath(home))
 	if err != nil {
-		return worktreeEnv{}, err
+		return worktreeEnv{}, fmt.Errorf("設定を読めない: %w", err)
 	}
+	repos := discoverPaths(cfg, home)
 	cl, err := dispatcher.ResolveClaude(context.Background(), home) // 家の cwd で解決する (resolveClaude と同じ)
 	if err != nil {
 		return worktreeEnv{}, err
 	}
 	jobs := filepath.Join(home, ".claude", "jobs")
-	return worktreeEnv{dir: liveDir(home), repos: repos, sessions: func(ctx context.Context) ([]agents.Session, error) {
+	return worktreeEnv{dir: liveDir(home), repos: repos, disposableTmp: disposableTmpRepos(cfg, home, repos), sessions: func(ctx context.Context) ([]agents.Session, error) {
 		return agents.List(ctx, agents.ExecRunner(cl.Path), jobs)
 	}, procCwds: lsofCwds, projects: filepath.Join(home, ".claude", "projects"), jobsDir: jobs, removeJob: wtclean.ClaudeRemover(cl.Path, jobs)}, nil
 }

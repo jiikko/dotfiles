@@ -10,9 +10,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"pro-con/agents"
 	"pro-con/card"
+	"pro-con/config"
 	"pro-con/dispatcher"
 	"pro-con/gitx"
 	"pro-con/live"
@@ -81,6 +83,78 @@ func TestWorktreeCleanYesRemoves(t *testing.T) {
 	}
 	if _, err := os.Stat(wt); !errors.Is(err, os.ErrNotExist) || !strings.Contains(out.String(), "消した pc-c-001") {
 		t.Errorf("消していない: %v / %q", err, out.String())
+	}
+}
+
+// issue 552: disposable_tmp の repo では、tmp/ の無視されたファイルだけの worktree を --yes で退避してから消し、退避した先を出す。
+// 30 日を過ぎた退避は同じ --yes で消す (結果の 1 行は最後のまま)。設定に無い repo の tmp/ は今までどおり残す。
+func TestWorktreeCleanYesStashesTmp(t *testing.T) {
+	for _, disposable := range []bool{true, false} {
+		env, wt := worktreeFixture(t)
+		if disposable {
+			env.disposableTmp = map[string]bool{"r": true}
+		}
+		repo := env.repos["r"]
+		if err := os.WriteFile(filepath.Join(repo, ".git", "info", "exclude"), []byte("tmp/\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(wt, "tmp"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(wt, "tmp", "mut-456.log"), []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		old := filepath.Join(env.dir, wtclean.TmpStashDir, "r", "pc-c-000")
+		if err := os.MkdirAll(old, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		past := time.Now().Add(-wtclean.TmpKeep - time.Hour)
+		if err := os.Chtimes(old, past, past); err != nil {
+			t.Fatal(err)
+		}
+		var out, errOut bytes.Buffer
+		if rc := runWorktree([]string{"clean", "--yes"}, env, &out, &errOut); rc != 0 {
+			t.Fatalf("rc = %d: %s / %s", rc, out.String(), errOut.String())
+		}
+		dest := filepath.Join(env.dir, wtclean.TmpStashDir, "r", "pc-c-001")
+		lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+		if !strings.HasPrefix(lines[len(lines)-1], schedule.ResultPrefix) || !strings.Contains(out.String(), "tmp/ の退避を消した (30 日を過ぎた): "+old) {
+			t.Errorf("disposable=%v: 30 日を過ぎた退避を消していないか、結果の行が最後に無い:\n%s", disposable, out.String())
+		}
+		_, err := os.Stat(wt)
+		switch {
+		case disposable && (!errors.Is(err, os.ErrNotExist) || !strings.Contains(out.String(), "へ退避した") || !strings.Contains(out.String(), dest)):
+			t.Errorf("tmp/ だけの worktree を退避して消していない: %v\n%s", err, out.String())
+		case disposable:
+			if _, err := os.Stat(filepath.Join(dest, "tmp", "mut-456.log")); err != nil {
+				t.Errorf("退避に無い: %v", err)
+			}
+		case err != nil || !strings.Contains(out.String(), "無視されたファイルがある (tmp/mut-456.log)"):
+			t.Errorf("設定に無い repo の tmp/ を理由に残していない: %v\n%s", err, out.String())
+		}
+	}
+}
+
+// disposable_tmp のパスは、設定の repo と同じ場所 (symlink を解いて) のものだけを印にする。
+func TestDisposableTmpRepos(t *testing.T) {
+	home := t.TempDir()
+	for _, d := range []string{"real/dotfiles", "src/other"} {
+		if err := os.MkdirAll(filepath.Join(home, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(filepath.Join(home, "real", "dotfiles"), filepath.Join(home, "dotfiles")); err != nil {
+		t.Fatal(err)
+	}
+	repos := map[string]string{"dotfiles": filepath.Join(home, "real", "dotfiles"), "other": filepath.Join(home, "src", "other")}
+	if got := disposableTmpRepos(config.Config{}, home, repos); len(got) != 1 || !got["dotfiles"] {
+		t.Errorf("既定 (~/dotfiles が link) = %v", got)
+	}
+	if got := disposableTmpRepos(config.Config{DisposableTmp: []string{}}, home, repos); len(got) != 0 {
+		t.Errorf("空の列 = %v", got)
+	}
+	if got := disposableTmpRepos(config.Config{DisposableTmp: []string{"~/src/other", "~/missing"}}, home, repos); len(got) != 1 || !got["other"] {
+		t.Errorf("書いた値 = %v", got)
 	}
 }
 

@@ -322,7 +322,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			if warn != "" {
 				_, _ = fmt.Fprintln(stderr, "pro-con dispatcher:", warn)
 			}
-			return runDispatcher(args[1:], liveDir(home), filepath.Join(home, ".claude", "projects"), paths, pmConfig{Repo: pmRepo, Mode: cfg.PM, IntegratorMode: cfg.Integrator, Review: cfg.Review}, stdout, stderr)
+			return runDispatcher(args[1:], liveDir(home), filepath.Join(home, ".claude", "projects"), paths, pmConfig{Repo: pmRepo, Mode: cfg.PM, IntegratorMode: cfg.Integrator, Review: cfg.Review,
+				DisposableTmp: disposableTmpRepos(cfg, home, paths)}, stdout, stderr)
 		case "monitor": // 見張り (dispatcher が子として起こす。読むだけで、見つけたことは受付の箱に置く。monitorcmd.go)
 			home, err := os.UserHomeDir()
 			if err != nil {
@@ -789,6 +790,24 @@ func repoPaths(home string) (map[string]string, error) {
 		return nil, fmt.Errorf("設定を読めない: %w", err)
 	}
 	return discoverPaths(cfg, home), nil
+}
+
+// disposableTmpRepos は repos (名前 → パス) のうち、設定の disposable_tmp に書いた repo の名前 (worktree の片付けで tmp/ を使い捨てとみなす。issue 552)。
+// パスは symlink を解いて同じファイルかで比べる (~/dotfiles が別の場所への link でも拾う)。
+func disposableTmpRepos(cfg config.Config, home string, repos map[string]string) map[string]bool {
+	out := map[string]bool{}
+	for _, p := range cfg.DisposableTmpPaths(home) {
+		pi, err := os.Stat(p)
+		if err != nil {
+			continue
+		}
+		for name, rp := range repos {
+			if ri, err := os.Stat(rp); err == nil && os.SameFile(pi, ri) {
+				out[name] = true
+			}
+		}
+	}
+	return out
 }
 
 // discoverPaths は設定の repo を見つけて、名前 → パスにする (見つからない repo は入れない)。

@@ -177,7 +177,7 @@ func TestNewDispatcherPassesUserSettingsToLauncher(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
-	d := newDispatcherFor(t.TempDir(), filepath.Join(home, ".claude", "projects"), nil, "", false, 1, dispatcher.Claude{Path: "/x/claude"}, nil)
+	d := newDispatcherFor(t.TempDir(), filepath.Join(home, ".claude", "projects"), nil, "", false, 1, dispatcher.Claude{Path: "/x/claude"}, nil, nil)
 	l, ok := d.Launch.(dispatcher.ExecLauncher)
 	if !ok {
 		t.Fatalf("Launch = %T (本物の launcher のはず)", d.Launch)
@@ -194,12 +194,16 @@ func TestNewDispatcherPassesUserSettingsToLauncher(t *testing.T) {
 // (514 の最初の commit で、行末のコメントが PMRepo 以降の欄を飲み込んだ。テストは通り、lint の unparam だけが気づいた)。
 func TestNewDispatcherWiresRolesAndCodex(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	d := newDispatcherFor(t.TempDir(), t.TempDir(), nil, "/w/dotfiles", true, 1, dispatcher.Claude{Path: "/x/claude"}, nil)
+	d := newDispatcherFor(t.TempDir(), t.TempDir(), nil, "/w/dotfiles", true, 1, dispatcher.Claude{Path: "/x/claude"}, nil, map[string]bool{"dotfiles": true})
 	if d.PMRepo != "/w/dotfiles" || !d.PMOff || d.PMGuide != pmGuide || d.IntegratorGuide != integratorGuide || d.PMGuide == "" || d.IntegratorGuide == "" {
 		t.Fatalf("役の欄を渡していない: PMRepo=%q PMOff=%v PMGuide=%d 字 IntegratorGuide=%d 字", d.PMRepo, d.PMOff, len(d.PMGuide), len(d.IntegratorGuide))
 	}
 	if d.ResolveCodex == nil {
 		t.Fatal("codex の解き方を渡していない (codex の設定でも PG に実体を渡せない)")
+	}
+	// 閉じたカードの片付け (Settle)・設定画面の一覧も、pro-con worktree clean と同じく disposable_tmp を見る (552)
+	if wt, ok := d.Worktrees.(worktreeOps); !ok || !wt.env.disposableTmp["dotfiles"] {
+		t.Fatalf("worktree の口に disposable_tmp を渡していない: %#v", d.Worktrees)
 	}
 }
 

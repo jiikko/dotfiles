@@ -38,16 +38,17 @@ func Discard(ctx context.Context, seen Verdict, opt Options) Result {
 	if err := keepReflog(ctx, v, v.Head); err != nil {
 		return Result{Verdict: v, Outcome: Failed, Detail: "取り込んでいない commit を残せないので消さない: " + err.Error()}
 	}
-	if err := removeWorktree(ctx, v); err != nil {
+	dest, err := removeTree(ctx, v, opt.StateDir)
+	if err != nil {
 		return Result{Verdict: v, Outcome: Failed, Detail: err.Error()}
 	}
-	kept := "取り込んでいない commit は git for-each-ref " + RemovedRef(v.Name) + " で見られる"
+	kept := "取り込んでいない commit は git for-each-ref " + RemovedRef(v.Name) + " で見られる" + stashedNote(len(v.Tmp), dest)
 	if v.Branch != BranchName(v.Name) {
 		return Result{Verdict: v, Outcome: TreeRemoved, Detail: fmt.Sprintf("ブランチは残した (pro-con が作った名前 %s ではない)。%s", BranchName(v.Name), kept)}
 	}
 	in, err := opt.Fresh(ctx)
 	if err != nil {
-		return Result{Verdict: v, Outcome: TreeRemoved, Detail: "ブランチは消せなかった (材料を取り直せない): " + err.Error()}
+		return Result{Verdict: v, Outcome: TreeRemoved, Detail: "ブランチは消せなかった (材料を取り直せない): " + err.Error() + "。" + kept}
 	}
 	if err := deleteBranch(ctx, in, v, opt.StateDir); err != nil {
 		return Result{Verdict: v, Outcome: TreeRemoved, Detail: "ブランチは消せなかった: " + err.Error() + "。" + kept}

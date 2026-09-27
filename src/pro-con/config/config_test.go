@@ -40,6 +40,32 @@ func TestLoadReadsKeys(t *testing.T) {
 	}
 }
 
+// disposable_tmp (issue 552): 書かなければ既定の ~/dotfiles、[] ならどの repo の tmp/ も使い捨てと見ない (既定に戻さない)。
+func TestDisposableTmpPaths(t *testing.T) {
+	home := "/h"
+	for name, c := range map[string]struct {
+		toml string
+		want []string
+	}{
+		"書かない": {"", []string{"/h/dotfiles"}},
+		"空の列":  {"disposable_tmp = []\n", []string{}},
+		"書いた値": {"disposable_tmp = [\"~/src/x\", \"/abs\"]\n", []string{"/h/src/x", "/abs"}},
+	} {
+		p := filepath.Join(t.TempDir(), "config.toml")
+		write(t, p, c.toml)
+		cfg, err := Load(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := cfg.DisposableTmpPaths(home); !slices.Equal(got, c.want) {
+			t.Errorf("%s: %q, want %q", name, got, c.want)
+		}
+	}
+	if got := Default().DisposableTmpPaths(home); !slices.Equal(got, []string{"/h/dotfiles"}) {
+		t.Errorf("ファイルが無いとき = %q", got)
+	}
+}
+
 // 書き間違えたキーを黙って無視しない (「設定したのに効かない」が無音になる)。
 func TestLoadRejectsUnknownKey(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "config.toml")
