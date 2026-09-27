@@ -7,7 +7,7 @@
 > 残っていなければ done、残っていれば指示が効いていない (PG の transcript で ScheduleWakeup を使った理由を見る)。
 > epic の中の `waiting/` は issues viewer が対応していないので `pending/` に置いている
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 

@@ -6,7 +6,7 @@
 > 来たら、人への質問のうち「わからん」「なぜ」で返った (問いの立て直しで差し戻した) 数を数えて本文に書く (受け入れ条件 2)。
 > 差し戻しが減っていなければ、指示の書き方を見直す。epic の中の `waiting/` は issues viewer が対応していないので `pending/` に置いている
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 

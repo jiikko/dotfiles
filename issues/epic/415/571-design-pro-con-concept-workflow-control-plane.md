@@ -1,6 +1,8 @@
-# 563 (design): pro-con のコンセプトを AI coding workflow / control plane として明文化する
+# 571 (design): pro-con のコンセプトを AI coding workflow / control plane として明文化する
 
 起票日: 2026-09-27
+
+> 番号 563 から改番 (2026-09-28。pending の 563-bug-nvim-plugin-checkout-drifts-from-lazy-lock と衝突していたため)。旧番号 563 で pro-con の control plane を指している話ならこの issue。
 
 親: [415](415-design-claude-pm-worker-orchestration.md)
 
