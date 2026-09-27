@@ -27,4 +27,5 @@ dispatcher の Tick (3 秒。`dispatchercmd.go` の `dispatcherInterval`) は、
 
 ## 関連
 
+- [502](done/502-perf-pro-con-agents-list-spawned-per-screen-and-dispatcher.md) (画面と dispatcher がそれぞれ 3 秒ごとに起動していた。画面の側は 502 で直り、dispatcher 自身の常時の呼び出しが残りの論点として残っていた。559 はその続き)
 - 500 (カーネルのメモリの漏れ) / 455 / 535
