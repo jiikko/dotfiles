@@ -607,8 +607,19 @@ __concat_verify_frame_order() {
   # メインのconcat関数とは独立した実装にすることで、ソートバグの検出が可能
   local -a sorted_files=()
   local -A num_map  # ファイルパス → 抽出された連番
-  local f basename num
+  local f basename num letter_core
   local -i used_letter=0
+
+  # 英字連番を読むときは、先頭が - / _ の共通サフィックス (-aac96k-enc) を外してから末尾の 1 文字を見る。
+  # 外さずに「数字 + 英字」を名前の途中から探すと、prefix 側の 1080p_ / 4k_ の英字を拾って全ファイルが同じ番号になり、
+  # 検証が黙って skip される (敵対レビュー 2026-09-27)
+  # 共通サフィックスは主処理と同じく NFC に揃えた stem (__concat_get_stem) で取る。生の名前で取ると NFC / NFD が
+  # 混ざった café で共通部分が空になり、英字を読めずに黙って skip する (敵対レビュー 2 周目)
+  local letter_suffix=""
+  local -A _nfc_stem=()
+  for f in "${raw_files[@]}"; do _nfc_stem[$f]="$(__concat_get_stem "$f")"; done
+  __concat_find_common_suffix "${_nfc_stem[@]}"
+  [[ "$REPLY" == [-_]* ]] && letter_suffix="$REPLY"
 
   for f in "${raw_files[@]}"; do
     basename="${f:t:r}"  # 拡張子なしのファイル名
@@ -625,10 +636,14 @@ __concat_verify_frame_order() {
     elif [[ "$basename" =~ '([0-9]+)$' ]]; then
       # フォールバック: 末尾の数値
       num="${match[1]}"
-    elif [[ "$basename" =~ '[0-9]([A-Z])([-_].*)?$' ]]; then
-      # 数字直後の英大文字 1 文字 (lecture_03A-enc)。A=1, B=2 …
+    elif letter_core="${_nfc_stem[$f]%"$letter_suffix"}"; [[ "$letter_core" =~ '[0-9]([A-Za-z])$' ]]; then
+      # 数字直後の英字 1 文字 (lecture_03A-enc / talk_05a-enc)。A=a=1, B=b=2 …
       local letter="${match[1]}"
-      num=$(( #letter - 64 ))
+      if [[ "$letter" == [A-Z] ]]; then
+        num=$(( #letter - 64 ))
+      else
+        num=$(( #letter - 96 ))
+      fi
       used_letter=1
     fi
     if [[ -z "$num" ]]; then
@@ -791,9 +806,12 @@ __concat_trash() {
 # (lecture_03A と lecture_03_1) が同じキーに入って番号が重なったまま結合される / interview_01A・01B
 # (カメラ違い) が確認なしに結合される (敵対レビュー 2026-09-27)。そのため英字連番は、ファイルを
 # 明示的に渡した単一グループの判定でだけ、次の条件をすべて満たすときに限って受け付ける:
-#   - 全 stem が「数字 + 英大文字 1 文字」で終わる (共通サフィックスは外してよい)。小文字 (1080p / 4k) は対象外
+#   - 全 stem が「数字 + 英字 1 文字」で終わる (共通サフィックスは外してよい)
+#   - 大文字・小文字が全ファイルで揃っている (03a と 03B は連番と読まない)
 #   - 英字の前 (prefix) が全ファイルで同じ
-#   - A から始まる (1080P / 1080Q のような「版」の命名を連番と読まない)
+#   - A (小文字なら a) から始まる (1080P / 1080Q のような「版」の命名を連番と読まない)
+# 小文字は 1080p / 4k / 2x のような単位の表記と形が同じなので、a から始まらない小文字は「英字連番の形ではない」(rc=1)
+# として数字連番の判定へ回す (大文字は「A から始まっていません」で止める rc=2。こちらは連番を意図した命名の可能性が高い)。
 # 戻り値: 0=英字連番で解決 (結果は __CONCAT_R_*) / 1=英字連番の形ではない / 2=形は英字連番だが不正 (出力済み)
 __concat_resolve_letter_sequence() {
   local -a stems=("$@") core=()
@@ -805,21 +823,33 @@ __concat_resolve_letter_sequence() {
     core+=("${stem%$common_suffix}")
   done
 
-  local prefix="" letter
+  local prefix="" letter letter_case="" this_case
   local -a numbers=()
   for stem in "${core[@]}"; do
-    [[ "$stem" =~ '^(.*[0-9])([A-Z])$' ]] || return 1
+    [[ "$stem" =~ '^(.*[0-9])([A-Za-z])$' ]] || return 1
     if [[ -z "$prefix" ]]; then
       prefix="${match[1]}"
     elif [[ "${match[1]}" != "$prefix" ]]; then
       return 1
     fi
     letter="${match[2]}"
-    numbers+=($(( #letter - 64 )))
+    if [[ "$letter" == [A-Z] ]]; then
+      this_case=upper
+      numbers+=($(( #letter - 64 )))
+    else
+      this_case=lower
+      numbers+=($(( #letter - 96 )))
+    fi
+    if [[ -z "$letter_case" ]]; then
+      letter_case="$this_case"
+    elif [[ "$this_case" != "$letter_case" ]]; then
+      return 1
+    fi
   done
 
   local -a sorted_numbers=("${(on)numbers[@]}")
   if (( sorted_numbers[1] != 1 )); then
+    [[ "$letter_case" == lower ]] && return 1
     print -r -- "エラー: 英字の連番が A から始まっていません: ${(j:, :)core}" >&2
     return 2
   fi
@@ -830,6 +860,7 @@ __concat_resolve_letter_sequence() {
   __CONCAT_R_USE_STRIPPED=$(( ${#common_suffix} > 0 ))
   __CONCAT_R_COMMON_SUFFIX="$common_suffix"
   __CONCAT_R_LETTER=1
+  __CONCAT_R_LETTER_CASE="$letter_case"
   return 0
 }
 
@@ -847,6 +878,7 @@ typeset -g  __CONCAT_R_FIRST_SUFFIX   # 共通サフィックス (番号より�
 typeset -gi __CONCAT_R_USE_STRIPPED   # 1=共通サフィックス除去で解決した
 typeset -g  __CONCAT_R_COMMON_SUFFIX  # 除去した共通サフィックス (USE_STRIPPED=1 のとき)
 typeset -gi __CONCAT_R_LETTER         # 1=英字連番 (lecture_03A / B / C) で解決した
+typeset -g  __CONCAT_R_LETTER_CASE    # 英字連番の大小 (upper / lower)。渡し忘れチェックが同じ大小の兄弟だけを見るため
 __concat_resolve_sequence() {
   local -a stems=("$@")
   __CONCAT_R_NUMBERS=()
@@ -855,8 +887,9 @@ __concat_resolve_sequence() {
   __CONCAT_R_USE_STRIPPED=0
   __CONCAT_R_COMMON_SUFFIX=""
   __CONCAT_R_LETTER=0
+  __CONCAT_R_LETTER_CASE=""
 
-  # 0. 英字連番 (数字の直後の英大文字 1 文字)。成立すればここで確定、形が違えば数字連番の段へ進む
+  # 0. 英字連番 (数字の直後の英字 1 文字)。成立すればここで確定、形が違えば数字連番の段へ進む
   local _letter_rc
   __concat_resolve_letter_sequence "${stems[@]}"
   _letter_rc=$?

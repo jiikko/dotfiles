@@ -37,8 +37,9 @@ concat — 複数の動画ファイルを無劣化で結合します。
     # 元ファイルを残す
     concat --keep video_001.mp4 video_002.mp4
 
-    # 数字直後の英大文字も連番として扱う (A, B, C …。共通の末尾は出力名に残る)
+    # 数字直後の英字 1 文字も連番として扱う (A, B, C … / a, b, c …。共通の末尾は出力名に残る)
     concat lecture_03A-enc.mp4 lecture_03B-enc.mp4 lecture_03C-enc.mp4   # → lecture_03-enc.mp4
+    concat talk_05a-enc.mp4 talk_05b-enc.mp4                           # → talk_05-enc.mp4
 
     # 複数グループを自動検出して結合
     concat clip_01.mp4 clip_02.mp4 scene_1.mp4 scene_2.mp4
@@ -225,6 +226,7 @@ EOF
   local use_stripped_stems=$__CONCAT_R_USE_STRIPPED
   local detected_common_suffix="$__CONCAT_R_COMMON_SUFFIX"
   local letter_mode=$__CONCAT_R_LETTER
+  local letter_case="$__CONCAT_R_LETTER_CASE"
 
   if (( ${#common_prefix} < 3 )); then
     print -r -- "エラー: ファイル名に連続性がありません: 共通プレフィックスが3文字未満です" >&2
@@ -282,9 +284,16 @@ EOF
     fi
 
     # 残りが [separator?][number] のパターンに一致するか。英字連番なら英字 1 文字だけを見る
-    # (prefix が数字で終わるので、ep1A に対する ep10 の "0" を兄弟と読んでしまう)
+    # (prefix が数字で終わるので、ep1A に対する ep10 の "0" を兄弟と読んでしまう)。
+    # 兄弟とみなすのは渡したファイルと同じ大小の英字だけ (lecture_4A / 4B に対する lecture_4k は 4k 版で、兄弟ではない)
+    # 🚨 小文字モードでは lecture_4a / 4b に対する lecture_4k (4k 版) も兄弟と読んで止める。英字と単位の表記を字面では
+    #    区別できないので、渡し忘れを通すより止める方に倒している (止まったら --keep 付きで別 dir に分けて結合する)
     if (( letter_mode )); then
-      [[ "$remaining" =~ '^[A-Z]$' ]] && missing_files+=("${f:t}")
+      if [[ "$letter_case" == lower ]]; then
+        [[ "$remaining" =~ '^[a-z]$' ]] && missing_files+=("${f:t}")
+      else
+        [[ "$remaining" =~ '^[A-Z]$' ]] && missing_files+=("${f:t}")
+      fi
     elif [[ "$remaining" =~ '^[-_]?[0-9]+$' ]] || \
        [[ "$remaining" =~ '^part[0-9]+$' ]] || \
        [[ "$remaining" =~ '^\([0-9]+\)$' ]]; then

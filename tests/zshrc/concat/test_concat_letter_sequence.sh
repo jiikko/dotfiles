@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 unset CDPATH
 # shellcheck shell=bash
-# concat 英字連番 (lecture_03A / lecture_03B …) のテスト
+# concat 英字連番 (lecture_03A / lecture_03B … / talk_05a / talk_05b …) のテスト
 
 source "${0:A:h}/test_helper.sh"
 
@@ -27,6 +27,26 @@ if [[ "$order" == "lecture_03A-aac96k-enc.mp4 lecture_03B-aac96k-enc.mp4 lecture
   printf '✓ Concat order is A, B, C\n'
 else
   bad '✗ Concat order should be A, B, C: got "%s"\n' "$order"
+fi
+
+# Test L14: 小文字の英字連番 (talk_05a / talk_05b) を結合できる
+# (L6 / L12 が __concat_frame_hash 等を差し替える前に置く。後ろに置くとスタブの hash で順序検証が落ちる)
+printf '\n## Test L14: Lowercase letter sequence with common suffix\n'
+TEST_DIR="$TEST_TMP/letter14"
+mkdir -p "$TEST_DIR"
+for l in a b; do echo "video $l" > "$TEST_DIR/talk_05${l}-aac96k-enc.mp4"; done
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+output=$(concat --keep "$TEST_DIR/talk_05b-aac96k-enc.mp4" "$TEST_DIR/talk_05a-aac96k-enc.mp4" 2>&1)
+exit_code=$?
+setopt err_exit
+assert_exit_code "0" "$exit_code" "Lowercase letter sequence concat succeeds"
+assert_file_exists "$TEST_DIR/talk_05-aac96k-enc.mp4" "Output name drops the lowercase letter and keeps the common suffix"
+order=$(print -r -- "$output" | grep -E '^   [0-9]+\. ' | sed -E 's/^   [0-9]+\. //' | tr '\n' ' ' || true)
+if [[ "$order" == "talk_05a-aac96k-enc.mp4 talk_05b-aac96k-enc.mp4 " ]]; then
+  printf '✓ Concat order is a, b\n'
+else
+  bad '✗ Concat order should be a, b: got "%s"\n' "$order"
 fi
 
 # Test L2: 英字が飛んでいたら欠番エラー
@@ -58,7 +78,8 @@ assert_contains "$output" "lecture_03D-enc.mp4" "Lists the left-out sibling"
 
 # Test L4: 英字連番と読まない形 (汎用の連番抽出にも、英字連番の判定にも当たらない)
 printf '\n## Test L4: Shapes that are not letter sequences\n'
-for pair in "video_final video_finaz" "clip_1080p clip_1080q" "lecture_03a lecture_03b"; do
+# 小文字は a から始まらなければ単位の表記 (1080p / 4k) として数字連番の判定へ回す。大文字小文字の混在も連番にしない
+for pair in "video_final video_finaz" "clip_1080p clip_1080q" "clip_4k clip_4l" "lecture_03a lecture_03B"; do
   unsetopt err_exit
   letter_err=$(__concat_resolve_letter_sequence ${=pair} 2>&1)
   letter_rc=$?
@@ -205,5 +226,93 @@ output=$(concat --dryrun "$TEST_DIR/ep1A.mp4" "$TEST_DIR/ep1B.mp4" 2>&1)
 exit_code=$?
 setopt err_exit
 assert_exit_code "0" "$exit_code" "ep1A + ep1B succeeds despite ep10 / ep11"
+
+# Test L15: 小文字の英字連番の渡し忘れ (c) を拒否する
+printf '\n## Test L15: Lowercase sibling left out\n'
+TEST_DIR="$TEST_TMP/letter15"
+mkdir -p "$TEST_DIR"
+for l in a b c; do echo "video $l" > "$TEST_DIR/talk_05${l}-enc.mp4"; done
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+output=$(concat --dryrun "$TEST_DIR/talk_05a-enc.mp4" "$TEST_DIR/talk_05b-enc.mp4" 2>&1)
+exit_code=$?
+setopt err_exit
+assert_exit_code "1" "$exit_code" "Left-out lowercase sibling is rejected"
+assert_contains "$output" "talk_05c-enc.mp4" "Lists the left-out lowercase sibling"
+
+# Test L16: フレーム順序検証が小文字の英字連番を読む
+printf '\n## Test L16: Frame order verification reads lowercase letter sequence\n'
+TEST_DIR="$TEST_TMP/letter16"
+mkdir -p "$TEST_DIR"
+touch "$TEST_DIR/talk_05a-aac96k-enc.mp4" "$TEST_DIR/talk_05b-aac96k-enc.mp4" "$TEST_DIR/out.mp4"
+__concat_frame_hash() {
+  case "${1:t}:$2" in
+    talk_05a-aac96k-enc.mp4:3.000) echo hash_a ;;
+    talk_05b-aac96k-enc.mp4:3.000) echo hash_b ;;
+    out.mp4:3.000)                  echo hash_b ;;  # 出力の先頭に b が来ている (順序の取り違え)
+    out.mp4:13.000)                 echo hash_a ;;
+    *)                              echo "other_${1:t}_$2" ;;
+  esac
+}
+unsetopt err_exit
+__concat_verify_frame_order "$TEST_DIR/out.mp4" "$TEST_DIR/talk_05b-aac96k-enc.mp4" "$TEST_DIR/talk_05a-aac96k-enc.mp4"
+exit_code=$?
+setopt err_exit
+assert_exit_code "1" "$exit_code" "Swapped lowercase letter order is detected"
+assert_contains "$REPLY" "talk_05a-aac96k-enc.mp4" "Mismatch names the first file (a)"
+
+# Test L17: 順序検証は prefix 側の「数字 + 英字」(1080p_) を英字連番と読まない (読むと同じ番号になり黙って skip する)
+printf '\n## Test L17: Frame order verification ignores letters in the prefix\n'
+TEST_DIR="$TEST_TMP/letter17"
+mkdir -p "$TEST_DIR"
+touch "$TEST_DIR/1080p_talk_05a-enc.mp4" "$TEST_DIR/1080p_talk_05b-enc.mp4" "$TEST_DIR/out.mp4"
+__concat_frame_hash() {
+  case "${1:t}:$2" in
+    1080p_talk_05a-enc.mp4:3.000) echo hash_a ;;
+    1080p_talk_05b-enc.mp4:3.000) echo hash_b ;;
+    out.mp4:3.000)                 echo hash_b ;;  # 出力の先頭に b が来ている (順序の取り違え)
+    out.mp4:13.000)                echo hash_a ;;
+    *)                             echo "other_${1:t}_$2" ;;
+  esac
+}
+unsetopt err_exit
+__concat_verify_frame_order "$TEST_DIR/out.mp4" "$TEST_DIR/1080p_talk_05b-enc.mp4" "$TEST_DIR/1080p_talk_05a-enc.mp4"
+exit_code=$?
+setopt err_exit
+assert_exit_code "1" "$exit_code" "Swapped order is detected despite 1080p_ prefix"
+
+# Test L18: 大文字の英字連番の渡し忘れチェックは、小文字 1 文字の兄弟 (4k 版) を拾わない
+printf '\n## Test L18: Uppercase letter mode ignores lowercase siblings\n'
+TEST_DIR="$TEST_TMP/letter18"
+mkdir -p "$TEST_DIR"
+for f in lecture_4A lecture_4B lecture_4k; do echo "$f" > "$TEST_DIR/$f.mp4"; done
+cd "$TEST_DIR" || exit 1
+unsetopt err_exit
+output=$(concat --dryrun "$TEST_DIR/lecture_4A.mp4" "$TEST_DIR/lecture_4B.mp4" 2>&1)
+exit_code=$?
+setopt err_exit
+assert_exit_code "0" "$exit_code" "lecture_4A + 4B succeeds despite lecture_4k"
+
+# Test L19: 共通サフィックスの NFC / NFD が混ざっていても、順序検証は英字を読む (主処理は NFC に揃えて受け付ける)
+printf '\n## Test L19: Frame order verification with mixed NFC / NFD suffix\n'
+TEST_DIR="$TEST_TMP/letter19"
+mkdir -p "$TEST_DIR"
+nfc_b="$TEST_DIR/lec_1B-caf"$'\xc3\xa9'".mp4"      # é = U+00E9
+nfd_a="$TEST_DIR/lec_1A-cafe"$'\xcc\x81'".mp4"     # é = e + U+0301
+touch "$nfc_b" "$nfd_a" "$TEST_DIR/out.mp4"
+__concat_frame_hash() {
+  case "${1:t}:$2" in
+    lec_1A*:3.000)  echo hash_a ;;
+    lec_1B*:3.000)  echo hash_b ;;
+    out.mp4:3.000)  echo hash_b ;;  # 出力の先頭に B が来ている (順序の取り違え)
+    out.mp4:13.000) echo hash_a ;;
+    *)              echo "other_${1:t}_$2" ;;
+  esac
+}
+unsetopt err_exit
+__concat_verify_frame_order "$TEST_DIR/out.mp4" "$nfc_b" "$nfd_a"
+exit_code=$?
+setopt err_exit
+assert_exit_code "1" "$exit_code" "Swapped order is detected despite mixed NFC / NFD suffix"
 
 printf '\n=== Letter Sequence Tests Completed ===\n'
