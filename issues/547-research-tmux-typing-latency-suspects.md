@@ -539,3 +539,61 @@ zsh側が主因なら:
 - `issues/done/322-perf-precmd-cost-is-dominated-by-third-party-hooks.md`
 - `issues/338-human-zsh-precmd-verification-and-direnv-decision.md`
 - `issues/500-bug-macos-kernel-zone-leak-from-tmux-clients.md`
+
+---
+
+## 実測 2026-09-27 (Linux コンテナ / tmux 3.7b をソースからビルド。Terminal.app での体感 A/B ではない)
+
+この節は **人の体感 A/B (Phase 1〜4) の代わりにはならない**。Terminal.app・macOS の描画・実キー入力は
+ここに無いので、受け入れ条件のチェックは付けない。確かめたのは「tmux サーバの event loop が
+1 回の再描画でどれだけ塞がるか」と「その回数を何が増やしているか」まで。
+
+計測の道具 (使い捨て。repo には入れていない): pty で `attach` したクライアントに 1 byte 書き、
+pane 内のアプリが返す印がクライアント側に出るまでの往復を測る (`send-keys` は使わない)。
+サーバの CPU は `/proc/<pid>/stat`、format の展開コストは `display -p` に同じ式を並べて rtt を引く。
+構成は 12 window × 3 pane、window の状態は busy+claude / 最近触った / 消灯 を 1:1:2 で混ぜた。
+
+### 分かったこと
+
+1. **tmux は set-option 1 回ごとに、attach 中の全クライアントを全面再描画する** (ユーザー option の `@...` も)。
+   `options.c` の `options_push_changes` が最後に全クライアントへ `server_redraw_client` を出している
+   (3.7b のソースで確認)。再描画 1 回の中身は status の format 展開がほぼ全部:
+   `refresh-client -S` 1 回 = サーバ CPU 8.5ms のうち window-status-format が 5.7ms、pane 枠 0.85ms、status を切ると 0.4ms
+2. **非 current window のセル 1 個の展開が重かった**。`@fade` と `@fadefg` (セル内で 2〜3 回) がそれぞれ
+   `@busy` (pane ごとに前面コマンドを引く P ループ) と `@fade-bucket` (T: と算術の 3 重評価) を計算し直し、
+   1 セルで @busy 3 回・@fade-bucket 最大 7 回を展開していた (`display -v` の展開ログで数えた)。
+   セル 1 個: 最近触った window 800µs / 消灯 380µs / busy 222µs
+3. **Claude の PostToolUse (ツール 1 回ごと) で、hook が tmux を 3 回起動 = 全面再描画 3 回**
+   (`@claude_state` / `@claude_state_since` / `@claude_bg` を別プロセスで書いていた)。
+   agent が複数走っている間は、これが毎秒何回も入る (S6 の「server event loop の混雑」の具体的な源の 1 つ)
+
+### 入れた変更 (見た目・挙動は変えない)
+
+- `_tmux.conf`: 段の鍵 `@fade-key` をセルごとに 1 回だけ計算し、`@window-cell` / `@fade-tpl` / `@fadefg-tpl`
+  (鍵を文字列置換で埋め込むテンプレート) で引く形にした。旧式と新式で 868 通り (busy × zoom × claude 状態 ×
+  経過 9 種 × 1/3 pane × current/非 current + bell) の展開結果を突き合わせ、差分 0。
+  見た目と展開回数は `tests/tmux/test_window_fade_render.sh` が固定する
+- `_claude/hooks/tmux-pane-state.sh`: 1 回の hook の書き込みを `\;` で繋いで tmux の起動 1 回にまとめた
+  (同じコマンド列の中なら再描画は 1 回に畳まれる)
+
+### 数字 (before → after、各 2 回)
+
+| 指標 | before | after |
+|---|---|---|
+| セル 1 個の展開 (最近触った / 消灯 / busy / busy+claude) | 800 / 380 / 222 / 355µs | 360 / 250 / 180 / 250µs |
+| 再描画 1 回 (`refresh-client -S`) のサーバ CPU | 8.50 / 8.35ms | 6.70 / 6.90ms |
+| うち window-status-format の分 | 5.7ms | 3.9ms |
+| hook `working` 1 回: 所要 / サーバ CPU / クライアントへの出力 | 24.2ms / 12.2ms / 4.8KB | 13.4ms / 5.9ms / 2.4KB |
+| 打鍵の往復 p99 / max (hook なし) | 3.1 / 12.2ms, 2.2 / 12.0ms | 1.4 / 9.9ms, 1.5 / 7.9ms |
+| 打鍵の往復 p99 / max (hook を 5Hz で回した間) | 7.7 / 15.4ms, 8.4 / 11.1ms | 6.6 / 8.4ms, 5.5 / 9.8ms |
+| 同上のサーバ CPU | 10.1 / 10.0% | 5.8 / 5.7% |
+
+p50 (0.6ms) は変わらない。効くのは「たまたま再描画とぶつかった打鍵」の尾の方で、症状の「時々もっさり」側。
+打鍵の p99 / max は 2 000 打鍵 × 2 回なので揺れは大きい (傾きだけを読む)。
+既存の `bench_tmux.sh` の `status_render_x200` は 1 pane・未スタンプの window で測るので、この差は出ない (前後とも ~550ms)。
+
+### 残り (人がやる A/B と、未着手の候補)
+
+- Phase 1〜4 の体感 A/B はまだ。特に「Claude の agent が多く動いている時間帯だけ重いか」を見ると、3 の効き目が分かる
+- 未着手: pane 枠 (再描画 1 回あたり ~0.85ms / 3 pane)、点火アニメ (切替 1 回で set-option 8 回 = 全面再描画 8 回)。
+  どちらも見た目を削る判断が要るので、この変更には入れていない

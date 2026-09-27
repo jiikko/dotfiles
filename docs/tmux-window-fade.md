@@ -28,7 +28,7 @@ status バーの window list で、**最近 shell でコマンドを実行した
 > 2026-07-14 に廃止し、毎 step 秒 1 段の連続減衰へ移行した。
 
 - bg のバイオレット階調は 256色 cube の対角 (r=b) `colour(16 + 37×(max−bucket))`（201→164→127→90→53）を算術生成する。
-  この式は `@fade-ramp-color` に 1 度だけ定義し、`@fade`/`@fadetrifg`/`@fadetribg` が参照する（色を変える
+  この式は `@fade-ramp-color` に 1 度だけ定義し、`@fade-tpl` が参照する（色を変える
   なら `@fade-ramp-color` の 1 箇所）。最明色（busy/bucket0）は `@fade-hot-bg`、段数上限は `@fade-bucket-max`、
   文字色 3 定数（`@fade-hot-fg`=黒 / `@fade-dim-fg`=明灰 / `@fade-cold-fg`=消灯）と、すべて `@fade-*` が出典
 - truecolor の連続グラデにしないのは、tmux の format 算術に 16 進整形が無く `#RRGGBB` を組めない
@@ -61,18 +61,28 @@ preexec（実行開始）と precmd（実行完了）でスタンプされる。
 [書き込み側] zshlib/_tmux_window_name.zsh の _tmux_stamp_window_touched
   zsh preexec/precmd → tmux set-option -w -t $TMUX_PANE @last-touched <epoch>
       ↓ (window user option)
-[表示側] _tmux.conf の @fade-bucket / @fade-ramp-color → @fade / @fadefg
-  window-status-format が #{E:@fade} で epoch と現在時刻の差を段 (bucket) に落とし分岐
+[表示側] _tmux.conf の @fade-key (@busy / @fade-bucket) → @fade-tpl / @fadefg-tpl
+  window-status-format が @fade-key をセルごとに 1 回だけ計算し、@window-cell へ埋め込んで展開
 ```
 
 - 表示側の現在時刻は `@epochfmt='%s'` を `#{T:@epochfmt}` で strftime 展開する
   トリック（status-left の @secfmt と同型）。追従はステータス再描画単位
   （status-interval=1、prefix 点滅の駆動と共用）なのでほぼ即時。window 切替等の操作でも再描画
-- `@fade` は bg+fg（セル先頭用）、`@fadefg` は fg のみ（pane 数・claude アイコン後の
+- `@fade-tpl` は bg+fg（セル先頭用）、`@fadefg-tpl` は fg のみ（pane 数・claude アイコン後の
   文字色リセット用）。分かれている理由は zoom の暗赤背景を途中で潰さないため。段計算は
   `@fade-bucket`、bg 色式は `@fade-ramp-color`、最明は `@fade-hot-bg`、段数上限は `@fade-bucket-max` に
-  集約したので、@fade / @fadefg / @fadetrifg / @fadetribg の 4 変数が自動で同期する（定数を 1 箇所
-  変えれば全変数へ伝播。以前は色式を 3 変数に複製していたが 2026-07-15 にヘルパーへ集約した）
+  集約したので、定数を 1 箇所変えれば全体へ伝播する（以前は色式を 3 変数に複製していたが
+  2026-07-15 にヘルパーへ集約した）
+- **段の鍵 `@fade-key`（`busy` / `0`〜`max`）はセル 1 個につき 1 回だけ計算する**（2026-09-27、issue 501）。
+  `@fade-tpl` / `@fadefg-tpl` は鍵を `@K@` と書いた**テンプレート**で、セルの本体 `@window-cell` が
+  `#{s/@K@/@FK@/:…}` で鍵の印へ差し替え、window-status-format が `@FK@` を計算済みの鍵へ置換してから
+  展開する（tmux の format に変数束縛が無いので、1 回計算した値を式へ埋め込む手段が文字列置換しかない）。
+  以前は `@fade` / `@fadefg`（セル内で 2〜3 回）がそれぞれ `@busy`（pane ごとに前面コマンドを引く P ループ）と
+  `@fade-bucket`（T: と算術の 3 重評価）を計算し直し、1 セルで @busy 3 回・@fade-bucket 最大 7 回を
+  展開していた。status は毎秒と **set-option のたび**（tmux は 1 回ごとに全クライアントを全面再描画する）に
+  全 window ぶん展開されるので、この重複が再描画 1 回の大半を占めていた。
+  🚨 `#{E:@fade-tpl}` を単独で展開しない（`@K@` が残って壊れる）。見た目と展開回数は
+  `tests/tmux/test_window_fade_render.sh` が固定している
 - スタンプの throttle は 3 秒（プロンプト毎に tmux client を fork しない方針。連続作業中でも
   3 秒に 1 回の fork に上限が付くので CPU は軽微）。さらにその fork は **非同期（`&!`）** で撃つ
   （preexec = コマンド実行の直前に走るため、同期だと throttle が明けるたびに 3.7〜9.7ms の
@@ -108,7 +118,7 @@ preexec（実行開始）と precmd（実行完了）でスタンプされる。
 
 ## 関連
 
-- 実装: `_tmux.conf`（`@fade` / `@fadefg` / window-status-format）、
+- 実装: `_tmux.conf`（`@fade-key` / `@fade-tpl` / `@fadefg-tpl` / `@window-cell` / window-status-format）、
   `zshlib/_tmux_window_name.zsh`（`_tmux_stamp_window_touched`）
 - 隣接機能: @claude_state アイコン（Claude の作業状態）/ bell 閃光システム（完了通知）/
   点火アニメ（window 切替時に current 島が暗赤→蛍光へランプ。scripts/tmux_ignite_current.sh、

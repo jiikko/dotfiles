@@ -194,7 +194,7 @@ _tmux_set_pane_title() {
 }
 
 # 「このウィンドウで最後に shell がコマンドを実行した時刻」を window option
-# @last-touched (epoch) に記録する。_tmux.conf の放置フェード (@fade) の唯一の入力。
+# @last-touched (epoch) に記録する。_tmux.conf の放置フェード (@fade-*) の唯一の入力。
 # アクティブ判定の仕様 (select では若返らない等) の詳細は docs/tmux-window-fade.md 参照。
 # - -t "$TMUX_PANE" への set -w は「その pane が属する window」の option になるので、
 #   split していても正しい window に届く。
@@ -213,7 +213,7 @@ _tmux_stamp_window_touched() {
   # 非同期 (&!) にする理由: この関数は preexec = ユーザーのコマンドが走る直前に呼ばれるため、
   # tmux client の fork を待つと throttle が明けるたびに体感レイテンシとして乗る
   # (実測 3.7ms / 混んだ実サーバでは 9.7ms)。fire-and-forget で 0.45ms。
-  # 妥当性: 書き込むのは window option 1 個で、読む側 (status の @fade) は次の再描画
+  # 妥当性: 書き込むのは window option 1 個で、読む側 (status の放置フェード) は次の再描画
   # (status-interval=1) で拾うので数 ms の遅延は見えない。throttle の記録 (_TMUX_LAST_TOUCH_STAMPED)
   # は同期的に済ませているので、非同期化で撃ちすぎることはない。
   # 既知の縮退: `exec nvim` のように直後にシェルが置き換わると背景ジョブが刈られてスタンプを
