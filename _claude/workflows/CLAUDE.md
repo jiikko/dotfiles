@@ -16,7 +16,13 @@ Workflow ツール（`Workflow({scriptPath, args})`）で起動する決定論�
 
 ## 構文チェック
 
-Workflow スクリプトはトップレベル `await`/`return` を使うため通常の `node --check` では弾かれる。`tmp/check_forge.mjs` のように **async ラッパで包んで `new Function` でパース**して検証する（実行はしない）。ロジック検証は agent/parallel/pipeline をスタブ化して制御フローを流す（`tmp/run_forge_stub.mjs` 参照）。
+Workflow スクリプトはトップレベル `await`/`return` を使うため通常の `node --check` では弾かれる。**`export` を外して async 関数の本体としてパース**して検証する（実行はしない。構文エラーなら rc=1）:
+
+```sh
+node -e 'const s=require("fs").readFileSync(process.argv[1],"utf8").replace(/^export\s+/gm,""); new (Object.getPrototypeOf(async function(){}).constructor)(s); console.log("parse ok")' _claude/workflows/forge.js
+```
+
+ロジック検証は agent/parallel/pipeline をスタブ化して制御フローを流す（スタブはその都度書く。`./tmp` に置いた版は残らないので、ここから指さない）。
 
 ## 現在のファイル
 

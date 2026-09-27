@@ -2,7 +2,7 @@
 """pro-con のカードの依存を見るビュー (issue 485) の見本。使い捨て。本体 (src/pro-con) には入れていない。
 
 使い方:
-  python3 tmp/pro-con-485-sample.py [--at HH:MM] [--sel C-xxx] [--width N] [--cards PATH] [案 ...]
+  python3 src/pro-con/samples/485-dependency-view/pro-con-485-sample.py [--at HH:MM] [--sel C-xxx] [--width N] [--cards PATH] [案 ...]
   案: 1A 1B 2 3 4 5 6 (省略すると全部)。--at を省くと今。--at 01:05 は issue 485 の実例の時刻
 データ: 本物の記録 (~/.local/state/pro-con/live/cards.json) の After と ParentID を読む (架空のカードは使わない)。
   --at の時刻の列は、各カードの History の文から巻き戻す (「PG を起動した」→ 作業中 等。下の STATE_BY_EVENT)。

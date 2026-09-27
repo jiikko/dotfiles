@@ -106,7 +106,7 @@ func (m *Model) overlayCursor(board []string) []string {
 	w := m.cardWidth(n) + 2
 	border := fg(frameColor) + sgrBold
 	top, bottom := row-cardGap, row+cardLines
-	// 滑っている途中も枠を丸ごと描く (2026-09-25 にユーザーが見本 tmp/pro-con-cursor-sample.py の B を選んだ。空き行と外枠の上だけに描くと、途中で枠がほぼ消えてちらつく)。
+	// 滑っている途中も枠を丸ごと描く (2026-09-25 にユーザーが見本の案 B を選んだ。案と経緯は issue 472。空き行と外枠の上だけに描くと、途中で枠がほぼ消えてちらつく)。
 	// ただしカードの字の上では線で置き換えず、字を残したまま色だけ変える (同じ日に見本の D。置き換えると、線が字を跨ぐ一瞬その字が消えて見える):
 	// 横の辺は赤の上線 (上辺) / 下線 (下辺)、縦の辺は赤の背景。止まっているときは枠が空き行と外枠 (空白と罫線) の上なので、ふつうの二重線になる
 	for r := top; r <= bottom; r++ {
