@@ -2,6 +2,11 @@
 
 起票日: 2026-09-27
 
+> **待ち (2026-09-28〜)**: 受け入れ条件 2 の確かめを待っている (実装は済み)。待っているもの: 指示を変えた後 (09-27 18:33) に pro-con が
+> 起動した PG が、作業を終えること。来たら「進捗」の 1 行で、その PG の session に起床の予約 (`session_cron`) が残っていないかが分かる。
+> 残っていなければ done、残っていれば指示が効いていない (PG の transcript で ScheduleWakeup を使った理由を見る)。
+> epic の中の `waiting/` は issues viewer が対応していないので `pending/` に置いている
+
 親: [415](415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
