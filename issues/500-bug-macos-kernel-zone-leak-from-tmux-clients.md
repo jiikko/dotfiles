@@ -116,6 +116,15 @@ attach が無ければほぼ漏れない。何が漏らしているか (tmux の
 2. パニックの報告 (`/Library/Logs/DiagnosticReports/*.panic` か `panic-full-2026-09-25-*.panic`) のバックトレースに `com.apple.iokit.EndpointSecurity` / `AppleMobileFileIntegrity` / `Sandbox` のどれが載っているかを本文に写す (上流と同じ経路かの照合)
 3. 確定したら: 当面は在庫を毎日見て 1,500 万個を越える前に再起動。恒久策は **macOS を上げる** (このマシンの macOS 27.0 では再現しない。ただし 27 で直ったのか、負荷が足りないだけかは未確認) か、上流 (#66020 / Apple Feedback) に 500 の数字を足す
 
+### 2026-09-27 14:30: パニックのバックトレースの照合 (次の一手 2) と、今の在庫
+
+- 在庫: **3,310,716** (14:25、`kernel-alloc-watch`。claude 6 / tmux のクライアント 3)。11:50 の 3,199,850 から約 2.6 時間で約 11 万増 (約 4.3 万個 / 時)
+- `/Library/Logs/DiagnosticReports/panic-full-2026-09-25-235315.0002.panic`: panicked task は `pid 64723: zsh`。
+  「Kernel Extensions in backtrace」は **`com.apple.driver.AppleMobileFileIntegrity` だけ** (依存: CoreAnalyticsFamily / corecrypto / CoreTrust / AppleImage4)。
+  `com.apple.iokit.EndpointSecurity` と apfs はロード済み kext の一覧に出ているだけで、バックトレースには無い
+- 読み方: バックトレースは「zone が尽きたときに最後に確保しようとした側」(zsh の exec の署名検査) であって、漏らした側ではない。
+  上流 #66020 のバックトレースも同じ性質なので、この照合では claude 起因かどうかを判別できない。**決め手は次の一手 1 の A-B のまま**
+
 ### 2026-09-27 13:10: 在庫を記録する道具 `bin/kernel-alloc-watch` を足した
 
 - `kernel-alloc-watch` (引数なし = record) で `~/.cache/kernel-alloc-watch/log.tsv` に 1 行、7 日より古い行はそのとき落とす。`kernel-alloc-watch list` で一覧 (前の行との差つき)。
