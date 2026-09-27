@@ -288,6 +288,65 @@ if grep -q 'snapshot' <<<"$("$BIN" --help)"; then pass "--help が snapshot を�
 rc=0; "$BIN" nosuch >/dev/null 2>&1 || rc=$?
 if [[ $rc -eq 2 ]]; then pass "不明なサブコマンドは rc=2"; else ng "不明なサブコマンドの rc=$rc"; fi
 
+# 9. destroy-all-logs: --yes 無しは何も消さない。--yes で log.tsv と一時ファイルだけを消し、ロックの印・ほかのファイル・dir は残す
+d="$TMP_DIR/t9"; mkdir -p "$d"
+printf '%s\trow\t1\n%s\trow\t2\n' $((NOW - 60)) "$NOW" > "$d/log.tsv"; : > "$d/.log.tsv.abc123"; : > "$d/.lock"; : > "$d/keep.txt"
+rc=0; out=$(KERNEL_ALLOC_WATCH_DIR="$d" "$BIN" destroy-all-logs 2>&1) || rc=$?
+if [[ $rc -eq 1 && -f "$d/log.tsv" && -f "$d/.log.tsv.abc123" && "$out" == *"log.tsv  (2 行)"* && "$out" == *".log.tsv.abc123"* ]]; then
+  pass "destroy-all-logs は --yes 無しなら消すものを出すだけで rc=1"
+else
+  ng "destroy-all-logs (--yes 無し): rc=$rc out=[$out] $(ls -A "$d" | tr '\n' ' ')"
+fi
+rc=0; KERNEL_ALLOC_WATCH_DIR="$d" "$BIN" destroy-all-logs --yes >/dev/null 2>&1 || rc=$?
+if [[ $rc -eq 0 && ! -e "$d/log.tsv" && ! -e "$d/.log.tsv.abc123" && -e "$d/.lock" && -e "$d/keep.txt" ]]; then
+  pass "destroy-all-logs --yes は log.tsv と一時ファイルだけを消し、ロックの印とほかのファイルは残す"
+else
+  ng "destroy-all-logs --yes: rc=$rc 残り=[$(ls -A "$d" | tr '\n' ' ')]"
+fi
+rc=0; out=$(KERNEL_ALLOC_WATCH_DIR="$d" "$BIN" destroy-all-logs --yes 2>&1) || rc=$?
+if [[ $rc -eq 0 && "$out" == *"消す記録は無い"* ]]; then pass "消す記録が無ければ rc=0"; else ng "消す記録が無いとき: rc=$rc [$out]"; fi
+rc=0; KERNEL_ALLOC_WATCH_DIR="$d" "$BIN" destroy-all-logs --force >/dev/null 2>&1 || rc=$?
+if [[ $rc -eq 2 ]]; then pass "destroy-all-logs に --yes 以外を渡すと rc=2"; else ng "destroy-all-logs --force の rc=$rc"; fi
+# ロックを取ってから消す段は、対象が 0 件 (先に別の destroy が消した) でも成功を返す
+rc=0; KW_DESTROY=1 KERNEL_ALLOC_WATCH_DIR="$d" "$BIN" __destroy_locked >/dev/null 2>&1 || rc=$?
+if [[ $rc -eq 0 ]]; then pass "消す段は対象が 0 件でも rc=0"; else ng "消す段の対象が 0 件のときの rc=$rc"; fi
+# 消す段を印なしで直接呼んでも、確認もロックも素通りしない
+printf '%s\trow\t1\n' "$NOW" > "$d/log.tsv"
+rc=0; env -u KW_DESTROY KERNEL_ALLOC_WATCH_DIR="$d" "$BIN" __destroy_locked >/dev/null 2>&1 || rc=$?
+if [[ $rc -ne 0 && -f "$d/log.tsv" ]]; then pass "消す段は印なしでは動かない"; else ng "消す段を印なしで呼んだ: rc=$rc log=$([[ -f $d/log.tsv ]] && echo 残 || echo 消)"; fi
+rm -f "$d/log.tsv"
+# 改行を含む名前の一時ファイルがあっても、記録先の外 (cwd) のファイルを消さない
+mkdir -p "$TMP_DIR/t9cwd"; : > "$TMP_DIR/t9cwd/important"; : > "$d/log.tsv"; : > "$d/.log.tsv.a
+important"
+rc=0; (cd "$TMP_DIR/t9cwd" && KERNEL_ALLOC_WATCH_DIR="$d" "$BIN" destroy-all-logs --yes >/dev/null 2>&1) || rc=$?
+if [[ $rc -eq 0 && -f "$TMP_DIR/t9cwd/important" && ! -e "$d/log.tsv" && ! -e "$d/.log.tsv.a
+important" ]]; then
+  pass "改行を含む名前も 1 つのパスとして消し、記録先の外は消さない"
+else
+  ng "改行を含む名前: rc=$rc cwd=[$(ls -A "$TMP_DIR/t9cwd")] d=[$(ls -A "$d" | tr '\n' '|')]"
+fi
+# 同じ名前の dir は消さずに残し、ファイルだけを消して rc=0。`-` で始まる相対パスの記録先でも動く
+mkdir -p "$TMP_DIR/t9rel/-q/.log.tsv.x"; : > "$TMP_DIR/t9rel/-q/log.tsv"; : > "$TMP_DIR/t9rel/-q/.log.tsv.y"
+rc=0; (cd "$TMP_DIR/t9rel" && KERNEL_ALLOC_WATCH_DIR="-q" "$BIN" destroy-all-logs --yes >/dev/null 2>&1) || rc=$?
+if [[ $rc -eq 0 && -d "$TMP_DIR/t9rel/-q/.log.tsv.x" && ! -e "$TMP_DIR/t9rel/-q/log.tsv" && ! -e "$TMP_DIR/t9rel/-q/.log.tsv.y" ]]; then
+  pass "同じ名前の dir は残してファイルだけ消す (記録先が - で始まる相対パスでも)"
+else
+  ng "dir / - で始まる記録先: rc=$rc 残り=[$(ls -A "$TMP_DIR/t9rel/-q" 2>&1 | tr '\n' ' ')]"
+fi
+rc=0; (cd "$TMP_DIR/t9rel" && KERNEL_ALLOC_WATCH_DIR="-q" KERNEL_ALLOC_WATCH_ZPRINT="$TMP_DIR/zprint" KERNEL_ALLOC_WATCH_PS="$TMP_DIR/ps" \
+  KERNEL_ALLOC_WATCH_TMUX="$TMP_DIR/tmux" KERNEL_ALLOC_WATCH_SYSCTL="$TMP_DIR/sysctl" KERNEL_ALLOC_WATCH_NOW="$NOW" "$BIN" >/dev/null 2>&1) || rc=$?
+if [[ $rc -eq 0 && -s "$TMP_DIR/t9rel/-q/log.tsv" ]]; then pass "- で始まる相対パスの記録先にも記録できる"; else ng "- で始まる記録先への記録: rc=$rc"; fi
+# 消すものが無ければ --yes 無しでも rc=0
+rc=0; KERNEL_ALLOC_WATCH_DIR="$d" "$BIN" destroy-all-logs >/dev/null 2>&1 || rc=$?
+if [[ $rc -eq 0 ]]; then pass "消すものが無ければ --yes 無しでも rc=0"; else ng "消すものが無いときの --yes 無しの rc=$rc"; fi
+# ほかの記録がロックを握っている間は消さない (rc=75)
+printf '%s\trow\t1\n' "$NOW" > "$d/log.tsv"
+/usr/bin/lockf -k "$d/.lock" sleep 30 & holder=$!
+for _ in $(seq 100); do /usr/bin/lockf -t 0 "$d/.lock" true 2>/dev/null || break; sleep 0.05; done
+rc=0; KERNEL_ALLOC_WATCH_DIR="$d" "$BIN" destroy-all-logs --yes >/dev/null 2>&1 || rc=$?
+pkill -P "$holder" 2>/dev/null || true; kill "$holder" 2>/dev/null || true; wait "$holder" 2>/dev/null || true   # lockf の子 (sleep) も止める
+if [[ $rc -eq 75 && -f "$d/log.tsv" ]]; then pass "ロックを握られている間は消さずに rc=75"; else ng "ロックを握られている間: rc=$rc log=$([[ -f $d/log.tsv ]] && echo 残 || echo 消)"; fi
+
 # 6. tmux が固まっても、ほかの record はロックで待たされずに記録できる (計測をロックの外で済ませている)
 d="$TMP_DIR/t6"; mark="$TMP_DIR/t6.hang"
 FAKE_TMUX=hang FAKE_MARK=$mark FAKE_INUSE=1 run "$d" >/dev/null 2>&1 & hung=$!

@@ -261,6 +261,7 @@ live 設定の丸ごとコピーなので、JIS マシンで実行すると ANSI
 kernel-alloc-watch            # 人が叩く形: 1 行記録して、在庫・増え方・判定 (正常 / 要観察 / 漏れの疑い / 漏れている / 危険) を出す
 kernel-alloc-watch snapshot   # Claude やスクリプトが叩く形: 1 行記録して、判定を JSON 1 行で出す
 kernel-alloc-watch list       # 記録を古い順に出す (時刻 / inuse / MiB / 前の行との差 / claude の数 / tmux のクライアント数)
+kernel-alloc-watch destroy-all-logs --yes   # 記録を全部消す (--yes 無しなら消すものを出すだけ)
 kernel-alloc-watch --help     # 判定の閾値・列の意味・JSON の項目・終了コード
 ```
 

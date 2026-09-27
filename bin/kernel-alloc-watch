@@ -26,6 +26,7 @@ RESTART_LEVEL=15000000   # 再起動の目安 (パニックの約 2,100 万個�
 MIN_SPAN=600             # 増え方を出すのに要る記録の幅 (秒)。短いと ±100 の揺れで速さが暴れる
 RECENT_WINDOW=$((6 * 3600))  # 増え方は直近この時間の記録から出す (起動以降の平均だと、日をまたいで急に漏れ始めたのが薄まる)
 DIR=${KERNEL_ALLOC_WATCH_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/kernel-alloc-watch}
+[[ $DIR == /* ]] || DIR=./$DIR   # `-` で始まる相対パスを lockf・rm がオプションとして読まないように
 LOG=$DIR/log.tsv
 SELF=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")
 
@@ -37,8 +38,10 @@ kernel-alloc-watch — カーネルの zone data.kalloc.1024 の在庫を記録�
   kernel-alloc-watch [check]       人が叩く形。1 行記録して、今の在庫・増え方・判定を出す (record も同じ)
   kernel-alloc-watch snapshot      Claude やスクリプトが叩く形。1 行記録して、判定を JSON 1 行で出す
   kernel-alloc-watch list          記録を古い順に出す
+  kernel-alloc-watch destroy-all-logs [--yes]
+                                   記録を全部消す。--yes 無しなら何を消すかを出すだけで、何も消さない
   kernel-alloc-watch -h | --help   このヘルプ
-  どの形でも、記録するときに 7 日より古い行を落とす
+  記録する形 (check / snapshot) では、記録するときに 7 日より古い行を落とす
 
 何を測るか:
   data.kalloc.1024 はカーネルの 1KB 単位の割り当て。カーネルのメモリなので、アクティビティモニタや
@@ -82,11 +85,14 @@ snapshot の JSON (1 行。値が出せないものは null):
 記録先:
   \${KERNEL_ALLOC_WATCH_DIR:-\${XDG_CACHE_HOME:-~/.cache}/kernel-alloc-watch}/log.tsv  (今は $LOG)
   1 行 = epoch / 時刻 / inuse / claude / tmux (タブ区切り)
+  destroy-all-logs が消すのは log.tsv と書き換えの途中の一時ファイル (.log.tsv.*) だけ。ロックの印 (.lock) と dir は残す
+  (dir を丸ごと消さないので、KERNEL_ALLOC_WATCH_DIR を別の場所へ向けていても、ほかのファイルは消えない)
 
 終了コード:
-  0  記録した / 一覧を出した (判定の結果によらない)
+  0  記録した / 一覧を出した (判定の結果によらない) / 記録を消した (消すものが無かったときも)
   1  記録できなかった (zprint が失敗した・書式が変わって inuse が読めない・記録を読めない・ロックを開けない)。
-     このとき既存の記録は触らない。list で記録を読めない・読める行がまだ無いときも 1
+     このとき既存の記録は触らない。list で記録を読めない・読める行がまだ無いときも 1。
+     destroy-all-logs を --yes 無しで打った (消すものを出すだけで、何も消さない) ときも 1。消すものが無ければ --yes の有無によらず 0
   2  使い方の誤り
   75 ほかの記録がロックを 10 秒以上握っていた (その回は記録しない)
 EOF
@@ -94,7 +100,7 @@ EOF
 
 usage_error() {
   echo "kernel-alloc-watch: $1" >&2
-  echo "使い方: kernel-alloc-watch [check] | snapshot | list | --help" >&2
+  echo "使い方: kernel-alloc-watch [check] | snapshot | list | destroy-all-logs [--yes] | --help" >&2
   exit 2
 }
 
@@ -280,11 +286,61 @@ cmd_list() {
   printf '%s\n' "$out"
 }
 
+# 記録を全部消す。消すのは log.tsv と一時ファイルだけ (上の help の「記録先」)。
+# 🚨 ロックの印 (.lock) は消さない: 消すと、並行する記録が握っているロックと別の印が作られ、2 本が同時に書き換える窓ができる
+# 🚨 消す対象はパスの配列のまま扱う (1 行ずつの文字列で受け渡さない)。改行を含む名前が 2 行に割れると、
+#   割れた後ろの行が cwd 相対のパスになり、記録先の外のファイルを消す (red team で再現)
+destroy_targets() {  # 在る消す対象を配列 TARGETS に入れる
+  TARGETS=()
+  local f
+  for f in "$LOG" "$DIR"/.log.tsv.*; do
+    if [[ -f $f || -L $f ]]; then TARGETS+=("$f"); fi   # この道具が作るのはファイルだけ (同じ名前の dir は消さずに残す)
+  done
+}
+
+cmd_destroy() {
+  local yes=0 f
+  case "$#:${1:-}" in
+    0:) ;;
+    1:--yes) yes=1 ;;
+    *) usage_error "destroy-all-logs に渡せるのは --yes だけ" ;;
+  esac
+  destroy_targets
+  if ((${#TARGETS[@]} == 0)); then
+    echo "kernel-alloc-watch: 消す記録は無い ($DIR)"
+    return 0
+  fi
+  if ((yes == 0)); then
+    echo "kernel-alloc-watch: 次を消す (まだ消していない。消すなら destroy-all-logs --yes):"
+    for f in "${TARGETS[@]}"; do
+      if [[ $f == "$LOG" ]]; then
+        printf '  %s  (%s 行)\n' "$f" "$(awk 'END { print NR }' "$f" 2>/dev/null || echo '?')"
+      else
+        printf '  %s\n' "$f"
+      fi
+    done
+    return 1
+  fi
+  # 記録と同じロックの下で消す (書き換えの途中の記録と混ざらない)。消す段は印 (KW_DESTROY) があるときだけ動く
+  local rc=0
+  KW_DESTROY=1 /usr/bin/lockf -k -t 10 "$DIR/.lock" "$SELF" __destroy_locked || rc=$?
+  if ((rc == 75)); then exit 75; elif ((rc != 0)); then exit 1; fi
+  echo "kernel-alloc-watch: 記録を消した (${DIR}。ロックの印と dir は残した)"
+}
+
+destroy_locked() {
+  [[ ${KW_DESTROY:-} == 1 ]] || { echo "kernel-alloc-watch: __destroy_locked は destroy-all-logs --yes から呼ぶ" >&2; return 1; }
+  destroy_targets   # ロックの下で取り直す (確かめてからロックを取るまでに別の destroy が消していれば 0 件)
+  if ((${#TARGETS[@]} > 0)); then rm -f -- "${TARGETS[@]}"; fi
+}
+
 case "${1:-check}" in
   check|record) record_and_report human ;;
   snapshot) record_and_report json ;;
   __record_locked) record_locked ;;
   list) cmd_list ;;
+  destroy-all-logs) shift; cmd_destroy "$@" ;;
+  __destroy_locked) destroy_locked ;;
   -h|--help|help) help_text ;;
   *) usage_error "不明なサブコマンド: $1" ;;
 esac
