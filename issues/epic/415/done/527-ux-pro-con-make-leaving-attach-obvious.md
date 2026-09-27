@@ -2,7 +2,7 @@
 
 起票日: 2026-09-26
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 
@@ -83,3 +83,4 @@
     案内の enter の時点で選択の変化を見直すようにした。`--leave` は画面を複数開いていれば全部の attach を終わらせる (仕様として help に書いた)。
     未確認のリスク: popup が正しく閉じたのに tmux が何か文を出したら「popup を開けない」と出る (出す形を確かめていない。起きたら `ui/attachpopup.go` の run の分岐を見る)
   - 518 の懸念 (Ctrl+Z で戻ったとき描き直すか): tmux の中は端末を渡さないので `ExecProcess` を通らない。外は 518 の直しの上の経路のまま
+- 2026-09-27: done へ。受け入れ条件 5 つに印・実装 (`ui/attachpopup.go` / `ui/attachguide.go` / `leavecmd.go`、敵対的レビュー対応 e7550aa7) が master にあり、カード C-082 が完了であることを確かめた。上の未確認のリスク (popup が閉じたのに tmux が文を出すと「開けない」と出る) は、起きたら `ui/attachpopup.go` の run の分岐を見る
