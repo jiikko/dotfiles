@@ -34,3 +34,12 @@ dogfooding (2026-09-27、550 の初回の予定で `pro-con worktree clean --yes
 ## 関連
 
 - 492 (worktree clean) / 550 (予定) / `wtclean/git.go` (`rebuildable`) / `wtclean/judge.go`
+
+## 並行するカードとの衝突の見積もり (2026-09-27、PM。pro-con カード C-006)
+
+- この issue (C-006): `wtclean/judge.go` / `wtclean/git.go` の `rebuildable`。変える判断は「無視されたファイルのうち、消してよい側に何を入れるか」
+- C-005 (553): 残した worktree を設定画面のディスクのタブに出し、人が消す/残すを選ぶ。消す操作は `pro-con worktree clean` と**同じ判定の 1 か所**を通す
+  (553 の「決定」節)。削除したカードの worktree の扱い (`cardOf` / `store.Purged`) も変えうる
+- → 同じ判定 (残す/消すの理由) を別々に変えるので **C-005 の後に積む** (`--after C-005`)。
+  取り込みの係は、553 の画面に出る「残した理由」が、この issue で `tmp/` を消す側へ移した後も正しいか (`tmp/` だけの worktree が一覧に出なくなるか) をテストで見る
+- C-002 (556。カードの色) / C-003 (555。止め直しの記録) とは重ならない
