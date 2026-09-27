@@ -1030,6 +1030,8 @@ sdk_case() {  # $1=プロジェクト名, 残り=NAME=VALUE → $REPLY に go bu
   root="$(new_project "$1")"; shift
   (
     unset SDKROOT FAKE_SDK_DIR FAKE_NO_DEVTOOLS
+    # 引数は NAME=VALUE の組なので、展開した中身を export するのが意図 (SC2163 は変数名を渡す誤用を想定している)
+    # shellcheck disable=SC2163
     [[ $# -gt 0 ]] && export "$@"
     FAKE_GO_SDKLOG="$root/sdklog" FAKE_XCRUN_CALLS="$root/xcrun-calls" FAKE_BIN_SDKLOG="$root/bin-sdklog" \
       run_tool "$root" >/dev/null
