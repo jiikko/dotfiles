@@ -136,7 +136,8 @@ func TestOnlyOwnedSessionsShowActivity(t *testing.T) {
 	}
 }
 
-// 入力待ちで止まった PG (質問待ちの列の WaitPermission) も、生きていて枠を使う PG として出す (dispatcher の枠の数えと揃える。C-054)。
+// 入力待ちで止まった PG (質問待ちの列の WaitPermission) も、生きている PG として出す (C-054)。
+// 枠に数えたかは画面の側で組み直さず、dispatcher が様子に書いたカード (Slots) をそのまま読む (issue 557)。
 func TestPromptWaitingPGIsConsumer(t *testing.T) {
 	b, _ := testBackend(t, sessions[:1], nil)
 	b.list = func(context.Context) ([]agents.Session, error) { return sessions, nil }
@@ -147,10 +148,17 @@ func TestPromptWaitingPGIsConsumer(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	now := time.Now()
+	if err := store.SaveDispatcherState(b.dir, store.DispatcherState{Tick: now, Slots: []string{"C-001", "C-009"}, SlotsAt: now}); err != nil {
+		t.Fatal(err)
+	}
 	b.Refresh(context.Background())
 	s := b.Poll()
-	if len(s.Consumers) != 1 || s.Consumers[0].CardID != "C-001" || s.SlotsUsed() != 1 {
-		t.Fatalf("入力待ちの PG を枠に数えていない: %+v used=%d", s.Consumers, s.SlotsUsed())
+	if len(s.Consumers) != 1 || s.Consumers[0].CardID != "C-001" {
+		t.Fatalf("入力待ちの PG を出さない: %+v", s.Consumers)
+	}
+	if n, ok := s.SlotsUsed(); !ok || n != 2 { // 一覧に居ない C-009 (起動の結果を確かめている等) も dispatcher が数えたとおり
+		t.Fatalf("dispatcher が数えた枠を読まない: used=%d ok=%v", n, ok)
 	}
 }
 

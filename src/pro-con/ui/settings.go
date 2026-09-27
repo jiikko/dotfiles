@@ -450,6 +450,10 @@ func (m *Model) toggleSettingsRow() {
 // (止まっている行は 1 行に畳む)。🚨 止まった PG のうち食い違いの無いもの (終わったカードの止まった session) は出さず、数えもしない (issue 497)。
 func splitProcs(rows []backend.Proc) (live, stopped []backend.Proc) {
 	for _, p := range rows {
+		if p.Slot == backend.SlotHeld { // 枠に数えた PG は止まっていても出す (作業中の数と行を合わせる。issue 557)
+			live = append(live, p)
+			continue
+		}
 		if p.Role == "PG" && p.State == backend.ProcStopped && p.Mismatch == "" {
 			continue
 		}
@@ -564,7 +568,11 @@ func (m *Model) limitNote() string {
 			queued++
 		}
 	}
-	note := fmt.Sprintf("%s · 今の枠 %d · PG %d 本 · 空き待ち %d 件", from, m.snap.Limit, m.snap.SlotsUsed(), queued)
+	used := "PG の本数は判定できない"
+	if n, ok := m.snap.SlotsUsed(); ok {
+		used = fmt.Sprintf("PG %d 本", n)
+	}
+	note := fmt.Sprintf("%s · 今の枠 %d · %s · 空き待ち %d 件", from, m.snap.Limit, used, queued)
 	if m.snap.LimitWhy != "" {
 		note += " · " + m.snap.LimitWhy
 	}
@@ -597,13 +605,26 @@ func (m *Model) procsSummary() string {
 		return sgrYellow + "読めない: " + m.set.procsErr.Error() + sgrFgReset
 	}
 	live, _ := splitProcs(m.set.procs)
-	odd := 0
+	odd, waiting := 0, 0
 	for _, p := range live {
 		if p.Mismatch != "" {
 			odd++
 		}
+		if p.Slot == backend.SlotIdle {
+			waiting++
+		}
 	}
-	return fmt.Sprintf("動いている %d・食い違い %d", len(live)-odd, odd)
+	return m.pgSlotsSummary(waiting) + fmt.Sprintf(" · 動いている %d・食い違い %d", len(live)-odd, odd)
+}
+
+// pgSlotsSummary は PG の枠の要約 (issue 557)。作業中はヘッダの「PG n/枠」と同じく dispatcher が枠に数えたカードの数、
+// 待機はプロセスの一覧で生きていて枠に数えていない PG の数。判定できなければそう出す (0 に見せない)。
+func (m *Model) pgSlotsSummary(waiting int) string {
+	n, ok := m.snap.SlotsUsed()
+	if !ok {
+		return sgrYellow + "PG の枠は判定できない (dispatcher が止まっている・古い)" + sgrFgReset
+	}
+	return fmt.Sprintf("PG 作業中 %d / 枠 %d · 待機 %d", n, m.snap.Limit, waiting)
 }
 
 func (m *Model) diskSummary() string {
@@ -652,11 +673,29 @@ func (m *Model) procLines(w int) ([]string, int) {
 		out = append(out, boxLine(border, sgrDim+fit(" 役", 12)+fit("pid", 8)+fit("経過", 13)+fit("状態", procStateCells)+fit("カード", procCardCells)+fit("session", 14)+"今のコマンド"+sgrReset, w))
 		live, stopped := splitProcs(s.procs)
 		screens := m.screensBlock(w)
-		for _, p := range live {
+		_, known := m.snap.SlotsUsed()
+		head, secs, tail := backend.SplitPGs(live, known)
+		row := func(p backend.Proc) {
 			if p.Role == "画面" && len(screens) > 0 { // 下に開いている画面の一覧 (モード・端末つき) を出すときは、そちらで出す
-				continue
+				return
 			}
 			out = append(out, boxLine(border, m.procRow(p, w), w))
+		}
+		for _, p := range head {
+			row(p)
+		}
+		for _, sec := range secs { // 枠を使う PG と待機中の PG を分けて出す (issue 557。pro-con ps と同じ区分・見出し)
+			col := sgrDim
+			if sec.Slot == backend.SlotUnknown {
+				col = sgrYellow
+			}
+			out = append(out, boxLine(border, col+" ── "+sec.Title(m.snap.Limit)+sgrReset, w))
+			for _, p := range sec.Rows {
+				row(p)
+			}
+		}
+		for _, p := range tail {
+			row(p)
 		}
 		if len(stopped) > 0 {
 			mark, verb := "▸", "enter で開く"

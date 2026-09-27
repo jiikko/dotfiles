@@ -36,6 +36,8 @@ type Snapshot struct {
 	Cards          []card.Card
 	Consumers      []Consumer
 	Limit          int       // 今の PG の同時実行数 (利用枠の残量で上限より絞ることがある)
+	Slots          []string  // dispatcher が PG の枠に数えたカード (issue 557。store.DispatcherState.Slots。読むだけ)
+	SlotsAt        time.Time // Slots を数えた時刻 (zero なら数えたことが無い)
 	LimitMax       int       // 上限 (dispatcher の --limit)
 	LimitWhy       string    // Limit を絞った / 利用枠を読めない理由 (無ければ空)
 	DispatcherTick time.Time // dispatcher (と watchdog) が最後に回った時刻。zero なら 1 度も回っていない。古ければ UI が警告する
@@ -92,24 +94,12 @@ type Consumer struct {
 // Idle は PG が turn を終えて次の入力を待っているか (一覧の status が idle)。
 func (c Consumer) Idle() bool { return c.Status == agents.StatusIdle }
 
-// SlotsUsed は一覧 (Consumers) の PG のうち枠を使っている数 (dispatcher と同じ判定 card.HoldsPGSlot。issue 455)。
-// テストの係の結果を待って idle の PG は、一覧には居るが数えない。
-// 🚨 母数は dispatcher と違う: dispatcher は一覧に居ない作業中の PG と、起動の結果が分からない (Launching) カードも数える
-// 画面が描くたびに呼ぶので、カード (1 枚 960 バイト) を map に複製しない (issue 494)。PG は数体なので、PG ごとに探す。
-func (s Snapshot) SlotsUsed() int {
-	n := 0
-	for _, pg := range s.Consumers {
-		c := &card.Card{} // 一覧に無いカードの PG は zero の Card で判定する (以前の map の引き損ねと同じ)
-		for i := range s.Cards {
-			if s.Cards[i].ID == pg.CardID {
-				c = &s.Cards[i]
-			}
-		}
-		if card.HoldsPGSlot(*c, pg.Idle()) {
-			n++
-		}
-	}
-	return n
+// SlotsUsed は dispatcher が枠に数えたカードの数 (issue 557。dispatcher が書いた値を読むだけで、画面の側で card.HoldsPGSlot を組み直さない。
+// 組み直すと母数が dispatcher と違う: 一覧に居ない作業中の PG と、起動の結果が分からない (Launching) カードを数え損ねる)。
+// ok = false は判定できない (CountedSlots。読めないのを 0 に見せない)。
+func (s Snapshot) SlotsUsed() (int, bool) {
+	slots, ok := CountedSlots(s.Slots, s.SlotsAt, s.DispatcherHeld, s.DispatcherGone, s.Now)
+	return len(slots), ok
 }
 
 // AttachRecorder は attach の間に人間が PG へ打った指示をカードの履歴へ残す backend (任意。持たない backend は残さない)。

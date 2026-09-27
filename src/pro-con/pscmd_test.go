@@ -39,7 +39,7 @@ func TestPSMarksMismatch(t *testing.T) {
 		}
 	}
 	// 動いているのは C-001 (作業中)・C-003 (完了)・C-005 (記録に無い = 片付け済み)
-	rows, _ := collectProcs(dir, time.Now(), map[int]string{101: "claude bg", 103: "claude bg", 105: "claude bg"})
+	rows, _, _ := collectProcs(dir, time.Now(), map[int]string{101: "claude bg", 103: "claude bg", 105: "claude bg"})
 	got := map[string]string{}
 	for _, p := range rows {
 		if p.Role == "PG" {
@@ -54,7 +54,7 @@ func TestPSMarksMismatch(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, store.StateFile), []byte("{壊れた"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	rows, _ = collectProcs(dir, time.Now(), map[int]string{101: "claude bg"})
+	rows, _, _ = collectProcs(dir, time.Now(), map[int]string{101: "claude bg"})
 	for _, p := range rows {
 		if p.Mismatch != "" {
 			t.Fatalf("記録を読めないのに食い違いを付けた: %+v", p)
@@ -94,7 +94,7 @@ func TestPSShowsMonitor(t *testing.T) {
 		}
 		row := func(procs map[int]string) Proc {
 			t.Helper()
-			rows, _ := collectProcs(dir, time.Now(), procs)
+			rows, _, _ := collectProcs(dir, time.Now(), procs)
 			for _, p := range rows {
 				if p.Role == role {
 					return p

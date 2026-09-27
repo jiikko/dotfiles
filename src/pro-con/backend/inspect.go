@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"fmt"
 	"time"
 
 	"pro-con/diskuse"
@@ -22,6 +23,79 @@ type Proc struct {
 	// Mismatch はカードと PG の session の食い違い (カードは作業中なのに session が止まっている / カードは完了なのに動いている。issue 497)。
 	// 空なら食い違いは無い。設定画面は、止まった PG の行のうち食い違いのあるものだけを出す
 	Mismatch string `json:"mismatch,omitempty"`
+	// Slot は PG の行が枠を使っているか (issue 557。SlotHeld / SlotIdle / SlotUnknown。止まっていて枠にも数えていない PG と、PG でない行は空)。
+	// dispatcher が様子に書いた「枠に数えたカード」を読んで決める (CountedSlots)
+	Slot string `json:"slot,omitempty"`
+}
+
+// Proc.Slot の値 (issue 557)。
+const (
+	SlotHeld    = "作業中"    // dispatcher が枠に数えた (turn の途中・入力待ち・起動や再開の結果を確かめている)
+	SlotIdle    = "待機中"    // 生きているが枠に数えていない (質問・テストの係の結果・再開の空きを待っている)
+	SlotUnknown = "判定できない" // dispatcher が止まっている・古い
+)
+
+// CountedSlots は dispatcher が枠に数えたカード (store.DispatcherState.Slots と数えた時刻 at。issue 557)。dispatcher が人に止められている (held)・
+// 居ない (gone)・数えたことが無い・数えてから DispatcherStale より経ったなら ok = false (判定できない。止まった dispatcher の最後の数を今の値に見せない)。
+// 🚨 古さは Tick ではなく数えた時刻で見る: 一覧を取れない Tick は割り当てを回さず数え直さないので、Tick が新しくても数は古いことがある
+func CountedSlots(slots []string, at time.Time, held, gone bool, now time.Time) ([]string, bool) {
+	if held || gone || at.IsZero() || now.Sub(at) > DispatcherStale {
+		return nil, false
+	}
+	return slots, true
+}
+
+// PGSection は一覧の PG の区分 1 つ (issue 557。pro-con ps と設定画面のプロセスのタブで同じ分け方・同じ見出し)。
+type PGSection struct {
+	Slot string // SlotHeld / SlotIdle / SlotUnknown / 空 (止まっている)
+	Rows []Proc
+}
+
+// Title は区分の見出し。limit は今の枠 (DispatcherState.Cap = Snapshot.Limit)。
+func (s PGSection) Title(limit int) string {
+	switch s.Slot {
+	case SlotHeld:
+		return fmt.Sprintf("PG 作業中 (枠を使う) %d / 枠 %d", len(s.Rows), limit)
+	case SlotIdle:
+		return fmt.Sprintf("PG 待機中 (枠を使わない) %d", len(s.Rows))
+	case SlotUnknown:
+		return fmt.Sprintf("PG %d (枠を使っているか判定できない: dispatcher が止まっている・古い)", len(s.Rows))
+	}
+	return fmt.Sprintf("PG 止まっている %d", len(s.Rows))
+}
+
+// SplitPGs は一覧の行を、PG より前の行 (dispatcher・見張り・PM・取り込み)・PG の区分・後ろの行 (テストの係・画面) に分ける。
+// known は枠に数えたカードを読めたか (CountedSlots の ok)。読めたら作業中と待機中の区分を空でも返し (枠と比べる数を 0 でも出す)、
+// 読めなければ生きている PG を「判定できない」の 1 区分にまとめる。止まっている PG の区分は行があるときだけ。
+func SplitPGs(rows []Proc, known bool) (head []Proc, secs []PGSection, tail []Proc) {
+	by := map[string][]Proc{}
+	for _, p := range rows {
+		switch {
+		case p.Role == "PG":
+			slot := p.Slot
+			if !known && (slot == SlotHeld || slot == SlotIdle) { // 行を読んだ後に dispatcher が止まった (読む時刻の違い)
+				slot = SlotUnknown
+			}
+			by[slot] = append(by[slot], p)
+		case len(by) == 0 && len(tail) == 0 && p.Role != "テストの係" && p.Role != "画面":
+			head = append(head, p)
+		default:
+			tail = append(tail, p)
+		}
+	}
+	for _, slot := range []string{SlotHeld, SlotIdle, SlotUnknown, ""} {
+		shown := len(by[slot]) > 0
+		switch slot {
+		case SlotHeld, SlotIdle:
+			shown = shown || known
+		case SlotUnknown:
+			shown = shown || !known
+		}
+		if shown {
+			secs = append(secs, PGSection{Slot: slot, Rows: by[slot]})
+		}
+	}
+	return head, secs, tail
 }
 
 // EventLog は設定画面のログのタブが読む backend (任意。持たない backend はタブに「読めない」と出す。issue 512)。

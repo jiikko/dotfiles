@@ -180,7 +180,7 @@ func (d *Dispatcher) writeState(now time.Time) error {
 	}
 	lim, from := d.limit()
 	rv := d.review()
-	s := store.DispatcherState{Tick: now, Limit: lim, LimitFrom: from, Cap: c, Why: why,
+	s := store.DispatcherState{Tick: now, Limit: lim, LimitFrom: from, Cap: c, Why: why, Slots: d.slots, SlotsAt: d.slotsAt,
 		Review: rv.Mode, ReviewFrom: rv.From, Codex: rv.Codex, CodexErr: rv.CodexErr, Roles: d.roles()}
 	for _, r := range roles() {
 		s.RoleStates = append(s.RoleStates, d.roleState(r, now))

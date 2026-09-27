@@ -206,7 +206,47 @@ func TestSettingsProcsShowOnlyLiveAndMismatch(t *testing.T) {
 	if out := setScreen(m); !strings.Contains(out, "取り込み") || strings.Contains(out, "C-005") {
 		t.Fatalf("enter で止まっている役を開かない / 止まった PG まで開いた:\n%s", out)
 	}
-	if got := m.procsSummary(); got != "動いている 3・食い違い 2" {
+	if got := m.procsSummary(); got != "PG 作業中 1 / 枠 2 · 待機 0 · 動いている 3・食い違い 2" {
+		t.Errorf("要約 = %q", got)
+	}
+}
+
+// PG は枠を使うもの (dispatcher が枠に数えたカード) と待機中のものを別の区分に出し、要約は「作業中 / 枠 · 待機」(issue 557)。
+// dispatcher が数え直していなければ分けずに「判定できない」と出す (読めないのを 0 に見せない)。
+func TestSettingsProcsSplitsPGsBySlot(t *testing.T) {
+	be := newInspSpy()
+	be.snap.Slots = []string{"R1", "C-030"}
+	be.procs = []backend.Proc{
+		{Role: "dispatcher", PID: 100, State: "動いている"},
+		{Role: "PG", PID: 102, State: "作業中", Card: "R1", Session: "s-r1", Slot: backend.SlotHeld},
+		{Role: "PG", PID: 103, State: "質問待ち", Card: "W1", Session: "s-w1", Slot: backend.SlotIdle},
+		{Role: "PG", State: backend.ProcStopped, Card: "C-030", Session: "s-c30", Slot: backend.SlotHeld}, // 枠に数えたが止まっている: 出す
+		{Role: "テストの係", PID: 104, State: "実行中", Card: "R1", Command: "make test"},
+	}
+	m := openSettingsFor(t, be)
+	toTab(t, m, tabProcs)
+	out := setScreen(m)
+	order := []string{"dispatcher", "PG 作業中 (枠を使う) 2 / 枠 2", "s-r1", "s-c30", "PG 待機中 (枠を使わない) 1", "s-w1", "make test"}
+	at := -1
+	for _, want := range order {
+		i := strings.Index(out, want)
+		if i <= at {
+			t.Fatalf("%q が無い / 並びが違う (%v の順のはず):\n%s", want, order, out)
+		}
+		at = i
+	}
+	if got := m.procsSummary(); !strings.HasPrefix(got, "PG 作業中 2 / 枠 2 · 待機 1 · ") {
+		t.Errorf("要約 = %q", got)
+	}
+
+	be.snap.SlotsAt = be.snap.Now.Add(-dispatcherStale - time.Second)
+	m = openSettingsFor(t, be)
+	toTab(t, m, tabProcs)
+	out = setScreen(m)
+	if !strings.Contains(out, "PG 3 (枠を使っているか判定できない") || strings.Contains(out, "作業中 (枠を使う)") || strings.Contains(out, "待機中 (枠を使わない)") {
+		t.Fatalf("dispatcher が古いのに枠で分けた:\n%s", out)
+	}
+	if got := ansi.Strip(m.procsSummary()); !strings.HasPrefix(got, "PG の枠は判定できない") {
 		t.Errorf("要約 = %q", got)
 	}
 }
