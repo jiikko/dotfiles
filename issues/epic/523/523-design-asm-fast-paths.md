@@ -73,13 +73,32 @@ asm の速い道を入れる場所は 1 つにしたい。そのために、端�
   - pro-con のアニメーション (Bump / Move / Glide) に効かない理由: 画面の 50 行中 12 行が受理集合の外で、12 行とも原因は日本語 (カードの
     タイトルの漢字・ひらがな)。アニメーションで何度も切り貼りされるのがその行で、x/ansi へ回っている (変更後の FrameBump の profile で
     `ansi.StringWidth` 12.8% + `ansi.Truncate` 7.5%)
-- **次の候補 (未着手)**: 受理集合に日本語 (CJK 統合漢字・ひらがな・カタカナ・全角形) を足す。幅は x/ansi から表に焼く (今の記号と同じ)。
-  足すと、幅の速い道・今回の切り詰めの速い道・NEON 版の 3 つが同時に日本語の行に効く。要るもの:
-  - 受理集合の不変条件 (どの字も単独で 1 書記素) を守る: ひらがなの結合用の濁点・半濁点 (U+3099 / U+309A) など、書記素を伸ばす字は除く。
-    `TestAcceptedSymbolsNeverCombineWithEachOther` を足した範囲に広げる
-  - 🚨 NEON 版 (`fastwidth_arm64.s`) は「3 byte の UTF-8 で表に届く先頭は 0xe0〜0xe2 だけ」と決め打ちしている。表の範囲と一緒に直し、
-    `FuzzFastDispWidthMatchesGeneric` で Go 版と突き合わせる
-  - 測り方は今回と同じ (pro-con の FrameBump / FrameMove / FrameGlide を主に)
+- **6. 受理集合に日本語を足す (2026-09-27。NEON 版も書き換えた)**: `acceptCJK` (漢字 拡張 A・統合・互換 / ひらがな / カタカナ /
+  全角の英数と記号 / 和文の句読点。結合用の濁点・半角の濁点・声調記号・ハングルは除く)。表の上限 U+28FF → U+FFEF、
+  `fastwidth_arm64.s` の 3 byte の先頭の判定 0xe2 → 0xef。幅・切り詰め・切り出し・NEON 版の 4 つが日本語の行にも効く
+  - 一致: NEON 版と Go 版の境界入力 8,320 件 + 差分 fuzz 60 秒 (3,199 万 exec)、幅と x/ansi の fuzz 45 秒、切り詰めの総当たり + fuzz 45 秒で
+    不一致 0。受理した 29,272 字の結合の検査 (`TestAcceptedSymbolsNeverCombineWithEachOther`) は本番の分割器 (x/ansi) で数える形にした
+  - 実測 (変更前後のテストバイナリを交互に 10 回。ばらつき ±2%):
+
+    | benchmark | 変更前 | 変更後 | 差 |
+    |---|---|---|---|
+    | pro-con FrameBump | 388.2µs | 214.6µs | **-44.7%** |
+    | pro-con FrameMove | 170.2µs | 85.1µs | **-50.0%** |
+    | pro-con FrameGlide | 283.1µs | 163.5µs | **-42.3%** |
+    | pro-con DiffBoardView/closed・open | 245.5 / 325.8µs | 192.9 / 270.4µs | -21.4% / -17.0% |
+    | glogx ViewSteadyJA / ViewWithPanelJA / ViewWithDiffJA | 27.6 / 34.2 / 34.1µs | 13.4 / 16.5 / 21.3µs | -51.6% / -51.9% / -37.4% |
+    | glogx 6 本の geomean | 24.92µs | 16.44µs | -34.0% |
+
+    allocs/op は最大 -4.4%。起動時の init は約 0.07 ms → 約 1.1 ms (6 allocs。3 万字を ansi.StringWidth で測る分)
+  - 敵対的レビュー (opus・読み取りのみ): P1 / P2 なし。受理字 × 文脈 (Hangul・Regional Indicator・Prepend・Indic・ZWJ・ExtPict) の結合、
+    NEON 版の 3 byte 列 655,360 件 + BMP の全 rune、切り詰めのランダム 30 万本で、x/ansi・Go 版と全件一致。P3 の 2 件:
+    - 結合の検査が uniseg (Unicode 15) で数えていた → 本番の分割器 (x/ansi、Unicode 16) で数える形に直した
+    - init の約 1 ms は、毎プロンプト起動される `bin/ratelimit` (UserPromptSubmit の hook) にも乗る。プロセスの起動全体に比べて小さいので受容。
+      **trigger**: 起動の遅さが目に見えると報告されたら、日本語の範囲の幅を x/ansi に聞く回数を減らす (範囲の中に幅 1 の字 U+303F 等が混ざるので、
+      範囲ごとに 1 字では済ませられない)
+  - 範囲に未割当の字 (U+FA6E / U+FA6F / U+FADA..U+FAFF 等) が入っている。幅は x/ansi から焼くので今の版とは一致する。
+    依存を上げたら上の検査を回し直す
+- **次の候補 (未着手)**: pro-con / glogx のフレームで、幅・切り詰めがまだ CPU の何 % かを profile で測り直す (asm を切り詰め側にも入れる価値があるか)
 
 - 寄せただけで十分速くなれば、asm は入れない (520 の方針どおり)
 - 新しい lib は立てない (`termwidth` に「切る・詰める」の API を足す)。別の lib が要ると分かったら、そのときに決める

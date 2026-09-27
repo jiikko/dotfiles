@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/rivo/uniseg"
 
 	"tuikit/widthenv"
 )
@@ -67,6 +66,17 @@ func TestSymbolWidthRejectsOutsideTable(t *testing.T) {
 // 文字に飲まれる**形で効くので、片方向だけ考えると見落とす (U+0600 + "1" が 1 クラスタ・
 // 幅 0 になる実例がある)。受理集合が閉じていることは、集合内の全ペアで
 // 「クラスタ数 = 2」かつ「fast の幅 = ansi の幅」を確かめて初めて言える。
+// clusterCount は s の書記素の数を本番の分割器 (FirstCluster = x/ansi) で数える。
+func clusterCount(s string) int {
+	n := 0
+	for s != "" {
+		c, _ := FirstCluster(s)
+		s = s[len(c):]
+		n++
+	}
+	return n
+}
+
 func TestAcceptedSymbolsNeverCombineWithEachOther(t *testing.T) {
 	syms := acceptedSymbols(t)
 	// 相手 (後ろに置く字) は、ASCII の代表 + 日本語以外の受理字すべて + 日本語の見本。🚨 日本語を全部相手にすると
@@ -84,7 +94,7 @@ func TestAcceptedSymbolsNeverCombineWithEachOther(t *testing.T) {
 		// 🚨 書記素を伸ばす字 (Extend 等) は先頭に置くと単独で 1 書記素になるので、「前に置く字」として試すだけでは見逃す。
 		// 受理した字はすべて「ASCII の後ろ」と「同じ字の後ろ」にも置く (相手を見本に絞ったぶん、ここは全字で確かめる)
 		for _, s := range []string{"x" + string(a), string(a) + string(a)} {
-			if n := uniseg.GraphemeClusterCount(s); n != 2 {
+			if n := clusterCount(s); n != 2 {
 				t.Fatalf("%q (U+%04X) が %d クラスタに結合した", s, a, n)
 			}
 			if w, ok := fastDispWidth(s); !ok || w != ansi.StringWidth(s) {
@@ -93,12 +103,10 @@ func TestAcceptedSymbolsNeverCombineWithEachOther(t *testing.T) {
 		}
 		for _, b := range probes {
 			s := string(a) + string(b)
-			// ⚠️ uniseg は Unicode 15、本番の分割器 (x/ansi) は 16 で**判断が割れる**
-			// (実測 2026-09-03: "a"+U+0897 は uniseg が 2 クラスタ / ansi.StringWidth が幅 1)。
-			// このオラクルは前段の目安で、**本番との一致は下の 2 つの assert が担う** —
-			// 版差のある rune を acceptedSymbols に足しても fastDispWidth が受理せず red になる
-			// (issue 202 発見 2 はここを見落とした false positive)。
-			if n := uniseg.GraphemeClusterCount(s); n != 2 {
+			// クラスタは本番と同じ分割器 (x/ansi。FirstCluster) で数える。🚨 uniseg で数えていた頃は Unicode の版が本番と
+			// 違い (uniseg 15 / x/ansi 16)、判断が割れた (実測 2026-09-03: "a"+U+0897 は uniseg が 2 クラスタ / ansi.StringWidth が幅 1)。
+			// 依存を上げて Unicode の版が変わったときも、本番の規則で確かめ直せるようにする (2026-09-27 の敵対レビュー P3)
+			if n := clusterCount(s); n != 2 {
 				t.Fatalf("U+%04X + U+%04X が %d クラスタに結合した", a, b, n)
 			}
 			w, ok := fastDispWidth(s)
