@@ -1,1 +1,0 @@
-../562-ux-pro-con-card-list-age-label.md
