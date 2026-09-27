@@ -78,7 +78,7 @@ v1 では pty スモークで実測した回帰 (`TestBrowseBatchedRunesKeyMsg`)
 
 | 機能 | 判断 | 理由 |
 |---|---|---|
-| `FocusMsg` / `BlurMsg` で非フォーカス中の tick / usage リフレッシュ停止 | **見送り (2026-07-25 ユーザー判断)** | 実装は小さく (`spinnerActive` と `usageRefreshTick` の再アーム条件に足すだけ)、`focus-events on` も揃っている。CPU 節約になるが今は要らないと判断。必要になったら「popup は modal なので Blur は macOS ウィンドウ非アクティブ時に来る」想定の実機確認から |
+| `FocusMsg` / `BlurMsg` で非フォーカス中の tick / usage リフレッシュ停止 | **見送り (2026-07-25 ユーザー判断)** | 実装は小さく (`spinnerActive` と `usageRefreshTick` の再アーム条件に足すだけ)、tmux は `focus-events off` (issue 568。pane の行き来の遅れを避けるため) なので、やるなら on へ戻す判断が先。CPU 節約になるが今は要らないと判断。必要になったら「popup は modal なので Blur は macOS ウィンドウ非アクティブ時に来る」想定の実機確認から |
 | `SetClipboard` (OSC52) で pbcopy 置換 | 採らない | tmux popup では copy-mode に入れず OSC52 が最も不安定な経路。pbcopy 直書きが唯一の取り出し口 (`options.go` / `external_commands.go` の `copyToClipboard` にも理由あり) |
 | `RequestCapability` / `ModeReportMsg` / `RequestCursorPosition` で幅の自己診断 | 前借りしない | 測る場所は TUI ではなく単発診断ツール `tools/width-probe` 側。桁ズレが再発したときに入れる |
 | `RequestBackgroundColor` でライト/ダーク出し分け | 採らない | tmux 越しに問い合わせが通るか不確実で、ライト背景で使う要望がない。色は `docs/theme-colors.md` の意図で固定 |

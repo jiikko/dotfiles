@@ -3359,8 +3359,9 @@ func (m *browseModel) fillUnknown() {
 //
 // 🚨 ここに「フォーカスされているか」を足して非フォーカス中の tick を止める案 (bubbletea v2 の
 // FocusMsg/BlurMsg。o/p で別アプリへ移った後も 80ms tick と usage の毎分リフレッシュが
-// 回り続けるのを削る) は、実装可能・前提も揃っている (tmux は focus-events on) が
-// 「今は不要」とのユーザー判断で見送っている (2026-07-25)。CPU が気になると言われたら再評価する。
+// 回り続けるのを削る) は実装が小さいが、「今は不要」とのユーザー判断で見送っている (2026-07-25)。
+// CPU が気になると言われたら再評価する。🚨 tmux は focus-events off (issue 568) なので、やるなら
+// 先に on へ戻すか (pane の行き来が遅くなる代償つき) を決める必要がある。
 // 経緯と他の未採用 v2 機能は docs/glogx-bubbletea-v2.md。
 func (m *browseModel) spinnerActive() bool {
 	// 演出 (glide / toast / 開閉スライド / zoom) は列挙しない: tickInterval が周期を上げている =

@@ -50,4 +50,16 @@ nvim が受け取るフォーカスの通知 (FocusGained / FocusLost) への反
 ## 進捗
 
 - [x] 隔離サーバで tmux 側と nvim 側を切り分けた (上の表)
-- [ ] 対応の候補から選ぶ (ユーザー)
+- [x] 対応の候補から選ぶ: 1 (`focus-events off`) を採用 (2026-09-28 ユーザー判断。「buffer の更新が遅れるくらいいい」)
+- [x] 実装: `_tmux.conf` を `set -g focus-events off` にして理由を書いた。同じ前提 (focus-events on) に触れていた
+  `src/glogx/tui.go` の spinnerActive のコメントと `docs/glogx-bubbletea-v2.md` の表を直した
+- [x] 実測 (上と同じ隔離サーバ、設定の上書きなし): nvim の pane の出入り 27ms → **11ms** (中央値、n=30)、1 回 68KB → 45KB
+
+## 受け入れた代償 (洗い出し 2026-09-28)
+
+- nvim の FocusGained の checktime が効かない。外で書き換えられたファイルは、キーを押して 0.5 秒止まる (CursorHold) か
+  buffer / window を移る (BufEnter) まで読み直されない。別アプリから Terminal.app へ戻ったときも同じ
+- which-key: フォーカスを失って 5 秒後に popup を自動で閉じる処理が効かない
+- Claude Code: 端末のフォーカス状態 (`isTerminalFocused` / `terminalFocusState`) が「不明 / フォーカスあり」のままになる。
+  何に使っているかは未確認 (気づくとしたら「別の pane にいる間の完了・入力待ちの知らせ」)。tmux 枠の 🔔 は hook 由来で影響なし
+- 影響なし: vimade (`enablefocusfading` は既定 off で未設定なので、フォーカスでは一時停止 / 再開だけ)・tmux の hook・glogx・pro-con・zsh
