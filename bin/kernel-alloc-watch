@@ -46,12 +46,12 @@ kernel-alloc-watch — カーネルの zone data.kalloc.1024 の在庫を記録�
   約 2,100 万個 (約 20GB) で "zone map exhausted" のカーネルパニックになる。
   内訳 (誰が漏らしているか) は分からない。分かるのは合計と、その時に何が動いていたかだけ。
 
-判定 (check / snapshot。snapshot の verdict の値を括弧に書く):
-  正常 (ok)          $(fmt_n $WATCH_LEVEL) 個未満。健全なら数千個で頭打ちになる
-  要観察 (watch)     $(fmt_n $WATCH_LEVEL) 個以上。増え方がまだ小さいか、測れていない
-  漏れの疑い (suspect) $(fmt_n $WATCH_LEVEL) 個以上で、1 時間に $(fmt_n $LEAK_RATE) 個以上増えている
-  漏れている (leaking) $(fmt_n $LEAK_LEVEL) 個以上
-  危険 (critical)    $(fmt_n $RESTART_LEVEL) 個以上。再起動する (パニックは約 2,100 万個)
+判定 (左は snapshot の verdict の値。check は右の日本語で出す):
+  ok        正常: $(fmt_n $WATCH_LEVEL) 個未満。健全なら数千個で頭打ちになる
+  watch     要観察: $(fmt_n $WATCH_LEVEL) 個以上。増え方がまだ小さいか、測れていない
+  suspect   漏れの疑い: $(fmt_n $WATCH_LEVEL) 個以上で、1 時間に $(fmt_n $LEAK_RATE) 個以上増えている
+  leaking   漏れている: $(fmt_n $LEAK_LEVEL) 個以上
+  critical  危険: $(fmt_n $RESTART_LEVEL) 個以上。再起動する (パニックは約 2,100 万個)
   増え方は、直近 $((RECENT_WINDOW / 3600)) 時間の最初の記録から今までの平均。直近の記録の幅が $((MIN_SPAN / 60)) 分に満たなければ、
   直近 $((RECENT_WINDOW / 3600)) 時間より前で最も新しい記録からの平均に倒す (間が空くほど平均は薄まるので、どちらで出したかを一緒に出す)。
   どちらも無ければ出さない。再起動すると在庫は戻るので、起動より前の記録は使わない。
