@@ -3,7 +3,7 @@ package ui
 // ボードの / の検索 (issue 532。見た目は 2026-09-27 にユーザーが見本の案 A を選んだ: 欄は最下段・一致しないカードは隠す)。
 //
 // 一致の判定は card.Matches (`card list --grep` と同じ)。絞るのはレーンの並び (lanes) だけで、タブの範囲 (visible) は変えない:
-// ゲージの件数・x の片付けの対象は今のタブの全部のまま。絞っている間は件数の行の頭に「/ <語> n/N 枚」、レーンの見出しに (一致/全部) を出す。
+// ゲージの数・x の片付けの対象は今のタブの全部のまま。絞っている間はゲージの行の頭に「/ <語> n/N 枚」、レーンの見出しに (一致/全部) を出す。
 //
 // 入力の作法は glogx の issues の番号の絞り込み (issues_number_filter.go) に揃える: 打つたびに絞る、enter で確定して絞り込みは残す
 // (確定後はボードのキーが絞った結果に効く)、esc で絞り込みをやめる。空で確定したら絞り込みごとやめる (印だけ残ると嘘になる)。
@@ -109,7 +109,7 @@ func (m *Model) searchRefusal(key string) string {
 	return ""
 }
 
-// searchMark は件数の行の頭に出す絞り込みの印 (確定した後だけ。打っている間は最下段の欄が見えている)。枚数は今のタブの中で数える。
+// searchMark はゲージの行の頭に出す絞り込みの印 (確定した後だけ。打っている間は最下段の欄が見えている)。枚数は今のタブの中で数える。
 func (m *Model) searchMark() string {
 	if !m.search.active || m.search.typing {
 		return ""
@@ -121,7 +121,7 @@ func (m *Model) searchMark() string {
 			hit++
 		}
 	}
-	return " " + sgrYellow + sgrBold + "/ " + m.search.query() + sgrFgReset + sgrYellow + fmt.Sprintf(" %d/%d 枚", hit, all) + sgrReset
+	return sgrYellow + sgrBold + "/ " + m.search.query() + sgrFgReset + sgrYellow + fmt.Sprintf(" %d/%d 枚", hit, all) + sgrReset
 }
 
 // searchHead は最下段の検索の欄の見出し。

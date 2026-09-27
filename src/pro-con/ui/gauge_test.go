@@ -2,6 +2,7 @@ package ui
 
 import (
 	tea "charm.land/bubbletea/v2"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 
 	"pro-con/backend"
 	"pro-con/card"
+	"tuikit/termwidth"
 )
 
 // ゲージの PG の数は今の同時実行数。利用枠で上限より絞っていれば上限と理由も出す。dispatcher が 1 度も回っていない /
@@ -212,5 +214,42 @@ func TestJoinScreensNotCountedAsOwners(t *testing.T) {
 	}
 	if g := ansi.Strip(New(be, nil).gauge()); !strings.Contains(g, "画面 4 (持ち主 1・join 3。s で一覧)") {
 		t.Fatalf("多い画面を数にまとめない: %q", g)
+	}
+}
+
+// ゲージの行にレーンごとの枚数を出さない (枠の見出し「3 作業中 (2)」と同じ数。issue 558)。行は残りの項目から始まり、
+// 頭に余分な │ が付かない。狭い端末でも頭の項目 (人の番・最古の待ち・PG) は画面に入る。
+func TestGaugeOmitsLaneCounts(t *testing.T) {
+	m := humanSnap(t)
+	g := ansi.Strip(m.gauge())
+	if !strings.HasPrefix(g, " !人の番 2 │ 最古の待ち ") {
+		t.Fatalf("行の頭が人の番・最古の待ちでない: %q", g)
+	}
+	for i, st := range card.Columns {
+		if n := len(m.lanes()[i]); strings.Contains(g, fmt.Sprintf("%s %d", st.Label(), n)) {
+			t.Errorf("ゲージにレーンの枚数 %q が残っている: %q", fmt.Sprintf("%s %d", st.Label(), n), g)
+		}
+	}
+	if g := ansi.Strip(New(newSpy(), nil).gauge()); !strings.HasPrefix(g, " 最古の待ち ") {
+		t.Fatalf("人の番が無いとき行の頭が最古の待ちでない: %q", g)
+	}
+	for _, w := range []int{40, 60, 80, 200} {
+		m.width, m.height = w, 30
+		lines := strings.Split(ansi.Strip(m.render()), "\n")
+		if len(lines) != m.height {
+			t.Fatalf("幅 %d: 画面の行数 %d (期待 %d)", w, len(lines), m.height)
+		}
+		if got := termwidth.Truncate(lines[2], w, ""); !strings.HasPrefix(got, " !人の番 2 │ 最古の待ち ") {
+			t.Errorf("幅 %d: ゲージの頭が画面に入らない: %q", w, got)
+		}
+		if w >= 60 && !strings.Contains(termwidth.Truncate(lines[2], w, ""), "PG ") {
+			t.Errorf("幅 %d: PG が画面に入らない: %q", w, lines[2])
+		}
+		screen := strings.Join(lines, "\n")
+		for i, st := range card.Columns { // 枠の見出しの枚数は残す
+			if want := fmt.Sprintf(" (%d)", len(m.lanes()[i])); w == 200 && !strings.Contains(screen, st.Label()+want) {
+				t.Errorf("幅 %d: 枠の見出しに %q が無い:\n%s", w, st.Label()+want, screen)
+			}
+		}
 	}
 }
