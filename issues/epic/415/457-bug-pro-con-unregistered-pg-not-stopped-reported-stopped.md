@@ -81,3 +81,12 @@ PG の session が pro-con の記録 (sessions.json) に取り込まれなかっ
   「bg・最後の起動より後に始まった」も一致したものだけを止め、名前だけの手がかりは止めずに名指しする形で、外の session に触らないのを読んで確かめた。
   make test の赤 (`tests/tmux/test_log_kill_command.sh`) は、単独では master でも C-010 のブランチでも 3/3 ずつ緑 (偽の tmux を使う検査。ロードアベレージ 25 の時間帯に落ちた = 471)。
   取り込んだ tree で pro-con の `make lint` 0 件・`go test -race` 15 パッケージ ok → master へ (376472e5 まで)。カード C-010 を閉じた
+
+## 残りの進め方 (2026-09-27、PM。pro-con カード C-009)
+
+- **PM の判断: 「記録の行はあるが、短い id が別の session id を指す形」は名指しに回す** (「一覧に無い = 止まっている」と読んで ok にしない)。
+  427 の不変条件「止められなければ名指し」に合わせる。`TestShutdownTouchesOnlyOwnSessions` がこの形を ok と決めている部分は、
+  この判断に合わせて直す (外の session に触らない、は変えない)
+- 「再開の新しい session の名前が引き継がれるか」は測れるなら測り、引き継がれるなら再開の途中の名指しを名前で絞る (人間の bg session で終了が失敗し続ける形を減らす)
+- それ以外の残り (kind も時刻も崩れて cwd も repo root の落ちた PG / 2 つの状態の置き場で worktree がぶつかる) は、直せる根拠が無ければ「未確認のリスク」として残してよい
+- 並行するカードとの衝突: C-003 (555。`shutdown.go` の止め直しの記録) は完了済み。C-006 (552。wtclean) / C-007 (557。dispatcher-state と一覧) とは重ならない
