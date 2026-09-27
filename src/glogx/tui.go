@@ -450,8 +450,13 @@ func (m *browseModel) Init() tea.Cmd {
 	// tmux prefix の取得は非同期 (fork 1 本 ≈ 6ms を初期描画のクリティカルパスに乗せない)
 	prefix := func() tea.Msg { return prefixMsg{key: loadTmuxPrefix()} }
 	// 起動時はディスクキャッシュ可 (連続起動のたびに claude subprocess を起こさない)
-	u := m.usageOv.fetchCmd(true)
-	// 🚨 fetchCmd は呼んだ時点で inFlight を立てるので、預けている間の usageRefreshMsg は重ねて取得しない
+	// CI の取得中は usage の取得を預ける (下の deferredStartup) が、ディスクキャッシュを読むだけなら fork しないので
+	// 先に済ませて数字を出す。預けると CI の取得の間ずっと右上がスピナーになる (issue 570 の敵対的レビュー)
+	var u tea.Cmd
+	if !m.fetching() || !m.usageOv.showCached(timeNow()) {
+		// 🚨 fetchCmd は呼んだ時点で inFlight を立てるので、預けている間の usageRefreshMsg は重ねて取得しない
+		u = m.usageOv.fetchCmd(true)
+	}
 	// usage を起動時に取得するため tick を常に起動する (取得中スピナーを回す。取得完了で
 	// spinnerActive が false になり tick は自然に止まる)。CI fetch の有無に依らず起動する。
 	// usageRefreshTick で 1 分ごとのバックグラウンド再取得チェーンも起動する (ユーザー要望)。
@@ -2330,6 +2335,9 @@ func (m *browseModel) quitWith(animate bool) (tea.Model, tea.Cmd) {
 	m.rememberDoctorScreen()
 	m.rememberRatelimitScreen()
 	m.cancelAll()
+	// 預けた起動時の検査は捨てる: 閉じる演出の間は done が立たないので、取り消された CI 取得の結果が届くと
+	// releaseStartupChecks を通り、終了直前に claude / codex を起こして孤児にする (issue 570 の敵対的レビュー)
+	m.deferredStartup = nil
 	if m.fetching() {
 		m.fillUnknown()
 	}

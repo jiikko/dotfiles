@@ -93,6 +93,21 @@ func (o *usageOverlay) fetchCmd(useCache bool) tea.Cmd {
 	}
 }
 
+// showCached はディスクキャッシュが当たれば、fork せずにその場で表示へ入れる (当たったか返す)。
+// fetchCmd(true) のキャッシュ経路と同じ判定・同じ格納 (handle) を通す。
+func (o *usageOverlay) showCached(now time.Time) bool {
+	path, err := usageCachePath()
+	if err != nil {
+		return false
+	}
+	snap, ok := loadUsageCache(path, now)
+	if !ok {
+		return false
+	}
+	o.handle(usageMsg{snap: snap})
+	return true
+}
+
 // handle は取得結果 (usageMsg) を格納する。
 //
 // 不変条件: 一度取れた usage 表示は、定期リフレッシュの一時的な失敗では失わない。既に
