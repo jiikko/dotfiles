@@ -1,5 +1,7 @@
 # 550 (feat): 決まった時刻に決まったコマンドを pro-con が回すスケジューラ (設定画面で「何時に何が呼ばれるか」を見られる)
 
+> 🚨 **担当中: dotfiles の issue 550 を実装しているセッション (worktree wt-550-sched)**（2026-09-27〜）
+
 起票日: 2026-09-27
 
 親: [415](415-design-claude-pm-worker-orchestration.md)
