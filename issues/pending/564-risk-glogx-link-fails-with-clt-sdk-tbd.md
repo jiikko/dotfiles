@@ -2,6 +2,12 @@
 
 起票日: 2026-09-27
 
+> **pending (2026-09-27〜)**: ユーザーの判断で凍結 (Air 1 台のツールチェーンの問題で、手間に見合わない)。
+> 再開の trigger: Air で dotfiles の Go を触るとき / 別のマシンでも同じ `tapi error` が出たとき。
+> 2026-09-27 時点の確認: kojiM3MBP (macOS 27.0) では `go build` が通り再現しない。
+> 自動修復を作るなら「警告を出して `SDKROOT` を Xcode の SDK へ逃がす」が候補。先に Air で逃がし先が通るかを確かめる。
+> `CGO_ENABLED=0` で逃がすのは不可 (`ime_tis_darwin.go` の cgo の IME 読み取りが黙って抜ける)。
+
 ## 概要
 
 2026-09-27 に KOJIm2-MacBook-Air (macOS 27.0 / Mac14,2) で `make test` を回すと、`test-go` が `glogx [build failed]`、
