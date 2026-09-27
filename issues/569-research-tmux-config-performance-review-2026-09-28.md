@@ -49,7 +49,13 @@
 ## 対応の候補 (ユーザーの判断待ち)
 
 - [ ] 1: 都合のよいときにサーバを再起動して 3.7c にする
-- [ ] 2: 22 の session を消し、スナップショットに載らないようにする (本当に要らないかをユーザーが確かめてから)。作られた場所も探す
+- [x] 2: 22 の session を消した (2026-09-28 ユーザー承認)。消す前に 22 個とも attach 無し・中の 30 pane は全部 zsh を確認。
+  Claude からの kill は PreToolUse の `deny-bare-tmux-kill.sh` が止めたので、ユーザーが実体の絶対パスと `-t "=<名前>"` (完全一致) で 1 つずつ消した。
+  結果: 30 → 8 session、97 → 67 pane
+  - 🚨 消した直後の自動保存は `scripts/tmux_resurrect_save.sh` の縮小の守り (`regression-blocked`。session が 1/3 以下) が弾き、
+    `last` が消す前の保存 (00:21) のまま残った (再起動すると 22 個が戻る状態)。`TT_SAVE_ALLOW_REGRESSION=1 scripts/tmux_resurrect_save.sh` で
+    1 回保存し、`last` = `tmux_resurrect_20260928T005511.txt` (8 session、消した名前 0 件) を確認
+  - 未着手: どこで作られたか (dotfiles の中には無い)
 - [ ] 5: 端末を替えるか
 
 ## 出典
