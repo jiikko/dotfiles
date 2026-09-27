@@ -2,6 +2,9 @@
 
 起票日: 2026-09-26
 
+> 🚨 **2026-09-27 12:55 時点の見立て: 漏らしているのは tmux ではなく「Claude Code (claude.exe) が動いている macOS 15 / 26」の可能性が高い**
+> (上流に同じ zone・同じ 2,100 万個 / 20GB の報告が複数ある。下の「2026-09-27 12:20〜 MacBook Air」節)。タイトルは起票時の仮説のまま残す (ファイル名を変えると参照が切れる)。
+
 ## 概要
 
 2026-09-25 23:53 に macOS がカーネルパニックで落ちた (pro-con の dogfooding 中。ユーザーの依頼「macos が今クラッシュしたので原因を調べて」)。
@@ -85,6 +88,33 @@ attach が無ければほぼ漏れない。何が漏らしているか (tmux の
   起動しているときだけ漏れるなら、この issue は tmux ではなくアクティビティモニタ (または macOS の libproc の経路) の問題になる
 - 在庫の推移を数日見る。横ばいのままなら、当面の再起動は不要
 - `make test` の段ごとに前後の在庫を取る (tests/tmux だけ・zshrc だけ・Go だけ)。増える段が分かれば、その段の中の 1 本まで絞る (本番の tmux は触らない。隔離サーバのテストはそのまま)
+
+### 2026-09-27 12:20〜12:55 KOJIm2-MacBook-Air: 別のマシン (macOS 27) では何をしても漏れない。上流に claude.exe 起因の同じ報告がある
+
+- 環境: macOS 27.0 (26A428) / Mac14,2 (24GB) / tmux 3.7 / 起動 2026-09-18 10:18 (9 日)。SIP 有効。サードパーティの ES クライアント・system extension のうち ES のものは無し (network extension と DriverKit のみ)
+- 在庫: **起動 9 日で 1,173** (漏れているマシンの再起動直後 1,617 と同じ水準)。wired 約 2.7GB。この間 claude (2.1.283) が 2.5 日動き続けていた (pro-con は動かしていない。claude は 1〜3 本)
+- 何もしない時間: 60 秒 ±12、120 秒 -16、60 秒 +14
+- 手順 2 (`zm500.sh`、隔離サーバ + pty で attach したクライアント) 2,000 回: **+40 / +57**。本番の tmux サーバ (クライアント 2 つ) に `display -p` 2,000 回: +90。対照の `/usr/bin/true` 2,000 回: -84
+- `sandbox-exec -p '(version 1)(allow default)' /usr/bin/true` 2,000 回: -126 / 0 (Claude Code の Bash が使う Seatbelt の適用ごとに漏れる、という仮説は棄却)
+- 手順 3 (`make test` の段ごと、全 zone の inuse を前後で比較): data.kalloc.1024 の差は idle -16 / test-tmux +266 / test-zshrc -27 / test-bats +110 / test-nvim -116 / test-setup +76 / test-go +98 / test-discovered-rest +506。
+  **全段 約 17 分で合計 約 +900** (漏れているマシンの「make test の日 約 10 万個 / 時」より 2 桁小さい)。ほかの zone も目立って増えたものは無い (キャッシュ類の数百〜数千の揺れだけ)。
+  注: test-nvim (`tests/nvim/test_nvim.sh`) と test-go (`glogx [build failed]`) と test-discovered-rest は rc=2 で途中までの実行。共有 working tree の他セッションの途中状態の可能性があり、原因は追っていない
+- 結論: **macOS 27 のこのマシンでは tmux・make test・exec・sandbox のどれでも漏れない**。漏れているマシン固有の条件 (macOS 15.7.7 か、pro-con で claude を多数並走させる負荷) に依存する
+
+#### 上流の同型の報告 (2026-09-27 に確認。どれも open / 未解決)
+
+- anthropics/claude-code #44824: macOS **15.7.4 / 15.7.5**、`kalloc.1024` が 30〜48MB/分。「**Claude Code を終了すると漏れが即止まる**」「Safe Mode でも起きる (サードパーティ kext ではない)」「端末を変えても起きる」。重複として close
+- anthropics/claude-code #66020: macOS **26.5.1**、`data.kalloc.1024 (20G, 21286288 elements)` でパニック (4 回 / 8 日)。panicked task は `claude.exe`、バックトレースに **`com.apple.iokit.EndpointSecurity`** と apfs。漏れは負荷に比例 (idle 約 21 個/秒 → 並列エージェント作業で約 1,027 個/秒)。claude を全部止めると止まる
+- anomalyco/opencode #32002: macOS 26.3、`data.kalloc.1024` 21,182,160 個 / 20GB。EndpointSecurity 経由と報告
+- 500 の数字との照合: パニック時 21,202,480 個 / 20G (上流とほぼ同じ上限)。増え方 約 2.2 万〜10 万個 / 時 = 約 6〜28 個 / 秒 (上流の idle〜中負荷の帯)。
+  pro-con の PG が多い日・テストの係が make test を走らせた日に増えた、は「claude の作業量に比例」とも読める。9/26 の「本番の tmux に display -p で +2,100」は、同じ時間に並走していた claude の分が乗っていた可能性がある (その日の揺れの幅は 10 秒 ±100 で測っており、並走中の claude の量は記録していない)
+
+### 次の一手 (2026-09-27 12:55 改訂。どれも漏れているマシンでしかできない)
+
+1. **決め手の A-B**: pro-con を止め、**claude のプロセスを全部終わらせて** 5〜10 分、1 分ごとに在庫を読む (手順 1 のループ)。次に claude を 1 本だけ起動して同じ時間読む。
+   止めている間だけ増えなくなれば claude 起因で確定 (上流 #44824 と同じ確かめ方)。止めても増えるなら claude ではなく、表の tmux 仮説に戻る
+2. パニックの報告 (`/Library/Logs/DiagnosticReports/*.panic` か `panic-full-2026-09-25-*.panic`) のバックトレースに `com.apple.iokit.EndpointSecurity` / `AppleMobileFileIntegrity` / `Sandbox` のどれが載っているかを本文に写す (上流と同じ経路かの照合)
+3. 確定したら: 当面は在庫を毎日見て 1,500 万個を越える前に再起動。恒久策は **macOS を上げる** (このマシンの macOS 27.0 では再現しない。ただし 27 で直ったのか、負荷が足りないだけかは未確認) か、上流 (#66020 / Apple Feedback) に 500 の数字を足す
 
 ## 別のマシンで検証する手順 (2026-09-27)
 
