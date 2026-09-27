@@ -55,7 +55,8 @@ func requeue(c *card.Card, now time.Time, resume string) {
 	c.Enter(card.Planned, now)
 }
 
-// gone は、作業中のカードの PG の session が一覧から消えて、restartWait を過ぎても戻らないか (Shutdown が「既に止まっていた」とする形と同じ判定)。
+// gone は、作業中のカードの PG の session が一覧から消えて、restartWait を過ぎても戻らないか (Shutdown が「既に止まっていた」とする形と、
+// 短い id が記録に無い別の session を指す形 (Shutdown は名指しする。再開は prepare が拒むので、その session には触らない))。
 // 消えたのを見た時刻 (DeadSince) が要る: 短い id が変わっただけで session は生きている形 (trackDead は生きていると見て外す) を消えたと読まない
 func (d *Dispatcher) gone(c card.Card, now time.Time, ss []agents.Session, reg []live.Owned) bool {
 	// テストの係の結果を待っているカードは戻さない (結果が出たら finishRun が着手待ちへ戻して再開する。戻すと頼みを捨てる = 483)
@@ -612,8 +613,12 @@ func (d *Dispatcher) stopTarget(c card.Card, now time.Time, ss []agents.Session,
 		// 別の session id を立てる = 427 の 3f)。再開の文がまだ書かれていないと register が記録を書き直さないので、ここで照らす
 		return stopPlan{target: s.ID}
 	}
-	// 一覧に無い: 止まっている。ただし落ちたのを見た直後なら、自動の再開を待っている途中かもしれない
-	return stopPlan{wait: !c.DeadSince.IsZero() && now.Sub(c.DeadSince) < restartWait}
+	// 記録の session が一覧に無い。落ちたのを見た直後なら、自動の再開を待っている途中かもしれない
+	if !c.DeadSince.IsZero() && now.Sub(c.DeadSince) < restartWait {
+		return stopPlan{wait: true}
+	}
+	// 止まっている。ただしカードの短い id が記録に無い別の session を指して生きていれば、止めずに名指しする (unregistered)
+	return d.strayPlan(c, ss, reg)
 }
 
 func (d *Dispatcher) strayPlan(c card.Card, ss []agents.Session, reg []live.Owned) stopPlan {
@@ -639,13 +644,11 @@ func (d *Dispatcher) strayPlan(c card.Card, ss []agents.Session, reg []live.Owne
 // (<repo>/.claude/worktrees/pc-<card>) そのものか、register が取り込むのと同じ根拠 (kind が background・最後の起動より後に開始) を
 // 満たす session だけ (session id も要る)。外の shell の claude は別の短い id を持つので当たらない。worktree に居れば kind と開始時刻は
 // 見ない (取り込まれなかった理由そのもの。理由は register が出来事に出す)。
-// 示せない生きている session (短い id だけ一致して cwd が違う / 起動・再開の途中でカードの worktree に居る) は proven を偽で返す
-// (呼び出し側は止めずに名指しする)。止まっている session・記録にある session (別のカードの行・再開で入れ替わった前の行も) は返さない。
+// 示せない生きている session (短い id だけ一致して cwd が違う / 起動・再開の途中でカードの worktree に居る /
+// 記録の行はあるがカードの短い id が記録に無い別の session を指している) は proven を偽で返す (呼び出し側は止めずに名指しする)。
+// 止まっている session・記録にある session (別のカードの行・再開で入れ替わった前の行も) は返さない。
 func unregistered(c card.Card, repoPath string, ss []agents.Session, reg []live.Owned) (s agents.Session, proven, ok bool) {
 	_, has := owned(c, reg)
-	if has && c.Launching == "" {
-		return agents.Session{}, false, false // 記録の行で照らす (短い id を別の session が得た形には触らない)
-	}
 	wt := card.WorktreePath(repoPath, c)
 	inWorktree := func(s agents.Session) bool { return wt != "" && samePath(s.Cwd, wt) }
 	var loose *agents.Session
@@ -653,14 +656,22 @@ func unregistered(c card.Card, repoPath string, ss []agents.Session, reg []live.
 		if !stoppable(s) || slices.ContainsFunc(reg, func(o live.Owned) bool { return o.SessionID != "" && o.SessionID == s.SessionID }) {
 			continue
 		}
+		if has && c.Launching == "" {
+			// 記録の行はあるが、カードの短い id が記録に無い別の session を指している (register が「別の session を指している」と知らせる形)。
+			// pro-con が起動したと示せないので止めない。ただし「一覧に無い = 止まっている」とも読まない (issue 457 の残り。PM の判断 2026-09-27)
+			if c.Session != "" && s.ID == c.Session {
+				return s, false, true
+			}
+			continue
+		}
 		if !has && c.Session != "" && s.ID == c.Session {
 			// register が取り込む根拠 (bg・最後の起動より後) を満たすのに pid 0 で載らなかった形 (落ちている間は cwd が repo root になる = 427 の 3f) も止める
 			byRegister := s.Kind == "background" && !s.Started().Before(c.LaunchedAt)
 			return s, s.SessionID != "" && (inWorktree(s) || byRegister), true
 		}
-		// 起動・再開の途中で、claude が返した id がまだカードに無い形。起動は名前 (-n) が手がかり。再開は名前を渡さないので
-		// worktree に居る対話でない session を名指しする (人間の対話の session を数えて、終了を永久に失敗させない)
-		if loose == nil && c.Launching != "" && inWorktree(s) && (s.Name == card.SessionName(c) || (c.Launching == "再開" && s.Kind != "interactive")) {
+		// 起動・再開の途中で、claude が返した id がまだカードに無い形。手がかりは worktree と名前 (-n)。再開も起動と同じ名前を渡す
+		// (488 で --bg --resume が -n を受けて名前がそろうことを実測)。名前で絞るので、worktree に居る人間の session を数えて終了を永久に失敗させない
+		if loose == nil && c.Launching != "" && inWorktree(s) && s.Name == card.SessionName(c) {
 			loose = &s
 		}
 	}

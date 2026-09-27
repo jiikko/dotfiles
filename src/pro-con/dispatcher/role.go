@@ -475,7 +475,8 @@ func (d *Dispatcher) prepareRole(r *role, row live.Owned, hasRow bool, cur agent
 }
 
 // pmAdopt は結果の分からない起動・再開の PM が一覧に出ているかを見る。印を書いた後 (LaunchedAt 以降) に始まったものだけ:
-// 起動は名前と cwd (PM の worktree そのもの)、再開は前の session と同じ session id か同じ作業ディレクトリ (再開は別の session id を立てる = 427 の 3f)。
+// 起動は名前と cwd (PM の worktree そのもの)、再開は前の session と同じ session id か、同じ作業ディレクトリと名前 (再開は別の session id を立てる = 427 の 3f。
+// 名前は再開も worktree の名前を渡す = 488。cwd だけだと、役の worktree で人間が立てた bg の session を取り込んで止める = issue 457)。
 func (d *Dispatcher) adopt(pm store.PMState, row live.Owned, hasRow bool, ss []agents.Session) (string, bool) {
 	for _, s := range ss {
 		if s.ID == "" || s.Kind != "background" || s.Started().Before(pm.LaunchedAt) {
@@ -484,7 +485,7 @@ func (d *Dispatcher) adopt(pm store.PMState, row live.Owned, hasRow bool, ss []a
 		if pm.Launching == "起動" && pm.Name != "" && s.Name == pm.Name && samePath(s.Cwd, d.roleWorktree(pm.Name)) {
 			return s.ID, true
 		}
-		if pm.Launching == "再開" && hasRow && (s.SessionID == row.SessionID || (strings.Contains(row.Cwd, worktreeMarker) && s.Cwd == row.Cwd)) {
+		if pm.Launching == "再開" && hasRow && (s.SessionID == row.SessionID || (strings.Contains(row.Cwd, worktreeMarker) && s.Cwd == row.Cwd && s.Name == filepath.Base(row.Cwd))) {
 			return s.ID, true
 		}
 	}
