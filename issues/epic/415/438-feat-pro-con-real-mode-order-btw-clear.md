@@ -64,7 +64,16 @@
   461 の `ExecLauncher{UserSettings}` と btw の `Ask` を両方残し、445 の `store.Pending` (画面の出来事を数えない) に合わせた。分解済みへ戻す処理は 458 の `requeue` に寄せた。
   ガイド §8 は 445 の「--view では断る操作を出さない」を正にした
 - [x] rebase 後の make test rc=0 (テストの係・repo の root で・所要 4m15s)
-- [ ] 本物の claude での確認 (idle の判定が turn の区切りと一致するか・再開の文が PG に読まれるか・haiku の答えの質)
+- 本物の claude での確認 (idle の判定が turn の区切りと一致するか・再開の文が PG に読まれるか・haiku の答えの質)
+  - [x] 追加オーダー: 本番で PG に届いた (下の「本番で見たこと」)
+  - [x] 片付け (2026-09-27、C-008): 隔離した置き場の本物のモード (下の「隔離した本物のモードで見たこと」) で `x` → `y`。完了の 2 枚がボードから外れ、
+    書庫 (`cards-archive.jsonl`) に `Archived: true`・履歴「完了のレーンから片付けた」で残り、`card list --all` に出た。依頼の列のカードは残った
+  - [x] btw の受付から答えまで (同じ置き場): 画面の `w` → 確認 `y` → dispatcher が同じ Tick で答えを履歴と詳細の画面に書いた (PG の出力が無いので記録から答える経路。1 秒以内)
+  - [x] haiku の答えの質: 本物の `HaikuAsk` + `btwPrompt` に、この PG が実際に出した出力 8 行を渡して 3 問 (1 本 7〜10 秒)。
+    「あと何分?」には「材料からは分からない」と答えて推測しなかった。「確かめ終わった?」は材料にある事実とまだ分からない部分を分けた。
+    「今どうなってる?」は要点は合っていたが「btw（追加オーダー）」と取り違えた (題名の並びから混ぜた。下の残り)
+  - [ ] 本物の PG の transcript を dispatcher が読んで haiku へ渡す通しの経路 (`pgOutputs` → `Ask`)。隔離した置き場で PG を起こせなかった (下の残り)。
+    配線 (`dispatchercmd.go` の `Ask: HaikuAsk` / `Transcript: transcriptReader`) と、偽の transcript での検査はある
 
 ## 残り・未確認のリスク
 
@@ -72,6 +81,10 @@
 - 415 論点 11 の「方針変更で止める前に、その時点の diff をカードに記録する」はしていない (worktree は `claude stop` で消えないので変更は残る)
 - 方針変更でテストの係の実行中のカードを戻すと、実行を止めるのは次の Tick (tickRuns が deliverOrders より先に回る)。その間の結果は捨てる (カードの履歴には「取り下げた」が残る)
 - AskUserQuestion で止まった PG へ追記が届かないまま残る (規律違反の PG。見張りは watchdog 側の課題)
+- haiku の btw の答えが、カードの題名に並んだ語を取り違えうる (実測 1/3 問: 「btw（追加オーダー）」)。答えは記録と履歴に残るだけで操作は起こさないので、今は直さない
+- btw の答えを本物の PG の出力から作る通しの経路は未実測 (上の進捗の最後の項)。確かめるには、隔離した置き場で PG を起こす必要がある。
+  🚨 `claude --bg` の session が起動した側の環境変数 (`XDG_STATE_HOME`) を受け継ぐかは**未実測**。受け継がないなら、隔離した dispatcher が起こした PG の
+  `pro-con card review <ID>` は本番の箱に届く (隔離した置き場の ID が本番のカードと重なる)。先にこれを測る (測りかけたが、probe の session が権限の確認で止まり、打ち直しは PG の session の guard に止められた)
 
 ## 本番で見たこと (2026-09-27、ユーザーと話す Claude が本番の記録 `~/.local/state/pro-con/live/events.jsonl` で確かめた)
 
@@ -85,3 +98,13 @@
 - 🚨 **本番の記録 (`~/.local/state/pro-con/live/`) で片付け (`x`) を試さない**。人のボードの完了のカードが画面から外れる。
   状態の置き場を分けた dispatcher と画面 (隔離した state dir) で、本物の claude を使って確かめる。本番でしか確かめられないと分かったら、そこで人に聞く
 - 確かめ方 (pty での画面の操作・隔離の仕方) は PG が決めてよい。不具合が見つかったら直して、ここの「残り・未確認のリスク」を更新する
+
+## 隔離した本物のモードで見たこと (2026-09-27、C-008 の PG)
+
+- 置き場: `XDG_STATE_HOME=<worktree>/tmp/e2e438/state` (本番の `~/.local/state/pro-con` に触らない)。`XDG_CONFIG_HOME` は git の設定にも効くので
+  変えず、dispatcher を手で `pro-con dispatcher --pm off --integrator off` と起こし、画面は `--join` で加えた (隔離した tmux `-L pc438 -f /dev/null`)。
+  カードは確認のカード (`--purpose question`) だけにして、PG を起こさない
+- 🚨 **空の置き場で dispatcher を起こすと、予定 `worktree-clean` (毎日 04:00) がその場で「今日の枠は未実行」として走る** (`schedule.Job.Due` は記録が無いと真。コードで読んだ。走らせてはいない)。
+  隔離した記録を正として本番の repo (`~/dotfiles`・`~/src/*`) の worktree を片付けにいくので、起こす前に `live/schedule.json` へ直前の時刻の実行を書いて止めた。
+  隔離した置き場で dispatcher を起こすときは同じ手当てが要る
+- 画面の幅 170 桁では、案内の行から `d 削除`・`s 設定`・`x 完了を片付け` が落ちて見えなかった (削る仕組みは未確認)。押せば効いた
