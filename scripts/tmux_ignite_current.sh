@@ -30,6 +30,17 @@
 #   (経路算術の決定的な検証用)。
 
 start="${1:-}"
+# $2 = 切替先の session 名 (hook が #{q:session_name} で渡す)
+session="${2:-}"
+
+# popup の session (scratch / claude-fork) では点火しない。popup は中身が変わるたびに popup 全体を
+# 描き直すので、1 フレーム (refresh-client -S) ごとに入れ子の画面全体が端末へ送り直され、1 回の
+# window 切替が約 570KB になる (止めると約 30KB。実測は issue 567)
+if [ -n "$session" ]; then
+  # shellcheck source=scripts/lib/tmux_popup_sessions.sh
+  . "${0%/*}/lib/tmux_popup_sessions.sh"
+  printf '%s:\n' "$session" | grep -Eq "$TT_POPUP_SESSION_RE" && exit 0
+fi
 
 # colourN (16..231 の cube 内) → "r g b" (各 0..5)。cube 外 (グレー 232+/名前色/空) は
 # 暗地 (0,0,0)=colour16 扱い (バー地はほぼ黒なので視覚的に等価な起点)。

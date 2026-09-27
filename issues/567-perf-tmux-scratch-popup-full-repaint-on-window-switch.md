@@ -39,9 +39,26 @@
 
 - scratch / claude-fork の popup session (`scripts/lib/tmux_popup_sessions.sh` の `TT_POPUP_SESSION_RE`) では、
   `tmux_ignite_current.sh` を最初に抜ける。`tmux_agent_panel.sh follow` が同じ正規表現で抜けているのと同じ形
-- 見た目が変わる (scratch だけ点火しない) ので、ユーザーの了承を待つ
+- 見た目が変わる (scratch だけ点火しない) → 2026-09-27 ユーザー了承 (「やってみて」)
 
 ## 進捗
 
 - [x] 隔離サーバで原因の層を切り分けた (上の表)
-- [ ] 対応方針をユーザーが決める
+- [x] 対応方針をユーザーが決める (上の案で了承)
+- [x] 実装: hook 2 本が `#{q:session_name}` を渡し、`tmux_ignite_current.sh` が `TT_POPUP_SESSION_RE` に当たる session なら最初に抜ける。
+  テスト `tests/tmux/test_ignite_skips_popup_sessions.sh`、`docs/theme-colors.md` に 1 行
+- [x] 変異で red を確認: 早期 return を外す (scratch / claude-fork が red) / hook 1 本から session 名を外す (配線が red) /
+  session 名なしで呼ぶ bind を足す (配線が red) / lib の source を壊す (main 等が red)
+- [x] 効果の実測 (上と同じ隔離サーバ): popup で 1 回の切替 **569KB → 27KB** (中央値、n=15)。到達は 10ms で変わらず。何もしないときの 47KB/秒は変わらない (status-interval 由来で対象外)
+- [x] `make test-dir DIR=tests/tmux` rc=0 (skip は以前からの test_fork_scratch.sh 1 件)
+- [x] 敵対的レビュー (opus、read-only、隔離サーバで実測つき): P1 なし。
+  P3 の 3 件を直した (`dirname` の fork を `${0%/*}` に / lib の利用者コメントの誤り / 配線検査の本数の固定をやめ、bind など全呼び出し行を見る)。
+  修正は判定ロジックの新設でなく各々を変異で直接確かめたので 2 周目は回していない
+
+## 残った既知の穴 (直していない)
+
+- 判定の鍵は「切り替えた先の session 名」で「popup が表示中か」ではない。popup を開いたまま別の端末の client が普通の session で window を切り替えると、
+  global の `@ignite` の更新で popup も描き直される (変更前から同じ。単一 client の通常の操作では踏まない。頻度は未測定)
+- popup の中から jump 系で普通の session へ移ると、以降の切替は点火する (popup が普通の session を表示しているので名前では区別できない。popup 内で jump が効くかは未確認)
+- 色の式 ($1) が空に展開されると $2 が $1 にずれて skip しない。今の `@fade-ramp-tpl` は `colour…` で始まるので空にならない
+- popup を通さず scratch / claude-fork に直接 attach しても点火しない (名前で判定しているため。scratch は popup 専用の前提)

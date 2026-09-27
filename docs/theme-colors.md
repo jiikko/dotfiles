@@ -98,6 +98,8 @@ window を切り替えると、current 島が **切替直前の表示色 → 暗
   (@cur-live は仕組み側。終点は @cur-accent を読むので色を変えても補間は自動追従)
 - 調整ノブ: 速度 = スクリプト内 sleep 値 (現 35ms) / 形 = 沈むフレーム数 D・点火フレーム数 A (現 4/4 =
   256色 cube の量子化上限。これ以上は中間色が存在しない)。連打時は世代トークンで最後の切替だけ完走。
+- popup の session (scratch / claude-fork。`scripts/lib/tmux_popup_sessions.sh`) では点火しない。popup は中身が変わるたびに全体を
+  描き直すので、1 フレームごとに入れ子の画面全体が端末へ送り直される (1 回の切替が約 570KB → 約 30KB。issue 567)
   算術は `TT_IGNITE_DRYRUN=1 scripts/tmux_ignite_current.sh colour201` で決定的に確認できる
 - CPU: 各フレームは「世代一致なら set+refresh」を `tmux if -F` でサーバ側原子実行 (1 フレーム 1 fork)。
   実測 = 最長 8 フレームの 1 回で user+sys ~60ms。切替イベント時のみで常時負荷ゼロ
