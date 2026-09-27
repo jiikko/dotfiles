@@ -125,6 +125,12 @@ attach が無ければほぼ漏れない。何が漏らしているか (tmux の
 - 読み方: バックトレースは「zone が尽きたときに最後に確保しようとした側」(zsh の exec の署名検査) であって、漏らした側ではない。
   上流 #66020 のバックトレースも同じ性質なので、この照合では claude 起因かどうかを判別できない。**決め手は次の一手 1 の A-B のまま**
 
+### 2026-09-27 15:20: 漏れているマシンにサードパーティの ES クライアント (EDR) は無い
+
+- `systemextensionsctl list`: Google One の network extension と Karabiner の DriverKit だけ (どちらも ES ではない)。
+  ES のプロセスは Apple の `endpointsecurityd` だけ。`profiles status -type enrollment`: DEP も MDM も No
+- → 「会社の EDR 等の ES クライアントが漏らしている」は外れる (MacBook Air と同じ構成)。上流 #66020 と同じく、Apple 側の経路 (ES / AMFI / apfs) を claude の負荷が叩いている形が残る
+
 ### 2026-09-27 14:50〜15:10: pro-con を止めた状態で、pro-con が起こす操作を 1 つずつ測った (どれも漏れない)
 
 - 静かな状態 (何もしない 30〜60 秒の差 -25〜+261) で測った。差はどれも揺れの範囲:
