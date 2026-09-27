@@ -12,6 +12,12 @@ dogfooding (2026-09-27) で分かったこと。550 の予定で worktree clean 
 - master に無い commit がある: 3 個 (C-004 / C-009 / C-020。完了のカードで、取り込まれなかった作業)
 - 記録に無いカードの worktree: 5 個 (pc-c-026 / 043 / 051 / 057 / 087。削除したカード)
 
+(数は 2026-09-27 13:39 に `pro-con worktree clean` の一覧だけのモードで数えた値)
+
+削除したカードの worktree が永久に残る理由: `card delete` (backend の `DeleteCard`) は worktree とブランチを消さず、片付けの印 (`store.Purged`。
+497) も書かない。印を書くのは 1 週間の自動の削除 (`d.purge`) だけなので、削除したカードの worktree は `wtclean` の `cardOf` で
+「記録に無いカード」になり、残す側から出られない
+
 ## 対応方針 (案)
 
 - 設定画面のディスクのタブ (か、スケジューラージョブのタブ) に「残した worktree と理由」を出し、人が選んで消せる口を置く案
