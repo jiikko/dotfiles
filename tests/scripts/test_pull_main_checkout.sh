@@ -26,6 +26,11 @@ git -C "$TMP_DIR/other" push -q origin HEAD 2>/dev/null
 want=$(git -C "$TMP_DIR/other" rev-parse HEAD)
 
 LM="$ROOT_DIR/bin/lockman"
+# lockman は初回に Go でビルドする。Go の無い runner (CI の rest) では始められないので skip にする
+# (exit 77 = runner が [skip] と数える)。Go があるのに lockman が動かないときは下の検査で赤にする
+if ! "$LM" --help >/dev/null 2>&1 && ! command -v go >/dev/null 2>&1; then
+  echo "SKIP: go が無く lockman をビルドできない"; exit 77
+fi
 run() { DOTFILES_DIR="$TMP_DIR/main" PULL_MAIN_LOCKMAN="$LM" PULL_MAIN_WAIT="${WAIT:-10s}" "$ROOT_DIR/scripts/pull_main_checkout.sh" > "$TMP_DIR/out" 2> "$TMP_DIR/err"; }
 
 # 1. ほかが lock を持っている間は pull しない (rc 121・理由を出す・HEAD はそのまま)
