@@ -54,18 +54,27 @@ idx="$("${T[@]}" display -t "$win" -p '#{window_index}')"
 # 段の境界を跨がないように 1 段を 1000 秒へ伸ばす (@fade-step-secs はライブ調整できる定数)。
 # 経過 1000k+1 秒 = 段 k。テストの実行が数秒かかっても段は変わらない
 "${T[@]}" set -g @fade-step-secs 1000
-# busy 判定は「前面が *zsh 以外」。被検体の sh は busy 扱いなので、busy でない状態は zsh を名乗る
-# 前面へ差し替えて作る (exec -a で argv[0] を zsh にした sleep。pane_current_command は argv[0] を返す)
+# busy 判定は「前面が *zsh 以外」。被検体の sh は busy 扱いなので、busy でない状態は前面を本物の zsh に
+# 差し替えて作る。🚨 `exec -a zsh sleep` で argv[0] を偽る手は macOS で効かない (tmux の osdep-darwin は
+# argv[0] ではなくカーネルの実行ファイル名 pbsi_comm を返す。Linux だけ /proc の cmdline を読む)
+# wait_cmd <pane> <期待する pane_current_command>: 前面が入れ替わるまで待つ (固定の sleep にしない)
+wait_cmd() {
+  local i
+  for i in $(seq 1 100); do
+    [ "$("${T[@]}" display -t "$1" -p '#{pane_current_command}')" = "$2" ] && return 0
+    sleep 0.05
+  done
+  ng "前面が $2 にならない ($1: $("${T[@]}" display -t "$1" -p '#{pane_current_command}'))"
+  exit 1
+}
 not_busy() {
   local p
   for p in $("${T[@]}" list-panes -t "$win" -F '#{pane_id}'); do
-    "${T[@]}" respawn-pane -k -t "$p" "exec -a zsh sleep 100000"
+    "${T[@]}" respawn-pane -k -t "$p" "exec zsh -f"
+    wait_cmd "$p" zsh
   done
 }
 not_busy
-sleep 0.3
-[ "$("${T[@]}" display -t "$p1" -p '#{pane_current_command}')" = zsh ] \
-  || { ng "前面を zsh に見せかけられない (pane_current_command=$("${T[@]}" display -t "$p1" -p '#{pane_current_command}'))"; exit 1; }
 
 fmt="$("${T[@]}" show -gv window-status-format)"
 render() { "${T[@]}" display -t "$win" -p "$fmt"; }
@@ -103,8 +112,8 @@ expect "zoom は fade の後に暗赤を重ねる" "#[bg=colour164]#[fg=colour16
 expect "claude アイコンの後は fade の文字色へ戻す" "#[bg=colour164]#[fg=colour16] $idx:#[fg=colour214][3]#[fg=colour16] #[fg=colour220]⚙#[fg=colour16] w "
 "${T[@]}" set -pu -t "$p1" @claude_state
 
-"${T[@]}" respawn-pane -k -t "$p1" 'sleep 100000'
-sleep 0.3
+"${T[@]}" respawn-pane -k -t "$p1" 'exec sleep 100000'
+wait_cmd "$p1" sleep
 touch_ago 100000
 expect "busy は経過に関係なく最明" "#[bg=colour201]#[fg=colour16] $idx:#[fg=colour214][3]#[fg=colour16] w "
 
@@ -128,7 +137,6 @@ if [ -z "$busy_body" ] || [ -z "$bucket_body" ]; then ng "@busy / @fade-bucket �
   || { ng "display -v の展開ログから @busy を拾えない (tmux のログ形式が変わった? 判定不能)"; exit 1; }
 check_cost "busy"
 not_busy
-sleep 0.3
 touch_ago 1001
 check_cost "段 1"
 touch_ago 100000
