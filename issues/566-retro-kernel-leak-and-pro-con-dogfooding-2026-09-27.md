@@ -11,6 +11,12 @@
 4. **共有の checkout で素の `git pull` を打った**: ほかの session と同時になり「Cannot rebase onto multiple branches」で失敗した。`pull_main_checkout.sh` を通す決まり (issue 544) を守らなかった
 5. **自作の道具の敵対的レビューが 5 周かかった**: 判定ロジックを足すたびに、足した分の境界 (窓の切り替え・幅の下限・起動より前の行) で新しい穴が出た
 
+## この調査の結果として取った手
+
+- **漏れているマシンの macOS を 15.7.7 → 27 へ上げた** (2026-09-27、ユーザーの判断)。別のマシン (macOS 27) では tmux・pro-con・claude を本物の重さで回しても
+  カーネルの `kalloc.1024` が漏れず、上流の同じ報告 (claude-code #44824 / #66020) も macOS 15 / 26 だったため。原因の特定より先に OS 側を変えた
+- 直ったかの確認と閉じる条件は issue 500 の「次の一手 (2026-09-27 19:20 改訂)」に置く (`kernel-alloc-watch` で 1 日以上「正常」なら done)
+
 ## 次に効きそうな改善 (提案)
 
 - 1 と 2 は、別の repo・別のスクリプトでも同じ形で踏む。`_claude/rules/mutation-verify-new-tests.md` の「platform / シェル」節へ 2 行足す案:
