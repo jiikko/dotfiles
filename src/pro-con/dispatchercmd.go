@@ -531,19 +531,20 @@ func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo stri
 		return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: e2e.Launcher(), List: e2e.List, ListAll: e2e.ListAll, Now: time.Now,
 			Runner: dispatcher.ExecRunner{}, FakePM: e2e.FakePM, PMOff: pmOff} // テストの係は本物のシェル (偽の worktree で走る)。失敗の要約 (haiku) はしない
 	}
-	home, _ := os.UserHomeDir() // 分からなければ "" (言語と ~/.claude/CLAUDE.md の除外を渡さないだけで、起動は止めない)
+	home, _ := os.UserHomeDir()                           // 分からなければ "" (言語と ~/.claude/CLAUDE.md の除外を渡さないだけで、起動は止めない)
+	jobs := filepath.Join(filepath.Dir(projects), "jobs") // Claude Code が session ごとに様子を書く置き場 (~/.claude/jobs)
 	haiku := dispatcher.HaikuSettings(home)
 	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{Claude: cl.Path, UserSettings: userSettingsPath(home)},
 		PMRepo: pmRepo, PMGuide: pmGuide, PMOff: pmOff, IntegratorGuide: integratorGuide,
 		// e2e の偽の PG は codex を呼ばないので、上の e2e の形には渡さない (514)
 		ResolveCodex: func(ctx context.Context) (dispatcher.Tool, error) { return dispatcher.ResolveCodex(ctx, home) },
 		Runner:       dispatcher.ExecRunner{Lockman: "lockman"}, Summarize: dispatcher.HaikuSummarize(cl.Path, dir, haiku), Ask: dispatcher.HaikuAsk(cl.Path, dir, haiku), Usage: dispatcher.ReadUsage(cl.Path, dir),
-		Procs: dispatcher.PSProcs, ProgressGit: dispatcher.ExecProgressGit{}, BootTime: dispatcher.KernBootTime, JobsDir: filepath.Join(filepath.Dir(projects), "jobs"),
+		Procs: dispatcher.PSProcs, ProgressGit: dispatcher.ExecProgressGit{}, BootTime: dispatcher.KernBootTime, JobsDir: jobs,
 		List: func(ctx context.Context) ([]agents.Session, error) {
-			return agents.List(ctx, agents.ExecRunner(cl.Path))
+			return agents.List(ctx, agents.ExecRunner(cl.Path), jobs)
 		},
 		ListAll: func(ctx context.Context) ([]agents.Session, error) {
-			return agents.List(ctx, agents.ExecRunnerAll(cl.Path))
+			return agents.List(ctx, agents.ExecRunnerAll(cl.Path), jobs)
 		}, Now: time.Now,
 		Transcript:     transcriptReader(projects, &live.TranscriptCache{}),
 		TranscriptPath: func(sessionID string) (string, error) { return live.FindTranscript(projects, sessionID) }}

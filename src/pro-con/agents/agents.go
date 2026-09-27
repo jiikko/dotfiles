@@ -11,7 +11,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -28,6 +31,8 @@ type Session struct {
 	Cwd        string `json:"cwd"`
 	PID        int    `json:"pid"`
 	StartedAt  int64  `json:"startedAt"` // epoch ms
+	// JobState は Claude Code が <jobsDir>/<ID>/state.json に書いた state。pid 無し・working の session だけ読む (List)。読めなければ空
+	JobState string `json:"-"`
 }
 
 func (s Session) Started() time.Time { return time.UnixMilli(s.StartedAt) }
@@ -41,7 +46,9 @@ const Timeout = 10 * time.Second
 var ErrEmptyOutput = errors.New("claude agents --json の出力が空")
 
 // List は session の一覧を返す。コマンドの失敗・timeout・空の出力・壊れた JSON はすべてエラー (0 本と区別する)。
-func List(ctx context.Context, run Runner) ([]Session, error) {
+// jobsDir は Claude Code が session ごとに様子を書く置き場 (~/.claude/jobs)。pid 無し・working の session の JobState を読む
+// (Stopped の判定に使う。空なら読まない = 今までどおり、pid 無し・working は自動の再開の途中として止まっていない扱い)。
+func List(ctx context.Context, run Runner, jobsDir string) ([]Session, error) {
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
 	out, errOut, err := run(ctx)
@@ -61,7 +68,33 @@ func List(ctx context.Context, run Runner) ([]Session, error) {
 	if err := json.Unmarshal(out, &ss); err != nil {
 		return nil, fmt.Errorf("claude agents --json の出力を読めない (版が変わった?): %w", err)
 	}
+	for i := range ss {
+		if s := &ss[i]; jobsDir != "" && s.PID == 0 && s.State == stateWorking && ShortID(s.ID) {
+			s.JobState = readJobState(filepath.Join(jobsDir, s.ID, "state.json"))
+		}
+	}
 	return ss, nil
+}
+
+// ShortID は裏の session の短い id の形か (claude attach / stop / rm に渡す id。~/.claude/jobs/<id> の置き場の名前にもなるので、
+// パスの区切りを含む値で置き場の外を読まない・撃たない)。
+func ShortID(id string) bool { return reShortID.MatchString(id) }
+
+var reShortID = regexp.MustCompile(`^[0-9a-f]{8}$`)
+
+// readJobState は state.json の state (読めない・壊れているなら空)。
+func readJobState(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var js struct {
+		State string `json:"state"`
+	}
+	if json.Unmarshal(data, &js) != nil {
+		return ""
+	}
+	return js.State
 }
 
 // StatusIdle は turn を終えて次の入力を待つ session の Status (425 の実測: 正常に終えた turn / API エラーで落ちた turn)。
@@ -120,8 +153,20 @@ const stateFailed = "failed"
 // 止まったと読み、閉じても終了でも止めない (issue 466)。許可リストに無い pid 無しは UnknownState (止めに行く側)
 // 425 の実測: 正常に終えた (pid あり・blocked) / API エラー (pid あり・failed) / claude stop (pid 無し・stopped) /
 // kill -9 (数秒 pid 無し・working のまま自動で再開)
+// 🚨 例外: pid 無し・working でも、Claude Code の記録 (JobState) が done なら止まっている。作業を終える前に起床を予約した session
+// (ScheduleWakeup の session_cron が残る) は、プロセスが無くても claude stop の後も agents が working を返し続ける
+// (2.1.283 で実測 2026-09-27。issue 551)。kill -9 の直後の自動の再開の途中は、記録が crashed → resuming なので区別できる (同日の実測)。
 func (s Session) Stopped() bool {
-	return s.PID == 0 && (s.State == StateStopped || s.State == stateDone || s.State == stateFailed)
+	if s.PID != 0 {
+		return false
+	}
+	switch s.State {
+	case StateStopped, stateDone, stateFailed:
+		return true
+	case stateWorking:
+		return s.JobState == stateDone
+	}
+	return false
 }
 
 // UnknownState は、pid 無しで止まったとも自動の再開の途中 (working) とも判定できない session か (知らない state・state の欄が無い)。

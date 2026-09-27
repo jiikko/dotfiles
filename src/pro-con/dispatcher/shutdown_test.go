@@ -329,6 +329,23 @@ func TestShutdownReportsSessionsThatDoNotStop(t *testing.T) {
 	}
 }
 
+// 起床の予約 (ScheduleWakeup) が残ったまま終えた PG は、止めた後も一覧では pid 無し・working のまま (Claude Code の記録は done)。
+// 止まったと読み、「止めきれなかった」にしない (issue 551。2.1.283 で実測)。
+func TestShutdownAcceptsPidlessWorkingWithDoneJob(t *testing.T) {
+	r := newCrashRig(t)
+	r.d.ListAll = func(ctx context.Context) ([]agents.Session, error) {
+		ss, err := r.d.List(ctx)
+		out := slices.Clone(ss)
+		for i := range out {
+			out[i].PID, out[i].State, out[i].JobState = 0, "working", "done"
+		}
+		return out, err
+	}
+	if _, err := r.d.Shutdown(context.Background()); err != nil {
+		t.Fatalf("記録が done の PG を止めきれなかったとした: %v", err)
+	}
+}
+
 // 止まったかを確かめるのは pro-con の記録にある session だけ (外の session は、生きていても止めない・残りに数えない)。
 func TestEnsureStoppedIgnoresForeignSessions(t *testing.T) {
 	r := newCrashRig(t)

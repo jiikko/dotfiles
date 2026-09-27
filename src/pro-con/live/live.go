@@ -124,7 +124,7 @@ func New(repos []backend.Repo, home, stateDir string) *Backend {
 		registry:  filepath.Join(stateDir, RegistryFile),
 		snap:      backend.Snapshot{Now: now, DispatcherTick: now},
 		done:      make(chan struct{}),
-		list:      execList,
+		list:      execList(filepath.Join(home, ".claude", "jobs")),
 		findPath:  func(id string) (string, error) { return FindTranscript(projects, id) },
 		read:      ReadTail,
 		now:       time.Now,
@@ -141,8 +141,10 @@ func New(repos []backend.Repo, home, stateDir string) *Backend {
 
 // execList は本物の claude agents を読む。🚨 画面は PATH の claude を素の名前で呼ぶ (画面の cwd は 1 つなので repo ごとには変わらないが、
 // dispatcher が起動時に解決した実体とは版がずれうる。464 の残り)
-func execList(ctx context.Context) ([]agents.Session, error) {
-	return agents.List(ctx, agents.ExecRunner("claude"))
+func execList(jobsDir string) func(context.Context) ([]agents.Session, error) {
+	return func(ctx context.Context) ([]agents.Session, error) {
+		return agents.List(ctx, agents.ExecRunner("claude"), jobsDir)
+	}
 }
 
 // Changed は読み直すたびに値が入る (溜まった分は 1 つにまとめる。backend.Notifier)。

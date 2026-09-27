@@ -37,6 +37,7 @@ import (
 	"testing"
 	"time"
 
+	"pro-con/agents"
 	"pro-con/card"
 	"pro-con/diskuse"
 	"pro-con/gitx"
@@ -74,7 +75,6 @@ func (v SessionVerdict) Removable() bool {
 
 var (
 	sessionIDRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-	shortIDRe   = regexp.MustCompile(`^[0-9a-f]{8}$`)
 )
 
 // ScanSessions は起動の記録と片付けの印にある PG のカードの session を判定する (カード ID の順)。
@@ -328,7 +328,7 @@ func jobOf(jobsDir string, o Owned, repo, wt, branch string) (id, why string, er
 	if jobsDir == "" || o.ID == "" {
 		return "", "", nil
 	}
-	if !shortIDRe.MatchString(o.ID) {
+	if !agents.ShortID(o.ID) {
 		return "", fmt.Sprintf("短い id の形が違う (%q)", o.ID), nil
 	}
 	data, err := os.ReadFile(filepath.Join(jobsDir, o.ID, "state.json"))
@@ -472,7 +472,7 @@ func allowSessions(in Inputs, v SessionVerdict, stateDir string) error {
 		}
 	}
 	for _, j := range v.Jobs {
-		if !shortIDRe.MatchString(j) {
+		if !agents.ShortID(j) {
 			return fmt.Errorf("claude rm に渡す id の形が違う (%q)", j)
 		}
 	}
@@ -487,7 +487,7 @@ func ClaudeRemover(claude, jobsDir string) func(ctx context.Context, id string) 
 		if testing.Testing() {
 			return errors.New("テストの二進で本物の claude rm を呼ばない")
 		}
-		if !shortIDRe.MatchString(id) {
+		if !agents.ShortID(id) {
 			return fmt.Errorf("claude rm に渡す id の形が違う (%q)", id)
 		}
 		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)

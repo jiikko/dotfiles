@@ -358,6 +358,6 @@ func realWorktreeEnv(home string) (worktreeEnv, error) {
 	}
 	jobs := filepath.Join(home, ".claude", "jobs")
 	return worktreeEnv{dir: liveDir(home), repos: repos, sessions: func(ctx context.Context) ([]agents.Session, error) {
-		return agents.List(ctx, agents.ExecRunner(cl.Path))
+		return agents.List(ctx, agents.ExecRunner(cl.Path), jobs)
 	}, procCwds: lsofCwds, projects: filepath.Join(home, ".claude", "projects"), jobsDir: jobs, removeJob: wtclean.ClaudeRemover(cl.Path, jobs)}, nil
 }

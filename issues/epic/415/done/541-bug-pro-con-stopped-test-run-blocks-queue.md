@@ -51,3 +51,14 @@
     `test-unused-excluding-tests` (`src/pro-con/store/loadcache.go:loadDecodes` が production から到達できない。528 の 8282a8cc)。後の 2 件は origin/master でも残っている
   - 残る形 (範囲外): 子が setsid / setpgid で自分のグループを作って止まり、bash がそれを待つ (S) 形は検出しない (グループごと撃つ方式の既知の制限と同じ。
     `runScript` の注記)
+
+## 追記: TestExecRunnerRestopsStoppedGroup が CI でだけたまに落ちる (2026-09-27)
+
+- CI (src/pro-con) で、このテストが入ってから 10 回中 1 回落ちた (run 36296544292: 「グループが止まったまま、実行が終わらない」= 20 秒たっても実行が返らない)。
+  手元では単体 40 回・pro-con 全体の `go test -race` を裏で回しながら 15 回走らせて 0 回
+- 止め直しは SIGTERM から最長 5 秒 (WaitDelay) で戻る作りなので、20 秒返らないのは見張り (watchStopped) が「グループが全部止まった」を一度も見ていないはず。原因は未確定
+- 観測を入れた: 諦める時点の見張りの判定 (groupStopped) と、bash のグループと子の ps (pid pgid ppid stat command) をテストのログに出す
+  (「test(pro-con): CI でだけ落ちる TestExecRunnerRestopsStoppedGroup に、諦める時点のグループの様子を出す」)。
+  その commit で CI を 6 回回して成功 5・取り消し 1 (落ちなかった)
+- 再開の trigger: 次に CI でこのテストが落ちたら、ログの ps の行 (STAT が T でないプロセスが居るか) を読んで原因を決める
+

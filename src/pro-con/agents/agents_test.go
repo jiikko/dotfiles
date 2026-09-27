@@ -3,6 +3,8 @@ package agents
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +22,7 @@ func runner(out, errOut string, err error) Runner {
 }
 
 func TestListParsesSessions(t *testing.T) {
-	ss, err := List(context.Background(), runner(sample, "", nil))
+	ss, err := List(context.Background(), runner(sample, "", nil), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +40,7 @@ func TestListParsesSessions(t *testing.T) {
 
 // 空の配列は「0 本」として正常。空の出力・壊れた JSON・コマンドの失敗は 0 本ではなくエラー。
 func TestListDistinguishesZeroFromFailure(t *testing.T) {
-	if ss, err := List(context.Background(), runner("[]\n", "", nil)); err != nil || len(ss) != 0 {
+	if ss, err := List(context.Background(), runner("[]\n", "", nil), ""); err != nil || len(ss) != 0 {
 		t.Fatalf("[] は 0 本の正常: %v %v", ss, err)
 	}
 	cases := []struct {
@@ -52,7 +54,7 @@ func TestListDistinguishesZeroFromFailure(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := List(context.Background(), tc.run)
+			_, err := List(context.Background(), tc.run, "")
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("%q を含むエラーのはず: %v", tc.want, err)
 			}
@@ -65,7 +67,7 @@ func TestListTimesOut(t *testing.T) {
 	hang := func(ctx context.Context) ([]byte, []byte, error) { <-ctx.Done(); return nil, nil, ctx.Err() }
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	_, err := List(ctx, hang)
+	_, err := List(ctx, hang, "")
 	if err == nil || !strings.Contains(err.Error(), "終わらない") {
 		t.Fatalf("timeout のエラーのはず: %v", err)
 	}
@@ -93,5 +95,64 @@ func TestSessionStopped(t *testing.T) {
 		if got := (Session{State: tc.state, PID: tc.pid}).Stopped(); got != tc.want {
 			t.Errorf("state=%s pid=%d: 止まっている=%v (%v のはず)", tc.state, tc.pid, got, tc.want)
 		}
+	}
+}
+
+// pid 無し・working の session だけ、Claude Code の記録 (<jobsDir>/<id>/state.json) を読む。記録が done なら止まっている
+// (起床を予約したまま終えた session。issue 551)。kill -9 の直後の自動の再開の途中 (crashed / resuming)・記録が無い・壊れているは止まっていない。
+// pid のある session と、置き場の外を指す id の記録は読まない。
+func TestListReadsJobStateForPidlessWorking(t *testing.T) {
+	root := t.TempDir()
+	jobs := filepath.Join(root, "jobs")
+	write := func(id, body string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Join(jobs, id), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(jobs, id, "state.json"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("aaaa0001", `{"state":"done","inFlight":{"kinds":["session_cron"]}}`)
+	write("aaaa0002", `{"state":"crashed"}`)
+	write("aaaa0003", `{"state":"resuming"}`)
+	write("aaaa0005", `{broken`)
+	write("aaaa0006", `{"state":"done"}`)
+	write("../x", `{"state":"done"}`) // 置き場の 1 つ上 (root/x)。id "../x" が指す先
+	out := `[
+ {"id":"aaaa0001","kind":"background","state":"working","sessionId":"s1"},
+ {"id":"aaaa0002","kind":"background","state":"working","sessionId":"s2"},
+ {"id":"aaaa0003","kind":"background","state":"working","sessionId":"s3"},
+ {"id":"aaaa0004","kind":"background","state":"working","sessionId":"s4"},
+ {"id":"aaaa0005","kind":"background","state":"working","sessionId":"s5"},
+ {"id":"aaaa0006","pid":42,"kind":"background","state":"working","sessionId":"s6"},
+ {"id":"../x","kind":"background","state":"working","sessionId":"s7"}
+]`
+	ss, err := List(context.Background(), runner(out, "", nil), filepath.Join(jobs, "sub", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]struct {
+		job     string
+		stopped bool
+	}{
+		"aaaa0001": {"done", true},     // 起床の予約が残ったまま終えた (C-089 の形)
+		"aaaa0002": {"crashed", false}, // kill -9 の直後
+		"aaaa0003": {"resuming", false},
+		"aaaa0004": {"", false}, // 記録が無い
+		"aaaa0005": {"", false}, // 記録が壊れている
+		"aaaa0006": {"", false}, // pid がある (動いている) なら記録は読まない
+		"../x":     {"", false}, // 置き場の外は読まない
+	}
+	for _, s := range ss {
+		w := want[s.ID]
+		if s.JobState != w.job || s.Stopped() != w.stopped {
+			t.Errorf("%s: JobState=%q Stopped=%v (%q / %v のはず)", s.ID, s.JobState, s.Stopped(), w.job, w.stopped)
+		}
+	}
+	// 置き場を渡さなければ読まない (今までどおり、pid 無し・working は止まっていない)
+	ss, _ = List(context.Background(), runner(out, "", nil), "")
+	if ss[0].JobState != "" || ss[0].Stopped() {
+		t.Errorf("置き場なしで記録を読んだ: %+v", ss[0])
 	}
 }
