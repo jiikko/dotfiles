@@ -6,6 +6,7 @@
 //	pm         = "on"           # "off" なら dispatcher は PM を起こさない (人か外の Claude が PM をする運用)。dispatcher の --pm が勝つ
 //	integrator = "on"           # "off" なら dispatcher は取り込みの係 (issue 487) を起こさない。dispatcher の --integrator が勝つ
 //	review     = "claude"       # 敵対的レビューの担い手: "claude" (既定) / "codex" (issue 514)。pro-con config set review (設定画面) が勝つ
+//	disposable_tmp = ["~/dotfiles"] # worktree の片付けで tmp/ の無視されたファイルを使い捨てとみなす repo (issue 552)。書かなければ既定の ~/dotfiles、[] ならどれも見なさない
 package config
 
 import (
@@ -32,6 +33,26 @@ type Config struct {
 	Integrator string `toml:"integrator"`
 	// Review は敵対的レビューの担い手 (store.ReviewModes / 空 = claude)。dispatcher の起動時に読む既定で、pro-con config set review が勝つ
 	Review string `toml:"review"`
+	// DisposableTmp は worktree の片付け (wtclean) で、worktree の直下の tmp/ にある無視されたファイルを使い捨て (退避してから消してよい) とみなす repo のパス (issue 552)。
+	// nil (キーを書いていない) なら defaultDisposableTmp、空の列なら どの repo も見なさない (DisposableTmpPaths)。
+	// 🚨 tmp/ を使い捨てとするのは dotfiles の決まり (CLAUDE.md「一時ファイルの配置」)。ほかの repo の tmp/ に本物のデータがありうるので、repo ごとに人が書く
+	DisposableTmp []string `toml:"disposable_tmp"`
+}
+
+// defaultDisposableTmp は disposable_tmp を書いていないときの repo (tmp/ を使い捨てと決めている dotfiles だけ)。
+var defaultDisposableTmp = []string{"~/dotfiles"}
+
+// DisposableTmpPaths は tmp/ を使い捨てとみなす repo の絶対パス (~ を展開する)。
+func (c Config) DisposableTmpPaths(home string) []string {
+	ps := c.DisposableTmp
+	if ps == nil {
+		ps = defaultDisposableTmp
+	}
+	out := make([]string, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, expand(p, home))
+	}
+	return out
 }
 
 // defaultPMRepo は pm_repo を書いていないときの PM の repo (pro-con の issue がある repo)。
@@ -81,7 +102,7 @@ func Load(path string) (Config, error) {
 		for i, k := range und {
 			keys[i] = k.String()
 		}
-		return Config{}, fmt.Errorf("%s: 知らないキー %s (使えるのは repo_roots / repos / pm_repo / pm / integrator / review)", path, strings.Join(keys, ", "))
+		return Config{}, fmt.Errorf("%s: 知らないキー %s (使えるのは repo_roots / repos / pm_repo / pm / integrator / review / disposable_tmp)", path, strings.Join(keys, ", "))
 	}
 	if c.PM != "" && c.PM != "on" && c.PM != "off" { // 書き間違いを on と読むと、止めたつもりの PM が起動して枠を使う
 		return Config{}, fmt.Errorf("%s: pm は \"on\" か \"off\" (%q)", path, c.PM)

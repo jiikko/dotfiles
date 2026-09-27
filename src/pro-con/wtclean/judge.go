@@ -13,7 +13,9 @@
 //     動いている pc-c-053 の lock の pid が既に居なかった)。session が動いているかは lock ではなく claude agents の cwd で見る
 //   - 未 commit の変更・追跡していないファイル・skip-worktree / assume-unchanged の印が無く、その下に別の worktree も無い
 //   - 無視されたファイルは、中身の無いディレクトリか、作り直せる go_autobuild の産物 (.autobuild.* とその隣の実行ファイル) だけ
-//     (🚨 git worktree remove は --force なしでも無視されたファイルを黙って消す。tmp/ のレポート・.env・settings.local.json・入れ子の repo を失わない)
+//     (🚨 git worktree remove は --force なしでも無視されたファイルを黙って消す。tmp/ のレポート・.env・settings.local.json・入れ子の repo を失わない)。
+//     例外は設定の disposable_tmp に書いた repo の、worktree の直下の tmp/ の下の無視されたファイル (issue 552): 使い捨てとみなし、
+//     状態の置き場の wtclean-tmp/<repo>/<名前>/ へ退避してから消す (Verdict.Tmp。退避は TmpKeep の間残す。stash.go)
 //   - 先端が取り込む先 (origin/master。無ければ origin/main) の祖先か、`git cherry` が全部 - で、かつ空白まで同じ patch
 //     (git patch-id --verbatim) が取り込む先にある (rebase / cherry-pick で入った。🚨 git cherry の patch-id は空白の違いを無視する)
 //
@@ -68,6 +70,8 @@ type Verdict struct {
 	// Ask は、自動では消さないが人が「消す」(Discard)・「残す」(Hold) を決められるもの (issue 553)。消さない理由が
 	// 「取り込む先に無い commit がある」か「記録に無いカード」だけで、ほかの止め具 (session・プロセス・未 commit の変更・lock 等) を全部通ったもの
 	Ask bool `json:"ask,omitempty"`
+	// Tmp は消す前に退避する tmp/ の無視されたファイル (worktree からの相対。Inputs.DisposableTmp の repo だけ。issue 552)
+	Tmp []string `json:"tmp,omitempty"`
 }
 
 // Removable は worktree を消してよいか。
@@ -87,6 +91,8 @@ type Inputs struct {
 	// Projects は transcript の置き場 (~/.claude/projects)。JobsDir は claude の job の置き場 (~/.claude/jobs。空なら job を見ない)
 	Projects string
 	JobsDir  string
+	// DisposableTmp は worktree の直下の tmp/ の無視されたファイルを使い捨て (退避してから消してよい) とみなす repo の名前 (設定の disposable_tmp。issue 552)
+	DisposableTmp map[string]bool
 }
 
 // Owned は起動の記録の 1 行のうち、片付けに要る欄 (live.Owned から作る。この package は live を知らない)。
@@ -251,7 +257,7 @@ func judge(ctx context.Context, in Inputs, repoName, repo string, w worktree, al
 			return keep("その下に別の worktree がある (%s)", o.Path)
 		}
 	}
-	st, err := readStatus(ctx, w.Path)
+	st, err := readStatus(ctx, w.Path, in.DisposableTmp[repoName])
 	if err != nil {
 		return keep("git status を読めない: %v", err)
 	}
@@ -263,6 +269,7 @@ func judge(ctx context.Context, in Inputs, repoName, repo string, w worktree, al
 	case len(st.ignored) > 0:
 		return keep("消すと戻せない無視されたファイルがある (%s)", clip(st.ignored))
 	}
+	v.Tmp = st.tmp
 	base, baseName, err := trunk(ctx, repo)
 	if err != nil {
 		return keep("取り込む先を読めない: %v", err)
@@ -274,12 +281,12 @@ func judge(ctx context.Context, in Inputs, repoName, repo string, w worktree, al
 	switch {
 	case orphan:
 		v.Ask = true
-		return keep("%s (%s)", orphanWhy, why)
+		return keep("%s (%s)%s", orphanWhy, why, tmpNote(v.Tmp))
 	case !merged:
 		v.Ask = true
-		return keep("%s", why)
+		return keep("%s%s", why, tmpNote(v.Tmp))
 	}
-	v.Why = why
+	v.Why = why + tmpNote(v.Tmp)
 	switch {
 	case w.Branch == "":
 		v.Action, v.BranchWhy = RemoveTree, "ブランチが無い (detached HEAD)"

@@ -4,6 +4,7 @@ package wtclean
 // その直後に消して、消えたかを確かめる (検査と実行の距離を 1 個の処理時間に縮める。sandbox-real-destructive-test-apis)。
 // 窓は 0 にできないので、git の側にも止め具を残す:
 //   - worktree は `git worktree remove` を --force なしで呼ぶ (未 commit の変更・追跡していないファイルがあれば git が断る)。
+//     使い捨てと決めた tmp/ のファイル (Verdict.Tmp) は、その前に状態の置き場へ退避する (stash.go。issue 552)
 //     Claude Code が残した lock は、判定し直して外してよいと見た直後に外し、消せなければ同じ理由で掛け直す
 //   - ブランチは `git update-ref -d <ref> <確かめた先端>` で消す (取り直してから先端が動いていれば git が断る)
 // 消すと worktree の HEAD とブランチの reflog も消える。reflog にしか無い commit (PG が rebase・amend・reset で外した前の版) は、
@@ -84,16 +85,18 @@ func cleanOne(ctx context.Context, in Inputs, t Verdict, opt Options) Result {
 	if err := keepReflog(ctx, v); err != nil {
 		return Result{Verdict: v, Outcome: Failed, Detail: "reflog にしか無い commit を残せないので消さない: " + err.Error()}
 	}
-	if err := removeWorktree(ctx, v); err != nil {
+	dest, err := removeTree(ctx, v, opt.StateDir)
+	if err != nil {
 		return Result{Verdict: v, Outcome: Failed, Detail: err.Error()}
 	}
+	stashed := stashedNote(len(v.Tmp), dest)
 	if v.Action != RemoveAll {
-		return Result{Verdict: v, Outcome: TreeRemoved, Detail: v.BranchWhy}
+		return Result{Verdict: v, Outcome: TreeRemoved, Detail: v.BranchWhy + stashed}
 	}
 	if err := deleteBranch(ctx, in, v, opt.StateDir); err != nil {
-		return Result{Verdict: v, Outcome: TreeRemoved, Detail: "ブランチは消せなかった: " + err.Error()}
+		return Result{Verdict: v, Outcome: TreeRemoved, Detail: "ブランチは消せなかった: " + err.Error() + stashed}
 	}
-	return Result{Verdict: v, Outcome: Removed, Detail: v.Why}
+	return Result{Verdict: v, Outcome: Removed, Detail: v.Why + stashed}
 }
 
 // run0 は消す側の git。rc が 0 でなければ失敗 (gitx.Run は rc 1 を結果の意味として返すので、そのまま使うと失敗を見落とす)。

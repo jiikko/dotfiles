@@ -138,7 +138,7 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 	if !resumed {
 		_ = dispatcher.StopRequested(dir) // 前の --stop が dispatcher の居ない間に置いた印は捨てる (起動した途端に止まらないように)
 	}
-	d := newDispatcherFor(dir, projects, repos, pm.Repo, pmOff, *limit, cl, e2e)
+	d := newDispatcherFor(dir, projects, repos, pm.Repo, pmOff, *limit, cl, e2e, pm.DisposableTmp)
 	d.Record = eventSink(dir, stdout, stderr)
 	// 予定 (issue 550)。e2e モードの偽の置き場と、1 回だけの dispatcher では回さない (--once の後に子を置き去りにする)
 	if e2e == nil && !*once {
@@ -406,8 +406,8 @@ func stopDispatcher(ctx context.Context, dir, projects string, repos map[string]
 	if err != nil {
 		return err
 	}
-	d := newDispatcherFor(dir, projects, repos, pmRepo, false, 1, cl, e2e) // 止めるだけ (PM は PMOff でも止める)
-	d.Record = eventSink(dir, stdout, stdout)                              // dispatcher の役を取った (lock を持つ) ので、出来事を書いてよい
+	d := newDispatcherFor(dir, projects, repos, pmRepo, false, 1, cl, e2e, nil) // 止めるだけ (PM は PMOff でも止める。worktree は片付けない)
+	d.Record = eventSink(dir, stdout, stdout)                                   // dispatcher の役を取った (lock を持つ) ので、出来事を書いてよい
 	sayClaude(d, cl)
 	// 自分で止めている間に次の --stop が来たら、その --stop は結果のファイルを読む。止めきれなければ止まるまで止め直す
 	// (画面の待ちが切れて閉じても、このプロセスは別のプロセスグループで続ける)
@@ -492,6 +492,8 @@ type pmConfig struct {
 	IntegratorMode string
 	// Review は設定の review (敵対的レビューの担い手。空なら claude。514)
 	Review string
+	// DisposableTmp は設定の disposable_tmp の repo の名前 (閉じたカードの worktree の片付けで tmp/ を使い捨てとみなす。552)
+	DisposableTmp map[string]bool
 }
 
 // resolvePM は PM を起こさないかを決める (resolveOnOff の pm 版)。
@@ -526,7 +528,9 @@ func userSettingsPath(home string) string {
 }
 
 // newDispatcherFor は dispatcher を組む。e2e が nil なら本物 (claude の実体 cl を起動する)、あれば偽の PG と偽の一覧 (claude を起動しない。PM は起こさず FakePM が役を持つ)。
-func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo string, pmOff bool, limit int, cl dispatcher.Claude, e2e *dispatcher.E2E) *dispatcher.Dispatcher {
+// disposable は worktree の片付けで tmp/ を使い捨てとみなす repo の名前 (設定の disposable_tmp。552)。
+func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo string, pmOff bool, limit int, cl dispatcher.Claude, e2e *dispatcher.E2E,
+	disposable map[string]bool) *dispatcher.Dispatcher {
 	if e2e != nil {
 		return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: e2e.Launcher(), List: e2e.List, ListAll: e2e.ListAll, Now: time.Now,
 			Runner: dispatcher.ExecRunner{}, FakePM: e2e.FakePM, PMOff: pmOff} // テストの係は本物のシェル (偽の worktree で走る)。失敗の要約 (haiku) はしない
@@ -538,7 +542,7 @@ func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo stri
 		return agents.List(ctx, agents.ExecRunner(cl.Path), jobs)
 	}
 	// 閉じた・削除したカードの worktree を見る・片付ける口 (issue 553)。材料は pro-con worktree clean と同じ集め方
-	wt := worktreeOps{worktreeEnv{dir: dir, repos: repos, sessions: list, procCwds: lsofCwds, projects: projects, jobsDir: jobs}}
+	wt := worktreeOps{worktreeEnv{dir: dir, repos: repos, disposableTmp: disposable, sessions: list, procCwds: lsofCwds, projects: projects, jobsDir: jobs}}
 	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{Claude: cl.Path, UserSettings: userSettingsPath(home)},
 		PMRepo: pmRepo, PMGuide: pmGuide, PMOff: pmOff, IntegratorGuide: integratorGuide,
 		// e2e の偽の PG は codex を呼ばないので、上の e2e の形には渡さない (514)

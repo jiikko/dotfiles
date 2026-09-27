@@ -42,6 +42,8 @@ bin/pro-con monitor [--once] [--interval 1m]  # 見張り (issue 475)。dispatch
 bin/pro-con worktree clean [--yes]  # 閉じたカードの PG の worktree を片付ける (issue 492)。既定は一覧 (消してよい / 消さないと理由) を出すだけ。--yes で 1 個ずつ、記録・session・git を取り直して判定し直してから消す。
                          # 消すのは: カードが完了して PG を止め終え、その中に session もプロセス (lsof の cwd) も居らず、未 commit の変更・skip-worktree の印・下の worktree が無く、
                          # 無視されたファイルが空のディレクトリか autobuild の産物だけで、先端が origin/master (origin/HEAD は見ない) の祖先か、git cherry が全部 - で空白まで同じ patch (patch-id --verbatim) があるもの。
+                         # 設定の disposable_tmp の repo では、worktree の直下の tmp/ の無視されたファイルは残す理由にせず、状態の置き場の wtclean-tmp/<repo>/<名前>/ へ退避してから消す
+                         # (結果の行に退避した先を出す。30 日を過ぎた退避は --yes のたびに消す。issue 552)。tmp/ の外の無視されたファイル (.env 等) は今までどおり残す。
                          # reflog にしか無い取り込んでいない版は refs/pro-con/removed/<名前>/<sha> に残してから消す (git for-each-ref refs/pro-con/removed で見る)。
                          # ブランチも消すのは名前が worktree-pc-<カード> でほかの worktree が使っていないときだけ (`git update-ref -d` に確かめた先端を渡す)。
                          # worktree とブランチが消えたカードは session も消す (issue 497): 起動の記録か片付けの印にある session の transcript
@@ -281,7 +283,13 @@ pm_repo    = "~/dotfiles"   # PM を起動する repo (PM はその下の worktr
 integrator = "on"            # 取り込みの係 (issue 487) を起こすか。"off" なら起こさない (レビューの列は人か外の Claude が扱う)。dispatcher の --integrator=on|off が勝つ
 pm         = "on"           # "off" なら dispatcher は PM を起動も再開もしない (依頼の列のカードはそのまま置き、人か外の Claude が PM をする)
 review     = "claude"       # 敵対的レビューの担い手 (issue 514): "claude" (既定。PG が自分のサブエージェントで回す) / "codex" (PG が codex exec で回す)
+disposable_tmp = ["~/dotfiles"] # worktree clean で tmp/ の無視されたファイルを使い捨て (退避してから消す) とみなす repo (issue 552)。書かなければ ~/dotfiles、[] ならどれも見なさない
 ```
+
+- **`disposable_tmp`** は repo ごとに人が書く。tmp/ を使い捨てとするのは dotfiles の決まり (CLAUDE.md「一時ファイルの配置」) で、ほかの repo の tmp/ には
+  本物のデータがありうる。repo 側の印 (追跡するファイル) にしないのは、PG が自分のブランチで印を足せてしまうため。
+  退避は `<状態の置き場>/wtclean-tmp/<repo>/<worktree の名前>/tmp/...` (同じ名前が既にあれば `<名前>.2`) に置き、作ってから 30 日を過ぎたものを `worktree clean --yes` が消す
+  (tmp/ を消す前に「issue や doc が指しているパスでないか」を機械では確かめられないので、30 日のあいだは退避から戻せるようにして代えている)
 
 - **敵対的レビューの担い手 (`review`)** は `pro-con config set review claude|codex` と設定画面 (s) の「設定」のタブでも変えられ、そちらが config.toml より勝つ
   (設定 > config.toml > 既定 claude。`pro-con config show` に今の値と出どころ・codex の実体が出る)。codex のとき dispatcher は PG の起動の指示に

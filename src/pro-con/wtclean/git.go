@@ -67,10 +67,20 @@ func listWorktrees(ctx context.Context, repo string) ([]worktree, error) {
 type status struct {
 	changes []string
 	hidden  []string // skip-worktree / assume-unchanged の印 (sparse-checkout も付ける)。変更しても git status に出ない
-	ignored []string // 無視されたファイルのうち、作り直せないもの (rebuildable でないもの)
+	ignored []string // 無視されたファイルのうち、作り直せないもの (rebuildable でないもの。disposable なら tmp/ の下のものを除く)
+	tmp     []string // 無視されたファイルのうち、worktree の直下の tmp/ の下のもの (disposable のときだけ。退避してから消す。issue 552)
 }
 
-func readStatus(ctx context.Context, wt string) (status, error) {
+// tmpDir は使い捨てとみなす無視されたファイルの置き場 (worktree の直下だけ。src/x/tmp/ は含めない)。
+const tmpDir = "tmp"
+
+func underTmp(rel string) bool {
+	return rel == tmpDir || strings.HasPrefix(rel, tmpDir+string(filepath.Separator))
+}
+
+// readStatus は worktree の状態を読む。disposable なら worktree の直下の tmp/ の無視されたファイルを ignored ではなく tmp に分ける
+// (repo の設定 disposable_tmp。🚨 tmp/ の外の .env 等と、無視されていない (追跡していない) tmp/ のファイルは今までどおり残す側)。
+func readStatus(ctx context.Context, wt string, disposable bool) (status, error) {
 	out, _, err := gitx.Run(ctx, wt, "--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching")
 	if err != nil {
 		return status{}, err
@@ -90,7 +100,11 @@ func readStatus(ctx context.Context, wt string) (status, error) {
 				return status{}, err
 			}
 			for _, f := range files {
-				if rel := filepath.Join(path, f); !rebuildable(wt, rel) {
+				switch rel := filepath.Join(path, f); {
+				case rebuildable(wt, rel):
+				case disposable && underTmp(rel):
+					st.tmp = append(st.tmp, rel)
+				default:
 					st.ignored = append(st.ignored, rel)
 				}
 			}
@@ -118,7 +132,7 @@ func readStatus(ctx context.Context, wt string) (status, error) {
 
 // rebuildable は、消しても作り直せる無視されたファイルか: bin/lib/go_autobuild.zsh の作業ファイル (.autobuild.*) と、
 // .autobuild.built の隣に置いた実行ファイル (autobuild が作ったバイナリ)。それ以外 (tmp/ のレポート・.env・settings.local.json・
-// 入れ子の repo の中身) は作り直せないとみなす。
+// 入れ子の repo の中身) は作り直せないとみなす (tmp/ は作り直せないが、使い捨てと決めた repo では退避してから消す。readStatus)。
 func rebuildable(wt, rel string) bool {
 	base := filepath.Base(rel)
 	if strings.HasPrefix(base, ".autobuild.") {
