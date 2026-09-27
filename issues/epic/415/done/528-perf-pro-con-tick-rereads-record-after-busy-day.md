@@ -88,3 +88,10 @@ bench は `BenchmarkLoadBusyDay` (store) / `BenchmarkTickBusyDay` (dispatcher) /
 
 - ユーザーの判断で done (issue-sync)。直しの本体 (`8282a8cc`: Tick 36.9ms → 2.7ms / refresh 2.8ms → 0.28ms) は master にある。
   上の「残り」の 2 つ (残りの 2.7ms は今の大きさでは見送り / 本物の session・PM が居るときの Tick は未計測) は見送りとして残す。記録がまた大きくなったら測り直す
+
+## 取り込み後 (2026-09-27)
+
+- 解析の回数 `loadDecodes` は本番では足すだけで読むのがテストだけだったので、unused のゲート (staticcheck -tests=false) が赤だった。
+  解析のたびに呼ぶ `onDecode` (本番は何もしない関数) に替え、テストが差し替えて数える
+  (「fix(pro-con): store の解析回数をテスト用の数ではなく差し替えられる hook にする」)。
+  キャッシュに当たる条件を常に偽にする変異で TestLoadResultIsNotShared が red

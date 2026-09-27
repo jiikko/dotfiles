@@ -42,3 +42,8 @@
     (選んだ Enter の 2 度押しで越えないため。docs/glogx-ui-guide.md §8)。epic は子にカードがあるときも確かめる
   - 突き合わせは `setSnap` で片付けたカードを落とす前の Snapshot から作る (`ui/picker.go` の `issueLinks`)。削除中のカードは出さない
   - テスト: `ui/picker_test.go` の `TestPickerShowsLinkedCards` / `TestPickerAsksBeforeAddingLinkedIssue` / `TestPickerAsksForEpicWithLinkedChildren`
+
+## 取り込み後 (2026-09-27)
+
+- 見本の書き出し `src/pro-con/samples/537-picker-cards/gen.sh` が LINT_DIRS の外で、`test_enumerations_are_derived.sh` が赤だった。
+  別のセッションが `src/pro-con` を LINT_DIRS に登録して直した (「fix(scripts): src/pro-con を LINT_DIRS に登録する」)

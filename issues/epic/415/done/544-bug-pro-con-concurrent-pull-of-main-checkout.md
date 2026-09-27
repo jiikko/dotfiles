@@ -42,3 +42,9 @@
     変異: lock を取らずに直接 pull する → 1 つ目が red / checkout でない所の断りを外す → 3 つ目が red
   - 敵対的レビューは省いた (lock を取ってから 1 コマンドを走らせるだけの薄いラッパーで、排他そのものは lockman が持つ)
 
+## 取り込み後 (2026-09-27)
+
+- CI の rest の runner には Go が無く、`bin/lockman` を初回にビルドできず `tests/scripts/test_pull_main_checkout.sh` が
+  「lock を持つ側が始まらない」で落ちていた (run 36287059671)。lockman が動かず go も無いときだけ exit 77 (skip) にした
+  (「fix(ci): Go の無い runner で pull_main_checkout のテストを skip にする」)。go があるのに lockman が動かないときは従来どおり赤
+  (LM=/usr/bin/false の変異で go 無し = 77 / go あり = ✗ を確認)。CI 上の結果は未確認
