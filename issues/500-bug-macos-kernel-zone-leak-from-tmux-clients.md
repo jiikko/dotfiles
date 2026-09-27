@@ -86,6 +86,89 @@ attach が無ければほぼ漏れない。何が漏らしているか (tmux の
 - 在庫の推移を数日見る。横ばいのままなら、当面の再起動は不要
 - `make test` の段ごとに前後の在庫を取る (tests/tmux だけ・zshrc だけ・Go だけ)。増える段が分かれば、その段の中の 1 本まで絞る (本番の tmux は触らない。隔離サーバのテストはそのまま)
 
+## 別のマシンで検証する手順 (2026-09-27)
+
+再起動しやすい別のマシンで続ける。🚨 本番の tmux サーバは触らない (測るのは隔離した `-L` のサーバだけ。kill するのも自分が立てたものだけ)。
+
+### 0. 記録の書式 (測るたびに「進捗」へ 1 節ずつ足す)
+
+```
+### YYYY-MM-DD HH:MM <マシン名>: <何を測ったか>
+- 環境: macOS <sw_vers の ProductVersion / BuildVersion> / <機種 (sysctl -n hw.model)> / tmux <tmux -V> / 起動 <sysctl -n kern.boottime>
+- 在庫の前後: <前> → <後> (差 <±N>)。同じ長さの何もしない時間の差: <±M> (揺れの幅として並べる)
+- 動いていたもの: アクティビティモニタ (有 / 無・CPU)、pro-con (PG の数)、ほかに重いもの
+- 結論: 揺れの範囲 / 漏れた (1 回あたり約 N 個) / 判定できない (理由)
+```
+
+- 在庫は `zprint | awk '$1=="data.kalloc.1024"{print $7}'` (7 列目 = inuse)。10 秒で ±100 程度揺れるので、**差は必ず「何もしない同じ長さの時間」の差と並べる**
+- 「漏れた」と書くのは、差が揺れの幅の数倍あり、同じ測定を 2 回以上して同じ向きに出たときだけ
+
+### 1. 何もしない時間の増え方 (揺れの幅と、放っておいても漏れるか)
+
+再起動の直後と、普段使いの状態で、1 分おきに 10 分読む:
+
+```sh
+for i in $(seq 10); do printf '%s %s\n' "$(date +%T)" "$(zprint | awk '$1=="data.kalloc.1024"{print $7}')"; sleep 60; done
+```
+
+### 2. attach したクライアントを持つ隔離サーバへ tmux コマンドを送る (9/26 の表の再現)
+
+下のスクリプトを `./tmp/zm500.sh` に置いて `bash ./tmp/zm500.sh 2000` (引数は回数)。隔離できていなければ何もせずに止まり、最後に自分が立てたサーバだけを止めて一時 dir を消す。
+2026-09-27 にこの Mac で試しに 200 回流して動くことを確かめた (+189。揺れの範囲の可能性があるので結論には使わない)。
+アクティビティモニタを起動した状態 / 止めた状態の両方で 2 回ずつ回し、`/usr/bin/true` の exec 2,000 回 (`for _ in $(seq 2000); do /usr/bin/true; done`) も対照として同じ回数測る。
+
+```bash
+#!/bin/bash
+# 500: 隔離した tmux サーバに pty で attach したクライアントを 1 つ置き、tmux コマンドを N 回送って data.kalloc.1024 の差を出す
+set -u
+unset TMUX TMUX_PANE
+N=${1:-2000}
+inuse() { zprint 2>/dev/null | awk '$1=="data.kalloc.1024"{print $7}'; }
+d=$(mktemp -d); export TMUX_TMPDIR=$d
+T() { tmux -L zm500 -f /dev/null "$@"; }
+T new-session -d -s zm
+# 隔離の実証: このサーバには zm しか居ない (本番のセッションが見えたら止める)
+[ "$(T ls -F '#S')" = zm ] || { echo "隔離できていない: $(T ls)"; exit 1; }
+python3 -c '
+import os,pty,sys,time
+pid,fd=pty.fork()
+if pid==0: os.execvp("tmux",["tmux","-L","zm500","attach","-t","zm"])
+end=time.time()+600
+while time.time()<end:
+    try: os.read(fd,65536)
+    except OSError: break
+' & att=$!
+for _ in $(seq 100); do [ "$(T list-clients | wc -l | tr -d " ")" -ge 1 ] && break; sleep 0.1; done
+echo "clients=$(T list-clients | wc -l | tr -d ' ')"
+a=$(inuse); for _ in $(seq "$N"); do T display -p x >/dev/null; done; b=$(inuse)
+echo "attach あり display -p ${N} 回: $((b-a))"
+T kill-server; kill "$att" 2>/dev/null; wait "$att" 2>/dev/null; rm -rf "$d"
+```
+
+効いている条件を絞るなら、`new-session` の後に `T set -g status off` / `T set -g status-interval 0` を足した版と比べる (「次に調べること」の 1 つ目)。
+
+### 3. make test を段ごとに測る (9/27 に増えたのは make test の間)
+
+段ごとに、前後の在庫と、同じ長さの何もしない時間の差を取る。対象は root の Makefile の
+`test-tmux` / `test-zshrc` / `test-bats` / `test-nvim` / `test-setup` / `test-go` / `test-discovered-rest`:
+
+```sh
+z() { zprint | awk '$1=="data.kalloc.1024"{print $7}'; }
+for t in test-tmux test-zshrc test-bats test-nvim test-setup test-go test-discovered-rest; do
+  a=$(z); s=$(date +%s); make "$t" > "tmp/zm-$t.log" 2>&1; rc=$?; b=$(z); e=$(( $(date +%s) - s ))
+  printf '%s rc=%s %ss 差 %s\n' "$t" "$rc" "$e" "$((b-a))"
+done
+```
+
+増える段が見つかったら、その段のテストを 1 本ずつ同じ形で測り、1 本まで絞る。
+
+### 4. どの経路が確保しているかを見る (zone logging。重いので最後)
+
+- 起動引数 `zlog=data.kalloc.1024` で、その zone の確保の呼び出しの流れをカーネルが記録する。SIP を切り (復旧モードで `csrutil disable`)、
+  `sudo nvram boot-args="zlog=data.kalloc.1024"` で再起動する。終わったら `sudo nvram -d boot-args` と `csrutil enable` で戻す
+- 🚨 **未確認**: 記録の読み出し方は確かめていない。この Mac (15.7.7) には `zlog` のコマンドが無く、`zprint` だけがある。
+  読み出しには Kernel Debug Kit と lldb のマクロが要るはずで、手順は実機で確かめてから本文に書く
+
 ## 関連
 
 - pro-con の復旧の 482 / 483 / 487 (このクラッシュで見つかった)
