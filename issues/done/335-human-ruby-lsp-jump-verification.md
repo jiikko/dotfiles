@@ -2,7 +2,7 @@
 
 期限: 2026-09-15
 
-関連: [332](done/332-ruby-lsp-selection-by-probe.md) / [334](done/334-ruby-references-call-site-index.md)
+関連: [332](332-ruby-lsp-selection-by-probe.md) / [334](334-ruby-references-call-site-index.md)
 
 **前提: nvim を一度終了して開き直すこと。** `vim.lsp.enable` は起動時に走るので、
 開きっぱなしのインスタンスは古い設定のまま動く（今日それで 2 往復した）。
@@ -153,3 +153,9 @@ statusline** で、そこに出ていた `utf-8` / `%d+:%d+` は**既定の rule
 
 `gd`（定義ジャンプ）は `lsp_definitions` = LSP の応答だけなので md は構造的に出ない。
 `gd` の精度の話は上の 2026-09-10 節（名前一致で AR のメソッドが外れる）が正本で、今回とは別件。
+
+## 2026-09-27: 未確認のまま閉じる (人の判断)
+
+pro-con カード C-001 で、人が「もう使っていない / 不要」と判断した。残っていた人の確認項目
+(`<C-k>` の体感・rg の結果の実用性・lualine の表示・`:DotfilesRefsStats` での sidecar 判断・
+`gd` の Rails 外れの許容判断) は**確認していない**。OK と確かめて閉じたのではない。

@@ -337,6 +337,6 @@ on_exit 時点の client 消失 (削除は後段の schedule) / フォールバ�
 ## 関連
 
 - [332](332-ruby-lsp-selection-by-probe.md) — 実装本体。「未解決」節がこの issue の出典
-- [335](../335-human-ruby-lsp-jump-verification.md) — 実 project での動作確認 (人間のタスク)
+- [335](335-human-ruby-lsp-jump-verification.md) — 実 project での動作確認 (人間のタスク)
 - [`docs/nvim-ruby-lsp.md`](../../docs/nvim-ruby-lsp.md) — 触る前に読む前提。`:RubyLspInfo` /
   `:RubyLspReset` の入口もここ

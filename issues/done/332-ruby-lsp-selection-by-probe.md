@@ -69,7 +69,7 @@ done
 - [x] `tests/nvim/lsp_ruby_server_select_check.lua` を新しい軸へ書き直す
 - [x] 変異検証 (15 本中 14 本 red。下記)
 - [x] 敵対的レビュー (read-only / opus) と、その指摘への対応
-- [x] 実 project (ubiregi-server) で attach 先が ruby_lsp になることを確認 → [335](../335-human-ruby-lsp-jump-verification.md) で追跡 (期限 2026-09-15)
+- [x] 実 project (ubiregi-server) で attach 先が ruby_lsp になることを確認 → [335](335-human-ruby-lsp-jump-verification.md) で追跡 (期限 2026-09-15)
 
 ## 進捗
 
