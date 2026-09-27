@@ -46,6 +46,8 @@ dogfooding (2026-09-27) で分かったこと。550 の予定で worktree clean 
 - 確かめたこと (単体テスト): `wtclean/decide_test.go` (本物の git を sandbox の中で。Ask の判定・Discard・見た後に変わったものを消さない・Hold・Unlanded・Settle)、
   `dispatcher/worktree_test.go` (close を除ける・確かめられないときも除ける・取り込まない終わり方で片付け・削除で片付け・止め終えた後の見直し)、
   `ui/settingswt_test.go` (一覧と理由・D 2 回 / L・見ているだけの画面は決めない)。新しいテストは mutation (11 本) で全部落ちるのを確かめた
+- `make -C src/pro-con test` (go test -race ./...) は全パッケージ ok。lint は `CGO_ENABLED=0 make -C src/pro-con lint` で 0 件
+  (cgo ありだと golangci-lint のビルドが clang と macOS 27 SDK の版ずれで落ちる = この変更の前の段階。errorlint 1 件は commit「close の検査のエラーを %w で包む」で直した)
 - 残り: 実物の dispatcher と repo での確かめはしていない (今ある残り物 C-004 / C-009 / C-020 / pc-c-026 等をディスクのタブで消すのは人が行う)。
   削除したカードの session・transcript は片付けない (wtclean の session の片付けは「記録に無いカードの session」を残す。前からの挙動)
 
