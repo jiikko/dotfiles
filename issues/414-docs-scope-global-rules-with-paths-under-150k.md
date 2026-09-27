@@ -1,7 +1,5 @@
 # 414 (docs): global rule の常時読み込みを減らし、上限 150k 字までの余裕を取り戻す
 
-> 🚨 **担当中: dotfiles (kojiM3MBP, issue 414 の D)**（2026-09-27〜）
-
 起票日: 2026-09-24
 
 ## 概要
@@ -178,6 +176,15 @@ Read なしでも YES になった（索引を見て答えていた）。rule �
 - 取りこぼし: `move-report-conclusions-to-issues.md` の発動点 (`./tmp` にレポートを書き出した) は issues/ の無い repo でも起きるが、
   そこでは届かなくなる。移し先の半分 (コードのコメント) は常時読み込みの `pending-issue-rationale-in-code.md` と
   CLAUDE.md「一時ファイルの配置」が持っているので受け入れた
+- 注入の確認 (push + `~/dotfiles` pull の後。`claude -p --model haiku --setting-sources '' --settings <SessionStart だけの settings>`。
+  Stop hook を外さないと応答が差し戻しで上書きされる): 3 本の本文にしか無い語 (`ccd_session_mgmt` / `prompt_issue_NNN.md` /
+  `probe-dex6.js`) が、`~/dotfiles` では 3 つとも YES、issues/ の無い dir では 3 つとも NO。通常の user 設定で issues/ の無い dir を
+  起こすと、常時読み込みの rule の語 (`poing`) は YES、3 本の語は NO (常時読み込みから外れた)
+- `~/.claude/rules/` に残った 3 本の古い link (移動元を指す dangling) は、指し先が `~/dotfiles/_claude/rules/<同名>` で実在しないことを
+  確かめてから、その 3 本だけ消した (他のマシンでは次の `./setup.sh` が消す)
+- `make test` は rc=2。落ちたのは 3 本で、うち `test_issue_links_valid.sh` (過去の issue 17 本が旧パスをリンクしていた) は張り直して緑。
+  残る 2 本は今回の変更と無関係で、master でも同じように落ちる: `test_issue_numbers_unique.sh` (番号 563 の重複) /
+  `tests/nvim/test_cheatsheet.sh` (このマシンに tree-sitter の parser が揃っておらず、実行のたびにダウンロードの表示が混ざる)
 ### 残タスク
 
 - [ ] obaket のセッションの常時読み込み合計の実測（このマシンに my-products の checkout が無く測れなかった。上の 141.8k は
