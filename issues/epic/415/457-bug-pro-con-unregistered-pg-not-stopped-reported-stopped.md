@@ -111,6 +111,8 @@ PG の session が pro-con の記録 (sessions.json) に取り込まれなかっ
   カードの adopt の名前を外す (`TestFailedResumeAdoptsNewSessionByCwd`) / 役の adopt の名前を外す (`TestPMResumeAdoptNeedsName`) / loose を前の形に戻す (`TestShutdownNamesUnadoptedResume`)
 - [x] codex (gpt-6-luna, effort high) の敵対的レビュー: 具体的な発火条件のある指摘なし。未確認リスクとして「再開の `-n` が本物の一覧の name に出るか」は
   偽の一覧でしか見ていない (488 の実測に依る) を挙げた
+- [x] make test (`pro-con card run`、d3e01494): rc=0。依頼したときの cwd が `src/pro-con` だったので走ったのは pro-con の `make test`
+  (= `go test -race ./...`) で、23 パッケージすべて ok (dispatcher 27s)。repo 全体の `make test` (lint / runtime / 他の src) は走らせていない (変更は pro-con の Go だけ)
 - 未確認のリスクとして残すもの (直す根拠が無い)
   - 短い id が別の session を指す形は、その session が生きている間は終了・閉じるが名指しで失敗し続け、カードも再開できない (fail closed。人が確かめて claude stop するまで)
   - 488 より前の版の dispatcher が始めた再開 (名前を渡していない) の結果を、この版が取り込む形は名前で当たらない (dispatcher の入れ替え 505 の途中だけ。名指しに回る)
