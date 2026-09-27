@@ -39,10 +39,29 @@ func stopFromOutside(t *testing.T, r ExecRunner, dir, runID string) (rc, child i
 	select {
 	case <-done:
 	case <-time.After(20 * time.Second):
+		// CI でだけ 10 回に 1 回ほど落ちる (手元では 55 回で 0 回)。原因が見えるまで、諦める時点のグループの様子を残す
+		t.Logf("20 秒たっても返らない。bash=%d child=%d・見張りの判定 groupStopped=%v。bash のグループと child の ps:\n%s",
+			bash, child, groupStopped([]int{bash}), psOf(bash, child))
 		_ = syscall.Kill(-bash, syscall.SIGKILL)
 		t.Fatal("グループが止まったまま、実行が終わらない")
 	}
 	return rc, child, err
+}
+
+// psOf は pgid のグループに居るプロセスと pid のプロセスの ps の行 (pid pgid ppid stat command)。
+func psOf(pgid, pid int) string {
+	out, err := exec.Command("ps", "-A", "-o", "pid=,pgid=,ppid=,stat=,command=").Output()
+	if err != nil {
+		return "ps が失敗した: " + err.Error()
+	}
+	var b strings.Builder
+	for _, l := range strings.Split(string(out), "\n") {
+		f := strings.Fields(l)
+		if len(f) >= 2 && (f[1] == strconv.Itoa(pgid) || f[0] == strconv.Itoa(pid)) {
+			b.WriteString(l + "\n")
+		}
+	}
+	return b.String()
 }
 
 // 実行のグループが丸ごと止まった (SIGSTOP) ら、上限 (1 時間) を待たずに止め直し、止まっていたことを失敗として返す。止まった子も残さない。
