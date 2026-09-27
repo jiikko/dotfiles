@@ -24,8 +24,7 @@ func (d *Dispatcher) listing(now time.Time) (list, quiet bool) {
 	if !quiet || !d.listedQuiet || d.listedAt.IsZero() {
 		return true, quiet
 	}
-	age := now.Sub(d.listedAt)
-	return age < 0 || age >= d.quietListEvery(), quiet // 時計が戻ったら取る
+	return now.Sub(d.listedAt) >= d.quietListEvery(), quiet
 }
 
 func (d *Dispatcher) quietListEvery() time.Duration {
@@ -39,6 +38,8 @@ func (d *Dispatcher) quietListEvery() time.Duration {
 //
 // 一覧を使う経路 (tick の register 〜 collectDoing) が扱うのは、完了していないカード・止める途中 / 削除待ちのカード・
 // 起動の結果待ち・生きている (または起こし直す) 役だけ。どれも無ければ、一覧を間引いても遅れるものは無い。
+// 生きている役は、知らせる物が無くても暇にしない: tellRole が一覧で役の入力待ち (人への知らせ) と落ちた時刻 (DeadSince。終了の
+// stopRole が自動の再開を待つかをこれで決める) を見張っている。間引くとどちらも最長 QuietListEvery 遅れる (issue 559 の敵対的レビュー 2 周目)。
 func (d *Dispatcher) quiet() bool {
 	st, err := store.Load(d.Dir)
 	if err != nil {

@@ -2,6 +2,8 @@ package dispatcher
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -21,6 +23,11 @@ type quietRig struct {
 func newQuietRig(t *testing.T, cards ...card.Card) *quietRig {
 	t.Helper()
 	r := &quietRig{dir: t.TempDir(), now: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)}
+	for i := range cards { // 完了した直後 (Since が zero だと、最初の Tick で書庫へ移って記録から消える)
+		if cards[i].Since.IsZero() {
+			cards[i].Since = r.now
+		}
+	}
 	saveCards(t, r.dir, cards)
 	r.d = &Dispatcher{Dir: r.dir, Limit: 1, Now: func() time.Time { return r.now }, Sleep: func(time.Duration) {},
 		List: func(context.Context) ([]agents.Session, error) { r.lists++; return nil, nil }}
@@ -84,7 +91,9 @@ func TestQuietAfterBusyListsOnceMore(t *testing.T) {
 	if !r.tickAt(t, 3*time.Second) {
 		t.Fatal("忙しい間の Tick で一覧を取らない")
 	}
-	saveCards(t, r.dir, []card.Card{doneCard("C-001")})
+	done := doneCard("C-001")
+	done.Since = r.now
+	saveCards(t, r.dir, []card.Card{done})
 	if !r.tickAt(t, 3*time.Second) {
 		t.Fatal("暇になった最初の Tick で一覧を取り直さない (前の一覧は忙しい間の鮮度)")
 	}
@@ -127,7 +136,7 @@ func TestQuietConditions(t *testing.T) {
 		{"起動の結果待ち", func(c *card.Card) { c.Launching = "再開" }, nil, false},
 		{"PM を止めてある", nil, &store.PMState{Session: "pm1", Stopped: true}, true},
 		{"PM が居ない", nil, &store.PMState{}, true},
-		{"PM が生きている (または起こし直す)", nil, &store.PMState{Session: "pm1"}, false},
+		{"PM が生きている (知らせる物が無くても、入力待ちと落ちたのを一覧で見張る)", nil, &store.PMState{Session: "pm1"}, false},
 		{"PM の起動の結果待ち", nil, &store.PMState{Launching: "起動"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -146,6 +155,45 @@ func TestQuietConditions(t *testing.T) {
 				t.Fatalf("quiet = %v (%v のはず)", got, tc.quiet)
 			}
 		})
+	}
+	// 取り込みの係も同じに見る (役のループから外れていない)
+	t.Run("取り込みの係の起動の結果待ち", func(t *testing.T) {
+		r := newQuietRig(t, doneCard("C-001"))
+		r.d.PMRepo, r.d.PMOff = "/repo", true
+		if err := store.SaveRole(r.dir, store.IntegratorStateFile, store.PMState{Launching: "起動"}); err != nil {
+			t.Fatal(err)
+		}
+		if r.d.quiet() {
+			t.Fatal("取り込みの係の起動の結果待ちを暇と読んだ")
+		}
+	})
+	// 読めない記録は暇と言わない (一覧を取る側に倒す)
+	t.Run("記録を読めない", func(t *testing.T) {
+		r := newQuietRig(t, doneCard("C-001"))
+		if err := os.WriteFile(filepath.Join(r.dir, store.StateFile), []byte("{壊れた"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if r.d.quiet() {
+			t.Fatal("読めない記録を暇と読んだ")
+		}
+	})
+}
+
+// 一覧を間引いた Tick でも、一覧を使わない経路は回す: 完了したカードへの btw に、次に一覧を取るのを待たずに答える。
+// (PG の出力が無いので答えは記録から同期的に作る経路。裏で作る経路 (d.Ask) は btw_test が見る)
+func TestQuietTickStillAnswersBtw(t *testing.T) {
+	r := newQuietRig(t, doneCard("C-001"))
+	r.tickAt(t, 0)
+	if _, ok := states(t, r.dir)["C-001"]; !ok {
+		t.Fatal("前提: 完了したカードが書庫へ移った")
+	}
+	btw(t, r.dir, "C-001", "結果は?")
+	if r.tickAt(t, 3*time.Second) {
+		t.Fatal("前提: 暇な Tick で一覧を取った")
+	}
+	c := states(t, r.dir)["C-001"]
+	if len(c.Btws) != 1 || c.Btws[0].Answered.IsZero() || c.Btws[0].Answer == "" {
+		t.Fatalf("一覧を間引いた Tick で btw に答えない: %+v", c.Btws)
 	}
 }
 
