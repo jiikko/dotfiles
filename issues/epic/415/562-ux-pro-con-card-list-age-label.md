@@ -1,5 +1,7 @@
 # 562 (ux): `pro-con card list` の「(N 分)」が所要と読み違えられる
 
+> 🚨 **担当中: Claude (dotfiles session)**（2026-09-28〜）
+
 起票日: 2026-09-27
 
 親: [415](415-design-claude-pm-worker-orchestration.md)
