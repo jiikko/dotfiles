@@ -116,7 +116,9 @@ func TestLoadResultIsNotShared(t *testing.T) {
 	if _, err := Load(dir); err != nil { // 解析してキャッシュに置く
 		t.Fatal(err)
 	}
-	decodes := loadDecodes
+	decodes := 0
+	onDecode = func() { decodes++ }
+	t.Cleanup(func() { onDecode = func() {} })
 	a, err := Load(dir) // キャッシュに当たった読み (書き換えるのはこちら)
 	if err != nil {
 		t.Fatal(err)
@@ -132,8 +134,8 @@ func TestLoadResultIsNotShared(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loadDecodes != decodes {
-		t.Fatalf("変わっていない記録を解析し直した (%d 回 → %d 回。キャッシュに当たっていない = このテストは共有を確かめられない)", decodes, loadDecodes)
+	if decodes != 0 {
+		t.Fatalf("変わっていない記録を解析し直した (%d 回。キャッシュに当たっていない = このテストは共有を確かめられない)", decodes)
 	}
 	if !reflect.DeepEqual(b, want) {
 		t.Fatalf("前に読んだ State の書き換えが後の読みに漏れた:\n%+v", b)

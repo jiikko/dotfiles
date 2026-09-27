@@ -50,8 +50,8 @@ var loadCache = struct {
 // maxCached は覚えておく記録の数。本番のプロセスが読む記録は 1 つ (テストは dir ごとに別の記録を読むので、溜めずに捨てる)。
 const maxCached = 4
 
-// loadDecodes はキャッシュに無くて記録を解析した回数 (テストがキャッシュに当たったかを見る)。
-var loadDecodes int
+// onDecode はキャッシュに無くて記録を解析したたびに (loadCache の lock の中で) 呼ぶ。テストが差し替えて、キャッシュに当たったかを数える。
+var onDecode = func() {}
 
 // Load は記録を読む。無ければ空の記録。壊れていたらエラー (空と区別する)。
 // ファイルが前に読んだときから変わっていなければ解析し直さず、前の結果の複製を返す (返した State は呼び手が自由に書き換えてよい)。
@@ -79,7 +79,7 @@ func Load(dir string) (State, error) {
 		clear(loadCache.m)
 	}
 	loadCache.m[path] = cachedState{key: key, st: st}
-	loadDecodes++
+	onDecode()
 	loadCache.Unlock()
 	return cloneState(st), nil
 }
