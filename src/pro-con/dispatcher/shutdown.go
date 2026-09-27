@@ -396,30 +396,26 @@ func (t restops) sent(id string) int {
 	return 0
 }
 
-// notes は止め直しの出来事 (session ごとに、止めた回数と、止まらなかったかを 1 行ずつ)。left は止まらなかった session。
+// notes は止め直しの出来事 (session ごとに 1 行: 止めた回数・止まらなかったか・止める要求の失敗)。left は止まらなかった session。
 func (t restops) notes(left stopLeft) []eventlog.Event {
 	var out []eventlog.Event
 	for _, r := range t {
 		still := slices.ContainsFunc(left.alive, func(a aliveSession) bool { return a.s.ID == r.id })
-		if r.sent > 0 {
-			var text string
-			switch {
-			case still:
-				text = fmt.Sprintf("%s の PG (%s) を %d 回止め直したが、一覧で止まったと確かめられない", r.cardID, r.id, r.sent)
-			case r.stray:
-				text = strayStopped(r.cardID, r.id) + times(r.sent)
-			default:
-				text = fmt.Sprintf("%s の PG (%s) がまだ動いていたので止め直した", r.cardID, r.id) + times(r.sent)
-			}
-			out = append(out, ev(eventlog.KindStop, r.cardID, r.id, text))
+		var text string
+		switch {
+		case r.sent == 0:
+			text = fmt.Sprintf("%s の PG (%s) を止め直せない: %v", r.cardID, r.id, r.lastErr) + times(r.failed)
+		case still:
+			text = fmt.Sprintf("%s の PG (%s) を %d 回止め直したが、一覧で止まったと確かめられない", r.cardID, r.id, r.sent)
+		case r.stray:
+			text = strayStopped(r.cardID, r.id) + times(r.sent)
+		default:
+			text = fmt.Sprintf("%s の PG (%s) がまだ動いていたので止め直した", r.cardID, r.id) + times(r.sent)
 		}
-		if r.failed > 0 {
-			text := fmt.Sprintf("%s の PG (%s) を止め直せない: %v", r.cardID, r.id, r.lastErr)
-			if r.failed > 1 {
-				text += fmt.Sprintf(" (%d 回失敗。最後の失敗)", r.failed)
-			}
-			out = append(out, ev(eventlog.KindStop, r.cardID, r.id, text))
+		if r.sent > 0 && r.failed > 0 {
+			text += fmt.Sprintf(" (止める要求が %d 回失敗した。最後の失敗: %v)", r.failed, r.lastErr)
 		}
+		out = append(out, ev(eventlog.KindStop, r.cardID, r.id, text))
 	}
 	return out
 }
@@ -436,7 +432,7 @@ func times(n int) string {
 type aliveSession struct {
 	cardID string
 	s      agents.Session
-	sent   int // 確かめる段で止める要求が通った回数 (0 なら pro-con の claude stop は 1 度も通っていない)
+	sent   int // 確かめる段で止める要求が通った回数 (0 なら確かめる段の claude stop はすべて失敗した。カードの側の 1 回目は数えない)
 }
 
 // restarting は、Claude Code が落ちた session を自動で再開している途中か (記録が crashed → resuming。issue 551 の実測)。
@@ -491,8 +487,8 @@ func (l stopLeft) advice() string {
 	}
 	for _, a := range l.alive {
 		switch {
-		case a.sent == 0: // pro-con の止める要求が 1 度も通らなかった (claude stop の失敗・時間切れ)
-			add("止める要求が通らなかったもの: claude stop <id>")
+		case a.sent == 0: // 確かめる段の止め直しがすべて失敗した (claude stop の失敗・時間切れ)。手で打てば失敗の中身が見える
+			add("止め直しの claude stop が失敗したもの: claude stop <id> を手で打って失敗の中身を見る")
 		case a.restarting():
 			add("自動の再開の途中のもの: 再開を待ってから pro-con dispatcher --stop をもう一度")
 		case a.s.PID == 0:

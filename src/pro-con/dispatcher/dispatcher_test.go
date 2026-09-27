@@ -34,10 +34,11 @@ type fakeLauncher struct {
 	resumeNames []string // 再開で付け直した session の名前 (488)
 	resumeID    string   // 空でなければ、再開はこの短い id の新しい session を立てる (本物の claude の形)
 	stopFail    bool
-	stopTries   []string // 失敗も含めて止めようとした id
-	startTries  int      // 失敗も含めて起動しようとした回数
-	repos       []string // 起動した repo
-	prompts     []string // 起動の指示
+	stopFailAt  func(try int) bool // 空でなければ、try 回目 (1 から) の止める要求だけを失敗させる
+	stopTries   []string           // 失敗も含めて止めようとした id
+	startTries  int                // 失敗も含めて起動しようとした回数
+	repos       []string           // 起動した repo
+	prompts     []string           // 起動の指示
 }
 
 func (f *fakeLauncher) Start(_ context.Context, repo, name, prompt string) (string, error) {
@@ -74,7 +75,7 @@ func (f *fakeLauncher) Resume(_ context.Context, stopID, _, cwd, name, text stri
 
 func (f *fakeLauncher) Stop(_ context.Context, id string) error {
 	f.stopTries = append(f.stopTries, id)
-	if f.stopFail {
+	if f.stopFail || (f.stopFailAt != nil && f.stopFailAt(len(f.stopTries))) {
 		return errors.New("止められない")
 	}
 	f.stops = append(f.stops, id)

@@ -352,6 +352,38 @@ func TestShutdownRestopNoteIsOneLinePerPG(t *testing.T) {
 	}
 }
 
+// 止め直しの途中で止める要求が失敗しても (1 回目は失敗し、2 回目で止まった)、同じ PG の出来事は 1 行 (失敗は添え書きにする)。
+func TestShutdownRestopNoteMergesPartialFailure(t *testing.T) {
+	r := newCrashRig(t)
+	stopped := false
+	r.d.ListAll = func(ctx context.Context) ([]agents.Session, error) {
+		if stopped {
+			return nil, nil
+		}
+		return r.d.List(ctx)
+	}
+	r.l.stopFailAt = func(try int) bool {
+		if try == 2 { // カードの側の 1 回目は通り、確かめる段の 1 回目は失敗する
+			return true
+		}
+		stopped = try >= 3
+		return false
+	}
+	notes, err := r.d.Shutdown(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restops []string
+	for _, n := range notes {
+		if n.Session == "id-pc-c-001" && strings.Contains(n.Reason, "止め直") {
+			restops = append(restops, n.Reason)
+		}
+	}
+	if len(restops) != 1 || !strings.Contains(restops[0], "止め直した (止める要求が 1 回失敗した。最後の失敗: 止められない)") {
+		t.Fatalf("止め直しの成功と失敗が 1 行にまとまらない: %q", restops)
+	}
+}
+
 // 止まらなかったときの案内は、そのとき見えている様子 (pid の有無・一覧・記録の state) を添え、その様子で効く操作だけを挙げる (issue 555)。
 func TestShutdownAdviceFollowsSessionState(t *testing.T) {
 	for _, tc := range []struct {
@@ -369,7 +401,7 @@ func TestShutdownAdviceFollowsSessionState(t *testing.T) {
 			want: []string{"[pid 無し・一覧 working・記録 resuming: 自動の再開の途中]", "再開を待ってから pro-con dispatcher --stop"},
 			not:  []string{"claude stop <id>", "kill・再起動は要らない"}},
 		{name: "止める要求が通らない", pid: 42, stopFail: true,
-			want: []string{"[pid 42・一覧 working: プロセスが居る]", "止める要求が通らなかったもの: claude stop <id>"},
+			want: []string{"[pid 42・一覧 working: プロセスが居る]", "止め直しの claude stop が失敗したもの: claude stop <id>"},
 			not:  []string{"kill・再起動は要らない"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
