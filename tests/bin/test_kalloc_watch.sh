@@ -281,7 +281,7 @@ chmod 600 "$d/log.tsv"
 if [[ $rc -eq 1 ]]; then pass "記録を読めない list は rc=1"; else ng "記録を読めない list の rc=$rc"; fi
 
 # 7c. --help は rc=0 で標準出力に、使い方の誤りは rc=2
-if "$BIN" --help | grep -q 'snapshot'; then pass "--help が snapshot を案内する"; else ng "--help に snapshot が無い"; fi
+if grep -q 'snapshot' <<<"$("$BIN" --help)"; then pass "--help が snapshot を案内する"; else ng "--help に snapshot が無い"; fi
 rc=0; "$BIN" nosuch >/dev/null 2>&1 || rc=$?
 if [[ $rc -eq 2 ]]; then pass "不明なサブコマンドは rc=2"; else ng "不明なサブコマンドの rc=$rc"; fi
 

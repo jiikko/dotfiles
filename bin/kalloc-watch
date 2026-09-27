@@ -240,8 +240,11 @@ record_and_report() {
   if [[ $rate == - ]]; then
     echo "増え方: まだ出せない (今回の起動以降の記録の幅が $((MIN_SPAN / 60)) 分に満たないか、時計が戻って記録が今より未来にある。$((MIN_SPAN / 60)) 分以上あけてもう一度叩く)"
   else
+    local rate_s
+    rate_s=$(fmt_n "$rate")
+    if ((rate > 0)); then rate_s="+$rate_s"; fi
     printf '増え方: 1 時間あたり %s 個 (%s記録 %s 個から、%s 時間の平均)\n' \
-      "$( ((rate > 0)) && echo "+$(fmt_n "$rate")" || fmt_n "$rate")" \
+      "$rate_s" \
       "$([[ $basis == recent ]] && echo "直近 $((RECENT_WINDOW / 3600)) 時間の最初の" || echo "直近 $((RECENT_WINDOW / 3600)) 時間より前で最も新しい")" \
       "$(fmt_n "$base_i")" "$(awk -v s=$((now - base_e)) 'BEGIN { printf "%.1f", s / 3600 }')"
   fi

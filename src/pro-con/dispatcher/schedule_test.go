@@ -44,6 +44,21 @@ func waitSchedule(t *testing.T, d *Dispatcher) {
 	t.Fatal("予定の goroutine が 2 秒たっても終わらない")
 }
 
+// writeOut は予定の出力のファイルを書き、更新時刻を at にする (settleOrphan は始めた時刻より古い出力を前の回のものと読む。
+// テストは固定の時刻で動くので、実時間の更新時刻のままだと、時差や日付で前後が入れ替わる = CI (UTC) だけ落ちた)。
+func writeOut(t *testing.T, path, body string, at time.Time) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, at, at); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func kinds(evs []eventlog.Event) []string {
 	var out []string
 	for _, e := range evs {
@@ -173,9 +188,7 @@ func TestSettleOrphan(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(out), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(out, []byte("消した pc-c-001: x\n"+schedule.ResultLine("worktree 消した 1", 0)+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeOut(t, out, "消した pc-c-001: x\n"+schedule.ResultLine("worktree 消した 1", 0)+"\n", start.Add(time.Second))
 	held, err := lockAs(d.Dir, "job.lock", errScheduleRunning, "test")
 	if err != nil {
 		t.Fatal(err)
@@ -376,9 +389,7 @@ func TestSettleOrphanWithResultIsNotFailure(t *testing.T) {
 	}
 	out := store.ScheduleOutPath(d.Dir, "job")
 	_ = os.MkdirAll(filepath.Dir(out), 0o700)
-	if err := os.WriteFile(out, []byte(schedule.ResultLine("worktree 消した 1", 0)+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeOut(t, out, schedule.ResultLine("worktree 消した 1", 0)+"\n", start.Add(time.Second))
 	if err := store.SaveScheduleRun(d.Dir, "job", store.ScheduleRun{Start: start, RC: -1, Locked: 1}); err != nil {
 		t.Fatal(err)
 	}
@@ -388,9 +399,7 @@ func TestSettleOrphanWithResultIsNotFailure(t *testing.T) {
 		t.Errorf("%v / %+v", kinds(evs), rec["job"])
 	}
 	// 子が失敗の結果の行を出していたら、待てなかった回でも失敗として出す
-	if err := os.WriteFile(out, []byte(schedule.ResultLine("worktree 消した 0・失敗 2", 1)+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeOut(t, out, schedule.ResultLine("worktree 消した 0・失敗 2", 1)+"\n", start.Add(time.Second))
 	if err := store.SaveScheduleRun(d.Dir, "job", store.ScheduleRun{Start: start, RC: -1}); err != nil {
 		t.Fatal(err)
 	}
