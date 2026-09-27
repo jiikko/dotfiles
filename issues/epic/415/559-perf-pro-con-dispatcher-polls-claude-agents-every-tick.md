@@ -1,5 +1,7 @@
 # 559 (perf): dispatcher が何もしていなくても 3 秒ごとに `claude agents --json` (claude 本体) を起こす
 
+> 🚨 **担当中: dotfiles-01**（2026-09-27〜）
+
 起票日: 2026-09-27
 
 親: [415](415-design-claude-pm-worker-orchestration.md)
