@@ -34,10 +34,25 @@ dogfooding (2026-09-27) でユーザーが「PG の枠は設定画面では 2 �
 
 ## 受け入れ条件
 
-- [ ] `pro-con ps` で、枠を使っている PG と待機中の PG が別のセクションに出る。待機中の行に待っている訳が出る
-- [ ] 設定画面のプロセスのタブも同じく分かれ、要約で「作業中の数 / 枠」と「待機の数」が読める
-- [ ] 一覧とヘッダは dispatcher が書いた「枠に数えたカード」を読むだけにする (一覧の側に判定を書かない。`Snapshot.SlotsUsed` の母数のずれも消える)
-- [ ] dispatcher が止まっている・古いときは「判定できない」と出る
+- [x] `pro-con ps` で、枠を使っている PG と待機中の PG が別のセクションに出る。待機中の行に待っている訳が出る
+- [x] 設定画面のプロセスのタブも同じく分かれ、要約で「作業中の数 / 枠」と「待機の数」が読める
+- [x] 一覧とヘッダは dispatcher が書いた「枠に数えたカード」を読むだけにする (一覧の側に判定を書かない。`Snapshot.SlotsUsed` の母数のずれも消える)
+- [x] dispatcher が止まっている・古いときは「判定できない」と出る
+
+## 進捗
+
+- 2026-09-27 (pro-con C-007): `pro-con: プロセスの一覧で PG を枠を使う作業中と待機中に分け、枠の数は dispatcher が書いたものを読む (557)`
+  - dispatcher は `dispatch` で枠に数えたカード (上限と比べるのと同じ値) を `dispatcher-state.json` の `slots` / `slots_at` に書く。途中で抜けた割り当て・一覧を取れない Tick は書き直さない
+  - `pro-con ps` と設定画面のプロセスのタブは `backend.SplitPGs` で「PG 作業中 (枠を使う) n / 枠 m」「PG 待機中 (枠を使わない) k」に分ける (`--json` は各行の `slot`)。
+    枠に数えたが起動の記録にまだ無いカードも作業中に 1 行出す。待機中の行の訳は `pgState` (「作業中 (テストの係の結果待ち)」を足した)
+  - ヘッダの「PG n/枠」・設定の要約「PG 作業中 n / 枠 m · 待機 k」は `slots` を読むだけ (`Snapshot.SlotsUsed` を Consumers から組み直さない)
+  - 人が止めた・dispatcher が居ない・`slots_at` が `DispatcherStale` (2 分) より古いときは、分けずに「判定できない」、ヘッダは `PG ?/m` (`backend.CountedSlots`)。
+    古さは Tick ではなく数えた時刻で見る (一覧を取れない Tick が続くと Tick は新しくても数は古い)
+- 確かめたこと: `make -C src/pro-con test` (go test -race) 全 ok / `CGO_ENABLED=0 make -C src/pro-con lint` 0 issues
+  (cgo ありは golangci-lint 本体のリンクが SDK 27.0 の `.tbd` の `arm64e.x1` を読めずに落ちる。環境の問題)。
+  新しいテスト (`pscmd_slot_test.go` / `backend/inspect_test.go` / `TestSettingsProcsSplitsPGsBySlot` / `TestSlotSkipsIdlePGAwaitingRun` の slots の確認) は実装を 8 か所壊して 8 か所とも赤になる。
+  模擬モードを隔離した tmux で開き、プロセスのタブと要約を撮った (カードに添付)。codex の敵対的レビュー 3 件は、2 件を再現した状態のテストで否定し、1 件は意図どおり (コメントに明記)
+- 残り: 本物の dispatcher で `pro-con ps` の見た目を確かめるのは、取り込み後に dispatcher が新版になってから
 
 ## 関連
 
