@@ -56,6 +56,14 @@ glogx の画面のうち、**複数 repo をこの規約に寄せる** / **書�
 | [`pro-con-vs-chat-cli-2026-09-27.md`](pro-con-vs-chat-cli-2026-09-27.md) | 2026-09-27 | pro-con は便利か。普通の Claude Code CLI のチャットと比べた Claude の観点 (チャット側の調査と pro-con のカード 10 枚を並べた 1 日の実例つき) |
 | [`feedback-nvim-tmux-2026-07-29.md`](feedback-nvim-tmux-2026-07-29.md) | 2026-07-29 | nvim 約 2,000 行 + tmux 約 2,600 行の全読レビュー (実測つき) |
 
+## アイデア (未着手)
+
+まだ着手していない案。実装する前に、それぞれの「確かめること」を実測する。
+
+| 文書 | 何の案か |
+|---|---|
+| [`ideas/anomaly-notification.md`](ideas/anomaly-notification.md) | 暴走しているプロセスや「いつもと違う」状態を、楽に知らせる仕組み。プロセスごとの「いつもの値」との比較と、「使っていないのに熱い」の判定。既製品 (Netdata など) の調べ |
+
 ## ここに置かないもの
 
 | 種類 | 置き場 |
