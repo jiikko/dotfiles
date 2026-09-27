@@ -17,11 +17,12 @@ import (
 func fg(n int) string { return "\x1b[38;5;" + strconv.Itoa(n) + "m" }
 func bg(n int) string { return "\x1b[48;5;" + strconv.Itoa(n) + "m" }
 
-// waitDim は待っているカードの地の明度の倍率 (issue 455。2026-09-26 にユーザーが見本の ×0.55 / ×0.4 から選んだ)。
-const waitDim = 0.55
+// waitDim は待っているカードの地の明度の倍率 (issue 455 で ×0.55 → issue 556 で ×0.7。2026-09-27 にユーザーが見本の ×0.55 / ×0.7 / ×0.8 から選んだ。×0.55 はほぼ黒で「色なし」に見えた)。
+const waitDim = 0.7
 
-// bgDim は 256 色の n を、色相を保ったまま明度を k 倍にした地 (RGB で出す)。cardPalette はどれも cube の最も暗い段なので、
+// bgDim は 256 色の n を、色相を保ったまま明度を k 倍にした地 (RGB で出す)。cardPalette は cube の暗い段なので、
 // 256 色のままでは色相を保って暗くできない。truecolor が通らない端末では近い 256 色に落ちる (ユーザー了承済み)。
+// k = 1 はカードの普段の地 (issue 556: 256 色の番号で塗ると端末の設定しだいで色が変わるので RGB で塗る。2026-09-27 のユーザーの決定)。
 func bgDim(n int, k float64) string {
 	r, g, b := rgb256(n)
 	scale := func(v int) string { return strconv.Itoa(int(float64(v)*k + 0.5)) }
@@ -35,7 +36,10 @@ const (
 
 // cardPalette はカード固有の地の色。明るい地は文字が溶けるので暗い地だけ (docs/theme-colors.md の「選択中テキスト」の実例)。
 // 状態の色 (stateColor) や現在地色 (202) と紛れない暗さにしてある。
-var cardPalette = []int{52, 17, 22, 53, 58, 23, 54, 94, 24, 89}
+// issue 556 で cube の最も暗い段 (#5f) から 1 段明るい段 (#87) へ上げた (#5f は待ちで暗くするとほぼ黒の「色なし」に見えた。
+// 2026-09-27 にユーザーが見本で選んだ。数が同じでも色が変わるので、既存のカードの色は全部変わる — ユーザー了承済み)。
+// 茶の 94 だけは据え置き (1 段上げると現在地 202 / 要対応 214 / 未 push 208 の橙に寄る)。
+var cardPalette = []int{88, 18, 28, 90, 100, 30, 91, 94, 25, 125}
 
 // cardColor はカード ID から固有の地の色を決める (同じカードは列を移っても・起動し直しても同じ色)。
 func cardColor(id string) int {

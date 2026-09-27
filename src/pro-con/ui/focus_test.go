@@ -12,7 +12,7 @@ func TestBoardDimsWhileTyping(t *testing.T) {
 	bgOf := func() (board, input int) {
 		lines := strings.Split(m.render(), "\n")
 		for i, l := range lines {
-			if !strings.Contains(l, "\x1b[48;5;") {
+			if !strings.Contains(l, "\x1b[48;") { // カードの地は RGB (48;2)、入力欄は 256 色 (48;5)
 				continue
 			}
 			if i >= m.headerRows() && i < len(lines)-len(m.footGroup()) {

@@ -544,7 +544,7 @@ func (m *Model) columnCells(col int, cs []*card.Card, inner, top, limit int) (ce
 // 選択中はタイトルを太字 + 下線にする。選択の目印は周りの枠 (cursor.go)。
 // 地は塗り替えない (カード固有の色が消えると、列を移ったときに目で追えなくなる)。完了は文字を dim にする。
 func (m *Model) cardCell(c card.Card, w int) []string {
-	base := bg(cardColor(c.ID)) + fg(252)
+	base := bgDim(cardColor(c.ID), 1) + fg(252)
 	if waiting(c) { // 待っているカードは、固有の色のまま明度を下げる (別の色に塗り替えない。spinner.go)
 		base = bgDim(cardColor(c.ID), waitDim) + fg(252)
 	}
