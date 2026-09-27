@@ -295,12 +295,13 @@ func orName(s, alt string) string {
 // publishSeen は画面のために、取った一覧と pro-con が起動した session の出力の末尾を書く (store.Seen。画面が 3 秒ごとに
 // claude agents と transcript を読まずに済む。issue 502 / 503)。起動の記録を読めない・書けないときは書かない (画面は古いと見て自分で読む)。
 // 出力の末尾を選ぶ判定 (live.OwnedSessions) と数 (live.LogOutputs) は、画面が自分で読むときと同じ。
-func (d *Dispatcher) publishSeen(now time.Time, ss []agents.Session) {
+// keep は次に一覧を取るまでの最長の間 (暇な間。0 は毎 Tick 取る)。
+func (d *Dispatcher) publishSeen(now time.Time, ss []agents.Session, keep time.Duration) {
 	reg, err := live.LoadRegistry(filepath.Join(d.Dir, live.RegistryFile))
 	if err != nil {
 		return
 	}
-	seen := store.Seen{At: now, Sessions: ss, Logs: map[string][]string{}}
+	seen := store.Seen{At: now, Sessions: ss, Logs: map[string][]string{}, Keep: keep}
 	if d.Transcript != nil {
 		for id, s := range live.OwnedSessions(reg, ss) {
 			if t, err := d.Transcript(s.SessionID); err == nil && len(t.Outputs) > 0 {

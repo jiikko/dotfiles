@@ -990,7 +990,7 @@ func TestResumeReleasesHoldThenStarts(t *testing.T) {
 }
 
 // dispatcher が書いた一覧と出力の末尾 (store.Seen) が新しければ、画面は自分で claude agents も transcript も読まない (issue 502 / 503)。
-// 古ければ (dispatcher が回っていない) 自分で読む。境目は seenFresh。
+// 古ければ (dispatcher が回っていない) 自分で読む。境目は store.SeenFresh。
 func TestRefreshUsesFreshSeenFromDispatcher(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -998,8 +998,8 @@ func TestRefreshUsesFreshSeenFromDispatcher(t *testing.T) {
 		err   string
 		fresh bool
 	}{
-		{"新しい", seenFresh - time.Second, "", true},
-		{"古い", seenFresh + time.Second, "", false},
+		{"新しい", store.SeenFresh - time.Second, "", true},
+		{"古い", store.SeenFresh + time.Second, "", false},
 		{"未来 (時計が戻った)", -time.Minute, "", false},
 		{"dispatcher が一覧を取れなかった", time.Second, "claude agents が終わらない", false},
 	} {

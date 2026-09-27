@@ -20,6 +20,9 @@ import (
 	"sync"
 )
 
+// listEveryTick は暇な間の一覧の間引き (issue 559) を切る。この file のテストは空の状態 (暇) で回し、一覧を取った回数で Tick を数える
+const listEveryTick = time.Nanosecond
+
 // dispatcher は interval を待たずに、依頼を置いた側の Poke ですぐ次の Tick を回す (interval は 1 時間にして、起きるのは Poke だけにする)。
 func TestServeWakesOnPoke(t *testing.T) {
 	dir, err := os.MkdirTemp("/tmp", "pcsv")
@@ -33,7 +36,7 @@ func TestServeWakesOnPoke(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = srv.Close() })
 	var ticks atomic.Int32 // Tick ごとに一覧を 1 回取る
-	d := &dispatcher.Dispatcher{Dir: dir, Limit: 1, Now: time.Now,
+	d := &dispatcher.Dispatcher{Dir: dir, Limit: 1, QuietListEvery: listEveryTick, Now: time.Now,
 		List: func(context.Context) ([]agents.Session, error) { ticks.Add(1); return nil, nil }}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int)
@@ -77,7 +80,7 @@ func serveExitsWithoutScreens(t *testing.T, mode presence.Mode) {
 		t.Fatal(err)
 	}
 	var ticks atomic.Int32
-	d := &dispatcher.Dispatcher{Dir: dir, Limit: 1, Now: time.Now, Sleep: func(time.Duration) {},
+	d := &dispatcher.Dispatcher{Dir: dir, Limit: 1, QuietListEvery: listEveryTick, Now: time.Now, Sleep: func(time.Duration) {},
 		List: func(context.Context) ([]agents.Session, error) { ticks.Add(1); return nil, nil }}
 	done := make(chan int, 1)
 	go func() {
@@ -131,7 +134,7 @@ func TestServeAloneGraceCountsFromLastScreen(t *testing.T) {
 	now := func() time.Time { mu.Lock(); defer mu.Unlock(); return clock }
 	advance := func(d time.Duration) { mu.Lock(); clock = clock.Add(d); mu.Unlock() }
 	var ticks atomic.Int32
-	d := &dispatcher.Dispatcher{Dir: dir, Limit: 1, Now: time.Now, Sleep: func(time.Duration) {},
+	d := &dispatcher.Dispatcher{Dir: dir, Limit: 1, QuietListEvery: listEveryTick, Now: time.Now, Sleep: func(time.Duration) {},
 		List: func(context.Context) ([]agents.Session, error) { ticks.Add(1); return nil, nil }}
 	done := make(chan int, 1)
 	go func() {
@@ -277,7 +280,7 @@ func serveUntilSignal(t *testing.T, screen presence.Mode) (bool, int) { // scree
 	var ticks atomic.Int32
 	var stopped atomic.Bool
 	l := &ctxLauncher{stopped: &stopped}
-	d := &dispatcher.Dispatcher{Dir: dir, Limit: 1, Now: time.Now, Sleep: func(time.Duration) {}, Launch: l,
+	d := &dispatcher.Dispatcher{Dir: dir, Limit: 1, QuietListEvery: listEveryTick, Now: time.Now, Sleep: func(time.Duration) {}, Launch: l,
 		List: func(ctx context.Context) ([]agents.Session, error) {
 			if err := ctx.Err(); err != nil {
 				return nil, err
@@ -384,7 +387,7 @@ func TestServeSignalWaitsForClosingScreens(t *testing.T) {
 	}
 	var ticks atomic.Int32
 	var stopped atomic.Bool
-	d := &dispatcher.Dispatcher{Dir: dir, Limit: 1, Now: time.Now, Sleep: func(time.Duration) {}, Launch: &ctxLauncher{stopped: &stopped},
+	d := &dispatcher.Dispatcher{Dir: dir, Limit: 1, QuietListEvery: listEveryTick, Now: time.Now, Sleep: func(time.Duration) {}, Launch: &ctxLauncher{stopped: &stopped},
 		List: func(context.Context) ([]agents.Session, error) { ticks.Add(1); return nil, nil },
 		ListAll: func(context.Context) ([]agents.Session, error) {
 			state, pid := "working", 42
@@ -448,7 +451,7 @@ func TestServeSignalStopFailureExitsNonZero(t *testing.T) {
 		t.Fatal(err)
 	}
 	var ticks atomic.Int32
-	d := &dispatcher.Dispatcher{Dir: dir, Limit: 1, Now: time.Now, Sleep: func(time.Duration) {}, Launch: &stopFlaky{},
+	d := &dispatcher.Dispatcher{Dir: dir, Limit: 1, QuietListEvery: listEveryTick, Now: time.Now, Sleep: func(time.Duration) {}, Launch: &stopFlaky{},
 		List: func(context.Context) ([]agents.Session, error) { ticks.Add(1); return nil, nil },
 		ListAll: func(context.Context) ([]agents.Session, error) { // 止めても止まらない
 			return []agents.Session{{ID: "pg1", SessionID: "S1", PID: 42, Kind: "background", State: "working"}}, nil

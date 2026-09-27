@@ -24,8 +24,9 @@ dispatcher の Tick (3 秒。`dispatchercmd.go` の `dispatcherInterval`) は、
 
 ## 受け入れ条件
 
-- [ ] カードが動いていない間の `claude agents --json` の回数が 1 分 20 回より大きく減る (実測で示す)
-- [ ] 起動の確かめ・落ちた PG の検出が、延ばした間隔でも遅れすぎない (どこまで遅れてよいかを決めて書く)
+- [ ] カードが動いていない間の `claude agents --json` の回数が 1 分 20 回より大きく減る (実測で示す。テストでは 30 秒に 1 回。本物では未実測)
+- [x] 起動の確かめ・落ちた PG の検出が、延ばした間隔でも遅れすぎない (どこまで遅れてよいかを決めて書く): 間引くのは起動の結果待ち・
+  生きている PG・役が 1 つも無いときだけなので、起動の確かめと落ちた PG の検出は遅れない。遅れるのは暇な間の外の出来事 (最大 30 秒)
 
 ## 関連
 
@@ -39,4 +40,20 @@ dispatcher の Tick (3 秒。`dispatchercmd.go` の `dispatcherInterval`) は、
   - 一覧を使わない処理 (`watch` / `tickRuns` / `tickBtws` / `refreshUsage` / `collectProgress`) は暇でも仕事がある (完了したカードへの btw の回答など)。間引くのは一覧の取得と、それを使う処理だけにする
   - 画面は `seen.json` が `seenFresh` (15 秒) より古いと自分で `claude agents` を叩く (`live/live.go`)。間引くなら、この鮮度の閾値も揃える (`seen.json` に「いつまで使ってよいか」を書く案)
   - 役の様子は、一覧と照らせなかった Tick を「確かめ中」(`RoleChecking`) と出す (`dispatcher/role.go` の `roleState`)。一覧を飛ばす Tick で、この表示が出っぱなしにならないようにする
-- 次の一手: pro-con 全体のポーリングを通知で動く形に置き換えられるかを調べている (`~/.claude/jobs` の変化の監視で一覧を取り直せるなら、間引くより筋が良い)。結果を見てから方式を決める
+- 通知で動く形への置き換えは採らない (2026-09-27 に pro-con 全体のポーリングを調べた結論): `~/.claude/jobs/<id>/state.json` に pid が無く、
+  `claude agents --json` の呼び出しは省けない。依頼の側からの起こし (`wake.Poke`) と画面への知らせ (`Changed`) は既に通知になっている
+- 実装 (pro-con: 暇な間は dispatcher の session の一覧を 30 秒に 1 回へ間引く):
+  - `dispatcher/idle.go` の `listing` / `quiet`: カードが全部完了 (止める途中・削除待ち・起動の結果待ちが無い) で、役が off・session 無し・
+    止めてあるなら暇。前に一覧を取った Tick も暇なときだけ間引く (忙しい → 暇の直後は 1 回取り直す)
+  - `tick` は一覧を使う経路 (`reconcile` = 登録〜消えた PG、`deliverOrders`、役、割り当て、`collectDoing`) を一覧を取れた Tick だけ回す。
+    一覧を使わない経路 (`watch` / `tickRuns` / `tickBtws` / `refreshUsage` / `collectProgress`) は毎 Tick
+  - 画面の鮮度: `store.Seen` に `Keep` (次の取得までの最長の間) を書き、`Seen.Fresh` が `SeenFresh` (15 秒) + `Keep` (上限 2 分) まで使う。
+    判定を `live/live.go` から `store` へ寄せた
+  - 間引いた Tick は役の様子の鮮度を前の値に戻す (「確かめ中」を出さない)
+  - 受付の箱の依頼の有無は判定に入れない: 依頼は一覧の判定より前に記録へ適用されるので、カードが増えた・動いた Tick は `quiet` が偽になる
+- 検証: `make -C src/pro-con lint` 0 issues / `make -C src/pro-con test` (`-race`) 21 パッケージ ok。
+  既存の `serve_test.go` 6 本は一覧の回数で Tick を数えていたので、間引きを切る (`listEveryTick`)
+- 変異 (`bin/mutate-verify`、7 本とも想定のテストが red): 常に一覧を取る / 忙しい直後の取り直しを外す / `StopAfterClose` を外す /
+  生きている PM を外す / 役の様子の鮮度を戻さない / `Keep` を書かない / `Fresh` が `Keep` を見ない
+- 回数 (見積もり。本物の dispatcher で未実測): 暇な間は 1 分 20 回 → 2 回
+- 残タスク: 敵対的レビュー (opus) の結果の反映 (push の時点で未着)。本物の dispatcher で暇な間の `claude agents` の回数を数える

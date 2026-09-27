@@ -123,6 +123,11 @@ type Dispatcher struct {
 	slotsAt time.Time
 
 	ticked bool // 1 度でも Tick したか
+	// QuietListEvery は暇な間に session の一覧を取る間隔 (idle.go。0 なら defaultQuietListEvery)
+	QuietListEvery time.Duration
+	listedAt       time.Time // 最後に一覧を取れた Tick の時刻
+	listedQuiet    bool      // その Tick が暇だったか (暇な Tick の後だけ一覧を間引く)
+	skipped        bool      // 直前の tick が一覧を間引いたか (Tick が役の様子の鮮度を戻す)
 	// Record は Tick / Shutdown の出来事を渡す (ログの行と events.jsonl。dispatchercmd.go)。記録を変えた知らせ (Changed) より先に呼ぶ
 	// (知らせを受けて読みに来た pro-con log --follow が、その出来事をもう読めるように)。nil なら渡さない
 	Record func([]eventlog.Event)
@@ -200,10 +205,18 @@ const defaultStallAfter = 15 * time.Minute
 // 別の session を止める)。
 // 回ったことは StatusFile に書く (途中で抜けた Tick も。画面が dispatcher の生存を見る)。
 func (d *Dispatcher) Tick(ctx context.Context) ([]eventlog.Event, error) {
+	prev := map[*roleRun]bool{}
 	for _, r := range roles() { // 役の様子は、この Tick に一覧と照らせたときだけ今のものとして書く (roleState)
-		d.roleRun(r).fresh = false
+		rr := d.roleRun(r)
+		prev[rr], rr.fresh = rr.fresh, false
 	}
+	d.skipped = false
 	notes, err := d.tick(ctx)
+	if d.skipped { // 暇で一覧を間引いた Tick: 役は止めてある / session が無い (quiet) ので、最後に照らした様子のまま出す (「確かめ中」にしない)
+		for rr, f := range prev {
+			rr.fresh = f
+		}
+	}
 	if werr := d.writeState(d.Now()); werr != nil {
 		notes = append(notes, ev(eventlog.KindError, "", "", "dispatcher の様子を書けない: "+werr.Error()))
 	}
@@ -244,11 +257,73 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	if _, err := store.SweepAttachments(d.Dir, now); err != nil {
 		notes = append(notes, ev(eventlog.KindError, "", "", "添付を片付けられない (次の Tick で消し直す): "+err.Error()))
 	}
-	ss, err := d.List(ctx)
-	if err != nil {
-		_ = store.SaveSeen(d.Dir, store.Seen{At: d.Now(), Err: err.Error()}) // 画面に前の一覧を使わせない (自分で読んで、取れなければ理由を出す)
-		return append(notes, ev(eventlog.KindError, "", "", "session の一覧を取れない (登録と割り当ては次の Tick へ): "+err.Error())), nil
+	// 一覧を使う経路 (reconcile・deliverOrders・役・割り当て) は一覧を取れた Tick だけ回す。暇な Tick は一覧を間引く (idle.go)
+	list, quiet := d.listing(now)
+	var ss []agents.Session
+	if list {
+		if ss, err = d.List(ctx); err != nil {
+			_ = store.SaveSeen(d.Dir, store.Seen{At: d.Now(), Err: err.Error()}) // 画面に前の一覧を使わせない (自分で読んで、取れなければ理由を出す)
+			return append(notes, ev(eventlog.KindError, "", "", "session の一覧を取れない (登録と割り当ては次の Tick へ): "+err.Error())), nil
+		}
+		d.listedAt, d.listedQuiet = now, quiet
+		reconciled, err := d.reconcile(ctx, now, ss, quiet)
+		notes = append(notes, reconciled...)
+		if err != nil {
+			return notes, err
+		}
+	} else {
+		d.skipped = true
 	}
+	watched, err := d.watch(now)
+	notes = append(notes, watched...)
+	if err != nil {
+		return notes, err
+	}
+	ran, err := d.tickRuns(ctx, now)
+	notes = append(notes, ran...)
+	if err != nil {
+		return notes, err
+	}
+	if list {
+		delivered, err := d.deliverOrders(now, ss)
+		notes = append(notes, delivered...)
+		if err != nil {
+			return notes, err
+		}
+	}
+	answered, err := d.tickBtws(ctx, now)
+	notes = append(notes, answered...)
+	if err != nil {
+		return notes, err
+	}
+	d.refreshUsage(ctx, now)
+	if ctx.Err() != nil { // 枠を読んでいる間に止められた。取り消された ctx で起動して「失敗」を履歴に残さない
+		return notes, nil
+	}
+	if list {
+		for _, r := range roles() {
+			told, err := d.tellRole(ctx, now, ss, r)
+			notes = append(notes, told...)
+			if err != nil { // 役の壊れ (pm.json が読めない等) で PG の割り当てとほかの役まで止めない
+				d.roleRun(r).blocked = "扱えない: " + err.Error()
+				notes = append(notes, ev(eventlog.KindError, r.cardID, "", r.name+" を扱えない (PG の割り当ては続ける): "+err.Error()))
+			}
+		}
+		more, err := d.dispatch(ctx, now, ss)
+		notes = append(notes, more...)
+		if err != nil {
+			return notes, err
+		}
+		d.collectDoing(ctx, now, ss)
+	}
+	d.collectProgress(ctx, now)
+	return append(notes, d.announce()...), nil // 割り当ての結果まで含めて知らせる
+}
+
+// reconcile は取った一覧と記録を照らす: 登録・画面への一覧・落ちた / 入力待ちの PG・再起動の復旧・止める印・落ち続けた / 消えた PG。
+// quiet なら画面に渡す一覧を、次に一覧を取るまで使えるようにする (store.Seen の Keep)。
+func (d *Dispatcher) reconcile(ctx context.Context, now time.Time, ss []agents.Session, quiet bool) ([]eventlog.Event, error) {
+	var notes []eventlog.Event
 	n, warn, err := d.register(now, ss)
 	if err != nil {
 		return notes, err
@@ -257,7 +332,11 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 		notes = append(notes, ev(eventlog.KindRegister, "", "", fmt.Sprintf("PG の session を %d 本登録した", n)))
 	}
 	notes = append(notes, warn...)
-	d.publishSeen(d.Now(), ss) // 登録の後 (この tick で登録した PG の出力も載せる)。時刻は書く時点 (一覧の取得は最長 10 秒かかり、tick の頭の時刻では書いた時点で古い)
+	var keep time.Duration
+	if quiet {
+		keep = d.quietListEvery()
+	}
+	d.publishSeen(d.Now(), ss, keep) // 登録の後 (この tick で登録した PG の出力も載せる)。時刻は書く時点 (一覧の取得は最長 10 秒かかり、tick の頭の時刻では書いた時点で古い)
 	if err := d.trackDead(now, ss); err != nil {
 		return notes, err
 	}
@@ -288,50 +367,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	}
 	// 落ち続けたものを回答待ちへ送った後に見る (上限に達したものを、消えた PG として再開へ回さない)
 	requeued, err := d.requeueVanished(now, ss)
-	notes = append(notes, requeued...)
-	if err != nil {
-		return notes, err
-	}
-	watched, err := d.watch(now)
-	notes = append(notes, watched...)
-	if err != nil {
-		return notes, err
-	}
-	ran, err := d.tickRuns(ctx, now)
-	notes = append(notes, ran...)
-	if err != nil {
-		return notes, err
-	}
-	delivered, err := d.deliverOrders(now, ss)
-	notes = append(notes, delivered...)
-	if err != nil {
-		return notes, err
-	}
-	answered, err := d.tickBtws(ctx, now)
-	notes = append(notes, answered...)
-	if err != nil {
-		return notes, err
-	}
-	d.refreshUsage(ctx, now)
-	if ctx.Err() != nil { // 枠を読んでいる間に止められた。取り消された ctx で起動して「失敗」を履歴に残さない
-		return notes, nil
-	}
-	for _, r := range roles() {
-		told, err := d.tellRole(ctx, now, ss, r)
-		notes = append(notes, told...)
-		if err != nil { // 役の壊れ (pm.json が読めない等) で PG の割り当てとほかの役まで止めない
-			d.roleRun(r).blocked = "扱えない: " + err.Error()
-			notes = append(notes, ev(eventlog.KindError, r.cardID, "", r.name+" を扱えない (PG の割り当ては続ける): "+err.Error()))
-		}
-	}
-	more, err := d.dispatch(ctx, now, ss)
-	notes = append(notes, more...)
-	if err != nil {
-		return notes, err
-	}
-	d.collectDoing(ctx, now, ss)
-	d.collectProgress(ctx, now)
-	return append(notes, d.announce()...), nil // 割り当ての結果まで含めて知らせる
+	return append(notes, requeued...), err
 }
 
 // archive は終えたカードを書庫へ移す。移せなくても Tick は続ける (記録が大きいままになるだけで、割り当ては止めない)。

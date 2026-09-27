@@ -110,10 +110,6 @@ type cardActivity struct {
 // LogOutputs はカードに出す PG の出力の末尾の数 (画面が自分で読むときも、dispatcher が store.Seen に書くときも同じ)。
 const LogOutputs = 3
 
-// seenFresh は dispatcher が書いた一覧 (store.Seen) を今の様子として使う古さの上限。dispatcher の tick (3 秒) と、一覧の取得の上限
-// (agents.Timeout = 10 秒) を足した余裕。これより古ければ画面が自分で読む。
-const seenFresh = 15 * time.Second
-
 // activityKeep は画面が 1 枚のカードについて持つ活動の上限 (古いものから捨てる。全部は pro-con card log で読める)。
 const activityKeep = 1000
 
@@ -550,10 +546,8 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 	var extra []card.Violation
 	// dispatcher が書いた一覧と出力の末尾が新しければ使い、自分では claude agents も transcript も読まない (issue 502 / 503)。
 	// 古い・無い (dispatcher が回っていない・一覧を取れていない) ときだけ自分で読む (正しさを dispatcher に預けない)
-	// 未来の時刻 (時計が戻った) と、dispatcher が一覧を取れなかった印 (Err) は古いとみなす
 	seen, seenErr := store.LoadSeen(b.dir)
-	age := now.Sub(seen.At)
-	fresh := seenErr == nil && !seen.At.IsZero() && seen.Err == "" && age >= 0 && age <= seenFresh
+	fresh := seenErr == nil && seen.Fresh(now)
 	switch {
 	case fresh:
 		b.ss, b.ssErr, b.listed, b.ssSeen = seen.Sessions, nil, true, true
