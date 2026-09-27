@@ -253,6 +253,18 @@ live 設定の丸ごとコピーなので、JIS マシンで実行すると ANSI
 - simple_modifications の **`japanese_eisuu` → `a` は意図的なマッピング**（愛用中。削除しないこと。
   英数切り替えはコマンドキー単押し・Ctrl+T 等の complex rule 側が担っている）
 
+### カーネルメモリの漏れの記録 (kalloc-watch)
+
+カーネルの zone `data.kalloc.1024` の在庫を記録する (issue 500。漏れるとパニックする。プロセス一覧には出ない)。
+
+```bash
+kalloc-watch          # 1 行記録する (= kalloc-watch record)。7 日より古い行はこのとき落とす
+kalloc-watch list     # 記録を古い順に出す (時刻 / inuse / MiB / 前の行との差)
+```
+
+- 記録先は `~/.cache/kalloc-watch/log.tsv` (`KALLOC_WATCH_DIR` で変更)
+- 健全なら数千個で頭打ち。数万個を越えて増え続けるなら漏れを疑い、約 1,500 万個を越える前に再起動する
+
 ### Finder Quick Actions
 
 Finderの右クリックメニューから動画処理コマンドを実行できます。

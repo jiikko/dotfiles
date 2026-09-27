@@ -1,0 +1,91 @@
+#!/bin/bash
+# kalloc-watch — カーネルの zone data.kalloc.1024 の在庫 (inuse) を記録・一覧する (issue 500)
+#
+# data.kalloc.1024 はカーネルのメモリなので、アクティビティモニタや ps ではどのプロセスの分かが見えない。
+# 健全なら数千個で頭打ちになり、漏れていると再起動するまで単調に増える (パニックは約 2,100 万個)。
+# 絶対値より「減るか・増え続けるか」を見るための記録。
+#
+# 使い方:
+#   kalloc-watch [record]   在庫を 1 行記録し、7 日より古い行を落とす
+#   kalloc-watch list       記録を古い順に出す (時刻 / inuse / MiB / 前の行との差)
+#
+# 記録先: ${KALLOC_WATCH_DIR:-${XDG_CACHE_HOME:-~/.cache}/kalloc-watch}/log.tsv
+#   1 行 = <epoch>\t<YYYY-MM-DD HH:MM:SS>\t<inuse>
+# テスト用: KALLOC_WATCH_ZPRINT (zprint の代わりに呼ぶコマンド) / KALLOC_WATCH_NOW (現在の epoch)
+set -euo pipefail
+
+ZONE=data.kalloc.1024
+KEEP_SECONDS=$((7 * 24 * 60 * 60))
+DIR=${KALLOC_WATCH_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/kalloc-watch}
+LOG=$DIR/log.tsv
+SELF=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")
+
+usage() {
+  sed -n '8,10p' "$SELF" | sed 's/^# \{0,1\}//' >&2
+  exit 2
+}
+
+# zprint から inuse を読む。書式が変わって読めないときは記録せずに失敗する
+# (空や別の列を記録すると、漏れていないように見える記録が残る)
+read_inuse() {
+  local out
+  out=$(${KALLOC_WATCH_ZPRINT:-zprint} -L "$ZONE") || { echo "kalloc-watch: zprint が失敗した" >&2; return 1; }
+  # 見出しの 2 行目は "zone name ... inuse ..." で、"zone name" が 2 語なので inuse は 8 語目、値の行では 7 列目
+  awk -v z="$ZONE" '
+    $1 == "zone" && $2 == "name" { hdr = ($8 == "inuse") }
+    $1 == z { v = $7 }
+    END {
+      if (!hdr) { print "kalloc-watch: zprint の見出しに inuse の列が見つからない (書式が変わった?)" > "/dev/stderr"; exit 1 }
+      if (v !~ /^[0-9]+$/) { print "kalloc-watch: zone " z " の inuse が読めない" > "/dev/stderr"; exit 1 }
+      print v
+    }' <<<"$out"
+}
+
+# lockf の下で呼ばれる。追記と古い行の除去を 1 つの書き換えで行う (並行した record の行を落とさないため)。
+# 🚨 各段を set -e で止まる形に置く (`{ ... } > tmp || ...` に包むと中の awk の失敗が握り潰され、
+# ログを読めないときに中身の欠けた tmp で既存の記録を上書きしていた)
+# 古さは記録時の現在時刻で決めるので、時計が先へ跳ぶとそれより 7 日前の記録は落ちる (NTP の異常は想定外として受ける)
+record_locked() {
+  local inuse now cutoff stamp
+  inuse=$(read_inuse)
+  now=${KALLOC_WATCH_NOW:-$(date +%s)}
+  [[ $now =~ ^[0-9]{1,12}$ ]] || { echo "kalloc-watch: 現在時刻が epoch の数字でない: $now" >&2; return 1; }
+  cutoff=$((now - KEEP_SECONDS))
+  stamp=$(date -r "$now" '+%Y-%m-%d %H:%M:%S')
+  TMP_LOG=$(mktemp "$DIR/.log.tsv.XXXXXX")
+  trap 'rm -f "$TMP_LOG"' EXIT
+  if [[ -e $LOG ]]; then
+    # 期限切れと判定できる行だけ落とす (epoch が数字でない行は残す。読めない行を黙って消さない)
+    awk -F '\t' -v c="$cutoff" '!($1 ~ /^[0-9]+$/ && $1 < c)' "$LOG" > "$TMP_LOG"
+  fi
+  printf '%s\t%s\t%s\n' "$now" "$stamp" "$inuse" >> "$TMP_LOG"
+  mv -f "$TMP_LOG" "$LOG"
+  trap - EXIT
+  printf '%s %s\n' "$stamp" "$inuse"
+}
+
+cmd_list() {
+  if [[ ! -s $LOG ]]; then
+    echo "kalloc-watch: まだ記録が無い ($LOG)。kalloc-watch record で記録する" >&2
+    return 1
+  fi
+  awk -F '\t' '
+    BEGIN { printf "%-19s  %10s  %9s  %10s\n", "time", "inuse", "MiB", "diff" }
+    $3 ~ /^[0-9]+$/ {
+      d = (n++ ? sprintf("%+d", $3 - prev) : "-")
+      printf "%-19s  %10d  %9.1f  %10s\n", $2, $3, $3 * 1024 / 1048576, d
+      prev = $3
+    }' "$LOG"
+}
+
+case "${1:-record}" in
+  record)
+    # ロック待ちが 10 秒を越えたら lockf が rc=75 で止まり、その回は記録しない (既存の記録は触らない)。
+    # lockf 本体へのシグナルは子へ届かないので、中断したつもりでも記録は 1 行増えることがある (失うものは無い)
+    mkdir -p "$DIR"
+    exec /usr/bin/lockf -k -t 10 "$DIR/.lock" "$SELF" __record_locked ;;
+  __record_locked) record_locked ;;
+  list) cmd_list ;;
+  -h|--help|help) usage ;;
+  *) echo "kalloc-watch: 不明なサブコマンド: $1" >&2; usage ;;
+esac

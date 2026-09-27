@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# bin/kalloc-watch のテスト (issue 500)。実 zprint は使わず、偽の zprint で在庫の値と書式を注入する。
+# 現在時刻は KALLOC_WATCH_NOW で固定する (7 日の境界を壁時計に依存させない)。
+# pin したいもの:
+#   - record が zprint の inuse (7 列目) を記録する
+#   - 7 日より古い行だけを落とす (境界ちょうどは残す / epoch の読めない行は消さない)
+#   - zprint が失敗する・書式が変わったときは記録せずに失敗する (空や別の列を記録しない)
+#   - 並行した record の行を落とさない (lockf の下で書き換える)
+set -euo pipefail
+unset CDPATH
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+BIN="$ROOT_DIR/bin/kalloc-watch"
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+fail=0
+pass() { printf '✓ %s\n' "$1"; }
+ng() { printf '✗ %s\n' "$1"; fail=1; }
+
+# 偽 zprint: FAKE_INUSE を data.kalloc.1024 の inuse に出す。FAKE_MODE=fail で失敗、noinuse で見出しを変える。
+# 実物の `zprint -L <名前>` は部分一致なので、名前の似た zone (前後に 1 行ずつ) も混ぜて完全一致を pin する
+cat > "$TMP_DIR/zprint" <<'EOF'
+#!/bin/bash
+[[ ${FAKE_MODE:-} == fail ]] && exit 3
+h=inuse; [[ ${FAKE_MODE:-} == noinuse ]] && h=other
+cat <<Z
+                            elem         cur         max        cur         max         cur  alloc  alloc
+zone name                   size        size        size      #elts       #elts       $h   size  count
+-------------------------------------------------------------------------------------------------------------
+kalloc.1024                 1024          0K          0K          0           0        111     0K      0
+data.kalloc.1024            1024          0K          0K          0           0        ${FAKE_INUSE:-1234}     0K      0
+data_shared.kalloc.1024     1024          0K          0K          0           0        222     0K      0
+Z
+EOF
+chmod +x "$TMP_DIR/zprint"
+
+NOW=2000000000
+DAY=86400
+run() {  # $1=記録先 dir, 残り=kalloc-watch の引数
+  local d=$1; shift
+  KALLOC_WATCH_DIR="$d" KALLOC_WATCH_ZPRINT="$TMP_DIR/zprint" KALLOC_WATCH_NOW="$NOW" "$BIN" "$@"
+}
+
+# 1. record が inuse を記録する
+d="$TMP_DIR/t1"
+if FAKE_INUSE=4321 run "$d" >/dev/null && [[ "$(cut -f1,3 "$d/log.tsv")" == "$NOW"$'\t'4321 ]]; then
+  pass "record が inuse を epoch と一緒に記録する"
+else
+  ng "record の記録内容が違う: $(cat "$d/log.tsv" 2>/dev/null)"
+fi
+
+# 2. 7 日より古い行だけを落とす
+d="$TMP_DIR/t2"; mkdir -p "$d"
+printf '%s\told8d\t1\n%s\tedge\t2\n%s\tover\t3\n%s\tnew6d\t4\nbroken line\n\n' \
+  $((NOW - 8 * DAY)) $((NOW - 7 * DAY)) $((NOW - 7 * DAY - 1)) $((NOW - 6 * DAY)) > "$d/log.tsv"
+FAKE_INUSE=5 run "$d" >/dev/null
+got=$(cut -f2 "$d/log.tsv" | tr '\n' '|')
+want="edge|new6d|broken line||$(date -r "$NOW" '+%Y-%m-%d %H:%M:%S')|"
+if [[ "$got" == "$want" ]]; then
+  pass "7 日より古い行だけを落とす (境界ちょうど・読めない行・空行は残す)"
+else
+  ng "古い行の除去が違う: got=[$got] want=[$want]"
+fi
+
+# 3. zprint の失敗・書式の変化では記録しない
+for mode in fail noinuse; do
+  d="$TMP_DIR/t3-$mode"; mkdir -p "$d"
+  printf '%s\tkeep\t9\n' "$NOW" > "$d/log.tsv"
+  before=$(cat "$d/log.tsv")
+  if FAKE_MODE=$mode run "$d" >/dev/null 2>"$d/err"; then
+    ng "zprint の $mode で rc=0 を返した"
+  elif [[ "$(cat "$d/log.tsv")" != "$before" ]]; then
+    ng "zprint の $mode で記録が変わった"
+  elif compgen -G "$d/.log.tsv.*" >/dev/null; then
+    ng "zprint の $mode で一時ファイルが残った"
+  else
+    pass "zprint の $mode では記録せずに失敗する ($(head -1 "$d/err"))"
+  fi
+done
+
+# 3b. ログを読めない・現在時刻が数字でないときは、既存の記録を残したまま失敗する
+for mode in unreadable badnow; do
+  d="$TMP_DIR/t3b-$mode"; mkdir -p "$d"
+  printf '%s\tkeep1\t9\n%s\tkeep2\t10\n' $((NOW - 60)) "$NOW" > "$d/log.tsv"
+  before=$(cat "$d/log.tsv")
+  now=$NOW
+  # badnow は算術評価でコマンドが走る形 (定義済みの変数の subscript。未定義だと set -u で先に止まる。数字の検査が無いと $((now - …)) が touch を実行する)
+  case $mode in unreadable) chmod 000 "$d/log.tsv" ;; badnow) now="PPID[\$(touch $d/pwned)]" ;; esac
+  rc=0; KALLOC_WATCH_DIR="$d" KALLOC_WATCH_ZPRINT="$TMP_DIR/zprint" KALLOC_WATCH_NOW="$now" "$BIN" >/dev/null 2>"$d/err" || rc=$?
+  chmod 600 "$d/log.tsv"
+  if [[ $rc -eq 0 ]]; then
+    ng "$mode で rc=0 を返した"
+  elif [[ "$(cat "$d/log.tsv")" != "$before" ]]; then
+    ng "$mode で既存の記録が変わった: $(cat "$d/log.tsv")"
+  elif compgen -G "$d/.log.tsv.*" >/dev/null; then
+    ng "$mode で一時ファイルが残った"
+  elif [[ -e $d/pwned ]]; then
+    ng "$mode で現在時刻の値がコマンドとして実行された"
+  else
+    pass "$mode では既存の記録を残して失敗する"
+  fi
+done
+
+# 4. list: 記録が無ければ失敗、あれば前の行との差を出す
+d="$TMP_DIR/t4"
+if run "$d" list >/dev/null 2>&1; then ng "記録が無いのに list が rc=0"; else pass "記録が無ければ list は失敗する"; fi
+FAKE_INUSE=100 run "$d" >/dev/null; FAKE_INUSE=250 run "$d" >/dev/null
+last=$(run "$d" list | tail -1)
+if [[ "$last" == *" 250 "* && "$last" == *"+150" ]]; then
+  pass "list が inuse と前の行との差を出す"
+else
+  ng "list の出力が違う: [$last]"
+fi
+
+# 5. 並行した record の行を落とさない
+d="$TMP_DIR/t5"
+pids=()
+for i in $(seq 20); do FAKE_INUSE=$i run "$d" >/dev/null & pids+=($!); done
+rcs=0; for p in "${pids[@]}"; do wait "$p" || rcs=$((rcs + 1)); done
+n=$(wc -l < "$d/log.tsv" | tr -d ' ')
+if [[ $rcs -eq 0 && $n -eq 20 ]]; then
+  pass "並行した record 20 本の行が全部残る"
+else
+  ng "並行した record: 失敗 $rcs 本 / 行 $n (期待 20)"
+fi
+
+exit "$fail"
