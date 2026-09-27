@@ -2,7 +2,7 @@
 
 起票日: 2026-09-26
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 
@@ -32,10 +32,10 @@
 
 ## 受け入れ条件
 
-- [ ] 設定の値 (`claude` / `codex`) を config.toml と設定画面で変えられ、`pro-con config show` に出る
-- [ ] `codex` のとき、PG (か取り込みの係) の敵対的レビューが `codex exec` で走り、カードの履歴か出力にその証拠が残る
-- [ ] codex が使えないときは Claude で代わりに回し、そのことを履歴に残す (偽の codex で失敗させて確かめる)
-- [ ] 既定は `claude` で、今の動きが変わらない
+- [x] 設定の値 (`claude` / `codex`) を config.toml と設定画面で変えられ、`pro-con config show` に出る — 2026-09-27 の本番の出力: `review 設定 codex / dispatcher が使っている担い手 codex (設定) / codex /Users/koji/.nodenv/versions/24.2.0/bin/codex`
+- [x] `codex` のとき、PG (か取り込みの係) の敵対的レビューが `codex exec` で走り、カードの履歴か出力にその証拠が残る — 2026-09-27 の本番: 07:47 に codex へ切り替えた後、C-100 (08:07) と C-099・C-102 の PG が transcript で `codex exec review` を実行し、C-099 は 2 回分・C-100 は 1 回分の出力をカードに添付した (`pro-con card show` の「添付」)
+- [x] codex が使えないときは Claude で代わりに回し、そのことを履歴に残す (偽の codex で失敗させて確かめる) — 🚨 **本番では未確認のまま、ユーザーの判断 (2026-09-27「とりま done でいい」) で閉じた**。確かめてあるのは dispatcher 側 (壊れた codex を解けたことにしない `TestResolveCodexRefusesBrokenBinary`) まで。PG が指示どおり Claude で代わりに回して `card attach` で残すかは、PG への指示文 (`rv.pgRule`) に頼っている。**trigger**: codex の枠切れ・codex の実行失敗が起きたカードで、履歴に代わりに回した添付が無ければ、この項を open に戻す
+- [x] 既定は `claude` で、今の動きが変わらない — claude のときの PG の指示に codex の行が無いことをテストで固定 (issue 539 で丸ごとの比較から変えた)
 
 ## 関連ファイル
 
