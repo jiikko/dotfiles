@@ -37,6 +37,15 @@ dogfooding (2026-09-27) で分かったこと。C-089 の PG は作業の途中�
   - commit: `pro-con: PG に起床の予約 (ScheduleWakeup / CronCreate / Monitor) を残させない (554)`
 - 残り: 受け入れ条件 2 (足した後に起動した PG で予約が残らないこと) は、master へ入って dispatcher が新しい指示で PG を起こしてからでないと確かめられない。
   `~/.claude/jobs/<id>/state.json` の `inFlight` に `session_cron` が無いことを見る
+- 2026-09-28 (dotfiles-01): 受け入れ条件 2 を確かめようとしたが、確かめる相手がまだ居ない。`~/.claude/jobs` に残る pro-con の PG の session
+  (cwd が `.claude/worktrees/pc-c-*`) は 74 本で、最後に起動したのは 09-27 11:27 (C-102)。指示を変えた commit (09-27 18:33) より後に起動した
+  PG は 0 本。dispatcher.log も 09-27 18:41 の停止で終わっている
+  - 確かめ方 (次に pro-con で PG を 1 本以上動かして完了した後): 下の 1 行で、指示を変えた後に作った PG の session の `inFlight` を並べる。
+    `kinds` に `session_cron` が無ければ条件 2 を満たす
+
+    ```sh
+    python3 -c 'import json,glob,os;[print(p.split("/")[-2],d.get("createdAt"),d.get("state"),(d.get("inFlight") or {}).get("kinds")) for p in glob.glob(os.path.expanduser("~/.claude/jobs/*/state.json")) for d in [json.load(open(p))] if "/pc-c-" in d.get("cwd","") and d.get("createdAt","")>"2026-09-27T09:33"]'
+    ```
 
 ## 関連
 
