@@ -1,7 +1,5 @@
 # 549 (perf): 放置フェードのランプ色でも段の鍵を使い回し、@fade-bucket の 2 回目の展開を消す
 
-> 🚨 **担当中: dotfiles-c2**（2026-09-27〜）
-
 起票日: 2026-09-27
 
 ## 概要
@@ -43,11 +41,11 @@ PR #16 (issue 547) で、非 current window のセルは段の鍵 `@fade-key` �
 
 ## 受け入れ条件
 
-- [ ] 描画が変わらない: 今の conf と新しい conf で window-status-format を展開し、差分 0 (issue 547 と同じ 868 通りの組み合わせ)
-- [ ] ランプ色の式 (`colour#{e|+:16,#{e|*:37,…}}`) が `_tmux.conf` に 1 か所だけある (grep で数える)
-- [ ] 点火アニメの開始色 (`tmux_ignite_current.sh` の `$1`) が変わらない
-- [ ] `check_cost` が @fade-bucket 1 回を固定し、2 回目を戻す変更を当てると red になる
-- [ ] before / after の実測を本文に書く (セル 1 個と全面再描画 1 回)
+- [x] 描画が変わらない — 変更前 (origin/master) と変更後の conf で隔離サーバを 2 つ立て、216 通り (pane 1 / 3 × busy × zoom × claude の状態 4 種 × 経過 9 通り: 未スタンプ・段 0〜5・上限超え・負) の window-status-format と点火の開始色を比べて差分 0。bell は fade の式を通らないので組み合わせに入れていない。比較スクリプトの検出力は、色の係数を 37 → 36 にずらした conf で 72 通りの差分が出ることで確かめた (スクリプトは使い捨てで、commit していない)
+- [x] ランプ色の式 (`colour#{e|+:16,#{e|*:37,…}}`) が `_tmux.conf` に 1 か所だけある — `grep -c` で 1 (`@fade-ramp-tpl`)。直す前は `@fade-hot-bg` (段 0 の色) にも同じ式があったので、これも `@fade-ramp-tpl` に段 0 を流し込む形に寄せた
+- [x] 点火アニメの開始色 (`tmux_ignite_current.sh` の `$1`) が変わらない — hook と同じ式 `#{?#{E:@busy},#{E:@fade-hot-bg},#{E:@fade-ramp-color}}` を上の 216 通りで比べて差分 0
+- [x] `check_cost` が @fade-bucket 1 回を固定し、2 回目を戻す変更を当てると red になる — 場面ごとの回数をぴったり固定 (busy 0 / 段 1 は 1 / 消灯 1 / 未スタンプ 0)。`@fade-tpl` を `#{E:@fade-ramp-color}` に戻す変異で「段 1 (ランプ色): @fade-bucket を 2 回展開した (期待 1)」の red を確認 (bin/mutate-verify)
+- [x] before / after の実測を本文に書く — 下の「実測 (修正後)」
 
 ## 関連ファイル
 
@@ -60,3 +58,20 @@ PR #16 (issue 547) で、非 current window のセルは段の鍵 `@fade-key` �
 ## 進捗
 
 - 2026-09-27: 起票。試作で効果を実測した (上表)。本体への変更はまだ
+- 2026-09-27 (dotfiles-c2): 本体に入れた。色の式の正本を `@fade-ramp-tpl` (段を印 `@RK@` で受けるテンプレート) の 1 か所にし、
+  `@fade-tpl` は `#{E:#{s/@RK@/@K@/:@fade-ramp-tpl}}` で計算済みの鍵を流し込む (外側の置き換えが `@K@` を鍵に書き換える。`@window-cell` の `@FK@` と同じ型)。
+  `@fade-ramp-color` (点火の hook) は同じテンプレートに `@fade-bucket` を、`@fade-hot-bg` は段 0 を流し込む。`docs/tmux-window-fade.md` の色の式の出典の記述も直した。
+  `make test` rc=0 (`tests/tmux/test_window_fade_render.sh` の実行を出力で確認)
+  - 敵対的レビューは省いた: 式の置き換えだけで判定ロジックを足しておらず、見た目の同一性を 216 通りの全比較、回数を check_cost の変異で確かめたため
+
+### 実測 (修正後、2026-09-27、この Mac / tmux 3.7b / 隔離サーバ)
+
+変更前と変更後の conf でサーバを 1 つずつ立て、window を 31 個 (1 pane・zsh -f・status off) 作り、`display -p "#{W:<window-status-format>}"` (31 セルを 1 回で展開) を
+100 回繰り返したときのサーバの CPU 時間 (`ps -o time`)。3 回ずつ交互に測った。
+
+| 場面 | 変更前 | 変更後 | 1 セルあたり |
+|---|---|---|---|
+| 最近触った (段 1) | 2,840〜2,940 ms | 1,640〜1,650 ms | 約 922 → 529µs (**−42%**) |
+| 消灯 | 770 ms | 760〜780 ms | 約 250µs (変わらない) |
+
+最近触った window は、まだ消灯の約 2.1 倍かかる (fg の dim 判定などの分。内訳は測っていない)

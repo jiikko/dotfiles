@@ -28,8 +28,11 @@ status バーの window list で、**最近 shell でコマンドを実行した
 > 2026-07-14 に廃止し、毎 step 秒 1 段の連続減衰へ移行した。
 
 - bg のバイオレット階調は 256色 cube の対角 (r=b) `colour(16 + 37×(max−bucket))`（201→164→127→90→53）を算術生成する。
-  この式は `@fade-ramp-color` に 1 度だけ定義し、`@fade-tpl` が参照する（色を変える
-  なら `@fade-ramp-color` の 1 箇所）。最明色（busy/bucket0）は `@fade-hot-bg`、段数上限は `@fade-bucket-max`、
+  この式はテンプレート `@fade-ramp-tpl`（段を印 `@RK@` で受ける）に 1 度だけ定義する（色を変えるなら
+  `@fade-ramp-tpl` の 1 箇所）。セル（`@fade-tpl`）は計算済みの段の鍵を `@RK@` へ流し込み、`@fade-ramp-color`
+  （点火アニメの hook が開始色に使う）は `@fade-bucket` をその場で計算して流し込み、最明色（busy/bucket0）の
+  `@fade-hot-bg` は段 0 を流し込んで作る（2026-09-27、issue 549。セルが `@fade-ramp-color` を引くと `@fade-bucket` を
+  もう 1 回計算していた）。段数上限は `@fade-bucket-max`、
   文字色 3 定数（`@fade-hot-fg`=黒 / `@fade-dim-fg`=明灰 / `@fade-cold-fg`=消灯）と、すべて `@fade-*` が出典
 - truecolor の連続グラデにしないのは、tmux の format 算術に 16 進整形が無く `#RRGGBB` を組めない
   ため（実測確認）。6 階調の cube で近似する。grayscale 24 段の方が滑らかだが「上品だが目に飛び
@@ -70,7 +73,7 @@ preexec（実行開始）と precmd（実行完了）でスタンプされる。
   （status-interval=1、prefix 点滅の駆動と共用）なのでほぼ即時。window 切替等の操作でも再描画
 - `@fade-tpl` は bg+fg（セル先頭用）、`@fadefg-tpl` は fg のみ（pane 数・claude アイコン後の
   文字色リセット用）。分かれている理由は zoom の暗赤背景を途中で潰さないため。段計算は
-  `@fade-bucket`、bg 色式は `@fade-ramp-color`、最明は `@fade-hot-bg`、段数上限は `@fade-bucket-max` に
+  `@fade-bucket`、bg 色式は `@fade-ramp-tpl`、段数上限は `@fade-bucket-max` に
   集約したので、定数を 1 箇所変えれば全体へ伝播する（以前は色式を 3 変数に複製していたが
   2026-07-15 にヘルパーへ集約した）
 - **段の鍵 `@fade-key`（`busy` / `0`〜`max`）はセル 1 個につき 1 回だけ計算する**（2026-09-27、issue 501）。

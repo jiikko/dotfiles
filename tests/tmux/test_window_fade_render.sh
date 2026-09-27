@@ -5,7 +5,7 @@
 #   - 見た目: 段 (bucket) ごとの bg / fg、busy・未スタンプ・負の経過・zoom・claude アイコンの組み合わせが
 #     docs/tmux-window-fade.md の表どおりに展開される
 #   - コスト: 1 セルの展開で @busy (pane ごとに前面コマンドを引く P ループ) を **1 回だけ**評価する。
-#     @fade-bucket は鍵の 1 回 + ランプ色の 1 回まで (issue 501)。status は毎秒と set-option のたびに
+#     @fade-bucket も鍵の計算の 1 回だけ (issue 501 / 549。ランプ色は鍵から組むので計算し直さない)。status は毎秒と set-option のたびに
 #     全 window ぶん展開されるので、式の重複はそのまま再描画 1 回の重さになる。
 #     時間ではなく「何回展開したか」を `display -v` の展開ログで数える (壁時計に依存しない)
 #
@@ -117,31 +117,33 @@ wait_cmd "$p1" sleep
 touch_ago 100000
 expect "busy は経過に関係なく最明" "#[bg=colour201]#[fg=colour16] $idx:#[fg=colour214][3]#[fg=colour16] w "
 
-# --- コスト: 1 セルの展開で @busy を 1 回、@fade-bucket を 2 回までしか展開しない ----------
+# --- コスト: 1 セルの展開で @busy を 1 回、@fade-bucket を鍵の 1 回だけ展開する ----------------
 # `display -v` は format の展開を 1 段ずつログに出す。@busy / @fade-bucket の本体が展開された回数を数える
 busy_body="$("${T[@]}" show -gv @busy)"
 bucket_body="$("${T[@]}" show -gv @fade-bucket)"
 count_expansions() { # count_expansions <式の本体>
   "${T[@]}" display -v -t "$win" -p "$fmt" | grep -cF "expanding format: $1"
 }
-check_cost() { # check_cost <label>
+check_cost() { # check_cost <label> <@fade-bucket の期待回数>
+  # @fade-bucket の回数は場面で決まる: busy と未スタンプは鍵が @fade-bucket を引かないので 0、それ以外は鍵の 1 回。
+  # 🚨 ランプ色 (段 0〜4) で 2 回目が出たら、@fade-tpl が @fade-ramp-color を引く形に戻っている (issue 549)
   local nb nk
   nb="$(count_expansions "$busy_body")"
   nk="$(count_expansions "$bucket_body")"
   if [ "$nb" = 1 ]; then ok "$1: @busy の展開 1 回"; else ng "$1: @busy を $nb 回展開した (期待 1。鍵をセルごとに 1 回だけ計算する形が崩れた)"; fi
-  if [ "$nk" -le 2 ] 2>/dev/null; then ok "$1: @fade-bucket の展開 $nk 回 (<= 2)"; else ng "$1: @fade-bucket を $nk 回展開した (期待 2 以下)"; fi
+  if [ "$nk" = "$2" ]; then ok "$1: @fade-bucket の展開 $nk 回"; else ng "$1: @fade-bucket を $nk 回展開した (期待 $2)"; fi
 }
 if [ -z "$busy_body" ] || [ -z "$bucket_body" ]; then ng "@busy / @fade-bucket が定義されていない"; exit 1; fi
 # 展開ログの形が変わって 0 件になると「少ない = 合格」に倒れるので、先に 1 件以上拾えることを確かめる
 [ "$(count_expansions "$busy_body")" -ge 1 ] 2>/dev/null \
   || { ng "display -v の展開ログから @busy を拾えない (tmux のログ形式が変わった? 判定不能)"; exit 1; }
-check_cost "busy"
+check_cost "busy" 0
 not_busy
 touch_ago 1001
-check_cost "段 1"
+check_cost "段 1 (ランプ色)" 1
 touch_ago 100000
-check_cost "消灯"
+check_cost "消灯" 1
 "${T[@]}" set -wu -t "$win" @last-touched
-check_cost "未スタンプ"
+check_cost "未スタンプ" 0
 
 [ "$fails" -eq 0 ] || { printf '%d 件失敗\n' "$fails"; exit 1; }
