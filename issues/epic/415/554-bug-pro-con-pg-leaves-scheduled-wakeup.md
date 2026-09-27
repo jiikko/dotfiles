@@ -26,8 +26,17 @@ dogfooding (2026-09-27) で分かったこと。C-089 の PG は作業の途中�
 
 ## 受け入れ条件
 
-- [ ] PG への指示に起床の予約を使わないことが入る (`dispatcher.Prompt`)
+- [x] PG への指示に起床の予約を使わないことが入る (`dispatcher.Prompt`)
 - [ ] 足した後に起動した PG で、ScheduleWakeup が残らないことを 1 度確かめる
+
+## 進捗
+
+- 2026-09-27 (pro-con C-004): `dispatcher.Prompt` に「ScheduleWakeup / CronCreate / Monitor で自分を起こさない。使ったなら turn を終える前に取り消す
+  (ScheduleWakeup は stop / CronCreate は CronDelete / Monitor は TaskStop)」の 1 行を、`card run` の行の後に足した。
+  `TestPromptCarriesDiscipline` で守る (行を消すと FAIL することを確かめた)
+  - commit: `pro-con: PG に起床の予約 (ScheduleWakeup / CronCreate / Monitor) を残させない (554)`
+- 残り: 受け入れ条件 2 (足した後に起動した PG で予約が残らないこと) は、master へ入って dispatcher が新しい指示で PG を起こしてからでないと確かめられない。
+  `~/.claude/jobs/<id>/state.json` の `inFlight` に `session_cron` が無いことを見る
 
 ## 関連
 

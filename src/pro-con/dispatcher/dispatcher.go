@@ -1104,6 +1104,9 @@ func Prompt(c card.Card, rv Review) string {
 	fmt.Fprintf(&b, "- 画面の見た目を変えたら撮って `pro-con card attach %s <ファイル> --note \"<一言>\"` で添付する (人間とレビューする側が見る。"+
 		"TUI は隔離した tmux (`-L`) で動かして `tmux capture-pane -e -p` を .ans に書く (色つきの文字)。画像が要るなら vhs の Screenshot で .png。"+
 		"`screencapture` は bg では壁紙しか写らないので使わない)\n", c.ID)
+	// 残った予約は session を working のまま残し、止め終えたと読めなくなる (issue 554)
+	b.WriteString("- ScheduleWakeup / CronCreate / Monitor で自分を起こさない (再開は dispatcher が、回答・run の結果・差し戻しで行う)。" +
+		"使ったなら turn を終える前に取り消す (ScheduleWakeup は stop / CronCreate は CronDelete / Monitor は TaskStop)\n")
 	b.WriteString("- run を頼んだら、その結果が届くまで ask しない (質問は結果を受け取ってからにする。先に ask すると、頼んだ実行が取り消される)\n")
 	b.WriteString(rv.pgRule(c.ID))
 	if len(c.Issues) > 0 { // 印は PG、done への移動は取り込みの係 (issue 539。integrator-guide.md の役目 3 と対)
