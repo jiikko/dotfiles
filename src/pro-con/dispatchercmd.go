@@ -92,7 +92,8 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 		}
 		// 止めている間に SIGTERM / SIGHUP / SIGINT が来ても (画面の終了・ログアウトと重なる)、1 回目は止めるのをもう 1 度だけ試してから抜ける。
 		// 2 回目ですぐ抜ける (止まらない形でも kill -9 無しで止められる)。
-		// 🚨 signal.Ignore にしない: 無視は exec した子 (claude stop / claude agents) に引き継がれ、子も止められなくなる (Notify で受けた分は引き継がれない)
+		// 🚨 signal.Ignore にしない: 1 回目と 2 回目を数えられない。無視は exec した子に引き継がれ、claude 以外の子は止められなくなる
+		// (Notify で受けた分は引き継がれない)。claude 自身は無視を引き継いでも SIGTERM で rc=143 で抜ける (2.1.283 で実測。issue 439)
 		ctx, cancel := context.WithCancel(context.Background())
 		sigs := make(chan os.Signal, 2)
 		signal.Notify(sigs, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGINT)

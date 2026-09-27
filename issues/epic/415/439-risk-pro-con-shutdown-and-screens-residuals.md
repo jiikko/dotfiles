@@ -31,9 +31,18 @@
 - attach で開いた (人が直接話している) session も、pro-con の終了で止める。照合は session id だけで、pid は見ない
   (同じ session id で pid が違うのは Claude Code の自動の再開 = pro-con の PG。外の shell の `--resume` は別の session id = 427 の 3f の実測)。
   止めた session を attach で同じ id のまま起こし直せるかは確かめていない
+  → **2026-09-28 に実測 (2.1.283)**: 起こし直せる。`claude --bg` の session を `claude stop` で止め (state: done・pid 無し)、pty の中で `claude attach <id>` を開くと、
+  **同じ短い id・同じ session id のまま新しい pid で**起きる (status: idle)。attach の画面を閉じても session は生きたまま残る。
+  pro-con の側では、終了で止めた PG を人が attach で起こし直すと、次の dispatcher には「同じ session id・違う pid」に見える (register の
+  「外から操作された疑い」の枝に入るはず。未確認)
 - claude (native binary) が起動時にシグナルの扱いを戻すかは確かめていない (`--stop` は Notify で受けるので、子は既定の扱いで起動する。
   Go の signal.Ignore なら子に引き継がれることは実測した)
+  → **2026-09-28 に実測 (2.1.283)**: 戻す (自分で扱い直す)。SIGTERM / SIGHUP / SIGINT を無視した親から pty で起動した対話の claude に SIGTERM を送ると、
+  無視しない場合と同じく rc=143 で抜ける。親の無視では claude の子を守れない (守るならプロセスグループを分ける)。
+  `dispatchercmd.go` の「Ignore にすると子も止められなくなる」のコメントを、実測に合わせて直した (Notify を選ぶ理由は、回数を数えることと claude 以外の子)
 - `claude agents --json` / `--all` の出力の形は 2.1.282 で測った。止まったかは pid と state で決める (pid 無し かつ working でない = 01dbb3b0。
   dogfooding で、終えた session が stop 後も state: done のままだと分かって直した)。版が上がって pid が出なくなる / working の綴りが変わると、
   止まったかの確かめがどちらかへ倒れる (未確認)。→ 466 で「止まった = pid 無し かつ stopped / done」の許可リストに直し、知らない state は
   止めに行って警告を出す側へ倒した (pid が出なくなる版では、生きている done を止まったと読む形が残る)
+  → **2026-09-28 に 2.1.283 で読み直した**: 形は同じ。欄は `id` / `sessionId` / `kind` / `name` / `cwd` / `startedAt` と、生きている session にだけ `pid` / `status`、
+  裏の session には `state`。9 本のうち対話の 8 本は pid 付き、裏の 1 本は「pid 無し・working」(551 の、起床の予約が残った形)
