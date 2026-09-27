@@ -48,7 +48,12 @@ type DispatcherState struct {
 	Codex    string `json:"codex,omitempty"`
 	CodexErr string `json:"codex_err,omitempty"`
 	Cap      int    `json:"cap"` // 今の同時に動かす数 (利用枠の残量で絞る。dispatcher/usage.go)
-	Why      string `json:"why"` // Cap を絞った / 枠を読めない理由
+	// Slots は最後に割り当て (dispatch) を回したときに PG の枠に数えたカード (issue 557。card.HoldsPGSlot を通したもの・起動や再開の結果が
+	// 分からないもの・その Tick に起動したもの)。SlotsAt はそれを数えた時刻 (zero なら数えたことが無い)。一覧を取れない Tick は数え直さないので、
+	// Tick より古いことがある。🚨 一覧 (pro-con ps・画面) はこれを読むだけにし、枠の判定を組み直さない (backend.CountedSlots)
+	Slots   []string  `json:"slots,omitempty"`
+	SlotsAt time.Time `json:"slots_at,omitzero"`
+	Why     string    `json:"why"` // Cap を絞った / 枠を読めない理由
 	// 最後に読めた利用枠の使用率 (%)。UsageAt が zero なら読めたことが無い
 	UsageSession int       `json:"usage_session"`
 	UsageWeek    int       `json:"usage_week"`

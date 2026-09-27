@@ -118,6 +118,9 @@ type Dispatcher struct {
 	// settingsBroken は設定を読めなかった (予定は回さない: schedule off を読めないまま破壊的な予定を回さない)
 	settingsBroken bool
 	held           string // 枠で起動・再開を待たせている知らせ (変わったときだけログに書く)
+	// slots は最後に割り当てを回し終えたときに枠に数えたカード、slotsAt はその時刻 (writeState が様子に書く。issue 557)
+	slots   []string
+	slotsAt time.Time
 
 	ticked bool // 1 度でも Tick したか
 	// Record は Tick / Shutdown の出来事を渡す (ログの行と events.jsonl。dispatchercmd.go)。記録を変えた知らせ (Changed) より先に呼ぶ
@@ -742,20 +745,20 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		o, ok := owned(c, reg)
 		return card.HoldsPGSlot(c, ok && idle(o, ss))
 	}
-	running := 0
+	var slots []string // 枠に数えたカード (上限と比べるのはこの数。様子に書いて一覧が読む = issue 557)
 	var queue []card.Card
 	var notes []eventlog.Event
 	for _, c := range st.Cards {
 		if c.Deleting() { // 起動・再開しない (PG を止めて消すのを待っている)。起動の結果が分からないものは立っているかもしれないので数える
 			if holds(c) || c.Launching != "" {
-				running++
+				slots = append(slots, c.ID)
 			}
 			continue
 		}
 		switch c.State {
 		case card.Running, card.Waiting: // 質問待ちの列では、入力待ちで止まった PG だけが枠を使う (card.HoldsPGSlot)
 			if holds(c) {
-				running++
+				slots = append(slots, c.ID)
 			}
 		case card.Planned:
 			// 順番 (issue 468) は初めての起動だけを止める (card.HeldBy)
@@ -796,12 +799,12 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 			if err := d.settle(c.ID, now, c.Launching, id); err != nil {
 				return notes, err
 			}
-			running++
+			slots = append(slots, c.ID)
 			notes = append(notes, ev(eventlog.KindLaunch, c.ID, id, fmt.Sprintf("%s の PG の%sを一覧で確かめた (%s)", c.ID, c.Launching, id)))
 			continue
 		}
 		if now.Sub(c.LaunchedAt) < launchGrace {
-			running++ // まだ一覧に出ていないだけかもしれない
+			slots = append(slots, c.ID) // まだ一覧に出ていないだけかもしれない
 			continue
 		}
 		fresh = append(fresh, c) // 待っても出なかった。起動・再開し直す (古い順は保つ)
@@ -810,8 +813,8 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 	lim, _ := d.limit()
 	held := ""
 	for i, c := range fresh {
-		if running >= limit {
-			if running < lim { // 枠で絞らなくても止まっていたなら、枠のせいにしない
+		if len(slots) >= limit {
+			if len(slots) < lim { // 枠で絞らなくても止まっていたなら、枠のせいにしない
 				held = fmt.Sprintf("着手待ちの %d 枚を起動・再開しない (%s)", len(fresh)-i, why)
 			}
 			break
@@ -838,7 +841,7 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		if err := d.mark(c.ID, now, how); err != nil {
 			return notes, err
 		}
-		running++ // 失敗と返っても立っているかもしれないので、確かめるまで上限に数える
+		slots = append(slots, c.ID) // 失敗と返っても立っているかもしれないので、確かめるまで上限に数える
 		id, launchErr := run(ctx)
 		if launchErr != nil {
 			if errors.Is(launchErr, ErrRejected) {
@@ -863,7 +866,8 @@ func (d *Dispatcher) dispatch(ctx context.Context, now time.Time, ss []agents.Se
 		}
 		notes = append(notes, ev(eventlog.KindLaunch, c.ID, id, fmt.Sprintf("%s に PG を%sした (%s)", c.ID, how, id)))
 	}
-	if held != d.held { // 枠で待たせていることは、変わったときだけ書く (Tick ごとにログを埋めない)
+	d.slots, d.slotsAt = slots, now // 途中で抜けた割り当ては書かない (数え損ねた数を今の値に見せない。古くなれば一覧は「判定できない」と出す)
+	if held != d.held {             // 枠で待たせていることは、変わったときだけ書く (Tick ごとにログを埋めない)
 		d.held = held
 		if held != "" {
 			notes = append(notes, ev(eventlog.KindHold, "", "", held))

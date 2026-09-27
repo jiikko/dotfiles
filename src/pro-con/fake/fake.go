@@ -391,8 +391,10 @@ func (s *Sim) Snapshot() backend.Snapshot {
 		cards[i] = c
 	}
 	var cons []backend.Consumer
+	var slots []string // 模擬の dispatcher は作業中の列のカードを枠に数える (busyConsumers と同じ)
 	for _, c := range s.cards {
 		if c.State == card.Running {
+			slots = append(slots, c.ID)
 			st := "busy"
 			if c.Wait.Kind != card.WaitNone {
 				st = "waiting"
@@ -400,7 +402,7 @@ func (s *Sim) Snapshot() backend.Snapshot {
 			cons = append(cons, backend.Consumer{Session: c.Session, CardID: c.ID, Status: st})
 		}
 	}
-	return backend.Snapshot{Now: s.now, Cards: cards, Consumers: cons, Limit: s.limit, LimitMax: s.limit, DispatcherTick: s.now,
+	return backend.Snapshot{Now: s.now, Cards: cards, Consumers: cons, Limit: s.limit, LimitMax: s.limit, DispatcherTick: s.now, Slots: slots, SlotsAt: s.now,
 		RoleStates: []card.RoleState{s.pmState()}, Violations: card.Check(cards), Config: s.config()}
 }
 

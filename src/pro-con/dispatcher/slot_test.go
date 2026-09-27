@@ -2,11 +2,13 @@ package dispatcher
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
 	"pro-con/agents"
 	"pro-con/card"
+	"pro-con/store"
 )
 
 // PG の枠は turn の途中の PG だけを数える (issue 455)。テストの係の結果を待って idle と一覧で確かめた PG は枠を使わないので、
@@ -56,6 +58,15 @@ func TestSlotSkipsIdlePGAwaitingRun(t *testing.T) {
 			cs := states(t, dir)
 			if got := cs["C-002"].State == card.Running; got != tc.start {
 				t.Fatalf("C-002 を起動した=%v、期待=%v (starts=%v C-001=%v)", got, tc.start, l.starts, cs["C-001"].State)
+			}
+			// 枠に数えたカードを様子に書く (一覧とヘッダが読む。issue 557): 起動した C-002 か、枠を使い続ける C-001
+			want := []string{"C-001"}
+			if tc.start {
+				want = []string{"C-002"}
+			}
+			ds, _, err := store.LoadDispatcherState(dir)
+			if err != nil || !slices.Equal(ds.Slots, want) || !ds.SlotsAt.Equal(d.Now()) {
+				t.Fatalf("様子の枠 = %v (%v)、期待 %v (err=%v)", ds.Slots, ds.SlotsAt, want, err)
 			}
 		})
 	}

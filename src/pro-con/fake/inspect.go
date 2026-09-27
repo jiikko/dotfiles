@@ -29,7 +29,8 @@ func (s *Sim) Procs() ([]backend.Proc, error) {
 	rows := []backend.Proc{{Role: "dispatcher", State: "動いている (模擬)"}, {Role: "PM", State: "動いている (模擬)", Session: "pm000001"}}
 	for _, c := range s.cards {
 		if c.State == card.Running {
-			rows = append(rows, backend.Proc{Role: "PG", State: c.State.Label(), Card: c.ID, Session: c.Session, Age: s.now.Sub(c.Since), Command: c.Exec.Command})
+			rows = append(rows, backend.Proc{Role: "PG", State: c.State.Label(), Card: c.ID, Session: c.Session, Age: s.now.Sub(c.Since), Command: c.Exec.Command,
+				Slot: backend.SlotHeld}) // 模擬の dispatcher は作業中の列のカードを枠に数える (Snapshot の Slots と同じ)
 		}
 	}
 	return rows, nil

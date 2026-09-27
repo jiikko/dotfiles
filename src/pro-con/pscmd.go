@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -79,7 +80,7 @@ func runPS(args []string, dir string, now func() time.Time, list procLister, std
 		_, _ = fmt.Fprintln(stderr, "pro-con ps:", err)
 		return 1
 	}
-	rows, warns := collectProcs(dir, now(), procs)
+	rows, slots, warns := collectProcs(dir, now(), procs)
 	for _, w := range warns {
 		_, _ = fmt.Fprintln(stderr, "pro-con ps:", w)
 	}
@@ -87,7 +88,17 @@ func runPS(args []string, dir string, now func() time.Time, list procLister, std
 		data, _ := json.MarshalIndent(rows, "", "  ")
 		_, _ = fmt.Fprintln(stdout, string(data))
 	} else {
-		for _, p := range rows {
+		head, secs, tail := backend.SplitPGs(rows, slots.known)
+		for _, p := range head {
+			_, _ = fmt.Fprintln(stdout, formatProcRow(p))
+		}
+		for _, sec := range secs { // 枠を使う PG と待機中の PG を分けて出す (issue 557)
+			_, _ = fmt.Fprintln(stdout, "── "+sec.Title(slots.limit))
+			for _, p := range sec.Rows {
+				_, _ = fmt.Fprintln(stdout, formatProcRow(p))
+			}
+		}
+		for _, p := range tail {
 			_, _ = fmt.Fprintln(stdout, formatProcRow(p))
 		}
 	}
@@ -123,8 +134,15 @@ func formatProcRow(p Proc) string {
 	return b.String()
 }
 
+// procSlots は PG の枠の読めた様子 (issue 557)。known は dispatcher が枠に数えたカードを読めたか (backend.CountedSlots)、limit は今の枠。
+type procSlots struct {
+	known bool
+	limit int
+}
+
 // collectProcs は状態の置き場と procs から役ごとの行を組む (読むだけ)。読めなかったものは warns に出す (0 本と区別する)。
-func collectProcs(dir string, now time.Time, procs map[int]string) (rows []Proc, warns []string) {
+// PG の行には、dispatcher が枠に数えたカードかどうかを付ける (Proc.Slot。一覧の側で card.HoldsPGSlot を組み直さない。issue 557)。
+func collectProcs(dir string, now time.Time, procs map[int]string) (rows []Proc, slots procSlots, warns []string) {
 	alive := func(pid int) bool { _, ok := procs[pid]; return pid > 0 && ok }
 
 	ds, ticked, err := store.LoadDispatcherState(dir)
@@ -141,6 +159,9 @@ func collectProcs(dir string, now time.Time, procs map[int]string) (rows []Proc,
 		}
 		return p
 	}
+	counted, ok := backend.CountedSlots(ds.Slots, ds.SlotsAt, store.Held(dir), store.DispatcherGone(dir), now)
+	slots = procSlots{known: ok, limit: ds.Cap}
+	held := map[string]bool{} // 枠に数えたカードのうち、行を出したもの
 	d := holder("dispatcher", dispatcher.LockFile, "dispatcher")
 	if d.PID != 0 && ticked {
 		d.State += fmt.Sprintf(" (最後の Tick %s 前)", now.Sub(ds.Tick).Round(time.Second))
@@ -191,6 +212,35 @@ func collectProcs(dir string, now time.Time, procs map[int]string) (rows []Proc,
 		if p.Role == "PG" && cardsOK {
 			p.Mismatch = mismatch(p.State != backend.ProcStopped, c, known)
 		}
+		if p.Role == "PG" {
+			switch {
+			case slots.known && slices.Contains(counted, o.CardID) && o.ID == c.Session: // 前の session の行は数えない (再開で入れ替わった)
+				p.Slot, held[o.CardID] = backend.SlotHeld, true
+			case p.State == backend.ProcStopped:
+			case slots.known:
+				p.Slot = backend.SlotIdle
+			default:
+				p.Slot = backend.SlotUnknown
+			}
+		}
+		rows = append(rows, p)
+	}
+	// 枠に数えたが起動の記録にまだ無い PG (起動・再開の結果を確かめている / 起動した直後で登録の前)。行を出さないと作業中の数と行が合わない
+	for _, id := range counted {
+		if held[id] {
+			continue
+		}
+		p := Proc{Role: "PG", Card: id, State: "起動中 (起動の記録にまだ無い)", Slot: backend.SlotHeld}
+		if c, ok := cards[id]; ok {
+			p.Session = c.Session
+			if c.Launching != "" {
+				p.State = c.Launching + "の結果を確かめている"
+			}
+			if !c.LaunchedAt.IsZero() {
+				p.Age = now.Sub(c.LaunchedAt)
+			}
+		}
+		held[id] = true
 		rows = append(rows, p)
 	}
 
@@ -225,12 +275,15 @@ func collectProcs(dir string, now time.Time, procs map[int]string) (rows []Proc,
 			rows = append(rows, Proc{Role: "画面", State: "開いている", Session: s.ID})
 		}
 	}
-	return rows, warns
+	return rows, slots, warns
 }
 
 // pgState は session が動いている PG の状態の欄 (issue 535)。着手待ちの列のカードの PG は、回答・結果・差し戻しを受けて
 // 同じ session の再開を待っている。列の名前 (カードの欄で分かる) ではなく PG 自身の状態を、待っている訳と一緒に出す。
 func pgState(c card.Card, ds store.DispatcherState) string {
+	if c.State == card.Running && c.AwaitsRun() { // 枠に数えないことがある (turn を終えて idle なら。issue 455)。待機中の区分に訳を出す
+		return c.State.Label() + " (テストの係の結果待ち)"
+	}
 	if c.State != card.Planned {
 		return c.State.Label()
 	}
@@ -274,7 +327,7 @@ func inspectProcs(dir string, now func() time.Time, list procLister) ([]Proc, er
 	if err != nil {
 		return nil, err
 	}
-	rows, warns := collectProcs(dir, now(), procs)
+	rows, _, warns := collectProcs(dir, now(), procs)
 	if len(warns) > 0 {
 		return rows, errors.New(strings.Join(warns, " / "))
 	}

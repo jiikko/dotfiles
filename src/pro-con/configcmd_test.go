@@ -185,7 +185,7 @@ func TestPSListsOwnedRolesOnly(t *testing.T) {
 	for key, want := range map[string]Proc{
 		"dispatcher  ":  {PID: 100, Command: "/x/pro-con dispatcher --exit-without-screens 1m"},
 		"PM  pm1":       {PID: 300, State: "動いている"},
-		"PG C-001 pg1":  {PID: 200, State: card.Running.Label(), Command: "make test"},
+		"PG C-001 pg1":  {PID: 200, State: card.Running.Label() + " (テストの係の結果待ち)", Command: "make test"}, // 枠に数えないことがある (issue 557)
 		"PG C-002 pg2":  {PID: 201, State: "止まっている"},
 		"テストの係 C-001 ":  {PID: 400, State: "実行中", Command: "make test"},
 		"画面  " + w.ID(): {State: "開いている"},

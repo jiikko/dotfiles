@@ -55,8 +55,9 @@ func TestGaugeStoppedDispatcherShowsMax(t *testing.T) {
 	be := newSpy()
 	be.snap.Limit, be.snap.LimitMax, be.snap.LimitWhy = 0, 3, "枠 96%: 新しく起動・再開しない"
 	be.snap.DispatcherTick = be.snap.Now.Add(-dispatcherStale - time.Second)
+	be.snap.SlotsAt = be.snap.DispatcherTick
 	g := ansi.Strip(New(be, nil).gauge())
-	if !strings.Contains(g, "PG 0/3 │") || strings.Contains(g, "上限") || strings.Contains(g, "枠 96%") {
+	if !strings.Contains(g, "PG ?/3 │") || strings.Contains(g, "上限") || strings.Contains(g, "枠 96%") {
 		t.Fatalf("止まった dispatcher の最後の絞りを出した: %q", g)
 	}
 }
@@ -170,8 +171,8 @@ func TestScreensShownAndQuitLabel(t *testing.T) {
 	}
 }
 
-// ゲージと PG の一覧の見出しの「PG n/m」は、枠を使っている PG (dispatcher と同じ card.HoldsPGSlot) を数える (issue 455)。
-// テストの係の結果を待って idle の PG は一覧には出すが数えない。
+// ゲージの「PG n/m」は、dispatcher が枠に数えたカード (様子の Slots) の数を読むだけ (issue 557)。画面の側で一覧 (Consumers) から
+// card.HoldsPGSlot を組み直さない (母数が dispatcher と違う)。dispatcher が数え直していなければ ? (読めないのを 0 に見せない)。
 func TestGaugeCountsOnlyPGsHoldingSlot(t *testing.T) {
 	be := newSpy()
 	now := be.snap.Now
@@ -183,9 +184,14 @@ func TestGaugeCountsOnlyPGsHoldingSlot(t *testing.T) {
 		{Session: "s-r2", CardID: "R2", Status: "idle"}, // 結果待ちで turn を終えた: 数えない
 		{Session: "s-r3", CardID: "R3", Status: "busy"}, // 頼んだが turn の途中: 数える
 	}
+	be.snap.Slots = []string{"R1", "R3"} // dispatcher が数えたもの (R2 は結果待ちで idle なので数えていない)
 	m := New(be, nil)
 	if g := ansi.Strip(m.gauge()); !strings.Contains(g, "PG 2/2") {
-		t.Fatalf("枠を使っていない PG を数えた: %q", g)
+		t.Fatalf("dispatcher が数えた枠を出さない: %q", g)
+	}
+	be.snap.SlotsAt = be.snap.Now.Add(-dispatcherStale - time.Second) // 一覧を取れない Tick が続いて数え直していない
+	if g := ansi.Strip(New(be, nil).gauge()); !strings.Contains(g, "PG ?/2") {
+		t.Fatalf("古い数を今の値として出した: %q", g)
 	}
 }
 

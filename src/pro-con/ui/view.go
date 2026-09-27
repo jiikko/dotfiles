@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -116,11 +117,16 @@ func (m *Model) render() string {
 const limitWhyCells = 40
 
 // pgGauge は枠を使っている PG (turn の途中。テストの係の結果を待って idle の PG は数えない) の数 / 今の同時実行数。利用枠で上限より絞っていれば上限と理由も出す。
+// 使っている数は dispatcher が枠に数えたカードで、判定できなければ ? (dispatcher が止まっている・古い。読めないのを 0 に見せない。issue 557)。
 func (m *Model) pgGauge() string {
-	if m.dispatcherStopped() && m.snap.LimitMax > 0 { // 止まった dispatcher の最後の絞りを今の値として出さない
-		return fmt.Sprintf("PG %d/%d", m.snap.SlotsUsed(), m.snap.LimitMax)
+	used := "?"
+	if n, ok := m.snap.SlotsUsed(); ok {
+		used = strconv.Itoa(n)
 	}
-	g := fmt.Sprintf("PG %d/%d", m.snap.SlotsUsed(), m.snap.Limit)
+	if m.dispatcherStopped() && m.snap.LimitMax > 0 { // 止まった dispatcher の最後の絞りを今の値として出さない
+		return fmt.Sprintf("PG %s/%d", used, m.snap.LimitMax)
+	}
+	g := fmt.Sprintf("PG %s/%d", used, m.snap.Limit)
 	if m.snap.Limit < m.snap.LimitMax {
 		g += fmt.Sprintf(" (上限 %d)", m.snap.LimitMax)
 	}

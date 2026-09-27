@@ -586,7 +586,7 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 		} else if t := b.transcript(s.SessionID); len(t.Outputs) > 0 {
 			cards[i].Log = slices.Clip(tail(t.Outputs, LogOutputs)) // Outputs は transcript のキャッシュと共有 (append で書き込ませない)
 		}
-		if c.State == card.Running || c.WaitsOnPrompt() { // 入力待ちで止まった PG も生きていて枠を使う (dispatcher と同じ = card.HoldsPGSlot)
+		if c.State == card.Running || c.WaitsOnPrompt() { // 作業中・入力待ちの PG (枠に数えたかは dispatcher が書いた Slots で読む。issue 557)
 			cons = append(cons, backend.Consumer{Session: s.ID, CardID: c.ID, Status: s.Status, PID: s.PID})
 		}
 	}
@@ -617,6 +617,7 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 		extra = append(extra, card.Violation{Reason: b.refused})
 	}
 	b.snap = backend.Snapshot{Now: now, Cards: cards, Consumers: cons, Limit: ds.Cap, LimitMax: ds.Limit, LimitWhy: ds.Why,
+		Slots: ds.Slots, SlotsAt: ds.SlotsAt,
 		DispatcherTick: ds.Tick, Screens: screens, DispatcherHeld: store.Held(b.dir),
 		DispatcherGone: store.DispatcherGone(b.dir), Startup: ds.Startup, StartupAlert: ds.StartupAlert, Upgrade: ds.Upgrade, UpgradeAlert: ds.UpgradeAlert, Roles: ds.Roles, RoleStates: ds.RoleStates, Violations: append(card.Check(cards), extra...), Config: cfg}
 	b.pending, b.ready = pending, true
