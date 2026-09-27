@@ -31,7 +31,7 @@ type Session struct {
 	Cwd        string `json:"cwd"`
 	PID        int    `json:"pid"`
 	StartedAt  int64  `json:"startedAt"` // epoch ms
-	// JobState は Claude Code が <jobsDir>/<ID>/state.json に書いた state。pid 無し・working の session だけ読む (List)。読めなければ空
+	// JobState は Claude Code が <jobsDir>/<ID>/state.json に書いた state。pid 無しで state だけでは止まったと読めない session だけ読む (List)。読めなければ空
 	JobState string `json:"-"`
 }
 
@@ -46,8 +46,9 @@ const Timeout = 10 * time.Second
 var ErrEmptyOutput = errors.New("claude agents --json の出力が空")
 
 // List は session の一覧を返す。コマンドの失敗・timeout・空の出力・壊れた JSON はすべてエラー (0 本と区別する)。
-// jobsDir は Claude Code が session ごとに様子を書く置き場 (~/.claude/jobs)。pid 無し・working の session の JobState を読む
-// (Stopped の判定に使う。空なら読まない = 今までどおり、pid 無し・working は自動の再開の途中として止まっていない扱い)。
+// jobsDir は Claude Code が session ごとに様子を書く置き場 (~/.claude/jobs)。pid 無しで state だけでは止まったと読めない session
+// (working と、知らない state) の JobState を読む (working の Stopped の判定と、止めきれなかったときの案内に使う = issue 555。
+// 空なら読まない = 今までどおり、pid 無し・working は自動の再開の途中として止まっていない扱い)。
 func List(ctx context.Context, run Runner, jobsDir string) ([]Session, error) {
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
@@ -69,7 +70,7 @@ func List(ctx context.Context, run Runner, jobsDir string) ([]Session, error) {
 		return nil, fmt.Errorf("claude agents --json の出力を読めない (版が変わった?): %w", err)
 	}
 	for i := range ss {
-		if s := &ss[i]; jobsDir != "" && s.PID == 0 && s.State == stateWorking && ShortID(s.ID) {
+		if s := &ss[i]; jobsDir != "" && s.PID == 0 && !s.Stopped() && ShortID(s.ID) { // 止まった形 (stopped / done / failed) は読まない (--all では数が多い)
 			s.JobState = readJobState(filepath.Join(jobsDir, s.ID, "state.json"))
 		}
 	}

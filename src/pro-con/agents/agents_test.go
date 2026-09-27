@@ -100,7 +100,7 @@ func TestSessionStopped(t *testing.T) {
 
 // pid 無し・working の session だけ、Claude Code の記録 (<jobsDir>/<id>/state.json) を読む。記録が done なら止まっている
 // (起床を予約したまま終えた session。issue 551)。kill -9 の直後の自動の再開の途中 (crashed / resuming)・記録が無い・壊れているは止まっていない。
-// pid のある session と、置き場の外を指す id の記録は読まない。
+// pid のある session・止まった形の session と、置き場の外を指す id の記録は読まない。知らない state は読む (案内に出す。issue 555)。
 func TestListReadsJobStateForPidlessWorking(t *testing.T) {
 	root := t.TempDir()
 	jobs := filepath.Join(root, "jobs")
@@ -118,6 +118,8 @@ func TestListReadsJobStateForPidlessWorking(t *testing.T) {
 	write("aaaa0003", `{"state":"resuming"}`)
 	write("aaaa0005", `{broken`)
 	write("aaaa0006", `{"state":"done"}`)
+	write("aaaa0007", `{"state":"crashed"}`)
+	write("aaaa0008", `{"state":"done"}`)
 	write("../x", `{"state":"done"}`) // 置き場の 1 つ上 (root/x)。id "../x" が指す先
 	out := `[
  {"id":"aaaa0001","kind":"background","state":"working","sessionId":"s1"},
@@ -126,7 +128,9 @@ func TestListReadsJobStateForPidlessWorking(t *testing.T) {
  {"id":"aaaa0004","kind":"background","state":"working","sessionId":"s4"},
  {"id":"aaaa0005","kind":"background","state":"working","sessionId":"s5"},
  {"id":"aaaa0006","pid":42,"kind":"background","state":"working","sessionId":"s6"},
- {"id":"../x","kind":"background","state":"working","sessionId":"s7"}
+ {"id":"../x","kind":"background","state":"working","sessionId":"s7"},
+ {"id":"aaaa0007","kind":"background","state":"weird","sessionId":"s8"},
+ {"id":"aaaa0008","kind":"background","state":"stopped","sessionId":"s9"}
 ]`
 	ss, err := List(context.Background(), runner(out, "", nil), filepath.Join(jobs, "sub", ".."))
 	if err != nil {
@@ -139,10 +143,12 @@ func TestListReadsJobStateForPidlessWorking(t *testing.T) {
 		"aaaa0001": {"done", true},     // 起床の予約が残ったまま終えた (C-089 の形)
 		"aaaa0002": {"crashed", false}, // kill -9 の直後
 		"aaaa0003": {"resuming", false},
-		"aaaa0004": {"", false}, // 記録が無い
-		"aaaa0005": {"", false}, // 記録が壊れている
-		"aaaa0006": {"", false}, // pid がある (動いている) なら記録は読まない
-		"../x":     {"", false}, // 置き場の外は読まない
+		"aaaa0004": {"", false},        // 記録が無い
+		"aaaa0005": {"", false},        // 記録が壊れている
+		"aaaa0006": {"", false},        // pid がある (動いている) なら記録は読まない
+		"../x":     {"", false},        // 置き場の外は読まない
+		"aaaa0007": {"crashed", false}, // 知らない state も読む (止めきれなかったときの案内に出す = issue 555)。止まったとは読まない
+		"aaaa0008": {"", true},         // 止まった形は読まない
 	}
 	for _, s := range ss {
 		w := want[s.ID]

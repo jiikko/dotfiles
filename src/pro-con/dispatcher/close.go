@@ -72,9 +72,10 @@ func (d *Dispatcher) stopMarked(ctx context.Context, now time.Time, ss []agents.
 		if deleting {
 			extra, wait, unsure = d.deleteTargets(c, now, ss, reg)
 		}
-		more, remaining, sent, err := d.ensureStopped(ctx, extra, map[string]bool{c.ID: true}, 0)
+		more, left, sent, err := d.ensureStopped(ctx, extra, map[string]bool{c.ID: true}, 0)
 		notes = append(notes, more...)
 		stopped := sent > 0 || c.StopSent // 前の Tick で止める要求を出して、この Tick で止まったのを見た形も「止めた」
+		remaining := left.names()
 		if err == nil && len(remaining) == 0 && !wait && len(unsure) == 0 {
 			delete(d.stopFrom, c.ID)
 			if deleting {
