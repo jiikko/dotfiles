@@ -1,0 +1,30 @@
+# 559 (perf): dispatcher が何もしていなくても 3 秒ごとに `claude agents --json` (claude 本体) を起こす
+
+起票日: 2026-09-27
+
+親: [415](415-design-claude-pm-worker-orchestration.md)
+
+## 概要
+
+dispatcher の Tick (3 秒。`dispatchercmd.go` の `dispatcherInterval`) は、毎回条件なしで `claude agents --json` を起こす
+(`dispatcher/dispatcher.go` の Tick → `d.List` → `agents/agents.go` の `execAgents`)。カードが 1 枚も動いていなくても、
+**claude 本体のプロセスが 1 分 20 回・1 日 約 2.9 万回**起きる (2026-09-27 に定数とコードで確かめた。500 の 15:10 の節)。
+
+- 1 回 約 0.14 秒・CPU 0.13 秒 (macOS 27 で `time claude agents --json` を実測)。1 日で CPU 約 1 時間分
+- 500 (macOS 15.7.7 でカーネルのメモリが漏れる) の容疑の 1 つ: 上流の報告では漏れが claude.exe のプロセスに付いて回る。
+  macOS 27 では 1,000 回叩いても漏れなかった (500 の 15:10 の節)。漏れているマシンでは未測定
+
+## 対応方針 (案。500 の測定を待たずに検討してよい)
+
+- 一覧が要らない Tick では呼ばない: 生きている PG・PM・取り込みの係が居ない・起動の結果待ち (Launching) が無い・受付の箱に何も無いなら、間隔を延ばす (例 30 秒)
+- 画面は dispatcher の一覧 (seen.json) を 15 秒以内なら使う (`live/live.go` の `seenFresh`) ので、間隔を延ばすときはこの鮮度の閾値も揃える
+- 🚨 一覧の遅れで壊れるもの (起動の結果の確かめ・落ちた PG の検出・停滞の判定) を先に列挙してから延ばす (`survey-receiver-guards-before-passing-new-values.md`)
+
+## 受け入れ条件
+
+- [ ] カードが動いていない間の `claude agents --json` の回数が 1 分 20 回より大きく減る (実測で示す)
+- [ ] 起動の確かめ・落ちた PG の検出が、延ばした間隔でも遅れすぎない (どこまで遅れてよいかを決めて書く)
+
+## 関連
+
+- 500 (カーネルのメモリの漏れ) / 455 / 535
