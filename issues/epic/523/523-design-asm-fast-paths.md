@@ -89,13 +89,14 @@ asm の速い道を入れる場所は 1 つにしたい。そのために、端�
     | glogx ViewSteadyJA / ViewWithPanelJA / ViewWithDiffJA | 27.6 / 34.2 / 34.1µs | 13.4 / 16.5 / 21.3µs | -51.6% / -51.9% / -37.4% |
     | glogx 6 本の geomean | 24.92µs | 16.44µs | -34.0% |
 
-    allocs/op は最大 -4.4%。起動時の init は約 0.07 ms → 約 1.1 ms (6 allocs。3 万字を ansi.StringWidth で測る分)
+    allocs/op は最大 -4.4%。起動時の init は一時 約 0.07 ms → 約 1.1 ms に延びた (3 万字を ansi.StringWidth で測っていた)。
+    同じ日に、日本語の幅を規則 (`cjkWidth`: 幅 2、U+303F だけ 1) で埋める形に替えて **約 0.10 ms・5 allocs** に戻した
+    (規則と x/ansi の一致は `TestCJKWidthRuleMatchesLibrary` が全字で・RUNEWIDTH_EASTASIAN の子プロセスでも確かめる)
   - 敵対的レビュー (opus・読み取りのみ): P1 / P2 なし。受理字 × 文脈 (Hangul・Regional Indicator・Prepend・Indic・ZWJ・ExtPict) の結合、
     NEON 版の 3 byte 列 655,360 件 + BMP の全 rune、切り詰めのランダム 30 万本で、x/ansi・Go 版と全件一致。P3 の 2 件:
     - 結合の検査が uniseg (Unicode 15) で数えていた → 本番の分割器 (x/ansi、Unicode 16) で数える形に直した
-    - init の約 1 ms は、毎プロンプト起動される `bin/ratelimit` (UserPromptSubmit の hook) にも乗る。プロセスの起動全体に比べて小さいので受容。
-      **trigger**: 起動の遅さが目に見えると報告されたら、日本語の範囲の幅を x/ansi に聞く回数を減らす (範囲の中に幅 1 の字 U+303F 等が混ざるので、
-      範囲ごとに 1 字では済ませられない)
+    - init の約 1 ms は、毎プロンプト起動される `bin/ratelimit` (UserPromptSubmit の hook) にも乗っていた → 上の規則で埋める形にして解消
+      (ユーザーの指摘「起動は遅くなって、描画で速くなる?」。描画をほとんどしないコマンドでは純粋な退行だった)
   - 範囲に未割当の字 (U+FA6E / U+FA6F / U+FADA..U+FAFF 等) が入っている。幅は x/ansi から焼くので今の版とは一致する。
     依存を上げたら上の検査を回し直す
 - **次の候補 (未着手)**: pro-con / glogx のフレームで、幅・切り詰めがまだ CPU の何 % かを profile で測り直す (asm を切り詰め側にも入れる価値があるか)

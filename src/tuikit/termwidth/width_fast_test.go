@@ -42,6 +42,33 @@ func TestSymbolWidthTableMatchesLibrary(t *testing.T) {
 		len(syms), os.Getenv("RUNEWIDTH_EASTASIAN"))
 }
 
+// 日本語の幅を x/ansi に聞かず規則 (cjkWidth) で埋めているので、その規則が受理する全字で x/ansi と一致すること。
+// 依存を上げて幅が変わった字があれば、ここが字を名指しして落ちる (直すのは cjkWidth の例外)
+func TestCJKWidthRuleMatchesLibrary(t *testing.T) {
+	n := 0
+	for r := rune(symTableLo); r <= symTableHi; r++ {
+		if !acceptCJK(r) {
+			continue
+		}
+		if got, want := symbolWidth(r), ansi.StringWidth(string(r)); got != want {
+			t.Errorf("U+%04X: 表の幅 %d / x/ansi %d", r, got, want)
+		}
+		n++
+	}
+	if n < 20000 {
+		t.Fatalf("確かめた日本語の字が %d しかない (acceptCJK が変わった?)", n)
+	}
+}
+
+// init は日本語以外の記号の幅を symbolHi までしか x/ansi に聞かない。それより上に記号を足すと、表に入らず黙って遅い道へ回る
+func TestSymbolsOutsideCJKStayBelowSymbolHi(t *testing.T) {
+	for r := rune(symbolHi + 1); r <= symTableHi; r++ {
+		if acceptSymbol(r) && !acceptCJK(r) {
+			t.Errorf("U+%04X は acceptSymbol が受理するのに symbolHi (U+%04X) より上にある (init が幅を焼かない)", r, symbolHi)
+		}
+	}
+}
+
 // 表の範囲外が受理されないこと。R1 の指摘 (以前の総当たりが U+FFFF で止まっていた)
 // への対処で、範囲の外側は BMP 外まで含めて 0 であることを主張する。
 func TestSymbolWidthRejectsOutsideTable(t *testing.T) {
@@ -146,6 +173,14 @@ func TestDispWidthAgreesUnderEastAsianEnv(t *testing.T) {
 			"✓ ok  ─── \x1b[32m→\x1b[0m …", "┌──┐"} {
 			if got, want := Of(s), ansi.StringWidth(s); got != want {
 				t.Fatalf("EASTASIAN=1: dispWidth=%d ansi=%d for %q", got, want, s)
+			}
+		}
+		// 日本語の幅は規則 (cjkWidth) で埋めていて env を見ない。env が効いていても x/ansi と一致すること (W / F は曖昧幅でない)
+		for r := rune(symTableLo); r <= symTableHi; r++ {
+			if acceptCJK(r) {
+				if got, want := symbolWidth(r), ansi.StringWidth(string(r)); got != want {
+					t.Fatalf("EASTASIAN=1: U+%04X の表の幅 %d / x/ansi %d", r, got, want)
+				}
 			}
 		}
 		// レイアウト算術が破れないこと (退行の実害はここに出た。罫線 10 個で

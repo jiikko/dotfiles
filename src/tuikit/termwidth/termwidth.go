@@ -152,12 +152,10 @@ var symWidthTable [symTableHi - symTableLo + 1]uint8
 // init は受理集合の幅をライブラリから引いて表に焼く。x/ansi の init は import 順で
 // 先に走るので、env 由来の設定はこの時点で確定している。
 func init() {
-	// 受理する字を 1 本の文字列に並べ、部分文字列で 1 字ずつ測る。🚨 1 字ごとに string(r) を作ると、日本語を足した表
-	// (約 3 万字) で起動のたびに 3 万回確保する (inittrace で 29,276 allocs・1.4〜2.9 ms。2026-09-27)。この形で 6 allocs・約 1.1 ms
-	// (日本語を足す前は 816 allocs・約 0.07 ms。残りは 3 万字を ansi.StringWidth で測る時間。区間ごとに 1 字で済ませると、
-	// 区間の中の幅 1 の字 (U+303F 等) を取り違える)
-	buf := make([]byte, 0, 3*(symTableHi-symTableLo+1))
-	for r := rune(symTableLo); r <= symTableHi; r++ {
+	// 日本語以外の記号 (約 800 字) は幅を x/ansi に聞く (RUNEWIDTH_EASTASIAN で曖昧幅の記号の幅が変わるため)。
+	// 受理する字を 1 本の文字列に並べて部分文字列で測る (1 字ずつ string(r) を作ると字数ぶん確保する)
+	buf := make([]byte, 0, 3*1024)
+	for r := rune(symTableLo); r <= symbolHi; r++ {
 		if acceptSymbol(r) {
 			buf = utf8.AppendRune(buf, r)
 		}
@@ -172,6 +170,23 @@ func init() {
 		}
 		symWidthTable[r-symTableLo] = uint8(w) + 1
 	}
+	// 日本語 (約 2.8 万字) は規則で埋める。🚨 x/ansi に 1 字ずつ聞くと起動のたびに約 1 ms かかり、描画をほとんどしない
+	// コマンド (毎プロンプト起動される bin/ratelimit・pro-con card 等) の起動が遅くなった (日本語を足す前は約 0.07 ms。2026-09-27)。
+	// 規則が x/ansi と全字で一致することは TestCJKWidthRuleMatchesLibrary が確かめる (依存を上げて幅が変われば red になる)
+	for _, rg := range cjkRanges {
+		for r := rg.lo; r <= rg.hi; r++ {
+			symWidthTable[r-symTableLo] = uint8(cjkWidth(r)) + 1
+		}
+	}
+}
+
+// cjkWidth は acceptCJK の字の表示幅。East Asian Width が W / F の字は幅 2 で、RUNEWIDTH_EASTASIAN (曖昧幅だけを変える) の
+// 影響を受けない。範囲の中の例外は U+303F (IDEOGRAPHIC HALF FILL SPACE。幅 1) だけ (2026-09-27 に全字を x/ansi v0.11.7 で測った)
+func cjkWidth(r rune) int {
+	if r == 0x303F {
+		return 1
+	}
+	return 2
 }
 
 // symbolWidth は r の表示幅を表から返す。受理しない rune は 0。
@@ -220,20 +235,25 @@ func acceptSymbol(r rune) bool {
 // 半角カナの濁点・半濁点 U+FF9E / U+FF9F、声調記号 U+302A..U+302F。ハングルは字母が組み合わさる (L / V / T) ので入れない。
 // 受理した字どうしが結合しないことは TestAcceptedSymbolsNeverCombineWithEachOther が確かめる
 func acceptCJK(r rune) bool {
-	switch {
-	case r >= 0x3000 && r <= 0x3029, r >= 0x3030 && r <= 0x303F: // CJK の記号と句読点 (声調記号を除く)
-		return true
-	case r >= 0x3041 && r <= 0x3096, r >= 0x309B && r <= 0x309F: // ひらがな (結合用の濁点・半濁点を除く)
-		return true
-	case r >= 0x30A0 && r <= 0x30FF, r >= 0x31F0 && r <= 0x31FF: // カタカナ・カタカナ拡張
-		return true
-	case r >= 0x3400 && r <= 0x4DBF, r >= 0x4E00 && r <= 0x9FFF, r >= 0xF900 && r <= 0xFAFF: // 漢字 (拡張 A・統合・互換)
-		return true
-	case r >= 0xFF01 && r <= 0xFF60, r >= 0xFFE0 && r <= 0xFFE6: // 全角の英数・記号 (半角カナは濁点が結合するので除く)
-		return true
+	for _, rg := range cjkRanges {
+		if r >= rg.lo && r <= rg.hi {
+			return true
+		}
 	}
 	return false
 }
+
+// cjkRanges は acceptCJK が受理する範囲 (init がこの表から直接幅を埋める)。
+var cjkRanges = []struct{ lo, hi rune }{
+	{0x3000, 0x3029}, {0x3030, 0x303F}, // CJK の記号と句読点 (声調記号 U+302A..U+302F を除く)
+	{0x3041, 0x3096}, {0x309B, 0x309F}, // ひらがな (結合用の濁点・半濁点 U+3099 / U+309A を除く)
+	{0x30A0, 0x30FF}, {0x31F0, 0x31FF}, // カタカナ・カタカナ拡張
+	{0x3400, 0x4DBF}, {0x4E00, 0x9FFF}, {0xF900, 0xFAFF}, // 漢字 (拡張 A・統合・互換)
+	{0xFF01, 0xFF60}, {0xFFE0, 0xFFE6}, // 全角の英数・記号 (半角カナは濁点 U+FF9E / U+FF9F が結合するので除く)
+}
+
+// symbolHi は日本語以外の受理字 (acceptSymbol の記号) の上限 (Braille の末尾)。init が x/ansi に幅を聞く範囲
+const symbolHi = 0x28FF
 
 // FirstCluster は s の先頭の grapheme クラスタ 1 個と、その表示幅を返す。s が空なら ("", 0)。
 //
