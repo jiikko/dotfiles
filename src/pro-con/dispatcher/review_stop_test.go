@@ -1,6 +1,7 @@
 package dispatcher
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"testing"
@@ -157,5 +158,62 @@ func TestReviewStopFailureGivesUp(t *testing.T) {
 	c := states(t, r.dir)["C-001"]
 	if c.State != card.Review || c.StopAfterClose || c.Stopped || !strings.Contains(lastHistory(c), "レビュー待ちに入ったが PG の session を止められない") {
 		t.Fatalf("諦めた後の形が違う: %v StopAfterClose=%v Stopped=%v 履歴=%q", c.State, c.StopAfterClose, c.Stopped, lastHistory(c))
+	}
+}
+
+// レビュー待ちで止めた PG は、一覧から消えても落ちたのではない: 落ちたのを見た時刻 (DeadSince) を付けず、終了は自動の再開を待たない (issue 560。
+// 付けると stopTarget が restartWait の間「自動の再開の途中かもしれない」と shutdownPolls 回 (約 46 秒) 待っていた)。
+func TestShutdownDoesNotWaitForReviewStoppedPG(t *testing.T) {
+	r := reviewRig(t)
+	r.tick(t) // 止める
+	r.stopInList()
+	r.tick(t) // 一覧から消えたのを見る
+	if c := states(t, r.dir)["C-001"]; !c.Stopped || !c.DeadSince.IsZero() {
+		t.Fatalf("止めた PG を落ちたと記録した: Stopped=%v DeadSince=%v", c.Stopped, c.DeadSince)
+	}
+	sleeps := 0
+	r.d.Sleep = func(time.Duration) { sleeps++ }
+	if _, err := r.d.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if sleeps != 0 {
+		t.Fatalf("レビュー待ちで止めた PG の自動の再開を %d 回待った", sleeps)
+	}
+}
+
+// 止める要求を出した次の Tick で止まったのを確かめると、同じ Tick の先頭 (trackDead) が付けた落ちた時刻を外す (MarkStopped)。
+// 止め終えた直後に閉じても、終了は自動の再開を待たない。
+func TestReviewStopConfirmedLaterClearsDeadSince(t *testing.T) {
+	r := reviewRig(t)
+	r.ss[0].Status = agents.StatusBusy // turn の途中: この Tick では止めない (印だけ付く)
+	r.tick(t)
+	r.ss[0].Status = agents.StatusIdle
+	setCard(t, r.dir, "C-001", func(c *card.Card) { c.StopSent = true }) // 止める要求を出したが、まだ止まったのを見ていない
+	r.stopInList()
+	r.tick(t)
+	c := states(t, r.dir)["C-001"]
+	if !c.Stopped || !c.DeadSince.IsZero() {
+		t.Fatalf("止まったのを確かめたのに落ちた時刻が残る: Stopped=%v DeadSince=%v 履歴=%q", c.Stopped, c.DeadSince, lastHistory(c))
+	}
+	sleeps := 0
+	r.d.Sleep = func(time.Duration) { sleeps++ }
+	if _, err := r.d.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if sleeps != 0 {
+		t.Fatalf("止め終えた直後の終了で %d 回待った", sleeps)
+	}
+}
+
+// 前の版が残した「止めた + 落ちた時刻」の記録は、次に一覧と照らしたときに落ちた時刻を外す (起動し直した dispatcher でも終了が待たない)。
+func TestTrackDeadClearsDeadSinceOfStoppedCard(t *testing.T) {
+	r := newCrashRig(t)
+	setCard(t, r.dir, "C-001", func(c *card.Card) { c.Stopped, c.DeadSince = true, t0 })
+	r.stopInList()
+	if err := r.d.trackDead(t0, r.ss); err != nil {
+		t.Fatal(err)
+	}
+	if c := states(t, r.dir)["C-001"]; !c.DeadSince.IsZero() {
+		t.Fatalf("止めたカードの落ちた時刻を外さない: DeadSince=%v", c.DeadSince)
 	}
 }

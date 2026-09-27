@@ -473,7 +473,10 @@ func (d *Dispatcher) register(now time.Time, ss []agents.Session) (int, []eventl
 }
 
 // trackDead は、PG の session を持つカードごとに「一覧に無い / pid 無し」を最初に見た時刻を DeadSince に書き、生きているのを見たら外す。
-// 待ちの起点を「落ちた (のを見た) 時刻」にするため (直前の再開や回答の時刻から数えると、長く走ってから落ちた PG を待たずに扱う)
+// 待ちの起点を「落ちた (のを見た) 時刻」にするため (直前の再開や回答の時刻から数えると、長く走ってから落ちた PG を待たずに扱う)。
+// dispatcher が止めた PG (Stopped) は落ちたのではないので付けない。付いていれば外す (issue 560)。
+// 止める要求を出しただけ (StopSent) の間は付ける: 止まる前に本当に落ちたなら自動の再開を待つ (削除中のカードを待たずに外して PG を
+// 取り残さない)。止まったのを確かめた Tick で MarkStopped が外す
 func (d *Dispatcher) trackDead(now time.Time, ss []agents.Session) error {
 	st, err := store.Load(d.Dir)
 	if err != nil {
@@ -491,18 +494,18 @@ func (d *Dispatcher) trackDead(now time.Time, ss []agents.Session) error {
 		if !ok {
 			continue
 		}
-		alive := false
+		down := !c.Stopped // 落ちている (止めた PG は一覧に出なくても落ちたのではない)
 		for _, s := range ss {
 			if s.SessionID == o.SessionID && s.PID != 0 {
-				alive = true
+				down = false
 			}
 		}
 		switch {
-		case alive && !c.DeadSince.IsZero():
+		case !down && !c.DeadSince.IsZero():
 			if err := d.update(c.ID, func(cc *card.Card) { cc.DeadSince = time.Time{} }); err != nil {
 				return err
 			}
-		case !alive && c.DeadSince.IsZero():
+		case down && c.DeadSince.IsZero():
 			if err := d.update(c.ID, func(cc *card.Card) { cc.DeadSince = now }); err != nil {
 				return err
 			}

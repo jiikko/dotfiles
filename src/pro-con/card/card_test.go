@@ -93,3 +93,12 @@ func TestArchivedMustBeDone(t *testing.T) {
 		t.Fatalf("完了していない片付けを違反として出すはず: %v", vs)
 	}
 }
+
+// 止めた印は落ちた時刻と対で持つ: 止めた PG は落ちたのではないので、落ちた時刻を外す (issue 560)。
+func TestMarkStoppedClearsDeadSince(t *testing.T) {
+	c := Card{DeadSince: time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC)}
+	c.MarkStopped()
+	if !c.Stopped || !c.DeadSince.IsZero() {
+		t.Fatalf("Stopped=%v DeadSince=%v", c.Stopped, c.DeadSince)
+	}
+}

@@ -376,7 +376,8 @@ type Card struct {
 	// PG の session が止まったのを確かめてからカードを記録から外す。止められずに諦めたら外す (カードは残る)。DeleteBy は依頼した人
 	DeleteAt time.Time `json:",omitzero"`
 	DeleteBy string    `json:",omitempty"`
-	// Stopped は pro-con の終了か、レビューの列に入ったこと (issue 536) で dispatcher が PG を止めた印。次の再開は、落ちた PG の自動の再開を待たずに (止めずに) 行う。起動・再開で外す
+	// Stopped は pro-con の終了か、レビューの列に入ったこと (issue 536) で dispatcher が PG を止めた印。次の再開は、落ちた PG の自動の再開を待たずに (止めずに) 行う。起動・再開で外す。
+	// 付けるのは MarkStopped だけ (DeadSince と対で持つ)
 	Stopped bool `json:",omitempty"`
 	// Revived は、落ちた・消えた PG を人の判断なしに再開へ回した印 (458 の消えた PG・483 の再起動の復旧)。再開 (settle) で落ちた回数の
 	// 数え始め (CrashesFrom) を今に戻さない (戻すと、落ち続ける PG を上限に届かないまま再開し続ける)。再開と人の回答待ちへ送るときに外す
@@ -406,6 +407,10 @@ type Card struct {
 
 // Deleting は削除の依頼を受けて、PG を止めるのを待っているか。
 func (c Card) Deleting() bool { return !c.DeleteAt.IsZero() }
+
+// MarkStopped は dispatcher が PG を止めた印を付ける。止めた PG は落ちたのではない (claude stop が自動の再開も抑える) ので、
+// 落ちたのを見た時刻 (DeadSince) を外す。残すと、終了や再開が「自動の再開の途中かもしれない」と restartWait まで待つ (issue 560)。
+func (c *Card) MarkStopped() { c.Stopped, c.DeadSince = true, time.Time{} }
 
 // Children は id を親に持つカードの ID (親を消すと子が親を失う = Check の違反)。
 func Children(cards []Card, id string) []string {

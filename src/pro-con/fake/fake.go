@@ -251,7 +251,7 @@ func (s *Sim) stepProgress() {
 		switch sc.then {
 		case "review":
 			s.releaseResources(c.ID)
-			c.Stopped = true // レビュー待ちの PG は dispatcher が止める (issue 536。a は attach せずに案内を出す)
+			c.MarkStopped() // レビュー待ちの PG は dispatcher が止める (issue 536。a は attach せずに案内を出す)
 			s.setState(c, card.Review, "PG が終えてブランチへ push した。レビュー待ち")
 		case "question":
 			w, err := card.AskWait(sc.question, sc.choices)

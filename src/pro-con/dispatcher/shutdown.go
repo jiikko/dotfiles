@@ -255,7 +255,8 @@ func (d *Dispatcher) stopCards(ctx context.Context, notes *[]eventlog.Event) (in
 				continue
 			}
 			if err := d.update(c.ID, func(cc *card.Card) {
-				cc.Stopped, cc.Launching = true, "" // 取り込めた起動・再開は止めた。取り込めなかったものは stopTarget が wait を返している
+				cc.MarkStopped() // 取り込めた起動・再開は止めた。取り込めなかったものは stopTarget が wait を返している
+				cc.Launching = ""
 				text := "pro-con の終了で PG を止めた"
 				if target == "" {
 					text = "pro-con の終了: PG の session は既に止まっていた"

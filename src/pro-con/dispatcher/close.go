@@ -201,7 +201,7 @@ func (d *Dispatcher) finishMarkedStop(id string, now time.Time, text string, sto
 	return d.update(id, func(cc *card.Card) {
 		cc.StopAfterClose, cc.StopSent, cc.DeleteAt, cc.DeleteBy = false, false, time.Time{}, ""
 		if stopped {
-			cc.Stopped = true
+			cc.MarkStopped()
 		}
 		cc.History = append(cc.History, card.Event{At: now, Text: text})
 	})
