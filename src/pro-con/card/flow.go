@@ -63,5 +63,5 @@ var FlowDetours = []FlowStep{
 // AfterDone は完了の後に起きること (片付けの時間は store.AutoClearAfter / store.PurgeAfter。issue 497)。
 var AfterDone = []string{
 	"24 時間 (か x) で書庫へ移り、完了から 1 週間で記録から消える",
-	"worktree・ブランチ・session は残る。消すのは人が pro-con worktree clean --yes を打ったときだけ",
+	"worktree・ブランチ・session は残る。消すのは pro-con worktree clean --yes (dispatcher の予定が毎日 04:00 に回す。人が打ってもよい)",
 }

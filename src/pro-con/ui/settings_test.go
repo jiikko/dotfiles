@@ -64,7 +64,7 @@ func run(m *Model, cmd tea.Cmd) {
 		for _, c := range msg {
 			run(m, c)
 		}
-	case procsMsg, diskMsg, eventsMsg:
+	case procsMsg, diskMsg, eventsMsg, scheduleMsg:
 		m.Update(msg)
 	}
 }
@@ -79,6 +79,20 @@ func openSettingsFor(t *testing.T, be backend.Backend) *Model {
 }
 
 func setScreen(m *Model) string { return ansi.Strip(m.render()) }
+
+// toTab は t のタブに着くまで tab を押す (並びを変えてもテストが押す回数を数え直さない)。
+func toTab(tb testing.TB, m *Model, t settingsTab) {
+	tb.Helper()
+	for range len(m.settingsTabs()) {
+		if m.set.tab == t {
+			return
+		}
+		tabKey(m)
+	}
+	if m.set.tab != t {
+		tb.Fatalf("タブ %v に着かない (今 %v)", t, m.set.tab)
+	}
+}
 
 func tabKey(m *Model) {
 	run(m, func() tea.Cmd { _, c := m.Update(tea.KeyPressMsg{Code: tea.KeyTab}); return c }())
@@ -99,8 +113,7 @@ func TestSettingsReadsOnOpenNotOnRender(t *testing.T) {
 	if be.procCalls != 1 || be.diskCalls != 1 || m.set.procsLoading || m.set.diskLoading {
 		t.Fatalf("描き直し・tick で読んだ: procs=%d disk=%d loading=%v/%v", be.procCalls, be.diskCalls, m.set.procsLoading, m.set.diskLoading)
 	}
-	tabKey(m)
-	tabKey(m)
+	toTab(t, m, tabDisk)
 	if m.set.tab != tabDisk {
 		t.Fatalf("tab でディスクのタブへ移らない: %v", m.set.tab)
 	}
@@ -157,7 +170,7 @@ func TestSettingsViewOnlyShowsInspectOnly(t *testing.T) {
 	be := viewInspSpy{newInspSpy()}
 	m := openSettingsFor(t, be)
 	out := setScreen(m)
-	if m.set.tab != tabProcs || strings.Contains(out, "変える所") || strings.Contains(out, " 設定 ") {
+	if m.set.tab != tabSchedule || strings.Contains(out, "変える所") || strings.Contains(out, " 設定 ") {
 		t.Fatalf("--view で変える所を出した (tab=%v):\n%s", m.set.tab, out)
 	}
 	press(m, "l", "h")
@@ -175,7 +188,7 @@ func TestSettingsProcsShowOnlyLiveAndMismatch(t *testing.T) {
 		backend.Proc{Role: "PG", PID: 302, State: "動いている", Card: "C-022", Mismatch: "動いている (カードは完了)"},
 		backend.Proc{Role: "取り込み", PID: 303, State: backend.ProcStopped})
 	m := openSettingsFor(t, be)
-	tabKey(m)
+	toTab(t, m, tabProcs)
 	out := setScreen(m)
 	// カードの列は前の PG の一覧と同じ cardHeading (タイトルの頭の issue 番号を落とす。issue 491)
 	if !strings.Contains(out, "R1 #491 番号が二重に出る") || strings.Contains(out, "491: ") {
@@ -202,8 +215,7 @@ func TestSettingsProcsShowOnlyLiveAndMismatch(t *testing.T) {
 func TestSettingsDiskBreakdown(t *testing.T) {
 	be := newInspSpy()
 	m := openSettingsFor(t, be)
-	tabKey(m)
-	tabKey(m)
+	toTab(t, m, tabDisk)
 	out := setScreen(m)
 	for _, want := range []string{"合計 210M", "PG・役の worktree", "うち完了したカード 4 個", "pc-c-001", "C-001 完了", "ほか 2 個", "状態の置き場"} {
 		if !strings.Contains(out, want) {
@@ -296,5 +308,90 @@ func TestSettingsStepsReview(t *testing.T) {
 	press(m, "h")
 	if last := be.applied[len(be.applied)-1].(backend.SetConfig); last.Value != "claude" {
 		t.Fatalf("← で逆に巡らない: %+v", last)
+	}
+}
+
+// schedSpy は予定を読む backend (backend.ScheduleReader)。読んだ回数を数える。
+type schedSpy struct {
+	*inspSpy
+	rows  []backend.ScheduleRow
+	calls int
+}
+
+func (s *schedSpy) Schedule() ([]backend.ScheduleRow, error) { s.calls++; return s.rows, nil }
+
+func newSchedSpy() *schedSpy {
+	i := newInspSpy()
+	return &schedSpy{inspSpy: i, rows: []backend.ScheduleRow{{When: "毎日 04:00", Command: "pro-con worktree clean --yes",
+		Last: "09-27 04:00:03〜04:01:15 rc=0 結果: worktree 消した 66・残した 26・失敗 0", Next: "09-28 04:00 (dispatcher が止まっていれば、次に起きた最初の Tick で 1 回だけ回す)",
+		Out: "/state/schedule/worktree-clean.out"}}}
+}
+
+// 予定のタブ (issue 550): dispatcher が起こすコマンドの字面 (--yes まで) と、いつ・前回・次回を出す。開いたときと r で読み、描き直しでは読まない。
+func TestSettingsScheduleTab(t *testing.T) {
+	be := newSchedSpy()
+	m := openSettingsFor(t, be)
+	if be.calls != 1 {
+		t.Fatalf("開いたときに 1 回読むはず: %d", be.calls)
+	}
+	tabKey(m)
+	if m.set.tab != tabSchedule { // 並びも見る (設定の次 = 変える所のすぐ隣に置く)
+		t.Fatalf("設定の次が予定のタブでない: %v", m.set.tab)
+	}
+	calls := be.calls
+	out := setScreen(m)
+	for _, want := range []string{" 予定 ", "毎日 04:00  pro-con worktree clean --yes", "前回  09-27 04:00:03〜04:01:15 rc=0 結果: worktree 消した 66", "次回  09-28 04:00", "出力  /state/schedule/worktree-clean.out / .err"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("予定のタブに %q が無い:\n%s", want, out)
+		}
+	}
+	_ = m.render()
+	if be.calls != calls {
+		t.Errorf("描き直しで読んだ: %d → %d", calls, be.calls)
+	}
+	run(m, press(m, "r"))
+	if be.calls != calls+1 {
+		t.Errorf("r で読み直さない: %d → %d", calls, be.calls)
+	}
+	be.snap.Config.ScheduleOff = true
+	m.setSnap(be.Snapshot())
+	if !strings.Contains(setScreen(m), "止めている") {
+		t.Errorf("schedule off を予定のタブに出さない:\n%s", setScreen(m))
+	}
+	be.snap.Config.Err = "壊れている"
+	m.setSnap(be.Snapshot())
+	if !strings.Contains(setScreen(m), "設定を読めないので回さない") {
+		t.Errorf("設定を読めないことを予定のタブに出さない:\n%s", setScreen(m))
+	}
+}
+
+// 予定を回すかは設定のタブのチェックボックス: Enter でも ← → でも入れ替え、schedule=on / off を受付の箱に置く (issue 550)。
+func TestSettingsTogglesScheduleCheckbox(t *testing.T) {
+	be := newSchedSpy()
+	m := openSettingsFor(t, be)
+	for m.set.cursor < len(configKeys)-1 && configKeys[m.set.cursor] != backend.ConfigSchedule {
+		press(m, "j")
+	}
+	if configKeys[m.set.cursor] != backend.ConfigSchedule || !strings.Contains(setScreen(m), "予定を回す") {
+		t.Fatalf("予定を回す の行が無い:\n%s", setScreen(m))
+	}
+	press(m, "enter")
+	be.snap.Config.ScheduleOff = true
+	m.setSnap(be.Snapshot())
+	delete(m.set.want, backend.ConfigSchedule) // 適用を待つ値ではなく Snapshot の値を描かせる
+	for _, l := range strings.Split(setScreen(m), "\n") {
+		if strings.Contains(l, "予定を回す") && !strings.Contains(l, "[ ]") {
+			t.Errorf("off なのにチェックが入っている: %q", l)
+		}
+	}
+	press(m, "l")
+	var got []string
+	for _, c := range be.applied {
+		if sc, ok := c.(backend.SetConfig); ok {
+			got = append(got, sc.Key+"="+sc.Value)
+		}
+	}
+	if strings.Join(got, ",") != "schedule=off,schedule=on" {
+		t.Fatalf("置いた設定 = %v", got)
 	}
 }

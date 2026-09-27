@@ -9,7 +9,9 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"time"
 
+	"pro-con/backend"
 	"pro-con/store"
 )
 
@@ -19,6 +21,8 @@ const configUsage = `usage: pro-con config <操作> ...   (受付の箱に依頼
   set pm <n>         PM の数 (今は 1 だけ。2 以上は 415 の論点 6 が決まるまで受けない)
   set review claude|codex
                      敵対的レビューの担い手 (既定 claude。~/.config/pro-con/config.toml の review より優先。起動済みの PG の指示は変わらない)
+  set schedule on|off
+                     予定 (決まった時刻に pro-con worktree clean --yes 等を dispatcher が回す) を回すか (既定 on。今の予定は show に出る)
   unset <名前>       設定を消す (limit なら --limit / 既定 2 に戻る)
   show               今の値と出どころ (読むだけ)`
 
@@ -66,6 +70,23 @@ func runConfig(args []string, dir string, stdout, stderr io.Writer) int {
 	}
 	_, _ = fmt.Fprintln(stdout, id)
 	return 0
+}
+
+// showSchedule は予定 (issue 550) ごとに、いつ・dispatcher が起こすコマンドの字面・前回・次回を出す (設定画面の予定のタブと同じ行)。
+func showSchedule(dir string, s store.Settings, serr error, now time.Time, w io.Writer) error {
+	rows, err := backend.ScheduleRows(dir, now)
+	state := "on (dispatcher が回す。既定)"
+	switch {
+	case serr != nil:
+		state = "設定を読めない (dispatcher は予定を回さない)"
+	case s.ScheduleOff:
+		state = "off (回さない。pro-con config set schedule on で戻す)"
+	}
+	_, _ = fmt.Fprintf(w, "schedule %s\n", state)
+	for _, r := range rows {
+		_, _ = fmt.Fprintf(w, "  %s  %s\n    前回 %s\n    次回 %s\n    出力 %s / .err\n", r.When, r.Command, r.Last, r.Next, r.Out)
+	}
+	return err
 }
 
 // showConfig は設定・dispatcher が最後に使った値・適用待ちを出す。
@@ -117,6 +138,10 @@ func showConfig(dir string, stdout, stderr io.Writer) int {
 		}
 	}
 	_, _ = fmt.Fprintln(stdout)
+	if err := showSchedule(dir, s, serr, time.Now(), stdout); err != nil {
+		_, _ = fmt.Fprintln(stderr, "pro-con config: 予定の記録を読めない:", err)
+		rc = 1
+	}
 	if _, n := store.PendingCounts(dir); n > 0 {
 		_, _ = fmt.Fprintf(stdout, "適用待ちの設定の依頼 %d 件 (dispatcher の次の Tick で使う。pro-con dispatcher が動いているか: pro-con ps)\n", n)
 	}

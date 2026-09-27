@@ -13,8 +13,10 @@ import (
 
 	"pro-con/agents"
 	"pro-con/card"
+	"pro-con/dispatcher"
 	"pro-con/gitx"
 	"pro-con/live"
+	"pro-con/schedule"
 	"pro-con/store"
 	"pro-con/wtclean"
 )
@@ -79,6 +81,67 @@ func TestWorktreeCleanYesRemoves(t *testing.T) {
 	}
 	if _, err := os.Stat(wt); !errors.Is(err, os.ErrNotExist) || !strings.Contains(out.String(), "消した pc-c-001") {
 		t.Errorf("消していない: %v / %q", err, out.String())
+	}
+}
+
+// --yes は最後に結果の 1 行を出す (dispatcher の予定はこの行をそのまま記録と画面に出す。issue 550)。
+// 作業中のカード C-002 の worktree は残した側に数える。
+func TestWorktreeCleanYesPrintsResultLine(t *testing.T) {
+	env, _ := worktreeFixture(t)
+	repo := env.repos["r"]
+	add := exec.Command("git", "-C", repo, "worktree", "add", "-q", "-b", wtclean.BranchName("pc-c-002"), filepath.Join(repo, ".claude", "worktrees", "pc-c-002"), "master")
+	add.Env = gitx.Env()
+	if b, err := add.CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add: %v\n%s", err, b)
+	}
+	if err := store.Update(env.dir, func(s *store.State) error {
+		s.Cards = append(s.Cards, card.Card{ID: "C-002", Repo: "r", State: card.Running})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut bytes.Buffer
+	if rc := runWorktree([]string{"clean", "--yes"}, env, &out, &errOut); rc != 0 {
+		t.Fatalf("rc = %d: %s / %s", rc, out.String(), errOut.String())
+	}
+	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+	if got, want := lines[len(lines)-1], schedule.ResultPrefix+"worktree 消した 1・残した 1・失敗 0 / session 消した 0 枚・失敗 0 枚 (rc=0)"; got != want {
+		t.Errorf("最後の行 = %q; want %q", got, want)
+	}
+}
+
+// 走査に失敗した repo があれば rc=1 で、結果の行もその rc を持つ (dispatcher が終わりを待てなかったときも、行から失敗が分かる)。
+func TestWorktreeCleanResultLineCarriesRC(t *testing.T) {
+	env, _ := worktreeFixture(t)
+	env.repos["gone"] = filepath.Join(filepath.Dir(env.dir), "no-such-repo")
+	var out, errOut bytes.Buffer
+	rc := runWorktree([]string{"clean", "--yes"}, env, &out, &errOut)
+	if rc != 1 || !strings.HasSuffix(out.String(), " (rc=1)\n") || !strings.Contains(out.String(), schedule.ResultPrefix) {
+		t.Errorf("rc=%d 最後の行:\n%s / %s", rc, out.String(), errOut.String())
+	}
+}
+
+// 別の worktree clean --yes (dispatcher の予定か人の手の実行) が lock を持っていれば、何も消さずに schedule.ExitLocked で抜ける。
+// 一覧だけ (--yes なし) は lock を取らない。
+func TestWorktreeCleanYesRefusesWhileLocked(t *testing.T) {
+	env, wt := worktreeFixture(t)
+	unlock, err := dispatcher.LockWorktreeClean(env.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	loads := 0 // 本物は設定と claude の実体を読む (数秒〜30 秒)。lock を取る前に読まない (dispatcher の予定の子が lock を取るまでの窓を広げない)
+	env.load = func(*worktreeEnv) error { loads++; return nil }
+	var out, errOut bytes.Buffer
+	if rc := runWorktree([]string{"clean", "--yes"}, env, &out, &errOut); rc != schedule.ExitLocked || !strings.Contains(errOut.String(), "別の pro-con worktree clean --yes が動いている") || loads != 0 {
+		t.Errorf("rc = %d, stderr = %q, load %d 回", rc, errOut.String(), loads)
+	}
+	if _, err := os.Stat(wt); err != nil {
+		t.Errorf("lock を持たれているのに消した: %v", err)
+	}
+	out.Reset()
+	if rc := runWorktree([]string{"clean"}, env, &out, &errOut); rc != 0 || !strings.Contains(out.String(), "消してよい (1 個)") {
+		t.Errorf("一覧だけでも lock で止まった: rc=%d %q", rc, out.String())
 	}
 }
 
@@ -147,6 +210,9 @@ func TestWorktreeCleanRemovesSessionsOfPurgedCard(t *testing.T) {
 	reqs := store.PendingRequests(env.dir)
 	if len(reqs) != 1 || reqs[0].Kind != store.KindForget || reqs[0].CardID != "C-001" || len(reqs[0].Sessions) != 1 || reqs[0].Sessions[0] != sid {
 		t.Fatalf("forget の依頼 = %+v", reqs)
+	}
+	if !strings.HasSuffix(out.String(), schedule.ResultPrefix+"worktree 消した 1・残した 0・失敗 0 / session 消した 1 枚・失敗 0 枚 (rc=0)\n") {
+		t.Errorf("結果の行が session を数えていない:\n%s", out.String())
 	}
 }
 

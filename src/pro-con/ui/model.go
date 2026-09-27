@@ -259,6 +259,9 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 	case eventsMsg:
 		m.onEvents(msg)
 		return m, nil
+	case scheduleMsg:
+		m.set.schedule, m.set.scheduleErr = msg.rows, msg.err
+		return m, nil
 	case diskMsg:
 		m.set.disk, m.set.diskErr, m.set.diskLoading = msg.u, msg.err, false
 		m.set.cursor = min(m.set.cursor, max(m.settingsRowCount()-1, 0))

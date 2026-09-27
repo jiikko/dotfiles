@@ -22,6 +22,7 @@ import (
 	"pro-con/eventlog"
 	"pro-con/live"
 	"pro-con/presence"
+	"pro-con/schedule"
 	"pro-con/store"
 	"pro-con/wake"
 )
@@ -139,6 +140,14 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 	}
 	d := newDispatcherFor(dir, projects, repos, pm.Repo, pmOff, *limit, cl, e2e)
 	d.Record = eventSink(dir, stdout, stderr)
+	// 予定 (issue 550)。e2e モードの偽の置き場と、1 回だけの dispatcher では回さない (--once の後に子を置き去りにする)
+	if e2e == nil && !*once {
+		if exe, err := os.Executable(); err != nil {
+			say(d, eventlog.KindError, "予定を回せない (動いている pro-con の置き場を読めない): "+err.Error())
+		} else {
+			d.Scheduled, d.RunScheduled = schedule.Jobs, dispatcher.ExecScheduled(exe, dir)
+		}
+	}
 	d.SeedNotified(notified)
 	if resumed {
 		text := fmt.Sprintf("dispatcher が新版に切り替わった (%s → %s。PID %d のまま)", upgradedFrom, binaryLabel(selfStart), os.Getpid())

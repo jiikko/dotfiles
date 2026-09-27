@@ -16,6 +16,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"pro-con/schedule"
 	"pro-con/store"
 )
 
@@ -35,6 +36,7 @@ var (
 	ErrRunning           = errors.New("pro-con dispatcher は既に動いている")
 	ErrMonitorRunning    = errors.New("pro-con monitor は既に動いている")
 	ErrSupervisorRunning = errors.New("pro-con supervise は既に動いている")
+	ErrCleanRunning      = errors.New("別の pro-con worktree clean --yes が動いている (dispatcher の予定か、人の手の実行)")
 )
 
 // Lock は状態の置き場の dispatcher のロックを取る。取れなければ ErrRunning。返した関数で外す。
@@ -58,6 +60,15 @@ func LockMonitor(dir string) (func(), error) {
 // LockSupervisor は状態の置き場の supervisor のロックを取る (supervisor を 2 つ動かさない)。取れなければ ErrSupervisorRunning。返した関数で外す。
 func LockSupervisor(dir string) (func(), error) {
 	l, err := lockAs(dir, SupervisorLockFile, ErrSupervisorRunning, "supervisor")
+	if err != nil {
+		return nil, err
+	}
+	return l.Release, nil
+}
+
+// LockWorktreeClean は状態の置き場の worktree clean のロック (schedule.WorktreeCleanLock) を取る。取れなければ ErrCleanRunning。返した関数で外す。
+func LockWorktreeClean(dir string) (func(), error) {
+	l, err := lockAs(dir, schedule.WorktreeCleanLock, ErrCleanRunning, "worktree clean")
 	if err != nil {
 		return nil, err
 	}

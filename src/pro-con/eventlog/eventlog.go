@@ -71,6 +71,8 @@ const (
 	KindUpgrade = "upgrade"
 	// KindDispatcher は dispatcher 自身が起きた・抜けた (issue 512。新版への入れ替えは KindUpgrade)
 	KindDispatcher = "dispatcher"
+	// KindSchedule は予定 (issue 550。決まった時刻に回すコマンド) を起こした・終わった。失敗は KindError
+	KindSchedule = "schedule"
 )
 
 // Append は出来事を足す (1 回の write。読む側は改行で終わった行だけを読むので、書きかけを読まない)。

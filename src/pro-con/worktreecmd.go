@@ -2,10 +2,11 @@ package main
 
 // pro-con worktree clean — 閉じたカードの PG の worktree を片付ける (issue 492)。既定は一覧を出すだけで、--yes で消してよいものを
 // 1 個ずつ取り直して消す。worktree とブランチを消し終えたカードは、pro-con が起動した session (transcript・claude の job・起動の記録の行)
-// も消す (issue 497。自動では消さない = ユーザーの決定)。判定と消し方は package wtclean。
+// も消す (issue 497)。dispatcher の予定が毎日 04:00 にこの --yes を回す (issue 550。止めるのは pro-con config set schedule off)。判定と消し方は package wtclean。
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ import (
 	"pro-con/diskuse"
 	"pro-con/dispatcher"
 	"pro-con/live"
+	"pro-con/schedule"
 	"pro-con/store"
 	"pro-con/wtclean"
 )
@@ -42,6 +44,10 @@ type worktreeEnv struct {
 	jobsDir  string                                      // claude の job の置き場 (~/.claude/jobs。空なら job を見ない)
 	// removeJob は claude の job を消す (本物は claude rm)。nil なら session を消さない (一覧には出す)
 	removeJob func(ctx context.Context, id string) error
+	// load は残りの欄を埋める (本物は realWorktreeEnv。設定の読み込みと claude の実体の解決で数秒〜30 秒かかる)。nil なら埋まっている。
+	// 🚨 --yes の lock を取った後に呼ぶ: 前に呼ぶと、dispatcher の予定の子が lock を取るまでの窓が数秒に広がり、
+	// その間に dispatcher が落ちると、次の dispatcher が走っている子を「終わった」と読む (dispatcher/schedule.go の settleOrphan)
+	load func(*worktreeEnv) error
 }
 
 func runWorktree(args []string, env worktreeEnv, stdout, stderr io.Writer) int {
@@ -55,6 +61,23 @@ func runWorktree(args []string, env worktreeEnv, stdout, stderr io.Writer) int {
 	if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 0 {
 		_, _ = fmt.Fprintln(stderr, worktreeUsage)
 		return 2
+	}
+	if *yes { // dispatcher の予定 (issue 550) と人の手の実行を重ねない。一覧だけなら取らない
+		unlock, err := dispatcher.LockWorktreeClean(env.dir)
+		if err != nil {
+			_, _ = fmt.Fprintln(stderr, "pro-con worktree clean:", err)
+			if errors.Is(err, dispatcher.ErrCleanRunning) {
+				return schedule.ExitLocked
+			}
+			return 1
+		}
+		defer unlock()
+	}
+	if env.load != nil {
+		if err := env.load(&env); err != nil {
+			_, _ = fmt.Fprintln(stderr, "pro-con worktree clean:", err)
+			return 1
+		}
 	}
 	ctx := context.Background()
 	fresh := func(ctx context.Context) (wtclean.Inputs, error) { return worktreeInputs(ctx, env, stderr) }
@@ -84,8 +107,11 @@ func runWorktree(args []string, env worktreeEnv, stdout, stderr io.Writer) int {
 		return rc
 	}
 	_, _ = fmt.Fprintln(stdout)
+	var sum cleanSummary
+	sum.kept = len(vs) - countRemovable(vs)
 	err = wtclean.Clean(ctx, vs, wtclean.Options{StateDir: env.dir, Fresh: fresh}, func(r wtclean.Result) {
 		_, _ = fmt.Fprintf(stdout, "%s %s: %s\n", r.Outcome, r.Verdict.Name, r.Detail)
+		sum.tree(r.Outcome)
 		if r.Outcome == wtclean.Failed {
 			rc = 1
 		}
@@ -95,16 +121,52 @@ func runWorktree(args []string, env worktreeEnv, stdout, stderr io.Writer) int {
 		return 1
 	}
 	if env.removeJob != nil {
-		if code := cleanWorktreeSessions(ctx, env, fresh, svs, stdout, stderr); code > rc {
+		if code := cleanWorktreeSessions(ctx, env, fresh, svs, &sum, stdout, stderr); code > rc {
 			rc = code
 		}
 	}
+	_, _ = fmt.Fprintln(stdout, sum.line(rc))
 	return rc
+}
+
+// cleanSummary は --yes で消した・残した・失敗した数 (worktree と session)。
+type cleanSummary struct {
+	removed, kept, failed   int // worktree (残したは一覧で消さない側 + 取り直したら消さないもの)
+	sessRemoved, sessFailed int
+}
+
+// tree は worktree 1 個の結果を数える (取り直したら消さないものは残した側)。
+func (s *cleanSummary) tree(o wtclean.Outcome) {
+	switch o {
+	case wtclean.Removed, wtclean.TreeRemoved:
+		s.removed++
+	case wtclean.Skipped:
+		s.kept++
+	case wtclean.Failed:
+		s.failed++
+	}
+}
+
+// session はカード 1 枚の session の結果を数える。
+func (s *cleanSummary) session(o wtclean.Outcome) {
+	switch o {
+	case wtclean.Removed, wtclean.TreeRemoved:
+		s.sessRemoved++
+	case wtclean.Failed:
+		s.sessFailed++
+	case wtclean.Skipped: // 取り直したら残すカード (worktree を消せなかった等)。数に入れない
+	}
+}
+
+// line は最後の 1 行 (dispatcher の予定がそのまま記録する。schedule.ResultLine)。
+func (s cleanSummary) line(rc int) string {
+	return schedule.ResultLine(fmt.Sprintf("worktree 消した %d・残した %d・失敗 %d / session 消した %d 枚・失敗 %d 枚",
+		s.removed, s.kept, s.failed, s.sessRemoved, s.sessFailed), rc)
 }
 
 // cleanWorktreeSessions は worktree とブランチを消し終えたカードの session を消す (svs は一覧で出した判定)。
 func cleanWorktreeSessions(ctx context.Context, env worktreeEnv, fresh func(context.Context) (wtclean.Inputs, error),
-	svs []wtclean.SessionVerdict, stdout, stderr io.Writer) int {
+	svs []wtclean.SessionVerdict, sum *cleanSummary, stdout, stderr io.Writer) int {
 	rc := 0
 	// worktree を消し終えてから材料を取り直して session を判定する (消せなかった worktree のカードの session は消さない)
 	in, err := fresh(ctx)
@@ -124,6 +186,7 @@ func cleanWorktreeSessions(ctx context.Context, env worktreeEnv, fresh func(cont
 	}
 	err = wtclean.CleanSessions(ctx, now, opt, func(v wtclean.SessionVerdict, o wtclean.Outcome, detail string) {
 		_, _ = fmt.Fprintf(stdout, "%s %s の session: %s\n", o, v.CardID, detail)
+		sum.session(o)
 		if o == wtclean.Failed {
 			rc = 1
 		}

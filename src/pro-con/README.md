@@ -46,7 +46,8 @@ bin/pro-con worktree clean [--yes]  # 閉じたカードの PG の worktree を�
                          # ブランチも消すのは名前が worktree-pc-<カード> でほかの worktree が使っていないときだけ (`git update-ref -d` に確かめた先端を渡す)。
                          # worktree とブランチが消えたカードは session も消す (issue 497): 起動の記録か片付けの印にある session の transcript
                          # (~/.claude/projects/*/<id>.jsonl と <id>/。中にその worktree を cwd にした記録があるものだけ)・claude の job (`claude rm <短い id>`。
-                         # job の cwd・worktree・ブランチがカードのものだけ)・起動の記録の行と印 (受付の箱に forget を置き、dispatcher が消す)。自動では消さない
+                         # job の cwd・worktree・ブランチがカードのものだけ)・起動の記録の行と印 (受付の箱に forget を置き、dispatcher が消す)。
+                         # dispatcher の予定が毎日 04:00 に --yes を回す (issue 550。下の「予定」)。--yes は worktree-clean.lock を取り、別の --yes が動いていれば rc 3 で何もしない。最後の行は「結果: …」
                          # master に無い commit があるもの・記録に無いもの・PM と取り込みの係の worktree・人が掛けた lock は消さない。Claude Code が残した lock は外して消す (消せなければ掛け直す)。判定は wtclean.Judge (設定画面 456 の内訳も同じ関数を呼ぶ)
 bin/pro-con --e2e <dir>  # e2e モード: 画面・dispatcher・受付の箱・記録は本物、PG と PM だけ台本どおりの偽物 (claude を起動しない。利用枠を使わない)
 bin/pro-con e2e <start|keys|text|screen|wait|stop|scenario> <dir> ...  # Claude が e2e モードの画面を操作する口 (隔離した tmux サーバで動かす)
@@ -75,7 +76,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
     作ったカードの総数に比例させない)。書庫は `card show` / `card list --all` / `card wait` が読む (画面は読まない。dispatcher は 1 時間に 1 回、古いカードを消すときだけ読む)。
     完了から 1 週間たったカードは dispatcher が書庫からも消す (issue 497。ID は使い回さない)。消す前に片付けの印
     (`…/live/cards-purged.jsonl`。カード ID・完了の時刻・session・worktree・ブランチ) を残し、`worktree clean` がそれで片付ける。
-    session・transcript・worktree・ブランチは自動では消さない (人が `pro-con worktree clean --yes` を打ったときだけ)
+    session・transcript・worktree・ブランチは `pro-con worktree clean --yes` が消す (dispatcher の予定が毎日 04:00 に回す。下の「予定」)
   - **所要の記録** (issue 516): カードを閉じたら (完了は PG を止め終えてから・削除は記録から外す前)、dispatcher が 1 行を `…/live/metrics.jsonl` に書く
     (ID・題名・repo・issue・ポイント・終わり方・時刻・列ごとに居た秒数とそのうち人の番だった秒数・回数・PG の枠)。1 週間の削除では消さず、閉じてから 90 日で消す
     (1 時間に 1 回。消す前に件数を出来事に書く)。列ごとの時間はカードの足跡 (`card.Trail`。列を移すのは `Card.Enter` だけ) から、回数は履歴の文から出す。
@@ -250,6 +251,22 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 
 glogx と意味を変えている字 (`a` attach / `r` 回答 / `n` 新しい依頼 / `s` 設定画面) とその理由はガイドの §8。
 `o` はガイドの「外で開く」の意味で、添付を `open` に渡す (issue 453)。`b` (半ページ上) はガイドの意味のために空けてあり、追加オーダーは `+`、btw は `w`、`?` はレーンの意味の表。
+
+## 予定 (issue 550。決まった時刻に dispatcher が回すコマンド)
+
+- 表は `schedule.Jobs` (src/pro-con/schedule) だけ。今は「毎日 04:00 に `pro-con worktree clean --yes`」の 1 つ。画面と `pro-con config show` に出す字面と、
+  dispatcher が起こす argv は同じ表の `Args` から作る (字面を別に持たない)
+- **見る所**: 設定画面 (s) の「予定」のタブと `pro-con config show` (いつ・コマンド・前回の時刻 / rc / 結果の 1 行・次回・出力の置き場)。起こした・終わった・失敗は
+  出来事 (`pro-con log` の `schedule` / `error`。ログのタブにも出る)
+- **止める**: `pro-con config set schedule off` か、設定のタブの「予定を回す」(既定 on)
+- 回し方: dispatcher の Tick で、前回に始めた時刻がその日の予定の時刻より前なら、子として `pro-con <Args>` を起こす (cwd は状態の置き場、
+  自分のプロセスグループ、stdout / stderr は `…/live/schedule/<名前>.out` / `.err` に毎回上書き)。起こす前に始めた時刻を `…/live/schedule.json` に書く
+  (記録を読めない・書けないなら回さない)。dispatcher が止まっていた・マシンが寝ていた間の予定は、次に起きた最初の Tick で **1 回だけ** 回す
+  (画面が無いと dispatcher は 1 分で抜けるので、04:00 ちょうどに回るとは限らない)
+- 🚨 子は殺さない (worktree remove とブランチの削除の間で殺すと、ブランチだけが残って二度と片付かない)。dispatcher が先に抜けた・入れ替わった実行は、
+  次の dispatcher が子の lock (`worktree-clean.lock`) が空いたことで終わりを知り、出力のファイルから結果の行を読んで記録する (rc は分からない)。
+  入れ替え (505) は予定の子を 30 分まで待つ
+- e2e モードと `--once` の dispatcher では回さない
 
 ## 設定 (`~/.config/pro-con/config.toml`)
 

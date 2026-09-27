@@ -132,7 +132,7 @@ func (d *Dispatcher) limit() (int, string) {
 // (壊れた設定で dispatcher を止めない。直すのは次の pro-con config set)。
 func (d *Dispatcher) loadSettings() {
 	s, err := store.LoadSettings(d.Dir)
-	d.settings, d.settingsErr = s, ""
+	d.settings, d.settingsErr, d.settingsBroken = s, "", err != nil
 	if err != nil {
 		d.settingsErr = "設定を読めない (起動の引数で動く): " + err.Error()
 	}

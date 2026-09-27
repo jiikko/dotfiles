@@ -207,7 +207,7 @@ func TestUIStateRoundTrip(t *testing.T) {
 	e.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	data, _ = e.ExportState()
 	f := New(newSpy(), nil)
-	if err := f.ImportState(data); err != nil || !f.set.open || f.set.tab != e.set.tab || f.set.tab != tabProcs {
+	if err := f.ImportState(data); err != nil || !f.set.open || f.set.tab != e.set.tab || f.set.tab != tabSchedule {
 		t.Fatalf("設定画面が戻らない: err=%v open=%v tab=%v (元 %v)", err, f.set.open, f.set.tab, e.set.tab)
 	}
 	c := New(newSpy(), nil)

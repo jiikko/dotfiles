@@ -56,6 +56,8 @@ type Config struct {
 	// (設定なしなら config.toml か既定。1 度も回っていなければ空)。Codex / CodexErr は PG に渡す codex の実体と、解けなかった理由 (514)
 	Review, ReviewNow, ReviewFrom string
 	Codex, CodexErr               string
+	// ScheduleOff は予定 (issue 550) を回さない設定 (既定は回す)
+	ScheduleOff bool
 }
 
 // 変える所の名前 (SetConfig.Key)。
@@ -64,6 +66,8 @@ const (
 	ConfigPM     = store.SettingPM
 	ConfigUsage  = store.SettingUsage // チェックボックス (1 = 枠で絞る / 0 = 絞らない。SetConfig の Value は on / off)
 	ConfigReview = store.SettingReview
+	// ConfigSchedule は予定を回すか (チェックボックス。SetConfig の Value は on / off。issue 550)
+	ConfigSchedule = store.SettingSchedule
 )
 
 // ReviewModes は review に置ける値 (先頭が既定)。

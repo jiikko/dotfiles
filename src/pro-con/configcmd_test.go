@@ -62,6 +62,36 @@ func TestConfigSetSubmits(t *testing.T) {
 	}
 }
 
+// show は予定 (issue 550) ごとに、dispatcher が起こすコマンドの字面 (--yes まで)・いつ・前回・次回を出す。schedule off も set で置き、show に出す。
+func TestConfigShowSchedule(t *testing.T) {
+	dir := t.TempDir()
+	rc, out, _ := configCmd(t, dir, "show")
+	for _, want := range []string{"schedule on", "毎日 04:00  pro-con worktree clean --yes", "前回 まだ回していない", "次回 "} {
+		if rc != 0 || !strings.Contains(out, want) {
+			t.Errorf("show に %q が無い (rc=%d):\n%s", want, rc, out)
+		}
+	}
+	start := time.Date(2026, 9, 27, 4, 0, 3, 0, time.Local)
+	if err := store.SaveScheduleRun(dir, "worktree-clean", store.ScheduleRun{Start: start, End: start.Add(72 * time.Second), RC: 0, Note: "結果: worktree 消した 66"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, out, _ = configCmd(t, dir, "show"); !strings.Contains(out, "前回 09-27 04:00:03〜04:01:15 rc=0 結果: worktree 消した 66") {
+		t.Errorf("前回の結果を出さない:\n%s", out)
+	}
+	if rc, _, e := configCmd(t, dir, "set", "schedule", "off"); rc != 0 {
+		t.Fatalf("set schedule off が rc=%d: %s", rc, e)
+	}
+	if rc, _, _ := configCmd(t, dir, "set", "schedule", "maybe"); rc != 2 {
+		t.Errorf("schedule に on / off 以外を受けた (rc=%d)", rc)
+	}
+	if _, err := store.Apply(dir, time.Now(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, out, _ = configCmd(t, dir, "show"); !strings.Contains(out, "schedule off") {
+		t.Errorf("schedule off を出さない:\n%s", out)
+	}
+}
+
 // review (514) も set で箱に置き、show に設定と dispatcher が使っている担い手・codex の実体を出す。claude / codex 以外は置く前に弾く。
 func TestConfigReview(t *testing.T) {
 	dir := t.TempDir()

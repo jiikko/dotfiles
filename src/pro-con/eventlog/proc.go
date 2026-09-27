@@ -37,7 +37,7 @@ func Role(e Event) (role string, ok bool) {
 		return RoleMonitor, strings.HasPrefix(e.Reason, RoleMonitor)
 	case KindScreen:
 		return RoleScreen, true
-	case KindDispatcher, KindUpgrade, KindScreens, KindRecover, KindError:
+	case KindDispatcher, KindUpgrade, KindScreens, KindRecover, KindSchedule, KindError:
 		return RoleDispatcher, true
 	case KindRegister, KindSuspect, KindCrash, KindWatchdog:
 		return cardRole(e.Card, RolePG), true

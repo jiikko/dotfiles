@@ -4,7 +4,8 @@ package wtclean
 //   - transcript (~/.claude/projects/<置き場>/<session id>.jsonl と、サブエージェントの <session id>/)
 //   - claude の job (~/.claude/jobs/<短い id>。claude agents --all の行。消す口は `claude rm <短い id>`)
 //   - 起動の記録の行 (sessions.json / sessions-retired.json。書き手は dispatcher なので、受付の箱に forget を置いて頼む)
-// を消す。自動では消さない (ユーザーの決定: 人が pro-con worktree clean --yes を打ったときだけ)。
+// を消す。消すのは pro-con worktree clean --yes だけ (人が打つか、dispatcher の予定が毎日 04:00 に回す (issue 550。止めるのは pro-con config set schedule off)。
+// 2026-09-27 のユーザーの決定で自動にした。それまでは人が打ったときだけ)。
 //
 // 消してよいのは、次を全部満たすカードの session だけ:
 //   - カードが記録・書庫・片付けの印のどれかにあり、完了して PG を止め終えた (削除の途中でない)。役 (PM・INT) の session は扱わない

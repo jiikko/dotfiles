@@ -274,12 +274,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			if len(args) < 2 || args[1] != "clean" { // 使い方の誤りでは claude を解決しない
 				return runWorktree(args[1:], worktreeEnv{}, stdout, stderr)
 			}
-			env, err := realWorktreeEnv(home)
-			if err != nil {
-				_, _ = fmt.Fprintln(stderr, "pro-con worktree:", err)
-				return 1
+			load := func(e *worktreeEnv) error { // --yes の lock を取った後に読む (worktreeEnv.load)
+				real, err := realWorktreeEnv(home)
+				*e = real
+				return err
 			}
-			return runWorktree(args[1:], env, stdout, stderr)
+			return runWorktree(args[1:], worktreeEnv{dir: liveDir(home), load: load}, stdout, stderr)
 		case "screen": // 人間の画面に今出ているものを外から読む (読むだけ。screencmd.go)
 			home, err := os.UserHomeDir()
 			if err != nil {

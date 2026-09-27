@@ -186,6 +186,11 @@ func (b *Backend) Events() ([]eventlog.Event, error) {
 	return b.events.Next()
 }
 
+// Schedule は予定の行 (backend.ScheduleReader。dispatcher が書いた schedule.json を読むだけ。issue 550)。
+func (b *Backend) Schedule() ([]backend.ScheduleRow, error) {
+	return backend.ScheduleRows(b.dir, time.Now())
+}
+
 // SetAttach は attach のコマンドを差し替える (e2e モードは本物の claude を起動しない)。
 func (b *Backend) SetAttach(f func(sessionID string) *exec.Cmd) { b.attach = f }
 
@@ -575,7 +580,7 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 	if set, err := store.LoadSettings(b.dir); err != nil {
 		cfg.Err = err.Error()
 	} else {
-		cfg.Limit, cfg.PMs, cfg.UsageOff, cfg.Review = set.Limit, set.PMs, set.UsageOff, set.Review
+		cfg.Limit, cfg.PMs, cfg.UsageOff, cfg.Review, cfg.ScheduleOff = set.Limit, set.PMs, set.UsageOff, set.Review, set.ScheduleOff
 	}
 	b.mu.Lock()
 	if b.refused != "" {

@@ -1,7 +1,7 @@
 package store
 
 // 完了から 1 週間たったカードを書庫から消す (issue 497)。ユーザーの決定 (2026-09-26): カードの記録は自動で消し、
-// session (起動の記録の行と transcript) と worktree は人が明示したとき (pro-con worktree clean --yes) だけ消す。
+// session (起動の記録の行と transcript) と worktree は pro-con worktree clean --yes だけが消す (dispatcher の予定が毎日 04:00 に回す (issue 550。止めるのは pro-con config set schedule off))。
 //
 // 🚨 カードを消すと、片付け (wtclean) が「pro-con が作った・完了した」と示す材料が無くなり、消したカードの worktree と session を
 // 二度と片付けられなくなる。消す前に、片付けに要る最小限の印 (カード ID・完了の時刻・session の id・worktree・ブランチ) を
@@ -35,7 +35,7 @@ const PurgeFile = "cards-purged.jsonl"
 const PurgeAfter = 7 * 24 * time.Hour
 
 // PurgeText は消したカードの出来事の文。
-const PurgeText = "完了から 1 週間たったので記録から消した (worktree と session は pro-con worktree clean --yes で消す)"
+const PurgeText = "完了から 1 週間たったので記録から消した (worktree と session は pro-con worktree clean --yes が消す。dispatcher の予定が毎日回す)"
 
 // Purged はカードを消した後に残す片付けの印 1 件。
 type Purged struct {

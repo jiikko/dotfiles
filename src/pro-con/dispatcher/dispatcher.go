@@ -29,6 +29,7 @@ import (
 	"pro-con/card"
 	"pro-con/eventlog"
 	"pro-con/live"
+	"pro-con/schedule"
 	"pro-con/store"
 )
 
@@ -114,7 +115,9 @@ type Dispatcher struct {
 	// settings は変えた設定 (store/settings.go。Tick ごとに読み直す) / settingsErr は読めなかった理由
 	settings    store.Settings
 	settingsErr string
-	held        string // 枠で起動・再開を待たせている知らせ (変わったときだけログに書く)
+	// settingsBroken は設定を読めなかった (予定は回さない: schedule off を読めないまま破壊的な予定を回さない)
+	settingsBroken bool
+	held           string // 枠で起動・再開を待たせている知らせ (変わったときだけログに書く)
 
 	ticked bool // 1 度でも Tick したか
 	// Record は Tick / Shutdown の出来事を渡す (ログの行と events.jsonl。dispatchercmd.go)。記録を変えた知らせ (Changed) より先に呼ぶ
@@ -163,6 +166,17 @@ type Dispatcher struct {
 	notified    map[string]bool      // 通知した人の番 (カード ID@列に入った時刻。人の番を抜けたら消す)
 	stopFrom    map[string]time.Time // 印の付いたカードを、この dispatcher が最初に止めに入った時刻 (close.go。諦めるまでの時間の起点)
 	unknownSeen map[string]bool      // 知らない state の警告を出した session id (unknownStateNote。止め直しの周・Tick ごとに重ねない)
+
+	// Scheduled は回す予定 (schedule.Jobs) / RunScheduled は予定を起こす口 (本物は ExecScheduled)。RunScheduled が nil なら予定を回さない
+	// (e2e モード・--once・テスト)。schedBusy は予定の子を待っている間、schedDone は終わった結果 (次の Tick が記録する)、
+	// schedErrs は前の Tick に出した回せない理由 / schedErrsNow はこの Tick に出した理由 (Tick の終わりに入れ替える = 出なくなった理由は外れる)
+	Scheduled    []schedule.Job
+	RunScheduled ScheduleRunner
+	schedBusy    atomic.Bool
+	schedDone    atomic.Pointer[scheduleDone]
+	schedErrs    map[string]bool
+	schedErrsNow map[string]bool
+	schedStart   time.Time // 今の予定を起こした時刻 (入れ替えが待つ上限の起点。scheduleBusy)
 
 	// UpgradeNote は新版への入れ替えの様子 (issue 505。dispupgrade.go が持つ)。Tick ごとに dispatcher-state.json へ書く。nil なら書かない
 	UpgradeNote func(now time.Time) (string, bool)
@@ -219,6 +233,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	notes = append(notes, d.meter(now, res)...) // 書庫へ移す前 (issue 516)
 	notes = append(notes, d.archive(now)...)
 	notes = append(notes, d.purge(now)...)
+	notes = append(notes, d.tickSchedule(ctx, now)...) // 一覧の取得より先 (claude の一覧を取れない Tick でも予定は回す。子が自分で読んで失敗を返す)
 	// 書庫へ移した・削除したカードの添付を消す (記録を書いた後に消す。落ちても次の Tick が消し直す。issue 453)
 	if _, err := store.SweepAttachments(d.Dir, now); err != nil {
 		notes = append(notes, ev(eventlog.KindError, "", "", "添付を片付けられない (次の Tick で消し直す): "+err.Error()))

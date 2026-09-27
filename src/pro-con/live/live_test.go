@@ -1061,3 +1061,22 @@ func TestNotifiedRefreshRelistsWhenSeenGoesStale(t *testing.T) {
 		t.Fatalf("前の一覧を黙って使い続けた: PG %+v / 理由 %+v", s.Consumers, s.Violations)
 	}
 }
+
+// 予定 (issue 550): schedule off の設定を画面の Config に載せ、予定の行の「次回」も回さないと出す。
+func TestScheduleOffReachesScreen(t *testing.T) {
+	b, _ := testBackend(t, nil, nil)
+	if _, err := store.Submit(b.dir, store.Request{Kind: store.KindConfig, Key: store.SettingSchedule, Value: "off"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Apply(b.dir, time.Now(), nil); err != nil {
+		t.Fatal(err)
+	}
+	b.Refresh(context.Background())
+	if !b.Poll().Config.ScheduleOff {
+		t.Error("schedule off が画面の Config に載らない")
+	}
+	rows, err := b.Schedule()
+	if err != nil || len(rows) == 0 || !strings.Contains(rows[0].Next, "回さない") {
+		t.Errorf("予定の行 = %+v (%v)", rows, err)
+	}
+}

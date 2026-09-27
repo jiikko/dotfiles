@@ -31,10 +31,12 @@ const (
 	SettingPM    = "pm"    // PM の数。🚨 受けるのは 1 だけなので dispatcher はまだ読まない (2 以上を受けるのは 415 の論点 6 の後。そのとき dispatcher に配線する)
 	// SettingReview は敵対的レビューの担い手 (ReviewModes。issue 514)。~/.config/pro-con/config.toml の review より勝つ
 	SettingReview = "review"
+	// SettingSchedule は予定 (issue 550。決まった時刻に pro-con worktree clean --yes 等を回す) を回すか (on = 既定 / off)
+	SettingSchedule = "schedule"
 )
 
 // SettingKeys は受け付ける設定の名前 (使い方の文と検査が引く)。
-var SettingKeys = []string{SettingLimit, SettingUsage, SettingPM, SettingReview}
+var SettingKeys = []string{SettingLimit, SettingUsage, SettingPM, SettingReview, SettingSchedule}
 
 // 敵対的レビューの担い手 (issue 514)。claude = PG が自分のサブエージェントで回す (既定。514 の前の動き) / codex = PG が codex exec で回す。
 const (
@@ -61,6 +63,8 @@ type Settings struct {
 	UsageOff bool `json:"usage_off,omitempty"`
 	// Review は敵対的レビューの担い手 (issue 514。空 = 設定なし = config.toml か既定)
 	Review string `json:"review,omitempty"`
+	// ScheduleOff は予定を回さない (既定の false = 回す)
+	ScheduleOff bool `json:"schedule_off,omitempty"`
 }
 
 // ErrSettingsBroken は SettingsFile が壊れているとき (読む側は起動の引数・既定で動き、理由を出す)。
@@ -113,6 +117,14 @@ func CheckSetting(key, value string) (func(*Settings), error) {
 			return func(s *Settings) { s.UsageOff = true }, nil
 		}
 		return nil, fmt.Errorf("usage は on か off (%q)", value)
+	case SettingSchedule:
+		switch value {
+		case "", "on":
+			return func(s *Settings) { s.ScheduleOff = false }, nil
+		case "off":
+			return func(s *Settings) { s.ScheduleOff = true }, nil
+		}
+		return nil, fmt.Errorf("schedule は on か off (%q)", value)
 	case SettingPM:
 		if value == "" {
 			return func(s *Settings) { s.PMs = 0 }, nil

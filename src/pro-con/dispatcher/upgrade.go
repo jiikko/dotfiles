@@ -74,6 +74,9 @@ func (d *Dispatcher) Busy() (string, error) {
 	if d.progressBusy.Load() { // git の子を置き去りにする
 		why = append(why, "進捗を集めている")
 	}
+	if d.scheduleBusy(d.Now()) { // 予定の子の rc を記録できなくなる (子は置き去りにしても最後まで走り、終わりは次の dispatcher が lock で知る)
+		why = append(why, "予定を走らせている")
+	}
 	if d.blocked != nil { // repo の lock 待ち: 諦めるまでの起点 (runLockGiveUp) と取り直しの時刻はメモリにある
 		why = append(why, d.blocked.cardID+" のテストの係が repo の lock を待っている")
 	}

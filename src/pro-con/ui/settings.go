@@ -29,10 +29,11 @@ import (
 type settingsTab int
 
 const (
-	tabConfig settingsTab = iota // 変える所 (と見る所の要約)
-	tabProcs                     // 役ごとのプロセスの一覧 (pro-con ps と同じ出どころ)
-	tabDisk                      // ディスクの使用量と内訳 (pro-con du と同じ)
-	tabLog                       // プロセスの出来事 (pro-con log と同じ出どころ。settingslog.go)
+	tabConfig   settingsTab = iota // 変える所 (と見る所の要約)
+	tabProcs                       // 役ごとのプロセスの一覧 (pro-con ps と同じ出どころ)
+	tabDisk                        // ディスクの使用量と内訳 (pro-con du と同じ)
+	tabLog                         // プロセスの出来事 (pro-con log と同じ出どころ。settingslog.go)
+	tabSchedule                    // 予定 (issue 550。dispatcher が決まった時刻に回すコマンド。pro-con config と同じ行)
 )
 
 func (t settingsTab) label() string {
@@ -45,6 +46,8 @@ func (t settingsTab) label() string {
 		return "ディスク"
 	case tabLog:
 		return "ログ"
+	case tabSchedule:
+		return "予定"
 	}
 	return ""
 }
@@ -53,7 +56,7 @@ func (t settingsTab) label() string {
 const settingsReverse = "\x1b[7m"
 
 // 設定のタブの行 (選ぶ行の順)。
-var configKeys = []string{backend.ConfigLimit, backend.ConfigUsage, backend.ConfigPM, backend.ConfigReview}
+var configKeys = []string{backend.ConfigLimit, backend.ConfigUsage, backend.ConfigPM, backend.ConfigReview, backend.ConfigSchedule}
 
 // configValueWidth は設定のタブの値の欄の幅 (「 ‹ claude › 」が入る)。
 const configValueWidth = 12
@@ -82,6 +85,9 @@ type settings struct {
 
 	log eventLog // ログのタブ (settingslog.go)
 
+	schedule    []backend.ScheduleRow // 予定のタブ (開いたとき・タブへ移ったとき・r で読む)
+	scheduleErr error
+
 	// want は ← → で置いた値のうち、まだ Snapshot に出ていないもの (続けて押したときに前の値から数える)。wantAt は置いた時刻
 	want   map[string]string
 	wantAt time.Time
@@ -91,6 +97,11 @@ type procsMsg struct {
 	rows []backend.Proc
 	err  error
 	at   time.Time
+}
+
+type scheduleMsg struct {
+	rows []backend.ScheduleRow
+	err  error
 }
 
 type diskMsg struct {
@@ -106,9 +117,9 @@ func (m *Model) inspector() backend.Inspector {
 // settingsTabs は出すタブ。変える所を受けない画面 (--view) は見る所だけ。
 func (m *Model) settingsTabs() []settingsTab {
 	if !m.accepts(backend.OpConfig) {
-		return []settingsTab{tabProcs, tabDisk, tabLog}
+		return []settingsTab{tabSchedule, tabProcs, tabDisk, tabLog}
 	}
-	return []settingsTab{tabConfig, tabProcs, tabDisk, tabLog}
+	return []settingsTab{tabConfig, tabSchedule, tabProcs, tabDisk, tabLog}
 }
 
 // openSettings は設定画面を開き、見る所を裏で読む。
@@ -121,7 +132,7 @@ func (m *Model) openSettings() tea.Cmd {
 	}
 	enter := m.enterSettingsTab(tab)
 	s.anim.Open(m.now(), drawerDuration)
-	return tea.Batch(m.fetchProcs(), m.measureDisk(), enter, m.startFrames())
+	return tea.Batch(m.fetchProcs(), m.measureDisk(), m.fetchSchedule(), enter, m.startFrames())
 }
 
 // enterSettingsTab は t のタブへ移る (選ぶ行を先頭へ。ログのタブは最新 = 一番下)。移った先で読むものがあれば裏で読む。
@@ -135,6 +146,8 @@ func (m *Model) enterSettingsTab(t settingsTab) tea.Cmd {
 		s.log.follow = true
 		s.cursor = max(len(s.log.rows)-1, 0)
 		return m.fetchEvents()
+	case tabSchedule:
+		return m.fetchSchedule()
 	case tabConfig, tabDisk:
 	}
 	return nil
@@ -189,6 +202,18 @@ func (m *Model) measureDisk() tea.Cmd {
 	}
 }
 
+// fetchSchedule は予定の記録を裏で読む (小さな JSON を 1 つ読むだけだが、描くたびには読まない)。読めない backend なら nil。
+func (m *Model) fetchSchedule() tea.Cmd {
+	r, ok := m.be.(backend.ScheduleReader)
+	if !ok {
+		return nil
+	}
+	return func() tea.Msg {
+		rows, err := r.Schedule()
+		return scheduleMsg{rows: rows, err: err}
+	}
+}
+
 func (m *Model) handleSettingsKey(k string) tea.Cmd {
 	s := &m.set
 	switch k {
@@ -236,6 +261,8 @@ func (m *Model) handleSettingsKey(k string) tea.Cmd {
 			return m.measureDisk()
 		case tabLog:
 			return m.fetchEvents()
+		case tabSchedule:
+			return m.fetchSchedule()
 		case tabConfig:
 		}
 		return tea.Batch(m.fetchProcs(), m.measureDisk())
@@ -311,15 +338,18 @@ func (m *Model) stepConfig(delta int) tea.Cmd {
 	return nil
 }
 
-// stepValue は key の値 v を delta だけ動かした値。数の設定は 1 ずつ、usage (チェックボックス) は ← → とも入れ替え、review は ReviewModes を巡る。
+// checkboxKeys は on / off のチェックボックスの設定 (← → と Enter で入れ替える)。
+var checkboxKeys = []string{backend.ConfigUsage, backend.ConfigSchedule}
+
+// stepValue は key の値 v を delta だけ動かした値。数の設定は 1 ずつ、チェックボックスは ← → とも入れ替え、review は ReviewModes を巡る。
 func stepValue(key, v string, delta int) (string, error) {
-	switch key {
-	case backend.ConfigUsage:
+	if slices.Contains(checkboxKeys, key) {
 		if v == "on" {
 			return "off", nil
 		}
 		return "on", nil
-	case backend.ConfigReview:
+	}
+	if key == backend.ConfigReview {
 		i := max(slices.Index(backend.ReviewModes, v), 0)
 		n := len(backend.ReviewModes)
 		return backend.ReviewModes[((i+delta)%n+n)%n], nil
@@ -340,6 +370,11 @@ func (m *Model) configNow(key string) string {
 			return "off"
 		}
 		return "on" // 既定は枠で絞る
+	case backend.ConfigSchedule:
+		if c.ScheduleOff {
+			return "off"
+		}
+		return "on" // 既定は予定を回す
 	case backend.ConfigPM:
 		return strconv.Itoa(cmp.Or(c.PMs, 1)) // 設定が無ければ 1 つで動く
 	case backend.ConfigReview:
@@ -382,7 +417,7 @@ func (m *Model) settingsSelectable() []string {
 			out = append(out, g.Name)
 		}
 		return out
-	case tabLog:
+	case tabLog, tabSchedule:
 	}
 	return nil
 }
@@ -396,7 +431,7 @@ func (m *Model) toggleSettingsRow() {
 	}
 	switch s.tab {
 	case tabConfig:
-		if sel[s.cursor] == backend.ConfigUsage {
+		if slices.Contains(checkboxKeys, sel[s.cursor]) {
 			_ = m.stepConfig(0)
 		}
 	case tabProcs:
@@ -407,7 +442,7 @@ func (m *Model) toggleSettingsRow() {
 		} else {
 			s.openGroup = sel[s.cursor]
 		}
-	case tabLog:
+	case tabLog, tabSchedule:
 	}
 }
 
@@ -461,6 +496,8 @@ func (m *Model) settingsPanel(rows int) []string {
 		body, cur = m.procLines(w)
 	case tabDisk:
 		body, cur = m.diskLines(w)
+	case tabSchedule:
+		body = m.scheduleLines(w)
 	case tabLog:
 	}
 	m.set.offset = listnav.WindowOffset(m.set.offset, cur, len(body), shown)
@@ -483,8 +520,12 @@ func (m *Model) configLines(w int) ([]string, int) {
 			name, note = "敵対的レビューの担い手", m.reviewNote()
 		}
 		val := fmt.Sprintf(" ‹ %s › ", v)
-		if key == backend.ConfigUsage {
-			name, note, val = "利用枠を見て PG を絞る", "80% で 1 本 / 95% で 0 本。外すと上限まで起動する (Enter か ← →)", " [ ] "
+		if slices.Contains(checkboxKeys, key) {
+			name, note = "利用枠を見て PG を絞る", "80% で 1 本 / 95% で 0 本。外すと上限まで起動する (Enter か ← →)"
+			if key == backend.ConfigSchedule {
+				name, note = "予定を回す", "決まった時刻に dispatcher がコマンドを回す (中身は予定のタブ。Enter か ← →)"
+			}
+			val = " [ ] "
 			if v == "on" {
 				val = " [x] "
 			}
@@ -765,6 +806,46 @@ func clipLeft(s string, n int) string {
 	return "…" + string(r[len(r)-n+1:])
 }
 
+// scheduleLines は予定のタブ (issue 550)。予定ごとに、いつ・dispatcher が起こすコマンドの字面・前回・次回・出力の置き場
+// (pro-con config と同じ行 = backend.ScheduleRows)。
+func (m *Model) scheduleLines(w int) []string {
+	border := fg(51)
+	s := &m.set
+	title := sgrBold + "予定" + sgrReset + sgrDim + "  dispatcher が決まった時刻に回すコマンド · r で読み直す" + sgrReset
+	switch {
+	case m.snap.Config.Err != "":
+		title += "  " + sgrRed + "設定を読めないので回さない" + sgrFgReset
+	case m.snap.Config.ScheduleOff:
+		title += "  " + sgrYellow + "止めている (設定のタブの「予定を回す」で戻す)" + sgrFgReset
+	}
+	out := []string{boxTop(border, title, w)}
+	_, readable := m.be.(backend.ScheduleReader)
+	switch {
+	case !readable:
+		out = append(out, boxLine(border, sgrDim+" この画面では読めない"+sgrReset, w))
+	case len(s.schedule) == 0 && s.scheduleErr == nil:
+		out = append(out, boxLine(border, sgrDim+" 読んでいる…"+sgrReset, w))
+	}
+	for i, r := range s.schedule {
+		if i > 0 {
+			out = append(out, boxLine(border, "", w))
+		}
+		last := sgrDim + r.Last + sgrReset
+		if r.Failed {
+			last = sgrRed + r.Last + sgrFgReset
+		}
+		out = append(out,
+			boxLine(border, " "+sgrBold+r.When+"  "+r.Command+sgrReset, w),
+			boxLine(border, "   前回  "+last, w),
+			boxLine(border, "   次回  "+r.Next, w),
+			boxLine(border, sgrDim+"   出力  "+r.Out+" / .err"+sgrReset, w))
+	}
+	if s.scheduleErr != nil {
+		out = append(out, boxLine(border, sgrRed+" 予定の記録を読めない: "+s.scheduleErr.Error()+sgrFgReset, w))
+	}
+	return append(out, boxBottom(border, w))
+}
+
 // settingsHints は設定画面の案内。
 func (m *Model) settingsHints() []string {
 	h := []string{"tab 次のタブ", "j / k 選ぶ"}
@@ -775,6 +856,8 @@ func (m *Model) settingsHints() []string {
 		h = append(h, avail("enter 止まっている役を開く / 畳む", len(m.settingsSelectable()) > 0), "r 読み直す")
 	case tabDisk:
 		h = append(h, "enter 内訳", "r 測り直す")
+	case tabSchedule:
+		h = append(h, "r 読み直す")
 	case tabLog:
 		verb := "c カードの出来事も出す"
 		if m.set.log.showCards {
