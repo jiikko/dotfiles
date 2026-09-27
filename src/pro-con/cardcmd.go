@@ -49,7 +49,10 @@ var cardUsage = `usage: pro-con card <操作> ... [--wait <長さ>]   (受付の
                                                  --redirect は方針変更 (PG を止めて届ける)。完了のカードには出せない (別件は add で新しい依頼にする)
   handoff <カード> <理由> [--from <PM|取り込みの係>]  PG の質問 / レビュー待ちを人に回したことを履歴に残す (列は変えない)
   close <カード> [--ending answered|investigated|rejected|pending-issue] [--issue <repo>#<番号>]...
-  delete <カード> [--from <人間|PM>]              カードを消す (依頼の列はすぐ。それ以外は PG の session を止めてから。worktree とブランチは残す)
+                                                 PG のブランチに origin/master に無い commit があれば除ける。取り込まずに閉じるなら
+                                                 --ending answered / investigated / rejected (commit を refs/pro-con/removed/ に残して worktree とブランチを消す)
+  delete <カード> [--from <人間|PM>]              カードを消す (依頼の列はすぐ。それ以外は PG の session を止めてから。
+                                                 その後 PG の worktree とブランチを、master に無い commit を refs/pro-con/removed/ に残してから消す)
   move <カード> up|down [--repo <repo>]          レーンの中で 1 つ上 / 下のカードと入れ替える (上ほど優先。--repo ならその repo のカードの中の隣)
   guide                                          PM への指示書を出す (箱には何も置かない)
 読むだけ (箱にも記録にも書かない):

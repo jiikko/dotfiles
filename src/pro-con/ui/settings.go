@@ -82,6 +82,7 @@ type settings struct {
 	disk        diskuse.Usage
 	diskErr     error
 	diskLoading bool
+	wt          wtState // ディスクのタブの残した worktree (settingswt.go。issue 553)
 
 	log eventLog // ログのタブ (settingslog.go)
 
@@ -132,7 +133,7 @@ func (m *Model) openSettings() tea.Cmd {
 	}
 	enter := m.enterSettingsTab(tab)
 	s.anim.Open(m.now(), drawerDuration)
-	return tea.Batch(m.fetchProcs(), m.measureDisk(), m.fetchSchedule(), enter, m.startFrames())
+	return tea.Batch(m.fetchProcs(), m.measureDisk(), m.fetchWorktrees(), m.fetchSchedule(), enter, m.startFrames())
 }
 
 // enterSettingsTab は t のタブへ移る (選ぶ行を先頭へ。ログのタブは最新 = 一番下)。移った先で読むものがあれば裏で読む。
@@ -216,6 +217,9 @@ func (m *Model) fetchSchedule() tea.Cmd {
 
 func (m *Model) handleSettingsKey(k string) tea.Cmd {
 	s := &m.set
+	if k != "D" {
+		s.wt.armed = "" // D の構え (もう一度 D で消す) は、ほかのキーを押したら外す
+	}
 	switch k {
 	case "ctrl+c", "Q":
 		return m.requestQuit()
@@ -248,6 +252,11 @@ func (m *Model) handleSettingsKey(k string) tea.Cmd {
 	case "enter":
 		m.toggleSettingsRow()
 		return nil
+	case "D", "L": // ディスクのタブの残した worktree を消す (2 回で確定)・残す (issue 553)
+		if s.tab == tabDisk {
+			return m.decideWorktree(k == "D")
+		}
+		return nil
 	case "c":
 		if s.tab == tabLog {
 			m.toggleCardEvents()
@@ -258,7 +267,7 @@ func (m *Model) handleSettingsKey(k string) tea.Cmd {
 		case tabProcs:
 			return m.fetchProcs()
 		case tabDisk:
-			return m.measureDisk()
+			return tea.Batch(m.measureDisk(), m.fetchWorktrees())
 		case tabLog:
 			return m.fetchEvents()
 		case tabSchedule:
@@ -416,7 +425,7 @@ func (m *Model) settingsSelectable() []string {
 		for _, g := range m.set.disk.Groups {
 			out = append(out, g.Name)
 		}
-		return out
+		return append(out, m.worktreeKeys()...)
 	case tabLog, tabSchedule:
 	}
 	return nil
@@ -437,6 +446,9 @@ func (m *Model) toggleSettingsRow() {
 	case tabProcs:
 		s.showStopped = !s.showStopped
 	case tabDisk:
+		if strings.HasPrefix(sel[s.cursor], wtKeyPrefix) {
+			return
+		}
 		if s.openGroup == sel[s.cursor] {
 			s.openGroup = ""
 		} else {
@@ -794,7 +806,8 @@ func (m *Model) diskLines(w int) ([]string, int) {
 			out = append(out, boxLine(border, sgrYellow+fmt.Sprintf(" 読めない所 %d 件 (その分は数えていない): %s", n, d.Warnings[0])+sgrFgReset, w))
 		}
 	}
-	return append(out, boxBottom(border, w)), cur
+	out = append(out, boxBottom(border, w))
+	return m.worktreeLines(out, w, len(d.Groups), &cur), cur
 }
 
 // clipLeft は長い名前を頭から切る (transcript の置き場の名前は末尾に worktree の名前がある)。
@@ -855,7 +868,8 @@ func (m *Model) settingsHints() []string {
 	case tabProcs:
 		h = append(h, avail("enter 止まっている役を開く / 畳む", len(m.settingsSelectable()) > 0), "r 読み直す")
 	case tabDisk:
-		h = append(h, "enter 内訳", "r 測り直す")
+		_, onWT := m.selectedWorktree()
+		h = append(h, "enter 内訳", avail("D 消す (2 回)", onWT), avail("L 残す", onWT), "r 測り直す")
 	case tabSchedule:
 		h = append(h, "r 読み直す")
 	case tabLog:

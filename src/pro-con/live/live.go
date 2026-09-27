@@ -27,6 +27,7 @@ import (
 	"pro-con/presence"
 	"pro-con/store"
 	"pro-con/wake"
+	"pro-con/wtclean"
 )
 
 // Interval は一覧と transcript を読み直す間隔。claude agents --json は 1 回 0.15 秒ほどかかるので、画面の tick (1 秒) では呼ばない。
@@ -81,6 +82,9 @@ type Backend struct {
 	// procs / disk は設定画面の見る所を読む口 (SetInspector。main がつなぐ)
 	procs func() ([]backend.Proc, error)
 	disk  func() (diskuse.Usage, error)
+	// worktrees / decide は残した worktree を読む口と、人が決める口 (SetWorktrees。main がつなぐ。issue 553)
+	worktrees func() ([]wtclean.Verdict, error)
+	decide    func(wtclean.Verdict, bool) (wtclean.Result, error)
 	// events は設定画面のログのタブが読み進める記録 (Events。evMu で守る。最初に呼ばれたときに作る)
 	evMu   sync.Mutex
 	events *eventlog.Follower
@@ -178,6 +182,29 @@ func (b *Backend) DiskUsage() (diskuse.Usage, error) {
 	return b.disk()
 }
 
+// SetWorktrees は残した worktree を読む口 (read) と、人が「消す」「残す」を決める口 (decide) をつなぐ (Start の前に呼ぶ。issue 553)。
+// どちらも main が持つ (pro-con worktree clean と同じ材料の集め方と worktree-clean.lock)。つながなければ ErrNoInspector を返す。
+func (b *Backend) SetWorktrees(read func() ([]wtclean.Verdict, error), decide func(wtclean.Verdict, bool) (wtclean.Result, error)) {
+	b.worktrees, b.decide = read, decide
+}
+
+// Worktrees は自動の片付けが残した worktree と理由 (backend.WorktreeReader。読むだけ。数秒かかる)。
+func (b *Backend) Worktrees() ([]wtclean.Verdict, error) {
+	if b.worktrees == nil {
+		return nil, ErrNoInspector
+	}
+	return b.worktrees()
+}
+
+// DecideWorktree は人が決めた worktree を消す・残す (backend.WorktreeDecider。worktree とブランチを動かす)。
+// 見ているだけの画面 (viewOnly) は型の上でこの口を持たない。
+func (b *Backend) DecideWorktree(v wtclean.Verdict, remove bool) (wtclean.Result, error) {
+	if b.decide == nil || b.viewOnly {
+		return wtclean.Result{}, ErrNoInspector
+	}
+	return b.decide(v, remove)
+}
+
 // Events は前に呼んだ後に events.jsonl へ足された出来事を返す (backend.EventLog。最初は全部。読むだけ)。
 func (b *Backend) Events() ([]eventlog.Event, error) {
 	b.evMu.Lock()
@@ -221,6 +248,7 @@ func (v viewOnly) Activity(cardID string) ([]backend.Activity, error) {
 func (v viewOnly) Procs() ([]backend.Proc, error)          { return v.b.Procs() }     // 読むだけ (ps と記録)
 func (v viewOnly) DiskUsage() (diskuse.Usage, error)       { return v.b.DiskUsage() } // 読むだけ (測るだけ)
 func (v viewOnly) Events() ([]eventlog.Event, error)       { return v.b.Events() }    // 読むだけ (events.jsonl)
+func (v viewOnly) Worktrees() ([]wtclean.Verdict, error)   { return v.b.Worktrees() } // 読むだけ (worktree・claude agents・lsof を読む)
 func (v viewOnly) Apply(backend.Command) (string, error)   { return "", ErrViewOnly }
 func (v viewOnly) AttachCommand(string) (*exec.Cmd, error) { return nil, ErrViewOnly }
 

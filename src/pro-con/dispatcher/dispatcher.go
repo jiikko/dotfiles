@@ -126,6 +126,9 @@ type Dispatcher struct {
 	// Changed は記録を変えたときに呼ぶ (画面へ「読み直して」と知らせる。package wake の Broadcast)。nil なら知らせない
 	Changed func()
 
+	// Worktrees は PG の worktree を見る・片付ける口 (worktree.go。issue 553)。nil なら close を検査せず、閉じた・削除したカードの worktree も片付けない
+	Worktrees WorktreeOps
+
 	// FakePM は e2e モードの偽の PM (Tick の頭で呼ぶ)。本物のモードでは nil
 	FakePM func() error
 	// PMRepo は PM を起動する repo の絶対パス (pm.go。PM はその下の worktree で動く)。空なら PM を起こさない (e2e モード)
@@ -219,7 +222,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 			notes = append(notes, ev(eventlog.KindError, "", "", "e2e の偽の PM: "+err.Error()))
 		}
 	}
-	res, err := store.Apply(d.Dir, now, d.Repos)
+	res, err := d.applyInbox(ctx, now)
 	if err != nil {
 		return nil, err
 	}

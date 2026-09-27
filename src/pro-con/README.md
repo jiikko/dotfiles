@@ -49,6 +49,10 @@ bin/pro-con worktree clean [--yes]  # 閉じたカードの PG の worktree を�
                          # job の cwd・worktree・ブランチがカードのものだけ)・起動の記録の行と印 (受付の箱に forget を置き、dispatcher が消す)。
                          # dispatcher の予定が毎日 04:00 に --yes を回す (issue 550。下の「予定」)。--yes は worktree-clean.lock を取り、別の --yes が動いていれば rc 3 で何もしない。最後の行は「結果: …」
                          # master に無い commit があるもの・記録に無いもの・PM と取り込みの係の worktree・人が掛けた lock は消さない。Claude Code が残した lock は外して消す (消せなければ掛け直す)。判定は wtclean.Judge (設定画面 456 の内訳も同じ関数を呼ぶ)
+                         # 🚨 これは受け皿で、主の経路は「閉じる・消すその場で片付ける」(issue 553。dispatcher/worktree.go): close は PG のブランチに origin/master に無い commit があれば除け
+                         # (取り込まない終わり方 --ending answered / investigated / rejected なら通す)、取り込まない終わり方で閉じたカードと削除したカードは、PG を止め終えた直後に
+                         # wtclean.Settle で commit を refs/pro-con/removed/ に残してから worktree とブランチを消す。未 commit の変更・中に居るもの・人の lock は消さない (退避しない)。
+                         # それでも残ったもの (前からの残り物・失敗したもの) は設定画面のディスクのタブの「残した worktree」に理由つきで出し、人が D (2 回) で消す・L で残す (git worktree lock)
 bin/pro-con --e2e <dir>  # e2e モード: 画面・dispatcher・受付の箱・記録は本物、PG と PM だけ台本どおりの偽物 (claude を起動しない。利用枠を使わない)
 bin/pro-con e2e <start|keys|text|screen|wait|stop|scenario> <dir> ...  # Claude が e2e モードの画面を操作する口 (隔離した tmux サーバで動かす)
 bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンドを頼む。dispatcher が PG の worktree で 1 本ずつ順に実行し、結果を渡して PG を再開する (失敗は haiku が要約し、1 行目に一次判定 = この変更のせい / 負荷・環境 / 前から / 判定できない を書く。見込みで証拠ではない。枠 95% 以上で始めた実行は要約しない。issue 475)。repo の lock (`<git の共通ディレクトリ>/pro-con-locks/test`) を `lockman with` で取って走らせ、外が持っていれば「pro-con の外が使用中」で待つ (issue 471)。実行のグループが止まったまま (全部 STAT T) 30 秒続かなければ、1 時間の上限を待たずに止め直して失敗として返す (issue 541)
@@ -396,7 +400,7 @@ issue の読み方 (状態 = ファイルの位置、`epic/<name>/` の 2 段、
 | `ui` | bubbletea v2 の TUI。状態は持たない (Snapshot を描き、Command を送るだけ) |
 | `monitor` | 見張り (`pro-con monitor`。issue 475)。読むだけで、見つけたことは受付の箱に置く |
 | `metrics` | 閉じたカード 1 枚の所要の行 (列ごとの時間・回数・PG の枠) と、束ねた集計 (`pro-con stats`。issue 516)。読み書きは `store/metrics.go` |
-| `wtclean` | 閉じたカードの PG の worktree と session の判定と片付け (`pro-con worktree clean`。issue 492 / 497)。消す操作はここだけ |
+| `wtclean` | 閉じたカードの PG の worktree と session の判定と片付け (`pro-con worktree clean`。issue 492 / 497)・閉じる・消すその場の片付けと人の決め (Settle / Discard / Hold。issue 553)。消す操作はここだけ |
 | `gitx` | git を呼ぶ共通の口 (継承した `GIT_DIR` などを外す。monitor と wtclean が使う) |
 
 - `fake` の dispatcher / watchdog / リソース列は**模擬**で、本番の判定ではない。本番の判定を育てるなら fake から切り出す

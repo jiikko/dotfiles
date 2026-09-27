@@ -4,7 +4,8 @@ package dispatcher
 // レビューの列に入ったカード (issue 536) も同じ印で止める (idle の PG を残しても、差し戻しの再開は止めてから --resume するので効かない)。
 // 止めたら Stopped を付ける (差し戻し・追加オーダーの再開が、落ちた PG の自動の再開を待たずに --resume する)。
 // 印は依頼の適用と同時に付き、dispatcher が Tick ごとに止める。止めた・止まったかの判定は終了のとき (shutdown.go の ensureStopped) と同じ部品を使う。
-// 🚨 PG の worktree とブランチは消さない (取り込みの係が merge で取り込む。削除しても取り込み前の作業が入っている)。
+// PG の worktree とブランチは、取り込みの係が merge で取り込むので閉じても残す。取り込まない終わり方で閉じたカードと削除したカードだけ、
+// 止め終えた直後に取り込み先に無い commit を残してから片付ける (worktree.go。issue 553)。
 
 import (
 	"context"
@@ -83,12 +84,17 @@ func (d *Dispatcher) stopMarked(ctx context.Context, now time.Time, ss []agents.
 					notes = append(notes, ev(eventlog.KindError, c.ID, c.Session, c.ID+": 所要の記録に書けないので、記録から外すのは次の Tick へ: "+err.Error()))
 					continue
 				}
-				n, err := d.dropCard(c, now, stopped)
+				n, dropped, err := d.dropCard(c, now, stopped)
 				if n != "" {
 					notes = append(notes, ev(eventlog.KindDelete, c.ID, c.Session, c.ID+": "+n))
 				}
 				if err != nil {
 					return notes, err
+				}
+				if dropped { // 記録から外した直後に worktree を片付ける (外した後は「記録に無いカード」として残り物になる。issue 553)
+					if e := d.settleWorktree(ctx, c, eventlog.KindDelete, false); e != nil {
+						notes = append(notes, *e)
+					}
 				}
 				continue
 			}
@@ -106,6 +112,17 @@ func (d *Dispatcher) stopMarked(ctx context.Context, now time.Time, ss []agents.
 			notes = append(notes, ev(eventlog.KindStop, c.ID, c.Session, c.ID+": "+text))
 			if err := d.finishMarkedStop(c.ID, now, text, reviewing); err != nil {
 				return notes, err
+			}
+			switch {
+			case reviewing:
+			case c.Ending.Discards(): // 取り込まない終わり方で閉じた: 取り込み先に無い commit を残してから worktree を片付ける (issue 553)
+				if e := d.settleWorktree(ctx, c, eventlog.KindStop, true); e != nil {
+					notes = append(notes, *e)
+				}
+			default: // 取り込んで閉じた: 検査の後・止め終える前に PG が commit を足していないかを見直す (黙って宙に浮かせない)
+				if e := d.recheckClosed(ctx, c); e != nil {
+					notes = append(notes, *e)
+				}
 			}
 			continue
 		}
@@ -193,7 +210,7 @@ func (d *Dispatcher) finishMarkedStop(id string, now time.Time, text string, sto
 // dropCard は PG が止まったのを確かめた削除のカードを記録から外し、記録に残す出来事の文を返す。
 // 外せない (不変条件に反する = 子カードが後から付いた等) ときは印を外して履歴に書き、カードを残す。
 // 🚨 pro-con が起動した session の記録の行は消さない (終了のときの確かめで、消したカードの PG も止まっていることを見続ける)。
-func (d *Dispatcher) dropCard(c card.Card, now time.Time, stopped bool) (string, error) {
+func (d *Dispatcher) dropCard(c card.Card, now time.Time, stopped bool) (string, bool, error) {
 	how := "PG の session を止めた"
 	if !stopped {
 		how = "PG の session は動いていなかった"
@@ -203,8 +220,8 @@ func (d *Dispatcher) dropCard(c card.Card, now time.Time, stopped bool) (string,
 		return nil
 	})
 	if err == nil {
-		return fmt.Sprintf("「%s」を削除した (%s が依頼。%s。worktree とブランチは残す)", c.Title, c.DeleteBy, how), nil
+		return fmt.Sprintf("「%s」を削除した (%s が依頼。%s)", c.Title, c.DeleteBy, how), true, nil
 	}
 	text := fmt.Sprintf("削除できない: %v (%s。カードは残した)", err, how)
-	return text, d.finishMarkedStop(c.ID, now, text, false)
+	return text, false, d.finishMarkedStop(c.ID, now, text, false)
 }

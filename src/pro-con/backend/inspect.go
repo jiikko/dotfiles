@@ -6,6 +6,7 @@ import (
 	"pro-con/diskuse"
 	"pro-con/eventlog"
 	"pro-con/store"
+	"pro-con/wtclean"
 )
 
 // 設定画面 (issue 456) の「見る所」と「変える所」の境界。
@@ -83,3 +84,20 @@ type SetConfig struct {
 const OpConfig Op = "config"
 
 func (SetConfig) isCommand() {}
+
+// WorktreeReader は設定画面のディスクのタブが読む「自動の片付けが残した worktree と理由」(pro-con worktree clean の一覧と同じ
+// wtclean.Scan。issue 553)。任意 (持たない backend はディスクのタブに「読めない」と出す)。
+// 🚨 読むだけ (--view でも使う)。重い (worktree ごとの git・claude agents・lsof) ので、ディスクを測るときに裏で呼ぶ。
+type WorktreeReader interface {
+	Worktrees() ([]wtclean.Verdict, error)
+}
+
+// OpWorktree は残した worktree を人が消す・残す操作 (設定画面のディスクのタブの D / L。見ているだけの画面は受けない)。
+const OpWorktree Op = "worktree"
+
+// WorktreeDecider は、人が決める worktree (wtclean.Verdict.Ask) を人が「消す」(remove。wtclean.Discard) か「残す」(wtclean.Hold)
+// に決める口 (issue 553)。🚨 git の worktree とブランチを動かすので、見ているだけの画面 (--view) は型の上で持たない。
+// 数秒かかるので画面は裏で呼ぶ。pro-con worktree clean --yes (dispatcher の予定) とは worktree-clean.lock で重ねない。
+type WorktreeDecider interface {
+	DecideWorktree(v wtclean.Verdict, remove bool) (wtclean.Result, error)
+}

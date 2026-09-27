@@ -55,6 +55,8 @@ pro-con (issue 415 の epic) の本物のモードで、取り込みの係 (PG �
 5. **自分では片付けられないカードは人に回す** (人の判断が要る・環境のせいでテストが通らない・push が権限で止まる 等)。回したことは履歴に残す
    `pro-con card handoff <カード> "<人間に回す理由>" --from 取り込みの係`
    - 回したカードは、またレビューの列に入り直すまで知らされない。人間が画面か `pro-con card close <カード> --issue <repo>#<番号>` / `pro-con card rework <カード> "<直してほしい点>"` で扱う
+   - 🚨 PG のブランチに origin/master に無い commit があるカードは、`card close` を dispatcher が除ける (取り込まずに閉じると PG の作業が宙に浮く。issue 553)。
+     取り込まずに終えると決めたときだけ `--ending rejected` を付けて閉じる (commit を `refs/pro-con/removed/pc-<カード>/` に残して worktree とブランチを消す)
 6. **カードの様子は読む口で見る** (記録のファイルを直接読まない。どれも読むだけ)
    `pro-con card list --state review` (レビューの列) / `pro-con card show <カード>` / `pro-con log --card <カード>` (dispatcher が何を判断したか)
 
