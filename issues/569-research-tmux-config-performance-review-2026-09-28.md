@@ -17,7 +17,7 @@
   3.7a の "Scrollbar options are now cached rather than being looked up for every redraw (issue 5298)" は 3.7b に入っている
 - 3.7c にするにはサーバの再起動が要る (session の配置は resurrect が戻すが、中で動いているプロセスは止まる)。効果は未実測
 
-### 2. 30 session のうち 22 が、名前からテストの残骸に見える
+### 2. 30 session のうち 22 が、名前からテストの残骸に見えた (2 つは誤り。下の「発生源の調査」)
 
 - `nvimtest`〜`nvimtest7` / `semitest`〜`semitest13` / `s1781492637` / `s1786094176`。どれも 2026-09-27 20:20 の復元で作られ、以後誰も使っていない
   (`session_activity` が作成時刻のまま)。最新のスナップショット (`tmux_resurrect_20260928T002117.txt`) にも 30 pane 行が載っていて、
@@ -55,8 +55,22 @@
   - 🚨 消した直後の自動保存は `scripts/tmux_resurrect_save.sh` の縮小の守り (`regression-blocked`。session が 1/3 以下) が弾き、
     `last` が消す前の保存 (00:21) のまま残った (再起動すると 22 個が戻る状態)。`TT_SAVE_ALLOW_REGRESSION=1 scripts/tmux_resurrect_save.sh` で
     1 回保存し、`last` = `tmux_resurrect_20260928T005511.txt` (8 session、消した名前 0 件) を確認
-  - 未着手: どこで作られたか (dotfiles の中には無い)
+  - どこで作られたか: 下の「発生源の調査」
 - [ ] 5: 端末を替えるか
+
+## 発生源の調査 (2026-09-28)
+
+- **`s1781492637` / `s1786094176` はテストの残骸ではなく、ユーザーの `t` (引数なし) が作った session だった見込みが高い**。
+  `zshlib/_tmux_session.zsh` の `_t_impl` は名前が無いと `s$(date +%s)` で 5 window を作る。消した 2 つは 5 window・cwd `~/src/ubiregi-server`、
+  名前の epoch は 2026-06-15 12:03 / 2026-08-07 18:16。中は待機中の zsh だけだったので作業は止めていないが、スクロールバックは消えた。
+  消す前の保存 `tmux_resurrect_20260928T002117.txt` (と当時の pane_contents) が残っている間は戻せる。**「名前の形がテストっぽい」で残骸と判定したのは誤り**
+- `nvimtest*` / `semitest*` の作成元は特定できなかった:
+  - dotfiles・`~/src` のコード、`~/.zsh_history`、`~/.tmux_history`、`~/.claude/history.jsonl` のどれにも作成の痕跡なし
+  - Claude のセッションの記録は 2026-08-04 以降しか残っていない。8/4 の記録の時点で、どれも「2026-07-30 15:54 に作成」
+    (= 7/30 の本番サーバ誤殺の後の resurrect の復元時刻) と表示されていて、それより前から在った
+  - 8/8 に、ある Claude のセッションが素の `tmux` (本番サーバ) で `nvimtest:1` などを実験台に使っていた (作ってはいない)
+- 形として分かったこと: **本番サーバに一度載った session は、resurrect の保存に入り、再起動のたびに復元され続ける**。
+  使われていない session を見つける手がかりは `session_activity` が作成 (= 復元) 時刻のまま動かないこと
 
 ## 出典
 
