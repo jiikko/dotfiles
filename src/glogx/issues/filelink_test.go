@@ -84,7 +84,7 @@ func TestResolveLink(t *testing.T) {
 		{"repo の外を指す symlink は開かない", markdown.LinkCode, "docs/evil.md", "", 0},
 		{"repo の中を指す symlink は開く", markdown.LinkCode, "docs/alias.md", "docs/alias.md", 0},
 		{"相対で repo の外へ出ない", markdown.LinkDest, "../../../outside.md", "", 0},
-		{"相対で repo の外の実在ファイルへ出ない", markdown.LinkDest, "../../../../sibling.md", "", 0},
+		{"相対で repo の外の実在ファイルへ出ない", markdown.LinkDest, "../../../sibling.md", "", 0},
 		{"~/ は書いた場所を信じる (symlink の先を問わない)", markdown.LinkCode, "~/linked.md", "~/linked.md", 0},
 		{"絶対パスでも repo の中から外へ出る symlink は開かない", markdown.LinkCode, filepath.Join(root, "docs", "evil.md"), "", 0},
 		{"絶対パスのリンクも同じ", markdown.LinkDest, filepath.Join(root, "docs", "evil.md"), "", 0},
