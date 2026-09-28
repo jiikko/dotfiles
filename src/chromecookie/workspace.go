@@ -444,7 +444,7 @@ func (w *Workspace) sweepStaleTempDirs(uid int, afterLstat func(string)) {
 		}
 		// 🚨 pid の生死だけで判定しない。番号が再利用されると永久に消えなくなる。
 		// 十分に古いものは「持ち主はもう居ない」とみなす（名前の条件は緩めない）。
-		if processAlive(pid) && !isStale(e) {
+		if processAlive(pid) && !isStale(r, e.Name()) {
 			continue // 生きているプロセスの、新しいものは触らない（並行実行）
 		}
 		// 🚨 削除は fd 起点（r.RemoveAll）で行う。パスを組み直して os.RemoveAll に渡すと、
@@ -456,9 +456,14 @@ func (w *Workspace) sweepStaleTempDirs(uid int, afterLstat func(string)) {
 	}
 }
 
-// isStale は staleAge より古いエントリかを返す。判定できないときは false（消さない方へ倒す）。
-func isStale(e os.DirEntry) bool {
-	info, err := e.Info()
+// isStale は root 直下の name が staleAge より古いかを返す。判定できないときは false（消さない方へ倒す）。
+//
+// 🚨 os.DirEntry.Info() を使わないこと。go1.25.0 では、入れ子に開いた Root から読んだ DirEntry の
+// Info() が cwd 相対のパス（"extract/./<name>"）を lstat して失敗し、古い残骸が永久に消えなくなる
+// （CI の go1.25.0 で TestSweepRemovesStaleEntriesEvenIfPidAlive が落ちて判明。go1.26 では再現しない）。
+// 検証済みの root を起点に Lstat する。
+func isStale(r *os.Root, name string) bool {
+	info, err := r.Lstat(name)
 	if err != nil {
 		return false
 	}
