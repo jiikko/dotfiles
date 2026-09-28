@@ -144,25 +144,32 @@ func TestRenderLinksPaintsMarks(t *testing.T) {
 
 // 行末で切られる幅 2 の字は字ごと落ちるので、その字だけのリンクは画面に出ない = 一覧に載せない。
 func TestRenderLinksWideCharAtClipEdge(t *testing.T) {
-	// 5 列 × 最小 3 桁の表を幅 14 に入れると行が溢れ、出口の clipToWidth が末尾を切る。
-	// 最終列のコードスパンが「残り 1 桁から始まる全角 1 字」になる位置を幅を掃いて探す
-	src := "| a | b | c | d | e |\n|---|---|---|---|---|\n| x | y | z | w | `全` |\n"
-	hit := false
-	for w := 10; w <= 20; w++ {
-		lines, _, links := RenderLinks(src, w, false, nil)
-		for _, l := range links {
-			for _, s := range l.Segs {
-				if s.Width == 0 || strings.TrimSpace(segText(lines, s)) == "" {
-					t.Fatalf("w=%d: 画面に出ていないリンクが載った: %+v 行 %q", w, s, lines[s.Line])
+	// 5 列 × 最小 3 桁の表は幅が足りないと行が溢れ、出口の clipToWidth が末尾を切る。最終列の
+	// 全角 1 字のコードスパン (後ろに字を続けて行を溢れさせる) が「見える最後の 1 桁」から始まる入力を、
+	// 前置きの長さと幅を掃いて探す
+	hit := 0
+	for pad := 0; pad < 6; pad++ {
+		for w := 8; w <= 30; w++ {
+			src := "| a" + strings.Repeat("a", pad) + " | b | c | d | e |\n|---|---|---|---|---|\n| x | y | z | v | `全`xx |\n"
+			ls := renderMarkdown(src, w)
+			l := ls[len(ls)-1]
+			if lineWidth(l) <= w {
+				continue
+			}
+			col := 0
+			for _, sp := range l.spans {
+				if sp.link != nil && col == w-2 && termwidth.Of(sp.Text) == 2 {
+					hit++
+					if _, _, links := RenderLinks(src, w, false, nil); len(links) != 0 {
+						t.Fatalf("pad=%d w=%d: 字ごと落ちたリンクが載った: %+v", pad, w, links)
+					}
 				}
+				col += termwidth.Of(sp.Text)
 			}
 		}
-		if len(links) == 0 {
-			hit = true // 全角の字が落ちてリンクごと消えた幅がある (この検査が空振りしていない証拠)
-		}
 	}
-	if !hit {
-		t.Fatal("前提: 全角のリンクが clip で落ちる幅が 1 つも無い (検査が空振りしている)")
+	if hit == 0 {
+		t.Fatal("前提: 全角のリンクが見える最後の 1 桁から始まる入力が 1 つも作れていない (検査が空振りしている)")
 	}
 }
 
