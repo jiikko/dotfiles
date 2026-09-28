@@ -19,9 +19,20 @@ func writeFile(t *testing.T, p string) {
 	}
 }
 
+// realTempDir は実体のパスで持つ一時ディレクトリ (macOS の /var は /private/var への symlink。
+// ResolveLink は解いた実体を返すので、期待値も実体で作る)。
+func realTempDir(t *testing.T) string {
+	t.Helper()
+	d, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
 func TestResolveLink(t *testing.T) {
-	root := t.TempDir()
-	home := t.TempDir()
+	root := realTempDir(t)
+	home := realTempDir(t)
 	t.Setenv("HOME", home)
 	issue := filepath.Join(root, "issues", "done", "001-x.md")
 	writeFile(t, issue)
@@ -30,9 +41,35 @@ func TestResolveLink(t *testing.T) {
 	writeFile(t, filepath.Join(root, "issues", "done", "src", "a.go")) // 同名の別ファイル (基準を取り違えたら当たる)
 	writeFile(t, filepath.Join(home, "note.md"))
 	writeFile(t, filepath.Join(root, "sp ace.md"))
-	outside := filepath.Join(t.TempDir(), "secret")
+	outsideDir := realTempDir(t)
+	outside := filepath.Join(outsideDir, "secret")
 	writeFile(t, outside)
 	if err := os.Symlink(outside, filepath.Join(root, "docs", "evil.md")); err != nil {
+		t.Fatal(err)
+	}
+	// ディレクトリの symlink で外へ出る (`d/secret` は外の実体)
+	if err := os.Symlink(outsideDir, filepath.Join(root, "d")); err != nil {
+		t.Fatal(err)
+	}
+	// readlink 先の `..` を symlink の後に当てる形: e -> outside/a/b、l -> e/../x。字面で潰すと repo/x (無害) を
+	// 判定してしまうので、repo/x も実在させる
+	writeFile(t, filepath.Join(outsideDir, "a", "x"))
+	if err := os.MkdirAll(filepath.Join(outsideDir, "a", "b"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outsideDir, "a", "b"), filepath.Join(root, "e")); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(root, "x"))
+	if err := os.Symlink("e/../x", filepath.Join(root, "l")); err != nil {
+		t.Fatal(err)
+	}
+	// repo の外から始まり、repo の中の symlink (e) 越しの `..` で外へ抜ける鎖:
+	// home/hop -> root/e/../../z。kernel は e を解いてから .. を当てる (= outside/z)。字面で Clean すると
+	// root/../z になって repo を通った痕跡ごと消える
+	writeFile(t, filepath.Join(outsideDir, "z"))
+	writeFile(t, filepath.Join(filepath.Dir(root), "z"))
+	if err := os.Symlink(root+"/e/../../z", filepath.Join(home, "hop")); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(filepath.Join(root, "docs", "spec.md"), filepath.Join(root, "docs", "alias.md")); err != nil {
@@ -82,22 +119,27 @@ func TestResolveLink(t *testing.T) {
 		{"行番号 0 は行番号でない", markdown.LinkCode, "src/a.go:0", "", 0},
 		{"GitHub 式の #L12", markdown.LinkDest, "../../docs/spec.md#L12-L20", "docs/spec.md", 12},
 		{"repo の外を指す symlink は開かない", markdown.LinkCode, "docs/evil.md", "", 0},
-		{"repo の中を指す symlink は開く", markdown.LinkCode, "docs/alias.md", "docs/alias.md", 0},
+		{"repo の中を指す symlink は開く (開くのは実体)", markdown.LinkCode, "docs/alias.md", "docs/spec.md", 0},
 		{"相対で repo の外へ出ない", markdown.LinkDest, "../../../outside.md", "", 0},
 		{"相対で repo の外の実在ファイルへ出ない", markdown.LinkDest, "../../../sibling.md", "", 0},
-		{"~/ は書いた場所を信じる (symlink の先を問わない)", markdown.LinkCode, "~/linked.md", "~/linked.md", 0},
+		{"~/ は repo に触れない鎖なら書いた場所を信じる (開くのは実体)", markdown.LinkCode, "~/linked.md", "@outside", 0},
 		{"絶対パスでも repo の中から外へ出る symlink は開かない", markdown.LinkCode, filepath.Join(root, "docs", "evil.md"), "", 0},
 		{"絶対パスのリンクも同じ", markdown.LinkDest, filepath.Join(root, "docs", "evil.md"), "", 0},
 		{"絶対パスで repo の中の通常ファイル", markdown.LinkCode, filepath.Join(root, "src", "a.go"), "src/a.go", 0},
 		{"外から repo の中の symlink を通って外へ出る鎖", markdown.LinkCode, "~/chain.md", "", 0},
-		{"外から repo の中の通常ファイルへ入る鎖は開く", markdown.LinkCode, "~/good.md", "~/good.md", 0},
+		{"外から repo の中の通常ファイルへ入る鎖は開く (開くのは実体)", markdown.LinkCode, "~/good.md", "src/a.go", 0},
 		{"閉じた山括弧の後ろに字", markdown.LinkDest, "<../../docs/spec.md>x", "", 0},
+		{"途中のディレクトリの symlink で外へ出ない", markdown.LinkCode, "d/secret", "", 0},
+		{"途中のディレクトリの symlink を絶対パスで書いても出ない", markdown.LinkCode, "@root/d/secret", "", 0},
+		{"readlink 先の .. を symlink の後で解く", markdown.LinkCode, "l", "", 0},
+		{"外から始まる鎖が repo の symlink 越しの .. で外へ抜ける", markdown.LinkCode, "~/hop", "", 0},
 		{"山括弧の中の空白を切らない", markdown.LinkDest, "<../../docs/spec draft.md>", "docs/spec draft.md", 0},
 		{"%エスケープで戻る制御文字", markdown.LinkDest, "../../a%1b[31m.md", "", 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			p, line, ok := ResolveLink(tc.kind, tc.dest, base)
+			dest := strings.ReplaceAll(tc.dest, "@root", root)
+			p, line, ok := ResolveLink(tc.kind, dest, base)
 			if tc.want == "" {
 				if ok {
 					t.Fatalf("リンクにしないはずが %q に解決した", p)
@@ -105,7 +147,10 @@ func TestResolveLink(t *testing.T) {
 				return
 			}
 			want := filepath.Join(root, tc.want)
-			if len(tc.want) > 2 && tc.want[:2] == "~/" {
+			switch {
+			case tc.want == "@outside":
+				want = outside
+			case strings.HasPrefix(tc.want, "~/"):
 				want = filepath.Join(home, tc.want[2:])
 			}
 			if !ok || p != want || line != tc.line {
@@ -117,8 +162,8 @@ func TestResolveLink(t *testing.T) {
 
 // 大文字小文字を変えて書いても repo の中と判定する (APFS は区別しないので、字面で比べると迂回される)。
 func TestResolveLinkCaseInsensitivePathStillChecked(t *testing.T) {
-	root := t.TempDir()
-	outside := filepath.Join(t.TempDir(), "secret")
+	root := realTempDir(t)
+	outside := filepath.Join(realTempDir(t), "secret")
 	writeFile(t, outside)
 	writeFile(t, filepath.Join(root, "docs", "ok.md"))
 	if err := os.Symlink(outside, filepath.Join(root, "docs", "evil.md")); err != nil {
@@ -149,7 +194,7 @@ func TestResolveLinkNoBase(t *testing.T) {
 
 // インラインコードの基準は issue ディレクトリの親 (root/app1/issues なら root/app1)。repo root ではない。
 func TestBodyCodeBaseIsProject(t *testing.T) {
-	root := t.TempDir()
+	root := realTempDir(t)
 	writeFile(t, filepath.Join(root, "src", "main.go"))         // repo root の同名ファイル (当たってはいけない)
 	writeFile(t, filepath.Join(root, "app1", "src", "main.go")) // app1 の本物
 	issue := filepath.Join(root, "app1", "issues", "done", "010-x.md")
@@ -167,7 +212,7 @@ func TestBodyCodeBaseIsProject(t *testing.T) {
 
 // FileLinks は実在するものだけを出現順で返し、JumpLines は行数を変えずに強調する。
 func TestBodyFileLinks(t *testing.T) {
-	root := t.TempDir()
+	root := realTempDir(t)
 	issue := filepath.Join(root, "issues", "001-x.md")
 	writeFile(t, filepath.Join(root, "src", "a.go"))
 	writeFile(t, filepath.Join(root, "docs", "b.md"))

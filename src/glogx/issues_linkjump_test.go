@@ -23,7 +23,11 @@ func (e *jumpEnv) path(rel string) string { return filepath.Join(e.root, rel) }
 // newJumpEnv は body を本文に持つ issue を開く。body 中の {filler} は窓より長い埋め草に置き換える。
 func newJumpEnv(t *testing.T, body string) *jumpEnv {
 	t.Helper()
-	root := t.TempDir()
+	// 実体で持つ (macOS の /var は /private/var への symlink。開く対象は解いた実体になる)
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, rel := range []string{"src/a.go", "src/b.go", "docs/spec.md"} {
 		p := filepath.Join(root, rel)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {

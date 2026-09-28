@@ -23,7 +23,7 @@ import (
 //     インラインコードは **その issue ディレクトリの親** (= プロジェクトの root。root/issues なら
 //     repo root、root/app1/issues なら root/app1)。repo root に固定すると、root/*/issues を持つ
 //     repo で兄弟プロジェクトの同名ファイルを開く。両方の基準を試すと同名の別ファイルを開きうる
-//   - **相対パスで書かれたものは、symlink を解いた実体が repo の中に在ること**を要求する (escapesRepo)。
+//   - **相対パスで書かれたものは、symlink を解いた実体が repo の中に在ること**を要求する (realOutsideRepo)。
 //     PR で `docs/x.md -> ~/.ssh/id_ed25519` の symlink と本文の `docs/x.md` を足されると、画面には
 //     無害な名前だけが出たまま repo 外を開かされる (discover.go の hasMarkdown が symlink を拒否して
 //     いるのと同じ脅威)。絶対パスと `~/` でも、**symlink の鎖が一度でも repo の中を通るなら**同じ要求を
@@ -70,38 +70,50 @@ func ResolveLink(kind markdown.LinkKind, dest string, b LinkBase) (path string, 
 			return "", 0, false
 		}
 		p = filepath.Join(home, p[2:])
-	case base == "" || b.Repo == "":
+	case base == "":
 		return "", 0, false
 	default:
 		p, relative = filepath.Join(base, p), true
 	}
-	p = filepath.Clean(p)
+	if b.Repo == "" {
+		return "", 0, false // 外へ出たかを判定できない (fail-closed)
+	}
 	if fi, err := os.Stat(p); err != nil || !fi.Mode().IsRegular() {
 		return "", 0, false
 	}
-	if b.Repo != "" && escapesRepo(p, b.Repo, relative) {
+	// 🚨 開く対象は解いた実体にする (書いたパスを nvim に渡すと、判定の後に kernel が別の解き方をする余地が残る)
+	real, escapes := realOutsideRepo(p, b.Repo, relative)
+	if escapes {
 		return "", 0, false
 	}
-	return p, line, true
+	return real, line, true
 }
 
-// escapesRepo は p を開くと repo の外の実体へ出るか。symlink の鎖を 1 段ずつ辿り、
-//   - 途中で一度でも repo の中に入った (書いた場所・どこかの段・symlink のディレクトリ経由のいずれか) なら、
-//     最終の実体も repo の中であることを要求する。PR で入れられるのは repo の中の symlink だけなので、
-//     そこを通る鎖は「書いた人が名指しした場所」ではない (`~/.claude/rules/x.md` は dotfiles では
-//     SessionStart hook が per-file link を張るので、repo の外に見えて repo の中の symlink を通る)
-//   - relative (相対パスで書いた) なら、最終の実体が repo の中であることを常に要求する
-// repo の中かどうかは**字面で比べない**。APFS は大文字小文字と Unicode 正規化を区別しないので、
-// `~/DOTFILES/...` のような書き方で前方一致をすり抜けられる。祖先ディレクトリと repo が同じもの
-// (os.SameFile = 同じ inode) かで判定する。
-// 判定できない (lstat / readlink の失敗・鎖が長すぎる) ときは出る扱い (fail-closed)。
-func escapesRepo(p, repo string, relative bool) bool {
+// realOutsideRepo は p を開いたときの実体と、それが repo の外へ出てはいけないのに出ているかを返す。
+//   - 実体は filepath.EvalSymlinks (成分ごとに symlink を解き、`..` も解いた後に当てる = kernel と同じ解き方)。
+//     🚨 自前で Readlink を辿って Clean しない: ディレクトリの symlink (`repo/d -> /outside` を通る
+//     `d/x`) と、readlink 先の `..` (`l -> e/../x` で e が symlink) で、判定した場所と開く場所が食い違う
+//     (敵対レビュー 3 周目で実測)
+//   - 「repo を通ったか」は、symlink の鎖の**各段**について、書かれたパスの**各 prefix** の実体が repo の中かで
+//     見る (最後の成分だけ見ると、途中のディレクトリの symlink と repo 外から repo 内の symlink へ入る鎖を落とす)
+//   - 通ったなら (相対パスは常に通った扱い) 実体も repo の中を要求する。PR で入れられるのは repo の中の
+//     symlink だけなので、そこを通る鎖は「書いた人が名指しした場所」ではない (`~/.claude/rules/x.md` は
+//     dotfiles では per-file link なので、repo の外に見えて repo の中の symlink を通る)
+// repo の中かどうかは**字面で比べない** (APFS は大文字小文字と Unicode 正規化を区別しないので `~/DOTFILES/...`
+// で前方一致をすり抜けられた)。実体の祖先を repo と os.SameFile (同じ inode) で比べる。
+// 判定できない (解決の失敗・鎖が長すぎる) ときは出る扱い (fail-closed)。
+func realOutsideRepo(p, repo string, relative bool) (real string, escapes bool) {
 	rfi, err := os.Stat(repo)
 	if err != nil {
-		return true
+		return "", true
 	}
-	under := func(q string) bool {
-		for d := filepath.Dir(q); ; d = filepath.Dir(d) {
+	// inRepo は q の実体が repo そのものか repo の中か
+	inRepo := func(q string) bool {
+		r, err := filepath.EvalSymlinks(q)
+		if err != nil {
+			return false
+		}
+		for d := r; ; d = filepath.Dir(d) {
 			if fi, err := os.Stat(d); err == nil && os.SameFile(fi, rfi) {
 				return true
 			}
@@ -110,29 +122,50 @@ func escapesRepo(p, repo string, relative bool) bool {
 			}
 		}
 	}
-	entered := relative
+	real, err = filepath.EvalSymlinks(p)
+	if err != nil {
+		return "", true
+	}
+	touched := relative
 	cur := p
-	for range 40 {
-		if under(cur) {
-			entered = true
+	for hop := 0; !touched; hop++ {
+		if hop >= 40 {
+			return "", true
 		}
-		li, err := os.Lstat(cur)
+		// 各 prefix (書かれた形のまま。Clean すると symlink 越しの `..` を字面で潰す)
+		for i := 1; i <= len(cur); i++ {
+			if (i == len(cur) || cur[i] == '/') && inRepo(cur[:i]) {
+				touched = true
+				break
+			}
+		}
+		// 鎖の次の段: 親の実体の下で、最後の成分が symlink なら readlink する
+		j := strings.LastIndexByte(cur, '/')
+		if j < 0 {
+			break
+		}
+		dir, err := filepath.EvalSymlinks(cur[:max(j, 1)])
 		if err != nil {
-			return true
+			return "", true
+		}
+		full := dir + "/" + cur[j+1:]
+		li, err := os.Lstat(full)
+		if err != nil {
+			return "", true
 		}
 		if li.Mode()&os.ModeSymlink == 0 {
-			return entered && !under(cur)
+			break
 		}
-		t, err := os.Readlink(cur)
+		t, err := os.Readlink(full)
 		if err != nil {
-			return true
+			return "", true
 		}
 		if !filepath.IsAbs(t) {
-			t = filepath.Join(filepath.Dir(cur), t)
+			t = dir + "/" + t
 		}
-		cur = filepath.Clean(t)
+		cur = t
 	}
-	return true
+	return real, touched && !inRepo(real)
 }
 
 // linkPath は dest からパス部分・行番号・相対パスの基準を取り出す (ファイルシステムは見ない)。
