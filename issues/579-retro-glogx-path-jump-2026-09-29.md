@@ -49,8 +49,8 @@
 却下 (既存の規範で足りる。今回は適用漏れ):
 
 - 項目 3: CLAUDE.md「依頼が誤っている / もっと良い方法があると思ったら一文で述べてから依頼どおり進める」がそのまま該当する
-- 項目 4: `mutation-verify-new-tests.md` の「前提が早期 return で素通りしていないかを assert しているか」が該当する。
-  今回も変異で拾えている
+- 項目 4: `mutation-verify-new-tests.md` の「到達しているか」節 (「検証したいコードが本当に実行されているか」と、
+  「前提が早期 return で素通りしていないかを assert しているか」) が該当する。今回も変異で拾えている
 - 項目 5: `parallel-write-agents-need-worktree-isolation.md` に明記済み
 - 項目 7: `mutation-verify-new-tests.md` の「窓がミリ秒なら人為的に広げて決定論にする」が該当する (今回そのとおり直した)
 
@@ -59,3 +59,8 @@
 - [ ] A: adversarial-review-own-safeguards.md §7 への追記 (ユーザーの判断待ち)
 - [ ] B: verify-execution-not-just-exit-code.md への追記 (ユーザーの判断待ち)
 - [ ] C: bin/mutate-verify の複数変異の issue 化 (ユーザーの判断待ち)
+
+## 進捗
+
+- 2026-09-29 起票。反証レビュー (sonnet 1 本): 規範の引用・既存ルールとの重複・commit 履歴との突合はすべて反証できず。
+  採用 (P3): 却下項目 4 の引用先を、fixture が経路に届かない形により直接該当する「到達しているか」節の 1 つ目も含めて書き直した
