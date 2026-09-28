@@ -142,7 +142,7 @@ func resolveFrom(p, base string, b LinkBase) (string, bool) {
 		return "", false // 外へ出たかを判定できない (fail-closed)
 	}
 	// ディレクトリも止まり先にする (nvim -R がファイラーとして開く。`census/raw/` のような言及が実在する)
-	if fi, err := os.Stat(p); err != nil || !(fi.Mode().IsRegular() || fi.IsDir()) {
+	if fi, err := os.Stat(p); err != nil || (!fi.Mode().IsRegular() && !fi.IsDir()) {
 		return "", false
 	}
 	// 🚨 開く対象は解いた実体にする (書いたパスを nvim に渡すと、判定の後に kernel が別の解き方をする余地が残る)
