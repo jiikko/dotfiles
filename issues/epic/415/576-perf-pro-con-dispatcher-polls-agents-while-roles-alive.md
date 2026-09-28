@@ -50,3 +50,6 @@ Tick (`dispatchercmd.go` の `dispatcherInterval` = 3 秒) のたびに `claude 
 ## 進捗
 
 - 2026-09-28 起票。まだ着手していない
+- 2026-09-28 反証レビュー (read-only のサブエージェント 1 本): 反証できず。`quiet` が生きている役で偽になることは
+  `dispatcher/idle_test.go` のテーブル (「PM が生きている」の行) が既に固定している。`DeadSince` の取りこぼしは今は起きない
+  (役が生きている間は毎 Tick 一覧を取るので)。間引いたときに起きる問題として書いている
