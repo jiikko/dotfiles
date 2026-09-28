@@ -26,7 +26,9 @@ import (
 //   - **相対パスで書かれたものは、symlink を解いた実体が repo の中に在ること**を要求する。
 //     PR で `docs/x.md -> ~/.ssh/id_ed25519` の symlink と本文の `docs/x.md` を足されると、画面には
 //     無害な名前だけが出たまま repo 外を開かされる (discover.go の hasMarkdown が symlink を拒否して
-//     いるのと同じ脅威)。絶対パスと `~/` は書いた人が場所を名指ししているので、実体を問わない
+//     いるのと同じ脅威)。絶対パスと `~/` でも、**書いた場所が repo の中なら**同じ要求を当てる
+//     (`~/dotfiles/docs/x.md` と書けば同じ symlink を通れてしまい、表示も repo 相対に畳まれる)。
+//     repo の外を名指しした絶対パス (`~/.claude/rules/x.md` 等) は書いた人の指定を信じて実体を問わない
 // 基準を足したくなったら、上の「別ファイルを開く」を先に解くこと。
 
 // FileLink は開けるファイルへ解決できたリンク 1 出現。
@@ -77,10 +79,28 @@ func ResolveLink(kind markdown.LinkKind, dest string, b LinkBase) (path string, 
 	if fi, err := os.Stat(p); err != nil || !fi.Mode().IsRegular() {
 		return "", 0, false
 	}
-	if relative && !insideRepo(p, b.Repo) {
+	if (relative || lexicallyInside(p, b.Repo)) && !insideRepo(p, b.Repo) {
 		return "", 0, false
 	}
 	return p, line, true
+}
+
+// lexicallyInside は p が (symlink を解かずに見て) repo の中に書かれているか。repo 自体の
+// symlink を解いた形 (/var → /private/var 等) で書かれている場合も中と数える。
+func lexicallyInside(p, repo string) bool {
+	if repo == "" {
+		return false
+	}
+	roots := []string{filepath.Clean(repo)}
+	if real, err := filepath.EvalSymlinks(repo); err == nil {
+		roots = append(roots, real)
+	}
+	for _, r := range roots {
+		if p == r || strings.HasPrefix(p, r+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 // insideRepo は p の実体 (symlink を解いた先) が repo の中か。どちらかが解けなければ false。
@@ -106,11 +126,16 @@ func linkPath(kind markdown.LinkKind, dest string, b LinkBase) (p string, line i
 	}
 	switch kind {
 	case markdown.LinkDest:
-		// `[x](path "title")` の title と `<path>` の山括弧を外す
-		if i := strings.IndexAny(dest, " \t"); i >= 0 {
+		// `<path>` の山括弧 (中は空白を含んでよい) と `[x](path "title")` の title を外す
+		if rest, ok := strings.CutPrefix(dest, "<"); ok {
+			end := strings.IndexByte(rest, '>')
+			if end < 0 {
+				return "", 0, "", false
+			}
+			dest = rest[:end]
+		} else if i := strings.IndexAny(dest, " \t"); i >= 0 {
 			dest = dest[:i]
 		}
-		dest = strings.TrimSuffix(strings.TrimPrefix(dest, "<"), ">")
 		if strings.HasPrefix(dest, "#") || strings.Contains(dest, "://") || strings.HasPrefix(dest, "mailto:") {
 			return "", 0, "", false
 		}
@@ -125,6 +150,10 @@ func linkPath(kind markdown.LinkKind, dest string, b LinkBase) (p string, line i
 		}
 		if u, err := url.PathUnescape(dest); err == nil {
 			dest = u
+		}
+		// 🚨 解いた後にもう一度見る (`%1b` / `%0a` は上の判定を素通りして制御文字に戻る)
+		if strings.ContainsFunc(dest, unicode.IsControl) {
+			return "", 0, "", false
 		}
 		if b.File == "" {
 			return "", 0, "", false

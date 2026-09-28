@@ -58,7 +58,16 @@ func collectLinks(lines []line, width int) (links []Link, index map[*linkRef]int
 		for _, sp := range l.spans {
 			w := termwidth.Of(sp.Text)
 			if sp.link != nil && col < limit && w > 0 {
-				vis := min(w, limit-col)
+				// 🚨 min(w, limit-col) にしない: 残り 1 桁から始まる幅 2 の字は clipToWidth が字ごと落とすので、
+				// 見える桁は「残りに収まる字だけ」で数える (0 なら画面に出ていない)
+				vis := w
+				if col+w > limit {
+					vis = termwidth.Of(termwidth.Truncate(sp.Text, limit-col, ""))
+				}
+				if vis == 0 {
+					col += w
+					continue
+				}
 				i, ok := index[sp.link]
 				if !ok {
 					i = len(links)

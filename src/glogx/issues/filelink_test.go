@@ -40,6 +40,9 @@ func TestResolveLink(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(home, "linked.md")); err != nil {
 		t.Fatal(err)
 	}
+	writeFile(t, filepath.Join(root, "docs", "spec draft.md"))
+	writeFile(t, filepath.Join(root, "docs", "spec")) // 空白で切ったら当たってしまう別ファイル
+	writeFile(t, filepath.Join(root, "a\x1b[31m.md"))
 	base := LinkBase{File: issue, Project: root, Repo: root}
 
 	cases := []struct {
@@ -60,6 +63,8 @@ func TestResolveLink(t *testing.T) {
 		{"コードの ~/", markdown.LinkCode, "~/note.md", "~/note.md", 0},
 		{"実在しない", markdown.LinkCode, "src/nope.go", "", 0},
 		{"ディレクトリは開かない", markdown.LinkCode, "src", "", 0},
+		{"実在しない絶対パス", markdown.LinkCode, "/nonexistent-glogx/x.go", "", 0},
+		{"絶対パスのディレクトリ", markdown.LinkCode, "/tmp", "", 0},
 		{"空白を含むコードはパスでない", markdown.LinkCode, "cat src/a.go", "", 0},
 		{"URL", markdown.LinkDest, "https://example.com/src/a.go", "", 0},
 		{"アンカーだけ", markdown.LinkDest, "#sec", "", 0},
@@ -70,6 +75,11 @@ func TestResolveLink(t *testing.T) {
 		{"repo の中を指す symlink は開く", markdown.LinkCode, "docs/alias.md", "docs/alias.md", 0},
 		{"相対で repo の外へ出ない", markdown.LinkDest, "../../../outside.md", "", 0},
 		{"~/ は書いた場所を信じる (symlink の先を問わない)", markdown.LinkCode, "~/linked.md", "~/linked.md", 0},
+		{"絶対パスでも repo の中から外へ出る symlink は開かない", markdown.LinkCode, filepath.Join(root, "docs", "evil.md"), "", 0},
+		{"絶対パスのリンクも同じ", markdown.LinkDest, filepath.Join(root, "docs", "evil.md"), "", 0},
+		{"絶対パスで repo の中の通常ファイル", markdown.LinkCode, filepath.Join(root, "src", "a.go"), "src/a.go", 0},
+		{"山括弧の中の空白を切らない", markdown.LinkDest, "<../../docs/spec draft.md>", "docs/spec draft.md", 0},
+		{"%エスケープで戻る制御文字", markdown.LinkDest, "../../a%1b[31m.md", "", 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

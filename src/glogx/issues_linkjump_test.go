@@ -249,6 +249,32 @@ func TestLinkJumpSurvivesBodyReload(t *testing.T) {
 	}
 }
 
+// 同じ dest の出現が減ったら、残った出現へ寄せてモードを保つ (消えた扱いにしない)。
+func TestLinkJumpReanchorWhenOccurrencesShrink(t *testing.T) {
+	e := newJumpEnv(t, "# 001\n\n`src/a.go` と `src/a.go` と `src/b.go`\n")
+	e.press("tab")
+	e.press("j") // 2 個目の src/a.go
+	if err := os.WriteFile(e.v.open.Path, []byte("# 001\n\n`src/a.go` と `src/b.go`\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e.v.reloadAfterEdit()
+	e.v.lines(renderOpts(20))
+	if l, ok := e.selected(t); !ok || l.Path != e.path("src/a.go") {
+		t.Fatalf("残った出現へ寄せない: %+v ok=%v", l, ok)
+	}
+}
+
+// 窓の先頭行ちょうどにあるリンクは「見えている」ので、入ったときにそれを選ぶ。
+func TestLinkJumpStartsAtWindowTopBoundary(t *testing.T) {
+	e := newJumpEnv(t, "# 001\n\n`src/a.go`\n\n{filler}`src/b.go`\n\n{filler}`docs/spec.md`\n")
+	fl := e.v.jumpLinks(vp(10))
+	e.v.bodyPager.Offset = fl[1].Top
+	e.press("tab")
+	if l, _ := e.selected(t); l.Path != e.path("src/b.go") {
+		t.Fatalf("窓の先頭行のリンクを選ばない: %q", l.Path)
+	}
+}
+
 // 開く直前に消えていたら開かずに知らせる。
 func TestLinkJumpOpenRechecksFile(t *testing.T) {
 	cmds := stubEditorCapture(t)

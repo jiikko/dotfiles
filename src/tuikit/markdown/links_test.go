@@ -142,6 +142,30 @@ func TestRenderLinksPaintsMarks(t *testing.T) {
 	}
 }
 
+// 行末で切られる幅 2 の字は字ごと落ちるので、その字だけのリンクは画面に出ない = 一覧に載せない。
+func TestRenderLinksWideCharAtClipEdge(t *testing.T) {
+	// 5 列 × 最小 3 桁の表を幅 14 に入れると行が溢れ、出口の clipToWidth が末尾を切る。
+	// 最終列のコードスパンが「残り 1 桁から始まる全角 1 字」になる位置を幅を掃いて探す
+	src := "| a | b | c | d | e |\n|---|---|---|---|---|\n| x | y | z | w | `全` |\n"
+	hit := false
+	for w := 10; w <= 20; w++ {
+		lines, _, links := RenderLinks(src, w, false, nil)
+		for _, l := range links {
+			for _, s := range l.Segs {
+				if s.Width == 0 || strings.TrimSpace(segText(lines, s)) == "" {
+					t.Fatalf("w=%d: 画面に出ていないリンクが載った: %+v 行 %q", w, s, lines[s.Line])
+				}
+			}
+		}
+		if len(links) == 0 {
+			hit = true // 全角の字が落ちてリンクごと消えた幅がある (この検査が空振りしていない証拠)
+		}
+	}
+	if !hit {
+		t.Fatal("前提: 全角のリンクが clip で落ちる幅が 1 つも無い (検査が空振りしている)")
+	}
+}
+
 // 表のセルで切り詰めて画面に出ないリンクは載らず、一部だけ出るリンクは見える桁までに切る。
 func TestRenderLinksClipped(t *testing.T) {
 	src := "| a | b |\n|---|---|\n| `abcdefghijklmnop/q` | `zz/yy` |\n"
@@ -159,14 +183,16 @@ func TestRenderLinksClipped(t *testing.T) {
 			}
 		}
 	}
-	// 出口の clipToWidth で末尾が落ちる行 (幅がインデント等の固定分より狭い)
-	lines, _, links = RenderLinks("- `aaaa/bbbb`", 4, false, nil)
-	if len(links) == 0 {
-		t.Fatalf("clip される行のリンクが取れていない: %q", lines)
+	// 出口の clipToWidth で末尾が落ちる行: 列が多く、最小列幅 (tableColWidths の minCol) まで詰めても
+	// 幅に収まらない表。行そのものが width を超え、Render の出口で "…" に切られる
+	src = "| a | b | c | d | e |\n|---|---|---|---|---|\n| `p/q` | x | y | z | `r/s` |\n"
+	lines, _, links = RenderLinks(src, 14, false, nil)
+	if len(links) == 0 || !strings.Contains(lines[2], "…") {
+		t.Fatalf("前提: 出口で切られる行にリンクがある (links=%d 行 %q)", len(links), lines)
 	}
 	for _, l := range links {
 		for _, s := range l.Segs {
-			if s.Col+s.Width > termwidth.Of(lines[s.Line]) || strings.Contains(segText(lines, s), "…") {
+			if s.Width == 0 || s.Col+s.Width > termwidth.Of(lines[s.Line]) || strings.Contains(segText(lines, s), "…") {
 				t.Fatalf("clip 後の行の外/省略記号を指す: %+v 行 %q", s, lines[s.Line])
 			}
 		}
