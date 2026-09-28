@@ -9,7 +9,7 @@ paths:
 ## ルール
 
 - **`_claude/skills/<skill>/` を変えたら、commit の前に `bin/skill-eval <skill>` を回し、結果の行を commit message に書く**
-  (`PASS fable score=1 delta=1 cases=1/1 cost=$0.15` の 1 行)。引数を省くと `origin/master` から変わった skill を全部回す
+  (`PASS <skill> score=1 delta=1 cases=1/1 cost=$0.15` の形の 1 行)。引数を省くと `origin/master` から変わった skill を全部回す
 - **ケースが無い skill (`NO-EVAL`・rc 3) は「通った」と書かない**。その skill を変えたなら、まず `_claude/skill-evals/<skill>/<case>/` に
   ケースを 1 本足す。最初の 1 本は「発火するか」(grader `type: tool_used` / `tool: Skill` / `input_match: <skill>`) でよい。
   変えた振る舞いを見るケース (`regex` / `llm` grader) は、その変更が振る舞いを変えるときに足す

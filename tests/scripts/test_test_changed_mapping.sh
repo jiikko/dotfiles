@@ -30,7 +30,7 @@ expect() {
 
 # issue 060 で実際に腐っていた対応 (回帰の本丸)
 expect "_claude/CLAUDE.md -> tests/claude" 'tests: .*tests/claude' _claude/CLAUDE.md
-expect "_claude/skills/*.md -> tests/claude" 'tests: .*tests/claude' _claude/skills/fable/SKILL.md
+expect "_claude/skills/*.md -> tests/claude" 'tests: .*tests/claude' _claude/skills/c/SKILL.md
 expect "_claude/rules/*.md -> tests/claude" 'tests: .*tests/claude' _claude/rules/commit-with-pathspec.md
 expect "_claude/hooks/*.sh -> shell lint + tests/claude" 'test-shellcheck.*tests: .*tests/claude' _claude/hooks/deny-bare-tmux-kill.sh
 expect "_claude/statusline-command.sh -> shell lint + tests/claude" 'test-shellcheck.*tests: .*tests/claude' _claude/statusline-command.sh
