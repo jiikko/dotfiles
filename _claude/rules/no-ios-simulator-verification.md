@@ -1,3 +1,16 @@
+---
+paths:
+  - "**/*.swift"
+  - "**/Package.swift"
+  - "**/Package.resolved"
+  - "**/project.yml"
+  - "**/*.xcodeproj/**"
+  - "**/*.xcworkspace/**"
+  - "**/*.xcconfig"
+  - "**/*.entitlements"
+  - "**/Info.plist"
+---
+
 # iOS シミュレータでの動作確認は封印する（人間の明示指示があるときだけ解禁）
 
 - **iOS シミュレータを使う動作確認（ランタイム DL / device 作成 / boot / `make test` / アプリ起動・UI 操作・スクショ）を自発的に行わない**。トークン消費が激しいため封印する。
