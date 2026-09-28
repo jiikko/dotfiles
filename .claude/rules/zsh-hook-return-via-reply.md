@@ -1,3 +1,11 @@
+---
+paths:
+  - "**/*.zsh"
+  - "_zshrc"
+  - "_zshenv*"
+  - "zshlib/**"
+---
+
 # zsh の hook (precmd/preexec) から呼ぶ関数は stdout でなく REPLY で返す
 
 ## ルール

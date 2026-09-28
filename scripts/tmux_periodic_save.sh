@@ -9,7 +9,7 @@
 #   (実測: トップレベル起動 0.8 回/秒、12 秒中 13% の時間走っている、概算 5-10 fork/秒)。
 #   実際に保存するのは 15 分に 1 回で、残りは全部「まだ 15 分経っていない」の判定コスト。
 #   zsh hook の fork 1 個を削る repo の基準に合わないため、判定を長寿命プロセスの
-#   sleep に置き換えて fork を 15 分に 1 回へ落とす (rules/zsh-hook-return-via-reply.md と同思想)。
+#   sleep に置き換えて fork を 15 分に 1 回へ落とす (.claude/rules/zsh-hook-return-via-reply.md と同思想)。
 #   interpolation 側は vendor/tmux-plugins/tmux-continuum/continuum.tmux のパッチで無効化済み。
 #
 # 役割分担 (保存経路は 3 系統。全て choke point wrapper @resurrect-save-script-path 経由):

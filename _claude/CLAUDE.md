@@ -89,7 +89,7 @@
 | テストで時間を測る / `sleep` で待つ | [`avoid-wall-clock-assertions.md`](rules/avoid-wall-clock-assertions.md) |
 | 見た目が未確定のまま本体を書く | [`decide-layout-in-sample-renderer-first.md`](rules/decide-layout-in-sample-renderer-first.md) |
 | 対話プロンプトを自動で確認する | [`verify-interactive-prompt-with-pty-driver.md`](rules/verify-interactive-prompt-with-pty-driver.md) |
-| zsh の precmd / preexec から関数を呼ぶ | `~/dotfiles/rules/zsh-hook-return-via-reply.md` (`REPLY` で返す。dotfiles 固有の規範の索引は同 `rules/README.md`) |
+| zsh の precmd / preexec から関数を呼ぶ | `~/dotfiles/.claude/rules/zsh-hook-return-via-reply.md` (`REPLY` で返す。dotfiles では zsh のファイルを Read すると `paths:` で読み込まれる。dotfiles 固有の規範の索引は `~/dotfiles/rules/README.md`) |
 
 ## コード変更時の自律改善
 

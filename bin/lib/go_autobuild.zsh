@@ -395,7 +395,7 @@ _go_autobuild_build() {  # $1=src_dir $2=name $3=quiet(0/1) $4=lock dir $5=自�
   # この罠は zsh 固有)。失われると、popup を閉じた瞬間に process group へ飛ぶ HUP で go build が
   # exit 129 (=128+SIGHUP) で死に、失敗記録が残って TTL が切れるまで旧版に固定される
   # (= 「古い版で動いています」が出続けてビルドされない)。ignore が届くのは、trap を張ったシェル
-  # 自身が exec する foreground コマンドだけ。詳細と実測表: rules/zsh-trap-not-inherited.md
+  # 自身が exec する foreground コマンドだけ。詳細と実測表: .claude/rules/zsh-trap-not-inherited.md
   # -C なら cd 用の fork が要らないのでこの条件を満たす (go 1.20 以降・かつ最初の引数)。
   # --pkg のときは module root で `go build ./<rel>` (成果物 $tmp は絶対パスなので置き場は変わらない)
   go build -C "$mod_dir" -o "$tmp" "$pkg" || rc=$?
@@ -524,7 +524,7 @@ _go_autobuild_spawn() {  # $1=src_dir $2=name
     # TERM を送る主体は現状いない。居ない相手向けの防御コードは、効くかどうかも確かめられない。
     #
     # 🚨 zsh はサブシェルとバックグラウンドジョブで trap を既定へ戻すので、この下でどちらかを
-    # 掘ると ignore がそこで切れる (rules/zsh-trap-not-inherited.md)。
+    # 掘ると ignore がそこで切れる (.claude/rules/zsh-trap-not-inherited.md)。
     trap '' HUP TERM INT
     _go_autobuild_self_pid
     local pid=$REPLY

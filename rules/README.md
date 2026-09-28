@@ -12,19 +12,21 @@
 | 置き場 | 読まれ方 | 何を置くか |
 |---|---|---|
 | [`_claude/rules/`](../_claude/rules/) | **毎セッション全文** (`~/.claude/rules/` へリンクされ、**全プロジェクト**で読まれる) | どのプロジェクトでも成立する作業規範。**36 本 2,256 行 / 174 KB** あるので、ここへ足すと全セッションのコンテキストを食う |
+| [`.claude/rules/`](../.claude/rules/) | dotfiles で作業するとき。frontmatter に `paths:` があれば、**その glob のファイルを Read したときだけ** (Write / Edit では読み込まれない) | **dotfiles 固有**で、踏む場所をファイルの種類で言えるもの (zsh の hook / trap) |
 | **`rules/`** (ここ) | 参照されたときだけ | **dotfiles 固有**。zsh / tmux / この repo の CI に閉じた規範 |
 | そのディレクトリの `CLAUDE.md` | そのディレクトリを触るとき | ディレクトリ固有の規約 (`scripts/` / `tests/` / `src/glogx/` / `_claude/`) |
 | [`docs/`](../docs/) | 索引から選んで | 設計判断・仕様・調査記録 (規範ではなく「なぜこうなっているか」) |
 
-判断の順: **他プロジェクトでも成立するか** → する なら `_claude/rules/`、しない なら ここ。
+判断の順: **他プロジェクトでも成立するか** → する なら `_claude/rules/`。しない なら、踏む場所を
+ファイルの glob で言えて、そのファイルを必ず Read してから踏むなら `.claude/rules/` + `paths:`、それ以外は ここ。
 迷ったらここに置く方が安い (毎セッションのコンテキストを増やさない)。
 
 ## 一覧
 
 | ルール | 何を禁じる / 要求するか | 参照元 (踏む場所) |
 |---|---|---|
-| [`zsh-hook-return-via-reply.md`](zsh-hook-return-via-reply.md) | precmd / preexec / zle から呼ぶ関数は `$(...)` でなく `REPLY` で返す。fork がそのまま体感レイテンシになる (実測 0.42ms/回 vs 0.03ms/回)。hook 本体に `local REPLY` を置く | `scripts/tmux_agent_panel.sh` / `scripts/tmux_periodic_save.sh` / `_claude/CLAUDE.md` の設計方針 |
-| [`zsh-trap-not-inherited.md`](zsh-trap-not-inherited.md) | `trap '' SIG` はサブシェルとバックグラウンドジョブに**継承されない** (zsh の実装依存。**bash では動くので bash の常識で書くと踏む**)。`cd` したいならサブシェルを掘らず `-C` オプションで済ませる | `bin/lib/go_autobuild.zsh` |
+| [`zsh-hook-return-via-reply.md`](../.claude/rules/zsh-hook-return-via-reply.md) (`.claude/rules/`) | precmd / preexec / zle から呼ぶ関数は `$(...)` でなく `REPLY` で返す。fork がそのまま体感レイテンシになる (実測 0.42ms/回 vs 0.03ms/回)。hook 本体に `local REPLY` を置く | `scripts/tmux_agent_panel.sh` / `scripts/tmux_periodic_save.sh` / `_claude/CLAUDE.md` の設計方針 |
+| [`zsh-trap-not-inherited.md`](../.claude/rules/zsh-trap-not-inherited.md) (`.claude/rules/`) | `trap '' SIG` はサブシェルとバックグラウンドジョブに**継承されない** (zsh の実装依存。**bash では動くので bash の常識で書くと踏む**)。`cd` したいならサブシェルを掘らず `-C` オプションで済ませる | `bin/lib/go_autobuild.zsh` |
 | [`bench-watch-after-push.md`](bench-watch-after-push.md) | nvim / tmux / zsh / glogx 系を push したら、その commit の CI (Bench を含む全 run) の完了を watch してデグレを確認するまでがタスク。「そのうち通るはず」で終わらない | `tests/run_bench.sh` / `tests/bench_stats.sh` |
 
 ## 書き方

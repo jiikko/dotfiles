@@ -74,7 +74,7 @@ REFRESH_SECS=2      # 描画ループの更新間隔
 
 # now_epoch は現在の epoch を REPLY へ入れる。🚨 echo で返さない / date を呼ばない:
 # `$(date +%s)` は 1 回ごとに fork+exec になり、描画 tick (行数に比例) と window 切替 hook の
-# 両方に乗る (rules/zsh-hook-return-via-reply.md と同思想)。bash 5+ の $EPOCHSECONDS は
+# 両方に乗る (.claude/rules/zsh-hook-return-via-reply.md と同思想)。bash 5+ の $EPOCHSECONDS は
 # 組み込みなので 0 fork。素の macOS /bin/bash (3.2) だけ date へ落ちる。
 if [ -n "${EPOCHSECONDS+x}" ]; then
   now_epoch() { REPLY=$EPOCHSECONDS; }
