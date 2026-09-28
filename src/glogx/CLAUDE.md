@@ -2,6 +2,31 @@
 
 使い方・ファイル境界・設計判断の正本は README.md (「開発」「設計メモ」)。ここは「触る前に読まないと壊す」前提だけ。
 
+## ファイルの地図
+
+`package main` フラットな 1 package (理由は下の「構造の判断」)。責務のまとまりごとに:
+
+- `main.go` / `options.go` — エントリポイント・CLI フラグ (`Options`)
+- `tui.go` — Bubble Tea の状態機械本体 (`browseModel`)。git log の対話ブラウズ
+- `render.go` / `width.go` / `box.go` — 描画層。コミット行の整形・幅計算 (`dispWidth`)・枠のレイアウト純関数
+- `gitlog.go`, `gitlog_watch.go` — git log の取得 (制御文字レコードでコミット境界を識別) と外部変更の監視
+- `github.go`, `cache.go` — CI 状態の GraphQL 取得とローカルキャッシュ
+- `external_commands.go` — git/tmux/claude/ブラウザ/クリップボードを叩くラッパー群 (テストの差し替え点)
+- `cli_health.go`, `claude_version.go`, `codex_version.go` — claude/codex CLI のログイン状態検査・新版検出
+- `action_modal.go` — push/pull/claude update の確認→実行→結果モーダル
+- `diff_overlay.go`, `pr_status_overlay.go`, `job_detail_overlay.go`, `usage_overlay.go` — コミットに重ねるポップアップ群 (いずれも「対象 SHA/key を持つ pager」型)
+- `status_view.go`, `worktree_status.go` — status viewer (`s`)。仕様は `docs/status-viewer-spec.md`
+- `issues_view.go`, `issues_drawer.go`, `issues_state.go`, `issues_watch.go`, `issues_number_filter.go` — issues viewer (`i`) の画面側。仕様は `docs/issues-viewer-spec.md`。ドメイン (探索・parse・表示整形) は独立パッケージ `issues/`
+- `doctor_view.go`, `doctor_brew*.go`, `doctor_cache.go`, `doctor_cleanup.go`, `doctor_delete.go`, `doctor_docker.go`, `doctor_keys.go`, `doctor_resume.go`, `doctor_rowcursor.go` — doctor 画面 (`D`)。判定は `doctor/disk` `doctor/svc` `doctor/docker` を直接呼ぶ (削除の破壊的操作は `doctor_delete.go` ではなく `doctor/disk.Delete` が持つ)
+- `ratelimit_dashboard.go`, `ratelimit_resume.go` — 全画面 ratelimit ダッシュボード (`R`)。取得・整形は `ratelimit/usage`
+- `ime.go`, `ime_tis_darwin.go`, `ime_tis_stub.go` — ブラウズ中の IME 英数切替 (macOS TIS 直接呼び出し)
+- `url_picker.go` — issue 本文 URL のピッカー (本文 pager で `u`)
+- `zoom.go`, `scroll_glide.go`, `hint_surfaces.go` — 開閉演出・スクロール滑走・最下行ヒントの共有ロジック
+- `autobuild.go`, `cleanup_latch.go`, `probe.go`, `terminal.go`, `fullscreen.go` — 自動再ビルド通知・終了前の完了待ち latch・計測フック・全画面ビューアの排他制御
+- `issues/` — 独立パッケージ。issue markdown の探索・分類・parse・本文整形 (glogx 本体に非依存)
+- `gorules/` — ruleguard のカスタム lint 規則 (`make lint` が `go vet -tags ruleguard` で型検査)
+- `tools/` — 表示のサンプルレンダラ (`border-preview.sh` / `dial-preview` / `width-probe`)。本体へ入れる前にここで見た目を固める
+
 ## 触る前に読むもの
 
 - Bubble Tea は v2 (`charm.land/bubbletea/v2`)。バージョンを上げる / 描画・キー入力に手を入れる前に `docs/glogx-bubbletea-v2.md` を読む (幅モデルの一致がエンジンの実装詳細に依存しており、勝手に一致し続けない)
