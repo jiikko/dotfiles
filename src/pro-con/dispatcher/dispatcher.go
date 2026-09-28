@@ -126,6 +126,9 @@ type Dispatcher struct {
 	listedAt       time.Time // 最後に一覧を取れた Tick の時刻
 	listedQuiet    bool      // その Tick が暇だったか (暇な Tick の後だけ一覧を間引く)
 	skipped        bool      // 直前の tick が一覧を間引いたか (Tick が役の様子の鮮度を戻す)
+	// Alive は pid のプロセスが居るか (idle.go の pidAlive。一覧を間引く間に役が落ちたのを見る)。nil なら kill(pid, 0)
+	Alive         func(pid int) bool
+	hintSuspected bool // 一覧の取り直しの合図が鳴らない形を出来事にした (1 度だけ。idle.go の settleMarks)
 	// Record は Tick / Shutdown の出来事を渡す (ログの行と events.jsonl。dispatchercmd.go)。記録を変えた知らせ (Changed) より先に呼ぶ
 	// (知らせを受けて読みに来た pro-con log --follow が、その出来事をもう読めるように)。nil なら渡さない
 	Record func([]eventlog.Event)
@@ -210,7 +213,14 @@ func (d *Dispatcher) Tick(ctx context.Context) ([]eventlog.Event, error) {
 	}
 	d.skipped = false
 	notes, err := d.tick(ctx)
-	if d.skipped { // 暇で一覧を間引いた Tick: 役は止めてある / session が無い (quiet) ので、最後に照らした様子のまま出す (「確かめ中」にしない)
+	if !d.skipped { // 一覧を取った (取りに行った) のに照らせなかった役 (取れない・途中で抜けた・記録を読めない) は見張りをやめ、次の Tick で取り直す (idle.go)
+		for rr := range prev {
+			if !rr.fresh {
+				rr.mark, rr.marked = jobMark{}, false // 控えも捨てる (次に照らした Tick で控え直す。古い控えと比べて suspect を出さない)
+			}
+		}
+	}
+	if d.skipped { // 暇で一覧を間引いた Tick: 役は止めてある / session が無い / 様子が動いた合図が無い (idle.go) ので、最後に照らした様子のまま出す (「確かめ中」にしない)
 		for rr, f := range prev {
 			rr.fresh = f
 		}
@@ -257,7 +267,9 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 	// 一覧を使う経路 (reconcile・deliverOrders・役・割り当て) は一覧を取れた Tick だけ回す。暇な Tick は一覧を間引く (idle.go)
 	list, quiet := d.listing(now)
 	var ss []agents.Session
+	var snaps map[*roleRun]roleSnap
 	if list {
+		snaps = d.markRoles() // 取る前に控える (idle.go)
 		if ss, err = d.List(ctx); err != nil {
 			_ = store.SaveSeen(d.Dir, store.Seen{At: d.Now(), Err: err.Error()}) // 画面に前の一覧を使わせない (自分で読んで、取れなければ理由を出す)
 			return append(notes, ev(eventlog.KindError, "", "", "session の一覧を取れない (登録と割り当ては次の Tick へ): "+err.Error())), nil
@@ -306,6 +318,7 @@ func (d *Dispatcher) tick(ctx context.Context) ([]eventlog.Event, error) {
 				notes = append(notes, ev(eventlog.KindError, r.cardID, "", r.name+" を扱えない (PG の割り当ては続ける): "+err.Error()))
 			}
 		}
+		notes = append(notes, d.settleMarks(snaps)...)
 		more, err := d.dispatch(ctx, now, ss)
 		notes = append(notes, more...)
 		if err != nil {

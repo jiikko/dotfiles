@@ -69,6 +69,12 @@ type roleRun struct {
 	sid      string // 今の session の session id (transcript を引く。一覧に出ていなければ空)
 	launched bool   // この Tick に起動・再開した (alive / seen は起動・再開の前の session のもの)
 	blocked  string // この Tick に起こさなかった・起こせなかった理由
+	// 一覧を間引く間の見張り (idle.go の watchable / rolesMoved)。最後の tellRole が照らした session の pid と短い id、
+	// その一覧を取る直前に控えた state.json の様子
+	pid    int
+	job    string
+	mark   jobMark
+	marked bool // mark がその session (job) のもの
 }
 
 func (d *Dispatcher) roleRun(r *role) *roleRun {
@@ -312,7 +318,7 @@ func (d *Dispatcher) tellRole(ctx context.Context, now time.Time, ss []agents.Se
 		}
 	}
 	alive := listed && cur.PID != 0
-	rr.fresh, rr.alive, rr.seen, rr.sid = true, alive, cur.Status, cur.SessionID
+	rr.fresh, rr.alive, rr.seen, rr.sid, rr.pid, rr.job = true, alive, cur.Status, cur.SessionID, cur.PID, cur.ID
 	switch {
 	case alive:
 		pm.DeadSince = time.Time{}
