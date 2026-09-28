@@ -274,7 +274,7 @@ func TestShiftSpaceScrollsUp(t *testing.T) {
 		v.body.Lines(80, false) // Len() を確定させる (幅ごとに整形するため)
 		v.bodyPager.Offset = 30
 		before := v.bodyPager.Offset
-		v.handleBodyKey("shift+space", 20)
+		v.handleBodyKey("shift+space", issuesViewport{width: 80, page: 20}, 20)
 		if v.bodyPager.Offset >= before {
 			t.Errorf("shift+space で上に戻らない: bodyOff %d -> %d", before, v.bodyPager.Offset)
 		}

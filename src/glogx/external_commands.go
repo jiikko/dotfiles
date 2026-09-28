@@ -365,3 +365,17 @@ func editorCommand(path string) *exec.Cmd {
 	// ので os/exec はパイプも copy goroutine も作らない (Wait が孫に握られる形が起きない)。
 	return editor.Command(path, nil) // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し
 }
+
+// readonlyCommand は path を読み取り専用で開く nvim (issues viewer のジャンプモードの Enter)。
+// 🚨 nvim 固定: 読み取り専用は vim 系の -R に依存する (openJobLogInEditor と同じ判断)。
+// line>0 ならその行へ。
+// 🚨 path の前に "--" を置く: 以降を必ずファイル名として読ませる (解決済みの絶対パスなので "-" / "+" で
+// 始まることは無いが、引数の解釈を path の中身に依存させない)。
+func readonlyCommand(path string, line int) *exec.Cmd {
+	args := []string{"-R"}
+	if line > 0 {
+		args = append(args, "+"+strconv.Itoa(line))
+	}
+	args = append(args, "--", path)
+	return exec.Command("nvim", args...) // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し
+}

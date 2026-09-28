@@ -1406,6 +1406,7 @@ func TestIssuesViewHintFitsPopupWidth(t *testing.T) {
 		{"番号入力中", func() { v.numFilter.typing = true }, "Esc: 解除", "Enter: 確定"},
 		{"本文", func() { v.numFilter.active, v.numFilter.typing = false, false; v.open = v.rows[0] }, "Enter/h/q: 戻る", "u: URL"},
 		{"URL ピッカー", func() { v.urlPick.open([]string{"https://example.com/"}) }, "Esc: 戻る", "Enter: 開く"},
+		{"パスのジャンプ", func() { v.urlPick.close(); v.linkJump.active = true }, "Esc: 戻る", "y: パス"},
 	}
 	for _, md := range modes {
 		md.setup()
@@ -2298,6 +2299,12 @@ func TestIssuesViewBodyHintKeysAllRespond(t *testing.T) {
 				t.Error("p で番号がコピーされない")
 			}
 		},
+		"Tab": func(t *testing.T, e *bodyKeyEnv) {
+			e.press("tab")
+			if !e.v.linkJump.active {
+				t.Error("Tab でジャンプモードに入らない")
+			}
+		},
 		"u": func(t *testing.T, e *bodyKeyEnv) {
 			e.press("u")
 			if !e.v.urlPick.active {
@@ -2400,7 +2407,8 @@ func newBodyKeyEnv(t *testing.T) *bodyKeyEnv {
 	// URL を 1 つ入れるのは u (ピッカー) の観測のため。
 	// 🚨 空行で区切る。連続行は markdown で 1 段落に畳まれ、body.Len() が窓より短くなって
 	// j / Space / G の効果が観測できない (実測: 80 行が 1 段落になり bodyOff が 0 のまま)
-	body := "# 001 feat: hint keys\n\nhttps://example.com/x\n\n" + strings.Repeat("本文の行。\n\n", 60)
+	// 自分自身の絶対パスを 1 つ入れるのは Tab (ジャンプモード) の観測のため (実在するファイルしかリンクにしない)
+	body := "# 001 feat: hint keys\n\nhttps://example.com/x `" + path + "`\n\n" + strings.Repeat("本文の行。\n\n", 60)
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -2574,7 +2582,7 @@ func TestIssuesViewerBodyModeIClosesViewer(t *testing.T) {
 		t.Fatal("前提が崩れた: 本文が開いていない")
 	}
 
-	v.handleBodyKey("i", 20)
+	v.handleBodyKey("i", issuesViewport{width: 80, page: 20}, 20)
 
 	if !v.closing && v.shown {
 		t.Error("本文モードの i で viewer が閉じない (--help の案内が嘘になる)")
@@ -2604,7 +2612,7 @@ func TestIssuesViewerRSwitchesToRatelimitDash(t *testing.T) {
 		if v.body == nil {
 			t.Fatal("前提が崩れた: 本文が開いていない")
 		}
-		v.handleBodyKey("R", 20)
+		v.handleBodyKey("R", issuesViewport{width: 80, page: 20}, 20)
 		if !v.takeWantRatelimit() {
 			t.Error("本文モードの R でダッシュボードへの横断を要求しない (--help の案内が嘘になる)")
 		}

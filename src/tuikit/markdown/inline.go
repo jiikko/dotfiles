@@ -36,7 +36,7 @@ func parseInline(s string) []span {
 		case s[i] == '`':
 			if content, next, ok := matchCode(s, i); ok {
 				flush()
-				out = append(out, span{Text: content, Style: styleCodeSpan})
+				out = append(out, span{Text: content, Style: styleCodeSpan, link: &linkRef{kind: LinkCode, dest: content}})
 				i = next
 				continue
 			}
@@ -54,7 +54,8 @@ func parseInline(s string) []span {
 		case s[i] == '[':
 			if label, dest, next, ok := matchLink(s, i); ok {
 				flush()
-				out = append(out, restyleText(parseInline(linkText(label, dest)), styleLink)...)
+				out = append(out, withLink(restyleText(parseInline(linkText(label, dest)), styleLink),
+					&linkRef{kind: LinkDest, dest: dest})...)
 				i = next
 				continue
 			}
@@ -100,6 +101,16 @@ func parseInline(s string) []span {
 	}
 	flush()
 	return mergeSpans(out)
+}
+
+// withLink は spans 全部を 1 つのリンク ref に属させる。ラベル内のコードスパン
+// (`[`foo.md`](../foo.md)`) が持っていた自前の ref は外側のリンクで上書きする — 開く先は dest で、
+// ラベルの文字列ではない。
+func withLink(spans []span, ref *linkRef) []span {
+	for i := range spans {
+		spans[i].link = ref
+	}
+	return spans
 }
 
 // isASCIIPunct はバックスラッシュエスケープの対象 (ASCII 記号) か。
@@ -243,14 +254,15 @@ func matchURL(s string, i int) (url string, next int) {
 	return url, i + len(url)
 }
 
-// mergeSpans は同じ style の隣接スパンを 1 本にまとめる (色の切り替えを最小にする)。
+// mergeSpans は同じ (style, link) の隣接スパンを 1 本にまとめる (色の切り替えを最小にする)。
+// link が違えば割る (mergeCells と同じ理由)。
 func mergeSpans(spans []span) []span {
 	out := make([]span, 0, len(spans))
 	for _, sp := range spans {
 		if sp.Text == "" {
 			continue
 		}
-		if n := len(out); n > 0 && out[n-1].Style == sp.Style {
+		if n := len(out); n > 0 && out[n-1].Style == sp.Style && out[n-1].link == sp.link {
 			out[n-1].Text += sp.Text
 			continue
 		}

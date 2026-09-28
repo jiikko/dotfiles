@@ -157,6 +157,8 @@ type issuesView struct {
 	body *issues.Body
 	// urlPick は本文中 URL のピッカー (u)。閉じているときは zero value。
 	urlPick urlPicker
+	// linkJump は本文中のファイルパスのジャンプモード (Tab。issues_linkjump.go)。zero value = モード外。
+	linkJump linkJump
 	// markNext は「次にやる」の目印を付ける確認 (n)。🚨 実ファイルを動かす唯一の操作なので、
 	// 他のキーと違って必ず確認を挟む (glogx の push/pull と同じ作法)。zero value = 確認なし。
 	markNext issuesMarkConfirm
@@ -1147,6 +1149,7 @@ func (v *issuesView) discardBody() {
 	v.open, v.body = nil, nil
 	v.bodyPager.Reset()
 	v.urlPick.close()
+	v.linkJump = linkJump{}
 	v.drawer = issuesDrawer{}
 }
 
@@ -1184,6 +1187,7 @@ func (v *issuesView) openIssue(iss *issues.Issue) bool {
 	v.open, v.body = iss, body
 	v.bodyPager.Reset()
 	v.urlPick.close() // 別の issue を開いたら前の URL 一覧を持ち越さない
+	v.linkJump = linkJump{}
 	v.drawer.open(timeNow())
 	return true
 }
@@ -1396,12 +1400,19 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 	if v.numFilter.typing {
 		return v.numberFilterKey(key, rows)
 	}
+	// 🚨 ジャンプモードはアクションキーより先に飲む: e / y は選択中のリンクへ効かせる (後回しにすると
+	// パスが光ったまま issue 自体を開く・コピーする)。捌かないキーはモードを抜けて下へ流れる
+	if v.open != nil && v.linkJump.active {
+		if cmd, ok := v.linkJumpKey(key, vp, rows); ok {
+			return cmd
+		}
+	}
 	// モードに依らないアクションキーは先に飲む (対象は target() が一覧/本文で切り替える)
 	if cmd, ok := v.actionKey(key); ok {
 		return cmd
 	}
 	if v.open != nil {
-		return v.handleBodyKey(key, rows)
+		return v.handleBodyKey(key, vp, rows)
 	}
 	switch key {
 	case "q", "esc":
@@ -1620,7 +1631,7 @@ func (v *issuesView) headWidth(total int) int {
 func (v *issuesView) bodyWidth(total int) int { return max(v.drawer.targetWidth(total)-1, 1) }
 
 // handleBodyKey は本文 pager のキー操作 (diffOverlay と同じ語彙)。
-func (v *issuesView) handleBodyKey(key string, rows int) tea.Cmd {
+func (v *issuesView) handleBodyKey(key string, vp issuesViewport, rows int) tea.Cmd {
 	switch key {
 	// Enter は「TUI 内の開閉 toggle」(ユーザー要望 2026-08-01)。一覧の Enter で開き、本文の
 	// Enter で閉じる。glogx 本体の job パネル (tui.go の handlePanelKey) が既にこの語彙なので、
@@ -1645,6 +1656,10 @@ func (v *issuesView) handleBodyKey(key string, rows int) tea.Cmd {
 		v.wantRatelimit = true
 	case "u":
 		v.openURLPicker()
+	case "tab":
+		// 本文中のファイルパスのジャンプモード (ユーザー要望 2026-09-28)。w3m / lynx / ブラウザの
+		// 「Tab = 次のリンク」。一覧の Tab はカテゴリ移動だが、本文ではカテゴリが無いので衝突しない
+		v.startLinkJump(vp, rows)
 	// 本文を開いたまま隣の issue へ (ユーザー要望 2026-09-05)。小文字 j/k が「行」なら大文字は
 	// 「項目」(docs/glogx-ui-guide.md §6)。一覧の J/K は範囲選択の伸張だが本文に選択は無いので
 	// 衝突しない。shift+矢印も受けるのは一覧側と同じ理由 (tmux 越しで届かない端末があるので、
@@ -2106,6 +2121,13 @@ func (v *issuesView) bodyHeadLines(width int, colored bool) []string {
 			status += "  " + p
 		}
 	}
+	if v.linkJump.active && v.body != nil {
+		// ジャンプ中は状態の行を「どこを開くか」に差し替える (行を足すと本文の位置が 1 行ずれる)
+		fl := v.body.FileLinks(v.bodyTextWidth(width), v.root)
+		if cur := v.linkJump.reanchor(fl); cur >= 0 {
+			status = v.linkJumpStatus(fl, cur)
+		}
+	}
 	return []string{
 		// Rel はファイル名 = 外部由来。ファイルを開く同一性は v.open.Path 側が持つので、
 		// 画面に出すこちらだけ無害化する (worktreeRow.dispPath と同じ分け方)。
@@ -2431,7 +2453,16 @@ func (v *issuesView) bodyLines(o issuesRenderOpts) []string {
 	// 左の行番号の溝ぶんも整形前に引く (溝を後付けすると幅を超える)。桁数はソース行数から
 	// 決める: 整形しないと行番号が分からず、行番号が分からないと溝幅が決まらない循環を切る
 	gutter := srcGutterWidth(v.body.SrcLineCount())
-	lines := v.body.Lines(o.width-layout.ScrollbarWidth-gutter, o.colored) // バー列ぶんも引く
+	textW := v.bodyTextWidth(o.width) // バー列と溝のぶんも引く
+	lines := v.body.Lines(textW, o.colored)
+	if v.linkJump.active {
+		// 強調は整形し直して塗る (行数・桁は Lines と同じ。markdown.RenderLinks の doc)
+		if cur := v.linkJump.reanchor(v.body.FileLinks(textW, v.root)); cur >= 0 {
+			lines = v.body.JumpLines(textW, o.colored, v.root, cur)
+		} else {
+			v.linkJump = linkJump{} // 読み直しで選択していたリンクが消えた
+		}
+	}
 	// 行数は幅で変わる (Body は幅ごとに整形し直す)。描画で確定した行数で論理 offset を収束させる
 	// (理由は listnav.Pager.Clamp の doc)
 	v.bodyPager.Clamp(len(lines), rows)
@@ -2494,6 +2525,16 @@ func (v *issuesView) hint(width int) string {
 			{"Esc: 戻る", 1},
 		})
 	}
+	if v.open != nil && v.linkJump.active {
+		// ジャンプ中は j/k がスクロールでなくリンクの移動になる (本文 pager の案内を残すと嘘になる)
+		return fitHintItems(width, []hintItem{
+			{"j/k: 選ぶ", 2},
+			{"Enter: 読み取り専用で開く", 2},
+			{"e: 編集", 4},
+			{"y: パス", 4},
+			{"Esc: 戻る", 1},
+		})
+	}
 	if v.numFilter.typing {
 		// 打鍵がすべて検索語になる = 一覧のキーが効かないことを伝える (urlPick と同じ理由)
 		return fitHintItems(width, []hintItem{
@@ -2508,11 +2549,14 @@ func (v *issuesView) hint(width int) string {
 		// "nvim" と案内しない)。案内した全キーが効くことは TestIssuesViewBodyHintKeysAllRespond が
 		// 予算幅で固定する。Enter/h/q は job パネルと同じ「戻る」。
 		return fitHintItems(width, []hintItem{
-			{"j/k/Space: スクロール", 2},
+			// 「スクロール」でなく「移動」: Tab を足して予算幅 (popup) に入らなくなったため縮めた
+			// (diff の pager の hint_surfaces.go は据え置き。あちらには Tab が無い)
+			{"j/k/Space: 移動", 2},
 			{"J/K: 隣へ", 3},
 			{"g/G: 端", 5},
 			{"p: 番号", 4},
 			{"u: URL", 5},
+			{"Tab: パス", 5},
 			{"e: 編集", 4},
 			{"Enter/h/q: 戻る", 1},
 		})

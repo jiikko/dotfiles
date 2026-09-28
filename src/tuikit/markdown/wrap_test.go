@@ -121,7 +121,7 @@ func TestTruncSpans(t *testing.T) {
 	}
 	// 収まる場合はそのまま
 	if got := truncSpans(textSpans("abc"), 5, "…"); spansWidth(got) != 3 {
-		t.Fatalf("収まる入力を切ってしまった: %q", got)
+		t.Fatalf("収まる入力を切ってしまった: %+v", got)
 	}
 }
 

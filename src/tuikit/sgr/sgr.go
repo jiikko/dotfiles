@@ -13,6 +13,7 @@ const (
 	Dim       = "\x1b[2m"
 	Italic    = "\x1b[3m"
 	Underline = "\x1b[4m"
+	Reverse   = "\x1b[7m"
 	Strike    = "\x1b[9m"
 	Red       = "\x1b[31m"
 	Green     = "\x1b[32m"

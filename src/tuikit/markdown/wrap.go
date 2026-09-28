@@ -37,6 +37,10 @@ const (
 type span struct {
 	Text  string
 	Style style
+	// link はこのスパンが属するリンク (nil = リンクではない)。**出現 1 回につき 1 つのポインタ**で、
+	// 折り返し・結合・style の差し替えを通しても同じポインタを保つ。折り返しで 2 行に割れた
+	// リンクを「1 つのリンクの 2 セグメント」として取り出すための同一性 (RenderLinks)。
+	link *linkRef
 }
 
 // line は端末 1 行分のスパン列。
@@ -64,6 +68,7 @@ type cell struct {
 	text  string
 	w     int
 	style style
+	link  *linkRef
 }
 
 // flattenSpans はスパン列を grapheme クラスタ単位へ展開する。rune 単位にしないのは
@@ -79,30 +84,32 @@ func flattenSpans(spans []span) []cell {
 		// 別の分割器で切ると「セル幅の総和 ≠ 行全体の幅」になり、折り返し位置がずれる
 		for rest := sp.Text; rest != ""; {
 			c, w := termwidth.FirstCluster(rest)
-			cells = append(cells, cell{text: c, w: w, style: sp.Style})
+			cells = append(cells, cell{text: c, w: w, style: sp.Style, link: sp.link})
 			rest = rest[len(c):]
 		}
 	}
 	return cells
 }
 
-// mergeCells は cell 列を同じ style ごとにまとめてスパン列へ戻す。
+// mergeCells は cell 列を同じ (style, link) ごとにまとめてスパン列へ戻す。
+// 🚨 link も区切りに数える: 隣り合う 2 つのリンク (`a` `b` が空白なしで並ぶ等) を 1 スパンに
+// 潰すと、片方の位置がもう片方に吸われる。
 func mergeCells(cells []cell) []span {
 	if len(cells) == 0 {
 		return nil
 	}
 	spans := make([]span, 0, 8)
 	var b strings.Builder
-	cur := cells[0].style
+	cur, curLink := cells[0].style, cells[0].link
 	for _, c := range cells {
-		if c.style != cur {
-			spans = append(spans, span{Text: b.String(), Style: cur})
+		if c.style != cur || c.link != curLink {
+			spans = append(spans, span{Text: b.String(), Style: cur, link: curLink})
 			b.Reset()
-			cur = c.style
+			cur, curLink = c.style, c.link
 		}
 		b.WriteString(c.text)
 	}
-	spans = append(spans, span{Text: b.String(), Style: cur})
+	spans = append(spans, span{Text: b.String(), Style: cur, link: curLink})
 	return spans
 }
 

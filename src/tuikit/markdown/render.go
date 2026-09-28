@@ -20,14 +20,34 @@ import (
 // 第 2 戻り値は各行に対応するソース (.md) の行番号 (0 = 出さない。理由は line.src の doc)。
 // 呼び出し側が左の溝に出す。
 func Render(src string, width int, colored bool) (out []string, srcLines []int) {
+	out, srcLines, _ = RenderLinks(src, width, colored, nil)
+	return out, srcLines
+}
+
+// RenderLinks は Render に加えて、本文中のリンク候補 (links.go の Link) の表示位置を返し、
+// mark が返す強調をリンクへ塗る (mark=nil なら塗らない = Render と同じ出力)。
+//
+// 🚨 強調は整形 (折り返し) の後に塗るだけなので、mark の有無で行数・桁は変わらない。
+// 呼び出し側は mark なしで取った Link の位置を、mark ありの出力にそのまま当ててよい。
+func RenderLinks(src string, width int, colored bool, mark func(i int) LinkMark) (out []string, srcLines []int, links []Link) {
 	lines := renderMarkdown(src, width)
+	links, index := collectLinks(lines, width)
+	markOf := func(*linkRef) LinkMark { return LinkPlain }
+	if mark != nil {
+		markOf = func(r *linkRef) LinkMark {
+			if i, ok := index[r]; ok {
+				return mark(i)
+			}
+			return LinkPlain // 切り詰めで画面に 1 桁も出ないリンク (links に載らない)
+		}
+	}
 	out = make([]string, 0, len(lines))
 	srcLines = make([]int, 0, len(lines))
 	for _, l := range lines {
-		out = append(out, clipToWidth(paintLine(l, colored), width))
+		out = append(out, clipToWidth(paintLine(l, colored, markOf), width))
 		srcLines = append(srcLines, l.src)
 	}
-	return out, srcLines
+	return out, srcLines, links
 }
 
 // clipToWidth は「出力は width 桁を超えない」という Render の契約を、**出口 1 箇所で**
@@ -57,8 +77,8 @@ func clipToWidth(line string, width int) string {
 	return termwidth.Truncate(line, width, "…")
 }
 
-// paintLine は 1 行のスパン列を ANSI 付き文字列へ変換する。
-func paintLine(l line, colored bool) string {
+// paintLine は 1 行のスパン列を ANSI 付き文字列へ変換する。markOf はリンクのスパンに足す強調。
+func paintLine(l line, colored bool, markOf func(*linkRef) LinkMark) string {
 	var b strings.Builder
 	for _, sp := range l.spans {
 		switch {
@@ -67,7 +87,11 @@ func paintLine(l line, colored bool) string {
 		case sp.Style == styleCodeBlock:
 			b.WriteString(highlight.Lang(l.lang, sp.Text))
 		default:
-			if seq := sgrFor(sp.Style); seq != "" {
+			seq := sgrFor(sp.Style)
+			if sp.link != nil {
+				seq += sgrForMark(markOf(sp.link))
+			}
+			if seq != "" {
 				b.WriteString(seq)
 				b.WriteString(sp.Text)
 				b.WriteString(sgr.Reset)
@@ -77,6 +101,20 @@ func paintLine(l line, colored bool) string {
 		}
 	}
 	return b.String()
+}
+
+// sgrForMark はリンクの強調に足す SGR。style の色の上に重ねる (コードスパンの緑は緑のまま)。
+func sgrForMark(m LinkMark) string {
+	switch m {
+	case LinkMarked:
+		return sgr.Underline
+	case LinkSelected:
+		return sgr.Reverse + sgr.Bold
+	case LinkPlain:
+		return ""
+	default:
+		return ""
+	}
 }
 
 // sgrFor は style に対応する SGR を返す ("" = 装飾なし)。

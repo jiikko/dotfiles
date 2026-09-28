@@ -620,7 +620,9 @@ func (iss *Issue) ReadBody() (*Body, error) {
 		return nil, err
 	}
 	bytesRead.Add(int64(len(b))) // LoadMeta と同じ観測点に積む (BytesReadForTest の doc)
-	return NewBody(string(b)), nil
+	body := NewBody(string(b))
+	body.base = LinkBase{File: iss.Path, Project: filepath.Dir(iss.Dir)}
+	return body, nil
 }
 
 // NextNumber は次に採番すべき番号 (最大番号 + 1) をゼロ埋めで返す。

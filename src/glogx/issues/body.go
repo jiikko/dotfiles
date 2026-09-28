@@ -26,6 +26,31 @@ type Body struct {
 
 	progress     string // Progress() の結果キャッシュ ("" も有効な値なので下のフラグと対で持つ)
 	progressDone bool
+
+	// base は本文中の相対パスの基準。**本文を読んだ時点**の値を ReadBody が入れる (viewer は
+	// 移動を追って開いている Issue を差し替えるが、本文は読み直すまで古い場所の書き方のまま。
+	// 基準を後から Issue 側で引くと、古い本文を新しい場所で解決してしまう)。Repo は FileLinks が入れる。
+	base LinkBase
+	// 以下はジャンプモード (FileLinks / JumpLines) のキャッシュ。本文を開いただけでは作らない。
+	resolved       map[linkKey]linkTarget // (種類, dest, root) → 解決結果。stat を 1 本文につき 1 回に抑える
+	fileLinks      []FileLink
+	fileLinksW     int
+	fileLinksRepo  string
+	fileLinksOK    bool
+	jumpLines      []string
+	jumpW, jumpSel int
+	jumpColored    bool
+}
+
+type linkKey struct {
+	kind       markdown.LinkKind
+	dest, repo string
+}
+
+type linkTarget struct {
+	path string
+	line int
+	ok   bool
 }
 
 // checkboxRe はチェックボックス行。parse.go の LoadMeta から Body へ移した
@@ -100,6 +125,61 @@ func (b *Body) SrcLines() []int { return b.srcLines }
 // SrcLineCount は本文のソース行数。行番号の溝を何桁取るかを整形前に決めるのに使う
 // (溝幅が決まらないと整形幅が決まらず、整形しないと行番号が決まらない循環を切る)。
 func (b *Body) SrcLineCount() int { return strings.Count(b.src, "\n") + 1 }
+
+// FileLinks は width 桁で整形したとき、開けるファイルへ解決できたリンク (画面の出現順)。
+// repo は相対パスの実体が収まるべき範囲 (LinkBase.Repo)。
+//
+// 解決 (stat) は (種類, dest) ごとに 1 回だけ行い、結果は Body が生きている間持つ。本文は
+// 取り直し (見張り・エディタから戻ったとき) で Body ごと作り直されるので、そこで新しくなる。
+// 位置は幅で変わるので幅ごとに作り直す (整形は Lines と同じだが、色の有無に依らず位置は同じなので
+// 色なしで 1 回整形する)。
+func (b *Body) FileLinks(width int, repo string) []FileLink {
+	if b.fileLinksOK && b.fileLinksW == width && b.fileLinksRepo == repo {
+		return b.fileLinks
+	}
+	_, _, links := markdown.RenderLinks(b.src, width, false, nil)
+	if b.resolved == nil {
+		b.resolved = map[linkKey]linkTarget{}
+	}
+	out := make([]FileLink, 0, len(links))
+	for i, l := range links {
+		k := linkKey{l.Kind, l.Dest, repo}
+		t, seen := b.resolved[k]
+		if !seen {
+			base := b.base
+			base.Repo = repo
+			p, line, ok := ResolveLink(l.Kind, l.Dest, base)
+			t = linkTarget{p, line, ok}
+			b.resolved[k] = t
+		}
+		if !t.ok || len(l.Segs) == 0 {
+			continue
+		}
+		out = append(out, FileLink{Index: i, Kind: l.Kind, Dest: l.Dest, Path: t.path, Line: t.line, Top: l.Segs[0].Line})
+	}
+	b.fileLinks, b.fileLinksW, b.fileLinksRepo, b.fileLinksOK = out, width, repo, true
+	return out
+}
+
+// JumpLines は FileLinks のリンクを強調した整形結果 (sel = FileLinks 内の選択中の添字)。
+// 行数・桁・行番号は Lines と同じ (markdown.RenderLinks の doc)。
+func (b *Body) JumpLines(width int, colored bool, repo string, sel int) []string {
+	if b.jumpLines != nil && b.jumpW == width && b.jumpColored == colored && b.jumpSel == sel &&
+		b.fileLinksOK && b.fileLinksW == width && b.fileLinksRepo == repo {
+		return b.jumpLines
+	}
+	fl := b.FileLinks(width, repo)
+	marks := make(map[int]markdown.LinkMark, len(fl))
+	for i, l := range fl {
+		marks[l.Index] = markdown.LinkMarked
+		if i == sel {
+			marks[l.Index] = markdown.LinkSelected
+		}
+	}
+	b.jumpLines, _, _ = markdown.RenderLinks(b.src, width, colored, func(i int) markdown.LinkMark { return marks[i] })
+	b.jumpW, b.jumpColored, b.jumpSel = width, colored, sel
+	return b.jumpLines
+}
 
 // Len は最後に整形した行数 (未整形なら 0)。pager のスクロール上限に使う。
 func (b *Body) Len() int { return len(b.lines) }
