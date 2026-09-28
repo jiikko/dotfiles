@@ -1143,7 +1143,9 @@ func Prompt(c card.Card, rv Review) string {
 	fmt.Fprintf(&b, "- 質問があるときは AskUserQuestion を使わず、`pro-con card ask %s \"<質問>\"` を実行してから turn を終える (回答は再開のときに届く)\n", c.ID)
 	fmt.Fprintf(&b, "  - 選択肢から選ぶ質問は `pro-con card ask %s \"<前置き>\" --json '<AskUserQuestion と同じ形の {\"questions\":[...]}>'` で聞く "+
 		"(問い 1〜4 個・選択肢 2〜4 個。推奨は option に \"recommended\":true。「その他」は画面が足すので入れない)。"+
-		"人間は画面の radio / checkbox から選び、答えは「番号. 見出し: 選んだ名前」の行で届く\n", c.ID)
+		"人間は画面の radio / checkbox から選び、答えは「番号. 見出し: 選んだ名前」の行で届く。"+
+		"案ごとの見本 (見た目の候補の .ans など) は、先に `pro-con card attach` で付けてから option に \"sample\":\"<付けたファイル名>\" を書く "+
+		"(人間はフォームから v でその見本を画面の中で開く。見本の確かめ方のコマンドを質問の文に書いて貼り付けさせない)\n", c.ID)
 	fmt.Fprintf(&b, "- make test・ビルド・実機 E2E など時間のかかるコマンドは自分で走らせず、`pro-con card run %s -- <コマンド>` で頼んでから turn を終える (結果は再開のときに届く。同時に頼めるのは 1 本。パイプや && を含む 1 行は `-- bash -c '<1 行>'` で頼む)\n", c.ID)
 	fmt.Fprintf(&b, "- 画面の見た目を変えたら撮って `pro-con card attach %s <ファイル> --note \"<一言>\"` で添付する (人間とレビューする側が見る。"+
 		"TUI は隔離した tmux (`-L`) で動かして `tmux capture-pane -e -p` を .ans に書く (色つきの文字)。画像が要るなら vhs の Screenshot で .png。"+

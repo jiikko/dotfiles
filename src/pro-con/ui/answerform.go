@@ -196,6 +196,9 @@ func (m *Model) handleFormKey(k tea.KeyPressMsg) tea.Cmd {
 			f.cur = min(f.cur+1, n-1)
 		case key == "space":
 			f.toggle()
+		case key == "v":
+			r := f.row()
+			return m.openSample(r.q, r.opt)
 		}
 	}
 	return nil
@@ -231,7 +234,11 @@ func (m *Model) formHints() []string {
 	if m.form.field() != nil {
 		return []string{"文字を打つと書く", "↑ / ↓ 選択", "tab 次の問い", "enter 送信", "esc 取り消し"}
 	}
-	return []string{"j / k 選択", "space 選ぶ / 外す", "tab 次の問い", "enter 送信", "esc 取り消し"}
+	h := []string{"j / k 選択", "space 選ぶ / 外す"}
+	if r := m.form.row(); r.q < len(m.form.qs) && r.opt < len(m.form.qs[r.q].Options) && m.form.qs[r.q].Options[r.opt].Sample != "" {
+		h = append(h, "v 見本")
+	}
+	return append(h, "tab 次の問い", "enter 送信", "esc 取り消し")
 }
 
 // formLine は枠の中の 1 行。caret は書く欄のキャレットの桁 (-1 = 無い)。
@@ -307,6 +314,9 @@ func (f *answerForm) optionLines(q, j int, on bool, inner int) []formLine {
 	line := " " + ptr + " " + markSGR + mark + sgrReset + " " + nameSGR + name + sgrReset
 	if rec {
 		line += " " + fg(214) + "推奨" + sgrReset
+	}
+	if !other && opts[j].Sample != "" {
+		line += " " + fg(81) + "[見本]" + sgrReset
 	}
 	var out []formLine
 	if other {

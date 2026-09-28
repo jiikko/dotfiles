@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"termsafe"
 )
 
 func twoOpts() []Option { return []Option{{Label: "A"}, {Label: "B"}} }
@@ -68,5 +70,36 @@ func TestFormatAnswer(t *testing.T) {
 	}
 	if _, err := FormatAnswer(qs, []Pick{{Chosen: []int{0}, Other: "x"}, {Chosen: []int{0}}}, ""); err == nil {
 		t.Fatal("1 つ選ぶ問いで 2 つ選んだ答えを通した")
+	}
+}
+
+// 見本の名前 (issue 495) は card attach で付けたファイルの名前だけを受ける: パス・. / ..・長すぎる名前を断り、制御文字は落とす。
+// 質問の文にも見本があることを出す (card show・PM への指示が見本の有無を読める)。
+func TestNormalizeQuestionsSample(t *testing.T) {
+	for _, s := range []string{"tmp/a.ans", `tmp\a.ans`, "..", ".", strings.Repeat("a", maxSampleLen+1)} {
+		if _, err := NormalizeQuestions([]Question{{Question: "q", Options: []Option{{Label: "A", Sample: s}, {Label: "B"}}}}); err == nil {
+			t.Errorf("sample %q を通した", s)
+		}
+	}
+	if _, err := NormalizeQuestions([]Question{{Question: "q", Options: []Option{{Label: "A", Sample: strings.Repeat("あ", maxSampleLen)}, {Label: "B"}}}}); err != nil {
+		t.Errorf("上限ちょうどの日本語の名前を断った (長さは字数で数える): %v", err)
+	}
+	// 見本の名前は添付の名前と完全一致で結ぶ。store は attach の名前に termsafe.PlainLine だけを掛けるので、同じ結果になること
+	// (空白を詰めたり前後を落としたりすると、その名前の添付と一致しなくなる)
+	for _, name := range []string{"\x1b[31mdots.ans\x1b[0m", "a  b.ans", " lead.ans"} {
+		got, err := NormalizeQuestions([]Question{{Question: "q", Options: []Option{{Label: "A", Sample: name}, {Label: "B"}}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s, want := got[0].Options[0].Sample, termsafe.PlainLine(name); s != want {
+			t.Errorf("見本の名前 %q が添付の名前 (%q) と違う形に正規化された: %q", name, want, s)
+		}
+	}
+	got, err := NormalizeQuestions([]Question{{Question: "q", Options: []Option{{Label: "A", Sample: "dots.ans"}, {Label: "B"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if txt := QuestionsText(got); !strings.Contains(txt, "A [見本: dots.ans]") || strings.Contains(txt, "B [見本") {
+		t.Fatalf("質問の文の見本の印が違う: %q", txt)
 	}
 }

@@ -37,7 +37,8 @@ var cardUsage = `usage: pro-con card <操作> ... [--wait <長さ>]   (受付の
                                                  依頼の列のカードなら PM が人に聞く (人の番。回答で依頼の列へ戻る)
   ask <カード> [<前置き>] --json '{"questions":[...]}'
                                                  選択肢つきの質問。形は AskUserQuestion と同じ (問い 1〜4 個・選択肢 2〜4 個。
-                                                 options に "recommended":true で推奨)。画面は radio / checkbox の回答フォームにする
+                                                 options に "recommended":true で推奨)。画面は radio / checkbox の回答フォームにする。
+                                                 案の見本は attach で付けてから options に "sample":"<付けたファイル名>" (フォームの v で開く)
   answer <カード> <回答> [--from <人間|PM>]      質問待ちのカードへの回答
   run <カード> [--wait <長さ>] -- <コマンド>...                PG がテストの係にコマンドの実行を頼んで turn を終える (結果は再開のときに届く)
   attach <カード> <ファイル> [--note <一言>]      PG が作業の証拠 (画面の見た目・コマンドの出力) をカードに添付する

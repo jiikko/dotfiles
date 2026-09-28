@@ -25,6 +25,11 @@ type Option struct {
 	Label       string `json:"label"`
 	Description string `json:"description,omitempty"`
 	Recommended bool   `json:"recommended,omitempty"` // 推奨。回答フォームで初めから選んでおく
+	// Sample はこの案の見本 (PG が `card attach` で付けたファイルの名前。issue 495)。回答フォームの v で、同じ名前の一番新しい添付を開く。
+	// 🚨 名前は完全一致で結ぶ (大文字小文字を区別し、Unicode の正規化 NFC / NFD もしない)。attach と ask で違う形の名前を書くと
+	// 「まだ添付されていない」と出る。正規化するなら、この欄と store の attach が名前に掛ける関数の両方に同じものを入れること
+	// 名前で結ぶのは、添付は dispatcher が状態の置き場へ移してから記録に載るので、ask の時点で PG が知っているのは元の名前だけだから
+	Sample string `json:"sample,omitempty"`
 }
 
 // 問いと選択肢の数・長さの上限 (選択肢の文は PG が書くので untrusted。画面の枠に収まらない量を記録に入れない)。
@@ -36,6 +41,7 @@ const (
 	maxHeaderLen   = 30
 	maxLabelLen    = 80
 	maxDescLen     = 300
+	maxSampleLen   = 120
 )
 
 // NormalizeQuestions は PG が書いた問いの制御文字を落として前後の空白を除き、数・長さ・推奨の数を検査する。
@@ -62,7 +68,9 @@ func NormalizeQuestions(qs []Question) ([]Question, error) {
 		opts := make([]Option, len(q.Options))
 		rec := 0
 		for j, o := range q.Options {
-			o.Label, o.Description = clean(o.Label), clean(o.Description)
+			// 見本の名前は添付の名前と完全一致で結ぶので、store が attach で名前に掛けるのと同じ termsafe.PlainLine だけを通す
+			// (clean で空白を詰めると「a  b.ans」が添付と一致しなくなる)
+			o.Label, o.Description, o.Sample = clean(o.Label), clean(o.Description), termsafe.PlainLine(o.Sample)
 			switch {
 			case o.Label == "":
 				return nil, fmt.Errorf("問 %d の選択肢 %d の label が空", n, j+1)
@@ -70,6 +78,10 @@ func NormalizeQuestions(qs []Question) ([]Question, error) {
 				return nil, fmt.Errorf("問 %d の選択肢 %d の label が長い (%d 字まで)", n, j+1, maxLabelLen)
 			case runeLen(o.Description) > maxDescLen:
 				return nil, fmt.Errorf("問 %d の選択肢 %d の description が長い (%d 字まで)", n, j+1, maxDescLen)
+			case runeLen(o.Sample) > maxSampleLen:
+				return nil, fmt.Errorf("問 %d の選択肢 %d の sample が長い (%d 字まで)", n, j+1, maxSampleLen)
+			case o.Sample == "." || o.Sample == ".." || strings.ContainsAny(o.Sample, `/\`):
+				return nil, fmt.Errorf("問 %d の選択肢 %d の sample はパスでなく、card attach で付けたファイルの名前だけを書く (受け取ったのは %q)", n, j+1, o.Sample)
 			}
 			if o.Recommended {
 				rec++
@@ -124,6 +136,9 @@ func QuestionsText(qs []Question) string {
 			}
 			if o.Description != "" {
 				b.WriteString(": " + o.Description)
+			}
+			if o.Sample != "" {
+				b.WriteString(" [見本: " + o.Sample + "]")
 			}
 		}
 	}

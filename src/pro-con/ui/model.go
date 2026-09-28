@@ -117,6 +117,7 @@ type Model struct {
 	legendOff  int               // 表が画面より長いときの送り (legend.go)
 	legendTab  legendTab         // 表のどのタブを出しているか (legend.go)
 	diff       diffView          // 詳細から D で開く差分の板 (diffview.go。issue 508)
+	sample     sampleView        // 回答フォームの選択肢から v で開く見本の板 (sampleview.go。issue 495)
 	lane       laneFade          // 選んでいるレーンの枠の色の移り変わり (lanefade.go)
 	drawer     anim.Transition
 	drawerCard string
@@ -383,6 +384,9 @@ func (m *Model) Update(msg tea.Msg) (_ tea.Model, cmd tea.Cmd) {
 		}
 		if m.diff.open {
 			return m, m.handleDiffKey(msg.String())
+		}
+		if m.sample.open { // 回答フォームの上に開く (フォームは modeForm のまま下に残る)
+			return m, m.handleSampleKey(msg.String())
 		}
 		switch m.mode {
 		case modeInput:
