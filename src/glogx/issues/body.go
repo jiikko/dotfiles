@@ -35,7 +35,7 @@ type Body struct {
 	resolved       map[linkKey]linkTarget // (種類, dest, root) → 解決結果。stat を 1 本文につき 1 回に抑える
 	fileLinks      []FileLink
 	fileLinksW     int
-	fileLinksRepo  string
+	fileLinksRepo  string // Repos を連結した鍵
 	fileLinksOK    bool
 	jumpLines      []string
 	jumpW, jumpSel int
@@ -127,13 +127,14 @@ func (b *Body) SrcLines() []int { return b.srcLines }
 func (b *Body) SrcLineCount() int { return strings.Count(b.src, "\n") + 1 }
 
 // FileLinks は width 桁で整形したとき、開けるファイルへ解決できたリンク (画面の出現順)。
-// repo は相対パスの実体が収まるべき範囲 (LinkBase.Repo)。
+// repos は「repo の中」とみなす範囲 (LinkBase.Repos)。
 //
 // 解決 (stat) は (種類, dest) ごとに 1 回だけ行い、結果は Body が生きている間持つ。本文は
 // 取り直し (見張り・エディタから戻ったとき) で Body ごと作り直されるので、そこで新しくなる。
 // 位置は幅で変わるので幅ごとに作り直す (整形は Lines と同じだが、色の有無に依らず位置は同じなので
 // 色なしで 1 回整形する)。
-func (b *Body) FileLinks(width int, repo string) []FileLink {
+func (b *Body) FileLinks(width int, repos []string) []FileLink {
+	repo := strings.Join(repos, "\x00")
 	if b.fileLinksOK && b.fileLinksW == width && b.fileLinksRepo == repo {
 		return b.fileLinks
 	}
@@ -147,7 +148,7 @@ func (b *Body) FileLinks(width int, repo string) []FileLink {
 		t, seen := b.resolved[k]
 		if !seen {
 			base := b.base
-			base.Repo = repo
+			base.Repos = repos
 			p, line, ok := ResolveLink(l.Kind, l.Dest, base)
 			t = linkTarget{p, line, ok}
 			b.resolved[k] = t
@@ -163,21 +164,21 @@ func (b *Body) FileLinks(width int, repo string) []FileLink {
 
 // Recheck は l を開く直前に、キャッシュを使わずもう一度解決する (ResolveLink と同じ判定を通す)。
 // 一覧を作った後に実体が symlink へ差し替わった (git pull 等) ものを、stat だけの近似で通さないため。
-func (b *Body) Recheck(l FileLink, repo string) bool {
+func (b *Body) Recheck(l FileLink, repos []string) bool {
 	base := b.base
-	base.Repo = repo
+	base.Repos = repos
 	p, _, ok := ResolveLink(l.Kind, l.Dest, base)
 	return ok && p == l.Path
 }
 
 // JumpLines は FileLinks のリンクを強調した整形結果 (sel = FileLinks 内の選択中の添字)。
 // 行数・桁・行番号は Lines と同じ (markdown.RenderLinks の doc)。
-func (b *Body) JumpLines(width int, colored bool, repo string, sel int) []string {
+func (b *Body) JumpLines(width int, colored bool, repos []string, sel int) []string {
 	if b.jumpLines != nil && b.jumpW == width && b.jumpColored == colored && b.jumpSel == sel &&
-		b.fileLinksOK && b.fileLinksW == width && b.fileLinksRepo == repo {
+		b.fileLinksOK && b.fileLinksW == width && b.fileLinksRepo == strings.Join(repos, "\x00") {
 		return b.jumpLines
 	}
-	fl := b.FileLinks(width, repo)
+	fl := b.FileLinks(width, repos)
 	marks := make(map[int]markdown.LinkMark, len(fl))
 	for i, l := range fl {
 		marks[l.Index] = markdown.LinkMarked

@@ -38,7 +38,19 @@ func (v *issuesView) bodyTextWidth(inner int) int {
 
 // jumpLinks は今の幅で開けるリンクの一覧 (vp はキー処理の窓。描画側は bodyLines が同じ幅で引く)。
 func (v *issuesView) jumpLinks(vp issuesViewport) []issues.FileLink {
-	return v.body.FileLinks(v.bodyTextWidth(v.bodyWidth(vp.width)), v.root)
+	return v.body.FileLinks(v.bodyTextWidth(v.bodyWidth(vp.width)), v.jumpRepos())
+}
+
+// jumpRepos は「repo の中」とみなす範囲 (同じ repo の全 checkout。issues.LinkBase.Repos の doc)。
+// git を 1 回叩くので root ごとに覚える (描画のたびに叩かない)。
+func (v *issuesView) jumpRepos() []string {
+	if v.linkReposRoot != v.root || v.linkRepos == nil {
+		v.linkRepos, v.linkReposRoot = nil, v.root
+		if v.root != "" {
+			v.linkRepos = issues.WorktreeRoots(v.root)
+		}
+	}
+	return v.linkRepos
 }
 
 // reanchor は鍵に一致するリンクの添字を返す。一致が無ければ -1。
@@ -136,7 +148,7 @@ func (v *issuesView) linkJumpKey(key string, vp issuesViewport, rows int) (cmd t
 // symlink に差し替わった (git pull) ものを開かない。消えたものを開くと nvim は空の新規バッファを
 // 「そのファイル」として見せる。
 func (v *issuesView) openLink(l issues.FileLink, readonly bool) tea.Cmd {
-	if !v.body.Recheck(l, v.root) {
+	if !v.body.Recheck(l, v.jumpRepos()) {
 		v.setNotice("ファイルが見つかりません: "+v.linkLabel(l), false)
 		return nil
 	}

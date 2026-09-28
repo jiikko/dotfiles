@@ -2,7 +2,9 @@ package issues
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -102,7 +104,7 @@ func TestResolveLink(t *testing.T) {
 	if err := os.Symlink(filepath.Join(root, "docs"), filepath.Join(home, "gooddir")); err != nil {
 		t.Fatal(err)
 	}
-	base := LinkBase{File: issue, Project: root, Repo: root}
+	base := LinkBase{File: issue, Project: root, Repos: []string{root}}
 
 	cases := []struct {
 		name string
@@ -187,7 +189,7 @@ func TestResolveLinkCaseInsensitivePathStillChecked(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(upper, "docs", "ok.md")); err != nil {
 		t.Skipf("このファイルシステムは大文字小文字を区別する (この迂回は起きない): %v", err)
 	}
-	base := LinkBase{File: filepath.Join(root, "issues", "001.md"), Project: root, Repo: root}
+	base := LinkBase{File: filepath.Join(root, "issues", "001.md"), Project: root, Repos: []string{root}}
 	if p, _, ok := ResolveLink(markdown.LinkCode, filepath.Join(upper, "docs", "evil.md"), base); ok {
 		t.Fatalf("大文字で書いた repo 内の symlink から外へ出た: %q", p)
 	}
@@ -199,7 +201,7 @@ func TestResolveLinkCaseInsensitivePathStillChecked(t *testing.T) {
 // 基準が無いと相対パスは解決しない (cwd などの別の基準へ落とさない)。
 func TestResolveLinkNoBase(t *testing.T) {
 	wd, _ := os.Getwd()
-	for _, b := range []LinkBase{{File: "/x/issues/001.md", Project: wd}, {File: "/x/issues/001.md", Repo: wd}} {
+	for _, b := range []LinkBase{{File: "/x/issues/001.md", Project: wd}, {File: "/x/issues/001.md", Repos: []string{wd}}} {
 		if p, _, ok := ResolveLink(markdown.LinkCode, "go.mod", b); ok {
 			t.Fatalf("基準が欠けた %+v で %q に解決した", b, p)
 		}
@@ -218,7 +220,7 @@ func TestBodyCodeBaseIsProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fl := body.FileLinks(80, root)
+	fl := body.FileLinks(80, []string{root})
 	if len(fl) != 1 || fl[0].Path != filepath.Join(root, "app1", "src", "main.go") {
 		t.Fatalf("基準が app1 でない: %+v", fl)
 	}
@@ -237,7 +239,7 @@ func TestBodyFileLinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fl := body.FileLinks(80, root)
+	fl := body.FileLinks(80, []string{root})
 	if len(fl) != 3 {
 		t.Fatalf("開けるリンク %d 個 (want 3): %+v", len(fl), fl)
 	}
@@ -248,7 +250,7 @@ func TestBodyFileLinks(t *testing.T) {
 		t.Fatalf("存在しないリンクを飛ばしたのに添字が詰まっている (Index は markdown.Link の添字): %+v", fl)
 	}
 	plain := body.Lines(80, true)
-	jl := body.JumpLines(80, true, root, 1)
+	jl := body.JumpLines(80, true, []string{root}, 1)
 	if len(plain) != len(jl) {
 		t.Fatalf("強調で行数が変わった: %d != %d", len(plain), len(jl))
 	}
@@ -261,5 +263,56 @@ func writeFileContent(t *testing.T, p, s string) {
 	}
 	if err := os.WriteFile(p, []byte(s), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// 同じ repo の別 checkout に置かれた symlink を通って外へ出るのも止める (Repos に全 checkout を入れる)。
+func TestResolveLinkOtherCheckoutSymlink(t *testing.T) {
+	a, b := realTempDir(t), realTempDir(t) // 同じ repo の 2 つの checkout に見立てる
+	secret := filepath.Join(realTempDir(t), "id")
+	writeFile(t, secret)
+	for _, r := range []string{a, b} {
+		if err := os.MkdirAll(filepath.Join(r, "docs"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(secret, filepath.Join(r, "docs", "x.md")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	base := LinkBase{File: filepath.Join(b, "issues", "001.md"), Project: b, Repos: []string{b, a}}
+	if p, _, ok := ResolveLink(markdown.LinkCode, filepath.Join(a, "docs", "x.md"), base); ok {
+		t.Fatalf("別 checkout の symlink から外へ出た: %q", p)
+	}
+}
+
+// WorktreeRoots は本体と worktree の両方を返す (本物の git で確かめる)。
+func TestWorktreeRoots(t *testing.T) {
+	// 🚨 hook から起動されたときに継承した GIT_DIR / GIT_WORK_TREE は -C / Dir より優先されるので外す
+	for _, k := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"} {
+		if v, ok := os.LookupEnv(k); ok {
+			os.Unsetenv(k)
+			t.Cleanup(func() { os.Setenv(k, v) })
+		}
+	}
+	main := realTempDir(t)
+	wt := filepath.Join(realTempDir(t), "wt")
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = main
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "x")
+	git("worktree", "add", "-q", "--detach", wt)
+	got := WorktreeRoots(main)
+	if !slices.Contains(got, main) || !slices.Contains(got, wt) {
+		t.Fatalf("WorktreeRoots = %q (want %q と %q を含む)", got, main, wt)
+	}
+	if got := WorktreeRoots(t.TempDir()); len(got) != 1 {
+		t.Fatalf("git 管理外では root だけ: %q", got)
 	}
 }

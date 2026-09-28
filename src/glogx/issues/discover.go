@@ -67,6 +67,27 @@ func ResolveRepoRoot(cwd string) (string, bool) {
 	return "", false
 }
 
+// WorktreeRoots は root と同じ repo の全 checkout (git worktree list) を返す。root は必ず含む。
+// 取れない (git 管理外・git が失敗) ときは root だけ (パスジャンプの「repo の中」の範囲。filelink.go の
+// LinkBase.Repos の doc)。
+func WorktreeRoots(root string) []string {
+	ctx, cancel := context.WithTimeout(context.Background(), subproc.GitOpTimeout)
+	defer cancel()
+	cmd := subproc.CommandContext(ctx, "git", "worktree", "list", "--porcelain")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	roots := []string{root}
+	if err != nil {
+		return roots
+	}
+	for line := range strings.Lines(string(out)) {
+		if p, ok := strings.CutPrefix(strings.TrimRight(line, "\n"), "worktree "); ok && p != root {
+			roots = append(roots, p)
+		}
+	}
+	return roots
+}
+
 // RepoRoot は探索の起点を返す。git repo の toplevel を優先し、取れなければ cwd をそのまま
 // 使う (git 管理外のディレクトリでも issues/ があれば見えるように)。
 func RepoRoot(cwd string) string {

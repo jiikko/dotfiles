@@ -159,6 +159,9 @@ type issuesView struct {
 	urlPick urlPicker
 	// linkJump は本文中のファイルパスのジャンプモード (Tab。issues_linkjump.go)。zero value = モード外。
 	linkJump linkJump
+	// linkRepos は linkReposRoot (= その時の root) と同じ repo の全 checkout (jumpRepos が遅延で引く)
+	linkRepos     []string
+	linkReposRoot string
 	// markNext は「次にやる」の目印を付ける確認 (n)。🚨 実ファイルを動かす唯一の操作なので、
 	// 他のキーと違って必ず確認を挟む (glogx の push/pull と同じ作法)。zero value = 確認なし。
 	markNext issuesMarkConfirm
@@ -2123,7 +2126,7 @@ func (v *issuesView) bodyHeadLines(width int, colored bool) []string {
 	}
 	if v.linkJump.active && v.body != nil {
 		// ジャンプ中は状態の行を「どこを開くか」に差し替える (行を足すと本文の位置が 1 行ずれる)
-		fl := v.body.FileLinks(v.bodyTextWidth(width), v.root)
+		fl := v.body.FileLinks(v.bodyTextWidth(width), v.jumpRepos())
 		if cur := v.linkJump.reanchor(fl); cur >= 0 {
 			status = v.linkJumpStatus(fl, cur)
 		}
@@ -2457,8 +2460,9 @@ func (v *issuesView) bodyLines(o issuesRenderOpts) []string {
 	lines := v.body.Lines(textW, o.colored)
 	if v.linkJump.active {
 		// 強調は整形し直して塗る (行数・桁は Lines と同じ。markdown.RenderLinks の doc)
-		if cur := v.linkJump.reanchor(v.body.FileLinks(textW, v.root)); cur >= 0 {
-			lines = v.body.JumpLines(textW, o.colored, v.root, cur)
+		repos := v.jumpRepos()
+		if cur := v.linkJump.reanchor(v.body.FileLinks(textW, repos)); cur >= 0 {
+			lines = v.body.JumpLines(textW, o.colored, repos, cur)
 		} else {
 			v.linkJump = linkJump{} // 読み直しで選択していたリンクが消えた
 		}

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -45,7 +46,11 @@ type FileLink struct {
 type LinkBase struct {
 	File    string // 本文を読んだ issue ファイル (markdown リンクの基準はこのディレクトリ)
 	Project string // インラインコードの基準 (issue ディレクトリの親)
-	Repo    string // 相対パスの実体が収まるべき範囲 (repo root)。"" なら相対パスは解決しない
+	// Repos は「repo の中」とみなす範囲 = 同じ repo の全 checkout (WorktreeRoots)。空なら解決しない。
+	// 🚨 1 つの root にしない: PR で入れた symlink は全 checkout に現れるので、worktree から本体の
+	// `~/dotfiles/...` を絶対パスで開くと、本体側の symlink を「repo の外」と見て素通りする (5 周目で実測)。
+	// 🚨 別の場所に clone した同じ repo は列挙できないので検出しない (脅威モデルの外として受容)。
+	Repos []string
 }
 
 // codeLineRe はインラインコードの末尾の行番号 (`path:12` / `path:12:3`)。
@@ -75,14 +80,14 @@ func ResolveLink(kind markdown.LinkKind, dest string, b LinkBase) (path string, 
 	default:
 		p, relative = filepath.Join(base, p), true
 	}
-	if b.Repo == "" {
+	if len(b.Repos) == 0 {
 		return "", 0, false // 外へ出たかを判定できない (fail-closed)
 	}
 	if fi, err := os.Stat(p); err != nil || !fi.Mode().IsRegular() {
 		return "", 0, false
 	}
 	// 🚨 開く対象は解いた実体にする (書いたパスを nvim に渡すと、判定の後に kernel が別の解き方をする余地が残る)
-	real, escapes := realOutsideRepo(p, b.Repo, relative)
+	real, escapes := realOutsideRepo(p, b.Repos, relative)
 	if escapes {
 		return "", 0, false
 	}
@@ -106,15 +111,20 @@ func ResolveLink(kind markdown.LinkKind, dest string, b LinkBase) (path string, 
 // repo の中かどうかは字面で比べず、実体の祖先を repo と os.SameFile (同じ inode) で比べる (APFS は
 // 大文字小文字と Unicode 正規化を区別しないので、字面の前方一致は `~/DOTFILES/...` で迂回された)。
 // 判定できない (解決の失敗・鎖が長すぎる・本物と食い違う) ときは出る扱い (fail-closed)。
-func realOutsideRepo(p, repo string, relative bool) (real string, escapes bool) {
-	rfi, err := os.Stat(repo)
-	if err != nil {
+func realOutsideRepo(p string, repos []string, relative bool) (real string, escapes bool) {
+	rfis := make([]os.FileInfo, 0, len(repos))
+	for _, r := range repos {
+		if fi, err := os.Stat(r); err == nil {
+			rfis = append(rfis, fi)
+		}
+	}
+	if len(rfis) == 0 {
 		return "", true
 	}
-	// inRepo は実体のパス (symlink を含まない) d が repo そのものか repo の中か
+	// inRepo は実体のパス (symlink を含まない) d が repo (のどれかの checkout) そのものかその中か
 	inRepo := func(d string) bool {
 		for ; ; d = filepath.Dir(d) {
-			if fi, err := os.Stat(d); err == nil && os.SameFile(fi, rfi) {
+			if fi, err := os.Stat(d); err == nil && slices.ContainsFunc(rfis, func(r os.FileInfo) bool { return os.SameFile(fi, r) }) {
 				return true
 			}
 			if d == filepath.Dir(d) {
@@ -126,6 +136,9 @@ func realOutsideRepo(p, repo string, relative bool) (real string, escapes bool) 
 	if !ok {
 		return "", true
 	}
+	// 🚨 EvalSymlinks は正解役として完全ではない: 空文字の target (`ln -s ""`) を自前の resolver と同じく
+	// 親ディレクトリとして解く (kernel は ENOENT。5 周目で実測)。ResolveLink の手前の os.Stat が落とすので
+	// 実害は無いが、その Stat を外すならここも見直すこと
 	if want, err := filepath.EvalSymlinks(p); err != nil || want != real {
 		return "", true
 	}
