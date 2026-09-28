@@ -680,5 +680,6 @@ index b88d676a..11d06c7f 100644
   - `no-concurrent-spm-build-during-xcodebuild.md:25` の「7.5 時間停止」: rationale ファイルが無く「なぜ」を rule 自身に持つ。`paths:` の条件つき読み込みで毎セッションの負担でもない
 - 本文から消した事例が rationale に残っているかを機械で突き合わせた (消えた「obaket NNN / 日付 / issue NNN」の字句が rationale に無いものを列挙)。
   出た 3 件は「実測」の語を落として移した・「881 / 941」とまとめた表記の違いで、中身は残っている
+- 追記 (同日): adversarial-review §7 の「(dotfiles 427: …)」2 か所を H2a で取りこぼしていたので、同じ形で rationale へ移した
 - 量: `_claude/rules/*.md` は 2,606 行 / 230,740 B → 2,579 行 / 225,030 B。🚨 は 86 → 44
 - 検証: `make test-changed` (tests/claude 3 本 + `src/pro-con` の go test) rc=0。L1〜L5 は flag のみで着手対象外
