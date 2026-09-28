@@ -202,6 +202,23 @@ func TestResolveLinkCaseInsensitivePathStillChecked(t *testing.T) {
 	}
 }
 
+// FileLinks はコードの波括弧を展開し、実在するそれぞれに止まる (同じ強調 = 同じ Index を共有する)。
+func TestBodyFileLinksExpandsBraces(t *testing.T) {
+	root := realTempDir(t)
+	writeFile(t, filepath.Join(root, "raw", "q.sql"))
+	writeFile(t, filepath.Join(root, "raw", "q.tsv")) // q.meta は無い
+	issue := filepath.Join(root, "issues", "001-x.md")
+	writeFileContent(t, issue, "`raw/q.{sql,tsv,meta}`\n")
+	body, err := (&Issue{Path: issue, Dir: filepath.Join(root, "issues")}).ReadBody()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fl := body.FileLinks(80, []string{root})
+	if len(fl) != 2 || fl[0].Path != filepath.Join(root, "raw", "q.sql") || fl[1].Path != filepath.Join(root, "raw", "q.tsv") || fl[0].Index != fl[1].Index {
+		t.Fatalf("波括弧の展開: %+v", fl)
+	}
+}
+
 func TestExpandBraces(t *testing.T) {
 	cases := map[string][]string{
 		"a/b.{sql,tsv,meta}": {"a/b.sql", "a/b.tsv", "a/b.meta"},
