@@ -99,6 +99,11 @@ local function require_resilient(mod)
   error(m)
 end
 
+-- 整形の入口 (<leader>F / <leader>p / :Format) が呼ぶ本体。同じ引数を 3 箇所に書き写さないためにまとめる。
+local function format_buffer()
+  require("conform").format({ async = true, lsp_format = "fallback" })
+end
+
 -- Setup lazy.nvim
 require("lazy").setup({
   { "ellisonleao/gruvbox.nvim",
@@ -459,7 +464,10 @@ require("lazy").setup({
     keys = {
       -- <leader>F (大文字): <leader>f は telescope の prefix (ff/fg/..) で、単独押しに Format を
       -- 置くと which-key popup + timeoutlen 待ちでしか発火しなかった (2026-07-29 に f から移動)
-      { "<leader>F", function() require("conform").format({ async = true, lsp_format = "fallback" }) end, desc = "Format buffer" },
+      { "<leader>F", format_buffer, desc = "Format buffer" },
+      -- <leader>p: Shift なしで押せる別名。<leader>= は JIS 配列だと Shift が要るので p にした。
+      -- <leader>p で始まる割り当てを足すと、上の f と同じ which-key + timeoutlen 待ちが起きる
+      { "<leader>p", format_buffer, desc = "Format buffer" },
     },
     config = function()
       local conform = require("conform")
@@ -499,9 +507,7 @@ require("lazy").setup({
           shfmt = { prepend_args = { "-i", "2", "-bn", "-ci", "-sr" } },
         },
       })
-      vim.api.nvim_create_user_command("Format", function()
-        conform.format({ async = true, lsp_format = "fallback" })
-      end, {})
+      vim.api.nvim_create_user_command("Format", format_buffer, {})
     end,
   },
   { "mfussenegger/nvim-lint",
