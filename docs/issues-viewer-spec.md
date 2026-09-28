@@ -474,7 +474,13 @@ backtick 内に 231 個 (ユニーク 137) あるが、**repo root から実在�
   symlink の鎖が一度でも repo の中を通るなら同じ要求を当てる (`~/.claude/rules/x.md` は dotfiles では
   per-file link なので repo の外に見えて repo の中の symlink を通る)。repo に一度も触れない絶対パスは
   書いた人の指定を信じる。「repo の中か」は**字面で比べず**祖先ディレクトリの inode (`os.SameFile`) で決める
-  (APFS は大文字小文字・Unicode 正規化を区別しないので、`~/DOTFILES/...` で前方一致をすり抜けられた)
+  (APFS は大文字小文字・Unicode 正規化を区別しないので、`~/DOTFILES/...` で前方一致をすり抜けられた)。
+  範囲は**同じ repo の全 checkout** (`git worktree list`。worktree から本体の `~/dotfiles/...` を開く形)。
+  「どの symlink を通ったか」は近似で選ばず、成分ごとに解決して出会った symlink を全部数える
+  (`issues/filelink.go` の `resolveObserving`。終点は `filepath.EvalSymlinks` と毎回突き合わせる)。
+  敵対レビュー 5 周で、最後の成分だけ・書かれた prefix だけ・Readlink を Clean して辿る、の近似がすべて迂回された
+- 受容した残り (検出しない): 別の場所に clone した同じ repo の symlink (列挙できない) / 解決から nvim 起動までの
+  差し替え (TOCTOU。作業ツリーへの書き込みが要る) / ハードリンク (git では運べない)
 - 🚨 **開く直前に同じ解決をもう一度通す** (stat だけの近似にしない。一覧の後に `git pull` で repo の外への
   symlink へ差し替わる形を止める)
 - 行番号: インラインコードの `foo.go:12` / `foo.go:12:3`、リンクの `#L12` / `#L12-L20`
