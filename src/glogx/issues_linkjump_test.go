@@ -194,6 +194,53 @@ func TestLinkJumpDocSurvivesRescanAndScreenSavesRoot(t *testing.T) {
 	}
 }
 
+// doc から底の issue を編集して戻っても古い本文を出さない / 画面の記憶は底の位置 / J・K で積んだものを捨てる /
+// 相互リンクで際限なく積まない。
+func TestLinkJumpDocStackEdges(t *testing.T) {
+	stubEditorCapture(t)
+	e := newJumpEnv(t, "# 001\n\n{filler}[仕様](../docs/spec.md)\n")
+	if err := os.WriteFile(e.path("docs/spec.md"), []byte("# spec\n\n[戻る](../issues/001-feat-jump.md)\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e.press("tab")
+	rootOff := e.v.bodyPager.Offset
+	if rootOff == 0 {
+		t.Fatal("前提: 底の本文が先頭から動いていない (BodyOff の取り違えを観測できない)")
+	}
+	e.v.handleKey("enter", vp(10)) // spec.md
+	if s, _ := e.v.screen(time.Now()); s.BodyOff != rootOff {
+		t.Fatalf("記憶する位置が底の本文のものでない: %d (want %d)", s.BodyOff, rootOff)
+	}
+	// 底の issue を書き換えて (spec から e で編集した想定) 取り直すと、積んだ本文も新しくなる
+	if err := os.WriteFile(e.path("issues/001-feat-jump.md"), []byte("# 001\n\n編集後の本文\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e.v.reloadAfterEdit()
+	e.press("h")
+	if out := strings.Join(e.v.lines(renderOpts(20)), "\n"); !strings.Contains(out, "編集後の本文") {
+		t.Fatalf("戻った本文が編集前のまま:\n%s", out)
+	}
+	// 相互リンクで往復しても上限で止まる
+	if err := os.WriteFile(e.path("issues/001-feat-jump.md"), []byte("# 001\n\n[仕様](../docs/spec.md)\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e.v.reloadAfterEdit()
+	for range 2 * maxDocDepth {
+		if !e.v.linkJump.active {
+			e.press("tab")
+		}
+		e.v.handleKey("enter", vp(10))
+	}
+	if len(e.v.docStack) != maxDocDepth {
+		t.Fatalf("積んだ段数 %d (上限 %d)", len(e.v.docStack), maxDocDepth)
+	}
+	// 別の issue を開く (J/K・復元が通る openIssue) と積んだものを捨てる (h で古い本文へ戻らない)
+	e.v.openIssue(e.v.rootOpen())
+	if len(e.v.docStack) != 0 {
+		t.Fatalf("openIssue の後も doc が積まれたまま: %d", len(e.v.docStack))
+	}
+}
+
 // #L12 で開いた doc はその行を窓に入れる。ディレクトリは nvim -R で開く。
 func TestLinkJumpDocLineAndDirectory(t *testing.T) {
 	cmds := stubEditorCapture(t)

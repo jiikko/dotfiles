@@ -126,7 +126,12 @@ func TestResolveLink(t *testing.T) {
 		{"コードの ~/", markdown.LinkCode, "~/note.md", "~/note.md", 0},
 		{"実在しない", markdown.LinkCode, "src/nope.go", "", 0},
 		{"単語 1 つはディレクトリに当てない", markdown.LinkCode, "src", "", 0},
-		{"/ を含むディレクトリは止まり先", markdown.LinkCode, "@root/src", "src", 0},
+		{"絶対パスのディレクトリは止まり先にしない", markdown.LinkCode, "@root/src", "", 0},
+		{"/ だけ", markdown.LinkCode, "/", "", 0},
+		{"./ だけ", markdown.LinkCode, "./", "", 0},
+		{"~/ だけ", markdown.LinkCode, "~/", "", 0},
+		{"/tmp", markdown.LinkCode, "/tmp", "", 0},
+		{"相対で 2 段のディレクトリ", markdown.LinkCode, "issues/done/", "issues/done", 0},
 		{"末尾 / 付きのディレクトリ", markdown.LinkCode, "src/", "src", 0},
 		{"実在しない絶対パス", markdown.LinkCode, "/nonexistent-glogx/x.go", "", 0},
 		{"通常ファイルでもディレクトリでもない", markdown.LinkCode, "/dev/null", "", 0},
@@ -216,6 +221,12 @@ func TestBodyFileLinksExpandsBraces(t *testing.T) {
 	fl := body.FileLinks(80, []string{root})
 	if len(fl) != 2 || fl[0].Path != filepath.Join(root, "raw", "q.sql") || fl[1].Path != filepath.Join(root, "raw", "q.tsv") || fl[0].Index != fl[1].Index {
 		t.Fatalf("波括弧の展開: %+v", fl)
+	}
+	// 展開した 1 つ目を選んでも反転が出る (2 つ目の下線で上書きしない)
+	for sel := range fl {
+		if out := strings.Join(body.JumpLines(80, true, []string{root}, sel), "\n"); !strings.Contains(out, "\x1b[7m") {
+			t.Fatalf("sel=%d で選択の反転が出ない: %q", sel, out)
+		}
 	}
 }
 

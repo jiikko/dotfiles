@@ -197,9 +197,11 @@ func (b *Body) JumpLines(width int, colored bool, repos []string, sel int) []str
 	fl := b.FileLinks(width, repos)
 	marks := make(map[int]markdown.LinkMark, len(fl))
 	for i, l := range fl {
-		marks[l.Index] = markdown.LinkMarked
+		// 🚨 Selected を Marked で上書きしない: 波括弧の展開は 1 つのリンク (Index) に複数の止まり先を持つ
 		if i == sel {
 			marks[l.Index] = markdown.LinkSelected
+		} else if marks[l.Index] != markdown.LinkSelected {
+			marks[l.Index] = markdown.LinkMarked
 		}
 	}
 	b.jumpLines, _, _ = markdown.RenderLinks(b.src, width, colored, func(i int) markdown.LinkMark { return marks[i] })

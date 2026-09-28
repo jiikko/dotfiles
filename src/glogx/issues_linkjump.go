@@ -165,6 +165,9 @@ func (v *issuesView) openLink(l issues.FileLink, readonly bool) tea.Cmd {
 	return runEditorCmd(readonlyCommand(l.Path, l.Line))
 }
 
+// maxDocDepth は docStack に積める段数 (相互リンクした doc を往復して積み続けないため)。
+const maxDocDepth = 8
+
 // bodyFrame は docStack に積んだ 1 段 (戻ったときに元の位置・ジャンプの選択まで戻す)。
 type bodyFrame struct {
 	open   *issues.Issue
@@ -190,6 +193,11 @@ func isMarkdownPath(p string) bool {
 // issue ディレクトリの親から決まる (LinkBase.Project)。doc 自身のディレクトリにすると基準がずれる。
 // 番号・状態は持たないので p は「番号が無いのでファイル名」に落ち、n (claim) は一覧でしか効かない。
 func (v *issuesView) openDoc(l issues.FileLink) {
+	if len(v.docStack) >= maxDocDepth {
+		// 相互リンクした doc を Enter で往復すると際限なく積まれ、抜けるのに h を何回も押すことになる
+		v.setNotice("これ以上は積めません ("+strconv.Itoa(maxDocDepth)+" 段)。h で戻ってから開いてください", false)
+		return
+	}
 	doc := &issues.Issue{Path: l.Path, Dir: v.open.Dir, Rel: v.pathLabel(l.Path)}
 	body, err := doc.ReadBody()
 	if err != nil {

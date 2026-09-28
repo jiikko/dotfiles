@@ -1269,6 +1269,13 @@ func (v *issuesView) reloadAfterEdit() tea.Cmd {
 		if body, err := v.open.ReadBody(); err == nil {
 			v.body = body // bodyPager の位置は保つ (描画側が新しい行数へ収束させる)
 		}
+		// 積んだ本文も読み直す: doc から底の issue へジャンプして e で編集すると、編集したのは積んだ側で、
+		// h で戻ったときに編集前の本文を出すことになる (「確信を持って嘘をつく」形)
+		for i := range v.docStack {
+			if body, err := v.docStack[i].open.ReadBody(); err == nil {
+				v.docStack[i].body = body
+			}
+		}
 	}
 	return v.scanAfterChangeCmd()
 }
@@ -1878,7 +1885,7 @@ func (v *issuesView) openURLPicker() {
 		return
 	}
 	if !v.urlPick.open(v.body.URLs()) {
-		v.setNotice("この issue に URL はありません", false)
+		v.setNotice("この本文に URL はありません", false)
 	}
 }
 
@@ -2157,7 +2164,7 @@ func (v *issuesView) bodyHeadLines(width int, colored bool) []string {
 	}
 	if len(v.docStack) > 0 {
 		// doc を開いている: issue の状態の代わりに戻り先を出す (状態・進捗は doc には無い)
-		status = "doc  h/Esc: " + sanitizePlainLine(v.docStack[len(v.docStack)-1].open.Rel) + " へ戻る"
+		status = "doc " + strconv.Itoa(len(v.docStack)) + " 段目  h/Esc: " + sanitizePlainLine(v.docStack[len(v.docStack)-1].open.Rel) + " へ戻る"
 	}
 	if v.linkJump.active && v.body != nil {
 		// ジャンプ中は状態の行を「どこを開くか」に差し替える (行を足すと本文の位置が 1 行ずれる)

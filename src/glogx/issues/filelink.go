@@ -99,12 +99,27 @@ func ResolveLink(kind markdown.LinkKind, dest string, b LinkBase) (path string, 
 		// ディレクトリは `/` を含む書き方 (`census/raw/`) のときだけ止まり先にする。単語 1 つのコードスパン
 		// (`config` / `client`) が同名のディレクトリに当たって光ると、本文の大半の語がリンクに見える
 		// (ubiregi-server 188 で実測: `config` `client` が当たった)
-		if fi, err := os.Stat(real); err == nil && fi.IsDir() && !strings.Contains(p, "/") {
+		if fi, err := os.Stat(real); err == nil && fi.IsDir() && !dirMention(p) {
 			continue
 		}
 		return real, line, true
 	}
 	return "", 0, false
+}
+
+// dirMention はディレクトリを止まり先にしてよい書き方か: **相対パスで、名前を含み、`/` で区切られたもの**
+// (`census/raw/` / `src/`)。単語 1 つ (`config`)、区切り記号だけ (`/` `./` `~/`)、絶対パス (`/tmp`) は外す。
+// 本文には `/` が区切り記号の意味で 246 件、`/tmp` が 16 件あり (dotfiles の issues/ と docs/。2026-09-28 の敵対
+// レビューで実測)、Tab の止まり先が無意味なリンクで埋まる。
+func dirMention(p string) bool {
+	if filepath.IsAbs(p) || strings.HasPrefix(p, "~") {
+		return false
+	}
+	c := filepath.Clean(p)
+	if c == "." || c == ".." || strings.HasPrefix(c, "../") {
+		return false
+	}
+	return strings.Contains(p, "/")
 }
 
 // resolveFrom は 1 つの基準で p を解決する (base="" は絶対パス / `~/` 専用)。
