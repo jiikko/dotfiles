@@ -1,5 +1,7 @@
 # 576 (perf): 役 (PM・取り込みの係) が生きている間、dispatcher が 3 秒ごとに `claude agents --json` を起こし続ける
 
+> 🚨 **担当中: dotfiles-f9**（2026-09-28〜）
+
 起票日: 2026-09-28
 
 親: [415](415-design-claude-pm-worker-orchestration.md)
