@@ -113,7 +113,7 @@ commit `perf(322): zsh-autosuggestions の毎プロンプト再バインドを�
 （run 間変動が 16〜22 ms。issue 323 で予算は締めたが、分解能の問題は残っている）。
 効果を語るときはこの直接計測を出すこと、を `_zshrc` のコメントにも書いた。
 
-### ②③ は人の判断へ → [338](../338-human-zsh-precmd-verification-and-direnv-decision.md)
+### ②③ は人の判断へ → [338](338-human-zsh-precmd-verification-and-direnv-decision.md)
 
 direnv を precmd から外すと失われる挙動 4 つ（`.envrc` の即時編集反映 / 別端末の allow /
 後から作られたディレクトリ / watch 対象の別ファイル）を列挙した。**どれも `cd .` で戻る**が、
@@ -123,8 +123,8 @@ direnv を precmd から外すと失われる挙動 4 つ（`.envrc` の即時�
 ## 受け入れ条件
 
 - [x] ①: 隔離実験で widget テーブルを diff し、**1 行で足りる**ことを確定させた
-- [x] ①: 入れた後の人手確認 → [338](../338-human-zsh-precmd-verification-and-direnv-decision.md) へ
-- [x] ②③: failure mode を列挙して [338](../338-human-zsh-precmd-verification-and-direnv-decision.md) で判断を仰ぐ形にした
+- [x] ①: 入れた後の人手確認 → [338](338-human-zsh-precmd-verification-and-direnv-decision.md) へ
+- [x] ②③: failure mode を列挙して [338](338-human-zsh-precmd-verification-and-direnv-decision.md) で判断を仰ぐ形にした
 - [x] 効果は**測った経路と計器の分解能**を併記した（「prompt_lag が改善」とは書いていない）
 
 ## 関連

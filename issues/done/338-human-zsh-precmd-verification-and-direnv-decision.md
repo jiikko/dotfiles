@@ -2,7 +2,7 @@
 
 起票日: 2026-09-08
 期限: 2026-09-20
-出典: [322](done/322-perf-precmd-cost-is-dominated-by-third-party-hooks.md) の受け入れ条件のうち、
+出典: [322](322-perf-precmd-cost-is-dominated-by-third-party-hooks.md) の受け入れ条件のうち、
 人にしかできない 2 つ（実際に触っての確認 / トレードオフの判断）
 
 ## ① 動作確認: `ZSH_AUTOSUGGEST_MANUAL_REBIND=1` を入れた後の zle
@@ -89,7 +89,7 @@ zle -l | grep -c autosuggest-orig            # (A) のまま = 未ラップ
 precmd から外して **chpwd + シェル起動時 1 回**だけにすれば、この定数コストが消える。
 
 **外すと失われるもの（failure mode の列挙。
-[`list-masked-failure-modes-before-removing-guard.md`](../_claude/rules/list-masked-failure-modes-before-removing-guard.md)）**:
+[`list-masked-failure-modes-before-removing-guard.md`](../../_claude/rules/list-masked-failure-modes-before-removing-guard.md)）**:
 
 | 失う挙動 | 外した後どうなるか | 回避手段 |
 |---|---|---|
@@ -108,3 +108,16 @@ precmd から外して **chpwd + シェル起動時 1 回**だけにすれば、
 ②と同じ commit で見直せるが、**起動 1 回ぶん**なので効果は小さい。②の判断に従う。
 
 - [ ] ②を外すと決めたときだけ、あわせて見直す
+
+## 結果 (2026-09-29)
+
+ユーザーの判断: **どちらも現状のまま**。
+
+- ①: `ZSH_AUTOSUGGEST_MANUAL_REBIND=1` はそのまま残す。メニュー補完・複数行 paste・suggestion 受理の
+  人手確認は**行わずに受容**した（検出可能性は未確認）。
+  **再評価の trigger**: メニュー補完の後に suggestion が出ない / paste が即実行される、に気づいたとき。
+  戻し方は上記のとおり `_zshrc` の該当行を**消す**（`=0` では戻らない）
+- ②: `direnv` の hook は precmd に残す（外さない）。代案として出した「上位に `.envrc` があるか
+  `DIRENV_DIR` が立っているときだけ `_direnv_hook` を呼ぶ」ガード（fork なしの `[[ -f ]]` 走査）は
+  未実装・未実測。**trigger**: precmd の定数コストを再び削りたくなったとき、まずこの案を測る
+- ③: ②を外さないので見直さない
