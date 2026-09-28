@@ -58,7 +58,23 @@ YES / NO を stdout から読む手順は、この形では判定材料を失う
 - [x] 手順 (対応方針 1) を書き足す — `.claude/rules/worktree-per-session.md` の `claude -p` の行の下に、stream-json で最初の答えを読む jq の 1 行を足した (2026-09-28。ユーザーが 1 を選択)
 - 対応方針 2 (Stop hook だけを黙らせる) は採らない (ユーザーが 1 を選択。1 で答えは読めるようになる)
 
-## 残タスク
+- [x] 書き込めない mode で注入が変わらないかを A-B で実測する (対応方針 3) — 下の「結果」。手順に `--disallowedTools` を足した
 
-- [ ] 未着手: headless のセッションが Stop hook の指示に従って issue を書き換えるリスク (対応方針 3)。今回は変更が無かったが保証はない。
-  書き込めない mode で注入が変わらないかを A-B で実測してから、手順に足すかを決める
+## 結果
+
+実測 2026-09-28 / Claude Code 2.1.283 / `--model haiku` / cwd `~/dotfiles`。答えは stream-json の先頭の assistant text から読んだ。
+「paths」= `zshlib/_git_prompt.zsh` を Read した後に zsh の REPLY ルールが見えるか、「対照」= 何も読まずに同じ問い、
+「SessionStart」= issue 運用の共通規約 (SessionStart hook の注入) が見えるか。
+
+| mode | paths | 対照 | SessionStart | Write で書く | Bash で書く | init の tools に Bash/Edit/Write |
+|---|---|---|---|---|---|---|
+| 指定なし | YES | NO | YES | 拒否 (権限未付与) | 拒否 (リダイレクトは要承認) | 在る |
+| `--permission-mode plan` | YES | NO | YES | 拒否 (plan mode) | 実行せず | 在る |
+| `--disallowedTools "Edit,Write,NotebookEdit,Bash"` | YES | NO | YES | (道具が無い) | `No such tool available` | 無い |
+
+- どの mode でも注入は変わらなかった。どの mode でもファイルは作られず、作業ツリーは clean のまま
+- 指定なしでも書けなかったのは、`-p` では承認に答える人がいないため。これは許可リストの中身次第で
+  (許可された Bash は通る)、保証にならない。道具を init の段階で外す `--disallowedTools` を手順に採った
+- 🚨 `--disallowedTools` を prompt の前に置くと、可変長の引数が prompt まで飲み込み、`Error: Input must be provided …` で rc=1 になった。
+  手順には「prompt の後ろに置く」と書いた
+- plan mode でも Stop hook は発火し、そのセッションは「plan mode なので書けない」と答えて終わった
