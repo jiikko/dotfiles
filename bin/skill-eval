@@ -1,0 +1,197 @@
+#!/bin/bash
+# skill-eval — dotfiles の skill を `claude plugin eval` でローカル評価する。
+#
+# 使い方:
+#   bin/skill-eval [options] [skill...]
+#     skill を省くと、--base (既定 origin/master) から変わった skill を対象にする
+#     (_claude/skills/<skill>/ か _claude/skill-evals/<skill>/ の差分。未 commit・未追跡も含む)
+#
+#   --base REF           変更の比較先 (既定 origin/master)
+#   --runs N             各ケースの回数を上書き (既定は各 prompt.md の runs、無ければ 3)
+#   --max-cost-usd USD   skill ごとの費用の上限 (既定 1)。超えたら打ち切り、その skill は rc 2
+#   --case GLOB          ケース名で絞る (`claude plugin eval --case` へそのまま渡す)
+#   --force              Claude の 5h 枠の確認 (`ratelimit -source claude -check`) を飛ばす
+#   --dry-run            対象の skill とケース数を出すだけ。Claude を呼ばない
+#   -h, --help
+#
+# ケースの置き場所: _claude/skill-evals/<skill>/<case>/prompt.md + graders/*.md
+#   (書式は `claude plugin eval --help` と https://code.claude.com/docs/en/plugin-evals.md)。
+#   skill のディレクトリの中に置かないのは、~/.claude/skills/<skill> がディレクトリごと link されていて、
+#   中に置くと skill の参照ファイルとして見えてしまうため。
+#
+# 仕組み: skill ごとに一時ディレクトリへ plugin を組み立てる
+#   (.claude-plugin/plugin.json + skills/<skill>/ + evals/)。`claude plugin eval` は
+#   `.claude-plugin/plugin.json` を持つディレクトリしか評価しないので、素の skill はこうして包む。
+#   各 run は隔離された HOME で動き、ユーザーの CLAUDE.md・rules・他の skill は読み込まれない
+#   (plugin-evals.md「How runs are isolated」)。plugin なしの比較 (baseline) も同じ数だけ回る。
+#   結果は tmp/skill-eval/<日時>-<乱数>/<skill>/ (result.json・report.html・stdout/stderr) に残す。
+#
+# 終了コード (skill ごとの結果のうち、いちばん重いもの):
+#   0 = 全部合格 / 1 = 不合格がある / 2 = 費用の上限に達した・認証で拒否された /
+#   3 = 判定できない (eval のケースが無い・結果の JSON が無い・ケース 0 件・想定外の終了コード) /
+#   4 = 5h 枠が閾値を超えているので実行しなかった / 64 = 引数の誤り
+#   🚨 3 は合格ではない。ケースの無い skill を「通った」と数えない。
+#
+# 費用: ケース数 × 回数 × 2 (plugin あり / なし) だけモデルを呼ぶ。実測 2026-09-29: 1 ケース 1 回ずつで $0.14・13 秒。
+# CI では回さない (2026-09-29 決定。実行のたびに費用がかかるため)。
+#
+# テスト用の差し替え: SKILL_EVAL_ROOT (repo root) / SKILL_EVAL_CLAUDE / SKILL_EVAL_RATELIMIT (実体のパス)。
+set -euo pipefail
+unset CDPATH
+
+ROOT="${SKILL_EVAL_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+SKILLS_DIR="$ROOT/_claude/skills"
+CASES_DIR="$ROOT/_claude/skill-evals"
+OUT_ROOT="$ROOT/tmp/skill-eval"
+
+usage() { sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'; }
+die_usage() { printf 'skill-eval: %s\n' "$1" >&2; exit 64; }
+
+base="origin/master" runs="" cap="1" case_glob="" force=0 dry=0
+skills=()
+while (($#)); do
+  case "$1" in
+    --base) [[ $# -ge 2 ]] || die_usage "--base に値が要る"; base="$2"; shift 2 ;;
+    --runs) [[ $# -ge 2 && "$2" =~ ^[0-9]+$ ]] || die_usage "--runs は整数"; runs="$2"; shift 2 ;;
+    --max-cost-usd) [[ $# -ge 2 && "$2" =~ ^[0-9]+(\.[0-9]+)?$ ]] || die_usage "--max-cost-usd は数値"; cap="$2"; shift 2 ;;
+    --case) [[ $# -ge 2 ]] || die_usage "--case に値が要る"; case_glob="$2"; shift 2 ;;
+    --force) force=1; shift ;;
+    --dry-run) dry=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    -*) die_usage "知らない option: $1" ;;
+    *) skills+=("$1"); shift ;;
+  esac
+done
+
+explicit=0
+((${#skills[@]} > 0)) && explicit=1
+if ((${#skills[@]} == 0)); then
+  # --no-renames: rename は移動先しか出ないので、移動元の skill も拾うために削除 + 追加として出す
+  git -C "$ROOT" rev-parse --verify -q "$base^{commit}" >/dev/null || die_usage "--base が解決できない: $base"
+  changed="$( { git -C "$ROOT" diff --name-only --no-renames "$base" -- _claude/skills _claude/skill-evals
+                git -C "$ROOT" ls-files --others --exclude-standard -- _claude/skills _claude/skill-evals; } |
+              awk -F/ 'NF >= 3 { print $3 }' | sort -u )"
+  while IFS= read -r s; do [[ -n "$s" ]] && skills+=("$s"); done <<<"$changed"
+  if ((${#skills[@]} == 0)); then
+    echo "skill-eval: $base から変わった skill は 0 件 (評価するものが無い)"
+    exit 0
+  fi
+fi
+
+# skill 名は plugin.json とパスに埋め込むので、JSON とパスを壊さない文字だけを通す
+# (変更から拾った名前にも同じ検査をかける)
+for s in "${skills[@]}"; do
+  [[ "$s" =~ ^[A-Za-z0-9._-]+$ && "$s" != .* ]] || die_usage "skill 名に使えない文字がある: $s"
+done
+
+case_count() { # $1=skill。prompt.md か case.yaml を持つケースの数
+  local d="$CASES_DIR/$1"
+  [[ -d "$d" ]] || { echo 0; return; }
+  find "$d" \( -name prompt.md -o -name case.yaml \) -not -path '*/results/*' | awk -F/ '{ print $(NF-1) }' | sort -u | wc -l | tr -d ' '
+}
+
+if ((dry)); then
+  for s in "${skills[@]}"; do
+    if [[ ! -f "$SKILLS_DIR/$s/SKILL.md" ]]; then echo "SKIP     $s (SKILL.md が無い。消した skill か名前の誤り)"; continue; fi
+    printf '%-8s %s (ケース %s 件)\n' "TARGET" "$s" "$(case_count "$s")"
+  done
+  exit 0
+fi
+
+CLAUDE_BIN="${SKILL_EVAL_CLAUDE:-$(command -v claude || true)}"
+[[ -n "$CLAUDE_BIN" && -x "$CLAUDE_BIN" ]] || { echo "skill-eval: claude が見つからない" >&2; exit 3; }
+command -v jq >/dev/null 2>&1 || { echo "skill-eval: jq が無いので結果を読めない" >&2; exit 3; }
+
+if ((!force)); then
+  RATELIMIT_BIN="${SKILL_EVAL_RATELIMIT:-$(command -v ratelimit || true)}"
+  if [[ -z "$RATELIMIT_BIN" ]]; then
+    echo "skill-eval: ratelimit が無いので 5h 枠を確かめずに進む" >&2
+  else
+    rl_rc=0; rl_out="$("$RATELIMIT_BIN" -source claude -check 2>&1)" || rl_rc=$?
+    case "$rl_rc" in
+      0) ;;
+      1) printf 'skill-eval: Claude の 5h 枠が閾値を超えているので実行しない (--force で上書き)\n%s\n' "$rl_out" >&2; exit 4 ;;
+      *) echo "skill-eval: 5h 枠を判定できなかった (ratelimit rc=$rl_rc)。確かめずに進む" >&2 ;;
+    esac
+  fi
+fi
+
+TMP_DIRS=()
+# shellcheck disable=SC2329  # EXIT trap から呼ばれる (SC2329 は直接呼び出ししか見ない)
+cleanup() { local d; for d in "${TMP_DIRS[@]+"${TMP_DIRS[@]}"}"; do if [[ "$d" == */skill-eval.* ]]; then rm -rf "$d" || true; fi; done; }
+# 走り終えずに抜けたら rc 3 にする。/bin/bash (3.2) は EXIT trap があると、`set -u` で落ちたときの
+# 終了コードが 0 になる (trap の中の $? も 0。trap が無ければ 1、bash 5 なら 1。実測 2026-09-29、
+# 3.2.57 と 5.x)。$? を保つだけでは防げないので、最後まで来たかの目印で判定する。
+finished=0
+# shellcheck disable=SC2329  # EXIT trap から呼ばれる (SC2329 は直接呼び出ししか見ない)
+on_exit() { local st=$?; cleanup; if ((!finished && st == 0)); then st=3; fi; exit "$st"; }
+trap on_exit EXIT
+
+# 出力先は実行ごとに必ず新しく作る (同じ秒の 2 回目が前回の result.json を読んで合格にしないため)
+mkdir -p "$OUT_ROOT"
+run_dir="$(mktemp -d "$OUT_ROOT/$(date +%Y%m%d-%H%M%S)-XXXX")"
+worst=0
+note() { # $1=結果の重さ
+  local r="$1"
+  case "$worst:$r" in
+    1:*) ;;              # 不合格がいちばん重い
+    *:1) worst=1 ;;
+    2:*) ;;
+    *:2) worst=2 ;;
+    *:3) worst=3 ;;
+  esac
+}
+
+for s in "${skills[@]}"; do
+  if [[ ! -f "$SKILLS_DIR/$s/SKILL.md" ]]; then
+    if ((explicit)); then
+      echo "NOT-FOUND $s (_claude/skills/$s/SKILL.md が無い。名前の誤り)"; note 3
+    else
+      echo "SKIP     $s (SKILL.md が無い。消した skill なので評価するものが無い)"
+    fi
+    continue
+  fi
+  n="$(case_count "$s")"
+  if [[ "$n" == 0 ]]; then
+    echo "NO-EVAL  $s (ケースが無い: _claude/skill-evals/$s/<case>/prompt.md を足す)"
+    note 3; continue
+  fi
+
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/skill-eval.XXXXXX")"
+  TMP_DIRS+=("$tmp")
+  mkdir -p "$tmp/plugin/.claude-plugin" "$tmp/plugin/skills" "$tmp/plugin/evals"
+  cp -R "$SKILLS_DIR/$s" "$tmp/plugin/skills/$s"
+  cp -R "$CASES_DIR/$s/." "$tmp/plugin/evals/"
+  rm -rf "$tmp/plugin/evals/results"
+  printf '{"name":"%s","version":"0.0.0","description":"skill-eval harness for %s"}\n' "$s" "$s" > "$tmp/plugin/.claude-plugin/plugin.json"
+
+  out="$run_dir/$s"
+  mkdir -p "$out"
+  args=(plugin eval ./plugin --trust-plugin --no-publish --max-cost-usd "$cap" --json "$out/result.json" --output-dir "$out/agg")
+  [[ -n "$runs" ]] && args+=(--runs "$runs")
+  [[ -n "$case_glob" ]] && args+=(--case "$case_glob")
+
+  rc=0
+  (cd "$tmp" && "$CLAUDE_BIN" "${args[@]}") >"$out/stdout.txt" 2>"$out/stderr.txt" || rc=$?
+  rel="${out#"$ROOT"/}"
+
+  if [[ ! -s "$out/result.json" ]]; then
+    echo "ERROR    $s (claude rc=${rc}、結果の JSON が無い。${rel}/stderr.txt を見る)"
+    note 3; continue
+  fi
+  total="$(jq -r '.aggregates.casesTotal // 0' "$out/result.json" 2>/dev/null || echo 0)"
+  summary="$(jq -r '"score=\(.aggregates.overallScore // "?") delta=\(.aggregates.meanDelta // "?") cases=\(.aggregates.casesPassed // 0)/\(.aggregates.casesTotal // 0) cost=$\(.costUsd // "?")"' "$out/result.json" 2>/dev/null || echo "(結果を読めない)")"
+  if [[ "$total" == 0 ]]; then
+    echo "ERROR    $s (実行したケースが 0 件。--case の絞り込みか、ケースの書式を見る) → $rel"
+    note 3; continue
+  fi
+  case "$rc" in
+    0) echo "PASS     $s $summary → $rel" ;;
+    1) echo "FAIL     $s $summary → $rel"; note 1 ;;
+    2) echo "COST-CAP $s $summary (費用の上限か認証の拒否で打ち切り) → $rel"; note 2 ;;
+    *) echo "ERROR    $s (claude rc=$rc) $summary → $rel"; note 3 ;;
+  esac
+done
+
+finished=1
+exit "$worst"
