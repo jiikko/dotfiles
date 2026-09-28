@@ -34,6 +34,11 @@ YES / NO を stdout から読む手順は、この形では判定材料を失う
 2. hook 側で headless の観測を黙らせる案は採らない方向で検討する: 観測したいのは hook の注入そのもので、
    hook を切る設定 (`--settings` で hooks を空にする等) は観測対象ごと消す。Stop hook だけを避ける手段が
    あるかは未確認
+2'. **Stop hook だけを黙らせる候補**: `CLAUDE_ISSUE_PROGRESS_DIR` を空の一時ディレクトリにして回す。
+   `issue-progress-start.sh` と `issue-progress-check.sh` は同じ変数から state の置き場を決め
+   (両ファイルの `state_dir=` の行)、check は `<session_id>.head` が無ければ `exit 0` する。ただし start も同じ置き場へ
+   `.head` を書くので、これだけでは黙らない。start が書けない置き場 (書き込み不可の dir 等) にするか、
+   start / check のどちらかに観測用の明示的な無効化を足す必要がある。`claude -p` の環境変数が hook に届くことも未実測
 3. headless のセッションが Stop hook の指示に従って issue を書き換えるリスク (上の「保証はない」) を、
    手順の側で塞ぐか (例: 観測は `--permission-mode plan` など書き込めない形で回す) を 1 で一緒に決める。
    その mode で SessionStart / paths の注入が変わらないかは未実測
@@ -45,6 +50,10 @@ YES / NO を stdout から読む手順は、この形では判定材料を失う
 - issue 353 (worktree 経由で他セッションの commit が混ざる誤報)
 
 ## 進捗
+
+- 反証レビュー (sonnet 1 体、read-only、2026-09-28): 事実誤認なし。hook 側に headless を除外する分岐が無いことを確認 (settings.json・スクリプトとも)。
+  P3 で 2' の候補 (`CLAUDE_ISSUE_PROGRESS_DIR`) を指摘された。start 側も同じ置き場へ書く点はレビューが見落としていたので、2' の注記で補った
+
 
 - [ ] 手順 (対応方針 1) を書き足す
 - [ ] 書き込めない mode で注入が変わらないかを A-B で実測する (対応方針 3)
