@@ -90,6 +90,18 @@ func TestResolveLink(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(filepath.Dir(root), "sibling.md")) // repo のすぐ外に実在する通常ファイル
+	// repo の外のディレクトリ link が、repo の中の「symlink に差し替えられたディレクトリ」へ入る鎖
+	// (~/.claude/skills/forge -> dotfiles/_claude/skills/forge、その forge が PR で外への symlink に)
+	if err := os.Symlink(outsideDir, filepath.Join(root, "sk")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "sk"), filepath.Join(home, "skills")); err != nil {
+		t.Fatal(err)
+	}
+	// 正当なディレクトリ link: repo の外から repo の中の通常のディレクトリへ
+	if err := os.Symlink(filepath.Join(root, "docs"), filepath.Join(home, "gooddir")); err != nil {
+		t.Fatal(err)
+	}
 	base := LinkBase{File: issue, Project: root, Repo: root}
 
 	cases := []struct {
@@ -133,6 +145,8 @@ func TestResolveLink(t *testing.T) {
 		{"途中のディレクトリの symlink を絶対パスで書いても出ない", markdown.LinkCode, "@root/d/secret", "", 0},
 		{"readlink 先の .. を symlink の後で解く", markdown.LinkCode, "l", "", 0},
 		{"外から始まる鎖が repo の symlink 越しの .. で外へ抜ける", markdown.LinkCode, "~/hop", "", 0},
+		{"外のディレクトリ link から repo の中のディレクトリ link を通って外へ", markdown.LinkCode, "~/skills/secret", "", 0},
+		{"外のディレクトリ link から repo の中の通常ディレクトリへは開く", markdown.LinkCode, "~/gooddir/spec.md", "docs/spec.md", 0},
 		{"山括弧の中の空白を切らない", markdown.LinkDest, "<../../docs/spec draft.md>", "docs/spec draft.md", 0},
 		{"%エスケープで戻る制御文字", markdown.LinkDest, "../../a%1b[31m.md", "", 0},
 	}
