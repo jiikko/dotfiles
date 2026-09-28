@@ -18,22 +18,22 @@
 - 外れたら **commit されない** (`git commit` は rc=1 + `error: pathspec '...' did not match`、`git add` は rc=128。無音ではない)
 - 🚨 **誤認は次の push で起きる**。commit が空振りした後の `git push` は
   **`Everything up-to-date` で rc=0** を返すので、push の出力だけを見ると成功に見える
-- 🚨 **push / merge に `-q` を付けない**。空振りを示す唯一の手がかり (`Everything up-to-date` /
+- **push / merge に `-q` を付けない**。空振りを示す唯一の手がかり (`Everything up-to-date` /
   `Already up to date`) がその 1 行なので、黙らせると rc=0 だけが残って完全に無音になる
-- 🚨 **push を再試行するなら、合間の `pull --rebase` の rc を見る**。衝突で止まった rebase の上で打った push も
+- **push を再試行するなら、合間の `pull --rebase` の rc を見る**。衝突で止まった rebase の上で打った push も
   `Everything up-to-date` rc=0 を返す。rc≠0 なら再試行のループを抜けて rebase を片付ける
 - 予防: **commit の前に `cd "$(git rev-parse --show-toplevel)"`**。ツールの cwd がサブディレクトリに
   残っている状態で pathspec を組まない (シェルの cwd は前のコマンドから持ち越される)
 - 検出: commit 直後の `git log -1 --stat` で想定ファイルが入っているか見る (下の節と同じ規律)
-- 🚨 **submodule・入れ子 repo の中のファイルは親から commit できない**。親の checkout の中に見えていても
+- **submodule・入れ子 repo の中のファイルは親から commit できない**。親の checkout の中に見えていても
   別 repo なので、親の pathspec は外れる。
   commit の前に **`git -C <ファイルの dir> rev-parse --show-toplevel`** で所属 repo を確かめ、その repo で
   commit & push してから親の参照を更新する
-- 🚨 **worktree からの `merge --ff-only` / `push` も cwd 依存**。作業 worktree (`wt-xxx`) の cwd で
+- **worktree からの `merge --ff-only` / `push` も cwd 依存**。作業 worktree (`wt-xxx`) の cwd で
   `git merge --ff-only <branch>` / `git push` を打つと、**worktree 側のブランチ**に対して
   「Already up to date」「Everything up-to-date」が返るだけで master は 1 mm も動かない。本体の checkout / umbrella への操作は
   **`git -C <本体の絶対パス>`** で対象を明示し、直後に `git -C <本体> log -1 --oneline` で先端が動いたことを見る
-- 🚨 **パイプ越しでも見失う**: `git commit ... | head` のように通すと `$?` はパイプ終端の
+- **パイプ越しでも見失う**: `git commit ... | head` のように通すと `$?` はパイプ終端の
   status になり、上の rc=1 が消える ([`verify-execution-not-just-exit-code.md`](verify-execution-not-just-exit-code.md) の系)
 
 ## pathspec で「生成物」を漏らすと壊れたコミットになる
@@ -44,7 +44,7 @@
 - 生成物が漏れると **その commit 単体では壊れる**。手元は再生成済みで build が通るため気づけない
 - 対策: **commit 後に `git show --stat HEAD` を読み、想定したファイルが全部入っているか目視する**。
   ファイル削除・追加を伴う変更では特に。`git status` に生成物が残っていたらそれが漏れのサイン
-- 🚨 **除外の判定は「自分が触ったか」ではなく「その差分が自分の変更と無関係か」で行う。**
+- **除外の判定は「自分が触ったか」ではなく「その差分が自分の変更と無関係か」で行う。**
   「見覚えのない変更は巻き込まない」(下の節) は**混入を防ぐ**規律だが、**自分の変更が原因で
   modified になったファイル**にそのまま当てると今度は**漏れ**を作る。典型は、自分が消した API を
   使っていた既存テストを他セッションの WIP と読んで除外する形 — **その commit 単体ではコンパイルが
@@ -79,7 +79,7 @@ MSGEOF
 
 `<<'MSGEOF'` のようにクォートすると変数展開もコマンド置換も起きない。
 🚨 **1 コマンドに heredoc を 2 つ書くとき (ファイルへの追記 + `-F -` の message)、片方を落としても構文エラーにならず、
-`-F -` が無音で stdin を待ち続ける** (rc も出力も出ず「時間がかかっている」に見える。obaket 895)。stdin から読む形を使うなら、
+`-F -` が無音で stdin を待ち続ける** (rc も出力も出ず「時間がかかっている」に見える)。stdin から読む形を使うなら、
 その入力を同じ行で与えたかを確かめる。
 `git commit -m "$(cat <<'EOF' ... EOF)"` は heredoc 自体は安全だが、`$(...)` の結果が
 再度 `-m` の引用符に入るため**書き方を誤ると同じ事故になる**。`-F -` が最も安全。
@@ -90,11 +90,11 @@ pathspec 規律は「混入」は防ぐが、**履歴を書き換える操作は
 
 - **`git reset HEAD~N` / `git commit --amend` / `git rebase` の前に、必ず `git log -N --format='%h %ad %s' --date=format:'%H:%M'` で対象コミットが自分のものか確認する**（自分が数分前に作ったコミットと、メッセージ・時刻が一致するか）
 - 「直近コミット = 自分の直近コミット」と思い込まない。自分のコミットの直後に並行セッションが commit していれば、reset HEAD~1 は**他人のコミット**を、自分のコミットの上に他人が積んでいれば**自分のつもりで他人の**を切り落とす
-- 🚨 **上の確認が効くのは「自分が書いたメッセージと一致するか」までで、他セッションへの帰属には使えない**。
+- **上の確認が効くのは「自分が書いたメッセージと一致するか」までで、他セッションへの帰属には使えない**。
   全セッションが同じ git user なので **author では区別できず**、`git pull --rebase` は他人の commit を
   自分の commit のあいだに挟むので **時刻の前後も根拠にならない**。帰属に使えるのは **commit が触ったファイル**と、
   **本人に聞くこと**だけ。誤帰属のコストは濡れ衣だけでなく、**真の当事者を探すのをやめてしまう**こと
-- 🚨 **推測した帰属を第三者へ伝えない。** 誤情報はそこで止まらず伝播し、受け取った側が
+- **推測した帰属を第三者へ伝えない。** 誤情報はそこで止まらず伝播し、受け取った側が
   無関係な相手へ確認に行く。分からないなら「分からない」と言い、
   `ListAgents` + `SendMessage` で**本人に聞く**
 - 副次の注意: **`git mv` は即座に stage される**。stage された変更は共有 index 上で「他セッションの pathspec なし commit / reset に拾われ得る」状態になるため、stage から commit までの間隔を最小にする
@@ -104,7 +104,7 @@ pathspec 規律は「混入」は防ぐが、**履歴を書き換える操作は
   commit の前に `git diff --cached --stat <同じ hash>` と差分を読み、自分の作業と無関係な変更が無いことを確かめる
 - **zsh に渡す reflog の参照は `'HEAD@{1}'` のように引用符で包む** (`brace_ccl` 等の設定で波括弧が展開され、戻したつもりで戻らない)
 - **zsh で refspec (`sha:ref`) を変数から組むときは `${SHA}:refs/heads/master` と波括弧で囲む**。`$SHA:r...` の `:r` は
-  履歴修飾子 (拡張子を落とす) に化け、`<sha>efs/heads/master` という refspec になる (obaket retro 967, 2026-09-27)。
+  履歴修飾子 (拡張子を落とす) に化け、`<sha>efs/heads/master` という refspec になる。
   `:h` `:t` `:e` `:l` `:u` も修飾子になる (全ての英字ではないが、どれが化けるかを覚えるより常に `${VAR}` にする)
 
 ## やること / やらないこと

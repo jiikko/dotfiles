@@ -27,3 +27,9 @@ seam を全部差し替えたテストは「実測表どおりに書いたコー
 片方に寄せる)。要点だけ: `docker builder prune --help` の `-a` の説明
 ("Include internal/frontend images") と、実行時の警告文が示す実際の範囲
 (`-a` 無し = dangling のみ / `-a` 有り = 全部) が食い違っていた。
+
+## 本文から移した実例 (2026-09-28 の prompt-audit。本文は規範だけにするため)
+
+- 実測日: 2026-09-08 / 出典: swift-smbee issue 092 / done/090
+- 実例 obaket 645 M6c, 2026-09-03: Swift Testing の `started` 行 (stdout) と NSLog マーカー (stderr) の順序から hang の位置を 推理して 2 回誤診。stderr だけに揃えた 5 run 目で確定
+- 実測 2026-09-25 dotfiles 427: fake の再開は同じ session を続ける前提で、 本物の `claude --bg --resume` は別の id を立てていた。その前提の上で敵対レビューを 5 周重ねた

@@ -11,7 +11,7 @@
 
 | 置き場 | 読まれ方 | 何を置くか |
 |---|---|---|
-| [`_claude/rules/`](../_claude/rules/) | **毎セッション全文** (`~/.claude/rules/` へリンクされ、**全プロジェクト**で読まれる) | どのプロジェクトでも成立する作業規範。**36 本 2,256 行 / 174 KB** あるので、ここへ足すと全セッションのコンテキストを食う |
+| [`_claude/rules/`](../_claude/rules/) | **毎セッション全文** (`~/.claude/rules/` へリンクされ、**全プロジェクト**で読まれる) | どのプロジェクトでも成立する作業規範。全文が毎セッション読まれるので、ここへ足すと全セッションのコンテキストを食う (今の量は `wc -lc _claude/rules/*.md`) |
 | [`.claude/rules/`](../.claude/rules/) | dotfiles で作業するとき。frontmatter に `paths:` があれば、**その glob のファイルを Read したときだけ** (Write / Edit では読み込まれない) | **dotfiles 固有**で、踏む場所をファイルの種類で言えるもの (zsh の hook / trap) |
 | **`rules/`** (ここ) | 参照されたときだけ | **dotfiles 固有**。zsh / tmux / この repo の CI に閉じた規範 |
 | そのディレクトリの `CLAUDE.md` | そのディレクトリを触るとき | ディレクトリ固有の規約 (`scripts/` / `tests/` / `src/glogx/` / `_claude/`) |

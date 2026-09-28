@@ -52,7 +52,7 @@ Before discovering tests, determine what code changed:
 
 ## Strict Prohibitions
 
-You MUST NEVER do the following to make tests pass:
+Do not make a test pass by weakening it — a green result must mean the code is fixed. In particular, do not:
 - Skip or disable failing tests (`@skip`, `.skip`, `xit`, etc.)
 - Weaken assertions or relax expected values
 - Add overly broad exception handling to suppress errors

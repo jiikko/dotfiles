@@ -549,3 +549,12 @@ frame 通知を出していた / overlay 表示中の取消が先に効いて ro
 pro-con の終了の保証で、「止めたら state: stopped」を 1 回の実測から fake に写し、判定も state の名前で書いた。dogfooding で、
 終えた session は stop 後も state: done のまま (pid 無し) と分かり、止め直しが続いた (01dbb3b0 で修正)。fake に無い状態が
 本番で出たため、テストは緑のまま判定が外れていた
+
+## 本文から移した実例 (2026-09-28 の prompt-audit。本文は規範だけにするため)
+
+- 実行件数の較正: obaket 881 で、runner の集計行の最後の 1 行が別 suite の数だった
+- 止めるフック: obaket 881 / 941 で、`#expect` のまま先へ進み、残ったフックで後続が止まって red ではなく無限待ちになった
+- 特別な値の fixture: obaket 881 で、空の path を弾く resolver が root を開いた瞬間に実機で落ちた
+- 遅延・非同期へ移した処理: 2026-09-24 pro-con で attach を裏に回したとき、「起きないこと」を見る assert 3 本がこの形になりかけた
+- flaky かつ空振り: obaket 881
+- 効率の不変条件: obaket 898

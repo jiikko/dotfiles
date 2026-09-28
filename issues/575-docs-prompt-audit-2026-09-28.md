@@ -658,5 +658,27 @@ index b88d676a..11d06c7f 100644
 
 - [x] 監査 (Step 0〜6) と提案 diff の作成 (2026-09-28)
 - [x] 反証レビュー (sonnet 1 体、read-only、2026-09-28) — 下の「反証レビューの結果」。指摘 3 件を訂正した
-- [ ] hunk ごとの採否 (ユーザー)
-- [ ] 採った hunk の適用 (M1c は H2a の後。H2 の残り 21 本は採ると決まってから同じ形で作る)
+- [x] hunk ごとの採否 (ユーザー: 2026-09-28「全部適用して」)
+- [x] 採った hunk の適用 — 下の「適用ログ」
+
+## 適用ログ (2026-09-28)
+
+1 commit で当てた (「rules: prompt-audit 575 を適用 …」)。
+
+- diff H1 / H2a / H2b / M1a / M1b / M1c / M2 / M3: 貼った patch をそのまま当てた
+- **H2 の残り**: 13 本の本文から事例の括弧を切り出し、同名の rationale 末尾の「本文から移した実例」節へそのまま移した
+  (avoid-wall-clock 3 / commit-with-pathspec 2 / decide-layout 3 / list-masked 4 / measure-external-cli 3 / no-unauthorized-branch-switch 1 /
+  parallel-write-agents 1 / perf-claims 2 / subagent-model-tiering 1 / survey-receiver 4 / tmux-probe 2 / verify-design-intent 2)。
+  sandbox-real-destructive-test-apis は「実例は rationale (…)」の括弧の中身が rationale に既にあったので、括弧だけ外した
+- **H2 の数え方には当たるが、動かさなかったもの** (次の監査が出し直さないため):
+  - 「起源の記録: issue NNN」「起源の詳細: …」の参照行 (関連の節の出典への指し示しで、事例の語りではない)
+  - `paths:` の判断を残した HTML コメント (no-ios-simulator / no-osascript / no-concurrent-spm / shell-numeric-gate。付け直し・外し直しを防ぐ保守の注記)
+  - 規則そのものの根拠になっている測定 (tmux-probe の「`$TMUX` が `TMUX_TMPDIR` に優先する」実測、「`kill-server` は socket を消さない (SIGKILL でも)」、
+    verify-execution の `check-lint-gate-wiring` の実装例、tmux-probe の `(issue 069)`)
+  - `pending-issue-rationale-in-code.md:24` の「(obaket 881: 決着済みの指摘が 3 周にわたって逆向きに出た)」: この rule は rationale ファイルを持たず、
+    この括弧がその段落の唯一の根拠なので残した (rationale を 1 行のために新設するなら、そのとき移す)
+  - `no-concurrent-spm-build-during-xcodebuild.md:25` の「7.5 時間停止」: rationale ファイルが無く「なぜ」を rule 自身に持つ。`paths:` の条件つき読み込みで毎セッションの負担でもない
+- 本文から消した事例が rationale に残っているかを機械で突き合わせた (消えた「obaket NNN / 日付 / issue NNN」の字句が rationale に無いものを列挙)。
+  出た 3 件は「実測」の語を落として移した・「881 / 941」とまとめた表記の違いで、中身は残っている
+- 量: `_claude/rules/*.md` は 2,606 行 / 230,740 B → 2,579 行 / 225,030 B。🚨 は 86 → 44
+- 検証: `make test-changed` (tests/claude 3 本 + `src/pro-con` の go test) rc=0。L1〜L5 は flag のみで着手対象外
