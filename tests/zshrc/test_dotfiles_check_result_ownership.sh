@@ -167,8 +167,8 @@ fi
 
 # --- 6. 親シェルが先に終わっていたら bg は公開しない ------------------------------------
 # zshexit が消せるのは「終了時点で在るもの」だけ。bg は disown 済み (&!) なので親より長生きしうる。
-# 🚨 ここの sleep はハーネスの「待ち」ではなく**窓を作る入力**: shasum を親の終了までブロックさせて
-#    「bg が親より遅れて書き終える」状況そのものを作っている。
+# 🚨 shim の sleep はハーネスの「待ち」ではなく**窓を作る入力**: shasum を親の終了までブロックさせて
+#    「bg が親より遅れて書き終える」状況そのものを作っている (gate を置くまで止まる)。
 reset_cache
 mkdir -p "$TD/shim0"
 gate="$TD/shasum.gate"
@@ -178,6 +178,21 @@ while [ ! -f "$gate" ]; do sleep 0.05; done
 echo "cafebabe  -"
 SHIM
 chmod +x "$TD/shim0/shasum"
+# rm を遅くして「bg が .partial を書いてから消すまで」の窓を広げる (issue 577)。固定の sleep で待つ実装なら
+# この窓で必ず落ち、bg の終了を待つ実装なら通る (負荷任せの flaky を決定論にする)。
+# 🚨 本物は絶対パスで呼ぶ (PATH 先頭の shim から素の rm を呼ぶと自分に戻る)
+real_rm=$(command -v rm)
+case "$real_rm" in
+  /*) ;;
+  *) print -u2 "✗ [ハーネス失敗] rm の実体を絶対パスで解決できない: $real_rm"; exit 1 ;;
+esac
+case "$real_rm" in "$TD"/*) print -u2 "✗ [ハーネス失敗] rm が shim 自身に解決した: $real_rm"; exit 1 ;; esac
+cat > "$TD/shim0/rm" <<SHIM
+#!/bin/sh
+sleep 0.5
+exec "$real_rm" "\$@"
+SHIM
+chmod +x "$TD/shim0/rm"
 c_log="$TD/c.log"
 # 🚨 \$(...) で受けない: disown した bg が stdout を握ったままなので、コマンド置換が
 #    bg の完了まで待ってしまい「親が先に終わる」窓が作れない。
@@ -187,16 +202,32 @@ HOME="$TD/home" PATH="$TD/shim0:$PATH" zsh -f -c "
   $FNS
   _dotfiles_check_watch \"\$HOME/dotfiles/setup.sh\" \"\$XDG_STATE_HOME/dotfiles/setup-sh.sha256\" \\
     setup 'MSG-setup' ''
-  print \"CPID=\$\$\"
+  print \"CPID=\$\$ BGPID=\$!\"
 " > "$c_log" 2>&1
-c_pid=$(sed -n 's/^CPID=//p' "$c_log")
-if [[ -z "$c_pid" ]]; then
-  print -u2 "✗ [ハーネス失敗] 親シェルが CPID を出さない: $(cat "$c_log")"
+c_pid=$(sed -n 's/^CPID=\([0-9]*\) .*/\1/p' "$c_log")
+bg_pid=$(sed -n 's/.* BGPID=\([0-9]*\)$/\1/p' "$c_log")
+if [[ -z "$c_pid" || -z "$bg_pid" ]]; then
+  print -u2 "✗ [ハーネス失敗] 親シェルが CPID / BGPID を出さない: $(cat "$c_log")"
+  exit 1
+fi
+# bg_alive は bg のプロセスがまだ終わっていないか。🚨 kill -0 で見ない (ゾンビにも成功する)。ps の状態で
+# 終了 (行が無い) とゾンビ (Z) を「終わった」に数える
+bg_alive() { local st; st=$(ps -p "$bg_pid" -o stat= 2>/dev/null) || return 1; [[ -n "$st" && "$st" != Z* ]] }
+# 窓ができていることを先に固定する: shasum が止めているので、親の終了時点で bg はまだ生きているはず。
+# 生きていなければ「bg が親より遅れて書き終える」状況を作れていない (下の判定が素通りする)
+if ! bg_alive; then
+  print -u2 "✗ [ハーネス失敗] 親の終了時点で bg が既に終わっている (窓を作れていない): $(cat "$c_log")"
   exit 1
 fi
 : > "$gate"   # shasum を解放 = bg がここから書き始める (親はもう居ない)
-i=0; while [[ -e "$CACHE/setup-check.$c_pid.result.partial" ]] && (( i < 200 )); do sleep 0.05; (( ++i )); done
-sleep 0.3     # rename が起きるなら起き切るまで
+# 🚨 待つのは「bg が終わった」そのもの (issue 577)。以前は「.partial が在る間は待つ」だったが、解放の直後は
+#    bg がまだ shim の中に居て .partial を書いていないので 1 回も回らず、実際には固定の sleep 0.3 で
+#    待っていた。並列の負荷で bg が 0.3 秒のうちに rm まで届かず、書きかけの .partial を「公開した」と読んだ
+i=0; while bg_alive && (( i < 400 )); do sleep 0.05; (( ++i )); done
+if bg_alive; then
+  print -u2 "✗ [ハーネス失敗] bg が 20 秒で終わらない (公開したかどうかは判定できない)"
+  exit 1
+fi
 orphan=( "$CACHE"/*-check."$c_pid".result(N) "$CACHE"/*-check."$c_pid".result.partial(N) )
 if (( ${#orphan} == 0 )); then
   ok "親が先に終わっていたら bg は公開せず捨てる (読み手のいない残骸を作らない)"
