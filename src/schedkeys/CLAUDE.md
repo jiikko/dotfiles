@@ -14,7 +14,7 @@ tmux 予約入力ウィザードの TUI (`prefix+m` / `Enter` / `C-m` の popup)
 - `timespec.go` — 予約時刻の文字列解釈 (純関数。`time.Now()` を触らない)
 - `style.go` — SGR 装飾の最小ヘルパー (lipgloss 不使用。ASCII 記号のみ)
 - `toast.go` — 予約成功のトースト通知 (tuikit/toast とは別実装。理由はファイル冒頭)
-- `regression_test.go` — 過去に壊れた具体的な症状の回帰テスト
+- `regression_test.go` / `render_test.go` — 過去に壊れた具体的な症状 (描画の幅・高さ・カーソル含む) の回帰テスト
 
 ## 入口
 
@@ -24,7 +24,7 @@ tmux 予約入力ウィザードの TUI (`prefix+m` / `Enter` / `C-m` の popup)
 ## ビルド・テスト
 
 - `make -C src/schedkeys lint` / `test`
-- tty が要る描画そのものはテスト対象外 (human issue で確認)
+- 実端末での見え方 (tty が要る部分) だけはテスト対象外 (human issue で確認)。描画の文字列はテストが見る
 
 ## 詳しくは
 

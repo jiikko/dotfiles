@@ -5,8 +5,8 @@ Claude Code / codex の利用枠 (5h / weekly) を取得・整形する module �
 ## ファイルの地図
 
 - `main.go` — `bin/ratelimit` のエントリポイント。フラグ解析・キャッシュ読み書き・閾値判定 (`-check`)
-- `usage/usage.go` — 取得の入口 (`Fetch` / `FetchCodex` / `FetchAll`)。glogx / bubbletea に依存しない自己完結パッケージ
-- `usage/codex.go` — codex 側の取得 (`codex app-server` の JSON-RPC 経路。選定理由はファイル冒頭)
+- `usage/usage.go` — Claude 側の取得 (`Fetch` / `FetchVersion`)。usage パッケージは glogx / bubbletea に依存しない (tuikit / termsafe / subproc には依存する)
+- `usage/codex.go` — codex 側の取得 (`FetchCodex`。`codex app-server` の JSON-RPC 経路。選定理由はファイル冒頭) と両方をまとめる `FetchAll`
 - `usage/pace.go` — ペースゲージの計算とゲージの読み方 (`_claude/statusline-command.sh` の `pace_row` と二重実装。乖離は `usage/pace_drift_test.go` が突き合わせる)
 - `usage/render.go` — 1 行・表形式の整形 (lint で I/O 禁止・stdout 直書き禁止)
 - `usage/banner.go` — ブロック文字 AA (大見出し・盤中央の使用率)
@@ -18,7 +18,7 @@ Claude Code / codex の利用枠 (5h / weekly) を取得・整形する module �
 ## 入口
 
 - `bin/ratelimit` (`main.go`)。Claude Code の UserPromptSubmit hook (`_claude/hooks/ratelimit-warn.sh`) が Claude 枠を、codex 系 skill が codex 枠を見る
-- `usage.FetchAll` / `usage.Fetch` / `usage.FetchCodex` — glogx の利用枠オーバーレイ・ダッシュボードが replace で取り込む
+- `usage.FetchAll` などの取得と `usage.RenderDashboard` — glogx の利用枠オーバーレイ・ダッシュボードが replace で取り込む
 
 ## ビルド・テスト
 

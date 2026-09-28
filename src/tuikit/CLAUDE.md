@@ -22,8 +22,8 @@ README.md の「パッケージ」表が正本 (各パッケージの中身と�
 
 ## 消費者
 
-- `glogx` (issues viewer 本体) と `pro-con` が replace で取り込む
-- `schedkeys` は `caret` の設計だけを借り (`toast` は別実装)、`termwidth` は独立利用
+- glogx (issues viewer 本体)・pro-con・schedkeys・ratelimit が replace で取り込む (`grep -l "replace tuikit" src/*/go.mod`)
+- schedkeys は `caret` / `termwidth` を使い、`toast` だけは別実装
 
 ## ビルド・テスト
 

@@ -4,7 +4,7 @@
 
 ## ファイルの地図
 
-- `supervisor.go` — 唯一の実装ファイル。`Outcome` / `EventKind` / `Result` / `Spec` の型定義と `Run` / `Start` / `ExitCode`
+- `supervisor.go` — 実装の全部。`Spec` (呼び出し側が渡す関数群)・`Result` と、`Run` / `Start` / `ExitCode`
 
 ## 入口
 

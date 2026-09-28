@@ -14,15 +14,19 @@
 - `external_commands.go` — git/tmux/claude/ブラウザ/クリップボードを叩くラッパー群 (テストの差し替え点)
 - `cli_health.go`, `claude_version.go`, `codex_version.go` — claude/codex CLI のログイン状態検査・新版検出
 - `action_modal.go` — push/pull/claude update の確認→実行→結果モーダル
-- `diff_overlay.go`, `pr_status_overlay.go`, `job_detail_overlay.go`, `usage_overlay.go` — コミットに重ねるポップアップ群 (いずれも「対象 SHA/key を持つ pager」型)
+- `diff_overlay.go`, `pr_status_overlay.go`, `job_detail_overlay.go` — コミットに重ねるポップアップ群 (いずれも「対象 SHA/key を持つ pager」型)
 - `status_view.go`, `worktree_status.go` — status viewer (`s`)。仕様は `docs/status-viewer-spec.md`
 - `issues_view.go`, `issues_drawer.go`, `issues_state.go`, `issues_watch.go`, `issues_number_filter.go` — issues viewer (`i`) の画面側。仕様は `docs/issues-viewer-spec.md`。ドメイン (探索・parse・表示整形) は独立パッケージ `issues/`
 - `doctor_view.go`, `doctor_brew*.go`, `doctor_cache.go`, `doctor_cleanup.go`, `doctor_delete.go`, `doctor_docker.go`, `doctor_keys.go`, `doctor_resume.go`, `doctor_rowcursor.go` — doctor 画面 (`D`)。判定は `doctor/disk` `doctor/svc` `doctor/docker` を直接呼ぶ (削除の破壊的操作は `doctor_delete.go` ではなく `doctor/disk.Delete` が持つ)
+- `usage_overlay.go`, `usage_cache.go` — 右上の利用枠オーバーレイ (`U`) とそのキャッシュ
 - `ratelimit_dashboard.go`, `ratelimit_resume.go` — 全画面 ratelimit ダッシュボード (`R`)。取得・整形は `ratelimit/usage`
 - `ime.go`, `ime_tis_darwin.go`, `ime_tis_stub.go` — ブラウズ中の IME 英数切替 (macOS TIS 直接呼び出し)
 - `url_picker.go` — issue 本文 URL のピッカー (本文 pager で `u`)
 - `zoom.go`, `scroll_glide.go`, `hint_surfaces.go` — 開閉演出・スクロール滑走・最下行ヒントの共有ロジック
-- `autobuild.go`, `cleanup_latch.go`, `probe.go`, `terminal.go`, `fullscreen.go` — 自動再ビルド通知・終了前の完了待ち latch・計測フック・全画面ビューアの排他制御
+- `autobuild.go`, `cleanup_latch.go`, `probe.go`, `fullscreen.go` — 自動再ビルド通知・終了前の完了待ち latch・計測フック・全画面ビューアの排他制御
+- `terminal.go` — termsafe の main 側の入口
+- `open_workspace.go` — `e` / `E` で nvim / ファイラーを起動
+- `line_cache.go` — diff / job / status が共有する行キャッシュと取得の単発化
 - `issues/` — 独立パッケージ。issue markdown の探索・分類・parse・本文整形 (glogx 本体に非依存)
 - `gorules/` — ruleguard のカスタム lint 規則 (`make lint` が `go vet -tags ruleguard` で型検査)
 - `tools/` — 表示のサンプルレンダラ (`border-preview.sh` / `dial-preview` / `width-probe`)。本体へ入れる前にここで見た目を固める
@@ -42,7 +46,7 @@ render.go の純粋描画層・幅計算の単一出典・stdout / 時刻のシ�
 - flat な `package main` は意図的。サブパッケージを切る基準は「実在する第二消費者」か「明示的な分離要望」(issues/ の前例。usage / subproc / atomicfile は第二消費者 = ratelimit ができたので独立 module へ出した)。行数や責務の見た目で割らない (README「glog との共通コード分離について」)
 - main から下位パッケージへ値・規律を共有したくなったら独立パッケージへ出す。main は下位から import できず、置くと「値を写す」運用になる (subproc がその教訓: issue 105)
 - 外部由来の文字列 (git / CI ログ / issue markdown / ファイル名) は表示前に termsafe を入口で 1 回通す。出所ごとに書き分けると漏れる (issue markdown と git status のパスが実際に漏れた / doctor の live 経路が 1 度も通っていなかった = issue 228)
-  - termsafe は **`src/termsafe` の独立 module** (glogx と doctor が replace で取り込む)。doctor 側の CLI (`bin/diskdoctor` / `bin/svcdoctor`) は **stdout へ直接書く**ので、TUI と違って描画層による後段の落としが無い = そちらこそ関門が要る、というのが分離の理由
+  - termsafe は **`src/termsafe` の独立 module** (各 module が replace で取り込む)。doctor 側の CLI (`bin/diskdoctor` / `bin/svcdoctor`) は **stdout へ直接書く**ので、TUI と違って描画層による後段の落としが無い = そちらこそ関門が要る、というのが分離の理由
   - doctor の走査結果は `disk.SanitizeForDisplay` / `svc.SanitizeForDisplay` を CLI と共有する。🚨 **`Item.Path` は書き換えず、制御文字を含むものを落とす** — 書き換えると画面のパスと実体が食い違い、削除の照合 (`planDelete` の itemKey) から外れて「見えているものと消えるものが違う」を作る
 - glog (`40d4a28` で退役) の派生だが、glog との差分管理はもう無い
 

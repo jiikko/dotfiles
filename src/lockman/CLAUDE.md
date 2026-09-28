@@ -8,7 +8,7 @@
 - `lock.go` — 排他の中核 (`Locker`)。原子操作での取得・期限切れの引き継ぎ (rename)
 - `lease_tracker.go` — `leaseTracker`: 「自分の lease が生きていると言い切れる限界」を持つ状態機械。期限の値を単体で検査できるよう分離
 - `timeout.go` — `--io-timeout` の配線 (`withTimeout` 等)
-- `cleanup.go` — 期限切れ lock の回収
+- `cleanup.go` — 残骸 (scratch / graveyard) の掃除。lock 本体は触らない (期限切れの引き継ぎは `lock.go` の `Acquire` だけが行う)
 - `with.go` — `with` サブコマンド (子プロセスを排他区間で実行)
 - `util.go` — token 生成などの小道具
 - `ab_abandoned.sh` — `--io-timeout` で見捨てた goroutine の副作用を実バイナリで A-B 計測するスクリプト (`go test` では測れない。issue 362)
@@ -25,7 +25,7 @@
 
 ## ビルド・テスト
 
-- `make -C src/lockman lint` / `test` (root の `make test` にも含まれる)
+- `make -C src/lockman lint` / `test`
 
 ## 詳しくは
 

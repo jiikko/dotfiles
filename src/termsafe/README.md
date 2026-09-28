@@ -1,6 +1,6 @@
 # termsafe — 外部由来の文字列を端末へ出す前に無害化する単一の関門
 
-`glogx` と `doctor` が go.mod の `replace termsafe => ../termsafe` で取り込む共有 module。
+各 module (glogx / doctor / pro-con / ratelimit / tuikit) が go.mod の `replace termsafe => ../termsafe` で取り込む共有 module。
 依存はゼロ (標準ライブラリのみ)。仕様・トレードオフの一次情報は `termsafe.go` の doc コメント。
 
 ## なぜ独立 module か

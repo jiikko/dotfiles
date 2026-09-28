@@ -13,16 +13,16 @@ PM (producer) と PG (consumer) を分けて Claude Code を並列に回すた�
 - `agents/` — `claude agents --json` で今動いている session を一覧する
 - `eventlog/` — dispatcher の出来事の記録 (events.jsonl)
 - `metrics/` — 閉じたカードの所要の記録 (metrics.jsonl)。`stats` コマンドが読む
-- `diskuse/` — pro-con が作った物のディスク使用量の測定 (`du` コマンド)
+- `diskuse/` — `pro-con du` の中身。pro-con が作った物のディスク使用量を、du と同じブロック単位の数え方で自前に測る
 - `monitor/` — 見張り (`pro-con monitor`)。取り込みの衝突・テスト順番の長さを読むだけで判定
 - `wtclean/` — 閉じたカードの PG の worktree/branch/session の片付け判定 (`Judge`) と実行
 - `presence/` — 開いている画面の数え上げ (flock ベース)
 - `relay/` — 画面が描いた最新の 1 枚を `pro-con screen` へ渡す中継
 - `wake/` — dispatcher を即時に起こす Unix socket
 - `schedule/` — dispatcher が決まった時刻に回す予定表 (`Jobs`)
-- `upgrade/` — 動いている pro-con 自身のライブアップグレード (ctrl+r で syscall.Exec)
+- `upgrade/` — 画面側のライブアップグレード (ctrl+r で syscall.Exec)。dispatcher 側は直下の `dispupgrade.go`
 - `foreground/` — 画面が端末前面のプロセスグループを持っているかの確認・取り戻し
-- `gitx/` — pro-con が git を呼ぶ共通の口 (`-C` の落とし穴に注意。GIT_DIR 等の継承)
+- `gitx/` — monitor と wtclean が git を呼ぶ口 (`-C` の落とし穴・GIT_DIR 等の継承に注意)。dispatcher は `exec.CommandContext(ctx, "git", …)` を直接呼んでいて、gitx を通らない
 - `config/` — `~/.config/pro-con/config.toml` の読み込みと repo 列挙
 - `ui/` — TUI 本体。状態は backend が持ち、ここは描画と Command 送信のみ
 - `help/` — `pro-con help` が出す話題ごとの本文 (`debug.md` / `flow.md` / `terms.md` / `usage.md`)
@@ -31,7 +31,7 @@ PM (producer) と PG (consumer) を分けて Claude Code を並列に回すた�
 
 ## 入口 (CLI サブコマンド、main.go が dispatch)
 
-`bin/pro-con` (本物) / `--mock` (模擬) / `--view` (見るだけ) と、`main.go` が振り分けるサブコマンド (`card` / `dispatcher` / `monitor` など)。各サブコマンドの実装は同名の `*cmd.go` (例: `card` → `cardcmd.go`)。一覧とフラグは README.md 冒頭の「起動のしかた」表と `pro-con help`
+`bin/pro-con` (本物) / `--mock` (模擬) / `--view` (見るだけ) と、`main.go` が振り分けるサブコマンド (`card` / `dispatcher` / `monitor` など)。実装はおおむね同名の `*cmd.go` (例外: `attach` → `leavecmd.go`、`card` は `cardcmd.go` / `cardview.go` / `cardlog.go` に分かれる)。一覧とフラグは README.md 冒頭の「起動のしかた」と `pro-con help`
 
 ## ビルド・テスト
 

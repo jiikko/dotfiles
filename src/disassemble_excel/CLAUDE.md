@@ -4,7 +4,7 @@ Excel ワークブック (`.xlsx` / `.xlsm` / `.xlsb`) を diff・grep できる
 
 ## ファイルの地図
 
-- `main.go` — CLI エントリポイント。フラグ解析と全体の処理フロー
+- `main.go` — CLI エントリポイント。フラグ解析と全体の処理フロー。`.xlsb` は `convertXLSB` が LibreOffice で .xlsm に変換してから解体する
 - `model.go` — `Cell` などの共有データ型
 - `sheets.go` — ワークシート XML を直接パースしてセル (数式・値・型) を読む。共有数式・配列数式は excelize で展開
 - `objects.go` — シート上のマクロ割り当てオブジェクト (画像・図形・ボタン) の抽出
@@ -15,7 +15,7 @@ Excel ワークブック (`.xlsx` / `.xlsm` / `.xlsb`) を diff・grep できる
 
 ## 入口
 
-- `main()` (`main.go`) — `disassemble_excel <file> [options]` として実行 (`go build -o disassemble_excel .` または `go install`)
+- `bin/disassemble_excel <file> [options]` (同期 autobuild のラッパー。`go install …@latest` は手元でなく GitHub のソースを建てるので使わない)
 
 ## ビルド・テスト
 

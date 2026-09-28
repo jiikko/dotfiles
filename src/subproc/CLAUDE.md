@@ -4,8 +4,8 @@
 
 ## 入口
 
-- `CommandContext(ctx, name, args...) *exec.Cmd` — 新しい外部コマンド実行はこれを使う (素の `exec.CommandContext` は使わない)
-- `WaitDelay` / `GitOpTimeout` — 上記が使う定数。単体で参照することもある
+- `CommandContext(ctx, name, args...) *exec.Cmd` — glogx / ratelimit では外部コマンドをこれで起こす (素の `exec.CommandContext` は使わない)。WaitDelay を張る
+- `WaitDelay` — 上記が張る値。`GitOpTimeout` — 呼び出し側が git の timeout に使う値 (glogx の `gitOpTimeout`)
 
 ## ビルド・テスト
 
