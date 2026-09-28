@@ -251,16 +251,20 @@ func TestLinkJumpSurvivesBodyReload(t *testing.T) {
 
 // 同じ dest の出現が減ったら、残った出現へ寄せてモードを保つ (消えた扱いにしない)。
 func TestLinkJumpReanchorWhenOccurrencesShrink(t *testing.T) {
-	e := newJumpEnv(t, "# 001\n\n`src/a.go` と `src/a.go` と `src/b.go`\n")
+	// 3 個 → 2 個に減らし、3 個目を選んでいた状態から「最後に残った出現」(2 個目) へ寄せる
+	// (最初の出現へ寄せる実装と区別するため、残りを 2 個にする)
+	e := newJumpEnv(t, "# 001\n\n`src/a.go` と `src/a.go` と `src/a.go` と `src/b.go`\n")
 	e.press("tab")
-	e.press("j") // 2 個目の src/a.go
-	if err := os.WriteFile(e.v.open.Path, []byte("# 001\n\n`src/a.go` と `src/b.go`\n"), 0o644); err != nil {
+	e.press("j")
+	e.press("j") // 3 個目の src/a.go
+	if err := os.WriteFile(e.v.open.Path, []byte("# 001\n\n`src/a.go` と `src/a.go` と `src/b.go`\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	e.v.reloadAfterEdit()
 	e.v.lines(renderOpts(20))
-	if l, ok := e.selected(t); !ok || l.Path != e.path("src/a.go") {
-		t.Fatalf("残った出現へ寄せない: %+v ok=%v", l, ok)
+	fl := e.v.jumpLinks(vp(10))
+	if cur := e.v.linkJump.reanchor(fl); cur != 1 {
+		t.Fatalf("最後に残った出現 (添字 1) へ寄せない: cur=%d", cur)
 	}
 }
 
@@ -289,6 +293,27 @@ func TestLinkJumpOpenRechecksFile(t *testing.T) {
 	}
 	if msg, _ := e.v.takeNotice(); !strings.Contains(msg, "見つかりません") {
 		t.Fatalf("案内が無い: %q", msg)
+	}
+}
+
+// 一覧を作った後に repo の外への symlink へ差し替わったら (git pull 等)、開く直前の再確認で止める。
+func TestLinkJumpOpenRechecksEscape(t *testing.T) {
+	cmds := stubEditorCapture(t)
+	e := newJumpEnv(t, jumpBody)
+	e.press("tab")
+	outside := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(outside, []byte("s\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(e.path("src/a.go")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, e.path("src/a.go")); err != nil {
+		t.Fatal(err)
+	}
+	e.v.handleKey("enter", vp(10))
+	if len(*cmds) != 0 {
+		t.Fatalf("repo の外へ差し替わったファイルを開いた: %v", (*cmds)[0].Args)
 	}
 }
 

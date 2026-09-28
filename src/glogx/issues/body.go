@@ -161,6 +161,15 @@ func (b *Body) FileLinks(width int, repo string) []FileLink {
 	return out
 }
 
+// Recheck は l を開く直前に、キャッシュを使わずもう一度解決する (ResolveLink と同じ判定を通す)。
+// 一覧を作った後に実体が symlink へ差し替わった (git pull 等) ものを、stat だけの近似で通さないため。
+func (b *Body) Recheck(l FileLink, repo string) bool {
+	base := b.base
+	base.Repo = repo
+	p, _, ok := ResolveLink(l.Kind, l.Dest, base)
+	return ok && p == l.Path
+}
+
 // JumpLines は FileLinks のリンクを強調した整形結果 (sel = FileLinks 内の選択中の添字)。
 // 行数・桁・行番号は Lines と同じ (markdown.RenderLinks の doc)。
 func (b *Body) JumpLines(width int, colored bool, repo string, sel int) []string {

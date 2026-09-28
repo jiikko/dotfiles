@@ -3,6 +3,7 @@ package issues
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"tuikit/markdown"
@@ -43,6 +44,15 @@ func TestResolveLink(t *testing.T) {
 	writeFile(t, filepath.Join(root, "docs", "spec draft.md"))
 	writeFile(t, filepath.Join(root, "docs", "spec")) // 空白で切ったら当たってしまう別ファイル
 	writeFile(t, filepath.Join(root, "a\x1b[31m.md"))
+	// repo の外 (home) から repo の中の symlink へ入る鎖: home/rules.md -> root/docs/evil.md -> outside
+	if err := os.Symlink(filepath.Join(root, "docs", "evil.md"), filepath.Join(home, "chain.md")); err != nil {
+		t.Fatal(err)
+	}
+	// repo の外から repo の中の通常ファイルへ入る鎖 (正当: ~/.claude/rules/x.md の形)
+	if err := os.Symlink(filepath.Join(root, "src", "a.go"), filepath.Join(home, "good.md")); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(filepath.Dir(root), "sibling.md")) // repo のすぐ外に実在する通常ファイル
 	base := LinkBase{File: issue, Project: root, Repo: root}
 
 	cases := []struct {
@@ -74,10 +84,14 @@ func TestResolveLink(t *testing.T) {
 		{"repo の外を指す symlink は開かない", markdown.LinkCode, "docs/evil.md", "", 0},
 		{"repo の中を指す symlink は開く", markdown.LinkCode, "docs/alias.md", "docs/alias.md", 0},
 		{"相対で repo の外へ出ない", markdown.LinkDest, "../../../outside.md", "", 0},
+		{"相対で repo の外の実在ファイルへ出ない", markdown.LinkDest, "../../../../sibling.md", "", 0},
 		{"~/ は書いた場所を信じる (symlink の先を問わない)", markdown.LinkCode, "~/linked.md", "~/linked.md", 0},
 		{"絶対パスでも repo の中から外へ出る symlink は開かない", markdown.LinkCode, filepath.Join(root, "docs", "evil.md"), "", 0},
 		{"絶対パスのリンクも同じ", markdown.LinkDest, filepath.Join(root, "docs", "evil.md"), "", 0},
 		{"絶対パスで repo の中の通常ファイル", markdown.LinkCode, filepath.Join(root, "src", "a.go"), "src/a.go", 0},
+		{"外から repo の中の symlink を通って外へ出る鎖", markdown.LinkCode, "~/chain.md", "", 0},
+		{"外から repo の中の通常ファイルへ入る鎖は開く", markdown.LinkCode, "~/good.md", "~/good.md", 0},
+		{"閉じた山括弧の後ろに字", markdown.LinkDest, "<../../docs/spec.md>x", "", 0},
 		{"山括弧の中の空白を切らない", markdown.LinkDest, "<../../docs/spec draft.md>", "docs/spec draft.md", 0},
 		{"%エスケープで戻る制御文字", markdown.LinkDest, "../../a%1b[31m.md", "", 0},
 	}
@@ -98,6 +112,28 @@ func TestResolveLink(t *testing.T) {
 				t.Fatalf("got (%q, %d, %v) want (%q, %d)", p, line, ok, want, tc.line)
 			}
 		})
+	}
+}
+
+// 大文字小文字を変えて書いても repo の中と判定する (APFS は区別しないので、字面で比べると迂回される)。
+func TestResolveLinkCaseInsensitivePathStillChecked(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "secret")
+	writeFile(t, outside)
+	writeFile(t, filepath.Join(root, "docs", "ok.md"))
+	if err := os.Symlink(outside, filepath.Join(root, "docs", "evil.md")); err != nil {
+		t.Fatal(err)
+	}
+	upper := strings.ToUpper(root)
+	if _, err := os.Stat(filepath.Join(upper, "docs", "ok.md")); err != nil {
+		t.Skipf("このファイルシステムは大文字小文字を区別する (この迂回は起きない): %v", err)
+	}
+	base := LinkBase{File: filepath.Join(root, "issues", "001.md"), Project: root, Repo: root}
+	if p, _, ok := ResolveLink(markdown.LinkCode, filepath.Join(upper, "docs", "evil.md"), base); ok {
+		t.Fatalf("大文字で書いた repo 内の symlink から外へ出た: %q", p)
+	}
+	if _, _, ok := ResolveLink(markdown.LinkCode, filepath.Join(upper, "docs", "ok.md"), base); !ok {
+		t.Fatal("大文字で書いた repo 内の通常ファイルが開けない")
 	}
 }
 

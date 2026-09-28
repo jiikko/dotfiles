@@ -23,12 +23,12 @@ import (
 //     インラインコードは **その issue ディレクトリの親** (= プロジェクトの root。root/issues なら
 //     repo root、root/app1/issues なら root/app1)。repo root に固定すると、root/*/issues を持つ
 //     repo で兄弟プロジェクトの同名ファイルを開く。両方の基準を試すと同名の別ファイルを開きうる
-//   - **相対パスで書かれたものは、symlink を解いた実体が repo の中に在ること**を要求する。
+//   - **相対パスで書かれたものは、symlink を解いた実体が repo の中に在ること**を要求する (escapesRepo)。
 //     PR で `docs/x.md -> ~/.ssh/id_ed25519` の symlink と本文の `docs/x.md` を足されると、画面には
 //     無害な名前だけが出たまま repo 外を開かされる (discover.go の hasMarkdown が symlink を拒否して
-//     いるのと同じ脅威)。絶対パスと `~/` でも、**書いた場所が repo の中なら**同じ要求を当てる
-//     (`~/dotfiles/docs/x.md` と書けば同じ symlink を通れてしまい、表示も repo 相対に畳まれる)。
-//     repo の外を名指しした絶対パス (`~/.claude/rules/x.md` 等) は書いた人の指定を信じて実体を問わない
+//     いるのと同じ脅威)。絶対パスと `~/` でも、**symlink の鎖が一度でも repo の中を通るなら**同じ要求を
+//     当てる (`~/dotfiles/docs/x.md` と書けば同じ symlink を通れてしまい、表示も repo 相対に畳まれる)。
+//     repo に一度も触れない絶対パスは書いた人の指定を信じて実体を問わない
 // 基準を足したくなったら、上の「別ファイルを開く」を先に解くこと。
 
 // FileLink は開けるファイルへ解決できたリンク 1 出現。
@@ -79,42 +79,60 @@ func ResolveLink(kind markdown.LinkKind, dest string, b LinkBase) (path string, 
 	if fi, err := os.Stat(p); err != nil || !fi.Mode().IsRegular() {
 		return "", 0, false
 	}
-	if (relative || lexicallyInside(p, b.Repo)) && !insideRepo(p, b.Repo) {
+	if b.Repo != "" && escapesRepo(p, b.Repo, relative) {
 		return "", 0, false
 	}
 	return p, line, true
 }
 
-// lexicallyInside は p が (symlink を解かずに見て) repo の中に書かれているか。repo 自体の
-// symlink を解いた形 (/var → /private/var 等) で書かれている場合も中と数える。
-func lexicallyInside(p, repo string) bool {
-	if repo == "" {
-		return false
+// escapesRepo は p を開くと repo の外の実体へ出るか。symlink の鎖を 1 段ずつ辿り、
+//   - 途中で一度でも repo の中に入った (書いた場所・どこかの段・symlink のディレクトリ経由のいずれか) なら、
+//     最終の実体も repo の中であることを要求する。PR で入れられるのは repo の中の symlink だけなので、
+//     そこを通る鎖は「書いた人が名指しした場所」ではない (`~/.claude/rules/x.md` は dotfiles では
+//     SessionStart hook が per-file link を張るので、repo の外に見えて repo の中の symlink を通る)
+//   - relative (相対パスで書いた) なら、最終の実体が repo の中であることを常に要求する
+// repo の中かどうかは**字面で比べない**。APFS は大文字小文字と Unicode 正規化を区別しないので、
+// `~/DOTFILES/...` のような書き方で前方一致をすり抜けられる。祖先ディレクトリと repo が同じもの
+// (os.SameFile = 同じ inode) かで判定する。
+// 判定できない (lstat / readlink の失敗・鎖が長すぎる) ときは出る扱い (fail-closed)。
+func escapesRepo(p, repo string, relative bool) bool {
+	rfi, err := os.Stat(repo)
+	if err != nil {
+		return true
 	}
-	roots := []string{filepath.Clean(repo)}
-	if real, err := filepath.EvalSymlinks(repo); err == nil {
-		roots = append(roots, real)
-	}
-	for _, r := range roots {
-		if p == r || strings.HasPrefix(p, r+string(filepath.Separator)) {
-			return true
+	under := func(q string) bool {
+		for d := filepath.Dir(q); ; d = filepath.Dir(d) {
+			if fi, err := os.Stat(d); err == nil && os.SameFile(fi, rfi) {
+				return true
+			}
+			if d == filepath.Dir(d) {
+				return false
+			}
 		}
 	}
-	return false
-}
-
-// insideRepo は p の実体 (symlink を解いた先) が repo の中か。どちらかが解けなければ false。
-func insideRepo(p, repo string) bool {
-	real, err := filepath.EvalSymlinks(p)
-	if err != nil {
-		return false
+	entered := relative
+	cur := p
+	for range 40 {
+		if under(cur) {
+			entered = true
+		}
+		li, err := os.Lstat(cur)
+		if err != nil {
+			return true
+		}
+		if li.Mode()&os.ModeSymlink == 0 {
+			return entered && !under(cur)
+		}
+		t, err := os.Readlink(cur)
+		if err != nil {
+			return true
+		}
+		if !filepath.IsAbs(t) {
+			t = filepath.Join(filepath.Dir(cur), t)
+		}
+		cur = filepath.Clean(t)
 	}
-	root, err := filepath.EvalSymlinks(repo)
-	if err != nil {
-		return false
-	}
-	rel, err := filepath.Rel(root, real)
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+	return true
 }
 
 // linkPath は dest からパス部分・行番号・相対パスの基準を取り出す (ファイルシステムは見ない)。
@@ -130,6 +148,10 @@ func linkPath(kind markdown.LinkKind, dest string, b LinkBase) (p string, line i
 		if rest, ok := strings.CutPrefix(dest, "<"); ok {
 			end := strings.IndexByte(rest, '>')
 			if end < 0 {
+				return "", 0, "", false
+			}
+			// 閉じた後ろは空白 (title) か終わりだけ。`<a>b` は CommonMark ではリンクにならない形
+			if after := rest[end+1:]; after != "" && after[0] != ' ' && after[0] != '\t' {
 				return "", 0, "", false
 			}
 			dest = rest[:end]

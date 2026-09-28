@@ -132,10 +132,11 @@ func (v *issuesView) linkJumpKey(key string, vp issuesViewport, rows int) (cmd t
 
 // openLink は選択中のファイルを開く。readonly=true は nvim -R (Enter。readonlyCommand)、false は $EDITOR (e)。
 //
-// 🚨 開く直前に stat を取り直す: 一覧を作った後に消えた・ディレクトリに化けたものを開くと、nvim は
-// 空の新規バッファを「そのファイル」として見せる。
+// 🚨 開く直前に解決をやり直す (Body.Recheck): 一覧を作った後に消えた・ディレクトリに化けた・repo の外への
+// symlink に差し替わった (git pull) ものを開かない。消えたものを開くと nvim は空の新規バッファを
+// 「そのファイル」として見せる。
 func (v *issuesView) openLink(l issues.FileLink, readonly bool) tea.Cmd {
-	if fi, err := os.Stat(l.Path); err != nil || !fi.Mode().IsRegular() {
+	if !v.body.Recheck(l, v.root) {
 		v.setNotice("ファイルが見つかりません: "+v.linkLabel(l), false)
 		return nil
 	}
