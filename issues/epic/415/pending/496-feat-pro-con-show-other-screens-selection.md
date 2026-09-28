@@ -6,7 +6,9 @@
 > 画面を開くのは人 1 人と Claude の session で、Claude は画面ではなく `pro-con card` / `pro-con screen` で読み書きするので、
 > 「ほかの画面が選んでいるカード」を人が気にする場面が今は無い。**再開の条件**: 複数の人が同時に画面を開いて使うようになったとき
 
-親: [441](../441-design-pro-con-viewer.md)
+親: [441](../done/441-design-pro-con-viewer.md)
+
+> 2026-09-29: 親 441 は done へ (viewer の設計は完了)。この issue は 441 から切り出した保留として継続する。
 
 ## 概要
 

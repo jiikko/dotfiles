@@ -2,7 +2,7 @@
 
 起票日: 2026-09-25
 
-親: [415](415-design-claude-pm-worker-orchestration.md) (2026-09-27 に epic 441 を epic 415 へまとめた)
+親: [415](../415-design-claude-pm-worker-orchestration.md) (2026-09-27 に epic 441 を epic 415 へまとめた)
 
 > もと epic 441 の親 issue。設計の正本 (目的・守ること・範囲) はここに置き、実装は子 issue (442〜445・481・496) で進めた。
 
@@ -34,15 +34,16 @@
   変わらないことを確かめた。変異 3 本 (読み取りだけの印を立てない / 操作を受ける / 終了の見出し) が red
 - [x] --view の敵対的レビュー (Opus): 本番のコードで止める・書く経路は無し。テストの穴 (--view を選ぶ分岐が守られていない) を直した (e5b75f28)。記録のみは 445
 - 外の **Claude** が読む口 (画面の中継・出来事の記録・カードの読み取り) は下の子 issue で
+- [x] 2026-09-29 issue-sync で done へ: 子 442・443・444・445・481 がすべて done。496 は pending で継続 (この issue の完了を妨げない)
 
 ## 範囲 (子 issue)
 
-- [442](done/442-feat-pro-con-card-list-show-wait.md) — `pro-con card list / show / wait` (カードを画面なしで読む。PM の CLI にも要る)。**442 で解消** (2026-09-25)
-- [443](done/443-feat-pro-con-screen-relay.md) — 画面の中継 `pro-con screen` (人間の画面に今出ているものを外から読む)。**443 で解消** (2026-09-25)
-- [444](done/444-feat-pro-con-event-log.md) — 出来事の記録 `pro-con log` (dispatcher の判断を構造化して残し、外から読む)。**444 で解消** (2026-09-25。画面の側の出来事は 445 へ)
-- [481](done/481-feat-pro-con-shared-read-write-screen.md) — 共同で読み書きする画面 `pro-con --join` (閉じても dispatcher と PG を止めない)。**481 で解消** (2026-09-26。カード C-039)
-- [496](pending/496-feat-pro-con-show-other-screens-selection.md) — ほかの画面が選んでいるカードを薄い印で出す (481 から切り出し。保留: 使うのは人 1 人と Claude だけ)
-- [445](done/445-risk-pro-con-viewer-read-only-guarantee.md) — 読み取りだけであることの担保と、見せる範囲。**445 で解消** (2026-09-25。カード C-009: 画面の出来事を dispatcher 経由で events.jsonl へ・`--view` の案内から断る操作を外す・読む口は socket の逃がし先の権限を直さない)
+- [442](442-feat-pro-con-card-list-show-wait.md) — `pro-con card list / show / wait` (カードを画面なしで読む。PM の CLI にも要る)。**442 で解消** (2026-09-25)
+- [443](443-feat-pro-con-screen-relay.md) — 画面の中継 `pro-con screen` (人間の画面に今出ているものを外から読む)。**443 で解消** (2026-09-25)
+- [444](444-feat-pro-con-event-log.md) — 出来事の記録 `pro-con log` (dispatcher の判断を構造化して残し、外から読む)。**444 で解消** (2026-09-25。画面の側の出来事は 445 へ)
+- [481](481-feat-pro-con-shared-read-write-screen.md) — 共同で読み書きする画面 `pro-con --join` (閉じても dispatcher と PG を止めない)。**481 で解消** (2026-09-26。カード C-039)
+- [496](../pending/496-feat-pro-con-show-other-screens-selection.md) — ほかの画面が選んでいるカードを薄い印で出す (481 から切り出し。保留: 使うのは人 1 人と Claude だけ)
+- [445](445-risk-pro-con-viewer-read-only-guarantee.md) — 読み取りだけであることの担保と、見せる範囲。**445 で解消** (2026-09-25。カード C-009: 画面の出来事を dispatcher 経由で events.jsonl へ・`--view` の案内から断る操作を外す・読む口は socket の逃がし先の権限を直さない)
 
 ## 関連
 
