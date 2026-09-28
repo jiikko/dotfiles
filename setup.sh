@@ -12,7 +12,7 @@ fi
 
 set -o pipefail
 
-# git hook を repo 管理の githooks/ から読ませる (中身は githooks/pre-commit のコメント)。
+# git hook を repo 管理の githooks/ から読ませる (中身は githooks/ の各 hook の冒頭のコメント)。
 # .git/hooks は repo 管理外でマシンごとに消えるため、setup で毎回張り直す。
 if git -C ~/dotfiles rev-parse --git-dir >/dev/null 2>&1; then
   git -C ~/dotfiles config core.hooksPath githooks

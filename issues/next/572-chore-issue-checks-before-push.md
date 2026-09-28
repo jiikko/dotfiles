@@ -1,1 +1,0 @@
-../572-chore-issue-checks-before-push.md

@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+# issues/ を触る push で、issue の整合検査 (tests/issues/ のうち repo の状態を見るもの) を回し、
+# 落ちたら push を止める (issue 572)。有効化は setup.sh の `git config core.hooksPath githooks`。
+#
+# - 検査するのは **push する commit のスナップショット** (一時 index に読んで書き出したもの)。作業ツリーは
+#   見ない: 共有の working tree は他のセッションの未コミット変更で汚れていて、検査したものと
+#   push するものが食い違う
+# - issues/ を触らない push では回さない。既に master で壊れていても、無関係の push は止めない
+# - issues/ を触る push では、**壊したのが今回の push でなくても止める**。赤を「無関係」として
+#   積み増した結果 master が半日赤いままだった (issue 572) ので、issue を触る人に直してもらう
+# - issues/ の外のファイルを消す・動かすだけの push では、リンクを見る検査 (LINK_CHECKS) だけを回す
+#   (issue の本文は docs/ や _claude/ を相対で指しているので、リンク先を動かすとリンクが切れる)。
+#   全部を回すと、master が別の理由で赤い間は src/ の rename まで止めてしまう
+# - web・別の環境・`--no-verify` から入る push は止められない。そこは CI が最後の網
+#
+# 脅威モデル: 止めるのはうっかり壊した issue を push すること。意図的な迂回は相手にしない。
+# 検出しない形 (意図的):
+#   - 同じ push で tests/issues/ の検査そのものを弱める (スナップショットの中の検査を回すため。
+#     CI も同じ tree の検査を回すので、そこは review の責務)
+#   - 既に remote に在る壊れた commit を、新しい ref で指すだけの push (壊したのはその commit の push で、
+#     CI も既に赤い)
+set -uo pipefail
+unset CDPATH
+
+# 回す検査。repo の状態を見る速いもの (合計 6 秒前後)
+CHECKS=(
+  test_issue_numbers_unique
+  test_issue_links_valid
+  test_next_links_valid
+  test_next_claims_have_banner
+  test_human_issues_have_deadline
+  test_issue_path_refs_not_stale
+)
+# issues/ の外の削除・移動だけの push で回すもの (CHECKS の部分集合)
+LINK_CHECKS=(
+  test_issue_links_valid
+  test_issue_path_refs_not_stale
+)
+# 回さない tests/issues/ の検査 (道具自身のテストで、repo の状態を見ない)。
+# CHECKS とこの一覧の和が tests/issues/test_*.sh と一致することを tests/githooks/test_pre_push.sh が見る
+EXCLUDED=(
+  test_issue_done
+  test_issue_number_drafts
+  test_next_claims_have_banner_fixtures
+)
+
+if [ "${1:-}" = "--list-checks" ]; then
+  printf 'check %s\n' "${CHECKS[@]}"
+  printf 'excluded %s\n' "${EXCLUDED[@]}"
+  printf 'link %s\n' "${LINK_CHECKS[@]}"
+  exit 0
+fi
+
+zero=0000000000000000000000000000000000000000
+remote_name="${1:-origin}"
+
+# check_mode は `--name-status` の出力 (タブ区切り) を読み、issues/ を触るなら full、issues/ の外の
+# ファイルを消す・動かすだけなら links、どちらでもなければ none を出す
+check_mode() {
+  # `"`・`\`・タブ・制御文字を含む名前は `"issues/..."` とクォートされるので、先頭の `"` を剥がして見る
+  awk -F '\t' '
+    { sub(/^"/, "", $2); sub(/^"/, "", $3) }
+    $2 ~ /^issues\// || $3 ~ /^issues\// { full = 1 }
+    $1 ~ /^[DR]/ { links = 1 }
+    END { print (full ? "full" : (links ? "links" : "none")) }'
+}
+
+# stdin: <local ref> <local sha> <remote ref> <remote sha> (ref ごとに 1 行)
+targets=() # <sha>:<full|links>
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  [ -n "${local_sha:-}" ] || continue
+  [ "$local_sha" = "$zero" ] && continue # ref の削除
+  if [ "$remote_sha" != "$zero" ] && git cat-file -e "${remote_sha}^{commit}" 2>/dev/null; then
+    # commit ごとの log ではなく両端の tree を比べる。log は merge commit の中の変更を出さず、
+    # 巻き戻しの force push では範囲が空になる (敵対的レビュー P1)
+    changes=$(git diff --name-status -M "$remote_sha" "$local_sha") || changes="? unknown"
+  else
+    # 新しい ref / 手元に無い remote の commit: remote の既知の ref に無い commit で判定し、
+    # 取れなければ回す (判定不能は検査する側へ倒す)
+    changes=$(git log --format= --name-status -M --diff-merges=first-parent "$local_sha" --not --remotes="$remote_name") ||
+      changes="? unknown"
+  fi
+  case "$changes" in "? unknown") mode=full ;; *) mode=$(printf '%s\n' "$changes" | check_mode) ;; esac
+  [ "$mode" = none ] || targets+=("$local_sha:$mode")
+done
+
+if [ "${#targets[@]}" -eq 0 ]; then
+  echo "pre-push: issues/ を触らず、ファイルの削除・移動も無い push なので issue の整合検査は省略" >&2
+  exit 0
+fi
+
+tmp=$(mktemp -d) || { echo "pre-push: ✗ 一時ディレクトリを作れない" >&2; exit 1; }
+trap 'rm -rf "$tmp"' EXIT
+
+# 検査スクリプトは自分の置き場所を repo root にする。push 中の hook が継承する GIT_DIR 等が
+# 残っていると、検査の中の git が展開先ではなくこの repo を見るので落とす
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
+
+failed=0
+seen=" "
+for target in "${targets[@]}"; do
+  case "$seen" in *" $target "*) continue ;; esac
+  seen="$seen$target "
+  sha=${target%%:*}
+  if [ "${target##*:}" = full ]; then
+    checks=("${CHECKS[@]}")
+    why="issues/ を触る push"
+  else
+    checks=("${LINK_CHECKS[@]}")
+    why="issues/ の外のファイルを消す・動かす push"
+  fi
+  snap="$tmp/${sha:0:12}-${target##*:}"
+  mkdir -p "$snap"
+  # git archive は使わない: export-ignore の attributes (.gitattributes / .git/info/attributes) で
+  # 検査からファイルが消える (敵対的レビュー P2)。一時 index に読んで書き出す
+  if ! { GIT_INDEX_FILE="$tmp/index" git read-tree "$sha" &&
+    GIT_INDEX_FILE="$tmp/index" git checkout-index -a -f --prefix="$snap/"; }; then
+    echo "pre-push: ✗ ${sha:0:12} を展開できない (判定不能なので止める)" >&2
+    failed=1
+    continue
+  fi
+  echo "pre-push: $why なので issue の整合検査を ${#checks[@]} 本回す (${sha:0:12})" >&2
+  for c in "${checks[@]}"; do
+    script="$snap/tests/issues/$c.sh"
+    if [ ! -f "$script" ]; then
+      echo "pre-push: ✗ $c が push する commit に無い (判定不能なので止める)" >&2
+      failed=1
+      continue
+    fi
+    if (cd / && bash "$script") >"$tmp/$c.log" 2>&1; then
+      echo "pre-push:   ✓ $c" >&2
+    else
+      echo "pre-push:   ✗ $c" >&2
+      sed 's/^/    /' "$tmp/$c.log" >&2
+      failed=1
+    fi
+  done
+done
+
+if [ "$failed" -ne 0 ]; then
+  cat >&2 <<'EOF'
+pre-push: ✗ issue の整合検査が落ちたので push を止めた。
+  上の出力の「直し方」に従って直し、commit してから push し直すこと。
+  今回の push が壊したものでなくても止まる (issue を触る push では直してから出す。issue 572)
+EOF
+  exit 1
+fi

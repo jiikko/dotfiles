@@ -49,7 +49,9 @@
 set -euo pipefail
 unset CDPATH
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# 実パスで持つ: 下の件数の下限は `pwd -P` と比べるので、論理パス (macOS の /var → /private/var、
+# symlink 越しの checkout) だと一致せず、下限が黙って外れる (issue 572 の敵対的レビュー)
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 cd "$ROOT_DIR" || exit 1
 
 issues_dir="${1:-issues}"

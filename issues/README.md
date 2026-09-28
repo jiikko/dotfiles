@@ -21,6 +21,8 @@ git fetch origin
   `scripts/issue_number_drafts.sh` で番号を付ける**（issue 530。手順は `src/pro-con/integrator-guide.md` の役目 2）
 - **番号の一意性は `tests/issues/test_issue_numbers_unique.sh` が検査する**（`make test` に自動発見で含まれる）。
   2026-08-28 に 127 と 133 が同時に衝突していたのを人手で見つけたのが起点
+- **`issues/` を触る push では `githooks/pre-push` が同じ検査 (と相対リンクの検査など) を回し、落ちたら止める**（issue 572）。
+  web など hook を通らない入口は止まらないので、CI の赤は「無関係」として積み増さずに直す
 - 並行セッションと同時に採番するときは、番号を取る前に一声かける。衝突したら**参照の少ない側を空き番号へ寄せる**
   （`grep -rn '<番号>'` と `git log --grep='issue <番号>'` の両方を数え、commit message から参照されている側は
   動かさない）。改番したファイルの冒頭に「旧番号の話ならこの issue」と注記を残す（実例: 135 と 136）

@@ -1,7 +1,5 @@
 # 572 (chore): issue の整合検査 (番号の一意性・相対リンク) を push の前に止める
 
-> 🚨 **担当中: dotfiles-f9**（2026-09-28〜）
-
 起票日: 2026-09-28
 
 ## 概要
@@ -47,10 +45,11 @@
 
 ## 受け入れ条件
 
-- [ ] `issues/` を触る push で、番号の重複 / 相対リンク切れがあると push が止まる (fixture で番号を重複させて確かめる)
-- [ ] `issues/` を触らない push では検査を回さない (待ち時間を増やさない)
-- [ ] 検査が走ったことが出力に出る (skip も skip と出る)
-- [ ] pre-push を足したことを `README.md` の githooks の節に書く
+- [x] `issues/` を触る push で、番号の重複 / 相対リンク切れがあると push が止まる (fixture で番号を重複させて確かめる)
+- [x] `issues/` を触らない push では検査を回さない (待ち時間を増やさない)
+- [x] 検査が走ったことが出力に出る (skip も skip と出る)
+- [x] pre-push を足したことを `README.md` の githooks の節に書く
+- [ ] 対応方針 2 (pending / waiting / next 行きの移動もリンクの張り直しと 1 組にする) — 未着手
 
 ## 関連ファイル
 
@@ -62,3 +61,35 @@
 ## 進捗
 
 - 2026-09-28: 起票。反証レビュー (sonnet 1 体、読み取り専用): 事実の主張はすべて裏が取れた (commit・author・時刻・引用・「pre-push は無い」)。P3 1 件 (issue_done.sh の分岐は移動元の判定であり、移動先ではない。書き方を明確にした) を反映
+- 2026-09-28: 対応方針 1 を実装 (commit「githooks: issues/ を触る push で issue の整合検査を回して止める pre-push を足す (572)」)
+  - `githooks/pre-push`: push する commit を一時 index に読んで書き出し、`tests/issues/` の 6 本を回す。
+    issues/ を触る push では全部、issues/ の外の削除・移動だけの push ではリンク系 2 本だけ。どちらも無い push は省略と出して通す。
+    「壊したのが今回でなくても止める」を選んだ (issue を触る push に限る。無関係の push は止めない)
+  - `tests/githooks/test_pre_push.sh` (13 ケース、約 50 秒): repo の HEAD のスナップショットから使い捨て repo と bare の remote を作り、実際に push する
+  - `tests/issues/test_issue_links_valid.sh`: ROOT_DIR を `pwd -P` に。件数の下限の判定が `pwd -P` と比べていたので、
+    論理パス (macOS の `/var` → `/private/var`、symlink 越しの checkout) では下限が黙って外れていた
+  - README.md / issues/README.md / setup.sh のコメントに pre-push を書いた
+
+## 結果
+
+- 変異検証 (`bin/mutate-verify`。全部、狙ったケースだけが red): 触ったかの判定を常に偽 / 常に真・検査対象を作業ツリーにする・
+  落ちても exit 0・CHECKS からリンク検査を抜く・一覧から 1 本抜く・tree の差分を旧 log 方式に戻す・展開を `git archive` に戻す・
+  D/R のトリガーを外す・links のときも全部回す・リンク検査の ROOT_DIR を `pwd` に戻す
+  - 🚨 最後の 1 本は初回 green (rc=6)。テストが HEAD から作った fixture の中の検査を写していて、作業ツリーの変異が届いていなかった。作業ツリーの検査を写す形に直して red
+  - 「落ちても exit 0」は mutate-verify の差分表示が途中で切れて一部のケースが見えなかったので、使い捨て worktree で手で当てて全出力を確かめた
+- 敵対的レビュー (opus、観点を分けて 1 体ずつ 3 周):
+  - 1 周目 (素通り): P1 merge commit の中だけの変更が `git log --name-only` に出ず素通り → 両端の tree の `git diff` に変更 /
+    P2 export-ignore の attributes で `git archive` からファイルが消える → read-tree + checkout-index に変更 /
+    P2 issue がリンクしている issues/ の外のファイルを動かしても回らない → 削除・移動でも回す / P2 巻き戻しの force push → tree の差分で解消
+  - 2 周目 (回帰): P2 削除・移動で全部回すと master が赤い間は src/ の rename まで止まる → リンク系 2 本だけに / P3 展開先で件数の下限が効かない → 上の `pwd -P`
+  - 3 周目 (2 周目の修正): P3 テスト 11 が実パスの TMPDIR では空振り → symlink の置き場を作り前提を assert /
+    P3 `"` 等を含む名前は `"issues/..."` とクォートされて full から links に落ちる → 先頭の `"` を剥がす (実際の git の出力で確認)。
+    修正は判定ロジックを増やさず直接の実測で確認したので、4 周目は回していない
+  - 壊せなかった (実測): worktree からの push・本物の index を汚さない・2 つの worktree から同時に push・一時ファイルの残骸・SIGINT / SIGTERM・symlink の issue・5145 commit の範囲で 0.155 秒
+- 検出しない形 (hook 冒頭に書いた。採らなかった指摘): 同じ push で検査スクリプト自体を弱める / 既に remote に在る壊れた commit を新しい ref で指すだけの push。
+  どちらも脅威モデル (うっかり壊した issue の push) の外で、CI も同じ tree を見るので review の責務
+
+## 残タスク
+
+- 未着手: 対応方針 2 (pending / waiting / next への移動もリンクの張り直しと 1 組にする)。今は pre-push で止まってから手で直す往復が残る
+- 未検証: 別のマシン (setup.sh を回していない / `core.hooksPath` が無い) では hook が効かない。そこは CI が網

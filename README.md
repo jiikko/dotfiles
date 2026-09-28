@@ -29,6 +29,9 @@ cd dotfiles
 - `pre-commit`: ステージした差分に、成人向けを匂わせる語や作品番号の書式がないかを civility-lint
   (dotfiles の外にある private repo のツール) で検査する。本体が無いマシンでは警告だけ出して通す。
   誤検出を 1 行だけ通すなら、その行に `civility-lint:ignore` を書く
+- `pre-push`: `issues/` を触る push のときだけ、push する commit を展開して issue の整合検査
+  (番号の一意性・相対リンク・next の目印など `tests/issues/` の 6 本。数秒) を回し、落ちたら止める。
+  今回の push が壊したものでなくても止まる。回す検査と外す検査の一覧は hook の冒頭にある
 
 ## Testing
 
