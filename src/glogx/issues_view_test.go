@@ -2413,6 +2413,7 @@ func newBodyKeyEnv(t *testing.T) *bodyKeyEnv {
 		t.Fatal(err)
 	}
 	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: rel, Number: "001", Category: "feat"})
+	v.root = dir                 // Tab (ジャンプモード) は「repo の中」の範囲が決まらないとパスを開かない (fail-closed)
 	v.handleKey("enter", vp(10)) // 本文モードへ
 	if v.open == nil {
 		t.Fatal("本文モードに入れていない")
