@@ -289,9 +289,9 @@ func TestResolveLinkOtherCheckoutSymlink(t *testing.T) {
 func TestWorktreeRoots(t *testing.T) {
 	// 🚨 hook から起動されたときに継承した GIT_DIR / GIT_WORK_TREE は -C / Dir より優先されるので外す
 	for _, k := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"} {
-		if v, ok := os.LookupEnv(k); ok {
-			os.Unsetenv(k)
-			t.Cleanup(func() { os.Setenv(k, v) })
+		t.Setenv(k, "") // 終了時に元へ戻す登録 (t.Setenv が持つ)
+		if err := os.Unsetenv(k); err != nil {
+			t.Fatal(err)
 		}
 	}
 	main := realTempDir(t)
