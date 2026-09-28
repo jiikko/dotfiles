@@ -210,7 +210,8 @@ func Usage() string {
                             N 次に採番すべき番号コピー / n 次にやる目印 (next/ に symlink) /
                             a done も表示 / u 本文中の URL ピッカー (本文表示中のみ) /
                             Tab 本文中のファイルパスのジャンプ (本文表示中のみ。j・k で選び
-                            Enter で nvim -R、e で編集、y でパスコピー、Esc で戻る) /
+                            Enter で開く (.md は viewer 内に積んで h で戻る、他は nvim -R)、
+                            e で編集、y でパスコピー、Esc で戻る) /
                             J・K 本文を開いたまま次・前の issue へ (本文表示中のみ) /
                             e・v $VISUAL・$EDITOR で開く (既定 nvim) /
                             r 再読込 /

@@ -1,6 +1,7 @@
 package issues
 
 import (
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -51,6 +52,7 @@ type linkTarget struct {
 	path string
 	line int
 	ok   bool
+	dir  bool
 }
 
 // checkboxRe はチェックボックス行。parse.go の LoadMeta から Body へ移した
@@ -144,19 +146,33 @@ func (b *Body) FileLinks(width int, repos []string) []FileLink {
 	}
 	out := make([]FileLink, 0, len(links))
 	for i, l := range links {
-		k := linkKey{l.Kind, l.Dest, repo}
-		t, seen := b.resolved[k]
-		if !seen {
-			base := b.base
-			base.Repos = repos
-			p, line, ok := ResolveLink(l.Kind, l.Dest, base)
-			t = linkTarget{p, line, ok}
-			b.resolved[k] = t
-		}
-		if !t.ok || len(l.Segs) == 0 {
+		if len(l.Segs) == 0 {
 			continue
 		}
-		out = append(out, FileLink{Index: i, Kind: l.Kind, Dest: l.Dest, Path: t.path, Line: t.line, Top: l.Segs[0].Line})
+		dests := []string{l.Dest}
+		if l.Kind == markdown.LinkCode {
+			dests = ExpandBraces(l.Dest) // `x.{sql,tsv}` は展開したそれぞれに止まる (同じ強調を共有する)
+		}
+		for _, d := range dests {
+			k := linkKey{l.Kind, d, repo}
+			t, seen := b.resolved[k]
+			if !seen {
+				base := b.base
+				base.Repos = repos
+				p, line, ok := ResolveLink(l.Kind, d, base)
+				t = linkTarget{path: p, line: line, ok: ok}
+				if ok {
+					if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+						t.dir = true
+					}
+				}
+				b.resolved[k] = t
+			}
+			if !t.ok {
+				continue
+			}
+			out = append(out, FileLink{Index: i, Kind: l.Kind, Dest: d, Path: t.path, Line: t.line, Dir: t.dir, Top: l.Segs[0].Line})
+		}
 	}
 	b.fileLinks, b.fileLinksW, b.fileLinksRepo, b.fileLinksOK = out, width, repo, true
 	return out

@@ -4,10 +4,13 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"glogx/issues"
+	"tuikit/anim"
 )
 
 // jumpEnv は repo root + issues/ + 実在するファイルを持つ本文を開いた viewer。
@@ -123,9 +126,96 @@ func TestLinkJumpEnterOpensReadonly(t *testing.T) {
 	}
 	// 行番号の無いリンクは +N を付けない
 	e.press("j")
+	e.press("j") // src/b.go (docs/spec.md は .md なので viewer 内で開く。別のテスト)
 	e.v.handleKey("enter", vp(10))
-	if args, want := (*cmds)[1].Args, []string{"nvim", "-R", "--", e.path("docs/spec.md")}; !slices.Equal(args, want) {
+	if args, want := (*cmds)[1].Args, []string{"nvim", "-R", "--", e.path("src/b.go")}; !slices.Equal(args, want) {
 		t.Fatalf("起動コマンド %q (want %q)", args, want)
+	}
+}
+
+// .md は viewer の本文 pager に積んで開き、h/Esc で元の本文・位置・選択へ戻る (nvim は起動しない)。
+func TestLinkJumpMarkdownOpensInViewerAndPops(t *testing.T) {
+	cmds := stubEditorCapture(t)
+	e := newJumpEnv(t, "# 001\n\n{filler}[仕様](../docs/spec.md) と `src/a.go`\n")
+	if err := os.WriteFile(e.path("docs/spec.md"), []byte("# spec\n\n`src/b.go` を見る\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e.press("tab")
+	before := e.v.bodyPager.Offset
+	issuePath := e.v.open.Path
+	e.v.handleKey("enter", vp(10))
+	if len(*cmds) != 0 {
+		t.Fatalf(".md で nvim を起動した: %v", (*cmds)[0].Args)
+	}
+	if e.v.open.Path != e.path("docs/spec.md") || len(e.v.docStack) != 1 || e.v.linkJump.active {
+		t.Fatalf("doc が積まれていない: open=%q stack=%d jump=%v", e.v.open.Path, len(e.v.docStack), e.v.linkJump.active)
+	}
+	if out := strings.Join(e.v.lines(renderOpts(20)), "\n"); !strings.Contains(out, "001-feat-jump.md へ戻る") {
+		t.Fatalf("ヘッダーに戻り先が出ない:\n%s", out)
+	}
+	// doc の中でもジャンプできる (インラインコードの基準は元の issue のプロジェクト root)
+	e.press("tab")
+	if l, ok := e.selected(t); !ok || l.Path != e.path("src/b.go") {
+		t.Fatalf("doc の中のジャンプ: %+v ok=%v", l, ok)
+	}
+	e.press("esc") // ジャンプを抜ける
+	e.press("h")   // doc から戻る
+	if e.v.open == nil || e.v.open.Path != issuePath || len(e.v.docStack) != 0 {
+		t.Fatalf("元の本文へ戻らない: open=%v stack=%d", e.v.open, len(e.v.docStack))
+	}
+	if e.v.bodyPager.Offset != before || !e.v.linkJump.active {
+		t.Fatalf("戻ったとき位置・選択が戻らない: offset %d→%d jump=%v", before, e.v.bodyPager.Offset, e.v.linkJump.active)
+	}
+	if l, _ := e.selected(t); l.Path != e.path("docs/spec.md") {
+		t.Fatalf("戻ったときの選択が違う: %q", l.Path)
+	}
+	e.press("esc")
+	e.press("h") // もう戻る段が無いので本文を閉じる
+	if e.v.drawer.phase() != anim.Closing && e.v.open != nil {
+		t.Fatal("底の本文で h を押しても閉じない")
+	}
+}
+
+// doc を開いたまま再スキャン (見張り) が来ても、底の issue で照合するので畳まれない。画面の記憶も底の issue。
+func TestLinkJumpDocSurvivesRescanAndScreenSavesRoot(t *testing.T) {
+	e := newJumpEnv(t, "# 001\n\n[仕様](../docs/spec.md)\n")
+	issuePath := e.v.open.Path
+	e.press("tab")
+	e.v.handleKey("enter", vp(10))
+	if len(e.v.docStack) != 1 {
+		t.Fatal("前提: doc が積まれていない")
+	}
+	e.v.rebindOpen(issuePath)
+	if e.v.open == nil || e.v.open.Path != e.path("docs/spec.md") || e.v.docStack[0].open.Path != issuePath {
+		t.Fatalf("再スキャンで doc が畳まれた / 底がずれた: open=%v", e.v.open)
+	}
+	if s, ok := e.v.screen(time.Now()); !ok || s.Open != issuePath {
+		t.Fatalf("画面の記憶が底の issue でない: %+v ok=%v", s, ok)
+	}
+}
+
+// #L12 で開いた doc はその行を窓に入れる。ディレクトリは nvim -R で開く。
+func TestLinkJumpDocLineAndDirectory(t *testing.T) {
+	cmds := stubEditorCapture(t)
+	e := newJumpEnv(t, "# 001\n\n[仕様](../docs/spec.md#L40) と `src/`\n")
+	var b strings.Builder
+	for i := 1; i <= 60; i++ {
+		b.WriteString("行 " + strconv.Itoa(i) + "\n\n")
+	}
+	if err := os.WriteFile(e.path("docs/spec.md"), []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e.press("tab")
+	e.v.handleKey("enter", vp(10))
+	out := strings.Join(e.v.lines(renderOpts(20)), "\n")
+	if !strings.Contains(out, "行 20") || strings.Contains(out, "行 1\n") {
+		t.Fatalf("#L40 の行へ送られていない:\n%s", out)
+	}
+	e.press("h") // 戻るとジャンプの選択 (spec.md) も戻る
+	e.press("j") // src/
+	e.v.handleKey("enter", vp(10))
+	if len(*cmds) != 1 || !slices.Equal((*cmds)[0].Args, []string{"nvim", "-R", "--", e.path("src")}) {
+		t.Fatalf("ディレクトリを nvim -R で開かない: %v", *cmds)
 	}
 }
 

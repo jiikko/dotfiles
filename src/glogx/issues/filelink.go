@@ -19,11 +19,13 @@ import (
 // 本文に書かれたパスは repo root から実在するものが半分以下で、基準が repo root / issue の
 // ディレクトリ / 別の場所で揺れる。そこで
 //   - **実在する通常ファイルに解決できたものだけ**をリンクにする (外れるものは画面で強調もしない)
-//   - **基準は種類ごとに 1 つだけ**試す。markdown リンクの dest はそのファイルのディレクトリ
-//     (markdown の意味論。scripts/issue_done.sh が done/ へ移すとき張り直すのもこの基準)、
-//     インラインコードは **その issue ディレクトリの親** (= プロジェクトの root。root/issues なら
-//     repo root、root/app1/issues なら root/app1)。repo root に固定すると、root/*/issues を持つ
-//     repo で兄弟プロジェクトの同名ファイルを開く。両方の基準を試すと同名の別ファイルを開きうる
+//   - **基準は順序つきで決める**。markdown リンクの dest は、まずそのファイルのディレクトリ
+//     (markdown の意味論。scripts/issue_done.sh が done/ へ移すとき張り直すのもこの基準)、そこに
+//     無ければ **その issue ディレクトリの親** (= プロジェクトの root)。後者は `[x](issues/epic/…)` のように
+//     repo root 起点でリンクを書く repo が実在するため (ubiregi-server。2026-09-28 ユーザー要望)。
+//     両方に実在するときは前者を優先し、どちらを開くかはヘッダーの 2 行目 (解決した先) で見せる。
+//     インラインコードはプロジェクトの root だけ (root/issues なら repo root、root/app1/issues なら
+//     root/app1)。repo root に固定すると、root/*/issues を持つ repo で兄弟プロジェクトの同名ファイルを開く
 //   - **相対パスで書かれたものは、symlink を解いた実体が repo の中に在ること**を要求する (realOutsideRepo)。
 //     PR で `docs/x.md -> ~/.ssh/id_ed25519` の symlink と本文の `docs/x.md` を足されると、画面には
 //     無害な名前だけが出たまま repo 外を開かされる (discover.go の hasMarkdown が symlink を拒否して
@@ -40,6 +42,7 @@ type FileLink struct {
 	Path  string // 開く対象の絶対パス
 	Line  int    // 行番号の指定 (`foo.go:12` / `foo.md#L12`)。0 = なし
 	Top   int    // 最初のセグメントの表示行 (選択をスクロールで見せるため)
+	Dir   bool   // ディレクトリ (nvim -R がファイラーとして開く)
 }
 
 // LinkBase は相対パスの基準 (ResolveLink の doc)。
@@ -53,6 +56,24 @@ type LinkBase struct {
 	Repos []string
 }
 
+// braceRe は波括弧の展開 1 組 (`x.{sql,tsv}`)。入れ子と 2 組以上は展開しない (シェルの全機能は要らない。
+// 本文で実際に使われているのは 1 組だけ)。
+var braceRe = regexp.MustCompile(`^([^{}]*)\{([^{}]*,[^{}]*)\}([^{}]*)$`)
+
+// ExpandBraces は波括弧 1 組を展開する (`a.{x,y}` → `a.x`, `a.y`)。展開しないものはそのまま 1 つ返す。
+func ExpandBraces(s string) []string {
+	m := braceRe.FindStringSubmatch(s)
+	if m == nil {
+		return []string{s}
+	}
+	parts := strings.Split(m[2], ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		out = append(out, m[1]+p+m[3])
+	}
+	return out
+}
+
 // codeLineRe はインラインコードの末尾の行番号 (`path:12` / `path:12:3`)。
 var codeLineRe = regexp.MustCompile(`^(.+?):([1-9][0-9]{0,6})(?::[0-9]+)?$`)
 
@@ -60,38 +81,61 @@ var codeLineRe = regexp.MustCompile(`^(.+?):([1-9][0-9]{0,6})(?::[0-9]+)?$`)
 var fragLineRe = regexp.MustCompile(`^L([1-9][0-9]{0,6})(?:-L?[0-9]+)?$`)
 
 // ResolveLink は本文のリンク候補を開く対象へ解決する。ok=false はリンクにしない
-// (実在しない・パスでない・通常ファイルでない・相対パスの実体が repo の外)。
+// (実在しない・パスでない・通常ファイルでもディレクトリでもない・相対パスの実体が repo の外)。
+// 相対パスは linkPath が返す基準を順に試し、最初に解決できたものを採る。
 func ResolveLink(kind markdown.LinkKind, dest string, b LinkBase) (path string, line int, ok bool) {
-	p, line, base, ok := linkPath(kind, dest, b)
+	p, line, bases, ok := linkPath(kind, dest, b)
 	if !ok {
 		return "", 0, false
 	}
+	if len(bases) == 0 || filepath.IsAbs(p) || strings.HasPrefix(p, "~/") {
+		bases = []string{""}
+	}
+	for _, base := range bases {
+		real, ok := resolveFrom(p, base, b)
+		if !ok {
+			continue
+		}
+		// ディレクトリは `/` を含む書き方 (`census/raw/`) のときだけ止まり先にする。単語 1 つのコードスパン
+		// (`config` / `client`) が同名のディレクトリに当たって光ると、本文の大半の語がリンクに見える
+		// (ubiregi-server 188 で実測: `config` `client` が当たった)
+		if fi, err := os.Stat(real); err == nil && fi.IsDir() && !strings.Contains(p, "/") {
+			continue
+		}
+		return real, line, true
+	}
+	return "", 0, false
+}
+
+// resolveFrom は 1 つの基準で p を解決する (base="" は絶対パス / `~/` 専用)。
+func resolveFrom(p, base string, b LinkBase) (string, bool) {
 	relative := false
 	switch {
 	case filepath.IsAbs(p):
 	case strings.HasPrefix(p, "~/"):
 		home, err := os.UserHomeDir()
 		if err != nil || home == "" {
-			return "", 0, false
+			return "", false
 		}
 		p = filepath.Join(home, p[2:])
 	case base == "":
-		return "", 0, false
+		return "", false
 	default:
 		p, relative = filepath.Join(base, p), true
 	}
 	if len(b.Repos) == 0 {
-		return "", 0, false // 外へ出たかを判定できない (fail-closed)
+		return "", false // 外へ出たかを判定できない (fail-closed)
 	}
-	if fi, err := os.Stat(p); err != nil || !fi.Mode().IsRegular() {
-		return "", 0, false
+	// ディレクトリも止まり先にする (nvim -R がファイラーとして開く。`census/raw/` のような言及が実在する)
+	if fi, err := os.Stat(p); err != nil || !(fi.Mode().IsRegular() || fi.IsDir()) {
+		return "", false
 	}
 	// 🚨 開く対象は解いた実体にする (書いたパスを nvim に渡すと、判定の後に kernel が別の解き方をする余地が残る)
 	real, escapes := realOutsideRepo(p, b.Repos, relative)
 	if escapes {
-		return "", 0, false
+		return "", false
 	}
-	return real, line, true
+	return real, true
 }
 
 // realOutsideRepo は p を開いたときの実体と、それが repo の外へ出てはいけないのに出ているかを返す。
@@ -193,11 +237,11 @@ func resolveObserving(p string, inRepo func(string) bool) (real string, touched,
 }
 
 // linkPath は dest からパス部分・行番号・相対パスの基準を取り出す (ファイルシステムは見ない)。
-func linkPath(kind markdown.LinkKind, dest string, b LinkBase) (p string, line int, base string, ok bool) {
+func linkPath(kind markdown.LinkKind, dest string, b LinkBase) (p string, line int, bases []string, ok bool) {
 	dest = strings.TrimSpace(dest)
 	// 🚨 制御文字を含むものはパスとして扱わない。画面 (ヘッダー) に出す値でもあり、nvim の引数でもある
 	if dest == "" || strings.ContainsFunc(dest, unicode.IsControl) {
-		return "", 0, "", false
+		return "", 0, nil, false
 	}
 	switch kind {
 	case markdown.LinkDest:
@@ -205,18 +249,18 @@ func linkPath(kind markdown.LinkKind, dest string, b LinkBase) (p string, line i
 		if rest, ok := strings.CutPrefix(dest, "<"); ok {
 			end := strings.IndexByte(rest, '>')
 			if end < 0 {
-				return "", 0, "", false
+				return "", 0, nil, false
 			}
 			// 閉じた後ろは空白 (title) か終わりだけ。`<a>b` は CommonMark ではリンクにならない形
 			if after := rest[end+1:]; after != "" && after[0] != ' ' && after[0] != '\t' {
-				return "", 0, "", false
+				return "", 0, nil, false
 			}
 			dest = rest[:end]
 		} else if i := strings.IndexAny(dest, " \t"); i >= 0 {
 			dest = dest[:i]
 		}
 		if strings.HasPrefix(dest, "#") || strings.Contains(dest, "://") || strings.HasPrefix(dest, "mailto:") {
-			return "", 0, "", false
+			return "", 0, nil, false
 		}
 		if i := strings.IndexByte(dest, '#'); i >= 0 {
 			if m := fragLineRe.FindStringSubmatch(dest[i+1:]); m != nil {
@@ -232,22 +276,29 @@ func linkPath(kind markdown.LinkKind, dest string, b LinkBase) (p string, line i
 		}
 		// 🚨 解いた後にもう一度見る (`%1b` / `%0a` は上の判定を素通りして制御文字に戻る)
 		if strings.ContainsFunc(dest, unicode.IsControl) {
-			return "", 0, "", false
+			return "", 0, nil, false
 		}
 		if b.File == "" {
-			return "", 0, "", false
+			return "", 0, nil, false
 		}
-		return dest, line, filepath.Dir(b.File), dest != ""
+		bases = []string{filepath.Dir(b.File)}
+		if b.Project != "" && b.Project != bases[0] {
+			bases = append(bases, b.Project)
+		}
+		return dest, line, bases, dest != ""
 	case markdown.LinkCode:
 		if strings.ContainsFunc(dest, unicode.IsSpace) {
-			return "", 0, "", false // コマンドや文 (`git log -1`) はパスでない
+			return "", 0, nil, false // コマンドや文 (`git log -1`) はパスでない
 		}
 		if m := codeLineRe.FindStringSubmatch(dest); m != nil {
 			dest = m[1]
 			line, _ = strconv.Atoi(m[2])
 		}
-		return dest, line, b.Project, true
+		if b.Project == "" {
+			return dest, line, nil, true
+		}
+		return dest, line, []string{b.Project}, true
 	default:
-		return "", 0, "", false
+		return "", 0, nil, false
 	}
 }

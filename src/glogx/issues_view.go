@@ -159,6 +159,12 @@ type issuesView struct {
 	urlPick urlPicker
 	// linkJump は本文中のファイルパスのジャンプモード (Tab。issues_linkjump.go)。zero value = モード外。
 	linkJump linkJump
+	// docStack はジャンプ先の .md を本文 pager で開いたときに下へ積んだ本文 (issue → doc → doc)。
+	// 空 = issue の本文だけ。🚨 空でないとき v.open は issue ではなく doc (一覧に無いパス) なので、
+	// 一覧と照合する処理 (rebindOpen・画面の記憶) は底の issue (rootOpen) を使う。
+	docStack []bodyFrame
+	// docLine は開いた doc で最初に見せたいソース行 (`x.md#L12`)。描画で行が決まってから 1 度だけ使う。
+	docLine int
 	// linkRepos は linkReposRoot (= その時の root) と同じ repo の全 checkout (jumpRepos が遅延で引く)
 	linkRepos     []string
 	linkReposRoot string
@@ -289,7 +295,11 @@ func (v *issuesView) screen(now time.Time) (issuesScreen, bool) {
 	if !v.shown || v.closing || v.root == "" {
 		return issuesScreen{}, false
 	}
-	open := issuePath(v.open)
+	// doc を開いていたら底の issue とその位置を覚える (doc は一覧に無いので、復元の照合で外れる)
+	open, bodyOff := issuePath(v.rootOpen()), v.bodyPager.Offset
+	if len(v.docStack) > 0 {
+		bodyOff = v.docStack[0].offset
+	}
 	if v.drawer.phase() == anim.Closing {
 		open = "" // 閉じる演出の途中 = ユーザーは既に閉じている。開いた状態で復元しない
 	}
@@ -300,7 +310,7 @@ func (v *issuesView) screen(now time.Time) (issuesScreen, bool) {
 		Filter:      v.filter.String(),
 		Cursor:      issuePath(v.current()),
 		Open:        open,
-		BodyOff:     v.bodyPager.Offset,
+		BodyOff:     bodyOff,
 		Groups:      copyExpandedGroups(v.expandedGroups),
 		CursorGroup: v.currentGroupKey(),
 	}, true
@@ -543,7 +553,7 @@ func (v *issuesView) receive(msg issuesScanMsg) tea.Cmd {
 	// 次の編集が来るまで永久に取りこぼす。自分の取り直しを「外部の変化」と誤検出しないのも同じ式で
 	// 満たせる (スキャンは内容を変えないので指紋は動かない)。
 	v.watch.seen, v.watch.pending = msg.fp, ""
-	tab, cursorPath, openPath, markPath := v.currentTab(), issuePath(v.current()), issuePath(v.open), v.markPath()
+	tab, cursorPath, openPath, markPath := v.currentTab(), issuePath(v.current()), issuePath(v.rootOpen()), v.markPath()
 	cursorGroupKey := v.currentGroupKey()
 	pendingCursorPath, pendingMarkPath := v.pendingCursorPath, v.pendingMarkPath
 	pendingMoveStale := v.pendingMoveStale
@@ -765,6 +775,22 @@ func (v *issuesView) rebindOpen(path string) {
 	if path == "" {
 		return
 	}
+	if len(v.docStack) > 0 {
+		// doc を開いている: 一覧と照合するのは底の issue (doc は一覧に無いので、照合すると「見つからない」で畳まれる)
+		doc := v.open
+		v.open = v.docStack[0].open
+		v.rebindOpenIssue(path)
+		if v.open == nil {
+			return // 底の issue が消えた = 本文ごと畳んだ (discardBody が積んだものも捨てている)
+		}
+		v.docStack[0].open, v.open = v.open, doc
+		return
+	}
+	v.rebindOpenIssue(path)
+}
+
+// rebindOpenIssue は rebindOpen の本体 (v.open が issue のとき)。
+func (v *issuesView) rebindOpenIssue(path string) {
 	for _, iss := range v.all {
 		if iss.Path == path {
 			v.open = iss
@@ -1153,6 +1179,7 @@ func (v *issuesView) discardBody() {
 	v.bodyPager.Reset()
 	v.urlPick.close()
 	v.linkJump = linkJump{}
+	v.docStack, v.docLine = nil, 0
 	v.drawer = issuesDrawer{}
 }
 
@@ -1191,6 +1218,7 @@ func (v *issuesView) openIssue(iss *issues.Issue) bool {
 	v.bodyPager.Reset()
 	v.urlPick.close() // 別の issue を開いたら前の URL 一覧を持ち越さない
 	v.linkJump = linkJump{}
+	v.docStack, v.docLine = nil, 0 // 別の issue を開いたら積んだ doc は捨てる (戻り先が別の issue になる)
 	v.drawer.open(timeNow())
 	return true
 }
@@ -1641,6 +1669,9 @@ func (v *issuesView) handleBodyKey(key string, vp issuesViewport, rows int) tea.
 	// viewer だけ Enter が行送りだと同じキーの意味が画面ごとに変わる。
 	// 🚨 pagerScrollKey へ渡す前に捌くこと: あちらは enter を 1 行送りに写す。
 	case "q", "esc", "h", "left", "enter":
+		if v.popDoc() {
+			break // doc を開いていたら 1 段戻る (元の本文へ)
+		}
 		v.closeBody()
 	case "i":
 		// i は本文からも効く (一覧の i と同じ toggle。**s と同じ理由**: --help と README が
@@ -2124,6 +2155,10 @@ func (v *issuesView) bodyHeadLines(width int, colored bool) []string {
 			status += "  " + p
 		}
 	}
+	if len(v.docStack) > 0 {
+		// doc を開いている: issue の状態の代わりに戻り先を出す (状態・進捗は doc には無い)
+		status = "doc  h/Esc: " + sanitizePlainLine(v.docStack[len(v.docStack)-1].open.Rel) + " へ戻る"
+	}
 	if v.linkJump.active && v.body != nil {
 		// ジャンプ中は状態の行を「どこを開くか」に差し替える (行を足すと本文の位置が 1 行ずれる)
 		fl := v.body.FileLinks(v.bodyTextWidth(width), v.jumpRepos())
@@ -2469,6 +2504,10 @@ func (v *issuesView) bodyLines(o issuesRenderOpts) []string {
 	}
 	// 行数は幅で変わる (Body は幅ごとに整形し直す)。描画で確定した行数で論理 offset を収束させる
 	// (理由は listnav.Pager.Clamp の doc)
+	if v.docLine > 0 {
+		v.scrollToSrcLine(v.docLine, rows)
+		v.docLine = 0
+	}
 	v.bodyPager.Clamp(len(lines), rows)
 	offset := v.bodyPager.DrawOffset(len(lines), rows)
 	end := min(offset+rows, len(lines))
@@ -2533,7 +2572,7 @@ func (v *issuesView) hint(width int) string {
 		// ジャンプ中は j/k がスクロールでなくリンクの移動になる (本文 pager の案内を残すと嘘になる)
 		return fitHintItems(width, []hintItem{
 			{"j/k: 選ぶ", 2},
-			{"Enter: 読み取り専用で開く", 2},
+			{"Enter: 開く (md は中で)", 2},
 			{"e: 編集", 4},
 			{"y: パス", 4},
 			{"Esc: 戻る", 1},

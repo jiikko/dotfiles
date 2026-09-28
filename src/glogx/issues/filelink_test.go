@@ -116,16 +116,20 @@ func TestResolveLink(t *testing.T) {
 		{"リンクはファイル基準", markdown.LinkDest, "../../docs/spec.md", "docs/spec.md", 0},
 		{"fragment と title を落とす", markdown.LinkDest, `../../docs/spec.md#sec "t"`, "docs/spec.md", 0},
 		{"% エスケープを解く", markdown.LinkDest, "../../sp%20ace.md", "sp ace.md", 0},
-		{"リンクは repo root 基準にしない", markdown.LinkDest, "docs/spec.md", "", 0},
+		{"リンクはファイル基準に無ければプロジェクト root 基準", markdown.LinkDest, "docs/spec.md", "docs/spec.md", 0},
+		{"両方の基準に在ればファイル基準を優先", markdown.LinkDest, "src/a.go", "issues/done/src/a.go", 0},
+		{"どちらの基準にも無い", markdown.LinkDest, "docs/nope.md", "", 0},
 		{"リンクの相対はファイル基準で同名の別ファイル", markdown.LinkDest, "src/a.go", "issues/done/src/a.go", 0},
 		{"コードは repo root 基準", markdown.LinkCode, "src/a.go", "src/a.go", 0},
 		{"コードの行番号", markdown.LinkCode, "src/a.go:12", "src/a.go", 12},
 		{"コードの行:桁", markdown.LinkCode, "src/a.go:12:3", "src/a.go", 12},
 		{"コードの ~/", markdown.LinkCode, "~/note.md", "~/note.md", 0},
 		{"実在しない", markdown.LinkCode, "src/nope.go", "", 0},
-		{"ディレクトリは開かない", markdown.LinkCode, "src", "", 0},
+		{"単語 1 つはディレクトリに当てない", markdown.LinkCode, "src", "", 0},
+		{"/ を含むディレクトリは止まり先", markdown.LinkCode, "@root/src", "src", 0},
+		{"末尾 / 付きのディレクトリ", markdown.LinkCode, "src/", "src", 0},
 		{"実在しない絶対パス", markdown.LinkCode, "/nonexistent-glogx/x.go", "", 0},
-		{"絶対パスのディレクトリ", markdown.LinkCode, "/tmp", "", 0},
+		{"通常ファイルでもディレクトリでもない", markdown.LinkCode, "/dev/null", "", 0},
 		{"空白を含むコードはパスでない", markdown.LinkCode, "cat src/a.go", "", 0},
 		{"URL", markdown.LinkDest, "https://example.com/src/a.go", "", 0},
 		{"アンカーだけ", markdown.LinkDest, "#sec", "", 0},
@@ -195,6 +199,21 @@ func TestResolveLinkCaseInsensitivePathStillChecked(t *testing.T) {
 	}
 	if _, _, ok := ResolveLink(markdown.LinkCode, filepath.Join(upper, "docs", "ok.md"), base); !ok {
 		t.Fatal("大文字で書いた repo 内の通常ファイルが開けない")
+	}
+}
+
+func TestExpandBraces(t *testing.T) {
+	cases := map[string][]string{
+		"a/b.{sql,tsv,meta}": {"a/b.sql", "a/b.tsv", "a/b.meta"},
+		"a/{x,y}/c":          {"a/x/c", "a/y/c"},
+		"a/b.go":             {"a/b.go"},
+		"a/{x}":              {"a/{x}"},      // カンマが無いものは展開しない
+		"{a,b}{c,d}":         {"{a,b}{c,d}"}, // 2 組以上は展開しない
+	}
+	for in, want := range cases {
+		if got := ExpandBraces(in); !slices.Equal(got, want) {
+			t.Errorf("ExpandBraces(%q) = %q want %q", in, got, want)
+		}
 	}
 }
 

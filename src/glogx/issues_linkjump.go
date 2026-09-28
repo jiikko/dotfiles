@@ -142,7 +142,10 @@ func (v *issuesView) linkJumpKey(key string, vp issuesViewport, rows int) (cmd t
 	return nil, true
 }
 
-// openLink は選択中のファイルを開く。readonly=true は nvim -R (Enter。readonlyCommand)、false は $EDITOR (e)。
+// openLink は選択中のファイルを開く。readonly=true は Enter、false は $EDITOR (e)。
+// Enter で開く先は種類で分ける (ユーザー選定 2026-09-28): **.md は viewer の本文 pager に積んで開く**
+// (整形して読め、h/Esc で元の本文へ戻る。TUI を中断して別アプリへ移らない)。それ以外のファイルと
+// ディレクトリは nvim -R (readonlyCommand。コードはシンタックスと検索、ディレクトリはファイラーが要る)。
 //
 // 🚨 開く直前に解決をやり直す (Body.Recheck): 一覧を作った後に消えた・ディレクトリに化けた・repo の外への
 // symlink に差し替わった (git pull) ものを開かない。消えたものを開くと nvim は空の新規バッファを
@@ -155,21 +158,114 @@ func (v *issuesView) openLink(l issues.FileLink, readonly bool) tea.Cmd {
 	if !readonly {
 		return runEditorCmd(editorCommand(l.Path))
 	}
+	if !l.Dir && isMarkdownPath(l.Path) {
+		v.openDoc(l)
+		return nil
+	}
 	return runEditorCmd(readonlyCommand(l.Path, l.Line))
+}
+
+// bodyFrame は docStack に積んだ 1 段 (戻ったときに元の位置・ジャンプの選択まで戻す)。
+type bodyFrame struct {
+	open   *issues.Issue
+	body   *issues.Body
+	offset int
+	jump   linkJump
+}
+
+// isMarkdownPath は viewer の本文 pager で開くファイルか (整形器が markdown 専用なので拡張子で決める)。
+func isMarkdownPath(p string) bool {
+	switch strings.ToLower(filepath.Ext(p)) {
+	case ".md", ".markdown":
+		return true
+	default:
+		return false
+	}
+}
+
+// openDoc は .md のリンク先を本文 pager に積んで開く (h/Esc = popDoc で戻る)。
+//
+// doc は issue ではないが、表示・コピー・編集・URL・さらに先へのジャンプを本文と同じ経路で通すため、
+// Issue の形に包む。🚨 Dir は元の issue のものを引き継ぐ: インラインコードの基準 (プロジェクトの root) は
+// issue ディレクトリの親から決まる (LinkBase.Project)。doc 自身のディレクトリにすると基準がずれる。
+// 番号・状態は持たないので p は「番号が無いのでファイル名」に落ち、n (claim) は一覧でしか効かない。
+func (v *issuesView) openDoc(l issues.FileLink) {
+	doc := &issues.Issue{Path: l.Path, Dir: v.open.Dir, Rel: v.pathLabel(l.Path)}
+	body, err := doc.ReadBody()
+	if err != nil {
+		v.setNotice("開けませんでした: "+firstLine(err.Error()), false)
+		return
+	}
+	v.docStack = append(v.docStack, bodyFrame{open: v.open, body: v.body, offset: v.bodyPager.Offset, jump: v.linkJump})
+	v.open, v.body = doc, body
+	v.bodyPager.Reset()
+	v.urlPick.close()
+	v.linkJump = linkJump{}
+	v.docLine = l.Line
+}
+
+// popDoc は積んだ doc を 1 段戻す。戻る段が無ければ false (呼び出し側が本文を閉じる)。
+func (v *issuesView) popDoc() bool {
+	n := len(v.docStack)
+	if n == 0 {
+		return false
+	}
+	f := v.docStack[n-1]
+	v.docStack = v.docStack[:n-1]
+	v.open, v.body = f.open, f.body
+	v.bodyPager.Reset()
+	v.bodyPager.Offset = f.offset
+	v.linkJump = f.jump
+	v.docLine = 0
+	return true
+}
+
+// rootOpen は一覧と照合できる本文 = docStack の底の issue (doc を開いていなければ v.open)。
+func (v *issuesView) rootOpen() *issues.Issue {
+	if len(v.docStack) > 0 {
+		return v.docStack[0].open
+	}
+	return v.open
+}
+
+// scrollToSrcLine はソース行 line を含む表示行が窓の上 1/3 に来るよう本文を送る (`x.md#L12` で開いたとき)。
+func (v *issuesView) scrollToSrcLine(line, rows int) {
+	nums := v.body.SrcLines()
+	top := -1
+	for i, n := range nums {
+		if n > 0 && n <= line {
+			top = i // ブロックの先頭の表示行にだけ番号がある。line 以下で最後のものがその行を含む
+		}
+		if n > line {
+			break
+		}
+	}
+	if top >= 0 {
+		v.bodyPager.Stop()
+		v.bodyPager.Offset = max(top-rows/3, 0)
+	}
 }
 
 // linkLabel はリンクの表示名 (repo 相対。repo の外は ~ 始まりか絶対パス)。本文に書かれた値ではなく
 // **解決した先**を出す: 共通名 (README.md / Makefile) は別の repo のつもりで書かれていても
 // ここの同名ファイルに当たるので、どこを開くのかを画面で確かめられるようにする。
 func (v *issuesView) linkLabel(l issues.FileLink) string {
-	p := l.Path
+	p := v.pathLabel(l.Path)
+	if l.Dir {
+		p += "/"
+	}
+	if l.Line > 0 {
+		p += ":" + strconv.Itoa(l.Line)
+	}
+	return p
+}
+
+// pathLabel は p の表示名 (repo 相対。repo の外は ~ 始まりか絶対パス。無害化済み)。
+func (v *issuesView) pathLabel(p string) string {
 	if rel, err := filepath.Rel(v.root, p); err == nil && v.root != "" && !strings.HasPrefix(rel, "..") {
 		p = rel
 	} else if home, err := os.UserHomeDir(); err == nil && home != "" && strings.HasPrefix(p, home+string(filepath.Separator)) {
 		p = "~" + p[len(home):]
-	}
-	if l.Line > 0 {
-		p += ":" + strconv.Itoa(l.Line)
 	}
 	return sanitizePlainLine(p)
 }
