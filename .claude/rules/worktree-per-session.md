@@ -54,6 +54,9 @@
 - **push + `~/dotfiles` pull の後は、「次のセッションで効くはず」で閉じず headless の新規セッションで観測する**。
   `claude -p --model haiku "<注入された文が見えるか答えて>"` を効くべき cwd / 効かないべき cwd の両方で回す
   (A-B。数十秒・低コスト。実測 2026-09-19 issue 401 で hook の注入をこれで確認した)
+  - 🚨 **答えは最終応答 (stdout / `result`) から読まない**。headless でも Stop hook が block して続きを処理させるので、
+    最後の返答が issue の点検結果に差し替わる (issue 573)。`--output-format stream-json --verbose` で回し、先頭の数行から答えを読む (答えの前に「読みます」の類の行が出ることがある):
+    `claude -p --model haiku --output-format stream-json --verbose "..." </dev/null | jq -r 'select(.type=="assistant") | .message.content[]? | select(.type=="text") | .text' | head -3`
 
 ## なぜ
 
