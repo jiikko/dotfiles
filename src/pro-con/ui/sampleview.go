@@ -69,11 +69,13 @@ func (m *Model) openSample(q, opt int) tea.Cmd {
 		m.refuse("この案に見本は無い")
 		return nil
 	}
-	c, _ := m.formCard()
+	c, found := m.formCard()
 	a, ok := latestAttachment(c, name)
 	var lines []string
 	var cmd tea.Cmd
 	switch {
+	case !found:
+		lines = []string{sgrYellow + "  " + m.form.cardID + " はもう記録に無い (取り下げられたか、書庫へ移った)。見本は開けない" + sgrReset}
 	case !ok:
 		lines = []string{sgrYellow + "  見本「" + name + "」はまだ添付されていない (PG が card attach する前か、名前が違う)" + sgrReset}
 	case a.Kind == card.AttachImage:

@@ -325,3 +325,16 @@ func TestSampleClampsScrollOnResize(t *testing.T) {
 		t.Fatalf("広げた直後の見出しが本文と違う桁数を出している (want %q):\n%s", want, strings.Split(s, "\n")[m.headerRows()])
 	}
 }
+
+// フォームを開いた後にカードが記録から消えたら (取り下げ・書庫)、「まだ添付されていない」ではなくカードが無いことを出す。
+func TestSampleCardGoneSaysSo(t *testing.T) {
+	m, _ := sampleForm(t)
+	snap := m.snap
+	snap.Cards = slices.DeleteFunc(slices.Clone(snap.Cards), func(c card.Card) bool { return c.ID == "W2" })
+	m.setSnap(snap)
+	press(m, "v")
+	s := screen(m)
+	if !m.sample.open || !strings.Contains(s, "W2 はもう記録に無い") || strings.Contains(s, "まだ添付されていない") {
+		t.Fatalf("カードが消えた後の知らせが違う:\n%s", s)
+	}
+}

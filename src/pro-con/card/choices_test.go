@@ -76,7 +76,7 @@ func TestFormatAnswer(t *testing.T) {
 // 見本の名前 (issue 495) は card attach で付けたファイルの名前だけを受ける: パス・. / ..・長すぎる名前を断り、制御文字は落とす。
 // 質問の文にも見本があることを出す (card show・PM への指示が見本の有無を読める)。
 func TestNormalizeQuestionsSample(t *testing.T) {
-	for _, s := range []string{"tmp/a.ans", `tmp\a.ans`, "..", ".", strings.Repeat("a", maxSampleLen+1)} {
+	for _, s := range []string{"tmp/a.ans", `tmp\a.ans`, "..", ".", strings.Repeat("a", maxSampleLen+1), "\x1b[31m\x1b[0m", "\x07"} {
 		if _, err := NormalizeQuestions([]Question{{Question: "q", Options: []Option{{Label: "A", Sample: s}, {Label: "B"}}}}); err == nil {
 			t.Errorf("sample %q を通した", s)
 		}

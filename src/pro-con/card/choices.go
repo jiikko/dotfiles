@@ -70,6 +70,7 @@ func NormalizeQuestions(qs []Question) ([]Question, error) {
 		for j, o := range q.Options {
 			// 見本の名前は添付の名前と完全一致で結ぶので、store が attach で名前に掛けるのと同じ termsafe.PlainLine だけを通す
 			// (clean で空白を詰めると「a  b.ans」が添付と一致しなくなる)
+			rawSample := o.Sample
 			o.Label, o.Description, o.Sample = clean(o.Label), clean(o.Description), termsafe.PlainLine(o.Sample)
 			switch {
 			case o.Label == "":
@@ -78,6 +79,9 @@ func NormalizeQuestions(qs []Question) ([]Question, error) {
 				return nil, fmt.Errorf("問 %d の選択肢 %d の label が長い (%d 字まで)", n, j+1, maxLabelLen)
 			case runeLen(o.Description) > maxDescLen:
 				return nil, fmt.Errorf("問 %d の選択肢 %d の description が長い (%d 字まで)", n, j+1, maxDescLen)
+			case o.Sample == "" && rawSample != "": // 制御文字だけの名前。黙って「見本なし」にすると、PG は付けたつもりのまま気づけない
+				// 元の入力はエラーに載せない (長さを検査する前の値で、断った依頼は理由ごと箱の記録に残る)
+				return nil, fmt.Errorf("問 %d の選択肢 %d の sample は無害化すると空になる (制御文字・見えない文字だけの名前)。card attach で付けたファイルの名前を書く", n, j+1)
 			case runeLen(o.Sample) > maxSampleLen:
 				return nil, fmt.Errorf("問 %d の選択肢 %d の sample が長い (%d 字まで)", n, j+1, maxSampleLen)
 			case o.Sample == "." || o.Sample == ".." || strings.ContainsAny(o.Sample, `/\`):
