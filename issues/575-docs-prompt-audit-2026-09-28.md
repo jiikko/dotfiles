@@ -19,13 +19,13 @@
 
 いちばん効くのは次の 2 つ。どちらも毎セッション全文が読まれる `_claude/rules/` の話。
 
-1. **本文の経緯が、165 で rationale へ移した後にまた増えている** (H2)。15 本・58 行に「obaket NNN」「実測 YYYY-MM-DD」が本文のまま残っていて、
+1. **本文の経緯が、165 で rationale へ移した後にまた増えている** (H2)。少なくとも 23 本・69 行に「obaket NNN」「実測 YYYY-MM-DD」「(NNN)」が本文のまま残っていて、
    root の `CLAUDE.md` の「本文は規範だけ、なぜ・起源・実例は rules-rationale へ」と食い違う。多くは retro から入った 1 件ずつの追記で、
    規範の 1 文に事例の括弧が付く形。多い 2 本の diff を作った
 2. **強調の印 (🚨) が、今日 mutation-verify で減らしたのと同じ密度で 3 本に残っている** (M1)。adversarial-review 22 個・verify-execution 17 個・
    commit-with-pathspec 11 個。全部に印があると印が意味を持たない。黙ってデータを失う・他人の変更を消す・無限に待つ、の項目だけに残す diff を作った
 
-件数: High 2 / Medium 3 / Low (flag) 5。Group 1 (古いモデル向けの文面) は 1a の強調だけ。思考の指示 (think step by step 等)・
+件数: High 2 / Medium 3 / Low (flag) 5 (反証レビューの訂正後)。Group 1 (古いモデル向けの文面) は 1a の強調だけ。思考の指示 (think step by step 等)・
 書式の禁止・進捗の抑制・数値の上限は 0 件。Group 3 (tool の description) と Group 4 (API の request) は該当なし
 (repo に Messages API を呼ぶコードが無い。pro-con は `claude -p --model haiku` を別名で呼ぶだけ)。
 
@@ -34,10 +34,10 @@
 | # | 場所 | 根拠の文 | パターン | なぜ古いか | 確度 | 対応 |
 |---|---|---|---|---|---|---|
 | H1 | `rules/README.md:14` | 「**36 本 2,256 行 / 174 KB** あるので」 | Group 2 volatile specifics | 今は 34 本 2,606 行 / 約 225 KB (`wc -lc _claude/rules/*.md`)。数字が書いた日から動いている | High (repo が反証) | rewrite: 数字を外し、測り方を添える (diff H1) |
-| H2 | `_claude/rules/` 15 本 58 行。多い順に adversarial-review 13 / mutation-verify 8 / survey-receiver 6 / measure-external-cli 6 / list-masked 5 / sandbox 3 / perf-claims 3 / no-concurrent-spm 3 / 他 7 本 | 例: `adversarial-review-own-safeguards.md` の「(obaket retro 982: 提出に届く入口が 4 つあり gate を通るのは 1 つだけだった…)」 | Group 2 history narratives + 同 conflict (root `CLAUDE.md` の「本文は規範だけ」) | 規範の権威は事例ではなく書かれた振る舞い。事例は毎セッションの読み込みを増やすだけで、正本の置き場 (rules-rationale) が別にある | High (repo の規約が反証) | move: 事例を rationale へ移し、本文には規範と理由の 1 文を残す。**diff は多い 2 本 (H2a / H2b) だけ作った**。残り 13 本は同じ形で未作成 |
-| M1 | `commit-with-pathspec.md` 11 個 / `verify-execution-not-just-exit-code.md` 17 個 / `adversarial-review-own-safeguards.md` 22 個 | 🚨 | 1a pressure (印が多すぎて情報を持たない) | 全項目に印があると、どれが本当に効くかが消え、全体が慎重すぎる register になる。今日 mutation-verify で 41 → 3 にしたのと同じ直し | Medium | rewrite: 残すのは commit-with-pathspec 2 (push の空振りの誤認 / soft reset の起点)、verify-execution 2 (`&&` で後段が走る / `pgrep -f` の自己一致)、adversarial 3 (判定不能で消さない / 検査と操作の境界 / SIGPIPE) (diff M1a〜c) |
+| H2 | `_claude/rules/` 23 本 69 行 (数え方は下の注)。多い順に adversarial-review 13 / mutation-verify 7 / tmux-probe 6 / measure-external-cli 6 / survey-receiver 5 / list-masked 4 / decide-layout 4 / no-concurrent-spm 3 / avoid-wall-clock 3 / 他 14 本 | 例: `adversarial-review-own-safeguards.md` の「(obaket retro 982: 提出に届く入口が 4 つあり gate を通るのは 1 つだけだった…)」 | Group 2 history narratives + 同 conflict (root `CLAUDE.md` の「本文は規範だけ」) | 規範の権威は事例ではなく書かれた振る舞い。事例は毎セッションの読み込みを増やすだけで、正本の置き場 (rules-rationale) が別にある | High (repo の規約が反証) | move: 事例を rationale へ移し、本文には規範と理由の 1 文を残す。**diff は多い 2 本 (H2a / H2b) だけ作った**。残り 21 本は同じ形で未作成 |
+| M1 | `commit-with-pathspec.md` 11 個 (→ 3) / `verify-execution-not-just-exit-code.md` 17 個 / `adversarial-review-own-safeguards.md` 22 個 | 🚨 | 1a pressure (印が多すぎて情報を持たない) | 全項目に印があると、どれが本当に効くかが消え、全体が慎重すぎる register になる。今日 mutation-verify で 41 → 3 にしたのと同じ直し | Medium | rewrite: 残すのは commit-with-pathspec 3 (push の空振りの誤認 / soft reset の起点 / heredoc を落とした `-F -` が無音で待ち続ける)、verify-execution 2 (`&&` で後段が走る / `pgrep -f` の自己一致)、adversarial 3 (判定不能で消さない / 検査と操作の境界 / SIGPIPE) (diff M1a〜c) |
 | M2 | `_claude/agents/test-runner.md:55` | 「You MUST NEVER do the following to make tests pass:」 | 1a pressure | 165 の M6 で「register だけ直す」と決めたが、適用ログに無く原文のまま。禁止の 7 項目は残す (現行モデルでも起きる失敗。keep list 5) | Medium | rewrite: 理由を先に言う 1 文へ (diff M2) |
-| M3 | `src/pro-con/pm-guide.md:22,56,60,89,91` / `integrator-guide.md:4,52` | 「2026-09-25 のユーザーの指示「意味不明な…」」「2026-09-27 の C-005」「2026-09-26 に手で取り込んだとき、3 枚がこの形だった」 | Group 2 history narratives | PM / 取り込みの係の session が毎回読む指示に、決定の日付と事例が入っている。同じ repo の PG への指示 (`dispatcher.go` の `Prompt`) は経緯をコードのコメントへ置き、指示の文は契約と理由だけにしている | Medium | rewrite: 日付と事例を外し、理由の句は残す (diff M3)。素の issue 番号 (「issue 491」等) は PM が読みに行く参照にもなるので flag (L1) |
+| M3 | `src/pro-con/pm-guide.md:22,56,60,89,91` / `integrator-guide.md:4,52` (日付と事例だけ。`(437)` などの issue 番号は L1 の判断待ちなので残す) | 「2026-09-25 のユーザーの指示「意味不明な…」」「2026-09-27 の C-005」「2026-09-26 に手で取り込んだとき、3 枚がこの形だった」 | Group 2 history narratives | PM / 取り込みの係の session が毎回読む指示に、決定の日付と事例が入っている。同じ repo の PG への指示 (`dispatcher.go` の `Prompt`) は経緯をコードのコメントへ置き、指示の文は契約と理由だけにしている | Medium | rewrite: 日付と事例を外し、理由の句は残す (diff M3)。素の issue 番号 (「issue 491」等) は PM が読みに行く参照にもなるので flag (L1) |
 | L1 | `pm-guide.md` / `integrator-guide.md` の素の issue 番号 (約 35 か所) | 「(issue 491)」「(426 の決定 1)」 | Group 2 history narratives | 経緯とも、PM が読みに行ける参照とも取れる。どちらかは使われ方の観測が要る | Low | flag |
 | L2 | `_claude/skills/audit/SKILL.md:22,77,154,209,226` / `issue-sync/SKILL.md:15,68,153` / `issue-writeback/SKILL.md:46,54` | 「実測 2026-09-06: この指示に反して 3 体を並行起動し…」 | Group 2 history narratives | rules と違い起動時にしか読まれず、skill には rationale の置き場の規約が無い。「なぜ」として読まれている可能性もある | Low | flag |
 | L3 | `_claude/skills/codex-drive/SKILL.md` (1,229 行。9/2 以降 +267) | — | Group 2 (一度に読めない SKILL.md) | codex は memory で自発的に使わない設定なので読まれる頻度が低い。削るなら codex-drive を使う日に、何が読まれずに済んでいるかを見てから | Low | flag |
@@ -54,6 +54,21 @@
 - **`CLAUDE.md:19` の「実測 2026-09-03: 691 行 = 全体 2517 行の 27%」**: 日付つきの測定値として書かれ、「今の値」とは読めない
 - **命令ファイルどうしの食い違い**: 今日の `no-ios-simulator-verification.md` の `paths:` (付けて revert された件) は、rule 末尾の HTML コメントと
   `_claude/CLAUDE.md` の列挙が揃って決着済み。PG の指示の「~/.claude/CLAUDE.md の worktree の規律より優先する」は、上書きする規則を名指ししているので上書き (conflict ではない)
+
+注 (H2 の数え方): `_claude/rules/*.md` の、`起源:` / `根拠` で始まる「なぜ」の定型行を除いた行のうち、
+`実測 ?20NN-` / `20NN-NN-NN` / `obaket` / `dotfiles NNN` / `retro NNN` / `issue NNN` / `(NNN)` のどれかに当たる行。
+起票時は狭い式で 15 本 58 行と数えていて、反証レビューに漏れを指摘された。式が変われば件数も変わるので「少なくとも」と読む
+
+## 反証レビューの結果 (2026-09-28、sonnet 1 体、read-only)
+
+件数 (Step 0 のファイル数・H1・M1 の 🚨 の数) と M2 の前提 (165 の適用ログに M6 が無い) は反証できなかった。訂正した指摘:
+
+- **P1 M1a が自分の基準と矛盾**: `commit-with-pathspec.md:81` の「heredoc を落とすと `-F -` が無音で stdin を待ち続ける」は「無限に待つ」に当たるのに 🚨 を外していた。残す側へ直した (11 → 3)
+- **P2 H2 の件数が過小**: 起票時の式が狭く、`tmux-probe` / `decide-layout` / `avoid-wall-clock` / `verify-design-intent` / `no-unauthorized-branch-switch` などの事例を数えていなかった。式を広げて 23 本 69 行に直した (上の注)
+- **P2 M3 が L1 を先取り**: M3 の diff が `(437)` の issue 番号まで消していた。L1 (素の issue 番号) は未決の flag なので、M3 は日付と事例だけを消し、番号を残す形に直した
+
+反証レビューも確かめきれなかったもの: M1b / M1c の「残す項目」の網羅的な突き合わせ (部分確認)、H2 の全数 (式による)。
+訂正後の patch も捨てる worktree で当て、`make test-changed` rc=0
 
 ## 提案 diff (未適用。hunk ごとに採否を決める)
 
@@ -271,21 +286,14 @@ index 55a40369..9c357fe5 100644
 ```
 </details>
 
-<details><summary>diff M1a — commit-with-pathspec の 🚨 を 11 → 2</summary>
+<details><summary>diff M1a — commit-with-pathspec の 🚨 を 11 → 3</summary>
 
 ```diff
 diff --git a/_claude/rules/commit-with-pathspec.md b/_claude/rules/commit-with-pathspec.md
-index 27e94a07..a8f49da6 100644
+index 27e94a07..68bad4c9 100644
 --- a/_claude/rules/commit-with-pathspec.md
 +++ b/_claude/rules/commit-with-pathspec.md
-@@ -11,47 +11,47 @@
- 
- 根拠・起源・実例は `~/dotfiles/_claude/rules-rationale/commit-with-pathspec.md` に置く（起動時には読まれない。ルールを疑う・改訂するときに読む）。
- 
- ## pathspec は cwd 相対で解決される — repo root へ移動してから打つ
- 
- - pathspec は **cwd 相対**。`cd src/glogx` した状態で `git commit -- src/doctor/x.go` と打つと
-   `src/glogx/src/doctor/x.go` を探して外れる
+@@ -18,22 +18,22 @@
  - 外れたら **commit されない** (`git commit` は rc=1 + `error: pathspec '...' did not match`、`git add` は rc=128。無音ではない)
  - 🚨 **誤認は次の push で起きる**。commit が空振りした後の `git push` は
    **`Everything up-to-date` で rc=0** を返すので、push の出力だけを見ると成功に見える
@@ -313,10 +321,7 @@ index 27e94a07..a8f49da6 100644
    status になり、上の rc=1 が消える ([`verify-execution-not-just-exit-code.md`](verify-execution-not-just-exit-code.md) の系)
  
  ## pathspec で「生成物」を漏らすと壊れたコミットになる
- 
- - **ソースを消す / 足す変更をしたら、それに連動する生成物 (Xcode の `project.pbxproj`、lock ファイル、
-   スナップショット等) を同じ commit に含める**。pathspec 方式は「書いたファイルを列挙する」ため、
-   自分が直接編集していない生成物を忘れやすい
+@@ -44,7 +44,7 @@
  - 生成物が漏れると **その commit 単体では壊れる**。手元は再生成済みで build が通るため気づけない
  - 対策: **commit 後に `git show --stat HEAD` を読み、想定したファイルが全部入っているか目視する**。
    ファイル削除・追加を伴う変更では特に。`git status` に生成物が残っていたらそれが漏れのサイン
@@ -325,34 +330,7 @@ index 27e94a07..a8f49da6 100644
    「見覚えのない変更は巻き込まない」(下の節) は**混入を防ぐ**規律だが、**自分の変更が原因で
    modified になったファイル**にそのまま当てると今度は**漏れ**を作る。典型は、自分が消した API を
    使っていた既存テストを他セッションの WIP と読んで除外する形 — **その commit 単体ではコンパイルが
-   通らない**のに、手元の作業ツリーには残りの差分があるので build も test も緑になる
- - 判定は `git diff -- <path>` を**読む**こと。セッション開始時から modified だったことは
-   「自分と無関係」の証拠にならない (開始時点の `git status` を控えていないなら、なおさら読む)
- 
- ## rename (`git mv`) は旧パスも pathspec に書く
- 
- - **`git mv` は「旧パスの削除」と「新パスの追加」の 2 つの変更**なので、pathspec に**両方**
-@@ -71,37 +71,37 @@
-   **その語がメッセージから消える** (`command not found` がシェルに出るだけで commit は成功する)
- - **必ず heredoc で渡す**。`$(...)` を使う形も同じ理由で危険:
- 
- ```bash
- git commit -F - <<'MSGEOF' -- path1 path2
- feat(x): `Foo.swift` の `bar()` を直す
- MSGEOF
- ```
- 
- `<<'MSGEOF'` のようにクォートすると変数展開もコマンド置換も起きない。
--🚨 **1 コマンドに heredoc を 2 つ書くとき (ファイルへの追記 + `-F -` の message)、片方を落としても構文エラーにならず、
-+**1 コマンドに heredoc を 2 つ書くとき (ファイルへの追記 + `-F -` の message)、片方を落としても構文エラーにならず、
- `-F -` が無音で stdin を待ち続ける** (rc も出力も出ず「時間がかかっている」に見える。obaket 895)。stdin から読む形を使うなら、
- その入力を同じ行で与えたかを確かめる。
- `git commit -m "$(cat <<'EOF' ... EOF)"` は heredoc 自体は安全だが、`$(...)` の結果が
- 再度 `-m` の引用符に入るため**書き方を誤ると同じ事故になる**。`-F -` が最も安全。
- 
- ## 履歴操作 (reset / amend / rebase) の前に直近コミットの所有者を確認する
- 
- pathspec 規律は「混入」は防ぐが、**履歴を書き換える操作は防げない**。branch の先頭には並行セッションのコミットが積まれているかもしれない。
+@@ -90,11 +90,11 @@ pathspec 規律は「混入」は防ぐが、**履歴を書き換える操作は
  
  - **`git reset HEAD~N` / `git commit --amend` / `git rebase` の前に、必ず `git log -N --format='%h %ad %s' --date=format:'%H:%M'` で対象コミットが自分のものか確認する**（自分が数分前に作ったコミットと、メッセージ・時刻が一致するか）
  - 「直近コミット = 自分の直近コミット」と思い込まない。自分のコミットの直後に並行セッションが commit していれば、reset HEAD~1 は**他人のコミット**を、自分のコミットの上に他人が積んでいれば**自分のつもりで他人の**を切り落とす
@@ -366,13 +344,6 @@ index 27e94a07..a8f49da6 100644
    無関係な相手へ確認に行く。分からないなら「分からない」と言い、
    `ListAgents` + `SendMessage` で**本人に聞く**
  - 副次の注意: **`git mv` は即座に stage される**。stage された変更は共有 index 上で「他セッションの pathspec なし commit / reset に拾われ得る」状態になるため、stage から commit までの間隔を最小にする
- - 🚨 **squash / 付け替えの soft reset の起点は、共有の ref (`origin/master` 等) ではなく自分の変更を積んだ起点の commit を hash で固定する**。
-   共有の ref は別の worktree の fetch で黙って進み、`reset --soft` した index が「他の session の変更を打ち消す差分」になる。
-   起点を変えるなら、先に新しい起点の hash へ rebase を済ませてから、その hash へ soft reset する (rebase の後に古い起点の hash を使い続けない)。
-   commit の前に `git diff --cached --stat <同じ hash>` と差分を読み、自分の作業と無関係な変更が無いことを確かめる
- - **zsh に渡す reflog の参照は `'HEAD@{1}'` のように引用符で包む** (`brace_ccl` 等の設定で波括弧が展開され、戻したつもりで戻らない)
- - **zsh で refspec (`sha:ref`) を変数から組むときは `${SHA}:refs/heads/master` と波括弧で囲む**。`$SHA:r...` の `:r` は
-   履歴修飾子 (拡張子を落とす) に化け、`<sha>efs/heads/master` という refspec になる (obaket retro 967, 2026-09-27)。
 ```
 </details>
 
@@ -616,11 +587,11 @@ index fe4cdd6f..a63da9f5 100644
 ```
 </details>
 
-<details><summary>diff M3 — pm-guide / integrator-guide の日付と事例</summary>
+<details><summary>diff M3 — pm-guide / integrator-guide の日付と事例 (issue 番号は残す)</summary>
 
 ```diff
 diff --git a/src/pro-con/integrator-guide.md b/src/pro-con/integrator-guide.md
-index 27d21ed1..43039866 100644
+index 27d21ed1..74cde1a9 100644
 --- a/src/pro-con/integrator-guide.md
 +++ b/src/pro-con/integrator-guide.md
 @@ -1,7 +1,7 @@
@@ -628,7 +599,7 @@ index 27d21ed1..43039866 100644
  
  pro-con (issue 415 の epic) の本物のモードで、取り込みの係 (PG が終えたカードをレビューし、master へ取り込む Claude Code の session。issue 487) に渡す指示。
 -分担は 2026-09-25 のユーザーの決定 (437): 依頼の分解と PG の質問への回答は PM、**レビュー・差し戻し・完了・master への取り込みは取り込みの係**。
-+分担: 依頼の分解と PG の質問への回答は PM、**レビュー・差し戻し・完了・master への取り込みは取り込みの係**。
++分担 (437): 依頼の分解と PG の質問への回答は PM、**レビュー・差し戻し・完了・master への取り込みは取り込みの係**。
  カードの操作は必ず `pro-con card` で行う (カードの記録を直接書かない。書き手は dispatcher だけ。issue 426 の決定 1)。
  取り込みの係は dispatcher が起動し、カードがレビューの列に来るたびに、turn の区切りで同じ session を再開して知らせる。
  知らせは「カードの ID・題・repo・PG の worktree」だけなので、中身は `pro-con card show <カード>` で読む。
@@ -642,7 +613,7 @@ index 27d21ed1..43039866 100644
     - テストや lint が落ちたら、落ちた検査の名前と出力の要点を書いて差し戻す
  5. **自分では片付けられないカードは人に回す** (人の判断が要る・環境のせいでテストが通らない・push が権限で止まる 等)。回したことは履歴に残す
 diff --git a/src/pro-con/pm-guide.md b/src/pro-con/pm-guide.md
-index b88d676a..6f868f94 100644
+index b88d676a..11d06c7f 100644
 --- a/src/pro-con/pm-guide.md
 +++ b/src/pro-con/pm-guide.md
 @@ -19,7 +19,7 @@ PM は dispatcher が起動し、依頼の列に新しいカードが来るた
@@ -664,7 +635,7 @@ index b88d676a..6f868f94 100644
     カードは質問待ちの列のまま残り、人間が画面 (選択肢つきなら radio / checkbox の回答フォーム) か `pro-con card answer <カード> "<回答>"` で答える (人間の番の目印と通知が付く。452)。
     人に回した質問がまた知らされたら (履歴に「人に回した」がある)、何もしない
 -5. **PG が終えたカード (レビューの列) は、取り込みの係がレビューする。PM は触らない**。分担は 2026-09-25 のユーザーの決定 (437):
-+5. **PG が終えたカード (レビューの列) は、取り込みの係がレビューする。PM は触らない**。分担:
++5. **PG が終えたカード (レビューの列) は、取り込みの係がレビューする。PM は触らない**。分担 (437):
     依頼の分解 (役目 1〜3) と PG の質問への回答 (役目 4) は PM、レビュー・差し戻し・完了・master への取り込みは取り込みの係
     (dispatcher が起こす別の Claude の session。issue 487。手順は `pro-con card guide --integrator` の指示書)。
     **見積もり (役目 3 の `--after`) は、取り込みの係が先に入ったカードとの組み合わせをテストで見るときに読む**ので、後のカードの issue の本文に残す
@@ -686,6 +657,6 @@ index b88d676a..6f868f94 100644
 ## 進捗
 
 - [x] 監査 (Step 0〜6) と提案 diff の作成 (2026-09-28)
-- [ ] 反証レビュー
+- [x] 反証レビュー (sonnet 1 体、read-only、2026-09-28) — 下の「反証レビューの結果」。指摘 3 件を訂正した
 - [ ] hunk ごとの採否 (ユーザー)
-- [ ] 採った hunk の適用 (M1c は H2a の後。H2 の残り 13 本は採ると決まってから同じ形で作る)
+- [ ] 採った hunk の適用 (M1c は H2a の後。H2 の残り 21 本は採ると決まってから同じ形で作る)
