@@ -27,6 +27,16 @@ fail() { echo "NG: $*"; fails=$((fails + 1)); }
 # 1 つも覆えていなかった (red team 2 周目 P2-4)。TMPDIR 全域を見ないのは、
 # **並行して走っている他 run** を残骸と誤検出しないため (同 1 周目 P2-7)
 leftovers_before="$(for x in "${TMPDIR:-/tmp}"/dotfiles-mutant.*; do [ -e "$x" ] && echo "$x"; done)"
+# 全体のログ (issue 574) は道具が消さないので、テスト中は $work の下へ出させる (末尾で漏れを見る)
+export MUTATE_VERIFY_LOG_ROOT="$work/logs"
+mkdir -p "$MUTATE_VERIFY_LOG_ROOT"
+logdir_of() { sed -n 's/^.*全体のログ: //p' "${1:-$work/out.log}" | tail -1; }
+# 道具はログの置き場を消さないので、テストの run が $work の外へ置き場を作ったら漏れ。
+# $TMPDIR 全体を数えないのは、並行する別 session の本物の run を拾わないため (issue 574 の敵対的レビュー P2-3)
+check_log_leak() { # $1=出力のログ
+  local p; p="$(logdir_of "$1")"
+  case "$p" in "" | "$work"/*) ;; *) fail "🚨 全体のログの置き場が \$work の外にできた: $p" ;; esac
+}
 
 # --- fixture: guard を持つスクリプトと、それを検証するテスト --------------------------------
 make_repo() { # $1=repo dir
@@ -65,8 +75,12 @@ V
 # mv <repo> <追加引数...> : 既定の引数を埋めて mutate-verify を呼び、rc を返す
 mv_run() {
   local d="$1"; shift
+  local rc
   ( cd "$d" && "$MV" --verify 'bash verify.sh' --baseline-expect '^ran 2 checks' "$@" ) \
     > "$work/out.log" 2>&1
+  rc=$?
+  check_log_leak "$work/out.log"
+  return "$rc"
 }
 
 # ---------------------------------------------------------------------------
@@ -625,6 +639,127 @@ mv_run "$d" --file guard.sh --apply "$mutate_guard" \
   --verify "bash verify.sh; git -C $d switch -q other; true" --expect 'FAIL: reject-bad'
 rc=$?
 [ "$rc" -eq 9 ] || fail "🚨 元 repo のブランチが切り替わったのに rc=$rc (期待 9)"
+
+# ---------------------------------------------------------------------------
+# 37. 差が 40 行を超えたら、省略した行数を出し、全体を「全体のログ」の diff.txt に残す (issue 574)
+#     切れた先に巻き添えの行があっても、表示からは「無い」と区別できなかった
+# ---------------------------------------------------------------------------
+d="$work/longdiff"; make_repo "$d"
+cat > "$d/verify.sh" <<'V'
+#!/bin/bash
+ng=0
+for i in $(seq 1 30); do echo "line $i: $(bash guard.sh bad 2>&1)"; done
+out="$(bash guard.sh bad 2>&1)"
+[ "$out" = "rejected" ] || { echo "FAIL: reject-bad (got=$out)"; ng=1; }
+echo "ran 2 checks"
+exit "$ng"
+V
+git -C "$d" commit -qam longdiff
+mv_run "$d" --file guard.sh --apply "$mutate_guard" --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 0 ] || { fail "長い差の変異が rc=$rc (期待 0)"; tail -5 "$work/out.log"; }
+ld="$(logdir_of)"
+# 差は「消えた 30 行 + 増えた 30 行 + FAIL の 1 行」= 61 行。40 行を超えた 21 行を省略と出す
+n_full="$(grep -ac '^[<>]' "$ld/diff.txt" 2>/dev/null || echo 0)"
+[ "$n_full" -eq 61 ] || fail "diff.txt の差が $n_full 行 (期待 61。全体が残っていない)"
+grep -q '残り 21 行を省略' "$work/out.log" || fail "🚨 40 行を超えた差を省略したと出していない"
+grep -q '^> line 30: accepted' "$ld/diff.txt" 2>/dev/null || fail "diff.txt に表示で切れた先の行が無い"
+grep -q '^> line 30: accepted' "$work/out.log" && fail "41 行目以降が表示に出ている (切っていない)"
+[ -f "$ld/mv-baseline.log" ] && [ -f "$ld/mv-mutant.log" ] || fail "baseline / 変異の全体のログが残っていない"
+
+# ---------------------------------------------------------------------------
+# 38. 40 行以下の差では省略と出さない。rc=6 (緑のまま) でも全体のログの置き場を出す
+# ---------------------------------------------------------------------------
+d="$work/shortdiff"; make_repo "$d"
+mv_run "$d" --file guard.sh --apply "$mutate_guard" --expect 'FAIL: reject-bad'
+grep -q '行を省略' "$work/out.log" && fail "40 行以下の差で省略と出した"
+[ -n "$(logdir_of)" ] || fail "rc=0 で全体のログの置き場を出していない"
+d="$work/greenlog"; make_repo "$d"
+mv_run "$d" --file other.sh --apply 'printf "# x\n" >> "$MUTATE_FILE"' --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 6 ] || fail "緑のままの変異が rc=$rc (期待 6)"
+[ -f "$(logdir_of)/mv-mutant.log" ] || fail "rc=6 で変異の全体のログが残っていない"
+
+# ---------------------------------------------------------------------------
+# 39. 全体のログを写せなくても判定 (rc) は変えない (ログは人が後から読む控えで、判定の材料ではない)
+# ---------------------------------------------------------------------------
+d="$work/nolog"; make_repo "$d"
+MUTATE_VERIFY_LOG_ROOT="$work/no-such-dir" mv_run "$d" --file guard.sh --apply "$mutate_guard" --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 0 ] || fail "ログを写せないと rc=$rc (期待 0)"
+grep -q '全体のログを写す先を作れない' "$work/out.log" || fail "ログを写せなかったことを出していない"
+
+# ---------------------------------------------------------------------------
+# 40. 差がちょうど 40 行なら省略と出さず、41 行なら 40 行だけ出して「残り 1 行」と出す (境目)
+# ---------------------------------------------------------------------------
+shown_lines() { awk '/出力の差/ { on = 1; next } on && /^\[mutate-verify\]/ { on = 0 } on && /^[<>]/ { n++ } END { print n + 0 }' "$work/out.log"; }
+for want in 40 41; do
+  d="$work/edge$want"; make_repo "$d"
+  # 差 = 消えた k 行 + 増えた k 行 + FAIL の 1 行 (+ 40 のときは FAIL の後の 1 行)
+  if [ "$want" -eq 40 ]; then k=19; extra='echo "after-fail"'; else k=20; extra=':'; fi
+  cat > "$d/verify.sh" <<V
+#!/bin/bash
+ng=0
+for i in \$(seq 1 $k); do echo "line \$i: \$(bash guard.sh bad 2>&1)"; done
+out="\$(bash guard.sh bad 2>&1)"
+[ "\$out" = "rejected" ] || { echo "FAIL: reject-bad (got=\$out)"; $extra; ng=1; }
+echo "ran 2 checks"
+exit "\$ng"
+V
+  git -C "$d" commit -qam "edge$want"
+  mv_run "$d" --file guard.sh --apply "$mutate_guard" --expect 'FAIL: reject-bad'
+  n_full="$(grep -ac '^[<>]' "$(logdir_of)/diff.txt" 2>/dev/null || echo 0)"
+  [ "$n_full" -eq "$want" ] || fail "境目 $want: fixture の差が $n_full 行 (期待 $want)"
+  [ "$(shown_lines)" -eq 40 ] || fail "境目 $want: 表示した差が $(shown_lines) 行 (期待 40)"
+  if [ "$want" -eq 40 ]; then
+    grep -q '行を省略' "$work/out.log" && fail "境目 40: ちょうど 40 行で省略と出した"
+  else
+    grep -q '残り 1 行を省略' "$work/out.log" || fail "境目 41: 「残り 1 行を省略」と出していない"
+  fi
+done
+
+# ---------------------------------------------------------------------------
+# 41. MUTATE_VERIFY_LOG_ROOT が元 repo の中を指しても rc=9 を作らない (写した物が untracked に見える)
+# ---------------------------------------------------------------------------
+d="$work/logsinside"; make_repo "$d"
+mkdir -p "$work/tmp-inside" "$d/logs"
+MUTATE_VERIFY_LOG_ROOT="$d/logs" TMPDIR="$work/tmp-inside" mv_run "$d" --file guard.sh --apply "$mutate_guard" --expect 'FAIL: reject-bad'
+rc=$?
+[ "$rc" -eq 0 ] || { fail "🚨 置き場が元 repo の中だと rc=$rc (期待 0)"; grep -n '変わった\|全体のログ' "$work/out.log"; }
+[ ! -e "$d/logs" ] || [ -z "$(ls -A "$d/logs")" ] || fail "元 repo の中へ全体のログを写した"
+grep -q '元 repo の中を指している' "$work/out.log" || fail "元 repo の中を指したことを出していない"
+# 表記だけ違う書き方でもすり抜けない (APFS は大文字小文字も Unicode の正規化も区別しない。3 周目 P2)
+mkdir -p "$d/Élogs"   # NFC の É
+nfd_E="$(printf 'E\xcc\x81')"
+for variant in upper nfd clocale; do
+  case "$variant" in
+    upper)   vpath="$(printf '%s' "$d" | tr '[:lower:]' '[:upper:]')/logs"; vlc="" ;;
+    nfd)     vpath="$d/${nfd_E}logs"; vlc="" ;;
+    clocale) vpath="$d/élogs"; vlc=C ;;
+  esac
+  if [ ! -d "$vpath" ]; then echo "skip: 表記の変種 $variant がこの volume では同じ dir にならない"; continue; fi
+  MUTATE_VERIFY_LOG_ROOT="$vpath" TMPDIR="$work/tmp-inside" LC_ALL="${vlc:-${LC_ALL:-}}" \
+    mv_run "$d" --file guard.sh --apply "$mutate_guard" --expect 'FAIL: reject-bad'
+  [ -z "$(ls -A "$d/logs")$(ls -A "$d/Élogs")" ] || fail "🚨 表記の変種 ($variant) で元 repo の中へ全体のログを写した"
+done
+
+# ---------------------------------------------------------------------------
+# 42. 中断 (SIGTERM) されても全体のログを写す (ログが一番要るのは hang のとき)
+#     bash は trap を実行中の子の終了まで遅らせるので、変異の sleep は短くしておく
+# ---------------------------------------------------------------------------
+d="$work/interrupt"; make_repo "$d"
+( cd "$d" && exec "$MV" --verify 'bash verify.sh' --baseline-expect '^ran 2 checks' --file guard.sh \
+    --apply 'perl -0pi -e "s/^check /sleep 3; check /m" "$MUTATE_FILE"' --expect 'FAIL: reject-bad' ) \
+  > "$work/int.log" 2>&1 &
+mvpid=$!
+for _ in $(seq 200); do grep -q '変異後の検証' "$work/int.log" && break; sleep 0.05; done
+grep -q '変異後の検証' "$work/int.log" || fail "中断のケース: 変異後の検証に入らない (10 秒)"
+kill -TERM "$mvpid" 2>/dev/null
+wait "$mvpid"; rc=$?
+[ "$rc" -eq 143 ] || fail "中断のケース: rc=$rc (期待 143)"
+ld="$(logdir_of "$work/int.log")"
+[ -f "$ld/mv-baseline.log" ] || { fail "🚨 中断されたら全体のログが残らない (置き場: ${ld:-出ていない})"; tail -8 "$work/int.log"; }
+check_log_leak "$work/int.log"
 
 # ---------------------------------------------------------------------------
 # 末尾. 🚨 全ケースを通した**後**の残骸ゼロ。
