@@ -148,7 +148,7 @@ func TestRenderLinksWideCharAtClipEdge(t *testing.T) {
 	// 全角 1 字のコードスパン (後ろに字を続けて行を溢れさせる) が「見える最後の 1 桁」から始まる入力を、
 	// 前置きの長さと幅を掃いて探す
 	hit := 0
-	for pad := 0; pad < 6; pad++ {
+	for pad := range 6 {
 		for w := 8; w <= 30; w++ {
 			src := "| a" + strings.Repeat("a", pad) + " | b | c | d | e |\n|---|---|---|---|---|\n| x | y | z | v | `全`xx |\n"
 			ls := renderMarkdown(src, w)
