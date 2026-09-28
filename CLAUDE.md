@@ -2,8 +2,7 @@
 
 - **macOS のみ。Linux はサポート対象外** (2026-08-28 決定 / issue 133)。CI も macOS runner で回す
 - したがって **BSD 側の書き方で構わない**。「GNU でも動くように」という理由だけで分岐を足さない
-- 移行は完了済み (issue 133)。Linux 前提の道具 (`make test-gnu` / `scripts/check_platform_dialect.sh`)
-  は、対象が macOS だけになった時点で「正しい macOS の書き方を弾く」側に回ったので外した
+- GNU 方言を要求する検査・ラッパーは置かない (正しい macOS の書き方を弾く側に回る)
 - 🚨 **残るのは「版」の差**。CI runner の `/bin/bash` は 3.2、開発機は Homebrew の 5 系。
   workflow 側で brew の bash を PATH 先頭に出して揃えている。新しい workflow を足すときは同じ手当てが要る
 

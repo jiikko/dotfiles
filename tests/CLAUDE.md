@@ -125,10 +125,8 @@ PATH 先頭に置く)、時間はモック内の `grep` 連打による **fork �
 ## platform (macOS のみ)
 
 対象は macOS だけ (issue 133)。**CI も全 workflow が macos-15 runner**なので、手元と CI の
-userland は同じ。かつて「手元 BSD / CI GNU」の差を潰すために持っていた道具
-(`make test-gnu` / `scripts/with_gnu_grep.sh` / `scripts/check_platform_dialect.sh`) は、
-**対象が macOS だけになった時点で「正しい macOS の書き方」を弾く側に回った**ので外した
-(例: 素の `stat -f %m` は macOS では正しいのに、あの検査は GNU フォールバックを要求していた)。
+userland は同じ。GNU 方言を要求する検査・ラッパーは置かない — 正しい macOS の書き方を弾く
+(例: 素の `stat -f %m` は macOS では正しいが、GNU フォールバックを要求する検査はこれを落とす)。
 
 - BSD の書き方で構わない。「GNU でも動くように」だけを理由に分岐を足さない
 - 🚨 **残っているのは「版」の差**。CI の `/bin/bash` は 3.2、開発機は Homebrew の 5 系。

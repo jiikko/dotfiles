@@ -206,7 +206,7 @@ Codex はリポジトリ内のコンテキストをある程度拾えるが、�
 - **全ての `command codex exec` 呼び出しに `</dev/null` を必ず付ける**。Claude Code の Bash ツールの stdin は非TTYのパイプ（書き込み側が開いたまま EOF が来ない）なので、prompt を引数で渡しても codex が「Reading additional input from stdin...」で stdin の EOF を待ち続け、コマンドがタイムアウトまでハングする。`</dev/null` で stdin を即 EOF にすると解消する（[openai/codex#20919](https://github.com/openai/codex/issues/20919)）。selector モード・プロンプトモードのどちらでも必要。codex 側が stdin チェックにタイムアウトを実装する等で修正されたら本対処は不要になる
 - 常に `--ephemeral -o "$review_out"` を付与する。sandbox は `-s read-only` を明示する（`--full-auto` は付けない。codex-cli 0.152.1 で削除済みで、渡すと未知の引数として即エラーになる。かつては `--sandbox workspace-write` の deprecated alias で、`-s read-only` と併用すると後勝ちで書き込み可能になった）
 - `codex exec` fallback を使う時は `-s read-only` を付ける
-- **モデルは `-m gpt-6-luna` で明示する**。省略すると `~/.codex/config.toml` の既定 (対話 TUI 側の都合で変わる。2026-09-27 時点は `gpt-5.6-luna` / effort `low`) を拾い、実行ごとにモデルが変わる。codex-drive と同じモデルに揃える
+- **モデルは `-m gpt-6-luna` で明示する**。省略すると `~/.codex/config.toml` の既定 (対話 TUI 側の都合で変わる) を拾い、実行ごとにモデルが変わる。codex-drive と同じモデルに揃える
 - レビュー結果はそのままユーザーに見せる（要約しすぎない）
 - `/tmp` は使わず、出力ファイルは必ず `./tmp` に置く
 - `codex exec review` と `codex exec -s read-only` はレビュー用途として使い、コードを変更しない
