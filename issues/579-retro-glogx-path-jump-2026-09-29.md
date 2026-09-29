@@ -56,11 +56,12 @@
 
 ## 残課題
 
-- [ ] A: adversarial-review-own-safeguards.md §7 への追記 (ユーザーの判断待ち)
-- [ ] B: verify-execution-not-just-exit-code.md への追記 (ユーザーの判断待ち)
-- [ ] C: bin/mutate-verify の複数変異の issue 化 (ユーザーの判断待ち)
+- [x] A: adversarial-review-own-safeguards.md §7 へ追記した (起源は rules-rationale の同名ファイル)
+- [x] B: verify-execution-not-just-exit-code.md の「観測できた経路と、主張する範囲を一致させる」の次へ追記した
+- [x] C: issue 580 に切り出した
 
 ## 進捗
 
 - 2026-09-29 起票。反証レビュー (sonnet 1 本): 規範の引用・既存ルールとの重複・commit 履歴との突合はすべて反証できず。
   採用 (P3): 却下項目 4 の引用先を、fixture が経路に届かない形により直接該当する「到達しているか」節の 1 つ目も含めて書き直した
+- 2026-09-29 ユーザー指示で A・B をルールへ追記、C を issue 580 に切り出した。残課題が空になったので done へ
