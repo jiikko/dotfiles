@@ -480,25 +480,48 @@ func (v *doctorView) waitDeleteCmd(gen int) tea.Cmd {
 	return func() tea.Msg {
 		// 溜まっている進捗を先に出す (両方 ready のときに select が完了を選ぶと、
 		// 直前のコマンドの出力が画面に出ないまま結果へ飛ぶ)
-		select {
-		case ev := <-ch:
-			return doctorDeleteMsg{gen: gen, ev: ev}
-		default:
-		}
-		select {
-		case ev := <-prog:
-			return doctorDeleteMsg{gen: gen, ev: ev}
-		default:
-		}
-		select {
-		case ev := <-ch:
-			return doctorDeleteMsg{gen: gen, ev: ev}
-		case ev := <-prog:
-			return doctorDeleteMsg{gen: gen, ev: ev}
-		case ev := <-done:
+		if ev, ok := pendingDeleteEvent(ch, prog); ok {
 			return doctorDeleteMsg{gen: gen, ev: ev}
 		}
+		return doctorDeleteMsg{gen: gen, ev: awaitDeleteEvent(ch, prog, done)}
 	}
+}
+
+// awaitDeleteEvent は次の 1 件を待つ。完了は、溜まっている出力と相を出し切ってから返す。
+//
+// 🚨 呼び出し側で覗いてからこの select までの間に進捗と完了の両方が届くと、select は
+// 無作為に完了を選ぶ。完了を返すと待ち受けを張り直さないので、残った進捗とコマンドの出力
+// (y でコピーする記録) を誰も読まない (1000 回に 8 回の実測)。残っていれば先に返し、完了は
+// done へ戻して次の待ち受けで受ける。done は cap 1 で、書き手は仕事 1 本につき 1 回しか
+// 書かない (今空けたので詰まらない)
+func awaitDeleteEvent(ch, prog, done chan doctorDeleteEvent) doctorDeleteEvent {
+	select {
+	case ev := <-ch:
+		return ev
+	case ev := <-prog:
+		return ev
+	case ev := <-done:
+		if pending, ok := pendingDeleteEvent(ch, prog); ok {
+			done <- ev
+			return pending
+		}
+		return ev
+	}
+}
+
+// pendingDeleteEvent は溜まっている出力 (ch) と相 (prog) を、この順に 1 件だけ待たずに取り出す。
+func pendingDeleteEvent(ch, prog chan doctorDeleteEvent) (doctorDeleteEvent, bool) {
+	select {
+	case ev := <-ch:
+		return ev, true
+	default:
+	}
+	select {
+	case ev := <-prog:
+		return ev, true
+	default:
+	}
+	return doctorDeleteEvent{}, false
 }
 
 // receiveDelete は進捗 / 完了を取り込む。次の 1 件を待つ Cmd を返す。

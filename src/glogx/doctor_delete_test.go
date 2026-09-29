@@ -1950,3 +1950,36 @@ func TestDoctorSelectedResultsSkipsWalkWhenNothingSelected(t *testing.T) {
 		t.Fatalf("選択が 1 件のとき summary が %d 件", n)
 	}
 }
+
+// 🚨 進捗と完了が同時に ready でも、完了より先に進捗・コマンドの出力を返す。
+// select は ready なものを無作為に選ぶので、出し切らずに完了を返すと残りを誰も読まない
+// (TestDoctorDeleteRunsAndShowsResult が 1000 回に 8 回「進捗が 1 件も届いていない」で落ちた原因)。
+// 200 回とも先に進捗が出ることを見る (壊れていれば毎回 1/2 で完了が先に出る)。
+func TestAwaitDeleteEventDrainsBeforeDone(t *testing.T) {
+	for i := range 200 {
+		ch := make(chan doctorDeleteEvent, 16)
+		prog := make(chan doctorDeleteEvent, 1)
+		done := make(chan doctorDeleteEvent, 1)
+		rep := disk.DeleteReport{}
+		prog <- doctorDeleteEvent{prog: &doctorProgress{i: 1, total: 1, known: true}}
+		ch <- doctorDeleteEvent{cmd: &disk.CommandRecord{Name: "brew"}}
+		done <- doctorDeleteEvent{rep: &rep}
+		var order []string
+		for range 3 {
+			switch ev := awaitDeleteEvent(ch, prog, done); {
+			case ev.cmd != nil:
+				order = append(order, "cmd")
+			case ev.prog != nil:
+				order = append(order, "prog")
+			case ev.rep != nil:
+				order = append(order, "done")
+			}
+		}
+		if order[2] != "done" {
+			t.Fatalf("%d 回目: 完了が出力・進捗より先に出た: %v", i, order)
+		}
+		if len(done) != 0 {
+			t.Fatalf("%d 回目: 完了が done に残った", i)
+		}
+	}
+}
