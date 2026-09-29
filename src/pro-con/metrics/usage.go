@@ -27,27 +27,32 @@ type Usage struct {
 	Output     int64 `json:"output"`
 	// Responses は数えた応答の数
 	Responses int `json:"responses"`
-	// USD は API の料金に換算した額、FiveHourPct はそれを 5 時間枠の % に直した粗い値 (FiveHourUSDPerPct)
+	// USD は API の料金に換算した額。FiveHourPct は 5 時間枠の % の粗い値で、USD を割った値ではない (quotaReadRate)
 	USD         *float64 `json:"usd,omitempty"`
 	FiveHourPct *float64 `json:"fiveHourPct,omitempty"`
 	Unpriced    []string `json:"unpriced,omitempty"`
 }
 
-// FiveHourUSDPerPct は 5 時間枠の 1% に当たる API 料金換算の額 (449 の「利用枠への換算」の粗い値。書き込み・読み・出力の重みは分けられていない)。
+// FiveHourUSDPerPct は 5 時間枠の 1% に当たる額 (449 の「利用枠への換算」の粗い値。書き込み・読み・出力の重みは分けられていない)。
 const FiveHourUSDPerPct = 3.5
 
-// price は 100 万トークンあたりの入力・出力の単価 ($)。キャッシュの読みは入力の 0.1 倍、書き込みは 5 分で 1.25 倍・1 時間で 2 倍
-// (449 が claude-api skill の表から引いた値)。
-type price struct{ in, out float64 }
+// quotaReadRate は 5 時間枠の % を数えるときの読みの重み (入力の倍率)。449 は読みを全 model で 0.1 倍と置いて FiveHourUSDPerPct を
+// 合わせたので、% はこの重みのまま数える。🚨 料金の price.readRate に替えない: Opus 5.5 の読みの料金は 0.05 倍で、それで割ると
+// 同じ使い方の % が 449 の合わせ方より小さく出る (読みが料金換算の 6〜7 割を占めた 449 の区間で 3 割ほど)。合わせ直すなら 449 の区間で測り直す
+const quotaReadRate = 0.1
 
-// prices は model の名前の頭 → 単価 (日付の付いた名前も頭で当てる)。
+// price は 100 万トークンあたりの入力・出力の単価 ($) と、キャッシュの読みの入力に対する倍率。書き込みはどの model も入力の
+// 5 分で 1.25 倍・1 時間で 2 倍 (claude-api skill の表。読みは Opus 5.5 だけ 0.05 倍 = $0.20 で、他は 0.1 倍)。
+type price struct{ in, out, readRate float64 }
+
+// prices は model の名前の頭 → 単価 (日付の付いた名前も頭で当てる。claude-sonnet-5 は claude-sonnet-5-5 にも当たる。単価は同じ)。
 var prices = []struct {
 	prefix string
 	p      price
 }{
-	{"claude-opus-5-5", price{4, 20}},
-	{"claude-sonnet-5", price{2, 10}},
-	{"claude-haiku-4-5", price{1, 5}},
+	{"claude-opus-5-5", price{4, 20, 0.05}},
+	{"claude-sonnet-5", price{2, 10, 0.1}},
+	{"claude-haiku-4-5", price{1, 5, 0.1}},
 }
 
 func priceOf(model string) (price, bool) {
@@ -61,6 +66,11 @@ func priceOf(model string) (price, bool) {
 
 // tally は model ごとに足したトークン (書き込みは 5 分と 1 時間を分けて持つ: 単価が違う)。
 type tally struct{ in, write5m, write1h, read, out int64 }
+
+// cost は t を p で数えた額 ($)。readRate は読みの入力に対する倍率 (料金なら p.readRate、5 時間枠の % なら quotaReadRate)。
+func (t tally) cost(p price, readRate float64) float64 {
+	return (float64(t.in)*p.in + float64(t.write5m)*p.in*1.25 + float64(t.write1h)*p.in*2 + float64(t.read)*p.in*readRate + float64(t.out)*p.out) / 1e6
+}
 
 // tallyOf は応答 1 つのトークン。
 func tallyOf(l usageLine) tally {
@@ -126,7 +136,7 @@ func ReadUsage(files []string) (Usage, error) {
 		t.in, t.write5m, t.write1h, t.read, t.out = t.in+r.t.in, t.write5m+r.t.write5m, t.write1h+r.t.write1h, t.read+r.t.read, t.out+r.t.out
 	}
 	out := Usage{Responses: len(byID)}
-	usd := 0.0
+	usd, quota := 0.0, 0.0
 	models := make([]string, 0, len(byModel))
 	for m := range byModel {
 		models = append(models, m)
@@ -143,11 +153,12 @@ func ReadUsage(files []string) (Usage, error) {
 			out.Unpriced = append(out.Unpriced, m)
 			continue
 		}
-		usd += (float64(t.in)*p.in + float64(t.write5m)*p.in*1.25 + float64(t.write1h)*p.in*2 + float64(t.read)*p.in*0.1 + float64(t.out)*p.out) / 1e6
+		usd += t.cost(p, p.readRate)
+		quota += t.cost(p, quotaReadRate)
 	}
 	if len(out.Unpriced) == 0 {
 		usd = math.Round(usd*100) / 100
-		pct := math.Round(usd/FiveHourUSDPerPct*100) / 100
+		pct := math.Round(math.Round(quota*100)/100/FiveHourUSDPerPct*100) / 100 // 記録済みの % と比べられるよう、セントに丸めてから割る
 		out.USD, out.FiveHourPct = &usd, &pct
 	}
 	return out, nil

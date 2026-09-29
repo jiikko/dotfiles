@@ -4,14 +4,16 @@ package dispatcher
 // (ユーザーの settings.json の hook・許可・~/.claude/rules はそれで外れる。2.1.282 の /context で実測)。
 // ここで外すのは --setting-sources では外れない残り:
 //   - auto memory (~/.claude/projects/<repo>/memory/MEMORY.md)。どの役割も外す
-//   - SendFeedback (feedbackDrafts: "off")。PG・PM だけ (再開があるのはこの 2 つ)。tools に入るかが GrowthBook の gate
+//   - SendFeedback (feedbackDrafts: "off")。PG・PM・取り込みの係 (再開がある役割)。tools に入るかが GrowthBook の gate
 //     (tengu_juniper_relay) の起動時の値で揺れ、起動と再開で tools の並びが食い違うとキャッシュを先頭から外す (525)。
 //     "off" なら gate と関係なく外れる (2.1.283 の実体: isEnabled = feedbackDrafts !== "off" && gate。--settings の値も読む)。
 //     🚨 これだけでは再開の外れは止まらない。EndConversation の段 (別の gate) を DISABLE_GROWTHBOOK で揃えても、再開は同じ形で外れた
 //     (546 の本物の A-B。外れの原因は gate ではなく未確認)。DISABLE_GROWTHBOOK は PG の gate を全部既定値に倒すので、効くと分かるまで入れない
 //   - ~/.claude/CLAUDE.md。cwd の祖先 (家) の .claude/CLAUDE.md として Project 扱いで拾われる。
-//     PG・PM は残す (git の禁止操作・レビュー方針が要る)。haiku (要約役・btw) は外す
-// 🚨 hook・許可をここへ足さない (--setting-sources で外した意味が崩れる)。PG に ~/.claude/rules の一部を戻すかは別の判断 (431)
+//     PG・PM・取り込みの係は残す (git の禁止操作・レビュー方針が要る)。haiku (要約役・btw) は外す
+// 🚨 hook・許可をここへ足さない (--setting-sources で外した意味が崩れる)。~/.claude/rules も戻さない (431 で決定。role に要る規律は
+// repo の CLAUDE.md・.claude/rules か、role に渡す guide に置く)。ユーザーの settings.json から写すのは language だけで、カード・session
+// ごとに変わる値も入れない (session の形が変わると prompt cache を共有できない。launcher_test.go の TestPersistentSessionProfile)
 
 import (
 	"encoding/json"
@@ -20,8 +22,9 @@ import (
 	"strings"
 )
 
-// sessionSettings は PG・PM の --settings。language はユーザーの settings.json (userSettings) から写す (461)。
-func sessionSettings(userSettings string) string {
+// persistentRoleSettings は PG・PM・取り込みの係の --settings。language はユーザーの settings.json (userSettings) から写す (461。-p では
+// --setting-sources に user を入れても language が効かず、--settings で渡したときだけ効いた。440 の 7d)。
+func persistentRoleSettings(userSettings string) string {
 	s := map[string]any{"autoMemoryEnabled": false, "feedbackDrafts": "off"}
 	if lang := userLanguage(userSettings); lang != "" {
 		s["language"] = lang

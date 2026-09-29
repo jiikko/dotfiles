@@ -33,13 +33,13 @@ import (
 	"pro-con/store"
 )
 
-// Launcher は PG の session を起動・再開する口。
+// Launcher は PG・PM・取り込みの係の session を起動・再開する口。
 type Launcher interface {
-	// Start は repoPath で PG を起動し、claude --bg が返す短い id を返す。name は worktree と session の名前
+	// Start は repoPath で session を起動し、claude --bg が返す短い id を返す。name は worktree と session の名前
 	Start(ctx context.Context, repoPath, name, prompt string) (id string, err error)
 	// Resume は stopID の session を止めてから (空なら止めない) 同じ session を text を渡して再開し、claude --bg が返す短い id を返す
 	// (実行中の session に --resume するとコピーが起動するため。415 論点 11。再開で短い id が変わるかは未実測なので、返った id を使う)
-	// cwd は session の作業ディレクトリ (PG の worktree)。再開はそこで走らせる。name は起動のときと同じ session の名前
+	// cwd は session の作業ディレクトリ (PG・役の worktree)。再開はそこで走らせる。name は起動のときと同じ session の名前
 	// (渡さないと、再開の後の名前は AI の付けた題になる。488 で実測)
 	Resume(ctx context.Context, stopID, sessionID, cwd, name, text string) (newID string, err error)
 	// Stop は session を止める (落ち続けた PG。426 の決定 4)

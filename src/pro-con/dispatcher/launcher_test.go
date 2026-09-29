@@ -38,7 +38,7 @@ func TestLauncherArgsPassLanguageAndNoAutoMemory(t *testing.T) {
 }
 
 // 読めない・壊れている・language が無い / 文字列でない / 空なら language を渡さない (起動は止めない。値を固定で補わない)。
-// auto memory・SendFeedback の無効化は language と関係なく渡す。~/.claude/CLAUDE.md は PG・PM には残す (431)。
+// auto memory・SendFeedback の無効化は language と関係なく渡す。~/.claude/CLAUDE.md は PG・PM・取り込みの係には残す (431)。
 func TestLauncherArgsWithoutLanguageStillDisableAutoMemory(t *testing.T) {
 	cases := map[string]string{
 		"パスが空":        "",
@@ -57,6 +57,69 @@ func TestLauncherArgsWithoutLanguageStillDisableAutoMemory(t *testing.T) {
 			}
 		}
 	}
+}
+
+// PG・PM・取り込みの係の session の形 (431)。prompt cache は request の先頭 (tools・system) が同じなら session をまたいで当たるので:
+//   - 起動と再開で違うのは -w <name> / --resume <id> と位置引数だけ
+//   - --settings はカード・session に依らない (カードの ID・cwd・session ID・時刻を入れない)
+//   - ユーザーの settings.json から写すのは language だけ (model・effort・hook・許可・MCP を写すと、人の普段の設定の変更で role の形が変わる)
+//   - --setting-sources に user を入れない (hook・許可・~/.claude/rules が戻る)。--exclude-dynamic-system-prompt-sections は付けない
+//     (-p 用で --bg の session には効かない。upstream が対応したら 449 の測り方で A-B してから)
+func TestPersistentSessionProfile(t *testing.T) {
+	user := writeSettings(t, `{"language": "日本語", "model": "opus", "effortLevel": "max", "hooks": {"Stop": []},
+		"permissions": {"allow": ["Bash"]}, "mcpServers": {"x": {"command": "x"}}, "statusLine": {"type": "command", "command": "x"},
+		"env": {"A": "1"}, "autoMemoryEnabled": true, "feedbackDrafts": "on", "claudeMdExcludes": ["/x"]}`)
+	l := ExecLauncher{UserSettings: user}
+	start := l.startArgs("pc-c-001", "依頼 C-001")
+	resume := l.resumeArgs("sid-1", "pc-c-001", "回答")
+	if s, r := sessionShape(t, start), sessionShape(t, resume); !slices.Equal(s, r) {
+		t.Fatalf("起動と再開で session の形が違う (再開の最初の要求がキャッシュの先頭から外れる):\n起動 %q\n再開 %q", s, r)
+	}
+	other := [][]string{l.startArgs("pc-pm-20260929-120000", "PM の指示"), l.resumeArgs("sid-2", "pc-int-20260929-120000", "- 取り込んで")}
+	for _, args := range other {
+		if a, b := flagValue(t, start, "--settings"), flagValue(t, args, "--settings"); a != b {
+			t.Fatalf("--settings がカード・session で変わる (session をまたいでキャッシュを共有できない):\n%s\n%s", a, b)
+		}
+	}
+	langOnly := ExecLauncher{UserSettings: writeSettings(t, `{"language": "日本語"}`)}
+	if a, b := flagValue(t, start, "--settings"), flagValue(t, langOnly.startArgs("pc-c-001", "依頼 C-001"), "--settings"); a != b {
+		t.Fatalf("ユーザーの settings.json から language 以外を写している:\n%s\nwant %s", a, b)
+	}
+	for _, args := range [][]string{start, resume} {
+		if v := flagValue(t, args, "--setting-sources"); v != "project,local" {
+			t.Fatalf("--setting-sources = %q (user を入れると hook・許可・~/.claude/rules が戻る): %q", v, args)
+		}
+		if slices.Contains(args, "--exclude-dynamic-system-prompt-sections") {
+			t.Fatalf("--exclude-dynamic-system-prompt-sections を付けた (-p 用で --bg の session には効かない): %q", args)
+		}
+	}
+}
+
+// sessionShape は起動・再開の引数から、起動だけ・再開だけに要る -w <name> / --resume <id> と最後の位置引数を除いた残り。
+func sessionShape(t *testing.T, args []string) []string {
+	t.Helper()
+	if len(args) == 0 {
+		t.Fatal("引数が空")
+	}
+	var out []string
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "-w" || args[i] == "--resume" {
+			i++
+			continue
+		}
+		out = append(out, args[i])
+	}
+	return out
+}
+
+// flagValue は args の flag の次の値。flag が無ければ落とす。
+func flagValue(t *testing.T, args []string, flag string) string {
+	t.Helper()
+	i := slices.Index(args, flag)
+	if i < 0 || i+1 >= len(args) {
+		t.Fatalf("%s が無い: %q", flag, args)
+	}
+	return args[i+1]
 }
 
 // haiku (要約役・btw) は家の .claude/CLAUDE.md も外す。家が分からなければ auto memory だけ外す (431)。

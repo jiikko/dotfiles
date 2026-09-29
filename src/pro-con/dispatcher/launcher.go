@@ -1,15 +1,12 @@
 package dispatcher
 
-// ExecLauncher は本物の claude で PG を起動・再開する。
-//
-// 🚨 **まだ一度も本物の claude で走らせていない** (週の利用枠のため。issue 427 の 3f で確かめる)。引数の形は 425 の実測と `claude --help` から組んだ:
-//   - 起動は `claude --bg -w <name> -n <name> --setting-sources project,local <prompt>`。-w で Claude Code に worktree を作らせる
-//     (trust 済みの repo の下でないと --bg が起動しない。415 論点 2)。--setting-sources でユーザーの hook を外す (431 の計測)
+// ExecLauncher は本物の claude で PG・PM・取り込みの係 (persistent role) の session を起動・再開する。引数の形は 425 の実測と `claude --help` から組んだ:
+//   - 起動は `claude --bg -w <name> <profile> <prompt>`。-w で Claude Code に worktree を作らせる
+//     (trust 済みの repo の下でないと --bg が起動しない。415 論点 2)
+//   - 再開は stop してから `claude --bg --resume <session-id> <profile> <text>` (実行中の session に --resume するとコピーが起動する。415 論点 11)
+//   - <profile> (persistentSessionArgs) は起動と再開で同じにする (431)。prompt cache は request の先頭 (tools・system) が同じなら session を
+//     またいで当たるので、起動と再開で違ってよいのは -w / --resume と位置引数だけ
 //   - TMUX / TMUX_PANE を落とす (PG が起動元の pane の状態のバッジを上書きしないように。415 論点 5)
-//   - 再開は stop してから `claude --bg --resume <session-id> -n <name> <text>` (実行中の session に --resume するとコピーが起動する。415 論点 11)
-//   - 起動・再開とも --settings で sessionSettings (rolesettings.go) を渡す: ユーザーの settings.json の language (461。-p では
-//     --setting-sources に user を入れても language が効かず、--settings で渡したときだけ効いた。440 の 7d) と、auto memory を外す (431) と、
-//     SendFeedback を外す (525。起動と再開で tools の並びを揃える)
 
 import (
 	"bytes"
@@ -63,17 +60,22 @@ func (l ExecLauncher) Stop(ctx context.Context, id string) error {
 }
 
 func (l ExecLauncher) startArgs(name, prompt string) []string {
-	return withSettings([]string{"--bg", "-w", name, "-n", name, "--setting-sources", "project,local"}, sessionSettings(l.UserSettings), prompt)
+	return l.args([]string{"--bg", "-w", name}, name, prompt)
 }
 
-// resumeArgs は -n で名前を付け直す (付けないと、再開の後の名前は AI の付けた題になる。488 で -n の有無の A-B を実測)
 func (l ExecLauncher) resumeArgs(sessionID, name, text string) []string {
-	return withSettings([]string{"--bg", "--resume", sessionID, "-n", name, "--setting-sources", "project,local"}, sessionSettings(l.UserSettings), text)
+	return l.args([]string{"--bg", "--resume", sessionID}, name, text)
 }
 
-// withSettings は --settings を位置引数 (prompt) の前に挟む。
-func withSettings(args []string, settings, positional string) []string {
-	return append(args, "--settings", settings, positionalArg(positional))
+// args は起動・再開に固有の引数 (lifecycle) の後ろに persistentSessionArgs と位置引数 (prompt / 再開の本文) を足す。
+func (l ExecLauncher) args(lifecycle []string, name, positional string) []string {
+	return append(append(lifecycle, persistentSessionArgs(name, l.UserSettings)...), positionalArg(positional))
+}
+
+// persistentSessionArgs は起動と再開で共通の session の形: -n <name> (再開でも付け直す。付けないと、再開の後の名前は AI の付けた題になる。
+// 488 で -n の有無の A-B を実測) と、--setting-sources project,local + --settings (persistentRoleSettings。中身と外すものは rolesettings.go)。
+func persistentSessionArgs(name, userSettings string) []string {
+	return []string{"-n", name, "--setting-sources", "project,local", "--settings", persistentRoleSettings(userSettings)}
 }
 
 // dashGuard は「-」で始まる位置引数の前に付ける前置き。
