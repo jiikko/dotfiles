@@ -1,1 +1,0 @@
-../580-feat-mutate-verify-run-a-list-of-mutants.md
