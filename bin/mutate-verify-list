@@ -1,0 +1,191 @@
+#!/bin/bash
+# mutate-verify-list — 一覧に書いた複数の変異を bin/mutate-verify で 1 本ずつ当て、結果を表にする (issue 580)。
+#
+# 1 つの変更に変異を何本も当てるとき、呼び出し側が毎回書いていた並べ役を道具にしたもの。
+# 判定 (baseline green・当たったか・構文・誤ファイル・--expect の帰属・作業ツリーの改変) は全部 mutate-verify が持ち、
+# ここは**変異ごとに mutate-verify を 1 回起動する**だけ。
+# 🚨 1 プロセスの中で複数の変異を回す形にしない: mutate-verify は 1 起動で worktree を 1 つ作って消し、後始末は単一の
+#    EXIT trap、判定は exit code で返す作りになっている (issue 580 の反証レビュー)。判定を別に実装すると必ず食い違う。
+#
+# ## 使い方
+#
+#   mutate-verify-list [--log-dir DIR] LIST
+#
+# LIST は bash の断片で、次の 2 つの関数だけを使って書く (引用は bash がそのまま解く。並べ役を手で書いていたときと同じ書き方):
+#
+#   defaults --syntax 'go test -vet=off -count=1 -run "^$" ./...' --baseline-expect '^ok '
+#   mutant guard-off --file src/x/guard.go \
+#     --apply 'perl -0pi -e "s/if guard/if false \&\& guard/" "$MUTATE_FILE"' \
+#     --verify 'go test -count=1 -run TestGuard -v ./...' --expect 'FAIL: TestGuard/case'
+#
+#   - defaults は、それより後の mutant の引数の前に置く共通の引数 (書き直せば以降が変わる)。同じ引数を mutant 側にも
+#     書いたら mutant 側が勝つ (mutate-verify は後に書いた値で上書きする)
+#   - mutant の第 1 引数は名前 (英数と . _ - だけ。ログのファイル名になる)。残りは mutate-verify の引数そのまま
+#   - 🚨 LIST は source する (= 任意のコードが走る)。信頼できない LIST を渡さないこと (mutate-verify の --apply と同じ脅威モデル)
+#   - 🚨 LIST は**全部読み終えてから**当て始める。書き損じ (途中で失敗するコマンド・未知の関数・名前の重複・mutant 側の
+#     --name) や途中の exit があれば 1 本も当てずに止める。LIST は隔離したサブシェルで読むので、LIST の cd / set は
+#     変異の実行に効かない (相対パスは起動したディレクトリ基準)。**`export` も効かない** (--verify に環境変数を渡すなら
+#     --verify の中に書く)。🚨 `return` で途中から抜けると後ろが黙って読まれない
+#   - rc=9 (元の作業ツリーが変わった) が出たら残りは当てずに止め、表に「未実行」と出す
+#   - ログの置き場は repo の外か、repo の中なら ignore された場所 (ignore されていないと全部 rc=9 になる)
+#
+# 結果の表は 1 変異 1 行: 名前 / rc / rc の意味 (mutate-verify の終了コード)。各変異の出力は --log-dir の
+# <名前>.log に残す (既定は $MUTATE_VERIFY_LOG_ROOT か $TMPDIR の下に作る。この道具は消さない)。
+# 🚨 rc=0 は「--expect の検査が落ちた」までで、「それだけが落ちた」ではない (mutate-verify の doc)。巻き添えは各ログの
+#    baseline との差 (消えた行・増えた行) を見て確かめる
+#
+# 環境変数: MUTATE_VERIFY_BIN (テスト用。当てる道具を差し替える。既定はこのスクリプトの隣の mutate-verify)
+#
+# ## 終了コード
+#
+#   0  全部の変異が rc=0 (想定どおり red)
+#   1  rc≠0 の変異が 1 本以上ある (表を見る)
+#   2  使い方の誤り / LIST の書き損じ
+set -uo pipefail
+
+prog="${0##*/}"
+die() { echo "$prog: $*" >&2; exit 2; }
+
+log_dir=""
+list=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --log-dir) log_dir="${2:-}"; shift 2 || die "--log-dir に値が無い" ;;
+    -h|--help) sed -n '2,/^set -uo pipefail/p' "$0" | sed '$d'; exit 0 ;;
+    -*)        die "未知の引数: $1" ;;
+    *)         [ -z "$list" ] || die "LIST は 1 つだけ: $1"; list="$1"; shift ;;
+  esac
+done
+[ -n "$list" ] || die "LIST を指定すること (--help)"
+[ -f "$list" ] || die "LIST が無い: $list"
+
+mv_bin="${MUTATE_VERIFY_BIN:-$(cd "$(dirname "$0")" && pwd)/mutate-verify}"
+case "$mv_bin" in /*) ;; *) die "MUTATE_VERIFY_BIN は絶対パスで: $mv_bin" ;; esac
+[ -x "$mv_bin" ] || die "mutate-verify を実行できない: $mv_bin"
+
+# --- LIST を読む (まだ当てない) -----------------------------------------------------------------
+# 🚨 LIST は**サブシェルで** source する (敵対レビュー P1-1〜3。親で source していた頃は、途中の書き損じを見落とし、
+#    LIST の `exit 0` が「全部 red」の rc=0 になり、LIST の `set -e` が 1 本目の rc≠0 で表ごと殺していた)。
+#   - サブシェルは `set -e` で走らせる: 途中のどのコマンドの失敗 (未知の関数 = 127 を含む) でも止まる
+#   - 最後まで読めたら完了の目印を書く。目印が無い = 途中で exit した (rc だけ見ると exit 0 を読み違える)
+#   - LIST の `cd` / `set` / 変数の書き換え (names・mv_bin・die の再定義) は親に漏れない
+#   - 変異の記録 (名前と引数) はファイルで受け取り、検査は親が持つ (LIST が関数を再定義しても検査は外れない)
+#   🚨 `return` で source を途中で抜けると、その後ろの mutant は黙って読まれない。検出する手段が無いので書かないこと
+# bash 3.2 (CI の /bin/bash) には入れ子の配列が無いので、1 変異の引数は printf %q で 1 本の文字列に畳み、当てる直前に
+# eval で戻す。%q は bash 自身が再び読める形を保証する (改行・制御文字・空文字列・`-` 始まりで往復を実測)
+parse_dir="$(mktemp -d "${TMPDIR:-/tmp}/mutate-verify-list-parse.XXXXXX")" || die "一時ディレクトリを作れない"
+trap 'rm -rf "$parse_dir"' EXIT
+__mvl_records="$parse_dir/records"
+: > "$__mvl_records"
+# 🚨 `( … ) || die` と書かない: `||` の左のサブシェルでは POSIX どおりの bash (5 系) だと set -e が無効になり、途中の
+#    書き損じを素通りする (bash 3.2 は source した行だけ偶然止まる。2 周目の敵対レビューで実測)。rc は後で見る
+(
+  set -e
+  # 並べ役の変数は LIST が上書きすると以降の記録を黙って別の場所へ書くので、読み取り専用にする (上書きは set -e で止まる)
+  readonly __mvl_records
+  __mvl_defaults=()
+  # shellcheck disable=SC2329 # LIST が呼ぶ (source した先から)
+  defaults() { __mvl_defaults=("$@"); }
+  # shellcheck disable=SC2329 # LIST が呼ぶ
+  mutant() {
+    local n="${1-}"
+    [ $# -gt 0 ] && shift
+    local spec=""
+    if [ "${#__mvl_defaults[@]}" -gt 0 ] || [ $# -gt 0 ]; then
+      spec="$(printf '%q ' ${__mvl_defaults[@]+"${__mvl_defaults[@]}"} "$@")"
+    fi
+    printf '%s\0%s\0' "$n" "$spec" >> "$__mvl_records"
+  }
+  # shellcheck source=/dev/null
+  . "$list"
+  : > "$parse_dir/done"
+)
+parse_rc=$?
+[ "$parse_rc" -eq 0 ] || die "LIST の読み込みが途中で失敗した (rc=$parse_rc): $list"
+[ -e "$parse_dir/done" ] || die "LIST が最後まで読まれていない (途中で exit した?): $list"
+
+names=()
+specs=()
+while IFS= read -r -d '' n && IFS= read -r -d '' spec; do
+  case "$n" in
+    "" | *[!A-Za-z0-9._-]*) die "mutant の名前に使えない字がある: '$n' (英数と . _ - だけ)" ;;
+  esac
+  for x in ${names[@]+"${names[@]}"}; do
+    [ "$x" != "$n" ] || die "mutant の名前が重複している: $n (ログが上書きされる)"
+  done
+  # --name は道具が付ける (表の名前・ログのファイル名・mutate-verify の全体のログの置き場を 1 つの名前に揃える)
+  eval "set -- $spec"
+  for a in "$@"; do
+    [ "$a" != "--name" ] || die "mutant $n の引数に --name がある (名前は mutant の第 1 引数で付ける)"
+  done
+  names+=("$n")
+  specs+=("$spec")
+done < "$__mvl_records"
+[ "${#names[@]}" -gt 0 ] || die "LIST に mutant が 1 つも無い: $list"
+
+if [ -z "$log_dir" ]; then
+  parent="${MUTATE_VERIFY_LOG_ROOT:-${TMPDIR:-/tmp}}"
+  log_dir="$(mktemp -d "${parent%/}/mutate-verify-list.XXXXXX")" || die "ログの置き場を作れない: $parent"
+else
+  mkdir -p "$log_dir" || die "ログの置き場を作れない: $log_dir"
+fi
+# 🚨 ログの置き場は repo の外 (か ignore された場所) に置く。repo の中で ignore されていないと、mutate-verify が走っている間に書かれ続けるログが untracked の差分に
+#    なり、全部の変異が rc=9 (元の作業ツリーが変わった) になる (敵対レビュー P2-2 で実測)
+# 「repo の中か」は字面で比べず git に聞く (大文字小文字違いのパスで前方一致をすり抜けた。2 周目 P3)
+if root="$(git rev-parse --show-toplevel 2>/dev/null)" &&
+   log_top="$(git -C "$log_dir" rev-parse --show-toplevel 2>/dev/null)" &&
+   [ "$(cd "$log_top" && pwd -P)" = "$(cd "$root" && pwd -P)" ]; then
+  # ignore されている置き場 (tmp/ 等) は git status に出ないので rc=9 の原因にならない。ignore されていないものだけ止める
+  git -C "$root" check-ignore -q -- "$(cd "$log_dir" && pwd -P)" ||
+    die "ログの置き場が repo の中で ignore されていない ($log_dir)。repo の外か ignore された場所を指定すること"
+fi
+
+# rc の意味 (mutate-verify の「終了コード」節と同じ。表の読み手が doc を開かずに済むように)
+rc_label() {
+  case "$1" in
+    0) echo "想定どおり red" ;;
+    2) echo "使い方の誤り" ;;
+    3) echo "判定不能 (baseline が red / 走っていない / worktree を作れない)" ;;
+    4) echo "変異が当たっていない" ;;
+    5) echo "変異が構文エラー (当て直す)" ;;
+    6) echo "🚨 緑のまま通った (テストが守っていない)" ;;
+    7) echo "red だが --expect に一致しない (別の検査が落ちた)" ;;
+    8) echo "--file 以外が変わった" ;;
+    9) echo "🚨 元の作業ツリーが変わった (結果を信用しない)" ;;
+    -) echo "未実行 (前の変異の rc=9 で止めた)" ;;
+    *) echo "想定外の終了コード" ;;
+  esac
+}
+
+# --- 1 本ずつ当てる ------------------------------------------------------------------------
+total="${#names[@]}"
+rcs=()
+i=0
+while [ "$i" -lt "$total" ]; do
+  n="${names[$i]}"
+  echo "[$prog] ($((i + 1))/$total) $n" >&2
+  eval "set -- ${specs[$i]}"
+  "$mv_bin" --name "$n" "$@" > "$log_dir/$n.log" 2>&1
+  rc=$?
+  rcs+=("$rc")
+  i=$((i + 1))
+  # rc=9 (元の作業ツリーが変わった = 並行セッションの編集など) の原因は続いていることが多い。その上で残りを
+  # 当てても信用できないので止め、残りは「未実行」として表に出す
+  if [ "$rc" = 9 ]; then
+    echo "[$prog] 🚨 $n で rc=9 (元の作業ツリーが変わった)。残り $((total - i)) 本は当てずに止める" >&2
+    while [ "$i" -lt "$total" ]; do rcs+=("-"); i=$((i + 1)); done
+  fi
+done
+
+# --- 表 ------------------------------------------------------------------------------------
+bad=0
+echo "名前	rc	意味"
+i=0
+while [ "$i" -lt "$total" ]; do
+  rc="${rcs[$i]}"
+  [ "$rc" = 0 ] || bad=$((bad + 1))
+  printf '%s\t%s\t%s\n' "${names[$i]}" "$rc" "$(rc_label "$rc")"
+  i=$((i + 1))
+done
+echo "[$prog] $total 本中 rc≠0 が $bad 本。各変異の出力: $log_dir/<名前>.log" >&2
+[ "$bad" -eq 0 ]

@@ -74,6 +74,8 @@
 #
 # ## 使い方
 #
+#   変異を何本も当てるなら bin/mutate-verify-list (一覧から 1 本ずつこの道具を起動し、結果を表にする。issue 580)
+#
 #   mutate-verify --file src/x/main.go \
 #     --apply 'perl -0pi -e "s/if guard/if false \&\& guard/" "$MUTATE_FILE"' \
 #     --syntax 'go test -vet=off -count=1 -run ^$ ./...' \
