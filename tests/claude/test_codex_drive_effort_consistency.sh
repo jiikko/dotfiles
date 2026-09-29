@@ -22,7 +22,7 @@
 #
 # codex-drive 以外の skill (codex-lead / codex-review) は意図的に別の effort を使うため対象外。
 #
-# 例外は「上振れ先」1 つだけ (FALLBACK_MODEL)。luna max の質が低いマイルストーンを gpt-6-astra へ
+# 例外は「上振れ先」1 つだけ (FALLBACK_MODEL)。luna max の質が低いマイルストーンを gpt-6.1-sol へ
 # 切り替えてよい (2026-09-13、dotfiles issue 369 1-3)。下げる方向の例外は無い (2026-08-26 に一度
 # sol-mid を 3 フェーズだけ許可したが、消費が重く同日中に廃止)。effort の例外も無い。
 # 許可される値は driver の既定 1 組 + FALLBACK_MODEL で、SKILL.md にそれ以外のモデル / effort が現れたら落とす。
@@ -36,7 +36,7 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
 DRIVER="$ROOT_DIR/bin/codex-fanout"
 SKILL_MD="$ROOT_DIR/_claude/skills/codex-drive/SKILL.md"
-FALLBACK_MODEL="gpt-6-astra"  # 上振れ先。SKILL.md「モデルはマイルストーンの性質で振らない」の例外項と一致させる
+FALLBACK_MODEL="gpt-6.1-sol"  # 上振れ先。SKILL.md「モデルはマイルストーンの性質で振らない」の例外項と一致させる
 
 fail=0
 
