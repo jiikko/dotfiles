@@ -87,3 +87,9 @@ issue 番号 309 の衝突を調べていて、**timestamp だけを根拠に「
 
 - obaket 895
 - obaket retro 967, 2026-09-27
+
+## 追記のつもりの変更で削除行を数える (2026-09-29 追記)
+
+起源: dotfiles issue 584。rationale 2 ファイルへの追記を `open(p,'w').write(open(p).read() + add)` と 1 式で書き、書き込み用の
+open が先に評価されて中身を 425 行・343 行消した。`tests/claude` は消えた状態でも緑で、commit 前の `git diff --stat` に削除行が
+出ていたことだけが手がかりだった。

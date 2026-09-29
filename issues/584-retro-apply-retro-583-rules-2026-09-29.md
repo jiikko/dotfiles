@@ -35,9 +35,10 @@
 
 ## 残課題
 
-- [ ] A: commit-with-pathspec.md への追記 (ユーザーの判断待ち)
+- [x] A: commit-with-pathspec.md の「commit 後に `git show --stat HEAD` を読み」の項の次へ追記した
 
 ## 進捗
 
 - 2026-09-29 起票。反証レビュー (sonnet 1 本): 指摘なし。追記先の実在と既存の記述との重複なし・rationale 2 ファイルが
   94774fe7 で追記のみ (削除 0)・hook が `git -C $W` の変数を展開しないことは、どれも反証できなかった
+- 2026-09-29 ユーザー指示で A を適用した。残課題が空になったので done へ
