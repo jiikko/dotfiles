@@ -244,13 +244,18 @@ func Usage() string {
                             内周の弧 = 消費した割合。1 分ごとに自動更新。
                             r で今すぐ更新 / i・s で issues・status viewer へ切り替え
                             (viewer 側の R と対で往復できる) / R・q・esc・h で閉じる
-  D                         doctor を全画面で表示 (toggle)。掃除候補のディスク占有と壊れた
-                            launchd 登録を、リスクと復元方法つきで一覧する。
-                            削除はしない (dry-run。実行するコマンドを提示するだけ)。
+  D                         doctor を全画面で表示 (toggle)。ディスクの掃除候補・壊れた launchd 登録・
+                            Homebrew の警告・Docker の未使用資源・内蔵 SSD の健康状態を、
+                            リスクと復元方法つきでタブに並べる (tab / h・l で切替)。
+                            ディスクは Space で選んで d で削除、Homebrew / Docker は Space で
+                            選んで x で提示コマンドを実行 (どちらも確認を挟む)。
+                            SSD は読むだけ (smartctl が無ければ brew install smartmontools を
+                            案内する。APFS の検査は実行せず、y でコマンドをコピーするだけ)。
                             画面内のキー: j/k で移動 / Enter で詳細の開閉 /
-                            y でパスをコピー / Y で解説をコピー / r で再スキャン /
+                            y でパス・コマンドをコピー / Y で解説をコピー / r で再スキャン /
                             D・q・esc で閉じる。
-                            同じ検査は CLI からも叩ける (bin/diskdoctor / bin/svcdoctor)
+                            同じ検査の一部は CLI からも叩ける (bin/diskdoctor / bin/svcdoctor。
+                            どちらも走査だけで削除しない)
   C                         claude update を実行する (確認なし即実行。結果は下部に表示)
   X                         codex update を実行する (C の codex 版。起動時に新バージョンを
                             検出するとトーストで X を案内する)
