@@ -1,7 +1,5 @@
 # 578 feat: glogx doctor に SSD 診断タブを追加する
 
-> 🚨 **担当中: dotfiles-43**（2026-09-29〜）
-
 起票日: 2026-09-29
 重要度: **P2**
 
@@ -337,8 +335,8 @@ SSD 側は `unrequested / running / done / failed` のような明示状態を�
 ## 関連
 
 - `docs/macos-health-check.md` — SSD / smartctl / APFS 検査候補の実機調査
-- [issue 148](done/148-feat-glogx-doctor-disk-diagnosis.md) — 現在の doctor / Disk タブの起点
-- [issue 500](done/500-bug-macos-kernel-zone-leak-from-tmux-clients.md) — メモリリークから kernel panic に至った調査
+- [issue 148](148-feat-glogx-doctor-disk-diagnosis.md) — 現在の doctor / Disk タブの起点
+- [issue 500](500-bug-macos-kernel-zone-leak-from-tmux-clients.md) — メモリリークから kernel panic に至った調査
 - `src/glogx/doctor_view.go` — doctor のタブ / state / 描画
 - `src/glogx/doctor_keys.go` — doctor の行キー
 - `src/doctor/README.md` — doctor の判定・安全性の既存契約
