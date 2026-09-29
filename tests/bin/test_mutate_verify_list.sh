@@ -134,7 +134,7 @@ done
 # 4. LIST の set -e / cd は変異の実行に効かない (1 本目が rc≠0 でも 2 本目を当てて表を出す)
 run_stub '
 set -euo pipefail
-cd /
+cd /  # cd-rc: allow LIST の本文 (テストの入力)。LIST の cd が変異の実行に効かないことを確かめるために置く
 mutant green-1 --file a
 mutant red-2 --file a'
 rc=$?
