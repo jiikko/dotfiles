@@ -1,5 +1,7 @@
 # 431 (perf/design): pro-con の persistent role session 設定を固定し、Opus 5.5 の prompt-cache affinity を最大化する
 
+> 🚨 **担当中: dotfiles-40**（2026-09-29〜）
+
 起票日: 2026-09-24  
 設計更新: 2026-09-29
 
