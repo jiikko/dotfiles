@@ -426,7 +426,7 @@
   「automatically restarted」の注記が入る) なら新しい pid で記録を書き直し、外での再開なら書き直さない、を区別する
 - **外からの操作を検出する**: pro-con の session は、他の shell からも `claude attach` / `claude stop` できてしまう (Claude Code の側で止められない)。
   pro-con が指示していない変化 (止まった・入力が増えた・transcript に pro-con の知らない人間の発言) を見つけたら、カードに「外から操作された」と出して止める
-- PG / 係は [431](431-feat-pro-con-pg-session-settings.md) の役割ごとの設定で起動する (431 を先にやる)
+- PG / 係は [431](pending/431-feat-pro-con-pg-session-settings.md) の役割ごとの設定で起動する (431 を先にやる)
 - 模擬 (ハリボテ) は残して起動のときに選ぶ。起動の口・状態ファイルの分け方・画面の区別は [424](done/424-feat-pro-con-readonly-real-backend.md) の「模擬と本物の併用」節
 
 ### 415 の決定事項
@@ -440,6 +440,7 @@
 - PG の状態は `claude agents --json --all` の `status` / `state` / `pid` / `waitingFor` で読める (完了・API エラー・停止・プロセスの死・権限待ち・質問待ちを区別できる)
 - PG への送信は SendMessage (bg session も `ListAgents` に名前で出る)。枠は `claude -p "/usage"`
 - PG にもユーザーの hook と規約が効く (起動時 約 13 万 token。Stop hook が別の作業の issue を更新させにいく)。PG 用の `--settings` で hook を絞るかを決める
+  → 431 で決めて実装した (`--setting-sources project,local` + `--settings`。~/.claude/rules は戻さない)
 
 ## 受け入れ条件 (424 から引き継ぎ)
 

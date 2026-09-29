@@ -3,7 +3,7 @@
 起票日: 2026-09-24
 期限: 2026-10-01
 
-親: [415](../415-design-claude-pm-worker-orchestration.md) / 出典: [431](../431-feat-pro-con-pg-session-settings.md) の計測
+親: [415](../415-design-claude-pm-worker-orchestration.md) / 出典: [431](../pending/431-feat-pro-con-pg-session-settings.md) の計測
 
 ## なぜ人が要るか
 

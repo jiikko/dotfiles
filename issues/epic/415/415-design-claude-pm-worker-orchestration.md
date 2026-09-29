@@ -18,8 +18,9 @@
 
 1. [x] 読み取り専用のモードで、`n` / `i` / `r` / `+` / `w` / `x` を押した時点で断る (下の進捗の「未対応」の項。小さなコードの修正)
 2. [x] retro [432](../../done/432-retro-pro-con-live-backend-2026-09-24.md) の提案 1〜4 を既存のルールへ追記する (文書だけ)
-3. [~] [431](431-feat-pro-con-pg-session-settings.md) の計測 — 済み。PG 用の設定ディレクトリでのログイン (人の作業 [433](done/433-human-login-pro-con-pg-config-dir.md)) 待ちで止まっている。
+3. [~] [431](pending/431-feat-pro-con-pg-session-settings.md) — 実装は済み。今の形の計測待ち (433 は不要として解消)
    - 2026-09-26: 433 は不要として解消 (`--settings` の `claudeMdExcludes` で絞れた)。431 は役割ごとの `--settings` まで済み、PG に rules を戻すかが未決 (本物の session を起こすので週の利用枠を使う。1 回 約 13 万 token。ここで枠が切れる見込み)
+   - 2026-09-29: rules は戻さないと決めた。431 で起動・再開の session の形を 1 箇所に寄せ、Opus 5.5 の読みの単価を直した。残りは今の形の計測 (10 起動 / 10 再開) だけ
 4. [x] [427](427-feat-pro-con-real-pm-pg-backend.md) の段階 3。小分けは 427 の「段階 3 の小分け」(3a から順に)
    - 2026-09-25 09:35: **段階 3 を閉じた** (3a〜3f 済み。本物の claude で 2 回通し、敵対的レビューを 10 周して P1 / P2 が出なくなった)。
      次は 427 の段階 4 (リソースの直列化) / 5 (自動スケーリング)、428、431 (433 のログイン待ち → 2026-09-26 に 433 は不要で解消)
@@ -52,7 +53,7 @@ worktree は `~/dotfiles-wt-night` を使っていた (残っていたら `git -
 | [428](428-feat-pro-con-record-attach-instructions.md) | attach 中に人間が打った指示をカードに残す | 424 の実測 |
 | [429](done/429-human-pro-con-try-mock-and-agent-view.md) | (human) 模擬版を触る / agent view との重なり / attach からの戻り方 | — |
 | [430](430-human-verify-bg-session-survives-reboot.md) | (human) bg session がマシンの再起動を越えて戻るか | — |
-| [431](431-feat-pro-con-pg-session-settings.md) | PG / 係の session 用の設定 (hook と規約を絞る。起動時 約 13 万 token) | 427 の前 |
+| [431](pending/431-feat-pro-con-pg-session-settings.md) | PG・PM・取り込みの係の session の設定の正本を 1 箇所に寄せ、Opus 5.5 の読みの単価を直す (計測待ち) | 427 の前 |
 | [433](done/433-human-login-pro-con-pg-config-dir.md) | (human) PG 用の設定ディレクトリで 1 度ログインする | 431 の続き → 2026-09-26 不要として解消 |
 
 ## 概要
