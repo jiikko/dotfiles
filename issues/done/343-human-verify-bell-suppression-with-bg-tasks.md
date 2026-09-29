@@ -3,7 +3,7 @@
 起票日: 2026-09-09
 カテゴリ: human（人間しかできない動作確認）
 期限: 2026-09-16
-出典: [retro 336](done/336-retro-bell-suppression-bg-2026-09-08.md) の残課題「人の動作確認」
+出典: [retro 336](336-retro-bell-suppression-bg-2026-09-08.md) の残課題「人の動作確認」
 
 ## 何を確認してほしいか
 
@@ -43,7 +43,7 @@ unit テストは隔離 tmux サーバで hook の判定までを固定してい
 
 ## 関連
 
-- [retro 336](done/336-retro-bell-suppression-bg-2026-09-08.md)
+- [retro 336](336-retro-bell-suppression-bg-2026-09-08.md)
 - `_claude/hooks/tmux-pane-state.sh` — 判定の実体（`bg_waiting` / `@claude_bg`）
 - `tests/claude/test_tmux_pane_state_bell.sh` — unit の回帰（Test 5 / 6 / 6b / 6c）
 
@@ -147,3 +147,14 @@ nodenv 配下に **3 つの版が同居**している（24.2.0=2.1.266 / 22.11.0
 - [x] hook の配線（Test 1）と、本番ペインで実際に動いていること（read-only 観測）
 - [x] **`notification_type` の enum が現行版 2.1.266 でも一致**（この節）
 - [ ] `Notification` に `background_tasks` が無いという前提（**未実測**。上の 2 案のどちらか）
+
+## 結果 (2026-09-29)
+
+ユーザーの判断で **目視もポーリングもせずに done**。
+
+- 期待表 3 行は隔離 tmux サーバのテスト (Test 5 / 6b / 6c) が覆っている (上記)
+- 🚨 未検証のまま受容したもの: `Notification` の stdin に `background_tasks` が無いという前提と、
+  実 Claude の payload が想定どおりに流れていること (検出可能性は未確認)。
+  enum の照合は 2.1.266 までで、現行は 2.1.284 (ネイティブ版) に上がっている
+- **再開の trigger**: bg タスク実行中の入力待ちで 🔔 が出る / bg なしの入力待ち・完了で 🔔 が出ない、に
+  気づいたとき。そのペインの `@claude_state` / `@claude_bg` を控えて issue を起こす

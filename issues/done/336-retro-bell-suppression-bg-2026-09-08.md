@@ -73,7 +73,7 @@ LANG=C           → a b   (分割されない)
 そのヘッダが言う「isolate_env を source しないテスト」の **3 例目**。
 変異（source を外す）で red を確認済み。
 
-### 人の動作確認 → [issue 343](../343-human-verify-bell-suppression-with-bg-tasks.md) へ切り出した
+### 人の動作確認 → [issue 343](343-human-verify-bell-suppression-with-bg-tasks.md) へ切り出した
 
 期限 2026-09-16。「bg あり → 鳴らない / bg なし → 鳴る」の両方向を見てもらう形にした
 （**鳴るべきで鳴らない方が問題**なので、そちらを明示した）。
