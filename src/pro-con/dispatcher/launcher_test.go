@@ -21,17 +21,19 @@ func writeSettings(t *testing.T, body string) string {
 
 // 起動・再開の引数に、ユーザーの settings.json の language と auto memory・SendFeedback の無効化だけを --settings で渡す
 // (461 / 431 / 525。hook・許可は持ち込まない。起動と再開で同じ値 = tools の並びが揃う)。
+// --settings を完全一致で固定するのはこのテストと TestLauncherArgsWithoutLanguageStillDisableAutoMemory で、時刻や PID のような揮発値を入れる変更は
+// この 2 本が止める (TestPersistentSessionProfile は同じ時刻の中でしか比べない)。名前は本番と同じ形 (pc-…) にしておく。
 func TestLauncherArgsPassLanguageAndNoAutoMemory(t *testing.T) {
 	p := writeSettings(t, `{"language": "日本語", "hooks": {"Stop": []}, "permissions": {"allow": ["Bash"]}, "model": "opus"}`)
 	const settings = `{"autoMemoryEnabled":false,"feedbackDrafts":"off","language":"日本語"}`
 	l := ExecLauncher{UserSettings: p}
-	start := l.startArgs("pg-1", "依頼")
-	want := []string{"--bg", "-w", "pg-1", "-n", "pg-1", "--setting-sources", "project,local", "--settings", settings, "依頼"}
+	start := l.startArgs("pc-c-001", "依頼")
+	want := []string{"--bg", "-w", "pc-c-001", "-n", "pc-c-001", "--setting-sources", "project,local", "--settings", settings, "依頼"}
 	if !slices.Equal(start, want) {
 		t.Fatalf("起動の引数 = %q\nwant %q", start, want)
 	}
-	resume := l.resumeArgs("sid", "pg-1", "回答")
-	want = []string{"--bg", "--resume", "sid", "-n", "pg-1", "--setting-sources", "project,local", "--settings", settings, "回答"}
+	resume := l.resumeArgs("sid", "pc-c-001", "回答")
+	want = []string{"--bg", "--resume", "sid", "-n", "pc-c-001", "--setting-sources", "project,local", "--settings", settings, "回答"}
 	if !slices.Equal(resume, want) {
 		t.Fatalf("再開の引数 = %q\nwant %q", resume, want)
 	}
@@ -59,31 +61,67 @@ func TestLauncherArgsWithoutLanguageStillDisableAutoMemory(t *testing.T) {
 	}
 }
 
-// PG・PM・取り込みの係の session の形 (431)。prompt cache は request の先頭 (tools・system) が同じなら session をまたいで当たるので:
-//   - 起動と再開で違うのは -w <name> / --resume <id> と位置引数だけ
-//   - --settings はカード・session に依らない (カードの ID・cwd・session ID・時刻を入れない)
-//   - ユーザーの settings.json から写すのは language だけ (model・effort・hook・許可・MCP を写すと、人の普段の設定の変更で role の形が変わる)
-//   - --setting-sources に user を入れない (hook・許可・~/.claude/rules が戻る)。--exclude-dynamic-system-prompt-sections は付けない
+// PG・PM・取り込みの係の session の形 (431。理由は launcher.go 冒頭)。止めるのは、pro-con のコードの変更で次が崩れる形:
+//   - 起動と再開・役 (PG / PM / 取り込みの係)・session の名前をまたいで、違うのは -w <name> / --resume <id> / -n <name> と位置引数だけ。
+//     Start / Resume は組んだ引数をそのまま claude に渡し (止めてから再開するときも)、環境変数も起動と再開で同じ
+//   - ユーザーの settings.json から写すのは language だけ (model・effort・hook・許可・plugin・env を写すと、人の普段の設定の変更で role の形が変わる)。
+//     引数の全体で比べるので、--settings に写す変更も CLI の flag に写す変更も止まる
+//   - --setting-sources は project,local (user を入れると hook・許可・~/.claude/rules が戻る)。--exclude-dynamic-system-prompt-sections は付けない
 //     (-p 用で --bg の session には効かない。upstream が対応したら 449 の測り方で A-B してから)
+//
+// 検出しないもの: fixture に無い鍵・値の形を写す変更 / 同じ時刻の中で変わらない揮発値 (完全一致の TestLauncherArgs… 2 本が止める) / 故意の迂回 /
+// Claude Code の側が起動と再開で変える部分 (546)
 func TestPersistentSessionProfile(t *testing.T) {
-	user := writeSettings(t, `{"language": "日本語", "model": "opus", "effortLevel": "max", "hooks": {"Stop": []},
-		"permissions": {"allow": ["Bash"]}, "mcpServers": {"x": {"command": "x"}}, "statusLine": {"type": "command", "command": "x"},
-		"env": {"A": "1"}, "autoMemoryEnabled": true, "feedbackDrafts": "on", "claudeMdExcludes": ["/x"]}`)
+	user := writeSettings(t, `{"language": "日本語", "model": "opus", "effortLevel": "max", "outputStyle": "x", "alwaysThinkingEnabled": true,
+		"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "stop.sh"}]}], "SessionStart": [{"hooks": [{"type": "command", "command": "start.sh"}]}],
+			"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "pre.sh"}]}]},
+		"permissions": {"allow": ["Bash"], "deny": ["Read(./.env)"], "ask": ["Bash(git push:*)"], "defaultMode": "auto"},
+		"enabledPlugins": {"gopls-lsp@claude-plugins-official": true}, "mcpServers": {"x": {"command": "x"}}, "statusLine": {"type": "command", "command": "x"},
+		"env": {"ENABLE_CLAUDEAI_MCP_SERVERS": "false", "CLAUDE_CODE_X": "1", "DISABLE_X": "1", "A": "1"},
+		"agentPushNotifEnabled": true, "skipAutoPermissionPrompt": true, "preferredNotifChannel": "x", "skipWorkflowUsageWarning": true,
+		"workflowSizeGuideline": "small", "autoMemoryEnabled": true, "feedbackDrafts": "on", "claudeMdExcludes": ["/x"]}`)
 	l := ExecLauncher{UserSettings: user}
-	start := l.startArgs("pc-c-001", "依頼 C-001")
-	resume := l.resumeArgs("sid-1", "pc-c-001", "回答")
-	if s, r := sessionShape(t, start), sessionShape(t, resume); !slices.Equal(s, r) {
-		t.Fatalf("起動と再開で session の形が違う (再開の最初の要求がキャッシュの先頭から外れる):\n起動 %q\n再開 %q", s, r)
-	}
-	other := [][]string{l.startArgs("pc-pm-20260929-120000", "PM の指示"), l.resumeArgs("sid-2", "pc-int-20260929-120000", "- 取り込んで")}
-	for _, args := range other {
-		if a, b := flagValue(t, start, "--settings"), flagValue(t, args, "--settings"); a != b {
-			t.Fatalf("--settings がカード・session で変わる (session をまたいでキャッシュを共有できない):\n%s\n%s", a, b)
+	const prompt, text = "依頼 C-001\n\n本文", "- 回答" // 改行を含む指示と、「-」で始まる本文 (前置きが付く) も通す
+	start := l.startArgs("pc-c-001", prompt)
+	resume := l.resumeArgs("sid-1", "pc-c-001", text)
+	shape := sessionShape(t, start)
+	for _, args := range [][]string{resume,
+		l.startArgs("pc-pm-20260929-120000", "PM の指示"), l.resumeArgs("sid-2", "pc-pm-20260929-120000", "通知"),
+		l.startArgs("pc-int-20260929-120000", "取り込みの指示"), l.resumeArgs("sid-3", "pc-int-20260929-120000", "- 取り込んで")} {
+		if s := sessionShape(t, args); !slices.Equal(s, shape) {
+			t.Fatalf("起動と再開・役・名前で session の形が違う (キャッシュの先頭が揃わない):\n%q\nwant %q", s, shape)
 		}
 	}
+	run := func(f func(ExecLauncher) error) ([]string, string) {
+		return execArgs(t, func(claude string) error { return f(ExecLauncher{Claude: claude, UserSettings: user}) })
+	}
+	execStart, envStart := run(func(x ExecLauncher) error {
+		_, err := x.Start(context.Background(), t.TempDir(), "pc-c-001", prompt)
+		return err
+	})
+	execResume, envResume := run(func(x ExecLauncher) error {
+		_, err := x.Resume(context.Background(), "", "sid-1", t.TempDir(), "pc-c-001", text)
+		return err
+	})
+	execStopResume, _ := run(func(x ExecLauncher) error {
+		_, err := x.Resume(context.Background(), "old-1", "sid-1", t.TempDir(), "pc-c-001", text)
+		return err
+	})
+	if !slices.Equal(execStart, start) || !slices.Equal(execResume, resume) || !slices.Equal(execStopResume, append([]string{"stop", "old-1"}, resume...)) {
+		t.Fatalf("claude が受け取った引数が、組んだ引数と違う (組んだ後に足した・組まずに渡した・止めずに再開した):\n起動 %q\nwant %q\n再開 %q\nwant %q\n止めて再開 %q",
+			execStart, start, execResume, resume, execStopResume)
+	}
+	if envStart != envResume || strings.Contains("\n"+envStart, "\nTMUX") {
+		t.Fatalf("起動と再開で claude の環境変数が違う / TMUX が残っている (415 論点 5):\n起動 %q\n再開 %q", envStart, envResume)
+	}
 	langOnly := ExecLauncher{UserSettings: writeSettings(t, `{"language": "日本語"}`)}
-	if a, b := flagValue(t, start, "--settings"), flagValue(t, langOnly.startArgs("pc-c-001", "依頼 C-001"), "--settings"); a != b {
-		t.Fatalf("ユーザーの settings.json から language 以外を写している:\n%s\nwant %s", a, b)
+	for _, c := range []struct{ got, want []string }{
+		{start, langOnly.startArgs("pc-c-001", prompt)},
+		{resume, langOnly.resumeArgs("sid-1", "pc-c-001", text)},
+	} {
+		if !slices.Equal(c.got, c.want) {
+			t.Fatalf("ユーザーの settings.json から language 以外を写している:\n%q\nwant %q", c.got, c.want)
+		}
 	}
 	for _, args := range [][]string{start, resume} {
 		if v := flagValue(t, args, "--setting-sources"); v != "project,local" {
@@ -95,7 +133,7 @@ func TestPersistentSessionProfile(t *testing.T) {
 	}
 }
 
-// sessionShape は起動・再開の引数から、起動だけ・再開だけに要る -w <name> / --resume <id> と最後の位置引数を除いた残り。
+// sessionShape は起動・再開の引数から、起動だけ・再開だけに要る -w <name> / --resume <id> と最後の位置引数を除き、-n の値を伏せた残り。
 func sessionShape(t *testing.T, args []string) []string {
 	t.Helper()
 	if len(args) == 0 {
@@ -103,21 +141,44 @@ func sessionShape(t *testing.T, args []string) []string {
 	}
 	var out []string
 	for i := 0; i < len(args)-1; i++ {
-		if args[i] == "-w" || args[i] == "--resume" {
+		switch args[i] {
+		case "-w", "--resume":
 			i++
-			continue
+		case "-n":
+			out = append(out, "-n", "<name>")
+			i++
+		default:
+			out = append(out, args[i])
 		}
-		out = append(out, args[i])
 	}
 	return out
 }
 
-// flagValue は args の flag の次の値。flag が無ければ落とす。
+// execArgs は偽の claude (fakeClaude) で f (Start / Resume) を走らせ、claude が受け取った引数 (呼んだ順につないだもの) と、
+// 最後の呼び出しの環境変数のうち claude の形を変えうるもの (fakeClaude の envFile) を返す。
+func execArgs(t *testing.T, f func(claude string) error) ([]string, string) {
+	t.Helper()
+	claude, argsFile := fakeClaude(t)
+	if err := f(claude); err != nil {
+		t.Fatalf("偽の claude が受け付けなかった: %v", err)
+	}
+	b, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, err := os.ReadFile(argsFile + ".env")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Split(strings.TrimSuffix(string(b), "\x00"), "\x00"), string(env)
+}
+
+// flagValue は args の flag の次の値。flag がちょうど 1 回だけ在るのでなければ落とす (2 つめの同じ flag で上書きする形を見逃さない)。
 func flagValue(t *testing.T, args []string, flag string) string {
 	t.Helper()
 	i := slices.Index(args, flag)
-	if i < 0 || i+1 >= len(args) {
-		t.Fatalf("%s が無い: %q", flag, args)
+	if i < 0 || i+1 >= len(args) || slices.Index(args[i+1:], flag) >= 0 {
+		t.Fatalf("%s がちょうど 1 回ではない: %q", flag, args)
 	}
 	return args[i+1]
 }
@@ -165,13 +226,15 @@ func TestUserSettingsPath(t *testing.T) {
 }
 
 // fakeClaude は PATH の先頭に偽の claude を置く。本物 (commander) と同じく、「-」で始まる引数のうち知らないものを
-// オプションと読んで rc=1 で落ち (`error: unknown option`)、それ以外は --bg の最初の行を返す。受けた引数は argsFile に書く。claude は偽物の絶対パス。
+// オプションと読んで rc=1 で落ち (`error: unknown option`)、それ以外は --bg の最初の行を返す。claude は偽物の絶対パス。
+// 受けた引数は argsFile に NUL で区切って足していき (引数に改行が入る)、claude の形を変えうる環境変数は argsFile.env に呼ぶたびに書き直す。
 func fakeClaude(t *testing.T) (claude, argsFile string) {
 	t.Helper()
 	bin := t.TempDir()
 	argsFile = filepath.Join(bin, "args")
 	script := `#!/bin/sh
-for a in "$@"; do printf '%s\n' "$a" >>"` + argsFile + `"; done
+for a in "$@"; do printf '%s\000' "$a" >>"` + argsFile + `"; done
+env | grep -E '^(DISABLE_|ENABLE_|CLAUDE|ANTHROPIC|TMUX)' | sort >"` + argsFile + `.env"
 skip=0
 for a in "$@"; do
   if [ $skip = 1 ]; then skip=0; continue; fi

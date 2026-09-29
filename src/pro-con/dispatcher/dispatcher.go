@@ -8,7 +8,7 @@
 //  6. 着手待ちのカードに、上限まで PG を割り当てる。回答を受けたカード (Resume が有る) と追加オーダーを届けるカードは同じ session を再開し、
 //     それ以外は新しく起動する
 //
-// 書き手は dispatcher だけ (426 の決定 1)。PG の起動と再開は Launcher に任せ、テストでは偽物に差し替える。
+// 書き手は dispatcher だけ (426 の決定 1)。PG・PM・取り込みの係の起動と再開は Launcher に任せ、テストでは偽物に差し替える。
 // 起動・再開の前に印を記録へ書き、結果は次の Tick で session の一覧と照らして確かめる (claude の「失敗」と実際が食い違う / 途中で落ちる)。
 // 落ちた回数で止める・watchdog は 3c-2、常駐と排他は 3c-3。
 package dispatcher
@@ -38,11 +38,11 @@ type Launcher interface {
 	// Start は repoPath で session を起動し、claude --bg が返す短い id を返す。name は worktree と session の名前
 	Start(ctx context.Context, repoPath, name, prompt string) (id string, err error)
 	// Resume は stopID の session を止めてから (空なら止めない) 同じ session を text を渡して再開し、claude --bg が返す短い id を返す
-	// (実行中の session に --resume するとコピーが起動するため。415 論点 11。再開で短い id が変わるかは未実測なので、返った id を使う)
+	// (実行中の session に --resume するとコピーが起動するため。415 論点 11。再開は別の session を立てて別の短い id を返す = 427 の 3f)
 	// cwd は session の作業ディレクトリ (PG・役の worktree)。再開はそこで走らせる。name は起動のときと同じ session の名前
 	// (渡さないと、再開の後の名前は AI の付けた題になる。488 で実測)
 	Resume(ctx context.Context, stopID, sessionID, cwd, name, text string) (newID string, err error)
-	// Stop は session を止める (落ち続けた PG。426 の決定 4)
+	// Stop は session を止める (PG・PM・取り込みの係のどれにも使う)
 	Stop(ctx context.Context, id string) error
 }
 

@@ -91,6 +91,30 @@ func TestReadUsageCacheReadPricePerModel(t *testing.T) {
 	}
 }
 
+// 5 時間枠の % は、全 model の額を足してからセントに丸め、FiveHourUSDPerPct で割る (記録済みの % と同じ丸め)。
+func TestReadUsageFiveHourPctRoundsToCentsFirst(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		lines    []string
+		usd, pct float64
+	}{
+		// $0.01504 → $0.02 → 0.01% (丸めずに割ると 0.0043% → 0)
+		{"1 model", []string{resp("m1", "claude-opus-5-5", 3_760, 0, 0, 0)}, 0.02, 0.01},
+		// opus $0.047 + haiku $0.007 = $0.054 → $0.05 → 0.01% (model ごとに丸めてから足すと $0.06 → 0.02%)
+		{"2 model", []string{resp("m1", "claude-opus-5-5", 11_750, 0, 0, 0), resp("m2", "claude-haiku-4-5-20251001", 7_000, 0, 0, 0)}, 0.05, 0.01},
+	} {
+		p := filepath.Join(t.TempDir(), "s.jsonl")
+		writeLines(t, p, tc.lines...)
+		u, err := metrics.ReadUsage([]string{p})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if u.USD == nil || *u.USD != tc.usd || u.FiveHourPct == nil || *u.FiveHourPct != tc.pct {
+			t.Errorf("%s: 料金換算 = %v、5 時間枠 = %v (want %v / %v)", tc.name, deref(u.USD), deref(u.FiveHourPct), tc.usd, tc.pct)
+		}
+	}
+}
+
 func deref(f *float64) any {
 	if f == nil {
 		return nil

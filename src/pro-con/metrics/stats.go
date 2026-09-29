@@ -45,8 +45,10 @@ type Group struct {
 	Total   Summary // 依頼を受けてから閉じるまで
 	Running Summary // 作業中の列に居た時間 (足跡のある行だけ)
 	Human   Summary // 人の番だった時間 (足跡のある行だけ)
-	USD     Summary // 枠の API 料金換算 (取れた行だけ)
-	Pct     Summary // 5 時間枠の % (取れた行だけ)
+	// 🚨 USD は各行を閉じたときの単価の表で数えた値で、表を直す前に閉じた行と束ねると混ざる (metrics.jsonl は 90 日残る)。
+	// Pct は重みを変えていないので混ざらない (usage.go の fiveHourReadRate)
+	USD Summary // 枠の API 料金換算 (取れた行だけ)
+	Pct Summary // 5 時間枠の % (取れた行だけ)
 }
 
 // Summarize は rows を by で束ねる (by が空なら全体で 1 つ)。束ねの並びはポイント・週は小さい順、repo は名前の順。
