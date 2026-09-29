@@ -51,3 +51,8 @@
 
 - [ ] A: verify-execution-not-just-exit-code.md への追記 (ユーザーの判断待ち)
 - [ ] B: adversarial-review-own-safeguards.md §2 への追記 (ユーザーの判断待ち)
+
+## 進捗
+
+- 2026-09-29 起票。反証レビュー (sonnet 1 本): 指摘なし。提案 A・B の追記先の実在・既存の記述との重複なし・項目 5 の hook の
+  挙動 (`lib/git_cmd_detect.sh` が `cd X && git commit` を拾わないと明記)・580 の実装との一致は、どれも反証できなかった
