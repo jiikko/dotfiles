@@ -49,10 +49,12 @@
 
 ## 残課題
 
-- [ ] A: verify-execution-not-just-exit-code.md への追記 (ユーザーの判断待ち)
-- [ ] B: adversarial-review-own-safeguards.md §2 への追記 (ユーザーの判断待ち)
+- [x] A: verify-execution-not-just-exit-code.md の「隔離環境での成功は、本番での成功ではない」へ追記した
+- [x] B: adversarial-review-own-safeguards.md §2 へ仕組みの正本として追記し、mutation-verify-new-tests.md の条件文脈の項は
+  そこを参照する形にした (同じ規範を 2 か所に書かない)
 
 ## 進捗
 
 - 2026-09-29 起票。反証レビュー (sonnet 1 本): 指摘なし。提案 A・B の追記先の実在・既存の記述との重複なし・項目 5 の hook の
   挙動 (`lib/git_cmd_detect.sh` が `cd X && git commit` を拾わないと明記)・580 の実装との一致は、どれも反証できなかった
+- 2026-09-29 ユーザー指示で A・B を適用した。残課題が空になったので done へ

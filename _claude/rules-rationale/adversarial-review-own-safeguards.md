@@ -421,3 +421,10 @@ flock の印 (各画面が自分で持つ) に作り直した
 して辿る) を、別の入力 (途中のディレクトリの symlink / symlink 越しの `..` / repo 外のディレクトリ link から repo 内のディレクトリ
 link へ入る鎖) で破る形だった。成分ごとに解決して出会った symlink を全部数え、終点を filepath.EvalSymlinks と毎回突き合わせる
 形へ移して収束した (~/.claude 配下 7688 ファイルで食い違い 0)。0-B と §8 は既にあったが、2 周目の時点で当てていなかった。
+
+## set -e は条件文脈で効かない (2026-09-29 追記)
+
+起源: dotfiles issue 583。bin/mutate-verify-list で LIST の読み込みを `( set -e; … . "$list"; … ) || die` と書き、bash 5 では
+途中の書き損じ (未知の関数・false) を素通りした (bash 3.2 では source した行だけ偶然止まるので、3.2 だけの self-test は緑)。
+同じ仕組みの注意は mutation-verify-new-tests.md にテストの assert の項としてあったが、守りを書く場面では思い出さなかったので、
+仕組みの正本をこちらへ置いて mutation-verify 側から参照する形にした。

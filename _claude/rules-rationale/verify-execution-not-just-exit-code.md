@@ -340,3 +340,9 @@ container 配下に 9 個**の lock file が**両方**実在した。経路を�
 起源: dotfiles issue 579。glogx のパスジャンプの効果を dotfiles の issue 579 ファイルで測り「ローカルを指す markdown リンク
 969 個中 966 個が解決」と spec に書いたが、ユーザーが使う別の repo (ubiregi-server) は repo root 起点でリンクを書く規約で、
 主要なリンクが 1 本も光らなかった。viewer を複数の repo で使うことは測る前から分かっていた。
+
+## 検査対象が走った版を確かめる (2026-09-29 追記)
+
+起源: dotfiles issue 583。bin/mutate-verify-list の self-test を `bash tests/…` (5.3) と `/bin/bash tests/…` (3.2) で起動して
+「両方で通った」と報告したが、テストは道具を `"$MVL"` で直接起動しており、道具は毎回 shebang の /bin/bash (3.2) で走っていた。
+bash 5 でだけ起きる素通り (`( set -e ) || die`) は、敵対レビューが道具を bash 5 で直接走らせて初めて見つかった。
