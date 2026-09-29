@@ -1,0 +1,29 @@
+   Device Identifier:         disk0
+   Device Node:               /dev/disk0
+   Whole:                     Yes
+   Part of Whole:             disk0
+   Device / Media Name:       APPLE SSD AP1024Z
+
+   Volume Name:               Not applicable (no file system)
+   Mounted:                   Not applicable (no file system)
+   File System:               None
+
+   Content (IOContent):       GUID_partition_scheme
+   OS Can Be Installed:       No
+   Media Type:                一般
+   Protocol:                  Apple Fabric
+   SMART Status:              Verified
+
+   Disk Size:                 1.0 TB (1000555581440 Bytes) (exactly 1954210120 512-Byte-Units)
+   Device Block Size:         4096 Bytes
+
+   Media OS Use Only:         No
+   Media Read-Only:           No
+   Volume Read-Only:          Not applicable (no file system)
+
+   Device Location:           Internal
+   Removable Media:           Fixed
+
+   Solid State:               Yes
+   Hardware AES Support:      Yes
+

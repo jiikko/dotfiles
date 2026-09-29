@@ -251,6 +251,7 @@ func TestDoctorLiveDiskScanSanitizesRealFileNames(t *testing.T) {
 		},
 		brewRun:    func(context.Context, string, ...string) (string, string, int, error) { return "", "", 0, nil },
 		dockerOpts: noDockerOptions, // 本物の docker system df を叩かない (issue 419)
+		ssdOpts:    fakeSSDOptions(true),
 	}
 	runDoctorCmds(t, v, v.open())
 

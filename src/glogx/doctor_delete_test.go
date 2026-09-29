@@ -14,6 +14,7 @@ import (
 
 	"doctor/disk"
 	"doctor/docker"
+	"doctor/ssd"
 	"doctor/svc"
 )
 
@@ -1007,6 +1008,7 @@ func multiItemView(t *testing.T, f *fakeDelete) *doctorView {
 		},
 		brewRun:    func(context.Context, string, ...string) (string, string, int, error) { return "", "", 0, nil },
 		dockerOpts: noDockerOptions, // 本物の docker system df を叩かない (issue 419)
+		ssdOpts:    fakeSSDOptions(true),
 	}
 	if f != nil {
 		v.deleteFn = f.fn
@@ -1750,9 +1752,9 @@ func TestDeleteKeepsRedrawAlive(t *testing.T) {
 	tv := doctorTestView(t)
 	m.doctorOv = *tv
 	m.doctorOv.shown = true
-	// 走査は終わっている状態を作る (4 つのレポートが揃うと scanning() は false)
+	// 走査は終わっている状態を作る (5 つのレポートが揃うと scanning() は false)
 	m.doctorOv.diskRep, m.doctorOv.svcRep, m.doctorOv.brew = &disk.Report{}, &svc.Report{}, &brewDoctorResult{}
-	m.doctorOv.docker = &docker.Report{}
+	m.doctorOv.docker, m.doctorOv.ssd = &docker.Report{}, &ssd.Report{}
 	// usage の枠は「開いていて未取得」だと単独で tick を立てるので落とす。
 	// 🚨 これを落とさないと、削除の配線を外す変異を当てても緑のまま = 何も守らないテストになる
 	m.usageOv.visible = false

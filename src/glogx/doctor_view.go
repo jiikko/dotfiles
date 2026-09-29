@@ -17,6 +17,7 @@ import (
 	"doctor/disk"
 	"doctor/docker"
 	"doctor/runner"
+	"doctor/ssd"
 	"doctor/svc"
 )
 
@@ -51,11 +52,12 @@ const (
 	tabSvc
 	tabBrew
 	tabDocker
+	tabSSD
 )
 
 // numDoctorTabs はタブの数。**enum の番兵にしない** — doctorTab の値として持つと
 // exhaustive の switch すべてに「タブでない値」の case を書かされる
-const numDoctorTabs = 4
+const numDoctorTabs = 5
 
 type doctorView struct {
 	shown bool
@@ -73,7 +75,9 @@ type doctorView struct {
 	brew        *brewDoctorResult
 	// docker は nil = 走査中。🚨 キャッシュ (snapshot) には載せない — 走査が速いので
 	// 開くたびに取り直す (doctor_docker.go の冒頭)
-	docker     *docker.Report
+	docker *docker.Report
+	// ssd は nil = 走査中。docker と同じくキャッシュに載せない (doctor_ssd.go の冒頭)
+	ssd        *ssd.Report
 	startedAt  time.Time
 	snapshotAt time.Time // 前回の結果をそのまま出しているときの走査時刻 (zero = 今回走査した)
 
@@ -113,6 +117,7 @@ type doctorView struct {
 	svcOpts    func() svc.Options
 	brewRun    runner.Runner
 	dockerOpts func() docker.Options
+	ssdOpts    func() ssd.Options
 	deleteOpts func() disk.DeleteOptions
 	deleteFn   func(context.Context, []disk.Result, disk.DeleteOptions) (disk.DeleteReport, error)
 }
@@ -168,7 +173,7 @@ func (v *doctorView) visible() bool { return v.shown }
 
 // scanning はいずれかのセクションが走査中か (スピナーの根拠)。
 func (v *doctorView) scanning() bool {
-	return v.shown && (v.diskRep == nil || v.svcRep == nil || v.brew == nil || v.docker == nil)
+	return v.shown && (v.diskRep == nil || v.svcRep == nil || v.brew == nil || v.docker == nil || v.ssd == nil)
 }
 
 // deleting は削除の下見 / 実行中か (スピナーと再描画の根拠)。
@@ -237,7 +242,7 @@ func (v *doctorView) start(force bool) tea.Cmd {
 	// 再表示されていた。敵対レビュー 2026-09-03)
 	v.rows, v.enterDetail, v.pendingCopy, v.pendingToast, v.pendingDeleteCmd = nil, "", "", "", nil
 	v.del.reset()
-	v.diskResults, v.diskRep, v.svcRep, v.brew, v.docker = nil, nil, nil, nil, nil
+	v.diskResults, v.diskRep, v.svcRep, v.brew, v.docker, v.ssd = nil, nil, nil, nil, nil, nil
 	v.startedAt = timeNow()
 	v.snapshotAt = time.Time{}
 	if !force {
@@ -252,11 +257,11 @@ func (v *doctorView) start(force bool) tea.Cmd {
 			brew := sn.Brew
 			v.brew = &brew
 			v.snapshotAt = sn.ScannedAt
-			// 🚨 docker だけは snapshot に載せていないので、復元経路でも走らせる
-			// (走らせないと Docker タブが永久にスピナーのままになる)
+			// 🚨 docker と ssd は snapshot に載せていないので、復元経路でも走らせる
+			// (走らせないとそのタブが永久にスピナーのままになる)
 			ctx, cancel := context.WithCancel(context.Background())
 			v.cancel = cancel
-			return v.dockerCmd(ctx, v.gen)
+			return tea.Batch(v.uncachedCmds(ctx, v.gen)...)
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -302,7 +307,7 @@ func (v *doctorView) start(force bool) tea.Cmd {
 	}
 	// 🚨 svc / brew は tea.Cmd の goroutine で走る。bubbletea は Run を抜けるときに
 	// Cmd の goroutine を待たないので、latch で看取る側を作っておく (issue 211)
-	return tea.Batch(
+	return tea.Batch(append([]tea.Cmd{
 		v.waitDiskCmd(gen),
 		func() tea.Msg {
 			var rep svc.Report
@@ -314,8 +319,15 @@ func (v *doctorView) start(force bool) tea.Cmd {
 			doctorTrack(func() { res = runBrewDoctor(ctx, bRun) })
 			return doctorBrewMsg{gen: gen, res: res}
 		},
-		v.dockerCmd(ctx, gen),
-	)
+	}, v.uncachedCmds(ctx, gen)...)...)
+}
+
+// uncachedCmds は snapshot に載せない (開くたびに取り直す) 走査。復元と新規の 2 経路が同じ集合を
+// 起こすよう 1 箇所にまとめる (片方にだけ足すと、そのタブが復元経路でスピナーのまま残る)。
+// 🚨 tea.Batch で包まず列で返す: 包むと start の Batch が入れ子になり、1 段だけ開いて Cmd を
+// 走らせる検査 (TestEachDoctorScanIsTrackedUntilItReturns) から中の走査が見えなくなる
+func (v *doctorView) uncachedCmds(ctx context.Context, gen int) []tea.Cmd {
+	return []tea.Cmd{v.dockerCmd(ctx, gen), v.ssdCmd(ctx, gen)}
 }
 
 // waitDiskCmd は channel から 1 イベント取り出して Msg にする (受け取り側が再アームする)。
@@ -602,7 +614,7 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 			return v.beginBrewRun()
 		case tabDocker:
 			return v.beginDockerRun()
-		case tabDisk, tabSvc:
+		case tabDisk, tabSvc, tabSSD:
 			v.pendingToast = "コマンドの実行は Homebrew か Docker のタブで (tab で移動)"
 			return doctorToast
 		}
@@ -716,11 +728,13 @@ func (v *doctorView) hint(width int) string {
 			hintItem{"d: 削除", 2})
 	case tabBrew, tabDocker:
 		items = append(items, hintItem{"Space: 選択", 2})
-	case tabSvc:
-		// サービスは選択も実行も持たない (壊れた登録は見て直すだけ)
+	case tabSvc, tabSSD:
+		// サービスと SSD は選択も実行も持たない (見て判断するだけ)
+	}
+	if v.tab != tabSSD { // SSD の行は開くものを持たない (押せないキーを案内しない)
+		items = append(items, hintItem{"Enter: 開閉", 4}) // 開くと対象パスへカーソルが移り、そこでも Space で選べる
 	}
 	items = append(items, []hintItem{
-		{"Enter: 開閉", 4}, // 開くと対象パスへカーソルが移り、そこでも Space で選べる
 		{doctorCopyHintLabel(v.tab), 5},
 		{"Y: 解説をコピー", 6},
 		{"r: 再スキャン", 5},
@@ -747,7 +761,7 @@ func (v *doctorView) selectedRunCount() int {
 		return len(v.selectedDockerActions())
 	case tabBrew:
 		return len(v.selectedBrewActions())
-	case tabDisk, tabSvc:
+	case tabDisk, tabSvc, tabSSD:
 		return 0
 	}
 	return 0
@@ -756,7 +770,7 @@ func (v *doctorView) selectedRunCount() int {
 // doctorCopyHintLabel は y が何をコピーするか。タブで中身が違うので語も変える
 // (Docker タブにパスは無い。押せる手の説明が嘘になると、押さなくなる)。
 func doctorCopyHintLabel(t doctorTab) string {
-	if t == tabDocker {
+	if t == tabDocker || t == tabSSD {
 		return "y: コマンドをコピー"
 	}
 	return "y: パスをコピー"
@@ -867,21 +881,37 @@ func (v *doctorView) moveTab(d int) {
 // 🚨 **切り替えなくても「どこに何件あるか」が分かること**が、タブにしても一望性を失わない条件。
 // 件数を出さないタブ行にすると、異常の有無を知るために全タブを回ることになる。
 func (v *doctorView) tabBarLine(o doctorRenderOpts) string {
-	names := [numDoctorTabs]string{"ディスク", "サービス", "Homebrew", "Docker"}
-	parts := make([]string, 0, numDoctorTabs)
-	for i := range numDoctorTabs {
-		t := doctorTab(i)
-		if !v.tabVisible(t) {
-			continue
+	names := [numDoctorTabs]string{"ディスク", "サービス", "Homebrew", "Docker", "SSD"}
+	short := [numDoctorTabs]string{"Disk", "Svc", "Brew", "Docker", "SSD"}
+	build := func(names [numDoctorTabs]string, pad string) string {
+		parts := make([]string, 0, numDoctorTabs)
+		for i := range numDoctorTabs {
+			t := doctorTab(i)
+			if !v.tabVisible(t) {
+				continue
+			}
+			label := names[i] + " " + v.tabSummary(o, t)
+			if t == v.tab {
+				parts = append(parts, doctorColor(o.colored, ansiBold, "["+label+"]"))
+				continue
+			}
+			parts = append(parts, doctorColor(o.colored, ansiDim, pad+label+pad))
 		}
-		label := names[i] + " " + v.tabSummary(o, t)
-		if t == v.tab {
-			parts = append(parts, doctorColor(o.colored, ansiBold, "["+label+"]"))
-			continue
-		}
-		parts = append(parts, doctorColor(o.colored, ansiDim, " "+label+" "))
+		return " " + strings.Join(parts, doctorColor(o.colored, ansiDim, "│"))
 	}
-	line := " " + strings.Join(parts, doctorColor(o.colored, ansiDim, "│"))
+	// 狭い幅では段階的に詰める: ①選んでいないタブの前後の空白を外す ②タブ名を短くする。
+	// 🚨 末尾を切るのは最後の手段: 切られるのは最後のタブ (SSD) の要約で、タブ行の役目
+	// (切り替えずにどこに異常があるか分かる) を失う (敵対レビュー 2 周目。幅 60・実在の値で 63 桁)
+	line := build(names, " ")
+	if dispWidth(line) > o.width {
+		line = build(names, "")
+	}
+	if dispWidth(line) > o.width {
+		line = build(short, "")
+	}
+	if dispWidth(line) > o.width {
+		return truncateDisp(line, o.width, "…")
+	}
 	// 🚨 切り替えのキーは**タブ行の隣**に置く。hint に足すと幅の予算を食って
 	// 「r: 再スキャン」のような常に使える手を押し出す (実測でそうなった)
 	if hintText := "  (tab / h l で切替)"; dispWidth(line)+dispWidth(hintText) <= o.width {
@@ -916,25 +946,33 @@ func (v *doctorView) tabSummary(o doctorRenderOpts, t doctorTab) string {
 		// 🚨 出すのは docker 自身の申告。候補の見積もりは共有レイヤーを重複計上して
 		// 上振れするので、一望の数字には使わない (doctor/docker の Estimate の 🚨)
 		return docker.HumanSize(v.docker.DockerReclaimable())
-	default:
-		results := v.diskResults
-		if v.diskRep != nil {
-			results = v.diskRep.Results
+	case tabSSD:
+		if v.ssd == nil {
+			return o.spinner
 		}
+		return ssdTabSummary(v.ssd.SMART)
+	case tabDisk:
 		if v.diskRep == nil {
 			return o.spinner
 		}
-		return disk.HumanSize(disk.SumDeletable(results))
+		return disk.HumanSize(disk.SumDeletable(v.diskRep.Results))
 	}
+	return "" // doctorTab の外の値 (switch は exhaustive なので、タブを足すと lint がここへ来る前に止める)
+}
+
+// sectionHeaderGap は見出しの題と要約の間の空白。1 未満なら要約は入らない (sectionHeader が落とす)。
+// 🚨 「要約が入るか」を呼び出し側で書き直さず、これを呼ぶ (SSD の見出しが題を削るかの判定で
+// 1 桁食い違い、幅 58 で要約だけが消えた。敵対レビュー 3 周目)
+func sectionHeaderGap(o doctorRenderOpts, title, summary string) int {
+	return o.width - 2 - dispWidth("▌"+title) - dispWidth(summary) - 1
 }
 
 // sectionHeader は案 A の見出し 2 行 (左に縦棒 + 太字の題、右端に要約 / 下に罫線)。
 func sectionHeader(o doctorRenderOpts, title, summary string) []doctorRow {
 	left := "▌" + title
 	inner := o.width - 2 // 行頭のカーソル欄 2 桁
-	gap := inner - dispWidth(left) - dispWidth(summary) - 1
 	line := doctorColor(o.colored, ansiBold, left)
-	if gap >= 1 {
+	if gap := sectionHeaderGap(o, title, summary); gap >= 1 {
 		line += padSpaces(gap) + summary
 	}
 	rule := strings.Repeat("─", max(1, inner))
@@ -960,7 +998,9 @@ func (v *doctorView) buildRows(o doctorRenderOpts) []doctorRow {
 		add(v.brewSection(o))
 	case tabDocker:
 		add(v.dockerSection(o))
-	default:
+	case tabSSD:
+		add(v.ssdSection(o))
+	case tabDisk:
 		add(v.diskSection(o))
 	}
 	return rows

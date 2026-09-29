@@ -1049,6 +1049,11 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case doctorDockerMsg:
 		m.doctorOv.receiveDocker(msg)
 		return m, m.maybeTick()
+	case doctorSSDMsg:
+		if text := m.doctorOv.receiveSSD(msg); text != "" {
+			m.toast.Show(text, false)
+		}
+		return m, m.maybeTick()
 	case doctorBrewMsg:
 		m.doctorOv.receiveBrew(msg)
 		return m, m.maybeTick()

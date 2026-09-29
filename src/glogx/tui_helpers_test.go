@@ -48,6 +48,7 @@ func installInertDoctor(t *testing.T, v *doctorView) {
 	v.svcOpts = func() svc.Options { return svc.Options{Run: inert} } // Dirs 空 = 走査対象なし
 	v.brewRun = inert
 	v.dockerOpts = noDockerOptions // Docker Desktop が入っていない扱い (本物の docker system df を叩かない)
+	v.ssdOpts = fakeSSDOptions(true)
 }
 
 // joinDoctorCleanup は走査の終了を**上限つきで**待つ。

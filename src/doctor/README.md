@@ -64,10 +64,11 @@ CLI が要るのは「スクリプトから叩きたい」「JSON で受けた�
 | `disk/` | 掃除候補の allowlist (`catalog.go`)、走査 (`scan.go`)、整形 (`report.go`)、除外判定 (`guard.go` — 起動中プロセス・boot 時刻・現存する simulator デバイスを見て「今は消してはいけない」を弾く。**判定に失敗したら fail-closed** = 対象外へ倒す) |
 | `svc/` | launchd の plist 読み (`plist.go`)、`launchctl` 経由の状態取得 (`launchctl.go`)、Homebrew 台帳との突き合わせ (`brew.go`)、整形 (`report.go`) |
 | `docker/` | Docker Desktop が抱えている未使用資源 (停止コンテナ / 未参照イメージ / ビルドキャッシュ / 参照の無いボリューム)。**削除の経路は持たない** — 提示するのは `docker ... prune` のコマンドだけ。合計と回収可能量は `docker system df` の申告をそのまま使う (共有レイヤーの勘定を自前で作り直さない) |
+| `ssd/` | 内蔵 SSD の健康状態 (issue 578)。`diskutil info disk0` の SMART Status と `smartctl -j -a disk0` の NVMe の健康情報を読み、ok / 注意 / 異常 / 判定不能 / 未検査に分ける。**読むだけ** — 修復・sudo・APFS の検査 (`verifyVolume`) の経路を持たない。🚨 シリアル番号は JSON を読む構造体に欄を置かないことで、どの値にも入らない。smartctl が無い・欄が無い・知らない終了状態は判定不能 (ok に丸めない) |
 | `brewledger/` | Homebrew が管理している formula/cask の台帳。**disk (`brew-orphan-state`) と svc (`homebrew.mxcl.<formula>` が台帳に無い判定) が同じ集合を引く**ための共有パッケージ |
 | `cachedir/` | キャッシュ置き場 (`$XDG_CACHE_HOME/glog`、未設定なら `~/.cache/glog`) の解決。glogx 本体と doctor のスキャン結果で共有する (🚨 ディレクトリ名は `glogx` ではなく `glog`) |
-| `internal/displaycheck/` | 「表示用の構造体へ文字列フィールドを足したのに `Sanitize*ForDisplay` へ通し忘れる」を止める検査の本体 (issue 252)。`disk` / `svc` / `docker` の 3 つが**同じ判定を 1 実装で共有**し、各 package は関門表と免除表だけを渡す。検査器自身のテストは testdata の fixture で持つ |
-| `runner/` | 外部コマンドの実行口。**stdout / stderr / exit code を分けて返す** (混ぜるとどの stream が判定材料か確定できない)。テストではここを差し替える |
+| `internal/displaycheck/` | 「表示用の構造体へ文字列フィールドを足したのに `Sanitize*ForDisplay` へ通し忘れる」を止める検査の本体 (issue 252)。`disk` / `svc` / `docker` / `ssd` の 4 つが**同じ判定を 1 実装で共有**し、各 package は関門表と免除表だけを渡す。検査器自身のテストは testdata の fixture で持つ |
+| `runner/` | 外部コマンドの実行口。**stdout / stderr / exit code を分けて返す** (混ぜるとどの stream が判定材料か確定できない)。テストではここを差し替える。コマンドの探索 (`LookPath`) もここ (os/exec を import してよいのはこの package だけ) |
 
 `glogx` からは go.mod の `replace doctor => ../doctor` で参照する。無害化の関門
 (`src/termsafe`) は逆に**この module が取り込む**側 (`replace termsafe => ../termsafe`)。

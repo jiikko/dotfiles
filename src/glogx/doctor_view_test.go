@@ -88,6 +88,7 @@ func doctorTestView(t *testing.T) *doctorView {
 		},
 		brewRun:    fake,
 		dockerOpts: func() docker.Options { return fakeDockerOptions(fakeDockerDF) },
+		ssdOpts:    fakeSSDOptions(true),
 	}
 	return v
 }
@@ -178,6 +179,8 @@ func runDoctorCmds(t *testing.T, v *doctorView, cmd tea.Cmd) {
 			v.receiveBrew(msg)
 		case doctorDockerMsg:
 			v.receiveDocker(msg)
+		case doctorSSDMsg:
+			v.receiveSSD(msg)
 		case nil:
 		default:
 			t.Fatalf("知らない Msg: %T", msg)
@@ -2216,13 +2219,13 @@ func TestDoctorHLMovesTabs(t *testing.T) {
 	runDoctorCmds(t, v, v.open())
 	_ = v.lines(doctorTestOpts(20))
 
-	for _, want := range []doctorTab{tabSvc, tabBrew, tabDocker, tabDisk} {
+	for _, want := range []doctorTab{tabSvc, tabBrew, tabDocker, tabSSD, tabDisk} {
 		v.handleKey("l", 20)
 		if v.tab != want {
 			t.Fatalf("l で %v へ行かない: %v", want, v.tab)
 		}
 	}
-	for _, want := range []doctorTab{tabDocker, tabBrew, tabSvc, tabDisk} {
+	for _, want := range []doctorTab{tabSSD, tabDocker, tabBrew, tabSvc, tabDisk} {
 		v.handleKey("h", 20)
 		if v.tab != want {
 			t.Fatalf("h で %v へ戻らない: %v", want, v.tab)
@@ -2369,13 +2372,13 @@ func TestDoctorTabs(t *testing.T) {
 
 	t.Run("tab で送り shift+tab で戻る (端で回る)", func(t *testing.T) {
 		v.tab = tabDisk
-		for _, want := range []doctorTab{tabSvc, tabBrew, tabDocker, tabDisk} {
+		for _, want := range []doctorTab{tabSvc, tabBrew, tabDocker, tabSSD, tabDisk} {
 			v.handleKey("tab", 20)
 			if v.tab != want {
 				t.Fatalf("tab で %v へ行かない: %v", want, v.tab)
 			}
 		}
-		for _, want := range []doctorTab{tabDocker, tabBrew, tabSvc, tabDisk} {
+		for _, want := range []doctorTab{tabSSD, tabDocker, tabBrew, tabSvc, tabDisk} {
 			v.handleKey("shift+tab", 20)
 			if v.tab != want {
 				t.Fatalf("shift+tab で %v へ戻らない: %v", want, v.tab)
@@ -2402,9 +2405,10 @@ func TestDoctorTabs(t *testing.T) {
 		v.handleKey("tab", 20) // → サービス
 		v.handleKey("tab", 20) // → Homebrew
 		v.handleKey("tab", 20) // → Docker
+		v.handleKey("tab", 20) // → SSD
 		_ = v.lines(o)
 		if v.cur.key == diskKey {
-			t.Fatalf("前提が崩れている: Docker でディスクの行を指している: %q", diskKey)
+			t.Fatalf("前提が崩れている: SSD でディスクの行を指している: %q", diskKey)
 		}
 		v.handleKey("tab", 20) // → ディスクへ一周
 		_ = v.lines(o)

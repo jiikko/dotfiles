@@ -250,22 +250,22 @@ SSD 側は `unrequested / running / done / failed` のような明示状態を�
 
 ## 受け入れ条件
 
-- [ ] doctor に `SSD` タブが追加され、既存 4 タブの操作を壊さない
-- [ ] Disk タブ（掃除）と SSD タブ（健康）が明確に分離されている
-- [ ] `diskutil info disk0` の SMART Status を表示できる
-- [ ] `smartctl` 詳細検査は明示操作でだけ走る
-- [ ] `smartctl` が無い場合に `判定不能` とし、ok に丸めない
-- [ ] Apple SSD の既知の rc=4 / `GetLogPage failed` だけで異常判定しない
-- [ ] `Critical Warning` / `Media and Data Integrity Errors` / `Available Spare` を構造化して判定する
-- [ ] `Percentage Used` / `Data Units Written` / `Power On Hours` / `Unsafe Shutdowns` を表示できる
-- [ ] `Serial Number` を UI / cache / clipboard に出さない
-- [ ] APFS 整合性を SMART と別項目として扱う
-- [ ] APFS 検査はタブを開いただけでは走らない
-- [ ] `repairVolume` / `fsck_apfs` / sudo を実行するコード経路が無い
-- [ ] timeout / cancel 後に `smartctl` / `diskutil` の子プロセスが残らない
-- [ ] `未検査` / `判定不能` / `ok` / `注意` / `異常` がテストで区別される
-- [ ] status を 1 つ潰す変異（例: 判定不能→ok、integrity errors 無視、rc=4 即異常）がテストで red になる
-- [ ] `docs/macos-health-check.md` の SSD の配置説明を、このタブを正本とするよう更新する
+- [x] doctor に `SSD` タブが追加され、既存 4 タブの操作を壊さない
+- [x] Disk タブ（掃除）と SSD タブ（健康）が明確に分離されている
+- [x] `diskutil info disk0` の SMART Status を表示できる
+- [x] ~~`smartctl` 詳細検査は明示操作でだけ走る~~ → **ユーザー決定 (2026-09-29) で撤回: タブを開いたときに自動で走らせる** (実測 0.02 秒で、明示にする理由が無かった)
+- [x] `smartctl` が無い場合に `判定不能` とし、ok に丸めない
+- [x] Apple SSD の既知の rc=4 / `GetLogPage failed` だけで異常判定しない
+- [x] `Critical Warning` / `Media and Data Integrity Errors` / `Available Spare` を構造化して判定する
+- [x] `Percentage Used` / `Data Units Written` / `Power On Hours` / `Unsafe Shutdowns` を表示できる
+- [x] `Serial Number` を UI / cache / clipboard に出さない
+- [x] APFS 整合性を SMART と別項目として扱う
+- [x] APFS 検査はタブを開いただけでは走らない
+- [x] `repairVolume` / `fsck_apfs` / sudo を実行するコード経路が無い
+- [x] timeout / cancel 後に `smartctl` / `diskutil` の子プロセスが残らない
+- [x] `未検査` / `判定不能` / `ok` / `注意` / `異常` がテストで区別される
+- [x] status を 1 つ潰す変異（例: 判定不能→ok、integrity errors 無視、rc=4 即異常）がテストで red になる
+- [x] `docs/macos-health-check.md` の SSD の配置説明を、このタブを正本とするよう更新する
 
 ## 着手前に再確認すること
 
@@ -280,9 +280,59 @@ SSD 側は `unrequested / running / done / failed` のような明示状態を�
 
 ## 反証レビュー
 
-この ChatGPT connector 環境には repo の規約が要求する codex / read-only subagent の実行口が無いため、
-**外部の反証レビューは未実施**。この仕様は「反証済み」と扱わない。
-着手時に現コード・実機出力との突き合わせを行い、P1/P2/P3 の反証レビューを通してから実装へ進む。
+起票時は未実施。**2026-09-29 に着手時の反証レビューを通した** (read-only サブエージェント。仕様と現コード・実機出力の突き合わせ)。
+事実の誤りは無く、仕様が見落としていた点を 4 つ採った: ①`tabSummary` / `buildRows` の `default:` で SSD タブが Disk の中身を描く
+(lint の exhaustive は default があると見ない) ②`TestDoctorHLMovesTabs` などが 4 タブの循環を固定している ③`src/glogx/README.md` の `D` の行が
+キーの正本 ④新しい package は `displaycheck` に自動では載らない。予備領域の判定は `<=` ではなく `<` (NVMe の定義。実機は 100% / 閾値 99%)。
+
+## 進捗
+
+2026-09-29 (dotfiles-43)。commit「feat(glogx): doctor に SSD 診断タブを足す (issue 578)」
+
+### 決めたこと (ユーザー)
+
+- smartctl は**タブを開いたときに自動で走らせる** (実測 `smartctl -a disk0` 0.02 秒 / `diskutil info disk0` 0.07 秒。3 回とも同じ)。
+  そのため結果はキャッシュに載せず、Docker と同じく開くたびに取り直す (古い値が今の値に見える形と、シリアル番号の保存経路が両方無くなる)
+- smartctl が無ければ、doctor を開いた直後に toast で `brew install smartmontools` を案内する (画面からは入れない)
+- APFS は**手動コマンドの提示だけ** (`y` で `diskutil verifyVolume /System/Volumes/Data` をコピー)。`verifyVolume` の sudo 要否・所要・中断の挙動は未実測のまま
+
+### 実装
+
+- `src/doctor/ssd/` を新設: diskutil の SMART Status と `smartctl -j -a disk0` の JSON を読み、ok / 注意 / 異常 / 判定不能 / 未検査 / 表示のみ に分ける。
+  JSON は必要な欄だけを持つ構造体へ unmarshal し、**シリアル番号の欄を置かない** (どの値にも入らない)。外部コマンドは `runner` 越し (timeout 10 秒・プロセスグループごと kill)
+- `runner.LookPath` を足し、docker が自前で持っていた `lookPath` (exec.LookPath の近似) を本物に置き換えた。近似を検査していた `docker/lookpath_test.go` は、
+  検査対象が標準ライブラリになったので削除した (失ったカバレッジは無い: 近似そのものが無くなった)
+- glogx: `tabSSD` (5 タブ)。`tabSummary` / `buildRows` の `default:` を外して exhaustive にした (`case tabSSD` を消すと lint が止める = 変異で確認)。
+  snapshot の復元と新規走査の 2 経路は `uncachedCmds` 1 箇所から docker と ssd を起こす。狭い幅のタブ行は ①空白を詰める ②タブ名を短く (Disk / Svc / Brew) の順で入れ、
+  末尾切りは最後の手段 (幅 60 で実在の値 = 63 桁あった)
+- テストが本物の diskutil / smartctl を叩かないよう、doctor を組む 4 箇所に fake を差した。漏れは「`ssdOpts` が空なら印を出す」probe を一時的に入れて全テストで数え、1 本 (`TestRescanCancelsPreviousGeneration`) を見つけて直した
+
+### 結果
+
+- `make test` rc=0 (glogx / doctor/ssd / doctor/docker / doctor/runner の `ok` 行を確認)。`make -C src/doctor lint` / `make -C src/glogx lint` とも 0 issues
+- 実機 (APPLE SSD AP1024Z / macOS 27.0 / smartctl 7.5) の出力で描いた SSD タブは見本どおり: SMART ok (rc=4 は注記)・予備領域 100% (閾値 99%)・摩耗 7%・書き込み 120 TB・通電 3,993 h・安全でない電源断 11 回、APFS 未検査
+- 変異 (`bin/mutate-verify`) 34 本すべて red (1 周目 16・指摘の修正 8・2 周目 7・3 周目 3): 予備領域の `<=`・整合性エラーの無視・rc=4 を即異常・シリアル番号を載せる・bit 3 / 未知ビットの無視・smartctl 不在を ok・判定不能を ok より軽く・diskutil の未知値を異常・関門を外す・
+  SSD タブが Disk を描く・復元経路で SSD を走らせない・タブ行を詰めない / 短くしない・toast を出さない・cleanup の latch に載せない・`case tabSSD` を消す (lint)・rc のフォールバック・欄の欠落を ok・負の値・温度のビット・bit 0/1 と 3 の同時・
+  注記の条件 (3 種)・桁あふれ・見出しの要約の判定・hint の Enter
+- 敵対的レビュー (Opus) を 3 周。採った指摘はすべて直して変異で確認した (1 周目: diskutil の未知値・rc のフォールバックと欄の欠落のテスト・負の値・温度・bit 同時・桁あふれ・注記。
+  2 周目: 狭い幅でタブ行の SSD の要約が切れる (P2)・タブ行と行の印の意味の食い違い・JSON が読めないときの bit 3・注記の条件・表示だけの行の負の値・見出しの要約・hint。
+  3 周目: 見出しの要約の判定が `sectionHeader` と 1 桁ずれて幅 58 で消える (P1。判定を `sectionHeaderGap` 1 箇所に寄せた)・異常の行の隣に「故障ではない」の注記)。
+  3 周目の修正は既存の判定 (`sectionHeader` から切り出した関数 / `overall()`) を使い回すだけで新しい判定を足しておらず、どれも変異で確認したので 4 周目は回していない
+
+### 採らなかった指摘 (理由)
+
+- 予備領域 0% / 閾値 0% が ok になる: smartctl が実際に出す形ではない (Apple の実機は閾値 99%)。仕様の定義 (`<`) のまま
+- 摩耗 100% 以上が注意のまま: NVMe の 100 は「メーカーの見積もった寿命に達した」であって故障ではない。異常の段を足すなら根拠を実測してから
+- `exec.LookPath` が相対パスの PATH を拾わない (ErrDot): 旧実装より安全側。smartctl を相対 PATH 経由でしか入れていないときは「無い」と出る (無害)
+- エラー経路のシリアル番号: smartctl -j はメッセージを JSON (stdout) に出し、JSON の読み違いの文は捨てている。Note に入るのは stderr の 1 行目だけ
+- snapshot から復元したときの見出し「N 分前の結果」が SSD には当たらない: Docker にも前からある形
+- 幅 50 前後より狭いとタブ行の末尾 (SSD) が切れる: 設計上の最後の手段
+- タブ行の要約は SMART だけを見る: APFS は常に未検査 (実行しない) なので、APFS の状態が変わる経路が無い
+
+### 残り
+
+- 無し (APFS を実行する経路が要るようになったら、`verifyVolume` の sudo 要否・所要・中断の挙動を先に実測する)
+- 既存の flaky (今回の変更と無関係): `TestDoctorDeleteRunsAndShowsResult` が基点 (682f8bfb) でも HEAD でも 50 回に 1 回落ちる (「進捗が 1 件も届いていない」)。変異検証の baseline で踏んだ
 
 ## 関連
 

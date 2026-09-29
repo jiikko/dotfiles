@@ -15,6 +15,7 @@ import (
 
 	"doctor/disk"
 	"doctor/runner"
+	"doctor/ssd"
 	"doctor/svc"
 )
 
@@ -69,7 +70,7 @@ func TestWaitDoctorCleanupWaitsForTrackedScan(t *testing.T) {
 // 🚨 3 つまとめて 1 回試す形でも足りない。1 経路だけ外した変異が緑になるので、
 // 「その経路だけが時間のかかる子を持つ」fixture を経路ごとに作って回す。
 func TestEachDoctorScanIsTrackedUntilItReturns(t *testing.T) {
-	for _, tc := range []string{"disk", "svc", "brew"} {
+	for _, tc := range []string{"disk", "svc", "brew", "ssd"} {
 		t.Run(tc, func(t *testing.T) {
 			drainDoctorCleanup(t)
 			var mu sync.Mutex
@@ -93,7 +94,7 @@ func TestEachDoctorScanIsTrackedUntilItReturns(t *testing.T) {
 			}
 
 			v := &doctorView{}
-			diskRun, svcRun, brewRun := quiet, quiet, quiet
+			diskRun, svcRun, brewRun, ssdRun := quiet, quiet, quiet, quiet
 			diskCatalog := []disk.Entry{}
 			switch tc {
 			case "disk":
@@ -108,10 +109,16 @@ func TestEachDoctorScanIsTrackedUntilItReturns(t *testing.T) {
 				svcRun = slow
 			case "brew":
 				brewRun = slow
+			case "ssd":
+				ssdRun = slow
 			}
 			v.diskOpts = func() disk.Options { return disk.Options{Catalog: diskCatalog, Run: diskRun} }
 			v.svcOpts = func() svc.Options { return svc.Options{Dirs: nil, Run: svcRun} }
 			v.brewRun = brewRun
+			v.dockerOpts = noDockerOptions // 本物の docker system df を叩かない (issue 419)
+			v.ssdOpts = func() ssd.Options {
+				return ssd.Options{Run: ssdRun, LookPath: func(string) (string, error) { return "/opt/homebrew/bin/smartctl", nil }}
+			}
 
 			cmd := v.start(true)
 			if cmd == nil {

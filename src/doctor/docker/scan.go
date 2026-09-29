@@ -121,7 +121,7 @@ type Options struct {
 	Run      runner.Runner
 	Now      func() time.Time
 	OldAfter time.Duration
-	// LookPath は docker CLI の探索 (既定 exec.LookPath)。AppExists は Docker Desktop の
+	// LookPath は docker CLI の探索 (既定 runner.LookPath)。AppExists は Docker Desktop の
 	// 実体があるかどうか (既定 /Applications/Docker.app)。
 	LookPath   func(string) (string, error)
 	AppExists  func() bool
@@ -155,7 +155,7 @@ func scan(ctx context.Context, o Options) Report {
 	rep := Report{OldAfter: o.oldAfter(), ScannedAt: o.now()}
 	look := o.LookPath
 	if look == nil {
-		look = lookPath
+		look = runner.LookPath
 	}
 	appExists := o.AppExists
 	if appExists == nil {

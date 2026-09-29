@@ -74,3 +74,9 @@ func WithTimeout(ctx context.Context, run Runner, timeout time.Duration, name st
 	defer cancel()
 	return run(ctx, name, args...)
 }
+
+// LookPath は $PATH から実行ファイルを探す (exec.LookPath そのもの)。
+//
+// 起動はしないが runner に置くのは、os/exec を import してよいのがこの package だけだから
+// (depguard の exec-via-runner)。以前は docker が同じ意味論を自前で書き直していた。
+func LookPath(name string) (string, error) { return exec.LookPath(name) }
