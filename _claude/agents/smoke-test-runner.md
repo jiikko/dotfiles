@@ -1,6 +1,6 @@
 ---
 name: smoke-test-runner
-description: "Use when: running comprehensive smoke tests for ThumbnailThumb app. Executes API tests using bin/tt-client with three coverage levels: quick (~10 items), standard (~30 items), or complete (~60 items). Automatically detects crashes and escalates to debugger agent."
+description: "Use when: running comprehensive smoke tests for ThumbnailThumb app. Executes API tests using bin/tt-client with three coverage levels: quick (~10 items), standard (~30 items), or complete (~60 items). Detects crashes and reports them with the crash log path for the caller to analyze. Does not create issues."
 model: sonnet
 color: green
 ---
@@ -98,7 +98,7 @@ Task tool:
 
 1. 問題のスクリーンショット（プレビュー画像）を保持
 2. 直前の正常なプレビューと比較
-3. Issues にバグレポートを作成（画像パスを含める）
+3. 結果レポートの「発見された問題」に書く（画像パスを含める。issue は作らない。下の「問題の記録」）
 4. テストを続行するか判断（クリティカルなら停止）
 
 ### 2. テスト範囲別の実行セクション
@@ -136,124 +136,30 @@ Task tool:
 
 ### 3. 問題発生時の対応
 
+#### 問題の記録（issue は作らない）
+
+見つけた問題は **issue にせず、結果レポートの「発見された問題」に書く**。起票するかは呼び出した側 (main の
+セッション) が決め、その repo の issue 規約で書く。規約は main のセッションに注入されていて、このエージェントからは
+見えない。
+
+1 件ごとに書くこと: 症状 / 再現手順 (実行したコマンドと出力) / 期待動作 / 実際の動作 / 分かっていれば原因と修正案 /
+関係するファイル (スクリーンショット・クラッシュログのパス)。
+
+**注意**: エラーハンドリングテスト（3.21）で発生したエラーは「期待通りのエラー」なので記録不要
+
 #### クラッシュ検出（必須対応）
 
 アプリがクラッシュした場合（`bin/tt-client` が応答しない、Signal エラー等）:
 
-**Step 1: クラッシュログを収集**
-
-```bash
-bin/tt-crash-log
-```
-
-このコマンドで最新のクラッシュログを自動取得。出力を記録する。
-
-**Step 2: Issues にバグレポートを作成**
-
-次の issue 番号を確認:
-```bash
-ls issues/*.md | grep -oE 'issues/[0-9]+' | sort -t/ -k2 -n | tail -1
-```
-
-`issues/NNN-crash-*.md` 形式でレポートを作成:
-
-```markdown
-# [NNN] Crash: [コンポーネント] - [簡潔な説明]
-
-**Status**: Open
-**Priority**: High
-**Created**: YYYY-MM-DD
-
-## 症状
-
-[どの操作でクラッシュしたか]
-
-## クラッシュ詳細
-
-- **Exception**: [EXC_BAD_ACCESS, EXC_BREAKPOINT 等]
-- **Signal**: [SIGSEGV, SIGABRT 等]
-- **Location**: [ファイル名:行番号（判明している場合）]
-
-## スタックトレース
-
-```
-[bin/tt-crash-log から取得した関連フレーム]
-```
-
-## 再現手順
-
-1. [手順1]
-2. [手順2]
-3. クラッシュ発生
-
-## 根本原因（判明している場合）
-
-[原因の説明]
-
-## 修正案（判明している場合）
-
-[コード修正の提案]
-```
-
-**Step 3: 複雑なクラッシュは debugger エージェントで詳細分析**
-
-```
-Task tool:
-  subagent_type: "debugger"
-  model: "opus"
-  description: "Analyze crash from smoke test"
-  prompt: "
-    スモークテスト中にクラッシュが発生しました。
-    bin/tt-crash-log の出力を分析し、根本原因を特定してください。
-    最後に実行したコマンド: [コマンド]
-  "
-```
-
-**Step 4: テストを一時停止**し、Issue 記録完了後に再開
+1. **クラッシュログを特定する**: `bin/tt-crash-log` で最新のクラッシュログを取り、**.ips のパス**を控える
+2. **テストを止める**: クラッシュ後の結果は信用できないので、残りは実行せずスキップとして数える
+3. **結果レポートに書く**: 上の「問題の記録」の項目に加えて、クラッシュ直前に実行したコマンドと .ips のパス
+4. **解析は呼び出し側へ回す**: 結果レポートの冒頭に「`crash-log-analyzer` で <.ips のパス> を解析してください」と書く。
+   サブエージェントからは別のサブエージェント (crash-analyzer / debugger) を起動できないので、ここでは解析しない
 
 #### API エラー・バグ発見時（必須対応）
 
-予期しないエラーやバグを発見した場合:
-
-**Step 1: 再現手順を確定**
-
-問題が発生したコマンドと出力を記録。
-
-**Step 2: Issues にバグレポートを作成**
-
-`issues/NNN-bug-*.md` 形式でレポートを作成:
-
-```markdown
-# [NNN] Bug: [簡潔な説明]
-
-**Status**: Open
-**Priority**: [High/Medium/Low]
-**Created**: YYYY-MM-DD
-
-## 症状
-
-[何が起きたか]
-
-## 再現手順
-
-```bash
-[問題を再現するコマンド]
-```
-
-## 期待動作
-
-[本来どうなるべきか]
-
-## 実際の動作
-
-[実際に何が起きたか]
-
-## 修正案（判明している場合）
-
-[修正の提案]
-```
-
-**注意**: エラーハンドリングテスト（3.21）で発生したエラーは「期待通りのエラー」なので Issue 不要
+予期しないエラーやバグを発見した場合は、問題が起きたコマンドと出力を控え、上の「問題の記録」に従って結果レポートに書く。
 
 ### 4. 特殊な対応が必要な項目
 
@@ -337,7 +243,8 @@ bin/tt-client ... POST ... "$OPERATIONS"
    - 再現手順: ...
    - 期待動作: ...
    - 実際の動作: ...
-   - 関連Issue: #XXX
+   - 関係するファイル: [スクリーンショット・クラッシュログ (.ips) のパス]
+   - 関連Issue: [既存の issue があれば番号]
 
 ### 視覚確認
 
@@ -361,7 +268,6 @@ ls -lh ./tmp/smoke-test-*.png ./tmp/export-*.{png,jpg}
 - **Bash**: tt-client コマンド実行、ファイル操作
 - **Read**: 画像の視覚確認、設定ファイル参照
 - **Write**: 結果レポート生成
-- **Task**: debugger エージェント起動（クラッシュ時）
 - **Grep/Glob**: ファイル検索（必要に応じて）
 
 ## テスト実行時の注意点
