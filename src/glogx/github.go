@@ -350,7 +350,7 @@ const associatedPRLimit = 5
 // なのでクエリ文字列へのリテラル埋め込みで injection の余地はない。
 //
 // contexts は先頭 100 件しか見ない。Check が 100 件を超えるコミットでは 101 件目以降の
-// 失敗を取りこぼして ✓ と誤報しうるが、「100 超の Check を持つ repo は現実に扱わない」
+// 失敗を取りこぼして ✅ と誤報しうるが、「100 超の Check を持つ repo は現実に扱わない」
 // とのユーザー判断 (2026-07-16) で totalCount ガード / pagination は見送り。
 // そうした repo を扱うようになったら再評価する (totalCount を見て安全側 ? に倒すのが最小対応)。
 func buildStatusQuery(shas []string) string {

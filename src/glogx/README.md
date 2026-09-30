@@ -19,15 +19,15 @@ atomicfile も第二消費者 (bin/ratelimit) ができたので `src/ratelimit`
 GitHub Actions / GitHub Checks の結果をコミットごとに添える `git log` ラッパー。
 
 ```text
-✓ commit 91a72bdc0ffee218da39a3ee5e6b4b0d3255bfef (HEAD -> master, origin/master)
+✅ commit 91a72bdc0ffee218da39a3ee5e6b4b0d3255bfef (HEAD -> master, origin/master)
 Author: koji <koji@example.com>
 Date:   Thu Jul 16 19:12:47 2026 +0900
 
     Fix invoice calculation
 
-✗ commit 7b18e20aa1b2c3d4e5f60718293a4b5c6d7e8f90
-    ✓ build
-    ✗ lint          ← Enter で展開した CI job 一覧
+❌ commit 7b18e20aa1b2c3d4e5f60718293a4b5c6d7e8f90
+    ✅ build
+    ❌ lint          ← Enter で展開した CI job 一覧
 Author: koji <koji@example.com>
 Date:   Thu Jul 16 14:03:21 2026 +0900
 
@@ -37,7 +37,7 @@ Date:   Thu Jul 16 14:03:21 2026 +0900
 ## 何ができるか
 
 - **履歴は即時、CI は非同期**: 実行直後にローカルの Git 履歴を表示し、CI 状態は
-  プレースホルダー (`⠋`) から GitHub API の取得完了時に `✓ ✗ ● ⊘ – ?` へ埋まる
+  プレースホルダー (`⠋`) から GitHub API の取得完了時に `✅ ❌ 🟡 🚫 ⬜ ❓` へ埋まる
 - **less 風の対話ブラウズ** (TTY のみ): `j`/`k` でコミットを選び、`Enter` で
   そのコミットの **CI job 一覧をポップアップ表示** (job には所要時間を併記)。
   `q` で抜けると表示は消える (git log の pager と同じ。残したいものは `y` で
@@ -48,7 +48,7 @@ Date:   Thu Jul 16 14:03:21 2026 +0900
 - **壊れない**: gh 未導入・未認証・GitHub 以外の remote・API 障害のどれでも
   Git 履歴の表示自体は成立する (CI 欄が `?` / `–` になり、警告 1 行を stderr へ)
 - **パイプ安全**: stdout が非 TTY なら ANSI カーソル制御を出さず、取得完了後に
-  静的な最終結果を 1 回だけ出力する (`glogx --no-pager -n 50 | grep '✗'` が機能する)
+  静的な最終結果を 1 回だけ出力する (`glogx --no-pager -n 50 | grep '❌'` が機能する)
 - **write 操作 (glog に無い独自機能)**: `s` で status viewer (未コミットの変更を一覧して
   stage / unstage / 変更を捨てる)、`b` で push (y/N 確認)、`u` で pull --rebase
   (conflict は自動 abort で元に戻す。未コミット変更があるときは案内して中止)。job パネル /
@@ -272,16 +272,16 @@ StatusContext の `targetUrl`。URL が無い job では開かず、その旨を
 
 | 表示 | 意味 |
 |---|---|
-| `✓` | すべての対象 Check が成功 (skipped 混在は成功扱い) |
-| `✗` | 1 つ以上の Check が失敗 |
-| `●` | queued / in_progress / pending |
-| `⊘` | cancelled / skipped / neutral のみ |
-| `–` | push 済みだが Check が存在しない |
-| `↑` | 未 push (GitHub 上にまだ存在しない) |
-| `?` | 未取得・取得不能 (gh 未導入 / 未認証 / API 障害) |
+| `✅` | すべての対象 Check が成功 (skipped 混在は成功扱い) |
+| `❌` | 1 つ以上の Check が失敗 |
+| `🟡` | queued / in_progress / pending |
+| `🚫` | cancelled / skipped / neutral のみ |
+| `⬜` | push 済みだが Check が存在しない |
+| `🔼` | 未 push (GitHub 上にまだ存在しない) |
+| `❓` | 未取得・取得不能 (gh 未導入 / 未認証 / API 障害) |
 | `⠋` | 取得中 (TTY のみ) |
 
-「Check なし (`–`)」「未 push (`↑`)」「取得失敗 (`?`)」は意図的に区別している。
+「Check なし (`⬜`)」「未 push (`🔼`)」「取得失敗 (`❓`)」は意図的に区別している。
 未 push の判定は `git rev-list --not --remotes` によるローカル判定で、これらの SHA は
 GitHub へ問い合わせない (必ず「無い」と返るため。API 消費の節約と、push 直後に
 古い「Check なし」キャッシュが当たる混同の防止)。
@@ -313,16 +313,16 @@ GitHub へ問い合わせない (必ず「無い」と返るため。API 消費�
   `gh api graphql` 経由
 - **一括取得 (並列チャンク)**: GraphQL `statusCheckRollup` で表示対象コミット
   (集約状態 + job 名) を SHA ごとの alias で束ねる。コミットごとの REST 逐次呼び出しは
-  しない。上限 100 SHA (超過分は `?`)。レイテンシは SHA 数に線形 (実測: 固定費 ≈ 480ms +
+  しない。上限 100 SHA (超過分は `❓`)。レイテンシは SHA 数に線形 (実測: 固定費 ≈ 480ms +
   約 21ms/SHA) なので、件数が多いときは最大 4 本のチャンクへ割って並列に投げる
   (`-n 50` の静的出力で 1.53s → 0.85s)。チャンク 1 は表示順の先頭なので、対話ブラウズでは
   **画面に映っているコミットの CI が最初に埋まる**。1 チャンクが失敗しても取れた分は表示し、
-  失敗チャンクの SHA だけが `?` に落ちる
+  失敗チャンクの SHA だけが `❓` に落ちる
 - **リポジトリ解決**: 現在ブランチの upstream remote → `origin` の順で remote URL
   から owner/repo を解決。HTTPS / SSH (`git@` / `ssh://`) 両対応。GitHub 以外の
-  remote は CI 取得対象外 (CI 欄は `–`)
-- **集約ルール** (優先順): 失敗あり → `✗` ＞ 実行中あり → `●` ＞ 成功あり → `✓`
-  ＞ cancelled/skipped/neutral のみ → `⊘` ＞ Check なし → `–`
+  remote は CI 取得対象外 (CI 欄は `⬜`)
+- **集約ルール** (優先順): 失敗あり → `❌` ＞ 実行中あり → `🟡` ＞ 成功あり → `✅`
+  ＞ cancelled/skipped/neutral のみ → `🚫` ＞ Check なし → `⬜`
 
 ### キャッシュ
 
@@ -353,10 +353,10 @@ GitHub へ問い合わせない (必ず「無い」と返るため。API 消費�
 
 | 症状 | 原因と対処 |
 |---|---|
-| CI 欄が全部 `?` + 「gh が見つからない」 | `brew install gh` |
-| CI 欄が全部 `?` + 「未認証」 | `gh auth login` |
-| CI 欄が全部 `–` | remote が GitHub でない。`git remote -v` を確認 |
-| CI 欄が `↑` | 未 push。push すれば次回から取得対象になる |
+| CI 欄が全部 `❓` + 「gh が見つからない」 | `brew install gh` |
+| CI 欄が全部 `❓` + 「未認証」 | `gh auth login` |
+| CI 欄が全部 `⬜` | remote が GitHub でない。`git remote -v` を確認 |
+| CI 欄が `🔼` | 未 push。push すれば次回から取得対象になる |
 | 直前に再実行した CI が反映されない | キャッシュ TTL 内。`glogx --refresh` |
 | rate limit の警告 | しばらく待つ。キャッシュがあるので通常は到達しない |
 | コミットメッセージの絵文字が単色になる | 仕様 (下記「絵文字の幅と脱色」) |

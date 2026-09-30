@@ -302,7 +302,7 @@ func TestBrowseLinesMemoized(t *testing.T) {
 			break
 		}
 	}
-	if !strings.Contains(header, "✗") {
+	if !strings.Contains(header, "❌") {
 		t.Errorf("再構築後の行に新しい状態が反映されていない: %q", header)
 	}
 }

@@ -314,20 +314,20 @@ diff ポップアップ表示中 (d で開く。ほぼ全画面のモーダル�
   場合は常に静的出力で、ANSI カーソル制御は出さない。
 
 CI 状態の記号:
-  ✓  すべての対象 Check が成功 (skipped 混在は成功扱い)
-  ✗  1 つ以上の Check が失敗
-  ●  queued / in_progress / pending
-  ⊘  cancelled / skipped / neutral のみ
-  –  push 済みだが Check が存在しない
-  ↑  未 push (GitHub 上にまだ存在しない。API には問い合わせない)
-  ?  未取得・取得不能 (gh 未導入 / 未認証 / API 障害。30 秒だけ再取得しない)
+  ✅ すべての対象 Check が成功 (skipped 混在は成功扱い)
+  ❌ 1 つ以上の Check が失敗
+  🟡 queued / in_progress / pending
+  🚫 cancelled / skipped / neutral のみ
+  ⬜ push 済みだが Check が存在しない
+  🔼 未 push (GitHub 上にまだ存在しない。API には問い合わせない)
+  ❓ 未取得・取得不能 (gh 未導入 / 未認証 / API 障害。30 秒だけ再取得しない)
   ⠋  取得中 (TTY のみ)
 
 GitHub 連携と前提:
   - 認証は GitHub CLI (gh) へ委譲する。gh auth login 済みであること。
-    gh が未導入・未認証でも Git 履歴の表示は成立する (CI 欄は ? / –)
+    gh が未導入・未認証でも Git 履歴の表示は成立する (CI 欄は ❓ / ⬜)
   - remote (upstream → origin) から owner/repo を解決する。GitHub 以外の
-    remote では CI 欄は – になる
+    remote では CI 欄は ⬜ になる
   - CI 状態は ~/.cache/glog/ ($XDG_CACHE_HOME 対応) に状態別 TTL で
     キャッシュされる (success/failure 24h, pending 10s など。本家 glog と共有)
 

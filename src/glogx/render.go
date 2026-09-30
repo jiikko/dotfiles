@@ -61,31 +61,28 @@ var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 // StateLoading は表示専用の擬似状態。statuses map に SHA が無いとき render 側で使う。
 const StateLoading CIState = "loading"
 
-// StatusGlyph は状態 1 つ分の記号 (+色)。loading は spinner フレームを渡す。
+// StatusGlyph は状態 1 つ分の記号。どの状態も表示幅 2 に揃える: 幅 1 の文字と幅 2 の絵文字を
+// 同じ列に混ぜると、桁数が合っていても縦に揃って見えない。絵文字は色を自前で持つので ANSI 色を
+// 付けない。取得中の spinner だけは幅 1 の点字なので空白で埋める。
 func StatusGlyph(state CIState, colored bool, spinner string) string {
-	var glyph, color string
 	switch state {
 	case StateSuccess:
-		glyph, color = "✓", ansiGreen
+		return "✅"
 	case StateFailure:
-		glyph, color = "✗", ansiRed
+		return "❌"
 	case StatePending:
-		glyph, color = "●", ansiYellow
+		return "🟡"
 	case StateNeutral:
-		glyph, color = "⊘", ansiDim
+		return "🚫"
 	case StateNone:
-		glyph, color = "–", ansiDim
+		return "⬜"
 	case StateUnpushed:
-		glyph, color = "↑", ansiDim
+		return "🔼"
 	case StateUnknown:
-		glyph, color = "?", ansiDim
+		return "❓"
 	default:
-		glyph, color = spinner, ansiCyan
+		return paint(fillRight(spinner, 2), ansiCyan, colored)
 	}
-	if !colored {
-		return glyph
-	}
-	return color + glyph + ansiReset
 }
 
 func stateFor(statuses map[string]CIState, sha string) CIState {
@@ -358,7 +355,7 @@ func prStateColor(state string) string {
 
 // mediumLines は git log 標準形式の 1 コミット分。
 //
-//	✓ commit <sha> (decorations)
+//	✅ commit <sha> (decorations)
 //	Author: name <email>
 //	Date:   Thu Jul 16 19:12:47 2026 +0900
 //

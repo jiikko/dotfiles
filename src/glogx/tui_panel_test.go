@@ -149,7 +149,7 @@ func TestBrowsePanelOpenClose(t *testing.T) {
 		t.Fatalf("パネルが開いていない")
 	}
 	view := m.View().Content
-	for _, want := range []string{"CI jobs:", "✓ build", "✗ lint"} {
+	for _, want := range []string{"CI jobs:", "✅ build", "❌ lint"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("パネルに %q が出ていない:\n%s", want, view)
 		}
@@ -216,7 +216,7 @@ func TestBrowsePanelClampedToViewport(t *testing.T) {
 	m.handleKey("G") // 末尾コミットへ (ヘッダーはビューポート下端付近)
 	m.openPanel()
 	view := m.View().Content
-	if !strings.Contains(view, "CI jobs:") || !strings.Contains(view, "✓ build") {
+	if !strings.Contains(view, "CI jobs:") || !strings.Contains(view, "✅ build") {
 		t.Errorf("下端のコミットでパネルが見えていない:\n%s", view)
 	}
 	if got := strings.Count(view, "\n"); got+1 > m.pageSize()+1 {
@@ -335,7 +335,7 @@ func TestBrowsePanelTriggersDetailFetch(t *testing.T) {
 	if m.detailsLoading[sha] {
 		t.Errorf("取得完了後も loading のまま")
 	}
-	if !strings.Contains(m.View().Content, "✓ build") {
+	if !strings.Contains(m.View().Content, "✅ build") {
 		t.Errorf("取得した詳細がパネルに出ていない:\n%s", m.View().Content)
 	}
 	if m.fetched[sha] != StateSuccess {
@@ -361,7 +361,7 @@ func TestBrowsePanelDuringBatchFetchWaits(t *testing.T) {
 	if m.detailsLoading[shas[0]] {
 		t.Errorf("一括取得完了後も loading のまま")
 	}
-	if !strings.Contains(m.View().Content, "✓ build") {
+	if !strings.Contains(m.View().Content, "✅ build") {
 		t.Errorf("一括取得の詳細がパネルに出ていない:\n%s", m.View().Content)
 	}
 }

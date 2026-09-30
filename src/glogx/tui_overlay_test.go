@@ -686,7 +686,7 @@ func TestBrowsePRStatusFlow(t *testing.T) {
 	}})
 	m.details[sha] = []CheckDetail{{Name: "lint", State: StateFailure}}
 	v := stripANSI(m.View().Content)
-	for _, want := range []string{"PR #12: new feature", "OPEN", "f/new → master", "APPROVED", "CONFLICTING", "CI: ✗", "1 job 失敗"} {
+	for _, want := range []string{"PR #12: new feature", "OPEN", "f/new → master", "APPROVED", "CONFLICTING", "CI: ❌", "1 job 失敗"} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("PR ポップアップに %q が無い:\n%s", want, v)
 		}

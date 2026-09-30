@@ -20,12 +20,12 @@ func TestRenderStaticMediumFormat(t *testing.T) {
 	statuses := map[string]CIState{"a": StateSuccess, "b": StateFailure}
 	out := RenderStatic(testCommits(), statuses, RenderOpts{})
 	for _, want := range []string{
-		"✓ commit a (HEAD -> master)",
+		"✅ commit a (HEAD -> master)",
 		"Author: koji <koji@example.com>",
 		"Date:   Thu Jul 16 19:12:47 2026 +0900",
 		"    Fix invoice calculation",
 		"    detail line",
-		"✗ commit b",
+		"❌ commit b",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("medium 形式に %q がありません:\n%s", want, out)
@@ -40,10 +40,10 @@ func TestRenderStaticOneline(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("行数 = %d; want 2:\n%s", len(lines), out)
 	}
-	if !strings.HasPrefix(lines[0], "✓ aaaaaaa") {
+	if !strings.HasPrefix(lines[0], "✅ aaaaaaa") {
 		t.Errorf("成功行 = %q", lines[0])
 	}
-	if !strings.HasPrefix(lines[1], "✗ bbbbbbb") {
+	if !strings.HasPrefix(lines[1], "❌ bbbbbbb") {
 		t.Errorf("失敗行 = %q", lines[1])
 	}
 	if !strings.Contains(lines[0], "(HEAD -> master)") {
@@ -104,7 +104,7 @@ func TestRenderLinesPushBoundary(t *testing.T) {
 func TestRenderLinesLoadingSpinner(t *testing.T) {
 	// statuses に無い SHA は取得中としてスピナーを出す
 	out := RenderStatic(testCommits(), map[string]CIState{}, RenderOpts{Oneline: true, Spinner: "⠋"})
-	if !strings.HasPrefix(out, "⠋ aaaaaaa") {
+	if !strings.HasPrefix(out, "⠋  aaaaaaa") {
 		t.Errorf("スピナー行 = %q", out)
 	}
 }
@@ -123,8 +123,9 @@ func TestRenderStaticNoANSIWhenUncolored(t *testing.T) {
 func TestRenderStaticColored(t *testing.T) {
 	statuses := map[string]CIState{"a": StateSuccess, "b": StateFailure}
 	out := RenderStatic(testCommits(), statuses, RenderOpts{Colored: true})
-	if !strings.Contains(out, ansiGreen+"✓"+ansiReset) {
-		t.Errorf("成功記号に色がない: %q", out)
+	// 絵文字は色を自前で持つので ANSI で包まない (包んでも色は変わらず、端末によっては崩れる)
+	if !strings.HasPrefix(out, "✅ ") {
+		t.Errorf("成功記号が色コードなしの絵文字で先頭に無い: %q", out)
 	}
 }
 
@@ -136,7 +137,7 @@ func TestRenderStaticWithDiffBody(t *testing.T) {
 	// CI 記号はヘッダー行にだけ付く (issue の設計)
 	var glyphLines int
 	for line := range strings.SplitSeq(out, "\n") {
-		if strings.HasPrefix(line, "✓") {
+		if strings.HasPrefix(line, "✅") {
 			glyphLines++
 		}
 	}
@@ -442,7 +443,7 @@ func TestClipToWidth(t *testing.T) {
 func TestRenderCached(t *testing.T) {
 	head := &Commit{SHA: "a", ShortSHA: "aaaaaaa", Subject: "Fix invoice calculation"}
 	out := RenderCached(head, StateSuccess, " 3 files changed", false, "")
-	if !strings.HasPrefix(out, "HEAD CI: ✓ aaaaaaa Fix invoice calculation") {
+	if !strings.HasPrefix(out, "HEAD CI: ✅ aaaaaaa Fix invoice calculation") {
 		t.Errorf("ヘッダー = %q", out)
 	}
 	if !strings.Contains(out, "Staged changes:\n 3 files changed") {
@@ -477,16 +478,29 @@ func BenchmarkRenderLinesLargePatch(b *testing.B) {
 
 func TestStatusGlyphAllStates(t *testing.T) {
 	want := map[CIState]string{
-		StateSuccess: "✓", StateFailure: "✗", StatePending: "●",
-		StateNeutral: "⊘", StateNone: "–", StateUnknown: "?", StateUnpushed: "↑",
+		StateSuccess: "✅", StateFailure: "❌", StatePending: "🟡",
+		StateNeutral: "🚫", StateNone: "⬜", StateUnknown: "❓", StateUnpushed: "🔼",
 	}
 	for state, glyph := range want {
 		if got := StatusGlyph(state, false, ""); got != glyph {
 			t.Errorf("StatusGlyph(%s) = %q; want %q", state, got, glyph)
 		}
 	}
-	if got := StatusGlyph(StateLoading, false, "⠙"); got != "⠙" {
-		t.Errorf("loading = %q; want spinner", got)
+	if got := StatusGlyph(StateLoading, false, "⠙"); got != "⠙ " {
+		t.Errorf("loading = %q; want spinner padded to width 2", got)
+	}
+}
+
+// TestStatusGlyphWidthIsUniform は記号の列が縦に揃うこと (どの状態も表示幅 2)。
+// 1 つでも幅 1 の記号が混ざると、その行だけ SHA と件名が 1 桁左へずれる。
+func TestStatusGlyphWidthIsUniform(t *testing.T) {
+	states := []CIState{StateSuccess, StateFailure, StatePending, StateNeutral, StateNone, StateUnpushed, StateUnknown, StateLoading}
+	for _, colored := range []bool{false, true} {
+		for _, st := range states {
+			if w := dispWidth(StatusGlyph(st, colored, spinnerFrames[0])); w != 2 {
+				t.Errorf("StatusGlyph(%s, colored=%v) の幅 = %d; want 2", st, colored, w)
+			}
+		}
 	}
 }
 
@@ -552,7 +566,7 @@ func TestRenderLinesVerbatimDecoratesHeaderOnly(t *testing.T) {
 	o := RenderOpts{Colored: true, Width: 80, Verbatim: v,
 		PRs: map[string]*PRRef{commits[0].SHA: {Number: 7, State: "OPEN"}}}
 	lines := RenderLines(commits, statuses, o)
-	if !strings.HasPrefix(lines[0].Text, ansiGreen+"✓"+ansiReset+" ") {
+	if !strings.HasPrefix(lines[0].Text, "✅ ") {
 		t.Errorf("ヘッダーに CI 記号が前置されていない: %q", lines[0].Text)
 	}
 	if !strings.Contains(lines[0].Text, "#7") {
