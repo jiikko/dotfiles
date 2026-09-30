@@ -90,6 +90,9 @@ MSGEOF
 
 pathspec 規律は「混入」は防ぐが、**履歴を書き換える操作は防げない**。branch の先頭には並行セッションのコミットが積まれているかもしれない。
 
+- **rebase / cherry-pick / merge の途中状態を自動で進めるループは、「今どの commit で止まっているか」を git の状態ファイル
+  (`REBASE_HEAD` / `.git/rebase-merge/stopped-sha` 等) で判定する**。`git status` の表示の文言で判定すると、進んだ後も同じ行を読んで
+  別の commit に同じ操作 (skip 等) をかける (obaket 1003: 他人の bump を skip するつもりで、次の周で自分の bump も skip した)
 - **`git reset HEAD~N` / `git commit --amend` / `git rebase` の前に、必ず `git log -N --format='%h %ad %s' --date=format:'%H:%M'` で対象コミットが自分のものか確認する**（自分が数分前に作ったコミットと、メッセージ・時刻が一致するか）
 - 「直近コミット = 自分の直近コミット」と思い込まない。自分のコミットの直後に並行セッションが commit していれば、reset HEAD~1 は**他人のコミット**を、自分のコミットの上に他人が積んでいれば**自分のつもりで他人の**を切り落とす
 - **上の確認が効くのは「自分が書いたメッセージと一致するか」までで、他セッションへの帰属には使えない**。

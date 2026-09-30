@@ -635,6 +635,8 @@ EOF
     切り替えは**マイルストーン単位**で、checkpoint に「M<n> は sol へ。理由: …」を 1 行残す (前後比較の材料)。
     下げる方向 (541 の low) は依然禁止。capacity 死は luna と共通 (openai/codex #43398) なので回避策にはならない。
     駄目だった質の判定材料は「`[3]` で差し戻した回数と種類」であって印象ではない
+  - 上振れ先は luna より 1 run の消費が重い。長い実装の run を上振れで起こす前に codex の 5h 枠の残量を見る
+    (`subagent-model-tiering.md` の「1 本の重さも見る」。obaket 1003 で astra の run が 2 回とも実装の途中で枠切れになった)
 - `command codex` プレフィックス / `</dev/null` / `--ephemeral -o` は **codex-review スキルのルールが正本**（理由・実測根拠はそちら）。
   `-o` は実行ログ全体ではなく最終応答 (`--output-last-message`) の保存先。標準出力/標準エラーは必要に応じて呼び出し側で保存する。
 - **`--full-auto` は使わない**。実装は `-s danger-full-access` を明示 (ユーザー決定 2026-09-13、issue 369。理由と
