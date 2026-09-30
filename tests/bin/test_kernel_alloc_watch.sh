@@ -342,10 +342,17 @@ if [[ $rc -eq 0 ]]; then pass "消すものが無ければ --yes 無しでも rc
 # ほかの記録がロックを握っている間は消さない (rc=75)
 printf '%s\trow\t1\n' "$NOW" > "$d/log.tsv"
 /usr/bin/lockf -k "$d/.lock" sleep 30 & holder=$!
-for _ in $(seq 100); do /usr/bin/lockf -t 0 "$d/.lock" true 2>/dev/null || break; sleep 0.05; done
-rc=0; KERNEL_ALLOC_WATCH_DIR="$d" "$BIN" destroy-all-logs --yes >/dev/null 2>&1 || rc=$?
+held=0
+for _ in $(seq 400); do /usr/bin/lockf -t 0 "$d/.lock" true 2>/dev/null || { held=1; break; }; sleep 0.05; done
+# 握れたのを確かめてから消しに行く。待ちきれずに進むと、誰も握っていない状態で消して rc=0 になり、
+# 「ロックを無視して消した」と区別できない偽の赤になる (CI の負荷で実際に起きた)
+if [[ $held -eq 1 ]]; then
+  rc=0; KERNEL_ALLOC_WATCH_DIR="$d" "$BIN" destroy-all-logs --yes >/dev/null 2>&1 || rc=$?
+fi
 pkill -P "$holder" 2>/dev/null || true; kill "$holder" 2>/dev/null || true; wait "$holder" 2>/dev/null || true   # lockf の子 (sleep) も止める
-if [[ $rc -eq 75 && -f "$d/log.tsv" ]]; then pass "ロックを握られている間は消さずに rc=75"; else ng "ロックを握られている間: rc=$rc log=$([[ -f $d/log.tsv ]] && echo 残 || echo 消)"; fi
+if [[ $held -ne 1 ]]; then
+  ng "ロックを握る側が 20 秒たってもロックを取れない (判定できない)"
+elif [[ $rc -eq 75 && -f "$d/log.tsv" ]]; then pass "ロックを握られている間は消さずに rc=75"; else ng "ロックを握られている間: rc=$rc log=$([[ -f $d/log.tsv ]] && echo 残 || echo 消)"; fi
 
 # 6. tmux が固まっても、ほかの record はロックで待たされずに記録できる (計測をロックの外で済ませている)
 d="$TMP_DIR/t6"; mark="$TMP_DIR/t6.hang"
