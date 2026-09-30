@@ -31,7 +31,7 @@
 4. commit message に「どの変異で red を確認したか」を書く
 ```
 
-**手で組む前に `bin/mutate-verify` を見る** (issue 408)。下の「復元の作法」と手順 0〜3 の guard
+**手で組む前に `bin/mutate-verify` を見る** (issue 408。dotfiles の `bin/` は PATH 上にあり、どの repo でも `mutate-verify` で呼べる。issue 585)。下の「復元の作法」と手順 0〜3 の guard
 (baseline green / 当たったか / 誤ファイル / 構文 = 第 3 の結果 / zero execution / red の帰属 /
 未コミット差分があれば拒否) を機械で強制する。使い捨て worktree の中だけで変異させるので作業ツリーを触らず、
 未コミットの変更は持ち込むので「今書いたテスト」も検証できる。変異の当て方 (`--apply`) は呼び出し側の責任。

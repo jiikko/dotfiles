@@ -176,10 +176,16 @@ printf 'ign/\n' > "$inrepo/.gitignore"
 rc=$?
 [ "$rc" = 0 ] || fail "ignore された置き場を拒否した (rc=$rc): $(cat "$work/out.log")"
 
+# 8. 別の dir へ symlink した mutate-verify-list も、兄弟の mutate-verify を実体の隣で見つける (issue 585)
+#    見つからなければ「実行できない」で止まり、見つかれば一覧の中身の検査 (mutant 0 本) まで進む
+mkdir -p "$work/linkbin"; ln -s "$MVL" "$work/linkbin/mutate-verify-list"; : > "$work/empty.list"
+( cd "$work" && env -u MUTATE_VERIFY_BIN "$MVL_BASH" "$work/linkbin/mutate-verify-list" --log-dir "$work/link-logs" "$work/empty.list" ) > "$work/out.log" 2>&1
+grep -q 'mutant が 1 つも無い' "$work/out.log" || fail "symlink 経由で兄弟の mutate-verify を見失った: $(cat "$work/out.log")"
+
 # --- 本物の mutate-verify と繋ぐ: red と green が表に出る -----------------------------------
+# helper を repo へコピーしない (dotfiles の外の repo と同じ形で繋ぐ。issue 585)
 repo="$work/repo"
-mkdir -p "$repo/scripts/lib"
-cp "$ROOT_DIR/scripts/lib/worktree_scratch.sh" "$repo/scripts/lib/"
+mkdir -p "$repo"
 cat > "$repo/guard.sh" <<'G'
 #!/bin/bash
 # note: この行は検査に効かない

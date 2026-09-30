@@ -45,11 +45,29 @@ mutate-verify: scripts/lib/worktree_scratch.sh を読めない
 
 ## 受け入れ条件
 
-- [ ] dotfiles の外の git repo で `bin/mutate-verify` が baseline → 変異 → 判定まで走る（swift-smbee のような別 repo で 1 回実測する）
-- [ ] 上のテスト（helper をコピーしない fixture、symlink / PATH 経由の起動を含む）があり、helper の読み先を `$root` に戻す変異で red
-- [ ] `mutation-verify-new-tests.md` の記述と実際に動く範囲が一致している
+- [x] dotfiles の外の git repo で `bin/mutate-verify` が baseline → 変異 → 判定まで走る（swift-smbee のような別 repo で 1 回実測する）
+- [x] 上のテスト（helper をコピーしない fixture、symlink / PATH 経由の起動を含む）があり、helper の読み先を `$root` に戻す変異で red
+- [x] `mutation-verify-new-tests.md` の記述と実際に動く範囲が一致している
 
 ## 進捗
 
 - 2026-09-30: 起票（swift-smbee retro 100 の項目 3）。codex の反証レビューで中心の診断は反証されず、「必ず見つからない」の言い過ぎ・
   既存 fixture が helper をコピーして退行を隠す点・symlink / PATH 起動と `mutate-verify-list` の確認漏れを指摘され、直した
+- 2026-09-30: 対応（commit「mutate-verify: helper を検査対象の repo ではなく道具の実体の隣から読む」）
+  - `bin/mutate-verify`: helper を `$root` ではなく、symlink を辿った実体の `../scripts/lib/` から読む（`bin/codex-fanout` と同じ辿り方）。
+    親へ上がるのは `cd -P`（`bin/` の dir ごとの symlink から起動すると、シェルの `cd <dir>/..` は symlink の置き場所の親へ行く。
+    試した起動の変種の中でこれだけ外れた）。`# shellcheck source=` は `SCRIPTDIR/../scripts/lib/worktree_scratch.sh`
+  - `bin/mutate-verify-list`: 兄弟の `mutate-verify` も `$0` の symlink を辿った実体の隣で探す（symlink だけを別の dir に置くと
+    「実行できない」で止まっていた。テストで再現）
+  - テスト: `make_repo` と mutate-verify-list の「本物と繋ぐ」fixture から helper のコピーを外した（全ケースが dotfiles の外の repo の
+    形で走る）。`test_mutate_verify.sh` のケース 43（symlink / PATH / bin の dir ごとの symlink）、`test_mutate_verify_list.sh` のケース 8
+    （symlink した mutate-verify-list が兄弟を見つける）を足した
+  - 変異（`bin/mutate-verify` で当てた。どれも狙った検査で red）: 読み先を `$root` に戻す → ケース 1 から全ケース /
+    mutate-verify の symlink 辿りを外す → ケース 43 の symlink・path / `cd -P` を `cd` に戻す → ケース 43 の dirlink だけ /
+    mutate-verify-list の symlink 辿りを外す → ケース 8
+  - 実測: swift-smbee はこのマシンに無いので esa-cli（helper を持たない、clean）で `cmd/esa/columns.go` の `dateOnly` に変異を当てた。
+    直す前の版は起票時と同じ `scripts/lib/worktree_scratch.sh を読めない` で rc=2、直した後は `FAIL: TestDateOnly` の red で rc=0。
+    相対パス・`bash <相対パス>`・空白を含む dir の相対 symlink の連鎖からの起動も rc=0。esa-cli の作業ツリーは clean のまま、worktree の残骸なし
+  - rule: 34 行目に「dotfiles の `bin/` は PATH 上にあり、どの repo でも `mutate-verify` で呼べる」を足した
+  - `make test` rc=0（`[ok] tests/bin/test_mutate_verify.sh` / `[ok] tests/bin/test_mutate_verify_list.sh`）
+  - 外部レビュー（敵対的レビュー）は通していない。代わりに起動の変種を実測で試し、外れた 1 つ（dir ごとの symlink）を直してテストに固定した

@@ -176,8 +176,17 @@ _canon="$( { git -C "$root" ls-files -z --full-name -- ":(literal)$file"
 # 同じ rc=8 誤検出になる。実体を指定させる (この repo は tracked symlink を実際に持つ)
 [ -L "$root/$file" ] && die "--file が symlink ($file)。変異は実体に当たるので実体のパスを指定すること"
 
-# shellcheck source=scripts/lib/worktree_scratch.sh
-. "$root/scripts/lib/worktree_scratch.sh" || die "scripts/lib/worktree_scratch.sh を読めない"
+# 🚨 helper は $root (検査対象の repo) ではなく、この道具の実体の隣から読む。dotfiles 以外の repo の
+# $root にこの helper は無い (issue 585)。PATH / symlink 経由の起動でも実体まで辿る (bin/codex-fanout と同じ形)
+_self="${BASH_SOURCE[0]}"
+while [ -L "$_self" ]; do
+  _sdir="$(cd "$(dirname "$_self")" && pwd)"
+  _self="$(readlink "$_self")"
+  case "$_self" in /*) ;; *) _self="$_sdir/$_self" ;; esac
+done
+_tool_root="$(cd -P "$(dirname "$_self")/.." && pwd -P)" || die "mutate-verify の置き場所を解決できない: $_self"
+# shellcheck source=SCRIPTDIR/../scripts/lib/worktree_scratch.sh
+. "$_tool_root/scripts/lib/worktree_scratch.sh" || die "$_tool_root/scripts/lib/worktree_scratch.sh を読めない"
 
 # --syntax の推定。**推定できない拡張子は明示必須** (黙って素通しすると検査 6 が消える)
 if [ -z "$syntax" ]; then

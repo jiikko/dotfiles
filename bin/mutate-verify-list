@@ -59,7 +59,14 @@ done
 [ -n "$list" ] || die "LIST を指定すること (--help)"
 [ -f "$list" ] || die "LIST が無い: $list"
 
-mv_bin="${MUTATE_VERIFY_BIN:-$(cd "$(dirname "$0")" && pwd)/mutate-verify}"
+# 兄弟の mutate-verify は実体の隣を探す (symlink で別の dir から起動されても外れない。issue 585)
+_self="$0"
+while [ -L "$_self" ]; do
+  _sdir="$(cd "$(dirname "$_self")" && pwd)"
+  _self="$(readlink "$_self")"
+  case "$_self" in /*) ;; *) _self="$_sdir/$_self" ;; esac
+done
+mv_bin="${MUTATE_VERIFY_BIN:-$(cd "$(dirname "$_self")" && pwd)/mutate-verify}"
 case "$mv_bin" in /*) ;; *) die "MUTATE_VERIFY_BIN は絶対パスで: $mv_bin" ;; esac
 [ -x "$mv_bin" ] || die "mutate-verify を実行できない: $mv_bin"
 

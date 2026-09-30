@@ -39,10 +39,11 @@ check_log_leak() { # $1=出力のログ
 }
 
 # --- fixture: guard を持つスクリプトと、それを検証するテスト --------------------------------
+# 🚨 helper (scripts/lib/worktree_scratch.sh) を fixture へコピーしない。mutate-verify は helper を自分の隣から
+# 読むので要らず、コピーすると「検査対象の repo から読む」退行 (issue 585) を全ケースが隠す
 make_repo() { # $1=repo dir
   local d="$1"
-  mkdir -p "$d/scripts/lib"
-  cp "$ROOT_DIR/scripts/lib/worktree_scratch.sh" "$d/scripts/lib/"
+  mkdir -p "$d"
   cat > "$d/guard.sh" <<'G'
 #!/bin/bash
 check() {
@@ -760,6 +761,27 @@ wait "$mvpid"; rc=$?
 ld="$(logdir_of "$work/int.log")"
 [ -f "$ld/mv-baseline.log" ] || { fail "🚨 中断されたら全体のログが残らない (置き場: ${ld:-出ていない})"; tail -8 "$work/int.log"; }
 check_log_leak "$work/int.log"
+
+# ---------------------------------------------------------------------------
+# 43. dotfiles の外の repo (helper を持たない) で、symlink / PATH / bin の dir ごとの symlink 経由で起動しても
+#     判定まで走る (issue 585)。実体の隣の helper を読むには、起動したパスではなく symlink を辿った先の置き場所が要る
+#     (dir ごとの symlink は、シェルの `cd <dir>/..` が symlink の置き場所の親へ行くので別に要る)
+# ---------------------------------------------------------------------------
+d="$work/outside"; make_repo "$d"
+[ ! -e "$d/scripts" ] || fail "前提: 外の repo に scripts/ がある (helper が見つかって退行を隠す)"
+mkdir -p "$work/linkbin"; ln -s "$MV" "$work/linkbin/mutate-verify"; ln -s "$ROOT_DIR/bin" "$work/bindir"
+for how in symlink path dirlink; do
+  case "$how" in
+    symlink) cmd="$work/linkbin/mutate-verify" ;;
+    path)    cmd=mutate-verify ;;
+    dirlink) cmd="$work/bindir/mutate-verify" ;;
+  esac
+  rc=0
+  ( cd "$d" && PATH="$work/linkbin:$PATH" "$cmd" --verify 'bash verify.sh' --baseline-expect '^ran 2 checks' --file guard.sh \
+      --apply 'perl -0pi -e "s/if \[ \"\\\$1\" = \"bad\" \]/if false/" "$MUTATE_FILE"' --expect 'FAIL: reject-bad' ) > "$work/out.log" 2>&1 || rc=$?
+  check_log_leak "$work/out.log"
+  [ "$rc" -eq 0 ] || { fail "外の repo を $how 経由で起動して rc=$rc (期待 0)"; tail -5 "$work/out.log"; }
+done
 
 # ---------------------------------------------------------------------------
 # 末尾. 🚨 全ケースを通した**後**の残骸ゼロ。
