@@ -2,7 +2,7 @@
 
 起票日: 2026-09-29
 
-対象: [431](epic/415/pending/431-feat-pro-con-pg-session-settings.md) の実装と計測 (dotfiles-40)。切り出し先はどれも提案で、実行はユーザーの判断を待つ。
+対象: [431](../epic/415/pending/431-feat-pro-con-pg-session-settings.md) の実装と計測 (dotfiles-40)。切り出し先はどれも提案で、実行はユーザーの判断を待つ。
 
 ## 1. 実測で合わせた定数と組になっている係数を、片方だけ直しかけた
 
