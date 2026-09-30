@@ -1,5 +1,7 @@
 # 585 bug: `bin/mutate-verify` が dotfiles 以外の repo では変異を当てる前に止まる
 
+> 🚨 **担当中: glogx/crash の作業をしていたセッション (2026-09-30 のユーザー指示)**（2026-09-30〜）
+
 起票日: 2026-09-30
 出典: swift-smbee の retro 100（issue 098 の変異検証で踏んだ。swift-smbee の `issues/100-retro-098-091-097-2026-09-30.md` 項目 3）
 関連: `bin/mutate-verify` / `scripts/lib/worktree_scratch.sh` / `_claude/rules/mutation-verify-new-tests.md` / `tests/bin/test_mutate_verify.sh`
