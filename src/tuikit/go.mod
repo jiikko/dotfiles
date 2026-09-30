@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/charmbracelet/x/ansi v0.11.7
-	github.com/jiikko/dotfiles/src/termsafe v0.0.0
+	github.com/jiikko/dotfiles/src/termsafe v0.0.0-20260930152350-8f8ec9851b4c
 )
 
 require (
