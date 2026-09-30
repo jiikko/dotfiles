@@ -21,10 +21,88 @@ import (
 	"github.com/jiikko/dotfiles/src/restartable/internal/control"
 )
 
+type presenterSnapshot struct {
+	Model       Model
+	RenderCount int
+}
+
+type integrationPresenter struct {
+	keys      chan string
+	conn      *net.UnixConn
+	path      string
+	statePath string
+	stop      chan struct{}
+	pumpDone  chan struct{}
+	renders   int
+}
+
+func newIntegrationPresenter(keyPath, statePath string) (*integrationPresenter, error) {
+	_ = os.Remove(keyPath)
+	conn, err := net.ListenUnixgram("unixgram", &net.UnixAddr{Name: keyPath, Net: "unixgram"})
+	if err != nil {
+		return nil, err
+	}
+	p := &integrationPresenter{keys: make(chan string, 32), conn: conn, path: keyPath, statePath: statePath,
+		stop: make(chan struct{}), pumpDone: make(chan struct{})}
+	go p.readKeys()
+	return p, nil
+}
+
+func (p *integrationPresenter) readKeys() {
+	defer close(p.pumpDone)
+	buf := make([]byte, 128)
+	for {
+		n, _, err := p.conn.ReadFromUnix(buf)
+		if err != nil {
+			return
+		}
+		select {
+		case p.keys <- string(buf[:n]):
+		case <-p.stop:
+			return
+		}
+	}
+}
+
+func (p *integrationPresenter) Render(m Model) {
+	p.renders++
+	data, err := json.Marshal(presenterSnapshot{Model: m, RenderCount: p.renders})
+	if err != nil {
+		return
+	}
+	tmp := p.statePath + ".tmp"
+	if os.WriteFile(tmp, data, 0600) == nil {
+		_ = os.Rename(tmp, p.statePath)
+	}
+}
+
+func (p *integrationPresenter) Keys() <-chan string { return p.keys }
+
+func (p *integrationPresenter) Close() error {
+	close(p.stop)
+	err := p.conn.Close()
+	<-p.pumpDone
+	close(p.keys)
+	_ = os.Remove(p.path)
+	if errors.Is(err, net.ErrClosed) {
+		return nil
+	}
+	return err
+}
+
 // TestRunnerHelper is re-executed as a separate process by integration tests.
 func TestRunnerHelper(t *testing.T) {
 	if os.Getenv("RESTARTABLE_TEST_HELPER") != "1" {
 		return
+	}
+	var presenter Presenter
+	if keyPath := os.Getenv("RESTARTABLE_TEST_KEY_SOCKET"); keyPath != "" {
+		var err error
+		presenter, err = newIntegrationPresenter(keyPath, os.Getenv("RESTARTABLE_TEST_PRESENTER_STATE"))
+		if err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	}
 	code, err := Run(Config{
 		BuildCommand:       os.Getenv("RESTARTABLE_TEST_BUILD"),
@@ -35,6 +113,7 @@ func TestRunnerHelper(t *testing.T) {
 		IDEnv:              os.Getenv("RESTARTABLE_TEST_ID_ENV"),
 		ControlPath:        os.Getenv("RESTARTABLE_TEST_SOCKET"),
 		Stdin:              strings.NewReader(""), Stdout: os.Stdout, Stderr: os.Stderr, Headless: true,
+		Presenter: presenter,
 	})
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
@@ -58,6 +137,56 @@ type testRunner struct {
 	stderr  string
 	done    chan struct{}
 	waitErr error
+}
+
+func sendIntegrationKey(t *testing.T, path, key string) {
+	t.Helper()
+	conn, err := net.Dial("unixgram", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := io.WriteString(conn, key); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func readPresenterSnapshot(path string) (presenterSnapshot, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return presenterSnapshot{}, false
+	}
+	var snapshot presenterSnapshot
+	if json.Unmarshal(data, &snapshot) != nil {
+		return presenterSnapshot{}, false
+	}
+	return snapshot, true
+}
+
+func waitPresenterSnapshot(t *testing.T, path, description string, predicate func(presenterSnapshot) bool) presenterSnapshot {
+	t.Helper()
+	var snapshot presenterSnapshot
+	waitFor(t, 3*time.Second, description, func() bool {
+		got, ok := readPresenterSnapshot(path)
+		if !ok {
+			return false
+		}
+		snapshot = got
+		return predicate(got)
+	})
+	return snapshot
+}
+
+func sendKeyAndWaitRender(t *testing.T, keyPath, statePath, key string) presenterSnapshot {
+	t.Helper()
+	before, ok := readPresenterSnapshot(statePath)
+	if !ok {
+		t.Fatal("runner has not rendered an initial snapshot")
+	}
+	sendIntegrationKey(t, keyPath, key)
+	return waitPresenterSnapshot(t, statePath, "key "+key+" to be rendered", func(got presenterSnapshot) bool {
+		return got.RenderCount > before.RenderCount
+	})
 }
 
 func startTestRunner(t *testing.T, options map[string]string) *testRunner {
@@ -113,6 +242,11 @@ func startTestRunnerMode(t *testing.T, options map[string]string, waitForStatus 
 	})
 	if waitForStatus {
 		waitFor(t, 3*time.Second, "runner control socket", func() bool {
+			select {
+			case <-r.done:
+				t.Fatalf("runner exited before opening control socket: %v; stderr: %s", r.waitErr, readFile(stderr))
+			default:
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
 			defer cancel()
 			response, err := control.Call(ctx, path, control.Status)
@@ -302,6 +436,230 @@ func TestStopCommandSuccessWaitsWithoutSignalingChild(t *testing.T) {
 	}
 	if err := syscall.Kill(*status.PID, 0); err == nil {
 		t.Fatalf("child pid %d survived forced shutdown", *status.PID)
+	}
+}
+
+func TestStopCommandSuccessIgnoresRestartAndQuitKeysWithoutKillingChild(t *testing.T) {
+	dir, err := os.MkdirTemp("/tmp", "rkey-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	keyPath := filepath.Join(dir, "keys.sock")
+	statePath := filepath.Join(t.TempDir(), "presenter.json")
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_RUN":             "exec /bin/sleep 30",
+		"RESTARTABLE_TEST_STOP":            "exit 0",
+		"RESTARTABLE_TEST_KEY_SOCKET":      keyPath,
+		"RESTARTABLE_TEST_PRESENTER_STATE": statePath,
+	})
+	initial := r.waitStatus(t, string(Running))
+	if initial.PID == nil {
+		t.Fatal("runner has no running child")
+	}
+	type callResult struct {
+		response control.Response
+		err      error
+	}
+	restartResult := make(chan callResult, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		defer cancel()
+		response, err := control.Call(ctx, r.path, control.Restart)
+		restartResult <- callResult{response: response, err: err}
+	}()
+	waitPresenterSnapshot(t, statePath, "successful stop-cmd acceptance", func(got presenterSnapshot) bool {
+		return got.Model.State == Stopping && got.Model.StopAccepted
+	})
+	r.waitStatus(t, string(Stopping))
+	beforeSecondRestart, ok := readPresenterSnapshot(statePath)
+	if !ok {
+		t.Fatal("runner has not rendered a snapshot")
+	}
+	secondRestartResult := make(chan callResult, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		defer cancel()
+		response, err := control.Call(ctx, r.path, control.Restart)
+		secondRestartResult <- callResult{response: response, err: err}
+	}()
+	waitPresenterSnapshot(t, statePath, "control restart accepted while stopping", func(got presenterSnapshot) bool {
+		return got.RenderCount > beforeSecondRestart.RenderCount && got.Model.State == Stopping
+	})
+
+	for _, key := range []string{"R", "Q", "y", "x"} {
+		got := sendKeyAndWaitRender(t, keyPath, statePath, key)
+		if got.Model.State != Stopping || got.Model.Confirm != ConfirmNone || got.Model.Message != "stopping" {
+			t.Fatalf("key %q changed stopping model: %+v", key, got.Model)
+		}
+		if err := syscall.Kill(*initial.PID, 0); err != nil {
+			t.Fatalf("key %q killed the application: %v", key, err)
+		}
+		select {
+		case <-r.done:
+			t.Fatalf("runner exited after key %q", key)
+		default:
+		}
+	}
+	status, err := r.status()
+	if err != nil || status.State != string(Stopping) || status.PID != nil {
+		t.Fatalf("status during accepted stop = %+v, err=%v", status, err)
+	}
+	if err := syscall.Kill(*initial.PID, 0); err != nil {
+		t.Fatalf("status request killed the application: %v", err)
+	}
+
+	got := sendKeyAndWaitRender(t, keyPath, statePath, "esc")
+	if got.Model.State != Running || got.Model.PID != *initial.PID || got.Model.StopAccepted {
+		t.Fatalf("Esc did not cancel accepted stop: %+v", got.Model)
+	}
+	for i, resultCh := range []<-chan callResult{restartResult, secondRestartResult} {
+		select {
+		case result := <-resultCh:
+			if result.err != nil || result.response.OK || result.response.Reason != "stop cancelled" {
+				t.Fatalf("restart response %d after Esc = %+v, err=%v", i+1, result.response, result.err)
+			}
+		case <-time.After(4 * time.Second):
+			t.Fatalf("restart request %d was not rejected after Esc", i+1)
+		}
+	}
+	if err := syscall.Kill(*initial.PID, 0); err != nil {
+		t.Fatalf("Esc killed the application: %v", err)
+	}
+	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
+		t.Fatalf("SIGTERM exit code = %d, want 143", code)
+	}
+}
+
+func TestStopCommandFailureAfterChildExitContinuesRestart(t *testing.T) {
+	dir := t.TempDir()
+	started := filepath.Join(dir, "stop-started")
+	fifo := filepath.Join(dir, "stop-gate")
+	if err := syscall.Mkfifo(fifo, 0600); err != nil {
+		t.Fatal(err)
+	}
+	stop := fmt.Sprintf(`touch %s; read ignored < %s; exit 9`, shellQuote(started), shellQuote(fifo))
+	keyDir, err := os.MkdirTemp("/tmp", "rkey-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(keyDir) })
+	keyPath := filepath.Join(keyDir, "keys.sock")
+	statePath := filepath.Join(dir, "presenter.json")
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_RUN":             "exec /bin/sleep 30",
+		"RESTARTABLE_TEST_STOP":            stop,
+		"RESTARTABLE_TEST_STOP_TIMEOUT":    "10s",
+		"RESTARTABLE_TEST_KEY_SOCKET":      keyPath,
+		"RESTARTABLE_TEST_PRESENTER_STATE": statePath,
+	})
+	initial := r.waitStatus(t, string(Running))
+	if initial.PID == nil {
+		t.Fatal("runner has no initial child pid")
+	}
+	type callResult struct {
+		response control.Response
+		err      error
+	}
+	restartResult := make(chan callResult, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		defer cancel()
+		response, err := control.Call(ctx, r.path, control.Restart)
+		restartResult <- callResult{response: response, err: err}
+	}()
+	r.waitStatus(t, string(Stopping))
+	waitFor(t, 2*time.Second, "stop-cmd start marker", func() bool {
+		_, err := os.Stat(started)
+		return err == nil
+	})
+	if err := syscall.Kill(*initial.PID, syscall.SIGTERM); err != nil {
+		t.Fatalf("terminate fake application: %v", err)
+	}
+	waitPresenterSnapshot(t, statePath, "child exit observed while stop-cmd is pending", func(got presenterSnapshot) bool {
+		return got.Model.State == Stopping && got.Model.Message == "child exited; waiting for stop result"
+	})
+	gate, err := os.OpenFile(fifo, os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := gate.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case result := <-restartResult:
+		if result.err != nil {
+			t.Fatal(result.err)
+		}
+		if !result.response.OK || result.response.Generation != 2 || result.response.PID == nil {
+			t.Fatalf("restart response after child exit = %+v", result.response)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatal("restart did not continue after child exited")
+	}
+	status := r.waitStatus(t, string(Running))
+	if status.Generation != 2 || status.PID == nil {
+		t.Fatalf("runner did not start generation 2: %+v", status)
+	}
+	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
+		t.Fatalf("SIGTERM exit code = %d, want 143", code)
+	}
+}
+
+func TestFinishRefusesWhileChildAlive(t *testing.T) {
+	proc, err := startProcess([]string{"/bin/sleep", "30"}, false, os.Environ(), strings.NewReader(""), newLogSink(io.Discard, true), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if !proc.finished.Load() {
+			_ = signalGroup(proc.pid, syscall.SIGTERM)
+			select {
+			case <-proc.done:
+			case <-time.After(time.Second):
+				_ = signalGroup(proc.pid, syscall.SIGKILL)
+				<-proc.done
+			}
+		}
+	})
+	var stderr bytes.Buffer
+	a := &actor{cfg: Config{Stderr: &stderr}, model: Model{State: Exiting, PID: proc.pid}, child: proc, presenter: headlessPresenter{}}
+	a.finish(0)
+	if a.finished || a.model.State != Running || a.model.PID != proc.pid {
+		t.Fatalf("finish was not refused safely: finished=%v model=%+v", a.finished, a.model)
+	}
+	if !strings.Contains(stderr.String(), "子が生きたまま終了しようとした") {
+		t.Fatalf("missing refusal log: %q", stderr.String())
+	}
+	if err := syscall.Kill(proc.pid, 0); err != nil {
+		t.Fatalf("finish guard killed the child: %v", err)
+	}
+}
+
+func TestDrainOutputsNeverKillsLiveProcessLeader(t *testing.T) {
+	proc, err := startProcess([]string{"/bin/sleep", "30"}, false, os.Environ(), strings.NewReader(""), newLogSink(io.Discard, true), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if !proc.finished.Load() {
+			_ = signalGroup(proc.pid, syscall.SIGTERM)
+			select {
+			case <-proc.done:
+			case <-time.After(time.Second):
+				_ = signalGroup(proc.pid, syscall.SIGKILL)
+				<-proc.done
+			}
+		}
+	})
+	var stderr bytes.Buffer
+	a := &actor{cfg: Config{Stderr: &stderr}, allProcesses: []*process{proc}, outputDrainTimeout: 0}
+	a.drainOutputs()
+	if proc.finished.Load() {
+		t.Fatal("output drain killed a live process-group leader")
+	}
+	if err := syscall.Kill(proc.pid, 0); err != nil {
+		t.Fatalf("live process was killed by output drain: %v", err)
 	}
 }
 

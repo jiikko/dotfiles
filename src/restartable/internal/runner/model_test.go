@@ -124,6 +124,62 @@ func TestUpdateStopCommandCancellationAndForceCodes(t *testing.T) {
 	}
 }
 
+func TestUpdateRestartAndQuitIgnoredWhileStoppingOrExiting(t *testing.T) {
+	withOpenDialog, _ := Update(Model{State: Stopping, PID: 212, Intent: IntentRestart, Confirm: ConfirmQuit}, Event{Kind: StopCommandOKEvent})
+	if withOpenDialog.Confirm != ConfirmNone {
+		t.Fatalf("stop acceptance left confirmation open: %+v", withOpenDialog)
+	}
+	for _, state := range []State{Stopping, Exiting} {
+		for _, key := range []string{"R", "Q"} {
+			t.Run(string(state)+"/"+key, func(t *testing.T) {
+				m := Model{State: state, PID: 212, Intent: IntentRestart, Confirm: ConfirmQuit, StopAccepted: true}
+				got, effects := apply(m, KeyEvent, key)
+				if got.State != state || got.PID != 212 || got.Intent != IntentRestart || got.Confirm != ConfirmNone || got.Message != "stopping" {
+					t.Fatalf("key %q changed lifecycle while %s: model=%+v", key, state, got)
+				}
+				if len(effects) != 1 || effects[0] != (Effect{Kind: MessageEffect, Reason: "stopping"}) {
+					t.Fatalf("key %q effects while %s = %+v", key, state, effects)
+				}
+			})
+		}
+	}
+}
+
+func TestUpdateEscCancelsAcceptedQuitStopAndRejectsControlRestart(t *testing.T) {
+	m := Model{State: Stopping, PID: 212, Generation: 3, Intent: IntentExit, StopAccepted: true}
+	m, _ = Update(m, Event{Kind: StopCommandOKEvent})
+	m, effects := apply(m, KeyEvent, "esc")
+	if m.State != Running || m.Intent != IntentNone || m.PID != 212 || m.StopAccepted || m.Message != "stop cancelled" {
+		t.Fatalf("Esc after accepted quit: model=%+v", m)
+	}
+	if len(effects) != 1 || effects[0] != (Effect{Kind: ControlRejectEffect, Reason: "stop cancelled"}) {
+		t.Fatalf("Esc effects = %+v", effects)
+	}
+}
+
+func TestUpdateStopCommandFailureAfterChildExitHonorsIntent(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		intent     Intent
+		wantState  State
+		wantEffect EffectKind
+	}{
+		{name: "restart", intent: IntentRestart, wantState: Building, wantEffect: StartBuildEffect},
+		{name: "quit", intent: IntentExit, wantState: Exiting, wantEffect: ExitEffect},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := Model{State: Stopping, PID: 212, Intent: tc.intent}
+			got, effects := Update(m, Event{Kind: StopCommandFailEvent, Reason: "stop-cmd failed", ChildExited: true})
+			if got.State != tc.wantState || got.PID != 0 || got.Intent != IntentNone {
+				t.Fatalf("stop failure after child exit: model=%+v, want state %s", got, tc.wantState)
+			}
+			if !hasEffect(effects, tc.wantEffect) {
+				t.Fatalf("effects=%+v, want %s", effects, tc.wantEffect)
+			}
+		})
+	}
+}
+
 func TestUpdateStoppingAndChildExit(t *testing.T) {
 	m := Model{State: Stopping, PID: 43, Generation: 2, Intent: IntentRestart}
 	m, effects := Update(m, Event{Kind: ChildExitedEvent})

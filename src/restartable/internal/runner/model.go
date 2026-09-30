@@ -48,12 +48,13 @@ const (
 // Event is an immutable input to Update. Key uses terminal spellings such as
 // "R", "enter", "esc", and "ctrl+c".
 type Event struct {
-	Kind       EventKind
-	Key        string
-	PID        int
-	ExitCode   int
-	SignalCode int
-	Reason     string
+	Kind        EventKind
+	Key         string
+	PID         int
+	ExitCode    int
+	SignalCode  int
+	Reason      string
+	ChildExited bool
 }
 
 type EffectKind string
@@ -90,9 +91,17 @@ type Model struct {
 func InitialModel() Model { return Model{State: Building, Confirm: ConfirmNone} }
 
 func Update(m Model, e Event) (Model, []Effect) {
+	if m.State == Stopping {
+		m.Confirm = ConfirmNone
+	}
 	if m.State == Exiting {
 		if e.Kind == ControlRestartEvent {
 			return m, []Effect{{Kind: ControlRejectEffect, Reason: "runner exiting"}}
+		}
+		if e.Kind == KeyEvent && isRestartOrQuitKey(e.Key) {
+			m.Confirm = ConfirmNone
+			m.Message = "stopping"
+			return m, []Effect{{Kind: MessageEffect, Reason: "stopping"}}
 		}
 		return m, nil
 	}
@@ -152,6 +161,9 @@ func Update(m Model, e Event) (Model, []Effect) {
 		m.Message = "stopping — waiting for child exit"
 		return m, nil
 	case StopCommandFailEvent:
+		if e.ChildExited {
+			return finishStopping(m)
+		}
 		if m.PID != 0 {
 			m.State = Running
 			m.Intent = IntentNone
@@ -178,6 +190,25 @@ func Update(m Model, e Event) (Model, []Effect) {
 func updateKey(m Model, key string) (Model, []Effect) {
 	if key == "ctrl+c" {
 		return Update(m, Event{Kind: ForceEvent, SignalCode: 130})
+	}
+	if m.State == Stopping {
+		// A stop request is already in flight. Only Esc can undo an accepted
+		// stop, and Ctrl-C above remains the explicit force path.
+		m.Confirm = ConfirmNone
+		switch key {
+		case "r", "R", "q", "Q":
+			m.Message = "stopping"
+			return m, []Effect{{Kind: MessageEffect, Reason: "stopping"}}
+		case "esc":
+			if m.StopAccepted {
+				m.State = Running
+				m.Intent = IntentNone
+				m.StopAccepted = false
+				m.Message = "stop cancelled"
+				return m, []Effect{{Kind: ControlRejectEffect, Reason: "stop cancelled"}}
+			}
+		}
+		return m, nil
 	}
 	if m.Confirm != ConfirmNone {
 		switch key {
@@ -226,16 +257,17 @@ func updateKey(m Model, key string) (Model, []Effect) {
 		}
 	case "q", "Q":
 		m.Confirm = ConfirmQuit
-	case "esc":
-		if m.State == Stopping && m.StopAccepted && m.Intent == IntentRestart {
-			m.State = Running
-			m.Intent = IntentNone
-			m.StopAccepted = false
-			m.Message = "stop cancelled"
-			return m, []Effect{{Kind: ControlRejectEffect, Reason: "stop cancelled"}}
-		}
 	}
 	return m, nil
+}
+
+func isRestartOrQuitKey(key string) bool {
+	switch key {
+	case "r", "R", "q", "Q":
+		return true
+	default:
+		return false
+	}
 }
 
 func updateControlRestart(m Model) (Model, []Effect) {
@@ -264,12 +296,14 @@ func updateControlRestart(m Model) (Model, []Effect) {
 func finishStopping(m Model) (Model, []Effect) {
 	m.PID = 0
 	m.StopAccepted = false
+	m.Message = ""
 	if m.Intent == IntentRestart {
 		m.State = Building
 		m.Intent = IntentNone
 		return m, []Effect{{Kind: StartBuildEffect}}
 	}
 	m.State = Exiting
+	m.Intent = IntentNone
 	m.Confirm = ConfirmNone
 	m.ExitCode = 0
 	return m, []Effect{{Kind: ExitEffect}}

@@ -64,30 +64,31 @@ func (headlessPresenter) Keys() <-chan string { return nil }
 func (headlessPresenter) Close() error        { return nil }
 
 type actor struct {
-	cfg              Config
-	model            Model
-	id               string
-	server           *control.Server
-	sink             *logSink
-	presenter        Presenter
-	events           chan actorEvent
-	build            *process
-	child            *process
-	stop             *process
-	allProcesses     []*process
-	queuedRequests   []*control.Request
-	pendingRequests  []*control.Request
-	childResult      *processResult
-	childProcessed   bool
-	stopAccepted     bool
-	stopRunning      bool
-	forceRunning     bool
-	groupStopRunning bool
-	forceCode        int
-	finished         bool
-	retCode          int
-	flusherDone      chan struct{}
-	flusherWG        sync.WaitGroup
+	cfg                Config
+	model              Model
+	id                 string
+	server             *control.Server
+	sink               *logSink
+	presenter          Presenter
+	events             chan actorEvent
+	build              *process
+	child              *process
+	stop               *process
+	allProcesses       []*process
+	queuedRequests     []*control.Request
+	pendingRequests    []*control.Request
+	childResult        *processResult
+	childProcessed     bool
+	stopAccepted       bool
+	stopRunning        bool
+	forceRunning       bool
+	groupStopRunning   bool
+	outputDrainTimeout time.Duration
+	forceCode          int
+	finished           bool
+	retCode            int
+	flusherDone        chan struct{}
+	flusherWG          sync.WaitGroup
 }
 
 // Run supervises one foreground process. It returns a process-style exit code.
@@ -128,7 +129,8 @@ func Run(cfg Config) (int, error) {
 	}
 	return (&actor{cfg: cfg, model: InitialModel(), id: id, server: server,
 		sink: newLogSink(cfg.Stdout, cfg.Headless), presenter: presenter,
-		events: make(chan actorEvent, 128), flusherDone: make(chan struct{})}).run()
+		events: make(chan actorEvent, 128), flusherDone: make(chan struct{}),
+		outputDrainTimeout: 500 * time.Millisecond}).run()
 }
 
 func newID() (string, error) {
@@ -288,6 +290,9 @@ func (a *actor) handleEvent(ev actorEvent) {
 		if a.model.State == Stopping {
 			if a.stopAccepted {
 				a.completeChildExit()
+			} else {
+				a.model.Message = "child exited; waiting for stop result"
+				a.presenter.Render(a.model)
 			}
 			return
 		}
@@ -296,11 +301,15 @@ func (a *actor) handleEvent(ev actorEvent) {
 		a.stop = nil
 		a.stopRunning = false
 		if ev.err != nil {
-			a.transition(Event{Kind: StopCommandFailEvent, Reason: "stop-cmd failed: " + ev.err.Error()})
-			a.report("stop-cmd failed: " + ev.err.Error())
-			a.failRequests("stop-cmd failed: " + ev.err.Error())
+			reason := "stop-cmd failed: " + ev.err.Error()
+			a.observeChildExit()
+			a.report(reason)
 			if a.childResult != nil {
-				a.completeChildExit()
+				_, effects := a.transition(Event{Kind: StopCommandFailEvent, Reason: reason, ChildExited: true})
+				a.handleEffects(effects)
+			} else {
+				a.transition(Event{Kind: StopCommandFailEvent, Reason: reason})
+				a.failRequests(reason)
 			}
 		} else {
 			a.stopAccepted = true
@@ -361,6 +370,10 @@ func (a *actor) handleKey(key string) {
 func (a *actor) handleEffects(effects []Effect) {
 	for _, effect := range effects {
 		switch effect.Kind {
+		case StartBuildEffect:
+			if err := a.startBuild(); err != nil {
+				a.failRequests(err.Error())
+			}
 		case BeginStopEffect:
 			a.beginStop()
 		case ForceStopEffect:
@@ -442,6 +455,7 @@ func (a *actor) handleControl(req *control.Request) {
 		a.pendingRequests = append(a.pendingRequests, req)
 		_, effects := a.transition(Event{Kind: ControlRestartEvent})
 		a.handleEffects(effects)
+		a.presenter.Render(a.model)
 	default:
 		req.Respond(control.Response{OK: false, Reason: "runner unavailable"})
 	}
@@ -612,6 +626,17 @@ func (a *actor) consumeChildExit() {
 	a.completeChildExit()
 }
 
+// observeChildExit synchronizes with the Wait goroutine's finished marker and
+// captures the result before stop-cmd completion is interpreted.
+func (a *actor) observeChildExit() {
+	if a.child == nil || a.childProcessed || !a.child.finished.Load() {
+		return
+	}
+	result := a.child.result
+	a.childResult = &result
+	a.childProcessed = true
+}
+
 func (a *actor) completeChildExit() {
 	if a.child == nil || !a.childProcessed {
 		return
@@ -655,6 +680,19 @@ func (a *actor) finish(code int) {
 	if a.finished {
 		return
 	}
+	if a.child != nil && !a.child.finished.Load() {
+		a.report("子が生きたまま終了しようとしたため、runner の終了を拒否しました")
+		a.model.State = Running
+		a.model.PID = a.child.pid
+		a.model.Intent = IntentNone
+		a.model.StopAccepted = false
+		a.model.Confirm = ConfirmNone
+		a.model.Message = "child is still running; exit refused"
+		a.stopAccepted = false
+		a.failRequests("runner exit refused while child is alive")
+		a.presenter.Render(a.model)
+		return
+	}
 	a.finished = true
 	a.retCode = code
 	if code == 0 {
@@ -673,9 +711,15 @@ func (a *actor) drainOutputs() {
 	for _, proc := range a.allProcesses {
 		select {
 		case <-proc.outputEnd:
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(a.outputDrainTimeout):
 			// A descendant can keep the shared pipe open after the leader exits.
-			// Close that process group and read end so the runner can finish.
+			// Only kill descendants after their group leader has been reaped. A
+			// live leader is an application process and must never be killed by
+			// output cleanup.
+			if !proc.finished.Load() {
+				a.report("子が生きたまま終了しようとしたため、出力回収による kill を拒否しました")
+				continue
+			}
 			_ = signalGroup(proc.pid, syscall.SIGKILL)
 			proc.closeOutput()
 			select {
