@@ -38,6 +38,7 @@
 
 ### 5. 段階的開示（教訓: Progressive disclosure）
 - `smoke-test`（クイック/標準/完全の全テストカタログが inline）/ `crash-log-analyzer`（299行）: 詳細マトリクスを `reference/*.md` に分離し、必要なモード時のみ参照させる。
+  - `crash-log-analyzer` は 2026-09-30 に別の形で解消した: .ips の読み方と分類の表は解析する側の `crash-analyzer` agent に 1 本化し、skill (46 行) はログを選んで渡すだけにした。`reference/*.md` への分離は不要になった（commit「crash-log-analyzer: 解析手順を crash-analyzer agent に 1 本化し…」）。残りは `smoke-test`
 
 ### 6. オンデマンド hook（教訓: Use on-demand hooks like `/careful`）
 - `review-loop`: スキル起動中だけ master への push をブロックする hook を仕込む（最大リスクの機械的防止）。
