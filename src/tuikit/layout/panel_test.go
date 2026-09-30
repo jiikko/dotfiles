@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"tuikit/sgr"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 // 行数は中身 + 3、各行の表示幅は width + Indent (中身に全角・SGR・幅超えが混ざっても罫線が崩れない)。

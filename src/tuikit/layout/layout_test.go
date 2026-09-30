@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 var geo = DrawerGeometry{Ratio: 0.8, Extra: 10, MinList: 8, MaxPeek: 18}

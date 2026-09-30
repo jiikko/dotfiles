@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"strings"
 
-	"termsafe"
+	"github.com/jiikko/dotfiles/src/termsafe"
 
-	"tuikit/markdown"
+	"github.com/jiikko/dotfiles/src/tuikit/markdown"
 )
 
 // Body は issue 1 件の本文と、整形結果の幅ごとのキャッシュ。
@@ -222,7 +222,7 @@ func (b *Body) Len() int { return len(b.lines) }
 // 入らないので実用上の損失は
 // 無く、含めないと `https://example.com/<ESC>]0;…<BEL>` が 1 本の URL として抽出され、URL
 // ピッカーの一覧描画で端末へ素通りする (URLs は整形経路を通らず生ソースから拾うため、
-// tuikit/markdown 側の無害化では守れない)。\s は \t\n\r\f\v しか外さない。
+// github.com/jiikko/dotfiles/src/tuikit/markdown 側の無害化では守れない)。\s は \t\n\r\f\v しか外さない。
 // C1 を落とすのは hasTerminalControl (同パッケージ) が C1 を制御文字と定義しているのと揃えるため。
 // U+009B (CSI) / U+009D (OSC) は端末によっては ESC[ / ESC] と同義に解釈されるので、負クラスから
 // 漏れると URL ピッカーの行 (url_picker.go) まで到達する。

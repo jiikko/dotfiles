@@ -11,8 +11,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"tuikit/confirm"
-	"tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/confirm"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 )
 
 // attachGuideLines は案内の枠の中身 (装飾なし)。

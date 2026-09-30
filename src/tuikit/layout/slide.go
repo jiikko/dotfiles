@@ -3,8 +3,8 @@ package layout
 import (
 	"math"
 
-	"tuikit/anim"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 // SlideIn は窓の各行を「右から左へ流し込む」途中の姿にする (closing なら右へ抜ける途中)。

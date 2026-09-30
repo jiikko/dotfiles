@@ -1,7 +1,7 @@
 package main
 
 import (
-	"tuikit/listnav"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 )
 
 // 表示 offset / カーソルを数フレームで滑らせる glide の、glogx 側の設定とキー語彙。

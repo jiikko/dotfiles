@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"tuikit/toast"
+	"github.com/jiikko/dotfiles/src/tuikit/toast"
 )
 
 // 右下合成: box は window の下端行に載り、その行の左背景は保持され、対象外の行は不変。
@@ -62,7 +62,7 @@ func TestToastBoxLinesDoesNotCutSecondBoxAtPageEightBudget(t *testing.T) {
 	}
 }
 
-// 通知の箱の落ち影は、ほかの板と同じ glogx の影の色 (ansiShadowFg)。tuikit/toast へ切り出してから、影の色は画面のモデルを作るときに
+// 通知の箱の落ち影は、ほかの板と同じ glogx の影の色 (ansiShadowFg)。github.com/jiikko/dotfiles/src/tuikit/toast へ切り出してから、影の色は画面のモデルを作るときに
 // 渡す配線になった。🚨 今は ansiShadowFg が layout.Panel の既定 (layout.ShadowNearBlack) と同じ値なので、渡し忘れても見た目は変わらない
 // (配線を外す変異は等価。2026-09-25 に確かめた)。glogx のテーマで影の色を変えたとき、通知の箱だけが既定の色に取り残されないことを守る
 func TestToastShadowIsGlogxNearBlack(t *testing.T) {

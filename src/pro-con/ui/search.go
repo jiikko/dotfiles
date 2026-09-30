@@ -18,8 +18,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"tuikit/lineedit"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"pro-con/card"
 )

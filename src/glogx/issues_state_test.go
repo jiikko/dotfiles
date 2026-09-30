@@ -1,12 +1,12 @@
 package main
 
 import (
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-	"tuikit/anim"
 
 	"glogx/issues"
 )

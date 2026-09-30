@@ -10,7 +10,7 @@ import (
 	"strings"
 	"unicode"
 
-	"tuikit/markdown"
+	"github.com/jiikko/dotfiles/src/tuikit/markdown"
 )
 
 // 本文中のファイルパスを開けるファイルへ解決する (viewer のジャンプモード。本文 pager の Tab)。

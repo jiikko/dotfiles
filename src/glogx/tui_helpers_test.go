@@ -14,7 +14,7 @@ import (
 	"doctor/disk"
 	"doctor/svc"
 	"doctor/testtmp"
-	"tuikit/widthenv"
+	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 )
 
 // installInertDoctor は doctor の走査口を**何も触らない fake** に差し替える。

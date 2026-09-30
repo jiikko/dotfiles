@@ -4,6 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
+	"github.com/jiikko/dotfiles/src/tuikit/confirm"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
+	"github.com/jiikko/dotfiles/src/tuikit/toast"
 	"maps"
 	"math"
 	"os"
@@ -11,11 +16,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"tuikit/anim"
-	"tuikit/confirm"
-	"tuikit/layout"
-	"tuikit/listnav"
-	"tuikit/toast"
 
 	"doctor/disk"
 	"glogx/issues"
@@ -357,7 +357,7 @@ type browseModel struct {
 	// 経路 (テスト・静的出力) も実画面がそのまま出る (開く演出は Init からも呼んでいない)。
 	zoom appZoom
 
-	// toast は右下に数秒だけ出す結果フィードバック (push/pull 完了)。自動消滅 (tuikit/toast)。
+	// toast は右下に数秒だけ出す結果フィードバック (push/pull 完了)。自動消滅 (github.com/jiikko/dotfiles/src/tuikit/toast)。
 	toast toast.Stack
 
 	ticking bool // 80ms スピナー tick チェーンが 1 本生きているか (maybeTick の single-flight)
@@ -3651,7 +3651,7 @@ func (m *browseModel) finishWithGlobalChrome(window []string, page int) string {
 	return m.finishWindow(window, page)
 }
 
-// toastTimers は toast の退場タイマー (静止に入った枚ごと) を bubbletea の Tick にする (tuikit/toast はタイマーを張らない)。
+// toastTimers は toast の退場タイマー (静止に入った枚ごと) を bubbletea の Tick にする (github.com/jiikko/dotfiles/src/tuikit/toast はタイマーを張らない)。
 func toastTimers(ts []toast.Timer) tea.Cmd {
 	cmds := make([]tea.Cmd, 0, len(ts))
 	for _, t := range ts {

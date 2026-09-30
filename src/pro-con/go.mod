@@ -6,11 +6,11 @@ require (
 	charm.land/bubbletea/v2 v2.0.8
 	github.com/BurntSushi/toml v1.6.0
 	github.com/charmbracelet/x/ansi v0.11.7
+	github.com/jiikko/dotfiles/src/termsafe v0.0.0
+	github.com/jiikko/dotfiles/src/tuikit v0.0.0
 	glogx v0.0.0
 	golang.org/x/sys v0.47.0
 	process_supervisor v0.0.0
-	termsafe v0.0.0
-	tuikit v0.0.0
 )
 
 require (
@@ -36,10 +36,10 @@ require (
 replace (
 	atomicfile => ../atomicfile
 	doctor => ../doctor
+	github.com/jiikko/dotfiles/src/termsafe => ../termsafe
+	github.com/jiikko/dotfiles/src/tuikit => ../tuikit
 	glogx => ../glogx
 	process_supervisor => ../process_supervisor
 	ratelimit => ../ratelimit
 	subproc => ../subproc
-	termsafe => ../termsafe
-	tuikit => ../tuikit
 )

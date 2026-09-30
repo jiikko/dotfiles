@@ -1,6 +1,6 @@
 # termsafe
 
-外部由来の文字列を端末へ出す前に無害化する単一の関門。各 module が go.mod の replace で取り込む共有 module (取り込み元は `grep -l "replace termsafe" src/*/go.mod`)。使い方・関数の使い分け・通し忘れ検査の一次情報は README.md、仕様・トレードオフは `termsafe.go` のパッケージ doc。
+外部由来の文字列を端末へ出す前に無害化する単一の関門。各 module が go.mod の replace で取り込む共有 module (取り込み元は `grep -l "replace github.com/jiikko/dotfiles/src/termsafe" src/*/go.mod`)。使い方・関数の使い分け・通し忘れ検査の一次情報は README.md、仕様・トレードオフは `termsafe.go` のパッケージ doc。
 
 ## ファイルの地図
 

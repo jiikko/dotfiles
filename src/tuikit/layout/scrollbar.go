@@ -1,8 +1,8 @@
 package layout
 
 import (
-	"tuikit/sgr"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 // スクロールバーのグリフ。track は枠の側辺 (│) と同じ字形にして「本文の中に走る細い溝」に見せ、

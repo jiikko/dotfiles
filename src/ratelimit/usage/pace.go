@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"tuikit/sgr"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 )
 
 // ペースゲージの配色。🚨 _claude/statusline-command.sh の bg_in / bg_over / under_sgr と同じ値に

@@ -70,7 +70,7 @@ func TestSaveDoctorCachesCleanTempOnWriteFailure(t *testing.T) {
 }
 
 // childContext は子プロセスをテストの deadline より手前で kill させる context を返す
-// (internal/testenv.CommandContext と同じ作法。tuikit/termwidth のテストにも同じものがある)。
+// (internal/testenv.CommandContext と同じ作法。github.com/jiikko/dotfiles/src/tuikit/termwidth のテストにも同じものがある)。
 // ⚠️ `go test -timeout` は親を panic で落とすだけで子を回収しないので、deadline ちょうどに
 // 任せると hang した子が孤児として残る。
 func childContext(t *testing.T) context.Context {

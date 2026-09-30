@@ -12,10 +12,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"tuikit/caret"
-	"tuikit/layout"
-	"tuikit/lineedit"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/caret"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"pro-con/backend"
 	"pro-con/card"

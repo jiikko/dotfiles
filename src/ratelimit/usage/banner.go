@@ -13,7 +13,7 @@ package usage
 import (
 	"strings"
 
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 const (

@@ -9,7 +9,7 @@ package ui
 import (
 	"time"
 
-	"tuikit/anim"
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
 
 	"pro-con/card"
 )

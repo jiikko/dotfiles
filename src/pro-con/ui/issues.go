@@ -60,7 +60,7 @@ type editorDoneMsg struct {
 	err  error
 }
 
-// openIssue は選択中のカードの issue をエディタで開く ($VISUAL → $EDITOR → nvim。tuikit/editor)。
+// openIssue は選択中のカードの issue をエディタで開く ($VISUAL → $EDITOR → nvim。github.com/jiikko/dotfiles/src/tuikit/editor)。
 func (m *Model) openIssue() tea.Cmd {
 	c, ok := m.selectedCard()
 	if !ok {

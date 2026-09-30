@@ -33,9 +33,9 @@ import (
 
 	"atomicfile"
 	"doctor/cachedir"
+	"github.com/jiikko/dotfiles/src/termsafe"
 	"ratelimit/usage"
 	"subproc"
-	"termsafe"
 
 	"golang.org/x/term"
 )

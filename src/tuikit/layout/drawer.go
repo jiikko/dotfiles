@@ -7,8 +7,8 @@ package layout
 import (
 	"math"
 
-	"tuikit/sgr"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 // DrawerGeometry は引き出し (右から滑り込む詳細パネル) の寸法の決め方。

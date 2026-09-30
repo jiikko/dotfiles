@@ -19,7 +19,7 @@ import (
 
 	"golang.org/x/term"
 
-	"tuikit/widthenv"
+	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 )
 
 func main() {

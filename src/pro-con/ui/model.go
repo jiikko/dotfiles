@@ -13,13 +13,13 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"tuikit/anim"
-	"tuikit/confirm"
-	"tuikit/editor"
-	"tuikit/layout"
-	"tuikit/lineedit"
-	"tuikit/listnav"
-	"tuikit/toast"
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
+	"github.com/jiikko/dotfiles/src/tuikit/confirm"
+	"github.com/jiikko/dotfiles/src/tuikit/editor"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
+	"github.com/jiikko/dotfiles/src/tuikit/toast"
 
 	"pro-con/backend"
 	"pro-con/card"
@@ -90,7 +90,7 @@ type Model struct {
 	mode        mode
 	inputRow    int             // 最後の render で入力欄を置いた行 (view.go の caret)
 	form        answerForm      // modeForm で開いている回答フォーム
-	line        lineedit.Line   // 入力欄 (編集キーは tuikit/lineedit。docs/glogx-ui-guide.md「入力欄の編集キー」)
+	line        lineedit.Line   // 入力欄 (編集キーは github.com/jiikko/dotfiles/src/tuikit/lineedit。docs/glogx-ui-guide.md「入力欄の編集キー」)
 	pending     backend.Command // modeConfirm で確認している操作
 	confirmText string          // modeConfirm の確認の行に出す文
 	send        *sendConfirm    // modeConfirm が送る前の確認のとき、その中身 (nil = 破壊的な操作の y/N。sendconfirm.go)
@@ -138,7 +138,7 @@ type Model struct {
 	children  *atomic.Int64 // 裏で外部コマンドを起こしている処理の数 (exec の前に 0 を待つ。upgrade.go の child)
 
 	copy       func(string) error     // クリップボードへ入れる (既定は pbcopy。テストは差し替える)
-	openEditor func(string) *exec.Cmd // ファイルを開くエディタのコマンド (既定は tuikit/editor。テストは差し替える)
+	openEditor func(string) *exec.Cmd // ファイルを開くエディタのコマンド (既定は github.com/jiikko/dotfiles/src/tuikit/editor。テストは差し替える)
 	// execProcess は端末を明け渡して外のコマンドを走らせる (既定は execOnTerminal。テストは戻りの知らせを取り出すために差し替える)
 	execProcess func(*exec.Cmd, tea.ExecCallback) tea.Cmd
 	onTermEvent func(string)         // 端末の前面が外れた・止められた後に入れ直した、を出来事に残す (terminal.go。nil なら残さない)

@@ -12,8 +12,8 @@ package main
 // 「開いているか」と「窓をどう埋めるか」だけを持つ。
 
 import (
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"time"
-	"tuikit/layout"
 
 	"ratelimit/usage"
 )

@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/jiikko/dotfiles/src/tuikit/toast"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
 	"time"
-	"tuikit/toast"
 
 	tea "charm.land/bubbletea/v2"
 )

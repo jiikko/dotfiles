@@ -12,7 +12,7 @@ import (
 	"doctor/cachedir"
 	"doctor/disk"
 	"doctor/svc"
-	"termsafe"
+	"github.com/jiikko/dotfiles/src/termsafe"
 )
 
 // doctor のディスク診断結果の保存と、起動時トースト (issue 148 の 3 章)。

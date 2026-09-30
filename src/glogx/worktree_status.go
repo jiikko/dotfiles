@@ -3,8 +3,8 @@ package main
 import (
 	"strings"
 
+	"github.com/jiikko/dotfiles/src/tuikit/highlight"
 	"glogx/issues"
-	"tuikit/highlight"
 )
 
 // 作業ツリーの状態 (git status) の読み取りとセクション分類。status viewer (status_view.go) が

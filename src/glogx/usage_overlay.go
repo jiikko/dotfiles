@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"strings"
 	"time"
-	"tuikit/layout"
 
 	"ratelimit/usage"
 

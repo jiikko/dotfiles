@@ -12,7 +12,7 @@ import (
 
 	"doctor/runner"
 
-	"termsafe/ctlprobe"
+	"github.com/jiikko/dotfiles/src/termsafe/ctlprobe"
 )
 
 // fakeRunner は launchctl / brew の fake。実際の出力形式を模す。渡された argv を記録するので、
@@ -521,7 +521,7 @@ func TestFormatSanitizesUntrustedText(t *testing.T) {
 		StatusErr:   "launchctl 失敗" + osc52,
 	})
 	for _, line := range strings.Split(out, "\n") {
-		// 判定の正本は termsafe/ctlprobe (issue 285)。ここへ書き戻さないこと —
+		// 判定の正本は github.com/jiikko/dotfiles/src/termsafe/ctlprobe (issue 285)。ここへ書き戻さないこと —
 		// 同じオラクルが 5 箇所に複製されていて、無害化の定義を広げるときに
 		// 直し忘れた側だけが旧い狭い判定で守り続ける形になっていた。
 		if ctlprobe.HasControl(line) {

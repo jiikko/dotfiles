@@ -5,8 +5,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"tuikit/anim"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"pro-con/card"
 )

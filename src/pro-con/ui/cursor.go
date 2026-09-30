@@ -10,8 +10,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"tuikit/anim"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 // 選択の枠の文字と色 (issue 472: 赤い二重線。ユーザーの指定)。赤は docs/theme-colors.md の 196 (sync の枠と同じ番号。

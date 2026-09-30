@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sort"
 
-	"tuikit/confirm"
+	"github.com/jiikko/dotfiles/src/tuikit/confirm"
 
 	tea "charm.land/bubbletea/v2"
 )

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"tuikit/sgr"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 )
 
 func TestDiffStructure(t *testing.T) {

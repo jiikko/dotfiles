@@ -12,7 +12,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 // 欄の見出し幅。行頭の "> " (2) + 見出し (全角 3 文字 = 6) + 区切りの空白 (1)。

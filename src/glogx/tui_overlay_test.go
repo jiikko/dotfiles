@@ -3,12 +3,12 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-	"tuikit/layout"
 
 	"glogx/issues"
 	"ratelimit/usage"

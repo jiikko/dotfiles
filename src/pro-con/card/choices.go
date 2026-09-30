@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"termsafe"
+	"github.com/jiikko/dotfiles/src/termsafe"
 )
 
 // 選択肢つきの質問 (issue 493)。PG が `card ask --json` で渡し、画面の `r` が radio / checkbox の回答フォームにする。

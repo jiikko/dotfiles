@@ -9,9 +9,9 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"pro-con/backend"
 	"pro-con/card"
-	"tuikit/termwidth"
 )
 
 // ゲージの PG の数は今の同時実行数。利用枠で上限より絞っていれば上限と理由も出す。dispatcher が 1 度も回っていない /

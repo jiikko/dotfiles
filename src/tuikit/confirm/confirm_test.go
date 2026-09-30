@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"tuikit/termwidth"
-	"tuikit/widthenv"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 )
 
 func TestMain(m *testing.M) {

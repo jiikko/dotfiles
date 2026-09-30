@@ -1,6 +1,6 @@
 package ssd
 
-import "termsafe"
+import "github.com/jiikko/dotfiles/src/termsafe"
 
 // SanitizeForDisplay は表示・コピーに出す前の関門 (disk / svc / docker の display.go と対。issue 228 の規律)。
 //

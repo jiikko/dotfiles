@@ -5,10 +5,10 @@ go 1.25.0
 require (
 	atomicfile v0.0.0
 	doctor v0.0.0
+	github.com/jiikko/dotfiles/src/termsafe v0.0.0
+	github.com/jiikko/dotfiles/src/tuikit v0.0.0
 	golang.org/x/term v0.45.0
 	subproc v0.0.0
-	termsafe v0.0.0
-	tuikit v0.0.0
 )
 
 require (
@@ -27,6 +27,6 @@ replace doctor => ../doctor
 
 replace subproc => ../subproc
 
-replace termsafe => ../termsafe
+replace github.com/jiikko/dotfiles/src/termsafe => ../termsafe
 
-replace tuikit => ../tuikit
+replace github.com/jiikko/dotfiles/src/tuikit => ../tuikit

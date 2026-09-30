@@ -14,10 +14,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"tuikit/layout"
-	"tuikit/sgr"
-	"tuikit/termwidth"
-	"tuikit/toast"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/toast"
 )
 
 const tickInterval = 16 * time.Millisecond
@@ -79,7 +79,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *model) View() tea.View {
 	w, h := max(m.width, 20), max(m.height, 8)
 	lines := make([]string, h)
-	lines[0] = sgr.Bold + " tuikit/toast" + sgr.Reset
+	lines[0] = sgr.Bold + " github.com/jiikko/dotfiles/src/tuikit/toast" + sgr.Reset
 	help := []string{"", " s  成功の通知 (緑)", " f  失敗の通知 (赤)", " i  進行中の通知 (次の通知で退く)", " l  長い通知 (窓の幅で折り返す)", " q  終了", "",
 		sgr.Dim + " 新しい通知は上に積まれ、古い通知は下から抜ける (最大 3 枚)" + sgr.Reset}
 	copy(lines[1:], help)

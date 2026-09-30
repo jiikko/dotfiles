@@ -5,10 +5,10 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
-	"tuikit/toast"
+	"github.com/jiikko/dotfiles/src/tuikit/toast"
 )
 
-// 操作の結果の通知は、下端の行ではなくボードの右下の toast に出る (tuikit/toast。2026-09-25 のユーザーの依頼)。
+// 操作の結果の通知は、下端の行ではなくボードの右下の toast に出る (github.com/jiikko/dotfiles/src/tuikit/toast。2026-09-25 のユーザーの依頼)。
 func TestNoticeGoesToToastNotFooter(t *testing.T) {
 	m, _ := cursorModel(t)
 	m.done("コピーした")

@@ -1,11 +1,11 @@
-// 予約できたことを知らせるトースト。glogx の通知 (tuikit/toast) と同じ振る舞い —
+// 予約できたことを知らせるトースト。glogx の通知 (github.com/jiikko/dotfiles/src/tuikit/toast) と同じ振る舞い —
 // 右下に「にゅっと」滑り込み、少し静止して消える — を、この UI の中に持たせたもの。
 //
-// 🚨 tuikit/toast は使わない (動き方の設計だけを借り、コードは共有していない):
-//   - tuikit/toast の箱は罫線 (U+2500 系) と ✓ を使う。どちらも East Asian Width が Ambiguous で、
+// 🚨 github.com/jiikko/dotfiles/src/tuikit/toast は使わない (動き方の設計だけを借り、コードは共有していない):
+//   - github.com/jiikko/dotfiles/src/tuikit/toast の箱は罫線 (U+2500 系) と ✓ を使う。どちらも East Asian Width が Ambiguous で、
 //     CJK フォントだと 2 セルに描かれる端末がある。この UI は「幅がずれると本物のカーソル
 //     (= IME の未確定文字の位置) がずれる」ため、装飾は色と反転だけに絞っている
-//   - tuikit/toast が罫線と記号を使わない描き方 (色と反転だけ) を持ったら、乗り換えを再評価する
+//   - github.com/jiikko/dotfiles/src/tuikit/toast が罫線と記号を使わない描き方 (色と反転だけ) を持ったら、乗り換えを再評価する
 //     (1 枚だけ出して閉じる使い方なので、スタックの機能は要らない)
 //
 // 表示のあとで終了するので、「予約した」と出てから popup が閉じる。実際に job を作るのは
@@ -18,7 +18,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 // toastFrames は滑り込みに使うフレーム数、toastTick は 1 フレームの間隔。

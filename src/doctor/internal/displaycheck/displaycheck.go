@@ -31,7 +31,9 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -87,6 +89,8 @@ func Run(t *testing.T, s Spec) {
 // 呼び出し側から観測できないので、「違反を見逃す変異」を当てても緑のままになる。
 // 実測 2026-09-04: 未使用 exempt の検出を外す変異が緑で通った)。
 // fatal は「検査できなかった」(空でなければ問題の一覧は意味を持たない)。
+const termsafeModulePath = "github.com/jiikko/dotfiles/src/termsafe"
+
 func check(s Spec) (problems []string, fatal string) {
 	sanitizeGate, sanitizeExempt, wantChecked := s.Gates, s.Exempt, s.WantChecked
 	addf := func(format string, a ...any) { problems = append(problems, fmt.Sprintf(format, a...)) }
@@ -167,6 +171,7 @@ func check(s Spec) (problems []string, fatal string) {
 	// 別の関門への委譲も「触った」に数える (委譲先はその型の担当として別途検査される)
 	touched := map[string]map[string]bool{}
 	for _, f := range pkg.Files {
+		termsafeAliases := termsafeImportAliases(f)
 		ast.Inspect(f, func(n ast.Node) bool {
 			fd, ok := n.(*ast.FuncDecl)
 			if !ok || !strings.HasPrefix(fd.Name.Name, "Sanitize") || fd.Body == nil {
@@ -192,7 +197,7 @@ func check(s Spec) (problems []string, fatal string) {
 					if !ok {
 						continue
 					}
-					if i < len(as.Rhs) && !sanitizingRHS(as.Rhs[i]) {
+					if i < len(as.Rhs) && !sanitizingRHS(as.Rhs[i], termsafeAliases) {
 						continue
 					}
 					set[id.Name+"."+sel.Sel.Name] = true
@@ -267,7 +272,23 @@ func check(s Spec) (problems []string, fatal string) {
 // sanitizingRHS は右辺が無害化の経路を通っているか (termsafe.* / sanitize* / Sanitize* /
 // DisplayablePath)。**名前ベースの近似**で、「無害化と名乗る関数を呼んでいるか」しか見ない
 // (中身が正しいかは各 Sanitize* の個別テストが見る = README の「検出しない形」の 3 つ目)。
-func sanitizingRHS(e ast.Expr) bool {
+func termsafeImportAliases(f *ast.File) map[string]bool {
+	aliases := map[string]bool{}
+	for _, spec := range f.Imports {
+		importPath, err := strconv.Unquote(spec.Path.Value)
+		if err != nil || importPath != termsafeModulePath {
+			continue
+		}
+		alias := path.Base(importPath)
+		if spec.Name != nil {
+			alias = spec.Name.Name
+		}
+		aliases[alias] = true
+	}
+	return aliases
+}
+
+func sanitizingRHS(e ast.Expr, termsafeAliases map[string]bool) bool {
 	found := false
 	ast.Inspect(e, func(n ast.Node) bool {
 		if found {
@@ -275,7 +296,7 @@ func sanitizingRHS(e ast.Expr) bool {
 		}
 		switch t := n.(type) {
 		case *ast.SelectorExpr:
-			if id, ok := t.X.(*ast.Ident); ok && id.Name == "termsafe" {
+			if id, ok := t.X.(*ast.Ident); ok && termsafeAliases[id.Name] {
 				found = true
 			}
 		case *ast.Ident:

@@ -1,9 +1,9 @@
 package main
 
 import (
+	"github.com/jiikko/dotfiles/src/tuikit/toast"
 	"testing"
 	"time"
-	"tuikit/toast"
 
 	tea "charm.land/bubbletea/v2"
 )

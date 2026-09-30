@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 func rowsN(n int) []string {

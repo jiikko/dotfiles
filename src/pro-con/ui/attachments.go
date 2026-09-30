@@ -14,9 +14,9 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
-	"termsafe"
+	"github.com/jiikko/dotfiles/src/termsafe"
 
 	"pro-con/card"
 )

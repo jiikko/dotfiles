@@ -1,16 +1,16 @@
 package main
 
 import (
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
+	"github.com/jiikko/dotfiles/src/tuikit/confirm"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-	"tuikit/anim"
-	"tuikit/confirm"
-	"tuikit/layout"
-	"tuikit/listnav"
 
 	"glogx/issues"
 

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"tuikit/sgr"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 // drawerFixture は glogx の issues viewer に寄せた一覧と本文 (SGR つき・日本語と記号混じり)。

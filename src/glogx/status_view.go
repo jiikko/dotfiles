@@ -3,6 +3,10 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
+	"github.com/jiikko/dotfiles/src/tuikit/confirm"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"io"
 	"math"
 	"os"
@@ -10,10 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"tuikit/anim"
-	"tuikit/confirm"
-	"tuikit/layout"
-	"tuikit/listnav"
 
 	tea "charm.land/bubbletea/v2"
 )

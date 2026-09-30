@@ -1,14 +1,14 @@
 package ui
 
-// 操作の結果の通知は tuikit/toast (glogx と同じ右下のトースト。右から滑り込み、数秒止まって、また右へ引っ込む)。2026-09-25 のユーザーの依頼。
+// 操作の結果の通知は github.com/jiikko/dotfiles/src/tuikit/toast (glogx と同じ右下のトースト。右から滑り込み、数秒止まって、また右へ引っ込む)。2026-09-25 のユーザーの依頼。
 // 成功 (✓ 緑)・失敗と断り (✗ 赤)・中立の知らせ (印なしのシアン。次の通知が来たら退く) の 3 つで積む。消すまで残す通知 (Notify / sticky) は下端の行のまま。
 
 import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"tuikit/termwidth"
-	"tuikit/toast"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/toast"
 )
 
 // done は操作が済んだ通知 (✓)。

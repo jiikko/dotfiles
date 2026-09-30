@@ -1,6 +1,6 @@
 package listnav
 
-import "tuikit/anim"
+import "github.com/jiikko/dotfiles/src/tuikit/anim"
 
 // Pager は本文 (カーソルの無いスクロール) の offset。zero value = 先頭。
 //

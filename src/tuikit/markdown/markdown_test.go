@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
-	"tuikit/sgr"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 )
 
 // sample は issue 本文で実際に使われている構文を一通り含むテスト用本文

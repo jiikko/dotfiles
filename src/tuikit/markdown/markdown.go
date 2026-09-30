@@ -6,9 +6,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"termsafe"
+	"github.com/jiikko/dotfiles/src/termsafe"
 
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 // issue 本文 (markdown) を端末行へ整形する層。

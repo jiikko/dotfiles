@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"termsafe"
+	"github.com/jiikko/dotfiles/src/termsafe"
 )
 
 // 「次にやる」の目印 (next/) を symlink で表す層 (issue 263)。

@@ -13,7 +13,7 @@ tmux 予約入力ウィザードの TUI (`prefix+m` / `Enter` / `C-m` の popup)
 - `jobs.go` — シェルが書いた予約一覧 TSV の読み込み
 - `timespec.go` — 予約時刻の文字列解釈 (純関数。`time.Now()` を触らない)
 - `style.go` — SGR 装飾の最小ヘルパー (lipgloss 不使用。ASCII 記号のみ)
-- `toast.go` — 予約成功のトースト通知 (tuikit/toast とは別実装。理由はファイル冒頭)
+- `toast.go` — 予約成功のトースト通知 (github.com/jiikko/dotfiles/src/tuikit/toast とは別実装。理由はファイル冒頭)
 - `regression_test.go` / `render_test.go` — 過去に壊れた具体的な症状 (描画の幅・高さ・カーソル含む) の回帰テスト
 
 ## 入口

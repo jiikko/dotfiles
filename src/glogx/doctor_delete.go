@@ -20,10 +20,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"strconv"
 	"strings"
 	"time"
-	"tuikit/layout"
 
 	tea "charm.land/bubbletea/v2"
 

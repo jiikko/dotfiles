@@ -1,6 +1,6 @@
 package ui
 
-// カードの詳細は右から滑り込む引き出し (tuikit/layout.ComposeDrawer)。カンバンの上に重ね、左にカンバンの端を残す
+// カードの詳細は右から滑り込む引き出し (github.com/jiikko/dotfiles/src/tuikit/layout.ComposeDrawer)。カンバンの上に重ね、左にカンバンの端を残す
 // (どのレーンのどこから開いたかが画面から消えない)。glogx の issues の本文と同じ形で、開いている間は移動のキーが
 // 本文のスクロールに効き、J / K で開いたまま隣のカードへ送る (docs/glogx-ui-guide.md §3 / §6)。
 
@@ -11,9 +11,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"tuikit/anim"
-	"tuikit/layout"
-	"tuikit/listnav"
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 
 	"pro-con/card"
 )

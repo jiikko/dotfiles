@@ -10,7 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"termsafe/ctlprobe"
+	"github.com/jiikko/dotfiles/src/termsafe/ctlprobe"
 )
 
 // --- ヘルパー ---
@@ -314,7 +314,7 @@ func TestStatusLoadErrorAfterLoadedKeepsLastGood(t *testing.T) {
 	}
 }
 
-// hasTerminalControl は termsafe/ctlprobe の薄い別名。
+// hasTerminalControl は github.com/jiikko/dotfiles/src/termsafe/ctlprobe の薄い別名。
 //
 // 🚨 判定そのものをここへ書き戻さないこと (issue 285)。同じオラクルが 5 箇所に複製されており、
 // 無害化の定義を広げるとき 4 箇所を直し忘れても全パッケージ green のままになる。

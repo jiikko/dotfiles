@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"pro-con/backend"
 	"pro-con/card"

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
 	"math"
 	"os"
 	"os/exec"
@@ -11,12 +12,11 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"tuikit/anim"
 
 	"time"
 
+	"github.com/jiikko/dotfiles/src/tuikit/editor"
 	"glogx/issues"
-	"tuikit/editor"
 )
 
 // atProgress は演出の進みを p (0..1) に固定した viewer を返す (壁時計を巻き戻して作る)。

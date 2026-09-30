@@ -10,7 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"tuikit/markdown"
+	"github.com/jiikko/dotfiles/src/tuikit/markdown"
 
 	"pro-con/backend"
 )

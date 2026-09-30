@@ -2,11 +2,11 @@ package main
 
 import (
 	"fmt"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
-	"tuikit/layout"
 
 	"doctor/disk"
 	"doctor/docker"

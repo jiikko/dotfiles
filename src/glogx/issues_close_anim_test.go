@@ -6,10 +6,10 @@ package main
 // 畳まれている前提で書かれているため)。ここだけ明示的に on にして演出そのものを見る。
 
 import (
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"strings"
 	"testing"
 	"time"
-	"tuikit/layout"
 )
 
 // openAnimView は演出を on にしたまま viewer を開いた状態を作る。

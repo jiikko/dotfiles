@@ -1,10 +1,10 @@
 package main
 
 import (
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"strings"
 	"testing"
 	"time"
-	"tuikit/layout"
 
 	tea "charm.land/bubbletea/v2"
 )

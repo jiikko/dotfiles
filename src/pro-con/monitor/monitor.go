@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"termsafe"
+	"github.com/jiikko/dotfiles/src/termsafe"
 
 	"pro-con/card"
 	"pro-con/store"

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"tuikit/sgr"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 )
 
 // 板とスクロールバーは毎フレーム全可視行で走るので、1 行あたりの確保を増やさないことを固定する。

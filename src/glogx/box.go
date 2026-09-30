@@ -1,7 +1,7 @@
 package main
 
 import (
-	"tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 )
 
 // 枠描画のプリミティブ (browseModel の状態に依存しない純関数)。状態機械 (tui.go) から
@@ -29,7 +29,7 @@ func overlayCenteredBox(window, box []string, width, page int, colored bool) []s
 // (2026-07-29) で diff / job / PR パネルへ再導入し全ポップアップを統一した。影なしの
 // buildPanelBox 変種はこの統一で呼び出しゼロになったため削除済み (必要になったら git 履歴から
 // 復活させる)。最外周フレームは画面端の余白セルにだけ影を落としコンテンツと重ならない (issue 025)。
-// 枠線は ansiDim (種別色で枠を染める通知の箱は tuikit/toast が自分で組む)。
+// 枠線は ansiDim (種別色で枠を染める通知の箱は github.com/jiikko/dotfiles/src/tuikit/toast が自分で組む)。
 func buildShadowPanelBox(title string, rows []string, width int, colored bool) []string {
 	return buildPanelBoxImpl(title, rows, width, colored, layout.PanelStyle{Border: layout.BorderLight, Color: ansiDim})
 }

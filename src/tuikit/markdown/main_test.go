@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"tuikit/widthenv"
+	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 )
 
 // TestMain は「支持しない幅 env」でテストを走らせない (glogx issue 054)。

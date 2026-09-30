@@ -1,6 +1,6 @@
 package markdown
 
-import "tuikit/termwidth"
+import "github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 // LinkKind はリンク候補の出どころ。開く側 (glogx issues viewer) がパスを解決する基準を
 // 種類ごとに 1 つに決めるために区別する (markdown リンクはそのファイル基準、コードスパンは

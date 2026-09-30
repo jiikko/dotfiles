@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"github.com/charmbracelet/x/ansi"
 )

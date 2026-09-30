@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 // segText は Seg が指す画面上の文字列 (色なしの出力から切り出す)。

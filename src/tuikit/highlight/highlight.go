@@ -1,5 +1,5 @@
 // Package highlight は diff とコードの行へシンタックスハイライト (chroma) を付ける。glogx の diff の板と、
-// pro-con の詳細の差分の板 (dotfiles issue 508)、markdown のフェンスコード (tuikit/markdown) が同じ色付けを使う
+// pro-con の詳細の差分の板 (dotfiles issue 508)、markdown のフェンスコード (github.com/jiikko/dotfiles/src/tuikit/markdown) が同じ色付けを使う
 // (glogx の highlight.go から移した)。
 //
 // 方式: git は --color=never で受け、diff の構造色 (メタ行/hunk/追加/削除の記号) は
@@ -19,7 +19,7 @@ import (
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
 
-	"tuikit/sgr"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 )
 
 // 256色主環境 (docs/theme-colors.md) なので formatter は terminal256、スタイルは

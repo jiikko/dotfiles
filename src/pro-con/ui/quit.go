@@ -13,8 +13,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"tuikit/confirm"
-	"tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/confirm"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 
 	"pro-con/backend"
 	"pro-con/card"

@@ -12,8 +12,8 @@ import (
 	"math"
 	"strings"
 
-	"tuikit/sgr"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 // brailleBit は (セル内 x, セル内 y) → ドットのビット。

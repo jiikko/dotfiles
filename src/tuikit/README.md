@@ -212,6 +212,6 @@ make demo                             # vhs で 2 つの gif を撮り直す (vh
 
 ```
 // go.mod
-require tuikit v0.0.0
-replace tuikit => ../tuikit
+require github.com/jiikko/dotfiles/src/tuikit v0.0.0
+replace github.com/jiikko/dotfiles/src/tuikit => ../tuikit
 ```

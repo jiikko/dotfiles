@@ -10,7 +10,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"tuikit/widthenv"
+	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 )
 
 // acceptedSymbols は fast-path が受理する記号を表から数え上げる (列挙の写しを持たない)。

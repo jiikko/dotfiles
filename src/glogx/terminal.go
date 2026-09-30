@@ -1,6 +1,6 @@
 package main
 
-import "termsafe"
+import "github.com/jiikko/dotfiles/src/termsafe"
 
 // 端末描画に対して外部由来の文字列を無害化する関数の、main パッケージ側の別名。
 //

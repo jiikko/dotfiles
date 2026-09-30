@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"termsafe/ctlprobe"
+	"github.com/jiikko/dotfiles/src/termsafe/ctlprobe"
 )
 
 // 検出条件そのものが未実測のエントリ (Entry.Unverified) は、候補 0 件でも行を畳まない。
@@ -131,7 +131,7 @@ func TestFormatSanitizesUntrustedText(t *testing.T) {
 
 	out := Format(rep, Env{}, now)
 	for _, line := range strings.Split(out, "\n") {
-		// 判定の正本は termsafe/ctlprobe (issue 285)。ここへ書き戻さないこと —
+		// 判定の正本は github.com/jiikko/dotfiles/src/termsafe/ctlprobe (issue 285)。ここへ書き戻さないこと —
 		// 同じオラクルが 5 箇所に複製されていて、無害化の定義を広げるときに
 		// 直し忘れた側だけが旧い狭い判定で守り続ける形になっていた。
 		if ctlprobe.HasControl(line) {

@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"termsafe"
+	"github.com/jiikko/dotfiles/src/termsafe"
 
 	"pro-con/backend"
 )

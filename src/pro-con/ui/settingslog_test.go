@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/termsafe"
 	"pro-con/eventlog"
-	"termsafe"
 )
 
 // logSpy はログのタブが読む backend (backend.EventLog)。pending を次の Events で渡し、呼ばれた回数を数える。

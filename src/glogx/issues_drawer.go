@@ -17,8 +17,8 @@ package main
 import (
 	"time"
 
-	"tuikit/anim"
-	"tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 )
 
 const (

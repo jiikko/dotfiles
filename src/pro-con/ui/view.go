@@ -8,9 +8,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"tuikit/caret"
-	"tuikit/layout"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/caret"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"pro-con/backend"
 	"pro-con/card"
@@ -52,7 +52,7 @@ func (m *Model) View() tea.View {
 }
 
 // caret は入力欄のキャレットに置く端末のカーソル。入力欄が無ければ nil (カーソルを隠す)。
-// 🚨 IME は変換中の文字を端末のカーソルの位置に出す (tuikit/caret)。位置は render と同じ行の並び (ヘッダ + 領域 + 入力欄) から数える
+// 🚨 IME は変換中の文字を端末のカーソルの位置に出す (github.com/jiikko/dotfiles/src/tuikit/caret)。位置は render と同じ行の並び (ヘッダ + 領域 + 入力欄) から数える
 func (m *Model) caret() *tea.Cursor {
 	switch {
 	case m.stopping:

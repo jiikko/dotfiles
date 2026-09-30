@@ -1,8 +1,8 @@
 package termsafe
 
 import (
+	"github.com/jiikko/dotfiles/src/termsafe/ctlprobe"
 	"strings"
-	"termsafe/ctlprobe"
 	"testing"
 )
 

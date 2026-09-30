@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"strconv"
 	"testing"
-	"tuikit/listnav"
 )
 
 // 移動の語彙 (tuikit の listnav.MotionOf) が各画面へ配線されていることを、ユーザーが触る入口

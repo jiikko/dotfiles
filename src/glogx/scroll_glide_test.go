@@ -8,8 +8,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"glogx/issues"
-	"tuikit/listnav"
 )
 
 // 半ページ移動 (Space / ctrl+d) が 4 面すべてで glide に載る (ユーザー要望 2026-07-31 の回帰)。

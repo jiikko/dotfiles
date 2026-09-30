@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 func dialTestNow() time.Time { return time.Date(2026, 8, 31, 22, 14, 0, 0, time.Local) }

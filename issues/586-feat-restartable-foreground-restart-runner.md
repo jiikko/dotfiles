@@ -33,7 +33,7 @@ obaket の `make dev-fg-loop` (`apps/obaket/macOS/bin/dev-fg-loop`) は、アプ
 
 ## 受け入れ条件
 
-- [ ] M1: `termsafe` と `tuikit` の module path を `github.com/jiikko/dotfiles/src/termsafe` / `.../src/tuikit` に変え、取り込んでいる module
+- [x] M1: `termsafe` と `tuikit` の module path を `github.com/jiikko/dotfiles/src/termsafe` / `.../src/tuikit` に変え、取り込んでいる module
       (doctor / glogx / pro-con / ratelimit / schedkeys) の import と `replace` を追従させる。全 module の `make lint` / `make test` が通り、`bin/` のラッパーがビルドできる
 - [ ] M2: `src/restartable` を 3 点セット (Makefile の lint / test、go.mod、`.github/workflows/src_restartable.yml`) と README 付きで足す。R1〜R11 をテストで固定する
       (キーと確認ダイアログは model の Update を直接叩く、プロセスの止め方と control socket は実プロセスで)
@@ -44,3 +44,9 @@ obaket の `make dev-fg-loop` (`apps/obaket/macOS/bin/dev-fg-loop`) は、アプ
 ## 進捗
 
 - 2026-09-30 起票
+- 2026-10-01 M1 実装・ローカル検証済み（未 commit。依頼者の検閲待ち）
+  - module / import / require / replace と package path の説明を GitHub path に統一。各 `replace` は従来どおり `../termsafe` / `../tuikit` を参照。
+  - 7 module の `go mod tidy` はすべて成功。7 module それぞれの `make lint` / `make test` は最終実行で rc=0。
+  - 指定の旧 path grep は 0 件（grep rc=1）。`GO_AUTOBUILD_SYNC=1 bin/glogx --help` は再ビルド後に rc=0。`pro-con help` / `schedkeys --help` / `svcdoctor --help` も rc=0。
+  - 既存の `doctor/internal/displaycheck` が package alias 名を旧 module path と混同していたため、新 module path の import spec から alias を解決するよう修正。glogx の初回 race test は時間・allocation 閾値の失敗が出たが、単独再実行では rc=0。
+  - ratelimit の `--help` は usage を表示して rc=2（現在の `run` が flag parse error を usage code に写す）。

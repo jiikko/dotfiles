@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
-	"tuikit/sgr"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 )
 
 // defaultOrder は Claude の枠のうち描くものと順序。5h セッションと weekly(all models) の

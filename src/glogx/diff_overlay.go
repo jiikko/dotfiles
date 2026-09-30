@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"tuikit/listnav"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 )
 
 // diffOverlay はコミット diff (d キー) を最前面に重ねる pager 型オーバーレイの状態と描画。

@@ -3,14 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"tuikit/layout"
-	"tuikit/listnav"
 
 	tea "charm.land/bubbletea/v2"
 

@@ -24,7 +24,7 @@ package disk
 import (
 	"fmt"
 
-	"termsafe"
+	"github.com/jiikko/dotfiles/src/termsafe"
 )
 
 // SanitizeForDisplay は Report を表示・コピーに出してよい形にする (Total は引き直す)。

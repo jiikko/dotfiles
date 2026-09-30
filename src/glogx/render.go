@@ -2,14 +2,14 @@ package main
 
 import (
 	"fmt"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"slices"
 	"strings"
-	"tuikit/layout"
-	"tuikit/termwidth"
 
 	"github.com/charmbracelet/x/ansi"
 
-	"tuikit/sgr"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 )
 
 // 状態記号は絵文字ではなく 1 カラム記号を使う (端末幅とフォント差異の影響を抑える: issue の設計)。

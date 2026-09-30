@@ -11,7 +11,7 @@ import (
 	"pro-con/card"
 )
 
-// spinFrames は回る印の 1 コマずつ。点字は端末で幅が揺れない 1 桁 (tuikit/termwidth の注記)。
+// spinFrames は回る印の 1 コマずつ。点字は端末で幅が揺れない 1 桁 (github.com/jiikko/dotfiles/src/tuikit/termwidth の注記)。
 var spinFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 // spinInterval は 1 コマの長さ。frame (33ms) より遅くてよい (滑らかさより、回っていることが分かれば足りる)。

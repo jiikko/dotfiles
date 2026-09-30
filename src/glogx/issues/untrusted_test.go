@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"termsafe/ctlprobe"
+	"github.com/jiikko/dotfiles/src/termsafe/ctlprobe"
 )
 
 // issue ファイルは第三者が PR で足せる = 完全に信頼できない入力。この 3 本は
@@ -20,7 +20,7 @@ const (
 	st8  = "\u009c" // 8bit ST (C1)
 )
 
-// hasTerminalControl は termsafe/ctlprobe の薄い別名 (判定の正本はあちら。issue 285)。
+// hasTerminalControl は github.com/jiikko/dotfiles/src/termsafe/ctlprobe の薄い別名 (判定の正本はあちら。issue 285)。
 func hasTerminalControl(s string) bool { return ctlprobe.HasControl(s) }
 
 // 本文・H1 の端末制御シーケンスは表示に出る前に落ちる。

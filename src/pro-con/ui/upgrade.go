@@ -9,7 +9,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"tuikit/anim"
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
 
 	"pro-con/backend"
 	"pro-con/card"

@@ -2,7 +2,7 @@ package ui
 
 // 詳細から D で開く差分の板 (issue 508): 取り込む先 (origin/master) との merge-base から作業ツリーまでの差分を、ファイルごとに畳める
 // 全幅の板で読む。本文は dispatcher が裏で集めて store.DiffPath に書いたもの (画面は git を叩かない = 441)。読むのと色付け
-// (tuikit/highlight)・板の行への組み立ては開いたときに 1 回だけ、裏の tea.Cmd で回す (毎フレームは窓の行を描くだけ = 529)。
+// (github.com/jiikko/dotfiles/src/tuikit/highlight)・板の行への組み立ては開いたときに 1 回だけ、裏の tea.Cmd で回す (毎フレームは窓の行を描くだけ = 529)。
 // 🚨 本文は PG の worktree の中身 = untrusted。dispatcher が termsafe.PlainLine で無害化してから書き、ここは色を足すだけ。
 
 import (
@@ -13,10 +13,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"tuikit/highlight"
-	"tuikit/layout"
-	"tuikit/listnav"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/highlight"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"pro-con/card"
 )

@@ -12,8 +12,8 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"tuikit/caret"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/caret"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 type frame struct {

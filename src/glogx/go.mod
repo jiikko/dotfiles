@@ -28,6 +28,8 @@ require (
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/dlclark/regexp2/v2 v2.5.2 // indirect
+	github.com/jiikko/dotfiles/src/termsafe v0.0.0
+	github.com/jiikko/dotfiles/src/tuikit v0.0.0
 	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
 	github.com/mattn/go-runewidth v0.0.27 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
@@ -35,8 +37,6 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	ratelimit v0.0.0
 	subproc v0.0.0
-	termsafe v0.0.0
-	tuikit v0.0.0
 )
 
 replace atomicfile => ../atomicfile
@@ -47,6 +47,6 @@ replace ratelimit => ../ratelimit
 
 replace subproc => ../subproc
 
-replace termsafe => ../termsafe
+replace github.com/jiikko/dotfiles/src/termsafe => ../termsafe
 
-replace tuikit => ../tuikit
+replace github.com/jiikko/dotfiles/src/tuikit => ../tuikit

@@ -1,12 +1,12 @@
 package main
 
 import (
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
-	"tuikit/layout"
 )
 
 func TestBuildShadowPanelBoxWidths(t *testing.T) {

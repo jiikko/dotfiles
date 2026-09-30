@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"termsafe"
+	"github.com/jiikko/dotfiles/src/termsafe"
 )
 
 func twoOpts() []Option { return []Option{{Label: "A"}, {Label: "B"}} }

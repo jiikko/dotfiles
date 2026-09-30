@@ -3,13 +3,13 @@ package ui
 import (
 	"slices"
 
-	"tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 
 	"pro-con/card"
 )
 
 // レーンのスクロール (issue 499)。入り切らないレーンは「何枚目から見せるか」(先頭) を持ち、選択が見える所まで追って動かす。
-// 入り切らないときだけ、レーンの右端に引き出しと同じスクロールバー (tuikit/layout.Scrollbar) を出す。以前の「… 他 N 枚」の行は置き換えた
+// 入り切らないときだけ、レーンの右端に引き出しと同じスクロールバー (github.com/jiikko/dotfiles/src/tuikit/layout.Scrollbar) を出す。以前の「… 他 N 枚」の行は置き換えた
 // (バーが残りの量と位置を見せる)。
 // 先頭はレーンごとに持つ (選択の無いレーンも、最後に見ていた所のまま描く)。単位はカード 1 枚で、選択が見える範囲を出たぶんだけ動かす。
 

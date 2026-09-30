@@ -3,8 +3,8 @@ package layout
 import (
 	"strings"
 
-	"tuikit/sgr"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 // Border は枠の罫線 (上角 + 横 + 縦)。下辺は影に接地させる低ブロック ▖▁▗ 固定なので下角の字形は

@@ -1,11 +1,11 @@
-module tuikit
+module github.com/jiikko/dotfiles/src/tuikit
 
 go 1.25.0
 
 require (
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/charmbracelet/x/ansi v0.11.7
-	termsafe v0.0.0
+	github.com/jiikko/dotfiles/src/termsafe v0.0.0
 )
 
 require (
@@ -30,4 +30,4 @@ require (
 	github.com/mattn/go-runewidth v0.0.24 // indirect
 )
 
-replace termsafe => ../termsafe
+replace github.com/jiikko/dotfiles/src/termsafe => ../termsafe

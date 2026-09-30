@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
 	"glogx/issues"
-	"tuikit/anim"
 )
 
 // jumpEnv は repo root + issues/ + 実在するファイルを持つ本文を開いた viewer。

@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"glogx/issues"
-	"tuikit/listnav"
 
 	"pro-con/backend"
 	"pro-con/card"

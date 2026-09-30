@@ -6,13 +6,13 @@ package markdown
 import (
 	"strings"
 
-	"tuikit/highlight"
-	"tuikit/sgr"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/highlight"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 // 純粋描画層: 意味付きスパン列へ ANSI を塗る。I/O・プロセス起動・非同期はここに置かない
-// (depguard の render-pure ルールが機械的に禁止している)。フェンスコードの色は diff の板と同じ tuikit/highlight。
+// (depguard の render-pure ルールが機械的に禁止している)。フェンスコードの色は diff の板と同じ github.com/jiikko/dotfiles/src/tuikit/highlight。
 
 // Render は markdown の本文 (issue 本文・PG の応答の文) を width 桁の端末行へ整形する。
 // colored=false なら ANSI を一切付けない (テストと非 TTY 出力のため)。

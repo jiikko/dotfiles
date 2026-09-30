@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"tuikit/markdown"
+	"github.com/jiikko/dotfiles/src/tuikit/markdown"
 )
 
 func writeFile(t *testing.T, p string) {

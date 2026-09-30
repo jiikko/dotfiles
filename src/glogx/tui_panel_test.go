@@ -3,13 +3,13 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"io"
 	"os/exec"
 	"slices"
 	"strings"
 	"testing"
 	"time"
-	"tuikit/layout"
 
 	tea "charm.land/bubbletea/v2"
 )

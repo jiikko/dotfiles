@@ -13,8 +13,8 @@ import (
 
 	"ratelimit/usage"
 
+	"github.com/jiikko/dotfiles/src/tuikit/editor"
 	"subproc"
-	"tuikit/editor"
 )
 
 // 外部プロセス (git / tmux / claude / ブラウザ / クリップボード) を叩くラッパー群。
@@ -331,7 +331,7 @@ var copyToClipboard = func(text string) error {
 }
 
 // editorCommand は実ファイルを開くエディタのコマンドを組む。**解決の規則 ($VISUAL → $EDITOR → nvim、
-// 値は空白で語分割、quote は解釈しない) は tuikit/editor が持つ** (pro-con と共有。2 実装にしない)。
+// 値は空白で語分割、quote は解釈しない) は github.com/jiikko/dotfiles/src/tuikit/editor が持つ** (pro-con と共有。2 実装にしない)。
 // 起動に失敗したときは tui.go の editorClosedMsg がトーストで理由を出す。
 //
 // 🚨 この経路は「実ファイルを 1 つ開く」ものにだけ使う。nvim を直に呼んでいる他の 2 箇所

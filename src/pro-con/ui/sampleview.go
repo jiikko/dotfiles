@@ -12,9 +12,9 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"tuikit/layout"
-	"tuikit/listnav"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"pro-con/card"
 )

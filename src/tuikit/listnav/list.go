@@ -1,6 +1,6 @@
 package listnav
 
-import "tuikit/anim"
+import "github.com/jiikko/dotfiles/src/tuikit/anim"
 
 // List は一覧のカーソルと窓。zero value = 先頭。
 //

@@ -11,8 +11,8 @@ package main
 import (
 	"unicode"
 
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"github.com/rivo/uniseg"
-	"tuikit/termwidth"
 )
 
 type editor struct {

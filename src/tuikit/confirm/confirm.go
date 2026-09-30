@@ -5,8 +5,8 @@
 package confirm
 
 import (
-	"tuikit/layout"
-	"tuikit/sgr"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 )
 
 // MaxWidth は板の幅の上限。これより広い画面でも板は広げない (短い確認文が横に間延びしない)。

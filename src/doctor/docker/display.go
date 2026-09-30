@@ -3,7 +3,7 @@ package docker
 import (
 	"fmt"
 
-	"termsafe"
+	"github.com/jiikko/dotfiles/src/termsafe"
 )
 
 // 表示・コピーに出す前の関門 (disk / svc の display.go と対。issue 228 の規律)。

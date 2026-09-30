@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"termsafe"
+	"github.com/jiikko/dotfiles/src/termsafe"
 )
 
 // 保存した Report を読み戻すときの信頼境界 (issue 178)。

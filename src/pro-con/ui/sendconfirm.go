@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
-	"tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 
 	"pro-con/backend"
 )

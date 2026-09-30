@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/jiikko/dotfiles/src/termsafe/ctlprobe"
 	"os"
 	"path/filepath"
 	"strings"
-	"termsafe/ctlprobe"
 	"testing"
 	"time"
 

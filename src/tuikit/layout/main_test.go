@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"tuikit/widthenv"
+	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 )
 
 // 枠・影・区切り線を「グリフ数 = 表示幅」で組むので、幅モデルが支持しない env の下では

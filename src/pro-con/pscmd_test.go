@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"pro-con/card"
 	"pro-con/dispatcher"

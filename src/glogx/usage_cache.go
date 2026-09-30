@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/termsafe"
 	"ratelimit/usage"
-	"termsafe"
 )
 
 // usage スナップショット (Claude /usage + codex rateLimits の併合結果) のディスクキャッシュ。

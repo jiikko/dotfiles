@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 // style は 1 スパンの意味。ANSI への変換は render.go が担う。

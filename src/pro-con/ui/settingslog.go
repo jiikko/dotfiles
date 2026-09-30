@@ -12,9 +12,9 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"termsafe"
-	"tuikit/listnav"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/termsafe"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"pro-con/backend"
 	"pro-con/eventlog"

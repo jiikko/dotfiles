@@ -17,11 +17,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"tuikit/anim"
-	"tuikit/layout"
-	"tuikit/listnav"
-	"tuikit/sgr"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 // 所要とフレーム数は glogx の issues viewer と同じ値 (体感を合わせてある)。

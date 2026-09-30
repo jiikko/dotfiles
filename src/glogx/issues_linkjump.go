@@ -2,7 +2,7 @@ package main
 
 // 本文中のファイルパスのジャンプモード (本文 pager の Tab)。仕様は docs/issues-viewer-spec.md の
 // 「本文中のファイルパスは Tab のジャンプモードから開く」。パスの解決 (何をリンクにするか) は
-// issues/filelink.go、画面上の位置は tuikit/markdown の RenderLinks が持つ。ここは状態とキーだけ。
+// issues/filelink.go、画面上の位置は github.com/jiikko/dotfiles/src/tuikit/markdown の RenderLinks が持つ。ここは状態とキーだけ。
 
 import (
 	"os"
@@ -12,9 +12,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/markdown"
 	"glogx/issues"
-	"tuikit/layout"
-	"tuikit/markdown"
 )
 
 // linkJump はジャンプモードの状態。zero value = モード外。

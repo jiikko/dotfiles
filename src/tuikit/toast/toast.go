@@ -11,10 +11,10 @@ import (
 	"math"
 	"time"
 
-	"termsafe"
-	"tuikit/layout"
-	"tuikit/sgr"
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/termsafe"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 // Hold は「にゅっと出た」あと引っ込むまでの静止時間。push/pull 完了の結果を見落とさない

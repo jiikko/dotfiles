@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"tuikit/listnav"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 )
 
 // jobDetailOverlay は job 詳細 (annotations / ログ tail) の第 2 ポップアップの状態と描画。

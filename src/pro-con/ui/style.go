@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"pro-con/card"
 )
