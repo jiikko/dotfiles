@@ -165,6 +165,14 @@ func TestBrowseTickInvalidateGate(t *testing.T) {
 	if m.linesValid {
 		t.Error("fetching 中の tickMsg でリストが無効化されない")
 	}
+	// CI 実行中のコミットは header 行がスピナーなので、fetch が終わっていても無効化する
+	mp := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	mp.statuses = statusesFor(mp, StatePending)
+	mp.linesValid = true
+	mp.Update(tickMsg{})
+	if mp.linesValid {
+		t.Error("CI 実行中のコミットがあるのに tickMsg でリストが無効化されない (スピナーが止まる)")
+	}
 	// pullAnimating だけ (fetch/awaitCI 無し) では list 内容は不変なので無効化しない
 	m2 := newTestBrowse(t, 3, map[string]CIState{}, nil)
 	m2.height = 6
@@ -505,6 +513,11 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 			m.panelSHA = m.commits[0].SHA
 			m.details[m.panelSHA] = []CheckDetail{{Name: "job", State: StatePending, StartedAt: time.Now()}}
 		}},
+		{"panelHasPendingJob (queued)", func(m *browseModel) {
+			m.panelSHA = m.commits[0].SHA
+			m.details[m.panelSHA] = []CheckDetail{{Name: "job", State: StatePending}}
+		}},
+		{"listHasPending", func(m *browseModel) { m.statuses = statusesFor(m, StatePending) }},
 		{"usageOv.loading", func(m *browseModel) { m.usageOv.visible = true; m.usageOv.snap = nil; m.usageOv.err = nil }},
 		// 🚨 以下 2 つは spinnerActive へ後から入った源で、テーブルへの追記が漏れていた
 		// (issue 028 P3 が予測した「追記漏れ」が実際に起きていた形)。

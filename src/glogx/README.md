@@ -37,7 +37,7 @@ Date:   Thu Jul 16 14:03:21 2026 +0900
 ## 何ができるか
 
 - **履歴は即時、CI は非同期**: 実行直後にローカルの Git 履歴を表示し、CI 状態は
-  プレースホルダー (`⠋`) から GitHub API の取得完了時に `✅ ❌ 🟡 🚫 ⬜ ❓` へ埋まる
+  プレースホルダー (`⠋`) から GitHub API の取得完了時に `✅ ❌ 🚫 ⬜ ❓` か、CI 実行中なら黄色のスピナーへ埋まる
 - **less 風の対話ブラウズ** (TTY のみ): `j`/`k` でコミットを選び、`Enter` で
   そのコミットの **CI job 一覧をポップアップ表示** (job には所要時間を併記)。
   `q` で抜けると表示は消える (git log の pager と同じ。残したいものは `y` で
@@ -274,7 +274,7 @@ StatusContext の `targetUrl`。URL が無い job では開かず、その旨を
 |---|---|
 | `✅` | すべての対象 Check が成功 (skipped 混在は成功扱い) |
 | `❌` | 1 つ以上の Check が失敗 |
-| `🟡` | queued / in_progress / pending |
+| `⠋` (黄色で回る) | queued / in_progress / pending |
 | `🚫` | cancelled / skipped / neutral のみ |
 | `⬜` | push 済みだが Check が存在しない |
 | `🔼` | 未 push (GitHub 上にまだ存在しない) |
@@ -321,7 +321,7 @@ GitHub へ問い合わせない (必ず「無い」と返るため。API 消費�
 - **リポジトリ解決**: 現在ブランチの upstream remote → `origin` の順で remote URL
   から owner/repo を解決。HTTPS / SSH (`git@` / `ssh://`) 両対応。GitHub 以外の
   remote は CI 取得対象外 (CI 欄は `⬜`)
-- **集約ルール** (優先順): 失敗あり → `❌` ＞ 実行中あり → `🟡` ＞ 成功あり → `✅`
+- **集約ルール** (優先順): 失敗あり → `❌` ＞ 実行中あり → 黄色のスピナー ＞ 成功あり → `✅`
   ＞ cancelled/skipped/neutral のみ → `🚫` ＞ Check なし → `⬜`
 
 ### キャッシュ

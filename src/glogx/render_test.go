@@ -478,13 +478,16 @@ func BenchmarkRenderLinesLargePatch(b *testing.B) {
 
 func TestStatusGlyphAllStates(t *testing.T) {
 	want := map[CIState]string{
-		StateSuccess: "✅", StateFailure: "❌", StatePending: "🟡",
+		StateSuccess: "✅", StateFailure: "❌", StatePending: "⠋ ",
 		StateNeutral: "🚫", StateNone: "⬜", StateUnknown: "❓", StateUnpushed: "🔼",
 	}
 	for state, glyph := range want {
 		if got := StatusGlyph(state, false, ""); got != glyph {
 			t.Errorf("StatusGlyph(%s) = %q; want %q", state, got, glyph)
 		}
+	}
+	if got := StatusGlyph(StatePending, false, "⠙"); got != "⠙ " {
+		t.Errorf("pending = %q; want 渡したスピナーのフレーム", got)
 	}
 	if got := StatusGlyph(StateLoading, false, "⠙"); got != "⠙ " {
 		t.Errorf("loading = %q; want spinner padded to width 2", got)

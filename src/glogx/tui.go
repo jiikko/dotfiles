@@ -830,7 +830,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.frame++
 		// list に毎フレーム変化する内容 (loading スピナー) が乗るのは fetch/awaitCI の 2 状態
-		// だけ。他の spinnerActive 条件 (panelHasRunningJob/pullAnimating/detailsLoading/
+		// だけ。他の spinnerActive 条件 (panelHasPendingJob/pullAnimating/detailsLoading/
 		// jobDetailBusy/diffBusy) のスピナー・経過時間は panelLines/diffBoxLines 側 (lines() の
 		// 外) で毎フレーム描かれるので、ここで list を無効化すると -p 巨大 patch を含む全行を
 		// 80ms ごとに組み直すだけの無駄になる (レビュー C7)。offset を動かす pull アニメも
@@ -845,7 +845,11 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 複製する必要があり、表示バグの危険が利得に見合わない。
 		// -p を常用して fetch 中の描画が重いと体感したら再評価する (その時は Line にスピナー
 		// 位置を持たせて View 側で差し替えるのが筋)。
-		if m.fetching() || len(m.awaitCI) > 0 {
+		//
+		// CI 実行中 (StatePending) のコミットも header 行がスピナーなので同じく組み直す。こちらは
+		// fetch と違って CI の実行時間 (数分) 続くが、コストは上の実測どおり既定で 7.8µs、-p でも
+		// 80ms 予算の 0.4% なので同じ判断で受ける。
+		if m.fetching() || len(m.awaitCI) > 0 || m.listHasPending() {
 			m.invalidateLines()
 		}
 		return m, tea.Batch(m.maybeTick(), toastHoldCmd, pushRefetchCmd)
@@ -3402,7 +3406,7 @@ func (m *browseModel) fillUnknown() {
 func (m *browseModel) spinnerActive() bool {
 	// 演出 (glide / toast / 開閉スライド / zoom) は列挙しない: tickInterval が周期を上げている =
 	// 何かの演出中、で導出する。演出の登録先を tickInterval の 1 箇所に保つ (同期漏れの再発防止)
-	return m.tickInterval() != spinnerInterval || m.fetching() || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || len(m.awaitCI) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.panelHasRunningJob() || m.usageOv.loading() || m.rlDashLoading() || m.issuesOv.loading() ||
+	return m.tickInterval() != spinnerInterval || m.fetching() || m.actModal.running() || m.pullAnimating || m.pushAnimating || len(m.pushSlides) > 0 || len(m.awaitCI) > 0 || len(m.detailsLoading) > 0 || m.detailOv.fetching() || m.diffOv.fetching() || m.prStatusOv.fetching() || m.listHasPending() || m.panelHasPendingJob() || m.usageOv.loading() || m.rlDashLoading() || m.issuesOv.loading() ||
 		m.statusOv.fetching() || m.doctorOv.scanning() || m.doctorOv.deleting()
 }
 
@@ -3456,6 +3460,30 @@ func (m *browseModel) issuesOpts() issuesRenderOpts {
 // tick を回し続けて「N 経過 / 残り ~M」をライブ更新するため (spinnerActive が false だと
 // tick が止まり、パネルを開いたまま経過秒が固まる)。
 func (m *browseModel) panelHasRunningJob() bool { return m.hasRunningJob(m.panelSHA) }
+
+// listHasPending は一覧に CI 実行中のコミットがあるか (その header 行はスピナーを描く)。
+func (m *browseModel) listHasPending() bool {
+	for _, c := range m.commits {
+		if m.statuses[c.SHA] == StatePending {
+			return true
+		}
+	}
+	return false
+}
+
+// panelHasPendingJob はパネルに queued / 実行中の job があるか (どちらもスピナーを描く)。
+// 実行中 (panelHasRunningJob) を含むので、tick を回す条件はこちらだけで足りる。
+func (m *browseModel) panelHasPendingJob() bool {
+	if m.panelSHA == "" {
+		return false
+	}
+	for _, job := range m.details[m.panelSHA] {
+		if job.State == StatePending {
+			return true
+		}
+	}
+	return false
+}
 
 // hasRunningJob は sha の取得済み Details に実行中 job があるか。
 // 🚨 statuses (ロールアップ) では代用できない: aggregateRollup は失敗を最優先するので
@@ -3857,7 +3885,7 @@ func (m *browseModel) panelLines() []string {
 			if i == m.panelCursor {
 				mark = cursorMark(m.colored)
 			}
-			row := mark + StatusGlyph(jobs[i].State, m.colored, "") + " " + jobs[i].Name
+			row := mark + StatusGlyph(jobs[i].State, m.colored, m.spinner()) + " " + jobs[i].Name
 			if suffix := m.jobTimeSuffix(jobs[i]); suffix != "" {
 				row += paint(" ("+suffix+")", ansiDim, m.colored)
 			}

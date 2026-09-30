@@ -316,12 +316,12 @@ diff ポップアップ表示中 (d で開く。ほぼ全画面のモーダル�
 CI 状態の記号:
   ✅ すべての対象 Check が成功 (skipped 混在は成功扱い)
   ❌ 1 つ以上の Check が失敗
-  🟡 queued / in_progress / pending
+  ⠋  queued / in_progress / pending (黄色で回る)
   🚫 cancelled / skipped / neutral のみ
   ⬜ push 済みだが Check が存在しない
   🔼 未 push (GitHub 上にまだ存在しない。API には問い合わせない)
   ❓ 未取得・取得不能 (gh 未導入 / 未認証 / API 障害。30 秒だけ再取得しない)
-  ⠋  取得中 (TTY のみ)
+  ⠋  取得中 (シアンで回る。TTY のみ)
 
 GitHub 連携と前提:
   - 認証は GitHub CLI (gh) へ委譲する。gh auth login 済みであること。

@@ -25,7 +25,7 @@ type ratelimitDash struct {
 	// usage.RenderDashboard はセル数 (幅 x 高) に比例して braille のスライスを確保し直すので、
 	// 12.5fps で回ると 1 フレーム 1065 allocs / 239KB (120x40 実測) がそのまま乗る。
 	// 12.5fps で回るのは rlDashLoading() ではなく **spinnerActive() の他の項**
-	// (len(awaitCI) > 0 = push 直後 / panelHasRunningJob() = CI 実行中) が真のとき。
+	// (len(awaitCI) > 0 = push 直後 / panelHasPendingJob() = CI 実行中) が真のとき。
 	cache    []string
 	cacheKey ratelimitCacheKey
 	cacheOK  bool

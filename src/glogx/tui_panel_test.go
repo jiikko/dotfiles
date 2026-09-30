@@ -138,6 +138,21 @@ func TestBrowseCIPolling(t *testing.T) {
 	}
 }
 
+// パネルの queued / 実行中の job は、一覧と同じく今のフレームのスピナーで回る
+// (固定の記号やフレーム 0 で止まらない)。
+func TestBrowsePanelPendingJobSpins(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.usageOv.visible = false // usage の取得中表示も同じスピナーを使うので隔離する
+	m.statuses = statusesFor(m, StateFailure)
+	m.details[m.commits[0].SHA] = []CheckDetail{{Name: "queued-job", State: StatePending}}
+	m.openPanel()
+	m.frame = 3
+	want := spinnerFrames[3] + "  queued-job"
+	if view := m.View().Content; !strings.Contains(view, want) {
+		t.Errorf("パネルに %q が出ていない:\n%s", want, view)
+	}
+}
+
 func TestBrowsePanelOpenClose(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.statuses = statusesFor(m, StateFailure)
