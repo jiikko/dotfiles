@@ -509,7 +509,7 @@ func TestBrowseSpinnerActiveSources(t *testing.T) {
 		{"detailOv.fetching", func(m *browseModel) { m.detailOv.cache.begin("a") }},
 		{"diffOv.fetching", func(m *browseModel) { m.diffOv.cache.begin("a") }},
 		{"prStatusOv.fetching", func(m *browseModel) { m.prStatusOv.busy["a"] = true }},
-		{"panelHasRunningJob", func(m *browseModel) {
+		{"panelHasPendingJob (running)", func(m *browseModel) {
 			m.panelSHA = m.commits[0].SHA
 			m.details[m.panelSHA] = []CheckDetail{{Name: "job", State: StatePending, StartedAt: time.Now()}}
 		}},

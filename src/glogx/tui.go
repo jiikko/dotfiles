@@ -3456,11 +3456,6 @@ func (m *browseModel) issuesOpts() issuesRenderOpts {
 	}
 }
 
-// panelHasRunningJob は表示中の job パネルに実行中 (経過時間が増える) job があるか。
-// tick を回し続けて「N 経過 / 残り ~M」をライブ更新するため (spinnerActive が false だと
-// tick が止まり、パネルを開いたまま経過秒が固まる)。
-func (m *browseModel) panelHasRunningJob() bool { return m.hasRunningJob(m.panelSHA) }
-
 // listHasPending は一覧に CI 実行中のコミットがあるか (その header 行はスピナーを描く)。
 func (m *browseModel) listHasPending() bool {
 	for _, c := range m.commits {
@@ -3471,8 +3466,9 @@ func (m *browseModel) listHasPending() bool {
 	return false
 }
 
-// panelHasPendingJob はパネルに queued / 実行中の job があるか (どちらもスピナーを描く)。
-// 実行中 (panelHasRunningJob) を含むので、tick を回す条件はこちらだけで足りる。
+// panelHasPendingJob はパネルに queued / 実行中の job があるか。tick を回し続けて、job 行の
+// スピナーと実行中の job の「N 経過 / 残り ~M」をライブ更新する (spinnerActive が false だと
+// tick が止まり、パネルを開いたままスピナーも経過秒も固まる)。
 func (m *browseModel) panelHasPendingJob() bool {
 	if m.panelSHA == "" {
 		return false

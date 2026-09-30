@@ -63,7 +63,7 @@ func TestCIPollStartsAtOpenPanelWithoutDetails(t *testing.T) {
 	sha := m.commits[0].SHA
 	m.statuses[sha] = StatePending
 	m.openPanel()
-	if m.panelHasRunningJob() {
+	if m.hasRunningJob(m.panelSHA) {
 		t.Fatal("前提: details 未取得なので running 判定は false のはず")
 	}
 	if !m.ciPolling {
