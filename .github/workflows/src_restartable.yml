@@ -1,0 +1,29 @@
+---
+name: src/restartable
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'src/restartable/**'
+      - .github/workflows/src_restartable.yml
+      - .github/workflows/_go-project.yml
+  pull_request:
+    paths:
+      - 'src/restartable/**'
+      - .github/workflows/src_restartable.yml
+      - .github/workflows/_go-project.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  restartable:
+    uses: ./.github/workflows/_go-project.yml
+    with:
+      dir: src/restartable
