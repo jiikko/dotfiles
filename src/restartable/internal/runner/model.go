@@ -100,8 +100,8 @@ func Update(m Model, e Event) (Model, []Effect) {
 		}
 		if e.Kind == KeyEvent && isRestartOrQuitKey(e.Key) {
 			m.Confirm = ConfirmNone
-			m.Message = "stopping"
-			return m, []Effect{{Kind: MessageEffect, Reason: "stopping"}}
+			m.Message = "終了処理中"
+			return m, []Effect{{Kind: MessageEffect, Reason: "終了処理中"}}
 		}
 		return m, nil
 	}
@@ -155,10 +155,11 @@ func Update(m Model, e Event) (Model, []Effect) {
 		m.State = Stopping
 		m.Confirm = ConfirmNone
 		m.Intent = IntentRestart
+		m.Message = "終了処理中 (Ctrl-C で強制終了)"
 		return m, []Effect{{Kind: BeginStopEffect}}
 	case StopCommandOKEvent:
 		m.StopAccepted = true
-		m.Message = "stopping — waiting for child exit"
+		m.Message = "終了待ち (Esc で取り消し / Ctrl-C で強制終了)"
 		return m, nil
 	case StopCommandFailEvent:
 		if e.ChildExited {
@@ -197,14 +198,18 @@ func updateKey(m Model, key string) (Model, []Effect) {
 		m.Confirm = ConfirmNone
 		switch key {
 		case "r", "R", "q", "Q":
-			m.Message = "stopping"
-			return m, []Effect{{Kind: MessageEffect, Reason: "stopping"}}
+			if m.StopAccepted {
+				m.Message = "終了待ち (Esc で取り消し / Ctrl-C で強制終了)"
+			} else {
+				m.Message = "終了処理中 (Ctrl-C で強制終了)"
+			}
+			return m, []Effect{{Kind: MessageEffect, Reason: "終了処理中"}}
 		case "esc":
 			if m.StopAccepted {
 				m.State = Running
 				m.Intent = IntentNone
 				m.StopAccepted = false
-				m.Message = "stop cancelled"
+				m.Message = "停止を取り消しました"
 				return m, []Effect{{Kind: ControlRejectEffect, Reason: "stop cancelled"}}
 			}
 		}
@@ -246,8 +251,8 @@ func updateKey(m Model, key string) (Model, []Effect) {
 	case "r", "R":
 		switch m.State {
 		case Building:
-			m.Message = "building"
-			return m, []Effect{{Kind: MessageEffect, Reason: "building"}}
+			m.Message = "ビルド中"
+			return m, []Effect{{Kind: MessageEffect, Reason: "ビルド中"}}
 		case BuildFailed:
 			m.State = Building
 			m.Message = ""
@@ -283,6 +288,7 @@ func updateControlRestart(m Model) (Model, []Effect) {
 	case Running:
 		m.State = Stopping
 		m.Intent = IntentRestart
+		m.Message = "終了処理中 (Ctrl-C で強制終了)"
 		return m, []Effect{{Kind: BeginStopEffect}}
 	case Stopping:
 		if m.Intent == IntentExit {

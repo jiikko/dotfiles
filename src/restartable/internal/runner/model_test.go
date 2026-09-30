@@ -43,7 +43,7 @@ func TestUpdateConfirmationKeysAndRestart(t *testing.T) {
 func TestUpdateBuildTransitionsAndGeneration(t *testing.T) {
 	m := InitialModel()
 	m, _ = apply(m, KeyEvent, "R")
-	if m.State != Building || m.Confirm != ConfirmNone || m.Message != "building" {
+	if m.State != Building || m.Confirm != ConfirmNone || m.Message != "ビルド中" {
 		t.Fatalf("R while building: %+v", m)
 	}
 	m, effects := Update(m, Event{Kind: ControlRestartEvent})
@@ -134,10 +134,15 @@ func TestUpdateRestartAndQuitIgnoredWhileStoppingOrExiting(t *testing.T) {
 			t.Run(string(state)+"/"+key, func(t *testing.T) {
 				m := Model{State: state, PID: 212, Intent: IntentRestart, Confirm: ConfirmQuit, StopAccepted: true}
 				got, effects := apply(m, KeyEvent, key)
-				if got.State != state || got.PID != 212 || got.Intent != IntentRestart || got.Confirm != ConfirmNone || got.Message != "stopping" {
+				wantMessage := "終了待ち (Esc で取り消し / Ctrl-C で強制終了)"
+				wantReason := "終了処理中"
+				if state == Exiting {
+					wantMessage = "終了処理中"
+				}
+				if got.State != state || got.PID != 212 || got.Intent != IntentRestart || got.Confirm != ConfirmNone || got.Message != wantMessage {
 					t.Fatalf("key %q changed lifecycle while %s: model=%+v", key, state, got)
 				}
-				if len(effects) != 1 || effects[0] != (Effect{Kind: MessageEffect, Reason: "stopping"}) {
+				if len(effects) != 1 || effects[0] != (Effect{Kind: MessageEffect, Reason: wantReason}) {
 					t.Fatalf("key %q effects while %s = %+v", key, state, effects)
 				}
 			})
@@ -149,7 +154,7 @@ func TestUpdateEscCancelsAcceptedQuitStopAndRejectsControlRestart(t *testing.T) 
 	m := Model{State: Stopping, PID: 212, Generation: 3, Intent: IntentExit, StopAccepted: true}
 	m, _ = Update(m, Event{Kind: StopCommandOKEvent})
 	m, effects := apply(m, KeyEvent, "esc")
-	if m.State != Running || m.Intent != IntentNone || m.PID != 212 || m.StopAccepted || m.Message != "stop cancelled" {
+	if m.State != Running || m.Intent != IntentNone || m.PID != 212 || m.StopAccepted || m.Message != "停止を取り消しました" {
 		t.Fatalf("Esc after accepted quit: model=%+v", m)
 	}
 	if len(effects) != 1 || effects[0] != (Effect{Kind: ControlRejectEffect, Reason: "stop cancelled"}) {

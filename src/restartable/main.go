@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/jiikko/dotfiles/src/restartable/internal/control"
 	"github.com/jiikko/dotfiles/src/restartable/internal/runner"
+	"github.com/jiikko/dotfiles/src/restartable/internal/ui"
 )
 
 func main() { os.Exit(realMain(os.Args[1:])) }
@@ -119,11 +120,15 @@ func runCommand(args []string) int {
 		}
 	}
 	headless := !term.IsTerminal(os.Stdin.Fd()) || !term.IsTerminal(os.Stdout.Fd())
+	var presenter runner.Presenter
+	if !headless {
+		presenter = ui.New(os.Stdin, os.Stdout)
+	}
 	code, err := runner.Run(runner.Config{
 		BuildCommand: *build, RunArgs: runArgs, StopCommand: *stop,
 		StopCommandTimeout: *stopTimeout, TermGrace: *termGrace,
 		IDEnv: *idEnv, ControlPath: resolved, Stdin: os.Stdin,
-		Stdout: os.Stdout, Stderr: os.Stderr, Headless: headless,
+		Stdout: os.Stdout, Stderr: os.Stderr, Headless: headless, Presenter: presenter,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

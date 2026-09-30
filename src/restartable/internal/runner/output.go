@@ -100,14 +100,19 @@ func itoa(n uint64) string {
 }
 
 type logSink struct {
-	writer   io.Writer
-	headless bool
-	buffer   *OutputBuffer
-	mu       sync.Mutex
+	writer    io.Writer
+	headless  bool
+	buffer    *OutputBuffer
+	printLine func(string)
+	mu        sync.Mutex
 }
 
-func newLogSink(w io.Writer, headless bool) *logSink {
-	return &logSink{writer: w, headless: headless, buffer: NewOutputBuffer(defaultOutputLines, defaultOutputBytes)}
+func newLogSink(w io.Writer, headless bool, printLines ...func(string)) *logSink {
+	var printLine func(string)
+	if len(printLines) > 0 {
+		printLine = printLines[0]
+	}
+	return &logSink{writer: w, headless: headless, buffer: NewOutputBuffer(defaultOutputLines, defaultOutputBytes), printLine: printLine}
 }
 
 // CopyFrom preserves bytes and ordering in headless mode. TTY logs are
@@ -165,6 +170,12 @@ func (s *logSink) Flush() {
 	if len(lines) == 0 {
 		return
 	}
+	if !s.headless && s.printLine != nil {
+		for _, line := range lines {
+			s.printLine(line)
+		}
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, line := range lines {
@@ -175,9 +186,15 @@ func (s *logSink) Flush() {
 func (s *logSink) runFlusher(done <-chan struct{}) {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
+	s.runFlusherTicks(done, ticker.C)
+}
+
+// runFlusherTicks takes ticks from a clock seam so batching can be tested
+// without sleeping for wall-clock time.
+func (s *logSink) runFlusherTicks(done <-chan struct{}, ticks <-chan time.Time) {
 	for {
 		select {
-		case <-ticker.C:
+		case <-ticks:
 			s.Flush()
 		case <-done:
 			s.Flush()
@@ -185,3 +202,5 @@ func (s *logSink) runFlusher(done <-chan struct{}) {
 		}
 	}
 }
+
+func (s *logSink) hasPrinter() bool { return !s.headless && s.printLine != nil }

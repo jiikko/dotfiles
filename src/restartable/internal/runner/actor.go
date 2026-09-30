@@ -57,6 +57,9 @@ type Presenter interface {
 	Close() error
 }
 
+type presenterStarter interface{ Start() error }
+type linePrinter interface{ Println(string) }
+
 type headlessPresenter struct{}
 
 func (headlessPresenter) Render(Model)        {}
@@ -88,6 +91,7 @@ type actor struct {
 	finished           bool
 	retCode            int
 	flusherDone        chan struct{}
+	actorDone          chan struct{}
 	flusherWG          sync.WaitGroup
 }
 
@@ -127,9 +131,20 @@ func Run(cfg Config) (int, error) {
 	if presenter == nil {
 		presenter = headlessPresenter{}
 	}
+	if starter, ok := presenter.(presenterStarter); ok {
+		if err := starter.Start(); err != nil {
+			_ = presenter.Close()
+			_ = server.Close()
+			return 1, fmt.Errorf("start terminal UI: %w", err)
+		}
+	}
+	var printLine func(string)
+	if printer, ok := presenter.(linePrinter); ok && !cfg.Headless {
+		printLine = printer.Println
+	}
 	return (&actor{cfg: cfg, model: InitialModel(), id: id, server: server,
-		sink: newLogSink(cfg.Stdout, cfg.Headless), presenter: presenter,
-		events: make(chan actorEvent, 128), flusherDone: make(chan struct{}),
+		sink: newLogSink(cfg.Stdout, cfg.Headless, printLine), presenter: presenter,
+		events: make(chan actorEvent, 128), flusherDone: make(chan struct{}), actorDone: make(chan struct{}),
 		outputDrainTimeout: 500 * time.Millisecond}).run()
 }
 
@@ -142,13 +157,14 @@ func newID() (string, error) {
 }
 
 func (a *actor) run() (int, error) {
+	defer func() { _ = a.server.Close() }()
+	defer func() { _ = a.presenter.Close() }()
 	defer func() {
+		close(a.actorDone)
 		a.drainOutputs()
 		close(a.flusherDone)
 		a.flusherWG.Wait()
 		a.sink.Flush()
-		_ = a.presenter.Close()
-		_ = a.server.Close()
 	}()
 	if !a.cfg.Headless {
 		a.flusherWG.Add(1)
@@ -160,7 +176,11 @@ func (a *actor) run() (int, error) {
 	requests := a.server.Requests
 	go func() {
 		for key := range a.presenter.Keys() {
-			a.events <- actorEvent{kind: keyEvent, result: processResult{Err: errors.New(key)}}
+			select {
+			case a.events <- actorEvent{kind: keyEvent, result: processResult{Err: errors.New(key)}}:
+			case <-a.actorDone:
+				return
+			}
 		}
 	}()
 	if a.cfg.BuildCommand != "" {
@@ -385,7 +405,9 @@ func (a *actor) handleEffects(effects []Effect) {
 		case ControlRejectEffect:
 			a.failRequests(effect.Reason)
 		case MessageEffect:
-			a.report(effect.Reason)
+			if a.sink == nil || !a.sink.hasPrinter() {
+				a.report(effect.Reason)
+			}
 		}
 	}
 }
@@ -503,6 +525,7 @@ func (a *actor) beginStop() {
 		return
 	}
 	if a.cfg.StopCommand != "" {
+		a.model.Message = "停止コマンド実行中 (Ctrl-C で強制終了)"
 		proc, err := startProcess([]string{a.cfg.StopCommand}, true, a.env(), a.cfg.Stdin, a.sink, a.cfg.Headless)
 		if err != nil {
 			a.transition(Event{Kind: StopCommandFailEvent, Reason: err.Error()})
@@ -516,6 +539,7 @@ func (a *actor) beginStop() {
 		go func() { a.events <- actorEvent{kind: stopDoneEvent, err: a.waitStopCommand(proc)} }()
 		return
 	}
+	a.model.Message = "終了待ち (Ctrl-C で強制終了)"
 	a.beginGroupStop(a.child)
 }
 
@@ -704,7 +728,12 @@ func (a *actor) report(message string) {
 	if message == "" {
 		return
 	}
-	_, _ = fmt.Fprintln(a.cfg.Stderr, termsafe.DetailLine(message))
+	line := termsafe.DetailLine(message)
+	if a.sink != nil && a.sink.hasPrinter() {
+		a.sink.addSafeLine(line)
+		return
+	}
+	_, _ = fmt.Fprintln(a.cfg.Stderr, line)
 }
 
 func (a *actor) drainOutputs() {

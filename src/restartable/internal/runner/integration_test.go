@@ -489,7 +489,7 @@ func TestStopCommandSuccessIgnoresRestartAndQuitKeysWithoutKillingChild(t *testi
 
 	for _, key := range []string{"R", "Q", "y", "x"} {
 		got := sendKeyAndWaitRender(t, keyPath, statePath, key)
-		if got.Model.State != Stopping || got.Model.Confirm != ConfirmNone || got.Model.Message != "stopping" {
+		if got.Model.State != Stopping || got.Model.Confirm != ConfirmNone || got.Model.Message != "終了待ち (Esc で取り消し / Ctrl-C で強制終了)" {
 			t.Fatalf("key %q changed stopping model: %+v", key, got.Model)
 		}
 		if err := syscall.Kill(*initial.PID, 0); err != nil {
