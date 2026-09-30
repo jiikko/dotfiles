@@ -180,6 +180,8 @@ for tool in rbenv nodenv goenv; do
 
   assert_path_priority "$expected_root/shims" "/usr/bin" "$tool shims precede /usr/bin"
   assert_path_priority "$expected_root/bin" "/usr/bin" "$tool bin precedes /usr/bin"
+  # ~/.local/bin (claude のネイティブ版) は shims より前: shims は別の版に入れた npm 版の claude も拾い、global の版に無いと落ちる
+  assert_path_priority "$TMP_HOME/.local/bin" "$expected_root/shims" ".local/bin precedes $tool shims"
   assert_lazy_body_runs "$tool"
   printf '\n'
 done

@@ -75,7 +75,6 @@ export GOPATH=$HOME/go
 export PATH=$GOPATH/bin:$PATH
 export PATH="$HOME/dotfiles/bin:$PATH"
 export PATH="/opt/homebrew/bin:$PATH"
-export PATH="$HOME/.local/bin:$PATH"
 if [ -d "/usr/local/heroku/bin" ]; then
   export PATH="/usr/local/heroku/bin:$PATH"
 fi
@@ -84,6 +83,11 @@ for _env in rbenv nodenv goenv; do
   _lazy_anyenv_manager "$_env"
 done
 unset _env
+# ~/.local/bin (claude のネイティブ版など) は env の shims より前に置く。shims は node の版ごとに入れた
+# npm の global も拾うので、どれかの版に npm 版の claude が入っていると、global の版に無くても shims/claude が
+# 先に当たり「nodenv: claude: command not found」で落ちる。`nodenv init -` を実行したシェルでは
+# shims が再び先頭に来る
+path=("$HOME/.local/bin" "${(@)path:#$HOME/.local/bin}")
 
 # husky (Node 系プロジェクトの git hooks) をグローバルにスキップする。
 # プロジェクト側の hook (lint-staged 等) を走らせたくなったらこの行を外す
