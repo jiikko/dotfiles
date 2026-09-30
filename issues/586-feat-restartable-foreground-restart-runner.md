@@ -44,9 +44,12 @@ obaket の `make dev-fg-loop` (`apps/obaket/macOS/bin/dev-fg-loop`) は、アプ
 ## 進捗
 
 - 2026-09-30 起票
-- 2026-10-01 M1 実装・ローカル検証済み（未 commit。依頼者の検閲待ち）
+- 2026-10-01 M1 完了
   - module / import / require / replace と package path の説明を GitHub path に統一。各 `replace` は従来どおり `../termsafe` / `../tuikit` を参照。
   - 7 module の `go mod tidy` はすべて成功。7 module それぞれの `make lint` / `make test` は最終実行で rc=0。
   - 指定の旧 path grep は 0 件（grep rc=1）。`GO_AUTOBUILD_SYNC=1 bin/glogx --help` は再ビルド後に rc=0。`pro-con help` / `schedkeys --help` / `svcdoctor --help` も rc=0。
-  - 既存の `doctor/internal/displaycheck` が package alias 名を旧 module path と混同していたため、新 module path の import spec から alias を解決するよう修正。glogx の初回 race test は時間・allocation 閾値の失敗が出たが、単独再実行では rc=0。
+  - codex は `doctor/internal/displaycheck` に termsafe の別名解決を足したが、Claude が使い捨ての worktree で元の版に戻して doctor の test を回すと rc 0 だった
+    (package 名は termsafe のまま) ので戻した (commit「revert(doctor): displaycheck の termsafe 別名の解決を戻す」)。glogx の初回 race test は時間・allocation 閾値の失敗が出たが、単独再実行では rc=0 (codex の報告)
+  - Claude の確認: 7 module の `make lint` / `make test` を回し直して全部 rc 0 (各 test ログに ok 行があり FAIL 0)、旧 import path の grep 0 件
+  - commit「refactor(src): termsafe と tuikit の module path を github.com/jiikko/dotfiles/src/... にする (issue 586 M1)」
   - ratelimit の `--help` は usage を表示して rc=2（現在の `run` が flag parse error を usage code に写す）。
