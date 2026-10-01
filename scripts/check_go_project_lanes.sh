@@ -6,7 +6,7 @@
 # `wildcard src/*/go.mod` で解決済み (Makefile:392) だが、**CI の paths filter と
 # プロジェクト側の Makefile target は今も手で用意する**ので、同じ穴が残っている。
 #
-# 検査する不変条件 (src/*/go.mod を出典に、5 つ):
+# 検査する不変条件 (src/*/go.mod を出典に、6 つ):
 #   1. src/<name>/Makefile に lint: と test: の両方がある
 #      (Makefile の run_go_projects が `make -C <dir> lint` / `test` を呼ぶ)
 #   2. .github/workflows/src_<name>.yml がある (paths filter つきの薄い caller)
@@ -15,6 +15,13 @@
 #   5. src/<name>/go.sum がある (依存が無ければ空でよい)。Go は依存の無い module に go.sum を作らないが、
 #      _go-project.yml の setup-go は cache-dependency-path に <dir>/go.sum を渡すので、無いと
 #      `Restore cache failed` の警告だけでキャッシュが毎回効かない (ジョブは緑のまま = 気づけない)
+#   6. workflow に _go-project.yml を呼ぶ job が 1 つ以上あり、その全部の `dir` が src/<name>
+#      (CI が lint / test するのは caller が渡す dir。写し間違えると、paths は合っていて起動もするのに
+#       別の project を検査し、この project は誰にも検査されない。1〜5 は src/<name> を前提にしているので気づけない)
+#      脅威モデルは「既存の src_*.yml をコピーしたときの書き換え忘れ」。検出しない形 (review の担当):
+#      追加 job の go-version-file / cache-dependency-path / env に残った古い project 名・job id の衝突・
+#      引用符で囲んだ job id や with 以外のキーの下の dir: (後勝ちで上書きされる)・steps の中の uses。
+#      `dir: ./src/<name>` は動くが赤になる (安全側に倒す。今の書き方に揃える)
 #
 # 🚨 検査できなかったときに緑を返さない。依存コマンド不在・発見 0 件はすべて失敗にする
 #   (`_claude/rules/adversarial-review-own-safeguards.md` の false green)。
@@ -116,6 +123,70 @@ replace_dirs() {
   ' "$1"
 }
 
+# go_project_dirs は workflow の jobs: の下で _go-project.yml を呼ぶ job ごとに、渡している dir を 1 行ずつ出す
+# (dir を渡していない job は空行)。呼ぶ job が無ければ何も出さない。
+#
+# 🚨 job の境目は jobs: 直下の深さのキーで決める (トリガー名と同じく job 名は列挙しない)。
+#    dir は block (`with:` の下の `dir: x`) と flow (`with: {dir: x}`) の両方で拾い、引用符・末尾の / と行末コメントを落とす。
+#    _go-project.yml を呼ばない job の dir は見ない (別用途の入力名と取り違えない)
+go_project_dirs() {
+  awk '
+    function flush() { if (injob && uses) print dir; uses = 0; dir = "" }
+    /^jobs:/ { injobs = 1; next }
+    /^[^[:space:]#]/ { if (injobs) flush(); injobs = 0; injob = 0; next }
+    !injobs { next }
+    /^[[:space:]]*#/ { next }
+    /^[[:space:]]+[A-Za-z_][A-Za-z_0-9-]*:/ {
+      ind = match($0, /[^ ]/)
+      if (jobind == 0) jobind = ind
+      if (ind == jobind) { flush(); injob = 1; next }
+    }
+    injob {
+      line = $0
+      sub(/[[:space:]]+#.*$/, "", line)
+      if (line ~ /^[[:space:]]*-?[[:space:]]*uses:/ && line ~ /_go-project\.yml/) uses = 1
+      if (match(line, /(^|[{,[:space:]])dir:[[:space:]]*[^,}[:space:]]+/)) {
+        v = substr(line, RSTART, RLENGTH)
+        sub(/^.*dir:[[:space:]]*/, "", v)
+        gsub(/["'"'"']/, "", v)
+        sub(/\/+$/, "", v)
+        dir = v
+      }
+    }
+    END { if (injobs) flush() }
+  ' "$1"
+}
+
+# 🚨 canary: 抽出が空を返すと「呼ぶ job が無い」として赤にはなるが、dir の取り違えは
+#    「別の値を返す」形で壊れる。block / flow / 引用符 / コメント / 呼ばない job を合成入力で先に固定する
+gd_probe=$(mktemp) || fail "mktemp できない"
+CGL_TMPFILES+=("$gd_probe")
+cat > "$gd_probe" <<'GDYML'
+on:
+  push:
+jobs:
+  a:
+    uses: ./.github/workflows/_go-project.yml
+    with:
+      dir: 'src/x/'   # 末尾の / と引用符とコメント
+  other:
+    runs-on: macos-15
+    with:
+      dir: src/notgo
+  b:
+    uses: ./.github/workflows/_go-project.yml
+    with: {dir: "src/y"}
+  c:
+    uses: ./.github/workflows/_go-project.yml
+  d:
+    uses: ./.github/workflows/other.yml   # _go-project.yml の写しではない (コメントの中の名前で拾わない)
+    with:
+      dir: src/notgo2
+GDYML
+gd_got=$(go_project_dirs "$gd_probe" | tr '\n' '|')
+rm -f "$gd_probe"
+[ "$gd_got" = "src/x|src/y||" ] || fail "go_project_dirs の canary が壊れている: got=[$gd_got] want=[src/x|src/y||]"
+
 # 🚨 canary: paths_has の壊れ方は**非対称**で、「見つからなくなる」は違反として大声で出るが
 #    「常に見つかる」は完全に無音。負例 (push には無く pull_request にだけ在る / paths-ignore の下 /
 #    コメント行) を pin しないと、トリガーの取り違えを検出できない (敵対的レビュー 2026-09-04)
@@ -204,6 +275,19 @@ while IFS= read -r name; do
         "$name" "$wf" "$trig" "$name"; bad=$((bad + 1))
     fi
   done
+  # 6. CI が実際に検査する dir が src/<name> か
+  gp_n=0
+  while IFS= read -r gp_dir; do
+    gp_n=$((gp_n + 1))
+    if [ "$gp_dir" != "src/$name" ]; then
+      printf '✗ %s: %s が _go-project.yml に渡す dir が [%s] (src/%s でない。CI は別の場所を検査する)\n' \
+        "$name" "$wf" "$gp_dir" "$name"; bad=$((bad + 1))
+    fi
+  done < <(go_project_dirs "$wf")
+  if [ "$gp_n" -eq 0 ]; then
+    printf '✗ %s: %s に _go-project.yml を呼ぶ job が無い (lint / test が走らない)\n' "$name" "$wf"; bad=$((bad + 1))
+  fi
+
   # 4. replace で取り込む共有 module も paths に入っているか (issue 251)
   #    go.mod の `replace X => ../<dir>` は「その dir が変わったらこの project の CI が要る」という依存。
   #    paths に無いと、**共有 module だけを変えた push でこの project の CI が 1 度も起動しない**
@@ -233,6 +317,7 @@ if [ "$bad" -gt 0 ]; then
   printf '  既存の src_*.yml に倣って作る (paths に src/<name>/** と _go-project.yml を含める)\n'
   printf '  go.mod が replace で共有 module を取り込むなら、その src/<dir>/** も paths に足す\n'
   printf '  go.sum が無ければ空で置く (: > src/<name>/go.sum。依存を足せば go が中身を書く)\n'
+  printf '  src_<name>.yml の with: の dir は src/<name> にする (コピー元の名前を残さない)\n'
   exit 1
 fi
-printf '✓ Go プロジェクト %s 件すべてに lint/test target・go.sum・CI レーン (paths つき) がある (replace 依存 %s 件も paths に在り)\n' "$n" "$deps"
+printf '✓ Go プロジェクト %s 件すべてに lint/test target・go.sum・CI レーン (paths と dir つき) がある (replace 依存 %s 件も paths に在り)\n' "$n" "$deps"
