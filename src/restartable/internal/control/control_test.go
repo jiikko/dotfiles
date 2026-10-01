@@ -269,17 +269,25 @@ func TestCloseWhileRequestsArePendingDoesNotPanic(t *testing.T) {
 }
 
 // 子(build/run/stop-cmd 等)に lock の fd が渡ると、runner が死んでも子が flock を握り続け、
-// 新しい runner が二重起動として拒否される (issue 597)。exec 先で fd が閉じていることを固定する。
+// 新しい runner が二重起動として拒否される (issue 597)。exec 先で、その番号の fd が lock のファイルでないことを固定する
+// (番号が開いているだけでは継承とは言えない: 子の Go の実行時が同じ番号を別のファイルに使うことがある。inode で比べる)。
 func TestListenLockFDIsNotInheritedByChildren(t *testing.T) {
 	if fdStr := os.Getenv("RESTARTABLE_TEST_LOCK_FD"); fdStr != "" {
 		var fd int
 		if _, err := fmt.Sscan(fdStr, &fd); err != nil {
 			os.Exit(2)
 		}
-		if _, _, errno := syscall.Syscall(syscall.SYS_FCNTL, uintptr(fd), syscall.F_GETFD, 0); errno == syscall.EBADF {
-			os.Exit(0)
+		var got, want syscall.Stat_t
+		if err := syscall.Fstat(fd, &got); err != nil {
+			os.Exit(0) // 閉じている
 		}
-		os.Exit(3)
+		if err := syscall.Stat(os.Getenv("RESTARTABLE_TEST_LOCK_PATH"), &want); err != nil {
+			os.Exit(2)
+		}
+		if got.Dev == want.Dev && got.Ino == want.Ino {
+			os.Exit(3) // lock のファイルを引き継いでいる
+		}
+		os.Exit(0)
 	}
 	server, err := Listen(filepath.Join(shortSocketDir(t), "runner.sock"))
 	if err != nil {
@@ -287,7 +295,7 @@ func TestListenLockFDIsNotInheritedByChildren(t *testing.T) {
 	}
 	defer func() { _ = server.Close() }()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestListenLockFDIsNotInheritedByChildren$")
-	cmd.Env = append(os.Environ(), fmt.Sprintf("RESTARTABLE_TEST_LOCK_FD=%d", server.lock.Fd()))
+	cmd.Env = append(os.Environ(), fmt.Sprintf("RESTARTABLE_TEST_LOCK_FD=%d", server.lock.Fd()), "RESTARTABLE_TEST_LOCK_PATH="+server.lock.Name())
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("lock fd is inherited by an exec'd child: %v\n%s", err, out)
