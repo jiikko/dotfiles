@@ -92,7 +92,7 @@ sonnet の read-only 調査を main が抜き取りで検閲)。2026-09-05 の�
 - [ ] A の 5 件を条件待ちにし (schedule_keys の 4 件は済み)、変更したテストの実行時間を before / after で記録する
 - [ ] B を 1 件ずつ、担保していたものの列挙 → 置き換え → 変異検証 → 3 回連続 green
 - [ ] C を `tt_wait_until` へ寄せる (bats から使えるようにするかを決める)
-- [ ] D の理由コメントを書き足す (代替案が成り立つものは置き換える)
+- [x] D の理由コメントを書き足す (代替案が成り立つものは置き換える)
 - [ ] [615](615-chore-gate-new-sleeps-in-tests.md) の検査の許可 (印 / ファイル単位の許可) を、この表の残り (TICK / DUMMY / NEGATIVE / STUB) と一致させる
 
 ## 関連ファイル
@@ -138,3 +138,12 @@ sonnet の read-only 調査を main が抜き取りで検閲)。2026-09-05 の�
   - `test_run_make_targets_parallel.sh` の `slow-ok` の `sleep 1` / `mid-ok` の `sleep 0.3` を外し、完了順が要る Test 4 だけに
     `ord-late` (ord-early の完了印を待つ) / `ord-early` を足した。4 s → 1 s 以下 (3 回連続 green、14 件)
   - 変異: 出力を完了順 (`.rc` の mtime 順) に並べる → 「出力順が引数順でない」で red
+- 2026-10-02 「test(bin): go_autobuild の「再挑戦しない」を待たずに、shim が裏ビルドを起こしたかで判定する (613 の D)」
+  - 347 (TTL 内) / 411 (失敗後の backoff): `sleep 0.5` → 再挑戦の判定は shim が exec の前に同期で下すので、バイナリに
+    `pending=${GO_AUTOBUILD_PENDING-} old` を焼いて起動の出力で読む (最後の語を old に保ち `binary_is` を壊さない)
+  - 473 (生きている builder の lock を尊重): 判定は裏で起こした builder の中 (`_go_autobuild_take_lock`) で、取れないと何も書かずに抜ける。
+    待つべき成立条件が無いので待ちを残し、理由をコメントに書いた
+  - 20 s → 12〜13 s (3 回連続 green、75 件。負荷の揺れを含む)
+  - 変異: `_go_autobuild_should_retry` を常に 0 → 「TTL 内なのに再挑戦した (起動の出力: pending=1 old)」で red
+  - 残す: `tests/scripts/test_golangci_lint_pinned.sh:40` の `FAKE_SLEEP=0.3` (6 本の並列起動で install を重ねる窓)。ヘルパーは lock で
+    直列化するので「残り 5 本が lock を待ち始めた」を外から観測する事象が無い。1 回 0.3 s

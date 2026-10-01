@@ -335,17 +335,21 @@ printf '\n## 古い失敗記録は無視して再挑戦する (一時的な失�
 # その条件は二度と成立しない = 一度の一時的な失敗 (toolchain 取得の失敗等) で再ビルドが永久に
 # 止まる。実証 (2026-07-31): pull 相当の状態で 1 回失敗させると、要因を解消した後の 3 回の起動で
 # go build が 0 回しか呼ばれず古いバイナリに固定された。TTL で救済する。
+# 「再挑戦しない」は shim が exec の前に同期で決める (_go_autobuild_should_retry)。起こさなければ
+# GO_AUTOBUILD_PENDING が立たないので、それをバイナリに読ませれば待たずに判定できる (issue 613)。
+# mark の最後の語を old に保つ (binary_mark は最後の語を読む)
+PROBE_OLD='pending=${GO_AUTOBUILD_PENDING-} old'
 ROOT="$(new_project failttl)"
-FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
+FAKE_GO_MARK="$PROBE_OLD" run_tool "$ROOT" >/dev/null
 freeze "$ROOT"
 bump "$ROOT/src/tool/main.go"
 AUTOBUILD_ARGS=--async FAKE_GO_FAIL=1 run_tool "$ROOT" >/dev/null
 wait_for "失敗記録が作られない" test -f "$ROOT/src/tool/.autobuild.failed"
 before="$(calls "$ROOT")"
 # TTL 内 (失敗記録は今) はソース未変更でも再挑戦しない = 従来の backoff
-AUTOBUILD_ARGS=--async FAKE_GO_MARK=fixed run_tool "$ROOT" >/dev/null
-sleep 0.5
-[[ "$(calls "$ROOT")" == "$before" ]] || fail "TTL 内なのに再挑戦した (落ちるビルドを撒く)"
+out="$(AUTOBUILD_ARGS=--async FAKE_GO_MARK=fixed run_tool "$ROOT")"
+[[ "$out" == "pending= old" ]] || fail "TTL 内なのに再挑戦した (落ちるビルドを撒く。起動の出力: $out)"
+[[ "$(calls "$ROOT")" == "$before" ]] || fail "TTL 内なのに go を呼んだ"
 ok "TTL 内はソース未変更で再挑戦しない"
 # 失敗記録を TTL より古くすると、ソース未変更でも再挑戦する
 mtime_at 30 "$ROOT/src/tool/.autobuild.failed"
@@ -394,11 +398,11 @@ ok "ビルド失敗は exit code つきでログに残る"
 
 printf '\n## --async のビルド失敗 (fail-open + backoff)\n'
 ROOT="$(new_project asyncfail)"
-FAKE_GO_MARK=old run_tool "$ROOT" >/dev/null
+FAKE_GO_MARK="$PROBE_OLD" run_tool "$ROOT" >/dev/null
 freeze "$ROOT"
 bump "$ROOT/src/tool/main.go"
 out="$(AUTOBUILD_ARGS=--async FAKE_GO_FAIL=1 run_tool "$ROOT")"
-[[ "$out" == "old" ]] || fail "async ビルド失敗で起動が壊れた (fail-open していない: $out)"
+[[ "$out" == "pending=1 old" ]] || fail "async ビルド失敗で起動が壊れた (fail-open していない / 裏のビルドを起こしていない: $out)"
 ok "async ビルド失敗でも旧版で動き続ける (fail-open)"
 
 wait_for "失敗記録 (.autobuild.failed) が作られない" \
@@ -407,9 +411,11 @@ binary_is "$ROOT" old || fail "async ビルド失敗で既存バイナリが壊�
 ok "ビルド失敗で既存バイナリは壊れない (一時ファイル → rename)"
 
 before="$(calls "$ROOT")"
-for _ in 1 2 3; do AUTOBUILD_ARGS=--async FAKE_GO_FAIL=1 run_tool "$ROOT" >/dev/null; done
-sleep 0.5
-[[ "$(calls "$ROOT")" == "$before" ]] || fail "失敗後もソース未変更で再ビルドを撒いている (起動ごとの CPU リーク)"
+for _ in 1 2 3; do
+  out="$(AUTOBUILD_ARGS=--async FAKE_GO_FAIL=1 run_tool "$ROOT")"
+  [[ "$out" == "pending= old" ]] || fail "失敗後もソース未変更で再ビルドを撒いている (起動ごとの CPU リーク。起動の出力: $out)"
+done
+[[ "$(calls "$ROOT")" == "$before" ]] || fail "失敗後もソース未変更で go を呼んだ"
 ok "失敗後はソースが変わるまで再挑戦しない (backoff)"
 
 mtime_at 30 "$ROOT/src/tool/.autobuild.failed"
@@ -470,6 +476,9 @@ mkdir -p "$ROOT/src/tool/.autobuild.lock"
 printf '%s\n' "$$" > "$ROOT/src/tool/.autobuild.lock/pid"
 before="$(calls "$ROOT")"
 AUTOBUILD_ARGS=--async run_tool "$ROOT" >/dev/null
+# 🚨 この待ちは消さない: lock を尊重するかは shim ではなく裏で起こした builder が決める (_go_autobuild_spawn の
+#    _go_autobuild_take_lock)。builder は lock を取れないと何も書かずに抜けるので、待つべき成立条件が無い
+#    (起きないことの確認。issue 613 の D)。0.5 秒は「二重ビルドが go を呼ぶだけの時間」
 sleep 0.5
 [[ "$(calls "$ROOT")" == "$before" ]] || fail "生きている builder がいるのに二重ビルドした"
 ok "生存中の builder の lock を尊重する (多重ビルドしない)"
