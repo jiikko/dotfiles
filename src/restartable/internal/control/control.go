@@ -136,7 +136,7 @@ func Listen(path string) (*Server, error) {
 	if err := os.MkdirAll(filepath.Dir(absPath), 0700); err != nil {
 		return nil, err
 	}
-	lockFD, err := syscall.Open(absPath+".lock", syscall.O_CREAT|syscall.O_RDWR|syscall.O_NOFOLLOW, 0600)
+	lockFD, err := syscall.Open(absPath+".lock", syscall.O_CREAT|syscall.O_RDWR|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("open control lock: %w", err)
 	}

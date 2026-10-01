@@ -9,8 +9,10 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -263,5 +265,31 @@ func TestCloseWhileRequestsArePendingDoesNotPanic(t *testing.T) {
 		for _, conn := range conns {
 			_ = conn.Close()
 		}
+	}
+}
+
+// 子(build/run/stop-cmd 等)に lock の fd が渡ると、runner が死んでも子が flock を握り続け、
+// 新しい runner が二重起動として拒否される (issue 597)。exec 先で fd が閉じていることを固定する。
+func TestListenLockFDIsNotInheritedByChildren(t *testing.T) {
+	if fdStr := os.Getenv("RESTARTABLE_TEST_LOCK_FD"); fdStr != "" {
+		var fd int
+		if _, err := fmt.Sscan(fdStr, &fd); err != nil {
+			os.Exit(2)
+		}
+		if _, _, errno := syscall.Syscall(syscall.SYS_FCNTL, uintptr(fd), syscall.F_GETFD, 0); errno == syscall.EBADF {
+			os.Exit(0)
+		}
+		os.Exit(3)
+	}
+	server, err := Listen(filepath.Join(shortSocketDir(t), "runner.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = server.Close() }()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestListenLockFDIsNotInheritedByChildren$")
+	cmd.Env = append(os.Environ(), fmt.Sprintf("RESTARTABLE_TEST_LOCK_FD=%d", server.lock.Fd()))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("lock fd is inherited by an exec'd child: %v\n%s", err, out)
 	}
 }
