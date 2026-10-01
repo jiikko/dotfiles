@@ -78,8 +78,7 @@ func (m *Model) handleDrawerKey(k string) (cmd tea.Cmd, handled bool) {
 		return nil, false
 	}
 	if mo := listnav.MotionOf(k); mo != listnav.None {
-		body := m.drawerBody()
-		m.pager.Move(mo, len(body), m.drawerBodyRows(), glideFrames)
+		m.pager.Move(mo, m.drawerLines().Len(), m.drawerBodyRows(), glideFrames)
 		return m.startFrames(), true
 	}
 	return nil, true
@@ -141,23 +140,39 @@ func (m *Model) drawerTextWidth() int {
 	return max(drawerGeometry.Target(m.width)-2-layout.ScrollbarWidth, 10)
 }
 
-// drawerBody は本文の全行 (開ききった幅で折り返し済み)。履歴と出力 (活動を読める backend では活動) は切り出さずに全部出す。
-func (m *Model) drawerBody() []string {
+// drawerLines は本文の全行 (開ききった幅で折り返し済み)。履歴と出力 (活動を読める backend では活動) は切り出さずに全部出す。
+// 活動の節 (act) は保持した行をそのまま指す: 描くたびに全行を組み直したり、head と結合してコピーしたりしない (issue 606。
+// 活動は最大 1000 件・数千行になり、毎回組むと 1 描画が 7〜8 ms かかっていた)。
+type drawerLines struct{ head, act []string }
+
+func (d drawerLines) Len() int { return len(d.head) + len(d.act) }
+
+func (d drawerLines) At(i int) string {
+	if i < len(d.head) {
+		return d.head[i]
+	}
+	return d.act[i-len(d.head)]
+}
+
+// wrapStyled は素の文字列を幅 w で折り返し、色を各行へ掛け直す (折り返した先の行で色が抜けないように)。
+func wrapStyled(style, text string, w int) []string {
+	lines := termwidth.Wrap(text, w, false)
+	if style != "" {
+		for i, l := range lines {
+			lines[i] = style + l + sgrReset
+		}
+	}
+	return lines
+}
+
+func (m *Model) drawerLines() drawerLines {
 	c, ok := m.drawerCardData()
 	if !ok {
-		return nil
+		return drawerLines{}
 	}
 	w := m.drawerTextWidth()
 	var out []string
-	// add は素の文字列を折り返し、色を各行へ掛け直す (折り返した先の行で色が抜けないように)
-	add := func(style, text string) {
-		for _, l := range termwidth.Wrap(text, w, false) {
-			if style != "" {
-				l = style + l + sgrReset
-			}
-			out = append(out, l)
-		}
-	}
+	add := func(style, text string) { out = append(out, wrapStyled(style, text, w)...) }
 	add("", fmt.Sprintf("状態: %s  担当: %s  repo: %s  session: %s", c.State.SinceText(fmtDur(m.snap.Now.Sub(c.Since))),
 		m.assignee(c), c.Repo, orDash(c.Session)))
 	var refs []string
@@ -239,14 +254,14 @@ func (m *Model) drawerBody() []string {
 	}
 	out = append(out, "")
 	if m.activityReader() != nil {
-		m.addActivity(add)
-		return out
+		act := m.addActivity(add)
+		return drawerLines{head: out, act: act}
 	}
 	add(sgrDim, "出力")
 	for _, s := range c.Log {
 		add("", "  "+s)
 	}
-	return out
+	return drawerLines{head: out}
 }
 
 // drawerPanel は引き出しの行 (開ききった幅で組む。演出中は ComposeDrawer が切るだけ)。
@@ -257,18 +272,18 @@ func (m *Model) drawerPanel() []string {
 	}
 	rows := m.drawerBodyRows()
 	target := drawerGeometry.Target(m.width)
-	body := m.drawerBody()
-	m.pager.Clamp(len(body), rows)
-	off := m.pager.DrawOffset(len(body), rows)
+	body := m.drawerLines()
+	m.pager.Clamp(body.Len(), rows)
+	off := m.pager.DrawOffset(body.Len(), rows)
 	win := make([]string, rows)
 	for i := range win {
-		if off+i < len(body) {
-			win[i] = " " + body[off+i]
+		if off+i < body.Len() {
+			win[i] = " " + body.At(off+i)
 		}
 	}
 	head := " " + sgrBold + fg(stateColor(c.State)) + c.ID + sgrFgReset + "  " + c.Title + sgrReset
 	out := []string{head, fg(240) + strings.Repeat("─", max(target-1, 0)) + sgrReset}
-	return append(out, layout.Scrollbar(win, target-1, len(body), off, true)...)
+	return append(out, layout.Scrollbar(win, target-1, body.Len(), off, true)...)
 }
 
 // overlayDrawer は領域 (ヘッダと下端の群のあいだ) に引き出しを重ねる。

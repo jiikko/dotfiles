@@ -29,6 +29,7 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 | `markdown` | markdown の本文を幅で整形する `Render(src, width, colored)` (見出し・箇条書き・チェックボックス・引用・表・水平線・フェンスコードの chroma ハイライト。行ごとのソース行番号も返す)。出力は width 桁を超えず、`colored=false` なら ANSI を出さない。本文の制御文字は termsafe で落とす | issue の本文 (glogx) と PG の応答の文 (pro-con の詳細) を同じ見た目で出す |
 | `highlight` | `Diff(lines)` (git の `--color=never` の diff に構造色 + chroma のシンタックスハイライト。行数は変えない) / `Lang(言語名, 1 行)`。入力の無害化は使う側 (termsafe) | glogx の diff の板・pro-con の差分の板・markdown のフェンスコードで同じ色付けを使う |
 | `listnav` | `MotionOf` (キー → 移動の語彙) / `List` (一覧のカーソル + 窓 + 半ページの滑走) / `Pager` (本文のスクロール) / `Scroll` / `WindowOffset` / `ClampOffset` (窓の計算) | 一覧・本文の移動を毎回書かない |
+| `framebench` | `NewRenderer(幅, 高さ)` / `Frame(content, 属性)` / `Written()`: 画面の文字列を bubbletea v2 のレンダラと同じ手順 (前のコマと同じなら描かない → セルへ書き直す → 端末への差分) で通す計測の道具。部品ではない (ultraviolet を import する。bubbletea は import しない) | フレームのベンチをレンダラ込みで測る。下の「フレームの重さを測る」 |
 
 ## 遷移のパターン
 
@@ -194,6 +195,18 @@ if confirm.IsYes(key) { run() }
 
 CI は `.github/workflows/src_tuikit.yml` (lint + test)。tuikit を変えると glogx の CI も走る
 (`src_glogx.yml` の paths に `src/tuikit/**` がある)。
+
+## フレームの重さを測る
+
+`View()` の文字列を作る時間だけを測るベンチは、bubbletea v2 のレンダラ (文字列を毎回セルへ書き直して前のコマと差分を取る) の分を見ない。
+レンダラは pro-con の 200 × 50 で View の約 2 倍、glogx の j/k で約 10 倍かかる (issue 607 の実測)。
+
+- レンダラ込みで測る: `framebench.NewRenderer` を作り、1 コマごとに `r.Frame(v.Content, v.Cursor)`。`r.Written()` は端末へ出たバイト
+  (例: pro-con `BenchmarkFrame*Rendered` / glogx `BenchmarkCursorMoveViewJARendered`)。同じ画面を描き続けると描かない (bubbletea と同じ) ので、
+  描き直しの重さを測るならコマを動かす
+- 件数で伸びないことを守る: 件数を 2 通りにして View の確保バイトの比を見る (時間は合否にしない)。例: pro-con `TestDrawerActivityViewAllocDoesNotGrowWithItems` /
+  glogx `TestListFramesAllocBytesDoNotScaleWithItems` / `TestStatusFrameAllocBytesDoNotScaleWithFileCount`
+- 🚨 ultraviolet の版は取り込んだ側の go.mod で決まる (tuikit の go.mod の版とずれている)。消費者のベンチで測る
 
 ## デモ
 

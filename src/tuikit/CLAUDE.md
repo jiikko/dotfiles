@@ -19,6 +19,7 @@ README.md の「パッケージ」表が正本 (各パッケージの中身と�
 - `markdown` — markdown 本文を幅で整形するレンダラ
 - `highlight` — diff / コードのシンタックスハイライト
 - `listnav` — 一覧・本文のカーソル移動・スクロール窓の計算
+- `framebench` — フレームをレンダラ込みで測る計測の道具 (部品ではない。ultraviolet を import する)
 
 ## 消費者
 

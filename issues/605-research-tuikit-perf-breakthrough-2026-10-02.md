@@ -93,8 +93,10 @@ pro-con の詳細を開いたカードの活動 (PG の応答の markdown・道�
 
 ### 候補 3 (保留) の再評価の trigger と、やるなら何が要るか
 
-- trigger: 606 の後で、ユーザーの操作で「重い」と分かる場面の profile で、レンダラ (`ultraviolet.(*StyledString).Draw` + `TerminalRenderer.Render`) が
-  CPU の半分以上を占めたとき。または 400 × 100 のような大きな端末で 1 コマが 5 ms を超えたとき (セル数に比例するので、200 × 50 の約 4 倍 = 約 2 ms の見積もり)
+- trigger: ユーザーの操作で「重い」と分かる場面で、1 コマ (View + レンダラ) が 5 ms を超えたとき (例: 400 × 100 のような大きな端末。
+  セル数に比例するので 200 × 50 の約 4 倍の見積もり)。607 の `framebench` で測る
+  - 2026-10-02 の実測 (607 の結果、TrueColor): レンダラの割合はもう大きい (glogx の j/k で View の約 10 倍、pro-con の枠の滑走で約 5 倍) が、
+    1 コマの絶対値は 0.3〜0.9 ms で枠 (33 ms) に対して小さい。割合ではなく絶対値で判断する
 - tuikit からは届かない: `tea.View` は `Content string` だけを持ち、bubbletea 側が毎回全体を解析する (v2.0.10 の `tea.go` でも同じ)。
   やるなら (a) ultraviolet / bubbletea へ「前の行と同じ文字列なら Draw を飛ばす」を提案する (b) replace で fork を持つ、のどちらか。
   (b) は bubbletea を使う 4 つの消費者 (glogx・pro-con・schedkeys・restartable。tuikit の消費者は ratelimit を足して 5 つ) の依存を握ることになるので、(a) を先に試す
@@ -123,3 +125,6 @@ pro-con の詳細を開いたカードの活動 (PG の応答の markdown・道�
 - [x] 実測と候補の判断 (この issue)
 - [x] 606 / 607 の起票
 - [x] 反証レビューと訂正 (上の「調べ方」)
+- [x] 606 (詳細の活動の保持。1000 件で 7.5 → 0.27 ms) と 607 (`tuikit/framebench`・レンダラ込みのベンチ・件数で確保が伸びない検査) を 2026-10-02 に実装して done。
+  表 B の値は NoTTY (色を捨てた) の下限で、TrueColor で測り直した値は 607 の「結果」にある
+- 残り: 候補 3 だけ (上の trigger 待ち。この issue は調査として閉じる)

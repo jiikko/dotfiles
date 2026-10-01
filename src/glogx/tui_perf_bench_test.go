@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"hash/fnv"
 	"testing"
+
+	"github.com/jiikko/dotfiles/src/tuikit/framebench"
 )
 
 // CI の Bench workflow (tests/glogx/bench_glogx.sh) が回す体感系ベンチ (2026-07-29 追加)。
@@ -43,6 +45,25 @@ func BenchmarkCursorMoveViewJA(b *testing.B) {
 	}
 }
 
+// BenchmarkCursorMoveViewJA を、bubbletea のレンダラと同じ手順 (tuikit/framebench) で端末への差分まで通して測る (issue 607)。
+// View の文字列を作るだけのベンチは、レンダラの分 (セルへの書き直しと差分。View より重い) を測らない。termB/op は 1 コマで端末へ出たバイト。
+func BenchmarkCursorMoveViewJARendered(b *testing.B) {
+	m := benchBrowseSubjects(b, 20, 120, 40, true)
+	r := framebench.NewRenderer(120, 40)
+	b.ReportAllocs()
+	frames := 0
+	for b.Loop() {
+		m.handleKey("j")
+		v := m.View()
+		r.Frame(v.Content, v.Cursor)
+		m.handleKey("k")
+		v = m.View()
+		r.Frame(v.Content, v.Cursor)
+		frames += 2
+	}
+	b.ReportMetric(float64(r.Written())/float64(frames), "termB/frame")
+}
+
 // benchDiffBrowse は diff オーバーレイ表示中のモデル (ASCII/JA 対照の共有 fixture)。
 // diff 本文は ASCII のまま (実運用でも diff 本文は ASCII が多い。issue 055)。
 // ja が変えるのはオーバーレイの下に見えている一覧行の subject。
@@ -75,6 +96,20 @@ func BenchmarkViewWithDiffJA(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		_ = m.View().Content
+	}
+}
+
+// BenchmarkViewWithDiffJA のレンダラ込み (issue 607)。同じ画面を描き続けると bubbletea は描かない (viewEquals) ので、
+// 1 コマごとに framebench を作り直して毎回描かせる (diff を開いた直後の 1 コマの重さ)。
+func BenchmarkViewWithDiffJARendered(b *testing.B) {
+	m := benchDiffBrowse(b, true)
+	b.ReportAllocs()
+	for b.Loop() {
+		b.StopTimer()
+		r := framebench.NewRenderer(120, 40)
+		b.StartTimer()
+		v := m.View()
+		r.Frame(v.Content, v.Cursor)
 	}
 }
 

@@ -55,7 +55,7 @@ func runRenderer(b *testing.B, frames []string) {
 
 ## 対応方針
 
-- tuikit に、View の文字列を bubbletea と同じ手順でセル化 + 差分まで通す計測の補助を置く (置き場所は `tuikit` の test 用の package か `internal`。
+- tuikit に、View の文字列を bubbletea と同じ手順でセル化 + 差分まで通す計測の補助を置く (消費者から import するので公開の package にする。`internal` や `_test.go` には置けない。
   フレームワーク非依存の層の約束と、bubbletea の import が `caret` だけという例外 (`src/tuikit/CLAUDE.md`) をどう扱うかを先に決める。
   ultraviolet だけを import する形なら bubbletea 本体には依存しない)。🚨 tuikit の go.mod の uv は `f5a850f9`、glogx・pro-con は `8b693049` で版が違う。
   tuikit 単体のテストで測ると消費者と別の版を測ることになるので、補助は tuikit に置いても、測るのは消費者のベンチからglogx・pro-con のフレームのベンチから呼び、`View` と `View+renderer` を並べて出す
@@ -65,9 +65,9 @@ func runRenderer(b *testing.B, frames []string) {
 
 ## 受け入れ条件
 
-- [ ] glogx と pro-con のフレームのベンチで、レンダラ込みの値が出る
-- [ ] データ量を振るベンチ / 確保の比の検査が pro-con の詳細 (606。比の検査を置くと 606 の経路で赤くなるので、606 と同じ変更で直す) と glogx の主要な画面にある。比の検査は、件数に比例する整形を戻す変異で red になる
-- [ ] 入口のドキュメント (tuikit の README のベンチの節 / 消費者のベンチのコメント) に使い方を書く
+- [x] glogx と pro-con のフレームのベンチで、レンダラ込みの値が出る
+- [x] データ量を振るベンチ / 確保の比の検査が pro-con の詳細 (606。比の検査を置くと 606 の経路で赤くなるので、606 と同じ変更で直す) と glogx の主要な画面にある。比の検査は、件数に比例する整形を戻す変異で red になる
+- [x] 入口のドキュメント (tuikit の README のベンチの節 / 消費者のベンチのコメント) に使い方を書く
 
 ## 関連ファイル
 
@@ -76,4 +76,33 @@ func runRenderer(b *testing.B, frames []string) {
 
 ## 進捗
 
-- [ ] 未着手
+- [x] 実装 (commit「perf(pro-con): 詳細の活動の整形を…(606)」と同じ commit。607 の道具は 606 の守りと同じ変更で入れた)
+
+### 結果 (2026-10-02)
+
+- `src/tuikit/framebench` (新設、公開の package): `NewRenderer(幅, 高さ)` / `Frame(content, 属性)` / `Written()`。bubbletea v2.0.8 の `cursedRenderer.flush` の
+  alt screen の経路 (前のコマと content・属性が同じなら描かない → Clear → Draw → Render → Flush) を再現する。色のプロファイルは TrueColor に固定
+  (NoTTY だと色を捨てる)。属性は `tea.View.Cursor` を `%+v` で比べる (カーソルだけ動くコマも描く。codex の設計レビュー P2)。
+  再現していないもの (カーソルの移動・同期出力の囲み・端末モード) はパッケージのコメントに書いた。tuikit の go.mod は uv・colorprofile を direct にしただけで版は上げていない
+- レンダラ込みのベンチ (この Mac、`-count 3`):
+
+  | benchmark | View だけ | レンダラ込み | 端末へ出たバイト/コマ |
+  |---|---|---|---|
+  | pro-con FrameBump | 203〜218 µs | 397〜414 µs | 約 278 |
+  | pro-con FrameMove | 82〜95 µs | 459 µs | 約 195 |
+  | pro-con FrameGlide | 155〜162 µs | 843〜878 µs | 約 4.3 K |
+  | glogx CursorMoveViewJA (j と k の 2 コマ) | 60 µs | 615〜625 µs | 約 182 |
+  | glogx ViewWithDiffJA (開いた直後の 1 コマ = 全面の描き直し) | 33 µs | 821〜841 µs | — |
+
+  glogx の j/k ではレンダラが View の約 10 倍。605 の表 B (NoTTY で色を捨てていた) より重い
+- データ量の伸び: pro-con は 606 の守り (`TestDrawerActivityViewAllocDoesNotGrowWithItems` / `TestDrawerActivityRedeliverReusesLines`) と `BenchmarkDrawerActivity` (0 / 210 / 1000 件)。
+  glogx は `TestListFramesAllocBytesDoNotScaleWithItems` (git log の一覧と issues の一覧、40 件と 2000 件で View の確保バイトの比 ≤ 1.3。実測は 30.8 / 30.9 KB、33.8 / 35.6 KB)
+- 変異 (`bin/mutate-verify`。全部想定の検査で red): git log の View で毎回全行を組み直す (20.1 倍) / issues の一覧で見えない行も組む (9.6 倍) /
+  framebench の TrueColor を外す (`TestFrameKeepsColors`) / 同じコマを飛ばさない・属性を比べない (`TestFrameSkipsOnlyIdenticalFrames`)
+- 入口: tuikit README のパッケージ表と「フレームの重さを測る」節、tuikit/CLAUDE.md の地図、docs/glogx-bubbletea-v2.md のチェックリストの 6 番
+- 実装の敵対的レビュー (codex、read-only): framebench と flush の突き合わせ・tuikit の go.mod の変更とも「壊せなかった」
+- CI: 新しいテストは各 module の `make test` (`go test -race ./...`) で走る。レンダラ込みのベンチは CI の Bench には入れていない (glogx の `tests/glogx/bench_glogx.sh` は名前を完全一致で選ぶ)
+
+### 残り
+
+- 605 の候補 3 (レンダラが変わっていない行を読み飛ばす) は、この計測で実例が出たら再評価する (glogx の j/k でレンダラが View の約 10 倍)。trigger は 605

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -31,6 +32,12 @@ func drawerModel(t *testing.T) (*Model, *spy, *clock) {
 }
 
 func screen(m *Model) string { return ansi.Strip(m.render()) }
+
+// drawerBody は詳細の本文 (drawerLines) を 1 本につないだもの。描く経路は drawerLines を使う (活動の節をコピーしない。issue 606)。
+func (m *Model) drawerBody() []string {
+	d := m.drawerLines()
+	return slices.Concat(d.head, d.act)
+}
 
 // open は Enter で開き、演出を終わらせる。
 func open(t *testing.T, m *Model, clk *clock) {

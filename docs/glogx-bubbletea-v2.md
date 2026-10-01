@@ -112,6 +112,8 @@ goroutine と `context` の cancel 取りこぼしを機械的に検証できる
 3. `make -C src/glogx lint` / `make -C src/glogx test` (CI の 2 job と同一コマンド)
 4. tmux 上で実 TUI を起動し、最外周フレーム・usage オーバーレイ・`j/k/G/Enter/Esc/q`・Alt Screen 復帰を目視
 5. `PasteMsg` の扱いが変わっていないか (貼り付けがキー実行に戻っていないか)
+6. `src/tuikit/framebench` が再現している flush の手順 (前のコマとの比較 → Clear → Draw → Render → Flush) が、新しい版の `cursed_renderer.go` の `flush` と食い違っていないかを読み、
+   pro-con `BenchmarkFrame*Rendered` / glogx `BenchmarkCursorMoveViewJARendered` を上げる前後で比べる (issue 607)
 
 ## 他の Go プロジェクト
 

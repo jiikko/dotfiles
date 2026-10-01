@@ -69,8 +69,8 @@ for b.Loop() { _ = m.View() }
 
 ## 受け入れ条件 (着手するとき)
 
-- [ ] 活動 1000 件の詳細を開いた View が、活動 0 件の View の 2 倍以内
-- [ ] 上の守り (件数で確保が伸びない) と、その変異の red
+- [x] 活動 1000 件の詳細を開いた View が、活動 0 件の View の 2 倍以内 (0.27〜0.31 ms / 0.26〜0.27 ms)
+- [x] 上の守り (件数で確保が伸びない) と、その変異の red
 
 ## 関連ファイル
 
@@ -82,4 +82,39 @@ for b.Loop() { _ = m.View() }
 ## 進捗
 
 - [x] 件数を振った実測と、591 の判断の再確認 (2026-10-02)
-- [ ] trigger 待ち
+- [x] 実装 (commit「perf(pro-con): 詳細の活動の整形を届いたときに 1 回だけにし、描くたびに全件を整形し直さない (606)…」)
+
+### 結果 (2026-10-02)
+
+設計は codex (read-only) の設計レビューを通した。指摘 P1 2・P2 4 → 全部採用:
+
+- 本文を `drawerLines{head, act}` に分け、活動の節 (act) は保持した slice をそのまま指す (毎回の結合で全行をコピーしない。P1)
+- 保持は 2 段: 活動の節 (`activityView.section`、幅が変われば組み直す) と、活動 1 件の行 (`activityView.lines`、`backend.Activity` を鍵にした map。
+  読み直しで同じ活動が届くので差し替えをまたいで引き継ぎ、今の items に無い鍵は捨てる)。節は活動が届いたとき (`onActivity`) に組む
+- 頭の活動が捨てられたときの位置の補正は、items を一時的に書き換えて測るのをやめ、`buildSection(items[k:])` の行数で数える (P1)
+- `drawerBody` (全行を 1 本につないだもの) はテストだけが使うので `drawer_test.go` へ移した (本番から到達できない検査が指摘)
+- `add` の折り返しと色の掛け直しを `wrapStyled` に抜いた (活動 1 件の行も同じ関数で組む)
+
+実測 (この Mac、`BenchmarkDrawerActivity` を `-count 3`。変更前は claim の commit 72549d99 に同じベンチを置いて測った):
+
+| 活動 | 変更前 | 変更後 | B/op 変更前 → 後 |
+|---|---|---|---|
+| 0 | 0.25〜0.28 ms | 0.26〜0.27 ms | 379 KB → 379 KB |
+| 210 | 1.80〜1.85 ms | 0.26〜0.29 ms | 1.75 MB → 392 KB |
+| 1000 | 7.50〜7.55 ms | 0.27〜0.31 ms | 6.7 MB → 392 KB |
+
+守り (`src/pro-con/ui/activity_cache_test.go`) と変異 (`bin/mutate-verify`。5 本とも想定の検査で red):
+
+| 変異 | red になった検査 |
+|---|---|
+| 節を描くたびに組み直す | `TestDrawerActivityViewAllocDoesNotGrowWithItems` (30 → 1000 件で 1.48 倍) |
+| 活動 1 件の保持を使わない | `TestDrawerActivityRedeliverReusesLines` (読み直しで初回の 0.92 倍を確保) |
+| 幅が変わっても節を作り直さない | `TestDrawerActivitySectionMatchesRebuild` (幅を変えた) |
+| 捨てた頭の分だけ位置を上げない | 既存の `TestDrawerActivityKeepsPositionWhenHeadIsDropped` |
+| 今の items に無い活動の行を捨てない | `TestDrawerActivitySectionMatchesRebuild` (54 件の活動に 61 件) |
+
+- 最初は幅の変異と捨てる変異が緑だった (活動が短く幅で折り返しが変わらない / 数える位置が幅の変更で保持が作り直された後)。fixture を直してから red を確認した
+- 実装の敵対的レビュー (codex、read-only): P2 1 件 (実行中に `time.Local` を差し替えると、保持した時刻の表示が古い時間帯のまま)。
+  pro-con の本番で `time.Local` を書き換える箇所は 0 件 (`grep -rn 'time\.Local\s*=' src/pro-con` はテスト 1 件だけ) なので採らず、理由を `activityLines` のコメントに残した。
+  それ以外 (位置の補正・保持の破棄と再利用・幅・session の切り替え) は「壊せなかった」
+- 見ていないもの (テストのコメントにも書いた): 確保せずに件数に比例して走査する形 / 活動が届いたとき (`onActivity`) の重さ (初めて届いた 1000 件は 1 回 7 ms 前後かかる)

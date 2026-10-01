@@ -2,9 +2,13 @@ package ui
 
 import (
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/tuikit/framebench"
+
+	"pro-con/backend"
 	"pro-con/card"
 )
 
@@ -48,8 +52,29 @@ func runFrames(b *testing.B, m *Model, clk *clock, dur time.Duration) {
 	}
 }
 
+// runFramesRendered は runFrames と同じコマを、bubbletea のレンダラと同じ手順 (tuikit/framebench) で端末への差分まで通して測る (issue 607)。
+// View の文字列を作るだけの runFrames は、レンダラの分 (このモデルで View の約 2.3 倍) を測らない。termB/op は 1 コマで端末へ出たバイト。
+func runFramesRendered(b *testing.B, m *Model, clk *clock, dur time.Duration) {
+	b.Helper()
+	start := clk.t
+	n := int(dur / frameInterval)
+	r := framebench.NewRenderer(m.width, m.height)
+	b.ReportAllocs()
+	i := 0
+	for b.Loop() {
+		clk.t = start.Add(time.Duration(i%n) * frameInterval)
+		v := m.View()
+		r.Frame(v.Content, v.Cursor)
+		i++
+	}
+	b.ReportMetric(float64(r.Written())/float64(i), "termB/op")
+}
+
 // 作業中のレーンの上端で k: レーンごと揺れる (bump.go の Cut / fit を毎コマ全行で通る)。
-func BenchmarkFrameBump(b *testing.B) {
+func BenchmarkFrameBump(b *testing.B)         { benchBump(b, runFrames) }
+func BenchmarkFrameBumpRendered(b *testing.B) { benchBump(b, runFramesRendered) }
+
+func benchBump(b *testing.B, run func(*testing.B, *Model, *clock, time.Duration)) {
 	m, _, clk := benchModel()
 	m.selected = "R1"
 	m.Update(frameMsg{})
@@ -61,11 +86,14 @@ func BenchmarkFrameBump(b *testing.B) {
 	if !m.bumping(clk.t) {
 		b.Fatal("前提: 揺れが始まっていない")
 	}
-	runFrames(b, m, clk, bumpDuration)
+	run(b, m, clk, bumpDuration)
 }
 
 // 着手待ちから作業中へ移ったカードが列のあいだを滑る (motion.go の splice)。
-func BenchmarkFrameMove(b *testing.B) {
+func BenchmarkFrameMove(b *testing.B)         { benchMove(b, runFrames) }
+func BenchmarkFrameMoveRendered(b *testing.B) { benchMove(b, runFramesRendered) }
+
+func benchMove(b *testing.B, run func(*testing.B, *Model, *clock, time.Duration)) {
 	m, be, clk := benchModel()
 	m.resetSlots()
 	for i := range be.snap.Cards {
@@ -77,11 +105,14 @@ func BenchmarkFrameMove(b *testing.B) {
 	if _, ok := m.moves["B0"]; !ok {
 		b.Fatal("前提: 移動の演出が始まっていない")
 	}
-	runFrames(b, m, clk, animDuration())
+	run(b, m, clk, animDuration())
 }
 
 // 選択の枠がレーンを跨いで滑る (cursor.go の cellsOf / softEdge / softSide)。
-func BenchmarkFrameGlide(b *testing.B) {
+func BenchmarkFrameGlide(b *testing.B)         { benchGlide(b, runFrames) }
+func BenchmarkFrameGlideRendered(b *testing.B) { benchGlide(b, runFramesRendered) }
+
+func benchGlide(b *testing.B, run func(*testing.B, *Model, *clock, time.Duration)) {
 	m, _, clk := benchModel()
 	m.selected = "R1"
 	m.Update(frameMsg{})
@@ -89,5 +120,31 @@ func BenchmarkFrameGlide(b *testing.B) {
 	if !m.cursorGliding(clk.t) {
 		b.Fatal("前提: 枠が滑り始めていない")
 	}
-	runFrames(b, m, clk, cursorDuration)
+	run(b, m, clk, cursorDuration)
+}
+
+// 詳細を開いたカードの活動の件数を振った View (issue 606 / 607)。210 件は実在する最大の PG の session 相当 (応答 70 件)、1000 件は
+// 画面が持つ上限 (live.activityKeep)。件数で伸びるなら、見えない行のために描くたびに働いている。
+//
+//	go test -run '^$' -bench BenchmarkDrawerActivity -benchmem -count 10 ./ui/
+func BenchmarkDrawerActivity(b *testing.B) {
+	for _, n := range []int{0, 210, 1000} {
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			m, sp, clk := benchModel()
+			be := &activitySpy{spy: sp, items: map[string][]backend.Activity{"R1": mixedActivity(sp.snap.Now, n)}}
+			m.be = be
+			m.selected = "R1"
+			m.Update(frameMsg{})
+			m.openDrawer()
+			clk.t = clk.t.Add(drawerDuration)
+			m.Update(activityMsg{cardID: m.drawerCard, items: be.items["R1"]})
+			if got := m.drawerLines().Len(); n > 0 && got < n {
+				b.Fatalf("前提: 活動の節が描かれていない (本文 %d 行)", got)
+			}
+			b.ReportAllocs()
+			for b.Loop() {
+				_ = m.View()
+			}
+		})
+	}
 }
