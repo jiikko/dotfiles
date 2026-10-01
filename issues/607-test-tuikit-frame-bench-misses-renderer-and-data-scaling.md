@@ -1,5 +1,7 @@
 # 607 (test): フレームのベンチが View の文字列までしか測らず、レンダラの分 (View の約 2.3 倍) とデータ量に対する伸びが見えない
 
+> 🚨 **担当中: dotfiles-05**（2026-10-02〜）
+
 起票日: 2026-10-02
 
 出典: [605](605-research-tuikit-perf-breakthrough-2026-10-02.md) の実測 B / C
@@ -11,7 +13,7 @@ glogx・pro-con のフレームのベンチ (`BenchmarkView*` / `BenchmarkFrame*
 
 1. **レンダラ**: bubbletea v2.0.8 は View の文字列が前と違うたびに、画面全体を `uv.NewStyledString(content).Draw` でセルへ書き直し、
    `TerminalRenderer.Render` で差分を取る (`cursed_renderer.go` の `flush`)。pro-con の 200 × 50 で **約 0.5 ms/コマ = View (約 0.2 ms) の約 2.3 倍**
-2. **データ量に対する伸び**: ベンチの盤面は件数が固定。[606](pending/606-perf-pro-con-drawer-rerenders-all-activity-markdown-per-frame.md) (詳細の活動を View のたびに全件整形。上限 1000 件で約 7.5 ms) は、
+2. **データ量に対する伸び**: ベンチの盤面は件数が固定。[606](606-perf-pro-con-drawer-rerenders-all-activity-markdown-per-frame.md) (詳細の活動を View のたびに全件整形。上限 1000 件で約 7.5 ms) は、
    件数を振るベンチが無かったので見えていなかった。268 / 270 / 274 / 275 / 591 (どれも done) も同じ形 (フレームの中でデータ量に比例する走査) だった
 
 ## 実測 (2026-10-02。605 の表 B を参照)
