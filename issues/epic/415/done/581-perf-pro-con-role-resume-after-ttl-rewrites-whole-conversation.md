@@ -1,10 +1,8 @@
 # 581 (perf): PM・取り込みの係が 1 時間以上空いた後の再開で、会話全体 (7〜70 万トークン) を書き直す
 
-> 🚨 **担当中: dotfiles-58**（2026-10-01〜）
-
 起票日: 2026-09-29
 
-親: [415](415-design-claude-pm-worker-orchestration.md) / 出典: [431](pending/431-feat-pro-con-pg-session-settings.md) の「計測」(2026-09-29)
+親: [415](../415-design-claude-pm-worker-orchestration.md) / 出典: [431](../pending/431-feat-pro-con-pg-session-settings.md) の「計測」(2026-09-29)
 
 ## 概要
 
@@ -49,9 +47,9 @@ claude 2.1.282 / 2.1.283、すべて claude-opus-5-5。数え方は 431 の「�
 
 ## 関連
 
-- [431](pending/431-feat-pro-con-pg-session-settings.md) — session の形の固定。1 時間 TTL の扱いは 431 の「今回はやらないもの」
-- [449](pending/449-research-pro-con-pg-startup-cost.md) — PG の起動のコスト
-- [546](546-research-pro-con-endconversation-gate-resume-cache.md) — PG の再開の外れの原因 (本番の内訳は 546 の「本番の再開の外れの内訳」)
+- [431](../pending/431-feat-pro-con-pg-session-settings.md) — session の形の固定。1 時間 TTL の扱いは 431 の「今回はやらないもの」
+- [449](../pending/449-research-pro-con-pg-startup-cost.md) — PG の起動のコスト
+- [546](../546-research-pro-con-endconversation-gate-resume-cache.md) — PG の再開の外れの原因 (本番の内訳は 546 の「本番の再開の外れの内訳」)
 
 ## 決定 (2026-10-01)
 

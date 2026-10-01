@@ -6,7 +6,8 @@
 > **保留 (2026-09-29)**: 実装 (実装順 1〜6) は済み。残りは今の形での計測 (実装順 7〜9) だけ。
 > **再開の trigger**: dogfooding を再開して、今の形で起動された PG の起動が 10 本・再開が 10 回たまったとき。**dogfooding を再開する前に
 > `pro-con config set schedule off`** (完了したカードの transcript を毎日 04:00 の clean が消すため。数え終えたら on に戻す。「進捗」の「残タスク」)。
-> 今の形の 7 本で見えた外れは PM・取り込みの係の TTL 切れで、431 の範囲外 ([581](../581-perf-pro-con-role-resume-after-ttl-rewrites-whole-conversation.md))。
+> 今の形の 7 本で見えた外れは PM・取り込みの係の TTL 切れで、431 の範囲外 ([581](../done/581-perf-pro-con-role-resume-after-ttl-rewrites-whole-conversation.md))。
+> 581 で解消 (2026-10-01): 前の応答から 55 分以上空いた役は再開せずに同じ worktree で起動し直す。計測で PM・取り込みの係の TTL 切れの外れを数えるときは、起動し直しの書き込み (約 2.2 万の見込み) に置き換わっているはず。
 
 親: [415](../415-design-claude-pm-worker-orchestration.md)  
 実測: [449](449-research-pro-con-pg-startup-cost.md) / [525](../525-perf-pro-con-pg-resume-cache-miss-tools-order.md) / [546](../546-research-pro-con-endconversation-gate-resume-cache.md)
@@ -652,7 +653,7 @@ commit「pro-con: Opus 5.5 のキャッシュの読みを料金 0.05 倍で数�
    (`tengu_umber_kestrel` / `tengu_juniper_relay`) なので、EndConversation の出入りは SendFeedback の gate を直接は表さない。内訳は 546 の「本番の再開の外れの内訳」
 4. **今の形の 7 本で見えた外れは PM・取り込みの係の TTL 切れだけ** (2 回で 1.16M トークンの書き直し。PG の TTL 切れはまだ観測していない)。
    前の形を含めると PM・取り込みの係の TTL 切れは 1.5 日で 18 回・5.26M。PG の `tools_changed` は transcript が残った再開 (71/240 回) だけで 2.26M の下限
-   (449 は C-002〜C-037 だけで 3.20M) なので、どちらが大きいかは言えない → [581](../581-perf-pro-con-role-resume-after-ttl-rewrites-whole-conversation.md)
+   (449 は C-002〜C-037 だけで 3.20M) なので、どちらが大きいかは言えない → [581](../done/581-perf-pro-con-role-resume-after-ttl-rewrites-whole-conversation.md)
 5. 前の形の起動の書き込みが 449 (約 23.5k) より小さい 21.7〜22.6k なのは、`autoMemoryEnabled: false` を入れた後の起動 (18 本) の分。
    auto memory の分だけ文脈も同じく約 1.9k 小さい (読みの先頭は変わらない)
 

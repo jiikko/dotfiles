@@ -67,7 +67,7 @@
     (`deferred_tools_delta`) があった (外れた 14・足された 1)。キャッシュ済みの tools に SendFeedback が在る状態で EndConversation が外れた再開は 14/20 が外れ、
     同じ状態で出入りの無い再開は 0/21、SendFeedback の無い状態の再開は 1/24 (状態 = 起動時の SendFeedback の有無を、外れた再開が読んだ先頭の値で付け直したもの。
     24,645 / 24,803 なら無し、26,601 / 26,759 / 28,876 なら在り)
-  - `previous_message_not_found` 22 回 — 前の応答から 60 分越え (1 時間 TTL 切れ)。PM・取り込みの係の分は 581
+  - `previous_message_not_found` 22 回 — 前の応答から 60 分越え (1 時間 TTL 切れ)。PM・取り込みの係の分は 581 (581 で解消: 55 分以上空いた役は再開せずに起動し直す。2026-10-01)
 - 上の実験の外れ 7 回のうち 6 回 (再開 A・`~/dotfiles` の 3 回・525 の probe の 2 回) は `messages_changed` (17,778〜96,598)、再開 B (`DISABLE_GROWTHBOOK`) だけが
   `tools_changed` (17,778。段なしの起動の tools は 14 本で、再開で tools そのものが変わった見込み)。「分かったこと 2」の表の A と B は外れの理由が違い、段の有無だけの
   比較になっていない。「段は外れの原因ではない」は `~/dotfiles` の組 (どれも `messages_changed`) から言える
