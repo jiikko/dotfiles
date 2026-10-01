@@ -2462,7 +2462,6 @@ func (m *browseModel) swallowKeyRepeat(key string) bool {
 	// 🚨 入力欄に打っている間は抑止しない: 印字キーはすべて検索語で、https の ss のように同じ字を素早く続けて打つと
 	// 2 字目が飲まれていた。y/N の確認 (n の目印) は入力欄ではないので抑止を残す (n のリピートが確認を取り消すため)
 	if m.issuesOv.visible() && m.issuesOv.typingInput() {
-		m.lastKey, m.lastKeyAt = "", time.Time{}
 		return false
 	}
 	if !repeatGuardedKeys[key] {
@@ -3639,6 +3638,8 @@ func (m *browseModel) caret() *tea.Cursor {
 	if m.done || m.activeFullScreen() != fullScreenIssues || m.zoom.scale(timeNow()) < appZoomSnap {
 		return nil
 	}
+	// toast は見ない: 右下に積む板で、入力欄のある 0 行目に届くのは窓が 4 行以下 (端末の高さ 5 以下) のときだけ
+	// (toastDrawBudget の下限)。その高さでは入力欄そのものがほぼ使えないので、判定を足して毎フレーム箱を組み直すより安い
 	if len(m.centerModalLines()) > 0 || len(m.restartPromptLines()) > 0 || len(m.usageOv.boxLines(m.contentWidth(), m.colored, m.spinner())) > 0 {
 		return nil
 	}

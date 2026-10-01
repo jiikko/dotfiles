@@ -129,16 +129,36 @@ func TestCaretStaysInFieldWithLongQuery(t *testing.T) {
 	t.Run("番号", func(t *testing.T) {
 		m := caretTestModel(t, false)
 		m.width = width
+		typeLongNumber(t, m)
+	})
+	// 🚨 枠ありでも見る: 枠なしでは caret.At が画面の右端へ寄せるので、欄で切らない旧い式でも同じ桁になり区別できない
+	// (2 周目の敵対レビューが実測)。枠ありでは旧い式だと右の罫線と影の外に出る。frameMinWidth 以上の幅にする
+	t.Run("番号・枠あり", func(t *testing.T) {
+		m := caretTestModel(t, true)
+		m.width = 70
+		if !m.frameActive() {
+			t.Fatal("前提が崩れた: 枠が出ていない")
+		}
+		typeLongNumber(t, m)
+		if c := m.View().Cursor; c.X >= frameContentLeft+m.contentWidth() {
+			t.Errorf("カーソルが中身の右端より外: X=%d (中身は %d 桁目まで)", c.X, frameContentLeft+m.contentWidth()-1)
+		}
+	})
+}
+
+func typeLongNumber(t *testing.T, m *browseModel) {
+	t.Helper()
+	{
 		typeKeys(m, "/")
 		for range 4 {
 			typeKeys(m, "1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
 		}
 		typeKeys(m, "5")
 		got := caretPrefix(t, m)
-		if !strings.HasPrefix(got, numberFilterPrompt) || !strings.HasSuffix(got, "78905") {
+		if !strings.Contains(got, numberFilterPrompt) || !strings.HasSuffix(got, "78905") {
 			t.Errorf("長い番号でカーソルが打った字の直後に無い: カーソルの左 = %q", got)
 		}
-	})
+	}
 }
 
 // 入力欄が無い・入力欄の上に何かが重なっている間は、端末のカーソルを置かない (IME の変換中の文字が別の所に出る)。
@@ -206,5 +226,20 @@ func TestURLPickerTypingResetsSelection(t *testing.T) {
 	typeKeys(m, "down", "left") // カーソルを動かすだけのキーでは選択を動かさない
 	if m.issuesOv.urlPick.cursor != 1 {
 		t.Errorf("検索語のカーソルを動かしただけで選択が動いた: cursor=%d", m.issuesOv.urlPick.cursor)
+	}
+}
+
+// 入力欄の外 (一覧) では、押しっぱなしの n のリピートを今までどおり飲む。飲まないと 1 打目で開いた目印の確認を
+// 2 打目のリピートが取り消す (markNextKey は y/Enter 以外を取り消しに倒す)。入力欄の除外を広げすぎない (ownsKeys
+// は確認中も真なので使わない) ことを固定する。
+func TestRepeatGuardStillHoldsNConfirmOutsideInputs(t *testing.T) {
+	m := caretTestModel(t, false)
+	m.handleKey("n")
+	if !m.issuesOv.markNext.active {
+		t.Fatal("前提が崩れた: n で目印の確認が開かない")
+	}
+	m.handleKey("n") // releaseKey を挟まない = 押しっぱなしのリピート
+	if !m.issuesOv.markNext.active {
+		t.Error("押しっぱなしの n のリピートが目印の確認を取り消した")
 	}
 }
