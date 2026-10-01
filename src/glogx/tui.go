@@ -571,6 +571,11 @@ func currentDir() string {
 	return cwd
 }
 
+// inputEditsWith は、issues の入力欄に打っている最中で、key がその入力欄の編集キーか (tmux prefix の分岐が使う)。
+func (m *browseModel) inputEditsWith(key string) bool {
+	return m.activeFullScreen() == fullScreenIssues && m.issuesOv.typingInput() && isLineEditKey(key)
+}
+
 // isLineEditKey は key が tuikit/lineedit の編集キー (移動・削除) か。lineedit の本物の Key に、使い捨ての行で聞く
 // (語彙の表をここに写すと、lineedit にキーが増えたときに食い違う)。text を渡さないので文字の入力は数えない。
 func isLineEditKey(key string) bool {
@@ -1508,7 +1513,7 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// docs/glogx-ui-guide.md §7 の編集の語彙を優先する (案内を出して編集を捨てる方が、C-b を左へ使う人を壊す)。
 	// 入力欄が自分で捌く移動のキー (ctrl+n / ctrl+p) は lineedit の編集キーではないので、prefix にしている人には入力中も
 	// 案内に取られる。救うには入力欄のキーの表をここにもう 1 つ持つことになるので、稀な設定として採らない (2026-10-02 の敵対レビュー)
-	if m.tmuxPrefix != "" && key == m.tmuxPrefix && !(m.activeFullScreen() == fullScreenIssues && m.issuesOv.typingInput() && isLineEditKey(key)) {
+	if m.tmuxPrefix != "" && key == m.tmuxPrefix && !m.inputEditsWith(key) {
 		// 通知は右下トースト (中央ダイアログは操作を遮って重い)
 		m.toast.Show("tmux prefix は popup では効きません (C-g で閉じてから)", false)
 		return m, m.maybeTick()
