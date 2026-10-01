@@ -432,10 +432,12 @@ func (d *Dispatcher) tellRole(ctx context.Context, now time.Time, ss []agents.Se
 	}
 	before = fmt.Sprint(pm)
 	id, launchErr := run(ctx)
+	if errors.Is(launchErr, ErrRejected) && why != "" {
+		// 起動し直しの拒否は再開の拒否と分けて数える (再開の試行を launchRejectLimit から減らさない)。何も立っていないので印も外す
+		rr.restartRejected, pm.Launching = true, ""
+		return append(notes, ev(eventlog.KindLaunch, r.cardID, "", fmt.Sprintf(r.name+" の起動し直しを claude が受け付けなかった。この dispatcher の間は再開に戻す: %v", launchErr))), save()
+	}
 	if errors.Is(launchErr, ErrRejected) {
-		if why != "" {
-			rr.restartRejected = true
-		}
 		rr.rejects++
 		rr.rejected = launchErr.Error()
 		if rr.rejects >= launchRejectLimit {
@@ -470,7 +472,7 @@ const roleCacheTTL = 55 * time.Minute
 
 // restartNote は起動し直した役への知らせの頭 (前の会話が無いことを伝え、続きの拾い方を指す)。
 const restartNote = "前の session は前の応答から %d 分空いて prompt cache が切れていたので、続きから再開せずに同じ worktree で新しく起動した (pro-con issue 581)。" +
-	"前の会話は引き継いでいない。扱い中だったカードは `pro-con card show <カード>` の履歴で確かめ、作業途中の物は指示書の「途中で落ちて再開されたら」と同じに扱ってから続ける。\n\n"
+	"前の会話は引き継いでいない。扱い中だったカードは `pro-con card show <カード>` の履歴で確かめてから続ける (作業途中の物の扱いは指示書に従う)。\n\n"
 
 // roleQuiet は session id の transcript の最後の応答から now までの長さ。transcript を読めない・応答が無いなら偽 (分からないので再開する = 581 の前の形)。
 func (d *Dispatcher) roleQuiet(sid string, now time.Time) (time.Duration, bool) {
@@ -497,7 +499,7 @@ func (d *Dispatcher) prepareRole(r *role, row live.Owned, hasRow bool, cur agent
 			stop = cur.ID
 		}
 		// 起動し直すのは役の worktree (-w の名前と cwd が揃う) だけ: 起動の結果を一覧で確かめる adopt が、名前と roleWorktree(名前) で引くため
-		if quiet, ok := d.roleQuiet(row.SessionID, now); mayRestart && ok && quiet >= roleCacheTTL && d.exists(row.Cwd) && samePath(row.Cwd, d.roleWorktree(filepath.Base(row.Cwd))) {
+		if quiet, ok := d.roleQuiet(row.SessionID, now); mayRestart && ok && quiet >= roleCacheTTL && samePath(row.Cwd, d.roleWorktree(filepath.Base(row.Cwd))) {
 			name = filepath.Base(row.Cwd)
 			// 新しい session には何も知らせていないので、知らせる物を全部新しい物として渡す
 			prompt := r.intro + "\n\n" + r.guide(d) + "\n---\n\n" + fmt.Sprintf(restartNote, int(quiet.Minutes())) + r.notice(d, cards, pending, pending)

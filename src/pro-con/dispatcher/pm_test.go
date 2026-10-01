@@ -717,6 +717,9 @@ func TestPMResumesAfterRestartRejected(t *testing.T) {
 	if len(r.l.restarts) != 1 || len(r.l.resumes) != 0 {
 		t.Fatalf("まず起動し直すはず: restarts=%v resumes=%v", r.l.restarts, r.l.resumes)
 	}
+	if n := r.d.roleRun(pmRole).rejects; n != 0 {
+		t.Fatalf("起動し直しの拒否を再開の拒否に数えた (%d。再開の試行が launchRejectLimit から減る)", n)
+	}
 	r.now = r.now.Add(launchGrace + time.Second)
 	r.tick(t)
 	if len(r.l.restarts) != 1 || len(r.l.resumes) != 1 || !strings.Contains(r.l.resumes[0], "C-002") {

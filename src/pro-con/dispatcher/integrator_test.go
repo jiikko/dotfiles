@@ -317,3 +317,30 @@ func TestIntegratorStoppedOnShutdownBeforeRegistered(t *testing.T) {
 		t.Fatalf("記録に載る前の係を終了で止めない: stops=%v", r.l.stops)
 	}
 }
+
+// 取り込みの係も、前の応答から 55 分以上空いていれば同じ worktree で起動し直し、レビューの列のカードを全部新しい物として渡す (581)。
+func TestIntegratorRestartsInPlaceAfterCacheTTL(t *testing.T) {
+	r := reviewedAndStarted(t)
+	pg := r.d.Transcript
+	r.d.Transcript = func(sid string) (live.Transcript, error) {
+		if sid == "I1" {
+			return live.Transcript{LastReply: t0}, nil
+		}
+		if pg == nil {
+			return live.Transcript{}, nil
+		}
+		return pg(sid)
+	}
+	r.ss = slices.DeleteFunc(r.ss, func(s agents.Session) bool { return s.SessionID == "I1" }) // 落ちた
+	r.now = t0.Add(3 * time.Hour)
+	r.tick(t)
+	r.now = r.now.Add(restartWait + time.Second)
+	r.tick(t)
+	wt := "/w/dotfiles/.claude/worktrees/" + intName
+	if !slices.Equal(r.l.restarts, []string{":" + wt + ":" + intName}) || slices.ContainsFunc(r.l.cwds, func(c string) bool { return c == wt }) {
+		t.Fatalf("取り込みの係を同じ worktree で起動し直していない / 再開した: restarts=%v cwds=%v", r.l.restarts, r.l.cwds)
+	}
+	if p := r.l.restartMsgs[0]; !strings.Contains(p, "INT-GUIDE") || !strings.Contains(p, "レビュー待ち C-001") || strings.Contains(p, "まだレビューの列に残っている") {
+		t.Fatalf("起動し直しの指示に指示書とレビュー待ちのカード (新しい物として) が無い: %q", p)
+	}
+}
