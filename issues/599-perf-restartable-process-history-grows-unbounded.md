@@ -1,5 +1,7 @@
 # 599 (perf): restartable の終わったプロセスの記録 (allProcesses) が runner の生存期間中に増え続ける
 
+> 🚨 **担当中: dotfiles-58**（2026-10-01〜）
+
 起票日: 2026-10-01
 
 出典: restartable の audit (codex のコードスキャン、2026-10-01。[601](601-research-restartable-audit-2026-10-01.md))。Claude がコードで裏を取った。

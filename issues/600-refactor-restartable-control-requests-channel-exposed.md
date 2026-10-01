@@ -1,5 +1,7 @@
 # 600 (refactor): restartable の control.Server.Requests が送受信どちらもできるチャネルのまま公開されている
 
+> 🚨 **担当中: dotfiles-58**（2026-10-01〜）
+
 起票日: 2026-10-01
 
 出典: restartable の audit (codex のコードスキャン、2026-10-01。[601](601-research-restartable-audit-2026-10-01.md))。Claude がコードで裏を取った。
