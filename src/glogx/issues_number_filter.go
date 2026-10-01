@@ -74,7 +74,11 @@ func (f *issuesNumberFilter) edit(key string) bool {
 // paste は貼り付けた文字列のうち、最初に出てくる数字の並びだけを検索語に入れる (検索語が変わったら true)。
 // 「#415」「issue 415」や、glogx の Y でコピーした参照 (「issue 415 タイトル (issues/415-x.md)」) を貼っても 415 で引ける。
 // 数字を全部つなげると参照の番号とパスの番号が重なって 415415 になり、何にも一致しない (敵対レビューが実測)。
+//
+// 先に termsafe で無害化する (エスケープの中の数字を拾わない: "\x1b[31m415" を 31 と読む。敵対レビューが実測)。
+// 最初の数字の並びが番号でない貼り付け (先頭に日付がある等) は外れるが、Y の参照は「issue N …」で始まるので起きない。
 func (f *issuesNumberFilter) paste(s string) bool {
+	s = sanitizePlainLine(s)
 	start := strings.IndexFunc(s, isASCIIDigit)
 	if start < 0 {
 		return false

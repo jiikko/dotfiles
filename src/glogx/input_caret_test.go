@@ -295,6 +295,14 @@ func TestPasteGoesOnlyIntoInputs(t *testing.T) {
 			t.Errorf("Y でコピーした参照から番号を引けない: query=%q (期待 123)", q)
 		}
 	})
+	t.Run("番号の無害化", func(t *testing.T) {
+		m := caretTestModel(t, false)
+		typeKeys(m, "/")
+		m.Update(tea.PasteMsg{Content: "\x1b[31m129"}) // エスケープの中の 31 を拾わない
+		if q := m.issuesOv.numFilter.query(); q != "129" {
+			t.Errorf("エスケープの中の数字を拾った: query=%q (期待 129)", q)
+		}
+	})
 	t.Run("入力欄の外", func(t *testing.T) {
 		m := caretTestModel(t, false)
 		before := m.issuesOv.cursor
@@ -322,21 +330,33 @@ func TestPasteGoesOnlyIntoInputs(t *testing.T) {
 	}
 }
 
-// tmux の prefix が入力欄の編集キー (C-a = 先頭へ) と同じでも、入力欄に打っている間は入力欄に届く。
-// 入力欄の外では今までどおり prefix を飲んで案内を出す。
+// tmux の prefix が入力欄の編集キーと同じでも、入力欄に打っている間は入力欄に届く。入力欄の外では今までどおり
+// prefix を飲んで案内を出す。🚨 ctrl+a 以外も回す: 1 つだけだと、判定を key == "ctrl+a" に書き換えても緑のまま通る (変異で実測)。
 func TestTmuxPrefixReachesInputWhileTyping(t *testing.T) {
-	m := caretTestModel(t, false)
-	m.tmuxPrefix = "ctrl+a"
-	typeKeys(m, "/", "1", "2", "ctrl+a", "9")
-	if q := m.issuesOv.numFilter.query(); q != "912" {
-		t.Errorf("入力中の ctrl+a (prefix と同じ) が先頭へ動かない: query=%q (期待 912)", q)
-	}
-	if strings.Contains(m.toast.Text(), "tmux prefix") {
-		t.Errorf("入力中に prefix の案内を出した: %q", m.toast.Text())
-	}
-	typeKeys(m, "esc", "ctrl+a")
-	if !strings.Contains(m.toast.Text(), "tmux prefix") {
-		t.Errorf("入力欄の外で prefix の案内が出ない: toast=%q", m.toast.Text())
+	for _, c := range []struct{ prefix, want string }{
+		{"ctrl+a", "912"}, // 先頭へ動いてから 9
+		{"ctrl+b", "192"}, // 1 字左へ動いてから 9
+		{"ctrl+u", "92"},  // カーソルの前を消してから 9 (カーソルは 2 の前)
+	} {
+		t.Run(c.prefix, func(t *testing.T) {
+			m := caretTestModel(t, false)
+			m.tmuxPrefix = c.prefix
+			typeKeys(m, "/", "1", "2")
+			if c.prefix == "ctrl+u" {
+				typeKeys(m, "left")
+			}
+			typeKeys(m, c.prefix, "9")
+			if q := m.issuesOv.numFilter.query(); q != c.want {
+				t.Errorf("入力中の %s (prefix と同じ) が編集として効かない: query=%q (期待 %s)", c.prefix, q, c.want)
+			}
+			if strings.Contains(m.toast.Text(), "tmux prefix") {
+				t.Errorf("入力中に prefix の案内を出した: %q", m.toast.Text())
+			}
+			typeKeys(m, "esc", c.prefix)
+			if !strings.Contains(m.toast.Text(), "tmux prefix") {
+				t.Errorf("入力欄の外で prefix の案内が出ない: toast=%q", m.toast.Text())
+			}
+		})
 	}
 }
 

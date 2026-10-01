@@ -1505,7 +1505,9 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// 🚨 入力欄に打っている間で、prefix が入力欄の編集キーでもある (C-a = 先頭へ / C-b = 1 字左へ) ときだけ飲まずに入力欄へ
 	// 渡す。飲むと入力欄でその編集が効かない。編集キーでない prefix (C-t 等) は入力欄でも今までどおり飲んで案内する
 	// (渡しても何も起きず、案内だけが消える)。C-b の利用者が window 移動のつもりで押すとキャレットが動くが、入力欄では
-	// docs/glogx-ui-guide.md §7 の編集の語彙を優先する (案内を出して編集を捨てる方が、C-b を左へ使う人を壊す)
+	// docs/glogx-ui-guide.md §7 の編集の語彙を優先する (案内を出して編集を捨てる方が、C-b を左へ使う人を壊す)。
+	// 入力欄が自分で捌く移動のキー (ctrl+n / ctrl+p) は lineedit の編集キーではないので、prefix にしている人には入力中も
+	// 案内に取られる。救うには入力欄のキーの表をここにもう 1 つ持つことになるので、稀な設定として採らない (2026-10-02 の敵対レビュー)
 	if m.tmuxPrefix != "" && key == m.tmuxPrefix && !(m.activeFullScreen() == fullScreenIssues && m.issuesOv.typingInput() && isLineEditKey(key)) {
 		// 通知は右下トースト (中央ダイアログは操作を遮って重い)
 		m.toast.Show("tmux prefix は popup では効きません (C-g で閉じてから)", false)
