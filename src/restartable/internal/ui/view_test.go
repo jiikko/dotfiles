@@ -580,10 +580,10 @@ func TestCompactTransitionLineShowsConfirmationPrompt(t *testing.T) {
 // 板を閉じた後の確認ダイアログも、板の入らない幅では 1 行にする (confirm.Dialog は最小 10 桁ではみ出す)。
 func TestConfirmOutsideTransitionFitsAtWidthsOneThroughNine(t *testing.T) {
 	want := map[runner.Confirm]map[int]string{
-		runner.ConfirmQuit: {1: "y", 2: "y/", 3: "y/n", 4: "y/n", 5: "y/n", 6: "y/n",
+		runner.ConfirmQuit: {1: "y", 2: "y/", 3: "y/n", 4: "Qy/n", 5: "終y/n", 6: "終y/n",
 			7: "終了y/n", 8: "終了y/n", 9: "終了y/n"},
-		runner.ConfirmRestart: {1: "y", 2: "y/", 3: "y/n", 4: "y/n", 5: "y/n", 6: "y/n",
-			7: "y/n", 8: "y/n", 9: "再起動y/n"},
+		runner.ConfirmRestart: {1: "y", 2: "y/", 3: "y/n", 4: "Ry/n", 5: "再y/n", 6: "再y/n",
+			7: "再y/n", 8: "再y/n", 9: "再起動y/n"},
 	}
 	for confirmState, rows := range want {
 		for width := 1; width <= 9; width++ {

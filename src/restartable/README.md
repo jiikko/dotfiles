@@ -80,11 +80,12 @@ restartable restart
 ```
 
 出力には状態、子 PID、generation、起動確認済みかを示す `ready` が含まれます。runner と client で別の socket を使う場合は、両方に同じ `--control PATH` を指定します。
+終了コードは 0 = 受け付けた (応答の `ok` が true) / 1 = 断られた (`ok` が false) か、その他の失敗 / 2 = runner が動いていない (socket が無い・接続を拒否された) か、引数の誤り / 124 = `--timeout` までに応答が無い、です。obaket の `dev-restart` は 2 を「ループが動いていない」と読みます。
 `--id-env NAME` を指定すると、生成したインスタンス ID を build / run / stop / ready command の環境変数に渡します。
 
 ## TTY UI を表示しない起動
 
-stdin と stdout のどちらか一方でも端末でなければ、キー入力と最下行 UI は有効になりません。control socket は利用できます。子のログは、stdout が端末でなければ (パイプ・ファイル) byte のまま素通しします。stdout が端末なら (stdin だけをリダイレクトした場合)、TTY UI と同じく行に分けて端末の制御列を取り除いてから 1 行ずつ出します (色の SGR は残します。改行の無い末尾は改行か子の出力の終わりまで出ません)。子の stdin は UI の有無ではなく runner の stdin で決まります。runner の stdin が端末なら、TTY UI を表示しない場合も build / run / stop-cmd の stdin は `/dev/null` です。これにより、出力をパイプへ流したときに背景プロセスグループの子が端末入力で停止するのを防ぎます。runner の stdin が非端末なら、その入力を子へ渡します。
+stdin と stdout のどちらか一方でも端末でなければ、キー入力と最下行 UI は有効になりません。control socket は利用できます。子のログは、stdout が端末でなければ (パイプ・ファイル) byte のまま素通しします。stdout が端末なら (stdin だけをリダイレクトした場合)、届いた分ごとに端末の制御列を取り除いてから出します (色の SGR は残します)。行にはまとめないので、改行の無い催促はすぐ出て、`\r` で上書きする進捗は端末の上で上書きされます。子の stdin は UI の有無ではなく runner の stdin で決まります。runner の stdin が端末なら、TTY UI を表示しない場合も build / run / stop-cmd の stdin は `/dev/null` です。これにより、出力をパイプへ流したときに背景プロセスグループの子が端末入力で停止するのを防ぎます。runner の stdin が非端末なら、その入力を子へ渡します。
 非 TTY では進捗板を描かず、`--ready-cmd` の確認結果を stderr に 1 行ずつ出します。
 例えば CI や pipe では次のように実行します。
 

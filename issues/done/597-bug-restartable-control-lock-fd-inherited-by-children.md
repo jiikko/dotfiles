@@ -36,3 +36,6 @@ lock の fd を `O_CLOEXEC` 付きで開く (`syscall.O_CLOEXEC` を足す、ま
   - 敵対的レビュー: (1)「`exec.Command` は FD を選別するのでテストは O_CLOEXEC 無しでも通りうる」は不採用。Go の exec は close-on-exec の無い fd をそのまま継承する (issue 本文の通り) うえ、変異で実際に red になった。(2)「親環境に `RESTARTABLE_TEST_LOCK_FD` があると親が exit する」は不採用 (テストが自分で子にだけ設定する変数で、親に入る経路を示せない)。`fork` と `exec` の間の一時的な fd は O_CLOEXEC で exec 時に閉じるため問題にならない。
 - 未再現: 実際の SIGKILL で二重起動が拒否される再現はしていない (テストは fd の継承そのものを固定)。
 - 取り込み (dotfiles-58): 子の側の検査を「渡された番号の fd が開いているか」から「その fd が lock のファイルか (fstat と stat の dev / ino)」に変えた。子の Go の実行時が同じ番号を別のファイルに使うと、修正後でも誤って赤になるため (commit「test(restartable): lock の fd の継承の検査を、番号ではなく inode で比べる」)。O_CLOEXEC を外す変異で red を確かめ直した
+- 残り (セルフレビュー 2026-10-01、方針の判断が要る): runner が SIGKILL で落ちてアプリが孤児で残ったとき、変更前は漏れた lock の fd を孤児が握っていたので
+  次の runner の起動は「control socket is already active」で拒否された (偶然の防御)。今は lock が取れ、古い socket を消して 2 つ目のアプリを黙って起動する。
+  孤児を検出して警告するかは未決 (SIGKILL での再現はしていない)。trigger: 同じ checkout で 2 つのアプリが動いていたという報告

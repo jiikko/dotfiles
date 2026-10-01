@@ -267,11 +267,7 @@ func (a *actor) run() (int, error) {
 	a.presenter.Render(a.model)
 	for !a.finished {
 		select {
-		case req, ok := <-requests:
-			if !ok {
-				requests = nil
-				continue
-			}
+		case req := <-requests: // 要求の列は閉じない (受信専用で渡るので外からも閉じられない = issue 600)
 			if req != nil {
 				a.handleControl(req)
 			}

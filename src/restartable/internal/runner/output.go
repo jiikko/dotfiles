@@ -1,10 +1,12 @@
 package runner
 
 import (
+	"bytes"
 	"io"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jiikko/dotfiles/src/termsafe"
 )
@@ -168,10 +170,11 @@ func (s *logSink) CopyFrom(r io.Reader, headless bool) {
 		_, _ = io.Copy(s.output, r)
 		return
 	}
-	emit := s.addSafeLine
 	if headless {
-		emit = func(line string) { s.writeOutput([]byte(safeLine(line) + "\n")) }
+		s.copyToTerminal(r)
+		return
 	}
+	emit := s.addSafeLine
 	var current []byte
 	previousWasCR := false
 	buf := make([]byte, 32<<10)
@@ -211,6 +214,77 @@ func (s *logSink) CopyFrom(r io.Reader, headless bool) {
 			return
 		}
 	}
+}
+
+// copyToTerminal は UI の無い起動で端末へ出す子の出力を、届いた分ごとに無害化して書く。
+// 行にまとめない: 改行の無い催促 ("Password: ") がすぐ出て、\r で上書きする進捗が端末の上で上書きされる
+// (601 で行ごとに区切ったら、催促が次の改行まで出ず、進捗の 1 コマずつが改行に化けた)。
+// 読み取りの切れ目で途中になった制御シーケンス・UTF-8 の文字は、無害化が切れ端を壊すので次の読み取りまで持ち越す。
+func (s *logSink) copyToTerminal(r io.Reader) {
+	var pending []byte
+	flush := func(upTo int) {
+		for len(pending[:upTo]) > 0 {
+			chunk := pending[:upTo]
+			i := bytes.IndexAny(chunk, "\r\n")
+			if i < 0 {
+				s.writeOutput([]byte(safeLine(string(chunk))))
+				break
+			}
+			s.writeOutput(append([]byte(safeLine(string(chunk[:i]))), chunk[i]))
+			pending, upTo = pending[i+1:], upTo-i-1
+		}
+		pending = append(pending[:0], pending[upTo:]...)
+	}
+	buf := make([]byte, 32<<10)
+	for {
+		n, err := r.Read(buf)
+		pending = append(pending, buf[:n]...)
+		if err != nil {
+			flush(len(pending))
+			return
+		}
+		cut := completePrefix(pending)
+		if len(pending)-cut >= maxOutputLineBytes { // 終わらない列で持ち越しを増やし続けない
+			cut = len(pending)
+		}
+		flush(cut)
+	}
+}
+
+// completePrefix は b のうち、終わっていない制御シーケンス・UTF-8 の文字を末尾から除いた長さ。
+func completePrefix(b []byte) int {
+	if i := bytes.LastIndexByte(b, 0x1b); i >= 0 && !escapeComplete(b[i:]) {
+		return i
+	}
+	for k := 1; k <= utf8.UTFMax && k <= len(b); k++ { // 末尾の文字の先頭の byte を探す
+		if utf8.RuneStart(b[len(b)-k]) {
+			if !utf8.FullRune(b[len(b)-k:]) {
+				return len(b) - k
+			}
+			break
+		}
+	}
+	return len(b)
+}
+
+// escapeComplete は ESC で始まる seq が終わっているか (CSI は終端の byte、OSC などの文字列は BEL か ST、ほかは 2 byte)。
+func escapeComplete(seq []byte) bool {
+	if len(seq) < 2 {
+		return false
+	}
+	switch seq[1] {
+	case '[':
+		for _, c := range seq[2:] {
+			if c >= 0x40 && c <= 0x7e {
+				return true
+			}
+		}
+		return false
+	case ']', 'P', '_', '^': // 終わりは BEL / ESC \ / U+009C (termsafe が終わりとみなすもの。食い違うと後ろの出力を持ち越し続ける)
+		rest := seq[2:]
+		return bytes.IndexByte(rest, 0x07) >= 0 || bytes.Contains(rest, []byte("\x1b\\")) || bytes.Contains(rest, []byte("\xc2\x9c"))
+	}
+	return true
 }
 
 // safeLine strips terminal control sequences except SGR, and resets SGR around

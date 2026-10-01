@@ -138,10 +138,11 @@ func compactTransitionLine(state runner.Model, width int) string {
 
 // compactConfirmLine は板の入らない幅 (layout.PanelMinWidth 未満) の確認の 1 行。板の間も板の外も同じ文言にする。
 func compactConfirmLine(confirmState runner.Confirm, width int) string {
+	// 4 桁あれば終了と再起動を見分けられる形を残す (Q / R は確認を開いたキー)。3 桁以下は y/n を切り詰める
 	if confirmState == runner.ConfirmRestart {
-		return fitFirst(width, "再起動y/n", "y/n")
+		return fitFirst(width, "再起動y/n", "再y/n", "Ry/n", "y/n")
 	}
-	return fitFirst(width, "終了y/n", "y/n")
+	return fitFirst(width, "終了y/n", "終y/n", "Qy/n", "y/n")
 }
 
 // fitFirst は width に収まる最初の候補を返す。どれも入らなければ最後の候補を切り詰める

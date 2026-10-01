@@ -131,25 +131,30 @@ func runCommand(args []string) int {
 			return 1
 		}
 	}
-	stdinIsTerminal := term.IsTerminal(os.Stdin.Fd())
-	stdoutIsTerminal := term.IsTerminal(os.Stdout.Fd())
-	headless := !stdinIsTerminal || !stdoutIsTerminal
-	var presenter runner.Presenter
-	if !headless {
-		presenter = ui.New(os.Stdin, os.Stdout)
-	}
-	code, err := runner.Run(runner.Config{
+	cfg := withTerminals(runner.Config{
 		BuildCommand: *build, RunArgs: runArgs, StopCommand: *stop,
 		StopCommandTimeout: *stopTimeout, TermGrace: *termGrace,
 		ReadyCommand: *ready, ReadyTimeout: *readyTimeout,
 		IDEnv: *idEnv, ControlPath: resolved, Stdin: os.Stdin,
-		Stdout: os.Stdout, Stderr: os.Stderr, Headless: headless, StdinIsTerminal: stdinIsTerminal, StdoutIsTerminal: stdoutIsTerminal, Presenter: presenter,
-	})
+		Stdout: os.Stdout, Stderr: os.Stderr,
+	}, term.IsTerminal(os.Stdin.Fd()), term.IsTerminal(os.Stdout.Fd()))
+	if !cfg.Headless {
+		cfg.Presenter = ui.New(os.Stdin, os.Stdout)
+	}
+	code, err := runner.Run(cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	return code
+}
+
+// withTerminals は stdin / stdout が端末かを cfg に写す。UI を出すのは両方が端末のときだけ (片方でも違えば headless)。
+// stdout が端末かは headless でも別に渡す: UI が無くても端末へ出す子の出力は無害化する (issue 601)
+func withTerminals(cfg runner.Config, stdinIsTerminal, stdoutIsTerminal bool) runner.Config {
+	cfg.Headless = !stdinIsTerminal || !stdoutIsTerminal
+	cfg.StdinIsTerminal, cfg.StdoutIsTerminal = stdinIsTerminal, stdoutIsTerminal
+	return cfg
 }
 
 func validEnvName(name string) bool {

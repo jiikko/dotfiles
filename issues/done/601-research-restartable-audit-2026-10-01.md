@@ -101,3 +101,12 @@ rc 6 (緑) が 1 本: 再ビルドで板を開かない変異が、寄せた直�
 `go test -race -count=1 ./...` rc=0 (4 package ok)。`scripts/golangci_lint.sh v2.5.0 run --max-same-issues 0 --max-issues-per-linter 0 ./...` rc=0、0 issues。
 - 取り込み (dotfiles-58): 597 → 600 の後に cherry-pick。control_test.go で 597 のテストと 601 の補助関数 (waitForBlockedServeConns) が同じ場所に足されて衝突したので両方残した。go test -race と lint (上限なし) は 0 issues。
 - 残り (601 の担当の報告): main.go が StdoutIsTerminal を渡すことを守るテストは無い (外す変異が緑)。CopyFrom の headless 引数は sink.headless と常に同じで冗長 (触っていない)
+- セルフレビュー (2026-10-01、3 観点) で直したこと:
+  - UI の無い起動で端末へ出す子の出力を、行にまとめず読み取りごとに無害化して書く (copyToTerminal)。行ごとに区切ったため、改行の無い催促が次の改行まで出ず、
+    \r で上書きする進捗が 1 コマずつ改行に化けていた。途中で切れた制御シーケンス・UTF-8 は次の読み取りまで持ち越す。codex の敵対的レビューの P2
+    (U+009C で閉じた OSC を終わりとみなさず、後ろの催促を持ち越し続ける) も直した
+  - main.go が stdout が端末かを渡す配線を withTerminals に切り出して固定 (外す・逆にする変異が緑だった)
+  - 幅 4〜8 の確認で終了と再起動を見分けられるようにした (Qy/n / Ry/n / 終y/n / 再y/n)。3 桁以下は y/n のまま
+  - README に control の終了コード (0 / 1 / 2 / 124) を書いた
+- 記録だけ (直していない): 色の指定と本文が別の読み取りに分かれると、その断片の色が落ちる (codex P3。見た目だけ)。読み取りの区切りの 64 KiB で UTF-8・SGR が切れる (TTY の経路は前から)。
+  settled の finished の条件・FailOnceWriter の短い書き込みの判定・callErrorCode の文字列判定は、外しても緑のまま (等価か、到達できるか未確認)

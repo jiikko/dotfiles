@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/jiikko/dotfiles/src/restartable/internal/control"
+	"github.com/jiikko/dotfiles/src/restartable/internal/runner"
 )
 
 func TestSIGPIPEMainHelper(t *testing.T) {
@@ -90,9 +91,11 @@ func runCLI(t *testing.T, args ...string) (code int, stdout, stderr string) {
 }
 
 // 短い socket path (MaxSocketPath = 103) を確保する。
+// shortSocketPath は /tmp の直下に socket の置き場を作る ($TMPDIR は macOS で長く、socket の path の上限 104 byte を超えうる。
+// control / runner のテストの shortSocketDir / shortTempDir と同じ置き場)。
 func shortSocketPath(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "rs")
+	dir, err := os.MkdirTemp("/tmp", "rs-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,6 +213,19 @@ func TestCallErrorCode(t *testing.T) {
 	} {
 		if got := callErrorCode(c.err); got != c.want {
 			t.Errorf("%s: callErrorCode = %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
+// stdin / stdout が端末かを、そのまま runner に渡す (取り違えると、パイプへの出力まで無害化する / 端末へ素通しする)。
+func TestWithTerminals(t *testing.T) {
+	for _, c := range []struct{ stdin, stdout, headless bool }{
+		{true, true, false}, {true, false, true}, {false, true, true}, {false, false, true},
+	} {
+		got := withTerminals(runner.Config{}, c.stdin, c.stdout)
+		if got.Headless != c.headless || got.StdinIsTerminal != c.stdin || got.StdoutIsTerminal != c.stdout {
+			t.Errorf("stdin 端末=%v stdout 端末=%v: Headless=%v StdinIsTerminal=%v StdoutIsTerminal=%v (want Headless=%v)",
+				c.stdin, c.stdout, got.Headless, got.StdinIsTerminal, got.StdoutIsTerminal, c.headless)
 		}
 	}
 }
