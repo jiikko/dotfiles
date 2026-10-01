@@ -12,6 +12,13 @@ import (
 	"pro-con/store"
 )
 
+// 既定のモデルと effort (store.Models[0] / store.DefaultEffort から作らない: 作ると既定を変える変更をテストが追いかける)。
+const (
+	defaultModel       = "claude-opus-5-5"
+	defaultEffort      = "medium"
+	defaultModelEffort = defaultModel + " " + defaultEffort
+)
+
 func writeSettings(t *testing.T, body string) string {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "settings.json")
@@ -30,17 +37,17 @@ func TestLauncherArgsPassLanguageAndNoAutoMemory(t *testing.T) {
 	const settings = `{"autoMemoryEnabled":false,"feedbackDrafts":"off","language":"日本語"}`
 	l := ExecLauncher{UserSettings: p}
 	start := l.startArgs("pc-c-001", "依頼")
-	want := []string{"--bg", "-w", "pc-c-001", "-n", "pc-c-001", "--model", "claude-opus-5-5", "--effort", "medium", "--setting-sources", "project,local", "--settings", settings, "依頼"}
+	want := []string{"--bg", "-w", "pc-c-001", "-n", "pc-c-001", "--model", defaultModel, "--effort", defaultEffort, "--setting-sources", "project,local", "--settings", settings, "依頼"}
 	if !slices.Equal(start, want) {
 		t.Fatalf("起動の引数 = %q\nwant %q", start, want)
 	}
 	resume := l.resumeArgs("sid", "pc-c-001", "回答")
-	want = []string{"--bg", "--resume", "sid", "-n", "pc-c-001", "--model", "claude-opus-5-5", "--effort", "medium", "--setting-sources", "project,local", "--settings", settings, "回答"}
+	want = []string{"--bg", "--resume", "sid", "-n", "pc-c-001", "--model", defaultModel, "--effort", defaultEffort, "--setting-sources", "project,local", "--settings", settings, "回答"}
 	if !slices.Equal(resume, want) {
 		t.Fatalf("再開の引数 = %q\nwant %q", resume, want)
 	}
 	restart := l.restartArgs("pc-pm-x", "指示")
-	want = []string{"--bg", "-n", "pc-pm-x", "--model", "claude-opus-5-5", "--effort", "medium", "--setting-sources", "project,local", "--settings", settings, "指示"}
+	want = []string{"--bg", "-n", "pc-pm-x", "--model", defaultModel, "--effort", defaultEffort, "--setting-sources", "project,local", "--settings", settings, "指示"}
 	if !slices.Equal(restart, want) {
 		t.Fatalf("起動し直しの引数 = %q\nwant %q", restart, want)
 	}
@@ -476,34 +483,48 @@ func TestRestartMarksOnlyStopFailure(t *testing.T) {
 // PG・PM・取り込みの係の --model / --effort は pro-con の設定 (状態の置き場の settings.json) から起動・再開・起動し直しのたびに読む。
 // 設定が無い・壊れているなら既定 (Opus 5.5 / medium) で起動する (Claude Code の既定やユーザーの settings.json の model に任せない)。
 func TestLauncherModelAndEffortFromSettings(t *testing.T) {
-	model := func(args []string) string {
-		return flagValue(t, args, "--model") + " " + flagValue(t, args, "--effort")
-	}
-	user := writeSettings(t, `{"model": "sonnet", "effortLevel": "max"}`)
+	user := writeSettings(t, `{"model": "sonnet", "effortLevel": "max"}`) // ユーザーの settings.json の model / effortLevel は写さない
 	dir := t.TempDir()
 	l := ExecLauncher{UserSettings: user, StateDir: dir}
-	if got := model(l.startArgs("pc-c-001", "p")); got != "claude-opus-5-5 medium" {
-		t.Fatalf("設定が無いときの --model / --effort = %q (既定は claude-opus-5-5 medium。ユーザーの settings.json の model を写さない)", got)
+	lifecycles := []struct {
+		kind string
+		args func() []string
+	}{
+		{"起動", func() []string { return l.startArgs("n", "p") }},
+		{"再開", func() []string { return l.resumeArgs("sid", "n", "t") }},
+		{"起動し直し", func() []string { return l.restartArgs("n", "p") }},
 	}
-	if err := os.WriteFile(filepath.Join(dir, store.SettingsFile), []byte(`{"model": "claude-fable-5-1", "effort": "high"}`), 0o600); err != nil {
-		t.Fatal(err)
+	for _, c := range []struct {
+		name, settings, want string // settings が空なら settings.json を置かない
+	}{
+		{"設定なし", "", defaultModelEffort},
+		{"設定の値", `{"model": "claude-fable-5-1", "effort": "high"}`, "claude-fable-5-1 high"},
+		{"選べない値は既定に倒す", `{"model": "opus", "effort": "hgih"}`, defaultModelEffort}, // claude が引数で弾くと、止めた後の起動に失敗する
+		{"壊れた設定は既定", `{"model": `, defaultModelEffort},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			writeProConSettings(t, dir, c.settings)
+			for _, lc := range lifecycles {
+				args := lc.args()
+				if got := flagValue(t, args, "--model") + " " + flagValue(t, args, "--effort"); got != c.want {
+					t.Errorf("%sの --model / --effort = %q, want %q", lc.kind, got, c.want)
+				}
+			}
+		})
 	}
-	for kind, args := range map[string][]string{"起動": l.startArgs("n", "p"), "再開": l.resumeArgs("sid", "n", "t"), "起動し直し": l.restartArgs("n", "p")} {
-		if got := model(args); got != "claude-fable-5-1 high" {
-			t.Fatalf("%sの --model / --effort = %q (設定の claude-fable-5-1 high のはず)", kind, got)
+}
+
+// writeProConSettings は pro-con の状態の置き場 dir に settings.json を書く (body が空なら消す)。
+func writeProConSettings(t *testing.T, dir, body string) {
+	t.Helper()
+	p := filepath.Join(dir, store.SettingsFile)
+	if body == "" {
+		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+			t.Fatal(err)
 		}
+		return
 	}
-	// 手で直した選べない値は渡さない (claude が引数で弾くと、止めた後の起動に失敗する)
-	if err := os.WriteFile(filepath.Join(dir, store.SettingsFile), []byte(`{"model": "opus", "effort": "hgih"}`), 0o600); err != nil {
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
-	}
-	if got := model(l.resumeArgs("sid", "n", "t")); got != "claude-opus-5-5 medium" {
-		t.Fatalf("選べない値の --model / --effort = %q (既定に倒すはず)", got)
-	}
-	if err := os.WriteFile(filepath.Join(dir, store.SettingsFile), []byte(`{"model": `), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := model(l.resumeArgs("sid", "n", "t")); got != "claude-opus-5-5 medium" {
-		t.Fatalf("設定が壊れているときの --model / --effort = %q (既定で起動するはず)", got)
 	}
 }

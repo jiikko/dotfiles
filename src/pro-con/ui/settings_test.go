@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -443,10 +444,10 @@ func TestSettingsStepsModelAndEffort(t *testing.T) {
 	if s := setScreen(m); !strings.Contains(s, "‹ opus-5-5 ›") || !strings.Contains(s, "‹ medium ›") || !strings.Contains(s, "設定なし (既定 opus-5-5)") {
 		t.Fatalf("既定のモデル・effort を出さない:\n%s", s)
 	}
-	for configKeys[m.set.cursor] != backend.ConfigModel {
-		press(m, "j")
-	}
-	press(m, "l", "j", "l", "h")
+	cursorTo(t, m, backend.ConfigModel)
+	press(m, "l")
+	cursorTo(t, m, backend.ConfigEffort)
+	press(m, "l", "h")
 	var got []string
 	for _, c := range be.applied {
 		if sc, ok := c.(backend.SetConfig); ok {
@@ -458,31 +459,73 @@ func TestSettingsStepsModelAndEffort(t *testing.T) {
 	}
 }
 
+// cursorTo は設定のタブで key の行までカーソルを動かす (行の並びを数で決め打ちしない。行が無ければ落とす)。
+func cursorTo(t *testing.T, m *Model, key string) {
+	t.Helper()
+	want := slices.Index(configKeys, key)
+	if want < 0 {
+		t.Fatalf("設定のタブに %s の行が無い", key)
+	}
+	for range len(configKeys) {
+		switch {
+		case m.set.cursor < want:
+			press(m, "j")
+		case m.set.cursor > want:
+			press(m, "k")
+		default:
+			return
+		}
+	}
+	t.Fatalf("%s の行に着かない (cursor %d / want %d)", key, m.set.cursor, want)
+}
+
+// screenLine は設定画面の name を含む行 (無ければ落とす)。
+func screenLine(t *testing.T, m *Model, name string) string {
+	t.Helper()
+	for _, l := range strings.Split(setScreen(m), "\n") {
+		if strings.Contains(l, name) {
+			return l
+		}
+	}
+	t.Fatalf("%q の行が無い:\n%s", name, setScreen(m))
+	return ""
+}
+
 // 設定した model / effort を出し、出どころを「設定」と言う。手で直した選べない値は、既定に倒して渡すことを出す (黙って既定に見せない)。
+// 「claude-」を付けずに書いた "opus-5-5" も選べない値 (claude には既定の claude-opus-5-5 を渡す)。
 func TestSettingsShowsSetModelAndEffort(t *testing.T) {
 	be := newInspSpy()
-	be.snap.Config.Model, be.snap.Config.Effort = "claude-fable-5-1", "high"
 	m := openSettingsFor(t, be)
-	line := func(name string) string {
-		for _, l := range strings.Split(setScreen(m), "\n") {
-			if strings.Contains(l, name) {
-				return l
-			}
+	for _, c := range []struct{ model, effort, wantModel, wantEffort string }{
+		{"claude-fable-5-1", "high", "‹ fable-5-1 ›    次の起動・再開から効く · 設定 ", "‹ high ›         次の起動・再開から効く · 設定 "},
+		{"opus", "hgih", "‹ opus-5-5 ›     次の起動・再開から効く · 設定の opus は選べない → 既定 opus-5-5", "‹ medium ›       次の起動・再開から効く · 設定の hgih は選べない → 既定 medium"},
+		{"opus-5-5", "", "‹ opus-5-5 ›     次の起動・再開から効く · 設定の opus-5-5 は選べない → 既定 opus-5-5", "‹ medium ›       次の起動・再開から効く · 設定なし (既定 medium)"},
+	} {
+		be.snap.Config.Model, be.snap.Config.Effort = c.model, c.effort
+		m.setSnap(be.Snapshot())
+		if l := screenLine(t, m, "のモデル"); !strings.Contains(l, c.wantModel) {
+			t.Errorf("model %q の行 = %q\nwant に %q", c.model, l, c.wantModel)
 		}
-		return ""
+		if l := screenLine(t, m, "の effort"); !strings.Contains(l, c.wantEffort) {
+			t.Errorf("effort %q の行 = %q\nwant に %q", c.effort, l, c.wantEffort)
+		}
 	}
-	if l := line("のモデル"); !strings.Contains(l, "‹ fable-5-1 ›") || !strings.Contains(l, "設定 ·") {
-		t.Fatalf("設定したモデルの行 = %q", l)
+}
+
+// 120 桁の端末でも、モデル・effort の行の「次の起動・再開から効く」は切れない (適用待ち・選べない値の長い説明でも)。
+func TestSettingsModelNoteFitsNarrowTerminal(t *testing.T) {
+	be := newInspSpy()
+	be.snap.Config.Model = "opus"
+	m := openSettingsFor(t, be)
+	m.width = 120
+	cursorTo(t, m, backend.ConfigEffort)
+	press(m, "l") // effort は適用待ちになる
+	for _, name := range []string{"のモデル", "の effort"} {
+		if l := screenLine(t, m, name); !strings.Contains(l, "次の起動・再開から効く") {
+			t.Errorf("120 桁で %s の行の効く時点が切れた: %q", name, l)
+		}
 	}
-	if l := line("の effort"); !strings.Contains(l, "‹ high ›") || !strings.Contains(l, "設定 ·") {
-		t.Fatalf("設定した effort の行 = %q", l)
-	}
-	be.snap.Config.Model, be.snap.Config.Effort = "opus", "hgih"
-	m.setSnap(be.Snapshot())
-	if l := line("のモデル"); !strings.Contains(l, "‹ opus-5-5 ›") || !strings.Contains(l, "opus は選べないので既定 opus-5-5") {
-		t.Fatalf("選べないモデルの行 = %q", l)
-	}
-	if l := line("の effort"); !strings.Contains(l, "‹ medium ›") || !strings.Contains(l, "hgih は選べないので既定 medium") {
-		t.Fatalf("選べない effort の行 = %q", l)
+	if l := screenLine(t, m, "の effort"); !strings.Contains(l, "適用待ち  次の") {
+		t.Errorf("適用待ちの印が無い / 長い: %q", l)
 	}
 }

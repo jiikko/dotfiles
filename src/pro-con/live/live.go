@@ -710,7 +710,7 @@ func (b *Backend) Apply(cmd backend.Command) (string, error) {
 			return "", err
 		}
 		r = store.Request{Kind: store.KindConfig, Key: c.Key, Value: c.Value}
-		done = fmt.Sprintf("%s を %s にするよう受け付けた (dispatcher の次の Tick から効く)", c.Key, c.Value)
+		done = fmt.Sprintf("%s を %s にするよう受け付けた (%s)", c.Key, c.Value, store.EffectNote(c.Key))
 	case backend.ClearDone:
 		var ids []string
 		for _, cc := range b.Snapshot().Cards { // 画面が見ている完了のカードだけ (適用までに完了になったカードを巻き込まない)

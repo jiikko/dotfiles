@@ -166,6 +166,14 @@ const DefaultEffort = store.DefaultEffort
 var (
 	SessionModelOf  = store.SessionModelOf
 	SessionEffortOf = store.SessionEffortOf
+	SessionSource   = store.SessionSource
+)
+
+// model / effort の設定の出どころ (store.Source)。
+const (
+	SourceDefault = store.SourceDefault
+	SourceSet     = store.SourceSet
+	SourceInvalid = store.SourceInvalid
 )
 
 // SetConfig は設定を変える依頼 (pro-con config set と同じ。受付の箱に置き、dispatcher の次の Tick から効く)。

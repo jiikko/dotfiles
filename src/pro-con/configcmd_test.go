@@ -243,10 +243,10 @@ func TestConfigModelEffort(t *testing.T) {
 	if _, out, _ := configCmd(t, dir, "show"); !strings.Contains(out, "model  claude-fable-5-1 / effort high (") {
 		t.Fatalf("設定した model / effort が show に出ない:\n%s", out)
 	}
-	if err := os.WriteFile(filepath.Join(dir, store.SettingsFile), []byte(`{"model": "opus", "effort": "hgih"}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, store.SettingsFile), []byte(`{"model": "opus-5-5", "effort": "hgih"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, out, _ := configCmd(t, dir, "show"); !strings.Contains(out, `model  claude-opus-5-5 (設定の "opus" は選べないので既定) / effort medium (設定の "hgih" は選べないので既定)`) {
+	if _, out, _ := configCmd(t, dir, "show"); !strings.Contains(out, `model  claude-opus-5-5 (設定の "opus-5-5" は選べないので既定) / effort medium (設定の "hgih" は選べないので既定)`) {
 		t.Fatalf("選べない値を既定に倒したことを show に出さない:\n%s", out)
 	}
 }

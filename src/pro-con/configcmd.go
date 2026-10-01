@@ -15,7 +15,7 @@ import (
 	"pro-con/store"
 )
 
-const configUsage = `usage: pro-con config <操作> ...   (受付の箱に依頼を置く。適用は dispatcher の次の Tick。止めずに効く)
+const configUsage = `usage: pro-con config <操作> ...   (受付の箱に依頼を置く。dispatcher が次の Tick で書き、止めずに変わる。model / effort が効くのは PG・PM・取り込みの係の次の起動・再開)
   set limit <n>      同時に動かす PG の上限 (1 以上。dispatcher の --limit より優先。利用枠の絞り 80% で 1 本 / 95% で 0 本はこれより優先)
   set usage on|off   利用枠 (5 時間・週) を見て PG を絞るか (既定 on。off にすると枠が 80% を超えても上限まで起動する)
   set pm <n>         PM の数 (今は 1 だけ。2 以上は 415 の論点 6 が決まるまで受けない)
@@ -144,13 +144,13 @@ func showConfig(dir string, stdout, stderr io.Writer) int {
 	}
 	_, _ = fmt.Fprintln(stdout)
 	from := func(v, used string) string {
-		switch v {
-		case "":
+		switch store.SessionSource(v, used) {
+		case store.SourceDefault:
 			return " (設定なし。既定)"
-		case used:
-			return ""
+		case store.SourceInvalid:
+			return fmt.Sprintf(" (設定の %q は選べないので既定)", v)
 		}
-		return fmt.Sprintf(" (設定の %q は選べないので既定)", v)
+		return ""
 	}
 	_, _ = fmt.Fprintf(stdout, "model  %s%s / effort %s%s (PG・PM・取り込みの係。次の起動・再開から効く)\n", s.SessionModel(), from(s.Model, s.SessionModel()), s.SessionEffort(), from(s.Effort, s.SessionEffort()))
 	if err := showSchedule(dir, s, serr, time.Now(), stdout); err != nil {

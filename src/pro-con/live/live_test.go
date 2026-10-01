@@ -1117,3 +1117,17 @@ func TestModelEffortReachScreen(t *testing.T) {
 		t.Errorf("画面の Config の model / effort = %q / %q (claude-fable-5-1 / high のはず)", c.Model, c.Effort)
 	}
 }
+
+// 設定を受け付けたトーストは、その設定が効く時点を言う (model / effort は次の起動・再開。ほかは次の Tick)。
+func TestSetConfigToastSaysWhenItTakesEffect(t *testing.T) {
+	b, _ := testBackend(t, nil, nil)
+	for _, c := range []struct{ key, value, want string }{
+		{store.SettingModel, "claude-fable-5-1", "model を claude-fable-5-1 にするよう受け付けた (PG・PM・取り込みの係の次の起動・再開から効く)"},
+		{store.SettingLimit, "3", "limit を 3 にするよう受け付けた (dispatcher の次の Tick から効く)"},
+	} {
+		got, err := b.Apply(backend.SetConfig{Key: c.key, Value: c.value})
+		if err != nil || got != c.want {
+			t.Errorf("トースト = %q (%v), want %q", got, err, c.want)
+		}
+	}
+}

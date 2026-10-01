@@ -564,12 +564,16 @@ func (m *Model) configLines(w int) ([]string, int) {
 		}
 		val += pad
 		if waiting {
-			note = sgrYellow + "適用待ち (dispatcher の次の Tick で効く)" + sgrFgReset + "  " + note
+			wait := "適用待ち (dispatcher の次の Tick で効く)"
+			if key == backend.ConfigModel || key == backend.ConfigEffort {
+				wait = "適用待ち" // 効く時点は note が言う (重ねると狭い端末で note が切れる)
+			}
+			note = sgrYellow + wait + sgrFgReset + "  " + note
 		}
 		out = append(out, boxLine(border, " "+mark+fit(name, 34)+val+"  "+sgrDim+note+sgrReset, w))
 	}
 	out = append(out, boxLine(border, "", w))
-	out = append(out, boxLine(border, sgrDim+"   ← → で変えると受付の箱に置き、dispatcher の次の Tick から効く (止めずに変わる)。利用枠の絞り (80% で 1 本 / 95% で 0 本) は、チェックが入っている間この上限より優先"+sgrReset, w))
+	out = append(out, boxLine(border, sgrDim+"   ← → で変えると受付の箱に置き、dispatcher の次の Tick から効く (止めずに変わる。モデル・effort は PG・PM・取り込みの係の次の起動・再開から)。利用枠の絞り (80% で 1 本 / 95% で 0 本) は、チェックが入っている間この上限より優先"+sgrReset, w))
 	if e := m.snap.Config.Err; e != "" {
 		out = append(out, boxLine(border, sgrRed+"   設定のファイルを読めない (dispatcher は --limit で動く): "+e+sgrFgReset, w))
 	}
@@ -602,17 +606,18 @@ func (m *Model) limitNote() string {
 	return note
 }
 
-// sessionNote はモデル・effort の出どころと効く時点 (set は設定の値、used は dispatcher が実際に渡す値 = 設定なし・選べない値なら既定)。
+// sessionNote はモデル・effort の効く時点と出どころ (set は設定の値、used は dispatcher が実際に渡す値 = 設定なし・選べない値なら既定)。
+// 効く時点を先に出す (説明の列は狭い端末で末尾から切れる。出どころの方が長くなりうる)
 func sessionNote(set, used string) string {
-	used = strings.TrimPrefix(used, "claude-")
+	short := strings.TrimPrefix(used, "claude-")
 	from := "設定"
-	switch {
-	case set == "":
-		from = "設定なし (既定 " + used + ")"
-	case strings.TrimPrefix(set, "claude-") != used: // settings.json を手で直した選べない値。黙って既定に倒したと見せない
-		from = sgrYellow + "設定の " + set + " は選べないので既定 " + used + sgrFgReset
+	switch backend.SessionSource(set, used) {
+	case backend.SourceDefault:
+		from = "設定なし (既定 " + short + ")"
+	case backend.SourceInvalid: // settings.json を手で直した選べない値。黙って既定に倒したと見せない
+		from = sgrYellow + "設定の " + set + " は選べない → 既定 " + short + sgrFgReset
 	}
-	return from + " · 次の起動・再開から効く"
+	return "次の起動・再開から効く · " + from
 }
 
 // reviewNote は敵対的レビューの担い手の出どころと、codex の実体 (codex のときの PG への渡し方)。

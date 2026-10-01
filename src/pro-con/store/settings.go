@@ -91,6 +91,36 @@ func (s Settings) SessionModel() string { return SessionModelOf(s.Model) }
 // SessionEffort は PG・PM・取り込みの係に渡す effort (設定が無い・選べる値でないなら既定)。
 func (s Settings) SessionEffort() string { return SessionEffortOf(s.Effort) }
 
+// Source は model / effort の設定の値の出どころ (画面と pro-con config show が同じ判定で出す。文言はそれぞれ)。
+type Source int
+
+const (
+	SourceDefault Source = iota // 設定なし (既定を渡す)
+	SourceSet                   // 設定の値を渡す
+	SourceInvalid               // 設定の値は選べないので既定を渡す (settings.json を手で直した値)
+)
+
+// SessionSource は設定の値 v と、実際に渡す値 used (SessionModelOf / SessionEffortOf) から出どころを決める。
+// 🚨 生の値どうしで比べる (「claude-」を外して比べると、手で書いた "opus-5-5" が既定の claude-opus-5-5 と一致して「設定」に見える)
+func SessionSource(v, used string) Source {
+	switch v {
+	case "":
+		return SourceDefault
+	case used:
+		return SourceSet
+	}
+	return SourceInvalid
+}
+
+// EffectNote は設定 key がいつ効くか (画面のトースト・出来事の文が使う)。どれも dispatcher が次の Tick で settings.json に書くが、
+// model / effort は PG・PM・取り込みの係の起動・再開で claude に渡すので、効くのはその session の次の起動・再開
+func EffectNote(key string) string {
+	if key == SettingModel || key == SettingEffort {
+		return "PG・PM・取り込みの係の次の起動・再開から効く"
+	}
+	return "dispatcher の次の Tick から効く"
+}
+
 // SessionModelOf / SessionEffortOf は設定の値 v から実際に渡す値を決める (画面も同じ値を出す)。
 func SessionModelOf(v string) string {
 	if slices.Contains(Models, v) {
@@ -199,10 +229,7 @@ func CheckSetting(key, value string) (func(*Settings), error) {
 
 // configNote は設定を変えた出来事の文。
 func configNote(key, value string) string {
-	when := "次の Tick から使う"
-	if key == SettingModel || key == SettingEffort {
-		when = "PG・PM・取り込みの係の次の起動・再開から使う"
-	}
+	when := EffectNote(key)
 	if strings.TrimSpace(value) == "" {
 		return fmt.Sprintf("設定 %s を消した (起動の引数・既定に戻す。%s)", key, when)
 	}
