@@ -9,6 +9,7 @@ import (
 	"github.com/jiikko/dotfiles/src/restartable/internal/runner"
 	"github.com/jiikko/dotfiles/src/termsafe"
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
@@ -77,6 +78,9 @@ func ViewLinesAt(state runner.Model, width, height, spinnerFrame int) []string {
 		height = defaultHeight
 	}
 	if state.Transition.Active {
+		if width < layout.PanelMinWidth {
+			return []string{compactTransitionLine(state, width)}
+		}
 		panel := transitionPanel(state, width, spinnerFrame)
 		status := StatusLine(state, width)
 		panelHeight := len(panel)
@@ -109,6 +113,26 @@ func ViewLinesAt(state runner.Model, width, height, spinnerFrame int) []string {
 	}
 	lines = append(lines, StatusLine(state, width))
 	return lines
+}
+
+func compactTransitionLine(state runner.Model, width int) string {
+	// 確認ダイアログが開いているなら、段より確認を優先して出す (板が入らない幅でも y / n を押せると分かるように)。
+	switch state.Confirm {
+	case runner.ConfirmQuit:
+		return termwidth.Truncate("quit? y/n", width, "")
+	case runner.ConfirmRestart:
+		return termwidth.Truncate("rst? y/n", width, "")
+	}
+	stage := "launch"
+	switch state.Transition.Stage {
+	case runner.TransitionStop:
+		stage = "stop"
+	case runner.TransitionBuild:
+		stage = "build"
+	case runner.TransitionReady:
+		stage = "ready"
+	}
+	return termwidth.Truncate(stage, width, "")
 }
 
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}

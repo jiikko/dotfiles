@@ -27,14 +27,16 @@ type Config struct {
 	ReadyInterval       time.Duration
 	ReadyAttemptTimeout time.Duration
 	ReadyCleanupGrace   time.Duration
-	IDEnv               string
-	ControlPath         string
-	Stdin               io.Reader
-	Stdout              io.Writer
-	Stderr              io.Writer
-	Headless            bool
-	StdinIsTerminal     bool
-	Presenter           Presenter
+	// OutputDrainTimeout は終了時に子の出力が閉じるのを待つ上限。0 なら 500ms (テストが手順の窓を広げるための差し込み口)。
+	OutputDrainTimeout time.Duration
+	IDEnv              string
+	ControlPath        string
+	Stdin              io.Reader
+	Stdout             io.Writer
+	Stderr             io.Writer
+	Headless           bool
+	StdinIsTerminal    bool
+	Presenter          Presenter
 }
 
 type actorEventKind string
@@ -70,6 +72,13 @@ const (
 	readyCleanupTimedOut  readyCleanupOutcome = "timed-out"
 	readyCleanupCancelled readyCleanupOutcome = "cancelled"
 )
+
+type readyCleanupRequest struct {
+	proc       *process
+	token      uint64
+	generation uint64
+	outcome    readyCleanupOutcome
+}
 
 // Presenter is the boundary for the next milestone's Bubble Tea terminal UI.
 // It receives model snapshots and key events; process management never draws.
@@ -119,6 +128,7 @@ type actor struct {
 	flusherWG            sync.WaitGroup
 	readyProbe           *process
 	readyCleaningProc    *process
+	readyCleanupQueue    []readyCleanupRequest
 	readyToken           uint64
 	readyGeneration      uint64
 	readyStarted         time.Time
@@ -219,7 +229,7 @@ func Run(cfg Config) (int, error) {
 	return (&actor{cfg: cfg, model: InitialModel(), id: id, server: server,
 		sink: sink, presenter: presenter,
 		events: make(chan actorEvent, 128), flusherDone: make(chan struct{}), actorDone: make(chan struct{}),
-		outputDrainTimeout: 500 * time.Millisecond, signals: signals}).run()
+		outputDrainTimeout: outputDrainTimeout(cfg.OutputDrainTimeout), signals: signals}).run()
 }
 
 func newID() (string, error) {
@@ -381,14 +391,35 @@ func (a *actor) scheduleReadyProbe(token, generation uint64) {
 }
 
 func (a *actor) startReadyCleanup(proc *process, token, generation uint64, outcome readyCleanupOutcome) {
-	if proc == nil || a.readyCleaningProc != nil {
+	if proc == nil || proc == a.readyCleaningProc {
 		return
 	}
+	if a.readyProbe == proc {
+		a.readyProbe = nil
+		if a.readyAttemptTimer != nil {
+			a.readyAttemptTimer.Stop()
+			a.readyAttemptTimer = nil
+		}
+	}
+	for _, pending := range a.readyCleanupQueue {
+		if pending.proc == proc {
+			return
+		}
+	}
+	request := readyCleanupRequest{proc: proc, token: token, generation: generation, outcome: outcome}
+	if a.readyCleaningProc != nil {
+		a.readyCleanupQueue = append(a.readyCleanupQueue, request)
+		return
+	}
+	a.runReadyCleanup(request)
+}
+
+func (a *actor) runReadyCleanup(request readyCleanupRequest) {
+	proc := request.proc
 	if a.readyAttemptTimer != nil {
 		a.readyAttemptTimer.Stop()
 		a.readyAttemptTimer = nil
 	}
-	a.readyProbe = nil
 	a.readyCleaningProc = proc
 	grace := a.cfg.ReadyCleanupGrace
 	go func() {
@@ -404,8 +435,17 @@ func (a *actor) startReadyCleanup(proc *process, token, generation uint64, outco
 		}
 		result := proc.wait()
 		a.post(actorEvent{kind: readyCleanupDoneEvent, proc: proc, result: result, err: cleanupErr,
-			token: token, generation: generation, outcome: outcome})
+			token: request.token, generation: request.generation, outcome: request.outcome})
 	}()
+}
+
+func (a *actor) startNextReadyCleanup() {
+	if a.readyCleaningProc != nil || len(a.readyCleanupQueue) == 0 {
+		return
+	}
+	request := a.readyCleanupQueue[0]
+	a.readyCleanupQueue = a.readyCleanupQueue[1:]
+	a.runReadyCleanup(request)
 }
 
 func (a *actor) handleReadyProbeDone(ev actorEvent) {
@@ -465,6 +505,7 @@ func (a *actor) handleReadyCleanupDone(ev actorEvent) {
 	if ev.err != nil {
 		a.report("ready-cmd process group cleanup: " + ev.err.Error())
 	}
+	a.startNextReadyCleanup()
 	if a.readySessionCurrent(ev.token, ev.generation) {
 		if time.Since(a.readyStarted) >= a.cfg.ReadyTimeout {
 			a.readyExpired = true
@@ -743,6 +784,7 @@ func (a *actor) handleKey(key string) {
 	_, effects := a.transition(Event{Kind: KeyEvent, Key: key})
 	if wasStopping && a.model.State == Running {
 		a.stopAccepted = false
+		a.resumeReadyCheckIfNeeded()
 	}
 	a.handleEffects(effects)
 	a.presenter.Render(a.model)
@@ -1125,7 +1167,7 @@ func (a *actor) finish(code int) {
 	if a.forceRunning {
 		return
 	}
-	if a.readyProbe != nil || a.readyCleaningProc != nil {
+	if a.readyProbe != nil || a.readyCleaningProc != nil || len(a.readyCleanupQueue) > 0 {
 		a.readyFinishPending = true
 		a.readyFinishCode = code
 		return
@@ -1142,6 +1184,12 @@ func (a *actor) finish(code int) {
 		a.failRequests("runner exit refused while child is alive")
 		a.presenter.Render(a.model)
 		return
+	}
+	a.model.Confirm = ConfirmNone
+	a.model.Transition.Active = false
+	a.model.Transition.Busy = false
+	if a.presenter != nil {
+		a.presenter.Render(a.model)
 	}
 	a.finished = true
 	a.retCode = code
@@ -1216,4 +1264,11 @@ func containsEffect(effects []Effect, kind EffectKind) bool {
 		}
 	}
 	return false
+}
+
+func outputDrainTimeout(configured time.Duration) time.Duration {
+	if configured > 0 {
+		return configured
+	}
+	return 500 * time.Millisecond
 }

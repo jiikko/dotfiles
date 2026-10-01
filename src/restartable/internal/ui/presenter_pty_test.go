@@ -31,18 +31,19 @@ func TestPTYRunnerHelper(t *testing.T) {
 		configuredPresenter = &recordingPresenter{Presenter: presenter, statePath: statePath}
 	}
 	code, err := runner.Run(runner.Config{
-		RunArgs:         []string{"/bin/sh", "-c", os.Getenv("RESTARTABLE_PTY_RUN")},
-		ReadyCommand:    os.Getenv("RESTARTABLE_PTY_READY"),
-		ReadyTimeout:    envDuration("RESTARTABLE_PTY_READY_TIMEOUT", 120*time.Second),
-		ReadyInterval:   envDuration("RESTARTABLE_PTY_READY_INTERVAL", 500*time.Millisecond),
-		ControlPath:     os.Getenv("RESTARTABLE_PTY_CONTROL"),
-		Stdin:           os.Stdin,
-		Stdout:          os.Stdout,
-		Stderr:          os.Stderr,
-		Headless:        false,
-		StdinIsTerminal: true,
-		Presenter:       configuredPresenter,
-		TermGrace:       100 * time.Millisecond,
+		RunArgs:            []string{"/bin/sh", "-c", os.Getenv("RESTARTABLE_PTY_RUN")},
+		ReadyCommand:       os.Getenv("RESTARTABLE_PTY_READY"),
+		ReadyTimeout:       envDuration("RESTARTABLE_PTY_READY_TIMEOUT", 120*time.Second),
+		ReadyInterval:      envDuration("RESTARTABLE_PTY_READY_INTERVAL", 500*time.Millisecond),
+		ControlPath:        os.Getenv("RESTARTABLE_PTY_CONTROL"),
+		Stdin:              os.Stdin,
+		Stdout:             os.Stdout,
+		Stderr:             os.Stderr,
+		Headless:           false,
+		StdinIsTerminal:    true,
+		Presenter:          configuredPresenter,
+		TermGrace:          100 * time.Millisecond,
+		OutputDrainTimeout: envDuration("RESTARTABLE_PTY_OUTPUT_DRAIN_TIMEOUT", 0),
 	})
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
@@ -295,6 +296,9 @@ func TestPTYRunnerDrainsLateOutputDuringTerminationWithInputBurst(t *testing.T) 
 		"RESTARTABLE_PTY_DESCENDANT_MODE=leader",
 		"RESTARTABLE_PTY_DESCENDANT_READY="+readyPath,
 		"RESTARTABLE_PTY_DESCENDANT_RELEASE="+releasePath,
+		// 出力の回収の待ち (既定 500ms) が、下の手順 (子の終了の確認・キーの流し込み・解放) より先に閉じると落ちる。
+		// 負荷の下で 1/3 程度落ちていたので、このテストだけ待ちを長くする (解放すれば子孫が出力を閉じるので、長くしても待ち切ることはない)。
+		"RESTARTABLE_PTY_OUTPUT_DRAIN_TIMEOUT=10s",
 	)
 	t.Cleanup(func() { _ = os.WriteFile(releasePath, []byte("release"), 0600) })
 	waitPTYOutput(t, r, "initial rendered status line", func(output string) bool {

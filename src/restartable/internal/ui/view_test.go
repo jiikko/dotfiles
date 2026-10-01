@@ -147,6 +147,42 @@ func TestTransitionViewKeepsPanelBelowLogAreaAtHeight24And40(t *testing.T) {
 	}
 }
 
+func TestTransitionPanelFitsOrFallsBackAtWidthsOneThroughNine(t *testing.T) {
+	stages := []struct {
+		stage runner.TransitionStage
+		label string
+	}{
+		{stage: runner.TransitionStop, label: "stop"},
+		{stage: runner.TransitionBuild, label: "build"},
+		{stage: runner.TransitionLaunch, label: "launch"},
+		{stage: runner.TransitionReady, label: "ready"},
+	}
+	for width := 1; width <= 9; width++ {
+		for _, stage := range stages {
+			state := runner.Model{State: runner.Running, Transition: runner.Transition{
+				Active: true, Kind: runner.TransitionRestart, Stage: stage.stage,
+			}}
+			lines := ViewLinesAt(state, width, 24, 0)
+			if len(lines) != 1 {
+				t.Fatalf("width %d/stage %s produced %d rows, want one compact stage row: %q", width, stage.stage, len(lines), lines)
+			}
+			if got := termwidth.Of(lines[0]); got > width {
+				t.Fatalf("width %d/stage %s compact row wraps at %d cells: %q", width, stage.stage, got, lines[0])
+			}
+			want := stage.label
+			if len(want) > width {
+				want = want[:width]
+			}
+			if lines[0] != want {
+				t.Fatalf("width %d/stage %s row = %q, want stage label %q", width, stage.stage, lines[0], want)
+			}
+			if strings.ContainsAny(lines[0], "┌┐└┘") {
+				t.Fatalf("width %d/stage %s still draws an oversized panel: %q", width, stage.stage, lines[0])
+			}
+		}
+	}
+}
+
 func TestTransitionPanelFlushesAgainstStatusOnTenRowTerminal(t *testing.T) {
 	state := runner.Model{
 		State:      runner.Running,
@@ -521,5 +557,20 @@ func TestPrintlnDoesNotDuplicateAnInFlightLineAfterProgramExit(t *testing.T) {
 	}
 	if got, want := fallback.String(), "after-exit\n"; got != want {
 		t.Fatalf("fallback output = %q, want %q", got, want)
+	}
+}
+
+// 板が入らない幅でも、確認ダイアログが開いていれば y / n の案内を出す (段の名前だけだと Q の後に何を押せばよいか分からない)。
+func TestCompactTransitionLineShowsConfirmationPrompt(t *testing.T) {
+	for _, tc := range []struct {
+		confirm runner.Confirm
+		want    string
+	}{{runner.ConfirmQuit, "quit? y/n"}, {runner.ConfirmRestart, "rst? y/n"}} {
+		state := runner.Model{State: runner.Building, Confirm: tc.confirm,
+			Transition: runner.Transition{Active: true, Kind: runner.TransitionStartup, Stage: runner.TransitionBuild}}
+		lines := ViewLinesAt(state, 9, 24, 0)
+		if len(lines) != 1 || lines[0] != tc.want {
+			t.Fatalf("confirm %q at width 9: lines = %q, want [%q]", tc.confirm, lines, tc.want)
+		}
 	}
 }

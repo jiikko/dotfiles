@@ -48,10 +48,20 @@ tick 42
 
 ## 受け入れ条件
 
-- [ ] T1〜T8 の実装とテスト (View の文字列テストで板の位置と中身、model の Update で段の遷移、実プロセスで --ready-cmd の成功 / 上限 / 子の先の終了、pty で板が出て消える)
-- [ ] 敵対レビュー (codex の並列)
+- [x] T1〜T8 の実装とテスト (View の文字列テストで板の位置と中身、model の Update で段の遷移、実プロセスで --ready-cmd の成功 / 上限 / 子の先の終了、pty で板が出て消える)
+- [x] 敵対レビュー (codex の並列)
 - [ ] push と、obaket の dev-fg-loop への反映 (obaket issue 1007 で版を上げ、`--ready-cmd` に health の devLoop の一致を渡す)
 
 ## 進捗
 
 - 2026-10-01 起票
+- 2026-10-01 実装 (codex)。Claude の検閲で直したもの: View が端末の高さを全部使ってログが見えなくなっていた / 案内が段に合っていなかった /
+  板の間 Q が効かなかった (仕様 T6 の改訂)。commit「feat(restartable): 再起動中・終了中・起動中に画面の縦の真ん中へ板を出し、…」
+- 2026-10-01 敵対レビュー (codex 2 本並列、状態遷移とプロセス / 描画とキー): P1 なし。採用 5 件 (いずれも直す前のテストで再現してから直した):
+  Esc で停止を取り消すと起動の確認が再開しない / ビルド中の Q → y で板が画面に残る / 確認プロセスの片付けの要求が捨てられうる / 幅 10 桁未満で板がはみ出す / README の案内が T6 と違う。
+  記録のみ: `RUNEWIDTH_EASTASIAN=1` の端末では罫線と → を含む板と最下行がはみ出しうる (既存の最下行と同じ制約。README)
+- 2026-10-01 修正の差分に絞った確認 (codex 1 本): P2 1 件 (幅 10 桁未満の 1 行表示で確認ダイアログの y / n が出ない) を Claude が直した (分岐を外す変異で red)。
+  README の文言を検査するテスト (守る不変条件が無く README の改訂で壊れるだけ) は Claude が消した
+- 2026-10-01 pty のテスト TestPTYRunnerDrainsLateOutputDuringTerminationWithInputBurst が負荷の下で落ちていた (出力の回収の待ち 500ms が手順より先に閉じる時間依存)。
+  Config に OutputDrainTimeout の差し込み口を足し、このテストだけ 10 秒にした。単独 30 回・2 本同時の負荷の下で 6 回・順に 3 回、すべて rc 0
+- 検証 (Claude): make lint rc 0、go test -count=1 -race で上記すべて rc 0、scripts/check_go_project_lanes.sh rc 0

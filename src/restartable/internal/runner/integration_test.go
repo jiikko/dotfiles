@@ -1735,6 +1735,223 @@ func TestQuitConfirmationDuringReadinessUsesStopCommand(t *testing.T) {
 	}
 }
 
+func TestQuitStopCancellationResumesUnconfirmedReadyCheck(t *testing.T) {
+	dir := t.TempDir()
+	keyDir, err := os.MkdirTemp("/tmp", "rkey-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(keyDir) })
+	keyPath := filepath.Join(keyDir, "keys.sock")
+	statePath := filepath.Join(dir, "presenter.json")
+	attemptPath := filepath.Join(dir, "ready-attempts")
+	attemptResultPath := filepath.Join(dir, "ready-results")
+	firstReadyGate := filepath.Join(dir, "ready-first")
+	secondReadyGate := filepath.Join(dir, "ready-second")
+	for _, path := range []string{firstReadyGate, secondReadyGate} {
+		if err := syscall.Mkfifo(path, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ready := fmt.Sprintf(`n=0; [ ! -f %s ] || n=$(cat %s); n=$((n+1)); echo "$n" > %s; if [ "$n" -eq 1 ]; then gate=%s; else gate=%s; fi; read result < "$gate"; echo "$n:$result" >> %s; [ "$result" = ready ]`,
+		shellQuote(attemptPath), shellQuote(attemptPath), shellQuote(attemptPath), shellQuote(firstReadyGate), shellQuote(secondReadyGate), shellQuote(attemptResultPath))
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_RUN":                 "exec /bin/sleep 30",
+		"RESTARTABLE_TEST_READY":               ready,
+		"RESTARTABLE_TEST_READY_TIMEOUT":       "30s",
+		"RESTARTABLE_TEST_READY_INTERVAL":      "5ms",
+		"RESTARTABLE_TEST_READY_CLEANUP_GRACE": "30ms",
+		"RESTARTABLE_TEST_STOP":                "exit 0",
+		"RESTARTABLE_TEST_KEY_SOCKET":          keyPath,
+		"RESTARTABLE_TEST_PRESENTER_STATE":     statePath,
+	})
+	waitFor(t, 3*time.Second, "first readiness command to block on its gate", func() bool {
+		return strings.TrimSpace(readFile(attemptPath)) == "1"
+	})
+	readyStatus := r.waitStatus(t, string(Running))
+	if readyStatus.Ready {
+		t.Fatalf("status reported ready before the gated command succeeded: %+v", readyStatus)
+	}
+	confirm := sendKeyAndWaitRender(t, keyPath, statePath, "Q")
+	if confirm.Model.Confirm != ConfirmQuit || confirm.Model.Transition.Stage != TransitionReady {
+		t.Fatalf("Q did not open the readiness-stage quit confirmation: %+v", confirm.Model)
+	}
+	sendKeyAndWaitRender(t, keyPath, statePath, "y")
+	waitPresenterSnapshot(t, statePath, "accepted stop command", func(got presenterSnapshot) bool {
+		return got.Model.State == Stopping && got.Model.StopAccepted
+	})
+	cancelled := sendKeyAndWaitRender(t, keyPath, statePath, "esc")
+	if cancelled.Model.State != Running || cancelled.Model.Ready {
+		t.Fatalf("Esc did not return to running with readiness unconfirmed: %+v", cancelled.Model)
+	}
+	waitFor(t, 3*time.Second, "readiness command to restart after Esc", func() bool {
+		return strings.TrimSpace(readFile(attemptPath)) == "2"
+	})
+	readyGate, err := os.OpenFile(secondReadyGate, os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(readyGate, "ready\n"); err != nil {
+		_ = readyGate.Close()
+		t.Fatal(err)
+	}
+	if err := readyGate.Close(); err != nil {
+		t.Fatal(err)
+	}
+	readyDeadline := time.NewTimer(3 * time.Second)
+	readyPoll := time.NewTicker(5 * time.Millisecond)
+	readyConfirmed := false
+	var lastStatus control.Response
+	var lastStatusErr error
+	for !readyConfirmed {
+		lastStatus, lastStatusErr = r.status()
+		readyConfirmed = lastStatusErr == nil && lastStatus.State == string(Running) && lastStatus.Ready
+		if readyConfirmed {
+			break
+		}
+		select {
+		case <-readyPoll.C:
+		case <-readyDeadline.C:
+			readyPoll.Stop()
+			t.Fatalf("status.ready remained false after resumed readiness command: status=%+v err=%v attempts=%q results=%q snapshot=%+v stderr=%q",
+				lastStatus, lastStatusErr, readFile(attemptPath), readFile(attemptResultPath), func() presenterSnapshot { snapshot, _ := readPresenterSnapshot(statePath); return snapshot }(), readFile(r.stderr))
+		}
+	}
+	readyPoll.Stop()
+	_ = readyDeadline.Stop()
+	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+}
+
+func TestReadyCleanupQueuesCancellationWhilePreviousCleanupRuns(t *testing.T) {
+	dir := t.TempDir()
+	cleanupStarted := filepath.Join(dir, "cleanup-started")
+	descendantStarted := filepath.Join(dir, "descendant-started")
+	cleanupRelease := filepath.Join(dir, "cleanup-release")
+	if err := syscall.Mkfifo(cleanupRelease, 0600); err != nil {
+		t.Fatal(err)
+	}
+	oldCommand := fmt.Sprintf(`( trap 'printf term > %s; read release < %s; exit 0' TERM; printf ready > %s; while :; do :; done ) & while [ ! -e %s ]; do :; done; exit 0`,
+		shellQuote(cleanupStarted), shellQuote(cleanupRelease), shellQuote(descendantStarted), shellQuote(descendantStarted))
+	sink := newLogSink(io.Discard, true)
+	oldProc, err := startProcess([]string{oldCommand}, true, os.Environ(), strings.NewReader(""), sink, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := oldProc.wait(); result.Code != 0 {
+		t.Fatalf("old ready command exit = %d, want 0", result.Code)
+	}
+	newProc, err := startProcess([]string{"/bin/sleep", "30"}, false, os.Environ(), strings.NewReader(""), sink, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !groupExists(newProc.pid) {
+		t.Fatal("new ready process group exited before its cancellation was queued")
+	}
+	t.Cleanup(func() {
+		_ = signalGroup(oldProc.pid, syscall.SIGKILL)
+		_ = signalGroup(newProc.pid, syscall.SIGKILL)
+	})
+	a := &actor{cfg: Config{ReadyCleanupGrace: 30 * time.Second}, events: make(chan actorEvent, 4)}
+	a.startReadyCleanup(oldProc, 1, 1, readyCleanupCompleted)
+	waitFor(t, 3*time.Second, "old cleanup process to enter its gated TERM handler", func() bool {
+		_, err := os.Stat(cleanupStarted)
+		return err == nil
+	})
+	a.readyProbe = newProc
+	a.startReadyCleanup(newProc, 2, 2, readyCleanupCancelled)
+	gate, err := os.OpenFile(cleanupRelease, os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(gate, "continue\n"); err != nil {
+		_ = gate.Close()
+		t.Fatal(err)
+	}
+	if err := gate.Close(); err != nil {
+		t.Fatal(err)
+	}
+	oldDone := <-a.events
+	if oldDone.kind != readyCleanupDoneEvent || oldDone.proc != oldProc {
+		t.Fatalf("first cleanup event = %+v, want old process cleanup", oldDone)
+	}
+	a.handleReadyCleanupDone(oldDone)
+	waitFor(t, 3*time.Second, "queued ready process group to be cleaned", func() bool {
+		return !groupExists(newProc.pid)
+	})
+	newDone := <-a.events
+	if newDone.kind != readyCleanupDoneEvent || newDone.proc != newProc {
+		t.Fatalf("second cleanup event = %+v, want new process cleanup", newDone)
+	}
+	a.handleReadyCleanupDone(newDone)
+	if groupExists(oldProc.pid) || groupExists(newProc.pid) {
+		t.Fatalf("ready process group survived cleanup: old=%v new=%v", groupExists(oldProc.pid), groupExists(newProc.pid))
+	}
+	if a.readyProbe != nil || a.readyCleaningProc != nil {
+		t.Fatalf("cleanup left process pointers set: probe=%p cleaning=%p", a.readyProbe, a.readyCleaningProc)
+	}
+	a.finish(0)
+	if !a.finished {
+		t.Fatal("runner could not finish after every ready process group was cleaned")
+	}
+}
+
+func TestFinalPresenterRenderClosesTransitionPanelForQuitAndCtrlC(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		keys []string
+		code int
+	}{
+		{name: "quit-during-build", keys: []string{"Q", "y"}, code: 0},
+		{name: "ctrl-c-during-build", keys: []string{"ctrl+c"}, code: 130},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			keyDir, err := os.MkdirTemp("/tmp", "rkey-")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.RemoveAll(keyDir) })
+			keyPath := filepath.Join(keyDir, "keys.sock")
+			statePath := filepath.Join(dir, "presenter.json")
+			r := startTestRunner(t, map[string]string{
+				"RESTARTABLE_TEST_BUILD":           "exec /bin/sleep 30",
+				"RESTARTABLE_TEST_RUN":             "exec /bin/sleep 30",
+				"RESTARTABLE_TEST_KEY_SOCKET":      keyPath,
+				"RESTARTABLE_TEST_PRESENTER_STATE": statePath,
+			})
+			waitPresenterSnapshot(t, statePath, "build transition", func(got presenterSnapshot) bool {
+				return got.Model.State == Building && got.Model.Transition.Active
+			})
+			for _, key := range tc.keys {
+				sendKeyAndWaitRender(t, keyPath, statePath, key)
+			}
+			select {
+			case <-r.done:
+			case <-time.After(4 * time.Second):
+				t.Fatalf("runner did not exit after %s", tc.name)
+			}
+			if tc.code == 0 && r.waitErr != nil {
+				t.Fatalf("runner exit = %v, want code 0", r.waitErr)
+			}
+			if tc.code != 0 {
+				var exit *exec.ExitError
+				if !errors.As(r.waitErr, &exit) || exit.ExitCode() != tc.code {
+					t.Fatalf("runner exit = %v, want code %d", r.waitErr, tc.code)
+				}
+			}
+			last, ok := readPresenterSnapshot(statePath)
+			if !ok {
+				t.Fatal("presenter did not record its last frame")
+			}
+			if last.Model.Transition.Active {
+				t.Fatalf("last rendered frame still has the transition panel: %+v", last.Model)
+			}
+		})
+	}
+}
+
 func TestReadyCommandRetriesWithInstanceIDAndReportsReadyInStatus(t *testing.T) {
 	dir := t.TempDir()
 	countPath := filepath.Join(dir, "attempts")
