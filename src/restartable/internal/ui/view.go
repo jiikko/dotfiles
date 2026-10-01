@@ -197,7 +197,7 @@ func transitionSteps(transition runner.Transition) string {
 	case runner.TransitionReady:
 		completed = len(steps) - 1
 	}
-	for index := 0; index < completed; index++ {
+	for index := range completed {
 		steps[index] += "✓"
 	}
 	return "   " + strings.Join(steps, " → ")
