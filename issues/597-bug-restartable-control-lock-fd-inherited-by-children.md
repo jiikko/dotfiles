@@ -25,3 +25,15 @@ lock の fd を `O_CLOEXEC` 付きで開く (`syscall.O_CLOEXEC` を足す、ま
 ## 確認
 
 コードで確認 (2026-10-01 Claude)。実際に SIGKILL して再現はしていない。
+
+## 進捗
+
+- 修正: `control.go` の `Listen` の lock の open に `syscall.O_CLOEXEC` を足した (open と同時に付くので fork/exec との race も無い)。
+- テスト: `TestListenLockFDIsNotInheritedByChildren`。Listen 後にテストバイナリ自身を子として exec し、lock の fd 番号を env で渡す。子は `fcntl(F_GETFD)` が EBADF なら exit 0、開いていれば exit 3。
+- 変異: `mutate-verify` で `O_CLOEXEC` を外すと、新しいテストだけが red (`exit status 3`、他のテストは baseline と同じ ok)。rc=0。
+- 検証: `go test -race -count=1 ./...` rc=0 (4 package ok)、`golangci_lint.sh v2.5.0 run` は 0 issues。
+- codex の指摘と採否:
+  - 設計の反証 (gpt-6-luna): 指摘なし。
+  - 通常レビュー (`--commit HEAD`): 指摘なし (sandbox が Unix socket の bind を拒否するためテストは codex 側では回せなかった)。
+  - 敵対的レビュー: (1)「`exec.Command` は FD を選別するのでテストは O_CLOEXEC 無しでも通りうる」は不採用。Go の exec は close-on-exec の無い fd をそのまま継承する (issue 本文の通り) うえ、変異で実際に red になった。(2)「親環境に `RESTARTABLE_TEST_LOCK_FD` があると親が exit する」は不採用 (テストが自分で子にだけ設定する変数で、親に入る経路を示せない)。`fork` と `exec` の間の一時的な fd は O_CLOEXEC で exec 時に閉じるため問題にならない。
+- 未再現: 実際の SIGKILL で二重起動が拒否される再現はしていない (テストは fd の継承そのものを固定)。
