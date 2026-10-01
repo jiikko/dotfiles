@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -189,5 +191,25 @@ func TestControlCLIExitCodes(t *testing.T) {
 				t.Fatalf("stderr = %q, want diagnostics: %v", stderr, tc.wantStderr)
 			}
 		})
+	}
+}
+
+// 時間切れはどちらの形 (context の期限切れ / 接続の I/O の期限切れ) で返っても 124。CLI を通すテストでは、どちらが先に返るかが
+// 競合で決まり、片方の分岐を外しても緑になる回があるので、写しそのものを決定的に固定する。
+func TestCallErrorCode(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"socket が無い", fmt.Errorf("dial unix /x: %w", os.ErrNotExist), 2},
+		{"listener が無い", errors.New("dial unix /x: connect: connection refused"), 2},
+		{"context の期限切れ", fmt.Errorf("call: %w", context.DeadlineExceeded), 124},
+		{"I/O の期限切れ", &net.OpError{Op: "read", Net: "unix", Err: os.ErrDeadlineExceeded}, 124},
+		{"それ以外", errors.New("decode: unexpected EOF"), 1},
+	} {
+		if got := callErrorCode(c.err); got != c.want {
+			t.Errorf("%s: callErrorCode = %d, want %d", c.name, got, c.want)
+		}
 	}
 }

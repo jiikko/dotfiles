@@ -75,15 +75,7 @@ func controlCommand(args []string, command control.Command, defaultTimeout time.
 	response, err := control.Call(ctx, resolved, command)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		if errors.Is(err, os.ErrNotExist) || strings.Contains(err.Error(), "no such file or directory") || strings.Contains(err.Error(), "connection refused") {
-			return 2
-		}
-		// Call は接続に ctx と同じ期限の I/O deadline を置くので、時間切れは
-		// context の期限切れより先に I/O の期限切れ (os.ErrDeadlineExceeded) として返ることがある。
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) {
-			return 124
-		}
-		return 1
+		return callErrorCode(err)
 	}
 	if err := json.NewEncoder(os.Stdout).Encode(response); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -172,4 +164,18 @@ func validEnvName(name string) bool {
 		}
 	}
 	return name != ""
+}
+
+// callErrorCode は control.Call の失敗を終了コードに写す (2 = runner が動いていない / 124 = 時間切れ / 1 = それ以外)。
+// obaket の dev-restart が rc 2 を「ループが動いていない」と読むので、写しを変えると呼ぶ側の判断が黙って変わる (issue 598)。
+func callErrorCode(err error) int {
+	if errors.Is(err, os.ErrNotExist) || strings.Contains(err.Error(), "no such file or directory") || strings.Contains(err.Error(), "connection refused") {
+		return 2
+	}
+	// Call は接続に ctx と同じ期限の I/O deadline を置くので、時間切れは
+	// context の期限切れより先に I/O の期限切れ (os.ErrDeadlineExceeded) として返ることがある。
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) {
+		return 124
+	}
+	return 1
 }
