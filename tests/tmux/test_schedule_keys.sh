@@ -94,8 +94,15 @@ case "$*" in
   "send-keys -t %5 -l"*)
     # 実 tmux は pane 不在で stderr にエラーを出して rc=1 (この stderr が run-shell 経由で view-mode に積まれる)
     [ "${STUB_PANE_GONE:-0}" = 1 ] && { echo "can't find pane: %5" >&2; exit 1; }
-    # 送信の途中に割り込む窓を作る (trap のテスト用)
-    [ -n "${STUB_SEND_DELAY:-}" ] && /bin/sleep "$STUB_SEND_DELAY" ;;
+    # 送信の途中に割り込む窓を作る (trap のテスト用)。秒数で遅らせず、入ったことを自分の pid で知らせてゲートで止める
+    # (テストは .entered を見てから TERM を撃ち、ゲートを開ける)。上限 30 秒で必ず抜ける (ハングさせない)。
+    # 送り終えたら send-complete を記録する: fire の `trap '' TERM` は無視の設定として子の tmux へ引き継がれる
+    # (popup を閉じると TERM / HUP はプロセスグループごと届く)。引き継がれていなければ stub はここまで来ない
+    if [ -n "${STUB_SEND_GATE:-}" ]; then
+      echo "$$" > "$STUB_SEND_GATE.entered"
+      i=0; while [ ! -f "$STUB_SEND_GATE" ] && [ "$i" -lt 600 ]; do /bin/sleep 0.05; i=$((i+1)); done
+      echo "send-complete" >> "$CALLS"
+    fi ;;
   "send-keys -t %5 "*)
     [ "${STUB_PANE_GONE:-0}" = 1 ] && { echo "can't find pane: %5" >&2; exit 1; } ;;
 esac
@@ -205,6 +212,20 @@ reset_state() {
 
 # shellcheck source=tests/tmux/lib/stub_env.sh
 . "$ROOT_DIR/tests/tmux/lib/stub_env.sh"
+# shellcheck source=tests/lib/wait_until.sh
+. "$ROOT_DIR/tests/lib/wait_until.sh"
+# 🚨 何かが起きるのを秒数で待たない。条件を関数にして上限つきで待ち、時間切れは理由つきで落とす
+# (_claude/rules/avoid-wall-clock-assertions.md / issue 613)
+wait_for() {  # $1=説明, 残りは条件コマンド
+  local msg="$1"; shift
+  TT_WAIT_TICKS=1200 TT_WAIT_TICK=0.05 tt_wait_until "$@" && return 0
+  printf '✗ %s (60 秒待っても成立しない)\n' "$msg"; exit 1
+}
+marker_exists() { [ -f "$1" ]; }
+# fire が発火時刻までの sleep に入った (sleep の stub は本物の sleep を呼ぶ前に $CALLS へ書く)。
+# 「0.5 秒経てば眠っているはず」と違い、眠る前の段を過ぎたことが確定する
+entered_sleep() { grep -q '^sleep [0-9]' "$CALLS"; }
+process_gone() { ! kill -0 "$1" 2>/dev/null; }
 # 本物の sleeper を起こす (pid_is_sleeper は ps の command line で「自分の fire <id>」を確かめるため、
 # 偽 pid では代用できない)。at は十分先、sleep は実物
 # write_job は job の書式を 1 箇所に集約する。🚨 socket と サーバ pid は **stub が返す既定値から
@@ -320,8 +341,8 @@ reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 write_job j2 "$(( $(/bin/date +%s) + 2 ))" "ls"
 ( trap - EXIT; PATH="$STUB_PATH" STUB_REAL_SLEEP=1 exec "$SCRIPT" fire j2 ) >/dev/null 2>&1 &
 fire_pid=$!
-/bin/sleep 0.5
-assert_not_called "send-keys" "起動 0.5 秒後: まだ送っていない"
+wait_for "fire j2 が発火時刻までの sleep に入らない" entered_sleep
+assert_not_called "send-keys" "発火時刻までの sleep に入った時点: まだ送っていない"
 [[ "$(cat "$TMUX_SCHEDULE_KEYS_DIR/j2.pid" 2>/dev/null)" == "$fire_pid" ]] || { printf '✗ .pid が sleeper 自身の pid でない\n'; exit 1; }
 printf '✓ .pid = sleeper の pid (取消の kill 先)\n'
 wait "$fire_pid" || { printf '✗ fire が非 0 で終了\n'; exit 1; }
@@ -348,7 +369,9 @@ export STUB_SRVPID_FILE="$TMP_DIR/srvpid"; echo 4242 > "$STUB_SRVPID_FILE"
 write_job j9 "$(( $(/bin/date +%s) + 2 ))" "make test"
 ( trap - EXIT; CALLS="$CALLS" PATH="$STUB_PATH" STUB_REAL_SLEEP=1 STUB_SRVPID_FILE="$STUB_SRVPID_FILE" exec "$SCRIPT" fire j9 ) >/dev/null 2>&1 &
 j9pid=$!; FAKE_PIDS+=("$j9pid")
-/bin/sleep 0.5; echo 9999 > "$STUB_SRVPID_FILE"   # 眠っている間にサーバが入れ替わった
+# 眠りに入ってから入れ替える。眠る前に入れ替えると「眠る前に判定する」誤った実装でも送らずに緑になる
+wait_for "fire j9 が sleep に入らない" entered_sleep
+echo 9999 > "$STUB_SRVPID_FILE"   # 眠っている間にサーバが入れ替わった
 wait "$j9pid" 2>/dev/null || true
 assert_not_called "send-keys -t %5 -l" "眠っている間にサーバが入れ替わったら送らない (判定は送る直前)"
 unset STUB_SRVPID_FILE
@@ -370,18 +393,25 @@ printf '\n## fire: 送信の途中で TERM が来ても両方送る\n'
 # 無視するのはそのため (取消が間に合わなかったときの半端送信を防ぐ)
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 write_job trapped 900 "make test"
-( trap - EXIT; CALLS="$CALLS" PATH="$STUB_PATH" STUB_SEND_DELAY=1 exec "$SCRIPT" fire trapped ) >/dev/null 2>&1 &
+SEND_GATE="$TMP_DIR/send_gate"; rm -f "$SEND_GATE" "$SEND_GATE.entered"
+( trap - EXIT; CALLS="$CALLS" PATH="$STUB_PATH" STUB_SEND_GATE="$SEND_GATE" exec "$SCRIPT" fire trapped ) >/dev/null 2>&1 &
 trap_pid=$!; FAKE_PIDS+=("$trap_pid")
-/bin/sleep 0.5; kill -TERM "$trap_pid" 2>/dev/null   # 1 回目の送信中に割り込む
+stub_pid_written() { [ -s "$SEND_GATE.entered" ]; }
+wait_for "送信の stub に入らない" stub_pid_written
+# 1 回目の送信中に割り込む。popup を閉じたときと同じく、fire と送信中の tmux の両方へ撃つ
+kill -TERM "$trap_pid" "$(cat "$SEND_GATE.entered")" 2>/dev/null
+: > "$SEND_GATE"
 wait "$trap_pid" 2>/dev/null || true
-assert_called "tmux send-keys -t %5 -l -- make test ; send-keys -t %5 Enter" "TERM が来ても本文と Enter を送り切る (半端な入力を残さない)"
+assert_called "tmux send-keys -t %5 -l -- make test ; send-keys -t %5 Enter" "TERM が来ても本文と Enter を送る"
+assert_called "send-complete" "TERM が来ても送信中の tmux が最後まで走る (半端な入力を残さない)"
 
 printf '\n## fire: 眠っている間に取り消されたら送らない\n'
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 write_job canc "$(( $(/bin/date +%s) + 2 ))" "make test"
 ( trap - EXIT; CALLS="$CALLS" PATH="$STUB_PATH" STUB_REAL_SLEEP=1 exec "$SCRIPT" fire canc ) >/dev/null 2>&1 &
 canc_pid=$!; FAKE_PIDS+=("$canc_pid")
-/bin/sleep 0.5; rm -f "$TMUX_SCHEDULE_KEYS_DIR/canc.job"   # 眠っている間に取り消された
+wait_for "fire canc が sleep に入らない" entered_sleep
+rm -f "$TMUX_SCHEDULE_KEYS_DIR/canc.job"   # 眠っている間に取り消された
 wait "$canc_pid" 2>/dev/null || true
 assert_not_called "send-keys -t %5 -l" "job が消えていたら送らない (kill が間に合わなくても止まる)"
 # 🚨 送らずに抜けるときも .pid を残さない (prune は *.job しか見ないので、残ると誰も回収しない)
@@ -572,8 +602,7 @@ reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 spawn_sleeper live; live_pid=$SLEEPER_PID
 ui_queue "cancel	live"; STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
 [[ "$RC" -eq 0 ]] || { printf '✗ wizard (cancel) が exit %s\n' "$RC"; cat "$RUN_ERR"; exit 1; }
-/bin/sleep 0.3
-kill -0 "$live_pid" 2>/dev/null && { printf '✗ 取消したのに sleeper が生きている\n'; exit 1; }
+wait_for "取消したのに sleeper が生きている" process_gone "$live_pid"
 [[ "$(jobs_count)" == 0 && ! -f "$TMUX_SCHEDULE_KEYS_DIR/live.pid" ]] || { printf '✗ 取消後に job/pid が残っている\n'; exit 1; }
 printf '✓ 取消 → sleeper kill + job/pid 削除\n'
 grep -E '^gum confirm .*--default=false' "$CALLS" >/dev/null || { printf '✗ 取消確認が --default=false でない\n'; exit 1; }
@@ -689,6 +718,8 @@ spawn_sleeper j-55; long_pid=$SLEEPER_PID
 write_job j-5 "$(( $(/bin/date +%s) + 3600 ))" "make test"
 printf '%s\n' "$long_pid" > "$TMUX_SCHEDULE_KEYS_DIR/j-5.pid"   # pid 再利用を模す
 ui_queue "cancel	j-5"; STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
+# 🚨 この待ちは消さない (起きないことの確認なので待つべき成立条件が無い)。シグナルの配送は非同期で、
+#    誤って j-55 を殺す実装でも直後の kill -0 は通る。0.3 秒は「誤った kill が届くだけの時間」(issue 613 の D)
 /bin/sleep 0.3
 kill -0 "$long_pid" 2>/dev/null || { printf '✗ j-5 の取消が別 id (j-55) の sleeper を殺した\n'; exit 1; }
 [[ -f "$TMUX_SCHEDULE_KEYS_DIR/j-55.job" ]] || { printf '✗ 別 id (j-55) の job まで消した\n'; exit 1; }
@@ -1125,13 +1156,6 @@ printf '✓ 一時ファイル: 正常復帰 3 経路とも $TMPDIR に残骸ゼ
 # 中断経路 (popup を外から閉じる = UI 実行中の SIGTERM)。issue 299 の発火条件そのもの。
 # 🚨 sleep で待たない: marker の出現と残骸ゼロを**上限つきポーリング**で見る
 #    (_claude/rules/avoid-wall-clock-assertions.md)。
-wait_for() {  # $1=説明, 残りは条件コマンド
-  local msg="$1"; shift
-  local _i
-  for _i in $(seq 1200); do "$@" && return 0; sleep 0.05; done
-  printf '✗ %s (60 秒待っても成立しない)\n' "$msg"; exit 1
-}
-marker_exists() { [ -f "$1" ]; }
 no_leftovers() { [ "$(tmp_leftovers)" = 0 ]; }
 rm -f "$TMPDIR"/schedkeys* 2>/dev/null || true
 BLOCK="$TMP_DIR/ui_block"; rm -f "$BLOCK"
