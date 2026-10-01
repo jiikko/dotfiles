@@ -1649,8 +1649,10 @@ func TestQuitConfirmationDuringBuildStopsBuildAndExits(t *testing.T) {
 	if confirm.Model.Confirm != ConfirmQuit {
 		t.Fatalf("Q did not reopen the quit confirmation: %+v", confirm.Model)
 	}
+	// Transition.Active は見ない: 終了の最後の描画 (actor.go の finish) で false に戻り、状態のファイルには最後の描画しか残らない。
+	// 負荷で 2 回の描画が続けて起きると、途中の描画 (Active) を読めない (make test の全体実行でだけ落ちた)
 	quitting := sendKeyAndWaitRender(t, keyPath, statePath, "y")
-	if quitting.Model.State != Exiting || quitting.Model.ExitCode != 0 || !quitting.Model.Transition.Active || quitting.Model.Transition.Kind != TransitionQuit {
+	if quitting.Model.State != Exiting || quitting.Model.ExitCode != 0 || quitting.Model.Transition.Kind != TransitionQuit {
 		t.Fatalf("confirmed Q during build did not enter graceful quit: %+v", quitting.Model)
 	}
 	select {
