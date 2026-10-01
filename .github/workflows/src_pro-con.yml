@@ -21,6 +21,7 @@ on:
       - 'tests/pro-con/**'  # e2e の通し (下の e2e job)
       - bin/pro-con
       - bin/lib/go_autobuild.zsh
+      - .github/actions/ensure-toolchain/**  # 下の e2e job が使う共有の action
       - .github/workflows/src_pro-con.yml
       - .github/workflows/_go-project.yml
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
@@ -38,6 +39,7 @@ on:
       - 'tests/pro-con/**'  # e2e の通し (下の e2e job)
       - bin/pro-con
       - bin/lib/go_autobuild.zsh
+      - .github/actions/ensure-toolchain/**  # 下の e2e job が使う共有の action
       - .github/workflows/src_pro-con.yml
       - .github/workflows/_go-project.yml
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
