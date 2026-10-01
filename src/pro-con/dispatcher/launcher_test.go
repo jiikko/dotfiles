@@ -447,3 +447,26 @@ func TestResolveClaudeSymlinks(t *testing.T) {
 		t.Fatalf("shim でない symlink の先に固定した: %+v %v", cl, err)
 	}
 }
+
+// 本物の stopThenRun が、前の session を止める段の拒否にだけ errStopFailed を付ける (581。role.go は errStopFailed の拒否を
+// 起動し直しの拒否と数えない。fakeLauncher は自分で付けて返すので、この配線は dispatcher のテストからは見えない)。
+func TestRestartMarksOnlyStopFailure(t *testing.T) {
+	for name, c := range map[string]struct {
+		script   string
+		stopFail bool
+	}{
+		"止める段で拒否":    {script: "#!/bin/sh\nexit 1\n", stopFail: true},
+		"止めた後の起動で拒否": {script: "#!/bin/sh\n[ \"$1\" = stop ] && exit 0\nexit 1\n", stopFail: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			claude := filepath.Join(t.TempDir(), "claude")
+			if err := os.WriteFile(claude, []byte(c.script), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			_, err := ExecLauncher{Claude: claude}.Restart(context.Background(), "old-1", t.TempDir(), "pc-pm-x", "指示")
+			if !errors.Is(err, ErrRejected) || errors.Is(err, errStopFailed) != c.stopFail {
+				t.Fatalf("err = %v (ErrRejected: %v / errStopFailed: %v、期待 %v)", err, errors.Is(err, ErrRejected), errors.Is(err, errStopFailed), c.stopFail)
+			}
+		})
+	}
+}
