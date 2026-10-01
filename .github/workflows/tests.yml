@@ -86,8 +86,8 @@ jobs:
 
       # rest の腕には Go を入れる。無いと Go で bin/ の道具をビルドするテストが丸ごと skip (77) になり、
       # そのうち tests/bin/test_go_autobuild_warmup.sh と tests/scripts/test_pull_main_checkout.sh は
-      # 別のどの workflow でも走っていなかった (2026-10-01 の run 36876647960 で skip 8 件。残り 6 件は
-      # src_pro-con.yml の e2e と src_glogx.yml が走らせる / setup.sh 前提の 1 件は skip が正しい)。
+      # 別のどの workflow でも走っていなかった (2026-10-01 の run 36876647960 で skip 8 件。残り 6 件のうち 5 件は
+      # src_pro-con.yml の e2e と src_glogx.yml が走らせ、1 件は setup.sh 前提なので skip が正しい)。
       # 版は全 module で同じ (go 1.25.0) なので glogx の go.mod を代表にする
       - uses: actions/setup-go@v7
         if: ${{ matrix.needs-go }}

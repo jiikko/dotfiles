@@ -67,7 +67,8 @@ jobs:
       # 依存のダウンロードとビルドからやり直す。setup-go のキャッシュは鍵 (go.sum のハッシュ) が一致すると保存し直さず、
       # 同じ鍵の test の job が先に保存した中身 (golangci-lint を含まない) を使い回すので、そちらでは補えない
       # (2026-10-01 の src/glogx の lint で `Cache hit` の後に `go: downloading` が 204 行。手元で空からのビルドは 23 秒)。
-      # 鍵の要素は置き場の鍵 (golangci_lint.sh の dir 名) と同じ。版が変われば別の鍵になり、古い物は使われない
+      # 鍵の要素は置き場の鍵 (golangci_lint.sh の dir 名) と同じで、CGO_ENABLED だけは上の env で 1 に固定しているので入れない。
+      # 版が変われば別の鍵になり、古い物は使われない
       - name: Key for the golangci-lint cache
         id: gl
         env:
