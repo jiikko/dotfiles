@@ -64,3 +64,17 @@
 2026-09-25 20:13	general	direct	issues/epic/415/457-bug-pro-con-unregistered-pg-not-stopped-reported-stopped.md,issues/epic/415/458-bug-pro-con-running-card-whose-pg-vanished-holds-slot.md,issues/epic/415/459-design-pro-con-manual-stop-undone-by-open-screen.md,issues/epic/415/460-research-pro-con-fragility-audit-2026-09-25.md
 2026-09-25 20:27	general	direct	issues/epic/415/462-bug-pro-con-resume-text-starting-with-dash-loops-forever.md,issues/epic/415/463-bug-pro-con-card-run-joins-argv-and-evals.md,issues/epic/415/464-bug-pro-con-claude-resolved-from-path-per-repo.md,issues/epic/415/465-bug-pro-con-worktree-name-reused-across-state-dirs.md,issues/epic/415/466-bug-pro-con-session-stopped-reads-unknown-state-as-stopped.md,issues/epic/415/460-research-pro-con-fragility-audit-2026-09-25.md
 2026-09-25 22:10	resource-leaks	direct	issues/epic/415/477-bug-pro-con-spawned-dispatcher-left-as-zombie.md,issues/epic/415/478-perf-pro-con-cards-json-grows-and-is-reread-every-tick.md,issues/epic/415/479-research-pro-con-resource-leak-audit-2026-09-25.md
+2026-10-01 16:06	design	direct	issues/594-research-tuikit-audit-2026-10-01.md
+2026-10-01 16:06	responsibility	direct	issues/594-research-tuikit-audit-2026-10-01.md
+2026-10-01 16:06	duplication	direct	issues/590-refactor-tuikit-consumers-hand-roll-missing-layout-apis.md,issues/594-research-tuikit-audit-2026-10-01.md
+2026-10-01 16:06	polymorphism	direct	issues/594-research-tuikit-audit-2026-10-01.md
+2026-10-01 16:06	encapsulation	direct	issues/590-refactor-tuikit-consumers-hand-roll-missing-layout-apis.md,issues/594-research-tuikit-audit-2026-10-01.md
+2026-10-01 16:06	ui-components	direct	issues/590-refactor-tuikit-consumers-hand-roll-missing-layout-apis.md,issues/594-research-tuikit-audit-2026-10-01.md
+2026-10-01 16:06	security	direct	issues/592-bug-tuikit-stripsgr-leaves-osc-fragments.md,issues/591-bug-tuikit-highlight-regex-backtracking-freezes-render.md,issues/594-research-tuikit-audit-2026-10-01.md
+2026-10-01 16:06	resource-leaks	direct	issues/594-research-tuikit-audit-2026-10-01.md
+2026-10-01 16:06	broken-code	direct	issues/589-bug-tuikit-lineedit-splits-grapheme-clusters.md,issues/594-research-tuikit-audit-2026-10-01.md
+2026-10-01 16:06	dead-code	direct	issues/594-research-tuikit-audit-2026-10-01.md
+2026-10-01 16:06	error-handling	direct	issues/592-bug-tuikit-stripsgr-leaves-osc-fragments.md,issues/594-research-tuikit-audit-2026-10-01.md
+2026-10-01 16:06	performance	direct	issues/591-bug-tuikit-highlight-regex-backtracking-freezes-render.md,issues/593-test-tuikit-termwidth-tests-take-minutes-under-race.md,issues/594-research-tuikit-audit-2026-10-01.md
+2026-10-01 16:06	test-cleanup	direct	issues/594-research-tuikit-audit-2026-10-01.md
+2026-10-01 16:06	test-helpers	direct	issues/594-research-tuikit-audit-2026-10-01.md
