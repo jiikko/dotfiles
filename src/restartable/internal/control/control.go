@@ -58,6 +58,7 @@ type Response struct {
 	Generation     uint64 `json:"generation,omitempty"`
 	RestartPending bool   `json:"restartPending,omitempty"`
 	Reason         string `json:"reason,omitempty"`
+	Ready          bool   `json:"ready"`
 }
 
 type requestLine struct {

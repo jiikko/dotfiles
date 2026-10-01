@@ -17,38 +17,59 @@ import (
 )
 
 type Config struct {
-	BuildCommand       string
-	RunArgs            []string
-	StopCommand        string
-	StopCommandTimeout time.Duration
-	TermGrace          time.Duration
-	IDEnv              string
-	ControlPath        string
-	Stdin              io.Reader
-	Stdout             io.Writer
-	Stderr             io.Writer
-	Headless           bool
-	StdinIsTerminal    bool
-	Presenter          Presenter
+	BuildCommand        string
+	RunArgs             []string
+	StopCommand         string
+	StopCommandTimeout  time.Duration
+	TermGrace           time.Duration
+	ReadyCommand        string
+	ReadyTimeout        time.Duration
+	ReadyInterval       time.Duration
+	ReadyAttemptTimeout time.Duration
+	ReadyCleanupGrace   time.Duration
+	IDEnv               string
+	ControlPath         string
+	Stdin               io.Reader
+	Stdout              io.Writer
+	Stderr              io.Writer
+	Headless            bool
+	StdinIsTerminal     bool
+	Presenter           Presenter
 }
 
 type actorEventKind string
 
 const (
-	buildDoneEvent actorEventKind = "build-done"
-	runDoneEvent   actorEventKind = "run-done"
-	stopDoneEvent  actorEventKind = "stop-done"
-	forceDoneEvent actorEventKind = "force-done"
-	keyEvent       actorEventKind = "key"
+	buildDoneEvent           actorEventKind = "build-done"
+	runDoneEvent             actorEventKind = "run-done"
+	stopDoneEvent            actorEventKind = "stop-done"
+	forceDoneEvent           actorEventKind = "force-done"
+	keyEvent                 actorEventKind = "key"
+	readyProbeDoneEvent      actorEventKind = "ready-probe-done"
+	readyProbeTimeoutEvent   actorEventKind = "ready-probe-timeout"
+	readyOverallTimeoutEvent actorEventKind = "ready-overall-timeout"
+	readyIntervalEvent       actorEventKind = "ready-interval"
+	readyCleanupDoneEvent    actorEventKind = "ready-cleanup-done"
 )
 
 type actorEvent struct {
-	kind   actorEventKind
-	proc   *process
-	result processResult
-	err    error
-	forced bool
+	kind       actorEventKind
+	proc       *process
+	result     processResult
+	err        error
+	forced     bool
+	generation uint64
+	token      uint64
+	outcome    readyCleanupOutcome
 }
+
+type readyCleanupOutcome string
+
+const (
+	readyCleanupCompleted readyCleanupOutcome = "completed"
+	readyCleanupTimedOut  readyCleanupOutcome = "timed-out"
+	readyCleanupCancelled readyCleanupOutcome = "cancelled"
+)
 
 // Presenter is the boundary for the next milestone's Bubble Tea terminal UI.
 // It receives model snapshots and key events; process management never draws.
@@ -68,34 +89,48 @@ func (headlessPresenter) Keys() <-chan string { return nil }
 func (headlessPresenter) Close() error        { return nil }
 
 type actor struct {
-	cfg                Config
-	model              Model
-	id                 string
-	server             *control.Server
-	sink               *logSink
-	presenter          Presenter
-	events             chan actorEvent
-	build              *process
-	child              *process
-	stop               *process
-	allProcesses       []*process
-	queuedRequests     []*control.Request
-	pendingRequests    []*control.Request
-	childResult        *processResult
-	childProcessed     bool
-	stopAccepted       bool
-	stopRunning        bool
-	forceRunning       bool
-	forcedTermination  bool
-	groupStopRunning   bool
-	outputDrainTimeout time.Duration
-	forceCode          int
-	finished           bool
-	retCode            int
-	flusherDone        chan struct{}
-	actorDone          chan struct{}
-	signals            <-chan os.Signal
-	flusherWG          sync.WaitGroup
+	cfg                  Config
+	model                Model
+	id                   string
+	server               *control.Server
+	sink                 *logSink
+	presenter            Presenter
+	events               chan actorEvent
+	build                *process
+	child                *process
+	stop                 *process
+	allProcesses         []*process
+	queuedRequests       []*control.Request
+	pendingRequests      []*control.Request
+	childResult          *processResult
+	childProcessed       bool
+	stopAccepted         bool
+	stopRunning          bool
+	forceRunning         bool
+	forcedTermination    bool
+	groupStopRunning     bool
+	outputDrainTimeout   time.Duration
+	forceCode            int
+	finished             bool
+	retCode              int
+	flusherDone          chan struct{}
+	actorDone            chan struct{}
+	signals              <-chan os.Signal
+	flusherWG            sync.WaitGroup
+	readyProbe           *process
+	readyCleaningProc    *process
+	readyToken           uint64
+	readyGeneration      uint64
+	readyStarted         time.Time
+	readyDeadlineTimer   *time.Timer
+	readyAttemptTimer    *time.Timer
+	readyIntervalTimer   *time.Timer
+	readyExpired         bool
+	readyFinishPending   bool
+	readyFinishCode      int
+	childExitPending     bool
+	readyDeferredEffects []Effect
+	readyResumePending   bool
 }
 
 // Run supervises one foreground process. It returns a process-style exit code.
@@ -105,6 +140,18 @@ func Run(cfg Config) (int, error) {
 	}
 	if cfg.StopCommandTimeout <= 0 {
 		cfg.StopCommandTimeout = 5 * time.Second
+	}
+	if cfg.ReadyTimeout <= 0 {
+		cfg.ReadyTimeout = 120 * time.Second
+	}
+	if cfg.ReadyInterval <= 0 {
+		cfg.ReadyInterval = 500 * time.Millisecond
+	}
+	if cfg.ReadyAttemptTimeout <= 0 {
+		cfg.ReadyAttemptTimeout = 5 * time.Second
+	}
+	if cfg.ReadyCleanupGrace <= 0 {
+		cfg.ReadyCleanupGrace = 100 * time.Millisecond
 	}
 	if cfg.TermGrace < 0 {
 		return 1, errors.New("--term-grace cannot be negative")
@@ -259,12 +306,256 @@ func (a *actor) env() []string {
 	return env
 }
 
+func (a *actor) post(ev actorEvent) {
+	if a.actorDone == nil {
+		a.events <- ev
+		return
+	}
+	select {
+	case a.events <- ev:
+	case <-a.actorDone:
+	}
+}
+
+func (a *actor) stopReadyTimers() {
+	for _, timer := range []*time.Timer{a.readyDeadlineTimer, a.readyAttemptTimer, a.readyIntervalTimer} {
+		if timer != nil {
+			timer.Stop()
+		}
+	}
+	a.readyDeadlineTimer = nil
+	a.readyAttemptTimer = nil
+	a.readyIntervalTimer = nil
+}
+
+func (a *actor) startReadyCheck() {
+	a.stopReadyTimers()
+	a.readyToken++
+	a.readyGeneration = a.model.Generation
+	a.readyStarted = time.Now()
+	a.readyExpired = false
+	token, generation := a.readyToken, a.readyGeneration
+	a.readyDeadlineTimer = time.AfterFunc(a.cfg.ReadyTimeout, func() {
+		a.post(actorEvent{kind: readyOverallTimeoutEvent, token: token, generation: generation})
+	})
+	a.startReadyProbe(token, generation)
+}
+
+func (a *actor) readySessionCurrent(token, generation uint64) bool {
+	return token == a.readyToken && generation == a.readyGeneration &&
+		a.model.Generation == generation && a.model.State == Running &&
+		a.model.Transition.Active && a.model.Transition.Stage == TransitionReady
+}
+
+func (a *actor) startReadyProbe(token, generation uint64) {
+	if !a.readySessionCurrent(token, generation) || a.readyExpired {
+		return
+	}
+	if time.Since(a.readyStarted) >= a.cfg.ReadyTimeout {
+		a.readyExpired = true
+		a.finishReadyFailure(generation)
+		return
+	}
+	proc, err := startProcess([]string{a.cfg.ReadyCommand}, true, a.env(), a.cfg.Stdin, a.sink, a.cfg.Headless, a.cfg.StdinIsTerminal)
+	if err != nil {
+		a.scheduleReadyProbe(token, generation)
+		return
+	}
+	a.readyProbe = proc
+	a.allProcesses = append(a.allProcesses, proc)
+	a.readyAttemptTimer = time.AfterFunc(a.cfg.ReadyAttemptTimeout, func() {
+		a.post(actorEvent{kind: readyProbeTimeoutEvent, proc: proc, token: token, generation: generation})
+	})
+	go func() {
+		a.post(actorEvent{kind: readyProbeDoneEvent, proc: proc, result: proc.wait(), token: token, generation: generation})
+	}()
+}
+
+func (a *actor) scheduleReadyProbe(token, generation uint64) {
+	if !a.readySessionCurrent(token, generation) || a.readyExpired {
+		return
+	}
+	a.readyIntervalTimer = time.AfterFunc(a.cfg.ReadyInterval, func() {
+		a.post(actorEvent{kind: readyIntervalEvent, token: token, generation: generation})
+	})
+}
+
+func (a *actor) startReadyCleanup(proc *process, token, generation uint64, outcome readyCleanupOutcome) {
+	if proc == nil || a.readyCleaningProc != nil {
+		return
+	}
+	if a.readyAttemptTimer != nil {
+		a.readyAttemptTimer.Stop()
+		a.readyAttemptTimer = nil
+	}
+	a.readyProbe = nil
+	a.readyCleaningProc = proc
+	grace := a.cfg.ReadyCleanupGrace
+	go func() {
+		var cleanupErr error
+		if groupExists(proc.pid) {
+			if err := signalGroup(proc.pid, syscall.SIGTERM); err != nil {
+				cleanupErr = err
+			}
+			waitForTermBoundary([]*process{proc}, grace)
+			if err := killRemainingGroups([]*process{proc}); err != nil && cleanupErr == nil {
+				cleanupErr = err
+			}
+		}
+		result := proc.wait()
+		a.post(actorEvent{kind: readyCleanupDoneEvent, proc: proc, result: result, err: cleanupErr,
+			token: token, generation: generation, outcome: outcome})
+	}()
+}
+
+func (a *actor) handleReadyProbeDone(ev actorEvent) {
+	if ev.proc != a.readyProbe || !a.readySessionCurrent(ev.token, ev.generation) {
+		return
+	}
+	a.startReadyCleanup(ev.proc, ev.token, ev.generation, readyCleanupCompleted)
+}
+
+func (a *actor) handleReadyProbeTimeout(ev actorEvent) {
+	if ev.proc != a.readyProbe || !a.readySessionCurrent(ev.token, ev.generation) {
+		return
+	}
+	if ev.proc.finished.Load() {
+		a.handleReadyProbeDone(actorEvent{proc: ev.proc, result: ev.proc.result, token: ev.token, generation: ev.generation})
+		return
+	}
+	a.startReadyCleanup(ev.proc, ev.token, ev.generation, readyCleanupTimedOut)
+}
+
+func (a *actor) handleReadyOverallTimeout(ev actorEvent) {
+	if !a.readySessionCurrent(ev.token, ev.generation) {
+		return
+	}
+	a.readyExpired = true
+	if a.readyIntervalTimer != nil {
+		a.readyIntervalTimer.Stop()
+		a.readyIntervalTimer = nil
+	}
+	if a.readyProbe != nil {
+		a.startReadyCleanup(a.readyProbe, ev.token, ev.generation, readyCleanupTimedOut)
+		return
+	}
+	if a.readyCleaningProc == nil {
+		a.finishReadyFailure(ev.generation)
+	}
+}
+
+func (a *actor) handleReadyInterval(ev actorEvent) {
+	if !a.readySessionCurrent(ev.token, ev.generation) {
+		return
+	}
+	a.readyIntervalTimer = nil
+	if time.Since(a.readyStarted) >= a.cfg.ReadyTimeout {
+		a.readyExpired = true
+		a.finishReadyFailure(ev.generation)
+		return
+	}
+	a.startReadyProbe(ev.token, ev.generation)
+}
+
+func (a *actor) handleReadyCleanupDone(ev actorEvent) {
+	if ev.proc != a.readyCleaningProc {
+		return
+	}
+	a.readyCleaningProc = nil
+	if ev.err != nil {
+		a.report("ready-cmd process group cleanup: " + ev.err.Error())
+	}
+	if a.readySessionCurrent(ev.token, ev.generation) {
+		if time.Since(a.readyStarted) >= a.cfg.ReadyTimeout {
+			a.readyExpired = true
+		}
+		if a.readyExpired {
+			a.finishReadyFailure(ev.generation)
+		} else if ev.outcome == readyCleanupCompleted && ev.result.Code == 0 {
+			a.finishReadySuccess(ev.generation)
+		} else {
+			a.scheduleReadyProbe(ev.token, ev.generation)
+		}
+	}
+	if a.childExitPending {
+		a.childExitPending = false
+		effects := a.readyDeferredEffects
+		a.readyDeferredEffects = nil
+		a.handleEffects(effects)
+		a.presenter.Render(a.model)
+	}
+	if a.readyResumePending && a.model.State == Running && !a.model.Ready {
+		a.readyResumePending = false
+		a.startReadyCheck()
+		a.presenter.Render(a.model)
+	}
+	if a.readyFinishPending {
+		code := a.readyFinishCode
+		a.readyFinishPending = false
+		a.finish(code)
+	}
+}
+
+func (a *actor) resumeReadyCheckIfNeeded() {
+	if a.cfg.ReadyCommand == "" || a.model.State != Running || a.model.Ready || a.child == nil || a.child.finished.Load() {
+		return
+	}
+	a.transition(Event{Kind: ReadyCheckResumedEvent})
+	if a.readyCleaningProc != nil {
+		a.readyResumePending = true
+		return
+	}
+	a.startReadyCheck()
+	a.presenter.Render(a.model)
+}
+
+func (a *actor) finishReadySuccess(generation uint64) {
+	a.stopReadyTimers()
+	a.transition(Event{Kind: ReadySucceededEvent, Generation: generation})
+	if a.cfg.Headless {
+		a.reportStderr("起動を確認しました")
+	}
+	a.presenter.Render(a.model)
+}
+
+func (a *actor) finishReadyFailure(generation uint64) {
+	if a.readyDeadlineTimer != nil {
+		a.readyDeadlineTimer.Stop()
+		a.readyDeadlineTimer = nil
+	}
+	if a.readyIntervalTimer != nil {
+		a.readyIntervalTimer.Stop()
+		a.readyIntervalTimer = nil
+	}
+	a.transition(Event{Kind: ReadyFailedEvent, Generation: generation})
+	if a.cfg.Headless {
+		a.reportStderr("起動を確認できませんでした")
+	}
+	a.presenter.Render(a.model)
+}
+
+func (a *actor) cancelReady() {
+	a.stopReadyTimers()
+	oldToken := a.readyToken
+	a.readyToken++
+	a.readyExpired = false
+	a.readyResumePending = false
+	if a.readyProbe != nil {
+		a.startReadyCleanup(a.readyProbe, oldToken, a.readyGeneration, readyCleanupCancelled)
+	}
+}
+
+func (a *actor) invalidateReadyForForce() {
+	a.stopReadyTimers()
+	a.readyToken++
+	a.readyExpired = false
+}
+
 func (a *actor) startBuild() error {
 	if a.build != nil {
 		a.report("build start refused: a build is already running")
 		return nil
 	}
-	a.model.State = Building
 	if a.cfg.BuildCommand == "" {
 		return a.startRun()
 	}
@@ -284,10 +575,12 @@ func (a *actor) startBuild() error {
 }
 
 func (a *actor) startRun() error {
+	a.transition(Event{Kind: LaunchStartedEvent})
 	proc, err := startProcess(a.cfg.RunArgs, false, a.env(), a.cfg.Stdin, a.sink, a.cfg.Headless, a.cfg.StdinIsTerminal)
 	if err != nil {
 		a.report("run failed: " + err.Error())
 		a.failRequests(err.Error())
+		a.model.Transition.Active = false
 		a.finished = true
 		a.retCode = 1
 		return nil
@@ -297,9 +590,13 @@ func (a *actor) startRun() error {
 	a.childResult = nil
 	a.childProcessed = false
 	go func() { a.events <- actorEvent{kind: runDoneEvent, proc: proc, result: proc.wait()} }()
-	a.transition(Event{Kind: ChildStartedEvent, PID: proc.pid})
+	a.transition(Event{Kind: ChildStartedEvent, PID: proc.pid, ReadyCheck: a.cfg.ReadyCommand != ""})
 	a.presenter.Render(a.model)
 	a.succeedRequests()
+	if a.cfg.ReadyCommand != "" {
+		a.startReadyCheck()
+		a.presenter.Render(a.model)
+	}
 	return nil
 }
 
@@ -372,6 +669,7 @@ func (a *actor) handleEvent(ev actorEvent) {
 			} else {
 				a.transition(Event{Kind: StopCommandFailEvent, Reason: reason})
 				a.failRequests(reason)
+				a.resumeReadyCheckIfNeeded()
 			}
 		} else {
 			a.stopAccepted = true
@@ -383,6 +681,16 @@ func (a *actor) handleEvent(ev actorEvent) {
 		a.presenter.Render(a.model)
 	case forceDoneEvent:
 		a.handleForceDone(ev)
+	case readyProbeDoneEvent:
+		a.handleReadyProbeDone(ev)
+	case readyProbeTimeoutEvent:
+		a.handleReadyProbeTimeout(ev)
+	case readyOverallTimeoutEvent:
+		a.handleReadyOverallTimeout(ev)
+	case readyIntervalEvent:
+		a.handleReadyInterval(ev)
+	case readyCleanupDoneEvent:
+		a.handleReadyCleanupDone(ev)
 	case keyEvent:
 		a.handleKey(ev.result.Err.Error())
 	}
@@ -391,6 +699,7 @@ func (a *actor) handleEvent(ev actorEvent) {
 func (a *actor) handleForceDone(ev actorEvent) {
 	if ev.forced {
 		a.forceRunning = false
+		a.readyProbe = nil
 		if ev.err != nil {
 			a.report("failed to stop process group: " + ev.err.Error())
 		}
@@ -547,6 +856,7 @@ func (a *actor) statusResponse() control.Response {
 	response := control.Response{
 		OK: true, ID: a.id, State: string(a.model.State), PID: nil,
 		Generation:     a.model.Generation,
+		Ready:          a.model.Ready,
 		RestartPending: queuedAlive || len(a.pendingRequests) > 0 || (a.model.State == Stopping && a.model.Intent == IntentRestart),
 	}
 	if a.model.State == Running && a.model.PID > 0 {
@@ -569,6 +879,7 @@ func (a *actor) liveQueued() []*control.Request {
 }
 
 func (a *actor) beginStop() {
+	a.cancelReady()
 	if a.model.PID == 0 || a.child == nil {
 		if a.model.Intent == IntentRestart {
 			_, effects := a.transition(Event{Kind: ChildExitedEvent})
@@ -585,6 +896,7 @@ func (a *actor) beginStop() {
 			a.transition(Event{Kind: StopCommandFailEvent, Reason: err.Error()})
 			a.report("stop-cmd failed: " + err.Error())
 			a.failRequests("stop-cmd failed: " + err.Error())
+			a.resumeReadyCheckIfNeeded()
 			return
 		}
 		a.stop = proc
@@ -720,12 +1032,22 @@ func (a *actor) beginForce(code int) {
 		a.forcedTermination = true
 		a.forceCode = code
 		a.model, _ = Update(a.model, Event{Kind: ForceEvent, SignalCode: code})
+		a.invalidateReadyForForce()
+		a.childExitPending = false
+		a.readyResumePending = false
+		a.readyDeferredEffects = nil
+		a.readyFinishPending = false
 		a.failRequests("runner interrupted")
 		return
 	}
 	a.forcedTermination = true
 	a.forceCode = code
 	a.model, _ = Update(a.model, Event{Kind: ForceEvent, SignalCode: code})
+	a.invalidateReadyForForce()
+	a.childExitPending = false
+	a.readyResumePending = false
+	a.readyDeferredEffects = nil
+	a.readyFinishPending = false
 	a.failRequests("runner interrupted")
 	a.queuedRequests = nil
 	a.beginForceStop()
@@ -754,19 +1076,33 @@ func (a *actor) completeChildExit() {
 	if a.child == nil || !a.childProcessed {
 		return
 	}
+	readyEndedEarly := a.model.State == Running && a.model.Transition.Active && a.model.Transition.Stage == TransitionReady
+	if readyEndedEarly && a.cfg.Headless {
+		a.reportStderr("起動を確認できませんでした")
+	}
+	if a.readyProbe != nil {
+		a.cancelReady()
+	}
+	a.readyResumePending = false
 	_, effects := a.transition(Event{Kind: ChildExitedEvent})
 	a.stopAccepted = false
+	if a.readyCleaningProc != nil {
+		a.childExitPending = true
+		a.readyDeferredEffects = effects
+		a.presenter.Render(a.model)
+		return
+	}
 	a.handleEffects(effects)
 	a.presenter.Render(a.model)
 }
 
 func (a *actor) succeedRequests() {
 	for _, req := range a.pendingRequests {
-		req.Respond(control.Response{OK: true, ID: a.id, State: string(Running), PID: intPointer(a.model.PID), Generation: a.model.Generation})
+		req.Respond(control.Response{OK: true, ID: a.id, State: string(Running), PID: intPointer(a.model.PID), Generation: a.model.Generation, Ready: a.model.Ready})
 	}
 	a.pendingRequests = nil
 	for _, req := range a.queuedRequests {
-		req.Respond(control.Response{OK: true, ID: a.id, State: string(Running), PID: intPointer(a.model.PID), Generation: a.model.Generation})
+		req.Respond(control.Response{OK: true, ID: a.id, State: string(Running), PID: intPointer(a.model.PID), Generation: a.model.Generation, Ready: a.model.Ready})
 	}
 	a.queuedRequests = nil
 }
@@ -787,6 +1123,11 @@ func (a *actor) finish(code int) {
 		return
 	}
 	if a.forceRunning {
+		return
+	}
+	if a.readyProbe != nil || a.readyCleaningProc != nil {
+		a.readyFinishPending = true
+		a.readyFinishCode = code
 		return
 	}
 	if a.child != nil && !a.child.finished.Load() {

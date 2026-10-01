@@ -55,7 +55,7 @@ func TestListenPermissionsStatusAndDuplicateStart(t *testing.T) {
 			t.Errorf("command = %q", req.Command)
 		}
 		pid := 412
-		req.Respond(Response{OK: true, ID: "unit-id", State: "running", PID: &pid, Generation: 9})
+		req.Respond(Response{OK: true, ID: "unit-id", State: "running", PID: &pid, Generation: 9, Ready: true})
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -63,7 +63,7 @@ func TestListenPermissionsStatusAndDuplicateStart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !response.OK || response.ID != "unit-id" || response.State != "running" || response.PID == nil || *response.PID != 412 || response.Generation != 9 {
+	if !response.OK || response.ID != "unit-id" || response.State != "running" || response.PID == nil || *response.PID != 412 || response.Generation != 9 || !response.Ready {
 		t.Fatalf("response = %+v", response)
 	}
 	if err := server.Close(); err != nil {
@@ -71,6 +71,16 @@ func TestListenPermissionsStatusAndDuplicateStart(t *testing.T) {
 	}
 	if _, err := os.Lstat(path); !os.IsNotExist(err) {
 		t.Fatalf("socket still exists after Close: %v", err)
+	}
+}
+
+func TestResponseAlwaysIncludesReadyBoolean(t *testing.T) {
+	data, err := json.Marshal(Response{OK: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"ready":false`) {
+		t.Fatalf("status response omitted ready=false: %s", data)
 	}
 }
 

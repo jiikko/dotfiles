@@ -20,6 +20,16 @@ restartable --build 'go build -o ./bin/server ./cmd/server' -- ./bin/server --fo
 `--build` と `--stop-cmd` は `/bin/sh -c` で実行します。`--` の後の run コマンドは shell を介さず argv のまま起動します。
 ビルドが失敗した場合は `build-failed` の表示で待ち、古い成果物は起動しません。`R` で再ビルドできます。
 
+`--ready-cmd '<command>'` を指定すると、run コマンドを起動した後に確認コマンドを `/bin/sh -c` で実行します。rc 0 になるまで 0.5 秒間隔で繰り返し、1 回の実行は 5 秒で打ち切ります。既定の全体上限は `--ready-timeout 120s` です。上限までに確認できなくてもアプリは終了させず、`status` の `ready` は `false` のままになります。`--id-env NAME` を併用すると、確認コマンドにも run / build / stop command と同じインスタンス ID を渡します。
+
+obaket では health の `devLoop` が現在の `$OBAKET_DEV_LOOP` と一致するまで起動確認を続けられます (health の URL は環境に合わせてください)。
+
+```sh
+restartable --id-env OBAKET_DEV_LOOP \
+  --ready-cmd 'curl -fsS http://127.0.0.1:8080/health | jq -e --arg id "$OBAKET_DEV_LOOP" ".devLoop == \$id" >/dev/null' \
+  --build 'make build' -- ./bin/obaket
+```
+
 TTY の最下行にはキーと状態が表示され、子の stdout / stderr はその上に流れます。
 
 ```text
@@ -27,6 +37,10 @@ TTY の最下行にはキーと状態が表示され、子の stdout / stderr �
 ```
 
 端末幅が狭い場合は罫線とキー表示が短くなります。確認中は `tuikit/confirm` の板が最下行より上に出ます。
+起動時・再起動中・終了中は別の進捗板を端末の中央に表示します。起動時と再起動中は「終了 → ビルド → 起動 → 起動の確認」の現在段を spinner で示し、`--ready-cmd` の確認が済むまで板を残します。ビルド失敗と起動未確認は結果を表示して板を閉じます。終了中は子が終了するまで表示します。端末が小さい場合は板を最下行の直上に寄せます。
+
+進捗板が出ている間は `R` / `Q` を受け付けず、板に「処理中」と表示します。Ctrl-C はいつでも強制終了です。`--stop-cmd` が成功して子の終了を待っている間は、Esc で停止を取り消せます。
+`--ready-cmd` を省略した場合は子の起動直後に `ready: true` になります。
 
 アプリ固有の quit API を使う場合は `--stop-cmd` を指定します。
 
@@ -41,8 +55,8 @@ restartable --build 'make build' --stop-cmd 'curl -fsS -X POST http://127.0.0.1:
 
 | キー | 動作 |
 | --- | --- |
-| `R` | running 中は再起動確認を表示。`y` / Enter で停止してビルドし直す。`build-failed` 中は確認なしで再ビルド。building 中は処理せず「ビルド中」と表示。 |
-| `Q` | 終了確認を表示。`y` / Enter で runner を終了。 |
+| `R` | 通常の running 中は再起動確認を表示。`y` / Enter で停止してビルドし直す。`build-failed` 中は確認なしで再ビルド。進捗板の表示中は無視して「処理中」と表示。 |
+| `Q` | 通常の running 中は終了確認を表示。`y` / Enter で runner を終了。進捗板の表示中は無視して「処理中」と表示。 |
 | `y` / `Y` / Enter | 確認中の操作を実行。 |
 | `n` / `N` / Esc | 確認をキャンセル。 |
 | Esc | `--stop-cmd` 成功後、子の終了待ち中なら停止を取り消して running に戻る。 |
@@ -65,12 +79,13 @@ restartable status
 restartable restart
 ```
 
-出力には状態、子 PID、generation が含まれます。runner と client で別の socket を使う場合は、両方に同じ `--control PATH` を指定します。
-`--id-env NAME` を指定すると、生成したインスタンス ID を build / run / stop command の環境変数に渡します。
+出力には状態、子 PID、generation、起動確認済みかを示す `ready` が含まれます。runner と client で別の socket を使う場合は、両方に同じ `--control PATH` を指定します。
+`--id-env NAME` を指定すると、生成したインスタンス ID を build / run / stop / ready command の環境変数に渡します。
 
 ## TTY UI を表示しない起動
 
 stdin と stdout のどちらか一方でも端末でなければ、キー入力と最下行 UI は有効になりません。ログは従来どおり stdout / stderr に素通しし、control socket は利用できます。子の stdin は UI の有無ではなく runner の stdin で決まります。runner の stdin が端末なら、TTY UI を表示しない場合も build / run / stop-cmd の stdin は `/dev/null` です。これにより、出力をパイプへ流したときに背景プロセスグループの子が端末入力で停止するのを防ぎます。runner の stdin が非端末なら、その入力を子へ渡します。
+非 TTY では進捗板を描かず、`--ready-cmd` の確認結果を stderr に 1 行ずつ出します。
 例えば CI や pipe では次のように実行します。
 
 ```sh
@@ -85,4 +100,4 @@ restartable --build 'make build' -- ./bin/server 2>&1 | tee server.log
 
 - 既定の control path では checkout ごとに runner は 1 つですが、同じ checkout でも異なる `--control PATH` を指定すれば別の runner を起動できます。複数起動する場合は各 runner に異なる path を指定してください。
 - runner の stdin が端末の場合、build / run / stop-cmd の stdin は `/dev/null` です。TTY UI の有無とは関係なく、子コマンドから端末の対話入力はできません。runner の stdin が非端末なら、その入力を子へ渡します。
-- build 中に `Q` → `y` で強制終了した場合、前世代の子が残した process group の子孫まで検出して停止する保証はありません。
+- build 中に Ctrl-C で強制終了した場合、前世代の子が残した process group の子孫まで検出して停止する保証はありません。

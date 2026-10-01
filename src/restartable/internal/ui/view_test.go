@@ -100,6 +100,208 @@ func TestQuitConfirmUsesAgreedPrompt(t *testing.T) {
 	}
 }
 
+func TestTransitionViewKeepsPanelBelowLogAreaAtHeight24And40(t *testing.T) {
+	state := runner.Model{
+		State:      runner.Stopping,
+		Transition: runner.Transition{Active: true, Kind: runner.TransitionRestart, Stage: runner.TransitionBuild},
+	}
+	for _, height := range []int{24, 40} {
+		lines := ViewLinesAt(state, 80, height, 0)
+		panelTop := -1
+		panelWidth := 0
+		left := 0
+		for index, line := range lines {
+			if strings.Contains(line, "┌") && strings.Contains(line, "再起動中") {
+				panelTop = index
+				left = termwidth.Of(strings.SplitN(line, "┌", 2)[0])
+				panelWidth = 44
+				break
+			}
+		}
+		if panelTop < 0 {
+			t.Fatalf("height %d has no restart panel: %q", height, lines)
+		}
+		panelHeight := 7 // four body rows + top/bottom/low-shadow rows from confirm.Box
+		wantScreenTop := (height - panelHeight) / 2
+		wantGap := max(height-wantScreenTop-panelHeight-1, 0)
+		if panelTop != 0 {
+			t.Fatalf("height %d view starts with %d rows above the panel; logs must own that area: %q", height, panelTop, lines[:panelTop])
+		}
+		if got := len(lines); got != panelHeight+wantGap+1 {
+			t.Fatalf("height %d view has %d rows, want panel %d + gap %d + status", height, got, panelHeight, wantGap)
+		}
+		if screenTop := height - len(lines); screenTop != wantScreenTop {
+			t.Fatalf("height %d panel screen top = %d, want about %d", height, screenTop, wantScreenTop)
+		}
+		if left != (80-panelWidth)/2 {
+			t.Fatalf("height %d panel left edge = %d, want %d", height, left, (80-panelWidth)/2)
+		}
+		for _, row := range lines[panelTop : panelTop+panelHeight] {
+			if got := termwidth.Of(row); got != 80 {
+				t.Fatalf("height %d panel row width = %d, want 80: %q", height, got, row)
+			}
+		}
+		if lines[len(lines)-1] != StatusLine(state, 80) {
+			t.Fatalf("height %d final row is not the pinned status: %q", height, lines[len(lines)-1])
+		}
+	}
+}
+
+func TestTransitionPanelFlushesAgainstStatusOnTenRowTerminal(t *testing.T) {
+	state := runner.Model{
+		State:      runner.Running,
+		PID:        1,
+		Transition: runner.Transition{Active: true, Kind: runner.TransitionStartup, Stage: runner.TransitionReady},
+	}
+	lines := ViewLinesAt(state, 80, 10, 0)
+	if len(lines) != 8 {
+		t.Fatalf("height 10 produced %d rows, want 7 panel rows plus status", len(lines))
+	}
+	if !strings.Contains(lines[6], "░") || lines[7] != StatusLine(state, 80) {
+		t.Fatalf("panel is not flush to the final status row: %q", lines)
+	}
+	if !strings.Contains(lines[0], "┌") || !strings.Contains(lines[1], "起動を確認しています") {
+		t.Fatalf("ready stage missing from short terminal panel: %q", lines)
+	}
+	panelScreenTop := 10 - len(lines)
+	panelCenter := panelScreenTop + 3
+	if panelScreenTop != 2 || panelCenter != 5 {
+		t.Fatalf("short terminal panel position = top %d, center %d; want top 2, center 5", panelScreenTop, panelCenter)
+	}
+}
+
+func TestTransitionPanelShowsCompletedStagesAndStageSpecificHints(t *testing.T) {
+	cases := []struct {
+		name       string
+		stage      runner.TransitionStage
+		steps      string
+		wantHint   string
+		wantNoHint string
+	}{
+		{"stop-command-running", runner.TransitionStop, "終了 → ビルド → 起動 → 起動の確認", "Ctrl-C: 強制終了", "Esc: 取り消し"},
+		{"stop-wait", runner.TransitionStop, "終了 → ビルド → 起動 → 起動の確認", "Esc: 取り消し   Ctrl-C: 強制終了", "Q: 終了"},
+		{"build", runner.TransitionBuild, "終了✓ → ビルド → 起動 → 起動の確認", "Q: 終了   Ctrl-C: 強制終了", "Esc: 取り消し"},
+		{"launch", runner.TransitionLaunch, "終了✓ → ビルド✓ → 起動 → 起動の確認", "Q: 終了   Ctrl-C: 強制終了", "Esc: 取り消し"},
+		{"ready", runner.TransitionReady, "終了✓ → ビルド✓ → 起動✓ → 起動の確認", "Q: 終了   Ctrl-C: 強制終了", "Esc: 取り消し"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			state := runner.Model{State: runner.Running, Transition: runner.Transition{
+				Active: true, Kind: runner.TransitionRestart, Stage: tc.stage,
+			}}
+			if tc.name == "stop-wait" {
+				state.State = runner.Stopping
+				state.StopAccepted = true
+			}
+			joined := strings.Join(ViewLinesAt(state, 80, 24, 0), "\n")
+			if !strings.Contains(joined, tc.steps) {
+				t.Fatalf("completed stage row missing %q: %q", tc.steps, joined)
+			}
+			if !strings.Contains(joined, tc.wantHint) || strings.Contains(joined, tc.wantNoHint) {
+				t.Fatalf("stage hint does not match accepted keys (want %q, exclude %q): %q", tc.wantHint, tc.wantNoHint, joined)
+			}
+		})
+	}
+	startup := ViewLinesAt(runner.Model{State: runner.Building, Transition: runner.Transition{
+		Active: true, Kind: runner.TransitionStartup, Stage: runner.TransitionBuild,
+	}}, 80, 24, 0)
+	if !strings.Contains(strings.Join(startup, "\n"), "終了✓ → ビルド → 起動 → 起動の確認") {
+		t.Fatalf("startup stage row should mark the skipped stop step complete: %q", startup)
+	}
+}
+
+func TestQuitConfirmationDuringTransitionIsDrawnInsidePanel(t *testing.T) {
+	state := runner.Model{State: runner.Running, Confirm: runner.ConfirmQuit, Transition: runner.Transition{
+		Active: true, Kind: runner.TransitionRestart, Stage: runner.TransitionReady,
+	}}
+	lines := ViewLinesAt(state, 80, 24, 0)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "アプリを終了しますか？") || !strings.Contains(joined, confirm.HintYesNo) {
+		t.Fatalf("quit confirmation missing from active transition panel: %q", lines)
+	}
+	if got := strings.Count(joined, "┌"); got != 1 {
+		t.Fatalf("confirmation should be contained in one progress panel, found %d boxes: %q", got, lines)
+	}
+	if !strings.Contains(joined, "起動を確認しています") {
+		t.Fatalf("confirmation obscured the active stage: %q", lines)
+	}
+	state.Transition.Busy = true
+	short := ViewLinesAt(state, 80, 10, 0)
+	if len(short) != 10 || short[len(short)-1] != StatusLine(state, 80) || !strings.Contains(strings.Join(short, "\n"), confirm.HintYesNo) {
+		t.Fatalf("busy confirmation does not fit above the final row on height 10: %q", short)
+	}
+}
+
+func TestTransitionPanelTextAndFullWidthMeasurements(t *testing.T) {
+	cases := []struct {
+		name, title, phrase string
+		kind                runner.TransitionKind
+		stage               runner.TransitionStage
+	}{
+		{"restart-stop", "再起動中", "アプリを終了しています", runner.TransitionRestart, runner.TransitionStop},
+		{"restart-build", "再起動中", "ビルドしています", runner.TransitionRestart, runner.TransitionBuild},
+		{"restart-launch", "再起動中", "アプリを起動しています", runner.TransitionRestart, runner.TransitionLaunch},
+		{"restart-ready", "再起動中", "起動を確認しています", runner.TransitionRestart, runner.TransitionReady},
+		{"quit", "終了中", "アプリを終了しています", runner.TransitionQuit, runner.TransitionStop},
+		{"startup", "起動中", "アプリを起動しています", runner.TransitionStartup, runner.TransitionLaunch},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			lines := ViewLinesAt(runner.Model{State: runner.Running, Transition: runner.Transition{
+				Active: true, Kind: tc.kind, Stage: tc.stage,
+			}}, 80, 24, 1)
+			joined := strings.Join(lines, "\n")
+			if !strings.Contains(joined, tc.title) || !strings.Contains(joined, tc.phrase) || !strings.Contains(joined, "⠙") {
+				t.Fatalf("panel text missing title/stage/spinner: %q", joined)
+			}
+			if tc.kind != runner.TransitionQuit && (!strings.Contains(joined, "→") || !strings.Contains(joined, "起動の確認")) {
+				t.Fatalf("restart/startup stage list missing: %q", joined)
+			}
+			for _, line := range lines {
+				if line == "" {
+					continue
+				}
+				if got := termwidth.Of(line); got != 80 {
+					t.Fatalf("full-width panel row measures %d cells, want 80: %q", got, line)
+				}
+			}
+		})
+	}
+	failed := ViewLinesAt(runner.Model{State: runner.BuildFailed, Transition: runner.Transition{Result: runner.TransitionBuildFailed}}, 80, 24, 0)
+	if !strings.Contains(strings.Join(failed, "\n"), "ビルドに失敗しました") {
+		t.Fatalf("build failure result line missing: %q", failed)
+	}
+	unconfirmed := ViewLinesAt(runner.Model{State: runner.Running, Transition: runner.Transition{Result: runner.TransitionReadinessUnconfirmed}}, 80, 24, 0)
+	if !strings.Contains(strings.Join(unconfirmed, "\n"), "起動を確認できませんでした") {
+		t.Fatalf("readiness failure result line missing: %q", unconfirmed)
+	}
+}
+
+func TestSpinnerTickUsesInjectedCommand(t *testing.T) {
+	ticks := 0
+	model := &teaModel{
+		state: runner.InitialModel(), width: 80, height: 24,
+		ready: func() {}, closed: make(chan struct{}),
+		spinnerTick: func() tea.Cmd {
+			ticks++
+			return func() tea.Msg { return spinnerTickMsg{} }
+		},
+	}
+	_, cmd := model.Update(startedMsg{})
+	if cmd == nil || ticks != 1 {
+		t.Fatalf("initial spinner command = %v, tick factory calls=%d", cmd != nil, ticks)
+	}
+	msg := cmd()
+	_, next := model.Update(msg)
+	if next == nil || model.spinnerFrame != 1 || ticks != 2 {
+		t.Fatalf("spinner tick was not advanced through injected clock: frame=%d calls=%d", model.spinnerFrame, ticks)
+	}
+	model.Update(snapshotMsg(runner.Model{State: runner.Running}))
+	if model.spinnerActive || model.spinnerFrame != 0 {
+		t.Fatalf("spinner stayed active after transition closed: %+v", model)
+	}
+}
+
 func TestMessageLineMeasuresFullWidthText(t *testing.T) {
 	message := "ビルド中のため再起動を待っています"
 	line := MessageLine(message, 12)

@@ -11,8 +11,8 @@ const (
 	Exiting     State = "exiting"
 )
 
-// Confirm is deliberately orthogonal to State: a build can finish while a quit
-// confirmation is open, and control requests can dismiss either confirmation.
+// Confirm is deliberately orthogonal to Transition: a confirmation asks the
+// user to choose an action; a transition panel shows work already in progress.
 type Confirm string
 
 const (
@@ -29,20 +29,61 @@ const (
 	IntentExit    Intent = "quit"
 )
 
+type TransitionKind string
+
+const (
+	TransitionNone    TransitionKind = ""
+	TransitionRestart TransitionKind = "restart"
+	TransitionQuit    TransitionKind = "quit"
+	TransitionStartup TransitionKind = "startup"
+)
+
+type TransitionStage string
+
+const (
+	TransitionStop   TransitionStage = "stop"
+	TransitionBuild  TransitionStage = "build"
+	TransitionLaunch TransitionStage = "launch"
+	TransitionReady  TransitionStage = "ready"
+)
+
+type TransitionResult string
+
+const (
+	TransitionResultNone           TransitionResult = ""
+	TransitionBuildFailed          TransitionResult = "build-failed"
+	TransitionReadinessUnconfirmed TransitionResult = "readiness-unconfirmed"
+)
+
+// Transition is the model for the progress panel. Active controls its
+// visibility; Kind and Stage describe its heading and current step, Result is
+// kept after the panel closes for the result line, and Busy marks ignored R/Q.
+type Transition struct {
+	Active bool
+	Kind   TransitionKind
+	Stage  TransitionStage
+	Result TransitionResult
+	Busy   bool
+}
+
 type EventKind string
 
 const (
-	KeyEvent             EventKind = "key"
-	BuildSucceededEvent  EventKind = "build-succeeded"
-	BuildFailedEvent     EventKind = "build-failed"
-	ChildStartedEvent    EventKind = "child-started"
-	ChildExitedEvent     EventKind = "child-exited"
-	StopStartedEvent     EventKind = "stop-started"
-	StopCommandOKEvent   EventKind = "stop-command-ok"
-	StopCommandFailEvent EventKind = "stop-command-failed"
-	ControlRestartEvent  EventKind = "control-restart"
-	ControlStatusEvent   EventKind = "control-status"
-	ForceEvent           EventKind = "force"
+	KeyEvent               EventKind = "key"
+	BuildSucceededEvent    EventKind = "build-succeeded"
+	BuildFailedEvent       EventKind = "build-failed"
+	ChildStartedEvent      EventKind = "child-started"
+	ChildExitedEvent       EventKind = "child-exited"
+	StopStartedEvent       EventKind = "stop-started"
+	StopCommandOKEvent     EventKind = "stop-command-ok"
+	StopCommandFailEvent   EventKind = "stop-command-failed"
+	ControlRestartEvent    EventKind = "control-restart"
+	ControlStatusEvent     EventKind = "control-status"
+	ForceEvent             EventKind = "force"
+	LaunchStartedEvent     EventKind = "launch-started"
+	ReadySucceededEvent    EventKind = "ready-succeeded"
+	ReadyFailedEvent       EventKind = "ready-failed"
+	ReadyCheckResumedEvent EventKind = "ready-check-resumed"
 )
 
 // Event is an immutable input to Update. Key uses terminal spellings such as
@@ -55,6 +96,8 @@ type Event struct {
 	SignalCode  int
 	Reason      string
 	ChildExited bool
+	ReadyCheck  bool
+	Generation  uint64
 }
 
 type EffectKind string
@@ -86,9 +129,16 @@ type Model struct {
 	StopAccepted bool
 	ExitCode     int
 	Message      string
+	Transition   Transition
+	Ready        bool
 }
 
-func InitialModel() Model { return Model{State: Building, Confirm: ConfirmNone} }
+func InitialModel() Model {
+	return Model{
+		State: Building, Confirm: ConfirmNone,
+		Transition: Transition{Active: true, Kind: TransitionStartup, Stage: TransitionBuild},
+	}
+}
 
 func Update(m Model, e Event) (Model, []Effect) {
 	if m.State == Stopping {
@@ -100,8 +150,11 @@ func Update(m Model, e Event) (Model, []Effect) {
 		}
 		if e.Kind == KeyEvent && isRestartOrQuitKey(e.Key) {
 			m.Confirm = ConfirmNone
-			m.Message = "終了処理中"
-			return m, []Effect{{Kind: MessageEffect, Reason: "終了処理中"}}
+			m.Message = "処理中"
+			if m.Transition.Active {
+				m.Transition.Busy = true
+			}
+			return m, []Effect{{Kind: MessageEffect, Reason: "処理中"}}
 		}
 		return m, nil
 	}
@@ -115,9 +168,15 @@ func Update(m Model, e Event) (Model, []Effect) {
 		if m.BuildQueued {
 			m.BuildQueued = false
 			m.Message = "restart queued during build"
+			if m.Transition.Active {
+				m.Transition.Stage = TransitionBuild
+			}
 			return m, []Effect{{Kind: StartBuildEffect}}
 		}
 		m.State = Running
+		if m.Transition.Active {
+			m.Transition.Stage = TransitionLaunch
+		}
 		return m, nil
 	case BuildFailedEvent:
 		if m.State != Building {
@@ -126,24 +185,76 @@ func Update(m Model, e Event) (Model, []Effect) {
 		if m.BuildQueued {
 			m.BuildQueued = false
 			m.Message = "restart queued during build"
+			if m.Transition.Active {
+				m.Transition.Stage = TransitionBuild
+			}
 			return m, []Effect{{Kind: StartBuildEffect}}
 		}
 		m.State = BuildFailed
 		m.PID = 0
+		m.Ready = false
 		m.Message = e.Reason
+		m.Transition.Active = false
+		m.Transition.Busy = false
+		m.Transition.Result = TransitionBuildFailed
+		return m, nil
+	case LaunchStartedEvent:
+		if m.Transition.Active {
+			m.Transition.Stage = TransitionLaunch
+		}
 		return m, nil
 	case ChildStartedEvent:
 		if m.State != Exiting {
 			m.State = Running
 			m.PID = e.PID
 			m.Generation++
+			m.Ready = !e.ReadyCheck
+			if m.Transition.Active {
+				if e.ReadyCheck {
+					m.Transition.Stage = TransitionReady
+				} else {
+					m.Transition.Active = false
+				}
+			}
+			m.Transition.Result = TransitionResultNone
+			m.Transition.Busy = false
 			m.Intent = IntentNone
 			m.StopAccepted = false
 			m.Message = ""
 		}
 		return m, nil
+	case ReadySucceededEvent:
+		if m.Generation != e.Generation || m.State != Running || !m.Transition.Active || m.Transition.Stage != TransitionReady {
+			return m, nil
+		}
+		m.Ready = true
+		m.Transition.Active = false
+		m.Transition.Busy = false
+		m.Transition.Result = TransitionResultNone
+		m.Message = ""
+		return m, nil
+	case ReadyFailedEvent:
+		if m.Generation != e.Generation || m.State != Running || !m.Transition.Active || m.Transition.Stage != TransitionReady {
+			return m, nil
+		}
+		m.Ready = false
+		m.Transition.Active = false
+		m.Transition.Busy = false
+		m.Transition.Result = TransitionReadinessUnconfirmed
+		m.Message = "起動を確認できませんでした"
+		return m, nil
+	case ReadyCheckResumedEvent:
+		if m.State != Running || m.Ready {
+			return m, nil
+		}
+		m.Transition = Transition{Active: true, Kind: TransitionStartup, Stage: TransitionReady}
+		m.Message = ""
+		return m, nil
 	case ChildExitedEvent:
 		m.PID = 0
+		m.Ready = false
+		m.Transition.Active = false
+		m.Transition.Busy = false
 		if m.State == Stopping {
 			return finishStopping(m)
 		}
@@ -154,7 +265,13 @@ func Update(m Model, e Event) (Model, []Effect) {
 	case StopStartedEvent:
 		m.State = Stopping
 		m.Confirm = ConfirmNone
-		m.Intent = IntentRestart
+		kind := TransitionRestart
+		if m.Intent == IntentExit {
+			kind = TransitionQuit
+		} else {
+			m.Intent = IntentRestart
+		}
+		m.Transition = Transition{Active: true, Kind: kind, Stage: TransitionStop}
 		m.Message = "終了処理中 (Ctrl-C で強制終了)"
 		return m, []Effect{{Kind: BeginStopEffect}}
 	case StopCommandOKEvent:
@@ -167,6 +284,8 @@ func Update(m Model, e Event) (Model, []Effect) {
 			// exit. In particular, a pending restart must not turn a human Cmd+Q
 			// into a restart after the application exits on its own.
 			m.Intent = IntentNone
+			m.Transition.Active = false
+			m.Transition.Busy = false
 			return finishStopping(m)
 		}
 		if m.PID != 0 {
@@ -174,6 +293,8 @@ func Update(m Model, e Event) (Model, []Effect) {
 			m.Intent = IntentNone
 			m.StopAccepted = false
 			m.Message = e.Reason
+			m.Transition.Active = false
+			m.Transition.Busy = false
 			return m, nil
 		}
 		return finishStopping(m)
@@ -186,6 +307,9 @@ func Update(m Model, e Event) (Model, []Effect) {
 		m.Confirm = ConfirmNone
 		m.PID = 0
 		m.Intent = IntentExit
+		m.Ready = false
+		m.Transition.Active = false
+		m.Transition.Busy = false
 		m.ExitCode = e.SignalCode
 		return m, []Effect{{Kind: ForceStopEffect}, {Kind: ExitEffect}}
 	}
@@ -202,22 +326,34 @@ func updateKey(m Model, key string) (Model, []Effect) {
 		m.Confirm = ConfirmNone
 		switch key {
 		case "r", "R", "q", "Q":
-			if m.StopAccepted {
-				m.Message = "終了待ち (Esc で取り消し / Ctrl-C で強制終了)"
-			} else {
-				m.Message = "終了処理中 (Ctrl-C で強制終了)"
-			}
-			return m, []Effect{{Kind: MessageEffect, Reason: "終了処理中"}}
+			m.Transition.Busy = true
+			m.Message = "処理中"
+			return m, []Effect{{Kind: MessageEffect, Reason: "処理中"}}
 		case "esc":
 			if m.StopAccepted {
 				m.State = Running
 				m.Intent = IntentNone
 				m.StopAccepted = false
+				m.Transition.Active = false
+				m.Transition.Busy = false
 				m.Message = "停止を取り消しました"
 				return m, []Effect{{Kind: ControlRejectEffect, Reason: "stop cancelled"}}
 			}
 		}
 		return m, nil
+	}
+	if m.Transition.Active && isRestartOrQuitKey(key) {
+		if key == "Q" || key == "q" {
+			if m.Confirm == ConfirmNone && transitionAcceptsQuit(m.Transition) {
+				m.Confirm = ConfirmQuit
+				m.Transition.Busy = false
+				m.Message = ""
+				return m, nil
+			}
+		}
+		m.Transition.Busy = true
+		m.Message = "処理中"
+		return m, []Effect{{Kind: MessageEffect, Reason: "処理中"}}
 	}
 	if m.Confirm != ConfirmNone {
 		switch key {
@@ -228,18 +364,19 @@ func updateKey(m Model, key string) (Model, []Effect) {
 				if m.State == Running {
 					m.State = Stopping
 					m.Intent = IntentRestart
+					m.Transition = Transition{Active: true, Kind: TransitionRestart, Stage: TransitionStop}
 					return m, []Effect{{Kind: BeginStopEffect}}
 				}
 				return m, nil
 			}
 			m.Intent = IntentExit
+			m.Transition = Transition{Active: true, Kind: TransitionQuit, Stage: TransitionStop}
 			if m.State == Running {
 				m.State = Stopping
 				return m, []Effect{{Kind: BeginStopEffect}}
 			}
 			if m.State == Building {
 				m.State = Exiting
-				m.Intent = IntentExit
 				m.ExitCode = 0
 				return m, []Effect{{Kind: ForceStopEffect}, {Kind: ExitEffect}}
 			}
@@ -248,6 +385,10 @@ func updateKey(m Model, key string) (Model, []Effect) {
 			return m, []Effect{{Kind: ExitEffect}}
 		case "n", "N", "esc":
 			m.Confirm = ConfirmNone
+			if m.Transition.Active {
+				m.Transition.Busy = false
+				m.Message = ""
+			}
 			return m, nil
 		default:
 			return m, nil
@@ -262,6 +403,12 @@ func updateKey(m Model, key string) (Model, []Effect) {
 		case BuildFailed:
 			m.State = Building
 			m.Message = ""
+			if m.Transition.Kind != TransitionNone {
+				m.Transition.Active = true
+				m.Transition.Stage = TransitionBuild
+				m.Transition.Result = TransitionResultNone
+				m.Transition.Busy = false
+			}
 			return m, []Effect{{Kind: StartBuildEffect}}
 		case Running:
 			m.Confirm = ConfirmRestart
@@ -270,6 +417,15 @@ func updateKey(m Model, key string) (Model, []Effect) {
 		m.Confirm = ConfirmQuit
 	}
 	return m, nil
+}
+
+func transitionAcceptsQuit(transition Transition) bool {
+	switch transition.Stage {
+	case TransitionBuild, TransitionLaunch, TransitionReady:
+		return true
+	default:
+		return false
+	}
 }
 
 func isRestartOrQuitKey(key string) bool {
@@ -290,15 +446,23 @@ func updateControlRestart(m Model) (Model, []Effect) {
 	case BuildFailed:
 		m.State = Building
 		m.Message = ""
+		if m.Transition.Kind != TransitionNone {
+			m.Transition.Active = true
+			m.Transition.Stage = TransitionBuild
+			m.Transition.Result = TransitionResultNone
+			m.Transition.Busy = false
+		}
 		return m, []Effect{{Kind: StartBuildEffect}}
 	case Running:
 		m.State = Stopping
 		m.Intent = IntentRestart
+		m.Transition = Transition{Active: true, Kind: TransitionRestart, Stage: TransitionStop}
 		m.Message = "終了処理中 (Ctrl-C で強制終了)"
 		return m, []Effect{{Kind: BeginStopEffect}}
 	case Stopping:
 		if m.Intent == IntentExit {
 			m.Intent = IntentRestart
+			m.Transition = Transition{Active: true, Kind: TransitionRestart, Stage: TransitionStop}
 		}
 		return m, nil
 	}
@@ -312,11 +476,16 @@ func finishStopping(m Model) (Model, []Effect) {
 	if m.Intent == IntentRestart {
 		m.State = Building
 		m.Intent = IntentNone
+		m.Ready = false
+		m.Transition = Transition{Active: true, Kind: TransitionRestart, Stage: TransitionBuild}
 		return m, []Effect{{Kind: StartBuildEffect}}
 	}
 	m.State = Exiting
 	m.Intent = IntentNone
 	m.Confirm = ConfirmNone
+	m.Ready = false
+	m.Transition.Active = false
+	m.Transition.Busy = false
 	m.ExitCode = 0
 	return m, []Effect{{Kind: ExitEffect}}
 }

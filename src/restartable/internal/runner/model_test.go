@@ -43,7 +43,7 @@ func TestUpdateConfirmationKeysAndRestart(t *testing.T) {
 func TestUpdateBuildTransitionsAndGeneration(t *testing.T) {
 	m := InitialModel()
 	m, _ = apply(m, KeyEvent, "R")
-	if m.State != Building || m.Confirm != ConfirmNone || m.Message != "ビルド中" {
+	if m.State != Building || m.Confirm != ConfirmNone || m.Message != "処理中" {
 		t.Fatalf("R while building: %+v", m)
 	}
 	m, effects := Update(m, Event{Kind: ControlRestartEvent})
@@ -92,7 +92,9 @@ func TestUpdateControlRestartByState(t *testing.T) {
 
 	running := Model{State: Running, PID: 77, Generation: 4, Confirm: ConfirmQuit}
 	running, effects = Update(running, Event{Kind: ControlRestartEvent})
-	if running.State != Stopping || running.Intent != IntentRestart || running.Confirm != ConfirmNone || !hasEffect(effects, BeginStopEffect) {
+	if running.State != Stopping || running.Intent != IntentRestart || running.Confirm != ConfirmNone ||
+		running.Transition.Kind != TransitionRestart || running.Transition.Stage != TransitionStop ||
+		!running.Transition.Active || !hasEffect(effects, BeginStopEffect) {
 		t.Fatalf("running restart: %+v %+v", running, effects)
 	}
 
@@ -100,6 +102,93 @@ func TestUpdateControlRestartByState(t *testing.T) {
 	stopping, effects = Update(stopping, Event{Kind: ControlRestartEvent})
 	if stopping.Intent != IntentRestart || len(effects) != 0 {
 		t.Fatalf("control restart while stopping: %+v %+v", stopping, effects)
+	}
+}
+
+func TestTransitionPanelTracksStartupRestartAndReadiness(t *testing.T) {
+	m := InitialModel()
+	if !m.Transition.Active || m.Transition.Kind != TransitionStartup || m.Transition.Stage != TransitionBuild {
+		t.Fatalf("initial transition = %+v", m.Transition)
+	}
+	m, _ = Update(m, Event{Kind: BuildSucceededEvent})
+	if m.Transition.Stage != TransitionLaunch {
+		t.Fatalf("build success transition = %+v", m.Transition)
+	}
+	m, _ = Update(m, Event{Kind: ChildStartedEvent, PID: 410, ReadyCheck: true})
+	if m.Generation != 1 || m.Ready || !m.Transition.Active || m.Transition.Stage != TransitionReady {
+		t.Fatalf("child startup transition = %+v, model=%+v", m.Transition, m)
+	}
+	m, _ = Update(m, Event{Kind: ReadySucceededEvent, Generation: 1})
+	if !m.Ready || m.Transition.Active {
+		t.Fatalf("ready success = %+v", m)
+	}
+
+	m, _ = Update(m, Event{Kind: KeyEvent, Key: "R"})
+	m, _ = Update(m, Event{Kind: KeyEvent, Key: "y"})
+	if m.State != Stopping || m.Transition.Kind != TransitionRestart || m.Transition.Stage != TransitionStop {
+		t.Fatalf("confirmed restart transition = %+v, model=%+v", m.Transition, m)
+	}
+	m, _ = Update(m, Event{Kind: ChildExitedEvent})
+	if m.State != Building || m.Transition.Kind != TransitionRestart || m.Transition.Stage != TransitionBuild {
+		t.Fatalf("restart build transition = %+v, model=%+v", m.Transition, m)
+	}
+	m, _ = Update(m, Event{Kind: BuildSucceededEvent})
+	if m.Transition.Stage != TransitionLaunch {
+		t.Fatalf("restart launch transition = %+v", m.Transition)
+	}
+	m, _ = Update(m, Event{Kind: ChildStartedEvent, PID: 411, ReadyCheck: true})
+	if m.Generation != 2 || m.Ready || m.Transition.Stage != TransitionReady {
+		t.Fatalf("second generation readiness transition = %+v, model=%+v", m.Transition, m)
+	}
+	m, _ = Update(m, Event{Kind: ReadySucceededEvent, Generation: 2})
+	if !m.Ready || m.Transition.Active {
+		t.Fatalf("second generation ready = %+v", m)
+	}
+}
+
+func TestTransitionResultsClosePanelAndRejectStaleReadyGeneration(t *testing.T) {
+	m, _ := Update(InitialModel(), Event{Kind: BuildFailedEvent, Reason: "exit 1"})
+	if m.State != BuildFailed || m.Transition.Active || m.Transition.Result != TransitionBuildFailed || m.Message != "exit 1" {
+		t.Fatalf("build failure result = %+v", m)
+	}
+
+	m = Model{State: Running, PID: 72, Generation: 2, Transition: Transition{Active: true, Kind: TransitionRestart, Stage: TransitionReady}}
+	got, effects := Update(m, Event{Kind: ReadySucceededEvent, Generation: 1})
+	if got.Ready || !got.Transition.Active || len(effects) != 0 {
+		t.Fatalf("stale readiness success applied: %+v, effects=%+v", got, effects)
+	}
+	got, _ = Update(m, Event{Kind: ReadyFailedEvent, Generation: 2})
+	if got.Ready || got.Transition.Active || got.Transition.Result != TransitionReadinessUnconfirmed || got.State != Running || got.PID != 72 {
+		t.Fatalf("readiness failure should close panel and preserve child: %+v", got)
+	}
+}
+
+func TestQuitTransitionEscCancellationAndChildExit(t *testing.T) {
+	base := Model{State: Running, PID: 90, Generation: 3, Ready: true}
+	m, _ := Update(base, Event{Kind: KeyEvent, Key: "Q"})
+	m, _ = Update(m, Event{Kind: KeyEvent, Key: "y"})
+	if m.State != Stopping || m.Transition.Kind != TransitionQuit || !m.Transition.Active {
+		t.Fatalf("quit transition = %+v", m)
+	}
+	m, _ = Update(m, Event{Kind: StopCommandOKEvent})
+	m, effects := Update(m, Event{Kind: KeyEvent, Key: "esc"})
+	if m.State != Running || m.Transition.Active || m.PID != base.PID || !m.Ready || m.StopAccepted || !hasEffect(effects, ControlRejectEffect) {
+		t.Fatalf("quit cancel = %+v, effects=%+v", m, effects)
+	}
+
+	m, _ = Update(base, Event{Kind: KeyEvent, Key: "Q"})
+	m, _ = Update(m, Event{Kind: KeyEvent, Key: "y"})
+	m, effects = Update(m, Event{Kind: ChildExitedEvent})
+	if m.State != Exiting || m.Transition.Active || !hasEffect(effects, ExitEffect) {
+		t.Fatalf("quit child exit = %+v, effects=%+v", m, effects)
+	}
+}
+
+func TestReadyCheckCanResumeAfterRejectedStop(t *testing.T) {
+	m := Model{State: Running, PID: 92, Generation: 4}
+	m, _ = Update(m, Event{Kind: ReadyCheckResumedEvent})
+	if !m.Transition.Active || m.Transition.Kind != TransitionStartup || m.Transition.Stage != TransitionReady || m.Ready {
+		t.Fatalf("resumed readiness state = %+v", m)
 	}
 }
 
@@ -134,11 +223,8 @@ func TestUpdateRestartAndQuitIgnoredWhileStoppingOrExiting(t *testing.T) {
 			t.Run(string(state)+"/"+key, func(t *testing.T) {
 				m := Model{State: state, PID: 212, Intent: IntentRestart, Confirm: ConfirmQuit, StopAccepted: true}
 				got, effects := apply(m, KeyEvent, key)
-				wantMessage := "終了待ち (Esc で取り消し / Ctrl-C で強制終了)"
-				wantReason := "終了処理中"
-				if state == Exiting {
-					wantMessage = "終了処理中"
-				}
+				wantMessage := "処理中"
+				wantReason := "処理中"
 				if got.State != state || got.PID != 212 || got.Intent != IntentRestart || got.Confirm != ConfirmNone || got.Message != wantMessage {
 					t.Fatalf("key %q changed lifecycle while %s: model=%+v", key, state, got)
 				}
@@ -185,18 +271,65 @@ func TestUpdateStopCommandFailureAfterChildExitExitsRegardlessOfIntent(t *testin
 	}
 }
 
-func TestUpdateQuitDuringBuildExitsAndRejectsControlRestart(t *testing.T) {
-	m, _ := Update(InitialModel(), Event{Kind: KeyEvent, Key: "Q"})
-	if m.Confirm != ConfirmQuit {
-		t.Fatalf("Q did not open quit confirmation: %+v", m)
+func TestQuitConfirmationDuringBuildStopsBuildOnYes(t *testing.T) {
+	m, effects := Update(InitialModel(), Event{Kind: KeyEvent, Key: "Q"})
+	if m.Confirm != ConfirmQuit || !m.Transition.Active || m.State != Building || len(effects) != 0 {
+		t.Fatalf("Q during build should open quit confirmation: %+v, effects=%+v", m, effects)
 	}
-	m, effects := Update(m, Event{Kind: KeyEvent, Key: "y"})
-	if m.State != Exiting || m.Intent != IntentExit || m.ExitCode != 0 || !hasEffect(effects, ForceStopEffect) {
-		t.Fatalf("confirmed quit during build = %+v, effects=%+v", m, effects)
+	m, effects = Update(m, Event{Kind: KeyEvent, Key: "y"})
+	if m.State != Exiting || m.Confirm != ConfirmNone || m.ExitCode != 0 || !hasEffect(effects, ForceStopEffect) || !hasEffect(effects, ExitEffect) {
+		t.Fatalf("confirmed quit during build should stop build and exit: %+v, effects=%+v", m, effects)
+	}
+	if !m.Transition.Active || m.Transition.Kind != TransitionQuit {
+		t.Fatalf("quit panel should remain visible while build is stopped: %+v", m.Transition)
+	}
+}
+
+func TestQuitConfirmationDuringReadyUsesChildStopPath(t *testing.T) {
+	m := Model{State: Running, PID: 410, Generation: 2, Transition: Transition{
+		Active: true, Kind: TransitionRestart, Stage: TransitionReady,
+	}}
+	m, effects := Update(m, Event{Kind: KeyEvent, Key: "Q"})
+	if m.Confirm != ConfirmQuit || !m.Transition.Active || len(effects) != 0 {
+		t.Fatalf("Q during readiness should open quit confirmation: %+v, effects=%+v", m, effects)
+	}
+	m, effects = Update(m, Event{Kind: KeyEvent, Key: "y"})
+	if m.State != Stopping || m.PID != 410 || m.Intent != IntentExit || m.Transition.Kind != TransitionQuit || m.Transition.Stage != TransitionStop || !hasEffect(effects, BeginStopEffect) {
+		t.Fatalf("confirmed quit during readiness should stop the running child: %+v, effects=%+v", m, effects)
+	}
+
+	stopping, effects := Update(m, Event{Kind: KeyEvent, Key: "Q"})
+	if stopping.State != Stopping || !stopping.Transition.Busy || stopping.Confirm != ConfirmNone || !hasEffect(effects, MessageEffect) {
+		t.Fatalf("Q during stop stage should be ignored as busy: %+v, effects=%+v", stopping, effects)
+	}
+}
+
+func TestRestartKeyDuringEveryTransitionStageShowsBusy(t *testing.T) {
+	for _, stage := range []TransitionStage{TransitionStop, TransitionBuild, TransitionLaunch, TransitionReady} {
+		state := Model{State: Running, Transition: Transition{Active: true, Kind: TransitionRestart, Stage: stage}}
+		if stage == TransitionStop {
+			state.State = Stopping
+		}
+		got, effects := Update(state, Event{Kind: KeyEvent, Key: "R"})
+		if !got.Transition.Active || !got.Transition.Busy || got.Message != "処理中" || len(effects) != 1 || effects[0].Reason != "処理中" {
+			t.Fatalf("R during %s should show processing: %+v, effects=%+v", stage, got, effects)
+		}
+	}
+	confirmed := Model{State: Building, Confirm: ConfirmQuit, Transition: Transition{
+		Active: true, Kind: TransitionStartup, Stage: TransitionBuild,
+	}}
+	got, effects := Update(confirmed, Event{Kind: KeyEvent, Key: "R"})
+	if got.Confirm != ConfirmQuit || !got.Transition.Busy || got.Message != "処理中" || len(effects) != 1 || effects[0].Reason != "処理中" {
+		t.Fatalf("R during quit confirmation should show busy and keep confirmation: %+v, effects=%+v", got, effects)
+	}
+
+	m, effects := Update(InitialModel(), Event{Kind: KeyEvent, Key: "ctrl+c"})
+	if m.State != Exiting || m.ExitCode != 130 || m.Transition.Active || !hasEffect(effects, ForceStopEffect) {
+		t.Fatalf("Ctrl-C during startup transition = %+v, effects=%+v", m, effects)
 	}
 	m, effects = Update(m, Event{Kind: ControlRestartEvent})
 	if m.State != Exiting || !hasEffect(effects, ControlRejectEffect) || effects[0].Reason != "runner exiting" {
-		t.Fatalf("control restart after quit confirmation = %+v, effects=%+v", m, effects)
+		t.Fatalf("control restart after forced exit = %+v, effects=%+v", m, effects)
 	}
 }
 

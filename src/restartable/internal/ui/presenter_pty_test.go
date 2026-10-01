@@ -25,15 +25,23 @@ func TestPTYRunnerHelper(t *testing.T) {
 	if os.Getenv("RESTARTABLE_PTY_HELPER") != "1" {
 		return
 	}
+	presenter := New(os.Stdin, os.Stdout)
+	var configuredPresenter runner.Presenter = presenter
+	if statePath := os.Getenv("RESTARTABLE_PTY_PANEL_STATE"); statePath != "" {
+		configuredPresenter = &recordingPresenter{Presenter: presenter, statePath: statePath}
+	}
 	code, err := runner.Run(runner.Config{
 		RunArgs:         []string{"/bin/sh", "-c", os.Getenv("RESTARTABLE_PTY_RUN")},
+		ReadyCommand:    os.Getenv("RESTARTABLE_PTY_READY"),
+		ReadyTimeout:    envDuration("RESTARTABLE_PTY_READY_TIMEOUT", 120*time.Second),
+		ReadyInterval:   envDuration("RESTARTABLE_PTY_READY_INTERVAL", 500*time.Millisecond),
 		ControlPath:     os.Getenv("RESTARTABLE_PTY_CONTROL"),
 		Stdin:           os.Stdin,
 		Stdout:          os.Stdout,
 		Stderr:          os.Stderr,
 		Headless:        false,
 		StdinIsTerminal: true,
-		Presenter:       New(os.Stdin, os.Stdout),
+		Presenter:       configuredPresenter,
 		TermGrace:       100 * time.Millisecond,
 	})
 	if err != nil {
@@ -41,6 +49,14 @@ func TestPTYRunnerHelper(t *testing.T) {
 		os.Exit(1)
 	}
 	os.Exit(code)
+}
+
+func envDuration(name string, fallback time.Duration) time.Duration {
+	value, err := time.ParseDuration(os.Getenv(name))
+	if err != nil {
+		return fallback
+	}
+	return value
 }
 
 // TestPTYDetachedOutputHelper creates a process that leaves the runner's
@@ -92,6 +108,20 @@ type ptyRunner struct {
 
 	outputMu sync.Mutex
 	output   bytes.Buffer
+}
+
+type recordingPresenter struct {
+	*Presenter
+	statePath string
+}
+
+func (p *recordingPresenter) Render(state runner.Model) {
+	active := "active=false"
+	if state.Transition.Active {
+		active = "active=true"
+	}
+	_ = os.WriteFile(p.statePath, []byte(active), 0600)
+	p.Presenter.Render(state)
 }
 
 func startPTYRunner(t *testing.T, run string) *ptyRunner {
@@ -164,6 +194,42 @@ func (r *ptyRunner) text() string {
 	r.outputMu.Lock()
 	defer r.outputMu.Unlock()
 	return r.output.String()
+}
+
+func TestPTYReadyPanelStaysVisibleUntilReadyThenCloses(t *testing.T) {
+	dir := t.TempDir()
+	gate := filepath.Join(dir, "ready")
+	statePath := filepath.Join(dir, "panel-state")
+	r := startPTYRunnerWithEnv(t, "exec /bin/sleep 30",
+		"RESTARTABLE_PTY_READY=test -e "+ptyShellQuote(gate),
+		"RESTARTABLE_PTY_READY_TIMEOUT=5s",
+		"RESTARTABLE_PTY_READY_INTERVAL=5ms",
+		"RESTARTABLE_PTY_PANEL_STATE="+statePath,
+	)
+	waitPTYOutput(t, r, "startup panel with readiness stage", func(output string) bool {
+		return strings.Contains(output, "起動中") && strings.Contains(output, "起動を確認しています")
+	})
+	waitPTYCondition(t, r, "active startup panel state", func() bool {
+		state, err := os.ReadFile(statePath)
+		return err == nil && string(state) == "active=true"
+	})
+	if err := os.WriteFile(gate, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	waitPTYCondition(t, r, "ready status and closed progress panel", func() bool {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		status, err := control.Call(ctx, r.path, control.Status)
+		state, stateErr := os.ReadFile(statePath)
+		return err == nil && stateErr == nil && status.Ready && string(state) == "active=false"
+	})
+	if code := signalPTYRunner(t, r); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+}
+
+func ptyShellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
 func waitPTYOutput(t *testing.T, r *ptyRunner, description string, predicate func(string) bool) {

@@ -114,14 +114,19 @@ func TestRunnerHelper(t *testing.T) {
 		}
 	}
 	code, err := Run(Config{
-		BuildCommand:       os.Getenv("RESTARTABLE_TEST_BUILD"),
-		RunArgs:            []string{"/bin/sh", "-c", os.Getenv("RESTARTABLE_TEST_RUN")},
-		StopCommand:        os.Getenv("RESTARTABLE_TEST_STOP"),
-		StopCommandTimeout: envDuration("RESTARTABLE_TEST_STOP_TIMEOUT", 250*time.Millisecond),
-		TermGrace:          envDuration("RESTARTABLE_TEST_TERM_GRACE", 60*time.Millisecond),
-		IDEnv:              os.Getenv("RESTARTABLE_TEST_ID_ENV"),
-		ControlPath:        os.Getenv("RESTARTABLE_TEST_SOCKET"),
-		Stdin:              stdin, Stdout: os.Stdout, Stderr: os.Stderr, Headless: true, StdinIsTerminal: stdinIsTerminal,
+		BuildCommand:        os.Getenv("RESTARTABLE_TEST_BUILD"),
+		RunArgs:             []string{"/bin/sh", "-c", os.Getenv("RESTARTABLE_TEST_RUN")},
+		StopCommand:         os.Getenv("RESTARTABLE_TEST_STOP"),
+		StopCommandTimeout:  envDuration("RESTARTABLE_TEST_STOP_TIMEOUT", 250*time.Millisecond),
+		TermGrace:           envDuration("RESTARTABLE_TEST_TERM_GRACE", 60*time.Millisecond),
+		ReadyCommand:        os.Getenv("RESTARTABLE_TEST_READY"),
+		ReadyTimeout:        envDuration("RESTARTABLE_TEST_READY_TIMEOUT", 120*time.Second),
+		ReadyInterval:       envDuration("RESTARTABLE_TEST_READY_INTERVAL", 500*time.Millisecond),
+		ReadyAttemptTimeout: envDuration("RESTARTABLE_TEST_READY_ATTEMPT_TIMEOUT", 5*time.Second),
+		ReadyCleanupGrace:   envDuration("RESTARTABLE_TEST_READY_CLEANUP_GRACE", 30*time.Millisecond),
+		IDEnv:               os.Getenv("RESTARTABLE_TEST_ID_ENV"),
+		ControlPath:         os.Getenv("RESTARTABLE_TEST_SOCKET"),
+		Stdin:               stdin, Stdout: os.Stdout, Stderr: os.Stderr, Headless: true, StdinIsTerminal: stdinIsTerminal,
 		Presenter: presenter,
 	})
 	if err != nil {
@@ -695,8 +700,11 @@ func TestStopCommandSuccessIgnoresRestartAndQuitKeysWithoutKillingChild(t *testi
 
 	for _, key := range []string{"R", "Q", "y", "x"} {
 		got := sendKeyAndWaitRender(t, keyPath, statePath, key)
-		if got.Model.State != Stopping || got.Model.Confirm != ConfirmNone || got.Model.Message != "終了待ち (Esc で取り消し / Ctrl-C で強制終了)" {
+		if got.Model.State != Stopping || got.Model.Confirm != ConfirmNone {
 			t.Fatalf("key %q changed stopping model: %+v", key, got.Model)
+		}
+		if (key == "R" || key == "Q") && (!got.Model.Transition.Busy || got.Model.Message != "処理中") {
+			t.Fatalf("key %q did not show processing during stop wait: %+v", key, got.Model)
 		}
 		if err := syscall.Kill(*initial.PID, 0); err != nil {
 			t.Fatalf("key %q killed the application: %v", key, err)
@@ -1602,7 +1610,7 @@ func TestGroupStopWaitsForDescendantAfterLeaderExit(t *testing.T) {
 	}
 }
 
-func TestQuitDuringBuildRejectsControlRestartWhileForceKillRuns(t *testing.T) {
+func TestQuitConfirmationDuringBuildStopsBuildAndExits(t *testing.T) {
 	dir := t.TempDir()
 	keyDir, err := os.MkdirTemp("/tmp", "rkey-")
 	if err != nil {
@@ -1612,61 +1620,292 @@ func TestQuitDuringBuildRejectsControlRestartWhileForceKillRuns(t *testing.T) {
 	keyPath := filepath.Join(keyDir, "keys.sock")
 	statePath := filepath.Join(dir, "presenter.json")
 	r := startTestRunner(t, map[string]string{
-		"RESTARTABLE_TEST_BUILD":           `trap '' TERM; while :; do /bin/sleep 1; done`,
+		"RESTARTABLE_TEST_BUILD":           "exec /bin/sleep 30",
 		"RESTARTABLE_TEST_RUN":             "exec /bin/sleep 30",
-		"RESTARTABLE_TEST_TERM_GRACE":      "2s",
 		"RESTARTABLE_TEST_KEY_SOCKET":      keyPath,
 		"RESTARTABLE_TEST_PRESENTER_STATE": statePath,
 	})
 	waitPresenterSnapshot(t, statePath, "initial building state", func(got presenterSnapshot) bool { return got.Model.State == Building })
-	type callResult struct {
-		response control.Response
-		err      error
+	busy := sendKeyAndWaitRender(t, keyPath, statePath, "R")
+	if !busy.Model.Transition.Active || !busy.Model.Transition.Busy || busy.Model.Confirm != ConfirmNone || busy.Model.Message != "処理中" {
+		t.Fatalf("R during build did not show busy: %+v", busy.Model)
 	}
-	pendingResult := make(chan callResult, 1)
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-		defer cancel()
-		response, err := control.Call(ctx, r.path, control.Restart)
-		pendingResult <- callResult{response: response, err: err}
-	}()
-	waitFor(t, time.Second, "restart request queued during build", func() bool {
-		status, err := r.status()
-		return err == nil && status.RestartPending
+	confirm := sendKeyAndWaitRender(t, keyPath, statePath, "Q")
+	if confirm.Model.State != Building || confirm.Model.Confirm != ConfirmQuit || !confirm.Model.Transition.Active {
+		t.Fatalf("Q during build did not open confirmation: %+v", confirm.Model)
+	}
+	sendIntegrationKey(t, keyPath, "R")
+	busy = waitPresenterSnapshot(t, statePath, "busy R while quit confirmation is open", func(got presenterSnapshot) bool {
+		return got.Model.Confirm == ConfirmQuit && got.Model.Transition.Busy
 	})
-	sendKeyAndWaitRender(t, keyPath, statePath, "Q")
-	confirmed := sendKeyAndWaitRender(t, keyPath, statePath, "y")
-	if confirmed.Model.State != Exiting {
-		confirmed = waitPresenterSnapshot(t, statePath, "quit confirmed while build is being killed", func(got presenterSnapshot) bool {
-			return got.Model.State == Exiting || (got.Model.State == Stopping && got.Model.Intent == IntentExit)
-		})
+	if busy.Model.Message != "処理中" {
+		t.Fatalf("R during confirmation should show busy and keep the dialog: %+v", busy.Model)
 	}
-	if confirmed.Model.State != Exiting && (confirmed.Model.State != Stopping || confirmed.Model.Intent != IntentExit) {
-		t.Fatalf("unexpected state after build quit confirmation: %+v", confirmed.Model)
+	cancelled := sendKeyAndWaitRender(t, keyPath, statePath, "n")
+	if cancelled.Model.Confirm != ConfirmNone || !cancelled.Model.Transition.Active || cancelled.Model.Transition.Busy {
+		t.Fatalf("n did not dismiss the quit confirmation: %+v", cancelled.Model)
+	}
+	confirm = sendKeyAndWaitRender(t, keyPath, statePath, "Q")
+	if confirm.Model.Confirm != ConfirmQuit {
+		t.Fatalf("Q did not reopen the quit confirmation: %+v", confirm.Model)
+	}
+	quitting := sendKeyAndWaitRender(t, keyPath, statePath, "y")
+	if quitting.Model.State != Exiting || quitting.Model.ExitCode != 0 || !quitting.Model.Transition.Active || quitting.Model.Transition.Kind != TransitionQuit {
+		t.Fatalf("confirmed Q during build did not enter graceful quit: %+v", quitting.Model)
 	}
 	select {
-	case result := <-pendingResult:
-		if result.err != nil {
-			t.Fatalf("pending restart after quit confirmation: %v", result.err)
-		}
-		if result.response.OK || result.response.Reason != "runner exiting" {
-			t.Fatalf("pending restart after quit confirmation = %+v", result.response)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("pending build restart was not rejected after quit confirmation")
+	case <-r.done:
+	case <-time.After(4 * time.Second):
+		t.Fatal("runner did not exit after confirmed build quit")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-	response, err := control.Call(ctx, r.path, control.Restart)
+	if r.waitErr != nil {
+		t.Fatalf("runner exit = %v, want code 0", r.waitErr)
+	}
+}
+
+func TestQuitConfirmationDuringReadinessUsesStopCommand(t *testing.T) {
+	dir := t.TempDir()
+	keyDir, err := os.MkdirTemp("/tmp", "rkey-")
 	if err != nil {
-		t.Fatalf("control restart during quit kill: %v", err)
+		t.Fatal(err)
 	}
-	if response.OK || response.Reason != "runner exiting" {
-		t.Fatalf("control restart during quit kill = %+v", response)
+	t.Cleanup(func() { _ = os.RemoveAll(keyDir) })
+	keyPath := filepath.Join(keyDir, "keys.sock")
+	statePath := filepath.Join(t.TempDir(), "presenter.json")
+	childPIDPath := filepath.Join(dir, "child.pid")
+	stopMarkerPath := filepath.Join(dir, "stop-called")
+	stopReleasePath := filepath.Join(dir, "stop-release")
+	if err := syscall.Mkfifo(stopReleasePath, 0600); err != nil {
+		t.Fatal(err)
 	}
-	if confirmed.Model.State != Exiting {
-		t.Fatalf("quit during build remained stoppable: %+v", confirmed.Model)
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_RUN":                   fmt.Sprintf("printf '%%s' \"$$\" > %s; exec /bin/sleep 30", shellQuote(childPIDPath)),
+		"RESTARTABLE_TEST_READY":                 "exec /bin/sleep 30",
+		"RESTARTABLE_TEST_READY_TIMEOUT":         "30s",
+		"RESTARTABLE_TEST_READY_INTERVAL":        "5ms",
+		"RESTARTABLE_TEST_READY_ATTEMPT_TIMEOUT": "30s",
+		"RESTARTABLE_TEST_STOP_TIMEOUT":          "30s",
+		"RESTARTABLE_TEST_STOP":                  fmt.Sprintf("printf started > %s; read release < %s; kill -TERM \"$(cat %s)\"; printf done > %s", shellQuote(stopMarkerPath), shellQuote(stopReleasePath), shellQuote(childPIDPath), shellQuote(stopMarkerPath)),
+		"RESTARTABLE_TEST_KEY_SOCKET":            keyPath,
+		"RESTARTABLE_TEST_PRESENTER_STATE":       statePath,
+	})
+
+	waitPresenterSnapshot(t, statePath, "child in readiness stage", func(got presenterSnapshot) bool {
+		return got.Model.State == Running && got.Model.Transition.Active && got.Model.Transition.Stage == TransitionReady
+	})
+	confirm := sendKeyAndWaitRender(t, keyPath, statePath, "Q")
+	if confirm.Model.Confirm != ConfirmQuit || !confirm.Model.Transition.Active || confirm.Model.Transition.Stage != TransitionReady {
+		t.Fatalf("Q during readiness did not open confirmation: %+v", confirm.Model)
 	}
+	sendKeyAndWaitRender(t, keyPath, statePath, "y")
+	stopping := waitPresenterSnapshot(t, statePath, "confirmed quit waiting in stop-cmd", func(got presenterSnapshot) bool {
+		return got.Model.State == Stopping && got.Model.Intent == IntentExit && got.Model.Transition.Kind == TransitionQuit && got.Model.Transition.Stage == TransitionStop
+	})
+	if stopping.Model.State != Stopping || stopping.Model.Intent != IntentExit || stopping.Model.Transition.Kind != TransitionQuit || stopping.Model.Transition.Stage != TransitionStop {
+		t.Fatalf("confirmed quit during readiness did not enter the stop path: %+v", stopping.Model)
+	}
+	waitFor(t, 3*time.Second, "stop-cmd to run for a quit during readiness", func() bool {
+		return readFile(stopMarkerPath) == "started"
+	})
+	busy := sendKeyAndWaitRender(t, keyPath, statePath, "Q")
+	if busy.Model.State != Stopping || !busy.Model.Transition.Busy || busy.Model.Message != "処理中" {
+		t.Fatalf("Q during stop-cmd should be ignored as busy: %+v", busy.Model)
+	}
+	stopRelease, err := os.OpenFile(stopReleasePath, os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(stopRelease, "continue\n"); err != nil {
+		_ = stopRelease.Close()
+		t.Fatal(err)
+	}
+	if err := stopRelease.Close(); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 3*time.Second, "stop-cmd to stop the running child", func() bool {
+		return readFile(stopMarkerPath) == "done"
+	})
+	select {
+	case <-r.done:
+	case <-time.After(4 * time.Second):
+		t.Fatal("runner did not exit after stop-cmd stopped the child")
+	}
+	if r.waitErr != nil {
+		t.Fatalf("runner exit = %v, want code 0", r.waitErr)
+	}
+}
+
+func TestReadyCommandRetriesWithInstanceIDAndReportsReadyInStatus(t *testing.T) {
+	dir := t.TempDir()
+	countPath := filepath.Join(dir, "attempts")
+	runIDPath := filepath.Join(dir, "run-id")
+	ready := fmt.Sprintf(`n=$(cat %s 2>/dev/null || echo 0); n=$((n+1)); printf '%%s' "$n" > %s; [ "$n" -ge 3 ] && [ "$OBAKET_DEV_LOOP" = "$(cat %s)" ]`, shellQuote(countPath), shellQuote(countPath), shellQuote(runIDPath))
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_RUN":            fmt.Sprintf(`printf '%%s' "$OBAKET_DEV_LOOP" > %s; exec /bin/sleep 30`, shellQuote(runIDPath)),
+		"RESTARTABLE_TEST_READY":          ready,
+		"RESTARTABLE_TEST_READY_TIMEOUT":  "2s",
+		"RESTARTABLE_TEST_READY_INTERVAL": "5ms",
+		"RESTARTABLE_TEST_ID_ENV":         "OBAKET_DEV_LOOP",
+		"RESTARTABLE_TEST_TERM_GRACE":     "60ms",
+	})
+	initial := r.waitStatus(t, string(Running))
+	if initial.Ready {
+		t.Fatalf("status reported ready before the confirmation command succeeded: %+v", initial)
+	}
+	var readyStatus control.Response
+	waitFor(t, 3*time.Second, "ready command to succeed on its third attempt", func() bool {
+		got, err := r.status()
+		if err != nil {
+			return false
+		}
+		readyStatus = got
+		return got.Ready
+	})
+	if readyStatus.Generation != 1 || strings.TrimSpace(readFile(countPath)) != "3" {
+		t.Fatalf("ready status/attempt count = %+v / %q", readyStatus, readFile(countPath))
+	}
+	if got := strings.TrimSpace(readFile(r.stderr)); got != "起動を確認しました" {
+		t.Fatalf("headless ready result = %q, want one confirmation line", got)
+	}
+	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+}
+
+func TestReadyTimeoutKillsProbeGroupsButKeepsChildAlive(t *testing.T) {
+	dir := t.TempDir()
+	pidPath := filepath.Join(dir, "probe-pids")
+	releaseChild := filepath.Join(dir, "release-child")
+	childSurvived := filepath.Join(dir, "child-survived")
+	ready := fmt.Sprintf(`echo $$ >> %s; trap '' TERM; while :; do /bin/sleep 1; done`, shellQuote(pidPath))
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_RUN":                   fmt.Sprintf(`while [ ! -e %s ]; do /bin/sleep 0.01; done; touch %s; exec /bin/sleep 30`, shellQuote(releaseChild), shellQuote(childSurvived)),
+		"RESTARTABLE_TEST_READY":                 ready,
+		"RESTARTABLE_TEST_READY_TIMEOUT":         "160ms",
+		"RESTARTABLE_TEST_READY_INTERVAL":        "5ms",
+		"RESTARTABLE_TEST_READY_ATTEMPT_TIMEOUT": "35ms",
+		"RESTARTABLE_TEST_READY_CLEANUP_GRACE":   "20ms",
+		"RESTARTABLE_TEST_TERM_GRACE":            "60ms",
+	})
+	status := r.waitStatus(t, string(Running))
+	if status.PID == nil || status.Ready {
+		t.Fatalf("initial readiness status = %+v", status)
+	}
+	waitFor(t, 3*time.Second, "ready timeout result", func() bool {
+		return strings.Contains(readFile(r.stderr), "起動を確認できませんでした")
+	})
+	status, err := r.status()
+	if err != nil || status.State != string(Running) || status.Ready || status.PID == nil || *status.PID == 0 {
+		t.Fatalf("readiness failure changed child status: %+v, err=%v", status, err)
+	}
+	if err := syscall.Kill(*status.PID, 0); err != nil {
+		t.Fatalf("readiness failure killed the application child: %v", err)
+	}
+	if err := os.WriteFile(releaseChild, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 2*time.Second, "application continues after readiness timeout", func() bool {
+		_, err := os.Stat(childSurvived)
+		return err == nil
+	})
+	if got := strings.Count(readFile(r.stderr), "起動を確認できませんでした"); got != 1 {
+		t.Fatalf("readiness timeout result count = %d, stderr=%q", got, readFile(r.stderr))
+	}
+	lines := strings.Fields(readFile(pidPath))
+	if len(lines) < 2 {
+		t.Fatalf("attempt timeout did not run repeated probes: %q", lines)
+	}
+	for _, line := range lines {
+		pid, err := strconv.Atoi(line)
+		if err != nil {
+			t.Fatalf("invalid probe process id %q: %v", line, err)
+		}
+		waitFor(t, 2*time.Second, fmt.Sprintf("ready probe process group %d cleanup", pid), func() bool {
+			return !groupExists(pid)
+		})
+	}
+	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+}
+
+func TestChildCanExitBeforeReadyProbeAndProbeGroupIsReaped(t *testing.T) {
+	dir := t.TempDir()
+	started := filepath.Join(dir, "probe-started")
+	pidPath := filepath.Join(dir, "probe-pid")
+	run := fmt.Sprintf(`while [ ! -e %s ]; do /bin/sleep 0.01; done; exit 0`, shellQuote(started))
+	ready := fmt.Sprintf(`echo $$ > %s; touch %s; trap '' TERM; while :; do /bin/sleep 1; done`, shellQuote(pidPath), shellQuote(started))
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_RUN":                   run,
+		"RESTARTABLE_TEST_READY":                 ready,
+		"RESTARTABLE_TEST_READY_TIMEOUT":         "5s",
+		"RESTARTABLE_TEST_READY_ATTEMPT_TIMEOUT": "2s",
+		"RESTARTABLE_TEST_READY_CLEANUP_GRACE":   "20ms",
+	})
+	select {
+	case <-r.done:
+		if r.waitErr != nil {
+			t.Fatalf("runner exit after child finished first: %v; stderr=%s", r.waitErr, readFile(r.stderr))
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatalf("runner did not exit after its child; stderr=%s", readFile(r.stderr))
+	}
+	if got := strings.TrimSpace(readFile(r.stderr)); got != "起動を確認できませんでした" {
+		t.Fatalf("headless child-exit-before-ready result = %q", got)
+	}
+	pidText := strings.TrimSpace(readFile(pidPath))
+	pid, err := strconv.Atoi(pidText)
+	if err != nil {
+		t.Fatalf("ready probe pid = %q: %v", pidText, err)
+	}
+	waitFor(t, 2*time.Second, "ready probe group cleanup after child exit", func() bool { return !groupExists(pid) })
+}
+
+func TestControlRestartDuringReadyDiscardsOldGenerationResult(t *testing.T) {
+	dir := t.TempDir()
+	countPath := filepath.Join(dir, "attempts")
+	firstGate := filepath.Join(dir, "first-gate")
+	secondGate := filepath.Join(dir, "second-gate")
+	ready := fmt.Sprintf(`n=$(cat %s 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > %s; if [ "$n" -eq 1 ]; then trap '' TERM; gate=%s; else gate=%s; fi; while [ ! -e "$gate" ]; do /bin/sleep 0.01; done; exit 0`, shellQuote(countPath), shellQuote(countPath), shellQuote(firstGate), shellQuote(secondGate))
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_RUN":                   "exec /bin/sleep 30",
+		"RESTARTABLE_TEST_READY":                 ready,
+		"RESTARTABLE_TEST_READY_TIMEOUT":         "5s",
+		"RESTARTABLE_TEST_READY_INTERVAL":        "5ms",
+		"RESTARTABLE_TEST_READY_ATTEMPT_TIMEOUT": "4s",
+		"RESTARTABLE_TEST_READY_CLEANUP_GRACE":   "20ms",
+		"RESTARTABLE_TEST_TERM_GRACE":            "60ms",
+	})
+	waitFor(t, 3*time.Second, "first generation readiness probe", func() bool {
+		return strings.TrimSpace(readFile(countPath)) == "1"
+	})
+	first, err := r.status()
+	if err != nil || first.Generation != 1 || first.Ready {
+		t.Fatalf("first generation status = %+v, err=%v", first, err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	response, err := control.Call(ctx, r.path, control.Restart)
+	cancel()
+	if err != nil || !response.OK || response.Generation != 2 || response.Ready {
+		t.Fatalf("control restart response = %+v, err=%v", response, err)
+	}
+	waitFor(t, 3*time.Second, "second generation readiness probe", func() bool {
+		return strings.TrimSpace(readFile(countPath)) == "2"
+	})
+	if err := os.WriteFile(firstGate, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	second, err := r.status()
+	if err != nil || second.Generation != 2 || second.Ready {
+		t.Fatalf("old generation result changed new readiness: %+v, err=%v", second, err)
+	}
+	if err := os.WriteFile(secondGate, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 3*time.Second, "second generation readiness", func() bool {
+		got, err := r.status()
+		return err == nil && got.Generation == 2 && got.Ready
+	})
 	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
 		t.Fatalf("runner exit code = %d, want 143", code)
 	}

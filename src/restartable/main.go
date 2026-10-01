@@ -100,6 +100,8 @@ func runCommand(args []string) int {
 	stop := fs.String("stop-cmd", "", "shell command that asks the child to exit")
 	stopTimeout := fs.Duration("stop-cmd-timeout", 5*time.Second, "maximum run time for --stop-cmd")
 	termGrace := fs.Duration("term-grace", 5*time.Second, "wait after SIGTERM before SIGKILL")
+	ready := fs.String("ready-cmd", "", "shell command that exits 0 when the child is ready")
+	readyTimeout := fs.Duration("ready-timeout", 120*time.Second, "maximum time to wait for --ready-cmd")
 	idEnv := fs.String("id-env", "", "environment variable receiving the instance ID")
 	path := fs.String("control", "", "control socket path")
 	if err := fs.Parse(args); err != nil {
@@ -116,6 +118,10 @@ func runCommand(args []string) int {
 	}
 	if *termGrace < 0 {
 		fmt.Fprintln(os.Stderr, "--term-grace cannot be negative")
+		return 2
+	}
+	if *readyTimeout <= 0 {
+		fmt.Fprintln(os.Stderr, "--ready-timeout must be positive")
 		return 2
 	}
 	if *idEnv != "" && !validEnvName(*idEnv) {
@@ -140,6 +146,7 @@ func runCommand(args []string) int {
 	code, err := runner.Run(runner.Config{
 		BuildCommand: *build, RunArgs: runArgs, StopCommand: *stop,
 		StopCommandTimeout: *stopTimeout, TermGrace: *termGrace,
+		ReadyCommand: *ready, ReadyTimeout: *readyTimeout,
 		IDEnv: *idEnv, ControlPath: resolved, Stdin: os.Stdin,
 		Stdout: os.Stdout, Stderr: os.Stderr, Headless: headless, StdinIsTerminal: stdinIsTerminal, Presenter: presenter,
 	})
