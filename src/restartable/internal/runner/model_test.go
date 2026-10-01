@@ -347,6 +347,28 @@ func TestUpdateStoppingAndChildExit(t *testing.T) {
 	}
 }
 
+// build-failed からの再ビルドは R キーでも control restart でも同じ (rebuildAfterFailure): 板を出していたなら
+// ビルドの段で開き直し、結果を消す。板を出していなかったなら開かない。
+func TestRebuildFromBuildFailedIsTheSameForKeyAndControl(t *testing.T) {
+	for _, entry := range []struct {
+		name  string
+		event Event
+	}{{"key", Event{Kind: KeyEvent, Key: "R"}}, {"control", Event{Kind: ControlRestartEvent}}} {
+		failed := Model{State: BuildFailed, Message: "build exited with status 2",
+			Transition: Transition{Kind: TransitionRestart, Stage: TransitionBuild, Result: TransitionBuildFailed, Busy: true}}
+		got, effects := Update(failed, entry.event)
+		want := Model{State: Building, Transition: Transition{Active: true, Kind: TransitionRestart, Stage: TransitionBuild}}
+		if !reflect.DeepEqual(got, want) || !reflect.DeepEqual(effects, []Effect{{Kind: StartBuildEffect}}) {
+			t.Fatalf("%s from build-failed with a panel: got %+v %+v; want %+v and one build", entry.name, got, effects, want)
+		}
+		noPanel := Model{State: BuildFailed, Message: "build exited with status 2"}
+		got, _ = Update(noPanel, entry.event)
+		if got.State != Building || got.Transition.Active || got.Message != "" {
+			t.Fatalf("%s from build-failed without a panel opened one or kept the message: %+v", entry.name, got)
+		}
+	}
+}
+
 func TestUpdateEffectsAreStable(t *testing.T) {
 	cases := []struct {
 		name    string
