@@ -3,6 +3,7 @@ package confirm
 import (
 	"github.com/charmbracelet/x/ansi"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -105,22 +106,36 @@ func TestWideDialogWidth(t *testing.T) {
 	}
 }
 
-// 狭い板でも案内の「取り消し」側を残す (既定の案内は末尾から切れると実行のキーだけが残り、取り消しの仕方が読めない。issue 604)。
-// 短い形も入らない幅 (20 桁未満。全角の「他」で HintYesOther は 1 桁長い) は切れる。広い板では元の案内のまま。
+// 狭い板でも案内の実行のキー (y/Enter) と取り消しのキーを両方残す (既定の案内は末尾から切れると実行のキーだけが残り、
+// 取り消しの仕方が読めない。短くしても Enter を落とすと、Enter で実行されることが読めない。issue 604)。
+// 行は元の案内か短い形のどれかそのものであること (部分一致にしない: "Enter" の n に当たる)。短い形も入らない幅 (26 桁未満) は切れる。
 func TestDialogHintKeepsCancelKeyWhenNarrow(t *testing.T) {
 	for _, c := range []struct{ hint, cancel string }{{HintYesNo, "n"}, {HintYesOther, "他"}} {
-		for width := 20; width <= 60; width++ {
+		allowed := append([]string{c.hint}, shortHints[c.hint]...)
+		for width := 26; width <= 60; width++ {
 			var row string
 			for _, l := range Dialog(" push ", []string{"本当に?"}, c.hint, width, false) {
 				if s := ansi.Strip(l); strings.Contains(s, "実行") {
-					row = s
+					row = strings.TrimSpace(strings.TrimRight(strings.TrimSpace(s), "│▒"))
+					row = strings.TrimSpace(strings.TrimPrefix(row, "│"))
 				}
 			}
-			if !strings.Contains(row, c.cancel) || (!strings.Contains(row, "取消") && !strings.Contains(row, "キャンセル")) {
-				t.Errorf("幅 %d: 案内の行 %q に取り消しのキー %q が無い", width, row, c.cancel)
+			if !slices.Contains(allowed, row) {
+				t.Errorf("幅 %d: 案内の行 %q が元の案内か短い形 %q のどれでもない (途中で切れている)", width, row, allowed)
+				continue
 			}
-			if width >= 40 && !strings.Contains(row, c.hint) {
+			if !strings.Contains(row, "y/Enter") || !strings.Contains(row, c.cancel+"/Esc") && !strings.Contains(row, c.cancel+":") && !strings.Contains(row, c.cancel+": ") {
+				t.Errorf("幅 %d: 案内の行 %q に実行のキー y/Enter と取り消しのキー %q が無い", width, row, c.cancel)
+			}
+			if width >= 40 && row != c.hint {
 				t.Errorf("幅 %d: 広い板で元の案内 %q のままでない: %q", width, c.hint, row)
+			}
+		}
+	}
+	for hint, shorts := range shortHints { // 短い形はどれも実行のキーを全部書く
+		for _, s := range shorts {
+			if !strings.HasPrefix(s, "y/Enter:") {
+				t.Errorf("%q の短い形 %q が実行のキー y/Enter で始まらない", hint, s)
 			}
 		}
 	}

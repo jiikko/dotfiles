@@ -740,7 +740,7 @@ func TestInfoToastHasNoMark(t *testing.T) {
 }
 
 // 窓幅 1〜40 のどれでも箱が出て、窓幅が PanelMinWidth 以上なら箱は窓に収まり、未満なら下限 (PanelMinWidth) で止まる。
-// 本文は欠けない (入り切らないときは最終行の末尾が … で、その手前は元の文の先頭と一致する)。
+// 本文は欠けない (入り切らないときは MaxTextLines 行まで折り返した上で最終行の末尾が … で、その手前は元の文の先頭と一致する)。
 // 窓幅 30 以上しか見ていなかった頃は、狭い窓で通知を全部消す・本文の幅の下限を取り違える変更が緑のまま通った (issue 602)。
 func TestToastBoxAtEveryNarrowWidth(t *testing.T) {
 	const text = "コピーした"
@@ -764,6 +764,10 @@ func TestToastBoxAtEveryNarrowWidth(t *testing.T) {
 		}
 		got := strings.ReplaceAll(body.String(), " ", "")
 		if cut, truncated := strings.CutSuffix(got, "…"); truncated {
+			// 切ってよいのは行数の上限 (MaxTextLines) まで折り返しても入らないときだけ (狭い窓で 1 行に縮めて先頭だけ残す変更を通さない)
+			if textLines := len(box) - (BoxHeight - 1); textLines != MaxTextLines {
+				t.Errorf("幅 %d: 本文を %d 行で切った (切ってよいのは %d 行まで折り返しても入らないときだけ)", width, textLines, MaxTextLines)
+			}
 			got = cut
 		} else if got != text {
 			t.Errorf("幅 %d: 本文が欠けた %q (want %q)", width, got, text)

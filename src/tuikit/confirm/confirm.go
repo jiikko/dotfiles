@@ -64,9 +64,10 @@ func dialog(title string, body []string, hint string, maxWidth, width int, color
 }
 
 // shortHints は既定の案内の短い形 (長い順)。狭い板で末尾の「取り消し」側が先に切れて、実行のキーだけが残るのを防ぐ。
+// 🚨 実行のキーは短くしても全部書く (y/Enter)。「y: 実行  他: 取消」は Enter を取り消しの側に読ませるが、実際は Enter で実行される
 var shortHints = map[string][]string{
-	HintYesNo:    {"y: 実行  n: 取消", "y:実行 n:取消"},
-	HintYesOther: {"y: 実行  他: 取消", "y:実行 他:取消"},
+	HintYesNo:    {"y/Enter:実行 n/Esc:取消", "y/Enter:実行 n:取消"},
+	HintYesOther: {"y/Enter:実行 その他:取消", "y/Enter:実行 他:取消"},
 }
 
 // fitHint は hint が width に入らないとき、既定の案内なら入る短い形に替える (入らなければ一番短い形。切るのは box)。

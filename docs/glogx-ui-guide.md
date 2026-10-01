@@ -112,8 +112,8 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
   揃えない理由は glogx の `status_view.go` の `discardKey` の注記)
 - 確認の板 (`confirm.Dialog`) の案内は**定型の `confirm.HintYesNo` (`y/Enter: 実行   n/Esc: キャンセル`) /
   `HintYesOther` (`… その他: キャンセル`) から選ぶ** (glogx の push / pull / rerun / 変更を捨てる / issues の next の目印、restartable)。
-  定型なら狭い板で `confirm.Dialog` が短い形 (`y: 実行  n: 取消`) に替えるので、取り消しの側が先に切れて実行のキーだけが
-  残る形にならない (手書きの案内は短い形を持たず、そのまま切られる)。y/N でない板 (glogx の新版の再起動 `r` など) は手書きでよい
+  定型なら狭い板で `confirm.Dialog` が短い形 (`y/Enter:実行 n/Esc:取消` → `y/Enter:実行 n:取消`。実行のキーは短くしても全部書く) に替えるので、
+  取り消しの側が先に切れて実行のキーだけが残る形にならない (手書きの案内は短い形を持たず、そのまま切られる)。y/N でない板 (glogx の新版の再起動 `r` など) は手書きでよい
   - pro-con の y/N は板を出さず、最下段の 1 行 (黄色の問い) と案内の行 (`y / enter 実行` `他のキー 取り消し`) で確かめる
     (`modeConfirm`。判定だけ `confirm.IsYesStrict`)。送る前の確認は中央の枠 (`sendconfirm.go`。§8)
 - 確認モーダルの `Enter` は「飲む」場合がある (doctor の削除確認は Enter で実行もキャンセルも

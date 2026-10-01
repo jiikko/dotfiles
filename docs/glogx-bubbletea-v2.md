@@ -123,15 +123,15 @@ v1 に残っていた `src/parallel-each` は **2026-09-08 にこの repo から
 **space が `" "` → `"space"` になる変化はコンパイルエラーにならない** (静かに壊れる)。
 
 なお charm 依存を持つモジュールが**それぞれ独立に版を持つ**ため、揃え忘れは構造的に起きる
-(揃える仕組みは今はない)。🚨 **「同じ依存の版がずれている」ではない — モジュールパスから違う**。
-実測 (2026-09-03):
+(tuikit を使う module の x/ansi と bubbletea の版は `tests/scripts/test_tuikit_consumers_aligned.sh` が一致を見る。issue 603)。🚨 **「同じ依存の版がずれている」ではない — モジュールパスから違う**。
+実測 (2026-09-03。schedkeys は 2026-10-01 に v2.0.8 / v0.11.7 へ揃えた):
 
 | モジュール | bubbletea | x/ansi | lipgloss |
 |---|---|---|---|
 | glogx | `charm.land/bubbletea/v2` v2.0.8 | v0.11.7 | 無し (ultraviolet へ移行) |
-| schedkeys | `charm.land/bubbletea/v2` v2.0.9 | v0.11.8 | 無し (同上) |
+| schedkeys | `charm.land/bubbletea/v2` v2.0.8 (2026-09-03 は v2.0.9) | v0.11.7 (同 v0.11.8) | 無し (同上) |
 
 v2 は `charm.land/bubbletea/v2`、v1 は `github.com/charmbracelet/bubbletea` で**別モジュール**なので、
 `go get -u` で片方を上げてももう片方は動かない (この repo に残る 2 本はどちらも v2 で
 `ultraviolet` へ移行済み、`lipgloss` 依存は無い)。同じ v2 どうしの glogx と schedkeys も
-版がずれている (2.0.8 / 2.0.9)。
+版がずれていた (2.0.8 / 2.0.9。2026-10-01 に揃え、上の検査で止める)。

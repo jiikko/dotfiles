@@ -33,7 +33,7 @@
   固定以降にこの 3 つで変わったのは `layout/panel.go` の追加 (+36 行) と使っていない `termwidth/wrap.go` の新設だけ (`git diff --stat 99b256e3 HEAD`)。今は遅れの実害は無い。
   tuikit 自身も termsafe を擬似バージョン (20260930152350) で要求していて、go install 経路の restartable に termsafe の変更が届くかは未確認 (第 2 波)
 - [ ] **termwidth の !arm64 の経路が CI で走らない** (false-green F4): CI は macos-15 (arm64)。`GOARCH=amd64 go vet` でコンパイルは通る。doc に明記済みで、範囲の申告として記録
-- [x] **pending/049 の参照先が古い** (issues-done の副産物): 049 の冒頭に移動先を注記した (呼び出しは今 2 か所)。完了ではないので pending のまま: 本文の `src/glogx/highlight.go` / `HighlightDiff` は今 `src/tuikit/highlight` の `Diff` (ベンチは `BenchmarkDiff`)。完了ではない (trigger 待ち)
+- [x] **pending/049 の参照先が古い** (issues-done の副産物): 049 の冒頭に移動先を注記した (呼び出しは今 3 か所: glogx の gitlog.go・worktree_status.go と pro-con の ui/diffview.go。最初は 2 か所と数え違えた)。完了ではないので pending のまま: 本文の `src/glogx/highlight.go` / `HighlightDiff` は今 `src/tuikit/highlight` の `Diff` (ベンチは `BenchmarkDiff`)。完了ではない (trigger 待ち)
 - [ ] **govulncheck が無く、依存の脆弱性は未確認** (dependency)
 
 ### 見送り

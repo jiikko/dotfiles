@@ -38,7 +38,7 @@ linters:
       rules:
         # 部品は描画フレームワークに依存しない (「[]string → []string」と壁時計の状態機械だけ)。
         # bubbletea に依存させると、v1 のままのアプリや別フレームワークから使えなくなる。
-        # デモ (examples/) と、bubbletea の View.Cursor を組むのが仕事の caret だけが bubbletea を使ってよい。
+        # デモ (examples/) と、bubbletea の View.Cursor を組むのが仕事の caret だけが bubbletea を使ってよい (README / CLAUDE.md の約束)。
         no-framework-in-parts:
           files:
             - "**/anim/**"
@@ -52,7 +52,8 @@ linters:
             - "**/widthenv/**"
             - "**/toast/**"
             - "**/lineedit/**"
-            - "!**/examples/**" # examples/toast 等のデモは bubbletea を使ってよい (部品と同じ名前のディレクトリに当たる)
+            - "**/editor/**" # 外部のエディタは起こす (parts-pure の対象外) が、描画フレームワークには依存しない
+            - "!**/tuikit/examples/**" # examples/toast 等のデモは bubbletea を使ってよい (部品と同じ名前のディレクトリに当たる)。🚨 tuikit の下に限る: checkout のパスに examples があると全部品が外れる
           deny:
             - pkg: charm.land/bubbletea
               desc: 部品はフレームワーク非依存 (tick は使う側が回す。README の「使う側の約束」)
@@ -73,7 +74,7 @@ linters:
             - "**/termwidth/**"
             - "**/toast/**"
             - "**/lineedit/**"
-            - "!**/examples/**"
+            - "!**/tuikit/examples/**"
             - "!**/*_test.go"
           deny:
             - pkg: os

@@ -27,6 +27,7 @@
   `scripts/discover_shell_scripts.sh` が shebang で拾い、登録漏れは **shellcheck の SC1071 で
   `make test` 全体が落ちる** (bin/schedkeys 追加時に実際に落とした 2026-08-27)
 - `.golangci.yml` は必須。`run:` 節に `allow-parallel-runners: true` を入れる（root の `make test` が全プロジェクトの lint を並列に回すため。`tests/scripts/test_golangci_parallel_runners.sh` が無い・入っていないを落とす。issue 258）。カスタム lint は任意で、実例は glogx
+- **tuikit を使う module (go.mod に `src/tuikit` を持つもの) は、x/ansi と bubbletea を tuikit と同じ版にし、`.golangci.yml` の forbidigo に折り返しの禁止 `^ansi\.(Hardwrap|Wrap|Wordwrap)$` を入れる**（`tests/scripts/test_tuikit_consumers_aligned.sh` がずれを落とす。issue 603）。新しく tuikit を使う module を切るときも同じ
 - golangci-lint はインストール不要（Makefile が `scripts/golangci_lint.sh` 経由で版を固定して実行。初回に版ごとの決まった場所へビルドし、以後はそれを起動する）
 - テストが「重い / 環境依存」に思えても、CI から除外する前に**実測**すること（parallel-each は「TUI 依存で重い」とされていたが実測 8.7s で CI 投入できた。
   この repo からは 2026-09-08 に出たが、判断の作法として残す）

@@ -16,7 +16,7 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 
 | パッケージ | 中身 | 使いどころ |
 |---|---|---|
-| `termwidth` | 表示幅の単一情報源 (`Of` / `Truncate` / `Clip` / `PadSpaces` / `FillRight` …)。折り返しは `Wrap(s, 幅, 頭の空白を落とすか)` (書記素単位) / `WordWrap(s, 幅)` (単語の境目で折る) | 行を幅で切る・揃える・折るときは**必ずここを通す** (x/ansi の `Hardwrap` / `Wrap` はキーキャップで幅を超える。glogx・pro-con は lint で禁止) |
+| `termwidth` | 表示幅の単一情報源 (`Of` / `Truncate` / `Clip` / `PadSpaces` / `FillRight` …)。折り返しは `Wrap(s, 幅, 頭の空白を落とすか)` (書記素単位) / `WordWrap(s, 幅)` (単語の境目で折る) | 行を幅で切る・揃える・折るときは**必ずここを通す** (x/ansi の `Hardwrap` / `Wrap` はキーキャップで幅を超える。tuikit と、tuikit を使う全 module が lint で禁止) |
 | `widthenv` | 幅モデルが支持しない環境変数 (`RUNEWIDTH_EASTASIAN`) の検出 | 起動時の警告・テストのガード |
 | `sgr` | 基本の ANSI 色・装飾 (`Reset` / `Bold` / `Dim` / `Cyan` …) | 色を付けるときの値の単一の出典 |
 | `anim` | `Transition` (開く / 閉じる / 途中で逆再生) / `Elapsed` (一方向の演出の進捗) / `ScrollGlide` / `CursorGlide` / easing | 開閉演出と「数行ぶんの移動を滑らせる」演出 |
@@ -27,7 +27,7 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 | `editor` | 実ファイルを 1 つエディタで開くコマンド ($VISUAL → $EDITOR → nvim、空白で語分割、quote は解釈しない) | glogx と pro-con の共通。tea.ExecProcess で待つ前提 (GUI エディタは -w) |
 | `toast` | 右下に数秒だけ出る通知のスタック: `Stack` (`Show` 成功 ✓緑・失敗 ✗赤 / `ShowInfo` 進行中 …シアン / `Advance` / `StartLeaving` / `BoxLines`)。右外から滑り込み、`Hold` (3 秒) 止まって、右へ滑り出る。`BoxLines` には重ねる窓の幅を渡す: 収まらない文は箱の中で折り返し (最大 `MaxTextLines` 行。超えた分は末尾を … にする)、窓の右端で切れない。新しい通知は上に積み、古い通知は下から抜ける (最大 3 枚。溢れたら成功・進行中から捨て、警告は残す)。タイマーは張らず `Timer` として返す | 操作の結果を画面の邪魔をせずに知らせる (glogx の push / pull の結果など)。デモの gif は下の「デモ」 |
 | `markdown` | markdown の本文を幅で整形する `Render(src, width, colored)` (見出し・箇条書き・チェックボックス・引用・表・水平線・フェンスコードの chroma ハイライト。行ごとのソース行番号も返す)。出力は width 桁を超えず、`colored=false` なら ANSI を出さない。本文の制御文字は termsafe で落とす | issue の本文 (glogx) と PG の応答の文 (pro-con の詳細) を同じ見た目で出す |
-| `highlight` | `Diff(lines)` (git の `--color=never` の diff に構造色 + chroma のシンタックスハイライト。行数は変えない) / `Code(lexer, 1 行)` / `Lang(言語名, 1 行)`。入力の無害化は使う側 (termsafe) | glogx の diff の板・pro-con の差分の板・markdown のフェンスコードで同じ色付けを使う |
+| `highlight` | `Diff(lines)` (git の `--color=never` の diff に構造色 + chroma のシンタックスハイライト。行数は変えない) / `Lang(言語名, 1 行)`。入力の無害化は使う側 (termsafe) | glogx の diff の板・pro-con の差分の板・markdown のフェンスコードで同じ色付けを使う |
 | `listnav` | `MotionOf` (キー → 移動の語彙) / `List` (一覧のカーソル + 窓 + 半ページの滑走) / `Pager` (本文のスクロール) / `Scroll` / `WindowOffset` / `ClampOffset` (窓の計算) | 一覧・本文の移動を毎回書かない |
 
 ## 遷移のパターン
@@ -183,9 +183,12 @@ if confirm.IsYes(key) { run() }
 
 | 何を | どこで |
 |---|---|
-| 部品 (`anim` / `confirm` / `layout` / `listnav` / `sgr` / `termwidth` / `widthenv`) は bubbletea を import しない | `.golangci.yml` の depguard |
+| 部品 (`anim` / `confirm` / `editor` / `highlight` / `layout` / `lineedit` / `listnav` / `markdown` / `sgr` / `termwidth` / `toast` / `widthenv`) は bubbletea を import しない (使ってよいのは `caret` と `examples/`) | `.golangci.yml` の depguard (`no-framework-in-parts`) |
+| 部品 (上から `editor`・`widthenv` を除いたもの) は `os` / `os/exec` / `context` を import しない | `.golangci.yml` の depguard (`parts-pure`) |
 | 部品の中で `time.Now` / `time.Since` を呼ばない | `.golangci.yml` の forbidigo |
 | 幅モデルは 1 系統 (runewidth・uniseg・`ansi.StringWidthWc` を使わない) | `.golangci.yml` の depguard / forbidigo |
+| 折り返しは `termwidth.Wrap` / `WordWrap` (`ansi.Hardwrap` / `Wrap` / `Wordwrap` を直に呼ばない。issue 590) | tuikit と全消費者の `.golangci.yml` の forbidigo |
+| tuikit と消費者 (go.mod に tuikit を持つ module) の x/ansi・bubbletea の版が一致し、全部が折り返しの禁止を持つ | `tests/scripts/test_tuikit_consumers_aligned.sh` (`make test` が自動で拾う。issue 603) |
 | VS16 付きの文字列リテラルを書かない / 2 本目の幅エンジンを使わない | glogx の `own_sources_test.go` 経由の走査 (tuikit も対象。走査の根は glogx の go.mod の replace と突き合わせて固定) |
 | glogx の一覧 4 画面が移動の語彙を `listnav.MotionOf` から取り、半ページが `listnav.Half(各画面が基準に渡す行数)` | glogx の `motion_vocabulary_test.go` (入口 `browseModel.handleKey` から、別名と一次語彙の結果の一致と、半ページの移動量を見る) |
 

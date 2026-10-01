@@ -53,22 +53,29 @@ func renderLines(src string, width int, colored bool) []string {
 // 通していなかった。実測 2026-08-27: 幅 1 で 80 行・幅 3 で 42 行が溢れていた (幅 20 以上は 0 件)
 // = 「離散点で緑」は「その点では壊せなかった」でしかない (issue 116)。
 // どの幅でも行が幅を超えず、本文が残る (行数 0 や本文を落とした出力も「幅を超えない」で通っていた。issue 602)。
-// 本文は段落の先頭で見る: 狭い幅では 1 字ずつ折り返すので、行をつないで空白を除いた文字列で比べる。
-// 幅 1 には全角の字 (2 桁) が入らず … になるので、ASCII の部分だけを見る。
+// 狭い幅では 1 字ずつ折り返すので、行をつないで空白を除いた文字列で比べる。各部分 (段落・見出し・リスト・引用・コード) が
+// 残り始める幅は実測 (全角は 2 桁なので幅 1 には入らず …、コードは折り返さず切る)。その幅以上で落ちたら失敗
 func TestRenderNeverExceedsWidth(t *testing.T) {
+	bodies := []struct {
+		from int
+		text string
+	}{
+		{1, "2026-07-25"}, {2, "2026-07-25のトースト改修"},
+		{4, "028refactor:box引数の整理"}, {4, "背景"}, {4, "未着手のタスク"}, {4, "snake_case"},
+		{5, "番号付きの項目"}, {7, "func"}, {12, "引用行"}, {40, "funcbuildPanelBoxImpl"},
+	}
 	for width := 1; width <= 120; width++ {
-		body := "2026-07-25のトースト改修"
-		if width == 1 {
-			body = "2026-07-25"
-		}
 		lines := renderLines(sample, width, false)
 		for i, ln := range lines {
 			if w := termwidth.Of(ln); w > width {
 				t.Fatalf("width=%d: 行 %d が幅を超えた (w=%d): %q", width, i, w, ln)
 			}
 		}
-		if joined := strings.ReplaceAll(strings.Join(lines, ""), " ", ""); len(lines) == 0 || !strings.Contains(joined, body) {
-			t.Fatalf("width=%d: 本文 %q が出力に残らない (%d 行)", width, body, len(lines))
+		joined := strings.ReplaceAll(strings.Join(lines, ""), " ", "")
+		for _, b := range bodies {
+			if width >= b.from && !strings.Contains(joined, b.text) {
+				t.Errorf("width=%d: 本文 %q が出力に残らない (%d 行)", width, b.text, len(lines))
+			}
 		}
 	}
 }
