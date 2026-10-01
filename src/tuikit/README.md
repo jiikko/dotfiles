@@ -206,7 +206,7 @@ CI は `.github/workflows/src_tuikit.yml` (lint + test)。tuikit を変えると
   描き直しの重さを測るならコマを動かす
 - 件数で伸びないことを守る: 件数を 2 通りにして View の確保バイトの比を見る (時間は合否にしない)。例: pro-con `TestDrawerActivityViewAllocDoesNotGrowWithItems` /
   glogx `TestListFramesAllocBytesDoNotScaleWithItems` / `TestStatusFrameAllocBytesDoNotScaleWithFileCount`
-- 🚨 ultraviolet の版は取り込んだ側の go.mod で決まる (tuikit の go.mod の版とずれている)。消費者のベンチで測る
+- 🚨 ultraviolet の版は取り込んだ側の go.mod で決まる。tuikit と消費者の版は `tests/scripts/test_tuikit_consumers_aligned.sh` が揃える (x/ansi・bubbletea と同じ)
 
 ## デモ
 

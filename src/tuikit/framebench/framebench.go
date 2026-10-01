@@ -8,7 +8,8 @@
 //
 // 🚨 色のプロファイルは TrueColor に固定する。uv.NewTerminalRenderer は書き込み先 (tty でない) と env から NoTTY を選び、
 // 色を全部捨てる (差分と出るバイトが本物より軽く出る)。
-// 🚨 ultraviolet の版は、この package を取り込んだ側 (消費者) の go.mod で決まる。tuikit 単体のテストは tuikit の go.mod の版で走る。
+// 🚨 ultraviolet の版は、この package を取り込んだ側 (消費者) の go.mod で決まる。tuikit と消費者の版は
+// tests/scripts/test_tuikit_consumers_aligned.sh が揃える (ずれると tuikit 単体のテストが消費者と別の版を測る)。
 package framebench
 
 import (
