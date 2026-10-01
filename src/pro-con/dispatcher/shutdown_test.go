@@ -126,11 +126,9 @@ func TestRequestStop(t *testing.T) {
 			}
 			done := make(chan error, 1)
 			go func() { _, err := RequestStop(context.Background(), dir, 10*time.Second); done <- err }()
-			for i := 0; !StopRequested(dir); i++ { // dispatcher の側: 印を見つけたら止めて抜ける
-				if i > 250 {
-					t.Fatal("止める印が 5 秒たっても置かれない")
-				}
-				time.Sleep(20 * time.Millisecond)
+			// dispatcher の側: 印を見つけたら止めて抜ける
+			if !pollUntil(t, 5*time.Second, func() bool { return StopRequested(dir) }) {
+				t.Fatal("止める印が 5 秒たっても置かれない")
 			}
 			// 否定の確認 (起きないことに待つ条件は無いので時間で見る): dispatcher がロックを持っている間は待ちを抜けない。
 			// 窓は見直す間隔 (上で 10ms) の 10 倍。早く抜ける実装は最初の 1 周で抜けるので、それより十分長ければよい
@@ -482,12 +480,8 @@ func TestRequestStopReadsResultWhileLockTakenAgain(t *testing.T) {
 	defer unlock()
 	done := make(chan error, 1)
 	go func() { _, err := RequestStop(context.Background(), dir, 30*time.Second); done <- err }()
-	for range 400 { // 頼みが置かれたら、止め終えた結果を書く (lock は持ったまま)
-		if _, err := os.Stat(filepath.Join(dir, StopRequestFile)); err == nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	// 頼みが置かれたら、止め終えた結果を書く (lock は持ったまま)。置かれなくても進み、下の select が落とす
+	pollUntil(t, 4*time.Second, func() bool { _, err := os.Stat(filepath.Join(dir, StopRequestFile)); return err == nil })
 	WriteStopResult(dir, nil)
 	select {
 	case err := <-done:

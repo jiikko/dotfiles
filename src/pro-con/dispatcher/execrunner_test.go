@@ -18,6 +18,17 @@ import (
 // alive は pid のプロセスがまだ居るか (ゾンビは reap されるまで居る扱いになるので、上限つきで居なくなるのを待つ側で使う)。
 func alive(pid int) bool { return syscall.Kill(pid, 0) == nil }
 
+// pollUntil は cond が真になるまで 5ms 刻みで待ち、limit までに真になれば true を返す (落とすのは呼び出し側。待ちを抜けても進めたい場面がある)。
+func pollUntil(t *testing.T, limit time.Duration, cond func() bool) bool {
+	t.Helper()
+	for deadline := time.Now().Add(limit); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		if cond() {
+			return true
+		}
+	}
+	return cond()
+}
+
 // waitGone は pid が居なくなるまで待つ (上限 5 秒)。
 func waitGone(t *testing.T, pid int) {
 	t.Helper()

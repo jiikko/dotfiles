@@ -276,14 +276,7 @@ func TestWithTimeoutMarksAbandonInProduction(t *testing.T) {
 	observed := make(chan bool, 1)
 	abandonCheckBeforePlaceHook = func(ab *abandon) {
 		// 期限が過ぎるのを**条件で**待つ (壁時計で assert しない)。上限を超えたら false を報告する。
-		for range 400 {
-			if ab.abandoned() {
-				observed <- true
-				return
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-		observed <- false
+		observed <- waitAbandoned(ab)
 	}
 
 	_, aerr := l.AcquireTimed(time.Minute, "wiring")
@@ -351,11 +344,8 @@ func TestUndoDoesNotClaimTheLockRemainsWhenIndeterminate(t *testing.T) {
 	}
 	// 実際、内側の goroutine は走り切って lock を消す = 「残る」は偽だった
 	<-released
-	for range 200 {
-		if _, serr := os.Lstat(l.lockPath()); os.IsNotExist(serr) {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	if waitForCondition(t, 2*time.Second, func() bool { _, serr := os.Lstat(l.lockPath()); return os.IsNotExist(serr) }) {
+		return
 	}
 	t.Fatal("期限切れで返った後も内側の goroutine が lock を消していない (このテストの前提が崩れている)")
 }

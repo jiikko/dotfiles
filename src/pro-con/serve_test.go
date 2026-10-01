@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"sync/atomic"
@@ -45,13 +46,7 @@ func TestServeWakesOnPoke(t *testing.T) {
 	}()
 	wait := func(n int32) {
 		t.Helper()
-		for range 400 {
-			if ticks.Load() >= n {
-				return
-			}
-			time.Sleep(25 * time.Millisecond)
-		}
-		t.Fatalf("Tick が %d 回にならない (%d 回)", n, ticks.Load())
+		waitUntil(t, fmt.Sprintf("Tick が %d 回にならない", n), func() bool { return ticks.Load() >= n })
 	}
 	wait(1)
 	if err := wake.Poke(dir); err != nil {
@@ -311,9 +306,7 @@ func serveUntilSignal(t *testing.T, screen presence.Mode) (bool, int) { // scree
 	go func() {
 		done <- serve(ctx, d, dir, nil, serveOpts{interval: time.Hour, alone: time.Hour}, io.Discard)
 	}()
-	for ticks.Load() == 0 {
-		time.Sleep(5 * time.Millisecond)
-	}
+	waitUntil(t, "Tick が回らない", func() bool { return ticks.Load() != 0 })
 	cancel()
 	rc := <-done
 	if b, err := os.ReadFile(filepath.Join(dir, dispatcher.StopResultFile)); stopped.Load() && (err != nil || string(b) != "ok\n") {
@@ -412,9 +405,7 @@ func TestServeSignalWaitsForClosingScreens(t *testing.T) {
 	go func() {
 		done <- serve(ctx, d, dir, nil, serveOpts{interval: time.Hour, alone: time.Hour}, io.Discard)
 	}()
-	for ticks.Load() == 0 {
-		time.Sleep(5 * time.Millisecond)
-	}
+	waitUntil(t, "Tick が回らない", func() bool { return ticks.Load() != 0 })
 	cancel()                          // dispatcher と画面に同時に届いた
 	time.Sleep(50 * time.Millisecond) // 画面が閉じるのは dispatcher が見た後 (待ちの窓を作るための入力。判定には使わない)
 	sc.Close()
@@ -472,9 +463,7 @@ func TestServeSignalStopFailureExitsNonZero(t *testing.T) {
 	go func() {
 		done <- serve(ctx, d, dir, nil, serveOpts{interval: time.Hour, alone: time.Hour}, io.Discard)
 	}()
-	for ticks.Load() == 0 {
-		time.Sleep(5 * time.Millisecond)
-	}
+	waitUntil(t, "Tick が回らない", func() bool { return ticks.Load() != 0 })
 	cancel()
 	select {
 	case rc := <-done:

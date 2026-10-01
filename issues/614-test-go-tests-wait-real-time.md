@@ -82,7 +82,7 @@ wtclean の 15 s は git fixture のコストで、sleep も子の sleep も無�
 
 - [x] 1〜8 を入れ、package の時間を before / after で記録する (7 は理由つきで残した。下の進捗)
 - [x] 9 の設計 (注入口の形) を決め、`with.go` の不変条件 (更新が止まったら lease が死ぬ) を tick の回数で表したテストに置き換える → 見送り (下の進捗に理由)
-- [ ] 10 は module ごとに 1 つの helper へ寄せる
+- [x] 10 は module ごとに 1 つの helper へ寄せる
 - [ ] [615](615-chore-gate-new-sleeps-in-tests.md) の Go 側の検査の許可リストを、この表の残りと一致させる
 
 ## 関連ファイル
@@ -122,3 +122,12 @@ wtclean の 15 s は git fixture のコストで、sleep も子の sleep も無�
     「自分は 9 tick 進んだが、他人から見た lease は実時間で 0.1 s しか経っていない」になり、本番と違う時間の流れで判定する
   - 置き換えるには FS の時刻を読む口 (`serverNow` と mtime を読む全経路) ごと差し替える必要があり、lease を守る安全機構の大きな作り直しになる
   - 再評価の trigger: lockman の時刻の取り方を変える別の理由が出たとき (例: probe ファイルをやめる)、または lockman のテストが CI の律速になったとき
+- 2026-10-02 「test(go): 手書きの待ちを package ごとの helper に寄せる (614 の 10)」 (sonnet が書き換え、main が diff を検閲)
+  - pro-con 本体: 同じ package に 2 つあった `waitUntil` (上限 10 s) と `eventually` (5 s) を `waitUntil` に寄せ、`eventually` を消した (7 箇所)。
+    手書きの待ち 5 箇所を置き換え (うち `ticks==0` の 3 箇所は元が無上限で、10 s の上限が付いた = ハングが失敗になる側の変化)
+  - lockman: `waitForCondition` (`t.Helper` だけで Fatal しないので goroutine からも呼べる) に 6 箇所、`waitAbandoned` に 1 箇所
+  - pro-con/dispatcher: 汎用の `pollUntil` を `execrunner_test.go` に作り 4 箇所
+  - 触らなかった: 否定の確認・窓・ループの中に副作用 (tick を回す / Lock を試す / `done` を読み戻す) があるもの・`t` の無い helper プロセスの中・
+    失敗時にログを出す上限 60 s の待ち
+  - 各 package 変更後 3 回 rc=0 (pro-con 本体 16.4〜16.6 s / dispatcher 13.1〜13.2 s / lockman 34.0〜34.1 s)。lint 0 件
+  - 9 を見送った理由を `src/lockman/on_lost_kill_test.go` の冒頭にも書いた (コードの側に残す)

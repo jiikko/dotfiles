@@ -183,12 +183,8 @@ func TestEscalateSendsTermWhenChildIsAlive(t *testing.T) {
 	go func() { escalateGroupKill(pgid, exited, 3*time.Second); close(done) }()
 	defer func() { close(exited); <-done }()
 
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if b, err := os.ReadFile(termLog); err == nil && len(b) > 0 {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	if waitForCondition(t, 5*time.Second, func() bool { b, err := os.ReadFile(termLog); return err == nil && len(b) > 0 }) {
+		return
 	}
 	t.Fatalf("生きている子へ TERM が飛んでいない (pgid=%d)", pgid)
 }

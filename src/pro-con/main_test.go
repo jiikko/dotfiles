@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -220,12 +221,8 @@ func TestSpawnedDispatcherIsNotLeftAsZombie(t *testing.T) {
 		t.Fatalf("supervisor (pid %s) が居ない / 親が画面のまま: %q %v", sup, out, err)
 	}
 	release()
-	for exec.Command("kill", "-0", sup).Run() == nil { // dispatcher が rc=0 で抜けたら supervisor も抜ける
-		if time.Now().After(deadline) {
-			t.Fatalf("dispatcher が抜けたのに supervisor (pid %s) が残った", sup)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	// dispatcher が rc=0 で抜けたら supervisor も抜ける
+	waitUntil(t, fmt.Sprintf("dispatcher が抜けたのに supervisor (pid %s) が残った", sup), func() bool { return exec.Command("kill", "-0", sup).Run() != nil })
 	for {
 		out, err := exec.Command("ps", "-o", "ppid=,stat=", "-p", strconv.Itoa(pid)).Output()
 		if err != nil { // 居ない = 刈り取られた

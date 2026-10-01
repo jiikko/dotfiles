@@ -262,7 +262,7 @@ func TestSupervisorStopSignalsDispatcher(t *testing.T) {
 	defer cancel()
 	done := make(chan supervisor.Result, 1)
 	go func() { done <- s.run(ctx) }()
-	eventually(t, "dispatcher が立たない", func() bool { _, err := os.Stat(ready); return err == nil })
+	waitUntil(t, "dispatcher が立たない", func() bool { _, err := os.Stat(ready); return err == nil })
 	cancel()
 	res := <-done
 	if _, err := os.Stat(mark); err != nil || res.Reason != supervisor.ReasonStopped || r.stops != 0 || r.starts != 1 ||

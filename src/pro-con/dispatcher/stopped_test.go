@@ -139,11 +139,8 @@ func TestStoppedRunIsReportedAndQueueMoves(t *testing.T) {
 	fr.relErr = fmt.Errorf("%w (テスト)", errRunStopped)
 	fr.release <- -1
 	var notes []eventlog.Event
-	for i := 0; r.d.active != nil && len(r.d.active.done) == 0; i++ {
-		if i > 500 {
-			t.Fatal("実行が 5 秒たっても終わらない")
-		}
-		time.Sleep(10 * time.Millisecond)
+	if !pollUntil(t, 5*time.Second, func() bool { return r.d.active == nil || len(r.d.active.done) != 0 }) {
+		t.Fatal("実行が 5 秒たっても終わらない")
 	}
 	notes = r.tick(t)
 	fr.waitStarted(t) // 2 本目が始まった

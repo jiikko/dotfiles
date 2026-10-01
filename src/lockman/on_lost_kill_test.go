@@ -11,6 +11,10 @@ import (
 	"time"
 )
 
+// 🚨 この file のテストは数秒ずつ実時間で走る (子の sleep 3/4 が lease の期限を跨ぎ、更新の ticker も本物)。時計を注入して
+// 短くする案は採っていない: lease が生きているかを**他のプロセスが**判定するのは lock の mtime と FS の今の時刻の差で、偽の時計では
+// FS の時刻が進まず、本番と違う時間の流れで判定することになる。再評価は lockman の時刻の取り方を変えるときに (issue 614 の 9)。
+//
 // `--on-lost kill` (既定) の経路。着手時点でテストは **1 本も無かった** (issue 356)。
 // 091:282 は「子プロセスを**止められる**ようにする」と書いているが、実装は SIGTERM を
 // 1 回撃つだけで、trap / 無視する子には効かなかった。
@@ -28,12 +32,8 @@ func TestOnLostKillEscalatesToSigkill(t *testing.T) {
 	}
 	const ttl = 600 * time.Millisecond // tick = 200ms
 	go func() {
-		for range 400 {
-			if _, err := os.Stat(l.lockPath()); err == nil {
-				_ = l.Break() // 他者が引き継いだ = lease 喪失
-				return
-			}
-			time.Sleep(10 * time.Millisecond)
+		if waitForCondition(t, 4*time.Second, func() bool { _, err := os.Stat(l.lockPath()); return err == nil }) {
+			_ = l.Break() // 他者が引き継いだ = lease 喪失
 		}
 	}()
 
@@ -54,12 +54,8 @@ func TestOnLostWarnDoesNotKillChild(t *testing.T) {
 	}
 	const ttl = 600 * time.Millisecond
 	go func() {
-		for range 400 {
-			if _, err := os.Stat(l.lockPath()); err == nil {
-				_ = l.Break()
-				return
-			}
-			time.Sleep(10 * time.Millisecond)
+		if waitForCondition(t, 4*time.Second, func() bool { _, err := os.Stat(l.lockPath()); return err == nil }) {
+			_ = l.Break()
 		}
 	}()
 	// 🚨 **終了コードでは区別できない。** outcome が renewLost なら、子が殺されていても
@@ -121,17 +117,13 @@ func TestRenewDoesNotPileUpGoroutinesWhenBlocked(t *testing.T) {
 	}
 	const ttl = 600 * time.Millisecond // tick = 200ms
 	go func() {
-		for range 400 {
-			if _, err := os.Stat(l.lockPath()); err == nil {
-				// 詰まらせる (消してから作ると errNotOwner を拾う窓ができるので rename で被せる)
-				tmp := l.lockPath() + ".fifo"
-				if err := syscall.Mkfifo(tmp, 0o600); err != nil {
-					return
-				}
-				_ = os.Rename(tmp, l.lockPath())
+		if waitForCondition(t, 4*time.Second, func() bool { _, err := os.Stat(l.lockPath()); return err == nil }) {
+			// 詰まらせる (消してから作ると errNotOwner を拾う窓ができるので rename で被せる)
+			tmp := l.lockPath() + ".fifo"
+			if err := syscall.Mkfifo(tmp, 0o600); err != nil {
 				return
 			}
-			time.Sleep(10 * time.Millisecond)
+			_ = os.Rename(tmp, l.lockPath())
 		}
 	}()
 

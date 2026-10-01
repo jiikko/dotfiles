@@ -162,8 +162,8 @@ func TestCollectProgressInterval(t *testing.T) {
 	}
 	d.ProgressGit = ExecProgressGit{}
 	d.collectProgress(context.Background(), t0)
-	for d.progressBusy.Load() {
-		time.Sleep(time.Millisecond)
+	if !pollUntil(t, 10*time.Second, func() bool { return !d.progressBusy.Load() }) {
+		t.Fatal("進捗の収集が終わらない")
 	}
 	p, errs := store.LoadDerived(dir)
 	if len(errs) > 0 || !p.Progress.At.Equal(t0) {
