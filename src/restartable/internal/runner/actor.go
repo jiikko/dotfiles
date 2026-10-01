@@ -372,7 +372,7 @@ func (a *actor) startReadyProbe(token, generation uint64) {
 		return
 	}
 	a.readyProbe = proc
-	a.allProcesses = append(a.allProcesses, proc)
+	a.trackProcess(proc)
 	a.readyAttemptTimer = time.AfterFunc(a.cfg.ReadyAttemptTimeout, func() {
 		a.post(actorEvent{kind: readyProbeTimeoutEvent, proc: proc, token: token, generation: generation})
 	})
@@ -609,7 +609,7 @@ func (a *actor) startBuild() error {
 		return nil
 	}
 	a.build = proc
-	a.allProcesses = append(a.allProcesses, proc)
+	a.trackProcess(proc)
 	go func() { a.events <- actorEvent{kind: buildDoneEvent, proc: proc, result: proc.wait()} }()
 	a.presenter.Render(a.model)
 	return nil
@@ -627,7 +627,7 @@ func (a *actor) startRun() error {
 		return nil
 	}
 	a.child = proc
-	a.allProcesses = append(a.allProcesses, proc)
+	a.trackProcess(proc)
 	a.childResult = nil
 	a.childProcessed = false
 	go func() { a.events <- actorEvent{kind: runDoneEvent, proc: proc, result: proc.wait()} }()
@@ -942,7 +942,7 @@ func (a *actor) beginStop() {
 			return
 		}
 		a.stop = proc
-		a.allProcesses = append(a.allProcesses, proc)
+		a.trackProcess(proc)
 		a.stopRunning = true
 		go func() { a.events <- actorEvent{kind: stopDoneEvent, err: a.waitStopCommand(proc)} }()
 		return
@@ -1026,6 +1026,21 @@ func killRemainingGroups(procs []*process) error {
 		}
 	}
 	return firstErr
+}
+
+// trackProcess is the only way a started process enters allProcesses. It first
+// drops settled records so the list stays bounded by the groups that forced
+// shutdown or output drain can still act on, instead of growing with every
+// ready-cmd probe.
+func (a *actor) trackProcess(p *process) {
+	kept := a.allProcesses[:0]
+	for _, old := range a.allProcesses {
+		if old != nil && !old.settled() {
+			kept = append(kept, old)
+		}
+	}
+	clear(a.allProcesses[len(kept):])
+	a.allProcesses = append(kept, p)
 }
 
 func (a *actor) beginForceStop() {

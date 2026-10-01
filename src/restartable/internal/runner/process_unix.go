@@ -97,6 +97,23 @@ func (p *process) wait() processResult {
 	return p.result
 }
 
+// settled reports that the leader was reaped, its output copy ended, and its
+// process group is empty. Forced shutdown and output drain have nothing left to
+// do for such a record. An empty group cannot be rejoined, so a later group
+// with the same id is an unrelated process reusing the pid; keeping the record
+// would only let forced shutdown signal it.
+func (p *process) settled() bool {
+	if !p.finished.Load() {
+		return false
+	}
+	select {
+	case <-p.outputEnd:
+	default:
+		return false
+	}
+	return !groupExists(p.pid)
+}
+
 func (p *process) closeOutput() { p.closeOnce.Do(func() { _ = p.reader.Close() }) }
 
 func processExitCode(state *os.ProcessState, err error) int {
