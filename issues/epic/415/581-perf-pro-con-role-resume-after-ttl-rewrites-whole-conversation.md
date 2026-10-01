@@ -52,3 +52,23 @@ claude 2.1.282 / 2.1.283、すべて claude-opus-5-5。数え方は 431 の「�
 - [431](pending/431-feat-pro-con-pg-session-settings.md) — session の形の固定。1 時間 TTL の扱いは 431 の「今回はやらないもの」
 - [449](pending/449-research-pro-con-pg-startup-cost.md) — PG の起動のコスト
 - [546](546-research-pro-con-endconversation-gate-resume-cache.md) — PG の再開の外れの原因 (本番の内訳は 546 の「本番の再開の外れの内訳」)
+
+## 決定 (2026-10-01)
+
+手 1 (起動し直す) を採る (ユーザー判断)。取り込みの係の作業途中のファイルを置き去りにしないよう、**新しい worktree ではなく前の worktree で**起動し直す。
+
+## 進捗
+
+- [x] 前の応答から 55 分 (`roleCacheTTL`) 以上空いた役は `--resume` せず、前の session を止めてから同じ worktree・同じ名前で `claude --bg -n <名前>` (-w 無し) を起動し、
+      指示書・起動し直した旨・知らせる物の全部を渡す (commit「pro-con: 前の応答から 55 分以上空いた PM・取り込みの係は再開せずに同じ worktree で起動し直す (issue 581)」。
+      最後の応答は transcript の assistant 行の最後の時刻 `Transcript.LastReply`。読めない・応答が無い・記録の cwd が役の worktree でないときは今までどおり再開)
+- [x] `-w` 無しの `--bg` が役の worktree で起動して idle になることを実測 (claude 2.1.286。`.claude/worktrees/probe-581` で haiku を 1 ターン、cwd・名前が一致。止めて worktree も消した)
+- [x] 変異 10 本 (mutate-verify-list) がすべて狙ったテストだけ red。境界の値をテストが `roleCacheTTL` から作っていて TTL の変更に緑のままだったので、リテラル (55 分ちょうど / 54 分 59 秒) に直した
+- [ ] 敵対的レビュー (状態機械・並行 / 素通り・回帰) と指摘の対応
+- [ ] pm-guide.md・integrator-guide.md の冒頭「同じ session を再開して知らせる」と README の `card guide` の行を、起動し直しを含む形に直す
+- [ ] make test
+
+## 残タスク
+
+- 効果の実測は未実施 (dogfooding で 60 分以上空けた再開が起きたとき、transcript の `cache_creation_input_tokens` で起動し直しの書き込みが約 2.2 万に収まるかを見る)
+- PM が会話の中だけで持っていた判断を失うかは未確認 (起動し直した後に、扱い中のカードを取り違えた・やり直した事例が出たら見る)
