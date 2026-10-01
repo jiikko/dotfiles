@@ -42,7 +42,7 @@ const FiveHourUSDPerPct = 3.5
 const fiveHourReadRate = 0.1
 
 // price は 100 万トークンあたりの入力・出力の単価 ($) と、キャッシュの読みの入力に対する倍率。書き込みはどの model も入力の
-// 5 分で 1.25 倍・1 時間で 2 倍 (claude-api skill の表。この表の model では、読みは Opus 5.5 だけ 0.05 倍 (= $0.20) で他は 0.1 倍)。
+// 5 分で 1.25 倍・1 時間で 2 倍 (claude-api skill の表。この表の model では、読みは Opus 5.5 が 0.05 倍 (= $0.20)・Fable 5.1 が 0.025 倍 (= $0.25) で他は 0.1 倍)。
 type price struct{ in, out, readRate float64 }
 
 // prices は model の名前の頭 → 単価 (日付の付いた名前も頭で当てる。claude-sonnet-5 は claude-sonnet-5-5 にも当たる。単価は同じ)。
@@ -51,8 +51,15 @@ var prices = []struct {
 	p      price
 }{
 	{"claude-opus-5-5", price{in: 4, out: 20, readRate: 0.05}},
+	{"claude-fable-5-1", price{in: 10, out: 50, readRate: 0.025}},
 	{"claude-sonnet-5", price{in: 2, out: 10, readRate: 0.1}},
 	{"claude-haiku-4-5", price{in: 1, out: 5, readRate: 0.1}},
+}
+
+// Priced は model の単価を持っているか (設定で選べるモデル store.Models が全部ここにあるかを store の検査が見る)。
+func Priced(model string) bool {
+	_, ok := priceOf(model)
+	return ok
 }
 
 func priceOf(model string) (price, bool) {

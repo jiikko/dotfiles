@@ -545,7 +545,7 @@ func newDispatcherFor(dir, projects string, repos map[string]string, pmRepo stri
 	}
 	// 閉じた・削除したカードの worktree を見る・片付ける口 (issue 553)。材料は pro-con worktree clean と同じ集め方
 	wt := worktreeOps{worktreeEnv{dir: dir, repos: repos, disposableTmp: disposable, sessions: list, procCwds: lsofCwds, projects: projects, jobsDir: jobs}}
-	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{Claude: cl.Path, UserSettings: userSettingsPath(home)},
+	return &dispatcher.Dispatcher{Dir: dir, Limit: limit, Repos: repos, Launch: dispatcher.ExecLauncher{Claude: cl.Path, UserSettings: userSettingsPath(home), StateDir: dir},
 		PMRepo: pmRepo, PMGuide: pmGuide, PMOff: pmOff, IntegratorGuide: integratorGuide,
 		// e2e の偽の PG は codex を呼ばないので、上の e2e の形には渡さない (514)
 		ResolveCodex: func(ctx context.Context) (dispatcher.Tool, error) { return dispatcher.ResolveCodex(ctx, home) },

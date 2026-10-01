@@ -20,11 +20,14 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"pro-con/store"
 )
 
 // ExecLauncher は Launcher の本物。Claude は claude の実体の絶対パス (ResolveClaude。素の名前にしない = 464)。
 // UserSettings はユーザーの settings.json のパスで、起動・再開のたびに language を読む (空なら language は渡さない)。
-type ExecLauncher struct{ Claude, UserSettings string }
+// StateDir は pro-con の状態の置き場で、起動・再開のたびに設定 (store.Settings) の model / effort を読む (空・読めないなら既定)。
+type ExecLauncher struct{ Claude, UserSettings, StateDir string }
 
 // ErrRejected は claude が起動・再開を受け付けなかった失敗 (rc≠0 で返った / プロセスを起動できなかった)。何も立っていないので、
 // 同じ失敗を繰り返さずに数えられる (462。時間切れ・--bg の出力が読めないものは、立っているかもしれないので含めない)
@@ -86,13 +89,28 @@ func (l ExecLauncher) restartArgs(name, prompt string) []string {
 }
 
 func (l ExecLauncher) args(lifecycle []string, name, positional string) []string {
-	return append(append(lifecycle, persistentSessionArgs(name, l.UserSettings)...), positionalArg(positional))
+	return append(append(lifecycle, persistentSessionArgs(name, l.UserSettings, l.sessionSettings())...), positionalArg(positional))
+}
+
+// sessionSettings は起動・再開のたびに読む pro-con の設定 (model / effort)。読めない・壊れているならゼロ値 (= 既定で起動する。
+// 設定のファイルが壊れても PG を止めない: dispatcher も同じとき --limit で動き、画面は「設定のファイルを読めない」を出す)。
+// 壊れている間に再開した session は既定のモデルに切り替わり、その再開は会話全体を書き直す。書き手は dispatcher だけ (writeAtomic) で、
+// 壊れるのは手で直したときなので、最後に読めた値を覚えておく形にはしていない (覚えると「直した値が効かない」が新しくできる)
+func (l ExecLauncher) sessionSettings() store.Settings {
+	if l.StateDir == "" {
+		return store.Settings{}
+	}
+	s, _ := store.LoadSettings(l.StateDir)
+	return s
 }
 
 // persistentSessionArgs は起動と再開で共通の session の形: -n <name> (再開でも付け直す。付けないと、再開の後の名前は AI の付けた題になる。
-// 488 で -n の有無の A-B を実測) と、--setting-sources project,local + --settings (persistentSessionSettings。中身と外すものは rolesettings.go)。
-func persistentSessionArgs(name, userSettings string) []string {
-	return []string{"-n", name, "--setting-sources", "project,local", "--settings", persistentSessionSettings(userSettings)}
+// 488 で -n の有無の A-B を実測)、--model / --effort (pro-con の設定。Claude Code の既定やユーザーの settings.json に任せない)、
+// --setting-sources project,local + --settings (persistentSessionSettings。中身と外すものは rolesettings.go)。
+// 🚨 model / effort は起動と再開で同じ設定から取る。再開で変わると、その再開は cache を先頭から書き直す (設定を変えた直後の 1 回は受ける)
+func persistentSessionArgs(name, userSettings string, set store.Settings) []string {
+	return []string{"-n", name, "--model", set.SessionModel(), "--effort", set.SessionEffort(),
+		"--setting-sources", "project,local", "--settings", persistentSessionSettings(userSettings)}
 }
 
 // dashGuard は「-」で始まる位置引数の前に付ける前置き。

@@ -33,10 +33,23 @@ const (
 	SettingReview = "review"
 	// SettingSchedule は予定 (issue 550。決まった時刻に pro-con worktree clean --yes 等を回す) を回すか (on = 既定 / off)
 	SettingSchedule = "schedule"
+	// SettingModel / SettingEffort は PG・PM・取り込みの係の claude に渡す --model / --effort (Models / Efforts。次の起動・再開から効く)
+	SettingModel  = "model"
+	SettingEffort = "effort"
 )
 
 // SettingKeys は受け付ける設定の名前 (使い方の文と検査が引く)。
-var SettingKeys = []string{SettingLimit, SettingUsage, SettingPM, SettingReview, SettingSchedule}
+var SettingKeys = []string{SettingLimit, SettingUsage, SettingPM, SettingReview, SettingSchedule, SettingModel, SettingEffort}
+
+// Models は model に書ける値 (先頭が既定)。claude の --model にそのまま渡す。
+// 🚨 Claude Code の既定に任せない: 既定が変わると、PG・PM・取り込みの係のモデルと料金の形 (Opus 5.5 は cache の読みが 0.05 倍) が黙って変わる
+var Models = []string{"claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5-5"}
+
+// Efforts は effort に書ける値 (claude --effort が受ける順。画面の ← → はこの順に巡る)。既定は DefaultEffort
+var Efforts = []string{"low", "medium", "high", "xhigh", "max"}
+
+// DefaultEffort は effort の既定。
+const DefaultEffort = "medium"
 
 // 敵対的レビューの担い手 (issue 514)。claude = PG が自分のサブエージェントで回す (既定。514 の前の動き) / codex = PG が codex exec で回す。
 const (
@@ -65,6 +78,32 @@ type Settings struct {
 	Review string `json:"review,omitempty"`
 	// ScheduleOff は予定を回さない (既定の false = 回す)
 	ScheduleOff bool `json:"schedule_off,omitempty"`
+	// Model / Effort は PG・PM・取り込みの係の --model / --effort (空 = 設定なし = Models の先頭 / DefaultEffort)
+	Model  string `json:"model,omitempty"`
+	Effort string `json:"effort,omitempty"`
+}
+
+// SessionModel は PG・PM・取り込みの係に渡すモデル (設定が無い・選べる値でないなら既定)。
+// 🚨 選べる値でないものを claude に渡さない: settings.json を手で直した値は CheckSetting を通らず、claude が引数で弾くと
+// 再開・起動し直しは前の session を止めた後で起動に失敗する (止めてから起動する作り = dispatcher.stopThenRun)
+func (s Settings) SessionModel() string { return SessionModelOf(s.Model) }
+
+// SessionEffort は PG・PM・取り込みの係に渡す effort (設定が無い・選べる値でないなら既定)。
+func (s Settings) SessionEffort() string { return SessionEffortOf(s.Effort) }
+
+// SessionModelOf / SessionEffortOf は設定の値 v から実際に渡す値を決める (画面も同じ値を出す)。
+func SessionModelOf(v string) string {
+	if slices.Contains(Models, v) {
+		return v
+	}
+	return Models[0]
+}
+
+func SessionEffortOf(v string) string {
+	if slices.Contains(Efforts, v) {
+		return v
+	}
+	return DefaultEffort
 }
 
 // ErrSettingsBroken は SettingsFile が壊れているとき (読む側は起動の引数・既定で動き、理由を出す)。
@@ -144,14 +183,28 @@ func CheckSetting(key, value string) (func(*Settings), error) {
 			return nil, err
 		}
 		return func(s *Settings) { s.Review = value }, nil
+	case SettingModel:
+		if value != "" && !slices.Contains(Models, value) {
+			return nil, fmt.Errorf("model は %s のどれか (%q)", strings.Join(Models, " / "), value)
+		}
+		return func(s *Settings) { s.Model = value }, nil
+	case SettingEffort:
+		if value != "" && !slices.Contains(Efforts, value) {
+			return nil, fmt.Errorf("effort は %s のどれか (%q)", strings.Join(Efforts, " / "), value)
+		}
+		return func(s *Settings) { s.Effort = value }, nil
 	}
 	return nil, fmt.Errorf("知らない設定 %q (%s)", key, strings.Join(SettingKeys, " / "))
 }
 
 // configNote は設定を変えた出来事の文。
 func configNote(key, value string) string {
-	if strings.TrimSpace(value) == "" {
-		return fmt.Sprintf("設定 %s を消した (起動の引数・既定に戻す)", key)
+	when := "次の Tick から使う"
+	if key == SettingModel || key == SettingEffort {
+		when = "PG・PM・取り込みの係の次の起動・再開から使う"
 	}
-	return fmt.Sprintf("設定 %s を %s にした (次の Tick から使う)", key, strings.TrimSpace(value))
+	if strings.TrimSpace(value) == "" {
+		return fmt.Sprintf("設定 %s を消した (起動の引数・既定に戻す。%s)", key, when)
+	}
+	return fmt.Sprintf("設定 %s を %s にした (%s)", key, strings.TrimSpace(value), when)
 }

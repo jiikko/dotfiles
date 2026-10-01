@@ -222,3 +222,31 @@ func TestPSListsOwnedRolesOnly(t *testing.T) {
 		t.Fatalf("pid を使い回した別のプロセスを PM とみなした:\n%s", out.String())
 	}
 }
+
+// model / effort: 選べる値だけを置き、show に実際に渡す値と出どころを出す。usage にも載せる。
+func TestConfigModelEffort(t *testing.T) {
+	dir := t.TempDir()
+	if _, out, _ := configCmd(t, dir, "show"); !strings.Contains(out, "model  claude-opus-5-5 (設定なし。既定) / effort medium (設定なし。既定)") {
+		t.Fatalf("既定の model / effort が show に出ない:\n%s", out)
+	}
+	if rc, _, e := configCmd(t, dir, "set", "model", "opus"); rc != 2 || !strings.Contains(e, "set model claude-opus-5-5|") || !strings.Contains(e, "set effort low|medium|high|xhigh|max") {
+		t.Fatalf("選べない model を受けた / usage に model・effort が無い (rc=%d):\n%s", rc, e)
+	}
+	for k, v := range map[string]string{"model": "claude-fable-5-1", "effort": "high"} {
+		if rc, _, e := configCmd(t, dir, "set", k, v); rc != 0 {
+			t.Fatalf("set %s %s が rc=%d: %s", k, v, rc, e)
+		}
+	}
+	if _, err := store.Apply(dir, time.Now(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, out, _ := configCmd(t, dir, "show"); !strings.Contains(out, "model  claude-fable-5-1 / effort high (") {
+		t.Fatalf("設定した model / effort が show に出ない:\n%s", out)
+	}
+	if err := os.WriteFile(filepath.Join(dir, store.SettingsFile), []byte(`{"model": "opus", "effort": "hgih"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, out, _ := configCmd(t, dir, "show"); !strings.Contains(out, `model  claude-opus-5-5 (設定の "opus" は選べないので既定) / effort medium (設定の "hgih" は選べないので既定)`) {
+		t.Fatalf("選べない値を既定に倒したことを show に出さない:\n%s", out)
+	}
+}

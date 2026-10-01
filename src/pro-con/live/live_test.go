@@ -1100,3 +1100,20 @@ func TestScheduleOffReachesScreen(t *testing.T) {
 		t.Errorf("予定の行 = %+v (%v)", rows, err)
 	}
 }
+
+// model / effort の設定を画面の Config に載せる (箱の依頼 → Apply → settings.json → Snapshot)。取り違えると画面と渡す値が食い違う。
+func TestModelEffortReachScreen(t *testing.T) {
+	b, _ := testBackend(t, nil, nil)
+	for k, v := range map[string]string{store.SettingModel: "claude-fable-5-1", store.SettingEffort: "high"} {
+		if _, err := store.Submit(b.dir, store.Request{Kind: store.KindConfig, Key: k, Value: v}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.Apply(b.dir, time.Now(), nil); err != nil {
+		t.Fatal(err)
+	}
+	b.Refresh(context.Background())
+	if c := b.Poll().Config; c.Model != "claude-fable-5-1" || c.Effort != "high" {
+		t.Errorf("画面の Config の model / effort = %q / %q (claude-fable-5-1 / high のはず)", c.Model, c.Effort)
+	}
+}

@@ -56,10 +56,13 @@ func (t settingsTab) label() string {
 const settingsReverse = "\x1b[7m"
 
 // 設定のタブの行 (選ぶ行の順)。
-var configKeys = []string{backend.ConfigLimit, backend.ConfigUsage, backend.ConfigPM, backend.ConfigReview, backend.ConfigSchedule}
+var configKeys = []string{backend.ConfigLimit, backend.ConfigUsage, backend.ConfigPM, backend.ConfigReview, backend.ConfigModel, backend.ConfigEffort, backend.ConfigSchedule}
 
-// configValueWidth は設定のタブの値の欄の幅 (「 ‹ claude › 」が入る)。
-const configValueWidth = 12
+// configValueWidth は設定のタブの値の欄の幅 (一番長い「 ‹ sonnet-5-5 › 」が入る)。
+const configValueWidth = 16
+
+// cycleValues は ← → で値の並びを巡る設定と、その並び。
+var cycleValues = map[string][]string{backend.ConfigReview: backend.ReviewModes, backend.ConfigModel: backend.Models, backend.ConfigEffort: backend.Efforts}
 
 // diskItemsShown はディスクのタブで、置き場ごとに内訳を出す数 (Enter で開いた置き場は全部)。
 const diskItemsShown = 3
@@ -350,7 +353,7 @@ func (m *Model) stepConfig(delta int) tea.Cmd {
 // checkboxKeys は on / off のチェックボックスの設定 (← → と Enter で入れ替える)。
 var checkboxKeys = []string{backend.ConfigUsage, backend.ConfigSchedule}
 
-// stepValue は key の値 v を delta だけ動かした値。数の設定は 1 ずつ、チェックボックスは ← → とも入れ替え、review は ReviewModes を巡る。
+// stepValue は key の値 v を delta だけ動かした値。数の設定は 1 ずつ、チェックボックスは ← → とも入れ替え、review / model / effort は並び (cycleValues) を巡る。
 func stepValue(key, v string, delta int) (string, error) {
 	if slices.Contains(checkboxKeys, key) {
 		if v == "on" {
@@ -358,10 +361,10 @@ func stepValue(key, v string, delta int) (string, error) {
 		}
 		return "on", nil
 	}
-	if key == backend.ConfigReview {
-		i := max(slices.Index(backend.ReviewModes, v), 0)
-		n := len(backend.ReviewModes)
-		return backend.ReviewModes[((i+delta)%n+n)%n], nil
+	if vals, ok := cycleValues[key]; ok {
+		i := max(slices.Index(vals, v), 0)
+		n := len(vals)
+		return vals[((i+delta)%n+n)%n], nil
 	}
 	n, _ := strconv.Atoi(v)
 	if key == backend.ConfigLimit && n+delta < 1 {
@@ -388,6 +391,10 @@ func (m *Model) configNow(key string) string {
 		return strconv.Itoa(cmp.Or(c.PMs, 1)) // 設定が無ければ 1 つで動く
 	case backend.ConfigReview:
 		return cmp.Or(c.Review, c.ReviewNow, "?") // 設定が無ければ dispatcher が使っている値 (config.toml か既定)。まだ回っていなければ分からない (claude と出すと config.toml の codex と食い違う)
+	case backend.ConfigModel:
+		return backend.SessionModelOf(c.Model) // dispatcher が実際に渡す値 (選べない値は既定に倒す)
+	case backend.ConfigEffort:
+		return backend.SessionEffortOf(c.Effort)
 	}
 	return strconv.Itoa(cmp.Or(c.Limit, m.snap.LimitMax)) // 設定が無ければ dispatcher の --limit か既定
 }
@@ -534,8 +541,12 @@ func (m *Model) configLines(w int) ([]string, int) {
 			name, note = "PG の枠 (同時に動かす PG の上限)", m.limitNote()
 		case backend.ConfigReview:
 			name, note = "敵対的レビューの担い手", m.reviewNote()
+		case backend.ConfigModel:
+			name, note = "PG・PM・取り込みの係のモデル", sessionNote(m.snap.Config.Model, backend.SessionModelOf(m.snap.Config.Model))
+		case backend.ConfigEffort:
+			name, note = "PG・PM・取り込みの係の effort", sessionNote(m.snap.Config.Effort, backend.SessionEffortOf(m.snap.Config.Effort))
 		}
-		val := fmt.Sprintf(" ‹ %s › ", v)
+		val := fmt.Sprintf(" ‹ %s › ", strings.TrimPrefix(v, "claude-"))
 		if slices.Contains(checkboxKeys, key) {
 			name, note = "利用枠を見て PG を絞る", "80% で 1 本 / 95% で 0 本。外すと上限まで起動する (Enter か ← →)"
 			if key == backend.ConfigSchedule {
@@ -589,6 +600,19 @@ func (m *Model) limitNote() string {
 		note += " · " + m.snap.LimitWhy
 	}
 	return note
+}
+
+// sessionNote はモデル・effort の出どころと効く時点 (set は設定の値、used は dispatcher が実際に渡す値 = 設定なし・選べない値なら既定)。
+func sessionNote(set, used string) string {
+	used = strings.TrimPrefix(used, "claude-")
+	from := "設定"
+	switch {
+	case set == "":
+		from = "設定なし (既定 " + used + ")"
+	case strings.TrimPrefix(set, "claude-") != used: // settings.json を手で直した選べない値。黙って既定に倒したと見せない
+		from = sgrYellow + "設定の " + set + " は選べないので既定 " + used + sgrFgReset
+	}
+	return from + " · 次の起動・再開から効く"
 }
 
 // reviewNote は敵対的レビューの担い手の出どころと、codex の実体 (codex のときの PG への渡し方)。

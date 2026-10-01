@@ -435,3 +435,54 @@ func TestSettingsTogglesScheduleCheckbox(t *testing.T) {
 		t.Fatalf("置いた設定 = %v", got)
 	}
 }
+
+// PG・PM・取り込みの係のモデルと effort は ← → で並びを巡り、受付の箱に置く。設定が無ければ既定 (opus-5-5 / medium) を出す。
+func TestSettingsStepsModelAndEffort(t *testing.T) {
+	be := newInspSpy()
+	m := openSettingsFor(t, be)
+	if s := setScreen(m); !strings.Contains(s, "‹ opus-5-5 ›") || !strings.Contains(s, "‹ medium ›") || !strings.Contains(s, "設定なし (既定 opus-5-5)") {
+		t.Fatalf("既定のモデル・effort を出さない:\n%s", s)
+	}
+	for configKeys[m.set.cursor] != backend.ConfigModel {
+		press(m, "j")
+	}
+	press(m, "l", "j", "l", "h")
+	var got []string
+	for _, c := range be.applied {
+		if sc, ok := c.(backend.SetConfig); ok {
+			got = append(got, sc.Key+"="+sc.Value)
+		}
+	}
+	if strings.Join(got, ",") != "model=claude-fable-5-1,effort=high,effort=medium" {
+		t.Fatalf("置いた設定 = %v", got)
+	}
+}
+
+// 設定した model / effort を出し、出どころを「設定」と言う。手で直した選べない値は、既定に倒して渡すことを出す (黙って既定に見せない)。
+func TestSettingsShowsSetModelAndEffort(t *testing.T) {
+	be := newInspSpy()
+	be.snap.Config.Model, be.snap.Config.Effort = "claude-fable-5-1", "high"
+	m := openSettingsFor(t, be)
+	line := func(name string) string {
+		for _, l := range strings.Split(setScreen(m), "\n") {
+			if strings.Contains(l, name) {
+				return l
+			}
+		}
+		return ""
+	}
+	if l := line("のモデル"); !strings.Contains(l, "‹ fable-5-1 ›") || !strings.Contains(l, "設定 ·") {
+		t.Fatalf("設定したモデルの行 = %q", l)
+	}
+	if l := line("の effort"); !strings.Contains(l, "‹ high ›") || !strings.Contains(l, "設定 ·") {
+		t.Fatalf("設定した effort の行 = %q", l)
+	}
+	be.snap.Config.Model, be.snap.Config.Effort = "opus", "hgih"
+	m.setSnap(be.Snapshot())
+	if l := line("のモデル"); !strings.Contains(l, "‹ opus-5-5 ›") || !strings.Contains(l, "opus は選べないので既定 opus-5-5") {
+		t.Fatalf("選べないモデルの行 = %q", l)
+	}
+	if l := line("の effort"); !strings.Contains(l, "‹ medium ›") || !strings.Contains(l, "hgih は選べないので既定 medium") {
+		t.Fatalf("選べない effort の行 = %q", l)
+	}
+}

@@ -23,6 +23,11 @@ const configUsage = `usage: pro-con config <操作> ...   (受付の箱に依頼
                      敵対的レビューの担い手 (既定 claude。~/.config/pro-con/config.toml の review より優先。起動済みの PG の指示は変わらない)
   set schedule on|off
                      予定 (決まった時刻に pro-con worktree clean --yes 等を dispatcher が回す) を回すか (既定 on。今の予定は show に出る)
+  set model claude-opus-5-5|claude-fable-5-1|claude-sonnet-5-5
+                     PG・PM・取り込みの係の claude に渡す --model (既定 claude-opus-5-5)
+  set effort low|medium|high|xhigh|max
+                     PG・PM・取り込みの係の claude に渡す --effort (既定 medium)。model も effort も次の起動・再開から効く
+                     (動いている session は、変えた直後の再開で会話全体を書き直す。モデルを替えると前の思考も引き継がない)
   unset <名前>       設定を消す (limit なら --limit / 既定 2 に戻る)
   show               今の値と出どころ (読むだけ)`
 
@@ -138,6 +143,16 @@ func showConfig(dir string, stdout, stderr io.Writer) int {
 		}
 	}
 	_, _ = fmt.Fprintln(stdout)
+	from := func(v, used string) string {
+		switch v {
+		case "":
+			return " (設定なし。既定)"
+		case used:
+			return ""
+		}
+		return fmt.Sprintf(" (設定の %q は選べないので既定)", v)
+	}
+	_, _ = fmt.Fprintf(stdout, "model  %s%s / effort %s%s (PG・PM・取り込みの係。次の起動・再開から効く)\n", s.SessionModel(), from(s.Model, s.SessionModel()), s.SessionEffort(), from(s.Effort, s.SessionEffort()))
 	if err := showSchedule(dir, s, serr, time.Now(), stdout); err != nil {
 		_, _ = fmt.Fprintln(stderr, "pro-con config: 予定の記録を読めない:", err)
 		rc = 1

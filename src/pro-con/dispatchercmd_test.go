@@ -193,6 +193,17 @@ func TestNewDispatcherPassesUserSettingsToLauncher(t *testing.T) {
 	}
 }
 
+// 本物の dispatcher の launcher は、状態の置き場の設定 (model / effort) を起動・再開のたびに読む。渡し忘れると設定が効かず、
+// どの PG も既定のモデルで動く (変異で全テストが緑だった。model / effort の敵対的レビュー)。
+func TestNewDispatcherPassesStateDirToLauncher(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir := t.TempDir()
+	d := newDispatcherFor(dir, t.TempDir(), nil, "", false, 1, dispatcher.Claude{Path: "/x/claude"}, nil, nil)
+	if l, ok := d.Launch.(dispatcher.ExecLauncher); !ok || l.StateDir != dir {
+		t.Fatalf("launcher に状態の置き場を渡していない: %#v", d.Launch)
+	}
+}
+
 // 本物の dispatcher は PM と取り込みの係の欄と codex の解き方 (514) を持つ。欄を落とすと、PM も取り込みの係も黙って起きない
 // (514 の最初の commit で、行末のコメントが PMRepo 以降の欄を飲み込んだ。テストは通り、lint の unparam だけが気づいた)。
 func TestNewDispatcherWiresRolesAndCodex(t *testing.T) {

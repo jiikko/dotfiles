@@ -133,6 +133,8 @@ type Config struct {
 	Codex, CodexErr               string
 	// ScheduleOff は予定 (issue 550) を回さない設定 (既定は回す)
 	ScheduleOff bool
+	// Model / Effort は PG・PM・取り込みの係の --model / --effort の設定 (空なら設定なし = store.Models の先頭 / store.DefaultEffort)
+	Model, Effort string
 }
 
 // 変える所の名前 (SetConfig.Key)。
@@ -143,10 +145,28 @@ const (
 	ConfigReview = store.SettingReview
 	// ConfigSchedule は予定を回すか (チェックボックス。SetConfig の Value は on / off。issue 550)
 	ConfigSchedule = store.SettingSchedule
+	// ConfigModel / ConfigEffort は PG・PM・取り込みの係の --model / --effort (Models / Efforts を巡る)
+	ConfigModel  = store.SettingModel
+	ConfigEffort = store.SettingEffort
 )
 
 // ReviewModes は review に置ける値 (先頭が既定)。
 var ReviewModes = store.ReviewModes
+
+// Models / Efforts は model / effort に置ける値 (Models は先頭が既定。effort の既定は DefaultEffort)。
+var (
+	Models  = store.Models
+	Efforts = store.Efforts
+)
+
+// DefaultEffort は effort の既定。
+const DefaultEffort = store.DefaultEffort
+
+// SessionModelOf / SessionEffortOf は設定の値から PG・PM・取り込みの係に実際に渡す値 (設定なし・選べない値なら既定)。
+var (
+	SessionModelOf  = store.SessionModelOf
+	SessionEffortOf = store.SessionEffortOf
+)
 
 // SetConfig は設定を変える依頼 (pro-con config set と同じ。受付の箱に置き、dispatcher の次の Tick から効く)。
 type SetConfig struct {

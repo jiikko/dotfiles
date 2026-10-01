@@ -605,6 +605,7 @@ func (b *Backend) refresh(ctx context.Context, withList bool) {
 		cfg.Err = err.Error()
 	} else {
 		cfg.Limit, cfg.PMs, cfg.UsageOff, cfg.Review, cfg.ScheduleOff = set.Limit, set.PMs, set.UsageOff, set.Review, set.ScheduleOff
+		cfg.Model, cfg.Effort = set.Model, set.Effort
 	}
 	b.mu.Lock()
 	if b.refused != "" {
