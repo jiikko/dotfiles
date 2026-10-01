@@ -1,1 +1,0 @@
-../588-feat-restartable-transition-dialog-and-ready-cmd.md

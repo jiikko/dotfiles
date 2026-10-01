@@ -6,7 +6,7 @@
 
 ## 概要
 
-[586](done/586-feat-restartable-foreground-restart-runner.md) の restartable を obaket の `make dev-fg-loop` で使ったユーザーの依頼 (2026-10-01):
+[586](586-feat-restartable-foreground-restart-runner.md) の restartable を obaket の `make dev-fg-loop` で使ったユーザーの依頼 (2026-10-01):
 
 > restartしてアプリが起動するまではstdoutの真ん中に再起動中のダイアログを表示することできますか？ それとquitをして終了中も同じようにダイアログを表示してほしい
 
