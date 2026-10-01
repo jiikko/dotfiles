@@ -114,13 +114,14 @@ func (p *urlPicker) handleKey(key string) (open, closed bool) {
 }
 
 // paste は貼り付けた文字列を検索語のカーソルの位置に入れる (bracketed paste。tui.go の PasteMsg)。
-// 空白・改行・タブは落とす: URL に現れず、打鍵の Space も入れていない (handleKey) ので、貼り付けた URL の末尾の改行が
-// 空白として残って何にも一致しなくなるのを避ける。
+// 先に termsafe で無害化する (ESC のシーケンスを丸ごと・BiDi の制御文字を落とす。lineedit.Insert は ESC 1 字しか
+// 落とさず、`[31m` の残骸や RLO が検索語と画面に残る。敵対レビューが実測)。空白・改行・タブも落とす: URL に現れず、
+// 打鍵の Space も入れていない (handleKey) ので、貼り付けた URL の末尾の改行が空白として残って何にも一致しなくなるのを避ける。
 func (p *urlPicker) paste(s string) {
 	if !p.active {
 		return
 	}
-	s = strings.Join(strings.Fields(s), "")
+	s = strings.Join(strings.Fields(sanitizePlainLine(s)), "")
 	if s == "" {
 		return
 	}

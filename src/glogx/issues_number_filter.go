@@ -71,21 +71,23 @@ func (f *issuesNumberFilter) edit(key string) bool {
 	return f.line.String() != before
 }
 
-// paste は貼り付けた文字列のうち数字だけを検索語に入れる (検索語が変わったら true)。「#415」や「issue 415」を
-// 貼っても番号で引けるよう、数字以外は捨てる (打鍵と同じく、数字以外を検索語にしない)。
+// paste は貼り付けた文字列のうち、最初に出てくる数字の並びだけを検索語に入れる (検索語が変わったら true)。
+// 「#415」「issue 415」や、glogx の Y でコピーした参照 (「issue 415 タイトル (issues/415-x.md)」) を貼っても 415 で引ける。
+// 数字を全部つなげると参照の番号とパスの番号が重なって 415415 になり、何にも一致しない (敵対レビューが実測)。
 func (f *issuesNumberFilter) paste(s string) bool {
-	digits := strings.Map(func(r rune) rune {
-		if r >= '0' && r <= '9' {
-			return r
-		}
-		return -1
-	}, s)
-	if digits == "" {
+	start := strings.IndexFunc(s, isASCIIDigit)
+	if start < 0 {
 		return false
 	}
-	f.line.Insert(digits)
+	run := s[start:]
+	if end := strings.IndexFunc(run, func(r rune) bool { return !isASCIIDigit(r) }); end >= 0 {
+		run = run[:end]
+	}
+	f.line.Insert(run)
 	return true
 }
+
+func isASCIIDigit(r rune) bool { return r >= '0' && r <= '9' }
 
 // rows は番号に検索語を含む issue を、渡された並びのまま返す。検索語が空なら全件
 // (入力を始めた直後に一覧が消えると、何を絞り込んでいるのか分からなくなる)。

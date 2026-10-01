@@ -8,6 +8,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/caret"
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"github.com/jiikko/dotfiles/src/tuikit/toast"
 	"maps"
@@ -568,6 +569,13 @@ func currentDir() string {
 		return "." // cwd が取れない環境でも repo 直下として探索を試みる
 	}
 	return cwd
+}
+
+// isLineEditKey は key が tuikit/lineedit の編集キー (移動・削除) か。lineedit の本物の Key に、使い捨ての行で聞く
+// (語彙の表をここに写すと、lineedit にキーが増えたときに食い違う)。text を渡さないので文字の入力は数えない。
+func isLineEditKey(key string) bool {
+	var probe lineedit.Line
+	return probe.Key(key, "")
 }
 
 // normalizeSpaceKey は Space の表記ゆれを " " へ揃える。キー switch は " " だけを見ればよい。
@@ -1341,7 +1349,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 貼り付け (bracketed paste。bubbletea v2 は既定で有効) は入力欄にだけ入れる。入力欄が無いときは捨てる:
 		// キー操作として解釈すると、貼った文字列が 1 字ずつ一覧のキーとして走る (docs/glogx-ui-guide.md §7)。
 		// 板が入力欄の上に出ている間 (action モーダル・再起動の確認) もキーは板が先に取るので、貼り付けも入れない
-		if m.issuesOv.visible() && m.issuesOv.typingInput() && !m.actModal.active() && !m.restartPromptVisible() {
+		if m.activeFullScreen() == fullScreenIssues && m.issuesOv.typingInput() && !m.actModal.active() && !m.restartPromptVisible() {
 			m.issuesOv.paste(msg.Content)
 		}
 		return m, m.maybeTick()
@@ -1494,9 +1502,11 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// 対象キーはハードコードせず起動時に tmux サーバへ聞いた現在値 (prefixMsg)。
 	// tmux 外や取得失敗では tmuxPrefix="" のままこの機能ごと無効になる。
 	//
-	// 🚨 入力欄に打っている間は飲まない: prefix が C-a / C-b の利用者では、それが入力欄の編集キー (先頭へ / 1 字左へ)
-	// でもあり、飲むと入力欄で効かない。入力欄の外では今までどおり案内する
-	if m.tmuxPrefix != "" && key == m.tmuxPrefix && !(m.issuesOv.visible() && m.issuesOv.typingInput()) {
+	// 🚨 入力欄に打っている間で、prefix が入力欄の編集キーでもある (C-a = 先頭へ / C-b = 1 字左へ) ときだけ飲まずに入力欄へ
+	// 渡す。飲むと入力欄でその編集が効かない。編集キーでない prefix (C-t 等) は入力欄でも今までどおり飲んで案内する
+	// (渡しても何も起きず、案内だけが消える)。C-b の利用者が window 移動のつもりで押すとキャレットが動くが、入力欄では
+	// docs/glogx-ui-guide.md §7 の編集の語彙を優先する (案内を出して編集を捨てる方が、C-b を左へ使う人を壊す)
+	if m.tmuxPrefix != "" && key == m.tmuxPrefix && !(m.activeFullScreen() == fullScreenIssues && m.issuesOv.typingInput() && isLineEditKey(key)) {
 		// 通知は右下トースト (中央ダイアログは操作を遮って重い)
 		m.toast.Show("tmux prefix は popup では効きません (C-g で閉じてから)", false)
 		return m, m.maybeTick()
@@ -2472,7 +2482,7 @@ var repeatGuardedKeys = map[string]bool{
 func (m *browseModel) swallowKeyRepeat(key string) bool {
 	// 🚨 入力欄に打っている間は抑止しない: 印字キーはすべて検索語で、https の ss のように同じ字を素早く続けて打つと
 	// 2 字目が飲まれていた。y/N の確認 (n の目印) は入力欄ではないので抑止を残す (n のリピートが確認を取り消すため)
-	if m.issuesOv.visible() && m.issuesOv.typingInput() {
+	if m.activeFullScreen() == fullScreenIssues && m.issuesOv.typingInput() {
 		return false
 	}
 	if !repeatGuardedKeys[key] {

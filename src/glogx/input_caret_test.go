@@ -262,15 +262,37 @@ func TestPasteGoesOnlyIntoInputs(t *testing.T) {
 			t.Errorf("貼り付けで絞り込みが更新されない: match=%v cursor=%d", p.match, p.cursor)
 		}
 	})
+	t.Run("URL の無害化", func(t *testing.T) {
+		m := caretTestModel(t, false)
+		m.issuesOv.urlPick.open([]string{"https://a.example/1"})
+		m.Update(tea.PasteMsg{Content: "\x1b[31ma.exa\u202emple\x07"}) // ESC のシーケンス・RLO・BEL は落とす
+		if q := m.issuesOv.urlPick.query(); q != "a.example" {
+			t.Errorf("制御文字・エスケープの残骸が検索語に残った: query=%q (期待 a.example)", q)
+		}
+	})
 	t.Run("番号", func(t *testing.T) {
 		m := caretTestModel(t, false)
-		typeKeys(m, "/")
+		typeKeys(m, "/", "down") // 選択を 2 行目にしてから貼る: 絞り込み直後は先頭へ戻す
+		if m.issuesOv.cursor != 1 {
+			t.Fatalf("前提が崩れた: 2 行目を選べない: cursor=%d", m.issuesOv.cursor)
+		}
 		m.Update(tea.PasteMsg{Content: "issue #12"}) // 数字だけを入れる
 		if q := m.issuesOv.numFilter.query(); q != "12" {
 			t.Errorf("貼り付けの数字が検索語に入らない: query=%q (期待 12)", q)
 		}
 		if len(m.issuesOv.rows) != 2 { // 123 と 129
 			t.Errorf("貼り付けで絞り込みが更新されない: rows=%d (期待 2)", len(m.issuesOv.rows))
+		}
+		if m.issuesOv.cursor != 0 {
+			t.Errorf("貼り付けの後に選択が先頭へ戻らない: cursor=%d", m.issuesOv.cursor)
+		}
+	})
+	t.Run("番号に Y の参照", func(t *testing.T) {
+		m := caretTestModel(t, false)
+		typeKeys(m, "/")
+		m.Update(tea.PasteMsg{Content: "issue 123 a (issues/123-feat-a.md)"}) // 最初の数字の並びだけを使う
+		if q := m.issuesOv.numFilter.query(); q != "123" {
+			t.Errorf("Y でコピーした参照から番号を引けない: query=%q (期待 123)", q)
 		}
 	})
 	t.Run("入力欄の外", func(t *testing.T) {
@@ -281,15 +303,23 @@ func TestPasteGoesOnlyIntoInputs(t *testing.T) {
 			t.Errorf("入力欄の外の貼り付けがキーとして走った: cursor %d→%d numFilter.active=%v", before, m.issuesOv.cursor, m.issuesOv.numFilter.active)
 		}
 	})
-	t.Run("板が出ている", func(t *testing.T) {
-		m := caretTestModel(t, false)
-		typeKeys(m, "/")
-		m.actModal.pullConfirm = true
-		m.Update(tea.PasteMsg{Content: "12"})
-		if q := m.issuesOv.numFilter.query(); q != "" {
-			t.Errorf("板の下の入力欄に貼り付けが入った: query=%q", q)
-		}
-	})
+	for _, c := range []struct {
+		name string
+		set  func(m *browseModel)
+	}{
+		{"action モーダル", func(m *browseModel) { m.actModal.pullConfirm = true }},
+		{"再起動の確認", func(m *browseModel) { m.restartPending = true }},
+	} {
+		t.Run("板が出ている/"+c.name, func(t *testing.T) {
+			m := caretTestModel(t, false)
+			typeKeys(m, "/")
+			c.set(m)
+			m.Update(tea.PasteMsg{Content: "12"})
+			if q := m.issuesOv.numFilter.query(); q != "" {
+				t.Errorf("板の下の入力欄に貼り付けが入った: query=%q", q)
+			}
+		})
+	}
 }
 
 // tmux の prefix が入力欄の編集キー (C-a = 先頭へ) と同じでも、入力欄に打っている間は入力欄に届く。
@@ -307,5 +337,18 @@ func TestTmuxPrefixReachesInputWhileTyping(t *testing.T) {
 	typeKeys(m, "esc", "ctrl+a")
 	if !strings.Contains(m.toast.Text(), "tmux prefix") {
 		t.Errorf("入力欄の外で prefix の案内が出ない: toast=%q", m.toast.Text())
+	}
+}
+
+// 編集キーでない prefix (C-t) は、入力欄に打っている間も今までどおり飲んで案内を出す (渡しても何も起きない)。
+func TestTmuxPrefixNotEditKeyStillWarnsWhileTyping(t *testing.T) {
+	m := caretTestModel(t, false)
+	m.tmuxPrefix = "ctrl+t"
+	typeKeys(m, "/", "1", "2", "ctrl+t")
+	if q := m.issuesOv.numFilter.query(); q != "12" {
+		t.Errorf("前提が崩れた: query=%q", q)
+	}
+	if !strings.Contains(m.toast.Text(), "tmux prefix") {
+		t.Errorf("入力中の C-t (編集キーでない prefix) で案内が出ない: toast=%q", m.toast.Text())
 	}
 }
