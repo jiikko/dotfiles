@@ -55,7 +55,7 @@ Go 1.25 以上が必要。ソースは dotfiles の `src/disassemble_excel` に�
 bin/disassemble_excel <file> [options]
 ```
 
-`go install github.com/jiikko/disassemble_excel@latest` は手元ではなく GitHub 上の別のソースを建てるので使わない。
+`go install github.com/jiikko/disassemble_excel@latest` は使わない。手元のソースではなく GitHub の `github.com/jiikko/disassemble_excel` を取りに行く (module path は dotfiles へ移す前のまま)。
 
 初回ビルドで Go モジュールの依存をダウンロードする。以降は完全オフラインで
 ビルド・実行できる。
