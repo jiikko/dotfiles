@@ -59,6 +59,14 @@ func TestToastLifecycle(t *testing.T) {
 	}
 }
 
+// settle はスタックの全枚の演出 (入場・繰り上げ・退場) を終わらせる。advanceToHolding は最新 1 枚の
+// phase しか見ないので、古い枚も動いているときはこちらを使う。
+func settle(s *Stack) {
+	for range SlideFrames + 2 {
+		s.Advance()
+	}
+}
+
 // advanceToHolding は entering のトーストを holding まで tick で進める (テスト用ヘルパー)。
 func advanceToHolding(to *Stack) {
 	for guard := 0; to.phase == Entering && guard < 100; guard++ {
@@ -175,15 +183,11 @@ func TestToastStackRemovesFinishedFromBottom(t *testing.T) {
 	s.Show("古い", true)
 	s.Show("新しい", true)
 	// 入場を終わらせる
-	for range SlideFrames + 2 {
-		s.Advance()
-	}
+	settle(&s)
 	// 古い方 (下) の静止が明けて退場 → 抜け切るまで進める
 	oldSeq := s.older[0].seq
 	s.StartLeaving(Msg{seq: oldSeq})
-	for range SlideFrames + 2 {
-		s.Advance()
-	}
+	settle(&s)
 	if len(s.older) != 0 {
 		t.Errorf("抜けた枚が残っている: %+v", s.older)
 	}
@@ -197,9 +201,7 @@ func TestToastStackLeavingIsPerItem(t *testing.T) {
 	var s Stack
 	s.Show("古い", true)
 	s.Show("新しい", true)
-	for range SlideFrames + 2 {
-		s.Advance()
-	}
+	settle(&s)
 	s.StartLeaving(Msg{seq: s.older[0].seq})
 	if s.older[0].phase != Leaving {
 		t.Errorf("下の枚が退場に入らない: %v", s.older[0].phase)
@@ -214,9 +216,7 @@ func TestToastStackBoxLinesOrder(t *testing.T) {
 	var s Stack
 	s.Show("古い通知", true)
 	s.Show("新しい通知", true)
-	for range SlideFrames + 2 {
-		s.Advance()
-	}
+	settle(&s)
 	out := strings.Join(s.BoxLines(false, 100, 0), "\n")
 	iNew, iOld := strings.Index(out, "新しい通知"), strings.Index(out, "古い通知")
 	if iNew < 0 || iOld < 0 {
@@ -269,9 +269,7 @@ func TestToastBoxLinesShowsTwoWarningsWithEightLineBudget(t *testing.T) {
 	var s Stack
 	s.Show("警告A", false)
 	s.Show("警告B", false)
-	for range SlideFrames + 2 {
-		s.Advance()
-	}
+	settle(&s)
 
 	out := strings.Join(s.BoxLines(false, BoxHeight*2, 0), "\n")
 	if !strings.Contains(out, "警告A") || !strings.Contains(out, "警告B") {
@@ -284,9 +282,7 @@ func TestToastBoxLinesDropsOldestWarningWhenThreeDoNotFit(t *testing.T) {
 	for _, text := range []string{"警告A", "警告B", "警告C"} {
 		s.Show(text, false)
 	}
-	for range SlideFrames + 2 {
-		s.Advance()
-	}
+	settle(&s)
 
 	out := strings.Join(s.BoxLines(false, BoxHeight*2, 0), "\n")
 	if strings.Contains(out, "警告A") {
@@ -303,9 +299,7 @@ func TestToastBoxLinesRespectsMaxLines(t *testing.T) {
 	for _, txt := range []string{"1", "2", "3"} {
 		s.Show(txt, true)
 	}
-	for range SlideFrames + 2 {
-		s.Advance()
-	}
+	settle(&s)
 	for _, c := range []struct {
 		maxLines  int
 		wantBoxes int
@@ -377,9 +371,7 @@ func TestToastBoxLinesKeepsWarningWithinBudget(t *testing.T) {
 	s.Show("警告: 未 push があります", false) // 最古 = 予算で最初に落ちる位置
 	s.Show("ok1", true)
 	s.Show("ok2", true)
-	for range SlideFrames + 2 {
-		s.Advance()
-	}
+	settle(&s)
 	if len(s.items()) != 3 {
 		t.Fatalf("前提が崩れた: 3 枚保持していない (%d)", len(s.items()))
 	}
@@ -441,9 +433,7 @@ func TestToastBoxLinesAlwaysDrawsNewest(t *testing.T) {
 	for _, c := range cases {
 		var s Stack
 		c.build(&s)
-		for range SlideFrames + 2 {
-			s.Advance()
-		}
+		settle(&s)
 		got := strings.Join(s.BoxLines(false, c.maxLines, 0), "\n")
 		if !strings.Contains(got, c.want) {
 			t.Errorf("%s: 最新のトースト %q が 1 行も描かれない:\n%s", c.name, c.want, got)
@@ -470,9 +460,7 @@ func TestClearKeepsGenerationAndShadow(t *testing.T) {
 		t.Fatal("Clear が影の色まで消した")
 	}
 	s.Show("消した後", true)
-	for range SlideFrames + 2 {
-		s.Advance()
-	}
+	settle(&s)
 	s.StartLeaving(timers[0].Msg) // 消す前の枚のタイマーが届く
 	if s.Phase() != Holding || s.Text() != "消した後" {
 		t.Fatalf("消す前の枚のタイマーが、消した後の枚を退場させた: phase=%d text=%q", s.Phase(), s.Text())

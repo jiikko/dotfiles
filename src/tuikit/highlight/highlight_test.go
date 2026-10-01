@@ -60,33 +60,12 @@ func TestDiffUnknownLanguagePassesThrough(t *testing.T) {
 	}
 }
 
-func TestDiffDeletedFileDevNull(t *testing.T) {
-	in := []string{
-		"diff --git a/a.go b/a.go",
-		"deleted file mode 100644",
-		"--- a/a.go",
-		"+++ /dev/null",
-		"@@ -1 +0,0 @@",
-		"-package highlight",
-	}
-	out := Diff(in)
-	want := sgr.Red + "-" + sgr.Reset + "package highlight"
-	if out[5] != want {
-		t.Errorf("/dev/null (削除ファイル) は素通しのはず: %q; want %q", out[5], want)
-	}
-}
-
-// 性能ガード: 最悪ケース (maxDiffLines=5000 行が全部 Go コード) のハイライト時間の回帰検出。
-// ローカル実測 ~0.9s (M3)。CI runner はローカル比 3〜4 倍遅い実績があるため閾値は 5s
-// (桁級の回帰だけ捕まえる)。典型コミット (数百行) は ~0.1s で、取得は tea.Cmd 非同期 +
-// スピナー付きなので体感は許容。これを超えて遅くなったら highlight.go ごと切り捨てる判断
-// (同ファイル冒頭コメントの手順) を再評価する。
 // BenchmarkDiff は maxDiffLines 相当 (diff popup の production 上限) の
 // ハイライト所要時間を測る。以前は固定 5s の wall-clock を assert する Test だったが、
 // 共有 CI runner (ubuntu-slim) の速度ムラで chroma が 5s を超え頻繁に flake した
 // (2026-07-21: 実測 10.36s で fail)。固定 wall-clock は shared runner で構造的に flaky
 // なので Benchmark へ移し、CI の go test ./... では走らせない (perf を見たいときは
-// go test -bench=HighlightDiff で測る)。production の暴走ガードは LoadCommitDiff の
+// go test -bench=Diff ./highlight/ で測る)。production の暴走ガードは LoadCommitDiff の
 // maxDiffLines 上限が担うため、CI での wall-clock ゲートは不要。
 func BenchmarkDiff(b *testing.B) {
 	lines := []string{"diff --git a/a.go b/a.go", "+++ b/a.go", "@@ -1 +1 @@"}

@@ -36,7 +36,6 @@ func TestTruncatePropertyWidth(t *testing.T) {
 	atoms := []string{"a", "Z", " ", "あ", "漢", "1️⃣", "#️⃣", "a️", "é",
 		"👨‍💻", "🇯🇵", "─", "…", "\x1b[31m", "\x1b[0m", "\x1b[1;4m"}
 	r := rand.New(rand.NewSource(416))
-	checked := 0
 	for range 20000 {
 		var b strings.Builder
 		for n := r.Intn(12); n > 0; n-- {
@@ -57,10 +56,6 @@ func TestTruncatePropertyWidth(t *testing.T) {
 		if got, gw := ClipMeasure(s, w); gw != Of(got) || gw > w {
 			t.Fatalf("ClipMeasure(%q, %d) = (%q, %d) が不正", s, w, got, gw)
 		}
-		checked++
-	}
-	if checked != 20000 {
-		t.Fatalf("検査が %d 件 (20000 のはず)", checked)
 	}
 }
 

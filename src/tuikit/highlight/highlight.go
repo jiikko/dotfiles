@@ -78,15 +78,12 @@ func Diff(lines []string) []string {
 }
 
 // lexerForDiffPath は "+++ b/path/to/file" のパス部分から lexer を解決する。
-// 見つからない言語・/dev/null (削除ファイル) は nil (素通し)。空白等を含むパスは
+// 見つからない言語は nil (素通し)。削除ファイルの "+++ /dev/null" も Match が nil を返すので
+// 専用の分岐は置かない (置いても結果が変わらず、テストで観測できない)。空白等を含むパスは
 // git が "b/pa th" と quote するため Match に失敗するが、その場合も素通しに
 // 落ちるだけで害はない (unquote 対応は実需要が出たら)。
 func lexerForDiffPath(path string) chroma.Lexer {
-	path = strings.TrimPrefix(path, "b/")
-	if path == "/dev/null" {
-		return nil
-	}
-	return lexers.Match(path)
+	return lexers.Match(strings.TrimPrefix(path, "b/"))
 }
 
 // Lang はフェンスの言語名 (sh / zsh / golang 等。エイリアスの解決は chroma の表に委ねる) でコード 1 行を色付けする。

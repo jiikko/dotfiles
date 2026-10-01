@@ -23,6 +23,8 @@ README.md の「パッケージ」表が正本 (各パッケージの中身と�
 ## 消費者
 
 - glogx (issues viewer 本体)・pro-con・schedkeys・ratelimit が replace で取り込む (`grep -l 'github.com/jiikko/dotfiles/src/tuikit =>' src/*/go.mod`。ブロック形式の `replace ( … )` も拾うため `replace` を前置しない)
+- restartable は replace を使わず擬似バージョンで固定する (`go install …@<版>` で入れられるようにするため。
+  `src/restartable/README.md`)。tuikit の変更は、restartable の go.mod の版を上げるまで届かない
 - schedkeys は `caret` / `termwidth` を使い、`toast` だけは別実装
 
 ## ビルド・テスト
