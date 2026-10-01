@@ -13,7 +13,10 @@ CI のまっさらな checkout には worktree が無いので、手元でしか
   手元の `make test-yaml` は、他のセッションの作業中の worktree の yml まで lint する (遅く、他人の途中状態で赤になりうる)
 - 同じファイルの ① (実在する yml が導出から漏れていないか) も `find` だが、比べる相手の `YAML_FILES` も同じく worktree を拾うので、今は一致して緑になっている (同じ誤りを両側が持つ)
 
+- `tests/tmux/test_confirm_default_gate.sh` の `find "$ROOT_DIR"` も `.claude` を prune しておらず worktree を歩く。同じファイルを何度も数えるだけで偽の赤にはならないが、遅くなる
+
 `scripts/discover_shell_scripts.sh` は起点を `LINT_DIRS` の固定のディレクトリにしているので、worktree を拾わない (0 本)。
+`scripts/check_ci_group_deps.sh` / `scripts/check_assert_reaches_exit.sh` も起点が固定で拾わない。
 
 ## 原因
 
@@ -22,20 +25,28 @@ CI のまっさらな checkout には worktree が無いので、手元でしか
 
 ## 対応方針
 
-- 母集合を `git ls-files --cached --others --exclude-standard` (追跡しているもの + 未追跡で ignore されていないもの) で取り、手書きの除外の列挙をやめる。
-  未追跡の新規ファイルも拾うので、「足したばかりで add していない yml が lint されない」形は作らない
-- 対象: `scripts/discover_yaml_files.sh`、`tests/scripts/test_enumerations_are_derived.sh` の ① と ③。ほかに作業ツリーを `find .` で歩く列挙がないかも、同じ仕組み (`find .` と、除外の手書き) で grep する
-- 🚨 ① は「導出が実物の母集合から漏れていない」を見る検査なので、導出と検査の両側を同じ `git ls-files` にすると、同じ誤りを両側が持つ形になる。
-  検査の側の母集合を何にするか (例: 検査は `find` のまま、ignore されたパスだけを `git check-ignore` で落とす) を決めてから直す
+- 4 箇所の `find` に `.claude/worktrees` の除外を足す: `scripts/discover_yaml_files.sh`、`tests/scripts/test_enumerations_are_derived.sh` の ① と ③、
+  `tests/tmux/test_confirm_default_gate.sh` (`-name .claude` で prune すると追跡している `.claude/rules/` まで外れるので、`-path` で worktrees だけを外す)。
+  除外の行には理由 (pro-con が作る worktree。中身は別の checkout の写しで、この repo の lint の対象ではない) を書く
+- ① は `find` のままにする。導出 (`discover_yaml_files.sh`) と検査が同じ除外を持つ形は今と変わらないが、検査を導出と別の仕組みにすると独立性が増すわけでもない
+  (`git ls-files` にすると下の vendor / tmp の問題を持ち込む)
+- ignore されるディレクトリが今後増えたときに同じ穴が開く点は残る。再発したら、作業ツリーを歩く列挙を共通の関数に寄せることを考える
+- 🚨 採らない案: 母集合を `git ls-files --cached --others --exclude-standard` に寄せて手書きの除外をやめる (反証レビューで崩れた)
+  - `vendor/` は追跡されている (138 本、yml も 2 本)。`-not -path '*/vendor/*'` は「ignore 済み」ではなく「第三者のコードを lint しない」除外なので、`git ls-files` に寄せると第三者の yml が lint に入る
+  - `tmp/` の ignore は repo の `.gitignore` に無く `~/.gitignore_global` 由来。`--exclude-standard` は手元では tmp を落とすが、新品の checkout や CI では落とさない (手元と CI で挙動が割れる)
 - 直したら、手元で worktree がある状態で `make test-yaml` と `tests/scripts/test_enumerations_are_derived.sh` が緑になり、`YAML_FILES` に worktree の yml が入らないことを確かめる
 
 ## 関連ファイル
 
 - `scripts/discover_yaml_files.sh` (`found=$(find . …)`)
 - `tests/scripts/test_enumerations_are_derived.sh` (① の `actual=$(find . …)`、③ の `allsh=$(find . …)`)
+- `tests/tmux/test_confirm_default_gate.sh` (`find "$ROOT_DIR"` の prune の一覧に `.claude` が無い)
 - `scripts/discover_shell_scripts.sh` (起点が固定のディレクトリなので影響なし。比較用)
 - `.gitignore` (`.claude/worktrees/`)
 
 ## 進捗
 
 - 2026-10-02 起票 (GHA の rest の内訳の調査中に、手元の計測で見つけた)
+- 2026-10-02 反証レビュー (sonnet、読み取りのみ 1 体) の訂正: P1 2 件 (git ls-files に寄せる案は vendor と tmp で壊れる) → 対応方針を差し替え /
+  P2 (test_confirm_default_gate.sh の `find "$ROOT_DIR"` も worktree を歩く) → 対象に追加。件数 (846 / 26 / 0)・③ が赤・① が緑の理由・submodule 無しは反証されなかった。
+  「CI には worktree が無い」は .claude が追跡されていないこと (`git ls-files .claude` 0 件) からの推論で、CI のログでは未確認
