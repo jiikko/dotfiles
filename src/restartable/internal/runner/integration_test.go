@@ -1034,8 +1034,16 @@ func TestControlDisconnectBeforeBuildCommitDropsRequest(t *testing.T) {
 func TestControlDisconnectAfterCommitContinuesRestart(t *testing.T) {
 	dir := t.TempDir()
 	count := filepath.Join(dir, "count")
+	release := filepath.Join(dir, "release")
 	build := fmt.Sprintf(`n=0; [ ! -f %s ] || n=$(cat %s); n=$((n+1)); echo "$n" > %s`, shellQuote(count), shellQuote(count), shellQuote(count))
-	r := startTestRunner(t, map[string]string{"RESTARTABLE_TEST_BUILD": build, "RESTARTABLE_TEST_RUN": "exec /bin/sleep 30"})
+	// 子は release が置かれるまで TERM で終わらない。終わると Stopping+RestartPending の窓が一瞬で閉じ、負荷が高いと
+	// ポーリングがその窓を取り逃がして落ちていた。窓を開けたまま切断し、切断の後で release して再起動の続きを見る
+	run := fmt.Sprintf(`trap 'while [ ! -e %s ]; do /bin/sleep 0.01; done; exit 0' TERM; while :; do /bin/sleep 0.01; done`, shellQuote(release))
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_BUILD":      build,
+		"RESTARTABLE_TEST_RUN":        run,
+		"RESTARTABLE_TEST_TERM_GRACE": "30s",
+	})
 	initial := r.waitStatus(t, string(Running))
 	if initial.Generation != 1 || initial.PID == nil {
 		t.Fatalf("initial status = %+v", initial)
@@ -1049,14 +1057,17 @@ func TestControlDisconnectAfterCommitContinuesRestart(t *testing.T) {
 	}{Command: "restart"}); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, time.Second, "restart commit", func() bool {
+	waitFor(t, 10*time.Second, "restart commit", func() bool {
 		status, err := r.status()
 		return err == nil && status.State == string(Stopping) && status.RestartPending
 	})
 	if err := conn.Close(); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, 3*time.Second, "committed restart despite disconnect", func() bool {
+	if err := os.WriteFile(release, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 10*time.Second, "committed restart despite disconnect", func() bool {
 		status, err := r.status()
 		return err == nil && status.State == string(Running) && status.Generation == 2 && status.PID != nil
 	})
