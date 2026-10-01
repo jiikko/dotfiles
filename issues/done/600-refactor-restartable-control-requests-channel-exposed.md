@@ -1,7 +1,5 @@
 # 600 (refactor): restartable の control.Server.Requests が送受信どちらもできるチャネルのまま公開されている
 
-> 🚨 **担当中: dotfiles-58**（2026-10-01〜）
-
 起票日: 2026-10-01
 
 出典: restartable の audit (codex のコードスキャン、2026-10-01。[601](601-research-restartable-audit-2026-10-01.md))。Claude がコードで裏を取った。
@@ -31,3 +29,4 @@ issue 586 の作業中に、`acceptLoop` がこのチャネルを close した�
 - compile で固定できたことの確認: 一時ファイルで `close(s.Requests())` と `s.Requests() <- nil` を書くと、どちらも `cannot close receive-only channel` / `cannot send to receive-only channel` で compile error になった (確認後に消した)。
 - 検証: `go test -race -count=1 ./...` rc=0 (全 package ok)。`go test -v` の PASS 行は変更の前後とも 172 件。golangci_lint v2.5.0 は 0 issues (rc=0)。
 - codex の実装レビュー (`codex exec review --uncommitted`): 指摘なし (sandbox で Unix socket の bind が拒否されたというテスト失敗の注記のみ。codex 側の環境の事情で、こちらの実行は通っている)。
+- 取り込み (dotfiles-58): 598 が足したテスト (main_test.go) がフィールド server.Requests を使っていたため、598 → 600 の順で並べるとビルドが壊れた (002fd390 で 1 度 push)。Requests() に直した (36fbf91f)

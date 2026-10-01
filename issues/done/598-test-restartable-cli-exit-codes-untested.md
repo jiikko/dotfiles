@@ -1,7 +1,5 @@
 # 598 (test): restartable の status / restart の終了コードをテストしていない (obaket の dev-restart が rc 2 に依存している)
 
-> 🚨 **担当中: dotfiles-58**（2026-10-01〜）
-
 起票日: 2026-10-01
 
 出典: restartable の audit (codex のコードスキャン、2026-10-01。[601](601-research-restartable-audit-2026-10-01.md))。Claude がコードで裏を取った。
@@ -38,3 +36,5 @@ CLI を実際に起動して (テストバイナリの helper か `go run`)、so
 - 変異 (mutate-verify、いずれも red を確認): `!response.OK` → `false` で `status:_ok:false` が red / 「connection refused」側の `return 2` → 1 で `status:_socket_が無い` が red / `return 124` → 125 で `status:_時間切れ` が red。
 - 変異 `os.ErrDeadlineExceeded` の分岐を外す: 時間切れの競合次第なので 1 回の run では緑のことがある (30 回繰り返すと red になる回と緑の回があった)。この分岐の検出は確率的で、決定的には守れていない。
 - 検証: `go test -race -count=1 ./...` rc=0 (4 package ok)、`golangci_lint.sh v2.5.0 run` 0 issues。
+- 取り込み (dotfiles-58): os.ErrDeadlineExceeded の分岐を外す変異が CLI のテストでは確率でしか red にならなかったので、誤りから終了コードへの写しを callErrorCode に切り出し、5 通りの誤りを直接与えて固定した (commit「test(restartable): 誤りから終了コードへの写しを callErrorCode に切り出し…」)。変異は毎回 red。
+- 取り込みの順 (598 → 600) で、598 の main_test.go がフィールド server.Requests を受信していたためビルドが壊れた状態を 1 度 push した (002fd390)。約 1 分後に Requests() へ直した (36fbf91f)

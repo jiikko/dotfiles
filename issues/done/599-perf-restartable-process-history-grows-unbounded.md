@@ -1,7 +1,5 @@
 # 599 (perf): restartable の終わったプロセスの記録 (allProcesses) が runner の生存期間中に増え続ける
 
-> 🚨 **担当中: dotfiles-58**（2026-10-01〜）
-
 起票日: 2026-10-01
 
 出典: restartable の audit (codex のコードスキャン、2026-10-01。[601](601-research-restartable-audit-2026-10-01.md))。Claude がコードで裏を取った。
@@ -65,3 +63,4 @@ runner を長時間動かし、R や control restart を繰り返す (特に --r
 - 通常レビュー: 指摘なし
 - 敵対的 1: ready-cmd が毎回「グループを抜けて pipe を握る子孫」を作ると記録が probe ごとに増える → **修正は採らず、コメントの「有界」を正確にした**。変更前より悪化しない (変更前は全 probe が残る)。残る記録はどれも実際に漏れている fd と出力回収の goroutine に 1 対 1 で、drainOutputs が閉じるための唯一の手がかり。ready cleanup で reader を先に閉じる案は、子孫の出力を落とし SIGPIPE を送る挙動の変更になるので 599 の範囲外
 - 敵対的 2: テストが `/usr/bin/perl` を暗黙に要求する → **採った**。無ければ理由を書いて Fatal にした (macOS 専用の repo なので skip にはしない)
+- 取り込み (dotfiles-58): 597・598 の後に cherry-pick し、衝突なし。捨てる条件を外す変異で TestTrackProcessKeepsRecordCountBoundedAcrossManyFinishedProbes と TestReadyProbeLoopDoesNotAccumulateProcessRecords が red になることを、取り込んだ木で確かめ直した

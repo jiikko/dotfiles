@@ -1,7 +1,5 @@
 # 597 (bug): restartable の control の lock ファイルの fd が子に引き継がれ、runner が死んだ後もアプリが lock を握る
 
-> 🚨 **担当中: dotfiles-58**（2026-10-01〜）
-
 起票日: 2026-10-01
 
 出典: restartable の audit (codex のコードスキャン、2026-10-01。[601](601-research-restartable-audit-2026-10-01.md))。Claude がコードで裏を取った。
@@ -37,3 +35,4 @@ lock の fd を `O_CLOEXEC` 付きで開く (`syscall.O_CLOEXEC` を足す、ま
   - 通常レビュー (`--commit HEAD`): 指摘なし (sandbox が Unix socket の bind を拒否するためテストは codex 側では回せなかった)。
   - 敵対的レビュー: (1)「`exec.Command` は FD を選別するのでテストは O_CLOEXEC 無しでも通りうる」は不採用。Go の exec は close-on-exec の無い fd をそのまま継承する (issue 本文の通り) うえ、変異で実際に red になった。(2)「親環境に `RESTARTABLE_TEST_LOCK_FD` があると親が exit する」は不採用 (テストが自分で子にだけ設定する変数で、親に入る経路を示せない)。`fork` と `exec` の間の一時的な fd は O_CLOEXEC で exec 時に閉じるため問題にならない。
 - 未再現: 実際の SIGKILL で二重起動が拒否される再現はしていない (テストは fd の継承そのものを固定)。
+- 取り込み (dotfiles-58): 子の側の検査を「渡された番号の fd が開いているか」から「その fd が lock のファイルか (fstat と stat の dev / ino)」に変えた。子の Go の実行時が同じ番号を別のファイルに使うと、修正後でも誤って赤になるため (commit「test(restartable): lock の fd の継承の検査を、番号ではなく inode で比べる」)。O_CLOEXEC を外す変異で red を確かめ直した

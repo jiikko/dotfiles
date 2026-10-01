@@ -1,7 +1,5 @@
 # 601 (research): restartable の audit (codex のコードスキャン、2026-10-01)
 
-> 🚨 **担当中: dotfiles-58**（2026-10-01〜）
-
 起票日: 2026-10-01
 
 ## 範囲とやり方
@@ -11,7 +9,7 @@
 - 監査タイプ 19: security / resource-leaks / broken-code / error-handling / false-green / dead-code / performance / design / responsibility / duplication / encapsulation /
   leaky-abstraction / polymorphism / ui-components / test-cleanup / test-helpers / ux / dependency / general
 - codex (gpt-6-luna、max、read-only) を 6 本 (タイプを束ねた lens)。ユーザーの指示で最初は直列、途中から最大 4 本並列。所見は Claude がコードで裏を取ってから採った
-- 既知・記録済みの制約 (README の「検出しない形 / 注意」、[586](done/586-feat-restartable-foreground-restart-runner.md) / [588](done/588-feat-restartable-transition-dialog-and-ready-cmd.md) の記録) は再提出の対象外にした
+- 既知・記録済みの制約 (README の「検出しない形 / 注意」、[586](586-feat-restartable-foreground-restart-runner.md) / [588](588-feat-restartable-transition-dialog-and-ready-cmd.md) の記録) は再提出の対象外にした
 - 反証レビュー (issue の起票ルールの codex) は通していない (所見そのものが codex の監査で、Claude が主要な主張をコードで確かめた。枠が近いとのユーザーの指示もあり省略)
 
 ## P2 (別の issue に起こした)
@@ -52,7 +50,7 @@
 
 ## 判断 (2026-10-01)
 
-P2 の 4 件は個別の issue で直す (597 が最優先: runner が死んだ後に起動し直せなくなる)。P3 は、restartable を次に触るとき (再設計の [596](pending/596-design-restartable-redesign-candidates.md) を含む) にまとめて扱う。
+P2 の 4 件は個別の issue で直す (597 が最優先: runner が死んだ後に起動し直せなくなる)。P3 は、restartable を次に触るとき (再設計の [596](../pending/596-design-restartable-redesign-candidates.md) を含む) にまとめて扱う。
 
 ## 進捗 (2026-10-01、P3 の 10 項目)
 
@@ -101,3 +99,5 @@ rc 6 (緑) が 1 本: 再ビルドで板を開かない変異が、寄せた直�
 ### 検証
 
 `go test -race -count=1 ./...` rc=0 (4 package ok)。`scripts/golangci_lint.sh v2.5.0 run --max-same-issues 0 --max-issues-per-linter 0 ./...` rc=0、0 issues。
+- 取り込み (dotfiles-58): 597 → 600 の後に cherry-pick。control_test.go で 597 のテストと 601 の補助関数 (waitForBlockedServeConns) が同じ場所に足されて衝突したので両方残した。go test -race と lint (上限なし) は 0 issues。
+- 残り (601 の担当の報告): main.go が StdoutIsTerminal を渡すことを守るテストは無い (外す変異が緑)。CopyFrom の headless 引数は sink.headless と常に同じで冗長 (触っていない)
