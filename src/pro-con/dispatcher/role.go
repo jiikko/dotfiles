@@ -404,7 +404,7 @@ func (d *Dispatcher) tellRole(ctx context.Context, now time.Time, ss []agents.Se
 		return notes, save()
 	}
 	rr.held = ""
-	how, name, run, err := d.prepareRole(r, row, hasRow, cur, alive, now, st.Cards, untold, pending)
+	how, name, why, run, err := d.prepareRole(r, row, hasRow, cur, alive, now, st.Cards, untold, pending)
 	if err != nil {
 		rr.blocked = how + "できない: " + err.Error()
 		if rr.failed != err.Error() { // 理由が変わらないまま Tick ごとにログを埋めない
@@ -414,6 +414,9 @@ func (d *Dispatcher) tellRole(ctx context.Context, now time.Time, ss []agents.Se
 		return notes, save()
 	}
 	rr.failed = ""
+	if why != "" {
+		notes = append(notes, ev(eventlog.KindLaunch, r.cardID, pm.Session, r.name+" を"+why))
+	}
 	pm.Launching, pm.LaunchedAt, pm.Telling = how, now, pending
 	if reviving {
 		pm.Revivals = append(pm.Revivals, now)
@@ -454,30 +457,60 @@ func settleRole(pm *store.PMState, id string) {
 	pm.Session, pm.Launching, pm.Telling, pm.DeadSince, pm.Stopped = id, "", nil, time.Time{}, false
 }
 
+// roleCacheTTL は、役の前の応答からこれ以上空いたら再開せずに起動し直す長さ (issue 581)。Claude Code の session の prompt cache は 1 時間 TTL で、
+// 切れた後の再開は会話全体 (PM・取り込みの係では 7〜70 万トークン) を書き直す。581 の実測は 56.5 分の再開まで当たり、61 分から外れた。
+// 60 分より手前に置くのは、損が片寄っているため: 当たる再開を起動し直しても指示書の書き込み (PG の起動と同じ約 2.2 万) で済むが、外れる再開は桁で高い
+const roleCacheTTL = 55 * time.Minute
+
+// restartNote は起動し直した役への知らせの頭 (前の会話が無いことを伝え、続きの拾い方を指す)。
+const restartNote = "前の session は前の応答から %d 分空いて prompt cache が切れていたので、続きから再開せずに同じ worktree で新しく起動した (pro-con issue 581)。" +
+	"前の会話は引き継いでいない。扱い中だったカードは `pro-con card show <カード>` の履歴で、作業途中のファイルは worktree の `git status` で確かめてから続ける。\n\n"
+
+// roleQuiet は session id の transcript の最後の応答から now までの長さ。transcript を読めない・応答が無いなら偽 (分からないので再開する = 581 の前の形)。
+func (d *Dispatcher) roleQuiet(sid string, now time.Time) (time.Duration, bool) {
+	if d.Transcript == nil || sid == "" {
+		return 0, false
+	}
+	t, err := d.Transcript(sid)
+	if err != nil || t.LastReply.IsZero() {
+		return 0, false
+	}
+	return now.Sub(t.LastReply), true
+}
+
 // preparePM は起動・再開の前提を確かめて、実行する関数を返す。記録に PM の行があれば同じ session を再開し、無ければ起動する。
-func (d *Dispatcher) prepareRole(r *role, row live.Owned, hasRow bool, cur agents.Session, alive bool, now time.Time, cards []card.Card, untold, pending []string) (how, name string, run func(context.Context) (string, error), err error) {
+// 記録の session の前の応答から roleCacheTTL 以上空いていれば、再開せずに同じ worktree で起動し直す (581。worktree の作業途中のファイルは残る)。
+func (d *Dispatcher) prepareRole(r *role, row live.Owned, hasRow bool, cur agents.Session, alive bool, now time.Time, cards []card.Card, untold, pending []string) (how, name, why string, run func(context.Context) (string, error), err error) {
 	notice := r.notice(d, cards, untold, pending)
 	if hasRow && (alive || d.exists(row.Cwd)) {
 		if row.Cwd == "" {
-			return "再開", "", nil, fmt.Errorf("前の "+r.name+" (%s) の作業ディレクトリが記録に無い (別の cwd で再開すると別の tree を書く)", row.ID)
+			return "再開", "", "", nil, fmt.Errorf("前の "+r.name+" (%s) の作業ディレクトリが記録に無い (別の cwd で再開すると別の tree を書く)", row.ID)
 		}
 		stop := ""
 		if alive {
 			stop = cur.ID
 		}
-		return "再開", "", func(ctx context.Context) (string, error) {
+		// 起動し直すのは役の worktree (-w の名前と cwd が揃う) だけ: 起動の結果を一覧で確かめる adopt が、名前と roleWorktree(名前) で引くため
+		if quiet, ok := d.roleQuiet(row.SessionID, now); ok && quiet >= roleCacheTTL && d.exists(row.Cwd) && samePath(row.Cwd, d.roleWorktree(filepath.Base(row.Cwd))) {
+			name = filepath.Base(row.Cwd)
+			// 新しい session には何も知らせていないので、知らせる物を全部新しい物として渡す
+			prompt := r.intro + "\n\n" + r.guide(d) + "\n---\n\n" + fmt.Sprintf(restartNote, int(quiet.Minutes())) + r.notice(d, cards, pending, pending)
+			why = fmt.Sprintf("再開せずに同じ worktree で起動し直す (前の応答から %d 分空いて prompt cache が切れている。581)", int(quiet.Minutes()))
+			return "起動", name, why, func(ctx context.Context) (string, error) { return d.Launch.Restart(ctx, stop, row.Cwd, name, prompt) }, nil
+		}
+		return "再開", "", "", func(ctx context.Context) (string, error) {
 			// 名前は起動のときの -w / -n の名前で、worktree の名前と同じ (記録に名前の欄は無いので cwd から取る)
 			return d.Launch.Resume(ctx, stop, row.SessionID, row.Cwd, filepath.Base(row.Cwd), notice)
 		}, nil
 	}
 	if alive {
 		// 起動した PM が一覧に出ているのに記録に載せられない (最後の起動より前に始まっている等)。もう 1 本起動しない
-		return "起動", "", nil, fmt.Errorf("起動した "+r.name+" (%s) を記録に載せられていない", cur.ID)
+		return "起動", "", "", nil, fmt.Errorf("起動した "+r.name+" (%s) を記録に載せられていない", cur.ID)
 	}
 	// 記録が無い / 前の PM の worktree が消えた (消えた cwd へは再開できない): 新しい worktree で起動する。前の PM の行は、新しい PM を記録に載せるときに退く
 	name = r.prefix + now.Format("20060102-150405")
 	prompt := r.intro + "\n\n" + r.guide(d) + "\n---\n\n" + notice
-	return "起動", name, func(ctx context.Context) (string, error) { return d.Launch.Start(ctx, d.PMRepo, name, prompt) }, nil
+	return "起動", name, "", func(ctx context.Context) (string, error) { return d.Launch.Start(ctx, d.PMRepo, name, prompt) }, nil
 }
 
 // pmAdopt は結果の分からない起動・再開の PM が一覧に出ているかを見る。印を書いた後 (LaunchedAt 以降) に始まったものだけ:

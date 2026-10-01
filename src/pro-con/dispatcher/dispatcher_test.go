@@ -39,6 +39,8 @@ type fakeLauncher struct {
 	startTries  int                // 失敗も含めて起動しようとした回数
 	repos       []string           // 起動した repo
 	prompts     []string           // 起動の指示
+	restarts    []string           // 起動し直し (581) の stopID + ":" + cwd + ":" + name
+	restartMsgs []string           // 起動し直しの指示
 }
 
 func (f *fakeLauncher) Start(_ context.Context, repo, name, prompt string) (string, error) {
@@ -71,6 +73,15 @@ func (f *fakeLauncher) Resume(_ context.Context, stopID, _, cwd, name, text stri
 		return "id-resumed", nil
 	}
 	return stopID, nil
+}
+
+func (f *fakeLauncher) Restart(_ context.Context, stopID, cwd, name, prompt string) (string, error) {
+	f.restarts = append(f.restarts, stopID+":"+cwd+":"+name)
+	f.restartMsgs = append(f.restartMsgs, prompt)
+	if f.reject {
+		return "", fmt.Errorf("claude --bg: %w: exit status 1: error: unknown option", ErrRejected)
+	}
+	return "id-restarted", nil
 }
 
 func (f *fakeLauncher) Stop(_ context.Context, id string) error {

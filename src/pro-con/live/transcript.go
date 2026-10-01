@@ -28,6 +28,8 @@ type Transcript struct {
 	Prompts    []Prompt // 人間の発言 (古い順)
 	Outputs    []string // PG の出力の文 (古い順)。改行を残した原文 (markdown。rawText)
 	LastAt     time.Time
+	// LastReply は assistant の行のうち最後のものの時刻 (最後の API の応答。prompt cache の寿命を測る起点 = issue 581)
+	LastReply time.Time
 	// LastNew は PG の出力のうち、末尾の中でそれまでに無かった文が最後に出た時刻 (watchdog の「進捗」。同じ出力を繰り返すループは数えない)
 	LastNew time.Time
 	// PendingSince は結果がまだ返っていないツール呼び出しのうち、最後のものの時刻 (長いコマンドの実行中。無ければゼロ)
@@ -195,6 +197,9 @@ func parseFrom(rd io.Reader) Transcript {
 				}
 			}
 		case "assistant":
+			if at.After(t.LastReply) {
+				t.LastReply = at
+			}
 			if r.Message != nil {
 				if s := text(r.Message.Content); s != "" {
 					t.Outputs = append(t.Outputs, rawText(r.Message.Content)) // 画面が markdown として描くので改行を残す (486)

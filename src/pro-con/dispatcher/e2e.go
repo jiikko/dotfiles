@@ -162,6 +162,16 @@ func (l e2eLauncher) Resume(ctx context.Context, stopID, _, cwd, _, text string)
 	return id, l.act(cardID, cwd, req)
 }
 
+// Restart は止めてから cwd に session を立てるだけ (起動し直すのは役だけで、e2e モードは役を起こさない = PM の repo が空)。
+func (l e2eLauncher) Restart(ctx context.Context, stopID, cwd, name, _ string) (string, error) {
+	if stopID != "" {
+		if err := l.Stop(ctx, stopID); err != nil {
+			return "", err
+		}
+	}
+	return l.newSession(cwd, name, "")
+}
+
 func (l e2eLauncher) Stop(_ context.Context, id string) error {
 	e2eMu.Lock()
 	defer e2eMu.Unlock()

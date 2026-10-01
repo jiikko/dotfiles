@@ -177,6 +177,9 @@ func (f *stopFlaky) Start(context.Context, string, string, string) (string, erro
 func (f *stopFlaky) Resume(context.Context, string, string, string, string, string) (string, error) {
 	return "", nil
 }
+func (f *stopFlaky) Restart(context.Context, string, string, string, string) (string, error) {
+	return "", nil
+}
 func (f *stopFlaky) Stop(context.Context, string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -319,6 +322,9 @@ type ctxLauncher struct{ stopped *atomic.Bool }
 
 func (l *ctxLauncher) Start(context.Context, string, string, string) (string, error) { return "", nil }
 func (l *ctxLauncher) Resume(context.Context, string, string, string, string, string) (string, error) {
+	return "", nil
+}
+func (l *ctxLauncher) Restart(context.Context, string, string, string, string) (string, error) {
 	return "", nil
 }
 func (l *ctxLauncher) Stop(ctx context.Context, _ string) error {

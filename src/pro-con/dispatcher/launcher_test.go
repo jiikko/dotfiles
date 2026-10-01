@@ -37,6 +37,11 @@ func TestLauncherArgsPassLanguageAndNoAutoMemory(t *testing.T) {
 	if !slices.Equal(resume, want) {
 		t.Fatalf("再開の引数 = %q\nwant %q", resume, want)
 	}
+	restart := l.restartArgs("pc-pm-x", "指示")
+	want = []string{"--bg", "-n", "pc-pm-x", "--setting-sources", "project,local", "--settings", settings, "指示"}
+	if !slices.Equal(restart, want) {
+		t.Fatalf("起動し直しの引数 = %q\nwant %q", restart, want)
+	}
 }
 
 // 読めない・壊れている・language が無い / 文字列でない / 空なら language を渡さない (起動は止めない。値を固定で補わない)。
@@ -52,7 +57,7 @@ func TestLauncherArgsWithoutLanguageStillDisableAutoMemory(t *testing.T) {
 	}
 	for name, p := range cases {
 		l := ExecLauncher{UserSettings: p}
-		for kind, args := range map[string][]string{"起動": l.startArgs("n", "p"), "再開": l.resumeArgs("sid", "n", "t")} {
+		for kind, args := range map[string][]string{"起動": l.startArgs("n", "p"), "再開": l.resumeArgs("sid", "n", "t"), "起動し直し": l.restartArgs("n", "p")} {
 			i := slices.Index(args, "--settings")
 			if i < 0 || i+1 >= len(args) || args[i+1] != `{"autoMemoryEnabled":false,"feedbackDrafts":"off"}` {
 				t.Errorf("%s: %sの引数 = %q (--settings は auto memory・SendFeedback の無効化だけのはず)", name, kind, args)
@@ -62,8 +67,8 @@ func TestLauncherArgsWithoutLanguageStillDisableAutoMemory(t *testing.T) {
 }
 
 // PG・PM・取り込みの係の session の形 (431。理由は launcher.go 冒頭)。止めるのは、pro-con のコードの変更で次が崩れる形:
-//   - 起動と再開・役 (PG / PM / 取り込みの係)・session の名前をまたいで、違うのは -w <name> / --resume <id> / -n <name> と位置引数だけ。
-//     Start / Resume は組んだ引数をそのまま claude に渡し (止めてから再開するときも)、環境変数も起動と再開で同じ
+//   - 起動・再開・起動し直し (581)・役 (PG / PM / 取り込みの係)・session の名前をまたいで、違うのは -w <name> / --resume <id> / -n <name> と位置引数だけ。
+//     Start / Resume / Restart は組んだ引数をそのまま claude に渡し (止めてから再開・起動し直すときも)、環境変数も起動・再開・起動し直しで同じ
 //   - ユーザーの settings.json から写すのは language だけ (model・effort・hook・許可・plugin・env を写すと、人の普段の設定の変更で role の形が変わる)。
 //     引数の全体で比べるので、--settings に写す変更も CLI の flag に写す変更も止まる
 //   - --setting-sources は project,local (user を入れると hook・許可・~/.claude/rules が戻る)。--exclude-dynamic-system-prompt-sections は付けない
@@ -87,7 +92,8 @@ func TestPersistentSessionProfile(t *testing.T) {
 	shape := sessionShape(t, start)
 	for _, args := range [][]string{resume,
 		l.startArgs("pc-pm-20260929-120000", "PM の指示"), l.resumeArgs("sid-2", "pc-pm-20260929-120000", "通知"),
-		l.startArgs("pc-int-20260929-120000", "取り込みの指示"), l.resumeArgs("sid-3", "pc-int-20260929-120000", "- 取り込んで")} {
+		l.startArgs("pc-int-20260929-120000", "取り込みの指示"), l.resumeArgs("sid-3", "pc-int-20260929-120000", "- 取り込んで"),
+		l.restartArgs("pc-pm-20260929-120000", "PM の指示"), l.restartArgs("pc-int-20260929-120000", "- 取り込みの指示")} {
 		if s := sessionShape(t, args); !slices.Equal(s, shape) {
 			t.Fatalf("起動と再開・役・名前で session の形が違う (キャッシュの先頭が揃わない):\n%q\nwant %q", s, shape)
 		}
@@ -107,23 +113,30 @@ func TestPersistentSessionProfile(t *testing.T) {
 		_, err := x.Resume(context.Background(), "old-1", "sid-1", t.TempDir(), "pc-c-001", text)
 		return err
 	})
-	if !slices.Equal(execStart, start) || !slices.Equal(execResume, resume) || !slices.Equal(execStopResume, append([]string{"stop", "old-1"}, resume...)) {
-		t.Fatalf("claude が受け取った引数が、組んだ引数と違う (組んだ後に足した・組まずに渡した・止めずに再開した):\n起動 %q\nwant %q\n再開 %q\nwant %q\n止めて再開 %q",
-			execStart, start, execResume, resume, execStopResume)
+	restart := l.restartArgs("pc-pm-20260929-120000", prompt)
+	execStopRestart, envRestart := run(func(x ExecLauncher) error {
+		_, err := x.Restart(context.Background(), "old-2", t.TempDir(), "pc-pm-20260929-120000", prompt)
+		return err
+	})
+	if !slices.Equal(execStart, start) || !slices.Equal(execResume, resume) || !slices.Equal(execStopResume, append([]string{"stop", "old-1"}, resume...)) ||
+		!slices.Equal(execStopRestart, append([]string{"stop", "old-2"}, restart...)) {
+		t.Fatalf("claude が受け取った引数が、組んだ引数と違う (組んだ後に足した・組まずに渡した・止めずに再開した):\n起動 %q\nwant %q\n再開 %q\nwant %q\n止めて再開 %q\n止めて起動し直し %q",
+			execStart, start, execResume, resume, execStopResume, execStopRestart)
 	}
-	if envStart != envResume || strings.Contains("\n"+envStart, "\nTMUX") {
-		t.Fatalf("起動と再開で claude の環境変数が違う / TMUX が残っている (415 論点 5):\n起動 %q\n再開 %q", envStart, envResume)
+	if envStart != envResume || envStart != envRestart || strings.Contains("\n"+envStart, "\nTMUX") {
+		t.Fatalf("起動・再開・起動し直しで claude の環境変数が違う / TMUX が残っている (415 論点 5):\n起動 %q\n再開 %q\n起動し直し %q", envStart, envResume, envRestart)
 	}
 	langOnly := ExecLauncher{UserSettings: writeSettings(t, `{"language": "日本語"}`)}
 	for _, c := range []struct{ got, want []string }{
 		{start, langOnly.startArgs("pc-c-001", prompt)},
 		{resume, langOnly.resumeArgs("sid-1", "pc-c-001", text)},
+		{restart, langOnly.restartArgs("pc-pm-20260929-120000", prompt)},
 	} {
 		if !slices.Equal(c.got, c.want) {
 			t.Fatalf("ユーザーの settings.json から language 以外を写している:\n%q\nwant %q", c.got, c.want)
 		}
 	}
-	for _, args := range [][]string{start, resume} {
+	for _, args := range [][]string{start, resume, restart} {
 		if v := flagValue(t, args, "--setting-sources"); v != "project,local" {
 			t.Fatalf("--setting-sources = %q (user を入れると hook・許可・~/.claude/rules が戻る): %q", v, args)
 		}

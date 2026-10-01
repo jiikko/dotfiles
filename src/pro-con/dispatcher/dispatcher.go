@@ -42,6 +42,9 @@ type Launcher interface {
 	// cwd は session の作業ディレクトリ (PG・役の worktree)。再開はそこで走らせる。name は起動のときと同じ session の名前
 	// (渡さないと、再開の後の名前は AI の付けた題になる。488 で実測)
 	Resume(ctx context.Context, stopID, sessionID, cwd, name, text string) (newID string, err error)
+	// Restart は stopID の session を止めてから (空なら止めない)、cwd (前の session の worktree) で同じ名前の新しい session を prompt で起動し、
+	// claude --bg が返す短い id を返す。前の会話は引き継がない (役の prompt cache が切れた後の再開の代わり = issue 581)
+	Restart(ctx context.Context, stopID, cwd, name, prompt string) (id string, err error)
 	// Stop は session を止める (PG・PM・取り込みの係のどれにも使う)
 	Stop(ctx context.Context, id string) error
 }

@@ -604,3 +604,103 @@ func TestPMResumeAdoptNeedsName(t *testing.T) {
 		t.Fatalf("同じ名前・作業ディレクトリで立った PM の再開を取り込まない: %q %v", id, ok)
 	}
 }
+
+// replyAt は session id ごとの最後の応答の時刻を返す transcript の読み手 (無い session id は読めない)。
+func replyAt(m map[string]time.Time) func(string) (live.Transcript, error) {
+	return func(sid string) (live.Transcript, error) {
+		at, ok := m[sid]
+		if !ok {
+			return live.Transcript{}, os.ErrNotExist
+		}
+		return live.Transcript{LastReply: at}, nil
+	}
+}
+
+// 前の応答から roleCacheTTL 以上空いた PM は、再開 (会話全体の書き直し) せずに、止めてから同じ worktree・同じ名前で起動し直す (581)。
+// 新しい session には何も知らせていないので、知らせ済みのカードも新しい物として渡し、指示書と起動し直した旨を添える。
+// 起動し直した session は一覧で確かめて記録の PM の行を置き換え、次の知らせは (応答が新しいので) その session を再開する。
+func TestPMRestartsInPlaceAfterCacheTTL(t *testing.T) {
+	r := startedPM(t)
+	wt := "/w/dotfiles/.claude/worktrees/" + pmName
+	replies := map[string]time.Time{"P1": t0.Add(2 * time.Second)}
+	r.d.Transcript = replyAt(replies)
+	request(t, r.dir, "二つ目")
+	r.now = t0.Add(2*time.Second + 55*time.Minute) // 境界ちょうど (roleCacheTTL から作らない: 定数を動かす変更をテストが追いかけてしまう)
+	notes := r.tick(t)
+	if len(r.l.resumes) != 0 || !slices.Equal(r.l.restarts, []string{"id-" + pmName + ":" + wt + ":" + pmName}) {
+		t.Fatalf("cache の切れた PM を止めて同じ worktree で起動し直していない: resumes=%v restarts=%v", r.l.resumes, r.l.restarts)
+	}
+	p := r.l.restartMsgs[0]
+	for _, want := range []string{"GUIDE-BODY", "続きから再開せずに同じ worktree で新しく起動した", "新しい依頼 C-001「一つ目」", "新しい依頼 C-002「二つ目」"} {
+		if !strings.Contains(p, want) {
+			t.Fatalf("起動し直しの指示に %q が無い (知らせ済みの C-001 も新しい物として渡す): %q", want, p)
+		}
+	}
+	if !slices.ContainsFunc(notes, func(e eventlog.Event) bool { return strings.Contains(e.Reason, "起動し直す") }) {
+		t.Fatalf("起動し直した理由を出来事に書いていない: %v", notes)
+	}
+	if pm := loadPM(t, r.dir); pm.Session != "id-restarted" || pm.Name != pmName || !slices.Equal(pm.Told, []string{"C-001", "C-002"}) {
+		t.Fatalf("起動し直した PM の様子が違う: %+v", pm)
+	}
+	fresh := pmSession("id-restarted", "P2", 61, "idle", r.now.Add(time.Second))
+	r.ss = []agents.Session{fresh}
+	replies["P2"] = r.now.Add(10 * time.Second)
+	r.now = r.now.Add(time.Minute)
+	r.tick(t)
+	if row, ok := pmRegRow(t, r.dir); !ok || row.SessionID != "P2" || row.Cwd != wt {
+		t.Fatalf("起動し直した PM で記録の行を置き換えていない: %+v %v", row, ok)
+	}
+	request(t, r.dir, "三つ目")
+	r.tick(t)
+	if len(r.l.restarts) != 1 || len(r.l.resumes) != 1 || !strings.HasPrefix(r.l.resumes[0], "id-restarted:") {
+		t.Fatalf("応答の新しい PM は再開するはず: restarts=%v resumes=%v", r.l.restarts, r.l.resumes)
+	}
+}
+
+// 起動し直さず、今までどおり再開する形: cache が生きている (roleCacheTTL 未満) / 最後の応答が分からない (transcript を読めない・応答が無い) /
+// 記録の作業ディレクトリが役の worktree でない (起動の結果を一覧で確かめる adopt が名前と worktree で引けない)。
+func TestPMResumesWhenCacheMayBeWarm(t *testing.T) {
+	for name, c := range map[string]struct {
+		read func(string) (live.Transcript, error)
+		cwd  string
+	}{
+		"cache が生きている":    {read: replyAt(map[string]time.Time{"P1": t0.Add(time.Minute)})},
+		"transcript が無い":  {read: replyAt(nil)},
+		"応答が無い":           {read: func(string) (live.Transcript, error) { return live.Transcript{LastAt: t0}, nil }},
+		"役の worktree でない": {read: replyAt(map[string]time.Time{"P1": t0}), cwd: "/w/elsewhere/" + pmName},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newPMRig(t)
+			request(t, r.dir, "一つ目")
+			r.tick(t)
+			s := pmSession("id-"+pmName, "P1", 60, "idle", t0.Add(time.Second))
+			if c.cwd != "" {
+				s.Cwd = c.cwd
+			}
+			r.ss = []agents.Session{s}
+			r.tick(t)
+			r.d.Transcript = c.read
+			request(t, r.dir, "二つ目")
+			r.now = t0.Add(time.Minute + 55*time.Minute - time.Second) // 前の応答 (t0 + 1 分) から 54 分 59 秒
+			r.tick(t)
+			if len(r.l.restarts) != 0 || len(r.l.resumes) != 1 {
+				t.Fatalf("起動し直さずに再開するはず: restarts=%v resumes=%v", r.l.restarts, r.l.resumes)
+			}
+		})
+	}
+}
+
+// 終了で止めた PM (一覧に居ない) も、cache が切れていれば止めずに同じ worktree で起動し直す (止める session が無い)。
+func TestStoppedPMRestartsInPlaceAfterCacheTTL(t *testing.T) {
+	r := startedPM(t)
+	r.d.Transcript = replyAt(map[string]time.Time{"P1": t0})
+	if _, err := r.d.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	r.ss = nil
+	r.now = t0.Add(3 * time.Hour)
+	r.tick(t)
+	if len(r.l.resumes) != 0 || !slices.Equal(r.l.restarts, []string{":/w/dotfiles/.claude/worktrees/" + pmName + ":" + pmName}) {
+		t.Fatalf("止めた PM を (止めずに) 同じ worktree で起動し直していない: resumes=%v restarts=%v", r.l.resumes, r.l.restarts)
+	}
+}

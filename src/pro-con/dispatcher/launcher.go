@@ -4,6 +4,8 @@ package dispatcher
 //   - 起動は `claude --bg -w <name> <profile> <prompt>`。-w で Claude Code に worktree を作らせる
 //     (trust 済みの repo の下でないと --bg が起動しない。415 論点 2)
 //   - 再開は stop してから `claude --bg --resume <session-id> <profile> <text>` (実行中の session に --resume するとコピーが起動する。415 論点 11)
+//   - 起動し直しは stop してから、前の worktree を cwd に `claude --bg <profile> <prompt>` (-w を付けない。付けると worktree の中に worktree を作る。
+//     -w 無しの --bg が role の worktree で起動して idle になることは 581 で実測 = claude 2.1.286)
 //   - <profile> (persistentSessionArgs) は起動と再開で同じにする (431)。prompt cache は request の先頭 (tools・system) が同じなら
 //     session をまたいで当たる。形は launcher_test.go の TestPersistentSessionProfile が固定する
 //   - TMUX / TMUX_PANE を落とす (PG が起動元の pane の状態のバッジを上書きしないように。415 論点 5)
@@ -40,12 +42,21 @@ func (l ExecLauncher) Start(ctx context.Context, repoPath, name, prompt string) 
 }
 
 func (l ExecLauncher) Resume(ctx context.Context, stopID, sessionID, cwd, name, text string) (string, error) {
+	return l.stopThenRun(ctx, stopID, cwd, l.resumeArgs(sessionID, name, text))
+}
+
+func (l ExecLauncher) Restart(ctx context.Context, stopID, cwd, name, prompt string) (string, error) {
+	return l.stopThenRun(ctx, stopID, cwd, l.restartArgs(name, prompt))
+}
+
+// stopThenRun は stopID の session を止めてから (空なら止めない) cwd で claude を args で走らせ、--bg が返す短い id を返す (再開と起動し直しの共通)。
+func (l ExecLauncher) stopThenRun(ctx context.Context, stopID, cwd string, args []string) (string, error) {
 	if stopID != "" {
 		if _, err := runClaude(ctx, l.Claude, "", "stop", stopID); err != nil {
 			return "", fmt.Errorf("claude stop %s: %w", stopID, err)
 		}
 	}
-	out, err := runClaude(ctx, l.Claude, cwd, l.resumeArgs(sessionID, name, text)...)
+	out, err := runClaude(ctx, l.Claude, cwd, args...)
 	if err != nil {
 		return "", err
 	}
@@ -65,6 +76,10 @@ func (l ExecLauncher) startArgs(name, prompt string) []string {
 
 func (l ExecLauncher) resumeArgs(sessionID, name, text string) []string {
 	return l.args([]string{"--bg", "--resume", sessionID}, name, text)
+}
+
+func (l ExecLauncher) restartArgs(name, prompt string) []string {
+	return l.args([]string{"--bg"}, name, prompt)
 }
 
 func (l ExecLauncher) args(lifecycle []string, name, positional string) []string {

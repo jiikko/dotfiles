@@ -52,6 +52,18 @@ func TestParseTranscript(t *testing.T) {
 	}
 }
 
+// LastReply は assistant の行の最後の時刻で、その後の user の行 (届いたが応答していない知らせ・ツールの結果) では進まない (581。cache の寿命の起点)。
+func TestParseTranscriptLastReply(t *testing.T) {
+	tr := parse([]byte(sample + `{"type":"user","timestamp":"2026-09-24T11:00:00Z","origin":{"kind":"human"},"message":{"content":"まだ答えていない"}}
+`))
+	if want := time.Date(2026, 9, 24, 10, 1, 30, 0, time.UTC); !tr.LastReply.Equal(want) {
+		t.Fatalf("最後の応答の時刻が %v (期待 %v。後の user の行で進めない)", tr.LastReply, want)
+	}
+	if tr := parse([]byte(`{"type":"user","timestamp":"2026-09-24T10:00:00Z","message":{"content":"x"}}` + "\n")); !tr.LastReply.IsZero() {
+		t.Fatalf("応答の無い transcript の LastReply が %v (ゼロのはず = 分からない)", tr.LastReply)
+	}
+}
+
 // 末尾だけを読む (対話の transcript は 14MB を超える)。先頭の側にある人間の発言は拾わない。
 func TestReadTailReadsOnlyTheEnd(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "s.jsonl")
