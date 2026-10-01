@@ -6,11 +6,15 @@
 # `wildcard src/*/go.mod` で解決済み (Makefile:392) だが、**CI の paths filter と
 # プロジェクト側の Makefile target は今も手で用意する**ので、同じ穴が残っている。
 #
-# 検査する不変条件 (src/*/go.mod を出典に、3 つ):
+# 検査する不変条件 (src/*/go.mod を出典に、5 つ):
 #   1. src/<name>/Makefile に lint: と test: の両方がある
 #      (Makefile の run_go_projects が `make -C <dir> lint` / `test` を呼ぶ)
 #   2. .github/workflows/src_<name>.yml がある (paths filter つきの薄い caller)
 #   3. その workflow の paths が src/<name>/ を含む (含まないと push で 1 度も起動しない)
+#   4. go.mod が replace で取り込む共有 module の src/<dir>/ も paths に含む
+#   5. src/<name>/go.sum がある (依存が無ければ空でよい)。Go は依存の無い module に go.sum を作らないが、
+#      _go-project.yml の setup-go は cache-dependency-path に <dir>/go.sum を渡すので、無いと
+#      `Restore cache failed` の警告だけでキャッシュが毎回効かない (ジョブは緑のまま = 気づけない)
 #
 # 🚨 検査できなかったときに緑を返さない。依存コマンド不在・発見 0 件はすべて失敗にする
 #   (`_claude/rules/adversarial-review-own-safeguards.md` の false green)。
@@ -186,6 +190,11 @@ while IFS= read -r name; do
     fi
   done
 
+  if [ ! -f "src/$name/go.sum" ]; then
+    printf '✗ %s: src/%s/go.sum が無い (CI のキャッシュが復元されない。依存が無ければ空のファイルを置く)\n' "$name" "$name"
+    bad=$((bad + 1))
+  fi
+
   if [ ! -f "$wf" ]; then
     printf '✗ %s: %s が無い (push しても CI が起動しない)\n' "$name" "$wf"; bad=$((bad + 1)); continue
   fi
@@ -223,6 +232,7 @@ if [ "$bad" -gt 0 ]; then
   printf '  直し方: src/<name>/Makefile に lint:/test: を足し、.github/workflows/src_<name>.yml を\n'
   printf '  既存の src_*.yml に倣って作る (paths に src/<name>/** と _go-project.yml を含める)\n'
   printf '  go.mod が replace で共有 module を取り込むなら、その src/<dir>/** も paths に足す\n'
+  printf '  go.sum が無ければ空で置く (: > src/<name>/go.sum。依存を足せば go が中身を書く)\n'
   exit 1
 fi
-printf '✓ Go プロジェクト %s 件すべてに lint/test target と CI レーン (paths つき) がある (replace 依存 %s 件も paths に在り)\n' "$n" "$deps"
+printf '✓ Go プロジェクト %s 件すべてに lint/test target・go.sum・CI レーン (paths つき) がある (replace 依存 %s 件も paths に在り)\n' "$n" "$deps"

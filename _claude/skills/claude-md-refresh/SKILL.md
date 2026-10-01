@@ -26,10 +26,19 @@ description: ディレクトリ・レイヤーごとに置いた CLAUDE.md と R
 ```sh
 git ls-files -- "${@:-.}" | grep -E '(^|/)(CLAUDE|README)\.md$' \
   | grep -vE '(^|/)(testdata|fixtures?|vendor|third_party|node_modules)/' \
-  | xargs -n1 dirname | sort -u
+  | xargs -n1 dirname | sort -u \
+  | while IFS= read -r d; do
+      case "/$d/" in */issues/*|*/issue/*)
+        # issue 運用の置き場 (直下に NNN-*.md を持つ issues/) とその配下だけ外す。同名の Go package 等は残す
+        t=$(printf '%s\n' "$d" | sed -E 's#^((.*/)?issues?)(/.*)?$#\1#')
+        [ -n "$(find "$t" -maxdepth 1 -name '[0-9][0-9][0-9]-*.md' -print -quit)" ] && continue ;;
+      esac
+      printf '%s\n' "$d"
+    done
 ```
 
 - README だけのディレクトリも対象に入れる (CLAUDE.md を起点にすると、README しか持たない module が漏れる)
+- issue 運用の置き場 (直下に `NNN-*.md` を持つ `issues/` / `issue/`) は配下ごと外す。issue の本文と運用の README は issue-writeback / issue-sync の担当
 - 列挙が空なら、引数のパスが合っているかを伝えて終える
 - 件数とディレクトリの一覧を、照合に入る前にユーザーへ出す
 
@@ -53,10 +62,39 @@ git ls-files -- "${@:-.}" | grep -E '(^|/)(CLAUDE|README)\.md$' \
 
 ### ディレクトリが多いとき
 
-対象が 5 ディレクトリを超えるなら、sonnet の read-only サブエージェントに照合を任せ、**1 体ずつ直列に**回す
-(1 体あたり数ディレクトリ)。指示は「乖離ごとに、文書の該当箇所・実体の根拠 (file:symbol / コマンドの出力)・構造的か意味的か を返す。
-直さない」。返ってきた一覧は **main が根拠を確かめてから**採る (`~/.claude/rules/subagent-model-tiering.md` の検閲の観点)。
-特に「〜は存在しない」は、grep の取りこぼしを疑って main が数え直す。
+対象が 5 ディレクトリを超えるなら、sonnet の read-only サブエージェント (Explore) に照合を任せ、**1 体ずつ直列に**回す。
+
+- 組は `wc -l` で文書の行数を見て均す。数百行の README は 1〜2 ディレクトリで 1 組、短い文書は 5〜7 ディレクトリをまとめる
+- 指示は下の雛形を使う。`<対象>` と `<背景>` だけを埋める。背景には、直近の rename・移動・module path の変更など、
+  照合する側が知らないと古い記述を見逃す事実を書く (無ければ行ごと消す)
+- 返ってきた一覧は **main が根拠を確かめてから**採る (`~/.claude/rules/subagent-model-tiering.md` の検閲の観点)。
+  特に「〜は存在しない」は、grep の取りこぼしを疑って main が数え直す
+- 次の組は、前の組の指摘を確かめてから起こす (確かめる間に修正を始めてよい。修正するファイルと次の組が読むファイルが重ならない範囲で)
+
+```
+読み取りのみ。何も編集しないこと。<repo の絶対パス> の次の文書を、実体 (コード・コマンド・構成) と照合して乖離を探してください。
+
+対象: <ディレクトリ (CLAUDE.md / README.md のどれか)>
+背景: <直近の rename・移動・path の変更。無ければこの行を消す>
+
+照合の仕方:
+- 文書の検証できる主張を拾い、実体で確かめる: パスと構成表・索引 (ls / git ls-files。索引なら「載っているが実在しない」と
+  「実在するが載っていない」の両方向を数える)、関数・型・定数のシンボル名と数値 (grep で**定義側**を確認。参照だけのヒットで実在としない)、
+  コマンド・flag・subcommand・キー操作・make target (Makefile や CLI・キーの定義のコードを読む)、「X に依存」「X を取り込む module の一覧」
+  (go.mod / package.json 等を数える)、workaround の警告 (根本原因の修正が入っていないか git log で見る)、件数・一覧 (数え直す)
+- 逆向き: 実体にあって入口の文書に載っていない利用者向けのもの (subcommand・flag・キー・make target・公開 API・道具) も探す
+- 同じ文書の別の節どうし、同じディレクトリの CLAUDE.md と README で、同じことを違って書いていないかも見る
+- 規範の文書 (作業の仕方を定めた CLAUDE.md 等) は、規範の妥当性を判定しない。参照しているパス・コマンド・検査の実在だけを見る
+- 印象で「古そう」と判定しない。根拠を示せないものは出さない
+- 「〜は存在しない」と判定する前に、rename 先・別ファイル・別 module への移動を git log -S / grep で探す
+
+出力: 乖離ごとに 1 項目で、
+- 文書 (パス) と該当箇所の引用 (短く。行番号も添える)
+- 実体の根拠 (file:symbol、コマンドの出力、git log の commit subject)
+- 種類: 構造的 / 意味的 / 記載漏れ
+- 確信度: 高 / 中
+乖離が無い文書は「乖離なし」と 1 行。最後に、照合した主張のおおよその件数を文書ごとに書く。
+```
 
 ## Step 3: 裏の取れた乖離だけ直す
 
