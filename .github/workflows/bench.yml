@@ -10,9 +10,18 @@
 name: Bench
 
 on:
+  # issue と docs だけの push では走らせない (2026-10-01 の master は 84 commit 中 61 件がそれで、bench-tmux だけで 6 分かかる)。
+  # bench の入力は一時ディレクトリの fixture で、実 repo の issues/ と docs/ は読まない (glogx の BenchmarkIssueScan も
+  # b.TempDir() に作る)。`*.md` 全般は外さない: pro-con の pm-guide.md のようにバイナリに埋め込まれる md がある
   push:
     branches: [master]
+    paths-ignore:
+      - 'issues/**'
+      - 'docs/**'
   pull_request:
+    paths-ignore:
+      - 'issues/**'
+      - 'docs/**'
   workflow_dispatch:  # GitHub UI からの手動再実行 (flake 切り分け用)
 
 permissions:
