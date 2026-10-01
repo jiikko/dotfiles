@@ -1083,6 +1083,119 @@ func TestChildExitWinsOverLaterControlRestart(t *testing.T) {
 	}
 }
 
+func TestFinishedMarkerBeforeConfirmationKeyDoesNotRestart(t *testing.T) {
+	child := &process{pid: 987654, done: make(chan struct{}), outputEnd: make(chan struct{})}
+	child.result = processResult{Code: 0}
+	child.finished.Store(true)
+	close(child.done)
+	a := &actor{
+		model: Model{State: Running, Confirm: ConfirmRestart, PID: child.pid, Generation: 1},
+		child: child, events: make(chan actorEvent, 4), presenter: headlessPresenter{},
+		sink: newLogSink(io.Discard, true),
+	}
+
+	a.handleKey("y")
+
+	if !a.finished || a.model.State != Exiting || a.model.Generation != 1 || len(a.allProcesses) != 0 {
+		t.Fatalf("confirmation after child exit started a restart: finished=%v model=%+v processes=%d", a.finished, a.model, len(a.allProcesses))
+	}
+}
+
+func TestStatusConsumesFinishedMarkerBeforeResponding(t *testing.T) {
+	dir, err := os.MkdirTemp("/tmp", "rsts-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	server, err := control.Listen(filepath.Join(dir, "runner.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.Close() })
+	child := &process{pid: 987654, done: make(chan struct{}), outputEnd: make(chan struct{})}
+	child.result = processResult{Code: 0}
+	child.finished.Store(true)
+	close(child.done)
+	a := &actor{
+		model: Model{State: Running, PID: child.pid, Generation: 1}, child: child,
+		server: server, events: make(chan actorEvent, 4), presenter: headlessPresenter{},
+		sink: newLogSink(io.Discard, true),
+	}
+
+	type statusResult struct {
+		response control.Response
+		err      error
+	}
+	got := make(chan statusResult, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		response, err := control.Call(ctx, server.Path(), control.Status)
+		got <- statusResult{response: response, err: err}
+	}()
+	a.handleControl(<-server.Requests)
+	result := <-got
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	if result.response.State != string(Exiting) || result.response.PID != nil || !a.finished {
+		t.Fatalf("status after finished marker = %+v; actor finished=%v model=%+v", result.response, a.finished, a.model)
+	}
+}
+
+func TestDrainOutputsDoesNotKillNaturalExitDescendantHoldingPipe(t *testing.T) {
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "descendant.pid")
+	gate := filepath.Join(dir, "gate")
+	marker := filepath.Join(dir, "descendant-alive")
+	if err := syscall.Mkfifo(gate, 0600); err != nil {
+		t.Fatal(err)
+	}
+	command := fmt.Sprintf("(read value < %s; echo alive > %s; exec /bin/sleep 30) & echo $! > %s; exit 0", shellQuote(gate), shellQuote(marker), shellQuote(pidFile))
+	proc, err := startProcess([]string{"/bin/sh", "-c", command}, false, os.Environ(), strings.NewReader(""), newLogSink(io.Discard, true), true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-proc.done
+	waitFor(t, time.Second, "descendant PID", func() bool { return strings.TrimSpace(readFile(pidFile)) != "" })
+	pid, err := strconv.Atoi(strings.TrimSpace(readFile(pidFile)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gateWriter *os.File
+	t.Cleanup(func() {
+		if gateWriter != nil {
+			_ = gateWriter.Close()
+		}
+		_ = signalGroup(proc.pid, syscall.SIGKILL)
+		_ = syscall.Kill(pid, syscall.SIGKILL)
+	})
+	var stderr bytes.Buffer
+	a := &actor{
+		cfg: Config{Stderr: &stderr}, allProcesses: []*process{proc},
+		outputDrainTimeout: 0, sink: newLogSink(io.Discard, true),
+	}
+
+	a.drainOutputs()
+
+	waitFor(t, time.Second, "natural-exit descendant to wait at the named pipe", func() bool {
+		file, err := os.OpenFile(gate, os.O_WRONLY|syscall.O_NONBLOCK, 0)
+		if err != nil {
+			return false
+		}
+		gateWriter = file
+		return true
+	})
+	if _, err := gateWriter.WriteString("continue\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = gateWriter.Close()
+	waitFor(t, time.Second, "natural-exit descendant to continue after output drain", func() bool { return strings.TrimSpace(readFile(marker)) == "alive" })
+	if !strings.Contains(stderr.String(), fmt.Sprintf("子孫が出力を握ったまま残っている (pgid %d)", proc.pid)) {
+		t.Fatalf("missing descendant output warning: %q", stderr.String())
+	}
+}
+
 func TestFinishedMarkerRejectsRestartBeforeExitEventIsConsumed(t *testing.T) {
 	dir, err := os.MkdirTemp("/tmp", "rfin-")
 	if err != nil {
@@ -1601,11 +1714,17 @@ func TestRunnerSignalHandlingAndSIGPIPEDefaultInExecChild(t *testing.T) {
 
 	t.Run("broken-stdout", func(t *testing.T) {
 		r := startTestRunnerWithBrokenStdout(t, map[string]string{
-			"RESTARTABLE_TEST_RUN": `printf 'output to a closed pipe\n'; exec /bin/sleep 30`,
+			"RESTARTABLE_TEST_RUN": `i=0; while [ "$i" -lt 10 ]; do echo output-$i; i=$((i+1)); done; exec /bin/sleep 30`,
 		})
 		status := r.waitStatus(t, string(Running))
 		if status.PID == nil {
 			t.Fatal("runner has no child PID after stdout broke")
+		}
+		waitFor(t, time.Second, "one broken-output warning", func() bool {
+			return strings.Contains(readFile(r.stderr), "出力先に書けなくなったので以後のログを捨てる")
+		})
+		if got := strings.Count(readFile(r.stderr), "出力先に書けなくなったので以後のログを捨てる"); got != 1 {
+			t.Fatalf("broken-output warnings = %d, want one; stderr=%q", got, readFile(r.stderr))
 		}
 		if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
 			t.Fatalf("runner exit code = %d, want 143", code)

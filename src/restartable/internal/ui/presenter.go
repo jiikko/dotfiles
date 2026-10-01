@@ -22,6 +22,7 @@ type printRequest struct {
 type Presenter struct {
 	program        *tea.Program
 	keys           chan string
+	keyDelivery    *keyDelivery
 	ready          chan struct{}
 	runDone        chan struct{}
 	closed         chan struct{}
@@ -41,23 +42,31 @@ type Presenter struct {
 
 // New creates an inline presenter. It starts only when runner.Run has opened
 // its control socket and is ready to own terminal cleanup.
-func New(input io.Reader, output io.Writer) *Presenter {
+func New(input io.Reader, output io.Writer, stderr ...io.Writer) *Presenter {
+	errorOutput := io.Writer(os.Stderr)
+	if len(stderr) > 0 {
+		errorOutput = stderr[0]
+	}
+	keys := make(chan string, 32)
+	closed := make(chan struct{})
+	delivery := newKeyDelivery(keys, closed)
 	p := &Presenter{
-		keys:      make(chan string, 32),
-		ready:     make(chan struct{}),
-		runDone:   make(chan struct{}),
-		closed:    make(chan struct{}),
-		prints:    make(chan printRequest),
-		printDone: make(chan struct{}),
-		fallback:  os.Stderr,
+		keys:        keys,
+		keyDelivery: delivery,
+		ready:       make(chan struct{}),
+		runDone:     make(chan struct{}),
+		closed:      closed,
+		prints:      make(chan printRequest),
+		printDone:   make(chan struct{}),
+		fallback:    os.Stderr,
 	}
 	model := &teaModel{
-		state: runner.InitialModel(), width: defaultWidth, height: defaultHeight, keys: p.keys,
+		state: runner.InitialModel(), width: defaultWidth, height: defaultHeight, keys: p.keys, delivery: p.keyDelivery,
 		ready: p.markReady, closed: p.closed,
 	}
 	p.program = tea.NewProgram(model,
 		tea.WithInput(input),
-		tea.WithOutput(discardWriteErrors{writer: output}),
+		tea.WithOutput(&discardWriteErrors{writer: output, stderr: errorOutput}),
 		tea.WithWindowSize(defaultWidth, defaultHeight),
 		tea.WithoutSignalHandler(),
 	)
@@ -65,25 +74,46 @@ func New(input io.Reader, output io.Writer) *Presenter {
 	return p
 }
 
-type discardWriteErrors struct{ writer io.Writer }
+type discardWriteErrors struct {
+	writer io.Writer
+	stderr io.Writer
+	mu     sync.Mutex
+	failed bool
+}
 
-var _ term.File = discardWriteErrors{}
+var _ term.File = (*discardWriteErrors)(nil)
 
-func (w discardWriteErrors) Write(data []byte) (int, error) {
-	_, _ = w.writer.Write(data)
+func (w *discardWriteErrors) Write(data []byte) (int, error) {
+	w.mu.Lock()
+	if w.failed {
+		w.mu.Unlock()
+		return len(data), nil
+	}
+	n, err := w.writer.Write(data)
+	if err == nil && n == len(data) {
+		w.mu.Unlock()
+		return len(data), nil
+	}
+	w.failed = true
+	w.mu.Unlock()
+	stderr := w.stderr
+	if stderr == nil {
+		stderr = os.Stderr
+	}
+	_, _ = fmt.Fprintln(stderr, runner.OutputFailureMessage)
 	return len(data), nil
 }
 
-func (w discardWriteErrors) Read(data []byte) (int, error) {
+func (w *discardWriteErrors) Read(data []byte) (int, error) {
 	if reader, ok := w.writer.(io.Reader); ok {
 		return reader.Read(data)
 	}
 	return 0, io.EOF
 }
 
-func (w discardWriteErrors) Close() error { return nil }
+func (w *discardWriteErrors) Close() error { return nil }
 
-func (w discardWriteErrors) Fd() uintptr {
+func (w *discardWriteErrors) Fd() uintptr {
 	if file, ok := w.writer.(interface{ Fd() uintptr }); ok {
 		return file.Fd()
 	}
@@ -248,6 +278,7 @@ func (p *Presenter) Close() error {
 		started := p.started
 		p.stateMu.Unlock()
 		close(p.closed)
+		<-p.keyDelivery.done
 		if started {
 			select {
 			case <-p.runDone:

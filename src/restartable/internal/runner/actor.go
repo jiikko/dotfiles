@@ -86,6 +86,7 @@ type actor struct {
 	stopAccepted       bool
 	stopRunning        bool
 	forceRunning       bool
+	forcedTermination  bool
 	groupStopRunning   bool
 	outputDrainTimeout time.Duration
 	forceCode          int
@@ -166,8 +167,10 @@ func Run(cfg Config) (int, error) {
 	if printer, ok := presenter.(linePrinter); ok && !cfg.Headless {
 		printLine = printer.Println
 	}
+	sink := newLogSink(cfg.Stdout, cfg.Headless, printLine)
+	sink.onOutputFailure = func() { reportOutputFailure(cfg.Stderr) }
 	return (&actor{cfg: cfg, model: InitialModel(), id: id, server: server,
-		sink: newLogSink(cfg.Stdout, cfg.Headless, printLine), presenter: presenter,
+		sink: sink, presenter: presenter,
 		events: make(chan actorEvent, 128), flusherDone: make(chan struct{}), actorDone: make(chan struct{}),
 		outputDrainTimeout: 500 * time.Millisecond, signals: signals}).run()
 }
@@ -421,6 +424,12 @@ func (a *actor) handleKey(key string) {
 		a.beginForce(130)
 		return
 	}
+	if a.model.State == Running && a.child != nil && a.child.finished.Load() && !a.childProcessed {
+		a.consumeChildExit()
+		if a.model.State == Exiting || a.finished {
+			return
+		}
+	}
 	wasStopping := a.model.State == Stopping && a.model.StopAccepted && key == "esc"
 	_, effects := a.transition(Event{Kind: KeyEvent, Key: key})
 	if wasStopping && a.model.State == Running {
@@ -466,6 +475,9 @@ func (a *actor) handleControl(req *control.Request) {
 		return
 	}
 	if req.Command == control.Status {
+		if a.child != nil && a.child.finished.Load() && !a.childProcessed {
+			a.consumeChildExit()
+		}
 		req.Respond(a.statusResponse())
 		return
 	}
@@ -705,11 +717,13 @@ func (a *actor) beginForce(code int) {
 		return
 	}
 	if a.forceRunning {
+		a.forcedTermination = true
 		a.forceCode = code
 		a.model, _ = Update(a.model, Event{Kind: ForceEvent, SignalCode: code})
 		a.failRequests("runner interrupted")
 		return
 	}
+	a.forcedTermination = true
 	a.forceCode = code
 	a.model, _ = Update(a.model, Event{Kind: ForceEvent, SignalCode: code})
 	a.failRequests("runner interrupted")
@@ -722,10 +736,7 @@ func (a *actor) consumeChildExit() {
 	if a.child == nil || a.childProcessed {
 		return
 	}
-	result := a.child.result
-	a.childResult = &result
-	a.childProcessed = true
-	a.completeChildExit()
+	a.handleEvent(actorEvent{kind: runDoneEvent, proc: a.child, result: a.child.result})
 }
 
 // observeChildExit synchronizes with the Wait goroutine's finished marker and
@@ -810,6 +821,17 @@ func (a *actor) report(message string) {
 	_, _ = fmt.Fprintln(a.cfg.Stderr, line)
 }
 
+func (a *actor) reportStderr(message string) {
+	if message == "" {
+		return
+	}
+	writer := a.cfg.Stderr
+	if writer == nil {
+		writer = os.Stderr
+	}
+	_, _ = fmt.Fprintln(writer, termsafe.DetailLine(message))
+}
+
 func (a *actor) drainOutputs() {
 	for _, proc := range a.allProcesses {
 		select {
@@ -821,6 +843,16 @@ func (a *actor) drainOutputs() {
 			// output cleanup.
 			if !proc.finished.Load() {
 				a.report("子が生きたまま終了しようとしたため、出力回収による kill を拒否しました")
+				continue
+			}
+			if !a.forcedTermination {
+				a.reportStderr(fmt.Sprintf("子孫が出力を握ったまま残っている (pgid %d)", proc.pid))
+				proc.closeOutput()
+				select {
+				case <-proc.outputEnd:
+				case <-time.After(time.Second):
+					a.report("timed out collecting child output")
+				}
 				continue
 			}
 			_ = signalGroup(proc.pid, syscall.SIGKILL)

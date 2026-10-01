@@ -83,5 +83,6 @@ restartable --build 'make build' -- ./bin/server 2>&1 | tee server.log
 
 ## 検出しない形 / 注意
 
+- 既定の control path では checkout ごとに runner は 1 つですが、同じ checkout でも異なる `--control PATH` を指定すれば別の runner を起動できます。複数起動する場合は各 runner に異なる path を指定してください。
 - runner の stdin が端末の場合、build / run / stop-cmd の stdin は `/dev/null` です。TTY UI の有無とは関係なく、子コマンドから端末の対話入力はできません。runner の stdin が非端末なら、その入力を子へ渡します。
 - build 中に `Q` → `y` で強制終了した場合、前世代の子が残した process group の子孫まで検出して停止する保証はありません。

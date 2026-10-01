@@ -91,12 +91,13 @@ type snapshotMsg runner.Model
 type startedMsg struct{}
 
 type teaModel struct {
-	state  runner.Model
-	width  int
-	height int
-	keys   chan<- string
-	ready  func()
-	closed <-chan struct{}
+	state    runner.Model
+	width    int
+	height   int
+	keys     chan<- string
+	delivery *keyDelivery
+	ready    func()
+	closed   <-chan struct{}
 }
 
 func (m *teaModel) Init() tea.Cmd {
@@ -124,6 +125,10 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = runner.Model(msg)
 	case tea.KeyPressMsg:
 		if key, ok := ModelKey(msg); ok {
+			if m.delivery != nil {
+				m.delivery.enqueue(key)
+				break
+			}
 			select {
 			case m.keys <- key:
 			case <-m.closed:

@@ -82,16 +82,26 @@ func TestTTYFlusherBatchesUntilInjectedTickAndPrintsDropNotice(t *testing.T) {
 	}
 }
 
-func TestHeadlessOutputWriteErrorsAreDiscardedWithoutStoppingSupervision(t *testing.T) {
+func TestHeadlessOutputFailureWarnsOnceAndKeepsReading(t *testing.T) {
 	writer := &brokenOutputWriter{}
 	reader := &countedChunkReader{left: 2048}
 	sink := newLogSink(writer, true)
+	var stderr strings.Builder
+	sink.onOutputFailure = func() { reportOutputFailure(&stderr) }
 	sink.CopyFrom(reader, true)
 	if reader.left != 0 || reader.reads != 4 {
 		t.Fatalf("copy stopped after output error: bytes left=%d read calls=%d", reader.left, reader.reads)
 	}
-	if writer.writes != 4 {
-		t.Fatalf("writes = %d, want one attempt per input chunk", writer.writes)
+	if writer.writes != 1 {
+		t.Fatalf("writes after first output error = %d, want one", writer.writes)
+	}
+	if got, want := stderr.String(), OutputFailureMessage+"\n"; got != want {
+		t.Fatalf("broken-output notice = %q, want %q", got, want)
+	}
+	extra := &countedChunkReader{left: 512}
+	sink.CopyFrom(extra, true)
+	if extra.left != 0 || extra.reads != 1 || writer.writes != 1 {
+		t.Fatalf("later output was not drained and discarded: left=%d reads=%d writes=%d", extra.left, extra.reads, writer.writes)
 	}
 }
 

@@ -16,9 +16,12 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
-type failingUIWriter struct{}
+type failingUIWriter struct{ writes int }
 
-func (failingUIWriter) Write([]byte) (int, error) { return 0, syscall.EPIPE }
+func (w *failingUIWriter) Write([]byte) (int, error) {
+	w.writes++
+	return 0, syscall.EPIPE
+}
 
 func TestStatusLineFitsWidthsAndShowsEveryState(t *testing.T) {
 	states := []runner.State{runner.Building, runner.Running, runner.BuildFailed, runner.Stopping}
@@ -153,12 +156,22 @@ func TestCtrlCKeyUsesForceStopModelPath(t *testing.T) {
 	}
 }
 
-func TestTTYOutputWriterDiscardsBrokenPipeErrors(t *testing.T) {
-	writer := discardWriteErrors{writer: failingUIWriter{}}
+func TestTTYOutputWriterReportsBrokenPipeOnceAndStopsWriting(t *testing.T) {
+	underlying := &failingUIWriter{}
+	var stderr bytes.Buffer
+	writer := &discardWriteErrors{writer: underlying, stderr: &stderr}
 	data := []byte("terminal output")
-	n, err := writer.Write(data)
-	if err != nil || n != len(data) {
-		t.Fatalf("TTY write = (%d, %v), want (%d, nil)", n, err, len(data))
+	for range 3 {
+		n, err := writer.Write(data)
+		if err != nil || n != len(data) {
+			t.Fatalf("TTY write = (%d, %v), want (%d, nil)", n, err, len(data))
+		}
+	}
+	if underlying.writes != 1 {
+		t.Fatalf("failed TTY output writes = %d, want one", underlying.writes)
+	}
+	if got := strings.Count(stderr.String(), runner.OutputFailureMessage); got != 1 {
+		t.Fatalf("TTY output warning count = %d, want one; stderr=%q", got, stderr.String())
 	}
 }
 
@@ -178,6 +191,50 @@ func TestTeaModelDropsKeyWhenRunnerQueueIsFull(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("key update blocked when the runner key queue was full")
+	}
+}
+
+func TestTeaModelPreservesControlKeysWhenRunnerQueueIsFull(t *testing.T) {
+	keysToPreserve := []struct {
+		name string
+		msg  tea.KeyPressMsg
+		want string
+	}{
+		{"ctrl+c", tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}, "ctrl+c"},
+		{"esc", tea.KeyPressMsg{Code: tea.KeyEscape}, "esc"},
+		{"y", tea.KeyPressMsg{Code: 'y', Text: "y"}, "y"},
+		{"Y", tea.KeyPressMsg{Code: 'Y', Text: "Y"}, "Y"},
+		{"enter", tea.KeyPressMsg{Code: tea.KeyEnter}, "enter"},
+		{"n", tea.KeyPressMsg{Code: 'n', Text: "n"}, "n"},
+		{"N", tea.KeyPressMsg{Code: 'N', Text: "N"}, "N"},
+	}
+	for _, test := range keysToPreserve {
+		t.Run(test.name, func(t *testing.T) {
+			keys := make(chan string, 32)
+			closed := make(chan struct{})
+			delivery := newKeyDelivery(keys, closed)
+			t.Cleanup(func() { close(closed); <-delivery.done })
+			for len(keys) < cap(keys) {
+				keys <- "queued"
+			}
+			model := &teaModel{keys: keys, delivery: delivery, closed: closed}
+			model.Update(test.msg)
+			timer := time.NewTimer(time.Second)
+			defer timer.Stop()
+			for {
+				select {
+				case got := <-keys:
+					if got == test.want {
+						return
+					}
+					if got != "queued" {
+						t.Fatalf("delivered key = %q, want filler or %q", got, test.want)
+					}
+				case <-timer.C:
+					t.Fatalf("control key %q was dropped while runner queue was full", test.want)
+				}
+			}
+		})
 	}
 }
 

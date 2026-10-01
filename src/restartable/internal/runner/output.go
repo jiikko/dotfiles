@@ -15,6 +15,8 @@ const (
 	maxOutputLineBytes = 64 << 10
 )
 
+const OutputFailureMessage = "出力先に書けなくなったので以後のログを捨てる"
+
 // OutputBuffer keeps the first line and the newest tail while bounding memory.
 // The omission marker is inserted between them when Drain is called.
 type OutputBuffer struct {
@@ -100,11 +102,13 @@ func itoa(n uint64) string {
 }
 
 type logSink struct {
-	writer    io.Writer
-	headless  bool
-	buffer    *OutputBuffer
-	printLine func(string)
-	mu        sync.Mutex
+	writer          io.Writer
+	headless        bool
+	buffer          *OutputBuffer
+	printLine       func(string)
+	mu              sync.Mutex
+	writerFailed    bool
+	onOutputFailure func()
 }
 
 func newLogSink(w io.Writer, headless bool, printLines ...func(string)) *logSink {
@@ -174,10 +178,27 @@ func (s *logSink) addSafeLine(line string) {
 type synchronizedWriter struct{ s *logSink }
 
 func (w synchronizedWriter) Write(data []byte) (int, error) {
-	w.s.mu.Lock()
-	defer w.s.mu.Unlock()
-	_, _ = w.s.writer.Write(data)
+	w.s.writeOutput(data)
 	return len(data), nil
+}
+
+func (s *logSink) writeOutput(data []byte) {
+	s.mu.Lock()
+	if s.writerFailed {
+		s.mu.Unlock()
+		return
+	}
+	n, err := s.writer.Write(data)
+	if err == nil && n == len(data) {
+		s.mu.Unlock()
+		return
+	}
+	s.writerFailed = true
+	onFailure := s.onOutputFailure
+	s.mu.Unlock()
+	if onFailure != nil {
+		onFailure()
+	}
 }
 
 func (s *logSink) Flush() {
@@ -191,11 +212,16 @@ func (s *logSink) Flush() {
 		}
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	for _, line := range lines {
-		_, _ = io.WriteString(s.writer, line+"\n")
+		s.writeOutput([]byte(line + "\n"))
 	}
+}
+
+func reportOutputFailure(stderr io.Writer) {
+	if stderr == nil {
+		stderr = io.Discard
+	}
+	_, _ = io.WriteString(stderr, OutputFailureMessage+"\n")
 }
 
 func (s *logSink) runFlusher(done <-chan struct{}) {
