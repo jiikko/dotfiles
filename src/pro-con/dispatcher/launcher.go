@@ -30,6 +30,9 @@ type ExecLauncher struct{ Claude, UserSettings string }
 // 同じ失敗を繰り返さずに数えられる (462。時間切れ・--bg の出力が読めないものは、立っているかもしれないので含めない)
 var ErrRejected = errors.New("claude が受け付けなかった")
 
+// errStopFailed は再開・起動し直しの前に前の session を止められなかった失敗 (ErrRejected も併せ持ちうる)。起動し直しが受け付けられなかったのと分ける (581)
+var errStopFailed = errors.New("前の session を止められなかった")
+
 // launchTimeout は claude --bg / stop が戻るまでの上限 (--bg は起動したらすぐ戻る。実測は 1 秒未満)。
 const launchTimeout = 30 * time.Second
 
@@ -53,7 +56,7 @@ func (l ExecLauncher) Restart(ctx context.Context, stopID, cwd, name, prompt str
 func (l ExecLauncher) stopThenRun(ctx context.Context, stopID, cwd string, args []string) (string, error) {
 	if stopID != "" {
 		if _, err := runClaude(ctx, l.Claude, "", "stop", stopID); err != nil {
-			return "", fmt.Errorf("claude stop %s: %w", stopID, err)
+			return "", fmt.Errorf("%w: claude stop %s: %w", errStopFailed, stopID, err)
 		}
 	}
 	out, err := runClaude(ctx, l.Claude, cwd, args...)

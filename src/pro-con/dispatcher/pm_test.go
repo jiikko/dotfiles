@@ -663,11 +663,14 @@ func TestPMResumesWhenCacheMayBeWarm(t *testing.T) {
 	for name, c := range map[string]struct {
 		read func(string) (live.Transcript, error)
 		cwd  string
+		gone bool
 	}{
 		"cache が生きている":    {read: replyAt(map[string]time.Time{"P1": t0.Add(time.Minute)})},
 		"transcript が無い":  {read: replyAt(nil)},
 		"応答が無い":           {read: func(string) (live.Transcript, error) { return live.Transcript{LastAt: t0}, nil }},
 		"役の worktree でない": {read: replyAt(map[string]time.Time{"P1": t0}), cwd: "/w/elsewhere/" + pmName},
+		// 生きているが worktree が消えた: 起動し直すと止めた後の chdir で拒否され、起動し直しの拒否の印が立つ (581 の 3 周目 P2-1)
+		"worktree が消えた": {read: replyAt(map[string]time.Time{"P1": t0}), gone: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := newPMRig(t)
@@ -680,6 +683,7 @@ func TestPMResumesWhenCacheMayBeWarm(t *testing.T) {
 			r.ss = []agents.Session{s}
 			r.tick(t)
 			r.d.Transcript = c.read
+			r.d.Exists = func(string) bool { return !c.gone }
 			request(t, r.dir, "二つ目")
 			r.now = t0.Add(time.Minute + 55*time.Minute - time.Second) // 前の応答 (t0 + 1 分) から 54 分 59 秒
 			r.tick(t)
@@ -724,5 +728,21 @@ func TestPMResumesAfterRestartRejected(t *testing.T) {
 	r.tick(t)
 	if len(r.l.restarts) != 1 || len(r.l.resumes) != 1 || !strings.Contains(r.l.resumes[0], "C-002") {
 		t.Fatalf("受け付けられなかった起動し直しを繰り返した / 再開に戻らない: restarts=%v resumes=%v", r.l.restarts, r.l.resumes)
+	}
+	if r.d.roleRun(pmRole).restartRejected {
+		t.Fatal("再開が成功したのに起動し直しの拒否の印が残った (一時的な拒否 1 回で 581 が dispatcher の終わりまで効かなくなる)")
+	}
+}
+
+// 起動し直しの前に前の session を止める段で拒否されたのは、起動し直しの拒否ではない (581 の 3 周目 P2-1)。再開と同じく rejects に数え、起動し直しは続ける。
+func TestPMRestartStopFailureCountsAsReject(t *testing.T) {
+	r := startedPM(t)
+	r.d.Transcript = replyAt(map[string]time.Time{"P1": t0})
+	r.l.restartStop = true
+	request(t, r.dir, "二つ目")
+	r.now = t0.Add(time.Hour)
+	r.tick(t)
+	if rr := r.d.roleRun(pmRole); rr.restartRejected || rr.rejects != 1 {
+		t.Fatalf("止める段の失敗の数え方が違う: restartRejected=%v rejects=%d", rr.restartRejected, rr.rejects)
 	}
 }

@@ -75,8 +75,9 @@ type roleRun struct {
 	job    string
 	mark   jobMark
 	marked bool // mark がその session (job) のもの
-	// restartRejected は起動し直し (581) を claude が受け付けなかった。この dispatcher の間は起動し直さずに再開する
-	// (起動し直しだけが受け付けられない形で、再開できる役を launchRejectLimit まで同じ失敗に当て続けて止めない)
+	// restartRejected は起動し直し (581) を claude が受け付けなかった。次の再開が成功するまで起動し直さずに再開する
+	// (起動し直しだけが受け付けられない形で、再開できる役を launchRejectLimit まで同じ失敗に当て続けて止めない。
+	// 再開が成功したら外す: 一時的な拒否 1 回で、dispatcher を起動し直すまで 581 が効かなくなるのを避ける)
 	restartRejected bool
 }
 
@@ -432,10 +433,11 @@ func (d *Dispatcher) tellRole(ctx context.Context, now time.Time, ss []agents.Se
 	}
 	before = fmt.Sprint(pm)
 	id, launchErr := run(ctx)
-	if errors.Is(launchErr, ErrRejected) && why != "" {
-		// 起動し直しの拒否は再開の拒否と分けて数える (再開の試行を launchRejectLimit から減らさない)。何も立っていないので印も外す
-		rr.restartRejected, pm.Launching = true, ""
-		return append(notes, ev(eventlog.KindLaunch, r.cardID, "", fmt.Sprintf(r.name+" の起動し直しを claude が受け付けなかった。この dispatcher の間は再開に戻す: %v", launchErr))), save()
+	if errors.Is(launchErr, ErrRejected) && why != "" && !errors.Is(launchErr, errStopFailed) {
+		// 起動し直しの拒否は再開の拒否と分けて数える (再開の試行を launchRejectLimit から減らさない)。前の session を止める段の失敗は
+		// 起動し直しのせいではないので、再開と同じに数える。印 (Launching) は再開の拒否と同じく残す (立っていたら launchGrace の間に取り込む)
+		rr.restartRejected = true
+		return append(notes, ev(eventlog.KindLaunch, r.cardID, "", fmt.Sprintf(r.name+" の起動し直しを claude が受け付けなかった。次の再開が成功するまで再開に戻す: %v", launchErr))), save()
 	}
 	if errors.Is(launchErr, ErrRejected) {
 		rr.rejects++
@@ -451,6 +453,9 @@ func (d *Dispatcher) tellRole(ctx context.Context, now time.Time, ss []agents.Se
 	}
 	settleRole(&pm, id)
 	rr.launched = true
+	if how == "再開" {
+		rr.restartRejected = false
+	}
 	notes = append(notes, ev(eventlog.KindLaunch, r.cardID, id, fmt.Sprintf(r.name+" を%sして"+r.told+" (%s: %s)", how, id, r.labels(pending))))
 	return notes, save()
 }
@@ -499,7 +504,7 @@ func (d *Dispatcher) prepareRole(r *role, row live.Owned, hasRow bool, cur agent
 			stop = cur.ID
 		}
 		// 起動し直すのは役の worktree (-w の名前と cwd が揃う) だけ: 起動の結果を一覧で確かめる adopt が、名前と roleWorktree(名前) で引くため
-		if quiet, ok := d.roleQuiet(row.SessionID, now); mayRestart && ok && quiet >= roleCacheTTL && samePath(row.Cwd, d.roleWorktree(filepath.Base(row.Cwd))) {
+		if quiet, ok := d.roleQuiet(row.SessionID, now); mayRestart && ok && quiet >= roleCacheTTL && d.exists(row.Cwd) && samePath(row.Cwd, d.roleWorktree(filepath.Base(row.Cwd))) {
 			name = filepath.Base(row.Cwd)
 			// 新しい session には何も知らせていないので、知らせる物を全部新しい物として渡す
 			prompt := r.intro + "\n\n" + r.guide(d) + "\n---\n\n" + fmt.Sprintf(restartNote, int(quiet.Minutes())) + r.notice(d, cards, pending, pending)
