@@ -80,8 +80,8 @@ wtclean の 15 s は git fixture のコストで、sleep も子の sleep も無�
 
 ## 受け入れ条件
 
-- [ ] 1〜8 を入れ、package の時間を before / after で記録する (同じ負荷条件で 3 回ずつ)
-- [ ] 9 の設計 (注入口の形) を決め、`with.go` の不変条件 (更新が止まったら lease が死ぬ) を tick の回数で表したテストに置き換える
+- [x] 1〜8 を入れ、package の時間を before / after で記録する (7 は理由つきで残した。下の進捗)
+- [x] 9 の設計 (注入口の形) を決め、`with.go` の不変条件 (更新が止まったら lease が死ぬ) を tick の回数で表したテストに置き換える → 見送り (下の進捗に理由)
 - [ ] 10 は module ごとに 1 つの helper へ寄せる
 - [ ] [615](615-chore-gate-new-sleeps-in-tests.md) の Go 側の検査の許可リストを、この表の残りと一致させる
 
@@ -115,3 +115,10 @@ wtclean の 15 s は git fixture のコストで、sleep も子の sleep も無�
   - 4: `cmdAcquire` の最初の backoff を `acquireBackoff` (package の変数、既定 1 s) にし、`TestWaitLoopDoesNotWarnPerRetry` は 10 ms・`--wait 150ms`。
     3.01 → 0.17 s。変異: 再試行のたびに警告を出す → 「待ち直す枝でも鳴っている」で red
   - lockman package: 42.3 s → 34.8 s (`make -C src/lockman test`、lint 0 件)。残りの大半は 9 (with.go の更新 ticker と子の `sleep 3/4`)
+- 2026-10-02 9 (lockman `with.go` に now と ticker を注入) は**着手しない**。起票時の見積り (42 s → 15 s) の前提が成り立たなかった:
+  - lease が生きているかを**他のプロセスが**判定するのは「lock ファイルの mtime と FS の今の時刻」(`serverNow` = probe ファイルの mtime) の差。
+    偽の時計で進められるのは自プロセスの ticker と `leaseTracker` の期限だけで、FS の時刻は進まない
+  - `on_lost_kill_test.go` / `on_lost_deadline_test.go` の長いテストは、別の Locker から `probeLease` で lease の生死を見る形。偽の時計に替えると
+    「自分は 9 tick 進んだが、他人から見た lease は実時間で 0.1 s しか経っていない」になり、本番と違う時間の流れで判定する
+  - 置き換えるには FS の時刻を読む口 (`serverNow` と mtime を読む全経路) ごと差し替える必要があり、lease を守る安全機構の大きな作り直しになる
+  - 再評価の trigger: lockman の時刻の取り方を変える別の理由が出たとき (例: probe ファイルをやめる)、または lockman のテストが CI の律速になったとき
