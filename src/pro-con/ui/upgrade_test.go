@@ -241,6 +241,19 @@ func TestImportClampsCursor(t *testing.T) {
 	}
 }
 
+// 書きかけの入力に複数の rune でできた文字 (肌色の絵文字) があっても、カーソルは保存した位置に戻る
+// (left を差の回数だけ押す形だと、left が書記素単位で動くぶん戻りすぎていた。issue 589 の敵対的レビュー)。
+func TestImportRestoresCursorPastMultiRuneCluster(t *testing.T) {
+	m := New(newSpy(), nil)
+	data := []byte(`{"input":true,"inputKind":3,"line":"a👍🏽b👍🏽","cursor":3}`)
+	if err := m.ImportState(data); err != nil {
+		t.Fatal(err)
+	}
+	if m.line.String() != "a👍🏽b👍🏽" || m.line.Cursor() != 3 {
+		t.Fatalf("got %q cur=%d、欲しいのはカーソル 3 (b の前)", m.line.String(), m.line.Cursor())
+	}
+}
+
 func itoa(n int) string { return strconv.Itoa(n) }
 
 // attach の照合 (live は claude agents を呼ぶ) も「裏で外部コマンドを起こす処理」として数え、exec の前に待つ。

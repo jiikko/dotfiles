@@ -300,9 +300,7 @@ func (m *Model) ImportState(data []byte) error {
 		m.orderKind = st.OrderKind
 		m.picker.target, m.picker.repo = st.Target, st.TargetRepo
 		m.line.Insert(st.Line)
-		for back := m.line.Cursor() - max(0, st.Cursor); back > 0; back-- { // 範囲外のカーソルは端に寄せる
-			m.line.Key("left", "")
-		}
+		m.line.SetCursor(st.Cursor) // 範囲外は端へ、書記素の途中は後ろの境界へ寄せる
 	}
 	return nil
 }

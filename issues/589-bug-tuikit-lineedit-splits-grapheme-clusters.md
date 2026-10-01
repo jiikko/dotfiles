@@ -1,6 +1,5 @@
 # 589 (bug): tuikit の lineedit が rune 単位で編集し、肌色・ZWJ・結合文字を割る
 
-> 🚨 **担当中: dotfiles-05**（2026-10-01〜）
 
 起票日: 2026-10-01
 
@@ -70,7 +69,20 @@ model.go の入力欄はカードの本文なので、壊れた文字列はそ�
 
 ## 進捗
 
-- [ ] 書記素単位の移動・削除
-- [ ] `Window` の前切りを書記素単位かつ 1 回の走査に (確保・計測の回数で固定するテスト)
-- [ ] 回帰テスト + 変異で red を確認
-- [ ] schedkeys の editor と寄せられるかの判断を記録
+- [x] 書記素単位の移動・削除 — `Line` はカーソルを rune の位置のまま持ち、常に書記素の境界に置く (`prevBoundary` / `nextBoundary` / `snap`)。
+  境界は `termwidth.FirstCluster`。編集で前後がまとまったとき (国旗の 2 字の間を消す等) は後ろの境界へ寄せる
+- [x] `Window` の前切りを書記素単位かつ 1 回の走査に。実測 (`"あa"` の繰り返し、`Window(40)`、10 回の平均): 1 万 rune で 151 ms → **0.45 ms**、
+  5 万 rune で 1.8 ms (線形)。代わりに編集キー 1 回も境界を数えるので長さに比例する (700 rune で 32 µs、1 万 rune で 0.39 ms)。
+  実際のカード本文 (最大 690 字) では無視できる
+- [x] `SetCursor` を足した (範囲外は端へ、書記素の途中は後ろの境界へ)。**敵対的レビューで見つかった回帰**: pro-con の `upgrade.go` の `ImportState` が
+  「`Cursor()` の差の回数だけ left を押す」でカーソルを戻しており、left が書記素単位になると戻りすぎた (`a👍🏽b👍🏽` で 3 に戻すはずが 1)。`SetCursor` を呼ぶ形に直した
+- [x] 回帰テスト (`lineedit_test.go` の `TestEditKeysKeepGraphemeClusters` / `TestEditSnapsCursorWhenClustersMerge` / `TestWindowCutsAtGraphemeClusters` / `TestSetCursor`、
+  pro-con の `TestImportRestoresCursorPastMultiRuneCluster`)。変異 6 本 (`mutate-verify`) がどれも狙ったテストだけ red: backspace を 1 rune に戻す /
+  right を 1 rune に戻す / `snap` を外す / `Window` を旧実装に戻す / `SetCursor` の境界寄せを外す / `ImportState` を left の繰り返しに戻す
+- [x] 敵対的レビュー (sonnet 1 体): lineedit 自体は壊せなかった (不変条件の fuzz 20 万列 × 12 操作で panic・境界の途中のカーソル・View と String の不整合 0、
+  旧実装との比較 10 万列 (ASCII・全角・半角カナ・é・空白・タブ) で String / Cursor / Window の差分 0)。上の `upgrade.go` の回帰 1 件を直した。
+  直した差分は既存の `snap` を呼ぶだけで新しい判定を足しておらず、変異で直接確かめたので 2 周目は回していない
+- [x] schedkeys の editor とは寄せない: どちらも 1 行入力で境界の処理は同じ形だが、schedkeys は入力の受け方が違う (VS16・書式文字 Cf・行区切りを弾く /
+  4096 字の上限 / `alt+b` `alt+f` が無い / 表示窓は `termwidth.SliceFrom` で切る)。寄せると schedkeys の挙動が変わるので、寄せるなら
+  「どの入力を受けるか」を揃える判断が先に要る
+- 検証: `make -C src/tuikit lint` / `make -C src/pro-con lint` 0 件、`make -C src/pro-con test` green、`go test -race ./lineedit/` green

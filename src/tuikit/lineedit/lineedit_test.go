@@ -126,3 +126,72 @@ func repeat(k string, n int) []string {
 	}
 	return out
 }
+
+// 見た目の 1 文字が複数の rune でできているもの (肌色・ZWJ・国旗・結合文字・キーキャップ・NFD の濁点) を、
+// 移動と削除で割らない (issue 589: rune 単位だと 👍🏽 の backspace 1 回で 👍 が残り、別の文字列が送られる)。
+// 前後に ASCII を置き、カーソルをクラスタの前後に置いた状態で当てる (末尾だけだと delete と right が見えない)。
+func TestEditKeysKeepGraphemeClusters(t *testing.T) {
+	for _, c := range []string{"👍🏽", "👨‍👩‍👧", "🇯🇵", "é", "1️⃣", "が"} {
+		n := len([]rune(c))
+		for _, tc := range []struct {
+			name   string
+			keys   []string
+			want   string
+			cursor int
+		}{
+			{"backspace", []string{"left", "backspace"}, "ab", 1},
+			{"delete", []string{"ctrl+a", "right", "delete"}, "ab", 1},
+			{"right は 1 文字ぶん", []string{"ctrl+a", "right", "right"}, "a" + c + "b", 1 + n},
+			{"left は 1 文字ぶん", []string{"left", "left"}, "a" + c + "b", 1},
+		} {
+			t.Run(c+"/"+tc.name, func(t *testing.T) {
+				var l Line
+				l.Insert("a" + c + "b")
+				for _, k := range tc.keys {
+					l.Key(k, "")
+				}
+				if l.String() != tc.want || l.Cursor() != tc.cursor {
+					t.Fatalf("got %q (カーソル %d) want %q (カーソル %d)", l.String(), l.Cursor(), tc.want, tc.cursor)
+				}
+			})
+		}
+	}
+}
+
+// 編集で前後の字が 1 つのクラスタにまとまったら、カーソルはその途中に残らず後ろの境界へ寄る
+// (途中に残ると、次の入力がクラスタの中に入る)。国旗の 2 字の間の a を消すと 🇯🇵 になる。
+func TestEditSnapsCursorWhenClustersMerge(t *testing.T) {
+	var l Line
+	l.Insert("🇯a🇵")
+	l.Key("left", "")
+	l.Key("backspace", "")
+	if l.String() != "🇯🇵" || l.Cursor() != 2 {
+		t.Fatalf("got %q (カーソル %d) want %q (カーソル 2)", l.String(), l.Cursor(), "🇯🇵")
+	}
+}
+
+// 窓の前切りもクラスタ単位: 欄の左端にキーキャップの VS16 + U+20E3 や肌色修飾子だけが残らない。
+func TestWindowCutsAtGraphemeClusters(t *testing.T) {
+	for _, tc := range []struct{ in, wantText string }{
+		{"1️⃣2️⃣3️⃣", "3️⃣"},
+		{"👍🏽👍🏽👍🏽", "👍🏽"},
+	} {
+		var l Line
+		l.Insert(tc.in)
+		if text, col := l.Window(4); text != tc.wantText || col != 2 {
+			t.Fatalf("Window(4) of %q = %q, %d、欲しいのは %q, 2", tc.in, text, col, tc.wantText)
+		}
+	}
+}
+
+// SetCursor は保存したカーソルを戻す: 範囲の外は端へ、クラスタの途中は後ろの境界へ寄せる。
+func TestSetCursor(t *testing.T) {
+	var l Line
+	l.Insert("a👍🏽b") // a=0, 👍🏽=1..3, b=3
+	for _, tc := range []struct{ in, want int }{{-5, 0}, {0, 0}, {1, 1}, {2, 3}, {3, 3}, {4, 4}, {999, 4}} {
+		l.SetCursor(tc.in)
+		if l.Cursor() != tc.want {
+			t.Fatalf("SetCursor(%d) → %d、欲しいのは %d", tc.in, l.Cursor(), tc.want)
+		}
+	}
+}
