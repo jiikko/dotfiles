@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	charm.land/bubbletea/v2 v2.0.8
 	github.com/charmbracelet/x/term v0.2.2
+	github.com/creack/pty v1.1.24
 	github.com/jiikko/dotfiles/src/termsafe v0.0.0-20260930152350-8f8ec9851b4c
 	github.com/jiikko/dotfiles/src/tuikit v0.0.0-20260930152520-99b256e39f08
 )

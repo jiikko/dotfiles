@@ -96,7 +96,9 @@ func TestRunnerHelper(t *testing.T) {
 		return
 	}
 	var presenter Presenter
-	if keyPath := os.Getenv("RESTARTABLE_TEST_KEY_SOCKET"); keyPath != "" {
+	if signalDuringStart := os.Getenv("RESTARTABLE_TEST_SIGNAL_DURING_START"); signalDuringStart != "" {
+		presenter = signalDuringStartPresenter{markerPath: signalDuringStart}
+	} else if keyPath := os.Getenv("RESTARTABLE_TEST_KEY_SOCKET"); keyPath != "" {
 		var err error
 		presenter, err = newIntegrationPresenter(keyPath, os.Getenv("RESTARTABLE_TEST_PRESENTER_STATE"))
 		if err != nil {
@@ -121,6 +123,21 @@ func TestRunnerHelper(t *testing.T) {
 	}
 	os.Exit(code)
 }
+
+type signalDuringStartPresenter struct{ markerPath string }
+
+func (p signalDuringStartPresenter) Start() error {
+	return syscall.Kill(os.Getpid(), syscall.SIGTERM)
+}
+
+func (p signalDuringStartPresenter) Render(model Model) {
+	if model.State == Exiting {
+		_ = os.WriteFile(p.markerPath, []byte("handled"), 0600)
+	}
+}
+
+func (signalDuringStartPresenter) Keys() <-chan string { return nil }
+func (signalDuringStartPresenter) Close() error        { return nil }
 
 func envDuration(name string, fallback time.Duration) time.Duration {
 	value, err := time.ParseDuration(os.Getenv(name))
@@ -1228,7 +1245,7 @@ func TestForcedShutdownKillsGrandchildAfterLeaderExits(t *testing.T) {
 	run := fmt.Sprintf(`(trap '' TERM; while :; do /bin/sleep 1; done) & echo $! > %s; wait`, shellQuote(grandchildFile))
 	r := startTestRunner(t, map[string]string{
 		"RESTARTABLE_TEST_RUN":        run,
-		"RESTARTABLE_TEST_TERM_GRACE": "1h",
+		"RESTARTABLE_TEST_TERM_GRACE": "100ms",
 	})
 	status := r.waitStatus(t, string(Running))
 	if status.PID == nil {
@@ -1242,29 +1259,58 @@ func TestForcedShutdownKillsGrandchildAfterLeaderExits(t *testing.T) {
 	waitFor(t, time.Second, "grandchild group cleanup", func() bool { return !groupExists(*status.PID) })
 }
 
-func TestGroupStopEscalatesWhenLeaderExitsBeforeTermGrace(t *testing.T) {
-	grandchildFile := filepath.Join(t.TempDir(), "grandchild.pid")
-	run := fmt.Sprintf(`(trap '' TERM; while :; do /bin/sleep 1; done) & echo $! > %s; wait`, shellQuote(grandchildFile))
+func TestGroupStopWaitsForDescendantAfterLeaderExit(t *testing.T) {
+	dir := t.TempDir()
+	ready := filepath.Join(dir, "descendant-ready")
+	leaderExited := filepath.Join(dir, "leader-exited")
+	release := filepath.Join(dir, "release-descendant")
+	gracefulExit := filepath.Join(dir, "descendant-exited-gracefully")
+	childPIDPath := filepath.Join(dir, "descendant.pid")
+	run := fmt.Sprintf(`(trap 'echo ready > %s; while [ ! -e %s ]; do /bin/sleep 0.01; done; echo graceful > %s; exit 0' TERM; while :; do /bin/sleep 1; done) & echo $! > %s; trap 'while [ ! -e %s ]; do /bin/sleep 0.01; done; echo exited > %s; exit 0' TERM; wait`,
+		shellQuote(ready), shellQuote(release), shellQuote(gracefulExit), shellQuote(childPIDPath), shellQuote(ready), shellQuote(leaderExited))
 	r := startTestRunner(t, map[string]string{
 		"RESTARTABLE_TEST_RUN":        run,
-		"RESTARTABLE_TEST_TERM_GRACE": "1h",
+		"RESTARTABLE_TEST_TERM_GRACE": "30s",
 	})
 	initial := r.waitStatus(t, string(Running))
 	if initial.PID == nil {
 		t.Fatal("runner has no child PID")
 	}
-	waitFor(t, time.Second, "grandchild PID", func() bool { return strings.TrimSpace(readFile(grandchildFile)) != "" })
+	waitFor(t, time.Second, "descendant PID", func() bool { return strings.TrimSpace(readFile(childPIDPath)) != "" })
 	t.Cleanup(func() { _ = signalGroup(*initial.PID, syscall.SIGKILL) })
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	response, err := control.Call(ctx, r.path, control.Restart)
-	if err != nil {
-		t.Fatalf("restart did not proceed after group leader exited: %v", err)
+	type restartResult struct {
+		response control.Response
+		err      error
 	}
-	if !response.OK || response.Generation != 2 {
-		t.Fatalf("restart response = %+v", response)
+	restartDone := make(chan restartResult, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		defer cancel()
+		response, err := control.Call(ctx, r.path, control.Restart)
+		restartDone <- restartResult{response: response, err: err}
+	}()
+	waitFor(t, time.Second, "descendant to receive SIGTERM", func() bool { return strings.TrimSpace(readFile(ready)) != "" })
+	waitFor(t, time.Second, "group leader to finish before its descendant", func() bool {
+		return errors.Is(syscall.Kill(*initial.PID, 0), syscall.ESRCH) && strings.TrimSpace(readFile(leaderExited)) != ""
+	})
+	if !groupExists(*initial.PID) {
+		t.Fatal("process group disappeared while its descendant was still handling SIGTERM")
 	}
-	waitFor(t, time.Second, "grandchild group cleanup after leader exit", func() bool { return !groupExists(*initial.PID) })
+	if err := os.WriteFile(release, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 2*time.Second, "descendant to complete graceful termination", func() bool { return strings.TrimSpace(readFile(gracefulExit)) != "" })
+	select {
+	case result := <-restartDone:
+		if result.err != nil {
+			t.Fatal(result.err)
+		}
+		if !result.response.OK || result.response.Generation != 2 {
+			t.Fatalf("restart response = %+v", result.response)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("restart did not finish after the process group exited")
+	}
 	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
 		t.Fatalf("runner exit code = %d, want 143", code)
 	}
@@ -1340,7 +1386,7 @@ func TestQuitDuringBuildRejectsControlRestartWhileForceKillRuns(t *testing.T) {
 	}
 }
 
-func TestRunnerSignalHandlingAndSIGPIPEIgnore(t *testing.T) {
+func TestRunnerSignalHandlingAndSIGPIPEDefaultInExecChild(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		sig  syscall.Signal
@@ -1366,6 +1412,20 @@ func TestRunnerSignalHandlingAndSIGPIPEIgnore(t *testing.T) {
 		})
 	}
 
+	t.Run("SIGPIPE-is-default-in-exec-child", func(t *testing.T) {
+		r := startTestRunnerMode(t, map[string]string{
+			"RESTARTABLE_TEST_RUN": `yes | head -c1`,
+		}, false)
+		select {
+		case <-r.done:
+		case <-time.After(3 * time.Second):
+			t.Fatal("runner did not exit after yes piped into head")
+		}
+		if output := readFile(r.stdout) + readFile(r.stderr); strings.Contains(output, "Broken pipe") {
+			t.Fatalf("exec child inherited ignored SIGPIPE: %q", output)
+		}
+	})
+
 	t.Run("broken-stdout", func(t *testing.T) {
 		r := startTestRunnerWithBrokenStdout(t, map[string]string{
 			"RESTARTABLE_TEST_RUN": `printf 'output to a closed pipe\n'; exec /bin/sleep 30`,
@@ -1378,4 +1438,59 @@ func TestRunnerSignalHandlingAndSIGPIPEIgnore(t *testing.T) {
 			t.Fatalf("runner exit code = %d, want 143", code)
 		}
 	})
+}
+
+func TestSIGTERMDuringPresenterStartReachesRunnerSignalHandler(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "handled-signal")
+	r := startTestRunnerMode(t, map[string]string{
+		"RESTARTABLE_TEST_RUN":                 "exec /bin/sleep 30",
+		"RESTARTABLE_TEST_SIGNAL_DURING_START": marker,
+	}, false)
+	select {
+	case <-r.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("runner did not handle SIGTERM delivered during presenter startup")
+	}
+	if !strings.Contains(readFile(marker), "handled") {
+		t.Fatalf("runner did not route startup SIGTERM through its handler; marker=%q exit=%v", readFile(marker), r.waitErr)
+	}
+	if code := processExitCodeFromError(r.waitErr); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+}
+
+func processExitCodeFromError(err error) int {
+	if err == nil {
+		return 0
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return exit.ExitCode()
+	}
+	return -1
+}
+
+func TestForwardKeysExitsWhenEventAndKeyQueuesAreFull(t *testing.T) {
+	done := make(chan struct{})
+	events := make(chan actorEvent, 128)
+	for len(events) < cap(events) {
+		events <- actorEvent{kind: keyEvent}
+	}
+	keys := make(chan string, 32)
+	for len(keys) < cap(keys) {
+		keys <- "r"
+	}
+	forwarded := make(chan struct{})
+	go func() {
+		forwardKeys(done, keys, events)
+		close(forwarded)
+	}()
+	waitFor(t, time.Second, "key forwarder to block on the full actor queue", func() bool { return len(keys) == cap(keys)-1 })
+	keys <- "q"
+	close(done)
+	select {
+	case <-forwarded:
+	case <-time.After(time.Second):
+		t.Fatal("key forwarder did not stop after actor shutdown")
+	}
 }

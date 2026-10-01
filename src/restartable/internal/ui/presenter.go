@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"sync"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/term"
 	"github.com/jiikko/dotfiles/src/restartable/internal/runner"
 )
 
@@ -18,12 +20,13 @@ type printRequest struct {
 // Presenter runs Bubble Tea in its inline mode and adapts its input/output to
 // the runner's snapshot and key boundary.
 type Presenter struct {
-	program *tea.Program
-	keys    chan string
-	ready   chan struct{}
-	runDone chan struct{}
-	closed  chan struct{}
-	prints  chan printRequest
+	program  *tea.Program
+	keys     chan string
+	ready    chan struct{}
+	runDone  chan struct{}
+	closed   chan struct{}
+	prints   chan printRequest
+	fallback io.Writer
 
 	startOnce sync.Once
 	closeOnce sync.Once
@@ -38,11 +41,12 @@ type Presenter struct {
 // its control socket and is ready to own terminal cleanup.
 func New(input io.Reader, output io.Writer) *Presenter {
 	p := &Presenter{
-		keys:    make(chan string, 32),
-		ready:   make(chan struct{}),
-		runDone: make(chan struct{}),
-		closed:  make(chan struct{}),
-		prints:  make(chan printRequest),
+		keys:     make(chan string, 32),
+		ready:    make(chan struct{}),
+		runDone:  make(chan struct{}),
+		closed:   make(chan struct{}),
+		prints:   make(chan printRequest),
+		fallback: os.Stderr,
 	}
 	model := &teaModel{
 		state: runner.InitialModel(), width: defaultWidth, keys: p.keys,
@@ -58,9 +62,27 @@ func New(input io.Reader, output io.Writer) *Presenter {
 
 type discardWriteErrors struct{ writer io.Writer }
 
+var _ term.File = discardWriteErrors{}
+
 func (w discardWriteErrors) Write(data []byte) (int, error) {
 	_, _ = w.writer.Write(data)
 	return len(data), nil
+}
+
+func (w discardWriteErrors) Read(data []byte) (int, error) {
+	if reader, ok := w.writer.(io.Reader); ok {
+		return reader.Read(data)
+	}
+	return 0, io.EOF
+}
+
+func (w discardWriteErrors) Close() error { return nil }
+
+func (w discardWriteErrors) Fd() uintptr {
+	if file, ok := w.writer.(interface{ Fd() uintptr }); ok {
+		return file.Fd()
+	}
+	return ^uintptr(0)
 }
 
 // Start is called by runner.Run when the configured presenter supports startup.
@@ -153,8 +175,10 @@ func (p *Presenter) Println(line string) {
 	select {
 	case p.prints <- request:
 	case <-p.runDone:
+		p.writeFallback(line)
 		return
 	case <-p.closed:
+		p.writeFallback(line)
 		return
 	}
 	select {
@@ -170,11 +194,27 @@ func (p *Presenter) printLoop() {
 		case request := <-p.prints:
 			select {
 			case <-p.runDone:
+				p.writeFallback(request.line)
+				close(request.done)
+				return
+			case <-p.closed:
+				p.writeFallback(request.line)
 				close(request.done)
 				return
 			default:
 			}
-			p.program.Println(request.line)
+			printed := make(chan struct{})
+			go func(line string) {
+				p.program.Println(line)
+				close(printed)
+			}(request.line)
+			select {
+			case <-printed:
+			case <-p.runDone:
+				p.writeFallback(request.line)
+			case <-p.closed:
+				p.writeFallback(request.line)
+			}
 			close(request.done)
 		case <-p.runDone:
 			return
@@ -184,12 +224,21 @@ func (p *Presenter) printLoop() {
 	}
 }
 
+func (p *Presenter) writeFallback(line string) {
+	writer := p.fallback
+	if writer == nil {
+		writer = os.Stderr
+	}
+	_, _ = fmt.Fprintln(writer, line)
+}
+
 func (p *Presenter) Close() error {
 	p.closeOnce.Do(func() {
 		p.stateMu.Lock()
 		p.closing = true
 		started := p.started
 		p.stateMu.Unlock()
+		close(p.closed)
 		if started {
 			select {
 			case <-p.runDone:
@@ -197,9 +246,8 @@ func (p *Presenter) Close() error {
 				p.program.Quit()
 				<-p.runDone
 			}
+			close(p.keys)
 		}
-		close(p.closed)
-		close(p.keys)
 	})
 	return nil
 }

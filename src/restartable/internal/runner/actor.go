@@ -92,6 +92,7 @@ type actor struct {
 	retCode            int
 	flusherDone        chan struct{}
 	actorDone          chan struct{}
+	signals            <-chan os.Signal
 	flusherWG          sync.WaitGroup
 }
 
@@ -121,9 +122,25 @@ func Run(cfg Config) (int, error) {
 	if cfg.ControlPath == "" {
 		return 1, errors.New("control socket path is empty")
 	}
-	// Broken stdout/stderr pipes must not terminate the supervisor. Writers
-	// below turn EPIPE into discarded output while actor events keep flowing.
-	signal.Ignore(syscall.SIGPIPE)
+	// Register signals before the presenter starts Bubble Tea, which switches a
+	// TTY to raw mode. A signal delivered during startup remains queued for actor.
+	signals := make(chan os.Signal, 6)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
+	defer signal.Stop(signals)
+	pipeSignals := make(chan os.Signal, 1)
+	pipeDrainDone := make(chan struct{})
+	signal.Notify(pipeSignals, syscall.SIGPIPE)
+	go func() {
+		for {
+			select {
+			case <-pipeSignals:
+			case <-pipeDrainDone:
+				return
+			}
+		}
+	}()
+	defer signal.Stop(pipeSignals)
+	defer close(pipeDrainDone)
 	server, err := control.Listen(cfg.ControlPath)
 	if err != nil {
 		return 1, err
@@ -151,7 +168,7 @@ func Run(cfg Config) (int, error) {
 	return (&actor{cfg: cfg, model: InitialModel(), id: id, server: server,
 		sink: newLogSink(cfg.Stdout, cfg.Headless, printLine), presenter: presenter,
 		events: make(chan actorEvent, 128), flusherDone: make(chan struct{}), actorDone: make(chan struct{}),
-		outputDrainTimeout: 500 * time.Millisecond}).run()
+		outputDrainTimeout: 500 * time.Millisecond, signals: signals}).run()
 }
 
 func newID() (string, error) {
@@ -176,19 +193,8 @@ func (a *actor) run() (int, error) {
 		a.flusherWG.Add(1)
 		go func() { defer a.flusherWG.Done(); a.sink.runFlusher(a.flusherDone) }()
 	}
-	signals := make(chan os.Signal, 6)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
-	defer signal.Stop(signals)
 	requests := a.server.Requests
-	go func() {
-		for key := range a.presenter.Keys() {
-			select {
-			case a.events <- actorEvent{kind: keyEvent, result: processResult{Err: errors.New(key)}}:
-			case <-a.actorDone:
-				return
-			}
-		}
-	}()
+	go forwardKeys(a.actorDone, a.presenter.Keys(), a.events)
 	if a.cfg.BuildCommand != "" {
 		a.handleEffects([]Effect{{Kind: StartBuildEffect}})
 	} else if err := a.startRun(); err != nil {
@@ -207,7 +213,7 @@ func (a *actor) run() (int, error) {
 			}
 		case ev := <-a.events:
 			a.handleEvent(ev)
-		case sig := <-signals:
+		case sig := <-a.signals:
 			switch sig {
 			case syscall.SIGINT:
 				a.beginForce(130)
@@ -221,6 +227,24 @@ func (a *actor) run() (int, error) {
 		}
 	}
 	return a.retCode, nil
+}
+
+func forwardKeys(done <-chan struct{}, keys <-chan string, events chan<- actorEvent) {
+	for {
+		select {
+		case <-done:
+			return
+		case key, ok := <-keys:
+			if !ok {
+				return
+			}
+			select {
+			case events <- actorEvent{kind: keyEvent, result: processResult{Err: errors.New(key)}}:
+			case <-done:
+				return
+			}
+		}
+	}
 }
 
 func (a *actor) env() []string {
@@ -595,9 +619,9 @@ func (a *actor) waitStopCommand(proc *process) error {
 	}
 }
 
-// waitForTermBoundary waits only while at least one target has a live leader
-// and a process group that still exists. A leader exit is enough to escalate:
-// descendants that ignored TERM are killed immediately after their owner exits.
+// waitForTermBoundary waits until every target process group is gone or the
+// configured grace period expires. A child leader may exit while descendants
+// are still handling TERM, so the leader's Wait result does not end the grace.
 func waitForTermBoundary(procs []*process, grace time.Duration) {
 	if len(procs) == 0 {
 		return
@@ -609,7 +633,7 @@ func waitForTermBoundary(procs []*process, grace time.Duration) {
 	for {
 		allStopped := true
 		for _, proc := range procs {
-			if !proc.finished.Load() && groupExists(proc.pid) {
+			if groupExists(proc.pid) {
 				allStopped = false
 				break
 			}

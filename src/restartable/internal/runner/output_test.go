@@ -3,6 +3,7 @@ package runner
 import (
 	"io"
 	"reflect"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -91,5 +92,15 @@ func TestHeadlessOutputWriteErrorsAreDiscardedWithoutStoppingSupervision(t *test
 	}
 	if writer.writes != 4 {
 		t.Fatalf("writes = %d, want one attempt per input chunk", writer.writes)
+	}
+}
+
+func TestTTYOutputPreservesEmptyLines(t *testing.T) {
+	var output strings.Builder
+	sink := newLogSink(&output, false)
+	sink.CopyFrom(strings.NewReader("a\n\nb"), false)
+	sink.Flush()
+	if got, want := output.String(), "a\n\nb\n"; got != want {
+		t.Fatalf("TTY output = %q, want %q", got, want)
 	}
 }

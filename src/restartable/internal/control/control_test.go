@@ -101,12 +101,12 @@ func TestListenRemovesOwnedStaleSocketAndRejectsRegularFile(t *testing.T) {
 	if data, err := os.ReadFile(regular); err != nil || string(data) != "keep" {
 		t.Fatalf("regular file changed: %q, %v", data, err)
 	}
-	if _, err := os.Lstat(regular + ".lock"); !os.IsNotExist(err) {
-		t.Fatalf("lock file remained after listen failure: %v", err)
+	if _, err := os.Stat(regular + ".lock"); err != nil {
+		t.Fatalf("stable lock file missing after listen failure: %v", err)
 	}
 }
 
-func TestListenBindFailureRemovesLockFile(t *testing.T) {
+func TestListenBindFailureKeepsLockInodeStable(t *testing.T) {
 	dir := shortSocketDir(t)
 	path := filepath.Join(dir, "runner.sock")
 	original := listenControlSocket
@@ -117,8 +117,24 @@ func TestListenBindFailureRemovesLockFile(t *testing.T) {
 	if _, err := Listen(path); err == nil || !strings.Contains(err.Error(), "simulated bind failure") {
 		t.Fatalf("Listen error = %v, want simulated bind failure", err)
 	}
-	if _, err := os.Lstat(path + ".lock"); !os.IsNotExist(err) {
-		t.Fatalf("lock file remained after bind failure: %v", err)
+	lockPath := path + ".lock"
+	firstInfo, err := os.Stat(lockPath)
+	if err != nil {
+		t.Fatalf("lock file missing after bind failure: %v", err)
+	}
+
+	listenControlSocket = original
+	server, err := Listen(path)
+	if err != nil {
+		t.Fatalf("Listen after simulated bind failure: %v", err)
+	}
+	defer func() { _ = server.Close() }()
+	secondInfo, err := os.Stat(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(firstInfo, secondInfo) {
+		t.Fatal("lock inode changed between Listen attempts")
 	}
 }
 

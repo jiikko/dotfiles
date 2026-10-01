@@ -2,9 +2,12 @@ package ui
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/jiikko/dotfiles/src/restartable/internal/runner"
@@ -139,5 +142,48 @@ func TestTTYOutputWriterDiscardsBrokenPipeErrors(t *testing.T) {
 	n, err := writer.Write(data)
 	if err != nil || n != len(data) {
 		t.Fatalf("TTY write = (%d, %v), want (%d, nil)", n, err, len(data))
+	}
+}
+
+func TestTeaModelDropsKeyWhenRunnerQueueIsFull(t *testing.T) {
+	keys := make(chan string, 32)
+	for i := 0; i < cap(keys); i++ {
+		keys <- "queued"
+	}
+	model := &teaModel{keys: keys, closed: make(chan struct{})}
+	done := make(chan struct{})
+	go func() {
+		model.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("key update blocked when the runner key queue was full")
+	}
+}
+
+func TestPrintlnFallsBackToStderrAfterProgramExit(t *testing.T) {
+	readEnd, writeEnd, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousStderr := os.Stderr
+	os.Stderr = writeEnd
+	defer func() { os.Stderr = previousStderr }()
+	presenter := New(strings.NewReader(""), io.Discard)
+	close(presenter.runDone)
+
+	presenter.Println("final report")
+	_ = writeEnd.Close()
+	os.Stderr = previousStderr
+	output, err := io.ReadAll(readEnd)
+	_ = readEnd.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(output), "final report\n"; got != want {
+		t.Fatalf("fallback output = %q, want %q", got, want)
 	}
 }

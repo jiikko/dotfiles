@@ -159,9 +159,6 @@ func Listen(path string) (*Server, error) {
 		return nil, fmt.Errorf("control socket is already active: %w", err)
 	}
 	cleanup := func() {
-		if current, err := os.Lstat(absPath + ".lock"); err == nil && os.SameFile(current, lockInfo) {
-			_ = os.Remove(absPath + ".lock")
-		}
 		_ = syscall.Flock(lockFD, syscall.LOCK_UN)
 		_ = lock.Close()
 	}

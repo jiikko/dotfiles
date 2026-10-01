@@ -123,17 +123,26 @@ func (s *logSink) CopyFrom(r io.Reader, headless bool) {
 		return
 	}
 	var current []byte
+	previousWasCR := false
 	buf := make([]byte, 32<<10)
 	for {
 		n, err := r.Read(buf)
 		for _, c := range buf[:n] {
-			if c == '\n' || c == '\r' {
-				if len(current) > 0 {
+			if c == '\r' {
+				s.addSafeLine(string(current))
+				current = current[:0]
+				previousWasCR = true
+				continue
+			}
+			if c == '\n' {
+				if !previousWasCR {
 					s.addSafeLine(string(current))
 					current = current[:0]
 				}
+				previousWasCR = false
 				continue
 			}
+			previousWasCR = false
 			current = append(current, c)
 			if len(current) >= maxOutputLineBytes {
 				s.addSafeLine(string(current))

@@ -4,6 +4,7 @@ package runner
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -50,7 +51,16 @@ func startProcess(argv []string, shell bool, env []string, stdin io.Reader, sink
 		cmd = exec.Command(argv[0], argv[1:]...)
 	}
 	cmd.Env = env
-	cmd.Stdin = stdin
+	if headless {
+		cmd.Stdin = stdin
+	} else {
+		devNull, err := os.Open(os.DevNull)
+		if err != nil {
+			return nil, fmt.Errorf("open child stdin: %w", err)
+		}
+		cmd.Stdin = devNull
+		defer func() { _ = devNull.Close() }()
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	r, w, err := os.Pipe()
 	if err != nil {

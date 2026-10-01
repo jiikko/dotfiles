@@ -116,6 +116,7 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			select {
 			case m.keys <- key:
 			case <-m.closed:
+			default:
 			}
 		}
 	}

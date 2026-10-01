@@ -78,3 +78,8 @@ restartable --build 'make build' -- ./bin/server 2>&1 | tee server.log
 ```
 
 この判定のために `/dev/tty` を別途開くことはありません。
+
+## 検出しない形 / 注意
+
+- TTY UI を表示する場合、キーボードは runner が使うため、build / run / stop-cmd の stdin は `/dev/null` です。子コマンドからの対話入力には使えません。非 TTY 起動では従来どおり stdin を子へ渡します。
+- build 中に `Q` → `y` で強制終了した場合、前世代の子が残した process group の子孫まで検出して停止する保証はありません。
