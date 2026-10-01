@@ -78,7 +78,6 @@ const (
 	StopCommandOKEvent     EventKind = "stop-command-ok"
 	StopCommandFailEvent   EventKind = "stop-command-failed"
 	ControlRestartEvent    EventKind = "control-restart"
-	ControlStatusEvent     EventKind = "control-status"
 	ForceEvent             EventKind = "force"
 	LaunchStartedEvent     EventKind = "launch-started"
 	ReadySucceededEvent    EventKind = "ready-succeeded"
@@ -92,7 +91,6 @@ type Event struct {
 	Kind        EventKind
 	Key         string
 	PID         int
-	ExitCode    int
 	SignalCode  int
 	Reason      string
 	ChildExited bool
@@ -108,7 +106,6 @@ const (
 	ForceStopEffect     EffectKind = "force-stop"
 	ExitEffect          EffectKind = "exit"
 	ControlRejectEffect EffectKind = "control-reject"
-	ControlStatusEffect EffectKind = "control-status"
 	MessageEffect       EffectKind = "message"
 )
 
@@ -300,8 +297,6 @@ func Update(m Model, e Event) (Model, []Effect) {
 		return finishStopping(m)
 	case ControlRestartEvent:
 		return updateControlRestart(m)
-	case ControlStatusEvent:
-		return m, []Effect{{Kind: ControlStatusEffect}}
 	case ForceEvent:
 		m.State = Exiting
 		m.Confirm = ConfirmNone
@@ -401,15 +396,7 @@ func updateKey(m Model, key string) (Model, []Effect) {
 			m.Message = "ビルド中"
 			return m, []Effect{{Kind: MessageEffect, Reason: "ビルド中"}}
 		case BuildFailed:
-			m.State = Building
-			m.Message = ""
-			if m.Transition.Kind != TransitionNone {
-				m.Transition.Active = true
-				m.Transition.Stage = TransitionBuild
-				m.Transition.Result = TransitionResultNone
-				m.Transition.Busy = false
-			}
-			return m, []Effect{{Kind: StartBuildEffect}}
+			return rebuildAfterFailure(m)
 		case Running:
 			m.Confirm = ConfirmRestart
 		}
@@ -444,15 +431,7 @@ func updateControlRestart(m Model) (Model, []Effect) {
 		m.BuildQueued = true
 		return m, nil
 	case BuildFailed:
-		m.State = Building
-		m.Message = ""
-		if m.Transition.Kind != TransitionNone {
-			m.Transition.Active = true
-			m.Transition.Stage = TransitionBuild
-			m.Transition.Result = TransitionResultNone
-			m.Transition.Busy = false
-		}
-		return m, []Effect{{Kind: StartBuildEffect}}
+		return rebuildAfterFailure(m)
 	case Running:
 		m.State = Stopping
 		m.Intent = IntentRestart
@@ -467,6 +446,20 @@ func updateControlRestart(m Model) (Model, []Effect) {
 		return m, nil
 	}
 	return m, []Effect{{Kind: ControlRejectEffect, Reason: "runner unavailable"}}
+}
+
+// rebuildAfterFailure starts a new build from build-failed (R key and control
+// restart). The panel reopens only if one was shown for the failed build.
+func rebuildAfterFailure(m Model) (Model, []Effect) {
+	m.State = Building
+	m.Message = ""
+	if m.Transition.Kind != TransitionNone {
+		m.Transition.Active = true
+		m.Transition.Stage = TransitionBuild
+		m.Transition.Result = TransitionResultNone
+		m.Transition.Busy = false
+	}
+	return m, []Effect{{Kind: StartBuildEffect}}
 }
 
 func finishStopping(m Model) (Model, []Effect) {

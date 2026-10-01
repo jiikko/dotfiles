@@ -345,12 +345,6 @@ func TestUpdateStoppingAndChildExit(t *testing.T) {
 	if m.State != Exiting || m.PID != 0 || !hasEffect(effects, ExitEffect) {
 		t.Fatalf("quit after stop: %+v %+v", m, effects)
 	}
-
-	m = Model{State: Running, PID: 43}
-	m, _ = Update(m, Event{Kind: ControlStatusEvent})
-	if m.State != Running || m.PID != 43 {
-		t.Fatalf("status changed model: %+v", m)
-	}
 }
 
 func TestUpdateEffectsAreStable(t *testing.T) {
@@ -362,7 +356,6 @@ func TestUpdateEffectsAreStable(t *testing.T) {
 		effects []Effect
 	}{
 		{"failed build retry", Model{State: BuildFailed, Generation: 8}, Event{Kind: KeyEvent, Key: "R"}, Model{State: Building, Generation: 8}, []Effect{{Kind: StartBuildEffect}}},
-		{"status", Model{State: Running, PID: 5}, Event{Kind: ControlStatusEvent}, Model{State: Running, PID: 5}, []Effect{{Kind: ControlStatusEffect}}},
 		{"control after exit", Model{State: Exiting}, Event{Kind: ControlRestartEvent}, Model{State: Exiting}, []Effect{{Kind: ControlRejectEffect, Reason: "runner exiting"}}},
 	}
 	for _, tc := range cases {
