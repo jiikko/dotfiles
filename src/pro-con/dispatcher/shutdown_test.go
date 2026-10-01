@@ -103,6 +103,9 @@ func TestShutdownReportsStopFailure(t *testing.T) {
 
 // 動いている dispatcher には止める印を置いて、止まる (ロックが外れる) まで待ち、dispatcher が書いた結果を返す。動いていなければ false を返す。
 func TestRequestStop(t *testing.T) {
+	old := stopRequestPoll
+	stopRequestPoll = 10 * time.Millisecond // 見直す間隔を実時間で 3 ケース分待たない (issue 614)
+	t.Cleanup(func() { stopRequestPoll = old })
 	dir := t.TempDir()
 	if running, err := RequestStop(context.Background(), dir, time.Second); running || err != nil {
 		t.Fatalf("dispatcher が居ないのに居る扱い: %v %v", running, err)
@@ -129,11 +132,12 @@ func TestRequestStop(t *testing.T) {
 				}
 				time.Sleep(20 * time.Millisecond)
 			}
-			// 否定の確認 (起きないことに待つ条件は無いので時間で見る): dispatcher がロックを持っている間は待ちを抜けない
+			// 否定の確認 (起きないことに待つ条件は無いので時間で見る): dispatcher がロックを持っている間は待ちを抜けない。
+			// 窓は見直す間隔 (上で 10ms) の 10 倍。早く抜ける実装は最初の 1 周で抜けるので、それより十分長ければよい
 			select {
 			case err := <-done:
 				t.Fatalf("dispatcher が止まる前に待ちを抜けた: %v", err)
-			case <-time.After(300 * time.Millisecond):
+			case <-time.After(10 * stopRequestPoll):
 			}
 			tc.result()
 			unlock()

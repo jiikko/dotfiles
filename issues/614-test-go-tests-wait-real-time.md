@@ -100,3 +100,9 @@ wtclean の 15 s は git fixture のコストで、sleep も子の sleep も無�
   - 2: `TestServeStopsOnSignalWhenSpawnedByScreen` で `signalGrace` を 200 ms に (package に `t.Parallel` は無い)。5.07 → 0.24 s。
     変異: 持ち主の画面を見ずに止める (`ownersStayOpen` を外す) → red
   - 5: `TestScreenFollowWaitsForFirstFrame` の `--timeout 2s` → `500ms`。2.00 → 0.51 s (3 回連続)。変異: 1 枚目を待たずに「閉じた」で抜ける → red
+- 2026-10-02 「test(pro-con): RequestStop の見直しの間隔をテストで縮める (614 の 8)」
+  - `shutdown.go` の 200 ms のリテラルを `stopRequestPoll` (package の変数) にし、`TestRequestStop` で 10 ms に。各ケースの否定の窓 (300 ms) も
+    「見直す間隔の 10 倍」に揃えた。1.21 → 0.38 s。変異: lock を見ずに「止める側が死んだ」で抜ける → 「止まる前に待ちを抜けた」で red
+  - `TestStopTakesOverWhenStopperDies` (2.2 s) は pro-con 本体のテストで、dispatcher の非公開の変数に届かない。今回は触らない (2.2 s の内訳も未確認)
+  - 7 (`stopped_test.go:104` の `sleep 1`) は残す: 「一部だけ止まっている間、猶予 (StopGrace 200 ms) を超えても止め直さない」を見る否定の窓で、
+    猶予の 5 倍。縮めても 0.5 s しか減らず、余裕が減ると負荷の日に誤った実装を見逃す (偽の緑) 側に倒れる

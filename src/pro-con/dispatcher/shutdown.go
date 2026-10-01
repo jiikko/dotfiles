@@ -718,6 +718,9 @@ func StopRequested(dir string) bool {
 	return err == nil
 }
 
+// stopRequestPoll は RequestStop が止めた結果と lock を見直す間隔 (テストで短くする。issue 614)。
+var stopRequestPoll = 200 * time.Millisecond
+
 // RequestStop は動いている dispatcher に止めるよう頼み、止まる (ロックが外れる) まで待つ。
 // dispatcher が動いていなければ false を返す (呼び出し側が自分で dispatcher の役を取って止める)。
 func RequestStop(ctx context.Context, dir string, timeout time.Duration) (bool, error) {
@@ -739,7 +742,7 @@ func RequestStop(ctx context.Context, dir string, timeout time.Duration) (bool, 
 		select {
 		case <-ctx.Done():
 			return true, ctx.Err()
-		case <-time.After(200 * time.Millisecond):
+		case <-time.After(stopRequestPoll):
 		}
 		// 結果を先に見る: 止め終えた dispatcher が lock を外した直後に、開いている画面が次の dispatcher を起こして lock を取ることがある
 		// (lock が外れるのを待つと、止め終えたのに時間切れと読む)
