@@ -124,3 +124,13 @@ sonnet の read-only 調査を main が抜き取りで検閲)。2026-09-05 の�
 - 2026-10-02 「test(bin): mutate-verify の中断のケースで hang を秒数で演じない (613 の B)」
   - `tests/bin/test_mutate_verify.sh` の 42 番: 変異で差し込む `sleep 3` を「ゲートが開くまで待つ子」に替え、TERM の後にゲートを開ける。
     40 s → 34〜35 s (3 回連続 green、42 ケース)。変異: 中断時の `report_logs` を外す → 「中断されたら全体のログが残らない」で red
+- 2026-10-02 「test(tmux): resurrect の lock 奪取の production 形状を、秒数の窓ではなくゲートで開ける (613 の B)」
+  - `test_resurrect_lock_acquire.sh` の fresh 形状 (5 回): `tt_proc_starttime` の `sleep 0.4` + ずらし `sleep 0.05` →
+    1 本目が窓に入ったら印を置いてゲートで止まる → 2 本目を起こす → 2 本目が結果を書く (正しい実装は即 rc=1 で退く) か同じ窓に入るまで待つ → ゲートを開ける。
+    6 s → 5 s (3 回連続 green、✓ 37 件は変更前と同数)
+  - 変異: 作りたての owner 不在 dir を奪わないガード (`tt_lock_dir_older_than` の分岐) を外す → 「lock 不在から 2 プロセスが来たとき」で red
+  - 残す: leftover / deadowner の 1〜5 ms のずらし (`sleep "$1"`) は臨界帯を掃く入力。ゲートにすると掃く意味が消える
+  - 残す: `tests/zshrc/test_dotfiles_check_result_ownership.sh:192` の rm の 0.5 s は、ハーネス自身が「bg の終了を待つ」ことを守る窓
+    (固定 sleep で待つハーネスなら必ず落ちる)。ゲートにすると bg が終わらなくなり、守る対象を崩す。1 回 0.5 s
+  - 作業中の事故: 最初の版は関数の中で `$5` (関数自身の引数 = 空) を使い、worktree の直下に印のファイルを 15 個作った。
+    さらに、その版の 3 回ループのバックグラウンド実行が残って後の計測に混ざった。ループを止め、残骸を消してから測り直した (上の数字は測り直したもの)

@@ -128,10 +128,16 @@ printf '\n=== 取り残し lock の奪取レース (issue 103) ===\n\n'
 race_worker() { # $1=guards.sh $2=lock dir $3=結果ファイル $4=窓を広げるか(0/1) $5=解放マーカー
   bash -c '
     . "$1" || exit 9
-    # $4=1 のとき tt_proc_starttime を遅くして、mkdir と owner 記録の間の窓を広げる。
-    # 窓は実測 4.6ms しかなく、素で回すとレースが「たまたま出ない」ので確率的にしか
-    # 落とせない。ここを広げると**決定論的に**再現でき、変異検証の当たりも安定する。
-    if [ "$4" = 1 ]; then tt_proc_starttime() { sleep 0.4; printf "WIDE_%s\n" "$1"; }; fi
+    # $4=1 のとき tt_proc_starttime (mkdir と owner 記録の間) で止めて窓を開けたままにする。
+    # 窓は実測 4.6ms しかなく、素で回すとレースが「たまたま出ない」ので確率的にしか落とせない。
+    # 秒数で広げず、窓に入ったことを <解放マーカー>.in.<pid> で知らせて <解放マーカー>.go を待つ (issue 613)。上限 20 秒。
+    # 🚨 関数の中の $5 は関数自身の引数なので、マーカーの置き場は変数で渡す
+    gate_base=$5
+    if [ "$4" = 1 ]; then tt_proc_starttime() {
+      : > "$gate_base.in.$$"
+      j=0; while [ ! -e "$gate_base.go" ] && [ "$j" -lt 400 ]; do sleep 0.05; j=$(( j + 1 )); done
+      printf "WIDE_%s\n" "$1"
+    }; fi
     rc=0
     tt_lock_acquire "$2" || rc=$?
     printf "%s\n" "$rc" >> "$3"
@@ -155,7 +161,7 @@ race_worker() { # $1=guards.sh $2=lock dir $3=結果ファイル $4=窓を広げ
 race_winners() { # $1=delay $2=形状(leftover|fresh) $3=窓を広げるか(0/1)
   local dir="$BASE/race.lock" out="$BASE/race.out" rel="$BASE/race.release" g p1 p2 i
   g="$ROOT_DIR/scripts/lib/tmux_resurrect_guards.sh"
-  rm -rf "$dir" "$dir.steal" "$out" "$rel"
+  rm -rf "$dir" "$dir.steal" "$out" "$rel" "$rel.go" "$rel".in.*
   # 🚨 取り残しは**古く**すること。作りたての owner 不在 dir は「今まさに owner を記録中」と
   #   区別できないので奪えないのが正しい (それが production 形状の二重取得を止めている)。
   #   ここを `mkdir` だけにすると本物の取り残しではなくなり、勝者 0 で落ちる。
@@ -167,8 +173,19 @@ race_winners() { # $1=delay $2=形状(leftover|fresh) $3=窓を広げるか(0/1)
   fi
   : > "$out"
   race_worker "$g" "$dir" "$out" "$3" "$rel"; p1=$!
-  sleep "$1"
-  race_worker "$g" "$dir" "$out" "$3" "$rel"; p2=$!
+  if [ "$3" = 1 ]; then
+    # 窓を開けたまま 2 本目を走らせる: 1 本目が窓に入る → 2 本目を起こす → 2 本目が結果を書くか
+    # 同じ窓に入る (= 記録中の lock を奪いに来た) まで待つ → 窓を閉じる。$1 (ずらし) は使わない
+    i=0; while ! ls "$rel".in.* >/dev/null 2>&1 && [ "$i" -lt 400 ]; do sleep 0.05; i=$(( i + 1 )); done
+    race_worker "$g" "$dir" "$out" "$3" "$rel"; p2=$!
+    i=0
+    while [ "$(grep -c . "$out" 2>/dev/null || true)" -lt 1 ] && [ "$(ls "$rel".in.* 2>/dev/null | wc -l)" -lt 2 ] \
+      && [ "$i" -lt 400 ]; do sleep 0.05; i=$(( i + 1 )); done
+    : > "$rel.go"
+  else
+    sleep "$1"   # 1〜5ms のずらしを掃く入力 (実測の臨界帯。窓を作る sleep で、待ちではない)
+    race_worker "$g" "$dir" "$out" "$3" "$rel"; p2=$!
+  fi
   # 2 本の結果が出揃ってから解放を許す。これで「片方が保持している間に、もう片方も取得できたか」
   # だけを見る形になる (出揃わない場合は下の harness: 分類が拾う)
   i=0
@@ -225,12 +242,12 @@ fi
 
 # --- production 形状 (lock 不在から 2 プロセス) を窓を広げて決定論的に検査する ----
 # 🚨 ここが本ファイルで最も重要。素の窓 (実測 4.6ms) だと二重取得は 2/30 程度でしか出ず、
-#   確率的にしか落とせない。tt_proc_starttime を 0.4s 遅らせると **ガードが無い実装では
+#   確率的にしか落とせない。tt_proc_starttime で窓を開けたまま 2 本目を走らせると **ガードが無い実装では
 #   15/15 で二重取得**し、あると 0/15 になる (実測 2026-08-28)。
 fresh_bad=0
 fresh_trials=0
 for _ in 1 2 3 4 5; do
-  n="$(race_winners 0.05 fresh 1)"
+  n="$(race_winners 0 fresh 1)"
   fresh_trials=$(( fresh_trials + 1 ))
   case "$n" in
     1) ;;
@@ -240,7 +257,7 @@ for _ in 1 2 3 4 5; do
   esac
 done
 if [ "$fresh_bad" -eq 0 ]; then
-  ok "owner 記録中 (mkdir 直後) の lock は奪われない ($fresh_trials 回・窓を 0.4s に拡大)"
+  ok "owner 記録中 (mkdir 直後) の lock は奪われない ($fresh_trials 回・窓を開けたまま 2 本目を走らせる)"
 fi
 
 # 奪取権 lock が取り残されたら TTL で回収する (回収しないとこの経路が二度と走らない)
