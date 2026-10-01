@@ -6,14 +6,23 @@ unset CDPATH
 src=~/dotfiles/mac/karabiner.json
 target=~/.config/karabiner/karabiner.json
 
-cp "$src" "$target"
+if ! cp "$src" "$target"; then
+    echo "エラー: $src を $target へコピーできませんでした" >&2
+    exit 1
+fi
 
 # restore 済みの印として repo 側 karabiner.json の sha256 を記録する (setup.sh と同方式)。
 # _zshrc がこの記録と現在の repo ファイルを比較し、git pull 後の restore 忘れを警告する。
-# 後続のレイアウトパッチは target 側のみの変更なので、記録は cp 直後で確定してよい。
-state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
-mkdir -p "$state_dir"
-shasum -a 256 "$src" | awk '{print $1}' > "$state_dir/karabiner-json.sha256"
+# 🚨 記録は全段が成功した後だけ (下の 2 か所の出口) にする。レイアウトのパッチが失敗したのに記録すると、
+# キーボード種別が違うまま restore 忘れの警告も出なくなる (issue 610)。
+record_restored() {
+    state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
+    if ! { mkdir -p "$state_dir" &&
+        shasum -a 256 "$src" | awk '{print $1}' > "$state_dir/karabiner-json.sha256"; }; then
+        echo "エラー: 設定はコピーしたが restore 済みの記録を $state_dir に書けませんでした" >&2
+        exit 1
+    fi
+}
 
 # 既知の外部キーボード → レイアウト対応表。
 # キーは "VendorID ProductID"（10進）。値は算術評価で正規化してから渡すので、
@@ -68,15 +77,21 @@ case "$layout" in
     iso) country_code=13 ;;
     *)
         # ansi: ベースの karabiner.json が既に ansi なのでパッチ不要
+        record_restored
         echo 'dotfilesにあるkarabinerの設定ファイルをkarabinerにコピーしました。(ansi)'
         exit 0
         ;;
 esac
 
-jq --arg type "$layout" --argjson code "$country_code" \
+if ! jq --arg type "$layout" --argjson code "$country_code" \
     '.profiles[].virtual_hid_keyboard.keyboard_type = $type
      | .profiles[].virtual_hid_keyboard.keyboard_type_v2 = $type
      | .profiles[].virtual_hid_keyboard.country_code = $code' \
-    "$target" > "${target}.tmp" && mv "${target}.tmp" "$target"
+    "$target" > "${target}.tmp" || ! mv "${target}.tmp" "$target"; then
+    rm -f "${target}.tmp"
+    echo "エラー: キーボード種別 (${layout}) を設定できませんでした (jq が無い / $target が壊れている)。設定は ansi のままです" >&2
+    exit 1
+fi
 
+record_restored
 echo "dotfilesにあるkarabinerの設定ファイルをkarabinerにコピーしました。(${layout}に自動設定)"

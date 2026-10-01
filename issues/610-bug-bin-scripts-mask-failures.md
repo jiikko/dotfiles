@@ -51,11 +51,31 @@ bin/ のシェルスクリプトを安定性の観点で監査した (sonnet の
 
 ## 受け入れ条件
 
-- [ ] 1〜3 を直し、それぞれの失敗を再現する入力で直ったことを確かめる (結果を下に)
-- [ ] concat_movies の引き算の関数に回帰テストを足し、bc に戻す変異で red を見る
+- [x] 1〜3 を直し、それぞれの失敗を再現する入力で直ったことを確かめる (結果を下に)
+- [x] concat_movies の引き算の関数に回帰テストを足し、bc に戻す変異で red を見る
 
 ## 関連ファイル
 
 - `bin/concat_movies` / `bin/restore_karabiner_config.sh` / `bin/backup_karabiner_config.sh` / `bin/ci-log`
 
 ## 進捗
+
+- 2026-10-02 「fix(bin): concat_movies の秒の引き算・karabiner の失敗・ci-log の gh の失敗を成功に見せない (610)」
+  - 1: `sub_seconds` (数値の検査 + awk の `%.3f`) に寄せ、bc を依存から外した。stream の duration が `N/A` / 空なら
+    `format=duration` へ落とす。フェードアウトより短い長さは非 0 で止める (以前は負の st を ffmpeg に渡していた。ffmpeg が受けたかは未実測)
+  - 2: restore は cp / jq / mv / 記録のどれが失敗しても非 0 で止め、`.tmp` を消す。「restore 済み」の記録は全段が成功した後だけに移した。
+    backup は cp と記録の失敗で止める
+  - 3: 2 か所の `gh run list` の出力を変数へ取り、失敗なら「CI の状態は分かりません」で rc=1。`mapfile` を `while read` にした
+  - テスト (どれも偽の ffmpeg / ffprobe / gh / jq、HOME の差し替え): `tests/bin/test_concat_movies.sh` 6 件 /
+    `test_karabiner_config_scripts.sh` 8 件 / `test_ci_log.sh` 10 件 (bash 5 と /bin/bash 3.2 の両方)
+  - 変異 (mutate-verify、すべて想定の検査で red): bc に戻す → 「1 未満の開始位置」/ N/A の落とし先を外す → 「N/A の落とし先」/
+    restore の jq 失敗時の exit を `:` に → 「jq の失敗」/ backup の cp の検査を外す → 「backup のコピーの失敗」/
+    ci-log を旧実装に戻す → 「1 本目の gh の失敗」/ 2 本目の `|| gh_failed` を外す → 「2 本目」/ restore の記録の失敗の exit を `:` に → 「記録の失敗」
+  - 敵対レビュー (sonnet、read-only、1 周): P2 1 件 = restore が記録の失敗 (mkdir / 書き込み) を握り潰して rc=0 (再現あり) → 直した (変異で red を確認)。
+    P3: CR 付きの長さ (`5.0\r`) を拒否する = macOS の ffprobe は CR を出さないので記録のみ / フェードアウトより短いと止まる = 意図どおり /
+    ci-log の HEAD より前の赤の走査が未検査 = テストを足した。2 周目は §7 の例外 (判定ロジックを新設せず、各修正を変異で直接確認) で打ち切り
+  - 残り: 上の「記録だけにするもの」の表 (mutate-verify の timeout ほか)。`ci-log <run-id>` の経路も `gh run view ... 2>/dev/null || true` で
+    gh の失敗を「失敗した job はありません」にしうるが、成功した run に `--log-failed` を当てたときの gh の rc を実測していないので触っていない
+  - `make test` (worktree): 新しい 3 本と tmux shim の 2 本は [ok]。全体は rc=2 で、落ちたのは今回の変更と無関係な 2 本:
+    test-yaml (`src/tuikit/.golangci.yml:56` の line-length。2fa1692e で入った。持ち主のセッションへ連絡済み) と
+    `tests/claude/test_deny_piped_push_then_destroy.sh` (9MB 入力で timeout rc=124。ロードアベレージ 27 の最中だった。単独の再実行は rc=0)

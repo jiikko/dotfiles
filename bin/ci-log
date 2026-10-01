@@ -61,8 +61,18 @@ fi
 # gh run list に --commit は無いため headSha で局所フィルタする (1 push = 複数 workflow を網羅)。
 head_sha=$(git rev-parse HEAD 2>/dev/null || echo "")
 [ -n "$head_sha" ] || { echo "git リポジトリではありません" >&2; exit 1; }
-mapfile -t failed < <(gh run list --limit 40 --json databaseId,headSha,conclusion,name \
-  --jq ".[] | select(.headSha==\"$head_sha\" and .conclusion==\"failure\") | \"\(.databaseId)\t\(.name)\"")
+# 🚨 gh の出力は変数へ取って rc を見る。プロセス置換 (`< <(gh ...)`) は gh の失敗を見えなくし、認証切れ・
+# ネットワーク断で「失敗した run はありません」と rc=0 で答えていた (issue 610)。
+gh_failed() {
+  echo "gh run list に失敗しました (認証切れ・ネットワーク断なら \`gh auth status\` で確かめる)。CI の状態は分かりません" >&2
+  exit 1
+}
+failed_tsv=$(gh run list --limit 40 --json databaseId,headSha,conclusion,name \
+  --jq ".[] | select(.headSha==\"$head_sha\" and .conclusion==\"failure\") | \"\(.databaseId)\t\(.name)\"") || gh_failed
+failed=()   # mapfile は bash 3.2 に無いので while read で積む
+while IFS= read -r line; do
+  [ -n "$line" ] && failed+=("$line")
+done <<< "$failed_tsv"
 
 if [ "${#failed[@]}" -eq 0 ]; then
   echo "HEAD ($(git rev-parse --short HEAD)) に失敗した run はありません" >&2
@@ -74,6 +84,8 @@ if [ "${#failed[@]}" -eq 0 ]; then
   # そのあと成功していれば黙る (古い赤を蒸し返さない)。
   stale=0
   seen_wf=""
+  recent_tsv=$(gh run list --limit 60 --json databaseId,headSha,conclusion,name \
+    --jq '.[] | select(.conclusion != null and .conclusion != "cancelled") | "\(.name)\t\(.headSha)\t\(.conclusion)\t\(.databaseId)"') || gh_failed
   while IFS=$'\t' read -r wf sha concl dbid; do
     [ -n "$wf" ] || continue
     case "$seen_wf" in *"|$wf|"*) continue ;; esac      # その workflow の最新 run だけ見る
@@ -88,8 +100,7 @@ if [ "${#failed[@]}" -eq 0 ]; then
     fi
     printf '   %-16s %s  %s  (ci-log %s)\n' "$wf" "$(git rev-parse --short "$sha")" \
       "$(git log -1 --format=%s "$sha" | cut -c1-52)" "$dbid" >&2
-  done < <(gh run list --limit 60 --json databaseId,headSha,conclusion,name \
-    --jq '.[] | select(.conclusion != null and .conclusion != "cancelled") | "\(.name)\t\(.headSha)\t\(.conclusion)\t\(.databaseId)"')
+  done <<< "$recent_tsv"
   [ "$stale" -eq 0 ] || echo "" >&2
   gh run list --limit 10
   exit 0

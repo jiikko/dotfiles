@@ -29,12 +29,27 @@
 set -euo pipefail
 
 # 依存コマンドチェック
-for cmd in ffmpeg ffprobe bc; do
+for cmd in ffmpeg ffprobe; do
   if ! command -v "$cmd" &>/dev/null; then
     echo "エラー: $cmd が見つかりません。インストールしてください" >&2
     exit 1
   fi
 done
+
+# 秒の引き算 (a - b) を小数 3 桁で出す。🚨 bc に戻さない: bc は `1 - 0.3` を `.7` と出し (ffmpeg が fade の st を
+# 拒否する)、数値でない入力 (ffprobe の `N/A`) を黙って別の値にする (`N/A - 0.7` → 1.3)。issue 610。
+sub_seconds() {  # $1=a $2=b $3=何の秒数か (エラー文用)
+  local num='^[0-9]+([.][0-9]+)?$|^[.][0-9]+$'
+  if ! [[ "$1" =~ $num && "$2" =~ $num ]]; then
+    echo "エラー: $3 の秒数が数値ではありません: '$1' - '$2'" >&2
+    return 1
+  fi
+  awk -v a="$1" -v b="$2" -v what="$3" 'BEGIN {
+    d = a - b
+    if (d < 0) { printf "エラー: %s (%s 秒) がフェードアウト (%s 秒) より短い\n", what, a, b > "/dev/stderr"; exit 1 }
+    printf "%.3f", d
+  }'
+}
 
 usage() {
   sed -n '2,/^$/s/^# //p' "$0"
@@ -139,7 +154,7 @@ if [[ -n "$thumbnail" ]]; then
 
   thumb_filter="scale=${ref_width}:${ref_height}:flags=lanczos,setsar=1,format=yuv420p"
   if [[ -n "$fadeout" ]]; then
-    fade_st=$(echo "$thumbnail_duration - $fadeout" | bc)
+    fade_st=$(sub_seconds "$thumbnail_duration" "$fadeout" "サムネイルの表示秒数")
     thumb_filter="${thumb_filter},fade=t=out:st=${fade_st}:d=${fadeout}"
   fi
 
@@ -164,7 +179,11 @@ for f in "${files[@]}"; do
   if [[ -n "$fadeout" ]]; then
     dur=$(ffprobe -v error -select_streams v:0 \
       -show_entries stream=duration -of csv=p=0 "$f" | awk 'NF { print; exit }')
-    fade_st=$(echo "$dur - $fadeout" | bc)
+    # stream に duration を持たないコンテナ (mkv 等) は N/A を返すので、コンテナの長さへ落とす
+    if [[ "$dur" == "N/A" || -z "$dur" ]]; then
+      dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$f" | awk 'NF { print; exit }')
+    fi
+    fade_st=$(sub_seconds "$dur" "$fadeout" "クリップの長さ ($(basename "$f"))")
     ffmpeg -y -hide_banner -loglevel error \
       -i "$f" \
       -vf "fade=t=out:st=${fade_st}:d=${fadeout}" \
