@@ -98,7 +98,8 @@ func TestExecRunnerLockedKillsLeftoverChild(t *testing.T) {
 // (lockman 本体を SIGKILL すると lock が TTL まで残り、repo の次の実行が「外が使用中」で待たされる)。
 func TestExecRunnerLockedCancelKillsStubbornChild(t *testing.T) {
 	_, wt := gitRepoWithWorktree(t)
-	r := ExecRunner{Lockman: buildLockman(t)}
+	// 猶予は短くする (見るのは止まることと lock の解放で、猶予の長さではない。issue 614)
+	r := ExecRunner{Lockman: buildLockman(t), KillGrace: 300 * time.Millisecond}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int, 1)
 	go func() {

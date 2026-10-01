@@ -179,7 +179,8 @@ func TestScreenFollowWaitsForFirstFrame(t *testing.T) {
 	var o, e syncBuf
 	done := make(chan int, 1)
 	go func() {
-		done <- runScreen([]string{"--e2e", root, "--follow", "--timeout", "2s"}, t.TempDir(), time.Now, &o, &e)
+		// 上限は「追い続ける長さ」で、満額を実時間で待つ。1 枚目は直後に置き、ポーリングは 10ms なので短くてよい (issue 614)
+		done <- runScreen([]string{"--e2e", root, "--follow", "--timeout", "500ms"}, t.TempDir(), time.Now, &o, &e)
 	}()
 	w.Put(relay.Frame{ANSI: "遅れて描いた 1 枚", At: time.Now()})
 	select {

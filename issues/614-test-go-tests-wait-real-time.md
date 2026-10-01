@@ -92,3 +92,11 @@ wtclean の 15 s は git fixture のコストで、sleep も子の sleep も無�
 - 実測のログ: `go test -count=1 -v ./...` の `--- PASS` 行 (再取得のコマンドはこれだけ)
 
 ## 進捗
+
+- 2026-10-02 「test(pro-con): SIGKILL までの猶予・画面を待つ猶予・follow の上限を実時間で消化しない (614 の 1 / 2 / 5)」
+  - 1: `ExecRunner` に `KillGrace` (0 なら既定 `runKillGrace`。既存の `StopGrace` / `StopPoll` と同じ形) を足し、2 本で 300 ms に。
+    `TestExecRunnerCancelKillsStubbornChild` 5.04 → 0.35 s / `TestExecRunnerLockedCancelKillsStubbornChild` 5.35 → 0.85 s。
+    変異: 猶予の後の SIGKILL への昇格を外す → Locked の方が red (lockman を挟まない方の昇格は WaitDelay の別経路で、この変異の対象外)
+  - 2: `TestServeStopsOnSignalWhenSpawnedByScreen` で `signalGrace` を 200 ms に (package に `t.Parallel` は無い)。5.07 → 0.24 s。
+    変異: 持ち主の画面を見ずに止める (`ownersStayOpen` を外す) → red
+  - 5: `TestScreenFollowWaitsForFirstFrame` の `--timeout 2s` → `500ms`。2.00 → 0.51 s (3 回連続)。変異: 1 枚目を待たずに「閉じた」で抜ける → red

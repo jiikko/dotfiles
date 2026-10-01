@@ -419,6 +419,8 @@ type ExecRunner struct {
 	Lockman string
 	// StopGrace / StopPoll は runStopGrace / runStopPoll の代わり (0 なら既定。テストで短くする)
 	StopGrace, StopPoll time.Duration
+	// KillGrace は runKillGrace の代わり (0 なら既定。テストで SIGTERM → SIGKILL の猶予を実時間で待たないため。issue 614)
+	KillGrace time.Duration
 }
 
 func (r ExecRunner) Run(ctx context.Context, dir, command, logPath, runID string) (int, error) {
@@ -453,6 +455,7 @@ func (r ExecRunner) Run(ctx context.Context, dir, command, logPath, runID string
 	// make test の中の `zsh -i -c` 等に端末の前面を奪わせない (奪われると前面で端末を読む画面が SIGTTIN で止まる。issue 518)
 	cmd.SysProcAttr = foreground.Detached()
 	exited := make(chan struct{})
+	killGrace := cmp.Or(r.KillGrace, runKillGrace)
 	cmd.Cancel = func() error {
 		if pgid := readPgid(pgidFile); pgid > 1 {
 			// 🚨 lockman 本体を SIGKILL すると lock を解放できず、TTL (30 分) まで repo の次の実行を止める。
@@ -462,7 +465,7 @@ func (r ExecRunner) Run(ctx context.Context, dir, command, logPath, runID string
 			go func() {
 				select {
 				case <-exited:
-				case <-time.After(runKillGrace):
+				case <-time.After(killGrace):
 					_ = syscall.Kill(-pgid, syscall.SIGKILL)
 				}
 			}()
@@ -471,9 +474,9 @@ func (r ExecRunner) Run(ctx context.Context, dir, command, logPath, runID string
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGCONT)
 		return err
 	}
-	cmd.WaitDelay = runKillGrace
+	cmd.WaitDelay = killGrace
 	if pgidFile != "" {
-		cmd.WaitDelay = 3 * runKillGrace // 子を止めた後に lockman が解放する間 (これを過ぎると lockman も SIGKILL される)
+		cmd.WaitDelay = 3 * killGrace // 子を止めた後に lockman が解放する間 (これを過ぎると lockman も SIGKILL される)
 	}
 	if err := cmd.Start(); err != nil {
 		return -1, err

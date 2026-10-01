@@ -53,7 +53,8 @@ func TestExecRunnerCancelKillsStubbornChild(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int, 1)
 	go func() {
-		rc, _ := ExecRunner{}.Run(ctx, dir, `trap "" TERM; sleep 60 & echo $! > child.pid; wait`, filepath.Join(dir, "log"), "t1")
+		// 猶予は短くする: 見るのは「SIGTERM を無視する子も最後は止まる」ことで、猶予の長さではない (issue 614)
+		rc, _ := ExecRunner{KillGrace: 300 * time.Millisecond}.Run(ctx, dir, `trap "" TERM; sleep 60 & echo $! > child.pid; wait`, filepath.Join(dir, "log"), "t1")
 		done <- rc
 	}()
 	child := readPid(t, pidFile)

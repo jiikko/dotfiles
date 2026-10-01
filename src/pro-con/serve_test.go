@@ -260,6 +260,11 @@ func TestStopUntilDoneRetriesAndYieldsToScreen(t *testing.T) {
 // (画面が dispatcher を起こし直し、PG はそのまま続く)。
 func TestServeStopsOnSignalWhenSpawnedByScreen(t *testing.T) {
 	// join の画面しか無ければ止める (join は dispatcher を起こし直さないので、止めずに抜けると見張る者の居ない PG が残る。issue 481)
+	// 持ち主の画面は猶予の間ずっと開いたままなので、既定 (5 秒) のままだと満額を実時間で待つ。見るのは止める / 止めないの分岐で、
+	// 猶予の長さではないので縮める (issue 614)。🚨 package の変数なのでこの package のテストに t.Parallel を足すときは注入へ移す
+	old := signalGrace
+	signalGrace = 200 * time.Millisecond
+	t.Cleanup(func() { signalGrace = old })
 	for _, screen := range []presence.Mode{"", presence.Owner, presence.Join} {
 		if stopped, rc := serveUntilSignal(t, screen); stopped != (screen != presence.Owner) || rc != 0 {
 			t.Fatalf("開いている画面=%q で、止めた=%v rc=%d", screen, stopped, rc)
