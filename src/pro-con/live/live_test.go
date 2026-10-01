@@ -543,7 +543,7 @@ func TestBroadcastRefreshesWithoutList(t *testing.T) {
 			if cond() {
 				return
 			}
-			time.Sleep(25 * time.Millisecond)
+			time.Sleep(25 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (waitFor)
 		}
 		t.Fatal(what)
 	}
@@ -697,7 +697,7 @@ func TestOpeningScreenUpdatesOthers(t *testing.T) {
 			if cond() {
 				return
 			}
-			time.Sleep(25 * time.Millisecond)
+			time.Sleep(25 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (waitFor)
 		}
 		t.Fatal(what)
 	}
@@ -723,6 +723,7 @@ func TestWaitWaitsForSubscription(t *testing.T) {
 	var ended atomic.Bool
 	b.subscribe = func(ctx context.Context, _ *wake.Subscriber) {
 		<-ctx.Done()
+		// sleep-ok: window: 購読の後始末に時間がかかる形を演じる入力
 		time.Sleep(50 * time.Millisecond) // 後始末に時間がかかる形
 		ended.Store(true)
 	}
@@ -799,7 +800,7 @@ func TestStartKeepsDispatcher(t *testing.T) {
 		if starts.Load() > 0 {
 			return
 		}
-		time.Sleep(25 * time.Millisecond)
+		time.Sleep(25 * time.Millisecond) // sleep-ok: tick: 読み直しのループが起こすのを条件で待つ刻み (上限つき)
 	}
 	t.Fatal("dispatcher が居ないのに、読み直しのループが起こさない")
 }

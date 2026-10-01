@@ -29,6 +29,7 @@ SOCKET_NAME="dss-$$"
 # scroll.sh の状態ファイルは ${TMPDIR:-/tmp}/tmux-smooth-scroll-<uid>/ に置かれるので TMPDIR ごと
 # 逃がす必要があるが、その隔離は lib 側 (HOME/XDG/TT_DEBOUNCE と一緒) へ集約した (issue 325)。
 source "$ROOT_DIR/tests/tmux/lib/isolate_env.sh"
+source "$ROOT_DIR/tests/lib/wait_until.sh"
 
 if ! command -v "$TMUX_BIN_PATH" >/dev/null 2>&1; then
   print -u2 "Error: tmux binary not found. Install tmux or set \$TMUX_BIN."
@@ -61,7 +62,7 @@ start_log="$TMUX_TMPDIR/start.log"
 # 上書きしないため、継承値が残ると勝ってしまう)
 if ! env -u TMUX -u TMUX_PANE \
     "${TMUX_CMD[@]}" -f "$CONF_FILE" new-session -d -x 100 -y 30 -s scrolltest \
-    'seq 1 300; exec sleep 3600' >"$start_log" 2>&1; then
+    'seq 1 300; exec sleep 3600' >"$start_log" 2>&1; then  # sleep-ok: dummy: pane を生かすだけのコマンド
   if grep -qiE "operation not permitted|permission denied" "$start_log"; then
     print -u2 "[test-smooth-scroll-tmux] skipped: tmux cannot create sockets in this environment"
     # 🚨 丸ごと skip は **exit 77** (automake の慣例)。0 で抜けると runner が [ok] と数え、
@@ -76,11 +77,8 @@ pane_id=$("${TMUX_CMD[@]}" display-message -p -t scrolltest '#{pane_id}')
 
 # 1. re-bind の確認 (init.sh は conf ロード中の run-shell で走る。少し待って安定を取る)
 bound=""
-for _ in {1..50}; do
-  bound=$("${TMUX_CMD[@]}" list-keys -T copy-mode-vi 2>/dev/null | grep -F "scroll.sh" || true)
-  [[ -n "$bound" ]] && break
-  sleep 0.1
-done
+scroll_bound() { bound=$("${TMUX_CMD[@]}" list-keys -T copy-mode-vi 2>/dev/null | grep -F "scroll.sh" || true); [[ -n "$bound" ]]; }
+TT_WAIT_TICKS=50 TT_WAIT_TICK=0.1 tt_wait_until scroll_bound || :
 [[ -n "$bound" ]] || fail "scroll keys were not rebound to scroll.sh"
 grep -q "C-u" <<< "$bound" || fail "C-u not rebound to scroll.sh"
 grep -q "C-d" <<< "$bound" || fail "C-d not rebound to scroll.sh"
@@ -89,11 +87,8 @@ grep -q "Wheel" <<< "$bound" && fail "Wheel bindings were rebound despite @smoot
 grep -qE "C-e|C-y" <<< "$bound" && fail "normal scope keys were rebound despite scopes"
 
 # スクロールバック素材 (起動コマンドの seq 出力) が溜まるのを待って copy-mode に入る
-for _ in {1..50}; do
-  hist=$("${TMUX_CMD[@]}" display-message -p -t "$pane_id" '#{history_size}')
-  [[ "$hist" -ge 100 ]] && break
-  sleep 0.1
-done
+history_filled() { hist=$("${TMUX_CMD[@]}" display-message -p -t "$1" '#{history_size}'); [[ "$hist" -ge 100 ]]; }
+TT_WAIT_TICKS=50 TT_WAIT_TICK=0.1 tt_wait_until history_filled "$pane_id" || :
 [[ "${hist:-0}" -ge 100 ]] || fail "history did not fill (history_size=${hist:-0})"
 "${TMUX_CMD[@]}" copy-mode -t "$pane_id"
 
@@ -119,13 +114,11 @@ read_gen() {
 #    なら即時ジャンプになるが、下の assert はどちらの経路でも同じ移動量を要求するので結果に効かない
 #    (固定 sleep にも状態ファイルの書き換えにも、効果が無いことを変異で確かめた)。経路そのものは検査していない
 # 指定 pane の gen が target 以上になるまで待つ (= 送った押下がすべて arbiter を通過した)
+gen_reached() { [[ "$(read_gen "$1")" -ge "$2" ]]; }
 wait_gen() {
-  local pane=$1 target=$2 cur=0
-  for _ in {1..100}; do
-    cur=$(read_gen "$pane")
-    [[ "$cur" -ge "$target" ]] && return 0
-    sleep 0.1
-  done
+  local pane=$1 target=$2
+  TT_WAIT_TICKS=100 TT_WAIT_TICK=0.1 tt_wait_until gen_reached "$pane" "$target" && return 0
+  local cur; cur=$(read_gen "$pane")
   fail "presses were not processed (gen=$cur, expected >= $target)"
 }
 
@@ -137,7 +130,7 @@ wait_settled() {
   for _ in {1..40}; do
     cur=$("${TMUX_CMD[@]}" display-message -p -t "$pane_id" '#{scroll_position}')
     [[ "$cur" != "$baseline" ]] && break
-    sleep 0.1
+    sleep 0.1   # sleep-ok: tick: 静止判定の helper の一部 (動き出さなくても先へ進み、下の静止判定で決める)
   done
   for _ in {1..60}; do
     cur=$("${TMUX_CMD[@]}" display-message -p -t "$pane_id" '#{scroll_position}')
@@ -148,7 +141,7 @@ wait_settled() {
       same=0
     fi
     prev="$cur"
-    sleep 0.1
+    sleep 0.1   # sleep-ok: tick: 同値が 3 回続くのを見るサンプリング (条件 1 つの待ちではない)
   done
   print -r -- "$cur"
 }
@@ -188,13 +181,10 @@ pos3=$(wait_settled "$pos2")
 # 5. 押下直後に pane を切り替える: 押下した pane だけが half スクロールし、切替先の
 #    pane は動かない。横 split (高さ不変) で copy-mode の pane をもう 1 枚用意し、
 #    C-u 送出直後 (run-shell -b の scroll.sh 起動前) に select-pane で切り替える
-"${TMUX_CMD[@]}" split-window -h -d -t scrolltest 'seq 1 300; exec sleep 3600'
+"${TMUX_CMD[@]}" split-window -h -d -t scrolltest 'seq 1 300; exec sleep 3600'  # sleep-ok: dummy: pane を生かすだけのコマンド
 pane2_id=$("${TMUX_CMD[@]}" list-panes -t scrolltest -F '#{pane_id}' | grep -v "^${pane_id}$")
-for _ in {1..50}; do
-  hist2=$("${TMUX_CMD[@]}" display-message -p -t "$pane2_id" '#{history_size}')
-  [[ "$hist2" -ge 100 ]] && break
-  sleep 0.1
-done
+TT_WAIT_TICKS=50 TT_WAIT_TICK=0.1 tt_wait_until history_filled "$pane2_id" || :
+hist2=$hist
 [[ "${hist2:-0}" -ge 100 ]] || fail "pane2 history did not fill (history_size=${hist2:-0})"
 "${TMUX_CMD[@]}" copy-mode -t "$pane2_id"
 pane2_before=$("${TMUX_CMD[@]}" display-message -p -t "$pane2_id" '#{scroll_position}')

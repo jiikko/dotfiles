@@ -52,7 +52,7 @@ OUT="$(
       esac
       return 0
     }
-    sleep() { : ; }   # debounce 待ちを潰す
+    sleep() { : ; }   # debounce 待ちを潰す  # sleep-ok: stub: sleep を潰す関数
 
     source "$SCRIPT"
 
@@ -152,10 +152,10 @@ OUT="$(
     #     main 実行後に token ファイルを別値で上書きしてから…ではなく、
     #     sleep を「後続イベントを模す」フックに差し替える。
     : > "'"$TMP_HOME"'/save_runs"
-    sleep() { printf "later-event\n" > "$TT_DEBOUNCE_TOKEN_FILE"; }  # 待機中に別 token が書かれた状況
+    sleep() { printf "later-event\n" > "$TT_DEBOUNCE_TOKEN_FILE"; }  # 待機中に別 token が書かれた状況  # sleep-ok: stub: 待機中に別 token が書かれた状況を演じる関数
     tt_debounced_save_main
     printf "CASE:main_superseded runs=%s\n" "$(wc -l < "'"$TMP_HOME"'/save_runs" | tr -d " ")"
-    sleep() { : ; }
+    sleep() { : ; }  # sleep-ok: stub: sleep を潰す関数
 
     # (c) 自分が最後でも復元中なら保存しない（直近 epoch = 復元中）
     : > "'"$TMP_HOME"'/save_runs"

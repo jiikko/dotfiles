@@ -89,7 +89,7 @@ STUB
 chmod +x "$BIN/pbpaste"
 export PATH="$BIN:$PATH"
 
-tmux -L "$SOCK" -f "$CONF" new-session -d -x 120 -y 30 "sh -c 'sleep 30'" 2>/dev/null
+tmux -L "$SOCK" -f "$CONF" new-session -d -x 120 -y 30 "sh -c 'sleep 30'" 2>/dev/null  # sleep-ok: dummy: session を生かすだけのコマンド
 
 # --- 1. bind の登録と説明 ---
 keys="$(tmux -L "$SOCK" list-keys -T root 2>/dev/null | grep -c ' C-v ')"
@@ -108,7 +108,7 @@ fi
 # 手元では ~/.tmux.conf -> _tmux.conf の link が同じ bind を読み直すので緑に見え、CI (link 無し)
 # で「bind から判定式を取り出せない」として初めて出た (2026-09-04 run 33823346926)。
 tmux -L "$SOCK" new-session -d -s zsh -x 120 -y 30 "zsh -f" 2>/dev/null
-tmux -L "$SOCK" new-session -d -s other -x 120 -y 30 "sh -c 'sleep 30'" 2>/dev/null
+tmux -L "$SOCK" new-session -d -s other -x 120 -y 30 "sh -c 'sleep 30'" 2>/dev/null  # sleep-ok: dummy: session を生かすだけのコマンド
 tmux -L "$SOCK" kill-session -t 0 2>/dev/null
 # 🚨 待つのは「判定式が真になること」ではなく **fixture が整うこと** (ペインの前面プロセスが
 #    確定する)。判定式そのものをポーリングすると、下の assert が必ず真になり何も守らなくなる。

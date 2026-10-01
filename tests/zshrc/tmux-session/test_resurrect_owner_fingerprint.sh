@@ -78,7 +78,7 @@ if [ -n "$raw" ]; then
 fi
 
 # --- 5. 死んだ pid は同一でない ------------------------------------------------
-sleep 100 & dead=$!; kill "$dead" 2>/dev/null || true; wait "$dead" 2>/dev/null || true
+sleep 100 & dead=$!; kill "$dead" 2>/dev/null || true; wait "$dead" 2>/dev/null || true  # sleep-ok: dummy: kill して死んだ pid を得るための常駐プロセス
 if tt_same_proc "$dead" "$fp"; then ng "死んだ pid を生存扱いした"; else ok "死んだ pid は同一でない (解除可)"; fi
 
 # --- 6. pid が数値でない / 空 は同一でない ------------------------------------

@@ -40,7 +40,7 @@ func waitSchedule(t *testing.T, d *Dispatcher) {
 		if !d.schedBusy.Load() {
 			return
 		}
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (waitSchedule)
 	}
 	t.Fatal("予定の goroutine が 2 秒たっても終わらない")
 }

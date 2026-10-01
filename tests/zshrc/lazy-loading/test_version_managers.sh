@@ -13,7 +13,7 @@ cleanup() {
   local _attempt
   for _attempt in 1 2 3; do
     rm -rf "$TMP_ZDOTDIR" "$TMP_HOME" 2>/dev/null && return 0
-    sleep 1
+    sleep 1  # sleep-ok: tick: rm 失敗時の再試行の間隔 (後始末。成立条件が観測できない)
   done
   rm -rf "$TMP_ZDOTDIR" "$TMP_HOME" 2>/dev/null ||
     printf '🚨 一時ディレクトリを消せなかった (残骸: %s %s)\n' "$TMP_ZDOTDIR" "$TMP_HOME" >&2

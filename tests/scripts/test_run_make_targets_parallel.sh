@@ -28,6 +28,7 @@ FIX=$(mktemp -d)
 trap 'rm -rf "$FIX"' EXIT
 # slow-ok は fast-fail が終わるまで終わらない (秒数ではなく順序で「失敗の後にまだ走っている」を作る)。
 # 🚨 この順序を外さない: 最初の失敗で残りを止める (fail-fast の) 退行は、失敗より後に終わる target でしか見えない (issue 613 の敵対レビュー)
+# sleep-ok: tick: Makefile の順序同期 (相手の完了ファイルを待つ刻み。上限つき)
 cat > "$FIX/Makefile" <<'MK'
 slow-ok:
 	@i=0; until [ -f fast-fail.done ] || [ $$i -ge 200 ]; do sleep 0.05; i=$$((i+1)); done; [ -f fast-fail.done ]; echo "OUT slow-ok"
@@ -98,6 +99,7 @@ rc=$( ( cd "$FIX" && "$RUNNER" > "$FIX/out" 2> "$FIX/err" ); echo $? )
 printf 'Test 6: 終了コードを回収できないターゲットは失敗\n'
 # make 相当を「自分の親 (バッファ用サブシェル) ごと殺す」偽物に差し替えて rc ファイルを消す。
 # 判定不能を成功へ丸めると、kill された検査が緑で通る
+# sleep-ok: dummy: 親を kill された後に残る偽 make
 cat > "$FIX/fake-make" <<'FM'
 #!/bin/sh
 kill -9 "$PPID" 2>/dev/null
@@ -113,6 +115,7 @@ printf 'Test 7: 中断 (SIGTERM) で子孫を残さない\n'
 #    既に消えた outdir へ書き続ける。実測 2026-09-06: 修正前は偽 make 2 + 孫 4 = 6 プロセスが孤児。
 #    判定は rc ではなく**残存プロセス数**で、上限つきポーリングで待つ
 #    (_claude/rules/avoid-wall-clock-assertions.md)。
+# sleep-ok: dummy: 孫を含む常駐プロセスの木 (kill される前提)
 cat > "$FIX/fake-make-tree" <<'FMT'
 #!/bin/sh
 sh -c 'sleep 120' &      # 孫を起こす (make -> 子ツール の構図)

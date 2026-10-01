@@ -50,7 +50,7 @@ OUT="$(
     # ps -o lstart= が使えるか（PID 再利用検出はこれに依存。使えない環境は fail-safe に縮退）。
     if [ -n "$ALIVE_START" ]; then printf "CASE:lstart val=yes\n"; else printf "CASE:lstart val=no\n"; fi
     # 死亡 PID: 起動直後に終了させた子の PID。テストは <1s で終わるため再利用はまず起きない。
-    sleep 100 & DEAD=$!; kill "$DEAD" 2>/dev/null; wait "$DEAD" 2>/dev/null || true
+    sleep 100 & DEAD=$!; kill "$DEAD" 2>/dev/null; wait "$DEAD" 2>/dev/null || true  # sleep-ok: dummy: kill して死んだ pid を得るための常駐プロセス
 
     reset_lock() { rm -rf "$LOCK"; mkdir -p "$LOCK"; }   # mtime=現在 (新しい)
     # ループと同様に owner 行を pid から一度読んで判定関数へ渡す。
@@ -289,7 +289,7 @@ FIXW_OUT="$(
 
     # 退避コピーの残置 GC: 死亡 pid の .pane_contents.ttguard.* は保存時に掃除され、
     # 生存 pid のものは残す (誤って進行中の退避を消さない)
-    sleep 100 & GCDEAD=$!; kill "$GCDEAD" 2>/dev/null; wait "$GCDEAD" 2>/dev/null || true
+    sleep 100 & GCDEAD=$!; kill "$GCDEAD" 2>/dev/null; wait "$GCDEAD" 2>/dev/null || true  # sleep-ok: dummy: kill して死んだ pid を得るための常駐プロセス
     printf x > "$RDIR/.pane_contents.ttguard.$GCDEAD.tar.gz"
     printf x > "$RDIR/.pane_contents.ttguard.$$.tar.gz"
     make_prev_w6; printf 6 > "$RDIR/.fake_w"; ( tt_save_main quiet )
@@ -320,7 +320,7 @@ SS_OUT="$(
     }
     source "'"$SCRIPT"'"
     date() { printf "20990101T000000\n"; }        # 「現在秒」を固定 (レース排除)
-    slept=0; sleep() { slept=$((slept+1)); }      # 待ちをカウントに置換
+    slept=0; sleep() { slept=$((slept+1)); }      # 待ちをカウントに置換  # sleep-ok: stub: 待ちをカウントに置換する関数
 
     ln -sf "tmux_resurrect_20990101T000000.txt" "$RDIR/last"   # 現在秒と同名 → 待つ
     slept=0; tt_save_avoid_same_second_target
@@ -408,7 +408,7 @@ WRAP_OUT="$(
 
     # dead owner の取り残し lock は横取りして保存し、終了時に自分の lock を解放する
     reset
-    sleep 100 & WDEAD=$!; kill "$WDEAD" 2>/dev/null; wait "$WDEAD" 2>/dev/null || true
+    sleep 100 & WDEAD=$!; kill "$WDEAD" 2>/dev/null; wait "$WDEAD" 2>/dev/null || true  # sleep-ok: dummy: kill して死んだ pid を得るための常駐プロセス
     mkdir -p "$TT_SAVE_LOCK_DIR"
     printf "%s %s\n" "$WDEAD" "sometime" > "$TT_SAVE_LOCK_DIR/pid"
     ( tt_save_main quiet ); rc=$?
@@ -421,12 +421,12 @@ WRAP_OUT="$(
     reset; _T_SESSIONS="proj"; _T_SOCKET=""
     TT_SAVE_LOCK_WAIT_SECONDS=15
     date() { case "${1:-}" in "+%s") command date +%s ;; *) printf "20990101T000000\n" ;; esac; }
-    sleep() { echo s >> "$RDIR/slept"; }
+    sleep() { echo s >> "$RDIR/slept"; }  # sleep-ok: stub: 待ちを記録に置換する関数
     : > "$RDIR/slept"
     ln -sf "tmux_resurrect_20990101T000000.txt" "$RDIR/last"
     ( tt_save_main quiet ); rc=$?
     printf "CASE:w_same_second rc=%s runs=%s slept=%s\n" "$rc" "$(runs)" "$(wc -l < "$RDIR/slept" | tr -d " ")"
-    unset -f date sleep
+    unset -f date sleep  # sleep-ok: stub: sleep の差し替えを外す
     rm -f "$RDIR/last" "$RDIR/slept"
   ' 2>/dev/null
 )"

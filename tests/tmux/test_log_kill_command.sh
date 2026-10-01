@@ -169,7 +169,7 @@ mkdir -p "$TMP_DIR/fakebin"
 # 🚨 補助プロセスの stdout/stderr は必ず /dev/null へ落とすこと。テストの stdout を継承させると
 #    テスト本体が終わってもパイプが閉じず、呼び出し側 (make test / CI) が EOF を待ってハングする
 #    (2026-07-30 に実際に踏んだ。テストは pass していたのに終わらなく見えた)。
-( trap - EXIT; exec -a "$FAKE_TMUX_PATH" /bin/sh -c 'sleep 300; :' kill-server ) >/dev/null 2>&1 &
+( trap - EXIT; exec -a "$FAKE_TMUX_PATH" /bin/sh -c 'sleep 300; :' kill-server ) >/dev/null 2>&1 &  # sleep-ok: dummy: kill される前提の偽 tmux プロセス
 FULLPATH_PID=$!
 HELPER_PIDS+=("$FULLPATH_PID")
 wait_visible "フルパス argv[0] のプロセスを作れていない" "$FULLPATH_PID"
@@ -188,7 +188,7 @@ printf '✓ フルパス起動 (/path/to/tmux) の発行元も basename 判定�
 # tmux は曖昧でない前方一致を受理するため発行元の argv は `kill-sessio` 等になりうる。
 # 正式名で完全一致すると取り逃す (本番 e2e で issuer=not-found を実測 2026-07-30)。
 reset_calls; : > "$LOG"
-( trap - EXIT; exec -a "$FAKE_TMUX_PATH" /bin/sh -c 'sleep 300; :' kill-sessio ) >/dev/null 2>&1 &
+( trap - EXIT; exec -a "$FAKE_TMUX_PATH" /bin/sh -c 'sleep 300; :' kill-sessio ) >/dev/null 2>&1 &  # sleep-ok: dummy: kill される前提の偽 tmux プロセス
 ABBREV_PID=$!
 HELPER_PIDS+=("$ABBREV_PID")
 wait_visible "略記 subcommand のプロセスを作れていない" "$ABBREV_PID"

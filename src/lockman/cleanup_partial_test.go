@@ -46,7 +46,7 @@ func TestCleanupTimedReportsPartialProgress(t *testing.T) {
 	// 「sweep の途中で期限切れ」を構造的に再現できず、**カウンタを一括で足す変異
 	// (= issue 393 の症状そのもの) が全スイート緑で通る** (敵対レビュー P1-1 が実測)。
 	// ここでは 1 件消すごとに待たせ、期限内に一部しか進めない状態を作る。
-	pause := func() { time.Sleep(testIOTimeout / 4) }
+	pause := func() { time.Sleep(testIOTimeout / 4) } // sleep-ok: window: sweep の途中で期限切れになる遅い処理を演じる入力
 	hook := &sweepPauseHook
 	hook.Store(&pause)
 	t.Cleanup(func() { hook.Store(nil) })
@@ -179,7 +179,7 @@ func TestCleanupTimedKeepsSweepErrorsOnTimeout(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(tmpDir, metaDirMode) })
 
-	pause := func() { time.Sleep(testIOTimeout / 4) }
+	pause := func() { time.Sleep(testIOTimeout / 4) } // sleep-ok: window: sweep の途中で期限切れになる遅い処理を演じる入力
 	sweepPauseHook.Store(&pause)
 	t.Cleanup(func() { sweepPauseHook.Store(nil) })
 

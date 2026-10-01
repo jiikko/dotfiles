@@ -122,5 +122,6 @@ func runCleanupHelper() {
 	_ = os.WriteFile(filepath.Join(dir, "Cookies"), []byte("xoxd-HELPER-NOT-A-REAL-SECRET"), 0o600)
 	fmt.Println("READY " + dir)
 	_ = os.Stdout.Sync()
+	// sleep-ok: dummy: helper プロセスをシグナルで殺されるまで生かすだけ
 	time.Sleep(60 * time.Second) // シグナルで殺される前提
 }

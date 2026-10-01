@@ -250,7 +250,7 @@ else
   }
   # 🚨 `&` の直後は exec 前なので、`kill -0` が真でも「起動した」とは言えない。
   # 実体が走り出すのを条件で待つ (壁時計の `sleep` にしない)。
-  tt_comm_is_sleep() { [ "$(ps -o comm= -p "$1" 2>/dev/null | sed 's|.*/||')" = sleep ]; }
+  tt_comm_is_sleep() { [ "$(ps -o comm= -p "$1" 2>/dev/null | sed 's|.*/||')" = sleep ]; }  # sleep-ok: other: comm 名 sleep の判定関数名
   tt_wait_alive() {  # tt_wait_alive <pid>
     TT_WAIT_TICKS=100 TT_WAIT_TICK=0.05 tt_wait_until tt_comm_is_sleep "$1"
   }
@@ -285,7 +285,7 @@ s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(1); time.sleep(30
   if [ ! -S "$sock8" ]; then
     bad "🚨 HARNESS: ⑧ の socket を作れない (実装の不合格ではない)"
   else
-    tt_spawn /bin/sleep; pid8=$REPLY_PID          # comm=sleep → 素性チェックに落ちる
+    tt_spawn /bin/sleep; pid8=$REPLY_PID          # comm=sleep → 素性チェックに落ちる  # sleep-ok: dummy: 素性チェックに落とすための生きた実体
     # 🚨 前提: 実体が生きていること。死んでいると「撃たなかった」と見分けが付かない
     tt_wait_alive "$pid8" || bad "⑧ の前提: 実体 (pid=$pid8) が起動していない"
     tt_stub "$pid8 $sock8"
@@ -347,6 +347,7 @@ s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(1); time.sleep(30
   # 自明に成り立ち、何も守らない (`TMUX_TMPDIR` を hang_dir に差し替えて閉じ込める)
   mkdir -p "$hang_dir/tmux-$(id -u)"; chmod 700 "$hang_dir/tmux-$(id -u)"
   sock10="$hang_dir/tmux-$(id -u)/tt-hang-10"; tt_mksock "$sock10"
+  # sleep-ok: dummy: 何を聞いても返らない偽 tmux (ハングを演じる)
   cat > "$hang_dir/tmux" <<STUB
 #!/bin/sh
 echo \$\$ > "$hang_dir/hangpid"
@@ -399,7 +400,7 @@ STUB
   if [ ! -S "$sock12" ]; then
     bad "🚨 HARNESS: ⑫ の socket を作れない (実装の不合格ではない)"
   else
-    tt_spawn /bin/sleep; pid12=$REPLY_PID     # 撃たれたら分かるように生きた実体を置く
+    tt_spawn /bin/sleep; pid12=$REPLY_PID     # 撃たれたら分かるように生きた実体を置く  # sleep-ok: dummy: 撃たれたら分かるように置く生きた実体
     tt_wait_alive "$pid12" || bad "⑫ の前提: 実体 (pid=$pid12) が起動していない"
     tt_stub "$pid12 $sock12"
     : > "$hang_dir/kill12"
@@ -433,6 +434,7 @@ STUB
   # bind 名で照合するため持ち主を引けず (仕様どおり)、fixture が主張したい状態にならない
   mkdir -p "$hang_dir/tmux-$(id -u)"; chmod 700 "$hang_dir/tmux-$(id -u)"
   sock13="$hang_dir/tmux-$(id -u)/tt-hang-13"; tt_mksock "$sock13" || bad "🚨 HARNESS: ⑬ の socket を作れない"
+  # sleep-ok: dummy: 何を聞いても返らない偽 tmux (ハングを演じる)
   cat > "$hang_dir/tmux" <<STUB
 #!/bin/sh
 exec sleep 300                 # 🚨 何を聞いても返らない (= 377 のハング)
@@ -466,7 +468,7 @@ STUB
   sock14="$hang_dir/tmux-$(id -u)/tt-hang-14"; tt_mksock "$sock14" || bad "🚨 HARNESS: ⑭ の socket を作れない"
   mini="$hang_dir/mini"; mkdir -p "$mini"
   miss=0
-  for b in ps head id dirname basename sleep rm grep sed cat mktemp chmod; do
+  for b in ps head id dirname basename sleep rm grep sed cat mktemp chmod; do  # sleep-ok: other: PATH に配る実体の名前の列挙
     src=$(command -v "$b" 2>/dev/null) || { miss=1; break; }
     ln -sf "$src" "$mini/$b"
   done
@@ -498,7 +500,7 @@ fi
 # 🚨 これを canary として先に確かめる。もし tmux 側が将来 socket を消すようになったら、
 # この検査は「何も守っていない」状態になるので、そのときに気づけるようにしておく。
 tt_new_socket raw tt-cleanup-raw
-tmux -L "$raw" -f /dev/null new-session -d 'sleep 30' >/dev/null 2>&1 || {
+tmux -L "$raw" -f /dev/null new-session -d 'sleep 30' >/dev/null 2>&1 || {  # sleep-ok: dummy: session を生かすだけのコマンド
   # 🚨 ⑥ で既に違反を見つけているなら skip に畳まない (skip は緑に見える)
   [ "$fails" -eq 0 ] || { printf '✗ tmux は起動できないが、⑥ が %d 件の違反を出している\n' "$fails" >&2; exit 1; }
   echo "SKIP: tmux を起動できない"; exit 77
@@ -514,7 +516,7 @@ fi
 
 # --- ② ヘルパーは socket ファイルまで消す ------------------------------------------------------
 tt_new_socket s1 tt-cleanup-a
-tmux -L "$s1" -f /dev/null new-session -d 'sleep 30' >/dev/null 2>&1
+tmux -L "$s1" -f /dev/null new-session -d 'sleep 30' >/dev/null 2>&1  # sleep-ok: dummy: session を生かすだけのコマンド
 p1=$(tmux -L "$s1" display -p '#{socket_path}' 2>/dev/null)
 [ -S "$p1" ] || bad "前提: socket が作られていない ($p1)"
 tt_tmux_kill_socket "$s1"
@@ -523,7 +525,7 @@ else ok "tt_tmux_kill_socket は socket ファイルまで消す"; fi
 
 # --- ③ 既に死んでいるサーバの socket も回収する ------------------------------------------------
 tt_new_socket s2 tt-cleanup-b
-tmux -L "$s2" -f /dev/null new-session -d 'sleep 30' >/dev/null 2>&1
+tmux -L "$s2" -f /dev/null new-session -d 'sleep 30' >/dev/null 2>&1  # sleep-ok: dummy: session を生かすだけのコマンド
 p2=$(tmux -L "$s2" display -p '#{socket_path}' 2>/dev/null)
 tmux -L "$s2" kill-server 2>/dev/null || :      # 先に殺す = display -p が失敗する状態を作る
 [ -S "$p2" ] || bad "前提: 先に kill しても socket は残るはず"
@@ -563,7 +565,7 @@ rm -rf -- "$guard_dir"; guard_dir=""
 # `-KILL` を `-TERM` へ弱める退行が緑のまま通る (健全なサーバは TERM でも死ぬため。
 # 敵対レビュー P2-1 の実測)。377 の定義的性質は「復旧は `kill -9` のみ」なので、種別が要点。
 tt_new_socket s7 tt-cleanup-hang
-tmux -L "$s7" -f /dev/null new-session -d 'sleep 300' >/dev/null 2>&1
+tmux -L "$s7" -f /dev/null new-session -d 'sleep 300' >/dev/null 2>&1  # sleep-ok: dummy: session を生かすだけのコマンド
 p7=$(tmux -L "$s7" display -p '#{socket_path}' 2>/dev/null)
 pid7=$(tmux -L "$s7" display -p '#{pid}' 2>/dev/null)
 # 🚨 **サーバを SIGKILL すると pane の子は道連れにならない** (launchd へ里子化して残る。
@@ -612,7 +614,7 @@ fi
 # ここは実 tmux サーバ + **全コマンドが返らない** stub client で、`lsof -t -- <socket>` から
 # 持ち主を引いて KILL し、死を確認して socket を消すまでを固定する。
 tt_new_socket s11 tt-cleanup-noresp
-tmux -L "$s11" -f /dev/null new-session -d 'sleep 300' >/dev/null 2>&1
+tmux -L "$s11" -f /dev/null new-session -d 'sleep 300' >/dev/null 2>&1  # sleep-ok: dummy: session を生かすだけのコマンド
 p11=$(tmux -L "$s11" display -p '#{socket_path}' 2>/dev/null)
 pid11=$(tmux -L "$s11" display -p '#{pid}' 2>/dev/null)
 pane11=$(tmux -L "$s11" display -p '#{pane_pid}' 2>/dev/null)   # ⑦ と同じ理由で登録する
@@ -622,7 +624,7 @@ if [ -z "$shim_dir" ] || [ ! -d "$shim_dir" ] || [ ! -S "$p11" ] || [ -z "$pid11
    || ! kill -0 "$pid11" 2>/dev/null; then
   bad "⑪ の前提が崩れている (socket=$p11 pid=$pid11 shim=$shim_dir)"
 else
-  printf '#!/bin/sh\nexec sleep 300\n' > "$shim_dir/tmux"   # 🚨 何を聞いても返らない
+  printf '#!/bin/sh\nexec sleep 300\n' > "$shim_dir/tmux"   # 🚨 何を聞いても返らない  # sleep-ok: dummy: 何を聞いても返らない偽 tmux
   chmod +x "$shim_dir/tmux"
   ( PATH="$shim_dir:$PATH"; tt_tmux_kill_socket "$s11" ) >/dev/null 2>&1; rc11=$?
   if kill -0 "$pid11" 2>/dev/null; then

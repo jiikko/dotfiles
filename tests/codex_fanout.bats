@@ -18,6 +18,7 @@ setup() {
   # (mode 分岐 ro/review が正しいサブコマンドに写像されることを検証するため)。
   # プロンプトのマーカー: FAIL_MARKER = 失敗 / SLEEP_MARKER = 長時間スリープ (timeout・中断試験用) /
   # EMPTY_OUT_MARKER = exit 0 だが -o へ何も書かない (digest 空チェックの検証用)。
+  # sleep-ok: dummy: hang する偽 codex が起こす常駐プロセス
   cat >"$WORK/bin/codex" <<'EOS'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"${CODEX_STUB_CALLS:-/dev/null}"
@@ -251,24 +252,13 @@ EOS
   "$DRIVER" -M "$WORK/m.tsv" "$WORK/out7" >"$WORK/driver7.log" 2>&1 &
   dpid=$!
   # codex (stub) が起動して pid ファイルが出るまで待つ
-  cpid=""
-  for _ in $(seq 1 50); do
-    if [ -f "$WORK/out7/hang.pid" ]; then
-      cpid="$(cat "$WORK/out7/hang.pid")"
-      break
-    fi
-    sleep 0.1
-  done
+  . "$BATS_TEST_DIRNAME/lib/wait_until.sh"
+  TT_WAIT_TICKS=50 TT_WAIT_TICK=0.1 tt_wait_until test -f "$WORK/out7/hang.pid" || :
+  cpid="$(cat "$WORK/out7/hang.pid" 2>/dev/null || true)"
   [ -n "$cpid" ]
   # 孫プロセスの pid が出るまで待つ (stub が書く)
-  gpid=""
-  for _ in $(seq 1 50); do
-    if [ -f "$WORK/out7/hang.out.md.grandchild" ]; then
-      gpid="$(cat "$WORK/out7/hang.out.md.grandchild")"
-      break
-    fi
-    sleep 0.1
-  done
+  TT_WAIT_TICKS=50 TT_WAIT_TICK=0.1 tt_wait_until test -f "$WORK/out7/hang.out.md.grandchild" || :
+  gpid="$(cat "$WORK/out7/hang.out.md.grandchild" 2>/dev/null || true)"
   [ -n "$gpid" ]
   kill -TERM "$dpid"
   wait "$dpid" || true

@@ -34,15 +34,15 @@ runs_within() { # $1=秒 $2...=コマンド
       wait "$pid" 2>/dev/null || true
       return 1
     fi
-    sleep 0.1; waited=$((waited + 1))
+    sleep 0.1; waited=$((waited + 1))   # sleep-ok: tick: 上限が引数で、時間切れなら kill して rc=1 を返す判定器 (成立を待つだけの形ではない)
   done
   wait "$pid" 2>/dev/null || true
   return 0
 }
 
 # 自己検査: 判定器が「終わらないもの」を本当に検出するか (これが無いと全 ok が vacuous)
-if runs_within 1 sleep 30; then
-  fail "判定器の自己検査: sleep 30 を上限内終了と誤判定した"
+if runs_within 1 sleep 30; then  # sleep-ok: dummy: 上限を超えて走る常駐コマンドを判定器に渡す自己検査
+  fail "判定器の自己検査: sleep 30 を上限内終了と誤判定した"  # sleep-ok: other: メッセージの中の sleep
 else
   ok "判定器の自己検査: 終わらないコマンドを検出する"
 fi

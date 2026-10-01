@@ -94,7 +94,7 @@ zpty_wait_marker() {
       wait_buf+="$chunk"
       [[ "$wait_buf" == *${marker}* ]] && return 0
     fi
-    sleep 0.005
+    sleep 0.005  # sleep-ok: tick: zpty の読み取りループの刻み (deadline つき。条件が chunk の読み取りで tt_wait_until にできない)
   done
   return 1
 }

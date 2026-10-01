@@ -59,7 +59,7 @@ func TestGuardAltScreenLeavesOnSignal(t *testing.T) {
 			select {} // 見張りが os.Exit する (しなければ親の上限で殺される)
 		}
 		// 外した見張りが書かないことの確認は、書くならこの間に書く猶予として短く待つ (否定の確認なので時間に頼る)
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond) // sleep-ok: negative: 外した見張りが書かないことの確認 (書くならこの間に書く猶予)
 		os.Exit(0)
 	}
 	for _, stopped := range []bool{false, true} {

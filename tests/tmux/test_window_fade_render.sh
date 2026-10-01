@@ -110,8 +110,8 @@ expect "zoom は fade の後に暗赤を重ねる" "#[bg=colour164]#[fg=colour16
 expect "claude アイコンの後は fade の文字色へ戻す" "#[bg=colour164]#[fg=colour16] $idx:#[fg=colour214][3]#[fg=colour16] #[fg=colour220]⚙#[fg=colour16] w "
 "${T[@]}" set -pu -t "$p1" @claude_state
 
-"${T[@]}" respawn-pane -k -t "$p1" 'exec sleep 100000'
-wait_cmd "$p1" sleep
+"${T[@]}" respawn-pane -k -t "$p1" 'exec sleep 100000'  # sleep-ok: dummy: pane の実行コマンド名を sleep にするための常駐
+wait_cmd "$p1" sleep  # sleep-ok: other: コマンド名 sleep を待つ関数への引数
 touch_ago 100000
 expect "busy は経過に関係なく最明" "#[bg=colour201]#[fg=colour16] $idx:#[fg=colour214][3]#[fg=colour16] w "
 

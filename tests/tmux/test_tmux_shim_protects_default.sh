@@ -127,7 +127,7 @@ else
   DECOY_TMPDIR="/tmp/tsd$$"; mkdir -p "$DECOY_TMPDIR"
   DECOY_NAME="zzdecoy$$"
   alive() { TMUX_TMPDIR="$DECOY_TMPDIR" "$REAL_TMUX" -L "$DECOY_NAME" has-session 2>/dev/null && echo A || echo D; }
-  ( unset TMUX; TMUX_TMPDIR="$DECOY_TMPDIR" "$REAL_TMUX" -L "$DECOY_NAME" -f /dev/null new-session -d 'sleep 300' 2>/dev/null )
+  ( unset TMUX; TMUX_TMPDIR="$DECOY_TMPDIR" "$REAL_TMUX" -L "$DECOY_NAME" -f /dev/null new-session -d 'sleep 300' 2>/dev/null )  # sleep-ok: dummy: session を生かすだけのコマンド
   if [ "$(alive)" != A ]; then
     ok "(skip) デコイ起動に失敗したので実 exec 証明は省略 (決定テストは実施済み)"
   else

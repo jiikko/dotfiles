@@ -563,15 +563,15 @@ chmod 644 "$d/unreadable.txt"
 #     red team 4 周目 P2-2: `pkill -f <path>` は正規表現の部分一致なので .452 が .4521 に当たった
 # ---------------------------------------------------------------------------
 kt="$work/killtest"; mkdir -p "$kt/dotfiles-mutant.4521"
-perl -e 'sleep 60' "$kt/dotfiles-mutant.4521/guard.sh" &
+perl -e 'sleep 60' "$kt/dotfiles-mutant.4521/guard.sh" &  # sleep-ok: dummy: kill 対象の常駐プロセス
 victim=$!
-perl -e 'sleep 60' "$kt/dotfiles-mutant.452/guard.sh" &
+perl -e 'sleep 60' "$kt/dotfiles-mutant.452/guard.sh" &  # sleep-ok: dummy: kill 対象の常駐プロセス
 target=$!
 # パスの直後に引用符や `;` が続く argv (`sh -c 'cd <path>; …'` の形) も当の worktree のもの (5 周目 P3-6)
-perl -e 'sleep 60' "$kt/dotfiles-mutant.452\";x" &
+perl -e 'sleep 60' "$kt/dotfiles-mutant.452\";x" &  # sleep-ok: dummy: kill 対象の常駐プロセス
 target2=$!
 ( . "$ROOT_DIR/scripts/lib/worktree_scratch.sh"; wts_kill_holders "$kt/dotfiles-mutant.452" )
-sleep 0.2  # kill の配送を待つ (成立条件のポーリングにできない否定の assert: 生き残ることを見る)
+sleep 0.2  # kill の配送を待つ (成立条件のポーリングにできない否定の assert: 生き残ることを見る)  # sleep-ok: negative: 生き残ることを見る否定の assert (直前のコメント参照)
 kill -0 "$victim" 2>/dev/null || fail "🚨 wts_kill_holders が別 run (.4521) のプロセスを殺した"
 kill -0 "$target" 2>/dev/null && fail "wts_kill_holders が当の worktree (.452) のプロセスを止めない"
 kill -0 "$target2" 2>/dev/null && fail "wts_kill_holders がパスの直後に引用符が続く argv を止めない"
@@ -753,6 +753,7 @@ done
 # ---------------------------------------------------------------------------
 d="$work/interrupt"; make_repo "$d"
 int_gate="$work/int.gate"; rm -f "$int_gate"
+# sleep-ok: tick: gate を待つ偽の遅い検査の刻み (上限つき)
 cat > "$work/int_slow.sh" <<EOS
 i=0; while [ ! -f '$int_gate' ] && [ "\$i" -lt 600 ]; do sleep 0.05; i=\$((i+1)); done
 EOS

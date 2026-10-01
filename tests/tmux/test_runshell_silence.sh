@@ -31,7 +31,7 @@ targets=(
   "scripts/tmux_periodic_save.sh:tt_trigger_log "           # 周期保存 (viewer を開いている間ずっと生きる)
   "scripts/tmux_server_watchdog.sh:tt_trigger_log "         # 死亡監視 (サーバの寿命だけ生きる)
   "scripts/tmux_restore_runner.sh:tt_trigger_log "          # 手動復元 (復元が終わるまで生きる)
-  "scripts/tmux_schedule_keys.sh:sleep \"\$wait_s\""          # 予約入力の fire (最長 30 日 sleep する)
+  "scripts/tmux_schedule_keys.sh:sleep \"\$wait_s\""          # 予約入力の fire (最長 30 日 sleep する)  # sleep-ok: other: 検査対象の表の中の文字列
   "scripts/tmux_resurrect_debounced_save.sh:tt_debounced_save_main$" # debounce 保存 (既定 10 秒)
 )
 

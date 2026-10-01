@@ -52,7 +52,7 @@ unset TMUX TMUX_PANE
 . "$ROOT_DIR/tests/tmux/lib/kill_socket.sh"
 cleanup() { tt_tmux_kill_socket "$SOCKET"; }
 trap cleanup EXIT
-tmux -L "$SOCKET" -f /dev/null new-session -d -x 80 -y 24 'sleep 300'
+tmux -L "$SOCKET" -f /dev/null new-session -d -x 80 -y 24 'sleep 300'  # sleep-ok: dummy: pane を生かすだけのコマンド
 TMUX_SOCK=$(tmux -L "$SOCKET" display -p '#{socket_path}')
 
 # 🚨 隔離の実証を「-L のサーバに本番セッションが見えないか」で書かないこと (-L は定義上
@@ -66,7 +66,7 @@ fi
 # 消えない — 実測)。ケース間で状態を持ち越すと前のケースのベルを次の期待値と
 # 取り違えるので、ケースごとに新しいウィンドウ = 新しいペインを作る。
 fresh_pane() {
-  tmux -L "$SOCKET" new-window -d -P -F '#{pane_id}' 'sleep 300'
+  tmux -L "$SOCKET" new-window -d -P -F '#{pane_id}' 'sleep 300'  # sleep-ok: dummy: pane を生かすだけのコマンド
 }
 
 # フックは素の `tmux` を呼ぶので、$TMUX で隔離ソケットへ向ける
@@ -197,6 +197,7 @@ VIS_PANE=$(fresh_pane)
 CTL_PANE=$(fresh_pane)   # 対照ベル用 (current にしないので隠れたまま = 鳴れば alert-bell が走る)
 VIS_WIN=$(tmux -L "$SOCKET" display -p -t "$VIS_PANE" '#{window_id}')
 CTL_WIN=$(tmux -L "$SOCKET" display -p -t "$CTL_PANE" '#{window_id}')
+# sleep-ok: other: python 本文のコメントの中の sleep
 if python3 - "$SOCKET" "$VIS_PANE" "$CTL_PANE" "$CTL_WIN" "$TMUX_SOCK" "$HOOK" "$MARK" <<'PYEOF'
 import os, pty, subprocess, sys, time
 socket, pane, ctl_pane, ctl_win, sock_path, hook, mark = sys.argv[1:8]

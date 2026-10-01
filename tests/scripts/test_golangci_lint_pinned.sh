@@ -17,6 +17,7 @@ note() { printf '✓ %s\n' "$1"; }
 bad() { printf '✗ %s\n' "$1"; fail=1; }
 
 mkdir -p "$TMP_DIR/fakebin"
+# sleep-ok: window: 遅い go install を演じる偽 go
 cat > "$TMP_DIR/fakebin/go" <<'GO'
 #!/usr/bin/env bash
 case "$1" in

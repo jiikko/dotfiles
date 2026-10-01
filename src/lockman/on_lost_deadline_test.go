@@ -43,7 +43,7 @@ func blockRenews(l *Locker, specs []blockSpec) <-chan error {
 			return
 		}
 		for _, spec := range specs {
-			time.Sleep(spec.after)
+			time.Sleep(spec.after) // sleep-ok: window: 詰まりを起こす時刻を演じる入力 (spec.after)
 			// ① 詰まらせる (FIFO を被せる)
 			fifo := l.lockPath() + ".fifo"
 			if err := syscall.Mkfifo(fifo, 0o600); err != nil {
@@ -54,7 +54,7 @@ func blockRenews(l *Locker, specs []blockSpec) <-chan error {
 				setupErr <- err
 				return
 			}
-			time.Sleep(spec.duration)
+			time.Sleep(spec.duration) // sleep-ok: window: 詰まりを保つ長さを演じる入力 (spec.duration)
 			// ② 復旧させる。**順番が要る**: 先に FIFO を退かして本物を戻し、
 			//    その後で FIFO へ書いて詰まっている読み手を解放する
 			//    (逆順だと、解放された Renew の open がまた FIFO に当たって詰まる)

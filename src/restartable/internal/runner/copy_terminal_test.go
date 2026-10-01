@@ -56,7 +56,7 @@ func waitOutput(t *testing.T, out *lockedBuffer, want string, i int) {
 		if out.String() == want {
 			return
 		}
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (waitOutput)
 	}
 	t.Fatalf("%d 回目の読み取りの後の出力 = %q, want %q (次の読み取りを待たずに出るはず)", i+1, out.String(), want)
 }

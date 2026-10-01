@@ -88,7 +88,7 @@ func waitDone(t *testing.T, r *crashRig) {
 		if i > 500 {
 			t.Fatal("実行が 5 秒たっても終わらない")
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (waitDone。Tick を回す)
 	}
 	r.tick(t)
 }

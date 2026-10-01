@@ -50,6 +50,7 @@ ok() { printf '✓ %s\n' "$1"; }
 
 # 偽 go。`go build -o <out> .` で out に実行可能な shim を書き、呼ばれた回数を記録する。
 mkdir -p "$TMP_DIR/bin"
+# sleep-ok: tick: 偽 go の gate 待ちの刻み (上限つき)
 cat > "$TMP_DIR/bin/go" <<'EOS'
 #!/bin/sh
 if [ "$1" = "env" ]; then printf '%s\n' "${FAKE_GO_VERSION:-go1.99.0}"; exit 0; fi
@@ -351,7 +352,7 @@ out="$(AUTOBUILD_ARGS=--async FAKE_GO_MARK=fixed run_tool "$ROOT")"
 [[ "$out" == "pending= old" ]] || fail "TTL 内なのに再挑戦した (落ちるビルドを撒く。起動の出力: $out)"
 # 🚨 上の判定は「shim が起こすと決めたか」しか見ない。合図 (GO_AUTOBUILD_PENDING) なしに裏で起こす退行は、裏の go が
 #    呼ばれるまで見えないので、ここは否定の確認として待つ (成立条件が無い。issue 613 の敵対レビュー)
-sleep 0.5
+sleep 0.5  # sleep-ok: negative: 起きないことの確認 (直前のコメント参照)
 [[ "$(calls "$ROOT")" == "$before" ]] || fail "TTL 内なのに go を呼んだ"
 ok "TTL 内はソース未変更で再挑戦しない"
 # 失敗記録を TTL より古くすると、ソース未変更でも再挑戦する
@@ -418,7 +419,7 @@ for _ in 1 2 3; do
   out="$(AUTOBUILD_ARGS=--async FAKE_GO_FAIL=1 run_tool "$ROOT")"
   [[ "$out" == "pending= old" ]] || fail "失敗後もソース未変更で再ビルドを撒いている (起動ごとの CPU リーク。起動の出力: $out)"
 done
-sleep 0.5   # 合図なしに裏で起こす退行を見る否定の確認 (上の TTL 内と同じ理由)
+sleep 0.5   # 合図なしに裏で起こす退行を見る否定の確認 (上の TTL 内と同じ理由)  # sleep-ok: negative: 起きないことの確認
 [[ "$(calls "$ROOT")" == "$before" ]] || fail "失敗後もソース未変更で go を呼んだ"
 ok "失敗後はソースが変わるまで再挑戦しない (backoff)"
 
@@ -483,7 +484,7 @@ AUTOBUILD_ARGS=--async run_tool "$ROOT" >/dev/null
 # 🚨 この待ちは消さない: lock を尊重するかは shim ではなく裏で起こした builder が決める (_go_autobuild_spawn の
 #    _go_autobuild_take_lock)。builder は lock を取れないと何も書かずに抜けるので、待つべき成立条件が無い
 #    (起きないことの確認。issue 613 の D)。0.5 秒は「二重ビルドが go を呼ぶだけの時間」
-sleep 0.5
+sleep 0.5  # sleep-ok: negative: 起きないことの確認 (直前のコメント参照)
 [[ "$(calls "$ROOT")" == "$before" ]] || fail "生きている builder がいるのに二重ビルドした"
 ok "生存中の builder の lock を尊重する (多重ビルドしない)"
 

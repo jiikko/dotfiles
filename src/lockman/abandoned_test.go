@@ -327,6 +327,7 @@ func TestUndoDoesNotClaimTheLockRemainsWhenIndeterminate(t *testing.T) {
 	t.Cleanup(func() { releaseBeforeRemoveHook = orig })
 	released := make(chan struct{})
 	releaseBeforeRemoveHook = func() {
+		// sleep-ok: window: Release を期限切れにする遅い処理を演じる入力
 		time.Sleep(300 * time.Millisecond) // l.timeout (50ms) を確実に超える
 		close(released)
 	}
@@ -387,7 +388,7 @@ func waitAbandoned(ab *abandon) bool {
 		if ab.abandoned() {
 			return true
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (waitAbandoned)
 	}
 	return false
 }

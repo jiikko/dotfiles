@@ -137,7 +137,7 @@ func awaitFile(path string) error {
 		if _, err := os.Stat(path); err == nil {
 			return nil
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (awaitFile。t を持たない goroutine からも呼ぶ)
 	}
 	return errors.New(path + " が 5 秒で現れない")
 }
@@ -161,7 +161,7 @@ func TestEscalateDoesNotSignalWhenAlreadyExited(t *testing.T) {
 
 	// 🚨 「起きないこと」の assert なので時間で待つ (成立条件が無い)。シグナルの配送と
 	// ハンドラの write を待つ余裕を取る。
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond) // sleep-ok: negative: 既に終わっている子へ TERM を撃たないことの確認 (成立条件が無い)
 	if b, err := os.ReadFile(termLog); err == nil && len(b) > 0 {
 		t.Fatalf("既に終わっているのに TERM を撃った (記録=%q)", string(b))
 	}

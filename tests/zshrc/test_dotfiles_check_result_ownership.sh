@@ -175,6 +175,7 @@ fi
 reset_cache
 mkdir -p "$TD/shim0"
 gate="$TD/shasum.gate"
+# sleep-ok: tick: gate を待つ偽 shasum の刻み
 cat > "$TD/shim0/shasum" <<SHIM
 #!/bin/sh
 while [ ! -f "$gate" ]; do sleep 0.05; done
@@ -190,6 +191,7 @@ case "$real_rm" in
   *) print -u2 "✗ [ハーネス失敗] rm の実体を絶対パスで解決できない: $real_rm"; exit 1 ;;
 esac
 case "$real_rm" in "$TD"/*) print -u2 "✗ [ハーネス失敗] rm が shim 自身に解決した: $real_rm"; exit 1 ;; esac
+# sleep-ok: window: 遅い rm を演じる shim
 cat > "$TD/shim0/rm" <<SHIM
 #!/bin/sh
 sleep 0.5

@@ -90,7 +90,7 @@ func TestMonitorStartFailureIsReported(t *testing.T) {
 	stop := superviseMonitor(context.Background(), s)
 	defer stop()
 	waitUntil(t, "起こせないと書かない", func() bool { _, said := r.snapshot(); return len(said) == 1 })
-	time.Sleep(20 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond) // sleep-ok: negative: 起こせないと書くのが 1 度だけで増えないことの確認 (成立条件が無い)
 	if _, said := r.snapshot(); len(said) != 1 || !strings.Contains(said[0], "見張りを起こせない") {
 		t.Fatalf("起こせないのを 1 度だけ書かない: %v", said)
 	}
@@ -145,6 +145,7 @@ func TestWatchLogsSameErrorOnce(t *testing.T) {
 	done := make(chan int)
 	go func() { done <- watch(ctx, m, time.Millisecond, false, &out, &errOut) }()
 	waitUntil(t, "失敗を書かない", func() bool { return strings.Contains(errOut.String(), "読めない") })
+	// sleep-ok: window: 1ms 間隔の見張りを何周も失敗させる入力 (失敗を 1 度しか書かないことを見る)
 	time.Sleep(30 * time.Millisecond) // 何周も失敗させる
 	if err := os.Remove(broken); err != nil {
 		t.Fatal(err)

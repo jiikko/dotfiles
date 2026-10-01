@@ -21,7 +21,7 @@ func alive(pid int) bool { return syscall.Kill(pid, 0) == nil }
 // pollUntil は cond が真になるまで 5ms 刻みで待ち、limit までに真になれば true を返す (落とすのは呼び出し側。待ちを抜けても進めたい場面がある)。
 func pollUntil(t *testing.T, limit time.Duration, cond func() bool) bool {
 	t.Helper()
-	for deadline := time.Now().Add(limit); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+	for deadline := time.Now().Add(limit); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) { // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (pollUntil)
 		if cond() {
 			return true
 		}
@@ -37,7 +37,7 @@ func waitGone(t *testing.T, pid int) {
 			_ = syscall.Kill(pid, syscall.SIGKILL) // 後始末 (テストの子を残さない)
 			t.Fatalf("pid %d が 5 秒たっても残っている", pid)
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (waitGone。上限を超えたら落とす)
 	}
 }
 
@@ -51,7 +51,7 @@ func readPid(t *testing.T, path string) int {
 			}
 			return pid
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (pid ファイルが書かれるのを待つ。上限つき)
 	}
 	t.Fatal("子の pid が書かれない")
 	return 0
@@ -150,7 +150,7 @@ func waitPS(t *testing.T, want string) {
 		if strings.Contains(string(out), want) {
 			return
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (waitPS。上限つき)
 	}
 	t.Fatalf("ps に出ない: %s", want)
 }

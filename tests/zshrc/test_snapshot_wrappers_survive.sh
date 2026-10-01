@@ -53,7 +53,7 @@ out="$(HOME="$FAKE_HOME" TT_SKIP_REAP=1 TT_ASSUME_TTY=1 zsh -f -c '
   [[ -n "${_TMUX_SESSION_LIB:-}" ]] && { echo PRECONDITION_BROKEN_VAR; exit 99; }
   (( ${+functions[_tt_impl]} )) && { echo PRECONDITION_BROKEN_IMPL; exit 99; }
   tmux() { echo "STUB_TMUX $1"; return 1 }
-  sleep() { : }
+  sleep() { : }  # sleep-ok: stub: sleep を潰す関数
   tt proj >/dev/null 2>&1 <&-; echo "rc=$?"
   (( ${+functions[_tt_impl]} )) && echo IMPL_LOADED
 ' 2>&1)"

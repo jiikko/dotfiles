@@ -86,7 +86,7 @@ func TestDispatcherUpgradesItselfE2E(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatalf("dispatcher が lock を取らない:\n%s", logText())
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: dispatcher が lock を取るまでの刻み。失敗メッセージが動的で waitUntil に載らない (上限つき)
 	}
 	switched := func() bool {
 		evs, _ := eventlog.Read(dir)
@@ -112,7 +112,7 @@ func TestDispatcherUpgradesItselfE2E(t *testing.T) {
 		} else if !errors.Is(err, dispatcher.ErrRunning) {
 			t.Fatal(err)
 		}
-		time.Sleep(2 * time.Millisecond)
+		time.Sleep(2 * time.Millisecond) // sleep-ok: tick: lock を取り続ける試行のループ。試行に副作用がある
 	}
 	for _, want := range []string{"新版ができた", "新版へ切り替える", "PID " + pid + " のまま"} {
 		if !strings.Contains(logText(), want) {

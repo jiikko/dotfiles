@@ -250,7 +250,7 @@ func TestFetchCIStatusesChunksInParallel(t *testing.T) {
 		maxSeen = max(maxSeen, inFlight)
 		queries++
 		mu.Unlock()
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond) // sleep-ok: window: fake の gh が滞留して同時実行の重なりを作る入力
 		mu.Lock()
 		inFlight--
 		mu.Unlock()
@@ -528,6 +528,7 @@ func TestFetchJobDetailSpeculatesLogInParallel(t *testing.T) {
 		inFlight++
 		maxSeen = max(maxSeen, inFlight)
 		mu.Unlock()
+		// sleep-ok: window: fake の gh が滞留して同時実行の重なりを作る入力
 		time.Sleep(20 * time.Millisecond) // 重なりを観測できるだけの滞留
 		mu.Lock()
 		inFlight--

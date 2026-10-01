@@ -51,7 +51,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-parallel test-discovered-serial test-discovered-heavy test-discovered-rest test-discovered-rest-parallel test-nvim test-tmux test-pro-con-slow test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-cd-rc test-trigger-log-writers test-skip-exit-code test-assert-reaches-exit test-workflow-action-pins test-go-project-lanes test-unused-excluding-tests test-go-lint test-go test-src test-fresh
+.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-parallel test-discovered-serial test-discovered-heavy test-discovered-rest test-discovered-rest-parallel test-nvim test-tmux test-pro-con-slow test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-test-sleeps test-cd-rc test-trigger-log-writers test-skip-exit-code test-assert-reaches-exit test-workflow-action-pins test-go-project-lanes test-unused-excluding-tests test-go-lint test-go test-src test-fresh
 
 # ./tmp のスクラッチを掃除する (既定は 30 日より古いトップレベルのエントリ)。
 #
@@ -340,6 +340,10 @@ test-ci-group-deps:
 test-pipefail-grep-q:
 	@scripts/check_pipefail_grep_q.sh
 
+# テストに理由の印の無い sleep を足させない (issue 615)。正本は scripts/check_test_sleeps.sh (規則・印の書き方・検出しない形)
+test-test-sleeps:
+	@scripts/check_test_sleeps.sh
+
 # tests/ で `cd` の rc を見ていない行を落とす (issue 204)。cd が失敗しても CWD (= repo root)
 # のまま先へ進み、fixture が repo に書かれる形を止める。意図的な例外は行内の `cd-rc: allow`。
 test-cd-rc:
@@ -519,7 +523,7 @@ test-lint-tests:
 #   「並列腕 + 直列腕」を束ねており、直列腕は tmux サーバに触るので同時実行の安全性が未検証
 #   (59f9e48c の分割の前提)。ここが並列でよいのは、互いに独立した静的検査だけだから。
 test-lint:
-	@+scripts/run_make_targets_parallel.sh test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps test-pipefail-grep-q test-cd-rc test-trigger-log-writers test-skip-exit-code test-workflow-action-pins test-go-project-lanes
+	@+scripts/run_make_targets_parallel.sh test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps test-pipefail-grep-q test-test-sleeps test-cd-rc test-trigger-log-writers test-skip-exit-code test-workflow-action-pins test-go-project-lanes
 
 # Go プロジェクトの静的解析とテスト。実体は各ディレクトリの Makefile の lint / test
 # ターゲットに閉じており、ここはそれへ委譲するだけ (ローカルのコミット前検証用。root の

@@ -197,7 +197,7 @@ func TestSpawnedDispatcherIsNotLeftAsZombie(t *testing.T) {
 			done <- err
 		default:
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: 偽の dispatcher の pid を待つ刻み。中継の失敗を見る副作用つきのループ (上限つき)
 	}
 	select { // 偽の dispatcher は release まで居続ける。その間に戻らなければ、画面は常駐する dispatcher を待って固まる
 	case err := <-done:
@@ -235,7 +235,7 @@ func TestSpawnedDispatcherIsNotLeftAsZombie(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatalf("抜けた dispatcher (pid %d) が刈り取られない: %q", pid, strings.TrimSpace(string(out)))
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond) // sleep-ok: tick: ゾンビが刈り取られるのを待つ刻み。ループの中で状態を検査する (上限つき)
 	}
 }
 

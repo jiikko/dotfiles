@@ -49,6 +49,7 @@ func TestLockExecHelper(t *testing.T) {
 		os.Exit(1)
 	case "new":
 		GuardInheritedLock()
+		// sleep-ok: window: 入れ替えの隙 (新版の立ち上がり) を広げる入力
 		time.Sleep(300 * time.Millisecond) // 入れ替えの隙 (新版の立ち上がり) を広げる: この間に lock が外れていれば、テストが取れてしまう
 		l, err := AdoptLock(dir)
 		if l == nil {
@@ -66,7 +67,7 @@ func TestLockExecHelper(t *testing.T) {
 			if _, err := os.Stat(filepath.Join(dir, "release")); err == nil {
 				os.Exit(0) // Release せずに抜ける (OS が外す)
 			}
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(10 * time.Millisecond) // sleep-ok: tick: helper プロセスの中で release の合図を待つ刻み (t が無い)
 		}
 	}
 }
@@ -100,7 +101,7 @@ func TestLockSurvivesExec(t *testing.T) {
 		if has("failed") || time.Now().After(deadline) {
 			t.Fatalf("入れ替えの前の役が lock を取らない: %s", read("failed"))
 		}
-		time.Sleep(time.Millisecond)
+		time.Sleep(time.Millisecond) // sleep-ok: tick: old が lock を取るまでの刻み。失敗の合図 (failed) も見る上限つきの待ち
 	}
 	tries := 0
 	for !has("new-pid") { // 入れ替えの前から、受け取り終えるまで取り続けてみる
@@ -116,7 +117,7 @@ func TestLockSurvivesExec(t *testing.T) {
 			t.Fatal(err)
 		}
 		tries++
-		time.Sleep(time.Millisecond)
+		time.Sleep(time.Millisecond) // sleep-ok: tick: lock を取り続ける試行のループ。試行に副作用があり、回数も数える
 	}
 	if tries < 50 { // 隙 (300ms) の間に試せていなければ、このテストは何も確かめていない
 		t.Fatalf("入れ替えの間に %d 回しか試せていない", tries)

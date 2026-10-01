@@ -61,7 +61,7 @@ func eventually(t *testing.T, what string, cond func() bool) {
 		if i > 500 {
 			t.Fatalf("5 秒たっても %s", what)
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (eventually)
 	}
 }
 

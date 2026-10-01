@@ -71,3 +71,15 @@
 - `scripts/check_pipefail_grep_q.sh` (検査の前例) / `src/glogx/.golangci.yml` (forbidigo で `time.Now` を止めている前例)
 
 ## 進捗
+
+- 2026-10-02 方針を 1 点変えた: **Go も forbidigo ではなく `scripts/check_test_sleeps.sh` で見る** (`time.Sleep(` に同じ `sleep-ok:` の印を要求)。
+  理由: 規則と印を 1 つにできる / glogx と pro-con の `.golangci.yml` はテストで forbidigo を丸ごと外しており、7 module の lint 設定
+  (うち 3 module は forbidigo 自体が無い) を崩さずに済む / `lint.yml` は paths の絞り込み無しで毎 push `make test-lint` を回すので CI で必ず走る
+- 実装: `scripts/check_test_sleeps.sh` (`make test-lint` の `test-test-sleeps`) と `tests/scripts/test_check_test_sleeps.sh` (fixture 22 件:
+  印の無い 5 形を落とす / 同じ行・直前の行の印で通す / 語彙に無い分類・理由なし・2 行上の印は通さない / heredoc は開始行の前の印でまとめて通し、
+  印が無ければ本文も落とし、heredoc の後ろの行は通さない / コメント行・別の語・wait_until.sh を数えない / 対象が下限未満なら失敗 / Go の 4 形 /
+  本物の tests/ と src/ が通る / Makefile の配線)
+- shell の印付け: 108 行のうち 97 行に印 (sonnet。印を取り除くと元と完全に一致することを main が機械で確認)、残り 11 行のうち 7 行は
+  `tt_wait_until` に寄せ (schedule_keys の sleeper 待ち・smooth_scroll の 4 箇所・codex_fanout.bats の 2 箇所)、4 行は理由つきの印
+  (smooth_scroll の静止判定のサンプリング 2 行・test_tt は sleep を関数で潰しているので helper が使えない・warmup の runs_within は判定器)
+- 入口: `_claude/rules/avoid-wall-clock-assertions.md` に 1 行 (検査が止めること・印の書き方)

@@ -38,7 +38,7 @@ run() { DOTFILES_DIR="$TMP_DIR/main" PULL_MAIN_LOCKMAN="$LM" PULL_MAIN_WAIT="${W
 # 1. ほかが lock を持っている間は pull しない (rc 121・理由を出す・HEAD はそのまま)
 dir="$(git -C "$TMP_DIR/main" rev-parse --path-format=absolute --git-common-dir)/dotfiles-locks/pull-main"
 mkdir -p "$dir"
-"$LM" with "$dir" --label test-holder -- bash -c "touch '$TMP_DIR/held'; while [ ! -f '$TMP_DIR/release' ]; do sleep 0.1; done" &
+"$LM" with "$dir" --label test-holder -- bash -c "touch '$TMP_DIR/held'; while [ ! -f '$TMP_DIR/release' ]; do sleep 0.1; done" &  # sleep-ok: tick: lock 保持者 (子) が release を待つ刻み
 holder=$!
 TT_WAIT_TICKS=200 TT_WAIT_TICK=0.05 tt_wait_until test -f "$TMP_DIR/held" || :
 [ -f "$TMP_DIR/held" ] || { bad "lock を持つ側が始まらない (10 秒待った)"; exit 1; }

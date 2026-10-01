@@ -224,6 +224,7 @@ func TestSupervisorWaitsForOwnerDuringUpgrade(t *testing.T) {
 	s.ownerGrace = 5 * time.Second
 	opened := make(chan *presence.Screen, 1)
 	go func() {
+		// sleep-ok: window: 入れ替わった画面が印を置き直すのが遅れる形を演じる入力
 		time.Sleep(200 * time.Millisecond) // 入れ替わった画面が印を置き直す
 		scr, _ := presence.Open(dir)
 		opened <- scr

@@ -46,7 +46,7 @@ LOG="$TMP_DIR/trigger.log"
 . "$ROOT_DIR/scripts/lib/tmux_resurrect_guards.sh"
 
 LIVE_PIDS=()
-spawn_live() { ( trap - EXIT; exec sleep 300 ) & LIVE_PIDS+=("$!"); REPLY_PID="$!"; }
+spawn_live() { ( trap - EXIT; exec sleep 300 ) & LIVE_PIDS+=("$!"); REPLY_PID="$!"; }  # sleep-ok: dummy: kill される前提の常駐プロセス
 cleanup_all() { local p; for p in ${LIVE_PIDS+"${LIVE_PIDS[@]}"}; do kill "$p" 2>/dev/null || true; done; rm -rf "$TMP_DIR"; }
 trap cleanup_all EXIT
 

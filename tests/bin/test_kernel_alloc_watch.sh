@@ -53,6 +53,7 @@ printf '%s\n' /Users/x/.local/bin/claude claude claude.exe /usr/bin/claudette no
 EOF
 # 偽 tmux: attach しているクライアントが 2 つ。FAKE_TMUX=fail でサーバ無し (rc=1)、
 # hang で固まったサーバ (自分の pid を FAKE_MARK に書いて止まる)
+# sleep-ok: dummy: hang する偽 tmux。kill される前提
 cat > "$TMP_DIR/tmux" <<'EOF'
 #!/bin/bash
 [[ ${FAKE_TMUX:-} == fail ]] && { echo "no server running" >&2; exit 1; }
@@ -343,7 +344,7 @@ rc=0; KERNEL_ALLOC_WATCH_DIR="$d" "$BIN" destroy-all-logs >/dev/null 2>&1 || rc=
 if [[ $rc -eq 0 ]]; then pass "消すものが無ければ --yes 無しでも rc=0"; else ng "消すものが無いときの --yes 無しの rc=$rc"; fi
 # ほかの記録がロックを握っている間は消さない (rc=75)
 printf '%s\trow\t1\n' "$NOW" > "$d/log.tsv"
-/usr/bin/lockf -k "$d/.lock" sleep 30 & holder=$!
+/usr/bin/lockf -k "$d/.lock" sleep 30 & holder=$!  # sleep-ok: dummy: lock を保持するだけの常駐プロセス
 held=0
 lock_is_held() { ! /usr/bin/lockf -t 0 "$d/.lock" true 2>/dev/null; }
 TT_WAIT_TICKS=400 TT_WAIT_TICK=0.05 tt_wait_until lock_is_held && held=1
@@ -352,7 +353,7 @@ TT_WAIT_TICKS=400 TT_WAIT_TICK=0.05 tt_wait_until lock_is_held && held=1
 if [[ $held -eq 1 ]]; then
   rc=0; KERNEL_ALLOC_WATCH_DIR="$d" "$BIN" destroy-all-logs --yes >/dev/null 2>&1 || rc=$?
 fi
-pkill -P "$holder" 2>/dev/null || true; kill "$holder" 2>/dev/null || true; wait "$holder" 2>/dev/null || true   # lockf の子 (sleep) も止める
+pkill -P "$holder" 2>/dev/null || true; kill "$holder" 2>/dev/null || true; wait "$holder" 2>/dev/null || true   # lockf の子 (sleep) も止める  # sleep-ok: other: コメントの中の sleep
 if [[ $held -ne 1 ]]; then
   ng "ロックを握る側が 20 秒たってもロックを取れない (判定できない)"
 elif [[ $rc -eq 75 && -f "$d/log.tsv" ]]; then pass "ロックを握られている間は消さずに rc=75"; else ng "ロックを握られている間: rc=$rc log=$([[ -f $d/log.tsv ]] && echo 残 || echo 消)"; fi

@@ -29,7 +29,7 @@ TT_DEFAULT_SOCK="$(realpath /tmp 2>/dev/null || echo /tmp)/tmux-$(id -u)/default
 #    2026-07-30 に tests/tmux/test_periodic_save.sh で実際に踏み、bash -x で観測して特定した。
 #    「サーバ役を kill して死亡検知させる」テスト (server_watchdog) はこのレースを最も踏みやすい。
 tt_spawn_fake_proc() {
-  ( trap - EXIT; exec sleep 300 ) &
+  ( trap - EXIT; exec sleep 300 ) &  # sleep-ok: dummy: kill される前提の常駐プロセス
   REPLY_PID=$!
   FAKE_PIDS+=("$REPLY_PID")
 }

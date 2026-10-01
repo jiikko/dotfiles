@@ -69,7 +69,7 @@ func TestExecKillsGrandchildOnCancel(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatalf("孫 (pid=%d) が cancel 後も生きている (プロセスグループごと殺していない)", pid)
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond) // sleep-ok: tick: 孫が死ぬのを条件で待つ刻み (上限つき)
 	}
 }
 
@@ -88,7 +88,7 @@ func waitForPID(t *testing.T, path string, limit time.Duration) int {
 		if time.Now().After(deadline) {
 			t.Fatalf("判定不能: 孫の pid を %s から読めない (孫が生まれていない = 何も検査できていない)", path)
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: 孫の pid が書かれるのを条件で待つ刻み (上限つき)
 	}
 }
 

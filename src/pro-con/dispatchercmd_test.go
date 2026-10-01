@@ -42,7 +42,7 @@ func TestRunDispatcherWiresSocket(t *testing.T) {
 			if cond() {
 				return
 			}
-			time.Sleep(25 * time.Millisecond)
+			time.Sleep(25 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (waitFor)
 		}
 		t.Fatalf("%s\nstdout:\n%s\nstderr:\n%s", what, out.String(), errOut.String())
 	}

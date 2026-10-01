@@ -156,7 +156,7 @@ func startChild(t *testing.T, m *Model) (release func()) {
 		if i > 200 {
 			t.Fatal("裏の処理が走り始めない")
 		}
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond) // sleep-ok: tick: 裏の処理が走り始めるのを条件で待つ刻み (上限つき)
 	}
 	return func() { close(ch) }
 }
@@ -268,7 +268,7 @@ func TestAttachCheckIsTracked(t *testing.T) {
 		if i > 200 {
 			t.Fatal("照合が数に入らない")
 		}
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond) // sleep-ok: tick: 照合が数に入るのを条件で待つ刻み (上限つき)
 	}
 	if m.WaitChildren(30 * time.Millisecond) {
 		t.Fatal("照合の途中なのに待ち終わった")

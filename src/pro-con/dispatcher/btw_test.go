@@ -28,7 +28,7 @@ func answered(t *testing.T, r *crashRig) card.Btw {
 		if c := states(t, r.dir)["C-001"]; len(c.Btws) > 0 && !c.Btws[0].Answered.IsZero() {
 			return c.Btws[0]
 		}
-		time.Sleep(time.Millisecond)
+		time.Sleep(time.Millisecond) // sleep-ok: tick: ループの中で r.tick を回す副作用つきの待ちの刻み (上限つき)
 	}
 	t.Fatal("btw に答えない")
 	return card.Btw{}

@@ -341,7 +341,7 @@ func waitForCondition(t *testing.T, limit time.Duration, ok func() bool) bool {
 		if ok() {
 			return true
 		}
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (waitForCondition)
 	}
 	return false
 }

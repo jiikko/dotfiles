@@ -32,7 +32,7 @@ trap cleanup EXIT
 
 # 補助プロセスは `( trap - EXIT; exec ... ) &` で起こす (素の `cmd &` は fork 直後に kill されると
 # 子が EXIT trap を継承して cleanup の rm -rf をテスト途中で走らせる)。
-spawn_live() { ( trap - EXIT; exec sleep 300 ) & FAKE_PIDS+=("$!"); REPLY_PID="$!"; }
+spawn_live() { ( trap - EXIT; exec sleep 300 ) & FAKE_PIDS+=("$!"); REPLY_PID="$!"; }  # sleep-ok: dummy: kill される前提の常駐プロセス
 free_pid() { local p="${1:-999999}"; while kill -0 "$p" 2>/dev/null; do p=$(( p - 1 )); done; REPLY_PID="$p"; }
 
 rc_of() { local rc=0; tt_lock_acquire "$1" || rc=$?; printf '%s' "$rc"; }
@@ -143,7 +143,7 @@ race_worker() { # $1=guards.sh $2=lock dir $3=結果ファイル $4=窓を広げ
     gate_base=$5
     if [ "$4" = 1 ]; then tt_proc_starttime() {
       : > "$gate_base.in.$$"
-      j=0; while [ ! -e "$gate_base.go" ] && [ "$j" -lt 400 ]; do sleep 0.05; j=$(( j + 1 )); done
+      j=0; while [ ! -e "$gate_base.go" ] && [ "$j" -lt 400 ]; do sleep 0.05; j=$(( j + 1 )); done  # sleep-ok: tick: マーカー待ちの刻み (子の中。上限つき)
       printf "WIDE_%s\n" "$1"
     }; fi
     rc=0
@@ -155,7 +155,7 @@ race_worker() { # $1=guards.sh $2=lock dir $3=結果ファイル $4=窓を広げ
     #    2 winners)。固定 sleep で凌ぐと「どれだけ待てば十分か」が未実測のマジックナンバーに
     #    なるので、マーカー待ちにして定数を消す (敵対的レビューの指摘 R1)。
     i=0
-    while [ ! -e "$5" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$(( i + 1 )); done
+    while [ ! -e "$5" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$(( i + 1 )); done  # sleep-ok: tick: マーカー待ちの刻み (子の中。上限つき)
   ' _ "$1" "$2" "$3" "$4" "$5" &
 }
 
@@ -195,7 +195,7 @@ race_winners() { # $1=delay $2=形状(leftover|fresh) $3=窓を広げるか(0/1)
     TT_WAIT_TICKS=400 TT_WAIT_TICK=0.05 tt_wait_until race_second_progressed "$out" "$rel" || :
     : > "$rel.go"
   else
-    sleep "$1"   # 1〜5ms のずらしを掃く入力 (実測の臨界帯。窓を作る sleep で、待ちではない)
+    sleep "$1"   # 1〜5ms のずらしを掃く入力 (実測の臨界帯。窓を作る sleep で、待ちではない)  # sleep-ok: window: 1〜5ms のずらしで競合の窓を作る入力
     race_worker "$g" "$dir" "$out" "$3" "$rel"; p2=$!
   fi
   # 2 本の結果が出揃ってから解放を許す。これで「片方が保持している間に、もう片方も取得できたか」

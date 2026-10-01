@@ -228,7 +228,7 @@ func waitForLockToken(l *Locker) (string, []byte, error) {
 			}
 			return m.Token, b, nil
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (waitForLockToken)
 	}
 	return "", nil, errors.New("lock が置かれなかった")
 }
@@ -268,6 +268,7 @@ func TestLeaseSurvivesLongHealthyRun(t *testing.T) {
 		}
 		// 上限 (3) の 9 倍の tick を通してから観測する。枠が戻らない実装は 3 tick 目
 		// (900ms) で更新をやめるので、lease は 1800ms には死んでいる (余裕 900ms)
+		// sleep-ok: window: 更新の ticker を 9 周回した後に lease を観測する (他のプロセスは FS の時刻で lease を判定するので偽の時計にできない。issue 614 の 9)
 		time.Sleep(2700 * time.Millisecond)
 		ch <- probeLease(l, other, ttl, tok)
 	}()
@@ -310,7 +311,7 @@ func TestIndeterminateThenLostKeepsIndeterminateExit(t *testing.T) {
 		}
 		// ② 期限切れの報告が済んだ後、lock ごと退ける。**詰まった読み手は解放しない**。
 		//    以後の更新は readLock が「存在しない」を返すので errNotOwner = 確実な喪失
-		time.Sleep(700 * time.Millisecond)
+		time.Sleep(700 * time.Millisecond) // sleep-ok: window: 読み手の詰まりを期限切れの報告が済むまで保つ入力
 		setup <- os.Rename(l.lockPath(), fifo)
 	}()
 
@@ -364,7 +365,7 @@ func TestLeaseSurvivesTransientRenewBlock(t *testing.T) {
 		//    ここが短いと、更新が始まる前 / 期限が来る前に復旧してしまい、
 		//    「判定不能を 1 回報告した後も更新を続けるか」という検査したい状態に入らない
 		//    (最初に 400ms で書いて、退行を当てても緑のまま通った)
-		time.Sleep(900 * time.Millisecond)
+		time.Sleep(900 * time.Millisecond) // sleep-ok: window: 読み手の詰まりを最初の tick と期限より長く保つ入力
 		// ③ 復旧させる。**順番が要る**: 先に FIFO を退かして本物を戻し、
 		//    その後で FIFO へ書いて詰まっている読み手を解放する。逆順だと、解放された
 		//    Renew が続けて打つ書き込み用 open がまた FIFO に当たって詰まる
@@ -387,6 +388,7 @@ func TestLeaseSurvivesTransientRenewBlock(t *testing.T) {
 		}
 		_ = os.Remove(fifo)
 		// ④ lease が切れているはずの時刻を十分に過ぎてから、別マシンが奪えるか試す
+		// sleep-ok: window: lease の期限を実時間で跨ぐ (他のプロセスは FS の時刻で lease を判定するので偽の時計にできない。issue 614 の 9)
 		time.Sleep(1500 * time.Millisecond)
 		stolen <- probeLease(l, other, ttl, tok)
 	}()
@@ -440,7 +442,7 @@ func TestLeaseSurvivesPermanentRenewBlock(t *testing.T) {
 			return
 		}
 		// ② (a) の余裕: tick(400ms) + 期限(200ms) より 400ms 長く保つ
-		time.Sleep(800 * time.Millisecond)
+		time.Sleep(800 * time.Millisecond) // sleep-ok: window: 読み手の詰まりを tick と期限より長く保つ入力
 		// ③ パスだけ復旧させる。**FIFO へは書かない** = 詰まった読み手は永久に返らない
 		if err := os.Rename(l.lockPath(), fifo); err != nil {
 			stolen <- leaseProbe{setupErr: err}
@@ -457,6 +459,7 @@ func TestLeaseSurvivesPermanentRenewBlock(t *testing.T) {
 		}
 		// ④ (b) の余裕: 復旧で打たれた mtime から ttl(1200ms) + 400ms 過ぎてから奪いに行く。
 		//    更新が再開していなければ、この時点で lease は死んでいる
+		// sleep-ok: window: lease の期限を実時間で跨ぐ (他のプロセスは FS の時刻で lease を判定するので偽の時計にできない。issue 614 の 9)
 		time.Sleep(1600 * time.Millisecond)
 		stolen <- probeLease(l, other, ttl, tok)
 	}()

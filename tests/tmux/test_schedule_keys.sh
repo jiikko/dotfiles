@@ -50,6 +50,7 @@ unset XDG_STATE_HOME
 
 mkdir -p "$TMP_DIR/bin" "$TMP_DIR/bin_nogum"
 # stub tmux: 呼び出しを記録し、スクリプトが使う照会にだけ応える。STUB_PANE_GONE=1 で %5 消滅を模す
+# sleep-ok: tick: 偽 tmux の gate 待ちの刻み (上限つき)
 cat > "$TMP_DIR/bin/tmux" <<'EOS2'
 #!/bin/sh
 echo "tmux $*" >> "$CALLS"
@@ -133,6 +134,7 @@ chmod +x "$TMP_DIR/bin/gum"
 # 🚨 同じ結果を返し続ける stub にしないこと: 呼び出し側が「取消したら一覧へ戻る」ループを持つので、
 #    実際に無限に回った (2026-08-28)。対話の終わりまで模す
 # 中止は out の "abort"、UI が動かない場合は STUB_UI_EXIT で 0 以外を返す
+# sleep-ok: tick: 偽 UI の block 解除待ちの刻み
 cat > "$TMP_DIR/bin/schedkeys" <<'EOS2'
 #!/bin/sh
 echo "schedkeys $*" >> "$CALLS"
@@ -177,13 +179,14 @@ cp "$TMP_DIR/bin/schedkeys" "$TMP_DIR/bin_nogum/schedkeys"
 
 # sleep も stub: fire の待機は STUB_SLEEP_LOG に記録するだけ (実時間を待たない)。
 # 「発火時刻まで送らない」は実 sleep で別に 1 回だけ測る (下の F2)
+# sleep-ok: stub: PATH 上の sleep の stub
 cat > "$TMP_DIR/bin/sleep" <<'EOS2'
 #!/bin/sh
 echo "sleep $*" >> "$CALLS"
 [ -n "${STUB_REAL_SLEEP:-}" ] && exec /bin/sleep "$@"
 exit 0
 EOS2
-chmod +x "$TMP_DIR/bin/sleep"; cp "$TMP_DIR/bin/sleep" "$TMP_DIR/bin_nogum/sleep"
+chmod +x "$TMP_DIR/bin/sleep"; cp "$TMP_DIR/bin/sleep" "$TMP_DIR/bin_nogum/sleep"  # sleep-ok: stub: sleep の stub の配置
 
 export TMUX_SCHEDULE_KEYS_UI="$TMP_DIR/bin/schedkeys"
 STUB_PATH="$TMP_DIR/bin:/usr/bin:/bin"
@@ -224,13 +227,13 @@ wait_for() {  # $1=説明, 残りは条件コマンド
 marker_exists() { [ -f "$1" ]; }
 # fire が発火時刻までの sleep に入った (sleep の stub は本物の sleep を呼ぶ前に $CALLS へ書く)。
 # 「0.5 秒経てば眠っているはず」と違い、眠る前の段を過ぎたことが確定する
-entered_sleep() { grep -q '^sleep [0-9]' "$CALLS"; }
+entered_sleep() { grep -q '^sleep [0-9]' "$CALLS"; }  # sleep-ok: other: 記録の中の sleep 呼び出しを数える grep
 # fire (pid=$1) が sleep に入るのを待つ。入らずに終わったら (発火時刻は秒精度なので、起動が 1 秒の境目を跨ぐと
 # 眠る長さが 0 になる) 上限まで待たずに前提の崩れとして落とす
 sleeping_or_gone() { entered_sleep || ! kill -0 "$1" 2>/dev/null; }
 wait_fire_sleeping() {  # $1=fire の pid $2=説明
   wait_for "$2" sleeping_or_gone "$1"
-  entered_sleep || { printf '✗ [前提] %s: fire が sleep に入らずに終わった (起動が遅れて発火時刻を過ぎた?)\n' "$2"; exit 1; }
+  entered_sleep || { printf '✗ [前提] %s: fire が sleep に入らずに終わった (起動が遅れて発火時刻を過ぎた?)\n' "$2"; exit 1; }  # sleep-ok: other: メッセージの中の sleep
 }
 process_gone() { ! kill -0 "$1" 2>/dev/null; }
 # 本物の sleeper を起こす (pid_is_sleeper は ps の command line で「自分の fire <id>」を確かめるため、
@@ -250,7 +253,7 @@ spawn_sleeper() {  # $1=id  → SLEEPER_PID
   # (make test の負荷下で実発生 2026-08-27)
   ( trap - EXIT; CALLS="$TMP_DIR/calls_sleeper.log" PATH="$STUB_PATH" STUB_REAL_SLEEP=1 exec "$SCRIPT" fire "$1" ) >/dev/null 2>&1 &
   SLEEPER_PID=$!; FAKE_PIDS+=("$SLEEPER_PID")
-  local i=0; while [[ ! -s "$TMUX_SCHEDULE_KEYS_DIR/$1.pid" && $i -lt 50 ]]; do /bin/sleep 0.1; i=$((i+1)); done
+  TT_WAIT_TICKS=50 TT_WAIT_TICK=0.1 tt_wait_until test -s "$TMUX_SCHEDULE_KEYS_DIR/$1.pid" || :
   [[ "$(cat "$TMUX_SCHEDULE_KEYS_DIR/$1.pid")" == "$SLEEPER_PID" ]] || { printf '✗ sleeper %s の .pid が書かれない\n' "$1"; exit 1; }
 }
 printf '## wizard: UI の結果で予約を作る\n'
@@ -341,15 +344,15 @@ assert_called 'tmux send-keys -t %5 -l -- Enter C-c \ "q" ; send-keys -t %5 Ente
 printf '✓ 送信は 1 回の呼び出し\n'
 [[ "$(jobs_count)" == 0 && ! -f "$TMUX_SCHEDULE_KEYS_DIR/j1.pid" ]] || { printf '✗ 送信後に job/pid が残っている\n'; exit 1; }
 printf '✓ 送信後は job/pid を掃く\n'
-assert_not_called "sleep" "発火時刻を過ぎていれば待たない"
+assert_not_called "sleep" "発火時刻を過ぎていれば待たない"  # sleep-ok: other: 呼び出し名の文字列
 
-printf '\n## fire: 発火時刻まで送らない (実 sleep)\n'
+printf '\n## fire: 発火時刻まで送らない (実 sleep)\n'  # sleep-ok: other: 見出しの中の sleep
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 write_job j2 "$(( $(/bin/date +%s) + 2 ))" "ls"
 ( trap - EXIT; PATH="$STUB_PATH" STUB_REAL_SLEEP=1 exec "$SCRIPT" fire j2 ) >/dev/null 2>&1 &
 fire_pid=$!
-wait_fire_sleeping "$fire_pid" "fire j2 が発火時刻までの sleep に入らない"
-assert_not_called "send-keys" "発火時刻までの sleep に入った時点: まだ送っていない"
+wait_fire_sleeping "$fire_pid" "fire j2 が発火時刻までの sleep に入らない"  # sleep-ok: other: 関数名とメッセージの中の sleep
+assert_not_called "send-keys" "発火時刻までの sleep に入った時点: まだ送っていない"  # sleep-ok: other: メッセージの中の sleep
 [[ "$(cat "$TMUX_SCHEDULE_KEYS_DIR/j2.pid" 2>/dev/null)" == "$fire_pid" ]] || { printf '✗ .pid が sleeper 自身の pid でない\n'; exit 1; }
 printf '✓ .pid = sleeper の pid (取消の kill 先)\n'
 wait "$fire_pid" || { printf '✗ fire が非 0 で終了\n'; exit 1; }
@@ -377,7 +380,7 @@ write_job j9 "$(( $(/bin/date +%s) + 2 ))" "make test"
 ( trap - EXIT; CALLS="$CALLS" PATH="$STUB_PATH" STUB_REAL_SLEEP=1 STUB_SRVPID_FILE="$STUB_SRVPID_FILE" exec "$SCRIPT" fire j9 ) >/dev/null 2>&1 &
 j9pid=$!; FAKE_PIDS+=("$j9pid")
 # 眠りに入ってから入れ替える。眠る前に入れ替えると「眠る前に判定する」誤った実装でも送らずに緑になる
-wait_fire_sleeping "$j9pid" "fire j9 が sleep に入らない"
+wait_fire_sleeping "$j9pid" "fire j9 が sleep に入らない"  # sleep-ok: other: 関数名とメッセージの中の sleep
 echo 9999 > "$STUB_SRVPID_FILE"   # 眠っている間にサーバが入れ替わった
 wait "$j9pid" 2>/dev/null || true
 assert_not_called "send-keys -t %5 -l" "眠っている間にサーバが入れ替わったら送らない (判定は送る直前)"
@@ -417,7 +420,7 @@ reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 write_job canc "$(( $(/bin/date +%s) + 2 ))" "make test"
 ( trap - EXIT; CALLS="$CALLS" PATH="$STUB_PATH" STUB_REAL_SLEEP=1 exec "$SCRIPT" fire canc ) >/dev/null 2>&1 &
 canc_pid=$!; FAKE_PIDS+=("$canc_pid")
-wait_fire_sleeping "$canc_pid" "fire canc が sleep に入らない"
+wait_fire_sleeping "$canc_pid" "fire canc が sleep に入らない"  # sleep-ok: other: 関数名とメッセージの中の sleep
 rm -f "$TMUX_SCHEDULE_KEYS_DIR/canc.job"   # 眠っている間に取り消された
 wait "$canc_pid" 2>/dev/null || true
 assert_not_called "send-keys -t %5 -l" "job が消えていたら送らない (kill が間に合わなくても止まる)"
@@ -434,7 +437,7 @@ cat > "$TMP_DIR/bin_nodate_date" <<'EOS2'
 exit 0
 EOS2
 chmod +x "$TMP_DIR/bin_nodate_date"
-mkdir -p "$TMP_DIR/bin_nodate"; cp "$TMP_DIR/bin/tmux" "$TMP_DIR/bin/sleep" "$TMP_DIR/bin_nodate/" 2>/dev/null
+mkdir -p "$TMP_DIR/bin_nodate"; cp "$TMP_DIR/bin/tmux" "$TMP_DIR/bin/sleep" "$TMP_DIR/bin_nodate/" 2>/dev/null  # sleep-ok: stub: sleep の stub の配置
 cp "$TMP_DIR/bin_nodate_date" "$TMP_DIR/bin_nodate/date"
 run "$TMP_DIR/bin_nodate:/usr/bin:/bin" "$SCRIPT" fire nodate
 # 🚨 fire は冒頭で exec </dev/null >/dev/null 2>&1 する (issue 129) ので、stdout/stderr が空なのは
@@ -727,7 +730,7 @@ printf '%s\n' "$long_pid" > "$TMUX_SCHEDULE_KEYS_DIR/j-5.pid"   # pid 再利用�
 ui_queue "cancel	j-5"; STUB_GUM_EXIT=0 run "$STUB_PATH" "$SCRIPT" wizard
 # 🚨 この待ちは消さない (起きないことの確認なので待つべき成立条件が無い)。シグナルの配送は非同期で、
 #    誤って j-55 を殺す実装でも直後の kill -0 は通る。0.3 秒は「誤った kill が届くだけの時間」(issue 613 の D)
-/bin/sleep 0.3
+/bin/sleep 0.3  # sleep-ok: negative: 起きないことの確認 (直前のコメント参照)
 kill -0 "$long_pid" 2>/dev/null || { printf '✗ j-5 の取消が別 id (j-55) の sleeper を殺した\n'; exit 1; }
 [[ -f "$TMUX_SCHEDULE_KEYS_DIR/j-55.job" ]] || { printf '✗ 別 id (j-55) の job まで消した\n'; exit 1; }
 printf '✓ id の完全一致で照合する (pid を取り違えても別の予約を巻き込まない)\n'
@@ -859,7 +862,7 @@ assert_not_called "set-option" "別サーバのときは表示を触らない (�
 #    (このブロック限定の stub。他は実 date を使う)
 reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 mkdir -p "$TMP_DIR/bin_nodate"
-cp "$TMP_DIR/bin/tmux" "$TMP_DIR/bin/sleep" "$TMP_DIR/bin_nodate/"
+cp "$TMP_DIR/bin/tmux" "$TMP_DIR/bin/sleep" "$TMP_DIR/bin_nodate/"  # sleep-ok: stub: sleep の stub の配置
 cat > "$TMP_DIR/bin_nodate/date" <<'EOS2'
 #!/bin/sh
 # +%s (現在時刻) だけを壊す。ログの日時整形と -r <epoch> は実物に通す

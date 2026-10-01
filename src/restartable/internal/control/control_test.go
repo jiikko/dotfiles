@@ -332,7 +332,7 @@ func waitForBlockedServeConns(t *testing.T, server *Server, want int) {
 		if count() >= want {
 			return
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: select で詰まる数が揃うのを条件で待つ刻み (上限つき)
 	}
 	t.Fatalf("serveConn blocked in select = %d, want %d (10 秒待っても揃わない)", count(), want)
 }

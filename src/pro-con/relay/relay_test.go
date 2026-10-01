@@ -17,7 +17,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 		if cond() {
 			return
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (waitFor)
 	}
 	t.Fatal(what)
 }

@@ -18,7 +18,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 		if cond() {
 			return
 		}
-		time.Sleep(25 * time.Millisecond)
+		time.Sleep(25 * time.Millisecond) // sleep-ok: tick: 条件を見ながら刻む待ちの helper の中の刻み (waitFor)
 	}
 	t.Fatalf("%s (10 秒待っても成立しない)", what)
 }
@@ -272,6 +272,7 @@ func TestSubscriberRefusesLooseFallbackDir(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("逃がし先を使えないことを知らせない")
 	}
+	// sleep-ok: negative: つながらない間に知らせが 1 度だけで増えないことの確認 (成立条件が無い)
 	time.Sleep(3 * retryEvery) // 繋ぎ直しを何度か回す (知らせは 1 度だけ・権限は直さない)
 	if len(refused) != 0 {
 		t.Fatalf("つながらない間に何度も知らせた: %d", len(refused)+1)

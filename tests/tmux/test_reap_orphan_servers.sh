@@ -252,7 +252,7 @@ env TMUX_TMPDIR="$ATT_DIR" "$TMUX_BIN_PATH" -L "$ATT_SOCK" \
   new-session -d -s att "tail -f /dev/null" >>"$start_log" 2>&1 || { cat "$start_log" >&2; fail "failed to start att server" }
 att_pid=$(env TMUX_TMPDIR="$ATT_DIR" "$TMUX_BIN_PATH" -L "$ATT_SOCK" display-message -p '#{pid}')
 [[ -n "$att_pid" ]] || fail "D: att server PID を取得できなかった"
-( sleep 8 | env TMUX_TMPDIR="$ATT_DIR" "$TMUX_BIN_PATH" -L "$ATT_SOCK" -C attach -t att >/dev/null 2>&1 & )
+( sleep 8 | env TMUX_TMPDIR="$ATT_DIR" "$TMUX_BIN_PATH" -L "$ATT_SOCK" -C attach -t att >/dev/null 2>&1 & )  # sleep-ok: dummy: attach した client を生かしておくだけの入力
 # client 接続の確立を待つ (socket 消滅前に確認しないと CLI が繋げない)
 att_has_client() { [ "$(env TMUX_TMPDIR="$ATT_DIR" "$TMUX_BIN_PATH" -L "$ATT_SOCK" list-clients 2>/dev/null | wc -l | tr -d ' ')" -ge 1 ]; }
 TT_WAIT_TICKS=31 TT_WAIT_TICK=0.1 tt_wait_until att_has_client || fail "D: control-mode client が attach しない"

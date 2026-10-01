@@ -38,7 +38,7 @@ printf '✓ %s exists\n' "${ZSH_LIB#$ROOT_DIR/}"
 # ============================================================================
 # shellcheck disable=SC2034 # source する case_assert.sh の case_line() が参照する
 OUT="$(HOME="$TMP_HOME" zsh -c '
-  sleep() { : }   # 待機を潰してタイムアウト経路も即時化する
+  sleep() { : }   # 待機を潰してタイムアウト経路も即時化する  # sleep-ok: stub: 待機を潰す関数
 
   # --- tmux スタブ ---------------------------------------------------------
   # 状態: _T_SERVER(非空=サーバ起動中) / _T_SESSIONS(存在セッション) /
@@ -251,7 +251,7 @@ OUT="$(HOME="$TMP_HOME" zsh -c '
   # GC. _tt_gc_stale_holds の三重条件 (pid死亡 + 非attach + pristine のみ kill)
   ##########################################################################
   # 死んだ pid を用意 (起動即 kill。テストは <1s で終わるので再利用はまず起きない)
-  sleep 100 & DEADPID=$!; kill "$DEADPID" 2>/dev/null; wait "$DEADPID" 2>/dev/null || true
+  sleep 100 & DEADPID=$!; kill "$DEADPID" 2>/dev/null; wait "$DEADPID" 2>/dev/null || true  # sleep-ok: dummy: kill して死んだ pid を得るための常駐プロセス
   ALIVEPID=$$   # 自分は生きている
 
   # (kill 対象) 死 pid + 非attach + 1win/1pane → kill される
@@ -275,7 +275,7 @@ proj 3 1"
   # 並行 tt の pid は必ず zsh なので、非 zsh 生存 pid は (a) で保護せず (b)(c) 判定へ進み、
   # 非attach + pristine なら kill される (pid 再利用で GC が恒久 skip する回帰の防止)。
   # sleep はスタブ関数なので command で実バイナリを background 起動する (comm=sleep)。
-  command sleep 100 & NONZSH=$!
+  command sleep 100 & NONZSH=$!  # sleep-ok: dummy: zsh でない実体として置く常駐プロセス
   # fork-exec レース対策: 起動直後は ps がまだ execve 前の zsh (fork コピー) を返すことが
   # あり、GC が (a) で「並行 tt」と誤判定して kill を skip する (Linux CI で flaky に落ちた)。
   # comm が zsh でなくなる (= sleep を exec 済み) まで待つ。sleep はスタブなので実待機は
@@ -289,7 +289,7 @@ proj 3 1"
     esac
     _gc_wait=$((_gc_wait+1))
     [ "$_gc_wait" -ge 100 ] && break
-    command sleep 0.02
+    command sleep 0.02   # sleep-ok: tick: このテストは sleep を関数で潰しているので tt_wait_until (中で sleep を呼ぶ) が使えない
   done
   reset_log
   _T_GC_SESSIONS="__tt_hold_${NONZSH} 1 0"

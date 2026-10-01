@@ -59,12 +59,13 @@ LOG="$TMP_DIR/trigger.log"
 
 # sleep 0 相当にするため既定間隔を 0 分にはできない (0 は既定へ丸める仕様) ので、
 # sleep を即返す stub で置き換える
+# sleep-ok: stub: PATH 上の sleep の stub (呼び出しを記録して即返す)
 cat > "$TMP_DIR/bin/sleep" <<'EOS'
 #!/bin/sh
 echo "sleep $*" >> "$CALLS"
 exit 0
 EOS
-chmod +x "$TMP_DIR/bin/sleep"
+chmod +x "$TMP_DIR/bin/sleep"  # sleep-ok: stub: sleep の stub の配置
 
 run_periodic() {  # $1=fake server pid, 以降は env で制御
   TT_TRIGGER_LOG="$LOG" TT_PERIODIC_STATE_DIR="$TMP_DIR/state" TT_PERIODIC_ONESHOT=1 \
@@ -88,7 +89,7 @@ printf '✓ 1 周で保存 + timestamp 更新 + begin/save の記録\n'
 reset_calls; : > "$LOG"
 STUB_SOCKET_PATH="$TT_DEFAULT_SOCK" STUB_INTERVAL=5 STUB_SAVE_SCRIPT="$TMP_DIR/bin/fake_save.sh" \
   run_periodic "$FAKE"
-assert_called "sleep 300" "@continuum-save-interval=5 分 → sleep 300 秒"
+assert_called "sleep 300" "@continuum-save-interval=5 分 → sleep 300 秒"  # sleep-ok: other: 期待する呼び出し文字列の中の sleep
 
 # --- (3) 保存失敗は rc=1 として記録される (無音で成功扱いにしない) --------------------
 reset_calls; : > "$LOG"

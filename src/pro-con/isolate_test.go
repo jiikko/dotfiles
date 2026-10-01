@@ -51,7 +51,7 @@ func runFakeDispatcher(pidPath string) int {
 		if _, err := os.Stat(pidPath + ".release"); err == nil {
 			return 0
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond) // sleep-ok: tick: helper プロセスの中で release の合図を待つ刻み (t が無い)
 	}
 	return 1
 }

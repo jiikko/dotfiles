@@ -22,15 +22,12 @@ func newTestLocker(t *testing.T) *Locker {
 	return l
 }
 
-// expireLease は lock の mtime を「3 × ttl 前」へ打ち、lease が切れた状態を待たずに作る (lease の期限は lock の mtime と
+// expireLease は lock の mtime を「3 × ttl 前」へ動かし、lease が切れた状態を待たずに作る (lease の期限は lock の mtime と
 // FS の時刻の差で決まる。issue 614)。🚨 遠い過去にしない: 同じ mtime を時計のずれの判定 (clockSkewTolerance) にも使う経路が
 // あり、実時間で 3 × ttl 待った状態から外れる
 func expireLease(t *testing.T, l *Locker, ttl time.Duration) {
 	t.Helper()
-	past := time.Now().Add(-3 * ttl)
-	if err := os.Chtimes(l.lockPath(), past, past); err != nil {
-		t.Fatalf("lock の mtime を打てない: %v", err)
-	}
+	ageLock(t, l, 3*ttl) // Acquire / Renew の直後に呼ぶので、今の mtime からの相対 = 今から 3 × ttl 前
 }
 
 // 同時に取りにいったら、勝つのはちょうど 1 つ。これが壊れたら道具の意味が無い。
@@ -77,7 +74,7 @@ func TestCriticalSectionsNeverOverlap(t *testing.T) {
 				mu.Lock()
 				events = append(events, "enter")
 				mu.Unlock()
-				time.Sleep(time.Millisecond)
+				time.Sleep(time.Millisecond) // sleep-ok: window: 臨界区間に滞留して排他の破れを観測できる窓を作る入力
 				mu.Lock()
 				events = append(events, "leave")
 				mu.Unlock()
@@ -143,7 +140,7 @@ func TestShortTTLCannotStealLiveLock(t *testing.T) {
 	if _, err := l.Acquire(time.Hour, "long-lease"); err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
-	time.Sleep(20 * time.Millisecond)
+	ageLock(t, l, 20*time.Millisecond) // 奪いに来た側の 1ms の TTL から見れば期限切れ、保持者の 1 時間から見れば新しい
 	if _, err := l.Acquire(time.Millisecond, "thief"); !errors.Is(err, errBusy) {
 		t.Fatalf("短い TTL を渡して他人の lease を奪えた (err=%v)", err)
 	}

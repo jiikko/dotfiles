@@ -595,7 +595,7 @@ echo "video content data" > "$TEST_DIR/b.avi"
 # 長く走る prefetch に差し替える (本物は head -c 1 で即終了するので、看取りの有無が観測できない)
 typeset -ga SPAWNED_PIDS=()
 __av1ify_prefetch() {
-  ( exec sleep 120 ) &
+  ( exec sleep 120 ) &  # sleep-ok: dummy: kill される前提の常駐プロセス
   __AV1IFY_PREFETCH_PIDS+=("$!")
   SPAWNED_PIDS+=("$!")   # 本体がクリアしても、テスト側は起こした pid を覚えておく
 }
