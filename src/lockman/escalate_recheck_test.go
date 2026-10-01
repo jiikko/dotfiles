@@ -176,7 +176,12 @@ func TestEscalateSendsTermWhenChildIsAlive(t *testing.T) {
 	// に間に合わなければ記録が永遠に現れず赤くなる (レビューの実測: 素のレイテンシは
 	// 0.32〜2.58ms で今は 4 倍の余裕だが、負荷の高い runner では詰まる)。
 	// しかも落ち方が最悪で、**赤は「冒頭 guard が退行した」に見える** (実際は fixture の競走)。
-	escalateGroupKill(pgid, make(chan struct{}), 3*time.Second)
+	// 猶予の満額は待たない: TERM の記録を見たら「子が終わった」を知らせて昇格を打ち切る (issue 614)。
+	// 子は fixture の Cleanup が SIGKILL で片付ける
+	exited := make(chan struct{})
+	done := make(chan struct{})
+	go func() { escalateGroupKill(pgid, exited, 3*time.Second); close(done) }()
+	defer func() { close(exited); <-done }()
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {

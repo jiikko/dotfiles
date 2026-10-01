@@ -106,3 +106,12 @@ wtclean の 15 s は git fixture のコストで、sleep も子の sleep も無�
   - `TestStopTakesOverWhenStopperDies` (2.2 s) は pro-con 本体のテストで、dispatcher の非公開の変数に届かない。今回は触らない (2.2 s の内訳も未確認)
   - 7 (`stopped_test.go:104` の `sleep 1`) は残す: 「一部だけ止まっている間、猶予 (StopGrace 200 ms) を超えても止め直さない」を見る否定の窓で、
     猶予の 5 倍。縮めても 0.5 s しか減らず、余裕が減ると負荷の日に誤った実装を見逃す (偽の緑) 側に倒れる
+- 2026-10-02 「test(lockman): lease の期限切れ・TERM の確認・取得の再試行を実時間で待たない (614 の 3 / 4 / 6)」
+  - 6: `lock_test.go` の `time.Sleep(3 * ttl)` 9 箇所 → `expireLease` (lock の mtime を「3 × ttl 前」へ `os.Chtimes`)。遠い過去にしないのは、
+    同じ mtime を時計のずれの判定 (`clockSkewTolerance`) にも使う経路があるため。変異: `expired` を常に偽 → `TestReleaseRefusesExpiredLease` /
+    `TestRenewDetectsLostLease` が red
+  - 3: `TestEscalateSendsTermWhenChildIsAlive` は `escalateGroupKill` を goroutine で呼び、TERM の記録を見たら `exited` を閉じて猶予を打ち切る
+    (猶予 3 s は「短いと記録が SIGKILL に間に合わない」理由のまま残した)。3.01 → 0.03〜0.24 s (-race で 3 回)。変異: TERM を撃たない → red
+  - 4: `cmdAcquire` の最初の backoff を `acquireBackoff` (package の変数、既定 1 s) にし、`TestWaitLoopDoesNotWarnPerRetry` は 10 ms・`--wait 150ms`。
+    3.01 → 0.17 s。変異: 再試行のたびに警告を出す → 「待ち直す枝でも鳴っている」で red
+  - lockman package: 42.3 s → 34.8 s (`make -C src/lockman test`、lint 0 件)。残りの大半は 9 (with.go の更新 ticker と子の `sleep 3/4`)

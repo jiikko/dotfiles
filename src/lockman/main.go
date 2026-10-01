@@ -339,9 +339,12 @@ func dispatch(cmd string, l *Locker, o *opts, child []string) int {
 	return exitError
 }
 
+// acquireBackoff は --wait の再試行の最初の間隔 (以後倍々で 15 秒まで)。テストで短くする (issue 614)
+var acquireBackoff = time.Second
+
 func cmdAcquire(l *Locker, o *opts) int {
 	deadline := time.Now().Add(o.wait)
-	backoff := time.Second
+	backoff := acquireBackoff
 	for {
 		meta, err := l.AcquireTimed(o.ttl, o.label)
 		switch {

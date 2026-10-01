@@ -360,8 +360,12 @@ func TestWaitLoopDoesNotWarnPerRetry(t *testing.T) {
 		t.Fatalf("Chtimes: %v", err)
 	}
 
+	// 再試行が何回か起きればよいので、間隔を縮めて実時間で 3 秒待たない (10・20・40・80ms と倍々で 4 周前後。issue 614)
+	oldBackoff := acquireBackoff
+	acquireBackoff = 10 * time.Millisecond
+	t.Cleanup(func() { acquireBackoff = oldBackoff })
 	var rc int
-	out := captureStderr(t, func() { rc = run([]string{"acquire", l.dir, "--wait", "3s"}) })
+	out := captureStderr(t, func() { rc = run([]string{"acquire", l.dir, "--wait", "150ms"}) })
 	if rc != exitBusy {
 		t.Fatalf("rc=%d (exitBusy=%d を期待)", rc, exitBusy)
 	}

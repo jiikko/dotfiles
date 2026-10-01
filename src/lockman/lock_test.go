@@ -22,6 +22,17 @@ func newTestLocker(t *testing.T) *Locker {
 	return l
 }
 
+// expireLease は lock の mtime を「3 × ttl 前」へ打ち、lease が切れた状態を待たずに作る (lease の期限は lock の mtime と
+// FS の時刻の差で決まる。issue 614)。🚨 遠い過去にしない: 同じ mtime を時計のずれの判定 (clockSkewTolerance) にも使う経路が
+// あり、実時間で 3 × ttl 待った状態から外れる
+func expireLease(t *testing.T, l *Locker, ttl time.Duration) {
+	t.Helper()
+	past := time.Now().Add(-3 * ttl)
+	if err := os.Chtimes(l.lockPath(), past, past); err != nil {
+		t.Fatalf("lock の mtime を打てない: %v", err)
+	}
+}
+
 // 同時に取りにいったら、勝つのはちょうど 1 つ。これが壊れたら道具の意味が無い。
 func TestAcquireHasExactlyOneWinner(t *testing.T) {
 	l := newTestLocker(t)
@@ -98,7 +109,7 @@ func TestStaleTakeoverHasExactlyOneWinner(t *testing.T) {
 	if _, err := l.Acquire(ttl, "dead"); err != nil {
 		t.Fatalf("下ごしらえの Acquire: %v", err)
 	}
-	time.Sleep(3 * ttl)
+	expireLease(t, l, ttl)
 
 	// 🚨 引き継ぐ側は長い TTL で取る。短い TTL のまま競わせると、勝者の新しい lock も
 	// すぐ期限切れになり、後続が「正当に」引き継いで勝者が増える (仕様どおりの挙動)。
@@ -206,7 +217,7 @@ func TestReleaseRefusesExpiredLease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
-	time.Sleep(3 * ttl)
+	expireLease(t, l, ttl)
 	if err := l.Release(m.Token); !errors.Is(err, errNotOwner) {
 		t.Fatalf("期限切れの lease で解放できた (err=%v)", err)
 	}
@@ -223,7 +234,7 @@ func TestRenewDetectsLostLease(t *testing.T) {
 	if err := l.Renew(m.Token); err != nil {
 		t.Fatalf("保持中の Renew が失敗: %v", err)
 	}
-	time.Sleep(3 * ttl)
+	expireLease(t, l, ttl)
 	if _, err := l.Acquire(ttl, "thief"); err != nil {
 		t.Fatalf("引き継げない: %v", err)
 	}
@@ -245,7 +256,7 @@ func TestRenewRefusesExpiredLease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
-	time.Sleep(3 * ttl)
+	expireLease(t, l, ttl)
 	// 前提: 誰も引き継いでいない (lock は自分の token のまま残っている)。
 	// ここが崩れると token 照合だけで落ちてしまい、期限検査を何も守らなくなる。
 	got, _, err := l.readLock()
@@ -454,7 +465,7 @@ func TestStaleTakeoverDoesNotEvictFreshLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("下ごしらえの Acquire: %v", err)
 	}
-	time.Sleep(3 * ttl)
+	expireLease(t, l, ttl)
 
 	observed, resume, calls := takeoverSeam(t)
 	type result struct {
@@ -517,7 +528,7 @@ func TestStaleTakeoverRefusesWhenGenerationChangedAfterClaimSwept(t *testing.T) 
 	if err != nil {
 		t.Fatalf("下ごしらえの Acquire: %v", err)
 	}
-	time.Sleep(3 * ttl)
+	expireLease(t, l, ttl)
 
 	observed, resume, _ := takeoverSeam(t)
 	late := make(chan error, 1)
@@ -570,7 +581,7 @@ func TestConcurrentTakeoverElectsExactlyOneEvictor(t *testing.T) {
 	if _, err := l.Acquire(ttl, "dead"); err != nil {
 		t.Fatalf("下ごしらえの Acquire: %v", err)
 	}
-	time.Sleep(3 * ttl)
+	expireLease(t, l, ttl)
 
 	const n = 8
 	var mu sync.Mutex
@@ -637,7 +648,7 @@ func TestStaleTakeoverRefusesRenewedLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("下ごしらえの Acquire: %v", err)
 	}
-	time.Sleep(3 * ttl)
+	expireLease(t, l, ttl)
 
 	observed, resume, _ := takeoverSeam(t)
 	late := make(chan error, 1)
@@ -737,7 +748,7 @@ func staleLockWithClaim(t *testing.T, l *Locker) (*Meta, string) {
 	if err != nil {
 		t.Fatalf("下ごしらえの Acquire: %v", err)
 	}
-	time.Sleep(3 * ttl)
+	expireLease(t, l, ttl)
 	claim := takeoverClaimPathFor(l, dead.Token)
 	if err := l.placeTakeoverClaim(claim); err != nil {
 		t.Fatalf("目印を作れない: %v", err)
