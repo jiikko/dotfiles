@@ -58,6 +58,34 @@ func TestWrapSpansKinsokuKeepsPunctuationOffLineHead(t *testing.T) {
 	}
 }
 
+// 行末禁則と、句読点以外の行頭禁則: 開き括弧は行末に、長音・閉じ括弧・三点リーダは行頭に来ない。
+// 字は production の表 (noLineEnd / noLineStart) から作らずここに直接書く (表から作ると、表を縮める退行が見えない)。
+// 全角だけの文を幅 4〜24 の全部で折るので、どの字もいずれかの幅で行の境目に来る。
+func TestWrapSpansKinsokuKeepsBracketsAndMarksOffLineEdges(t *testing.T) {
+	const src = "あいう「かきく」けこ（さしす）せそ『たち』つて【なに】ぬねのーはひふ…まみむめも"
+	noEnd := []string{"「", "（", "『", "【"}
+	noHead := []string{"」", "）", "』", "】", "ー", "…"}
+	for limit := 4; limit <= 24; limit++ {
+		for _, l := range wrapSpans(textSpans(src), limit) {
+			var b strings.Builder
+			for _, sp := range l {
+				b.WriteString(sp.Text)
+			}
+			line := b.String()
+			for _, c := range noEnd {
+				if strings.HasSuffix(line, c) {
+					t.Fatalf("limit=%d で開き括弧 %q が行末に来た: %q", limit, c, line)
+				}
+			}
+			for _, c := range noHead {
+				if strings.HasPrefix(line, c) {
+					t.Fatalf("limit=%d で %q が行頭に来た: %q", limit, c, line)
+				}
+			}
+		}
+	}
+}
+
 func TestWrapSpansProgressesWhenClusterWiderThanLimit(t *testing.T) {
 	// 幅 1 に幅 2 の字を流す: 1 行 1 字で必ず前進する (無限ループ・空行の量産を防ぐ)
 	lines := wrapSpans(textSpans("日本語"), 1)
