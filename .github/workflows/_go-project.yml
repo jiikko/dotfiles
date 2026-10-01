@@ -57,10 +57,32 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Set up Go
+        id: go
         uses: actions/setup-go@v7
         with:
           go-version-file: ${{ inputs.dir }}/go.mod
           cache-dependency-path: ${{ inputs.dir }}/go.sum
+
+      # scripts/golangci_lint.sh がビルドした golangci-lint を run をまたいで残す。残さないと lint の job は毎回
+      # 依存のダウンロードとビルドからやり直す。setup-go のキャッシュは鍵 (go.sum のハッシュ) が一致すると保存し直さず、
+      # 同じ鍵の test の job が先に保存した中身 (golangci-lint を含まない) を使い回すので、そちらでは補えない
+      # (2026-10-01 の src/glogx の lint で `Cache hit` の後に `go: downloading` が 204 行。手元で空からのビルドは 23 秒)。
+      # 鍵の要素は置き場の鍵 (golangci_lint.sh の dir 名) と同じ。版が変われば別の鍵になり、古い物は使われない
+      - name: Key for the golangci-lint cache
+        id: gl
+        env:
+          GO_VERSION: ${{ steps.go.outputs.go-version }}
+          SCRIPT_HASH: ${{ hashFiles('scripts/golangci_lint.sh') }}
+        run: |
+          v=$(sed -n 's/^GOLANGCI_LINT_VERSION[[:space:]]*:=[[:space:]]*//p' ${{ inputs.dir }}/Makefile)
+          [ -n "$v" ] || { echo "::error::${{ inputs.dir }}/Makefile から GOLANGCI_LINT_VERSION を読めない"; exit 1; }
+          echo "key=golangci-lint-$v-go$GO_VERSION-$RUNNER_OS-$RUNNER_ARCH-$SCRIPT_HASH" >> "$GITHUB_OUTPUT"
+
+      - name: Cache golangci-lint binary
+        uses: actions/cache@v6
+        with:
+          path: ~/Library/Caches/dotfiles-go-tools
+          key: ${{ steps.gl.outputs.key }}
 
       - name: Lint
         run: make -C ${{ inputs.dir }} lint
