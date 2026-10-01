@@ -1337,6 +1337,14 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// KeyMsg (v2 では KeyPressMsg/KeyReleaseMsg を束ねる interface) ではなく押下だけを取る。
 	// 離鍵イベントは KeyboardEnhancements を要求していないので届かないが、interface で受けると
 	// 将来 enhancement を有効にした瞬間に 1 打が 2 回処理される。
+	case tea.PasteMsg:
+		// 貼り付け (bracketed paste。bubbletea v2 は既定で有効) は入力欄にだけ入れる。入力欄が無いときは捨てる:
+		// キー操作として解釈すると、貼った文字列が 1 字ずつ一覧のキーとして走る (docs/glogx-ui-guide.md §7)。
+		// 板が入力欄の上に出ている間 (action モーダル・再起動の確認) もキーは板が先に取るので、貼り付けも入れない
+		if m.issuesOv.visible() && m.issuesOv.typingInput() && !m.actModal.active() && !m.restartPromptVisible() {
+			m.issuesOv.paste(msg.Content)
+		}
+		return m, m.maybeTick()
 	case tea.KeyPressMsg:
 		// 高速連打やパイプ入力で複数の文字キーが 1 つのキーイベント (Text 長 > 1) に
 		// まとまって届いた場合の分解。まとめずに msg.String() だけ見ると "hhq" のような
@@ -1485,7 +1493,10 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// 「y 以外の任意キー = キャンセル」というモーダルの語彙を優先する。
 	// 対象キーはハードコードせず起動時に tmux サーバへ聞いた現在値 (prefixMsg)。
 	// tmux 外や取得失敗では tmuxPrefix="" のままこの機能ごと無効になる。
-	if m.tmuxPrefix != "" && key == m.tmuxPrefix {
+	//
+	// 🚨 入力欄に打っている間は飲まない: prefix が C-a / C-b の利用者では、それが入力欄の編集キー (先頭へ / 1 字左へ)
+	// でもあり、飲むと入力欄で効かない。入力欄の外では今までどおり案内する
+	if m.tmuxPrefix != "" && key == m.tmuxPrefix && !(m.issuesOv.visible() && m.issuesOv.typingInput()) {
 		// 通知は右下トースト (中央ダイアログは操作を遮って重い)
 		m.toast.Show("tmux prefix は popup では効きません (C-g で閉じてから)", false)
 		return m, m.maybeTick()

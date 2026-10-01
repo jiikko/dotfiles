@@ -113,6 +113,22 @@ func (p *urlPicker) handleKey(key string) (open, closed bool) {
 	return false, false
 }
 
+// paste は貼り付けた文字列を検索語のカーソルの位置に入れる (bracketed paste。tui.go の PasteMsg)。
+// 空白・改行・タブは落とす: URL に現れず、打鍵の Space も入れていない (handleKey) ので、貼り付けた URL の末尾の改行が
+// 空白として残って何にも一致しなくなるのを避ける。
+func (p *urlPicker) paste(s string) {
+	if !p.active {
+		return
+	}
+	s = strings.Join(strings.Fields(s), "")
+	if s == "" {
+		return
+	}
+	p.line.Insert(s)
+	p.cursor = 0 // 絞り込み直後は先頭を見せる (打鍵と同じ)
+	p.refilter()
+}
+
 // isPrintableKey は検索語に足してよい 1 文字か。修飾キー付き ("ctrl+x") や名前付きキー
 // ("pgdown") を弾くため、1 ルーンで制御文字でないものだけを通す。
 func isPrintableKey(key string) bool {

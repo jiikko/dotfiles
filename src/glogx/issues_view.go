@@ -2279,6 +2279,20 @@ func (v *issuesView) numberField(width int) (string, int) {
 	return v.numFilter.line.Window(max(width-termwidth.Of(numberFilterPrompt), 1))
 }
 
+// paste は入力欄に貼り付けを入れる。入力欄が無いときは何もしない (貼り付けをキー操作として解釈しない。
+// docs/glogx-ui-guide.md §7)。
+func (v *issuesView) paste(s string) {
+	switch {
+	case v.urlPick.active:
+		v.urlPick.paste(s)
+	case v.numFilter.typing:
+		if v.numFilter.paste(s) {
+			v.cursor = 0 // 絞り込み直後は先頭を見せる (numberFilterKey と同じ)
+			v.refresh()
+		}
+	}
+}
+
 // typingInput は入力欄 (URL ピッカー・番号の入力中) にキーを打っているか。打っている間は印字キーがすべて
 // 検索語なので、browseModel のキーリピートの抑止 (swallowKeyRepeat) を外す。
 func (v *issuesView) typingInput() bool { return v.urlPick.active || v.numFilter.typing }

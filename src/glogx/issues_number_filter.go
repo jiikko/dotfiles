@@ -71,6 +71,22 @@ func (f *issuesNumberFilter) edit(key string) bool {
 	return f.line.String() != before
 }
 
+// paste は貼り付けた文字列のうち数字だけを検索語に入れる (検索語が変わったら true)。「#415」や「issue 415」を
+// 貼っても番号で引けるよう、数字以外は捨てる (打鍵と同じく、数字以外を検索語にしない)。
+func (f *issuesNumberFilter) paste(s string) bool {
+	digits := strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, s)
+	if digits == "" {
+		return false
+	}
+	f.line.Insert(digits)
+	return true
+}
+
 // rows は番号に検索語を含む issue を、渡された並びのまま返す。検索語が空なら全件
 // (入力を始めた直後に一覧が消えると、何を絞り込んでいるのか分からなくなる)。
 func (f *issuesNumberFilter) rows(all []*issues.Issue) []*issues.Issue {

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"glogx/issues"
@@ -242,5 +244,68 @@ func TestRepeatGuardStillHoldsNConfirmOutsideInputs(t *testing.T) {
 	m.handleKey("n") // releaseKey を挟まない = 押しっぱなしのリピート
 	if !m.issuesOv.markNext.active {
 		t.Error("押しっぱなしの n のリピートが目印の確認を取り消した")
+	}
+}
+
+// 貼り付け (bracketed paste) は入力欄にだけ入れる。入力欄が無いとき・入力欄の上に板が出ているときは捨てる
+// (キー操作として解釈しない)。
+func TestPasteGoesOnlyIntoInputs(t *testing.T) {
+	t.Run("URL", func(t *testing.T) {
+		m := caretTestModel(t, false)
+		m.issuesOv.urlPick.open([]string{"https://a.example/1", "https://b.example/2"})
+		typeKeys(m, "down")
+		m.Update(tea.PasteMsg{Content: "b.exa mple/\n"}) // 空白と改行は落とす (URL に現れない)
+		if q := m.issuesOv.urlPick.query(); q != "b.example/" {
+			t.Errorf("貼り付けが検索語に入らない: query=%q (期待 b.example/)", q)
+		}
+		if p := &m.issuesOv.urlPick; len(p.match) != 1 || p.cursor != 0 {
+			t.Errorf("貼り付けで絞り込みが更新されない: match=%v cursor=%d", p.match, p.cursor)
+		}
+	})
+	t.Run("番号", func(t *testing.T) {
+		m := caretTestModel(t, false)
+		typeKeys(m, "/")
+		m.Update(tea.PasteMsg{Content: "issue #12"}) // 数字だけを入れる
+		if q := m.issuesOv.numFilter.query(); q != "12" {
+			t.Errorf("貼り付けの数字が検索語に入らない: query=%q (期待 12)", q)
+		}
+		if len(m.issuesOv.rows) != 2 { // 123 と 129
+			t.Errorf("貼り付けで絞り込みが更新されない: rows=%d (期待 2)", len(m.issuesOv.rows))
+		}
+	})
+	t.Run("入力欄の外", func(t *testing.T) {
+		m := caretTestModel(t, false)
+		before := m.issuesOv.cursor
+		m.Update(tea.PasteMsg{Content: "jjj/12"}) // キーとして走れば下へ動き、/ で絞り込みが始まる
+		if m.issuesOv.cursor != before || m.issuesOv.numFilter.active {
+			t.Errorf("入力欄の外の貼り付けがキーとして走った: cursor %d→%d numFilter.active=%v", before, m.issuesOv.cursor, m.issuesOv.numFilter.active)
+		}
+	})
+	t.Run("板が出ている", func(t *testing.T) {
+		m := caretTestModel(t, false)
+		typeKeys(m, "/")
+		m.actModal.pullConfirm = true
+		m.Update(tea.PasteMsg{Content: "12"})
+		if q := m.issuesOv.numFilter.query(); q != "" {
+			t.Errorf("板の下の入力欄に貼り付けが入った: query=%q", q)
+		}
+	})
+}
+
+// tmux の prefix が入力欄の編集キー (C-a = 先頭へ) と同じでも、入力欄に打っている間は入力欄に届く。
+// 入力欄の外では今までどおり prefix を飲んで案内を出す。
+func TestTmuxPrefixReachesInputWhileTyping(t *testing.T) {
+	m := caretTestModel(t, false)
+	m.tmuxPrefix = "ctrl+a"
+	typeKeys(m, "/", "1", "2", "ctrl+a", "9")
+	if q := m.issuesOv.numFilter.query(); q != "912" {
+		t.Errorf("入力中の ctrl+a (prefix と同じ) が先頭へ動かない: query=%q (期待 912)", q)
+	}
+	if strings.Contains(m.toast.Text(), "tmux prefix") {
+		t.Errorf("入力中に prefix の案内を出した: %q", m.toast.Text())
+	}
+	typeKeys(m, "esc", "ctrl+a")
+	if !strings.Contains(m.toast.Text(), "tmux prefix") {
+		t.Errorf("入力欄の外で prefix の案内が出ない: toast=%q", m.toast.Text())
 	}
 }
