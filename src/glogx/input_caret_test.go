@@ -150,7 +150,8 @@ func typeLongNumber(t *testing.T, m *browseModel) {
 	t.Helper()
 	{
 		typeKeys(m, "/")
-		for range 4 {
+		// 81 桁: 枠ありの幅 70 (中身 63 桁) でも欄より長くする。短いと欄で切らない旧い式でも収まり、差が出ない (変異で実測)
+		for range 8 {
 			typeKeys(m, "1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
 		}
 		typeKeys(m, "5")
