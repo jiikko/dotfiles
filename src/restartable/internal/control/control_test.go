@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -99,6 +101,25 @@ func TestListenRemovesOwnedStaleSocketAndRejectsRegularFile(t *testing.T) {
 	if data, err := os.ReadFile(regular); err != nil || string(data) != "keep" {
 		t.Fatalf("regular file changed: %q, %v", data, err)
 	}
+	if _, err := os.Lstat(regular + ".lock"); !os.IsNotExist(err) {
+		t.Fatalf("lock file remained after listen failure: %v", err)
+	}
+}
+
+func TestListenBindFailureRemovesLockFile(t *testing.T) {
+	dir := shortSocketDir(t)
+	path := filepath.Join(dir, "runner.sock")
+	original := listenControlSocket
+	listenControlSocket = func(string) (net.Listener, error) {
+		return nil, errors.New("simulated bind failure")
+	}
+	defer func() { listenControlSocket = original }()
+	if _, err := Listen(path); err == nil || !strings.Contains(err.Error(), "simulated bind failure") {
+		t.Fatalf("Listen error = %v, want simulated bind failure", err)
+	}
+	if _, err := os.Lstat(path + ".lock"); !os.IsNotExist(err) {
+		t.Fatalf("lock file remained after bind failure: %v", err)
+	}
 }
 
 func TestInvalidRequestAndPathLimit(t *testing.T) {
@@ -126,12 +147,41 @@ func TestInvalidRequestAndPathLimit(t *testing.T) {
 		t.Fatalf("invalid response = %+v", response)
 	}
 
-	tooLong := filepath.Join(string(os.PathSeparator), strings.Repeat("x", MaxSocketPath))
+	tooLong := strings.Repeat("x", 104)
 	if err := ValidatePath(tooLong); err == nil {
-		t.Fatalf("accepted %d byte path", len(tooLong))
+		t.Fatalf("accepted 104 byte path")
 	}
-	if err := ValidatePath(strings.Repeat("x", MaxSocketPath)); err != nil {
-		t.Fatalf("rejected exactly %d byte path: %v", MaxSocketPath, err)
+	if err := ValidatePath(strings.Repeat("x", 103)); err != nil {
+		t.Fatalf("rejected exactly 103 byte path: %v", err)
+	}
+}
+
+func TestExtraNULByteDisconnectsControlRequest(t *testing.T) {
+	path := filepath.Join(shortSocketDir(t), "control.sock")
+	server, err := Listen(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = server.Close() }()
+	conn, err := net.Dial("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := fmt.Fprintln(conn, `{"command":"restart"}`); err != nil {
+		t.Fatal(err)
+	}
+	request := <-server.Requests
+	if _, err := conn.Write([]byte{0}); err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+	var data [1]byte
+	if n, err := conn.Read(data[:]); n != 0 || !errors.Is(err, io.EOF) {
+		t.Fatalf("connection after extra NUL = (%d, %v), want EOF", n, err)
+	}
+	if request.Alive() {
+		t.Fatal("NUL byte after request left the request alive")
 	}
 }
 

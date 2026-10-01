@@ -162,7 +162,8 @@ type synchronizedWriter struct{ s *logSink }
 func (w synchronizedWriter) Write(data []byte) (int, error) {
 	w.s.mu.Lock()
 	defer w.s.mu.Unlock()
-	return w.s.writer.Write(data)
+	_, _ = w.s.writer.Write(data)
+	return len(data), nil
 }
 
 func (s *logSink) Flush() {

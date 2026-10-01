@@ -50,10 +50,17 @@ func New(input io.Reader, output io.Writer) *Presenter {
 	}
 	p.program = tea.NewProgram(model,
 		tea.WithInput(input),
-		tea.WithOutput(output),
+		tea.WithOutput(discardWriteErrors{writer: output}),
 		tea.WithoutSignalHandler(),
 	)
 	return p
+}
+
+type discardWriteErrors struct{ writer io.Writer }
+
+func (w discardWriteErrors) Write(data []byte) (int, error) {
+	_, _ = w.writer.Write(data)
+	return len(data), nil
 }
 
 // Start is called by runner.Run when the configured presenter supports startup.

@@ -22,10 +22,21 @@ type process struct {
 	pid       int
 	finished  atomic.Bool
 	result    processResult
-	done      chan processResult
+	done      chan struct{}
 	reader    *os.File
 	outputEnd chan struct{}
 	closeOnce sync.Once
+}
+
+type serializedReader struct {
+	mu     sync.Mutex
+	reader io.Reader
+}
+
+func (r *serializedReader) Read(data []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.reader.Read(data)
 }
 
 func startProcess(argv []string, shell bool, env []string, stdin io.Reader, sink *logSink, headless bool) (*process, error) {
@@ -53,7 +64,7 @@ func startProcess(argv []string, shell bool, env []string, stdin io.Reader, sink
 		return nil, err
 	}
 	_ = w.Close()
-	p := &process{cmd: cmd, pid: cmd.Process.Pid, done: make(chan processResult, 1), reader: r, outputEnd: make(chan struct{})}
+	p := &process{cmd: cmd, pid: cmd.Process.Pid, done: make(chan struct{}), reader: r, outputEnd: make(chan struct{})}
 	go func() {
 		defer close(p.outputEnd)
 		defer p.closeOutput()
@@ -64,10 +75,16 @@ func startProcess(argv []string, shell bool, env []string, stdin io.Reader, sink
 		result := processResult{Code: processExitCode(cmd.ProcessState, err), Err: err}
 		p.result = result
 		p.finished.Store(true)
-		p.done <- result
 		close(p.done)
 	}()
 	return p, nil
+}
+
+// wait returns the stored result after the broadcast close. Multiple actor
+// paths can wait for the same process without consuming one another's result.
+func (p *process) wait() processResult {
+	<-p.done
+	return p.result
 }
 
 func (p *process) closeOutput() { p.closeOnce.Do(func() { _ = p.reader.Close() }) }

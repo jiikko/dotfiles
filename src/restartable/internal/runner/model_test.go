@@ -162,14 +162,14 @@ func TestUpdateEscCancelsAcceptedQuitStopAndRejectsControlRestart(t *testing.T) 
 	}
 }
 
-func TestUpdateStopCommandFailureAfterChildExitHonorsIntent(t *testing.T) {
+func TestUpdateStopCommandFailureAfterChildExitExitsRegardlessOfIntent(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		intent     Intent
 		wantState  State
 		wantEffect EffectKind
 	}{
-		{name: "restart", intent: IntentRestart, wantState: Building, wantEffect: StartBuildEffect},
+		{name: "restart", intent: IntentRestart, wantState: Exiting, wantEffect: ExitEffect},
 		{name: "quit", intent: IntentExit, wantState: Exiting, wantEffect: ExitEffect},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -182,6 +182,21 @@ func TestUpdateStopCommandFailureAfterChildExitHonorsIntent(t *testing.T) {
 				t.Fatalf("effects=%+v, want %s", effects, tc.wantEffect)
 			}
 		})
+	}
+}
+
+func TestUpdateQuitDuringBuildExitsAndRejectsControlRestart(t *testing.T) {
+	m, _ := Update(InitialModel(), Event{Kind: KeyEvent, Key: "Q"})
+	if m.Confirm != ConfirmQuit {
+		t.Fatalf("Q did not open quit confirmation: %+v", m)
+	}
+	m, effects := Update(m, Event{Kind: KeyEvent, Key: "y"})
+	if m.State != Exiting || m.Intent != IntentExit || m.ExitCode != 0 || !hasEffect(effects, ForceStopEffect) {
+		t.Fatalf("confirmed quit during build = %+v, effects=%+v", m, effects)
+	}
+	m, effects = Update(m, Event{Kind: ControlRestartEvent})
+	if m.State != Exiting || !hasEffect(effects, ControlRejectEffect) || effects[0].Reason != "runner exiting" {
+		t.Fatalf("control restart after quit confirmation = %+v, effects=%+v", m, effects)
 	}
 }
 

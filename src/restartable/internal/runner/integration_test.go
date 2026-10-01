@@ -194,6 +194,14 @@ func startTestRunner(t *testing.T, options map[string]string) *testRunner {
 }
 
 func startTestRunnerMode(t *testing.T, options map[string]string, waitForStatus bool) *testRunner {
+	return startTestRunnerModeWithBrokenStdout(t, options, waitForStatus, false)
+}
+
+func startTestRunnerWithBrokenStdout(t *testing.T, options map[string]string) *testRunner {
+	return startTestRunnerModeWithBrokenStdout(t, options, true, true)
+}
+
+func startTestRunnerModeWithBrokenStdout(t *testing.T, options map[string]string, waitForStatus, brokenStdout bool) *testRunner {
 	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "rnt-")
 	if err != nil {
@@ -203,7 +211,12 @@ func startTestRunnerMode(t *testing.T, options map[string]string, waitForStatus 
 	path := filepath.Join(dir, "runner.sock")
 	stdout := filepath.Join(t.TempDir(), "stdout.log")
 	stderr := filepath.Join(t.TempDir(), "stderr.log")
-	out, err := os.Create(stdout)
+	var out, pipeReader *os.File
+	if brokenStdout {
+		pipeReader, out, err = os.Pipe()
+	} else {
+		out, err = os.Create(stdout)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,6 +237,9 @@ func startTestRunnerMode(t *testing.T, options map[string]string, waitForStatus 
 		t.Fatal(err)
 	}
 	_ = out.Close()
+	if pipeReader != nil {
+		_ = pipeReader.Close()
+	}
 	_ = errFile.Close()
 	r := &testRunner{cmd: cmd, path: path, stdout: stdout, stderr: stderr, done: make(chan struct{})}
 	go func() { r.waitErr = cmd.Wait(); close(r.done) }()
@@ -531,7 +547,7 @@ func TestStopCommandSuccessIgnoresRestartAndQuitKeysWithoutKillingChild(t *testi
 	}
 }
 
-func TestStopCommandFailureAfterChildExitContinuesRestart(t *testing.T) {
+func TestStopCommandFailureAfterChildExitExitsAndFailsRestart(t *testing.T) {
 	dir := t.TempDir()
 	started := filepath.Join(dir, "stop-started")
 	fifo := filepath.Join(dir, "stop-gate")
@@ -591,18 +607,19 @@ func TestStopCommandFailureAfterChildExitContinuesRestart(t *testing.T) {
 		if result.err != nil {
 			t.Fatal(result.err)
 		}
-		if !result.response.OK || result.response.Generation != 2 || result.response.PID == nil {
+		if result.response.OK || !strings.Contains(result.response.Reason, "stop-cmd failed") {
 			t.Fatalf("restart response after child exit = %+v", result.response)
 		}
 	case <-time.After(4 * time.Second):
-		t.Fatal("restart did not continue after child exited")
+		t.Fatal("failed stop-cmd request was not rejected after child exit")
 	}
-	status := r.waitStatus(t, string(Running))
-	if status.Generation != 2 || status.PID == nil {
-		t.Fatalf("runner did not start generation 2: %+v", status)
-	}
-	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
-		t.Fatalf("SIGTERM exit code = %d, want 143", code)
+	select {
+	case <-r.done:
+		if r.waitErr != nil {
+			t.Fatalf("runner did not exit naturally after stop failure: %v; stderr: %s", r.waitErr, readFile(r.stderr))
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("runner kept running after stop-cmd failed and child exited")
 	}
 }
 
@@ -887,7 +904,7 @@ func TestFinishedMarkerRejectsRestartBeforeExitEventIsConsumed(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = server.Close() }()
-	child := &process{pid: 987654, done: make(chan processResult), outputEnd: make(chan struct{})}
+	child := &process{pid: 987654, done: make(chan struct{}), outputEnd: make(chan struct{})}
 	child.result = processResult{Code: 0}
 	child.finished.Store(true)
 	close(child.done)
@@ -987,4 +1004,378 @@ func TestChildStdoutStderrOrderIsPreserved(t *testing.T) {
 	if strings.Join(lines, "|") != strings.Join(want, "|") {
 		t.Fatalf("combined stream order = %q, want %q", lines, want)
 	}
+}
+
+func TestBuildFailedControlRestartStartsOneBuild(t *testing.T) {
+	dir, err := os.MkdirTemp("/tmp", "rbuild-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	server, err := control.Listen(filepath.Join(dir, "runner.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = server.Close() }()
+	a := &actor{
+		cfg:   Config{BuildCommand: "exec /bin/sleep 30", Stdin: strings.NewReader(""), Stderr: io.Discard},
+		model: Model{State: BuildFailed}, server: server,
+		sink: newLogSink(io.Discard, true), presenter: headlessPresenter{}, events: make(chan actorEvent, 8),
+	}
+	conn, err := net.Dial("unix", server.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.NewEncoder(conn).Encode(struct {
+		Command string `json:"command"`
+	}{Command: "restart"}); err != nil {
+		_ = conn.Close()
+		t.Fatal(err)
+	}
+	request := <-server.Requests
+	a.handleControl(request)
+	if got := len(a.allProcesses); got != 1 {
+		_ = conn.Close()
+		for _, proc := range a.allProcesses {
+			_ = signalGroup(proc.pid, syscall.SIGKILL)
+		}
+		for _, proc := range a.allProcesses {
+			<-proc.done
+		}
+		t.Fatalf("one control restart launched %d builds, want 1", got)
+	}
+	_ = conn.Close()
+	for _, proc := range a.allProcesses {
+		_ = signalGroup(proc.pid, syscall.SIGKILL)
+	}
+	for _, proc := range a.allProcesses {
+		<-proc.done
+	}
+}
+
+func TestStartBuildRefusesWhenBuildAlreadyRunning(t *testing.T) {
+	var stderr bytes.Buffer
+	a := &actor{
+		cfg:   Config{BuildCommand: "exec /bin/sleep 30", Stdin: strings.NewReader(""), Stderr: &stderr},
+		model: Model{State: Building}, sink: newLogSink(io.Discard, true), presenter: headlessPresenter{}, events: make(chan actorEvent, 8),
+	}
+	if err := a.startBuild(); err != nil {
+		t.Fatal(err)
+	}
+	first := a.build
+	if err := a.startBuild(); err != nil {
+		t.Fatal(err)
+	}
+	if a.build != first || len(a.allProcesses) != 1 {
+		for _, proc := range a.allProcesses {
+			_ = signalGroup(proc.pid, syscall.SIGKILL)
+		}
+		for _, proc := range a.allProcesses {
+			<-proc.done
+		}
+		t.Fatalf("second build replaced the active build: active=%p first=%p count=%d", a.build, first, len(a.allProcesses))
+	}
+	if !strings.Contains(stderr.String(), "build start refused") {
+		_ = signalGroup(first.pid, syscall.SIGKILL)
+		<-first.done
+		t.Fatalf("refused build attempt was not logged: %q", stderr.String())
+	}
+	_ = signalGroup(first.pid, syscall.SIGKILL)
+	<-first.done
+}
+
+func TestProcessDoneDeliversSameResultToMultipleWaiters(t *testing.T) {
+	proc, err := startProcess([]string{"/bin/sh", "-c", "exit 23"}, false, os.Environ(), strings.NewReader(""), newLogSink(io.Discard, true), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := proc.wait()
+	second := proc.wait()
+	if first.Code != 23 || second.Code != 23 {
+		t.Fatalf("process done results = %+v and %+v, want code 23 for both", first, second)
+	}
+}
+
+func TestChildExitCannotFinishDuringForcedShutdown(t *testing.T) {
+	child := &process{pid: 987654, done: make(chan struct{}), outputEnd: make(chan struct{})}
+	child.result = processResult{Code: 143}
+	child.finished.Store(true)
+	close(child.done)
+	a := &actor{
+		model: Model{State: Exiting, PID: child.pid, ExitCode: 143},
+		child: child, childProcessed: true, forceRunning: true, presenter: headlessPresenter{},
+	}
+	a.completeChildExit()
+	if a.finished || a.model.State != Exiting {
+		t.Fatalf("child exit finished the runner before forced cleanup: finished=%v model=%+v", a.finished, a.model)
+	}
+}
+
+func TestFinishIsBlockedDuringForcedShutdown(t *testing.T) {
+	child := &process{pid: 987654, done: make(chan struct{}), outputEnd: make(chan struct{})}
+	child.result = processResult{Code: 143}
+	child.finished.Store(true)
+	close(child.done)
+	a := &actor{model: Model{State: Exiting, PID: child.pid}, child: child, forceRunning: true}
+	a.finish(143)
+	if a.finished || a.retCode != 0 {
+		t.Fatalf("finish crossed forced shutdown barrier: finished=%v retCode=%d", a.finished, a.retCode)
+	}
+}
+
+func TestForceStopWithNoProcessesDoesNotSendToActorEventsSynchronously(t *testing.T) {
+	a := &actor{
+		model:  Model{State: Exiting, Intent: IntentExit},
+		events: make(chan actorEvent), presenter: headlessPresenter{},
+	}
+	done := make(chan struct{})
+	go func() { a.beginForceStop(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("beginForceStop deadlocked sending to its own unbuffered event channel")
+	}
+}
+
+func TestForcedShutdownKillsStopCommandGroupAfterChildExits(t *testing.T) {
+	dir := t.TempDir()
+	stopPIDFile := filepath.Join(dir, "stop.pid")
+	stop := fmt.Sprintf(`trap '' TERM; echo $$ > %s; while :; do /bin/sleep 1; done`, shellQuote(stopPIDFile))
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_RUN":        "exec /bin/sleep 30",
+		"RESTARTABLE_TEST_STOP":       stop,
+		"RESTARTABLE_TEST_TERM_GRACE": "150ms",
+	})
+	initial := r.waitStatus(t, string(Running))
+	if initial.PID == nil {
+		t.Fatal("runner has no child PID")
+	}
+	result := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_, err := control.Call(ctx, r.path, control.Restart)
+		result <- err
+	}()
+	waitFor(t, time.Second, "stop command to start", func() bool { return strings.TrimSpace(readFile(stopPIDFile)) != "" })
+	stopPID, err := strconv.Atoi(strings.TrimSpace(readFile(stopPIDFile)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = signalGroup(stopPID, syscall.SIGKILL) })
+	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+	select {
+	case <-result:
+	case <-time.After(time.Second):
+		t.Fatal("control call did not finish during forced shutdown")
+	}
+	waitFor(t, time.Second, "stop command group cleanup", func() bool { return !groupExists(stopPID) })
+}
+
+func TestForcedShutdownIncludesGroupsWhoseLeadersWereReaped(t *testing.T) {
+	dir := t.TempDir()
+	stopPIDFile := filepath.Join(dir, "stop-group.pid")
+	stop := fmt.Sprintf(`echo $$ > %s; (trap '' TERM; while :; do /bin/sleep 1; done) >/dev/null 2>&1 & exit 0`, shellQuote(stopPIDFile))
+	keyDir, err := os.MkdirTemp("/tmp", "rkey-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(keyDir) })
+	keyPath := filepath.Join(keyDir, "keys.sock")
+	statePath := filepath.Join(dir, "presenter.json")
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_RUN":             "exec /bin/sleep 30",
+		"RESTARTABLE_TEST_STOP":            stop,
+		"RESTARTABLE_TEST_TERM_GRACE":      "150ms",
+		"RESTARTABLE_TEST_KEY_SOCKET":      keyPath,
+		"RESTARTABLE_TEST_PRESENTER_STATE": statePath,
+	})
+	r.waitStatus(t, string(Running))
+	result := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		defer cancel()
+		_, err := control.Call(ctx, r.path, control.Restart)
+		result <- err
+	}()
+	waitPresenterSnapshot(t, statePath, "successful stop command", func(got presenterSnapshot) bool {
+		return got.Model.State == Stopping && got.Model.StopAccepted
+	})
+	waitFor(t, time.Second, "stop group leader PID", func() bool { return strings.TrimSpace(readFile(stopPIDFile)) != "" })
+	stopPID, err := strconv.Atoi(strings.TrimSpace(readFile(stopPIDFile)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = signalGroup(stopPID, syscall.SIGKILL) })
+	if !groupExists(stopPID) {
+		t.Fatal("stop command descendant group exited before forced shutdown")
+	}
+	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+	select {
+	case <-result:
+	case <-time.After(time.Second):
+		t.Fatal("pending restart call did not finish during forced shutdown")
+	}
+	waitFor(t, time.Second, "reaped stop command group cleanup", func() bool { return !groupExists(stopPID) })
+}
+
+func TestForcedShutdownKillsGrandchildAfterLeaderExits(t *testing.T) {
+	grandchildFile := filepath.Join(t.TempDir(), "grandchild.pid")
+	run := fmt.Sprintf(`(trap '' TERM; while :; do /bin/sleep 1; done) & echo $! > %s; wait`, shellQuote(grandchildFile))
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_RUN":        run,
+		"RESTARTABLE_TEST_TERM_GRACE": "1h",
+	})
+	status := r.waitStatus(t, string(Running))
+	if status.PID == nil {
+		t.Fatal("runner has no child PID")
+	}
+	waitFor(t, time.Second, "grandchild PID", func() bool { return strings.TrimSpace(readFile(grandchildFile)) != "" })
+	t.Cleanup(func() { _ = signalGroup(*status.PID, syscall.SIGKILL) })
+	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+	waitFor(t, time.Second, "grandchild group cleanup", func() bool { return !groupExists(*status.PID) })
+}
+
+func TestGroupStopEscalatesWhenLeaderExitsBeforeTermGrace(t *testing.T) {
+	grandchildFile := filepath.Join(t.TempDir(), "grandchild.pid")
+	run := fmt.Sprintf(`(trap '' TERM; while :; do /bin/sleep 1; done) & echo $! > %s; wait`, shellQuote(grandchildFile))
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_RUN":        run,
+		"RESTARTABLE_TEST_TERM_GRACE": "1h",
+	})
+	initial := r.waitStatus(t, string(Running))
+	if initial.PID == nil {
+		t.Fatal("runner has no child PID")
+	}
+	waitFor(t, time.Second, "grandchild PID", func() bool { return strings.TrimSpace(readFile(grandchildFile)) != "" })
+	t.Cleanup(func() { _ = signalGroup(*initial.PID, syscall.SIGKILL) })
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	response, err := control.Call(ctx, r.path, control.Restart)
+	if err != nil {
+		t.Fatalf("restart did not proceed after group leader exited: %v", err)
+	}
+	if !response.OK || response.Generation != 2 {
+		t.Fatalf("restart response = %+v", response)
+	}
+	waitFor(t, time.Second, "grandchild group cleanup after leader exit", func() bool { return !groupExists(*initial.PID) })
+	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+}
+
+func TestQuitDuringBuildRejectsControlRestartWhileForceKillRuns(t *testing.T) {
+	dir := t.TempDir()
+	keyDir, err := os.MkdirTemp("/tmp", "rkey-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(keyDir) })
+	keyPath := filepath.Join(keyDir, "keys.sock")
+	statePath := filepath.Join(dir, "presenter.json")
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_BUILD":           `trap '' TERM; while :; do /bin/sleep 1; done`,
+		"RESTARTABLE_TEST_RUN":             "exec /bin/sleep 30",
+		"RESTARTABLE_TEST_TERM_GRACE":      "2s",
+		"RESTARTABLE_TEST_KEY_SOCKET":      keyPath,
+		"RESTARTABLE_TEST_PRESENTER_STATE": statePath,
+	})
+	waitPresenterSnapshot(t, statePath, "initial building state", func(got presenterSnapshot) bool { return got.Model.State == Building })
+	type callResult struct {
+		response control.Response
+		err      error
+	}
+	pendingResult := make(chan callResult, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		defer cancel()
+		response, err := control.Call(ctx, r.path, control.Restart)
+		pendingResult <- callResult{response: response, err: err}
+	}()
+	waitFor(t, time.Second, "restart request queued during build", func() bool {
+		status, err := r.status()
+		return err == nil && status.RestartPending
+	})
+	sendKeyAndWaitRender(t, keyPath, statePath, "Q")
+	confirmed := sendKeyAndWaitRender(t, keyPath, statePath, "y")
+	if confirmed.Model.State != Exiting {
+		confirmed = waitPresenterSnapshot(t, statePath, "quit confirmed while build is being killed", func(got presenterSnapshot) bool {
+			return got.Model.State == Exiting || (got.Model.State == Stopping && got.Model.Intent == IntentExit)
+		})
+	}
+	if confirmed.Model.State != Exiting && (confirmed.Model.State != Stopping || confirmed.Model.Intent != IntentExit) {
+		t.Fatalf("unexpected state after build quit confirmation: %+v", confirmed.Model)
+	}
+	select {
+	case result := <-pendingResult:
+		if result.err != nil {
+			t.Fatalf("pending restart after quit confirmation: %v", result.err)
+		}
+		if result.response.OK || result.response.Reason != "runner exiting" {
+			t.Fatalf("pending restart after quit confirmation = %+v", result.response)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("pending build restart was not rejected after quit confirmation")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	response, err := control.Call(ctx, r.path, control.Restart)
+	if err != nil {
+		t.Fatalf("control restart during quit kill: %v", err)
+	}
+	if response.OK || response.Reason != "runner exiting" {
+		t.Fatalf("control restart during quit kill = %+v", response)
+	}
+	if confirmed.Model.State != Exiting {
+		t.Fatalf("quit during build remained stoppable: %+v", confirmed.Model)
+	}
+	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+}
+
+func TestRunnerSignalHandlingAndSIGPIPEIgnore(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		sig  syscall.Signal
+		code int
+	}{
+		{name: "hangup", sig: syscall.SIGHUP, code: 129},
+		{name: "quit", sig: syscall.SIGQUIT, code: 131},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := startTestRunner(t, map[string]string{
+				"RESTARTABLE_TEST_RUN":        `trap '' TERM; while :; do /bin/sleep 1; done`,
+				"RESTARTABLE_TEST_TERM_GRACE": "100ms",
+			})
+			status := r.waitStatus(t, string(Running))
+			if status.PID == nil {
+				t.Fatal("runner has no child PID")
+			}
+			t.Cleanup(func() { _ = signalGroup(*status.PID, syscall.SIGKILL) })
+			if code := r.signalAndWait(t, tc.sig); code != tc.code {
+				t.Fatalf("runner exit code = %d, want %d", code, tc.code)
+			}
+			waitFor(t, time.Second, "child group cleanup", func() bool { return !groupExists(*status.PID) })
+		})
+	}
+
+	t.Run("broken-stdout", func(t *testing.T) {
+		r := startTestRunnerWithBrokenStdout(t, map[string]string{
+			"RESTARTABLE_TEST_RUN": `printf 'output to a closed pipe\n'; exec /bin/sleep 30`,
+		})
+		status := r.waitStatus(t, string(Running))
+		if status.PID == nil {
+			t.Fatal("runner has no child PID after stdout broke")
+		}
+		if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
+			t.Fatalf("runner exit code = %d, want 143", code)
+		}
+	})
 }

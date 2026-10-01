@@ -115,9 +115,15 @@ func Run(cfg Config) (int, error) {
 	if cfg.Stdin == nil {
 		cfg.Stdin = os.Stdin
 	}
+	if _, ok := cfg.Stdin.(*os.File); !ok {
+		cfg.Stdin = &serializedReader{reader: cfg.Stdin}
+	}
 	if cfg.ControlPath == "" {
 		return 1, errors.New("control socket path is empty")
 	}
+	// Broken stdout/stderr pipes must not terminate the supervisor. Writers
+	// below turn EPIPE into discarded output while actor events keep flowing.
+	signal.Ignore(syscall.SIGPIPE)
 	server, err := control.Listen(cfg.ControlPath)
 	if err != nil {
 		return 1, err
@@ -170,8 +176,8 @@ func (a *actor) run() (int, error) {
 		a.flusherWG.Add(1)
 		go func() { defer a.flusherWG.Done(); a.sink.runFlusher(a.flusherDone) }()
 	}
-	signals := make(chan os.Signal, 4)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	signals := make(chan os.Signal, 6)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
 	defer signal.Stop(signals)
 	requests := a.server.Requests
 	go func() {
@@ -184,9 +190,7 @@ func (a *actor) run() (int, error) {
 		}
 	}()
 	if a.cfg.BuildCommand != "" {
-		if err := a.startBuild(); err != nil {
-			return 1, err
-		}
+		a.handleEffects([]Effect{{Kind: StartBuildEffect}})
 	} else if err := a.startRun(); err != nil {
 		return 1, err
 	}
@@ -209,6 +213,10 @@ func (a *actor) run() (int, error) {
 				a.beginForce(130)
 			case syscall.SIGTERM:
 				a.beginForce(143)
+			case syscall.SIGHUP:
+				a.beginForce(129)
+			case syscall.SIGQUIT:
+				a.beginForce(131)
 			}
 		}
 	}
@@ -224,12 +232,17 @@ func (a *actor) env() []string {
 }
 
 func (a *actor) startBuild() error {
+	if a.build != nil {
+		a.report("build start refused: a build is already running")
+		return nil
+	}
 	a.model.State = Building
 	if a.cfg.BuildCommand == "" {
 		return a.startRun()
 	}
 	proc, err := startProcess([]string{a.cfg.BuildCommand}, true, a.env(), a.cfg.Stdin, a.sink, a.cfg.Headless)
 	if err != nil {
+		a.model.BuildQueued = false
 		a.transition(Event{Kind: BuildFailedEvent, Reason: err.Error()})
 		a.report("build failed: " + err.Error())
 		a.failRequests(err.Error())
@@ -237,7 +250,7 @@ func (a *actor) startBuild() error {
 	}
 	a.build = proc
 	a.allProcesses = append(a.allProcesses, proc)
-	go func() { a.events <- actorEvent{kind: buildDoneEvent, proc: proc, result: <-proc.done} }()
+	go func() { a.events <- actorEvent{kind: buildDoneEvent, proc: proc, result: proc.wait()} }()
 	a.presenter.Render(a.model)
 	return nil
 }
@@ -255,7 +268,7 @@ func (a *actor) startRun() error {
 	a.allProcesses = append(a.allProcesses, proc)
 	a.childResult = nil
 	a.childProcessed = false
-	go func() { a.events <- actorEvent{kind: runDoneEvent, proc: proc, result: <-proc.done} }()
+	go func() { a.events <- actorEvent{kind: runDoneEvent, proc: proc, result: proc.wait()} }()
 	a.transition(Event{Kind: ChildStartedEvent, PID: proc.pid})
 	a.presenter.Render(a.model)
 	a.succeedRequests()
@@ -269,6 +282,10 @@ func (a *actor) handleEvent(ev actorEvent) {
 			return
 		}
 		a.build = nil
+		if a.model.State == Exiting {
+			// A build killed by a confirmed human quit is not a build failure.
+			return
+		}
 		if a.model.BuildQueued {
 			alive := a.liveQueued()
 			if len(alive) == 0 {
@@ -281,9 +298,7 @@ func (a *actor) handleEvent(ev actorEvent) {
 		if ev.result.Code == 0 {
 			_, effects := a.transition(Event{Kind: BuildSucceededEvent})
 			if containsEffect(effects, StartBuildEffect) {
-				if err := a.startBuild(); err != nil {
-					a.failRequests(err.Error())
-				}
+				a.handleEffects(effects)
 			} else if a.model.State == Running {
 				if err := a.startRun(); err != nil {
 					a.failRequests(err.Error())
@@ -292,9 +307,7 @@ func (a *actor) handleEvent(ev actorEvent) {
 		} else {
 			_, effects := a.transition(Event{Kind: BuildFailedEvent, Reason: fmt.Sprintf("build exited with status %d", ev.result.Code)})
 			if containsEffect(effects, StartBuildEffect) {
-				if err := a.startBuild(); err != nil {
-					a.failRequests(err.Error())
-				}
+				a.handleEffects(effects)
 			} else {
 				a.report(fmt.Sprintf("build failed (exit %d)", ev.result.Code))
 				a.failRequests(fmt.Sprintf("build failed (exit %d)", ev.result.Code))
@@ -326,6 +339,7 @@ func (a *actor) handleEvent(ev actorEvent) {
 			a.report(reason)
 			if a.childResult != nil {
 				_, effects := a.transition(Event{Kind: StopCommandFailEvent, Reason: reason, ChildExited: true})
+				a.failRequests(reason)
 				a.handleEffects(effects)
 			} else {
 				a.transition(Event{Kind: StopCommandFailEvent, Reason: reason})
@@ -340,36 +354,40 @@ func (a *actor) handleEvent(ev actorEvent) {
 		}
 		a.presenter.Render(a.model)
 	case forceDoneEvent:
-		if ev.forced {
-			a.forceRunning = false
-			if ev.err != nil {
-				a.report("failed to stop process group: " + ev.err.Error())
-			}
-			if a.model.State == Exiting {
-				a.finish(a.forceCode)
-			}
-			if a.model.State == Stopping && a.model.Intent == IntentExit {
-				if a.child == nil {
-					a.model.State = Exiting
-					a.finish(0)
-				} else {
-					a.stopAccepted = true
-					if a.childResult != nil {
-						a.completeChildExit()
-					}
-				}
-			}
-		} else {
-			a.groupStopRunning = false
-			if a.model.State == Stopping {
+		a.handleForceDone(ev)
+	case keyEvent:
+		a.handleKey(ev.result.Err.Error())
+	}
+}
+
+func (a *actor) handleForceDone(ev actorEvent) {
+	if ev.forced {
+		a.forceRunning = false
+		if ev.err != nil {
+			a.report("failed to stop process group: " + ev.err.Error())
+		}
+		if a.model.State == Exiting {
+			a.finish(a.forceCode)
+		}
+		if a.model.State == Stopping && a.model.Intent == IntentExit {
+			if a.child == nil {
+				a.model.State = Exiting
+				a.finish(0)
+			} else {
 				a.stopAccepted = true
 				if a.childResult != nil {
 					a.completeChildExit()
 				}
 			}
 		}
-	case keyEvent:
-		a.handleKey(ev.result.Err.Error())
+		return
+	}
+	a.groupStopRunning = false
+	if a.model.State == Stopping {
+		a.stopAccepted = true
+		if a.childResult != nil {
+			a.completeChildExit()
+		}
 	}
 }
 
@@ -419,6 +437,9 @@ func (a *actor) transition(e Event) (Model, []Effect) {
 }
 
 func (a *actor) handleControl(req *control.Request) {
+	if !req.Alive() {
+		return
+	}
 	if req.Command == control.Status {
 		req.Respond(a.statusResponse())
 		return
@@ -448,11 +469,6 @@ func (a *actor) handleControl(req *control.Request) {
 		a.pendingRequests = append(a.pendingRequests, req) // build start is the commit point
 		_, effects := a.transition(Event{Kind: ControlRestartEvent})
 		a.handleEffects(effects)
-		if containsEffect(effects, StartBuildEffect) {
-			if err := a.startBuild(); err != nil {
-				a.failRequests(err.Error())
-			}
-		}
 	case Running:
 		if a.child != nil && a.child.finished.Load() && !a.childProcessed {
 			a.consumeChildExit()
@@ -518,7 +534,8 @@ func (a *actor) liveQueued() []*control.Request {
 func (a *actor) beginStop() {
 	if a.model.PID == 0 || a.child == nil {
 		if a.model.Intent == IntentRestart {
-			a.transition(Event{Kind: ChildExitedEvent})
+			_, effects := a.transition(Event{Kind: ChildExitedEvent})
+			a.handleEffects(effects)
 		} else {
 			a.finish(0)
 		}
@@ -552,16 +569,9 @@ func (a *actor) beginGroupStop(p *process) {
 	}
 	a.groupStopRunning = true
 	go func() {
-		if a.cfg.TermGrace > 0 {
-			timer := time.NewTimer(a.cfg.TermGrace)
-			<-timer.C
-			timer.Stop()
-		}
-		var killErr error
-		if groupExists(p.pid) {
-			killErr = signalGroup(p.pid, syscall.SIGKILL)
-		}
-		<-p.done
+		waitForTermBoundary([]*process{p}, a.cfg.TermGrace)
+		killErr := killRemainingGroups([]*process{p})
+		p.wait()
 		a.events <- actorEvent{kind: forceDoneEvent, proc: p, err: killErr}
 	}()
 }
@@ -570,55 +580,98 @@ func (a *actor) waitStopCommand(proc *process) error {
 	timer := time.NewTimer(a.cfg.StopCommandTimeout)
 	defer timer.Stop()
 	select {
-	case result := <-proc.done:
+	case <-proc.done:
+		result := proc.wait()
 		if result.Code != 0 {
 			return fmt.Errorf("exit status %d", result.Code)
 		}
 		return nil
 	case <-timer.C:
 		_ = signalGroup(proc.pid, syscall.SIGTERM)
-		grace := time.NewTimer(a.cfg.TermGrace)
-		<-grace.C
-		grace.Stop()
-		if groupExists(proc.pid) {
-			_ = signalGroup(proc.pid, syscall.SIGKILL)
-		}
-		<-proc.done
+		waitForTermBoundary([]*process{proc}, a.cfg.TermGrace)
+		_ = killRemainingGroups([]*process{proc})
+		proc.wait()
 		return errors.New("timeout")
 	}
 }
 
+// waitForTermBoundary waits only while at least one target has a live leader
+// and a process group that still exists. A leader exit is enough to escalate:
+// descendants that ignored TERM are killed immediately after their owner exits.
+func waitForTermBoundary(procs []*process, grace time.Duration) {
+	if len(procs) == 0 {
+		return
+	}
+	timer := time.NewTimer(grace)
+	defer timer.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		allStopped := true
+		for _, proc := range procs {
+			if !proc.finished.Load() && groupExists(proc.pid) {
+				allStopped = false
+				break
+			}
+		}
+		if allStopped {
+			return
+		}
+		select {
+		case <-timer.C:
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func killRemainingGroups(procs []*process) error {
+	var firstErr error
+	for _, proc := range procs {
+		if groupExists(proc.pid) {
+			if err := signalGroup(proc.pid, syscall.SIGKILL); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
+}
+
 func (a *actor) beginForceStop() {
-	// Used for a pending build canceled by Q, or another process being shut down.
-	procs := make([]*process, 0, 3)
-	for _, p := range []*process{a.build, a.child, a.stop} {
-		if p != nil {
+	// Include every process group started by the runner, even when its leader
+	// has exited but descendants still keep the group alive.
+	procs := make([]*process, 0, len(a.allProcesses))
+	seen := make(map[*process]struct{}, len(a.allProcesses))
+	for _, p := range a.allProcesses {
+		if p == nil {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		if !p.finished.Load() || groupExists(p.pid) {
 			procs = append(procs, p)
 		}
 	}
 	a.forceRunning = true
+	if a.model.State == Exiting && a.model.Intent == IntentExit && a.model.ExitCode == 0 {
+		a.failRequests("runner exiting")
+	}
 	if len(procs) == 0 {
-		a.events <- actorEvent{kind: forceDoneEvent, forced: true}
+		a.handleForceDone(actorEvent{kind: forceDoneEvent, forced: true})
 		return
 	}
 	for _, p := range procs {
 		_ = signalGroup(p.pid, syscall.SIGTERM)
 	}
 	go func() {
-		if a.cfg.TermGrace > 0 {
-			timer := time.NewTimer(a.cfg.TermGrace)
-			<-timer.C
-			timer.Stop()
-		}
+		waitForTermBoundary(procs, a.cfg.TermGrace)
+		killErr := killRemainingGroups(procs)
 		for _, p := range procs {
-			if groupExists(p.pid) {
-				_ = signalGroup(p.pid, syscall.SIGKILL)
-			}
+			p.wait()
 		}
-		for _, p := range procs {
-			<-p.done
-		}
-		a.events <- actorEvent{kind: forceDoneEvent, forced: true}
+		a.events <- actorEvent{kind: forceDoneEvent, forced: true, err: killErr}
 	}()
 }
 
@@ -665,16 +718,9 @@ func (a *actor) completeChildExit() {
 	if a.child == nil || !a.childProcessed {
 		return
 	}
-	a.transition(Event{Kind: ChildExitedEvent})
+	_, effects := a.transition(Event{Kind: ChildExitedEvent})
 	a.stopAccepted = false
-	switch a.model.State {
-	case Building:
-		if err := a.startBuild(); err != nil {
-			a.failRequests(err.Error())
-		}
-	case Exiting:
-		a.finish(a.model.ExitCode)
-	}
+	a.handleEffects(effects)
 	a.presenter.Render(a.model)
 }
 
@@ -702,6 +748,9 @@ func (a *actor) failRequests(reason string) {
 
 func (a *actor) finish(code int) {
 	if a.finished {
+		return
+	}
+	if a.forceRunning {
 		return
 	}
 	if a.child != nil && !a.child.finished.Load() {

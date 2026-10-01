@@ -163,6 +163,10 @@ func Update(m Model, e Event) (Model, []Effect) {
 		return m, nil
 	case StopCommandFailEvent:
 		if e.ChildExited {
+			// A failed stop command cannot be treated as the cause of the child's
+			// exit. In particular, a pending restart must not turn a human Cmd+Q
+			// into a restart after the application exits on its own.
+			m.Intent = IntentNone
 			return finishStopping(m)
 		}
 		if m.PID != 0 {
@@ -234,7 +238,9 @@ func updateKey(m Model, key string) (Model, []Effect) {
 				return m, []Effect{{Kind: BeginStopEffect}}
 			}
 			if m.State == Building {
-				m.State = Stopping
+				m.State = Exiting
+				m.Intent = IntentExit
+				m.ExitCode = 0
 				return m, []Effect{{Kind: ForceStopEffect}, {Kind: ExitEffect}}
 			}
 			m.State = Exiting

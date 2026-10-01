@@ -23,8 +23,12 @@ import (
 
 const (
 	MaxLineBytes  = 4096
-	MaxSocketPath = 104
+	MaxSocketPath = 103
 )
+
+var listenControlSocket = func(path string) (net.Listener, error) {
+	return net.Listen("unix", path)
+}
 
 type Command string
 
@@ -154,12 +158,18 @@ func Listen(path string) (*Server, error) {
 		_ = lock.Close()
 		return nil, fmt.Errorf("control socket is already active: %w", err)
 	}
-	cleanup := func() { _ = syscall.Flock(lockFD, syscall.LOCK_UN); _ = lock.Close() }
+	cleanup := func() {
+		if current, err := os.Lstat(absPath + ".lock"); err == nil && os.SameFile(current, lockInfo) {
+			_ = os.Remove(absPath + ".lock")
+		}
+		_ = syscall.Flock(lockFD, syscall.LOCK_UN)
+		_ = lock.Close()
+	}
 	if err := removeStaleSocket(absPath); err != nil {
 		cleanup()
 		return nil, err
 	}
-	listener, err := net.Listen("unix", absPath)
+	listener, err := listenControlSocket(absPath)
 	if err != nil {
 		cleanup()
 		return nil, fmt.Errorf("listen on control socket: %w", err)
@@ -241,17 +251,24 @@ func (s *Server) serveConn(conn net.Conn) {
 	}
 	req := &Request{Command: Command(wire.Command), reply: make(chan Response, 1)}
 	req.alive.Store(true)
+	disconnected := make(chan struct{})
 	// Clients keep the connection open while they await a response. Monitoring
 	// the read side lets the actor drop requests disconnected pre-commit.
 	go func() {
 		var extra [1]byte
-		_, readErr := conn.Read(extra[:])
-		if readErr != nil || extra[0] != 0 {
-			req.alive.Store(false)
+		for {
+			n, readErr := conn.Read(extra[:])
+			if n > 0 || readErr != nil {
+				req.alive.Store(false)
+				close(disconnected)
+				return
+			}
 		}
 	}()
 	select {
 	case s.Requests <- req:
+	case <-disconnected:
+		return
 	case <-s.serveDone:
 		return
 	}
@@ -259,6 +276,8 @@ func (s *Server) serveConn(conn net.Conn) {
 	case response := <-req.reply:
 		_ = conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
 		_ = json.NewEncoder(conn).Encode(response)
+	case <-disconnected:
+		return
 	case <-s.serveDone:
 	}
 }

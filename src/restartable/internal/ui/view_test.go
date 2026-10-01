@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"syscall"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -10,6 +11,10 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
+
+type failingUIWriter struct{}
+
+func (failingUIWriter) Write([]byte) (int, error) { return 0, syscall.EPIPE }
 
 func TestStatusLineFitsWidthsAndShowsEveryState(t *testing.T) {
 	states := []runner.State{runner.Building, runner.Running, runner.BuildFailed, runner.Stopping}
@@ -125,5 +130,14 @@ func TestCtrlCKeyUsesForceStopModelPath(t *testing.T) {
 	}
 	if len(effects) == 0 || effects[0].Kind != runner.ForceStopEffect {
 		t.Fatalf("Ctrl-C effects = %+v, want forced stop first", effects)
+	}
+}
+
+func TestTTYOutputWriterDiscardsBrokenPipeErrors(t *testing.T) {
+	writer := discardWriteErrors{writer: failingUIWriter{}}
+	data := []byte("terminal output")
+	n, err := writer.Write(data)
+	if err != nil || n != len(data) {
+		t.Fatalf("TTY write = (%d, %v), want (%d, nil)", n, err, len(data))
 	}
 }
