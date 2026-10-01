@@ -50,7 +50,7 @@ tick 42
 
 - [x] T1〜T8 の実装とテスト (View の文字列テストで板の位置と中身、model の Update で段の遷移、実プロセスで --ready-cmd の成功 / 上限 / 子の先の終了、pty で板が出て消える)
 - [x] 敵対レビュー (codex の並列)
-- [ ] push と、obaket の dev-fg-loop への反映 (obaket issue 1007 で版を上げ、`--ready-cmd` に health の devLoop の一致を渡す)
+- [x] push と、obaket の dev-fg-loop への反映 (obaket issue 1007 で版を上げ、`--ready-cmd` に health の devLoop の一致を渡す)
 
 ## 進捗
 
@@ -65,3 +65,4 @@ tick 42
 - 2026-10-01 pty のテスト TestPTYRunnerDrainsLateOutputDuringTerminationWithInputBurst が負荷の下で落ちていた (出力の回収の待ち 500ms が手順より先に閉じる時間依存)。
   Config に OutputDrainTimeout の差し込み口を足し、このテストだけ 10 秒にした。単独 30 回・2 本同時の負荷の下で 6 回・順に 3 回、すべて rc 0
 - 検証 (Claude): make lint rc 0、go test -count=1 -race で上記すべて rc 0、scripts/check_go_project_lanes.sh rc 0
+- 2026-10-01 push (d4f7cae5、版 v0.0.0-20261001083854-d4f7cae527f5)。obaket issue 1007 で版を上げ、--ready-cmd に debug API の health の devLoop の一致を渡した (obaket a4961b5c)。実アプリでの確認は obaket issue 1008
