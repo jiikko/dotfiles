@@ -360,15 +360,12 @@ func startTestRunnerWithBrokenStdout(t *testing.T, options map[string]string) *t
 
 func startTestRunnerModeWithBrokenStdout(t *testing.T, options map[string]string, waitForStatus, brokenStdout bool) *testRunner {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "rnt-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir := shortTempDir(t, "rnt-")
 	path := filepath.Join(dir, "runner.sock")
 	stdout := filepath.Join(t.TempDir(), "stdout.log")
 	stderr := filepath.Join(t.TempDir(), "stderr.log")
 	var out, pipeReader *os.File
+	var err error
 	if brokenStdout {
 		pipeReader, out, err = os.Pipe()
 	} else {
@@ -487,15 +484,23 @@ func waitFor(t *testing.T, limit time.Duration, description string, predicate fu
 	}
 }
 
-func shellQuote(s string) string  { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
-func readFile(path string) string { data, _ := os.ReadFile(path); return string(data) }
-
-func TestHeadlessRunnerWithTerminalStdinDoesNotPassTTYToChild(t *testing.T) {
-	dir, err := os.MkdirTemp("/tmp", "rstin-")
+// shortTempDir は unix socket を置く一時ディレクトリ。socket の path は 103 byte までなので、
+// 長い t.TempDir() (macOS では /var/folders/...) ではなく /tmp の直下に作り、テストの終わりに消す。
+func shortTempDir(t *testing.T, prefix string) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", prefix)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
+func shellQuote(s string) string  { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
+func readFile(path string) string { data, _ := os.ReadFile(path); return string(data) }
+
+func TestHeadlessRunnerWithTerminalStdinDoesNotPassTTYToChild(t *testing.T) {
+	dir := shortTempDir(t, "rstin-")
 	socketPath := filepath.Join(dir, "runner.sock")
 	stopMarker := filepath.Join(dir, "stop-child")
 	run := fmt.Sprintf(`rm -f %s; if read value; then echo run-stdin-read; else echo run-stdin-eof; fi; while [ ! -e %s ]; do /bin/sleep 0.01; done; exit 0`, shellQuote(stopMarker), shellQuote(stopMarker))
@@ -651,11 +656,7 @@ func TestStopCommandSuccessWaitsWithoutSignalingChild(t *testing.T) {
 }
 
 func TestStopCommandSuccessIgnoresRestartAndQuitKeysWithoutKillingChild(t *testing.T) {
-	dir, err := os.MkdirTemp("/tmp", "rkey-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir := shortTempDir(t, "rkey-")
 	keyPath := filepath.Join(dir, "keys.sock")
 	statePath := filepath.Join(t.TempDir(), "presenter.json")
 	r := startTestRunner(t, map[string]string{
@@ -753,11 +754,7 @@ func TestStopCommandFailureAfterChildExitExitsAndFailsRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	stop := fmt.Sprintf(`touch %s; read ignored < %s; exit 9`, shellQuote(started), shellQuote(fifo))
-	keyDir, err := os.MkdirTemp("/tmp", "rkey-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(keyDir) })
+	keyDir := shortTempDir(t, "rkey-")
 	keyPath := filepath.Join(keyDir, "keys.sock")
 	statePath := filepath.Join(dir, "presenter.json")
 	r := startTestRunner(t, map[string]string{
@@ -1110,11 +1107,7 @@ func TestFinishedMarkerBeforeConfirmationKeyDoesNotRestart(t *testing.T) {
 }
 
 func TestStatusConsumesFinishedMarkerBeforeResponding(t *testing.T) {
-	dir, err := os.MkdirTemp("/tmp", "rsts-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir := shortTempDir(t, "rsts-")
 	server, err := control.Listen(filepath.Join(dir, "runner.sock"))
 	if err != nil {
 		t.Fatal(err)
@@ -1205,11 +1198,7 @@ func TestDrainOutputsDoesNotKillNaturalExitDescendantHoldingPipe(t *testing.T) {
 }
 
 func TestFinishedMarkerRejectsRestartBeforeExitEventIsConsumed(t *testing.T) {
-	dir, err := os.MkdirTemp("/tmp", "rfin-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.RemoveAll(dir) }()
+	dir := shortTempDir(t, "rfin-")
 	server, err := control.Listen(filepath.Join(dir, "runner.sock"))
 	if err != nil {
 		t.Fatal(err)
@@ -1318,11 +1307,7 @@ func TestChildStdoutStderrOrderIsPreserved(t *testing.T) {
 }
 
 func TestBuildFailedControlRestartStartsOneBuild(t *testing.T) {
-	dir, err := os.MkdirTemp("/tmp", "rbuild-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir := shortTempDir(t, "rbuild-")
 	server, err := control.Listen(filepath.Join(dir, "runner.sock"))
 	if err != nil {
 		t.Fatal(err)
@@ -1489,11 +1474,7 @@ func TestForcedShutdownIncludesGroupsWhoseLeadersWereReaped(t *testing.T) {
 	dir := t.TempDir()
 	stopPIDFile := filepath.Join(dir, "stop-group.pid")
 	stop := fmt.Sprintf(`echo $$ > %s; (trap '' TERM; while :; do /bin/sleep 1; done) >/dev/null 2>&1 & exit 0`, shellQuote(stopPIDFile))
-	keyDir, err := os.MkdirTemp("/tmp", "rkey-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(keyDir) })
+	keyDir := shortTempDir(t, "rkey-")
 	keyPath := filepath.Join(keyDir, "keys.sock")
 	statePath := filepath.Join(dir, "presenter.json")
 	r := startTestRunner(t, map[string]string{
@@ -1612,11 +1593,7 @@ func TestGroupStopWaitsForDescendantAfterLeaderExit(t *testing.T) {
 
 func TestQuitConfirmationDuringBuildStopsBuildAndExits(t *testing.T) {
 	dir := t.TempDir()
-	keyDir, err := os.MkdirTemp("/tmp", "rkey-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(keyDir) })
+	keyDir := shortTempDir(t, "rkey-")
 	keyPath := filepath.Join(keyDir, "keys.sock")
 	statePath := filepath.Join(dir, "presenter.json")
 	r := startTestRunner(t, map[string]string{
@@ -1667,11 +1644,7 @@ func TestQuitConfirmationDuringBuildStopsBuildAndExits(t *testing.T) {
 
 func TestQuitConfirmationDuringReadinessUsesStopCommand(t *testing.T) {
 	dir := t.TempDir()
-	keyDir, err := os.MkdirTemp("/tmp", "rkey-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(keyDir) })
+	keyDir := shortTempDir(t, "rkey-")
 	keyPath := filepath.Join(keyDir, "keys.sock")
 	statePath := filepath.Join(t.TempDir(), "presenter.json")
 	childPIDPath := filepath.Join(dir, "child.pid")
@@ -1739,11 +1712,7 @@ func TestQuitConfirmationDuringReadinessUsesStopCommand(t *testing.T) {
 
 func TestQuitStopCancellationResumesUnconfirmedReadyCheck(t *testing.T) {
 	dir := t.TempDir()
-	keyDir, err := os.MkdirTemp("/tmp", "rkey-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(keyDir) })
+	keyDir := shortTempDir(t, "rkey-")
 	keyPath := filepath.Join(keyDir, "keys.sock")
 	statePath := filepath.Join(dir, "presenter.json")
 	attemptPath := filepath.Join(dir, "ready-attempts")
@@ -1910,11 +1879,7 @@ func TestFinalPresenterRenderClosesTransitionPanelForQuitAndCtrlC(t *testing.T) 
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			keyDir, err := os.MkdirTemp("/tmp", "rkey-")
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = os.RemoveAll(keyDir) })
+			keyDir := shortTempDir(t, "rkey-")
 			keyPath := filepath.Join(keyDir, "keys.sock")
 			statePath := filepath.Join(dir, "presenter.json")
 			r := startTestRunner(t, map[string]string{

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -241,14 +242,15 @@ func TestOversizedControlLineIsRejected(t *testing.T) {
 // Close と接続の処理が重なっても panic しない (Requests を閉じると、送信待ちの serveConn が閉じたチャネルへ送って panic した)。
 // 受け手 (actor) がいない状態で要求を送らせ、送信待ちの serveConn がある間に Close する。
 func TestCloseWhileRequestsArePendingDoesNotPanic(t *testing.T) {
-	for range 50 {
+	const pending = 8
+	for range 3 {
 		path := filepath.Join(shortSocketDir(t), "runner.sock")
 		server, err := Listen(path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		conns := make([]net.Conn, 0, 8)
-		for range 8 {
+		conns := make([]net.Conn, 0, pending)
+		for range pending {
 			conn, err := net.Dial("unix", path)
 			if err != nil {
 				t.Fatal(err)
@@ -258,7 +260,9 @@ func TestCloseWhileRequestsArePendingDoesNotPanic(t *testing.T) {
 			}
 			conns = append(conns, conn)
 		}
-		// 誰も Requests を読まないので、serveConn は送信で待っている (はず)。その間に閉じる。
+		// 誰も要求を受け取らないので、serveConn は要求の送信で止まる。全部が止まったのを見てから閉じる
+		// (先に閉じると送信待ちとの競合を通らず、Requests を閉じる退行でも緑になる)。
+		waitForBlockedServeConns(t, server, pending)
 		if err := server.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
 			t.Fatal(err)
 		}
@@ -300,4 +304,35 @@ func TestListenLockFDIsNotInheritedByChildren(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lock fd is inherited by an exec'd child: %v\n%s", err, out)
 	}
+}
+
+// waitForBlockedServeConns は goroutine の stack から、select で止まっている server の serveConn の本体
+// (切断を見張る serveConn.func1 と、他の Server の serveConn は数えない) が want 本になるのを待つ。
+// production に差し込み口を足さずに「送信待ちに着いた」を観測するため stack を読む。
+func waitForBlockedServeConns(t *testing.T, server *Server, want int) {
+	t.Helper()
+	frame := fmt.Sprintf("control.(*Server).serveConn(%p", server)
+	count := func() int {
+		buf := make([]byte, 1<<20)
+		n := runtime.Stack(buf, true)
+		blocked := 0
+		for _, g := range strings.Split(string(buf[:n]), "\n\n") {
+			header, frames, _ := strings.Cut(g, "\n")
+			if !strings.Contains(header, "[select") {
+				continue
+			}
+			first, _, _ := strings.Cut(frames, "\n")
+			if strings.Contains(first, frame) {
+				blocked++
+			}
+		}
+		return blocked
+	}
+	for range 1000 {
+		if count() >= want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("serveConn blocked in select = %d, want %d (10 秒待っても揃わない)", count(), want)
 }
