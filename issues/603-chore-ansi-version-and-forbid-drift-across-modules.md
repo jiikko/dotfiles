@@ -1,5 +1,7 @@
 # 603 (chore): x/ansi の版と、ansi の折り返しの直呼びの禁止が、tuikit の消費者の module ごとにずれている
 
+> 🚨 **担当中: dotfiles-58**（2026-10-01〜）
+
 起票日: 2026-10-01
 
 出典: tuikit の監査 (dependency / lint-from-done、2026-10-01。[604](604-research-tuikit-audit-remaining-types-2026-10-01.md))。数は Claude が `go list -m` と grep で数え直した。

@@ -1,5 +1,7 @@
 # 602 (test): tuikit が宣言している守りのうち 3 つが機械で止まっていない (depguard の対象漏れ・狭い窓の toast・行数 0 の markdown)
 
+> 🚨 **担当中: dotfiles-58**（2026-10-01〜）
+
 起票日: 2026-10-01
 
 出典: tuikit の監査 (未実施の 7 タイプ、2026-10-01。[604](604-research-tuikit-audit-remaining-types-2026-10-01.md))。所見は読み取り専用の調査役 (sonnet) のもので、depguard の対象漏れは Claude がコードで確かめた。2 と 3 の変異は調査役が mktemp のコピーで当て、反証レビューが別に当て直して緑を再現した (2 は textWidth の `maxWidth-5`、3 は width < 12 で lines = nil)。
