@@ -37,7 +37,7 @@ obaket の `make dev-fg-loop` (`apps/obaket/macOS/bin/dev-fg-loop`) は、アプ
       (doctor / glogx / pro-con / ratelimit / schedkeys) の import と `replace` を追従させる。全 module の `make lint` / `make test` が通り、`bin/` のラッパーがビルドできる
 - [x] M2: `src/restartable` を 3 点セット (Makefile の lint / test、go.mod、`.github/workflows/src_restartable.yml`) と README 付きで足す。R1〜R11 をテストで固定する
       (キーと確認ダイアログは model の Update を直接叩く、プロセスの止め方と control socket は実プロセスで)
-- [ ] M3: push 後、空の GOPATH / GOMODCACHE で `go install github.com/jiikko/dotfiles/src/restartable@<commit>` が通る (R12)
+- [x] M3: push 後、空の GOPATH / GOMODCACHE で `go install github.com/jiikko/dotfiles/src/restartable@<commit>` が通る (R12)
 - [ ] 見た目 (最下行と確認ダイアログ) と R / Q の操作を、ユーザーが実端末で確かめる ([587](587-human-verify-restartable-ui-and-keys.md))
 - [x] obaket 側の切り替え (dev-fg-loop / dev-restart) は obaket に別の issue を起こす (obaket issue 1007。実装は obaket の worktree で済み、版の固定待ち)
 
@@ -68,3 +68,4 @@ obaket の `make dev-fg-loop` (`apps/obaket/macOS/bin/dev-fg-loop`) は、アプ
     (2 本同時に走らせる負荷の下を含む)。再発したら、落ちたテスト名をここに書く
   - 検証 (Claude): make lint rc 0、go test -count=1 -race 5 回連続 rc 0 (77 本、skip 0。本物の pty のテスト 3 本を含む)、scripts/check_go_project_lanes.sh rc 0、
     python の pty (80x24) で起動して最下行・running (pid N)・Q の確認ダイアログが出ることを目視
+- 2026-10-01 M3: 空の GOPATH / GOMODCACHE で `go install github.com/jiikko/dotfiles/src/restartable@3cf90b65` が、既定の proxy 経由と GOPROXY=direct の両方で rc 0 (`--help` も応答)。版は `v0.0.0-20261001052920-3cf90b653dd4`。obaket issue 1007 はこの版を固定する

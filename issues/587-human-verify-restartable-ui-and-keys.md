@@ -10,7 +10,7 @@
 
 ## 手順
 
-1. 入れる: `go install github.com/jiikko/dotfiles/src/restartable@<版>` (または dotfiles の checkout で `cd src/restartable && go build -o /tmp/restartable .`)
+1. 入れる: `go install github.com/jiikko/dotfiles/src/restartable@v0.0.0-20261001052920-3cf90b653dd4` (または dotfiles の checkout で `cd src/restartable && go build -o /tmp/restartable .`)
 2. 試す: `restartable --build 'echo build; sleep 2' --stop-cmd 'exit 0' -- sh -c 'i=0; while :; do i=$((i+1)); echo "tick $i"; sleep 1; done'`
    (stop-cmd が成功しても子は自分で終わらないので「終了待ち」の状態を試せる)
 3. 見る・押す:
