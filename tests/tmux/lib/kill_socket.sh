@@ -74,7 +74,8 @@ tt__run_bounded() { # tt__run_bounded <出力変数名> <秒> <コマンド...>
   return "$__ret"
 }
 
-# 条件待ちの正本 (呼び出し側が source していなくても使えるよう、この lib 自身が読む)
+# 条件待ちの正本 (呼び出し側が source していなくても使えるよう、この lib 自身が読む)。
+# 🚨 BASH_SOURCE で置き場所を引くので、この lib は bash からだけ source する (zsh では空になり /wait_until.sh を読む)
 # shellcheck source=tests/lib/wait_until.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/wait_until.sh"
 

@@ -225,6 +225,13 @@ marker_exists() { [ -f "$1" ]; }
 # fire が発火時刻までの sleep に入った (sleep の stub は本物の sleep を呼ぶ前に $CALLS へ書く)。
 # 「0.5 秒経てば眠っているはず」と違い、眠る前の段を過ぎたことが確定する
 entered_sleep() { grep -q '^sleep [0-9]' "$CALLS"; }
+# fire (pid=$1) が sleep に入るのを待つ。入らずに終わったら (発火時刻は秒精度なので、起動が 1 秒の境目を跨ぐと
+# 眠る長さが 0 になる) 上限まで待たずに前提の崩れとして落とす
+sleeping_or_gone() { entered_sleep || ! kill -0 "$1" 2>/dev/null; }
+wait_fire_sleeping() {  # $1=fire の pid $2=説明
+  wait_for "$2" sleeping_or_gone "$1"
+  entered_sleep || { printf '✗ [前提] %s: fire が sleep に入らずに終わった (起動が遅れて発火時刻を過ぎた?)\n' "$2"; exit 1; }
+}
 process_gone() { ! kill -0 "$1" 2>/dev/null; }
 # 本物の sleeper を起こす (pid_is_sleeper は ps の command line で「自分の fire <id>」を確かめるため、
 # 偽 pid では代用できない)。at は十分先、sleep は実物
@@ -341,7 +348,7 @@ reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 write_job j2 "$(( $(/bin/date +%s) + 2 ))" "ls"
 ( trap - EXIT; PATH="$STUB_PATH" STUB_REAL_SLEEP=1 exec "$SCRIPT" fire j2 ) >/dev/null 2>&1 &
 fire_pid=$!
-wait_for "fire j2 が発火時刻までの sleep に入らない" entered_sleep
+wait_fire_sleeping "$fire_pid" "fire j2 が発火時刻までの sleep に入らない"
 assert_not_called "send-keys" "発火時刻までの sleep に入った時点: まだ送っていない"
 [[ "$(cat "$TMUX_SCHEDULE_KEYS_DIR/j2.pid" 2>/dev/null)" == "$fire_pid" ]] || { printf '✗ .pid が sleeper 自身の pid でない\n'; exit 1; }
 printf '✓ .pid = sleeper の pid (取消の kill 先)\n'
@@ -370,7 +377,7 @@ write_job j9 "$(( $(/bin/date +%s) + 2 ))" "make test"
 ( trap - EXIT; CALLS="$CALLS" PATH="$STUB_PATH" STUB_REAL_SLEEP=1 STUB_SRVPID_FILE="$STUB_SRVPID_FILE" exec "$SCRIPT" fire j9 ) >/dev/null 2>&1 &
 j9pid=$!; FAKE_PIDS+=("$j9pid")
 # 眠りに入ってから入れ替える。眠る前に入れ替えると「眠る前に判定する」誤った実装でも送らずに緑になる
-wait_for "fire j9 が sleep に入らない" entered_sleep
+wait_fire_sleeping "$j9pid" "fire j9 が sleep に入らない"
 echo 9999 > "$STUB_SRVPID_FILE"   # 眠っている間にサーバが入れ替わった
 wait "$j9pid" 2>/dev/null || true
 assert_not_called "send-keys -t %5 -l" "眠っている間にサーバが入れ替わったら送らない (判定は送る直前)"
@@ -410,7 +417,7 @@ reset_state; mkdir -p "$TMUX_SCHEDULE_KEYS_DIR"
 write_job canc "$(( $(/bin/date +%s) + 2 ))" "make test"
 ( trap - EXIT; CALLS="$CALLS" PATH="$STUB_PATH" STUB_REAL_SLEEP=1 exec "$SCRIPT" fire canc ) >/dev/null 2>&1 &
 canc_pid=$!; FAKE_PIDS+=("$canc_pid")
-wait_for "fire canc が sleep に入らない" entered_sleep
+wait_fire_sleeping "$canc_pid" "fire canc が sleep に入らない"
 rm -f "$TMUX_SCHEDULE_KEYS_DIR/canc.job"   # 眠っている間に取り消された
 wait "$canc_pid" 2>/dev/null || true
 assert_not_called "send-keys -t %5 -l" "job が消えていたら送らない (kill が間に合わなくても止まる)"

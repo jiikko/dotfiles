@@ -184,7 +184,13 @@ race_winners() { # $1=delay $2=形状(leftover|fresh) $3=窓を広げるか(0/1)
   if [ "$3" = 1 ]; then
     # 窓を開けたまま 2 本目を走らせる: 1 本目が窓に入る → 2 本目を起こす → 2 本目が結果を書くか
     # 同じ窓に入る (= 記録中の lock を奪いに来た) まで待つ → 窓を閉じる。$1 (ずらし) は使わない
-    TT_WAIT_TICKS=400 TT_WAIT_TICK=0.05 tt_wait_until race_worker_in_window "$rel" || :
+    if ! TT_WAIT_TICKS=400 TT_WAIT_TICK=0.05 tt_wait_until race_worker_in_window "$rel"; then
+      # 🚨 1 本目が窓 (tt_proc_starttime) に入らないなら、この形状は production の窓を通っていない
+      #    (owner の記録が tt_proc_starttime を経なくなった等)。2 本目を走らせても何も検査しないので前提の崩れとして返す
+      : > "$rel.go"; : > "$rel"; wait "$p1" 2>/dev/null || true
+      printf 'nowindow\n'
+      return 0
+    fi
     race_worker "$g" "$dir" "$out" "$3" "$rel"; p2=$!
     TT_WAIT_TICKS=400 TT_WAIT_TICK=0.05 tt_wait_until race_second_progressed "$out" "$rel" || :
     : > "$rel.go"
@@ -257,6 +263,8 @@ for _ in 1 2 3 4 5; do
   case "$n" in
     1) ;;
     harness:*) printf '🚨 production 形状のハーネスが結果を %s 件しか残せなかった。この試行は判定不能\n' "${n#harness:}" ;;
+    nowindow) ng "[前提] 1 本目が owner 記録の窓 (tt_proc_starttime) に入らない (production の窓を通っていない)"
+       fresh_bad=$(( fresh_bad + 1 )); break ;;
     *) ng "lock 不在から 2 プロセスが来たとき $n プロセスが取得した (owner 記録中の lock を奪っている)"
        fresh_bad=$(( fresh_bad + 1 )); break ;;
   esac

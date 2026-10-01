@@ -349,6 +349,9 @@ before="$(calls "$ROOT")"
 # TTL 内 (失敗記録は今) はソース未変更でも再挑戦しない = 従来の backoff
 out="$(AUTOBUILD_ARGS=--async FAKE_GO_MARK=fixed run_tool "$ROOT")"
 [[ "$out" == "pending= old" ]] || fail "TTL 内なのに再挑戦した (落ちるビルドを撒く。起動の出力: $out)"
+# 🚨 上の判定は「shim が起こすと決めたか」しか見ない。合図 (GO_AUTOBUILD_PENDING) なしに裏で起こす退行は、裏の go が
+#    呼ばれるまで見えないので、ここは否定の確認として待つ (成立条件が無い。issue 613 の敵対レビュー)
+sleep 0.5
 [[ "$(calls "$ROOT")" == "$before" ]] || fail "TTL 内なのに go を呼んだ"
 ok "TTL 内はソース未変更で再挑戦しない"
 # 失敗記録を TTL より古くすると、ソース未変更でも再挑戦する
@@ -415,6 +418,7 @@ for _ in 1 2 3; do
   out="$(AUTOBUILD_ARGS=--async FAKE_GO_FAIL=1 run_tool "$ROOT")"
   [[ "$out" == "pending= old" ]] || fail "失敗後もソース未変更で再ビルドを撒いている (起動ごとの CPU リーク。起動の出力: $out)"
 done
+sleep 0.5   # 合図なしに裏で起こす退行を見る否定の確認 (上の TTL 内と同じ理由)
 [[ "$(calls "$ROOT")" == "$before" ]] || fail "失敗後もソース未変更で go を呼んだ"
 ok "失敗後はソースが変わるまで再挑戦しない (backoff)"
 

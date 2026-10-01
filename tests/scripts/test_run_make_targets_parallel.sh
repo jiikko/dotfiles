@@ -26,11 +26,13 @@ bad() { printf '  ✗ %s\n' "$1"; fail=1; }
 
 FIX=$(mktemp -d)
 trap 'rm -rf "$FIX"' EXIT
+# slow-ok は fast-fail が終わるまで終わらない (秒数ではなく順序で「失敗の後にまだ走っている」を作る)。
+# 🚨 この順序を外さない: 最初の失敗で残りを止める (fail-fast の) 退行は、失敗より後に終わる target でしか見えない (issue 613 の敵対レビュー)
 cat > "$FIX/Makefile" <<'MK'
 slow-ok:
-	@echo "OUT slow-ok"
+	@i=0; until [ -f fast-fail.done ] || [ $$i -ge 200 ]; do sleep 0.05; i=$$((i+1)); done; [ -f fast-fail.done ]; echo "OUT slow-ok"
 fast-fail:
-	@echo "OUT fast-fail"; echo "ERR fast-fail" >&2; exit 3
+	@echo "OUT fast-fail"; echo "ERR fast-fail" >&2; touch fast-fail.done; exit 3
 mid-ok:
 	@echo "OUT mid-ok"
 # 完了順が引数順と食い違うことを秒数ではなく順序で作る (出力順の検査を vacuous にしないため。issue 613):
@@ -52,6 +54,7 @@ MK
 run() { ( cd "$FIX" && "$RUNNER" "$@" > "$FIX/out" 2> "$FIX/err" ); echo $?; }
 
 printf 'Test 1: 先頭が落ちても後続を全部走らせる\n'
+rm -f "$FIX/fast-fail.done"
 rc=$(run fast-fail slow-ok mid-ok)
 [ "$rc" = 1 ] && ok '非 0 で返る' || bad "非 0 で返るべきだが rc=$rc"
 for t in slow-ok mid-ok; do
@@ -59,6 +62,7 @@ for t in slow-ok mid-ok; do
 done
 
 printf 'Test 2: 失敗したターゲットを全部まとめて報告する\n'
+rm -f "$FIX/fast-fail.done"
 rc=$(run fast-fail slow-ok also-fail)
 [ "$rc" = 1 ] && ok '非 0 で返る' || bad "非 0 で返るべきだが rc=$rc"
 line=$(grep '✗ 失敗したターゲット' "$FIX/err" || true)

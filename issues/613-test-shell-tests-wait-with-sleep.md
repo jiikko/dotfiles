@@ -156,3 +156,16 @@ sonnet の read-only 調査を main が抜き取りで検閲)。2026-09-05 の�
     `bash -c '...'` の文字列・heredoc の中のループ / `test_go_autobuild_warmup.sh` の `runs_within` (上限が引数の判定器) /
     `codex_fanout.bats` (bats は helper を source していない)
   - 未検証: `tests/tmux/test_fork_scratch.sh` は macOS では skip (rc=77) なので、置き換えの動作は構文確認 (`zsh -n`) だけ
+- 2026-10-02 「test: 613 の敵対レビュー (opus) の指摘を直す」
+  - P1 (再現): 並列ランナーの Test 1 / 2 から `sleep` を外したことで、「最初の失敗で残りを止める」(fail-fast) 退行が見えなくなっていた
+    (`slow-ok` が `fast-fail` より後に終わることが、その退行を見る唯一の手段だった)。`slow-ok` が `fast-fail` の完了印を待つゲートにした。
+    変異: 最初の非 0 の rc で残りを reap する → 「slow-ok が走っていない」で red
+  - P2 (再現): go_autobuild の `pending=` は「shim が起こすと決めたか」しか見ず、合図なしに裏で起こす退行 (`_go_autobuild_spawn` を
+    `_go_autobuild_should_retry` の前へ動かす) を TTL 内のケースで見逃した。否定の窓 `sleep 0.5` を 2 箇所に戻し、理由をコメントに書いた
+    (同期の判定は主のまま。これで 1 s 戻った)。変異: 上の入れ替え → 「TTL 内なのに go を呼んだ」で red
+  - P3: schedule_keys の発火時刻は秒精度で、起動が 1 秒の境目を跨ぐと眠らずに終わり 60 秒待って落ちていた → fire が終わった時点で待ちを抜け
+    「[前提] sleep に入らずに終わった」と即座に落とす。変異: 発火の近い job は眠らない → 「[前提]」で red (27 s。60 s 待たない)
+  - P3: resurrect の fresh 形状に「1 本目が窓に入った」ことの assert が無く、owner の記録が `tt_proc_starttime` を経なくなると窓が開かないまま進んでいた →
+    入らなければ「[前提] 1 本目が owner 記録の窓に入らない」で落とす。変異: owner の記録で `ps` を直接呼ぶ → red
+  - 記録のみ: mutate-verify の 42 番で TERM の前に fail すると変異の run が最大 30 秒残る (上限つき) / `kill_socket.sh` は bash からだけ source する (注意を書いた)
+  - 2 周目は §7 の例外で打ち切り (判定ロジックの新設ではなく、ゲートと前提の assert の追加。各修正を変異で直接確認)
