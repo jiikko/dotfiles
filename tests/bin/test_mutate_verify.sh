@@ -746,16 +746,22 @@ done
 
 # ---------------------------------------------------------------------------
 # 42. 中断 (SIGTERM) されても全体のログを写す (ログが一番要るのは hang のとき)
-#     bash は trap を実行中の子の終了まで遅らせるので、変異の sleep は短くしておく
+#     bash は trap を実行中の子の終了まで遅らせるので、変異は「ゲートが開くまで待つ」子を差し込み、
+#     TERM を撃った後にゲートを開ける (秒数で hang を演じない。issue 613)。上限 30 秒で必ず抜ける
 # ---------------------------------------------------------------------------
 d="$work/interrupt"; make_repo "$d"
+int_gate="$work/int.gate"; rm -f "$int_gate"
+cat > "$work/int_slow.sh" <<EOS
+i=0; while [ ! -f '$int_gate' ] && [ "\$i" -lt 600 ]; do sleep 0.05; i=\$((i+1)); done
+EOS
 ( cd "$d" && exec "$MV" --verify 'bash verify.sh' --baseline-expect '^ran 2 checks' --file guard.sh \
-    --apply 'perl -0pi -e "s/^check /sleep 3; check /m" "$MUTATE_FILE"' --expect 'FAIL: reject-bad' ) \
+    --apply "perl -0pi -e 's|^check |sh $work/int_slow.sh; check |m' \"\$MUTATE_FILE\"" --expect 'FAIL: reject-bad' ) \
   > "$work/int.log" 2>&1 &
 mvpid=$!
 for _ in $(seq 200); do grep -q '変異後の検証' "$work/int.log" && break; sleep 0.05; done
 grep -q '変異後の検証' "$work/int.log" || fail "中断のケース: 変異後の検証に入らない (10 秒)"
 kill -TERM "$mvpid" 2>/dev/null
+: > "$int_gate"
 wait "$mvpid"; rc=$?
 [ "$rc" -eq 143 ] || fail "中断のケース: rc=$rc (期待 143)"
 ld="$(logdir_of "$work/int.log")"
