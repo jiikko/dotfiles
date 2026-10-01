@@ -351,6 +351,9 @@ func updateKey(m Model, key string) (Model, []Effect) {
 		return m, []Effect{{Kind: MessageEffect, Reason: "処理中"}}
 	}
 	if m.Confirm != ConfirmNone {
+		// 実行のキーは tuikit の confirm.IsYes と同じ y / Y / Enter だが、寄せない: confirm は y / Enter 以外をすべて取り消すのに対し、
+		// ここは n / N / Esc だけが取り消しで、ほかのキーでは確認を開いたままにする (誤打鍵で確認を閉じない)。実行の集合だけを
+		// 寄せると 1 つの switch に 2 つの規則が混ざり、状態遷移の層 (runner) が UI の部品を import する。規則を揃えるときに一緒に見直す
 		switch key {
 		case "y", "Y", "enter":
 			confirm := m.Confirm

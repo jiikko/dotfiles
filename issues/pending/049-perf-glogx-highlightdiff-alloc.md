@@ -4,6 +4,10 @@
 種別: perf (実測駆動)
 状態: **pending** — 着手条件を満たすまで手を付けない (下記)
 
+> **参照先の移動 (2026-10-01、issue 604)**: `HighlightDiff` と `src/glogx/highlight.go` は今は `src/tuikit/highlight` の `Diff`、
+> ベンチは `src/tuikit/highlight/highlight_test.go` の `BenchmarkDiff`。呼び出しは glogx の `gitlog.go` (`LoadCommitDiff`) と
+> `worktree_status.go` の 2 か所 (本文の「1 箇所だけ」は当時)。本文の名前と数値は測った当時のもの。
+
 ## 観測した事実
 
 `BenchmarkHighlightDiff` (`maxDiffLines` = 5000 行が全部 Go コード) の実測 (count=6):

@@ -1,6 +1,7 @@
 package confirm
 
 import (
+	"github.com/charmbracelet/x/ansi"
 	"os"
 	"strings"
 	"testing"
@@ -100,6 +101,27 @@ func TestWideDialogWidth(t *testing.T) {
 		box := WideDialog(" t ", []string{"x"}, HintYesNo, c.width, false)
 		if got := termwidth.Of(box[0]); got != c.want {
 			t.Errorf("width=%d: 幅 = %d, want %d", c.width, got, c.want)
+		}
+	}
+}
+
+// 狭い板でも案内の「取り消し」側を残す (既定の案内は末尾から切れると実行のキーだけが残り、取り消しの仕方が読めない。issue 604)。
+// 短い形も入らない幅 (20 桁未満。全角の「他」で HintYesOther は 1 桁長い) は切れる。広い板では元の案内のまま。
+func TestDialogHintKeepsCancelKeyWhenNarrow(t *testing.T) {
+	for _, c := range []struct{ hint, cancel string }{{HintYesNo, "n"}, {HintYesOther, "他"}} {
+		for width := 20; width <= 60; width++ {
+			var row string
+			for _, l := range Dialog(" push ", []string{"本当に?"}, c.hint, width, false) {
+				if s := ansi.Strip(l); strings.Contains(s, "実行") {
+					row = s
+				}
+			}
+			if !strings.Contains(row, c.cancel) || (!strings.Contains(row, "取消") && !strings.Contains(row, "キャンセル")) {
+				t.Errorf("幅 %d: 案内の行 %q に取り消しのキー %q が無い", width, row, c.cancel)
+			}
+			if width >= 40 && !strings.Contains(row, c.hint) {
+				t.Errorf("幅 %d: 広い板で元の案内 %q のままでない: %q", width, c.hint, row)
+			}
 		}
 	}
 }

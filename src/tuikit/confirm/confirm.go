@@ -7,6 +7,7 @@ package confirm
 import (
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/sgr"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 // MaxWidth は板の幅の上限。これより広い画面でも板は広げない (短い確認文が横に間延びしない)。
@@ -52,10 +53,37 @@ func WideDialog(title string, body []string, hint string, width int, colored boo
 func dialog(title string, body []string, hint string, maxWidth, width int, colored bool) []string {
 	rows := make([]string, 0, len(body)+2)
 	rows = append(rows, body...)
+	if width <= 0 {
+		width = 80
+	}
+	hint = fitHint(hint, layout.PanelContentWidth(min(maxWidth, width)))
 	if colored {
 		hint = sgr.Dim + hint + sgr.Reset
 	}
 	return box(title, append(rows, "", hint), maxWidth, width, colored)
+}
+
+// shortHints は既定の案内の短い形 (長い順)。狭い板で末尾の「取り消し」側が先に切れて、実行のキーだけが残るのを防ぐ。
+var shortHints = map[string][]string{
+	HintYesNo:    {"y: 実行  n: 取消", "y:実行 n:取消"},
+	HintYesOther: {"y: 実行  他: 取消", "y:実行 他:取消"},
+}
+
+// fitHint は hint が width に入らないとき、既定の案内なら入る短い形に替える (入らなければ一番短い形。切るのは box)。
+func fitHint(hint string, width int) string {
+	if termwidth.Of(hint) <= width {
+		return hint
+	}
+	shorts := shortHints[hint]
+	for _, s := range shorts {
+		if termwidth.Of(s) <= width {
+			return s
+		}
+	}
+	if len(shorts) > 0 {
+		return shorts[len(shorts)-1]
+	}
+	return hint
 }
 
 // IsYes は確認の「実行」キーか: y / Y / Enter。それ以外はすべて取り消しとして扱う。

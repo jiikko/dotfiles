@@ -1,7 +1,7 @@
 // Package editor は実ファイルを 1 つエディタで開くコマンドを組む。$VISUAL → $EDITOR → nvim の順に見る
 // (VISUAL を先に見るのは「全画面エディタは VISUAL」という POSIX の慣習)。
 //
-// 契約は glogx の src/glogx/external_commands.go の editorCommand と同じ (glogx はまだこの package に寄せていない):
+// glogx (external_commands.go) と pro-con (ui/issues.go) がこの package で開く。契約:
 //   - 値は空白で語分割する (EDITOR="code -w" のような引数つきの指定のため)。quote は解釈しない
 //     (シェルの解釈をエディタ起動に持ち込まない)。空白を含むパスの指定は非対応で、起動に失敗する
 //   - 呼び出し側は tea.ExecProcess で TUI を中断して待つ。**起動したプロセスの終了 = 編集の完了**が前提なので、

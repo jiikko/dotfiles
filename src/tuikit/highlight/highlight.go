@@ -62,11 +62,11 @@ func Diff(lines []string) []string {
 			strings.HasPrefix(line, "Binary files")):
 			out = append(out, sgr.Dim+line+sgr.Reset)
 		case inDiff && strings.HasPrefix(line, "+"):
-			out = append(out, sgr.Green+"+"+sgr.Reset+Code(lex, line[1:]))
+			out = append(out, sgr.Green+"+"+sgr.Reset+codeLine(lex, line[1:]))
 		case inDiff && strings.HasPrefix(line, "-"):
-			out = append(out, sgr.Red+"-"+sgr.Reset+Code(lex, line[1:]))
+			out = append(out, sgr.Red+"-"+sgr.Reset+codeLine(lex, line[1:]))
 		case inDiff && strings.HasPrefix(line, " "):
-			out = append(out, " "+Code(lex, line[1:]))
+			out = append(out, " "+codeLine(lex, line[1:]))
 		case !inDiff && strings.HasPrefix(line, "commit "):
 			out = append(out, sgr.Yellow+line+sgr.Reset)
 		default:
@@ -92,7 +92,7 @@ func Lang(lang, code string) string {
 	if lang == "" {
 		return code
 	}
-	return Code(lexers.Get(lang), code)
+	return codeLine(lexers.Get(lang), code)
 }
 
 // hlEscCache はトークン種別 → ANSI エスケープ列 ("" = 装飾なし) のメモ。
@@ -122,14 +122,14 @@ func hlEscapeFor(t chroma.TokenType) string {
 	return esc
 }
 
-// Code はコード 1 行を chroma でハイライトする。lexer 不明・トークナイズ
+// codeLine はコード 1 行を chroma でハイライトする。lexer 不明・トークナイズ
 // 失敗時は素のまま返す。
 //
 // トークンの整形は Format を使わず自前で行う (hlEscCache の doc)。出力形式は Format
 // (terminal256) と同一: 装飾ありトークンは esc + 本文 + リセット、なしは素のまま。
 // 入力は 1 行 (改行を含まない) なので、chroma が補う改行はトークン末尾にしか現れない。
 // Format は改行の手前でリセットするため、末尾で改行を落としてから閉じれば等価になる。
-func Code(lex chroma.Lexer, code string) string {
+func codeLine(lex chroma.Lexer, code string) string {
 	if lex == nil || code == "" {
 		return code
 	}
