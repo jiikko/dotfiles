@@ -254,7 +254,7 @@ func (a *actor) run() (int, error) {
 		a.flusherWG.Add(1)
 		go func() { defer a.flusherWG.Done(); a.sink.runFlusher(a.flusherDone) }()
 	}
-	requests := a.server.Requests
+	requests := a.server.Requests()
 	go forwardKeys(a.actorDone, a.presenter.Keys(), a.events)
 	if a.cfg.BuildCommand != "" {
 		a.handleEffects([]Effect{{Kind: StartBuildEffect}})

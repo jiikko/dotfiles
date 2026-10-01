@@ -1141,7 +1141,7 @@ func TestStatusConsumesFinishedMarkerBeforeResponding(t *testing.T) {
 		response, err := control.Call(ctx, server.Path(), control.Status)
 		got <- statusResult{response: response, err: err}
 	}()
-	a.handleControl(<-server.Requests)
+	a.handleControl(<-server.Requests())
 	result := <-got
 	if result.err != nil {
 		t.Fatal(result.err)
@@ -1236,7 +1236,7 @@ func TestFinishedMarkerRejectsRestartBeforeExitEventIsConsumed(t *testing.T) {
 			err      error
 		}{response, err}
 	}()
-	request := <-server.Requests
+	request := <-server.Requests()
 	actor.handleControl(request)
 	result := <-resultCh
 	if result.err != nil {
@@ -1343,7 +1343,7 @@ func TestBuildFailedControlRestartStartsOneBuild(t *testing.T) {
 		_ = conn.Close()
 		t.Fatal(err)
 	}
-	request := <-server.Requests
+	request := <-server.Requests()
 	a.handleControl(request)
 	if got := len(a.allProcesses); got != 1 {
 		_ = conn.Close()

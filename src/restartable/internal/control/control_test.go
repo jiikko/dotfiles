@@ -52,7 +52,7 @@ func TestListenPermissionsStatusAndDuplicateStart(t *testing.T) {
 	}
 
 	go func() {
-		req := <-server.Requests
+		req := <-server.Requests()
 		if req.Command != Status {
 			t.Errorf("command = %q", req.Command)
 		}
@@ -199,7 +199,7 @@ func TestExtraNULByteDisconnectsControlRequest(t *testing.T) {
 	if _, err := fmt.Fprintln(conn, `{"command":"restart"}`); err != nil {
 		t.Fatal(err)
 	}
-	request := <-server.Requests
+	request := <-server.Requests()
 	if _, err := conn.Write([]byte{0}); err != nil {
 		t.Fatal(err)
 	}

@@ -70,10 +70,13 @@ type Server struct {
 	listener  net.Listener
 	lock      *os.File
 	sockInfo  os.FileInfo
-	Requests  chan *Request
+	requests  chan *Request
 	closeOnce sync.Once
 	serveDone chan struct{}
 }
+
+// Requests は受信専用で返す。送信も close もできない型にして、閉じた要求の列へ serveConn が送る panic を compile で防ぐ。
+func (s *Server) Requests() <-chan *Request { return s.requests }
 
 func DefaultPath() (string, error) {
 	cwd, err := os.Getwd()
@@ -184,7 +187,7 @@ func Listen(path string) (*Server, error) {
 		cleanup()
 		return nil, err
 	}
-	s := &Server{path: absPath, listener: listener, lock: lock, sockInfo: info, Requests: make(chan *Request), serveDone: make(chan struct{})}
+	s := &Server{path: absPath, listener: listener, lock: lock, sockInfo: info, requests: make(chan *Request), serveDone: make(chan struct{})}
 	go s.acceptLoop()
 	return s, nil
 }
@@ -265,7 +268,7 @@ func (s *Server) serveConn(conn net.Conn) {
 		}
 	}()
 	select {
-	case s.Requests <- req:
+	case s.requests <- req:
 	case <-disconnected:
 		return
 	case <-s.serveDone:
