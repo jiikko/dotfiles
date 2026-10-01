@@ -189,10 +189,10 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
   (issue 589)。長い入力は `lineedit.Line.Window(幅)` がキャレットの見える位置まで前を切って出す (全角は 2 桁)
 - 🚨 **入力欄には端末のカーソルを `tuikit/caret` の `caret.At` で置く** (棒のカーソル。位置は「欄の左端 +
   `Window` が返すキャレットの桁」)。IME は変換中の文字を端末のカーソルの位置に出すので、置かないと日本語の
-  変換中の文字が入力欄の外 (描画を書き終えた位置) に出る (issue 517。pro-con の入力欄・回答フォームと schedkeys が置く)
-- 🚨 **glogx の入力欄 (issues の番号の絞り込み `issues_number_filter.go` / URL ピッカー `url_picker.go`) はまだ
-  `lineedit` に寄せていない**。今効くのは `backspace` / `Ctrl-H` / `Ctrl-U` (全部消す) だけで、カーソルが無く、
-  `caret` も置いていない。次に触るときに寄せる (2 画面で同じ編集を別々に書いている)
+  変換中の文字が入力欄の外 (描画を書き終えた位置) に出る (issue 517。pro-con の入力欄・回答フォーム・schedkeys・glogx の入力欄が置く)
+- glogx の入力欄 (issues の番号の絞り込み `issues_number_filter.go` / URL ピッカー `url_picker.go`) も `lineedit` と
+  `caret` を使う (2026-10-02 に寄せた)。番号の絞り込みは数字だけを入れ、URL ピッカーは `Space` を入れない。どちらも
+  `ctrl+n` / `ctrl+p` (と `↑` `↓`) は候補の移動に使う (編集キーより先に捌く)
 
 ## 8. pro-con の例外
 
@@ -253,7 +253,7 @@ glogx の issues の一覧 (範囲選択) と本文 (隣へ送る) と同じ割�
 | 本文 (issue の md・PG の応答) | `markdown.Render` | glogx の issues・pro-con の詳細 |
 | diff・コードの色付け | `highlight.Diff` (本文のフェンスコードは `markdown.Render` が中で `highlight.Lang` を通す) | glogx の diff の板・pro-con の差分の板 |
 | 一覧・本文の移動 (§2) | `listnav.MotionOf` / `List` / `Pager` | glogx の全画面・pro-con |
-| 入力欄 (§7) | `lineedit` + `caret` | pro-con・schedkeys (glogx は未移行。§7) |
+| 入力欄 (§7) | `lineedit` + `caret` | pro-con・schedkeys・glogx (issues の番号の絞り込み・URL ピッカー) |
 | 操作の結果の通知 (下) | `toast.Stack` | glogx・pro-con |
 | 行を幅で切る・揃える・折る | `termwidth` (x/ansi の `Hardwrap` / `Wrap` は使わない) | 全部 |
 

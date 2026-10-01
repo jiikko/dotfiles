@@ -14,9 +14,14 @@ package main
 //
 // Enter を「確定して絞り込みは残す」にしているのは、y / p / n を絞り込み結果へ効かせるため。
 // ピッカーのように選んで閉じる形にすると、フィルタとしては使えない。
+//
+// 編集キー (カーソルの移動・語の削除・ctrl+u / ctrl+k) は tuikit/lineedit に任せる
+// (docs/glogx-ui-guide.md §7。urlPicker も同じ)。足してよい文字が数字だけなのはここで絞る。
 
 import (
 	"strings"
+
+	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
 
 	"glogx/issues"
 )
@@ -26,8 +31,11 @@ type issuesNumberFilter struct {
 	active bool
 	// typing は検索語を入力中か。true のあいだ一覧のキーは飲まれる。
 	typing bool
-	query  string
+	line   lineedit.Line // 検索語 (数字だけ)
 }
+
+// query は今の検索語。
+func (f *issuesNumberFilter) query() string { return f.line.String() }
 
 // start は入力を始める。絞り込み中に呼べば検索語の続きから打てる (打ち直しにしない — 1 文字
 // 消したいだけのときに全部消えるのは操作の取り消しとして強すぎる)。
@@ -38,7 +46,7 @@ func (f *issuesNumberFilter) start() {
 // confirm は入力を終えて絞り込みを残す。検索語が空なら絞り込みごとやめる (空の絞り込みは
 // 「全部見えている」= 絞り込んでいないのと同じで、ヘッダーだけが残ると嘘になる)。
 func (f *issuesNumberFilter) confirm() {
-	if f.query == "" {
+	if f.line.Empty() {
 		f.clear()
 		return
 	}
@@ -48,37 +56,28 @@ func (f *issuesNumberFilter) confirm() {
 // clear は絞り込みを捨てる。
 func (f *issuesNumberFilter) clear() { *f = issuesNumberFilter{} }
 
-// edit は入力中のキーを検索語へ反映する (検索語が変わったら true)。数字と編集キー以外は捨てる。
+// edit は入力中のキーを検索語へ反映する (検索語が変わったら true)。数字は入れ、数字以外の文字は捨て、
+// それ以外は lineedit の編集キーとして渡す (カーソルを動かすだけのキーは false)。
 func (f *issuesNumberFilter) edit(key string) bool {
-	switch key {
-	case "backspace", "ctrl+h":
-		// ctrl+h は backspace の別名 (端末によっては 0x08 で届く。urlPicker と同じ扱い)
-		if f.query == "" {
-			return false
-		}
-		r := []rune(f.query)
-		f.query = string(r[:len(r)-1])
-		return true
-	case "ctrl+u":
-		if f.query == "" {
-			return false
-		}
-		f.query = ""
-		return true
+	before := f.line.String()
+	switch {
+	case isDigitKey(key):
+		f.line.Insert(key)
+	case isPrintableKey(key):
+		return false // 数字以外の文字は検索語にしない (一覧のキーとしても実行しない。冒頭の doc)
+	default:
+		f.line.Key(key, "") // text を渡さないので、編集キー以外は何も入れない
 	}
-	if !isDigitKey(key) {
-		return false
-	}
-	f.query += key
-	return true
+	return f.line.String() != before
 }
 
 // rows は番号に検索語を含む issue を、渡された並びのまま返す。検索語が空なら全件
 // (入力を始めた直後に一覧が消えると、何を絞り込んでいるのか分からなくなる)。
 func (f *issuesNumberFilter) rows(all []*issues.Issue) []*issues.Issue {
+	q := f.query()
 	out := make([]*issues.Issue, 0, len(all))
 	for _, iss := range all {
-		if f.query == "" || strings.Contains(iss.Number, f.query) {
+		if q == "" || strings.Contains(iss.Number, q) {
 			out = append(out, iss)
 		}
 	}

@@ -10,18 +10,24 @@ package main
 // Enter、取り消しは Esc。🚨 j/k を移動に使わない — インクリメンタルサーチでは j も k も
 // 検索語の一部であり、両立させると「j を打つと勝手にカーソルが動く」か「移動できない」の
 // どちらかになる。この割り切りをやめるなら検索モードを別キー (/) に分ける必要がある。
+//
+// 検索語の編集 (カーソルの移動・語の削除・ctrl+u / ctrl+k) は tuikit/lineedit に任せる
+// (docs/glogx-ui-guide.md §7)。
 
 import (
 	"fmt"
 	"strings"
+
+	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 type urlPicker struct {
 	active bool
-	urls   []string // 元の並び (本文の出現順)
-	query  string   // インクリメンタルサーチの検索語
-	match  []int    // query に一致する urls の index (絞り込み結果。並びは出現順)
-	cursor int      // match 内の位置
+	urls   []string      // 元の並び (本文の出現順)
+	line   lineedit.Line // インクリメンタルサーチの検索語
+	match  []int         // query に一致する urls の index (絞り込み結果。並びは出現順)
+	cursor int           // match 内の位置
 }
 
 // open はピッカーを開く。URL が 1 本も無ければ開かず false を返す (呼び出し側が通知を出す)。
@@ -29,10 +35,13 @@ func (p *urlPicker) open(urls []string) bool {
 	if len(urls) == 0 {
 		return false
 	}
-	p.active, p.urls, p.query, p.cursor = true, urls, "", 0
+	p.active, p.urls, p.line, p.cursor = true, urls, lineedit.Line{}, 0
 	p.refilter()
 	return true
 }
+
+// query は今の検索語。
+func (p *urlPicker) query() string { return p.line.String() }
 
 // close はピッカーを閉じる (状態は捨てる。次に開いたときは検索語なしから始める)。
 func (p *urlPicker) close() { *p = urlPicker{} }
@@ -49,7 +58,7 @@ func (p *urlPicker) selected() string {
 // 大文字小文字を無視した部分一致 (URL はホスト名も path も小文字が多く、入力で shift を
 // 押させる意味がない)。
 func (p *urlPicker) refilter() {
-	q := strings.ToLower(p.query)
+	q := strings.ToLower(p.query())
 	p.match = p.match[:0]
 	for i, u := range p.urls {
 		if q == "" || strings.Contains(strings.ToLower(u), q) {
@@ -85,22 +94,19 @@ func (p *urlPicker) handleKey(key string) (open, closed bool) {
 		if len(p.match) > 0 {
 			p.cursor = (p.cursor - 1 + len(p.match)) % len(p.match)
 		}
-	case "backspace", "ctrl+h":
-		// ctrl+h は backspace の別名 (readline の慣習。端末によっては backspace が 0x08 =
-		// ctrl+h として届くため、どちらの綴りで来ても 1 文字消せるようにする)
-		if r := []rune(p.query); len(r) > 0 {
-			p.query = string(r[:len(r)-1])
-			p.refilter()
-		}
-	case "ctrl+u":
-		p.query = ""
-		p.refilter()
 	case " ":
 		// Space は URL に現れないので絞り込みには不要。誤爆 (本文スクロールの癖) を無視する
 	default:
+		before := p.query()
+		text := ""
 		if isPrintableKey(key) {
-			p.query += key
-			p.cursor = 0 // 絞り込み直後は先頭を見せる (fzf と同じ)
+			text = key // 1 文字の印字キーは、その文字を入れる (KeyPressMsg.String() は印字キーなら Text と同じ)
+		}
+		p.line.Key(key, text)
+		if after := p.query(); after != before {
+			if text != "" {
+				p.cursor = 0 // 絞り込み直後は先頭を見せる (fzf と同じ)
+			}
 			p.refilter()
 		}
 	}
@@ -114,11 +120,26 @@ func isPrintableKey(key string) bool {
 	return len(r) == 1 && r[0] >= 0x20 && r[0] != 0x7f
 }
 
+// urlPickerPrompt は検索行の頭。キャレットの桁はこの幅から数える (caretCol)。
+const urlPickerPrompt = "URL 検索: "
+
+// field は検索行に出す検索語と、その中のキャレットの桁 (幅 width の行のうち、頭の後ろの欄に収める)。
+func (p *urlPicker) field(width int) (string, int) {
+	return p.line.Window(max(width-termwidth.Of(urlPickerPrompt), 1))
+}
+
+// caretCol は検索行 (lines の 0 行目) のキャレットの桁。端末のカーソルはここに置く (issuesView.caretCol)。
+func (p *urlPicker) caretCol(width int) int {
+	_, col := p.field(width)
+	return termwidth.Of(urlPickerPrompt) + col
+}
+
 // lines はピッカーの描画行 (ヘッダー + 一覧)。width/page は呼び出し側の領域。
 // 選択行はカーソル溝 (→) で示し、cursorPaint があれば強調も乗せる (一覧と同じ語彙)。
 func (p *urlPicker) lines(o issuesRenderOpts) []string {
+	text, _ := p.field(o.width)
 	head := []string{
-		paint(clipToWidth(fmt.Sprintf("URL 検索: %s_", p.query), o.width), ansiBold, o.colored),
+		paint(clipToWidth(urlPickerPrompt+text, o.width), ansiBold, o.colored),
 		paint(clipToWidth(fmt.Sprintf("%d/%d 件  ctrl+n/p: 移動  ctrl+h: 1 字消す  Enter: 開く  Esc: 戻る",
 			len(p.match), len(p.urls)), o.width), ansiDim, o.colored),
 		"",

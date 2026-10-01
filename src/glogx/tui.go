@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jiikko/dotfiles/src/tuikit/anim"
+	"github.com/jiikko/dotfiles/src/tuikit/caret"
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
@@ -3542,8 +3543,12 @@ func (m *browseModel) invalidateLines() {
 const (
 	frameHOverhead = 7
 	frameVOverhead = 5
-	frameMinWidth  = 60
-	frameMinHeight = 15
+	// frameContentLeft / frameContentTop はフレーム有効時に中身の左上が来る画面の桁と行
+	// (左余白1 + "│ "2 / 上余白1 + 上辺1)。端末のカーソルを中身の座標から画面の座標へ直すのに使う (caret)
+	frameContentLeft = 3
+	frameContentTop  = 2
+	frameMinWidth    = 60
+	frameMinHeight   = 15
 )
 
 // frameActive は今このフレームで最外周フレームを描くか。起動時固定の showFrame に加え、端末が
@@ -3615,7 +3620,31 @@ func (m *browseModel) View() tea.View {
 	// Alt Screen 上でブラウズし q で抜けると表示は消える (git log の pager と同じ。
 	// ユーザー要望 2026-07-17)。
 	v.AltScreen = true
+	v.Cursor = m.caret()
 	return v
+}
+
+// caret は入力欄 (issues の番号の絞り込み・URL ピッカー) のキャレットに置く端末のカーソル。入力欄が無ければ nil (隠す)。
+//
+// 🚨 IME は変換中の文字を端末のカーソルの位置に出す (tuikit/caret・docs/glogx-ui-guide.md §7)。位置は issuesView.caretCol
+// (窓の 0 行目の桁) にフレームの原点を足したもの。窓を変形する演出 (開閉の zoom) の最中と、窓の上に板が重なっている間
+// (action モーダル・再起動・usage は左上の入力欄に重なりうる) は置かない。
+func (m *browseModel) caret() *tea.Cursor {
+	if m.done || m.activeFullScreen() != fullScreenIssues || m.zoom.scale(timeNow()) < appZoomSnap {
+		return nil
+	}
+	if len(m.centerModalLines()) > 0 || len(m.restartPromptLines()) > 0 || len(m.usageOv.boxLines(m.contentWidth(), m.colored, m.spinner())) > 0 {
+		return nil
+	}
+	x, ok := m.issuesOv.caretCol(m.issuesOpts())
+	if !ok {
+		return nil
+	}
+	y := 0
+	if m.frameActive() {
+		x, y = x+frameContentLeft, y+frameContentTop
+	}
+	return caret.At(x, y, m.width, m.height)
 }
 
 // finishWithGlobalChrome はどの画面 (コミット一覧 / issues / status viewer) でも出るべき

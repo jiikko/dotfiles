@@ -77,8 +77,8 @@ func TestIssuesNumberFilterTypingSwallowsListKeys(t *testing.T) {
 			t.Fatalf("%q で行集合が変わった: %q → %q", key, before, got)
 		}
 	}
-	if v.numFilter.query != "4" {
-		t.Fatalf("数字以外が検索語に混ざった: %q", v.numFilter.query)
+	if v.numFilter.query() != "4" {
+		t.Fatalf("数字以外が検索語に混ざった: %q", v.numFilter.query())
 	}
 }
 

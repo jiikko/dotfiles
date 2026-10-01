@@ -1624,8 +1624,8 @@ func TestIssuesViewURLPickerSwallowsActionKeys(t *testing.T) {
 		if len(*cmds) != before {
 			t.Errorf("ピッカー中の %q がエディタを起動した: %v", key, (*cmds)[before].Args)
 		}
-		if p.urlPick.query != key {
-			t.Errorf("%q が検索語にならない: query=%q", key, p.urlPick.query)
+		if p.urlPick.query() != key {
+			t.Errorf("%q が検索語にならない: query=%q", key, p.urlPick.query())
 		}
 	}
 
@@ -2059,15 +2059,15 @@ func TestIssuesViewURLPickerResetsOnNewIssue(t *testing.T) {
 	v.handleKey("enter", vp(20))
 	v.handleKey("u", vp(20))
 	v.handleKey("1", vp(20)) // 検索語を入れた状態で
-	if !v.urlPick.active || v.urlPick.query == "" {
+	if !v.urlPick.active || v.urlPick.query() == "" {
 		t.Fatal("ピッカーの前提が崩れている")
 	}
 	v.handleKey("esc", vp(20)) // 閉じて一覧へ
 	v.handleKey("h", vp(20))
 	v.handleKey("j", vp(20))
 	v.handleKey("enter", vp(20))
-	if v.urlPick.active || v.urlPick.query != "" {
-		t.Errorf("別の issue へ状態が持ち越された: active=%v query=%q", v.urlPick.active, v.urlPick.query)
+	if v.urlPick.active || v.urlPick.query() != "" {
+		t.Errorf("別の issue へ状態が持ち越された: active=%v query=%q", v.urlPick.active, v.urlPick.query())
 	}
 }
 
@@ -2480,7 +2480,7 @@ func TestIssuesViewerOwnsKeysDuringURLPicker(t *testing.T) {
 	m.handleKey("U")
 
 	// 本命の主張はこちら: キーが viewer へ届いているか
-	if q := m.issuesOv.urlPick.query; q != "U" {
+	if q := m.issuesOv.urlPick.query(); q != "U" {
 		t.Errorf("U が検索語に届いていない (外側が横取りしている): query=%q (期待 \"U\")", q)
 	}
 	// 🚨 こちらは別の主張 (残量モーダルを開かない)。混ぜて 1 つの非難文にすると、dismiss の

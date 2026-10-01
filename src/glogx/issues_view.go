@@ -5,6 +5,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"os"
 	"path/filepath"
 	"sort"
@@ -1578,7 +1579,7 @@ func (v *issuesView) numberFilterKey(key string, rows int) tea.Cmd {
 	case "esc", "ctrl+g":
 		v.clearNumberFilter()
 	case "enter":
-		if v.numFilter.query == "" {
+		if v.numFilter.query() == "" {
 			v.clearNumberFilter()
 			return nil
 		}
@@ -2241,10 +2242,10 @@ func (v *issuesView) emptyMessage(o issuesRenderOpts) string {
 		return o.spinner + " issues を探しています..."
 	case len(v.dirs) == 0:
 		return "issues ディレクトリが見つかりません (repo root と root/*/issues を探しました)"
-	case len(v.rows) == 0 && v.numFilter.active && v.numFilter.query != "":
+	case len(v.rows) == 0 && v.numFilter.active && v.numFilter.query() != "":
 		// 🚨 状態フィルタの案内 (a: pending も表示) を出さない。番号検索は状態を無視しているので、
 		// a を押しても結果は 1 件も増えない
-		return "番号に「" + v.numFilter.query + "」を含む issue はありません (Esc: 解除)"
+		return "番号に「" + v.numFilter.query() + "」を含む issue はありません (Esc: 解除)"
 	case len(v.rows) == 0 && v.filter == issues.FilterOpen:
 		return "このタブに open の issue はありません (a: pending も表示)"
 	case len(v.rows) == 0 && v.filter == issues.FilterPending:
@@ -2260,15 +2261,38 @@ func (v *issuesView) emptyMessage(o issuesRenderOpts) string {
 //
 // 「全カテゴリ・全状態」を必ず出す: 番号検索はタブと状態フィルタの両方を無視するので、書かないと
 // 「今 open だけを見ているはず」という直前までの文脈のまま done の issue が並ぶことになる。
-// 入力中だけ末尾に "_" を出して、打鍵を待っているのか確定済みなのかを区別できるようにする。
+// 入力中は端末のカーソルを検索語の中に置く (caretCol)。確定した後はカーソルを出さないので、
+// 打鍵を待っているのか確定済みなのかはカーソルの有無で分かる。
 func (v *issuesView) numberFilterLine(width int, colored bool) string {
-	caret := ""
-	if v.numFilter.typing {
-		caret = "_"
-	}
-	line := "番号: " + v.numFilter.query + caret +
+	line := numberFilterPrompt + v.numFilter.query() +
 		"  " + strconv.Itoa(len(v.rows)) + " 件 (全カテゴリ・全状態)"
 	return paint(clipToWidth(line, width), ansiBold, colored)
+}
+
+// numberFilterPrompt は番号の絞り込みの行の頭。キャレットの桁はこの幅から数える。
+// 検索語は数字だけで欄より長くならないので、lineedit.Line.Window で前を切らない
+// (切ると後ろの件数の表示まで動く)。
+const numberFilterPrompt = "番号: "
+
+// caretCol は入力欄のキャレットを置く桁 (lines が返す窓の中の桁)。入力欄が無い・隠れているときは ok=false。
+// 行は常に窓の 0 行目 (どちらの入力欄も先頭の行にある。下の並びの注記)。
+//
+// 🚨 端末のカーソルは IME が変換中の文字を出す位置 (docs/glogx-ui-guide.md §7・tuikit/caret)。lines の並び
+// (URL ピッカーは 0 行目が検索行 / 一覧は listHeadLines の 0 行目が番号の行) に合わせて数える。lines の並びを
+// 変えたらここも直す (input_caret_test.go が描画結果の上で固定している)。
+// 演出中 (開く・閉じる) と確認の板が出ている間は置かない (行がずれる・板の下に隠れる)。
+func (v *issuesView) caretCol(o issuesRenderOpts) (x int, ok bool) {
+	if v.markNext.active || v.animProgress() < 1 {
+		return 0, false
+	}
+	switch {
+	case v.urlPick.active:
+		return v.urlPick.caretCol(o.width), true
+	case v.numFilter.typing && v.open == nil:
+		// 検索語は数字 (1 字 = 1 桁) だけなので、カーソルの rune の位置がそのまま桁になる
+		return termwidth.Of(numberFilterPrompt) + v.numFilter.line.Cursor(), true
+	}
+	return 0, false
 }
 
 // tabLine はタブ行 (件数つき) と、右端に有効な状態フィルタを描く。

@@ -26,7 +26,7 @@ func TestURLPickerOpenClose(t *testing.T) {
 		t.Errorf("初期選択 = %q", got)
 	}
 	p.close()
-	if p.active || p.query != "" || len(p.match) != 0 {
+	if p.active || p.query() != "" || len(p.match) != 0 {
 		t.Errorf("close で状態が残る: %+v", p)
 	}
 	// 閉じているときはキーを飲まない (呼び出し側の他の割当へ通す)
@@ -58,8 +58,8 @@ func TestURLPickerIncrementalSearch(t *testing.T) {
 	}
 	// ctrl+u で検索語を捨てる (絞り込んだ状態から一気に戻せる)
 	p.handleKey("ctrl+u")
-	if p.query != "" || len(p.match) != 3 {
-		t.Errorf("ctrl+u で戻らない: query=%q match=%d", p.query, len(p.match))
+	if p.query() != "" || len(p.match) != 3 {
+		t.Errorf("ctrl+u で戻らない: query=%q match=%d", p.query(), len(p.match))
 	}
 	// 大文字小文字を無視する
 	p.handleKey("A")
@@ -123,12 +123,12 @@ func TestURLPickerCtrlHDeletesChar(t *testing.T) {
 	p.open(pickerURLs())
 	p.handleKey("b")
 	p.handleKey("e")
-	if p.query != "be" {
-		t.Fatalf("前提が崩れている: query=%q", p.query)
+	if p.query() != "be" {
+		t.Fatalf("前提が崩れている: query=%q", p.query())
 	}
 	p.handleKey("ctrl+h")
-	if p.query != "b" {
-		t.Errorf("ctrl+h で 1 字消えない: query=%q", p.query)
+	if p.query() != "b" {
+		t.Errorf("ctrl+h で 1 字消えない: query=%q", p.query())
 	}
 	if len(p.match) != 1 || p.selected() != "https://example.com/beta" {
 		t.Errorf("消した後に絞り込みが追従しない: match=%d sel=%q", len(p.match), p.selected())
@@ -136,8 +136,8 @@ func TestURLPickerCtrlHDeletesChar(t *testing.T) {
 	// 空でも落ちない
 	p.handleKey("ctrl+h")
 	p.handleKey("ctrl+h")
-	if p.query != "" || len(p.match) != 3 {
-		t.Errorf("空からさらに消して壊れた: query=%q match=%d", p.query, len(p.match))
+	if p.query() != "" || len(p.match) != 3 {
+		t.Errorf("空からさらに消して壊れた: query=%q match=%d", p.query(), len(p.match))
 	}
 	// 案内にも出す
 	if out := stripANSI(strings.Join(p.lines(issuesRenderOpts{width: testPopupWidth, page: 8}), "\n")); !strings.Contains(out, "ctrl+h") {
@@ -152,8 +152,8 @@ func TestURLPickerIgnoresNamedKeys(t *testing.T) {
 	for _, k := range []string{"pgdown", "ctrl+x", "shift+tab", "home", " "} {
 		p.handleKey(k)
 	}
-	if p.query != "" {
-		t.Errorf("名前付き/修飾キーが検索語に入った: %q", p.query)
+	if p.query() != "" {
+		t.Errorf("名前付き/修飾キーが検索語に入った: %q", p.query())
 	}
 }
 
