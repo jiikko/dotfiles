@@ -72,3 +72,16 @@ lexer の正規表現が爆発的にバックトラックし、1 行あたり約
 - [ ] `highlight.Code` の入口に素通しの条件 + 閾値の実測
 - [ ] 回帰テスト (変異で red を確認)
 - [ ] pro-con の `addActivity` のキャッシュを、ここでやるか別 issue にするかを決める
+
+## 決着 (2026-10-01 の見直しで閉じる)
+
+事実 (1 行 379 ms・10 行で 4 秒) は正しいが、**発火する形が実際の入力に無い**ので閉じる。
+
+- バックスラッシュの連続: dotfiles の `issues/` で 15 個以上の行を含むファイル 0 (`grep -rlE '(\\){15,}' issues`)、
+  dotfiles の git 履歴で 30 個以上 0、`~/src` の 34 repo と dotfiles の `git grep -E '\\{8,}'` も 0 件
+  (パターンが当たることは `\\{2,}` で先に確かめた)。8〜20 個なら 0.1〜3.3 ms で問題にならない
+- glogx の diff の `highlight.Diff` は tea.Cmd の中で呼ばれ、diff の板はキャッシュするので、払うのは開いたときの 1 回だけ
+- pro-con の `addActivity` は毎フレーム整形し直す (キャッシュ無し) が、実在する最大の PG session (応答 70 件) の `markdown.Render` は 1.5〜2.0 ms
+
+**再開の trigger**: 長い 1 行の diff で開くのが遅いと感じたとき。実際に起きうる重さは minified の 1 行 (JS 50 KB の `highlight.Diff` が 94 ms、
+JSON 56 KB で 22 ms) の方で、直すなら「行の長さの上限を超えたら chroma に渡さず素通し」にする (バックスラッシュの数より先にこちら)。

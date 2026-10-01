@@ -57,3 +57,12 @@ pro-con の回答フォームの質問文・選択肢も `src/pro-con/card/choic
 
 - [ ] tuikit の ESC 列の読み方を直す + 回帰テスト (変異で red を確認)
 - [ ] README に「layout / confirm は無害化しない」を書く
+
+## 決着 (2026-10-01 の見直しで閉じる): 416 の P3-2 の重複
+
+同じ問題が 416 (done) の P3-2 で既に記録され、「記録のみ (異常な入力か定数の誤りでしか届かない)」と判断済みだった
+(`DropColumns` / `StripSGR` が「最初の英字まで」を ESC 列と読み、OSC 8 で解釈が食い違う)。起票の前にこれを見落とした。
+この issue が足したのは BEL が残る・`DropColumns` が OSC を replay する、という症状の細部だけで、届く経路はこの issue も見つけていない。
+pro-con の状態ファイルにも OSC (`ESC ]`) は 0 件。416 の判断を覆す根拠は無いので閉じる。
+
+**再開の trigger** (416 と同じ): 無害化していない外部の文字列を `layout` / `confirm` / `DropColumns` に渡す呼び出しが足されたとき。

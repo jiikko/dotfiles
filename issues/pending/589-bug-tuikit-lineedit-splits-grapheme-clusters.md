@@ -2,6 +2,13 @@
 
 起票日: 2026-10-01
 
+> **pending (2026-10-01 の見直しで凍結)**: 害は本物 (送る文字列が黙って変わる) だが、今の使い方では入力に現れていない。
+> pro-con の状態 (cards.json・cards-archive.jsonl・events) に 4 バイトの絵文字・肌色・ZWJ・キーキャップは 0 件、
+> PG の transcript で利用者が入力した文 7,496 件にも NFD の濁点 (U+3099 / U+309A) は 0 件。lineedit を使うのは pro-con の 3 ファイルだけ。
+> `Window` の O(n²) は、実際のカード本文の長さ (n=48、最大 690 字) では 1 ms 未満なので、書記素の修正のついでに直す扱いにする。
+> **再開の trigger**: カードの本文・回答に絵文字や Finder から貼ったファイル名 (NFD) を入れ始めたとき / lineedit の消費者が増えたとき /
+> schedkeys の editor を lineedit へ寄せる作業が来たとき
+
 ## 概要
 
 `tuikit/lineedit` の `Line` は `[]rune` とカーソル (rune の位置) を持ち、backspace / delete / ←→ /

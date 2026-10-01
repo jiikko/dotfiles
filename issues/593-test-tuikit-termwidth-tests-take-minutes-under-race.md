@@ -30,6 +30,12 @@
   `-test.run=…|TestFastDispWidthMatchesLibrary|TestAcceptedSymbolsNeverCombineWithEachOther)$` を走らせる (`wantPass = 4`)。
   親が走らせたのと同じ `TestAcceptedSymbols…` の総当たりを、env だけ変えてもう 1 回払っている (main で確認。重複ではない理由は対応方針 1)
 
+### どこで払うか (2026-10-01 の見直しで訂正)
+
+「commit 前の `make test` で毎回 4 分」ではない。go のテストキャッシュが効くので、手元で 2 回続けて回すと 2 回目の termwidth は `(cached)` になる。
+手元で 4 分払うのは termwidth・tuikit の go.mod / go.sum を変えたときだけ (tuikit を作った 9/24 から 19 commit、9/28 以降は 3)。
+**毎回払うのは CI**: `src/tuikit/**` と `src/termsafe/**` を触る push のたびに 388 秒 (これまで 59 commit が該当)。優先度の根拠はこちら。
+
 ## 対応方針 (どれも検出力を変えうるので、採る前に変異で red を確かめる)
 
 1. 子プロセスの filter から `TestAcceptedSymbolsNeverCombineWithEachOther` を外す案は**採らない方向**。
