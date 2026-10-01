@@ -26,7 +26,7 @@ func (r *countedChunkReader) Read(data []byte) (int, error) {
 		return 0, io.EOF
 	}
 	n := min(len(data), 512, r.left)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		data[i] = 'x'
 	}
 	r.left -= n

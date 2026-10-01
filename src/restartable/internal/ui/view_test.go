@@ -177,7 +177,7 @@ func TestTTYOutputWriterReportsBrokenPipeOnceAndStopsWriting(t *testing.T) {
 
 func TestTeaModelDropsKeyWhenRunnerQueueIsFull(t *testing.T) {
 	keys := make(chan string, 32)
-	for i := 0; i < cap(keys); i++ {
+	for range cap(keys) {
 		keys <- "queued"
 	}
 	model := &teaModel{keys: keys, closed: make(chan struct{})}

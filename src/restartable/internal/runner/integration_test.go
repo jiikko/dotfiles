@@ -494,7 +494,7 @@ func TestHeadlessRunnerWithTerminalStdinDoesNotPassTTYToChild(t *testing.T) {
 	socketPath := filepath.Join(dir, "runner.sock")
 	stopMarker := filepath.Join(dir, "stop-child")
 	run := fmt.Sprintf(`rm -f %s; if read value; then echo run-stdin-read; else echo run-stdin-eof; fi; while [ ! -e %s ]; do /bin/sleep 0.01; done; exit 0`, shellQuote(stopMarker), shellQuote(stopMarker))
-	stop := fmt.Sprintf(`if read value; then echo stop-stdin-read; else echo stop-stdin-eof; fi; touch %s`, shellQuote(stopMarker))
+	stop := `if read value; then echo stop-stdin-read; else echo stop-stdin-eof; fi; touch ` + shellQuote(stopMarker)
 	r := startPTYStdinHeadlessRunner(t, socketPath,
 		"RESTARTABLE_TEST_BUILD=if read value; then echo build-stdin-read; else echo build-stdin-eof; fi",
 		"RESTARTABLE_TEST_RUN="+run,
@@ -1259,7 +1259,7 @@ func TestLargeTTYLogRetainsFirstAndLastAndReportsDrops(t *testing.T) {
 	sink := newLogSink(&output, false)
 	var input strings.Builder
 	input.WriteString("head\n")
-	for n := 0; n < 2100; n++ {
+	for n := range 2100 {
 		fmt.Fprintf(&input, "middle-%d\n", n)
 	}
 	input.WriteString("tail\n")

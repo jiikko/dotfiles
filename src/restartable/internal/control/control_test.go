@@ -229,14 +229,14 @@ func TestOversizedControlLineIsRejected(t *testing.T) {
 // Close と接続の処理が重なっても panic しない (Requests を閉じると、送信待ちの serveConn が閉じたチャネルへ送って panic した)。
 // 受け手 (actor) がいない状態で要求を送らせ、送信待ちの serveConn がある間に Close する。
 func TestCloseWhileRequestsArePendingDoesNotPanic(t *testing.T) {
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		path := filepath.Join(shortSocketDir(t), "runner.sock")
 		server, err := Listen(path)
 		if err != nil {
 			t.Fatal(err)
 		}
 		conns := make([]net.Conn, 0, 8)
-		for j := 0; j < 8; j++ {
+		for range 8 {
 			conn, err := net.Dial("unix", path)
 			if err != nil {
 				t.Fatal(err)

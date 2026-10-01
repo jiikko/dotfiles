@@ -1,7 +1,6 @@
 # golangci-lint v2 config for restartable.
-# linter は既定 (errcheck / govet / ineffassign / staticcheck / unused) のまま。他の src/* が足している
-# 衛生系 (intrange / perfsprint 等) は、入れると既存のテストコードに指摘が出る (2026-10-01 に 5 件) ので、
-# 直すのと一緒に足す。
+# 既定の linter (errcheck / govet / ineffassign / staticcheck / unused) に加えて、
+# 低ノイズで自動修正できる衛生系だけを足す (他の src/* と同じ構成)。
 version: "2"
 
 # 🚨 golangci-lint は既定で os.TempDir()/golangci-lint.lock に flock を取り、別インスタンスが
@@ -10,6 +9,23 @@ version: "2"
 # (lock がキャッシュ保護ではない理由と実測は src/subproc/.golangci.yml。issue 258)
 run:
   allow-parallel-runners: true
+
+linters:
+  enable:
+    - copyloopvar    # loop variables needlessly copied (Go 1.22+)
+    - forbidigo      # 幅・切り詰めの x/ansi 直呼びを禁止 (下の forbid)
+    - intrange       # for i := 0; i < n; i++  ->  for i := range n
+    - misspell       # common English misspellings in comments/strings
+    - perfsprint     # fmt.Sprintf that a faster stdlib call can replace
+    - unconvert      # redundant type conversions
+    - usestdlibvars  # hand-written constants that exist in the stdlib
+    - wastedassign   # assignments whose value is never read
+  settings:
+    forbidigo:
+      forbid:
+        # 端末の幅・切り詰め・切り出しは github.com/jiikko/dotfiles/src/tuikit/termwidth を通す (issue 524)
+        - pattern: ^ansi\.(StringWidth|Cut|Truncate|TruncateLeft)$
+          msg: 幅は termwidth.Of、切り詰め・切り出しは termwidth.Truncate / Cut / Slice / SliceFrom / SplitAround を使う (issue 524)
 
 # gofmt を CI ゲートにする (v2 では formatter は linters と別枠。ここに無いと run が整形差分を見ない)
 formatters:

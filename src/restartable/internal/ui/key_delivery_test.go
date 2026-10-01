@@ -18,7 +18,7 @@ func TestKeyDeliveryBoundsPendingKeysAndKeepsRecentOrder(t *testing.T) {
 	})
 
 	var enqueued []string
-	for i := 0; i < 48; i++ {
+	for i := range 48 {
 		key := "y"
 		if i%2 == 1 {
 			key = "esc"
@@ -49,7 +49,7 @@ func TestKeyDeliveryPrioritizesCtrlCOverPendingKeys(t *testing.T) {
 		<-delivery.done
 	})
 
-	for i := 0; i < 48; i++ {
+	for i := range 48 {
 		key := "y"
 		if i%2 == 1 {
 			key = "esc"
