@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"github.com/charmbracelet/x/ansi"
@@ -734,6 +735,41 @@ func TestInfoToastHasNoMark(t *testing.T) {
 		it.text = strings.Repeat("a", it.textWidth(30)*2) // ちょうど 2 行 (幅が 1 桁でも狭いと 3 行になる)
 		if got, want := len(it.fullBox(false, 30, MaxTextLines)), it.height(30, MaxTextLines); got != want || want != BoxHeight+1 {
 			t.Fatalf("info=%v: 箱の行数 %d と height %d が違う", it.info, got, want)
+		}
+	}
+}
+
+// 窓幅 1〜40 のどれでも箱が出て、窓幅が PanelMinWidth 以上なら箱は窓に収まり、未満なら下限 (PanelMinWidth) で止まる。
+// 本文は欠けない (入り切らないときは最終行の末尾が … で、その手前は元の文の先頭と一致する)。
+// 窓幅 30 以上しか見ていなかった頃は、狭い窓で通知を全部消す・本文の幅の下限を取り違える変更が緑のまま通った (issue 602)。
+func TestToastBoxAtEveryNarrowWidth(t *testing.T) {
+	const text = "コピーした"
+	for width := 1; width <= 40; width++ {
+		var s Stack
+		s.Show(text, true)
+		advanceToHolding(&s)
+		box := s.BoxLines(false, 100, width)
+		if len(box) == 0 {
+			t.Fatalf("幅 %d で箱が出ない", width)
+		}
+		boxWidth := 0
+		var body strings.Builder
+		for _, row := range box {
+			boxWidth = max(boxWidth, termwidth.Of(row))
+			inner := strings.Trim(ansi.Strip(row), "│▖▁▗▓█▒░ ─┌┐")
+			body.WriteString(strings.TrimPrefix(inner, "✓ "))
+		}
+		if want := max(width, layout.PanelMinWidth); boxWidth > want || (width < layout.PanelMinWidth && boxWidth != layout.PanelMinWidth) {
+			t.Errorf("幅 %d: 箱の幅 %d (窓幅以内、狭い窓では下限の %d のはず)", width, boxWidth, layout.PanelMinWidth)
+		}
+		got := strings.ReplaceAll(body.String(), " ", "")
+		if cut, truncated := strings.CutSuffix(got, "…"); truncated {
+			got = cut
+		} else if got != text {
+			t.Errorf("幅 %d: 本文が欠けた %q (want %q)", width, got, text)
+		}
+		if got == "" || !strings.HasPrefix(text, got) {
+			t.Errorf("幅 %d: 本文 %q が元の文の先頭と一致しない", width, got)
 		}
 	}
 }

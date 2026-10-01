@@ -26,6 +26,9 @@ linters:
         # 端末の幅・切り詰め・切り出しは github.com/jiikko/dotfiles/src/tuikit/termwidth を通す (issue 524)
         - pattern: ^ansi\.(StringWidth|Cut|Truncate|TruncateLeft)$
           msg: 幅は termwidth.Of、切り詰め・切り出しは termwidth.Truncate / Cut / Slice / SliceFrom / SplitAround を使う (issue 524)
+        # 折り返しも x/ansi を直に呼ばない。Hardwrap / Wrap はキーキャップで幅を超える行を返し、Wrap は書記素も割る (issue 590)
+        - pattern: ^ansi\.(Hardwrap|Wrap|Wordwrap)$
+          msg: 折り返しは termwidth.Wrap / WordWrap を使う (x/ansi はキーキャップで幅を超える。issue 590)
 
 # gofmt を CI ゲートにする (v2 では formatter は linters と別枠。ここに無いと run が整形差分を見ない)
 formatters:

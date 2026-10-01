@@ -59,6 +59,9 @@ linters:
       # usage は glogx の TUI 層からも呼ばれるので stdout へ直接書かない。stdout への出力は main.go に限定
       # (exclusions で許可)。
       forbid:
+        # 折り返しも x/ansi を直に呼ばない。Hardwrap / Wrap はキーキャップで幅を超える行を返し、Wrap は書記素も割る (issue 590)
+        - pattern: ^ansi\.(Hardwrap|Wrap|Wordwrap)$
+          msg: 折り返しは termwidth.Wrap / WordWrap を使う (x/ansi はキーキャップで幅を超える。issue 590)
         - pattern: ^fmt\.Print(f|ln)?$
           msg: stdout への直接出力は main.go に限定する (TUI 層は tea.Msg 経由で描画)
         # 利用枠キャッシュへの書き込みは atomicfile.Write を通す (途中まで書けた JSON を残さない)。

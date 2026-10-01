@@ -3,8 +3,8 @@ module schedkeys
 go 1.25.0
 
 require (
-	charm.land/bubbletea/v2 v2.0.9
-	github.com/charmbracelet/x/ansi v0.11.8
+	charm.land/bubbletea/v2 v2.0.8
+	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/jiikko/dotfiles/src/tuikit v0.0.0
 	github.com/rivo/uniseg v0.4.7
 )

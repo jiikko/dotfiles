@@ -1,7 +1,5 @@
 # 603 (chore): x/ansi の版と、ansi の折り返しの直呼びの禁止が、tuikit の消費者の module ごとにずれている
 
-> 🚨 **担当中: dotfiles-58**（2026-10-01〜）
-
 起票日: 2026-10-01
 
 出典: tuikit の監査 (dependency / lint-from-done、2026-10-01。[604](604-research-tuikit-audit-remaining-types-2026-10-01.md))。数は Claude が `go list -m` と grep で数え直した。
@@ -35,5 +33,15 @@ ansi の禁止の一覧が 5 つの `.golangci.yml` にコピーされていて�
 
 ## 進捗
 
-- [ ] 1. x/ansi・bubbletea の版を揃え、版の一致の検査を足す
-- [ ] 2. 折り返しの禁止を 4 module に足し、禁止の集合の一致の検査を足す
+- [x] 1. x/ansi・bubbletea の版を揃え、版の一致の検査を足す
+- [x] 2. 折り返しの禁止を 4 module に足し、禁止の集合の一致の検査を足す
+
+## 結果 (2026-10-01)
+
+- 1: schedkeys を bubbletea v2.0.8 / x/ansi v0.11.7 に下げて、tuikit がテストしている版に揃えた (schedkeys は 8/27 の新設時にその時点の最新を入れただけで、新しい版が要る理由は見当たらなかった)。
+  下げた後の ultraviolet・runewidth も tuikit と同じ (20260703 / 0.0.24)。`make -C src/schedkeys test lint` は通る
+- 2: forbidigo `^ansi\.(Hardwrap|Wrap|Wordwrap)$` を tuikit・ratelimit・restartable・schedkeys に足した (tuikit は termwidth を exclusions に。restartable は dotfiles-44 の df2869c2 の上に重ねた)。
+  変異: 各 module の本番のファイルに `var _ = ansi.Wordwrap(...)` → 4 module とも forbidigo が赤。termwidth の wrap.go では赤にならない (除外が効く)
+- 静的検査 `tests/scripts/test_tuikit_consumers_aligned.sh`: tuikit と、go.mod に tuikit を持つ module の x/ansi の版 (`go list -m`) が一致し、全部が折り返しの禁止を持つこと。
+  版が読めない・対象が 2 module 未満は失敗。変異: schedkeys の禁止の行を消す / go.mod の x/ansi を v0.11.8 → どちらも ✗ src/schedkeys で赤。`make test` の `[ok]` の行で起動を確認
+- 検出しないもの: glogx の幅の禁止 (issue 524) は forbidigo ではなく depguard の説明で持っていて、この検査は折り返しの禁止だけを見る。bubbletea の版の一致は見ていない

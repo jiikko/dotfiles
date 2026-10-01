@@ -32,6 +32,9 @@ linters:
         # 置く場所を termwidth の 1 か所にするため。字面で見るので、別名の import・変数経由の呼び出しは検出しない
         - pattern: ^ansi\.(StringWidth|Cut|Truncate|TruncateLeft)$
           msg: 幅は termwidth.Of、切り詰め・切り出しは termwidth.Truncate / Cut / Slice / SliceFrom / SplitAround を使う (issue 524)
+        # 折り返しも x/ansi を直に呼ばない。Hardwrap / Wrap はキーキャップで幅を超える行を返し、Wrap は書記素も割る (issue 590)
+        - pattern: ^ansi\.(Hardwrap|Wrap|Wordwrap)$
+          msg: 折り返しは termwidth.Wrap / WordWrap を使う (x/ansi はキーキャップで幅を超える。issue 590)
     errcheck:
       # Best-effort writes to stderr/stdout and closing read handles.
       exclude-functions:

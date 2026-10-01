@@ -1,7 +1,5 @@
 # 602 (test): tuikit が宣言している守りのうち 3 つが機械で止まっていない (depguard の対象漏れ・狭い窓の toast・行数 0 の markdown)
 
-> 🚨 **担当中: dotfiles-58**（2026-10-01〜）
-
 起票日: 2026-10-01
 
 出典: tuikit の監査 (未実施の 7 タイプ、2026-10-01。[604](604-research-tuikit-audit-remaining-types-2026-10-01.md))。所見は読み取り専用の調査役 (sonnet) のもので、depguard の対象漏れは Claude がコードで確かめた。2 と 3 の変異は調査役が mktemp のコピーで当て、反証レビューが別に当て直して緑を再現した (2 は textWidth の `maxWidth-5`、3 は width < 12 で lines = nil)。
@@ -32,6 +30,16 @@
 
 ## 進捗
 
-- [ ] 1. depguard の files に toast・lineedit を足し、変異で赤を確かめる
-- [ ] 2. toast の狭い窓の掃引のテスト
-- [ ] 3. markdown の掃引に行数と本文の検査
+- [x] 1. depguard の files に toast・lineedit を足し、変異で赤を確かめる
+- [x] 2. toast の狭い窓の掃引のテスト
+- [x] 3. markdown の掃引に行数と本文の検査
+
+## 結果 (2026-10-01)
+
+- 1: `no-framework-in-parts` / `parts-pure` の files に `**/toast/**` / `**/lineedit/**` を足した。`**/toast/**` が `examples/toast/` (bubbletea を使ってよいデモ) にも当たったので
+  両方に `!**/examples/**` を足した。caret (bubbletea の View.Cursor を組むのが仕事) と editor (外部のエディタを起こすのが仕事) は理由をコメントに書いて対象外のまま。
+  変異: toast.go / lineedit.go に bubbletea と os を import → どちらも depguard が 2 件で赤 (mutate-verify rc=0)
+- 2: `TestToastBoxAtEveryNarrowWidth` (幅 1〜40: 箱が出る・PanelMinWidth 以上は窓に収まり未満は下限で止まる・本文が欠けない)。
+  変異: 狭い窓で通知を全部消す / textWidth を `maxWidth-5` → どちらもこのテストだけが赤
+- 3: `TestRenderNeverExceedsWidth` に行数と本文 (段落の先頭) の検査を足した。幅 1 は全角が入らず … になるので ASCII の部分を見る。
+  変異: width < 12 / < 6 で lines = nil → どちらも赤

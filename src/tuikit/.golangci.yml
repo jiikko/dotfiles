@@ -38,7 +38,7 @@ linters:
       rules:
         # 部品は描画フレームワークに依存しない (「[]string → []string」と壁時計の状態機械だけ)。
         # bubbletea に依存させると、v1 のままのアプリや別フレームワークから使えなくなる。
-        # デモ (examples/) だけが bubbletea を使ってよい。
+        # デモ (examples/) と、bubbletea の View.Cursor を組むのが仕事の caret だけが bubbletea を使ってよい。
         no-framework-in-parts:
           files:
             - "**/anim/**"
@@ -50,6 +50,9 @@ linters:
             - "**/sgr/**"
             - "**/termwidth/**"
             - "**/widthenv/**"
+            - "**/toast/**"
+            - "**/lineedit/**"
+            - "!**/examples/**" # examples/toast 等のデモは bubbletea を使ってよい (部品と同じ名前のディレクトリに当たる)
           deny:
             - pkg: charm.land/bubbletea
               desc: 部品はフレームワーク非依存 (tick は使う側が回す。README の「使う側の約束」)
@@ -57,7 +60,7 @@ linters:
               desc: 部品はフレームワーク非依存 (tick は使う側が回す。README の「使う側の約束」)
         # 部品は「状態 → 文字列」の純粋な層。I/O・プロセス起動・非同期を持ち込むと、毎フレーム呼ばれる
         # 合成の性能とテスト容易性が壊れる (glogx の render.go に掛けていた render-pure と同じ)。
-        # widthenv は環境変数を読むのが仕事なので対象外。
+        # widthenv は環境変数を読む・editor は外部のエディタを起こすのが仕事なので対象外。
         parts-pure:
           files:
             - "**/anim/**"
@@ -68,6 +71,9 @@ linters:
             - "**/markdown/**"
             - "**/sgr/**"
             - "**/termwidth/**"
+            - "**/toast/**"
+            - "**/lineedit/**"
+            - "!**/examples/**"
             - "!**/*_test.go"
           deny:
             - pkg: os
@@ -103,6 +109,9 @@ linters:
         # 幅・切り詰め・切り出しは termwidth を通す (速い道を置く場所を 1 か所にする。issue 524)。termwidth 自身は下で除外
         - pattern: ^ansi\.(StringWidth|Cut|Truncate|TruncateLeft)$
           msg: 幅は termwidth.Of、切り詰め・切り出しは termwidth.Truncate / Cut / Slice / SliceFrom / SplitAround を使う (issue 524)
+        # 折り返しも x/ansi を直に呼ばない。Hardwrap / Wrap はキーキャップで幅を超える行を返し、Wrap は書記素も割る (issue 590)
+        - pattern: ^ansi\.(Hardwrap|Wrap|Wordwrap)$
+          msg: 折り返しは termwidth.Wrap / WordWrap を使う (x/ansi はキーキャップで幅を超える。issue 590)
         # 部品は時刻を引数 (now) で受け取る。中で取ると、使う側のテストが時刻を固定できない
         - pattern: ^time\.(Now|Since)$
           msg: 部品は時刻を引数で受け取る (使う側のテストで固定できるように)
@@ -115,6 +124,11 @@ linters:
       # termwidth は x/ansi を包む層そのもの。テストは x/ansi を正本にして答え合わせをする
       - path: (termwidth/|_test\.go)
         text: issue 524
+        linters:
+          - forbidigo
+      # 折り返しも termwidth.Wrap が x/ansi の Wordwrap を包む層そのもの (issue 590)
+      - path: (termwidth/|_test\.go)
+        text: issue 590
         linters:
           - forbidigo
       # デモは実時間で動かす本物のアプリ
