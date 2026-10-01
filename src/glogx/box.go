@@ -52,12 +52,10 @@ func wrapWindowFrame(content []string, termW int, colored bool) []string {
 }
 
 // withScrollbar は buildShadowPanelBox に渡す本文行の右端に 1 桁のスクロールバー列を足す。
-// boxWidth は buildShadowPanelBox に渡すのと同じ幅を受け取り、本文幅 (inner) を内部で再計算
-// する (呼び出し側に枠の内訳を知らせない)。影付き枠は右影 1 桁を width から捻出して枠自体が
-// 1 桁狭い (buildPanelBoxImpl の fw = width-1) ため、-1 してから inner を出す — これを忘れると
-// バー列が枠の clip に食われて消える。
+// boxWidth は buildShadowPanelBox に渡すのと同じ幅を受け取り、本文幅は layout.PanelContentWidth で出す
+// (影の 1 桁と最小幅を引いた幅。広く数えるとバー列が枠の clip に食われて消える)。
 func withScrollbar(rows []string, boxWidth, total, offset int, colored bool) []string {
-	return layout.Scrollbar(rows, layout.PanelInnerWidth(max(boxWidth, layout.PanelMinWidth)-1), total, offset, colored)
+	return layout.Scrollbar(rows, layout.PanelContentWidth(boxWidth), total, offset, colored)
 }
 
 // buildPanelBoxImpl は tuikit layout.Panel に glogx の影の色 (テーマの近黒) を渡して板を組む。

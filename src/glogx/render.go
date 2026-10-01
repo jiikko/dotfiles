@@ -7,8 +7,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/charmbracelet/x/ansi"
-
 	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 )
 
@@ -500,9 +498,9 @@ func wrapToWidth(s string, width int) []string {
 	if width <= 0 || dispWidth(s) <= width {
 		return []string{s}
 	}
-	// ansi.Hardwrap は grapheme クラスタ単位で折る (旧実装は rune 単位で ⚠️ を VS16 の
-	// 手前で分断していた)。単語境界は見ない (preserveSpace=false)。
-	return strings.Split(ansi.Hardwrap(s, width, false), "\n")
+	// 書記素クラスタ単位で折り、各行の幅は termwidth.Of で width 以下を保証する (rune 単位だと ⚠️ を VS16 の手前で
+	// 分断し、ansi.Hardwrap はキーキャップで幅を超えた。issue 590)。単語境界は見ず、折り返しの頭の空白は落とす。
+	return termwidth.Wrap(s, width, true)
 }
 
 func paint(s, color string, colored bool) string {

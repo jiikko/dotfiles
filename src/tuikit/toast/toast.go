@@ -165,7 +165,7 @@ func (t *item) textWidth(maxWidth int) int {
 	if maxWidth <= 0 {
 		return 0
 	}
-	return max(maxWidth, layout.PanelMinWidth) - layout.PanelChrome - t.markWidth()
+	return layout.PanelContentWidth(maxWidth) - t.markWidth()
 }
 
 // height は fullBox が組む箱の行数 (Panel は内容の行数 + 上辺・下辺・影の 3 行)。箱を組まずに求める

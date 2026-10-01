@@ -67,6 +67,10 @@ linters:
         # 正当な time.Now は下の exclusions (path-except) で許可する。
         - pattern: ^time\.(Now|Since)$
           msg: tui.go の時刻は timeNow シーム経由で取る (テストで固定するため。issue 038)
+        # 折り返しは termwidth.Wrap / WordWrap を通す。x/ansi の Hardwrap / Wrap はキーキャップで幅を超える行を返し、
+        # Wrap は書記素も割る (issue 590)。字面で見るので、別名の import・変数経由の呼び出しは検出しない
+        - pattern: ^ansi\.(Hardwrap|Wrap|Wordwrap)$
+          msg: 折り返しは termwidth.Wrap / WordWrap を使う (x/ansi はキーキャップで幅を超える。issue 590)
     depguard:
       rules:
         width-single-source:

@@ -16,7 +16,6 @@ import (
 
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/sgr"
-	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"github.com/jiikko/dotfiles/src/tuikit/toast"
 )
 
@@ -84,24 +83,10 @@ func (m *model) View() tea.View {
 		sgr.Dim + " 新しい通知は上に積まれ、古い通知は下から抜ける (最大 3 枚)" + sgr.Reset}
 	copy(lines[1:], help)
 	box := m.toasts.BoxLines(true, h-1, w)
-	overlayBottomRight(lines, box, w)
+	layout.OverlayRight(lines, box, w, true, max(len(lines)-len(box), 0))
 	v := tea.NewView(strings.Join(lines, "\n"))
 	v.AltScreen = true
 	return v
-}
-
-// overlayBottomRight は box を window の右下に重ねる (左の背景は残す)。glogx の overlayBoxRight と同じ形 (デモ用に小さく持つ)。
-func overlayBottomRight(window, box []string, width int) {
-	base := max(len(window)-len(box), 0)
-	for i, row := range box {
-		pos := base + i
-		if pos >= len(window) {
-			break
-		}
-		left := termwidth.Cut(window[pos], max(width-termwidth.Of(row), 0))
-		pad := strings.Repeat(" ", max(width-termwidth.Of(row)-termwidth.Of(left), 0))
-		window[pos] = left + sgr.Reset + pad + row
-	}
 }
 
 func main() {

@@ -46,6 +46,11 @@ const (
 // PanelInnerWidth は罫線の幅 frameWidth (右影を除いた板の幅) のうち、中身に使える幅。
 func PanelInnerWidth(frameWidth int) int { return frameWidth - 4 }
 
+// PanelContentWidth は Panel に渡す width (右影 1 桁込み) のとき、中身の行に使える幅。Panel と同じく
+// PanelMinWidth 未満の width は押し上げてから数える (中身の幅を決めてから行を折る呼び出し側は、これを使えば
+// 影の 1 桁と最小幅を知らなくてよい)。
+func PanelContentWidth(width int) int { return PanelInnerWidth(max(width, PanelMinWidth) - 1) }
+
 // 落ち影のグリフ。色なし (NO_COLOR) では近黒が使えず █ だと地色に対して明るく浮くので、陰影文字で代用する。
 const (
 	ShadowFull     = "█" // 本体 (最も濃い)
@@ -141,6 +146,37 @@ func Overlay(window, box []string, anchor, page int) []string {
 		} else if len(window) < page {
 			window = append(window, p)
 		}
+	}
+	return window
+}
+
+// OverlayRight は box を window の右端に寄せ、base 行目から重ねる (左側の背景は残し、箱の直前で reset して
+// 背景の開いた色が箱へ滲まないようにする)。箱の行が width 以上なら、その行は箱を width で切って置き換える。
+//
+// 🚨 window を**その場で書き換えて**返す (Overlay と同じ)。共有している行を渡すならコピーを渡す。
+func OverlayRight(window, box []string, width int, colored bool, base int) []string {
+	if len(window) == 0 || width <= 0 || len(box) == 0 {
+		return window
+	}
+	reset := ""
+	if colored {
+		reset = sgr.Reset
+	}
+	for i, row := range box {
+		pos := base + i
+		if pos < 0 {
+			continue
+		}
+		if pos >= len(window) {
+			break
+		}
+		bw := termwidth.Of(row)
+		if bw >= width {
+			window[pos] = termwidth.Clip(row, width)
+			continue
+		}
+		left, lw := termwidth.CutMeasure(window[pos], width-bw)
+		window[pos] = left + reset + termwidth.PadSpaces(width-bw-lw) + row
 	}
 	return window
 }

@@ -136,7 +136,7 @@ func zoomWindow(lines []string, scale float64, width int, colored, framed bool) 
 	// buildPanelBoxImpl は右 1 桁を影に使い、返す行数は 中身 + 3 (上辺 + 下辺 + 下影)
 	inner, innerH := boxW, boxH // 枠なしは切り出した中身がそのまま演出フレームになる
 	if framed {
-		inner, innerH = layout.PanelInnerWidth(boxW-1), max(boxH-3, 1)
+		inner, innerH = layout.PanelContentWidth(boxW), max(boxH-3, 1)
 	}
 	// framed の実画面クローム: 上 = 上余白 1 + 枠上辺 1、左 = 左余白 1 + "║ " 2
 	// (内訳の一次情報は tui.go の frameHOverhead / frameVOverhead)。これをスキップして

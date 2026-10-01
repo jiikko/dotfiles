@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
 // attachGuideLines は案内の枠の中身 (装飾なし)。
@@ -66,7 +66,7 @@ func (m *Model) overlayAttachGuide(region []string) []string {
 		if i == 0 {
 			col = sgrBold + sgrYellow
 		}
-		for _, l := range strings.Split(ansi.Hardwrap(s, inner, true), "\n") {
+		for _, l := range termwidth.Wrap(s, inner, false) {
 			lines = append(lines, formLine{text: col + l + sgrReset, caret: -1})
 		}
 	}

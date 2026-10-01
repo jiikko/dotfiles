@@ -10,10 +10,10 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/jiikko/dotfiles/src/tuikit/anim"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"pro-con/card"
 )
@@ -151,7 +151,7 @@ func (m *Model) drawerBody() []string {
 	var out []string
 	// add は素の文字列を折り返し、色を各行へ掛け直す (折り返した先の行で色が抜けないように)
 	add := func(style, text string) {
-		for _, l := range strings.Split(ansi.Hardwrap(text, w, true), "\n") {
+		for _, l := range termwidth.Wrap(text, w, false) {
 			if style != "" {
 				l = style + l + sgrReset
 			}
@@ -284,7 +284,7 @@ func (m *Model) overlayDrawer(region []string) []string {
 func hangWrap(text string, w int) []string {
 	body := strings.TrimLeft(text, " ")
 	lead := strings.Repeat(" ", len(text)-len(body))
-	lines := strings.Split(ansi.Hardwrap(body, max(w-len(lead)-2, 10), true), "\n")
+	lines := termwidth.Wrap(body, max(w-len(lead)-2, 10), false)
 	for i, l := range lines {
 		if i == 0 {
 			lines[i] = lead + l

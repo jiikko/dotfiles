@@ -7,7 +7,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
+	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/toast"
 )
 
@@ -41,20 +41,6 @@ func (m *Model) overlayToast(region []string) []string {
 	if len(box) == 0 {
 		return region
 	}
-	out := append([]string(nil), region...)
-	base := max(len(out)-len(box), 0)
-	for i, row := range box {
-		pos := base + i
-		if pos >= len(out) {
-			break
-		}
-		rw := termwidth.Of(row)
-		keep := max(m.width-rw, 0)
-		left, lw := "", 0
-		if keep > 0 {
-			left, lw = termwidth.TruncateMeasure(out[pos], keep, "")
-		}
-		out[pos] = left + sgrReset + termwidth.PadSpaces(keep-lw) + row
-	}
-	return out
+	out := append([]string(nil), region...) // OverlayRight はその場で書き換えるので、ボードの行を写してから重ねる
+	return layout.OverlayRight(out, box, m.width, true, max(len(out)-len(box), 0))
 }

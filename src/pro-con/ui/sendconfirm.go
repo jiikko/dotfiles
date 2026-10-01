@@ -9,8 +9,8 @@ package ui
 import (
 	"strings"
 
-	"github.com/charmbracelet/x/ansi"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"pro-con/backend"
 )
@@ -50,7 +50,7 @@ func (m *Model) overlaySend(region []string) []string {
 	add := func(text string) { lines = append(lines, formLine{text: text, caret: -1}) }
 	add("")
 	if s.warn != "" {
-		for _, l := range strings.Split(ansi.Hardwrap(s.warn, inner, true), "\n") {
+		for _, l := range termwidth.Wrap(s.warn, inner, false) {
 			add(sgrBold + sgrYellow + l + sgrReset)
 		}
 		add("")
@@ -59,7 +59,7 @@ func (m *Model) overlaySend(region []string) []string {
 		add(fg(244) + "(空)" + sgrReset)
 	} else {
 		for _, b := range s.body {
-			for _, l := range strings.Split(ansi.Hardwrap(b, inner, true), "\n") {
+			for _, l := range termwidth.Wrap(b, inner, false) {
 				add(fg(231) + l + sgrReset)
 			}
 		}

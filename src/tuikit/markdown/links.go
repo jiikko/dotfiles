@@ -45,7 +45,7 @@ type linkRef struct {
 
 // collectLinks は整形済みの行からリンクの位置を集める。index は ref → links の添字。
 //
-// 桁は clipToWidth (出口の切り詰め) を考慮する: 行が width を超えると末尾 1 桁が "…" に
+// 桁は termwidth.Clip (Render の出口の切り詰め) を考慮する: 行が width を超えると末尾 1 桁が "…" に
 // なるので、そこから先の区間は画面に出ない。
 func collectLinks(lines []line, width int) (links []Link, index map[*linkRef]int) {
 	index = map[*linkRef]int{}
@@ -58,7 +58,7 @@ func collectLinks(lines []line, width int) (links []Link, index map[*linkRef]int
 		for _, sp := range l.spans {
 			w := termwidth.Of(sp.Text)
 			if sp.link != nil && col < limit && w > 0 {
-				// 🚨 min(w, limit-col) にしない: 残り 1 桁から始まる幅 2 の字は clipToWidth が字ごと落とすので、
+				// 🚨 min(w, limit-col) にしない: 残り 1 桁から始まる幅 2 の字は 出口の termwidth.Clip が字ごと落とすので、
 				// 見える桁は「残りに収まる字だけ」で数える (0 なら画面に出ていない)
 				vis := w
 				if col+w > limit {

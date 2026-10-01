@@ -131,7 +131,7 @@ func repeat(k string, n int) []string {
 // 移動と削除で割らない (issue 589: rune 単位だと 👍🏽 の backspace 1 回で 👍 が残り、別の文字列が送られる)。
 // 前後に ASCII を置き、カーソルをクラスタの前後に置いた状態で当てる (末尾だけだと delete と right が見えない)。
 func TestEditKeysKeepGraphemeClusters(t *testing.T) {
-	for _, c := range []string{"👍🏽", "👨‍👩‍👧", "🇯🇵", "é", "1️⃣", "が"} {
+	for _, c := range []string{"👍🏽", "👨\u200d👩\u200d👧", "🇯🇵", "e\u0301", "1\ufe0f\u20e3", "か\u3099"} {
 		n := len([]rune(c))
 		for _, tc := range []struct {
 			name   string
@@ -173,7 +173,7 @@ func TestEditSnapsCursorWhenClustersMerge(t *testing.T) {
 // 窓の前切りもクラスタ単位: 欄の左端にキーキャップの VS16 + U+20E3 や肌色修飾子だけが残らない。
 func TestWindowCutsAtGraphemeClusters(t *testing.T) {
 	for _, tc := range []struct{ in, wantText string }{
-		{"1️⃣2️⃣3️⃣", "3️⃣"},
+		{"1\ufe0f\u20e32\ufe0f\u20e33\ufe0f\u20e3", "3\ufe0f\u20e3"},
 		{"👍🏽👍🏽👍🏽", "👍🏽"},
 	} {
 		var l Line

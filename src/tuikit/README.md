@@ -12,13 +12,13 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 
 | パッケージ | 中身 | 使いどころ |
 |---|---|---|
-| `termwidth` | 表示幅の単一情報源 (`Of` / `Truncate` / `Clip` / `PadSpaces` / `FillRight` …) | 行を幅で切る・揃えるときは**必ずここを通す** |
+| `termwidth` | 表示幅の単一情報源 (`Of` / `Truncate` / `Clip` / `PadSpaces` / `FillRight` …)。折り返しは `Wrap(s, 幅, 頭の空白を落とすか)` (書記素単位) / `WordWrap(s, 幅)` (単語の境目で折る) | 行を幅で切る・揃える・折るときは**必ずここを通す** (x/ansi の `Hardwrap` / `Wrap` はキーキャップで幅を超える。glogx・pro-con は lint で禁止) |
 | `widthenv` | 幅モデルが支持しない環境変数 (`RUNEWIDTH_EASTASIAN`) の検出 | 起動時の警告・テストのガード |
 | `sgr` | 基本の ANSI 色・装飾 (`Reset` / `Bold` / `Dim` / `Cyan` …) | 色を付けるときの値の単一の出典 |
 | `anim` | `Transition` (開く / 閉じる / 途中で逆再生) / `Elapsed` (一方向の演出の進捗) / `ScrollGlide` / `CursorGlide` / easing | 開閉演出と「数行ぶんの移動を滑らせる」演出 |
-| `layout` | `ComposeDrawer` (一覧の上に詳細を右から重ねる) / `DrawerGeometry` / `SlideIn` / `Scrollbar` / `Panel` (落ち影つきの板) / `Overlay` / `OverlayCentered` / `PadTo` | 画面の合成 |
+| `layout` | `ComposeDrawer` (一覧の上に詳細を右から重ねる) / `DrawerGeometry` / `SlideIn` / `Scrollbar` / `Panel` (落ち影つきの板) と `PanelContentWidth` (Panel に渡す幅から中身の幅を出す) / `Overlay` / `OverlayCentered` / `OverlayRight` (右端に寄せて重ねる) / `PadTo` | 画面の合成 |
 | `confirm` | y/N 確認ダイアログ: `Dialog` (本文 + 空行 + 案内の板) / `Box` (幅 44 で頭打ちの中央の板) / `IsYes` (y・Y・Enter) / `IsYesStrict` (y・Enter) / 案内の定型 `HintYesNo` / `HintYesOther` | 破壊的操作の確認を毎回組まない。語彙の正本は `docs/glogx-ui-guide.md` §4 |
-| `lineedit` | 1 行の入力欄 (カーソル + readline の編集キー: `ctrl+h` / `ctrl+w` / `ctrl+u` / `ctrl+k` / `ctrl+a` / `ctrl+e` …)。`Window(幅)` は欄に出す文字列とキャレットの桁 (長ければキャレットが欄に収まるよう前を切る。全角は 2) | 入力欄を毎回書かない。キーの語彙の正本は `docs/glogx-ui-guide.md` §7 |
+| `lineedit` | 1 行の入力欄 (カーソル + readline の編集キー: `ctrl+h` / `ctrl+w` / `ctrl+u` / `ctrl+k` / `ctrl+a` / `ctrl+e` …)。移動と削除は書記素単位 (肌色・ZWJ・国旗・結合文字を割らない)。`Window(幅)` は欄に出す文字列とキャレットの桁 (長ければキャレットが欄に収まるよう前を切る。全角は 2)。保存したカーソルは `SetCursor` で戻す | 入力欄を毎回書かない。キーの語彙の正本は `docs/glogx-ui-guide.md` §7 |
 | `caret` | `At(x, y, 幅, 高さ)`: 入力欄のキャレットに置く棒の端末のカーソル (bubbletea v2 の `tea.Cursor`。幅の外の桁は最終列へ寄せ、画面の外の行なら nil) | IME の変換中の文字を入力欄に出す (IME は端末のカーソルの位置に出す)。桁は `lineedit.Line.Window` の「欄の左端 + 桁」。**tuikit で唯一 bubbletea を import する** (置く先が `tea.Cursor` そのもの)。pro-con の入力欄・回答フォームと schedkeys が使う (issue 517) |
 | `editor` | 実ファイルを 1 つエディタで開くコマンド ($VISUAL → $EDITOR → nvim、空白で語分割、quote は解釈しない) | glogx と pro-con の共通。tea.ExecProcess で待つ前提 (GUI エディタは -w) |
 | `toast` | 右下に数秒だけ出る通知のスタック: `Stack` (`Show` 成功 ✓緑・失敗 ✗赤 / `ShowInfo` 進行中 …シアン / `Advance` / `StartLeaving` / `BoxLines`)。右外から滑り込み、`Hold` (3 秒) 止まって、右へ滑り出る。`BoxLines` には重ねる窓の幅を渡す: 収まらない文は箱の中で折り返し (最大 `MaxTextLines` 行。超えた分は末尾を … にする)、窓の右端で切れない。新しい通知は上に積み、古い通知は下から抜ける (最大 3 枚。溢れたら成功・進行中から捨て、警告は残す)。タイマーは張らず `Timer` として返す | 操作の結果を画面の邪魔をせずに知らせる (glogx の push / pull の結果など)。デモの gif は下の「デモ」 |

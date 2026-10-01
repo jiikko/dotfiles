@@ -144,7 +144,7 @@ func TestRenderLinksPaintsMarks(t *testing.T) {
 
 // 行末で切られる幅 2 の字は字ごと落ちるので、その字だけのリンクは画面に出ない = 一覧に載せない。
 func TestRenderLinksWideCharAtClipEdge(t *testing.T) {
-	// 5 列 × 最小 3 桁の表は幅が足りないと行が溢れ、出口の clipToWidth が末尾を切る。最終列の
+	// 5 列 × 最小 3 桁の表は幅が足りないと行が溢れ、出口の termwidth.Clip が末尾を切る。最終列の
 	// 全角 1 字のコードスパン (後ろに字を続けて行を溢れさせる) が「見える最後の 1 桁」から始まる入力を、
 	// 前置きの長さと幅を掃いて探す
 	hit := 0
@@ -190,7 +190,7 @@ func TestRenderLinksClipped(t *testing.T) {
 			}
 		}
 	}
-	// 出口の clipToWidth で末尾が落ちる行: 列が多く、最小列幅 (tableColWidths の minCol) まで詰めても
+	// 出口の termwidth.Clip で末尾が落ちる行: 列が多く、最小列幅 (tableColWidths の minCol) まで詰めても
 	// 幅に収まらない表。行そのものが width を超え、Render の出口で "…" に切られる
 	src = "| a | b | c | d | e |\n|---|---|---|---|---|\n| `p/q` | x | y | z | `r/s` |\n"
 	lines, _, links = RenderLinks(src, 14, false, nil)

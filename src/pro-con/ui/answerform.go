@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/jiikko/dotfiles/src/tuikit/caret"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
@@ -259,14 +258,14 @@ func (f *answerForm) formLines(inner int) []formLine {
 	var out []formLine
 	add := func(s string) { out = append(out, formLine{text: s, caret: -1}) }
 	if f.preamble != "" {
-		for _, l := range strings.Split(ansi.Wrap(f.preamble, inner, ""), "\n") {
+		for _, l := range termwidth.WordWrap(f.preamble, inner) {
 			add(fg(244) + l + sgrReset)
 		}
 		add("")
 	}
 	cur := f.row()
 	for i, q := range f.qs {
-		for _, l := range strings.Split(ansi.Wrap(sgrBold+fg(231)+strconv.Itoa(i+1)+". "+q.Question+sgrReset+"  "+fg(244)+"("+q.Kind()+")"+sgrReset, inner, ""), "\n") {
+		for _, l := range termwidth.WordWrap(sgrBold+fg(231)+strconv.Itoa(i+1)+". "+q.Question+sgrReset+"  "+fg(244)+"("+q.Kind()+")"+sgrReset, inner) {
 			add(l)
 		}
 		for j := range len(q.Options) + 1 {
@@ -338,7 +337,7 @@ func (f *answerForm) optionLines(q, j int, on bool, inner int) []formLine {
 		out = append(out, formLine{text: line + fg(244) + "  — " + desc + sgrReset, cur: on, caret: -1})
 	default:
 		out = append(out, formLine{text: line, cur: on, caret: -1})
-		for _, l := range strings.Split(ansi.Wrap(desc, inner-formDescShift, ""), "\n") {
+		for _, l := range termwidth.WordWrap(desc, inner-formDescShift) {
 			out = append(out, formLine{text: strings.Repeat(" ", formDescShift) + fg(244) + l + sgrReset, caret: -1})
 		}
 	}

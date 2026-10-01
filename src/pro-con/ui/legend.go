@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
@@ -116,10 +115,9 @@ func legendTabBar(cur legendTab, inner int) string {
 }
 
 // legendSize は画面の幅 total に対する表の板の幅と、中身の幅。
-// 🚨 Panel の width は右の影 1 桁込みなので、中身の幅は width-1 の枠から数える (1 桁広く折り返すと行末が … で切れる)
 func legendSize(total int) (width, inner int) {
 	width = min(total-4, 76)
-	return width, layout.PanelInnerWidth(width - 1)
+	return width, layout.PanelContentWidth(width)
 }
 
 // legendRows はタブ tab の中身の行 (どの行も幅 inner に収まるよう折り返す)。
@@ -128,7 +126,7 @@ func legendRows(tab legendTab, inner int) []string {
 	// explain は説明の文を幅に収まるよう折り返し、見出しの下に indent 桁下げて足す
 	explainAt := func(indent int, text string) {
 		pad := strings.Repeat(" ", indent)
-		for _, l := range strings.Split(ansi.Hardwrap(text, max(inner-indent, 10), true), "\n") {
+		for _, l := range termwidth.Wrap(text, max(inner-indent, 10), false) {
 			rows = append(rows, pad+l)
 		}
 	}

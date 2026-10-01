@@ -44,37 +44,14 @@ func RenderLinks(src string, width int, colored bool, mark func(i int) LinkMark)
 	out = make([]string, 0, len(lines))
 	srcLines = make([]int, 0, len(lines))
 	for _, l := range lines {
-		out = append(out, clipToWidth(paintLine(l, colored, markOf), width))
+		// 「出力は width 桁を超えない」という Render の契約を、出口のここ 1 箇所で無条件に守る (issue 116)。
+		// 整形は箇条書きの記号・番号・表の罫線・入れ子のインデントを先に置いてから残り幅へ本文を詰めるので、
+		// 幅がそれらの固定分より狭いと構造の側が溢れる (実測 2026-08-27: 幅 1 で 80 行・幅 3 で 42 行)。
+		// 「幅 N 未満は畳む」下限の案は、下限を跨ぐ入力ごとに畳み方を決めることになるので採らなかった。
+		out = append(out, termwidth.Clip(paintLine(l, colored, markOf), width))
 		srcLines = append(srcLines, l.src)
 	}
 	return out, srcLines, links
-}
-
-// clipToWidth は「出力は width 桁を超えない」という Render の契約を、**出口 1 箇所で**
-// 無条件に守る (issue 116)。
-//
-// なぜ必要か: 整形 (renderMarkdown) は箇条書きの記号・番号・表の罫線・入れ子のインデントを
-// 先に置いてから残り幅へ本文を詰めるので、**幅がそれらの固定分より狭いと構造の側が溢れる**。
-// 実測 2026-08-27: 幅 1 で 80 行・幅 3 で 42 行が溢れていた (幅 20 以上では 0 件。テストが
-// {20,40,60,86,120} しか掃いていなかったので 20 未満を一度も見ていなかった)。
-//
-// 「幅 N 未満は畳む」という下限を決める案は採らなかった: 下限を跨ぐ入力ごとに畳み方を決める
-// ことになり、ここで一律に切る方が契約が単純 (glogx 本体も同名の関数で同じことをしており、
-// 今日この溢れが表に出ていないのはその下流 clip が吸収していたから)。
-//
-// 🚨 glogx は Body.Lines のキャッシュ越しに呼ぶので毎フレームは走らない (width か colored が
-// 変わったときだけ)。とはいえ ANSI 無しで byte 長が収まる行は最も多いので fast-path は残す。
-func clipToWidth(line string, width int) string {
-	if width <= 0 {
-		return "" // 幅 0 以下に収まる表示は空しかない (glogx 本体の clipToWidth と同じ契約)
-	}
-	if len(line) <= width && strings.IndexByte(line, '\x1b') < 0 {
-		return line
-	}
-	if termwidth.Of(line) <= width {
-		return line
-	}
-	return termwidth.Truncate(line, width, "…")
 }
 
 // paintLine は 1 行のスパン列を ANSI 付き文字列へ変換する。markOf はリンクのスパンに足す強調。

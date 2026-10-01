@@ -464,7 +464,7 @@ func TestRenderSrcLineNumbersSkipFrontMatter(t *testing.T) {
 	}
 }
 
-// 幅 0 以下では空行を返す (issue 116。glogx 本体の clipToWidth と同じ契約)。
+// 幅 0 以下では空行を返す (issue 116。termwidth.Clip の契約)。
 //
 // 🚨 呼び出し側の「width - 固定列」が極小幅で 0 や負になることがある。そのまま返すと
 // 行が枠を突き破る (issue 053 が本体側で踏んだのと同じ形)。

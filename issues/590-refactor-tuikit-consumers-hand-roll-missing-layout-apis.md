@@ -1,6 +1,5 @@
 # 590 (refactor): tuikit に無い部品を消費者が手書きしている (右寄せ重ね・板の内側の幅・折り返し)
 
-> 🚨 **担当中: dotfiles-05**（2026-10-01〜）
 
 起票日: 2026-10-01
 
@@ -105,8 +104,29 @@ README は「幅は `termwidth` だけで測る」と約束しているが、折
 
 ## 進捗
 
-- [ ] A: `layout.OverlayRight` と 3 か所の置き換え
-- [ ] B: `layout.PanelContentWidth` と 3 か所の置き換え
-- [ ] C: `termwidth.Wrap` と 10 呼び出しの置き換え + キーキャップの回帰テスト
-- [ ] markdown の `clipToWidth` を `termwidth.Clip` へ
-- [ ] 直接呼び出しを lint で止めるかの判断を記録
+- [x] A: `layout.OverlayRight` を足し、glogx の `overlayBoxRight`・pro-con の `overlayToast`・examples の `overlayBottomRight` を寄せた。
+  箱が窓幅以上の行は箱を窓の幅で切る (glogx の契約。pro-con と examples は切らずに連結していた)。`OverlayCentered` は今回は変えていない
+- [x] B: `layout.PanelContentWidth(width)` (= `PanelInnerWidth(max(width, PanelMinWidth) - 1)`) を足し、glogx の `withScrollbar`・`zoom`、
+  pro-con の `legendSize`、toast の `textWidth` を置き換えた。legend と zoom は width が `PanelMinWidth` 未満のときだけ値が変わる
+  (旧は 0 以下になりえた。新は Panel の実際の押し上げと一致する)
+- [x] C: `termwidth.Wrap(s, 幅, trimSpace)` / `WordWrap(s, 幅)` を足し、x/ansi を直接呼んでいた 10 か所を寄せた
+  (`Hardwrap(x, w, true)` → `Wrap(x, w, false)`、glogx の `Hardwrap(x, w, false)` → `Wrap(x, w, true)`、`ansi.Wrap(x, w, "")` → `WordWrap(x, w)`)。
+  glogx と pro-con の `.golangci.yml` の forbidigo に `ansi.(Hardwrap|Wrap|Wordwrap)` を足して戻りを止めた
+  - 色は次の行で張り直さない (x/ansi の Hardwrap と同じ)。ESC 列の長さは x/ansi のパーサ (`DecodeSequence`) に読ませ、見える字は `FirstCluster` で測る
+  - 速度 (幅 80、20 回の平均): 平文 2 KB で ansi.Hardwrap 16 µs / Wrap 26 µs、20 KB で 146 µs / 272 µs、色付き 100 KB で 538 µs / 926 µs (線形。x/ansi の約 1.7 倍)
+- [x] markdown の `clipToWidth` を `termwidth.Clip` に置き換え、出口で切る理由のコメントは呼び出し箇所へ移した
+- [x] README のパッケージ表に `Wrap` / `WordWrap` / `PanelContentWidth` / `OverlayRight` を足した
+- [x] 回帰テスト: `TestOverlayRight` / `TestPanelContentWidthMatchesPanel` (正解役は Panel 自身) / `TestWrapProperties` (乱数 2 万件: 各行の幅・書記素の途中で始まらない・
+  trim なしならつなげ直すと入力と 1 byte も違わない) / `TestWrapKeycapsStayWithinWidth` / `TestWrapContract` / `TestWrapTerminatesOnZeroWidthHeads` / `TestWrapOutputStaysProportional`
+- [x] 変異 (mutate-verify) 12 本がどれも red: OverlayRight の切り詰めを外す / PanelContentWidth の影の 1 桁を外す / Wrap を ansi.Hardwrap に戻す / 空の行を足さない処理を外す /
+  glogx と pro-con に ansi の折り返しを書く (lint が止める) / ESC だけの列で進まない / reset で張り直しの状態を消さない (1 回目の実装) /
+  残りの ESC 列を捨てる / ESC 列を 1 byte ずつ読む / 進まない形 (先に走る乱数のテストが `go test -timeout` で落ちる) / 行ごとに SGR を張り直す
+- [x] 敵対的レビュー 3 周 (sonnet、read-only):
+  - 1 周目: P1 2 件 (先頭が幅 0 の字で無限ループ / Cut + DropColumns の繰り返しで 2 乗。色付き 20 KB で x/ansi の 100 倍) → 1 回の走査に書き直した。
+    OverlayRight と PanelContentWidth は壊せなかった
+  - 2 周目: 自前の ESC の読み方が Of と食い違う (閉じていない OSC が後ろを飲む・中間バイト付きの列が割れる)、SGR の張り直しが部分的な解除で
+    積み上がる (100 KB → 68 MB)、空白だけの残りの ESC 列を捨てる → 近似の手直しをやめ、x/ansi のパーサに読ませ、張り直しをやめた
+  - 3 周目: 残ったのは x/ansi 自身の不整合 1 件 (閉じていない APC / SOS / PM を `DecodeSequence` は幅 0、`StringWidth` は中身の幅で数える)。
+    無害化していない壊れた端末出力でしか起きず、消費者の入力は termsafe を通るので直さない。判断と再提起の条件は `termwidth/wrap.go` のコメント
+- 検証: `make -C src/tuikit lint` / `make -C src/pro-con lint` / `make -C src/glogx lint` 0 件、glogx と pro-con のテスト一式 green
+- 未確認: 実機の画面での見え方 (pro-con の引き出し・回答フォーム、glogx の詳細の折り返し)。テストと probe の出力でしか見ていない

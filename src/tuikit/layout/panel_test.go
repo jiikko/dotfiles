@@ -106,3 +106,54 @@ func TestOverlayPullsUpToFit(t *testing.T) {
 		t.Fatalf("末尾で引き上げない: %q", out)
 	}
 }
+
+// PanelContentWidth は Panel が中身に使う幅そのもの: その幅ちょうどの行は切られず、1 桁でも長い行は切られる
+// (最小幅で押し上げられる狭い width も含む)。正解役は Panel 自身。
+func TestPanelContentWidthMatchesPanel(t *testing.T) {
+	for width := range 61 {
+		cw := PanelContentWidth(width)
+		fit := strings.Repeat("x", cw)
+		over := strings.Repeat("x", cw+1)
+		out := Panel("", []string{fit, over}, width, false, PanelStyle{Border: BorderLight})
+		if !strings.Contains(out[1], fit) || strings.Contains(out[1], "…") {
+			t.Fatalf("width=%d: 幅 %d の行が切られた: %q", width, cw, out[1])
+		}
+		if !strings.Contains(out[2], "…") {
+			t.Fatalf("width=%d: 幅 %d の行が切られていない (中身の幅を 1 桁広く数えている): %q", width, cw+1, out[2])
+		}
+	}
+}
+
+// 右寄せの重ね: 左の背景は残り、各行の幅は窓の幅ちょうど、箱は右端に揃う。箱が窓より広い行は箱を窓の幅で切る。
+// 窓の外 (base が負・下にはみ出す) の行は捨てる。色ありなら箱の直前で reset する (背景の開いた色を箱へ滲ませない)。
+func TestOverlayRight(t *testing.T) {
+	bg := func() []string {
+		return []string{"0123456789abcdefghij", "\x1b[31m赤い背景のa行がつづく", "あいうえおかきくけこ", "tail"}
+	}
+	box := []string{"[box1]", "[箱２]"}
+
+	got := OverlayRight(bg(), box, 20, true, 1)
+	for i, want := range []string{"0123456789abcdefghij", "\x1b[31m赤い背景のa行" + sgr.Reset + " [box1]", "あいうえおかき" + sgr.Reset + "[箱２]", "tail"} {
+		if got[i] != want {
+			t.Fatalf("行 %d = %q, want %q", i, got[i], want)
+		}
+	}
+	for i := 1; i <= 2; i++ {
+		if w := termwidth.Of(got[i]); w != 20 {
+			t.Fatalf("行 %d の幅 %d, want 20", i, w)
+		}
+	}
+
+	wide := OverlayRight(bg(), []string{strings.Repeat("箱", 15)}, 20, false, 0)
+	if w := termwidth.Of(wide[0]); w > 20 || !strings.HasPrefix(wide[0], "箱") {
+		t.Fatalf("窓より広い箱: %q (幅 %d)", wide[0], w)
+	}
+
+	edge := OverlayRight(bg(), box, 20, false, -1)
+	if edge[0] != "0123456789abcd[箱２]" {
+		t.Fatalf("base=-1: 2 行目の箱だけが 0 行目に来るはず: %q", edge[0])
+	}
+	if out := OverlayRight(bg(), box, 20, false, 3); len(out) != 4 || out[3] != "tail          [box1]" {
+		t.Fatalf("下にはみ出す: %q", out)
+	}
+}
