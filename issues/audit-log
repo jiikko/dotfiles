@@ -97,3 +97,10 @@
 2026-10-01 20:17	performance	direct	issues/599-perf-restartable-process-history-grows-unbounded.md,issues/601-research-restartable-audit-2026-10-01.md
 2026-10-01 20:17	encapsulation	direct	issues/600-refactor-restartable-control-requests-channel-exposed.md,issues/601-research-restartable-audit-2026-10-01.md
 2026-10-01 20:17	general	direct	issues/599-perf-restartable-process-history-grows-unbounded.md,issues/601-research-restartable-audit-2026-10-01.md
+2026-10-01 23:25	leaky-abstraction	direct	issues/602-test-tuikit-declared-guards-not-enforced.md,issues/604-research-tuikit-audit-remaining-types-2026-10-01.md
+2026-10-01 23:25	false-green	direct	issues/602-test-tuikit-declared-guards-not-enforced.md,issues/604-research-tuikit-audit-remaining-types-2026-10-01.md
+2026-10-01 23:25	ux	direct	issues/604-research-tuikit-audit-remaining-types-2026-10-01.md
+2026-10-01 23:25	general	direct	issues/604-research-tuikit-audit-remaining-types-2026-10-01.md
+2026-10-01 23:25	dependency	direct	issues/603-chore-ansi-version-and-forbid-drift-across-modules.md,issues/604-research-tuikit-audit-remaining-types-2026-10-01.md
+2026-10-01 23:25	issues-done	direct	issues/604-research-tuikit-audit-remaining-types-2026-10-01.md
+2026-10-01 23:25	lint-from-done	direct	issues/603-chore-ansi-version-and-forbid-drift-across-modules.md,issues/604-research-tuikit-audit-remaining-types-2026-10-01.md
