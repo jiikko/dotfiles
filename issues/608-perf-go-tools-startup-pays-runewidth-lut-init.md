@@ -37,9 +37,9 @@ init の 2 位以下は glogx / pro-con の chroma (`styles` 約 3.5 ms・`lexer
 
 ## 受け入れ条件
 
-- [ ] 3 つの go.mod / go.sum を v0.0.30 にし、各 module の `make test` / `make lint` が通る
-- [ ] inittrace で runewidth の init が 1 ms 未満になる (before / after を下に記録)
-- [ ] 遅延構築が最初の描画へ移っただけでないかを測る (初回の `RuneWidth` の非 ASCII の問い合わせのコスト)
+- [x] 3 つの go.mod / go.sum を v0.0.30 にし、各 module の `make test` / `make lint` が通る
+- [x] inittrace で runewidth の init が 1 ms 未満になる (before / after を下に記録)
+- [x] 遅延構築が最初の描画へ移っただけでないかを測る (初回の `RuneWidth` の非 ASCII の問い合わせのコスト)
 
 ## 関連ファイル
 
@@ -47,3 +47,11 @@ init の 2 位以下は glogx / pro-con の chroma (`styles` 約 3.5 ms・`lexer
 - `_claude/hooks/ratelimit-warn.sh` (毎プロンプトの起動元)
 
 ## 進捗
+
+- 2026-10-02 「deps(go): go-runewidth を v0.0.30 へ上げ、起動ごとの LUT の init を消す (608)」
+  - `go get github.com/mattn/go-runewidth@v0.0.30 && go mod tidy` を glogx / pro-con / ratelimit で。go.sum の差分は runewidth の 2 行だけ (x/ansi 等は動かない)
+  - inittrace の runewidth の init (各 3 回): glogx 16 → 0.020〜0.053 ms / pro-con 15〜16 → 0.011〜0.035 ms / ratelimit 20 → 0.012〜0.049 ms
+  - 遅延構築: 使い捨てのプログラムで最初の `StringWidth("日本語のテキスト ✅")` を測ると v0.0.30 は 232〜248 µs (v0.0.27 は init 済みなので 9〜32 µs)。
+    init の 15〜20 ms が初回の描画へ移るのではなく、約 0.25 ms に縮む。2 回目以降の `RuneWidth` は両版とも数十 ns
+  - `make -C src/{glogx,pro-con,ratelimit} test` / `lint` すべて rc=0。`tests/scripts/test_tuikit_consumers_aligned.sh` rc=0 (x/ansi v0.11.7 / bubbletea v2.0.8 で揃ったまま)
+  - 残り: なし (chroma の init は上の方針どおり見送り)

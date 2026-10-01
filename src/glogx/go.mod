@@ -31,7 +31,7 @@ require (
 	github.com/jiikko/dotfiles/src/termsafe v0.0.0
 	github.com/jiikko/dotfiles/src/tuikit v0.0.0
 	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
-	github.com/mattn/go-runewidth v0.0.27 // indirect
+	github.com/mattn/go-runewidth v0.0.30 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sys v0.47.0 // indirect
