@@ -1,0 +1,17 @@
+# golangci-lint v2 config for restartable.
+# linter は既定 (errcheck / govet / ineffassign / staticcheck / unused) のまま。他の src/* が足している
+# 衛生系 (intrange / perfsprint 等) は、入れると既存のテストコードに指摘が出る (2026-10-01 に 5 件) ので、
+# 直すのと一緒に足す。
+version: "2"
+
+# 🚨 golangci-lint は既定で os.TempDir()/golangci-lint.lock に flock を取り、別インスタンスが
+# 走っていると 5 秒待って "parallel golangci-lint is running" で落ちる。root の Makefile (run_go_projects) は
+# 全プロジェクトの lint を並列に回すので、全プロジェクトでこれを true にする
+# (lock がキャッシュ保護ではない理由と実測は src/subproc/.golangci.yml。issue 258)
+run:
+  allow-parallel-runners: true
+
+# gofmt を CI ゲートにする (v2 では formatter は linters と別枠。ここに無いと run が整形差分を見ない)
+formatters:
+  enable:
+    - gofmt
