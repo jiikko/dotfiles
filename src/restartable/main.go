@@ -78,7 +78,9 @@ func controlCommand(args []string, command control.Command, defaultTimeout time.
 		if errors.Is(err, os.ErrNotExist) || strings.Contains(err.Error(), "no such file or directory") || strings.Contains(err.Error(), "connection refused") {
 			return 2
 		}
-		if errors.Is(err, context.DeadlineExceeded) {
+		// Call は接続に ctx と同じ期限の I/O deadline を置くので、時間切れは
+		// context の期限切れより先に I/O の期限切れ (os.ErrDeadlineExceeded) として返ることがある。
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) {
 			return 124
 		}
 		return 1
