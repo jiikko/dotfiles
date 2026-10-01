@@ -1,5 +1,7 @@
 # 581 (perf): PM・取り込みの係が 1 時間以上空いた後の再開で、会話全体 (7〜70 万トークン) を書き直す
 
+> 🚨 **担当中: dotfiles-58**（2026-10-01〜）
+
 起票日: 2026-09-29
 
 親: [415](415-design-claude-pm-worker-orchestration.md) / 出典: [431](pending/431-feat-pro-con-pg-session-settings.md) の「計測」(2026-09-29)
