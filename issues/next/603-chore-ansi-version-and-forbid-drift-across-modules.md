@@ -1,1 +1,0 @@
-../603-chore-ansi-version-and-forbid-drift-across-modules.md

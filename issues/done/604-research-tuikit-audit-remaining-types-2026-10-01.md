@@ -5,7 +5,7 @@
 ## 範囲とやり方
 
 - 対象: `src/tuikit` の Go 62 ファイル (production 31・test 31、9,127 行)。消費者の照合は tuikit を go.mod に持つ 5 module (glogx・pro-con・ratelimit・restartable・schedkeys)
-- 同じ日の 16:06 に 14 タイプを済ませている ([594](done/594-research-tuikit-audit-2026-10-01.md))。今回はその残りの 7 タイプ: leaky-abstraction / false-green / ux / general / dependency / issues-done / lint-from-done。594 の所見は再提出の対象外にした
+- 同じ日の 16:06 に 14 タイプを済ませている ([594](594-research-tuikit-audit-2026-10-01.md))。今回はその残りの 7 タイプ: leaky-abstraction / false-green / ux / general / dependency / issues-done / lint-from-done。594 の所見は再提出の対象外にした
 - 直接実行。読み取り専用の調査役 (sonnet) を 3 本、1 本ずつ直列に回した (leaky-abstraction + false-green / ux + general / dependency + issues-done + lint-from-done)。主要な主張は Claude がコードとコマンドで確かめた (下の各項に書いた)
 - 反証レビュー: 起票の前に read-only のサブエージェントで 1 回 (下の「反証レビュー」)
 
