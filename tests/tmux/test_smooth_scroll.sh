@@ -114,6 +114,10 @@ read_gen() {
   awk 'NR==1 {print ($1 ~ /^[0-9]+$/) ? $1 : 0; exit} END {if (NR==0) print 0}' "$f"
 }
 
+# 🚨 押下の間に「リピート判定 (150ms) を跨ぐ」ための sleep は置かない (issue 613)。直前の wait_settled が
+#    3 回の同値 (0.1s 刻み) を見るので、前回押下から 150ms は必ず過ぎている。アニメ中の再押下 (anim_until_ms の内側)
+#    なら即時ジャンプになるが、下の assert はどちらの経路でも同じ移動量を要求するので結果に効かない
+#    (固定 sleep にも状態ファイルの書き換えにも、効果が無いことを変異で確かめた)。経路そのものは検査していない
 # 指定 pane の gen が target 以上になるまで待つ (= 送った押下がすべて arbiter を通過した)
 wait_gen() {
   local pane=$1 target=$2 cur=0
@@ -158,7 +162,6 @@ pos1=$(wait_settled 0)
 
 # 3. 3 連打 (間隔ほぼ 0ms): 1 打目のアニメは打ち切られうる (部分 0〜half)、2-3 打目は素通しで
 #    half ずつ。合計は [2*half, 3*half]。重畳 (押下数を超える加算) が無いことが本質の assert
-sleep 0.3 # 直前の押下からリピート判定 (150ms) を跨ぐ
 gen1=$(read_gen "$pane_id")
 "${TMUX_CMD[@]}" send-keys -t "$pane_id" C-u
 "${TMUX_CMD[@]}" send-keys -t "$pane_id" C-u
@@ -172,12 +175,10 @@ fi
 
 # 4. conf 再 source の冪等性 (init.sh は re-bind 済みキーも同じ scroll.sh 引数へマッチさせる)
 "${TMUX_CMD[@]}" source-file "$CONF_FILE" >/dev/null 2>&1 || fail "conf re-source failed"
-sleep 0.5
 cu_count=$("${TMUX_CMD[@]}" list-keys -T copy-mode-vi | grep -c "C-u" || true)
 [[ "$cu_count" -eq 1 ]] || fail "after re-source: C-u bound $cu_count times (expected 1)"
 grep -q "scroll.sh" <<< "$("${TMUX_CMD[@]}" list-keys -T copy-mode-vi | grep "C-u")" \
   || fail "after re-source: C-u no longer bound to scroll.sh"
-sleep 0.3
 gen2=$(read_gen "$pane_id")
 "${TMUX_CMD[@]}" send-keys -t "$pane_id" C-u
 wait_gen "$pane_id" $((gen2 + 1))
@@ -200,7 +201,6 @@ pane2_before=$("${TMUX_CMD[@]}" display-message -p -t "$pane2_id" '#{scroll_posi
 # split-window は copy-mode 中の既存 pane の scroll_position を 0 にリセットする
 # (tmux の resize 仕様、実測)。押下前の基準値はここで取り直す
 pane1_base=$("${TMUX_CMD[@]}" display-message -p -t "$pane_id" '#{scroll_position}')
-sleep 0.3 # リピート判定 (150ms) を跨ぐ
 gen3=$(read_gen "$pane_id")
 "${TMUX_CMD[@]}" send-keys -t "$pane_id" C-u
 "${TMUX_CMD[@]}" select-pane -t "$pane2_id" # scroll.sh 起動より先に切替を仕掛ける
