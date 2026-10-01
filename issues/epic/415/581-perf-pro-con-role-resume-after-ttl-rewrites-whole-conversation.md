@@ -64,11 +64,29 @@ claude 2.1.282 / 2.1.283、すべて claude-opus-5-5。数え方は 431 の「�
       最後の応答は transcript の assistant 行の最後の時刻 `Transcript.LastReply`。読めない・応答が無い・記録の cwd が役の worktree でないときは今までどおり再開)
 - [x] `-w` 無しの `--bg` が役の worktree で起動して idle になることを実測 (claude 2.1.286。`.claude/worktrees/probe-581` で haiku を 1 ターン、cwd・名前が一致。止めて worktree も消した)
 - [x] 変異 10 本 (mutate-verify-list) がすべて狙ったテストだけ red。境界の値をテストが `roleCacheTTL` から作っていて TTL の変更に緑のままだったので、リテラル (55 分ちょうど / 54 分 59 秒) に直した
-- [ ] 敵対的レビュー (状態機械・並行 / 素通り・回帰) と指摘の対応
-- [ ] pm-guide.md・integrator-guide.md の冒頭「同じ session を再開して知らせる」と README の `card guide` の行を、起動し直しを含む形に直す
-- [ ] make test
+- [x] 敵対的レビュー 4 周 (opus。1 体ずつ直列)。採った指摘と対応 (commit の subject は「581 の … 敵対的レビュー」):
+  - 1 周目 (状態機械・並行): P2 起動し直しが拒否されると再開に戻らず、止めた役が launchRejectLimit まで起こせない → 拒否したら再開に戻す /
+    P3 注記が取り込みの係の途中の物 (`<repo>/../merge-*`) と違う場所を指す → 指示書の扱いを指す文に。P3 会話を捨てる → 手 1 の代償として受容
+  - 2 周目 (素通り・回帰): P2 注記が pm-guide に無い節を指す → 役に依らない文に / P2 取り込みの係の起動し直しを守るテストが無い → 追加 /
+    P3 起動し直しの拒否を再開の拒否に数えて上限が 1 回減る → 別に数える
+  - 3 周目 (2 周目までの修正): P2 止める段の失敗 (claude stop の rc≠0) でも起動し直しの拒否の印が立つ / 外した `d.exists` が実は効いていた → 止める段に errStopFailed を付けて分け、`d.exists` を戻す /
+    P2 印がプロセスの間残る → 再開が成功したら外す / P3 拒否で起動の印を外して、実は立っていた session を取り込めない → 印を残す
+  - 4 周目 (3 周目の修正): P3 errStopFailed の配線を守るテストが無い (fake が自分で付けていた) → 本物の ExecLauncher.Restart で固定。ほかは壊せなかった。
+    この周の修正はテストの追加だけ (判定を足していない) で、変異で確かめたので打ち切った
+- [x] 変異: 最初の 10 本 + 指摘の対応ごとに 1〜3 本 (計 16 本)。すべて狙ったテストだけが red
+- [x] pm-guide.md・integrator-guide.md の冒頭と README の `card guide` の行に、55 分以上空いたら同じ worktree で起動し直す (会話は引き継がない) を書いた
+- [x] make test rc=0 (origin/master に rebase した後。pro-con の 21 パッケージ ok)
 
 ## 残タスク
 
 - 効果の実測は未実施 (dogfooding で 60 分以上空けた再開が起きたとき、transcript の `cache_creation_input_tokens` で起動し直しの書き込みが約 2.2 万に収まるかを見る)
 - PM が会話の中だけで持っていた判断を失うかは未確認 (起動し直した後に、扱い中のカードを取り違えた・やり直した事例が出たら見る)
+
+## 記録した未確認リスク (直していない)
+
+- LastReply は `"model":"<synthetic>"` の assistant 行 (API を呼ばずに書かれる "No response requested." / 上限のエラー) でも進む。冷えた session の再開の直後に
+  上限のエラーで返ると、続く 55 分は冷えているのに再開を選ぶ。581 より前の挙動 (常に再開) に戻るだけで悪化ではない (2 周目の実測)
+- 起点は応答を書き終えた時刻で、cache が書かれた request の開始ではない。長い応答 (数分の thinking) の分だけ 55 分の余裕が削られる (未実測)
+- 再開の直後、記録の行がまだ前の session id のまま (registerRole の前・pid がまだ 0) で restartWait を越えると、前の session の古い応答で判定して
+  stop 無しで起動し直しうる (同じ worktree に 2 本)。この窓は 581 より前の再開にもある (再開を 2 度打つ)。発生は未確認
+- 「55 分」を指示書・README に直書きしていて、`roleCacheTTL` と突き合わせる検査は無い (変えるときは grep で `55 分` を直す)
