@@ -83,9 +83,6 @@ func TestURLPickerCaretFollowsLineEdit(t *testing.T) {
 		if q := m.issuesOv.urlPick.query(); q != "gexm" {
 			t.Fatalf("frame=%v: 先頭に入らない: query=%q (期待 gexm)", frame, q)
 		}
-		if m.issuesOv.urlPick.cursor != 0 {
-			t.Errorf("frame=%v: 打った後に選択が先頭へ戻らない: cursor=%d", frame, m.issuesOv.urlPick.cursor)
-		}
 		if got := caretPrefix(t, m); !strings.HasSuffix(got, urlPickerPrompt+"g") {
 			t.Errorf("frame=%v: カーソルが g の直後に無い: カーソルの左 = %q", frame, got)
 		}
@@ -187,5 +184,27 @@ func TestRepeatGuardDoesNotSwallowTypedLetters(t *testing.T) {
 	}
 	if q := m.issuesOv.urlPick.query(); q != "ssiiaa" {
 		t.Errorf("連打の 2 字目が飲まれた: query=%q (期待 ssiiaa)", q)
+	}
+}
+
+// 打った直後は選択を先頭へ戻す (fzf と同じ)。🚨 打った字に両方の URL が一致する入力にする: 一致が 1 件に減ると
+// refilter が選択を範囲へ寄せて 0 になり、戻す処理を消しても緑のまま通る (変異で実測)。
+func TestURLPickerTypingResetsSelection(t *testing.T) {
+	m := caretTestModel(t, false)
+	m.issuesOv.urlPick.open([]string{"https://a.example/1", "https://b.example/2"})
+	typeKeys(m, "down")
+	if m.issuesOv.urlPick.cursor != 1 {
+		t.Fatalf("前提が崩れた: 2 本目を選べない: cursor=%d", m.issuesOv.urlPick.cursor)
+	}
+	typeKeys(m, "x") // どちらの URL にも x がある
+	if n := len(m.issuesOv.urlPick.match); n != 2 {
+		t.Fatalf("前提が崩れた: 絞り込みで一致が %d 件 (2 件のままでないと戻す処理を検査できない)", n)
+	}
+	if m.issuesOv.urlPick.cursor != 0 {
+		t.Errorf("打った後に選択が先頭へ戻らない: cursor=%d", m.issuesOv.urlPick.cursor)
+	}
+	typeKeys(m, "down", "left") // カーソルを動かすだけのキーでは選択を動かさない
+	if m.issuesOv.urlPick.cursor != 1 {
+		t.Errorf("検索語のカーソルを動かしただけで選択が動いた: cursor=%d", m.issuesOv.urlPick.cursor)
 	}
 }
