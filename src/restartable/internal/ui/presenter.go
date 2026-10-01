@@ -66,7 +66,7 @@ func New(input io.Reader, output io.Writer, stderr ...io.Writer) *Presenter {
 	}
 	p.program = tea.NewProgram(model,
 		tea.WithInput(input),
-		tea.WithOutput(&discardWriteErrors{writer: output, stderr: errorOutput}),
+		tea.WithOutput(newDiscardWriteErrors(output, errorOutput)),
 		tea.WithWindowSize(defaultWidth, defaultHeight),
 		tea.WithoutSignalHandler(),
 	)
@@ -74,47 +74,35 @@ func New(input io.Reader, output io.Writer, stderr ...io.Writer) *Presenter {
 	return p
 }
 
+// discardWriteErrors is Bubble Tea's output: the runner's fail-once write path
+// plus the term.File methods Bubble Tea needs to inspect the terminal.
 type discardWriteErrors struct {
-	writer io.Writer
-	stderr io.Writer
-	mu     sync.Mutex
-	failed bool
+	*runner.FailOnceWriter
 }
 
 var _ term.File = (*discardWriteErrors)(nil)
 
-func (w *discardWriteErrors) Write(data []byte) (int, error) {
-	w.mu.Lock()
-	if w.failed {
-		w.mu.Unlock()
-		return len(data), nil
-	}
-	n, err := w.writer.Write(data)
-	if err == nil && n == len(data) {
-		w.mu.Unlock()
-		return len(data), nil
-	}
-	w.failed = true
-	w.mu.Unlock()
-	stderr := w.stderr
+func newDiscardWriteErrors(output, stderr io.Writer) *discardWriteErrors {
 	if stderr == nil {
 		stderr = os.Stderr
 	}
-	_, _ = fmt.Fprintln(stderr, runner.OutputFailureMessage)
-	return len(data), nil
+	return &discardWriteErrors{runner.NewFailOnceWriter(output, func() {
+		_, _ = fmt.Fprintln(stderr, runner.OutputFailureMessage)
+	})}
 }
 
 func (w *discardWriteErrors) Read(data []byte) (int, error) {
-	if reader, ok := w.writer.(io.Reader); ok {
+	if reader, ok := w.Writer().(io.Reader); ok {
 		return reader.Read(data)
 	}
 	return 0, io.EOF
 }
 
+// Close does not close the wrapped writer: it is the process's stdout.
 func (w *discardWriteErrors) Close() error { return nil }
 
 func (w *discardWriteErrors) Fd() uintptr {
-	if file, ok := w.writer.(interface{ Fd() uintptr }); ok {
+	if file, ok := w.Writer().(interface{ Fd() uintptr }); ok {
 		return file.Fd()
 	}
 	return ^uintptr(0)

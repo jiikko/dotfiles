@@ -20,13 +20,15 @@ const OutputFailureMessage = "出力先に書けなくなったので以後の�
 // OutputBuffer keeps the first line and the newest tail while bounding memory.
 // The omission marker is inserted between them when Drain is called.
 type OutputBuffer struct {
-	mu        sync.Mutex
-	maxLines  int
-	maxBytes  int
-	lines     []string
-	bytes     int
-	dropped   uint64
-	firstSeen bool
+	mu       sync.Mutex
+	maxLines int
+	maxBytes int
+	first    string
+	hasFirst bool
+	// tail は先頭行より後の新しい行。古い行は先頭を切り落として捨てる (詰め直すと上限の行数に比例する)。
+	tail    []string
+	bytes   int
+	dropped uint64
 }
 
 func NewOutputBuffer(maxLines, maxBytes int) *OutputBuffer {
@@ -43,22 +45,17 @@ func (b *OutputBuffer) AddLine(line string) {
 	line = strings.TrimSuffix(line, "\n")
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if !b.firstSeen {
-		b.lines = append(b.lines, line)
-		b.bytes += len(line)
-		b.firstSeen = true
+	b.bytes += len(line)
+	if !b.hasFirst {
+		b.first, b.hasFirst = line, true
 	} else {
-		b.lines = append(b.lines, line)
-		b.bytes += len(line)
+		b.tail = append(b.tail, line)
 	}
-	for len(b.lines) > b.maxLines || b.bytes > b.maxBytes {
-		if len(b.lines) <= 1 { // the initial line is retained, even if it is long
-			break
-		}
-		// Preserve the first line and discard the oldest line after it.
-		b.bytes -= len(b.lines[1])
-		copy(b.lines[1:], b.lines[2:])
-		b.lines = b.lines[:len(b.lines)-1]
+	// The first line is retained even if it alone exceeds the byte bound.
+	for len(b.tail) > 0 && (1+len(b.tail) > b.maxLines || b.bytes > b.maxBytes) {
+		b.bytes -= len(b.tail[0])
+		b.tail[0] = "" // release the string; the backing array keeps the slot until append reallocates
+		b.tail = b.tail[1:]
 		b.dropped++
 	}
 }
@@ -66,20 +63,19 @@ func (b *OutputBuffer) AddLine(line string) {
 func (b *OutputBuffer) Drain() []string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	lines := make([]string, 0, len(b.lines)+1)
-	if len(b.lines) == 0 {
+	lines := make([]string, 0, len(b.tail)+2)
+	if !b.hasFirst {
 		return lines
 	}
-	if b.dropped > 0 && len(b.lines) > 1 {
-		lines = append(lines, b.lines[0], omissionLine(b.dropped))
-		lines = append(lines, b.lines[1:]...)
-	} else {
-		lines = append(lines, b.lines...)
+	lines = append(lines, b.first)
+	if b.dropped > 0 && len(b.tail) > 0 {
+		lines = append(lines, omissionLine(b.dropped))
 	}
-	b.lines = nil
+	lines = append(lines, b.tail...)
+	b.first, b.hasFirst = "", false
+	b.tail = nil
 	b.bytes = 0
 	b.dropped = 0
-	b.firstSeen = false
 	return lines
 }
 
@@ -101,13 +97,50 @@ func itoa(n uint64) string {
 	return string(buf[i:])
 }
 
+// FailOnceWriter writes to the wrapped writer until the first failed or short
+// write, then calls onFailure once and discards every later write. Write always
+// reports success so a copier (io.Copy, Bubble Tea's renderer) keeps draining
+// its source instead of blocking the child on a full pipe.
+type FailOnceWriter struct {
+	writer    io.Writer
+	onFailure func()
+	mu        sync.Mutex
+	failed    bool
+}
+
+func NewFailOnceWriter(w io.Writer, onFailure func()) *FailOnceWriter {
+	return &FailOnceWriter{writer: w, onFailure: onFailure}
+}
+
+func (w *FailOnceWriter) Write(data []byte) (int, error) {
+	w.mu.Lock()
+	if w.failed {
+		w.mu.Unlock()
+		return len(data), nil
+	}
+	n, err := w.writer.Write(data)
+	if err == nil && n == len(data) {
+		w.mu.Unlock()
+		return len(data), nil
+	}
+	w.failed = true
+	w.mu.Unlock()
+	if w.onFailure != nil {
+		w.onFailure()
+	}
+	return len(data), nil
+}
+
+// Writer returns the wrapped writer (for capabilities such as Fd).
+func (w *FailOnceWriter) Writer() io.Writer { return w.writer }
+
 type logSink struct {
-	writer          io.Writer
-	headless        bool
+	output   *FailOnceWriter
+	headless bool
+	// terminalOutput は stdout が端末か。UI が無くても端末へ出すなら無害化する (CopyFrom)。
+	terminalOutput  bool
 	buffer          *OutputBuffer
 	printLine       func(string)
-	mu              sync.Mutex
-	writerFailed    bool
 	onOutputFailure func()
 }
 
@@ -116,15 +149,28 @@ func newLogSink(w io.Writer, headless bool, printLines ...func(string)) *logSink
 	if len(printLines) > 0 {
 		printLine = printLines[0]
 	}
-	return &logSink{writer: w, headless: headless, buffer: NewOutputBuffer(defaultOutputLines, defaultOutputBytes), printLine: printLine}
+	s := &logSink{headless: headless, buffer: NewOutputBuffer(defaultOutputLines, defaultOutputBytes), printLine: printLine}
+	s.output = NewFailOnceWriter(w, func() {
+		if s.onOutputFailure != nil {
+			s.onOutputFailure()
+		}
+	})
+	return s
 }
 
-// CopyFrom preserves bytes and ordering in headless mode. TTY logs are
-// normalized and sanitized before they reach the terminal.
+// CopyFrom is the one place that decides whether child output is sanitized.
+// Only output bound for a non-terminal (pipe / file) without the UI is copied
+// byte for byte. Anything that reaches a terminal is split into lines and
+// sanitized the same way: buffered for the TTY UI, written at once otherwise.
 func (s *logSink) CopyFrom(r io.Reader, headless bool) {
-	if headless || s.headless {
-		_, _ = io.Copy(synchronizedWriter{s: s}, r)
+	headless = headless || s.headless
+	if headless && !s.terminalOutput {
+		_, _ = io.Copy(s.output, r)
 		return
+	}
+	emit := s.addSafeLine
+	if headless {
+		emit = func(line string) { s.writeOutput([]byte(safeLine(line) + "\n")) }
 	}
 	var current []byte
 	previousWasCR := false
@@ -137,7 +183,7 @@ func (s *logSink) CopyFrom(r io.Reader, headless bool) {
 				// Leading or repeated CRs rewrite an empty frame and must not
 				// introduce blank lines; CRLF still collapses to one boundary.
 				if len(current) > 0 {
-					s.addSafeLine(string(current))
+					emit(string(current))
 					current = current[:0]
 				}
 				previousWasCR = true
@@ -145,7 +191,7 @@ func (s *logSink) CopyFrom(r io.Reader, headless bool) {
 			}
 			if c == '\n' {
 				if !previousWasCR {
-					s.addSafeLine(string(current))
+					emit(string(current))
 					current = current[:0]
 				}
 				previousWasCR = false
@@ -154,52 +200,32 @@ func (s *logSink) CopyFrom(r io.Reader, headless bool) {
 			previousWasCR = false
 			current = append(current, c)
 			if len(current) >= maxOutputLineBytes {
-				s.addSafeLine(string(current))
+				emit(string(current))
 				current = current[:0]
 			}
 		}
 		if err != nil {
 			if len(current) > 0 {
-				s.addSafeLine(string(current))
+				emit(string(current))
 			}
 			return
 		}
 	}
 }
 
-func (s *logSink) addSafeLine(line string) {
+// safeLine strips terminal control sequences except SGR, and resets SGR around
+// a line that sets it so a child's colour cannot leak into later lines.
+func safeLine(line string) string {
 	line = termsafe.DetailLine(line)
 	if strings.Contains(line, "\x1b[") {
 		line = "\x1b[0m" + line + "\x1b[0m"
 	}
-	s.buffer.AddLine(line)
+	return line
 }
 
-type synchronizedWriter struct{ s *logSink }
+func (s *logSink) addSafeLine(line string) { s.buffer.AddLine(safeLine(line)) }
 
-func (w synchronizedWriter) Write(data []byte) (int, error) {
-	w.s.writeOutput(data)
-	return len(data), nil
-}
-
-func (s *logSink) writeOutput(data []byte) {
-	s.mu.Lock()
-	if s.writerFailed {
-		s.mu.Unlock()
-		return
-	}
-	n, err := s.writer.Write(data)
-	if err == nil && n == len(data) {
-		s.mu.Unlock()
-		return
-	}
-	s.writerFailed = true
-	onFailure := s.onOutputFailure
-	s.mu.Unlock()
-	if onFailure != nil {
-		onFailure()
-	}
-}
+func (s *logSink) writeOutput(data []byte) { _, _ = s.output.Write(data) }
 
 func (s *logSink) Flush() {
 	lines := s.buffer.Drain()

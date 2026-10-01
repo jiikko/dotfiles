@@ -132,7 +132,8 @@ func runCommand(args []string) int {
 		}
 	}
 	stdinIsTerminal := term.IsTerminal(os.Stdin.Fd())
-	headless := !stdinIsTerminal || !term.IsTerminal(os.Stdout.Fd())
+	stdoutIsTerminal := term.IsTerminal(os.Stdout.Fd())
+	headless := !stdinIsTerminal || !stdoutIsTerminal
 	var presenter runner.Presenter
 	if !headless {
 		presenter = ui.New(os.Stdin, os.Stdout)
@@ -142,7 +143,7 @@ func runCommand(args []string) int {
 		StopCommandTimeout: *stopTimeout, TermGrace: *termGrace,
 		ReadyCommand: *ready, ReadyTimeout: *readyTimeout,
 		IDEnv: *idEnv, ControlPath: resolved, Stdin: os.Stdin,
-		Stdout: os.Stdout, Stderr: os.Stderr, Headless: headless, StdinIsTerminal: stdinIsTerminal, Presenter: presenter,
+		Stdout: os.Stdout, Stderr: os.Stderr, Headless: headless, StdinIsTerminal: stdinIsTerminal, StdoutIsTerminal: stdoutIsTerminal, Presenter: presenter,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

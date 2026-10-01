@@ -36,7 +36,9 @@ type Config struct {
 	Stderr             io.Writer
 	Headless           bool
 	StdinIsTerminal    bool
-	Presenter          Presenter
+	// StdoutIsTerminal は UI の有無と別に、子の出力を無害化するかを決める (logSink.CopyFrom)。
+	StdoutIsTerminal bool
+	Presenter        Presenter
 }
 
 type actorEventKind string
@@ -225,6 +227,7 @@ func Run(cfg Config) (int, error) {
 		printLine = printer.Println
 	}
 	sink := newLogSink(cfg.Stdout, cfg.Headless, printLine)
+	sink.terminalOutput = cfg.StdoutIsTerminal
 	sink.onOutputFailure = func() { reportOutputFailure(cfg.Stderr) }
 	return (&actor{cfg: cfg, model: InitialModel(), id: id, server: server,
 		sink: sink, presenter: presenter,
@@ -617,6 +620,8 @@ func (a *actor) startBuild() error {
 
 func (a *actor) startRun() error {
 	a.transition(Event{Kind: LaunchStartedEvent})
+	// startProcess は exec の成否まで待つ (作り直した実行ファイルは macOS の初回検査で待つことがある)。その間「起動」の段を見せる。
+	a.presenter.Render(a.model)
 	proc, err := startProcess(a.cfg.RunArgs, false, a.env(), a.cfg.Stdin, a.sink, a.cfg.Headless, a.cfg.StdinIsTerminal)
 	if err != nil {
 		a.report("run failed: " + err.Error())

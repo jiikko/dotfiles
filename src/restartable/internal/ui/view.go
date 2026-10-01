@@ -99,7 +99,11 @@ func ViewLinesAt(state runner.Model, width, height, spinnerFrame int) []string {
 	}
 	lines := make([]string, 0, 8)
 	if prompt := confirmPrompt(state.Confirm); prompt != "" {
-		lines = append(lines, confirm.Dialog("", []string{prompt}, confirm.HintYesNo, width, false)...)
+		if width < layout.PanelMinWidth {
+			lines = append(lines, compactConfirmLine(state.Confirm, width))
+		} else {
+			lines = append(lines, confirm.Dialog("", []string{prompt}, confirm.HintYesNo, width, false)...)
+		}
 	}
 	message := state.Message
 	switch state.Transition.Result {
@@ -117,22 +121,38 @@ func ViewLinesAt(state runner.Model, width, height, spinnerFrame int) []string {
 
 func compactTransitionLine(state runner.Model, width int) string {
 	// 確認ダイアログが開いているなら、段より確認を優先して出す (板が入らない幅でも y / n を押せると分かるように)。
-	switch state.Confirm {
-	case runner.ConfirmQuit:
-		return termwidth.Truncate("quit? y/n", width, "")
-	case runner.ConfirmRestart:
-		return termwidth.Truncate("rst? y/n", width, "")
+	if state.Confirm != runner.ConfirmNone {
+		return compactConfirmLine(state.Confirm, width)
 	}
-	stage := "launch"
 	switch state.Transition.Stage {
 	case runner.TransitionStop:
-		stage = "stop"
+		return fitFirst(width, "終了", "stop")
 	case runner.TransitionBuild:
-		stage = "build"
+		return fitFirst(width, "ビルド", "build")
 	case runner.TransitionReady:
-		stage = "ready"
+		return fitFirst(width, "確認", "ready")
+	default:
+		return fitFirst(width, "起動", "launch")
 	}
-	return termwidth.Truncate(stage, width, "")
+}
+
+// compactConfirmLine は板の入らない幅 (layout.PanelMinWidth 未満) の確認の 1 行。板の間も板の外も同じ文言にする。
+func compactConfirmLine(confirmState runner.Confirm, width int) string {
+	if confirmState == runner.ConfirmRestart {
+		return fitFirst(width, "再起動y/n", "y/n")
+	}
+	return fitFirst(width, "終了y/n", "y/n")
+}
+
+// fitFirst は width に収まる最初の候補を返す。どれも入らなければ最後の候補を切り詰める
+// (全角の候補は 1 桁に入らないので、最後は ASCII にしておく)。
+func fitFirst(width int, candidates ...string) string {
+	for _, candidate := range candidates {
+		if termwidth.Of(candidate) <= width {
+			return candidate
+		}
+	}
+	return termwidth.Truncate(candidates[len(candidates)-1], width, "")
 }
 
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}

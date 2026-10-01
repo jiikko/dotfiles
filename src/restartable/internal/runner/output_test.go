@@ -115,6 +115,39 @@ func TestTTYOutputPreservesEmptyLines(t *testing.T) {
 	}
 }
 
+func TestOutputBufferByteBoundKeepsLongFirstLineAndIsReusableAfterDrain(t *testing.T) {
+	buffer := NewOutputBuffer(100, 10)
+	for _, line := range []string{"first-is-long", "aaaa", "bbbb", "cc"} {
+		buffer.AddLine(line)
+	}
+	// 先頭行だけで 13 byte (上限 10) でも先頭行は残し、後ろの行はすべて落とす。最後の行も上限を超えるので落ちる。
+	if got, want := buffer.Drain(), []string{"first-is-long"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Drain() with long first line = %q, want %q", got, want)
+	}
+	for _, line := range []string{"x", "1234", "5678", "90"} {
+		buffer.AddLine(line)
+	}
+	// 1+4+4+2 = 11 > 10 なので "1234" を落とす。Drain の後は先頭行と落とした数を新しく数え直す。
+	if got, want := buffer.Drain(), []string{"x", omissionLine(1), "5678", "90"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Drain() after reuse = %q, want %q", got, want)
+	}
+	if got := buffer.Drain(); len(got) != 0 {
+		t.Fatalf("Drain() of an empty buffer = %q, want none", got)
+	}
+}
+
+// 上限に達した後の 1 行あたりの費用 (落とす行ごとに残りを詰め直すと、上限の行数に比例する)。
+func BenchmarkOutputBufferAddLineAtCapacity(b *testing.B) {
+	buffer := NewOutputBuffer(defaultOutputLines, defaultOutputBytes)
+	for range defaultOutputLines {
+		buffer.AddLine("warm-up line")
+	}
+	b.ResetTimer()
+	for range b.N {
+		buffer.AddLine("a log line from a burst")
+	}
+}
+
 func TestTTYOutputIgnoresCarriageReturnWithoutCurrentText(t *testing.T) {
 	for _, test := range []struct {
 		input string

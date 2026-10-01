@@ -148,14 +148,16 @@ func TestTransitionViewKeepsPanelBelowLogAreaAtHeight24And40(t *testing.T) {
 }
 
 func TestTransitionPanelFitsOrFallsBackAtWidthsOneThroughNine(t *testing.T) {
+	// 日本語の段名が入る幅ではそれを、入らない幅 (全角 1 文字も入らない 1 桁など) では ASCII を切り詰めて出す。
 	stages := []struct {
 		stage runner.TransitionStage
 		label string
+		ascii string
 	}{
-		{stage: runner.TransitionStop, label: "stop"},
-		{stage: runner.TransitionBuild, label: "build"},
-		{stage: runner.TransitionLaunch, label: "launch"},
-		{stage: runner.TransitionReady, label: "ready"},
+		{stage: runner.TransitionStop, label: "終了", ascii: "stop"},
+		{stage: runner.TransitionBuild, label: "ビルド", ascii: "build"},
+		{stage: runner.TransitionLaunch, label: "起動", ascii: "launch"},
+		{stage: runner.TransitionReady, label: "確認", ascii: "ready"},
 	}
 	for width := 1; width <= 9; width++ {
 		for _, stage := range stages {
@@ -170,8 +172,8 @@ func TestTransitionPanelFitsOrFallsBackAtWidthsOneThroughNine(t *testing.T) {
 				t.Fatalf("width %d/stage %s compact row wraps at %d cells: %q", width, stage.stage, got, lines[0])
 			}
 			want := stage.label
-			if len(want) > width {
-				want = want[:width]
+			if termwidth.Of(want) > width {
+				want = stage.ascii[:min(width, len(stage.ascii))]
 			}
 			if lines[0] != want {
 				t.Fatalf("width %d/stage %s row = %q, want stage label %q", width, stage.stage, lines[0], want)
@@ -397,7 +399,7 @@ func TestCtrlCKeyUsesForceStopModelPath(t *testing.T) {
 func TestTTYOutputWriterReportsBrokenPipeOnceAndStopsWriting(t *testing.T) {
 	underlying := &failingUIWriter{}
 	var stderr bytes.Buffer
-	writer := &discardWriteErrors{writer: underlying, stderr: &stderr}
+	writer := newDiscardWriteErrors(underlying, &stderr)
 	data := []byte("terminal output")
 	for range 3 {
 		n, err := writer.Write(data)
@@ -565,12 +567,40 @@ func TestCompactTransitionLineShowsConfirmationPrompt(t *testing.T) {
 	for _, tc := range []struct {
 		confirm runner.Confirm
 		want    string
-	}{{runner.ConfirmQuit, "quit? y/n"}, {runner.ConfirmRestart, "rst? y/n"}} {
+	}{{runner.ConfirmQuit, "終了y/n"}, {runner.ConfirmRestart, "再起動y/n"}} {
 		state := runner.Model{State: runner.Building, Confirm: tc.confirm,
 			Transition: runner.Transition{Active: true, Kind: runner.TransitionStartup, Stage: runner.TransitionBuild}}
 		lines := ViewLinesAt(state, 9, 24, 0)
 		if len(lines) != 1 || lines[0] != tc.want {
 			t.Fatalf("confirm %q at width 9: lines = %q, want [%q]", tc.confirm, lines, tc.want)
 		}
+	}
+}
+
+// 板を閉じた後の確認ダイアログも、板の入らない幅では 1 行にする (confirm.Dialog は最小 10 桁ではみ出す)。
+func TestConfirmOutsideTransitionFitsAtWidthsOneThroughNine(t *testing.T) {
+	want := map[runner.Confirm]map[int]string{
+		runner.ConfirmQuit:    {1: "y", 3: "y/n", 6: "y/n", 7: "終了y/n", 9: "終了y/n"},
+		runner.ConfirmRestart: {1: "y", 3: "y/n", 8: "y/n", 9: "再起動y/n"},
+	}
+	for confirmState, rows := range want {
+		for width := 1; width <= 9; width++ {
+			state := runner.Model{State: runner.Running, PID: 7, Confirm: confirmState}
+			lines := ViewLinesAt(state, width, 24, 0)
+			for _, line := range lines {
+				if got := termwidth.Of(line); got > width {
+					t.Fatalf("confirm %q at width %d: row %q is %d cells wide; lines = %q", confirmState, width, line, got, lines)
+				}
+			}
+			if len(lines) != 2 || lines[1] != StatusLine(state, width) {
+				t.Fatalf("confirm %q at width %d: lines = %q, want the confirm row and the status row", confirmState, width, lines)
+			}
+			if expected, ok := rows[width]; ok && lines[0] != expected {
+				t.Fatalf("confirm %q at width %d: confirm row = %q, want %q", confirmState, width, lines[0], expected)
+			}
+		}
+	}
+	if lines := ViewLinesAt(runner.Model{State: runner.Running, Confirm: runner.ConfirmQuit}, 10, 24, 0); len(lines) < 3 || !strings.Contains(lines[0], "┌") {
+		t.Fatalf("width 10 should keep the confirm dialog: %q", lines)
 	}
 }
