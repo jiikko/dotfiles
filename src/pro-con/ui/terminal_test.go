@@ -265,7 +265,7 @@ func TestStopWatcherKeepsContinueAfterTTINFlood(t *testing.T) {
 		time.Sleep(5 * time.Millisecond) // sleep-ok: window: SIGTTIN を間隔をあけて溜める入力
 	}
 	_ = syscall.Kill(os.Getpid(), syscall.SIGCONT)
-	// sleep-ok: window: SIGCONT がシグナルのチャンネルへ届くのを外から観測する口が無いので、届くだけの時間を置いてから戻す
+	// sleep-ok: realtime: SIGCONT がシグナルのチャンネルへ届くのを外から観測する口が無く、届くだけの時間を置いてから戻す (負荷で届かない日は順序の検査が弱まる)
 	time.Sleep(50 * time.Millisecond) // SIGCONT がチャンネルへ届いてから、見張りを止まる処理から戻す
 	close(release)
 	select {

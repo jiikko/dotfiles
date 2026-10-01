@@ -41,7 +41,7 @@ expect_red   background  'sleep 30 &'   # sleep-ok: other: 検査の fixture
 printf 'Test 2: 印があれば通す\n'
 expect_green sameline    'sleep 30 &   # sleep-ok: dummy: kill される前提'   # sleep-ok: other: 検査の fixture
 expect_green prevline    '# sleep-ok: negative: 起きないことの確認
-sleep 0.3'
+sleep 0.3'   # sleep-ok: other: 検査の fixture
 
 printf 'Test 3: 印の形が違えば通さない\n'
 expect_red   badkind     'sleep 1   # sleep-ok: wait: 語彙に無い分類'   # sleep-ok: other: 検査の fixture
@@ -49,6 +49,11 @@ expect_red   noreason    'sleep 1   # sleep-ok: dummy:'   # sleep-ok: other: 検
 expect_red   prev2lines  '# sleep-ok: negative: 2 行上の印は効かない
 echo x
 sleep 0.3'   # sleep-ok: other: 検査の fixture
+
+printf 'Test 3b: 印のある sleep の行は次の行を許さない (直前の行の印はコメントだけの行に限る)\n'   # sleep-ok: other: 見出しの文字列
+expect_red   nextline    'sleep 0.1  # sleep-ok: tick: 刻み
+sleep 5'   # sleep-ok: other: 検査の fixture
+expect_green realtime    'sleep 1   # sleep-ok: realtime: 本番の猶予を実時間で過ぎさせる'   # sleep-ok: other: 検査の fixture
 
 printf 'Test 4: heredoc の本文\n'
 # sleep-ok: other: 検査の fixture (本文に sleep を含む heredoc を書き出す)
@@ -64,6 +69,22 @@ expect_red   after_heredoc "cat > stub <<'EOS'   # sleep-ok: stub: 本文だけ
 x
 EOS
 sleep 1"   # sleep-ok: other: 検査の fixture
+
+printf 'Test 4b: heredoc でないものを heredoc と読まない (読むと印 1 つで後ろが素通りする)\n'
+expect_red   arith       'sleep 0.05  # sleep-ok: tick: 刻み
+n=$((n << shift))
+sleep 10'   # sleep-ok: other: 検査の fixture
+expect_red   herestring  'grep -q x <<< foo  # sleep-ok: other: x
+sleep 30'   # sleep-ok: other: 検査の fixture
+expect_red   quotedheredoc 'echo "a <<EOF b"   # sleep-ok: other: x
+sleep 40'   # sleep-ok: other: 検査の fixture
+# 偽の red にしない: 算術・文字列の中の << を heredoc と読むと、終端が来ずに末尾で落ちる
+expect_green arith_ok    'n=$((n << shift))
+sleep 1   # sleep-ok: negative: x'   # sleep-ok: other: 検査の fixture
+expect_green quoted_ok   'echo "a <<EOF b"
+sleep 1   # sleep-ok: negative: x'   # sleep-ok: other: 検査の fixture
+# sleep-ok: other: 検査の fixture (終端の来ない heredoc はファイルの末尾で落とす)
+expect_red   unterminated "cat > stub <<EOS   # sleep-ok: stub: 終端が無い"$'\n'"echo x"
 
 printf 'Test 5: 数えないもの\n'
 expect_green comment     '# ここで sleep 3 していた (コメント行は数えない)'   # sleep-ok: other: 検査の fixture
@@ -98,6 +119,13 @@ check_go same 'time.Sleep(time.Second) // sleep-ok: dummy: kill される前提'
 check_go prev '// sleep-ok: tick: helper の刻み
 time.Sleep(5 * time.Millisecond)'   # sleep-ok: other: 検査の fixture
 [ "$RC" -eq 0 ] && ok 'Go: 直前の行の印で通す' || bad "Go: 直前の行の印で通らない: $OUT"
+check_go space 'time.Sleep (time.Second)'   # sleep-ok: other: 検査の fixture
+[ "$RC" -ne 0 ] && ok 'Go: 括弧の前に空白がある time.Sleep も落とす' || bad "Go: time.Sleep ( を通した: $OUT"
+check_go value 'sl := time.Sleep'   # sleep-ok: other: 検査の fixture
+[ "$RC" -ne 0 ] && ok 'Go: メソッド値の time.Sleep も落とす' || bad "Go: メソッド値を通した: $OUT"
+check_go next 'time.Sleep(1) // sleep-ok: tick: x
+time.Sleep(time.Second)'   # sleep-ok: other: 検査の fixture
+[ "$RC" -ne 0 ] && ok 'Go: 印のある行は次の行を許さない' || bad "Go: 次の行まで許した: $OUT"
 check_go comment '// time.Sleep(3 * ttl) していた'
 [ "$RC" -eq 0 ] && ok 'Go: コメント行は数えない' || bad "Go: コメント行を数えた: $OUT"
 
@@ -109,4 +137,4 @@ if [ "$fails" -ne 0 ]; then
   printf 'FAIL: %d 件\n' "$fails"
   exit 1
 fi
-printf 'OK check_test_sleeps (22 件)\n'
+printf 'OK check_test_sleeps (33 件)\n'

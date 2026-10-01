@@ -407,7 +407,7 @@ func TestServeSignalWaitsForClosingScreens(t *testing.T) {
 	}()
 	waitUntil(t, "Tick が回らない", func() bool { return ticks.Load() != 0 })
 	cancel() // dispatcher と画面に同時に届いた
-	// sleep-ok: window: 画面が閉じるのは dispatcher が見た後、という窓を作る入力 (判定には使わない)
+	// sleep-ok: realtime: 「dispatcher が見た後に画面を閉じる」順序を秒数で作る (dispatcher が見たことを外から観測する口が無い。判定には使わない)
 	time.Sleep(50 * time.Millisecond) // 画面が閉じるのは dispatcher が見た後 (待ちの窓を作るための入力。判定には使わない)
 	sc.Close()
 	select {

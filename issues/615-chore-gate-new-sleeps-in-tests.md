@@ -83,3 +83,14 @@
   `tt_wait_until` に寄せ (schedule_keys の sleeper 待ち・smooth_scroll の 4 箇所・codex_fanout.bats の 2 箇所)、4 行は理由つきの印
   (smooth_scroll の静止判定のサンプリング 2 行・test_tt は sleep を関数で潰しているので helper が使えない・warmup の runs_within は判定器)
 - 入口: `_claude/rules/avoid-wall-clock-assertions.md` に 1 行 (検査が止めること・印の書き方)
+- 2026-10-02 敵対レビュー 1 周目 (opus) の指摘を直した:
+  - P1 (再現): heredoc の開始の判定が `<<<`・算術の `<<`・文字列の中の `<<` にも当たり、終端が来ないまま印 1 つでファイルの最後まで素通りした
+    (実 repo でも 5 ファイルで後半が「本文」扱いだった) → 開始の判定からこの 3 つを外し、**終端の来ない heredoc は末尾で落とす**。文字列の中に書いた
+    heredoc の終端「タグ + 閉じ引用符」も終端に数える
+  - P2 (再現): 印のある sleep の行が次の行まで許した → 直前の行の印は**コメントだけの行**に限る (Go も同じ)
+  - P2: Go の `time.Sleep (` と括弧の無いメソッド値を拾う。別名 / dot import・テスト用 helper の package・`/* */` の中・Python の `time.sleep`・文字列の中の印は
+    「検出しない形」に明記 (今の repo に別名 / dot import の time は 0 件)
+  - 観点 4: 固定待ちに window の印を付けていた (本番の ticker / lease を実時間で回す 3 箇所・SIGCONT の到着待ち・serve の順序作り) →
+    分類 `realtime` (本番の時間を実時間で過ぎさせる / 観測の口が無い事象を秒数で待つ。理由に「なぜ置き換えられないか」を書く) を足して付け替えた (5 箇所)
+  - fixture を 33 件に。変異で red を確認: `<<<` を外さない / 直前の行の印をコメント行に限らない / 終端の来ない heredoc を見ない / Go の `time.Sleep (` を拾わない /
+    算術の `<<` を外さない (→ 正しいコードが偽の red) / 文字列の中の `<<` を外さない (→ 偽の red)
