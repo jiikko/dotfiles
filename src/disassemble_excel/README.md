@@ -48,22 +48,14 @@ Excel ワークブック（`.xlsx` / `.xlsm`）を、diff しやすいプレー�
 
 ## インストール
 
-Go 1.23 以上が必要。
-
-最新版を直接インストール:
-
-```sh
-go install github.com/jiikko/disassemble_excel@latest
-```
-
-またはソースからビルド:
+Go 1.25 以上が必要。ソースは dotfiles の `src/disassemble_excel` にあり、入口は `bin/disassemble_excel`
+(初回とソースの変更後に手元のソースからビルドしてから起動する)。
 
 ```sh
-git clone https://github.com/jiikko/disassemble_excel
-cd disassemble_excel
-go build -o disassemble_excel .
-# 必要なら ./disassemble_excel を PATH に移動する
+bin/disassemble_excel <file> [options]
 ```
+
+`go install github.com/jiikko/disassemble_excel@latest` は手元ではなく GitHub 上の別のソースを建てるので使わない。
 
 初回ビルドで Go モジュールの依存をダウンロードする。以降は完全オフラインで
 ビルド・実行できる。

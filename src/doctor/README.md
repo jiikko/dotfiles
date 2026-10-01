@@ -18,6 +18,7 @@
 | **見るもの** | **容量** — allowlist に載った掃除候補が今どれだけ占有しているか | **常駐** — 壊れた launchd 登録 (実行ファイル不在 / 失敗し続け / Homebrew 台帳に無い) |
 | 使いどき | ディスクが減ったとき | 常駐が増えた / 起動が遅い / 見覚えのないサービスがあるとき |
 | 出力の並び | 占有量の降順 (リスクと復元方法つき) | 検出した登録ごとに、判定理由と手で叩くコマンド |
+| flag | `-json` / `-progress` (完了したエントリを stderr に順次出す) | `-json` |
 
 迷ったら「**容量が知りたいなら diskdoctor、常駐が知りたいなら svcdoctor**」。両者は対象が
 重ならないので、片方の結果からもう片方を推測できない。
@@ -68,6 +69,8 @@ CLI が要るのは「スクリプトから叩きたい」「JSON で受けた�
 | `brewledger/` | Homebrew が管理している formula/cask の台帳。**disk (`brew-orphan-state`) と svc (`homebrew.mxcl.<formula>` が台帳に無い判定) が同じ集合を引く**ための共有パッケージ |
 | `cachedir/` | キャッシュ置き場 (`$XDG_CACHE_HOME/glog`、未設定なら `~/.cache/glog`) の解決。glogx 本体と doctor のスキャン結果で共有する (🚨 ディレクトリ名は `glogx` ではなく `glog`) |
 | `internal/displaycheck/` | 「表示用の構造体へ文字列フィールドを足したのに `Sanitize*ForDisplay` へ通し忘れる」を止める検査の本体 (issue 252)。`disk` / `svc` / `docker` / `ssd` の 4 つが**同じ判定を 1 実装で共有**し、各 package は関門表と免除表だけを渡す。検査器自身のテストは testdata の fixture で持つ |
+| `exitcode/` | 2 本の CLI で共通の終了コード語彙 (上の表の値の正本) |
+| `testtmp/` | テストが `$TMPDIR` に作る一時ディレクトリを、中断 (SIGKILL 等) されても次の起動で回収する共通ヘルパー |
 | `runner/` | 外部コマンドの実行口。**stdout / stderr / exit code を分けて返す** (混ぜるとどの stream が判定材料か確定できない)。テストではここを差し替える。コマンドの探索 (`LookPath`) もここ (os/exec を import してよいのはこの package だけ) |
 
 `glogx` からは go.mod の `replace doctor => ../doctor` で参照する。無害化の関門

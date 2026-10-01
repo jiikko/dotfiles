@@ -55,8 +55,8 @@ make test-setup  # exercises setup.sh in a temporary HOME
 make test-shellcheck # runs shellcheck on shell-compatible scripts
 make test-yaml   # yamllint on workflow/pre-commit config
 make test-json   # jq validation for JSON configs
-make test-lint   # aggregate lint target (shellcheck + zsh syntax + YAML + JSON + karabiner + actionlint + gitconfig + ruby syntax)
-make test-src    # lint + test for all Go projects under src/ (same coverage as CI's src_*.yml)
+make test-lint   # aggregate lint target (shellcheck + zsh syntax + YAML + JSON + karabiner + actionlint + gitconfig + ruby syntax + the repo-wide scripts/check_*.sh gates; full list in the Makefile)
+make test-src    # lint + unused check + test for all Go projects under src/ (same coverage as CI's src_*.yml)
 make test-runtime # aggregate runtime target (syntax + auto-discovered tests/**/test_*.sh + bats)
 make test-bats   # bats tests (skips if bats is not installed)
 tests/zshrc/test_zshrc.sh  # existing zsh tests (also run via make test)
@@ -104,7 +104,7 @@ AV1_CRF=35 av1ify movie.mp4  # CRF指定
 - 解像度に応じてCRFを自動調整
 - 音声は可能な限りコピー、非対応形式はAACに再エンコード
 - `--dry-run` で実行内容のみ表示（ファイルを変更しない）
-- 対応形式: `.avi`, `.mkv`, `.rm`, `.wmv`, `.mpg`, `.mpeg`, `.mov`, `.mp4`, `.flv`, `.webm`, `.3gp`
+- 対応形式: `.avi`, `.mkv`, `.rm`, `.wmv`, `.mpg`, `.mpeg`, `.mov`, `.mp4`, `.flv`, `.webm`, `.3gp`, `.ts`
 - 出力: `*-enc.mp4`
 - **同じファイルへの二重実行は `lockman` で防ぐ**。1 ファイル 1 ロックで、他プロセスが
   処理中なら SKIP して次へ進む。ロックが無いと、一時出力 `*-enc.mp4.in_progress` が
@@ -159,10 +159,8 @@ prefix は `C-t`。設定の正本は [_tmux.conf](./_tmux.conf)（コメント�
 
 | キー | 範囲 | 動作 |
 |---|---|---|
-| `C-t S` → `h/j/k/l` | 同一 window | 入れ替えモード。連打で押し込める。他のキーで終了 |
 | `C-t e` → 数字 | 同一 window | ペイン番号オーバーレイから選んで現在ペインと交換 |
-| `C-t m` → 相手ペインで `C-t >` → `s` | **window 跨ぎ可** | マークしたペインと Swap Marked で交換 |
-| `C-t G` | window 跨ぎ | 現在のペインを fzf popup で選んだ window へ送る (give)。get 側の旧 `C-t g` は git popup に転用済み |
+| `C-t G` | window 跨ぎ | 現在のペインを fzf popup で選んだ window へ送る (give)。get 側の旧 `C-t g` は glogx の popup に転用済み |
 | `C-t !` | — | ペインを独立した window に切り出す (break-pane) |
 
 ### ウィンドウ操作・ジャンプ
@@ -180,7 +178,8 @@ prefix は `C-t`。設定の正本は [_tmux.conf](./_tmux.conf)（コメント�
 
 | キー | 動作 |
 |---|---|
-| `C-t g` / `C-g` | **git 操作 popup**（`C-g` = Ctrl+g なら prefix 不要）。いま見ているペインの cwd の repo に対して fzf のインクリメンタル操作で status/diff/add/commit（nvim や Claude のペインからでも効く。`Tab`/`Enter` = stage⇄unstage、`C-a` = 全 add、`C-o` = commit、`C-b` = push、`C-d` = diff 全画面、`Esc` = 閉じる。clean 時はサマリ画面になり `p` = push） |
+| `C-t g` / `C-g` | **git log TUI (glogx) の popup**（`C-g` = Ctrl+g なら prefix 不要。popup 内でもう一度 `C-g` で閉じる）。いま見ているペインの cwd の repo を開く（nvim や Claude のペインからでも効く。repo の外ではトーストで知らせる）。status viewer (`s`) で stage / unstage、`b` で push。キー操作は [src/glogx/README.md](src/glogx/README.md) |
+| `C-t m` / `C-t Enter` | **予約入力**: N 時間 M 分後にこのペインへ文字列を送る (一覧・取消も)。[src/schedkeys](src/schedkeys/README.md) の popup |
 | `C-t t` | **スクラッチターミナルのトグル**。専用セッション scratch をフローティング表示し、popup 内でもう一度押すと閉じる（セッションは生きるので作業状態は保持） |
 | `M-[` | prefix なしでコピーモードへ。vi キーバインド、`v`/`Space` で選択開始、`y`/`Enter` で pbcopy にコピーして抜ける |
 | `C-t R` | 設定リロード |
@@ -188,10 +187,10 @@ prefix は `C-t`。設定の正本は [_tmux.conf](./_tmux.conf)（コメント�
 
 ### 視認性まわり
 
-- アクティブペインの境界は **cyan の発光帯**（fg=bg 塗りつぶし + heavy 線 + 矢印インジケータ）
-- カーソルは **cyan の明滅ブロック**（カーソルはアクティブペインにしか無いので現在地の点光源になる）
-- 各ペイン上端にタイトルバー（ペイン番号 + パス + 実行コマンド。アクティブは cyan 帯）
-- copy-mode 中だけ右端にスクロール位置バー（tmux 3.6+）
+- アクティブペインの境界は **緑の発光帯**（fg=bg 塗りつぶし + 二重線 + 矢印インジケータ。copy-mode 中は黄、synchronize-panes 中は赤）
+- カーソルは **緑の明滅ブロック**（カーソルはアクティブペインにしか無いので現在地の点光源になる）
+- 各ペイン上端にタイトルバー（ペイン番号 + パス + 実行コマンド。アクティブは緑の帯）
+- スクロール位置バー (`pane-scrollbars`) は off（tmux 3.6a ではバーを出したペインが 1 列狭まって reflow が起きるため）
 
 ### ウィンドウ名の自動反映
 
@@ -226,6 +225,7 @@ Claude Code を動かしているペインの境界に作業状態が出る。
 | `⚙ working` | 黄 | 応答処理中 |
 | `⚙ working (bg:N)` | 黄 | バックグラウンドタスク N 件の完了待ち (手は空いていない) |
 | `🔔 input` | 赤 | permission 承認待ち・質問への回答待ち (承認すると working に自動復帰) |
+| `🔕 seen` | 灰 | 入力待ちの window を開いて見たが、まだ応答していない (応答すると working へ戻る) |
 | `✓ idle` | 緑 | 完了・次の指示待ち |
 
 さらに `🔔 input` / `✓ idle` への遷移時、**そのペインがどのクライアントでも前面に

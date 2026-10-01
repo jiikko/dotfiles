@@ -22,7 +22,7 @@ README.md の「パッケージ」表が正本 (各パッケージの中身と�
 
 ## 消費者
 
-- glogx (issues viewer 本体)・pro-con・schedkeys・ratelimit が replace で取り込む (`grep -l "replace github.com/jiikko/dotfiles/src/tuikit" src/*/go.mod`)
+- glogx (issues viewer 本体)・pro-con・schedkeys・ratelimit が replace で取り込む (`grep -l 'github.com/jiikko/dotfiles/src/tuikit =>' src/*/go.mod`。ブロック形式の `replace ( … )` も拾うため `replace` を前置しない)
 - schedkeys は `caret` / `termwidth` を使い、`toast` だけは別実装
 
 ## ビルド・テスト

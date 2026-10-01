@@ -19,7 +19,7 @@ tmux 予約入力ウィザードの TUI (`prefix+m` / `Enter` / `C-m` の popup)
 ## 入口
 
 - `bin/schedkeys` (`main.go`。同期ビルド)。呼び出し元は `scripts/tmux_schedule_keys.sh`
-- I/O 契約: `--label` / `--jobs <TSV>` / `--out <結果ファイル>`。結果は `new\t<epoch>\t<文字列>` または `cancel\t<id>` の 1 行 (詳細は README.md)
+- I/O 契約: `--label` / `--jobs <TSV>` / `--out <結果ファイル>` / `--toggle-prefix` / `--start`。結果は `new\t<epoch>\t<文字列>` / `cancel\t<id>` / `abort` の 1 行 (詳細は README.md)
 
 ## ビルド・テスト
 

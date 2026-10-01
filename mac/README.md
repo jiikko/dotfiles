@@ -48,10 +48,19 @@ cd dotfiles
 ./setup.sh
 ```
 
-### Setup Vim
+`setup.sh` は Terminal.app のプロファイル (`mac/ClaudeWarm.terminal`) も既定にする (`scripts/terminal_profile_restore.sh`)。
+
+### Setup Neovim
+
+`setup.sh` が `_nviminit.lua` を `~/.config/nvim/init.lua` に張る。初回の起動で lazy.nvim が自分を取得し、
+プラグインは repo の `_lazy-lock.json` の版で入る。
+
+### Setup Karabiner
+
+`mac/karabiner.json` は symlink ではなくコピーで置く。編集したら復元し直す:
 
 ```shell
-sh -c "$(wget -O- https://raw.githubusercontent.com/Shougo/dein-installer.vim/master/installer.sh)"
+bin/restore_karabiner_config.sh
 ```
 
 ## Change login shell

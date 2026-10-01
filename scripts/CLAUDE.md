@@ -74,6 +74,7 @@ tmux バインド (_tmux.conf) から display-popup / run-shell 経由で呼ば�
 | `check_skip_exit_code.sh` | 丸ごと skip なのに `exit 0` (runner が `[ok]` と数える。issue 139) | `partial-skip: allow` |
 | `check_workflow_action_pins.sh` | 同じ Action が workflow 間で違う版 (issue 073 §1) | `action-pin: allow` |
 | `check_go_project_lanes.sh` | 新しい Go プロジェクトが CI レーン無しで入る (`src/*/go.mod` があるのに lint/test target・`src_<name>.yml`・paths filter が欠ける。issue 203 / 出典 080・087) | — |
+| `check_cd_rc_in_tests.sh` | `cd` の rc を見ていない行 (失敗すると別の場所で続行し、テストを 0 件発見したまま緑になる。tests/ だけでなく scripts/ と bin/ も見る) | `cd-rc: allow` |
 
 ## テスト
 

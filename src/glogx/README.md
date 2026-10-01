@@ -156,7 +156,7 @@ glogx --help              # ヘルプ (キー操作・記号・終了コード�
 [`theme/colors.yml`](../../theme/colors.yml) の `blink_magenta`)。落ち影は色を持たせず中立のまま
 (影が主張しないように)。
 
-起動と終了には**中央から開く / 中央へ吸い込まれる**演出が入る (片道 320ms。ユーザー要望 2026-08-01)。
+起動と終了には**中央から開く / 中央へ吸い込まれる**演出が入る (片道 160ms。ユーザー要望 2026-08-01、2026-09-05 に演出を一律 2 倍速にした)。
 枠を中央から広げ、その中に実画面の左上部分を切り出して入れるので、最初のフレームから 1 行目のコミットが見え、開き切った姿がそのまま本物になる。
 終了はこの演出を挟んでから抜けるが、途中でキーを押せば即着地する。`Ctrl-C` は演出なしで即終了する。
 枠を持たない画面 (`--no-frame` / 小さい端末) では演出も枠なしで動く。
@@ -166,8 +166,8 @@ glogx --help              # ヘルプ (キー操作・記号・終了コード�
 
 | 要素 | 効き方 |
 |---|---|
-| フレーム周期 (`zoomInterval` 16ms) | この演出だけ 60fps。12.5fps だと中間フレームが 2 枚しか出ず点滅に見えた |
-| 所要 (`appZoomDuration` 320ms) | 60fps での 1 フレームあたりの平均: 220ms = 2.7 行 / 320ms = 1.8 行 / 420ms = 1.3 行 |
+| フレーム周期 (`zoomInterval` 8ms) | この演出だけ 125fps。12.5fps だと中間フレームが 2 枚しか出ず点滅に見えた |
+| 所要 (`appZoomDuration` 160ms) | 1 フレームあたりの平均は約 1.8 行 (36 行 / 20 フレーム)。2 倍速にしたとき周期も半分にして、1 フレームで跳ぶ行数を据え置いた |
 | 曲線の終点 (`scale` の `* appZoomSnap`) | 素の easeOutCubic は進捗 69% で snap に達し、残り 31% は絵が変わらなかった |
 
 - `--no-frame` で無効化できる
@@ -381,7 +381,7 @@ bare 記号なら全層で 1 に一致するため。割れる文字を出すと
 ## 開発
 
 ```bash
-make test   # go test ./... (unit + 一時 git リポジトリでの integration。外部通信なし)
+make test   # go test -race ./... (unit + 一時 git リポジトリでの integration。外部通信なし)
 make lint   # golangci-lint (scripts/golangci_lint.sh 経由・バージョン固定、設定は .golangci.yml)
 
 # 幅ズレ調査用 (要 TTY。tmux の内と外で走らせて比べる)
@@ -392,7 +392,7 @@ go test -run '^$' -bench BenchmarkView -benchmem .
 ```
 
 🚨 **lint の確認は必ず `make lint` で行う。PATH の `golangci-lint` を直接叩かないこと。**
-`make lint` は `go run ...@v2.5.0` で版を固定していて、PATH のバイナリとは指摘が食い違う
+`make lint` は `scripts/golangci_lint.sh` 経由で v2.5.0 に版を固定していて、PATH のバイナリとは指摘が食い違う
 (実測 2026-09-01: 同じツリーで `make lint` = 0 issues / PATH の v2.12.2 = 6 issues)。
 逆向きも起きる — PATH 版が 0 issues なのに固定版が prealloc を 1 件出し、master の lint が
 落ちた実例が `1b025b8`。CI が回すのは固定版なので、そちらが唯一の出典。
@@ -407,15 +407,14 @@ go test -run '^$' -bench BenchmarkView -benchmem .
   `options.go` (引数 allowlist) / `gitlog.go` (git 実行と %x1e/%x1f レコード解析) /
   `github.go` (repo 解決・GraphQL・集約) / `cache.go` (XDG キャッシュ) /
   `external_commands.go` (git/tmux/claude/browser/clipboard の外部プロセスラッパー) /
-  `terminal.go` (端末サニタイズ) / `render.go` (行生成) / `highlight.go` (diff の
-  シンタックスハイライト) / `tui.go` (Bubble Tea ブラウズの中核・状態遷移) /
+  `terminal.go` (端末サニタイズ) / `render.go` (行生成) / `tui.go` (Bubble Tea ブラウズの中核・状態遷移) /
   `box.go` (枠と影の本体は tuikit の `layout.Panel` / `OverlayCentered`。ここは glogx のテーマ色を渡すラッパ。確認ダイアログは tuikit の `confirm`) /
   各種オーバーレイ・モーダル (`diff_overlay.go` / `job_detail_overlay.go` /
   `usage_overlay.go` / `pr_status_overlay.go` / `action_modal.go`。右下の通知スタック (新しい通知は上に積まれ
   古い通知は下から抜ける。最大 3 枚) は tuikit の `toast`) /
   **新しい外部コマンド実行は `subproc.CommandContext` を使う** — 素の `exec.CommandContext` は
   `waitdelay_discipline_test.go` が落とす /
-  `sgr/` (基本 ANSI 色。3 パッケージで別名の写しになっていたものを 1 箇所へ) / `main.go` (配線)
+  `main.go` (配線)。diff のシンタックスハイライト (`highlight`) と基本 ANSI 色 (`sgr`) は tuikit から取り込む
 - 表示幅の単一情報源 (`termwidth`) と、演出・画面合成の部品 (drawer の開閉 / glide / slide-in /
   窓の計算) は [`../tuikit`](../tuikit/README.md) にある (replace で取り込む。別の TUI でも使えるように
   切り出した)。main は `width.go` の別名経由、issues / usage は `github.com/jiikko/dotfiles/src/tuikit/termwidth` を直接呼ぶ。

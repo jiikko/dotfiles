@@ -66,7 +66,7 @@ PATH 先頭に置く)、時間はモック内の `grep` 連打による **fork �
 - **`make test-changed PATHS="<触ったファイル>"` で代替してよいのは、時間が取れないときだけ**。
   その場合は**全体を回していない事実を報告に書く** (「docs だけだから省いた」を前例として
   積まない。issue 185 項目 4 / issue 188)
-- 🚨 **`test-lint` の発見式ゲート 6 本 (`check_*.sh`) は `test-changed` からは一度も入らない**
+- 🚨 **`test-lint` の発見式ゲート 7 本 (`check_*.sh`) は `test-changed` からは一度も入らない**
   (写像に無い。実測 2026-09-03: `.github/workflows/tests.yml` を渡しても
   `test-workflow-action-pins` は入らず、`scripts/check_skip_exit_code.sh` を渡してもそれ自身は
   走らない)。**shell / テストスクリプト / workflow / Makefile / CI の構造を触ったら

@@ -28,6 +28,8 @@
 | [`zsh-hook-return-via-reply.md`](../.claude/rules/zsh-hook-return-via-reply.md) (`.claude/rules/`) | precmd / preexec / zle から呼ぶ関数は `$(...)` でなく `REPLY` で返す。fork がそのまま体感レイテンシになる (実測 0.42ms/回 vs 0.03ms/回)。hook 本体に `local REPLY` を置く | `scripts/tmux_agent_panel.sh` / `scripts/tmux_periodic_save.sh` / `_claude/CLAUDE.md` の設計方針 |
 | [`zsh-trap-not-inherited.md`](../.claude/rules/zsh-trap-not-inherited.md) (`.claude/rules/`) | `trap '' SIG` はサブシェルとバックグラウンドジョブに**継承されない** (zsh の実装依存。**bash では動くので bash の常識で書くと踏む**)。`cd` したいならサブシェルを掘らず `-C` オプションで済ませる | `bin/lib/go_autobuild.zsh` |
 | [`skill-eval-after-edit.md`](../.claude/rules/skill-eval-after-edit.md) (`.claude/rules/`) | `_claude/skills/<skill>/` を変えたら commit の前に `bin/skill-eval <skill>` で評価し、結果の行を commit message に書く。ケースの無い skill (`NO-EVAL`) を通ったと書かない。CI では回さない (費用のため) | `bin/skill-eval` / `_claude/skill-evals/` |
+| [`worktree-per-session.md`](../.claude/rules/worktree-per-session.md) (`.claude/rules/`) | dotfiles で編集するときはセッションごとに worktree を作り、push して `~/dotfiles` へ pull するまでを担当範囲にする (実体パスから動く `_claude/` `scripts/` `bin/` は pull するまで古い版が動く) | dotfiles での作業の開始時 |
+| [`use-ci-log-for-ci-inspection.md`](../.claude/rules/use-ci-log-for-ci-inspection.md) (`.claude/rules/`) | GitHub Actions の失敗は `bin/ci-log` で調べる (同じ push で落ちた別 workflow を見落とさない) | `bin/ci-log` |
 | [`bench-watch-after-push.md`](bench-watch-after-push.md) | nvim / tmux / zsh / glogx 系を push したら、その commit の CI (Bench を含む全 run) の完了を watch してデグレを確認するまでがタスク。「そのうち通るはず」で終わらない | `tests/run_bench.sh` / `tests/bench_stats.sh` |
 
 ## 書き方

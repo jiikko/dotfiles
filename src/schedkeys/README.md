@@ -8,7 +8,7 @@ bubbletea v2。呼び出し元は `scripts/tmux_schedule_keys.sh`、起動は `b
 このバイナリは **表示と入力だけ**を持つ。tmux にも job ファイルにも触れない。
 
 ```
-schedkeys --label "main:3 claude" --jobs <一覧 TSV> --out <結果ファイル>
+schedkeys --label "main:3 claude" --jobs <一覧 TSV> --out <結果ファイル> [--toggle-prefix C-t] [--start pick]
 ```
 
 `--out` に 1 行書いて exit 0:
@@ -17,8 +17,10 @@ schedkeys --label "main:3 claude" --jobs <一覧 TSV> --out <結果ファイル>
 | --- | --- |
 | `new<TAB><発火 epoch><TAB><送る文字列>` | 新規予約 |
 | `cancel<TAB><予約 id>` | 一覧から取消を選んだ |
+| `abort` | 中止した (Esc / Ctrl-C)。中止も終了コードでなく結果の行で返す |
 
-中止 (Esc / Ctrl-C) は exit 1（`--out` は使わない）。
+引数の誤りは exit 2。`--toggle-prefix` は tmux の prefix キーで、これに続けて `m` / `Enter` を押すと閉じる
+(popup を開いたのと同じキーで閉じられるように)。`--start pick` は予約一覧から開く (空ならメニュー。取消の後に一覧へ戻るときに使う)。
 
 予約の作成・sleeper の起動・**取消の確認 (`gum confirm --default=false`) と実行**は呼び出し元の
 シェルが行う。破壊的な操作をシェル側のテスト済み経路に残すための分担で、UI を差し替えても

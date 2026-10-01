@@ -44,7 +44,7 @@
 
 | 検査 | 何を止めるか |
 | --- | --- |
-| `doctor/internal/displaycheck` の `Run` | 表示用構造体に新しい文字列フィールドを足したのに `Sanitize*ForDisplay` へ通し忘れる。**検査の本体はここ 1 つ**で、`doctor/disk` / `doctor/svc` / `doctor/docker` の各 `display_coverage_test.go` が「どの型をどの関門が担当するか」と「免除とその理由」だけを渡す (写経すると片方だけ直る形ができるため 1 実装に寄せた) |
+| `doctor/internal/displaycheck` の `Run` | 表示用構造体に新しい文字列フィールドを足したのに `Sanitize*ForDisplay` へ通し忘れる。**検査の本体はここ 1 つ**で、`doctor/disk` / `doctor/svc` / `doctor/docker` / `doctor/ssd` の各 `display_coverage_test.go` が「どの型をどの関門が担当するか」と「免除とその理由」だけを渡す (写経すると片方だけ直る形ができるため 1 実装に寄せた) |
 | `doctor/internal/displaycheck/displaycheck_test.go` | **検査器そのもの**の回帰 (testdata の fixture に既知の違反を置き、見逃さないことを固定する)。各 package の呼び出しは「今は違反が無い」しか示さず、検査器が見逃すようになったことは検出しない |
 | `src/glogx/untrusted_display_test.go` | sink ごとの回帰 (実際に素通しが見つかった経路を固定) |
 | `scripts/check_go_project_lanes.sh` | `go.mod` の `replace` 先が dependent の workflow paths に入っているか (= 共有 module を変えた push で CI が走るか) |
@@ -71,10 +71,6 @@
 - 無害化の**中身**が正しいか (右辺が `termsafe.*` / `sanitize*` を呼んでいるかまでしか見ない)
 - **関門がコピーを無害化して親へ書き戻さない形** (`r.Items = kept` の一文だけを消す等)。
   この形は sink テスト (`glogx/untrusted_display_test.go`) が end-to-end で見る担当
-- 🚨 **`doctor/svc` 側の関門は未対応**。`svc.Finding` (Label / PlistPath / Domain / Reasons /
-  MissingExec / RestartKeys / BrewFormula / Commands) と `svc.Report` (StatusErr / BrewErr /
-  DirErrs) に文字列を足しても誰も止めない。`~/Library/LaunchAgents` には誰でも plist を置ける
-  (`svc/display.go` 自身がそう書いている) ので脅威は同じ。**別 issue として起票済み**
 
 いずれも **review の責務**。字句・構文の検査は迂回が原理的に無限にあるので、
 「全部塞ぐ」を目標にしない (`_claude/rules/adversarial-review-own-safeguards.md` の §8)。
