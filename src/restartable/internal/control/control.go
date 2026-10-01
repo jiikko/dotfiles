@@ -223,8 +223,9 @@ func (s *Server) Close() error {
 }
 
 func (s *Server) acceptLoop() {
+	// Requests は閉じない: 送信を待っている serveConn が閉じたチャネルへ送ると panic する。
+	// 終わりは serveDone で知らせる (serveConn も受け手も serveDone を見て抜ける)。
 	defer close(s.serveDone)
-	defer close(s.Requests)
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
