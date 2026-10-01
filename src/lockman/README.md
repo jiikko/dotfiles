@@ -71,7 +71,8 @@ root の `make test` にも含まれる (`GO_PROJECT_DIRS`)。
 
 - **`go.sum` は空だが消さないこと**。依存は今のところ標準ライブラリだけだが、CI の
   `actions/setup-go` が `cache-dependency-path: src/lockman/go.sum` を解決できないと
-  ジョブごと失敗する。依存を足せば中身が入る
+  キャッシュの復元が警告 (`Restore cache failed`) で飛ばされ、毎回キャッシュなしで走る
+  (ジョブは失敗しないので気づきにくい)。依存を足せば中身が入る
 - `bin/lockman` は `bin/lib/go_autobuild.zsh` 方式 (ソース更新時に自動再ビルド)。
   **`--async` は使わない** — glogx は popup の体感速度のため「旧版で即起動」を選んで
   いるが、排他の道具で古いバイナリが動くのは危険なので同期ビルドにする
