@@ -116,7 +116,7 @@ func serve(t *testing.T, path string, respond func(*control.Request) control.Res
 	go func() {
 		for {
 			select {
-			case req := <-server.Requests:
+			case req := <-server.Requests():
 				if respond != nil {
 					req.Respond(respond(req))
 				}
