@@ -607,6 +607,8 @@ av1ify "$TEST_DIR/a.avi" "$TEST_DIR/b.avi" > /dev/null 2>&1 || true
 setopt err_exit
 
 # 起こした prefetch が全部死んでいること (上限つきポーリング)
+. "$ROOT_DIR/tests/lib/wait_until.sh"
+_prefetch_pid_gone() { ! kill -0 "$1" 2>/dev/null }
 leaked=0
 # 前提が崩れているときだけは即 exit する (prefetch が 1 つも起きていないなら、この後の
 # 「全部死んだか」は何も検査しないまま緑になる)。判定した結果の失敗は bad() で数える。
@@ -614,10 +616,7 @@ if (( ${#SPAWNED_PIDS[@]} == 0 )); then
   bad '✗ prefetch が 1 つも起きていない (前提が崩れている)\n'; exit 1
 fi
 for _pid in "${SPAWNED_PIDS[@]:-}"; do
-  _i=0
-  # 🚨 (( _i++ )) は _i=0 のとき旧値 0 を返す = status 1 で err_exit に殺される (zsh の罠)。
-  #    _i=$((_i+1)) の代入形にする
-  while kill -0 "$_pid" 2>/dev/null && (( _i < 200 )); do sleep 0.05; _i=$((_i+1)); done
+  TT_WAIT_TICKS=200 TT_WAIT_TICK=0.05 tt_wait_until _prefetch_pid_gone "$_pid" || :
   if kill -0 "$_pid" 2>/dev/null; then leaked=$((leaked+1)); kill "$_pid" 2>/dev/null; fi
 done
 if (( leaked == 0 )); then

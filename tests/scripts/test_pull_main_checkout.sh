@@ -5,6 +5,8 @@ set -euo pipefail
 unset CDPATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=tests/lib/wait_until.sh
+. "$ROOT_DIR/tests/lib/wait_until.sh"
 cd "$ROOT_DIR" || exit 1
 TMP_DIR="$(mktemp -d)"
 holder=""
@@ -38,7 +40,7 @@ dir="$(git -C "$TMP_DIR/main" rev-parse --path-format=absolute --git-common-dir)
 mkdir -p "$dir"
 "$LM" with "$dir" --label test-holder -- bash -c "touch '$TMP_DIR/held'; while [ ! -f '$TMP_DIR/release' ]; do sleep 0.1; done" &
 holder=$!
-for _ in $(seq 200); do [ -f "$TMP_DIR/held" ] && break; sleep 0.05; done
+TT_WAIT_TICKS=200 TT_WAIT_TICK=0.05 tt_wait_until test -f "$TMP_DIR/held" || :
 [ -f "$TMP_DIR/held" ] || { bad "lock を持つ側が始まらない (10 秒待った)"; exit 1; }
 rc=0; WAIT=1s run || rc=$?
 if [ "$rc" -eq 121 ] && grep -q 'ほかの pull が lock を持ったまま' "$TMP_DIR/err" && [ "$(git -C "$TMP_DIR/main" rev-parse HEAD)" != "$want" ]; then

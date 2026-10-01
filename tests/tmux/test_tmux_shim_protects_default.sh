@@ -21,6 +21,8 @@ unset TMUX TMUX_PANE   # 🚨 $TMUX は TMUX_TMPDIR より優先される。残�
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SHIM="$ROOT_DIR/bin/tmux"
+# shellcheck source=tests/lib/wait_until.sh
+. "$ROOT_DIR/tests/lib/wait_until.sh"
 
 fails=0; checks=0
 ok()  { checks=$((checks + 1)); printf '✓ %s\n' "$1"; }
@@ -140,7 +142,8 @@ else
     ( unset TMUX; TMUX_TMPDIR="$DECOY_TMPDIR" TMUX_PROTECT_FILE="/dev/null" \
         "$SHIM" -L "$DECOY_NAME" kill-server </dev/null >/dev/null 2>&1 )
     # 消えるまで少し待つ
-    for _ in $(seq 20); do [ "$(alive)" = D ] && break; sleep 0.05; done
+    decoy_gone() { [ "$(alive)" = D ]; }
+    TT_WAIT_TICKS=20 TT_WAIT_TICK=0.05 tt_wait_until decoy_gone || :
     if [ "$(alive)" = D ]; then ok "protect 非登録時: 素通しで実 kill が通りデコイ消滅 (guard は load-bearing)"
     else bad "protect 非登録なのにデコイが生存 (shim が実 tmux を exec していない = 素通しが壊れている)"; fi
   fi

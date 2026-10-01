@@ -29,6 +29,8 @@ unset TMUX TMUX_PANE   # 🚨 $TMUX は TMUX_TMPDIR より優先される。残�
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=tests/tmux/lib/kill_socket.sh
 . "$ROOT_DIR/tests/tmux/lib/kill_socket.sh"
+# shellcheck source=tests/lib/wait_until.sh
+. "$ROOT_DIR/tests/lib/wait_until.sh"
 
 fails=0
 checks=0
@@ -248,13 +250,9 @@ else
   }
   # 🚨 `&` の直後は exec 前なので、`kill -0` が真でも「起動した」とは言えない。
   # 実体が走り出すのを条件で待つ (壁時計の `sleep` にしない)。
+  tt_comm_is_sleep() { [ "$(ps -o comm= -p "$1" 2>/dev/null | sed 's|.*/||')" = sleep ]; }
   tt_wait_alive() {  # tt_wait_alive <pid>
-    local p="$1" i=0
-    while [ "$i" -lt 100 ]; do
-      [ "$(ps -o comm= -p "$p" 2>/dev/null | sed 's|.*/||')" = sleep ] && return 0
-      sleep 0.05; i=$((i + 1))
-    done
-    return 1
+    TT_WAIT_TICKS=100 TT_WAIT_TICK=0.05 tt_wait_until tt_comm_is_sleep "$1"
   }
   # `tmux` の stub。display は仕込んだ答えを返し、kill-server は**何もしない** (= 届かない server)
   tt_stub() {  # tt_stub <display が返す文字列>
@@ -272,16 +270,11 @@ STUB
   # = 本物の残骸になり、新しい実装はそれを正しく dead と判定して消す (fixture が主張したい
   # 「生きているサーバ」を 1 度も作らないまま赤 / 緑になる)
   tt_mksock() {  # tt_mksock <パス>
-    local i=0
     ( trap - EXIT; exec python3 -c 'import socket,sys,time
 s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(1); time.sleep(300)' "$1" ) >/dev/null 2>&1 &
     REPLY_SOCK_PID="$!"          # socket の持ち主 (= 実装が stderr に出すべき pid)
     TT_FAKE_PIDS+=("$REPLY_SOCK_PID")
-    while [ "$i" -lt 100 ]; do
-      [ -S "$1" ] && return 0
-      sleep 0.05; i=$((i + 1))
-    done
-    return 1
+    TT_WAIT_TICKS=100 TT_WAIT_TICK=0.05 tt_wait_until test -S "$1"
   }
 
   # --- ⑧ 🚨 死を確認できなければ socket を消さず、pid を出して失敗を返す ----------------------
@@ -371,11 +364,8 @@ STUB
       echo $? > "$hang_dir/done10"
     ) &
     wait10=$!
-    i=0
-    while [ "$i" -lt 600 ]; do          # 上限 30s (bound は 3s x 2。上限は「無限に待たない」安全網)
-      [ -s "$hang_dir/done10" ] && break
-      sleep 0.05; i=$((i + 1))
-    done
+    # 上限 30s (bound は 3s x 2。上限は「無限に待たない」安全網)。時間切れは下の rc10 空で判定する
+    TT_WAIT_TICKS=600 TT_WAIT_TICK=0.05 tt_wait_until test -s "$hang_dir/done10" || :
     rc10=$(cat "$hang_dir/done10" 2>/dev/null || true)
     hp=$(cat "$hang_dir/hangpid" 2>/dev/null || true)
     if [ -z "$rc10" ]; then

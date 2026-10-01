@@ -14,6 +14,8 @@ unset CDPATH
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 # shellcheck source=scripts/lib/tmux_resurrect_guards.sh
 . "$ROOT_DIR/scripts/lib/tmux_resurrect_guards.sh"
+# shellcheck source=tests/lib/wait_until.sh
+. "$ROOT_DIR/tests/lib/wait_until.sh"
 
 fails=0
 ok() { printf '✓ %s\n' "$1"; }
@@ -125,6 +127,12 @@ printf '\n=== 取り残し lock の奪取レース (issue 103) ===\n\n'
 
 # 🚨 別プロセスで起こすこと。同一シェルの subshell だと `$$` が同じになり、
 #   tt_lock_write_owner が同じ owner を書くので「2 プロセスが競る」形にならない。
+# race の待ち条件 (tt_wait_until へ渡すコマンド。コマンド置換を引数に書くと 1 回しか評価されない)
+race_worker_in_window() { ls "$1".in.* >/dev/null 2>&1; }
+race_second_progressed() { # $1=結果ファイル $2=解放マーカー: 結果が 1 行出た or 2 本とも窓に入った
+  [ "$(grep -c . "$1" 2>/dev/null || true)" -ge 1 ] || [ "$(ls "$2".in.* 2>/dev/null | wc -l)" -ge 2 ]
+}
+race_results_complete() { [ "$(grep -c . "$1" 2>/dev/null || true)" -ge 2 ]; }
 race_worker() { # $1=guards.sh $2=lock dir $3=結果ファイル $4=窓を広げるか(0/1) $5=解放マーカー
   bash -c '
     . "$1" || exit 9
@@ -159,7 +167,7 @@ race_worker() { # $1=guards.sh $2=lock dir $3=結果ファイル $4=窓を広げ
 #   `mkdir` で入り、奪取権 lock を一切持たないまま owner を記録する — そこが issue 103 の
 #   原症状の窓だった。leftover だけ緑にして「閉じた」と誤判定した実例がある (2026-08-28)。
 race_winners() { # $1=delay $2=形状(leftover|fresh) $3=窓を広げるか(0/1)
-  local dir="$BASE/race.lock" out="$BASE/race.out" rel="$BASE/race.release" g p1 p2 i
+  local dir="$BASE/race.lock" out="$BASE/race.out" rel="$BASE/race.release" g p1 p2
   g="$ROOT_DIR/scripts/lib/tmux_resurrect_guards.sh"
   rm -rf "$dir" "$dir.steal" "$out" "$rel" "$rel.go" "$rel".in.*
   # 🚨 取り残しは**古く**すること。作りたての owner 不在 dir は「今まさに owner を記録中」と
@@ -176,11 +184,9 @@ race_winners() { # $1=delay $2=形状(leftover|fresh) $3=窓を広げるか(0/1)
   if [ "$3" = 1 ]; then
     # 窓を開けたまま 2 本目を走らせる: 1 本目が窓に入る → 2 本目を起こす → 2 本目が結果を書くか
     # 同じ窓に入る (= 記録中の lock を奪いに来た) まで待つ → 窓を閉じる。$1 (ずらし) は使わない
-    i=0; while ! ls "$rel".in.* >/dev/null 2>&1 && [ "$i" -lt 400 ]; do sleep 0.05; i=$(( i + 1 )); done
+    TT_WAIT_TICKS=400 TT_WAIT_TICK=0.05 tt_wait_until race_worker_in_window "$rel" || :
     race_worker "$g" "$dir" "$out" "$3" "$rel"; p2=$!
-    i=0
-    while [ "$(grep -c . "$out" 2>/dev/null || true)" -lt 1 ] && [ "$(ls "$rel".in.* 2>/dev/null | wc -l)" -lt 2 ] \
-      && [ "$i" -lt 400 ]; do sleep 0.05; i=$(( i + 1 )); done
+    TT_WAIT_TICKS=400 TT_WAIT_TICK=0.05 tt_wait_until race_second_progressed "$out" "$rel" || :
     : > "$rel.go"
   else
     sleep "$1"   # 1〜5ms のずらしを掃く入力 (実測の臨界帯。窓を作る sleep で、待ちではない)
@@ -188,8 +194,7 @@ race_winners() { # $1=delay $2=形状(leftover|fresh) $3=窓を広げるか(0/1)
   fi
   # 2 本の結果が出揃ってから解放を許す。これで「片方が保持している間に、もう片方も取得できたか」
   # だけを見る形になる (出揃わない場合は下の harness: 分類が拾う)
-  i=0
-  while [ "$(grep -c . "$out" 2>/dev/null || true)" -lt 2 ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$(( i + 1 )); done
+  TT_WAIT_TICKS=200 TT_WAIT_TICK=0.05 tt_wait_until race_results_complete "$out" || :
   : > "$rel"
   # 🚨 素の `wait` は使わない。このファイルは前段で補助プロセスを起こしており、
   #   bare wait がそれらを拾って「子ではない」警告を出す

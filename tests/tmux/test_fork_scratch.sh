@@ -47,6 +47,7 @@ unset TMUX TMUX_PANE 2>/dev/null || true
 TMUX_BIN_PATH=${TMUX_BIN:-tmux}
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
+. "$ROOT_DIR/tests/lib/wait_until.sh"
 CONF_FILE="$ROOT_DIR/_tmux.conf"
 POPUP_SCRIPT="$ROOT_DIR/scripts/tmux_fork_popup.sh"
 CMD_FILE="$ROOT_DIR/_claude/commands/fork-scratch.md"
@@ -237,8 +238,7 @@ grep -q 'fork OK' <<< "$f2_out" || fail "stub env で 'fork OK' が出ない (�
 "$TMUX_BIN_PATH" has-session -t claude-fork 2>/dev/null || fail "claude-fork セッションが作られていない"
 
 # stub が引数を書き出すのを待つ (detached 起動直後は未書き込みのことがある)
-i=0
-while [[ ! -s "$args_file" && $i -lt 60 ]]; do sleep 0.05; i=$((i+1)); done
+TT_WAIT_TICKS=60 TT_WAIT_TICK=0.05 tt_wait_until test -s "$args_file" || :
 [[ -s "$args_file" ]] || fail "stub claude が引数を記録しなかった (起動失敗の可能性)"
 recorded=$(cat "$args_file")
 grep -q -- '--resume' <<< "$recorded"       || fail "claude 引数に --resume がない (実際: $recorded)"

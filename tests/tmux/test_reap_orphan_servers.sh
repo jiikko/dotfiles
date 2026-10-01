@@ -29,6 +29,7 @@ UID_NUM=$(id -u)
 # (敵対レビュー 3 周目 P1-2)。理由は lib のヘッダに書いてある。
 # shellcheck source=tests/tmux/lib/reap_mktemp.sh
 . "$ROOT_DIR/tests/tmux/lib/reap_mktemp.sh"
+. "$ROOT_DIR/tests/lib/wait_until.sh"
 
 # socket 名と pid の入れ物を先に置く。🚨 **cleanup と trap を「dir を作る前」に据える**ため
 # (敵対レビュー 3 周目 P3)。旧版は trap が dir 作成の 40 行あとに在り、3 本目の
@@ -202,8 +203,8 @@ ok "準備: orphan は socket 消滅・プロセス生存 / live は socket 生�
 "$REAP" >/dev/null 2>&1 || true
 
 # A) 孤児が kill されること（TERM は非同期なので最大 ~3s 待つ）
-i=0
-while kill -0 "$orphan_pid" 2>/dev/null && [ "$i" -lt 30 ]; do sleep 0.1; i=$((i+1)); done
+pid_gone() { ! kill -0 "$1" 2>/dev/null; }
+TT_WAIT_TICKS=30 TT_WAIT_TICK=0.1 tt_wait_until pid_gone "$orphan_pid" || :
 kill -0 "$orphan_pid" 2>/dev/null && fail "A: 孤児サーバ (pid=$orphan_pid) が reap 後も生存している"
 ok "A: socket 消滅の孤児サーバを reap が回収した"
 
@@ -253,11 +254,8 @@ att_pid=$(env TMUX_TMPDIR="$ATT_DIR" "$TMUX_BIN_PATH" -L "$ATT_SOCK" display-mes
 [[ -n "$att_pid" ]] || fail "D: att server PID を取得できなかった"
 ( sleep 8 | env TMUX_TMPDIR="$ATT_DIR" "$TMUX_BIN_PATH" -L "$ATT_SOCK" -C attach -t att >/dev/null 2>&1 & )
 # client 接続の確立を待つ (socket 消滅前に確認しないと CLI が繋げない)
-i=0
-while [ "$(env TMUX_TMPDIR="$ATT_DIR" "$TMUX_BIN_PATH" -L "$ATT_SOCK" list-clients 2>/dev/null | wc -l | tr -d ' ')" -lt 1 ]; do
-  [ "$i" -ge 30 ] && fail "D: control-mode client が attach しない"
-  sleep 0.1; i=$((i+1))
-done
+att_has_client() { [ "$(env TMUX_TMPDIR="$ATT_DIR" "$TMUX_BIN_PATH" -L "$ATT_SOCK" list-clients 2>/dev/null | wc -l | tr -d ' ')" -ge 1 ]; }
+TT_WAIT_TICKS=31 TT_WAIT_TICK=0.1 tt_wait_until att_has_client || fail "D: control-mode client が attach しない"
 rm -f "$ATT_DIR/tmux-$UID_NUM/$ATT_SOCK"
 [[ -S "$ATT_DIR/tmux-$UID_NUM/$ATT_SOCK" ]] && fail "D: att socket を消せていない"
 "$REAP" >/dev/null 2>&1 || true
@@ -290,8 +288,7 @@ ok "E: 保護対象 socket は socket 消滅 + 接続なしでも kill されな
 # 対照: 保護リストから外すと同じプロセスが reap される (保護が効いていることの陽性対照。
 # これが無いと「そもそも reap 対象になっていなかった」だけで緑になる)
 TT_REAP_PROTECT_SOCKS="/nowhere/does-not-exist" "$REAP" >/dev/null 2>&1 || true
-i=0
-while kill -0 "$prot_pid" 2>/dev/null && [ "$i" -lt 30 ]; do sleep 0.1; i=$((i+1)); done
+TT_WAIT_TICKS=30 TT_WAIT_TICK=0.1 tt_wait_until pid_gone "$prot_pid" || :
 kill -0 "$prot_pid" 2>/dev/null \
   && fail "E(対照): 保護を外しても kill されない (= E は reap 対象外を見ていただけ)"
 ok "E(対照): 保護を外すと同じプロセスが reap される (保護が実際に効いている)"

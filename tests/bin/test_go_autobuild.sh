@@ -1099,11 +1099,8 @@ printf '\n## 作業ファイル / lock を残さない\n'
 # テストの直後で偽陽性になる: 手元では 0ms で解放されるが CI の遅い runner で落ちた (2026-08-01)。
 # 「残さない」の意味は「builder が終われば消える」であって「バイナリと同時に消える」ではない。
 leftovers() { find "$TMP_DIR" \( -name '.autobuild.new.*' -o -name 'nohup.out' -o -name '.autobuild.lock' \) | head -5; }
-for ((i = 0; i < 100; i++)); do
-  leftover="$(leftovers)"
-  [[ -z "$leftover" ]] && break
-  sleep 0.1
-done
+leftovers_gone() { leftover="$(leftovers)"; [[ -z "$leftover" ]]; }
+tt_wait_until leftovers_gone || :
 [[ -z "$leftover" ]] || fail "10 秒経っても作業ファイル / lock が残っている: $leftover"
 ok "rename 前の一時ファイル・nohup.out・lock を残さない (builder 終了後に解放される)"
 

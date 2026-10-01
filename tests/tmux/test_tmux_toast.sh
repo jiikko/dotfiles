@@ -17,6 +17,8 @@ unset CDPATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRIPT="$ROOT_DIR/bin/tmux-toast"
+# shellcheck source=tests/lib/wait_until.sh
+. "$ROOT_DIR/tests/lib/wait_until.sh"
 TMP_DIR="$(mktemp -d)"
 cleanup() { rm -rf "$TMP_DIR"; }
 trap cleanup EXIT
@@ -281,10 +283,8 @@ STUB_TTY="$TMP_DIR/fake_tty"
 export STUB_TTY
 STUB_FLOATING=0 run_toast -d 0.2 "fallback msg"
 # 描画ループは background なので refresh-client (終了処理) を最大 2 秒待つ
-for _ in $(seq 1 20); do
-  grep -q 'refresh-client' "$CALLS" && break
-  sleep 0.1
-done
+refresh_called() { grep -q 'refresh-client' "$CALLS"; }
+TT_WAIT_TICKS=20 TT_WAIT_TICK=0.1 tt_wait_until refresh_called || :
 if grep -q '^tmux new-pane' "$CALLS"; then
   ng "fallback: floating 非対応なのに new-pane が呼ばれた"
 else

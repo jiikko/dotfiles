@@ -11,6 +11,8 @@
 set -uo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+# shellcheck source=tests/lib/wait_until.sh
+. "$ROOT_DIR/tests/lib/wait_until.sh"
 MV="$ROOT_DIR/bin/mutate-verify"
 [ -x "$MV" ] || { echo "NG: bin/mutate-verify が無い"; exit 1; }
 
@@ -758,7 +760,7 @@ EOS
     --apply "perl -0pi -e 's|^check |sh $work/int_slow.sh; check |m' \"\$MUTATE_FILE\"" --expect 'FAIL: reject-bad' ) \
   > "$work/int.log" 2>&1 &
 mvpid=$!
-for _ in $(seq 200); do grep -q '変異後の検証' "$work/int.log" && break; sleep 0.05; done
+TT_WAIT_TICKS=200 TT_WAIT_TICK=0.05 tt_wait_until grep -q '変異後の検証' "$work/int.log" || :
 grep -q '変異後の検証' "$work/int.log" || fail "中断のケース: 変異後の検証に入らない (10 秒)"
 kill -TERM "$mvpid" 2>/dev/null
 : > "$int_gate"

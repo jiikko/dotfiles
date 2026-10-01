@@ -23,6 +23,7 @@ log_file="$TMUX_TMPDIR/tmux.log"
 # なので HOME を temp にすると $HOME/dotfiles が壊れるため）。
 # 状態隔離 (HOME/XDG/TT_DEBOUNCE を TMUX_TMPDIR 配下へ) は lib へ集約 (bench/smooth_scroll と共通)。
 source "$ROOT_DIR/tests/tmux/lib/isolate_env.sh"
+. "$ROOT_DIR/tests/lib/wait_until.sh"
 
 if ! command -v "$TMUX_BIN_PATH" >/dev/null 2>&1; then
   print -u2 "Error: tmux binary not found. Install tmux or set \$TMUX_BIN."
@@ -266,7 +267,7 @@ guard_probe="$TMUX_TMPDIR/glogx_guard.log"
 # 指定 cwd で条件を評価し、選ばれた枝 (popup / toast) と展開された cwd を返す。
 # run-shell -b は非同期なので、probe への書き込みをポーリングで待つ。
 run_guard_branch() {
-  local session="$1" cwd="$2" waited=0
+  local session="$1" cwd="$2"
   : > "$guard_probe"
   "${TMUX_CMD[@]}" new-session -d -s "$session" -c "$cwd" "tail -f /dev/null" >"$log_file" 2>&1 \
     || handle_result "$log_file" "guard 用セッション ($session) の作成に失敗" "fail"
@@ -274,10 +275,7 @@ run_guard_branch() {
     "run-shell -b 'echo popup:#{pane_current_path} >> $guard_probe'" \
     "run-shell -b 'echo toast:#{pane_current_path} >> $guard_probe'" >"$log_file" 2>&1 \
     || handle_result "$log_file" "guard 条件の実行に失敗" "fail"
-  while [[ ! -s "$guard_probe" && $waited -lt 50 ]]; do
-    sleep 0.1
-    waited=$(( waited + 1 ))  # (( waited++ )) は戻り値 0 → set -e で即死する
-  done
+  TT_WAIT_TICKS=50 TT_WAIT_TICK=0.1 tt_wait_until test -s "$guard_probe" || :
   "${TMUX_CMD[@]}" kill-session -t "$session" >/dev/null 2>&1 || true
   REPLY=$(< "$guard_probe")
 }

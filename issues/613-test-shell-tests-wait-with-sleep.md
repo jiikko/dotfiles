@@ -89,9 +89,9 @@ sonnet の read-only 調査を main が抜き取りで検閲)。2026-09-05 の�
 
 ## 受け入れ条件
 
-- [ ] A の 5 件を条件待ちにし (schedule_keys の 4 件は済み)、変更したテストの実行時間を before / after で記録する
-- [ ] B を 1 件ずつ、担保していたものの列挙 → 置き換え → 変異検証 → 3 回連続 green
-- [ ] C を `tt_wait_until` へ寄せる (bats から使えるようにするかを決める)
+- [x] A の 5 件を条件待ちにし、変更したテストの実行時間を before / after で記録する
+- [x] B を 1 件ずつ、担保していたものの列挙 → 置き換え → 変異検証 → 3 回連続 green (置き換えられないものは理由つきで残した)
+- [x] C を `tt_wait_until` へ寄せる (bats は見送り。下の進捗)
 - [x] D の理由コメントを書き足す (代替案が成り立つものは置き換える)
 - [ ] [615](615-chore-gate-new-sleeps-in-tests.md) の検査の許可 (印 / ファイル単位の許可) を、この表の残り (TICK / DUMMY / NEGATIVE / STUB) と一致させる
 
@@ -147,3 +147,12 @@ sonnet の read-only 調査を main が抜き取りで検閲)。2026-09-05 の�
   - 変異: `_go_autobuild_should_retry` を常に 0 → 「TTL 内なのに再挑戦した (起動の出力: pending=1 old)」で red
   - 残す: `tests/scripts/test_golangci_lint_pinned.sh:40` の `FAKE_SLEEP=0.3` (6 本の並列起動で install を重ねる窓)。ヘルパーは lock で
     直列化するので「残り 5 本が lock を待ち始めた」を外から観測する事象が無い。1 回 0.3 s
+- 2026-10-02 「test: 手書きのポーリングを tt_wait_until に寄せる (613 の C)」
+  - 16 ファイル (sonnet が書き換え、main が diff を検閲)。上限は元以上 (`TT_WAIT_TICKS` / `TT_WAIT_TICK` を呼び出しに付ける)、
+    条件は関数、時間切れの扱い (fail の文言・exit・dump) は元のまま。`tests/tmux/lib/kill_socket.sh` は自分で `wait_until.sh` を読む
+    (利用者 4 本はすべて bash)。各ファイル変更前 1 回・変更後 3 回とも変更前と同じ rc
+  - 変更したテストのシェルに `sleep` の stub が PATH で入っていないことを確かめた (入っていると `tt_wait_until` が待たずに上限を使い切る)
+  - 触らなかった: `tests/zshrc/tmux-session/test_tt.sh:292` (テストが `sleep() { : }` で sleep を潰しており、`command sleep` で回避している) /
+    `bash -c '...'` の文字列・heredoc の中のループ / `test_go_autobuild_warmup.sh` の `runs_within` (上限が引数の判定器) /
+    `codex_fanout.bats` (bats は helper を source していない)
+  - 未検証: `tests/tmux/test_fork_scratch.sh` は macOS では skip (rc=77) なので、置き換えの動作は構文確認 (`zsh -n`) だけ

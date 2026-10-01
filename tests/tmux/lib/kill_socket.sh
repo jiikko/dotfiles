@@ -74,15 +74,14 @@ tt__run_bounded() { # tt__run_bounded <出力変数名> <秒> <コマンド...>
   return "$__ret"
 }
 
+# 条件待ちの正本 (呼び出し側が source していなくても使えるよう、この lib 自身が読む)
+# shellcheck source=tests/lib/wait_until.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/wait_until.sh"
+
 # tt__wait_gone は pid が消えるまで最大 <回> x 0.05s 待つ。消えたら 0、残っていたら 1。
+tt__pid_gone() { ! kill -0 "$1" 2>/dev/null; }
 tt__wait_gone() { # tt__wait_gone <pid> <回数>
-  local p="$1" n="$2" i=0
-  while [ "$i" -lt "$n" ]; do
-    kill -0 "$p" 2>/dev/null || return 0
-    sleep 0.05
-    i=$((i + 1))
-  done
-  ! kill -0 "$p" 2>/dev/null
+  TT_WAIT_TICKS="$2" TT_WAIT_TICK=0.05 tt_wait_until tt__pid_gone "$1"
 }
 
 # tt__pid_of_socket は socket ファイルの**持ち主**を外から引く (生死判定の唯一の根拠)。

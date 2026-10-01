@@ -62,7 +62,8 @@ runshell() {
     autoload -Uz add-zsh-hook
     $FNS
     # 条件のポーリング (壁時計 sleep で待たない)
-    waitfor() { local i=0; while [[ ! -f \"\$1\" ]] && (( i < 200 )); do sleep 0.05; (( ++i )); done; [[ -f \"\$1\" ]] }
+    . \"$ROOT_DIR/tests/lib/wait_until.sh\"
+    waitfor() { TT_WAIT_TICKS=200 TT_WAIT_TICK=0.05 tt_wait_until test -f \"\$1\" }
     w() { _dotfiles_check_watch \"\$HOME/dotfiles/\$1\" \"\$XDG_STATE_HOME/dotfiles/\$2\" \"\$3\" \"MSG-\$3\" '' }
     hooked() { add-zsh-hook -L precmd | grep -c _dotfiles_check_notify }
     $1
@@ -124,7 +125,9 @@ runshell '
   print "APID=$$"
   waitfor "'"$a_go"'"   # 測り終わるまで生きている
 ' > "$a_log" 2>&1 &
-i=0; while ! grep -q "APID=" "$a_log" 2>/dev/null && (( i < 200 )); do sleep 0.05; (( ++i )); done
+. "$ROOT_DIR/tests/lib/wait_until.sh"
+a_pid_up() { grep -q "APID=" "$a_log" 2>/dev/null }
+TT_WAIT_TICKS=200 TT_WAIT_TICK=0.05 tt_wait_until a_pid_up || :
 a_pid=$(sed -n 's/^APID=//p' "$a_log")
 if [[ -z "$a_pid" ]]; then
   print -u2 "✗ [ハーネス失敗] 先行シェル A が起き上がらない: $(cat "$a_log")"
@@ -223,7 +226,8 @@ fi
 # 🚨 待つのは「bg が終わった」そのもの (issue 577)。以前は「.partial が在る間は待つ」だったが、解放の直後は
 #    bg がまだ shim の中に居て .partial を書いていないので 1 回も回らず、実際には固定の sleep 0.3 で
 #    待っていた。並列の負荷で bg が 0.3 秒のうちに rm まで届かず、書きかけの .partial を「公開した」と読んだ
-i=0; while bg_alive && (( i < 400 )); do sleep 0.05; (( ++i )); done
+bg_gone() { ! bg_alive }
+TT_WAIT_TICKS=400 TT_WAIT_TICK=0.05 tt_wait_until bg_gone || :
 if bg_alive; then
   print -u2 "✗ [ハーネス失敗] bg が 20 秒で終わらない (公開したかどうかは判定できない)"
   exit 1

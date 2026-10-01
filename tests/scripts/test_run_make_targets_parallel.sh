@@ -8,6 +8,8 @@ set -uo pipefail
 unset CDPATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=tests/lib/wait_until.sh
+. "$ROOT_DIR/tests/lib/wait_until.sh"
 RUNNER="$ROOT_DIR/scripts/run_make_targets_parallel.sh"
 [ -x "$RUNNER" ] || { printf '✗ ランナーが無い / 実行権限が無い: %s\n' "$RUNNER"; exit 1; }
 
@@ -119,13 +121,14 @@ gone()  { [ "$(alive)" = 0 ]; }
 #    届かない (このテストを書くときに実際に踏んだ)
 ( cd "$FIX" && MAKE="$FIX/fake-make-tree" exec "$RUNNER" a b >/dev/null 2>&1 ) &
 runner_pid=$!
-i=0; while [ "$(alive)" -lt 2 ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i+1)); done
+alive_ge2() { [ "$(alive)" -ge 2 ]; }
+TT_WAIT_TICKS=200 TT_WAIT_TICK=0.05 tt_wait_until alive_ge2 || :
 if [ "$(alive)" -lt 2 ]; then
   bad "偽 make が起動しない (前提が崩れている)"
 else
   kill -TERM "$runner_pid" 2>/dev/null
   wait "$runner_pid" 2>/dev/null
-  i=0; while ! gone && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i+1)); done
+  TT_WAIT_TICKS=200 TT_WAIT_TICK=0.05 tt_wait_until gone || :
   if gone; then ok '中断後に子孫が 0 (pgid ごと看取っている)'
   else bad "中断後に $(alive) プロセスが孤児として残った (issue 301)"; pkill -f "$FIX/fake-make-tree" 2>/dev/null; fi
 fi

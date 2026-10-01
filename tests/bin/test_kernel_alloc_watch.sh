@@ -12,6 +12,8 @@ set -euo pipefail
 unset CDPATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=tests/lib/wait_until.sh
+. "$ROOT_DIR/tests/lib/wait_until.sh"
 BIN="$ROOT_DIR/bin/kernel-alloc-watch"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -343,7 +345,8 @@ if [[ $rc -eq 0 ]]; then pass "消すものが無ければ --yes 無しでも rc
 printf '%s\trow\t1\n' "$NOW" > "$d/log.tsv"
 /usr/bin/lockf -k "$d/.lock" sleep 30 & holder=$!
 held=0
-for _ in $(seq 400); do /usr/bin/lockf -t 0 "$d/.lock" true 2>/dev/null || { held=1; break; }; sleep 0.05; done
+lock_is_held() { ! /usr/bin/lockf -t 0 "$d/.lock" true 2>/dev/null; }
+TT_WAIT_TICKS=400 TT_WAIT_TICK=0.05 tt_wait_until lock_is_held && held=1
 # 握れたのを確かめてから消しに行く。待ちきれずに進むと、誰も握っていない状態で消して rc=0 になり、
 # 「ロックを無視して消した」と区別できない偽の赤になる (CI の負荷で実際に起きた)
 if [[ $held -eq 1 ]]; then
@@ -357,7 +360,7 @@ elif [[ $rc -eq 75 && -f "$d/log.tsv" ]]; then pass "ロックを握られてい
 # 6. tmux が固まっても、ほかの record はロックで待たされずに記録できる (計測をロックの外で済ませている)
 d="$TMP_DIR/t6"; mark="$TMP_DIR/t6.hang"
 FAKE_TMUX=hang FAKE_MARK=$mark FAKE_INUSE=1 run "$d" >/dev/null 2>&1 & hung=$!
-for _ in $(seq 200); do [[ -s $mark ]] && break; sleep 0.05; done
+TT_WAIT_TICKS=200 TT_WAIT_TICK=0.05 tt_wait_until test -s "$mark" || :
 if [[ ! -s $mark ]]; then
   ng "固まる tmux が 10 秒たっても呼ばれない (判定できない)"
 else

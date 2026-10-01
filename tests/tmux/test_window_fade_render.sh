@@ -32,6 +32,7 @@ export TMUX_TMPDIR
 source "$ROOT_DIR/tests/tmux/lib/isolate_env.sh"
 # shellcheck source=tests/tmux/lib/kill_socket.sh
 . "$ROOT_DIR/tests/tmux/lib/kill_socket.sh"
+. "$ROOT_DIR/tests/lib/wait_until.sh"
 SOCK="dffade-$$"
 REAL_TMUX="$(command -v "$TMUX_BIN_PATH")"
 T=("$REAL_TMUX" -L "$SOCK" -f "$CONF_FILE")
@@ -57,13 +58,10 @@ idx="$("${T[@]}" display -t "$win" -p '#{window_index}')"
 # busy 判定は「前面が *zsh 以外」。被検体の sh は busy 扱いなので、busy でない状態は前面を本物の zsh に
 # 差し替えて作る。🚨 `exec -a zsh sleep` で argv[0] を偽る手は macOS で効かない (tmux の osdep-darwin は
 # argv[0] ではなくカーネルの実行ファイル名 pbsi_comm を返す。Linux だけ /proc の cmdline を読む)
+pane_cmd_is() { [ "$("${T[@]}" display -t "$1" -p '#{pane_current_command}')" = "$2" ]; }
 # wait_cmd <pane> <期待する pane_current_command>: 前面が入れ替わるまで待つ (固定の sleep にしない)
 wait_cmd() {
-  local i
-  for i in $(seq 1 100); do
-    [ "$("${T[@]}" display -t "$1" -p '#{pane_current_command}')" = "$2" ] && return 0
-    sleep 0.05
-  done
+  TT_WAIT_TICKS=100 TT_WAIT_TICK=0.05 tt_wait_until pane_cmd_is "$1" "$2" && return 0
   ng "前面が $2 にならない ($1: $("${T[@]}" display -t "$1" -p '#{pane_current_command}'))"
   exit 1
 }
