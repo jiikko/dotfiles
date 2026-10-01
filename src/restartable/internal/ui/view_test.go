@@ -580,8 +580,10 @@ func TestCompactTransitionLineShowsConfirmationPrompt(t *testing.T) {
 // 板を閉じた後の確認ダイアログも、板の入らない幅では 1 行にする (confirm.Dialog は最小 10 桁ではみ出す)。
 func TestConfirmOutsideTransitionFitsAtWidthsOneThroughNine(t *testing.T) {
 	want := map[runner.Confirm]map[int]string{
-		runner.ConfirmQuit:    {1: "y", 3: "y/n", 6: "y/n", 7: "終了y/n", 9: "終了y/n"},
-		runner.ConfirmRestart: {1: "y", 3: "y/n", 8: "y/n", 9: "再起動y/n"},
+		runner.ConfirmQuit: {1: "y", 2: "y/", 3: "y/n", 4: "y/n", 5: "y/n", 6: "y/n",
+			7: "終了y/n", 8: "終了y/n", 9: "終了y/n"},
+		runner.ConfirmRestart: {1: "y", 2: "y/", 3: "y/n", 4: "y/n", 5: "y/n", 6: "y/n",
+			7: "y/n", 8: "y/n", 9: "再起動y/n"},
 	}
 	for confirmState, rows := range want {
 		for width := 1; width <= 9; width++ {
@@ -595,7 +597,7 @@ func TestConfirmOutsideTransitionFitsAtWidthsOneThroughNine(t *testing.T) {
 			if len(lines) != 2 || lines[1] != StatusLine(state, width) {
 				t.Fatalf("confirm %q at width %d: lines = %q, want the confirm row and the status row", confirmState, width, lines)
 			}
-			if expected, ok := rows[width]; ok && lines[0] != expected {
+			if expected := rows[width]; lines[0] != expected {
 				t.Fatalf("confirm %q at width %d: confirm row = %q, want %q", confirmState, width, lines[0], expected)
 			}
 		}
