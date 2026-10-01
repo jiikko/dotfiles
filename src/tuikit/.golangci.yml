@@ -52,8 +52,11 @@ linters:
             - "**/widthenv/**"
             - "**/toast/**"
             - "**/lineedit/**"
-            - "**/editor/**" # 外部のエディタは起こす (parts-pure の対象外) が、描画フレームワークには依存しない
-            - "!**/tuikit/examples/**" # examples/toast 等のデモは bubbletea を使ってよい (部品と同じ名前のディレクトリに当たる)。🚨 tuikit の下に限る: checkout のパスに examples があると全部品が外れる
+            # editor は外部のエディタを起こす (parts-pure の対象外) が、描画フレームワークには依存しない
+            - "**/editor/**"
+            # examples/toast 等のデモは bubbletea を使ってよい (部品と同じ名前のディレクトリに当たる)。
+            # 🚨 tuikit の下に限る: checkout のパスに examples があると全部品が外れる
+            - "!**/tuikit/examples/**"
           deny:
             - pkg: charm.land/bubbletea
               desc: 部品はフレームワーク非依存 (tick は使う側が回す。README の「使う側の約束」)
