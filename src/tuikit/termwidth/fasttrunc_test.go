@@ -21,6 +21,7 @@ var truncTails = []string{"", "…", "..", "\x1b[0m…", "あ"}
 // 部品を最大 5 個並べた全列 × 幅 -1〜9 × tail で、x/ansi 本体と 1 byte 違わず一致することを総当たりで確かめる
 // (速い道は x/ansi の規則の写しなので、本物を正解役にして突き合わせる)
 func TestAnsiTruncateMatchesAnsi(t *testing.T) {
+	t.Parallel()
 	var fast, total int
 	var walk func(prefix string, depth int)
 	walk = func(prefix string, depth int) {

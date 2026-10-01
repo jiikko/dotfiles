@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -105,15 +106,24 @@ func clusterCount(s string) int {
 }
 
 func TestAcceptedSymbolsNeverCombineWithEachOther(t *testing.T) {
+	t.Parallel()
 	syms := acceptedSymbols(t)
 	// 相手 (後ろに置く字) は、ASCII の代表 + 日本語以外の受理字すべて + 日本語の見本。🚨 日本語を全部相手にすると
 	// 約 3 万 × 3 万で 140 秒かかる (2026-09-27 に 1 度だけ全部を回して結合 0 を確かめた)。日本語の受理字はどれも
 	// Grapheme_Cluster_Break が Other で結合の規則上は区別が無いので、各範囲の端と一定間隔の見本で足りる。
-	// 前に置く字 (a) は受理字すべて (範囲の中に Extend が紛れ込んでいたら、ここで ASCII の相手と組んで落ちる)
-	probes := []rune{'a', '0', ' ', '~', '!'} // ASCII 代表も混ぜる (Prepend が ASCII を飲むケースを塞ぐため)
+	// 前に置く字 (a) も同じ理由で、全相手と組むのは見本だけにする (全字 × 全相手は 3,300 万ペアで -race 85 秒。issue 593)。
+	// 全字については次の 3 つを必ず確かめるので、結合を起こす字が範囲に紛れ込んでも見逃さない:
+	//   - "x" + a と a + a (下のループの先頭): a が Extend / ZWJ / SpacingMark なら前の字と結合して、地域指示子・ハングルの字母なら
+	//     同じ字どうしで結合して落ちる (幅もここで x/ansi と突き合わせる)
+	//   - a + ASCII の代表 (asciiProbes): a が Prepend なら後ろの ASCII を飲んで落ちる
+	// 残る「日本語の字どうし」の結合は、Grapheme_Cluster_Break が全部 Other なので規則上起きない (上の 2026-09-27 の全数確認)
+	asciiProbes := []rune{'a', '0', ' ', '~', '!'}
+	probes := slices.Clone(asciiProbes)
+	sampled := map[rune]bool{}
 	for i, r := range syms {
 		if !acceptCJK(r) || i%97 == 0 || !acceptCJK(r-1) || !acceptCJK(r+1) {
 			probes = append(probes, r)
+			sampled[r] = true
 		}
 	}
 	pairs := 0
@@ -128,7 +138,11 @@ func TestAcceptedSymbolsNeverCombineWithEachOther(t *testing.T) {
 				t.Fatalf("%q (U+%04X): fast=(%d,%v) ansi=%d", s, a, w, ok, ansi.StringWidth(s))
 			}
 		}
-		for _, b := range probes {
+		partners := asciiProbes
+		if sampled[a] {
+			partners = probes
+		}
+		for _, b := range partners {
 			s := string(a) + string(b)
 			// クラスタは本番と同じ分割器 (x/ansi。FirstCluster) で数える。🚨 uniseg で数えていた頃は Unicode の版が本番と
 			// 違い (uniseg 15 / x/ansi 16)、判断が割れた (実測 2026-09-03: "a"+U+0897 は uniseg が 2 クラスタ / ansi.StringWidth が幅 1)。
@@ -146,7 +160,7 @@ func TestAcceptedSymbolsNeverCombineWithEachOther(t *testing.T) {
 			pairs++
 		}
 	}
-	t.Logf("%d ペアで結合なし・幅一致を確認 (前 %d 字 × 相手 %d 字)", pairs, len(syms), len(probes))
+	t.Logf("%d ペアで結合なし・幅一致を確認 (前 %d 字 (うち全相手と組む見本 %d 字) × 相手 %d 字)", pairs, len(syms), len(sampled), len(probes))
 }
 
 // RUNEWIDTH_EASTASIAN=1 の子プロセスでも dispWidth が ansi と一致すること。
@@ -160,6 +174,7 @@ func TestAcceptedSymbolsNeverCombineWithEachOther(t *testing.T) {
 // ことだけ (fast-path が幅を決め打ちすると fillRight / truncateDispLeft の算術が破れる。
 // 046 の退行)。描画がこの env で正しいかは別問題で、実測では正しくない (widthenv 参照)。
 func TestDispWidthAgreesUnderEastAsianEnv(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("TUIKIT_EAW_CHILD") == "1" {
 		// ⚠️ まず env が実際に効いていることを止まる形で確かめる。これが無いと、x/ansi が
 		// env の読み方を変えた日にこのテストは**無言で恒真になる** (assert が

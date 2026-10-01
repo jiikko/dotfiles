@@ -1,6 +1,5 @@
 # 593 (test): tuikit の termwidth のテストが `-race` で手元 4 分・CI 6.5 分かかる (3 本の総当たりがほぼ全部)
 
-> 🚨 **担当中: dotfiles-05**（2026-10-01〜）
 
 起票日: 2026-10-01
 
@@ -63,4 +62,14 @@ CI (`.github/workflows/src_tuikit.yml`) でも同じ形 (2026-10-01 の run 3681
 
 - [x] CI での所要時間を確認 (388 秒。上の詳細)
 - [x] 1: 子の filter から外す案は採らない (env で答えが変わる。上の対応方針 1)
-- [ ] 2 / 3: 間引き・並列化の判断 (変異で検出力を確かめてから)
+- [x] 2: `TestAcceptedSymbolsNeverCombineWithEachOther` の前に置く字を、相手と同じ見本 (日本語は範囲の端 + 97 字おき、それ以外は全部) に絞った。
+  全字については引き続き「ASCII の後ろ (`"x" + a`)・同じ字の後ろ (`a + a`)・ASCII の前 (`a + ASCII の代表 5 字`)」を回す。
+  ペアは 3,300 万 → 141 万。`TestAnsiTruncateMatchesAnsi` の深さ 4 は変えていない (幅の範囲を絞っても 2〜3 割しか減らない)
+- [x] 3: 重い 3 本 (`TestAcceptedSymbols…` / `TestDispWidthAgreesUnderEastAsianEnv` / `TestAnsiTruncateMatchesAnsi`) に `t.Parallel()`
+- 実測 (`go test -race -count=1 -v ./termwidth/`、この開発機): `TestAcceptedSymbols…` 84.8 → **3.7 秒**、`TestDispWidthAgreesUnderEastAsianEnv` 85.5 → **4.7 秒**、
+  `TestAnsiTruncateMatchesAnsi` 69.7 秒 (変えていない)。termwidth パッケージ全体は **248 → 78 秒** (`make -C src/tuikit test` で 78.3 秒)。CI の値は push 後の run で確かめる
+- 検出力の確認 (使い捨ての worktree で手で当てた変異):
+  - 受理範囲に U+05F0〜0605 (ヘブライ文字と Prepend) を足す → red (`mutate-verify`。ただし落ちたのは U+00B7 + U+05F0 の幅の不一致で、Prepend の検出ではない)
+  - 受理範囲に U+0600〜0605 (Prepend だけ) を足し、テスト側で日本語の範囲を見本から全部外す → red。落ちたのは全字を回す `"x" + a` の幅の検査 (`"x\u0600"` で fast=3 / ansi=1)。
+    続けて「ASCII の前」の検査も外しても red のまま (同じ `"x" + a` の検査が先に捕まえる)。見本に絞っても、範囲に紛れ込んだ字は全字を回す検査で捕まる
+- 検証: `make -C src/tuikit lint` 0 件、`make -C src/tuikit test` green
