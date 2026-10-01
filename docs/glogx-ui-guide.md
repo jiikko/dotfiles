@@ -1,9 +1,12 @@
-# glogx UI ガイド — 操作感の世界観とキー語彙
+# TUI ガイド — 操作感の世界観とキー語彙 (glogx / pro-con と tuikit)
 
 (pro-con もこの語彙に従う。pro-con で意味を変えている字は §8)
 
 glogx の画面 (git log 一覧 / job パネル / diff / issues viewer / status viewer / doctor /
-ratelimit) に共通する**操作の考え方**を 1 箇所に置く。個々のキーの一覧は
+ratelimit) と pro-con に共通する**操作の考え方**を 1 箇所に置く。ファイル名に glogx が残っているのは
+glogx から始まった名残で、扱う範囲は tuikit (`src/tuikit`) を使う TUI 全体。
+**語彙の正本は本書で、tuikit の部品 (`listnav` / `lineedit` / `confirm` / `toast` …) はそれを実装する側**
+(部品を足す・語彙を変えるときは本書を同じ変更で直す。§10)。個々のキーの一覧は
 [`src/glogx/README.md`](../src/glogx/README.md) と `glogx --help` が正本で、ここには
 「なぜそのキーか」「新しい操作を足すときに何に揃えるか」を書く。
 
@@ -20,7 +23,7 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 - **画面は「板」の重なりで、板は奥から手前へ飛び出してくる**。issues viewer は右から、
   status viewer は左から、引き出し (本文) は右から。方向で「どの板か」を見分ける。
   板の出入りは演出つきだが、**演出中のキーは即着地させ、かつ飲み込まない** (押した瞬間に
-  意図した操作が始まる。待たせない)
+  意図した操作が始まる。待たせない)。板と演出をどの部品で組むかは §9
 - **1 段戻る操作と、全部終える操作を分ける**。`q` は tig 流に「今の板を 1 段戻る」で、
   即終了は `Ctrl-C`。ただし issues / status viewer は例外で `q`/`Esc` が glogx ごと終了する
   (ユーザー選定 2026-08-06。`i` / `s` が「閉じて一覧へ戻る」を担うため)
@@ -107,6 +110,12 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
   `y` と `Enter` だけが実行で、**知らないキーはすべて取り消し**に倒す。判定と板は tuikit の `confirm`
   (`IsYes` = 大文字 `Y` も実行 / `IsYesStrict` = `Y` も取り消し。どちらを使うかは画面ごとの判断で、
   揃えない理由は glogx の `status_view.go` の `discardKey` の注記)
+- 確認の板 (`confirm.Dialog`) の案内は**定型の `confirm.HintYesNo` (`y/Enter: 実行   n/Esc: キャンセル`) /
+  `HintYesOther` (`… その他: キャンセル`) から選ぶ** (glogx の push / pull / rerun / 変更を捨てる / issues の next の目印、restartable)。
+  定型なら狭い板で `confirm.Dialog` が短い形 (`y: 実行  n: 取消`) に替えるので、取り消しの側が先に切れて実行のキーだけが
+  残る形にならない (手書きの案内は短い形を持たず、そのまま切られる)。y/N でない板 (glogx の新版の再起動 `r` など) は手書きでよい
+  - pro-con の y/N は板を出さず、最下段の 1 行 (黄色の問い) と案内の行 (`y / enter 実行` `他のキー 取り消し`) で確かめる
+    (`modeConfirm`。判定だけ `confirm.IsYesStrict`)。送る前の確認は中央の枠 (`sendconfirm.go`。§8)
 - 確認モーダルの `Enter` は「飲む」場合がある (doctor の削除確認は Enter で実行もキャンセルも
   しない。issue 243)。Enter が開閉 toggle として全画面に効くため、連打の勢いで削除が
   走らないようにしている
@@ -120,6 +129,7 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
   入力中に案内が残っていると、載せたキーが全部検索語に化ける (issues viewer の URL ピッカーで
   実測)。入力中は案内を差し替える
 - 幅の都合で案内から落としたキー (`R` 等) も**動く**。案内は「全部」ではなく「よく使う」
+- 操作の結果は案内の行に出さず、通知 (§9 の `toast`) に出す。案内の行は「何が押せるか」だけを持つ
 
 ## 6. 「詳細を開いたまま隣へ」= `J` / `K`
 
@@ -175,9 +185,14 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 - **ペーストは入力欄にだけ入れ、改行とタブは空白にする** (1 行の欄に行を増やさない)。入力欄が閉じているときの
   ペーストはキー操作として解釈しない (glogx の bubbletea v2 移行で得た性質。`glogx-bubbletea-v2.md`)
 - 修飾キー付きの打鍵 (`Ctrl-Z` 等) は、編集に割り当てていなければ文字として入れない
+- **1 文字 = 書記素 1 つ**。`←` `→` `backspace` `delete` は肌色・ZWJ・国旗・結合文字を割らずにまとめて動く・消す
+  (issue 589)。長い入力は `lineedit.Line.Window(幅)` がキャレットの見える位置まで前を切って出す (全角は 2 桁)
+- 🚨 **入力欄には端末のカーソルを `tuikit/caret` の `caret.At` で置く** (棒のカーソル。位置は「欄の左端 +
+  `Window` が返すキャレットの桁」)。IME は変換中の文字を端末のカーソルの位置に出すので、置かないと日本語の
+  変換中の文字が入力欄の外 (描画を書き終えた位置) に出る (issue 517。pro-con の入力欄・回答フォームと schedkeys が置く)
 - 🚨 **glogx の入力欄 (issues の番号の絞り込み `issues_number_filter.go` / URL ピッカー `url_picker.go`) はまだ
-  `lineedit` に寄せていない**。今効くのは `backspace` / `Ctrl-H` / `Ctrl-U` (全部消す) だけで、カーソルが無い。
-  次に触るときに寄せる (2 画面で同じ編集を別々に書いている)
+  `lineedit` に寄せていない**。今効くのは `backspace` / `Ctrl-H` / `Ctrl-U` (全部消す) だけで、カーソルが無く、
+  `caret` も置いていない。次に触るときに寄せる (2 画面で同じ編集を別々に書いている)
 
 ## 8. pro-con の例外
 
@@ -213,7 +228,7 @@ glogx と違って入力は `lineedit` (§7) で、題名・カード ID・issue
 `j` / `k` が選択を動かし、大文字がカードを動かす (§2 の「大文字は小文字の強い版」)。詳細の中 (隣へ送る) とカンバンで意味が割れるが、
 glogx の issues の一覧 (範囲選択) と本文 (隣へ送る) と同じ割れとして承知の上で採る。`[` / `]` は空いているがホームポジションから外れるので採らない。
 
-案内の行では、**選んでいるカードで効かない操作を暗く出す** (状態によって効く操作が変わるため。押すと理由が flash に出る)。
+案内の行では、**選んでいるカードで効かない操作を暗く出す** (状態によって効く操作が変わるため。押すと理由が toast に失敗として出る。§9)。
 見ているだけの画面 (`pro-con --view`) では、**どの状態でも断る操作は暗くせず出さない** (暗いと「状態が変われば押せる」と読める)。
 模擬と本物のモードは、書き込みの操作をどれも受ける (issue 438)。
 
@@ -225,7 +240,38 @@ glogx の issues の一覧 (範囲選択) と本文 (隣へ送る) と同じ割�
 - 動作キーに移動の語彙 (`b` `f` `g` `space` …) を使わない。使うとその移動が効かなくなる (btw を `b` にしていたとき、
   半ページ上が効かなかった)
 
-## 9. 新しいキーを足すときのチェック
+## 9. 部品の地図と通知の語彙
+
+画面は tuikit の部品で組み、同じ見た目・同じ手触りを画面ごとに作り直さない。各部品の API は
+[`src/tuikit/README.md`](../src/tuikit/README.md) の「パッケージ」表が正本で、ここには「どの見た目をどの部品で出すか」だけを書く。
+
+| 見た目 | 部品 | 使っている所 |
+|---|---|---|
+| 一覧の上に右から重なる詳細 (引き出し。§1・§6) | `layout.ComposeDrawer` + `layout.DrawerGeometry` / 開閉は `anim.Transition` | glogx の issues の本文・pro-con のカードの詳細 |
+| 落ち影つきの板 (確認・ピッカーなど) | `layout.Panel` (中身の幅は `layout.PanelContentWidth`) / 重ねるのは `layout.OverlayCentered` / `OverlayRight` | glogx・pro-con・restartable |
+| y/N の確認 (§4) | `confirm.Dialog` (案内は定型の `HintYesNo` / `HintYesOther`) / 判定は `confirm.IsYes` / `IsYesStrict` | 板: glogx・restartable / 判定だけ: pro-con (§4 の下の項) |
+| 本文 (issue の md・PG の応答) | `markdown.Render` | glogx の issues・pro-con の詳細 |
+| diff・コードの色付け | `highlight.Diff` (本文のフェンスコードは `markdown.Render` が中で `highlight.Lang` を通す) | glogx の diff の板・pro-con の差分の板 |
+| 一覧・本文の移動 (§2) | `listnav.MotionOf` / `List` / `Pager` | glogx の全画面・pro-con |
+| 入力欄 (§7) | `lineedit` + `caret` | pro-con・schedkeys (glogx は未移行。§7) |
+| 操作の結果の通知 (下) | `toast.Stack` | glogx・pro-con |
+| 行を幅で切る・揃える・折る | `termwidth` (x/ansi の `Hardwrap` / `Wrap` は使わない) | 全部 |
+
+### 通知: 操作の結果は右下の toast に出す
+
+- **操作の結果 (成功・失敗・断り・進行中) は `tuikit/toast` に出す**。右外から滑り込み、3 秒止まって、右へ抜ける。
+  画面の他の行 (案内の行・ヘッダ) には出さない (§5)
+- 色は意味で選ぶ: 成功 = `Show(…, true)` (✓ 緑) / 失敗 = `Show(…, false)` (✗ 赤) / 進行中 = `ShowInfo` (… シアン)
+- 🚨 **押したキーが効かなかった理由 (できない・使えない・選ばれていない) は失敗 (✗ 赤) で出す**。進行中のシアンで出すと
+  「何かが始まった」に見える (2026-09-25 のユーザーの指摘。pro-con の `refuse` / glogx の `showWarning`)
+- glogx の viewer (issues / status) は自分で toast を持たず、`setNotice` で置いた結果を browseModel が `takeNotice` で
+  取り出して toast に流す (`deliverNotice`)。Msg 経路で置いた notice も同じ口を通す (通さないと次の打鍵まで出ない。issue 059)。
+  失敗は `w` でコピーできるよう控える (`lastWarning`)
+- **時間で消えてはいけない知らせ** (起動時の警告・捨てた書きかけの文) は toast に載せず、消すまで残す行に置く
+  (pro-con の `Notify` / `sticky`。ボードの `Esc` で消す)
+- schedkeys の予約成功の通知は tuikit/toast を使わない別実装 (理由は `src/schedkeys/toast.go` の冒頭)
+
+## 10. 新しいキー・画面を足すときのチェック
 
 1. どの層か (移動 / 別名 / 動作)。別名層には新しい意味を与えない
 2. その字は他の画面で何の動詞か。**同じ字は同じ動詞** (§2 の表に足す)
@@ -234,4 +280,8 @@ glogx の issues の一覧 (範囲選択) と本文 (隣へ送る) と同じ割�
 5. 案内に載せるなら、その画面の全状態 (入力中・演出中・モーダル中) で案内どおりに動くか
 6. README のキー表と `--help` を同じ変更で直す (案内・README・help の 3 つが正本の分担で、
    コードのコメントは入口に数えない)
-7. 入力欄を足すなら `tuikit/lineedit` を使い、§7 の編集キーが効くか (入力中は案内を入力欄のキーに差し替える)
+7. 入力欄を足すなら `tuikit/lineedit` を使い、§7 の編集キーが効くか (入力中は案内を入力欄のキーに差し替える)。
+   端末のカーソルを `tuikit/caret` で置いたか (日本語の変換中の文字が欄に出るか)
+8. 板・確認・本文・通知を足すなら §9 の部品で組んだか (確認の板の案内は定型、操作の結果は toast、断りは ✗ 赤)
+9. **tuikit の部品を足した・語彙や見た目の決まりを変えたなら、本書 (§2 の表・§7 の表・§9 の地図) を同じ変更で直す**。
+   部品の README は API の正本、本書は「どの場面でどの部品をどう使うか」の正本で、片方だけ直すと次の画面が古い方に合わせる

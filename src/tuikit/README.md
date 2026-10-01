@@ -10,6 +10,10 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 
 ## パッケージ
 
+キーの語彙と「どの見た目をどの部品で出すか」(確認の案内・通知の色・入力欄のキャレット) は
+[`docs/glogx-ui-guide.md`](../../docs/glogx-ui-guide.md) (TUI ガイド) が正本で、この表は API の正本。
+部品を足す・決まりを変えるときは両方を同じ変更で直す。
+
 | パッケージ | 中身 | 使いどころ |
 |---|---|---|
 | `termwidth` | 表示幅の単一情報源 (`Of` / `Truncate` / `Clip` / `PadSpaces` / `FillRight` …)。折り返しは `Wrap(s, 幅, 頭の空白を落とすか)` (書記素単位) / `WordWrap(s, 幅)` (単語の境目で折る) | 行を幅で切る・揃える・折るときは**必ずここを通す** (x/ansi の `Hardwrap` / `Wrap` はキーキャップで幅を超える。glogx・pro-con は lint で禁止) |

@@ -24,7 +24,10 @@
 - [x] **highlight.Code が chroma.Lexer を公開 API に出している** (leaky-abstraction L2): 直した。非公開の `codeLine` にした (外からの呼び出しは 0 件)
 - [x] **restartable が confirm.IsYes と同じ y / Y / enter を手書きしている** (leaky-abstraction L6): 寄せない (理由を model.go にコメント)。confirm は y / Enter 以外をすべて取り消すが、restartable は n / N / Esc だけを取り消しにして、ほかのキーでは確認を開いたままにする。実行の集合だけを寄せると規則が混ざり、状態遷移の層が UI の部品を import する
 - [x] **editor の doc の「glogx はまだこの package に寄せていない」が古い**: 直した (glogx と pro-con が使うと書いた)
-- [ ] **lineedit / listnav のキーの語彙の正本が、消費者側の docs/glogx-ui-guide.md を指す**: 依存の向きが逆 (部品の正本が消費者の文書)
+- [x] **lineedit / listnav のキーの語彙の正本が、消費者側の docs/glogx-ui-guide.md を指す**: 依存の向きが逆 (部品の正本が消費者の文書)
+  - 2026-10-02 決着: 向きは変えない。ガイドは glogx 専用の文書ではなく tuikit を使う TUI 全体の語彙の正本と位置づけ直した (題名を「TUI ガイド」にし、冒頭に「語彙の正本は本書、tuikit の部品は実装する側」と書いた)。ファイル名は参照が多いので据え置き。
+    代わりに「部品を足す・決まりを変えたらガイドも直す」を tuikit の CLAUDE.md・README とガイド §10 に置き、ガイドに部品の地図と通知の語彙 (§9) を足した。
+    ガイドの語彙表とコードの突き合わせを機械で止める検査は置いていない (`motion_vocabulary_test.go` / pro-con の `guide_test.go` は動作を固定するが、ガイドの文書は読まない)
 - [ ] **restartable が tuikit を擬似バージョン 99b256e3 で固定し、HEAD より production 10 ファイル遅れている** (dependency): 固定は go install 経路のための意図 (restartable の CLAUDE.md)。589〜592 の修正が入っていない。
   `src_restartable.yml` の paths に tuikit が無く、追従の合図が出ない。restartable が import する tuikit は confirm・layout・termwidth だけで (反証レビュー)、
   固定以降にこの 3 つで変わったのは `layout/panel.go` の追加 (+36 行) と使っていない `termwidth/wrap.go` の新設だけ (`git diff --stat 99b256e3 HEAD`)。今は遅れの実害は無い。

@@ -895,7 +895,7 @@ func (m *Model) hints() []string {
 		return out
 	}
 
-	// カードへの操作は、選んでいるカードで効くかどうかを色で出す (効かないものは暗く。押すと理由が flash に出る)
+	// カードへの操作は、選んでいるカードで効くかどうかを色で出す (効かないものは暗く。押すと理由が toast に出る)
 	cardOps := offer(
 		hint{"a attach", has && c.Session != "", true}, // backend は session の無いカードを ErrNoSession で拒否する
 		hint{"r 回答", has && c.Answerable() && m.accepts(backend.OpAnswer), true},

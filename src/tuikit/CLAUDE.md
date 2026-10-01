@@ -27,6 +27,12 @@ README.md の「パッケージ」表が正本 (各パッケージの中身と�
   `src/restartable/README.md`)。tuikit の変更は、restartable の go.mod の版を上げるまで届かない
 - schedkeys は `caret` / `termwidth` を使い、`toast` だけは別実装
 
+## 部品を足す・語彙や見た目の決まりを変えたら
+
+- **`docs/glogx-ui-guide.md` (TUI ガイド) を同じ変更で直す**。キーの語彙 (§2・§7)・確認の案内 (§4)・通知 (§9)・
+  「どの見た目をどの部品で出すか」の地図 (§9) の正本はあちらで、ここと README は API の正本。部品だけ足すと、
+  次に画面を作る人がガイドを読んでもその部品に辿り着けない (ガイドのチェックは §10)
+
 ## ビルド・テスト
 
 - `make -C src/tuikit lint` / `test` / `demo` (vhs で gif 再撮影)

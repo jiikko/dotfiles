@@ -98,7 +98,7 @@ type Model struct {
 	orderKind   card.OrderKind
 
 	toasts toast.Stack // 操作の結果の通知 (toast.go)
-	sticky string      // 消すまで残す通知 (捨てた書きかけの文など。flash は次の通知で消えるので置かない)。ボードの esc で消す
+	sticky string      // 消すまで残す通知 (捨てた書きかけの文など。toast は時間で消えるので置かない)。ボードの esc で消す
 
 	// カードの移動の演出 (motion.go)。now は時計 (テストで差し替える)
 	now       func() time.Time
@@ -162,7 +162,7 @@ func New(be backend.Backend, repos []backend.Repo) *Model {
 	return m
 }
 
-// Notify は起動時の警告など、画面の外から通知を足す。操作の結果 (flash) と違って時間では消さず、esc で消すまで残す
+// Notify は起動時の警告など、画面の外から通知を足す。操作の結果 (toast) と違って時間では消さず、esc で消すまで残す
 // (上書きしない: 引き継ぎで捨てた書きかけの文などを消さない)。
 func (m *Model) Notify(s string) {
 	if m.sticky != "" {
