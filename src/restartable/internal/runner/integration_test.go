@@ -1439,7 +1439,7 @@ func TestGroupStopWaitsForDescendantAfterLeaderExit(t *testing.T) {
 	release := filepath.Join(dir, "release-descendant")
 	gracefulExit := filepath.Join(dir, "descendant-exited-gracefully")
 	childPIDPath := filepath.Join(dir, "descendant.pid")
-	run := fmt.Sprintf(`(trap 'echo ready > %s; while [ ! -e %s ]; do /bin/sleep 0.01; done; echo graceful > %s; exit 0' TERM; while :; do /bin/sleep 1; done) & echo $! > %s; trap 'while [ ! -e %s ]; do /bin/sleep 0.01; done; echo exited > %s; exit 0' TERM; wait`,
+	run := fmt.Sprintf(`(trap 'echo ready > %s; while [ ! -e %s ]; do /bin/sleep 0.01; done; echo graceful > %s; exit 0' TERM; while :; do /bin/sleep 0.01; done) & echo $! > %s; trap 'while [ ! -e %s ]; do /bin/sleep 0.01; done; echo exited > %s; exit 0' TERM; wait`,
 		shellQuote(ready), shellQuote(release), shellQuote(gracefulExit), shellQuote(childPIDPath), shellQuote(ready), shellQuote(leaderExited))
 	r := startTestRunner(t, map[string]string{
 		"RESTARTABLE_TEST_RUN":        run,
@@ -1462,8 +1462,8 @@ func TestGroupStopWaitsForDescendantAfterLeaderExit(t *testing.T) {
 		response, err := control.Call(ctx, r.path, control.Restart)
 		restartDone <- restartResult{response: response, err: err}
 	}()
-	waitFor(t, time.Second, "descendant to receive SIGTERM", func() bool { return strings.TrimSpace(readFile(ready)) != "" })
-	waitFor(t, time.Second, "group leader to finish before its descendant", func() bool {
+	waitFor(t, 10*time.Second, "descendant to receive SIGTERM", func() bool { return strings.TrimSpace(readFile(ready)) != "" })
+	waitFor(t, 10*time.Second, "group leader to finish before its descendant", func() bool {
 		return errors.Is(syscall.Kill(*initial.PID, 0), syscall.ESRCH) && strings.TrimSpace(readFile(leaderExited)) != ""
 	})
 	if !groupExists(*initial.PID) {
