@@ -33,9 +33,10 @@ func caretTestModel(t *testing.T, frame bool) *browseModel {
 }
 
 // caretPrefix は描画した画面のうち、端末のカーソルより左にある文字列 (カーソルの行の頭から x 桁)。
+// カーソルは View().Cursor から読む (caret() を直接呼ぶと、View への配線を消されても気づけない)。
 func caretPrefix(t *testing.T, m *browseModel) string {
 	t.Helper()
-	c := m.caret()
+	c := m.View().Cursor
 	if c == nil {
 		t.Fatal("入力中なのに端末のカーソルが無い (IME の変換中の文字が入力欄の外に出る)")
 	}
@@ -77,9 +78,13 @@ func TestURLPickerCaretFollowsLineEdit(t *testing.T) {
 		if !m.issuesOv.urlPick.open([]string{"https://example.com/abc", "https://github.com/x"}) {
 			t.Fatal("前提が崩れた: URL ピッカーが開かない")
 		}
+		typeKeys(m, "down")                     // 2 本目を選んでから打つ: 絞り込み直後は先頭へ戻す (fzf と同じ)
 		typeKeys(m, "e", "x", "m", "home", "g") // 先頭へ戻って g を入れる
 		if q := m.issuesOv.urlPick.query(); q != "gexm" {
 			t.Fatalf("frame=%v: 先頭に入らない: query=%q (期待 gexm)", frame, q)
+		}
+		if m.issuesOv.urlPick.cursor != 0 {
+			t.Errorf("frame=%v: 打った後に選択が先頭へ戻らない: cursor=%d", frame, m.issuesOv.urlPick.cursor)
 		}
 		if got := caretPrefix(t, m); !strings.HasSuffix(got, urlPickerPrompt+"g") {
 			t.Errorf("frame=%v: カーソルが g の直後に無い: カーソルの左 = %q", frame, got)
@@ -105,5 +110,82 @@ func TestCaretHiddenWhileIssuesViewerAnimates(t *testing.T) {
 	m.issuesOv.animStart = timeNow()
 	if c := m.caret(); c != nil {
 		t.Errorf("演出の最中にカーソルを置いている: %+v", c)
+	}
+}
+
+// 検索語が欄より長くなっても、キャレットは欄の中 (打った字の直後) に居る。前を切るのは lineedit.Line.Window。
+func TestCaretStaysInFieldWithLongQuery(t *testing.T) {
+	const width = 40
+	t.Run("URL", func(t *testing.T) {
+		m := caretTestModel(t, false)
+		m.width = width
+		m.issuesOv.urlPick.open([]string{"https://example.com/abc"})
+		q := "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMN" // 同じ並びが 2 度出ない (ずれた桁で偶然一致しない)
+		for _, r := range q {
+			typeKeys(m, string(r))
+		}
+		got := caretPrefix(t, m)
+		if !strings.HasPrefix(got, urlPickerPrompt) || !strings.HasSuffix(got, "LMN") {
+			t.Errorf("長い検索語でカーソルが打った字の直後に無い: カーソルの左 = %q", got)
+		}
+	})
+	t.Run("番号", func(t *testing.T) {
+		m := caretTestModel(t, false)
+		m.width = width
+		typeKeys(m, "/")
+		for range 4 {
+			typeKeys(m, "1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
+		}
+		typeKeys(m, "5")
+		got := caretPrefix(t, m)
+		if !strings.HasPrefix(got, numberFilterPrompt) || !strings.HasSuffix(got, "78905") {
+			t.Errorf("長い番号でカーソルが打った字の直後に無い: カーソルの左 = %q", got)
+		}
+	})
+}
+
+// 入力欄が無い・入力欄の上に何かが重なっている間は、端末のカーソルを置かない (IME の変換中の文字が別の所に出る)。
+// 条件を 1 つずつ作り、その条件だけでカーソルが消えることを見る。
+func TestCaretHiddenWhenFieldIsCoveredOrGone(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		set  func(m *browseModel)
+	}{
+		{"glogx を終える", func(m *browseModel) { m.done = true }},
+		{"issues viewer を閉じた", func(m *browseModel) { m.issuesOv.shown = false }},
+		{"窓の zoom の演出中", func(m *browseModel) { m.zoom.off = false; m.zoom.start(timeNow()) }},
+		{"action モーダル", func(m *browseModel) { m.actModal.pullConfirm = true }},
+		{"再起動の確認", func(m *browseModel) { m.restartPending = true }},
+		{"usage の板", func(m *browseModel) { m.usageOv.visible = true }},
+		{"next の目印の確認", func(m *browseModel) { m.issuesOv.markNext.active = true }},
+		{"本文を開いている", func(m *browseModel) {
+			if !m.issuesOv.openIssue(realIssue(t)) {
+				t.Fatal("前提が崩れた: 本文を開けない")
+			}
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m := caretTestModel(t, true)
+			typeKeys(m, "/", "1")
+			if m.View().Cursor == nil {
+				t.Fatal("前提が崩れた: 入力中なのにカーソルが無い")
+			}
+			c.set(m)
+			if cur := m.View().Cursor; cur != nil {
+				t.Errorf("%s の間もカーソルを置いている: %+v", c.name, cur)
+			}
+		})
+	}
+}
+
+// 入力欄に打っている間は、同じ字を素早く続けて打っても飲まない (https の ss)。キーリピートの抑止は入力欄の外だけ。
+func TestRepeatGuardDoesNotSwallowTypedLetters(t *testing.T) {
+	m := caretTestModel(t, false)
+	m.issuesOv.urlPick.open([]string{"https://example.com/abc"})
+	for _, k := range []string{"s", "s", "i", "i", "a", "a"} { // releaseKey を挟まない = 素早い連打
+		m.handleKey(k)
+	}
+	if q := m.issuesOv.urlPick.query(); q != "ssiiaa" {
+		t.Errorf("連打の 2 字目が飲まれた: query=%q (期待 ssiiaa)", q)
 	}
 }

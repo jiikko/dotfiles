@@ -2459,6 +2459,12 @@ var repeatGuardedKeys = map[string]bool{
 
 // swallowKeyRepeat は自動リピートとみなしたキーを飲む (true = 何もしない)。
 func (m *browseModel) swallowKeyRepeat(key string) bool {
+	// 🚨 入力欄に打っている間は抑止しない: 印字キーはすべて検索語で、https の ss のように同じ字を素早く続けて打つと
+	// 2 字目が飲まれていた。y/N の確認 (n の目印) は入力欄ではないので抑止を残す (n のリピートが確認を取り消すため)
+	if m.issuesOv.visible() && m.issuesOv.typingInput() {
+		m.lastKey, m.lastKeyAt = "", time.Time{}
+		return false
+	}
 	if !repeatGuardedKeys[key] {
 		m.lastKey, m.lastKeyAt = "", time.Time{} // 別のキーが来たら押しっぱなしは切れている
 		return false
@@ -3664,6 +3670,9 @@ func (m *browseModel) caret() *tea.Cursor {
 //   - usage: 上部右端の複数行モーダル。U で再表示、任意キーで消える
 //   - トースト: 右下 (hint 行の直上) に数秒。push/pull 完了や viewer の操作結果 (コピー等) を
 //     glogx 共通の語彙で出す
+//
+// 🚨 窓の上に板を足すときは、caret() の「板が出ている間は端末のカーソルを置かない」判定にも足す
+// (入力欄の上に板が重なると、IME の変換中の文字が板の上に出る)。
 func (m *browseModel) finishWithGlobalChrome(window []string, page int) string {
 	if box := m.centerModalLines(); len(box) > 0 {
 		window = overlayCenteredBox(window, box, m.contentWidth(), page, m.colored)

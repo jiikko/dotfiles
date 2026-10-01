@@ -2264,15 +2264,24 @@ func (v *issuesView) emptyMessage(o issuesRenderOpts) string {
 // 入力中は端末のカーソルを検索語の中に置く (caretCol)。確定した後はカーソルを出さないので、
 // 打鍵を待っているのか確定済みなのかはカーソルの有無で分かる。
 func (v *issuesView) numberFilterLine(width int, colored bool) string {
-	line := numberFilterPrompt + v.numFilter.query() +
+	text, _ := v.numberField(width)
+	line := numberFilterPrompt + text +
 		"  " + strconv.Itoa(len(v.rows)) + " 件 (全カテゴリ・全状態)"
 	return paint(clipToWidth(line, width), ansiBold, colored)
 }
 
 // numberFilterPrompt は番号の絞り込みの行の頭。キャレットの桁はこの幅から数える。
-// 検索語は数字だけで欄より長くならないので、lineedit.Line.Window で前を切らない
-// (切ると後ろの件数の表示まで動く)。
 const numberFilterPrompt = "番号: "
+
+// numberField は番号の行に出す検索語と、その中のキャレットの桁。数字は何桁でも打てるので、行の幅に収まるよう
+// lineedit.Line.Window で前を切る (切らないと、長く打ったときにカーソルが行の外 = 枠の上に出る)。
+func (v *issuesView) numberField(width int) (string, int) {
+	return v.numFilter.line.Window(max(width-termwidth.Of(numberFilterPrompt), 1))
+}
+
+// typingInput は入力欄 (URL ピッカー・番号の入力中) にキーを打っているか。打っている間は印字キーがすべて
+// 検索語なので、browseModel のキーリピートの抑止 (swallowKeyRepeat) を外す。
+func (v *issuesView) typingInput() bool { return v.urlPick.active || v.numFilter.typing }
 
 // caretCol は入力欄のキャレットを置く桁 (lines が返す窓の中の桁)。入力欄が無い・隠れているときは ok=false。
 // 行は常に窓の 0 行目 (どちらの入力欄も先頭の行にある。下の並びの注記)。
@@ -2289,8 +2298,8 @@ func (v *issuesView) caretCol(o issuesRenderOpts) (x int, ok bool) {
 	case v.urlPick.active:
 		return v.urlPick.caretCol(o.width), true
 	case v.numFilter.typing && v.open == nil:
-		// 検索語は数字 (1 字 = 1 桁) だけなので、カーソルの rune の位置がそのまま桁になる
-		return termwidth.Of(numberFilterPrompt) + v.numFilter.line.Cursor(), true
+		_, col := v.numberField(o.width)
+		return termwidth.Of(numberFilterPrompt) + col, true
 	}
 	return 0, false
 }
