@@ -1029,9 +1029,11 @@ func killRemainingGroups(procs []*process) error {
 }
 
 // trackProcess is the only way a started process enters allProcesses. It first
-// drops settled records so the list stays bounded by the groups that forced
-// shutdown or output drain can still act on, instead of growing with every
-// ready-cmd probe.
+// drops settled records so the list holds only records that forced shutdown
+// or output drain can still act on (a live group, or an output pipe still held
+// by a descendant that left the group), instead of one per ready-cmd probe.
+// The held-pipe records are kept on purpose: dropping them loses the only
+// handle drainOutputs has to close that pipe.
 func (a *actor) trackProcess(p *process) {
 	kept := a.allProcesses[:0]
 	for _, old := range a.allProcesses {

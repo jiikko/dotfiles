@@ -3,6 +3,7 @@ package runner
 import (
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -116,6 +117,9 @@ func TestTrackProcessKeepsReapedLeaderWhoseGroupIsAliveForForcedShutdown(t *test
 }
 
 func TestTrackProcessKeepsRecordWhoseOutputIsStillHeld(t *testing.T) {
+	if _, err := os.Stat("/usr/bin/perl"); err != nil {
+		t.Fatalf("fixture needs /usr/bin/perl to move a descendant out of the group: %v", err)
+	}
 	pidFile := filepath.Join(t.TempDir(), "escaped.pid")
 	// The descendant leaves the group but keeps the shared output pipe open.
 	script := fmt.Sprintf(`/usr/bin/perl -e 'setpgrp(0,0); sleep 30' & echo $! > %s; exit 0`, shellQuote(pidFile))
