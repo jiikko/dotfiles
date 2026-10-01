@@ -24,14 +24,19 @@ bad() { printf '  ✗ %s\n' "$1"; fail=1; }
 
 FIX=$(mktemp -d)
 trap 'rm -rf "$FIX"' EXIT
-# 完了順が引数順と食い違うように sleep を仕込む (出力順の検査を vacuous にしないため)
 cat > "$FIX/Makefile" <<'MK'
 slow-ok:
-	@sleep 1; echo "OUT slow-ok"
+	@echo "OUT slow-ok"
 fast-fail:
 	@echo "OUT fast-fail"; echo "ERR fast-fail" >&2; exit 3
 mid-ok:
-	@sleep 0.3; echo "OUT mid-ok"
+	@echo "OUT mid-ok"
+# 完了順が引数順と食い違うことを秒数ではなく順序で作る (出力順の検査を vacuous にしないため。issue 613):
+# ord-late は ord-early が書き終えるまで終わらない。逐次に走ると ord-late が上限 (10 秒) まで待って落ちる
+ord-late:
+	@i=0; until [ -f ord-early.done ] || [ $$i -ge 200 ]; do sleep 0.05; i=$$((i+1)); done; [ -f ord-early.done ]; echo "OUT ord-late"
+ord-early:
+	@echo "OUT ord-early"; touch ord-early.done
 also-fail:
 	@echo "OUT also-fail"; exit 1
 # ランデブー: 互いの開始マーカーを待つ。逐次実行だと先に走った方が相手を待ち続けて
@@ -68,9 +73,10 @@ run fast-fail > /dev/null
 grep -q 'ERR fast-fail' "$FIX/err" && ok '失敗ターゲットの stderr が出ている' || bad '失敗ターゲットの stderr が捨てられている'
 
 printf 'Test 4: 出力は完了順でなく引数順\n'
-run slow-ok mid-ok > /dev/null   # 完了は mid-ok が先、引数は slow-ok が先
+rm -f "$FIX/ord-early.done"
+run ord-late ord-early > /dev/null   # 完了は ord-early が先 (ゲート)、引数は ord-late が先
 order=$(grep -o 'OUT [a-z-]*' "$FIX/out" | tr '\n' ' ')
-[ "$order" = "OUT slow-ok OUT mid-ok " ] && ok "引数順で出ている ($order)" || bad "出力順が引数順でない: '$order'"
+[ "$order" = "OUT ord-late OUT ord-early " ] && ok "引数順で出ている ($order)" || bad "出力順が引数順でない: '$order'"
 
 printf 'Test 4b: ターゲットは実際に並列に走る (逐次化の退行を検知)\n'
 # 🚨 ここが無いと「集約の契約」は守れていても、& / wait を外して逐次に戻す退行が緑で通る
