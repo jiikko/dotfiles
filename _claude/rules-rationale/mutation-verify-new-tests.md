@@ -558,3 +558,6 @@ pro-con の終了の保証で、「止めたら state: stopped」を 1 回の実
 - 遅延・非同期へ移した処理: 2026-09-24 pro-con で attach を裏に回したとき、「起きないこと」を見る assert 3 本がこの形になりかけた
 - flaky かつ空振り: obaket 881
 - 効率の不変条件: obaket 898
+- **差分テストの oracle に既存処理を写した実例** (swift-smbee issue 075 / retro 101, 2026-10-01): pure-Swift の CCM 整形
+  (B_0・AAD 長符号化・padding) を約 100 行テスト専用に複製した。誤りを共有して独立ではなく、複製を除き
+  pyca/cryptography (OpenSSL) の固定値と CommonCrypto 経路を照合した

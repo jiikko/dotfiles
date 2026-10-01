@@ -346,3 +346,8 @@ container 配下に 9 個**の lock file が**両方**実在した。経路を�
 起源: dotfiles issue 583。bin/mutate-verify-list の self-test を `bash tests/…` (5.3) と `/bin/bash tests/…` (3.2) で起動して
 「両方で通った」と報告したが、テストは道具を `"$MVL"` で直接起動しており、道具は毎回 shebang の /bin/bash (3.2) で走っていた。
 bash 5 でだけ起きる素通り (`( set -e ) || die`) は、敵対レビューが道具を bash 5 で直接走らせて初めて見つかった。
+
+## 最後の編集後に検査を回し直す実例 (swift-smbee issue 075 / retro 101, 2026-10-01)
+
+`make lint-analyze` の後にテスト配列へ固定値を 1 行追加し、CI の SwiftLint strict が trailing comma で失敗した。
+analyze は strict lint を検査していなかった。
