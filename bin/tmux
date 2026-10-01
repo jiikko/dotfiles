@@ -1,4 +1,7 @@
-#!/usr/bin/env bash
+#!/bin/bash
+# 🚨 shebang は macOS 同梱の /bin/bash (3.2) に固定する。`env bash` は PATH 先頭の Homebrew bash 5 を起こし、
+# kill を含まない fast path でも 1 回 約 5〜7 ms 余計にかかる (起動が律速。issue 609 の実測)。
+# 3.2 に無い構文 (連想配列・mapfile・${x,,}・local -n) をこの shim に入れないこと。
 #
 # bin/tmux — tmux ラッパー shim。本番 tmux サーバ (default) を **非対話シェルから
 # kill-server / kill-session で殺せない**ようにする。それ以外は素の tmux へ素通しする。

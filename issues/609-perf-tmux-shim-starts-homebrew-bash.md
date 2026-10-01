@@ -30,8 +30,8 @@ fork を避けても起動する bash そのものが重い。
 
 ## 受け入れ条件
 
-- [ ] shebang を変え、shim の回帰テストが 3.2 で緑
-- [ ] 変更後の `bin/tmux -V` を同じ方法で測り、下に記録する
+- [x] shebang を変え、shim の回帰テストが 3.2 で緑
+- [x] 変更後の `bin/tmux -V` を同じ方法で測り、下に記録する
 
 ## 関連ファイル
 
@@ -39,3 +39,10 @@ fork を避けても起動する bash そのものが重い。
 - `tests/tmux/test_tmux_shim_protects_default.sh`
 
 ## 進捗
+
+- 2026-10-02 「perf(tmux): shim の shebang を /bin/bash にし、tmux の呼び出しごとの Homebrew bash の起動を消す (609)」
+  - `/bin/bash -n bin/tmux` OK。`tests/tmux/test_tmux_shim_protects_default.sh` は検査 34 件 fail=0 (`GNU bash, version 3.2.57(1)-release`。
+    テストは `$ROOT_DIR/bin/tmux` を shebang 経由で起動するので、3.2 で走っている)
+  - 50 回平均: 実体 5.2 ms / 変更後の shim 7.3 ms / 変更前の shim (~/dotfiles の版) 14.6 ms
+  - 敵対レビューは省略した: 判定ロジックは変えておらずインタプリタの版だけを変えた変更で、kill 経路を含む既存の回帰テスト 34 件を
+    変更後の版で通した。3.2 に無い構文を入れない注意は shebang の直下のコメントに書いた
