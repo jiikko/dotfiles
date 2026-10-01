@@ -704,3 +704,22 @@ func TestStoppedPMRestartsInPlaceAfterCacheTTL(t *testing.T) {
 		t.Fatalf("止めた PM を (止めずに) 同じ worktree で起動し直していない: resumes=%v restarts=%v", r.l.resumes, r.l.restarts)
 	}
 }
+
+// 起動し直しを claude が受け付けなかったら、この dispatcher の間は起動し直さずに再開する (581 の敵対的レビュー P2:
+// 起動し直しだけが通らない形で、再開できる PM を launchRejectLimit まで同じ失敗に当てて止めない)。
+func TestPMResumesAfterRestartRejected(t *testing.T) {
+	r := startedPM(t)
+	r.d.Transcript = replyAt(map[string]time.Time{"P1": t0})
+	r.l.restartRej = true
+	request(t, r.dir, "二つ目")
+	r.now = t0.Add(time.Hour)
+	r.tick(t)
+	if len(r.l.restarts) != 1 || len(r.l.resumes) != 0 {
+		t.Fatalf("まず起動し直すはず: restarts=%v resumes=%v", r.l.restarts, r.l.resumes)
+	}
+	r.now = r.now.Add(launchGrace + time.Second)
+	r.tick(t)
+	if len(r.l.restarts) != 1 || len(r.l.resumes) != 1 || !strings.Contains(r.l.resumes[0], "C-002") {
+		t.Fatalf("受け付けられなかった起動し直しを繰り返した / 再開に戻らない: restarts=%v resumes=%v", r.l.restarts, r.l.resumes)
+	}
+}

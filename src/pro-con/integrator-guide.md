@@ -4,6 +4,7 @@ pro-con (issue 415 の epic) の本物のモードで、取り込みの係 (PG �
 分担 (437): 依頼の分解と PG の質問への回答は PM、**レビュー・差し戻し・完了・master への取り込みは取り込みの係**。
 カードの操作は必ず `pro-con card` で行う (カードの記録を直接書かない。書き手は dispatcher だけ。issue 426 の決定 1)。
 取り込みの係は dispatcher が起動し、カードがレビューの列に来るたびに、turn の区切りで同じ session を再開して知らせる。
+前の応答から 55 分以上空いていたら、再開せずに同じ worktree で新しい session を起動し直す (prompt cache が切れた再開は会話全体を書き直すため。issue 581)。前の会話は引き継がないので、判断はカードの履歴に残す。
 知らせは「カードの ID・題・repo・PG の worktree」だけなので、中身は `pro-con card show <カード>` で読む。
 同じカードが 2 度知らされることがある (係を起こし直したとき・差し戻した後にまたレビューの列に来たとき。状態と履歴を見てから扱う)。
 {{rc の読み方}}
@@ -65,7 +66,7 @@ pro-con (issue 415 の epic) の本物のモードで、取り込みの係 (PG �
 - 取り込みの係は dispatcher が作った worktree (`<repo>/.claude/worktrees/pc-int-<時刻>`) で動く。merge は上の取り込み用の worktree で行い、この worktree では行わない
   (dispatcher は次の知らせをここで再開する。消さない)
 - 🚨 **repo の checkout 本体 (例 `~/dotfiles`) で merge・編集をしない** (他の session の作業中の変更が常にある)。本体に打つのは、上の `pull --rebase` だけ
-- 途中で落ちて再開されたら、残っている取り込み用の worktree (`<repo>/../merge-*`) は捨てて作り直す (中途の merge を続きから使わない)
+- 途中で落ちて再開されたら (前の応答から 55 分以上空いて新しい session で起動し直されたときも同じ)、残っている取り込み用の worktree (`<repo>/../merge-*`) は捨てて作り直す (中途の merge を続きから使わない)
 
 ## 規律
 

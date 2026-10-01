@@ -24,7 +24,7 @@ bin/pro-con ps [--json]  # pro-con が起動したプロセスを役ごとに出
 bin/pro-con dispatcher --stop  # dispatcher と、pro-con が起動した PG を止める。作業中のカードは次に dispatcher を起動したら続きから再開する (画面の終了も同じことをする)
                                # 人が止めた印 (`dispatcher-held`) を置く: 開いている画面は dispatcher を起こし直さず、ゲージに「止めてある」と出す。外すのは画面の c か、次に手で `pro-con dispatcher` を起動したとき (issue 459)
 bin/pro-con card …   # PM / PG が使うカードの操作 (add / plan / ask / answer / handoff / review / rework / order / close / delete。plan --after は前のカードが完了するまで起動させない = issue 468。handoff は PM が PG の質問を人に回したことを履歴に残す。rework はレビュー待ちを直してほしい点つきで PG に戻す。order は画面の + と同じ追加オーダー (既定は追記、--redirect で方針変更、--from PM で PM が出した印。断る条件は画面と同じで適用の側が決める = issue 507)。delete は依頼の列ならすぐ消し、ほかは PG の session を止めてから消す = issue 451)。受付の箱に置くだけで、適用は dispatcher (issue 427)
-bin/pro-con card guide  # PM の session に渡す指示書 (src/pro-con/pm-guide.md) を出す。dispatcher は依頼の列にカードが来たら・PG が質問したら PM を起動 / 再開してこれと新しいカード・質問を渡す (issue 437。PM は 1 つ・--limit に数えない)
+bin/pro-con card guide  # PM の session に渡す指示書 (src/pro-con/pm-guide.md) を出す。dispatcher は依頼の列にカードが来たら・PG が質問したら PM を起動 / 再開してこれと新しいカード・質問を渡す (issue 437。PM は 1 つ・--limit に数えない。前の応答から 55 分以上空いていれば再開せずに同じ worktree で起動し直す = issue 581。取り込みの係も同じ)
 bin/pro-con card guide --integrator  # 取り込みの係の session に渡す指示書 (src/pro-con/integrator-guide.md) を出す。dispatcher はカードがレビューの列に来たら取り込みの係を起動 / 再開してこれとカードを渡す。係はレビューし、master へ merge して push し閉じるか、差し戻す・人に回す (issue 487。1 つ・--limit に数えない)
 bin/pro-con card attach C-001 shot.png --note "詳細の見た目"  # PG が作業の証拠 (画面の見た目・コマンドの出力) をカードに添付する (issue 453)。ファイルを受付の箱の files/ に写して依頼を置き、
                                          # dispatcher が状態の置き場の attachments/<カード>/ (0700 / 0600) へ移して記録に載せる。1 件 20 MiB・1 枚に 50 件まで。
