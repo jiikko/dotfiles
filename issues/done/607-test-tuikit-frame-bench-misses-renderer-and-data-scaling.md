@@ -105,3 +105,4 @@ func runRenderer(b *testing.B, frames []string) {
 ### 残り
 
 - 605 の候補 3 (レンダラが変わっていない行を読み飛ばす) は、この計測で実例が出たら再評価する (glogx の j/k でレンダラが View の約 10 倍)。trigger は 605
+- 2026-10-02 追記: tuikit と消費者の ultraviolet の版のずれ (tuikit・schedkeys・restartable が f5a850f9) を解消し、`tests/scripts/test_tuikit_consumers_aligned.sh` で揃いを守る形にした (commit「chore(tuikit): ultraviolet の版を tuikit と全消費者で 8b693049 に揃え…」)
