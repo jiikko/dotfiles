@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -70,6 +71,22 @@ func TestViewPlacesConfirmAboveStatusAndMessageOnPreviousLine(t *testing.T) {
 	}
 	if strings.Index(joined, "アプリを再起動しますか？") > strings.LastIndex(joined, lines[len(lines)-1]) {
 		t.Fatal("confirm dialog must appear above the final status line")
+	}
+}
+
+func TestZeroWindowSizeUsesDefaultDimensionsAndResizesRenderer(t *testing.T) {
+	model := &teaModel{width: defaultWidth, height: defaultHeight, closed: make(chan struct{})}
+	updated, resize := model.Update(tea.WindowSizeMsg{Width: 0, Height: 0})
+	got := updated.(*teaModel)
+	if got.width != defaultWidth || got.height != defaultHeight {
+		t.Fatalf("normalized dimensions = %dx%d, want %dx%d", got.width, got.height, defaultWidth, defaultHeight)
+	}
+	if resize == nil {
+		t.Fatal("zero dimensions did not request a renderer resize")
+	}
+	msg, ok := resize().(tea.WindowSizeMsg)
+	if !ok || msg.Width != defaultWidth || msg.Height != defaultHeight {
+		t.Fatalf("resize command = %#v, want WindowSizeMsg{%d, %d}", msg, defaultWidth, defaultHeight)
 	}
 }
 
@@ -173,9 +190,16 @@ func TestPrintlnFallsBackToStderrAfterProgramExit(t *testing.T) {
 	os.Stderr = writeEnd
 	defer func() { os.Stderr = previousStderr }()
 	presenter := New(strings.NewReader(""), io.Discard)
+	go presenter.printLoop()
 	close(presenter.runDone)
 
 	presenter.Println("final report")
+	close(presenter.closed)
+	select {
+	case <-presenter.printDone:
+	case <-time.After(time.Second):
+		t.Fatal("print loop did not finish")
+	}
 	_ = writeEnd.Close()
 	os.Stderr = previousStderr
 	output, err := io.ReadAll(readEnd)
@@ -184,6 +208,59 @@ func TestPrintlnFallsBackToStderrAfterProgramExit(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got, want := string(output), "final report\n"; got != want {
+		t.Fatalf("fallback output = %q, want %q", got, want)
+	}
+}
+
+func TestPrintlnDoesNotDuplicateAnInFlightLineAfterProgramExit(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	delivered := make(chan string, 1)
+	var fallback bytes.Buffer
+	presenter := &Presenter{
+		runDone: make(chan struct{}), closed: make(chan struct{}), prints: make(chan printRequest),
+		fallback: &fallback, printDone: make(chan struct{}),
+		programPrintln: func(line string) {
+			close(started)
+			<-release
+			delivered <- line
+		},
+	}
+	go presenter.printLoop()
+	callDone := make(chan struct{})
+	go func() {
+		presenter.Println("in-flight")
+		close(callDone)
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("print loop did not start the in-flight line")
+	}
+	close(presenter.runDone)
+	close(release)
+	select {
+	case <-callDone:
+	case <-time.After(time.Second):
+		t.Fatal("Println did not finish after the program exited")
+	}
+	select {
+	case line := <-delivered:
+		if line != "in-flight" {
+			t.Fatalf("program received %q, want in-flight", line)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("in-flight line was not delivered to the program")
+	}
+
+	presenter.Println("after-exit")
+	close(presenter.closed)
+	select {
+	case <-presenter.printDone:
+	case <-time.After(time.Second):
+		t.Fatal("print loop did not finish after close")
+	}
+	if got, want := fallback.String(), "after-exit\n"; got != want {
 		t.Fatalf("fallback output = %q, want %q", got, want)
 	}
 }

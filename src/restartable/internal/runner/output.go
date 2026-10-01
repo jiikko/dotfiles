@@ -129,8 +129,13 @@ func (s *logSink) CopyFrom(r io.Reader, headless bool) {
 		n, err := r.Read(buf)
 		for _, c := range buf[:n] {
 			if c == '\r' {
-				s.addSafeLine(string(current))
-				current = current[:0]
+				// A CR completes a frame only when the current line has text.
+				// Leading or repeated CRs rewrite an empty frame and must not
+				// introduce blank lines; CRLF still collapses to one boundary.
+				if len(current) > 0 {
+					s.addSafeLine(string(current))
+					current = current[:0]
+				}
 				previousWasCR = true
 				continue
 			}

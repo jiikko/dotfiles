@@ -104,3 +104,22 @@ func TestTTYOutputPreservesEmptyLines(t *testing.T) {
 		t.Fatalf("TTY output = %q, want %q", got, want)
 	}
 }
+
+func TestTTYOutputIgnoresCarriageReturnWithoutCurrentText(t *testing.T) {
+	for _, test := range []struct {
+		input string
+		want  string
+	}{
+		{input: "\n\r", want: "\n"},
+		{input: "\r\r\n", want: ""},
+		{input: "spin\rspin\r\n", want: "spin\nspin\n"},
+	} {
+		var output strings.Builder
+		sink := newLogSink(&output, false)
+		sink.CopyFrom(strings.NewReader(test.input), false)
+		sink.Flush()
+		if got := output.String(); got != test.want {
+			t.Errorf("TTY output for %q = %q, want %q", test.input, got, test.want)
+		}
+	}
+}

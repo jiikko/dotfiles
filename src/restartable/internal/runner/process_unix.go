@@ -40,7 +40,7 @@ func (r *serializedReader) Read(data []byte) (int, error) {
 	return r.reader.Read(data)
 }
 
-func startProcess(argv []string, shell bool, env []string, stdin io.Reader, sink *logSink, headless bool) (*process, error) {
+func startProcess(argv []string, shell bool, env []string, stdin io.Reader, sink *logSink, headless, stdinIsTerminal bool) (*process, error) {
 	if len(argv) == 0 {
 		return nil, errors.New("empty command")
 	}
@@ -51,15 +51,15 @@ func startProcess(argv []string, shell bool, env []string, stdin io.Reader, sink
 		cmd = exec.Command(argv[0], argv[1:]...)
 	}
 	cmd.Env = env
-	if headless {
-		cmd.Stdin = stdin
-	} else {
+	if stdinIsTerminal {
 		devNull, err := os.Open(os.DevNull)
 		if err != nil {
 			return nil, fmt.Errorf("open child stdin: %w", err)
 		}
 		cmd.Stdin = devNull
 		defer func() { _ = devNull.Close() }()
+	} else {
+		cmd.Stdin = stdin
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	r, w, err := os.Pipe()

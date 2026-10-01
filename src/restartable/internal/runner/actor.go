@@ -28,6 +28,7 @@ type Config struct {
 	Stdout             io.Writer
 	Stderr             io.Writer
 	Headless           bool
+	StdinIsTerminal    bool
 	Presenter          Presenter
 }
 
@@ -264,7 +265,7 @@ func (a *actor) startBuild() error {
 	if a.cfg.BuildCommand == "" {
 		return a.startRun()
 	}
-	proc, err := startProcess([]string{a.cfg.BuildCommand}, true, a.env(), a.cfg.Stdin, a.sink, a.cfg.Headless)
+	proc, err := startProcess([]string{a.cfg.BuildCommand}, true, a.env(), a.cfg.Stdin, a.sink, a.cfg.Headless, a.cfg.StdinIsTerminal)
 	if err != nil {
 		a.model.BuildQueued = false
 		a.transition(Event{Kind: BuildFailedEvent, Reason: err.Error()})
@@ -280,7 +281,7 @@ func (a *actor) startBuild() error {
 }
 
 func (a *actor) startRun() error {
-	proc, err := startProcess(a.cfg.RunArgs, false, a.env(), a.cfg.Stdin, a.sink, a.cfg.Headless)
+	proc, err := startProcess(a.cfg.RunArgs, false, a.env(), a.cfg.Stdin, a.sink, a.cfg.Headless, a.cfg.StdinIsTerminal)
 	if err != nil {
 		a.report("run failed: " + err.Error())
 		a.failRequests(err.Error())
@@ -567,7 +568,7 @@ func (a *actor) beginStop() {
 	}
 	if a.cfg.StopCommand != "" {
 		a.model.Message = "停止コマンド実行中 (Ctrl-C で強制終了)"
-		proc, err := startProcess([]string{a.cfg.StopCommand}, true, a.env(), a.cfg.Stdin, a.sink, a.cfg.Headless)
+		proc, err := startProcess([]string{a.cfg.StopCommand}, true, a.env(), a.cfg.Stdin, a.sink, a.cfg.Headless, a.cfg.StdinIsTerminal)
 		if err != nil {
 			a.transition(Event{Kind: StopCommandFailEvent, Reason: err.Error()})
 			a.report("stop-cmd failed: " + err.Error())

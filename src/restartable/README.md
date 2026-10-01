@@ -70,16 +70,18 @@ restartable restart
 
 ## TTY UI を表示しない起動
 
-stdin と stdout のどちらか一方でも端末でなければ、キー入力と最下行 UI は有効になりません。ログは従来どおり stdout / stderr に素通しし、control socket は利用できます。
+stdin と stdout のどちらか一方でも端末でなければ、キー入力と最下行 UI は有効になりません。ログは従来どおり stdout / stderr に素通しし、control socket は利用できます。子の stdin は UI の有無ではなく runner の stdin で決まります。runner の stdin が端末なら、TTY UI を表示しない場合も build / run / stop-cmd の stdin は `/dev/null` です。これにより、出力をパイプへ流したときに背景プロセスグループの子が端末入力で停止するのを防ぎます。runner の stdin が非端末なら、その入力を子へ渡します。
 例えば CI や pipe では次のように実行します。
 
 ```sh
 restartable --build 'make build' -- ./bin/server 2>&1 | tee server.log
 ```
 
+この例は runner の stdin が端末、stdout がパイプなので headless で動きます。子は `/dev/null` から stdin を読みます。子にファイルやパイプの入力を渡す場合は、runner の stdin をリダイレクトしてください。
+
 この判定のために `/dev/tty` を別途開くことはありません。
 
 ## 検出しない形 / 注意
 
-- TTY UI を表示する場合、キーボードは runner が使うため、build / run / stop-cmd の stdin は `/dev/null` です。子コマンドからの対話入力には使えません。非 TTY 起動では従来どおり stdin を子へ渡します。
+- runner の stdin が端末の場合、build / run / stop-cmd の stdin は `/dev/null` です。TTY UI の有無とは関係なく、子コマンドから端末の対話入力はできません。runner の stdin が非端末なら、その入力を子へ渡します。
 - build 中に `Q` → `y` で強制終了した場合、前世代の子が残した process group の子孫まで検出して停止する保証はありません。

@@ -20,13 +20,15 @@ type printRequest struct {
 // Presenter runs Bubble Tea in its inline mode and adapts its input/output to
 // the runner's snapshot and key boundary.
 type Presenter struct {
-	program  *tea.Program
-	keys     chan string
-	ready    chan struct{}
-	runDone  chan struct{}
-	closed   chan struct{}
-	prints   chan printRequest
-	fallback io.Writer
+	program        *tea.Program
+	keys           chan string
+	ready          chan struct{}
+	runDone        chan struct{}
+	closed         chan struct{}
+	prints         chan printRequest
+	fallback       io.Writer
+	programPrintln func(string)
+	printDone      chan struct{}
 
 	startOnce sync.Once
 	closeOnce sync.Once
@@ -41,22 +43,25 @@ type Presenter struct {
 // its control socket and is ready to own terminal cleanup.
 func New(input io.Reader, output io.Writer) *Presenter {
 	p := &Presenter{
-		keys:     make(chan string, 32),
-		ready:    make(chan struct{}),
-		runDone:  make(chan struct{}),
-		closed:   make(chan struct{}),
-		prints:   make(chan printRequest),
-		fallback: os.Stderr,
+		keys:      make(chan string, 32),
+		ready:     make(chan struct{}),
+		runDone:   make(chan struct{}),
+		closed:    make(chan struct{}),
+		prints:    make(chan printRequest),
+		printDone: make(chan struct{}),
+		fallback:  os.Stderr,
 	}
 	model := &teaModel{
-		state: runner.InitialModel(), width: defaultWidth, keys: p.keys,
+		state: runner.InitialModel(), width: defaultWidth, height: defaultHeight, keys: p.keys,
 		ready: p.markReady, closed: p.closed,
 	}
 	p.program = tea.NewProgram(model,
 		tea.WithInput(input),
 		tea.WithOutput(discardWriteErrors{writer: output}),
+		tea.WithWindowSize(defaultWidth, defaultHeight),
 		tea.WithoutSignalHandler(),
 	)
+	p.programPrintln = func(line string) { p.program.Println(line) }
 	return p
 }
 
@@ -172,52 +177,56 @@ func (p *Presenter) Keys() <-chan string { return p.keys }
 // the process actor while it is flushing logs during cleanup.
 func (p *Presenter) Println(line string) {
 	request := printRequest{line: line, done: make(chan struct{})}
-	select {
-	case p.prints <- request:
-	case <-p.runDone:
-		p.writeFallback(line)
-		return
-	case <-p.closed:
-		p.writeFallback(line)
-		return
-	}
-	select {
-	case <-request.done:
-	case <-p.runDone:
-	case <-p.closed:
-	}
+	p.prints <- request
+	<-request.done
 }
 
 func (p *Presenter) printLoop() {
+	defer close(p.printDone)
+	fallbackOnly := false
 	for {
+		if fallbackOnly {
+			select {
+			case request := <-p.prints:
+				p.writeFallback(request.line)
+				close(request.done)
+			case <-p.closed:
+				return
+			}
+			continue
+		}
 		select {
 		case request := <-p.prints:
 			select {
 			case <-p.runDone:
 				p.writeFallback(request.line)
 				close(request.done)
-				return
+				fallbackOnly = true
+				continue
 			case <-p.closed:
 				p.writeFallback(request.line)
 				close(request.done)
-				return
+				fallbackOnly = true
+				continue
 			default:
 			}
 			printed := make(chan struct{})
 			go func(line string) {
-				p.program.Println(line)
+				p.programPrintln(line)
 				close(printed)
 			}(request.line)
 			select {
 			case <-printed:
 			case <-p.runDone:
-				p.writeFallback(request.line)
+				// Program.Println may have queued this line before Run returned.
+				// Do not write it again through the fallback path.
+				fallbackOnly = true
 			case <-p.closed:
-				p.writeFallback(request.line)
+				fallbackOnly = true
 			}
 			close(request.done)
 		case <-p.runDone:
-			return
+			fallbackOnly = true
 		case <-p.closed:
 			return
 		}
@@ -247,6 +256,9 @@ func (p *Presenter) Close() error {
 				<-p.runDone
 			}
 			close(p.keys)
+		}
+		if started && p.printDone != nil {
+			<-p.printDone
 		}
 	})
 	return nil

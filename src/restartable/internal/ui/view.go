@@ -12,10 +12,11 @@ import (
 )
 
 const (
-	defaultWidth = 80
-	fullActions  = "── [R] 再起動  [Q] 終了 "
-	shortActions = "[R]再起動 [Q]終了 "
-	minActions   = "[R][Q] "
+	defaultWidth  = 80
+	defaultHeight = 24
+	fullActions   = "── [R] 再起動  [Q] 終了 "
+	shortActions  = "[R]再起動 [Q]終了 "
+	minActions    = "[R][Q] "
 )
 
 // StatusLine renders the pinned inline status row at exactly width display cells.
@@ -92,6 +93,7 @@ type startedMsg struct{}
 type teaModel struct {
 	state  runner.Model
 	width  int
+	height int
 	keys   chan<- string
 	ready  func()
 	closed <-chan struct{}
@@ -102,12 +104,21 @@ func (m *teaModel) Init() tea.Cmd {
 }
 
 func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
 	switch msg := msg.(type) {
 	case startedMsg:
 		m.ready()
 	case tea.WindowSizeMsg:
-		if msg.Width > 0 {
-			m.width = msg.Width
+		width, height := msg.Width, msg.Height
+		if width <= 0 {
+			width = defaultWidth
+		}
+		if height <= 0 {
+			height = defaultHeight
+		}
+		m.width, m.height = width, height
+		if width != msg.Width || height != msg.Height {
+			cmd = func() tea.Msg { return tea.WindowSizeMsg{Width: width, Height: height} }
 		}
 	case snapshotMsg:
 		m.state = runner.Model(msg)
@@ -120,7 +131,7 @@ func (m *teaModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
-	return m, nil
+	return m, cmd
 }
 
 func (m *teaModel) View() tea.View {

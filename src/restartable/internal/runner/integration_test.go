@@ -14,10 +14,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/creack/pty"
 	"github.com/jiikko/dotfiles/src/restartable/internal/control"
 )
 
@@ -95,6 +97,11 @@ func TestRunnerHelper(t *testing.T) {
 	if os.Getenv("RESTARTABLE_TEST_HELPER") != "1" {
 		return
 	}
+	stdin := io.Reader(strings.NewReader(""))
+	stdinIsTerminal := os.Getenv("RESTARTABLE_TEST_STDIN_TERMINAL") == "1"
+	if stdinIsTerminal {
+		stdin = os.Stdin
+	}
 	var presenter Presenter
 	if signalDuringStart := os.Getenv("RESTARTABLE_TEST_SIGNAL_DURING_START"); signalDuringStart != "" {
 		presenter = signalDuringStartPresenter{markerPath: signalDuringStart}
@@ -114,7 +121,7 @@ func TestRunnerHelper(t *testing.T) {
 		TermGrace:          envDuration("RESTARTABLE_TEST_TERM_GRACE", 60*time.Millisecond),
 		IDEnv:              os.Getenv("RESTARTABLE_TEST_ID_ENV"),
 		ControlPath:        os.Getenv("RESTARTABLE_TEST_SOCKET"),
-		Stdin:              strings.NewReader(""), Stdout: os.Stdout, Stderr: os.Stderr, Headless: true,
+		Stdin:              stdin, Stdout: os.Stdout, Stderr: os.Stderr, Headless: true, StdinIsTerminal: stdinIsTerminal,
 		Presenter: presenter,
 	})
 	if err != nil {
@@ -154,6 +161,134 @@ type testRunner struct {
 	stderr  string
 	done    chan struct{}
 	waitErr error
+}
+
+type ptyStdinRunner struct {
+	cmd    *exec.Cmd
+	master *os.File
+	path   string
+	done   chan struct{}
+	err    error
+
+	outputMu sync.Mutex
+	output   bytes.Buffer
+}
+
+func startPTYStdinHeadlessRunner(t *testing.T, socketPath string, extraEnv ...string) *ptyStdinRunner {
+	t.Helper()
+	master, slave, err := pty.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdoutRead, stdoutWrite, err := os.Pipe()
+	if err != nil {
+		_ = master.Close()
+		_ = slave.Close()
+		t.Fatal(err)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRunnerHelper$")
+	cmd.Env = append(os.Environ(),
+		"RESTARTABLE_TEST_HELPER=1",
+		"RESTARTABLE_TEST_SOCKET="+socketPath,
+		"RESTARTABLE_TEST_RUN="+`if read value; then echo child-stdin-read; else echo child-stdin-eof; fi; exec /bin/sleep 30`,
+		"RESTARTABLE_TEST_STDIN_TERMINAL=1",
+	)
+	cmd.Env = append(cmd.Env, extraEnv...)
+	cmd.Stdin = slave
+	cmd.Stdout = stdoutWrite
+	cmd.Stderr = stdoutWrite
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
+	if err := cmd.Start(); err != nil {
+		_ = stdoutRead.Close()
+		_ = stdoutWrite.Close()
+		_ = master.Close()
+		_ = slave.Close()
+		t.Fatal(err)
+	}
+	_ = stdoutWrite.Close()
+	_ = slave.Close()
+	r := &ptyStdinRunner{cmd: cmd, master: master, path: socketPath, done: make(chan struct{})}
+	go func() {
+		defer close(r.done)
+		r.err = cmd.Wait()
+	}()
+	go func() {
+		defer func() { _ = stdoutRead.Close() }()
+		buf := make([]byte, 4096)
+		for {
+			n, readErr := stdoutRead.Read(buf)
+			if n > 0 {
+				r.outputMu.Lock()
+				_, _ = r.output.Write(buf[:n])
+				r.outputMu.Unlock()
+			}
+			if readErr != nil {
+				return
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		select {
+		case <-r.done:
+		default:
+			_ = r.cmd.Process.Signal(syscall.SIGTERM)
+			select {
+			case <-r.done:
+			case <-time.After(4 * time.Second):
+				_ = r.cmd.Process.Kill()
+				<-r.done
+			}
+		}
+		_ = r.master.Close()
+	})
+	return r
+}
+
+func (r *ptyStdinRunner) outputText() string {
+	r.outputMu.Lock()
+	defer r.outputMu.Unlock()
+	return r.output.String()
+}
+
+func (r *ptyStdinRunner) waitOutput(t *testing.T, want string) {
+	t.Helper()
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	timer := time.NewTimer(3 * time.Second)
+	defer timer.Stop()
+	for {
+		if strings.Contains(r.outputText(), want) {
+			return
+		}
+		select {
+		case <-ticker.C:
+		case <-timer.C:
+			t.Fatalf("timed out waiting for %q; output=%q", want, r.outputText())
+		case <-r.done:
+			t.Fatalf("runner exited before %q: %v; output=%q", want, r.err, r.outputText())
+		}
+	}
+}
+
+func (r *ptyStdinRunner) signalAndWait(t *testing.T, sig syscall.Signal) int {
+	t.Helper()
+	if err := r.cmd.Process.Signal(sig); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		t.Fatal(err)
+	}
+	select {
+	case <-r.done:
+		if r.err == nil {
+			return 0
+		}
+		var exit *exec.ExitError
+		if errors.As(r.err, &exit) {
+			return exit.ExitCode()
+		}
+		t.Fatalf("wait for runner: %v", r.err)
+	case <-time.After(4 * time.Second):
+		t.Fatalf("runner did not exit; output=%q", r.outputText())
+	}
+	return -1
 }
 
 func sendIntegrationKey(t *testing.T, path, key string) {
@@ -349,6 +484,44 @@ func waitFor(t *testing.T, limit time.Duration, description string, predicate fu
 
 func shellQuote(s string) string  { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
 func readFile(path string) string { data, _ := os.ReadFile(path); return string(data) }
+
+func TestHeadlessRunnerWithTerminalStdinDoesNotPassTTYToChild(t *testing.T) {
+	dir, err := os.MkdirTemp("/tmp", "rstin-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	socketPath := filepath.Join(dir, "runner.sock")
+	stopMarker := filepath.Join(dir, "stop-child")
+	run := fmt.Sprintf(`rm -f %s; if read value; then echo run-stdin-read; else echo run-stdin-eof; fi; while [ ! -e %s ]; do /bin/sleep 0.01; done; exit 0`, shellQuote(stopMarker), shellQuote(stopMarker))
+	stop := fmt.Sprintf(`if read value; then echo stop-stdin-read; else echo stop-stdin-eof; fi; touch %s`, shellQuote(stopMarker))
+	r := startPTYStdinHeadlessRunner(t, socketPath,
+		"RESTARTABLE_TEST_BUILD=if read value; then echo build-stdin-read; else echo build-stdin-eof; fi",
+		"RESTARTABLE_TEST_RUN="+run,
+		"RESTARTABLE_TEST_STOP="+stop,
+	)
+	r.waitOutput(t, "build-stdin-eof")
+	r.waitOutput(t, "run-stdin-eof")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	response, err := control.Call(ctx, socketPath, control.Restart)
+	cancel()
+	if err != nil {
+		t.Fatalf("control restart: %v; child output=%q", err, r.outputText())
+	}
+	if !response.OK || response.Generation != 2 {
+		t.Fatalf("control restart response = %+v, want successful generation 2", response)
+	}
+	r.waitOutput(t, "stop-stdin-eof")
+	waitFor(t, 3*time.Second, "second build with null stdin", func() bool {
+		return strings.Count(r.outputText(), "build-stdin-eof") >= 2
+	})
+	if output := r.outputText(); strings.Contains(output, "stdin-read") {
+		t.Fatalf("a child received the terminal stdin: %q", output)
+	}
+	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+}
 
 func TestBuildFailureNeverRunsStaleArtifactAndRestartWaitsForNewRun(t *testing.T) {
 	dir := t.TempDir()
@@ -641,7 +814,7 @@ func TestStopCommandFailureAfterChildExitExitsAndFailsRestart(t *testing.T) {
 }
 
 func TestFinishRefusesWhileChildAlive(t *testing.T) {
-	proc, err := startProcess([]string{"/bin/sleep", "30"}, false, os.Environ(), strings.NewReader(""), newLogSink(io.Discard, true), true)
+	proc, err := startProcess([]string{"/bin/sleep", "30"}, false, os.Environ(), strings.NewReader(""), newLogSink(io.Discard, true), true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -671,7 +844,7 @@ func TestFinishRefusesWhileChildAlive(t *testing.T) {
 }
 
 func TestDrainOutputsNeverKillsLiveProcessLeader(t *testing.T) {
-	proc, err := startProcess([]string{"/bin/sleep", "30"}, false, os.Environ(), strings.NewReader(""), newLogSink(io.Discard, true), true)
+	proc, err := startProcess([]string{"/bin/sleep", "30"}, false, os.Environ(), strings.NewReader(""), newLogSink(io.Discard, true), true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1102,7 +1275,7 @@ func TestStartBuildRefusesWhenBuildAlreadyRunning(t *testing.T) {
 }
 
 func TestProcessDoneDeliversSameResultToMultipleWaiters(t *testing.T) {
-	proc, err := startProcess([]string{"/bin/sh", "-c", "exit 23"}, false, os.Environ(), strings.NewReader(""), newLogSink(io.Discard, true), true)
+	proc, err := startProcess([]string{"/bin/sh", "-c", "exit 23"}, false, os.Environ(), strings.NewReader(""), newLogSink(io.Discard, true), true, false)
 	if err != nil {
 		t.Fatal(err)
 	}

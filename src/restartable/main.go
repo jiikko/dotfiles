@@ -7,7 +7,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/charmbracelet/x/term"
@@ -16,7 +18,17 @@ import (
 	"github.com/jiikko/dotfiles/src/restartable/internal/ui"
 )
 
-func main() { os.Exit(realMain(os.Args[1:])) }
+func main() { os.Exit(runMain(os.Args[1:])) }
+
+func runMain(args []string) int {
+	pipeSignals := make(chan os.Signal, 1)
+	signal.Notify(pipeSignals, syscall.SIGPIPE)
+	go func() {
+		for range pipeSignals {
+		}
+	}()
+	return realMain(args)
+}
 
 func realMain(args []string) int {
 	if len(args) > 0 {
@@ -119,7 +131,8 @@ func runCommand(args []string) int {
 			return 1
 		}
 	}
-	headless := !term.IsTerminal(os.Stdin.Fd()) || !term.IsTerminal(os.Stdout.Fd())
+	stdinIsTerminal := term.IsTerminal(os.Stdin.Fd())
+	headless := !stdinIsTerminal || !term.IsTerminal(os.Stdout.Fd())
 	var presenter runner.Presenter
 	if !headless {
 		presenter = ui.New(os.Stdin, os.Stdout)
@@ -128,7 +141,7 @@ func runCommand(args []string) int {
 		BuildCommand: *build, RunArgs: runArgs, StopCommand: *stop,
 		StopCommandTimeout: *stopTimeout, TermGrace: *termGrace,
 		IDEnv: *idEnv, ControlPath: resolved, Stdin: os.Stdin,
-		Stdout: os.Stdout, Stderr: os.Stderr, Headless: headless, Presenter: presenter,
+		Stdout: os.Stdout, Stderr: os.Stderr, Headless: headless, StdinIsTerminal: stdinIsTerminal, Presenter: presenter,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

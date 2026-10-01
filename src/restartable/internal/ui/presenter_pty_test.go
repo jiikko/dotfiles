@@ -2,11 +2,13 @@ package ui
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/jiikko/dotfiles/src/restartable/internal/control"
 	"github.com/jiikko/dotfiles/src/restartable/internal/runner"
 )
 
@@ -23,20 +26,61 @@ func TestPTYRunnerHelper(t *testing.T) {
 		return
 	}
 	code, err := runner.Run(runner.Config{
-		RunArgs:     []string{"/bin/sh", "-c", os.Getenv("RESTARTABLE_PTY_RUN")},
-		ControlPath: os.Getenv("RESTARTABLE_PTY_CONTROL"),
-		Stdin:       os.Stdin,
-		Stdout:      os.Stdout,
-		Stderr:      os.Stderr,
-		Headless:    false,
-		Presenter:   New(os.Stdin, os.Stdout),
-		TermGrace:   100 * time.Millisecond,
+		RunArgs:         []string{"/bin/sh", "-c", os.Getenv("RESTARTABLE_PTY_RUN")},
+		ControlPath:     os.Getenv("RESTARTABLE_PTY_CONTROL"),
+		Stdin:           os.Stdin,
+		Stdout:          os.Stdout,
+		Stderr:          os.Stderr,
+		Headless:        false,
+		StdinIsTerminal: true,
+		Presenter:       New(os.Stdin, os.Stdout),
+		TermGrace:       100 * time.Millisecond,
 	})
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	os.Exit(code)
+}
+
+// TestPTYDetachedOutputHelper creates a process that leaves the runner's
+// process group while keeping the shared output pipe open. The test releases
+// it after SIGTERM so output draining overlaps a controlled key burst.
+func TestPTYDetachedOutputHelper(t *testing.T) {
+	switch os.Getenv("RESTARTABLE_PTY_DESCENDANT_MODE") {
+	case "leader":
+		detached := exec.Command(os.Args[0], "-test.run=^TestPTYDetachedOutputHelper$")
+		detached.Env = append(os.Environ(), "RESTARTABLE_PTY_DESCENDANT_MODE=detached")
+		detached.Stdin, detached.Stdout, detached.Stderr = os.Stdin, os.Stdout, os.Stderr
+		detached.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		if err := detached.Start(); err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		if err := os.WriteFile(os.Getenv("RESTARTABLE_PTY_DESCENDANT_READY"), []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		holdRead, holdWrite, err := os.Pipe()
+		if err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		defer func() { _ = holdRead.Close(); _ = holdWrite.Close() }()
+		var hold [1]byte
+		_, _ = holdRead.Read(hold[:])
+	case "detached":
+		release := os.Getenv("RESTARTABLE_PTY_DESCENDANT_RELEASE")
+		ticker := time.NewTicker(5 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			if _, err := os.Stat(release); err == nil {
+				_, _ = fmt.Fprintln(os.Stdout, "delayed-output-line")
+				return
+			}
+			<-ticker.C
+		}
+	}
 }
 
 type ptyRunner struct {
@@ -51,6 +95,14 @@ type ptyRunner struct {
 }
 
 func startPTYRunner(t *testing.T, run string) *ptyRunner {
+	return startPTYRunnerWithEnvAndSize(t, run, nil)
+}
+
+func startPTYRunnerWithEnv(t *testing.T, run string, extraEnv ...string) *ptyRunner {
+	return startPTYRunnerWithEnvAndSize(t, run, nil, extraEnv...)
+}
+
+func startPTYRunnerWithEnvAndSize(t *testing.T, run string, size *pty.Winsize, extraEnv ...string) *ptyRunner {
 	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "rpty-")
 	if err != nil {
@@ -64,7 +116,11 @@ func startPTYRunner(t *testing.T, run string) *ptyRunner {
 		"RESTARTABLE_PTY_CONTROL="+path,
 		"RESTARTABLE_PTY_RUN="+run,
 	)
-	master, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 24, Cols: 100})
+	cmd.Env = append(cmd.Env, extraEnv...)
+	if size == nil {
+		size = &pty.Winsize{Rows: 24, Cols: 100}
+	}
+	master, err := pty.StartWithSize(cmd, size)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,16 +206,89 @@ func TestPTYRunnerRendersStatusAndConfirmAndUsesNullStdin(t *testing.T) {
 	}
 }
 
-func TestPTYRunnerHandlesInputBurstBeyondEventAndKeyBuffers(t *testing.T) {
-	r := startPTYRunner(t, "exec /bin/sleep 30")
+func TestPTYRunnerRendersStatusWithZeroByZeroTerminalSize(t *testing.T) {
+	r := startPTYRunnerWithEnvAndSize(t, "exec /bin/sleep 30", &pty.Winsize{Rows: 0, Cols: 0})
+	waitPTYOutput(t, r, "status row with zero terminal dimensions", func(output string) bool {
+		return strings.Contains(output, "[R] 再起動") && strings.Contains(output, "running (pid ")
+	})
+	if code := signalPTYRunner(t, r); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+}
+
+func TestPTYRunnerDrainsLateOutputDuringTerminationWithInputBurst(t *testing.T) {
+	dir, err := os.MkdirTemp("/tmp", "rpty-drain-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	readyPath := filepath.Join(dir, "ready")
+	releasePath := filepath.Join(dir, "release")
+	run := fmt.Sprintf("exec '%s' -test.run=^TestPTYDetachedOutputHelper$", strings.ReplaceAll(os.Args[0], "'", "'\\''"))
+	r := startPTYRunnerWithEnv(t, run,
+		"RESTARTABLE_PTY_DESCENDANT_MODE=leader",
+		"RESTARTABLE_PTY_DESCENDANT_READY="+readyPath,
+		"RESTARTABLE_PTY_DESCENDANT_RELEASE="+releasePath,
+	)
+	t.Cleanup(func() { _ = os.WriteFile(releasePath, []byte("release"), 0600) })
 	waitPTYOutput(t, r, "initial rendered status line", func(output string) bool {
 		return strings.Contains(output, "[R] 再起動") && strings.Contains(output, "running (pid ")
 	})
-	if _, err := r.master.Write([]byte(strings.Repeat("r", 4096))); err != nil {
+	waitPTYCondition(t, r, "detached descendant holding output pipe", func() bool {
+		_, err := os.Stat(readyPath)
+		return err == nil
+	})
+	ready, err := os.ReadFile(readyPath)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if code := signalPTYRunner(t, r); code != 143 {
-		t.Fatalf("runner exit code after input burst = %d, want 143", code)
+	childPID, err := strconv.Atoi(strings.TrimSpace(string(ready)))
+	if err != nil {
+		t.Fatalf("detached-output leader PID: %v; value=%q", err, ready)
+	}
+	if err := r.cmd.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		t.Fatal(err)
+	}
+	waitPTYCondition(t, r, "runner draining after its child group exited", func() bool {
+		return errors.Is(syscall.Kill(childPID, 0), syscall.ESRCH)
+	})
+	waitPTYCondition(t, r, "actor leaving its event loop for output draining", func() bool {
+		ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+		defer cancel()
+		_, err := control.Call(ctx, r.path, control.Status)
+		return errors.Is(err, context.DeadlineExceeded)
+	})
+	if _, err := r.master.Write([]byte(strings.Repeat("r", 400))); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(releasePath, []byte("release"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if code := waitPTYRunner(t, r, 5*time.Second); code != 143 {
+		t.Fatalf("runner exit code after drain-window burst = %d, want 143", code)
+	}
+	if output := r.text(); !strings.Contains(output, "delayed-output-line") {
+		t.Fatalf("late descendant output was not printed: %q", output)
+	}
+}
+
+func waitPTYCondition(t *testing.T, r *ptyRunner, description string, predicate func() bool) {
+	t.Helper()
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	timer := time.NewTimer(4 * time.Second)
+	defer timer.Stop()
+	for {
+		if predicate() {
+			return
+		}
+		select {
+		case <-ticker.C:
+		case <-timer.C:
+			t.Fatalf("timed out waiting for %s; PTY output: %q", description, r.text())
+		case <-r.done:
+			t.Fatalf("runner exited before %s: %v; PTY output: %q", description, r.err, r.text())
+		}
 	}
 }
 
@@ -168,6 +297,11 @@ func signalPTYRunner(t *testing.T, r *ptyRunner) int {
 	if err := r.cmd.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
 		t.Fatal(err)
 	}
+	return waitPTYRunner(t, r, 5*time.Second)
+}
+
+func waitPTYRunner(t *testing.T, r *ptyRunner, limit time.Duration) int {
+	t.Helper()
 	select {
 	case <-r.done:
 		if r.err == nil {
@@ -178,7 +312,7 @@ func signalPTYRunner(t *testing.T, r *ptyRunner) int {
 			return exit.ExitCode()
 		}
 		t.Fatalf("wait for runner: %v", r.err)
-	case <-time.After(5 * time.Second):
+	case <-time.After(limit):
 		t.Fatalf("runner did not exit after SIGTERM; PTY output: %q", r.text())
 	}
 	return -1
