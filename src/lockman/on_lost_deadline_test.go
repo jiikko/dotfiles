@@ -198,11 +198,23 @@ func TestFailedRenewDoesNotAdvanceLeaseDeadline(t *testing.T) {
 	}
 	const ttl = 900 * time.Millisecond
 	mark := filepath.Join(t.TempDir(), "child-finished")
+	// 🚨 **肯定側の観測を 1 つ持つ** (敵対レビュー 385 の 2 周目 P3-C)。合否が「marker が無い」+
+	// 「rc == 125」だけだと**純粋な否定**になり、列が成立しなくても緑になる。実測: argv を
+	// 存在しないバイナリに替えると `cmd.Start()` が失敗して即 125 を返し、更新も昇格も期限も
+	// 一度も通らないのに PASS (0.02s。正常時は 0.91s)。子が走り始めたことを固定する。
+	started := filepath.Join(filepath.Dir(mark), "child-started")
 
 	setupErr := make(chan error, 1)
 	go func() {
-		// 取得できたら中身を壊す。以後の Renew は errUnreadableLock を**即座に**返す
+		// 取得が終わったら中身を壊す。以後の Renew は errUnreadableLock を**即座に**返す
 		// (FIFO と違って詰まらないので、renewCh のエラー枝を通る)。
+		// 🚨 **lock が見えた時点では壊さない。子が走り始めてから壊す** (2026-10-02、負荷下で 180 回中 2 回 rc=121)。
+		// 取得 (`tryPlace`) は link で置いた後に lock を読み直して自分の token かを確かめるので、見えた直後に壊すと
+		// その読み直しが「中身を読めない lock」を見て busy に倒れ、子が起動しない。子は取得の後にしか起こされない
+		if err := awaitFile(started); err != nil {
+			setupErr <- err
+			return
+		}
 		if _, _, err := waitForLockToken(l); err != nil {
 			setupErr <- err
 			return
@@ -210,11 +222,6 @@ func TestFailedRenewDoesNotAdvanceLeaseDeadline(t *testing.T) {
 		setupErr <- os.WriteFile(l.lockPath(), []byte("{ torn"), 0o600)
 	}()
 
-	// 🚨 **肯定側の観測を 1 つ持つ** (敵対レビュー 385 の 2 周目 P3-C)。合否が「marker が無い」+
-	// 「rc == 125」だけだと**純粋な否定**になり、列が成立しなくても緑になる。実測: argv を
-	// 存在しないバイナリに替えると `cmd.Start()` が失敗して即 125 を返し、更新も昇格も期限も
-	// 一度も通らないのに PASS (0.02s。正常時は 0.91s)。子が走り始めたことを固定する。
-	started := filepath.Join(filepath.Dir(mark), "child-started")
 	rc := boundedInt(t, "runWith (中身を読めない lock)", func() int {
 		return runWith(l, ttl, "", true, // ← 既定 = --on-lost kill
 			[]string{"sh", "-c", fmt.Sprintf(": > %q; sleep 3; : > %q", started, mark)})

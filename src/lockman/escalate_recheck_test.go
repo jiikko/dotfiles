@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -124,14 +125,21 @@ func TestEscalateReportsWhenSignalCannotReach(t *testing.T) {
 // waitForFile は子が「準備できた」と申告するのを待つ。
 func waitForFile(t *testing.T, path string) {
 	t.Helper()
+	if err := awaitFile(path); err != nil {
+		t.Fatalf("前提: 子が準備完了を申告しない (%v)", err)
+	}
+}
+
+// awaitFile は path が現れるまで待つ (5 秒で諦めてエラーを返す)。t を持たない goroutine からも呼べる形。
+func awaitFile(path string) error {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(path); err == nil {
-			return
+			return nil
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("前提: 子が準備完了を申告しない (%s)", path)
+	return errors.New(path + " が 5 秒で現れない")
 }
 
 // 🚨 **関数冒頭の guard も検査する** (敵対レビュー P2-4)。

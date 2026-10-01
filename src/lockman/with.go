@@ -167,6 +167,11 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 		done <- err
 	}()
 	var escalate sync.Once
+	// 🚨 **昇格の goroutine は runWith が返る前に待つ** (2026-10-02)。待たずに返ると、子が終わった後も goroutine が
+	// 猶予の後の `escalateBeforeKillHook` を読みに行き、次に呼ばれた側 (テストの次の runWith) がその hook を差し替えるのと
+	// race になる (`go test -race -count=3` で TestEscalateRechecksExitedBeforeSigkill が落ちた)。待つのは exited を閉じた後なので、
+	// goroutine はどの分岐でもすぐ返る (猶予を待たない)
+	var escalating sync.WaitGroup
 
 	outcome := renewOK
 	// 更新は **同時に 1 本まで**。詰まっている間は新しく起こさない (tick ごとに積むと
@@ -201,7 +206,7 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 	escalateNow := func() {
 		// 🚨 **昇格は 1 回だけ**。tick ごとに撃ち直すと猶予が毎回振り出しに戻り、
 		// SIGKILL へ永久に到達しない (上限の無い再試行は上限が無いのと同じ)。
-		escalate.Do(func() { go escalateGroupKill(pgid, exited, onLostGracePeriod) })
+		escalate.Do(func() { escalating.Go(func() { escalateGroupKill(pgid, exited, onLostGracePeriod) }) })
 	}
 	reportRenewErr := func(err error) {
 		cur := classifyRenewErr(err)
@@ -336,6 +341,7 @@ func runWith(l *Locker, ttl time.Duration, label string, onLostKill bool, argv [
 			renewCh, renewExpired = nil, nil
 			reportRenewErr(l.ioTimeoutErr())
 		case err := <-done:
+			escalating.Wait()
 			switch outcome {
 			case renewLost:
 				return exitWithLost
