@@ -466,7 +466,7 @@ func cursorTo(t *testing.T, m *Model, key string) {
 	if want < 0 {
 		t.Fatalf("設定のタブに %s の行が無い", key)
 	}
-	for range len(configKeys) {
+	for range configKeys {
 		switch {
 		case m.set.cursor < want:
 			press(m, "j")

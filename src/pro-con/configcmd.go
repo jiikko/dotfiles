@@ -149,6 +149,7 @@ func showConfig(dir string, stdout, stderr io.Writer) int {
 			return " (設定なし。既定)"
 		case store.SourceInvalid:
 			return fmt.Sprintf(" (設定の %q は選べないので既定)", v)
+		case store.SourceSet:
 		}
 		return ""
 	}

@@ -610,8 +610,10 @@ func (m *Model) limitNote() string {
 // 効く時点を先に出す (説明の列は狭い端末で末尾から切れる。出どころの方が長くなりうる)
 func sessionNote(set, used string) string {
 	short := strings.TrimPrefix(used, "claude-")
-	from := "設定"
+	var from string
 	switch backend.SessionSource(set, used) {
+	case backend.SourceSet:
+		from = "設定"
 	case backend.SourceDefault:
 		from = "設定なし (既定 " + short + ")"
 	case backend.SourceInvalid: // settings.json を手で直した選べない値。黙って既定に倒したと見せない
