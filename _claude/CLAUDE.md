@@ -57,6 +57,9 @@
 - **Claude がセッション中に作る成果物 (レポート・スクラッチ・中間生成物) は `./tmp`**。`/tmp` に置かない
   - 例外: ハーネスが指定する scratchpad (`/private/tmp/claude-501/…`) はそのまま使ってよい
   - 🚨 `tmp/` の ignore が `~/.gitignore_global` 由来で repo の `.gitignore` に無い repo がある (dotfiles 等)。その場合、新品チェックアウトと CI では ignore されず、`tmp/` 自体も存在しない
+  - 🚨 **リダイレクト先を `..` で repo の外へ出さない** (`<worktree>/../push.log` / `../../../../out`)。後で消す worktree の中で
+    走らせる出力は、本体 checkout の `tmp/` を絶対パスで書くか scratchpad に置く。親ディレクトリは誰の `tmp/` でもなく、
+    消し損ねると残り続ける (実測 2026-09-26: push のログ 22 個が `~/src` と `my-products/apps` の直下に残った。my-products issue 033)
   - 消す前に、結論が issue / コードへ移っているかと、issue や doc が指しているパスでないかを確かめる (`grep -rn 'tmp/' issues/ _claude/`)。dotfiles では `make clean-tmp` (既定は 30 日より古いもの。`DRY_RUN=1` で一覧のみ、`DAYS=7` で期間を変える)
 - **スクリプト / テストが実行時に作る隔離ディレクトリは対象外**。既定は OS の一時領域 (`mktemp -d` / `t.TempDir()`)。`./tmp` に置くなら理由をコード直近に残す
 - 線引きは置き場所ではなく **終了時に消す責任が実装されているか**
