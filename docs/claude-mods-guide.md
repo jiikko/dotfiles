@@ -4,6 +4,23 @@ Claude Code の mods (関数 hook の plugin) が dotfiles でどう置かれ、
 **判断・実測・制約の正本は [`claude-mods.md`](claude-mods.md)** (このマシンで届かないイベント、読み込まれる経路の実測、pro-con に載せない理由)。
 ここには「どのファイルが何をするか」と「触るときの手順」だけを置く。
 
+## 公式ドキュメント
+
+API・イベント・部品の一次情報は公式 (英語)。この文書は dotfiles での置き方と手順だけを書く。
+
+- [Mods overview](https://code.claude.com/docs/en/plugins/mods/overview) — mods とは何か・どこで動くか (CLI / desktop の Code タブ / `claude -p` …)・settings の hook / skill / MCP との比較
+- [Create a mod](https://code.claude.com/docs/en/plugins/mods/create) — 作り方と、編集 → 読み直しの流れ
+- [Draw in the interface](https://code.claude.com/docs/en/plugins/mods/interface) — pane・プロンプトの上の帯・ボタン・状態
+- [React to events](https://code.claude.com/docs/en/plugins/mods/events) — tool call・プロンプト・ターン、mod の実行順
+- [Use the mods API](https://code.claude.com/docs/en/plugins/mods/api) — コマンド・tool・model の呼び出し・timer・ファイル
+- [Test a mod](https://code.claude.com/docs/en/plugins/mods/test) / [Troubleshoot a mod](https://code.claude.com/docs/en/plugins/mods/troubleshoot)
+- [Mods reference](https://code.claude.com/docs/en/plugins/mods/reference) — イベント・メソッド・部品・制限の一覧
+- [Manage mods for your organization](https://code.claude.com/docs/en/plugins/mods/admin) — managed settings で mod を止める・審査する (このマシンで一部のイベントが届かない理由に関係。`claude-mods.md`)
+- 見本: [公式の見本の mod](https://github.com/anthropics/claude-code-playground/tree/main/claude-code/mods) / [Claude Code 組み込みの mod のソース](https://github.com/anthropics/claude-code/tree/main/mods)
+
+2026-10-03 に overview の実在と内容を確かめた (他のページは overview のリンクと検索結果から)。手元の `plugin-authoring` skill の型定義 (`claude-code.d.ts`) は、
+動いている版の API そのもので、公式ページより細かい。食い違ったら型定義を信じる。
+
 ## mods とは
 
 - Claude Code の**中**で動く TypeScript の小さな plugin。イベント (`session.start` / `turn.complete` / `ui.render` …) に hook を掛けて、画面に帯を足すなどをする
@@ -114,7 +131,7 @@ mod が**同じ script** を呼んで、出力を desktop の部品に直して�
 | 直したもの | 反映 |
 |---|---|
 | `_claude/statusline-command.sh` (表示内容) | pull 後、次の更新 (最大 60 秒 / `/statusline-refresh`) から。セッションの開き直しは不要 |
-| mod のコード (`hooks/*`) | 新しいセッションから |
+| mod のコード (`hooks/*`) | 新しいセッションから。公式 (overview) によると、開いているセッションで `/reload-plugins` を打つと読み直す (desktop で効くかは未実測) |
 
 ### 新しい mod を足す
 
@@ -138,7 +155,7 @@ mod が**同じ script** を呼んで、出力を desktop の部品に直して�
 
 | 症状 | 見るところ |
 |---|---|
-| 直したのに desktop に反映されない | 新しいセッションを開いたか / `~/dotfiles` に pull したか (`git -C ~/dotfiles status -sb` の `behind`) |
+| 直したのに desktop に反映されない | 新しいセッションを開いたか (または `/reload-plugins`。desktop では未実測) / `~/dotfiles` に pull したか (`git -C ~/dotfiles status -sb` の `behind`) |
 | desktop に何も出ない | 新しいセッションか / `printenv CLAUDE_CODE_ENTRYPOINT` が `claude-desktop` か / 帯に `ステータスバーを作れない` が出ていないか / `claude plugin validate` が通るか |
 | どの repo でも出る? | 出る (設定はユーザー全体)。issue-band は開いた repo に issue と件数があるときだけ |
 | テストが「0 件」で落ちる | mod にテストが無い。`tests/` に 1 本以上置く |
