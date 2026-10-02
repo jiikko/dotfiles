@@ -559,6 +559,9 @@ EOF
   - **作業根の外へ書かない**をプロンプトに明記する (`-C` で渡した worktree / repo root の外は読むだけ)。
     採用判定 `[3]` の前に **本体 checkout の `git status --short` が起動前スナップショットと同じ**こと、
     worktree の `git log -1` が起動前と同じ hash であることを確認する (sandbox が無いので、はみ出しは検閲でしか見えない)
+    - **make target やラッパー経由の build を許すなら、中で走る道具の既定の出力先 (DerivedData・cache・`$HOME` 配下) まで確かめる**。
+      作業根の外へ書く target は、作業根の中の出力先を指定できない限り使わせず、プロンプトで名指しして禁止する
+      (「外に書かない」の一般則だけではラッパーの既定値を止められない。obaket 1016: `make -C macOS build` が既定の DerivedData に書いた)
   - **git 操作全般の禁止**は従来どおりプロンプトで (「git commit はしない」だけでは codex が `git pull --ff-only` を
     試みる。ThumbnailThumb 542)。sandbox があった頃は失敗していたが、いまは**成功する**ので検閲の項目に格上げ
   - 依頼していない破壊的操作 (rm -rf / 他 checkout の編集 / プロセス・tmux 操作) が要約と log に無いかを `[3]` で読む
