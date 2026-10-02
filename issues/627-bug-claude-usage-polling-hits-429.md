@@ -87,3 +87,12 @@
 
 却下: pro-con の旧 ParseUsage が受けていた小数・「<1%」を usage.Parse が受けない — `-p` の /usage は Math.floor の整数で出す
 (2.1.287 のバイナリで確認)。resets の無い行は 0% の枠。理由は `src/pro-con/dispatcher/usage.go` の `usageOf` のコメント
+- 2026-10-02 15:00: ユーザー指摘「このセッションの /usage は普通に見えている」。CLI のコード (`/usage` の取得 `R` / 画面 `$s`) を読んで判明:
+  - 対話セッションの `/usage` は、推論の応答ヘッダで受け取った利用枠 (statusline の `rate_limits` と同じ出所) や前回の値を使い、
+    「Usage read answered from a snapshot …; endpoint not asked」で `/api/oauth/usage` を叩かずに答える。429 のときもヘッダの値か
+    前回の値で表示を続け、「(rate limited — try again in a moment)」「Per-model breakdown unavailable」等の注記を付ける
+  - `claude -p /usage` は推論をしない新しいプロセスなのでヘッダの値を持たず、前回の値 (`~/.claude.json` の
+    `cachedUsageUtilization`。この時点で 11:10 のもの) も古すぎて使われない。必ず `/api/oauth/usage` を叩き、429 なら枠が出ない
+  - つまり `/api/oauth/usage` の 429 は本物だが、壊れるのは `claude -p` 経由で取る側 (glogx / ratelimit / pro-con) だけ
+  - 残る設計の選択肢 (ユーザー判断待ち): statusline が受け取る `rate_limits` (推論の応答ヘッダ由来。サーバを余計に叩かない) を
+    ファイルへ書き出して主な出所にする。欠点: 7d(Fable) が出ない・セッションが動いていない間は更新されない
