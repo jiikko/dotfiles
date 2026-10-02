@@ -146,9 +146,9 @@ assert_contains "$av1ify_body" "_reload_then_call" "av1ify keeps its lazy-reload
 # 入力は zsh が渡す形どおり末尾に改行を付ける。bin/lib はディレクトリなので対象外。
 hist_rcs="$(run_zsh '
   (( ${zshaddhistory_functions[(Ie)_dotfiles_hist_skip_bin]} )) && print -n "hooked "
-  for l in "ci-log -l" "FOO=1 glogx" "ls -la" "lib" "bin/ci-log" "echo ci-log"; do
+  for l in "ci-log -l" "FOO=1 glogx" "FOO=\"a b\" ci-log" "ls -la" "lib" "bin/ci-log" "echo ci-log"; do
     _dotfiles_hist_skip_bin "$l"$'"'"'\n'"'"'; print -n "$? "
   done' </dev/null | awk 'END{print}')"
-assert_contains "$hist_rcs" "hooked 1 1 0 0 0 0 " "commands in ~/dotfiles/bin are kept out of history"
+assert_contains "$hist_rcs" "hooked 1 1 1 0 0 0 0 " "commands in ~/dotfiles/bin are kept out of history"
 
 printf 'All zshrc tests passed.\n'

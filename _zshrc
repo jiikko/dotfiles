@@ -227,7 +227,8 @@ setopt hist_expand           # 補完時にヒストリを自動的に展開
 # 一覧を持たず毎回ファイルの有無を見るので、bin に足したコマンドも自動で対象になる。
 # 判定するのは先頭の語 (前置きの VAR=val は読み飛ばす)。パス付きの呼び出し (bin/foo) は対象外。
 _dotfiles_hist_skip_bin() {
-  local -a words=(${(z)1})
+  # sh_word_split が有効なので引用符で囲む。囲まないと FOO="a b" cmd の値の空白でもう一度割れ、cmd を読み違える
+  local -a words=("${(@z)1}")
   while (( ${#words} )) && [[ ${words[1]} =~ '^[A-Za-z_][A-Za-z0-9_]*=' ]]; do
     shift words
   done
