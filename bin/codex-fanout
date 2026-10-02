@@ -20,7 +20,7 @@
 #                                 900 を超える値で使うときは呼び出し側を detach する (Claude Code の Bash は 15 分で
 #                                 background ごと kill される。codex-drive skill「並列起動の作法」参照)
 #     CODEX_FANOUT_MERGER_MODEL   merger のモデル (既定 gpt-6-luna)
-#     CODEX_FANOUT_MERGER_EFFORT  merger の effort (既定 max。codex-drive の「全フェーズ max 固定」に合わせる)
+#     CODEX_FANOUT_MERGER_EFFORT  merger の effort (既定 max。codex-drive の「書く run と集約は luna-max」に合わせる)
 #
 # manifest (TSV・1 行 1 本。空行と # 始まりは無視。CRLF は末尾 \r を剥がして受ける):
 #   label <TAB> mode <TAB> model <TAB> effort <TAB> prompt_part1[,part2,...] [<TAB> timeout_s]

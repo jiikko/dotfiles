@@ -82,7 +82,7 @@ contract_out="./tmp/design-contract.$stamp.md"  # 設計コントラクト。Pha
 ```bash
 # `</dev/null` 必須（理由は下記「ルール」参照）。codex 本体の stdin を即 EOF にする。
 # ※ ここの `</dev/null` は codex 用。引数内の `<<'EOF'` は `cat` 用のヒアドキュメントで別物。
-command codex exec -s read-only -m gpt-6-luna -c model_reasoning_effort="low" \
+command codex exec -s read-only -m gpt-6.1-sol -c model_reasoning_effort="medium" \
   --ephemeral -o "$lead_out" </dev/null \
   "$(cat <<'EOF'
 このタスクの設計・実装方針をあなたにリードしてほしい。リポジトリの現状コードを読んだ上で、どう設計・実装すべきかの方針を主導して提案して。
@@ -236,7 +236,6 @@ Bash ツールはシェル変数を呼び出し間で保持しないため、`$c
 Pass A / B の P1/P2 を修正し、テストが green に戻った状態で回す最終ゲート。**プロンプトと指摘の採否ルールは codex-review スキルの「敵対的モード」テンプレートおよび「敵対的レビューの作法」が正本**（ここでは再定義しない）。呼び出しは codex-review のモード選択に従う（未コミットなら selector なしのプロンプト付きモード、commit / base 指定なら fallback `-s read-only`）。
 
 - **コントラクトは渡さない**。Pass A の観点と混ぜると「設計どおりか」に引きずられ、設計の外側から壊す視点が消える
-- Pass C は effort を **一段上げて明示する**（`-c model_reasoning_effort="medium"` 以上。理由と正本は codex-review の敵対的モード）
 - このタスク固有の攻め口があれば末尾に追記する（外部 I/O の異常系、並行・再入、移行中の中途半端な状態、別プラットフォームなど）
 - 採否は codex-review「敵対的レビューの作法」の仕分けどおり: **発火条件が具体的で再現できたものだけ修正**、再現できないものは「反証の反証」として記録、発火条件を示せないものは未確認リスクとして報告 / issue 化に留める。**推測に基づく防御コードを足さない**
 - **「壊せなかった」は合格判定にしない**。重要な不変条件はテストで固定して初めて閉じる（Pass A のコントラクトにある不変条件でテスト未固定のものは、ここで洗い出してテスト追加の判断材料にする）
@@ -261,7 +260,7 @@ Pass A（設計適合）・Pass B（実装正当性）・Pass C（敵対）の�
 - 設計リードも実装レビューも codex はレビュー用途で使い、codex にコードを変更させない（設計リードは `codex exec -s read-only`、実装レビューは原則 `codex exec review` 系。selector とカスタム指示を併用する Pass A の fallback 時のみ `codex exec -s read-only`）
 - **`codex exec` 呼び出しの共通制約は codex-review スキルのルールが正本**（各制約の理由・実測根拠・codex issue 番号はそちら参照。ここでは再記述しない）: `command codex` プレフィックス（zsh 関数オーバーライド回避）／全 `codex exec` 呼び出しに `</dev/null` 必須（stdin が EOF 待ちでハングするのを防ぐ）／`--full-auto` を付けず `--ephemeral -o "$lead_out"` を使う（`-s read-only` を上書きさせない）。Phase 1-2 のようにヒアドキュメントで prompt を組む場合の `</dev/null` 位置の注意は 1-2 のコメントに記載済み
 - 設計リードは差分がないため `codex exec -s read-only` を使う（selector は使わない）
-- **設計リードのモデルはスキル側で明示する**: `-m gpt-6-luna -c model_reasoning_effort="low"`。省略すると `~/.codex/config.toml` の既定（対話 TUI 側の都合で変わる）を拾い、実行ごとにモデルが変わる。Phase 3 のレビューが `codex exec review` に委譲される部分は codex-review スキル側のモデル指定に従う
+- **設計リードのモデルと effort はスキル側で明示する**: `-m gpt-6.1-sol -c model_reasoning_effort="medium"` (codex-review と同じ組。ユーザー決定 2026-10-02。それまでは luna + low)。省略すると `~/.codex/config.toml` の既定（対話 TUI 側の都合で変わる）を拾い、実行ごとにモデルが変わる。Phase 3 のレビューが `codex exec review` に委譲される部分は codex-review スキル側のモデル指定に従う
 - まず `-o` の出力ファイルを読み、空なら stdout / stderr を fallback として使う
 - レビュー・方針はそのままユーザーに見せる（要約しすぎない）
 - `/tmp` は使わず、出力ファイルは必ず `./tmp` に置く。報告後、各フェーズで書き出したファイルだけを `rm -f` で削除する（`$task_out` / `$lead_out` は Phase 1-6、`$contract_out` は Phase 3-5）
