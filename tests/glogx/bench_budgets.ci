@@ -1,33 +1,36 @@
 # glogx bench の CI 予算 (ms)。tests/check_bench_budgets.sh が読む。
-# 時間の rel 予算は 2026-10-02 に CI (macos-15) の直近 25 run の実測から締め直した:
-#   予算 = max(中央値 × 4, 較正の補正後の最大 × 2) を有効数字 2 桁で切り上げ。
-# 導入時 (2026-07-29) は CI の実測が無く、ローカル実測の ~20 倍の粗い上限で始めていた。締め直す前は中央値の 15〜116 倍で、
-# 3 指標を 50 倍にしても緑だった。締め直した後は、過去 25 run を全部通して赤 0 / 3 指標を 5 倍にすると赤。
-# 次に締め直すときも同じ手順で (直近の run の metric 行を集め、新しい予算に過去の run を全部通して赤 0 を確かめてから入れる)。
+# 値は導入時 (2026-07-29) のローカル実測 (M3 Max: view_steady 0.131 / view_panel 0.145 /
+# render_large_patch 0.55) の ~20 倍の粗い上限。CI (ubuntu-slim) の実測がまだ無いため
+# 「桁級の回帰 (linesCache の無効化バグ・偶発的な O(n^2) 等) だけ捕まえるログ観測フェーズ」
+# として緩く始めた。🚨 時間の rel 予算は CI の実測の ~4 倍へ締めない (issue 269 の決定。2026-10-02 に一度締めて戻した):
+#   ×4 の予算は 4 倍未満の退行を定義上すべて通す (268 の退行は 2.74 倍)。その種の退行は下の「同一 run 内の比」
+#   (*_scale_x100) で捕まえる。絶対時間の予算は「桁級の回帰を捕まえる粗い安全網」の役割のまま残す。
+#   締め直すなら 269 の推奨対応 3〜5 (CALIB_MAX_SCALE の境目・較正器の絶対予算・issue_scan) を同時に満たすこと
 # BenchmarkHighlightDiff (chroma) を予算に足さない理由は tests/glogx/bench_glogx.sh の
 # ヘッダと highlight_test.go の benchmark 直上コメント (CI ゲートは flake 実績あり) を参照。
 # 較正器 (2026-07-30 導入): repo コード非依存の固定ワークロード (BenchmarkCalibrate)。
 # 全 metric が runner 世代/混雑で一様に振れる問題への対処 (無変更 push で ×2 級の偽悪化を
-# 実測: run 30454886162 → 30475764682)。基準は CI (macos-15) の直近 25 run の中央値 0.091 (2026-10-02 に取り直した。
-# 範囲 0.083〜0.103)。以前の暫定値 0.15 は CI の実測を一度も下回らず、補正の倍率が常に 1 で効いていなかった。
-# 較正器自身の絶対予算は中央値の ~4 倍 (ドリフトの検知用)。
-calibrate glogx_calib 0.091
-glogx_calib 0.37
-view_steady 0.14 rel
-view_panel 0.15 rel
-render_large_patch 2.8 rel
+# 実測: run 30454886162 → 30475764682)。基準 0.15 はローカル M3 実測 0.074 からの CI 想定の値。
+# 🚨 CI (macos-15) の実測 (中央値 0.091) へ取り直さない (issue 269): 取り直すと、補正が CALIB_MAX_SCALE (4) を超えて
+# rel の判定が警告だけ (CI 緑) に落ちる境目が較正器 0.6ms から 0.36ms へ下がる。絶対時間の予算を締めないので今は要らない。
+# 較正器の絶対予算 (5) はドリフトの検知用で、締めると混雑の吸収役が混雑の検出役になる (269 の推奨対応 4)
+calibrate glogx_calib 0.15
+glogx_calib 5
+view_steady 3 rel
+view_panel 3 rel
+render_large_patch 10 rel
 # 体感系 (2026-07-29 追加)。導入時ローカル実測 (M3 Max): cursor_move_view 0.265 /
-# view_diff 0.224 / model_init_200 0.407。2026-10-02 に上と同じ手順で締め直した
+# view_diff 0.224 / model_init_200 0.407。既存と同じ ~20 倍の粗い上限 (締めない理由は冒頭)
 # status viewer のフレーム (2026-08-05 追加)。2000 は「変更ファイル数に比例して働いていないか」の
 # ゲート: 以前は全行を整形してから窓で切っており 40 件 0.103 / 2000 件 1.65ms だった (16 倍)。
 # 可視の窓だけ整形する形へ直して 0.128ms になったので、桁が戻ったら気づけるようにする。
 # 導入時ローカル実測 (M3 Max): status_view_frame 0.099 / status_view_2000 0.128
-status_view_frame 0.16 rel
-status_view_2000 0.17 rel
+status_view_frame 2 rel
+status_view_2000 3 rel
 # issues viewer のフレーム (issue 062, 2026-08-15 追加)。導入時ローカル実測 (M3 Max):
-# issues_view_frame 0.022 / issues_view_2000 0.024 (件数比例なし)。2026-10-02 に冒頭と同じ手順で締め直した
-issues_view_frame 0.12 rel
-issues_view_2000 0.13 rel
+# issues_view_frame 0.022 / issues_view_2000 0.024 (件数比例なし)。status と同じ水準の粗い上限
+issues_view_frame 2 rel
+issues_view_2000 3 rel
 # 🚨 「件数を増やしたときの伸び率」を**同一 run 内の比** (x100) で見る (issue 269)。
 # 絶対時間の予算は runner の速度差・混雑に晒されるので粗くせざるを得ず、実測の 16〜125 倍まで
 # 緩んでいて **2.7 倍の退行 (issue 268) を素通しした**。比なら同じ run の 2 測定に同じ倍率が
@@ -41,20 +44,20 @@ issues_view_2000 0.13 rel
 # 退行そのものを予算に焼き込むことになる (issue 269 の初版がその形だった)。
 issues_view_scale_x100 150
 status_view_scale_x100 150
-cursor_move_view 0.26 rel
-view_diff 0.18 rel
-model_init_200 0.52 rel
-# issue scan (issue 065, 2026-08-15 追加)。導入時ローカル実測 (M3 Max): 1.10ms。2026-10-02 に冒頭と
-# 同じ手順で締め直した (CI の中央値 1.14、最大 2.44 で揺れが他より大きい)。🚨 ファイル I/O (合成 50 件の open + 先頭 read) を含み、共有 runner の
+cursor_move_view 5 rel
+view_diff 5 rel
+model_init_200 10 rel
+# issue scan (issue 065, 2026-08-15 追加)。導入時ローカル実測 (M3 Max): 1.10ms。既存と同じ
+# ~20 倍の粗い上限。🚨 ファイル I/O (合成 50 件の open + 先頭 read) を含み、共有 runner の
 # ディスク揺れは CPU 系の較正器では吸えないため、rel でも他 metric より flake しやすい。
 # 超えたら較正器の値と見比べて、ディスク由来なら上限側を緩める (黙って緩めず理由をここへ)
-issue_scan 4.6 rel
+issue_scan 25 rel
 
 # --- 確保バイト (issue 051, 2026-08-14 追加) -------------------------------------
 # 単位は metric 名が持つ (_alloc_kb = B/op ÷ 1024)。値の出処は bench_glogx.sh の -benchmem。
 #
-# 🚨 rel を付けない: 確保はマシン非依存なので較正スケールの対象外。時間の予算が runner の揺れのため
-# 中央値の約 4 倍なのに対し、ここは**実測 +3%** で締める。根拠 (2026-08-14 実測):
+# 🚨 rel を付けない: 確保はマシン非依存なので較正スケールの対象外。時間の予算が「桁級の
+# 回帰だけ捕まえる粗い上限」なのに対し、ここは**実測 +3%** で締める。根拠 (2026-08-14 実測):
 # darwin/arm64 (M3 Max, go1.25.4) と CI と同じ linux/amd64 (docker golang:1.25) を全 8 metric で
 # 突き合わせて **差は最大 0.09%** だった (B/op):
 #

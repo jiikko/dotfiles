@@ -70,8 +70,8 @@ jobs:
 
       - uses: ./.github/actions/setup-nvim
 
-      # 予算 (bench_budgets.ci) 超過で fail。予算は原則ローカル実測の ~4 倍の粗い上限 = 桁級の
-      # 回帰 (foldexpr の 678ms 級) を捕まえる安全網で、微差の追跡は Step Summary の経時比較。
+      # 予算 (bench_budgets.ci) 超過で fail。予算の決め方は metric ごとに違い (桁級の回帰を捕まえる粗い安全網 /
+      # 「現在速度」ゲート / 同一 run 内の比 / 確保量)、一次情報は各 bench_budgets.ci のコメント。微差の追跡は Step Summary の経時比較。
       # 例外: startup は min-of-5 集約 + CI 実測ベースの「現在速度」ゲート (bench_budgets.ci 参照)。
       # 注: CI は treesitter parser 未導入 (DOTFILES_TS_SKIP_ENSURE=1) のため fold/highlight の
       # コストは載らない。それらを含む実測はローカルで tests/nvim/bench_nvim.sh を叩く。
