@@ -21,6 +21,14 @@ settings の hook (`_claude/settings.json` の command) と比べて、次がで
 制約: モジュールは Node も DOM も無い隔離環境で動き、外の世界には `$` (fs / process / http / model …) 経由でしか届かない。
 **API は early access で、リリースごとに変わる** (skill の reference.md が明記)。
 
+## 結論 (2026-10-02)
+
+- **settings の hook を mods へ移すのは、この環境では向かない。移したものは 0 件** (620 / 622 / 623 と下の表)。
+  hook のイベントとシステムプロンプトの口が user の mod に届かず、届く口 (`tool.call`) で移せるものも、sh の script や settings の hook のままの方が壊れ方が少なかった
+- **mods は、hook ではできない「画面に足すもの」にだけ使う**: 帯 `issue-band` (621) と desktop のステータスバー `desktop-statusline` (625)
+- 625 はユーザーが残すと決めた (2026-10-02)。628 の画面確認で見えたら、625 / 628 と一緒にこの epic を done にする。
+  見直すのは、managed settings か Claude Code の更新で届く口が変わったとき (下の「このマシンの制約」を測り直す)
+
 ## このマシンの制約 (619 で実測。2026-10-02 / claude 2.1.287)
 
 managed settings (組織のリモートの設定) があるため、組み込みの `cc-plugin-sec-default` が一番外側に座り、user の tier の mod の
@@ -122,3 +130,4 @@ settings の hook は失敗すれば stderr に出る。**移したものは、�
   desktop の画面での確認を 628 (human、期限 2026-10-09) に起こした。振り返りは 629。
   残り: 625 / 628 の確認。前提のチェックのうち「二重に効かないこと」は 621 で意図して併記にした (注入と帯)、
   「API の変化への備え」は `make test` の `tests/claude/test_claude_mods.sh` (validate / test) が更新後の最初の実行で気づく形
+- 2026-10-02: 結論の節を足した (移行は向かない・mods は画面に足すものだけ・625 は残して 628 の確認後にこの epic を閉じる。ユーザーと確認)
