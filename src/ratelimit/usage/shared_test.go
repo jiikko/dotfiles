@@ -31,6 +31,8 @@ func setClock(t *testing.T, start time.Time) func(time.Duration) {
 
 // countingClaude は `-p` で起こされた回数を calls ファイルへ 1 行ずつ書く偽の claude を PATH に置く。
 // stdout は body (sh の printf 文) が書く。
+// 🚨 PATH をこの stub のディレクトリだけにするので、body の外部コマンドは絶対パスで書く (`sleep` は
+// `command not found` で素通りし、遅い claude を演じられないまま緑になっていた。issue 627 の進捗の末尾)。
 func countingClaude(t *testing.T, body string) (calls func() int) {
 	t.Helper()
 	dir := t.TempDir()
@@ -177,7 +179,7 @@ func TestFetchCallerTimeoutIsNotShared(t *testing.T) {
 	isolateShared(t)
 	setClock(t, time.Date(2026, 7, 20, 12, 0, 0, 0, time.Local))
 	// sleep-ok: 入力: 呼び出し側の持ち時間 (200ms) より遅い claude を演じる
-	calls := countingClaude(t, "sleep 2\n"+streamOK)
+	calls := countingClaude(t, "/bin/sleep 2\n"+streamOK)
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	_, err := Fetch(ctx)
 	cancel()
@@ -273,7 +275,7 @@ func TestFetchConcurrentCallsRunClaudeOnce(t *testing.T) {
 	isolateShared(t)
 	setClock(t, time.Date(2026, 7, 20, 12, 0, 0, 0, time.Local))
 	// sleep-ok: 窓: 1 本目が claude を起こしている間に、残りがロック待ちへ入る時間を作る
-	calls := countingClaude(t, "sleep 0.3\n"+streamOK)
+	calls := countingClaude(t, "/bin/sleep 0.3\n"+streamOK)
 	var wg sync.WaitGroup
 	errs := make(chan error, 4)
 	for range 4 {
