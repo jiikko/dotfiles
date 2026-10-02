@@ -1,7 +1,5 @@
 # 627 (bug): Claude の利用枠の取得が `/api/oauth/usage` を 1 分ごとに叩いて 429 になり、枠が取れなくなる
 
-> 🚨 **担当中: ratelimit-429 のセッション**（2026-10-02〜）
-
 起票日: 2026-10-02
 
 ## 概要
@@ -55,6 +53,14 @@
   - [x] 実環境 (429 中): worktree の build で `ratelimit -source claude` が 1 回目 3.2 秒で「…14:14 まで取得を止める」、2 回目は 0.00 秒
         (claude を起こさない)。この時点の止める期間は 30 分 (後で 10 分に変えた)
   - [ ] 実環境の成功経路 (サーバが枠を返す状態で stream-json から枠が読めること) の観測。CLI の 429 の覚えが切れるまで待つ
+    - 2026-10-02 14:29 時点ではまだ観測できない: push 後の本番 `bin/ratelimit -source claude` は rc=3
+      「サーバから利用枠を受け取れない (429 か通信の失敗)。14:36 まで取得を止める」(ゲートは期待どおり)。
+      `claude -p /usage --debug-file` は `429 remembered for this bearer; not asking again for 2849s`。13:32 には
+      残り 2692 秒 (14:17 ごろ切れる) だったので、切れた後の最初の問い合わせにサーバが再び 429 を返している
+      (サーバ側の窓は 45 分より長い。数え方は未確認)
+    - **再観測の条件**: 15:20 以降に `ratelimit -source claude` を 1 回。成功なら 5h / 7d が出て、
+      `~/.cache/glog/claude-usage-shared.json` に `fetchedAt` と枠が入る。まだ 429 なら `--debug-file` で残り秒数を見て、その後にもう 1 回
+    - 成功を見たらこの項目を埋めて done へ (`scripts/issue_done.sh 627`)
 
 ### 敵対的レビュー (opus、観点を分けて 3 本 + 2 周目 1 本)
 
