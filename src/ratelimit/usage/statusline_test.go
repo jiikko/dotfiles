@@ -332,3 +332,46 @@ func TestStatuslineWriterQuietOnBadInput(t *testing.T) {
 		t.Errorf("桁あふれの値で stderr: %q", e)
 	}
 }
+
+// 桁あふれ (ミリ秒など) のリセット時刻は書かない。既にファイルに入っていても、正しい観測で上書きできる。
+func TestStatuslineWriterRejectsOverlongReset(t *testing.T) {
+	now := time.Now()
+	r5 := now.Add(time.Hour).Unix()
+	cache := t.TempDir()
+	runStatusline(t, cache, fmt.Sprintf(`{"rate_limits":{"five_hour":{"used_percentage":10,"resets_at":%d},"seven_day":{"used_percentage":5,"resets_at":%d}}}`,
+		r5*1000, now.Add(48*time.Hour).Unix()))
+	if st := readStatuslineRaw(t, cache); st.FiveHour.UsedPercentage != nil {
+		t.Fatalf("桁あふれのリセット時刻を書いた: %+v", st.FiveHour)
+	}
+	broken := t.TempDir()
+	path := filepath.Join(broken, "glog", statuslineFile)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, fmt.Appendf(nil, `{"observedAt":%d,"five_hour":{"used_percentage":10,"resets_at":%d},"seven_day":{"used_percentage":null,"resets_at":null},"version":""}`+"\n",
+		now.Add(-time.Minute).Unix(), r5*1000), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runStatusline(t, broken, fmt.Sprintf(`{"rate_limits":{"five_hour":{"used_percentage":12,"resets_at":%d}}}`, r5))
+	if st := readStatuslineRaw(t, broken); *st.FiveHour.UsedPercentage != 12 || *st.FiveHour.ResetsAt != r5 {
+		t.Fatalf("ファイルに入った壊れた値を正しい観測で上書きしない: %+v", st.FiveHour)
+	}
+}
+
+// transcript が新しくても、ファイルより古い値 (使用率が低い) で上書きしない (observedAt だけ進める)。
+func TestStatuslineWriterBumpKeepsValues(t *testing.T) {
+	now := time.Now()
+	r5, r7 := now.Add(time.Hour).Unix(), now.Add(48*time.Hour).Unix()
+	cache := t.TempDir()
+	old := now.Add(-10 * time.Minute)
+	writeRaw(t, cache, old, 30, r5, 60, r7)
+	tr := filepath.Join(t.TempDir(), "s.jsonl")
+	if err := os.WriteFile(tr, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runStatusline(t, cache, fmt.Sprintf(`{"transcript_path":%q,"rate_limits":{"five_hour":{"used_percentage":12,"resets_at":%d},"seven_day":{"used_percentage":40,"resets_at":%d}}}`, tr, r5, r7))
+	st := readStatuslineRaw(t, cache)
+	if st.ObservedAt == old.Unix() || *st.FiveHour.UsedPercentage != 30 || *st.SevenDay.UsedPercentage != 60 {
+		t.Fatalf("observedAt だけ進めるはずが: %+v / 5h %d / 7d %d", st.ObservedAt, *st.FiveHour.UsedPercentage, *st.SevenDay.UsedPercentage)
+	}
+}
