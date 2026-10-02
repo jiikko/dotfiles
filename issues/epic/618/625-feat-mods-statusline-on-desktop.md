@@ -12,10 +12,13 @@ Claude desktop の Code タブでも同じものを見たい。
 
 ## 前提 (未確認。最初に確かめる)
 
-- [ ] desktop の Code タブが settings の `statusLine` を描くかどうか。描くなら mod は要らず、この issue は設定の確認だけで閉じる
+- [x] desktop の Code タブが settings の `statusLine` を描くかどうか。描くなら mod は要らず、この issue は設定の確認だけで閉じる
+      → 実行されなかった (1 回の観測。下の「前提の実測」)。mod が要る側として進めた。画面での確定は [628](628-human-verify-desktop-statusline.md)
 - [ ] desktop で mod が読み込まれるか。desktop が起こすセッションには `--plugin-dir` を渡せないので、`CLAUDE_CODE_PLUGIN_DIRS` (settings の `env` かプロセスの環境) で読ませる (reference.md「Developing one」)。619 の実測に desktop の経路を足す
+      → 未確認。settings の `env` で読ませる形にした (619)。desktop のセッションで読まれるかは 628 で確かめる
 - [ ] mod の表示の口が desktop で何を描けるか。`$.ui.status(text)` は plugin ごとに 1 本の行 (型定義では文字列 1 つ。改行と ANSI の色が desktop で通るかは未確認)。
       複数行・色が要るなら `AbovePrompt` の帯 (`ui.render`、`e.surface === 'desktop'` の要素の表) で描く
+      → `AbovePrompt` の帯で描く形にした (3 行・色つき)。desktop で実際に描けるかは 628 で確かめる
 
 ## 対応方針 (前提の結果で決める)
 
@@ -34,9 +37,11 @@ Claude desktop の Code タブでも同じものを見たい。
 ## 受け入れ条件
 
 - [ ] desktop の Code タブで、CLI と同じ項目が見えることを人が確かめた (desktop の描画は機械で確かめる手段が無い。確かめる手順を human の issue に起こす)
-- [ ] CLI の表示が変わっていないこと (二重に出ていない)
-- [ ] mod のテスト (`claude plugin test`) で、`desktop` の surface に描くことと `terminal` では描かないことを固定した
-- [ ] mod が読み込まれない・script が失敗したときに、desktop で何が見えるかを書いた (黙って消えるなら、その判断と理由を書く。618 の「黙って止まったときの扱い」)
+- [x] CLI の表示が変わっていないこと (二重に出ていない) — settings の `statusLine` は触っていない。mod は `terminal` では描かず `next(e)` を返す (テストで固定。CLI の画面を目では見ていない)
+- [x] mod のテスト (`claude plugin test`) で、`desktop` の surface に描くことと `terminal` では描かないことを固定した (10 本、変異 4 本で red)
+- [x] mod が読み込まれない・script が失敗したときに、desktop で何が見えるかを書いた (黙って消えるなら、その判断と理由を書く。618 の「黙って止まったときの扱い」)
+      → script の失敗は帯に理由の 1 行を出す (下の「実装」)。読み込まれないときは何も出ない: 描く主体が無いので、mod の側では知らせようがない。
+      気づく手段は、人が見て帯が無いこと (628 の「何も出ない」の手順) と、壊れた mod を validate / test で落とす `tests/claude/test_claude_mods.sh`
 
 ## 前提の実測 (2026-10-02 / desktop 2.19675.0、claude 2.1.286〜287)
 
@@ -69,3 +74,4 @@ Claude desktop の Code タブでも同じものを見たい。
 - 2026-10-02: 起票 (ユーザーの依頼)。mod の API で使えるものは型定義で確かめた: `$.process.run` は `stdin` を渡せる、`$.session.usage()` は status line と同じ値を返す、`$.ui.status` は plugin ごとに 1 行
 - 2026-10-02: desktop の Code タブのこのセッションでは settings の `statusLine` が実行されなかった (80 秒間に起動された 5 件はすべて CLI 側)。描いていない見込みが高いので mod が要る側として進める (確定は人が画面で見る)
 - 2026-10-02: mod を実装 (案 B)。テスト 10 本・変異 4 本。desktop の画面での確認を 628 (human) に起こした。claim は外した (人の確認待ち)
+- 2026-10-02: 前提と受け入れ条件のチェックを実装・実測に合わせた (statusLine を実行しない / CLI で二重に出ない / テスト / 失敗時の見え方は済み。mod が desktop で読まれるか・描けるか・人の確認は 628 待ち)

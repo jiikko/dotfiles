@@ -121,3 +121,10 @@
   - [x] 実環境: pull 後 (15:30) に statusline が `claude-rate-limits.json` を書き出し (5h 37% / 7d 27% / 版 2.1.287)、
         `ratelimit -source claude` が rc=0 で同じ値を返した。15:27 のサーバの値と一致
 - 2026-10-02 15:31: 完了。記録だけの項目 (上の「記録だけ」) は open な残課題にしない (害が限られ、再現したら新しい issue で扱う)
+- 2026-10-02 21:00 頃 (別セッションが epic 618 の `make test` の失敗から調べた。直していない): `TestFetchCallerTimeoutIsNotShared` は環境で合否が変わる。
+  `countingClaude` が `PATH` を stub のディレクトリだけにするので、stub の `sleep 2` は `command not found` で素通りし、偽の claude はすぐ成功を返す。
+  合否は「Fetch が 200ms の持ち時間の内に終わるか」(マシンの速さ) で決まり、速いと落ちる。単体の `-race -count=1` で 3 回中 2 回、5 回中 3 回落ちた。
+  statusline の commit より前の 681b5f5e でも 5 回中 3 回で、66e222ac〜7fb015cd が原因ではない。`PATH` を絞って stub と同じ形の script を起こすと、
+  `sleep: command not found` を出して rc=0 で続きを書いた (`/bin/sh` は bash)。
+  `TestFetchConcurrentCallsRunClaudeOnce` の `sleep 0.3` も同じ形で、狙ったロック待ちの窓は作れていない見込み (未確認。緑のまま通る)。
+  直し方は stub の `sleep` を `/bin/sleep` にする (`codex_test.go` の stub は既に絶対パス)。どの open issue でも追っていない
