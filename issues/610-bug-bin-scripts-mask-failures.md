@@ -74,7 +74,7 @@ bin/ のシェルスクリプトを安定性の観点で監査した (sonnet の
   - 敵対レビュー (sonnet、read-only、1 周): P2 1 件 = restore が記録の失敗 (mkdir / 書き込み) を握り潰して rc=0 (再現あり) → 直した (変異で red を確認)。
     P3: CR 付きの長さ (`5.0\r`) を拒否する = macOS の ffprobe は CR を出さないので記録のみ / フェードアウトより短いと止まる = 意図どおり /
     ci-log の HEAD より前の赤の走査が未検査 = テストを足した。2 周目は §7 の例外 (判定ロジックを新設せず、各修正を変異で直接確認) で打ち切り
-  - 残り: 上の「記録だけにするもの」の表 (mutate-verify の timeout ほか)。`ci-log <run-id>` の経路も `gh run view ... 2>/dev/null || true` で
+  - 残り: 上の「記録だけにするもの」の表 (mutate-verify の timeout は 2026-10-02 に直した。残りは trigger 待ち)。`ci-log <run-id>` の経路も `gh run view ... 2>/dev/null || true` で
     gh の失敗を「失敗した job はありません」にしうるが、成功した run に `--log-failed` を当てたときの gh の rc を実測していないので触っていない
   - `make test` (worktree): 新しい 3 本と tmux shim の 2 本は [ok]。全体は rc=2 で、落ちたのは今回の変更と無関係な 2 本:
     test-yaml (`src/tuikit/.golangci.yml:56` の line-length。2fa1692e で入った。持ち主のセッションへ連絡済み) と
