@@ -2,7 +2,8 @@
 # Claude Code hook: tmux ペイン境界 (@claude_state) に作業状態を反映する。
 #
 # 使い方: tmux-pane-state.sh working|input|idle|start|clear
-#   working : "⚙ working" を表示 (UserPromptSubmit / PostToolUse=承認後の自動復帰)
+#   working : "⚙ working" を表示 (UserPromptSubmit / PostToolUse=承認後の自動復帰)。書くのは tmux-pane-working.sh へ exec する
+#             (PostToolUse は bash を起こさないよう settings から直接そちらを呼ぶ。issue 622)
 #             + @claude_bg を落とす (Claude が動いている = bg 待機ではない)
 #   input   : "🔔 input" を表示   (Notification — permission 承認待ち・質問への回答待ち)
 #             + ペインが画面に見えていなければ macOS 通知 (音あり)
@@ -143,7 +144,7 @@ ring_bell() {
 }
 
 case "${1:-}" in
-  working) set_state "⚙ working" 0 ;;
+  working) exec "$(dirname "$0")/tmux-pane-working.sh" ;;
   input)
     # Notification hook は入力待ち以外の種別 (auth_success / agent_completed 等) でも
     # 発火する。stdin JSON の notification_type

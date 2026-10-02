@@ -240,7 +240,8 @@ Claude Code を動かしているペインの境界に作業状態が出る。
 状態も一覧できる。
 
 - Claude Code の hooks (`_claude/settings.json`) が `_claude/hooks/tmux-pane-state.sh` を呼び、
-  ペイン単位オプション `@claude_state` (と bg 待機フラグ `@claude_bg`) を出し入れする
+  ペイン単位オプション `@claude_state` (と bg 待機フラグ `@claude_bg`) を出し入れする。
+  ツール呼び出しのたびに走る working だけは、bash を起こさない `_claude/hooks/tmux-pane-working.sh` を直接呼ぶ
 - `_tmux.conf` の `pane-border-format` が `#{?@claude_state,...,}` で表示。未設定ペイン
   (通常シェル) には何も出ない。セッション終了 (SessionEnd) で自動クリア
 

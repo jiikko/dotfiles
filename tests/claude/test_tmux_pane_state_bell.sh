@@ -41,6 +41,13 @@ if grep -q 'tmux-pane-state.sh idle' "$SETTINGS" && grep -q 'tmux-pane-state.sh 
 else
   bad 'フックが settings.json に配線されていない (ベルが誰も鳴らさない)'
 fi
+# PostToolUse の working は bg フラグを落とす唯一の契機 (bg の後に再開した承認待ちのベル。Test 6c の前提)。
+# bash を起こさないよう tmux-pane-working.sh を直接呼ぶ (issue 622)。matcher の無い (全ツールの) 項目に在ること
+if jq -e '[.hooks.PostToolUse[] | select(has("matcher") | not) | .hooks[].command] | index("~/dotfiles/_claude/hooks/tmux-pane-working.sh")' "$SETTINGS" >/dev/null 2>&1; then
+  ok 'PostToolUse (全ツール) に tmux-pane-working.sh が配線されている'
+else
+  bad 'PostToolUse に tmux-pane-working.sh が無い (bg の後の承認待ちでベルが鳴らなくなる)'
+fi
 
 # --- 隔離 tmux サーバ ---
 SOCKET="pane-state-bell-$$"
@@ -272,6 +279,18 @@ else
   bad '見えているウィンドウの検査ができなかった (判定不能)'
 fi
 rm -f "$MARK"
+
+# PostToolUse から直接呼ぶ tmux-pane-working.sh も、単体で同じ 3 つを書く (bg フラグを落とす・状態・時刻)
+printf 'Test 9: tmux-pane-working.sh を直接呼ぶ (PostToolUse の経路)\n'
+WK_PANE=$(fresh_pane)
+run_hook "$WK_PANE" idle "$BG_JSON"
+printf '{}' | TMUX="$TMUX_SOCK,0,0" TMUX_PANE="$WK_PANE" "$ROOT_DIR/_claude/hooks/tmux-pane-working.sh"
+expect_state_pane "$WK_PANE" '⚙ working' '状態を ⚙ working にする'
+if [ -z "$(tmux -L "$SOCKET" show -p -v -t "$WK_PANE" @claude_bg 2>/dev/null)" ]; then ok 'bg フラグを落とす'; else bad 'bg フラグが残っている (承認待ちのベルが鳴らなくなる)'; fi
+case "$(tmux -L "$SOCKET" show -p -v -t "$WK_PANE" @claude_state_since 2>/dev/null)" in
+  '' | *[!0123456789]*) bad '@claude_state_since が epoch 秒でない' ;;
+  *) ok '@claude_state_since に epoch 秒を書く' ;;
+esac
 
 [ "$fail" -eq 0 ] || { printf '✗ 失敗あり\n'; exit 1; }
 printf '✓ すべて成功\n'

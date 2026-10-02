@@ -396,7 +396,7 @@ set -g status-right "#{?client_prefix,#{p27:@keyguide},#{p27:@nothing}}"
 | history 解放確認 | `prefix + M-c` | display-popup + gum confirm / list-panes -a / clear-history | `_tmux.conf` bind M-c |
 | resurrect debounce 保存 | window/pane 構成変化フック | set-hook / run-shell -b / @flag ガード / mkdir lock | `scripts/tmux_resurrect_debounced_save.sh` |
 | 保存の直列化 wrapper | continuum/debounce/手動 C-s | 単一 lock / @resurrect-save-script-path 上書き | `scripts/tmux_resurrect_save.sh` |
-| Claude 状態バッジ書込 | Claude Code hook | set -p @claude_state / window_active_clients で通知判定 | `_claude/hooks/tmux-pane-state.sh` |
+| Claude 状態バッジ書込 | Claude Code hook | set -p @claude_state / window_active_clients で通知判定 | `_claude/hooks/tmux-pane-state.sh` (ツール呼び出しごとの working は `_claude/hooks/tmux-pane-working.sh`) |
 | 🔔→🔕 既読降格 | after-select-window フック | if-shell -F で atomic な条件付き set | `_claude/hooks/tmux-mark-seen.sh` |
 | 状態アイコン表示 | status / border の format | window-status-format / pane-border-format / #{P:...} | `_tmux.conf` |
 | zoom 色強調 | format | #{?window_zoomed_flag,...} 背景反転 | `_tmux.conf` |

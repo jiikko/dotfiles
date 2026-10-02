@@ -37,7 +37,7 @@
       {
         "hooks": [
           {
-            "command": "~/dotfiles/_claude/hooks/tmux-pane-state.sh working",
+            "command": "~/dotfiles/_claude/hooks/tmux-pane-working.sh",
             "timeout": 10,
             "type": "command"
           }
