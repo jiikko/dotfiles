@@ -24,9 +24,16 @@ mod の側からは何も起きないように見える (2.1.287 で実測。iss
 - user の settings を読む裏の `claude -p` (ratelimit の `claude -p /usage` 等) でも mods が走る。mod は `session.start` の
   `e.isInteractive` / `e.surface` で、対話のセッションにだけ効かせる
 
+## 今ある mod
+
+| mod | 何をするか |
+|---|---|
+| `canary` | 何もしない。`DOTFILES_MOD_CANARY_DIR` があれば読み込まれた印を書く (読まれる経路の実測用。issue 619) |
+| `issue-band` | 期限切れ・期限が近い human と未決着の retro があるときだけ、プロンプトの上の帯に出す。数えるのは `_claude/hooks/human-tasks-due.sh` / `retro-open.sh` の `--counts` (issue 621) |
+
 ## 置き場所と読み込み
 
-- 1 つの mod = `_claude/mods/<name>/` の 1 ディレクトリ。`.claude-plugin/plugin.json` / `hooks/hooks.json` / `hooks/register.ts(x)` と、`tests/*.test.ts`
+- 1 つの mod = `_claude/mods/<name>/` の 1 ディレクトリ。`.claude-plugin/plugin.json` / `hooks/hooks.json` / `hooks/register.ts(x)` と、`tests/*.test.ts(x)`
 - `_claude/settings.json` の `env` に `CLAUDE_CODE_PLUGIN_DIRS=~/dotfiles/_claude/mods` を 1 つ書いてある。親のフォルダを渡すと子の mod を全部読むので、
   mod を足しても settings は書き換えない (2.1.287 で実測。プロセスの環境で渡した場合。`~` も効く)
   - 子のうち `.claude-plugin/plugin.json` の無いディレクトリは読まれない (debug log に `no manifest in <dir>` が出るだけ)。

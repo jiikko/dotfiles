@@ -1,0 +1,9 @@
+{
+  "name": "issue-band",
+  "version": "0.1.0",
+  "description": "期限切れ・期限が近い human と未決着の retro があるときだけ、プロンプトの上の帯に出す (issue 621)",
+  "author": {
+    "name": "jiikko"
+  },
+  "types": "./types/index.d.ts"
+}
