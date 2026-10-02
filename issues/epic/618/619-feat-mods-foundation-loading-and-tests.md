@@ -19,7 +19,8 @@ mod を dotfiles で持つための共通部分を作る。中身のある mod �
 4. **テスト**: `claude plugin validate` と `claude plugin test` (`*.test.ts`) を `make test` から回す。`tests/claude/` に、
    `_claude/mods/*/` を自動で見つけて両方を回す bash のテストを 1 本置く。mod が 0 件なら失敗にする
    (`verify-execution-not-just-exit-code.md`: 対象 0 件は失敗)
-   - CI (macOS runner) に `claude` が無いなら、そのテストは skip せず「判定不能」と出す形にし、CI での扱いを決める
+   - CI (macOS runner) に `claude` が入っていない (`.github/workflows/` に install の行が無い)。CI でどうするかを決める:
+     runner に入れて必須にするか、CI では対象外と明示するか。判定不能を緑として扱う形にはしない
 5. **入口の文書**: `_claude/CLAUDE.md` か `docs/` に「mod の置き場所・読み込み・テスト・settings の hook との分担 (618 の表)」を書き、
    `docs/README.md` の索引に 1 行足す (`new-tool-requires-entrypoint-docs.md`)
 
@@ -28,6 +29,8 @@ mod を dotfiles で持つための共通部分を作る。中身のある mod �
 - [ ] `_claude/mods/` に何もしない mod が 1 つあり、`make test` で validate と test が走ったことを出力で確かめた
 - [ ] 対話 / `claude -p` / PG の 3 経路で、読まれた・読まれなかったの実測を本文に書いた
 - [ ] 入口の文書と索引を足した
+- [ ] CI での扱い (必須 / 対象外の明示) を決めて本文に書いた
+- [ ] 3 経路の結果を 618 の表と 620〜623 の着手条件に反映した
 
 ## 進捗
 

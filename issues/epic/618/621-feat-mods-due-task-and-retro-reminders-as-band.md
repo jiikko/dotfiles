@@ -18,8 +18,18 @@ mod の `AbovePrompt` の帯なら、人へ直接出せる。
 - 数え方は今の hook と同じにする。走査の対象ディレクトリ (`issues/` 直下・`pending/`・`next/`・`epic/*/` …) は
   `_claude/hooks/lib/issue-hooks.sh` が持っているので、**数え方を mod に写さない**。`$.process.run` で既存の script を呼んで結果を読む形を第一案にする
   (TS で書き直すと 2 実装になる)
-- 更新のきっかけ: `session.start` と `turn.complete` (issue を done へ移した直後に減るように)
-- 帯へ移したら、SessionStart の 2 本と、規約の「冒頭で一言伝える」の文を外す
+- 更新のきっかけ: `session.start` と `turn.complete` (issue を done へ移した直後に減るように)。そこで script を呼んで結果を `$.state` に置き、
+  `ui.render` は state を読むだけにする (描画の dispatch の中で外部の script を呼ばない。dispatch には時間の予算がある)
+- 620 の後に着手する (どちらも `_claude/issue-rules.md` の文面を直す)
+
+## 失敗モード
+
+帯は mod が読み込まれないと黙って消える。`retro-open.sh` の冒頭は「誰も読まなければ永久に open のまま溜まる」を既定の壊れ方としている。
+今はモデルが冒頭で伝えるので、hook が壊れても規約の文が補っている。
+
+- 帯へ移しても、しばらくは SessionStart の 2 本と規約の「冒頭で一言伝える」を残して併記する。外すのは、619 の実測と、
+  帯が出なかったときに気づく手段 (620 の「気づく手段」と共通にできる) が揃ってから
+- 外すかどうかの判断と、その時点の根拠を本文に書く
 
 ## 決めること
 

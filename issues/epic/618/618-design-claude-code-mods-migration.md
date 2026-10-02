@@ -21,16 +21,15 @@ settings の hook (`_claude/settings.json` の command) と比べて、次がで
 
 ## 判断: どの hook を移すか
 
-settings に配線されている hook 16 本 (`_claude/hooks/*.sh`) を、mod にすると**何が新しくできるか**で分けた。
+settings に配線されている hook の script 16 本 (エントリは 25) (`_claude/hooks/*.sh`) を、mod にすると**何が新しくできるか**で分けた。
 「移せるか」では分けない (`classic.*` があるので、型の上では全部移せる)。
 
 | hook | 判断 | 子 issue |
 |---|---|---|
 | `issue-rules-inject.sh` (SessionStart で規約を注入、4 本) | **移す**。注入をシステムプロンプトの節へ上げる。今の `<system-reminder>` は CLAUDE.md と同じ拘束力を持たない (`CLAUDE.md` の「`_claude/` を触るとき」の節) | 620 |
 | `human-tasks-due.sh` / `retro-open.sh` | **移す**。人へ見せる情報なので帯に出す。モデルに伝えさせるのをやめ、文脈を空ける | 621 |
-| `tmux-pane-state.sh` (6 イベント。PostToolUse はツール呼び出しのたびに bash を起こす) | **移す**。状態を常駐側に持てる。速度の効果は未計測 (622 で before を測ってから) | 622 |
-| `warn-discarding-checkout.sh` | **移す**。注入の警告を、消える差分を見せて進める / 止めるを選ぶペインに上げる | 623 |
-| (新規) issue の採番 | **新設**。採番 → commit → push を 1 回のツール呼び出しにする | 624 |
+| `tmux-pane-state.sh` (6 イベント。PostToolUse はツール呼び出しのたびに bash を起こす) | **保留 (実測待ち)**。状態を常駐側に持てるが、移す利点 (速度) が未計測。622 で before を測り、閾値を超えたら移す | 622 |
+| `warn-discarding-checkout.sh` | **検討**。人に選ばせる形にしたいが、settings の hook の PreToolUse `ask` でも標準の確認で同じことができる。mod が要るかを 623 で先に決める | 623 |
 | `ratelimit-warn.sh` / `next-claim-unshared.sh` | **今は移さない**。モデルに行動 (ユーザーへの提案 / push の伺い) をさせるための注入で、帯に出すだけでは役目を果たさない。621 の帯に同じ情報を足すかは 621 で決める | — |
 | `deny-bare-tmux-kill.sh` / `deny-piped-push-then-destroy.sh` | **移さない**。守りの hook。mod の hook は失敗すると黙ってスキップされ、chain が続く (reference.md「Developing one」)。settings の hook のままにする | — |
 | `issue-progress-check.sh` (Stop で差し戻す) | **今は移さない**。`classic.Stop` の `block` で移せるが、新しくできることが無い | — |
@@ -38,7 +37,21 @@ settings に配線されている hook 16 本 (`_claude/hooks/*.sh`) を、mod �
 
 **移さないと決めたものは、移植のコストを払う理由が出たとき (bash の起動が遅いという実測が出た、等) に見直す。**
 
+## mod が黙って止まったときの扱い (移すものすべてに適用)
+
+mod の hook は失敗するとスキップされ、知らせは debug log か (ホットリロード中だけ) transcript の 1 行に出るだけ
+(reference.md「Developing one」)。Claude Code の更新で API が変われば、読み込まれないまま気づかれない。
+settings の hook は失敗すれば stderr に出る。**移したものは、壊れ方が「出る」から「黙る」に変わる**。
+
+- 移す子 issue は、それぞれ「mod が読み込まれなかったとき何が起きるか」と、それを検出する手段 (canary・A-B) を受け入れ条件に持つ
+- 「黙る」ことが壊れ方そのものになる hook (`issue-rules-inject.sh` は冒頭に「規約が届かないことがこのフックの壊れ方」と書いて黙らない設計にしている) は、
+  移した後も、規約側の文 (`_claude/CLAUDE.md` の義務の 1 行) を残す
+- 切り替えの commit ごとに、読み込まれる経路 / 読み込まれない経路の両方の期待値を書く (「1 本ずつ切り替える」運用だけで二重・欠落を防がない)
+
 ## 前提と未確認の点 (619 で最初に潰す)
+
+**619 の 3 経路の実測結果は、620〜623 の着手条件にする**。読まれない経路があれば、その経路で要る settings の hook は残し、この表を直してから着手する。
+
 
 - [ ] **読み込まれる経路**。settings の hook は対話・`claude -p`・pro-con の PG (`--settings` を役割ごとに渡す。issue 431) のどれでも走る。
       mod は plugin として読み込まれる必要がある。reference.md によれば `CLAUDE_CODE_PLUGIN_DIRS` は、プロセスの環境か
@@ -52,12 +65,18 @@ settings に配線されている hook 16 本 (`_claude/hooks/*.sh`) を、mod �
 - [ ] 619 — 土台: 置き場所・読み込みの配線・テスト・入口の文書 (**他の全部の前提**)
 - [ ] 620 — issue 規約の注入をシステムプロンプトの節へ (最初の 1 本)
 - [ ] 621 — human / retro の催促をプロンプトの上の帯へ
-- [ ] 622 — tmux のペインの状態表示を mod へ
-- [ ] 623 — 未コミットの変更を捨てる checkout の前に、確認のペインを出す
-- [ ] 624 — issue の採番を、push まで済ませるツールにする
+- [ ] 622 — tmux のペインの状態表示を mod へ (実測の結果で移すかを決める)
+- [ ] 623 — 未コミットの変更を捨てる checkout の前に、人に選ばせる (mod か settings の `ask` かを先に決める)
 
-順番は 619 → 620 → (621 / 622 / 623 / 624 は独立)。
+順番は 619 → 620 → 621 (620 と 621 はどちらも `_claude/issue-rules.md` と `_claude/CLAUDE.md` の文面を直すので直列)。622 / 623 は 619 の後なら独立。
+
+> 起票時は 624 (issue の採番を push まで済ませる) も子にしていたが、反証レビューで「script 1 本で同じことができ、mod にする理由が無い」と指摘され、
+> epic から外して `issues/` 直下の 624 にした (mod の失敗モードだけが増える)。
 
 ## 進捗
 
 - 2026-10-02: 起票 (記事と `claude-code.d.ts` を読み、hook 16 本を分類した)
+- 2026-10-02: 反証レビュー 2 本 (事実 / 設計。read-only のサブエージェント、sonnet)。事実は行数など軽微 3 件を訂正。
+  設計は採用 9 件: 622 を保留に、623 を settings の `ask` との比較からに、624 を epic から外す、黙って止まるときの扱いの節を足す、
+  620 の判定を script 経由に、619 を 620〜623 の着手条件に、620 → 621 を直列に、621 の失敗モード、619 の CI の扱いを決める。
+  反証されなかった判断: 守りの hook・`ratelimit-warn`・`next-claim-unshared`・残り 7 本を移さないこと、619 を土台にすること
