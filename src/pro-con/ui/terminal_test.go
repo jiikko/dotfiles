@@ -265,8 +265,14 @@ func TestStopWatcherKeepsContinueAfterTTINFlood(t *testing.T) {
 		time.Sleep(5 * time.Millisecond) // sleep-ok: window: SIGTTIN を間隔をあけて溜める入力
 	}
 	_ = syscall.Kill(os.Getpid(), syscall.SIGCONT)
-	// sleep-ok: realtime: SIGCONT がシグナルのチャンネルへ届くのを外から観測する口が無く、届くだけの時間を置いてから戻す (負荷で届かない日は順序の検査が弱まる)
-	time.Sleep(50 * time.Millisecond) // SIGCONT がチャンネルへ届いてから、見張りを止まる処理から戻す
+	// SIGCONT がチャンネルへ届いてから (見張りは止まる処理の中なので、受け口に積まれたまま)、見張りを止まる処理から戻す
+	deadline := time.Now().Add(5 * time.Second)
+	for len(w.cont) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("SIGCONT がチャンネルへ届かない")
+		}
+		time.Sleep(time.Millisecond) // sleep-ok: tick: 受け口に積まれるのを待つ刻み (ui の package に待ちの helper が無い)
+	}
 	close(release)
 	select {
 	case msg := <-got:

@@ -335,15 +335,22 @@ func ownersOpen(dir string) bool {
 	return err == nil && n > 0
 }
 
+// ownersStayOpenObserved は、ownersStayOpen が持ち主の画面を最初に「開いている」と見たときに呼ぶ (テストが差し替える。本番は nil)。
+// テストは「dispatcher が見た後に画面を閉じる」順序をこれで作る (秒数で作ると、負荷の日は見る前に閉じて守りたい経路を通らない)
+var ownersStayOpenObserved func()
+
 // signalGrace は、取り消されたときに画面が消えるのを待つ長さ。
 var signalGrace = 5 * time.Second
 
 // ownersStayOpen は、grace の間ずっと持ち主の画面が開いているか (途中で 1 度でも 0 になれば偽)。
 func ownersStayOpen(dir string, grace time.Duration) bool {
 	deadline := time.Now().Add(grace)
-	for {
+	for first := true; ; first = false {
 		if !ownersOpen(dir) {
 			return false
+		}
+		if first && ownersStayOpenObserved != nil {
+			ownersStayOpenObserved()
 		}
 		if time.Now().After(deadline) {
 			return true

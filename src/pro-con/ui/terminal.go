@@ -103,6 +103,7 @@ func (s *stopState) takeExpectedCont() bool {
 type StopWatcher struct {
 	m    *Model
 	send atomic.Pointer[func(tea.Msg)] // 走っている Program へ知らせる (nil = Program の外)
+	cont chan os.Signal                // SIGCONT の受け口 (テストが「届いた」を len で待つ)
 }
 
 // WatchStops は見張りを置く (プロセスに 1 回)。
@@ -110,6 +111,7 @@ type StopWatcher struct {
 func (m *Model) WatchStops() *StopWatcher {
 	w := &StopWatcher{m: m}
 	stops, cont := make(chan os.Signal, 4), make(chan os.Signal, 1)
+	w.cont = cont
 	signal.Notify(stops, syscall.SIGTSTP, syscall.SIGTTIN, syscall.SIGTTOU)
 	signal.Notify(cont, syscall.SIGCONT)
 	go func() {

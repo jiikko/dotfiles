@@ -268,6 +268,7 @@ func TestLeaseSurvivesLongHealthyRun(t *testing.T) {
 		}
 		// 上限 (3) の 9 倍の tick を通してから観測する。枠が戻らない実装は 3 tick 目
 		// (900ms) で更新をやめるので、lease は 1800ms には死んでいる (余裕 900ms)
+		// 更新の回数で待つ案は見送った: 周期は本番の ticker のままで短くならず、子の寿命 (sleep 4) が固定なので、負荷の日は数え終わる前に lock が外れて偽の赤になる
 		// sleep-ok: realtime: 本番の更新の ticker を実時間で 9 周回した後に lease を観測する (他のプロセスは FS の時刻で lease を判定するので偽の時計にできない。issue 614 の 9)
 		time.Sleep(2700 * time.Millisecond)
 		ch <- probeLease(l, other, ttl, tok)
@@ -388,6 +389,7 @@ func TestLeaseSurvivesTransientRenewBlock(t *testing.T) {
 		}
 		_ = os.Remove(fifo)
 		// ④ lease が切れているはずの時刻を十分に過ぎてから、別マシンが奪えるか試す
+		// 更新の回数で待つ案は見送った: 短くならず、子の寿命が固定なので、負荷の日に偽の赤へ変わるだけ
 		// sleep-ok: realtime: lease の期限を実時間で跨ぐ (他のプロセスは FS の時刻で lease を判定するので偽の時計にできない。issue 614 の 9)
 		time.Sleep(1500 * time.Millisecond)
 		stolen <- probeLease(l, other, ttl, tok)
@@ -459,6 +461,7 @@ func TestLeaseSurvivesPermanentRenewBlock(t *testing.T) {
 		}
 		// ④ (b) の余裕: 復旧で打たれた mtime から ttl(1200ms) + 400ms 過ぎてから奪いに行く。
 		//    更新が再開していなければ、この時点で lease は死んでいる
+		// 更新の回数で待つ案は見送った: 短くならず、子の寿命が固定なので、負荷の日に偽の赤へ変わるだけ
 		// sleep-ok: realtime: lease の期限を実時間で跨ぐ (他のプロセスは FS の時刻で lease を判定するので偽の時計にできない。issue 614 の 9)
 		time.Sleep(1600 * time.Millisecond)
 		stolen <- probeLease(l, other, ttl, tok)

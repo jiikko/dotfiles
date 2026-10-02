@@ -130,3 +130,13 @@ wtclean の 15 s は git fixture のコストで、sleep も子の sleep も無�
     失敗時にログを出す上限 60 s の待ち
   - 各 package 変更後 3 回 rc=0 (pro-con 本体 16.4〜16.6 s / dispatcher 13.1〜13.2 s / lockman 34.0〜34.1 s)。lint 0 件
   - 9 を見送った理由を `src/lockman/on_lost_kill_test.go` の冒頭にも書いた (コードの側に残す)
+- 2026-10-02 (done の後の追記) 「realtime の sleep も減らせないか」(ユーザーの依頼) で 5 箇所を見直した:
+  - pro-con 2 箇所を事象待ちにした:
+    - `TestServeSignalWaitsForClosingScreens`: 50 ms の順序作り → `ownersStayOpenObserved` (既定 nil。`ownersStayOpen` が持ち主の画面を最初に見たときに呼ぶ) を待ってから閉じる。
+      秒数だと負荷の日は見る前に閉じ、assert は通るのに「閉じる途中の画面を待つ」経路を通らなかった。変異: 最初の 1 回しか見ない → red
+    - `TestStopWatcherKeepsContinueAfterTTINFlood`: 50 ms → `StopWatcher.cont` (SIGCONT の受け口をフィールドに持たせた) に積まれたのを `len` で待つ。
+      変異: SIGCONT を他の信号と同じチャンネルで受ける → 「SIGCONT がチャンネルへ届かない」で red
+    - どちらも -race で 3 回 green。本番の分岐は変えていない (nil の口とフィールドの代入だけ) ので敵対レビューは省略した
+  - lockman 3 箇所は見送った: 更新の回数 (lock の mtime の打ち直し) で待つ形は書けるが、周期は本番の ticker のままで短くならず (0〜0.3 s)、
+    子の寿命 (`sleep 3` / `sleep 4`) が固定なので、負荷の日は数え終わる前に lock が外れて偽の赤になる (今の弱さは偽の緑の向き)。理由は各行の印の上に書いた
+  - realtime の印は 5 → 3 (lockman の 3 行だけ)

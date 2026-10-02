@@ -406,9 +406,16 @@ func TestServeSignalWaitsForClosingScreens(t *testing.T) {
 		done <- serve(ctx, d, dir, nil, serveOpts{interval: time.Hour, alone: time.Hour}, io.Discard)
 	}()
 	waitUntil(t, "Tick が回らない", func() bool { return ticks.Load() != 0 })
+	observed := make(chan struct{})
+	var once sync.Once
+	ownersStayOpenObserved = func() { once.Do(func() { close(observed) }) }
+	t.Cleanup(func() { ownersStayOpenObserved = nil })
 	cancel() // dispatcher と画面に同時に届いた
-	// sleep-ok: realtime: 「dispatcher が見た後に画面を閉じる」順序を秒数で作る (dispatcher が見たことを外から観測する口が無い。判定には使わない)
-	time.Sleep(50 * time.Millisecond) // 画面が閉じるのは dispatcher が見た後 (待ちの窓を作るための入力。判定には使わない)
+	select { // 画面が閉じるのは dispatcher が「開いている」と見た後 (秒数でなく、見たことを待つ)
+	case <-observed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("dispatcher が持ち主の画面を見に行かない")
+	}
 	sc.Close()
 	select {
 	case <-done:
