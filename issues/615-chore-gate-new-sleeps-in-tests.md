@@ -60,10 +60,10 @@
 
 ## 受け入れ条件
 
-- [ ] 613 / 614 の残りに印を付け、検査を入れた時点で違反 0 件
-- [ ] shell の検査と、その fixture のテスト (red / green の 4 形)
-- [ ] Go の forbidigo を時間を待つテストのある module (lockman / pro-con / glogx / doctor / process_supervisor / restartable / chromecookie) に入れる
-- [ ] `_claude/rules/avoid-wall-clock-assertions.md` に「検査が止める・印の書き方」を 1 行足す (入口のドキュメント)
+- [x] 613 / 614 の残りに印を付け、検査を入れた時点で違反 0 件
+- [x] shell の検査と、その fixture のテスト (red / green の 4 形) → fixture 40 件
+- [x] Go の forbidigo を時間を待つテストのある module (lockman / pro-con / glogx / doctor / process_supervisor / restartable / chromecookie) に入れる → 方針変更: 同じ検査で Go も見る (上の進捗)
+- [x] `_claude/rules/avoid-wall-clock-assertions.md` に「検査が止める・印の書き方」を 1 行足す (入口のドキュメント)
 
 ## 関連ファイル
 
@@ -99,3 +99,10 @@
   (引用符つきは任意の文字、素は区切り文字まで、`<<\EOS` も可。算術は `((`/`))` の深さで除く) 形に書き直した。P3 の偽の red のうち
   `cat > "$d/stub" <<"EOS"` / `<<\EOS` / `$(( (a) << b ))` はこれで解消、残り (Go の文字列の中など) は検査の冒頭に「既知の偽の red」として書いた。
   到達しない分岐 (FNR==1 の報告) を消した。fixture 37 件。変異: タグを `[A-Za-z_][A-Za-z0-9_]*` に戻す → hyphen_tag で red / 引用符の中身を潰さない → red
+- 2026-10-02 敵対レビュー 3 周目 (opus): 素通り 3 形 (行末コメントの中の `<<` を開始と読む / `<<"EOF"x` のタグを `EOF` と読む / `\<<EOF` を heredoc と読む)。
+  写しで引用符の外のエスケープと語の先頭の `#` 以降を潰し、タグを区切りまで連結して読むよう直した。fixture 40 件。変異で red を確認:
+  コメントを潰さない / タグを連結しない / エスケープを潰さない。変異の途中で、UTF-8 のロケールの awk が 1 文字ずつの切り出しで
+  「multibyte conversion failure」で落ちることが分かったので、awk を `LC_ALL=C` で走らせるようにした (規則はすべて ASCII)
+  - **打ち切り** (adversarial-review-own-safeguards.md §8 の stopping rule): 3 周目の形はどれも「印のある行のコメントに `<<TAG` を書き、後ろに同名の
+    heredoc を置く」のように組み立てないと起きない。脅威モデルを「うっかり印の無い sleep を足す」に限り、意図的な迂回は対象外と検査の冒頭に書いた。
+    残る既知の偽の red (安全側) も冒頭に書いた。再評価の trigger: 偽の red / 素通りが実際のテストの変更で起きたとき

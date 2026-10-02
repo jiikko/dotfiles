@@ -93,7 +93,7 @@ sonnet の read-only 調査を main が抜き取りで検閲)。2026-09-05 の�
 - [x] B を 1 件ずつ、担保していたものの列挙 → 置き換え → 変異検証 → 3 回連続 green (置き換えられないものは理由つきで残した)
 - [x] C を `tt_wait_until` へ寄せる (bats は見送り。下の進捗)
 - [x] D の理由コメントを書き足す (代替案が成り立つものは置き換える)
-- [ ] [615](615-chore-gate-new-sleeps-in-tests.md) の検査の許可 (印 / ファイル単位の許可) を、この表の残り (TICK / DUMMY / NEGATIVE / STUB) と一致させる
+- [x] [615](615-chore-gate-new-sleeps-in-tests.md) の検査の許可 (印 / ファイル単位の許可) を、この表の残り (TICK / DUMMY / NEGATIVE / STUB) と一致させる (615 で印を付け、検査は違反 0 件)
 
 ## 関連ファイル
 

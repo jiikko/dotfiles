@@ -21,6 +21,8 @@
 #   tests/lib/wait_until.sh (刻みの唯一の実装) は印なしで許す。
 #   🚨 heredoc の開始は「引用符の外の `<<`」で判定する (引用符の中身を潰した写しで探す)。here-string (`<<<`) と算術
 #   (`(( … ))` の中) は除く。タグは bash の規則で読む (`<<'A-B'` は引用符の中の任意の文字、素の `<<EOS-A` は区切り文字まで、`<<\EOS` も可)。
+#   awk は LC_ALL=C (バイト単位) で走らせる。規則はすべて ASCII で、UTF-8 のロケールでは 1 文字ずつの切り出しが多バイト文字の途中で
+#   「multibyte conversion failure」で落ちることがある (変異検証で実測)。
 #   字句の近似を足していく形にしない (red team 2 周で、正規表現の継ぎ足しはタグのハイフンで素通りした)
 #   終端の行が来ないまま末尾に達したら落とす (開始の判定を誤ると本文がファイルの最後まで続き、印 1 つで後半が素通りするため)
 #   Go は `time.Sleep(` の行に、同じ行か直前の行の `// sleep-ok: <分類>: <理由>` を要求する (分類は同じ)。待つなら各 package の
@@ -29,7 +31,9 @@
 #   丸ごと外しており、各 module の lint 設定を崩さずに済む (lint.yml は paths の絞り込み無しで毎 push この検査を回す)
 #
 # 脅威モデル (adversarial-review-own-safeguards.md §8):
-#   止めるもの: テストを書く人が、秒数で待つ sleep を理由を書かずに足すこと。印の理由が妥当かは検査しない (review が読む)
+#   止めるもの: テストを書く人が、秒数で待つ sleep を理由を書かずに**うっかり**足すこと。印の理由が妥当かは検査しない (review が読む)。
+#   意図的な迂回 (印のある行のコメントに `<<TAG` を書いて後ろの同名の heredoc まで飲ませる、のように組み立てた形) は脅威に含めない。
+#   red team 3 周で、素通りの形は周ごとに「組み立てないと起きない」側へ移った (3 周目の 3 形は直したが、ここで打ち切る。issue 615)
 #   止めないもの (検出しない形):
 #     - 本番の定数 (猶予・lease・ticker) を実時間で過ぎさせる形。テストに sleep の語が出ない (issue 614 の主因)
 #     - `read -t` / `timeout` / `perl -e 'select(undef,undef,undef,0.5)'` など、sleep の語を使わない待ち
@@ -74,19 +78,22 @@ for f in "${files[@]}"; do
   checked=$((checked + 1))
   case "$f" in */tests/lib/wait_until.sh|tests/lib/wait_until.sh) continue ;; esac
   out="$(
-    awk '
+    LC_ALL=C awk '
       function has_mark(s) { return s ~ /sleep-ok: (dummy|window|negative|stub|tick|realtime|other): [^[:space:]]/ }
       function has_sleep(s) { return s ~ /(^|[^A-Za-z0-9_.-])sleep([^A-Za-z0-9_-]|$)/ }
       # 直前の行の印は、その行がコメントだけのときに限る (印のある sleep の行が次の行まで許さないように)
       function prev_mark(p,   t) { t = p; gsub(/^[[:space:]]+/, "", t); return t ~ /^#/ && has_mark(t) }
       # heredoc のタグを返す (開始でなければ "")。引用符の中身を潰した写しで「引用符の外の <<」を探し、here-string (<<<) と
       # 算術 ((( … )) の中) を除き、タグは元の行のその位置から bash の規則で読む (引用符つきは閉じるまで任意の文字、素なら区切りまで)
-      function heredoc_tag(l,   n, i, c, q, blank, depth, rest, tag, j) {
+      # 写しでは引用符の中身・引用符の外のエスケープ (\X)・語の先頭の # から行末 (コメント) を空白にする
+      function heredoc_tag(l,   n, i, c, q, blank, depth, rest, tag, j, pc) {
         n = length(l); blank = ""; q = ""
         for (i = 1; i <= n; i++) {
           c = substr(l, i, 1)
           if (q == "") {
-            if (c == "\\" && i < n) { blank = blank c substr(l, i + 1, 1); i++; continue }
+            if (c == "\\" && i < n) { blank = blank "  "; i++; continue }
+            pc = (i == 1) ? " " : substr(l, i - 1, 1)
+            if (c == "#" && pc ~ /[[:space:];&|(]/) { while (length(blank) < n) blank = blank " "; break }
             if (c == "\047" || c == "\042") q = c
             blank = blank c
           } else {
@@ -101,15 +108,24 @@ for f in "${files[@]}"; do
           if (substr(blank, i, 3) == "<<<") { i += 2; continue }
           if (substr(blank, i, 2) != "<<" || depth > 0) continue
           rest = substr(l, i + 2)
-          sub(/^-/, "", rest); sub(/^[[:space:]]+/, "", rest); sub(/^\\/, "", rest)
-          c = substr(rest, 1, 1)
-          if (c == "\047" || c == "\042") {
-            j = index(substr(rest, 2), c)
-            if (j == 0) return ""
-            return substr(rest, 2, j - 1)
+          sub(/^-/, "", rest); sub(/^[[:space:]]+/, "", rest)
+          # タグは 1 語: 引用符で囲んだ部分 (中は任意の文字) と素の部分 (\X は X) を、区切り文字まで連結する (`<<"E" に引用符つきの S と x が続けば ESx`)
+          tag = ""
+          while (rest != "") {
+            c = substr(rest, 1, 1)
+            if (c == "\047" || c == "\042") {
+              j = index(substr(rest, 2), c)
+              if (j == 0) return ""
+              tag = tag substr(rest, 2, j - 1); rest = substr(rest, j + 2)
+            } else if (c == "\\" && length(rest) > 1) {
+              tag = tag substr(rest, 2, 1); rest = substr(rest, 3)
+            } else if (c ~ /[[:space:];|&<>()]/) {
+              break
+            } else {
+              tag = tag c; rest = substr(rest, 2)
+            }
           }
-          if (match(rest, /^[^[:space:];|&<>()]+/)) return substr(rest, 1, RLENGTH)
-          return ""
+          return tag
         }
         return ""
       }
@@ -166,7 +182,7 @@ if [ "$GO_DIR" != none ]; then
     [ -r "$f" ] || { printf '✗ 読めないファイル: %s (検査できないので緑にしない)\n' "$f"; exit 1; }
     go_checked=$((go_checked + 1))
     out="$(
-      awk '
+      LC_ALL=C awk '
         function has_mark(s) { return s ~ /sleep-ok: (dummy|window|negative|stub|tick|realtime|other): [^[:space:]]/ }
         function prev_mark(p,   t) { t = p; gsub(/^[[:space:]]+/, "", t); return t ~ /^\/\// && has_mark(t) }
         FNR == 1 { prev = "" }

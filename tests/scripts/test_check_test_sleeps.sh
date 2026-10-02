@@ -65,6 +65,9 @@ expect_red   after_heredoc "$H   # sleep-ok: stub: 本文だけ"$'\n'"x"$'\n'"EO
 expect_red   hyphen_tag  "cat <<EOS-A   # sleep-ok: stub: 本文だけ"$'\n'"x"$'\n'"EOS-A"$'\n'"sleep 30"$'\n'"cat <<EOS"$'\n'"y"$'\n'"EOS"   # sleep-ok: other: 検査の fixture (タグのハイフンで終端を読み違えない)
 expect_green quoted_file "cat > \"\$d/stub\" <<\"EOS\"   # sleep-ok: stub: 本文"$'\n'"sleep 0.05"$'\n'"EOS"   # sleep-ok: other: 検査の fixture (前の引用符で開始を見落とさない)
 expect_green backslash   "cat <<\\EOS   # sleep-ok: stub: 本文"$'\n'"sleep 0.05"$'\n'"EOS"   # sleep-ok: other: 検査の fixture
+expect_red   comment_heredoc "sleep 5 \& pid=\$! # sleep-ok: dummy: see the cat <<EOF stub"$'\n'"sleep 3"$'\n'"cat <<EOF"$'\n'"x"$'\n'"EOF"   # sleep-ok: other: 検査の fixture (行末コメントの中の << を開始と読まない)
+expect_red   concat_tag  "cat <<\"EOF\"x   # sleep-ok: stub: 本文"$'\n'"y"$'\n'"EOFx"$'\n'"sleep 3"$'\n'"cat <<EOF"$'\n'"z"$'\n'"EOF"   # sleep-ok: other: 検査の fixture (タグは区切りまで連結する)
+expect_red   escaped_lt  "echo \\<<EOF # sleep-ok: other: literal"$'\n'"sleep 3"$'\n'"cat <<EOF"$'\n'"z"$'\n'"EOF"   # sleep-ok: other: 検査の fixture (\< は heredoc ではない)
 expect_green nested_arith 'x=$(( (a) << b ))'$'\n'"sleep 1   # sleep-ok: negative: x"   # sleep-ok: other: 検査の fixture
 
 printf 'Test 4b: heredoc でないものを heredoc と読まない (読むと印 1 つで後ろが素通りする)\n'
@@ -134,4 +137,4 @@ if [ "$fails" -ne 0 ]; then
   printf 'FAIL: %d 件\n' "$fails"
   exit 1
 fi
-printf 'OK check_test_sleeps (37 件)\n'
+printf 'OK check_test_sleeps (40 件)\n'

@@ -83,7 +83,7 @@ wtclean の 15 s は git fixture のコストで、sleep も子の sleep も無�
 - [x] 1〜8 を入れ、package の時間を before / after で記録する (7 は理由つきで残した。下の進捗)
 - [x] 9 の設計 (注入口の形) を決め、`with.go` の不変条件 (更新が止まったら lease が死ぬ) を tick の回数で表したテストに置き換える → 見送り (下の進捗に理由)
 - [x] 10 は module ごとに 1 つの helper へ寄せる
-- [ ] [615](615-chore-gate-new-sleeps-in-tests.md) の Go 側の検査の許可リストを、この表の残りと一致させる
+- [x] [615](615-chore-gate-new-sleeps-in-tests.md) の Go 側の検査の許可リストを、この表の残りと一致させる (615 で印を付け、検査は違反 0 件)
 
 ## 関連ファイル
 
