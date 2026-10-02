@@ -38,7 +38,7 @@ mod の側からは何も起きないように見える (2.1.287 で実測。iss
 |---|---|
 | `canary` | 何もしない。`DOTFILES_MOD_CANARY_DIR` があれば読み込まれた印を書く (読まれる経路の実測用。issue 619) |
 | `issue-band` | 期限切れ・期限が近い human と未決着の retro があるときだけ、プロンプトの上の帯に出す。数えるのは `_claude/hooks/human-tasks-due.sh` / `retro-open.sh` の `--counts` (issue 621) |
-| `desktop-statusline` | Claude desktop の Code タブ (settings の `statusLine` を実行しない) に、CLI と同じ `_claude/statusline-command.sh` の出力を色つきで出す。terminal には描かない (issue 625) |
+| `desktop-statusline` | Claude desktop の Code タブ (settings の `statusLine` を実行しない) に、CLI と同じ `_claude/statusline-command.sh` の出力を色つきで出す。terminal には描かない (issue 625)。更新はセッション開始・メインのターンの終わり・60 秒ごと。今すぐ更新するスラッシュコマンド `/statusline-refresh` を desktop のセッションにだけ登録する (skill でも実行ファイルでもなく、mod が `session.start` で `$.command.register` する) |
 
 ## 置き場所と読み込み
 

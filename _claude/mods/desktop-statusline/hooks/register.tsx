@@ -45,10 +45,18 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     if (await isDesktopHosted($)) {
+      await $.command.register({ name: 'statusline-refresh', description: 'ステータスバーを今すぐ作り直す', immediate: true })
       await refresh($)
       $.clock.every(60_000, () => refresh($))
     }
     return started
+  })
+
+  // 返信やタイマーを待たずに作り直す手段。作り直した結果 (成功 / 失敗の理由) をそのまま出力に返す
+  on('command.run', { command: 'statusline-refresh' }, async $ => {
+    await refresh($)
+    const err = await read($, error)
+    return { text: err === null ? 'ステータスバーを作り直した' : `ステータスバーを作れない: ${err}` }
   })
 
   on('turn.complete', async ($, e, next) => {

@@ -112,6 +112,7 @@ desktop の Code タブのセッション (2026-10-02 23:19 に再開。`CLAUDE_
   (b) mod の再読み込みと裏の `refresh` が重なったとき、`update()` が reject しうる (旧 `turn.complete` の `void refresh` から在る形。engine の挙動は未検証) /
   (c) issue-band の起動の裏の数え直し (約 1.5 秒) とターンの終わりの数え直しが逆順に終わると古い件数で上書きされる (稀。旧からある競合) /
   (d) desktop-statusline の起動時の `refresh` は、`$.session.model()` / `usage()` が headless の host でまだ答えられないと、次のターンか 60 秒後まで理由の 1 行が出うる (未検証)
+- 追加: 返信やタイマーを待たずに作り直す `/statusline-refresh` を、desktop が起こしたセッションにだけ登録した (commit「mods: desktop-statusline に /statusline-refresh を足す」。結果 (成功 / 失敗の理由) を出力に返す。テスト 4 本、変異 4 本が想定のテストで red)。desktop 実機で `/` の候補に出て実行できることは未確認
 - **未観測**: desktop 実機の `session.start` の `surface` / `isInteractive` / `$.session.surfaces()` の値 (2 本目の probe は `$.session.surfaces()` の中身を描かせたが、画面を読む手段が無く値を得ていない。
   `screencapture -x` は `could not create image from display` で失敗した)。原因は「最有力」であって、確定は新しい desktop のセッションで帯が出ること (628)
 
