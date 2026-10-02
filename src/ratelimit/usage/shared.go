@@ -102,7 +102,8 @@ func FetchShared(ctx context.Context, run func(context.Context) (*Snapshot, erro
 		// 呼び出し側の持ち時間切れ・取り消しは、他の呼び出し元を止める理由にしない
 		return nil, err
 	default:
-		st.AttemptedAt, st.LastErr = now, termsafe.PlainLine(err.Error())
+		// 理由は他の呼び出し元の画面にも出るので、短く切る (pro-con の run は stderr を全文添える)
+		st.AttemptedAt, st.LastErr = now, clipRunes(termsafe.PlainLine(err.Error()), 200)
 	}
 	// 書けなくても今回の結果は正しい。次の呼び出しがもう一度起こすだけなので、失敗は返さない
 	_ = saveShared(path, st)
@@ -142,7 +143,7 @@ func lockShared(ctx context.Context, path string) (func(), error) {
 
 // loadShared は共有ファイルを読む。無い・壊れているときは空 (= 取りに行く)。
 //   - 時刻は now より未来のものを信用しない (時計の巻き戻り・壊れたファイルで、古い枠を「新しい」と
-//     出し続けたり、何時間も止まり続けたりしないため)。止める期限は now + noLimitsBackoff まで
+//     出し続けたり、何時間も止まり続けたりしないため)。止める期限は now + noLimitsBackoff に丸める
 //   - 表示に載る文字列は termsafe を通す (別プロセスが書いたファイルなので、端末へ出す前に制御列を落とす)
 func loadShared(path string, now time.Time) sharedState {
 	data, err := os.ReadFile(path)
@@ -167,8 +168,9 @@ func loadShared(path string, now time.Time) sharedState {
 		st.AttemptedAt, st.LastErr = time.Time{}, ""
 	}
 	st.LastErr = termsafe.PlainLine(st.LastErr)
-	if st.BlockedUntil.After(now.Add(noLimitsBackoff)) {
-		st.BlockedUntil = time.Time{}
+	if limit := now.Add(noLimitsBackoff); st.BlockedUntil.After(limit) {
+		// 捨てずに丸める (止める側に倒す)。古い版が長い期間で書いた値も、今の期間で止まる
+		st.BlockedUntil = limit
 	}
 	return st
 }

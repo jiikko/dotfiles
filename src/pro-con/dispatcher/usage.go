@@ -46,6 +46,9 @@ const (
 // usageOf は利用枠の Snapshot から使用率を読む。片方の枠だけ無ければ、無い側は 0 として読める側で絞り、無い側を Missing に
 // 残す (週の枠が尽きかけているのに 5 時間の枠が無いだけで全力で起動しない / 表示の変化を黙らせない)。両方とも無ければ誤り
 // (0% と区別する)。モデル別の週の枠 (7d(Fable) 等) は見ない (上の注記)。
+// 枠の行は usage.Parse が読む。小数・「<1%」は受けない: `-p` の /usage は使用率を Math.floor した整数で出す (2.1.287 の
+// バイナリで確認 2026-10-02)。resets の無い行 (resets_at が null の枠) も読めず Missing になり 0% として扱うが、
+// その形は消費が始まっていない枠なので実際も 0% に近い。CLI が小数などを出すようになったら usage.Parse 側で受ける。
 func usageOf(snap *usage.Snapshot) (Usage, error) {
 	s, okS := snap.Find("5h")
 	w, okW := snap.Find("7d")

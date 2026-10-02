@@ -2,6 +2,7 @@ package usage
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -237,15 +238,19 @@ func TestLoadSharedDistrustsFutureTimes(t *testing.T) {
 	if got.LastErr != "" {
 		t.Error("未来の attemptedAt の失敗を読んだ")
 	}
-	if !got.BlockedUntil.IsZero() {
-		t.Error("now + 止める期間を超える blockedUntil を読んだ")
+	if !got.BlockedUntil.Equal(now.Add(noLimitsBackoff)) {
+		t.Errorf("blockedUntil = %v, want now + 止める期間に丸める", got.BlockedUntil)
 	}
 	st.BlockedUntil = now.Add(noLimitsBackoff)
 	if err := saveShared(path, st); err != nil {
 		t.Fatal(err)
 	}
-	if loadShared(path, now).BlockedUntil.IsZero() {
-		t.Error("期間内の blockedUntil まで捨てた")
+	st.BlockedUntil = now.Add(time.Minute)
+	if err := saveShared(path, st); err != nil {
+		t.Fatal(err)
+	}
+	if !loadShared(path, now).BlockedUntil.Equal(now.Add(time.Minute)) {
+		t.Error("期間内の blockedUntil を書き換えた")
 	}
 }
 
@@ -312,5 +317,17 @@ func TestParseStreamErrorQuotesFirstLine(t *testing.T) {
 	_, err = ParseStream([]byte(`{"type":"result","result":"`+strings.Repeat("あ", 200)+`","is_error":false}`), now)
 	if err == nil || strings.Count(err.Error(), "あ") != 80 || !strings.Contains(err.Error(), "…") {
 		t.Fatalf("1 行目を切らない: %v", err)
+	}
+}
+
+// 共有する失敗の理由は 200 文字で切る (他の呼び出し元の画面に出る)。
+func TestFetchSharedClipsLastErr(t *testing.T) {
+	dir := isolateShared(t)
+	setClock(t, time.Date(2026, 7, 20, 12, 0, 0, 0, time.Local))
+	long := strings.Repeat("あ", 500)
+	_, _ = FetchShared(context.Background(), func(context.Context) (*Snapshot, error) { return nil, errors.New(long) }, false)
+	st := loadShared(filepath.Join(dir, sharedFile), clock())
+	if n := strings.Count(st.LastErr, "あ"); n != 200 {
+		t.Fatalf("共有した理由の長さ = %d 文字, want 200", n)
 	}
 }
