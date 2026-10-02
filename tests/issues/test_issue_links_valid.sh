@@ -102,14 +102,14 @@ scan_files() {
   #      「その後にバッククォートが有る」ので開始にならない (issues/done/165 が実在の形)
   #   ② `~~~` フェンス (CommonMark の正当な形)
   #   リンクの形は ](<../ の繰り返し><パス>.<拡張子><#アンカー>) で、アンカーを落としてファイルの実在を見る
-  while IFS=$'\t' read -r f link; do
-    [ -n "$link" ] || continue
-    if [ -e "${f%/*}/$link" ]; then
-      printf 'OK|%s|%s\n' "$f" "$link"
-    else
-      printf 'BAD|%s|%s\n' "$f" "$link"
-    fi
-  done < <(awk '
+  # 🚨 awk は LC_ALL=C (バイト単位) で動かす。UTF-8 のロケールの macOS の awk は、中身に不正な UTF-8 があると
+  # `towc: multibyte conversion failure` で止まり、全ファイルを 1 回の awk で読む形では**後ろの全ファイルが無検査の
+  # まま緑**になる (2026-10-02 の敵対的レビューで再現)。リンクの形もフェンスの判定も ASCII だけを見るので、C でも判定は変わらない
+  # 🚨 それでも awk が途中で止まったら判定不能として赤にする (プロセス置換の中の失敗は rc にも set -e にも届かない)
+  local hits rc=0
+  # ISSUE_LINKS_AWK は下の自己検査が「出力してから失敗で終わる awk」へ差し替えるための口 (普段は awk)
+  # shellcheck disable=SC2016 # 単一引用符の中は awk のプログラム (シェルに展開させない。コマンド名が変数なので shellcheck が awk と分からない)
+  hits=$(LC_ALL=C "${ISSUE_LINKS_AWK:-awk}" '
     FNR == 1 { fence = 0 }
     /^[[:space:]]*```[^`]*$/ { fence = !fence; next }
     /^[[:space:]]*~~~/       { fence = !fence; next }
@@ -124,7 +124,19 @@ scan_files() {
         t = substr(t, RSTART + RLENGTH)
       }
     }
-  ' "${readable[@]}")
+  ' "${readable[@]}") || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf 'UNREADABLE|(awk が途中で止まった: rc=%s。止まった後ろのファイルは未検査)|\n' "$rc"
+  fi
+  [ -n "$hits" ] || return 0
+  while IFS=$'\t' read -r f link; do
+    [ -n "$link" ] || continue
+    if [ -e "${f%/*}/$link" ]; then
+      printf 'OK|%s|%s\n' "$f" "$link"
+    else
+      printf 'BAD|%s|%s\n' "$f" "$link"
+    fi
+  done <<< "$hits"
 }
 
 # --- canary: 既知の入力で既知の答えが出ることを、本走査の前に固定する ---------------------
@@ -157,11 +169,14 @@ printf '[deep](../../../nonexistent-deep.md)\n' > "$canary_dir/epic/x/done/900-f
 # scan_files は全ファイルを 1 回の awk で読むので、ファイルの境目でフェンスの状態を戻し忘れると、
 # 次のファイルの本文がフェンスの中として丸ごと落ちる (1 ファイルずつの版には無かった壊れ方)
 printf '```\n' > "$canary_dir/epic/x/done/899-feat-unclosed-fence.md"
+# 🚨 中身に不正な UTF-8 を含むファイルでも awk を止めない (止まると後ろのファイルが無検査になる)。
+# UTF-8 のロケールで LC_ALL=C を外すと、このファイルで awk が止まり、判定不能の行が出て件数が合わなくなる
+printf '\377\376 [ok3](../../../010-feat-target.md)\n' > "$canary_dir/epic/x/done/898-feat-bad-utf8.md"
 canary_out=$(find "$canary_dir" -name '*.md' -type f -print | sort | scan_files)
 canary_all=$(printf '%s' "$canary_out" | grep -c . || true)
 canary_bad=$(printf '%s' "$canary_out" | grep -c '^BAD|' || true)
-if [ "$canary_all" -ne 8 ]; then
-  printf '✗ canary で数えたリンクが 8 件でない (フェンス / インラインコード / 深さの扱いがずれている): %d (フェンス / インラインコードの除去がずれている)\n%s\n' \
+if [ "$canary_all" -ne 9 ]; then
+  printf '✗ canary で数えたリンクが 9 件でない (フェンス / インラインコード / 深さの扱いがずれている): %d (フェンス / インラインコードの除去がずれている)\n%s\n' \
     "$canary_all" "$canary_out" >&2
   exit 1
 fi
@@ -224,6 +239,16 @@ if [ "${ISSUE_LINKS_SELFTEST:-}" != "1" ]; then
   printf '[ok](../010-feat-target.md)\n' > "$clean_dir/done/011-feat-ok.md"
   if ! ISSUE_LINKS_SELFTEST=1 "$0" "$clean_dir" >/dev/null 2>&1; then
     printf '✗ 陰性対照が赤になった (正しいリンクを落としている)\n' >&2
+    rm -rf "$clean_dir"; exit 1
+  fi
+
+  # awk が途中で止まった対照: 正しく出力してから失敗で終わる awk に差し替えて、陰性対照と同じ fixture を通す。
+  # 緑なら awk の失敗を見ていない (全ファイルを 1 回の awk で読むので、止まると後ろのファイルが無検査になる)
+  awkfail="$clean_dir/awk-then-fail"
+  printf '#!/bin/sh\nawk "$@"\nexit 3\n' > "$awkfail"
+  chmod +x "$awkfail"
+  if ISSUE_LINKS_SELFTEST=1 ISSUE_LINKS_AWK="$awkfail" "$0" "$clean_dir" >/dev/null 2>&1; then
+    printf '✗ awk が途中で止まったのを合格にしている (止まった後ろのファイルが無検査になる)\n' >&2
     rm -rf "$clean_dir"; exit 1
   fi
   rm -rf "$clean_dir"
