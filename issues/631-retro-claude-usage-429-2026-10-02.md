@@ -47,3 +47,4 @@
 ## 進捗
 
 - 2026-10-02: 起票。A / B / C の切り出しはユーザーの判断待ち
+- 2026-10-02: A を `check-other-platform-reference.md`、B / C を `measure-external-cli-streams-separately.md` へ追記 (根拠は各 rules-rationale)。却下 3 件は上に理由つき。残課題なし

@@ -33,3 +33,15 @@ seam を全部差し替えたテストは「実測表どおりに書いたコー
 - 実測日: 2026-09-08 / 出典: swift-smbee issue 092 / done/090
 - 実例 obaket 645 M6c, 2026-09-03: Swift Testing の `started` 行 (stdout) と NSLog マーカー (stderr) の順序から hang の位置を 推理して 2 回誤診。stderr だけに揃えた 5 run 目で確定
 - 実測 2026-09-25 dotfiles 427: fake の再開は同じ session を続ける前提で、 本物の `claude --bg --resume` は別の id を立てていた。その前提の上で敵対レビューを 5 周重ねた
+
+## ログ 1 行の解釈・周期的な外部呼び出し (起源: dotfiles issue 627 / retro 631, 2026-10-02)
+
+- ログ: Claude Code の debug ログの「fetchUtilization: 429 remembered for this bearer; not asking again for 2692s」を、
+  「CLI が覚えている間はサーバへ行かない」と読み、429 の後に止める時間を 10 分にした。CLI のコード (`fetchUtilization`) を
+  読むと、覚えは `claude -p` のプロセスをまたがず、起こすたびに実際に GET して新しい 429 を受け取っていた
+  (秒数が 2692 → 2849 と伸びていたのが証拠)。10 分ごとに 429 を叩き直し、窓を延ばしていた。止める時間は 50 分に直した
+- 周期: glogx は利用枠の表示中、60 秒ごとに `claude -p /usage` を起こしていた (2026-07-22 の要望)。周期を決めた時の判断は
+  「トークン課金ゼロ」「1 回 2 秒」というローカルのコストで、サーバの `/api/oauth/usage` の rate limit は考えていなかった。
+  表示を開いたまま 17 分 (17 回) で 429 になり、以後約 45 分は取れなかった。bin/ratelimit (hook) と pro-con も同じ口を
+  それぞれの周期で叩いていたので、呼び出し元ごとに周期を下げても合計は減らない。直し方は全呼び出し元が通る共有ゲート
+  (5 分に 1 回まで) と、応答ヘッダ由来で既に届いている statusline の値を主な出所にすること
