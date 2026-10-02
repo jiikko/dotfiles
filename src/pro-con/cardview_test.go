@@ -862,3 +862,13 @@ func TestFormatEventDropsTerminalControls(t *testing.T) {
 		t.Fatalf("formatEvent が制御の列か改行を残した / 文字まで消した: %q", got)
 	}
 }
+
+// dispatcher が出来事を dispatcher.log (前面で起こせば端末) へ書く口も、理由の題名の制御の列と改行を落とす。
+func TestEventSinkDropsTerminalControls(t *testing.T) {
+	var out, errOut bytes.Buffer
+	sink := eventSink(viewDir(t), &out, &errOut)
+	sink([]eventlog.Event{{Kind: "delete", Card: "C-001", Reason: "「色\x1b]52;c;aGVsbG8=\a直す\n状態: 完了」を削除した"}})
+	if strings.ContainsAny(out.String(), "\x1b\a") || strings.Count(out.String(), "\n") != 1 || !strings.Contains(out.String(), "を削除した") {
+		t.Fatalf("eventSink が制御の列か改行を残した / 文字まで消した: %q (err=%q)", out.String(), errOut.String())
+	}
+}

@@ -148,3 +148,36 @@ func TestPullRebaseRefusesWhileCherryPickInProgress(t *testing.T) {
 		t.Fatal("🚨 ユーザーが止めていた cherry-pick の状態を消した (CHERRY_PICK_HEAD が無い)")
 	}
 }
+
+// branch の上で bisect を始めた直後も pull を断る (断らないと pull が bisect 中の branch を動かす)。
+func TestPullRebaseRefusesWhileBisecting(t *testing.T) {
+	work := pullSandbox(t)
+	gitIn(t, work, "bisect", "start")
+	if _, err := os.Stat(filepath.Join(work, ".git", "BISECT_LOG")); err != nil {
+		t.Fatalf("前提: BISECT_LOG が無い: %v", err)
+	}
+	if err := runGitPullRebase(context.Background()); err == nil || !strings.Contains(err.Error(), "bisect の途中") {
+		t.Fatalf("bisect の途中なのに pull を断らなかった: %v", err)
+	}
+}
+
+// conflict で止まった merge は作業ツリーが汚れているが、「commit か stash」ではなく「merge の途中」と案内する
+// (途中状態の検査が作業ツリーの検査より先)。
+func TestPullRebaseTellsMergeInProgressBeforeDirtyTree(t *testing.T) {
+	work := pullSandbox(t)
+	gitIn(t, work, "checkout", "-q", "-b", "side")
+	writeFileIn(t, work, "a", "side\n")
+	gitIn(t, work, "commit", "-q", "-am", "side")
+	gitIn(t, work, "checkout", "-q", "master")
+	writeFileIn(t, work, "a", "master\n")
+	gitIn(t, work, "commit", "-q", "-am", "master")
+	cmd := exec.Command("git", "merge", "side")
+	cmd.Dir = work
+	_ = cmd.Run() // conflict で rc≠0。止まったことは MERGE_HEAD で確かめる
+	if _, err := os.Stat(filepath.Join(work, ".git", "MERGE_HEAD")); err != nil {
+		t.Fatalf("前提: MERGE_HEAD が無い (merge が conflict で止まっていない): %v", err)
+	}
+	if err := runGitPullRebase(context.Background()); err == nil || !strings.Contains(err.Error(), "merge の途中") {
+		t.Fatalf("conflict で止まった merge で「merge の途中」と案内しなかった: %v", err)
+	}
+}

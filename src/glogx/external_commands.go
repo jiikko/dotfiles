@@ -89,6 +89,12 @@ func waitPullCleanup() {
 // 素の git エラーは分かりにくいので、事前に検知して glogx らしい案内を返す (自動 stash は
 // しない: 復元 pop の衝突で working tree に壊れた状態を残しうるため。ユーザー選定 2026-07-22)。
 var runGitPullRebase = func(ctx context.Context) error {
+	// 途中状態の検査を作業ツリーの検査より先に回す。conflict で止まった rebase / merge は作業ツリーが汚れているので、
+	// 逆の順だと「commit か stash して」と案内し、rebase の途中で commit を勧めてしまう (2026-10-02 の敵対的レビュー)
+	op, opErr := operationInProgress()
+	if opErr == nil && op != "" {
+		return fmt.Errorf("%s の途中なので pull (--rebase) しません。シェルで続けるか中止して片付けてから u で再度 pull してください", op)
+	}
 	if st, stErr := noPromptGitCmd(ctx, "status", "--porcelain").Output(); stErr == nil && pullBlockedByDirtyTree(string(st)) {
 		return errors.New("未コミットの変更があるため pull (--rebase) できません。commit か stash してから u で再度 pull してください")
 	}
@@ -98,10 +104,6 @@ var runGitPullRebase = func(ctx context.Context) error {
 	// 確かめられたときだけにする (確かめられないなら、その rebase が pull の起こしたものだと言えないので触らない)
 	// rebase 以外の途中状態 (cherry-pick / revert / merge / 複数の pick の sequencer) も断る。空になった cherry-pick で止まった状態は
 	// 作業ツリーが clean で、pull --rebase がその CHERRY_PICK_HEAD を消していた (2026-10-02 の敵対的レビュー)
-	op, opErr := operationInProgress()
-	if opErr == nil && op != "" {
-		return fmt.Errorf("%s の途中なので pull (--rebase) しません。シェルで続けるか中止して片付けてから u で再度 pull してください", op)
-	}
 	// 🚨 検査は fetch の前の 1 回だけ。fetch の最中 (ネットワークの数秒) に別の端末で rebase を始めると、その rebase を
 	// pull のものと区別できず、pull が conflict すると後始末が abort しうる (2026-10-02 の敵対的レビューで指摘。同じ repo で
 	// u を押した数秒のうちに手で rebase を始めた場合だけで、記録に留める)
@@ -133,10 +135,11 @@ func rebaseInProgress() (bool, error) {
 // operationInProgress は途中で止まっている git の操作の名前を返す (無ければ "")。pull の前に断る判定に使う。
 func operationInProgress() (string, error) {
 	names := map[string]string{
-		"rebase-merge": "rebase", "rebase-apply": "rebase (am)", "MERGE_HEAD": "merge",
+		"rebase-merge": "rebase", "rebase-apply": "rebase / am", "MERGE_HEAD": "merge",
 		"CHERRY_PICK_HEAD": "cherry-pick", "REVERT_HEAD": "revert", "sequencer": "cherry-pick / revert",
+		"BISECT_LOG": "bisect", // branch の上で bisect を始めた直後は pull が branch を動かす
 	}
-	marker, err := gitDirMarker("rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "sequencer")
+	marker, err := gitDirMarker("rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "sequencer", "BISECT_LOG")
 	return names[marker], err
 }
 

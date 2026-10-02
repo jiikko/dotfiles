@@ -4,6 +4,8 @@ package main
 // 2 つ起動しない (dispatcher.Lock)。🚨 本物の claude で PG を起動するので、週の利用枠を使う。
 
 import (
+	"github.com/jiikko/dotfiles/src/termsafe"
+
 	"context"
 	"errors"
 	"flag"
@@ -438,7 +440,8 @@ func eventSink(dir string, out, errOut io.Writer) func([]eventlog.Event) {
 				e.At = now
 			}
 			stamped[i] = e
-			_, _ = fmt.Fprintf(out, "%s %s\n", e.At.Format("15:04:05"), e.Reason)
+			// 理由は削除の出来事でカードの題名を含む。dispatcher.log (前面で起こせば端末) へ書く前に 1 行に無害化する (log の formatEvent と同じ理由)
+			_, _ = fmt.Fprintf(out, "%s %s\n", e.At.Format("15:04:05"), termsafe.PlainLine(e.Reason))
 		}
 		if err := eventlog.Append(dir, stamped); err != nil {
 			_, _ = fmt.Fprintln(errOut, "pro-con dispatcher: 出来事を events.jsonl に書けない:", err)
