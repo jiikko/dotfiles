@@ -47,15 +47,21 @@ settings の hook は失敗すれば stderr に出る。**移したものは、�
 - 「黙る」ことが壊れ方そのものになる hook (`issue-rules-inject.sh` は冒頭に「規約が届かないことがこのフックの壊れ方」と書いて黙らない設計にしている) は、
   移した後も、規約側の文 (`_claude/CLAUDE.md` の義務の 1 行) を残す
 - 切り替えの commit ごとに、読み込まれる経路 / 読み込まれない経路の両方の期待値を書く (「1 本ずつ切り替える」運用だけで二重・欠落を防がない)
+- **切り替えの commit を `~/dotfiles` へ pull した時点で動いているセッション**の期待値も書く。mod のフォルダは保存で読み直されるが、
+  settings の env (読むフォルダの一覧) は起動時に読まれる。settings の hook が起動時の snapshot かは未確認。
+  env にフォルダを足す commit は、hook を外す切り替えの commit より前に分けて入れる
 
 ## 前提と未確認の点 (619 で最初に潰す)
 
 **619 の 3 経路の実測結果は、620〜623 の着手条件にする**。読まれない経路があれば、その経路で要る settings の hook は残し、この表を直してから着手する。
 
 
-- [ ] **読み込まれる経路**。settings の hook は対話・`claude -p`・pro-con の PG (`--settings` を役割ごとに渡す。issue 431) のどれでも走る。
-      mod は plugin として読み込まれる必要がある。reference.md によれば `CLAUDE_CODE_PLUGIN_DIRS` は、プロセスの環境か
-      `~/.claude/settings.json` (= `_claude/settings.json` への link) の `env` から読まれる。**`claude -p` と PG でも読まれるかは未実測**
+- [ ] **読み込まれる経路**。settings の hook は対話と `claude -p` では走るが、**pro-con の PG・PM・取り込みの係では走らない**
+      (`--setting-sources project,local` で起動し、ユーザーの settings.json の hook と env が外れる。`src/pro-con/dispatcher/launcher.go` の
+      `persistentSessionArgs`、`rolesettings.go` 冒頭。issue 431)。移す hook は今も PG に効いていないので、PG で mod が読まれないことは退行ではない。
+      reference.md によれば `CLAUDE_CODE_PLUGIN_DIRS` は、`~/.claude/settings.json` (= `_claude/settings.json` への link) の `env` に加えて**プロセスの環境**からも読まれる。
+      dispatcher は PG を `os.Environ()` (tmux の変数だけ外す) で起こすので、Claude のペインの中から pro-con を起動すると、
+      その経路の PG にだけ mod が載りうる (431 の隔離が経路で変わる。未実測)。dispatcher で `CLAUDE_CODE_PLUGIN_DIRS` を外すか、載せると決めるかを 619 で決める
 - [ ] **subagent / fork**。`prompt.compose` で足した節が subagent のシステムプロンプトにも入るかは未確認 (今の SessionStart の注入は subagent に届かない)
 - [ ] **二重に効かないこと**。移行の途中で、mod と settings の hook が同じ注入・同じ表示をしないようにする (1 本ずつ切り替える)
 - [ ] **API の変化への備え**。Claude Code の更新で mod が読み込まれなくなったとき、何が黙って止まるかを列挙しておく。守りの hook を移さないのはこのため
@@ -80,3 +86,8 @@ settings の hook は失敗すれば stderr に出る。**移したものは、�
   設計は採用 9 件: 622 を保留に、623 を settings の `ask` との比較からに、624 を epic から外す、黙って止まるときの扱いの節を足す、
   620 の判定を script 経由に、619 を 620〜623 の着手条件に、620 → 621 を直列に、621 の失敗モード、619 の CI の扱いを決める。
   反証されなかった判断: 守りの hook・`ratelimit-warn`・`next-claim-unshared`・残り 7 本を移さないこと、619 を土台にすること
+- 2026-10-02: 敵対的レビュー 1 本 (read-only のサブエージェント、opus。「書いたとおりに実装したら壊れる手順」を探させた)。7 件すべて採用 (根拠は実物で確認):
+  PG の前提の誤り (今も PG で hook は走っていない / 親の環境から plugin が載りうる) → 618・619・623 / 624 の push が古い base で通らない → commit-tree の形へ /
+  620 の「気づく手段」が `$.store` の古い印で素通りする → session_id ごとの印へ / 620 の節が描画のたびに変わり cache を外す → session.start で 1 回読む /
+  619 の `.claude-plugin/types/` が共有の working tree に生成される → .gitignore / 切り替え時に動いているセッション → 618 / pre-push に止められた番号が手元に残る → 624。
+  壊せなかった攻め口: 624 の同時実行 (pre-push の一意性検査が止める)・epic 配下の数え漏れ、622 の `TMUX_PANE` の取り違えと本番 tmux への副作用、621 の古い `$.state`

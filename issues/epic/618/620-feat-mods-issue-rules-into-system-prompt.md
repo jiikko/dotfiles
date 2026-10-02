@@ -18,7 +18,9 @@ mod の `prompt.compose` なら、同じ文をシステムプロンプトの節 
 - `_claude/mods/issue-rules/`: `prompt.compose` で `next(e)` の `sections` の最後に 1 節を足す
 - issues/ の在りかの判定は TS で書き直さない。`_claude/hooks/lib/issue-hooks.sh` の `issue_hook_resolve_dir` は git root・`issue/` と `issues/` の両方・入れ子 1 段・
   `node_modules` / `vendor` の除外を持っている。判定を出力する入口を lib に 1 本置き、`$.process.run` で呼ぶ (621 と同じ方針)
-- 中身は今と同じファイルを `$.fs.read` で読む (正本は `_claude/issue-rules.md` のまま。mod に写さない)
+- 中身は今と同じファイルを読む (正本は `_claude/issue-rules.md` のまま。mod に写さない)。
+  **読むのは `session.start` で 1 回だけ**にし、結果を `$.state` に置く。`prompt.compose` は描画のたびに発火する (`/context` の解析でも) ので、
+  そこでファイルや script を読むと、セッションの途中で規約ファイルが pull で変わった・script が一時的に失敗した、で節の文が変わり、prompt cache を外す
 - 切り替えは 1 回で行う: mod を入れる commit で、settings の `issue-rules-inject.sh` の 4 行を外す (二重に注入しない)。
   ただし 619 の実測で mod が読まれない経路 (PG 等) があれば、その経路では settings の hook を残す
 
@@ -29,15 +31,18 @@ mod は失敗すると黙ってスキップされる。移すと、規約の無�
 
 - `_claude/CLAUDE.md` の「注入された規約に従う」の 1 行は**残す** (mod が止まっても、規約を読みに行く手がかりになる)
 - mod が規約を足せなかったとき (ファイルを読めない・判定の入口が失敗した) は、節の代わりに「規約を読めなかった」と書いた節を足すか `$.ui.toast` を出す。黙って何も足さない形にしない
-- mod そのものが読み込まれなかったときに気づく手段を決める (例: settings 側に、mod の読み込みの印 (`$.store` か一時ファイル) が無ければ警告だけを出す小さな hook を置く)。
-  置かないなら、その判断と理由を書く
+- mod そのものが読み込まれなかったときに気づく手段を決める (例: settings 側に、mod の読み込みの印が無ければ警告だけを出す小さな hook を置く)。置かないなら、その判断と理由を書く
+  - 🚨 印を `$.store` に置かない。`$.store` はセッションをまたいで残るファイルなので、一度 mod が動いた後は、mod が読まれなくなっても古い印で警告が永久に出ない。
+    印は **session_id ごと**にする
+  - 印を調べる時点は、mod の `session.start` より後に来る点 (最初の UserPromptSubmit 等) にする。SessionStart の settings の hook と mod の `session.start` の順序は未確認
 
 ## 確かめること
 
 - [ ] headless の新規セッションで A-B を取る (`issues/` の在る cwd / 無い cwd)。手順は `.claude/rules/worktree-per-session.md` の
       `claude -p --model haiku --output-format stream-json ...` の形。答えは stream-json の先頭から読む (Stop hook が最後の返答を差し替えるため)
 - [ ] subagent に規約が入るかを見る (今は入らない。入るなら挙動が変わるので、本文に書く)
-- [ ] prompt cache への影響。節はセッションの間変わらないので、キャッシュは壊れない見込み (未実測)。`$.session.usage()` か `/context` で確かめる
+- [ ] セッションの途中で規約ファイルを編集しても、節が 1 バイトも変わらないこと (cache を外さない)。`$.session.usage()` の `cache_read_input_tokens` で確かめる
+- [ ] 「気づく手段」を、mod あり → 警告なし / mod なし → 警告あり、の両方で同じ手順で確かめた (同じマシンで、mod を一度動かした後に外した状態で)
 - [ ] mod を外した状態 (読み込まれない) で同じ A-B を取り、何が起きるかを見た (上の「気づく手段」が働くか)
 - [ ] `tests/claude/test_issue_rules_inject.sh` を移行後の形に合わせて直す (settings の hook を残す経路があるなら残す)
 
