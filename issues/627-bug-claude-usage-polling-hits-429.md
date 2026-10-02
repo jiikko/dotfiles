@@ -26,11 +26,13 @@
 
 ## 対応方針 (ユーザー判断 2026-10-02: 頻度を落とし、429 で止める)
 
-- `usage.Fetch` の下に、全プロセス共有の Claude 取得ゲートを置く。最後に取れた結果を `~/.cache/glog/claude-usage-shared.json` に書き出し、
-  全ての取得元 (glogx / ratelimit) がまずそこを読む (ユーザー提案 2026-10-02)。claude の起動は flock で 1 本に絞る
-  - 5 分以内に誰か (glogx / ratelimit / 他の glogx) が取った結果があれば、`claude` を起こさずそれを返す
-  - サーバが枠を返さなかった (`usage_report.rate_limits == null`) ら、30 分は `claude` を起こさず、理由と再開時刻をエラーにする
-- 失敗の理由を「検出できず」ではなく「サーバが利用枠を返さない (429 の可能性)。HH:MM まで取得を止める」にする
+- `claude -p /usage` を起こす全ての呼び出し元 (glogx / bin/ratelimit / pro-con の dispatcher) を、全プロセス共有のゲート
+  (`usage.FetchShared`、`src/ratelimit/usage/shared.go`) に通す。最後の結果を `~/.cache/glog/claude-usage-shared.json` に書き出し、
+  全ての取得元がまずそこを読む (ユーザー提案 2026-10-02)。claude の起動は flock で 1 本に絞る
+  - 成否によらず、5 分以内に誰かが claude を起こしていれば起こし直さない (成功ならその結果、失敗ならその理由を返す)
+  - サーバが枠を返さなかった (`usage_report.rate_limits == null`。429 か通信の失敗) ら、10 分は起こさず、理由と再開時刻をエラーにする
+  - glogx の R の `r` (人の操作) だけは 5 分の間引きを飛ばす。止めている間は飛ばさない
+- 失敗の理由を「検出できず」ではなく「サーバから利用枠を受け取れない (429 か通信の失敗)。HH:MM まで取得を止める」にする
 - glogx / ratelimit のキャッシュの契約 (main.go 冒頭の分離理由) は変えない
 
 ## 関連ファイル
@@ -42,3 +44,32 @@
 ## 進捗
 
 - 2026-10-02: 起票。原因を実測で特定
+- 2026-10-02: 実装 (commit「fix(ratelimit): Claude の利用枠の取得を全プロセス共有のゲートに通し、429 のあいだは止める」
+  「fix(ratelimit,glogx,pro-con): 共有ゲートの敵対的レビュー指摘を直す」「fix(ratelimit): 共有ゲートの 2 周目の指摘を直す」
+  「docs(ratelimit,glogx,pro-con): claude -p /usage の共有ゲートを入口の文書に書く」)
+  - [x] 共有ゲート (5 分の共有・失敗の共有・10 分の停止・flock・未来の時刻を信用しない)
+  - [x] glogx / bin/ratelimit / pro-con の dispatcher をゲートに通す (pro-con は自前の引数のまま `FetchShared` + `ParseStream`)
+  - [x] glogx の R の `r` は間引きを飛ばす。フッターは `usage.SharedFresh` から「5分ごとに更新」
+  - [x] ratelimit / glogx / pro-con の lint と全テストが緑。変異 23 本 (ゲートの各判定・stream-json の判定・glogx の `r` の配線・
+        pro-con の素通り) がすべて想定どおり red
+  - [x] 実環境 (429 中): worktree の build で `ratelimit -source claude` が 1 回目 3.2 秒で「…14:14 まで取得を止める」、2 回目は 0.00 秒
+        (claude を起こさない)。この時点の止める期間は 30 分 (後で 10 分に変えた)
+  - [ ] 実環境の成功経路 (サーバが枠を返す状態で stream-json から枠が読めること) の観測。CLI の 429 の覚えが切れるまで待つ
+
+### 敵対的レビュー (opus、観点を分けて 3 本 + 2 周目 1 本)
+
+採用して直した: pro-con の dispatcher がゲートを素通りしていた / 読めない応答のたびに起こし直す / blockedUntil に上限が無い
+(→ 丸める) / 未来の fetchedAt を信用する / R の `r` が取り直さない / フッターの「1分ごと」/ rate_limits=null は通信断でも出うる
+(→ 文言と 10 分) / type が result でない行の result キー / 共有する失敗の理由の長さ
+
+記録だけ (今より悪くはしない。直していない):
+- 他の呼び出し元 (起こし方が違う pro-con 等) の失敗が、自分の取得を 5 分止める。止まりきりにはならない
+- claude が呼び出し側の持ち時間 (glogx は 10 秒。ロック待ちを含む) より遅いと、時間切れは共有しないので毎回起こしては kill する
+- 止めている間でも、5 分以内に取れていた枠は force 無しの呼び出しに成功として返る (glogx の staleErr の注記が消える)
+- Snapshot に取得時刻が無く、受け取った側が自分の時刻で記録する (各キャッシュの古さが最大 5 分若く見える)。
+  claude の版の表示も最大 5 分古い
+- ロック待ちで打ち切ると「他のプロセスが利用枠を取得中で、待ちきれなかった」を出す (以前は自分で起こしていた)
+- `cachedir.Base()` が失敗する環境 (HOME も XDG も無い) ではゲートを通らない
+
+却下: pro-con の旧 ParseUsage が受けていた小数・「<1%」を usage.Parse が受けない — `-p` の /usage は Math.floor の整数で出す
+(2.1.287 のバイナリで確認)。resets の無い行は 0% の枠。理由は `src/pro-con/dispatcher/usage.go` の `usageOf` のコメント
