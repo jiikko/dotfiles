@@ -57,20 +57,34 @@ type sharedState struct {
 }
 
 // Fetch は Claude の利用枠を、全プロセス共有のゲートを通して返す (FetchShared に fetchClaude を渡す)。
-func Fetch(ctx context.Context) (*Snapshot, error) { return FetchShared(ctx, fetchClaude, false) }
+// statusline 由来の枠は版を持たないので、`claude --version` で補う (取れなければ空 = 版の表示が前回の値のまま)。
+func Fetch(ctx context.Context) (*Snapshot, error) { return fetchClaudeShared(ctx, false) }
 
-// FetchShared は run (`claude -p /usage` を起こして読む関数) をゲート越しに呼ぶ。
+func fetchClaudeShared(ctx context.Context, force bool) (*Snapshot, error) {
+	snap, err := FetchShared(ctx, fetchClaude, force)
+	if err == nil && snap.Version == "" {
+		snap.Version = FetchVersion(ctx)
+	}
+	return snap, err
+}
+
+// FetchShared は Claude の利用枠を返す。statusline が書き出した新しい観測 (statusline.go) があればそれを返し、
+// run (`claude -p /usage` を起こして読む関数) は呼ばない。無いときだけ run をゲート越しに呼ぶ:
 //   - SharedFresh 以内に誰かが取れていれば、run を呼ばずその結果を返す
 //   - SharedFresh 以内に誰かが失敗していれば、run を呼ばずその理由を返す
 //   - サーバから枠を受け取れず止めている間は、run を呼ばずエラーを返す
 //
 // force は前の 2 つを飛ばす (人が「今すぐ取り直す」を押したとき。止めている間は force でも呼ばない)。
+// statusline の観測は force でも優先する (それが最新の観測で、取り直してもサーバを叩くだけ)。
 // 同時に呼ばれても run を呼ぶのは 1 本だけ (flock)。キャッシュの置き場が決まらない (HOME も
 // XDG_CACHE_HOME も無い) ときは、共有せず直接呼ぶ。
 func FetchShared(ctx context.Context, run func(context.Context) (*Snapshot, error), force bool) (*Snapshot, error) {
 	dir, err := cachedir.Base()
 	if err != nil {
 		return run(ctx)
+	}
+	if snap := readStatusline(dir, clock()); snap != nil {
+		return snap, nil
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("利用枠の共有ファイルの置き場を作れない: %w", err)

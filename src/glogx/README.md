@@ -348,7 +348,7 @@ GitHub へ問い合わせない (必ず「無い」と返るため。API 消費�
   (最新版チェック、TTL 1 時間) と `claude-usage.json` (`/usage` + codex の残量、TTL 1 分)。
   `claude -p /usage` は 1 回 ≈ 2.0s wall / 1.8s CPU かかる (トークン課金は無いが node 起動 +
   セッション初期化が重い) ので、起動のたびには払わずキャッシュを使う。定期リフレッシュ側は
-  鮮度を作るのが役目なのでキャッシュを読まない。ただし Claude 側は `usage.FetchClaudePart` の下の全プロセス共有のゲート
+  鮮度を作るのが役目なのでキャッシュを読まない。ただし Claude 側の主な出所は statusline が書き出すファイル (`src/ratelimit/usage/statusline.go`) で、それが無いか古いときだけ `usage.FetchClaudePart` の下の全プロセス共有のゲート
   (`src/ratelimit/usage/shared.go`) を通るので、claude を起こすのは全プロセスで 5 分に 1 回まで (issue 627: 1 分ごとに
   起こしたら 17 回目でサーバが 429 を返した)。R の `r` だけはこの間引きを飛ばす (`FetchClaudePartNow`)
 

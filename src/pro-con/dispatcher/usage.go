@@ -4,7 +4,8 @@ package dispatcher
 // 滞留の側は dispatch がもともと見ている (着手待ちのカードが無ければ起動しない / 上限まで古い順に起動する)。
 //
 // 枠の残量は `claude -p /usage` の stdout から読む (モデルを呼ばずに返る。2.1.281 で実測 2026-09-25: 約 4 秒・rc=0・stderr 空)。
-// 🚨 起こすのは ratelimit/usage の全プロセス共有のゲート (usage.FetchShared) 越しで、glogx・bin/ratelimit と結果を共有する
+// 🚨 読むのは ratelimit/usage の usage.FetchShared 越し: statusline が書き出した枠 (推論の応答ヘッダ由来) があればそれを使い、
+// 無いか古いときだけ下のコマンドを全プロセス共有のゲート越しに起こす。glogx・bin/ratelimit と結果を共有する
 // (issue 627: `claude -p /usage` は 1 回ごとにサーバの /api/oauth/usage を叩き、呼び出し元の合計で 429 になる)。
 // 共有するのは同じアカウントの枠だから。下の 431 の注記どおり PG を別のアカウントで動かすようになったら、共有をやめる。
 // 🚨 --no-session-persistence が無いと、読むたびに transcript が 1 本残る (5 分ごとで 1 日 288 本。resume の一覧と /usage の集計を汚す)。

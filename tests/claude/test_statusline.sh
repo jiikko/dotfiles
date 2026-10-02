@@ -12,6 +12,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SL="$ROOT_DIR/_claude/statusline-command.sh"
 
 TMP_DIR="$(mktemp -d)"
+# statusline は利用枠を $XDG_CACHE_HOME/glog/claude-rate-limits.json へ書き出す (issue 627)。
+# 本物のキャッシュを汚さないよう、全テストをこの一時ディレクトリへ向ける
+export XDG_CACHE_HOME="$TMP_DIR/cache"
 cleanup() { rm -rf "$TMP_DIR"; }
 trap cleanup EXIT
 

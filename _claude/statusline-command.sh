@@ -190,6 +190,29 @@ under_sgr="\033[4;1m"    # ペース行の当日 (背景色と反転は競合す
 unspent_fg="\033[94m"
 
 now=$(date +%s)
+
+# 利用枠を glogx / bin/ratelimit / pro-con へ渡す (issue 627)。
+# 🚨 この rate_limits は Claude Code が推論の応答ヘッダから得た値で、サーバを余計に叩かない。
+#   以前の出所の `claude -p /usage` は 1 回ごとに /api/oauth/usage を叩き、glogx が 1 分ごとに取ったら 429 になった。
+#   読む側は src/ratelimit/usage/statusline.go (ファイル名・項目の名前はそこと 1:1。乖離は statusline_test.go の
+#   TestStatuslineWriterMatchesReader が、このスクリプトを実際に走らせて検出する)。
+# 書き出しは描画ごと (値が無い描画では書かない)。tmp + mv で読み手に書きかけを見せない。失敗しても描画は続ける。
+write_rate_limits() {
+  [ -n "$five_pct$seven_pct" ] || return 0
+  local dir="${XDG_CACHE_HOME:-$HOME/.cache}/glog" fr sr
+  to_int "$five_reset"; fr=$REPLY
+  to_int "$seven_reset"; sr=$REPLY
+  [ -d "$dir" ] || mkdir -p "$dir" 2>/dev/null || return 0
+  local tmp="$dir/claude-rate-limits.json.tmp.$$"
+  if ! printf '{"observedAt":%s,"five_hour":{"used_percentage":%s,"resets_at":%s},"seven_day":{"used_percentage":%s,"resets_at":%s}}\n' \
+    "$now" "${five_pct:-null}" "${fr:-null}" "${seven_pct:-null}" "${sr:-null}" > "$tmp" 2>/dev/null ||
+    ! mv -f "$tmp" "$dir/claude-rate-limits.json" 2>/dev/null; then
+    rm -f "$tmp" 2>/dev/null
+  fi
+  return 0
+}
+write_rate_limits
+
 # 最も広い窓のスロット数 (7d = 7)。狭い窓は括弧の後ろをこの幅まで空白で埋めて、
 # 行をまたいだ数値の縦を揃える
 PACE_MAX_CELLS=7
