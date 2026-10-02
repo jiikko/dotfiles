@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jiikko/dotfiles/src/termsafe"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"pro-con/backend"
@@ -294,7 +295,10 @@ func runCardList(args []string, env viewEnv, stdout, stderr io.Writer) int {
 		if s.RoleStep != "" {
 			line += "  " + s.RoleStep
 		}
-		_, _ = fmt.Fprintln(stdout, line)
+		// 🚨 題名・待ちの文はカードの文字列 (人の依頼・PG の card add / ask) で、store は制御文字を落とさずに持つ。
+		// stdout へ直接書くので、OSC 52 (クリップボードの書き換え)・画面の消去・タイトルの書き換えが端末で発火する
+		// (2026-10-02 の監査。termwidth の切り詰めはこれらの列を通す)。行ごと termsafe で無害化する
+		_, _ = fmt.Fprintln(stdout, termsafe.PlainLine(line))
 	}
 	return 0
 }
@@ -372,7 +376,10 @@ func pgLog(env viewEnv, c card.Card) []string {
 // writeDetail は画面の詳細 (ui/drawer.go の drawerBody) と同じ中身を、色も折り返しも無しで出す。
 func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 	c := d.Card
-	p := func(format string, a ...any) { _, _ = fmt.Fprintf(w, format+"\n", a...) }
+	// 🚨 題名・依頼の原文・質問・追加オーダー・履歴はカードの文字列 (人の依頼・PG の card add / ask) で、store は
+	// 制御文字を落とさずに持つ。stdout へ直接書くので、行ごと termsafe で無害化する (card list と同じ理由)。
+	// 依頼の原文は複数行になりうるので改行は残す (PlainBlock)
+	p := func(format string, a ...any) { _, _ = fmt.Fprintln(w, termsafe.PlainBlock(fmt.Sprintf(format, a...))) }
 	p("%s  %s", c.ID, c.Title)
 	p("状態: %s  担当: %s  repo: %s  session: %s", c.State.SinceText(fmtAge(now.Sub(c.Since))), orDashCLI(d.Assignee), orDashCLI(c.Repo), orDashCLI(c.Session))
 	var refs []string

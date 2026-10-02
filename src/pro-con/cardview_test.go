@@ -811,3 +811,30 @@ func TestCardListAgeSaysWhatItMeasures(t *testing.T) {
 		t.Errorf("show の状態に経過の起点が無い: %q", out)
 	}
 }
+
+// list / show は stdout へ直接書くので、カードの文字列 (人の依頼・PG の card add / ask) に入った端末の制御の列を落とす。
+// OSC 52 (クリップボードの書き換え)・画面の消去・タイトルの書き換えが、端末で card list / show を叩いた時点で発火しないこと。
+// 依頼の原文の改行は残す (複数行の依頼を 1 行に潰さない)。
+func TestCardListAndShowDropTerminalControls(t *testing.T) {
+	dir := viewDir(t)
+	mustSubmit(t, dir, store.Request{Kind: "add", Title: "色\x1b]52;c;aGVsbG8=\a直す", Request: "1 行目\x1b[2J\x1b[H\n2 行目"})
+	mustApply(t, dir)
+	mustSubmit(t, dir, store.Request{Kind: "ask", CardID: "C-001", Question: "どれ\x1b]0;pwned\aにする"})
+	mustApply(t, dir)
+	env := viewEnv{dir: dir, projects: t.TempDir(), now: time.Now}
+	for _, args := range [][]string{{"list"}, {"show", "C-001"}} {
+		rc, out, errOut := viewCmd(t, env, args...)
+		if rc != 0 || !strings.Contains(out, "C-001") {
+			t.Fatalf("%v: rc=%d out=%q err=%q", args, rc, out, errOut)
+		}
+		if strings.ContainsAny(out, "\x1b\a") {
+			t.Fatalf("%v: 端末の制御の列が stdout に残っている: %q", args, out)
+		}
+		if !strings.Contains(out, "色") || !strings.Contains(out, "直す") {
+			t.Fatalf("%v: 制御の列を落とすついでに題名の文字まで消した: %q", args, out)
+		}
+	}
+	if _, out, _ := viewCmd(t, env, "show", "C-001"); !strings.Contains(out, "1 行目") || !strings.Contains(out, "\n2 行目") || !strings.Contains(out, "質問: どれ") {
+		t.Fatalf("show: 依頼の原文の改行か質問が残っていない: %q", out)
+	}
+}
