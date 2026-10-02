@@ -1,7 +1,5 @@
 # 625 (feat): Claude desktop (Code タブ) にも、CLI と同じステータスバーを mod で出す
 
-> 🚨 **担当中: Claude code mods migration design (epic 618 を順に)**（2026-10-02〜）
-
 起票日: 2026-10-02
 
 epic [618](618-design-claude-code-mods-migration.md) の子。619 の後。
@@ -48,7 +46,26 @@ Claude desktop の Code タブでも同じものを見たい。
   → 描いていない見込みが高い。確定は人が desktop の画面で見て確かめる (下の受け入れ条件の human の issue と同じ手順でよい)
 - **このマシンの制約 (619)**: user の mod に `ui.render` (AbovePrompt) と `$.ui.status` は届く (CLI の対話で実測)。desktop の surface で描けるか、`$.ui.status` の改行・色が通るかは未実測
 
+## 実装 (2026-10-02)
+
+- 見た目はユーザーが案 B (色つき) を選んだ (2026-10-02)
+- `_claude/mods/desktop-statusline`: desktop のセッション (`$.session.surfaces()` に `desktop`) でだけ、`session.start`・メインの `turn.complete`・60 秒ごと (`$.clock.every`) に
+  `_claude/statusline-command.sh` を直接起動する (CLI と同じく shebang の `env bash`)。stdin には CLI の `statusLine` と同じ形の JSON を、
+  `$.session.cwd()` / `model()` (id を `Opus 5.5` の形に) / `usage()` (文脈の量・5h と 7 日の枠。リセット時刻は ISO からエポック秒へ) / `id()` と環境変数 `CLAUDE_EFFORT` から組む
+- 出力の ANSI (文字色 30〜37・90 番台、背景 40 番台、太字・下線) を desktop の Text の `color` / `backgroundColor` / `bold` / `underline` に置き換えて、
+  `ui.render` (AbovePrompt) で描く。色の閾値は script が決める (ここは写さない)。点滅は捨てる。terminal には描かない (CLI の statusLine と二重に出さない)
+- script が失敗したら、帯に `ステータスバーを作れない: <理由>` の 1 行を出す (黙らない)
+- テスト: `claude plugin test` 10 本 (ANSI の読み取り・JSON の組み立て・desktop でだけ呼ぶ・色つきで描く・terminal には描かない・失敗の理由・60 秒ごと)。
+  変異 4 本で red (terminal にも描く / 色の置き換えを誤る / desktop 以外でも呼ぶ / 60 秒ごとを外す)
+- CLI の JSON にあって `$` から取れない項目: `advisor` (script は settings から読むので影響なし)・`transcript_path` (空で渡す)
+- 敵対的レビューは省略した: 表示だけの mod で、守りの機構でも、既存の挙動を変えるものでもない (CLI の statusLine と settings には触れていない)。失敗したときは帯が出ないか理由の 1 行が出るだけ
+
+## 残り
+
+- desktop の画面で見え方を人が確かめる: [628](628-human-verify-desktop-statusline.md) (期限 2026-10-09)。確かめられたら 625 も done にする
+
 ## 進捗
 
 - 2026-10-02: 起票 (ユーザーの依頼)。mod の API で使えるものは型定義で確かめた: `$.process.run` は `stdin` を渡せる、`$.session.usage()` は status line と同じ値を返す、`$.ui.status` は plugin ごとに 1 行
 - 2026-10-02: desktop の Code タブのこのセッションでは settings の `statusLine` が実行されなかった (80 秒間に起動された 5 件はすべて CLI 側)。描いていない見込みが高いので mod が要る側として進める (確定は人が画面で見る)
+- 2026-10-02: mod を実装 (案 B)。テスト 10 本・変異 4 本。desktop の画面での確認を 628 (human) に起こした。claim は外した (人の確認待ち)

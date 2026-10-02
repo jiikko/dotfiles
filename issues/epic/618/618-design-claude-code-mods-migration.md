@@ -83,7 +83,7 @@ settings の hook は失敗すれば stderr に出る。**移したものは、�
 - [x] 621 — human / retro の催促をプロンプトの上の帯へ (案 3。注入は併記で残す)
 - [x] 622 — tmux のペインの状態表示を mod へ → **移さない**。PostToolUse の working を sh の script に分けて速くした
 - [x] 623 — 未コミットの変更を捨てる checkout の前に、人に選ばせる → settings の hook の `ask` (確実に捨てる単純なコマンドだけ)
-- [ ] 625 — Claude desktop (Code タブ) にも CLI と同じステータスバーを出す (desktop が `statusLine` を描くかを先に確かめる)
+- [ ] 625 — Claude desktop (Code タブ) にも CLI と同じステータスバーを出す → mod を入れた。desktop の画面での確認 (628、human) 待ち
 
 順番は 619 → 620 → 621 (620 と 621 はどちらも `_claude/issue-rules.md` と `_claude/CLAUDE.md` の文面を直すので直列)。622 / 623 は 619 の後なら独立。
 620 は文面を変えずに閉じたので、621 は 619 の後なら独立になった。
