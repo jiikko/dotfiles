@@ -446,7 +446,9 @@ run_in_wt() {  # $1=段の名前 $2=コマンド。出力は呼び出し側の�
   tick=0.01
   while [ ! -s "$rcf" ]; do
     # 根が rc を書かずに死んだ (外から撃たれた) なら待たずに抜ける (時間切れと誤報しない・無制限で永久に待たない。2 周目 P3-1)
-    ps -o stat= -p "$run_root" 2>/dev/null | grep -qv '^Z' || break
+    # パイプで grep -q に渡さない (pipefail 下で SIGPIPE が偽の失敗を作る)。ヒアストリングも空に改行を足して「生きている」に化けるので case で見る
+    root_stat=$(ps -o stat= -p "$run_root" 2>/dev/null || true)
+    case $root_stat in ''|Z*) break ;; esac
     # SECONDS は秒単位なので「超えたら」で見る (-ge だと上限の 1 秒手前で切れうる。2 周目 P3-2)
     if [ "$timeout" -gt 0 ] && [ $((SECONDS - start)) -gt "$timeout" ]; then
       stop_tree "$run_root"; run_root=""
