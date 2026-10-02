@@ -26,7 +26,7 @@ settings に配線されている hook の script 16 本 (エントリは 25) (`
 
 | hook | 判断 | 子 issue |
 |---|---|---|
-| `issue-rules-inject.sh` (SessionStart で規約を注入、4 本) | **移す**。注入をシステムプロンプトの節へ上げる。今の `<system-reminder>` は CLAUDE.md と同じ拘束力を持たない (`CLAUDE.md` の「`_claude/` を触るとき」の節) | 620 |
+| `issue-rules-inject.sh` (SessionStart で規約を注入、4 本) | **仮説を測ってから決める**。「システムプロンプトの節にすれば、今の `<system-reminder>` より守られる」は未検証の仮説。620 で A-B を取り、守られる率が上がったときだけ移す | 620 |
 | `human-tasks-due.sh` / `retro-open.sh` | **移す**。人へ見せる情報なので帯に出す。モデルに伝えさせるのをやめ、文脈を空ける | 621 |
 | `tmux-pane-state.sh` (6 イベント。PostToolUse はツール呼び出しのたびに bash を起こす) | **保留 (実測待ち)**。状態を常駐側に持てるが、移す利点 (速度) が未計測。622 で before を測り、閾値を超えたら移す | 622 |
 | `warn-discarding-checkout.sh` | **検討**。人に選ばせる形にしたいが、settings の hook の PreToolUse `ask` でも標準の確認で同じことができる。mod が要るかを 623 で先に決める | 623 |
@@ -91,3 +91,6 @@ settings の hook は失敗すれば stderr に出る。**移したものは、�
   620 の「気づく手段」が `$.store` の古い印で素通りする → session_id ごとの印へ / 620 の節が描画のたびに変わり cache を外す → session.start で 1 回読む /
   619 の `.claude-plugin/types/` が共有の working tree に生成される → .gitignore / 切り替え時に動いているセッション → 618 / pre-push に止められた番号が手元に残る → 624。
   壊せなかった攻め口: 624 の同時実行 (pre-push の一意性検査が止める)・epic 配下の数え漏れ、622 の `TMUX_PANE` の取り違えと本番 tmux への副作用、621 の古い `$.state`
+- 2026-10-02: ユーザーとの対話で、620 の前提「システムプロンプトの節へ上げれば拘束力が上がる」に根拠が無いと確認した
+  (文面を移しても拘束力は足されず、置き場所と名目が変わるだけ。強まるか弱まるかは測るまで分からない)。620 を「上がるか測る」issue に直した。
+  mods の価値は、文面の転記ではなく機械的な止め方 (deny / block / ask) と状態を持つ検査にある、という整理も同時に確認した
