@@ -96,10 +96,15 @@ var runGitPullRebase = func(ctx context.Context) error {
 	// 作業ツリーは clean なので上の検査を通り、pull は失敗し、下の後始末が**ユーザーの rebase を abort して**進めていた
 	// 成果を捨てていた (2026-10-02 の監査で前提を再現)。後始末の abort は「pull の前には rebase が無かった」と
 	// 確かめられたときだけにする (確かめられないなら、その rebase が pull の起こしたものだと言えないので触らない)
-	before, beforeErr := rebaseInProgress()
-	if beforeErr == nil && before {
-		return errors.New("rebase の途中なので pull (--rebase) しません。シェルで `git rebase --continue` か `git rebase --abort` で片付けてから u で再度 pull してください")
+	// rebase 以外の途中状態 (cherry-pick / revert / merge / 複数の pick の sequencer) も断る。空になった cherry-pick で止まった状態は
+	// 作業ツリーが clean で、pull --rebase がその CHERRY_PICK_HEAD を消していた (2026-10-02 の敵対的レビュー)
+	op, opErr := operationInProgress()
+	if opErr == nil && op != "" {
+		return fmt.Errorf("%s の途中なので pull (--rebase) しません。シェルで続けるか中止して片付けてから u で再度 pull してください", op)
 	}
+	// 🚨 検査は fetch の前の 1 回だけ。fetch の最中 (ネットワークの数秒) に別の端末で rebase を始めると、その rebase を
+	// pull のものと区別できず、pull が conflict すると後始末が abort しうる (2026-10-02 の敵対的レビューで指摘。同じ repo で
+	// u を押した数秒のうちに手で rebase を始めた場合だけで、記録に留める)
 	out, err := noPromptGitCmd(ctx, "pull", "--rebase").CombinedOutput()
 	if err == nil {
 		return nil
@@ -108,9 +113,9 @@ var runGitPullRebase = func(ctx context.Context) error {
 	// quit で pull が cancel された場合こそ rebase 途中状態の後始末が要るのに、cancel 済み ctx を
 	// 渡すと abort が実行されないまま repo に rebase-merge が残る。独立 timeout なら quit 後も
 	// 後始末が走り、かつハング (.git ロック競合等) しても有限で終わる。
-	// beforeErr の条件が効くのは、pull の前の rev-parse だけが一時的に失敗した (ロック競合・時間切れ) ときだけで、
+	// opErr の条件が効くのは、pull の前の rev-parse だけが一時的に失敗した (ロック競合・時間切れ) ときだけで、
 	// テストでは作れない (外す変異は緑のまま。2026-10-02)。前が分からないなら、その rebase を pull のものと言えない
-	if beforeErr == nil {
+	if opErr == nil { // ここに来るのは「pull の前は何の途中でもない」と確かめられたときだけ
 		if after, afterErr := rebaseInProgress(); afterErr == nil && after {
 			return abortRebase(out)
 		}
@@ -121,17 +126,33 @@ var runGitPullRebase = func(ctx context.Context) error {
 // rebaseInProgress は今の repo で rebase が途中で止まっているか (git dir の下に rebase-merge / rebase-apply があるか)。
 // git dir を引けないときは err を返す (呼び出し側は「分からない」を「途中ではない」に丸めない)。
 func rebaseInProgress() (bool, error) {
+	op, err := gitDirMarker("rebase-merge", "rebase-apply")
+	return op != "", err
+}
+
+// operationInProgress は途中で止まっている git の操作の名前を返す (無ければ "")。pull の前に断る判定に使う。
+func operationInProgress() (string, error) {
+	names := map[string]string{
+		"rebase-merge": "rebase", "rebase-apply": "rebase (am)", "MERGE_HEAD": "merge",
+		"CHERRY_PICK_HEAD": "cherry-pick", "REVERT_HEAD": "revert", "sequencer": "cherry-pick / revert",
+	}
+	marker, err := gitDirMarker("rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "sequencer")
+	return names[marker], err
+}
+
+// gitDirMarker は git dir の下にある最初の印 (ファイルかディレクトリ) の名前を返す (無ければ "")。
+func gitDirMarker(markers ...string) (string, error) {
 	gitDir, err := runGitTimeout("rev-parse", "--git-dir")
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	dir := strings.TrimSpace(gitDir)
-	for _, name := range []string{"rebase-merge", "rebase-apply"} {
+	for _, name := range markers {
 		if _, statErr := os.Stat(dir + "/" + name); statErr == nil {
-			return true, nil
+			return name, nil
 		}
 	}
-	return false, nil
+	return "", nil
 }
 
 // abortRebase は途中停止した rebase を中断し、結果に応じたメッセージを返す。

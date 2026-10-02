@@ -128,3 +128,23 @@ func TestPullRebaseAbortsItsOwnConflict(t *testing.T) {
 		t.Fatalf("abort 後の HEAD が pull 前と違う: got %s, want %s", got, head)
 	}
 }
+
+// 空になった cherry-pick で止まった状態 (CHERRY_PICK_HEAD があり作業ツリーは clean) でも pull を断り、その状態を消さない。
+func TestPullRebaseRefusesWhileCherryPickInProgress(t *testing.T) {
+	work := pullSandbox(t)
+	cmd := exec.Command("git", "cherry-pick", "HEAD")
+	cmd.Dir = work
+	_ = cmd.Run() // 空の cherry-pick は rc≠0 で止まる。止まったことは下の CHERRY_PICK_HEAD で確かめる
+	head := filepath.Join(work, ".git", "CHERRY_PICK_HEAD")
+	if _, err := os.Stat(head); err != nil {
+		t.Fatalf("前提: CHERRY_PICK_HEAD が無い (cherry-pick が止まっていない): %v", err)
+	}
+
+	err := runGitPullRebase(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "cherry-pick の途中") {
+		t.Fatalf("cherry-pick の途中なのに pull を断らなかった: %v", err)
+	}
+	if _, statErr := os.Stat(head); statErr != nil {
+		t.Fatal("🚨 ユーザーが止めていた cherry-pick の状態を消した (CHERRY_PICK_HEAD が無い)")
+	}
+}
