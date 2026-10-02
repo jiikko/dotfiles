@@ -104,7 +104,9 @@ scan_files() {
   #   リンクの形は ](<../ の繰り返し><パス>.<拡張子><#アンカー>) で、アンカーを落としてファイルの実在を見る
   # 🚨 awk は LC_ALL=C (バイト単位) で動かす。UTF-8 のロケールの macOS の awk は、中身に不正な UTF-8 があると
   # `towc: multibyte conversion failure` で止まり、全ファイルを 1 回の awk で読む形では**後ろの全ファイルが無検査の
-  # まま緑**になる (2026-10-02 の敵対的レビューで再現)。リンクの形もフェンスの判定も ASCII だけを見るので、C でも判定は変わらない
+  # まま緑**になる (2026-10-02 の敵対的レビューで再現)。リンクの形もフェンスの判定も ASCII だけを見るので、C でも判定は
+  # ほぼ変わらない。変わるのは NBSP (U+00A0) で字下げしたフェンスの行だけで、UTF-8 では [[:space:]] に入り C では入らない。
+  # CommonMark では NBSP の字下げはフェンスにならないので C の方が仕様に沿う (実 issues/ に該当 0 件。2026-10-02)
   # 🚨 それでも awk が途中で止まったら判定不能として赤にする (プロセス置換の中の失敗は rc にも set -e にも届かない)
   local hits rc=0
   # ISSUE_LINKS_AWK は下の自己検査が「出力してから失敗で終わる awk」へ差し替えるための口 (普段は awk)
@@ -242,13 +244,22 @@ if [ "${ISSUE_LINKS_SELFTEST:-}" != "1" ]; then
     rm -rf "$clean_dir"; exit 1
   fi
 
-  # awk が途中で止まった対照: 正しく出力してから失敗で終わる awk に差し替えて、陰性対照と同じ fixture を通す。
-  # 緑なら awk の失敗を見ていない (全ファイルを 1 回の awk で読むので、止まると後ろのファイルが無検査になる)
+  # awk が途中で止まった対照: 陰性対照と同じ fixture の**本走査のときだけ**、正しく出力してから失敗で終わる awk に
+  # 差し替える (canary は普通に通す)。緑なら awk の失敗を見ていない (全ファイルを 1 回の awk で読むので、止まると後ろの
+  # ファイルが無検査になる)。🚨 canary でも失敗させると、子は canary の件数で落ち、守りの報告の経路 (UNREADABLE の分類 →
+  # 件数 → exit 1) を見ないまま赤になる (2026-10-02 の敵対的レビュー 2 周目: 印の綴りを変える変異が素通りした)
   awkfail="$clean_dir/awk-then-fail"
-  printf '#!/bin/sh\nawk "$@"\nexit 3\n' > "$awkfail"
+  # shellcheck disable=SC2016 # 偽の awk の本文 ($@ / $? / $*) はその偽物が実行時に展開する。ここで展開させない
+  printf '#!/bin/sh\nawk "$@"; rc=$?\ncase "$*" in *"%s/"*) exit 3 ;; esac\nexit $rc\n' "$clean_dir" > "$awkfail"
   chmod +x "$awkfail"
-  if ISSUE_LINKS_SELFTEST=1 ISSUE_LINKS_AWK="$awkfail" "$0" "$clean_dir" >/dev/null 2>&1; then
+  awkfail_err="$clean_dir/awk-then-fail.err"
+  if ISSUE_LINKS_SELFTEST=1 ISSUE_LINKS_AWK="$awkfail" "$0" "$clean_dir" >/dev/null 2>"$awkfail_err"; then
     printf '✗ awk が途中で止まったのを合格にしている (止まった後ろのファイルが無検査になる)\n' >&2
+    rm -rf "$clean_dir"; exit 1
+  fi
+  if ! grep -q 'ファイルを読めない.*awk が途中で止まった' "$awkfail_err"; then
+    printf '✗ awk が途中で止まった対照が、守りではない理由で赤になった (canary 等):\n' >&2
+    cat "$awkfail_err" >&2
     rm -rf "$clean_dir"; exit 1
   fi
   rm -rf "$clean_dir"
