@@ -236,7 +236,7 @@ rc=0 が保証するのは「`--expect` の検査が落ちた」**まで**で、
 - **観測対象が生まれるのを待ってから撃つ** (生まれる前に撃つと、修正の有無で結果が変わらない観測になる。
   待ち方は [`avoid-wall-clock-assertions.md`](avoid-wall-clock-assertions.md))
 - **zsh の `(( i++ ))` は古い値を返す** (`i` が 0 だと status 1。`err_exit` 下で死ぬ。`(( ++i ))` を使う)
-- **bash (特に 3.2) で `$var` の直後に ASCII 以外の文字を置かない** (全角の先頭バイトまで変数名として読まれ、`set -u` で止まる。`${var}` にする)
+- **bash (特に 3.2) で `$var` の直後に ASCII 以外の文字を置かない** (全角の先頭バイトまで変数名として読まれ、`set -u` で止まる。無ければ値が黙って消える。`${var}` にする。dotfiles では `make test-lint` (`scripts/check_var_before_multibyte.sh`) が落とす)
 - **空になりうる出力の行数を here-string + `NR` で数えない** (`<<<` は空にも改行を足すので 0 件が 1 と数えられる。空でない行を数える)
 
 ## やること / やらないこと

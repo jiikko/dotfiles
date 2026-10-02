@@ -114,6 +114,7 @@ PATH 先頭に置く)、時間はモック内の `grep` 連打による **fork �
 
 - `set -euo pipefail` 下の `var=$(… | grep …)` は無マッチの時点で代入ごと死に、直後の FAIL メッセージへ到達しない。抽出は `|| true` で受けて、空を明示的に FAIL にする
 - `… | grep -q` は一致していても偽になりうる (grep が先に抜けて producer が SIGPIPE → pipefail が拾う)。`grep -q PAT <<< "$(cmd)"` にする。`make test-pipefail-grep-q` (scripts/check_pipefail_grep_q.sh) が落とす。例外は行内 `pipefail-grep-q: allow` + 理由
+- bash のテストで `"…$rc。…"` のように `$var` の直後に全角を置かない (CI の `/bin/bash` 3.2 が `rc` + 全角の先頭バイトを変数名に読み、失敗メッセージの行で死んで落ちた理由がログから消える)。`${rc}` にする。`make test-var-multibyte` (scripts/check_var_before_multibyte.sh) が落とす
 - **`cd` は rc を見る** (`cd "$X" || exit 1`)。見ないと、失敗しても CWD (= repo root) のまま先へ進み
   **fixture が repo に書かれる**。実際に踏んだ (issue 204): zsh のテストを `bash` で直接実行すると
   `source "${0:A:h}/test_helper.sh"` が bash で `/test_helper.sh` に潰れて helper が 1 行も走らず、
