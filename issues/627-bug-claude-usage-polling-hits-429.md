@@ -98,3 +98,25 @@
   - つまり `/api/oauth/usage` の 429 は本物だが、壊れるのは `claude -p` 経由で取る側 (glogx / ratelimit / pro-con) だけ
   - 残る設計の選択肢 (ユーザー判断待ち): statusline が受け取る `rate_limits` (推論の応答ヘッダ由来。サーバを余計に叩かない) を
     ファイルへ書き出して主な出所にする。欠点: 7d(Fable) が出ない・セッションが動いていない間は更新されない
+- 2026-10-02 15:40: ユーザー判断「statusline の値を主にする」で実装 (commit「feat(ratelimit,statusline): Claude の利用枠の主な出所を
+  statusline の rate_limits にする」と、レビュー指摘の 3 commit「fix(ratelimit,statusline): 敵対的レビュー指摘 …」
+  「fix(statusline): 2 周目の指摘 …」「fix(statusline): 3 周目の指摘 …」)
+  - [x] statusline (`write_rate_limits`) が `~/.cache/glog/claude-rate-limits.json` を書き、`usage.FetchShared` が先に読む
+        (glogx / bin/ratelimit / pro-con の 3 つとも切り替わる)。7d(Fable) は出ない (受け入れ済み)
+  - [x] statusline は送信が無くても `refreshInterval` (60 秒) ごとに描画し、古い値を持ってくる (ユーザー指摘・レビューが再現)。
+        書き手は窓ごとに値で新旧を比べ (リセット時刻が後 / 600 秒以内なら同じ窓として使用率が高い方)、新しいときだけ書く。
+        値が同じでも、そのセッションの transcript がファイルより新しければ observedAt だけ進める
+  - [x] 15 分新しい値が来なければ予備 (`claude -p /usage`、共有ゲート) へ落ちる。pro-con の PG は statusline を走らせないので、
+        PG だけが動いている間はサーバの値で見る。R の `r` は statusline を飛ばす
+  - [x] キーの無い窓 (リセットを過ぎて落とされた窓) は 0% Unused。使用率があるのにリセット時刻が無い形は予備へ。版は入力から
+  - [x] 3 module の lint・全テスト・shellcheck・test_statusline.sh が緑。変異 33 本 (書き手の新旧比較・bump・桁の検査・stderr・
+        読み手の各分岐・force) がすべて red。statusline の描画は 22.3 → 24.9 ms (50 回平均)
+  - 敵対的レビュー (opus): 1 周目 2 本 + 2 周目 1 本 + 3 周目 1 本。3 周目の修正は検査の順序とテストだけで、変異で直接確かめたので打ち切り
+  - 記録だけ (直していない):
+    - `-nt` は「transcript が書かれた」で、「ヘッダ付きの応答が届いた」ではない。API を呼ばずに transcript を書く操作が
+      あると、ファイルの値が最長 15 分新しく見える (どの操作が書くかは未確認)。bash 3.2 の `-nt` は秒単位
+    - 2 つのセッションの同時の書き込み (読む → 比べる → mv の間) で新しい値が負けることがある。相手の次の描画 (60 秒以内) で戻る
+    - サーバ側の補正などで使用率が実際に下がると、リセットまで高い方が残る
+    - 別のアカウントのセッションも同じファイルに書く (今は同じアカウントだけを使う前提)
+    - bin/ratelimit のキャッシュは取得した時刻で古さを測るので、statusline の観測からは最大 20 分古い値で `-check` が答える
+  - [ ] 実環境: pull 後に statusline が書き出し、`ratelimit -source claude` がその値を返すことの観測
