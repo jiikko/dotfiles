@@ -763,9 +763,15 @@ EOS
 mvpid=$!
 TT_WAIT_TICKS=200 TT_WAIT_TICK=0.05 tt_wait_until grep -q '変異後の検証' "$work/int.log" || :
 grep -q '変異後の検証' "$work/int.log" || fail "中断のケース: 変異後の検証に入らない (10 秒)"
+# 変異の検証の子 (int_slow) が走り始めてから撃つ (始まる前に撃つと「子を止めた」が何も検査しない)
+int_slow_running() { pgrep -f "$work/int_slow.sh" >/dev/null; }
+TT_WAIT_TICKS=200 TT_WAIT_TICK=0.05 tt_wait_until int_slow_running || fail "中断のケース: 変異の検証の子が始まらない (10 秒)"
 kill -TERM "$mvpid" 2>/dev/null
-: > "$int_gate"
+# 🚨 ゲートを開ける**前に**待つ: 中断の trap が実行中の run のグループを止めるので、子が自分で抜けるのを待たずに終わる。
+#    止めていなければ子はゲートを待ち続け (上限 30 秒)、wait も返らない (issue 610)
 wait "$mvpid"; rc=$?
+int_slow_running && fail "🚨 中断しても変異の検証の子が残った (実行中の run のグループを止めていない)"
+: > "$int_gate"
 [ "$rc" -eq 143 ] || fail "中断のケース: rc=$rc (期待 143)"
 ld="$(logdir_of "$work/int.log")"
 [ -f "$ld/mv-baseline.log" ] || { fail "🚨 中断されたら全体のログが残らない (置き場: ${ld:-出ていない})"; tail -8 "$work/int.log"; }
@@ -791,6 +797,49 @@ for how in symlink path dirlink; do
   check_log_leak "$work/out.log"
   [ "$rc" -eq 0 ] || { fail "外の repo を $how 経由で起動して rc=$rc (期待 0)"; tail -5 "$work/out.log"; }
 done
+
+# ---------------------------------------------------------------------------
+# 44. 変異が hang したら --timeout で止め、rc=10 (時間切れ。第 3 の結果) を返す。TERM を無視する子も
+#     プロセスグループごと KILL で止め、全体のログを写す (issue 610: 変異の hang で mutate-verify-list が詰まっていた)
+# ---------------------------------------------------------------------------
+d="$work/hang"; make_repo "$d"
+hang_mark="mvhang-$$-44"
+# shellcheck disable=SC2016  # 変異で guard.sh に書き込む文字列 (ここで展開しない)
+printf 's/^check /bash -c '"'"'trap "" TERM; while :; do sleep 1; done'"'"' %s; check /m;\n' "$hang_mark" > "$work/hang.pl"   # sleep-ok: window: hang を演じる変異の中身 (TERM を無視して回り続ける)
+t0=$SECONDS
+mv_run "$d" --file guard.sh --timeout 2 --apply "perl -0pi $work/hang.pl \"\$MUTATE_FILE\"" --expect 'FAIL: reject-bad'
+rc=$?
+elapsed=$((SECONDS - t0))
+[ "$rc" -eq 10 ] || { fail "hang する変異が rc=$rc (期待 10)"; tail -8 "$work/out.log"; }
+grep -q '変異後の検証 が --timeout (2 秒) を超えた' "$work/out.log" || fail "時間切れの段と上限を出していない: $(tail -3 "$work/out.log")"
+[ "$elapsed" -lt 30 ] || fail "時間切れの後に止めきるまで ${elapsed} 秒かかった (上限 2 秒 + KILL の猶予 5 秒のはず)"
+pgrep -f "$hang_mark" >/dev/null && { fail "🚨 TERM を無視する子が時間切れの後も残った ($hang_mark)"; pkill -9 -f "$hang_mark"; }
+ld="$(logdir_of "$work/out.log")"
+[ -f "$ld/mv-mutant.log" ] || fail "時間切れのときに全体のログ (mv-mutant.log) が残らない (置き場: ${ld:-出ていない})"
+
+# ---------------------------------------------------------------------------
+# 45. baseline の検証が hang しても止める (環境変数 MUTATE_VERIFY_TIMEOUT で渡す形)。段の名前を出す
+# ---------------------------------------------------------------------------
+d="$work/hangbase"; make_repo "$d"
+base_mark="mvhang-$$-45"
+rc=0
+# sleep-ok: window: baseline の検証が hang する形を演じる入力
+( cd "$d" && MUTATE_VERIFY_TIMEOUT=2 "$MV" --verify "bash verify.sh && bash -c 'sleep 60' $base_mark" --baseline-expect '^ran 2 checks' \
+    --file guard.sh --apply 'true' --expect 'FAIL: reject-bad' ) > "$work/out.log" 2>&1 || rc=$?
+check_log_leak "$work/out.log"
+[ "$rc" -eq 10 ] || { fail "baseline が hang して rc=$rc (期待 10)"; tail -8 "$work/out.log"; }
+grep -q 'baseline の検証 が --timeout (2 秒) を超えた' "$work/out.log" || fail "baseline の時間切れの段を出していない: $(tail -3 "$work/out.log")"
+pgrep -f "$base_mark" >/dev/null && { fail "🚨 baseline の hang した子が残った ($base_mark)"; pkill -9 -f "$base_mark"; }
+
+# ---------------------------------------------------------------------------
+# 46. --timeout の値の検査 (整数でなければ使い方の誤り rc=2)。0 は無制限で、正常系はそのまま rc=0
+# ---------------------------------------------------------------------------
+d="$work/tmval"; make_repo "$d"
+mv_run "$d" --file guard.sh --timeout 2s --apply 'true' --expect 'FAIL: reject-bad'; rc=$?
+[ "$rc" -eq 2 ] || fail "--timeout 2s が rc=$rc (期待 2)"
+mv_run "$d" --file guard.sh --timeout 0 \
+  --apply 'perl -0pi -e "s/if \[ \"\\\$1\" = \"bad\" \]/if false/" "$MUTATE_FILE"' --expect 'FAIL: reject-bad'; rc=$?
+[ "$rc" -eq 0 ] || { fail "--timeout 0 (無制限) の正常系が rc=$rc (期待 0)"; tail -5 "$work/out.log"; }
 
 # ---------------------------------------------------------------------------
 # 末尾. 🚨 全ケースを通した**後**の残骸ゼロ。

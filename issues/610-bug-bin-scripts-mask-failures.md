@@ -38,7 +38,7 @@ bin/ のシェルスクリプトを安定性の観点で監査した (sonnet の
 
 | 箇所 | 内容 | 直さない理由 / trigger |
 |---|---|---|
-| `bin/mutate-verify` | `--verify` の run に timeout が無い。変異で hang すると止まらない (mutate-verify-list も詰まる) | 変異検証の判定 (第 3 の結果) に関わる安全機構の変更で、単独の作業として敵対レビュー込みで行うべき。trigger: hang する変異に実際に当たったとき |
+| `bin/mutate-verify` | ~~`--verify` の run に timeout が無い~~ → **2026-10-02 に直した** (下の進捗) | 613 の作業で hang する変異に実際に当たり、手で止めた (trigger が成立) |
 | `bin/codex-fanout` | watchdog が TERM を 1 回送るだけで KILL へ昇格しない | 推測 (未再現)。codex を使う作業でのみ発火。trigger: codex-fanout が timeout 後も返らなかったとき |
 | `bin/concat_movies` | 音声の無いクリップを混ぜると、音声の欠けた連結を「完了」として出す | 実害 (音ズレの程度) が未検証。trigger: 音声なしの素材を連結する用途が出たとき |
 | `bin/repair_avi_vorbis_audio.sh` / `bin/repair-avcc-avi` | `ffmpeg -y` で既定の出力名を無警告で上書きし、途中失敗で壊れた出力が残る | 修復ツールの出力は都度確認して使う運用。trigger: 上書きで成果物を失った実例が出たとき |
@@ -79,3 +79,14 @@ bin/ のシェルスクリプトを安定性の観点で監査した (sonnet の
   - `make test` (worktree): 新しい 3 本と tmux shim の 2 本は [ok]。全体は rc=2 で、落ちたのは今回の変更と無関係な 2 本:
     test-yaml (`src/tuikit/.golangci.yml:56` の line-length。2fa1692e で入った。持ち主のセッションへ連絡済み) と
     `tests/claude/test_deny_piped_push_then_destroy.sh` (9MB 入力で timeout rc=124。ロードアベレージ 27 の最中だった。単独の再実行は rc=0)
+- 2026-10-02 「feat(mutate-verify): 各 run に --timeout を付け、超えたらプロセスグループごと止めて rc=10 を返す (610)」 (ユーザーの依頼)
+  - 4 つの run (構文検査・baseline・`--apply`・変異後の検証) を自分のプロセスグループで背景に起こして `wait` で待ち、上限は別に起こした
+    見張りが数える。時間切れなら印を置いてグループを TERM → 5 秒後に KILL。既定 1800 秒 / `MUTATE_VERIFY_TIMEOUT` / 0 で無制限。新しい rc=10
+    (`mutate-verify-list` の表にも足した)。標準入力は /dev/null になる (前景でないグループが端末を読むと SIGTTIN で止まるため。冒頭に書いた)
+  - 中断 (TERM / INT) の trap が、実行中の run のグループと見張りを止めるようにした。旧実装は「実行中の `--verify` が終わるまで trap が走らない」
+  - 🚨 完了を 0.1 秒刻みのポーリングで待つ最初の版は、既存の 42 ケースが 34 s → 58 s に遅くなった。`wait` + 見張りに変えて 34 s に戻した
+  - テスト: 44 (変異が hang し、TERM を無視する子が残る形 → rc=10・段の名前・上限内・子が残らない・全体のログ) / 45 (baseline の hang を
+    環境変数で → rc=10) / 46 (`--timeout 2s` → rc=2、`--timeout 0` の正常系 → rc=0)。42 (中断) は「ゲートを開ける前に子が止まっていること」を見る形に組み替えた
+    (旧実装は trap が子の終了を待つのでゲートが要った)。45 ケース 47 s
+  - 変異 (外側は変異前の bin/mutate-verify に --timeout 300 を付けて回した。すべて想定の検査で red): グループを KILL しない → 「TERM を無視する子が
+    時間切れの後も残った」/ 見張りが印を置かない → 「hang する変異が rc=7」/ 中断の trap で run を止めない → 「中断しても変異の検証の子が残った」

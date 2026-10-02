@@ -60,8 +60,9 @@
 #   - **検証コマンド自身が作る差** — 道具は 2 回の run の間に差を作らない (一時ファイルは gitdir、構文検査は
 #     baseline の前) が、`--verify` 自身が残す生成物 (coverage.out 等) で 2 回目の木が変わる形は止めない
 #   - **argv にパスを持たない子プロセス** — 掃除は「worktree のパスを argv に持つプロセス」を止めるだけ。
-#     SIGKILL で道具が死ぬと、`--verify` が起こした `sleep` 等は PPID=1 で残る。SIGTERM / SIGINT は
-#     **実行中の `--verify` が終わるまで**処理されない (bash の trap は子の終了を待つ)
+#     SIGKILL で道具が死ぬと、`--verify` が起こした `sleep` 等は PPID=1 で残る。SIGTERM / SIGINT では、
+#     実行中の run のプロセスグループごと止める (下の「時間の上限」)。グループを抜けた子 (setsid / 自分で
+#     別グループを作るもの) は止めない
 #   - **すでに dirty なファイルのパーミッションだけの変更** — 内容 hash が同じなので見えない
 #   - **symlink の張り替え** — `[ -f ]` が偽になる先 (dangling / ディレクトリ) を指す symlink は
 #     恒久的に `<missing>` 扱いで、張り替えても差分が出ない
@@ -98,6 +99,12 @@
 #   終了時に「全体のログ」の置き場を出す (baseline / 変異 / 構文検査の出力と、差の全体 diff.txt)。
 #   worktree と一緒に消えないよう外へ写したもので、**この道具は消さない**。置き場の親は
 #   MUTATE_VERIFY_LOG_ROOT で変えられる (既定は $TMPDIR)
+#   --timeout <秒> は各 run (構文検査 / baseline / --apply / 変異後の検証) の上限。既定 1800 秒、
+#   環境変数 MUTATE_VERIFY_TIMEOUT でも渡せる (引数が優先)。0 で無制限。超えた run はプロセスグループごと
+#   SIGTERM → 5 秒後に SIGKILL で止め、rc=10 (時間切れ。第 3 の結果) を返す。変異が hang を起こしても、
+#   一覧 (mutate-verify-list) が 1 本で詰まらない (issue 610)
+#   🚨 run は自分のプロセスグループで、標準入力は /dev/null で走る (前景のグループではないので、端末を読むと
+#   SIGTTIN で止まるため)。端末を読む検証コマンドは自分で pty を用意すること
 #   --syntax は shell / python / ruby なら拡張子から推定する。それ以外は明示必須
 #   (推定できないものを黙って素通しすると、検査 6 が無いまま緑が出る)。
 #
@@ -113,6 +120,7 @@
 #   8  --file 以外のファイルが変わった (誤ファイルへの変異)
 #   9  作業ツリー (worktree ではなく元の repo) が変わった — --apply / --verify が外を書いた、
 #      **または並行セッションが編集した**。他の rc より優先する (壊れた木の上の結果は信用しない)
+#  10  時間切れ — どれかの run が --timeout を超えた (どの段かを出す)。red でも green でもない (判定不能)
 set -uo pipefail
 
 prog="${0##*/}"
@@ -124,7 +132,7 @@ die() { echo "$prog: $*" >&2; exit 2; }
 exec 3>&2
 note() { echo "[$prog] $*" >&3; }
 
-file="" apply="" verify="" expect="" baseline_expect="" syntax="" name=""
+file="" apply="" verify="" expect="" baseline_expect="" syntax="" name="" timeout="${MUTATE_VERIFY_TIMEOUT:-1800}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --file)            file="${2:-}"; shift 2 || die "--file に値が無い" ;;
@@ -134,6 +142,7 @@ while [ $# -gt 0 ]; do
     --baseline-expect) baseline_expect="${2:-}"; shift 2 || die "--baseline-expect に値が無い" ;;
     --syntax)          syntax="${2:-}"; shift 2 || die "--syntax に値が無い" ;;
     --name)            name="${2:-}"; shift 2 || die "--name に値が無い" ;;
+    --timeout)         timeout="${2:-}"; shift 2 || die "--timeout に値が無い" ;;
     -h|--help)         sed -n '2,/^set -uo pipefail/p' "$0" | sed '$d'; exit 0 ;;
     *)                 die "未知の引数: $1" ;;
   esac
@@ -144,6 +153,7 @@ done
 [ -n "$expect" ]          || die "--expect は必須 (red の帰属を確かめないと、既存の assert が先に落ちても気づけない)"
 [ -n "$baseline_expect" ] || die "--baseline-expect は必須 (rc=0 だけでは zero execution と全 pass を区別できない)"
 [ -n "$name" ] || name="$file"
+case "$timeout" in ''|*[!0-9]*) die "--timeout は 0 以上の整数 (秒): $timeout" ;; esac
 
 root="$(git rev-parse --show-toplevel 2>/dev/null)" || die "git repo の中で実行すること"
 [ -f "$root/$file" ] || die "--file が repo 内に無い: $file"
@@ -327,6 +337,7 @@ on_cleanup() {
   # trap は中断された関数のリダイレクト (`> "$mut_out" 2>&1`) の中で走るので、後片付けの出力
   # (worktree_scratch.sh の「消せなかった」警告を含む) を起動時の stderr へ戻す (2 周目 P2)
   exec 1>&3 2>&3
+  stop_run_group   # 中断されたら実行中の run も止める (グループを分けたので Ctrl-C は届いていない)
   check_worktree_untouched
   report_logs
 }
@@ -370,7 +381,64 @@ export MUTATE_FILE="$WTS_PATH/$file"
 # `git ls-files` を数える検証では挙動を変えない変異が red になる (red team 4 周目 P1-2)
 git -C "$WTS_PATH" add -N -- "$file" 2>/dev/null || true
 
-run_in_wt() { ( cd "$WTS_PATH" && eval "$1" ) 3>&-; } # 報告用の fd 3 は検証コマンドへ渡さない
+# --- 時間の上限 (issue 610) ----------------------------------------------------------------------
+# 各 run を**自分のプロセスグループ**で背景に起こして `wait` で待ち、上限は別に起こした見張り (watchdog) が数える。
+# 時間切れなら見張りが印を置いてからグループを TERM → 5 秒後に KILL する。
+# 🚨 完了をポーリングで待たない (1 run ごとに刻みの分だけ遅れ、42 ケースのテストが 34 秒 → 58 秒になった)。
+# 🚨 run が終わったら見張りを**先に**止める。rc ファイルがあれば、見張りの印があっても完了として扱う (際どい競争で丸めない)
+# 🚨 グループを分けるので、端末の Ctrl-C は run に届かない。中断の trap (on_cleanup) が run と見張りを止める
+run_pgid=""
+watch_pgid=""
+timed_out_phase=""
+stop_group() {  # $1=pgid。TERM → 5 秒 → KILL して回収する
+  local pg="$1" i=0
+  [ -n "$pg" ] || return 0
+  kill -TERM -- "-$pg" 2>/dev/null || true
+  while kill -0 -- "-$pg" 2>/dev/null && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+  kill -KILL -- "-$pg" 2>/dev/null || true
+  wait "$pg" 2>/dev/null || true
+}
+# shellcheck disable=SC2329  # on_cleanup (WTS_ON_CLEANUP 経由で EXIT trap から呼ばれる) が呼ぶ
+stop_run_group() {  # 中断の trap から: 見張りと実行中の run を止める
+  [ -z "$watch_pgid" ] || { kill -KILL -- "-$watch_pgid" 2>/dev/null || true; wait "$watch_pgid" 2>/dev/null || true; watch_pgid=""; }
+  [ -z "$run_pgid" ] || { stop_group "$run_pgid"; run_pgid=""; }
+}
+run_in_wt() {  # $1=段の名前 $2=コマンド。出力は呼び出し側のリダイレクトへ。時間切れは rc=124 + timed_out_phase
+  local phase="$1" cmd="$2" rcf mark rc
+  rcf="$scratch/mv-run.rc"; mark="$scratch/mv-run.timedout"; rm -f "$rcf" "$mark"
+  set -m
+  # 報告用の fd 3 は検証コマンドへ渡さない。標準入力は /dev/null (前景でないグループが端末を読むと SIGTTIN で止まる)
+  ( ( cd "$WTS_PATH" && eval "$cmd" ) 3>&- </dev/null; echo "$?" > "$rcf" ) &
+  run_pgid=$!
+  if [ "$timeout" -gt 0 ]; then
+    ( exec 3>&- 1>/dev/null 2>&1 </dev/null
+      sleep "$timeout"
+      : > "$mark"
+      kill -TERM -- "-$run_pgid" 2>/dev/null
+      sleep 5
+      kill -KILL -- "-$run_pgid" 2>/dev/null ) &
+    watch_pgid=$!
+  fi
+  set +m
+  wait "$run_pgid" 2>/dev/null || true
+  [ -z "$watch_pgid" ] || { kill -KILL -- "-$watch_pgid" 2>/dev/null || true; wait "$watch_pgid" 2>/dev/null || true; watch_pgid=""; }
+  if [ -s "$rcf" ]; then
+    run_pgid=""
+    rc="$(cat "$rcf")"
+    return "$rc"
+  fi
+  # rc が書かれていない = 完了していない。時間切れなら残りのグループを止める (TERM を無視した子)
+  stop_group "$run_pgid"; run_pgid=""
+  if [ -e "$mark" ]; then timed_out_phase="$phase"; return 124; fi
+  return 125   # 時間切れでもなく rc も無い (外から殺された)。呼び出し側では失敗として扱われる
+}
+# 時間切れなら rc=10 で終える (どの run でも第 3 の結果。red / green に丸めない)
+finish_if_timed_out() {  # $1=出力ファイル (末尾を見せる。無ければ空)
+  [ -n "$timed_out_phase" ] || return 0
+  note "🚨 $timed_out_phase が --timeout ($timeout 秒) を超えた。プロセスグループごと止めた (判定不能)"
+  [ -n "${1:-}" ] && [ -f "$1" ] && tail -20 "$1" >&2
+  finish 10
+}
 
 # 🚨 **元 repo が壊れていたら、その run の結果は信用できない**ので rc=9 を優先する。
 # rc=0 の経路だけで見ていたときは、rc=4〜7 を受けた呼び出し側が「変異が弱い」と読んで
@@ -399,14 +467,17 @@ finish() { # $1=rc
 # 🚨 **baseline より前に**当てる。構文検査の副作用 (`py_compile` の `__pycache__` 等) が baseline と
 # 変異の run の間に入ると、2 回の run で木が違って挙動を変えない変異が red になる (5 周目 P2-3)
 note "[$name] 構文検査を変異前の本物に当てる"
-if ! run_in_wt "$syntax" > "$scratch/mv-syntax.log" 2>&1; then
+run_in_wt "構文検査 (変異前)" "$syntax" > "$scratch/mv-syntax.log" 2>&1; syntax0_rc=$?
+finish_if_timed_out "$scratch/mv-syntax.log"
+if [ "$syntax0_rc" -ne 0 ]; then
   note "🚨 構文検査 ($syntax) が**変異前の本物**でも落ちる。検査の選び方が合っていない (--syntax で明示すること)"
   tail -10 "$scratch/mv-syntax.log" >&2; finish 3
 fi
 
 note "[$name] baseline を測る"
 base_out="$scratch/mv-baseline.log"
-run_in_wt "$verify" > "$base_out" 2>&1; base_rc=$?
+run_in_wt "baseline の検証" "$verify" > "$base_out" 2>&1; base_rc=$?
+finish_if_timed_out "$base_out"
 if [ "$base_rc" -ne 0 ]; then
   note "🚨 baseline が green でない (rc=$base_rc)。変異を当てても red の増減を帰属できない"
   tail -20 "$base_out" >&2; finish 3
@@ -432,7 +503,9 @@ fi
 before_hash="$(shasum -a 256 < "$MUTATE_FILE" | awk '{print $1}')"
 before_state="$(snapshot_tree "$WTS_PATH")"
 note "[$name] 変異を当てる"
-if ! run_in_wt "$apply" >&2; then
+run_in_wt "--apply" "$apply" >&2; apply_rc=$?
+finish_if_timed_out
+if [ "$apply_rc" -ne 0 ]; then
   note "--apply が失敗した"; finish 2
 fi
 
@@ -462,7 +535,8 @@ git -C "$WTS_PATH" --no-pager diff -- "$file" >&2 || true
 
 # --- 4. 構文検査 (第 3 の結果) ---------------------------------------------------------------
 note "[$name] 構文検査"
-run_in_wt "$syntax" > "$scratch/mv-syntax-mutant.log" 2>&1; syntax_rc=$?
+run_in_wt "構文検査 (変異後)" "$syntax" > "$scratch/mv-syntax-mutant.log" 2>&1; syntax_rc=$?
+finish_if_timed_out "$scratch/mv-syntax-mutant.log"
 cat "$scratch/mv-syntax-mutant.log" >&2
 if [ "$syntax_rc" -ne 0 ]; then
   note "🚨 変異が構文エラー (red でも green でもない第 3 の結果)。当て直すこと"
@@ -473,7 +547,8 @@ fi
 # --- 5. 検証 --------------------------------------------------------------------------------
 note "[$name] 変異後の検証"
 mut_out="$scratch/mv-mutant.log"
-run_in_wt "$verify" > "$mut_out" 2>&1; mut_rc=$?
+run_in_wt "変異後の検証" "$verify" > "$mut_out" 2>&1; mut_rc=$?
+finish_if_timed_out "$mut_out"
 if [ "$mut_rc" -eq 0 ]; then
   note "🚨 変異が緑のまま通った (そのテストは主張を何も守っていない)"
   tail -20 "$mut_out" >&2; finish 6
