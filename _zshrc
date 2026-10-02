@@ -333,6 +333,7 @@ alias cl='clear'
 alias less='less -R'
 
 alias ks='ls'
+alias mg='mp'  # /usr/bin/mg (Emacs 風エディタ) を mp の打ち間違いで開かない
 
 alias gg='git grep -n'
 alias gst='git status'
