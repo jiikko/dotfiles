@@ -223,6 +223,21 @@ setopt hist_save_no_dups     # ヒストリファイルに書き出すときに�
 setopt hist_no_store         # historyコマンドは履歴に登録しない
 setopt hist_expand           # 補完時にヒストリを自動的に展開
 
+# ~/dotfiles/bin にあるコマンドはヒストリに入れない (セッション中の候補にも出さない)。
+# 一覧を持たず毎回ファイルの有無を見るので、bin に足したコマンドも自動で対象になる。
+# 判定するのは先頭の語 (前置きの VAR=val は読み飛ばす)。パス付きの呼び出し (bin/foo) は対象外。
+_dotfiles_hist_skip_bin() {
+  local -a words=(${(z)1})
+  while (( ${#words} )) && [[ ${words[1]} =~ '^[A-Za-z_][A-Za-z0-9_]*=' ]]; do
+    shift words
+  done
+  local cmd=${words[1]}
+  [[ -n $cmd && $cmd != */* && -f $HOME/dotfiles/bin/$cmd ]] && return 1
+  return 0
+}
+autoload -Uz add-zsh-hook
+add-zsh-hook zshaddhistory _dotfiles_hist_skip_bin
+
 # 全履歴の一覧を出力する
 function history-all { history -E 1 }
 

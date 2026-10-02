@@ -142,4 +142,13 @@ printf '✓ bin/ has no av1c executable shadowing the shell function\n'
 av1ify_body="$(run_zsh 'av1c >/dev/null 2>&1; functions av1ify' </dev/null)"
 assert_contains "$av1ify_body" "_reload_then_call" "av1ify keeps its lazy-reload wrapper after av1c runs"
 
+# 10. ~/dotfiles/bin のコマンドはヒストリに入れない (zshaddhistory が 1 を返す)
+# 入力は zsh が渡す形どおり末尾に改行を付ける。bin/lib はディレクトリなので対象外。
+hist_rcs="$(run_zsh '
+  (( ${zshaddhistory_functions[(Ie)_dotfiles_hist_skip_bin]} )) && print -n "hooked "
+  for l in "ci-log -l" "FOO=1 glogx" "ls -la" "lib" "bin/ci-log" "echo ci-log"; do
+    _dotfiles_hist_skip_bin "$l"$'"'"'\n'"'"'; print -n "$? "
+  done' </dev/null | awk 'END{print}')"
+assert_contains "$hist_rcs" "hooked 1 1 0 0 0 0 " "commands in ~/dotfiles/bin are kept out of history"
+
 printf 'All zshrc tests passed.\n'
