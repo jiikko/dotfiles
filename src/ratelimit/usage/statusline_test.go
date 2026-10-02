@@ -325,7 +325,10 @@ func TestStatuslineWriterQuietOnBadInput(t *testing.T) {
 	if e := run(cache, fmt.Sprintf(`{"rate_limits":{"five_hour":{"used_percentage":5,"resets_at":%d}}}`, now.Add(time.Hour).Unix())); e != "" {
 		t.Errorf("読めないファイルで stderr: %q", e)
 	}
-	if e := run(t.TempDir(), `{"rate_limits":{"five_hour":{"used_percentage":5,"resets_at":99999999999999999999}}}`); e != "" {
+	// 既存の観測がある状態で渡す (無いと比べるまでもなく書くので、桁あふれの比較を通らない)
+	huge := t.TempDir()
+	writeRaw(t, huge, now.Add(-time.Minute), 30, now.Add(time.Hour).Unix(), 60, now.Add(48*time.Hour).Unix())
+	if e := run(huge, `{"rate_limits":{"five_hour":{"used_percentage":5,"resets_at":99999999999999999999}}}`); e != "" {
 		t.Errorf("桁あふれの値で stderr: %q", e)
 	}
 }
