@@ -1,7 +1,5 @@
 # 627 (bug): Claude の利用枠の取得が `/api/oauth/usage` を 1 分ごとに叩いて 429 になり、枠が取れなくなる
 
-> 🚨 **担当中: ratelimit-429 のセッション**（2026-10-02〜）
-
 起票日: 2026-10-02
 
 ## 概要
@@ -54,7 +52,8 @@
         pro-con の素通り) がすべて想定どおり red
   - [x] 実環境 (429 中): worktree の build で `ratelimit -source claude` が 1 回目 3.2 秒で「…14:14 まで取得を止める」、2 回目は 0.00 秒
         (claude を起こさない)。この時点の止める期間は 30 分 (後で 10 分に変えた)
-  - [ ] 実環境の成功経路 (サーバが枠を返す状態で stream-json から枠が読めること) の観測。CLI の 429 の覚えが切れるまで待つ
+  - [x] 実環境の成功経路 (サーバが枠を返す状態で stream-json から枠が読めること) の観測。2026-10-02 15:27:22 に共有ゲート越しの
+        `claude -p /usage` が成功: `claude-usage-shared.json` に 5h 37% / 7d 27% / 7d(Fable) 0% / 版 2.1.287、blockedUntil は空
     - 2026-10-02 14:29 時点ではまだ観測できない: push 後の本番 `bin/ratelimit -source claude` は rc=3
       「サーバから利用枠を受け取れない (429 か通信の失敗)。14:36 まで取得を止める」(ゲートは期待どおり)。
       `claude -p /usage --debug-file` は `429 remembered for this bearer; not asking again for 2849s`。13:32 には
@@ -119,4 +118,6 @@
     - サーバ側の補正などで使用率が実際に下がると、リセットまで高い方が残る
     - 別のアカウントのセッションも同じファイルに書く (今は同じアカウントだけを使う前提)
     - bin/ratelimit のキャッシュは取得した時刻で古さを測るので、statusline の観測からは最大 20 分古い値で `-check` が答える
-  - [ ] 実環境: pull 後に statusline が書き出し、`ratelimit -source claude` がその値を返すことの観測
+  - [x] 実環境: pull 後 (15:30) に statusline が `claude-rate-limits.json` を書き出し (5h 37% / 7d 27% / 版 2.1.287)、
+        `ratelimit -source claude` が rc=0 で同じ値を返した。15:27 のサーバの値と一致
+- 2026-10-02 15:31: 完了。記録だけの項目 (上の「記録だけ」) は open な残課題にしない (害が限られ、再現したら新しい issue で扱う)
