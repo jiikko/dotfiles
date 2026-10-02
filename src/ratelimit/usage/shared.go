@@ -75,7 +75,7 @@ func fetchClaudeShared(ctx context.Context, force bool) (*Snapshot, error) {
 //   - サーバから枠を受け取れず止めている間は、run を呼ばずエラーを返す
 //
 // force は前の 2 つを飛ばす (人が「今すぐ取り直す」を押したとき。止めている間は force でも呼ばない)。
-// statusline の観測は force でも優先する (それが最新の観測で、取り直してもサーバを叩くだけ)。
+// force は statusline の観測も飛ばす (statusline の値は最大 statuslineMaxAge 古く、PG や他のデバイスの消費を含まない)。
 // 同時に呼ばれても run を呼ぶのは 1 本だけ (flock)。キャッシュの置き場が決まらない (HOME も
 // XDG_CACHE_HOME も無い) ときは、共有せず直接呼ぶ。
 func FetchShared(ctx context.Context, run func(context.Context) (*Snapshot, error), force bool) (*Snapshot, error) {
@@ -83,8 +83,10 @@ func FetchShared(ctx context.Context, run func(context.Context) (*Snapshot, erro
 	if err != nil {
 		return run(ctx)
 	}
-	if snap := readStatusline(dir, clock()); snap != nil {
-		return snap, nil
+	if !force {
+		if snap := readStatusline(dir, clock()); snap != nil {
+			return snap, nil
+		}
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("利用枠の共有ファイルの置き場を作れない: %w", err)

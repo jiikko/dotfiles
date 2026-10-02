@@ -30,6 +30,7 @@ input=$(cat)
   IFS= read -r effort_level
   IFS= read -r transcript
   IFS= read -r session_id
+  IFS= read -r cc_version
 } <<JSON_FIELDS
 $(printf '%s' "$input" | jq -r '
   (.workspace.current_dir // .cwd // ""),
@@ -43,7 +44,8 @@ $(printf '%s' "$input" | jq -r '
   (.context_window.used_percentage // ""),
   (.effort.level // ""),
   (.transcript_path // ""),
-  (.session_id // "")
+  (.session_id // ""),
+  (.version // "")
 ' 2>/dev/null)
 JSON_FIELDS
 
@@ -194,19 +196,47 @@ now=$(date +%s)
 # 利用枠を glogx / bin/ratelimit / pro-con へ渡す (issue 627)。
 # 🚨 この rate_limits は Claude Code が推論の応答ヘッダから得た値で、サーバを余計に叩かない。
 #   以前の出所の `claude -p /usage` は 1 回ごとに /api/oauth/usage を叩き、glogx が 1 分ごとに取ったら 429 になった。
-#   読む側は src/ratelimit/usage/statusline.go (ファイル名・項目の名前はそこと 1:1。乖離は statusline_test.go の
-#   TestStatuslineWriterMatchesReader が、このスクリプトを実際に走らせて検出する)。
-# 書き出しは描画ごと (値が無い描画では書かない)。tmp + mv で読み手に書きかけを見せない。失敗しても描画は続ける。
+#   読む側は src/ratelimit/usage/statusline.go (ファイル名・項目の名前はそこと 1:1。乖離は statusline_test.go が
+#   このスクリプトを実際に走らせて検出する)。
+# 🚨 描画は送信が無くても refreshInterval (60 秒) ごとに起き、そのたびに最後に受け取った (古いかもしれない) 値が来る。
+#   放置したセッションが新しい値を上書きしないよう、既にあるファイルより新しい観測のときだけ書き換え、observedAt は
+#   「誰かが新しい値を受け取った時刻」にする。新しさは窓ごとに値で決める: リセット時刻が後の方、同じなら使用率が
+#   高い方 (同じ窓の使用率は下がらない)。値の無い窓 (リセットを過ぎて落とされた窓) は新しい観測に数えない。
+# tmp + mv で読み手に書きかけを見せない。失敗しても描画は続ける。
+rl_newer() {  # rl_newer <新 %> <新リセット> <旧 %> <旧リセット> → 新しい観測なら 0
+  [ -n "$1" ] || return 1
+  [ -n "$3" ] || return 0
+  local nr=${2:-0} or=${4:-0}
+  [ "$nr" -gt "$or" ] && return 0
+  [ "$nr" -eq "$or" ] && [ "$1" -gt "$3" ] && return 0
+  return 1
+}
 write_rate_limits() {
   [ -n "$five_pct$seven_pct" ] || return 0
-  local dir="${XDG_CACHE_HOME:-$HOME/.cache}/glog" fr sr
+  local dir="${XDG_CACHE_HOME:-$HOME/.cache}/glog" fr sr ver
+  local f old="" o5p="" o5r="" o7p="" o7r="" changed=""
+  f="$dir/claude-rate-limits.json"
   to_int "$five_reset"; fr=$REPLY
   to_int "$seven_reset"; sr=$REPLY
+  # JSON の文字列へそのまま入れるので、版の形 (数字・英字・. + -) 以外は捨てる
+  case "$cc_version" in ''|*[!0-9A-Za-z.+-]*) ver="" ;; *) ver=$cc_version ;; esac
   [ -d "$dir" ] || mkdir -p "$dir" 2>/dev/null || return 0
-  local tmp="$dir/claude-rate-limits.json.tmp.$$"
-  if ! printf '{"observedAt":%s,"five_hour":{"used_percentage":%s,"resets_at":%s},"seven_day":{"used_percentage":%s,"resets_at":%s}}\n' \
-    "$now" "${five_pct:-null}" "${fr:-null}" "${seven_pct:-null}" "${sr:-null}" > "$tmp" 2>/dev/null ||
-    ! mv -f "$tmp" "$dir/claude-rate-limits.json" 2>/dev/null; then
+  [ -f "$f" ] && IFS= read -r old < "$f" 2>/dev/null
+  local re='^\{"observedAt":[0-9]+,"five_hour":\{"used_percentage":([0-9]+|null),"resets_at":([0-9]+|null)\},"seven_day":\{"used_percentage":([0-9]+|null),"resets_at":([0-9]+|null)\}'
+  if [[ $old =~ $re ]]; then
+    o5p=${BASH_REMATCH[1]} o5r=${BASH_REMATCH[2]} o7p=${BASH_REMATCH[3]} o7r=${BASH_REMATCH[4]}
+    [ "$o5p" = null ] && o5p=""; [ "$o5r" = null ] && o5r=""
+    [ "$o7p" = null ] && o7p=""; [ "$o7r" = null ] && o7r=""
+  fi
+  if rl_newer "$five_pct" "$fr" "$o5p" "$o5r"; then o5p=$five_pct o5r=$fr changed=1; fi
+  if rl_newer "$seven_pct" "$sr" "$o7p" "$o7r"; then o7p=$seven_pct o7r=$sr changed=1; fi
+  [ -n "$changed" ] || return 0
+  if [ -z "$ver" ] && [[ $old =~ \"version\":\"([0-9A-Za-z.+-]+)\" ]]; then ver=${BASH_REMATCH[1]}; fi
+  local tmp="$f.tmp.$$"
+  # { } 2>/dev/null で包む: `> "$tmp" 2>/dev/null` だとリダイレクトは左から処理され、tmp を開く失敗が stderr に出る
+  if ! { printf '{"observedAt":%s,"five_hour":{"used_percentage":%s,"resets_at":%s},"seven_day":{"used_percentage":%s,"resets_at":%s},"version":"%s"}\n' \
+    "$now" "${o5p:-null}" "${o5r:-null}" "${o7p:-null}" "${o7r:-null}" "$ver" > "$tmp"; } 2>/dev/null ||
+    ! mv -f "$tmp" "$f" 2>/dev/null; then
     rm -f "$tmp" 2>/dev/null
   fi
   return 0
