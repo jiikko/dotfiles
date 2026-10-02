@@ -128,3 +128,9 @@
   `sleep: command not found` を出して rc=0 で続きを書いた (`/bin/sh` は bash)。
   `TestFetchConcurrentCallsRunClaudeOnce` の `sleep 0.3` も同じ形で、狙ったロック待ちの窓は作れていない見込み (未確認。緑のまま通る)。
   直し方は stub の `sleep` を `/bin/sleep` にする (`codex_test.go` の stub は既に絶対パス)。どの open issue でも追っていない
+- 2026-10-03: 上の環境依存の失敗を直した (commit「test(ratelimit): 偽の claude の sleep を絶対パスにする …」)。stub の `sleep 2` /
+  `sleep 0.3` を `/bin/sleep` にし、countingClaude に「PATH を絞るので外部コマンドは絶対パス」の注記を足した。
+  `PATH` を絞った stub で `sleep: command not found` → rc=0・0 秒で続きを書くことを直接再現してから直した。
+  直した後: 2 本とも `-race -count=1` で 3 回緑。変異で red を確認: 持ち時間切れを共有する (TestFetchCallerTimeoutIsNotShared) /
+  flock を外す (TestFetchConcurrentCallsRunClaudeOnce)。同じ形 (PATH を絞った stub の素の外部コマンド) を ratelimit / glogx の
+  テストで grep し、他は絶対パスか組み込み (printf / echo / read / pwd) だけだった

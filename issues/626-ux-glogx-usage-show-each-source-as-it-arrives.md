@@ -72,3 +72,4 @@ glogx の利用枠の表示 (右上の U の箱 / 全画面の R のダッシュ
   `tests/bin/test_kernel_alloc_watch.sh` はロック待ちの判定の `lockf` に `-k` が無いこと ([630](done/630-test-kernel-alloc-watch-lock-probe-unlinks.md))。
   `TestFetchCallerTimeoutIsNotShared` は stub の `sleep` が `PATH` から見つからないこと ([627](done/627-bug-claude-usage-polling-hits-429.md) の進捗の末尾)
 - 2026-10-03 (別セッションから追記): 上の `test_kernel_alloc_watch.sh` の落ちる原因は 630 で解消 (判定の `lockf` を `-k` 付きにした。CI の Tests run 37034308994 で緑)
+- 2026-10-03 (別セッションから追記): 上の `TestFetchCallerTimeoutIsNotShared` の落ちる原因は 627 側で解消 (stub の `sleep` を `/bin/sleep` に。[627](done/627-bug-claude-usage-polling-hits-429.md) の進捗の末尾)
