@@ -39,6 +39,9 @@ type usageOverlay struct {
 	// fetchedAt は snap を取得した時刻 (zero = 未取得)。非表示中はリフレッシュを止めるので、
 	// 再表示時に「今の表示が古いか」を判断する出典として要る (stale 参照)。
 	fetchedAt time.Time
+	// staleErr は last-good を保持したまま失敗した最後の取得の理由 (nil = 表示中の snap が最新の取得)。
+	// 全滅時も前回の枠を出し続けるので、これが無いと古い値が黙って表示される。
+	staleErr error
 }
 
 // fetchCmd は Claude Code の /usage と codex の rateLimits を非同期取得する tea.Cmd
@@ -120,8 +123,11 @@ func (o *usageOverlay) showCached(now time.Time) bool {
 func (o *usageOverlay) handle(msg usageMsg) {
 	o.inFlight = false // fetchCmd の closure は成否によらず必ず usageMsg を返す (ここで対に降ろす)
 	if msg.err != nil && o.snap != nil {
-		return // 定期リフレッシュの一時失敗: last-good を保持し表示を崩さない
+		// 定期リフレッシュの一時失敗: last-good を保持し表示を崩さない (古いことは注記で伝える)
+		o.staleErr = msg.err
+		return
 	}
+	o.staleErr = nil
 	o.snap = msg.snap
 	o.err = msg.err
 	if msg.err == nil {
@@ -206,6 +212,10 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 		}
 		// 自動更新の明示フッターを content 幅に右寄せで添える (ユーザー要望)。値の取得は静かに
 		// 差し替わるので、更新中であることは出さない。
+		if note := fetchNote(o.snap, o.staleErr); note != "" {
+			// 右上の小さな箱を理由の長さで横に広げない (全文は R のダッシュボードに出る)
+			rows = append(rows, paint(clipToWidth(note, max(w, dispWidth(title))), ansiYellow, colored))
+		}
 		footer := "1分ごとに更新"
 		rows = append(rows, padSpaces(max(w-dispWidth(footer), 0))+paint(footer, ansiDim, colored))
 	}
@@ -229,4 +239,28 @@ func overlayBoxTopRight(window, box []string, width int, colored bool) []string 
 // (トースト用)。
 func overlayBoxBottomRight(window, box []string, width int, colored bool) []string {
 	return layout.OverlayRight(window, box, width, colored, max(len(window)-len(box), 0))
+}
+
+// fetchNote は表示中の枠に古い値が混じっているときの注記を返す (無ければ空)。古い値が混じるのは
+// 2 通り: 全滅して last-good を保持した (staleErr。handle) / Claude 側だけ失敗して前回の枠で補った
+// (ClaudeErr。MergeLastGood)。注記が無いと古い残量が黙って出続ける。
+// 理由は外部コマンドの stderr を含むので無害化して載せる。
+func fetchNote(snap *usage.Snapshot, staleErr error) string {
+	if snap == nil {
+		return ""
+	}
+	// 全滅の注記を優先する: last-good 自体が Claude を前回値で補った snap でも、「表示中の値は全部古い」が
+	// 上位の事実で、1 行に 2 つの注記は載せない
+	if staleErr != nil {
+		// FetchAll の全滅は errors.Join (改行区切り)。無害化は改行を詰めて落とすので、先に区切りへ置き換える
+		return "🚨 取得に失敗 (前回の値を表示中): " + sanitizePlainLine(strings.ReplaceAll(staleErr.Error(), "\n", " / "))
+	}
+	if snap.ClaudeErr == "" {
+		return ""
+	}
+	head := "🚨 Claude Code の取得に失敗"
+	if snap.HasClaude() {
+		head += " (前回の値を表示中)"
+	}
+	return head + ": " + sanitizePlainLine(snap.ClaudeErr)
 }

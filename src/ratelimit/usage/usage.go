@@ -11,6 +11,7 @@
 package usage
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,6 +23,8 @@ import (
 	"time"
 
 	"subproc"
+
+	"github.com/jiikko/dotfiles/src/termsafe"
 )
 
 // Window は 1 つの利用枠 (5h セッション / weekly) の残量とリセット時刻。
@@ -61,6 +64,11 @@ type Snapshot struct {
 	// CodexVersion は codex CLI のバージョン ("0.144.6" 等)。未導入・取得失敗時は空
 	// (omitempty により codex バージョン対応前のディスクキャッシュも欠損として読める)。
 	CodexVersion string `json:",omitempty"`
+	// ClaudeErr は FetchAll が Claude 側の取得に失敗し codex だけを返したときの理由。
+	// 空 = Claude 側は今回取れた (または FetchAll 以外の経路)。FetchAll は片側の失敗を err=nil で
+	// 返すので、これが無いと呼び出し側は「Claude が取れない」ことも理由も知る手段が無い
+	// (前回の枠が MergeLastGood で補完され続け、古い値が黙って表示される)。
+	ClaudeErr string `json:",omitempty"`
 }
 
 // Find は label ("5h" / "7d" 等) に一致する Window を返す。
@@ -99,8 +107,16 @@ func Fetch(ctx context.Context) (*Snapshot, error) {
 	if fi, err := os.Stat(os.TempDir()); err == nil && fi.IsDir() {
 		cmd.Dir = os.TempDir()
 	}
+	// exit status だけでは原因 (PATH 上の別の claude が壊れている等) が分からないので、
+	// stderr の最初の行を失敗の理由に添える。
+	stderr := &headWriter{max: stderrKeep}
+	cmd.Stderr = stderr
 	out, err := cmd.Output()
 	if err != nil {
+		// stderr は端末へ出る (ratelimit の -refresh / glogx) ので、ここで制御列を落とす
+		if line := termsafe.PlainLine(firstNonEmptyLine(stderr.buf.String())); line != "" {
+			return nil, fmt.Errorf("claude /usage 実行失敗: %w: %s", err, line)
+		}
 		return nil, fmt.Errorf("claude /usage 実行失敗: %w", err)
 	}
 	var res claudeResult
@@ -226,4 +242,31 @@ func parseResetTime(date, clock string, now time.Time) (time.Time, error) {
 		res = res.AddDate(1, 0, 0)
 	}
 	return res, nil
+}
+
+// firstNonEmptyLine は s の空白以外を含む最初の行を前後の空白を落として返す (無ければ空)。
+func firstNonEmptyLine(s string) string {
+	for line := range strings.Lines(s) {
+		if t := strings.TrimSpace(line); t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
+// stderrKeep は失敗の理由のために残す stderr の先頭のバイト数 (最初の行しか使わない)。
+const stderrKeep = 4096
+
+// headWriter は先頭 max バイトだけを残して残りを捨てる io.Writer。子の stderr を上限なしに
+// メモリへ溜めない (Output が Stderr=nil のときに使う内部バッファも上限つき)。
+type headWriter struct {
+	buf bytes.Buffer
+	max int
+}
+
+func (w *headWriter) Write(p []byte) (int, error) {
+	if room := w.max - w.buf.Len(); room > 0 {
+		w.buf.Write(p[:min(len(p), room)])
+	}
+	return len(p), nil // 捨てた分も書けたことにする (子を EPIPE で止めない)
 }

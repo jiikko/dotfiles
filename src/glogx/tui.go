@@ -3470,13 +3470,14 @@ func (m *browseModel) doctorOpts() doctorRenderOpts {
 
 func (m *browseModel) ratelimitOpts() ratelimitRenderOpts {
 	return ratelimitRenderOpts{
-		width:   m.contentWidth(),
-		page:    m.pageSize(),
-		colored: m.colored,
-		spinner: m.spinner(),
-		snap:    m.usageOv.snap,
-		err:     m.usageOv.err,
-		now:     timeNow(),
+		width:    m.contentWidth(),
+		page:     m.pageSize(),
+		colored:  m.colored,
+		spinner:  m.spinner(),
+		snap:     m.usageOv.snap,
+		err:      m.usageOv.err,
+		staleErr: m.usageOv.staleErr,
+		now:      timeNow(),
 	}
 }
 

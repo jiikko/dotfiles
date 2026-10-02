@@ -267,6 +267,9 @@ func TestFetchAllMergesBothSources(t *testing.T) {
 	if !snap.HasCodex() {
 		t.Error("HasCodex() = false, want true")
 	}
+	if snap.ClaudeErr != "" {
+		t.Errorf("両方成功なのに ClaudeErr = %q", snap.ClaudeErr)
+	}
 }
 
 func TestFetchAllCodexFailureKeepsClaude(t *testing.T) {
@@ -290,7 +293,9 @@ func TestFetchAllCodexFailureKeepsClaude(t *testing.T) {
 
 func TestFetchAllClaudeFailureKeepsCodex(t *testing.T) {
 	dir := t.TempDir()
-	writeStub(t, dir, "claude", "exit 1\n")
+	// PATH 上の壊れた shim (nodenv の別 node 版に入った claude 等) を模す: stderr に原因、rc=127
+	// 端末制御列も混ぜる (理由は端末へ出るので落ちていること)
+	writeStub(t, dir, "claude", "printf 'nodenv: \\033[31mclaude: command not found\\n' >&2\nexit 127\n")
 	writeStub(t, dir, "codex", codexStubOK)
 	t.Setenv("PATH", dir)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -301,6 +306,37 @@ func TestFetchAllClaudeFailureKeepsCodex(t *testing.T) {
 	}
 	if _, ok := snap.Find("cx7d"); !ok {
 		t.Errorf("codex 枠がない: %+v", snap.Windows)
+	}
+	// 失敗を黙って捨てない: 理由 (exit status と stderr の最初の行) が呼び出し側へ届く
+	for _, want := range []string{"exit status 127", "claude: command not found"} {
+		if !strings.Contains(snap.ClaudeErr, want) {
+			t.Errorf("ClaudeErr に %q が無い: %q", want, snap.ClaudeErr)
+		}
+	}
+	if strings.Contains(snap.ClaudeErr, "\x1b") {
+		t.Errorf("ClaudeErr に端末制御列が残っている: %q", snap.ClaudeErr)
+	}
+}
+
+// 子の stderr は先頭だけ残す (上限なしにメモリへ溜めない)。書き込み自体は成功扱いにする。
+func TestHeadWriterKeepsOnlyHead(t *testing.T) {
+	w := &headWriter{max: 8}
+	for _, chunk := range []string{"12345", "67890", "abc"} {
+		if n, err := w.Write([]byte(chunk)); n != len(chunk) || err != nil {
+			t.Fatalf("Write(%q) = %d, %v", chunk, n, err)
+		}
+	}
+	if got := w.buf.String(); got != "12345678" {
+		t.Errorf("残った stderr = %q, want %q", got, "12345678")
+	}
+}
+
+// 前回の失敗理由は引き継がない: 回復した取得で注記が消える (Version のような last-good にしない)。
+func TestMergeLastGoodDoesNotCarryClaudeErr(t *testing.T) {
+	s := &Snapshot{Windows: []Window{{Label: "5h"}}}
+	s.MergeLastGood(&Snapshot{ClaudeErr: "claude /usage 実行失敗: exit status 127"})
+	if s.ClaudeErr != "" {
+		t.Errorf("前回の ClaudeErr を引き継いだ: %q", s.ClaudeErr)
 	}
 }
 

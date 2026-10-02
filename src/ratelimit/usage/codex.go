@@ -270,6 +270,8 @@ func (s *Snapshot) HasCodex() bool {
 // 🚨 片側だけの失敗は err=nil で返るため、返った Snapshot は前回より枠が減っていることが
 // ある。前回結果を持つ呼び出し側は MergeLastGood で欠けた出所を補完すること (これを怠ると
 // 一時失敗のたびに取れていた枠が黙って消える。敵対的レビュー指摘 2026-07-31)。
+// Claude 側だけが失敗したときの理由は Snapshot.ClaudeErr に載る (補完した枠が古いことを
+// 表示側が伝えられるように)。
 func FetchAll(ctx context.Context) (*Snapshot, error) {
 	type codexRes struct {
 		ws  []Window
@@ -293,7 +295,7 @@ func FetchAll(ctx context.Context) (*Snapshot, error) {
 		snap.CodexVersion = cx.ver
 		return snap, nil
 	case cx.err == nil:
-		return &Snapshot{Windows: cx.ws, CodexVersion: cx.ver}, nil
+		return &Snapshot{Windows: cx.ws, CodexVersion: cx.ver, ClaudeErr: err.Error()}, nil
 	default:
 		return nil, errors.Join(err, cx.err)
 	}

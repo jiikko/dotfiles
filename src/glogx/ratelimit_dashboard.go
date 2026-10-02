@@ -45,6 +45,7 @@ type ratelimitCacheKey struct {
 	colored     bool
 	snap        *usage.Snapshot // 取得のたびに丸ごと差し替わる (usage_overlay.go) のでポインタで足りる
 	sec         int64
+	stale       string // last-good を保持した失敗の理由。snap が差し替わらずに注記だけ変わる
 }
 
 func (d *ratelimitDash) visible() bool { return d.shown }
@@ -56,23 +57,28 @@ func (d *ratelimitDash) dropCache() { d.cache, d.cacheKey, d.cacheOK = nil, rate
 
 // ratelimitRenderOpts はダッシュボードの描画情報 (窓の寸法 + 色 + 描くデータ)。
 type ratelimitRenderOpts struct {
-	width   int
-	page    int
-	colored bool
-	spinner string
-	snap    *usage.Snapshot // nil = 未取得 (取得中の表示に落ちる)
-	err     error           // 取得失敗 (snap があれば last-good を優先する)
-	now     time.Time
+	width    int
+	page     int
+	colored  bool
+	spinner  string
+	snap     *usage.Snapshot // nil = 未取得 (取得中の表示に落ちる)
+	err      error           // 取得失敗 (snap があれば last-good を優先する)
+	staleErr error           // last-good を保持したまま失敗した理由 (usageOverlay.staleErr)
+	now      time.Time
 }
 
 // lines はダッシュボードをちょうど page 行で返す (全画面 viewer 共通の契約)。
 func (d *ratelimitDash) lines(o ratelimitRenderOpts) []string {
 	head := []string{d.headerLine(o), ""}
+	if note := fetchNote(o.snap, o.staleErr); note != "" {
+		head[1] = paint(centerLine(note, o.width), ansiYellow, o.colored)
+	}
 	body := max(o.page-len(head), 1)
 	switch {
 	case o.snap != nil:
 		key := ratelimitCacheKey{
 			width: o.width, page: o.page, colored: o.colored, snap: o.snap, sec: o.now.Unix(),
+			stale: errString(o.staleErr),
 		}
 		if d.cacheOK && d.cacheKey == key {
 			// 🚨 コピーを返す。呼び出し側 (finishWithGlobalChrome) が append する経路があると、
@@ -180,4 +186,12 @@ func centerLine(s string, w int) string {
 		return clipToWidth(s, w)
 	}
 	return padSpaces(pad/2) + s
+}
+
+// errString は err の文字列 (nil は空)。比較できる鍵に error を載せるときに使う。
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

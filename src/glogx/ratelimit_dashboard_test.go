@@ -97,6 +97,37 @@ func TestRatelimitDashHeaderShowsVersions(t *testing.T) {
 	}
 }
 
+// Claude 側だけ取れなかったとき (FetchAll が codex だけ返し、Claude 枠は前回値で補完) は、
+// 古い残量を黙って出さず理由を見出しの下に出す。理由は外部コマンドの stderr なので無害化する。
+func TestRatelimitDashShowsClaudeFetchError(t *testing.T) {
+	var d ratelimitDash
+	d.toggle()
+	if got := d.lines(rlTestOpts(rlTestSnap(), nil))[1]; got != "" {
+		t.Fatalf("取得できているのに注記行がある: %q", got)
+	}
+	snap := rlTestSnap()
+	snap.ClaudeErr = "claude /usage 実行失敗: exit status 127: nodenv: \x1b[31mcommand not found"
+	o := rlTestOpts(snap, nil)
+	lines := d.lines(o)
+	note := stripANSI(lines[1])
+	for _, want := range []string{"Claude Code の取得に失敗", "前回の値を表示中", "exit status 127"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("注記に %q が無い: %q", want, note)
+		}
+	}
+	if strings.Contains(lines[1], "\x1b[31m") {
+		t.Errorf("理由の制御列が無害化されていない: %q", lines[1])
+	}
+	if len(lines) != o.page {
+		t.Errorf("行数 = %d, want %d", len(lines), o.page)
+	}
+	for i, l := range lines {
+		if w := dispWidth(l); w > o.width {
+			t.Errorf("%d 行目が幅 %d を超える (%d): %q", i, o.width, w, l)
+		}
+	}
+}
+
 // 閉じる / 更新 / 横断以外のキーは飲み切る (全画面なので裏の一覧をスクロールさせない)。
 func TestRatelimitDashHandleKey(t *testing.T) {
 	for _, key := range []string{"R", "q", "esc", "h", "left"} {

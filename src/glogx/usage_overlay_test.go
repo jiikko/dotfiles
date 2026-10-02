@@ -545,3 +545,60 @@ func TestUsageBoxLinesTitleShowsCodexVersion(t *testing.T) {
 		t.Errorf("codex バージョン欠損時に名前だけの表記へ落ちない:\n%s", plain)
 	}
 }
+
+// Claude 側だけ取れなかったときは右上の箱にも注記を出す。ただし理由の長さで箱を広げない
+// (全文はダッシュボードに出る)。
+func TestUsageBoxShowsClaudeFetchError(t *testing.T) {
+	m := newTestBrowse(t, 5, nil, nil)
+	m.usageOv.visible = true
+	m.usageOv.snap = &usage.Snapshot{Windows: []usage.Window{
+		{Label: "5h", Percent: 4, ResetAt: time.Now().Add(time.Hour)},
+	}}
+	base := m.usageOv.boxLines(m.width, m.colored, m.spinner())
+	if strings.Contains(stripANSI(strings.Join(base, "\n")), "取得に失敗") {
+		t.Fatalf("取得できているのに注記がある:\n%s", stripANSI(strings.Join(base, "\n")))
+	}
+	m.usageOv.snap.ClaudeErr = "claude /usage 実行失敗: exit status 127: " + strings.Repeat("x", 300)
+	box := m.usageOv.boxLines(m.width, m.colored, m.spinner())
+	plain := stripANSI(strings.Join(box, "\n"))
+	if !strings.Contains(plain, "Claude Code の取得に失敗 (前回の値を表示中)") {
+		t.Errorf("箱に注記が無い:\n%s", plain)
+	}
+	if got, want := dispWidth(box[0]), dispWidth(base[0]); got != want {
+		t.Errorf("理由の長さで箱の幅が変わった: %d → %d", want, got)
+	}
+}
+
+// 全滅 (FetchAll が err) のときは last-good を保持するが、古いことと理由を注記で出す。次の成功で消える。
+func TestUsageLastGoodShowsStaleReason(t *testing.T) {
+	// 描画キャッシュの鍵には秒が入る。時刻を止めないと、失敗時と回復後の描画が秒をまたいだときに
+	// 鍵の秒の違いでキャッシュが外れ、鍵に理由を載せ忘れた退行を素通りする
+	orig := timeNow
+	timeNow = func() time.Time { return time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC) }
+	t.Cleanup(func() { timeNow = orig })
+	m := newTestBrowse(t, 5, nil, nil)
+	m.usageOv.visible = true
+	good := &usage.Snapshot{Windows: []usage.Window{{Label: "5h", Percent: 4, ResetAt: time.Now().Add(time.Hour)}}}
+	m.usageOv.handle(usageMsg{snap: good})
+	m.usageOv.handle(usageMsg{err: errors.Join(errors.New("claude /usage 実行失敗: exit status 127"), errors.New("codex 起動失敗"))})
+	if m.usageOv.snap != good {
+		t.Fatal("全滅で last-good を捨てた")
+	}
+	box := stripANSI(strings.Join(m.usageOv.boxLines(m.width, m.colored, m.spinner()), "\n"))
+	if !strings.Contains(box, "取得に失敗 (前回の値を表示中)") {
+		t.Errorf("last-good を保持したのに注記が無い:\n%s", box)
+	}
+	var d ratelimitDash
+	d.toggle()
+	if head := stripANSI(d.lines(m.ratelimitOpts())[1]); !strings.Contains(head, "exit status 127 / ") {
+		t.Errorf("ダッシュボードに両方の理由が区切られて出ていない: %q", head)
+	}
+	m.usageOv.handle(usageMsg{snap: good}) // 回復 (同じポインタでも注記は消える = 描画キャッシュの鍵に理由が要る)
+	box = stripANSI(strings.Join(m.usageOv.boxLines(m.width, m.colored, m.spinner()), "\n"))
+	if strings.Contains(box, "取得に失敗") {
+		t.Errorf("回復後も注記が残る:\n%s", box)
+	}
+	if head := d.lines(m.ratelimitOpts())[1]; head != "" {
+		t.Errorf("回復後もダッシュボードに注記が残る: %q", head)
+	}
+}
