@@ -35,7 +35,7 @@
 #     深さ決め打ちの検査は新しい段を黙って対象外にする (claude-md-maintenance.md の実例)
 #   - **ディレクトリ名で絞らない** (`done` / `pending` 決め打ちにしない)。予約外の綴り
 #     (`closed/` 等) の配下にも md は在りうる (issue 291 でそれを迷子として一覧に出すようにした)
-#   - **canary を本走査と同じ関数に通す** (extract_links / scan_file)。抽出が空を返すと
+#   - **canary を本走査と同じ関数に通す** (scan_files)。抽出が空を返すと
 #     「違反 0 件 = 緑」になるので、既知の入力で既知の答えが出ることを先に固定する
 #     (verify-execution-not-just-exit-code.md)。式をコピーして別に書かないこと — コピーすると
 #     canary は「コピーしたロジック」を検査するだけになり、本走査の破損を検出しない
@@ -70,9 +70,28 @@ fi
 MIN_FILES=100
 MIN_LINKS=100
 
-# extract_links はファイル本文から検査対象のリンクだけを抜く (コードフェンス / インラインコードを除く)。
+# scan_files は stdin に 1 行 1 本で渡した md の各リンクを "OK|file|link" / "BAD|file|link" で出す
+# (読めないファイルは "UNREADABLE|file|")。検査対象のリンクだけを抜く (コードフェンス / インラインコードを除く)。
 # 🚨 canary と本走査の**両方**がこの関数を通る。ここを直したら canary が落ちる
-extract_links() {
+# 全ファイルを 1 回の awk で読む。以前は 1 ファイルごとに dirname / awk / grep / sed を起こしていて、
+# issues/ の 622 本で約 4.4 秒かかっていた (pre-push の hook が issue を触る push のたびに回し、
+# tests/githooks/test_pre_push.sh はその hook を 11 回走らせる。2026-10-02 実測)。
+# 抽出の規則 (フェンス・インラインコード・リンクの形・アンカーの落とし方) は 1 ファイルずつの版と同じ。
+# 🚨 件数を変数で数えない: 呼び出し側は $(...) で受けるので**サブシェル**になり、中で増やした
+# カウンタは消える (最初にそう書いて canary が「0 件」で落ちた。判定不能を緑にしない形が効いた)。
+# 数えるのは呼び出し側で、出力行から数える
+scan_files() {
+  local f link readable=()
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    # 🚨 読めないファイルを「リンク 0 件 = 合格」に畳まない (判定不能は第 3 の結果)
+    if [ -r "$f" ]; then
+      readable+=("$f")
+    else
+      printf 'UNREADABLE|%s|\n' "$f"
+    fi
+  done
+  [ "${#readable[@]}" -gt 0 ] || return 0
   # フェンスの判定は 2 条件:
   #   ① 行頭 (字下げ可) がバッククォート 3 つ、**その後にバッククォートが無い**
   #      → ```sh / ```diff / ```sh title="x" は開始、``` は終了
@@ -82,36 +101,30 @@ extract_links() {
   #      🚨 バッククォート 4 つ以上の行 (```` ``` ```` = ``` 自体を本文で説明する書き方) は
   #      「その後にバッククォートが有る」ので開始にならない (issues/done/165 が実在の形)
   #   ② `~~~` フェンス (CommonMark の正当な形)
-  awk '
-    /^[[:space:]]*```[^`]*$/ { fence = !fence; next }
-    /^[[:space:]]*~~~/       { fence = !fence; next }
-    fence { next }
-    { gsub(/`[^`]*`/, ""); print }
-  ' "$1" |
-    grep -oE '\]\((\.\./)*[A-Za-z0-9_./-]+\.[A-Za-z0-9]+(#[A-Za-z0-9_-]+)?\)' |
-    sed 's/^](//; s/)$//; s/#.*$//' || true
-}
-
-# scan_file は 1 ファイルの各リンクを "OK|file|link" / "BAD|file|link" で出す。
-# 🚨 件数を変数で数えない: 呼び出し側は $(...) で受けるので**サブシェル**になり、中で増やした
-# カウンタは消える (最初にそう書いて canary が「0 件」で落ちた。判定不能を緑にしない形が効いた)。
-# 数えるのは呼び出し側で、出力行から数える
-scan_file() {
-  local f="$1" d link
-  d=$(dirname "$f")
-  # 🚨 読めないファイルを「リンク 0 件 = 合格」に畳まない (判定不能は第 3 の結果)
-  if [ ! -r "$f" ]; then
-    printf 'UNREADABLE|%s|\n' "$f"
-    return 0
-  fi
-  while IFS= read -r link; do
+  #   リンクの形は ](<../ の繰り返し><パス>.<拡張子><#アンカー>) で、アンカーを落としてファイルの実在を見る
+  while IFS=$'\t' read -r f link; do
     [ -n "$link" ] || continue
-    if [ -e "$d/$link" ]; then
+    if [ -e "${f%/*}/$link" ]; then
       printf 'OK|%s|%s\n' "$f" "$link"
     else
       printf 'BAD|%s|%s\n' "$f" "$link"
     fi
-  done < <(extract_links "$f")
+  done < <(awk '
+    FNR == 1 { fence = 0 }
+    /^[[:space:]]*```[^`]*$/ { fence = !fence; next }
+    /^[[:space:]]*~~~/       { fence = !fence; next }
+    fence { next }
+    {
+      gsub(/`[^`]*`/, "")
+      t = $0
+      while (match(t, /\]\((\.\.\/)*[A-Za-z0-9_.\/-]+\.[A-Za-z0-9]+(#[A-Za-z0-9_-]+)?\)/)) {
+        link = substr(t, RSTART + 2, RLENGTH - 3)
+        sub(/#.*$/, "", link)
+        print FILENAME "\t" link
+        t = substr(t, RSTART + RLENGTH)
+      }
+    }
+  ' "${readable[@]}")
 }
 
 # --- canary: 既知の入力で既知の答えが出ることを、本走査の前に固定する ---------------------
@@ -135,26 +148,30 @@ cat > "$canary_dir/done/011-feat-canary.md" <<'CANARY'
 - フェンス判定が反転していたら、この先は全部読み飛ばされる: [after](../nonexistent-after.md)
 - .md 以外も見る: [script](../nonexistent.sh)
 - アンカー付きは落として見る: [anchor](../010-feat-target.md#section)
+- 1 行に 2 つ: [ok2](../010-feat-target.md) と [bad2](nope-same-line.md)
 CANARY
 # 🚨 深さで絞らないことを canary で固定する (issues/epic/<name>/done/ は 4 段目。
 # -maxdepth を足す変異は、実データに epic が 1 件も無いと素通りする — 敵対レビュー 2026-09-06)
 printf '[deep](../../../nonexistent-deep.md)\n' > "$canary_dir/epic/x/done/900-feat-deep.md"
-canary_out=$(
-  find "$canary_dir" -name '*.md' -type f -print | sort | while IFS= read -r cf; do scan_file "$cf"; done
-)
+# 🚨 閉じていないフェンスで終わるファイルを、切れリンクを持つファイルの直前 (sort の順) に置く。
+# scan_files は全ファイルを 1 回の awk で読むので、ファイルの境目でフェンスの状態を戻し忘れると、
+# 次のファイルの本文がフェンスの中として丸ごと落ちる (1 ファイルずつの版には無かった壊れ方)
+printf '```\n' > "$canary_dir/epic/x/done/899-feat-unclosed-fence.md"
+canary_out=$(find "$canary_dir" -name '*.md' -type f -print | sort | scan_files)
 canary_all=$(printf '%s' "$canary_out" | grep -c . || true)
 canary_bad=$(printf '%s' "$canary_out" | grep -c '^BAD|' || true)
-if [ "$canary_all" -ne 6 ]; then
-  printf '✗ canary で数えたリンクが 6 件でない (フェンス / インラインコード / 深さの扱いがずれている): %d (フェンス / インラインコードの除去がずれている)\n%s\n' \
+if [ "$canary_all" -ne 8 ]; then
+  printf '✗ canary で数えたリンクが 8 件でない (フェンス / インラインコード / 深さの扱いがずれている): %d (フェンス / インラインコードの除去がずれている)\n%s\n' \
     "$canary_all" "$canary_out" >&2
   exit 1
 fi
-if [ "$canary_bad" -ne 4 ] ||
+if [ "$canary_bad" -ne 5 ] ||
   ! grep -q '^BAD|.*|010-feat-target.md$' <<< "$canary_out" ||
   ! grep -q '^BAD|.*|\.\./nonexistent-after.md$' <<< "$canary_out" ||
   ! grep -q '^BAD|.*|\.\./nonexistent.sh$' <<< "$canary_out" ||
+  ! grep -q '^BAD|.*|nope-same-line.md$' <<< "$canary_out" ||
   ! grep -q '^BAD|.*|\.\./\.\./\.\./nonexistent-deep.md$' <<< "$canary_out"; then
-  printf '✗ canary の判定が想定と違う (切れている 4 件だけを検出するはず):\n%s\n' "$canary_out" >&2
+  printf '✗ canary の判定が想定と違う (切れている 5 件だけを検出するはず):\n%s\n' "$canary_out" >&2
   exit 1
 fi
 
@@ -221,21 +238,18 @@ file_count=$(printf '%s' "$files" | grep -c . || true)
 
 bad=0
 checked_links=0
-while IFS= read -r f; do
-  [ -n "$f" ] || continue
-  while IFS= read -r hit; do
-    [ -n "$hit" ] || continue
-    checked_links=$((checked_links + 1))
-    case "$hit" in
-      BAD\|*)
-        printf '✗ リンクが解決しない: %s\n' "${hit#BAD|}" >&2
-        bad=$((bad + 1)) ;;
-      UNREADABLE\|*)
-        printf '✗ ファイルを読めない (判定不能。合格にはしない): %s\n' "${hit#UNREADABLE|}" >&2
-        bad=$((bad + 1)) ;;
-    esac
-  done < <(scan_file "$f")
-done <<< "$files"
+while IFS= read -r hit; do
+  [ -n "$hit" ] || continue
+  checked_links=$((checked_links + 1))
+  case "$hit" in
+    BAD\|*)
+      printf '✗ リンクが解決しない: %s\n' "${hit#BAD|}" >&2
+      bad=$((bad + 1)) ;;
+    UNREADABLE\|*)
+      printf '✗ ファイルを読めない (判定不能。合格にはしない): %s\n' "${hit#UNREADABLE|}" >&2
+      bad=$((bad + 1)) ;;
+  esac
+done < <(printf '%s\n' "$files" | scan_files)
 
 if [ "$file_count" -eq 0 ]; then
   printf '✗ 検査対象の md が 0 件 (走査が壊れているか、対象ディレクトリが違う): %s\n' "$issues_dir" >&2

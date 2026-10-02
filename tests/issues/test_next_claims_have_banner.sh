@@ -58,6 +58,9 @@ find "$issues_dir" \( -type l -o -type f \) -print0 > "$list" || { printf '✗ f
 bad=0
 checked=0
 while IFS= read -r -d '' c; do
+  # 目印になりうるのはパスに next を (大文字小文字を問わず) 含むものだけ。先に字句で落として、
+  # 残りだけ tr で小文字にする (全 621 本で tr を起こしていて約 1.9 秒かかっていた。2026-10-02 実測)
+  case "${c#"$issues_dir"/}" in *[Nn][Ee][Xx][Tt]*) ;; *) continue ;; esac
   rel=$(printf '%s' "${c#"$issues_dir"/}" | tr '[:upper:]' '[:lower:]')
   # 置き場は next/<f> か epic/<name>/next/<f> だけ (段数で判定する。case の * は / もまたぐ)。
   # それ以外の深さの目印は test_next_links_valid.sh が落とす
