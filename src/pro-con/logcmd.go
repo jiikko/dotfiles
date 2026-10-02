@@ -6,6 +6,8 @@ package main
 // (--follow が送るのは購読の sub だけ)。TestLogDoesNotWrite が固定する。
 
 import (
+	"github.com/jiikko/dotfiles/src/termsafe"
+
 	"context"
 	"encoding/json"
 	"errors"
@@ -98,7 +100,9 @@ func runLog(ctx context.Context, args []string, dir string, now func() time.Time
 
 // formatEvent は人が読む 1 行 (種類・カード・session は ASCII なので桁で揃う)。
 func formatEvent(e eventlog.Event) string {
-	return fmt.Sprintf("%s  %-8s  %-6s  %-12s  %s", e.At.Local().Format("01-02 15:04:05"), e.Kind, orDashCLI(e.Card), orDashCLI(e.Session), e.Reason)
+	// 理由はカードの題名を含むことがある (削除の出来事は「<題名>」を削除した)。題名は制御文字も改行も残りうるので、
+	// stdout へ書く前に 1 行に無害化する (card list / show と同じ理由。2026-10-02 の敵対的レビュー)
+	return termsafe.PlainLine(fmt.Sprintf("%s  %-8s  %-6s  %-12s  %s", e.At.Local().Format("01-02 15:04:05"), e.Kind, orDashCLI(e.Card), orDashCLI(e.Session), e.Reason))
 }
 
 // parseSince は --since の時刻を読む。時刻だけなら今日 (手元の時刻)、長さなら今からその分前 (日数は 30d。pro-con stats も使う)。

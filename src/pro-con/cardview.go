@@ -377,9 +377,17 @@ func pgLog(env viewEnv, c card.Card) []string {
 func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 	c := d.Card
 	// 🚨 題名・依頼の原文・質問・追加オーダー・履歴はカードの文字列 (人の依頼・PG の card add / ask) で、store は
-	// 制御文字を落とさずに持つ。stdout へ直接書くので、行ごと termsafe で無害化する (card list と同じ理由)。
-	// 依頼の原文は複数行になりうるので改行は残す (PlainBlock)
-	p := func(format string, a ...any) { _, _ = fmt.Fprintln(w, termsafe.PlainBlock(fmt.Sprintf(format, a...))) }
+	// 制御文字も改行も落とさずに持つ。stdout へ直接書くので、引数の文字列ごとに termsafe で無害化する (card list と同じ理由)。
+	// 改行は残し (依頼の原文や履歴は複数行が正常)、2 行目以降の頭に空白 4 つを付ける。見出しの行は 0 桁目・項目の行は 2 桁目から
+	// 始まるので、続きの行が偽の「状態: 完了」や偽の項目に化けられない (2026-10-02 の敵対的レビュー: 題名の改行で偽の行を差し込めた)
+	p := func(format string, a ...any) {
+		for i, v := range a {
+			if str, ok := v.(string); ok {
+				a[i] = strings.ReplaceAll(termsafe.PlainBlock(str), "\n", "\n    ")
+			}
+		}
+		_, _ = fmt.Fprintf(w, format+"\n", a...)
+	}
 	p("%s  %s", c.ID, c.Title)
 	p("状態: %s  担当: %s  repo: %s  session: %s", c.State.SinceText(fmtAge(now.Sub(c.Since))), orDashCLI(d.Assignee), orDashCLI(c.Repo), orDashCLI(c.Session))
 	var refs []string
@@ -478,7 +486,7 @@ func writeDetail(w io.Writer, d cardDetail, now time.Time) {
 	p("")
 	p("出力 (PG の出力の末尾)")
 	for _, s := range d.Log { // 1 件が複数行になりうる (改行を残した原文。486)
-		p("  %s", strings.ReplaceAll(s, "\n", "\n  "))
+		p("  %s", s)
 	}
 }
 
@@ -558,7 +566,8 @@ func runCardWait(args []string, env viewEnv, stdout, stderr io.Writer) int {
 		s.Waiting, _ = waitingIn(env.dir, got, v.roles) // 書庫から読んだカードでも、順番の待ちは記録の動いているカードで引く
 		return writeJSON(stdout, stderr, s)
 	}
-	_, _ = fmt.Fprintf(stdout, "%s  %s → %s  %s\n", got.ID, first.State.Label(), got.State.Label(), got.Title)
+	// 題名はカードの文字列で制御文字も改行も残りうる。card list と同じく 1 行に無害化する (card wait は PM が常用する待ちの口)
+	_, _ = fmt.Fprintf(stdout, "%s  %s → %s  %s\n", got.ID, first.State.Label(), got.State.Label(), termsafe.PlainLine(got.Title))
 	return 0
 }
 

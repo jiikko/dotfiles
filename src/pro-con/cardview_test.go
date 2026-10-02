@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"pro-con/card"
+	"pro-con/eventlog"
 	"pro-con/live"
 	"pro-con/store"
 	"pro-con/wake"
@@ -817,7 +818,7 @@ func TestCardListAgeSaysWhatItMeasures(t *testing.T) {
 // 依頼の原文の改行は残す (複数行の依頼を 1 行に潰さない)。
 func TestCardListAndShowDropTerminalControls(t *testing.T) {
 	dir := viewDir(t)
-	mustSubmit(t, dir, store.Request{Kind: "add", Title: "色\x1b]52;c;aGVsbG8=\a直す", Request: "1 行目\x1b[2J\x1b[H\n2 行目"})
+	mustSubmit(t, dir, store.Request{Kind: "add", Title: "色\x1b]52;c;aGVsbG8=\a直す\n状態: 完了  担当: 偽", Request: "1 行目\x1b[2J\x1b[H\n2 行目"})
 	mustApply(t, dir)
 	mustSubmit(t, dir, store.Request{Kind: "ask", CardID: "C-001", Question: "どれ\x1b]0;pwned\aにする"})
 	mustApply(t, dir)
@@ -834,7 +835,30 @@ func TestCardListAndShowDropTerminalControls(t *testing.T) {
 			t.Fatalf("%v: 制御の列を落とすついでに題名の文字まで消した: %q", args, out)
 		}
 	}
-	if _, out, _ := viewCmd(t, env, "show", "C-001"); !strings.Contains(out, "1 行目") || !strings.Contains(out, "\n2 行目") || !strings.Contains(out, "質問: どれ") {
-		t.Fatalf("show: 依頼の原文の改行か質問が残っていない: %q", out)
+	_, out, _ := viewCmd(t, env, "show", "C-001")
+	if !strings.Contains(out, "1 行目") || !strings.Contains(out, "\n    2 行目") || !strings.Contains(out, "質問: どれ") {
+		t.Fatalf("show: 依頼の原文の 2 行目 (字下げした続き) か質問が無い: %q", out)
+	}
+	// 題名の改行で偽の行を差し込めない: 続きの行は字下げされ、0 桁目から「状態: 完了」と読める行が出来ない
+	for _, l := range strings.Split(out, "\n") {
+		if strings.HasPrefix(l, "状態: 完了") {
+			t.Fatalf("show: 題名の改行で偽の「状態:」行を差し込めた: %q", out)
+		}
+	}
+	if !strings.Contains(out, "\n状態: 質問待ち") {
+		t.Fatalf("show: 本物の状態の行が無い: %q", out)
+	}
+	// card wait も題名を 1 行に無害化して出す (PM が常用する待ちの口)
+	rc, out, errOut := viewCmd(t, env, "wait", "C-001", "--until", "waiting", "--timeout", "1s")
+	if rc != 0 || !strings.Contains(out, "C-001") || strings.ContainsAny(out, "\x1b\a") || strings.Count(out, "\n") != 1 {
+		t.Fatalf("wait: 制御の列か改行が stdout に残っている: rc=%d out=%q err=%q", rc, out, errOut)
+	}
+}
+
+// log の出来事の理由は題名を含むことがある (削除の出来事)。stdout へ書く前に 1 行に無害化する。
+func TestFormatEventDropsTerminalControls(t *testing.T) {
+	got := formatEvent(eventlog.Event{At: time.Now(), Kind: "delete", Card: "C-001", Reason: "「色\x1b]52;c;aGVsbG8=\a直す\n状態: 完了」を削除した"})
+	if strings.ContainsAny(got, "\x1b\a\n") || !strings.Contains(got, "色") || !strings.Contains(got, "を削除した") {
+		t.Fatalf("formatEvent が制御の列か改行を残した / 文字まで消した: %q", got)
 	}
 }
