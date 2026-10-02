@@ -8,6 +8,7 @@
 // 他デバイス・claude.ai の消費を含まない (出力自身がそう明記している)。リセット時刻は
 // サーバのウィンドウ境界由来。`claude -p "/usage"` は LLM を呼ばない (num_turns=0・
 // ゼロコスト) ため高速で、確認のために利用枠を減らさない。
+// ただしサーバの `/api/oauth/usage` は 1 回ずつ叩くので、頻度には上限がある (shared.go)。
 package usage
 
 import (
@@ -80,24 +81,68 @@ func (s *Snapshot) Find(label string) (Window, bool) {
 	return Window{}, false
 }
 
-// claudeResult は `claude ... --output-format json` の必要フィールドだけ。
+// claudeResult は `claude ... --output-format stream-json` の result 行の必要フィールドだけ。
 type claudeResult struct {
-	Result  string `json:"result"`
-	IsError bool   `json:"is_error"`
+	Result  *string `json:"result"`
+	IsError bool    `json:"is_error"`
+	// UsageReport は assistant 行 (local command の /usage) にだけ載る。rate_limits が null =
+	// CLI がサーバから枠を受け取れなかった。キーごと無い (古い版) とは区別する。
+	UsageReport *struct {
+		RateLimits json.RawMessage `json:"rate_limits"`
+	} `json:"usage_report"`
 }
 
-// Fetch は `claude -p "/usage"` を実行して結果をパースする。
+// streamResult は stream-json の行を集めた結果。
+type streamResult struct {
+	Result   string
+	IsError  bool
+	noLimits bool
+}
+
+// parseStream は stream-json の出力 (1 行 1 JSON) から result 行と usage_report を拾う。
+// result 行は `result` キーを持つ行で決める (`type` を見ない。json 形式の 1 行も同じ形で読める)。
+func parseStream(out []byte) (streamResult, error) {
+	var res streamResult
+	found := false
+	for line := range strings.Lines(string(out)) {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var r claudeResult
+		if err := json.Unmarshal([]byte(line), &r); err != nil {
+			return streamResult{}, fmt.Errorf("/usage 出力の JSON パース失敗: %w", err)
+		}
+		if r.UsageReport != nil && string(r.UsageReport.RateLimits) == "null" {
+			res.noLimits = true
+		}
+		if r.Result != nil {
+			res.Result, res.IsError, found = *r.Result, r.IsError, true
+		}
+	}
+	if !found {
+		return streamResult{}, errors.New("/usage 出力に result が無い")
+	}
+	return res, nil
+}
+
+// fetchClaude は `claude -p "/usage"` を実行して結果をパースする。呼び出し側は Fetch (shared.go) で、
+// 全プロセス共有のゲートを通してからここへ来る。
+//
+// --output-format stream-json で読むのは、サーバが枠を返さなかったことを区別するため: CLI はそのとき
+// 枠の行を黙って省くだけで、result の文面では「書式が変わって読めない」と見分けられない。assistant 行の
+// usage_report.rate_limits が null なら errNoLimits にする (2.1.287 で実測。usage_report が無い版では
+// 区別できず、従来どおりパースの失敗になる)。
 //
 // --model haiku を明示する: /usage はローカルコマンド処理で LLM を呼ばない
 // (num_turns=0・total_cost_usd=0・duration_api_ms=0 を実測) ためモデル指定は結果に影響
 // しないが、将来 /usage が推論を伴う実装に変わった場合に備え最小モデルへ固定しておく (保険)。
-func Fetch(ctx context.Context) (*Snapshot, error) {
+func fetchClaude(ctx context.Context) (*Snapshot, error) {
 	// バージョンは /usage と独立なので並列取得して起動 fork の直列化を避ける。取得失敗は
 	// 致命ではない (バージョン表示が消えるだけ) ため error は握りつぶし空文字にする。
 	verCh := make(chan string, 1)
 	go func() { verCh <- FetchVersion(ctx) }()
 
-	cmd := subproc.CommandContext(ctx, "claude", "-p", "/usage", "--model", "haiku", "--output-format", "json")
+	cmd := subproc.CommandContext(ctx, "claude", "-p", "/usage", "--model", "haiku", "--output-format", "stream-json", "--verbose")
 	// claude -p は cwd の project にセッション記録 (~/.claude/projects/<cwd>/*.jsonl) を作る (実測 2026-09-26)。
 	// 呼び出し元の cwd (glogx / hook ならユーザーの作業 repo) のままだと、その repo の --resume 一覧に
 	// /usage だけのセッションが取得のたびに溜まるので、一時ディレクトリで起こして 1 か所に寄せる。
@@ -118,15 +163,18 @@ func Fetch(ctx context.Context) (*Snapshot, error) {
 		}
 		return nil, fmt.Errorf("claude /usage 実行失敗: %w", err)
 	}
-	var res claudeResult
-	if err := json.Unmarshal(out, &res); err != nil {
-		return nil, fmt.Errorf("/usage 出力の JSON パース失敗: %w", err)
+	res, err := parseStream(out)
+	if err != nil {
+		return nil, err
 	}
 	if res.IsError {
 		return nil, errors.New("/usage がエラーを返した")
 	}
 	snap, err := Parse(res.Result, time.Now())
 	if err != nil {
+		if res.noLimits {
+			return nil, errNoLimits
+		}
 		return nil, err
 	}
 	snap.Version = <-verCh

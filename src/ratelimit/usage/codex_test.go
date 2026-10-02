@@ -205,6 +205,7 @@ func TestFetchCodexReturnsWhenDescendantHoldsStdout(t *testing.T) {
 }
 
 func TestFetchRunsClaudeOutsideCallerCwd(t *testing.T) {
+	isolateShared(t)
 	dir := t.TempDir()
 	tmp := t.TempDir()
 	pwdFile := filepath.Join(dir, "pwd")
@@ -228,6 +229,7 @@ func TestFetchRunsClaudeOutsideCallerCwd(t *testing.T) {
 }
 
 func TestFetchWorksWhenTempDirIsMissing(t *testing.T) {
+	isolateShared(t)
 	dir := t.TempDir()
 	writeStub(t, dir, "claude", claudeStubOK)
 	t.Setenv("PATH", dir)
@@ -247,6 +249,7 @@ esac
 `
 
 func TestFetchPartsFromBothSources(t *testing.T) {
+	isolateShared(t)
 	dir := t.TempDir()
 	writeStub(t, dir, "claude", claudeStubOK)
 	writeStub(t, dir, "codex", "if [ \"$1\" = --version ]; then echo 'codex-cli 0.144.6'; exit 0; fi\n"+codexStubOK)
@@ -283,6 +286,7 @@ func TestFetchCodexPartFailure(t *testing.T) {
 }
 
 func TestFetchClaudePartFailureKeepsReason(t *testing.T) {
+	isolateShared(t)
 	dir := t.TempDir()
 	// PATH 上の壊れた shim (nodenv の別 node 版に入った claude 等) を模す: stderr に原因、rc=127
 	// 端末制御列も混ぜる (理由は端末へ出るので落ちていること)
