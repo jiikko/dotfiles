@@ -117,3 +117,8 @@ settings の hook は失敗すれば stderr に出る。**移したものは、�
 - 2026-10-02: 619 を実装 (canary の mod・settings の env・make test の検査・pro-con の役から外す)。実測で、このマシンでは user の mod に `classic.*` と `prompt.*` (compose / context / section) が
   届かないと分かった (managed settings のため `cc-plugin-sec-default` が bypass)。620 を「移さない」で閉じ、表の 620 / 622 / 623 の行と前提のチェックを直した。
   622 は before の実測で go、623 と 625 は前提を実測 (623: `ask` は `-p` で拒否になる / 625: desktop の Code タブは `statusLine` を実行していない)
+- 2026-10-02: 621 (帯の mod、案 3。注入は併記で残す) / 622 (mod へは移さず、PostToolUse の working を sh の script に分けて 28.7ms → 15.7ms) /
+  623 (settings の hook のまま、確実に捨てる単純なコマンドだけ ask。敵対的レビュー 5 周) を done。625 は desktop-statusline の mod を入れ、
+  desktop の画面での確認を 628 (human、期限 2026-10-09) に起こした。振り返りは 629。
+  残り: 625 / 628 の確認。前提のチェックのうち「二重に効かないこと」は 621 で意図して併記にした (注入と帯)、
+  「API の変化への備え」は `make test` の `tests/claude/test_claude_mods.sh` (validate / test) が更新後の最初の実行で気づく形
