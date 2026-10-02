@@ -56,19 +56,16 @@ sleep 5'   # sleep-ok: other: 検査の fixture
 expect_green realtime    'sleep 1   # sleep-ok: realtime: 本番の猶予を実時間で過ぎさせる'   # sleep-ok: other: 検査の fixture
 
 printf 'Test 4: heredoc の本文\n'
-# sleep-ok: other: 検査の fixture (本文に sleep を含む heredoc を書き出す)
-expect_green heredoc_ok  "cat > stub <<'EOS'   # sleep-ok: stub: 生成する stub の中の待ち
-sleep 0.05
-EOS"
-# sleep-ok: other: 検査の fixture
-expect_red   heredoc_bad "cat > stub <<'EOS'
-sleep 0.05
-EOS"
-# sleep-ok: other: 検査の fixture (heredoc の後ろの行は heredoc の印で通らない)
-expect_red   after_heredoc "cat > stub <<'EOS'   # sleep-ok: stub: 本文だけ
-x
-EOS
-sleep 1"   # sleep-ok: other: 検査の fixture
+# 複数行の fixture は 1 行の文字列で組み立てる ($'\n' で改行)。検査はこのファイル自身も読むので、複数行の文字列にすると
+# 2 行目以降が地の文に見える (検査は引用符の状態を行をまたいで追わない)
+H="cat > stub <<'EOS'"
+expect_green heredoc_ok  "$H   # sleep-ok: stub: 生成する stub の中の待ち"$'\n'"sleep 0.05"$'\n'"EOS"   # sleep-ok: other: 検査の fixture
+expect_red   heredoc_bad "$H"$'\n'"sleep 0.05"$'\n'"EOS"   # sleep-ok: other: 検査の fixture
+expect_red   after_heredoc "$H   # sleep-ok: stub: 本文だけ"$'\n'"x"$'\n'"EOS"$'\n'"sleep 1"   # sleep-ok: other: 検査の fixture (heredoc の後ろの行は heredoc の印で通らない)
+expect_red   hyphen_tag  "cat <<EOS-A   # sleep-ok: stub: 本文だけ"$'\n'"x"$'\n'"EOS-A"$'\n'"sleep 30"$'\n'"cat <<EOS"$'\n'"y"$'\n'"EOS"   # sleep-ok: other: 検査の fixture (タグのハイフンで終端を読み違えない)
+expect_green quoted_file "cat > \"\$d/stub\" <<\"EOS\"   # sleep-ok: stub: 本文"$'\n'"sleep 0.05"$'\n'"EOS"   # sleep-ok: other: 検査の fixture (前の引用符で開始を見落とさない)
+expect_green backslash   "cat <<\\EOS   # sleep-ok: stub: 本文"$'\n'"sleep 0.05"$'\n'"EOS"   # sleep-ok: other: 検査の fixture
+expect_green nested_arith 'x=$(( (a) << b ))'$'\n'"sleep 1   # sleep-ok: negative: x"   # sleep-ok: other: 検査の fixture
 
 printf 'Test 4b: heredoc でないものを heredoc と読まない (読むと印 1 つで後ろが素通りする)\n'
 expect_red   arith       'sleep 0.05  # sleep-ok: tick: 刻み
@@ -137,4 +134,4 @@ if [ "$fails" -ne 0 ]; then
   printf 'FAIL: %d 件\n' "$fails"
   exit 1
 fi
-printf 'OK check_test_sleeps (33 件)\n'
+printf 'OK check_test_sleeps (37 件)\n'

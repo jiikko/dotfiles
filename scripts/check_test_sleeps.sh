@@ -19,8 +19,9 @@
 #   heredoc の本文 (生成する stub / Makefile) は、heredoc の開始行かその直前のコメント行の印 1 つでまとめて許す
 #   (本文の行末に `#` を書くと生成物の一部になる。継続行 `\` の末尾にも書けない)。
 #   tests/lib/wait_until.sh (刻みの唯一の実装) は印なしで許す。
-#   🚨 heredoc の開始は `<<TAG` / `<<-TAG` / `<<'TAG'` で判定し、here-string (`<<<`)・算術 (`$(( a << b ))`)・同じ行で閉じる
-#   引用符の中の `<<` (テストデータの文字列) は除く。
+#   🚨 heredoc の開始は「引用符の外の `<<`」で判定する (引用符の中身を潰した写しで探す)。here-string (`<<<`) と算術
+#   (`(( … ))` の中) は除く。タグは bash の規則で読む (`<<'A-B'` は引用符の中の任意の文字、素の `<<EOS-A` は区切り文字まで、`<<\EOS` も可)。
+#   字句の近似を足していく形にしない (red team 2 周で、正規表現の継ぎ足しはタグのハイフンで素通りした)
 #   終端の行が来ないまま末尾に達したら落とす (開始の判定を誤ると本文がファイルの最後まで続き、印 1 つで後半が素通りするため)
 #   Go は `time.Sleep(` の行に、同じ行か直前の行の `// sleep-ok: <分類>: <理由>` を要求する (分類は同じ)。待つなら各 package の
 #   待ちの helper (pro-con の waitUntil / dispatcher の pollUntil / lockman の waitForCondition) で条件を待ち、helper の中の刻みに印を付ける。
@@ -36,6 +37,8 @@
 #     - 印が文字列の中にある形 (`echo "sleep-ok: …"; sleep 9`)。印の書き方は review が見る
 #     - Go の `time.After` / `time.NewTimer` / ticker で待つ形、`exec.Command("sleep", …)` で子を起こす形 (多くは kill される前提の子)
 #     - Go の別名 / dot import の time (`tm.Sleep` / `Sleep`)、`*_test.go` 以外のテスト用 helper の package。`/* … */` の中の time.Sleep は落とす (`//` の行だけを読み飛ばす)
+#   既知の偽の red (安全側。`other` の印で逃がす): Go の文字列・行末のコメント・`/* */` の中の time.Sleep / 終端タグの後ろに空白がある行を
+#   終端と数える / 複数行にまたがる文字列の 2 行目以降 (検査は引用符の状態を行をまたいで追わない)
 #
 # 本ファイルの説明文には `sleep` が字として入る (検査の説明そのもの)。対象は tests/ だけなのでこのファイルは数えない。
 # shellcheck disable=SC2016  # 案内の文言に `…` を字として入れる (展開しない)
@@ -76,8 +79,41 @@ for f in "${files[@]}"; do
       function has_sleep(s) { return s ~ /(^|[^A-Za-z0-9_.-])sleep([^A-Za-z0-9_-]|$)/ }
       # 直前の行の印は、その行がコメントだけのときに限る (印のある sleep の行が次の行まで許さないように)
       function prev_mark(p,   t) { t = p; gsub(/^[[:space:]]+/, "", t); return t ~ /^#/ && has_mark(t) }
-      FNR == 1 { if (hd != "") { printf "%s:%d: heredoc の終端 (%s) が見つからないまま次のファイルへ進んだ\n", prevfile, prevfnr, hd } hd = ""; hd_ok = 0; prev = "" }
-      { prevfile = FILENAME; prevfnr = FNR }
+      # heredoc のタグを返す (開始でなければ "")。引用符の中身を潰した写しで「引用符の外の <<」を探し、here-string (<<<) と
+      # 算術 ((( … )) の中) を除き、タグは元の行のその位置から bash の規則で読む (引用符つきは閉じるまで任意の文字、素なら区切りまで)
+      function heredoc_tag(l,   n, i, c, q, blank, depth, rest, tag, j) {
+        n = length(l); blank = ""; q = ""
+        for (i = 1; i <= n; i++) {
+          c = substr(l, i, 1)
+          if (q == "") {
+            if (c == "\\" && i < n) { blank = blank c substr(l, i + 1, 1); i++; continue }
+            if (c == "\047" || c == "\042") q = c
+            blank = blank c
+          } else {
+            if (q == "\042" && c == "\\" && i < n) { blank = blank "  "; i++; continue }
+            if (c == q) { q = ""; blank = blank c } else blank = blank " "
+          }
+        }
+        depth = 0
+        for (i = 1; i < n; i++) {
+          if (substr(blank, i, 2) == "((") { depth++; i++; continue }
+          if (substr(blank, i, 2) == "))" && depth > 0) { depth--; i++; continue }
+          if (substr(blank, i, 3) == "<<<") { i += 2; continue }
+          if (substr(blank, i, 2) != "<<" || depth > 0) continue
+          rest = substr(l, i + 2)
+          sub(/^-/, "", rest); sub(/^[[:space:]]+/, "", rest); sub(/^\\/, "", rest)
+          c = substr(rest, 1, 1)
+          if (c == "\047" || c == "\042") {
+            j = index(substr(rest, 2), c)
+            if (j == 0) return ""
+            return substr(rest, 2, j - 1)
+          }
+          if (match(rest, /^[^[:space:];|&<>()]+/)) return substr(rest, 1, RLENGTH)
+          return ""
+        }
+        return ""
+      }
+      FNR == 1 { hd = ""; hd_ok = 0; prev = "" }
       END { if (hd != "") printf "%s:%d: heredoc の終端 (%s) が見つからない (開始の判定を誤っている。本文がファイルの最後まで続く)\n", FILENAME, FNR, hd }
       {
         line = $0
@@ -91,16 +127,8 @@ for f in "${files[@]}"; do
         }
         s = line; gsub(/^[[:space:]]+/, "", s)
         if (s ~ /^#/) { prev = line; next }
-        # here-string (<<<)・算術の <<・同じ行で閉じる引用符の中の << (テストデータの文字列) を消してから heredoc の開始を探す
-        probe = line
-        gsub(/<<</, "   ", probe)
-        gsub(/\047[^\047]*<<[^\047]*\047/, "", probe)
-        gsub(/"[^"]*<<[^"]*"/, "", probe)
-        while (match(probe, /\$\(\([^)]*<<[^)]*\)\)/)) probe = substr(probe, 1, RSTART - 1) substr(probe, RSTART + RLENGTH)
-        if (match(probe, /<<-?[[:space:]]*[\047\042]?[A-Za-z_][A-Za-z0-9_]*/)) {
-          tag = substr(probe, RSTART, RLENGTH)
-          sub(/^<<-?[[:space:]]*/, "", tag)
-          gsub(/[\047\042]/, "", tag)
+        tag = heredoc_tag(line)
+        if (tag != "") {
           hd = tag
           hd_ok = has_mark(line) || prev_mark(prev)
         }
