@@ -66,7 +66,8 @@ dispatcher が claude を起こす環境から `CLAUDE_CODE_PLUGIN_DIRS` を落�
 - **CI では claude の要る検査を skip する (exit 77)**。runner に claude が無く、入れると毎回その時点の最新版になって、手元で動いている engine と版が揃わない。手元の `make test` が正本
 - `make test-changed` は `_claude/mods/` と `_claude/settings.json` の変更で tests/claude を回す
 - `claude plugin test` の `$` は engine そのもので、テストの `on` が engine の役 (plugin の下) に座る。engine の既定の答えは無いので、mod が呼ぶ `$` の口
-  (`session.start` / `fs.write` …) はテスト側で答える。`$.session.id` はテストから答えられない (文字列を返すと「result object ではない」として捨てられる。2.1.286)
+  (`session.start` / `process.run` …) はテスト側で答える。`$` の口 (op のイベント: `process.run` / `session.id` …) は `{ value: … }` で包んで返す
+  (素の値を返すと「result object ではない」として捨てられ、その口を呼んだ plugin の hook ごとスキップされる)。engine のイベント (`session.start` / `tool.call`) は結果の形のまま返す
 
 ## settings の hook との分担
 
