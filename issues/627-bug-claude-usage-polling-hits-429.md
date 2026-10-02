@@ -22,7 +22,7 @@
   `/usage` を含む記録の mtime を数えると、普段は 1 時間に 2〜8 回、10-02 は 11 時 12 回 / 12 時 46 回 / 13 時 34 回。
   11:53:41 から **ちょうど 60 秒ごと**に 17 回成功し、12:10:41 から枠の無い応答になった
 - 60 秒周期の出所は glogx: U の箱 / R のダッシュボードの表示中、`usageRefreshInterval = time.Minute` (`src/glogx/tui.go`) ごとに
-  `usage.FetchAll` → `claude -p /usage` を起こす。ratelimit (hook) はキャッシュ 5 分 (`cacheTTL`) で、別に起こす
+  `usage.FetchAll` → `claude -p /usage` を起こす (起票時点。同日の 626 で `FetchClaudePart` に置き換わった)。ratelimit (hook) はキャッシュ 5 分 (`cacheTTL`) で、別に起こす
 
 ## 対応方針 (ユーザー判断 2026-10-02: 頻度を落とし、429 で止める)
 
@@ -37,7 +37,7 @@
 
 ## 関連ファイル
 
-- `src/ratelimit/usage/usage.go` (`Fetch`) / `src/ratelimit/usage/codex.go` (`FetchAll`)
+- `src/ratelimit/usage/usage.go` (`Fetch`) / `src/ratelimit/usage/codex.go` (`FetchClaudePart` / `FetchClaudePartNow`)
 - `src/glogx/tui.go` (`usageRefreshInterval`) / `src/glogx/usage_overlay.go`
 - `src/ratelimit/main.go` (`cacheTTL` / `refreshInterval`)
 
@@ -49,7 +49,7 @@
   「docs(ratelimit,glogx,pro-con): claude -p /usage の共有ゲートを入口の文書に書く」)
   - [x] 共有ゲート (5 分の共有・失敗の共有・10 分の停止・flock・未来の時刻を信用しない)
   - [x] glogx / bin/ratelimit / pro-con の dispatcher をゲートに通す (pro-con は自前の引数のまま `FetchShared` + `ParseStream`)
-  - [x] glogx の R の `r` は間引きを飛ばす。フッターは `usage.SharedFresh` から「5分ごとに更新」
+  - [x] glogx の R の `r` は間引きを飛ばす (`FetchClaudePartNow`。626 の出所ごとの取得の上に載せ直した)。フッターは `usage.SharedFresh` から「5分ごとに更新」
   - [x] ratelimit / glogx / pro-con の lint と全テストが緑。変異 23 本 (ゲートの各判定・stream-json の判定・glogx の `r` の配線・
         pro-con の素通り) がすべて想定どおり red
   - [x] 実環境 (429 中): worktree の build で `ratelimit -source claude` が 1 回目 3.2 秒で「…14:14 まで取得を止める」、2 回目は 0.00 秒

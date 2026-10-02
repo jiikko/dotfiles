@@ -824,7 +824,7 @@ esac
 	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
 	m.rlDash.shown = true
 	runCmdTree(m.usageOv.fetchCmd(false)) // 共有ゲートに 5 分以内の結果を作る
-	m.usageOv.inFlight = false  // handle を通していないので手で下ろす
+	m.usageOv.inFlight = false            // handle を通していないので手で下ろす
 	if got := count(); got != 1 {
 		t.Fatalf("前提: claude %d 回, want 1", got)
 	}
