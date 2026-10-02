@@ -17,11 +17,13 @@ Claude Code (`/usage`) と codex (app-server の rateLimits) の利用枠 (5h / 
 - キャッシュは `~/.cache/glog/ratelimit-<source>.json` (出所ごと)。glogx の `claude-usage.json` とは分けている
   (理由は main.go 冒頭)。書き込みは `atomicfile.Write` (lint が `os.WriteFile` を禁止)
 - 表示に載る文字列 (キャッシュ由来の Label) は入口で `termsafe` を通す
-- 🚨 **Claude の枠の取得 (`usage.Fetch`) は全プロセス共有のゲートを通る** (`usage/shared.go`、issue 627)。
-  `claude -p /usage` は 1 回ごとにサーバの `/api/oauth/usage` を叩き、これは強く rate limit される (glogx が 60 秒ごとに
-  取ったら 17 回目で 429、以後約 45 分は枠が返らなかった)。最後に取れた結果を `~/.cache/glog/claude-usage-shared.json` に置き、
-  5 分以内なら claude を起こさずそれを返す。サーバが枠を返さなかった (stream-json の `usage_report.rate_limits` が null) ら
-  30 分は起こさない。上の 2 つのキャッシュはこの手前にある呼び出し側の契約で、ゲートとは別物
+- 🚨 **`claude -p /usage` は全プロセス共有のゲート (`usage.FetchShared`、`usage/shared.go`) 越しにしか起こさない** (issue 627)。
+  1 回ごとにサーバの `/api/oauth/usage` を叩き、これは強く rate limit される (glogx が 60 秒ごとに取ったら 17 回目で 429、
+  以後約 45 分は枠が返らなかった)。呼び出し元は glogx (`FetchAll` / `R` の `r` は `FetchAllNow`)・`bin/ratelimit` (`Fetch`)・
+  pro-con の dispatcher (自前の引数で起こし、`FetchShared` + `ParseStream` を通す)
+  - 最後の結果を `~/.cache/glog/claude-usage-shared.json` に置き、成否によらず 5 分 (`SharedFresh`) は起こし直さない
+  - サーバが枠を返さなかった (stream-json の `usage_report.rate_limits` が null。429 か通信の失敗) ら 10 分は起こさない
+  - 上の 2 つのキャッシュはこの手前にある呼び出し側の契約で、ゲートとは別物
 - pace 判定は `_claude/statusline-command.sh` と二重実装。乖離は `usage/pace_drift_test.go` が突き合わせ、
   shell だけを変えたときは `tests/claude/test_statusline.sh` がこのテストを `-count=1` で叩く
 - lint の規則 (`render.go` の I/O 禁止・stdout 直書き禁止・空白の確保・幅エンジンの一本化) は

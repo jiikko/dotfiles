@@ -5,8 +5,8 @@ Claude Code / codex の利用枠 (5h / weekly) を取得・整形する module �
 ## ファイルの地図
 
 - `main.go` — `bin/ratelimit` のエントリポイント。フラグ解析・キャッシュ読み書き・閾値判定 (`-check`)
-- `usage/usage.go` — Claude 側の取得の本体 (`fetchClaude` / `FetchVersion`)。usage パッケージは glogx / bubbletea に依存しない (tuikit / termsafe / subproc / atomicfile / doctor/cachedir には依存する)
-- `usage/shared.go` — Claude 取得の全プロセス共有ゲート (`Fetch`。最後の結果の共有・5 分の間引き・429 時の 30 分停止。理由は README の「境界と制約」)
+- `usage/usage.go` — Claude 側の取得の本体 (`fetchClaude` / `ParseStream` / `FetchVersion`)。usage パッケージは glogx / bubbletea に依存しない (tuikit / termsafe / subproc / atomicfile / doctor/cachedir には依存する)
+- `usage/shared.go` — `claude -p /usage` を起こす全ての呼び出し元 (glogx / ratelimit / pro-con) が通る共有ゲート (`FetchShared`。最後の結果の共有・5 分の間引き・サーバが枠を返さないときの 10 分停止。理由は README の「境界と制約」)
 - `usage/codex.go` — codex 側の取得 (`FetchCodex`。`codex app-server` の JSON-RPC 経路。選定理由はファイル冒頭) と両方をまとめる `FetchAll`
 - `usage/pace.go` — ペースゲージの計算とゲージの読み方 (`_claude/statusline-command.sh` の `pace_row` と二重実装。乖離は `usage/pace_drift_test.go` が突き合わせる)
 - `usage/render.go` — 1 行・表形式の整形 (lint で I/O 禁止・stdout 直書き禁止)
