@@ -27,13 +27,19 @@ const refresh = async ($: EngineInterface, cwd: string) => {
   }
 }
 
+// desktop が起こすセッションは `-p` / SDK と同じ作りで、型定義 (SessionStartInput / session.attach) によると session.start の時点では
+// isInteractive が false・名簿 ($.session.surfaces()) が空 (desktop 実機は未観測)。起動時に決まる環境変数でも聞く。
+const isDesktopHosted = async ($: EngineInterface) => (await $.env.get('CLAUDE_CODE_ENTRYPOINT')) === 'claude-desktop'
+
 // 対話かどうかは毎回聞く (module の変数は、保存や pull で module が読み直されると消える)
-const isInteractive = async ($: EngineInterface) => (await $.session.surfaces()).length > 0
+const isInteractive = async ($: EngineInterface) => (await $.session.surfaces()).length > 0 || (await isDesktopHosted($))
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     if (e.isInteractive) await refresh($, e.cwd)
+    // 環境変数は子の claude -p にも継承される (実測) ので、desktop の Bash から起こした -p も真になる。誤検出しても起動を待たせないよう裏で数える
+    else if (await isDesktopHosted($)) void refresh($, e.cwd)
     return started
   })
 

@@ -9,7 +9,7 @@ type Out = { human: string; retro: string; exitCode?: number }
 type Run = { argv: string[]; cwd?: string; stdin?: string }
 
 // test の on は engine の役 (plugin の下に座る)。script の --counts を答える。out は呼ばれるたびに読むので、途中で差し替えられる
-const engineBeneath = (on: On, runs: Run[], out: { now: Out }, surfaces: string[] = ['terminal']) => {
+const engineBeneath = (on: On, runs: Run[], out: { now: Out }, surfaces: string[] = ['terminal'], entrypoint?: string, gate?: Promise<void>) => {
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('turn.complete', () => ({ text: '' }))
   on('session.cwd', () => ({ value: '/w' }))
@@ -19,12 +19,14 @@ const engineBeneath = (on: On, runs: Run[], out: { now: Out }, surfaces: string[
     const { Box } = $.ui.resolve(e)
     return <Box key="engine-band" />
   })
-  on('process.run', ($, e) => {
+  on('process.run', async ($, e) => {
+    await gate
     runs.push({ argv: [...e.argv], cwd: e.init?.cwd, stdin: typeof e.init?.stdin === 'string' ? e.init.stdin : undefined })
     const which = e.argv[0]?.endsWith('/human-tasks-due.sh') ? 'human' : 'retro'
     // $ の口を test が答えるときは { value } で包む
     return { value: { exitCode: out.now.exitCode ?? 0, stdout: out.now[which], stderr: out.now.exitCode ? 'boom' : '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
+  mock.env(on, entrypoint ? { CLAUDE_CODE_ENTRYPOINT: entrypoint } : {})
 }
 
 const TURN = { reason: 'answer', answer: 'ok', durationMs: 1, isAborted: false, turnId: 't1' } as const
@@ -45,6 +47,40 @@ test('非対話のセッション (claude -p) では script を呼ばない', as
   // @ts-ignore: turn.complete の入力の型は省く
   await $.turn.complete(TURN)
   expect(runs).toEqual([])
+})
+
+// desktop が起こすセッションは、型定義 (SessionStartInput) では開始時に surface が null・isInteractive が false・名簿が空 (`claude -p` と同じ見た目)
+test('desktop が起こしたセッションは、開始時に isInteractive=false・名簿が空でも数える (起動は待たせず裏で)', async ($, on) => {
+  const clock = mock.clock(on)
+  const runs: Run[] = []
+  engineBeneath(on, runs, { now: NONE }, [], 'claude-desktop')
+  await $.session.start({ cwd: '/w', surface: null, isInteractive: false })
+  await clock.advance(1) // 裏で走らせた数え直しが落ち着くまで待つ
+  expect(runs.map(r => r.argv.slice(1))).toEqual([['--counts'], ['--counts']])
+})
+
+test('desktop が起こしたセッションの数え直しは、起動を待たせない (script が終わる前に session.start が返る)', async ($, on) => {
+  let release = () => {}
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const clock = mock.clock(on)
+  const runs: Run[] = []
+  engineBeneath(on, runs, { now: NONE }, [], 'claude-desktop', gate)
+  await $.session.start({ cwd: '/w', surface: null, isInteractive: false })
+  expect(runs).toEqual([]) // script はまだ終わっていない (gate で止めてある)
+  release()
+  await clock.advance(1)
+  expect(runs.length).toBe(2)
+})
+
+test('desktop が起こしたセッションは、メインのターンの終わりにも、名簿が空のままで数え直す', async ($, on) => {
+  const clock = mock.clock(on)
+  const runs: Run[] = []
+  engineBeneath(on, runs, { now: NONE }, [], 'claude-desktop')
+  await $.session.start({ cwd: '/w', surface: null, isInteractive: false })
+  // @ts-ignore: turn.complete の入力の型は省く
+  await $.turn.complete(TURN)
+  await clock.advance(1)
+  expect(runs.length).toBe(4)
 })
 
 for (const surface of ['terminal', 'desktop'] as const) {

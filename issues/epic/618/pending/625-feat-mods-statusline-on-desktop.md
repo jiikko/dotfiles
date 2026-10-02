@@ -92,13 +92,34 @@ desktop の Code タブのセッション (2026-10-02 23:19 に再開。`CLAUDE_
 2. 要求は来ているが、mod が描く中身を一度も作っていない。`refresh` を呼ぶのは `$.session.surfaces()` に `desktop` があるときだけ (`onDesktop`) で、
    lines も error も null のままなら `ui.render` は `next(e)` を返す (何も描かない)
 
-次の観測 (提案。未着手): `ui.render` を desktop の surface で受けたら、中身がまだ無くても待機の 1 行 (`$.session.surfaces()` の中身つき) を描く形にし、
-新しい desktop のセッションで見る。待機の行が出れば 2 (描画は来ている。surfaces の条件を直す)、何も出なければ 1。
+## 切り分けの結果と修正 (2026-10-03)
+
+- **候補 1 は棄却**: dev-mods (`~/.claude/dev-mods/<session>/desktop-probe`。`e.surface === 'desktop'` の `AbovePrompt` に、中身を持たずに緑の 1 行を無条件で描くだけの mod) を、
+  desktop の Code タブのこのセッションへホットリロードで載せたところ、**入力欄の上に出た** (ユーザーが目で確認)。desktop は `AbovePrompt` の描画を要求していて、`e.surface` は `desktop`
+- **原因 (最有力。desktop 実機の値は未観測)**: 両 mod が、`session.start` の `refresh` と 60 秒ごとの timer を `$.session.surfaces()` (名簿) や `e.isInteractive` で「desktop / 対話か」を聞いてから起動していた。
+  型定義によると、`session.start` の `surface` は `-p` / SDK では null、名簿に載る remote client は `session.attach` (最初の描画の要求) で後から加わる。desktop が起こすセッションは
+  `-p` / SDK と同じ作りで、開始時には名簿が空・`isInteractive` が false のはずで、そうなら帯の中身は一度も作られず `ui.render` が `next(e)` を返す (何も描かない)。
+  既存のテストは desktop のセッションを `surface: 'desktop'` / 名簿 `['desktop']` から始める fixture で書かれていて、この初期状態を一度も踏んでいなかった
+- **修正** (commit「mods: desktop が起こすセッションを環境変数で判定する」): 「desktop が起こしたセッションか」を、起動時に決まる環境変数 `CLAUDE_CODE_ENTRYPOINT=claude-desktop` で聞く
+  (desktop の Code タブのセッションで `claude-desktop` を実測。`$.env.get` で読める)。名簿・`isInteractive` には頼らない。描くかどうかは従来どおり描画のたびの `e.surface` で決める。
+  `desktop-statusline` と `issue-band` の両方 (issue-band も session.start を `e.isInteractive` で、ターンの終わりを名簿で聞いていて同じ形)。
+  script の出力が空 (rc=0) のときは、黙って何も描かず消えていたので、理由の 1 行を出す
+- テスト: fixture を型定義どおりの desktop の開始 (surface null・isInteractive false・名簿空・環境変数 `claude-desktop`) に直し、CLI / `-p` では呼ばないことと、ターンの終わり・60 秒ごとが名簿なしで動くことを足した。
+  変異 7 本が想定のテストで red (名簿に戻す変異は 6 本が red / 常に desktop 扱い / 空出力の guard 抜き / ターン側だけ名簿 / issue-band の 3 本)
+- 敵対的レビュー (read-only の別視点 1 本。P1 / P2 なし、主要な修正は壊せなかった)。P3 は再現できていない推測なので防御は足さず、未確認リスクとして残す:
+  (a) CLI で起こしたセッションに desktop の client が後から attach する形 (Remote Control など。推測) は、ターンの終わりの判定が環境変数だけになったので帯を作らない (旧: 名簿に desktop が載れば作った)。
+  起きたら `turn.complete` の判定に `|| (await $.session.surfaces()).includes('desktop')` を足す /
+  (b) mod の再読み込みと裏の `refresh` が重なったとき、`update()` が reject しうる (旧 `turn.complete` の `void refresh` から在る形。engine の挙動は未検証) /
+  (c) issue-band の起動の裏の数え直し (約 1.5 秒) とターンの終わりの数え直しが逆順に終わると古い件数で上書きされる (稀。旧からある競合) /
+  (d) desktop-statusline の起動時の `refresh` は、`$.session.model()` / `usage()` が headless の host でまだ答えられないと、次のターンか 60 秒後まで理由の 1 行が出うる (未検証)
+- **未観測**: desktop 実機の `session.start` の `surface` / `isInteractive` / `$.session.surfaces()` の値 (2 本目の probe は `$.session.surfaces()` の中身を描かせたが、画面を読む手段が無く値を得ていない。
+  `screencapture -x` は `could not create image from display` で失敗した)。原因は「最有力」であって、確定は新しい desktop のセッションで帯が出ること (628)
 
 ## 残り
 
-- 上の「次の観測」で 1 / 2 を切り分ける。2 なら直して、[628](628-human-verify-desktop-statusline.md) の手順でもう一度見る (期限 2026-10-09)。確かめられたら 625 も done にする
-- 1 なら、desktop の更新で描画が来るまで待つ (waiting へ移す) か、この mod を外すかを決める
+- [628](628-human-verify-desktop-statusline.md) の手順で、**新しい** desktop のセッションで帯が出ることを人が確かめる (既存のセッションは旧版の mod を読み込んだままで、フォルダを見張らない。見張らせるには `CLAUDE_CODE_PLUGIN_DIR_WATCH=1` を env に足す必要があるが未実測)。
+  出なければ 625 を開いたままにし、上の未観測の値を取るための probe を足す
+- 確かめられたら 625 / 628 を done にする
 
 ## 進捗
 
@@ -107,3 +128,4 @@ desktop の Code タブのセッション (2026-10-02 23:19 に再開。`CLAUDE_
 - 2026-10-02: mod を実装 (案 B)。テスト 10 本・変異 4 本。desktop の画面での確認を 628 (human) に起こした。claim は外した (人の確認待ち)
 - 2026-10-02: 前提と受け入れ条件のチェックを実装・実測に合わせた (statusLine を実行しない / CLI で二重に出ない / テスト / 失敗時の見え方は済み。mod が desktop で読まれるか・描けるか・人の確認は 628 待ち)
 - 2026-10-02: 628 の確認で、desktop の画面には何も出なかった。版 (2.1.286) では読まれる、を A-B で確かめた。候補を 2 つに絞り、切り分けの観測を提案した (上の「628 の確認の結果」)
+- 2026-10-03: dev-mods の probe で desktop が AbovePrompt を要求していることを確かめた (候補 1 棄却)。原因は desktop 判定を名簿 / isInteractive で聞いていたこと (最有力。実機の値は未観測) として、環境変数で判定する修正とテストを入れた (上の「切り分けの結果と修正」)。人の確認 (628) 待ち

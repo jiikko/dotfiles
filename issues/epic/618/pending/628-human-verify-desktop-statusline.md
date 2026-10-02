@@ -42,3 +42,4 @@ headless の claude からは観測できない (`claude plugin test` は deskto
   切り分けの観測と候補は 625 の「628 の確認の結果」。625 の次の観測が済んだら、この手順でもう一度見る (この issue は開いたまま)
 - 🚨 `screencapture -x <file>` で撮った画面を Read すれば、Claude も desktop の画面を見られる (このマシンでは Screen Recording の権限があり、真っ黒にならなかった)。
   次からは人に見てもらう前に、Claude が撮って確かめてよい
+- 2026-10-03: 625 の修正 (desktop 判定を環境変数にした) を入れた。**新しい** desktop の Code タブのセッションで、この手順をもう一度見る (既存のセッションは旧版の mod のまま)。dotfiles が修正の commit を含むこと (手順 1) を先に確かめる

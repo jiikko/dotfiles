@@ -23,6 +23,14 @@ mod の側からは何も起きないように見える (2.1.287 で実測。iss
   起動時にエラーで止まりうる (2.1.287 の二進を静的に読んだだけ。回復の案内は出る)。そうなったら settings の env の行を外す
 - user の settings を読む裏の `claude -p` (ratelimit の `claude -p /usage` 等) でも mods が走る。mod は `session.start` の
   `e.isInteractive` / `e.surface` で、対話のセッションにだけ効かせる
+  - 🚨 **ただし desktop が起こすセッションは `-p` / SDK と同じ作り**で、型定義 (`SessionStartInput` / `session.attach`) によると、開始時は
+    `surface` が null・`isInteractive` が false・`$.session.surfaces()` (名簿) が空で、desktop は最初の描画の要求で名簿に載る (実機の値は未観測)。
+    `session.start` や `turn.complete` で「desktop / 対話か」を名簿・`e.isInteractive` で聞くと、desktop では帯が一度も作られない (issue 625)。
+    desktop が起こしたセッションかは、起動時に決まる環境変数 **`CLAUDE_CODE_ENTRYPOINT=claude-desktop`** (`$.env.get`) で聞く。描くかどうかは描画のたびの `e.surface` で決める (名簿でなく描く先そのもの)。
+    🚨 この環境変数は子の `claude -p` にも**継承される** (desktop の Bash から起こした `claude -p` で `claude-desktop` を実測)。desktop 以外の -p も真になりうるので、起動を待たせる処理 (issue-band の数え直し) は裏で走らせ、描画は `e.surface` で決める
+    テストの fixture も、この初期状態 (`surface: null` / `isInteractive: false` / 名簿空 / 環境変数あり) から始める
+  - 見張り: 対話の CLI は `CLAUDE_CODE_PLUGIN_DIRS` のフォルダを見張って mod を読み直すが、desktop (長命の headless セッション) は `CLAUDE_CODE_PLUGIN_DIR_WATCH=1` を env に持つときだけ見張る
+    (plugin-authoring の reference.md による。未実測)。見張っていない desktop のセッションは、mod を直しても**新しいセッションを開くまで旧版のまま**
 
 ## 今ある mod
 
