@@ -61,8 +61,7 @@
 #     baseline の前) が、`--verify` 自身が残す生成物 (coverage.out 等) で 2 回目の木が変わる形は止めない
 #   - **argv にパスを持たない子プロセス** — 掃除は「worktree のパスを argv に持つプロセス」を止めるだけ。
 #     SIGKILL で道具が死ぬと、`--verify` が起こした `sleep` 等は PPID=1 で残る。SIGTERM / SIGINT では、
-#     実行中の run のプロセスグループごと止める (下の「時間の上限」)。グループを抜けた子 (setsid / 自分で
-#     別グループを作るもの) は止めない
+#     実行中の run の子孫の木を止める (下の「時間の上限」)。それより前に親を離れて init の子になったものは止めない
 #   - **すでに dirty なファイルのパーミッションだけの変更** — 内容 hash が同じなので見えない
 #   - **symlink の張り替え** — `[ -f ]` が偽になる先 (dangling / ディレクトリ) を指す symlink は
 #     恒久的に `<missing>` 扱いで、張り替えても差分が出ない
@@ -100,11 +99,10 @@
 #   worktree と一緒に消えないよう外へ写したもので、**この道具は消さない**。置き場の親は
 #   MUTATE_VERIFY_LOG_ROOT で変えられる (既定は $TMPDIR)
 #   --timeout <秒> は各 run (構文検査 / baseline / --apply / 変異後の検証) の上限。既定 1800 秒、
-#   環境変数 MUTATE_VERIFY_TIMEOUT でも渡せる (引数が優先)。0 で無制限。超えた run はプロセスグループごと
+#   環境変数 MUTATE_VERIFY_TIMEOUT でも渡せる (引数が優先)。0 で無制限。超えた run は子孫の木を凍らせてから
 #   SIGTERM → 5 秒後に SIGKILL で止め、rc=10 (時間切れ。第 3 の結果) を返す。変異が hang を起こしても、
-#   一覧 (mutate-verify-list) が 1 本で詰まらない (issue 610)
-#   🚨 run は自分のプロセスグループで、標準入力は /dev/null で走る (前景のグループではないので、端末を読むと
-#   SIGTTIN で止まるため)。端末を読む検証コマンドは自分で pty を用意すること
+#   一覧 (mutate-verify-list) が 1 本で詰まらない (issue 610)。上限は壁時計 (Ctrl-Z で止めていた間も数える)。
+#   時間切れより前に親を離れて init の子になったもの (daemon 化) は止めない
 #   --syntax は shell / python / ruby なら拡張子から推定する。それ以外は明示必須
 #   (推定できないものを黙って素通しすると、検査 6 が無いまま緑が出る)。
 #
@@ -154,6 +152,8 @@ done
 [ -n "$baseline_expect" ] || die "--baseline-expect は必須 (rc=0 だけでは zero execution と全 pass を区別できない)"
 [ -n "$name" ] || name="$file"
 case "$timeout" in ''|*[!0-9]*) die "--timeout は 0 以上の整数 (秒): $timeout" ;; esac
+# 桁が多すぎると `[ -gt ]` が整数として読めずに偽を返し、黙って無制限になる (red team で実測)
+[ "${#timeout}" -le 7 ] || die "--timeout が大きすぎる (7 桁まで。無制限は 0): $timeout"
 
 root="$(git rev-parse --show-toplevel 2>/dev/null)" || die "git repo の中で実行すること"
 [ -f "$root/$file" ] || die "--file が repo 内に無い: $file"
@@ -382,60 +382,71 @@ export MUTATE_FILE="$WTS_PATH/$file"
 git -C "$WTS_PATH" add -N -- "$file" 2>/dev/null || true
 
 # --- 時間の上限 (issue 610) ----------------------------------------------------------------------
-# 各 run を**自分のプロセスグループ**で背景に起こして `wait` で待ち、上限は別に起こした見張り (watchdog) が数える。
-# 時間切れなら見張りが印を置いてからグループを TERM → 5 秒後に KILL する。
-# 🚨 完了をポーリングで待たない (1 run ごとに刻みの分だけ遅れ、42 ケースのテストが 34 秒 → 58 秒になった)。
-# 🚨 run が終わったら見張りを**先に**止める。rc ファイルがあれば、見張りの印があっても完了として扱う (際どい競争で丸めない)
-# 🚨 グループを分けるので、端末の Ctrl-C は run に届かない。中断の trap (on_cleanup) が run と見張りを止める
-run_pgid=""
-watch_pgid=""
+# 各 run は**同じプロセスグループ**の背景の子として起こし、完了は rc ファイルで待つ (kill -0 はゾンビにも成功するので
+# 生死の判定に使わない)。上限を超えたら run の**子孫の木**を止める。
+# 🚨 グループを分けない: 分けると端末の job control から外れ、`stty tostop` の端末で --apply の出力が SIGTTOU で止まって
+#    上限まで待つ / Ctrl-Z で run が止まらない (red team で実測。旧実装は前景のまま走っていた)
+# 🚨 待ちを別プロセスの見張りに任せない: 「見張りを止める」と「見張りが撃つ」の競争で、凍らせた子を STOP のまま残しうる。
+#    本体が刻みを 10ms から 200ms へ伸ばしながら待つ (固定 0.1 秒の刻みは 42 ケースのテストを 34 s → 58 s にした)
+# 🚨 上限は壁時計で数える (Ctrl-Z で止めていた間も数える)
+run_root=""
 timed_out_phase=""
-stop_group() {  # $1=pgid。TERM → 5 秒 → KILL して回収する
-  local pg="$1" i=0
-  [ -n "$pg" ] || return 0
-  kill -TERM -- "-$pg" 2>/dev/null || true
-  while kill -0 -- "-$pg" 2>/dev/null && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
-  kill -KILL -- "-$pg" 2>/dev/null || true
-  wait "$pg" 2>/dev/null || true
+descendants() {  # $1=根の pid → 根を含む子孫の pid を 1 行ずつ
+  ps -Ao pid=,ppid= | awk -v r="$1" '{ p[$1] = $2 }
+    END { s[r] = 1; ch = 1; while (ch) { ch = 0; for (k in p) if (!(k in s) && (p[k] in s)) { s[k] = 1; ch = 1 } } for (k in s) print k }'
 }
-# shellcheck disable=SC2329  # on_cleanup (WTS_ON_CLEANUP 経由で EXIT trap から呼ばれる) が呼ぶ
-stop_run_group() {  # 中断の trap から: 見張りと実行中の run を止める
-  [ -z "$watch_pgid" ] || { kill -KILL -- "-$watch_pgid" 2>/dev/null || true; wait "$watch_pgid" 2>/dev/null || true; watch_pgid=""; }
-  [ -z "$run_pgid" ] || { stop_group "$run_pgid"; run_pgid=""; }
+stop_tree() {  # $1=根の pid。木を凍らせてから集め直し、TERM → 5 秒 → KILL。凍らせるのは、親が先に死んで子が init へ
+  # 付け替わると木から外れて取りこぼすため (グループを抜けた子 = setsid / set -m も、親が生きていれば木に居る)
+  local root="$1" all="" now i alive
+  [ -n "$root" ] || return 0
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    now="$(descendants "$root" | sort -n | tr '\n' ' ')"
+    [ "$now" = "$all" ] && break
+    all="$now"
+    # shellcheck disable=SC2086  # pid の並びを語に割る
+    kill -STOP $all 2>/dev/null || true
+  done
+  # shellcheck disable=SC2086
+  { kill -TERM $all; kill -CONT $all; } 2>/dev/null || true
+  for i in $(seq 50); do
+    # shellcheck disable=SC2086
+    alive="$(ps -o pid=,stat= -p "$(printf '%s' "$all" | tr ' ' ',' | sed 's/,$//')" 2>/dev/null | awk '$2 !~ /^Z/ { print $1 }')"
+    [ -n "$alive" ] || break
+    sleep 0.1
+  done
+  # shellcheck disable=SC2086
+  [ -z "$alive" ] || kill -KILL $alive 2>/dev/null || true
+  wait "$root" 2>/dev/null || true
+}
+stop_run_group() {  # 中断の trap から: 実行中の run の木を止める
+  [ -z "$run_root" ] || { stop_tree "$run_root"; run_root=""; }
 }
 run_in_wt() {  # $1=段の名前 $2=コマンド。出力は呼び出し側のリダイレクトへ。時間切れは rc=124 + timed_out_phase
-  local phase="$1" cmd="$2" rcf mark rc
-  rcf="$scratch/mv-run.rc"; mark="$scratch/mv-run.timedout"; rm -f "$rcf" "$mark"
-  set -m
-  # 報告用の fd 3 は検証コマンドへ渡さない。標準入力は /dev/null (前景でないグループが端末を読むと SIGTTIN で止まる)
-  ( ( cd "$WTS_PATH" && eval "$cmd" ) 3>&- </dev/null; echo "$?" > "$rcf" ) &
-  run_pgid=$!
-  if [ "$timeout" -gt 0 ]; then
-    ( exec 3>&- 1>/dev/null 2>&1 </dev/null
-      sleep "$timeout"
-      : > "$mark"
-      kill -TERM -- "-$run_pgid" 2>/dev/null
-      sleep 5
-      kill -KILL -- "-$run_pgid" 2>/dev/null ) &
-    watch_pgid=$!
-  fi
-  set +m
-  wait "$run_pgid" 2>/dev/null || true
-  [ -z "$watch_pgid" ] || { kill -KILL -- "-$watch_pgid" 2>/dev/null || true; wait "$watch_pgid" 2>/dev/null || true; watch_pgid=""; }
-  if [ -s "$rcf" ]; then
-    run_pgid=""
-    rc="$(cat "$rcf")"
-    return "$rc"
-  fi
-  # rc が書かれていない = 完了していない。時間切れなら残りのグループを止める (TERM を無視した子)
-  stop_group "$run_pgid"; run_pgid=""
-  if [ -e "$mark" ]; then timed_out_phase="$phase"; return 124; fi
-  return 125   # 時間切れでもなく rc も無い (外から殺された)。呼び出し側では失敗として扱われる
+  local phase="$1" cmd="$2" rcf start tick rc
+  rcf="$scratch/mv-run.rc"; rm -f "$rcf"
+  ( ( cd "$WTS_PATH" && eval "$cmd" ) 3>&-; echo "$?" > "$rcf" ) &   # 報告用の fd 3 は検証コマンドへ渡さない
+  run_root=$!
+  start=$SECONDS
+  tick=0.01
+  while [ ! -s "$rcf" ]; do
+    if [ "$timeout" -gt 0 ] && [ $((SECONDS - start)) -ge "$timeout" ]; then
+      stop_tree "$run_root"; run_root=""
+      timed_out_phase="$phase"
+      return 124
+    fi
+    sleep "$tick"
+    case "$tick" in 0.01) tick=0.02 ;; 0.02) tick=0.05 ;; 0.05) tick=0.1 ;; *) tick=0.2 ;; esac
+  done
+  wait "$run_root" 2>/dev/null || true
+  run_root=""
+  rc="$(cat "$rcf")"
+  return "$rc"
 }
 # 時間切れなら rc=10 で終える (どの run でも第 3 の結果。red / green に丸めない)
 finish_if_timed_out() {  # $1=出力ファイル (末尾を見せる。無ければ空)
   [ -n "$timed_out_phase" ] || return 0
-  note "🚨 $timed_out_phase が --timeout ($timeout 秒) を超えた。プロセスグループごと止めた (判定不能)"
+  note "🚨 $timed_out_phase が --timeout ($timeout 秒) を超えた。run の子孫を止めた (判定不能)"
+  note "   止められないもの: 時間切れより前に親を離れて init の子になったもの (daemon 化した子・tmux -L のサーバ等)"
   [ -n "${1:-}" ] && [ -f "$1" ] && tail -20 "$1" >&2
   finish 10
 }

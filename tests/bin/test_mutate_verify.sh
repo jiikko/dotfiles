@@ -824,19 +824,34 @@ d="$work/hangbase"; make_repo "$d"
 base_mark="mvhang-$$-45"
 rc=0
 # sleep-ok: window: baseline の検証が hang する形を演じる入力
-( cd "$d" && MUTATE_VERIFY_TIMEOUT=2 "$MV" --verify "bash verify.sh && bash -c 'sleep 60' $base_mark" --baseline-expect '^ran 2 checks' \
+( cd "$d" && MUTATE_VERIFY_TIMEOUT=2 "$MV" --verify "bash verify.sh && bash -c 'sleep 60; :' $base_mark" --baseline-expect '^ran 2 checks' \
     --file guard.sh --apply 'true' --expect 'FAIL: reject-bad' ) > "$work/out.log" 2>&1 || rc=$?
 check_log_leak "$work/out.log"
 [ "$rc" -eq 10 ] || { fail "baseline が hang して rc=$rc (期待 10)"; tail -8 "$work/out.log"; }
 grep -q 'baseline の検証 が --timeout (2 秒) を超えた' "$work/out.log" || fail "baseline の時間切れの段を出していない: $(tail -3 "$work/out.log")"
+# 🚨 `bash -c 'sleep 60'` のようにコマンドが 1 つだと bash は exec に置き換えて印が引数から消える (red team で実測)。`; :` で bash を残す
 pgrep -f "$base_mark" >/dev/null && { fail "🚨 baseline の hang した子が残った ($base_mark)"; pkill -9 -f "$base_mark"; }
 
+# ---------------------------------------------------------------------------
+# 47. 時間切れのとき、別のプロセスグループへ抜けた孫 (`set -m` の job) も止める (子孫の木を辿って止める。red team P2-3)
+# ---------------------------------------------------------------------------
+d="$work/hanggrp"; make_repo "$d"
+grp_mark="mvhang-$$-47"
+rc=0
+# sleep-ok: window: 別グループへ抜けた孫が hang する形を演じる入力
+( cd "$d" && MUTATE_VERIFY_TIMEOUT=2 "$MV" --verify "bash verify.sh && bash -c 'set -m; perl -e \"sleep 300\" $grp_mark & wait'" \
+    --baseline-expect '^ran 2 checks' --file guard.sh --apply 'true' --expect 'FAIL: reject-bad' ) > "$work/out.log" 2>&1 || rc=$?
+check_log_leak "$work/out.log"
+[ "$rc" -eq 10 ] || { fail "別グループの孫が hang して rc=$rc (期待 10)"; tail -8 "$work/out.log"; }
+pgrep -f "$grp_mark" >/dev/null && { fail "🚨 別のプロセスグループへ抜けた孫が時間切れの後も残った ($grp_mark)"; pkill -9 -f "$grp_mark"; }
 # ---------------------------------------------------------------------------
 # 46. --timeout の値の検査 (整数でなければ使い方の誤り rc=2)。0 は無制限で、正常系はそのまま rc=0
 # ---------------------------------------------------------------------------
 d="$work/tmval"; make_repo "$d"
 mv_run "$d" --file guard.sh --timeout 2s --apply 'true' --expect 'FAIL: reject-bad'; rc=$?
 [ "$rc" -eq 2 ] || fail "--timeout 2s が rc=$rc (期待 2)"
+mv_run "$d" --file guard.sh --timeout 99999999999999999999 --apply 'true' --expect 'FAIL: reject-bad'; rc=$?
+[ "$rc" -eq 2 ] || fail "桁が多すぎる --timeout が rc=$rc (期待 2。黙って無制限にしない)"
 mv_run "$d" --file guard.sh --timeout 0 \
   --apply 'perl -0pi -e "s/if \[ \"\\\$1\" = \"bad\" \]/if false/" "$MUTATE_FILE"' --expect 'FAIL: reject-bad'; rc=$?
 [ "$rc" -eq 0 ] || { fail "--timeout 0 (無制限) の正常系が rc=$rc (期待 0)"; tail -5 "$work/out.log"; }
