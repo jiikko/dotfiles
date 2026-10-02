@@ -3476,7 +3476,7 @@ func (m *browseModel) ratelimitOpts() ratelimitRenderOpts {
 		page:     m.pageSize(),
 		colored:  m.colored,
 		spinner:  m.spinner(),
-		snap:     m.usageOv.snap,
+		snap:     m.usageOv.view(),
 		err:      m.usageOv.err,
 		staleErr: m.usageOv.staleErr,
 		waiting:  m.usageOv.waitingNote(m.spinner()),

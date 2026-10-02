@@ -112,14 +112,22 @@ func RenderTableGroups(s *Snapshot, now time.Time, colored bool) (header string,
 	days := make([]string, len(ws))
 	hours := make([]string, len(ws))
 	mins := make([]string, len(ws))
-	var wDay, wHour, wMin int
 	// リセット日時も同様に (月 / 日 / 時刻) の列へ分解して右寄せ整列する。月日の桁数が
 	// 違っても時刻 (HH:MM) が縦に揃う (ユーザー要望 2026-07-21)。時刻はゼロ埋め固定幅。
 	months := make([]string, len(ws))
 	dates := make([]string, len(ws))
 	clocks := make([]string, len(ws))
-	var wMonth, wDate int
+	// 🚨 列の幅は、値が取りうる最大の幅から始める (issue 626)。値で幅を決めると、取得中の場所取りの行
+	// (値が無い) から実際の値へ替わったとき・届いた出所の値で列が広がるたびに、箱の幅が変わる。
+	// 枠は最長 weekly なので日は 1 桁 ("6日")。それより長い窓が来たら、その値の幅まで広がる
+	wDay, wHour, wMin := termwidth.Of("6日"), termwidth.Of("23時間"), termwidth.Of("59分")
+	wMonth, wDate := termwidth.Of("12月"), termwidth.Of("31日")
 	for i, w := range ws {
+		if w.Pending {
+			// 値を持たない (行は下で語だけを置く)。時刻は列幅を測らない固定幅なので、同じ幅の空白で取る
+			clocks[i] = termwidth.PadSpaces(termwidth.Of("15:04"))
+			continue
+		}
 		if w.Unused {
 			// リセット時刻が無い枠。残りの列は「時間」のスロットに語を置き (日/分は空)、
 			// リセット側は空にする。列分割は他の行と同じに保つ (縦揃えを崩さない)。
@@ -149,10 +157,18 @@ func RenderTableGroups(s *Snapshot, now time.Time, colored bool) (header string,
 		}
 		// バーは色付き時 ANSI を含むが表示幅は常に barCells+2 なので固定列 (tblUsageW) として扱える。
 		usageCell := fmt.Sprintf("%s %3d%%", bar(w.Percent, colored), w.Percent)
+		if w.Pending {
+			// 使用の列に語を置き、残りの列は空白で同じ幅を取る (届いた後と行の幅を揃える)
+			usageCell = paintIf(padRight(pendingWord, tblUsageW), sgr.Dim, colored)
+		}
 		remainCell := padLeft(days[i], wDay) + padLeft(hours[i], wHour) + padLeft(mins[i], wMin)
 		resetCell := padLeft(months[i], wMonth) + padLeft(dates[i], wDate) + clocks[i]
+		sep := " / "
+		if w.Pending {
+			sep = "   " // 値の無い行に区切りだけを残さない (幅は同じ)
+		}
 		cur = append(cur, padRight(w.Label, labelW)+tblGap+usageCell+tblGap+
-			remainCell+" / "+resetCell)
+			remainCell+sep+resetCell)
 	}
 	if len(cur) > 0 {
 		groups = append(groups, cur)

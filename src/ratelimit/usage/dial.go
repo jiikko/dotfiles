@@ -501,6 +501,9 @@ func cardPace(c dialCard, now time.Time) (remain time.Duration, elapsed float64,
 	if c.win.Unused {
 		return 0, 0, sgr.Dim, unusedWord
 	}
+	if c.win.Pending {
+		return 0, 0, sgr.Dim, pendingWord
+	}
 	remain = max(c.win.ResetAt.Sub(now), 0)
 	if c.span > 0 {
 		elapsed = clampPct(float64(c.span-remain) / float64(c.span) * 100)
@@ -527,19 +530,11 @@ func paceElapsed(elapsed float64) float64 { return math.Floor(elapsed) }
 // renderCard は 1 枚ぶんをちょうど h 行で返す。headless = 見出しを描かない (段の見出し帯が
 // 既にこのカードのラベルを出しているとき。renderGroup が決める)。
 func renderCard(c dialCard, now time.Time, w, h int, headless, colored bool) []string {
-	remain, elapsed, col, word := cardPace(c, now)
-
-	// 見出し・数値行は狭い割り当てでは端から情報を落とす (切り詰めの … で読めなくするより、
-	// 落とす順を決めておく方が読める)。落とす順は「重要度の低い順」= 種別 → CLI 名 /
-	// リセット絶対時刻 → 見出しの語 / 想定と乖離 → 使用率。
-	foot := cardFoot(c, remain, elapsed, col, word, w, cardFootLines(h), colored)
-	var head []string
-	if !headless {
-		head = cardHead(c, col, w, h, len(foot), colored)
-	}
+	remain, elapsed, col, _ := cardPace(c, now)
+	head, foot := cardFrame(c, now, w, h, headless, colored)
 	bodyH := max(0, h-len(head)-len(foot))
 	var body []string
-	if c.win.Unused || c.span <= 0 || w < dialMinW || bodyH < 5 {
+	if c.win.Unused || c.win.Pending || c.span <= 0 || w < dialMinW || bodyH < 5 {
 		body = textCardBody(c, col, w, bodyH, colored)
 	} else {
 		body = renderFace(c, remain, elapsed, col, w, bodyH, colored)
@@ -553,6 +548,30 @@ func renderCard(c dialCard, now time.Time, w, h int, headless, colored bool) []s
 		out = append(out, "")
 	}
 	return out[:h]
+}
+
+// cardFrame はカードの見出しと下の段を返す (本体はその残りの高さに描く。renderCard)。場所取りのカードと
+// 届いた後のカードで、この 2 つの行数が揃うことがレイアウトを動かさない条件 (issue 626)。
+func cardFrame(c dialCard, now time.Time, w, h int, headless, colored bool) (head, foot []string) {
+	remain, elapsed, col, word := cardPace(c, now)
+
+	// 見出し・数値行は狭い割り当てでは端から情報を落とす (切り詰めの … で読めなくするより、
+	// 落とす順を決めておく方が読める)。落とす順は「重要度の低い順」= 種別 → CLI 名 /
+	// リセット絶対時刻 → 見出しの語 / 想定と乖離 → 使用率。
+	if c.win.Pending {
+		// 値は出さずに空ける。行数は、目安の値 (PendingWindows が写した前回の値) で実物と同じ組み方をして決める
+		// (幅に入れば 1 行へ畳むので、cardFootLines の行数とは限らない)
+		hint := c
+		hint.win.Pending = false
+		r, e, hc, hw := cardPace(hint, now)
+		foot = make([]string, len(cardFoot(hint, r, e, hc, hw, w, cardFootLines(h), colored)))
+	} else {
+		foot = cardFoot(c, remain, elapsed, col, word, w, cardFootLines(h), colored)
+	}
+	if !headless {
+		head = cardHead(c, col, w, h, len(foot), colored)
+	}
+	return head, foot
 }
 
 // cardHead はカード見出し。枠ラベル ("5H" / "7D") は 4 桁幅の AA で大きく出し、種別
@@ -573,6 +592,8 @@ func cardHead(c dialCard, col string, w, h, footN int, colored bool) []string {
 	// 盤が 2 行縮む。優先順位は「中央の数字 > 見出し」— 中央は盤の主役で、見出しは
 	// 同じことを小さい字でも言えるため (実測 2026-09-01: 120x44 で見出しを AA にすると
 	// 中央が普通の字へ落ちた)。
+	// 場所取りの値は表示しない目安 (PendingWindows)。中央の数字の字形の幅で見出しの形が決まるので、
+	// これが届いた後の値と離れていると見出しの形が入れ替わり、カードの中身が上下にずれる
 	if c.span > 0 && centerAAFits(w, h-1-footN, c.win.Percent) && !centerAAFits(w, h-bannerRows-footN, c.win.Percent) {
 		return plain
 	}
@@ -886,6 +907,8 @@ func textCardBody(c dialCard, _ string, w, h int, colored bool) []string {
 	}
 	var msg []string
 	switch {
+	case c.win.Pending:
+		msg = append(msg, fitLine(w, []string{paintIf(pendingWord, sgr.Dim, colored)}))
 	case c.win.Unused:
 		// 盤は「窓のどこにいるか」を描くもので、開いていない窓には描くものが無い。理由を
 		// 書かないと「盤が無い = 壊れた」に見える (5h カードが丸ごと消えていた頃と同じ印象)。

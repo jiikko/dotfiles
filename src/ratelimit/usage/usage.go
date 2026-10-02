@@ -53,6 +53,56 @@ type Window struct {
 	// 時間帯にダッシュボードの 5h カードが黙って消え、壊れたように見えた (ユーザー報告 2026-09-03)。
 	// 「無い」と「まだ使っていない」は別の事実なので、型で区別して描画側に伝える。
 	Unused bool `json:",omitempty"`
+	// Pending は「この枠はまだ取得中」の場所取り (PendingWindows が作る。値は持たない)。取得を待つ間も
+	// 表と盤のレイアウトを、届いた後と同じにするため (issue 626)。表示だけのもので、キャッシュへは書かない。
+	Pending bool `json:"-"`
+}
+
+// pendingWord は場所取りの枠に出す語。
+const pendingWord = "取得中..."
+
+// PendingWindows は出所 src の場所取りの枠を返す。Claude は描く枠が defaultOrder で決まっているので
+// 届いた後と同じ枠になる。codex は枠の構成がプランで変わるので、like (前回取れた枠。古くてよい) にある codex の枠の
+// 形を写し、無ければよくある形 (weekly 1 枠) を置く (外れたら届いたときに行の数が変わる)。
+//
+// 値 (Percent / ResetAt) は表示しない目安で、盤のカードの見出しと下の段の形 (中央の大きな数字が入るか・下の段を
+// 何行に畳むか。dial.go の renderCard / cardHead) を届いた後と揃えるために持つ。like の同じ枠の値 (前回) を写し、
+// 無ければ 2 桁の使用率だけを置く (外れると盤のカードの中の形が変わりうる)。
+func PendingWindows(src string, like []Window) []Window {
+	const guess = 50
+	// Unused も目安として残す (盤の下の段の形が変わるため)。場所取りのカードは語も値も描かない (dial.go の cardFrame / textCardBody)
+	pending := func(w Window) Window {
+		w.Pending = true
+		return w
+	}
+	if src == SourceCodex {
+		var ws []Window
+		for _, w := range like {
+			if w.Source == SourceCodex {
+				ws = append(ws, pending(w))
+			}
+		}
+		if len(ws) > 0 {
+			return ws
+		}
+		week := int64((7 * 24 * time.Hour) / time.Minute)
+		return []Window{{Label: codexLabel(&week), Source: SourceCodex, WindowMins: week, Percent: guess, Pending: true}}
+	}
+	prev := &Snapshot{Windows: like}
+	// 窓幅は /usage の元ラベルから決める経路 (windowMinsFor) を通す (Claude 枠の窓幅の出典を 1 つに保つ)
+	mins := map[string]int64{"5h": windowMinsFor("Current session"), "7d": windowMinsFor("Current week")}
+	ws := make([]Window, 0, len(defaultOrder))
+	for _, l := range defaultOrder {
+		if w, ok := prev.Find(l); ok && w.Source == "" {
+			if w.WindowMins == 0 {
+				w.WindowMins = mins[l] // 窓幅を持たない頃のキャッシュ (Window.WindowMins の doc)
+			}
+			ws = append(ws, pending(w))
+			continue
+		}
+		ws = append(ws, Window{Label: l, WindowMins: mins[l], Percent: guess, Pending: true})
+	}
+	return ws
 }
 
 // Span は枠の長さ。不明なら 0 (呼び出し側が「窓のどこにいるか」を出さない判断に使う)。

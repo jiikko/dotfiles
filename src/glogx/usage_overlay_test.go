@@ -547,11 +547,17 @@ printf '%s\n' '{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":69,"wind
 	}
 }
 
+// usagePart は出所 src の取得の成功を作る。残りは実際の値に近い長さにする (5h は時間と分・weekly は日も出る。
+// 箱の幅の比較が値の長さを見るので、値を短くすると幅の差が隠れる)。
 func usagePart(src string, pct int) *usage.Part {
+	now := timeNow()
 	if src == usage.SourceCodex {
-		return &usage.Part{Source: src, Version: "0.1", Windows: []usage.Window{{Label: "cx7d", Source: src, Percent: pct}}}
+		return &usage.Part{Source: src, Version: "0.144.6", Windows: []usage.Window{
+			{Label: "cx7d", Source: src, Percent: pct, WindowMins: 10080, ResetAt: now.Add(6*24*time.Hour + 23*time.Hour + 59*time.Minute)}}}
 	}
-	return &usage.Part{Version: "2.1", Windows: []usage.Window{{Label: "5h", Percent: pct}, {Label: "7d", Percent: pct}}}
+	return &usage.Part{Version: "2.1.216", Windows: []usage.Window{
+		{Label: "5h", Percent: pct, WindowMins: 300, ResetAt: now.Add(4*time.Hour + 26*time.Minute)},
+		{Label: "7d", Percent: pct, WindowMins: 10080, ResetAt: now.Add(5*24*time.Hour + 3*time.Hour)}}}
 }
 
 func usageLabels(s *usage.Snapshot) string {
@@ -565,38 +571,90 @@ func usageLabels(s *usage.Snapshot) string {
 	return strings.Join(ls, ",")
 }
 
-// 先に届いた方 (codex) をその場で出し、遅い方 (Claude) は「取得中」と出して待つ (issue 626)。
-// 周の終わりに、取れた両方をキャッシュへ保存する。
+// 先に届いた方をその場で出し、遅い方は場所取りの行 (「取得中...」) で待つ (issue 626)。届く前と後で箱の幅と
+// 行の数は変わらない (場所取りは届いた後と同じ枠・列は最大の幅から)。周の終わりに、取れた両方をキャッシュへ保存する。
 func TestUsageShowsEachSourceAsItArrives(t *testing.T) {
+	plain := func(o *usageOverlay) []string {
+		lines := o.boxLines(120, false, "*")
+		for i, l := range lines {
+			lines[i] = stripANSI(l)
+		}
+		return lines
+	}
+	width := func(lines []string) int {
+		w := 0
+		for _, l := range lines {
+			w = max(w, dispWidth(l))
+		}
+		return w
+	}
+	for _, first := range []string{usage.SourceCodex, ""} {
+		second := usage.SourceCodex
+		if first == usage.SourceCodex {
+			second = ""
+		}
+		t.Run(usageSourceName(first)+" が先", func(t *testing.T) {
+			t.Setenv("XDG_CACHE_HOME", t.TempDir())
+			t.Setenv("PATH", "") // codex の無い環境としてキャッシュを読む (usage_cache.go)
+			o := usageOverlay{visible: true}
+			o.fetchCmd(false) // closure は走らせない (届く順をテストが決める)
+			o.handle(usageMsg{part: usagePart(first, 7)})
+			if got := usageLabels(o.snap); got != usageLabels((*usage.Snapshot)(nil).With(*usagePart(first, 7))) {
+				t.Fatalf("先に届いた方が表示へ入らない: %s", got)
+			}
+			before := plain(&o)
+			pending := 0
+			for _, l := range before {
+				if strings.Contains(l, "取得中...") {
+					pending++
+				}
+			}
+			if want := len(usage.PendingWindows(second, nil)); pending != want {
+				t.Errorf("場所取りの行 = %d, want %d (まだの出所の枠の数):\n%s", pending, want, strings.Join(before, "\n"))
+			}
+			if c := o.handle(usageMsg{part: usagePart(second, 3)}); c != nil {
+				c() // 周の終わりのキャッシュの保存
+			}
+			if got := usageLabels(o.snap); got != "5h,7d,cx7d" {
+				t.Errorf("届いた順に依らず Claude が先に並ばない: %s", got)
+			}
+			if o.inFlight || len(o.waiting()) != 0 || o.fetchedAt.IsZero() {
+				t.Errorf("周が閉じていない: inFlight=%v waiting=%v", o.inFlight, o.waiting())
+			}
+			after := plain(&o)
+			if strings.Contains(strings.Join(after, "\n"), "取得中") {
+				t.Errorf("両方そろった後も「取得中」が残った:\n%s", strings.Join(after, "\n"))
+			}
+			if len(before) != len(after) || width(before) != width(after) {
+				t.Errorf("届く前と後で箱の形が変わった: %d 行 x %d 桁 → %d 行 x %d 桁\n%s\n---\n%s",
+					len(before), width(before), len(after), width(after), strings.Join(before, "\n"), strings.Join(after, "\n"))
+			}
+			path, _ := usageCachePath()
+			if snap, ok := loadUsageCache(path, time.Now()); !ok || usageLabels(snap) != "5h,7d,cx7d" {
+				t.Errorf("周の終わりに両方を保存していない: ok=%v %s", ok, usageLabels(snap))
+			}
+		})
+	}
+}
+
+// 最初の取得の codex の場所取りは、前回のキャッシュ (古くてよい) の枠の構成を写す (2 枠のプランで行の数を変えない)。
+func TestUsagePendingUsesCachedCodexShape(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	path, err := usageCachePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := (*usage.Snapshot)(nil).With(*usagePart("", 1)).With(usage.Part{Source: usage.SourceCodex, Windows: []usage.Window{
+		{Label: "cx5h", Source: usage.SourceCodex, WindowMins: 300}, {Label: "cx7d", Source: usage.SourceCodex, WindowMins: 10080}}})
+	if err := saveUsageCache(path, old, time.Now().Add(-24*time.Hour)); err != nil { // TTL を過ぎた前回
+		t.Fatal(err)
+	}
 	o := usageOverlay{visible: true}
-	o.fetchCmd(false) // closure は走らせない (届く順をテストが決める)
-	o.handle(usageMsg{part: usagePart(usage.SourceCodex, 7)})
-	if got := usageLabels(o.snap); got != "cx7d" {
-		t.Fatalf("先に届いた codex が表示へ入らない: %s", got)
-	}
-	if !o.loading() {
-		t.Error("Claude を待っている間にスピナーが止まる")
-	}
-	box := strings.Join(o.boxLines(80, false, "*"), "\n")
-	if !strings.Contains(box, "* Claude Code 取得中...") || strings.Contains(box, "codex 取得中") {
-		t.Errorf("待っている出所だけを「取得中」に出していない:\n%s", box)
-	}
-	if c := o.handle(usageMsg{part: usagePart("", 3)}); c != nil {
-		c() // 周の終わりのキャッシュの保存
-	}
-	if got := usageLabels(o.snap); got != "5h,7d,cx7d" {
-		t.Errorf("Claude が後から届いても先に並ばない: %s", got)
-	}
-	if o.inFlight || o.loading() || len(o.waiting()) != 0 || o.fetchedAt.IsZero() {
-		t.Errorf("周が閉じていない: inFlight=%v loading=%v waiting=%v", o.inFlight, o.loading(), o.waiting())
-	}
-	if box := strings.Join(o.boxLines(80, false, "*"), "\n"); strings.Contains(box, "取得中") {
-		t.Errorf("両方そろった後も「取得中」が残った:\n%s", box)
-	}
-	path, _ := usageCachePath()
-	if snap, ok := loadUsageCache(path, time.Now()); !ok || usageLabels(snap) != "5h,7d,cx7d" {
-		t.Errorf("周の終わりに両方を保存していない: ok=%v %s", ok, usageLabels(snap))
+	o.fetchCmd(false)
+	defer o.stop()
+	o.handle(usageMsg{part: usagePart("", 3)})
+	if got := usageLabels(o.view()); got != "5h,7d,cx5h,cx7d" {
+		t.Errorf("codex の場所取りが前回の形でない: %s", got)
 	}
 }
 

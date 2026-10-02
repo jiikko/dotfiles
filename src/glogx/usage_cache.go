@@ -44,16 +44,39 @@ func usageCachePath() (string, error) {
 	return filepath.Join(base, usageCacheFile), nil
 }
 
+// readUsageCache はキャッシュのファイルを読むだけ (鮮度・完全性は見ない)。
+func readUsageCache(path string) (usageCacheEntry, bool) {
+	var entry usageCacheEntry
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return entry, false
+	}
+	if err := json.Unmarshal(data, &entry); err != nil {
+		return entry, false
+	}
+	return entry, true
+}
+
+// loadUsageShape は、場所取りの枠の形 (codex の枠の構成) と目安の値に使う前回の枠を返す (古くてよい。無ければ nil)。
+// 値は表示しない (usage.PendingWindows の doc)。
+func loadUsageShape() []usage.Window {
+	path, err := usageCachePath()
+	if err != nil {
+		return nil
+	}
+	entry, ok := readUsageCache(path)
+	if !ok || entry.Snapshot == nil {
+		return nil
+	}
+	return entry.Snapshot.Windows
+}
+
 // loadUsageCache は fresh かつキャッシュ契約を満たすスナップショットを返す。契約は
 // Claude 枠が必須、codex 枠は best-effort。欠損・破損・TTL 切れ・Claude 枠なしは
 // 「キャッシュなし」に落とす (キャッシュ都合で表示を壊さない)。
 func loadUsageCache(path string, now time.Time) (*usage.Snapshot, bool) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, false
-	}
-	var entry usageCacheEntry
-	if err := json.Unmarshal(data, &entry); err != nil {
+	entry, ok := readUsageCache(path)
+	if !ok {
 		return nil, false
 	}
 	// 取得は Claude 失敗 + codex 成功でも表示を成立させる (usage.Snapshot.With) ので、Claude 枠の無いスナップショットがありうる。

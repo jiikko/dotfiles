@@ -91,6 +91,8 @@ type usageOverlay struct {
 	staleErr error
 	// round は走行中の取得の途中経過 (inFlight の間だけ意味を持つ)。
 	round usageRound
+	// shape は場所取りの枠の形の出典 (前回のキャッシュの枠。最初の取得を始めるときに読む。view)。
+	shape []usage.Window
 }
 
 // fetchCmd は Claude Code の /usage と codex の rateLimits を非同期取得する tea.Cmd。
@@ -125,6 +127,9 @@ func (o *usageOverlay) fetchCmdWith(useCache, force bool) tea.Cmd {
 	o.cancel = cancel
 	// last-good の出典は周の始まりの表示。束縛は UI スレッドのここで行う
 	o.round = usageRound{base: o.snap}
+	if o.fetchedAt.IsZero() && o.shape == nil {
+		o.shape = loadUsageShape() // 場所取りを出すのは最初の取得だけ (waitingSources)。小さなファイルを 1 回読むだけ
+	}
 	one := func(fetch func(context.Context) usage.Part) tea.Cmd {
 		return func() tea.Msg {
 			ctx, cancelTimeout := context.WithTimeout(parent, fetchTimeout)
@@ -254,21 +259,43 @@ func (o *usageOverlay) handle(msg usageMsg) tea.Cmd {
 	}
 }
 
-// waiting は、まだ届いていない出所の名前 (「取得中」を出す対象)。最初の取得が終わるまでだけ出す
-// (その間の表示には届いた出所の枠しか無い):
-// 定期リフレッシュは静かに差し替える (下の boxLines のフッターの注記) ので、codex 未導入の環境で毎分「codex 取得中」が
-// 点滅しないようにする。
-func (o *usageOverlay) waiting() []string {
+// waitingSources は、まだ届いていない出所 (場所取りを置く対象)。最初の取得が終わるまでだけ返す
+// (その間の表示には届いた出所の枠しか無い): 定期リフレッシュは静かに差し替える (下の boxLines のフッターの注記) ので、
+// codex 未導入の環境で毎分 codex の場所取りが出入りしないようにする。
+func (o *usageOverlay) waitingSources() []string {
 	if !o.inFlight || o.snap == nil || !o.fetchedAt.IsZero() {
 		return nil
 	}
-	names := make([]string, 0, len(usageRoundSources))
+	srcs := make([]string, 0, len(usageRoundSources))
 	for _, src := range usageRoundSources {
 		if !o.round.arrived(src) {
-			names = append(names, usageSourceName(src))
+			srcs = append(srcs, src)
 		}
 	}
+	return srcs
+}
+
+// waiting は waitingSources の表示名。
+func (o *usageOverlay) waiting() []string {
+	srcs := o.waitingSources()
+	names := make([]string, 0, len(srcs))
+	for _, src := range srcs {
+		names = append(names, usageSourceName(src))
+	}
 	return names
+}
+
+// view は描く Snapshot (U の箱と R の盤の両方がこれを描く)。まだ届いていない出所には場所取りの枠
+// (usage.PendingWindows) を入れ、届いた後とレイアウト (行の数・列の幅・盤の段) を揃える (issue 626)。
+// 場所取りは表示だけのもので、o.snap には入れない (キャッシュ・last-good の出典を汚さない)。
+func (o *usageOverlay) view() *usage.Snapshot {
+	s := o.snap
+	// 🚨 Claude の場所取りを With に「成功」として入れると ClaudeErr を消すが、待っている間の snap は ClaudeErr を
+	// 持たない (Claude が失敗したら届いた扱いで、場所取りを置かない)
+	for _, src := range o.waitingSources() {
+		s = s.With(usage.Part{Source: src, Windows: usage.PendingWindows(src, o.shape)})
+	}
+	return s
 }
 
 // waitingNote は waiting を 1 行にした表示 (無ければ空)。
@@ -292,13 +319,14 @@ func (o *usageOverlay) toggle() { o.visible = !o.visible }
 // dismiss は任意のナビゲーションキーで起動時グランス表示を引っ込める。
 func (o *usageOverlay) dismiss() { o.visible = false }
 
-// loading は取得待ち (spinner を回す) かどうか。表示中かつ、結果未着 (snap も err も無い) か片方の出所を
-// 待っている (waiting) ときだけ true。これが true の間だけ tick を回してスピナーを animate する。
+// loading は取得待ち (spinner を回す) かどうか。表示中かつ結果未着 (snap も err も無い) の
+// ときだけ true。これが true の間だけ tick を回してスピナーを animate する (片方の出所を待つ間の箱は
+// 場所取りの行で、回すものが無い)。
 func (o *usageOverlay) loading() bool {
-	return o.visible && o.awaiting()
+	return o.visible && o.snap == nil && o.err == nil
 }
 
-// awaiting は表示 (U の箱 / R のダッシュボード) にスピナーが要るか。
+// awaiting は R のダッシュボードにスピナーが要るか (片方を待つ間も見出しの下の「取得中」を回す)。
 func (o *usageOverlay) awaiting() bool {
 	return (o.snap == nil && o.err == nil) || len(o.waiting()) > 0
 }
@@ -329,17 +357,18 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 	case o.snap == nil:
 		rows = []string{paint(spinner+" 取得中...", ansiDim, colored)}
 	default:
+		snap := o.view()
 		// CLI バージョンが取れていればタイトルに添える (取得失敗時は空で従来どおり)。
 		// バージョン文字列は外部バイナリの出力なので無害化して枠へ載せる
-		if v := sanitizePlainLine(o.snap.Version); v != "" {
+		if v := sanitizePlainLine(snap.Version); v != "" {
 			title = " Claude Code v" + v + " · usage "
 		}
 		// codex の枠が取れているときだけ "+ codex" を添える (codex 未導入環境や取得失敗時に
 		// 名前だけ出さない。行側の cx ラベルと対で、この箱が両 CLI の残量であることを示す)。
 		// バージョンは Claude 側と同じく取れていれば添える (取得失敗時は名前だけで従来どおり)。
-		if o.snap.HasCodex() {
+		if snap.HasCodex() {
 			cx := " + codex"
-			if v := sanitizePlainLine(o.snap.CodexVersion); v != "" {
+			if v := sanitizePlainLine(snap.CodexVersion); v != "" {
 				cx += " v" + v
 			}
 			title = strings.Replace(title, " · usage ", cx+" · usage ", 1)
@@ -347,7 +376,7 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 		// ヘッダー (列見出し) は自明なので表示しない (ユーザー要望 2026-07-23)。data 行のみ。
 		// Claude と codex の境目には content 幅の区切り罫線を挟む (ユーザー要望 2026-07-31)。
 		// 罫線幅を全グループの最大行幅に合わせるため、先に幅 w を確定してから組む。
-		_, groups := usage.RenderTableGroups(o.snap, time.Now(), colored)
+		_, groups := usage.RenderTableGroups(snap, time.Now(), colored)
 		w := 0
 		for _, g := range groups {
 			for _, r := range g {
@@ -360,12 +389,9 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 			}
 			rows = append(rows, g...)
 		}
-		if note := o.waitingNote(spinner); note != "" {
-			rows = append(rows, paint(note, ansiDim, colored))
-		}
 		// 自動更新の明示フッターを content 幅に右寄せで添える (ユーザー要望)。値の取得は静かに
 		// 差し替わるので、更新中であることは出さない。
-		if note := fetchNote(o.snap, o.staleErr); note != "" {
+		if note := fetchNote(snap, o.staleErr); note != "" {
 			// 右上の小さな箱を理由の長さで横に広げない (全文は R のダッシュボードに出る)
 			rows = append(rows, paint(clipToWidth(note, max(w, dispWidth(title))), ansiYellow, colored))
 		}
