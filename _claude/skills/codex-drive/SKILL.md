@@ -100,7 +100,7 @@ codex 往復より速いので Claude が直接やってよい (`subagent-model-
   事実を取り、それを codex への次の指示に翻訳する。CI でしか出ない移植/プロトコルバグはこの往復で 1 段ずつ潰す。
 - **モデルはスキル側で明示する**: `-m <model> -c model_reasoning_effort=...`。省略すると
   `~/.codex/config.toml` の既定 (対話 TUI 側の都合で変わる) を拾い、実行ごとにモデルが変わってしまう。
-  effort も省かない (config.toml の既定 effort は luna 用の `max` なので、モデルだけ sol にすると sol が `max` で走る)。
+  effort も省かない (モデルだけ指定すると effort は config.toml の値になる。config.toml は対話用に sol + medium にしてあるので、書く run で effort を省くと luna が medium で走る)。
 - **モデルと effort は run の種類で 2 組に分ける** (ユーザー決定 2026-10-02):
 
   | run | モデル + effort | フェーズ |
