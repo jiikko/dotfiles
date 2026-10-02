@@ -346,16 +346,21 @@ if [[ $rc -eq 0 ]]; then pass "消すものが無ければ --yes 無しでも rc
 printf '%s\trow\t1\n' "$NOW" > "$d/log.tsv"
 /usr/bin/lockf -k "$d/.lock" sleep 30 & holder=$!  # sleep-ok: dummy: lock を保持するだけの常駐プロセス
 held=0
-lock_is_held() { ! /usr/bin/lockf -t 0 "$d/.lock" true 2>/dev/null; }
+# 判定も -k 付きにする。-k が無いと判定は終わるときに .lock を消し、その間に open して待っていた握る側が
+# 消されたファイルのロックを取る。以後の判定は新しい .lock を毎回取れてしまい、握る側が生きていても
+# 「握られていない」と見え続ける (issue 630。負荷の高いときにだけ判定が握る側より先に走って出る)。
+# rc=75 (時間切れ) だけを「握られている」と読み、open や fork の失敗を握られていると取り違えない
+lock_is_held() { local r=0; /usr/bin/lockf -k -t 0 "$d/.lock" true 2>/dev/null || r=$?; [[ $r -eq 75 ]]; }
 TT_WAIT_TICKS=400 TT_WAIT_TICK=0.05 tt_wait_until lock_is_held && held=1
 # 握れたのを確かめてから消しに行く。待ちきれずに進むと、誰も握っていない状態で消して rc=0 になり、
-# 「ロックを無視して消した」と区別できない偽の赤になる (CI の負荷で実際に起きた)
+# 「ロックを無視して消した」と区別できない偽の赤になる
+holder_alive=$(pgrep -P "$holder" >/dev/null 2>&1 && echo 生 || echo 無)
 if [[ $held -eq 1 ]]; then
   rc=0; KERNEL_ALLOC_WATCH_DIR="$d" "$BIN" destroy-all-logs --yes >/dev/null 2>&1 || rc=$?
 fi
 pkill -P "$holder" 2>/dev/null || true; kill "$holder" 2>/dev/null || true; wait "$holder" 2>/dev/null || true   # lockf の子 (sleep) も止める  # sleep-ok: other: コメントの中の sleep
 if [[ $held -ne 1 ]]; then
-  ng "ロックを握る側が 20 秒たってもロックを取れない (判定できない)"
+  ng "ロックを握る側が 20 秒たってもロックを取れない (判定できない。握る側の子: $holder_alive)"
 elif [[ $rc -eq 75 && -f "$d/log.tsv" ]]; then pass "ロックを握られている間は消さずに rc=75"; else ng "ロックを握られている間: rc=$rc log=$([[ -f $d/log.tsv ]] && echo 残 || echo 消)"; fi
 
 # 6. tmux が固まっても、ほかの record はロックで待たされずに記録できる (計測をロックの外で済ませている)
