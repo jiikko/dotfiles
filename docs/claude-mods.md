@@ -3,6 +3,7 @@
 Claude Code 2.1.287 の mods を、settings の hook (`_claude/settings.json` の `command`) と並べて持つための約束。
 どの hook を mod へ移すか / 移さないかの判断の正本は epic issue 618、土台の実測は issue 619 に置く。
 API の正本は plugin-authoring skill が書き出す `claude-code.d.ts` で、**early access なのでリリースごとに変わる**。
+初めて触るなら、全体像と変更の手順を [`claude-mods-guide.md`](claude-mods-guide.md) で先に読む。
 
 ## 🚨 このマシンでは mod に届かないイベントがある
 
@@ -34,11 +35,7 @@ mod の側からは何も起きないように見える (2.1.287 で実測。iss
 
 ## 今ある mod
 
-| mod | 何をするか |
-|---|---|
-| `canary` | 何もしない。`DOTFILES_MOD_CANARY_DIR` があれば読み込まれた印を書く (読まれる経路の実測用。issue 619) |
-| `issue-band` | 期限切れ・期限が近い human と未決着の retro があるときだけ、プロンプトの上の帯に出す。数えるのは `_claude/hooks/human-tasks-due.sh` / `retro-open.sh` の `--counts` (issue 621) |
-| `desktop-statusline` | Claude desktop の Code タブ (settings の `statusLine` を実行しない) に、CLI と同じ `_claude/statusline-command.sh` の出力を色つきで出す。terminal には描かない (issue 625)。更新はセッション開始・メインのターンの終わり・60 秒ごと。今すぐ更新するスラッシュコマンド `/statusline-refresh` を desktop のセッションにだけ登録する (skill でも実行ファイルでもなく、mod が `session.start` で `$.command.register` する) |
+一覧・各ファイルの役割・仕組み・変更の手順は [`claude-mods-guide.md`](claude-mods-guide.md) にある (入門と地図。ここは約束と実測)。
 
 ## 置き場所と読み込み
 
