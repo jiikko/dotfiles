@@ -20,14 +20,18 @@
 # 検査が静かに空回りする)。
 #
 # 入力: SessionStart の hook JSON (stdin)。出力: 未決着が 1 件以上のときだけ emit。
+# `--counts`: 帯の mod (_claude/mods/issue-band。issue 621) 向けの機械の出口。数え方は同じで、`retro= held= odd=` を
+#   1 行ずつ、0 件でも必ず出す (issue dir の無い repo では何も出さない)。数えられないときは `error=<理由>`
 
 set -u
+mode="${1:-}"
 
 lib="$(dirname "$0")/lib/issue-hooks.sh"
 # 🚨 source の失敗を黙らせない: set -e が無いので `.` が失敗しても次行へ進み、関数未定義の
 # 非 0 が `|| exit 0` に吸われて「点検して報告なし」と区別できなくなる (実測 2026-08-21)
 # shellcheck source=_claude/hooks/lib/issue-hooks.sh
 if ! . "$lib" || ! command -v issue_hook_resolve_dir >/dev/null 2>&1; then
+  [ "$mode" = --counts ] && printf 'error=%s を読めない\n' "$lib" && exit 0
   printf '%s を読めないためretro issue の点検を省略した (hook の配線を確認する)\n' "$lib"
   exit 0
 fi
@@ -80,7 +84,7 @@ while IFS= read -r idir; do
 done <<EOF_DIRS
 $ISSUE_HOOK_DIRS
 EOF_DIRS
-[ -n "$retro_files" ] || exit 0
+[ -n "$retro_files" ] || [ "$mode" = --counts ] || exit 0
 while IFS= read -r f; do
   [ -e "$f" ] || continue
   base=${f##*/}
@@ -142,6 +146,11 @@ $retro_files
 EOF_FILES
 
 # 未決着が無ければ黙る (毎セッションのノイズにしない)
+if [ "$mode" = --counts ]; then
+  printf 'retro=%d\nheld=%d\nodd=%d\n' "$count" "$held_count" "$(awk 'NF { n++ } END { print n + 0 }' <<<"$odd")"
+  exit 0
+fi
+
 [ -n "$dated$odd" ] || exit 0
 
 report=$(

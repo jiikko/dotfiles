@@ -216,8 +216,29 @@ git -C "$none" init -q .
 none_out="$(printf '{"cwd":"%s"}' "$none" | "$HOOK" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext // ""')"
 check "issue dir が無ければ黙る" "" "$none_out"
 
+# --- --counts: 帯の mod (issue 621) 向けの機械の出口。数え方は本体と同じで、0 件でも必ず出す ---
+cnt="$WORK/cnt"
+mkdir -p "$cnt/issues/pending"
+git -C "$cnt" init -q .
+counts_of() { printf '{"cwd":"%s"}' "$1" | "$2" --counts 2>/dev/null || echo "__ERROR__"; }
+check "--counts: 空の issues/ でも 0 を出す" '^overdue=0$' "$(counts_of "$cnt" "$HOOK")"
+printf '# t\n\n起票日: 2026-08-01\n期限: 2000-01-01\n' >"$cnt/issues/950-human-overdue.md"
+printf '# t\n\n起票日: 2026-08-01\n期限: %s\n' "$(date +%F)" >"$cnt/issues/951-human-soon.md"
+printf '# t\n\n起票日: 2026-08-01\n期限: 2999-01-01\n' >"$cnt/issues/952-human-later.md"
+printf '# t\n\n起票日: 2026-08-01\n' >"$cnt/issues/953-human-nodue.md"
+printf '# t\n\n起票日: 2026-08-01\n期限: 2000-01-02\n' >"$cnt/issues/pending/954-human-held.md"
+got="$(counts_of "$cnt" "$HOOK")"
+want=$'overdue=2\nsoon=1\nhuman=4\nbroken=1'
+if [ "$got" != "$want" ]; then
+  echo "NG: --counts の件数 (期限切れは保留も数え、human は保留を数えない):"; printf '%s\n' "$got"; fails=$((fails + 1))
+fi
+check "--counts: issue dir の無い repo では何も出さない" "" "$(counts_of "$none" "$HOOK")"
+mkdir -p "$WORK/nolib"
+cp "$HOOK" "$WORK/nolib/human-tasks-due.sh"
+check "--counts: lib を読めなければ error= を出す (黙らない)" '^error=' "$(counts_of "$cnt" "$WORK/nolib/human-tasks-due.sh")"
+
 if [ "$fails" -gt 0 ]; then
   echo "FAIL: human-tasks-due.sh のテストが $fails 件失敗"
   exit 1
 fi
-echo "OK: human-tasks-due.sh (12 観点)"
+echo "OK: human-tasks-due.sh (16 観点)"

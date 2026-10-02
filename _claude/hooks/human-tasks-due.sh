@@ -24,14 +24,19 @@
 #       未確認 0 件 + 期限問題なしのときは何も出さない (毎セッションのノイズにしない)。
 #       🚨 「期限が読めなかった」は黙って捨てない — 書式不正・期限なしとして必ず出す
 #       (取りこぼしを「期限なし」と区別できないと、検査が静かに空回りする)。
+# `--counts`: 帯の mod (_claude/mods/issue-band。issue 621) 向けの機械の出口。数え方は同じで、
+#       `overdue= soon= human= broken=` を 1 行ずつ、0 件でも必ず出す (issue dir の無い repo では何も出さない)。
+#       数えられないときは `error=<理由>` を出す (黙ると帯が「何も無い」と区別できない)
 
 set -u
+mode="${1:-}"
 
 lib="$(dirname "$0")/lib/issue-hooks.sh"
 # 🚨 source の失敗を黙らせない: set -e が無いので `.` が失敗しても次行へ進み、関数未定義の
 # 非 0 が `|| exit 0` に吸われて「点検して報告なし」と区別できなくなる (実測 2026-08-21)
 # shellcheck source=_claude/hooks/lib/issue-hooks.sh
 if ! . "$lib" || ! command -v issue_hook_resolve_dir >/dev/null 2>&1; then
+  [ "$mode" = --counts ] && printf 'error=%s を読めない\n' "$lib" && exit 0
   printf '%s を読めないためhuman タスク issue の点検を省略した (hook の配線を確認する)\n' "$lib"
   exit 0
 fi
@@ -68,7 +73,7 @@ while IFS= read -r idir; do
 done <<EOF_DIRS
 $ISSUE_HOOK_DIRS
 EOF_DIRS
-[ -n "$issue_files" ] || exit 0
+[ -n "$issue_files" ] || [ "$mode" = --counts ] || exit 0
 while IFS= read -r f; do
   [ -e "$f" ] || continue
   base=${f##*/}
@@ -132,6 +137,12 @@ while IFS= read -r f; do
 done <<EOF_FILES
 $issue_files
 EOF_FILES
+
+if [ "$mode" = --counts ]; then
+  lines() { awk 'NF { n++ } END { print n + 0 }' <<<"$1"; }
+  printf 'overdue=%d\nsoon=%d\nhuman=%d\nbroken=%d\n' "$(lines "$overdue")" "$(lines "$upcoming")" "$unread" "$(lines "$broken")"
+  exit 0
+fi
 
 # 報告するものが何も無ければ黙る
 [ -n "$overdue$upcoming$broken" ] || [ "$unread" -gt 0 ] || exit 0

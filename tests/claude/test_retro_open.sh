@@ -301,7 +301,30 @@ check "入れ子がある repo は移動先を単一 dir で名指ししない" 
 check "入れ子がある repo で issues/done/ と断定しない" "" \
   "$(printf '%s' "$both_ctx" | grep -E 'と issues/done/ へ移動できる' || true)"
 
+# --- --counts: 帯の mod (issue 621) 向けの機械の出口。数え方は本体と同じで、0 件でも必ず出す ---
+cnt="$WORK/cnt"
+mkdir -p "$cnt/issues/pending"
+git -C "$cnt" init -q .
+counts_of() { printf '{"cwd":"%s"}' "$1" | "$2" --counts 2>/dev/null || echo "__ERROR__"; }
+check "--counts: 空の issues/ でも 0 を出す" '^retro=0$' "$(counts_of "$cnt" "$HOOK")"
+printf '# t\n\n- [ ] 残課題\n' >"$cnt/issues/960-retro-a-2026-09-01.md"
+printf '# t\n\n- [ ] 残課題\n' >"$cnt/issues/961-retro-b-2026-09-02.md"
+printf '# t\n\n- [ ] 残課題\n' >"$cnt/issues/962-retro-nodate.md"
+printf '# t\n\n- [ ] 残課題\n' >"$cnt/issues/pending/963-retro-held-2026-09-03.md"
+got="$(counts_of "$cnt" "$HOOK")"
+want=$'retro=3\nheld=1\nodd=1'
+if [ "$got" != "$want" ]; then
+  echo "NG: --counts の件数 (保留は retro に数えず held に、日付不明は odd に):"; printf '%s\n' "$got"; fails=$((fails + 1))
+fi
+nod="$WORK/nodir"
+mkdir -p "$nod"
+git -C "$nod" init -q .
+check "--counts: issue dir の無い repo では何も出さない" "" "$(counts_of "$nod" "$HOOK")"
+mkdir -p "$WORK/nolib"
+cp "$HOOK" "$WORK/nolib/retro-open.sh"
+check "--counts: lib を読めなければ error= を出す (黙らない)" '^error=' "$(counts_of "$cnt" "$WORK/nolib/retro-open.sh")"
+
 if [ "$fails" -gt 0 ]; then
   echo "FAIL: retro-open.sh ($fails 件)"; exit 1
 fi
-echo "OK: retro-open.sh (32 観点)"
+echo "OK: retro-open.sh (36 観点)"
