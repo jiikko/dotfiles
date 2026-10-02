@@ -40,6 +40,15 @@ Claude desktop の Code タブでも同じものを見たい。
 - [ ] mod のテスト (`claude plugin test`) で、`desktop` の surface に描くことと `terminal` では描かないことを固定した
 - [ ] mod が読み込まれない・script が失敗したときに、desktop で何が見えるかを書いた (黙って消えるなら、その判断と理由を書く。618 の「黙って止まったときの扱い」)
 
+## 前提の実測 (2026-10-02 / desktop 2.19675.0、claude 2.1.286〜287)
+
+- **desktop の Code タブのこのセッションでは、settings の `statusLine` が実行されなかった (観測。1 回)**: desktop の Code タブで動くセッション (`CLAUDE_PID=93948`、`CLAUDE_CODE_ENTRYPOINT=claude-desktop`) の作業中に、
+  80 秒間 0.5 秒ごとに `ps -Ao pid,ppid,command` で `statusline-command.sh` を探した。見つかった 5 件の親はすべて CLI の claude (pid 88080 / 30763 / 63712) と、別の worktree のテストで、
+  93948 の子も desktop の本体 (Claude.app) の子も無かった。`refreshInterval: 60` なので、描いているなら 80 秒の間に少なくとも 1 回は起動されるはず。
+  → 描いていない見込みが高い。確定は人が desktop の画面で見て確かめる (下の受け入れ条件の human の issue と同じ手順でよい)
+- **このマシンの制約 (619)**: user の mod に `ui.render` (AbovePrompt) と `$.ui.status` は届く (CLI の対話で実測)。desktop の surface で描けるか、`$.ui.status` の改行・色が通るかは未実測
+
 ## 進捗
 
 - 2026-10-02: 起票 (ユーザーの依頼)。mod の API で使えるものは型定義で確かめた: `$.process.run` は `stdin` を渡せる、`$.session.usage()` は status line と同じ値を返す、`$.ui.status` は plugin ごとに 1 行
+- 2026-10-02: desktop の Code タブのこのセッションでは settings の `statusLine` が実行されなかった (80 秒間に起動された 5 件はすべて CLI 側)。描いていない見込みが高いので mod が要る側として進める (確定は人が画面で見る)

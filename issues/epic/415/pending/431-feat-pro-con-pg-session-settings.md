@@ -724,6 +724,12 @@ commit「pro-con: Opus 5.5 のキャッシュの読みを料金 0.05 倍で数�
 (TestPersistentSessionProfile の冒頭。検出しないものも同じ所に書いた)。2 周目の指摘はこの範囲の迂回を 1 段ずつ深く突いたもので、全部を検査にして変異で閉じた。
 例で守るテストは迂回が尽きないので、3 周目は回さない (production の判定ロジックは 1 周目から変えておらず、2 周目の修正は検査の追加と文面だけで、どれも直接の実測で確かめた)
 
+### 2026-10-02 619 (Claude Code の mods) との関係
+
+mods (関数 hook の plugin) は `--setting-sources` では外れず、プロセスの環境の `CLAUDE_CODE_PLUGIN_DIRS` からも読まれる。619 で dispatcher が役を起こす環境から
+この変数を落とした (`roleEnv`。起動・再開・起動し直しは同じ `runClaude` を通るので揃ったまま。TestPersistentSessionProfile に親の環境に変数がある形を足した)。
+mods は PG に載らないので tools は変わらず、残りの計測 (10 起動 / 10 再開) を mods の後の形で数え直す必要は無い。役に mods を載せると決めたら、そのときに数え直す
+
 ## 過去の経緯 (圧縮)
 
 ### 2026-09-24

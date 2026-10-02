@@ -14,12 +14,15 @@ mod の側からは何も起きないように見える (2.1.287 で実測。iss
 |---|---|
 | `session.start` / `prompt.submit` / `turn.start` / `turn.complete` / `tool.call` / `tool.describe` / `session.end` / `ui.render` (AbovePrompt) / `$.ui.status` | `classic.*` (測ったのは SessionStart・UserPromptSubmit・PreToolUse・PostToolUse・Stop) / `prompt.section` / `prompt.compose` / `prompt.context` |
 
-- 帰結: mod からシステムプロンプトや最初のメッセージの文脈に文を足せない。settings の hook のイベントを `classic.<Event>` で受けることもできない
+- 帰結: mod からシステムプロンプトと、最初のメッセージの context ブロック (CLAUDE.md の枠) に文を足せない。settings の hook のイベントを `classic.<Event>` で受けることもできない。
+  プロンプトの隣にモデル向けの block を足す `prompt.submit` の `context` は届く (置き場所は settings の hook の注入と同じメッセージの側)
 - `--plugin-dir` で載せても `CLAUDE_CODE_PLUGIN_DIRS` で載せても tier は `user` で同じ
-- 測り直し方: 各イベントで印を書くだけの probe の mod を `--plugin-dir` で載せ、`--debug-file` の `bypassed by` の行を見る。Claude Code の更新や
+- 測り直し方: 各イベントで印を書くだけの probe の mod (コードは issue 619 の「このマシンでは user の mod に届かないイベントがある」) を `--plugin-dir` で載せ、`--debug-file` の `bypassed by` の行を見る。Claude Code の更新や
   managed settings の変更で変わりうるので、届かない前提に頼る設計 (ここに書いた表) は更新のたびに疑う
 - 未確認のリスク: 組織が sideload (`--plugin-dir` / `CLAUDE_CODE_PLUGIN_DIRS`) を禁じるポリシーを入れると、`CLAUDE_CODE_PLUGIN_DIRS` を持つ claude は
   起動時にエラーで止まりうる (2.1.287 の二進を静的に読んだだけ。回復の案内は出る)。そうなったら settings の env の行を外す
+- user の settings を読む裏の `claude -p` (ratelimit の `claude -p /usage` 等) でも mods が走る (settings の env から読まれるなら)。mod は `session.start` の
+  `e.isInteractive` / `e.surface` で、対話のセッションにだけ効かせる
 
 ## 置き場所と読み込み
 

@@ -22,7 +22,7 @@ mod の `AbovePrompt` の帯なら、人へ直接出せる。
   (TS で書き直すと 2 実装になる)
 - 更新のきっかけ: `session.start` と `turn.complete` (issue を done へ移した直後に減るように)。そこで script を呼んで結果を `$.state` に置き、
   `ui.render` は state を読むだけにする (描画の dispatch の中で外部の script を呼ばない。dispatch には時間の予算がある)
-- 620 の後に着手する (どちらも `_claude/issue-rules.md` の文面を直す)
+- ~~620 の後に着手する (どちらも `_claude/issue-rules.md` の文面を直す)~~ → 620 は文面を変えずに閉じたので外れた (下の「前提の実測」)
 
 ## 失敗モード
 
@@ -39,7 +39,17 @@ mod の `AbovePrompt` の帯なら、人へ直接出せる。
       どちらもモデルに行動 (提案 / push の伺い) をさせるための注入なので、**注入は残し、帯は人向けの表示として足すだけ**にするのが第一案
 - [ ] 帯の幅が狭い端末での見え方。決める前に見本を出す (`decide-layout-in-sample-renderer-first.md`)
 
+## 前提の実測 (2026-10-02 / claude 2.1.287。619)
+
+- このマシン (managed settings あり) でも、user の mod に `session.start` / `turn.complete` / `ui.render` (AbovePrompt) / `$.ui.status` は届く。
+  対話 (隔離した tmux) で probe の mod の帯 (`EVPROBE-BAND`) がプロンプトの上に描かれ、status にも出た
+- 620 は「移さない」で閉じ、`_claude/issue-rules.md` の文面は変えていないので、「620 の後に着手」の条件は外れた
+- ratelimit の裏で起きる `claude -p /usage` (user の settings を読む) でも mods が走るはず (settings の env からの読み込みが 619 で実測されたら確定)。帯の mod は `session.start` の `e.isInteractive` / `e.surface` で絞り、
+  非対話のセッションでは script を呼ばない
+- 帯の見本 (4 案) をユーザーに出した (2026-10-02)。推奨は案 3 (人がやる必要があるとき = 期限切れ・期限が近い・retro 未決着のときだけ出し、余裕のある human だけなら出さない)。返事待ち
+
 ## 進捗
 
 - 2026-10-02: 起票
 - 2026-10-02: 起票と同じ日に、反証レビュー (sonnet 2 本) と敵対的レビュー (opus 2 本) の指摘で方針を改訂した。621 に、帯が黙って消える失敗モード (併記の期間を置く)・描画は `$.state` を読むだけ・620 の後に着手、を足した。採否と理由の一覧は親 618 の進捗
+- 2026-10-02: 前提を実測 (帯と status は mod から描ける)。見本 4 案を出して見た目の返事待ち。件数は script に機械向けの出口 (`--counts` 等) を足して mod から呼ぶ方針

@@ -1,10 +1,8 @@
 # 620 (feat): issue 規約の注入を、mod でシステムプロンプトの節へ上げる (守られる率が上がるかを先に測る)
 
-> 🚨 **担当中: Claude code mods migration design (epic 618 を順に)**（2026-10-02〜）
-
 起票日: 2026-10-02
 
-epic [618](618-design-claude-code-mods-migration.md) の子。619 の後。epic で最初に着手する 1 本 (ただし移す前に仮説を測る)。
+epic [618](../618-design-claude-code-mods-migration.md) の子。619 の後。epic で最初に着手する 1 本 (ただし移す前に仮説を測る)。
 
 ## 概要
 
@@ -84,7 +82,96 @@ mod は失敗すると黙ってスキップされる。移すと、規約の無�
 - [ ] mod を外した状態 (読み込まれない) で同じ A-B を取り、何が起きるかを見た (上の「気づく手段」が働くか)
 - [ ] `tests/claude/test_issue_rules_inject.sh` を移行後の形に合わせて直す (settings の hook を残す経路があるなら残す)
 
+## 決着 (2026-10-02): 移さない — このマシンでは仮説の腕 (システムプロンプトの節 / CLAUDE.md の枠) を mod で作れない
+
+> 決着したので、上の「対応方針」「失敗モード」「確かめること」の未チェックの項目は無効 (移すときの手順として残してある)
+
+619 の実測で、managed settings のあるこのマシンでは、組み込みの `cc-plugin-sec-default` が user の tier の mod の
+`prompt.compose` / `prompt.section` / `prompt.context` / `classic.SessionStart` を呼ばずに素通りさせることが分かった
+(claude 2.1.287。debug log の `issue-rules-ab: prompt.compose bypassed by cc-plugin-sec-default (tier user); beneath runs`)。
+腕 B (システムプロンプトの節) は作れないので、A-B は取らずに閉じる。
+`prompt.submit` は mod に届き、`context` に「プロンプトの隣でモデルだけが読む block」を足せる (型定義) が、置き場所は今の A (hook の注入) と同じメッセージの側なので、
+「置き場所を上げれば守られる」という仮説の腕にはならない (この腕は測っていない)。
+
+- 確かめた手順: 腕 B / D (D = 規約を `claudeMd` の context ブロック、CLAUDE.md と同じ「指示ファイル」の枠に足す。仮説の「置き場所と名目」を直接試す腕として足した) の mod を書き、
+  本物の `issue-rules-inject.sh` を 4 回呼んで A と同じ文 (14,937 字) を `session.start` で得た。`claude -p --model haiku --setting-sources project,local --plugin-dir <mod>` で起こすと、
+  `session.start` は動いたが、`prompt.compose` / `prompt.context` の hook は一度も呼ばれず (入口で書く印が無い)、モデルも規約を見ていないと答えた。debug log に上の bypass の行
+- `--plugin-dir` でも `CLAUDE_CODE_PLUGIN_DIRS` でも tier は `user` で同じ。`--setting-sources` を付けない普通の起動でも同じ
+- 計測の前提として、`--setting-sources project,local` + `--settings` に腕ごとの hook を渡せば、本番の settings に触らずに隔離できることも確かめた
+  (SessionStart の hook が走り、注入がモデルに届いた)。再開するときはこの形を使う
+- **再開の trigger**: このマシンから managed settings が無くなった / `cc-plugin-sec-default` が user の tier の `prompt.*` を通すようになった
+  (Claude Code の更新で変わりうる)。確かめ方: probe の mod (各イベントで印を書くだけ) を `--plugin-dir` で載せ、`--debug-file` の `bypassed by` の行が消えたかを見る。
+  その時点で、上の計測計画 (A / B / C / D の腕) をそのまま使う
+- 腕 B / D に使った mod (`hooks/register.ts`。manifest は `{"name":"issue-rules-ab",...}`、hooks.json は `{"modules":["./register.ts"]}`)。入口ごとに印を書く版:
+
+  <details><summary>register.ts</summary>
+
+  ```ts
+  import type { Register, EngineInterface } from 'claude-code'
+
+  // 620 の A-B 計測用。腕 A (SessionStart の hook) と同じ文を得るため、本物の issue-rules-inject.sh を同じ引数で呼ぶ
+  const HOOK = '/Users/koji/dotfiles/_claude/hooks/issue-rules-inject.sh'
+  const ARGS = [[], ['issue-rules.d/claim-issue-in-next-and-push.md'], ['issue-rules.d/issue-creation-codex-review.md'], ['issue-rules.d/move-report-conclusions-to-issues.md']]
+
+  let loading: Promise<string> | null = null
+  const load = ($: EngineInterface, cwd: string) =>
+    (loading ??= (async () => {
+      const parts: string[] = []
+      for (const a of ARGS) {
+        const r = await $.process.run([HOOK, ...a], { cwd, stdin: JSON.stringify({ cwd }) })
+        let t = r.stdout
+        try { t = JSON.parse(r.stdout).hookSpecificOutput.additionalContext } catch {}
+        if (t.trim()) parts.push(t.trim())
+      }
+      return parts.join('\n\n')
+    })())
+
+  const mark = async ($: EngineInterface, name: string, text: string) => {
+    const dir = await $.env.get('ISSUE_RULES_AB_DIR')
+    if (dir) await $.fs.write(`${dir}/${name}`, `${text.length}\n${text.slice(0, 120)}\n`)
+  }
+
+  export const register: Register = on => {
+    on('session.start', async ($, e, next) => {
+      const r = await next(e)
+      try {
+        const t = await load($, e.cwd)
+        await mark($, 'start', t)
+      } catch (err) {
+        await mark($, 'start-error', String(err))
+      }
+      return r
+    })
+    on('prompt.compose', async ($, e, next) => {
+      const r = await next(e)
+      await mark($, 'compose-called', r.sections.map(x => x.id).join(','))
+      if ((await $.env.get('ISSUE_RULES_AB_ARM')) !== 'B') return r
+      const text = await load($, await $.session.cwd())
+      if (!text) return r
+      await mark($, 'composed', text)
+      return { ...r, sections: [...r.sections, { id: 'issue-rules-ab:rules', text, scope: 'session' as const }] }
+    })
+    on('prompt.context', async ($, e, next) => {
+      const r = await next(e)
+      await mark($, 'context-called', r.blocks.map(x => x.name).join(','))
+      if ((await $.env.get('ISSUE_RULES_AB_ARM')) !== 'D') return r
+      const text = await load($, await $.session.cwd())
+      if (!text) return r
+      const i = r.blocks.findIndex(b => b.name === 'claudeMd')
+      if (i < 0) return r
+      await mark($, 'context', text)
+      const blocks = r.blocks.map((b, j) => (j === i ? { ...b, text: `${b.text}\n\n${text}` } : b))
+      return { ...r, blocks }
+    })
+  }
+  ```
+
+  </details>
+
+- 618 の表の 620 の行は「移さない」に直した。`_claude/CLAUDE.md` の「注入された規約に従う」の 1 行と `issue-rules-inject.sh` はそのまま
+
 ## 進捗
 
 - 2026-10-02: 起票
 - 2026-10-02: 起票と同じ日に、反証レビュー (sonnet 2 本) と敵対的レビュー (opus 2 本) の指摘で方針を改訂した。620 を「システムプロンプトの節なら守られる」の仮説を A-B で測る issue に直し (3 腕・隔離した config・CLAUDE.md の文をそろえる)、規約は session.start で 1 回読む・印は session_id ごと、を足した。採否と理由の一覧は親 618 の進捗
+- 2026-10-02: 決着 — 移さない。このマシンでは user の mod の `prompt.compose` / `prompt.context` / `classic.SessionStart` が bypass され、腕 B / D を作れない (上の「決着」)。A-B は取らずに閉じる

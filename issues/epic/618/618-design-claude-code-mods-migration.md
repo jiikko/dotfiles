@@ -15,9 +15,18 @@ settings の hook (`_claude/settings.json` の command) と比べて、次がで
 - システムプロンプトに節を足せる (`prompt.compose`)。モデルが呼べるツール (`$.tool.register`) とスラッシュコマンド (`$.command.register`) を足せる
 - settings の hook のイベントも `classic.<Event>` として受けられる。結果は settings の hook と同じ形 (`block` / `additionalContext` / PreToolUse の `allow`・`ask`・`deny`)。
   型定義の記述では、settings の hook が 1 本も無くても発火する
+  - 🚨 **このマシンでは、システムプロンプトへの節 (`prompt.compose`) と `classic.*` が user の mod に届かない** (619 で実測)。下の「このマシンの制約」。
+    プロンプトの隣にモデル向けの block を足す `prompt.submit` の `context` は届く (置き場所は今の hook の注入と同じ側)
 
 制約: モジュールは Node も DOM も無い隔離環境で動き、外の世界には `$` (fs / process / http / model …) 経由でしか届かない。
 **API は early access で、リリースごとに変わる** (skill の reference.md が明記)。
+
+## このマシンの制約 (619 で実測。2026-10-02 / claude 2.1.287)
+
+managed settings (組織のリモートの設定) があるため、組み込みの `cc-plugin-sec-default` が一番外側に座り、user の tier の mod の
+`classic.*` / `prompt.section` / `prompt.compose` / `prompt.context` を呼ばずに素通りさせる。届くのは `session.start` / `prompt.submit` / `turn.start` /
+`turn.complete` / `tool.call` / `tool.describe` / `session.end` / `ui.render` / `$.ui.status`。表と測り方は `docs/claude-mods.md`。
+下の表はこの制約を反映した。Claude Code の更新や managed settings の変更で変わりうるので、移す・移さないの判断はそのたびに測り直す。
 
 ## 判断: どの hook を移すか
 
@@ -26,10 +35,10 @@ settings に配線されている hook の script 16 本 (エントリは 25) (`
 
 | hook | 判断 | 子 issue |
 |---|---|---|
-| `issue-rules-inject.sh` (SessionStart で規約を注入、4 本) | **仮説を測ってから決める**。「システムプロンプトの節にすれば、今の `<system-reminder>` より守られる」は未検証の仮説。620 で A-B を取り、守られる率が上がったときだけ移す | 620 |
+| `issue-rules-inject.sh` (SessionStart で規約を注入、4 本) | **移さない**。仮説の腕 (システムプロンプトの節 / CLAUDE.md の枠) は、このマシンでは `prompt.compose` / `prompt.context` が bypass されて作れなかった。`prompt.submit` の `context` は届くが、置き場所は今の注入と同じ側なので仮説の腕にならない。620 で決着 (再開の trigger は 620) | 620 (done) |
 | `human-tasks-due.sh` / `retro-open.sh` | **移す**。人へ見せる情報なので帯に出す。モデルに伝えさせるのをやめ、文脈を空ける | 621 |
-| `tmux-pane-state.sh` (6 イベント。PostToolUse はツール呼び出しのたびに bash を起こす) | **保留 (実測待ち)**。状態を常駐側に持てるが、移す利点 (速度) が未計測。622 で before を測り、閾値を超えたら移す | 622 |
-| `warn-discarding-checkout.sh` | **検討**。人に選ばせる形にしたいが、settings の hook の PreToolUse `ask` でも標準の確認で同じことができる。mod が要るかを 623 で先に決める | 623 |
+| `tmux-pane-state.sh` (6 イベント。PostToolUse はツール呼び出しのたびに bash を起こす) | **条件付きで進める**。今の費用 (中央値 28.7ms × 30 = 約 860ms) は条件 (300ms) を超えた。移して減る量は、tmux を直接起こす下限 (6.9ms) で見積もって約 650ms / 30 回。`$.process.run` の費用は未測定で、試作で測ってから決める。`classic.Notification` は届かない前提 (測った classic 5 つが全部 bypass) なので Notification は settings に残る | 622 |
+| `warn-discarding-checkout.sh` | **検討**。人に選ばせる形にしたいが、settings の hook の PreToolUse `ask` でも標準の確認で同じことができる。mod が要るかを 623 で先に決める (`ask` は `claude -p` で測った 4 モードとも拒否になった / 対話での見え方は未実測 / `tool.call` は mod に届く) | 623 |
 | `ratelimit-warn.sh` / `next-claim-unshared.sh` | **今は移さない**。モデルに行動 (ユーザーへの提案 / push の伺い) をさせるための注入で、帯に出すだけでは役目を果たさない。621 の帯に同じ情報を足すかは 621 で決める | — |
 | `deny-bare-tmux-kill.sh` / `deny-piped-push-then-destroy.sh` | **移さない**。守りの hook。mod の hook は失敗すると黙ってスキップされ、chain が続く (reference.md「Developing one」)。settings の hook のままにする | — |
 | `issue-progress-check.sh` (Stop で差し戻す) | **今は移さない**。`classic.Stop` の `block` で移せるが、新しくできることが無い | — |
@@ -56,26 +65,28 @@ settings の hook は失敗すれば stderr に出る。**移したものは、�
 **619 の 3 経路の実測結果は、620〜623 の着手条件にする**。読まれない経路があれば、その経路で要る settings の hook は残し、この表を直してから着手する。
 
 
-- [ ] **読み込まれる経路**。settings の hook は対話と `claude -p` では走るが、**pro-con の PG・PM・取り込みの係では走らない**
+- [x] **読み込まれる経路** (619 で実測。プロセスの環境では対話 / `-p` / `--bg` とも読む。PG は dispatcher で外すと決め、テストで固定した。settings の `env` からの読み込みは 619 の残タスク)。settings の hook は対話と `claude -p` では走るが、**pro-con の PG・PM・取り込みの係では走らない**
       (`--setting-sources project,local` で起動し、ユーザーの settings.json の hook と env が外れる。`src/pro-con/dispatcher/launcher.go` の
       `persistentSessionArgs`、`rolesettings.go` 冒頭。issue 431)。移す hook は今も PG に効いていないので、PG で mod が読まれないことは退行ではない。
       reference.md によれば `CLAUDE_CODE_PLUGIN_DIRS` は、`~/.claude/settings.json` (= `_claude/settings.json` への link) の `env` に加えて**プロセスの環境**からも読まれる。
-      dispatcher は PG を `os.Environ()` (tmux の変数だけ外す) で起こすので、Claude のペインの中から pro-con を起動すると、
-      その経路の PG にだけ mod が載りうる (431 の隔離が経路で変わる。未実測)。dispatcher で `CLAUDE_CODE_PLUGIN_DIRS` を外すか、載せると決めるかを 619 で決める
-- [ ] **subagent / fork**。`prompt.compose` で足した節が subagent のシステムプロンプトにも入るかは未確認 (今の SessionStart の注入は subagent に届かない)
+      dispatcher は PG を `os.Environ()` (tmux の変数だけ外す) で起こしていたので、Claude のペインの中から pro-con を起動すると、
+      その経路の PG にだけ mod が載りえた。→ 619 で外すと決め、`roleEnv` (dispatcher が claude を起こす 3 箇所) にした
+- [x] **subagent / fork**。`prompt.compose` で足した節が subagent のシステムプロンプトにも入るかは未確認 (今の SessionStart の注入は subagent に届かない)
+      → このマシンでは `prompt.compose` 自体が mod に届かないので、問いが消えた (620)
 - [ ] **二重に効かないこと**。移行の途中で、mod と settings の hook が同じ注入・同じ表示をしないようにする (1 本ずつ切り替える)
 - [ ] **API の変化への備え**。Claude Code の更新で mod が読み込まれなくなったとき、何が黙って止まるかを列挙しておく。守りの hook を移さないのはこのため
 
 ## 子 issue
 
-- [ ] 619 — 土台: 置き場所・読み込みの配線・テスト・入口の文書 (**他の全部の前提**)
-- [ ] 620 — issue 規約の注入をシステムプロンプトの節へ (最初の 1 本)
+- [ ] 619 — 土台: 置き場所・読み込みの配線・テスト・入口の文書 (**他の全部の前提**)。実装済み、settings の env からの読み込みの実測が残り
+- [x] 620 — issue 規約の注入をシステムプロンプトの節へ → **移さない** (このマシンでは mod から足せない)
 - [ ] 621 — human / retro の催促をプロンプトの上の帯へ
-- [ ] 622 — tmux のペインの状態表示を mod へ (実測の結果で移すかを決める)
+- [ ] 622 — tmux のペインの状態表示を mod へ (今の費用は条件を超えた。移して減る量を試作で測ってから決める)
 - [ ] 623 — 未コミットの変更を捨てる checkout の前に、人に選ばせる (mod か settings の `ask` かを先に決める)
 - [ ] 625 — Claude desktop (Code タブ) にも CLI と同じステータスバーを出す (desktop が `statusLine` を描くかを先に確かめる)
 
 順番は 619 → 620 → 621 (620 と 621 はどちらも `_claude/issue-rules.md` と `_claude/CLAUDE.md` の文面を直すので直列)。622 / 623 は 619 の後なら独立。
+620 は文面を変えずに閉じたので、621 は 619 の後なら独立になった。
 
 > 起票時は 624 (issue の採番を push まで済ませる) も子にしていたが、反証レビューで「script 1 本で同じことができ、mod にする理由が無い」と指摘され、
 > epic から外して `issues/` 直下の 624 にした (mod の失敗モードだけが増える)。
@@ -103,3 +114,6 @@ settings の hook は失敗すれば stderr に出る。**移したものは、�
 - 2026-10-02: **保留 (起票しない)**: CI が落ちたら mod が見張って、セッションが空いたところで修正のターンを差し込む案 (`$.clock.every` + `$.prompt.submit`)。
   機能の上では組めるが、並行セッションの担当を 1 つに絞る直列化と、「キリ」の誤認 (返事待ちの間に割り込む) のタイミングの問題が面倒なため、ユーザーの判断で保留。
   再開するなら、push した sha を覚えたセッションだけが起きる・空いた状態が続いたら or 人が選ぶ・試行の上限、の 3 つから設計する
+- 2026-10-02: 619 を実装 (canary の mod・settings の env・make test の検査・pro-con の役から外す)。実測で、このマシンでは user の mod に `classic.*` と `prompt.*` (compose / context / section) が
+  届かないと分かった (managed settings のため `cc-plugin-sec-default` が bypass)。620 を「移さない」で閉じ、表の 620 / 622 / 623 の行と前提のチェックを直した。
+  622 は before の実測で go、623 と 625 は前提を実測 (623: `ask` は `-p` で拒否になる / 625: desktop の Code タブは `statusLine` を実行していない)
