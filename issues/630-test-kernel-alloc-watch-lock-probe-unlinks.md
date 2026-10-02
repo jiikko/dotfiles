@@ -1,5 +1,7 @@
 # 630 (test): test_kernel_alloc_watch.sh のロック待ちの判定が `-k` 無しの lockf で、`make test` の中でだけ落ちる
 
+> 🚨 **担当中: dotfiles-20**（2026-10-03〜）
+
 起票日: 2026-10-02
 
 ## 概要
