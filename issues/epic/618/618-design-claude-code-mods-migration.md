@@ -38,7 +38,7 @@ settings に配線されている hook の script 16 本 (エントリは 25) (`
 | `issue-rules-inject.sh` (SessionStart で規約を注入、4 本) | **移さない**。仮説の腕 (システムプロンプトの節 / CLAUDE.md の枠) は、このマシンでは `prompt.compose` / `prompt.context` が bypass されて作れなかった。`prompt.submit` の `context` は届くが、置き場所は今の注入と同じ側なので仮説の腕にならない。620 で決着 (再開の trigger は 620) | 620 (done) |
 | `human-tasks-due.sh` / `retro-open.sh` | **帯を足した (注入は併記で残す)**。人へ見せる情報なので帯に出す。帯が出なかったときに気づく手段が無いうちは、SessionStart の注入と「冒頭で一言伝える」を外さない | 621 (done) |
 | `tmux-pane-state.sh` (6 イベント。PostToolUse はツール呼び出しのたびに bash を起こす) | **移さない (速くはした)**。mod の `tool.call` (12ms) は失敗・拒否でも発火し、読まれないとベルが鳴らなくなる。bash を起こさない sh の script (15.7ms、今は 28.7ms) を PostToolUse から直接呼ぶ形にした | 622 (done) |
-| `warn-discarding-checkout.sh` | **検討**。人に選ばせる形にしたいが、settings の hook の PreToolUse `ask` でも標準の確認で同じことができる。mod が要るかを 623 で先に決める (`ask` は `claude -p` で測った 4 モードとも拒否になった / 対話での見え方は未実測 / `tool.call` は mod に届く) | 623 |
+| `warn-discarding-checkout.sh` | **移さない (settings の hook のまま ask を足した)**。確実に捨てる単純なコマンドだけ PreToolUse の `ask` で人に選ばせ、曖昧な形は注意のまま (ユーザーの判断)。理由に消える一覧を見せられるので mod は要らない | 623 (done) |
 | `ratelimit-warn.sh` / `next-claim-unshared.sh` | **今は移さない**。モデルに行動 (ユーザーへの提案 / push の伺い) をさせるための注入で、帯に出すだけでは役目を果たさない。621 の帯にも足さないと決めた | — |
 | `deny-bare-tmux-kill.sh` / `deny-piped-push-then-destroy.sh` | **移さない**。守りの hook。mod の hook は失敗すると黙ってスキップされ、chain が続く (reference.md「Developing one」)。settings の hook のままにする | — |
 | `issue-progress-check.sh` (Stop で差し戻す) | **今は移さない**。`classic.Stop` の `block` で移せるが、新しくできることが無い | — |
@@ -82,7 +82,7 @@ settings の hook は失敗すれば stderr に出る。**移したものは、�
 - [x] 620 — issue 規約の注入をシステムプロンプトの節へ → **移さない** (このマシンでは mod から足せない)
 - [x] 621 — human / retro の催促をプロンプトの上の帯へ (案 3。注入は併記で残す)
 - [x] 622 — tmux のペインの状態表示を mod へ → **移さない**。PostToolUse の working を sh の script に分けて速くした
-- [ ] 623 — 未コミットの変更を捨てる checkout の前に、人に選ばせる (mod か settings の `ask` かを先に決める)
+- [x] 623 — 未コミットの変更を捨てる checkout の前に、人に選ばせる → settings の hook の `ask` (確実に捨てる単純なコマンドだけ)
 - [ ] 625 — Claude desktop (Code タブ) にも CLI と同じステータスバーを出す (desktop が `statusLine` を描くかを先に確かめる)
 
 順番は 619 → 620 → 621 (620 と 621 はどちらも `_claude/issue-rules.md` と `_claude/CLAUDE.md` の文面を直すので直列)。622 / 623 は 619 の後なら独立。

@@ -1,1 +1,0 @@
-../623-feat-mods-confirm-pane-before-discarding-checkout.md
