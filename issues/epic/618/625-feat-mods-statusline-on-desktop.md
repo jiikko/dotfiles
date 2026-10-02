@@ -1,0 +1,43 @@
+# 625 (feat): Claude desktop (Code タブ) にも、CLI と同じステータスバーを mod で出す
+
+起票日: 2026-10-02
+
+epic [618](618-design-claude-code-mods-migration.md) の子。619 の後。
+
+## 概要
+
+CLI では `_claude/settings.json` の `statusLine` (`~/.claude/statusline-command.sh`、587 行の bash) が、プロンプトの下にステータスバーを出している。
+1 行目はディレクトリ / ブランチ / セッション名 / モデル / 文脈の使用量 / effort / advisor、2 行目以降は 5h・7 日の枠の消費ペース (色分け)。
+Claude desktop の Code タブでも同じものを見たい。
+
+## 前提 (未確認。最初に確かめる)
+
+- [ ] desktop の Code タブが settings の `statusLine` を描くかどうか。描くなら mod は要らず、この issue は設定の確認だけで閉じる
+- [ ] desktop で mod が読み込まれるか。desktop が起こすセッションには `--plugin-dir` を渡せないので、`CLAUDE_CODE_PLUGIN_DIRS` (settings の `env` かプロセスの環境) で読ませる (reference.md「Developing one」)。619 の実測に desktop の経路を足す
+- [ ] mod の表示の口が desktop で何を描けるか。`$.ui.status(text)` は plugin ごとに 1 本の行 (型定義では文字列 1 つ。改行と ANSI の色が desktop で通るかは未確認)。
+      複数行・色が要るなら `AbovePrompt` の帯 (`ui.render`、`e.surface === 'desktop'` の要素の表) で描く
+
+## 対応方針 (前提の結果で決める)
+
+**表示の中身は 1 箇所に寄せる。CLI の script と mod の 2 実装にしない** (`statusline-command.sh` には、ratelimit の色の閾値を
+`src/ratelimit/usage/pace_drift_test.go` と揃える契約がある。写すと 3 つ目の実装になる)。
+
+- 第一案: mod が `$.process.run({ argv: [statusline-command.sh], init: { stdin } })` で既存の script を呼び、出力を描く。
+  stdin の JSON は CLI の `statusLine` が受けるものと同じ形を、`$.session.usage()` (文脈の使用量・枠・コスト。「status line が持つ値」と型定義に明記) と
+  `$.session.model()` / `$.session.cwd()` 等から組む。CLI の JSON にあって `$` から取れない項目 (effort / advisor 等) は、取れる口を探し、無ければ desktop では出さない
+- ANSI の色: desktop がそのまま描けないなら、script の出力の色を落とすか、mod 側で色付きの要素 (`Text` の色) に変換する。どちらにするかは見本を出して決める
+  (`decide-layout-in-sample-renderer-first.md`)
+- 更新のきっかけ: CLI は `refreshInterval: 60` と再描画のたび。mod は `turn.complete` と `$.clock.every` で呼び直し、結果を `$.state` に置いて描画は読むだけにする
+  (描画の dispatch の中で外部の script を呼ばない)
+- CLI では mod の表示を出さない (`e.surface` が `terminal` なら何もしない)。CLI の `statusLine` と二重に出さないため
+
+## 受け入れ条件
+
+- [ ] desktop の Code タブで、CLI と同じ項目が見えることを人が確かめた (desktop の描画は機械で確かめる手段が無い。確かめる手順を human の issue に起こす)
+- [ ] CLI の表示が変わっていないこと (二重に出ていない)
+- [ ] mod のテスト (`claude plugin test`) で、`desktop` の surface に描くことと `terminal` では描かないことを固定した
+- [ ] mod が読み込まれない・script が失敗したときに、desktop で何が見えるかを書いた (黙って消えるなら、その判断と理由を書く。618 の「黙って止まったときの扱い」)
+
+## 進捗
+
+- 2026-10-02: 起票 (ユーザーの依頼)。mod の API で使えるものは型定義で確かめた: `$.process.run` は `stdin` を渡せる、`$.session.usage()` は status line と同じ値を返す、`$.ui.status` は plugin ごとに 1 行
