@@ -167,7 +167,8 @@ func TestReadStatuslineRejectsUnusable(t *testing.T) {
 		{"古い観測", body(now.Add(-statuslineMaxAge))},
 		{"壊れた JSON", "{"},
 		{"枠が無い", fmt.Sprintf(`{"observedAt":%d,"five_hour":null,"seven_day":{"used_percentage":null,"resets_at":null}}`, now.Unix())},
-		{"使用率があるのにリセット時刻が無い", fmt.Sprintf(`{"observedAt":%d,"five_hour":{"used_percentage":97,"resets_at":null},"seven_day":null}`, now.Unix())},
+		// 7d は正常な値にする (7d も空だと「使える枠が無い」で nil になり、この形を見分けられない)
+		{"使用率があるのにリセット時刻が無い", fmt.Sprintf(`{"observedAt":%d,"five_hour":{"used_percentage":97,"resets_at":null},"seven_day":{"used_percentage":10,"resets_at":%d}}`, now.Unix(), reset)},
 	} {
 		dir := t.TempDir()
 		writeStatuslineFile(t, dir, tc.body)
