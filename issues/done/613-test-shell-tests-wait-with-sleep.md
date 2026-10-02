@@ -1,6 +1,5 @@
 # 613 (test): shell のテストに残る秒数の待ち (固定待ち 5・窓 8・時刻跨ぎ 3) と、手書きのポーリング 38 本
 
-> 🚨 **担当中: dotfiles-38**（2026-10-02〜）
 
 起票日: 2026-10-02
 
@@ -11,7 +10,7 @@
 
 `tests/` 配下の shell / bats / zsh テストの `sleep` を全数分類した (コメント行を除く 112 行。最初の grep `sleep +[0-9.$]` は
 `sleep "$x"` の形を落としており、反証レビューの指摘で 5 行を足した。
-sonnet の read-only 調査を main が抜き取りで検閲)。2026-09-05 の分類 ([262](pending/262-perf-test-suite-speedup-plan.md) の節 E) 以降に
+sonnet の read-only 調査を main が抜き取りで検閲)。2026-09-05 の分類 ([262](../pending/262-perf-test-suite-speedup-plan.md) の節 E) 以降に
 増えた分と、そこで「触らない」とした分を含む今の全量。Go のテストは [614](614-test-go-tests-wait-real-time.md)、新しい sleep を止める検査は
 [615](615-chore-gate-new-sleeps-in-tests.md)。
 
@@ -99,7 +98,7 @@ sonnet の read-only 調査を main が抜き取りで検閲)。2026-09-05 の�
 
 - `tests/lib/wait_until.sh` (`tt_wait_until`)
 - `_claude/rules/avoid-wall-clock-assertions.md`
-- [262](pending/262-perf-test-suite-speedup-plan.md) の節 E (2026-09-05 の分類と、窓のゲート化の前例)
+- [262](../pending/262-perf-test-suite-speedup-plan.md) の節 E (2026-09-05 の分類と、窓のゲート化の前例)
 
 ## 進捗
 
