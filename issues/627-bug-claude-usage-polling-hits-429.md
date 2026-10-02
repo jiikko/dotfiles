@@ -58,9 +58,17 @@
       `claude -p /usage --debug-file` は `429 remembered for this bearer; not asking again for 2849s`。13:32 には
       残り 2692 秒 (14:17 ごろ切れる) だったので、切れた後の最初の問い合わせにサーバが再び 429 を返している
       (サーバ側の窓は 45 分より長い。数え方は未確認)
-    - **再観測の条件**: 15:20 以降に `ratelimit -source claude` を 1 回。成功なら 5h / 7d が出て、
+    - **再観測の条件** (14:55 に改訂。下の進捗を参照): 15:45 以降に `ratelimit -source claude` を 1 回。成功なら 5h / 7d が出て、
       `~/.cache/glog/claude-usage-shared.json` に `fetchedAt` と枠が入る。まだ 429 なら `--debug-file` で残り秒数を見て、その後にもう 1 回
     - 成功を見たらこの項目を埋めて done へ (`scripts/issue_done.sh 627`)
+- 2026-10-02 14:55: 止める期間を 10 分 → 50 分に直した (commit「fix(ratelimit): 429 のあとはサーバの Retry-After より長く止める」)
+  - 🚨 前提の誤り: 「CLI は 429 を覚えている間はサーバへ行かない」と書いていたが、CLI のコード (`fetchUtilization`) を読むと
+    その記憶は `claude -p` のプロセスをまたいで残らない。debug ログの「GET /api/oauth/usage (attempt 1)」→「429 remembered …
+    not asking again for Ns」は、その場でサーバから受け取った 429 の記録 (覚えた値の再生なら「… replayed —」の行になる)。
+    Ns が 2692 → 2849 と伸びたのも、新しい 429 を受け取った証拠
+  - つまり 10 分の停止では 10 分ごとに 429 を叩き直していた (14:16 / 14:26 / 14:51 の試行がすべて 429)。50 分は実測の
+    Retry-After の最大 (2849 秒 ≒ 47.5 分) を上回る値
+  - 再観測は、最後の 429 (14:51) から 50 分以上空けた 15:45 以降に 1 回
 
 ### 敵対的レビュー (opus、観点を分けて 3 本 + 2 周目 1 本)
 

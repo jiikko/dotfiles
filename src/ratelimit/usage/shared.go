@@ -28,10 +28,14 @@ const (
 	// SharedFresh: 誰かが claude を起こしてからこの時間は、成否によらず起こし直さない (成功ならその
 	// 結果を、失敗ならその理由を返す)。429 になる前の実績 (1 時間に 2〜8 回) に合わせた。
 	SharedFresh = 5 * time.Minute
-	// noLimitsBackoff: サーバから枠を受け取れなかった後、claude を起こさない時間。CLI 自身が 429 の
-	// Retry-After (実測 2692 秒) を覚えていて、その間は起こしてもサーバへは行かない。ここで止めるのは
-	// node を無駄に起こさないためなので短めでよく、通信断で null になった場合の取りこぼしも小さくする。
-	noLimitsBackoff = 10 * time.Minute
+	// noLimitsBackoff: サーバから枠を受け取れなかった後、claude を起こさない時間。サーバの 429 の
+	// Retry-After より長くする (実測 2692 秒 / 2849 秒、2026-10-02)。
+	// 🚨 CLI は 429 を覚える仕組みを持つが、`claude -p` のプロセスをまたいで残らない: 起こすたびに実際に
+	// GET し、新しい 429 と Retry-After を受け取っていた (debug ログの「GET … (attempt 1)」の直後に
+	// 「429 remembered … not asking again for 2849s」。覚えた値の再生なら「replayed」の行になる)。
+	// 以前の 10 分では 10 分ごとに 429 を叩き直し、窓を延ばし続けていた。通信断でも同じ形 (rate_limits が null)
+	// になりうるので、そのときも 50 分止まるが、サーバを叩き続ける方を避ける。
+	noLimitsBackoff = 50 * time.Minute
 )
 
 // errNoLimits は CLI がサーバから利用枠を受け取れなかったこと (usage_report.rate_limits が null)。

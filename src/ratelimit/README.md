@@ -22,7 +22,7 @@ Claude Code (`/usage`) と codex (app-server の rateLimits) の利用枠 (5h / 
   以後約 45 分は枠が返らなかった)。呼び出し元は glogx (`FetchClaudePart` / `R` の `r` は `FetchClaudePartNow`)・`bin/ratelimit` (`Fetch`)・
   pro-con の dispatcher (自前の引数で起こし、`FetchShared` + `ParseStream` を通す)
   - 最後の結果を `~/.cache/glog/claude-usage-shared.json` に置き、成否によらず 5 分 (`SharedFresh`) は起こし直さない
-  - サーバが枠を返さなかった (stream-json の `usage_report.rate_limits` が null。429 か通信の失敗) ら 10 分は起こさない
+  - サーバが枠を返さなかった (stream-json の `usage_report.rate_limits` が null。429 か通信の失敗) ら 50 分は起こさない (サーバの Retry-After は実測 45〜47 分。CLI は 429 をプロセスをまたいで覚えないので、起こせばサーバを叩く)
   - 上の 2 つのキャッシュはこの手前にある呼び出し側の契約で、ゲートとは別物
 - pace 判定は `_claude/statusline-command.sh` と二重実装。乖離は `usage/pace_drift_test.go` が突き合わせ、
   shell だけを変えたときは `tests/claude/test_statusline.sh` がこのテストを `-count=1` で叩く

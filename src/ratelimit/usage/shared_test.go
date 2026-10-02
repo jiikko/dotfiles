@@ -101,11 +101,11 @@ func TestFetchBacksOffWhenServerReturnsNoLimits(t *testing.T) {
 	calls := countingClaude(t, streamNoLimits)
 
 	_, err := fetchT(t)
-	if err == nil || !strings.Contains(err.Error(), "サーバから利用枠を受け取れない") || !strings.Contains(err.Error(), "12:10 まで取得を止める") {
+	if err == nil || !strings.Contains(err.Error(), "サーバから利用枠を受け取れない") || !strings.Contains(err.Error(), "12:50 まで取得を止める") {
 		t.Fatalf("err = %v, want サーバが枠を返さない旨と再開時刻", err)
 	}
 	advance(noLimitsBackoff - time.Minute)
-	if _, err := fetchT(t); err == nil || !strings.Contains(err.Error(), "12:10 まで") {
+	if _, err := fetchT(t); err == nil || !strings.Contains(err.Error(), "12:50 まで") {
 		t.Fatalf("止めている間の err = %v", err)
 	}
 	if got := calls(); got != 1 {
@@ -138,7 +138,7 @@ func TestFetchNoLimitsKeepsFreshResult(t *testing.T) {
 	}
 }
 
-// usage_report を出さない版 (または書式変更) で読めないときは、10 分止めずに通常の失敗として返す。
+// usage_report を出さない版 (または書式変更) で読めないときは、長く止めずに通常の失敗として返す。
 // ただし失敗も共有し、5 分は claude を起こし直さない (読めない応答のたびに起こすとサーバを高頻度に叩く)。
 func TestFetchParseFailureIsSharedButNotBlocked(t *testing.T) {
 	isolateShared(t)
