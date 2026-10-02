@@ -1,0 +1,9 @@
+{
+  "name": "desktop-statusline",
+  "version": "0.1.0",
+  "description": "Claude desktop の Code タブに、CLI と同じステータスバー (statusline-command.sh の出力) を色つきで出す (issue 625)",
+  "author": {
+    "name": "jiikko"
+  },
+  "types": "./types/index.d.ts"
+}
