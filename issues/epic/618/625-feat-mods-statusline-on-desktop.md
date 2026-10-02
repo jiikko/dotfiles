@@ -16,6 +16,8 @@ Claude desktop の Code タブでも同じものを見たい。
       → 実行されなかった (1 回の観測。下の「前提の実測」)。mod が要る側として進めた。画面での確定は [628](628-human-verify-desktop-statusline.md)
 - [ ] desktop で mod が読み込まれるか。desktop が起こすセッションには `--plugin-dir` を渡せないので、`CLAUDE_CODE_PLUGIN_DIRS` (settings の `env` かプロセスの環境) で読ませる (reference.md「Developing one」)。619 の実測に desktop の経路を足す
       → 未確認。settings の `env` で読ませる形にした (619)。desktop のセッションで読まれるかは 628 で確かめる
+      → desktop 同梱の claude (2.1.286) を単独で起こすと、desktop と同じ stream-json のモードでも settings の env だけでも読む (下の「628 の確認の結果」)。
+        動いている desktop のセッションの中で読まれているかは未観測
 - [ ] mod の表示の口が desktop で何を描けるか。`$.ui.status(text)` は plugin ごとに 1 本の行 (型定義では文字列 1 つ。改行と ANSI の色が desktop で通るかは未確認)。
       複数行・色が要るなら `AbovePrompt` の帯 (`ui.render`、`e.surface === 'desktop'` の要素の表) で描く
       → `AbovePrompt` の帯で描く形にした (3 行・色つき)。desktop で実際に描けるかは 628 で確かめる
@@ -65,9 +67,36 @@ Claude desktop の Code タブでも同じものを見たい。
 - CLI の JSON にあって `$` から取れない項目: `advisor` (script は settings から読むので影響なし)・`transcript_path` (空で渡す)
 - 敵対的レビューは省略した: 表示だけの mod で、守りの機構でも、既存の挙動を変えるものでもない (CLI の statusLine と settings には触れていない)。失敗したときは帯が出ないか理由の 1 行が出るだけ
 
+## 628 の確認の結果 (2026-10-02 23:25。何も出なかった)
+
+desktop の Code タブのセッション (2026-10-02 23:19 に再開。`CLAUDE_CODE_ENTRYPOINT=claude-desktop`、Bash から `CLAUDE_CODE_PLUGIN_DIRS=~/dotfiles/_claude/mods` が見える) で、
+入力欄の上には何も出なかった。ユーザーが画面で見たうえで、`screencapture -x` で撮った画面でも確かめた。`issue-band` の帯も出ていない
+(ただし issue-band は `e.isInteractive` と `$.session.surfaces()` が空でないことで絞っているので、desktop で出ないことは切り分けの材料にならない)。
+
+切り分けの観測 (どれも 2026-10-02。desktop 2.19675.0):
+
+- **desktop が起こす claude は 2.1.286** (`~/Library/Application Support/Claude/claude-code/2.1.286/…/claude`)。CLI は 2.1.287
+- **2.1.286 も mod を読む**。`env -i` から canary の印を見た: `-p` で読む / `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` を足しても同じ (2.1.286 の二進には rollout の switch で mods を止める文言があるが、このアカウントでは flag 無しで読んだ。2.1.287 にはその文言が無い) /
+  desktop と同じ stream-json のモード (`--output-format stream-json --input-format stream-json`) でも読む / プロセスの環境に `CLAUDE_CODE_PLUGIN_DIRS` が無く settings の env だけでも読む。
+  対照の 2.1.287 も同じ条件で読んだ。**版のせいで読まれない、ではない**
+- 単独で起こした stream-json のモードでは、canary が見る `surface` は `null`、`isInteractive` は `false`。desktop は claude を `--await-initialize` で起こしていて、
+  engine の二進 (2.1.286) を静的に読むと、desktop の surface の描画は desktop の client からの要求で動く (`ui.render … of <component> from desktop`、requestId つき)
+- desktop アプリの `app.asar` にも mod の UI の部品の schema (`["Pane","AbovePrompt"]`) はある。desktop が描画を要求しているかは観測できていない
+  (desktop のログ `~/Library/Logs/Claude/main.log` に mod の UI の行は 0。desktop のセッションの debug log は出ていない)
+
+残っている候補 (どちらも未観測):
+
+1. desktop が AbovePrompt の描画を要求していない (desktop 側の未対応・機能の出し分け。dotfiles からは直せない)
+2. 要求は来ているが、mod が描く中身を一度も作っていない。`refresh` を呼ぶのは `$.session.surfaces()` に `desktop` があるときだけ (`onDesktop`) で、
+   lines も error も null のままなら `ui.render` は `next(e)` を返す (何も描かない)
+
+次の観測 (提案。未着手): `ui.render` を desktop の surface で受けたら、中身がまだ無くても待機の 1 行 (`$.session.surfaces()` の中身つき) を描く形にし、
+新しい desktop のセッションで見る。待機の行が出れば 2 (描画は来ている。surfaces の条件を直す)、何も出なければ 1。
+
 ## 残り
 
-- desktop の画面で見え方を人が確かめる: [628](628-human-verify-desktop-statusline.md) (期限 2026-10-09)。確かめられたら 625 も done にする
+- 上の「次の観測」で 1 / 2 を切り分ける。2 なら直して、[628](628-human-verify-desktop-statusline.md) の手順でもう一度見る (期限 2026-10-09)。確かめられたら 625 も done にする
+- 1 なら、desktop の更新で描画が来るまで待つ (waiting へ移す) か、この mod を外すかを決める
 
 ## 進捗
 
@@ -75,3 +104,4 @@ Claude desktop の Code タブでも同じものを見たい。
 - 2026-10-02: desktop の Code タブのこのセッションでは settings の `statusLine` が実行されなかった (80 秒間に起動された 5 件はすべて CLI 側)。描いていない見込みが高いので mod が要る側として進める (確定は人が画面で見る)
 - 2026-10-02: mod を実装 (案 B)。テスト 10 本・変異 4 本。desktop の画面での確認を 628 (human) に起こした。claim は外した (人の確認待ち)
 - 2026-10-02: 前提と受け入れ条件のチェックを実装・実測に合わせた (statusLine を実行しない / CLI で二重に出ない / テスト / 失敗時の見え方は済み。mod が desktop で読まれるか・描けるか・人の確認は 628 待ち)
+- 2026-10-02: 628 の確認で、desktop の画面には何も出なかった。版 (2.1.286) では読まれる、を A-B で確かめた。候補を 2 つに絞り、切り分けの観測を提案した (上の「628 の確認の結果」)
