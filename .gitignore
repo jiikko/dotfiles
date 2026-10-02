@@ -22,3 +22,10 @@ _claude/settings.local.json
 # `claude -w <name>` (pro-con の PG / PM / 取り込みの係など) が作る git worktree の置き場。
 # 各 worktree は自分のブランチで commit するので、本体から追跡する対象ではない。
 .claude/worktrees/
+
+# Claude Code が mod を読むたびに書き出す型 (その build の API と、マシンごとに違う MCP の型)。issue 619。
+# 2.1.287 では engine 自身が types/ に `*` の .gitignore を置くが、その挙動が変わっても未追跡が増えないようにする
+_claude/mods/*/.claude-plugin/types/
+# engine は mod の直下に tsconfig.json (上の types/ を extends するだけ) も無ければ書く。追跡すると、追跡していない mod を
+# 足したときに ~/dotfiles に未追跡が出て、後でそれを追加する commit の pull が「untracked would be overwritten」で止まる
+_claude/mods/*/tsconfig.json

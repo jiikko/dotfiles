@@ -34,6 +34,10 @@ expect "_claude/skills/*.md -> tests/claude" 'tests: .*tests/claude' _claude/ski
 expect "_claude/rules/*.md -> tests/claude" 'tests: .*tests/claude' _claude/rules/commit-with-pathspec.md
 expect "_claude/hooks/*.sh -> shell lint + tests/claude" 'test-shellcheck.*tests: .*tests/claude' _claude/hooks/deny-bare-tmux-kill.sh
 expect "_claude/statusline-command.sh -> shell lint + tests/claude" 'test-shellcheck.*tests: .*tests/claude' _claude/statusline-command.sh
+# issue 619: mods の manifest / hooks.json が *.json (文法だけ) に落ちると、modules の指し先の誤りが test-changed を素通りする
+expect "_claude/mods/*/plugin.json -> tests/claude" 'tests: .*tests/claude' _claude/mods/canary/.claude-plugin/plugin.json
+expect "_claude/mods/*/register.ts -> tests/claude" 'tests: .*tests/claude' _claude/mods/canary/hooks/register.ts
+expect "_claude/settings.json -> test-json + tests/claude" 'test-json.*tests: .*tests/claude' _claude/settings.json
 
 # 主要な腕の代表 1 例ずつ
 expect "src/<proj> -> go lint+test" 'go: .*src/glogx' src/glogx/tui.go
@@ -54,7 +58,7 @@ expect "zshlib/_fs_helpers.zsh -> tests/zshrc" 'tests: .*tests/zshrc' zshlib/_fs
 expect "参照の無い新規スクリプトは lint だけ" 'test-shellcheck' scripts/__no_such_test_refs__.sh
 expect "tests/<dir> -> test-dir + lint-tests" 'test-lint-tests.*tests: .*tests/claude' tests/claude/test_statusline.sh
 expect "zshlib -> shell 系" 'test-zshrc' zshlib/_concat.zsh
-expect "json -> test-json" 'test-json' _claude/settings.json
+expect "json -> test-json" 'test-json' _claude/keybindings.json
 # issue ファイルは「ドキュメント = テスト対象なし」に落ちていた (2026-08-28 に修正)。
 # 追加・改番が NNN 一意性検査のトリガーそのものなので、*.md の腕へ戻ると無言で検査されなくなる。
 # パスは合成 (写像はパス文字列だけを見る)。実在の issue 名を書くと done/ への移動で腐る。

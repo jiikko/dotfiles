@@ -7,6 +7,7 @@
     "swift-lsp@claude-plugins-official": true
   },
   "env": {
+    "CLAUDE_CODE_PLUGIN_DIRS": "~/dotfiles/_claude/mods",
     "ENABLE_CLAUDEAI_MCP_SERVERS": "false"
   },
   "hooks": {

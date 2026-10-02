@@ -43,6 +43,8 @@ tests/ の run_tests と同じ repo 既存の前提)。
   _claude/hooks/ _claude/**.sh → shell 系 lint + make test-dir DIR=tests/claude
   _claude/CLAUDE.md _claude/(agents|rules|skills|references|commands)/
                               → make test-dir DIR=tests/claude (skill 参照表・symlink 健全性)
+  _claude/mods/               → make test-dir DIR=tests/claude (claude plugin validate / test)
+  _claude/settings.json       → test-json + make test-dir DIR=tests/claude (hook と mods の配線)
   bin/ scripts/ zshlib/ と、場所を問わない *.sh / _z*
                               → test-syntax test-shellcheck test-zsh-syntax test-zshrc
   *.md *.txt LICENSE issues/ docs/ vendor/
@@ -166,6 +168,14 @@ for p in "$@"; do
     # 🚨 *.yml の写像 (test-yaml だけ) に落とすと、色を変えても文法検査しか走らない。
     theme/*)
       add_target test-yaml; add_test_dir "tests/theme"; add_go_dir "src/glogx" ;;
+    # mods (Claude Code の関数 hook の plugin) の manifest / hooks.json を *.json の写像に落とさない (test-json は Makefile の
+    # JSON_FILES の固定のファイルしか見ない): modules の指す先を間違えても通り、本番では mod が黙って読まれない。.ts もここで拾う (issue 619)
+    _claude/mods/*)
+      add_test_dir "tests/claude"
+      case "$p" in *.sh) add_shell_targets ;; esac ;;
+    # settings.json は文法に加えて tests/claude も回す: hook の配線と mods の読み込み (CLAUDE_CODE_PLUGIN_DIRS) を検査している
+    _claude/settings.json)
+      add_target test-json; add_test_dir "tests/claude" ;;
     mac/karabiner.json)
       add_target test-json; add_target test-karabiner ;;
     *.json)

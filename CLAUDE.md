@@ -29,4 +29,5 @@
 - **規範を常時ロードの場所 (`_claude/CLAUDE.md` / `_claude/rules/`) から hook の条件付き注入へ移すときは、
   常時ロード側に「注入された規約に従う」義務を 1 行残す**。hook の出力は背景情報 (`<system-reminder>`) として届き、
   CLAUDE.md と同じ拘束力を持たない (issue 401 の `_claude/issue-rules.md` がこの形)
+- **mods (関数 hook の plugin) は `_claude/mods/<name>/`**。読み込み・経路・テストの約束は [`docs/claude-mods.md`](docs/claude-mods.md)。link は張らない (settings の `env` の `CLAUDE_CODE_PLUGIN_DIRS` が `~/dotfiles/_claude/mods` を直接読む)
 - 🚨 **hook だけは例外で、link されていなくても動く**。hook の起動経路は `_claude/settings.json` の `command` **だけ**で、そこには dotfiles の実体パス (`~/dotfiles/_claude/hooks/...`) を書いている。`~/.claude/hooks/` への link は**どこからも読まれていない** (実測 2026-09-02 / issue 142: Claude Code 2.1.257 のバイナリに `.claude/hooks` の文字列が 0 件 — `skills` 66 / `agents` 20 等は在る。起動時の `$0` も dotfiles 側だった)。link は「置き場所に依存しない安定パス」として残してあるだけなので、**新しい hook を足して setup.sh を忘れても hook は動く** (テストは赤くなる)
