@@ -727,7 +727,7 @@ func haiku(ctx context.Context, claude, dir, settings, prompt string) (string, e
 	// --no-session-persistence: 使い捨てなので transcript を残さない (460 の P3。1 回あたり約 200KB が ~/.claude/projects に残っていた)
 	cmd := exec.CommandContext(ctx, claude, "-p", "--model", "haiku", "--no-session-persistence", "--setting-sources", "project,local", "--settings", settings)
 	cmd.Dir = dir
-	cmd.Env = withoutTmux(os.Environ())
+	cmd.Env = roleEnv(os.Environ())
 	cmd.Stdin = strings.NewReader(prompt)
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut

@@ -9,6 +9,7 @@ package dispatcher
 //   - <profile> (persistentSessionArgs) は起動と再開で同じにする (431)。prompt cache は request の先頭 (tools・system) が同じなら
 //     session をまたいで当たる。形は launcher_test.go の TestPersistentSessionProfile が固定する
 //   - TMUX / TMUX_PANE を落とす (PG が起動元の pane の状態のバッジを上書きしないように。415 論点 5)
+//   - CLAUDE_CODE_PLUGIN_DIRS を落とす (役に mods を載せない。理由は roleEnv)
 
 import (
 	"bytes"
@@ -18,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -139,7 +141,7 @@ func runClaude(ctx context.Context, claude, dir string, args ...string) (string,
 	defer cancel()
 	cmd := exec.CommandContext(ctx, claude, args...)
 	cmd.Dir = dir
-	cmd.Env = withoutTmux(os.Environ())
+	cmd.Env = roleEnv(os.Environ())
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	cmd.WaitDelay = time.Second
@@ -163,6 +165,16 @@ func parseBackgrounded(out string) (string, error) {
 		return "", fmt.Errorf("claude --bg の出力を読めない (版が変わった?): %q", line)
 	}
 	return strings.TrimSpace(parts[1]), nil
+}
+
+// roleEnv は pro-con が起こす claude (PG・PM・取り込みの係・haiku) の環境。withoutTmux に加えて CLAUDE_CODE_PLUGIN_DIRS を落とす (619)。
+// 役は --setting-sources project,local でユーザーの settings の hook と env を外している (431) が、mods (関数 hook の plugin) は
+// プロセスの環境の CLAUDE_CODE_PLUGIN_DIRS からも読まれる。dispatcher の環境にこの値があると (Claude の中から起こした pro-con が
+// 持ちうる)、落とさない限り、その起こし方のときだけ役に mods が載る。claude --bg の session は、daemon の環境ではなく起動した
+// client (この呼び出し) の値で mods を決め、client に無ければ session の Bash の環境にも残らない (claude 2.1.287 で実測。619) ので、
+// ここで落とせば役にもその子にも載らない。載せると決めたら、起動と再開で同じ値を渡す (mods は tools を変えうる。TestPersistentSessionProfile)
+func roleEnv(env []string) []string {
+	return slices.DeleteFunc(withoutTmux(env), func(e string) bool { return strings.HasPrefix(e, "CLAUDE_CODE_PLUGIN_DIRS=") })
 }
 
 func withoutTmux(env []string) []string {

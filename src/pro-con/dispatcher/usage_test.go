@@ -357,11 +357,12 @@ func TestParseUsageErrorQuotesOutput(t *testing.T) {
 	}
 }
 
-// 枠を読むコマンド: 読むたびに session を残さない / user の hook を走らせない / 状態の置き場で動かす / 子孫が stdout を握っても戻る。
+// 枠を読むコマンド: 読むたびに session を残さない / user の hook と mods を走らせない / 状態の置き場で動かす / 子孫が stdout を握っても戻る。
 func TestUsageCmd(t *testing.T) {
 	t.Setenv("TMUX", "/tmp/tmux-1/default,1,0")
 	t.Setenv("TMUX_PANE", "%1")
 	t.Setenv("PRO_CON_KEEP", "1")
+	t.Setenv("CLAUDE_CODE_PLUGIN_DIRS", "/h/dotfiles/_claude/mods")
 	cmd := usageCmd(context.Background(), "/bin/claude", "/state")
 	if cmd.Env == nil || !slices.Contains(cmd.Env, "PRO_CON_KEEP=1") {
 		t.Fatalf("親の環境を引き継いでいない / Env が nil (親の TMUX がそのまま渡る): %d 個", len(cmd.Env))
@@ -371,8 +372,8 @@ func TestUsageCmd(t *testing.T) {
 		t.Fatalf("args=%q dir=%q waitDelay=%v", cmd.Args, cmd.Dir, cmd.WaitDelay)
 	}
 	for _, e := range cmd.Env {
-		if strings.HasPrefix(e, "TMUX=") || strings.HasPrefix(e, "TMUX_PANE=") {
-			t.Fatalf("TMUX を落としていない: %q", e)
+		if strings.HasPrefix(e, "TMUX=") || strings.HasPrefix(e, "TMUX_PANE=") || strings.HasPrefix(e, "CLAUDE_CODE_PLUGIN_DIRS=") {
+			t.Fatalf("TMUX / CLAUDE_CODE_PLUGIN_DIRS を落としていない (619): %q", e)
 		}
 	}
 }

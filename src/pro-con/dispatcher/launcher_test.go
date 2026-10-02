@@ -82,10 +82,12 @@ func TestLauncherArgsWithoutLanguageStillDisableAutoMemory(t *testing.T) {
 //     引数の全体で比べるので、--settings に写す変更も CLI の flag に写す変更も止まる
 //   - --setting-sources は project,local (user を入れると hook・許可・~/.claude/rules が戻る)。--exclude-dynamic-system-prompt-sections は付けない
 //     (-p 用で --bg の session には効かない。upstream が対応したら 449 の測り方で A-B してから)
+//   - 起動元の環境に CLAUDE_CODE_PLUGIN_DIRS が在っても claude に渡さない (役に mods を載せない。619。理由は roleEnv)
 //
 // 検出しないもの: fixture に無い鍵・値の形を写す変更 / 同じ時刻の中で変わらない揮発値 (完全一致の TestLauncherArgs… 2 本が止める) / 故意の迂回 /
 // Claude Code の側が起動と再開で変える部分 (546)
 func TestPersistentSessionProfile(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_PLUGIN_DIRS", "/h/dotfiles/_claude/mods") // settings の env を読んだ Claude の中から pro-con を起こした形
 	user := writeSettings(t, `{"language": "日本語", "model": "opus", "effortLevel": "max", "outputStyle": "x", "alwaysThinkingEnabled": true,
 		"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "stop.sh"}]}], "SessionStart": [{"hooks": [{"type": "command", "command": "start.sh"}]}],
 			"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "pre.sh"}]}]},
@@ -134,6 +136,9 @@ func TestPersistentSessionProfile(t *testing.T) {
 	}
 	if envStart != envResume || envStart != envRestart || strings.Contains("\n"+envStart, "\nTMUX") {
 		t.Fatalf("起動・再開・起動し直しで claude の環境変数が違う / TMUX が残っている (415 論点 5):\n起動 %q\n再開 %q\n起動し直し %q", envStart, envResume, envRestart)
+	}
+	if strings.Contains("\n"+envStart, "\nCLAUDE_CODE_PLUGIN_DIRS=") {
+		t.Fatalf("起動元の CLAUDE_CODE_PLUGIN_DIRS を claude に渡した (役に mods が載る。619):\n%q", envStart)
 	}
 	langOnly := ExecLauncher{UserSettings: writeSettings(t, `{"language": "日本語"}`)}
 	for _, c := range []struct{ got, want []string }{
@@ -216,11 +221,13 @@ func TestHaikuSettings(t *testing.T) {
 }
 
 // haiku は --no-session-persistence (transcript を残さない。460 の P3) と --setting-sources project,local と --settings を付けて claude -p を呼ぶ (prompt は標準入力)。
+// 起動元の CLAUDE_CODE_PLUGIN_DIRS は渡さない (619。理由は roleEnv)。
 func TestHaikuPassesSettings(t *testing.T) {
+	t.Setenv("CLAUDE_CODE_PLUGIN_DIRS", "/h/dotfiles/_claude/mods")
 	bin := t.TempDir()
 	argsFile := filepath.Join(bin, "args")
 	claude := filepath.Join(bin, "claude")
-	script := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\" >>\"" + argsFile + "\"; done\necho 要約\n"
+	script := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\" >>\"" + argsFile + "\"; done\nenv | grep '^CLAUDE_CODE_PLUGIN_DIRS=' >\"" + argsFile + ".env\"\necho 要約\n"
 	if err := os.WriteFile(claude, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -232,6 +239,9 @@ func TestHaikuPassesSettings(t *testing.T) {
 	want := []string{"-p", "--model", "haiku", "--no-session-persistence", "--setting-sources", "project,local", "--settings", `{"x":1}`}
 	if got := strings.Split(strings.TrimSuffix(string(b), "\n"), "\n"); !slices.Equal(got, want) {
 		t.Fatalf("引数 = %q\nwant %q", got, want)
+	}
+	if env, err := os.ReadFile(argsFile + ".env"); err != nil || len(env) != 0 {
+		t.Fatalf("起動元の CLAUDE_CODE_PLUGIN_DIRS を haiku に渡した / 偽の claude が環境を記録していない (619): %q %v", env, err)
 	}
 }
 
