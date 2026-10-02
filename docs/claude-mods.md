@@ -21,7 +21,7 @@ mod の側からは何も起きないように見える (2.1.287 で実測。iss
   managed settings の変更で変わりうるので、届かない前提に頼る設計 (ここに書いた表) は更新のたびに疑う
 - 未確認のリスク: 組織が sideload (`--plugin-dir` / `CLAUDE_CODE_PLUGIN_DIRS`) を禁じるポリシーを入れると、`CLAUDE_CODE_PLUGIN_DIRS` を持つ claude は
   起動時にエラーで止まりうる (2.1.287 の二進を静的に読んだだけ。回復の案内は出る)。そうなったら settings の env の行を外す
-- user の settings を読む裏の `claude -p` (ratelimit の `claude -p /usage` 等) でも mods が走る (settings の env から読まれるなら)。mod は `session.start` の
+- user の settings を読む裏の `claude -p` (ratelimit の `claude -p /usage` 等) でも mods が走る。mod は `session.start` の
   `e.isInteractive` / `e.surface` で、対話のセッションにだけ効かせる
 
 ## 置き場所と読み込み
@@ -31,7 +31,8 @@ mod の側からは何も起きないように見える (2.1.287 で実測。iss
   mod を足しても settings は書き換えない (2.1.287 で実測。プロセスの環境で渡した場合。`~` も効く)
   - 子のうち `.claude-plugin/plugin.json` の無いディレクトリは読まれない (debug log に `no manifest in <dir>` が出るだけ)。
     子の 1 本の hooks module が壊れていても、他の子は読まれる
-  - settings の `env` から読まれること、その値がセッションの Bash の子へ継承されるかは issue 619 の実測を参照 (この文書を書いた時点では未実測)
+  - settings の `env` からも読まれる (対話・`claude -p`。2.1.287 で実測)。`--setting-sources` から `user` を外した起動 (pro-con の役) では読まれない。
+    値はセッションの Bash の子へ継承される (`~` のまま) ので、Claude の中から起こした `claude -p` も mods を読む
 - 読まれるのは `~/dotfiles` の実体。hook と同じく、worktree で編集しても master へ push して `~/dotfiles` へ pull するまで効かない
   (`.claude/rules/worktree-per-session.md`)。対話のセッションはフォルダを見張っていて、`hooks/` などを保存すると mod を読み直す
 - engine は mod を読むたびに `<mod>/.claude-plugin/types/` (その build の型) と、無ければ `<mod>/tsconfig.json` (types/ を extends するだけ) を書く。

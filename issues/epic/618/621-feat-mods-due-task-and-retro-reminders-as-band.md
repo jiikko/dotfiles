@@ -44,7 +44,7 @@ mod の `AbovePrompt` の帯なら、人へ直接出せる。
 - このマシン (managed settings あり) でも、user の mod に `session.start` / `turn.complete` / `ui.render` (AbovePrompt) / `$.ui.status` は届く。
   対話 (隔離した tmux) で probe の mod の帯 (`EVPROBE-BAND`) がプロンプトの上に描かれ、status にも出た
 - 620 は「移さない」で閉じ、`_claude/issue-rules.md` の文面は変えていないので、「620 の後に着手」の条件は外れた
-- ratelimit の裏で起きる `claude -p /usage` (user の settings を読む) でも mods が走るはず (settings の env からの読み込みが 619 で実測されたら確定)。帯の mod は `session.start` の `e.isInteractive` / `e.surface` で絞り、
+- ratelimit の裏で起きる `claude -p /usage` (user の settings を読む) でも mods が走る (settings の env から `-p` も読むことを 619 で実測)。帯の mod は `session.start` の `e.isInteractive` / `e.surface` で絞り、
   非対話のセッションでは script を呼ばない
 - 帯の見本 (4 案) をユーザーに出した (2026-10-02)。推奨は案 3 (人がやる必要があるとき = 期限切れ・期限が近い・retro 未決着のときだけ出し、余裕のある human だけなら出さない)。返事待ち
 

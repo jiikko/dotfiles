@@ -1,10 +1,8 @@
 # 619 (feat): mods の土台 — 置き場所・読み込みの配線・テスト・入口の文書
 
-> 🚨 **担当中: Claude code mods migration design (epic 618 を順に)**（2026-10-02〜）
-
 起票日: 2026-10-02
 
-epic [618](618-design-claude-code-mods-migration.md) の子。620〜624 の前提。
+epic [618](../618-design-claude-code-mods-migration.md) の子。620〜624 の前提。
 
 ## 概要
 
@@ -37,7 +35,7 @@ mod を dotfiles で持つための共通部分を作る。中身のある mod �
 
 - [x] `_claude/mods/` に何もしない mod が 1 つあり、`make test` で validate と test が走ったことを出力で確かめた (`[ok] tests/claude/test_claude_mods.sh`、出力に `✓ canary: claude plugin test (2 件)`)
 - [x] 対話 / `claude -p` / PG の 3 経路で、`env -u CLAUDE_CODE_PLUGIN_DIRS` の有無ごとに、読まれた・読まれなかったの実測を本文に書いた (下の「実測」。プロセスの環境の経路)
-- [ ] settings の `env` から読まれる経路の実測 (push して `~/dotfiles` へ pull した後に測る)
+- [x] settings の `env` から読まれる経路の実測 (push して `~/dotfiles` へ pull した後に測った。下の「実測」の S1 / S2 / S4)
 - [x] PG に mod を載せるか外すかを決め、dispatcher の起動の環境をテストで固定した (外す。`roleEnv`。TestPersistentSessionProfile / TestHaikuPassesSettings / TestUsageCmd)
 - [x] mod を読ませた後、`git status` に `.claude-plugin/types/` が出ないことを確かめた (engine 自身が types/ に `*` の .gitignore を置く。repo の `.gitignore` にも足した)
 - [x] 入口の文書と索引を足した (`docs/claude-mods.md`、`docs/README.md`、root の `CLAUDE.md` の `_claude/` 節)
@@ -64,7 +62,10 @@ E1 / E2 は daemon が止まった状態から 2 つの client を続けて起�
 - 計測で起こした daemon は、session を止めた 5 秒後に自分で終了した (`idle 5s with no clients — exiting`)。`claude agents` に残っていた `pc-c-089` は 9/26 に終わった古い記録
 - 親フォルダの中に壊れた mod (hooks module が parse できない) があっても、他の子は読まれる。`claude -p` の text 出力では stderr に `broken: hooks module did not load: ...` が出る
 - 子のうち manifest の無いディレクトリは読まれない (debug log に `no manifest in <dir>` が出るだけ)。テストで失敗にした
-- settings の `env` からの読み込み: (push + pull の後に測る)
+- **settings の `env` からの読み込み** (push して `~/dotfiles` へ pull した後、プロセスの環境に変数を持たせずに測った):
+  対話 (S2) と `claude -p` (S1) は読む。印の `pluginDirs` は settings に書いた文字列のまま (`~/dotfiles/_claude/mods`)。
+  `--setting-sources project,local` (PG と同じ) では読まない (S4)。S1 の Bash の子の環境には `CLAUDE_CODE_PLUGIN_DIRS=~/dotfiles/_claude/mods` が継承されていた
+  (→ Claude の Bash から起こした `claude -p` や pro-con も mods を読む。pro-con は `roleEnv` で落とす)
 
 ## このマシンでは user の mod に届かないイベントがある (620〜625 に効く)
 
@@ -132,4 +133,5 @@ export const register: Register = on => {
 
 - 2026-10-02: 起票
 - 2026-10-02: 起票と同じ日に、反証レビュー (sonnet 2 本) と敵対的レビュー (opus 2 本) の指摘で方針を改訂した。619 で、実測を `env -u CLAUDE_CODE_PLUGIN_DIRS` の有無で分ける・PG に mod を載せるか決めてテストで固定・`.claude-plugin/types/` の ignore・mod ごとのテスト 0 件を失敗に・CI の扱いを決める、を足した。採否と理由の一覧は親 618 の進捗
-- 2026-10-02: 実装 — canary の mod・settings の env・`tests/claude/test_claude_mods.sh`・pro-con の役から外す (`roleEnv`)・入口の文書。経路の実測と、このマシンで mod に届かないイベントを上に書いた。敵対的レビュー 2 周の結果も上。残り: settings の env からの読み込みの実測
+- 2026-10-02: 実装 — canary の mod・settings の env・`tests/claude/test_claude_mods.sh`・pro-con の役から外す (`roleEnv`)・入口の文書。経路の実測と、このマシンで mod に届かないイベントを上に書いた。敵対的レビュー 2 周の結果も上
+- 2026-10-02: push して `~/dotfiles` へ pull し、settings の env からの読み込みを実測 (対話・`-p` は読む、`--setting-sources project,local` は読まない、Bash の子に継承される)。受け入れ条件がすべて埋まったので done

@@ -65,7 +65,7 @@ settings の hook は失敗すれば stderr に出る。**移したものは、�
 **619 の 3 経路の実測結果は、620〜623 の着手条件にする**。読まれない経路があれば、その経路で要る settings の hook は残し、この表を直してから着手する。
 
 
-- [x] **読み込まれる経路** (619 で実測。プロセスの環境では対話 / `-p` / `--bg` とも読む。PG は dispatcher で外すと決め、テストで固定した。settings の `env` からの読み込みは 619 の残タスク)。settings の hook は対話と `claude -p` では走るが、**pro-con の PG・PM・取り込みの係では走らない**
+- [x] **読み込まれる経路** (619 で実測。プロセスの環境では対話 / `-p` / `--bg` とも読む。settings の `env` からも対話 / `-p` は読み、`--setting-sources project,local` は読まない。PG は dispatcher で外すと決め、テストで固定した)。settings の hook は対話と `claude -p` では走るが、**pro-con の PG・PM・取り込みの係では走らない**
       (`--setting-sources project,local` で起動し、ユーザーの settings.json の hook と env が外れる。`src/pro-con/dispatcher/launcher.go` の
       `persistentSessionArgs`、`rolesettings.go` 冒頭。issue 431)。移す hook は今も PG に効いていないので、PG で mod が読まれないことは退行ではない。
       reference.md によれば `CLAUDE_CODE_PLUGIN_DIRS` は、`~/.claude/settings.json` (= `_claude/settings.json` への link) の `env` に加えて**プロセスの環境**からも読まれる。
@@ -78,7 +78,7 @@ settings の hook は失敗すれば stderr に出る。**移したものは、�
 
 ## 子 issue
 
-- [ ] 619 — 土台: 置き場所・読み込みの配線・テスト・入口の文書 (**他の全部の前提**)。実装済み、settings の env からの読み込みの実測が残り
+- [x] 619 — 土台: 置き場所・読み込みの配線・テスト・入口の文書 (**他の全部の前提**)。settings の env からも読まれることを実測して done
 - [x] 620 — issue 規約の注入をシステムプロンプトの節へ → **移さない** (このマシンでは mod から足せない)
 - [ ] 621 — human / retro の催促をプロンプトの上の帯へ
 - [ ] 622 — tmux のペインの状態表示を mod へ (今の費用は条件を超えた。移して減る量を試作で測ってから決める)

@@ -62,7 +62,7 @@ min 25.0 / 中央値 28.7 / p90 43.9 / max 52.6 ms。中央値 × 30 = 約 860ms
 mod に移せるのは `turn.start` / `turn.complete` / `tool.call` / `session.start` / `session.end` (いずれも届くことを実測) の経路だけ。
 Notification の hook が書いた `input` を mod は知らないので、`tool.call` で `working` に戻すには、そのつど pane option を読むか書くかで tmux を 1 回起こす必要がある。
 
-- ratelimit の裏の `claude -p /usage` (user の settings を読む) でも mods が走るはず (619 の敵対的レビュー。settings の env からの読み込みが実測されたら確定)。tmux の状態を書く mod は対話のセッションに絞る
+- ratelimit の裏の `claude -p /usage` (user の settings を読む) でも mods が走る (619 で settings の env から `-p` も読むことを実測)。tmux の状態を書く mod は対話のセッションに絞る
 
 ## 進捗
 
