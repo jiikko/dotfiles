@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"ratelimit/usage"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // overlayBoxTopRight は box を右上へ右揃えで重ね、覆った各行の表示幅が width ちょうどに
@@ -473,9 +475,31 @@ func TestUsageBoxLinesCodexDivider(t *testing.T) {
 	}
 }
 
-// fetchCmd は片側 (claude) の一時失敗で取れていた枠を失わない (出所単位の last-good)。
-// FetchAll が部分失敗を err=nil で返すため、handle の last-good ガードだけでは受けられない
-// 経路の回帰テスト (敵対的レビュー指摘 2026-07-31)。stub CLI で claude 失敗 + codex 成功を作る。
+// drainUsageFetch は fetchCmd の Cmd を走らせ、届く usageMsg を順に handle へ入れる (保存の Cmd も走らせる)。
+func drainUsageFetch(t *testing.T, o *usageOverlay, cmd tea.Cmd) {
+	t.Helper()
+	if cmd == nil {
+		t.Fatal("fetchCmd が nil")
+	}
+	msgs := []tea.Msg{cmd()}
+	if b, ok := msgs[0].(tea.BatchMsg); ok {
+		msgs = msgs[:0]
+		for _, c := range b {
+			msgs = append(msgs, c())
+		}
+	}
+	for _, msg := range msgs {
+		um, ok := msg.(usageMsg)
+		if !ok {
+			t.Fatalf("usageMsg でない: %T", msg)
+		}
+		if c := o.handle(um); c != nil {
+			c()
+		}
+	}
+}
+
+// 片側 (claude) の一時失敗で取れていた枠を失わない (出所単位の last-good)。stub CLI で claude 失敗 + codex 成功を作る。
 func TestUsageFetchCmdKeepsOtherSourceOnPartialFailure(t *testing.T) {
 	dir := t.TempDir()
 	stub := func(name, script string) {
@@ -503,23 +527,191 @@ printf '%s\n' '{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":69,"wind
 		{Label: "cx7d", Source: usage.SourceCodex, Percent: 1},
 	}}
 	o := usageOverlay{visible: true, snap: prev}
-	msg, ok := o.fetchCmd(false)().(usageMsg)
-	if !ok || msg.err != nil {
-		t.Fatalf("fetchCmd: %+v", msg)
+	drainUsageFetch(t, &o, o.fetchCmd(false))
+	if o.err != nil || o.staleErr != nil || o.inFlight {
+		t.Fatalf("err=%v staleErr=%v inFlight=%v", o.err, o.staleErr, o.inFlight)
 	}
-	if _, found := msg.snap.Find("5h"); !found {
-		t.Errorf("claude 一時失敗で 5h 枠が消えた: %+v", msg.snap.Windows)
+	if _, found := o.snap.Find("5h"); !found {
+		t.Errorf("claude 一時失敗で 5h 枠が消えた: %+v", o.snap.Windows)
 	}
-	if w, _ := msg.snap.Find("cx7d"); w.Percent != 69 {
+	if w, _ := o.snap.Find("cx7d"); w.Percent != 69 {
 		t.Errorf("codex 枠が新値でない: %d, want 69", w.Percent)
 	}
-	if msg.snap.Version != "9.9.9" {
-		t.Errorf("Version の last-good が効いていない: %q", msg.snap.Version)
+	if o.snap.Version != "9.9.9" || o.snap.ClaudeErr == "" {
+		t.Errorf("Version の last-good / Claude の失敗理由: %q %q", o.snap.Version, o.snap.ClaudeErr)
 	}
 	// 表示用 snap は last-good で Claude 枠を補完するが、今回取得できたのは codex だけ。
 	// キャッシュ契約を満たさないため、補完済み snap を保存してはならない。
 	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
 		t.Errorf("claude 失敗 + codex 成功でキャッシュが作られた: err=%v", err)
+	}
+}
+
+func usagePart(src string, pct int) *usage.Part {
+	if src == usage.SourceCodex {
+		return &usage.Part{Source: src, Version: "0.1", Windows: []usage.Window{{Label: "cx7d", Source: src, Percent: pct}}}
+	}
+	return &usage.Part{Version: "2.1", Windows: []usage.Window{{Label: "5h", Percent: pct}, {Label: "7d", Percent: pct}}}
+}
+
+func usageLabels(s *usage.Snapshot) string {
+	if s == nil {
+		return "<nil>"
+	}
+	ls := make([]string, 0, len(s.Windows))
+	for _, w := range s.Windows {
+		ls = append(ls, w.Label)
+	}
+	return strings.Join(ls, ",")
+}
+
+// 先に届いた方 (codex) をその場で出し、遅い方 (Claude) は「取得中」と出して待つ (issue 626)。
+// 周の終わりに、取れた両方をキャッシュへ保存する。
+func TestUsageShowsEachSourceAsItArrives(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	o := usageOverlay{visible: true}
+	o.fetchCmd(false) // closure は走らせない (届く順をテストが決める)
+	o.handle(usageMsg{part: usagePart(usage.SourceCodex, 7)})
+	if got := usageLabels(o.snap); got != "cx7d" {
+		t.Fatalf("先に届いた codex が表示へ入らない: %s", got)
+	}
+	if !o.loading() {
+		t.Error("Claude を待っている間にスピナーが止まる")
+	}
+	box := strings.Join(o.boxLines(80, false, "*"), "\n")
+	if !strings.Contains(box, "* Claude Code 取得中...") || strings.Contains(box, "codex 取得中") {
+		t.Errorf("待っている出所だけを「取得中」に出していない:\n%s", box)
+	}
+	if c := o.handle(usageMsg{part: usagePart("", 3)}); c != nil {
+		c() // 周の終わりのキャッシュの保存
+	}
+	if got := usageLabels(o.snap); got != "5h,7d,cx7d" {
+		t.Errorf("Claude が後から届いても先に並ばない: %s", got)
+	}
+	if o.inFlight || o.loading() || len(o.waiting()) != 0 || o.fetchedAt.IsZero() {
+		t.Errorf("周が閉じていない: inFlight=%v loading=%v waiting=%v", o.inFlight, o.loading(), o.waiting())
+	}
+	if box := strings.Join(o.boxLines(80, false, "*"), "\n"); strings.Contains(box, "取得中") {
+		t.Errorf("両方そろった後も「取得中」が残った:\n%s", box)
+	}
+	path, _ := usageCachePath()
+	if snap, ok := loadUsageCache(path, time.Now()); !ok || usageLabels(snap) != "5h,7d,cx7d" {
+		t.Errorf("周の終わりに両方を保存していない: ok=%v %s", ok, usageLabels(snap))
+	}
+}
+
+// 何も取れていないうちの Claude の失敗は、空の表示を出さずに codex を待つ。codex が取れたら Claude の失敗の注記つきで出す。
+func TestUsageClaudeFailureFirstWaitsForCodex(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	o := usageOverlay{visible: true}
+	o.fetchCmd(false)
+	o.handle(usageMsg{part: &usage.Part{Err: errors.New("claude /usage 実行失敗: exit status 127")}})
+	if o.snap != nil || o.err != nil || !o.loading() {
+		t.Fatalf("Claude の失敗だけで表示が変わった: snap=%v err=%v", usageLabels(o.snap), o.err)
+	}
+	o.handle(usageMsg{part: usagePart(usage.SourceCodex, 7)})
+	if usageLabels(o.snap) != "cx7d" || !strings.Contains(fetchNote(o.snap, o.staleErr), "Claude Code の取得に失敗") {
+		t.Errorf("codex だけの表示 / Claude の注記: %s %q", usageLabels(o.snap), fetchNote(o.snap, o.staleErr))
+	}
+	path, _ := usageCachePath()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("Claude 枠の無い周でキャッシュを書いた: %v", err)
+	}
+}
+
+// 両方失敗した周は、途中で入れた失敗の注記ごと周の始まりの表示へ戻し、理由を Claude → codex の順で staleErr に置く。
+// 何も無いところからの全滅は「取得失敗」。
+func TestUsageBothFailRound(t *testing.T) {
+	base := &usage.Snapshot{Windows: []usage.Window{{Label: "5h"}, {Label: "cx7d", Source: usage.SourceCodex}}}
+	o := usageOverlay{visible: true, snap: base, fetchedAt: timeNow()}
+	o.fetchCmd(false)
+	o.handle(usageMsg{part: &usage.Part{Source: usage.SourceCodex, Err: errors.New("codex 起動失敗")}})
+	o.handle(usageMsg{part: &usage.Part{Err: errors.New("claude 失敗")}})
+	if o.snap != base || o.err != nil || o.inFlight {
+		t.Errorf("全滅で周の始まりの表示へ戻らない: snap=%p base=%p err=%v", o.snap, base, o.err)
+	}
+	if o.staleErr == nil || o.staleErr.Error() != "claude 失敗\ncodex 起動失敗" {
+		t.Errorf("staleErr = %v", o.staleErr)
+	}
+
+	o = usageOverlay{visible: true}
+	o.fetchCmd(false)
+	o.handle(usageMsg{part: &usage.Part{Err: errors.New("a")}})
+	o.handle(usageMsg{part: &usage.Part{Source: usage.SourceCodex, Err: errors.New("b")}})
+	if o.snap != nil || o.err == nil || o.loading() {
+		t.Errorf("初回の全滅が「取得失敗」にならない: snap=%v err=%v", usageLabels(o.snap), o.err)
+	}
+}
+
+// 初回の全滅の後、次の周で 1 本でも取れたらその場で「取得失敗」から回復する。
+func TestUsageRecoversFromInitialErrorViaParts(t *testing.T) {
+	o := usageOverlay{visible: true}
+	o.fetchCmd(false)
+	o.handle(usageMsg{part: &usage.Part{Err: errors.New("a")}})
+	o.handle(usageMsg{part: &usage.Part{Source: usage.SourceCodex, Err: errors.New("b")}})
+	o.fetchCmd(false)
+	defer o.stop()
+	o.handle(usageMsg{part: usagePart(usage.SourceCodex, 7)})
+	if o.err != nil {
+		t.Fatalf("codex が取れたのに「取得失敗」のまま: %v", o.err)
+	}
+	if box := strings.Join(o.boxLines(80, false, "*"), "\n"); strings.Contains(box, "取得失敗") {
+		t.Errorf("箱が「取得失敗」のまま:\n%s", box)
+	}
+}
+
+// 全滅した周の注記 (前回の値を表示中) は、次の周で先に届いた方では消さず、周の終わりに消す
+// (まだ届いていない出所の枠は前回の値のまま)。
+func TestUsageStaleNoteKeptUntilRoundEnds(t *testing.T) {
+	base := (*usage.Snapshot)(nil).With(*usagePart("", 1)).With(*usagePart(usage.SourceCodex, 1))
+	o := usageOverlay{visible: true, snap: base, fetchedAt: timeNow(), staleErr: errors.New("前の周の全滅")}
+	o.fetchCmd(false)
+	o.handle(usageMsg{part: usagePart(usage.SourceCodex, 7)})
+	if o.staleErr == nil {
+		t.Error("Claude の前回の値を出したまま注記を消した")
+	}
+	o.handle(usageMsg{part: usagePart("", 7)})
+	if o.staleErr != nil {
+		t.Errorf("両方取れた周の終わりに注記が消えない: %v", o.staleErr)
+	}
+}
+
+// キャッシュへは今回の周で取れた分だけを書く: codex が失敗した周に、前回の codex 枠を混ぜて TTL を延ばさない。
+func TestUsageCacheExcludesLastGoodOfFailedSource(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("PATH", "") // codex が無い環境として読む (codex 欠損のキャッシュを miss にしない。usage_cache.go)
+	base := (*usage.Snapshot)(nil).With(*usagePart("", 1)).With(*usagePart(usage.SourceCodex, 1))
+	o := usageOverlay{visible: true, snap: base, fetchedAt: timeNow()}
+	o.fetchCmd(false)
+	o.handle(usageMsg{part: usagePart("", 5)})
+	c := o.handle(usageMsg{part: &usage.Part{Source: usage.SourceCodex, Err: errors.New("codex 起動失敗")}})
+	if c == nil {
+		t.Fatal("Claude が取れた周なのに保存の Cmd が無い")
+	}
+	c()
+	path, _ := usageCachePath()
+	snap, ok := loadUsageCache(path, time.Now())
+	if !ok || usageLabels(snap) != "5h,7d" {
+		t.Errorf("キャッシュ = ok:%v %s, want 今回の Claude 枠だけ", ok, usageLabels(snap))
+	}
+	if w, _ := o.snap.Find("cx7d"); w.Percent != 1 {
+		t.Errorf("表示からは前回の codex 枠を消さない: %+v", o.snap.Windows)
+	}
+}
+
+// 定期リフレッシュは静かに差し替える: 片方を待つ間も「取得中」を出さない。表示に codex の無い環境
+// (codex 未導入) でも、毎分「codex 取得中」を点滅させない。
+func TestUsageRefreshDoesNotShowWaiting(t *testing.T) {
+	base := (*usage.Snapshot)(nil).With(*usagePart("", 1))
+	o := usageOverlay{visible: true, snap: base, fetchedAt: timeNow()}
+	o.fetchCmd(false)
+	defer o.stop()
+	o.handle(usageMsg{part: usagePart("", 9)})
+	if o.loading() || len(o.waiting()) != 0 {
+		t.Errorf("リフレッシュで「取得中」を出した: %v", o.waiting())
+	}
+	if w, _ := o.snap.Find("5h"); w.Percent != 9 {
+		t.Errorf("届いた Claude が表示へ入らない: %d", w.Percent)
 	}
 }
 
@@ -569,7 +761,7 @@ func TestUsageBoxShowsClaudeFetchError(t *testing.T) {
 	}
 }
 
-// 全滅 (FetchAll が err) のときは last-good を保持するが、古いことと理由を注記で出す。次の成功で消える。
+// 全滅 (キャッシュ経路の err) のときは last-good を保持するが、古いことと理由を注記で出す。次の成功で消える。
 func TestUsageLastGoodShowsStaleReason(t *testing.T) {
 	// 描画キャッシュの鍵には秒が入る。時刻を止めないと、失敗時と回復後の描画が秒をまたいだときに
 	// 鍵の秒の違いでキャッシュが外れ、鍵に理由を載せ忘れた退行を素通りする

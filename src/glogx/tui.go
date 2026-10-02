@@ -1005,8 +1005,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.tmuxPrefix = msg.key
 		return m, nil
 	case usageMsg:
-		m.usageOv.handle(msg)
-		return m, nil
+		return m, m.usageOv.handle(msg)
 	case issuesWatchMsg:
 		// viewer を開いている間だけ回る独立チェーン (issues_watch.go)。別プロセスの編集を
 		// その場で反映する。🚨 maybeTick を束ねない: 反映は再スキャン (scanCmd) で、アニメは
@@ -2514,7 +2513,7 @@ func (m *browseModel) wantsUsageRefresh() bool {
 // rlDashLoading はダッシュボードが取得待ち (スピナーを回す) か。usageOverlay.loading() は
 // 右上オーバーレイの表示状態を見るので、ダッシュボードだけが開いているときは false になる。
 func (m *browseModel) rlDashLoading() bool {
-	return m.rlDash.visible() && m.usageOv.snap == nil && m.usageOv.err == nil
+	return m.rlDash.visible() && m.usageOv.awaiting()
 }
 
 // toggleRatelimitDash は全画面 ratelimit ダッシュボードの開閉 (R)。開くときは右上の usage
@@ -3477,6 +3476,7 @@ func (m *browseModel) ratelimitOpts() ratelimitRenderOpts {
 		snap:     m.usageOv.snap,
 		err:      m.usageOv.err,
 		staleErr: m.usageOv.staleErr,
+		waiting:  m.usageOv.waitingNote(m.spinner()),
 		now:      timeNow(),
 	}
 }

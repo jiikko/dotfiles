@@ -64,10 +64,9 @@ type Snapshot struct {
 	// CodexVersion は codex CLI のバージョン ("0.144.6" 等)。未導入・取得失敗時は空
 	// (omitempty により codex バージョン対応前のディスクキャッシュも欠損として読める)。
 	CodexVersion string `json:",omitempty"`
-	// ClaudeErr は FetchAll が Claude 側の取得に失敗し codex だけを返したときの理由。
-	// 空 = Claude 側は今回取れた (または FetchAll 以外の経路)。FetchAll は片側の失敗を err=nil で
-	// 返すので、これが無いと呼び出し側は「Claude が取れない」ことも理由も知る手段が無い
-	// (前回の枠が MergeLastGood で補完され続け、古い値が黙って表示される)。
+	// ClaudeErr は Claude 側の最後の取得が失敗したときの理由 (Snapshot.With が載せ、Claude が取れたら消す)。
+	// codex だけ取れた回も表示は成立するので、これが無いと呼び出し側は「Claude が取れない」ことも理由も
+	// 知る手段が無い (前回の Claude 枠が残り続け、古い値が黙って表示される)。
 	ClaudeErr string `json:",omitempty"`
 }
 

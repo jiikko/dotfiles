@@ -46,6 +46,7 @@ type ratelimitCacheKey struct {
 	snap        *usage.Snapshot // 取得のたびに丸ごと差し替わる (usage_overlay.go) のでポインタで足りる
 	sec         int64
 	stale       string // last-good を保持した失敗の理由。snap が差し替わらずに注記だけ変わる
+	waiting     string // 「取得中」の行 (スピナーのコマを含む。待っている間だけ毎フレーム外れる)
 }
 
 func (d *ratelimitDash) visible() bool { return d.shown }
@@ -64,6 +65,7 @@ type ratelimitRenderOpts struct {
 	snap     *usage.Snapshot // nil = 未取得 (取得中の表示に落ちる)
 	err      error           // 取得失敗 (snap があれば last-good を優先する)
 	staleErr error           // last-good を保持したまま失敗した理由 (usageOverlay.staleErr)
+	waiting  string          // まだ届いていない出所の「取得中」(usageOverlay.waitingNote。空 = 待っていない)
 	now      time.Time
 }
 
@@ -72,13 +74,15 @@ func (d *ratelimitDash) lines(o ratelimitRenderOpts) []string {
 	head := []string{d.headerLine(o), ""}
 	if note := fetchNote(o.snap, o.staleErr); note != "" {
 		head[1] = paint(centerLine(note, o.width), ansiYellow, o.colored)
+	} else if o.waiting != "" {
+		head[1] = paint(centerLine(o.waiting, o.width), ansiDim, o.colored)
 	}
 	body := max(o.page-len(head), 1)
 	switch {
 	case o.snap != nil:
 		key := ratelimitCacheKey{
 			width: o.width, page: o.page, colored: o.colored, snap: o.snap, sec: o.now.Unix(),
-			stale: errString(o.staleErr),
+			stale: errString(o.staleErr), waiting: o.waiting,
 		}
 		if d.cacheOK && d.cacheKey == key {
 			// 🚨 コピーを返す。呼び出し側 (finishWithGlobalChrome) が append する経路があると、

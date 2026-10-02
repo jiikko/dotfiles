@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"ratelimit/usage"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // usageSnapFixture は本物の /usage 出力を usage.Parse に通して作る。手組みの Snapshot だと
@@ -192,11 +194,8 @@ func TestFetchCmdRefreshIgnoresCache(t *testing.T) {
 	t.Setenv("PATH", "") // subprocess 経路に入ったことを err で観測する
 
 	var o usageOverlay
-	msg, ok := o.fetchCmd(false)().(usageMsg)
-	if !ok {
-		t.Fatalf("usageMsg が返らない: %T", msg)
-	}
-	if msg.err == nil {
-		t.Error("キャッシュを読んでしまった (リフレッシュは常に取得しに行くべき)")
+	defer o.stop()
+	if msg, ok := o.fetchCmd(false)().(tea.BatchMsg); !ok || len(msg) != 2 {
+		t.Errorf("キャッシュを読んでしまった (リフレッシュは常に 2 本の取得へ進むべき): %T %v", msg, msg)
 	}
 }

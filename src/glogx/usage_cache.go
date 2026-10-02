@@ -56,7 +56,7 @@ func loadUsageCache(path string, now time.Time) (*usage.Snapshot, bool) {
 	if err := json.Unmarshal(data, &entry); err != nil {
 		return nil, false
 	}
-	// FetchAll は Claude 失敗 + codex 成功を err=nil の部分スナップショットとして返し得る。
+	// 取得は Claude 失敗 + codex 成功でも表示を成立させる (usage.Snapshot.With) ので、Claude 枠の無いスナップショットがありうる。
 	// それを起動時キャッシュとして採用せず、Claude 枠を取り直せるよう miss にする。
 	if entry.Snapshot == nil || !entry.Snapshot.HasClaude() {
 		return nil, false

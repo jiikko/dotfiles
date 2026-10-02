@@ -3,6 +3,7 @@ package usage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -245,68 +246,51 @@ const claudeStubOK = `case "$1" in
 esac
 `
 
-func TestFetchAllMergesBothSources(t *testing.T) {
+func TestFetchPartsFromBothSources(t *testing.T) {
 	dir := t.TempDir()
 	writeStub(t, dir, "claude", claudeStubOK)
-	writeStub(t, dir, "codex", codexStubOK)
+	writeStub(t, dir, "codex", "if [ \"$1\" = --version ]; then echo 'codex-cli 0.144.6'; exit 0; fi\n"+codexStubOK)
 	t.Setenv("PATH", dir)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	snap, err := FetchAll(ctx)
-	if err != nil {
-		t.Fatalf("FetchAll: %v", err)
+	cl, cx := FetchClaudePart(ctx), FetchCodexPart(ctx)
+	if cl.Err != nil || cx.Err != nil {
+		t.Fatalf("claude=%v codex=%v", cl.Err, cx.Err)
 	}
+	if cl.Source != "" || cx.Source != SourceCodex {
+		t.Errorf("出所の印: claude=%q codex=%q", cl.Source, cx.Source)
+	}
+	snap := (*Snapshot)(nil).With(cl).With(cx)
 	for _, label := range []string{"5h", "7d", "cx7d"} {
 		if _, ok := snap.Find(label); !ok {
 			t.Errorf("%s 枠がない: %+v", label, snap.Windows)
 		}
 	}
-	if snap.Version != "9.9.9" {
-		t.Errorf("Version = %q, want 9.9.9", snap.Version)
-	}
-	if !snap.HasCodex() {
-		t.Error("HasCodex() = false, want true")
-	}
-	if snap.ClaudeErr != "" {
-		t.Errorf("両方成功なのに ClaudeErr = %q", snap.ClaudeErr)
+	if snap.Version != "9.9.9" || snap.CodexVersion != "0.144.6" || !snap.HasCodex() || snap.ClaudeErr != "" {
+		t.Errorf("Version=%q CodexVersion=%q HasCodex=%v ClaudeErr=%q", snap.Version, snap.CodexVersion, snap.HasCodex(), snap.ClaudeErr)
 	}
 }
 
-func TestFetchAllCodexFailureKeepsClaude(t *testing.T) {
+func TestFetchCodexPartFailure(t *testing.T) {
 	dir := t.TempDir()
-	writeStub(t, dir, "claude", claudeStubOK)
 	writeStub(t, dir, "codex", "exit 1\n")
 	t.Setenv("PATH", dir)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	snap, err := FetchAll(ctx)
-	if err != nil {
-		t.Fatalf("codex 失敗が FetchAll 全体を失敗させた: %v", err)
-	}
-	if _, ok := snap.Find("5h"); !ok {
-		t.Errorf("Claude 枠が失われた: %+v", snap.Windows)
-	}
-	if snap.HasCodex() {
-		t.Error("codex 失敗なのに codex 枠がある")
+	if p := FetchCodexPart(ctx); p.Err == nil || len(p.Windows) != 0 || p.Source != SourceCodex {
+		t.Errorf("codex 失敗の Part: %+v", p)
 	}
 }
 
-func TestFetchAllClaudeFailureKeepsCodex(t *testing.T) {
+func TestFetchClaudePartFailureKeepsReason(t *testing.T) {
 	dir := t.TempDir()
 	// PATH 上の壊れた shim (nodenv の別 node 版に入った claude 等) を模す: stderr に原因、rc=127
 	// 端末制御列も混ぜる (理由は端末へ出るので落ちていること)
 	writeStub(t, dir, "claude", "printf 'nodenv: \\033[31mclaude: command not found\\n' >&2\nexit 127\n")
-	writeStub(t, dir, "codex", codexStubOK)
 	t.Setenv("PATH", dir)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	snap, err := FetchAll(ctx)
-	if err != nil {
-		t.Fatalf("claude 失敗でも codex 枠があれば成立するはず: %v", err)
-	}
-	if _, ok := snap.Find("cx7d"); !ok {
-		t.Errorf("codex 枠がない: %+v", snap.Windows)
-	}
+	snap := (*Snapshot)(nil).With(FetchClaudePart(ctx))
 	// 失敗を黙って捨てない: 理由 (exit status と stderr の最初の行) が呼び出し側へ届く
 	for _, want := range []string{"exit status 127", "claude: command not found"} {
 		if !strings.Contains(snap.ClaudeErr, want) {
@@ -331,24 +315,16 @@ func TestHeadWriterKeepsOnlyHead(t *testing.T) {
 	}
 }
 
-// 前回の失敗理由は引き継がない: 回復した取得で注記が消える (Version のような last-good にしない)。
-func TestMergeLastGoodDoesNotCarryClaudeErr(t *testing.T) {
-	s := &Snapshot{Windows: []Window{{Label: "5h"}}}
-	s.MergeLastGood(&Snapshot{ClaudeErr: "claude /usage 実行失敗: exit status 127"})
-	if s.ClaudeErr != "" {
-		t.Errorf("前回の ClaudeErr を引き継いだ: %q", s.ClaudeErr)
+// 前回の失敗理由は引き継がない: Claude が取れた回で注記が消える (Version のような last-good にしない)。
+func TestWithClaudeSuccessClearsClaudeErr(t *testing.T) {
+	s := &Snapshot{ClaudeErr: "claude /usage 実行失敗: exit status 127"}
+	got := s.With(Part{Windows: []Window{{Label: "5h"}}})
+	if got.ClaudeErr != "" {
+		t.Errorf("前回の ClaudeErr を引き継いだ: %q", got.ClaudeErr)
 	}
-}
-
-func TestFetchAllBothFail(t *testing.T) {
-	dir := t.TempDir()
-	writeStub(t, dir, "claude", "exit 1\n")
-	writeStub(t, dir, "codex", "exit 1\n")
-	t.Setenv("PATH", dir)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if _, err := FetchAll(ctx); err == nil {
-		t.Error("両方失敗でエラーにならなかった")
+	// codex の成功では消さない (Claude の値はまだ古いまま)
+	if got := s.With(Part{Source: SourceCodex, Windows: []Window{{Label: "cx7d", Source: SourceCodex}}}); got.ClaudeErr == "" {
+		t.Error("codex の成功で Claude の失敗理由が消えた")
 	}
 }
 
@@ -372,54 +348,55 @@ func TestSnapshotHasClaude(t *testing.T) {
 	}
 }
 
-func TestMergeLastGood(t *testing.T) {
-	prev := &Snapshot{Version: "2.1.216", Windows: []Window{
+func TestSnapshotWith(t *testing.T) {
+	prev := &Snapshot{Version: "2.1.216", CodexVersion: "0.1", Windows: []Window{
 		{Label: "5h", Percent: 4},
 		{Label: "7d", Percent: 29},
 		{Label: "cx7d", Source: SourceCodex, Percent: 69},
 	}}
-
-	// claude だけ失敗した回 (codex 枠のみ・Version 空) → claude 枠とバージョンを引き継ぎ、
-	// codex 枠は今回の新値が勝つ。
-	got := &Snapshot{Windows: []Window{{Label: "cx7d", Source: SourceCodex, Percent: 73}}}
-	got.MergeLastGood(prev)
-	if len(got.Windows) != 3 {
-		t.Fatalf("枠数 = %d, want 3: %+v", len(got.Windows), got.Windows)
-	}
-	if w, _ := got.Find("cx7d"); w.Percent != 73 {
-		t.Errorf("codex 枠が前回値で上書きされた: %d, want 73", w.Percent)
-	}
-	if _, ok := got.Find("5h"); !ok {
-		t.Errorf("claude 枠が引き継がれない: %+v", got.Windows)
-	}
-	if got.Version != "2.1.216" {
-		t.Errorf("Version = %q, want 引き継ぎ 2.1.216", got.Version)
+	labels := func(s *Snapshot) string {
+		var ls []string
+		for _, w := range s.Windows {
+			ls = append(ls, fmt.Sprintf("%s=%d", w.Label, w.Percent))
+		}
+		return strings.Join(ls, ",")
 	}
 
-	// codex だけ失敗した回 → codex 枠を引き継ぎ、Version は今回値が勝つ。
-	got = &Snapshot{Version: "2.1.220", Windows: []Window{
-		{Label: "5h", Percent: 10},
-		{Label: "7d", Percent: 30},
-	}}
-	got.MergeLastGood(prev)
-	if w, ok := got.Find("cx7d"); !ok || w.Percent != 69 {
-		t.Errorf("codex 枠が引き継がれない: %+v", got.Windows)
+	// claude だけ失敗 → claude 枠とバージョンは前回のまま、理由が載る。codex 枠は新値。
+	got := prev.With(Part{Err: errors.New("boom")}).
+		With(Part{Source: SourceCodex, Version: "0.2", Windows: []Window{{Label: "cx7d", Source: SourceCodex, Percent: 73}}})
+	if l := labels(got); l != "5h=4,7d=29,cx7d=73" {
+		t.Errorf("枠 = %s, want 5h=4,7d=29,cx7d=73", l)
 	}
-	if got.Version != "2.1.220" {
-		t.Errorf("Version = %q, want 今回値 2.1.220", got.Version)
+	if got.Version != "2.1.216" || got.CodexVersion != "0.2" || got.ClaudeErr != "boom" {
+		t.Errorf("Version=%q CodexVersion=%q ClaudeErr=%q", got.Version, got.CodexVersion, got.ClaudeErr)
 	}
 
-	// 両方成功 → 引き継ぎなし (枠が重複しない)。prev=nil は no-op。
-	got = &Snapshot{Version: "v", Windows: []Window{
-		{Label: "5h"}, {Label: "7d"}, {Label: "cx7d", Source: SourceCodex},
-	}}
-	got.MergeLastGood(prev)
-	if len(got.Windows) != 3 {
-		t.Errorf("両方成功で枠が増えた: %+v", got.Windows)
+	// Claude が取れた後に codex が失敗しても、codex の理由を Claude の失敗として載せない
+	if got := prev.With(Part{Windows: []Window{{Label: "5h"}}}).With(Part{Source: SourceCodex, Err: errors.New("codex 起動失敗")}); got.ClaudeErr != "" {
+		t.Errorf("codex の失敗が ClaudeErr に載った: %q", got.ClaudeErr)
 	}
-	got.MergeLastGood(nil)
-	if len(got.Windows) != 3 {
-		t.Errorf("prev=nil で枠が変わった: %+v", got.Windows)
+
+	// codex だけ失敗 → codex 枠は前回のまま (黙る)、claude は新値。
+	got = prev.With(Part{Source: SourceCodex, Err: errors.New("x")}).
+		With(Part{Version: "2.1.220", Windows: []Window{{Label: "5h", Percent: 10}, {Label: "7d", Percent: 30}}})
+	if l := labels(got); l != "5h=10,7d=30,cx7d=69" {
+		t.Errorf("枠 = %s", l)
+	}
+	if got.Version != "2.1.220" || got.ClaudeErr != "" {
+		t.Errorf("Version=%q ClaudeErr=%q", got.Version, got.ClaudeErr)
+	}
+
+	// 届いた順に依らず Claude が先に並ぶ (codex が先に届いた初回)
+	got = (*Snapshot)(nil).With(Part{Source: SourceCodex, Windows: []Window{{Label: "cx7d", Source: SourceCodex, Percent: 1}}}).
+		With(Part{Windows: []Window{{Label: "5h", Percent: 2}, {Label: "7d", Percent: 3}}})
+	if l := labels(got); l != "5h=2,7d=3,cx7d=1" {
+		t.Errorf("枠の並び = %s, want Claude が先", l)
+	}
+
+	// 元の Snapshot を書き換えない (glogx はポインタを描画キャッシュの鍵にする)
+	if l := labels(prev); l != "5h=4,7d=29,cx7d=69" || prev.Version != "2.1.216" || prev.ClaudeErr != "" {
+		t.Errorf("With が元を書き換えた: %s %q %q", l, prev.Version, prev.ClaudeErr)
 	}
 }
 

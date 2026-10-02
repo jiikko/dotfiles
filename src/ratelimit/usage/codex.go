@@ -9,7 +9,7 @@
 //
 // app-server は [experimental] 表記でプロトコルが変わりうる。読むフィールドを usedPercent /
 // windowDurationMins / resetsAt の 3 つに絞り、壊れたときの影響は「codex の枠が出ない」に
-// 閉じる (FetchAll 参照)。スキーマの一次情報は `codex app-server generate-json-schema` の
+// 閉じる (Snapshot.With: codex の失敗は付加情報の欠けとして黙る)。スキーマの一次情報は `codex app-server generate-json-schema` の
 // GetAccountRateLimitsResponse。
 // (パッケージ doc は usage.go 側。このブロックはファイルコメント)
 
@@ -262,71 +262,80 @@ func (s *Snapshot) HasCodex() bool {
 	return false
 }
 
-// FetchAll は Claude Code と codex の残量を並列取得して 1 つの Snapshot へ併合する。
-// codex は付加情報の扱い: 失敗 (未インストール・未ログイン・プロトコル変更) しても Claude の
-// 表示は成立させ、逆に Claude 側が失敗しても codex の枠だけの Snapshot を返す。両方失敗した
-// ときだけエラー (呼び出し側の「取得失敗」表示は全滅時に限る)。
-//
-// 🚨 片側だけの失敗は err=nil で返るため、返った Snapshot は前回より枠が減っていることが
-// ある。前回結果を持つ呼び出し側は MergeLastGood で欠けた出所を補完すること (これを怠ると
-// 一時失敗のたびに取れていた枠が黙って消える。敵対的レビュー指摘 2026-07-31)。
-// Claude 側だけが失敗したときの理由は Snapshot.ClaudeErr に載る (補完した枠が古いことを
-// 表示側が伝えられるように)。
-func FetchAll(ctx context.Context) (*Snapshot, error) {
-	type codexRes struct {
-		ws  []Window
-		err error
-		ver string
-	}
-	ch := make(chan codexRes, 1)
-	go func() {
-		// バージョンは rateLimits と独立なので並列取得する (Claude 側 Fetch と同じ理由)。
-		// 取得失敗は空文字 = バージョン表示が消えるだけで、枠の取得には影響しない。
-		verCh := make(chan string, 1)
-		go func() { verCh <- FetchCodexVersion(ctx) }()
-		ws, err := FetchCodex(ctx)
-		ch <- codexRes{ws, err, <-verCh}
-	}()
-	snap, err := Fetch(ctx)
-	cx := <-ch
-	switch {
-	case err == nil:
-		snap.Windows = append(snap.Windows, cx.ws...) // codex 失敗時 ws は nil で no-op
-		snap.CodexVersion = cx.ver
-		return snap, nil
-	case cx.err == nil:
-		return &Snapshot{Windows: cx.ws, CodexVersion: cx.ver, ClaudeErr: err.Error()}, nil
-	default:
-		return nil, errors.Join(err, cx.err)
-	}
+// Part は 1 つの出所 (Claude Code / codex) の 1 回分の取得結果。Snapshot.With で表示中の Snapshot へ入れる。
+// 出所ごとに分けて返すのは、速い方を遅い方に待たせずに表示するため (glogx。issue 626。以前は両方を
+// 待ってから併合する FetchAll だった)。
+type Part struct {
+	Source  string   // 空文字 = Claude Code / SourceCodex = codex (Window.Source と同じ語彙)
+	Windows []Window // Err が nil なら 1 枠以上 (Fetch / FetchCodex は 0 枠をエラーにする)
+	Version string   // CLI のバージョン。取得失敗時は空 (枠の取得とは独立に取る)
+	Err     error
 }
 
-// MergeLastGood は新しい取得結果 s に枠が 1 本も無い出所 (Claude / codex) の枠を、前回の
-// 取得結果 prev から引き継ぐ。FetchAll は片側の一時失敗を err=nil で返すため、結果をそのまま
-// 表示へ置き換えると「一度取れた表示は一時失敗で失わない」という last-good 不変条件
-// (glogx 側 usageOverlay.handle の doc) が出所単位で破れる — claude の一時失敗で 5h/7d 行が
-// 黙って消える。出所単位の補完で不変条件を「枠は、その出所の一時失敗では失わない」へ一般化
-// する。Fetch / FetchCodex は成功時に必ず 1 枠以上返す (0 枠はエラー) ため、「出所の枠が 0 =
-// その出所は今回失敗」と同値であり、失敗フラグの持ち回りは要らない。
-func (s *Snapshot) MergeLastGood(prev *Snapshot) {
-	if prev == nil {
-		return
+// FetchClaudePart は Claude Code の残量を Part で返す。
+func FetchClaudePart(ctx context.Context) Part {
+	snap, err := Fetch(ctx)
+	if err != nil {
+		return Part{Err: err}
 	}
-	has := make(map[string]bool, len(s.Windows))
-	for _, w := range s.Windows {
-		has[w.Source] = true
+	return Part{Windows: snap.Windows, Version: snap.Version}
+}
+
+// FetchCodexPart は codex の残量を Part で返す。バージョンは rateLimits と独立なので並列に取る
+// (Claude 側 Fetch と同じ理由)。バージョンの取得失敗は空文字 = 表示が消えるだけで、枠の取得には影響しない。
+func FetchCodexPart(ctx context.Context) Part {
+	verCh := make(chan string, 1)
+	go func() { verCh <- FetchCodexVersion(ctx) }()
+	ws, err := FetchCodex(ctx)
+	return Part{Source: SourceCodex, Windows: ws, Version: <-verCh, Err: err}
+}
+
+// With は s (nil = まだ何も無い) に p を入れた新しい Snapshot を返す (s は書き換えない。glogx は
+// Snapshot のポインタを描画キャッシュの鍵にしているので、取得のたびに別の値にする)。
+//
+// 不変条件: 枠は、その出所の一時失敗では失わない (last-good を出所ごとに持つ)。
+//   - p が成功: その出所の枠とバージョンを p で置き換える。Claude が成功したら ClaudeErr を消す
+//   - p が失敗: その出所の枠は s のまま残す。Claude の失敗は理由を ClaudeErr に載せる (残した枠が古いことを
+//     表示側が伝えるため)。codex の失敗は付加情報の欠けとして黙る
+//
+// 枠の並びは Claude が先・codex が後に保つ (届いた順に依らない)。
+func (s *Snapshot) With(p Part) *Snapshot {
+	out := &Snapshot{}
+	if s != nil {
+		*out = *s // 枠の slice は下で作り直すので共有のままでよい (s の要素は書き換えない)
 	}
-	for _, w := range prev.Windows {
-		if !has[w.Source] {
-			s.Windows = append(s.Windows, w)
+	if p.Version != "" {
+		if p.Source == SourceCodex {
+			out.CodexVersion = p.Version
+		} else {
+			out.Version = p.Version
 		}
 	}
-	// バージョン表示も last-good: claude / codex 失敗時の FetchAll (または --version だけの
-	// 失敗) は Version / CodexVersion 空で返るため、前回値があれば保つ。
-	if s.Version == "" {
-		s.Version = prev.Version
+	if p.Err != nil {
+		if p.Source != SourceCodex {
+			out.ClaudeErr = p.Err.Error()
+		}
+		return out
 	}
-	if s.CodexVersion == "" {
-		s.CodexVersion = prev.CodexVersion
+	if p.Source != SourceCodex {
+		out.ClaudeErr = ""
 	}
+	var claude, codex []Window
+	for _, w := range out.Windows {
+		if w.Source == p.Source {
+			continue
+		}
+		if w.Source == SourceCodex {
+			codex = append(codex, w)
+		} else {
+			claude = append(claude, w)
+		}
+	}
+	if p.Source == SourceCodex {
+		codex = p.Windows
+	} else {
+		claude = p.Windows
+	}
+	out.Windows = append(append([]Window(nil), claude...), codex...)
+	return out
 }

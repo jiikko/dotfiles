@@ -97,7 +97,7 @@ func TestRatelimitDashHeaderShowsVersions(t *testing.T) {
 	}
 }
 
-// Claude 側だけ取れなかったとき (FetchAll が codex だけ返し、Claude 枠は前回値で補完) は、
+// Claude 側だけ取れなかったとき (codex だけ取れ、Claude 枠は前回値のまま) は、
 // 古い残量を黙って出さず理由を見出しの下に出す。理由は外部コマンドの stderr なので無害化する。
 func TestRatelimitDashShowsClaudeFetchError(t *testing.T) {
 	var d ratelimitDash
@@ -257,6 +257,32 @@ func TestRLDashLoading(t *testing.T) {
 	m.usageOv.snap = rlTestSnap()
 	if m.rlDashLoading() {
 		t.Error("取得済みなのに loading")
+	}
+}
+
+// 片方だけ届いた最初の取得では、届いた分の盤を描き、まだの出所を見出しの下に「取得中」と出す (issue 626)。
+// 盤の描画キャッシュは「取得中」の有無で外れる (同じ snap のまま待ちが終わっても行が残らない)。
+func TestRatelimitDashShowsWaitingSource(t *testing.T) {
+	var m browseModel
+	m.rlDash.toggle()
+	m.usageOv.fetchCmd(false)
+	defer m.usageOv.stop()
+	m.usageOv.handle(usageMsg{part: &usage.Part{Source: usage.SourceCodex,
+		Windows: []usage.Window{{Label: "cx7d", Source: usage.SourceCodex, Percent: 7, WindowMins: 10080, ResetAt: timeNow().Add(time.Hour)}}}})
+	if !m.rlDashLoading() {
+		t.Error("Claude を待っている間にスピナーが止まる")
+	}
+	o := m.ratelimitOpts()
+	if o.waiting == "" {
+		t.Fatal("ratelimitOpts が待っている出所を渡さない")
+	}
+	o.width, o.page = 100, 30 // ゼロ値の browseModel は窓の寸法を持たない
+	if got := stripANSI(m.rlDash.lines(o)[1]); !strings.Contains(got, "Claude Code 取得中...") {
+		t.Errorf("見出しの下に待っている出所が無い: %q", got)
+	}
+	o.waiting = ""
+	if got := stripANSI(m.rlDash.lines(o)[1]); strings.Contains(got, "取得中") {
+		t.Errorf("待ちが終わっても描画キャッシュの「取得中」が残った: %q", got)
 	}
 }
 
