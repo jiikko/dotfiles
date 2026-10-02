@@ -55,3 +55,6 @@ init の 2 位以下は glogx / pro-con の chroma (`styles` 約 3.5 ms・`lexer
     init の 15〜20 ms が初回の描画へ移るのではなく、約 0.25 ms に縮む。2 回目以降の `RuneWidth` は両版とも数十 ns
   - `make -C src/{glogx,pro-con,ratelimit} test` / `lint` すべて rc=0。`tests/scripts/test_tuikit_consumers_aligned.sh` rc=0 (x/ansi v0.11.7 / bubbletea v2.0.8 で揃ったまま)
   - 残り: なし (chroma の init は上の方針どおり見送り)
+- 2026-10-03 決着: done へ送る前に HEAD (origin/master) で測り直した。3 つとも `go build` し直したバイナリの
+  `GODEBUG=inittrace=1 <bin> --zz-nonexistent` で runewidth の init は 0.010〜0.094 ms (各 2 回)。go.mod は 3 つとも v0.0.30。
+  CI は v0.0.30 を含む最新の commit で src/glogx・src/pro-con・src/ratelimit が success
