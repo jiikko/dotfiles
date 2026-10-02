@@ -14,6 +14,9 @@ CI のまっさらな checkout には worktree が無いので、手元でしか
 - 同じファイルの ① (実在する yml が導出から漏れていないか) も `find` だが、比べる相手の `YAML_FILES` も同じく worktree を拾うので、今は一致して緑になっている (同じ誤りを両側が持つ)
 
 - `tests/tmux/test_confirm_default_gate.sh` の `find "$ROOT_DIR"` も `.claude` を prune しておらず worktree を歩く。同じファイルを何度も数えるだけで偽の赤にはならないが、遅くなる
+- `tests/issues/test_issue_path_refs_not_stale.sh` の `grep -rnI 'issues/' .` も worktree の中まで歩き、手元では 14,431 行を拾って **13 秒**かかる (worktree を除けば 625 行・1 秒未満。
+  /usr/bin/grep で実測 2026-10-02)。この検査は pre-push の hook が issue を触る push のたびに回すので、**手元の `git push` が毎回 10 秒以上遅い**。
+  hook はスナップショットの中で回すので、CI と hook の中では worktree が無く速い (0.7 秒)。遅いのは手元で直接走らせる `make test` と、hook の外で回したとき
 
 `scripts/discover_shell_scripts.sh` は起点を `LINT_DIRS` の固定のディレクトリにしているので、worktree を拾わない (0 本)。
 `scripts/check_ci_group_deps.sh` / `scripts/check_assert_reaches_exit.sh` も起点が固定で拾わない。
@@ -25,7 +28,7 @@ CI のまっさらな checkout には worktree が無いので、手元でしか
 
 ## 対応方針
 
-- 4 箇所の `find` に `.claude/worktrees` の除外を足す: `scripts/discover_yaml_files.sh`、`tests/scripts/test_enumerations_are_derived.sh` の ① と ③、
+- 4 箇所の `find` と `test_issue_path_refs_not_stale.sh` の `grep -r` (`--exclude-dir` に足す) に `.claude/worktrees` の除外を足す: `scripts/discover_yaml_files.sh`、`tests/scripts/test_enumerations_are_derived.sh` の ① と ③、
   `tests/tmux/test_confirm_default_gate.sh` (`-name .claude` で prune すると追跡している `.claude/rules/` まで外れるので、`-path` で worktrees だけを外す)。
   除外の行には理由 (pro-con が作る worktree。中身は別の checkout の写しで、この repo の lint の対象ではない) を書く
 - ① は `find` のままにする。導出 (`discover_yaml_files.sh`) と検査が同じ除外を持つ形は今と変わらないが、検査を導出と別の仕組みにすると独立性が増すわけでもない
@@ -41,6 +44,7 @@ CI のまっさらな checkout には worktree が無いので、手元でしか
 - `scripts/discover_yaml_files.sh` (`found=$(find . …)`)
 - `tests/scripts/test_enumerations_are_derived.sh` (① の `actual=$(find . …)`、③ の `allsh=$(find . …)`)
 - `tests/tmux/test_confirm_default_gate.sh` (`find "$ROOT_DIR"` の prune の一覧に `.claude` が無い)
+- `tests/issues/test_issue_path_refs_not_stale.sh` (`scan_tree` の `grep -rnI 'issues/' .` の `--exclude-dir`)
 - `scripts/discover_shell_scripts.sh` (起点が固定のディレクトリなので影響なし。比較用)
 - `.gitignore` (`.claude/worktrees/`)
 
@@ -50,3 +54,4 @@ CI のまっさらな checkout には worktree が無いので、手元でしか
 - 2026-10-02 反証レビュー (sonnet、読み取りのみ 1 体) の訂正: P1 2 件 (git ls-files に寄せる案は vendor と tmp で壊れる) → 対応方針を差し替え /
   P2 (test_confirm_default_gate.sh の `find "$ROOT_DIR"` も worktree を歩く) → 対象に追加。件数 (846 / 26 / 0)・③ が赤・① が緑の理由・submodule 無しは反証されなかった。
   「CI には worktree が無い」は .claude が追跡されていないこと (`git ls-files .claude` 0 件) からの推論で、CI のログでは未確認
+- 2026-10-02 追記: `test_issue_path_refs_not_stale.sh` の `grep -r` も同じ原因で手元 13 秒 (GHA の rest の内訳の調査で、pre-push の hook が回す検査を測って見つけた)
