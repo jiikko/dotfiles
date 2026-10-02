@@ -1,5 +1,7 @@
 # 623 (feat): 未コミットの変更を捨てる checkout / restore の前に、mod で確認のペインを出す
 
+> 🚨 **担当中: Claude code mods migration design (epic 618 を順に)**（2026-10-02〜）
+
 起票日: 2026-10-02
 
 epic [618](618-design-claude-code-mods-migration.md) の子。619 の後。

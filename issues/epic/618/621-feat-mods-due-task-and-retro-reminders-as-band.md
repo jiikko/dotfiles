@@ -1,5 +1,7 @@
 # 621 (feat): human / retro の催促を、mod でプロンプトの上の帯に出す
 
+> 🚨 **担当中: Claude code mods migration design (epic 618 を順に)**（2026-10-02〜）
+
 起票日: 2026-10-02
 
 epic [618](618-design-claude-code-mods-migration.md) の子。619 の後。

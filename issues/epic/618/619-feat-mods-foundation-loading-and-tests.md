@@ -1,5 +1,7 @@
 # 619 (feat): mods の土台 — 置き場所・読み込みの配線・テスト・入口の文書
 
+> 🚨 **担当中: Claude code mods migration design (epic 618 を順に)**（2026-10-02〜）
+
 起票日: 2026-10-02
 
 epic [618](618-design-claude-code-mods-migration.md) の子。620〜624 の前提。

@@ -1,5 +1,7 @@
 # 622 (refactor): tmux のペインの状態表示 (`tmux-pane-state.sh`) を mod へ移す
 
+> 🚨 **担当中: Claude code mods migration design (epic 618 を順に)**（2026-10-02〜）
+
 起票日: 2026-10-02
 
 epic [618](618-design-claude-code-mods-migration.md) の子。619 の後。

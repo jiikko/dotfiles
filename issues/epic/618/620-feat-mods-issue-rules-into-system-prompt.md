@@ -1,5 +1,7 @@
 # 620 (feat): issue 規約の注入を、mod でシステムプロンプトの節へ上げる (守られる率が上がるかを先に測る)
 
+> 🚨 **担当中: Claude code mods migration design (epic 618 を順に)**（2026-10-02〜）
+
 起票日: 2026-10-02
 
 epic [618](618-design-claude-code-mods-migration.md) の子。619 の後。epic で最初に着手する 1 本 (ただし移す前に仮説を測る)。
