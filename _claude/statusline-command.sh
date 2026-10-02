@@ -200,15 +200,23 @@ now=$(date +%s)
 #   このスクリプトを実際に走らせて検出する)。
 # 🚨 描画は送信が無くても refreshInterval (60 秒) ごとに起き、そのたびに最後に受け取った (古いかもしれない) 値が来る。
 #   放置したセッションが新しい値を上書きしないよう、既にあるファイルより新しい観測のときだけ書き換え、observedAt は
-#   「誰かが新しい値を受け取った時刻」にする。新しさは窓ごとに値で決める: リセット時刻が後の方、同じなら使用率が
-#   高い方 (同じ窓の使用率は下がらない)。値の無い窓 (リセットを過ぎて落とされた窓) は新しい観測に数えない。
+#   「誰かが新しい値を受け取った時刻」にする。新しさは窓ごとに値で決める: リセット時刻が後の方、同じ窓なら使用率が
+#   高い方 (同じ窓の使用率は下がらない)。リセット時刻の差が rl_same_window 秒以内なら同じ窓とみなす (ヘッダの値が
+#   揺れても、使用率の低い古い観測が「後のリセット時刻」で勝たないように。揺れるかは未実測)。値の無い窓 (リセットを
+#   過ぎて落とされた窓) は新しい観測に数えない。
+#   値が変わらなくても (使用率は整数に切り捨てるので、軽い利用では 15 分動かないことがある)、このセッションの
+#   transcript がファイルより新しければ、ファイルを書いた後にやり取りがあった = 今も新しい値を受け取っているとみなし、
+#   observedAt だけ進める (放置したセッションの transcript は古いので進めない)。
 # tmp + mv で読み手に書きかけを見せない。失敗しても描画は続ける。
+rl_same_window=600
 rl_newer() {  # rl_newer <新 %> <新リセット> <旧 %> <旧リセット> → 新しい観測なら 0
   [ -n "$1" ] || return 1
   [ -n "$3" ] || return 0
   local nr=${2:-0} or=${4:-0}
-  [ "$nr" -gt "$or" ] && return 0
-  [ "$nr" -eq "$or" ] && [ "$1" -gt "$3" ] && return 0
+  # 桁が多すぎる値 (桁あふれで [ が失敗する) は比べない (新しい観測に数えない)
+  [ "${#nr}" -le 12 ] && [ "${#or}" -le 12 ] && [ "${#1}" -le 3 ] && [ "${#3}" -le 3 ] || return 1
+  [ "$nr" -gt $(( or + rl_same_window )) ] && return 0
+  [ "$nr" -ge $(( or - rl_same_window )) ] && [ "$1" -gt "$3" ] && return 0
   return 1
 }
 write_rate_limits() {
@@ -221,7 +229,7 @@ write_rate_limits() {
   # JSON の文字列へそのまま入れるので、版の形 (数字・英字・. + -) 以外は捨てる
   case "$cc_version" in ''|*[!0-9A-Za-z.+-]*) ver="" ;; *) ver=$cc_version ;; esac
   [ -d "$dir" ] || mkdir -p "$dir" 2>/dev/null || return 0
-  [ -f "$f" ] && IFS= read -r old < "$f" 2>/dev/null
+  [ -f "$f" ] && { IFS= read -r old < "$f"; } 2>/dev/null
   local re='^\{"observedAt":[0-9]+,"five_hour":\{"used_percentage":([0-9]+|null),"resets_at":([0-9]+|null)\},"seven_day":\{"used_percentage":([0-9]+|null),"resets_at":([0-9]+|null)\}'
   if [[ $old =~ $re ]]; then
     o5p=${BASH_REMATCH[1]} o5r=${BASH_REMATCH[2]} o7p=${BASH_REMATCH[3]} o7r=${BASH_REMATCH[4]}
@@ -230,6 +238,8 @@ write_rate_limits() {
   fi
   if rl_newer "$five_pct" "$fr" "$o5p" "$o5r"; then o5p=$five_pct o5r=$fr changed=1; fi
   if rl_newer "$seven_pct" "$sr" "$o7p" "$o7r"; then o7p=$seven_pct o7r=$sr changed=1; fi
+  # 値は同じでも、このセッションにファイルより後のやり取りがあれば observedAt だけ進める (上の注記)
+  if [ -z "$changed" ] && [ -n "$transcript" ] && [ "$transcript" -nt "$f" ]; then changed=1; fi
   [ -n "$changed" ] || return 0
   if [ -z "$ver" ] && [[ $old =~ \"version\":\"([0-9A-Za-z.+-]+)\" ]]; then ver=${BASH_REMATCH[1]}; fi
   local tmp="$f.tmp.$$"

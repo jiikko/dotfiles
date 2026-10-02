@@ -235,3 +235,97 @@ func TestFetchPrefersStatusline(t *testing.T) {
 		t.Fatalf("古い観測で予備へ落ちない: 5h=%+v calls=%d", w, calls())
 	}
 }
+
+// writeRaw は既存の観測として、observedAt を指定してファイルを置く。
+func writeRaw(t *testing.T, cache string, observed time.Time, p5 int, r5 int64, p7 int, r7 int64) string {
+	t.Helper()
+	path := filepath.Join(cache, "glog", statuslineFile)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf(`{"observedAt":%d,"five_hour":{"used_percentage":%d,"resets_at":%d},"seven_day":{"used_percentage":%d,"resets_at":%d},"version":"2.1.287"}`+"\n",
+		observed.Unix(), p5, r5, p7, r7)
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, observed, observed); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// リセット時刻が数秒ずれても同じ窓とみなし、使用率で比べる (使用率の低い古い観測が「後のリセット時刻」で勝たない)。
+func TestStatuslineWriterToleratesResetJitter(t *testing.T) {
+	cache := t.TempDir()
+	now := time.Now()
+	r5, r7 := now.Add(time.Hour).Unix(), now.Add(48*time.Hour).Unix()
+	old := now.Add(-10 * time.Minute)
+	writeRaw(t, cache, old, 30, r5, 60, r7)
+	runStatusline(t, cache, fmt.Sprintf(`{"rate_limits":{"five_hour":{"used_percentage":20,"resets_at":%d}}}`, r5+1))
+	if st := readStatuslineRaw(t, cache); *st.FiveHour.UsedPercentage != 30 || st.ObservedAt != old.Unix() {
+		t.Fatalf("揺れたリセット時刻の古い観測で書き換えた: %+v", st.FiveHour)
+	}
+	runStatusline(t, cache, fmt.Sprintf(`{"rate_limits":{"five_hour":{"used_percentage":31,"resets_at":%d}}}`, r5+1))
+	if st := readStatuslineRaw(t, cache); *st.FiveHour.UsedPercentage != 31 {
+		t.Fatalf("同じ窓の新しい観測を採らない: %+v", st.FiveHour)
+	}
+}
+
+// 値が同じでも、そのセッションの transcript がファイルより新しければ observedAt だけ進める (使用率は整数に切り捨てるので、
+// 軽い利用では値が動かない)。transcript が古い (放置したセッション) なら進めない。
+func TestStatuslineWriterBumpsObservedAtOnActivity(t *testing.T) {
+	now := time.Now()
+	r5, r7 := now.Add(time.Hour).Unix(), now.Add(48*time.Hour).Unix()
+	in := func(transcript string) string {
+		return fmt.Sprintf(`{"transcript_path":%q,"rate_limits":{"five_hour":{"used_percentage":30,"resets_at":%d},"seven_day":{"used_percentage":60,"resets_at":%d}}}`, transcript, r5, r7)
+	}
+	old := now.Add(-10 * time.Minute)
+	for _, tc := range []struct {
+		name  string
+		mtime time.Time
+		bump  bool
+	}{{"やり取りがあったセッション", now.Add(-time.Minute), true}, {"放置したセッション", now.Add(-time.Hour), false}} {
+		cache := t.TempDir()
+		writeRaw(t, cache, old, 30, r5, 60, r7)
+		tr := filepath.Join(t.TempDir(), "s.jsonl")
+		if err := os.WriteFile(tr, []byte("{}\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(tr, tc.mtime, tc.mtime); err != nil {
+			t.Fatal(err)
+		}
+		runStatusline(t, cache, in(tr))
+		if got := readStatuslineRaw(t, cache).ObservedAt != old.Unix(); got != tc.bump {
+			t.Errorf("%s: observedAt を進めた = %v, want %v", tc.name, got, tc.bump)
+		}
+	}
+}
+
+// 読めないファイル・桁あふれの値でも、描画は壊れず stderr にも何も出さない。
+func TestStatuslineWriterQuietOnBadInput(t *testing.T) {
+	script, _ := filepath.Abs("../../../_claude/statusline-command.sh")
+	now := time.Now()
+	run := func(cache, input string) string {
+		cmd := exec.Command("bash", script)
+		cmd.Stdin = strings.NewReader(input)
+		cmd.Env = append(os.Environ(), "XDG_CACHE_HOME="+cache)
+		var stderr strings.Builder
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("rc=%v", err)
+		}
+		return stderr.String()
+	}
+	cache := t.TempDir()
+	path := writeRaw(t, cache, now.Add(-time.Minute), 30, now.Add(time.Hour).Unix(), 60, now.Add(48*time.Hour).Unix())
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+	if e := run(cache, fmt.Sprintf(`{"rate_limits":{"five_hour":{"used_percentage":5,"resets_at":%d}}}`, now.Add(time.Hour).Unix())); e != "" {
+		t.Errorf("読めないファイルで stderr: %q", e)
+	}
+	if e := run(t.TempDir(), `{"rate_limits":{"five_hour":{"used_percentage":5,"resets_at":99999999999999999999}}}`); e != "" {
+		t.Errorf("桁あふれの値で stderr: %q", e)
+	}
+}
