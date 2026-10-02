@@ -849,17 +849,19 @@ pgrep -f "$grp_mark" >/dev/null && { fail "🚨 別のプロセスグループ�
 #     そのまま渡すと Ctrl-C や trap … INT を扱うテストが baseline で落ちる。/bin/bash 3.2 は trap - で戻せない。red team 2 周目)
 # ---------------------------------------------------------------------------
 d="$work/intok"; make_repo "$d"
-cat > "$d/intprobe.sh" <<'IP'   # sleep-ok: dummy: INT で止まるかを見るための常駐と、その確認の待ち
-sleep 30 & p=$!
-kill -INT "$p"; sleep 0.3
-if kill -0 "$p" 2>/dev/null; then kill -9 "$p"; echo "INT_IGNORED"; exit 1; fi
+# 前景の子が自分に INT を撃ち、受け継いだ disposition のまま死ぬか (rc=130) を見る。`sleep & kill -INT` で見ると、
+# プローブ自身の `&` が子の INT を無視にする前に届くかの race と、kill -0 がゾンビにも成功する偽の生存を測ってしまう
+# (CI で 1 回落ちた。12 並列で旧プローブは既定の disposition でも 300 回中 26 回「無視」と出た)
+cat > "$d/intprobe.sh" <<'IP'
+rc=0; perl -e 'kill "INT", $$; select(undef, undef, undef, 1); print "survived\n"' || rc=$?
+if [ "$rc" -ne 130 ]; then echo "INT_IGNORED rc=$rc"; exit 1; fi
 echo "INT_KILLED"
 IP
 rc=0
 ( cd "$d" && git add intprobe.sh && git commit -qm probe && "$MV" --verify 'bash verify.sh && bash intprobe.sh' --baseline-expect '^ran 2 checks' \
     --file guard.sh --apply 'true' --expect 'FAIL: reject-bad' ) > "$work/out.log" 2>&1 || rc=$?
 check_log_leak "$work/out.log"
-[ "$rc" -eq 4 ] || { fail "🚨 検証コマンドが INT を受けられない (rc=$rc。期待 4 = baseline は緑で変異が当たらない)"; tail -6 "$work/out.log"; }
+[ "$rc" -eq 4 ] || { fail "🚨 検証コマンドが INT を受けられない (rc=${rc}。期待 4 = baseline は緑で変異が当たらない)"; tail -6 "$work/out.log"; }
 
 # ---------------------------------------------------------------------------
 # 49. run が rc を書かずに死んだら (外から撃たれた)、時間切れを待たずに失敗として返す (無制限のときに永久に待たない)
