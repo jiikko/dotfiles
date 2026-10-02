@@ -69,5 +69,6 @@ glogx の利用枠の表示 (右上の U の箱 / 全画面の R のダッシュ
   - `make -C src/glogx test` / `lint`、`make -C src/ratelimit lint` rc=0
 
 - 2026-10-02 (別セッションから追記): 上で「無関係」とした 2 つの落ちる原因が分かった。どちらも 626 の変更とは無関係。
-  `tests/bin/test_kernel_alloc_watch.sh` はロック待ちの判定の `lockf` に `-k` が無いこと ([630](630-test-kernel-alloc-watch-lock-probe-unlinks.md))。
+  `tests/bin/test_kernel_alloc_watch.sh` はロック待ちの判定の `lockf` に `-k` が無いこと ([630](done/630-test-kernel-alloc-watch-lock-probe-unlinks.md))。
   `TestFetchCallerTimeoutIsNotShared` は stub の `sleep` が `PATH` から見つからないこと ([627](done/627-bug-claude-usage-polling-hits-429.md) の進捗の末尾)
+- 2026-10-03 (別セッションから追記): 上の `test_kernel_alloc_watch.sh` の落ちる原因は 630 で解消 (判定の `lockf` を `-k` 付きにした。CI の Tests run 37034308994 で緑)

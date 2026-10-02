@@ -1,7 +1,5 @@
 # 630 (test): test_kernel_alloc_watch.sh のロック待ちの判定が `-k` 無しの lockf で、`make test` の中でだけ落ちる
 
-> 🚨 **担当中: dotfiles-20**（2026-10-03〜）
-
 起票日: 2026-10-02
 
 ## 概要
@@ -112,3 +110,4 @@ pkill -P $holder; kill $holder; wait $holder; rm -rf "$d"
     0/200 は「直った」の強い証拠ではない (レビュワーの CPU 負荷下の実測 80/400 → 400/400 と合わせて読む)
   - 単体 3 回連続 57 件 ✓、worktree の `make test` rc=0
   - 敵対的レビューは省略した (テストの判定 1 行の変更で、仕組みは決定論的な再現で確かめられたため)
+- 2026-10-03: CI の Tests (run 37034308994。217032c7 = この修正を含む) が rest / heavy とも success。`[ok] tests/bin/test_kernel_alloc_watch.sh` がログに出ている。done へ
