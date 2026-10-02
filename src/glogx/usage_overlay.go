@@ -285,15 +285,19 @@ func (o *usageOverlay) waiting() []string {
 	return names
 }
 
-// view は描く Snapshot (U の箱と R の盤の両方がこれを描く)。まだ届いていない出所には場所取りの枠
+// view は描く Snapshot (U の箱と R の盤の両方がこれを描く。spinner は場所取りに添えるスピナーの今のコマ)。まだ届いていない出所には場所取りの枠
 // (usage.PendingWindows) を入れ、届いた後とレイアウト (行の数・列の幅・盤の段) を揃える (issue 626)。
 // 場所取りは表示だけのもので、o.snap には入れない (キャッシュ・last-good の出典を汚さない)。
-func (o *usageOverlay) view() *usage.Snapshot {
+func (o *usageOverlay) view(spinner string) *usage.Snapshot {
 	s := o.snap
 	// 🚨 Claude の場所取りを With に「成功」として入れると ClaudeErr を消すが、待っている間の snap は ClaudeErr を
 	// 持たない (Claude が失敗したら届いた扱いで、場所取りを置かない)
 	for _, src := range o.waitingSources() {
-		s = s.With(usage.Part{Source: src, Windows: usage.PendingWindows(src, o.shape)})
+		ws := usage.PendingWindows(src, o.shape)
+		for i := range ws {
+			ws[i].Spinner = spinner
+		}
+		s = s.With(usage.Part{Source: src, Windows: ws})
 	}
 	return s
 }
@@ -319,14 +323,13 @@ func (o *usageOverlay) toggle() { o.visible = !o.visible }
 // dismiss は任意のナビゲーションキーで起動時グランス表示を引っ込める。
 func (o *usageOverlay) dismiss() { o.visible = false }
 
-// loading は取得待ち (spinner を回す) かどうか。表示中かつ結果未着 (snap も err も無い) の
-// ときだけ true。これが true の間だけ tick を回してスピナーを animate する (片方の出所を待つ間の箱は
-// 場所取りの行で、回すものが無い)。
+// loading は取得待ち (spinner を回す) かどうか。表示中かつ、結果未着 (snap も err も無い) か片方の出所を
+// 待っている (場所取りの行のスピナー) ときだけ true。これが true の間だけ tick を回してスピナーを animate する。
 func (o *usageOverlay) loading() bool {
-	return o.visible && o.snap == nil && o.err == nil
+	return o.visible && o.awaiting()
 }
 
-// awaiting は R のダッシュボードにスピナーが要るか (片方を待つ間も見出しの下の「取得中」を回す)。
+// awaiting は表示 (U の箱 / R のダッシュボード) にスピナーが要るか (片方を待つ間も場所取りのスピナーを回す)。
 func (o *usageOverlay) awaiting() bool {
 	return (o.snap == nil && o.err == nil) || len(o.waiting()) > 0
 }
@@ -357,7 +360,7 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 	case o.snap == nil:
 		rows = []string{paint(spinner+" 取得中...", ansiDim, colored)}
 	default:
-		snap := o.view()
+		snap := o.view(spinner)
 		// CLI バージョンが取れていればタイトルに添える (取得失敗時は空で従来どおり)。
 		// バージョン文字列は外部バイナリの出力なので無害化して枠へ載せる
 		if v := sanitizePlainLine(snap.Version); v != "" {

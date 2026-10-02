@@ -908,7 +908,7 @@ func textCardBody(c dialCard, _ string, w, h int, colored bool) []string {
 	var msg []string
 	switch {
 	case c.win.Pending:
-		msg = append(msg, fitLine(w, []string{paintIf(pendingWord, sgr.Dim, colored)}))
+		msg = append(msg, fitLine(w, []string{paintIf(pendingText(c.win), sgr.Dim, colored), paintIf(pendingWord, sgr.Dim, colored)}))
 	case c.win.Unused:
 		// 盤は「窓のどこにいるか」を描くもので、開いていない窓には描くものが無い。理由を
 		// 書かないと「盤が無い = 壊れた」に見える (5h カードが丸ごと消えていた頃と同じ印象)。

@@ -159,7 +159,7 @@ func RenderTableGroups(s *Snapshot, now time.Time, colored bool) (header string,
 		usageCell := fmt.Sprintf("%s %3d%%", bar(w.Percent, colored), w.Percent)
 		if w.Pending {
 			// 使用の列に語を置き、残りの列は空白で同じ幅を取る (届いた後と行の幅を揃える)
-			usageCell = paintIf(padRight(pendingWord, tblUsageW), sgr.Dim, colored)
+			usageCell = paintIf(padRight(pendingText(w), tblUsageW), sgr.Dim, colored)
 		}
 		remainCell := padLeft(days[i], wDay) + padLeft(hours[i], wHour) + padLeft(mins[i], wMin)
 		resetCell := padLeft(months[i], wMonth) + padLeft(dates[i], wDate) + clocks[i]

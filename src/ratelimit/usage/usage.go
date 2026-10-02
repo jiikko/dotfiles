@@ -56,10 +56,20 @@ type Window struct {
 	// Pending は「この枠はまだ取得中」の場所取り (PendingWindows が作る。値は持たない)。取得を待つ間も
 	// 表と盤のレイアウトを、届いた後と同じにするため (issue 626)。表示だけのもので、キャッシュへは書かない。
 	Pending bool `json:"-"`
+	// Spinner は場所取りの語の前に添えるスピナーのコマ (呼び出し側が毎フレーム入れ替える。空なら添えない)。
+	Spinner string `json:"-"`
 }
 
 // pendingWord は場所取りの枠に出す語。
 const pendingWord = "取得中..."
+
+// pendingText は場所取りの枠に出す文字列 (スピナーのコマ + 語)。
+func pendingText(w Window) string {
+	if w.Spinner == "" {
+		return pendingWord
+	}
+	return w.Spinner + " " + pendingWord
+}
 
 // PendingWindows は出所 src の場所取りの枠を返す。Claude は描く枠が defaultOrder で決まっているので
 // 届いた後と同じ枠になる。codex は枠の構成がプランで変わるので、like (前回取れた枠。古くてよい) にある codex の枠の

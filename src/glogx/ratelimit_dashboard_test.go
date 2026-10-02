@@ -280,8 +280,8 @@ func TestRatelimitDashShowsWaitingSource(t *testing.T) {
 	if got := stripANSI(m.rlDash.lines(o)[1]); !strings.Contains(got, "Claude Code 取得中...") {
 		t.Errorf("見出しの下に待っている出所が無い: %q", got)
 	}
-	// 盤の本体は Claude の 2 枚を場所取りのカードで取る (見出しの下の 1 つ + カードの 2 つ)
-	if all := stripANSI(strings.Join(m.rlDash.lines(o), "\n")); strings.Count(all, "取得中...") != 3 {
+	// 盤の本体は Claude の 2 枚を、スピナー付きの場所取りのカードで取る
+	if all := stripANSI(strings.Join(m.rlDash.lines(o), "\n")); strings.Count(all, m.spinner()+" 取得中...") != 2 {
 		t.Errorf("盤が場所取りのカードで Claude の段を取っていない:\n%s", all)
 	}
 	o.waiting = ""

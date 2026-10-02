@@ -609,6 +609,12 @@ func TestUsageShowsEachSourceAsItArrives(t *testing.T) {
 					pending++
 				}
 			}
+			if !o.loading() {
+				t.Error("片方を待っている間に場所取りのスピナーが止まる")
+			}
+			if spun := strings.Count(strings.Join(before, "\n"), "* 取得中..."); spun != pending {
+				t.Errorf("場所取りの行にスピナーが付いていない (%d / %d):\n%s", spun, pending, strings.Join(before, "\n"))
+			}
 			if want := len(usage.PendingWindows(second, nil)); pending != want {
 				t.Errorf("場所取りの行 = %d, want %d (まだの出所の枠の数):\n%s", pending, want, strings.Join(before, "\n"))
 			}
@@ -653,7 +659,7 @@ func TestUsagePendingUsesCachedCodexShape(t *testing.T) {
 	o.fetchCmd(false)
 	defer o.stop()
 	o.handle(usageMsg{part: usagePart("", 3)})
-	if got := usageLabels(o.view()); got != "5h,7d,cx5h,cx7d" {
+	if got := usageLabels(o.view("")); got != "5h,7d,cx5h,cx7d" {
 		t.Errorf("codex の場所取りが前回の形でない: %s", got)
 	}
 }

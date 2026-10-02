@@ -61,4 +61,10 @@ glogx の利用枠の表示 (右上の U の箱 / 全画面の R のダッシュ
   - `make -C src/glogx test` / `lint`、`make -C src/ratelimit lint` rc=0、`-race -count=3` rc=0。`make -C src/ratelimit test` は
     `TestFetchCallerTimeoutIsNotShared` (shared_test.go。627 の共有ゲートのテスト) だけが落ちる。変更していない master でも落ちる (627 の持ち主へ連絡済み)。
     root の `make test` は `tests/bin/test_kernel_alloc_watch.sh` だけが落ちる (前の commit と同じ負荷の偽の赤。単体では rc=0)
+- 2026-10-02 「feat(glogx): 利用枠の場所取りにスピナーを添える (626)」 (ユーザーの追加の要望: 表示前は回るインジケータを出す)
+  - `Window.Spinner` (表示だけ) を `pendingText` が「⠋ 取得中...」にする。U の箱の行と R の盤のカードに出る (幅は「取得中...」の列の中に収まる)。
+    glogx の `view(spinner)` が毎フレームのコマを入れ、`loading()` は片方を待つ間も真に戻した (tick を回してスピナーを動かす)
+  - 変異 (すべて red): view がコマを入れない / loading が待ちを見ない / 表がコマを添えない / 盤のカードがコマを添えない
+  - 敵対的レビューは省略: 判定ロジックの新設は無く (表示の文字列と、レビュー済みの loading の条件へ戻しただけ)、各変更を変異で直接確かめた
+  - `make -C src/glogx test` / `lint`、`make -C src/ratelimit lint` rc=0
 

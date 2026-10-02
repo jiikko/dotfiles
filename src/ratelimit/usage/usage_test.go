@@ -243,6 +243,11 @@ func TestRenderTablePendingKeepsWidth(t *testing.T) {
 		{Label: "5h", Percent: 4, ResetAt: now.Add(4*time.Hour + 26*time.Minute)},
 		{Label: "7d", Percent: 29, ResetAt: now.Add(5*24*time.Hour + 3*time.Hour)},
 	}})
+	// スピナーのコマを添えても同じ幅 (毎フレーム入れ替わるので、幅が動くと箱が震える)
+	spun := got.Windows
+	for i := range spun {
+		spun[i].Spinner = "⠋"
+	}
 	_, rows := RenderTable(got, now, false)
 	_, want := RenderTable(arrived, now, false)
 	if len(rows) != len(want) {
@@ -252,7 +257,7 @@ func TestRenderTablePendingKeepsWidth(t *testing.T) {
 		if termwidth.Of(rows[i]) != termwidth.Of(want[i]) {
 			t.Errorf("行 %d の幅 = %d, want %d:\n%q\n%q", i, termwidth.Of(rows[i]), termwidth.Of(want[i]), rows[i], want[i])
 		}
-		if !strings.Contains(rows[i], "取得中...") || strings.Contains(rows[i], "/") || strings.Contains(rows[i], "%") {
+		if !strings.Contains(rows[i], "⠋ 取得中...") || strings.Contains(rows[i], "/") || strings.Contains(rows[i], "%") {
 			t.Errorf("場所取りの行が値や区切りを出す: %q", rows[i])
 		}
 	}
