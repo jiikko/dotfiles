@@ -583,6 +583,48 @@ func TestIssuesViewGroupParentIssueMergesIntoHeaderRow(t *testing.T) {
 	}
 }
 
+// TestIssuesViewNamedGroupParentMergesAndHidesWhenDone は名前付きの group の親 (`NNN-epic-<group 名>.md`。
+// obaket の形) が親行へ統合されることと、親と子を全部 done へ送ると `a` で全開にしても一覧から
+// 消えることを固定する (2026-10-02 ユーザー要望)。親の判定は issues.IsGroupParent の 1 箇所。
+func TestIssuesViewNamedGroupParentMergesAndHidesWhenDone(t *testing.T) {
+	dir := "/repo/issues"
+	named := func(status issues.Status) *issues.Issue {
+		iss := fakeEpicIssue(dir, "pane-perf", "956", "pane-perf", status)
+		iss.Category = issues.EpicDirName
+		iss.Rel = strings.Replace(iss.Rel, "956-feat-", "956-epic-", 1)
+		iss.Path = filepath.Join(dir, iss.Rel)
+		return iss
+	}
+	parent := named(issues.StatusOpen)
+	child := fakeEpicIssue(dir, "pane-perf", "962", "relayout", issues.StatusDone)
+	v := loadedView(parent, child)
+	if len(v.displayRows) != 1 || !v.displayRows[0].groupHead || v.displayRows[0].issue != parent {
+		t.Fatalf("名前付きの group の親 issue が親行へ統合されていない: %+v", v.displayRows)
+	}
+
+	done := named(issues.StatusDone)
+	v = loadedView(done, child)
+	v.filter = issues.FilterAll
+	v.refresh()
+	if len(v.displayRows) != 0 {
+		t.Fatalf("親を done へ送った epic が a の全開で残っている: %+v", v.displayRows)
+	}
+}
+
+// TestIssuesViewNumberParentWinsOverNamedForm は 1 つの group に親の 2 つの形が並んだとき、番号の形
+// (旧来の親) が親行に残ることを固定する。v.rows の並び (番号の降順) に任せると、後から足した
+// `470-epic-467.md` が 467 を子へ落とす (2026-10-02 敵対レビュー P2)。
+func TestIssuesViewNumberParentWinsOverNamedForm(t *testing.T) {
+	dir := "/repo/issues"
+	numbered := fakeEpicIssue(dir, "467", "467", "x", issues.StatusOpen)
+	named := fakeEpicIssue(dir, "467", "470", "467", issues.StatusOpen)
+	named.Category = issues.EpicDirName
+	v := loadedView(named, numbered) // Scan と同じ番号の降順
+	if len(v.displayRows) != 1 || v.displayRows[0].issue != numbered || v.displayRows[0].childCount != 1 {
+		t.Fatalf("番号の形の親が親行に残っていない: %+v", v.displayRows)
+	}
+}
+
 // TestIssuesViewGroupParentShowsDoneCount は親行の括弧が「子の件数 + done の件数」を出すことと、
 // done な子が既定 (状態フィルタ open) でも group の中に見えることを固定する (issue 291)。
 func TestIssuesViewGroupParentShowsDoneCount(t *testing.T) {

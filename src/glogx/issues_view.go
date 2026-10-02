@@ -61,7 +61,7 @@ type displayRow struct {
 	// inGroup は展開した group 親行の直下に並ぶ子 issue。一覧では groupChildIndent ぶん右へ寄せて
 	// 親との所属を見せる (2026-09-05 のユーザー要望: 親と同じ桁に並ぶと開いたときに所属が読めない)。
 	inGroup bool
-	// groupHead は「group 名と同じ番号を持つ親 issue」を group の親行として描く行。合成の
+	// groupHead は epic 自身の親 issue (形は issues.IsGroupParent) を group の親行として描く行。合成の
 	// group 行 (displayRowGroup) と違い実体は issue なので、開く・コピー・n はそのまま効く
 	// (親 issue が group 行に吸われて触れなくなるのを避ける。2026-09-05 ユーザー要望)。
 	groupHead bool
@@ -912,9 +912,15 @@ func (v *issuesView) rebuildDisplayRows() {
 			groups[key] = g
 			groupList = append(groupList, g)
 		}
-		if iss.Number != "" && iss.Number == iss.Group && g.parent == nil {
-			g.parent = iss // group 名と同じ番号の issue = その epic 自身の親 issue
-		} else {
+		switch {
+		case issues.IsGroupParent(iss) && g.parent == nil:
+			g.parent = iss // その epic 自身の親 issue (形は issues.IsGroupParent)
+		case issues.IsGroupNumberParent(iss) && !issues.IsGroupNumberParent(g.parent):
+			// 番号の形を優先する (v.rows の並び = 番号の降順に任せると、後から足した
+			// `NNN-epic-<番号>` が旧来の親を子へ落とす)。先に親にしたものは子へ戻す
+			g.children = append(g.children, g.parent)
+			g.parent = iss
+		default:
 			g.children = append(g.children, iss)
 		}
 		n, ok := issueNumberOK(iss)
