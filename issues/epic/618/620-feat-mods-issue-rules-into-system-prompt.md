@@ -23,13 +23,29 @@ mod の `prompt.compose` なら、同じ文をシステムプロンプトの節 
 
 ### 計測 (A-B)
 
-- **腕**: A = 今の SessionStart の注入 / B = mod の節 (settings の hook は外す)。同じ規約の文面、同じモデル (ふだん使う main のモデル。haiku で代用しない)
-- **課題**: 隔離した一時 repo (`issues/` だけを持つ。remote は無いか、ローカルの bare。本物の dotfiles に push できない形) で、規約に触れる作業を headless で頼む
-  (例: 「この不具合を issue に起票して」「この issue を完了にして」)。頼む文には規約の中身を書かない
+- **腕**: A = 今の SessionStart の注入 / B = mod の節 / **C = 規約なし** (対照。C と A で差が出ない項目は、既定の振る舞いで守られているので判定から外す)。
+  同じ規約の文面、同じモデル (ふだん使う main のモデル。haiku で代用しない)
+- **隔離した config で回す**: 本番の `~/dotfiles/_claude/settings.json` から hook を外すと、並行中の全セッションから規約が消える
+  (hook は実体パスから起動し、worktree の編集は効かない)。`ISSUE_RULES_FILE` を空のファイルへ向ける手も使えない (「規約を読めなかった」と注入され、規約を指す文が B に混ざる)。
+  そこで 3 腕とも `CLAUDE_CONFIG_DIR` か HOME を差し替えた隔離した config で回し、settings の写しの hook の行だけを腕ごとに変える。B の mod は `--plugin-dir` でだけ載せる
+  (本番の mods フォルダには置かない)。隔離の下で認証 (Keychain) が通るかは未確認なので、先に 1 本で確かめる
+- **CLAUDE.md の文を腕でそろえる**: `~/.claude/CLAUDE.md` の「Issue管理」は、注入に「この CLAUDE.md と同じ拘束力で従う」を与え (A だけが後押しされる)、
+  「注入が見当たらないときは正本を Read する」とも言う (B と C は規約を Read しやすい)。隔離した config の CLAUDE.md では、この節を 3 腕で同じ中立の文にするか外す。
+  `issue-rules*.md` を Read した run は記録して別に集計する
+- **Stop hook の差し戻しより前で判定する**: Stop の `issue-progress-check.sh` (進捗を書かせる) と PostToolUse の `git-state-verify.sh` / `next-claim-push.sh` (未 push を知らせる) は、
+  出口で項目を強制して腕の差を消す。進捗と push の項目は、最初に Stop が来た時点の状態で判定し、block の有無は stream-json から記録する
+- **課題**: 隔離した一時 repo で、規約に触れる作業を headless で頼む (例: 「この不具合を issue に起票して」「この issue を完了にして」)。頼む文には規約の中身を書かない
+  - 置き場所は 3 腕とも scratchpad (`/private/tmp/...`) 配下の同じパス (`~/dotfiles/tmp/` に置くと dotfiles の CLAUDE.md が祖先として読まれる)。git root と直下の `issues/` を持たせる (注入の条件)
+  - remote はローカルの bare にする (本物の dotfiles に push できない形)
+  - `next/` を持つ形も用意する (`next/` が無い repo では claim と「完了前に目印を消す」が規約上も適用されず、両腕 0 差に数えられる)。置く既存の issue は規約に沿った見本になるので、その影響を C で測る
+- **コマンド**: 書き込みの道具を許可して回す (`.claude/rules/worktree-per-session.md` の観測用のコマンドは書き込みの道具を外しているので、A-B には使わない)。
+  各 run で「issue ファイルが 1 つ以上できた」ことを判定の前提にし、できなかった run は判定不能として数える
 - **測るもの**: 機械で判定できる規約の項目だけ。ファイル名の形 (`NNN-<type>-<slug>.md`)・`起票日:` の行・human の `期限:` の書式・採番した後すぐ commit したか・
   done へ移す前に目印を消したか、など。項目ごとに守った / 破ったを数える。判定は生成物と git の状態から読み、モデルの返答の文面からは読まない
 - **回数と打ち切り**: 腕ごとの回数を始める前に決めて本文に書く。本物のセッションを起こすので、先に `ratelimit` で 5h 枠を見る。1 回の token を測ってから総数を決める
-- **名目の確認**: B で、節がどういう形でモデルに届いているかを `/context` か debug log で見て、本文に書く
+- **B で節が実際に足されたかを run ごとに確かめる**: `-p` では `/context` が使えず (`/context` は送信しない `analysis` の描画)、読み込みの失敗は json / stream-json の run では
+  debug log にしか出ない (reference.md「Developing one」)。mod が `prompt.compose` (trait `print`) で節を足したことを、session_id ごとの印か debug log の行で確かめ、
+  確かめられない run は判定から外す。節の名目 (どう見えるか) は、対話のセッションで `/context` を 1 回見て本文に書く
 - **判定**: B が A より守られる率が上がったときだけ、下の対応方針へ進む。差が無い・下がるなら、移さずに閉じる (618 の表を「移さない」に直す)。
   差の大きさと回数を本文に書き、少ない回数で「上がった」と書かない
 
@@ -58,8 +74,8 @@ mod は失敗すると黙ってスキップされる。移すと、規約の無�
 
 ## 確かめること
 
-- [ ] headless の新規セッションで A-B を取る (`issues/` の在る cwd / 無い cwd)。手順は `.claude/rules/worktree-per-session.md` の
-      `claude -p --model haiku --output-format stream-json ...` の形。答えは stream-json の先頭から読む (Stop hook が最後の返答を差し替えるため)
+- [ ] (計測とは別の、移した後の確認) 規約の節が注入されるかを、`issues/` の在る cwd / 無い cwd の両方で見る。手順は `.claude/rules/worktree-per-session.md` の
+      `claude -p --model haiku --output-format stream-json ...` の形 (書き込みの道具を外した観測用。答えは stream-json の先頭から読む)
 - [ ] subagent に規約が入るかを見る (今は入らない。入るなら挙動が変わるので、本文に書く)
 - [ ] セッションの途中で規約ファイルを編集しても、節が 1 バイトも変わらないこと (cache を外さない)。`$.session.usage()` の `cache_read_input_tokens` で確かめる
 - [ ] 「気づく手段」を、mod あり → 警告なし / mod なし → 警告あり、の両方で同じ手順で確かめた (同じマシンで、mod を一度動かした後に外した状態で)
