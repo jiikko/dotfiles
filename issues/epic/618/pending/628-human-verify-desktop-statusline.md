@@ -1,6 +1,8 @@
 # 628 (human): Claude desktop の Code タブにステータスバーが出るかを見る (625 の確認)
 
 起票日: 2026-10-02
+
+> 保留 (2026-10-02、ユーザーの判断): mods 系の open issue をまとめて凍結した。再開するかどうかはユーザーが決める。
 期限: 2026-10-09
 
 epic [618](618-design-claude-code-mods-migration.md) の子。[625](625-feat-mods-statusline-on-desktop.md) の受け入れ条件の確認。

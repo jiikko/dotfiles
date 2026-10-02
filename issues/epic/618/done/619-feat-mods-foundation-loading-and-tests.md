@@ -2,7 +2,7 @@
 
 起票日: 2026-10-02
 
-epic [618](../618-design-claude-code-mods-migration.md) の子。620〜624 の前提。
+epic [618](../pending/618-design-claude-code-mods-migration.md) の子。620〜624 の前提。
 
 ## 概要
 
