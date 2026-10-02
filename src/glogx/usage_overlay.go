@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"strconv"
 	"strings"
 	"time"
 
@@ -103,7 +104,17 @@ type usageOverlay struct {
 // useCache=true (起動時) は fresh なディスクキャッシュがあれば subprocess を起こさず即答する。
 // 定期リフレッシュ側は false — 鮮度を作るのがその役目なので、自分が書いたキャッシュを読み返す
 // のは無意味 (TTL == 周期なので必ず miss する)。キャッシュの保存は周の終わりに handle が行う。
-func (o *usageOverlay) fetchCmd(useCache bool) tea.Cmd {
+func (o *usageOverlay) fetchCmd(useCache bool) tea.Cmd { return o.fetchCmdWith(useCache, false) }
+
+// usageFooter は箱の末尾の文言。表示は usageRefreshInterval ごとに読み直すが、Claude の枠そのものは
+// 全プロセス共有のゲートの間隔 (usage.SharedFresh) でしか新しくならないので、そちらを出す (issue 627)。
+var usageFooter = strconv.Itoa(int(usage.SharedFresh/time.Minute)) + "分ごとに更新"
+
+// fetchNowCmd は人が「今すぐ取り直す」を押したときの取得。Claude 側は全プロセス共有のゲートの
+// 5 分の間引きを飛ばす (usage.FetchClaudePartNow。間引きのまま返すと、数分前の値が今取った値として入る)。
+func (o *usageOverlay) fetchNowCmd() tea.Cmd { return o.fetchCmdWith(false, true) }
+
+func (o *usageOverlay) fetchCmdWith(useCache, force bool) tea.Cmd {
 	if o.inFlight {
 		return nil // 走行中の fetch がある: overlap させない (inFlight フィールドの doc)
 	}
@@ -122,7 +133,11 @@ func (o *usageOverlay) fetchCmd(useCache bool) tea.Cmd {
 			return usageMsg{part: &p}
 		}
 	}
-	both := tea.BatchMsg{one(usage.FetchClaudePart), one(usage.FetchCodexPart)}
+	claude := usage.FetchClaudePart
+	if force {
+		claude = usage.FetchClaudePartNow
+	}
+	both := tea.BatchMsg{one(claude), one(usage.FetchCodexPart)}
 	return func() tea.Msg {
 		// キャッシュ経路の失敗 (path 解決不能・破損・TTL 切れ) はすべて「キャッシュなし」に
 		// 落として通常取得へ進む (キャッシュ都合で usage 表示を失わない)
@@ -354,7 +369,7 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 			// 右上の小さな箱を理由の長さで横に広げない (全文は R のダッシュボードに出る)
 			rows = append(rows, paint(clipToWidth(note, max(w, dispWidth(title))), ansiYellow, colored))
 		}
-		footer := "1分ごとに更新"
+		footer := usageFooter
 		rows = append(rows, padSpaces(max(w-dispWidth(footer), 0))+paint(footer, ansiDim, colored))
 	}
 	// 枠幅 = 内容の最大表示幅 + 罫線・影の余白。ただし title を切り詰めない幅 (title 幅 + 3。

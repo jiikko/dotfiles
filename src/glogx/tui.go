@@ -57,8 +57,8 @@ const (
 	// 🚨 実装で強制できない 2 つの制約 (変更時に再評価すること):
 	//  1. fetchTimeout より必ず大きく保つ。小さくすると fetch が overlap し、fetchCmd の
 	//     o.cancel 上書きで前回 fetch の cancel を取りこぼす (現状 10s < 60s で overlap しない)。
-	//  2. usage_overlay.go boxLines のフッター文言「1分ごとに更新」がこの値に結合している。
-	//     周期を変えるならフッター文言も揃えること (dim 表示・値は静かに差し替わる旨の明示)。
+	//  2. usage_overlay.go のフッター (usageFooter) はこの値ではなく usage.SharedFresh から作る
+	//     (値が新しくなる間隔はそちらで決まる)。この周期をそれより長くするならフッターも見直すこと。
 	// 🚨 この周期で claude を起こすわけではない: Claude 側の取得は usage.Fetch の全プロセス共有ゲート
 	//    (src/ratelimit/usage/shared.go) を通り、5 分以内の結果があればそれを返す。以前は毎回起こしていて、
 	//    表示を開いたまま 17 分で /api/oauth/usage が 429 になった (issue 627)。
@@ -1781,7 +1781,7 @@ func (m *browseModel) routeKeyToRatelimitDash(key string) (tea.Model, tea.Cmd) {
 	case rlDashClosed:
 		return m, m.maybeTick()
 	case rlDashRefresh:
-		return m, tea.Batch(m.usageOv.fetchCmd(false), m.maybeTick())
+		return m, tea.Batch(m.usageOv.fetchNowCmd(), m.maybeTick())
 	// i / s = viewer へ横断 (viewer 側の R と対。ユーザー要望 2026-09-01)。handleKey が
 	// 既に閉じているので、issues ↔ status の横断と同じく閉じ演出は待たずに即着地する。
 	// 🚨 toggle を呼ぶので、ここへ来る時点で相手の viewer が開いていないこと (全画面は

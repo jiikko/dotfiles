@@ -272,9 +272,18 @@ type Part struct {
 	Err     error
 }
 
-// FetchClaudePart は Claude Code の残量を Part で返す。
+// FetchClaudePart は Claude Code の残量を Part で返す (全プロセス共有のゲート越し。shared.go)。
 func FetchClaudePart(ctx context.Context) Part {
-	snap, err := Fetch(ctx)
+	return claudePart(FetchShared(ctx, fetchClaude, false))
+}
+
+// FetchClaudePartNow は FetchClaudePart と同じだが、共有ゲートの 5 分の間引きを飛ばして取り直す
+// (人が「今すぐ取り直す」を押したとき。サーバから枠を受け取れず止めている間は取りに行かない)。
+func FetchClaudePartNow(ctx context.Context) Part {
+	return claudePart(FetchShared(ctx, fetchClaude, true))
+}
+
+func claudePart(snap *Snapshot, err error) Part {
 	if err != nil {
 		return Part{Err: err}
 	}

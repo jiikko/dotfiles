@@ -343,8 +343,8 @@ func TestUsageHandleRecoversFromInitialError(t *testing.T) {
 	}
 }
 
-// 成功時の usage box は自動更新を明示するフッター「1分ごとに更新」を末尾に出す
-// (ユーザー要望 2026-07-22: バックグラウンドで 1 分ごとに更新している旨の明記)。
+// 成功時の usage box は自動更新を明示するフッター (usageFooter) を末尾に出す
+// (ユーザー要望 2026-07-22。間隔は全プロセス共有のゲートの間隔。issue 627)。
 func TestUsageBoxLinesShowsAutoRefreshFooter(t *testing.T) {
 	ov := usageOverlay{
 		visible: true,
@@ -354,17 +354,17 @@ func TestUsageBoxLinesShowsAutoRefreshFooter(t *testing.T) {
 	}
 	box := ov.boxLines(80, false, "|")
 	plain := stripANSI(strings.Join(box, "\n"))
-	if !strings.Contains(plain, "1分ごとに更新") {
+	if !strings.Contains(plain, usageFooter) {
 		t.Errorf("usage box に自動更新フッターが無い:\n%s", plain)
 	}
 	// フッターは末尾付近 (データ行の後) に出る: 5h 行より後であること
-	if strings.Index(plain, "1分ごとに更新") < strings.Index(plain, "5h") {
+	if strings.Index(plain, usageFooter) < strings.Index(plain, "5h") {
 		t.Errorf("フッターがデータ行より前に出ている:\n%s", plain)
 	}
 	// 右寄せ: フッター文言は行の右端 (右罫線 │ の直前) に来る。左端 "│ " 直後には出さない。
 	var footerLine string
 	for _, l := range box {
-		if strings.Contains(stripANSI(l), "1分ごとに更新") {
+		if strings.Contains(stripANSI(l), usageFooter) {
 			footerLine = stripANSI(l)
 			break
 		}
@@ -372,10 +372,10 @@ func TestUsageBoxLinesShowsAutoRefreshFooter(t *testing.T) {
 	if footerLine == "" {
 		t.Fatal("フッター行が見つからない")
 	}
-	if !strings.Contains(footerLine, "1分ごとに更新 │") {
+	if !strings.Contains(footerLine, usageFooter+" │") {
 		t.Errorf("フッターが右寄せされていない (右罫線に接していない):\n%q", footerLine)
 	}
-	if strings.Contains(footerLine, "│ 1分ごとに更新") {
+	if strings.Contains(footerLine, "│ "+usageFooter) {
 		t.Errorf("フッターが左寄せのまま (左罫線直後に出ている):\n%q", footerLine)
 	}
 }
@@ -792,5 +792,50 @@ func TestUsageLastGoodShowsStaleReason(t *testing.T) {
 	}
 	if head := d.lines(m.ratelimitOpts())[1]; head != "" {
 		t.Errorf("回復後もダッシュボードに注記が残る: %q", head)
+	}
+}
+
+// R のダッシュボードの `r` は、全プロセス共有のゲートの 5 分の間引きを飛ばして取り直す。定期の取得は
+// 間引きの内側 (claude を起こさない)。`r` が定期と同じ経路に戻ると、数分前の値が「今取った値」として
+// 入り、押しても取り直されない (issue 627 の敵対的レビュー)。
+func TestRatelimitDashRefreshKeyBypassesSharedGate(t *testing.T) {
+	dir := t.TempDir()
+	calls := filepath.Join(dir, "calls")
+	stub := func(name, script string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"+script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stub("claude", `case "$1" in
+--version) echo "9.9.9 (Claude Code)";;
+*) echo x >> `+calls+`
+printf '%s\n' '{"type":"result","result":"Current session: 2% used · resets Jul 22 at 3:09am (Asia/Tokyo)","is_error":false}';;
+esac
+`)
+	stub("codex", "exit 1\n")
+	t.Setenv("PATH", dir)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	count := func() int {
+		b, _ := os.ReadFile(calls)
+		return strings.Count(string(b), "\n")
+	}
+
+	m := newTestBrowse(t, 2, map[string]CIState{}, nil)
+	m.rlDash.shown = true
+	runCmdTree(m.usageOv.fetchCmd(false)) // 共有ゲートに 5 分以内の結果を作る
+	m.usageOv.inFlight = false  // handle を通していないので手で下ろす
+	if got := count(); got != 1 {
+		t.Fatalf("前提: claude %d 回, want 1", got)
+	}
+	runCmdTree(m.usageOv.fetchCmd(false)) // 定期の取得は間引かれる
+	m.usageOv.inFlight = false
+	if got := count(); got != 1 {
+		t.Fatalf("定期の取得が 5 分以内に claude を起こした: %d 回", got)
+	}
+	_, cmd := m.routeKeyToRatelimitDash("r")
+	runCmdTree(cmd)
+	if got := count(); got != 2 {
+		t.Fatalf("r で取り直さない: claude %d 回, want 2", got)
 	}
 }

@@ -15,41 +15,63 @@ import (
 	"pro-con/card"
 	"pro-con/eventlog"
 	"pro-con/store"
+	"ratelimit/usage"
 )
 
-// 2.1.281 の `claude -p /usage` の stdout (2026-09-25 に実測した形。使用率は差し替えた)
-const usageOut = `You are currently using your subscription to power your Claude Code usage
-
-Current session: 12% used · resets Sep 25 at 4:40pm (Asia/Tokyo)
-Current week (all models): 8% used · resets Oct 2 at 8am (Asia/Tokyo)
-Current week (Fable): 0% used · resets Oct 2 at 8am (Asia/Tokyo)
+// 2.1.287 の `claude -p /usage --output-format stream-json --verbose` の形 (2026-10-02 に実測。使用率は差し替えた)
+const usageStream = `{"type":"system","subtype":"init"}
+{"type":"assistant","usage_report":{"session":{},"rate_limits":{"limits":[]}}}
+{"type":"result","result":"You are currently using your subscription to power your Claude Code usage\nCurrent session: 12% used · resets Sep 25 at 4:40pm (Asia/Tokyo)\nCurrent week (all models): 8% used · resets Oct 2 at 8am (Asia/Tokyo)\nCurrent week (Fable): 0% used · resets Oct 2 at 8am (Asia/Tokyo)","is_error":false}
 `
 
-func TestParseUsage(t *testing.T) {
-	u, err := ParseUsage(usageOut)
+func snapOf(t *testing.T, stream string) *usage.Snapshot {
+	t.Helper()
+	snap, err := usage.ParseStream([]byte(stream), time.Date(2026, 9, 25, 12, 0, 0, 0, time.Local))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return snap
+}
+
+func TestUsageOf(t *testing.T) {
+	u, err := usageOf(snapOf(t, usageStream))
 	if err != nil || u.Session != 12 || u.Week != 8 {
 		t.Fatalf("session 12 / week 8 のはず: %+v %v", u, err)
 	}
-	// 片方の行だけ無ければ、読める側で絞る (無い側は 0)
-	if u, err := ParseUsage(strings.Replace(usageOut, "Current session", "Session", 1)); err != nil || u.Session != 0 || u.Week != 8 || u.Missing != "5 時間の枠" {
-		t.Fatalf("5 時間の枠の行が無いと週の枠も捨てた: %+v %v", u, err)
+	// 片方の枠だけ無ければ、読める側で絞る (無い側は 0)
+	if u, err := usageOf(snapOf(t, strings.Replace(usageStream, "Current session", "Session", 1))); err != nil || u.Session != 0 || u.Week != 8 || u.Missing != "5 時間の枠" {
+		t.Fatalf("5 時間の枠が無いと週の枠も捨てた: %+v %v", u, err)
 	}
-	if u, err := ParseUsage(strings.Replace(usageOut, "Current week (all models)", "This week", 1)); err != nil || u.Session != 12 || u.Week != 0 || u.Missing != "週の枠" {
-		t.Fatalf("週の行が無いと 5 時間の枠も捨てた: %+v %v", u, err)
+	if u, err := usageOf(snapOf(t, strings.Replace(usageStream, "Current week (all models)", "This week", 1))); err != nil || u.Session != 12 || u.Week != 0 || u.Missing != "週の枠" {
+		t.Fatalf("週の枠が無いと 5 時間の枠も捨てた: %+v %v", u, err)
 	}
-	// 両方無ければ誤り (0% と区別する)
-	both := strings.NewReplacer("Current session", "Session", "Current week (all models)", "This week").Replace(usageOut)
-	if _, err := ParseUsage(both); err == nil {
-		t.Fatal("使用率の行が無いのに読めたことにした (0% と区別できない)")
+	// 両方無ければ誤り (0% と区別する)。モデル別の週の枠だけでは読めたことにしない
+	only := &usage.Snapshot{Windows: []usage.Window{{Label: "7d(Fable)", Percent: 99}}}
+	if _, err := usageOf(only); err == nil {
+		t.Fatal("5h / 7d が無いのに読めたことにした (0% と区別できない)")
 	}
-	// 小数・「<1%」・行頭の空白 (表示の揺れ)。モデル別の週の枠は見ない
-	odd := "  Current session: 81.5% used · resets x\nCurrent week (all models): <1% used · resets y\nCurrent week (Fable): 99% used\n"
-	if u, err := ParseUsage(odd); err != nil || u.Session != 81 || u.Week != 1 {
-		t.Fatalf("表示の揺れを読めない / モデル別の枠を読んだ: %+v %v", u, err)
+}
+
+// 枠は全プロセス共有のゲート越しに読む: 5 分以内に 2 回読んでも claude は 1 回しか起こさない (issue 627)。
+func TestReadUsageGoesThroughSharedGate(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	dir := t.TempDir()
+	calls := filepath.Join(dir, "calls")
+	claude := filepath.Join(dir, "claude")
+	body := "#!/bin/sh\necho x >> " + calls + "\ncat <<'EOF'\n" + usageStream + "EOF\n"
+	if err := os.WriteFile(claude, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	odd = "Current session: <1% used · resets x\n  Current week (all models): 12.5% used · resets y\n"
-	if u, err := ParseUsage(odd); err != nil || u.Session != 1 || u.Week != 12 {
-		t.Fatalf("表示の揺れを読めない: %+v %v", u, err)
+	read := ReadUsage(claude, t.TempDir())
+	for range 2 {
+		u, err := read(context.Background())
+		if err != nil || u.Session != 12 {
+			t.Fatalf("u=%+v err=%v", u, err)
+		}
+	}
+	b, _ := os.ReadFile(calls)
+	if got := strings.Count(string(b), "\n"); got != 1 {
+		t.Fatalf("5 分以内に claude を %d 回起こした, want 1", got)
 	}
 }
 
@@ -320,7 +342,7 @@ func TestFailingResumeDoesNotStarveOthers(t *testing.T) {
 func TestPartialUsageIsShown(t *testing.T) {
 	r := newUsageRig(t)
 	r.d.Usage = func(context.Context) (Usage, error) {
-		return ParseUsage(strings.Replace(usageOut, "Current session", "Session", 1))
+		return usageOf(snapOf(t, strings.Replace(usageStream, "Current session", "Session", 1)))
 	}
 	r.tick(t)
 	st, _, _ := store.LoadDispatcherState(r.d.Dir)
@@ -342,20 +364,8 @@ func TestPartialUsageNotedWhenCapped(t *testing.T) {
 	}
 }
 
-// 誤りに添える 1 行目は 80 文字で切る。
-func TestParseUsageErrorQuoteIsBounded(t *testing.T) {
-	_, err := ParseUsage(strings.Repeat("あ", 200))
-	if err == nil || strings.Count(err.Error(), "あ") != 80 || !strings.Contains(err.Error(), "…") {
-		t.Fatalf("1 行目を切らない: %v", err)
-	}
-}
-
-// 使用率の行が無い (未認証など) ときの誤りには、実際に返った文の 1 行目を添える (原因を取り違えて見せない)。
-func TestParseUsageErrorQuotesOutput(t *testing.T) {
-	if _, err := ParseUsage("Total cost: $0.00\nTotal duration: 1s\n"); err == nil || !strings.Contains(err.Error(), "Total cost: $0.00") {
-		t.Fatalf("返った文を添えない: %v", err)
-	}
-}
+// 読めないときの誤りに返った文の 1 行目を添える検査は usage.ParseStream へ移した
+// (src/ratelimit/usage/shared_test.go の TestParseStreamErrorQuotesFirstLine)。
 
 // 枠を読むコマンド: 読むたびに session を残さない / user の hook と mods を走らせない / 状態の置き場で動かす / 子孫が stdout を握っても戻る。
 func TestUsageCmd(t *testing.T) {
@@ -367,7 +377,7 @@ func TestUsageCmd(t *testing.T) {
 	if cmd.Env == nil || !slices.Contains(cmd.Env, "PRO_CON_KEEP=1") {
 		t.Fatalf("親の環境を引き継いでいない / Env が nil (親の TMUX がそのまま渡る): %d 個", len(cmd.Env))
 	}
-	want := []string{"/bin/claude", "-p", "--no-session-persistence", "--setting-sources", "", "/usage"}
+	want := []string{"/bin/claude", "-p", "--no-session-persistence", "--setting-sources", "", "--output-format", "stream-json", "--verbose", "/usage"}
 	if strings.Join(cmd.Args, "\x00") != strings.Join(want, "\x00") || cmd.Dir != "/state" || cmd.WaitDelay != time.Second {
 		t.Fatalf("args=%q dir=%q waitDelay=%v", cmd.Args, cmd.Dir, cmd.WaitDelay)
 	}

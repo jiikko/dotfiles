@@ -81,8 +81,9 @@ func (s *Snapshot) Find(label string) (Window, bool) {
 	return Window{}, false
 }
 
-// claudeResult は `claude ... --output-format stream-json` の result 行の必要フィールドだけ。
+// claudeResult は `claude ... --output-format stream-json` の行の必要フィールドだけ。
 type claudeResult struct {
+	Type    string  `json:"type"`
 	Result  *string `json:"result"`
 	IsError bool    `json:"is_error"`
 	// UsageReport は assistant 行 (local command の /usage) にだけ載る。rate_limits が null =
@@ -99,8 +100,41 @@ type streamResult struct {
 	noLimits bool
 }
 
+// ParseStream は `claude -p /usage --output-format stream-json --verbose` の出力を Snapshot にする。
+// サーバから枠を受け取れなかった (usage_report.rate_limits が null で、枠の行が無い) ときは errNoLimits を包んで返す。
+// `claude -p /usage` を自分の引数で起こす呼び出し元 (pro-con の dispatcher) も、これと FetchShared を使う。
+func ParseStream(out []byte, now time.Time) (*Snapshot, error) {
+	res, err := parseStream(out)
+	if err != nil {
+		return nil, err
+	}
+	if res.IsError {
+		return nil, errors.New("/usage がエラーを返した")
+	}
+	snap, err := Parse(res.Result, now)
+	switch {
+	case err == nil:
+		return snap, nil
+	case res.noLimits:
+		return nil, errNoLimits
+	}
+	// 実際に返った文の 1 行目を添える (未認証・書式変更などの原因を取り違えて見せない)
+	if line := firstNonEmptyLine(res.Result); line != "" {
+		return nil, fmt.Errorf("%w: %q", err, clipRunes(termsafe.PlainLine(line), 80))
+	}
+	return nil, err
+}
+
+// clipRunes は s を n 文字までに切る (切ったら … を足す)。誤りに添える引用が画面と状態のファイルを広げないため。
+func clipRunes(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n]) + "…"
+	}
+	return s
+}
+
 // parseStream は stream-json の出力 (1 行 1 JSON) から result 行と usage_report を拾う。
-// result 行は `result` キーを持つ行で決める (`type` を見ない。json 形式の 1 行も同じ形で読める)。
+// result 行は `result` キーを持ち、`type` が無いか "result" の行 (json 形式の 1 行も同じ形で読める)。
 func parseStream(out []byte) (streamResult, error) {
 	var res streamResult
 	found := false
@@ -115,7 +149,7 @@ func parseStream(out []byte) (streamResult, error) {
 		if r.UsageReport != nil && string(r.UsageReport.RateLimits) == "null" {
 			res.noLimits = true
 		}
-		if r.Result != nil {
+		if r.Result != nil && (r.Type == "" || r.Type == "result") {
 			res.Result, res.IsError, found = *r.Result, r.IsError, true
 		}
 	}
@@ -163,18 +197,8 @@ func fetchClaude(ctx context.Context) (*Snapshot, error) {
 		}
 		return nil, fmt.Errorf("claude /usage 実行失敗: %w", err)
 	}
-	res, err := parseStream(out)
+	snap, err := ParseStream(out, time.Now())
 	if err != nil {
-		return nil, err
-	}
-	if res.IsError {
-		return nil, errors.New("/usage がエラーを返した")
-	}
-	snap, err := Parse(res.Result, time.Now())
-	if err != nil {
-		if res.noLimits {
-			return nil, errNoLimits
-		}
 		return nil, err
 	}
 	snap.Version = <-verCh

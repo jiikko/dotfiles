@@ -13,6 +13,8 @@ require (
 	process_supervisor v0.0.0
 )
 
+require doctor v0.0.0 // indirect
+
 require (
 	atomicfile v0.0.0 // indirect
 	github.com/alecthomas/chroma/v2 v2.27.0 // indirect
@@ -30,6 +32,7 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sync v0.22.0 // indirect
+	ratelimit v0.0.0
 	subproc v0.0.0 // indirect
 )
 

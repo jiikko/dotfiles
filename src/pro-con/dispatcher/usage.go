@@ -4,24 +4,27 @@ package dispatcher
 // 滞留の側は dispatch がもともと見ている (着手待ちのカードが無ければ起動しない / 上限まで古い順に起動する)。
 //
 // 枠の残量は `claude -p /usage` の stdout から読む (モデルを呼ばずに返る。2.1.281 で実測 2026-09-25: 約 4 秒・rc=0・stderr 空)。
+// 🚨 起こすのは ratelimit/usage の全プロセス共有のゲート (usage.FetchShared) 越しで、glogx・bin/ratelimit と結果を共有する
+// (issue 627: `claude -p /usage` は 1 回ごとにサーバの /api/oauth/usage を叩き、呼び出し元の合計で 429 になる)。
+// 共有するのは同じアカウントの枠だから。下の 431 の注記どおり PG を別のアカウントで動かすようになったら、共有をやめる。
 // 🚨 --no-session-persistence が無いと、読むたびに transcript が 1 本残る (5 分ごとで 1 日 288 本。resume の一覧と /usage の集計を汚す)。
 // --setting-sources "" で user の hook を走らせない。どちらも付けて出力が変わらないことを実測した。
 // 🚨 モデル別の週の枠 (「Current week (Fable)」等) は見ない: PG が使うモデルを固定していない (431)。その枠が尽きたら PG が 429 で止まり、watchdog が拾う
-// 🚨 文面は Claude Code の版で変わりうる。読めなくなったら (行が無い) 読めないとして画面に出し、上限は --limit のまま動かす
+// 🚨 文面は Claude Code の版で変わりうる。読めなくなったら (枠が無い) 読めないとして画面に出し、上限は --limit のまま動かす
 // (起動を止める側に倒すと、文面が変わっただけで全部の作業が止まる。枠が本当に尽きていれば起動した PG が 429 で止まり、watchdog が拾う)。
 // 🚨 PG を別の設定ディレクトリで動かすようになったら (431)、ここも同じ CLAUDE_CONFIG_DIR で読む (別のアカウントの枠を見ない)
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
 	"pro-con/store"
+	"ratelimit/usage"
 )
 
 // Usage は利用枠の使用率 (%)。
@@ -40,41 +43,27 @@ const (
 	usageStopAt  = 95 // これ以上なら新しく起動・再開しない (動いている PG は止めない)
 )
 
-var (
-	reUsageSession = regexp.MustCompile(`(?m)^\s*Current session: <?(\d+)(?:\.\d+)?% used`)
-	reUsageWeek    = regexp.MustCompile(`(?m)^\s*Current week \(all models\): <?(\d+)(?:\.\d+)?% used`)
-)
-
-// ParseUsage は `claude -p /usage` の stdout から使用率を読む (小数は切り捨て、「<1%」は 1 と読む)。
-// 片方の行だけ無ければ、無い側は 0 として読める側で絞り、無い側を Missing に残す (週の枠が尽きかけているのに 5 時間の枠の行が
-// 無いだけで全力で起動しない / 表示の変化を黙らせない)。両方とも無ければ誤り (0% と区別する。未認証のときもこの形)。
-func ParseUsage(out string) (Usage, error) {
-	s := reUsageSession.FindStringSubmatch(out)
-	w := reUsageWeek.FindStringSubmatch(out)
-	if s == nil && w == nil {
-		return Usage{}, fmt.Errorf("使用率の行が無い (未認証か、Claude Code の表示が変わった): %q", firstLine(out))
+// usageOf は利用枠の Snapshot から使用率を読む。片方の枠だけ無ければ、無い側は 0 として読める側で絞り、無い側を Missing に
+// 残す (週の枠が尽きかけているのに 5 時間の枠が無いだけで全力で起動しない / 表示の変化を黙らせない)。両方とも無ければ誤り
+// (0% と区別する)。モデル別の週の枠 (7d(Fable) 等) は見ない (上の注記)。
+func usageOf(snap *usage.Snapshot) (Usage, error) {
+	s, okS := snap.Find("5h")
+	w, okW := snap.Find("7d")
+	if !okS && !okW {
+		return Usage{}, errors.New("使用率の枠が無い (Claude Code の表示が変わった)")
 	}
 	var u Usage
-	if s != nil {
-		u.Session, _ = strconv.Atoi(s[1])
+	if okS {
+		u.Session = s.Percent
 	} else {
 		u.Missing = "5 時間の枠"
 	}
-	if w != nil {
-		u.Week, _ = strconv.Atoi(w[1])
+	if okW {
+		u.Week = w.Percent
 	} else {
 		u.Missing = "週の枠"
 	}
 	return u, nil
-}
-
-// firstLine は誤りに添える 1 行目 (80 文字まで。画面と状態のファイルに出る)。
-func firstLine(s string) string {
-	s, _, _ = strings.Cut(strings.TrimSpace(s), "\n")
-	if r := []rune(s); len(r) > 80 {
-		s = string(r[:80]) + "…"
-	}
-	return s
 }
 
 // ReadUsage は dir (状態の置き場) で `claude -p /usage` を実行して使用率を読む (claude は実体の絶対パス)。
@@ -85,22 +74,29 @@ func ReadUsage(claude, dir string) func(context.Context) (Usage, error) {
 func readUsage(ctx context.Context, claude, dir string) (Usage, error) {
 	ctx, cancel := context.WithTimeout(ctx, usageTimeout)
 	defer cancel()
-	cmd := usageCmd(ctx, claude, dir)
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+	snap, err := usage.FetchShared(ctx, func(ctx context.Context) (*usage.Snapshot, error) {
+		cmd := usageCmd(ctx, claude, dir)
+		var stderr strings.Builder
+		cmd.Stderr = &stderr
+		out, err := cmd.Output()
+		if err != nil {
+			return nil, fmt.Errorf("claude -p /usage: %w: %s", err, strings.TrimSpace(stderr.String()))
+		}
+		return usage.ParseStream(out, time.Now())
+	}, false)
 	if err != nil {
-		return Usage{}, fmt.Errorf("claude -p /usage: %w: %s", err, strings.TrimSpace(stderr.String()))
+		return Usage{}, err
 	}
-	return ParseUsage(string(out))
+	return usageOf(snap)
 }
 
-// usageCmd は枠を読むコマンド (引数と置き場はテストが固定する)。
+// usageCmd は枠を読むコマンド (引数と置き場はテストが固定する)。stream-json で読むのは、サーバが枠を返さなかった
+// (usage_report.rate_limits が null) ことを区別するため (usage.ParseStream)。
 // 🚨 --setting-sources "" は user の settings の env と plugin も落とす。今は認証を settings に置いていないので同じアカウントの枠を読むが、
 // 置くようになったら (apiKeyHelper / CLAUDE_CONFIG_DIR) PG と別の枠を読む。プロセスの環境の CLAUDE_CODE_PLUGIN_DIRS は
 // --setting-sources では落ちないので roleEnv で落とす (619)
 func usageCmd(ctx context.Context, claude, dir string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, claude, "-p", "--no-session-persistence", "--setting-sources", "", "/usage")
+	cmd := exec.CommandContext(ctx, claude, "-p", "--no-session-persistence", "--setting-sources", "", "--output-format", "stream-json", "--verbose", "/usage")
 	cmd.Dir = dir // 空の project が 1 つだけできる (Claude Code が cwd ごとに memory の dir を作る)
 	cmd.Env = roleEnv(os.Environ())
 	cmd.WaitDelay = time.Second // 子孫が stdout を握ったままでも timeout で戻る (launcher と同じ)
