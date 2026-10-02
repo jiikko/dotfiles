@@ -845,6 +845,35 @@ check_log_leak "$work/out.log"
 [ "$rc" -eq 10 ] || { fail "別グループの孫が hang して rc=$rc (期待 10)"; tail -8 "$work/out.log"; }
 pgrep -f "$grp_mark" >/dev/null && { fail "🚨 別のプロセスグループへ抜けた孫が時間切れの後も残った ($grp_mark)"; pkill -9 -f "$grp_mark"; }
 # ---------------------------------------------------------------------------
+# 48. 検証コマンドは INT を既定の動作で受ける (非対話の bash の `( … ) &` は INT を無視した状態で子を起こすので、
+#     そのまま渡すと Ctrl-C や trap … INT を扱うテストが baseline で落ちる。/bin/bash 3.2 は trap - で戻せない。red team 2 周目)
+# ---------------------------------------------------------------------------
+d="$work/intok"; make_repo "$d"
+cat > "$d/intprobe.sh" <<'IP'   # sleep-ok: dummy: INT で止まるかを見るための常駐と、その確認の待ち
+sleep 30 & p=$!
+kill -INT "$p"; sleep 0.3
+if kill -0 "$p" 2>/dev/null; then kill -9 "$p"; echo "INT_IGNORED"; exit 1; fi
+echo "INT_KILLED"
+IP
+rc=0
+( cd "$d" && git add intprobe.sh && git commit -qm probe && "$MV" --verify 'bash verify.sh && bash intprobe.sh' --baseline-expect '^ran 2 checks' \
+    --file guard.sh --apply 'true' --expect 'FAIL: reject-bad' ) > "$work/out.log" 2>&1 || rc=$?
+check_log_leak "$work/out.log"
+[ "$rc" -eq 4 ] || { fail "🚨 検証コマンドが INT を受けられない (rc=$rc。期待 4 = baseline は緑で変異が当たらない)"; tail -6 "$work/out.log"; }
+
+# ---------------------------------------------------------------------------
+# 49. run が rc を書かずに死んだら (外から撃たれた)、時間切れを待たずに失敗として返す (無制限のときに永久に待たない)
+# ---------------------------------------------------------------------------
+d="$work/killed"; make_repo "$d"
+t0=$SECONDS
+rc=0
+( cd "$d" && "$MV" --timeout 0 --verify 'kill -9 $PPID' --baseline-expect '^ran 2 checks' \
+    --file guard.sh --apply 'true' --expect 'FAIL: reject-bad' ) > "$work/out.log" 2>&1 || rc=$?
+check_log_leak "$work/out.log"
+[ "$rc" -eq 3 ] || { fail "rc を書かずに死んだ run が rc=$rc (期待 3 = baseline が green でない)"; tail -6 "$work/out.log"; }
+[ $((SECONDS - t0)) -lt 30 ] || fail "rc を書かずに死んだ run を $((SECONDS - t0)) 秒待った (根の死を見ていない)"
+
+# ---------------------------------------------------------------------------
 # 46. --timeout の値の検査 (整数でなければ使い方の誤り rc=2)。0 は無制限で、正常系はそのまま rc=0
 # ---------------------------------------------------------------------------
 d="$work/tmval"; make_repo "$d"
