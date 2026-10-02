@@ -1,10 +1,8 @@
 # 622 (refactor): tmux のペインの状態表示 (`tmux-pane-state.sh`) を mod へ移す
 
-> 🚨 **担当中: Claude code mods migration design (epic 618 を順に)**（2026-10-02〜）
-
 起票日: 2026-10-02
 
-epic [618](618-design-claude-code-mods-migration.md) の子。619 の後。
+epic [618](../618-design-claude-code-mods-migration.md) の子。619 の後。
 
 ## 概要
 
@@ -64,8 +62,39 @@ Notification の hook が書いた `input` を mod は知らないので、`tool
 
 - ratelimit の裏の `claude -p /usage` (user の settings を読む) でも mods が走る (619 で settings の env から `-p` も読むことを実測)。tmux の状態を書く mod は対話のセッションに絞る
 
+## 決着 (2026-10-02): mod へは移さない — PostToolUse の working を `/bin/sh` の script に分けて速くした
+
+**`$.process.run` の費用 (試作で実測)**: Bash の `tool.call` の後に tmux を 1 回起こすだけの mod を、隔離した tmux のペインの中から `claude -p --model haiku` で
+10 回の Bash に使わせた。`$.clock.now()` で前後を測って 7〜17ms、中央値 12ms (n=10)。子の環境にはペインの `TMUX` / `TMUX_PANE` が渡っていた。
+
+**mod の試作への敵対的レビュー (opus) の指摘 (採用)**:
+- P2-1: `tool.call` は失敗・中断・ダイアログでの拒否でも発火する (`isError`)。今の PostToolUse は成功時だけなので、mod だと止まったターンに「⚙ working」が残る
+- P2-2: mod が読まれないセッション (engine の更新で壊れた・settings の hook は走るが mods を読まない) では、ツール呼び出しで `@claude_bg` が落ちず、
+  bg の後に再開した承認待ちでベルも通知も出ない (入力待ちに気づけない、一番危ない向き)。検出の手段も切り替えの時点のセッションの期待値も書いていなかった
+- P3: 対話に絞っていない / tmux の上限が 10 秒から 30 秒に延びる / ずれの検査が値の一部しか見ない / README が古い
+
+**代わりの形 (実測)**: bash も jq も起こさず tmux を 1 回起こすだけの `/bin/sh` の script を、同じ隔離したペインから PostToolUse と同じ stdin で 40 回起こすと、
+min 13.8 / 中央値 15.7 / p90 22.1 ms (外れ値 1 回 202ms)。
+
+| 形 | 1 回 (中央値) | 30 回で減る量 | 新しい失敗モード |
+|---|---|---|---|
+| 今 (`tmux-pane-state.sh working`) | 28.7ms | — | — |
+| mod の `tool.call` | 12ms | 約 500ms | P2-1 / P2-2 |
+| `/bin/sh` の script | 15.7ms | 約 390ms | 無し (PostToolUse のまま。mod に依存しない) |
+
+sh の形でも条件 (300ms) を超え、mod 固有の失敗モードが消えるので、こちらを採った。差の約 110ms / 30 回は、壊れ方を増やさないことの方を取る。
+- `_claude/hooks/tmux-pane-working.sh` (新設): `@claude_state "⚙ working"` / `@claude_state_since` / `@claude_bg` の unset を tmux 1 回で書く。値の正本はここ 1 箇所
+- settings の PostToolUse はこれを直接呼ぶ。`tmux-pane-state.sh working` (UserPromptSubmit) もここへ exec する (1 ターンに 1 回なので bash の起動は払う)
+- テスト: `tests/claude/test_tmux_pane_state_bell.sh` に、PostToolUse (全ツール) の配線と、sh の script 単体で 3 つが書かれることを足した。
+  変異 3 本で red を確認 (bg の unset を外す / settings の配線を戻す / bash 側の exec を外す)。既存の Test 6c (bg の後に working でベルが戻る) も exec 経由で sh を通る
+- 敵対的レビューは省略した: 判定のロジックは新設していない (既存の `set_state "⚙ working" 0` の 3 つを sh に移しただけ)。検査の効きは変異で確かめた
+- 試作の mod (`_claude/mods/tmux-state`) は commit していない (`claude plugin test` 用のテスト 3 本と、値のずれの検査も一緒に捨てた)
+- 期待値: 切り替えの commit を pull した後に起動したセッションは sh を呼ぶ。動いているセッションが settings の hook を読み直すかは未確認だが、
+  どちらでも同じ 3 つを書くので見え方は変わらない (旧い経路が残れば遅いだけ)。pro-con の役は前から user の hook が走らない (変化なし)
+
 ## 進捗
 
 - 2026-10-02: 起票
 - 2026-10-02: 起票と同じ日に、反証レビュー (sonnet 2 本) と敵対的レビュー (opus 2 本) の指摘で方針を改訂した。622 を go / no-go (before の実測で移すか決める) に直し、`TMUX_PANE` が渡るか・`session.end` の予算の確認を足した。採否と理由の一覧は親 618 の進捗
 - 2026-10-02: before を実測 (中央値 28.7ms × 30 = 約 860ms で、条件 300ms を超えた)。反証レビューで「条件は移して減る量ではない」と指摘され、tmux 直の下限 6.9ms で減る量を約 650ms と見積もった。`$.process.run` の費用を試作で測ってから決める (条件付きで進める)。PostToolUse の hook はターンの待ち時間に直列で乗る。ただし Notification は mod に届かないので settings に残り、mod は `tool.call` の後で `working` に戻すときに tmux を 1 回起こす形になる
+- 2026-10-02: 決着 — mod の試作 (12ms) は敵対的レビューで P2 が 2 件 (失敗・拒否でも発火 / 読まれないとベルが鳴らない)。bash を起こさない sh の script (15.7ms) で条件を満たせたので、mod へは移さずそちらに切り替えた (上の「決着」)
