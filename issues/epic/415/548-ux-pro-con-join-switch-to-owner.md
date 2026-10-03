@@ -20,9 +20,21 @@
 
 ## 受け入れ条件
 
-- [ ] join の画面から 1 キー + y で持ち主の画面になり、帯が消える
-- [ ] N / esc では何も変わらない
+- [x] join の画面から 1 キー + y で持ち主の画面になり、帯が消える (キーは O。実機で確認、下の進捗)
+- [x] N / esc では何も変わらない (テストは n / N / esc / 知らないキー。実機は n)
 
 ## 関連
 
 - 543 (帯) / 481 (join の画面) / 506 (supervisor)
+
+## 進捗
+
+- 2026-10-03: 実装 (commit「join の画面から O → y で持ち主の画面に切り替える (548)」)
+  - O → y/N。y で ctrl+r と同じ暗転で終了し、main が `--join` を外した引数で同じバイナリ (os.Executable) を exec する。状態は ctrl+r と同じく引き継ぐ
+  - 切り替えの要求を ui の upgrader から Model に移し、行き先 (新版 / 持ち主) を持たせた (bin/pro-con 以外から起動して ctrl+r が無効でも切り替えられる)
+  - 帯 (543) の案内は見出しのすぐ後ろに O を置いた (帯は幅で切り詰めるので、末尾だと 80 桁で切れた)。固まった dispatcher の帯には出さない (切り替えても起きない)
+  - README / help usage に O を書いた
+- 実機 (e2e の置き場 + 隔離した tmux): join の画面 → O → n で何も変わらない (同じ pid で `--join` のまま)。O → y で同じ pid のまま `--join` が外れ、
+  帯が消えて「dispatcher を起動した」(ゲージ「dispatcher 2秒前」、`--from-screen` の dispatcher が居る)。e2e stop の後に引き継ぎのファイル・プロセス・socket は残らない
+- `make -C src/pro-con lint` 0 issues / `test` rc=0
+- 残タスク: 敵対的レビュー (実行中) / 変異検証 / `make test`
