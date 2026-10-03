@@ -37,4 +37,15 @@
 - 実機 (e2e の置き場 + 隔離した tmux): join の画面 → O → n で何も変わらない (同じ pid で `--join` のまま)。O → y で同じ pid のまま `--join` が外れ、
   帯が消えて「dispatcher を起動した」(ゲージ「dispatcher 2秒前」、`--from-screen` の dispatcher が居る)。e2e stop の後に引き継ぎのファイル・プロセス・socket は残らない
 - `make -C src/pro-con lint` 0 issues / `test` rc=0
-- 残タスク: 敵対的レビュー (実行中) / 変異検証 / `make test`
+- 敵対的レビュー (opus 1 本): P1 / P2 なし。P3 2 件
+  - 採用: 持ち主への切り替えなのに、暗転・開き直した画面の明転と通知が「新版」と出た → 行き先で文言を分けた
+    (commit「持ち主への切り替えで「新版」と出さない (548 の敵対的レビュー P3)」)。文言だけの修正で変異で確かめたので周回を打ち切った
+  - 記録 (直さない): 起動したのに 1 度も Tick していない dispatcher (起動直後に固まった) でも、帯は「O で…起きる」と出る。
+    `DispatcherGone` は lock の pid が居ないときだけ真なので、snapshot では「1 度も起動していない」と区別できない。判定の順は 543 から同じ
+    (旧文言も「開くと起きる」)。起動の途中にこの帯が出ても、O で持ち主になった後の startDispatcherIfIdle は動いていれば何もしないので害は無い。
+    再現は未確認。trigger: 固まったまま帯が「起きる」と言い続ける実例が出たら、snapshot に「lock の pid が生きている」を足して判定を分ける
+  - 壊せなかった: 暗転の間のキー (ctrl+r / Q / ctrl+c / O / y / d / x) で切り替えの取り違えは起きない、pendingOwner は確認を抜けるどの経路でも下りる、
+    withoutJoin は --as の値・--e2e / --mock を壊さない、--view では O を断る、開き直した後の presence / supervisor の隙間・dispatcher の二重起動・Held は従来どおり
+- 変異検証 7 本 red: O のキーを外す / 確認の y で切り替えない / 取り消した後に pendingOwner を残す / 行き先を新版にする / 帯の O の案内を末尾へ戻す /
+  開き直した側に Owner を渡さない / withoutJoin が --join を外さない
+- `make -C src/pro-con lint` 0 issues / `test` rc=0 (21 package)
