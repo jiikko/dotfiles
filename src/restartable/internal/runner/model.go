@@ -205,10 +205,11 @@ func Update(m Model, e Event) (Model, []Effect) {
 		m.Transition.Busy = false
 		m.Transition.Result = TransitionBuildFailed
 		if e.NoUI {
+			// 止めた古い子の残り (stop-cmd が親だけを終わらせた場合の孫など) も、Ctrl-C と同じく片付けてから終える
 			m.State = Exiting
 			m.Confirm = ConfirmNone
 			m.ExitCode = 1
-			return m, []Effect{{Kind: ExitEffect}}
+			return m, []Effect{{Kind: ForceStopEffect}, {Kind: ExitEffect}}
 		}
 		return m, nil
 	case LaunchStartedEvent:

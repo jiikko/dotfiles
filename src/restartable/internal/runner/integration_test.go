@@ -2513,3 +2513,40 @@ func TestHeadlessBuildFailureExitsWithOne(t *testing.T) {
 		t.Fatalf("run started after a failed build: %q", got)
 	}
 }
+
+// UI の無い起動で、stop-cmd が親だけを終わらせた再起動のビルドが失敗したら、古い子の孫も片付けてから rc 1 で終える。
+func TestHeadlessRebuildFailureStopsOldLeftoversBeforeExit(t *testing.T) {
+	dir := t.TempDir()
+	count, parent, gcPID := filepath.Join(dir, "count"), filepath.Join(dir, "parent.pid"), filepath.Join(dir, "gc.pid")
+	build := fmt.Sprintf(`n=0; [ ! -f %[1]s ] || n=$(cat %[1]s); n=$((n+1)); echo "$n" > %[1]s; [ "$n" -eq 1 ]`, shellQuote(count))
+	run := fmt.Sprintf(`echo $$ > %[1]s; /bin/sleep 300 & echo $! > %[2]s; exec /bin/sleep 300`, shellQuote(parent), shellQuote(gcPID))
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_BUILD": build, "RESTARTABLE_TEST_RUN": run,
+		"RESTARTABLE_TEST_STOP": "kill -KILL $(cat " + shellQuote(parent) + ")",
+	})
+	r.waitStatus(t, string(Running))
+	waitFor(t, 3*time.Second, "grandchild pid", func() bool { return strings.TrimSpace(readFile(gcPID)) != "" })
+	pid, err := strconv.Atoi(strings.TrimSpace(readFile(gcPID)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	if response, err := control.Call(ctx, r.path, control.Restart); err == nil && response.OK {
+		t.Fatalf("restart with a failing rebuild succeeded: %+v", response)
+	}
+	select {
+	case <-r.done:
+		var exit *exec.ExitError
+		if !errors.As(r.waitErr, &exit) || exit.ExitCode() != 1 {
+			t.Fatalf("headless rebuild failure: runner exit = %v, want rc 1", r.waitErr)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatalf("headless runner did not exit after the rebuild failed; stderr: %s", readFile(r.stderr))
+	}
+	// 強制停止は終わるまで runner の終了を止めるので、r.done の時点で孫は消えている
+	if processAlive(pid) {
+		t.Fatalf("old grandchild %d survived the headless exit", pid)
+	}
+}

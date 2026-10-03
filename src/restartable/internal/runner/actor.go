@@ -122,7 +122,6 @@ type actor struct {
 	forcedTermination    bool
 	groupStopRunning     bool
 	outputDrainTimeout   time.Duration
-	forceCode            int
 	finished             bool
 	retCode              int
 	flusherDone          chan struct{}
@@ -758,7 +757,7 @@ func (a *actor) handleForceDone(ev actorEvent) {
 			a.report("failed to stop process group: " + ev.err.Error())
 		}
 		if a.model.State == Exiting {
-			a.finish(a.forceCode)
+			a.finish(a.model.ExitCode) // ForceEvent は SignalCode を、UI の無い起動のビルド失敗は 1 を入れている
 		}
 		if a.model.State == Stopping && a.model.Intent == IntentExit {
 			if a.child == nil {
@@ -1114,7 +1113,6 @@ func (a *actor) beginForce(code int) {
 	}
 	if a.forceRunning {
 		a.forcedTermination = true
-		a.forceCode = code
 		a.model, _ = Update(a.model, Event{Kind: ForceEvent, SignalCode: code})
 		a.invalidateReadyForForce()
 		a.childExitPending = false
@@ -1125,7 +1123,6 @@ func (a *actor) beginForce(code int) {
 		return
 	}
 	a.forcedTermination = true
-	a.forceCode = code
 	a.model, _ = Update(a.model, Event{Kind: ForceEvent, SignalCode: code})
 	a.invalidateReadyForForce()
 	a.childExitPending = false
