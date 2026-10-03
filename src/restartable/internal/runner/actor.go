@@ -1344,10 +1344,7 @@ func (a *actor) deferBuildForCrashCleanup() bool {
 	go func() {
 		_ = signalGroup(p.pid, syscall.SIGTERM)
 		waitForTermBoundary([]*process{p}, grace)
-		err := killRemainingGroups([]*process{p})
-		// KILL の後もグループが消える (ポート等が解放される) まで待ってから次を起動する
-		waitForTermBoundary([]*process{p}, grace)
-		a.post(actorEvent{kind: crashCleanupDoneEvent, proc: p, err: err})
+		a.post(actorEvent{kind: crashCleanupDoneEvent, proc: p, err: killRemainingGroups([]*process{p})})
 	}()
 	return true
 }
