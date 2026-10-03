@@ -59,11 +59,11 @@ CI の結果を待つたびに、「待つ対象の run の ID」を手で組み
 
 ## 受け入れ条件
 
-- [ ] commit と workflow を渡すと、その commit の run の ID だけを返す (headSha を照合している)
-- [ ] 短縮 SHA を渡しても完全な SHA に展開して引く
-- [ ] 該当が無い / gh が失敗したときに rc≠0 で区別できる
-- [ ] `tests/bin/test_ci_log.sh` に、古い run が一覧の先頭に来る fake を置いても正しい ID を返すケースがある
-- [ ] rule と usage に載っている
+- [x] commit と workflow を渡すと、その commit の run の ID だけを返す (headSha を照合している)
+- [x] 短縮 SHA を渡しても完全な SHA に展開して引く
+- [x] 該当が無い / gh が失敗したときに rc≠0 で区別できる
+- [x] `tests/bin/test_ci_log.sh` に、古い run が一覧の先頭に来る fake を置いても正しい ID を返すケースがある
+- [x] rule と usage に載っている
 
 ## 関連ファイル
 
@@ -80,3 +80,24 @@ CI の結果を待つたびに、「待つ対象の run の ID」を手で組み
   未実測の点 (re-run・workflow_dispatch の複数 run / `--branch` との併用 / `--commit` と `--limit`) は方針に未実測と書いた。
   古い run が先頭に来た原因の候補は、裏の取れるものが無かった。
   起票の commit の message は「反映済み」と書いたが、編集の失敗で反映されていなかった。反映はこの後の commit で入れた
+- 2026-10-03: 実装した (commit「feat(ci-log): -i で commit と workflow を名指しして run の ID を返す (634)」)
+  - `ci-log -i <workflow> [<commit>]`: commit を `git rev-parse --verify` で完全な SHA にし、`gh run list --commit <sha> --workflow <名前>` で引いて、
+    bash の側で headSha を照合した最初の ID を返す。rc: 0 = ID / 4 = run がまだ無い (push 直後・paths filter) / 5 = GitHub に無い
+    (push していない) / 1 = gh の失敗 (workflow の名前の誤りを含む) / 2 = 引数の誤り
+  - push されたかは `gh api repos/{owner}/{repo}/commits/<sha>` で GitHub に聞く (HTTP 422 = 無い)。ローカルの追跡 ref は使わない
+  - 既定の経路 (HEAD の失敗 run を集める) も `--commit "$head_sha"` で絞るようにし、「`--commit` は無い」という古いコメントを直した
+  - 実測 (本物の gh 2.101.0): push 済み → ID (headSha を照合して一致) / paths filter で起動しない Karabiner Lint → rc=4 / push していない HEAD → rc=5。
+    直近 200 件の run に re-run (attempt>1) と、同じ commit で同じ workflow の重複は 0 件 (複数あれば作成が新しい方を返し、stderr で数を言う)。
+    re-run は同じ databaseId のまま attempt が増えるので、watch は最新の attempt を見る (敵対的レビューの確認)
+  - テスト 28 件 (14 ケース × bash 5 / 3.2)、変異 11 本すべて red。`make test-lint` / `make test` rc=0
+  - 自分で書いた `「$id_wf」` (bash 3.2 の全角の罠) を、633 の lint と `/bin/bash` で走るテストの両方が捕まえた
+- 2026-10-03: 敵対的レビュー (opus、読み取りのみ) を 2 周。全数勘定:
+  - 1 周目: 取り違えと既定の経路の退行は壊せなかった。指摘 4: 待ち方の例に `--exit-status` が無い (run が失敗しても rc=0) /
+    push していない commit も rc=4 で「待てば来る」と区別できない / 「workflow の名前の誤り」は rc=4 ではなく rc=1 / テストの空振り。すべて直した
+  - 2 周目: 指摘 3: 例の `gh run watch "$(ci-log -i …)"` は rc を捨てる → `id=$(…); rc=$?` で受ける形に直した /
+    git の失敗で rc=5 と嘘をつく、URL や tag だけの push・追跡 ref が古いと rc=5 → 判定の根拠を GitHub の API に変えて解消 /
+    remote で巻き戻した後の追跡 ref で rc=4 → API に変えたので解消
+  - 3 周目は回していない: 2 周目の修正の各分岐 (API の 200 / 422 / それ以外) は、本物の gh と偽物の両方で直接測り、変異で固定したため
+  - 検査していない (記録): 偽の gh は `--jq` と `--limit` を解釈しないので、`sort_by(.createdAt) | reverse`・`--limit 20`・既定の経路の jq の
+    headSha の照合は、変異しても緑のまま。本物の gh は `--commit` でサーバ側で絞り、新しい順で返すので実害は小さい。
+    HTTP 422 の判定は gh の英語のメッセージの文言に頼る (gh は翻訳しない。文言が変わると rc=1 側に倒れ、「push していない」とは言わない)

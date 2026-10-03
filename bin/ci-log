@@ -12,6 +12,14 @@
 #   ci-log <run-id>   指定 run の失敗 job のログ
 #   ci-log -a         対象 run の全 job ログ (成功も含む。run-id 指定時のみ意味を持つ)
 #   ci-log -l         直近の run 一覧を出すだけ (対象 id を選ぶ用)
+#   ci-log -i <workflow> [<commit>]
+#                     その commit (既定 HEAD) の、その workflow の run の ID だけを stdout に出す。待つときは
+#                     `id=$(ci-log -i Tests); rc=$?` で受けてから `gh run watch --exit-status "$id"` で待つ。`gh run watch "$(ci-log …)"`
+#                     と引数の中で展開すると ci-log の rc が捨てられ、空の ID で 404 になる。「最新の run」で選ぶと別の commit の
+#                     run を拾う。--exit-status が無いと run が失敗しても watch は rc=0 で終わる。
+#                     rc=4: run がまだ無い (push 直後でまだ作られていない / paths filter で起動しない)。上限つきで再試行する
+#                     rc=5: その commit が GitHub に無い (push していない。待っても run は来ない)
+#                     rc=1: gh の失敗 (認証・ネットワーク・workflow の名前の誤り) / rc=2: 引数の誤り
 
 set -euo pipefail
 
@@ -20,15 +28,65 @@ command -v gh >/dev/null 2>&1 || { echo "gh (GitHub CLI) が必要です" >&2; e
 all=false
 list_only=false
 run_id=""
+id_wf=""
+id_mode=false
+id_args=()
 for arg in "$@"; do
+  if $id_mode; then id_args+=("$arg"); continue; fi
   case "$arg" in
     -a|--all) all=true ;;
     -l|--list) list_only=true ;;
-    -h|--help) sed -n '3,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -i|--id) id_mode=true ;;
+    -h|--help) awk 'NR >= 3 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     -*) echo "不明なオプション: $arg" >&2; exit 2 ;;
     *) run_id="$arg" ;;
   esac
 done
+
+gh_failed() {
+  echo "gh run list に失敗しました (認証切れ・ネットワーク断なら \`gh auth status\` で確かめる。-i なら workflow の名前の誤りもある)。CI の状態は分かりません" >&2
+  exit 1
+}
+
+# -i: commit と workflow を名指しして run の ID を返す (issue 634)
+if $id_mode; then
+  [ "${#id_args[@]}" -ge 1 ] && [ "${#id_args[@]}" -le 2 ] && [ -n "${id_args[0]}" ] \
+    || { echo "使い方: ci-log -i <workflow の名前> [<commit>]" >&2; exit 2; }
+  id_wf="${id_args[0]}"
+  # 🚨 --commit は 40 桁の完全な SHA でしか一致しない。短縮 SHA だとエラーにならず空が返り、「まだ起動していない」と誤診する
+  sha="$(git rev-parse --verify --quiet "${id_args[1]:-HEAD}^{commit}")" \
+    || { echo "commit を解決できません: ${id_args[1]:-HEAD}" >&2; exit 2; }
+  rows=$(gh run list --commit "$sha" --workflow "$id_wf" --limit 20 --json databaseId,headSha,createdAt \
+    --jq 'sort_by(.createdAt) | reverse | .[] | "\(.databaseId)\t\(.headSha)"') || gh_failed
+  # 照合は bash の側で行う (一覧の並びや絞り込みを信用しない。先頭が別の commit の古い run だったことがある)
+  found=""; matched=0
+  while IFS=$'\t' read -r rid rsha; do
+    [ -n "$rid" ] || continue
+    [ "$rsha" = "$sha" ] || continue
+    matched=$((matched + 1))
+    [ -n "$found" ] || found="$rid"
+  done <<< "$rows"
+  if [ -z "$found" ]; then
+    # push されたかは GitHub に聞く。ローカルの追跡 ref は fetch していなければ古く、URL への push や tag だけの push も
+    # 映らない (それで「push していない」と言うと、来る run を待つのをやめさせてしまう)
+    api_err=""
+    api_out="$(gh api "repos/{owner}/{repo}/commits/$sha" --jq .sha 2>&1 >/dev/null)" || api_err="$api_out"
+    if [ -n "$api_err" ]; then
+      # gh はメッセージを翻訳しない。GitHub に無い commit は「No commit found for SHA … (HTTP 422)」になる (gh 2.101.0 で実測)
+      case "$api_err" in
+        *"HTTP 422"*)
+          echo "commit $(git rev-parse --short "$sha") は GitHub にありません (push していない)。待っても run は来ません" >&2
+          exit 5 ;;
+        *) printf '%s\n' "$api_err" >&2; gh_failed ;;
+      esac
+    fi
+    echo "commit $(git rev-parse --short "$sha") の workflow「${id_wf}」の run がまだありません (push 直後でまだ作られていない / paths filter で起動しない)" >&2
+    exit 4
+  fi
+  [ "$matched" -eq 1 ] || echo "同じ commit に「${id_wf}」の run が $matched 本あります。作成が新しいものを返します" >&2
+  printf '%s\n' "$found"
+  exit 0
+fi
 
 if $list_only; then
   gh run list --limit 15
@@ -57,17 +115,13 @@ if [ -n "$run_id" ]; then
   exit 0
 fi
 
-# 既定: HEAD コミットに紐づく run 群を集め、失敗したものすべての失敗ログを出す。
-# gh run list に --commit は無いため headSha で局所フィルタする (1 push = 複数 workflow を網羅)。
+# 既定: HEAD コミットに紐づく run 群を集め、失敗したものすべての失敗ログを出す (1 push = 複数 workflow を網羅)。
+# --commit で HEAD の run に絞る (件数の上限で HEAD の run が一覧から漏れない)。headSha の照合も残す
 head_sha=$(git rev-parse HEAD 2>/dev/null || echo "")
 [ -n "$head_sha" ] || { echo "git リポジトリではありません" >&2; exit 1; }
 # 🚨 gh の出力は変数へ取って rc を見る。プロセス置換 (`< <(gh ...)`) は gh の失敗を見えなくし、認証切れ・
 # ネットワーク断で「失敗した run はありません」と rc=0 で答えていた (issue 610)。
-gh_failed() {
-  echo "gh run list に失敗しました (認証切れ・ネットワーク断なら \`gh auth status\` で確かめる)。CI の状態は分かりません" >&2
-  exit 1
-}
-failed_tsv=$(gh run list --limit 40 --json databaseId,headSha,conclusion,name \
+failed_tsv=$(gh run list --commit "$head_sha" --limit 40 --json databaseId,headSha,conclusion,name \
   --jq ".[] | select(.headSha==\"$head_sha\" and .conclusion==\"failure\") | \"\(.databaseId)\t\(.name)\"") || gh_failed
 failed=()   # mapfile は bash 3.2 に無いので while read で積む
 while IFS= read -r line; do

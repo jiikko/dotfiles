@@ -5,6 +5,11 @@
 - **この repo で GitHub Actions の失敗を調べるときは `bin/ci-log` を使う**。`gh run list` → 失敗 run の id 特定 → `gh run view <id> --log-failed` を手で叩き分けない
 - 既定 (`ci-log` 引数なし) は **HEAD コミットに紐づく全 run のうち失敗したものすべて**の失敗ログを出す。1 回の push で複数 workflow (Lint / Bench / Tests / src_* 等) が同時に落ちても取りこぼさない
 - 主なオプション: `ci-log <run-id>` = 指定 run の失敗ログ / `ci-log -a <run-id>` = 全 job ログ (成功含む) / `ci-log -l` = run 一覧
+- **CI の完了を待つときは、待つ run を `ci-log -i <workflow> [<commit>]` で名指しする** (その commit の run の ID を、headSha を照合して返す。既定は HEAD)。
+  `id=$(ci-log -i Tests); rc=$?` で rc を受けてから `gh run watch --exit-status "$id"` で待つ
+  (`gh run watch "$(ci-log -i Tests)"` と引数の中で展開すると rc が捨てられる。`--exit-status` が無いと run が失敗しても rc=0 で終わる)。
+  `gh run list --limit 1` のように「最新」で選ぶと、別の commit の run を拾うことがある (2026-10-02 に 2026-09-04 の run の success を拾いかけた。issue 634)。
+  rc=4 は「run がまだ無い」(push 直後 / paths filter で起動しない) なので上限つきで再試行する。rc=5 は GitHub に無い (push していない) commit で、待っても来ない
 - 🚨 **HEAD が緑でも「直前までが緑」ではない**。paths filter 付きの workflow は、その paths に触らない
   commit では起動しないので、赤いまま残った 1 つ前の commit が HEAD の緑に隠れる。`ci-log` は
   引数なしのとき「HEAD から辿れる commit における各 workflow の最新 run」も見て、まだ緑になって
