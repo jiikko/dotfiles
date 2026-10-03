@@ -1,7 +1,5 @@
 # 634 (feat): ci-log に「commit と workflow を名指しして run の ID を返す」オプションを足す
 
-> 🚨 **担当中: dotfiles-20**（2026-10-03〜）
-
 起票日: 2026-10-03
 
 ## 概要
@@ -101,3 +99,4 @@ CI の結果を待つたびに、「待つ対象の run の ID」を手で組み
   - 検査していない (記録): 偽の gh は `--jq` と `--limit` を解釈しないので、`sort_by(.createdAt) | reverse`・`--limit 20`・既定の経路の jq の
     headSha の照合は、変異しても緑のまま。本物の gh は `--commit` でサーバ側で絞り、新しい順で返すので実害は小さい。
     HTTP 422 の判定は gh の英語のメッセージの文言に頼る (gh は翻訳しない。文言が変わると rc=1 側に倒れ、「push していない」とは言わない)
+- 2026-10-03: CI (5e22e0ed) の Lint (run 37085718059) / Tests (run 37085718073) が success。待つのに `ci-log -i` 自身を使った。Tests のログに `[ok] tests/bin/test_ci_log.sh`。done へ

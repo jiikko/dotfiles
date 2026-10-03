@@ -1,1 +1,0 @@
-../634-feat-ci-log-print-run-id-by-commit.md
