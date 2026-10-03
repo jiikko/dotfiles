@@ -48,7 +48,7 @@ claude 2.1.282 / 2.1.283、すべて claude-opus-5-5。数え方は 431 の「�
 ## 関連
 
 - [431](../pending/431-feat-pro-con-pg-session-settings.md) — session の形の固定。1 時間 TTL の扱いは 431 の「今回はやらないもの」
-- [449](../pending/449-research-pro-con-pg-startup-cost.md) — PG の起動のコスト
+- [449](449-research-pro-con-pg-startup-cost.md) — PG の起動のコスト
 - [546](../546-research-pro-con-endconversation-gate-resume-cache.md) — PG の再開の外れの原因 (本番の内訳は 546 の「本番の再開の外れの内訳」)
 
 ## 決定 (2026-10-01)

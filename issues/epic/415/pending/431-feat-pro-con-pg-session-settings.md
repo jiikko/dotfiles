@@ -10,7 +10,7 @@
 > 581 で解消 (2026-10-01): 前の応答から 55 分以上空いた役は再開せずに同じ worktree で起動し直す。計測で PM・取り込みの係の TTL 切れの外れを数えるときは、起動し直しの書き込み (約 2.2 万の見込み) に置き換わっているはず。
 
 親: [415](../415-design-claude-pm-worker-orchestration.md)  
-実測: [449](449-research-pro-con-pg-startup-cost.md) / [525](../525-perf-pro-con-pg-resume-cache-miss-tools-order.md) / [546](../546-research-pro-con-endconversation-gate-resume-cache.md)
+実測: [449](../done/449-research-pro-con-pg-startup-cost.md) / [525](../525-perf-pro-con-pg-resume-cache-miss-tools-order.md) / [546](../546-research-pro-con-endconversation-gate-resume-cache.md)
 
 ## 結論
 
