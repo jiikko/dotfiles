@@ -472,6 +472,9 @@ func updateControlRestart(m Model) (Model, []Effect) {
 // rebuildAfterFailure starts a new build from build-failed or crashed (R key and
 // control restart). The panel reopens only if one was shown for the failed build.
 func rebuildAfterFailure(m Model) (Model, []Effect) {
+	if m.State == Crashed {
+		m.Transition.Kind = TransitionRestart // 動いていたアプリを立ち上げ直すので、初回の起動の後でも「再起動」
+	}
 	m.State = Building
 	m.Message = ""
 	if m.Transition.Kind != TransitionNone {

@@ -2302,3 +2302,40 @@ func TestHeadlessChildCrashExitsWithChildCode(t *testing.T) {
 		t.Fatalf("headless runner did not exit after the child crashed; stderr: %s", readFile(r.stderr))
 	}
 }
+
+// crashed からの再ビルドは、落ちた子のプロセスグループの残り (孫) を片付けてから次を起動する。
+func TestCrashedRebuildStopsLeftoverGroupBeforeNextLaunch(t *testing.T) {
+	dir := t.TempDir()
+	launches, marker, armed := filepath.Join(dir, "launches"), filepath.Join(dir, "grandchild-term"), filepath.Join(dir, "grandchild-armed")
+	// 1 回目: TERM を受けたら印を書く孫を残して rc 3 で落ちる (孫が trap を張り終えるのを待ってから落ちる。張る前に
+	// TERM が届くと印を書かずに死に、片付けが効いていても dirty になる)。2 回目: 起動した時点で印があるかを記録する
+	run := fmt.Sprintf(`if [ ! -f %[1]s ]; then echo first > %[1]s; /bin/sh -c 'trap "echo term > %[2]s; exit 0" TERM; : > %[3]s; while :; do sleep 0.05; done' & while [ ! -f %[3]s ]; do sleep 0.01; done; exit 3; fi; if [ -f %[2]s ]; then echo clean >> %[1]s; else echo dirty >> %[1]s; fi; exec /bin/sleep 30`,
+		shellQuote(launches), shellQuote(marker), shellQuote(armed))
+	r, _ := startInteractiveRunner(t, map[string]string{"RESTARTABLE_TEST_RUN": run, "RESTARTABLE_TEST_TERM_GRACE": "2s"})
+	r.waitStatus(t, string(Crashed))
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	if response, err := control.Call(ctx, r.path, control.Restart); err != nil || !response.OK {
+		t.Fatalf("restart from crashed = %+v, %v", response, err)
+	}
+	waitFor(t, 3*time.Second, "second launch to record", func() bool { return len(strings.Fields(readFile(launches))) >= 2 })
+	if got := strings.Fields(readFile(launches)); len(got) != 2 || got[1] != "clean" {
+		t.Fatalf("launches = %q, want the second launch after the leftover group got TERM\nstderr: %s\nstdout: %s", got, readFile(r.stderr), readFile(r.stdout))
+	}
+	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+}
+
+// 起動の板は InitialModel で開いていて transition を通らないので、run() が計測を始める配線を守る。
+func TestStartupPanelReportsElapsedTime(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "presenter.json")
+	keyPath := filepath.Join(shortTempDir(t, "rst-"), "keys.sock")
+	startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_RUN": "exec /bin/sleep 30", "RESTARTABLE_TEST_INTERACTIVE": "1",
+		"RESTARTABLE_TEST_KEY_SOCKET": keyPath, "RESTARTABLE_TEST_PRESENTER_STATE": state,
+	})
+	waitPresenterSnapshot(t, state, "startup summary", func(got presenterSnapshot) bool {
+		return strings.HasPrefix(got.Model.Message, "起動しました (計 ")
+	})
+}

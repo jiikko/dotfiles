@@ -54,6 +54,7 @@ const (
 	readyOverallTimeoutEvent actorEventKind = "ready-overall-timeout"
 	readyIntervalEvent       actorEventKind = "ready-interval"
 	readyCleanupDoneEvent    actorEventKind = "ready-cleanup-done"
+	crashCleanupDoneEvent    actorEventKind = "crash-cleanup-done"
 )
 
 type actorEvent struct {
@@ -144,6 +145,11 @@ type actor struct {
 	readyDeferredEffects []Effect
 	readyResumePending   bool
 	timer                transitionTimer
+	// crashedChild は Crashed に入った子。再ビルドの前にそのプロセスグループの残り (孫) を片付ける。
+	// Q で終えるときは片付けない (自然終了で孫を消さないのと同じ。issue 586)
+	crashedChild           *process
+	crashCleanupRunning    bool
+	buildAfterCrashCleanup bool
 }
 
 // Run supervises one foreground process. It returns a process-style exit code.
@@ -727,6 +733,8 @@ func (a *actor) handleEvent(ev actorEvent) {
 		a.presenter.Render(a.model)
 	case forceDoneEvent:
 		a.handleForceDone(ev)
+	case crashCleanupDoneEvent:
+		a.handleCrashCleanupDone(ev)
 	case readyProbeDoneEvent:
 		a.handleReadyProbeDone(ev)
 	case readyProbeTimeoutEvent:
@@ -799,6 +807,9 @@ func (a *actor) handleEffects(effects []Effect) {
 	for _, effect := range effects {
 		switch effect.Kind {
 		case StartBuildEffect:
+			if a.deferBuildForCrashCleanup() {
+				continue
+			}
 			if err := a.startBuild(); err != nil {
 				a.failRequests(err.Error())
 			}
@@ -1157,6 +1168,7 @@ func (a *actor) completeChildExit() {
 	_, effects := a.transition(Event{Kind: ChildExitedEvent, ExitStatus: code, HoldOnFailure: !a.cfg.Headless})
 	a.stopAccepted = false
 	if a.model.State == Crashed {
+		a.crashedChild = a.child
 		a.failRequests(fmt.Sprintf("child exited (rc %d)", code))
 	}
 	if a.readyCleaningProc != nil {
@@ -1302,4 +1314,44 @@ func outputDrainTimeout(configured time.Duration) time.Duration {
 		return configured
 	}
 	return 500 * time.Millisecond
+}
+
+// deferBuildForCrashCleanup は Crashed からの再ビルドで、落ちた子のプロセスグループが残っていれば
+// 片付けを始めてビルドを後回しにする (true)。残った孫がポート等を握ったまま新しい子と並ぶのを防ぐ。
+func (a *actor) deferBuildForCrashCleanup() bool {
+	if a.crashCleanupRunning {
+		a.buildAfterCrashCleanup = true
+		return true
+	}
+	p := a.crashedChild
+	a.crashedChild = nil
+	if p == nil || !groupExists(p.pid) {
+		return false
+	}
+	a.crashCleanupRunning = true
+	a.buildAfterCrashCleanup = true
+	grace := a.cfg.TermGrace
+	go func() {
+		_ = signalGroup(p.pid, syscall.SIGTERM)
+		waitForTermBoundary([]*process{p}, grace)
+		a.post(actorEvent{kind: crashCleanupDoneEvent, proc: p, err: killRemainingGroups([]*process{p})})
+	}()
+	return true
+}
+
+func (a *actor) handleCrashCleanupDone(ev actorEvent) {
+	a.crashCleanupRunning = false
+	if ev.err != nil {
+		a.report("failed to stop process group: " + ev.err.Error())
+	}
+	build := a.buildAfterCrashCleanup
+	a.buildAfterCrashCleanup = false
+	// 片付けの間に終了 (Q / Ctrl-C) へ移っていたらビルドしない
+	if !build || a.model.State != Building {
+		return
+	}
+	if err := a.startBuild(); err != nil {
+		a.failRequests(err.Error())
+	}
+	a.presenter.Render(a.model)
 }

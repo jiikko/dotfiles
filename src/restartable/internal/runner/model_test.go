@@ -423,9 +423,9 @@ func TestChildExitHoldsOnFailureOnlyWithKeys(t *testing.T) {
 }
 
 func TestCrashedAcceptsRestartAndQuit(t *testing.T) {
-	crashed := Model{State: Crashed, Generation: 2, Message: "アプリが終了しました (rc 3)。R で再ビルド / Q で終了", Transition: Transition{Kind: TransitionRestart}}
+	crashed := Model{State: Crashed, Generation: 2, Message: "アプリが終了しました (rc 3)。R で再ビルド / Q で終了", Transition: Transition{Kind: TransitionStartup}}
 	m, effects := apply(crashed, KeyEvent, "R")
-	if m.State != Building || m.Message != "" || !m.Transition.Active || m.Transition.Stage != TransitionBuild || !hasEffect(effects, StartBuildEffect) {
+	if m.State != Building || m.Transition.Kind != TransitionRestart || m.Message != "" || !m.Transition.Active || m.Transition.Stage != TransitionBuild || !hasEffect(effects, StartBuildEffect) {
 		t.Fatalf("R after crash: model=%+v effects=%+v", m, effects)
 	}
 	m, effects = Update(crashed, Event{Kind: ControlRestartEvent})
