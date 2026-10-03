@@ -23,8 +23,17 @@ local DEBOUNCE_MS = 400
 local computed_tick = {}
 local timers = {}
 
+-- fold を計算する行数の上限。refresh_win は同期パース + 全行の foldexpr 評価で、コストは行数に比例する
+-- (issue 612 の実測: 20,000 行で BufWinEnter 1 回 ~200ms、200,000 行で ~1.8s)。超えたバッファは fold なしで開く
+-- (foldmethod は既定の manual のまま)。行数で見るのは foldexpr が行ごとに評価されるため。1 行が巨大な minified
+-- ファイルは行数では素通りするが、その形は測っていない
+local MAX_LINES = 20000
+
+M.max_lines = MAX_LINES -- テストが境界を読む (tests/nvim/folds_size_limit_check.lua)
+
 local function eligible(buf)
   return vim.bo[buf].buftype == "" and vim.api.nvim_buf_is_loaded(buf)
+    and vim.api.nvim_buf_line_count(buf) <= MAX_LINES
 end
 
 -- win に表示中のバッファの fold を expr で計算し、manual に凍結する。
