@@ -257,22 +257,22 @@ func (m *Model) ownerlessBand() string {
 	if owners, _ := m.snap.ScreenTally(); owners > 0 {
 		return ""
 	}
-	const join = "この画面 (join) からは起こせない"
+	// O の案内は見出しのすぐ後ろに置く (帯は画面の幅で切り詰めるので、末尾に置くと 80 桁ほどの端末では切れる。issue 548)
 	var text string
 	switch {
-	case m.snap.DispatcherHeld: // 持ち主の画面を開いても、人が止めた印があれば起こさない (c で外す)
-		text = " ■ カードは進まない — dispatcher は人が止めてある。持ち主の画面 (pro-con) を開いて c で起こす。" + join
+	case m.snap.DispatcherHeld: // 持ち主の画面にしても、人が止めた印があれば起こさない (c で外す)
+		text = " ■ カードは進まない — O で持ち主の画面に切り替えてから c で起こす。dispatcher は人が止めてある (持ち主の画面 (pro-con) を開いて c で起こしてもよい)"
 	case m.snap.DispatcherTick.IsZero():
-		text = " ■ カードは進まない — dispatcher が 1 度も回っていない。持ち主の画面 (pro-con) を開くと起きる。" + join
+		text = " ■ カードは進まない — O で持ち主の画面に切り替えると起きる。dispatcher が 1 度も回っていない (持ち主の画面 (pro-con) を開くと起きる)"
 	case m.snap.DispatcherGone:
-		text = fmt.Sprintf(" ■ カードは進まない — dispatcher が止まっている (最後の Tick %s前)。持ち主の画面が無いので誰も起こさない。持ち主の画面 (pro-con) を開くと起きる。%s",
-			fmtDur(m.snap.Now.Sub(m.snap.DispatcherTick)), join)
+		text = fmt.Sprintf(" ■ カードは進まない — O で持ち主の画面に切り替えると起きる。dispatcher が止まっている (最後の Tick %s前)。持ち主の画面が無いので誰も起こさない (持ち主の画面 (pro-con) を開くと起きる)",
+			fmtDur(m.snap.Now.Sub(m.snap.DispatcherTick)))
 	case m.dispatcherStopped():
 		// プロセスは居るのに回っていない (固まった): lock を持ったままなので、持ち主の画面を開いても起こさない (main.go の startDispatcherIfIdle)
 		text = fmt.Sprintf(" ■ カードは進まない — dispatcher のプロセスは居るが %s前から回っていない (固まっている?)。持ち主の画面を開いても、それが抜けるまでは起きない。pro-con ps で確かめる",
 			fmtDur(m.snap.Now.Sub(m.snap.DispatcherTick)))
 	default:
-		return paint(bg(214)+fg(16)+sgrBold, " ⚠ 持ち主の画面が無い — dispatcher は今は動いているが、止まっても誰も (supervisor も) 起こし直さない。持ち主の画面 (pro-con) を開くと見張りが戻る。"+join, m.width)
+		return paint(bg(214)+fg(16)+sgrBold, " ⚠ 持ち主の画面が無い — O で持ち主の画面に切り替えると見張りが戻る。dispatcher は今は動いているが、止まっても誰も (supervisor も) 起こし直さない (持ち主の画面 (pro-con) を開くと見張りが戻る)", m.width)
 	}
 	return paint(bg(196)+fg(231)+sgrBold, text, m.width)
 }
@@ -922,6 +922,9 @@ func (m *Model) hints() []string {
 	h = append(append(h, "s 設定"), offer(hint{"x 完了を片付け", m.doneInTab() > 0 && m.accepts(backend.OpClear) && !m.search.active, true})...)
 	if m.snap.DispatcherHeld && !m.joined() { // 止めてあるときだけ出す (いつも出すと、暗い字が「状態が変われば押せる」以上の意味を持たない)。join は起こさない
 		h = append(h, offer(hint{"c dispatcher を起こす", m.accepts(backend.OpResume), true})...)
+	}
+	if m.joined() {
+		h = append(h, "O 持ち主の画面にする")
 	}
 	return append(h, "? レーンの意味", back)
 }

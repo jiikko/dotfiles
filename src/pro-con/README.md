@@ -147,7 +147,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 
   持ち主の画面が 1 つも無い間、join の画面は罫線の上に帯を出す (issue 543。黄 = dispatcher は動いているが、止まっても join も supervisor も
   起こし直さない / 赤 = 止まっていてカードは進まない)。
-  止まった後に動かし直すのは、持ち主の画面か `pro-con dispatcher` (join は dispatcher を起こさない)。詳しい決まりは次のとおり。
+  止まった後に動かし直すのは、持ち主の画面か `pro-con dispatcher` (join は dispatcher を起こさない)。join の画面は O で、その場で持ち主の画面に切り替えられる (issue 548)。詳しい決まりは次のとおり。
   `--join` でない画面はすべて持ち主。Q → quit で閉じるとき、ほかに **持ち主の画面** が開いていれば
   この画面だけ閉じる (dispatcher と PG は動いたまま)。**最後の持ち主の画面が止める** (join の画面が残っていても止める。確認の見出しに
   「join の画面が N 残り、止めた後は表示が止まる」)。join の画面の quit は何も止めない。数え直しは quit の排他 (`quit.lock`) の中
@@ -249,6 +249,7 @@ bin/pro-con card run C-001 -- make test  # PG がテストの係にコマンド�
 | w | btw (PG を止めずに状況を聞く。what's up)。本物のモードでは答えがカードの履歴に出る |
 | ? | レーンと役の意味の表 (レーンの説明の正本は `card.State.Meaning`、役 = プロセスの仕事の正本は `ui/legend.go` の `roleMeanings`)。画面より長ければ j / k で送る (g / G で頭 / 末尾)。? / q / esc で閉じる |
 | c | 人が止めた dispatcher を起こす (continue。y/N 確認。作業中のカードの PG が再開して利用枠を使う)。`pro-con dispatcher --stop` で止めた印があるときだけ効き、案内にもそのときだけ出る (ゲージは「dispatcher 止めてある (c で起こす)」)。`--view` と `--join` では受けない (issue 459 / 481) |
+| O | join の画面を持ち主の画面に切り替える (owner。y/N 確認。ctrl+r と同じく暗くしてから、同じ端末で `--join` を外して開き直す。カードと UI の状態は引き継ぐ)。持ち主の画面は dispatcher が止まっていれば起こし (人が止めた印があれば起こさない)、閉じると dispatcher と PG を止める。join の画面でだけ効き、案内にもそのときだけ出る (issue 548) |
 
 入力欄 (n / r / + / ?) は readline の編集キーが効く (ctrl+h / ctrl+w / ctrl+u / ctrl+k / ctrl+a / ctrl+e / ctrl+b / ctrl+f …。
 `github.com/jiikko/dotfiles/src/tuikit/lineedit`)。入力中は最下行の案内が入力欄のキーに替わる。

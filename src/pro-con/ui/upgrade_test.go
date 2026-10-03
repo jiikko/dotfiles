@@ -397,7 +397,7 @@ func TestUpgradeCheckErrorsAreShownAgainAfterRecovery(t *testing.T) {
 func TestUpgradeFailedNilDoesNotPanic(t *testing.T) {
 	reply := spawnOK
 	m, _, _ := upgradeModel(t, &reply)
-	m.UpgradeFailed(nil)
+	m.SwitchFailed(nil)
 	if m.UpgradeRequested() || m.toasts.Text() == "" {
 		t.Fatalf("nil でも旧版のまま続けて知らせるはず: %q", m.toasts.Text())
 	}

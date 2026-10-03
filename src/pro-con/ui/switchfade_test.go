@@ -70,7 +70,7 @@ func TestSwitchFailureRestoresBrightness(t *testing.T) {
 	m.pressCtrlR()
 	clk.t = clk.t.Add(switchDuration)
 	m.Update(frameMsg{})
-	m.UpgradeFailed(os.ErrPermission)
+	m.SwitchFailed(os.ErrPermission)
 	if got := m.View().Content; strings.Contains(ansi.Strip(got), switchLabel) || !m.fade.leaving.IsZero() || m.fade.lastView != "" {
 		t.Fatal("失敗したのに暗転の状態が残った")
 	}

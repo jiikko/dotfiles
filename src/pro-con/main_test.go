@@ -55,7 +55,7 @@ func TestSwitchFailureLeavesNoStateFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 引き継いだファイルがあるとき: そこへ上書きして渡し、exec に失敗しても消さない (旧版のまま続けるときの状態のファイル)
-	if p, err := switchToNew(m, sim, nil, dir, prev); err == nil || p != prev || passed != prev {
+	if p, err := switchToNew(m, sim, func() (string, error) { return m.UpgradeExe(), nil }, nil, dir, prev); err == nil || p != prev || passed != prev {
 		t.Fatalf("引き継いだファイルへ上書きして渡すはず: path=%s passed=%s err=%v", p, passed, err)
 	}
 	if _, err := os.Stat(prev); err != nil {
@@ -63,7 +63,7 @@ func TestSwitchFailureLeavesNoStateFiles(t *testing.T) {
 	}
 	// 引き継いでいないとき: 新しく作って渡し、exec に失敗したら消す
 	_ = os.Remove(prev)
-	if p, err := switchToNew(m, sim, nil, dir, ""); err == nil || p != "" {
+	if p, err := switchToNew(m, sim, func() (string, error) { return m.UpgradeExe(), nil }, nil, dir, ""); err == nil || p != "" {
 		t.Fatalf("失敗したのにパスを返した: %s %v", p, err)
 	}
 	if passed == "" || passed == prev {
@@ -306,5 +306,17 @@ func TestAltGuardLeavesOnlyBeforeScreen(t *testing.T) {
 	b, _ := os.ReadFile(f.Name())
 	if want := "\x1b[0m\x1b[?25h\x1b[?1049lboom\nagain\nafter\n"; string(b) != want {
 		t.Fatalf("got %q\nwant %q", b, want)
+	}
+}
+
+// join の画面を持ち主の画面として開き直す引数は --join だけを外す (--as の名前と、その後ろのフラグは残す。issue 548)。
+func TestWithoutJoinKeepsLabel(t *testing.T) {
+	got := withoutJoin([]string{"--join", "--as", "review"})
+	if strings.Join(got, " ") != "--as review" {
+		t.Fatalf("withoutJoin = %q", got)
+	}
+	f, rest, err := parseScreen(append(got, "--e2e", "x"))
+	if err != nil || f.join || f.label != "review" || strings.Join(rest, " ") != "--e2e x" {
+		t.Fatalf("開き直した引数を読み直すと: %+v rest=%q err=%v", f, rest, err)
 	}
 }

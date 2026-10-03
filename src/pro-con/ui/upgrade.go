@@ -37,10 +37,7 @@ type upgrader struct {
 	lastSpawn time.Time   // 最後に shim が裏ビルドを起動した時刻。失敗の記録はこれより後のものだけを見る
 	run       upgrade.Runner
 	state     upgradeState
-	requested bool
-	// keepScreen は終了の直前に呼ぶ (main が渡す upgrade.Screen.Keep。alt screen を抜けずに exec する: switchfade.go)
-	keepScreen func()
-	checkErr   string // shim に尋ねられなかった / バイナリを見られなかった理由 (同じ理由は繰り返し通知しない。回復したら忘れる)
+	checkErr  string // shim に尋ねられなかった / バイナリを見られなかった理由 (同じ理由は繰り返し通知しない。回復したら忘れる)
 }
 
 type upgradeTickMsg struct{}
@@ -68,27 +65,28 @@ func (m *Model) EnableUpgrade(exe string, run upgrade.Runner) error {
 }
 
 // UpgradeRequested は ctrl+r で切り替えを頼まれて終了したか (main がそれを見て exec する)。
-func (m *Model) UpgradeRequested() bool { return m.up != nil && m.up.requested }
+func (m *Model) UpgradeRequested() bool { return m.switchRequested && m.switchTo == switchUpgrade }
 
-// OnSwitch は、切り替えのために終了する直前に呼ぶ関数を置く (main が upgrade.Screen.Keep を渡す)。
-func (m *Model) OnSwitch(f func()) {
-	if m.up != nil {
-		m.up.keepScreen = f
-	}
-}
+// OnSwitch は、切り替え (新版・持ち主の画面) のために終了する直前に呼ぶ関数を置く (main が upgrade.Screen.Keep を渡す)。
+func (m *Model) OnSwitch(f func()) { m.keepScreen = f }
 
 // UpgradeExe は切り替え先のバイナリ。
 func (m *Model) UpgradeExe() string { return m.up.src.Exe }
 
-// UpgradeFailed は切り替え (exec) が失敗して戻ってきたときに呼ぶ。旧版のまま続ける。
-func (m *Model) UpgradeFailed(err error) {
-	m.up.requested = false
+// SwitchFailed は切り替え (exec) が失敗して戻ってきたときに呼ぶ。今の画面のまま続ける。
+func (m *Model) SwitchFailed(err error) {
+	to := m.switchTo
+	m.switchRequested, m.switchTo = false, switchNone
 	m.cancelLeaving()
 	// 前の Program が予約していた tick (演出のコマ・処理中の印) は、終了で捨てられている。回っている印を下ろさないと、
 	// 起こし直した Program で二度と予約されない (2 回目の ctrl+r の暗転が進まず暗いまま止まった: issue 509 の実機確認)
 	m.framing, m.spinning = false, false
 	if err == nil {
 		err = errors.New("exec が戻ってきた")
+	}
+	if to == switchOwner {
+		m.fail("持ち主の画面への切り替えに失敗した (join の画面のまま続ける): " + err.Error())
+		return
 	}
 	m.fail("新版への切り替えに失敗した (旧版のまま続ける): " + err.Error())
 }
@@ -158,6 +156,7 @@ func (m *Model) requestUpgrade() tea.Cmd {
 	case m.up.state != upReady:
 		m.info("新版はまだ無い")
 	default:
+		m.switchTo = switchUpgrade
 		return m.startLeaving()
 	}
 	return nil

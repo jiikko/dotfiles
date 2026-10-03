@@ -109,12 +109,12 @@ func (m *Model) switchAnimating(now time.Time) bool {
 // leaveDone は暗くなりきったか。なりきったら終了して main に切り替えを任せる (onFrame が呼ぶ)。
 // 暗くなりきった 1 枚は、この Update の後の View で描かれてから終わる (bubbletea は終了のときに最後の View を書き出す)。
 func (m *Model) leaveDone() tea.Cmd {
-	if m.leavingProgress(m.now()) < 1 || m.up == nil || m.up.requested {
+	if m.leavingProgress(m.now()) < 1 || m.switchTo == switchNone || m.switchRequested {
 		return nil
 	}
-	m.up.requested = true
-	if m.up.keepScreen != nil {
-		m.up.keepScreen()
+	m.switchRequested = true
+	if m.keepScreen != nil {
+		m.keepScreen()
 	}
 	return tea.Quit
 }

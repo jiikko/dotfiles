@@ -492,7 +492,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 			return 1
 		}
-		if !m.UpgradeRequested() {
+		if !m.UpgradeRequested() && !m.OwnerRequested() {
 			// 裏の処理 (attach の間の指示を受付の箱へ置く等) を終えてから抜ける。bubbletea は走っている Cmd を待たない
 			_ = m.WaitChildren(ui.SwitchWait)
 			removeResume(resumePath)
@@ -509,11 +509,17 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 			return 0
 		}
-		closeRelay()                                                                                                               // 新しい版へ exec すると defer が走らず、中継のファイルが落ちた画面の残りになる。戻ってきたら (失敗) 開き直す
-		p, err := switchToNew(m, be, append(append(append([]string(nil), screen.args...), modeArgs...), args...), dir, resumePath) // 新版も同じ種類の画面で開く
+		closeRelay() // 新しい版へ exec すると defer が走らず、中継のファイルが落ちた画面の残りになる。戻ってきたら (失敗) 開き直す
+		// 新版は同じ種類の画面で開く。持ち主への切り替え (O。issue 548) は同じバイナリを --join を外して開き直す
+		exe := func() (string, error) { return m.UpgradeExe(), nil }
+		screenArgs := screen.args
+		if m.OwnerRequested() {
+			exe, screenArgs = os.Executable, withoutJoin(screen.args)
+		}
+		p, err := switchToNew(m, be, exe, append(append(append([]string(nil), screenArgs...), modeArgs...), args...), dir, resumePath)
 		resumePath = p
-		scr.Release() // 旧版のまま続ける: 次の終了では alt screen を抜ける
-		m.UpgradeFailed(err)
+		scr.Release() // 今の画面のまま続ける: 次の終了では alt screen を抜ける
+		m.SwitchFailed(err)
 		openRelay()
 	}
 }
@@ -711,10 +717,14 @@ func stopInChild(ctx context.Context, dir string, extra []string) error {
 // execFn は syscall.Exec (テストで差し替える)。
 var execFn upgrade.ExecFunc = syscall.Exec
 
-// switchToNew は状態を書き出して新版を exec する。成功すると戻らない。戻ってきたら (状態のファイルのパス, エラー)
-// (旧版のまま続ける)。引き継いだ状態のファイル (resume) があればそこへ上書きする (溜めない。消したパスを案内しない)。
-// exec に失敗したとき、新しく作ったファイルは消す (旧版のまま続けるので要らない)。
-func switchToNew(m *ui.Model, be backend.Backend, args []string, dir, resume string) (string, error) {
+// switchToNew は状態を書き出して exe (新版・持ち主の画面として開き直す同じバイナリ) を exec する。成功すると戻らない。
+// 戻ってきたら (状態のファイルのパス, エラー) (今の画面のまま続ける)。引き継いだ状態のファイル (resume) があればそこへ上書きする
+// (溜めない。消したパスを案内しない)。exec に失敗したとき、新しく作ったファイルは消す (今の画面のまま続けるので要らない)。
+func switchToNew(m *ui.Model, be backend.Backend, exe func() (string, error), args []string, dir, resume string) (string, error) {
+	path, err := exe()
+	if err != nil {
+		return resume, err
+	}
 	uiData, err := m.PrepareSwitch(ui.SwitchWait)
 	if err != nil {
 		return resume, err
@@ -727,17 +737,28 @@ func switchToNew(m *ui.Model, be backend.Backend, args []string, dir, resume str
 	}
 	// 🚨 --view の画面もここで状態の置き場に resume-*.json を書く (読むだけの例外 (a)。issue 445): 中身はこの画面自身の表示の状態
 	// (選んでいるカード・開いている板) だけで、カード・受付の箱・dispatcher・PG の状態は変えず、新版が読んだら消す
-	path, err := upgrade.Save(dir, resume, upgrade.State{UI: uiData, Backend: beData})
+	saved, err := upgrade.Save(dir, resume, upgrade.State{UI: uiData, Backend: beData})
 	if err != nil {
 		return resume, err
 	}
-	if err := upgrade.Exec(m.UpgradeExe(), args, os.Environ(), path, execFn); err != nil {
+	if err := upgrade.Exec(path, args, os.Environ(), saved, execFn); err != nil {
 		if resume == "" {
-			removeResume(path)
+			removeResume(saved)
 		}
 		return resume, err
 	}
-	return path, nil
+	return saved, nil
+}
+
+// withoutJoin は画面の種類のフラグから --join を外す (join の画面を持ち主の画面として開き直す。--as の名前は残す)。
+func withoutJoin(screenArgs []string) []string {
+	out := make([]string, 0, len(screenArgs))
+	for _, a := range screenArgs {
+		if a != "--join" {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // wrapperPath は案内に出す起動のコマンド (bin/pro-con の絶対パス。見つからなければ "bin/pro-con")。

@@ -87,15 +87,22 @@ type Model struct {
 	selRow     int // 最後のスナップショットでの selected の行 (setSnap が差し替えの直前に控える)。消えたカードの 1 つ上を選ぶのに使う
 	showDetail bool
 
-	mode        mode
-	inputRow    int             // 最後の render で入力欄を置いた行 (view.go の caret)
-	form        answerForm      // modeForm で開いている回答フォーム
-	line        lineedit.Line   // 入力欄 (編集キーは github.com/jiikko/dotfiles/src/tuikit/lineedit。docs/glogx-ui-guide.md「入力欄の編集キー」)
-	pending     backend.Command // modeConfirm で確認している操作
-	confirmText string          // modeConfirm の確認の行に出す文
-	send        *sendConfirm    // modeConfirm が送る前の確認のとき、その中身 (nil = 破壊的な操作の y/N。sendconfirm.go)
-	inputKind   inputKind
-	orderKind   card.OrderKind
+	mode     mode
+	inputRow int             // 最後の render で入力欄を置いた行 (view.go の caret)
+	form     answerForm      // modeForm で開いている回答フォーム
+	line     lineedit.Line   // 入力欄 (編集キーは github.com/jiikko/dotfiles/src/tuikit/lineedit。docs/glogx-ui-guide.md「入力欄の編集キー」)
+	pending  backend.Command // modeConfirm で確認している操作
+	// pendingOwner は modeConfirm が持ち主の画面への切り替え (O。ownerswitch.go) を確かめているか (pending は nil)
+	pendingOwner bool
+	// switchTo は暗転して終了する切り替えの行き先、switchRequested は暗くなりきって終了したか (main が見て exec する)。
+	// keepScreen は終了の直前に呼ぶ (main が渡す upgrade.Screen.Keep。alt screen を抜けずに exec する: switchfade.go)
+	switchTo        switchKind
+	switchRequested bool
+	keepScreen      func()
+	confirmText     string       // modeConfirm の確認の行に出す文
+	send            *sendConfirm // modeConfirm が送る前の確認のとき、その中身 (nil = 破壊的な操作の y/N。sendconfirm.go)
+	inputKind       inputKind
+	orderKind       card.OrderKind
 
 	toasts toast.Stack // 操作の結果の通知 (toast.go)
 	sticky string      // 消すまで残す通知 (捨てた書きかけの文など。toast は時間で消えるので置かない)。ボードの esc で消す
@@ -755,6 +762,8 @@ func (m *Model) handleBoardKey(k tea.KeyPressMsg) tea.Cmd {
 		return m.moveCard(1)
 	case "c": // 人が止めた dispatcher を起こす (continue。glogx で空いている字。PG が再開して利用枠を使うので y/N 確認を挟む)
 		m.askResume()
+	case "O": // join の画面を持ち主の画面に切り替える (owner。y/N 確認を挟む。issue 548)
+		m.askOwnerSwitch()
 	default:
 		if i, ok := laneKey(k.String()); ok {
 			m.jumpCol(i)
@@ -872,7 +881,7 @@ func (m *Model) handleInputKey(k tea.KeyPressMsg) tea.Cmd {
 // handleConfirmKey は y/N 確認。y と Enter だけが実行で、知らないキーはすべて取り消し (docs/glogx-ui-guide.md §4)。
 // askConfirm は cmd を y/N 確認に載せる (docs/glogx-ui-guide.md §4)。question は確認の行に出す文。
 func (m *Model) askConfirm(cmd backend.Command, question string) {
-	m.pending, m.send = cmd, nil
+	m.pending, m.send, m.pendingOwner = cmd, nil, false
 	m.confirmText = question
 	m.mode = modeConfirm
 }
@@ -938,9 +947,11 @@ func (m *Model) handleConfirmKey(k tea.KeyPressMsg) tea.Cmd {
 	case key == "ctrl+c":
 		cmd := m.requestQuit() // 送る前の確認なら断る (書いた中身を持っている)。確認を閉じたときだけ忘れる
 		if m.mode != modeConfirm {
-			m.pending, m.send = nil, nil
+			m.pending, m.send, m.pendingOwner = nil, nil, false
 		}
 		return cmd
+	case confirm.IsYesStrict(key) && m.pendingOwner:
+		return m.confirmOwnerSwitch()
 	case confirm.IsYesStrict(key):
 		cmd := m.pending
 		m.pending, m.send = nil, nil
@@ -954,7 +965,7 @@ func (m *Model) handleConfirmKey(k tea.KeyPressMsg) tea.Cmd {
 			m.mode = modeBoard
 			m.line.Reset()
 		}
-		m.pending, m.send = nil, nil
+		m.pending, m.send, m.pendingOwner = nil, nil, false
 	}
 	return nil
 }
