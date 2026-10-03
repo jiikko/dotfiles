@@ -2223,12 +2223,17 @@ func TestForwardKeysExitsWhenEventAndKeyQueuesAreFull(t *testing.T) {
 
 // startInteractiveRunner はキーを受ける (UI のある) runner を起動する。子が rc≠0 で落ちたときに待つのはこの形だけ。
 func startInteractiveRunner(t *testing.T, options map[string]string) (r *testRunner, keyPath string) {
+	return startInteractiveRunnerMode(t, options, true)
+}
+
+// startInteractiveRunnerMode の waitForStatus=false は、子がすぐ終わって runner が socket の確認より先に終わりうる起動に使う。
+func startInteractiveRunnerMode(t *testing.T, options map[string]string, waitForStatus bool) (r *testRunner, keyPath string) {
 	t.Helper()
 	keyPath = filepath.Join(shortTempDir(t, "rcr-"), "keys.sock")
 	options["RESTARTABLE_TEST_INTERACTIVE"] = "1"
 	options["RESTARTABLE_TEST_KEY_SOCKET"] = keyPath
 	options["RESTARTABLE_TEST_PRESENTER_STATE"] = filepath.Join(t.TempDir(), "presenter.json")
-	return startTestRunner(t, options), keyPath
+	return startTestRunnerMode(t, options, waitForStatus), keyPath
 }
 
 func TestInteractiveChildCrashWaitsAndControlRestartRebuilds(t *testing.T) {
@@ -2277,7 +2282,7 @@ func TestInteractiveChildCrashRestartsWithRKeyAndQuitsWithQ(t *testing.T) {
 
 // rc 0 の終了は人の Cmd+Q 等なので、UI があっても待たずに runner を終える (issue 586 の R7)。
 func TestInteractiveChildCleanExitStillEndsRunner(t *testing.T) {
-	r, _ := startInteractiveRunner(t, map[string]string{"RESTARTABLE_TEST_RUN": "exit 0"})
+	r, _ := startInteractiveRunnerMode(t, map[string]string{"RESTARTABLE_TEST_RUN": "exit 0"}, false)
 	select {
 	case <-r.done:
 		if r.waitErr != nil {
