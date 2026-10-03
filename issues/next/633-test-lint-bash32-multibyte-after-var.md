@@ -1,1 +1,0 @@
-../633-test-lint-bash32-multibyte-after-var.md
