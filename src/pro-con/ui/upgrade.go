@@ -289,7 +289,7 @@ func (m *Model) ImportState(data []byte) error {
 	m.ensureSelection()
 	m.fade.owner = st.Owner
 	if st.Owner {
-		m.done("持ち主の画面に切り替えた (UI の状態とカードを引き継いだ。dispatcher が止まっていれば起こす)")
+		m.done("持ち主の画面に切り替えた (UI の状態とカードを引き継いだ)")
 	} else {
 		m.done("新版に切り替えた (UI の状態とカードを引き継いだ)")
 	}

@@ -56,7 +56,10 @@ func main() {
 // runInherited は run を、旧版から alt screen のまま渡されたときの見張りで包む (defer を os.Exit より内側に置く)。
 func runInherited() int {
 	var stderr io.Writer = os.Stderr
-	if os.Getenv(upgrade.ResumeEnv) != "" { // ctrl+r で旧版から渡された: alt screen の中で起動している (issue 509)
+	// 引き継ぎの印は何かを起こす前に環境変数から消す (残すと、画面が起こす supervisor・dispatcher・claude まで受け継ぎ、
+	// 子の pro-con が alt screen の見張りを張って SIGTERM で止める処理を飛ばす。issue 548 の敵対的レビュー)
+	inheritedResume = takeResumeEnv()
+	if inheritedResume != "" { // ctrl+r / O で旧版から渡された: alt screen の中で起動している (issue 509)
 		inheritedAlt = &altGuard{w: os.Stderr, stop: upgrade.GuardAltScreen(os.Stdout)} // 画面を出す前の ctrl+c 等でも抜ける
 		stderr = inheritedAlt
 		defer func() {
@@ -74,6 +77,9 @@ func runInherited() int {
 // inheritedAlt は、旧版から alt screen のまま渡された新版が、画面を出す前に終わるときに alt screen を抜ける見張り (issue 509)。
 // nil なら渡されていない。
 var inheritedAlt *altGuard
+
+// inheritedResume は旧版から渡された引き継ぎの状態のファイル (runInherited が環境変数から取って消したもの。無ければ空)。
+var inheritedResume string
 
 // altGuard は stderr を包み、画面を出す前の最初の書き込みの前に alt screen を抜ける (抜けないと、エラーの文が暗い画面に紛れ、
 // シェルへ戻っても alt screen に閉じ込められる)。画面を出した後は何もしない (bubbletea が終了のときに抜ける。
@@ -412,7 +418,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	// ライブアップグレードで引き継いだ状態。読んだら環境変数は消す (エディタ・claude などの子プロセスへ漏らさない)
-	resumePath := takeResumeEnv()
+	resumePath := inheritedResume
+	inheritedResume = "" // 1 度だけ使う
 	var uiData []byte
 	if resumePath != "" {
 		if st, err := upgrade.Load(resumePath); err != nil {

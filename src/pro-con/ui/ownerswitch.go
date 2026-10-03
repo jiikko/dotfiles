@@ -27,7 +27,7 @@ func (m *Model) askOwnerSwitch() {
 	}
 	m.pending, m.send = nil, nil
 	m.pendingOwner = true
-	m.confirmText = "この画面を持ち主の画面に切り替えます (dispatcher が止まっていれば起こす。閉じると dispatcher と PG を止める画面になる)。よいですか? [y/N]"
+	m.confirmText = "この画面を持ち主の画面に切り替えます (dispatcher が止まっていれば起こす。人が止めてあれば起こさない。閉じると dispatcher と PG を止める画面になる)。よいですか? [y/N]"
 	m.mode = modeConfirm
 }
 
