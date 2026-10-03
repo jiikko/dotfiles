@@ -290,6 +290,32 @@ func TestRatelimitDashShowsWaitingSource(t *testing.T) {
 	}
 }
 
+// 何も届いていない最初の取得でも、盤は場所取りのカードで届いた後と同じ段を取る (中央の 1 行の「取得中...」にしない。issue 626)。
+// 初回の全滅の後の取り直しは「取得失敗」のまま (場所取りで隠さない)。
+func TestRatelimitDashPlaceholdersBeforeAnyArrives(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("PATH", "")
+	stubLookPath(t, map[string]string{"codex": "/fake/codex"}) // codex あり・前回のキャッシュ無し = codex の場所取りは既定の 1 枠
+	var m browseModel
+	m.rlDash.toggle()
+	m.usageOv.fetchCmd(false)
+	defer m.usageOv.stop()
+	o := m.ratelimitOpts()
+	o.width, o.page = 100, 30
+	all := stripANSI(strings.Join(m.rlDash.lines(o), "\n"))
+	if want := len(usage.PendingWindows("", nil)) + len(usage.PendingWindows(usage.SourceCodex, nil)); strings.Count(all, m.spinner()+" 取得中...") != want {
+		t.Errorf("何も届いていない盤が場所取りのカード %d 枚になっていない:\n%s", want, all)
+	}
+	m.usageOv.endRound()
+	m.usageOv.err = errors.New("初回の全滅")
+	m.usageOv.fetchCmd(false)
+	o = m.ratelimitOpts()
+	o.width, o.page = 100, 30
+	if all := stripANSI(strings.Join(m.rlDash.lines(o), "\n")); !strings.Contains(all, "取得失敗") || strings.Contains(all, "取得中...") {
+		t.Errorf("初回の全滅の後の取り直しで「取得失敗」が場所取りに隠れた:\n%s", all)
+	}
+}
+
 // R でダッシュボードが開き、開いている間は移動キーが裏の一覧へ届かない (全画面の契約)。
 // 届くと、閉じたときにカーソルが知らない場所へ動いている。
 func TestRatelimitDashKeyRouting(t *testing.T) {

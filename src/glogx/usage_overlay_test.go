@@ -574,20 +574,7 @@ func usageLabels(s *usage.Snapshot) string {
 // 先に届いた方をその場で出し、遅い方は場所取りの行 (「取得中...」) で待つ (issue 626)。届く前と後で箱の幅と
 // 行の数は変わらない (場所取りは届いた後と同じ枠・列は最大の幅から)。周の終わりに、取れた両方をキャッシュへ保存する。
 func TestUsageShowsEachSourceAsItArrives(t *testing.T) {
-	plain := func(o *usageOverlay) []string {
-		lines := o.boxLines(120, false, "*")
-		for i, l := range lines {
-			lines[i] = stripANSI(l)
-		}
-		return lines
-	}
-	width := func(lines []string) int {
-		w := 0
-		for _, l := range lines {
-			w = max(w, dispWidth(l))
-		}
-		return w
-	}
+	plain, width := usageBoxPlain, linesWidth
 	for _, first := range []string{usage.SourceCodex, ""} {
 		second := usage.SourceCodex
 		if first == usage.SourceCodex {
@@ -595,9 +582,11 @@ func TestUsageShowsEachSourceAsItArrives(t *testing.T) {
 		}
 		t.Run(usageSourceName(first)+" が先", func(t *testing.T) {
 			t.Setenv("XDG_CACHE_HOME", t.TempDir())
-			t.Setenv("PATH", "") // codex の無い環境としてキャッシュを読む (usage_cache.go)
+			t.Setenv("PATH", "")                                       // 外部コマンドを起こさない
+			stubLookPath(t, map[string]string{"codex": "/fake/codex"}) // codex の入った環境 (codex の場所取りを置く)
 			o := usageOverlay{visible: true}
 			o.fetchCmd(false) // closure は走らせない (届く順をテストが決める)
+			none := plain(&o) // 何も届いていない瞬間 (起動直後のグランス)
 			o.handle(usageMsg{part: usagePart(first, 7)})
 			if got := usageLabels(o.snap); got != usageLabels((*usage.Snapshot)(nil).With(*usagePart(first, 7))) {
 				t.Fatalf("先に届いた方が表示へ入らない: %s", got)
@@ -631,6 +620,10 @@ func TestUsageShowsEachSourceAsItArrives(t *testing.T) {
 			if strings.Contains(strings.Join(after, "\n"), "取得中") {
 				t.Errorf("両方そろった後も「取得中」が残った:\n%s", strings.Join(after, "\n"))
 			}
+			if len(none) != len(after) || width(none) != width(after) {
+				t.Errorf("何も届く前と後で箱の形が変わった: %d 行 x %d 桁 → %d 行 x %d 桁\n%s\n---\n%s",
+					len(none), width(none), len(after), width(after), strings.Join(none, "\n"), strings.Join(after, "\n"))
+			}
 			if len(before) != len(after) || width(before) != width(after) {
 				t.Errorf("届く前と後で箱の形が変わった: %d 行 x %d 桁 → %d 行 x %d 桁\n%s\n---\n%s",
 					len(before), width(before), len(after), width(after), strings.Join(before, "\n"), strings.Join(after, "\n"))
@@ -638,6 +631,92 @@ func TestUsageShowsEachSourceAsItArrives(t *testing.T) {
 			path, _ := usageCachePath()
 			if snap, ok := loadUsageCache(path, time.Now()); !ok || usageLabels(snap) != "5h,7d,cx7d" {
 				t.Errorf("周の終わりに両方を保存していない: ok=%v %s", ok, usageLabels(snap))
+			}
+		})
+	}
+}
+
+func usageBoxPlain(o *usageOverlay) []string {
+	lines := o.boxLines(120, false, "*")
+	for i, l := range lines {
+		lines[i] = stripANSI(l)
+	}
+	return lines
+}
+
+func linesWidth(lines []string) int {
+	w := 0
+	for _, l := range lines {
+		w = max(w, dispWidth(l))
+	}
+	return w
+}
+
+// 何も届いていないうちに Claude が先に失敗したら、codex を待つ間も Claude の失敗の注記を出し、codex が届いた後と同じ形を取る
+// (注記が無いと Claude の段が黙って消え、codex が届いた瞬間に注記の行が増える)。
+func TestUsageClaudeFailureFirstKeepsNoteWhileWaiting(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("PATH", "")
+	stubLookPath(t, map[string]string{"codex": "/fake/codex"})
+	o := usageOverlay{visible: true}
+	o.fetchCmd(false)
+	defer o.stop()
+	o.handle(usageMsg{part: &usage.Part{Err: errors.New("claude /usage 実行失敗")}})
+	waiting := usageBoxPlain(&o)
+	if !strings.Contains(strings.Join(waiting, "\n"), "Claude Code の取得に失敗") {
+		t.Errorf("codex を待つ間に Claude の失敗の注記が無い:\n%s", strings.Join(waiting, "\n"))
+	}
+	o.handle(usageMsg{part: usagePart(usage.SourceCodex, 7)})
+	after := usageBoxPlain(&o)
+	if len(waiting) != len(after) || linesWidth(waiting) != linesWidth(after) {
+		t.Errorf("codex が届く前と後で箱の形が変わった: %d 行 x %d 桁 → %d 行 x %d 桁\n%s\n---\n%s",
+			len(waiting), linesWidth(waiting), len(after), linesWidth(after), strings.Join(waiting, "\n"), strings.Join(after, "\n"))
+	}
+}
+
+// codex の入っていない環境 (前回の形にも codex の枠が無い) では、最初の取得で codex の場所取りを置かない
+// (置くと起動のたびに codex の行と「+ codex」が出て、codex の失敗が届くと消える)。前回の形に codex の枠があれば置く。
+func TestUsageNoCodexPendingWithoutCodex(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		installed   bool
+		cachedCodex bool // 前回のキャッシュ (TTL 切れ) に codex の枠がある
+		wantCodex   bool
+	}{{"codex なし", false, false, false}, {"codex あり", true, false, true}, {"codex なし・前回に codex の枠", false, true, true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("XDG_CACHE_HOME", t.TempDir())
+			t.Setenv("PATH", "")
+			if tc.cachedCodex {
+				path, err := usageCachePath()
+				if err != nil {
+					t.Fatal(err)
+				}
+				old := (*usage.Snapshot)(nil).With(*usagePart("", 1)).With(*usagePart(usage.SourceCodex, 1))
+				if err := saveUsageCache(path, old, time.Now().Add(-24*time.Hour)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			avail := map[string]string{}
+			if tc.installed {
+				avail["codex"] = "/fake/codex"
+			}
+			stubLookPath(t, avail)
+			o := usageOverlay{visible: true}
+			o.fetchCmd(false)
+			defer o.stop()
+			none := usageBoxPlain(&o)
+			if got := strings.Contains(strings.Join(none, "\n"), "cx7d"); got != tc.wantCodex {
+				t.Errorf("codex の場所取り = %v, want %v:\n%s", got, tc.wantCodex, strings.Join(none, "\n"))
+			}
+			if tc.wantCodex {
+				return
+			}
+			o.handle(usageMsg{part: &usage.Part{Source: usage.SourceCodex, Err: errors.New("exec: codex: not found")}})
+			o.handle(usageMsg{part: usagePart("", 3)})
+			after := usageBoxPlain(&o)
+			if len(none) != len(after) || linesWidth(none) != linesWidth(after) {
+				t.Errorf("届く前と後で箱の形が変わった: %d 行 x %d 桁 → %d 行 x %d 桁\n%s\n---\n%s",
+					len(none), linesWidth(none), len(after), linesWidth(after), strings.Join(none, "\n"), strings.Join(after, "\n"))
 			}
 		})
 	}

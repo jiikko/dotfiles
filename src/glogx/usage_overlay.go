@@ -93,6 +93,9 @@ type usageOverlay struct {
 	round usageRound
 	// shape は場所取りの枠の形の出典 (前回のキャッシュの枠。最初の取得を始めるときに読む。view)。
 	shape []usage.Window
+	// noCodexPending は最初の取得で codex の場所取りを置かないか (前回の形に codex の枠が無く、codex も入っていない。
+	// 置くと codex 未導入の環境で起動のたびに codex の行と見出しの「+ codex」が出て、codex の失敗が届くと消える)。
+	noCodexPending bool
 }
 
 // fetchCmd は Claude Code の /usage と codex の rateLimits を非同期取得する tea.Cmd。
@@ -128,7 +131,9 @@ func (o *usageOverlay) fetchCmdWith(useCache, force bool) tea.Cmd {
 	// last-good の出典は周の始まりの表示。束縛は UI スレッドのここで行う
 	o.round = usageRound{base: o.snap}
 	if o.fetchedAt.IsZero() && o.shape == nil {
-		o.shape = loadUsageShape() // 場所取りを出すのは最初の取得だけ (waitingSources)。小さなファイルを 1 回読むだけ
+		o.shape = loadUsageShape()    // 場所取りを出すのは最初の取得だけ (waitingSources)。小さなファイルを 1 回読むだけ
+		_, err := lookPathFn("codex") // 判定は loadUsageCache の「codex が入っているか」と同じ
+		o.noCodexPending = !(&usage.Snapshot{Windows: o.shape}).HasCodex() && err != nil
 	}
 	one := func(fetch func(context.Context) usage.Part) tea.Cmd {
 		return func() tea.Msg {
@@ -262,12 +267,17 @@ func (o *usageOverlay) handle(msg usageMsg) tea.Cmd {
 // waitingSources は、まだ届いていない出所 (場所取りを置く対象)。最初の取得が終わるまでだけ返す
 // (その間の表示には届いた出所の枠しか無い): 定期リフレッシュは静かに差し替える (下の boxLines のフッターの注記) ので、
 // codex 未導入の環境で毎分 codex の場所取りが出入りしないようにする。
+// 何も届いていない間 (snap が nil) も返す: 返さないと起動直後だけ箱が 1 行の「取得中...」になり、最初の 1 本が届いた瞬間に
+// 幅と段が変わる。初回の全滅の後 (snap が nil で err あり) は返さない (「取得失敗」の表示を場所取りで隠さない)。
 func (o *usageOverlay) waitingSources() []string {
-	if !o.inFlight || o.snap == nil || !o.fetchedAt.IsZero() {
+	if !o.inFlight || (o.snap == nil && o.err != nil) || !o.fetchedAt.IsZero() {
 		return nil
 	}
 	srcs := make([]string, 0, len(usageRoundSources))
 	for _, src := range usageRoundSources {
+		if src == usage.SourceCodex && o.noCodexPending {
+			continue
+		}
 		if !o.round.arrived(src) {
 			srcs = append(srcs, src)
 		}
@@ -289,10 +299,18 @@ func (o *usageOverlay) waiting() []string {
 // (usage.PendingWindows) を入れ、届いた後とレイアウト (行の数・列の幅・盤の段) を揃える (issue 626)。
 // 場所取りは表示だけのもので、o.snap には入れない (キャッシュ・last-good の出典を汚さない)。
 func (o *usageOverlay) view(spinner string) *usage.Snapshot {
+	srcs := o.waitingSources()
 	s := o.snap
+	if s == nil && len(srcs) > 0 {
+		// 何も表示できていない間に届いた part (失敗だけ。成功があれば snap がある) を土台に畳む: Claude が先に失敗したとき、
+		// その注記 (ClaudeErr) を codex を待つ間も出す (畳まないと Claude の段が注記なしで消え、codex が届くと注記が増えて形が変わる)
+		for _, p := range o.round.parts {
+			s = s.With(p)
+		}
+	}
 	// 🚨 Claude の場所取りを With に「成功」として入れると ClaudeErr を消すが、待っている間の snap は ClaudeErr を
 	// 持たない (Claude が失敗したら届いた扱いで、場所取りを置かない)
-	for _, src := range o.waitingSources() {
+	for _, src := range srcs {
 		ws := usage.PendingWindows(src, o.shape)
 		for i := range ws {
 			ws[i].Spinner = spinner
@@ -354,13 +372,13 @@ func (o *usageOverlay) boxLines(width int, colored bool, spinner string) []strin
 	// 下でこのタイトルが切り詰められない幅を最低確保する。
 	title := " Claude Code · usage "
 	var rows []string
+	snap := o.view(spinner)
 	switch {
 	case o.err != nil:
 		rows = []string{paint("取得失敗", ansiDim, colored)}
-	case o.snap == nil:
+	case snap == nil:
 		rows = []string{paint(spinner+" 取得中...", ansiDim, colored)}
 	default:
-		snap := o.view(spinner)
 		// CLI バージョンが取れていればタイトルに添える (取得失敗時は空で従来どおり)。
 		// バージョン文字列は外部バイナリの出力なので無害化して枠へ載せる
 		if v := sanitizePlainLine(snap.Version); v != "" {
