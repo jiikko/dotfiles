@@ -73,3 +73,14 @@ glogx の利用枠の表示 (右上の U の箱 / 全画面の R のダッシュ
   `TestFetchCallerTimeoutIsNotShared` は stub の `sleep` が `PATH` から見つからないこと ([627](done/627-bug-claude-usage-polling-hits-429.md) の進捗の末尾)
 - 2026-10-03 (別セッションから追記): 上の `test_kernel_alloc_watch.sh` の落ちる原因は 630 で解消 (判定の `lockf` を `-k` 付きにした。CI の Tests run 37034308994 で緑)
 - 2026-10-03 (別セッションから追記): 上の `TestFetchCallerTimeoutIsNotShared` の落ちる原因は 627 側で解消 (stub の `sleep` を `/bin/sleep` に。[627](done/627-bug-claude-usage-polling-hits-429.md) の進捗の末尾)
+- 2026-10-03 実機の見え方を確かめた (隔離した tmux `-L` で HEAD の glogx を 120x40 で起動し、起動時のグランスを 20 ms ごとに `capture-pane`。
+  `XDG_CACHE_HOME` を使い捨てに向け、本物のキャッシュを写して `fetchedAt` を古くした = 形は前回のもの、取得は必ず走る)。3 回撮った:
+  - ✅ 出所が届いた後: Claude が先に届くと、codex は前回の形の 2 行 (`cx5h` / `cx7d`) が「⠋ 取得中...」の場所取りになる。
+    箱の幅 (60 桁) と行数は codex が届いても変わらない。スピナーも回る
+  - ✅ 前回のキャッシュに codex の枠が無いと、codex の場所取りは `cx7d` の 1 行で、届くと `cx5h` / `cx7d` の 2 行に増える (仕様どおり。進捗の「避けられない限界」と同じ)。
+    本物の `~/.cache/glog/claude-usage.json` は撮った時点で Claude の枠しか持っていない回があった (codex が取れなかった周の保存)
+  - 🔴 **何も届いていない最初の約 0.5 秒** (3 回とも 22〜27 コマ): 箱が幅 22 桁・1 行の「┌ Claude Code · usage / ⠋ 取得中...」になり、
+    Claude が届いた瞬間に 60 桁・5〜6 行へ広がる。原因: `usageOverlay.boxLines` の `case o.snap == nil:` が 626 より前からある 1 行の分岐で、
+    `view()` (場所取り) を通らない。`waitingSources` も `o.snap == nil` で空を返す。2 つ目の commit の要望 (取得前と後でレイアウトの幅を変えない) の
+    いちばん目に付く場面 (起動直後) が満たされていない。R の盤の `snap == nil` (`usage_overlay.go` の `if snap == nil {` / `tui.go` の toggleRatelimitDash) は未確認
+  - 残り: 上の 🔴 を直す (snap が nil でも最初の取得の間は Claude / codex の場所取りを描く)。直したら同じ撮り方で取得前のコマを撮り直す
