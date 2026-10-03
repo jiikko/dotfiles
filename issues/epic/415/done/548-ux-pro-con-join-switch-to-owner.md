@@ -1,10 +1,8 @@
 # 548 (ux): join の画面から 1 キーで持ち主の画面に切り替える (y/N で確かめる)
 
-> 🚨 **担当中: restartable の作業をしていたセッション**（2026-10-03〜）
-
 起票日: 2026-09-27
 
-親: [415](415-design-claude-pm-worker-orchestration.md)
+親: [415](../415-design-claude-pm-worker-orchestration.md)
 
 ## 概要
 
