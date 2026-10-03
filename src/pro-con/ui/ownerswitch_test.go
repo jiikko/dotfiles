@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"pro-con/backend"
@@ -147,5 +148,30 @@ func TestOwnerSwitchLabelsDoNotSayUpgrade(t *testing.T) {
 	plain, _, _ := joinModel(t)
 	if err := plain.ImportState([]byte(`{"tab":""}`)); err != nil || !strings.Contains(plain.toasts.Text(), "新版に切り替えた") || plain.fade.owner {
 		t.Fatalf("新版の切り替えの通知: %q owner=%v err=%v", plain.toasts.Text(), plain.fade.owner, err)
+	}
+}
+
+// 帯が O を案内している間は、引き出し・設定画面・issue の一覧を開いていても O が効く (黙って飲み込まない。548 の敵対的レビュー 2/3)。
+func TestOwnerSwitchFromPanels(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		open func(m *Model)
+	}{
+		{"引き出し", func(m *Model) { press(m, "enter") }},
+		{"設定画面", func(m *Model) { press(m, "s") }},
+		{"issue の一覧", func(m *Model) { m.picker.open = true }},
+	} {
+		m, _, _ := joinModel(t)
+		c.open(m)
+		press(m, "O")
+		if m.mode != modeConfirm || !m.pendingOwner {
+			t.Fatalf("%s: O で確認を出さない: mode=%v pendingOwner=%v", c.name, m.mode, m.pendingOwner)
+		}
+		if m.set.open || m.picker.open {
+			t.Fatalf("%s: 確認を出したのに板を開いたまま: set=%v picker=%v", c.name, m.set.open, m.picker.open)
+		}
+		if !isQuit(func() tea.Cmd { press(m, "y"); return leaveFully(m) }()) || !m.OwnerRequested() {
+			t.Fatalf("%s: y で持ち主へ切り替えない", c.name)
+		}
 	}
 }

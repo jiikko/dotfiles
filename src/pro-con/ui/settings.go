@@ -228,6 +228,13 @@ func (m *Model) handleSettingsKey(k string) tea.Cmd {
 		return m.requestQuit()
 	case "ctrl+r": // 新版への切り替えは画面全体の操作 (どの板からも効く)
 		return m.requestUpgrade()
+	case "O": // 持ち主の画面への切り替え (帯が案内する。issue 548)。確認はボードの最下段に出すので、設定画面を閉じてから
+		if !m.joined() {
+			return nil
+		}
+		cmd := m.closeSettings()
+		m.askOwnerSwitch()
+		return cmd
 	case "s", "q", "esc":
 		return m.closeSettings()
 	case "y", "Y": // ログのタブ: y = 選んでいる行 / Y = その行の出来事の文だけ (ほかのタブでは何もしない)

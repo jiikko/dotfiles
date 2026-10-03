@@ -240,6 +240,11 @@ func (m *Model) handlePickerKey(k tea.KeyPressMsg) tea.Cmd {
 		return m.requestQuit()
 	case "i", "q", "esc":
 		m.picker.open = false
+	case "O": // 持ち主の画面への切り替え (帯が案内する。issue 548)。確認はボードの最下段に出すので、一覧を閉じてから
+		if m.joined() {
+			m.picker.open = false
+			m.askOwnerSwitch()
+		}
 	case "enter":
 		m.pickOrAsk()
 	default:
