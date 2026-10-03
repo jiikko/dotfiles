@@ -867,6 +867,11 @@ func (a *actor) handleControl(req *control.Request) {
 	}
 	switch a.model.State {
 	case Building:
+		if a.crashCleanupRunning {
+			// 片付けの後のビルドはまだ始まっていないので、次のビルドの要求は積まない (積むとビルドが 1 回増える)
+			a.pendingRequests = append(a.pendingRequests, req) // build start is the commit point
+			return
+		}
 		a.queuedRequests = append(a.queuedRequests, req)
 		_, effects := a.transition(Event{Kind: ControlRestartEvent})
 		a.handleEffects(effects)
@@ -1168,7 +1173,12 @@ func (a *actor) completeChildExit() {
 	_, effects := a.transition(Event{Kind: ChildExitedEvent, ExitStatus: code, HoldOnFailure: !a.cfg.Headless})
 	a.stopAccepted = false
 	if a.model.State == Crashed {
-		a.crashedChild = a.child
+		// 落ちた時点でグループが残っている (孫がいる) ときだけ記録する。空のグループの番号は再利用されうるので、
+		// Crashed で長く待った後に撃つと無関係なグループに届く。孫が後から自然に消えて番号が再利用される窓は残る
+		// (強制終了の beginForceStop も allProcesses の記録へ同じ形で撃つ。pgid の同一性を確かめる手段が無い)
+		if groupExists(a.child.pid) {
+			a.crashedChild = a.child
+		}
 		a.failRequests(fmt.Sprintf("child exited (rc %d)", code))
 	}
 	if a.readyCleaningProc != nil {
@@ -1334,7 +1344,10 @@ func (a *actor) deferBuildForCrashCleanup() bool {
 	go func() {
 		_ = signalGroup(p.pid, syscall.SIGTERM)
 		waitForTermBoundary([]*process{p}, grace)
-		a.post(actorEvent{kind: crashCleanupDoneEvent, proc: p, err: killRemainingGroups([]*process{p})})
+		err := killRemainingGroups([]*process{p})
+		// KILL の後もグループが消える (ポート等が解放される) まで待ってから次を起動する
+		waitForTermBoundary([]*process{p}, grace)
+		a.post(actorEvent{kind: crashCleanupDoneEvent, proc: p, err: err})
 	}()
 	return true
 }

@@ -2339,3 +2339,67 @@ func TestStartupPanelReportsElapsedTime(t *testing.T) {
 		return strings.HasPrefix(got.Model.Message, "起動しました (計 ")
 	})
 }
+
+// crashedTERMIgnoringGrandchildRun は 1 回目に TERM を無視する孫を残して rc 3 で落ち、2 回目は起動した時点で
+// 孫が残っているかを launches に記録して生き続ける run コマンドを返す。
+func crashedTERMIgnoringGrandchildRun(dir string) (run, launches string) {
+	launches, armed, gcPID := filepath.Join(dir, "launches"), filepath.Join(dir, "armed"), filepath.Join(dir, "gc.pid")
+	run = fmt.Sprintf(`if [ ! -f %[1]s ]; then echo first > %[1]s; /bin/sh -c 'trap "" TERM; echo $$ > %[3]s; : > %[2]s; while :; do sleep 0.05; done' & while [ ! -f %[2]s ]; do sleep 0.01; done; exit 3; fi; if kill -0 "$(cat %[3]s)" 2>/dev/null; then echo dirty >> %[1]s; else echo clean >> %[1]s; fi; exec /bin/sleep 30`,
+		shellQuote(launches), shellQuote(armed), shellQuote(gcPID))
+	return run, launches
+}
+
+// TERM を無視する孫も、KILL の後にグループが消えてから次を起動する。
+func TestCrashedRebuildKillsTERMIgnoringLeftoverBeforeNextLaunch(t *testing.T) {
+	run, launches := crashedTERMIgnoringGrandchildRun(t.TempDir())
+	r, _ := startInteractiveRunner(t, map[string]string{"RESTARTABLE_TEST_RUN": run, "RESTARTABLE_TEST_TERM_GRACE": "200ms"})
+	r.waitStatus(t, string(Crashed))
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	if response, err := control.Call(ctx, r.path, control.Restart); err != nil || !response.OK {
+		t.Fatalf("restart from crashed = %+v, %v", response, err)
+	}
+	waitFor(t, 3*time.Second, "second launch to record", func() bool { return len(strings.Fields(readFile(launches))) >= 2 })
+	if got := strings.Fields(readFile(launches)); got[1] != "clean" {
+		t.Fatalf("launches = %q, want the TERM-ignoring grandchild killed before the second launch", got)
+	}
+	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+}
+
+// 片付けの最中に来た restart は、まだ始まっていない片付け後のビルドに乗る (ビルドを増やさない)。
+func TestRestartDuringCrashCleanupDoesNotAddBuild(t *testing.T) {
+	dir := t.TempDir()
+	builds := filepath.Join(dir, "builds")
+	run, launches := crashedTERMIgnoringGrandchildRun(dir)
+	r, _ := startInteractiveRunner(t, map[string]string{
+		"RESTARTABLE_TEST_BUILD": "echo b >> " + shellQuote(builds), "RESTARTABLE_TEST_RUN": run, "RESTARTABLE_TEST_TERM_GRACE": "1s",
+	})
+	r.waitStatus(t, string(Crashed))
+	results := make(chan control.Response, 2)
+	call := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		response, _ := control.Call(ctx, r.path, control.Restart)
+		results <- response
+	}
+	go call()
+	r.waitStatus(t, string(Building)) // 片付けの間 (孫が TERM を無視するので grace の 1s は Building のまま)
+	go call()
+	for range 2 {
+		if response := <-results; !response.OK || response.Generation != 2 {
+			t.Fatalf("restart during cleanup = %+v, want both answered by the second launch", response)
+		}
+	}
+	if got := strings.Fields(readFile(builds)); len(got) != 2 {
+		t.Fatalf("builds = %q, want the initial build and one rebuild", got)
+	}
+	waitFor(t, 3*time.Second, "second launch to record", func() bool { return len(strings.Fields(readFile(launches))) >= 2 })
+	if got := strings.Fields(readFile(launches)); len(got) != 2 || got[1] != "clean" {
+		t.Fatalf("launches = %q", got)
+	}
+	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+}
