@@ -2648,3 +2648,30 @@ func TestCtrlCDuringForcedStopKillsWithoutWaitingForGrace(t *testing.T) {
 		t.Fatalf("Ctrl-C did not cut the 60s grace short; stderr: %s", readFile(r.stderr))
 	}
 }
+
+// UI の無い起動のビルド失敗は、失敗したビルドが残したプロセスも片付けてから rc 1 で終える。
+func TestHeadlessBuildFailureStopsBuildLeftovers(t *testing.T) {
+	bgPID := filepath.Join(t.TempDir(), "bg.pid")
+	r := startTestRunnerMode(t, map[string]string{
+		"RESTARTABLE_TEST_BUILD": "/bin/sleep 300 </dev/null >/dev/null 2>&1 & echo $! > " + shellQuote(bgPID) + "; exit 1",
+		"RESTARTABLE_TEST_RUN":   "exec /bin/sleep 300",
+	}, false)
+	select {
+	case <-r.done:
+		var exit *exec.ExitError
+		if !errors.As(r.waitErr, &exit) || exit.ExitCode() != 1 {
+			t.Fatalf("headless build failure: runner exit = %v, want rc 1", r.waitErr)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatalf("headless runner did not exit after the build failed; stderr: %s", readFile(r.stderr))
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(readFile(bgPID)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	// 強制停止は終わるまで runner の終了を止めるので、r.done の時点で消えている
+	if processAlive(pid) {
+		t.Fatalf("background process %d left by the failed build survived the headless exit", pid)
+	}
+}

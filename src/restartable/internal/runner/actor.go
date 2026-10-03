@@ -1113,11 +1113,12 @@ func (a *actor) beginForce(code int) {
 	if a.finished {
 		return
 	}
+	// Exiting の model は ForceEvent を素通りするので、Q で終える途中 (強制停止の最中や、その後の ready の後片付けの待ち) に
+	// 来た Ctrl-C / シグナルの rc はここで書く
+	a.model.ExitCode = code
 	if a.forceRunning {
-		// 強制停止の最中の 2 回目の Ctrl-C / シグナルは、猶予を待たずに KILL し、その rc で終える
-		// (Exiting の model は ForceEvent を素通りするので、rc はここで書く)
+		// 強制停止の最中の 2 回目の Ctrl-C / シグナルは、猶予を待たずに KILL する
 		a.forcedTermination = true
-		a.model.ExitCode = code
 		_ = killRemainingGroups(a.forceProcs)
 		a.model, _ = Update(a.model, Event{Kind: ForceEvent, SignalCode: code})
 		a.invalidateReadyForForce()
@@ -1126,6 +1127,7 @@ func (a *actor) beginForce(code int) {
 		a.readyDeferredEffects = nil
 		a.readyFinishPending = false
 		a.failRequests("runner interrupted")
+		a.presenter.Render(a.model)
 		return
 	}
 	a.forcedTermination = true

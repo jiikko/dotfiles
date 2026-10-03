@@ -205,10 +205,12 @@ func Update(m Model, e Event) (Model, []Effect) {
 		m.Transition.Busy = false
 		m.Transition.Result = TransitionBuildFailed
 		if e.NoUI {
+			// runner 自身の判断で終えるので、外から強制終了されたとき (以前は待っていたので CI の時間切れ等) と同じく、
+			// 失敗したビルドが残したプロセスも強制停止で片付ける
 			m.State = Exiting
 			m.Confirm = ConfirmNone
 			m.ExitCode = 1
-			return m, []Effect{{Kind: ExitEffect}}
+			return m, []Effect{{Kind: ForceStopEffect}, {Kind: ExitEffect}}
 		}
 		return m, nil
 	case LaunchStartedEvent:
