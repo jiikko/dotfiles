@@ -1,4 +1,6 @@
 # vim: set filetype=ruby:
+# 🚨 今は使っていない (入れたものの覚え書きでしかなく、実際に入っているものと揃えていない)。
+#    下の `brew bundle cleanup` を回すと、ここに載っていないものが消されうるので回さない。
 # Usage:
 #   $ brew bundle cleanup
 #   $ brew bundle
