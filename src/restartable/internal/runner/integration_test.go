@@ -540,7 +540,7 @@ func TestBuildFailureNeverRunsStaleArtifactAndRestartWaitsForNewRun(t *testing.T
 	launches := filepath.Join(dir, "launches")
 	build := fmt.Sprintf(`n=0; [ ! -f %s ] || n=$(cat %s); n=$((n+1)); echo "$n" > %s; if [ "$n" -eq 1 ]; then echo stale > %s; exit 1; fi; echo fresh > %s`, shellQuote(count), shellQuote(count), shellQuote(count), shellQuote(artifact), shellQuote(artifact))
 	run := fmt.Sprintf(`cat %s >> %s; echo >> %s; exec /bin/sleep 30`, shellQuote(artifact), shellQuote(launches), shellQuote(launches))
-	r := startTestRunner(t, map[string]string{"RESTARTABLE_TEST_BUILD": build, "RESTARTABLE_TEST_RUN": run})
+	r, _ := startInteractiveRunner(t, map[string]string{"RESTARTABLE_TEST_BUILD": build, "RESTARTABLE_TEST_RUN": run})
 	r.waitStatus(t, string(BuildFailed))
 	if _, err := os.Stat(launches); !os.IsNotExist(err) {
 		t.Fatalf("run started from failed build: %q (%v)", readFile(launches), err)
@@ -564,7 +564,7 @@ func TestBuildFailureNeverRunsStaleArtifactAndRestartWaitsForNewRun(t *testing.T
 }
 
 func TestBuildFailureIsReturnedToControlRestart(t *testing.T) {
-	r := startTestRunner(t, map[string]string{
+	r, _ := startInteractiveRunner(t, map[string]string{
 		"RESTARTABLE_TEST_BUILD": "echo no; exit 17",
 		"RESTARTABLE_TEST_RUN":   "exec /bin/sleep 30",
 	})
@@ -2491,5 +2491,25 @@ func TestQuitDuringCrashCleanupDoesNotLaunch(t *testing.T) {
 	time.Sleep(300 * time.Millisecond) // sleep-ok: negative: 起きないことの確認
 	if got := strings.Fields(readFile(launches)); len(got) != 1 {
 		t.Fatalf("launches = %q, want no launch after quitting during cleanup", got)
+	}
+}
+
+// UI の無い起動ではビルドの失敗で待たずに rc 1 で終える (CI や pipe が止まったままにならない)。
+func TestHeadlessBuildFailureExitsWithOne(t *testing.T) {
+	launches := filepath.Join(t.TempDir(), "launches")
+	r := startTestRunnerMode(t, map[string]string{
+		"RESTARTABLE_TEST_BUILD": "exit 17", "RESTARTABLE_TEST_RUN": "echo x >> " + shellQuote(launches) + "; exec /bin/sleep 30",
+	}, false)
+	select {
+	case <-r.done:
+		var exit *exec.ExitError
+		if !errors.As(r.waitErr, &exit) || exit.ExitCode() != 1 {
+			t.Fatalf("headless build failure: runner exit = %v, want rc 1", r.waitErr)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatalf("headless runner kept waiting after the build failed; stderr: %s", readFile(r.stderr))
+	}
+	if got := readFile(launches); got != "" {
+		t.Fatalf("run started after a failed build: %q", got)
 	}
 }

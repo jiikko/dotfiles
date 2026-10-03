@@ -99,20 +99,32 @@ func ViewLinesAt(state runner.Model, width, height, spinnerFrame int) []string {
 		if width < layout.PanelMinWidth {
 			return append([]string{compactConfirmLine(state.Confirm, width)}, footer...)
 		}
-		return centeredPanel(confirm.Dialog("", []string{prompt}, confirm.HintYesNo, width, false), width, height, footer...)
+		// 確認は横だけ中央に寄せ、縦は footer の直上に置く。inline 表示は view の上端が戻らないので、縦に寄せると
+		// 取り消した後 (ログが流れていない間) に最下行が画面の途中に浮いたまま残る
+		return append(centerHorizontally(confirm.Dialog("", []string{prompt}, confirm.HintYesNo, width, false), width), footer...)
 	}
 	return footer
+}
+
+// centerHorizontally は板を横の中央に寄せ、各行を width 桁に揃える。
+func centerHorizontally(box []string, width int) []string {
+	boxWidth := 0
+	for _, line := range box {
+		boxWidth = max(boxWidth, termwidth.Of(line))
+	}
+	indent := strings.Repeat(" ", max((width-boxWidth)/2, 0))
+	lines := make([]string, 0, len(box))
+	for _, line := range box {
+		line = indent + line
+		lines = append(lines, line+strings.Repeat(" ", max(width-termwidth.Of(line), 0)))
+	}
+	return lines
 }
 
 // centeredPanel は板を端末の中央に置き、footer (最下行のステータスなど) をその下の最下部に付ける。
 // inline 表示なので板より上の行は返さない (そこはログが流れる場所)。板の下に空行を挟んで縦の位置を中央へ寄せ、
 // 端末が低くて入らないときは footer の直上に寄せる。
 func centeredPanel(box []string, width, height int, footer ...string) []string {
-	boxWidth := 0
-	for _, line := range box {
-		boxWidth = max(boxWidth, termwidth.Of(line))
-	}
-	indent := strings.Repeat(" ", max((width-boxWidth)/2, 0))
 	panelHeight := len(box)
 	gap := 0
 	if height > panelHeight+len(footer)+2 {
@@ -120,10 +132,7 @@ func centeredPanel(box []string, width, height int, footer ...string) []string {
 		gap = max(height-screenTop-panelHeight-len(footer), 0)
 	}
 	lines := make([]string, 0, panelHeight+gap+len(footer))
-	for _, line := range box {
-		line = indent + line
-		lines = append(lines, line+strings.Repeat(" ", max(width-termwidth.Of(line), 0)))
-	}
+	lines = append(lines, centerHorizontally(box, width)...)
 	for range gap {
 		lines = append(lines, "")
 	}

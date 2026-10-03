@@ -608,7 +608,9 @@ func TestConfirmOutsideTransitionFitsAtWidthsOneThroughNine(t *testing.T) {
 }
 
 // R / Q の確認ダイアログも進捗板と同じく端末の中央に置き、メッセージとステータスは最下部に残す。
-func TestConfirmDialogIsCenteredOnScreen(t *testing.T) {
+// R / Q の確認ダイアログは横だけ中央に寄せ、縦は footer の直上に置く (縦に寄せると、inline 表示では取り消した後に
+// 最下行が画面の途中に浮いたまま残る)。
+func TestConfirmDialogIsHorizontallyCenteredAboveFooter(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		state   runner.Model
@@ -632,8 +634,8 @@ func TestConfirmDialogIsCenteredOnScreen(t *testing.T) {
 			if panelHeight < 0 {
 				t.Fatalf("%s/height %d: dialog bottom not found: %q", tc.name, height, lines)
 			}
-			if screenTop, want := height-len(lines), (height-panelHeight)/2; screenTop != want {
-				t.Fatalf("%s/height %d: dialog screen top = %d, want %d", tc.name, height, screenTop, want)
+			if len(lines) != panelHeight+tc.footers {
+				t.Fatalf("%s/height %d: view has %d rows, want dialog %d + footer %d with no gap: %q", tc.name, height, len(lines), panelHeight, tc.footers, lines)
 			}
 			left := termwidth.Of(strings.SplitN(lines[0], "┌", 2)[0])
 			dialogWidth := termwidth.Of(strings.TrimSpace(lines[0]))

@@ -401,10 +401,10 @@ func TestChildExitHoldsOnFailureOnlyWithKeys(t *testing.T) {
 		wantCode  int
 		wantExit  bool
 	}{
-		{"crash with keys", Event{Kind: ChildExitedEvent, ExitStatus: 3, HoldOnFailure: true}, Crashed, 0, false},
-		{"signal with keys", Event{Kind: ChildExitedEvent, ExitStatus: 137, HoldOnFailure: true}, Crashed, 0, false},
-		{"clean exit with keys (Cmd+Q)", Event{Kind: ChildExitedEvent, ExitStatus: 0, HoldOnFailure: true}, Exiting, 0, true},
-		{"crash without keys", Event{Kind: ChildExitedEvent, ExitStatus: 3}, Exiting, 3, true},
+		{"crash with keys", Event{Kind: ChildExitedEvent, ExitStatus: 3, }, Crashed, 0, false},
+		{"signal with keys", Event{Kind: ChildExitedEvent, ExitStatus: 137, }, Crashed, 0, false},
+		{"clean exit with keys (Cmd+Q)", Event{Kind: ChildExitedEvent, ExitStatus: 0, }, Exiting, 0, true},
+		{"crash without keys", Event{Kind: ChildExitedEvent, ExitStatus: 3, NoUI: true}, Exiting, 3, true},
 	}
 	for _, tc := range cases {
 		m, effects := Update(running, tc.event)

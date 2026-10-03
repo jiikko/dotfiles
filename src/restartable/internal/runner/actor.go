@@ -612,9 +612,10 @@ func (a *actor) startBuild() error {
 	proc, err := startProcess([]string{a.cfg.BuildCommand}, true, a.env(), a.cfg.Stdin, a.sink, a.cfg.StdinIsTerminal)
 	if err != nil {
 		a.model.BuildQueued = false
-		a.transition(Event{Kind: BuildFailedEvent, Reason: err.Error()})
+		_, effects := a.transition(Event{Kind: BuildFailedEvent, Reason: err.Error(), NoUI: a.cfg.Headless})
 		a.report("build failed: " + err.Error())
 		a.failRequests(err.Error())
+		a.handleEffects(effects)
 		return nil
 	}
 	a.build = proc
@@ -682,13 +683,12 @@ func (a *actor) handleEvent(ev actorEvent) {
 				}
 			}
 		} else {
-			_, effects := a.transition(Event{Kind: BuildFailedEvent, Reason: fmt.Sprintf("build exited with status %d", ev.result.Code)})
-			if containsEffect(effects, StartBuildEffect) {
-				a.handleEffects(effects)
-			} else {
+			_, effects := a.transition(Event{Kind: BuildFailedEvent, Reason: fmt.Sprintf("build exited with status %d", ev.result.Code), NoUI: a.cfg.Headless})
+			if !containsEffect(effects, StartBuildEffect) {
 				a.report(fmt.Sprintf("build failed (exit %d)", ev.result.Code))
 				a.failRequests(fmt.Sprintf("build failed (exit %d)", ev.result.Code))
 			}
+			a.handleEffects(effects)
 		}
 		a.presenter.Render(a.model)
 	case runDoneEvent:
@@ -1170,7 +1170,7 @@ func (a *actor) completeChildExit() {
 	a.readyResumePending = false
 	// childProcessed は子の Wait が済んだ後にだけ立つので、child.result は書き込み済み
 	code := a.child.result.Code
-	_, effects := a.transition(Event{Kind: ChildExitedEvent, ExitStatus: code, HoldOnFailure: !a.cfg.Headless})
+	_, effects := a.transition(Event{Kind: ChildExitedEvent, ExitStatus: code, NoUI: a.cfg.Headless})
 	a.stopAccepted = false
 	if a.model.State == Crashed {
 		// 落ちた時点でグループが残っている (孫がいる) ときだけ記録する。空のグループの番号は再利用されうるので、

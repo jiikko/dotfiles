@@ -103,9 +103,9 @@ type Event struct {
 	Generation  uint64
 	// ExitStatus は ChildExitedEvent の子の終了コード (シグナルは 128+番号)。
 	ExitStatus int
-	// HoldOnFailure は rc≠0 の終了で Crashed に留まるか。キーを受けられない (UI の無い) 起動では
-	// 待っても操作できないので false にし、子の rc で runner を終える。
-	HoldOnFailure bool
+	// NoUI はキーを受けられない (UI の無い) 起動。待っても操作できないので、子の rc≠0 の終了は子の rc で、
+	// ビルドの失敗は rc 1 で、待たずに runner を終える (CI や pipe が止まったままにならないように)。
+	NoUI bool
 }
 
 type EffectKind string
@@ -204,6 +204,12 @@ func Update(m Model, e Event) (Model, []Effect) {
 		m.Transition.Active = false
 		m.Transition.Busy = false
 		m.Transition.Result = TransitionBuildFailed
+		if e.NoUI {
+			m.State = Exiting
+			m.Confirm = ConfirmNone
+			m.ExitCode = 1
+			return m, []Effect{{Kind: ExitEffect}}
+		}
 		return m, nil
 	case LaunchStartedEvent:
 		if m.Transition.Active {
@@ -268,7 +274,7 @@ func Update(m Model, e Event) (Model, []Effect) {
 		m.Confirm = ConfirmNone
 		m.Intent = IntentNone
 		m.StopAccepted = false
-		if e.ExitStatus != 0 && e.HoldOnFailure {
+		if e.ExitStatus != 0 && !e.NoUI {
 			m.State = Crashed
 			m.Transition.Result = TransitionResultNone // 前の「起動を確認できませんでした」が view で message を上書きしないように
 			m.Message = fmt.Sprintf("アプリが終了しました (rc %d)。R で再ビルド / Q で終了", e.ExitStatus)
