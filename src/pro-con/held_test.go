@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -86,5 +87,40 @@ func TestScreenQuitStopDoesNotHold(t *testing.T) {
 	spawns := 0
 	if started, err := startDispatcherIfIdle(dir, func(string) error { spawns++; return nil }); !started || err != nil || spawns != 1 {
 		t.Fatalf("印が無いのに画面が起こさない: started=%v err=%v spawns=%d", started, err, spawns)
+	}
+}
+
+// issue 638: 置き場 (state/) がまだ無いところで人が --stop を打っても、止めた印を置く (印は止める処理より前に置くので、
+// lock が置き場を作るのを待てない)。heldRoot は置き場を先に作るので、このテストは作らない置き場で試す (本番の初期状態)。
+func TestManualStopHoldsWithoutStateDir(t *testing.T) {
+	root, err := os.MkdirTemp("/tmp", "pchn")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	dir := dispatcher.E2E{Root: root}.StateDir()
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("前提: 置き場が無いはず: %v", err)
+	}
+	var out, errOut bytes.Buffer
+	if rc := runDispatcher([]string{"--stop", "--e2e", root}, "", "", nil, pmConfig{}, &out, &errOut); rc != 0 || !store.Held(dir) {
+		t.Fatalf("置き場の無いところで --stop: rc=%d held=%v\n%s%s", rc, store.Held(dir), out.String(), errOut.String())
+	}
+}
+
+// issue 638: 止めた印を置けなくても止める処理は続け (止めたい人が止められなくならない)、rc 1 で知らせる。
+// 印のパスをディレクトリにして、lock は取れるが印だけ置けない形を作る (置き場を書けなくすると lock も取れず、印の失敗と区別できない)。
+func TestManualStopReportsHoldFailure(t *testing.T) {
+	root, dir := heldRoot(t)
+	if err := os.MkdirAll(filepath.Join(dir, store.HeldFile, "x"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut bytes.Buffer
+	rc := runDispatcher([]string{"--stop", "--e2e", root}, "", "", nil, pmConfig{}, &out, &errOut)
+	if rc != 1 || !strings.Contains(errOut.String(), "止めた印は置けていない") {
+		t.Fatalf("印を置けないのに rc=%d で知らせない:\n%s%s", rc, out.String(), errOut.String())
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, dispatcher.StopResultFile)); strings.TrimSpace(string(b)) != "ok" {
+		t.Fatalf("印を置けないことを理由に止める処理をやめた: stop-result=%q", b)
 	}
 }

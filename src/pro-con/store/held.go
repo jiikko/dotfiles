@@ -13,7 +13,13 @@ import (
 const HeldFile = "dispatcher-held"
 
 // Hold は止めた印を置く (置いた時刻を中に書く。あれば上書き)。
+// 置き場はここで作る: `pro-con dispatcher --stop` は止める処理 (lock を取ると置き場ができる) より前に印を置くので、初めて使うマシンや
+// 置き場を消した後は、まだ置き場が無い (issue 638)。writeAtomic には入れない: ほかの書き手は lock の後で置き場が必ずあり、
+// そこで黙って作ると、誤ったパスへの書き込みを隠す。
 func Hold(dir string, at time.Time) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
 	return writeAtomic(filepath.Join(dir, HeldFile), []byte(at.Format(time.RFC3339)+"\n"))
 }
 

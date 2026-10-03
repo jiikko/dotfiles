@@ -85,8 +85,11 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 		return 0
 	}
 	if *stopAll {
+		// 印を置けなくても止める処理は続け (止めたい人が止められなくならないように)、最後に rc 1 で知らせる (issue 638)
+		holdFailed := false
 		if !*fromScreen { // 人が止めた: 印を置く (画面の keeper が起こし直さない。issue 459)。止める前に置く (止め終えた直後の keeper に先を越されない)
 			if err := store.Hold(dir, time.Now()); err != nil {
+				holdFailed = true
 				_, _ = fmt.Fprintln(stderr, "pro-con dispatcher --stop: 止めた印を置けない (開いている画面が dispatcher を起こし直しうる):", err)
 			} else {
 				_, _ = fmt.Fprintln(stdout, "止めた印を置いた: 開いている画面は dispatcher を起こさない (画面の c か、手で pro-con dispatcher を起動すると外れる)")
@@ -108,6 +111,10 @@ func runDispatcher(args []string, dir, projects string, repos map[string]string,
 		defer signal.Stop(sigs)
 		if err := stopDispatcher(ctx, dir, projects, repos, pm.Repo, e2e, stdout); err != nil {
 			_, _ = fmt.Fprintln(stderr, "pro-con dispatcher --stop:", err)
+			return 1
+		}
+		if holdFailed {
+			_, _ = fmt.Fprintln(stderr, "pro-con dispatcher --stop: 止めたが、止めた印は置けていない (開いている画面が起こし直しうる)")
 			return 1
 		}
 		return 0
