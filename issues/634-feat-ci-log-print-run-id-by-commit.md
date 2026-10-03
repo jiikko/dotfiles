@@ -37,18 +37,28 @@ CI の結果を待つたびに、「待つ対象の run の ID」を手で組み
 
 - `ci-log -i <workflow の名前> [<commit>]` (仮。名前は実装時に決める) を足す。
   commit の既定は HEAD。`gh run list --commit <sha> --workflow <名前>` で引き、**返す前に headSha を照合する**
-  (一覧の並びに頼らない。上の古い run の取り違えは、headSha を照合していれば起きない)
+  (一覧の並びに頼らない。古い run が先頭に来た原因は分かっていないが、headSha を照合していれば原因を問わず取り違えない)
+  - 🚨 **`--commit` は 40 桁の完全な SHA でしか一致しない**。短縮 SHA を渡すと、エラーにならず空の一覧が返る
+    (2026-10-03 に実測: `gh run list -c <8 桁> -w Tests` は 0 件、同じ commit の完全な SHA では 1 件)。
+    受け取った commit は `git rev-parse` で完全な SHA に展開してから渡す。そうしないと「まだ起動していない」と誤診して待ち続ける
+  - 照合は `--jq` の中ではなく bash 側に置く。今の偽 gh (`tests/bin/test_ci_log.sh`) は `--jq` を解釈せず、
+    絞り込み後の行を環境変数 (`GH_FAILED_ROWS` / `GH_RECENT_ROWS`) でそのまま返し、分岐は `--limit 40` / `--limit 60` の文字列で行う。
+    照合を `--jq` に埋めると fake は照合を素通りし、照合を外す変異でも緑になる。`--commit` の経路には、`--json` の生の JSON を返す分岐を fake に足す
+  - `--branch` は付けない (`-c` だけで絞れる。併用したときの挙動は未実測)
 - 該当する run が無いときは、rc≠0 で「まだ起動していない / paths filter で起動しない」を区別できるように出す
-  (paths filter で起動しない workflow を待ち続けないように)。同じ commit に複数の run がある (re-run) ときは最新の attempt を返す
+  (paths filter で起動しない workflow を待ち続けないように)。同じ commit に複数の run がある
+  (re-run の attempt / push と workflow_dispatch が両方起動) ときの返り方は未実測。実装の前に測って、どれを返すかを決める
 - cancel を追う待ちは、このオプションを使えば `gh run watch` と組み合わせて数行で書ける。待ちのループ自体を ci-log に入れるかは、
   実装時に決める (入れるなら上限時間と「判定不能」の出力を持たせる)
-- `--commit` が無いという古いコメントは、実装の前に gh の版を確かめて直す。今の headSha の局所フィルタ (`--limit 40` / `--limit 60`) を
+- `--commit` が無いという古いコメント (`bin/ci-log` の失敗 run を集める箇所) は、実装の前に gh の版を確かめて直す。今の headSha の局所フィルタ (`--limit 40` / `--limit 60`) を
   `--commit` に寄せられるかも見る (件数の上限から run が漏れる形が消える)
+  (`--commit` と `--limit` の関係、つまり server 側で絞ってから件数を切るのかは未実測)
 - 入口の更新: `.claude/rules/use-ci-log-for-ci-inspection.md` の主なオプションと、ci-log の usage コメント
 
 ## 受け入れ条件
 
 - [ ] commit と workflow を渡すと、その commit の run の ID だけを返す (headSha を照合している)
+- [ ] 短縮 SHA を渡しても完全な SHA に展開して引く
 - [ ] 該当が無い / gh が失敗したときに rc≠0 で区別できる
 - [ ] `tests/bin/test_ci_log.sh` に、古い run が一覧の先頭に来る fake を置いても正しい ID を返すケースがある
 - [ ] rule と usage に載っている
@@ -62,3 +72,9 @@ CI の結果を待つたびに、「待つ対象の run の ID」を手で組み
 ## 進捗
 
 - 2026-10-03: 起票
+- 2026-10-03: 反証レビュー (sonnet 1 体、読み取りのみ) を通した。事実の記述 (run 33894864496 の素性・Tests の workflow が 1 つ・
+  gh 2.101.0 の `--commit`・ci-log のコメントと `--limit`・fake の作り) は反証されなかった。重複する issue は無かった (610 は別件)。
+  指摘 2 件を反映した: 短縮 SHA で `--commit` が黙って空になる (自分でも再現) / 照合を `--jq` に置くと今の fake では検査できない。
+  未実測の点 (re-run・workflow_dispatch の複数 run / `--branch` との併用 / `--commit` と `--limit`) は方針に未実測と書いた。
+  古い run が先頭に来た原因の候補は、裏の取れるものが無かった。
+  起票の commit の message は「反映済み」と書いたが、編集の失敗で反映されていなかった。反映はこの後の commit で入れた
