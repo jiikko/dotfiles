@@ -1,0 +1,49 @@
+# 636 (feat): restartable — 落ちたアプリを待って再ビルド・所要時間の表示・message の日本語化
+
+起票日: 2026-10-03
+
+## 概要
+
+ユーザーの依頼 (「restartable で改善できることある？」→「修正お願いします」) で 4 件をまとめて入れた。
+
+1. 子が rc≠0 (シグナルを含む) で自分から終わったら、TTY の UI では `crashed` で待ち、R / `restartable restart` で再ビルド、Q で終了 (rc 0)。
+   rc 0 の終了は今までどおり runner も終える ([586](586-feat-restartable-foreground-restart-runner.md) の R7: 人の Cmd+Q)。
+   UI の無い起動は待たずに終え、子の rc を runner の rc にする (今までは常に 0)
+2. 起動・再起動の板が成功で閉じたら段ごとの所要時間を 1 行出す (`internal/runner/transition_timing.go`)
+3. 画面に出る英語の message 3 つを日本語に (control の `Reason` は機械が読むので据え置き)
+4. `CopyFrom` / `startProcess` の `headless` 引数を削除 ([601](601-research-restartable-audit-2026-10-01.md) の残り。全呼び出しで `sink.headless` と同じ値だった)
+
+`actor.go` の分割はユーザーから許可が出たが見送った (ファイル分割では複雑性が下がらない。601 で責務は分かれていると判定済み)。
+分けるなら ready の確認 (`ready*` の欄 13 個と約 250 行) を自分の状態を持つ型に切り出す形で、状態遷移に触る別のリファクタとして扱う。
+
+## 進捗
+
+- [x] 実装 (commit: 「落ちたアプリを待って再ビルドできるようにし、所要時間を出す」)
+- [x] 敵対的レビュー 1 周目 (opus 2 本: 壊す / 素通りと回帰) → 採用 4 件 (commit: 「crashed からの再ビルドで落ちたアプリの残りを片付ける」)
+- [x] 2 周目 (opus 1 本、直した差分) → P1 なし。採用 3 件 (commit: 「片付けの対象・待ち・要求の積み方を詰める」)
+- [x] 2 周目で足した「KILL の後にグループが消えるまで待つ」は外す変異が緑だったので外した (commit: 「KILL の後にグループが消えるのを待つ処理を外す」)
+- [x] 変異検証: 14 本 red (下記)。`go test -race` rc=0、`make lint` 0 issues
+
+## 結果
+
+変異で red を確認したもの: 待つ判定を外す / headless でも待つ / 子の rc を 0 に戻す / actor が rc を渡さない / control restart を crashed で断る /
+R を crashed で受けない / 前の結果を消さない / 所要時間を成功以外でも出す / 片付けを外す / 起動時の計測開始を外す / crashed からの板を「起動」のまま /
+KILL の段を外す / 片付け中の restart を次のビルドに積む。
+
+## 採らなかった指摘 (再提起するなら実測を添える)
+
+- **stop-cmd の失敗と子の rc≠0 での終了が重なると rc 0 で終わる** (`model.go` の `StopCommandFailEvent` の `ChildExited`)。停止を頼んでいる最中の終了で、
+  子の rc が停止の結果か自滅かを区別できない。既存の `TestStopCommandFailureAfterChildExitExitsAndFailsRestart` が rc 0 を意図して固定している
+- **build なしでも所要時間に「ビルド 0.0s」が出る**。`InitialModel` の段が build で、板も常に「ビルド」を描く (今の表示と揃っている)
+- **Esc で停止を取り消した後に再開した起動の確認が成功すると「起動しました」と出る** (`ReadyCheckResumedEvent` が Kind を startup にする。板の題も同じで、今の表示と揃っている)
+- **子の終了が未処理の隙間で R を押すと、確認なしで再ビルドする** (`handleKey` が先に終了を処理して crashed にする)。動いているアプリは無いので害が無い
+
+## 未確認リスク
+
+- **pid の再利用**: 落ちた時点でグループが残っているときだけ片付けの対象にした。孫が後から自然に消え、その番号が別のグループに再利用された後に R を押すと、
+  無関係なグループへ TERM / KILL が届く。強制終了 (`beginForceStop`) も `allProcesses` の記録へ同じ形で撃つ (既存)。pgid の同一性を確かめる手段が無い。
+  この判定は pid の再利用をテストで作れないので変異で確かめていない
+- **KILL 直後の起動**: KILL の後に後始末 (ポートの解放) が済む前に次の子が起動しうる (レビューの推論)。TERM を無視する孫で測って差が出なかったので待ちは入れていない。
+  trigger: crashed からの再起動で「address already in use」が出たら、待ちを戻して before / after を測る
+- **run が wrapper の場合**: rc 0 を人の Cmd+Q とみなす前提は、`make run` のように子の終了コードを変える wrapper では崩れうる (未確認)
+- **obaket 側**: status の `state` に `crashed` が増えた。obaket の checkout がこのマシンに無く、`state` の値を読んでいるかは確かめていない
