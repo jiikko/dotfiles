@@ -606,3 +606,46 @@ func TestConfirmOutsideTransitionFitsAtWidthsOneThroughNine(t *testing.T) {
 		t.Fatalf("width 10 should keep the confirm dialog: %q", lines)
 	}
 }
+
+// R / Q の確認ダイアログも進捗板と同じく端末の中央に置き、メッセージとステータスは最下部に残す。
+func TestConfirmDialogIsCenteredOnScreen(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		state   runner.Model
+		footers int
+	}{
+		{"quit", runner.Model{State: runner.Running, PID: 7, Confirm: runner.ConfirmQuit}, 1},
+		{"restart with message", runner.Model{State: runner.Running, PID: 7, Confirm: runner.ConfirmRestart, Message: "restart requested"}, 2},
+	} {
+		for _, height := range []int{24, 40} {
+			const width = 120
+			lines := ViewLinesAt(tc.state, width, height, 0)
+			if !strings.Contains(lines[0], "┌") {
+				t.Fatalf("%s/height %d: view must start with the dialog (logs own the rows above): %q", tc.name, height, lines)
+			}
+			panelHeight := -1
+			for index, line := range lines {
+				if strings.Contains(line, "░") {
+					panelHeight = index + 1
+				}
+			}
+			if panelHeight < 0 {
+				t.Fatalf("%s/height %d: dialog bottom not found: %q", tc.name, height, lines)
+			}
+			if screenTop, want := height-len(lines), (height-panelHeight)/2; screenTop != want {
+				t.Fatalf("%s/height %d: dialog screen top = %d, want %d", tc.name, height, screenTop, want)
+			}
+			left := termwidth.Of(strings.SplitN(lines[0], "┌", 2)[0])
+			dialogWidth := termwidth.Of(strings.TrimSpace(lines[0]))
+			if want := (width - dialogWidth) / 2; left != want || left == 0 {
+				t.Fatalf("%s/height %d: dialog left edge = %d, want %d (non-zero)", tc.name, height, left, want)
+			}
+			if lines[len(lines)-1] != StatusLine(tc.state, width) {
+				t.Fatalf("%s/height %d: final row is not the status: %q", tc.name, height, lines[len(lines)-1])
+			}
+			if tc.footers == 2 && lines[len(lines)-2] != MessageLine(tc.state.Message, width) {
+				t.Fatalf("%s/height %d: message is not just above the status: %q", tc.name, height, lines[len(lines)-2])
+			}
+		}
+	}
+}

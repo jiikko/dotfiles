@@ -81,30 +81,9 @@ func ViewLinesAt(state runner.Model, width, height, spinnerFrame int) []string {
 		if width < layout.PanelMinWidth {
 			return []string{compactTransitionLine(state, width)}
 		}
-		panel := transitionPanel(state, width, spinnerFrame)
-		status := StatusLine(state, width)
-		panelHeight := len(panel)
-		gap := 0
-		if height > panelHeight+3 {
-			screenTop := max((height-panelHeight)/2, 0)
-			gap = max(height-screenTop-panelHeight-1, 0)
-		}
-		lines := make([]string, 0, panelHeight+gap+1)
-		lines = append(lines, panel...)
-		for range gap {
-			lines = append(lines, "")
-		}
-		lines = append(lines, status)
-		return lines
+		return centeredPanel(transitionPanel(state, width, spinnerFrame), width, height, StatusLine(state, width))
 	}
-	lines := make([]string, 0, 8)
-	if prompt := confirmPrompt(state.Confirm); prompt != "" {
-		if width < layout.PanelMinWidth {
-			lines = append(lines, compactConfirmLine(state.Confirm, width))
-		} else {
-			lines = append(lines, confirm.Dialog("", []string{prompt}, confirm.HintYesNo, width, false)...)
-		}
-	}
+	footer := make([]string, 0, 2)
 	message := state.Message
 	switch state.Transition.Result {
 	case runner.TransitionBuildFailed:
@@ -113,10 +92,42 @@ func ViewLinesAt(state runner.Model, width, height, spinnerFrame int) []string {
 		message = "起動を確認できませんでした"
 	}
 	if message := MessageLine(message, width); message != "" {
-		lines = append(lines, message)
+		footer = append(footer, message)
 	}
-	lines = append(lines, StatusLine(state, width))
-	return lines
+	footer = append(footer, StatusLine(state, width))
+	if prompt := confirmPrompt(state.Confirm); prompt != "" {
+		if width < layout.PanelMinWidth {
+			return append([]string{compactConfirmLine(state.Confirm, width)}, footer...)
+		}
+		return centeredPanel(confirm.Dialog("", []string{prompt}, confirm.HintYesNo, width, false), width, height, footer...)
+	}
+	return footer
+}
+
+// centeredPanel は板を端末の中央に置き、footer (最下行のステータスなど) をその下の最下部に付ける。
+// inline 表示なので板より上の行は返さない (そこはログが流れる場所)。板の下に空行を挟んで縦の位置を中央へ寄せ、
+// 端末が低くて入らないときは footer の直上に寄せる。
+func centeredPanel(box []string, width, height int, footer ...string) []string {
+	boxWidth := 0
+	for _, line := range box {
+		boxWidth = max(boxWidth, termwidth.Of(line))
+	}
+	indent := strings.Repeat(" ", max((width-boxWidth)/2, 0))
+	panelHeight := len(box)
+	gap := 0
+	if height > panelHeight+len(footer)+2 {
+		screenTop := max((height-panelHeight)/2, 0)
+		gap = max(height-screenTop-panelHeight-len(footer), 0)
+	}
+	lines := make([]string, 0, panelHeight+gap+len(footer))
+	for _, line := range box {
+		line = indent + line
+		lines = append(lines, line+strings.Repeat(" ", max(width-termwidth.Of(line), 0)))
+	}
+	for range gap {
+		lines = append(lines, "")
+	}
+	return append(lines, footer...)
 }
 
 func compactTransitionLine(state runner.Model, width int) string {
@@ -189,18 +200,7 @@ func transitionPanel(state runner.Model, width, frame int) []string {
 	} else {
 		rows = append(rows, "", transitionHint(state))
 	}
-	box := confirm.Box("─ "+title+" ", rows, width, false)
-	boxWidth := 0
-	for _, line := range box {
-		boxWidth = max(boxWidth, termwidth.Of(line))
-	}
-	left := max((width-boxWidth)/2, 0)
-	indent := strings.Repeat(" ", left)
-	for index := range box {
-		line := indent + box[index]
-		box[index] = line + strings.Repeat(" ", max(width-termwidth.Of(line), 0))
-	}
-	return box
+	return confirm.Box("─ "+title+" ", rows, width, false)
 }
 
 func transitionSteps(transition runner.Transition) string {
