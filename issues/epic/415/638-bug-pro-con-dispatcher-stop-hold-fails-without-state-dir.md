@@ -1,5 +1,7 @@
 # 638 (bug): pro-con dispatcher --stop が、状態の置き場が無いと止めた印を置けず、それでも rc 0 で返る
 
+> 🚨 **担当中: restartable の作業をしていたセッション**（2026-10-04〜）
+
 起票日: 2026-10-04
 
 親: [415](415-design-claude-pm-worker-orchestration.md)
