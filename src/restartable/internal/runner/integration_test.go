@@ -126,7 +126,7 @@ func TestRunnerHelper(t *testing.T) {
 		ReadyCleanupGrace:   envDuration("RESTARTABLE_TEST_READY_CLEANUP_GRACE", 30*time.Millisecond),
 		IDEnv:               os.Getenv("RESTARTABLE_TEST_ID_ENV"),
 		ControlPath:         os.Getenv("RESTARTABLE_TEST_SOCKET"),
-		Stdin:               stdin, Stdout: os.Stdout, Stderr: os.Stderr, Headless: true, StdinIsTerminal: stdinIsTerminal,
+		Stdin:               stdin, Stdout: os.Stdout, Stderr: os.Stderr, Headless: os.Getenv("RESTARTABLE_TEST_INTERACTIVE") != "1", StdinIsTerminal: stdinIsTerminal,
 		Presenter: presenter,
 	})
 	if err != nil {
@@ -788,7 +788,7 @@ func TestStopCommandFailureAfterChildExitExitsAndFailsRestart(t *testing.T) {
 		t.Fatalf("terminate fake application: %v", err)
 	}
 	waitPresenterSnapshot(t, statePath, "child exit observed while stop-cmd is pending", func(got presenterSnapshot) bool {
-		return got.Model.State == Stopping && got.Model.Message == "child exited; waiting for stop result"
+		return got.Model.State == Stopping && got.Model.Message == "アプリは終了しました。停止コマンドの結果を待っています"
 	})
 	gate, err := os.OpenFile(fifo, os.O_WRONLY, 0600)
 	if err != nil {
@@ -819,7 +819,7 @@ func TestStopCommandFailureAfterChildExitExitsAndFailsRestart(t *testing.T) {
 }
 
 func TestFinishRefusesWhileChildAlive(t *testing.T) {
-	proc, err := startProcess([]string{"/bin/sleep", "30"}, false, os.Environ(), strings.NewReader(""), newLogSink(io.Discard, true), true, false)
+	proc, err := startProcess([]string{"/bin/sleep", "30"}, false, os.Environ(), strings.NewReader(""), newLogSink(io.Discard, true), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -849,7 +849,7 @@ func TestFinishRefusesWhileChildAlive(t *testing.T) {
 }
 
 func TestDrainOutputsNeverKillsLiveProcessLeader(t *testing.T) {
-	proc, err := startProcess([]string{"/bin/sleep", "30"}, false, os.Environ(), strings.NewReader(""), newLogSink(io.Discard, true), true, false)
+	proc, err := startProcess([]string{"/bin/sleep", "30"}, false, os.Environ(), strings.NewReader(""), newLogSink(io.Discard, true), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1164,7 +1164,7 @@ func TestDrainOutputsDoesNotKillNaturalExitDescendantHoldingPipe(t *testing.T) {
 		t.Fatal(err)
 	}
 	command := fmt.Sprintf("(read value < %s; echo alive > %s; exec /bin/sleep 30) & echo $! > %s; exit 0", shellQuote(gate), shellQuote(marker), shellQuote(pidFile))
-	proc, err := startProcess([]string{"/bin/sh", "-c", command}, false, os.Environ(), strings.NewReader(""), newLogSink(io.Discard, true), true, false)
+	proc, err := startProcess([]string{"/bin/sh", "-c", command}, false, os.Environ(), strings.NewReader(""), newLogSink(io.Discard, true), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1271,7 +1271,7 @@ func TestLargeTTYLogRetainsFirstAndLastAndReportsDrops(t *testing.T) {
 		fmt.Fprintf(&input, "middle-%d\n", n)
 	}
 	input.WriteString("tail\n")
-	sink.CopyFrom(strings.NewReader(input.String()), false)
+	sink.CopyFrom(strings.NewReader(input.String()))
 	sink.Flush()
 	lines := strings.Split(strings.TrimSuffix(output.String(), "\n"), "\n")
 	if lines[0] != "head" || lines[len(lines)-1] != "tail" {
@@ -1392,7 +1392,7 @@ func TestStartBuildRefusesWhenBuildAlreadyRunning(t *testing.T) {
 }
 
 func TestProcessDoneDeliversSameResultToMultipleWaiters(t *testing.T) {
-	proc, err := startProcess([]string{"/bin/sh", "-c", "exit 23"}, false, os.Environ(), strings.NewReader(""), newLogSink(io.Discard, true), true, false)
+	proc, err := startProcess([]string{"/bin/sh", "-c", "exit 23"}, false, os.Environ(), strings.NewReader(""), newLogSink(io.Discard, true), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1817,14 +1817,14 @@ func TestReadyCleanupQueuesCancellationWhilePreviousCleanupRuns(t *testing.T) {
 	oldCommand := fmt.Sprintf(`( trap 'printf term > %s; read release < %s; exit 0' TERM; printf ready > %s; while :; do :; done ) & while [ ! -e %s ]; do :; done; exit 0`,
 		shellQuote(cleanupStarted), shellQuote(cleanupRelease), shellQuote(descendantStarted), shellQuote(descendantStarted))
 	sink := newLogSink(io.Discard, true)
-	oldProc, err := startProcess([]string{oldCommand}, true, os.Environ(), strings.NewReader(""), sink, true, false)
+	oldProc, err := startProcess([]string{oldCommand}, true, os.Environ(), strings.NewReader(""), sink, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result := oldProc.wait(); result.Code != 0 {
 		t.Fatalf("old ready command exit = %d, want 0", result.Code)
 	}
-	newProc, err := startProcess([]string{"/bin/sleep", "30"}, false, os.Environ(), strings.NewReader(""), sink, true, false)
+	newProc, err := startProcess([]string{"/bin/sleep", "30"}, false, os.Environ(), strings.NewReader(""), sink, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2218,5 +2218,87 @@ func TestForwardKeysExitsWhenEventAndKeyQueuesAreFull(t *testing.T) {
 	case <-forwarded:
 	case <-time.After(time.Second):
 		t.Fatal("key forwarder did not stop after actor shutdown")
+	}
+}
+
+// startInteractiveRunner はキーを受ける (UI のある) runner を起動する。子が rc≠0 で落ちたときに待つのはこの形だけ。
+func startInteractiveRunner(t *testing.T, options map[string]string) (r *testRunner, keyPath string) {
+	t.Helper()
+	keyPath = filepath.Join(shortTempDir(t, "rcr-"), "keys.sock")
+	options["RESTARTABLE_TEST_INTERACTIVE"] = "1"
+	options["RESTARTABLE_TEST_KEY_SOCKET"] = keyPath
+	options["RESTARTABLE_TEST_PRESENTER_STATE"] = filepath.Join(t.TempDir(), "presenter.json")
+	return startTestRunner(t, options), keyPath
+}
+
+func TestInteractiveChildCrashWaitsAndControlRestartRebuilds(t *testing.T) {
+	launches := filepath.Join(t.TempDir(), "launches")
+	// 1 回目の起動は rc 3 で落ち、2 回目は生き続ける
+	run := fmt.Sprintf(`echo x >> %s; [ "$(wc -l < %s)" -ge 2 ] && exec /bin/sleep 30; exit 3`, shellQuote(launches), shellQuote(launches))
+	r, _ := startInteractiveRunner(t, map[string]string{"RESTARTABLE_TEST_BUILD": "true", "RESTARTABLE_TEST_RUN": run})
+	crashed := r.waitStatus(t, string(Crashed))
+	if crashed.PID != nil || crashed.Ready {
+		t.Fatalf("crashed status = %+v, want no PID and not ready", crashed)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	response, err := control.Call(ctx, r.path, control.Restart)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !response.OK || response.Generation != 2 || response.PID == nil {
+		t.Fatalf("restart from crashed = %+v, want the second launch", response)
+	}
+	r.waitStatus(t, string(Running))
+	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+}
+
+func TestInteractiveChildCrashRestartsWithRKeyAndQuitsWithQ(t *testing.T) {
+	launches := filepath.Join(t.TempDir(), "launches")
+	run := fmt.Sprintf(`echo x >> %s; exit 5`, shellQuote(launches))
+	r, keyPath := startInteractiveRunner(t, map[string]string{"RESTARTABLE_TEST_BUILD": "true", "RESTARTABLE_TEST_RUN": run})
+	r.waitStatus(t, string(Crashed))
+	sendIntegrationKey(t, keyPath, "R")
+	waitFor(t, 3*time.Second, "R to launch again", func() bool { return strings.Count(readFile(launches), "x") >= 2 })
+	r.waitStatus(t, string(Crashed))
+	sendIntegrationKey(t, keyPath, "Q")
+	sendIntegrationKey(t, keyPath, "y")
+	select {
+	case <-r.done:
+		if r.waitErr != nil {
+			t.Fatalf("Q after crash: runner exit = %v, want rc 0", r.waitErr)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatalf("runner did not exit after Q y; stderr: %s", readFile(r.stderr))
+	}
+}
+
+// rc 0 の終了は人の Cmd+Q 等なので、UI があっても待たずに runner を終える (issue 586 の R7)。
+func TestInteractiveChildCleanExitStillEndsRunner(t *testing.T) {
+	r, _ := startInteractiveRunner(t, map[string]string{"RESTARTABLE_TEST_RUN": "exit 0"})
+	select {
+	case <-r.done:
+		if r.waitErr != nil {
+			t.Fatalf("clean child exit: runner exit = %v, want rc 0", r.waitErr)
+		}
+	case <-time.After(3 * time.Second):
+		status, _ := r.status()
+		t.Fatalf("runner kept running after the child exited with rc 0: %+v", status)
+	}
+}
+
+// UI の無い起動では待っても操作できないので、子の rc をそのまま runner の rc にして終える。
+func TestHeadlessChildCrashExitsWithChildCode(t *testing.T) {
+	r := startTestRunnerMode(t, map[string]string{"RESTARTABLE_TEST_RUN": "exit 7"}, false)
+	select {
+	case <-r.done:
+		var exit *exec.ExitError
+		if !errors.As(r.waitErr, &exit) || exit.ExitCode() != 7 {
+			t.Fatalf("headless crash: runner exit = %v, want rc 7", r.waitErr)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatalf("headless runner did not exit after the child crashed; stderr: %s", readFile(r.stderr))
 	}
 }

@@ -143,6 +143,7 @@ type actor struct {
 	childExitPending     bool
 	readyDeferredEffects []Effect
 	readyResumePending   bool
+	timer                transitionTimer
 }
 
 // Run supervises one foreground process. It returns a process-style exit code.
@@ -259,6 +260,9 @@ func (a *actor) run() (int, error) {
 	}
 	requests := a.server.Requests()
 	go forwardKeys(a.actorDone, a.presenter.Keys(), a.events)
+	if a.model.Transition.Active {
+		a.timer.begin() // 起動の板は InitialModel で開いていて、transition を通らない
+	}
 	if a.cfg.BuildCommand != "" {
 		a.handleEffects([]Effect{{Kind: StartBuildEffect}})
 	} else if err := a.startRun(); err != nil {
@@ -365,7 +369,7 @@ func (a *actor) startReadyProbe(token, generation uint64) {
 		a.finishReadyFailure(generation)
 		return
 	}
-	proc, err := startProcess([]string{a.cfg.ReadyCommand}, true, a.env(), a.cfg.Stdin, a.sink, a.cfg.Headless, a.cfg.StdinIsTerminal)
+	proc, err := startProcess([]string{a.cfg.ReadyCommand}, true, a.env(), a.cfg.Stdin, a.sink, a.cfg.StdinIsTerminal)
 	if err != nil {
 		a.scheduleReadyProbe(token, generation)
 		return
@@ -599,7 +603,7 @@ func (a *actor) startBuild() error {
 	if a.cfg.BuildCommand == "" {
 		return a.startRun()
 	}
-	proc, err := startProcess([]string{a.cfg.BuildCommand}, true, a.env(), a.cfg.Stdin, a.sink, a.cfg.Headless, a.cfg.StdinIsTerminal)
+	proc, err := startProcess([]string{a.cfg.BuildCommand}, true, a.env(), a.cfg.Stdin, a.sink, a.cfg.StdinIsTerminal)
 	if err != nil {
 		a.model.BuildQueued = false
 		a.transition(Event{Kind: BuildFailedEvent, Reason: err.Error()})
@@ -618,7 +622,7 @@ func (a *actor) startRun() error {
 	a.transition(Event{Kind: LaunchStartedEvent})
 	// startProcess は exec の成否まで待つ (作り直した実行ファイルは macOS の初回検査で待つことがある)。その間「起動」の段を見せる。
 	a.presenter.Render(a.model)
-	proc, err := startProcess(a.cfg.RunArgs, false, a.env(), a.cfg.Stdin, a.sink, a.cfg.Headless, a.cfg.StdinIsTerminal)
+	proc, err := startProcess(a.cfg.RunArgs, false, a.env(), a.cfg.Stdin, a.sink, a.cfg.StdinIsTerminal)
 	if err != nil {
 		a.report("run failed: " + err.Error())
 		a.failRequests(err.Error())
@@ -691,7 +695,7 @@ func (a *actor) handleEvent(ev actorEvent) {
 			if a.stopAccepted {
 				a.completeChildExit()
 			} else {
-				a.model.Message = "child exited; waiting for stop result"
+				a.model.Message = "アプリは終了しました。停止コマンドの結果を待っています"
 				a.presenter.Render(a.model)
 			}
 			return
@@ -818,7 +822,11 @@ func (a *actor) handleEffects(effects []Effect) {
 
 func (a *actor) transition(e Event) (Model, []Effect) {
 	var effects []Effect
+	before := a.model.Transition
 	a.model, effects = Update(a.model, e)
+	if summary := a.timer.observe(before, a.model.Transition, a.model.State); summary != "" {
+		a.model.Message = summary
+	}
 	return a.model, effects
 }
 
@@ -851,7 +859,7 @@ func (a *actor) handleControl(req *control.Request) {
 		a.queuedRequests = append(a.queuedRequests, req)
 		_, effects := a.transition(Event{Kind: ControlRestartEvent})
 		a.handleEffects(effects)
-	case BuildFailed:
+	case BuildFailed, Crashed:
 		if !req.Alive() {
 			return
 		}
@@ -934,7 +942,7 @@ func (a *actor) beginStop() {
 	}
 	if a.cfg.StopCommand != "" {
 		a.model.Message = "停止コマンド実行中 (Ctrl-C で強制終了)"
-		proc, err := startProcess([]string{a.cfg.StopCommand}, true, a.env(), a.cfg.Stdin, a.sink, a.cfg.Headless, a.cfg.StdinIsTerminal)
+		proc, err := startProcess([]string{a.cfg.StopCommand}, true, a.env(), a.cfg.Stdin, a.sink, a.cfg.StdinIsTerminal)
 		if err != nil {
 			a.transition(Event{Kind: StopCommandFailEvent, Reason: err.Error()})
 			a.report("stop-cmd failed: " + err.Error())
@@ -1144,8 +1152,13 @@ func (a *actor) completeChildExit() {
 		a.cancelReady()
 	}
 	a.readyResumePending = false
-	_, effects := a.transition(Event{Kind: ChildExitedEvent})
+	// childProcessed は子の Wait が済んだ後にだけ立つので、child.result は書き込み済み
+	code := a.child.result.Code
+	_, effects := a.transition(Event{Kind: ChildExitedEvent, ExitStatus: code, HoldOnFailure: !a.cfg.Headless})
 	a.stopAccepted = false
+	if a.model.State == Crashed {
+		a.failRequests(fmt.Sprintf("child exited (rc %d)", code))
+	}
 	if a.readyCleaningProc != nil {
 		a.childExitPending = true
 		a.readyDeferredEffects = effects
@@ -1197,7 +1210,7 @@ func (a *actor) finish(code int) {
 		a.model.Intent = IntentNone
 		a.model.StopAccepted = false
 		a.model.Confirm = ConfirmNone
-		a.model.Message = "child is still running; exit refused"
+		a.model.Message = "アプリが動いているので終了を取りやめました"
 		a.stopAccepted = false
 		a.failRequests("runner exit refused while child is alive")
 		a.presenter.Render(a.model)

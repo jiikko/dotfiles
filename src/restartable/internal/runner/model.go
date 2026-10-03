@@ -1,5 +1,7 @@
 package runner
 
+import "fmt"
+
 // State is the externally visible lifecycle state of a runner.
 type State string
 
@@ -9,6 +11,9 @@ const (
 	BuildFailed State = "build-failed"
 	Stopping    State = "stopping"
 	Exiting     State = "exiting"
+	// Crashed は子が rc≠0 (シグナルを含む) で自分から終わった後、R / restart か Q を待つ状態。
+	// rc 0 の終了は人の Cmd+Q 等なので待たずに runner も終える (issue 586 の R7)
+	Crashed State = "crashed"
 )
 
 // Confirm is deliberately orthogonal to Transition: a confirmation asks the
@@ -96,6 +101,11 @@ type Event struct {
 	ChildExited bool
 	ReadyCheck  bool
 	Generation  uint64
+	// ExitStatus は ChildExitedEvent の子の終了コード (シグナルは 128+番号)。
+	ExitStatus int
+	// HoldOnFailure は rc≠0 の終了で Crashed に留まるか。キーを受けられない (UI の無い) 起動では
+	// 待っても操作できないので false にし、子の rc で runner を終える。
+	HoldOnFailure bool
 }
 
 type EffectKind string
@@ -164,7 +174,7 @@ func Update(m Model, e Event) (Model, []Effect) {
 		}
 		if m.BuildQueued {
 			m.BuildQueued = false
-			m.Message = "restart queued during build"
+			m.Message = "ビルド中に再起動の要求があったのでビルドし直します"
 			if m.Transition.Active {
 				m.Transition.Stage = TransitionBuild
 			}
@@ -181,7 +191,7 @@ func Update(m Model, e Event) (Model, []Effect) {
 		}
 		if m.BuildQueued {
 			m.BuildQueued = false
-			m.Message = "restart queued during build"
+			m.Message = "ビルド中に再起動の要求があったのでビルドし直します"
 			if m.Transition.Active {
 				m.Transition.Stage = TransitionBuild
 			}
@@ -255,9 +265,17 @@ func Update(m Model, e Event) (Model, []Effect) {
 		if m.State == Stopping {
 			return finishStopping(m)
 		}
-		m.State = Exiting
 		m.Confirm = ConfirmNone
-		m.ExitCode = 0
+		m.Intent = IntentNone
+		m.StopAccepted = false
+		if e.ExitStatus != 0 && e.HoldOnFailure {
+			m.State = Crashed
+			m.Transition.Result = TransitionResultNone // 前の「起動を確認できませんでした」が view で message を上書きしないように
+			m.Message = fmt.Sprintf("アプリが終了しました (rc %d)。R で再ビルド / Q で終了", e.ExitStatus)
+			return m, nil
+		}
+		m.State = Exiting
+		m.ExitCode = e.ExitStatus
 		return m, []Effect{{Kind: ExitEffect}}
 	case StopStartedEvent:
 		m.State = Stopping
@@ -398,7 +416,7 @@ func updateKey(m Model, key string) (Model, []Effect) {
 		case Building:
 			m.Message = "ビルド中"
 			return m, []Effect{{Kind: MessageEffect, Reason: "ビルド中"}}
-		case BuildFailed:
+		case BuildFailed, Crashed:
 			return rebuildAfterFailure(m)
 		case Running:
 			m.Confirm = ConfirmRestart
@@ -433,7 +451,7 @@ func updateControlRestart(m Model) (Model, []Effect) {
 	case Building:
 		m.BuildQueued = true
 		return m, nil
-	case BuildFailed:
+	case BuildFailed, Crashed:
 		return rebuildAfterFailure(m)
 	case Running:
 		m.State = Stopping
@@ -451,8 +469,8 @@ func updateControlRestart(m Model) (Model, []Effect) {
 	return m, []Effect{{Kind: ControlRejectEffect, Reason: "runner unavailable"}}
 }
 
-// rebuildAfterFailure starts a new build from build-failed (R key and control
-// restart). The panel reopens only if one was shown for the failed build.
+// rebuildAfterFailure starts a new build from build-failed or crashed (R key and
+// control restart). The panel reopens only if one was shown for the failed build.
 func rebuildAfterFailure(m Model) (Model, []Effect) {
 	m.State = Building
 	m.Message = ""

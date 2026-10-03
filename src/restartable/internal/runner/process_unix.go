@@ -40,7 +40,7 @@ func (r *serializedReader) Read(data []byte) (int, error) {
 	return r.reader.Read(data)
 }
 
-func startProcess(argv []string, shell bool, env []string, stdin io.Reader, sink *logSink, headless, stdinIsTerminal bool) (*process, error) {
+func startProcess(argv []string, shell bool, env []string, stdin io.Reader, sink *logSink, stdinIsTerminal bool) (*process, error) {
 	if len(argv) == 0 {
 		return nil, errors.New("empty command")
 	}
@@ -78,7 +78,7 @@ func startProcess(argv []string, shell bool, env []string, stdin io.Reader, sink
 	go func() {
 		defer close(p.outputEnd)
 		defer p.closeOutput()
-		sink.CopyFrom(p.reader, headless)
+		sink.CopyFrom(p.reader)
 	}()
 	go func() {
 		err := cmd.Wait()

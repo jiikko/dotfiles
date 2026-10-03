@@ -15,7 +15,7 @@ import (
 
 func startTrackedTestProcess(t *testing.T, script string) *process {
 	t.Helper()
-	proc, err := startProcess([]string{script}, true, nil, strings.NewReader(""), newLogSink(io.Discard, true), true, false)
+	proc, err := startProcess([]string{script}, true, nil, strings.NewReader(""), newLogSink(io.Discard, true), false)
 	if err != nil {
 		t.Fatal(err)
 	}

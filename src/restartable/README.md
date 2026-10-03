@@ -20,6 +20,8 @@ restartable --build 'go build -o ./bin/server ./cmd/server' -- ./bin/server --fo
 `--build` と `--stop-cmd` は `/bin/sh -c` で実行します。`--` の後の run コマンドは shell を介さず argv のまま起動します。
 ビルドが失敗した場合は `build-failed` の表示で待ち、古い成果物は起動しません。`R` で再ビルドできます。
 
+アプリが自分で終わったときは、終了コードで扱いを分けます。rc 0 (人の Cmd+Q 等) なら runner も終了します。rc≠0 やシグナルで落ちた場合、TTY の UI では `crashed` の状態で「アプリが終了しました (rc N)」を表示して待ち、`R` / `restartable restart` で再ビルド、`Q` で終了できます。UI の無い起動 (stdin / stdout が端末でない) では待たずに終了し、子の終了コードを runner の終了コードにします。
+
 `--ready-cmd '<command>'` を指定すると、run コマンドを起動した後に確認コマンドを `/bin/sh -c` で実行します。rc 0 になるまで 0.5 秒間隔で繰り返し、1 回の実行は 5 秒で打ち切ります。既定の全体上限は `--ready-timeout 120s` です。上限までに確認できなくてもアプリは終了させず、`status` の `ready` は `false` のままになります。`--id-env NAME` を併用すると、確認コマンドにも run / build / stop command と同じインスタンス ID を渡します。
 
 obaket では health の `devLoop` が現在の `$OBAKET_DEV_LOOP` と一致するまで起動確認を続けられます (health の URL は環境に合わせてください)。
@@ -41,6 +43,7 @@ TTY の最下行にはキーと状態が表示され、子の stdout / stderr �
 
 進捗板の段ごとにキー操作が異なります。すべての進捗段で `R` を受け付けず「処理中」と表示します。ビルド段と起動の確認段では `Q` で終了確認を表示します。終了の待ち段では `R` / `Q` を受け付けず「処理中」と表示します。`--stop-cmd` 成功後の終了待ちでは `Esc` で取り消せます。Ctrl-C はいつでも強制終了です。
 `--ready-cmd` を省略した場合は子の起動直後に `ready: true` になります。
+起動・再起動の板が成功で閉じると、最下行の上に段ごとの所要時間を 1 行出します (例: `再起動しました (計 9.8s: 終了 0.4s / ビルド 8.2s / 起動 0.1s / 起動の確認 1.1s)`)。
 
 アプリ固有の quit API を使う場合は `--stop-cmd` を指定します。
 
@@ -55,7 +58,7 @@ restartable --build 'make build' --stop-cmd 'curl -fsS -X POST http://127.0.0.1:
 
 | キー | 動作 |
 | --- | --- |
-| `R` | 通常の running 中は再起動確認を表示。`y` / Enter で停止してビルドし直す。`build-failed` 中は確認なしで再ビルド。進捗板のすべての段では無視して「処理中」と表示。 |
+| `R` | 通常の running 中は再起動確認を表示。`y` / Enter で停止してビルドし直す。`build-failed` / `crashed` 中は確認なしで再ビルド。進捗板のすべての段では無視して「処理中」と表示。 |
 | `Q` | 通常の running 中は終了確認を表示。ビルド段と起動の確認段では終了確認を表示し、`y` / Enter で終了。進捗板の終了の待ち段と起動段では無視して「処理中」と表示。 |
 | `y` / `Y` / Enter | 確認中の操作を実行。 |
 | `n` / `N` / Esc | 確認をキャンセル。 |

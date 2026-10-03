@@ -35,7 +35,7 @@ func copyChunks(t *testing.T, chunks, waitFor []string) string {
 	sink.terminalOutput = true
 	r, w := io.Pipe()
 	done := make(chan struct{})
-	go func() { sink.CopyFrom(r, true); close(done) }()
+	go func() { sink.CopyFrom(r); close(done) }()
 	for i, c := range chunks {
 		if _, err := w.Write([]byte(c)); err != nil { // io.Pipe の Write は読み手が読み終わるまで戻らない = 1 回の読み取り
 			t.Fatal(err)

@@ -164,13 +164,12 @@ func newLogSink(w io.Writer, headless bool, printLines ...func(string)) *logSink
 // Only output bound for a non-terminal (pipe / file) without the UI is copied
 // byte for byte. Anything that reaches a terminal is split into lines and
 // sanitized the same way: buffered for the TTY UI, written at once otherwise.
-func (s *logSink) CopyFrom(r io.Reader, headless bool) {
-	headless = headless || s.headless
-	if headless && !s.terminalOutput {
+func (s *logSink) CopyFrom(r io.Reader) {
+	if s.headless && !s.terminalOutput {
 		_, _ = io.Copy(s.output, r)
 		return
 	}
-	if headless {
+	if s.headless {
 		s.copyToTerminal(r)
 		return
 	}

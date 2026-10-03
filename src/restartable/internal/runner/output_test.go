@@ -88,7 +88,7 @@ func TestHeadlessOutputFailureWarnsOnceAndKeepsReading(t *testing.T) {
 	sink := newLogSink(writer, true)
 	var stderr strings.Builder
 	sink.onOutputFailure = func() { reportOutputFailure(&stderr) }
-	sink.CopyFrom(reader, true)
+	sink.CopyFrom(reader)
 	if reader.left != 0 || reader.reads != 4 {
 		t.Fatalf("copy stopped after output error: bytes left=%d read calls=%d", reader.left, reader.reads)
 	}
@@ -99,7 +99,7 @@ func TestHeadlessOutputFailureWarnsOnceAndKeepsReading(t *testing.T) {
 		t.Fatalf("broken-output notice = %q, want %q", got, want)
 	}
 	extra := &countedChunkReader{left: 512}
-	sink.CopyFrom(extra, true)
+	sink.CopyFrom(extra)
 	if extra.left != 0 || extra.reads != 1 || writer.writes != 1 {
 		t.Fatalf("later output was not drained and discarded: left=%d reads=%d writes=%d", extra.left, extra.reads, writer.writes)
 	}
@@ -108,7 +108,7 @@ func TestHeadlessOutputFailureWarnsOnceAndKeepsReading(t *testing.T) {
 func TestTTYOutputPreservesEmptyLines(t *testing.T) {
 	var output strings.Builder
 	sink := newLogSink(&output, false)
-	sink.CopyFrom(strings.NewReader("a\n\nb"), false)
+	sink.CopyFrom(strings.NewReader("a\n\nb"))
 	sink.Flush()
 	if got, want := output.String(), "a\n\nb\n"; got != want {
 		t.Fatalf("TTY output = %q, want %q", got, want)
@@ -159,7 +159,7 @@ func TestTTYOutputIgnoresCarriageReturnWithoutCurrentText(t *testing.T) {
 	} {
 		var output strings.Builder
 		sink := newLogSink(&output, false)
-		sink.CopyFrom(strings.NewReader(test.input), false)
+		sink.CopyFrom(strings.NewReader(test.input))
 		sink.Flush()
 		if got := output.String(); got != test.want {
 			t.Errorf("TTY output for %q = %q, want %q", test.input, got, test.want)

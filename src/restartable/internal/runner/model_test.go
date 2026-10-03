@@ -391,3 +391,53 @@ func TestUpdateEffectsAreStable(t *testing.T) {
 }
 
 func hasEffect(effects []Effect, kind EffectKind) bool { return containsEffect(effects, kind) }
+
+func TestChildExitHoldsOnFailureOnlyWithKeys(t *testing.T) {
+	running := Model{State: Running, PID: 9, Generation: 2, Transition: Transition{Kind: TransitionStartup, Result: TransitionReadinessUnconfirmed}}
+	cases := []struct {
+		name      string
+		event     Event
+		wantState State
+		wantCode  int
+		wantExit  bool
+	}{
+		{"crash with keys", Event{Kind: ChildExitedEvent, ExitStatus: 3, HoldOnFailure: true}, Crashed, 0, false},
+		{"signal with keys", Event{Kind: ChildExitedEvent, ExitStatus: 137, HoldOnFailure: true}, Crashed, 0, false},
+		{"clean exit with keys (Cmd+Q)", Event{Kind: ChildExitedEvent, ExitStatus: 0, HoldOnFailure: true}, Exiting, 0, true},
+		{"crash without keys", Event{Kind: ChildExitedEvent, ExitStatus: 3}, Exiting, 3, true},
+	}
+	for _, tc := range cases {
+		m, effects := Update(running, tc.event)
+		if m.State != tc.wantState || m.PID != 0 || m.Ready || hasEffect(effects, ExitEffect) != tc.wantExit {
+			t.Fatalf("%s: model=%+v effects=%+v", tc.name, m, effects)
+		}
+		if tc.wantExit && m.ExitCode != tc.wantCode {
+			t.Fatalf("%s: exit code = %d, want %d", tc.name, m.ExitCode, tc.wantCode)
+		}
+		if tc.wantState == Crashed {
+			if m.Message == "" || m.Transition.Result != TransitionResultNone {
+				t.Fatalf("%s: crash must be shown and not hidden behind an earlier result: %+v", tc.name, m)
+			}
+		}
+	}
+}
+
+func TestCrashedAcceptsRestartAndQuit(t *testing.T) {
+	crashed := Model{State: Crashed, Generation: 2, Message: "アプリが終了しました (rc 3)。R で再ビルド / Q で終了", Transition: Transition{Kind: TransitionRestart}}
+	m, effects := apply(crashed, KeyEvent, "R")
+	if m.State != Building || m.Message != "" || !m.Transition.Active || m.Transition.Stage != TransitionBuild || !hasEffect(effects, StartBuildEffect) {
+		t.Fatalf("R after crash: model=%+v effects=%+v", m, effects)
+	}
+	m, effects = Update(crashed, Event{Kind: ControlRestartEvent})
+	if m.State != Building || !hasEffect(effects, StartBuildEffect) {
+		t.Fatalf("control restart after crash: model=%+v effects=%+v", m, effects)
+	}
+	m, _ = apply(crashed, KeyEvent, "Q")
+	if m.Confirm != ConfirmQuit {
+		t.Fatalf("Q after crash did not confirm: %+v", m)
+	}
+	m, effects = apply(m, KeyEvent, "y")
+	if m.State != Exiting || m.ExitCode != 0 || !hasEffect(effects, ExitEffect) || hasEffect(effects, BeginStopEffect) {
+		t.Fatalf("quit after crash: model=%+v effects=%+v", m, effects)
+	}
+}
