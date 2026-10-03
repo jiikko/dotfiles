@@ -5,7 +5,7 @@
 #   - 見た目: 段 (bucket) ごとの bg / fg、busy・未スタンプ・負の経過・zoom・claude アイコンの組み合わせが
 #     docs/tmux-window-fade.md の表どおりに展開される
 #   - コスト: 1 セルの展開で @busy (pane ごとに前面コマンドを引く P ループ) を **1 回だけ**評価する。
-#     @fade-bucket も鍵の計算の 1 回だけ (issue 501 / 549。ランプ色は鍵から組むので計算し直さない)。status は毎秒と set-option のたびに
+#     @fade-bucket も鍵の計算の 1 回だけ (issue 547 / 549。ランプ色は鍵から組むので計算し直さない)。status は毎秒と set-option のたびに
 #     全 window ぶん展開されるので、式の重複はそのまま再描画 1 回の重さになる。
 #     時間ではなく「何回展開したか」を `display -v` の展開ログで数える (壁時計に依存しない)
 #
