@@ -18,7 +18,7 @@ restartable --build 'go build -o ./bin/server ./cmd/server' -- ./bin/server --fo
 ```
 
 `--build` と `--stop-cmd` は `/bin/sh -c` で実行します。`--` の後の run コマンドは shell を介さず argv のまま起動します。
-ビルドが失敗した場合は `build-failed` の表示で待ち、古い成果物は起動しません。`R` で再ビルドできます。UI の無い起動 (stdin / stdout が端末でない) では待たずに rc 1 で終了します。
+ビルドが失敗した場合は `build-failed` の表示で待ち、古い成果物は起動しません。`R` で再ビルドできます。UI の無い起動 (stdin / stdout が端末でない) では待たずに、失敗したビルドが残したプロセスを強制終了してから rc 1 で終了します。
 
 アプリが自分で終わったときは、終了コードで扱いを分けます。rc 0 (人の Cmd+Q 等) なら runner も終了します。rc≠0 やシグナルで落ちた場合、TTY の UI では `crashed` の状態で「アプリが終了しました (rc N)」を表示して待ち、`R` / `restartable restart` で再ビルド、`Q` → `y` で終了 (rc 0) できます。再ビルドの前に、落ちたアプリのプロセスグループの残り (子が起こしたプロセス) へ SIGTERM、`--term-grace` 後に SIGKILL を送ります。`Q` で終えるときは残りに触りません。UI の無い起動 (stdin / stdout が端末でない) では待たずに終了し、子の終了コードを runner の終了コードにします (子がシグナルで終わると 128+番号になり、runner 自身がシグナルで終わったときの 130 / 143 などや、runner の失敗の 1 / 2 と区別できません)。
 
