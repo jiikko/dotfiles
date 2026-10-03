@@ -2349,7 +2349,7 @@ func crashedTERMIgnoringGrandchildRun(dir string) (run, launches string) {
 	return run, launches
 }
 
-// TERM を無視する孫も、KILL の後にグループが消えてから次を起動する。
+// TERM を無視する孫も、KILL を送ってから次を起動する。
 func TestCrashedRebuildKillsTERMIgnoringLeftoverBeforeNextLaunch(t *testing.T) {
 	run, launches := crashedTERMIgnoringGrandchildRun(t.TempDir())
 	r, _ := startInteractiveRunner(t, map[string]string{"RESTARTABLE_TEST_RUN": run, "RESTARTABLE_TEST_TERM_GRACE": "200ms"})
@@ -2401,5 +2401,90 @@ func TestRestartDuringCrashCleanupDoesNotAddBuild(t *testing.T) {
 	}
 	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
 		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+}
+
+// 起動の確認の段で子が落ちたら、所要時間の行で「アプリが終了しました」を上書きしない。
+func TestCrashDuringReadyKeepsCrashMessage(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "presenter.json")
+	keyPath := filepath.Join(shortTempDir(t, "rcm-"), "keys.sock")
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_RUN": "sleep 0.4; exit 4", "RESTARTABLE_TEST_READY": "false", "RESTARTABLE_TEST_READY_INTERVAL": "50ms",
+		"RESTARTABLE_TEST_INTERACTIVE": "1", "RESTARTABLE_TEST_KEY_SOCKET": keyPath, "RESTARTABLE_TEST_PRESENTER_STATE": state,
+	})
+	got := waitPresenterSnapshot(t, state, "crashed to be rendered", func(got presenterSnapshot) bool { return got.Model.State == Crashed })
+	if !strings.HasPrefix(got.Model.Message, "アプリが終了しました (rc 4)") {
+		t.Fatalf("crashed message = %q, want the crash notice", got.Model.Message)
+	}
+	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+}
+
+// processAlive は pid が生きていて zombie でもないか (kill(pid, 0) は zombie にも成功する)。
+func processAlive(pid int) bool {
+	out, err := exec.Command("/bin/ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
+	stat := strings.TrimSpace(string(out))
+	return err == nil && stat != "" && !strings.HasPrefix(stat, "Z")
+}
+
+func quitFromCrashed(t *testing.T, keyPath, statePath string) {
+	t.Helper()
+	sendIntegrationKey(t, keyPath, "Q")
+	waitPresenterSnapshot(t, statePath, "quit confirmation", func(got presenterSnapshot) bool { return got.Model.Confirm == ConfirmQuit })
+	sendIntegrationKey(t, keyPath, "y")
+}
+
+// crashed から Q で終えるときは、落ちたアプリの残り (孫) に触らない (自然終了で孫を消さないのと同じ。586)。
+func TestQuitFromCrashedLeavesLeftoverGroup(t *testing.T) {
+	dir := t.TempDir()
+	run, _ := crashedTERMIgnoringGrandchildRun(dir)
+	state := filepath.Join(dir, "presenter.json")
+	keyPath := filepath.Join(shortTempDir(t, "rql-"), "keys.sock")
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_RUN": run, "RESTARTABLE_TEST_TERM_GRACE": "100ms", "RESTARTABLE_TEST_INTERACTIVE": "1",
+		"RESTARTABLE_TEST_KEY_SOCKET": keyPath, "RESTARTABLE_TEST_PRESENTER_STATE": state,
+	})
+	r.waitStatus(t, string(Crashed))
+	pid, err := strconv.Atoi(strings.TrimSpace(readFile(filepath.Join(dir, "gc.pid"))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	quitFromCrashed(t, keyPath, state)
+	select {
+	case <-r.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("runner did not exit after Q y")
+	}
+	// 強制停止は終わるまで runner の終了を止めるので、消すなら r.done の時点で既に消えている
+	if !processAlive(pid) {
+		t.Fatalf("Q from crashed stopped the leftover grandchild %d", pid)
+	}
+}
+
+// 片付けの最中に Q で終えたら、片付けの後に起動しない。
+func TestQuitDuringCrashCleanupDoesNotLaunch(t *testing.T) {
+	dir := t.TempDir()
+	run, launches := crashedTERMIgnoringGrandchildRun(dir)
+	state := filepath.Join(dir, "presenter.json")
+	keyPath := filepath.Join(shortTempDir(t, "rqc-"), "keys.sock")
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_RUN": run, "RESTARTABLE_TEST_TERM_GRACE": "1s", "RESTARTABLE_TEST_INTERACTIVE": "1",
+		"RESTARTABLE_TEST_KEY_SOCKET": keyPath, "RESTARTABLE_TEST_PRESENTER_STATE": state,
+	})
+	r.waitStatus(t, string(Crashed))
+	sendIntegrationKey(t, keyPath, "R")
+	r.waitStatus(t, string(Building)) // 孫が TERM を無視するので grace の 1s は片付けの最中
+	quitFromCrashed(t, keyPath, state)
+	select {
+	case <-r.done:
+	case <-time.After(4 * time.Second):
+		t.Fatal("runner did not exit after Q y during cleanup")
+	}
+	// 起動しなかったことには待つ条件が無い。起動したなら子は起動直後に launches へ書くので、その分だけ待つ
+	time.Sleep(300 * time.Millisecond) // sleep-ok: negative: 起きないことの確認
+	if got := strings.Fields(readFile(launches)); len(got) != 1 {
+		t.Fatalf("launches = %q, want no launch after quitting during cleanup", got)
 	}
 }

@@ -65,10 +65,6 @@ func (t *transitionTimer) lap(stage TransitionStage) {
 	now := t.clock()
 	took := now.Sub(t.stageStarted)
 	t.stageStarted = now
-	if n := len(t.stages); n > 0 && t.stages[n-1].stage == stage {
-		t.stages[n-1].took += took
-		return
-	}
 	t.stages = append(t.stages, stageTime{stage: stage, took: took})
 }
 

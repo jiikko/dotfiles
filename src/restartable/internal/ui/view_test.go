@@ -649,3 +649,11 @@ func TestConfirmDialogIsCenteredOnScreen(t *testing.T) {
 		}
 	}
 }
+
+// crashed ではアプリはもう終わっているので、Q の確認は runner を終えるかを聞く。
+func TestQuitConfirmFromCrashedAsksToQuitRunner(t *testing.T) {
+	joined := strings.Join(ViewLinesAt(runner.Model{State: runner.Crashed, Confirm: runner.ConfirmQuit}, 80, 24, 0), "\n")
+	if !strings.Contains(joined, "restartable を終了しますか？") || strings.Contains(joined, "アプリを終了しますか？") {
+		t.Fatalf("crashed quit confirmation = %q", joined)
+	}
+}

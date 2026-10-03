@@ -95,7 +95,7 @@ func ViewLinesAt(state runner.Model, width, height, spinnerFrame int) []string {
 		footer = append(footer, message)
 	}
 	footer = append(footer, StatusLine(state, width))
-	if prompt := confirmPrompt(state.Confirm); prompt != "" {
+	if prompt := confirmPrompt(state); prompt != "" {
 		if width < layout.PanelMinWidth {
 			return append([]string{compactConfirmLine(state.Confirm, width)}, footer...)
 		}
@@ -195,7 +195,7 @@ func transitionPanel(state runner.Model, width, frame int) []string {
 	if state.Transition.Busy {
 		rows = append(rows, "処理中")
 	}
-	if prompt := confirmPrompt(state.Confirm); prompt != "" && state.Transition.Active {
+	if prompt := confirmPrompt(state); prompt != "" && state.Transition.Active {
 		rows = append(rows, "", prompt, confirm.HintYesNo)
 	} else {
 		rows = append(rows, "", transitionHint(state))
@@ -239,11 +239,14 @@ func transitionHint(state runner.Model) string {
 	}
 }
 
-func confirmPrompt(confirmState runner.Confirm) string {
-	switch confirmState {
+func confirmPrompt(state runner.Model) string {
+	switch state.Confirm {
 	case runner.ConfirmRestart:
 		return "アプリを再起動しますか？"
 	case runner.ConfirmQuit:
+		if state.State == runner.Crashed {
+			return "restartable を終了しますか？" // アプリはもう終わっている
+		}
 		return "アプリを終了しますか？"
 	default:
 		return ""
