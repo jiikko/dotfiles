@@ -104,20 +104,15 @@ func FuzzReapplyAfterReset(f *testing.F) {
 //
 // 🚨 上限は実測値の**すぐ上**に置く。緩い上限は退行を通す: 当初 list を 150 にしていたら
 // 「38 行のうち 15 行を旧形に戻す」(削減の 35%) と「regexp 撤去だけを revert する」(+5) の
-// どちらも素通りした (2026-08-14 の R3 レビューで実測)。余裕は -race の揺れ (下記) の分だけ。
+// どちらも素通りした (2026-08-14 の R3 レビューで実測)。
 //
-// 🚨 -race で値が変わるので、上限は **-race 側の実測**から採る。実測
-// (darwin/arm64・GOMAXPROCS=14・-race・-count=10 の分布):
-//
-//	list / list-ja  135 (10/10)          → 上限 138
-//	status-40       318 (10/10)          → 上限 322
-//	diff-overlay    212 x1 / 213 x9      → 上限 217
-//	job-panel       156 x3 / 157 x6 / 158 x1 → 上限 162
-//
-// overlay 系は -race で ±2 揺れるので余裕を少し広く採っている (素の実測は
-// diff-overlay 211 / job-panel 153)。`make test` は -race 付きなのでそちらが本番のゲート。
-// CI (linux/amd64) の -race も 2026-08-14 に docker (golang:1.25) で実測し、darwin と
-// 同じ水準だった (list/list-ja 135 / status-40 317 / diff-overlay 213 / job-panel 157)。
+// 🚨 **回数は -race なしの run で判定する** (2026-10-03)。-race の計装は描画と無関係の確保を呼ぶたびに違う数だけ
+// 足すので、同じモデルを続けて測っても doctor-svc は 450〜460 と揺れた (-race なしは 15 回とも 380)。5 回の最小値を
+// 採っても 577〜583 (doctor-disk) と揺れが残り、上限を揺れの上に置くと退行を通し、下に置くと `make test` の負荷の下で
+// 偽の赤になる (doctor-svc 459 / 上限 458 で落ちた)。そこで `make test` (Makefile の test) に -race なしでこのテストだけを
+// 回す行を置き、回数はその run でだけ判定する。バイトは -race 付きの run でだけ判定する (benchmark で 1 ケース約 1 秒かかり、
+// 両方で回すと make test が 16 秒延びるため。バイトは -race でほぼ揺れない)。どちらの run かは raceEnabled (build tag)。
+// 上限は -race なしの実測 + 3 (-race なしは 3 回とも全ケースで完全に一致した)。
 // 上限を上げるときは「実測がいくらだったか」を必ずここに書き足すこと (黙って緩めない)。
 //
 // バイト側の上限を回数と**別に**持つ理由 (issue 051): `AllocsPerRun` は確保の回数しか
@@ -125,71 +120,42 @@ func FuzzReapplyAfterReset(f *testing.F) {
 // 完全一致のまま B/op だけ +0.8〜1.0% 増えており、048 では回数版のガードが
 // **メモ化を丸ごと revert しても PASS** した (R1 レビューが実証)。
 //
-// 🚨 バイトの上限も -race 側の実測から採る (`make test` は -race 付き)。実測
-// (darwin/arm64・GOMAXPROCS=14・-race・4 回の最大値):
-//
-//	list 30776 / list-ja 31488 / status-40 43047 / diff-overlay 47654 / job-panel 36366 B
-//
-// 回数と違い、バイトは -race でほぼ水増しされない (素の list は 30744 B = +0.1%)。上限は
-// 実測の +3%: 4 回のばらつきは 0.03%、環境 (OS/arch/Go patch/GOMAXPROCS) を跨いでも 0.15%
-// 以内だったため (測定条件は tests/glogx/bench_budgets.ci に記載)。
+// 🚨 バイトの上限は -race 側の実測から採る (-race 付きの run で見るため)。
+// 回数と違い、バイトは -race でほぼ揺れない (4 回のばらつきは 0.03%、環境を跨いでも 0.15% 以内)。上限は実測の +3%
+// (測定条件は tests/glogx/bench_budgets.ci に記載)。
 //
 // CI 側の同じ主張は tests/glogx/bench_budgets.ci の *_alloc_kb が -race 無しで持つ
-// (二重管理だが役割が違う: ここは `make test` 一発で回る -race 付きの門番、あちらは
+// (二重管理だが役割が違う: ここは `make test` 一発で回る門番、あちらは
 // 経時比較つきで render_large_patch / model_init_200 など本テストが持たない経路も見る)。
 // 確保が増える変更を意図して入れるときは**両方**を同じ commit で更新すること。
 //
-// 🚨 回数と同じく、この上限は `RUNEWIDTH_EASTASIAN=1` の環境では落ちる (issue 054)。実測で
+// 🚨 この上限は `RUNEWIDTH_EASTASIAN=1` の環境では落ちる (issue 054)。実測で
 // list が 135 回 30776 B → 322 回 41139 B になる (幅計算が変わり行の作り直しが増えるため)。
 // その環境で赤くなったら、退行ではなく env 前提の方を疑うこと。
-// 🚨 **上限だけでなく「現在値」も書く** (issue 323)。上限だけだと「どれだけ悪化したら red か」が
-// 読めず、余裕を使い切っていることに誰も気づけない。実際 issues-40 は上限 213 に対して
-// 現在値も 213 で、**余裕 0** のまま「回数の余裕は既存ケースと同じ +4」というコメントが残っていた。
 //
-// 2026-09-08 の実測 (darwin/arm64・GOMAXPROCS=14・**-race**・-count=3〜5・120x40):
+// 🚨 **上限だけでなく「現在値」も書く** (issue 323)。上限だけだと「どれだけ悪化したら red か」が読めない。
+// 2026-10-03 の実測 (darwin/arm64・GOMAXPROCS=14・120x40。回数は **-race なし**・3 回とも同じ値、バイトは -race):
 //
-//	ケース          現在値      上限   余裕    バイト現在値      上限
-//	list            132        138    +6     30976〜30980    31700
-//	list-ja         132        138    +6     31696           32500
-//	status-40       313〜314   322    +8     42869〜42873    44400
-//	diff-overlay    216        225    +9     48027〜48038    49100
-//	job-panel       160        162    +2     36644〜36653    37500
-//	issues-40       213        213    **0**  34136           34900
-//	usage-glance    173        180    +7     35832           36700
-//	toast-holding   179        186    +7     37072           38000
-//	ratelimit-dash  175        179    +4     82024〜82025    84900
-//	doctor-disk     575〜583   591    +8     63152〜63249    65200  ← 321 の後
+//	ケース          回数の現在値  上限   バイト現在値 (-race)  上限
+//	list            127         130    30048                31700
+//	list-ja         127         130    30768                32500
+//	status-40       279         282    42366                44400
+//	diff-overlay    209         212    47129                49100
+//	job-panel       151         154    35649                37500
+//	issues-40       210         213    33880                34900
+//	usage-glance    153         156    32600                36700
+//	toast-holding   167         170    35712                38000
+//	ratelimit-dash  175         178    82024                84900
+//	doctor-disk     476         479    63733                65200
+//	doctor-svc      380         383    65954                67500
+//	doctor-brew     179         182    37921                38700
+//	doctor-docker   486         489    56495                57900
 //
-// 🚨 **issues-40 の余裕 0 は据え置く**。記録時 209 → 現在 213 の +4 は、その間に入った
-// issues viewer の機能追加 (waiting/ 状態・group 親行の y・終わった epic の除外) によるもので、
-// **3 回とも 213 で完全一致 = 揺れない**。揺れないケースに余裕は要らず、緩めれば
-// 「+1 の退行が通る」だけになる。意図して増やす変更では**この表と上限を同じ commit で更新する**
-// (このファイルが元から要求している運用)。
-// 🚨 **job-panel の +2 も同じ理由で据え置く** (160 が 3/3 で一致)。
+// doctor の 4 ケースは 2026-09-29 の SSD タブ (issue 578) でタブが 1 つ増え、-race なしで +5 (svc 375 → 380 / disk 471 → 476)。
 //
-// 🚨 **「どれだけ悪化したら red になるか」を実測した** (issue 323 の受け入れ条件)。
-// doctor の `lines()` に「表示行ごとに 1 確保」を足す変異 (太る退行の最小の形) を当てた結果:
-//
-//	doctor-svc     445 → 468  (+23) → red   ✅
-//	doctor-brew    188 → 198  (+10) → red   ✅
-//	doctor-disk    604 → 616  (+12) → **素通り** (旧上限 620)
-//	doctor-docker  572 → 582  (+10) → **素通り** (旧上限 589)
-//
-// 「観測レンジ + ~3%」で置いた上限が、行数ぶんの退行をそのまま吸収していた
-// (issue 323 が名指しした「予算は在るが壊れても緑」の形)。**この変異が red になる水準**へ
-// 締め直した: doctor-disk 620 → 612 / doctor-docker 589 → 580。
-//
-// 🚨 その後 issue 321 (マーク幅のメモ化) で doctor-disk が 63,2xx B まで落ちたので
-// **612 → 591 へさらに下げた**。同じ変異を当て直した結果 (2026-09-08、321 の後):
-//
-//	doctor-svc    465 > 458 red / doctor-brew   198 > 194 red
-//	doctor-disk   596 > 591 red / doctor-docker 581 > 580 red
-//
-// 🚨 **doctor-docker は 581 vs 580 で差 1 しかない**。この fixture は 4 群 × 4 items = 20 行程度で
-// 行数が少なく、「行ごと 1 確保」の効きが +6〜10 にしかならないため。CI で flake したら
-// **上限を緩める前に fixture を大きくする** (行数を増やせば変異の効きが増え、余裕を広げても
-// 検出できる)。緩めるだけだとこの変異を素通りする側へ戻る。
-// 上限を動かすときは、この変異を当て直して red を確認すること。
+// 🚨 **「どれだけ悪化したら red になるか」を実測する** (issue 323 の受け入れ条件)。doctor の `lines()` に
+// 「表示行ごとに 1 確保」を足す変異 (太る退行の最小の形) が、doctor の 4 ケースとも red になること。
+// 2026-10-03 (上の上限で) の結果は issue 323 ではなく commit message に残した。上限を動かすときは、この変異を当て直して red を確認すること。
 func TestFrameAllocBudget(t *testing.T) {
 	// diff overlay / job パネルを含める理由: これらは buildShadowPanelBox を通る経路で、
 	// 一覧と status だけでは **その経路がテストの視界に入らない**。実際「buildShadowPanelBox の
@@ -201,57 +167,37 @@ func TestFrameAllocBudget(t *testing.T) {
 		allocs int
 		bytes  int64
 	}{
-		{"list", func(tb testing.TB) *browseModel { return benchBrowseSubjects(tb, 20, 120, 40, false) }, 138, 31700},
-		{"list-ja", func(tb testing.TB) *browseModel { return benchBrowseSubjects(tb, 20, 120, 40, true) }, 138, 32500},
-		{"status-40", func(tb testing.TB) *browseModel { return benchStatusBrowse(tb, 40, 120, 40) }, 322, 44400},
-		// 🚨 diff-overlay は上限 217 に張り付いており -race で flake する (実測 2026-09-06:
-		// 216〜218。私の変更前後どちらでも同じ)。既存の「+4」は他ケースが (10/10) で
-		// 完全一致するのを前提にした値で、このケースには足りない。観測レンジの上に
-		// 余裕を取って 225 へ (issue 269 の「緩すぎず、flake もしない」の実践)。
-		{"diff-overlay", budgetDiffModel, 225, 49100},
-		{"job-panel", budgetPanelModel, 162, 37500},
+		{"list", func(tb testing.TB) *browseModel { return benchBrowseSubjects(tb, 20, 120, 40, false) }, 130, 31700},
+		{"list-ja", func(tb testing.TB) *browseModel { return benchBrowseSubjects(tb, 20, 120, 40, true) }, 130, 32500},
+		{"status-40", func(tb testing.TB) *browseModel { return benchStatusBrowse(tb, 40, 120, 40) }, 282, 44400},
+		{"diff-overlay", budgetDiffModel, 212, 49100},
+		{"job-panel", budgetPanelModel, 154, 37500},
 		// issues viewer / usage グランス / toast (issue 062)。それまで viewLines の全画面ビュー
 		// 2 つのうち issues 側と、起動直後の実フレーム (usage グランス表示) がどのゲートの
-		// 視界にも入っていなかった。実測 (darwin/arm64・GOMAXPROCS=14・-race・-count=10):
-		// issues-40 209 (10/10) 33848〜33849 B / usage-glance 176 (10/10) 35624 B /
-		// toast-holding 182 (10/10) 36864 B。回数の余裕は既存ケースと同じ +4、バイトは +3%
+		// 視界にも入っていなかった。上限の取り方と現在値は上の doc の表
 		{"issues-40", func(tb testing.TB) *browseModel { return benchIssuesBrowse(tb, 40, 120, 40) }, 213, 34900},
-		{"usage-glance", budgetUsageGlanceModel, 180, 36700},
-		{"toast-holding", budgetToastModel, 186, 38000},
+		{"usage-glance", budgetUsageGlanceModel, 156, 36700},
+		{"toast-holding", budgetToastModel, 170, 38000},
 		// 全画面ビューア 4 枚のうち doctor と ratelimit は、予算の枠組み (047 / 051 / 062) より
 		// 後に足されたためどのゲートの視界にも入っていなかった (issue 275 / 270)。
-		// 上限は 2026-09-06 のローカル実測 (下の PROBE で採取) に回数 +4 / バイト +3%。
-		// 2026-09-06 実測 (darwin/arm64・GOMAXPROCS=14・**-race**・120x40)。
-		// 上限は重い方 (-race) 基準で、既存と同じ余裕 (回数 +4 / バイト +3%)。
 		//
 		// ratelimit-dash: メモ化前 1065 allocs / 239319 B → **メモ化後 175 / 82241** (issue 275)。
-		// 🚨 時計を固定した fixture での値 (-race 6 回で 6/6 とも 175)。実時計のままだと
+		// 🚨 時計を固定した fixture での値。実時計のままだと
 		// 測定窓が秒境界をまたいだときだけ 1 回キャッシュミスして平均が 193 まで跳ね、
 		// ~4%/run で flake した (敵対レビューが 145 窓で実測)。
 		// 上限は必ず**今の実測**へ締め直すこと — 締めずに残すと「6 倍悪化しても緑」になり、
 		// issue 269 と同じ「観測できない予算」を新設したことになる。
-		// doctor-disk: 🚨 **既存ケースの「+4」は使えない**。-race で揺れる
-		// (遅延化前は 1506〜1515、遅延化後は 597〜601)。他のケースは (10/10) で完全一致すると
-		// このファイルの上のコメントが記録しているが、doctor は当てはまらない。
-		// 観測レンジの上に ~3% の余裕で 620。
-		// 270 の遅延化 (畳まれた行の detail を組まない) で 1506 → 601 に落ちたので締め直した。
+		// doctor-disk: 270 の遅延化 (畳まれた行の detail を組まない) で -race の値が 1506 → 601 に落ちたので締め直した。
 		// 締めずに残すと「2.5 倍悪化しても緑」になる (issue 269 と同じ形)。
-		{"ratelimit-dash", budgetRatelimitModel, 179, 84900},
+		{"ratelimit-dash", budgetRatelimitModel, 178, 84900},
 		// 🚨 issue 321 (doctorMaxMarkWidth のメモ化) の後に**下げた**上限。
-		// 2026-09-08 実測 (-race・count=3): 575 / 577 / 583 allocs、63152〜63249 B。
-		// メモ化前は 598〜604 / 83100〜83184 B だったので **-19,950 B (-24%)**。
+		// バイトはメモ化前 83100〜83184 B → 後 63152〜63249 B (-race) で **-19,950 B (-24%)**。
 		// 緩いまま残すと「メモ化を revert しても緑」= 改善を守らない予算になる (issue 269 の形)。
-		{"doctor-disk", budgetDoctorModel, 591, 65200},
+		{"doctor-disk", budgetDoctorModel, 479, 65200},
 		// doctor の残り 3 タブ (issue 323 ②)。それまで disk だけがゲートに載っていた。
-		// 2026-09-08 実測 (darwin/arm64・GOMAXPROCS=14・**-race**・-count=5・120x40):
-		//   doctor-svc    440 / 442 / 443 / 444 / 445   65409〜65516 B
-		//   doctor-brew   187 x3 / 188 x2               37525〜37552 B
-		//   doctor-docker 567 x2 / 571 / 572 x2         56092〜56161 B
-		// 🚨 doctor 系は disk と同じく -race で揺れる (レンジ 6 / 1 / 5)。既存ケースの「+4」では
-		// 足りないので、doctor-disk と同じく**観測レンジの上に ~3%** を採る。
-		{"doctor-svc", budgetDoctorSvcModel, 458, 67500},
-		{"doctor-brew", budgetDoctorBrewModel, 194, 38700},
-		{"doctor-docker", budgetDoctorDockerModel, 580, 57900},
+		{"doctor-svc", budgetDoctorSvcModel, 383, 67500},
+		{"doctor-brew", budgetDoctorBrewModel, 182, 38700},
+		{"doctor-docker", budgetDoctorDockerModel, 489, 57900},
 	}
 	for _, c := range cases {
 		m := c.build(t)
@@ -264,18 +210,22 @@ func TestFrameAllocBudget(t *testing.T) {
 		// 見るのは「そのフレームが実際に描いたか」= alt screen を埋めたか。
 		assertFrameDrawn(t, c.name, m)
 
-		got := int(testing.AllocsPerRun(50, func() { _ = m.View().Content }))
-		if got > c.allocs {
-			t.Errorf("%s: 1 フレームの確保が %d 回 (上限 %d)。行の作り直しが増えていないか",
-				c.name, got, c.allocs)
+		// 回数は -race なしの run で、バイトは -race 付きの run で判定する (上の doc。Makefile の test が両方を回す)
+		if !raceEnabled {
+			got := int(testing.AllocsPerRun(50, func() { _ = m.View().Content }))
+			if got > c.allocs {
+				t.Errorf("%s: 1 フレームの確保が %d 回 (上限 %d)。行の作り直しが増えていないか",
+					c.name, got, c.allocs)
+			}
+			t.Logf("%s: %d allocs/frame (上限 %d)", c.name, got, c.allocs)
+			continue
 		}
 		gotBytes := frameAllocBytes(t, c.build)
 		if gotBytes > c.bytes {
 			t.Errorf("%s: 1 フレームの確保が %d B (上限 %d B)。回数は同じでも 1 本あたりが"+
 				"太っていないか (バッファの作り直し・過大な pre-grow)", c.name, gotBytes, c.bytes)
 		}
-		t.Logf("%s: %d allocs/frame (上限 %d) / %d B/frame (上限 %d)",
-			c.name, got, c.allocs, gotBytes, c.bytes)
+		t.Logf("%s: %d B/frame (上限 %d)", c.name, gotBytes, c.bytes)
 	}
 }
 

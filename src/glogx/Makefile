@@ -16,5 +16,8 @@ lint: vet-gorules
 vet-gorules:
 	go vet -tags ruleguard ./gorules
 
+# 2 行目: 1 フレームの確保の回数は -race の計装で揺れるので、その予算だけ -race なしで判定する (バイトは 1 行目で判定)
+# (frame_alloc_test.go の TestFrameAllocBudget の doc)。-race 付きの run は回数の判定を飛ばす
 test:
 	go test -race ./...
+	go test -count=1 -run '^TestFrameAllocBudget$$' .
