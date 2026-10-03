@@ -117,3 +117,35 @@ func TestOwnerlessBandShowsOwnerKeyAt80(t *testing.T) {
 		}
 	}
 }
+
+// 持ち主への切り替えは、暗転の文言も、開き直した画面の明転と通知も「新版」と言わない (敵対レビューの P3)。新版の切り替えは今までどおり。
+func TestOwnerSwitchLabelsDoNotSayUpgrade(t *testing.T) {
+	m, _, _ := joinModel(t)
+	m.width, m.height = 120, 30
+	press(m, "O", "y")
+	at := m.now().Add(switchDuration / 2)
+	m.now = func() time.Time { return at }
+	if v := ansi.Strip(m.applySwitchFade(m.render())); !strings.Contains(v, ownerSwitchLabel) || strings.Contains(v, switchLabel) {
+		t.Fatalf("持ち主への暗転の文言: %q", v)
+	}
+	leaveFully(m)
+	data, err := m.ExportState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, _, _ := joinModel(t)
+	if err := owner.ImportState(data); err != nil {
+		t.Fatal(err)
+	}
+	if got := owner.toasts.Text(); !strings.Contains(got, "持ち主の画面に切り替えた") || strings.Contains(got, "新版") {
+		t.Fatalf("開き直した画面の通知: %q", got)
+	}
+	if !owner.fade.owner {
+		t.Fatal("明転を持ち主の文言にしない")
+	}
+	// 新版の切り替え (Owner なし) は今までどおり「新版に切り替えた」
+	plain, _, _ := joinModel(t)
+	if err := plain.ImportState([]byte(`{"tab":""}`)); err != nil || !strings.Contains(plain.toasts.Text(), "新版に切り替えた") || plain.fade.owner {
+		t.Fatalf("新版の切り替えの通知: %q owner=%v err=%v", plain.toasts.Text(), plain.fade.owner, err)
+	}
+}

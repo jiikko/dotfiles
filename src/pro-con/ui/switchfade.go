@@ -32,7 +32,10 @@ const (
 	arriveWait   = time.Second
 	switchLabel  = "↻ 新版へ切り替え中…"
 	arrivedLabel = "↻ 新版に切り替えた"
-	switchAccent = 202 // 現在地の色 (style.go の冒頭の合意)
+	// 持ち主の画面への切り替え (O。ownerswitch.go) の文言。新版とは言わない (同じバイナリを開き直すだけ)
+	ownerSwitchLabel  = "↻ 持ち主の画面へ切り替え中…"
+	ownerArrivedLabel = "↻ 持ち主の画面に切り替えた"
+	switchAccent      = 202 // 現在地の色 (style.go の冒頭の合意)
 )
 
 type rgb struct{ r, g, b int }
@@ -49,6 +52,7 @@ type switchFade struct {
 	lastView string    // 最後に描いた画面 (暗くしている間だけ持つ。新版へ渡す)
 	arriving string    // 新版として受け取った旧版の最後の 1 枚 ("" = 受け取っていない / 明るく戻し始めた)
 	arrived  time.Time // 新版として明るく戻し始めた時刻
+	owner    bool      // 持ち主の画面として開き直した (明転の文言を変える。uiState.Owner)
 	fg, bg   *rgb      // 端末の既定の色 (問い合わせの答え。nil なら defaultTerm*)
 }
 
@@ -155,13 +159,21 @@ func (m *Model) applySwitchFade(r string) string {
 	fg, bg := m.fade.termColors()
 	if p := m.leavingProgress(now); p >= 0 {
 		t := anim.EaseOutCubic(p)
-		out := m.overlaySwitchLabel(dimANSI(r, 1-(1-switchFloor)*t, fg, bg), switchLabel, t, bg)
+		label := switchLabel
+		if m.switchTo == switchOwner {
+			label = ownerSwitchLabel
+		}
+		out := m.overlaySwitchLabel(dimANSI(r, 1-(1-switchFloor)*t, fg, bg), label, t, bg)
 		m.fade.lastView = out
 		return out
 	}
 	if p := m.arrivingProgress(now); p >= 0 && p < 1 {
 		t := 1 - anim.EaseOutCubic(p) // 暗さ (1 = 暗くなりきり)
-		return m.overlaySwitchLabel(dimANSI(r, 1-(1-switchFloor)*t, fg, bg), arrivedLabel, t, bg)
+		label := arrivedLabel
+		if m.fade.owner {
+			label = ownerArrivedLabel
+		}
+		return m.overlaySwitchLabel(dimANSI(r, 1-(1-switchFloor)*t, fg, bg), label, t, bg)
 	}
 	return r
 }

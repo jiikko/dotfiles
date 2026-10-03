@@ -252,6 +252,8 @@ type uiState struct {
 	Cursor       int                  `json:"cursor"`
 	Target       *backend.IssueTarget `json:"target,omitempty"`
 	TargetRepo   backend.Repo         `json:"targetRepo"`
+	// Owner は join の画面を持ち主の画面として開き直した (O。新版への切り替えと文言を分ける。issue 548)
+	Owner bool `json:"owner,omitempty"`
 	// Frame は旧版が最後に描いた画面 (暗くなりきった 1 枚。新版は最初の読み込みまでこれを出してから明るく戻す: switchfade.go)
 	Frame string `json:"frame,omitempty"`
 }
@@ -260,7 +262,7 @@ type uiState struct {
 func (m *Model) ExportState() ([]byte, error) {
 	return json.Marshal(uiState{Tab: m.tab, Col: m.col, Selected: m.selected, ShowDetail: m.showDetail, ShowSessions: m.set.open, SettingsTab: m.set.tab,
 		Input: m.mode == modeInput && m.inputKind != inputQuit, InputKind: m.inputKind, OrderKind: m.orderKind, Line: m.line.String(), Cursor: m.line.Cursor(),
-		Target: m.picker.target, TargetRepo: m.picker.repo, Frame: m.fade.lastView})
+		Target: m.picker.target, TargetRepo: m.picker.repo, Owner: m.switchTo == switchOwner, Frame: m.fade.lastView})
 }
 
 // ImportState は ExportState した UI の状態を戻す。読めなければ何も変えない (UI の状態を失うだけで、カードは backend にある)。
@@ -285,7 +287,12 @@ func (m *Model) ImportState(data []byte) error {
 	}
 	m.ensureTab()
 	m.ensureSelection()
-	m.done("新版に切り替えた (UI の状態とカードを引き継いだ)")
+	m.fade.owner = st.Owner
+	if st.Owner {
+		m.done("持ち主の画面に切り替えた (UI の状態とカードを引き継いだ。dispatcher が止まっていれば起こす)")
+	} else {
+		m.done("新版に切り替えた (UI の状態とカードを引き継いだ)")
+	}
 	// 書きかけの入力は宛先のカードが同じときだけ戻す (カードが無くなっていたら、別のカードへ送られないよう戻さない。
 	// 書いた文は失わないよう通知に出す)。新しい依頼 (n) と issue からの依頼はカードに依らない
 	if st.Input {
