@@ -4,4 +4,59 @@
 
 親: [415](415-design-claude-pm-worker-orchestration.md)
 
-(本文は後で)
+## 概要
+
+状態の置き場 (`state/`) がまだ無いところで `pro-con dispatcher --stop` を打つと、「止めた印を置けない」と stderr に出るのに rc 0 で返る。
+止めた印 (`state/dispatcher-held`。`store/held.go` の `HeldFile`。issue 459) が置かれないので、開いている画面の keeper が dispatcher を起こし直しうる (印の目的が果たされない)。
+548 の敵対的レビュー (2 周目 1/3) が範囲外として見つけた。
+
+## 再現 (2026-10-04 実測)
+
+使い捨ての e2e の置き場で、`src/pro-con` を build したバイナリを使った (本番の置き場には触れていない):
+
+```sh
+root=<空のディレクトリ>
+pro-con dispatcher --stop --e2e "$root" >out 2>err; echo rc=$?
+```
+
+- rc=0、stdout は空
+- stderr: `pro-con dispatcher --stop: 止めた印を置けない (開いている画面が dispatcher を起こし直しうる): open <root>/state/.dispatcher-held.tmp-…: no such file or directory`
+- 終わった後には `<root>/state/` があり、中は `dispatcher.lock` と `stop-result` だけ (止めた印は無い)。置き場は印を書いた後の停止の処理で作られている
+
+## 原因 (コードを読んだ範囲)
+
+- `dispatchercmd.go` の `--stop` の分岐は、`store.Hold(dir, …)` を停止の処理 (`stopDispatcher`) より先に呼ぶ (「止め終えた直後の keeper に先を越されない」ための順序)
+- `store.Hold` → `writeAtomic` (`store/store.go`) は `os.CreateTemp(filepath.Dir(path), …)` で、親のディレクトリを作らない
+- 失敗しても stderr に出すだけで停止を続け、停止が成功すれば rc 0 で返る (印を置けなかったことが終了コードに出ない)
+
+## 影響の範囲
+
+- 本物のモード (`--e2e` 無し) も同じ経路を通る見込み: `main.go` の `liveDir(home)` から `runDispatcher` までに置き場を作る処理が無い
+  (反証レビューが grep で確認。実行はしていない)。初めて使うマシンや、置き場を消した後に `--stop` を打つと当たる
+- `supervise.go` の `ReasonGaveUp` の分岐の `store.Hold` は当たらない: そこへ来る前に `dispatcher.LockSupervisor` → `lockAs` (`dispatcher/lock.go`) が
+  `MkdirAll(dir)` で置き場を作っている (コードで確認)
+
+## 対応方針 (案。決めるのは着手時)
+
+1. 印を書く前に置き場を作る。作る場所は `store.Hold` / `writeAtomic` / `--stop` の分岐のどれかで、`--stop` の分岐で作るなら本物のモードも同じ分岐を通す
+   (e2e だけで作る実装にしない)。`writeAtomic` の呼び口 (`store/` の archive.go / dispatcher_state.go / doing.go / pm_state.go / purge.go /
+   settings.go / store.go / held.go) ごとに、親を誰が作る前提かを洗い、`writeAtomic` 自身に入れるかを決める
+2. 印を置けなかったときの終了コードを決める。停止はできたが印が無い (keeper が起こし直しうる) のは部分的な失敗なので、非 0 で返して呼び手 (人・スクリプト) に気づかせる案。
+   止める処理そのものは今どおり続ける (印を置けないことを理由に止めないと、止めたい人が止められない)。
+   1 を入れると、置き場の無いケースは印を置けるようになり、2 の対象は「lock は取れるが印だけ置けない」形に狭まる
+
+## 受け入れ条件
+
+- [ ] 置き場の無い e2e の置き場で `pro-con dispatcher --stop` を打つと、止めた印が置かれる。本物のモードも同じ分岐を通る (e2e だけで作る実装にしない)
+- [ ] lock は取れるが印だけ置けない状態 (例: `state/dispatcher-held` がディレクトリで rename が失敗する) では、停止は続けたうえで rc が非 0 になる (決めた方針どおり)。
+  置き場そのものに書けない (chmod 500) 形は lock が開けずに今でも rc 1 になるので、印の失敗の確かめには使えない
+
+## 関連
+
+- 459 (人が止めた印) / 548 (見つけた経緯)
+
+## 進捗
+
+- 2026-10-04: 起票。反証レビュー (sonnet 1 本、読み取りのみ) を通した。再現・原因・番号の参照は反証されなかった。指摘を反映した:
+  印のファイル名 (`dispatcher-held`。`.dispatcher-held.tmp-*` は一時ファイル)、受け入れ条件 2 の作り方 (chmod 500 では lock の失敗と区別できない)、
+  本物のモードも同じ分岐を通すこと、`writeAtomic` の呼び口の洗い出し。未確認だった 2 点はコードで確かめて「影響の範囲」に書いた
