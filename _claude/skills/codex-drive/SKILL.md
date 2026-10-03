@@ -43,9 +43,9 @@ codex トークンを積極消費したいタスク向け。
 (`subagent-model-tiering.md`) が破れる。節約するのは検閲の**入力の形** (生出力 → digest) であって、
 検閲そのものではない。
 
-**既定は run の種類で 2 組** (下のモデル表が正本): **読む・判断する run (read-only / review。集約役を除く) は `gpt-6.1-sol` + effort `medium`**
-(= sol-medium)、**書く run (danger-full-access) と集約役は `gpt-6-luna` + effort `max`** (= luna-max)。
-フェーズ・難易度でこの 2 組から外さず、品質の上積みは本数と観点の数で作る (ユーザー決定 2026-10-02。それまでは全フェーズ luna-max)。
+**既定は run の種類で 2 組** (下のモデル表が正本): **読む・判断する run (read-only / review。集約役を除く) は `gpt-6.1-sol` + effort `high`**
+(= sol-high)、**書く run (danger-full-access) と集約役は `gpt-6-luna` + effort `max`** (= luna-max)。
+フェーズ・難易度でこの 2 組から外さず、品質の上積みは本数と観点の数で作る (ユーザー決定 2026-10-02、読む run の effort は 2026-10-03 に medium から high へ。それまでは全フェーズ luna-max)。
 ユーザーが「品質全開で」と明示したときだけ v2 運用 (merger を挟まず Claude が生出力を全文精読) に切り替える。
 
 ## 役割分担（崩さない）
@@ -105,7 +105,7 @@ codex 往復より速いので Claude が直接やってよい (`subagent-model-
 
   | run | モデル + effort | フェーズ |
   |---|---|---|
-  | 読む・判断する (`-s read-only` / `codex exec review`) | `gpt-6.1-sol` + `medium` | `[S]` の 3 本・`[D1]`/`[D1.5]`/`[D2]`/`[D3]`・敗者剖検・`[3.5]`/`[3.55]`/`[3.6]`・`[7]` の敵対照合 |
+  | 読む・判断する (`-s read-only` / `codex exec review`) | `gpt-6.1-sol` + `high` | `[S]` の 3 本・`[D1]`/`[D1.5]`/`[D2]`/`[D3]`・敗者剖検・`[3.5]`/`[3.55]`/`[3.6]`・`[7]` の敵対照合 |
   | 書く (`-s danger-full-access`) と集約 | `gpt-6-luna` + `max` | `[2]`/`[2p]`・`[3.7]`・`[3.8]`・merger・変更マップ |
 
   - 読む側を sol にするのは、設計の反証と敵対レビューの見落としは後工程で拾えず、1 本あたりの質が効くため。
@@ -113,9 +113,9 @@ codex 往復より速いので Claude が直接やってよい (`subagent-model-
     ([`subagent-model-tiering.md`](../../rules/subagent-model-tiering.md) の「重いモデルは短い高価値な run へ」)。
     2026-08-26 に裁定役の 3 フェーズだけ sol-mid にして消費が重く同日中に廃止した経緯があるので、
     **sol の run を並べる前に codex の 5h 枠を見る** (`ratelimit -source codex -check`)。
-  - **sol の effort は `medium`** (ユーザー決定 2026-10-02)。DeepSWE v1.1 の sol: medium 73.0% / high 75.2% / xhigh 71.9% / max 71.9%、1 タスクのコストは medium $0.42 / high $0.65 / xhigh $0.79 / max $1.57 (2026-10 時点の公開値)。精度は high が最も高いが差は 2.2 ポイントで、
-    5h 枠の消費を優先して medium にした。`xhigh` / `max` は精度も下がるので使わない。
-    medium で枯れないときの手は effort ではなく本数と観点 (下の項)。
+  - **sol の effort は `high`** (ユーザー決定 2026-10-03。2026-10-02 〜 10-03 は medium)。DeepSWE v1.1 の sol: medium 73.0% / high 75.2% / xhigh 71.9% / max 71.9%、1 タスクのコストは medium $0.42 / high $0.65 / xhigh $0.79 / max $1.57 (2026-10 時点の公開値)。精度が最も高い high を採る。
+    1 本のコストは medium の約 1.5 倍なので、sol の run を並べる前に 5h 枠を見る (上の項)。`xhigh` / `max` は精度も下がるので使わない。
+    high で枯れないときの手は effort ではなく本数と観点 (下の項)。
   - **luna の effort は `max` だけ**。`low` / `medium` / `high` / `xhigh` は使わない (sol の組と混ぜない)
     (難易度の自己判定がブレて難所を低い effort で踏む事故を、固定で構造的に潰す)。
   - sol は luna より遅い (公開値で初トークンまで約 4 倍・出力速度は約半分)。既定の timeout (1200 秒) で足りるかは
@@ -372,10 +372,10 @@ RFC / MS-* / API 仕様が正解を決めるタスクでは、**設計より前�
 spec の読み違いは最も高くつく失敗 (実装・テスト・レビューが全部同じ誤読の上に建つ) で、読解を 1 本に
 しておくと `[3.6]` の循環テスト lens でも捕まらないことがある。独立読解 2 本の**相違 = 読み違いの検出器**。
 
-- **独立 2 本** (`codex exec -s read-only`・`gpt-6.1-sol`・medium・並列作法どおり) に、実装の存在を前提にせず
+- **独立 2 本** (`codex exec -s read-only`・`gpt-6.1-sol`・high・並列作法どおり) に、実装の存在を前提にせず
   spec 該当節から抽出させる: **要件 (MUST/SHOULD の別)・不変条件・バイトレイアウト/状態機械・公式 test vector・
   spec が曖昧な箇所 (解釈が割れる文)**。2 本には互いの存在を伝えない。
-- **第 3 の codex** (read-only・**sol-medium**) に 2 本の digest を突き合わせさせ、**相違点と「どちらが spec に
+- **第 3 の codex** (read-only・**sol-high**) に 2 本の digest を突き合わせさせ、**相違点と「どちらが spec に
   忠実か」の判定案だけ**を出させる。一致部分は「独立 2 本が一致した」という証拠つきで合意 digest になる。
 - **Claude は相違点だけ spec 原文で裁定する** (全文を 2 回読むのではなく、割れた箇所に精読を集中させる —
   これが「検閲の前処理」パターンの原型)。裁定済みの合意 digest を要件ファイル
@@ -388,7 +388,7 @@ spec の読み違いは最も高くつく失敗 (実装・テスト・レビュ�
 
 - **低い** (spec/RFC が設計をほぼ決める・既存設計 doc がある・大量移植で構造が既定) → **軽量パス**:
   D1 を「設計方針の確認 1 回」に短縮し、Claude が検閲してユーザーに一言確認したら D2 を省略して `[1]` へ。
-  ただし **D3 の敵対観点 1 本 (read-only・`gpt-6.1-sol`・medium) だけは省略せず回す**
+  ただし **D3 の敵対観点 1 本 (read-only・`gpt-6.1-sol`・high) だけは省略せず回す**
   (「設計をほぼ決める spec」の読み違い・前提崩れは軽量パスでこそ実装後に高くつく)。
   「設計自由度が低いので軽量パス (+ 敵対 1 本) で進める」と明示する。
 - **ある** (新規ライブラリ・API 境界の新設・複数の実現方式がある) → D1→D2→D3 をフルで回す。
@@ -441,7 +441,7 @@ D3 敵対 1 本が「sheet 経由の対象を Delete 押下時に共有 selectio
 # 以下は fallback の per-call 形。プロンプト内容の見本としてはどちらでも同じ。
 # --- 案A (Bash 呼び出し 1・run_in_background)。案B〜案D も同形で別呼び出し・別パス ---
 out="<scratchpad>/codex-drive.<literal-stamp>.designA.md"; log="$out.log"
-command codex exec -s read-only -m gpt-6.1-sol -c model_reasoning_effort="medium" \
+command codex exec -s read-only -m gpt-6.1-sol -c model_reasoning_effort="high" \
   --ephemeral -o "$out" </dev/null "$(cat <<'EOF'
 <タスク>の設計壁打ち。コードは書かない (設計検討のみ)。
 
@@ -462,7 +462,7 @@ EOF
 
 - **他案の存在を各本に伝えない**。「他案と差別化して」と書くと、独立性を保つためにやっている分割が
   「相手を意識した案」に崩れる。
-- 4 本揃ったら **[D1.5] クロス批評**を挟む: **批評者 codex 4 本** (read-only・sol・medium・並列作法どおり) に、
+- 4 本揃ったら **[D1.5] クロス批評**を挟む: **批評者 codex 4 本** (read-only・sol・high・並列作法どおり) に、
   各々「自分が書いていない 1 案 + [R] の要件」だけを渡し、**その案の破綻シナリオ・隠れコスト・要件との乖離**を
   批評させる (案 A の批評者には案 B〜D を見せない — 相互汚染で独立性が崩れるのを防ぐ)。
   作者へ返して改訂させる往復はしない (重い割に、改訂は統合時に Claude が判断できる)。
@@ -472,7 +472,7 @@ EOF
   まとめさせる。**Claude はその 1 枚を検閲して統合を確定する** — 推奨案の原文と、批評が「破綻」と
   言った案の該当箇所だけ spot check する (8 ファイル全文は読まない)。批評で initial 案が全滅したら、
   その批評内容を出発点制約に足して D1 をもう 1 巡する (最大 2 巡)。
-- 設計フェーズは読む run なので `gpt-6.1-sol` + `medium` (モデル表)。
+- 設計フェーズは読む run なので `gpt-6.1-sol` + `high` (モデル表)。
 - Claude が検閲し、**ユーザーと方針を選ぶ**。壁打ちの相手は codex だけでなく人間も含む (方針候補と推奨理由を
   要約して提示し、採用方針の合意を取ってから D2 へ)。
 - **丸投げ運用ではタッチポイントを集約してよい**: [R] で曖昧点を潰してあることを前提に、Claude が推奨案を
@@ -487,7 +487,7 @@ EOF
   失敗モードと吸収方法の表 / 責務分担** (+ データ構造・テスト戦略・マイルストーン分割案)。不変条件と失敗モードは
   必須項目 (CLAUDE.md「不具合対応の原則」を設計フェーズに接続する)。自由記述にせず、`[3]` の乖離チェックが
   「コントラクト項目ごとの検証」として機械的に回る形にする。
-- コマンドは D1 と同形 (`-s read-only`・sol・medium)。出力先は別の一意パスに。
+- コマンドは D1 と同形 (`-s read-only`・sol・high)。出力先は別の一意パスに。
 - Claude が検閲する。**設計段階でも「実在しない API/設定キーの捏造」は起きる** (既知の弱点表)。設計が参照する
   API・設定キー・ライブラリ機能は実環境・実ドキュメントで存在確認してから採用する。
 
@@ -510,7 +510,7 @@ EOF
 - **Claude 自身も 1 視点として設計をレビューする**。codex の設計を codex だけでレビューすると同一モデルの
   相関盲点が残る (「循環テスト」問題の設計版)。実装レビューと違い設計は正解が客観確定しにくいため、
   別モデル視点を必ず 1 本混ぜる。
-- **発見型 (A)・敵対 (B) ともに sol-medium**。
+- **発見型 (A)・敵対 (B) ともに sol-high**。
   B は「設計を破綻させるシナリオ」を 1 本だけで構築する役で、冗長性が誤りを吸収しない。
 - 敵対側の指摘は **発火条件 (どんな前提・入力・運用で破綻するか) が具体的なものだけ設計変更に反映する**。
   「起こりえないが念のため」の防御を設計に足すと over-engineering になる。示せないものは
@@ -641,7 +641,7 @@ EOF
   判断を含む実装・非自明な wire/protocol でも、一律 `gpt-6-luna` + `max` (モデル表の書く run)。
   - **唯一の例外は上振れ**: luna max の出力の質が低いと `[3]` の検閲で判定したマイルストーン
     (「動くが筋が通っていない」/ 捏造 API / 同じ型エラーを 2 往復しても直らない、等) は、
-    **そのマイルストーンだけ `-m gpt-6.1-sol`** (effort は sol の `medium`。モデル表) へ切り替えてよい
+    **そのマイルストーンだけ `-m gpt-6.1-sol`** (effort は sol の `high`。モデル表) へ切り替えてよい
     (ユーザー指示 2026-09-13、dotfiles issue 369 1-3。2026-09-30 に上振れ先を astra から `gpt-6.1-sol` へ変更 (ユーザー指示: コストが安いため)。probe 実測: codex-cli 0.159.1 で rc 0、応答 "GPT-6")。
     切り替えは**マイルストーン単位**で、checkpoint に「M<n> は sol へ。理由: …」を 1 行残す (前後比較の材料)。
     下げる方向 (541 の low) は依然禁止。capacity 死は luna と共通 (openai/codex #43398) なので回避策にはならない。
@@ -731,7 +731,7 @@ command codex exec -s danger-full-access -C "$wt" -m gpt-6-luna \
   馴染むか → ④ テストが循環していないか。**「codex のサマリがよく書けている方」で選ばない** (overclaim は既知の弱点)。
 - **敗者剖検は codex にやらせる (検閲の前処理)**: 勝者と敗者の diff を渡し、「**敗者にだけある良い判断**
   (見落としていた異常系・簡潔な書き方・追加テスト・片方だけが踏んだ落とし穴) を列挙して、勝者へ移植する
-  最小 patch 案を出せ」と read-only (sol・medium) で 1 本回す。Claude は剖検結果を検閲して移植を判断する
+  最小 patch 案を出せ」と read-only (sol・high) で 1 本回す。Claude は剖検結果を検閲して移植を判断する
   (2 本の diff 全文を並べて読む作業を digest 化する — 競作の主目的である「比較で見える落とし穴」を
   取りこぼさずに検閲単価を下げる)。移植の実施は `[2]` (codex) か trivial なら Claude 直接。
 - **勝者を本流に持ち込む (patch 経由・codex には commit させない)**: 勝者 worktree には commit が無く、
@@ -839,7 +839,7 @@ git worktree list   # 消えたことを確認する
 # stdout も保存する ($log 群は merger に全文読ませる)。詳細は「並列起動の作法」。
 # --- 観点A (Bash 呼び出し 1・run_in_background)。観点B・C も同形で別呼び出し・別パス ---
 out="<scratchpad>/codex-drive.<literal-stamp>.reviewA.md"; log="$out.log"
-command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="medium" \
+command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="high" \
   --ephemeral -o "$out" </dev/null \
   "<観点A の指示。file:line・理由・最小修正案を。要約/称賛不要>" > "$log" 2>&1; tail -40 "$log"
 ```
@@ -856,7 +856,7 @@ command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="medium" \
 丸ごと Claude の精読に乗っており、ここが本数を増やせない律速だった。裏取りを前置することで、Claude の検閲は
 「指摘を一から検証する」から「**構築済みの再現手順をなぞって確定する**」に軽量化される。
 
-- **裏取り codex** (read-only・`gpt-6.1-sol`・medium) に指摘リストを渡し、各指摘について:
+- **裏取り codex** (read-only・`gpt-6.1-sol`・high) に指摘リストを渡し、各指摘について:
   - **再現手順を構築させる** (どの入力・順序・環境で発火するか。可能なら最小の再現コード/コマンド)
   - 構築できなければ **「再現不能」と明記**させる (「たぶん正しい」と書かせない)
   - 指摘同士の重複 (同一根本原因) をマージさせる
@@ -898,8 +898,8 @@ command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="medium" \
   silent に破れる残り経路を列挙させる (例: 「将来 case 追加で壊れない」が目的なら、実際に case を
   足す開発者を演じて素通りする箇所を挙げる。実測: obaket 635 round 3 で最多の実害を出した lens)
 
-- モデルと effort は読む run の `gpt-6.1-sol` + `medium` (モデル表)。反証はパターンマッチでなく構築作業だが、
-  effort は上げず、枯れないときは lens を足す。
+- モデルと effort は読む run の `gpt-6.1-sol` + `high` (モデル表)。反証はパターンマッチでなく構築作業だが、
+  effort は high より上げず (xhigh 以上は精度が下がる)、枯れないときは lens を足す。
   **1 ラウンド回して新規反証ゼロだが枯れたと思えないときは、lens を足す** (effort の上げ代は使わない)。
   - **effort を上げない分、本数は削らない**。攻め口 (lens) の多様性が反証力の主軸なのは変わらない。
     枯れないなら forge / cross-review へ escalate する。
@@ -919,7 +919,7 @@ command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="medium" \
 # 起動は codex-fanout driver が既定 (lens ごとの brief + review-lens-header.md を連結する manifest)。
 # --- fallback の per-call 形: lens ごとに別 Bash 呼び出し・run_in_background。パスは round と lens で一意にする ---
 out="<scratchpad>/codex-drive.<literal-stamp>.r<N>-adv-<lens>.md"; log="$out.log"
-command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="medium" \
+command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="high" \
   --ephemeral -o "$out" </dev/null \
   "<codex-review「敵対的モード」テンプレート全文 + この lens の攻め口だけを指定>" > "$log" 2>&1; tail -40 "$log"
 ```
@@ -1165,7 +1165,7 @@ EOF
   受け入れ条件を満たす証拠 (テスト・実行ログ・CI・実機) を示せない要件は **充足ではなく「未検証」**に落とす。
 - **未充足・部分充足・未検証・意図的にスコープ外にした項目を明示して報告する** (黙って「完了」にしない)。
   未充足が残るなら `[1]` に戻して追加マイルストーンを切るか、ユーザーに判断を仰ぐ。
-- **codex 敵対照合 1 本を必須で先行させる** (read-only・**sol-medium**)。「充足を確認して」ではなく
+- **codex 敵対照合 1 本を必須で先行させる** (read-only・**sol-high**)。「充足を確認して」ではなく
   **「未充足の要件を探して。充足の主張を反証して。証拠 (テスト・実行ログ・CI) の無い『充足』を列挙して」**と
   敵対側で投げる (肯定形で聞くと追認が返ってくる)。その出力を材料に Claude が要件ごとの最終判定を行う
   (v2.0.0 で任意→必須化。照合は本 skill の出口ゲートで、ここの見落としだけは後工程が無い)。

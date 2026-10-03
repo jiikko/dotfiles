@@ -154,10 +154,10 @@ Step 5 まで完了したら、二段階目として Codex によるレビュー
 
 ```bash
 # 未コミット変更がある場合
-command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="medium" --uncommitted </dev/null
+command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="high" --uncommitted </dev/null
 
 # コミット済みの場合
-command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="medium" --commit {sha} </dev/null
+command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="high" --commit {sha} </dev/null
 ```
 
 タイムアウトは 300秒に設定する。

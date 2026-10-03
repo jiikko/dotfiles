@@ -55,11 +55,11 @@ EOS
   ! grep -qE '(^| )-C( |$)' "$CODEX_STUB_CALLS"
 }
 
-@test "モデルと effort の既定は sol / medium (読む run の組)" {
+@test "モデルと effort の既定は sol / high (読む run の組)" {
   run "$RUN" -o "$WORK/out" review "$WORK/prompt.md"
   [ "$status" -eq 0 ]
   grep -q -- "-m gpt-6.1-sol" "$CODEX_STUB_CALLS"
-  grep -q "model_reasoning_effort=medium" "$CODEX_STUB_CALLS"
+  grep -q "model_reasoning_effort=high" "$CODEX_STUB_CALLS"
 }
 
 @test "rc が 0 でも本文が空なら警告を出す (成果物で判定させる)" {
