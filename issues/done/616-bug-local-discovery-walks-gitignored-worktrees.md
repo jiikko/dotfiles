@@ -55,3 +55,16 @@ CI のまっさらな checkout には worktree が無いので、手元でしか
   P2 (test_confirm_default_gate.sh の `find "$ROOT_DIR"` も worktree を歩く) → 対象に追加。件数 (846 / 26 / 0)・③ が赤・① が緑の理由・submodule 無しは反証されなかった。
   「CI には worktree が無い」は .claude が追跡されていないこと (`git ls-files .claude` 0 件) からの推論で、CI のログでは未確認
 - 2026-10-02 追記: `test_issue_path_refs_not_stale.sh` の `grep -r` も同じ原因で手元 13 秒 (GHA の rest の内訳の調査で、pre-push の hook が回す検査を測って見つけた)
+- 2026-10-03 「fix(test): 手元の列挙が .claude/worktrees (pro-con の worktree) を歩かないようにする (616)」 (ユーザーの依頼で着手)
+  - 対応方針どおり 4 ファイル 5 箇所: `scripts/discover_yaml_files.sh` と `tests/scripts/test_enumerations_are_derived.sh` の ① ③ は
+    `-path ./.claude/worktrees -prune` (中へ降りない。`-not -path` だと歩くこと自体は止まらない)、`tests/tmux/test_confirm_default_gate.sh` は
+    prune の一覧に `-path "$ROOT_DIR/.claude/worktrees"` (`-name .claude` だと追跡している .claude/rules まで外れる)、
+    `tests/issues/test_issue_path_refs_not_stale.sh` は `--exclude-dir=worktrees` (名前でしか外せない。追跡している worktrees という名前のディレクトリは 0 件)
+  - 検証 (A-B): worktree の中に偽の `.claude/worktrees/fake/` (yml・`_claude/hooks/*.sh`・`--default=false` の無い gum confirm・切れた issue のパス) を置き、
+    HEAD の版と新しい版を同じ木で走らせた。旧版は 4 つとも worktree の中を拾った (yml の導出 1 本 / 列挙の検査 rc=1 / confirm の検査 rc=1 / issue のパスの検査 rc=1)、
+    新しい版は 4 つとも拾わず rc=0。外しすぎの確認: 新しい版の yml の導出 = 旧版の導出から `.claude/worktrees` の行を除いたもの (diff 一致)
+  - 手元 (`~/dotfiles`、worktree 26 個) の `grep -rnI 'issues/'`: 7.13 s → 0.15 s (同じ 623 行)
+  - worktree での `make test` rc=0 ([ok] 111 本・[FAIL] 0)
+  - 敵対的レビューは省略: 検査の対象を狭める除外だけで判定は新設していない。旧版を正解役にして「消えたのは worktree の中だけ」を確かめた (adversarial-review-own-safeguards 0-B)
+  - 残り: ignore されるディレクトリが増えたら同じ穴が開く点は対応方針のとおり残す (再発したら列挙を共通の関数へ寄せる)
+

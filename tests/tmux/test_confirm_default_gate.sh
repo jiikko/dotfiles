@@ -42,9 +42,11 @@ while IFS= read -r f; do
     *) unreadable+=("$f") ;;     # 検査できなかった = 緑にしない
   esac
 done < <(
+  # .claude/worktrees は pro-con の worktree (別の checkout の写し。issue 616)。-name .claude だと追跡している .claude/rules まで外れる
   find "$ROOT_DIR" \
     \( -name .git -o -name tmp -o -name tests -o -name docs -o -name issues \
-       -o -name node_modules -o -name vendor -o -name src -o -name .venv \) -prune -o \
+       -o -name node_modules -o -name vendor -o -name src -o -name .venv \
+       -o -path "$ROOT_DIR/.claude/worktrees" \) -prune -o \
     -type f ! -name '*.md' ! -name '*.json' ! -name '*.lock' -print 2>/dev/null
 )
 if [ "${#unreadable[@]}" -gt 0 ]; then

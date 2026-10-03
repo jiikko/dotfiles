@@ -19,11 +19,14 @@ cd "$(dirname "$0")/.." || exit 1
 #   .git       : メタデータ
 #   vendor     : 取り込んだ第三者のコード (こちらの規約を当てる対象ではない)
 #   node_modules / tmp : 生成物・作業領域 (tmp は ~/.gitignore_global で ignore)
-found=$(find . \( -name '*.yml' -o -name '*.yaml' \) -type f \
+#   .claude/worktrees  : pro-con が作る worktree (.gitignore)。中身は別の checkout の写しで、他のセッションの
+#                        作業途中を含む。CI の checkout には無いので、手元だけ数が膨らむ (issue 616)。中へは降りない (prune)
+found=$(find . -path ./.claude/worktrees -prune -o \( -name '*.yml' -o -name '*.yaml' \) -type f \
   -not -path './.git/*' \
   -not -path '*/vendor/*' \
   -not -path '*/node_modules/*' \
   -not -path './tmp/*' \
+  -print \
   | sed 's|^\./||' | sort) || { printf '__DISCOVERY_FAILED__\n'; exit 1; }
 
 if [ -z "$found" ]; then

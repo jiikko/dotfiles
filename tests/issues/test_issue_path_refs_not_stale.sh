@@ -55,8 +55,10 @@ scan_tree() {
     printf 'VIOL\t%s\t%s\t%s\n' "$loc" "$written" "$actual"
   done < <(
     cd "$root" &&
+    # worktrees は .claude/worktrees (pro-con の worktree。別の checkout の写し。issue 616) を外すため。
+    # --exclude-dir は名前でしか外せない (追跡している worktrees という名前のディレクトリは無い)
     grep -rnI 'issues/' . \
-      --exclude-dir=issues --exclude-dir=.git --exclude-dir=tmp --exclude-dir=node_modules \
+      --exclude-dir=issues --exclude-dir=.git --exclude-dir=tmp --exclude-dir=node_modules --exclude-dir=worktrees \
       2>/dev/null |
     perl -ne '
       next unless s/^\.\///;
