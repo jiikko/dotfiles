@@ -69,10 +69,10 @@ glogx の利用枠の表示 (右上の U の箱 / 全画面の R のダッシュ
   - `make -C src/glogx test` / `lint`、`make -C src/ratelimit lint` rc=0
 
 - 2026-10-02 (別セッションから追記): 上で「無関係」とした 2 つの落ちる原因が分かった。どちらも 626 の変更とは無関係。
-  `tests/bin/test_kernel_alloc_watch.sh` はロック待ちの判定の `lockf` に `-k` が無いこと ([630](done/630-test-kernel-alloc-watch-lock-probe-unlinks.md))。
-  `TestFetchCallerTimeoutIsNotShared` は stub の `sleep` が `PATH` から見つからないこと ([627](done/627-bug-claude-usage-polling-hits-429.md) の進捗の末尾)
+  `tests/bin/test_kernel_alloc_watch.sh` はロック待ちの判定の `lockf` に `-k` が無いこと ([630](630-test-kernel-alloc-watch-lock-probe-unlinks.md))。
+  `TestFetchCallerTimeoutIsNotShared` は stub の `sleep` が `PATH` から見つからないこと ([627](627-bug-claude-usage-polling-hits-429.md) の進捗の末尾)
 - 2026-10-03 (別セッションから追記): 上の `test_kernel_alloc_watch.sh` の落ちる原因は 630 で解消 (判定の `lockf` を `-k` 付きにした。CI の Tests run 37034308994 で緑)
-- 2026-10-03 (別セッションから追記): 上の `TestFetchCallerTimeoutIsNotShared` の落ちる原因は 627 側で解消 (stub の `sleep` を `/bin/sleep` に。[627](done/627-bug-claude-usage-polling-hits-429.md) の進捗の末尾)
+- 2026-10-03 (別セッションから追記): 上の `TestFetchCallerTimeoutIsNotShared` の落ちる原因は 627 側で解消 (stub の `sleep` を `/bin/sleep` に。[627](627-bug-claude-usage-polling-hits-429.md) の進捗の末尾)
 - 2026-10-03 実機の見え方を確かめた (隔離した tmux `-L` で HEAD の glogx を 120x40 で起動し、起動時のグランスを 20 ms ごとに `capture-pane`。
   `XDG_CACHE_HOME` を使い捨てに向け、本物のキャッシュを写して `fetchedAt` を古くした = 形は前回のもの、取得は必ず走る)。3 回撮った:
   - ✅ 出所が届いた後: Claude が先に届くと、codex は前回の形の 2 行 (`cx5h` / `cx7d`) が「⠋ 取得中...」の場所取りになる。
