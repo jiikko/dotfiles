@@ -83,4 +83,23 @@ glogx の利用枠の表示 (右上の U の箱 / 全画面の R のダッシュ
     Claude が届いた瞬間に 60 桁・5〜6 行へ広がる。原因: `usageOverlay.boxLines` の `case o.snap == nil:` が 626 より前からある 1 行の分岐で、
     `view()` (場所取り) を通らない。`waitingSources` も `o.snap == nil` で空を返す。2 つ目の commit の要望 (取得前と後でレイアウトの幅を変えない) の
     いちばん目に付く場面 (起動直後) が満たされていない。R の盤の `snap == nil` (`usage_overlay.go` の `if snap == nil {` / `tui.go` の toggleRatelimitDash) は未確認
-  - 残り: 上の 🔴 を直す (snap が nil でも最初の取得の間は Claude / codex の場所取りを描く)。直したら同じ撮り方で取得前のコマを撮り直す
+  - 残り: 上の 🔴 を直す (snap が nil でも最初の取得の間は Claude / codex の場所取りを描く)。直したら同じ撮り方で取得前のコマを撮り直す → 下で解消
+- 2026-10-03 「fix(glogx): 利用枠の最初の取得で何も届いていない間も場所取りを描く (626)」 (ユーザーの依頼: 直して、撮り直してから done へ)
+  - U の箱と R の盤はどちらも `usageOverlay.view()` を描くので、`waitingSources` の 1 か所で両方の穴だった。
+    snap が nil でも最初の取得中は場所取りの対象を返す (初回の全滅の後 = err ありは返さず「取得失敗」を保つ)。boxLines の分岐も view を見る
+  - 敵対的レビュー (opus) 1 周目 P2 2 件を直した: 何も届かないうちに Claude が先に失敗すると Claude の段が注記なしで消える
+    (→ view が届いた失敗を土台に畳んで ClaudeErr の注記を出す) / codex 未導入の環境で起動のたびに codex の場所取りと「+ codex」が出て消える
+    (→ 前回の形に codex の枠が無く `lookPathFn("codex")` も失敗するなら codex の場所取りを置かない。判定は `loadUsageCache` と同じ)
+  - 2 周目: P1/P2 なし。P3 は記録だけ (直さない):
+    - P3-a: codex 未導入で、Claude の失敗が codex の失敗より先に届くと、その間だけ箱が 1 行の「取得中...」に戻る。両方の CLI がすぐ失敗し、かつ
+      goroutine の順が逆転したときだけで、続くのはミリ秒。trigger: 起動直後に「取得中...」の 1 行が目に見えて残る報告が出たとき
+    - P3-b: R の盤の 2 行目は、Claude が失敗して codex を待つ間「codex 取得中...」より ClaudeErr の注記を優先する (`lines` の head[1])。
+      codex のカードにスピナーが付くので待ちは見え、形も変わらないので受ける
+    - P3-c: codex は入っているが毎回失敗する環境 (未ログイン等) では、起動のたびに codex の場所取りが出て消える。`loadUsageCache` が毎回 miss する
+      環境で、この修正の前から同じ。trigger: そういう環境で使うことになったとき (codex の失敗の種類で判定する必要がある)
+  - 変異 (mutate-verify、すべて想定の検査で red): 条件を元に戻す / 箱の分岐を戻す / 全滅の後も出す / 失敗の畳み込みを外す /
+    noCodexPending を無視 / 前回の形の codex 判定を外す。`make -C src/glogx test` / `lint` rc=0
+  - 撮り直し (前と同じ撮り方、3 回): U の箱は最初のコマから「5h / 7d / ── / cx5h / cx7d」の場所取り (幅 61 桁) で、Claude が届いても codex が届いても
+    幅と行数は変わらない。1 回目は本物のキャッシュに codex の枠が無かったので codex の場所取りが cx7d の 1 行で、届くと 2 行に増えた (仕様どおりの限界)。
+    R の盤も最初のコマから Claude / codex の段とカードの場所を取り、codex の段の見出しの行は届く前後で同じ
+  - 残り: なし (P3 の 3 件は上の trigger 待ち)
