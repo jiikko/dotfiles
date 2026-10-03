@@ -63,13 +63,14 @@ restartable --build 'make build' --stop-cmd 'curl -fsS -X POST http://127.0.0.1:
 | `y` / `Y` / Enter | 確認中の操作を実行。 |
 | `n` / `N` / Esc | 確認をキャンセル。 |
 | Esc | `--stop-cmd` 成功後、子の終了待ち中なら停止を取り消して running に戻る。 |
-| Ctrl-C | 確認状態に関係なく子のプロセスグループを強制終了し、runner を終了 (rc 130)。 |
+| Ctrl-C | 確認状態に関係なく子のプロセスグループを強制終了し、runner を終了 (rc 130)。強制終了の猶予 (`--term-grace`) の間にもう一度押すと、待たずに SIGKILL を送る。 |
 
 ## 停止の順序
 
 - `--stop-cmd '<command>'` を指定した場合、R / Q / control restart は stop command を実行します。成功後はシグナルを送らず、アプリ自身が終了するのを待ちます。終了確認をアプリ側で出す構成に使えます。
 - stop command が失敗するか `--stop-cmd-timeout` を超えた場合は子へシグナルを送らず running に戻り、エラーを表示します。
 - stop command の成功後、子の終了待ち中に Esc を押すと停止を取り消します。Ctrl-C は待ちを中断し、プロセスグループへ SIGTERM、`--term-grace` 後に SIGKILL を送ります。
+- stop command の成功後にアプリ (子のプロセス) が終わっても、そのプロセスグループに残りのプロセス (アプリが起こした子) がいれば、再起動のビルドの前に SIGTERM、`--term-grace` 後に SIGKILL を送ります。残ったプロセスがポート等を握ったまま新しいアプリと並ぶのを防ぎます。
 - `--stop-cmd` がない場合は、R / Q / control restart でもプロセスグループに SIGTERM を送り、猶予後も残っていれば SIGKILL を送ります。
 - runner への外部 SIGINT / SIGTERM も強制終了経路です。SIGINT は rc 130、SIGTERM は rc 143 で終了します。
 

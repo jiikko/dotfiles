@@ -2433,7 +2433,7 @@ func processAlive(pid int) bool {
 	return err == nil && stat != "" && !strings.HasPrefix(stat, "Z")
 }
 
-func quitFromCrashed(t *testing.T, keyPath, statePath string) {
+func quitWithConfirm(t *testing.T, keyPath, statePath string) {
 	t.Helper()
 	sendIntegrationKey(t, keyPath, "Q")
 	waitPresenterSnapshot(t, statePath, "quit confirmation", func(got presenterSnapshot) bool { return got.Model.Confirm == ConfirmQuit })
@@ -2456,7 +2456,7 @@ func TestQuitFromCrashedLeavesLeftoverGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
-	quitFromCrashed(t, keyPath, state)
+	quitWithConfirm(t, keyPath, state)
 	select {
 	case <-r.done:
 	case <-time.After(3 * time.Second):
@@ -2481,7 +2481,7 @@ func TestQuitDuringCrashCleanupDoesNotLaunch(t *testing.T) {
 	r.waitStatus(t, string(Crashed))
 	sendIntegrationKey(t, keyPath, "R")
 	r.waitStatus(t, string(Building)) // 孫が TERM を無視するので grace の 1s は片付けの最中
-	quitFromCrashed(t, keyPath, state)
+	quitWithConfirm(t, keyPath, state)
 	select {
 	case <-r.done:
 	case <-time.After(4 * time.Second):
@@ -2548,5 +2548,103 @@ func TestHeadlessRebuildFailureStopsOldLeftoversBeforeExit(t *testing.T) {
 	// 強制停止は終わるまで runner の終了を止めるので、r.done の時点で孫は消えている
 	if processAlive(pid) {
 		t.Fatalf("old grandchild %d survived the headless exit", pid)
+	}
+}
+
+// stop-cmd が親だけを終わらせた再起動では、次のビルドの前に古い子の残り (孫) を片付ける。ビルドが失敗して Q で終えても残らない。
+func TestQuitFromBuildFailedStopsOldLeftovers(t *testing.T) {
+	dir := t.TempDir()
+	count, parent, gcPID := filepath.Join(dir, "count"), filepath.Join(dir, "parent.pid"), filepath.Join(dir, "gc.pid")
+	build := fmt.Sprintf(`n=0; [ ! -f %[1]s ] || n=$(cat %[1]s); n=$((n+1)); echo "$n" > %[1]s; [ "$n" -eq 1 ]`, shellQuote(count))
+	run := fmt.Sprintf(`echo $$ > %[1]s; /bin/sleep 300 & echo $! > %[2]s; exec /bin/sleep 300`, shellQuote(parent), shellQuote(gcPID))
+	state := filepath.Join(dir, "presenter.json")
+	keyPath := filepath.Join(shortTempDir(t, "rbq-"), "keys.sock")
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_BUILD": build, "RESTARTABLE_TEST_RUN": run,
+		"RESTARTABLE_TEST_STOP":        "kill -KILL $(cat " + shellQuote(parent) + ")",
+		"RESTARTABLE_TEST_INTERACTIVE": "1", "RESTARTABLE_TEST_KEY_SOCKET": keyPath, "RESTARTABLE_TEST_PRESENTER_STATE": state,
+	})
+	r.waitStatus(t, string(Running))
+	waitFor(t, 3*time.Second, "grandchild pid", func() bool { return strings.TrimSpace(readFile(gcPID)) != "" })
+	pid, err := strconv.Atoi(strings.TrimSpace(readFile(gcPID)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	if response, err := control.Call(ctx, r.path, control.Restart); err == nil && response.OK {
+		t.Fatalf("restart with a failing rebuild succeeded: %+v", response)
+	}
+	r.waitStatus(t, string(BuildFailed))
+	quitWithConfirm(t, keyPath, state)
+	select {
+	case <-r.done:
+		if r.waitErr != nil {
+			t.Fatalf("Q from build-failed: runner exit = %v, want rc 0", r.waitErr)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatalf("runner did not exit after Q y; stderr: %s", readFile(r.stderr))
+	}
+	// 強制停止は終わるまで runner の終了を止めるので、r.done の時点で孫は消えている
+	if processAlive(pid) {
+		t.Fatalf("old grandchild %d survived quitting from build-failed", pid)
+	}
+}
+
+// stop-cmd が親だけを終わらせた再起動でも、古い子の孫が消えてから新しい子を起動する。
+func TestStopCommandRestartStopsOldLeftoversBeforeNextLaunch(t *testing.T) {
+	dir := t.TempDir()
+	parent, gcPID, launches := filepath.Join(dir, "parent.pid"), filepath.Join(dir, "gc.pid"), filepath.Join(dir, "launches")
+	// 2 回目の起動は、1 回目の孫が生きているか (zombie は死んでいると数える) を記録する
+	run := fmt.Sprintf(`if [ -f %[2]s ]; then s=$(ps -o stat= -p "$(cat %[2]s)" 2>/dev/null); case "$s" in ""|Z*) echo clean >> %[3]s ;; *) echo dirty >> %[3]s ;; esac; exec /bin/sleep 300; fi; echo $$ > %[1]s; /bin/sleep 300 & echo $! > %[2]s; echo first >> %[3]s; exec /bin/sleep 300`,
+		shellQuote(parent), shellQuote(gcPID), shellQuote(launches))
+	r := startTestRunner(t, map[string]string{
+		"RESTARTABLE_TEST_BUILD": "true", "RESTARTABLE_TEST_RUN": run,
+		"RESTARTABLE_TEST_STOP": "kill -KILL $(cat " + shellQuote(parent) + ")",
+	})
+	r.waitStatus(t, string(Running))
+	waitFor(t, 3*time.Second, "first launch", func() bool { return strings.TrimSpace(readFile(gcPID)) != "" })
+	if pid, err := strconv.Atoi(strings.TrimSpace(readFile(gcPID))); err == nil {
+		t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	if response, err := control.Call(ctx, r.path, control.Restart); err != nil || !response.OK {
+		t.Fatalf("restart = %+v, %v", response, err)
+	}
+	waitFor(t, 3*time.Second, "second launch to record", func() bool { return len(strings.Fields(readFile(launches))) >= 2 })
+	if got := strings.Fields(readFile(launches)); got[1] != "clean" {
+		t.Fatalf("launches = %q, want the old grandchild gone before the second launch", got)
+	}
+	if code := r.signalAndWait(t, syscall.SIGTERM); code != 143 {
+		t.Fatalf("runner exit code = %d, want 143", code)
+	}
+}
+
+// 強制停止の最中の Ctrl-C は、猶予 (--term-grace) を待たずに KILL して rc 130 で終える。
+func TestCtrlCDuringForcedStopKillsWithoutWaitingForGrace(t *testing.T) {
+	dir := t.TempDir()
+	started := filepath.Join(dir, "build-started")
+	state := filepath.Join(dir, "presenter.json")
+	keyPath := filepath.Join(shortTempDir(t, "rcc-"), "keys.sock")
+	r := startTestRunnerMode(t, map[string]string{
+		"RESTARTABLE_TEST_BUILD":       "trap '' TERM; : > " + shellQuote(started) + "; while :; do sleep 0.05; done",
+		"RESTARTABLE_TEST_RUN":         "exec /bin/sleep 300",
+		"RESTARTABLE_TEST_TERM_GRACE":  "60s",
+		"RESTARTABLE_TEST_INTERACTIVE": "1", "RESTARTABLE_TEST_KEY_SOCKET": keyPath, "RESTARTABLE_TEST_PRESENTER_STATE": state,
+	}, true)
+	waitFor(t, 3*time.Second, "build to start", func() bool { _, err := os.Stat(started); return err == nil })
+	quitWithConfirm(t, keyPath, state) // ビルド中の Q → 強制停止 (ビルドは TERM を無視するので 60s の猶予を待つ)
+	waitPresenterSnapshot(t, state, "exiting", func(got presenterSnapshot) bool { return got.Model.State == Exiting })
+	sendIntegrationKey(t, keyPath, "ctrl+c")
+	select {
+	case <-r.done:
+		var exit *exec.ExitError
+		if !errors.As(r.waitErr, &exit) || exit.ExitCode() != 130 {
+			t.Fatalf("Ctrl-C during forced stop: runner exit = %v, want rc 130", r.waitErr)
+		}
+	case <-time.After(10 * time.Second): // hang guard (猶予の 60s より十分短い)
+		t.Fatalf("Ctrl-C did not cut the 60s grace short; stderr: %s", readFile(r.stderr))
 	}
 }

@@ -54,7 +54,7 @@ const (
 	readyOverallTimeoutEvent actorEventKind = "ready-overall-timeout"
 	readyIntervalEvent       actorEventKind = "ready-interval"
 	readyCleanupDoneEvent    actorEventKind = "ready-cleanup-done"
-	crashCleanupDoneEvent    actorEventKind = "crash-cleanup-done"
+	leftoverCleanupDoneEvent actorEventKind = "leftover-cleanup-done"
 )
 
 type actorEvent struct {
@@ -144,11 +144,12 @@ type actor struct {
 	readyDeferredEffects []Effect
 	readyResumePending   bool
 	timer                transitionTimer
-	// crashedChild は Crashed に入った子。再ビルドの前にそのプロセスグループの残り (孫) を片付ける。
-	// Q で終えるときは片付けない (自然終了で孫を消さないのと同じ。issue 586)
-	crashedChild           *process
-	crashCleanupRunning    bool
-	buildAfterCrashCleanup bool
+	// leftoverChild は終わった後に次のビルドへ進む子 (crashed からの再ビルド / stop-cmd の再起動)。ビルドの前に
+	// そのプロセスグループの残り (孫) を片付ける。Q で終えるときは片付けない (自然終了で孫を消さないのと同じ。issue 586)
+	leftoverChild             *process
+	leftoverCleanupRunning    bool
+	buildAfterLeftoverCleanup bool
+	forceProcs                []*process // 強制停止が撃っているグループ (2 回目の Ctrl-C で KILL する)
 }
 
 // Run supervises one foreground process. It returns a process-style exit code.
@@ -732,8 +733,8 @@ func (a *actor) handleEvent(ev actorEvent) {
 		a.presenter.Render(a.model)
 	case forceDoneEvent:
 		a.handleForceDone(ev)
-	case crashCleanupDoneEvent:
-		a.handleCrashCleanupDone(ev)
+	case leftoverCleanupDoneEvent:
+		a.handleLeftoverCleanupDone(ev)
 	case readyProbeDoneEvent:
 		a.handleReadyProbeDone(ev)
 	case readyProbeTimeoutEvent:
@@ -806,7 +807,7 @@ func (a *actor) handleEffects(effects []Effect) {
 	for _, effect := range effects {
 		switch effect.Kind {
 		case StartBuildEffect:
-			if a.deferBuildForCrashCleanup() {
+			if a.deferBuildForLeftoverCleanup() {
 				continue
 			}
 			if err := a.startBuild(); err != nil {
@@ -866,7 +867,7 @@ func (a *actor) handleControl(req *control.Request) {
 	}
 	switch a.model.State {
 	case Building:
-		if a.crashCleanupRunning {
+		if a.leftoverCleanupRunning {
 			// 片付けの後のビルドはまだ始まっていないので、次のビルドの要求は積まない (積むとビルドが 1 回増える)
 			a.pendingRequests = append(a.pendingRequests, req) // build start is the commit point
 			return
@@ -1087,6 +1088,7 @@ func (a *actor) beginForceStop() {
 		}
 	}
 	a.forceRunning = true
+	a.forceProcs = procs
 	if a.model.State == Exiting && a.model.Intent == IntentExit && a.model.ExitCode == 0 {
 		a.failRequests("runner exiting")
 	}
@@ -1112,7 +1114,11 @@ func (a *actor) beginForce(code int) {
 		return
 	}
 	if a.forceRunning {
+		// 強制停止の最中の 2 回目の Ctrl-C / シグナルは、猶予を待たずに KILL し、その rc で終える
+		// (Exiting の model は ForceEvent を素通りするので、rc はここで書く)
 		a.forcedTermination = true
+		a.model.ExitCode = code
+		_ = killRemainingGroups(a.forceProcs)
 		a.model, _ = Update(a.model, Event{Kind: ForceEvent, SignalCode: code})
 		a.invalidateReadyForForce()
 		a.childExitPending = false
@@ -1169,13 +1175,14 @@ func (a *actor) completeChildExit() {
 	code := a.child.result.Code
 	_, effects := a.transition(Event{Kind: ChildExitedEvent, ExitStatus: code, NoUI: a.cfg.Headless})
 	a.stopAccepted = false
+	// 次のビルドへ進む子 (crashed で待つ / stop-cmd の再起動で親だけが終わった) のグループの残りを、ビルドの前に片付ける。
+	// 終わった時点でグループが残っている (孫がいる) ときだけ記録する。空のグループの番号は再利用されうるので、
+	// Crashed で長く待った後に撃つと無関係なグループに届く。孫が後から自然に消えて番号が再利用される窓は残る
+	// (強制終了の beginForceStop も allProcesses の記録へ同じ形で撃つ。pgid の同一性を確かめる手段が無い)
+	if (a.model.State == Crashed || containsEffect(effects, StartBuildEffect)) && groupExists(a.child.pid) {
+		a.leftoverChild = a.child
+	}
 	if a.model.State == Crashed {
-		// 落ちた時点でグループが残っている (孫がいる) ときだけ記録する。空のグループの番号は再利用されうるので、
-		// Crashed で長く待った後に撃つと無関係なグループに届く。孫が後から自然に消えて番号が再利用される窓は残る
-		// (強制終了の beginForceStop も allProcesses の記録へ同じ形で撃つ。pgid の同一性を確かめる手段が無い)
-		if groupExists(a.child.pid) {
-			a.crashedChild = a.child
-		}
 		a.failRequests(fmt.Sprintf("child exited (rc %d)", code))
 	}
 	if a.readyCleaningProc != nil {
@@ -1323,36 +1330,36 @@ func outputDrainTimeout(configured time.Duration) time.Duration {
 	return 500 * time.Millisecond
 }
 
-// deferBuildForCrashCleanup は Crashed からの再ビルドで、落ちた子のプロセスグループが残っていれば
+// deferBuildForLeftoverCleanup は次のビルドの前に、終わった子のプロセスグループが残っていれば
 // 片付けを始めてビルドを後回しにする (true)。残った孫がポート等を握ったまま新しい子と並ぶのを防ぐ。
-func (a *actor) deferBuildForCrashCleanup() bool {
-	if a.crashCleanupRunning {
-		a.buildAfterCrashCleanup = true
+func (a *actor) deferBuildForLeftoverCleanup() bool {
+	if a.leftoverCleanupRunning {
+		a.buildAfterLeftoverCleanup = true
 		return true
 	}
-	p := a.crashedChild
-	a.crashedChild = nil
+	p := a.leftoverChild
+	a.leftoverChild = nil
 	if p == nil || !groupExists(p.pid) {
 		return false
 	}
-	a.crashCleanupRunning = true
-	a.buildAfterCrashCleanup = true
+	a.leftoverCleanupRunning = true
+	a.buildAfterLeftoverCleanup = true
 	grace := a.cfg.TermGrace
 	go func() {
 		_ = signalGroup(p.pid, syscall.SIGTERM)
 		waitForTermBoundary([]*process{p}, grace)
-		a.post(actorEvent{kind: crashCleanupDoneEvent, proc: p, err: killRemainingGroups([]*process{p})})
+		a.post(actorEvent{kind: leftoverCleanupDoneEvent, proc: p, err: killRemainingGroups([]*process{p})})
 	}()
 	return true
 }
 
-func (a *actor) handleCrashCleanupDone(ev actorEvent) {
-	a.crashCleanupRunning = false
+func (a *actor) handleLeftoverCleanupDone(ev actorEvent) {
+	a.leftoverCleanupRunning = false
 	if ev.err != nil {
 		a.report("failed to stop process group: " + ev.err.Error())
 	}
-	build := a.buildAfterCrashCleanup
-	a.buildAfterCrashCleanup = false
+	build := a.buildAfterLeftoverCleanup
+	a.buildAfterLeftoverCleanup = false
 	// 片付けの間に終了 (Q / Ctrl-C) へ移っていたらビルドしない
 	if !build || a.model.State != Building {
 		return
