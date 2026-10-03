@@ -144,9 +144,15 @@ func TestOwnerSwitchLabelsDoNotSayUpgrade(t *testing.T) {
 	if !owner.fade.owner {
 		t.Fatal("明転を持ち主の文言にしない")
 	}
-	// 新版の切り替え (Owner なし) は今までどおり「新版に切り替えた」
+	// 新版の切り替え (ctrl+r) は ExportState を通しても Owner を書かず、今までどおり「新版に切り替えた」
+	up, _, _ := joinModel(t)
+	up.switchTo = switchUpgrade
+	upData, err := up.ExportState()
+	if err != nil {
+		t.Fatal(err)
+	}
 	plain, _, _ := joinModel(t)
-	if err := plain.ImportState([]byte(`{"tab":""}`)); err != nil || !strings.Contains(plain.toasts.Text(), "新版に切り替えた") || plain.fade.owner {
+	if err := plain.ImportState(upData); err != nil || !strings.Contains(plain.toasts.Text(), "新版に切り替えた") || plain.fade.owner {
 		t.Fatalf("新版の切り替えの通知: %q owner=%v err=%v", plain.toasts.Text(), plain.fade.owner, err)
 	}
 }
@@ -173,5 +179,35 @@ func TestOwnerSwitchFromPanels(t *testing.T) {
 		if !isQuit(func() tea.Cmd { press(m, "y"); return leaveFully(m) }()) || !m.OwnerRequested() {
 			t.Fatalf("%s: y で持ち主へ切り替えない", c.name)
 		}
+	}
+}
+
+// O の印 (pendingOwner) は、確認を抜けるどの経路でも、別の確認を置くどの経路でも下りる (1 か所ずつ直接見る。敵対的レビュー 3/3 の P3:
+// 前のテストは取り消しの後に askConfirm を通していたので、どちらか 1 か所を外しても緑だった)。
+func TestPendingOwnerClearedOnEveryPath(t *testing.T) {
+	for _, k := range []string{"n", "esc", "j"} {
+		m, _, _ := joinModel(t)
+		press(m, "O", k)
+		if m.pendingOwner {
+			t.Fatalf("%s で取り消したのに O の印が残った", k)
+		}
+	}
+	m, _, _ := joinModel(t)
+	press(m, "O", "ctrl+c")
+	if m.pendingOwner {
+		t.Fatal("ctrl+c で確認を抜けたのに O の印が残った")
+	}
+	// 確認の中身を置き換える口は、どれも O の印を下ろす (印が残る経路が将来できても、別の確認の y が切り替えに化けない)
+	m, _, _ = joinModel(t)
+	m.pendingOwner = true
+	m.askConfirm(backend.ResumeDispatcher{}, "別の確認 [y/N]")
+	if m.pendingOwner {
+		t.Fatal("askConfirm が O の印を下ろさない")
+	}
+	m, _, _ = joinModel(t)
+	m.pendingOwner = true
+	m.askSend(backend.ResumeDispatcher{}, sendConfirm{title: "送る"})
+	if m.pendingOwner {
+		t.Fatal("askSend が O の印を下ろさない")
 	}
 }

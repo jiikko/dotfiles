@@ -499,7 +499,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 			return 1
 		}
-		if !m.UpgradeRequested() && !m.OwnerRequested() {
+		exe, screenArgs, switching := switchPlan(m.UpgradeRequested(), m.OwnerRequested(),
+			func() (string, error) { return m.UpgradeExe(), nil }, os.Executable, screen.args)
+		if !switching {
 			// 裏の処理 (attach の間の指示を受付の箱へ置く等) を終えてから抜ける。bubbletea は走っている Cmd を待たない
 			_ = m.WaitChildren(ui.SwitchWait)
 			removeResume(resumePath)
@@ -517,12 +519,6 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 0
 		}
 		closeRelay() // 新しい版へ exec すると defer が走らず、中継のファイルが落ちた画面の残りになる。戻ってきたら (失敗) 開き直す
-		// 新版は同じ種類の画面で開く。持ち主への切り替え (O。issue 548) は同じバイナリを --join を外して開き直す
-		exe := func() (string, error) { return m.UpgradeExe(), nil }
-		screenArgs := screen.args
-		if m.OwnerRequested() {
-			exe, screenArgs = os.Executable, withoutJoin(screen.args)
-		}
 		p, err := switchToNew(m, be, exe, append(append(append([]string(nil), screenArgs...), modeArgs...), args...), dir, resumePath)
 		resumePath = p
 		scr.Release() // 今の画面のまま続ける: 次の終了では alt screen を抜ける
@@ -755,6 +751,20 @@ func switchToNew(m *ui.Model, be backend.Backend, exe func() (string, error), ar
 		return resume, err
 	}
 	return saved, nil
+}
+
+// switchPlan は画面が終了した後に exec する先と画面の引数を決める。切り替えを頼まれていなければ switching=false (普通の終了)。
+// 新版 (ctrl+r) は同じ種類の画面のまま新版のバイナリ (upgradeExe) を、持ち主への切り替え (O。issue 548) は同じバイナリ (self) を
+// --join を外して開き直す。upgradeExe は持ち主への切り替えでは呼ばない (bin/pro-con 以外から起動した画面には新版の情報が無い)。
+func switchPlan(upgrade, owner bool, upgradeExe, self func() (string, error), screenArgs []string) (exe func() (string, error), args []string, switching bool) {
+	switch {
+	case owner:
+		return self, withoutJoin(screenArgs), true
+	case upgrade:
+		return upgradeExe, screenArgs, true
+	default:
+		return nil, nil, false
+	}
 }
 
 // withoutJoin は画面の種類のフラグから --join を外す (join の画面を持ち主の画面として開き直す。--as の名前は残す)。

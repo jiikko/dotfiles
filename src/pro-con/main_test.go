@@ -320,3 +320,42 @@ func TestWithoutJoinKeepsLabel(t *testing.T) {
 		t.Fatalf("開き直した引数を読み直すと: %+v rest=%q err=%v", f, rest, err)
 	}
 }
+
+// 終了の後の切り替え先 (issue 548): O は同じバイナリを --join を外して、ctrl+r は新版を同じ種類の画面のまま開く。どちらでもなければ普通の終了。
+// O では新版のバイナリを尋ねない (bin/pro-con 以外から起動した画面には新版の情報が無い)。
+func TestSwitchPlan(t *testing.T) {
+	upgradeAsked := false
+	upgradeExe := func() (string, error) { upgradeAsked = true; return "/new/pro-con", nil }
+	self := func() (string, error) { return "/self/pro-con", nil }
+	args := []string{"--join", "--as", "review"}
+	cases := []struct {
+		name            string
+		upgrade, owner  bool
+		wantExe, wantAs string
+		switching       bool
+	}{
+		{"O", false, true, "/self/pro-con", "--as review", true},
+		{"ctrl+r", true, false, "/new/pro-con", "--join --as review", true},
+		{"普通の終了", false, false, "", "", false},
+	}
+	for _, c := range cases {
+		upgradeAsked = false
+		exe, got, switching := switchPlan(c.upgrade, c.owner, upgradeExe, self, args)
+		if switching != c.switching {
+			t.Fatalf("%s: switching = %v", c.name, switching)
+		}
+		if !switching {
+			continue
+		}
+		path, _ := exe()
+		if path != c.wantExe || strings.Join(got, " ") != c.wantAs {
+			t.Fatalf("%s: exe=%s args=%q", c.name, path, got)
+		}
+		if c.owner && upgradeAsked {
+			t.Fatalf("%s: 持ち主への切り替えで新版のバイナリを尋ねた", c.name)
+		}
+	}
+	if strings.Join(args, " ") != "--join --as review" {
+		t.Fatalf("元の引数を書き換えた: %q", args)
+	}
+}

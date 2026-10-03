@@ -26,7 +26,7 @@ type sendConfirm struct {
 // askSend は cmd を送る前の確認に載せる。取り消すと今の画面 (入力欄・回答フォーム) へ、書いた中身のまま戻る。
 func (m *Model) askSend(cmd backend.Command, s sendConfirm) {
 	s.back = m.mode
-	m.pending, m.send = cmd, &s
+	m.pending, m.send, m.pendingOwner = cmd, &s, false // 確認の中身は 1 つ (前の O の印を残すと、この y が切り替えに化ける)
 	m.mode = modeConfirm
 }
 
