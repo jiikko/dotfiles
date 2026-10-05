@@ -441,3 +441,21 @@ func TestCrashedAcceptsRestartAndQuit(t *testing.T) {
 		t.Fatalf("quit after crash: model=%+v effects=%+v", m, effects)
 	}
 }
+
+// 確認が出ていないときの Enter はログに区切りを入れるだけで、状態を変えない。確認中の Enter は従来どおり実行。
+func TestEnterWithoutConfirmMarksLogAndKeepsState(t *testing.T) {
+	running := Model{State: Running, Confirm: ConfirmNone, PID: 42, Generation: 3}
+	got, effects := Update(running, Event{Kind: KeyEvent, Key: "enter"})
+	if got != running {
+		t.Fatalf("model changed: %+v, want %+v", got, running)
+	}
+	if len(effects) != 1 || effects[0].Kind != LogMarkEffect {
+		t.Fatalf("effects = %+v, want one LogMarkEffect", effects)
+	}
+
+	confirming, _ := Update(running, Event{Kind: KeyEvent, Key: "R"})
+	got, effects = Update(confirming, Event{Kind: KeyEvent, Key: "enter"})
+	if got.State != Stopping || len(effects) != 1 || effects[0].Kind != BeginStopEffect {
+		t.Fatalf("enter in confirm = %+v %+v, want Stopping + BeginStopEffect", got, effects)
+	}
+}

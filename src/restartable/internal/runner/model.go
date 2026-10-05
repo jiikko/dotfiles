@@ -117,6 +117,9 @@ const (
 	ExitEffect          EffectKind = "exit"
 	ControlRejectEffect EffectKind = "control-reject"
 	MessageEffect       EffectKind = "message"
+	// LogMarkEffect は子のログに空行を 1 行入れる (確認が出ていないときの Enter)。端末は UI が raw にしているので、
+	// Enter の改行は端末へ echo されない。ログを見ながら区切りを付ける手段をここで持つ
+	LogMarkEffect EffectKind = "log-mark"
 )
 
 type Effect struct {
@@ -340,6 +343,9 @@ func Update(m Model, e Event) (Model, []Effect) {
 func updateKey(m Model, key string) (Model, []Effect) {
 	if key == "ctrl+c" {
 		return Update(m, Event{Kind: ForceEvent, SignalCode: 130})
+	}
+	if key == "enter" && m.Confirm == ConfirmNone {
+		return m, []Effect{{Kind: LogMarkEffect}}
 	}
 	if m.State == Stopping {
 		// A stop request is already in flight. Only Esc can undo an accepted

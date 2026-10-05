@@ -61,6 +61,7 @@ restartable --build 'make build' --stop-cmd 'curl -fsS -X POST http://127.0.0.1:
 | `R` | 通常の running 中は再起動確認を表示。`y` / Enter で停止してビルドし直す。`build-failed` / `crashed` 中は確認なしで再ビルド。進捗板のすべての段では無視して「処理中」と表示。 |
 | `Q` | 通常の running 中と `crashed` 中は終了確認を表示。ビルド段と起動の確認段では終了確認を表示し、`y` / Enter で終了。進捗板の終了の待ち段と起動段では無視して「処理中」と表示。 |
 | `y` / `Y` / Enter | 確認中の操作を実行。 |
+| Enter | 確認が出ていないときは、ログに空行を 1 行入れる (ログを見ながら区切りを付ける。端末は raw なので Enter は echo されない)。 |
 | `n` / `N` / Esc | 確認をキャンセル。 |
 | Esc | `--stop-cmd` 成功後、子の終了待ち中なら停止を取り消して running に戻る。 |
 | Ctrl-C | 確認状態に関係なく子のプロセスグループを強制終了し、runner を終了 (rc 130)。強制終了の猶予 (`--term-grace`) の間にもう一度押すと、待たずに SIGKILL を送る。 |

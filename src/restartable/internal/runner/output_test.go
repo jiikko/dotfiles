@@ -166,3 +166,45 @@ func TestTTYOutputIgnoresCarriageReturnWithoutCurrentText(t *testing.T) {
 		}
 	}
 }
+
+// Mark は tick を待たずに、それまでの行の後ろへ空行を吐く (ログを見ながら付けた区切りがすぐ見える)。
+func TestMarkPrintsBlankLineAfterBufferedLinesWithoutTick(t *testing.T) {
+	printed := make(chan string, 8)
+	sink := newLogSink(io.Discard, false, func(line string) { printed <- line })
+	done := make(chan struct{})
+	flusherDone := make(chan struct{})
+	go func() {
+		defer close(flusherDone)
+		sink.runFlusherTicks(done, make(chan time.Time))
+	}()
+	defer func() { close(done); <-flusherDone }()
+
+	sink.addSafeLine("before")
+	sink.Mark()
+	want := []string{"before", ""}
+	got := make([]string, 0, len(want))
+	for range want {
+		select {
+		case line := <-printed:
+			got = append(got, line)
+		case <-time.After(2 * time.Second):
+			t.Fatalf("Mark did not flush without a tick; got %q", got)
+		}
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("printed = %q, want %q", got, want)
+	}
+}
+
+func TestLogMarkEffectAddsBlankLineToSink(t *testing.T) {
+	sink := newLogSink(io.Discard, false, func(string) {})
+	(&actor{sink: sink}).handleEffects([]Effect{{Kind: LogMarkEffect}})
+	if got := sink.buffer.Drain(); !reflect.DeepEqual(got, []string{""}) {
+		t.Fatalf("buffer = %q, want one blank line", got)
+	}
+	headless := newLogSink(io.Discard, true)
+	(&actor{sink: headless}).handleEffects([]Effect{{Kind: LogMarkEffect}})
+	if got := headless.buffer.Drain(); len(got) != 0 {
+		t.Fatalf("headless buffer = %q, want empty", got)
+	}
+}

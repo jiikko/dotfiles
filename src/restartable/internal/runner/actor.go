@@ -827,6 +827,10 @@ func (a *actor) handleEffects(effects []Effect) {
 			if a.sink == nil || !a.sink.hasPrinter() {
 				a.report(effect.Reason)
 			}
+		case LogMarkEffect:
+			if a.sink != nil {
+				a.sink.Mark()
+			}
 		}
 	}
 }

@@ -144,6 +144,9 @@ type logSink struct {
 	buffer          *OutputBuffer
 	printLine       func(string)
 	onOutputFailure func()
+	// flushNow は Mark の後に flusher をすぐ回す合図。印刷は flusher の goroutine 1 本に保つ
+	// (別の goroutine から Flush すると、Drain した塊どうしの印刷順が入れ替わりうる)
+	flushNow chan struct{}
 }
 
 func newLogSink(w io.Writer, headless bool, printLines ...func(string)) *logSink {
@@ -151,7 +154,7 @@ func newLogSink(w io.Writer, headless bool, printLines ...func(string)) *logSink
 	if len(printLines) > 0 {
 		printLine = printLines[0]
 	}
-	s := &logSink{headless: headless, buffer: NewOutputBuffer(defaultOutputLines, defaultOutputBytes), printLine: printLine}
+	s := &logSink{headless: headless, buffer: NewOutputBuffer(defaultOutputLines, defaultOutputBytes), printLine: printLine, flushNow: make(chan struct{}, 1)}
 	s.output = NewFailOnceWriter(w, func() {
 		if s.onOutputFailure != nil {
 			s.onOutputFailure()
@@ -298,6 +301,19 @@ func safeLine(line string) string {
 
 func (s *logSink) addSafeLine(line string) { s.buffer.AddLine(safeLine(line)) }
 
+// Mark は子の出力と同じバッファに空行を足し、flusher にすぐ吐かせる。子の書きかけの行 (改行の前) は
+// CopyFrom が持っているので、空行はその手前の完結した行の後ろに入る。UI の無い起動ではキーが来ないので何もしない
+func (s *logSink) Mark() {
+	if !s.hasPrinter() {
+		return
+	}
+	s.buffer.AddLine("")
+	select {
+	case s.flushNow <- struct{}{}:
+	default:
+	}
+}
+
 func (s *logSink) writeOutput(data []byte) { _, _ = s.output.Write(data) }
 
 func (s *logSink) Flush() {
@@ -335,6 +351,8 @@ func (s *logSink) runFlusherTicks(done <-chan struct{}, ticks <-chan time.Time) 
 	for {
 		select {
 		case <-ticks:
+			s.Flush()
+		case <-s.flushNow:
 			s.Flush()
 		case <-done:
 			s.Flush()
