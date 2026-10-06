@@ -70,7 +70,7 @@ func New(input io.Reader, output io.Writer, stderr ...io.Writer) *Presenter {
 		tea.WithWindowSize(defaultWidth, defaultHeight),
 		tea.WithoutSignalHandler(),
 	)
-	p.programPrintln = func(line string) { p.program.Println(line) }
+	p.programPrintln = func(line string) { p.program.Println(printableLine(line)) }
 	return p
 }
 
@@ -197,6 +197,15 @@ func (p *Presenter) Println(line string) {
 	request := printRequest{line: line, done: make(chan struct{})}
 	p.prints <- request
 	<-request.done
+}
+
+// printableLine は空行を空白 1 文字にする。Bubble Tea (v2.0.8 の cursedRenderer.insertAbove) は空文字列を
+// 黙って捨てるので、子の出力の空行と Enter の区切り (logSink.Mark) が端末に出ない。版を上げて空行を描くようになったら外せる
+func printableLine(line string) string {
+	if line == "" {
+		return " "
+	}
+	return line
 }
 
 func (p *Presenter) printLoop() {

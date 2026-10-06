@@ -659,3 +659,13 @@ func TestQuitConfirmFromCrashedAsksToQuitRunner(t *testing.T) {
 		t.Fatalf("crashed quit confirmation = %q", joined)
 	}
 }
+
+// Bubble Tea は空文字列の Println を捨てるので、空行は空白 1 文字にして渡す (子の空行と Enter の区切りを端末に出す)。
+func TestPrintableLineKeepsBlankLinesVisible(t *testing.T) {
+	if got := printableLine(""); got != " " {
+		t.Fatalf("printableLine(\"\") = %q, want a single space", got)
+	}
+	if got := printableLine("log"); got != "log" {
+		t.Fatalf("printableLine(\"log\") = %q, want unchanged", got)
+	}
+}
