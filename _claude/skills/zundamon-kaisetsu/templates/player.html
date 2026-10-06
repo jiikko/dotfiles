@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+:root {
+  --bg: #f6f5f2; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e2e0da;
+  --stage: #e9eef5; --accent: #2f6fd0; --caption-bg: rgba(255,255,255,.92);
+}
+/* OS の設定に加え、埋め込み先が data-theme で明示したテーマにも従う */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #141416; --panel: #1e1e22; --text: #ececf0; --muted: #a0a0a8; --line: #33333a;
+          --stage: #23272f; --accent: #7aa7ff; --caption-bg: rgba(30,30,34,.92); color-scheme: dark; }
+}
+:root[data-theme="dark"] { --bg: #141416; --panel: #1e1e22; --text: #ececf0; --muted: #a0a0a8; --line: #33333a;
+        --stage: #23272f; --accent: #7aa7ff; --caption-bg: rgba(30,30,34,.92); color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+       font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; line-height: 1.6; }
+main { max-width: 960px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 1.25rem; margin: 0 0 12px; }
+.stage { position: relative; aspect-ratio: 16 / 9; background: var(--stage); border-radius: 12px; overflow: hidden; }
+.char { position: absolute; bottom: 0; width: 40%; height: 96%; display: flex; flex-direction: column;
+        align-items: center; justify-content: flex-end; transition: transform .15s, opacity .15s; opacity: .75; }
+.char.left { left: 1%; } .char.right { right: 1%; }
+.char.speaking { opacity: 1; transform: translateY(-2%); }
+.char img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.avatar { width: 62%; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center;
+          justify-content: center; gap: 8%; color: #fff; font-weight: 700; margin-bottom: 18%; }
+.avatar .mouth { width: 30%; background: rgba(0,0,0,.55); border-radius: 999px; transition: height .03s; }
+.caption { position: absolute; left: 3%; right: 3%; bottom: 3%; background: var(--caption-bg); border-radius: 10px;
+           padding: 10px 14px; min-height: 3.4em; font-size: clamp(14px, 2.4vw, 20px); font-weight: 700; }
+.caption .who { display: block; font-size: .7em; }
+.caption:empty { display: none; }
+.controls { display: flex; align-items: center; gap: 10px; margin: 10px 0; flex-wrap: wrap; }
+.controls button, .controls select { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line);
+                                     background: var(--panel); color: var(--text); cursor: pointer; }
+.controls input[type=range] { flex: 1; min-width: 120px; accent-color: var(--accent); }
+.time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: .9rem; }
+details { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; margin-top: 10px; }
+summary { cursor: pointer; font-weight: 700; }
+.transcript { max-height: 50vh; overflow-y: auto; list-style: none; padding: 0; margin: 8px 0 0; }
+.transcript li { padding: 4px 8px; border-radius: 6px; cursor: pointer; }
+.transcript li.current { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.transcript .who { font-weight: 700; margin-right: .5em; }
+.chapters { padding-left: 1.2em; } .chapters a { color: var(--accent); cursor: pointer; }
+.desc { white-space: pre-wrap; color: var(--muted); }
+/* mp4 書き出し用の描画モード: 舞台だけを窓いっぱいに出し、遷移アニメは止める */
+html.render main { max-width: none; padding: 0; }
+html.render main > :not(.sheet) { display: none; }
+html.render .sheet .stage { width: 100vw; height: 56.25vw; aspect-ratio: auto; border-radius: 0; }
+html.render * { transition: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title"></h1>
+  <div class="stage" id="stage"><div class="caption" id="caption"></div></div>
+  <div class="controls">
+    <button id="play" type="button">▶</button>
+    <input id="seek" type="range" min="0" step="0.01" value="0" aria-label="再生位置">
+    <span class="time" id="time"></span>
+    <select id="speed" aria-label="再生速度"></select>
+  </div>
+  <details id="about"><summary>概要・チャプター・クレジット</summary>
+    <p class="desc" id="desc"></p><ol class="chapters" id="chapters"></ol><ul id="credits"></ul></details>
+  <details open><summary>書き起こし</summary><ul class="transcript" id="transcript"></ul></details>
+</main>
+<script type="application/json" id="data">__DATA_JSON__</script>
+<script>
+(() => {
+  const D = JSON.parse(document.getElementById('data').textContent);
+  const $ = (id) => document.getElementById(id);
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+  $('title').textContent = D.title; $('desc').textContent = D.description;
+  for (const c of D.credits) $('credits').append(el('li', null, c));
+  for (const ch of D.chapters) {
+    const a = el('a', null, `${fmt(ch.start)} ${ch.title}`); a.onclick = () => { seek(ch.start); play(); };
+    const li = el('li'); li.append(a); $('chapters').append(li);
+  }
+  if (!D.chapters.length) $('chapters').remove();
+
+  // ---------- cast ----------
+  const keys = Object.keys(D.cast);
+  const actors = {};
+  keys.forEach((k) => {
+    const c = D.cast[k]; const color = c.color;
+    const box = el('div', `char ${c.side}`);
+    let img = null, mouth = null;
+    if (Object.keys(c.images).length) { img = el('img'); img.alt = c.name; box.append(img); }
+    else { const av = el('div', 'avatar', c.name); av.style.background = color; mouth = el('div', 'mouth'); av.append(mouth); box.append(av); }
+    $('stage').insertBefore(box, $('caption'));
+    actors[k] = { c, color, box, img, mouth, level: -1 };
+  });
+  const setMouth = (a, lv, face) => { // images は {表情: [閉じ, 半開き, 開き]}。build が使う表情だけを入れている
+    const key = `${face}/${lv}`; if (a.level === key) return; a.level = key;
+    if (a.img) a.img.src = (a.c.images[face] || a.c.images[D.defaultFace])[lv];
+    else a.mouth.style.height = ['6%', '14%', '24%'][lv];
+  };
+
+  // ---------- transcript ----------
+  const items = D.lines.map((l, i) => {
+    const li = el('li'); const who = el('span', 'who', actors[l.who].c.name); who.style.color = actors[l.who].color;
+    li.append(who, document.createTextNode(l.text)); li.onclick = () => { seek(l.start); play(); };
+    $('transcript').append(li); return li;
+  });
+
+  // ---------- render ----------
+  // 各フレームの状態 [開始フレーム, 字幕の行, 話し中か, 口の開き] は build が計算して D.frames に入れている。
+  // mp4 の書き出しも同じ D.frames から画像を作るので、ここで状態を計算し直さない (2 実装にすると食い違う)
+  const stateAt = (t) => {
+    const k = Math.floor(t * D.fps); let lo = 0, hi = D.frames.length - 1, ans = -1;
+    while (lo <= hi) { const m = (lo + hi) >> 1; if (D.frames[m][0] <= k) { ans = m; lo = m + 1; } else hi = m - 1; }
+    return ans < 0 ? [-1, 0, 0] : D.frames[ans].slice(1);
+  };
+  let cur = -2;
+  function paint(li, speaking, lv, follow) {
+    const line = li >= 0 ? D.lines[li] : null;
+    for (const [k, a] of Object.entries(actors)) {
+      const on = !!speaking && !!line && line.who === k;
+      setMouth(a, on ? lv : 0, line ? line.faces[k] : D.defaultFace); a.box.classList.toggle('speaking', on);
+    }
+    if (li === cur) return;
+    cur = li; items.forEach((e, i) => e.classList.toggle('current', i === li));
+    const cap = $('caption'); cap.textContent = '';
+    if (!line) return;
+    const who = el('span', 'who', actors[line.who].c.name); who.style.color = actors[line.who].color;
+    cap.append(who, document.createTextNode(line.text));
+    if (follow) items[li].scrollIntoView({ block: 'nearest' });
+  }
+  function render(t) {
+    const [li, speaking, lv] = stateAt(t); paint(li, speaking, lv, !audio.paused);
+    $('seek').value = t; $('time').textContent = `${fmt(t)} / ${fmt(D.duration)}`;
+  }
+
+  // mp4 の書き出し用: #sheet=行,話し中,口;行,話し中,口;... の各状態を 1 枚ずつ舞台に描いて複製し、縦に並べて止まる。
+  // Chrome を 1 回起動するだけで複数の状態を撮れるようにするため (音声は読まない)。1 枚の高さは幅の 9/16
+  const S = location.hash.match(/^#sheet=((?:-?\d+,[01],[012];?)+)$/);
+  if (S) {
+    const root = document.documentElement;
+    root.classList.add('render');
+    root.dataset.theme = 'light'; // 撮る環境のダークモードで動画の配色が変わらないようにする
+    const stage = $('stage'); const sheet = el('div', 'sheet');
+    const states = S[1].split(';').filter(Boolean).map((x) => x.split(',').map(Number));
+    for (const [li, sp, lv] of states) {
+      paint(li, sp, lv, false);
+      const shot = stage.cloneNode(true); shot.removeAttribute('id');
+      shot.querySelectorAll('[id]').forEach((e) => e.removeAttribute('id'));
+      sheet.append(shot);
+    }
+    stage.replaceWith(sheet);
+    root.dataset.rendered = String(states.length);
+    return;
+  }
+
+  // ---------- playback ----------
+  const audio = new Audio(); audio.preload = 'auto'; audio.src = D.audio;
+  $('seek').max = D.duration;
+  [0.75, 1, 1.25, 1.5, 2].forEach((s) => { const o = el('option', null, `${s}x`); o.value = s; if (s === 1) o.selected = true; $('speed').append(o); });
+  $('speed').onchange = () => { audio.playbackRate = Number($('speed').value); };
+  let looping = false; // 再生中にクリックで play() が重なっても、描画ループは 1 本に保つ
+  function loop() { render(audio.currentTime); if (audio.paused) { looping = false; return; } requestAnimationFrame(loop); }
+  function play() {
+    audio.play().then(() => { if (!looping) { looping = true; requestAnimationFrame(loop); } })
+      .catch((e) => { if (e.name !== 'AbortError') showError(`再生できない: ${e.message}`); });
+  }
+  function showError(msg) { $('caption').textContent = msg; } // 次に行が変わるまで字幕欄に残る
+  audio.onerror = () => showError('音声を読み込めない (このブラウザが AAC/m4a を再生できないか、データが壊れている)');
+  function seek(x) { if (!Number.isFinite(x)) return; x = Math.max(0, Math.min(D.duration, x)); audio.currentTime = x; render(x); }
+  $('play').onclick = () => (audio.paused ? play() : audio.pause());
+  $('seek').oninput = () => seek(Number($('seek').value));
+  audio.onplay = () => { $('play').textContent = '❚❚'; };
+  audio.onpause = () => { $('play').textContent = '▶'; history.replaceState(null, '', `#t=${audio.currentTime.toFixed(1)}`); };
+  audio.onended = () => render(D.duration);
+  document.addEventListener('keydown', (e) => {
+    if (e.target.closest('input, select, button')) return;
+    if (e.key === ' ') { e.preventDefault(); audio.paused ? play() : audio.pause(); }
+    else if (e.key === 'ArrowLeft') seek(audio.currentTime - 5);
+    else if (e.key === 'ArrowRight') seek(audio.currentTime + 5);
+  });
+  const m = location.hash.match(/t=([0-9.]+)/);
+  if (m) audio.addEventListener('loadedmetadata', () => seek(Number(m[1])), { once: true });
+  render(0);
+})();
+</script>
+</body>
+</html>

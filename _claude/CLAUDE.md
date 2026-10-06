@@ -158,3 +158,4 @@ agent はこの表に一部しか載っていないので、**agent を探すと
 | レビューループ, review-loop, make review | `~/.claude/skills/review-loop/SKILL.md` |
 | pro-con, カード, PM, PG, レーン, dispatcher, dogfooding (pro-con を外から動かす・調べる) | `~/.claude/skills/pro-con/SKILL.md` (正本は `pro-con help <話題>`) |
 | 視認性, 色被り, UXレビュー | `~/.claude/skills/ux-visibility-review/SKILL.md` |
+| ずんだもん解説, VOICEVOX, ずんだもん, キャラ音声の掛け合い動画, 読み上げ動画 | `~/.claude/skills/zundamon-kaisetsu/SKILL.md` |

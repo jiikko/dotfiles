@@ -1,0 +1,32 @@
+{
+  "title": "サンプル: 掛け合いのテスト",
+  "description": "dialogue_video.py の動作確認用の短い台本。",
+  "lead_in": 0.4,
+  "gap": 0.35,
+  "lines": [
+    {
+      "who": "metan",
+      "face": "説明",
+      "chapter": "はじめに",
+      "text": "今日は、音声を埋め込んだ動画の仕組みを確かめるわ。"
+    },
+    {
+      "who": "zundamon",
+      "face": "驚き",
+      "text": "動画ファイルは作らないのだ？"
+    },
+    {
+      "who": "metan",
+      "face": "説明",
+      "text": "そう。音声を一本にまとめて、字幕と口の動きは再生位置から描くの。",
+      "pause_after": 0.8
+    },
+    {
+      "who": "zundamon",
+      "face": "笑顔",
+      "chapter": "まとめ",
+      "text": "シークしてもずれないのだ。",
+      "speed": 1.1
+    }
+  ]
+}
