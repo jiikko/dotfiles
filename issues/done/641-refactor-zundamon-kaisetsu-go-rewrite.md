@@ -81,6 +81,10 @@
 - [x] bin ラッパー・Makefile・workflow・.golangci.yml（Go プロジェクト共通の検査と go_autobuild の検査は緑）
 - [x] SKILL.md / README.md の書き換え、Python 版の削除
 - [x] 敵対的レビュー（下節。4 周で打ち切り）
+- [x] push 後の CI: 39fe8c02 で Lint の `test-go-project-lanes` が「go.sum が無い」で落ちた（手元では module の `make lint` / `make test` と
+  Go プロジェクト共通の検査を個別に回しただけで、root の `make test-lint` を回していなかった。上の「Go プロジェクト共通の検査は緑」は
+  その範囲での結果）。空の go.sum を置いて cff4d18d で修正し、手元で `make test-lint` の緑を確認。src/README.md の 3 点セットにも
+  go.sum と `make test-lint` を書き足した。振り返りは issue 642
 
 ## 敵対的レビュー（2026-10-06、opus）の対応
 
