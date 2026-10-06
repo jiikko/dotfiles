@@ -179,6 +179,7 @@ DV="$S/scripts/dialogue_video.py"    # 標準ライブラリのみ。圧縮に f
 
 | キー | 意味 |
 |---|---|
+| `title` | 動画の左上に常に出る (HTML ではページの見出しにも出る)。省くと台本のファイル名 |
 | `lead_in` / `gap` | 冒頭の無音 / セリフ間の無音 (秒)。行ごとの `pause_after` が `gap` より優先 |
 | `speed` `pitch` `intonation` `volume` | VOICEVOX の話速・音高・抑揚・音量。行 → `cast` → 台本全体 の順で優先 (pitch 等は行か cast のみ) |
 | `style_id` | 声のスタイル (ささやき等) を変えるとき。行か `cast` に書く。そのキャラ以外の声の ID なら synth が止まる |
