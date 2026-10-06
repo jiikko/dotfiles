@@ -49,10 +49,12 @@ SAMPLE_RATE = 24000  # VOICEVOX の既定出力。全セリフをこの値に揃
 MOUTH_FPS = 30
 VIDEO_SIZE = (1280, 720)  # mp4 は 720p 固定 (字幕・アバターの大きさはこの解像度で合わせている)
 SHEET_STATES = 20  # まとめ撮り 1 回の枚数。縦 720 x 20 = 14400px (Chrome が 1 枚で撮れる高さに収める)
-# キャラクターは四国めたんとずんだもんに固定する。名前・既定の声・色・立ち位置の正本はここ
+# キャラクターは四国めたんとずんだもんに固定する。名前・既定の声・色・立ち位置の正本はここ。
+# mirror は立ち絵を左右反転して表示する。2 人が向き合うよう、素材の向き (めたんは画面の左向き、
+# ずんだもんは左寄り向き) と立ち位置から決めている。素材を替えて向きが変わったら見直す
 CAST = {
-    "metan": {"name": "四国めたん", "style_id": 2, "color": "#d9418c", "side": "left"},
-    "zundamon": {"name": "ずんだもん", "style_id": 3, "color": "#2e9e3a", "side": "right"},
+    "metan": {"name": "四国めたん", "style_id": 2, "color": "#d9418c", "side": "left", "mirror": True},
+    "zundamon": {"name": "ずんだもん", "style_id": 3, "color": "#2e9e3a", "side": "right", "mirror": False},
 }
 CAST_OPTIONS = ("faces", "style_id", "speed", "pitch", "intonation", "volume")  # 台本の cast.<キャラ> で変えてよいもの
 # 表情の語彙。faces/*.json (psd_faces.py の定義) はキャラごとにこの全部を定義する
@@ -548,7 +550,7 @@ def assemble(script_path: Path, script: dict, td: Path, kbps: int) -> tuple[dict
         "credits": list(dict.fromkeys(
             [f"VOICEVOX:{CAST[k]['name']}" for k in CAST if any(l["who"] == k for l in script["lines"])]
             + face_credits(script_path, script) + [str(c) for c in script.get("credits", [])])),
-        "cast": {key: {"name": c["name"], "color": c["color"], "side": c["side"], "images": images[key]}
+        "cast": {key: {"name": c["name"], "color": c["color"], "side": c["side"], "mirror": c["mirror"], "images": images[key]}
                  for key, c in script["cast"].items()},
         "defaultFace": DEFAULT_FACE,
         "chapters": chapters,
