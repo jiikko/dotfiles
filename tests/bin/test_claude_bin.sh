@@ -24,7 +24,7 @@ if PATH="$SYS_PATH" type -P claude >/dev/null 2>&1; then
   exit 1
 fi
 
-mkdir -p "$WORK/shim" "$WORK/real" "$WORK/eater" "$WORK/counted"
+mkdir -p "$WORK/shim" "$WORK/real" "$WORK/eater" "$WORK/counted" "$WORK/hang"
 # 版管理の shim: 今の版に無いと言って 127 で終わる
 cat > "$WORK/shim/claude" <<'EOF'
 #!/bin/sh
@@ -48,7 +48,14 @@ cat > "$WORK/counted/claude" <<EOF
 echo x >> "$WORK/count"
 exit 127
 EOF
-chmod +x "$WORK/shim/claude" "$WORK/real/claude" "$WORK/eater/claude" "$WORK/counted/claude"
+# --version が終わらない候補: 自分の pid を残してから止まり続ける (打ち切り後に残っていないかを pid で見る)
+# sleep-ok: stub: 終わらない候補そのもの。resolve_claude が上限で kill する対象 (待つための sleep ではない)
+cat > "$WORK/hang/claude" <<EOF
+#!/bin/sh
+echo \$\$ > "$WORK/hang.pid"
+exec sleep 30
+EOF
+chmod +x "$WORK/shim/claude" "$WORK/real/claude" "$WORK/eater/claude" "$WORK/counted/claude" "$WORK/hang/claude"
 
 # run <PATH>: resolve_claude を偽の PATH で 1 回呼ぶ。stdout / stderr / rc を別々に $WORK/out|err|rc に置く
 run() {
@@ -102,8 +109,33 @@ else
   fail "重複: rc=$(cat "$WORK/rc") 起動回数=$count (期待 1)"
 fi
 
+# 上限は 1 秒にして速く回す (既定の 10 秒は待たない)
+export CLAUDE_BIN_VERSION_TIMEOUT=1
+rm -f "$WORK/hang.pid"
+run "$WORK/hang:$WORK/real:$SYS_PATH"
+hang_pid="$(cat "$WORK/hang.pid" 2>/dev/null || true)"
+if [ "$(cat "$WORK/rc")" = 0 ] && [ "$(cat "$WORK/out")" = "$WORK/real/claude" ]; then
+  ok "応答しない候補が先にあっても、上限で打ち切って後ろの実体を選ぶ"
+else
+  fail "応答しない候補が先: rc=$(cat "$WORK/rc") out=$(cat "$WORK/out") err=$(cat "$WORK/err")"
+fi
+if [ -n "$hang_pid" ] && ! ps -p "$hang_pid" >/dev/null 2>&1; then
+  ok "打ち切った候補のプロセスが残らない"
+else
+  fail "打ち切った候補: pid=$hang_pid が残っている (または pid を読めない)"
+  [ -n "$hang_pid" ] && kill -9 "$hang_pid" 2>/dev/null || true
+fi
+
+run "$WORK/hang:$SYS_PATH"
+if [ "$(cat "$WORK/rc")" = 2 ] && [ ! -s "$WORK/out" ] && grep -qF "$WORK/hang/claude (応答なし)" "$WORK/err"; then
+  ok "応答しない候補しか無ければ rc=2 で、応答なしと出す"
+else
+  fail "応答しない候補だけ: rc=$(cat "$WORK/rc") out=$(cat "$WORK/out") err=$(cat "$WORK/err")"
+fi
+unset CLAUDE_BIN_VERSION_TIMEOUT
+
 if [ "$fails" -gt 0 ]; then
   echo "✗ $fails 件失敗" >&2
   exit 1
 fi
-echo "✓ resolve_claude: 6 件"
+echo "✓ resolve_claude: 9 件"

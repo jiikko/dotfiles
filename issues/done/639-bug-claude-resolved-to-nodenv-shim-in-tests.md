@@ -86,8 +86,10 @@ shim が残っているのは、Node 24.2.0 に npm 版の `claude` が入って
 
 - 採用: 候補が stdin を読むとループの入力 (候補の一覧) を食って後ろの本物に届かない (再現済み → `</dev/null`)。
   CI で「在るが動かない」まで skip になる (→ rc を 1 / 2 に分けた)。PATH の重複で同じ候補を 2 回起動する (→ 除く)
-- 記録のみ: `--version` に時間の上限が無い。macOS に標準の timeout が無く、stdin を閉じたので対話待ちでは止まらない。
-  ハングする claude が実際に現れたら上限を足す (`bin/lib/claude_bin.sh` の冒頭に同じことを書いた)
+- 採用 (後から): `--version` に時間の上限が無い → 既定 10 秒の上限を付けた (環境変数 `CLAUDE_BIN_VERSION_TIMEOUT`)。
+  macOS に標準の timeout が無いので、背景で起動して 0.1 秒ごとに見る形 (`tests/bin/test_go_autobuild_warmup.sh` の
+  `runs_within` と同じ)。上限を超えた候補は kill して「応答なし」として次へ進む。テストに「応答しない候補が先」
+  「打ち切った候補が残らない」「応答しない候補だけ」の 3 件を足し、打ち切りを無効にする変異で前後 2 件が red になることを確かめた
 - 記録のみ: PATH の相対パスの要素では相対パスが返る (普通の環境では起きない)
 - 却下: `bin/skill-eval` を symlink 経由で呼ぶと lib が見つからない → 同じファイルの ROOT も同じ前提
   (`BASH_SOURCE` の dirname) で、今回の変更で生まれた制約ではない
