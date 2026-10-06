@@ -13,7 +13,7 @@
 | パス | 中身 |
 |---|---|
 | `SKILL.md` | skill の本体 (手順・台本の書き方・表情の語彙) |
-| `scripts/dialogue_video.py` | 合成・組み立て (`check` / `up` / `down` / `speakers` / `kana` / `synth` / `build`)。標準ライブラリのみ |
+| `scripts/dialogue_video.py` | 合成・組み立て (`check` / `up` / `down` / `speakers` / `kana` (文か台本の全行の読み) / `synth` / `build`)。標準ライブラリのみ |
 | `scripts/psd_faces.py` | 立ち絵の PSD から表情 × 口 3 段階の画像を書き出す (psd-tools を使う) |
 | `faces/<キャラ>.json` | 表情ごとに使う PSD のレイヤーの定義 |
 | `templates/player.html` | HTML プレイヤー (mp4 の絵もこれで描く) |

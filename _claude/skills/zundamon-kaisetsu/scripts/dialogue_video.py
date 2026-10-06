@@ -6,6 +6,7 @@
   dialogue_video.py check                          # 必要なコマンドとエンジンの状態を確かめる
   dialogue_video.py up / down                      # エンジンをコンテナで起動 / 停止 (container を優先、無ければ docker)
   dialogue_video.py speakers                       # 話者とスタイル ID の一覧
+  dialogue_video.py kana "文" … / kana --script script.json  # 文か台本の全行の読み (合成はしない)
   dialogue_video.py synth  script.json             # セリフごとに wav を作る (キャッシュあり)
   dialogue_video.py build  script.json -o out --format html|mp4|both  # 連結・口パク・HTML / mp4 化
 
@@ -228,7 +229,30 @@ def fetch_styles(engine: str) -> dict[int, str]:
 
 
 def cmd_kana(args: argparse.Namespace) -> None:
-    """文ごとに audio_query の読み (kana) を出す。read の候補 (カタカナ・ひらがな・英字のまま) を合成せずに比べる用。"""
+    """文ごとに audio_query の読み (kana) を出す。read の候補 (カタカナ・ひらがな・英字のまま) を合成せずに比べる用。
+
+    --script を付けると、台本の全行について 行番号 / 話者 / 字幕 / 読み を出す。synth 済みの行はキャッシュの読みを使い、
+    無い行だけエンジンに問い合わせる (合成はしない)。音声を差し替えた行 (read か readings) には * を付ける。
+    """
+    if args.script:
+        if args.texts:
+            die("kana は --script か文のどちらか一方を渡す")
+        script_path = Path(args.script).resolve()
+        script = load_script(script_path)
+        wd = work_dir(script_path)
+        for i, line in enumerate(script["lines"]):
+            p = line_params(script, line)
+            query_path = cache_paths(wd, p)[1]
+            if query_path.exists():
+                kana = json.loads(query_path.read_text(encoding="utf-8")).get("kana", "")
+            else:
+                kana = json.loads(engine_request(args.engine, "/audio_query",
+                                                 {"text": p["text"], "speaker": p["style_id"]}, b"")).get("kana", "")
+            mark = "*" if p["text"] != line["text"] else " "
+            print(f"{i}\t{line['who']}\t{mark}{line['text']}\t{kana}")
+        return
+    if not args.texts:
+        die("kana には読みを見たい文か --script <台本> を渡す")
     sid = args.style_id if args.style_id is not None else CAST[args.who]["style_id"]
     for text in args.texts:
         kana = json.loads(engine_request(args.engine, "/audio_query", {"text": text, "speaker": sid}, b"")).get("kana", "")
@@ -257,6 +281,10 @@ def load_script(path: Path) -> dict:
     for key in ("lead_in", "gap"):
         if key in script:
             nonneg(path, key, script[key])
+    readings = script.get("readings", {})
+    if not isinstance(readings, dict) or not all(
+            isinstance(k, str) and k and isinstance(v, str) and v.strip() for k, v in readings.items()):
+        die(f"{path}: readings は {{\"字幕の語\": \"読ませたい語\"}} の形 (キーも値も空でない文字列)")
     for name, c in cast.items():
         extra = set(c) - set(CAST_OPTIONS)
         if extra:
@@ -317,11 +345,26 @@ def work_dir(script_path: Path) -> Path:
     return script_path.parent / (script_path.stem + ".work")
 
 
+def spoken_text(script: dict, line: dict) -> str:
+    """音声にする文。字幕は text のまま。行の read があればそれを使い、無ければ text に台本全体の readings を当てる。
+
+    readings は 1 回の走査で置き換える。同じ位置では長いキーを優先し (「Hash」と「HashMap」の両方があれば HashMap)、
+    置き換えた結果をもう一度置き換えない (語ごとに replace を重ねると、結果に別のキーが含まれたとき二重に変わる)。
+    """
+    if "read" in line:
+        return line["read"]
+    readings = script.get("readings", {})
+    if not readings:
+        return line["text"]
+    pattern = re.compile("|".join(map(re.escape, sorted(readings, key=len, reverse=True))))
+    return pattern.sub(lambda m: readings[m.group(0)], line["text"])
+
+
 def line_params(script: dict, line: dict) -> dict:
     """合成結果を決める入力をすべて集める。キャッシュの鍵もここから作るので、合成に効く値を足したらここに足す。"""
     cast = script["cast"][line["who"]]
     return {
-        "text": line.get("read", line["text"]),  # 字幕は text、音声は read (読み違いを直すとき) を使う
+        "text": spoken_text(script, line),
         "style_id": int(line.get("style_id", cast["style_id"])),
         "speed": float(line.get("speed", cast.get("speed", script.get("speed", 1.0)))),
         "pitch": float(line.get("pitch", cast.get("pitch", 0.0))),
@@ -756,7 +799,8 @@ def main() -> None:
     sub.add_parser("down", help=f"up で起動したコンテナ {CONTAINER_NAME} を止める").set_defaults(func=cmd_down)
     sub.add_parser("speakers", help="話者とスタイル ID を一覧する").set_defaults(func=cmd_speakers)
     k = sub.add_parser("kana", help="文ごとの読み (audio_query の kana) を出す。read の候補を合成せずに比べる")
-    k.add_argument("texts", nargs="+", help="読みを見たい文 (複数可)")
+    k.add_argument("texts", nargs="*", help="読みを見たい文 (複数可)")
+    k.add_argument("--script", help="台本の全行の読みを一覧する (synth 済みの行はキャッシュを使う)")
     k.add_argument("--who", choices=tuple(CAST), default="metan", help="声のキャラ (既定 metan)")
     k.add_argument("--style-id", type=int, help="声のスタイル ID (--who の既定の声より優先)")
     k.set_defaults(func=cmd_kana)
