@@ -586,6 +586,9 @@ def assemble(script_path: Path, script: dict, td: Path, kbps: int) -> tuple[dict
             chapters.append({"title": str(line["chapter"]), "start": round(start, 3)})
         timeline.append({
             "who": line["who"], "text": str(line["text"]), "faces": faces[i],
+            # 行が属するチャプターの番号 (最初のチャプターより前の行は -1)。画面の上部中央のトピック名はこれで決める。
+            # mp4 は行ごとに絵を撮るので、ここで決めておけば、チャプターが変わる行で HTML と同じく表示が切り替わる
+            "chapter": len(chapters) - 1,
             "start": round(start, 3), "end": round(start + dur, 3),
             "mouth": mouth_track(json.loads(query_path.read_text(encoding="utf-8")), dur),
         })

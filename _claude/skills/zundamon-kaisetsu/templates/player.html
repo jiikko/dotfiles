@@ -36,6 +36,11 @@ h1 { font-size: 1.25rem; margin: 0 0 12px; }
 .stage-title { position: absolute; left: 3%; top: 3%; max-width: 70%; background: var(--caption-bg); border-radius: 12px;
                padding: 8px 20px; font-size: clamp(16px, 3vw, 28px); font-weight: 700; z-index: 1; }
 .caption:empty { display: none; }
+/* トピック (チャプター) 名。チャプターが 2 つ以上あるときだけ、上端のタイトルと立ち絵の頭の間に出す */
+.stage-topic { position: absolute; left: 50%; top: 17%; transform: translateX(-50%); max-width: 70%; text-align: center;
+               background: var(--caption-bg); border-radius: 14px; padding: 10px 28px;
+               font-size: clamp(18px, 3.8vw, 38px); font-weight: 800; color: var(--accent); z-index: 1; }
+.stage-topic:empty { display: none; }
 .controls { display: flex; align-items: center; gap: 10px; margin: 10px 0; flex-wrap: wrap; }
 .controls button, .controls select { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line);
                                      background: var(--panel); color: var(--text); cursor: pointer; }
@@ -59,7 +64,7 @@ html.render * { transition: none !important; }
 <body>
 <main>
   <h1 id="title"></h1>
-  <div class="stage" id="stage"><div class="stage-title" id="stage-title"></div><div class="caption" id="caption"></div></div>
+  <div class="stage" id="stage"><div class="stage-title" id="stage-title"></div><div class="stage-topic" id="stage-topic"></div><div class="caption" id="caption"></div></div>
   <div class="controls">
     <button id="play" type="button">▶</button>
     <input id="seek" type="range" min="0" step="0.01" value="0" aria-label="再生位置">
@@ -128,6 +133,9 @@ html.render * { transition: none !important; }
     }
     if (li === cur) return;
     cur = li; items.forEach((e, i) => e.classList.toggle('current', i === li));
+    // トピック名は行の chapter (build が決めた番号) から引く。行が変わるたびに必ず書き直す
+    const ch = line && D.chapters.length >= 2 ? D.chapters[line.chapter] : null;
+    $('stage-topic').textContent = ch ? ch.title : '';
     const cap = $('caption'); cap.textContent = '';
     if (!line) return;
     const who = el('span', 'who', actors[line.who].c.name); who.style.color = actors[line.who].color;
