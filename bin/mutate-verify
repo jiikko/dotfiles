@@ -382,86 +382,46 @@ export MUTATE_FILE="$WTS_PATH/$file"
 # `git ls-files` を数える検証では挙動を変えない変異が red になる (red team 4 周目 P1-2)
 git -C "$WTS_PATH" add -N -- "$file" 2>/dev/null || true
 
-# --- 時間の上限 (issue 610) ----------------------------------------------------------------------
-# 各 run は**同じプロセスグループ**の背景の子として起こし、完了は rc ファイルで待つ (kill -0 はゾンビにも成功するので
-# 生死の判定に使わない)。上限を超えたら run の**子孫の木**を止める。
-# 🚨 グループを分けない: 分けると端末の job control から外れ、`stty tostop` の端末で --apply の出力が SIGTTOU で止まって
-#    上限まで待つ / Ctrl-Z で run が止まらない (red team で実測。旧実装は前景のまま走っていた)
-# 🚨 待ちを別プロセスの見張りに任せない: 「見張りを止める」と「見張りが撃つ」の競争で、凍らせた子を STOP のまま残しうる。
-#    本体が刻みを 10ms から 200ms へ伸ばしながら待つ (固定 0.1 秒の刻みは 42 ケースのテストを 34 s → 58 s にした)
-# 🚨 上限は壁時計で数える (Ctrl-Z で止めていた間も数える)
+# --- 時間の上限 (issue 610 / 640) -----------------------------------------------------------------
+# 各 run は runtimeout -f で上限付きに起こす (時間切れは run の子孫の木を凍らせてから止めて rc=124。止め方は src/runtimeout)。
+# 🚨 -f (グループを分けない) にする: 分けると端末の job control から外れ、`stty tostop` の端末で --apply の出力が SIGTTOU で
+#    止まって上限まで待つ / Ctrl-Z で run が止まらない (red team で実測。旧実装は前景のまま走っていた)
+# 🚨 runtimeout は起動時に 1 回だけ解決する (bin/lib/runtimeout.sh)。run ごとにラッパーを通すと、再ビルドの失敗 rc=1 を
+#    検証の red と読みうる / ビルドの進捗が片方の出力にだけ混ざる
+# 🚨 上限は壁時計で数える (Ctrl-Z で止めていた間も数える。runtimeout のタイマーは単調時計)
+# shellcheck source=SCRIPTDIR/lib/runtimeout.sh
+. "$_tool_root/bin/lib/runtimeout.sh" || { note "$_tool_root/bin/lib/runtimeout.sh を読めない"; exit 3; }
+runtimeout_resolve "$_tool_root" || { note "runtimeout を用意できない (各 run に上限を課せない)"; exit 3; }
 run_root=""
 timed_out_phase=""
-descendants() {  # $1=根の pid → 根を含む子孫の pid を 1 行ずつ
-  ps -Ao pid=,ppid= | awk -v r="$1" '{ p[$1] = $2 }
-    END { s[r] = 1; ch = 1; while (ch) { ch = 0; for (k in p) if (!(k in s) && (p[k] in s)) { s[k] = 1; ch = 1 } } for (k in s) print k }'
-}
-stop_tree() {  # $1=根の pid。木を凍らせてから集め直し、TERM → 5 秒 → KILL。凍らせるのは、親が先に死んで子が init へ
-  # 付け替わると木から外れて取りこぼすため (グループを抜けた子 = setsid / set -m も、親が生きていれば木に居る)
-  # 🚨 凍らせた pid は**累積**して持つ。集め直した一覧で置き換えると、凍らせた後に init へ付け替わった子が一覧から外れ、
-  #    TERM も CONT も受けずに T のまま残る (red team 2 周目で実測: 5 回とも 6〜13 本が凍ったまま残った)
-  #    この窓 (ps で集めてから STOP を撃つまでの数 ms に親が抜ける) は外から決定論的に作れないので、テストでは固定していない
-  #    (fork の多い木を当てるテストは、累積をやめる変異でも凍った子が 0 本のまま緑だった。issue 610)
-  local root="$1" all=" " now pid i alive t0
-  [ -n "$root" ] || return 0
-  for i in 1 2 3 4 5 6 7 8 9 10; do
-    now=""
-    for pid in $(descendants "$root"); do
-      case "$all" in *" $pid "*) ;; *) now="$now $pid" ;; esac
-    done
-    [ -n "$now" ] || break
-    all="$all${now# } "
-    # shellcheck disable=SC2086  # pid の並びを語に割る
-    kill -STOP $now 2>/dev/null || true
-  done
-  # shellcheck disable=SC2086
-  { kill -TERM $all; kill -CONT $all; } 2>/dev/null || true
-  t0=$SECONDS
-  while :; do
-    # shellcheck disable=SC2086
-    alive="$(ps -o pid=,stat= -p "$(printf '%s,' $all | sed 's/,$//')" 2>/dev/null | awk '$2 !~ /^Z/ { print $1 }')"
-    [ -n "$alive" ] || break
-    [ $((SECONDS - t0)) -lt 5 ] || break
-    sleep 0.1
-  done
-  # shellcheck disable=SC2086
-  [ -z "$alive" ] || kill -KILL $alive 2>/dev/null || true
-  wait "$root" 2>/dev/null || true
-}
 # shellcheck disable=SC2329  # on_cleanup (WTS_ON_CLEANUP 経由で EXIT trap から呼ばれる) が呼ぶ
-stop_run_group() {  # 中断の trap から: 実行中の run の木を止める
-  [ -z "$run_root" ] || { stop_tree "$run_root"; run_root=""; }
+stop_run_group() {  # 中断の trap から: 実行中の run を止める。runtimeout へ TERM を送ると、木を凍らせて止め終えてから死ぬ
+  [ -n "$run_root" ] || return 0
+  kill -TERM "$run_root" 2>/dev/null || true
+  wait "$run_root" 2>/dev/null || true   # 止め終わるまで待つ (待たずに worktree を消すと、まだ生きている子と競合する)
+  run_root=""
 }
 run_in_wt() {  # $1=段の名前 $2=コマンド。出力は呼び出し側のリダイレクトへ。時間切れは rc=124 + timed_out_phase
-  local phase="$1" cmd="$2" rcf start tick rc
-  rcf="$scratch/mv-run.rc"; rm -f "$rcf"
+  local phase="$1" cmd="$2" start rc=0
   # 🚨 非対話の bash の `( … ) &` は INT / QUIT を**無視した状態**で子を起こし、それが検証コマンドへ引き継がれる
   #    (Ctrl-C や trap … INT を扱うテストが baseline で落ちる。red team 2 周目)。/bin/bash 3.2 は `trap - INT` で戻せない
   #    (実測) ので、perl で既定に戻してから同じ bash を exec する。オプションは旧実装の eval が引き継いでいた -u / pipefail に揃える。
   #    検証コマンドに渡るのは環境変数だけ (MUTATE_FILE は export 済み)。報告用の fd 3 は渡さない
-  ( ( cd "$WTS_PATH" && exec perl -e '$SIG{INT} = $SIG{QUIT} = "DEFAULT"; exec @ARGV or die "exec: $!\n"' \
-        "$BASH" -uo pipefail -c "$cmd" ) 3>&-; echo "$?" > "$rcf" ) &
+  # 背景で起こして wait するのは、中断の trap が wait を抜けて stop_run_group を走らせられるようにするため
+  # (前景で起こすと、trap は run が終わるまで走らない)
+  # shellcheck disable=SC2016  # perl のコードはシェルに展開させない
+  ( cd "$WTS_PATH" && exec "$RUNTIMEOUT" -f "$timeout" \
+      perl -e '$SIG{INT} = $SIG{QUIT} = "DEFAULT"; exec @ARGV or die "exec: $!\n"' \
+      "$BASH" -uo pipefail -c "$cmd" ) 3>&- &
   run_root=$!
   start=$SECONDS
-  tick=0.01
-  while [ ! -s "$rcf" ]; do
-    # 根が rc を書かずに死んだ (外から撃たれた) なら待たずに抜ける (時間切れと誤報しない・無制限で永久に待たない。2 周目 P3-1)
-    # パイプで grep -q に渡さない (pipefail 下で SIGPIPE が偽の失敗を作る)。ヒアストリングも空に改行を足して「生きている」に化けるので case で見る
-    root_stat=$(ps -o stat= -p "$run_root" 2>/dev/null || true)
-    case $root_stat in ''|Z*) break ;; esac
-    # SECONDS は秒単位なので「超えたら」で見る (-ge だと上限の 1 秒手前で切れうる。2 周目 P3-2)
-    if [ "$timeout" -gt 0 ] && [ $((SECONDS - start)) -gt "$timeout" ]; then
-      stop_tree "$run_root"; run_root=""
-      timed_out_phase="$phase"
-      return 124
-    fi
-    sleep "$tick"
-    case "$tick" in 0.01) tick=0.02 ;; 0.02) tick=0.05 ;; 0.05) tick=0.1 ;; *) tick=0.2 ;; esac
-  done
-  wait "$run_root" 2>/dev/null || true
+  wait "$run_root" || rc=$?
   run_root=""
-  [ -s "$rcf" ] || return 125   # rc を書かずに死んだ (呼び出し側では失敗として扱われる)
-  rc="$(cat "$rcf")"
+  # 🚨 124 は検証コマンド自身も返しうる (hook の時間切れをそのまま 124 で返すテスト等)。上限を超えて走っていたときだけ
+  #    時間切れと読む。SECONDS は秒単位だが上限も整数秒なので、本当の時間切れなら差は上限以上になる
+  if [ "$rc" -eq 124 ] && [ "$timeout" -gt 0 ] && [ $((SECONDS - start)) -ge "$timeout" ]; then
+    timed_out_phase="$phase"
+  fi
   return "$rc"
 }
 # 時間切れなら rc=10 で終える (どの run でも第 3 の結果。red / green に丸めない)

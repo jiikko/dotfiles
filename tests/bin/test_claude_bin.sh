@@ -17,6 +17,32 @@ fail() { printf '✗ %s\n' "$1" >&2; fails=$((fails + 1)); }
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/claude-bin.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 
+# lib が上限付きで候補を起動する runtimeout は、PATH を絞る前に解決して渡す (絞った PATH ではビルドできない)
+# shellcheck source=bin/lib/runtimeout.sh
+source "$ROOT_DIR/bin/lib/runtimeout.sh"
+runtimeout_resolve "$ROOT_DIR" || exit 1
+# この checkout のバイナリでない値 (別の checkout の版・偽物) は採らずに解決し直す
+if [ "$(RUNTIMEOUT=/usr/bin/true; runtimeout_resolve "$ROOT_DIR" && printf '%s' "$RUNTIMEOUT")" = "$(cd "$ROOT_DIR" && pwd -P)/src/runtimeout/runtimeout" ]; then
+  ok "runtimeout_resolve: 別のバイナリを指す RUNTIMEOUT を採らない"
+else
+  fail "runtimeout_resolve: RUNTIMEOUT=/usr/bin/true をそのまま採った"
+fi
+# resolve_claude も照合を迂回しない (lib の中で RUNTIMEOUT の値を信用すると、偽物で上限が外れる)
+cat > "$WORK/broken-claude" <<'EOF'
+#!/bin/sh
+exit 1
+EOF
+mkdir -p "$WORK/broken" && mv "$WORK/broken-claude" "$WORK/broken/claude" && chmod +x "$WORK/broken/claude"
+rc=0
+# shellcheck source=bin/lib/claude_bin.sh
+(export RUNTIMEOUT=/usr/bin/true; PATH="$WORK/broken:/usr/bin:/bin"; source "$LIB"; resolve_claude) >/dev/null 2>"$WORK/err-fake" || rc=$?
+# rc=2 は「runtimeout を用意できない」でも返るので、理由が「候補が動かない」であることまで見る
+if [ "$rc" -eq 2 ] && grep -qF 'どれも動かない' "$WORK/err-fake" && ! grep -qF '用意できない' "$WORK/err-fake"; then
+  ok "resolve_claude: RUNTIMEOUT が偽物でも、動かない候補を採らない (rc=2)"
+else
+  fail "resolve_claude: RUNTIMEOUT=/usr/bin/true で動かない候補を採った (rc=$rc)"
+fi
+
 SYS_PATH="/usr/bin:/bin"
 # 前提: 偽の dir 以外から claude が見つかると、どのケースも判定できない
 if PATH="$SYS_PATH" type -P claude >/dev/null 2>&1; then

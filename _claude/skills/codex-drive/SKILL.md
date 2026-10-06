@@ -119,7 +119,7 @@ codex 往復より速いので Claude が直接やってよい (`subagent-model-
   - **luna の effort は `max` だけ**。`low` / `medium` / `high` / `xhigh` は使わない (sol の組と混ぜない)
     (難易度の自己判定がブレて難所を低い effort で踏む事故を、固定で構造的に潰す)。
   - sol は luna より遅い (公開値で初トークンまで約 4 倍・出力速度は約半分)。既定の timeout (1200 秒) で足りるかは
-    **未実測**。読む run が rc=143 で落ちたら、その行に timeout 列を付ける (`[3.6]` の 2400 と同じ扱い)。
+    **未実測**。読む run が 時間切れ (rc=124) で落ちたら、その行に timeout 列を付ける (`[3.6]` の 2400 と同じ扱い)。
   - 例外は書く run の上振れ 1 つだけ (`[2]` の「モデルはマイルストーンの性質で振らない」)。
     足りないと感じても組を変えず、forge / cross-review へ escalate する
     ([`escalate-to-forge-after-failed-tries.md`](../../rules/escalate-to-forge-after-failed-tries.md))。
@@ -195,7 +195,7 @@ Claude がやるのは:
    **`mode` は `ro` | `review` の 2 値** (それぞれ `codex exec -s read-only` / `codex exec review`)。
    下の例はコマンド形で書いてあるので、manifest には略号の方を書くこと。
    末尾の `timeout_s` は任意で、**その行だけ** timeout を上書きする (省略時は `CODEX_FANOUT_TIMEOUT`)。
-   敵対レビュー系 lens は反証の構築に時間がかかり既定値で rc=143 になりやすい (dotfiles issue 150) ので
+   敵対レビュー系 lens は反証の構築に時間がかかり既定値で時間切れ (rc=124) になりやすい (dotfiles issue 150) ので
    `2400` を付ける ([3.6] が正本)
 3. **manifest・prompt 部品・merger prompt (`-m`)・outdir はすべて cwd 依存**なので、各 Bash 呼び出しで
    値を再計算するか、前回出力のリテラル絶対パスを使う。prompt part のパスにはカンマを入れない
@@ -909,10 +909,10 @@ command codex exec review -m gpt-6.1-sol -c model_reasoning_effort="high" \
 - 各 lens は **別々の Bash 呼び出しで `run_in_background: true`**・出力は別パス (`[3.5]` と同じ並列作法)。
 - `[3.5]` の 2 本と**同時に走らせない** (3.5 の指摘を直した後のコードを攻めるため)。
 - **manifest の各 lens 行に timeout 列 `2400` を付ける** (発見型レビューと違い、反証の構築は思考時間が
-  長く既定の 1200 秒で rc=143 が頻発した — dotfiles issue 150 の実測。3〜4 回落ちて単発再実行では毎回完走)。
+  長く既定の 1200 秒で 時間切れ (当時の rc=143。今は 124) が頻発した — dotfiles issue 150 の実測。3〜4 回落ちて単発再実行では毎回完走)。
   900 秒超なので起動は detach 形 (「並列起動の作法」の nohup + Monitor) にする。
   🚨 **`codex-run` で 1 本だけ起動するときも `-t 2400` を明示する**。`codex-run` は timeout を
-  `CODEX_FANOUT_TIMEOUT` の既定 (1200 秒) から取るので、**付け忘れると 20 分待ってから rc=143 で
+  `CODEX_FANOUT_TIMEOUT` の既定 (1200 秒) から取るので、**付け忘れると 20 分待ってから 時間切れ (rc=124) で
   本文ゼロ**になる (実測 2026-09-15 obaket 820 の D3: 32,062 行のログだけが残り、`-t 2400` で
   再実行して 1,426 秒で完走した)。上の manifest の記述は `codex-fanout` の列の話なので、
   **1 本だけのときに落としやすい**。
@@ -1193,7 +1193,7 @@ EOF
 - ✓ 大きい diff は codex の変更マップをナビに全 hunk を 1 回で精読し、機械的分類の hunk も最低 1 割は精読して分類を監査する (分類誤り 1 件で全 hunk 精読に戻す)
 - ✓ [3.8] の変異適用×テスト実行ループは codex に回させ、Claude は結果表 + 抜き取り 1 件の追試で監査する
 - ✓ 変異 patch は既定の context 付き (`git diff`、`-U3`) で保存させる (`-U0` は再適用すると別の位置に落ちる)
-- ✓ `codex-run` で敵対レビューを 1 本だけ回すときも `-t 2400` を明示する (既定は 1200 秒で rc=143 になる)
+- ✓ `codex-run` で敵対レビューを 1 本だけ回すときも `-t 2400` を明示する (既定は 1200 秒で 時間切れ (rc=124) になる)
 - ✓ codex に issue へ記録させたら、commit 前に `grep -n 'tmp/' <issue>` で gitignore 配下へのリンクを潰す
 - ✓ 着手前に codex 適性を評価し、苦手領域 (UI/実機/主観判断) なら一度ユーザーに確認する
 - ✓ 丸投げ依頼は [R] で「要件 + 受け入れ条件」に言語化してから着手し、[7] でそのリストと照合して締める

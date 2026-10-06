@@ -28,7 +28,7 @@
 #   prompt_part: ファイルパス。複数はカンマ区切りで順に連結する (共通テンプレート + タスク固有 brief)。
 #                パスにカンマは使えない (区切りと衝突する)
 #   timeout_s: この行だけの秒数上限 (任意。省略時は CODEX_FANOUT_TIMEOUT)。敵対レビュー系
-#              (反証を構築する lens) は思考時間が長く既定値で rc=143 になりやすい (issue 150)
+#              (反証を構築する lens) は思考時間が長く既定値で時間切れ (rc=124) になりやすい (issue 150)
 #              ので、その行だけ 2400 程度に伸ばす。900 超は呼び出し側の detach が必要 (上記)
 #
 # 出力 (outdir):
@@ -50,9 +50,9 @@
 #   1 = 全滅 / merger 失敗 / 中断 (SIGINT/SIGTERM) / 引数・manifest エラー
 #
 # 中断 (SIGINT/SIGTERM) は trap で受け、走行中の codex を kill してから exit 1 する
-# (driver だけ死んで codex が裏で API を消費し続ける孤児化を防ぐ)。codex は専用の
-# process group で起動し (perl setpgrp。macOS に setsid が無い)、timeout・中断の kill は
-# グループごと行う — codex が子プロセス (node 等) を持っていても取り残さない。
+# (driver だけ死んで codex が裏で API を消費し続ける孤児化を防ぐ)。codex は runtimeout (bin/runtimeout) の
+# 下で専用の process group に起動し、timeout・中断では子孫ごと止める — codex が子プロセス (node 等) を持っていても
+# 取り残さない。時間切れの run の rc は 124。
 # 安全域: 起動するのは read-only / review のみ。workspace-write の並列は worktree 分離が必要で
 # この driver の守備範囲外 (codex-drive [2p] の手順に従う)。
 set -u
@@ -106,10 +106,10 @@ on_interrupt() {
   trap - INT TERM
   for f in "$outdir"/*.pid; do
     [ -f "$f" ] || continue
-    # 負の pid = process group ごと kill (codex の子プロセスも道連れにする)
-    kill -- "-$(cat "$f")" 2>/dev/null
+    # runtimeout の pid。TERM を受けると codex の子孫を凍らせて止めてから死ぬ
+    kill -TERM "$(cat "$f")" 2>/dev/null
   done
-  # run_one サブシェル・watchdog は codex の死を見て自然に終わる (poll 間隔以内)
+  # run_one サブシェルは runtimeout の死を見て自然に終わる
   printf 'codex-fanout: 中断 — 走行中の codex を kill した\n' >&2
   exit 1
 }
@@ -163,29 +163,31 @@ if [ "$do_merge" -eq 1 ] && [ "${#labels[@]}" -eq 1 ] && [ -z "$merge_prompt_fil
   merge_skipped_single=1
 fi
 
-# merger プロンプトの既定は skill 側テンプレート。$0 が symlink でも実体側から辿る。
-# 解決はスキップ判定の後 (スキップ時にテンプレート不在で die しない)
+# 実体のディレクトリ ($0 が symlink でも辿る)。merger プロンプトの既定と runtimeout の解決に使う
+src="$0"
+while [ -L "$src" ]; do
+  src_dir="$(cd "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  case "$src" in /*) ;; *) src="$src_dir/$src" ;; esac
+done
+script_dir="$(cd "$(dirname "$src")" && pwd)"
+
+# merger プロンプトの既定は skill 側テンプレート。解決はスキップ判定の後 (スキップ時にテンプレート不在で die しない)
 if [ "$do_merge" -eq 1 ]; then
-  if [ -z "$merge_prompt_file" ]; then
-    src="$0"
-    while [ -L "$src" ]; do
-      src_dir="$(cd "$(dirname "$src")" && pwd)"
-      src="$(readlink "$src")"
-      case "$src" in /*) ;; *) src="$src_dir/$src" ;; esac
-    done
-    script_dir="$(cd "$(dirname "$src")" && pwd)"
-    merge_prompt_file="$script_dir/../_claude/skills/codex-drive/templates/merger.md"
-  fi
+  [ -n "$merge_prompt_file" ] || merge_prompt_file="$script_dir/../_claude/skills/codex-drive/templates/merger.md"
   [ -f "$merge_prompt_file" ] || die "merger プロンプトが無い: $merge_prompt_file"
 fi
 
+# 各 run の上限は runtimeout (時間切れは codex の子孫ごと止めて rc=124)。起動前に 1 回だけ解決する (bin/lib/runtimeout.sh)
+# shellcheck source=bin/lib/runtimeout.sh
+. "$script_dir/lib/runtimeout.sh" || die "$script_dir/lib/runtimeout.sh を読めない"
+runtimeout_resolve "$script_dir/.." || die "runtimeout を用意できない (各 run に上限を課せない)"
+
 # --- 起動と watchdog (fan-out 本体と merger で共用) ---
 # launch_with_watchdog <timeout_s> <rcfile> <pidfile> <cmd...>
-# cmd を専用 process group で bg 起動し (perl setpgrp → exec。macOS に setsid が無いための代替。
-# exec は PATH を直接引くので shell 関数/エイリアスを経由しない = `command` プレフィックスと同等)、
-# timeout 超過でグループごと kill する (hang した codex を wait で待ち続けない・codex の
-# 子プロセスを取り残さない。kill された run は rc=143 で失敗扱い)。
-# リダイレクトは呼び出し側で関数ごと付ける。
+# cmd を runtimeout で上限付きに起動する (hang した codex を wait で待ち続けない・codex の子プロセスを取り残さない。
+# 時間切れの run は rc=124 で失敗扱い)。runtimeout は PATH を引いて exec するので shell 関数/エイリアスを経由しない
+# (`command` プレフィックスと同等)。リダイレクトは呼び出し側で関数ごと付ける。
 launch_with_watchdog() {
   local run_timeout="$1" rcfile="$2" pidfile="$3"
   shift 3
@@ -193,26 +195,11 @@ launch_with_watchdog() {
   local timefile="${rcfile%.rc}.time" t0 started_at
   t0="$(date +%s)"
   started_at="$(date +%Y-%m-%dT%H:%M:%S%z)"
-  perl -e 'setpgrp(0, 0); exec @ARGV or die "exec: $!"' -- "$@" &
-  local cpid=$! # = setpgrp した process group の leader
+  "$RUNTIMEOUT" "$run_timeout" "$@" &
+  local cpid=$! # = runtimeout の pid。TERM を受けると codex の子孫を止めてから死ぬ
   printf '%s\n' "$cpid" >"$pidfile" # 中断時の後始末 (on_interrupt) が読む
-  local poll=5
-  [ "$run_timeout" -lt 30 ] && poll=1
-  (
-    slept=0
-    while kill -0 "$cpid" 2>/dev/null; do
-      if [ "$slept" -ge "$run_timeout" ]; then
-        kill -- "-$cpid" 2>/dev/null # 負の pid = グループごと (子プロセス含む)
-        exit 0
-      fi
-      sleep "$poll"
-      slept=$((slept + poll))
-    done
-  ) &
-  local wpid=$!
   wait "$cpid"
   local rc=$?
-  kill "$wpid" 2>/dev/null
   rm -f "$pidfile" # 完走した run の pid を on_interrupt が再利用 pid に誤爆させない
   printf '%s\t%s\n' "$started_at" "$(( $(date +%s) - t0 ))" >"$timefile"
   printf '%s\n' "$rc" >"$rcfile"

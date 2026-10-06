@@ -9,7 +9,7 @@
   時間上限内に必ずまとめ、指摘が無い観点は「反証できなかった」と書いて短く終える (obaket issues/619)
 - **探索は上限の前に打ち切って必ず出力する**。実効の上限は driver の `CODEX_FANOUT_TIMEOUT` (既定 1200 秒) で、プロンプトに分数を書いても
   driver は待ってくれない。大きい差分を読ませるなら起動側で `CODEX_FANOUT_TIMEOUT=2700` 等に上げ、lens には「読む範囲」を具体名で書く
-  (obaket 617 で範囲指定なしの lens が 4 本 rc=143 で死んだ。範囲を書いた再実行はすべて出力した)
+  (obaket 617 で範囲指定なしの lens が 4 本時間切れ (当時の rc=143) で死んだ。範囲を書いた再実行はすべて出力した)
 - 🚨 **read-only lens は build / test / `ps` を実行しない**。`swift build` / `swift test` (`--skip-build` 含む) / `go test` は
   sandbox で hang して **SwiftPM の `.build` lock を握り、外の Claude の build を止める** (実測 2026-09-05 obaket 650 M1 r2:
   3 lens が 40 分 timeout、うち 1 本の `swift test --skip-build` が 3 時間 49 分 lock を握った)。検知力・挙動は**静的に判定**し

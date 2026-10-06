@@ -22,22 +22,17 @@ fi
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/autobuild-warmup.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 
-# 秒数上限つきで 1 回起こす。戻り値: 0 = 上限内に終了 / 1 = 上限内に終わらず kill した。
-# (`timeout` は coreutils 依存なので使わない。bash の & + kill で組む)
+# shellcheck source=bin/lib/runtimeout.sh
+source "$ROOT_DIR/bin/lib/runtimeout.sh"
+runtimeout_resolve "$ROOT_DIR" || exit 1
+
+# 秒数上限つきで 1 回起こす。戻り値: 0 = 上限内に終了 (子の rc は見ない) / 1 = 上限内に終わらず止めた。
+# runtimeout 自身の rc (125 誤用) は 124 と別なので「終わった」側に入る。runtimeout も温めの対象で、
+# --__autobuild_warmup__ には 125 を返すため、125 を誤用として弾くと runtimeout 自身を落とす
 runs_within() { # $1=秒 $2...=コマンド
-  local limit="$1"; shift
-  "$@" >/dev/null 2>&1 </dev/null &
-  local pid=$! waited=0
-  while kill -0 "$pid" 2>/dev/null; do
-    if (( waited >= limit * 10 )); then
-      kill -9 "$pid" 2>/dev/null || true
-      wait "$pid" 2>/dev/null || true
-      return 1
-    fi
-    sleep 0.1; waited=$((waited + 1))   # sleep-ok: tick: 上限が引数で、時間切れなら kill して rc=1 を返す判定器 (成立を待つだけの形ではない)
-  done
-  wait "$pid" 2>/dev/null || true
-  return 0
+  local rc=0
+  "$RUNTIMEOUT" -k 1 "$@" >/dev/null 2>&1 </dev/null || rc=$?
+  [ "$rc" -ne 124 ]
 }
 
 # 自己検査: 判定器が「終わらないもの」を本当に検出するか (これが無いと全 ok が vacuous)

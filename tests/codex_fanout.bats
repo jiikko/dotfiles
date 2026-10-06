@@ -192,7 +192,7 @@ EOS
   [ ! -e "$WORK/out_tv/a.rc" ]
 }
 
-# issue 150: 敵対レビュー lens だけ思考時間が長く既定 timeout で rc=143 になるため、
+# issue 150: 敵対レビュー lens だけ思考時間が長く既定 timeout で時間切れになるため、
 # 行単位で timeout を上書きできる (省略行は CODEX_FANOUT_TIMEOUT のまま)
 @test "manifest の timeout_s 列: その行だけ上書きされ、省略行は env 既定のまま走る" {
   printf 'hang\tro\tm1\thigh\t%s\t2\nok\tro\tm1\thigh\t%s\n' \
@@ -200,7 +200,7 @@ EOS
   # env は十分長い値: hang 行が 2 秒で殺されたなら行の列が効いた証拠
   CODEX_FANOUT_TIMEOUT=600 run "$DRIVER" -M "$WORK/m.tsv" "$WORK/out_rowto"
   [ "$status" -eq 2 ]
-  grep -q "^hang	143	" "$WORK/out_rowto/runs.tsv"
+  grep -q "^hang	124	" "$WORK/out_rowto/runs.tsv"
   grep -q "^ok	0	" "$WORK/out_rowto/runs.tsv"
 }
 
@@ -235,8 +235,8 @@ EOS
   printf 'hang\tro\tm1\thigh\t%s\n' "$WORK/brief_sleep.md" >"$WORK/m.tsv"
   CODEX_FANOUT_TIMEOUT=2 run "$DRIVER" -M "$WORK/m.tsv" "$WORK/out6"
   [ "$status" -eq 1 ]
-  # SIGTERM で殺された run は rc 非0 (143) で台帳に残る
-  grep -q "^hang	143	" "$WORK/out6/runs.tsv"
+  # 時間切れの run は runtimeout の rc=124 で台帳に残る
+  grep -q "^hang	124	" "$WORK/out6/runs.tsv"
   # elapsed_s は実測: 2 秒で殺した run は 2 秒以上 (壊れて 0 や "-" になっていれば落ちる)
   elapsed="$(awk -F'\t' '$1=="hang"{print $4}' "$WORK/out6/runs.tsv")"
   [[ "$elapsed" =~ ^[0-9]+$ ]] && [ "$elapsed" -ge 2 ]

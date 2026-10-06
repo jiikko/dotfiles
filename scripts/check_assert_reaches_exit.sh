@@ -68,6 +68,10 @@ cd "$ROOT_DIR" || exit 1
 
 JOBS="${PROBE_JOBS:-4}"
 export PROBE_TIMEOUT="${PROBE_TIMEOUT:-180}"
+# プローブは runtimeout で上限付きに走らせる (時間切れは子孫ごと止めて rc=124)。xargs の worker へは export で渡る
+# shellcheck source=bin/lib/runtimeout.sh
+source "$ROOT_DIR/bin/lib/runtimeout.sh"
+runtimeout_resolve "$ROOT_DIR" || exit 1
 
 targets=("${@:-tests}")
 mapfile -t FILES < <(find "${targets[@]}" -type f -name 'test_*.sh' ! -name '*helper*' -print | sort)
@@ -166,14 +170,9 @@ probe_plan() {
 # コピーを 1 回走らせて rc を返す (timeout つき)。出力は $2 のファイルへ落とす
 # (「その分岐に到達したか」を ✗ の数で確かめるため。rc だけでは判定できない)。
 run_probe() {
-  local probe="$1" out="$2" rc pid killer
+  local probe="$1" out="$2"
   chmod +x "$probe"
-  "$probe" > "$out" 2>&1 &
-  pid=$!
-  ( sleep "$PROBE_TIMEOUT"; kill -9 "$pid" 2>/dev/null ) & killer=$!
-  wait "$pid"; rc=$?
-  kill "$killer" 2>/dev/null; wait "$killer" 2>/dev/null
-  return "$rc"
+  "$RUNTIMEOUT" "$PROBE_TIMEOUT" "$probe" < /dev/null > "$out" 2>&1   # stdin は旧実装の & 起動と同じく /dev/null
 }
 
 # ✗ の数 (取れなければ 0)。🚨 空文字を返さない — 返すと呼び出し側の [ -le ] が
@@ -205,8 +204,8 @@ probe_one() {
   # baseline: **コピーを素のまま**走らせる (自分のファイル名への依存・skip・既存の赤をここで弾く)。
   # 出力の ✗ の数も控える (正常な出力に ✗ を含むテストがあるので、増分で「到達した」を判定する)。
   cp "$f" "$probe"
-  if ! run_probe "$probe" "$base_out"; then
-    rc=$?
+  rc=0; run_probe "$probe" "$base_out" || rc=$?
+  if [ "$rc" -ne 0 ]; then
     rm -f "$probe" "$plan" "$base_out"
     printf '不明\t%s\tコピーの素の実行が rc=%s (skip / 環境依存 / 自分のファイル名への依存 / timeout)\n' "$f" "$rc"
     return 0
