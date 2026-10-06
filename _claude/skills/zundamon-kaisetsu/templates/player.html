@@ -35,6 +35,10 @@ h1 { font-size: 1.25rem; margin: 0 0 12px; }
 .caption .who { display: block; font-size: .7em; }
 .stage-title { position: absolute; left: 3%; top: 3%; max-width: 70%; background: var(--caption-bg); border-radius: 12px;
                padding: 8px 20px; font-size: clamp(16px, 3vw, 28px); font-weight: 700; z-index: 1; }
+/* 作成日。タイトルと同じ高さの右端に出す (タイトルは max-width 70% なので重ならない) */
+.stage-date { position: absolute; right: 3%; top: 3%; background: var(--caption-bg); border-radius: 12px;
+              padding: 8px 16px; font-size: clamp(12px, 2vw, 18px); font-weight: 700; z-index: 1; }
+.stage-date:empty { display: none; }
 .caption:empty { display: none; }
 /* トピック (チャプター) 名。チャプターが 2 つ以上あるときだけ、上端のタイトルと立ち絵の頭の間に出す */
 .stage-topic { position: absolute; left: 50%; top: 17%; transform: translateX(-50%); max-width: 70%; text-align: center;
@@ -64,7 +68,7 @@ html.render * { transition: none !important; }
 <body>
 <main>
   <h1 id="title"></h1>
-  <div class="stage" id="stage"><div class="stage-title" id="stage-title"></div><div class="stage-topic" id="stage-topic"></div><div class="caption" id="caption"></div></div>
+  <div class="stage" id="stage"><div class="stage-title" id="stage-title"></div><div class="stage-date" id="stage-date"></div><div class="stage-topic" id="stage-topic"></div><div class="caption" id="caption"></div></div>
   <div class="controls">
     <button id="play" type="button">▶</button>
     <input id="seek" type="range" min="0" step="0.01" value="0" aria-label="再生位置">
@@ -83,7 +87,7 @@ html.render * { transition: none !important; }
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
-  $('title').textContent = D.title; $('stage-title').textContent = D.title; $('desc').textContent = D.description;
+  $('title').textContent = D.title; $('stage-title').textContent = D.title; $('stage-date').textContent = D.date ? `作成日 ${D.date}` : ''; $('desc').textContent = D.description;
   for (const c of D.credits) $('credits').append(el('li', null, c));
   for (const ch of D.chapters) {
     const a = el('a', null, `${fmt(ch.start)} ${ch.title}`); a.onclick = () => { seek(ch.start); play(); };

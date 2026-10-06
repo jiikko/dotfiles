@@ -119,6 +119,11 @@ func loadScript(path string, env *Env) (*Script, error) {
 			}
 		}
 	}
+	if d, ok := raw["date"]; ok {
+		if ds, isStr := d.(string); !isStr || strings.TrimSpace(ds) == "" {
+			return nil, fail("%s: date は空でない文字列で書く (実際: %s)", path, pyRepr(d))
+		}
+	}
 	if rd, ok := raw["readings"]; ok && !validReadings(rd) {
 		return nil, fail(`%s: readings は {"字幕の語": "読ませたい語"} の形 (キーも値も空でない文字列)`, path)
 	}

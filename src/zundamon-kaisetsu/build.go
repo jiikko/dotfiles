@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 )
 
 const (
@@ -385,6 +386,7 @@ type castData struct {
 // PlayerData はプレイヤー (player.html) に埋め込むデータ。HTML の再生と mp4 の撮影が同じものを使う。
 type PlayerData struct {
 	Title       string              `json:"title"`
+	Date        string              `json:"date"`
 	Description string              `json:"description"`
 	Credits     []string            `json:"credits"`
 	Cast        map[string]castData `json:"cast"`
@@ -395,6 +397,18 @@ type PlayerData struct {
 	Duration    float64             `json:"duration"`
 	FPS         int                 `json:"fps"`
 	Audio       string              `json:"audio"`
+}
+
+// createdDate は舞台の右上に出す作成日。台本の date を優先し、無ければ build した日 (手元の時刻) にする。
+func createdDate(s *Script, env *Env) string {
+	if v, ok := s.Raw["date"]; ok {
+		return pyStr(v)
+	}
+	now := time.Now
+	if env.Now != nil {
+		now = env.Now
+	}
+	return now().Format("2006-01-02")
 }
 
 // assemble は合成済みの wav を連結し、プレイヤーに渡すデータ (音声以外) と連結した PCM を返す。
@@ -489,6 +503,7 @@ func assemble(s *Script, env *Env) (*PlayerData, []byte, error) {
 	}
 	data := &PlayerData{
 		Title:       title,
+		Date:        createdDate(s, env),
 		Description: pyStr(lineGet(s.Raw, "description", "")),
 		Credits:     credits,
 		Cast:        cast,

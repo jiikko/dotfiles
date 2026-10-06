@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -239,6 +240,10 @@ func TestBuildDataMatchesPython(t *testing.T) {
 				}
 			}
 			for _, k := range sortedKeys(got) {
+				// Go に移した後で足したキーは Python 版に無い。名前で挙げて除き、それ以外の余分なキーは今までどおり落とす
+				if slices.Contains(keysAddedAfterPort, k) {
+					continue
+				}
 				if _, ok := g.Data[k]; !ok {
 					t.Errorf("Python 版に無いキー %s がある", k)
 				}
@@ -246,6 +251,9 @@ func TestBuildDataMatchesPython(t *testing.T) {
 		})
 	}
 }
+
+// keysAddedAfterPort はプレイヤーのデータのうち、Python 版 (golden) の後で足したキー。中身は TestCreatedDate などが見る。
+var keysAddedAfterPort = []string{"date"}
 
 func firstBytes(b []byte, n int) []byte {
 	if len(b) > n {

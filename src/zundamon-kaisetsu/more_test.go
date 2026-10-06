@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestMouthTrackSyntheticMatchesPython(t *testing.T) {
@@ -351,5 +352,36 @@ func TestNegativeZeroIntLiteralKey(t *testing.T) {
 	}
 	if got := cacheKey(p); got != want {
 		t.Errorf("整数の -0 の鍵が Python 版と違う: got %s want %s (%s)", got, want, cacheSerialize(p))
+	}
+}
+
+// 舞台の右上の作成日: 台本の date を優先し、無ければ build した日。プレイヤーのデータに載ることまで見る。
+func TestCreatedDate(t *testing.T) {
+	env := testEnv(t)
+	env.Now = func() time.Time { return time.Date(2026, 10, 6, 23, 59, 0, 0, time.Local) }
+	s, err := loadScript(resolvePath(filepath.Join("testdata", "build", "script.json")), env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _, err := assemble(s, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.Date != "2026-10-06" {
+		t.Errorf("date の無い台本の作成日: %q (want build した日 2026-10-06)", data.Date)
+	}
+	s.Raw["date"] = "2026-09-30"
+	if got := createdDate(s, env); got != "2026-09-30" {
+		t.Errorf("台本の date を使っていない: %q", got)
+	}
+	for name, d := range map[string]any{"空": " ", "数": 20261006} {
+		path := filepath.Join(t.TempDir(), "s.json")
+		b, _ := json.Marshal(map[string]any{"date": d, "lines": []any{map[string]any{"who": "metan", "text": "a"}}})
+		if err := os.WriteFile(path, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := loadScript(path, env); err == nil || !strings.Contains(err.Error(), "date") {
+			t.Errorf("%s の date を受け入れた (%v)", name, err)
+		}
 	}
 }
