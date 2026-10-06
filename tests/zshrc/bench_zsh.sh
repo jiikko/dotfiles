@@ -3,7 +3,7 @@
 #
 # 計測するもの (いずれも 5 回計測の min を metric として出力):
 #   startup       = `zsh -l -i -c exit` の wall time。zshenv → zshrc → zlogin の
-#                   全ロードコスト (プロンプト描画・zle 初期化は含まない)
+#                   全ロードコスト (プロンプト描画・zle 初期化は含まない。上限を課す runtimeout の起動分は差し引く)
 #   first_command = zpty 上に本物の対話 login シェルを spawn し、起動直後に投入した
 #                   コマンドの出力が返るまで。= zshrc/zlogin ロード + zle/プロンプト初期化 +
 #                   入力受け付け + 最初のコマンド実行完了 (zsh-bench の first-command-lag 相当)
@@ -63,20 +63,37 @@ typeset -a bench_env=(
 )
 
 # --- startup: zsh -l -i -c exit の wall time (ms) ---
-# rc ロード自体のハングで CI job の 10 分 timeout まで無言でぶら下がるのを防ぐため、
-# timeout(1) があれば 60s で切る (Ubuntu は coreutils 同梱。素の macOS には無いので条件付き)
-typeset -a with_timeout=()
-command -v timeout >/dev/null 2>&1 && with_timeout=(timeout 60)
+# rc ロード自体のハングで CI job の timeout まで無言でぶら下がるのを防ぐため、runtimeout で 60s で切る。
+# -f (グループを分けない) にする: 分けると端末から実行したとき zsh -i が /dev/tty の tcsetpgrp で SIGTTOU に止まり、毎回 60s で落ちる
+# (issue 640。以前は timeout(1) があるときだけ切っており、素の macOS = CI では上限なしだった)。
+# runtimeout の起動の分 (手元で約 2.5ms。issue 640) は計測値から差し引く: 差し引かないと、道具を入れただけで
+# 指標 (zsh の起動時間) が 1 割近く動き、予算 (bench_budgets.ci) との比較が別物になる。
+# 差し引く量は「runtimeout 経由の /usr/bin/true」と「素の /usr/bin/true」の min-of-5 の差 (計測と同じ min の取り方)
+source "$ROOT_DIR/bin/lib/runtimeout.sh"
+runtimeout_resolve "$ROOT_DIR" || { print -u2 "runtimeout を用意できない (startup の計測に上限を課せない)"; exit 1; }
+startup_overhead_ms() {
+  local -F t0 t1 best_tool=1e9 best_plain=1e9 d
+  local i
+  for i in 1 2 3 4 5; do
+    t0=$EPOCHREALTIME; "$RUNTIMEOUT" -f 60 /usr/bin/true; t1=$EPOCHREALTIME
+    d=$(( (t1 - t0) * 1000 )); (( d < best_tool )) && best_tool=$d
+    t0=$EPOCHREALTIME; /usr/bin/true; t1=$EPOCHREALTIME
+    d=$(( (t1 - t0) * 1000 )); (( d < best_plain )) && best_plain=$d
+  done
+  d=$(( best_tool - best_plain )); (( d < 0 )) && d=0
+  printf '%.3f\n' $d
+}
+typeset -F STARTUP_OVERHEAD_MS=$(startup_overhead_ms)
 
 measure_startup() {
   local -F t0 t1
   t0=$EPOCHREALTIME
   # 終了ステータスを明示検査: 起動失敗を「高速な計測値」として false-pass させない
-  "${with_timeout[@]}" env "${bench_env[@]}" zsh -l -i -c exit </dev/null >/dev/null 2>&1 || {
-    print -u2 "startup 計測失敗: zsh -l -i -c exit が非 0 終了 (timeout 60s 超過を含む)"; return 1
+  "$RUNTIMEOUT" -f 60 env "${bench_env[@]}" zsh -l -i -c exit </dev/null >/dev/null 2>&1 || {
+    print -u2 "startup 計測失敗: zsh -l -i -c exit が非 0 終了 (rc=124 は 60s の上限超過)"; return 1
   }
   t1=$EPOCHREALTIME
-  printf '%.1f\n' $(( (t1 - t0) * 1000 ))
+  printf '%.1f\n' $(( (t1 - t0) * 1000 - STARTUP_OVERHEAD_MS ))
 }
 
 # --- zpty 共通ヘルパー ---

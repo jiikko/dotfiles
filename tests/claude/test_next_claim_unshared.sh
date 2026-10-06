@@ -15,9 +15,9 @@ HOOK="$ROOT_DIR/_claude/hooks/next-claim-unshared.sh"
 HOOK_TIMEOUT=10
 
 # 本番と同じ上限を課せないなら「合格」ではなく「判定不能 = 失敗」にする
-if command -v timeout >/dev/null 2>&1; then TIMEOUT_BIN=timeout
-elif command -v gtimeout >/dev/null 2>&1; then TIMEOUT_BIN=gtimeout
-else echo "✗ timeout(1) / gtimeout(1) がどちらも無い。本番と同じ上限を課せないので検査できない" >&2; exit 1; fi
+# shellcheck source=bin/lib/runtimeout.sh
+. "$ROOT_DIR/bin/lib/runtimeout.sh"
+runtimeout_resolve "$ROOT_DIR" || exit 1
 command -v jq >/dev/null 2>&1 || { echo "✗ jq が無い。hook は jq 前提なので検査できない" >&2; exit 1; }
 
 fail=0; ok=0
@@ -44,7 +44,7 @@ new_nested_repo() { # root 直下に issues/ が無く、macOS/issues/next/ だ�
     : > macOS/issues/186-x.md &&
     git add -A && git -c user.email=t@t -c user.name=t commit -qm init ) >/dev/null 2>&1
 }
-run_hook() { ( cd "$REPO" && printf '{"prompt":"x"}' | "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null ) || true; }
+run_hook() { ( cd "$REPO" && printf '{"prompt":"x"}' | "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null ) || true; }
 
 expect_fire() { # $1=説明
   local out; out=$(run_hook)
@@ -147,7 +147,7 @@ scope=$(mktemp -d "$TMP_ROOT/noopt.XXXXXX")
   git mv issues/1-x.md issues/next/ &&
   git -c user.email=t@t -c user.name=t commit -qm claim &&
   rm -rf issues/next ) >/dev/null 2>&1
-out=$( cd "$scope" && printf '{"prompt":"x"}' | "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true )
+out=$( cd "$scope" && printf '{"prompt":"x"}' | "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true )
 if [ -n "$out" ]; then echo "✗ issues/next/ を消した repo (opt-out) で発火した"; fail=$((fail+1));
 else echo "✓ issues/next/ が無い repo では発火しない (opt-out した repo を急かさない)"; ok=$((ok+1)); fi
 

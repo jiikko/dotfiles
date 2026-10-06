@@ -14,9 +14,9 @@ HOOK="$ROOT_DIR/_claude/hooks/warn-discarding-checkout.sh"
 # 課さないと「ゲートが消える」退行を観測できない。
 HOOK_TIMEOUT=10
 # 🚨 「timeout が無いから skip」で緑を返さない (判定不能は合格ではない)
-if command -v timeout >/dev/null 2>&1; then TIMEOUT_BIN=timeout
-elif command -v gtimeout >/dev/null 2>&1; then TIMEOUT_BIN=gtimeout
-else echo "✗ timeout(1) / gtimeout(1) がどちらも無い。本番と同じ上限を課せないので検査できない" >&2; exit 1; fi
+# shellcheck source=bin/lib/runtimeout.sh
+. "$ROOT_DIR/bin/lib/runtimeout.sh"
+runtimeout_resolve "$ROOT_DIR" || exit 1
 command -v jq >/dev/null 2>&1 || { echo "✗ jq が無い。hook は jq 前提なので検査できない" >&2; exit 1; }
 
 ok=0; fail=0
@@ -32,7 +32,7 @@ dirty() { printf 'b\n' >> "$REPO/x.go"; }
 
 run() { # $1=command → hook の stdout
   jq -n --arg c "$1" --arg d "$REPO" '{cwd: $d, tool_input: {command: $c}}' |
-    "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true
+    "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true
 }
 
 # body_of <hook の stdout>: 本文 (ask なら確認に出る理由、注意なら additionalContext)。JSON が壊れていれば空
@@ -179,12 +179,12 @@ echo "## cross-repo: 見るのは「捨てられる側」であって cwd では
 new_repo; CLEAN="$REPO"          # clean な repo を cwd に
 new_repo; dirty; DIRTY="$REPO"   # dirty な repo を -C の対象に
 out=$(jq -n --arg c "git -C $DIRTY checkout -- x.go" --arg d "$CLEAN" '{cwd:$d,tool_input:{command:$c}}' |
-  "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
+  "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
 if body_of "$out" | grep -qF "$DIRTY"; then
   echo "✓ clean な cwd から dirty な repo を触ると、対象 repo の変更を出す"; ok=$((ok+1))
 else echo "✗ cwd が clean だと沈黙した (今まさに消える場面で黙る)"; fail=$((fail+1)); fi
 out=$(jq -n --arg c "git -C $CLEAN checkout -- x.go" --arg d "$DIRTY" '{cwd:$d,tool_input:{command:$c}}' |
-  "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
+  "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
 if [ -z "$out" ]; then echo "✓ dirty な cwd から clean な repo を触っても黙る (無関係な一覧を見せない)"; ok=$((ok+1))
 else echo "✗ 対象は clean なのに cwd 側の変更を「消えるもの」として見せた"; printf '%s\n' "$out" | head -2; fail=$((fail+1)); fi
 # 対象の repo の書き方 (issue 623 の敵対的レビュー P2-5 / P3-1): 引用符つきの -C / ~ / -c k=v の後の -C / cd <dir> && / サブシェル。
@@ -192,7 +192,7 @@ else echo "✗ 対象は clean なのに cwd 側の変更を「消えるもの�
 for c in "git -C \"$DIRTY\" checkout -- x.go" "git -c a=b -C $DIRTY checkout -- x.go" \
          "git -C ~/${DIRTY##*/} checkout -- x.go" "git -C \$HOME/${DIRTY##*/} checkout -- x.go"; do
   out=$(jq -n --arg c "$c" --arg d "$CLEAN" '{cwd:$d,tool_input:{command:$c}}' |
-    HOME="${DIRTY%/*}" "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
+    HOME="${DIRTY%/*}" "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
   if body_of "$out" | grep -qF "$DIRTY"; then echo "✓ 対象 repo を読む: $c"; ok=$((ok+1))
   else echo "✗ 対象 repo を読めずに黙った / 違う repo を見た: $c"; printf '%s\n' "$out" | head -2; fail=$((fail+1)); fi
 done
@@ -200,7 +200,7 @@ done
 #    dirty な cwd での確実な破棄が、旧と同じく少なくとも注意を出すこと (cd があるので ask にはしない)
 for c in "git checkout -- x.go; cd $CLEAN; git checkout -- x.go" "git checkout -- x.go && cd $CLEAN && git checkout main" \
          "git commit -m 'x; cd /tmp'; git checkout -- x.go" "git checkout -- x.go; git -C $CLEAN checkout -b new"; do
-  out=$(jq -n --arg c "$c" --arg d "$DIRTY" '{cwd:$d,tool_input:{command:$c}}' | "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
+  out=$(jq -n --arg c "$c" --arg d "$DIRTY" '{cwd:$d,tool_input:{command:$c}}' | "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
   if body_of "$out" | grep -qF "$DIRTY"; then echo "✓ 後ろの segment に対象を奪われない: $c"; ok=$((ok+1))
   else echo "✗ 後ろの segment に対象を奪われて黙った / 違う repo を見た: $c"; printf '%s\n' "$out" | head -2; fail=$((fail+1)); fi
 done
@@ -208,13 +208,13 @@ done
 #    -C の無い破棄の後ろの `-C <dirty>` の破棄を見落とさない (clean な cwd でも dirty な対象の一覧を出す)
 for c in "git restore x.go && git -C $DIRTY restore x.go" "git checkout -- x.go; git -C $DIRTY checkout -- x.go" \
          "git checkout main && git -C $DIRTY checkout -- x.go"; do
-  out=$(jq -n --arg c "$c" --arg d "$CLEAN" '{cwd:$d,tool_input:{command:$c}}' | "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
+  out=$(jq -n --arg c "$c" --arg d "$CLEAN" '{cwd:$d,tool_input:{command:$c}}' | "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
   if body_of "$out" | grep -qF "$DIRTY"; then echo "✓ 後ろの -C <dirty> を見落とさない: $c"; ok=$((ok+1))
   else echo "✗ 後ろの -C <dirty> を見落として黙った: $c"; printf '%s\n' "$out" | head -2; fail=$((fail+1)); fi
 done
 #    確実な破棄が clean な別の repo を指していれば、cwd (dirty) の一覧で ask にしない (cwd 側の曖昧な形は注意だけ)
 for c in "git checkout main && git -C $CLEAN restore x.go" "echo git checkout foo; git -C $CLEAN checkout -- x.go"; do
-  out=$(jq -n --arg c "$c" --arg d "$DIRTY" '{cwd:$d,tool_input:{command:$c}}' | "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
+  out=$(jq -n --arg c "$c" --arg d "$DIRTY" '{cwd:$d,tool_input:{command:$c}}' | "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
   if [ -n "$out" ] && printf '%s' "$out" | jq -e '.hookSpecificOutput.permissionDecision' >/dev/null 2>&1; then
     echo "✗ clean な別の repo への破棄なのに cwd の一覧で ask にした: $c"; fail=$((fail+1))
   else echo "✓ 確実な破棄の対象が clean なら ask にしない: $c"; ok=$((ok+1)); fi
@@ -224,7 +224,7 @@ for c in "(cd $CLEAN && git checkout -- x.go)" "pushd $CLEAN; git checkout -- x.
          "GIT_DIR=$CLEAN/.git GIT_WORK_TREE=$CLEAN git checkout -- x.go" "git --git-dir=$CLEAN/.git --work-tree=$CLEAN checkout -- x.go" \
          "git -C $DIRTY -C $CLEAN checkout -- x.go" "git -C /nonexistent/xyz checkout -- x.go" \
          "git status;	cd $CLEAN && git checkout -- x.go" "git checkout feature 2> >(tee -p log)"; do
-  out=$(jq -n --arg c "$c" --arg d "$DIRTY" '{cwd:$d,tool_input:{command:$c}}' | "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
+  out=$(jq -n --arg c "$c" --arg d "$DIRTY" '{cwd:$d,tool_input:{command:$c}}' | "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
   if [ -n "$out" ] && printf '%s' "$out" | jq -e '.hookSpecificOutput.permissionDecision' >/dev/null 2>&1; then
     echo "✗ 対象に自信が無いのに ask にした: $c"; fail=$((fail+1))
   else echo "✓ 対象に自信が無ければ ask にしない: $c"; ok=$((ok+1)); fi
@@ -236,7 +236,7 @@ REPO=$(mktemp -d "$TMP_ROOT/norepo.XXXXXX"); expect_silent "repo でない cwd" 
 # cwd が実在しない → $PWD へ落ちる。落ちた先が dirty でも壊れない (JSON が出るか無出力のどちらか)
 new_repo; dirty
 out=$(jq -n --arg c "git checkout -- x.go" '{cwd: "/nonexistent/xxx", tool_input: {command: $c}}' |
-  "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
+  "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
 if [ -z "$out" ] || printf '%s' "$out" | jq -e . >/dev/null 2>&1; then
   echo "✓ cwd が実在しなくても壊れない"; ok=$((ok+1))
 else echo "✗ cwd 不在で壊れた JSON を出した"; fail=$((fail+1)); fi
@@ -244,11 +244,11 @@ else echo "✗ cwd 不在で壊れた JSON を出した"; fail=$((fail+1)); fi
 new_repo; dirty
 shim=$(mktemp -d "$TMP_ROOT/nojq.XXXXXX")
 out=$(jq -n --arg c "git checkout -- x.go" --arg d "$REPO" '{cwd: $d, tool_input: {command: $c}}' |
-  PATH="$shim" "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
+  PATH="$shim" "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
 if [ -z "$out" ]; then echo "✓ jq 不在では黙る"; ok=$((ok+1)); else echo "✗ jq 不在なのに出力した"; fail=$((fail+1)); fi
 # 非 JSON / 空入力で異常終了しない
 for bad in "" "not json"; do
-  if printf '%s' "$bad" | "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" >/dev/null 2>&1; then
+  if printf '%s' "$bad" | "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" >/dev/null 2>&1; then
     ok=$((ok+1)); else echo "✗ 不正入力で異常終了した: [$bad]"; fail=$((fail+1)); fi
 done
 # 🚨 巨大な heredoc で timeout に殺されないこと (殺されると無出力 = 注意が消える)
@@ -260,7 +260,7 @@ big="git checkout -- $big"
 out=$(jq -n --arg c "git commit -F - <<'M'
 $big
 M" --arg d "$REPO" '{cwd: $d, tool_input: {command: $c}}' |
-  "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
+  "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
 # 🚨 期待は「時間内に**注意が出る**」。timeout に殺されると stdout は 0 byte になるので、
 # 「出た」ことが本走査を最後まで通った証拠になる (無出力だと殺されたのか対象外なのか
 # 区別できない = 沈黙が成功に見える形)。

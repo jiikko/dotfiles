@@ -95,6 +95,14 @@ jobs:
         with:
           commands: zsh
 
+      # runtimeout (src/runtimeout。上限付き実行の道具) を go_autobuild でビルドするのに Go が要る (issue 640)。
+      # 使うのは tests/zshrc/bench_zsh.sh の startup の上限。
+      # 版は全 module で同じなので glogx の go.mod を代表にする (tests.yml と同じ)
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: src/glogx/go.mod
+          cache-dependency-path: src/*/go.sum
+
       # 🚨 以下は ubuntu runner の事情への対処で、macOS では compaudit が何も返さないため
       #   実質 no-op (実測 2026-08-29)。壊れないので残す (runner を戻したときに効く)。
       # GHA runner は zsh の system fpath (/usr/share/zsh 等) が group-writable なため、対話シェルの

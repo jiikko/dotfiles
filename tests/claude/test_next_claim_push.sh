@@ -15,15 +15,10 @@ HOOK_TIMEOUT=10
 
 # 本番と同じ上限を課せないなら「合格」ではなく「判定不能 = 失敗」にする
 # (tests/claude/test_deny_bare_tmux_kill.sh と同じ規律。CI で timeout(1) が消えて
-#  検査が丸ごと skip に化けた事故がある)。
-if command -v timeout >/dev/null 2>&1; then
-  TIMEOUT_BIN=timeout
-elif command -v gtimeout >/dev/null 2>&1; then
-  TIMEOUT_BIN=gtimeout
-else
-  echo "✗ timeout(1) / gtimeout(1) がどちらも無い。本番と同じ上限を課せないので検査できない" >&2
-  exit 1
-fi
+#  検査が丸ごと skip に化けた事故がある)。上限は runtimeout (issue 640) で課す。
+# shellcheck source=bin/lib/runtimeout.sh
+. "$ROOT_DIR/bin/lib/runtimeout.sh"
+runtimeout_resolve "$ROOT_DIR" || exit 1
 
 command -v jq >/dev/null 2>&1 || { echo "✗ jq が無い。hook は jq 前提なので検査できない" >&2; exit 1; }
 
@@ -68,7 +63,7 @@ run_nested_hook() { # $1 = command 文字列 → 入れ子 repo で stdout に h
   (
     cd "$NESTED_FIRE_REPO" &&
       jq -n --arg c "$1" '{tool_input: {command: $c}}' |
-      "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null
+      "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null
   ) || true
 }
 
@@ -76,7 +71,7 @@ run_hook() { # $1 = command 文字列 → stdout に hook の出力
   (
     cd "$FIRE_REPO" &&
       jq -n --arg c "$1" '{tool_input: {command: $c}}' |
-      "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null
+      "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null
   ) || true
 }
 
@@ -84,7 +79,7 @@ run_epic_hook() { # $1 = command 文字列 → epic-only repo で stdout に hoo
   (
     cd "$EPIC_FIRE_REPO" &&
       jq -n --arg c "$1" '{tool_input: {command: $c}}' |
-      "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null
+      "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null
   ) || true
 }
 
@@ -165,30 +160,30 @@ scope_tmp=$(mktemp -d)
 
 # issues/ はあるが next/ が無い → 無効
 out=$(cd "$scope_tmp" && jq -n --arg c "git mv issues/1.md issues/next/" '{tool_input: {command: $c}}' |
-  "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
+  "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
 if [ -z "$out" ]; then ok=$((ok + 1)); else
   echo "✗ issues/next/ が無い repo で発火した (仕事の repo でも出てしまう)"; fail=$((fail + 1)); fi
 
 # next/ を作れば有効 (opt-in が効くこと。無効側だけ見ると「常に黙る」退行を見逃す)
 mkdir -p "$scope_tmp/issues/next"
 out=$(cd "$scope_tmp" && jq -n --arg c "git mv issues/1.md issues/next/" '{tool_input: {command: $c}}' |
-  "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
+  "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
 if [ -n "$out" ]; then ok=$((ok + 1)); else
   echo "✗ issues/next/ を作っても発火しない (opt-in が効いていない)"; fail=$((fail + 1)); fi
 
 # git 管理外 → 無効
 out=$(cd "$(mktemp -d)" && jq -n --arg c "git mv issues/1.md issues/next/" '{tool_input: {command: $c}}' |
-  "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
+  "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
 if [ -z "$out" ]; then ok=$((ok + 1)); else
   echo "✗ git 管理外で発火した"; fail=$((fail + 1)); fi
 
 # --- 異常系: 壊れた入力で JSON を壊さない / 落ちない ---
-if printf '' | "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" >/dev/null 2>&1; then
+if printf '' | "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" >/dev/null 2>&1; then
   ok=$((ok + 1))
 else
   echo "✗ 空入力で異常終了した (PostToolUse は全 Bash 呼び出しで no-op であるべき)"; fail=$((fail + 1))
 fi
-if printf 'not json' | "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" >/dev/null 2>&1; then
+if printf 'not json' | "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" >/dev/null 2>&1; then
   ok=$((ok + 1))
 else
   echo "✗ 非 JSON 入力で異常終了した"; fail=$((fail + 1))

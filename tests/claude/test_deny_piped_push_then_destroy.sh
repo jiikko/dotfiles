@@ -15,14 +15,9 @@ HOOK="$ROOT_DIR/_claude/hooks/deny-piped-push-then-destroy.sh"
 . "$ROOT_DIR/tests/lib/utf8_locale.sh"
 SETTINGS="$ROOT_DIR/_claude/settings.json"
 HOOK_TIMEOUT=10 # 本番の配線 (settings.json) と同じ上限。殺されると無出力 = 素通り
-if command -v timeout >/dev/null 2>&1; then
-  TIMEOUT_BIN=timeout
-elif command -v gtimeout >/dev/null 2>&1; then
-  TIMEOUT_BIN=gtimeout
-else
-  echo "✗ timeout(1) / gtimeout(1) がどちらも無い。本番と同じ上限を課せないので検査できない" >&2
-  exit 1
-fi
+# shellcheck source=bin/lib/runtimeout.sh
+. "$ROOT_DIR/bin/lib/runtimeout.sh"
+runtimeout_resolve "$ROOT_DIR" || exit 1
 [ -x "$HOOK" ] || { printf '✗ フック本体が無い / 実行権限が無い: %s\n' "$HOOK"; exit 1; }
 if ! command -v jq >/dev/null 2>&1; then
   # フック本体は jq 不在で fail-open (防御ゼロ) なので、ここを成功にしない
@@ -39,7 +34,7 @@ checked=0
 # judge <command>: deny / allow / error:<rc> を出す
 judge() {
   local out rc=0
-  out=$(jq -n --arg c "$1" '{tool_name: "Bash", tool_input: {command: $c}}' | "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK") || rc=$?
+  out=$(jq -n --arg c "$1" '{tool_name: "Bash", tool_input: {command: $c}}' | "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK") || rc=$?
   if [ "$rc" -ne 0 ]; then
     echo "error:$rc"
   elif [ -z "$out" ]; then
@@ -192,7 +187,7 @@ expect deny "引用符の中身が大きい (60KB) 入力も、上限の時間�
 mb="echo \"$(python3 -c "print('𝕏' * 40000)")\"; git push origin x | tail -1 && git worktree remove ../wt"
 # 文字数では上限 (131072) の内側・byte では外側 (約 160KB) の入力。走査に進んでも結局 deny になりうる (8 秒かかる) ので、deny の理由が「大きすぎて」(上限で諦めた) であることまで見る
 checked=$((checked + 1))
-mb_reason=$(jq -n --arg c "$mb" '{tool_input: {command: $c}}' | "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""')
+mb_reason=$(jq -n --arg c "$mb" '{tool_input: {command: $c}}' | "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""')
 if [[ "$mb_reason" == *"大きすぎて"* ]]; then
   printf '✓ deny: 4 byte の文字の大きい入力も byte で数えて、上限で拒否に倒す (文字数で数えると上限が 4 倍に膨らむ)\n'
 else
@@ -213,7 +208,7 @@ trap 'rm -rf "$fake"' EXIT
 printf '#!/bin/sh\nexit 2\n' > "$fake/awk"
 chmod +x "$fake/awk"
 checked=$((checked + 1))
-fa=$(jq -n --arg c 'git push 2>&1 | tail -1 && git worktree remove ../wt' '{tool_input: {command: $c}}' | PATH="$fake:$PATH" "$TIMEOUT_BIN" "$HOOK_TIMEOUT" "$HOOK" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""') || fa="(hook が失敗した: rc=$?)"
+fa=$(jq -n --arg c 'git push 2>&1 | tail -1 && git worktree remove ../wt' '{tool_input: {command: $c}}' | PATH="$fake:$PATH" "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""') || fa="(hook が失敗した: rc=$?)"
 if [[ "$fa" == *"awk"*"失敗"* ]]; then
   printf '✓ deny: awk が失敗したら判定を諦めて拒否に倒す\n'
 else
@@ -227,7 +222,7 @@ if [ -x /bin/bash ]; then
   checked=$((checked + 1))
   python3 -c "import json; print(json.dumps({'tool_input': {'command': 'git push | tail && git worktree remove x\\n' + 'y' * 9000000}}))" > "$fake/big.json"
   # 🚨 hook が timeout に殺されるとパイプが失敗し、set -e で検査ごと無言で止まる。rc を取って「止めていない」として報告する
-  br=$("$TIMEOUT_BIN" "$HOOK_TIMEOUT" /bin/bash "$HOOK" < "$fake/big.json" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""') || br="(hook が失敗した / timeout: rc=$?)"
+  br=$("$RUNTIMEOUT" "$HOOK_TIMEOUT" /bin/bash "$HOOK" < "$fake/big.json" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""') || br="(hook が失敗した / timeout: rc=$?)"
   if [[ "$br" == *"大きすぎて"* ]]; then
     printf '✓ deny: 9MB の入力は /bin/bash でも粗い上限で止める (上限の時間内)\n'
   else

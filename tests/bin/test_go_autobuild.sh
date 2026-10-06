@@ -18,6 +18,12 @@ unset CDPATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LIB="$ROOT_DIR/bin/lib/go_autobuild.zsh"
+# 上限付きの起動は runtimeout。PATH・偽の go を差し替える前に解決し、以後はバイナリの絶対パスで呼ぶ
+# (PATH を絞るケースではラッパーの zsh / go が見えない)。runtimeout 自身も go_autobuild でビルドされるので、
+# go_autobuild が壊れていればここで exit 1 になる (検査対象を道具に使う循環だが、黙って緑にはならない)
+# shellcheck source=bin/lib/runtimeout.sh
+. "$ROOT_DIR/bin/lib/runtimeout.sh"
+runtimeout_resolve "$ROOT_DIR" || exit 1
 TMP_DIR="$(mktemp -d)"
 GATES=()
 # 🚨 失敗経路でも必ず release する。テストが途中で落ちると、ゲートで待っている偽 go が
@@ -952,7 +958,7 @@ go_autobuild_exec --pkg
 EOS
 chmod +x "$ROOT/bin/broken"
 set +e
-out="$(PATH="$TMP_DIR/bin:$PATH" timeout 5 "$ROOT/bin/broken" 2>&1)"; rc=$?
+out="$(PATH="$TMP_DIR/bin:$PATH" "$RUNTIMEOUT" 5 "$ROOT/bin/broken" 2>&1)"; rc=$?
 set -e
 [[ "$rc" == 2 ]] || fail "--pkg の値欠落で exit 2 にならない (rc=$rc out=${out:0:200})"
 ok "--pkg の値欠落は exit 2 で止まる"
@@ -965,8 +971,7 @@ mkdir -p "$TMP_DIR/nogo-bin"
 ln -sf "$(command -v zsh)" "$TMP_DIR/nogo-bin/zsh"
 ln -sf "$(command -v awk)" "$TMP_DIR/nogo-bin/awk"
 set +e
-TIMEOUT_BIN="$(command -v timeout)"   # PATH を絞る前に絶対パスで解決する
-out="$(PATH="$TMP_DIR/nogo-bin" "$TIMEOUT_BIN" 5 "$ROOT/bin/tool" </dev/null 2>&1)"; rc=$?
+out="$(PATH="$TMP_DIR/nogo-bin" "$RUNTIMEOUT" 5 "$ROOT/bin/tool" </dev/null 2>&1)"; rc=$?
 set -e
 [[ "$rc" == 1 ]] || fail "go 不在で exit 1 にならない (rc=$rc out=${out:0:300})"
 [[ "$out" == *"brew install go"* ]] || fail "go 不在の案内に brew install go が無い: ${out:0:300}"
