@@ -45,8 +45,14 @@ type Env struct {
 	AssetsFaces    string
 	Stdout, Stderr io.Writer
 	Now            func() time.Time
-	Sleep          func(time.Duration)
-	LoadAvg        func() (float64, bool)
+	// EngineUp / EngineDown / SpawnReaper はエンジンの自動起動と、使われなくなったら止める見張り (engine_auto.go)。
+	// nil なら自動で管理しない (テストは本物のコンテナに触れない)。StateDir は印・最後に使った時刻・見張りのロックの置き場
+	EngineUp    func() error
+	EngineDown  func(runtime string) error
+	SpawnReaper func() error
+	StateDir    string
+	Sleep       func(time.Duration)
+	LoadAvg     func() (float64, bool)
 }
 
 // Template はプレイヤーのテンプレート。
@@ -59,6 +65,15 @@ func newEnv() *Env {
 	}
 	e := &Env{Engine: engine, Stdout: os.Stdout, Stderr: os.Stderr, Now: time.Now, Sleep: sleepCtx, LoadAvg: loadAvg1}
 	e.setSkillDir(os.Getenv(skillDirEnv))
+	e.StateDir = defaultStateDir()
+	e.EngineUp = func() error { return startEngine(e) }
+	e.EngineDown = func(rt string) error {
+		ctx, cancel := cleanupContext()
+		defer cancel()
+		_, err := stopContainers(ctx, rt)
+		return err
+	}
+	e.SpawnReaper = func() error { return spawnReaper(e) }
 	return e
 }
 
@@ -380,8 +395,9 @@ func styleIDArg(v string) error {
 const usageText = `usage: zundamon-kaisetsu [--engine URL] {check,up,down,speakers,kana,synth,build} ...
 
   check     必要なコマンド・コンテナ・エンジンの状態を確かめる (足りなければ rc=1)
-  up        エンジンをコンテナ ` + containerName + ` で起動し、応答するまで待つ
-  down      up で起動したコンテナ ` + containerName + ` を止める
+  up        エンジンをコンテナ ` + containerName + ` で起動し、応答するまで待つ (down まで動き続ける)
+  down      コンテナ ` + containerName + ` を止める
+            (synth / kana / speakers は止まっているエンジンを自動で起動し、最後に使ってから 10 分で自動で止める。up は要らない)
   speakers  話者とスタイル ID を一覧する
   kana      文ごとの読み (audio_query の kana) を出す。read の候補を合成せずに比べる
               kana "文" … [--who metan|zundamon] [--style-id ID]  /  kana --script 台本.json
@@ -438,6 +454,9 @@ func dispatch(args []string, env *Env) error {
 		return &usageError{msg: "the following arguments are required: cmd"}
 	}
 	sub, subArgs := rest[0], rest[1:]
+	if sub == reapCmd {
+		return cmdReap(env) // 見張り (engine_auto.go)。自動で起動したときに切り離して起こされる
+	}
 	specs := map[string][]optSpec{
 		"check": nil, "up": nil, "down": nil, "speakers": nil,
 		"kana": {
@@ -484,7 +503,7 @@ func dispatch(args []string, env *Env) error {
 	case "down":
 		return cmdDown(env)
 	case "speakers":
-		return cmdSpeakers(env)
+		return withEngine(env, func() error { return cmdSpeakers(env) })
 	case "kana":
 		who := p.opts["who"]
 		if who == "" {
@@ -500,12 +519,12 @@ func dispatch(args []string, env *Env) error {
 				return err
 			}
 		}
-		return cmdKana(env, p.pos, p.opts["script"], who, sid)
+		return withEngine(env, func() error { return cmdKana(env, p.pos, p.opts["script"], who, sid) })
 	case "synth":
 		if err := env.requireSkillDir(); err != nil {
 			return err
 		}
-		return cmdSynth(env, p.pos[0], p.opts["force"] == "true")
+		return withEngine(env, func() error { return cmdSynth(env, p.pos[0], p.opts["force"] == "true") })
 	case "build":
 		output, ok := p.opts["output"]
 		if !ok {

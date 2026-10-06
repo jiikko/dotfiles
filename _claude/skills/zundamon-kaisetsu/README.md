@@ -46,9 +46,12 @@ zundamon-kaisetsu check
 ### 2. VOICEVOX エンジン
 
 ```sh
-zundamon-kaisetsu up     # container を優先し、無ければ docker で起動して応答を待つ
-zundamon-kaisetsu down   # 終わったら止める
+zundamon-kaisetsu check  # container か docker が使えれば、エンジンが止まっていても OK
 ```
+
+- `synth` / `kana` / `speakers` は、エンジンが止まっていれば自分で起動し (container を優先し、無ければ docker)、見張りのプロセスを残す。
+  見張りは最後にエンジンを使ってから 10 分で止めて終わる (印・最後に使った時刻・見張りのログは `~/Library/Caches/zundamon-kaisetsu/`)
+- 起動したままにしたいときだけ `zundamon-kaisetsu up` で起動し、`zundamon-kaisetsu down` で止める (`up` で起動したものは自動では止めない)
 
 - イメージは `voicevox/voicevox_engine:cpu-latest` (約 3.7GB。初回の取得に数分かかる)
 - `container` は初回に `container system start` が要る (Linux カーネルを入れるか聞かれる)
@@ -97,9 +100,7 @@ zundamon-kaisetsu down   # 終わったら止める
 ### 4. 動作確認
 
 ```sh
-zundamon-kaisetsu up
 mkdir -p /tmp/zk && cp examples/script.json /tmp/zk/
-zundamon-kaisetsu synth /tmp/zk/script.json
-zundamon-kaisetsu build /tmp/zk/script.json -o /tmp/zk/out --format both   # out.html と out.mp4
-zundamon-kaisetsu down
+zundamon-kaisetsu synth /tmp/zk/script.json   # エンジンを自動で起動する (使わなくなって 10 分で止まる)
+zundamon-kaisetsu build /tmp/zk/script.json -o /tmp/zk/out --format both   # out.html と out.mp4 (エンジンは使わない)
 ```

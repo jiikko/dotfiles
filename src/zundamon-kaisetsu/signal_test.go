@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -23,6 +24,19 @@ func buildBinary(t *testing.T) string {
 		t.Fatalf("go build: %v\n%s", err, out)
 	}
 	return bin
+}
+
+// isolatedEnv は本物のバイナリを走らせるときの環境。エンジンの自動起動・自動停止が本物のコンテナ (container / docker) と
+// ユーザーのキャッシュ (ロックと印) に届かないよう、PATH からランタイムを外し、HOME を一時ディレクトリにする。
+func isolatedEnv(t *testing.T, extra ...string) []string {
+	t.Helper()
+	var env []string
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "PATH=") && !strings.HasPrefix(kv, "HOME=") {
+			env = append(env, kv)
+		}
+	}
+	return append(append(env, "PATH=/usr/bin:/bin", "HOME="+t.TempDir()), extra...)
 }
 
 // blockingEngine は /speakers を release が閉じられるまで返さない偽のエンジン。
@@ -54,7 +68,7 @@ func TestMainDiesBySignal(t *testing.T) {
 	bin := buildBinary(t)
 	url, requested, _ := blockingEngine(t)
 	cmd := exec.Command(bin, "speakers")
-	cmd.Env = append(os.Environ(), "VOICEVOX_URL="+url)
+	cmd.Env = isolatedEnv(t, "VOICEVOX_URL="+url)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +92,7 @@ func TestMainKeepsIgnoredSignal(t *testing.T) {
 	bin := buildBinary(t)
 	url, requested, release := blockingEngine(t)
 	cmd := exec.Command("/bin/sh", "-c", `trap "" INT; exec "$0" speakers`, bin)
-	cmd.Env = append(os.Environ(), "VOICEVOX_URL="+url)
+	cmd.Env = isolatedEnv(t, "VOICEVOX_URL="+url)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
