@@ -67,6 +67,13 @@ func newFakeEngineEnv(t *testing.T, alive bool) (*Env, *fakeEngine) {
 		fe.start()
 	}
 	t.Cleanup(fe.stop)
+	// 自動起動はランタイム (container / docker) の有無を PATH で見る。手元と CI (ランタイムが無い) で結果が変わらないよう、
+	// 実行されても何もせず失敗するだけの偽の container を置く (本物のランタイムには触れない。起動・停止は上の fake が担う)
+	shims := t.TempDir()
+	if err := os.WriteFile(filepath.Join(shims, "container"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", shims+":/usr/bin:/bin")
 	env := testEnv(t)
 	env.Engine = "http://" + fe.addr
 	env.StateDir = t.TempDir()
