@@ -71,6 +71,24 @@ shim が残っているのは、Node 24.2.0 に npm 版の `claude` が入って
 
 ## 進捗
 
-- [ ] テスト側で実体を選ぶ
-- [ ] `bin/skill-eval` に同じ修正を当てる (要否を実測してから)
-- [ ] 変異検証: shim だけが PATH にある状態で、修正前は rc=127 / 修正後は本物で通ることを確かめる
+- [x] テスト側で実体を選ぶ — `bin/lib/claude_bin.sh` の `resolve_claude` を新設。PATH の候補 (`type -aP`) を順に
+  `--version` で試し、最初に動いたものを返す。rc は 0 = 選べた / 1 = 無い / 2 = 在るが動かない
+- [x] `tests/claude/test_claude_mods.sh` を `resolve_claude` に置き換え。CI で skip するのは rc=1 (無い) だけで、
+  rc=2 (壊れた claude しか無い) は CI でも失敗にする (緑の skip に隠さない)
+- [x] `bin/skill-eval` も `resolve_claude` に置き換え (`SKILL_EVAL_CLAUDE` を渡したときは従来どおりそれを使う)
+- [x] 回帰テスト `tests/bin/test_claude_bin.sh` (6 件)。本物の claude には触らない (PATH を偽の dir と /usr/bin:/bin だけにする)
+- [x] 変異検証: (1) `--version` の確認を外す (= 修正前の `command -v` と同じ動き) → 「shim が先」「shim だけ」が red
+  (2) 候補の起動で stdin を閉じない → 「stdin を読む候補が先」が red (3) 重複の除去を外す → 「重複」が red。
+  いずれも狙ったケースだけが落ちた
+- 結果: 手元で `test_claude_mods.sh` が通る (mods 3 件の validate / test)。修正前はこの環境で毎回 rc=127 で落ちていた
+
+### 敵対レビュー (2026-10-06、read-only のサブエージェント 1 本、bash 3.2 で実測)
+
+- 採用: 候補が stdin を読むとループの入力 (候補の一覧) を食って後ろの本物に届かない (再現済み → `</dev/null`)。
+  CI で「在るが動かない」まで skip になる (→ rc を 1 / 2 に分けた)。PATH の重複で同じ候補を 2 回起動する (→ 除く)
+- 記録のみ: `--version` に時間の上限が無い。macOS に標準の timeout が無く、stdin を閉じたので対話待ちでは止まらない。
+  ハングする claude が実際に現れたら上限を足す (`bin/lib/claude_bin.sh` の冒頭に同じことを書いた)
+- 記録のみ: PATH の相対パスの要素では相対パスが返る (普通の環境では起きない)
+- 却下: `bin/skill-eval` を symlink 経由で呼ぶと lib が見つからない → 同じファイルの ROOT も同じ前提
+  (`BASH_SOURCE` の dirname) で、今回の変更で生まれた制約ではない
+- 修正後の 2 周目のレビューは回していない (各修正は変異で直接 red を確かめた)

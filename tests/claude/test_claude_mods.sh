@@ -37,14 +37,23 @@ if [ "$got_dirs" != "$want_dirs" ]; then
 fi
 echo "✓ settings の env.CLAUDE_CODE_PLUGIN_DIRS = $want_dirs"
 
-if ! claude_bin="$(command -v claude)"; then
-  if [ -n "${CI:-}" ]; then
-    echo "- SKIP: CI に claude が無いので mods の validate / test を検査していない (手元の make test が正本)"
-    exit 77
-  fi
+# shellcheck source=bin/lib/claude_bin.sh
+source "$repo/bin/lib/claude_bin.sh"
+# PATH の名前ではなく実際に動く実体で選ぶ (版管理の shim を掴んで rc=127 で落ちていた。issue 639)
+resolve_rc=0
+claude_bin="$(resolve_claude)" || resolve_rc=$?
+if [ "$resolve_rc" -eq 1 ] && [ -n "${CI:-}" ]; then
+  echo "- SKIP: CI に claude が無いので mods の validate / test を検査していない (手元の make test が正本)"
+  exit 77
+elif [ "$resolve_rc" -eq 1 ]; then
   echo "✗ claude が見つからない (CI 以外では mods の検査を skip しない)" >&2
   exit 1
+elif [ "$resolve_rc" -ne 0 ]; then
+  # 候補はあるが動かない (rc=2) は CI でも skip にしない。壊れた claude を緑の skip に隠さない
+  echo "✗ PATH の claude がどれも動かない (resolve_claude rc=${resolve_rc}。上に試した候補)" >&2
+  exit 1
 fi
+echo "✓ claude: $claude_bin"
 
 # ran_count <claude plugin test の stdout>: `Ran N tests` の N。取れなければ空
 ran_count() {

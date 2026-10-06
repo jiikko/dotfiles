@@ -98,8 +98,11 @@ if ((dry)); then
   exit 0
 fi
 
-CLAUDE_BIN="${SKILL_EVAL_CLAUDE:-$(command -v claude || true)}"
-[[ -n "$CLAUDE_BIN" && -x "$CLAUDE_BIN" ]] || { echo "skill-eval: claude が見つからない" >&2; exit 3; }
+# shellcheck source=bin/lib/claude_bin.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/lib/claude_bin.sh"
+# PATH の名前ではなく実際に動く実体で選ぶ (版管理の shim は -x を通るが実行時に 127 で落ちる。issue 639)
+CLAUDE_BIN="${SKILL_EVAL_CLAUDE:-$(resolve_claude || true)}"
+[[ -n "$CLAUDE_BIN" && -x "$CLAUDE_BIN" ]] || { echo "skill-eval: 動く claude が見つからない" >&2; exit 3; }
 command -v jq >/dev/null 2>&1 || { echo "skill-eval: jq が無いので結果を読めない" >&2; exit 3; }
 
 if ((!force)); then
