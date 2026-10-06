@@ -49,6 +49,12 @@ START_HINT = f"  起動: python3 {Path(__file__).resolve()} up   (container か 
 SAMPLE_RATE = 24000  # VOICEVOX の既定出力。全セリフをこの値に揃えて連結する
 MOUTH_FPS = 30
 VIDEO_SIZE = (1280, 720)  # mp4 は 720p 固定 (字幕・アバターの大きさはこの解像度で合わせている)
+# mp4 の撮影前に、CPU が混んでいたら空くまで待つ。負荷が高いときに headless Chrome が watchdog で落ちた
+# (rc=2 "own watchdog expired"。同じ条件の再実行で通った) ので、負荷との関係を仮説として入れている。
+# 1 分平均の load がコア数 × LOAD_BUSY_RATIO 以上を「混んでいる」とし、LOAD_WAIT_MAX 秒待っても空かなければそのまま撮る
+LOAD_BUSY_RATIO = 0.8
+LOAD_WAIT_MAX = 20 * 60
+LOAD_POLL = 15
 SHEET_STATES = 20  # まとめ撮り 1 回の枚数。縦 720 x 20 = 14400px (Chrome が 1 枚で撮れる高さに収める)
 # キャラクターは四国めたんとずんだもんに固定する。名前・既定の声・色・立ち位置の正本はここ。
 # mirror は立ち絵を左右反転して表示する。2 人が向き合うよう、素材の向き (めたんは画面の左向き、
@@ -219,6 +225,14 @@ def cmd_down(args: argparse.Namespace) -> None:
 def fetch_styles(engine: str) -> dict[int, str]:
     """スタイル ID → 話者名。"""
     return {st["id"]: sp["name"] for sp in json.loads(engine_request(engine, "/speakers")) for st in sp["styles"]}
+
+
+def cmd_kana(args: argparse.Namespace) -> None:
+    """文ごとに audio_query の読み (kana) を出す。read の候補 (カタカナ・ひらがな・英字のまま) を合成せずに比べる用。"""
+    sid = args.style_id if args.style_id is not None else CAST[args.who]["style_id"]
+    for text in args.texts:
+        kana = json.loads(engine_request(args.engine, "/audio_query", {"text": text, "speaker": sid}, b"")).get("kana", "")
+        print(f"{text}\t{kana}")
 
 
 def cmd_speakers(args: argparse.Namespace) -> None:
@@ -606,6 +620,30 @@ def png_size(path: Path) -> tuple[int, int]:
     return int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")
 
 
+def wait_for_idle_cpu() -> None:
+    """CPU が混んでいる間、最大 LOAD_WAIT_MAX 秒待つ。待っている間も 1 分ごとに状況を出す (黙って止まって見えないように)。"""
+    cores = os.cpu_count() or 1
+    limit = cores * LOAD_BUSY_RATIO
+    start = time.monotonic()
+    last_note = None
+    while True:
+        load = os.getloadavg()[0]
+        waited = time.monotonic() - start
+        if load < limit:
+            if last_note is not None:
+                print(f"build: CPU が空いた (load {load:.1f} / {cores} コア、{waited / 60:.1f} 分待った)", file=sys.stderr)
+            return
+        if waited >= LOAD_WAIT_MAX:
+            print(f"build: {LOAD_WAIT_MAX // 60} 分待っても CPU が空かない (load {load:.1f} / {cores} コア)。"
+                  "そのまま撮る (Chrome が落ちたら空いてから build し直す)", file=sys.stderr)
+            return
+        if last_note is None or waited - last_note >= 60:
+            print(f"build: CPU が混んでいる (load {load:.1f} / {cores} コア、閾値 {limit:.1f})。"
+                  f"空くまで最大 {LOAD_WAIT_MAX // 60} 分待つ (経過 {waited / 60:.0f} 分)", file=sys.stderr)
+            last_note = waited
+        time.sleep(LOAD_POLL)
+
+
 def write_mp4(data: dict, m4a: Path, out: Path, td: Path, jobs: int) -> None:
     """HTML プレイヤーで「見た目の状態」ごとの絵を Chrome に撮らせ、状態の列どおりに並べて音声と合わせる。
 
@@ -621,6 +659,7 @@ def write_mp4(data: dict, m4a: Path, out: Path, td: Path, jobs: int) -> None:
         die("mp4 には H.264 を書ける ffmpeg が要る (brew install ffmpeg)")
     page = td / "render.html"
     page.write_text(render_html(data), encoding="utf-8")
+    wait_for_idle_cpu()
     states = sorted({tuple(r[1:]) for r in data["frames"]})
     shots = {st: td / f"state_{st[0] + 1}_{st[1]}_{st[2]}.png" for st in states}
     groups = [states[i:i + SHEET_STATES] for i in range(0, len(states), SHEET_STATES)]
@@ -716,6 +755,11 @@ def main() -> None:
     sub.add_parser("up", help=f"エンジンをコンテナ {CONTAINER_NAME} で起動し、応答するまで待つ").set_defaults(func=cmd_up)
     sub.add_parser("down", help=f"up で起動したコンテナ {CONTAINER_NAME} を止める").set_defaults(func=cmd_down)
     sub.add_parser("speakers", help="話者とスタイル ID を一覧する").set_defaults(func=cmd_speakers)
+    k = sub.add_parser("kana", help="文ごとの読み (audio_query の kana) を出す。read の候補を合成せずに比べる")
+    k.add_argument("texts", nargs="+", help="読みを見たい文 (複数可)")
+    k.add_argument("--who", choices=tuple(CAST), default="metan", help="声のキャラ (既定 metan)")
+    k.add_argument("--style-id", type=int, help="声のスタイル ID (--who の既定の声より優先)")
+    k.set_defaults(func=cmd_kana)
     s = sub.add_parser("synth", help="セリフごとに wav を合成する (<台本名>.work/ にキャッシュ)")
     s.add_argument("script")
     s.add_argument("--force", action="store_true", help="キャッシュを無視して作り直す (エンジンや辞書を更新したとき)")
