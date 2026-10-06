@@ -210,3 +210,20 @@ obaket はその submodule の commit `92c83eb`。
 - 余裕は約 6.7k で、global の流入は 3 日で約 9k だった (9/25 の 117.1k → 9/27 の 126.0k)。**再開の trigger**: obaket の起動で
   上限超えの警告が再び出たとき、または global が 123k を超えたとき
 
+
+### 追補 (2026-10-06): 再び上限を超えたので、paths: 以外の手で 7.4k 字を戻す
+
+obaket のセッションで `⚠ 42 instruction files add up to 152.9k chars` が出た (global 120.5k + my-products 14.1k + obaket 14.4k + obaket/macOS 4.4k)。
+
+- **mutation-verify は paths: にせず、チェックリストだけを切り出した**: 「よくある『守っていないテスト』の形」節 (6.5k) を
+  `_claude/rules-checklists/mutation-verify-new-tests.md` (起動時には読まれない) へ移し、rule には「変異を当てる前に Read する」の指示を残した。
+  発動点・手順・ルールは常時読み込みのまま (上の「A 却下」の理由を壊さない)。rule は 13.2k → 6.9k
+- **`_claude/CLAUDE.md`「設計方針」の発動点→rule の索引表から、常時読み込みの rule を指す 11 行を外した** (rule 本体が毎回全文読まれるので重複)。
+  `paths:` 付きの zsh-hook の行だけ 1 文で残した。13.2k → 12.0k。「スキルファイル参照」表は `tests/claude/test_skill_trigger_table.sh` が守っているので残した
+- 結果 (`wc -m`、`paths:` の無いファイルだけ): global 120.5k → **113.1k**。obaket のセッションの見積もりは 153.4k → 約 146.0k
+- 反証レビュー (sonnet 1 体、read-only): 採用 2 件 = `avoid-wall-clock-assertions.md` の「あちらの節に」の参照を書き換え /
+  `tests/CLAUDE.md` の写像の既知の穴に `rules-checklists` を足した。却下 2 件:
+  - 「Read するかは自己申告で、忘れても機械は止めない」: paths: でも同じく Write→commit では読み込まれない (上の A 却下)。
+    検査で止められるのは参照先ファイルの存在までで、読んだかどうかは止められない。**再開の trigger**: チェックリストの項目に当たる見落としが、
+    Read されなかったせいだと分かる実例が出たとき
+  - 「`~/dotfiles/...` の絶対パスは clone の位置が違う環境では辿れない」: `rules-rationale` の参照と同じ前提 (`~/.claude/rules/` の link 先も `~/dotfiles`)

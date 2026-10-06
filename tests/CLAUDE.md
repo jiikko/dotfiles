@@ -72,7 +72,7 @@ PATH 先頭に置く)、時間はモック内の `grep` 連打による **fork �
   走らない)。**shell / テストスクリプト / workflow / Makefile / CI の構造を触ったら
   `make test-lint` を明示的に回す**
 - 🚨 写像の穴として既知: `_claude/settings.json` は `*.json` に先勝ちして `test-json` だけになり
-  `tests/claude` へ落ちない / `_claude/rules-rationale/*.md` は「テスト対象なし」になる
+  `tests/claude` へ落ちない / `_claude/rules-rationale/*.md` と `_claude/rules-checklists/*.md` は「テスト対象なし」になる
   (issue 188 の発火元がまさに rules-rationale の新設だった)
 
 ## 「0 件」「skip」「沈黙」の扱い

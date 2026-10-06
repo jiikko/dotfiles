@@ -69,7 +69,7 @@
 - [`verify-execution-not-just-exit-code.md`](verify-execution-not-just-exit-code.md) — exit code だけで
   成否を判断しない一般論の正本
 - [`mutation-verify-new-tests.md`](mutation-verify-new-tests.md) — 「fake が外部コマンドの exit code を
-  模しているか」はあちらの「守っていないテストの形」が正本
+  模しているか」はあちらのチェックリスト (`~/dotfiles/_claude/rules-checklists/mutation-verify-new-tests.md` の fake / stub) が正本
 - [`adversarial-review-own-safeguards.md`](adversarial-review-own-safeguards.md) — 異常系を実験で作る
   一般論の正本 (本ルールでは CLI の副作用隔離がその前提になる)
 - 起源の記録: issue 100

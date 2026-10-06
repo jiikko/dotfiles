@@ -80,4 +80,3 @@
 
 - [`verify-design-intent-before-refactor.md`](verify-design-intent-before-refactor.md) — thin delegation / 「複雑性が実際に下がるか」で判断する同思想 (本ルールは「価値が実際にあるか」で判断)
 - [`no-osascript-for-ui-verification.md`](no-osascript-for-ui-verification.md) / [`no-ios-simulator-verification.md`](no-ios-simulator-verification.md) — 低価値・困難な検証を避ける同根 (検証手段の版)
-- `~/.claude/CLAUDE.md`「設計方針」— カバレッジ拒否の要点がここからリンクされている (本ルールが一次情報)

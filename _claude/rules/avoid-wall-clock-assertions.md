@@ -115,7 +115,7 @@ wait_for "builder が終わらない" builder_gone "$pid"
 ## 関連
 
 - [`mutation-verify-new-tests.md`](mutation-verify-new-tests.md) — 閾値が判別するかを変異で確かめる。
-  あちらの「よくある『守っていないテスト』の形」に**時間依存**の項を足すのではなく、
+  あちらのチェックリスト (`~/dotfiles/_claude/rules-checklists/mutation-verify-new-tests.md`) に**時間依存**の項を足すのではなく、
   発動点が明確なので本ルールとして独立させた
 - [`perf-claims-need-measurement.md`](perf-claims-need-measurement.md) — 性能を**主張**するときの規律。
   本ルールは性能を**合否に使う**ときの禁止 (向きが違う)

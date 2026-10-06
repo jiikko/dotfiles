@@ -77,22 +77,7 @@
 - God クラスを避ける。肥大化しそうなら責務ごとに分割できないか検討する
 - 変更したファイルに God クラス / God ファイルの予兆 (責務の混在など) を見つけたらリファクタを提案する。ただし**目的は複雑性を下げること**で、行数だけを理由にファイルを分けるのはリファクタではない (分割は複雑性を移動するだけ)。判断基準は [`verify-design-intent-before-refactor.md`](rules/verify-design-intent-before-refactor.md)
 - バグフィックス後、その project の linter のカスタムルール / preset で再発防止できないか検討し、提案する
-- 以下は rule が正本。発動点だけ並べる:
-
-| 発動点 | rule |
-|---|---|
-| カバレッジ向上を求められた | [`refuse-low-value-coverage.md`](rules/refuse-low-value-coverage.md) |
-| 検査・テストを「通った」と判断する | [`verify-execution-not-just-exit-code.md`](rules/verify-execution-not-just-exit-code.md) |
-| 新規テストを commit する | [`mutation-verify-new-tests.md`](rules/mutation-verify-new-tests.md) |
-| 性能を主張する | [`perf-claims-need-measurement.md`](rules/perf-claims-need-measurement.md) |
-| shim / wrapper を PATH 先頭に置く | [`path-shim-must-resolve-real-binary.md`](rules/path-shim-must-resolve-real-binary.md) |
-| 外部コマンドの出力・終了コードを判定材料にする | [`measure-external-cli-streams-separately.md`](rules/measure-external-cli-streams-separately.md) |
-| 再利用される道具を新設する | [`new-tool-requires-entrypoint-docs.md`](rules/new-tool-requires-entrypoint-docs.md) |
-| 端末 UI で縦に揃える | [`no-mixed-width-columns-in-terminal-ui.md`](rules/no-mixed-width-columns-in-terminal-ui.md) |
-| テストで時間を測る / `sleep` で待つ | [`avoid-wall-clock-assertions.md`](rules/avoid-wall-clock-assertions.md) |
-| 見た目が未確定のまま本体を書く | [`decide-layout-in-sample-renderer-first.md`](rules/decide-layout-in-sample-renderer-first.md) |
-| 対話プロンプトを自動で確認する | [`verify-interactive-prompt-with-pty-driver.md`](rules/verify-interactive-prompt-with-pty-driver.md) |
-| zsh の precmd / preexec から関数を呼ぶ | `~/dotfiles/.claude/rules/zsh-hook-return-via-reply.md` (`REPLY` で返す。dotfiles では zsh のファイルを Read すると `paths:` で読み込まれる。dotfiles 固有の規範の索引は `~/dotfiles/rules/README.md`) |
+- 設計・検証の rule (`rules/*.md`) は毎セッション全文読まれ、各 rule の冒頭に発動点がある。ここで索引し直さない。例外は `paths:` で条件ロードされるもの: zsh の precmd / preexec から関数を呼ぶなら `~/dotfiles/.claude/rules/zsh-hook-return-via-reply.md` (`REPLY` で返す。dotfiles では zsh のファイルを Read すると読み込まれる。dotfiles 固有の規範の索引は `~/dotfiles/rules/README.md`)
 
 ## コード変更時の自律改善
 
