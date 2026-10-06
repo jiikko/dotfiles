@@ -66,7 +66,12 @@ issue 641（dialogue_video.py を Go で書き直す）をやり切ったセッ�
 
 ## 残課題
 
-- [ ] A を 0-B に追記するか（ユーザーの判断待ち）
-- [ ] B を mutation-verify のチェックリストに追記するか（ユーザーの判断待ち）
-- [ ] C を verify-execution に追記するか、フィードバックを送るか（ユーザーの判断待ち）
-- [ ] D を 0-A に、E を §7 に追記するか（ユーザーの判断待ち）
+- [x] A: `adversarial-review-own-safeguards.md` の 0-B に追記（実装を書き直すときも旧実装が正解役・突き合わせまで動く状態を保つ・
+  `git show HEAD:` で呼べる・golden を作った版を残す）。今回の golden にも版を残した（`src/zundamon-kaisetsu/golden_test.go` の冒頭）
+- [x] B: `rules-checklists/mutation-verify-new-tests.md` の「fixture と前提」に追記（数値の移植では境界を狙った合成の入力を入れる）
+- [x] C: `verify-execution-not-just-exit-code.md` の「読み戻して比較する」の項に、ファイルを書くツールの例として追記。
+  Claude Code へのフィードバックは下書きを作った（送るかはユーザーの判断。`/feedback` で確認できる）
+- [x] D: `adversarial-review-own-safeguards.md` の 0-A に追記（中断・後始末は言語の構造に載せる）
+- 却下: E（指摘を直すとき、直す関数の呼び出し元が複数の意味で使っていないかを確かめる）。CLAUDE.md の「関数の契約変更 (返し方・シグネチャ)
+  の呼び残しも同じ扱い」と、`survey-receiver-guards-before-passing-new-values.md` の「既存経路を共通 helper に差し替えるとき」で
+  ほぼ覆われている。ルールを増やすより既存の項を守る方が効く

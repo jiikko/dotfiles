@@ -2,6 +2,9 @@ package main
 
 // Python 版 (dialogue_video.py) を正解役にした golden との突き合わせ (issue 641)。
 // testdata/*.json は Python 版の関数を直接呼んで書き出したもので、Python 版を消した後も回帰テストとして残す。
+// 生成に使った Python は 3.14.7 (sum の Neumaier の補正は 3.12 以降、Path.stem の規則は 3.14 の振る舞い。版が違うと golden も変わる)。
+// Python 版は git の履歴 (issue 641 の 39fe8c02 より前) にあり、`git show <その前の commit>:_claude/skills/zundamon-kaisetsu/scripts/dialogue_video.py`
+// で取り出せば、ケースを足すときの正解役として呼べる。
 
 import (
 	"crypto/sha256"
