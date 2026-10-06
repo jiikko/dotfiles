@@ -1,0 +1,453 @@
+{
+ "script": {
+  "data": {
+   "title": "テスト用の台本 <b>&",
+   "description": "golden を作るための fixture。\n2 行目",
+   "credits": [
+    "VOICEVOX:四国めたん",
+    "VOICEVOX:ずんだもん",
+    "立ち絵: テスト用",
+    "追加のクレジット"
+   ],
+   "cast": {
+    "metan": {
+     "name": "四国めたん",
+     "color": "#d9418c",
+     "side": "left",
+     "mirror": true,
+     "images": {
+      "笑顔": [
+       "data:image/webp;base64,ZmFrZS13ZWJwLeeskemhlC0w",
+       "data:image/webp;base64,ZmFrZS13ZWJwLeeskemhlC0x",
+       "data:image/webp;base64,ZmFrZS13ZWJwLeeskemhlC0y"
+      ],
+      "説明": [
+       "data:image/webp;base64,ZmFrZS13ZWJwLeiqrOaYji0w",
+       "data:image/webp;base64,ZmFrZS13ZWJwLeiqrOaYji0x",
+       "data:image/webp;base64,ZmFrZS13ZWJwLeiqrOaYji0y"
+      ],
+      "通常": [
+       "data:image/webp;base64,ZmFrZS13ZWJwLemAmuW4uC0w",
+       "data:image/webp;base64,ZmFrZS13ZWJwLemAmuW4uC0x",
+       "data:image/webp;base64,ZmFrZS13ZWJwLemAmuW4uC0y"
+      ]
+     }
+    },
+    "zundamon": {
+     "name": "ずんだもん",
+     "color": "#2e9e3a",
+     "side": "right",
+     "mirror": false,
+     "images": {}
+    }
+   },
+   "defaultFace": "通常",
+   "chapters": [
+    {
+     "title": "はじめに",
+     "start": 0.938
+    },
+    {
+     "title": "まとめ",
+     "start": 2.437
+    }
+   ],
+   "lines": [
+    {
+     "who": "metan",
+     "text": "今日はAPI3の話をするわ。",
+     "faces": {
+      "metan": "説明",
+      "zundamon": "通常"
+     },
+     "chapter": -1,
+     "start": 0.412,
+     "end": 0.621
+    },
+    {
+     "who": "zundamon",
+     "text": "APIって何なのだ？",
+     "faces": {
+      "metan": "説明",
+      "zundamon": "驚き"
+     },
+     "chapter": 0,
+     "start": 0.938,
+     "end": 1.193
+    },
+    {
+     "who": "metan",
+     "text": "ぱぱっと、まみむめもで口を閉じるの。",
+     "faces": {
+      "metan": "通常",
+      "zundamon": "驚き"
+     },
+     "chapter": 0,
+     "start": 1.995,
+     "end": 2.12
+    },
+    {
+     "who": "zundamon",
+     "text": "ん、きゃっ、すごいのだ！",
+     "faces": {
+      "metan": "通常",
+      "zundamon": "笑顔"
+     },
+     "chapter": 1,
+     "start": 2.437,
+     "end": 2.761
+    },
+    {
+     "who": "metan",
+     "text": "おしまい。",
+     "faces": {
+      "metan": "笑顔",
+      "zundamon": "笑顔"
+     },
+     "chapter": 1,
+     "start": 3.078,
+     "end": 3.267
+    }
+   ],
+   "frames": [
+    [
+     0,
+     -1,
+     0,
+     0
+    ],
+    [
+     12,
+     0,
+     1,
+     2
+    ],
+    [
+     13,
+     0,
+     1,
+     1
+    ],
+    [
+     14,
+     0,
+     1,
+     2
+    ],
+    [
+     15,
+     0,
+     1,
+     1
+    ],
+    [
+     18,
+     0,
+     1,
+     0
+    ],
+    [
+     19,
+     0,
+     0,
+     0
+    ],
+    [
+     28,
+     1,
+     1,
+     1
+    ],
+    [
+     29,
+     1,
+     1,
+     0
+    ],
+    [
+     30,
+     1,
+     1,
+     1
+    ],
+    [
+     31,
+     1,
+     1,
+     0
+    ],
+    [
+     32,
+     1,
+     1,
+     2
+    ],
+    [
+     35,
+     1,
+     1,
+     0
+    ],
+    [
+     36,
+     1,
+     0,
+     0
+    ],
+    [
+     60,
+     2,
+     1,
+     0
+    ],
+    [
+     63,
+     2,
+     1,
+     2
+    ],
+    [
+     64,
+     2,
+     0,
+     0
+    ],
+    [
+     73,
+     3,
+     1,
+     0
+    ],
+    [
+     77,
+     3,
+     1,
+     1
+    ],
+    [
+     78,
+     3,
+     1,
+     0
+    ],
+    [
+     80,
+     3,
+     1,
+     2
+    ],
+    [
+     81,
+     3,
+     1,
+     1
+    ],
+    [
+     82,
+     3,
+     1,
+     0
+    ],
+    [
+     83,
+     3,
+     0,
+     0
+    ],
+    [
+     92,
+     4,
+     1,
+     0
+    ],
+    [
+     93,
+     4,
+     1,
+     2
+    ],
+    [
+     94,
+     4,
+     1,
+     1
+    ],
+    [
+     95,
+     4,
+     1,
+     2
+    ],
+    [
+     96,
+     4,
+     1,
+     1
+    ],
+    [
+     97,
+     4,
+     1,
+     0
+    ],
+    [
+     98,
+     4,
+     0,
+     0
+    ]
+   ],
+   "duration": 3.583,
+   "fps": 30,
+   "audio": ""
+  },
+  "joined_pcm_sha256": "bf5997a49847a41359795e7a4fb0c3454251b16973f36ee4aa5c162fddc597d5"
+ },
+ "solo": {
+  "data": {
+   "title": "solo",
+   "description": "",
+   "credits": [
+    "VOICEVOX:ずんだもん"
+   ],
+   "cast": {
+    "metan": {
+     "name": "四国めたん",
+     "color": "#d9418c",
+     "side": "left",
+     "mirror": true,
+     "images": {}
+    },
+    "zundamon": {
+     "name": "ずんだもん",
+     "color": "#2e9e3a",
+     "side": "right",
+     "mirror": false,
+     "images": {}
+    }
+   },
+   "defaultFace": "通常",
+   "chapters": [],
+   "lines": [
+    {
+     "who": "zundamon",
+     "text": "APIって何なのだ？",
+     "faces": {
+      "metan": "通常",
+      "zundamon": "驚き"
+     },
+     "chapter": -1,
+     "start": 0.4,
+     "end": 0.656
+    },
+    {
+     "who": "zundamon",
+     "text": "ん、きゃっ、すごいのだ！",
+     "faces": {
+      "metan": "通常",
+      "zundamon": "笑顔"
+     },
+     "chapter": -1,
+     "start": 1.006,
+     "end": 1.33
+    }
+   ],
+   "frames": [
+    [
+     0,
+     -1,
+     0,
+     0
+    ],
+    [
+     12,
+     0,
+     1,
+     1
+    ],
+    [
+     13,
+     0,
+     1,
+     0
+    ],
+    [
+     14,
+     0,
+     1,
+     1
+    ],
+    [
+     15,
+     0,
+     1,
+     0
+    ],
+    [
+     16,
+     0,
+     1,
+     2
+    ],
+    [
+     19,
+     0,
+     1,
+     0
+    ],
+    [
+     20,
+     0,
+     0,
+     0
+    ],
+    [
+     30,
+     1,
+     1,
+     0
+    ],
+    [
+     34,
+     1,
+     1,
+     1
+    ],
+    [
+     35,
+     1,
+     1,
+     0
+    ],
+    [
+     37,
+     1,
+     1,
+     2
+    ],
+    [
+     38,
+     1,
+     1,
+     1
+    ],
+    [
+     39,
+     1,
+     1,
+     0
+    ],
+    [
+     40,
+     1,
+     0,
+     0
+    ]
+   ],
+   "duration": 1.68,
+   "fps": 30,
+   "audio": ""
+  },
+  "joined_pcm_sha256": "a336de2bd389ce82a2b0af673f134059fa0032861dc481cf444df61832ff23a5"
+ }
+}

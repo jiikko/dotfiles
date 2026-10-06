@@ -1,0 +1,29 @@
+# golangci-lint v2 config for zundamon-kaisetsu。linter は既定セットのまま (カスタム lint が
+# 必要になったら glogx の .golangci.yml を参照)。
+version: "2"
+
+# 🚨 golangci-lint は既定で os.TempDir()/golangci-lint.lock に flock を取り、別インスタンスが
+# 走っていると 5 秒待って "parallel golangci-lint is running" で落ちる (v2.5.0 の
+# pkg/commands/run.go acquireFileLock を実測)。この lock はキャッシュ保護ではない
+# (キャッシュは Go の build cache の fork。内容アドレスなので競合する 2 プロセスは同一バイト列を
+# 書く。書き込み自体は temp+rename ではなく最終名への直接 write で、安全性の根拠は原子性ではなく
+# 内容アドレス) ので、外しても結果の正しさには影響しない。root の Makefile (run_go_projects) が 7 プロジェクトを並列に
+# 回すため、全プロジェクトでこれを true にする (1 つでも false が残ると、その 1 つが他の
+# 6 つの起動タイミング次第で落ちる)。issue 258
+run:
+  allow-parallel-runners: true
+
+# gofmt を CI ゲートにする (v2 では formatter は linters と別枠。ここに無いと run が整形差分を見ない)
+formatters:
+  enable:
+    - gofmt
+
+linters:
+  settings:
+    errcheck:
+      # 端末 (env.Stdout / env.Stderr) への進捗・結果の書き込み。失敗しても打つ手が無く、
+      # 失敗を返り値で扱うと全コマンドの経路が戻り値の確認で埋まる。ファイルへの書き込みは対象外 (os.WriteFile 等は確認している)
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln

@@ -1,0 +1,241 @@
+[
+ {
+  "line": {
+   "who": "metan",
+   "text": "こんにちは"
+  },
+  "serialized": "{\"intonation\": 1.0, \"pitch\": 0.0, \"speed\": 1.0, \"style_id\": 2, \"text\": \"こんにちは\", \"volume\": 1.0}",
+  "key": "2aad92a7379b2ba0"
+ },
+ {
+  "line": {
+   "who": "zundamon",
+   "text": "ascii only"
+  },
+  "serialized": "{\"intonation\": 1.0, \"pitch\": 0.0, \"speed\": 1.0, \"style_id\": 3, \"text\": \"ascii only\", \"volume\": 1.0}",
+  "key": "84b04075173d1710"
+ },
+ {
+  "line": {
+   "who": "metan",
+   "text": "改行\nタブ\t制御\u0001\u001f削除"
+  },
+  "serialized": "{\"intonation\": 1.0, \"pitch\": 0.0, \"speed\": 1.0, \"style_id\": 2, \"text\": \"改行\\nタブ\\t制御\\u0001\\u001f削除\", \"volume\": 1.0}",
+  "key": "8ff8a9000f3e0432"
+ },
+ {
+  "line": {
+   "who": "metan",
+   "text": "引用\"と\\と</script>&<>"
+  },
+  "serialized": "{\"intonation\": 1.0, \"pitch\": 0.0, \"speed\": 1.0, \"style_id\": 2, \"text\": \"引用\\\"と\\\\と</script>&<>\", \"volume\": 1.0}",
+  "key": "88f1e8107241a9b7"
+ },
+ {
+  "line": {
+   "who": "metan",
+   "text": "絵文字😀と非BMP𠮷とU+2028 とU+2029 とBOM﻿"
+  },
+  "serialized": "{\"intonation\": 1.0, \"pitch\": 0.0, \"speed\": 1.0, \"style_id\": 2, \"text\": \"絵文字😀と非BMP𠮷とU+2028 とU+2029 とBOM﻿\", \"volume\": 1.0}",
+  "key": "2b4439839eb1c525"
+ },
+ {
+  "line": {
+   "who": "metan",
+   "text": "x",
+   "speed": 1.05,
+   "pitch": 0.02,
+   "intonation": 1.2,
+   "volume": 0.9
+  },
+  "serialized": "{\"intonation\": 1.2, \"pitch\": 0.02, \"speed\": 1.05, \"style_id\": 2, \"text\": \"x\", \"volume\": 0.9}",
+  "key": "76c9913beeeec61e"
+ },
+ {
+  "line": {
+   "who": "metan",
+   "text": "x",
+   "speed": 2,
+   "pitch": 0,
+   "intonation": 1,
+   "volume": 1
+  },
+  "serialized": "{\"intonation\": 1.0, \"pitch\": 0.0, \"speed\": 2.0, \"style_id\": 2, \"text\": \"x\", \"volume\": 1.0}",
+  "key": "fbe9989d99fbbaf3"
+ },
+ {
+  "line": {
+   "who": "metan",
+   "text": "x",
+   "speed": 0.30000000000000004
+  },
+  "serialized": "{\"intonation\": 1.0, \"pitch\": 0.0, \"speed\": 0.30000000000000004, \"style_id\": 2, \"text\": \"x\", \"volume\": 1.0}",
+  "key": "fe18b25eb20c5f2a"
+ },
+ {
+  "line": {
+   "who": "metan",
+   "text": "x",
+   "speed": 1e-05,
+   "pitch": -0.0
+  },
+  "serialized": "{\"intonation\": 1.0, \"pitch\": -0.0, \"speed\": 1e-05, \"style_id\": 2, \"text\": \"x\", \"volume\": 1.0}",
+  "key": "5978caf93810e8b5"
+ },
+ {
+  "line": {
+   "who": "metan",
+   "text": "x",
+   "speed": 1e+16,
+   "pitch": 123456789.0
+  },
+  "serialized": "{\"intonation\": 1.0, \"pitch\": 123456789.0, \"speed\": 1e+16, \"style_id\": 2, \"text\": \"x\", \"volume\": 1.0}",
+  "key": "5d9e562b47a3056c"
+ },
+ {
+  "line": {
+   "who": "metan",
+   "text": "x",
+   "speed": 1000000000000000.0,
+   "pitch": 0.0001
+  },
+  "serialized": "{\"intonation\": 1.0, \"pitch\": 0.0001, \"speed\": 1000000000000000.0, \"style_id\": 2, \"text\": \"x\", \"volume\": 1.0}",
+  "key": "41a0d3acc9e7a980"
+ },
+ {
+  "line": {
+   "who": "metan",
+   "text": "x",
+   "speed": 1.5e+300,
+   "pitch": 5e-324
+  },
+  "serialized": "{\"intonation\": 1.0, \"pitch\": 5e-324, \"speed\": 1.5e+300, \"style_id\": 2, \"text\": \"x\", \"volume\": 1.0}",
+  "key": "6d5901d270187eac"
+ },
+ {
+  "line": {
+   "who": "metan",
+   "text": "x",
+   "speed": "1.10",
+   "style_id": "36"
+  },
+  "serialized": "{\"intonation\": 1.0, \"pitch\": 0.0, \"speed\": 1.1, \"style_id\": 36, \"text\": \"x\", \"volume\": 1.0}",
+  "key": "e9a19ab2acd52d35"
+ },
+ {
+  "line": {
+   "who": "metan",
+   "text": "x",
+   "style_id": 2.9
+  },
+  "serialized": "{\"intonation\": 1.0, \"pitch\": 0.0, \"speed\": 1.0, \"style_id\": 2, \"text\": \"x\", \"volume\": 1.0}",
+  "key": "606f7ffeeda5680f"
+ },
+ {
+  "line": {
+   "who": "zundamon",
+   "text": "x",
+   "style_id": 76
+  },
+  "serialized": "{\"intonation\": 1.0, \"pitch\": 0.0, \"speed\": 1.0, \"style_id\": 76, \"text\": \"x\", \"volume\": 1.0}",
+  "key": "50f4dca4aa3f7b6a"
+ },
+ {
+  "line": {
+   "who": "metan",
+   "text": "表示",
+   "read": "ひょうじ"
+  },
+  "serialized": "{\"intonation\": 1.0, \"pitch\": 0.0, \"speed\": 1.0, \"style_id\": 2, \"text\": \"ひょうじ\", \"volume\": 1.0}",
+  "key": "6675081147a86fa9"
+ },
+ {
+  "line": {
+   "who": "metan",
+   "text": "x",
+   "speed": "nan",
+   "pitch": "inf",
+   "volume": "-inf"
+  },
+  "serialized": "{\"intonation\": 1.0, \"pitch\": Infinity, \"speed\": NaN, \"style_id\": 2, \"text\": \"x\", \"volume\": -Infinity}",
+  "key": "f6cc82c29516ec05"
+ },
+ {
+  "line": {
+   "who": "metan",
+   "text": "x",
+   "speed": " 1.5 ",
+   "pitch": "-0.0",
+   "volume": true
+  },
+  "serialized": "{\"intonation\": 1.0, \"pitch\": -0.0, \"speed\": 1.5, \"style_id\": 2, \"text\": \"x\", \"volume\": 1.0}",
+  "key": "ad6a387ba8d693f5"
+ },
+ {
+  "line": {
+   "who": "metan",
+   "text": "x",
+   "intonation": 0.0001,
+   "volume": 9007199254740993
+  },
+  "serialized": "{\"intonation\": 0.0001, \"pitch\": 0.0, \"speed\": 1.0, \"style_id\": 2, \"text\": \"x\", \"volume\": 9007199254740992.0}",
+  "key": "0e3ae885f0df9a35"
+ },
+ {
+  "line": {
+   "who": "metan",
+   "text": "y"
+  },
+  "script_speed": 1.2,
+  "cast_override": {
+   "metan": {
+    "speed": 0.9,
+    "style_id": 36
+   }
+  },
+  "serialized": "{\"intonation\": 1.0, \"pitch\": 0.0, \"speed\": 0.9, \"style_id\": 36, \"text\": \"y\", \"volume\": 1.0}",
+  "key": "f7b4c20ed5477ed2"
+ },
+ {
+  "line": {
+   "who": "zundamon",
+   "text": "y"
+  },
+  "script_speed": 1.2,
+  "cast_override": {
+   "metan": {
+    "speed": 0.9,
+    "style_id": 36
+   }
+  },
+  "serialized": "{\"intonation\": 1.0, \"pitch\": 0.0, \"speed\": 1.2, \"style_id\": 3, \"text\": \"y\", \"volume\": 1.0}",
+  "key": "e7d6477f766991e2"
+ },
+ {
+  "line": {
+   "who": "metan",
+   "text": "y",
+   "speed": 1.4
+  },
+  "script_speed": 1.2,
+  "cast_override": {
+   "metan": {
+    "speed": 0.9,
+    "style_id": 36
+   }
+  },
+  "serialized": "{\"intonation\": 1.0, \"pitch\": 0.0, \"speed\": 1.4, \"style_id\": 36, \"text\": \"y\", \"volume\": 1.0}",
+  "key": "bc5e76f21cc994a0"
+ },
+ {
+  "line": {
+   "who": "metan",
+   "text": "a",
+   "pitch": 0,
+   "volume": 0,
+   "intonation": 0
+  },
+  "serialized": "{\"intonation\": 0.0, \"pitch\": 0.0, \"speed\": 1.0, \"style_id\": 2, \"text\": \"a\", \"volume\": 0.0}",
+  "key": "e0460dfa23ffff0e"
+ }
+]

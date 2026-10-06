@@ -1,0 +1,1138 @@
+[
+ {
+  "name": "not_json",
+  "script": null,
+  "error": "<SCRIPT>: 読めない (Expecting property name enclosed in double quotes: line 1 column 2 (char 1))",
+  "exact": false
+ },
+ {
+  "name": "cast_unknown",
+  "script": {
+   "title": "テスト用の台本 <b>&",
+   "description": "golden を作るための fixture。\n2 行目",
+   "lead_in": 0.4123,
+   "gap": 0.317,
+   "speed": 1.1,
+   "cast": {
+    "metan": {
+     "speed": 1.05,
+     "faces": "faces/metan"
+    },
+    "tsumugi": {}
+   },
+   "readings": {
+    "API": "エーピーアイ",
+    "API3": "エーピーアイスリー"
+   },
+   "credits": [
+    "追加のクレジット",
+    "VOICEVOX:四国めたん"
+   ],
+   "lines": [
+    {
+     "who": "metan",
+     "face": "説明",
+     "text": "今日はAPI3の話をするわ。"
+    },
+    {
+     "who": "zundamon",
+     "face": "驚き",
+     "text": "APIって何なのだ？",
+     "pause_after": 0.8016,
+     "chapter": "はじめに"
+    },
+    {
+     "who": "metan",
+     "text": "ぱぱっと、まみむめもで口を閉じるの。",
+     "read": "ぱぱっと、まみむめも。"
+    },
+    {
+     "who": "zundamon",
+     "face": "笑顔",
+     "text": "ん、きゃっ、すごいのだ！",
+     "chapter": "まとめ",
+     "speed": 1.3,
+     "pitch": 0.02,
+     "intonation": 1.2,
+     "volume": 0.9
+    },
+    {
+     "who": "metan",
+     "face": "笑顔",
+     "text": "おしまい。"
+    }
+   ]
+  },
+  "error": "<SCRIPT>: cast に書けるのは metan/zundamon だけ (キャラクターは固定)",
+  "exact": true
+ },
+ {
+  "name": "cast_not_object",
+  "script": {
+   "title": "テスト用の台本 <b>&",
+   "description": "golden を作るための fixture。\n2 行目",
+   "lead_in": 0.4123,
+   "gap": 0.317,
+   "speed": 1.1,
+   "cast": [],
+   "readings": {
+    "API": "エーピーアイ",
+    "API3": "エーピーアイスリー"
+   },
+   "credits": [
+    "追加のクレジット",
+    "VOICEVOX:四国めたん"
+   ],
+   "lines": [
+    {
+     "who": "metan",
+     "face": "説明",
+     "text": "今日はAPI3の話をするわ。"
+    },
+    {
+     "who": "zundamon",
+     "face": "驚き",
+     "text": "APIって何なのだ？",
+     "pause_after": 0.8016,
+     "chapter": "はじめに"
+    },
+    {
+     "who": "metan",
+     "text": "ぱぱっと、まみむめもで口を閉じるの。",
+     "read": "ぱぱっと、まみむめも。"
+    },
+    {
+     "who": "zundamon",
+     "face": "笑顔",
+     "text": "ん、きゃっ、すごいのだ！",
+     "chapter": "まとめ",
+     "speed": 1.3,
+     "pitch": 0.02,
+     "intonation": 1.2,
+     "volume": 0.9
+    },
+    {
+     "who": "metan",
+     "face": "笑顔",
+     "text": "おしまい。"
+    }
+   ]
+  },
+  "error": null,
+  "exact": true
+ },
+ {
+  "name": "lines_empty",
+  "script": {
+   "title": "テスト用の台本 <b>&",
+   "description": "golden を作るための fixture。\n2 行目",
+   "lead_in": 0.4123,
+   "gap": 0.317,
+   "speed": 1.1,
+   "cast": {
+    "metan": {
+     "speed": 1.05,
+     "faces": "faces/metan"
+    }
+   },
+   "readings": {
+    "API": "エーピーアイ",
+    "API3": "エーピーアイスリー"
+   },
+   "credits": [
+    "追加のクレジット",
+    "VOICEVOX:四国めたん"
+   ],
+   "lines": []
+  },
+  "error": "<SCRIPT>: lines が空",
+  "exact": true
+ },
+ {
+  "name": "lines_missing",
+  "script": {
+   "title": "テスト用の台本 <b>&",
+   "description": "golden を作るための fixture。\n2 行目",
+   "lead_in": 0.4123,
+   "gap": 0.317,
+   "speed": 1.1,
+   "cast": {
+    "metan": {
+     "speed": 1.05,
+     "faces": "faces/metan"
+    }
+   },
+   "readings": {
+    "API": "エーピーアイ",
+    "API3": "エーピーアイスリー"
+   },
+   "credits": [
+    "追加のクレジット",
+    "VOICEVOX:四国めたん"
+   ]
+  },
+  "error": "<SCRIPT>: lines が空",
+  "exact": true
+ },
+ {
+  "name": "lead_in_negative",
+  "script": {
+   "title": "テスト用の台本 <b>&",
+   "description": "golden を作るための fixture。\n2 行目",
+   "lead_in": -1,
+   "gap": 0.317,
+   "speed": 1.1,
+   "cast": {
+    "metan": {
+     "speed": 1.05,
+     "faces": "faces/metan"
+    }
+   },
+   "readings": {
+    "API": "エーピーアイ",
+    "API3": "エーピーアイスリー"
+   },
+   "credits": [
+    "追加のクレジット",
+    "VOICEVOX:四国めたん"
+   ],
+   "lines": [
+    {
+     "who": "metan",
+     "face": "説明",
+     "text": "今日はAPI3の話をするわ。"
+    },
+    {
+     "who": "zundamon",
+     "face": "驚き",
+     "text": "APIって何なのだ？",
+     "pause_after": 0.8016,
+     "chapter": "はじめに"
+    },
+    {
+     "who": "metan",
+     "text": "ぱぱっと、まみむめもで口を閉じるの。",
+     "read": "ぱぱっと、まみむめも。"
+    },
+    {
+     "who": "zundamon",
+     "face": "笑顔",
+     "text": "ん、きゃっ、すごいのだ！",
+     "chapter": "まとめ",
+     "speed": 1.3,
+     "pitch": 0.02,
+     "intonation": 1.2,
+     "volume": 0.9
+    },
+    {
+     "who": "metan",
+     "face": "笑顔",
+     "text": "おしまい。"
+    }
+   ]
+  },
+  "error": "<SCRIPT>: lead_in は 0 以上の数 (実際: -1)",
+  "exact": true
+ },
+ {
+  "name": "gap_string",
+  "script": {
+   "title": "テスト用の台本 <b>&",
+   "description": "golden を作るための fixture。\n2 行目",
+   "lead_in": 0.4123,
+   "gap": "0.3",
+   "speed": 1.1,
+   "cast": {
+    "metan": {
+     "speed": 1.05,
+     "faces": "faces/metan"
+    }
+   },
+   "readings": {
+    "API": "エーピーアイ",
+    "API3": "エーピーアイスリー"
+   },
+   "credits": [
+    "追加のクレジット",
+    "VOICEVOX:四国めたん"
+   ],
+   "lines": [
+    {
+     "who": "metan",
+     "face": "説明",
+     "text": "今日はAPI3の話をするわ。"
+    },
+    {
+     "who": "zundamon",
+     "face": "驚き",
+     "text": "APIって何なのだ？",
+     "pause_after": 0.8016,
+     "chapter": "はじめに"
+    },
+    {
+     "who": "metan",
+     "text": "ぱぱっと、まみむめもで口を閉じるの。",
+     "read": "ぱぱっと、まみむめも。"
+    },
+    {
+     "who": "zundamon",
+     "face": "笑顔",
+     "text": "ん、きゃっ、すごいのだ！",
+     "chapter": "まとめ",
+     "speed": 1.3,
+     "pitch": 0.02,
+     "intonation": 1.2,
+     "volume": 0.9
+    },
+    {
+     "who": "metan",
+     "face": "笑顔",
+     "text": "おしまい。"
+    }
+   ]
+  },
+  "error": "<SCRIPT>: gap は 0 以上の数 (実際: '0.3')",
+  "exact": true
+ },
+ {
+  "name": "gap_bool",
+  "script": {
+   "title": "テスト用の台本 <b>&",
+   "description": "golden を作るための fixture。\n2 行目",
+   "lead_in": 0.4123,
+   "gap": true,
+   "speed": 1.1,
+   "cast": {
+    "metan": {
+     "speed": 1.05,
+     "faces": "faces/metan"
+    }
+   },
+   "readings": {
+    "API": "エーピーアイ",
+    "API3": "エーピーアイスリー"
+   },
+   "credits": [
+    "追加のクレジット",
+    "VOICEVOX:四国めたん"
+   ],
+   "lines": [
+    {
+     "who": "metan",
+     "face": "説明",
+     "text": "今日はAPI3の話をするわ。"
+    },
+    {
+     "who": "zundamon",
+     "face": "驚き",
+     "text": "APIって何なのだ？",
+     "pause_after": 0.8016,
+     "chapter": "はじめに"
+    },
+    {
+     "who": "metan",
+     "text": "ぱぱっと、まみむめもで口を閉じるの。",
+     "read": "ぱぱっと、まみむめも。"
+    },
+    {
+     "who": "zundamon",
+     "face": "笑顔",
+     "text": "ん、きゃっ、すごいのだ！",
+     "chapter": "まとめ",
+     "speed": 1.3,
+     "pitch": 0.02,
+     "intonation": 1.2,
+     "volume": 0.9
+    },
+    {
+     "who": "metan",
+     "face": "笑顔",
+     "text": "おしまい。"
+    }
+   ]
+  },
+  "error": "<SCRIPT>: gap は 0 以上の数 (実際: True)",
+  "exact": true
+ },
+ {
+  "name": "cast_extra_option",
+  "script": {
+   "title": "テスト用の台本 <b>&",
+   "description": "golden を作るための fixture。\n2 行目",
+   "lead_in": 0.4123,
+   "gap": 0.317,
+   "speed": 1.1,
+   "cast": {
+    "metan": {
+     "speed": 1.05,
+     "faces": "faces/metan",
+     "color": "red"
+    }
+   },
+   "readings": {
+    "API": "エーピーアイ",
+    "API3": "エーピーアイスリー"
+   },
+   "credits": [
+    "追加のクレジット",
+    "VOICEVOX:四国めたん"
+   ],
+   "lines": [
+    {
+     "who": "metan",
+     "face": "説明",
+     "text": "今日はAPI3の話をするわ。"
+    },
+    {
+     "who": "zundamon",
+     "face": "驚き",
+     "text": "APIって何なのだ？",
+     "pause_after": 0.8016,
+     "chapter": "はじめに"
+    },
+    {
+     "who": "metan",
+     "text": "ぱぱっと、まみむめもで口を閉じるの。",
+     "read": "ぱぱっと、まみむめも。"
+    },
+    {
+     "who": "zundamon",
+     "face": "笑顔",
+     "text": "ん、きゃっ、すごいのだ！",
+     "chapter": "まとめ",
+     "speed": 1.3,
+     "pitch": 0.02,
+     "intonation": 1.2,
+     "volume": 0.9
+    },
+    {
+     "who": "metan",
+     "face": "笑顔",
+     "text": "おしまい。"
+    }
+   ]
+  },
+  "error": "<SCRIPT>: cast.metan に書けるのは faces/style_id/speed/pitch/intonation/volume だけ (実際: ['color'])",
+  "exact": true
+ },
+ {
+  "name": "readings_list",
+  "script": {
+   "title": "テスト用の台本 <b>&",
+   "description": "golden を作るための fixture。\n2 行目",
+   "lead_in": 0.4123,
+   "gap": 0.317,
+   "speed": 1.1,
+   "cast": {
+    "metan": {
+     "speed": 1.05,
+     "faces": "faces/metan"
+    }
+   },
+   "readings": [
+    "x"
+   ],
+   "credits": [
+    "追加のクレジット",
+    "VOICEVOX:四国めたん"
+   ],
+   "lines": [
+    {
+     "who": "metan",
+     "face": "説明",
+     "text": "今日はAPI3の話をするわ。"
+    },
+    {
+     "who": "zundamon",
+     "face": "驚き",
+     "text": "APIって何なのだ？",
+     "pause_after": 0.8016,
+     "chapter": "はじめに"
+    },
+    {
+     "who": "metan",
+     "text": "ぱぱっと、まみむめもで口を閉じるの。",
+     "read": "ぱぱっと、まみむめも。"
+    },
+    {
+     "who": "zundamon",
+     "face": "笑顔",
+     "text": "ん、きゃっ、すごいのだ！",
+     "chapter": "まとめ",
+     "speed": 1.3,
+     "pitch": 0.02,
+     "intonation": 1.2,
+     "volume": 0.9
+    },
+    {
+     "who": "metan",
+     "face": "笑顔",
+     "text": "おしまい。"
+    }
+   ]
+  },
+  "error": "<SCRIPT>: readings は {\"字幕の語\": \"読ませたい語\"} の形 (キーも値も空でない文字列)",
+  "exact": true
+ },
+ {
+  "name": "readings_empty_value",
+  "script": {
+   "title": "テスト用の台本 <b>&",
+   "description": "golden を作るための fixture。\n2 行目",
+   "lead_in": 0.4123,
+   "gap": 0.317,
+   "speed": 1.1,
+   "cast": {
+    "metan": {
+     "speed": 1.05,
+     "faces": "faces/metan"
+    }
+   },
+   "readings": {
+    "A": " "
+   },
+   "credits": [
+    "追加のクレジット",
+    "VOICEVOX:四国めたん"
+   ],
+   "lines": [
+    {
+     "who": "metan",
+     "face": "説明",
+     "text": "今日はAPI3の話をするわ。"
+    },
+    {
+     "who": "zundamon",
+     "face": "驚き",
+     "text": "APIって何なのだ？",
+     "pause_after": 0.8016,
+     "chapter": "はじめに"
+    },
+    {
+     "who": "metan",
+     "text": "ぱぱっと、まみむめもで口を閉じるの。",
+     "read": "ぱぱっと、まみむめも。"
+    },
+    {
+     "who": "zundamon",
+     "face": "笑顔",
+     "text": "ん、きゃっ、すごいのだ！",
+     "chapter": "まとめ",
+     "speed": 1.3,
+     "pitch": 0.02,
+     "intonation": 1.2,
+     "volume": 0.9
+    },
+    {
+     "who": "metan",
+     "face": "笑顔",
+     "text": "おしまい。"
+    }
+   ]
+  },
+  "error": "<SCRIPT>: readings は {\"字幕の語\": \"読ませたい語\"} の形 (キーも値も空でない文字列)",
+  "exact": true
+ },
+ {
+  "name": "readings_empty_key",
+  "script": {
+   "title": "テスト用の台本 <b>&",
+   "description": "golden を作るための fixture。\n2 行目",
+   "lead_in": 0.4123,
+   "gap": 0.317,
+   "speed": 1.1,
+   "cast": {
+    "metan": {
+     "speed": 1.05,
+     "faces": "faces/metan"
+    }
+   },
+   "readings": {
+    "": "x"
+   },
+   "credits": [
+    "追加のクレジット",
+    "VOICEVOX:四国めたん"
+   ],
+   "lines": [
+    {
+     "who": "metan",
+     "face": "説明",
+     "text": "今日はAPI3の話をするわ。"
+    },
+    {
+     "who": "zundamon",
+     "face": "驚き",
+     "text": "APIって何なのだ？",
+     "pause_after": 0.8016,
+     "chapter": "はじめに"
+    },
+    {
+     "who": "metan",
+     "text": "ぱぱっと、まみむめもで口を閉じるの。",
+     "read": "ぱぱっと、まみむめも。"
+    },
+    {
+     "who": "zundamon",
+     "face": "笑顔",
+     "text": "ん、きゃっ、すごいのだ！",
+     "chapter": "まとめ",
+     "speed": 1.3,
+     "pitch": 0.02,
+     "intonation": 1.2,
+     "volume": 0.9
+    },
+    {
+     "who": "metan",
+     "face": "笑顔",
+     "text": "おしまい。"
+    }
+   ]
+  },
+  "error": "<SCRIPT>: readings は {\"字幕の語\": \"読ませたい語\"} の形 (キーも値も空でない文字列)",
+  "exact": true
+ },
+ {
+  "name": "who_invalid",
+  "script": {
+   "title": "テスト用の台本 <b>&",
+   "description": "golden を作るための fixture。\n2 行目",
+   "lead_in": 0.4123,
+   "gap": 0.317,
+   "speed": 1.1,
+   "cast": {
+    "metan": {
+     "speed": 1.05,
+     "faces": "faces/metan"
+    }
+   },
+   "readings": {
+    "API": "エーピーアイ",
+    "API3": "エーピーアイスリー"
+   },
+   "credits": [
+    "追加のクレジット",
+    "VOICEVOX:四国めたん"
+   ],
+   "lines": [
+    {
+     "who": "metan",
+     "face": "説明",
+     "text": "今日はAPI3の話をするわ。"
+    },
+    {
+     "who": "tsumugi",
+     "face": "驚き",
+     "text": "APIって何なのだ？",
+     "pause_after": 0.8016,
+     "chapter": "はじめに"
+    },
+    {
+     "who": "metan",
+     "text": "ぱぱっと、まみむめもで口を閉じるの。",
+     "read": "ぱぱっと、まみむめも。"
+    },
+    {
+     "who": "zundamon",
+     "face": "笑顔",
+     "text": "ん、きゃっ、すごいのだ！",
+     "chapter": "まとめ",
+     "speed": 1.3,
+     "pitch": 0.02,
+     "intonation": 1.2,
+     "volume": 0.9
+    },
+    {
+     "who": "metan",
+     "face": "笑顔",
+     "text": "おしまい。"
+    }
+   ]
+  },
+  "error": "<SCRIPT>: lines[1].who は metan/zundamon のどれか (実際: 'tsumugi')",
+  "exact": true
+ },
+ {
+  "name": "face_invalid",
+  "script": {
+   "title": "テスト用の台本 <b>&",
+   "description": "golden を作るための fixture。\n2 行目",
+   "lead_in": 0.4123,
+   "gap": 0.317,
+   "speed": 1.1,
+   "cast": {
+    "metan": {
+     "speed": 1.05,
+     "faces": "faces/metan"
+    }
+   },
+   "readings": {
+    "API": "エーピーアイ",
+    "API3": "エーピーアイスリー"
+   },
+   "credits": [
+    "追加のクレジット",
+    "VOICEVOX:四国めたん"
+   ],
+   "lines": [
+    {
+     "who": "metan",
+     "face": "説明",
+     "text": "今日はAPI3の話をするわ。"
+    },
+    {
+     "who": "zundamon",
+     "face": "眠い",
+     "text": "APIって何なのだ？",
+     "pause_after": 0.8016,
+     "chapter": "はじめに"
+    },
+    {
+     "who": "metan",
+     "text": "ぱぱっと、まみむめもで口を閉じるの。",
+     "read": "ぱぱっと、まみむめも。"
+    },
+    {
+     "who": "zundamon",
+     "face": "笑顔",
+     "text": "ん、きゃっ、すごいのだ！",
+     "chapter": "まとめ",
+     "speed": 1.3,
+     "pitch": 0.02,
+     "intonation": 1.2,
+     "volume": 0.9
+    },
+    {
+     "who": "metan",
+     "face": "笑顔",
+     "text": "おしまい。"
+    }
+   ]
+  },
+  "error": "<SCRIPT>: lines[1].face は 通常/笑顔/説明/驚き/困り/考え中/怒り/悲しみ のどれか (実際: '眠い')",
+  "exact": true
+ },
+ {
+  "name": "text_empty",
+  "script": {
+   "title": "テスト用の台本 <b>&",
+   "description": "golden を作るための fixture。\n2 行目",
+   "lead_in": 0.4123,
+   "gap": 0.317,
+   "speed": 1.1,
+   "cast": {
+    "metan": {
+     "speed": 1.05,
+     "faces": "faces/metan"
+    }
+   },
+   "readings": {
+    "API": "エーピーアイ",
+    "API3": "エーピーアイスリー"
+   },
+   "credits": [
+    "追加のクレジット",
+    "VOICEVOX:四国めたん"
+   ],
+   "lines": [
+    {
+     "who": "metan",
+     "face": "説明",
+     "text": "今日はAPI3の話をするわ。"
+    },
+    {
+     "who": "zundamon",
+     "face": "驚き",
+     "text": "APIって何なのだ？",
+     "pause_after": 0.8016,
+     "chapter": "はじめに"
+    },
+    {
+     "who": "metan",
+     "text": "  ",
+     "read": "ぱぱっと、まみむめも。"
+    },
+    {
+     "who": "zundamon",
+     "face": "笑顔",
+     "text": "ん、きゃっ、すごいのだ！",
+     "chapter": "まとめ",
+     "speed": 1.3,
+     "pitch": 0.02,
+     "intonation": 1.2,
+     "volume": 0.9
+    },
+    {
+     "who": "metan",
+     "face": "笑顔",
+     "text": "おしまい。"
+    }
+   ]
+  },
+  "error": "<SCRIPT>: lines[2].text が空",
+  "exact": true
+ },
+ {
+  "name": "read_empty",
+  "script": {
+   "title": "テスト用の台本 <b>&",
+   "description": "golden を作るための fixture。\n2 行目",
+   "lead_in": 0.4123,
+   "gap": 0.317,
+   "speed": 1.1,
+   "cast": {
+    "metan": {
+     "speed": 1.05,
+     "faces": "faces/metan"
+    }
+   },
+   "readings": {
+    "API": "エーピーアイ",
+    "API3": "エーピーアイスリー"
+   },
+   "credits": [
+    "追加のクレジット",
+    "VOICEVOX:四国めたん"
+   ],
+   "lines": [
+    {
+     "who": "metan",
+     "face": "説明",
+     "text": "今日はAPI3の話をするわ。"
+    },
+    {
+     "who": "zundamon",
+     "face": "驚き",
+     "text": "APIって何なのだ？",
+     "pause_after": 0.8016,
+     "chapter": "はじめに"
+    },
+    {
+     "who": "metan",
+     "text": "ぱぱっと、まみむめもで口を閉じるの。",
+     "read": ""
+    },
+    {
+     "who": "zundamon",
+     "face": "笑顔",
+     "text": "ん、きゃっ、すごいのだ！",
+     "chapter": "まとめ",
+     "speed": 1.3,
+     "pitch": 0.02,
+     "intonation": 1.2,
+     "volume": 0.9
+    },
+    {
+     "who": "metan",
+     "face": "笑顔",
+     "text": "おしまい。"
+    }
+   ]
+  },
+  "error": "<SCRIPT>: lines[2].read が空 (読みを直さないなら read を書かない)",
+  "exact": true
+ },
+ {
+  "name": "pause_negative",
+  "script": {
+   "title": "テスト用の台本 <b>&",
+   "description": "golden を作るための fixture。\n2 行目",
+   "lead_in": 0.4123,
+   "gap": 0.317,
+   "speed": 1.1,
+   "cast": {
+    "metan": {
+     "speed": 1.05,
+     "faces": "faces/metan"
+    }
+   },
+   "readings": {
+    "API": "エーピーアイ",
+    "API3": "エーピーアイスリー"
+   },
+   "credits": [
+    "追加のクレジット",
+    "VOICEVOX:四国めたん"
+   ],
+   "lines": [
+    {
+     "who": "metan",
+     "face": "説明",
+     "text": "今日はAPI3の話をするわ。",
+     "pause_after": -0.1
+    },
+    {
+     "who": "zundamon",
+     "face": "驚き",
+     "text": "APIって何なのだ？",
+     "pause_after": 0.8016,
+     "chapter": "はじめに"
+    },
+    {
+     "who": "metan",
+     "text": "ぱぱっと、まみむめもで口を閉じるの。",
+     "read": "ぱぱっと、まみむめも。"
+    },
+    {
+     "who": "zundamon",
+     "face": "笑顔",
+     "text": "ん、きゃっ、すごいのだ！",
+     "chapter": "まとめ",
+     "speed": 1.3,
+     "pitch": 0.02,
+     "intonation": 1.2,
+     "volume": 0.9
+    },
+    {
+     "who": "metan",
+     "face": "笑顔",
+     "text": "おしまい。"
+    }
+   ]
+  },
+  "error": "<SCRIPT>: lines[0].pause_after は 0 以上の数 (実際: -0.1)",
+  "exact": true
+ },
+ {
+  "name": "speed_not_number",
+  "script": {
+   "title": "テスト用の台本 <b>&",
+   "description": "golden を作るための fixture。\n2 行目",
+   "lead_in": 0.4123,
+   "gap": 0.317,
+   "speed": 1.1,
+   "cast": {
+    "metan": {
+     "speed": 1.05,
+     "faces": "faces/metan"
+    }
+   },
+   "readings": {
+    "API": "エーピーアイ",
+    "API3": "エーピーアイスリー"
+   },
+   "credits": [
+    "追加のクレジット",
+    "VOICEVOX:四国めたん"
+   ],
+   "lines": [
+    {
+     "who": "metan",
+     "face": "説明",
+     "text": "今日はAPI3の話をするわ。",
+     "speed": "abc"
+    },
+    {
+     "who": "zundamon",
+     "face": "驚き",
+     "text": "APIって何なのだ？",
+     "pause_after": 0.8016,
+     "chapter": "はじめに"
+    },
+    {
+     "who": "metan",
+     "text": "ぱぱっと、まみむめもで口を閉じるの。",
+     "read": "ぱぱっと、まみむめも。"
+    },
+    {
+     "who": "zundamon",
+     "face": "笑顔",
+     "text": "ん、きゃっ、すごいのだ！",
+     "chapter": "まとめ",
+     "speed": 1.3,
+     "pitch": 0.02,
+     "intonation": 1.2,
+     "volume": 0.9
+    },
+    {
+     "who": "metan",
+     "face": "笑顔",
+     "text": "おしまい。"
+    }
+   ]
+  },
+  "error": "<SCRIPT>: lines[0] の数値が不正 (could not convert string to float: 'abc')",
+  "exact": false
+ },
+ {
+  "name": "speed_zero",
+  "script": {
+   "title": "テスト用の台本 <b>&",
+   "description": "golden を作るための fixture。\n2 行目",
+   "lead_in": 0.4123,
+   "gap": 0.317,
+   "speed": 1.1,
+   "cast": {
+    "metan": {
+     "speed": 1.05,
+     "faces": "faces/metan"
+    }
+   },
+   "readings": {
+    "API": "エーピーアイ",
+    "API3": "エーピーアイスリー"
+   },
+   "credits": [
+    "追加のクレジット",
+    "VOICEVOX:四国めたん"
+   ],
+   "lines": [
+    {
+     "who": "metan",
+     "face": "説明",
+     "text": "今日はAPI3の話をするわ。",
+     "speed": 0
+    },
+    {
+     "who": "zundamon",
+     "face": "驚き",
+     "text": "APIって何なのだ？",
+     "pause_after": 0.8016,
+     "chapter": "はじめに"
+    },
+    {
+     "who": "metan",
+     "text": "ぱぱっと、まみむめもで口を閉じるの。",
+     "read": "ぱぱっと、まみむめも。"
+    },
+    {
+     "who": "zundamon",
+     "face": "笑顔",
+     "text": "ん、きゃっ、すごいのだ！",
+     "chapter": "まとめ",
+     "speed": 1.3,
+     "pitch": 0.02,
+     "intonation": 1.2,
+     "volume": 0.9
+    },
+    {
+     "who": "metan",
+     "face": "笑顔",
+     "text": "おしまい。"
+    }
+   ]
+  },
+  "error": "<SCRIPT>: lines[0] の speed は正の数",
+  "exact": true
+ },
+ {
+  "name": "faces_dir_missing",
+  "script": {
+   "title": "テスト用の台本 <b>&",
+   "description": "golden を作るための fixture。\n2 行目",
+   "lead_in": 0.4123,
+   "gap": 0.317,
+   "speed": 1.1,
+   "cast": {
+    "metan": {
+     "speed": 1.05,
+     "faces": "faces/none"
+    }
+   },
+   "readings": {
+    "API": "エーピーアイ",
+    "API3": "エーピーアイスリー"
+   },
+   "credits": [
+    "追加のクレジット",
+    "VOICEVOX:四国めたん"
+   ],
+   "lines": [
+    {
+     "who": "metan",
+     "face": "説明",
+     "text": "今日はAPI3の話をするわ。"
+    },
+    {
+     "who": "zundamon",
+     "face": "驚き",
+     "text": "APIって何なのだ？",
+     "pause_after": 0.8016,
+     "chapter": "はじめに"
+    },
+    {
+     "who": "metan",
+     "text": "ぱぱっと、まみむめもで口を閉じるの。",
+     "read": "ぱぱっと、まみむめも。"
+    },
+    {
+     "who": "zundamon",
+     "face": "笑顔",
+     "text": "ん、きゃっ、すごいのだ！",
+     "chapter": "まとめ",
+     "speed": 1.3,
+     "pitch": 0.02,
+     "intonation": 1.2,
+     "volume": 0.9
+    },
+    {
+     "who": "metan",
+     "face": "笑顔",
+     "text": "おしまい。"
+    }
+   ]
+  },
+  "error": "cast.metan.faces: <DIR>/faces/none/faces.json が読めない ([Errno 2] No such file or directory: '<DIR>/faces/none/faces.json')。psd_faces.py で書き出した dir を指定する",
+  "exact": false
+ },
+ {
+  "name": "face_not_exported",
+  "script": {
+   "title": "テスト用の台本 <b>&",
+   "description": "golden を作るための fixture。\n2 行目",
+   "lead_in": 0.4123,
+   "gap": 0.317,
+   "speed": 1.1,
+   "cast": {
+    "metan": {
+     "speed": 1.05,
+     "faces": "faces/metan"
+    }
+   },
+   "readings": {
+    "API": "エーピーアイ",
+    "API3": "エーピーアイスリー"
+   },
+   "credits": [
+    "追加のクレジット",
+    "VOICEVOX:四国めたん"
+   ],
+   "lines": [
+    {
+     "who": "metan",
+     "face": "怒り",
+     "text": "今日はAPI3の話をするわ。"
+    },
+    {
+     "who": "zundamon",
+     "face": "驚き",
+     "text": "APIって何なのだ？",
+     "pause_after": 0.8016,
+     "chapter": "はじめに"
+    },
+    {
+     "who": "metan",
+     "text": "ぱぱっと、まみむめもで口を閉じるの。",
+     "read": "ぱぱっと、まみむめも。"
+    },
+    {
+     "who": "zundamon",
+     "face": "笑顔",
+     "text": "ん、きゃっ、すごいのだ！",
+     "chapter": "まとめ",
+     "speed": 1.3,
+     "pitch": 0.02,
+     "intonation": 1.2,
+     "volume": 0.9
+    },
+    {
+     "who": "metan",
+     "face": "笑顔",
+     "text": "おしまい。"
+    }
+   ]
+  },
+  "error": "<SCRIPT>: lines[0].face='怒り' が cast.metan.faces の書き出しに無い (psd_faces.py の定義に足す)",
+  "exact": true
+ }
+]

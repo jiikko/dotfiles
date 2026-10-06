@@ -1,0 +1,38 @@
+[
+ {
+  "name": "s.json",
+  "stem": "s"
+ },
+ {
+  "name": "foo.",
+  "stem": "foo"
+ },
+ {
+  "name": "..json",
+  "stem": "..json"
+ },
+ {
+  "name": "a.json.",
+  "stem": "a.json"
+ },
+ {
+  "name": ".json",
+  "stem": ".json"
+ },
+ {
+  "name": "a.b.c",
+  "stem": "a.b"
+ },
+ {
+  "name": "noext",
+  "stem": "noext"
+ },
+ {
+  "name": "...",
+  "stem": "..."
+ },
+ {
+  "name": "x..y",
+  "stem": "x."
+ }
+]

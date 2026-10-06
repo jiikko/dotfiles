@@ -1,0 +1,11 @@
+#!/usr/bin/env zsh
+# zundamon-kaisetsu — 四国めたんとずんだもんの掛け合い動画 (HTML / mp4) を VOICEVOX で作る。
+# Go implementation at: ~/dotfiles/src/zundamon-kaisetsu/ (main.go)。使い方は
+# ~/dotfiles/_claude/skills/zundamon-kaisetsu/SKILL.md。
+# skill のディレクトリ (テンプレートと立ち絵の既定の置き場) を ZUNDAMON_KAISETSU_SKILL_DIR で渡す。
+# 再ビルドは同期: 出力 (合成・動画) を人が使うので、旧版の結果を新コードの結果と誤認させない。
+# 機構は bin/lib/go_autobuild.zsh。
+set -u
+source "${0:A:h}/lib/go_autobuild.zsh"
+export ZUNDAMON_KAISETSU_SKILL_DIR="${ZUNDAMON_KAISETSU_SKILL_DIR:-${0:A:h}/../_claude/skills/zundamon-kaisetsu}"
+go_autobuild_exec "${0:A:h}/../src/zundamon-kaisetsu" zundamon-kaisetsu -- "$@"

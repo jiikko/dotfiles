@@ -1,0 +1,355 @@
+package main
+
+// 敵対的レビュー (2026-10-06、壊す / 素通り の 2 観点) で見つかった穴を固定するテスト。golden は HEAD にあった Python 版から作った。
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
+	"slices"
+	"strings"
+	"sync"
+	"testing"
+)
+
+func TestMouthTrackSyntheticMatchesPython(t *testing.T) {
+	var cases []struct {
+		Name     string         `json:"name"`
+		Query    map[string]any `json:"query"`
+		Duration float64        `json:"duration"`
+		Mouth    string         `json:"mouth"`
+	}
+	readGolden(t, "mouth_synth.json", &cases)
+	if len(cases) < 20 {
+		t.Fatalf("golden の件数が少ない: %d", len(cases))
+	}
+	for _, c := range cases {
+		if got := mouthTrack(c.Query, c.Duration); got != c.Mouth {
+			t.Errorf("%s (%.4f 秒): got %s want %s", c.Name, c.Duration, got, c.Mouth)
+		}
+	}
+}
+
+// 行の開始・終了がフレームの中点 (k+0.5)/30 とちょうど重なるときの等号の向き (start <= t / t < end)。
+func TestFrameRunsBoundaryMatchesPython(t *testing.T) {
+	var g struct {
+		Timeline []struct {
+			Start float64 `json:"start"`
+			End   float64 `json:"end"`
+			Mouth string  `json:"mouth"`
+		} `json:"timeline"`
+		Duration float64  `json:"duration"`
+		Frames   [][4]int `json:"frames"`
+	}
+	readGolden(t, "frames_boundary.json", &g)
+	var tl []timelineLine
+	for _, x := range g.Timeline {
+		tl = append(tl, timelineLine{Start: x.Start, End: x.End, mouth: x.Mouth})
+	}
+	if got := frameRuns(tl, g.Duration); !reflect.DeepEqual(got, g.Frames) {
+		t.Errorf("got  %v\nwant %v", got, g.Frames)
+	}
+}
+
+func TestStemMatchesPython(t *testing.T) {
+	var cases []struct{ Name, Stem string }
+	readGolden(t, "stem.json", &cases)
+	if len(cases) == 0 {
+		t.Fatal("golden が空")
+	}
+	for _, c := range cases {
+		if got := pyStem(c.Name); got != c.Stem {
+			t.Errorf("%q: got %q want %q", c.Name, got, c.Stem)
+		}
+	}
+}
+
+// 本番の主経路: 台本に faces を書かず、skill の assets にある立ち絵を使う。空文字のチャプターはチャプターにならない。
+// 期待値は golden の script (faces を台本に書いた版) と同じ。
+func TestBuildWithDefaultAssetsMatchesPython(t *testing.T) {
+	var golden map[string]struct {
+		Data map[string]any `json:"data"`
+	}
+	readGolden(t, "build_data.json", &golden)
+	dir := t.TempDir()
+	copyTree(t, filepath.Join("testdata", "build", "script.work"), filepath.Join(dir, "script.work"))
+	copyTree(t, filepath.Join("testdata", "build", "faces", "metan"), filepath.Join(dir, "assets", "metan"))
+	b, err := os.ReadFile(filepath.Join("testdata", "build", "script.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := decodeJSON(b, &raw); err != nil {
+		t.Fatal(err)
+	}
+	delete(raw["cast"].(map[string]any)["metan"].(map[string]any), "faces")
+	raw["lines"].([]any)[2].(map[string]any)["chapter"] = ""
+	out, _ := json.Marshal(raw)
+	path := filepath.Join(dir, "script.json")
+	if err := os.WriteFile(path, out, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := testEnv(t)
+	env.AssetsFaces = filepath.Join(dir, "assets")
+	s, err := loadScript(resolvePath(path), env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _, err := assemble(s, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gb, _ := json.Marshal(data)
+	var got map[string]any
+	if err := decodeJSON(gb, &got); err != nil {
+		t.Fatal(err)
+	}
+	want := golden["script"].Data
+	normalizeNumbers(got)
+	normalizeNumbers(want)
+	for _, k := range sortedKeys(want) {
+		if !reflect.DeepEqual(got[k], want[k]) {
+			t.Errorf("%s が golden と違う (既定の置き場の立ち絵を読んでいないか、空のチャプターを数えた)", k)
+		}
+	}
+}
+
+// まだ話していないキャラは「通常」の顔で出るので、立ち絵を持つキャラには通常を必ず埋め込む。
+func TestDefaultFaceAlwaysEmbedded(t *testing.T) {
+	dir := t.TempDir()
+	facesAbs, _ := filepath.Abs(filepath.Join("testdata", "build", "faces", "metan"))
+	script := map[string]any{
+		"cast":  map[string]any{"metan": map[string]any{"faces": facesAbs}},
+		"lines": []any{map[string]any{"who": "zundamon", "text": "ぼくだけが話すのだ"}},
+	}
+	b, _ := json.Marshal(script)
+	path := filepath.Join(dir, "solo.json")
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := testEnv(t)
+	s, err := loadScript(path, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imgs, err := loadFaces(s, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sortedKeys(imgs["metan"]); !slices.Equal(got, []string{"通常"}) || len(imgs["metan"]["通常"]) != 3 {
+		t.Errorf("話さないキャラの立ち絵: %v (want [通常] の 3 段階)", got)
+	}
+}
+
+func TestFFConcatListing(t *testing.T) {
+	runs := [][4]int{{0, -1, 0, 0}, {12, 0, 1, 2}, {15, 0, 0, 0}}
+	shot := func(st [3]int) string {
+		return "/t/" + strings.Trim(strings.Join(strings.Fields(strings.Trim(jsonOf(st), "[]")), ""), " ") + ".png"
+	}
+	got := ffconcatListing(runs, 0.7, shot) // 0.7 秒 = 21 フレーム
+	want := []string{
+		"ffconcat version 1.0",
+		"file '/t/-1,0,0.png'", "duration 0.400000",
+		"file '/t/0,1,2.png'", "duration 0.100000",
+		"file '/t/0,0,0.png'", "duration 0.200000",
+		"file '/t/0,0,0.png'",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("got  %q\nwant %q", got, want)
+	}
+	if q := ffq("/a/it's.png"); q != `'/a/it'\''s.png'` {
+		t.Errorf("ffq: %s", q)
+	}
+}
+
+func jsonOf(v any) string { b, _ := json.Marshal(v); return string(b) }
+
+// synth は合成の入力 (話速などの scale) をエンジンへ渡し、キャッシュの鍵どおりの名前で保存し、壊れた wav は残さない。
+func TestSynthWithFakeEngine(t *testing.T) {
+	var mu sync.Mutex
+	var bodies []map[string]any
+	broken := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/speakers":
+			_, _ = io.WriteString(w, `[{"name":"四国めたん","styles":[{"name":"ノーマル","id":2}]},{"name":"ずんだもん","styles":[{"name":"ノーマル","id":3}]}]`)
+		case "/audio_query":
+			_, _ = io.WriteString(w, `{"accent_phrases":[],"speedScale":1.0,"kana":"テスト","unknownField":{"keep":true}}`)
+		case "/synthesis":
+			b, _ := io.ReadAll(r.Body)
+			var q map[string]any
+			_ = json.Unmarshal(b, &q)
+			mu.Lock()
+			bodies = append(bodies, q)
+			mu.Unlock()
+			if broken {
+				_, _ = w.Write([]byte("RIFFnope"))
+				return
+			}
+			_, _ = w.Write(wavBytes(fmtChunk(1, 24000, 16), chunk("data", make([]byte, 480))))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "s.json")
+	script := `{"lines":[{"who":"metan","text":"あ","speed":1.25,"pitch":0.03,"intonation":1.1,"volume":0.8}]}`
+	if err := os.WriteFile(path, []byte(script), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := testEnv(t)
+	env.Engine = srv.URL
+	if err := cmdSynth(env, path, false); err != nil {
+		t.Fatal(err)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("/synthesis の呼び出し: %d 回", len(bodies))
+	}
+	q := bodies[0]
+	for k, want := range map[string]float64{"speedScale": 1.25, "pitchScale": 0.03, "intonationScale": 1.1, "volumeScale": 0.8, "outputSamplingRate": 24000} {
+		if got, _ := q[k].(float64); got != want {
+			t.Errorf("/synthesis の %s: got %v want %v", k, q[k], want)
+		}
+	}
+	if q["outputStereo"] != false || q["unknownField"] == nil {
+		t.Errorf("outputStereo か、エンジンの知らないフィールドが落ちた: %v", q)
+	}
+	s, err := loadScript(resolvePath(path), env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, _ := lineParams(s, s.Lines[0])
+	wav, query := cachePaths(workDir(s.Path), p)
+	if !isFile(wav) || !isFile(query) {
+		t.Fatalf("キャッシュの鍵どおりの名前で保存されていない: %s", workDir(s.Path))
+	}
+	// 2 回目はキャッシュを使う (エンジンを呼ばない)
+	if err := cmdSynth(env, path, false); err != nil || len(bodies) != 1 {
+		t.Errorf("キャッシュを使わずに合成し直した (呼び出し %d 回, %v)", len(bodies), err)
+	}
+	// 壊れた wav が返ったら、何も残さずに止まる
+	broken = true
+	_ = os.Remove(wav)
+	_ = os.Remove(query)
+	if err := cmdSynth(env, path, false); err == nil {
+		t.Error("壊れた wav で成功した")
+	}
+	entries, _ := os.ReadDir(workDir(s.Path))
+	if len(entries) != 0 {
+		t.Errorf("壊れた合成結果がキャッシュに残った: %v", entries)
+	}
+}
+
+func TestArgparseEdgeCases(t *testing.T) {
+	specs := []optSpec{
+		{names: []string{"-o", "--output"}, dest: "output", takes: true},
+		{names: []string{"--jobs"}, dest: "jobs", takes: true, check: jobsArg},
+	}
+	p, _, err := parseArgs([]string{"-o=out", "s.json"}, specs, false)
+	if err != nil || p.opts["output"] != "out" {
+		t.Errorf("-o=out: output=%q err=%v (argparse は = の後ろを値にする)", p.opts["output"], err)
+	}
+	p, _, err = parseArgs([]string{"-o", "-x y", "-a b"}, specs, false)
+	if err != nil || p.opts["output"] != "-x y" || !slices.Equal(p.pos, []string{"-a b"}) {
+		t.Errorf("空白を含む値はオプションと見なさない: %+v err=%v", p, err)
+	}
+	p, _, err = parseArgs([]string{"-h", "--jobs", "99"}, specs, false)
+	if err != nil || !p.help {
+		t.Errorf("-h の後ろの誤りより -h を優先する: err=%v", err)
+	}
+}
+
+func TestLoadScriptRejectsMalformedFiles(t *testing.T) {
+	cases := map[string]string{
+		"余分な閉じ括弧":      `{"lines":[{"who":"metan","text":"a"}]}}`,
+		"余分な閉じ括弧 (配列)": `{"lines":[{"who":"metan","text":"a"}]}]`,
+		"不正な UTF-8":    "{\"lines\":[{\"who\":\"metan\",\"text\":\"\xff\"}]}",
+	}
+	for name, body := range cases {
+		path := filepath.Join(t.TempDir(), "s.json")
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := loadScript(path, testEnv(t)); err == nil || !strings.Contains(err.Error(), "読めない") {
+			t.Errorf("%s: 受け入れた (%v)", name, err)
+		}
+	}
+}
+
+func TestWavOddLengthAndFloat(t *testing.T) {
+	odd := wavBytes(fmtChunk(1, 24000, 16), chunk("data", make([]byte, 201)))
+	if pcm, n, err := checkWavBytes(odd, "t"); err != nil || n != 100 || len(pcm) != 200 {
+		t.Errorf("奇数長の data を読めない: n=%d len=%d err=%v", n, len(pcm), err)
+	}
+	ext := binaryFmtExtensible(3) // subformat = IEEE float
+	if _, _, err := checkWavBytes(wavBytes(ext, chunk("data", make([]byte, 200))), "t"); err == nil {
+		t.Error("拡張形式の float を PCM として受け入れた")
+	}
+	if _, _, err := checkWavBytes(wavBytes(binaryFmtExtensible(1), chunk("data", make([]byte, 200))), "t"); err != nil {
+		t.Errorf("拡張形式の PCM を読めない: %v", err)
+	}
+	// 先頭 2 バイトだけ PCM で、残りが違う GUID は拒否する (Python 3.14 は GUID 全体を比べる)
+	fake := binaryFmtExtensible(1)
+	fake[len(fake)-1] ^= 0xff
+	if _, _, err := checkWavBytes(wavBytes(fake, chunk("data", make([]byte, 200))), "t"); err == nil {
+		t.Error("PCM でない GUID を受け入れた")
+	}
+}
+
+func binaryFmtExtensible(sub uint16) []byte {
+	b := []byte{0xFE, 0xFF, 1, 0}                                                    // tag, channels
+	b = append(b, 0xC0, 0x5D, 0, 0)                                                  // 24000
+	b = append(b, 0x80, 0xBB, 0, 0, 2, 0, 16, 0)                                     // byte rate, block align, bits
+	b = append(b, 22, 0, 16, 0, 0, 0, 0, 0)                                          // cbSize, valid bits, channel mask
+	guid := append([]byte{byte(sub), byte(sub >> 8)}, ksdataformatSubtypePCM[2:]...) // subformat の GUID
+	b = append(b, guid...)
+	return chunk("fmt ", b)
+}
+
+// ".." の直前が symlink のとき、Python の Path.resolve() と同じく symlink を解決した後の親へ戻る。
+func TestResolvePathSymlinkThenParent(t *testing.T) {
+	root := resolvePath(t.TempDir())
+	real := filepath.Join(root, "real", "deep", "proj")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "home"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "home", "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := resolvePath(link+"/../s.json"), filepath.Join(root, "real", "deep", "s.json"); got != want {
+		t.Errorf("got %s want %s", got, want)
+	}
+	t.Chdir(link)
+	if got, want := resolvePath("../s.json"), filepath.Join(root, "real", "deep", "s.json"); got != want {
+		t.Errorf("相対パス: got %s want %s", got, want)
+	}
+}
+
+// JSON の整数の -0 は、Python では 0 (int) になり float() で 0.0 になる。-0.0 にすると鍵が Python 版と違う (敵対的レビュー P2-1)。
+// golden の cachekey.json の最後の件は、Python に -0 を与えて作った鍵 (golden の line には Python が読んだ後の 0 が書かれている)。
+func TestNegativeZeroIntLiteralKey(t *testing.T) {
+	var cases []struct {
+		Key string `json:"key"`
+	}
+	readGolden(t, "cachekey.json", &cases)
+	want := cases[len(cases)-1].Key
+	line := map[string]any{"who": "metan", "text": "a", "pitch": json.Number("-0"), "volume": json.Number("-0"), "intonation": json.Number("-0")}
+	s := &Script{Raw: map[string]any{}, Cast: map[string]map[string]any{"metan": {"style_id": json.Number("2")}}}
+	p, err := lineParams(s, line)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cacheKey(p); got != want {
+		t.Errorf("整数の -0 の鍵が Python 版と違う: got %s want %s (%s)", got, want, cacheSerialize(p))
+	}
+}

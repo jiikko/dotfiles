@@ -55,23 +55,26 @@ base directory を `S` に入れてから使う (skill の外のパスを決め�
 
 ```sh
 S=<この skill の base directory>
-DV="$S/scripts/dialogue_video.py"    # 標準ライブラリのみ。圧縮に ffmpeg か afconvert
+DV=zundamon-kaisetsu    # dotfiles の bin/ のコマンド (Go 製。ソースは dotfiles の src/zundamon-kaisetsu)。圧縮に ffmpeg か afconvert
 ```
+
+`zundamon-kaisetsu` は、この skill のディレクトリ (テンプレートと立ち絵の既定の置き場) を `bin/zundamon-kaisetsu` から
+環境変数 `ZUNDAMON_KAISETSU_SKILL_DIR` で受け取る。PATH 上の古いバイナリを直接起動すると止まるので、必ず `bin/` の入口を通す。
 
 初めて使う環境の準備 (エンジン・立ち絵の入手) は `README.md` の Setup にある。
 
 0. **出力を html / mp4 / 両方 のどれにするかユーザーに聞く** (指定済みなら聞かない)。迷っているなら上の表で用途を示す
 1. **必要なコマンドを確かめる** (足りなければ rc=1 で、何が足りないかと次の手を出す)
    ```sh
-   python3 $DV check
-   # OK  python / 音声の圧縮 / mp4 用: Chrome / mp4 用: H.264 / コンテナ (container を優先) / そのサービス / VOICEVOX エンジン
+   $DV check
+   # OK  音声の圧縮 / 立ち絵の書き出し: uv / mp4 用: Chrome / mp4 用: H.264 / コンテナ (container を優先) / そのサービス / VOICEVOX エンジン
    ```
    NG の行は表示された手で直す (mp4 用の 2 行は html だけ作るなら無視してよい)。インストールやサービスの起動
    (`brew install`・`container system start`) はユーザーに確認してから行う
 2. **エンジンを起動**し、使う声のスタイル ID を調べる
    ```sh
-   python3 $DV up            # container (無ければ docker) で起動し、応答するまで待つ。既に応答していれば何もしない
-   python3 $DV speakers      # 例: 四国めたん: ノーマル=2, ... / ずんだもん: ノーマル=3, ...
+   $DV up            # container (無ければ docker) で起動し、応答するまで待つ。既に応答していれば何もしない
+   $DV speakers      # 例: 四国めたん: ノーマル=2, ... / ずんだもん: ノーマル=3, ...
    ```
    ID はエンジンの版で増減しうるので、台本に書く前に毎回この出力で確かめる
 3. **台本を書く**。作業ディレクトリはユーザーの指定先 (無ければ `./tmp/<名前>/`)。前後でサブエージェントを走らせる
@@ -85,7 +88,7 @@ DV="$S/scripts/dialogue_video.py"    # 標準ライブラリのみ。圧縮に f
       - 事実の裏取り: 各行を「資料・一次情報で裏付けあり / 前提知識の一般的な説明 / 推測 / 誤り」に分け、誤りには根拠を添える
       - 指摘は main agent が資料と台本で確かめてから直す (無検閲で採用しない)
    4. **ユーザーに見せる**。資料の外から足した行 (一般的な説明・推測) を挙げて確認をもらう
-4. **合成**: `python3 $DV synth script.json`
+4. **合成**: `$DV synth script.json`
    - セリフごとの wav と `audio_query` の結果が `script.work/` に入る。ファイル名は合成入力 (文・声・話速等) のハッシュなので、
      台本を直して再実行すると、行の挿入・削除・並べ替えを含めて**変わった行だけ**合成し直す
    - `style_id` がエンジンに無いか、そのキャラ以外の声なら止まる
@@ -93,7 +96,7 @@ DV="$S/scripts/dialogue_video.py"    # 標準ライブラリのみ。圧縮に f
      出たら、`script.work/` ごと消して synth し直してよい
    - 最初から読みを足さない。英字の固有名詞も、そのままで正しく読まれることが多い (読みは次の手順 5 で、合成の結果を見て直す)
 5. **読みの見直し**: 合成した音声の読みを、サブエージェントと main agent で確かめて直す
-   1. `python3 $DV kana --script script.json > kana.tsv` で全行の 行番号 / 話者 / 字幕 / 読み を書き出す (音声を差し替えた行には `*`)
+   1. `$DV kana --script script.json > kana.tsv` で全行の 行番号 / 話者 / 字幕 / 読み を書き出す (音声を差し替えた行には `*`)
    2. **読みの見直しのサブエージェント**を起動する (Agent ツール・`model: "sonnet"`・読み取りのみ)。`kana.tsv` のパスを渡し、
       字幕と読みが食い違う行を、行番号・語・今の読み・正しい読みつきで返させる。プロンプトに次を書く
       - 読みの表記: `'` はアクセントの位置、`/` と `、` は区切り、`_` は無声化。助詞の「は」「を」は `ワ` `オ`、長音は `エエ` `オオ`
@@ -101,22 +104,22 @@ DV="$S/scripts/dialogue_video.py"    # 標準ライブラリのみ。圧縮に f
       - 見る観点: 英字の略語・識別子 (1 文字ずつ読まれる・英語として読まれない)、数字と助数詞 (「8件」→「はっけん」)、
         同じ字で読みが違う語 (「空を返す」→「そら」、「親」→「しん」)、固有名詞、記号を含む語 (`eql?`)
       - アクセントの高低は指摘しない (読み = 音の並びだけを見る)
-   3. 指摘ごとに、直し方の候補を `python3 $DV kana "候補1" "候補2" …` で合成せずに比べる (`--who zundamon` で声を変える)。
+   3. 指摘ごとに、直し方の候補を `$DV kana "候補1" "候補2" …` で合成せずに比べる (`--who zundamon` で声を変える)。
       候補には**カタカナ・ひらがな・英字のまま**を並べる。カタカナにすると逆に誤読することがある
       (実例: 「ヘロクの」は文頭の「ヘ」が助詞扱いで「エ ロクノ」。英字の「Herokuの」なら「ヘロクノ」)。指摘が誤り (正しく読めている) なら採らない
    4. 同じ語が何行にも出るなら台本全体の `readings` (`{"datetime": "デートタイム"}`) で直し、その行だけの直しは行の `read` で直す
    5. `synth` し直し (変わった行だけ合成される)、`kana --script` で直した行の読みを確かめる
-6. **組み立て**: `python3 $DV build script.json -o out --format html|mp4|both` (拡張子は形式に合わせて付く)
+6. **組み立て**: `$DV build script.json -o out --format html|mp4|both` (拡張子は形式に合わせて付く)
    - `--bitrate 96k` で音質を上げられる (既定 64k)。mp4 は 1280x720 (720p) 固定
    - mp4 は撮影の前に CPU の負荷を見る。1 分平均の load がコア数の 8 割以上なら、空くまで**最大 20 分待つ** (1 分ごとに状況を出す)。
      20 分で空かなければそのまま撮る。bash ツールの timeout を 20 分以上に取って起動する (足りなければ背景で起動して完了を待つ)
 7. **確認**: `open out.html` / `open out.mp4` で再生し、ユーザーに見てもらう。HTML は URL 末尾の `#t=12.3` でその秒から開く (一時停止すると URL に書かれる)
-8. **片付け**: `python3 $DV down` でエンジンを止める (この skill 専用の名前 `zundamon-kaisetsu-voicevox` のコンテナだけを、container と docker の両方で止める。デスクトップアプリは止めない)
+8. **片付け**: `$DV down` でエンジンを止める (この skill 専用の名前 `zundamon-kaisetsu-voicevox` のコンテナだけを、container と docker の両方で止める。デスクトップアプリは止めない)
 
 ## 立ち絵と表情
 
-キャラクターは **四国めたん (`metan`、左) とずんだもん (`zundamon`、右) に固定**。2 人が向き合うよう、めたんの立ち絵は左右反転して表示する (素材は画面の左向きに描かれているため。`CAST` の `mirror`)。名前・既定の声 (めたん 2 / ずんだもん 3)・色は
-`scripts/dialogue_video.py` の `CAST` が正本で、台本では変えない。立ち絵が無いキャラは名前入りの丸アバターで出る。
+キャラクターは **四国めたん (`metan`、左) とずんだもん (`zundamon`、右) に固定**。2 人が向き合うよう、めたんの立ち絵は左右反転して表示する (素材は画面の左向きに描かれているため。`castOrder` の `Mirror`)。名前・既定の声 (めたん 2 / ずんだもん 3)・色は
+dotfiles の `src/zundamon-kaisetsu/script.go` の `castOrder` が正本で、台本では変えない。立ち絵が無いキャラは名前入りの丸アバターで出る。
 
 立ち絵は、PSDTool 形式の PSD (`!口` `!目` のような排他グループを持つもの) から表情ごとに書き出して使う。
 
@@ -225,7 +228,7 @@ DV="$S/scripts/dialogue_video.py"    # 標準ライブラリのみ。圧縮に f
 
 - 出力は **mono / 16bit / 24kHz** に揃える (`build` が違う wav を拒否する)。`synth --force` で作り直せる
 - 口パクのタイミングはモーラ長から作った推定で、wav の実際の長さに合わせて全体を伸縮している。音とのずれが目立つなら、
-  wav の音量から作る方式に差し替える (`mouth_track`)
+  wav の音量から作る方式に差し替える (dotfiles の `src/zundamon-kaisetsu/build.go` の `mouthTrack`)
 - mp4 の絵は Chrome の描画なので、HTML と同じフォントになる。配色は OS の設定によらず明るい方に固定している
 - mp4 の映像は H.264 (libx264 の `-tune stillimage`)。AV1 は採らない: Apple シリコンに AV1 のハードウェアエンコーダは無く
   (再生だけ)、libsvtav1 で書き出すと静止画中心のこの動画ではむしろ大きく (実測: 194 秒の動画で H.264 5.78MB / AV1 6.51〜7.01MB)、
@@ -233,4 +236,4 @@ DV="$S/scripts/dialogue_video.py"    # 標準ライブラリのみ。圧縮に f
 - mp4 の撮影は Chrome の起動 (1 回 1 秒強) が律速。`--jobs` で並列数を変えられる (既定 4)。`--user-data-dir` を付けると
   撮影後も Chrome が終わらないので付けていない
 - CPU が混んでいるときに、撮影中の Chrome が `own watchdog expired` (rc=2) で落ちたことがある (同じ条件の再実行で通った)。
-  負荷との関係は仮説で、撮影前の待機 (`wait_for_idle_cpu`) はそのために入れている。待った後でも落ちたら、`--jobs` を下げて build し直す
+  負荷との関係は仮説で、撮影前の待機 (`waitForIdleCPU`) はそのために入れている。待った後でも落ちたら、`--jobs` を下げて build し直す

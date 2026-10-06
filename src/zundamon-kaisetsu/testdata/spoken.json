@@ -1,0 +1,80 @@
+[
+ {
+  "text": "HashMapとHashのUPDATE文",
+  "read": null,
+  "readings": {
+   "Hash": "ハッシュ",
+   "HashMap": "ハッシュマップ",
+   "ハッシュ": "はっしゅ",
+   "a.b": "エービー",
+   "UPDATE": "アップデート"
+  },
+  "spoken": "ハッシュマップとハッシュのアップデート文"
+ },
+ {
+  "text": "Hashとハッシュ",
+  "read": null,
+  "readings": {
+   "Hash": "ハッシュ",
+   "HashMap": "ハッシュマップ",
+   "ハッシュ": "はっしゅ",
+   "a.b": "エービー",
+   "UPDATE": "アップデート"
+  },
+  "spoken": "ハッシュとはっしゅ"
+ },
+ {
+  "text": "axb と a.b",
+  "read": null,
+  "readings": {
+   "Hash": "ハッシュ",
+   "HashMap": "ハッシュマップ",
+   "ハッシュ": "はっしゅ",
+   "a.b": "エービー",
+   "UPDATE": "アップデート"
+  },
+  "spoken": "axb と エービー"
+ },
+ {
+  "text": "そのまま",
+  "read": null,
+  "readings": {},
+  "spoken": "そのまま"
+ },
+ {
+  "text": "Hash",
+  "read": "読み",
+  "readings": {
+   "Hash": "ハッシュ",
+   "HashMap": "ハッシュマップ",
+   "ハッシュ": "はっしゅ",
+   "a.b": "エービー",
+   "UPDATE": "アップデート"
+  },
+  "spoken": "読み"
+ },
+ {
+  "text": "HashHashMapHash",
+  "read": null,
+  "readings": {
+   "Hash": "ハッシュ",
+   "HashMap": "ハッシュマップ",
+   "ハッシュ": "はっしゅ",
+   "a.b": "エービー",
+   "UPDATE": "アップデート"
+  },
+  "spoken": "ハッシュハッシュマップハッシュ"
+ },
+ {
+  "text": "",
+  "read": null,
+  "readings": {
+   "Hash": "ハッシュ",
+   "HashMap": "ハッシュマップ",
+   "ハッシュ": "はっしゅ",
+   "a.b": "エービー",
+   "UPDATE": "アップデート"
+  },
+  "spoken": ""
+ }
+]

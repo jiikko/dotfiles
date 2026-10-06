@@ -13,37 +13,41 @@
 | パス | 中身 |
 |---|---|
 | `SKILL.md` | skill の本体 (手順・台本の書き方・表情の語彙) |
-| `scripts/dialogue_video.py` | 合成・組み立て (`check` / `up` / `down` / `speakers` / `kana` (文か台本の全行の読み) / `synth` / `build`)。標準ライブラリのみ |
 | `scripts/psd_faces.py` | 立ち絵の PSD から表情 × 口 3 段階の画像を書き出す (psd-tools を使う) |
 | `faces/<キャラ>.json` | 表情ごとに使う PSD のレイヤーの定義 |
-| `templates/player.html` | HTML プレイヤー (mp4 の絵もこれで描く) |
+| `templates/player.html` | HTML プレイヤー (mp4 の絵もこれで描く。zundamon-kaisetsu が実行時に読む) |
 | `examples/script.json` | 台本の見本 |
 | `assets/zundamon-kaisetsu/` | 立ち絵の置き場 (`psd/` に元の素材、`faces/<キャラ>/` に書き出した表情)。**同梱しない** (下の Setup で用意する) |
 
+合成・組み立ての本体は Go 製のコマンド `zundamon-kaisetsu` (`check` / `up` / `down` / `speakers` / `kana` (文か台本の全行の読み) /
+`synth` / `build`)。ソースは dotfiles の `src/zundamon-kaisetsu/`、入口は dotfiles の `bin/zundamon-kaisetsu` で、
+このディレクトリ (テンプレートと立ち絵の既定の置き場) を環境変数 `ZUNDAMON_KAISETSU_SKILL_DIR` で渡す。
+
 ## Setup
 
-コマンドは**このディレクトリで**実行する (パスはここからの相対)。
+コマンドは**このディレクトリで**実行する (パスはここからの相対)。`zundamon-kaisetsu` は dotfiles の `bin/` を PATH に入れて使う
+(初回の起動で Go のツールチェーンがビルドする)。
 
 ### 1. コマンド
 
 ```sh
-python3 scripts/dialogue_video.py check
+zundamon-kaisetsu check
 ```
 
 足りないものを `NG` で示す。目安:
 
 | 用途 | 必要なもの |
 |---|---|
-| 合成・HTML | Python 3.9 以上、ffmpeg (無ければ macOS の afconvert) |
+| 合成・HTML | Go (`zundamon-kaisetsu` のビルド)、ffmpeg (無ければ macOS の afconvert) |
 | VOICEVOX エンジン | Apple の `container` か `docker` (どちらも無ければ VOICEVOX のデスクトップアプリ) |
 | mp4 | ffmpeg (H.264) と Google Chrome か Chromium (`CHROME` 環境変数で場所を指定できる) |
-| 立ち絵の書き出し | `uv` (psd-tools を一時的に入れて動かす) |
+| 立ち絵の書き出し | `uv` (psd-tools を一時的に入れて動かす。`scripts/psd_faces.py` は Python のまま) |
 
 ### 2. VOICEVOX エンジン
 
 ```sh
-python3 scripts/dialogue_video.py up     # container を優先し、無ければ docker で起動して応答を待つ
-python3 scripts/dialogue_video.py down   # 終わったら止める
+zundamon-kaisetsu up     # container を優先し、無ければ docker で起動して応答を待つ
+zundamon-kaisetsu down   # 終わったら止める
 ```
 
 - イメージは `voicevox/voicevox_engine:cpu-latest` (約 3.7GB。初回の取得に数分かかる)
@@ -93,9 +97,9 @@ python3 scripts/dialogue_video.py down   # 終わったら止める
 ### 4. 動作確認
 
 ```sh
-python3 scripts/dialogue_video.py up
+zundamon-kaisetsu up
 mkdir -p /tmp/zk && cp examples/script.json /tmp/zk/
-python3 scripts/dialogue_video.py synth /tmp/zk/script.json
-python3 scripts/dialogue_video.py build /tmp/zk/script.json -o /tmp/zk/out --format both   # out.html と out.mp4
-python3 scripts/dialogue_video.py down
+zundamon-kaisetsu synth /tmp/zk/script.json
+zundamon-kaisetsu build /tmp/zk/script.json -o /tmp/zk/out --format both   # out.html と out.mp4
+zundamon-kaisetsu down
 ```

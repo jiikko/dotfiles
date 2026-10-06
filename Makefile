@@ -24,6 +24,7 @@ ZSH_SYNTAX_FILES := \
   bin/schedkeys \
   bin/validate-mp4 \
   bin/video_health \
+  bin/zundamon-kaisetsu \
   scripts/check_syntax.zsh \
   zshlib/_av1ify_lock.zsh \
   zshlib/_codex.zsh \

@@ -1,0 +1,610 @@
+[
+ {
+  "name": "devoiced",
+  "query": {
+   "speedScale": 1.0,
+   "prePhonemeLength": 0.1,
+   "postPhonemeLength": 0.1,
+   "accent_phrases": [
+    {
+     "moras": [
+      {
+       "consonant": "d",
+       "consonant_length": 0.05,
+       "vowel": "e",
+       "vowel_length": 0.1
+      },
+      {
+       "consonant": "s",
+       "consonant_length": 0.08,
+       "vowel": "U",
+       "vowel_length": 0.06
+      }
+     ],
+     "pause_mora": null
+    },
+    {
+     "moras": [
+      {
+       "consonant": "m",
+       "consonant_length": 0.06,
+       "vowel": "a",
+       "vowel_length": 0.12
+      },
+      {
+       "consonant": "s",
+       "consonant_length": 0.07,
+       "vowel": "U",
+       "vowel_length": 0.05
+      }
+     ],
+     "pause_mora": {
+      "vowel": "pau",
+      "vowel_length": 0.2
+     }
+    }
+   ]
+  },
+  "duration": 0.5,
+  "mouth": "001110022100000"
+ },
+ {
+  "name": "devoiced",
+  "query": {
+   "speedScale": 1.0,
+   "prePhonemeLength": 0.1,
+   "postPhonemeLength": 0.1,
+   "accent_phrases": [
+    {
+     "moras": [
+      {
+       "consonant": "d",
+       "consonant_length": 0.05,
+       "vowel": "e",
+       "vowel_length": 0.1
+      },
+      {
+       "consonant": "s",
+       "consonant_length": 0.08,
+       "vowel": "U",
+       "vowel_length": 0.06
+      }
+     ],
+     "pause_mora": null
+    },
+    {
+     "moras": [
+      {
+       "consonant": "m",
+       "consonant_length": 0.06,
+       "vowel": "a",
+       "vowel_length": 0.12
+      },
+      {
+       "consonant": "s",
+       "consonant_length": 0.07,
+       "vowel": "U",
+       "vowel_length": 0.05
+      }
+     ],
+     "pause_mora": {
+      "vowel": "pau",
+      "vowel_length": 0.2
+     }
+    }
+   ]
+  },
+  "duration": 0.95,
+  "mouth": "0001111110000222110000000000"
+ },
+ {
+  "name": "devoiced",
+  "query": {
+   "speedScale": 1.0,
+   "prePhonemeLength": 0.1,
+   "postPhonemeLength": 0.1,
+   "accent_phrases": [
+    {
+     "moras": [
+      {
+       "consonant": "d",
+       "consonant_length": 0.05,
+       "vowel": "e",
+       "vowel_length": 0.1
+      },
+      {
+       "consonant": "s",
+       "consonant_length": 0.08,
+       "vowel": "U",
+       "vowel_length": 0.06
+      }
+     ],
+     "pause_mora": null
+    },
+    {
+     "moras": [
+      {
+       "consonant": "m",
+       "consonant_length": 0.06,
+       "vowel": "a",
+       "vowel_length": 0.12
+      },
+      {
+       "consonant": "s",
+       "consonant_length": 0.07,
+       "vowel": "U",
+       "vowel_length": 0.05
+      }
+     ],
+     "pause_mora": {
+      "vowel": "pau",
+      "vowel_length": 0.2
+     }
+    }
+   ]
+  },
+  "duration": 0.03333333333333333,
+  "mouth": "2"
+ },
+ {
+  "name": "devoiced",
+  "query": {
+   "speedScale": 1.0,
+   "prePhonemeLength": 0.1,
+   "postPhonemeLength": 0.1,
+   "accent_phrases": [
+    {
+     "moras": [
+      {
+       "consonant": "d",
+       "consonant_length": 0.05,
+       "vowel": "e",
+       "vowel_length": 0.1
+      },
+      {
+       "consonant": "s",
+       "consonant_length": 0.08,
+       "vowel": "U",
+       "vowel_length": 0.06
+      }
+     ],
+     "pause_mora": null
+    },
+    {
+     "moras": [
+      {
+       "consonant": "m",
+       "consonant_length": 0.06,
+       "vowel": "a",
+       "vowel_length": 0.12
+      },
+      {
+       "consonant": "s",
+       "consonant_length": 0.07,
+       "vowel": "U",
+       "vowel_length": 0.05
+      }
+     ],
+     "pause_mora": {
+      "vowel": "pau",
+      "vowel_length": 0.2
+     }
+    }
+   ]
+  },
+  "duration": 2.0,
+  "mouth": "000000111111111111110000000222222221111000000000000000000000"
+ },
+ {
+  "name": "speed_zero",
+  "query": {
+   "speedScale": 0,
+   "prePhonemeLength": 0.1,
+   "postPhonemeLength": 0.1,
+   "accent_phrases": [
+    {
+     "moras": [
+      {
+       "consonant": null,
+       "consonant_length": null,
+       "vowel": "a",
+       "vowel_length": 0.2
+      },
+      {
+       "consonant": "p",
+       "consonant_length": 0.04,
+       "vowel": "o",
+       "vowel_length": 0.1
+      }
+     ]
+    }
+   ]
+  },
+  "duration": 0.5,
+  "mouth": "000222220222000"
+ },
+ {
+  "name": "speed_zero",
+  "query": {
+   "speedScale": 0,
+   "prePhonemeLength": 0.1,
+   "postPhonemeLength": 0.1,
+   "accent_phrases": [
+    {
+     "moras": [
+      {
+       "consonant": null,
+       "consonant_length": null,
+       "vowel": "a",
+       "vowel_length": 0.2
+      },
+      {
+       "consonant": "p",
+       "consonant_length": 0.04,
+       "vowel": "o",
+       "vowel_length": 0.1
+      }
+     ]
+    }
+   ]
+  },
+  "duration": 0.95,
+  "mouth": "0000022222222222002222200000"
+ },
+ {
+  "name": "speed_zero",
+  "query": {
+   "speedScale": 0,
+   "prePhonemeLength": 0.1,
+   "postPhonemeLength": 0.1,
+   "accent_phrases": [
+    {
+     "moras": [
+      {
+       "consonant": null,
+       "consonant_length": null,
+       "vowel": "a",
+       "vowel_length": 0.2
+      },
+      {
+       "consonant": "p",
+       "consonant_length": 0.04,
+       "vowel": "o",
+       "vowel_length": 0.1
+      }
+     ]
+    }
+   ]
+  },
+  "duration": 0.03333333333333333,
+  "mouth": "2"
+ },
+ {
+  "name": "speed_zero",
+  "query": {
+   "speedScale": 0,
+   "prePhonemeLength": 0.1,
+   "postPhonemeLength": 0.1,
+   "accent_phrases": [
+    {
+     "moras": [
+      {
+       "consonant": null,
+       "consonant_length": null,
+       "vowel": "a",
+       "vowel_length": 0.2
+      },
+      {
+       "consonant": "p",
+       "consonant_length": 0.04,
+       "vowel": "o",
+       "vowel_length": 0.1
+      }
+     ]
+    }
+   ]
+  },
+  "duration": 2.0,
+  "mouth": "000000000002222222222222222222222000002222222222200000000000"
+ },
+ {
+  "name": "no_pre_post",
+  "query": {
+   "accent_phrases": [
+    {
+     "moras": [
+      {
+       "consonant": "b",
+       "consonant_length": 0.05,
+       "vowel": "i",
+       "vowel_length": 0.1
+      },
+      {
+       "consonant": null,
+       "consonant_length": null,
+       "vowel": "N",
+       "vowel_length": 0.08
+      },
+      {
+       "consonant": null,
+       "consonant_length": null,
+       "vowel": "cl",
+       "vowel_length": 0.07
+      }
+     ]
+    }
+   ]
+  },
+  "duration": 0.5,
+  "mouth": "000001100000000"
+ },
+ {
+  "name": "no_pre_post",
+  "query": {
+   "accent_phrases": [
+    {
+     "moras": [
+      {
+       "consonant": "b",
+       "consonant_length": 0.05,
+       "vowel": "i",
+       "vowel_length": 0.1
+      },
+      {
+       "consonant": null,
+       "consonant_length": null,
+       "vowel": "N",
+       "vowel_length": 0.08
+      },
+      {
+       "consonant": null,
+       "consonant_length": null,
+       "vowel": "cl",
+       "vowel_length": 0.07
+      }
+     ]
+    }
+   ]
+  },
+  "duration": 0.95,
+  "mouth": "0000000001111100000000000000"
+ },
+ {
+  "name": "no_pre_post",
+  "query": {
+   "accent_phrases": [
+    {
+     "moras": [
+      {
+       "consonant": "b",
+       "consonant_length": 0.05,
+       "vowel": "i",
+       "vowel_length": 0.1
+      },
+      {
+       "consonant": null,
+       "consonant_length": null,
+       "vowel": "N",
+       "vowel_length": 0.08
+      },
+      {
+       "consonant": null,
+       "consonant_length": null,
+       "vowel": "cl",
+       "vowel_length": 0.07
+      }
+     ]
+    }
+   ]
+  },
+  "duration": 0.03333333333333333,
+  "mouth": "0"
+ },
+ {
+  "name": "no_pre_post",
+  "query": {
+   "accent_phrases": [
+    {
+     "moras": [
+      {
+       "consonant": "b",
+       "consonant_length": 0.05,
+       "vowel": "i",
+       "vowel_length": 0.1
+      },
+      {
+       "consonant": null,
+       "consonant_length": null,
+       "vowel": "N",
+       "vowel_length": 0.08
+      },
+      {
+       "consonant": null,
+       "consonant_length": null,
+       "vowel": "cl",
+       "vowel_length": 0.07
+      }
+     ]
+    }
+   ]
+  },
+  "duration": 2.0,
+  "mouth": "000000000000000000111111111111000000000000000000000000000000"
+ },
+ {
+  "name": "pre_zero",
+  "query": {
+   "speedScale": 1.3,
+   "prePhonemeLength": 0,
+   "postPhonemeLength": 0.2,
+   "accent_phrases": [
+    {
+     "moras": [
+      {
+       "consonant": "k",
+       "consonant_length": 0.05,
+       "vowel": "u",
+       "vowel_length": 0.1
+      }
+     ]
+    }
+   ]
+  },
+  "duration": 0.5,
+  "mouth": "111110000000000"
+ },
+ {
+  "name": "pre_zero",
+  "query": {
+   "speedScale": 1.3,
+   "prePhonemeLength": 0,
+   "postPhonemeLength": 0.2,
+   "accent_phrases": [
+    {
+     "moras": [
+      {
+       "consonant": "k",
+       "consonant_length": 0.05,
+       "vowel": "u",
+       "vowel_length": 0.1
+      }
+     ]
+    }
+   ]
+  },
+  "duration": 0.95,
+  "mouth": "1111111111000000000000000000"
+ },
+ {
+  "name": "pre_zero",
+  "query": {
+   "speedScale": 1.3,
+   "prePhonemeLength": 0,
+   "postPhonemeLength": 0.2,
+   "accent_phrases": [
+    {
+     "moras": [
+      {
+       "consonant": "k",
+       "consonant_length": 0.05,
+       "vowel": "u",
+       "vowel_length": 0.1
+      }
+     ]
+    }
+   ]
+  },
+  "duration": 0.03333333333333333,
+  "mouth": "0"
+ },
+ {
+  "name": "pre_zero",
+  "query": {
+   "speedScale": 1.3,
+   "prePhonemeLength": 0,
+   "postPhonemeLength": 0.2,
+   "accent_phrases": [
+    {
+     "moras": [
+      {
+       "consonant": "k",
+       "consonant_length": 0.05,
+       "vowel": "u",
+       "vowel_length": 0.1
+      }
+     ]
+    }
+   ]
+  },
+  "duration": 2.0,
+  "mouth": "111111111111111111111100000000000000000000000000000000000000"
+ },
+ {
+  "name": "all_zero",
+  "query": {
+   "speedScale": 1.0,
+   "prePhonemeLength": 0,
+   "postPhonemeLength": 0,
+   "accent_phrases": [
+    {
+     "moras": [
+      {
+       "consonant": null,
+       "consonant_length": 0,
+       "vowel": "a",
+       "vowel_length": 0
+      }
+     ]
+    }
+   ]
+  },
+  "duration": 0.5,
+  "mouth": "000000000000000"
+ },
+ {
+  "name": "all_zero",
+  "query": {
+   "speedScale": 1.0,
+   "prePhonemeLength": 0,
+   "postPhonemeLength": 0,
+   "accent_phrases": [
+    {
+     "moras": [
+      {
+       "consonant": null,
+       "consonant_length": 0,
+       "vowel": "a",
+       "vowel_length": 0
+      }
+     ]
+    }
+   ]
+  },
+  "duration": 0.95,
+  "mouth": "0000000000000000000000000000"
+ },
+ {
+  "name": "all_zero",
+  "query": {
+   "speedScale": 1.0,
+   "prePhonemeLength": 0,
+   "postPhonemeLength": 0,
+   "accent_phrases": [
+    {
+     "moras": [
+      {
+       "consonant": null,
+       "consonant_length": 0,
+       "vowel": "a",
+       "vowel_length": 0
+      }
+     ]
+    }
+   ]
+  },
+  "duration": 0.03333333333333333,
+  "mouth": "0"
+ },
+ {
+  "name": "all_zero",
+  "query": {
+   "speedScale": 1.0,
+   "prePhonemeLength": 0,
+   "postPhonemeLength": 0,
+   "accent_phrases": [
+    {
+     "moras": [
+      {
+       "consonant": null,
+       "consonant_length": 0,
+       "vowel": "a",
+       "vowel_length": 0
+      }
+     ]
+    }
+   ]
+  },
+  "duration": 2.0,
+  "mouth": "000000000000000000000000000000000000000000000000000000000000"
+ }
+]

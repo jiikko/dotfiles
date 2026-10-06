@@ -4,7 +4,7 @@
   uv run --with psd-tools python psd_faces.py <立ち絵.psd> <表情定義.json> <出力dir> [--preview sheet.png]
 
 出力は <出力dir>/<表情>_0.webp (閉じ) / _1 (半開き) / _2 (開き) と、使った定義の写し faces.json。
-dialogue_video.py は台本の cast.<キャラ>.faces にこの出力 dir を書くと読む。
+zundamon-kaisetsu (dotfiles の bin/zundamon-kaisetsu) は台本の cast.<キャラ>.faces にこの出力 dir を書くと読む。
 
 表情定義 (faces/*.json):
   {"crop": [左, 上, 右, 下],          # PSD 座標で切り抜く範囲 (上半身など)

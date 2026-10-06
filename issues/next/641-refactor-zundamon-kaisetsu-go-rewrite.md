@@ -1,1 +1,0 @@
-../641-refactor-zundamon-kaisetsu-go-rewrite.md
