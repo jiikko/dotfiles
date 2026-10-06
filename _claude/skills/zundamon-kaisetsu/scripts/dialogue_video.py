@@ -261,6 +261,8 @@ def load_script(path: Path) -> dict:
             die(f"{path}: lines[{i}].face={face!r} が cast.{who}.faces の書き出しに無い (psd_faces.py の定義に足す)")
         if not str(line.get("text", "")).strip():
             die(f"{path}: lines[{i}].text が空")
+        if "read" in line and not str(line["read"]).strip():
+            die(f"{path}: lines[{i}].read が空 (読みを直さないなら read を書かない)")
         if "pause_after" in line:
             nonneg(path, f"lines[{i}].pause_after", line["pause_after"])
         try:
@@ -305,7 +307,7 @@ def line_params(script: dict, line: dict) -> dict:
     """合成結果を決める入力をすべて集める。キャッシュの鍵もここから作るので、合成に効く値を足したらここに足す。"""
     cast = script["cast"][line["who"]]
     return {
-        "text": line["text"],
+        "text": line.get("read", line["text"]),  # 字幕は text、音声は read (読み違いを直すとき) を使う
         "style_id": int(line.get("style_id", cast["style_id"])),
         "speed": float(line.get("speed", cast.get("speed", script.get("speed", 1.0)))),
         "pitch": float(line.get("pitch", cast.get("pitch", 0.0))),
