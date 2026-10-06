@@ -253,10 +253,10 @@ while IFS= read -r name; do
     fi
     # 🚨 名前だけあって recipe が空だと「lint が走る」を守れない (同 P3-9)。
     #    target 行の次の行がタブ始まり (recipe) か、依存を持つことを求める
-    if ! awk -v t="$t" '
+    if ! grep -q ok <<< "$(awk -v t="$t" '
           $0 ~ "^" t ":" { got = 1; deps = $0; sub(/^[^:]*:[[:space:]]*/, "", deps); next }
           got { if ($0 ~ /^\t/ || deps != "") { print "ok"; exit } ; got = 0 }
-        ' "$mk" | grep -q ok; then
+        ' "$mk")"; then
       printf '✗ %s: %s の %s: が空 (recipe も依存も無い = 実際には何も走らない)\n' "$name" "$mk" "$t"; bad=$((bad + 1))
     fi
   done

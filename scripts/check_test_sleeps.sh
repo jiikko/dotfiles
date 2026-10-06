@@ -70,6 +70,9 @@ if [ "${#files[@]}" -lt "$MIN_FILES" ]; then
   exit 1
 fi
 
+# heredoc のタグの読み方は検査どうしで共有する
+scl="$(cat "$ROOT_DIR/scripts/lib/shell_code_lines.awk")" || { printf '✗ scripts/lib/shell_code_lines.awk を読めない\n'; exit 1; }
+
 offenders=""
 checked=0
 marked=0
@@ -78,57 +81,11 @@ for f in "${files[@]}"; do
   checked=$((checked + 1))
   case "$f" in */tests/lib/wait_until.sh|tests/lib/wait_until.sh) continue ;; esac
   out="$(
-    LC_ALL=C awk '
+    LC_ALL=C awk "$scl"'
       function has_mark(s) { return s ~ /sleep-ok: (dummy|window|negative|stub|tick|realtime|other): [^[:space:]]/ }
       function has_sleep(s) { return s ~ /(^|[^A-Za-z0-9_.-])sleep([^A-Za-z0-9_-]|$)/ }
       # 直前の行の印は、その行がコメントだけのときに限る (印のある sleep の行が次の行まで許さないように)
       function prev_mark(p,   t) { t = p; gsub(/^[[:space:]]+/, "", t); return t ~ /^#/ && has_mark(t) }
-      # heredoc のタグを返す (開始でなければ "")。引用符の中身を潰した写しで「引用符の外の <<」を探し、here-string (<<<) と
-      # 算術 ((( … )) の中) を除き、タグは元の行のその位置から bash の規則で読む (引用符つきは閉じるまで任意の文字、素なら区切りまで)
-      # 写しでは引用符の中身・引用符の外のエスケープ (\X)・語の先頭の # から行末 (コメント) を空白にする
-      function heredoc_tag(l,   n, i, c, q, blank, depth, rest, tag, j, pc) {
-        n = length(l); blank = ""; q = ""
-        for (i = 1; i <= n; i++) {
-          c = substr(l, i, 1)
-          if (q == "") {
-            if (c == "\\" && i < n) { blank = blank "  "; i++; continue }
-            pc = (i == 1) ? " " : substr(l, i - 1, 1)
-            if (c == "#" && pc ~ /[[:space:];&|(]/) { while (length(blank) < n) blank = blank " "; break }
-            if (c == "\047" || c == "\042") q = c
-            blank = blank c
-          } else {
-            if (q == "\042" && c == "\\" && i < n) { blank = blank "  "; i++; continue }
-            if (c == q) { q = ""; blank = blank c } else blank = blank " "
-          }
-        }
-        depth = 0
-        for (i = 1; i < n; i++) {
-          if (substr(blank, i, 2) == "((") { depth++; i++; continue }
-          if (substr(blank, i, 2) == "))" && depth > 0) { depth--; i++; continue }
-          if (substr(blank, i, 3) == "<<<") { i += 2; continue }
-          if (substr(blank, i, 2) != "<<" || depth > 0) continue
-          rest = substr(l, i + 2)
-          sub(/^-/, "", rest); sub(/^[[:space:]]+/, "", rest)
-          # タグは 1 語: 引用符で囲んだ部分 (中は任意の文字) と素の部分 (\X は X) を、区切り文字まで連結する (`<<"E" に引用符つきの S と x が続けば ESx`)
-          tag = ""
-          while (rest != "") {
-            c = substr(rest, 1, 1)
-            if (c == "\047" || c == "\042") {
-              j = index(substr(rest, 2), c)
-              if (j == 0) return ""
-              tag = tag substr(rest, 2, j - 1); rest = substr(rest, j + 2)
-            } else if (c == "\\" && length(rest) > 1) {
-              tag = tag substr(rest, 2, 1); rest = substr(rest, 3)
-            } else if (c ~ /[[:space:];|&<>()]/) {
-              break
-            } else {
-              tag = tag c; rest = substr(rest, 2)
-            }
-          }
-          return tag
-        }
-        return ""
-      }
       FNR == 1 { hd = ""; hd_ok = 0; prev = "" }
       END { if (hd != "") printf "%s:%d: heredoc の終端 (%s) が見つからない (開始の判定を誤っている。本文がファイルの最後まで続く)\n", FILENAME, FNR, hd }
       {

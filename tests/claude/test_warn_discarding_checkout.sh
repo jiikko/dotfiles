@@ -180,7 +180,7 @@ new_repo; CLEAN="$REPO"          # clean な repo を cwd に
 new_repo; dirty; DIRTY="$REPO"   # dirty な repo を -C の対象に
 out=$(jq -n --arg c "git -C $DIRTY checkout -- x.go" --arg d "$CLEAN" '{cwd:$d,tool_input:{command:$c}}' |
   "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
-if body_of "$out" | grep -qF "$DIRTY"; then
+if grep -qF "$DIRTY" <<< "$(body_of "$out")"; then
   echo "✓ clean な cwd から dirty な repo を触ると、対象 repo の変更を出す"; ok=$((ok+1))
 else echo "✗ cwd が clean だと沈黙した (今まさに消える場面で黙る)"; fail=$((fail+1)); fi
 out=$(jq -n --arg c "git -C $CLEAN checkout -- x.go" --arg d "$DIRTY" '{cwd:$d,tool_input:{command:$c}}' |
@@ -193,7 +193,7 @@ for c in "git -C \"$DIRTY\" checkout -- x.go" "git -c a=b -C $DIRTY checkout -- 
          "git -C ~/${DIRTY##*/} checkout -- x.go" "git -C \$HOME/${DIRTY##*/} checkout -- x.go"; do
   out=$(jq -n --arg c "$c" --arg d "$CLEAN" '{cwd:$d,tool_input:{command:$c}}' |
     HOME="${DIRTY%/*}" "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
-  if body_of "$out" | grep -qF "$DIRTY"; then echo "✓ 対象 repo を読む: $c"; ok=$((ok+1))
+  if grep -qF "$DIRTY" <<< "$(body_of "$out")"; then echo "✓ 対象 repo を読む: $c"; ok=$((ok+1))
   else echo "✗ 対象 repo を読めずに黙った / 違う repo を見た: $c"; printf '%s\n' "$out" | head -2; fail=$((fail+1)); fi
 done
 # 🚨 後ろの segment に最初の破棄の対象を奪われて黙らない (対象は最初の「捨てる segment」で決める。敵対的レビュー 3 周目 P2-1)。
@@ -201,7 +201,7 @@ done
 for c in "git checkout -- x.go; cd $CLEAN; git checkout -- x.go" "git checkout -- x.go && cd $CLEAN && git checkout main" \
          "git commit -m 'x; cd /tmp'; git checkout -- x.go" "git checkout -- x.go; git -C $CLEAN checkout -b new"; do
   out=$(jq -n --arg c "$c" --arg d "$DIRTY" '{cwd:$d,tool_input:{command:$c}}' | "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
-  if body_of "$out" | grep -qF "$DIRTY"; then echo "✓ 後ろの segment に対象を奪われない: $c"; ok=$((ok+1))
+  if grep -qF "$DIRTY" <<< "$(body_of "$out")"; then echo "✓ 後ろの segment に対象を奪われない: $c"; ok=$((ok+1))
   else echo "✗ 後ろの segment に対象を奪われて黙った / 違う repo を見た: $c"; printf '%s\n' "$out" | head -2; fail=$((fail+1)); fi
 done
 # 🚨 対象の repo は segment ごとに持つ (敵対的レビュー 4 周目 P2-1 / P2-2)。
@@ -209,7 +209,7 @@ done
 for c in "git restore x.go && git -C $DIRTY restore x.go" "git checkout -- x.go; git -C $DIRTY checkout -- x.go" \
          "git checkout main && git -C $DIRTY checkout -- x.go"; do
   out=$(jq -n --arg c "$c" --arg d "$CLEAN" '{cwd:$d,tool_input:{command:$c}}' | "$RUNTIMEOUT" "$HOOK_TIMEOUT" "$HOOK" 2>/dev/null || true)
-  if body_of "$out" | grep -qF "$DIRTY"; then echo "✓ 後ろの -C <dirty> を見落とさない: $c"; ok=$((ok+1))
+  if grep -qF "$DIRTY" <<< "$(body_of "$out")"; then echo "✓ 後ろの -C <dirty> を見落とさない: $c"; ok=$((ok+1))
   else echo "✗ 後ろの -C <dirty> を見落として黙った: $c"; printf '%s\n' "$out" | head -2; fail=$((fail+1)); fi
 done
 #    確実な破棄が clean な別の repo を指していれば、cwd (dirty) の一覧で ask にしない (cwd 側の曖昧な形は注意だけ)
@@ -278,7 +278,7 @@ printf 'GARBAGE' > "$REPO/.git/index"
 if git -C "$REPO" rev-parse --show-toplevel >/dev/null 2>&1 &&
    ! git -C "$REPO" status --porcelain >/dev/null 2>&1; then
   out=$(run "git checkout -- x.go")
-  if body_of "$out" | grep -q "判定できなかった" &&
+  if grep -q "判定できなかった" <<< "$(body_of "$out")" &&
      printf '%s' "$out" | jq -e '.hookSpecificOutput.permissionDecision == "ask"' >/dev/null 2>&1; then
     echo "✓ status が失敗したら判定不能として出す (確実な形なので ask。黙らない)"; ok=$((ok+1))
   else echo "✗ status 失敗を黙って握り潰した (沈黙 = 成功になっている)"; fail=$((fail+1)); fi

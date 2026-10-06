@@ -35,14 +35,11 @@ for c in grep find sort awk; do
 done
 
 # 対象: discover_shell_scripts.sh が見つける lint 対象 + tests/ 配下の shell script。
-files_raw="$(
-  { scripts/discover_shell_scripts.sh || printf '__DISCOVERY_FAILED__\n'
-    find tests -type f \( -name '*.sh' -o -name '*.zsh' \)
-  } | sort -u
-)"
-case "$files_raw" in
-  *__DISCOVERY_FAILED__*) printf '✗ 対象ファイルの発見に失敗した。検査できないので緑にしない\n'; exit 1 ;;
-esac
+# 発見は 2 つとも rc を見る (片方の失敗を、もう片方の件数で緑にしない)
+discovered="$(scripts/discover_shell_scripts.sh)" || { printf '✗ discover_shell_scripts.sh が失敗した。検査できないので緑にしない\n'; exit 1; }
+test_files="$(find tests -type f \( -name '*.sh' -o -name '*.zsh' \))" || { printf '✗ tests/ の列挙に失敗した。検査できないので緑にしない\n'; exit 1; }
+[ -n "$test_files" ] || { printf '✗ tests/ に shell のファイルが 1 つも無い (発見の壊れ)。緑にしない\n'; exit 1; }
+files_raw="$(printf '%s\n%s\n' "$discovered" "$test_files" | sort -u)"
 
 files=()
 while IFS= read -r f; do
@@ -55,6 +52,9 @@ if [ "${#files[@]}" -lt 20 ]; then
   exit 1
 fi
 
+# コメント行と heredoc を飛ばす関数 (検査どうしで共有する)
+scl="$(cat scripts/lib/shell_code_lines.awk)" || { printf '✗ scripts/lib/shell_code_lines.awk を読めない\n'; exit 1; }
+
 offenders=""
 checked=0
 for f in "${files[@]}"; do
@@ -62,29 +62,21 @@ for f in "${files[@]}"; do
   [ -r "$f" ] || { printf '✗ 読めないファイル: %s (検査できないので緑にしない)\n' "$f"; exit 1; }
   checked=$((checked + 1))
   out="$(
-    awk '
-      FNR == 1 { has_pipefail = 0; hd = "" }
-      /set +-[a-zA-Z]*o[[:space:]]*pipefail|set +-o +pipefail|setopt.*pipe_fail/ { has_pipefail = 1 }
-      {
-        line = $0
-        if (hd != "") {
-          s = line; gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
-          if (s == hd) hd = ""
-          next
-        }
-        s = line; gsub(/^[[:space:]]+/, "", s)
-        if (s ~ /^#/) next
-        if (match(line, /<<-?[[:space:]]*[\047\042]?[A-Za-z_][A-Za-z0-9_]*/)) {
-          tag = substr(line, RSTART, RLENGTH)
-          sub(/^<<-?[[:space:]]*/, "", tag)
-          gsub(/[\047\042]/, "", tag)
-          hd = tag
-          next
-        }
-        if (line ~ /pipefail-grep-q: allow/) next
-        if (line ~ /(\|\||&&)[[:space:]]*(command[[:space:]]+)?grep/) next
-        if (has_pipefail && line ~ /\|[[:space:]]*(command[[:space:]]+)?grep[^|]*-[A-Za-z]*q/) {
-          printf "%s:%d: %s\n", FILENAME, FNR, s
+    awk "$scl"'
+      FNR == 1 { n = 0 }
+      { L[++n] = $0 }
+      END {
+        shell_code_all(n)
+        has_pipefail = 0
+        for (i = 1; i <= n; i++) if (L[i] ~ /set +-[a-zA-Z]*o[[:space:]]*pipefail|set +-o +pipefail|setopt.*pipe_fail/) has_pipefail = 1
+        if (!has_pipefail) exit
+        for (i = 1; i <= n; i++) {
+          line = C[i]
+          if (line == "") continue
+          s = line; gsub(/^[[:space:]]+/, "", s)
+          if (line ~ /pipefail-grep-q: allow/) continue
+          if (line ~ /(\|\||&&)[[:space:]]*(command[[:space:]]+)?grep/) continue
+          if (line ~ /\|[[:space:]]*(command[[:space:]]+)?grep[^|]*-[A-Za-z]*q/) printf "%s:%d: %s\n", FILENAME, i, s
         }
       }
     ' "$f"
