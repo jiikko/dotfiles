@@ -3,6 +3,8 @@
 - **macOS のみ。Linux はサポート対象外** (2026-08-28 決定 / issue 133)。CI も macOS runner で回す
 - したがって **BSD 側の書き方で構わない**。「GNU でも動くように」という理由だけで分岐を足さない
 - GNU 方言を要求する検査・ラッパーは置かない (正しい macOS の書き方を弾く側に回る)
+- macOS に `timeout(1)` は無い。**時間の上限付き実行は `bin/runtimeout`** (子孫ごと止める。スクリプト・テストからは
+  `bin/lib/runtimeout.sh` で解決する)。背景起動 + kill の手組みや `gtimeout` を新しく書かない (issue 640 で寄せた)
 - 🚨 **残るのは「版」の差**。CI runner の `/bin/bash` は 3.2、開発機は Homebrew の 5 系。
   workflow 側で brew の bash を PATH 先頭に出して揃えている。新しい workflow を足すときは同じ手当てが要る
 

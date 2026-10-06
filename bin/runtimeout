@@ -1,0 +1,11 @@
+#!/usr/bin/env zsh
+# runtimeout — コマンドを時間の上限付きで実行し、時間が来たら子孫ごと止める (coreutils の timeout 相当)。
+# Go implementation at:
+#   ~/dotfiles/src/runtimeout/
+#     runtimeout [-f] [-k <猶予秒>] <秒> <コマンド> [引数…]   (時間切れは rc=124)
+# 再ビルドは同期 (--async にしない): 呼び出し側は rc で判定するので、旧版が返す rc を新版の結果と誤認させない。
+# スクリプト・テストからは bin/lib/runtimeout.sh の runtimeout_resolve で解決したバイナリの絶対パス ($RUNTIMEOUT) で呼ぶ
+# (理由は bin/lib/runtimeout.sh の冒頭)。
+set -u
+source "${0:A:h}/lib/go_autobuild.zsh"
+go_autobuild_exec "${0:A:h}/../src/runtimeout" runtimeout -- "$@"

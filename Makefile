@@ -20,6 +20,7 @@ ZSH_SYNTAX_FILES := \
   bin/pro-con \
   bin/ratelimit \
   bin/repair-mp4-timebase \
+  bin/runtimeout \
   bin/svcdoctor \
   bin/schedkeys \
   bin/validate-mp4 \
@@ -305,7 +306,7 @@ CI_HEAVY_TEST_DIRS := tests/zshrc/av1ify tests/zshrc/concat
 CI_HEAVY_PRUNE := \( $(foreach d,$(CI_HEAVY_TEST_DIRS),-path $(d) -o) -false \) -prune -o
 
 # CI (tests.yml) が各グループで用意するランタイム依存 (コマンド名)。brew の formula 名が
-# 違うもの (bats → bats-core / gtimeout → coreutils / rg → ripgrep) の写像は
+# 違うもの (bats → bats-core / rg → ripgrep) の写像は
 # .github/actions/ensure-toolchain の case 文にある。
 # グループ定義 (上の
 # CI_HEAVY_TEST_DIRS) と同じ場所に置く: workflow 側にハードコードすると、heavy に bats/tmux
@@ -315,7 +316,7 @@ CI_HEAVY_PRUNE := \( $(foreach d,$(CI_HEAVY_TEST_DIRS),-path $(d) -o) -false \) 
 # ffmpeg (ffprobe も同じ formula) は av1ify の e2e (tests/zshrc/av1ify/test_av1ify_vfr_e2e.sh) 用。
 # 無いと e2e は exit 77 で skip し、CI では一度も走らない (issue 394)。
 CI_COMMANDS_HEAVY := zsh make ffmpeg
-CI_COMMANDS_REST  := tmux zsh make bats gtimeout rg
+CI_COMMANDS_REST  := tmux zsh make bats rg
 # rest にはあるが heavy には無い = heavy で使うと CI が落ちるコマンド (乖離検査の対象)
 CI_COMMANDS_ONLY_REST := $(filter-out $(CI_COMMANDS_HEAVY),$(CI_COMMANDS_REST))
 
