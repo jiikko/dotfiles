@@ -50,8 +50,15 @@ description: 四国めたんとずんだもん (VOICEVOX の声と立ち絵) の
 
 ## 手順
 
-スクリプトは `~/.claude/skills/zundamon-kaisetsu/scripts/dialogue_video.py` (標準ライブラリのみ。圧縮に ffmpeg か afconvert)。
-以下 `DV=~/.claude/skills/zundamon-kaisetsu/scripts/dialogue_video.py` とする。
+パスはすべて **この skill のディレクトリ (`SKILL.md` のある場所) からの相対**で書く。呼び出し時に示される skill の
+base directory を `S` に入れてから使う (skill の外のパスを決め打ちしない)。
+
+```sh
+S=<この skill の base directory>
+DV="$S/scripts/dialogue_video.py"    # 標準ライブラリのみ。圧縮に ffmpeg か afconvert
+```
+
+初めて使う環境の準備 (エンジン・立ち絵の入手) は `README.md` の Setup にある。
 
 0. **出力を html / mp4 / 両方 のどれにするかユーザーに聞く** (指定済みなら聞かない)。迷っているなら上の表で用途を示す
 1. **必要なコマンドを確かめる** (足りなければ rc=1 で、何が足りないかと次の手を出す)
@@ -87,12 +94,12 @@ description: 四国めたんとずんだもん (VOICEVOX の声と立ち絵) の
 
 立ち絵は、PSDTool 形式の PSD (`!口` `!目` のような排他グループを持つもの) から表情ごとに書き出して使う。
 
-**既定の立ち絵は、非公開リポジトリ `jiikko/assets` を dotfiles の `assets/` にサブモジュールとして置いたもの**
-(`assets/zundamon-kaisetsu/faces/<キャラ>/`)。台本で `cast.<キャラ>.faces` を省くとここを読む。
-素材そのもの (PSD と readme) も同じリポジトリの `psd/` にある。公開の dotfiles に画像を置かないのは、素材ファイルの再配布になるため。
+**立ち絵の置き場は `$S/assets/zundamon-kaisetsu/`** (`faces/<キャラ>/` に書き出した表情、`psd/` に元の素材)。
+台本で `cast.<キャラ>.faces` を省くと `faces/<キャラ>/` を読み、無ければ丸アバターで出る (build は止まらない)。
+素材は公開リポジトリに置けない (素材ファイルの再配布になる) ので、skill には同梱しない。用意の仕方は README の Setup。
 
-- サブモジュールが空なら `git -C ~/dotfiles submodule update --init assets` で取得する (非公開なので権限のあるアカウントでだけ取れる)
-- 取得できない環境では丸アバターで出る (build は止まらない)
+- dotfiles では、非公開リポジトリ `jiikko/assets` を `assets/` にサブモジュールとして置いている。空なら
+  `git -C "$S" submodule update --init assets` で取得する (権限のあるアカウントでだけ取れる)
 
 表情を変える・素材を差し替えるときは、PSD から書き出し直す:
 
@@ -101,12 +108,12 @@ description: 四国めたんとずんだもん (VOICEVOX の声と立ち絵) の
    素材の版でレイヤー名が変わったら、無いレイヤーを名指しして止まるので定義を直す
 3. 書き出す (psd-tools が要るので `uv run --with` で実行する。1 キャラ 1〜2 分)
    ```sh
-   A=~/dotfiles/assets/zundamon-kaisetsu
-   uv run --with psd-tools python ~/.claude/skills/zundamon-kaisetsu/scripts/psd_faces.py \
-     "$A/psd/ずんだもん立ち絵素材2.3/ずんだもん立ち絵素材2.3.psd" ~/.claude/skills/zundamon-kaisetsu/faces/zundamon.json \
+   A="$S/assets/zundamon-kaisetsu"
+   uv run --with psd-tools python "$S/scripts/psd_faces.py" \
+     "$A/psd/ずんだもん立ち絵素材2.3/ずんだもん立ち絵素材2.3.psd" "$S/faces/zundamon.json" \
      "$A/faces/zundamon" --preview ./tmp/faces_preview.png   # 全表情 × 口 3 段階の一覧。ユーザーに見せて確認する
    ```
-4. assets 側で commit & push し、dotfiles のサブモジュールの参照を更新して commit & push する
+4. dotfiles のサブモジュールなら、assets 側で commit & push してから、dotfiles のサブモジュールの参照を更新して commit & push する
 
 **表情の語彙** (全キャラ共通。定義ファイルはこの 8 つを全部持つ)。台本を書くときに、セリフの内容と場面に合わせて行ごとに選ぶ:
 

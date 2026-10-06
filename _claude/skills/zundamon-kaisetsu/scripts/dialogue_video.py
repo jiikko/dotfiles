@@ -38,8 +38,9 @@ from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE = SKILL_DIR / "templates" / "player.html"
-# 立ち絵の既定の置き場。素材の再配布になるので公開の dotfiles には置かず、非公開リポジトリをサブモジュールで参照する
-ASSETS_FACES = SKILL_DIR.parents[2] / "assets" / "zundamon-kaisetsu" / "faces"
+# 立ち絵の既定の置き場 (skill のディレクトリからの相対)。素材の再配布になるので公開リポジトリには置かない。
+# dotfiles では非公開リポジトリをここにサブモジュールとして置いている。それ以外の環境は README の Setup で用意する
+ASSETS_FACES = SKILL_DIR / "assets" / "zundamon-kaisetsu" / "faces"
 DEFAULT_ENGINE = os.environ.get("VOICEVOX_URL", "http://127.0.0.1:50021")
 IMAGE = "voicevox/voicevox_engine:cpu-latest"
 # ユーザーが自分で立てた同名のコンテナを up / down で巻き込まないよう、この skill 専用の名前にする
@@ -272,7 +273,7 @@ def load_script(path: Path) -> dict:
 
 
 def faces_dir(script_path: Path, key: str, cast: dict) -> Path | None:
-    """立ち絵の dir。台本の cast.<キャラ>.faces が無ければ、dotfiles の assets (非公開のサブモジュール) にあれば使う。"""
+    """立ち絵の dir。台本の cast.<キャラ>.faces が無ければ、skill の assets/ にあれば使う。"""
     if cast.get("faces"):
         return (script_path.parent / Path(cast["faces"]).expanduser()).resolve()
     default = ASSETS_FACES / key
