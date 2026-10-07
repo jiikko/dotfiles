@@ -28,8 +28,8 @@
 2. 書き換えるファイルをコピーする。`-X` で拡張属性を付けない (付けると FAT のドライブに `._*` のゴミができる)
    ```sh
    V=/Volumes/Adv360   # ls /Volumes で名前を確かめる
-   cp -X kinesis_360_setting/layouts/layout1.txt  "$V/layouts/"
-   cp -X kinesis_360_setting/lighting/led1.txt    "$V/lighting/"
+   cp -X keyboards/kinesis-360/layouts/layout1.txt  "$V/layouts/"
+   cp -X keyboards/kinesis-360/lighting/led1.txt    "$V/lighting/"
    ```
    `settings/` は書き戻さない (公式が編集を禁じている)
 3. Finder で取り出してから v-Drive を閉じる (SmartSet + Hotkey 3)。閉じると変更が反映される

@@ -252,7 +252,7 @@ for p in "$@"; do
       add_test_dir "tests/issues" ;;
     # テスト対象なし (明示写像)。ドキュメント・vendor・データファイルは対応する
     # テストが存在しないので何も回さないが、黙って落とすのではなく報告する
-    *.md|*.txt|LICENSE|docs/*|vendor/*|kinesis*)
+    *.md|*.txt|LICENSE|docs/*|vendor/*|keyboards/*)
       notest="$notest $p" ;;
     *)
       echo "✗ 写像に無いパス: $p (make test で全体を回すか、scripts/test_changed.sh に写像を足すこと)" >&2
