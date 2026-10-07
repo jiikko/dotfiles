@@ -608,7 +608,9 @@ command codex exec -s danger-full-access -C "$ROOT" -m gpt-6-luna -c model_reaso
   --ephemeral -o "$last_message" </dev/null "$(cat <<'EOF'
 <タスク>。git 操作 (commit / pull / checkout / stash 等) はしない (人間が検証して commit する)。作業根 (この repo root) の外には書かない。
 ファイルを書き、プロジェクト標準の build/test が green になるまで自分で反復すること。Swift プロジェクトなら swift build / swift test を使う。
+最後の確認はテスト全体で行う (関係しそうな suite だけを選んで代用しない。応答の形や request の列は contract / golden の stub が別の suite で作っている)。
 xcodebuild を回すときは -derivedDataPath ./.derived (repo root 直下) を付ける。
+issue は起票しない。範囲外の発見は要約に書く (採番から push までは人間側が 1 手で行う)。
 
 ## ゴール / 受け入れ条件
 - <1 マイルストーンの完了条件と検証方法>
@@ -678,6 +680,8 @@ EOF
   死ぬ前に**編集が途中まで、ときには全部残っている**。実例 (2026-08-25 obaket 571): 632k tokens 消費後に
   「Selected model is at capacity」で死んだ run は、突き合わせたら**要求項目が全部完了していた**。
   再投げの前に `git status --short` と要求項目を突き合わせる (全ロス前提の再投げは**二重編集**を作る)。
+  起動し直すプロンプトには「再開の注意: まず git diff を読み、どこまで当たっているかを確かめてから続きを行う」を足す
+  (obaket retro 1076: クレジット切れで途中で死んだ run を 3 回この形で起動し直し、3 回とも二重に当てずに続きから終わった)。
   上の空振り判定と同じ形で、違うのは向きだけ — あちらは「まだ走っている」を「壊れた」と読む誤り、
   こちらは「異常終了した」を「何もしなかった」と読む誤り。
   なお capacity で codex が使えない状態が続くなら、独立視点の agent で代替してよい
@@ -805,6 +809,10 @@ git worktree list   # 消えたことを確認する
   (`git diff -- <file> | grep -cE '^-\s*//'` と `^\+\s*//` を並べ、大きく減っていたら削除行を読む)。codex は書き換えのついでに
   理由のコメントを要約・削除し、要約にはそれを書かない (実測 obaket 807: engine で削除 52 行に対し追加 29 行。issue 323 / 334 の理由が
   消えていて差し戻した)。消えたものは `list-masked-failure-modes-before-removing-guard.md` の「統合・移設で comment を書き換えるとき」の扱いで戻させる
+  🚨 **既存の分岐が投げるエラーの種類と、再試行の扱い (再試行する / しない) が変わっていないか**を先に読む。codex は寄せる・整える
+  ついでにエラーの分類を変え、要約に書かない。テストがエラーの型しか見ていなければ素通りする (実測 obaket 1033: 再試行しない
+  `capabilityLimit` を再試行する `transport` に変え、ファイル全体の取得を最大 5 回繰り返す退行。diff 精読でだけ見つかった。
+  一般則は `survey-receiver-guards-before-passing-new-values.md` の「逆向きも同じ」)
 - **大きい diff (目安 200 行超) は「変更マップ」をナビに 1 回で精読する**: codex (read-only・luna・max) に
   「ファイル × 変更意図 × リスク順の hunk ランキング + 各 hunk の機械的/判断の分類 (根拠つき)」を
   作らせ、Claude はマップの順に diff を 1 回だけ読む (行き来と再読を消す — 精読を安くするのであって
