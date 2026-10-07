@@ -5,7 +5,15 @@ Claude Code 2.1.287 の mods を、settings の hook (`_claude/settings.json` �
 API の正本は plugin-authoring skill が書き出す `claude-code.d.ts` で、**early access なのでリリースごとに変わる**。
 初めて触るなら、全体像と変更の手順を [`claude-mods-guide.md`](claude-mods-guide.md) で先に読む。
 
-## 🚨 このマシンでは mod に届かないイベントがある
+## 🚨 このマシンでは mod に届かないイベントがある — **2026-10-07 に消えた (条件付き)**
+
+> **2026-10-07 (claude 2.1.292) の測り直し**: 619 の probe (`prompt.compose` / `prompt.context` を足した 15 イベント) を `--plugin-dir` で載せ `claude -p` (Bash 1 回) で回すと、
+> **15 イベント全部に印が付き、debug log に `bypassed by` は 0 本**。理由は debug log の
+> `cc-plugin-sec-default@builtin not seated: no managed settings and not a Team or Enterprise organization (max)` で、
+> 下の表の原因だった managed settings (`/Library/Application Support/ClaudeCode/managed-settings.json`) が**無くなっている** (Broken symlink or missing file)。
+> つまり下の表は「managed settings があるとき」の挙動で、**今のこのマシンでは `classic.*` / `prompt.compose` / `prompt.context` / `prompt.section` も user の mod に届く**。
+> 🚨 managed settings が戻れば (組織のポリシー配布) 表のとおり素通しに戻るので、これらの口に依存する mod は「届かないときに何が起きるか」を持つ (epic 618「mod が黙って止まったときの扱い」)。
+> 測り直しの手順は下 (probe は 619 の本文)。下の表は、戻ったときの参照用に残す。
 
 managed settings (組織のリモートの設定) のあるマシンでは、組み込みの `cc-plugin-sec-default` が一番外側に座り、user の tier の mod の
 一部のイベントを呼ばずに素通りさせる。debug log (`--debug-file`) に `<plugin>: <event> bypassed by cc-plugin-sec-default (tier user); beneath runs` と出るだけで、

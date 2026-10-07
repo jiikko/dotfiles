@@ -138,3 +138,8 @@ settings の hook は失敗すれば stderr に出る。**移したものは、�
 - 2026-10-02: 結論の節を足した (移行は向かない・mods は画面に足すものだけ・625 は残して 628 の確認後にこの epic を閉じる。ユーザーと確認)
 - 2026-10-02: 628 の 1 回目の確認で desktop に何も出なかった (625 に観測と候補)。「移行できなかったのは版が足りなかったからか」をユーザーに問われ、
   2.1.286 / 2.1.287 で probe の結果が同じことを確かめて結論の節に書いた (原因は managed settings のまま)
+- 2026-10-07: **測り直し (claude 2.1.292)**。619 の probe に `prompt.compose` / `prompt.context` を足した 15 イベントを `--plugin-dir` + `claude -p` (Bash 1 回) で回すと全部届き、`bypassed by` 0 本。
+  原因は `cc-plugin-sec-default@builtin not seated: no managed settings and not a Team or Enterprise organization` — managed settings が無くなった。
+  **この epic の「移さない」判断の前提 (届かない口) が今は成り立たない**ので、ユーザーの指示で見直しに入る (`docs/claude-mods.md` の制約の節に条件付きで追記)。
+  見直す対象: `issue-rules-inject.sh` (620 の再開 trigger が満たされた) / `ratelimit-warn.sh` (`session.measure` + `$.session.usage()` で子プロセス無しに枠が読める) /
+  `next-claim-unshared.sh`。守りの hook (deny-*) は「失敗すると黙る」が変わっていないので据え置き
