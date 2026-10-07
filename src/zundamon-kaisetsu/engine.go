@@ -337,6 +337,11 @@ func containerNameFor(engine string) string {
 // テストで縮めるので変数にしている
 var startRunTimeout = 5 * time.Minute
 
+// notFoundRe は「そのコンテナは無い」を停止の成功とみなす文言。2026-10-07 に本物で測った stderr (どちらも rc=1):
+//   - Apple container 1.5.0: Error: internalError: "failed to stop container" (cause: "notFound: "container with ID <名前> not found"")
+//   - docker 29.8.0: Error response from daemon: No such container: <名前>
+//
+// docker のデーモンが動いていないときの「接続できない」は合わない (失敗として扱う)。版を上げて文言が変わったら測り直す (issue 646 の 6)
 var notFoundRe = regexp.MustCompile(`(?i)not ?found|no such container`)
 
 func cmdDown(env *Env) error {

@@ -1,6 +1,5 @@
 # 646 (risk): zundamon-kaisetsu のエンジンの自動起動 — 敵対的レビューで残した未確認リスク
 
-> 🚨 **担当中: pj-energy-matching-d6**（2026-10-07〜）
 
 
 起票日: 2026-10-07
@@ -96,11 +95,23 @@ P1 の 2 件 (見張りが別のポートに up したコンテナを名前で�
   CSS で隠す・コメントで囲むといった退行は見ない (記録のみ)
 - [x] 3. 見張りの作業ディレクトリと環境変数 — reaperCommand で cwd を "/" に。環境変数は絞らない (DOCKER_HOST / DOCKER_CONTEXT で
   接続先が変わるため)。spawnReaper が reaperCommand を使う配線はテストしていない (記録のみ)
-- [ ] 4. 起動途中の kill -9 と長い取得 — 未着手 (本物のランタイムが要る。今回の変更で前提は変わっていない)
+- [x] 4. 起動途中の kill -9 と長い取得 — 本物で確かめて、残る形は無いと判断した (commit「docs(zundamon-kaisetsu): 停止の文言を本物で測った結果を残し、issue 646 を閉じる」)
+  - 前提が変わっていた: イメージの取得 (`image pull`) は `container run` と別の段に分けてある (5273deeb)。取得の途中でコマンドが
+    kill -9 されても、取り残された pull は取得を終えるだけでコンテナを作らない。長い取得の後にエンジンが立つ形は起きない
+  - 残る形 (イメージが手元にあり、`run` の数秒の間に kill -9) を Apple container 1.5.0 で再現した (2026-10-07、ポート 50077):
+    `up: container run` が出た直後に kill -9 → 取り残された `run` が最後まで進んでコンテナが立った / 印 (container, 50077) と
+    見張りは残っていた / 起動途中のポートは接続を拒否し (curl rc=7)、約 2 秒後に応答した / 見張りは使ってから 10m1s で止めて
+    終わり、印も消えた。issue の「確かめていない前提」2 つ (子の run は親の死後も進むか・起動途中に接続を拒否するか) はどちらも「する」
 - [x] 5. Linux でのテストの隔離 — 「ランタイムが無い」PATH を空のディレクトリ (noRuntimePath) か偽物のディレクトリだけにし、
   状態の置き場を作るテスト (isolatedEnv・TestNewEnvWiresEngineAuto・TestReaperProcessLifecycle) で XDG_CACHE_HOME も差し替えた。
   macOS には /usr/bin に docker が無いので、変異では確かめられない (コードで確認)
-- [ ] 6. 本物のランタイムでの文言・挙動 — 未着手 (上の版の食い違いを書き足した)
+- [x] 6. 本物のランタイムでの文言・挙動 — 停止の文言を測った (同上の commit)
+  - 無いコンテナを止めたときの stderr (どちらも rc=1): Apple container 1.5.0 は `Error: internalError: "failed to stop container"
+    (cause: "notFound: "container with ID <名前> not found"")`、docker 29.8.0 は `Error response from daemon: No such container: <名前>`。
+    どちらも notFoundRe に合う。測った文言と版を engine.go の notFoundRe の横に残した (版を上げて文言が変わったら測り直す)
+  - ほかの項目は、測った結果か書いた扱いのまま受け入れる: reaper.log は何度か起動した後で 8 行・4KB (ローテーションしない) /
+    版の食い違い・旧版の固定名・ロックの持ち主の表示は上の本文のとおり。ロックの持ち主の表示は今回、kill -9 したコマンドの pid を
+    見張りが表示した (持っていたのはそのコマンドなので正しい。プロセスの終了でロックは外れ、見張りは先へ進んだ)
 - [x] 7. SKILL.md のコンテナ名 — 片付けの節をポートごとの名前に
 - 検証: `go test -race ./...` が緑。変異 9 本が想定のテストで red (見張りが inuse を見ない / withEngine が持たない / 判定できないとき
   「使っていない」 / 別のポートでも持ち続ける / 排他で取る / 起動用のロックの後に取る / 見張りの cwd を戻す / 作成日の代入を分岐の
