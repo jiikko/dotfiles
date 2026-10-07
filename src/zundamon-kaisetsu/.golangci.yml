@@ -41,11 +41,14 @@ linters:
 
   exclusions:
     rules:
-      - path: main\.go
+      # main.go はシグナルで自分が死に直す行 (自分への kill) だけを許す (ファイル全体を外すと、そこに足したグループ宛ての kill も通る)
+      - path: (^|/)main\.go$
+        source: syscall\.Kill\(os\.Getpid\(\)
         text: proctree
         linters:
           - forbidigo
-      - path: _test\.go
+      # テストは偽のプロセスの後始末に kill を使う
+      - path: _test\.go$
         text: proctree
         linters:
           - forbidigo
