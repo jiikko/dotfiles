@@ -149,8 +149,11 @@ DV=zundamon-kaisetsu    # dotfiles の bin/ のコマンド (Go 製。ソース�
 7. **確認**: `open out.html` / `open out.mp4` で再生し、ユーザーに見てもらう。図を使ったなら、その前に図の行を表示して
    ラベルが読めるかを自分の目で確かめる (読めなければ描き直すか外す。字の小ささは build では測れない)。HTML は URL 末尾の `#t=12.3` でその秒から開く (一時停止すると URL に書かれる)
 8. **片付け**: 自動で起動したエンジンは、最後に使ってから 10 分で見張りが止めるので、何もしなくてよい (すぐ止めたいなら `$DV down`)。
+   ただし、エンジンを使うコマンド (synth / kana / speakers) が動いている間は止めない (Ctrl-Z で止めたままのものも含む。
+   止めたままにしたら、再開して終わらせるか、`$DV down` で止める)。
    `up` を打っていたら `$DV down` で止める
-   (この skill 専用の名前 `zundamon-kaisetsu-voicevox` のコンテナだけを、container と docker の両方で止める。デスクトップアプリは止めない)
+   (この skill 専用の名前 `zundamon-kaisetsu-voicevox-<ポート>` のコンテナ (旧版が起こした固定名 `zundamon-kaisetsu-voicevox` と、
+   自動起動の印が別のポートを指していればそのポートのものも) だけを、container と docker の両方で止める。デスクトップアプリは止めない)
 
 ## 立ち絵と表情
 

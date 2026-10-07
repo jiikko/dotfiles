@@ -1,1 +1,0 @@
-../646-risk-zundamon-kaisetsu-engine-auto-followups.md

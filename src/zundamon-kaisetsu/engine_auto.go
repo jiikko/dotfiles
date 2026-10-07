@@ -30,6 +30,9 @@ import (
 //   - engine.start.lock: コマンドの「確かめる・起動する・使った時刻を更新する」、見張りの「時刻を見直して止める」、up / down を
 //     1 つずつにする。見張りが止めると決めてから止めるまでの間に来たコマンドが、止まるエンジンを使い始めないように
 //   - reaper.lock: 見張りが生きている間ずっと持つロック。取れれば見張りはいない (pid の再利用を気にしなくてよい)
+//   - engine.inuse: エンジンを使うコマンドが動いている間ずっと持つ共有ロック。見張りは止める直前に排他で取れるかを試し、
+//     取れなければ (誰かが使っている) 止めない。時刻 (engine.last) だけで決めると、長い合成の途中でスリープして 10 分を
+//     過ぎたとき、復帰直後に使用中のエンジンを止めうる (issue 646 の 1)。ロックはプロセスが死ねば外れる (kill -9 でも)
 //
 // 印は消して取り消さない (起動に失敗しても、時間切れでも残す)。「何も起動していない」は起動側からは確かめられない
 // (時間切れの後もコンテナは起動したまま残りうる) ので、印を消すかは見張りが、エンジンが応答しないまま startGrace たったかで決める。
@@ -59,13 +62,29 @@ func withEngine(env *Env, fn func() error) error {
 	if _, err := localPort(env.Engine); err != nil {
 		return fn() // 別ホストのエンジンは起動できない
 	}
+	// 起動用のロックより先に取る (起動を確かめてから使い始めるまでの間にも、見張りが止めないように)
+	release, err := holdEngineInUse(env)
+	if err != nil {
+		return err
+	}
+	held := true
+	defer func() {
+		if held {
+			release()
+		}
+	}()
 	if err := withStartLock(env, func() error { return ensureEngine(env) }); err != nil {
 		return err
 	}
-	if usesAutoEngine(env) { // 別のポートのエンジン (デスクトップアプリ等) を使っても、自動のエンジンの停止を延ばさない
+	// 別のポートのエンジン (デスクトップアプリ等) を使っても、自動のエンジンの停止を延ばさない: 使った時刻を更新せず、
+	// 使用中のロックも手放す (持ったままだと、そのコマンドが動いている間ずっと自動のエンジンが止まらない)
+	if usesAutoEngine(env) {
 		hook := func() { touchLastUse(env) }
 		engineUseHook.Store(&hook)
 		defer engineUseHook.Store(nil)
+	} else {
+		release()
+		held = false
 	}
 	return fn()
 }
@@ -195,6 +214,39 @@ func touchLastUse(env *Env) {
 	}
 }
 
+// holdEngineInUse は engine.inuse の共有ロックを取り、外す関数を返す。見張りが排他で持つのは「試して、すぐ外す」間だけなので
+// 待ちは一瞬で済む。
+func holdEngineInUse(env *Env) (func(), error) {
+	if err := os.MkdirAll(env.StateDir, 0o755); err != nil {
+		return nil, fail("%s を作れない (%v)", env.StateDir, err)
+	}
+	p := filepath.Join(env.StateDir, "engine.inuse")
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, fail("%s を開けない (%v)", p, err)
+	}
+	if err := flockWait(int(f.Fd()), syscall.LOCK_SH); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return func() { _ = f.Close() }, nil // ロックは close で外れる
+}
+
+// engineInUse はエンジンを使っているコマンドがいるか (engine.inuse の排他ロックが取れないか)。開けないなど判定できないときは
+// 「使っている」に倒す (使用中のエンジンを止めるより、止め損ねる方が害が小さい。止め損ねたら down で止められる)。
+func engineInUse(env *Env) bool {
+	f, err := os.OpenFile(filepath.Join(env.StateDir, "engine.inuse"), os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return true
+	}
+	defer func() { _ = f.Close() }()
+	if syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) != nil {
+		return true
+	}
+	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	return false
+}
+
 // reaperAlive は見張りのロックが他のプロセスに持たれているか。
 func reaperAlive(env *Env) bool {
 	f, err := os.OpenFile(filepath.Join(env.StateDir, "reaper.lock"), os.O_CREATE|os.O_RDWR, 0o644)
@@ -260,7 +312,7 @@ func (r *reaper) once(env *Env) bool {
 		return true
 	}
 	last := lastUseTime(env)
-	if env.Now().Sub(last) < engineIdleStop {
+	if env.Now().Sub(last) < engineIdleStop || engineInUse(env) {
 		r.failed = 0 // 使われている間の失敗は数えない (続けて失敗した回数だけを数える)
 		return false
 	}
@@ -308,13 +360,23 @@ func spawnReaper(env *Env) error {
 		return err
 	}
 	defer func() { _ = logf.Close() }()
-	cmd := exec.Command(exe, "--engine", env.Engine, reapCmd)
+	cmd := reaperCommand(exe, env)
 	cmd.Stdout, cmd.Stderr = logf, logf
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		return err
 	}
 	return cmd.Process.Release()
+}
+
+// reaperCommand は見張りを起こすコマンド。見張りは呼び出し側より長く生きる (最後に使ってから 10 分) ので、作業ディレクトリは
+// "/" にする (呼び出し側の cwd を持ったままだと、外付けディスクから実行したときに取り出せなくなる。issue 646 の 3)。
+// 環境変数は絞らずに引き継ぐ: docker は DOCKER_HOST / DOCKER_CONTEXT で接続先が変わり、絞ると呼び出し側と別のコンテナを見る。
+// 見張りが読むパスは引数のエンジンの URL と、状態の置き場 (env.StateDir。os.UserCacheDir から決まり、HOME が相対パスでない限り絶対パス) だけ
+func reaperCommand(exe string, env *Env) *exec.Cmd {
+	cmd := exec.Command(exe, "--engine", env.Engine, reapCmd)
+	cmd.Dir = "/"
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	return cmd
 }
 
 // flockWait はロックが取れるまで待つ。中断 (Ctrl-C) されたら待つのをやめる。

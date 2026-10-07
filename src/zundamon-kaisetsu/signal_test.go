@@ -32,11 +32,13 @@ func isolatedEnv(t *testing.T, extra ...string) []string {
 	t.Helper()
 	var env []string
 	for _, kv := range os.Environ() {
-		if !strings.HasPrefix(kv, "PATH=") && !strings.HasPrefix(kv, "HOME=") {
+		if !strings.HasPrefix(kv, "PATH=") && !strings.HasPrefix(kv, "HOME=") && !strings.HasPrefix(kv, "XDG_CACHE_HOME=") {
 			env = append(env, kv)
 		}
 	}
-	return append(append(env, "PATH=/usr/bin:/bin", "HOME="+t.TempDir()), extra...)
+	// PATH は空のディレクトリ (/usr/bin にすると、docker がそこにある Linux では本物に届く)。状態の置き場は Linux では
+	// XDG_CACHE_HOME が HOME より優先されるので、それも差し替える (issue 646 の 5)
+	return append(append(env, "PATH="+t.TempDir(), "HOME="+t.TempDir(), "XDG_CACHE_HOME="+t.TempDir()), extra...)
 }
 
 // blockingEngine は /speakers を release が閉じられるまで返さない偽のエンジン。

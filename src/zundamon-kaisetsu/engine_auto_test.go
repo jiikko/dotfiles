@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -79,7 +80,7 @@ func newFakeEngineEnv(t *testing.T, alive bool) (*Env, *fakeEngine) {
 	if err := os.WriteFile(filepath.Join(shims, "container"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", shims+":/usr/bin:/bin")
+	t.Setenv("PATH", shims)
 	env := testEnv(t)
 	env.Engine = "http://" + fe.addr
 	env.StateDir = t.TempDir()
@@ -332,7 +333,7 @@ func TestProductionEngineDownStopsOnlyMarkedRuntime(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	t.Setenv("PATH", shims+":/bin:/usr/bin") // 本物のランタイムを見つけさせない
+	t.Setenv("PATH", shims) // 本物のランタイムを見つけさせない
 	cancel := withAppCtx(t)
 	cancel()
 	if err := newEnv().EngineDown("container", "http://127.0.0.1:50021"); err != nil {
@@ -355,7 +356,7 @@ func TestProductionEngineDownStopsOnlyMarkedRuntime(t *testing.T) {
 func TestCmdUpClearsMarkerEvenOnFailure(t *testing.T) {
 	env, _ := newFakeEngineEnv(t, false)
 	writeMarker(t, env, "docker", env.Engine, 0)
-	t.Setenv("PATH", "/usr/bin:/bin") // ランタイムが見つからず起動は失敗する (本物のランタイムには触れない)
+	t.Setenv("PATH", noRuntimePath(t)) // ランタイムが見つからず起動は失敗する (本物のランタイムには触れない)
 	if err := cmdUp(env); err == nil {
 		t.Fatal("ランタイムが無いのに up が成功した")
 	}
@@ -382,7 +383,7 @@ func TestWithEngineOldOneLineMarker(t *testing.T) {
 func TestWithEngineNoRuntimeWritesNoMarker(t *testing.T) {
 	env, fe := newFakeEngineEnv(t, false)
 	fe.upErr = errors.New("container も docker も無い")
-	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("PATH", noRuntimePath(t))
 	if err := withEngine(env, func() error { return nil }); err == nil {
 		t.Fatal("起動できないのにエラーを返さない")
 	}
@@ -456,7 +457,7 @@ func TestCmdUpKeepsOtherPortMarker(t *testing.T) {
 	env, _ := newFakeEngineEnv(t, false)
 	_, auto := newFakeEngineEnv(t, true)
 	writeMarker(t, env, "container", "http://"+auto.addr, 0)
-	t.Setenv("PATH", "/usr/bin:/bin") // 起動は失敗する (本物のランタイムには触れない)
+	t.Setenv("PATH", noRuntimePath(t)) // 起動は失敗する (本物のランタイムには触れない)
 	if err := cmdUp(env); err == nil {
 		t.Fatal("ランタイムが無いのに up が成功した")
 	}
@@ -487,7 +488,7 @@ func TestCmdDownClearsAnyMarkerAfterStop(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(shims, "container"), []byte("#!/bin/sh\necho \"$*\" >> "+log+"\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", shims+":/usr/bin:/bin") // 偽の container だけを見せる (本物のランタイムには触れない)
+	t.Setenv("PATH", shims) // 偽の container だけを見せる (本物のランタイムには触れない)
 	if err := cmdDown(env); err != nil {
 		t.Fatal(err)
 	}
@@ -506,13 +507,14 @@ func TestCmdDownClearsAnyMarkerAfterStop(t *testing.T) {
 // up はポートごとの名前でコンテナを起こし、container run が返らなければ startRunTimeout で打ち切る
 // (起動用のロックの中で走るので、返らないと synth / down / 見張りが全部待ち続ける)。
 func TestStartEngineRunTimeoutAndPortName(t *testing.T) {
-	env, _ := newFakeEngineEnv(t, false)
-	shims := t.TempDir()
-	log := filepath.Join(t.TempDir(), "calls")
+	// sleep の場所は PATH を差し替える (newFakeEngineEnv) 前に決める (差し替えた後の PATH にはランタイムも sleep も無い)
 	sleepBin, err := exec.LookPath("sleep")
 	if err != nil {
 		t.Fatal(err)
 	}
+	env, _ := newFakeEngineEnv(t, false)
+	shims := t.TempDir()
+	log := filepath.Join(t.TempDir(), "calls")
 	// 手元にイメージが無い (image inspect が失敗) ので取得する。
 	// sleep-ok: dummy: 時間のかかる取得 (startRunTimeout より長い 1 秒。上限に含まれていれば打ち切られる) と、返らない container run を演じる
 	// (run は startRunTimeout で kill される。kill されなくても 30 秒で終わる)
@@ -521,7 +523,7 @@ func TestStartEngineRunTimeoutAndPortName(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(shims, "container"), []byte(shim), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", shims+":/usr/bin:/bin")
+	t.Setenv("PATH", shims)
 	old := startRunTimeout
 	startRunTimeout = 500 * time.Millisecond
 	t.Cleanup(func() { startRunTimeout = old })
@@ -597,7 +599,9 @@ func TestDispatchWrapsEngineCommands(t *testing.T) {
 func TestNewEnvWiresEngineAuto(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("PATH", "/usr/bin:/bin") // 本物のランタイムを見つけさせない (起動は「無い」で失敗する)
+	// Linux では状態の置き場に XDG_CACHE_HOME が HOME より優先される。差し替えないと本物のキャッシュを指す (issue 646 の 5)
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("PATH", noRuntimePath(t)) // 本物のランタイムを見つけさせない (起動は「無い」で失敗する)
 	t.Setenv("VOICEVOX_URL", "http://127.0.0.1:1")
 	e := newEnv()
 	if e.EngineUp == nil || e.EngineDown == nil || e.SpawnReaper == nil {
@@ -616,7 +620,8 @@ func TestNewEnvWiresEngineAuto(t *testing.T) {
 func TestReaperProcessLifecycle(t *testing.T) {
 	bin := buildBinary(t)
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("XDG_CACHE_HOME", t.TempDir()) // Linux で本物の印と見張りに届かないように (issue 646 の 5)
+	t.Setenv("PATH", noRuntimePath(t))
 	t.Setenv("VOICEVOX_URL", "http://127.0.0.1:1") // 誰も待ち受けていない
 	old := reaperExe
 	reaperExe = func() (string, error) { return bin, nil }
@@ -688,7 +693,7 @@ func TestStartEngineSkipsPullWhenImageIsLocal(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(shims, "container"), []byte(shim), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", shims+":/usr/bin:/bin")
+	t.Setenv("PATH", shims)
 	cancel := withAppCtx(t)
 	done := make(chan error, 1)
 	go func() { done <- startEngine(env) }()
@@ -716,5 +721,150 @@ func TestWithEngineTouchesLastUseAfterStart(t *testing.T) {
 	env.Now = time.Now
 	if (&reaper{}).once(env) || fe.downs.Load() != 0 {
 		t.Errorf("起動した直後に見張りが止めた (停止 %d)", fe.downs.Load())
+	}
+}
+
+// TestReaperCommandRunsFromRoot は、見張りを作業ディレクトリ "/" で、端末から切り離して起こすことを確かめる (issue 646 の 3)。
+// 呼び出し側の cwd のまま起こすと、外付けディスクから実行したときに見張りが生きている間ディスクを取り出せない。
+func TestReaperCommandRunsFromRoot(t *testing.T) {
+	env := &Env{Engine: "http://127.0.0.1:50077"}
+	cmd := reaperCommand("/path/to/zundamon-kaisetsu", env)
+	if cmd.Dir != "/" {
+		t.Errorf("見張りの作業ディレクトリ: got %q want /", cmd.Dir)
+	}
+	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setsid {
+		t.Error("見張りを新しいセッションで起こしていない (端末を閉じると一緒に止まる)")
+	}
+	if want := []string{"/path/to/zundamon-kaisetsu", "--engine", env.Engine, reapCmd}; !slices.Equal(cmd.Args, want) {
+		t.Errorf("見張りの引数: got %v want %v", cmd.Args, want)
+	}
+	if cmd.Env != nil {
+		t.Error("見張りの環境変数を絞っている (DOCKER_HOST などが届かず、別のコンテナを見る)")
+	}
+}
+
+// noRuntimePath は「ランタイム (container / docker) が無い」PATH。空のディレクトリにする: /usr/bin:/bin にすると、docker が
+// /usr/bin にある Linux では本物の docker に届く (issue 646 の 5)。テストの偽物は /bin/sh と絶対パスのコマンドだけを使う
+func noRuntimePath(t *testing.T) string {
+	t.Helper()
+	return t.TempDir()
+}
+
+// TestReaperKeepsEngineInUse は、エンジンを使っているコマンドがいる間は、最後に使った時刻から engineIdleStop を過ぎても
+// 止めないことを確かめる (長い合成の途中でスリープし、復帰直後に見張りが先に動く形。issue 646 の 1)。
+func TestReaperKeepsEngineInUse(t *testing.T) {
+	env, fe := newFakeEngineEnv(t, true)
+	writeMarker(t, env, "docker", env.Engine, 0)
+	touchLastUse(env)
+	release, err := holdEngineInUse(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	env.Now = func() time.Time { return now.Add(engineIdleStop + time.Hour) } // スリープから復帰した
+	r := &reaper{}
+	if r.once(env) || fe.downs.Load() != 0 {
+		t.Fatalf("使っているコマンドがいるのに止めた (停止 %d)", fe.downs.Load())
+	}
+	release()
+	if !r.once(env) || fe.downs.Load() != 1 {
+		t.Fatalf("使い終わった後も止めない (停止 %d)", fe.downs.Load())
+	}
+}
+
+// TestWithEngineHoldsInUse は、withEngine が本体を実行している間だけ使用中のロックを持つことを確かめる。
+func TestWithEngineHoldsInUse(t *testing.T) {
+	env, _ := newFakeEngineEnv(t, true)
+	var during bool
+	if err := withEngine(env, func() error { during = engineInUse(env); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if !during {
+		t.Error("本体の実行中に使用中のロックを持っていない")
+	}
+	if engineInUse(env) {
+		t.Error("本体が終わった後も使用中のロックが残っている")
+	}
+}
+
+// TestEngineInUseUnknownMeansInUse は、使用中のロックを確かめられないとき (ファイルを開けない) は「使っている」に倒す
+// (止めない) ことを確かめる。
+func TestEngineInUseUnknownMeansInUse(t *testing.T) {
+	env := &Env{StateDir: t.TempDir()}
+	if err := os.Mkdir(filepath.Join(env.StateDir, "engine.inuse"), 0o755); err != nil { // ディレクトリは O_RDWR で開けない
+		t.Fatal(err)
+	}
+	if !engineInUse(env) {
+		t.Error("確かめられないのに「使っていない」と判定した (使用中のエンジンを止めうる)")
+	}
+}
+
+// TestWithEngineOtherPortReleasesInUse は、別のポートのエンジン (デスクトップアプリ等) を使うコマンドが、自動で起動した
+// エンジンの停止を延ばさないことを確かめる (使用中のロックを手放す)。
+func TestWithEngineOtherPortReleasesInUse(t *testing.T) {
+	envA, feA := newFakeEngineEnv(t, true) // 自動で起動したエンジン
+	writeMarker(t, envA, "docker", envA.Engine, 0)
+	touchLastUse(envA)
+	now := time.Now()
+	envA.Now = func() time.Time { return now.Add(engineIdleStop + time.Hour) }
+	other := &fakeEngine{t: t, addr: "127.0.0.1:0"}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other.addr = ln.Addr().String()
+	_ = ln.Close()
+	other.start()
+	t.Cleanup(other.stop)
+	envB := *envA
+	envB.Engine = "http://" + other.addr // 別のポートで応答しているエンジン
+	var stopped bool
+	if err := withEngine(&envB, func() error { stopped = (&reaper{}).once(envA); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if !stopped || feA.downs.Load() != 1 {
+		t.Errorf("別のポートのエンジンを使っている間、自動のエンジンを止めなかった (停止 %d)", feA.downs.Load())
+	}
+}
+
+// TestEngineInUseIsShared は、使用中のロックを複数のコマンドが同時に持てることを確かめる (排他にすると、合成の途中で打った
+// kana / speakers が合成の終わりまで待たされる)。
+func TestEngineInUseIsShared(t *testing.T) {
+	env := &Env{StateDir: t.TempDir()}
+	r1, err := holdEngineInUse(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r1()
+	done := make(chan error, 1)
+	go func() {
+		r2, err := holdEngineInUse(env)
+		if err == nil {
+			r2()
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second): // 待ちの上限 (共有なら即座に返る)
+		t.Fatal("2 つ目のコマンドが使用中のロックを取れずに待っている (共有ロックになっていない)")
+	}
+}
+
+// TestWithEngineHoldsInUseBeforeStart は、エンジンを起動する時点で、もう使用中のロックを持っていることを確かめる
+// (起動用のロックより先に取る。後に取ると、起動を確かめてから使い始めるまでの間に見張りが止めうる)。
+func TestWithEngineHoldsInUseBeforeStart(t *testing.T) {
+	env, _ := newFakeEngineEnv(t, false) // 応答しないので起動する
+	up := env.EngineUp
+	var heldAtStart bool
+	env.EngineUp = func() error { heldAtStart = engineInUse(env); return up() }
+	if err := withEngine(env, func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if !heldAtStart {
+		t.Error("起動する時点で使用中のロックを持っていない")
 	}
 }

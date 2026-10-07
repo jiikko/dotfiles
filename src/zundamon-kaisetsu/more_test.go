@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -383,5 +384,29 @@ func TestCreatedDate(t *testing.T) {
 		if _, err := loadScript(path, env); err == nil || !strings.Contains(err.Error(), "date") {
 			t.Errorf("%s の date を受け入れた (%v)", name, err)
 		}
+	}
+}
+
+// TestCreatedDateRenderedByPlayer は、player.html が作成日を舞台に出していることを確かめる (issue 646 の 2)。
+// TestCreatedDate は PlayerData.Date までしか見ないので、要素や代入を消しても緑のままだった。
+// 代入はまとめ撮り (#sheet=) の分岐より前に置く (分岐の後ろだと、mp4 の絵に作成日が写らない)。
+func TestCreatedDateRenderedByPlayer(t *testing.T) {
+	tb, err := os.ReadFile(testEnv(t).Template())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tpl := string(tb)
+	if !regexp.MustCompile(`<div class="stage-date" id="stage-date"></div>`).MatchString(tpl) {
+		t.Error("舞台に作成日の要素 (#stage-date) が無い")
+	}
+	assign := regexp.MustCompile(`\$\('stage-date'\)\.textContent = D\.date \?`).FindStringIndex(tpl)
+	sheet := strings.Index(tpl, "location.hash.match(/^#sheet=")
+	switch {
+	case assign == nil:
+		t.Error("作成日 (D.date) を #stage-date に入れていない")
+	case sheet < 0:
+		t.Error("まとめ撮りの分岐が見つからない (テストの前提が変わった)")
+	case assign[0] > sheet:
+		t.Error("作成日の代入がまとめ撮りの分岐より後ろにある (mp4 に写らない)")
 	}
 }
