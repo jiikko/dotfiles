@@ -1,0 +1,9 @@
+{
+  "name": "peer-inbox",
+  "version": "0.1.0",
+  "description": "他セッションとの SendMessage の送受信を、プロンプト直上の帯・toast・status line に残す (transcript が流れても消えない写し)",
+  "author": {
+    "name": "jiikko"
+  },
+  "types": "./types/index.d.ts"
+}

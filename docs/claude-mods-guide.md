@@ -54,6 +54,7 @@ _claude/mods/<name>/                 1 つの mod = 1 ディレクトリ
 | `canary` | 何もしない。`DOTFILES_MOD_CANARY_DIR` があれば「読み込まれた印」を書く (読まれる経路の実測用) | `hooks/register.ts` |
 | `issue-band` | 期限切れ / 期限間近の human と未決着の retro があるときだけ、プロンプトの上の帯に出す | `hooks/register.tsx` (配線) / `hooks/band.ts` (出力の読み取りと文言) |
 | `desktop-statusline` | Claude desktop の Code タブに、CLI と同じステータスバーを色つきで出す。CLI には描かない | 下の節 |
+| `peer-inbox` | 他セッション / teammate との SendMessage の送受信を、プロンプトの上の帯 (直近 3 件・既読 / 隠す)・toast・status line の未読数に残す。transcript に流れる本文は止めない (流れない写し) | `hooks/register.tsx` |
 
 ## desktop-statusline の仕組み
 
