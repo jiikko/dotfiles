@@ -3,6 +3,7 @@ package main
 // 敵対的レビュー (2026-10-06、壊す / 素通り の 2 観点) で見つかった穴を固定するテスト。golden は HEAD にあった Python 版から作った。
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -110,7 +111,11 @@ func TestBuildWithDefaultAssetsMatchesPython(t *testing.T) {
 	if err := decodeJSON(gb, &got); err != nil {
 		t.Fatal(err)
 	}
-	want := golden["script"].Data
+	g, ok := golden["script"]
+	if !ok || len(g.Data) == 0 {
+		t.Fatal("golden に script が無い (比較 0 件のまま通らないように)")
+	}
+	want := g.Data
 	normalizeNumbers(got)
 	normalizeNumbers(want)
 	for _, k := range sortedKeys(want) {
@@ -458,5 +463,37 @@ func TestBuildChecksOutputDirFirst(t *testing.T) {
 		if strings.HasPrefix(l, "ffmpeg ") || strings.HasPrefix(l, "chrome ") {
 			t.Errorf("出力先を確かめる前に外部コマンドを起こした: %s", l)
 		}
+	}
+}
+
+// writeWav のヘッダの各欄を直接見る (自前の parser は byte rate / block align を読まないので、往復では検査されない。issue 653)
+func TestWriteWavHeaderFields(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "x.wav")
+	pcm := make([]byte, 480)
+	must(t, writeWav(p, pcm))
+	b, err := os.ReadFile(p)
+	must(t, err)
+	le32 := func(i int) int { return int(binary.LittleEndian.Uint32(b[i : i+4])) }
+	le16 := func(i int) int { return int(binary.LittleEndian.Uint16(b[i : i+2])) }
+	for _, c := range []struct {
+		name      string
+		got, want int
+	}{
+		{"RIFF の大きさ", le32(4), 36 + len(pcm)},
+		{"fmt の長さ", le32(16), 16},
+		{"形式 (PCM)", le16(20), 1},
+		{"チャンネル", le16(22), 1},
+		{"サンプリング周波数", le32(24), sampleRate},
+		{"byte rate", le32(28), sampleRate * 2},
+		{"block align", le16(32), 2},
+		{"ビット数", le16(34), 16},
+		{"data の大きさ", le32(40), len(pcm)},
+	} {
+		if c.got != c.want {
+			t.Errorf("%s: got %d want %d", c.name, c.got, c.want)
+		}
+	}
+	if string(b[0:4]) != "RIFF" || string(b[8:16]) != "WAVEfmt " || string(b[36:40]) != "data" {
+		t.Errorf("チャンクの名前が違う: %q", b[:44])
 	}
 }

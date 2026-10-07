@@ -82,10 +82,7 @@ func parseWav(b []byte) (ch, width, rate, nframes int, pcm []byte, err error) {
 		}
 		pos += 8 + size + size%2
 	}
-	if !gotFmt {
-		return 0, 0, 0, 0, nil, errors.New("fmt chunk and/or data chunk missing")
-	}
-	return 0, 0, 0, 0, nil, errors.New("fmt chunk and/or data chunk missing")
+	return 0, 0, 0, 0, nil, errors.New("fmt chunk and/or data chunk missing") // fmt が無い・data が無いのどちらも (Python の wave と同じ文言)
 }
 
 // checkWavBytes は mono / 16bit / sampleRate で、ヘッダの長さどおりに PCM が入っているかを確かめる。
@@ -135,6 +132,8 @@ func writeWav(path string, pcm []byte) error {
 
 // --- 口の開き ---
 
+// numOr は数に読めればその値、キーが無い・null・数でなければ既定値 (エンジンは null を返さないので、Python 版の
+// query.get(key, default) の「null なら None で落ちる」は再現しない)。
 func numOr(v any, def float64) float64 {
 	if v == nil {
 		return def
@@ -159,7 +158,7 @@ func mouthTrack(query map[string]any, duration float64) string {
 		d  float64
 		lv int
 	}
-	segs := []seg{{numOr(lookupOr(query, "prePhonemeLength"), 0.1), 0}}
+	segs := []seg{{numOr(query["prePhonemeLength"], 0.1), 0}}
 	phrases, _ := query["accent_phrases"].([]any)
 	for _, apRaw := range phrases {
 		ap, _ := apRaw.(map[string]any)
@@ -181,7 +180,7 @@ func mouthTrack(query map[string]any, duration float64) string {
 			segs = append(segs, seg{numOr(pm["vowel_length"], 0) / speed, 0})
 		}
 	}
-	segs = append(segs, seg{numOr(lookupOr(query, "postPhonemeLength"), 0.1), 0})
+	segs = append(segs, seg{numOr(query["postPhonemeLength"], 0.1), 0})
 	ds := make([]float64, len(segs))
 	for i, s := range segs {
 		ds[i] = s.d
@@ -238,10 +237,6 @@ func pySum(xs []float64) float64 {
 	}
 	return f
 }
-
-// lookupOr は query.get(key, default) の「キーが無い」と「null」を区別する (Python では null の get は None で、
-// その後の加算で落ちるが、エンジンは null を返さないので既定値に倒す)。
-func lookupOr(m map[string]any, key string) any { return m[key] }
 
 // --- 表示の状態 ---
 

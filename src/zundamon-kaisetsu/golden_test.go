@@ -114,6 +114,9 @@ func TestSpokenTextMatchesPython(t *testing.T) {
 		Spoken   string         `json:"spoken"`
 	}
 	readGolden(t, "spoken.json", &cases)
+	if len(cases) < 5 { // 空の golden で比較 0 件のまま通らないように (今は 7 件)
+		t.Fatalf("golden の件数が少ない: %d", len(cases))
+	}
 	for _, c := range cases {
 		line := map[string]any{"text": c.Text}
 		if c.Read != nil {
@@ -133,6 +136,9 @@ func TestRoundMatchesPython(t *testing.T) {
 		Round  int     `json:"round"`
 	}
 	readGolden(t, "round.json", &cases)
+	if len(cases) < 10 { // 空の golden で比較 0 件のまま通らないように (今は 20 件)
+		t.Fatalf("golden の件数が少ない: %d", len(cases))
+	}
 	for _, c := range cases {
 		if got := pyRound3(c.X); got != c.Round3 {
 			t.Errorf("round(%v, 3): got %v want %v", c.X, got, c.Round3)

@@ -21,5 +21,13 @@
 
 ## 進捗
 
-- [ ] 死んだコード・古いコメント
-- [ ] 空でも通るテストと wav ヘッダの検査
+- [x] 死んだコード・古いコメント — chore(zundamon-kaisetsu) の commit
+- [x] 空でも通るテストと wav ヘッダの検査 — 同じ commit
+
+## 結果 (2026-10-07)
+
+- `lookupOr` を消して `query["…"]` を直接書く (null の扱いは `numOr` のコメントへ) / `parseWav` の重複した return を 1 つに
+- engine_auto.go の「コンテナ名は 1 つ」系の 3 か所を「印はエンジンを 1 つしか書けない」に直す (利用者向けの文言を含む)
+- `TestSpokenTextMatchesPython` / `TestRoundMatchesPython` に件数の下限、`TestBuildWithDefaultAssetsMatchesPython` に golden の script の有無の検査
+- `TestWriteWavHeaderFields`: ヘッダの 9 欄とチャンク名を直接見る
+- 変異で red: byte rate を壊す / spoken.json と round.json を空にする / build_data.json から script を消す
