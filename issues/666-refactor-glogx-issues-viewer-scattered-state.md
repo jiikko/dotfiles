@@ -13,15 +13,16 @@ issues viewer (`issuesView`) と周辺で、対で更新すべき状態の更新
 
 ### E. group 展開状態の 3 map (`expandedGroups` / `autoExpandedGroups` / `collapsedGroups`)
 
-- 読むのは `groupExpanded` 1 か所、書くのは 7 関数 (`applyScreen` / `finishClose` / `anchorCursorInternal` / `pruneExpandedGroups` /
-  `refresh` / `toggleGroupAtCursor` / `clearNumberFilter`)、nil なら make が 4 か所 (監査体の数え)
+- 書くのは 7 関数 (`applyScreen` / `finishClose` / `anchorCursorInternal` / `pruneExpandedGroups` /
+  `refresh` / `toggleGroupAtCursor` / `clearNumberFilter`)、nil なら make が 5 か所。表示の判定として読むのは `groupExpanded` だが、
+  `toggleGroupAtCursor` / `clearNumberFilter` が `autoExpandedGroups[key]` を、`pruneExpandedGroups` と保存処理が `expandedGroups` を直接読む (反証レビューの数え直し)
 - 不変条件: `collapsed` は番号フィルタ中だけ意味を持ち、auto 展開を打ち消すためだけにある。これを `clearNumberFilter` と `finishClose` の 2 か所が守る
 - 発火条件: 番号フィルタを解く 3 本目の経路でリセットを忘れると、解除後も畳んだ状態が残り、手動で展開した group が開かない
 - 方針: `groupExpansion` 型 (toggle / reveal / endFilter(promote) / prune / saved / expanded)。**寄せる前に各呼び出し側の例外を移す**:
   `anchorCursorInternal` は collapsed を意図的に上書き (コメントの P3-5) / `clearNumberFilter` は現在行の group だけ auto を expanded へ引き継ぐ /
   `applyScreen` は Cursor / Open の group を足す
 
-### D. 本文 pager の差し替え時のリセットが 4 関数に散る (trigger: issue 662 に着手するとき)
+### D. 本文 pager の差し替え時のリセットが 5 関数に散る (trigger: issue 662 に着手するとき)
 
 - フィールド `open` / `body` / `docStack` / `docLine` / `bodyPager` / `urlPick` / `linkJump` / `linkRepos` / `drawer` を、
   `openIssue` / `openDoc` / `popDoc` / `discardBody` / `closeBody` がそれぞれ別の組み合わせで畳む
@@ -46,7 +47,8 @@ issues viewer (`issuesView`) と周辺で、対で更新すべき状態の更新
 ### D3 / U3. 入力・リストの部品の手組み (小)
 
 - `urlPicker.lines` (url_picker.go) が `listnav.WindowOffset` を使わず窓の位置を手で計算し、offset を持たない。
-  一致数が窓より多いとき下へ送ってから上へ戻すと、一覧 (窓をできるだけ動かさない) と手触りが違う。同関数の `else` 節は作った `line` を捨てて作り直している
+  一致数が窓より多いとき下へ送ってから上へ戻すと、一覧 (窓をできるだけ動かさない) と手触りが違う。同関数の `else` 節は作った `line` を捨てて作り直している。
+  同関数のコメント「issues 一覧と同じ規律。offset を状態で持たない」は古い (issues 一覧は今 `listnav.WindowOffset(v.offset, …)` で offset を状態で持つ) ので一緒に直す
 - カーソル行の描き方 (`cursorGutterMark` + `cursorPaint`) が `rowLine` / `groupLine` / `urlPicker.lines` の 3 か所
 - 見出し + `lineedit` の表示窓 + キャレット桁を `urlPicker.field`/`caretCol` と `issuesView.numberField`/`caretCol` の 2 か所で手組み
 - 方針: `urlPicker` に offset を持たせ `listnav.WindowOffset` を通す / `paintCursorRow` にまとめる (`statusCursorPaint` は意図的に別なので含めない) /

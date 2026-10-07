@@ -14,8 +14,9 @@ viewer (issues / status) の通知口 `setNotice(text, ok bool)` は 2 値しか
 ## 詳細
 
 - 該当: `issuesView.setNotice` / `statusView.setNotice` / `browseModel.deliverNotice` / `browseModel.showWarning` (tui.go)
-- `setNotice(…, false)` の呼び出しは 30 件 (issues 20 / status 10。監査時の grep)。監査体の分類では
-  断りの文 16 / クリップボード失敗 2 / エラー詳細 12。**分類の件数は監査体の読みで、main は未検算**
+- `setNotice(…, false)` の呼び出しは 30 件 (issues_view.go 16 + issues_linkjump.go 4 + status 10)。分類は
+  断りの文 16 / クリップボード失敗 2 / エラー詳細 12 (監査体と反証レビューの手分類が一致)
+- viewer の通知 (`takeNotice`) を受けるのは `deliverNotice` の 3 箇所だけで、別経路で `toast.Show` する道は無い (反証レビューで確認)
 - issues viewer のコピー (`issuesView.copyText` / `copyLines`) は共有の `browseModel.copyWithToast` を通らず手組みで、
   失敗文言「コピーに失敗しました」が tui.go と別に 2 箇所ある。`copyWithToast` の doc は「失敗文言の複製を一本化した」
   と書いており、issues 側だけ取り残されている
@@ -23,7 +24,8 @@ viewer (issues / status) の通知口 `setNotice(text, ok bool)` は 2 値しか
 ### 発火条件 (コード経路で確認。実機の再現は未実施)
 
 1. pull 失敗などで lastWarning に「pull に失敗: …」が入っている
-2. issues viewer で末尾の issue に居て `J` (「これが最後の issue です」) を押す、または親行で `y`、またはコピーが失敗する
+2. issues viewer で末尾の issue に居て `J` (「これが最後の issue です」) を押す、または合成の親行で `v` / `e` / `p` / `Y` / `N`
+   (`actionKey` の断りの分岐。親行の `y` は group 名のコピーに回るので断りにならない)、またはコピーが失敗する
 3. viewer を閉じて `w` を押すと、元の pull の警告ではなく断りの文がコピーされる
 
 silent に壊れる (compile も test も通る)。

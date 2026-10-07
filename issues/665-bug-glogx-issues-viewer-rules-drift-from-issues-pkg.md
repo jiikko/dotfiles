@@ -46,7 +46,8 @@
 
 ### G. 並び順の規則が二重 (潜在)
 
-- `issues.sortIssues` / `numOf` と画面側の `sortDisplayUnits` / `issueNumberOK` (`numOf` と逐語同一)。画面側の再ソートは rows に group があるときだけ効く
+- `issues.sortIssues` / `numOf` と画面側の `sortDisplayUnits` / `issueNumberOK`。後 2 者は書き方が違う (`numOf` はエラー時 `(0,false)`、
+  `issueNumberOK` は `(n, err==nil)` で範囲外のとき Atoi の飽和値が入る) が、bool の結果は同じで並びは実質等価。画面側の再ソートは rows に group があるときだけ効く
 - 方針: `issues` が比較関数を公開し、画面はそれを使う。`sortDisplayUnits` の末尾 3 分岐が同じ `a.key < b.key` を返している点も併せて畳む
 
 ### H. `issues.Filter` は全件を渡される前提 (潜在)
@@ -57,8 +58,10 @@
 ### I. 移動を追う同一性の範囲が `issues/` と食い違う (潜在。コード上の経路のみ)
 
 - `issues_view.go` の `matchByBase` は全 issue ディレクトリを basename だけで照合する。`issues.conflicts` は (Dir, basename)
-- 発火条件: root の `issues/` と `macOS/issues/` を両方持つ repo で、開いていた issue が消え、もう一方の dir に同じ basename が 1 件ある → 別 dir の issue に黙って繋ぎ直す
-- 方針: 照合を同じ Dir に絞る (`n` も `git mv` も Dir 内の移動なので、追う範囲は失わない)。issue 277 は Dir に絞る案を検討していない
+- 発火条件: root の `issues/` と `macOS/issues/` を両方持つ repo で、開いていた issue が消え、もう一方の dir に同じ basename が 1 件ある → 別 dir の issue に繋ぎ直す。
+  ただし `rebindOpenIssue` は `LoadMeta` で見出しを突き合わせ、違えば「見出しが変わりました (別 issue の可能性)」を出す (issue 277 の防御)。
+  **黙って繋がるのは見出しまで同じとき (と見出しが読めないとき) だけ**
+- 方針: 照合を同じ Dir に絞る (`n` も `git mv` も Dir 内の移動なので、追う範囲は失わない)。issue 277 は macOS/issues の事例を検討したが、Dir に絞る案は検討していない
 
 ### ついでに直す文書の乖離
 

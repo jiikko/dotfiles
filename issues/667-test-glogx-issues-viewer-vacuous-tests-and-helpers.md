@@ -44,8 +44,9 @@ fixture が 6 つのヘルパーと 26 箇所の手組みに散り、手組み�
 ## 詳細: ヘルパー (test-helpers)
 
 1. **実ファイルで本文を開く fixture の一本化** (最優先): 同じ処理のヘルパーが 6 つ (`realIssue` / `realDoneIssue` / `path2issue` / `realIssuesView` / `newBodyKeyEnv` / `newJumpEnv`)、
-   手組みの `&issues.Issue{Path: …, Dir: dir, …}` が issues_view_test.go に 20 + 他ファイルに 6 (監査体の grep。母集合は issues 系 main パッケージの `os.WriteFile` 52 箇所)。
-   既にずれている: `drawer.finish()` を呼ぶのは 7 箇所だけ (抜けた 1 箇所が上の #2)。root の `EvalSymlinks` は `newJumpEnv` だけ。
+   手組みの `&issues.Issue{Path: …}` が issues_view_test.go に 20〜28 + 他ファイルに 3〜6 (grep の書き方で揺れる。監査体と反証レビューで数えが食い違った。
+   母集合の issues 系 main パッケージの `os.WriteFile` は 52 箇所で両者一致)。
+   既にずれている: `drawer.finish()` を呼ぶのは issues_view_test.go で 7 箇所、issues 系全体で 10 箇所だけ (抜けた 1 箇所が上の #2)。root の `EvalSymlinks` は `newJumpEnv` だけ。
    → `openRealBody(t, body, opts) *issuesView` に寄せ、着地と描画の確定まで必ず行う
 2. **外部作用 (クリップボード / エディタ / ブラウザ) の既定 stub**: `loadedView` / `newTestIssuesView` は差し替えず、各テストが自分で差し替える (35 箇所)。上の #4 が漏れの実例。
    → viewer を作るヘルパーが `t` を受け取り、既定で「呼ばれたら t.Fatal」の stub を入れる
@@ -53,6 +54,11 @@ fixture が 6 つのヘルパーと 26 箇所の手組みに散り、手組み�
 4. 閉じる演出つき browse の 4 行 (`newTestBrowse` → `closeAnimOff=false` → `toggle` → `finishAnim`) が issues_close_anim_test.go に 4 回
 5. `fmt.Sprintf("%03d")` のループが issues_view_test.go に 5 箇所、`manyIssues` / `numStr` (issues_cursor_glide_test.go) と重複
 6. `issues/` パッケージ: `writeFile` / `writeFileContent` / `writeIssue` / `mkFiles` が同形、`parse_test.go` の `contains` / `indexOf` は `strings.Contains` の書き直し
+
+## 反証レビュー (2026-10-07)
+
+#1 / #2 / #4 / #5 / #6 / 軽微は反証レビューでも成り立った (#2 は glogx パッケージ全体で緑、#5 の assert `v.watch.seen == ""` はループ中常に非空で空振り)。
+#3 / #7 / #8 とヘルパー #2〜#6 は監査体の測定のみで、独立には確かめていない。
 
 ## 対応方針
 
