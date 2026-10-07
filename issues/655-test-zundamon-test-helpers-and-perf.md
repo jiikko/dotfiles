@@ -1,7 +1,5 @@
 # 655 (test): zundamon-kaisetsu のテストのヘルパーの共通化と、性能の小さな改善
 
-> 🚨 **担当中: dotfiles-4d**（2026-10-07〜）
-
 起票日: 2026-10-07
 
 ## テストのヘルパー
@@ -26,5 +24,16 @@
 
 ## 進捗
 
-- [ ] ヘルパーの共通化
-- [ ] 性能の小さな改善 (golden のテストで出力が変わらないことを確かめる)
+- [x] ヘルパーの共通化 — test(zundamon-kaisetsu): テストの helper を helpers_test.go にまとめ…
+- [x] 性能の小さな改善 (golden のテストで出力が変わらないことを確かめる) — perf(zundamon-kaisetsu): …
+
+## 結果 (2026-10-07)
+
+- helper: `helpers_test.go` に must / testEnv / writeScript / writeScriptFile / writeShim / prependPath (testing.TB で受ける)。
+  偽のコマンドの書き出し 9 か所・PATH の先頭に足す 3 か所・台本を手で書く 4 か所を置き換えた。テストの実行数は前後とも 146
+- 性能 (bench_test.go、-count=5 の平均、前 → 後): Assemble 29.95 → 19.32 ms / 438.4 → 124.4 MB、SortedStates 2.96 → 0.26 ms、
+  SpokenText 4.81 → 0.10 ms、WriteWav 13.09 → 11.64 ms / 57.6 → 0 MB。build 全体では Go 側は 1% 未満で、体感は変わらない
+- アセンブラ / SIMD は使わない (上の数字のとおり、対象になりうる処理が build 全体の 0.2% 未満)
+- 見送り: Chrome を常駐させて CDP で撮る (実時間で効きうる唯一の候補。推定で未試作。撮影の仕組みを変える設計変更になる)
+- 敵対的レビューは省略した (挙動を変えない置き換え。Python 版の golden との一致を含む全テストが通る。readings の正規表現のキャッシュは
+  「台本を読み込んだ後に readings を書き換える呼び出し元が無い」前提で、コード直近に書いた)
