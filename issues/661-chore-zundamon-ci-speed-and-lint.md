@@ -1,7 +1,5 @@
 # 661 (chore): zundamon-kaisetsu の CI の遅いテストを軽くし、done の issue から lint に転用できる規律を足す
 
-> 🚨 **担当中: dotfiles-4d**（2026-10-07〜）
-
 起票日: 2026-10-07
 
 ## 概要
@@ -31,5 +29,20 @@ audit の ci / lint-from-done の観点 (656 の続き)。
 
 ## 進捗
 
-- [ ] 爆弾のテスト
-- [ ] lint
+- [x] 爆弾のテスト — chore(zundamon-kaisetsu): CI の遅いテストを軽くし…
+- [x] lint — 同じ commit と、敵対的レビューの指摘を直した commit
+
+## 結果 (2026-10-07)
+
+- `TestImageBombStopsBeforeDecode`: 縦横 20000x20000 を名乗る PNG を IHDR・1 行分の IDAT・IEND で組む (-race で 35.4 秒 → 0.00 秒)。
+  手元の `go test -race` 全体は 68 秒 → 34 秒
+- forbidigo: 本体の `syscall.Kill` (main.go は死に直しの行だけ許す) と `.Parallel` を禁止。CLAUDE.md の t.Parallel の再掲を外した
+- 変異で red: 縦横の検査の前に本体を Decode する (エラーを返す / 捨てる。後者は 381MB の確保で落ちる) / renderMermaid・新しいファイル・main.go に
+  グループ宛ての kill を足す (lint) / テストに t.Parallel を足す (lint)
+
+## 敵対的レビュー (2026-10-07、opus 1 周)
+
+- P2 (採用): IDAT が無いと確保量の検査が効かない → 1 行分の IDAT を足した
+- P3 (採用): 除外の path の固定が無く domain.go が素通り・main.go 全体が除外 → path を固定し、死に直しの行だけ許す
+- 記録のみ (脅威モデルの外): 別名 import の Kill / os.Process.Signal や Process.Kill (直接の子にしか届かない) / `.Parallel$` は無関係な x.Parallel
+  (今は該当 0 件) にも当たる
