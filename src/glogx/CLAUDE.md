@@ -10,13 +10,14 @@
 - `tui.go` — Bubble Tea の状態機械本体 (`browseModel`)。git log の対話ブラウズ
 - `render.go` / `width.go` / `box.go` — 描画層。コミット行の整形・幅計算 (`dispWidth`)・枠のレイアウト純関数
 - `gitlog.go`, `gitlog_watch.go` — git log の取得 (制御文字レコードでコミット境界を識別) と外部変更の監視
+- `watch_chain.go` — fsnotify のイベント待ち + 保険のポーリングの 2 本のチェーンの札 (git log と issues viewer の見張りが共有)
 - `github.go`, `cache.go` — CI 状態の GraphQL 取得とローカルキャッシュ
 - `external_commands.go` — git/tmux/claude/ブラウザ/クリップボードを叩くラッパー群 (テストの差し替え点)
 - `cli_health.go`, `claude_version.go`, `codex_version.go` — claude/codex CLI のログイン状態検査・新版検出
 - `action_modal.go` — push/pull/claude update の確認→実行→結果モーダル
 - `diff_overlay.go`, `pr_status_overlay.go`, `job_detail_overlay.go` — コミットに重ねるポップアップ群 (いずれも「対象 SHA/key を持つ pager」型)
 - `status_view.go`, `worktree_status.go` — status viewer (`s`)。仕様は `docs/status-viewer-spec.md`
-- `issues_view.go`, `issues_drawer.go`, `issues_state.go`, `issues_watch.go`, `issues_number_filter.go`, `issues_linkjump.go` — issues viewer (`i`) の画面側 (最後は本文のファイルパスのジャンプモード `Tab`)。仕様は `docs/issues-viewer-spec.md`。ドメイン (探索・parse・表示整形) は独立パッケージ `issues/`
+- `issues_view.go`, `issues_drawer.go`, `issues_state.go`, `issues_watch.go`, `issues_number_filter.go`, `issues_linkjump.go`, `issues_group_expansion.go` — issues viewer (`i`) の画面側 (`issues_group_expansion.go` は epic group の展開状態 3 集合の整合) (最後は本文のファイルパスのジャンプモード `Tab`)。仕様は `docs/issues-viewer-spec.md`。ドメイン (探索・parse・表示整形) は独立パッケージ `issues/`
 - `doctor_view.go`, `doctor_brew*.go`, `doctor_cache.go`, `doctor_cleanup.go`, `doctor_delete.go`, `doctor_docker.go`, `doctor_keys.go`, `doctor_resume.go`, `doctor_rowcursor.go`, `doctor_ssd.go` — doctor 画面 (`D`)。判定は `doctor/disk` `doctor/svc` `doctor/docker` `doctor/ssd` を直接呼ぶ (削除の破壊的操作は `doctor_delete.go` ではなく `doctor/disk.Delete` が持つ)
 - `usage_overlay.go`, `usage_cache.go` — 右上の利用枠オーバーレイ (`U`) とそのキャッシュ
 - `ratelimit_dashboard.go`, `ratelimit_resume.go` — 全画面 ratelimit ダッシュボード (`R`)。取得・整形は `ratelimit/usage`

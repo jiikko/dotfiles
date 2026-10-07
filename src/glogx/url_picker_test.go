@@ -201,3 +201,29 @@ func TestURLPickerWindowFollowsCursor(t *testing.T) {
 		t.Errorf("選択行 %q が描かれていない:\n%s", sel, out)
 	}
 }
+
+// 窓は状態で持ち、カーソルが窓の中で動く間は動かさない (issues 一覧と同じ規律。issue 666)。
+// 以前はカーソルから毎回導出していて、下端を越えて送った後に上へ 1 行戻すと窓も 1 行戻った。
+func TestURLPickerWindowStaysWhileCursorInside(t *testing.T) {
+	urls := make([]string, 20)
+	for i := range urls {
+		urls[i] = fmt.Sprintf("https://example.com/%02d", i)
+	}
+	var p urlPicker
+	p.open(urls)
+	o := issuesRenderOpts{width: 60, page: 8} // ヘッダー 3 行 + 一覧 5 行
+	first := func() string {
+		lines := p.lines(o)
+		return strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(lines[3], cursorGutterMark), cursorGutterBlank))
+	}
+	for range 7 {
+		p.handleKey("down")
+	}
+	if got := first(); got != urls[3] {
+		t.Fatalf("前提が崩れた: 下端を越えた後の窓の先頭 = %q, want %q", got, urls[3])
+	}
+	p.handleKey("up") // 窓の中で 1 行戻る
+	if got := first(); got != urls[3] {
+		t.Errorf("カーソルが窓の中なのに窓が動いた: 先頭 = %q, want %q", got, urls[3])
+	}
+}

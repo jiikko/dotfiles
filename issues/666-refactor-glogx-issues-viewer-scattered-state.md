@@ -67,8 +67,22 @@ issues viewer (`issuesView`) と周辺で、対で更新すべき状態の更新
 
 ## 進捗
 
-- [ ] E: `groupExpansion` 型
-- [ ] F: `stopGlides()`
-- [ ] D1: `watchChain` の共有 (issues 側の watcher 死亡時の扱いを先に確かめる)
-- [ ] D3 / U3
-- D / J は trigger 待ち (上記)
+- [x] E: `groupExpansion` 型 (issues_group_expansion.go) に 3 つの map を寄せた。書き込みは `reveal` / `setAuto` / `toggle` / `endFilter` / `prune` / `restore` だけ。
+  呼び出し側の例外はメソッドとして持たせた (`anchorCursorInternal` の上書き = `reveal` / `clearNumberFilter` の引き継ぎ = `endFilter(keep)` / `applyScreen` = `restore` + `reveal`)。
+  `applyScreen` の `reveal` は旧実装と違い collapsed も消すが、collapsed はフィルタ中だけ意味を持ち、復元はフィルタを解いてから行うので観測できる差は無い。
+  回帰: `TestGroupExpansionEndFilterDropsCollapse` / `TestGroupExpansionRevealAndPrune`。変異 (`endFilter` が collapsed を消さない) → 新テストと既存の
+  `TestIssuesViewClearingNumberFilterDropsStaleCollapsedGroups` が red
+- [x] F: diff / issues / status に `stopGlides()` を置き、tui.go の resize はそれを呼ぶ。変異 (issues の `stopGlides` から `curGlide.Stop` を外す) → 既存の `TestResizeStopsAllGlides` が red
+- [x] D1: 「issues 側の watcher 死亡時の扱いは誤りか」を確かめた → **誤りではない**。git log 側が世代を進めるのは飛んでいる測定 (`measuring`) を捨てるためで、
+  そのせいで旧世代のポーリングも捨てられるので札を張り直す。issues 側は指紋を goroutine の中で測り終えて届くので捨てる測定が無く、世代を進めず旧世代のポーリングもそのまま有効
+  (理由を `handleWatch` のコメントに書いた)。共通部分 (watcher・世代・2 本の札・イベント待ち・届けた側だけ札を降ろす) を `watchChain` (watch_chain.go) に寄せ、両方の見張りに埋め込んだ。
+  メッセージを作る関数は**張るときだけ**呼ぶ形にした (最初の版は張っている間も `watchTargets` (ReadDir を含む) を毎回組んでいて、旧実装より重くなっていた)。
+  変異 (`release` が両方の札を降ろす) → `TestGitLogProbeDropsOnlyDeliveringChain` と issues 側の 2 本が red
+- [x] D3: URL ピッカーに `offset` を持たせて `listnav.WindowOffset` を通した (古いコメントも直した)。カーソル行の描き方は `issuesRenderOpts.paintCursorRow` に寄せた
+  (一覧の行 / group の親行 / URL ピッカー)。回帰: `TestURLPickerWindowStaysWhileCursorInside`。変異 (旧来の式) → red
+- [x] U3: `promptWindow(prompt, line, width)` を置き、URL ピッカーと番号の入力欄の描画・キャレットの両方がそれを通す (`urlPicker.field` / `issuesView.numberField` は削除)
+- D / J は trigger 待ち (上記のまま)
+- `make -C src/glogx lint` 0 issues / `make -C src/glogx test` rc=0 (2026-10-08)
+- 観測: 1 回目の `make test` で doctor 系の 2 本 (`TestRescanCancelsPreviousGeneration` 10s / `TestCursorFallbackIsToldThroughBrowseModel` 30s) が時間切れで落ちた
+  (全体 107s。マシンに負荷)。単独では 3/3 通り、同じ HEAD の 2 回目の `make test` も通った (48s) = 非決定性。この変更が触っていない走査の cancel 経路のテストで、未起票
+- [ ] 敵対的レビュー (663〜667 をまとめて)

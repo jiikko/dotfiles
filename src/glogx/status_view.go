@@ -292,6 +292,11 @@ func (v *statusView) advanceGlide() {
 	v.pager.Advance()
 }
 
+// stopGlides は進行中の滑走を全部止める (advanceGlide と対。resize で着地点が古くなったとき)。
+func (v *statusView) stopGlides() {
+	v.pager.Stop()
+}
+
 // setNotice / takeNotice は操作結果の受け渡し (browseModel がトーストにする)。
 // 🚨 ここで無害化する: 通知文はパス・git のエラー出力を素で埋め込む呼び出しが多く、
 // 呼び出しごとに包むと必ずどこかが漏れる (自前の静的文だけの通知は無害化しても変わらない)。

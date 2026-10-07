@@ -70,15 +70,15 @@ func TestIssuesViewGroupsUseSeparateDisplayRowsAndToggle(t *testing.T) {
 		t.Fatalf("親行が issue として扱われた: current=%+v", v.current())
 	}
 	v.handleKey("enter", vp(10))
-	if !v.expandedGroups[alpha.GroupKey] || len(v.displayRows) != 4 {
-		t.Fatalf("Enter で group が展開されない: expanded=%v rows=%d", v.expandedGroups, len(v.displayRows))
+	if !v.groups.manual[alpha.GroupKey] || len(v.displayRows) != 4 {
+		t.Fatalf("Enter で group が展開されない: expanded=%v rows=%d", v.groups.manual, len(v.displayRows))
 	}
 	if v.displayRows[2].kind != displayRowIssue || v.displayRows[2].issue != alpha {
 		t.Fatalf("展開後に子 issue が親の直下にない: %+v", v.displayRows)
 	}
 	v.handleKey(" ", vp(10))
-	if v.expandedGroups[alpha.GroupKey] || len(v.displayRows) != 3 {
-		t.Fatalf("Space で group が折り畳まれない: expanded=%v rows=%d", v.expandedGroups, len(v.displayRows))
+	if v.groups.manual[alpha.GroupKey] || len(v.displayRows) != 3 {
+		t.Fatalf("Space で group が折り畳まれない: expanded=%v rows=%d", v.groups.manual, len(v.displayRows))
 	}
 }
 
@@ -190,8 +190,8 @@ func TestIssuesViewNumberFilterAutoExpandsAndReanchorsChild(t *testing.T) {
 	v.handleKey("/", vp(10))
 	v.handleKey("4", vp(10))
 	v.handleKey("1", vp(10))
-	if !v.autoExpandedGroups[groupKey] || v.expandedGroups[groupKey] {
-		t.Fatalf("番号 filter の group 展開状態が分離されていない: manual=%v auto=%v", v.expandedGroups[groupKey], v.autoExpandedGroups[groupKey])
+	if !v.groups.auto[groupKey] || v.groups.manual[groupKey] {
+		t.Fatalf("番号 filter の group 展開状態が分離されていない: manual=%v auto=%v", v.groups.manual[groupKey], v.groups.auto[groupKey])
 	}
 	v.handleKey("enter", vp(10))
 	v.handleKey("down", vp(10)) // auto 展開された親の下の 415
@@ -200,8 +200,8 @@ func TestIssuesViewNumberFilterAutoExpandsAndReanchorsChild(t *testing.T) {
 		t.Fatalf("filter 中の子 issue へ移れない: %+v", v.current())
 	}
 	v.handleKey("esc", vp(10))
-	if len(v.autoExpandedGroups) != 0 {
-		t.Fatalf("解除後も autoExpanded が残った: %v", v.autoExpandedGroups)
+	if len(v.groups.auto) != 0 {
+		t.Fatalf("解除後も autoExpanded が残った: %v", v.groups.auto)
 	}
 	if v.current() == nil || v.current().Path != want {
 		t.Fatalf("解除後に子 issue の path へ再アンカーされない: %+v display=%+v", v.current(), v.displayRows)
@@ -218,7 +218,7 @@ func TestIssuesViewClearingNumberFilterDropsStaleCollapsedGroups(t *testing.T) {
 	v.handleKey("5", vp(10))
 	v.handleKey("enter", vp(10))
 	v.handleKey(" ", vp(10)) // 自動展開された group を手動で折り畳む
-	if !v.collapsedGroups[child.GroupKey] {
+	if !v.groups.collapsed[child.GroupKey] {
 		t.Fatal("前提: 番号 filter 中の group を折り畳めていない")
 	}
 
@@ -235,7 +235,7 @@ func TestIssuesViewClearingNumberFilterDropsStaleCollapsedGroups(t *testing.T) {
 	v.handleKey("5", vp(10))
 	if !v.groupExpanded(child.GroupKey) || len(v.displayRows) != 2 {
 		t.Fatalf("検索語を戻しても group が再展開されない: expanded=%v collapsed=%v rows=%+v",
-			v.groupExpanded(child.GroupKey), v.collapsedGroups, v.displayRows)
+			v.groupExpanded(child.GroupKey), v.groups.collapsed, v.displayRows)
 	}
 }
 
@@ -260,7 +260,7 @@ func TestIssuesViewAutoExpandedGroupStillToggles(t *testing.T) {
 	v.handleKey("/", vp(10))
 	v.handleKey("4", vp(10))
 	v.handleKey("1", vp(10))
-	if !v.autoExpandedGroups[child.GroupKey] || !v.groupExpanded(child.GroupKey) {
+	if !v.groups.auto[child.GroupKey] || !v.groupExpanded(child.GroupKey) {
 		t.Fatal("番号 filter で group が自動展開されていない")
 	}
 	v.handleKey("enter", vp(10)) // 入力を確定し、親行の toggle を通常モードで試す
@@ -437,11 +437,11 @@ func TestIssuesViewApplyScreenPrunesDeadGroupKeys(t *testing.T) {
 	alpha := fakeEpicIssue("/repo/issues", "alpha", "710", "alpha", issues.StatusOpen)
 	v := loadedView(alpha)
 	v.applyScreen(issuesScreen{Groups: map[string]bool{alpha.GroupKey: true, "/repo/issues/epic/gone": true}})
-	if !v.expandedGroups[alpha.GroupKey] {
+	if !v.groups.manual[alpha.GroupKey] {
 		t.Fatal("生きている GroupKey まで落とした")
 	}
-	if v.expandedGroups["/repo/issues/epic/gone"] {
-		t.Fatalf("死にキーが残っている: %v", v.expandedGroups)
+	if v.groups.manual["/repo/issues/epic/gone"] {
+		t.Fatalf("死にキーが残っている: %v", v.groups.manual)
 	}
 }
 
@@ -474,12 +474,12 @@ func TestIssuesViewReceivePrunesDeadGroupKeys(t *testing.T) {
 	beta := fakeEpicIssue("/repo/issues", "beta", "709", "beta", issues.StatusOpen)
 	v := loadedView(alpha, beta)
 	v.handleKey("enter", vp(10)) // alpha を展開
-	if !v.expandedGroups[alpha.GroupKey] {
+	if !v.groups.manual[alpha.GroupKey] {
 		t.Fatal("前提: alpha が展開されていない")
 	}
 	v.receive(issuesScanMsg{dirs: []string{"/repo/issues"}, issues: []*issues.Issue{beta}}) // alpha が消えた
-	if v.expandedGroups[alpha.GroupKey] {
-		t.Fatalf("消えた group の展開キーが残っている: %v", v.expandedGroups)
+	if v.groups.manual[alpha.GroupKey] {
+		t.Fatalf("消えた group の展開キーが残っている: %v", v.groups.manual)
 	}
 }
 
@@ -567,8 +567,8 @@ func TestIssuesViewGroupParentIssueMergesIntoHeaderRow(t *testing.T) {
 	}
 	// Enter / Space はどちらも子 issue の展開 toggle (本文は o で開く)
 	v.handleKey("enter", vp(10))
-	if !v.expandedGroups[parent.GroupKey] || len(v.displayRows) != 2 {
-		t.Fatalf("Enter で子リストが開かない: expanded=%v rows=%d", v.expandedGroups, len(v.displayRows))
+	if !v.groups.manual[parent.GroupKey] || len(v.displayRows) != 2 {
+		t.Fatalf("Enter で子リストが開かない: expanded=%v rows=%d", v.groups.manual, len(v.displayRows))
 	}
 	if v.displayRows[1].issue != child || !v.displayRows[1].inGroup {
 		t.Fatalf("子行が親の下に並ばない: %+v", v.displayRows[1])
@@ -577,8 +577,8 @@ func TestIssuesViewGroupParentIssueMergesIntoHeaderRow(t *testing.T) {
 		t.Fatalf("Enter が本文を開いた (子リストの展開が優先されるべき)")
 	}
 	v.handleKey(" ", vp(10)) // Space でも同じ toggle
-	if v.expandedGroups[parent.GroupKey] || len(v.displayRows) != 1 {
-		t.Fatalf("Space で畳めない: expanded=%v rows=%d", v.expandedGroups, len(v.displayRows))
+	if v.groups.manual[parent.GroupKey] || len(v.displayRows) != 1 {
+		t.Fatalf("Space で畳めない: expanded=%v rows=%d", v.groups.manual, len(v.displayRows))
 	}
 }
 
@@ -727,10 +727,10 @@ func TestIssuesViewAnchorOpensCollapsedGroupForMovedIssue(t *testing.T) {
 			v.anchorCursorInternal(child.Path)
 
 			if !v.groupExpanded(child.GroupKey) {
-				t.Fatalf("畳んだ group が開かれていない: %+v", v.expandedGroups)
+				t.Fatalf("畳んだ group が開かれていない: %+v", v.groups.manual)
 			}
 			if v.groupExpanded(other.GroupKey) {
-				t.Fatalf("無関係な group まで開いた: %+v", v.expandedGroups)
+				t.Fatalf("無関係な group まで開いた: %+v", v.groups.manual)
 			}
 			row, ok := v.currentDisplayRow()
 			if !ok || row.kind != displayRowIssue || row.issue != child {
@@ -754,7 +754,7 @@ func TestIssuesViewAnchorIgnoresIssuesOutsideVisibleRows(t *testing.T) {
 	v.anchorCursorInternal(child.Path)
 
 	if v.groupExpanded(child.GroupKey) {
-		t.Fatalf("一覧に居ない issue のために group を開いた: %+v", v.expandedGroups)
+		t.Fatalf("一覧に居ない issue のために group を開いた: %+v", v.groups.manual)
 	}
 }
 
@@ -766,16 +766,16 @@ func TestIssuesViewAnchorOverridesExplicitCollapse(t *testing.T) {
 	dir := "/repo/issues"
 	child := fakeEpicIssue(dir, "cloud", "702", "moved-in", issues.StatusNext)
 	v := loadedView(fakeIssue("900", "feat", "global", issues.StatusOpen), child)
-	v.collapsedGroups = map[string]bool{child.GroupKey: true}
-	v.autoExpandedGroups = map[string]bool{child.GroupKey: true} // 番号フィルタが開けた分を人が畳んだ形
+	v.groups.collapsed = map[string]bool{child.GroupKey: true}
+	v.groups.auto = map[string]bool{child.GroupKey: true} // 番号フィルタが開けた分を人が畳んだ形
 
 	v.anchorCursorInternal(child.Path)
 
-	if v.collapsedGroups[child.GroupKey] {
-		t.Fatalf("明示的な畳みが残ったまま: %+v", v.collapsedGroups)
+	if v.groups.collapsed[child.GroupKey] {
+		t.Fatalf("明示的な畳みが残ったまま: %+v", v.groups.collapsed)
 	}
 	if !v.groupExpanded(child.GroupKey) {
-		t.Fatalf("group が開いていない: expanded=%+v collapsed=%+v", v.expandedGroups, v.collapsedGroups)
+		t.Fatalf("group が開いていない: expanded=%+v collapsed=%+v", v.groups.manual, v.groups.collapsed)
 	}
 	row, ok := v.currentDisplayRow()
 	if !ok || row.kind != displayRowIssue || row.issue != child {

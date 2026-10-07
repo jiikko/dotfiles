@@ -66,9 +66,9 @@ func TestIssuesViewRestoreAppliesExpandedGroups(t *testing.T) {
 	child := fakeEpicIssue("/repo/issues", "cloud", "710", "drive", issues.StatusOpen)
 	v := loadedView(child)
 	v.applyScreen(issuesScreen{Cursor: child.Path, Groups: map[string]bool{child.GroupKey: true}})
-	if !v.expandedGroups[child.GroupKey] || len(v.displayRows) != 2 || v.current() != child {
+	if !v.groups.manual[child.GroupKey] || len(v.displayRows) != 2 || v.current() != child {
 		t.Fatalf("復元した Groups が displayRows へ反映されない: expanded=%v rows=%d current=%+v",
-			v.expandedGroups, len(v.displayRows), v.current())
+			v.groups.manual, len(v.displayRows), v.current())
 	}
 }
 
@@ -110,8 +110,8 @@ func TestIssuesViewRestoreExpandsEpicChildForCursorAndOpen(t *testing.T) {
 			s := issuesScreen{}
 			tc.set(&s, child.Path)
 			v.applyScreen(s)
-			if !v.expandedGroups[child.GroupKey] {
-				t.Fatalf("%s 復元で Epic group が展開されない: expanded=%v display=%+v", tc.name, v.expandedGroups, v.displayRows)
+			if !v.groups.manual[child.GroupKey] {
+				t.Fatalf("%s 復元で Epic group が展開されない: expanded=%v display=%+v", tc.name, v.groups.manual, v.displayRows)
 			}
 			tc.check(t, v, child)
 		})

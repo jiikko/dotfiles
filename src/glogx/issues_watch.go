@@ -108,22 +108,18 @@ var newDirWatcher = func() (dirWatcher, error) {
 
 // issuesWatch は見張りの状態。zero value は「見張っていない」。
 type issuesWatch struct {
-	w dirWatcher
+	// watchChain は watcher・世代・2 本のチェーンの札 (watch_chain.go)。世代は閉じるたびに増え、
+	// 古いチェーンの観測を弾く。
 	// 🚨 「Add 済み」を自前で覚えて skip しないこと。fsnotify の watch は**ディレクトリが
 	// 消えると黙って失われる**ので、印だけが残って二度と Add されない状態になる (実測
 	// 2026-08-21: 実 repo で git switch により issues/done が消えて戻ると、同一 viewer
 	// セッション中は done/ 内の変更が恒久的に無音。手動の取り直し 3 回でも復帰せず、
 	// 指紋ポーリング 30s も done/ の未知の新規ファイルは見ないので代替にならない)。
 	// Add は冪等 (同一パスの重複配送は起きないことを実測) なので、毎回無条件に Add する。
-	gen int // 見張りの世代 (閉じるたびに増える。古いチェーンの観測を弾く)
+	watchChain
 
 	seen    string // 反映済みの指紋 ("" = 次の観測を基準にする)
 	pending string // 変化を検出したが、書きかけを避けるため安定を待っている指紋
-
-	// チェーンは 2 本 (イベント待ち / 保険のポーリング)。それぞれ二重に張らない
-	// (maybeTick と同じ single-flight)。
-	evArmed   bool
-	pollArmed bool
 }
 
 // watchCmd は次の観測を予約する (イベント待ち + 保険のポーリング)。viewer を閉じている /
@@ -144,12 +140,8 @@ func (v *issuesView) startWatch() {
 	if !v.shown {
 		return
 	}
-	if v.watch.w == nil {
-		w, err := newDirWatcher()
-		if err != nil {
-			return
-		}
-		v.watch.w = w
+	if !v.watch.ensureWatcher() {
+		return
 	}
 	for _, dir := range v.watchDirs() {
 		// 失敗は無視して次の取り直しで再挑戦する (消えたディレクトリ等)。成功しても印を
@@ -161,10 +153,8 @@ func (v *issuesView) startWatch() {
 // stopWatch は watcher を閉じて状態を畳む (fd を残さない)。世代を 1 つ進めて、閉じる前に
 // 張ってあったチェーンの観測が開き直した後の状態へ効かないようにする。
 func (v *issuesView) stopWatch() {
-	if v.watch.w != nil {
-		_ = v.watch.w.Close()
-	}
-	v.watch = issuesWatch{gen: v.watch.gen + 1}
+	v.watch.close()
+	v.watch = issuesWatch{watchChain: watchChain{gen: v.watch.gen + 1}}
 }
 
 // watchDirs は fsnotify へ Add するディレクトリ (issue ディレクトリ + ファイルが居るサブ + epic/ と
@@ -180,27 +170,19 @@ func (v *issuesView) watchDirs() []string {
 // (bubbletea では Cmd の goroutine で待つのが定石)。viewer を閉じると watcher が Close され、
 // チャネルが閉じてこの Cmd も終わる。
 func (v *issuesView) eventCmd() tea.Cmd {
-	if v.watch.evArmed || !v.shown || v.watch.w == nil {
+	if !v.shown {
 		return nil
 	}
-	v.watch.evArmed = true
-	w, gen := v.watch.w, v.watch.gen
-	dirs, paths := v.watchTargets()
-	return func() tea.Msg {
-		select {
-		case _, ok := <-w.Events():
-			if !ok {
+	return v.watch.eventCmd(issuesWatchDebounce, func() func(bool) tea.Msg {
+		gen := v.watch.gen
+		dirs, paths := v.watchTargets()
+		return func(closed bool) tea.Msg {
+			if closed {
 				return issuesWatchMsg{closed: true, fromEvent: true, gen: gen}
 			}
-		case _, ok := <-w.Errors():
-			if !ok {
-				return issuesWatchMsg{closed: true, fromEvent: true, gen: gen}
-			}
-			// エラーは握って観測へ倒す (指紋が正本なので、測り直せば辻褄は合う)
+			return issuesWatchMsg{fp: issuesFingerprint(dirs, paths), fromEvent: true, gen: gen}
 		}
-		drainWatchEvents(w, issuesWatchDebounce)
-		return issuesWatchMsg{fp: issuesFingerprint(dirs, paths), fromEvent: true, gen: gen}
-	}
+	})
 }
 
 // drainWatchEvents は quiet の間イベントが来なくなるまで吸う (バーストの畳み込み)。
@@ -226,14 +208,13 @@ func drainWatchEvents(w dirWatcher, quiet time.Duration) {
 
 // pollCmd は保険のポーリング。イベントを取りこぼしても必ず追いつく。
 func (v *issuesView) pollCmd() tea.Cmd {
-	if v.watch.pollArmed || !v.shown {
+	if !v.shown {
 		return nil
 	}
-	v.watch.pollArmed = true
-	gen := v.watch.gen
-	dirs, paths := v.watchTargets()
-	return tea.Tick(v.pollInterval(), func(time.Time) tea.Msg {
-		return issuesWatchMsg{fp: issuesFingerprint(dirs, paths), gen: gen}
+	return v.watch.pollCmd(v.pollInterval(), func() func() tea.Msg {
+		gen := v.watch.gen
+		dirs, paths := v.watchTargets()
+		return func() tea.Msg { return issuesWatchMsg{fp: issuesFingerprint(dirs, paths), gen: gen} }
 	})
 }
 
@@ -351,28 +332,20 @@ func (v *issuesView) handleWatch(msg issuesWatchMsg) tea.Cmd {
 		return nil // 閉じる前に張った古いチェーンの観測 (札も触らない)
 	}
 	if msg.closed {
-		v.watch.evArmed = false
 		if !v.shown {
 			v.stopWatch()
 			return nil
 		}
-		// watcher が死んだ (fd 回収・NFS 等)。閉じてポーリングだけで続ける (無音にはしない)
-		if v.watch.w != nil {
-			_ = v.watch.w.Close()
-			v.watch.w = nil
-		}
+		// watcher が死んだ (fd 回収・NFS 等)。閉じてポーリングだけで続ける (無音にはしない)。
+		// 世代は進めない: 指紋は goroutine の中で測り終えて届くので、捨てるべき飛行中の測定が無く、
+		// 旧世代のポーリングもそのまま有効 (git log の見張りは測定を後段に持つので進める。gitlog_watch.go)
+		v.watch.dropDeadWatcher()
 		return v.watchCmd()
 	}
-	// 指紋つきの観測はイベント経路とポーリング経路の両方から来る。🚨 降ろすのは**届けた
-	// チェーンの札だけ**にする (closed 経路と同じ規律)。両方降ろすと、まだ w.Events で
-	// ブロックしている goroutine が生きているのに evArmed が false になり、watchCmd の
-	// single-flight をすり抜けて 2 本目が張られる = 観測 1 回ごとに goroutine が 1 本残る。
-	// 平常時のポーリングは 30s 周期なので、viewer を開きっぱなしにするだけで増え続ける。
-	if msg.fromEvent {
-		v.watch.evArmed = false
-	} else {
-		v.watch.pollArmed = false
-	}
+	// 指紋つきの観測はイベント経路とポーリング経路の両方から来る。降ろすのは届けたチェーンの札だけ
+	// (理由は watchChain.release。平常時のポーリングは 30s 周期なので、両方降ろすと viewer を
+	// 開きっぱなしにするだけで goroutine が増え続ける)
+	v.watch.release(msg.fromEvent)
 	if !v.shown {
 		v.stopWatch() // 閉じたら watcher ごと畳む (fd を残さない)
 		return nil

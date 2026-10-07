@@ -131,3 +131,8 @@ func (o *diffOverlay) animating() bool { return o.pager.Animating() }
 func (o *diffOverlay) advanceGlide() {
 	o.pager.Advance()
 }
+
+// stopGlides は進行中の滑走を全部止める (advanceGlide と対。resize で着地点が古くなったとき)。
+func (o *diffOverlay) stopGlides() {
+	o.pager.Stop()
+}

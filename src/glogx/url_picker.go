@@ -16,6 +16,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"strings"
 
 	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
@@ -28,6 +29,7 @@ type urlPicker struct {
 	line   lineedit.Line // インクリメンタルサーチの検索語
 	match  []int         // query に一致する urls の index (絞り込み結果。並びは出現順)
 	cursor int           // match 内の位置
+	offset int           // 窓の先頭 (描画のたびに listnav.WindowOffset で更新する。issues 一覧と同じ規律)
 }
 
 // open はピッカーを開く。URL が 1 本も無ければ開かず false を返す (呼び出し側が通知を出す)。
@@ -35,7 +37,7 @@ func (p *urlPicker) open(urls []string) bool {
 	if len(urls) == 0 {
 		return false
 	}
-	p.active, p.urls, p.line, p.cursor = true, urls, lineedit.Line{}, 0
+	p.active, p.urls, p.line, p.cursor, p.offset = true, urls, lineedit.Line{}, 0, 0
 	p.refilter()
 	return true
 }
@@ -140,21 +142,25 @@ func isPrintableKey(key string) bool {
 // urlPickerPrompt は検索行の頭。キャレットの桁はこの幅から数える (caretCol)。
 const urlPickerPrompt = "URL 検索: "
 
-// field は検索行に出す検索語と、その中のキャレットの桁 (幅 width の行のうち、頭の後ろの欄に収める)。
-func (p *urlPicker) field(width int) (string, int) {
-	return p.line.Window(max(width-termwidth.Of(urlPickerPrompt), 1))
-}
-
 // caretCol は検索行 (lines の 0 行目) のキャレットの桁。端末のカーソルはここに置く (issuesView.caretCol)。
 func (p *urlPicker) caretCol(width int) int {
-	_, col := p.field(width)
-	return termwidth.Of(urlPickerPrompt) + col
+	_, caret := promptWindow(urlPickerPrompt, &p.line, width)
+	return caret
+}
+
+// promptWindow は「見出し + 入力欄」の 1 行について、入力欄に見せる部分 (行の幅に収まるよう
+// lineedit.Line.Window で前を切る) と、行頭から数えたキャレットの桁を返す。描画とキャレットの
+// 両方がこれを通る (別々に組むと、見出しを変えたときにキャレットだけ取り残されて IME の変換中の
+// 文字が欄からずれる。URL ピッカーと番号の入力欄が共有する。issue 666)。
+func promptWindow(prompt string, line *lineedit.Line, width int) (text string, caret int) {
+	text, col := line.Window(max(width-termwidth.Of(prompt), 1))
+	return text, termwidth.Of(prompt) + col
 }
 
 // lines はピッカーの描画行 (ヘッダー + 一覧)。width/page は呼び出し側の領域。
 // 選択行はカーソル溝 (→) で示し、cursorPaint があれば強調も乗せる (一覧と同じ語彙)。
 func (p *urlPicker) lines(o issuesRenderOpts) []string {
-	text, _ := p.field(o.width)
+	text, _ := promptWindow(urlPickerPrompt, &p.line, o.width)
 	head := []string{
 		paint(clipToWidth(urlPickerPrompt+text, o.width), ansiBold, o.colored),
 		paint(clipToWidth(fmt.Sprintf("%d/%d 件  ctrl+n/p: 移動  ctrl+h: 1 字消す  Enter: 開く  Esc: 戻る",
@@ -165,23 +171,17 @@ func (p *urlPicker) lines(o issuesRenderOpts) []string {
 	if len(p.match) == 0 {
 		return append(head, paint(clipToWidth("一致する URL がありません", o.width), ansiDim, o.colored))
 	}
-	// 窓はカーソルから導出する (issues 一覧と同じ規律。offset を状態で持たない)。
-	offset := max(min(p.cursor-rows+1, len(p.match)-rows), 0)
-	offset = min(offset, p.cursor)
+	// 窓は状態 (offset) で持ち、カーソルが窓を出たときだけ動かす (issues 一覧と同じ規律。以前は
+	// カーソルから毎回導出していて、下端を越えた後に上へ戻すと窓が 1 行ずつ戻った。issue 666)
+	p.offset = listnav.WindowOffset(p.offset, p.cursor, len(p.match), rows)
 	out := head
-	for i := offset; i < min(offset+rows, len(p.match)); i++ {
+	for i := p.offset; i < min(p.offset+rows, len(p.match)); i++ {
 		text := p.urls[p.match[i]]
 		if i != p.cursor {
 			out = append(out, clipToWidth(cursorGutterBlank+text, o.width))
 			continue
 		}
-		line := clipToWidth(cursorGutterMark+text, o.width)
-		if o.cursorPaint != nil {
-			line = o.cursorPaint(line)
-		} else {
-			line = clipToWidth(cursorGutterMark+paint(text, ansiBold, o.colored), o.width)
-		}
-		out = append(out, line)
+		out = append(out, o.paintCursorRow(text, o.width, ansiBold))
 	}
 	return out
 }

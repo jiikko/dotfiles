@@ -817,10 +817,9 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// resize 中の glide は破棄して即時にする (表示 offset が stale になるため)。一覧だけでなく
 		// pager 側も止める: 幅で行数が変わり、glide の着地点が resize 前の行数基準で古くなる。
 		m.glide.Stop()
-		m.diffOv.pager.Stop()
-		m.issuesOv.bodyPager.Stop()
-		m.issuesOv.curGlide.Stop() // 一覧のカーソル滑走も同じ理由 (窓の起点が resize 前の行数基準)
-		m.statusOv.pager.Stop()
+		m.diffOv.stopGlides()
+		m.issuesOv.stopGlides()
+		m.statusOv.stopGlides()
 		m.ensureCursorVisible()
 		return m, nil
 	case tickMsg:

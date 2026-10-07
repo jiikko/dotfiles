@@ -5,7 +5,6 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
-	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"os"
 	"path/filepath"
 	"sort"
@@ -134,13 +133,10 @@ type issuesView struct {
 	// 直接代入を禁じる規律は issues_rows_setter_test.go がソース走査で強制する。
 	rowsGen        int
 	displayRowsGen int
-	// expandedGroups は手動で展開した GroupKey だけ、autoExpandedGroups は番号フィルタが
-	// 一時的に展開した GroupKey だけを持つ。collapsedGroups は filter 中に親行を明示的に
-	// 畳んだときの一時 override で、state へ保存するのは expandedGroups の true のみ。
-	expandedGroups     map[string]bool
-	autoExpandedGroups map[string]bool
-	collapsedGroups    map[string]bool
-	cursor             int
+	// groups は epic group の展開状態 (手動 / 番号フィルタの一時展開 / フィルタ中の明示的な畳み)。
+	// 3 つの整合は groupExpansion が持つ (issues_group_expansion.go)
+	groups groupExpansion
+	cursor int
 	// 複数選択 (shift+↑/↓)。範囲は錨 (markAt) と cursor から毎回導出する。🚨 選択集合を別に
 	// 持たない: 行集合はフィルタ・タブ・再スキャンで入れ替わるので、集合で持つと実体を失った
 	// 選択が残り「見えていない行がコピーされる」。錨だけなら行集合を作り直す refresh で畳める。
@@ -310,7 +306,7 @@ func (v *issuesView) screen(now time.Time) (issuesScreen, bool) {
 		Cursor:      issuePath(v.current()),
 		Open:        open,
 		BodyOff:     bodyOff,
-		Groups:      copyExpandedGroups(v.expandedGroups),
+		Groups:      v.groups.saved(),
 		CursorGroup: v.currentGroupKey(),
 	}, true
 }
@@ -320,19 +316,12 @@ func (v *issuesView) screen(now time.Time) (issuesScreen, bool) {
 // 消えた issue (rename / 状態ディレクトリへ移動) には黙って別物を当てない: カーソルは
 // anchorCursorInternal が当たらなければ先頭のまま、本文はパスが見つからなければ一覧のままにする。
 func (v *issuesView) applyScreen(s issuesScreen) {
-	v.expandedGroups = copyExpandedGroups(s.Groups)
+	v.groups.restore(s.Groups)
 	for _, iss := range v.all {
 		if (iss.Path != s.Cursor && iss.Path != s.Open) || iss.GroupKind != issues.GroupEpic {
 			continue
 		}
-		key := iss.GroupKey
-		if key == "" {
-			continue
-		}
-		if v.expandedGroups == nil {
-			v.expandedGroups = make(map[string]bool)
-		}
-		v.expandedGroups[key] = true
+		v.groups.reveal(iss.GroupKey) // カーソル・本文の居場所が畳んだ group の中に隠れないように
 	}
 	v.filter, _ = issues.ParseStatusFilter(s.Filter) // 未知の名前は既定へ (loadIssuesScreen で正規化済み)
 	v.refresh()                                      // フィルタを反映してタブの並びと件数を作る (tabIdx を引くのに要る)
@@ -413,7 +402,7 @@ func (v *issuesView) finishClose() bool {
 	if v.numFilter.active {
 		v.numFilter.clear()
 		v.refresh()
-		v.collapsedGroups = nil
+		v.groups.endFilter("")
 	}
 	return true
 }
@@ -477,6 +466,14 @@ func (v *issuesView) advanceGlide() {
 	if v.curGlide.Active() {
 		v.curGlide.Advance(v.cursor)
 	}
+}
+
+// stopGlides は進行中の滑走を全部止める (advanceGlide と対)。resize では幅で行数が変わり、着地点と
+// 窓の起点が resize 前の行数基準で古くなる。🚨 滑走を足したらここにも足す: 呼び出し側 (tui.go の
+// resize) が viewer の中のフィールドを直接止めていた頃は、足した滑走の止め忘れが tui.go 側に出た (issue 666)
+func (v *issuesView) stopGlides() {
+	v.bodyPager.Stop()
+	v.curGlide.Stop()
 }
 
 // scanCmd は探索・メタデータ読み込みを 1 つのゴルーチンでまとめて行う。
@@ -648,20 +645,16 @@ func (v *issuesView) anchorCursorInternal(path string) {
 	// 押すと `epic/<name>/next/` = group の子になる)、開かないと「移動しました」と言った直後に
 	// 対象が画面から消え、カーソルは親行に着地する (2026-09-06 の敵対的レビュー 2 周目)。
 	//
-	// 🚨 これは**ユーザーが明示的に畳んだ状態 (collapsedGroups) を上書きし、しかも
-	// expandedGroups は screen に保存される**ので、再起動を跨いで開いたままになる。
-	// autoExpandedGroups は refresh のたびに捨てられるので、再スキャンを跨ぐ移動の
-	// 再アンカーには使えない (置き場が expandedGroups しかない)。カーソルの居場所を
+	// 🚨 これは**ユーザーが明示的に畳んだ状態 (groups.collapsed) を上書きし、しかも
+	// groups.manual は screen に保存される**ので、再起動を跨いで開いたままになる。
+	// groups.auto は refresh のたびに捨てられるので、再スキャンを跨ぐ移動の
+	// 再アンカーには使えない (置き場が groups.manual しかない)。カーソルの居場所を
 	// 見せる方を優先した意図的な選択 (同 3 周目 P3-5)。
 	for _, iss := range v.rows {
 		if iss.Path != path || iss.GroupKey == "" {
 			continue
 		}
-		if v.expandedGroups == nil {
-			v.expandedGroups = make(map[string]bool)
-		}
-		v.expandedGroups[iss.GroupKey] = true
-		delete(v.collapsedGroups, iss.GroupKey)
+		v.groups.reveal(iss.GroupKey)
 		v.rebuildDisplayRows()
 		v.cursorToPath(path)
 		return
@@ -683,10 +676,10 @@ func (v *issuesView) cursorToPath(path string) bool {
 // パスなので、group の rename / 削除 / checkout の移動で死にキーが state に溜まり、同名 group を
 // 作り直したとき「畳んだつもり」を無視して勝手に展開する (敵対レビュー round 2)。
 func (v *issuesView) pruneExpandedGroups() {
-	if len(v.expandedGroups) == 0 {
+	if len(v.groups.manual) == 0 {
 		return
 	}
-	alive := make(map[string]bool, len(v.expandedGroups))
+	alive := make(map[string]bool, len(v.groups.manual))
 	for _, iss := range v.all {
 		if iss.GroupKind == issues.GroupEpic {
 			if key := iss.GroupKey; key != "" {
@@ -694,11 +687,7 @@ func (v *issuesView) pruneExpandedGroups() {
 			}
 		}
 	}
-	for key := range v.expandedGroups {
-		if !alive[key] {
-			delete(v.expandedGroups, key)
-		}
-	}
+	v.groups.prune(alive)
 }
 
 // isGroupParent は展開を持つ親行 (合成の group 行と、統合した親 issue 行の両方)。
@@ -857,9 +846,9 @@ func (v *issuesView) refresh() {
 	v.curGlide.Stop() // 同じ理由で滑走も畳む (起点の行番号が別の issue を指す)
 	v.setRows(v.visibleIssues())
 	if v.numFilter.active {
-		v.autoExpandedGroups = v.numFilter.groupKeys(v.rows)
+		v.groups.setAuto(v.numFilter.groupKeys(v.rows))
 	} else {
-		v.autoExpandedGroups = nil
+		v.groups.setAuto(nil)
 	}
 	v.rebuildDisplayRows()
 	v.cursor = clampIdx(v.cursor, len(v.displayRows))
@@ -986,7 +975,7 @@ func sortDisplayUnits(units []displayUnit) {
 }
 
 func (v *issuesView) groupExpanded(key string) bool {
-	return key != "" && !v.collapsedGroups[key] && (v.expandedGroups[key] || v.autoExpandedGroups[key])
+	return v.groups.expanded(key)
 }
 
 // ensureDisplayRows は setRows で予約された再構築を、実際に displayRows が要るところで消化する。
@@ -1291,25 +1280,7 @@ func (v *issuesView) toggleGroupAtCursor() bool {
 		return false
 	}
 	key := row.groupKey
-	if v.groupExpanded(key) {
-		delete(v.expandedGroups, key)
-		if v.autoExpandedGroups[key] {
-			if v.collapsedGroups == nil {
-				v.collapsedGroups = make(map[string]bool)
-			}
-			v.collapsedGroups[key] = true
-		} else {
-			delete(v.collapsedGroups, key)
-		}
-	} else {
-		delete(v.collapsedGroups, key)
-		if !v.autoExpandedGroups[key] {
-			if v.expandedGroups == nil {
-				v.expandedGroups = make(map[string]bool)
-			}
-			v.expandedGroups[key] = true
-		}
-	}
+	v.groups.toggle(key)
 	v.refresh()
 	v.anchorGroup(key)
 	return true
@@ -1333,22 +1304,17 @@ func (v *issuesView) anchorGroupInternal(key string) {
 // clearNumberFilter は一時 autoExpanded を捨て、解除前に見ていた子 issue のパスへカーソルを
 // 張り直す。番号フィルタ中は親行を含む displayRows の添字が解除後に変わるため、添字を残しては
 // ならない。現在行が auto 展開された group の子なら、解除後もその子へ着地できるよう group の
-// 展開だけは通常の expandedGroups へ引き継ぐ。autoExpanded 自体は捨てるので、次の refresh で
+// 展開だけは手動の展開 (groups.manual) へ引き継ぐ。autoExpanded 自体は捨てるので、次の refresh で
 // 番号フィルタ由来の展開は残らない (カーソルの可視性を保つための 1 group だけが例外)。
 func (v *issuesView) clearNumberFilter() {
 	iss := v.current()
 	path := issuePath(iss)
 	groupKey := v.currentGroupKey() // 親行で Esc したときは親行へ戻す (添字を残さない)
-	v.collapsedGroups = nil
+	keep := ""
 	if iss != nil && iss.GroupKind == issues.GroupEpic {
-		key := iss.GroupKey
-		if key != "" && v.autoExpandedGroups[key] && !v.expandedGroups[key] {
-			if v.expandedGroups == nil {
-				v.expandedGroups = make(map[string]bool)
-			}
-			v.expandedGroups[key] = true
-		}
+		keep = iss.GroupKey
 	}
+	v.groups.endFilter(keep) // 🚨 auto を読むので refresh (setAuto(nil)) より前
 	v.numFilter.clear()
 	v.refresh()
 	// Esc は「1 段戻る」であってカーソル移動の意思表示ではないので、直前の move の再アンカー
@@ -2238,7 +2204,7 @@ func (v *issuesView) emptyMessage(o issuesRenderOpts) string {
 // 入力中は端末のカーソルを検索語の中に置く (caretCol)。確定した後はカーソルを出さないので、
 // 打鍵を待っているのか確定済みなのかはカーソルの有無で分かる。
 func (v *issuesView) numberFilterLine(width int, colored bool) string {
-	text, _ := v.numberField(width)
+	text, _ := promptWindow(numberFilterPrompt, &v.numFilter.line, width)
 	line := numberFilterPrompt + text +
 		"  " + strconv.Itoa(len(v.rows)) + " 件 (全カテゴリ・全状態)"
 	return paint(clipToWidth(line, width), ansiBold, colored)
@@ -2246,12 +2212,6 @@ func (v *issuesView) numberFilterLine(width int, colored bool) string {
 
 // numberFilterPrompt は番号の絞り込みの行の頭。キャレットの桁はこの幅から数える。
 const numberFilterPrompt = "番号: "
-
-// numberField は番号の行に出す検索語と、その中のキャレットの桁。数字は何桁でも打てるので、行の幅に収まるよう
-// lineedit.Line.Window で前を切る (切らないと、長く打ったときにカーソルが行の外 = 枠の上に出る)。
-func (v *issuesView) numberField(width int) (string, int) {
-	return v.numFilter.line.Window(max(width-termwidth.Of(numberFilterPrompt), 1))
-}
 
 // paste は入力欄に貼り付けを入れる。入力欄が無いときは何もしない (貼り付けをキー操作として解釈しない。
 // docs/glogx-ui-guide.md §7)。
@@ -2286,8 +2246,8 @@ func (v *issuesView) caretCol(o issuesRenderOpts) (x int, ok bool) {
 	case v.urlPick.active:
 		return v.urlPick.caretCol(o.width), true
 	case v.numFilter.typing && v.open == nil:
-		_, col := v.numberField(o.width)
-		return termwidth.Of(numberFilterPrompt) + col, true
+		_, caret := promptWindow(numberFilterPrompt, &v.numFilter.line, o.width)
+		return caret, true
 	}
 	return 0, false
 }
@@ -2490,10 +2450,16 @@ func (v *issuesView) rowLine(i, cur int, o issuesRenderOpts, width int) string {
 		}
 		return clipToWidth(gutter+text, width)
 	}
+	return o.paintCursorRow(text, width, ansiBold)
+}
+
+// paintCursorRow はカーソル行を描く: 溝の矢印 (→) を付け、cursorPaint があればその強調、無ければ emph の
+// 色で塗る (一覧の行 / group の親行 / URL ピッカーで共有する語彙)。
+func (o issuesRenderOpts) paintCursorRow(text string, width int, emph string) string {
 	if o.cursorPaint != nil {
 		return o.cursorPaint(clipToWidth(cursorGutterMark+text, width))
 	}
-	return clipToWidth(cursorGutterMark+paint(text, ansiBold, o.colored), width)
+	return clipToWidth(cursorGutterMark+paint(text, emph, o.colored), width)
 }
 
 func (v *issuesView) groupLine(i, cur int, row displayRow, o issuesRenderOpts, width int) string {
@@ -2506,10 +2472,7 @@ func (v *issuesView) groupLine(i, cur int, row displayRow, o issuesRenderOpts, w
 	if i != cur {
 		return clipToWidth(cursorGutterBlank+text, width)
 	}
-	if o.cursorPaint != nil {
-		return o.cursorPaint(clipToWidth(cursorGutterMark+text, width))
-	}
-	return clipToWidth(cursorGutterMark+paint(text, ansiBold+ansiCyan, o.colored), width)
+	return o.paintCursorRow(text, width, ansiBold+ansiCyan)
 }
 
 // bodyLines は本文 pager (ヘッダー + 本文) を描く。

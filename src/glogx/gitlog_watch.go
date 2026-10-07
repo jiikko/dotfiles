@@ -77,16 +77,14 @@ type gitLogReloadMsg struct {
 
 // gitLogWatch は見張りの状態。zero value は「まだ何も張っていない」。
 type gitLogWatch struct {
-	w    dirWatcher
+	// watchChain は watcher・世代・2 本のチェーンの札 (watch_chain.go)。世代は watcher を閉じるたびに
+	// 増え、古いチェーンの観測を弾く。
+	watchChain
 	dirs []string // 見張るディレクトリ (空 = 解決できなかった → ポーリングのみ)
-	gen  int      // 世代 (watcher を閉じるたびに増える。古いチェーンの観測を弾く)
 	seen string   // 反映済みの指紋
 	// hasSeen は seen が有効か。🚨 空文字列を「基準なし」のセンチネルにしないこと: コミット 0 件
 	// (revs が空範囲) の指紋は正当に "" になるため、区別できないと変化の判定が狂う。
 	hasSeen bool
-	// チェーンは 2 本 (イベント待ち / 保険のポーリング)。それぞれ二重に張らない。
-	evArmed   bool
-	pollArmed bool
 	// measuring は指紋の測定が in-flight か (観測が来るたびに git を重ねない)。
 	// 🚨 厳密な排他ではない: 自分で読み直したとき (reloadLog) は飛んでいる測定を捨てるために
 	// 札を降ろすので、その結果が届く前に次の測定が始まりうる (最大 fork 1 本の重複)。
@@ -197,12 +195,8 @@ func (m *browseModel) startGitLogWatch() {
 	if len(m.logWatch.dirs) == 0 {
 		return
 	}
-	if m.logWatch.w == nil {
-		w, err := newDirWatcher()
-		if err != nil {
-			return
-		}
-		m.logWatch.w = w
+	if !m.logWatch.ensureWatcher() {
+		return
 	}
 	for _, dir := range m.logWatch.dirs {
 		_ = m.logWatch.w.Add(dir) // 失敗は次の周期で再挑戦 (存在しない refs/tags 等)
@@ -216,11 +210,9 @@ func (m *browseModel) startGitLogWatch() {
 // cancelAll の doc)。この見張りは起動から終了まで開き続けるので、閉じ忘れると r で再起動する
 // たびに kqueue fd が 1 本ずつ新プロセスへ継承される。
 func (m *browseModel) stopGitLogWatch() {
-	if m.logWatch.w != nil {
-		_ = m.logWatch.w.Close()
-	}
+	m.logWatch.close()
 	// dirs は残す (解決し直す必要がない)。世代を進めて古いチェーンの観測を弾く。
-	m.logWatch = gitLogWatch{gen: m.logWatch.gen + 1, dirs: m.logWatch.dirs}
+	m.logWatch = gitLogWatch{watchChain: watchChain{gen: m.logWatch.gen + 1}, dirs: m.logWatch.dirs}
 }
 
 // gitLogWatchCmd は次の観測を予約する (イベント待ち + 保険のポーリング)。
@@ -231,37 +223,17 @@ func (m *browseModel) gitLogWatchCmd() tea.Cmd {
 // gitLogEventCmd は fsnotify のイベントを 1 回待ち、バーストを畳んでから合図を返す。
 // ブロックする Cmd にするのは、外から Msg を送る口を持たずに済むため (bubbletea の定石)。
 func (m *browseModel) gitLogEventCmd() tea.Cmd {
-	if m.logWatch.evArmed || m.logWatch.w == nil {
-		return nil
-	}
-	m.logWatch.evArmed = true
-	w, gen := m.logWatch.w, m.logWatch.gen
-	return func() tea.Msg {
-		select {
-		case _, ok := <-w.Events():
-			if !ok {
-				return gitLogProbeMsg{fromEvent: true, closed: true, gen: gen}
-			}
-		case _, ok := <-w.Errors():
-			if !ok {
-				return gitLogProbeMsg{fromEvent: true, closed: true, gen: gen}
-			}
-			// エラーは握って測定へ倒す (指紋が正本なので、測り直せば辻褄は合う)
-		}
-		drainWatchEvents(w, gitLogWatchDebounce)
-		return gitLogProbeMsg{fromEvent: true, gen: gen}
-	}
+	return m.logWatch.eventCmd(gitLogWatchDebounce, func() func(bool) tea.Msg {
+		gen := m.logWatch.gen
+		return func(closed bool) tea.Msg { return gitLogProbeMsg{fromEvent: true, closed: closed, gen: gen} }
+	})
 }
 
 // gitLogPollCmd は保険のポーリング。イベントを取りこぼしても必ず追いつく。
 func (m *browseModel) gitLogPollCmd() tea.Cmd {
-	if m.logWatch.pollArmed {
-		return nil
-	}
-	m.logWatch.pollArmed = true
-	gen := m.logWatch.gen
-	return tea.Tick(gitLogWatchPoll, func(time.Time) tea.Msg {
-		return gitLogProbeMsg{gen: gen}
+	return m.logWatch.pollCmd(gitLogWatchPoll, func() func() tea.Msg {
+		gen := m.logWatch.gen
+		return func() tea.Msg { return gitLogProbeMsg{gen: gen} }
 	})
 }
 
@@ -291,11 +263,7 @@ func (m *browseModel) handleGitLogProbe(msg gitLogProbeMsg) tea.Cmd {
 	}
 	if msg.closed {
 		// watcher が死んだ (fd 回収等)。閉じてポーリングだけで続ける (無音にはしない)
-		m.logWatch.evArmed = false
-		if m.logWatch.w != nil {
-			_ = m.logWatch.w.Close()
-			m.logWatch.w = nil
-		}
+		m.logWatch.dropDeadWatcher()
 		m.logWatch.gen++
 		// 🚨 飛んでいる測定の札もここで降ろす: 世代を進めた後に届く結果は gen 違いで捨てられるので、
 		// 降ろさないと measuring が永久に true のまま = 以降ひとつも測らなくなる (静かに機能停止)。
@@ -304,10 +272,8 @@ func (m *browseModel) handleGitLogProbe(msg gitLogProbeMsg) tea.Cmd {
 		m.logWatch.pollArmed = false // 旧世代の tick は捨てられるので張り直す
 		return m.gitLogWatchCmd()
 	}
-	if msg.fromEvent {
-		m.logWatch.evArmed = false
-	} else {
-		m.logWatch.pollArmed = false
+	m.logWatch.release(msg.fromEvent)
+	if !msg.fromEvent {
 		m.startGitLogWatch() // 消えて戻ったディレクトリを取り戻す (Add は冪等)
 	}
 	if m.logWatch.measuring || m.logWatch.reloading || m.gitLogReloadDeferred() {
