@@ -1,0 +1,1 @@
+../666-refactor-glogx-issues-viewer-scattered-state.md
