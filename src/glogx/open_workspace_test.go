@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,18 +45,6 @@ func realPath(t *testing.T, path string) string {
 	return path
 }
 
-func stubLookPath(t *testing.T, available map[string]string) {
-	t.Helper()
-	orig := lookPathFn
-	lookPathFn = func(name string) (string, error) {
-		if p, ok := available[name]; ok {
-			return p, nil
-		}
-		return "", errors.New("not found")
-	}
-	t.Cleanup(func() { lookPathFn = orig })
-}
-
 // e: nvim が repo root (取れなければ ".") を cwd に `nvim .` で起動される
 func TestOpenEditorAtRoot(t *testing.T) {
 	m := newTestBrowse(t, 1, nil, nil)
@@ -81,43 +68,6 @@ func TestOpenEditorAtRoot(t *testing.T) {
 	}
 }
 
-// E: 探索順の先頭で見つかったファイラーが repo root を cwd に起動される
-func TestOpenFilerAtRootPicksFirstCandidate(t *testing.T) {
-	m := newTestBrowse(t, 1, nil, nil)
-	cmds := stubEditorCapture(t)
-	// yazi は無く ranger と lf がある → 探索順どおり ranger が選ばれる
-	stubLookPath(t, map[string]string{"ranger": "/opt/bin/ranger", "lf": "/opt/bin/lf"})
-
-	if _, cmd := m.handleKey("E"); cmd == nil {
-		t.Fatal("E が tea.Cmd を返さない")
-	}
-	if len(*cmds) != 1 {
-		t.Fatalf("ファイラー起動回数 = %d, want 1", len(*cmds))
-	}
-	c := (*cmds)[0]
-	if c.Args[0] != "/opt/bin/ranger" {
-		t.Fatalf("探索順の先頭 (ranger) でない: %v", c.Args)
-	}
-	if want := repoRootOracle(t); realPath(t, c.Dir) != want { // 対象は cwd (上の e と同じ理由)
-		t.Fatalf("ファイラーの cwd が repo root でない: %q want %q", c.Dir, want)
-	}
-}
-
-// E: ファイラーが 1 つも無ければ起動せず理由をトーストで案内する
-func TestOpenFilerAtRootNoneFound(t *testing.T) {
-	m := newTestBrowse(t, 1, nil, nil)
-	cmds := stubEditorCapture(t)
-	stubLookPath(t, nil)
-
-	m.handleKey("E")
-	if len(*cmds) != 0 {
-		t.Fatalf("ファイラー不在なのに起動している: %v", (*cmds)[0].Args)
-	}
-	if !strings.Contains(m.toast.Text(), "ファイラーが見つかりません") {
-		t.Fatalf("不在理由のトーストが出ていない: %q", m.toast.Text())
-	}
-}
-
 // repoRoot 自体の単体テスト (これまで 0 本だった。上の 2 本が「repoRoot の単体テストの担当」と
 // 書いていた対象が実在しなかったので足す)。
 func TestRepoRootReturnsGitToplevelAndFallsBack(t *testing.T) {
@@ -138,7 +88,7 @@ func TestRepoRootReturnsGitToplevelAndFallsBack(t *testing.T) {
 		t.Fatalf("repo 内で toplevel を返さない: got %q want %q", got, want)
 	}
 
-	// 2. repo 外では "." に落ちる (nvim/ファイラーを起動できる形を保つ)
+	// 2. repo 外では "." に落ちる (nvim を起動できる形を保つ)
 	outside := t.TempDir()
 	t.Chdir(outside)
 	if got := repoRoot(); got != "." {

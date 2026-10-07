@@ -25,7 +25,7 @@
 - `zoom.go`, `scroll_glide.go`, `hint_surfaces.go` — 開閉演出・スクロール滑走・最下行ヒントの共有ロジック
 - `autobuild.go`, `cleanup_latch.go`, `probe.go`, `fullscreen.go` — 自動再ビルド通知・終了前の完了待ち latch・計測フック・全画面ビューアの排他制御
 - `terminal.go` — termsafe の main 側の入口
-- `open_workspace.go` — `e` / `E` で nvim / ファイラーを起動
+- `open_workspace.go` — `e` で nvim を repo root で起動
 - `line_cache.go` — diff / job / status が共有する行キャッシュと取得の単発化
 - `issues/` — 独立パッケージ。issue markdown の探索・分類・parse・本文整形 (glogx 本体に非依存)
 - `gorules/` — ruleguard のカスタム lint 規則 (`make lint` が `go vet -tags ruleguard` で型検査)

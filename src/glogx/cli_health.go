@@ -81,6 +81,9 @@ func commandExitCode(err error) (int, bool) {
 	return exitCode, true
 }
 
+// lookPathFn はテストで PATH 探索を差し替えるための注入点。
+var lookPathFn = exec.LookPath
+
 func checkClaudeHealth(ctx context.Context) cliHealthState {
 	path, err := lookPathFn("claude")
 	if err != nil {

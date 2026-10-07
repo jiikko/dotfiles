@@ -1680,8 +1680,6 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, m.openCommitURL()
 	case "e":
 		return m, m.openEditorAtRoot()
-	case "E":
-		return m, m.openFilerAtRoot()
 	default:
 		// 移動の語彙 (j/k/g/G/半ページ) は listnav が持つ。🚨 この面は b が push (上で捌く) で
 		// Space が開くなので、上半ページの経路は ctrl+u / pgup (shift+space は端末によって届かない。

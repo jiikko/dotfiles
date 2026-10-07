@@ -611,3 +611,15 @@ func TestBrowseStartupChecksWaitForCIFetch(t *testing.T) {
 		}
 	})
 }
+
+func stubLookPath(t *testing.T, available map[string]string) {
+	t.Helper()
+	orig := lookPathFn
+	lookPathFn = func(name string) (string, error) {
+		if p, ok := available[name]; ok {
+			return p, nil
+		}
+		return "", errors.New("not found")
+	}
+	t.Cleanup(func() { lookPathFn = orig })
+}
