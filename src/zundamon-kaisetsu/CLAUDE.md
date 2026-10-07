@@ -20,13 +20,13 @@
 ## 外部プロセス
 
 - 🚨 **mermaid の描画を止めるときは子孫ごと止める** (`proctree`)。puppeteer は Chrome を別のプロセスグループ (detached) で起こすので、
-  グループ宛ての kill では届かない (issue 649。実機で、グループ宛てだけでは Chrome が残った)
+  グループ宛ての kill では届かない (issue 649。実機で、グループ宛てだけでは Chrome が残った)。本体での `syscall.Kill` の直書きと、
+  テストの `t.Parallel` (パッケージ変数を書き換えるテストがある) は forbidigo が止める (`.golangci.yml`。issue 661)
 - 中断の判定: 全体の中断は `interruptedErr()` (appCtx)。**見張りは appCtx と別の ctx で止めるので、ctx を受け取る処理は
   `ctxInterrupted(ctx)` で見る** (appCtx で見ると、見張りの成功や失敗まで「中断」になる。issue 652)
 - 自動で起動するエンジンは同時に 1 つだけ (印 `engine.auto` が URL を 1 つしか書けないため。コンテナの名前はポートごと)
 
 ## テスト
 
-- 🚨 **この package のテストは `t.Parallel` を使わない前提**。mp4 のテストはパッケージ変数 `videoSize` を縮めて書き換える
 - 本物のエンジン・コンテナ・ネットワークに触れない (偽物は `helpers_test.go` の `writeShim` / `newFakeEngineEnv`)
 - 実機の mermaid / Chrome を中断して確かめるときは、非対話の bash の `&` で起こしたプロセスは SIGINT を無視した状態で始まるので、SIGTERM を使う

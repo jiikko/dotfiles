@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
+	"hash/crc32"
 	stdimage "image" // パッケージに定数 image (engine.go) があるので別名にする
 	"image/color"
 	"image/jpeg"
@@ -261,12 +263,10 @@ func TestImageBoxMatchesPlayerCSS(t *testing.T) {
 // 20000x20000 のグレーは展開すると 400MB になる (ゼロ埋めの PNG は 400KB ほどに縮む)。
 func TestImageBombStopsBeforeDecode(t *testing.T) {
 	dir := t.TempDir()
-	func() { // 作った画像はこの中で手放し、測る前の GC で回収させる
-		f, err := os.Create(filepath.Join(dir, "bomb.png"))
-		must(t, err)
-		defer func() { must(t, f.Close()) }()
-		must(t, png.Encode(f, stdimage.NewGray(stdimage.Rect(0, 0, 20000, 20000))))
-	}()
+	// 縦横 20000x20000 を名乗る PNG を、IHDR と IEND だけで組む (本体の IDAT は無い)。確かめたいのは「本体を展開する前に縦横で止める」で、
+	// 本体を展開する退行なら IDAT が無いことで別のエラーになり、「大きすぎる」で止まらないので落ちる。
+	// 本物の 20000x20000 を符号化すると -race の下で 35 秒かかり、CI のこのテストの大半を占めていた (issue 661)
+	must(t, os.WriteFile(filepath.Join(dir, "bomb.png"), pngHeaderOnly(20000, 20000), 0o644))
 	runtime.GC()
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
@@ -307,4 +307,20 @@ func TestJPEGOrientationVariants(t *testing.T) {
 			t.Errorf("%s: got %d want %d", tc.name, got, tc.want)
 		}
 	}
+}
+
+// pngHeaderOnly は縦横を名乗るだけの PNG (シグネチャ・IHDR・IEND。画素の本体は無い) を返す
+func pngHeaderOnly(w, h uint32) []byte {
+	chunk := func(typ string, data []byte) []byte {
+		b := binary.BigEndian.AppendUint32(nil, uint32(len(data)))
+		b = append(b, typ...)
+		b = append(b, data...)
+		return binary.BigEndian.AppendUint32(b, crc32.ChecksumIEEE(append([]byte(typ), data...)))
+	}
+	ihdr := binary.BigEndian.AppendUint32(nil, w)
+	ihdr = binary.BigEndian.AppendUint32(ihdr, h)
+	ihdr = append(ihdr, 8, 0, 0, 0, 0) // 8 bit・グレー・圧縮 0・フィルタ 0・インターレースなし
+	out := []byte("\x89PNG\r\n\x1a\n")
+	out = append(out, chunk("IHDR", ihdr)...)
+	return append(out, chunk("IEND", nil)...)
 }

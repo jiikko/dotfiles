@@ -1,5 +1,4 @@
-# golangci-lint v2 config for zundamon-kaisetsu。linter は既定セットのまま (カスタム lint が
-# 必要になったら glogx の .golangci.yml を参照)。
+# golangci-lint v2 config for zundamon-kaisetsu。既定セットに forbidigo (下の 2 つの規律) を足す。
 version: "2"
 
 # 🚨 golangci-lint は既定で os.TempDir()/golangci-lint.lock に flock を取り、別インスタンスが
@@ -19,7 +18,19 @@ formatters:
     - gofmt
 
 linters:
+  enable:
+    - forbidigo
   settings:
+    forbidigo:
+      # 字面で見る (別名の import・変数経由の呼び出しは検出しない)。issue 661
+      forbid:
+        # 子孫を止めるのは proctree に寄せる。グループ宛ての kill では、puppeteer が別のグループで起こした Chrome に届かない (issue 649)。
+        # main.go のシグナルでの死に直し (自分への kill) とテストは下の exclusions で許す
+        - pattern: ^syscall\.Kill$
+          msg: 子孫を止めるのは proctree.Target.Stop を使う (グループ宛ての kill では別のグループの子に届かない。issue 649)
+        # この package のテストはパッケージ変数 (mp4 のテストが縮める videoSize など) を書き換えるので、並列にしない (issue 651)
+        - pattern: \.Parallel$
+          msg: この package のテストは並列にしない (videoSize などのパッケージ変数を書き換えるテストがある。issue 651)
     errcheck:
       # 端末 (env.Stdout / env.Stderr) への進捗・結果の書き込み。失敗しても打つ手が無く、
       # 失敗を返り値で扱うと全コマンドの経路が戻り値の確認で埋まる。ファイルへの書き込みは対象外 (os.WriteFile 等は確認している)
@@ -27,3 +38,14 @@ linters:
         - fmt.Fprint
         - fmt.Fprintf
         - fmt.Fprintln
+
+  exclusions:
+    rules:
+      - path: main\.go
+        text: proctree
+        linters:
+          - forbidigo
+      - path: _test\.go
+        text: proctree
+        linters:
+          - forbidigo
