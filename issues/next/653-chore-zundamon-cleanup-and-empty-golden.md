@@ -1,1 +1,0 @@
-../653-chore-zundamon-cleanup-and-empty-golden.md
