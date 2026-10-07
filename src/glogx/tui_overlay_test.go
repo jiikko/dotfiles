@@ -1308,12 +1308,42 @@ func TestIssuesViewerCopyFailureToast(t *testing.T) {
 	})
 	m.issuesOv.finishAnim()
 
+	m.lastWarning = "pull に失敗: rejected" // 直前のエラー (w でコピーしたいもの)
 	m.handleKey("y")
 	if !m.toast.Visible() || m.toast.OK() {
 		t.Fatalf("失敗が失敗色のトーストになっていない: visible=%v ok=%v", m.toast.Visible(), m.toast.OK())
 	}
-	if !strings.Contains(m.lastWarning, "コピーに失敗") {
-		t.Errorf("lastWarning に残っていない (w でコピーできない): %q", m.lastWarning)
+	// クリップボード失敗は lastWarning を汚さない (showWarning の doc の 3 分類。issue 663: 以前は
+	// viewer 経由だけ上書きし、直前のエラーを w でコピーできなくしていた)
+	if m.lastWarning != "pull に失敗: rejected" {
+		t.Errorf("コピー失敗が直前の警告を上書きした: %q", m.lastWarning)
+	}
+}
+
+// viewer の断りの文 (末尾で J など) も lastWarning を汚さない (issue 663)。エラー詳細を含む
+// 通知 (noticeError) だけが積まれる。
+func TestIssuesViewerRefusalKeepsLastWarning(t *testing.T) {
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.width, m.height = 100, 16
+	m.handleKey("i")
+	m.issuesOv.receive(issuesScanMsg{
+		dirs:   []string{"/repo/issues"},
+		issues: []*issues.Issue{fakeIssue("030", "feat", "alpha", issues.StatusOpen)},
+	})
+	m.issuesOv.finishAnim()
+	m.lastWarning = "pull に失敗: rejected"
+	for _, key := range []string{"u"} { // 一覧モードの u は「本文を開いてから」の断り
+		m.handleKey(key)
+		if !m.toast.Visible() || m.toast.OK() {
+			t.Fatalf("%s: 断りが失敗色のトーストになっていない: visible=%v ok=%v", key, m.toast.Visible(), m.toast.OK())
+		}
+		if m.lastWarning != "pull に失敗: rejected" {
+			t.Fatalf("%s: 断りの文が直前の警告を上書きした: %q", key, m.lastWarning)
+		}
+	}
+	m.deliverNotice("本文を読めませんでした: EACCES", noticeError)
+	if !strings.Contains(m.lastWarning, "本文を読めませんでした") {
+		t.Errorf("noticeError が lastWarning に積まれていない: %q", m.lastWarning)
 	}
 }
 

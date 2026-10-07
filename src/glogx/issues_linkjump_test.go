@@ -298,7 +298,7 @@ func TestLinkJumpExitAndFallThrough(t *testing.T) {
 	if e.v.linkJump.active {
 		t.Fatal("u でモードを抜けていない")
 	}
-	if msg, _ := e.v.takeNotice(); !strings.Contains(msg, "URL") {
+	if msg, _ := noticeOKOf(e.v.takeNotice()); !strings.Contains(msg, "URL") {
 		t.Fatalf("抜けた後に u が通常のキーとして処理されていない: %q", msg)
 	}
 	// 隣の issue へ行く操作 (openIssue) はモードを捨てる
@@ -315,7 +315,7 @@ func TestLinkJumpNoLinksNotifies(t *testing.T) {
 	if e.v.linkJump.active {
 		t.Fatal("開けるリンクが無いのにモードに入った")
 	}
-	if msg, _ := e.v.takeNotice(); !strings.Contains(msg, "開けるファイルパスはありません") {
+	if msg, _ := noticeOKOf(e.v.takeNotice()); !strings.Contains(msg, "開けるファイルパスはありません") {
 		t.Fatalf("案内が無い: %q", msg)
 	}
 }
@@ -432,7 +432,7 @@ func TestLinkJumpOpenRechecksFile(t *testing.T) {
 	if len(*cmds) != 0 {
 		t.Fatalf("消えたファイルを開いた: %v", *cmds)
 	}
-	if msg, _ := e.v.takeNotice(); !strings.Contains(msg, "見つかりません") {
+	if msg, _ := noticeOKOf(e.v.takeNotice()); !strings.Contains(msg, "見つかりません") {
 		t.Fatalf("案内が無い: %q", msg)
 	}
 }

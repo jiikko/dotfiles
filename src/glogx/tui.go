@@ -752,22 +752,41 @@ func (m *browseModel) showWarning(text string) {
 	m.toast.Show(text, false)
 }
 
-// deliverNotice は viewer の操作結果 (takeNotice の戻り) をトーストへ流す。成功はトースト、
-// 失敗は w でコピーできるよう lastWarning にも積む (showWarning)。戻り値は「流したか」で、
-// 呼び出し側がトーストを動かす tick を束ねるかの判断に使う。
+// noticeKind は viewer の操作結果の種類。showWarning の 3 分類 (showWarning の doc) を viewer からも
+// 表せるようにする: 以前は ok bool の 2 値で、断りの文やクリップボード失敗まで lastWarning を
+// 上書きし、直前のエラーを w でコピーできなくしていた (issue 663)。
+type noticeKind uint8
+
+const (
+	noticeOK      noticeKind = iota // 成功 (トーストのみ)
+	noticeRefused                   // 操作を拒否した理由の案内・クリップボード失敗 (失敗トーストのみ。lastWarning を汚さない)
+	noticeError                     // エラー詳細を含み、後で w でコピーする価値があるもの (showWarning)
+)
+
+// deliverNotice は viewer の操作結果 (takeNotice の戻り) をトーストへ流す。lastWarning に積むのは
+// noticeError だけ。戻り値は「流したか」で、呼び出し側がトーストを動かす tick を束ねるかの判断に使う。
 // 🚨 setNotice は打鍵経路 (handleKey 直後) だけでなく Msg 経路 (issuesScanMsg → rebindOpen)
 // からも置かれる。Msg 経路の呼び出し側でもこれを通すこと。通さないと「置いたが誰も取り出さず、
 // 次の打鍵まで画面に出ない」黙殺になる (issue 059: 本文が無言で畳まれた)。
-func (m *browseModel) deliverNotice(text string, ok bool) bool {
+func (m *browseModel) deliverNotice(text string, kind noticeKind) bool {
 	if text == "" {
 		return false
 	}
-	if ok {
+	switch kind {
+	case noticeOK:
 		m.toast.Show(text, true)
-	} else {
+	case noticeRefused:
+		m.toast.Show(text, false)
+	case noticeError:
 		m.showWarning(text)
 	}
 	return true
+}
+
+// clipboardFailText はクリップボードへのコピーが失敗したときの通知文 (copyWithToast と viewer で共有)。
+// 通知の種類は noticeRefused (lastWarning を汚さない。showWarning の doc の 3 分類)。
+func clipboardFailText(err error) string {
+	return "コピーに失敗しました: " + firstLine(err.Error())
 }
 
 // showClaudeUpdate は「新バージョンあり」の通知を出す。
@@ -2908,7 +2927,7 @@ func (m *browseModel) openCommitURL() tea.Cmd {
 // 警告を上書きして w の再試行を潰さないため、showWarning は通さない)。
 func (m *browseModel) copyWithToast(text, successMsg string) {
 	if err := copyToClipboard(text); err != nil {
-		m.toast.Show("コピーに失敗しました: "+firstLine(err.Error()), false)
+		m.toast.Show(clipboardFailText(err), false)
 		return
 	}
 	m.toast.Show(successMsg, true)

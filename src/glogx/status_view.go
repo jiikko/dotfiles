@@ -78,8 +78,8 @@ type statusView struct {
 	discard    worktreeRow
 	discarding bool
 
-	notice   string
-	noticeOK bool
+	notice     string
+	noticeKind noticeKind
 
 	// wantIssues は「i で issues viewer へ切り替えたい」の一度きりの信号 (browseModel が
 	// takeWantIssues で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。
@@ -297,14 +297,14 @@ func (v *statusView) advanceGlide() {
 // setNotice / takeNotice は操作結果の受け渡し (browseModel がトーストにする)。
 // 🚨 ここで無害化する: 通知文はパス・git のエラー出力を素で埋め込む呼び出しが多く、
 // 呼び出しごとに包むと必ずどこかが漏れる (自前の静的文だけの通知は無害化しても変わらない)。
-func (v *statusView) setNotice(text string, ok bool) {
-	v.notice, v.noticeOK = sanitizePlainLine(text), ok
+func (v *statusView) setNotice(text string, kind noticeKind) {
+	v.notice, v.noticeKind = sanitizePlainLine(text), kind
 }
 
-func (v *statusView) takeNotice() (string, bool) {
-	text, ok := v.notice, v.noticeOK
+func (v *statusView) takeNotice() (string, noticeKind) {
+	text, kind := v.notice, v.noticeKind
 	v.notice = ""
-	return text, ok
+	return text, kind
 }
 
 // loadCmd は git status を読み直す。取得中なら nil (二重発行の防止)。
@@ -648,12 +648,12 @@ func (v *statusView) discardKey(key string) tea.Cmd {
 func (v *statusView) runDiscard(row worktreeRow) tea.Cmd {
 	fresh, err := loadWorktreeStatus()
 	if err != nil {
-		v.setNotice("git status に失敗しました: "+firstLine(err.Error()), false)
+		v.setNotice("git status に失敗しました: "+firstLine(err.Error()), noticeError)
 		return v.loadCmd()
 	}
 	now, ok := fresh.find(row.section, row.path)
 	if !ok || now.x != row.x || now.y != row.y {
-		v.setNotice("確認中に "+row.path+" が変わったため中止しました", false)
+		v.setNotice("確認中に "+row.path+" が変わったため中止しました", noticeRefused)
 		v.applyFresh(fresh)
 		return nil
 	}
@@ -663,10 +663,10 @@ func (v *statusView) runDiscard(row worktreeRow) tea.Cmd {
 		err = runGitRestoreWorktree(row.pathspecs())
 	}
 	if err != nil {
-		v.setNotice("捨てられませんでした: "+firstLine(err.Error()), false)
+		v.setNotice("捨てられませんでした: "+firstLine(err.Error()), noticeError)
 		return v.loadCmd()
 	}
-	v.setNotice(row.path+" の変更を捨てました", true)
+	v.setNotice(row.path+" の変更を捨てました", noticeOK)
 	return v.loadCmd()
 }
 
@@ -833,7 +833,7 @@ func (v *statusView) toggleStage() tea.Cmd {
 		return nil
 	}
 	if !row.section.mutable() {
-		v.setNotice("conflict の解決はシェルで行ってください", false)
+		v.setNotice("conflict の解決はシェルで行ってください", noticeRefused)
 		return nil
 	}
 	var err error
@@ -843,7 +843,7 @@ func (v *statusView) toggleStage() tea.Cmd {
 		err = runGitAdd(row.pathspecs())
 	}
 	if err != nil {
-		v.setNotice("失敗しました: "+firstLine(err.Error()), false)
+		v.setNotice("失敗しました: "+firstLine(err.Error()), noticeError)
 	}
 	return v.loadCmd()
 }
@@ -863,14 +863,14 @@ func (v *statusView) stageAll() tea.Cmd {
 		}
 	}
 	if len(paths) == 0 {
-		v.setNotice("stage するものがありません", true)
+		v.setNotice("stage するものがありません", noticeOK)
 		return nil
 	}
 	if err := runGitAdd(paths); err != nil {
-		v.setNotice("stage できませんでした: "+firstLine(err.Error()), false)
+		v.setNotice("stage できませんでした: "+firstLine(err.Error()), noticeError)
 		return v.loadCmd()
 	}
-	v.setNotice(strconv.Itoa(len(paths))+" 件を stage しました", true)
+	v.setNotice(strconv.Itoa(len(paths))+" 件を stage しました", noticeOK)
 	return v.loadCmd()
 }
 
@@ -886,9 +886,9 @@ func (v *statusView) askDiscard() {
 	}
 	switch {
 	case !row.section.mutable():
-		v.setNotice("conflict の解決はシェルで行ってください", false)
+		v.setNotice("conflict の解決はシェルで行ってください", noticeRefused)
 	case row.section == sectionStaged:
-		v.setNotice("staged の変更は Space で unstage してから X してください", false)
+		v.setNotice("staged の変更は Space で unstage してから X してください", noticeRefused)
 	default:
 		v.discarding, v.discard = true, row
 	}
@@ -912,9 +912,9 @@ func (v *statusView) openNeighborPager(delta int, vp statusViewport) tea.Cmd {
 	ni := v.cursor + delta
 	if ni < 0 || ni >= len(v.rows) {
 		if delta > 0 {
-			v.setNotice("これが最後のファイルです", false)
+			v.setNotice("これが最後のファイルです", noticeRefused)
 		} else {
-			v.setNotice("これが最初のファイルです", false)
+			v.setNotice("これが最初のファイルです", noticeRefused)
 		}
 		return nil
 	}

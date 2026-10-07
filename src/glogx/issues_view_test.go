@@ -317,12 +317,12 @@ func TestIssuesViewMultiSelectYank(t *testing.T) {
 	if *copied != want {
 		t.Fatalf("選択範囲のパスがコピーされていない:\n got=%q\nwant=%q", *copied, want)
 	}
-	if text, ok := v.takeNotice(); !ok || !strings.Contains(text, "3 件のパスをコピーしました") {
+	if text, ok := noticeOKOf(v.takeNotice()); !ok || !strings.Contains(text, "3 件のパスをコピーしました") {
 		t.Fatalf("複数コピーの通知が想定と違う: %q", text)
 	}
 	// 🚨 通知に改行を含めない (トーストは 1 行。含めると枠が壊れる)
 	v.handleKey("Y", vp(10))
-	if text, _ := v.takeNotice(); strings.Contains(text, "\n") {
+	if text, _ := noticeOKOf(v.takeNotice()); strings.Contains(text, "\n") {
 		t.Fatalf("通知に改行が入った: %q", text)
 	}
 	v.handleKey("p", vp(10))
@@ -332,7 +332,7 @@ func TestIssuesViewMultiSelectYank(t *testing.T) {
 	// 単数のときの文言は変えない (複数選択を足したせいで普段の見た目が変わらないように)
 	v.clearMark()
 	v.handleKey("y", vp(10))
-	if text, _ := v.takeNotice(); !strings.Contains(text, "パスをコピーしました: ") ||
+	if text, _ := noticeOKOf(v.takeNotice()); !strings.Contains(text, "パスをコピーしました: ") ||
 		strings.Contains(text, "件の") {
 		t.Fatalf("選択なしの通知が複数形になった: %q", text)
 	}
@@ -546,7 +546,7 @@ func TestIssuesViewMarkNextMovesAfterConfirm(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Fatal("claim で実ファイルが動いた")
 	}
-	if text, ok := v.takeNotice(); !ok || !strings.Contains(text, "next の目印を付けました") {
+	if text, ok := noticeOKOf(v.takeNotice()); !ok || !strings.Contains(text, "next の目印を付けました") {
 		t.Fatalf("結果が通知に載らない: %q ok=%v", text, ok)
 	}
 }
@@ -709,7 +709,7 @@ func TestIssuesViewMarkNextTogglesOff(t *testing.T) {
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatal("next/ にファイルが残っている")
 	}
-	if text, ok := v.takeNotice(); !ok || !strings.Contains(text, "next を外しました") {
+	if text, ok := noticeOKOf(v.takeNotice()); !ok || !strings.Contains(text, "next を外しました") {
 		t.Fatalf("結果が通知に載らない: %q", text)
 	}
 }
@@ -1082,7 +1082,7 @@ func TestIssuesViewCopyPathAndEditor(t *testing.T) {
 		t.Fatalf("カーソル行のパスがコピーされていない: %q", *copied)
 	}
 	// 結果はヘッダーに出さず、browseModel がトーストへ流すために取り出す (takeNotice)
-	if text, ok := v.takeNotice(); !ok || !strings.Contains(text, "コピーしました") {
+	if text, ok := noticeOKOf(v.takeNotice()); !ok || !strings.Contains(text, "コピーしました") {
 		t.Fatalf("コピーの結果が通知に載らない: %q ok=%v", text, ok)
 	}
 	if cmd := v.handleKey("v", vp(10)); cmd == nil || len(*cmds) != 1 {
@@ -1200,7 +1200,7 @@ func TestIssuesViewNoticeIsTransientAndDoesNotHideWarning(t *testing.T) {
 		warnings: []string{"同じファイル名が複数の状態ディレクトリにあります: 028-x.md / done/028-x.md"},
 	})
 	v.handleKey("y", vp(10))
-	text, ok := v.takeNotice()
+	text, ok := noticeOKOf(v.takeNotice())
 	if !ok || !strings.Contains(text, "コピーしました") {
 		t.Fatalf("コピーの結果が通知に載らない: %q ok=%v", text, ok)
 	}
@@ -1228,7 +1228,7 @@ func TestIssuesViewBodyModeShowsCopyResult(t *testing.T) {
 	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "028-refactor-x.md", Number: "028", Category: "refactor"})
 	v.handleKey("enter", vp(10))
 	v.handleKey("p", vp(10))
-	text, ok := v.takeNotice()
+	text, ok := noticeOKOf(v.takeNotice())
 	if ok || !strings.Contains(text, "コピーに失敗しました") {
 		t.Fatalf("本文モードのコピー失敗が通知に載らない: %q ok=%v", text, ok)
 	}
@@ -1740,7 +1740,7 @@ func TestIssuesViewEditSkipsMissingFile(t *testing.T) {
 	if !v.rescanPending {
 		t.Error("飛行中の取り直しが予約されていない (実体なしのまま古い一覧が残る)")
 	}
-	if text, ok := v.takeNotice(); text == "" || ok {
+	if text, ok := noticeOKOf(v.takeNotice()); text == "" || ok {
 		t.Errorf("理由を通知していない: text=%q ok=%v", text, ok)
 	}
 }
@@ -1800,7 +1800,7 @@ func TestIssuesViewRebindOpenDiscardsWhenGone(t *testing.T) {
 	if v.body != nil {
 		t.Error("消えた issue の本文を保持し続けている")
 	}
-	if text, ok := v.takeNotice(); text == "" || ok {
+	if text, ok := noticeOKOf(v.takeNotice()); text == "" || ok {
 		t.Errorf("理由を通知していない: text=%q ok=%v", text, ok)
 	}
 }
@@ -1843,7 +1843,7 @@ func TestScanIssuesDoesNotReadFullBody(t *testing.T) {
 // 受けたフレームで配達される (トースト + w でコピーできる lastWarning)。
 // 以前は takeNotice が打鍵経路にしか無く、本文が無言で畳まれて見え、直後に q を押すと
 // 理由が 1 度も描かれないままプロセスが終わった。
-// 🚨 v.takeNotice() を直接 assert しない: それは配達経路 (browseModel の Update) を通らず、
+// 🚨 noticeOKOf(v.takeNotice()) を直接 assert しない: それは配達経路 (browseModel の Update) を通らず、
 // 配達ブロックを丸ごと削っても green のままになる (この issue 自身が見つけた false green)。
 func TestIssuesScanMsgDeliversRebindNotice(t *testing.T) {
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
@@ -1879,7 +1879,7 @@ func TestIssuesScanMsgDeliversRebindNotice(t *testing.T) {
 	if !m.toast.Visible() {
 		t.Error("畳んだ理由のトーストが積まれていない")
 	}
-	if text, _ := m.issuesOv.takeNotice(); text != "" {
+	if text, _ := noticeOKOf(m.issuesOv.takeNotice()); text != "" {
 		t.Errorf("notice が取り出されずに残っている (配達漏れ): %q", text)
 	}
 }
@@ -2232,7 +2232,7 @@ func TestIssuesViewKeepsSelectionAcrossRescan(t *testing.T) {
 func TestIssuesNoticeIsSanitized(t *testing.T) {
 	const esc, bel = "\x1b", "\a"
 	v := newTestIssuesView()
-	v.setNotice("URL を開きます: https://example.com/"+esc+"]0;pwned"+bel+"x", true)
+	v.setNotice("URL を開きます: https://example.com/"+esc+"]0;pwned"+bel+"x", noticeOK)
 	if hasTerminalControl(v.notice) {
 		t.Errorf("通知に制御シーケンスが残った: %q", v.notice)
 	}
@@ -2357,13 +2357,13 @@ func TestIssuesViewBodyHintKeysAllRespond(t *testing.T) {
 			// env は 1 件なので観測できる効果は「端の案内」。差し替えそのものは
 			// TestIssuesViewBodyNeighborKeysSwapIssueWithoutReopening が見る
 			e.press("J")
-			if msg, _ := e.v.takeNotice(); !strings.Contains(msg, "最後") {
+			if msg, _ := noticeOKOf(e.v.takeNotice()); !strings.Contains(msg, "最後") {
 				t.Errorf("J が本文モードで効いていない (端の案内が出ない): %q", msg)
 			}
 		},
 		"K": func(t *testing.T, e *bodyKeyEnv) {
 			e.press("K")
-			if msg, _ := e.v.takeNotice(); !strings.Contains(msg, "最初") {
+			if msg, _ := noticeOKOf(e.v.takeNotice()); !strings.Contains(msg, "最初") {
 				t.Errorf("K が本文モードで効いていない (端の案内が出ない): %q", msg)
 			}
 		},
@@ -2673,7 +2673,7 @@ func TestIssuesViewerListModeUReturnsReason(t *testing.T) {
 
 	v.handleKey("u", vp(20))
 
-	notice, _ := v.takeNotice()
+	notice, _ := noticeOKOf(v.takeNotice())
 	if notice == "" {
 		t.Error("一覧モードの u が無音 (押したのに何も起きない = 壊れて見える)")
 	}
@@ -2732,7 +2732,7 @@ func TestIssuesViewBodyNeighborKeysSwapIssueWithoutReopening(t *testing.T) {
 	if v.open != c {
 		t.Fatalf("末尾の J で issue が変わった: %+v", v.open)
 	}
-	if msg, _ := v.takeNotice(); !strings.Contains(msg, "最後") {
+	if msg, _ := noticeOKOf(v.takeNotice()); !strings.Contains(msg, "最後") {
 		t.Errorf("末尾の J で案内が出ない: %q", msg)
 	}
 
@@ -2745,7 +2745,7 @@ func TestIssuesViewBodyNeighborKeysSwapIssueWithoutReopening(t *testing.T) {
 		t.Fatalf("shift+↑ で a へ戻らない: open=%v cursor=%d", v.open, v.cursor)
 	}
 	v.handleKey("K", vp(10))
-	if msg, _ := v.takeNotice(); v.open != a || !strings.Contains(msg, "最初") {
+	if msg, _ := noticeOKOf(v.takeNotice()); v.open != a || !strings.Contains(msg, "最初") {
 		t.Errorf("先頭の K で止まらない / 案内が出ない: open=%v notice=%q", v.open, msg)
 	}
 }

@@ -99,8 +99,8 @@ type issuesView struct {
 	// notice は直近の操作結果 (コピー成功・読み込み失敗など)。noticeOK は成功か。
 	// browseModel はこれを取り出してトーストにする (takeNotice)。🚨 viewer 単体でも駆動できる
 	// 契約 (このファイル冒頭) を保つため、ここではトーストを知らず「結果」だけを置く。
-	notice   string
-	noticeOK bool
+	notice     string
+	noticeKind noticeKind
 
 	// tabsCanon は issues.Tabs が返す正規順序 (done 込みの件数降順 → 名前昇順、other は末尾)。
 	// tabs は「そこから 0 件を右へ寄せた表示・巡回順」。🚨 並べ替えを tabs へ破壊的に適用すると
@@ -803,6 +803,8 @@ func (v *issuesView) rebindOpenIssue(path string) {
 	if v.open != nil {
 		dir = v.open.Dir
 	}
+	// 🚨 ここの通知は noticeError (lastWarning に積む)。Msg 経路 (外部の変更) で置かれるので、次の打鍵が q だと
+	// トーストを読む前に終了し、理由が w でしか辿れない (issue 059)
 	moved, ambiguous := v.matchByBase(dir, base)
 	switch {
 	case moved != nil:
@@ -821,7 +823,7 @@ func (v *issuesView) rebindOpenIssue(path string) {
 		if v.open != nil && v.open.Title != "" {
 			_ = moved.LoadMeta() // 見出しは遅延読み。読めなければ突き合わせを諦める (下の条件が偽)
 			if moved.Title != "" && moved.Title != v.open.Title {
-				v.setNotice("見出しが変わりました (別 issue の可能性): "+base, false)
+				v.setNotice("見出しが変わりました (別 issue の可能性): "+base, noticeError)
 			}
 		}
 		v.open = moved
@@ -829,7 +831,7 @@ func (v *issuesView) rebindOpenIssue(path string) {
 		// 実体はあるが本人を決められない。畳むのは「どこにも無い」ときだけなので現状維持
 	default:
 		v.discardBody() // 演出は挟まない (抜けていく板に映す中身がもう無い)
-		v.setNotice("開いていた issue が見つかりません (一覧へ戻ります): "+base, false)
+		v.setNotice("開いていた issue が見つかりません (一覧へ戻ります): "+base, noticeError)
 	}
 }
 
@@ -1112,11 +1114,11 @@ func reorderTabsByCount(tabs []issues.Tab, counts []int) ([]issues.Tab, []int) {
 	return outTabs, outCounts
 }
 
-// setNotice は操作結果を置く (ok=false は失敗)。
+// setNotice は操作結果を置く (kind は deliverNotice が lastWarning に積むかを決める。noticeKind の doc)。
 // 🚨 ここで無害化する: 通知文は issue のファイル名・本文由来の URL を素で埋め込む呼び出しが
 // 多く、呼び出しごとに包むと必ずどこかが漏れる (status_view.go の setNotice と同じ規律)。
-func (v *issuesView) setNotice(text string, ok bool) {
-	v.notice, v.noticeOK = sanitizePlainLine(text), ok
+func (v *issuesView) setNotice(text string, kind noticeKind) {
+	v.notice, v.noticeKind = sanitizePlainLine(text), kind
 }
 
 // takeNotice は未表示の操作結果を取り出して消す。browseModel がトーストへ流すための口で、
@@ -1125,10 +1127,10 @@ func (v *issuesView) setNotice(text string, ok bool) {
 // なぜヘッダー行でなくトーストにするか: コピーや URL 起動の結果は glogx 全体で右下トーストに
 // 出す語彙で統一されている (ユーザー要望 2026-07-31)。viewer が全画面でトーストが隠れていた
 // 時代の名残でヘッダーに出していたが、トーストを viewer の上にも合成するようにしたので不要。
-func (v *issuesView) takeNotice() (string, bool) {
-	text, ok := v.notice, v.noticeOK
-	v.notice, v.noticeOK = "", false
-	return text, ok
+func (v *issuesView) takeNotice() (string, noticeKind) {
+	text, kind := v.notice, v.noticeKind
+	v.notice, v.noticeKind = "", noticeOK
+	return text, kind
 }
 
 // tabNextName は疑似カテゴリ [next] の識別子 (保存・復元でもこの名前で持つ)。
@@ -1193,7 +1195,7 @@ func (v *issuesView) settleDrawer() {
 // カーソルが動いた」等の状態を増やすだけで得がない (スキャンと違い件数に比例しない)。
 func (v *issuesView) openBody() {
 	if row, ok := v.currentDisplayRow(); ok && row.kind == displayRowGroup {
-		v.setNotice("親行では issue を開けません", false)
+		v.setNotice("親行では issue を開けません", noticeRefused)
 		return
 	}
 	if iss := v.current(); iss != nil {
@@ -1207,7 +1209,7 @@ func (v *issuesView) openIssue(iss *issues.Issue) bool {
 	v.clearMark() // 本文は 1 件の操作。選択を残すと y が一覧の範囲へ効いて対象が食い違う
 	body, err := iss.ReadBody()
 	if err != nil {
-		v.setNotice("本文を読めませんでした: "+firstLine(err.Error()), false)
+		v.setNotice("本文を読めませんでした: "+firstLine(err.Error()), noticeError)
 		return false
 	}
 	v.open, v.body = iss, body
@@ -1239,9 +1241,9 @@ func (v *issuesView) openNeighbor(delta, rows int) {
 	}
 	if i < 0 || i >= len(v.displayRows) {
 		if delta > 0 {
-			v.setNotice("これが最後の issue です", false)
+			v.setNotice("これが最後の issue です", noticeRefused)
 		} else {
-			v.setNotice("これが最初の issue です", false)
+			v.setNotice("これが最初の issue です", noticeRefused)
 		}
 		return
 	}
@@ -1487,7 +1489,7 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 		// (status viewer 側で明文化されている規律。issue 122)。
 		// 効かせない理由は openURLPicker の doc: 一覧で押せるようにするとキー 1 打ごとにファイルを
 		// 読むことになり、しかも「その issue に URL があるか」は一覧に出ていない。
-		v.setNotice("URL 一覧は本文を開いてから u で出します", false)
+		v.setNotice("URL 一覧は本文を開いてから u で出します", noticeRefused)
 	case "/":
 		v.numFilter.start() // 絞り込み中なら続きから打てる (行集合は変わらないので refresh 不要)
 	// 範囲選択 (ユーザー要望 2026-08-01)。y / p / Y が選択範囲へ効く。
@@ -1611,7 +1613,7 @@ func (v *issuesView) actionKey(key string) (tea.Cmd, bool) {
 			v.copyGroupName()
 			return nil, true
 		case "v", "e", "p", "Y", "N":
-			v.setNotice("親行では issue 操作はできません", false)
+			v.setNotice("親行では issue 操作はできません", noticeRefused)
 			return nil, true
 		}
 	}
@@ -1749,12 +1751,12 @@ func (v *issuesView) extendMark(delta, rows int) {
 		return
 	}
 	if !v.isIssueDisplayRow(v.cursor) {
-		v.setNotice("親行では issue を選択できません", false)
+		v.setNotice("親行では issue を選択できません", noticeRefused)
 		return
 	}
 	next := clampIdx(v.cursor+delta, len(v.displayRows))
 	if !v.isIssueDisplayRow(next) {
-		v.setNotice("親行は選択できません", false)
+		v.setNotice("親行は選択できません", noticeRefused)
 		return
 	}
 	if !v.marked {
@@ -1866,7 +1868,7 @@ func (v *issuesView) editCmd() tea.Cmd {
 		return nil
 	}
 	if _, err := os.Stat(iss.Path); err != nil {
-		v.setNotice("実体が見つかりません (一覧を取り直します): "+iss.Rel, false)
+		v.setNotice("実体が見つかりません (一覧を取り直します): "+iss.Rel, noticeRefused)
 		return v.scanAfterChangeCmd()
 	}
 	return runEditorCmd(editorCommand(iss.Path))
@@ -1881,7 +1883,7 @@ func (v *issuesView) openURLPicker() {
 		return
 	}
 	if !v.urlPick.open(v.body.URLs()) {
-		v.setNotice("この本文に URL はありません", false)
+		v.setNotice("この本文に URL はありません", noticeRefused)
 	}
 }
 
@@ -1894,7 +1896,7 @@ func (v *issuesView) urlPickerKey(key string) tea.Cmd {
 	}
 	v.urlPick.close()
 	// 「開きました」と断定しない: 失敗は openURLMsg 経由でトースト警告になる (browseModel 側)。
-	v.setNotice("URL を開きます: "+url, true)
+	v.setNotice("URL を開きます: "+url, noticeOK)
 	return func() tea.Msg { return openURLMsg{err: openInBrowser(url)} }
 }
 
@@ -1962,10 +1964,10 @@ func (v *issuesView) copyLines(lines []string, label string) {
 		return
 	}
 	if err := copyToClipboard(strings.Join(lines, "\n")); err != nil {
-		v.setNotice("コピーに失敗しました: "+firstLine(err.Error()), false)
+		v.setNotice(clipboardFailText(err), noticeRefused)
 		return
 	}
-	v.setNotice(strconv.Itoa(len(lines))+" 件の"+label+"をコピーしました: "+lines[0]+" ほか", true)
+	v.setNotice(strconv.Itoa(len(lines))+" 件の"+label+"をコピーしました: "+lines[0]+" ほか", noticeOK)
 }
 
 // copyGroupName は合成の group 親行の名称をコピーする (y)。
@@ -1998,10 +2000,10 @@ func (v *issuesView) copyNextNumber() {
 // copyText はクリップボードへ入れて結果を通知する (コピー系アクションの共通処理)。
 func (v *issuesView) copyText(text, okPrefix string) {
 	if err := copyToClipboard(text); err != nil {
-		v.setNotice("コピーに失敗しました: "+firstLine(err.Error()), false)
+		v.setNotice(clipboardFailText(err), noticeRefused)
 		return
 	}
-	v.setNotice(okPrefix+text, true)
+	v.setNotice(okPrefix+text, noticeOK)
 }
 
 // カテゴリの色。意味が広く共有されている語には固定色を割り、表に無い語は語のハッシュで
@@ -2732,7 +2734,7 @@ type issuesMarkConfirm struct {
 // 1 件を外します」は読めない)。
 func (v *issuesView) askMarkNext() {
 	if v.currentIsGroup() {
-		v.setNotice("親行では issue を next へ移せません", false)
+		v.setNotice("親行では issue を next へ移せません", noticeRefused)
 		return
 	}
 	rows := v.selectedRows()
@@ -2778,7 +2780,7 @@ func (v *issuesView) markNextKey(key string) tea.Cmd {
 		newPath, err := issues.MoveToSubdir(iss, dest)
 		if err != nil {
 			v.setPendingMoveAnchors(cursorBefore, markBefore, movedPaths)
-			v.setNotice("移動できませんでした: "+firstLine(err.Error()), false)
+			v.setNotice("移動できませんでした: "+firstLine(err.Error()), noticeError)
 			return v.scanAfterChangeCmd() // 途中まで動いた分を一覧へ反映する
 		}
 		movedPaths[iss.Path] = newPath
@@ -2786,7 +2788,7 @@ func (v *issuesView) markNextKey(key string) tea.Cmd {
 	}
 	v.clearMark()
 	if moved == 0 {
-		v.setNotice("対象がありません (すべて既にその状態)", true)
+		v.setNotice("対象がありません (すべて既にその状態)", noticeOK)
 		return nil
 	}
 	v.setPendingMoveAnchors(cursorBefore, markBefore, movedPaths)
@@ -2794,7 +2796,7 @@ func (v *issuesView) markNextKey(key string) tea.Cmd {
 	if skipped > 0 {
 		notice += " (" + strconv.Itoa(skipped) + " 件は対象外)"
 	}
-	v.setNotice(notice, true)
+	v.setNotice(notice, noticeOK)
 	return v.scanAfterChangeCmd() // 置き場所が変わったので一覧を取り直す
 }
 

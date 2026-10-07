@@ -173,7 +173,7 @@ func TestStatusConflictRowRejectsStageAndDiscard(t *testing.T) {
 	if len(calls.add) != 0 || len(calls.restoreStaged) != 0 {
 		t.Fatalf("conflict 行で git が走った: add=%v staged=%v", calls.add, calls.restoreStaged)
 	}
-	if notice, ok := v.takeNotice(); ok || !strings.Contains(notice, "conflict") {
+	if notice, ok := noticeOKOf(v.takeNotice()); ok || !strings.Contains(notice, "conflict") {
 		t.Errorf("notice = %q (ok=%v), want conflict の案内を失敗として出す", notice, ok)
 	}
 	v.handleKey("X", testViewport())
@@ -203,7 +203,7 @@ func TestStatusStageAllOnCleanTreeDoesNothing(t *testing.T) {
 	if len(calls.add) != 0 {
 		t.Fatalf("stage 対象が無いのに git add が走った: %v", calls.add)
 	}
-	if notice, ok := v.takeNotice(); !ok || notice == "" {
+	if notice, ok := noticeOKOf(v.takeNotice()); !ok || notice == "" {
 		t.Errorf("notice = %q (ok=%v), want 「stage するものがありません」", notice, ok)
 	}
 }
@@ -354,7 +354,7 @@ func TestStatusPathIsSanitizedForDisplayOnly(t *testing.T) {
 func TestStatusNoticeIsSanitized(t *testing.T) {
 	const esc, bel = "\x1b", "\a"
 	v := newTestStatusView(t, statusRec("## master", "?? a.txt"))
-	v.setNotice("evil"+esc+"]0;pwned"+bel+".txt の変更を捨てました", true)
+	v.setNotice("evil"+esc+"]0;pwned"+bel+".txt の変更を捨てました", noticeOK)
 	if hasTerminalControl(v.notice) {
 		t.Errorf("通知に制御シーケンスが残った: %q", v.notice)
 	}
@@ -380,7 +380,7 @@ func TestStatusDiscardRejectsStagedRow(t *testing.T) {
 	if v.discarding {
 		t.Fatal("staged 行で X の確認が開いた (先に Space で unstage させる契約)")
 	}
-	if notice, ok := v.takeNotice(); ok || !strings.Contains(notice, "unstage") {
+	if notice, ok := noticeOKOf(v.takeNotice()); ok || !strings.Contains(notice, "unstage") {
 		t.Errorf("notice = %q (ok=%v), want unstage を促す案内", notice, ok)
 	}
 }
@@ -454,7 +454,7 @@ func TestStatusDiscardAbortsWhenStateChangedDuringConfirm(t *testing.T) {
 	if len(calls.restoreWork) != 0 || len(calls.clean) != 0 {
 		t.Fatalf("状態が変わったのに捨ててしまった: restore=%v clean=%v", calls.restoreWork, calls.clean)
 	}
-	notice, ok := v.takeNotice()
+	notice, ok := noticeOKOf(v.takeNotice())
 	if ok || !strings.Contains(notice, "変わった") {
 		t.Errorf("notice = %q (ok=%v), want 中止したことを失敗として伝える", notice, ok)
 	}
@@ -1497,7 +1497,7 @@ func TestStatusPagerNeighborKeysSwapFile(t *testing.T) {
 		t.Fatalf("shift+↓ で c.txt へ移らない: key=%q cursor=%d", v.pagerKey, v.cursor)
 	}
 	v.handleKey("J", testViewport())
-	if msg, _ := v.takeNotice(); v.pagerKey != previewKey(v.rows[2]) || !strings.Contains(msg, "最後") {
+	if msg, _ := noticeOKOf(v.takeNotice()); v.pagerKey != previewKey(v.rows[2]) || !strings.Contains(msg, "最後") {
 		t.Errorf("末尾の J で止まらない / 案内が出ない: key=%q notice=%q", v.pagerKey, msg)
 	}
 	v.handleKey("K", testViewport())
@@ -1506,7 +1506,7 @@ func TestStatusPagerNeighborKeysSwapFile(t *testing.T) {
 		t.Fatalf("K ×2 で a.go へ戻らない: key=%q cursor=%d", v.pagerKey, v.cursor)
 	}
 	v.handleKey("K", testViewport())
-	if msg, _ := v.takeNotice(); v.pagerKey == "" || !strings.Contains(msg, "最初") {
+	if msg, _ := noticeOKOf(v.takeNotice()); v.pagerKey == "" || !strings.Contains(msg, "最初") {
 		t.Errorf("先頭の K で閉じた / 案内が出ない: key=%q notice=%q", v.pagerKey, msg)
 	}
 }

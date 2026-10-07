@@ -48,7 +48,15 @@ silent に壊れる (compile も test も通る)。
 
 ## 進捗
 
-- [ ] 通知の kind を 3 値にする
-- [ ] issues viewer のコピーを `copyWithToast` に寄せる
-- [ ] ui-guide §9 を直す
-- [ ] 回帰テストと変異での red 確認
+- [x] 通知の kind を 3 値にした (`noticeKind`: `noticeOK` / `noticeRefused` / `noticeError`。tui.go)。`deliverNotice` は exhaustive な switch で、
+  `showWarning` へ流すのは `noticeError` だけ。分類は断り 21 / エラー 9 (計 30)
+  - 🚨 Msg 経路で置く 2 件 (「開いていた issue が見つかりません」「見出しが変わりました」) は `noticeError`。次の打鍵が q だと
+    トーストを読む前に終わるので、理由を `lastWarning` に残す契約 (issue 059、`TestIssuesScanMsgDeliversRebindNotice`) を守る
+- [x] コピー失敗の文言は `clipboardFailText` を `copyWithToast` と viewer で共有し、種類は `noticeRefused`。
+  viewer から `copyWithToast` を直接呼ぶ形にしなかったのは、viewer が browseModel を持たないため (意味の不具合は kind で直る)
+- [x] ui-guide §9 を 3 分類に合わせた
+- [x] 回帰テスト: `TestIssuesViewerCopyFailureToast` を「直前の警告を上書きしない」に書き換えた (旧版は 2026-07-31 17:56 の commit で入り、
+  43 分後に `showWarning` の doc が 3 分類を定めた時点で取り残されていた) / `TestIssuesViewerRefusalKeepsLastWarning` を新設
+- 変異: `deliverNotice` を旧来の形 (`noticeRefused` も `showWarning`) に戻す → 上の 2 本が red、059 のテストは緑のまま (意図どおり)
+- `make -C src/glogx lint` 0 issues / `make -C src/glogx test` rc=0 (2026-10-08)
+- [ ] 敵対的レビュー (663〜667 をまとめて)

@@ -92,7 +92,7 @@ func (v *issuesView) selectLink(fl []issues.FileLink, i, rows int) {
 func (v *issuesView) startLinkJump(vp issuesViewport, rows int) {
 	fl := v.jumpLinks(vp)
 	if len(fl) == 0 {
-		v.setNotice("この issue に開けるファイルパスはありません", false)
+		v.setNotice("この issue に開けるファイルパスはありません", noticeRefused)
 		return
 	}
 	top := v.bodyPager.Offset
@@ -152,7 +152,7 @@ func (v *issuesView) linkJumpKey(key string, vp issuesViewport, rows int) (cmd t
 // 「そのファイル」として見せる。
 func (v *issuesView) openLink(l issues.FileLink, readonly bool) tea.Cmd {
 	if !v.body.Recheck(l, v.jumpRepos()) {
-		v.setNotice("ファイルが見つかりません: "+v.linkLabel(l), false)
+		v.setNotice("ファイルが見つかりません: "+v.linkLabel(l), noticeRefused)
 		return nil
 	}
 	if !readonly {
@@ -195,13 +195,13 @@ func isMarkdownPath(p string) bool {
 func (v *issuesView) openDoc(l issues.FileLink) {
 	if len(v.docStack) >= maxDocDepth {
 		// 相互リンクした doc を Enter で往復すると際限なく積まれ、抜けるのに h を何回も押すことになる
-		v.setNotice("これ以上は積めません ("+strconv.Itoa(maxDocDepth)+" 段)。h で戻ってから開いてください", false)
+		v.setNotice("これ以上は積めません ("+strconv.Itoa(maxDocDepth)+" 段)。h で戻ってから開いてください", noticeRefused)
 		return
 	}
 	doc := &issues.Issue{Path: l.Path, Dir: v.open.Dir, Rel: v.pathLabel(l.Path)}
 	body, err := doc.ReadBody()
 	if err != nil {
-		v.setNotice("開けませんでした: "+firstLine(err.Error()), false)
+		v.setNotice("開けませんでした: "+firstLine(err.Error()), noticeError)
 		return
 	}
 	v.docStack = append(v.docStack, bodyFrame{open: v.open, body: v.body, offset: v.bodyPager.Offset, jump: v.linkJump})

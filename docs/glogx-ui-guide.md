@@ -271,7 +271,9 @@ glogx の issues の一覧 (範囲選択) と本文 (隣へ送る) と同じ割�
   「何かが始まった」に見える (2026-09-25 のユーザーの指摘。pro-con の `refuse` / glogx の `showWarning`)
 - glogx の viewer (issues / status) は自分で toast を持たず、`setNotice` で置いた結果を browseModel が `takeNotice` で
   取り出して toast に流す (`deliverNotice`)。Msg 経路で置いた notice も同じ口を通す (通さないと次の打鍵まで出ない。issue 059)。
-  失敗は `w` でコピーできるよう控える (`lastWarning`)
+  通知は 3 種類 (`noticeKind`): 成功 (`noticeOK`) / 断り・クリップボード失敗 (`noticeRefused`、✗ のトーストだけ) /
+  エラー詳細 (`noticeError`)。`w` でコピーできるよう控える (`lastWarning`) のは `noticeError` だけ — 断りの文まで控えると
+  直前のエラーを上書きして `w` で辿れなくなる (issue 663。分類の正本は tui.go の `showWarning` の doc)
 - **時間で消えてはいけない知らせ** (起動時の警告・捨てた書きかけの文) は toast に載せず、消すまで残す行に置く
   (pro-con の `Notify` / `sticky`。ボードの `Esc` で消す)
 - schedkeys の予約成功の通知は tuikit/toast を使わない別実装 (理由は `src/schedkeys/toast.go` の冒頭)

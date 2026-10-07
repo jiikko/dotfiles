@@ -122,7 +122,7 @@ func TestIssuesViewGroupParentCopiesGroupName(t *testing.T) {
 	if *copied != "google-drive" {
 		t.Fatalf("group 名がコピーされていない: %q", *copied)
 	}
-	if text, ok := v.takeNotice(); !ok || !strings.Contains(text, "group 名をコピーしました: google-drive") {
+	if text, ok := noticeOKOf(v.takeNotice()); !ok || !strings.Contains(text, "group 名をコピーしました: google-drive") {
 		t.Fatalf("コピーの通知が想定と違う: %q", text)
 	}
 	// y は「コピーするだけ」: 親行の no-op 表 (ActionsAreNoopWithNotice) から y を外したぶん、
@@ -149,7 +149,7 @@ func TestIssuesViewGroupParentCopiesRawGroupNameButSanitizesNotice(t *testing.T)
 	if *copied != name {
 		t.Fatalf("コピーに無害化が掛かった (貼り先で別物になる): %q", *copied)
 	}
-	text, _ := v.takeNotice()
+	text, _ := noticeOKOf(v.takeNotice())
 	if strings.ContainsAny(text, "\t\n") {
 		t.Fatalf("通知に制御文字が残った (1 行の枠が壊れる): %q", text)
 	}

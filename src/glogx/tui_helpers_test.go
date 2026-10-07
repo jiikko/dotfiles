@@ -353,3 +353,9 @@ func uniformWidth(t *testing.T, box []string) int {
 	}
 	return w
 }
+
+// noticeOKOf は takeNotice の戻りを (文言, 成功か) に読み替える (成功 / 失敗だけを見るテスト用)。
+// 失敗の種類 (noticeRefused / noticeError) を見るテストは takeNotice を直接読む。
+func noticeOKOf(text string, kind noticeKind) (string, bool) {
+	return text, kind == noticeOK
+}
