@@ -1,8 +1,12 @@
 # 620 (feat): issue 規約の注入を、mod でシステムプロンプトの節へ上げる (守られる率が上がるかを先に測る)
 
+> 🚨 **担当中: obaket の session (peer-inbox / ratelimit-warn を作った Fable)**（2026-10-07〜）
+
+> 2026-10-02 に「移さない」で決着 → **2026-10-07 に再開**: 再開の trigger (managed settings が無くなり `prompt.compose` が user の mod に届く) を同日の測り直しで確認した (618 の進捗)。下の計測計画を回す。
+
 起票日: 2026-10-02
 
-epic [618](../618-design-claude-code-mods-migration.md) の子。619 の後。epic で最初に着手する 1 本 (ただし移す前に仮説を測る)。
+epic [618](618-design-claude-code-mods-migration.md) の子。619 の後。epic で最初に着手する 1 本 (ただし移す前に仮説を測る)。
 
 ## 概要
 
@@ -175,3 +179,10 @@ mod は失敗すると黙ってスキップされる。移すと、規約の無�
 - 2026-10-02: 起票
 - 2026-10-02: 起票と同じ日に、反証レビュー (sonnet 2 本) と敵対的レビュー (opus 2 本) の指摘で方針を改訂した。620 を「システムプロンプトの節なら守られる」の仮説を A-B で測る issue に直し (3 腕・隔離した config・CLAUDE.md の文をそろえる)、規約は session.start で 1 回読む・印は session_id ごと、を足した。採否と理由の一覧は親 618 の進捗
 - 2026-10-02: 決着 — 移さない。このマシンでは user の mod の `prompt.compose` / `prompt.context` / `classic.SessionStart` が bypass され、腕 B / D を作れない (上の「決着」)。A-B は取らずに閉じる
+
+## 進捗 (再開後)
+
+- 2026-10-07: 再開。隔離の前提を測り直した: `CLAUDE_CONFIG_DIR` を一時 dir にすると認証が通らない (`Not logged in`) ので、この形は使えない。
+  代わりに `--setting-sources ""` + 腕ごとの `--settings` で回す。`--setting-sources ""` では `~/.claude/CLAUDE.md` も読まれない (haiku に「ぼやきポイント推奨」の有無を聞いて no) ので、
+  「CLAUDE.md の文を腕でそろえる」は何もしなくても満たされる (3 腕とも global の CLAUDE.md なし。本番と違う点として記録)
+
