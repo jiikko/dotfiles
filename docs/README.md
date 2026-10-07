@@ -13,7 +13,7 @@
 |---|---|---|
 | [`claude-mods.md`](claude-mods.md) | Claude Code の mods (関数 hook の plugin) の置き場所・読み込み (`CLAUDE_CODE_PLUGIN_DIRS`)・読まれる経路の実測・**このマシンで mod に届かないイベント**・pro-con の役に載せない理由・テストと CI の扱い | `_claude/mods/` に mod を足す / settings の hook を mod へ移す |
 | [`claude-mods-guide.md`](claude-mods-guide.md) | mods の全体像 (どのファイルが何をするか)・各 mod の仕組み (desktop-statusline のデータの流れ、`/statusline-refresh` とは何か)・変更と試し方の手順・反映のタイミング・つまずき | mod を初めて触る / 直す / 足す / desktop に出ない |
-| [`glogx-bubbletea-v2.md`](glogx-bubbletea-v2.md) | glogx が bubbletea v2 で動く前提、v2 の新機能を採らなかった判断、次に上げるとき測り直すもの。**他モジュールが v1 のままである理由**も | glogx の TUI を触る / bubbletea を上げる |
+| [`glogx-bubbletea-v2.md`](glogx-bubbletea-v2.md) | glogx が bubbletea v2 で動く前提、v2 の新機能を採らなかった判断、次に上げるとき測り直すもの。**v1 のまま repo の外へ出たモジュール (parallel-each) を上げない理由**と、charm 依存の版を module 間で揃える検査も | glogx の TUI を触る / bubbletea を上げる |
 | [`nvim-ruby-lsp.md`](nvim-ruby-lsp.md) | nvim の Ruby LSP。定義ジャンプが索引をどう引くか、索引がいつ作られどこに在るか (ディスクには無い)、参照検索だけ 11 秒かかる理由、2026-09-08 の高速化で何を書き何を書かなかったか | Ruby のサーバ選択・`<C-k>`・ステータスラインの進捗を触る / 「遅い」と言われた |
 | [`theme-colors.md`](theme-colors.md) | 色は「意味 (role) → 定数」で管理する。**使用箇所ではなく定数を触る**。色の意味マップ | tmux か nvim の色を変えたい |
 | [`tmux-plugins.md`](tmux-plugins.md) | セッション永続化 (resurrect + continuum)。イベント駆動の debounce 保存と、全保存経路を直列化する単一 lock | tmux の保存・復元経路を触る |
@@ -72,7 +72,7 @@ glogx の画面のうち、**複数 repo をこの規約に寄せる** / **書�
 |---|---|
 | 全プロジェクト共通の作業規範 (毎セッション読まれる) | [`_claude/rules/`](../_claude/rules/) — 本文は規範だけ。根拠は `_claude/rules-rationale/` |
 | dotfiles 固有で、必要なときだけ読む規範 | [`rules/`](../rules/README.md) — bench の見方 (索引つき。zsh の hook / trap は `.claude/rules/` へ移した) |
-| ディレクトリ固有の規約 | そのディレクトリの `CLAUDE.md` (`scripts/` / `tests/` / `src/glogx/` / `_claude/`) |
+| ディレクトリ固有の規約 | そのディレクトリの `CLAUDE.md` (`scripts/` / `tests/` / `_claude/` / `src/<name>/` の各 module など) |
 | 各ツールの使い方 | `src/<name>/README.md` と `<tool> --help` |
 | 作業の記録・残課題・振り返り | [`issues/`](../issues/) (共通規約は [`_claude/issue-rules.md`](../_claude/issue-rules.md)、dotfiles 固有は `issues/README.md`) |
 | 検証レポートの中間生成物 | `./tmp` (gitignore。**結論は issue かコードへ移す**。掃除は `make clean-tmp`) |
