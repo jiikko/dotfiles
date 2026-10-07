@@ -73,12 +73,14 @@ CI の runner / OS / 依存を差し替えたら、緑どうしの比較で終�
     `"\u003c"` が `"<"` になった)。書いた直後に表記を grep し、化けるなら `\x5c` などツールが解釈しない形にする (retro 642)
 - **表示・コピー用と実行用でコマンド文字列を分けない**
 
-## path filter 付きの CI では、HEAD の緑を「直前までの緑」と読み替えない
+## 起動しなかった / 取り消された run は、その commit を検証していない (path filter・concurrency)
 
 - `paths:` 付きの workflow は、対象を触らない commit では起動しない。判定は commit ではなく**範囲**で行い、
   最後にその workflow が走った commit から HEAD までに対象を触った commit が挟まっていないかを見る
 - HEAD が対象を触っていないなら、その緑は HEAD を検証していない
 - **`make test` に lint が入っていない repo では、Go / shell を触った commit ごとに lint を別に回す**
+- **concurrency で取り消された (cancelled) run は、失敗でも成功でもない**。続けて push すると前の commit の run は取り消される。
+  その commit は、それを含む後の commit の run で確かめ、待ちもそちらに張り直す (`gh run list --commit` は完全な sha で渡す。retro 647)
 
 ## 集約テストが赤いまま、その上で検証を続けない
 

@@ -54,6 +54,8 @@ mermaid の「壊す・並行」のレビュー担当が、調べる途中で `p
 
 ## 進捗
 
-- [ ] A
-- [ ] B
-- [ ] C
+- [x] A — `adversarial-review-own-safeguards.md` §7 に追記 (commit「rules: retro 647 の提案を既存ルールに追記する」)
+- [x] B — `subagent-model-tiering.md` の「指示を書くとき」に追記 (同上)
+- [x] C — `verify-execution-not-just-exit-code.md` の節の見出しを「起動しなかった / 取り消された run は、その commit を検証していない」に
+  広げて追記 (同上)。`gh run list --commit` に先頭 10 文字の sha を渡すと、エラーも出さずに空で返ることを確かめてから書いた
+  (完全な sha なら run が返る)
