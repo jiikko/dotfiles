@@ -1,7 +1,5 @@
 # 649 (bug): zundamon-kaisetsu の mermaid の描画を中断・時間切れで止めると、puppeteer が起こした Chrome が残る
 
-> 🚨 **担当中: dotfiles-4d**（2026-10-07〜）
-
 起票日: 2026-10-07
 
 ## 概要
@@ -44,4 +42,7 @@
 - 敵対的レビュー (opus 1 周): P1 / P2 なし。採用した P3: Cancel と回収が並行しうることをコメントで正しく書く / 時間切れのテストは孫の起動を待ってから判定 /
   runtimeout の `TestDefaultPutsChildInOwnGroup` が `sleep 300` の孤児を残していた (グループごと撃つ)。記録のみ: 回収後も最長 3 秒同じ番号へ撃つ窓
   (runtimeout と同じ。pid の再利用が要る) / 中断で最長 3 秒待つ / CONT の後に Chrome が新しく起こす子は集めていない (実機は未確認)
-- 実機 (本物の npx + Chrome) で中断したときに Chrome が残らないかは未確認 (偽物での確認)
+- 実機で確かめた (2026-10-07。本物の npx の mermaid-cli 11.17.0 と手元の Chrome。台本は testdata/build に mermaid の図を足したもの)。
+  puppeteer の Chrome (`puppeteer_dev_chrome_profile` を使うもの) が現れた時点で build に SIGTERM を送り、6 秒後に残っているかを見た:
+  修正前の版 (c12cf089) は Chrome が 1 個残った / 修正後の版は 4 回とも 0 個 (Chrome とヘルパーが 1〜5 個居た回を含む)。
+  🚨 試すときの注意: 非対話の bash の `&` で起こした build は SIGINT を無視した状態で始まるので、SIGINT では中断できない (SIGTERM を使う)
