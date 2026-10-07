@@ -1,7 +1,5 @@
 # 654 (refactor): zundamon-kaisetsu のファイル構成と重複の整理
 
-> 🚨 **担当中: dotfiles-4d**（2026-10-07〜）
-
 起票日: 2026-10-07
 
 ## 詳細 (どれも P3。挙動は変えない)
@@ -28,5 +26,16 @@
 
 ## 進捗
 
-- [ ] ファイルの分割 (挙動を変えない commit として単独で)
-- [ ] 重複の解消
+- [x] ファイルの分割 (挙動を変えない commit として単独で) — refactor(zundamon-kaisetsu): mp4.go / build.go / synth.go に同居していた責務をファイルに分ける
+- [x] 重複の解消 — refactor(zundamon-kaisetsu): 台本の場所からの相対パスと faces.json の読み込みを 1 つにする
+
+## 結果 (2026-10-07)
+
+- 分割: wav.go / outfile.go / chrome.go を新設し、cmdBuild を build.go へ。移動の前後で package 行と import を除いた全行の多重集合が一致することを確かめた
+- 重複: `resolveScriptRelative` (立ち絵の faces と図解の image.src) / `readFacesMeta` (faceList と faceCredits) / player.html の `whoLabel` (書き起こしと字幕)。
+  testdata の台本で HTML を作り、headless の Chrome の DOM で話者名が行数ぶん出ることを確かめた
+- **見送り (理由)**:
+  - query.json の読み込み (assemble / cmdKana): 意味が違う (assemble は読めなければ失敗、cmdKana はエンジンに問い合わせ直す)。共通にできるのは decode の 3 行だけで、寄せても複雑性が下がらない
+  - `showData` の段階ごとの型分け: 呼び出し元が assemble の 1 つだけで、今は未発火。図解を assemble 以外から PlayerData に入れる呼び出し元を足すときに分ける
+  - player.html の図解のカードを表にする: showAt の分岐は 650 のテストが種類ごとに検査している形で、表にしても分岐の数は変わらない
+- 敵対的レビューは省略した (挙動を変えない移動と機械的な置き換え。テストを変えずに go test / make lint が通り、描画も実物で確かめた)

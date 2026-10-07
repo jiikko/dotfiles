@@ -273,15 +273,21 @@ func nonneg(path, key string, v any) error {
 	return fail("%s: %s は 0 以上の数 (実際: %s)", path, key, pyRepr(v))
 }
 
+// resolveScriptRelative は台本に書いたパス (~ と相対パス可) を、台本の場所から解いた実際のパスにする。
+// 立ち絵の cast.*.faces と図解の image.src が同じ規則で解く
+func resolveScriptRelative(scriptPath, p string) string {
+	p = expandUser(p)
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(filepath.Dir(scriptPath), p)
+	}
+	return resolvePath(p)
+}
+
 // facesDir は立ち絵の dir。台本の cast.<キャラ>.faces が無ければ、skill の assets/ にあれば使う。
 func facesDir(s *Script, key string, env *Env) (string, bool) {
 	c := s.Cast[key]
 	if v, ok := c["faces"]; ok && pyTruthy(v) {
-		p := expandUser(pyStr(v))
-		if !filepath.IsAbs(p) {
-			p = filepath.Join(filepath.Dir(s.Path), p)
-		}
-		return resolvePath(p), true
+		return resolveScriptRelative(s.Path, pyStr(v)), true
 	}
 	if env.AssetsFaces == "" {
 		return "", false
@@ -293,6 +299,19 @@ func facesDir(s *Script, key string, env *Env) (string, bool) {
 	return "", false
 }
 
+// readFacesMeta は立ち絵の dir の faces.json (psd_faces.py の出力: faces / credit) を読む。
+func readFacesMeta(dir string) (map[string]any, error) {
+	b, err := os.ReadFile(filepath.Join(dir, "faces.json"))
+	if err != nil {
+		return nil, err
+	}
+	var meta map[string]any
+	if err := decodeJSON(b, &meta); err != nil {
+		return nil, err
+	}
+	return meta, nil
+}
+
 // faceList は cast.<キャラ>.faces (psd_faces.py の出力 dir) にある表情の一覧。dir が無ければ nil (丸アバターで出す)。
 func faceList(s *Script, key string, env *Env) ([]string, error) {
 	d, ok := facesDir(s, key, env)
@@ -300,11 +319,7 @@ func faceList(s *Script, key string, env *Env) ([]string, error) {
 		return nil, nil
 	}
 	fj := filepath.Join(d, "faces.json")
-	var meta map[string]any
-	b, err := os.ReadFile(fj)
-	if err == nil {
-		err = decodeJSON(b, &meta)
-	}
+	meta, err := readFacesMeta(d)
 	if err == nil {
 		list, ok := meta["faces"].([]any)
 		if !ok {

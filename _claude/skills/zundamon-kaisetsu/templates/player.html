@@ -141,9 +141,12 @@ html.render * { transition: none !important; }
     else a.mouth.style.height = ['6%', '14%', '24%'][lv];
   };
 
+  // 話者名 (キャラの色)。書き起こしと字幕で同じものを使う
+  const whoLabel = (k) => { const w = el('span', 'who', actors[k].c.name); w.style.color = actors[k].color; return w; };
+
   // ---------- transcript ----------
   const items = D.lines.map((l, i) => {
-    const li = el('li'); const who = el('span', 'who', actors[l.who].c.name); who.style.color = actors[l.who].color;
+    const li = el('li'); const who = whoLabel(l.who);
     li.append(who, document.createTextNode(l.text)); li.onclick = () => { seek(l.start); play(); };
     $('transcript').append(li); return li;
   });
@@ -204,7 +207,7 @@ html.render * { transition: none !important; }
     showAt(line && line.show !== undefined ? line.show : -1);
     const cap = $('caption'); cap.textContent = '';
     if (!line) return;
-    const who = el('span', 'who', actors[line.who].c.name); who.style.color = actors[line.who].color;
+    const who = whoLabel(line.who);
     cap.append(who, document.createTextNode(line.text));
     if (follow) items[li].scrollIntoView({ block: 'nearest' });
   }

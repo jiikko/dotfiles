@@ -260,10 +260,9 @@ func faceCredits(s *Script, env *Env) []string {
 		if !ok {
 			continue
 		}
-		var meta map[string]any
-		b, err := os.ReadFile(filepath.Join(d, "faces.json"))
-		if err != nil || decodeJSON(b, &meta) != nil {
-			continue // loadScript が faces.json を読めることを確かめ済み
+		meta, err := readFacesMeta(d)
+		if err != nil {
+			continue // loadScript (faceList) が faces.json を読めることを確かめ済み
 		}
 		if c, ok := meta["credit"]; ok && pyTruthy(c) && !slices.Contains(out, pyStr(c)) {
 			out = append(out, pyStr(c))

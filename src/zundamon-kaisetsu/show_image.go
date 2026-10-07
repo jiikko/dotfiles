@@ -52,16 +52,7 @@ func parseImage(path, at string, m map[string]any) (*showData, error) {
 	}
 	// Src は実際の場所 (symlink を解決した絶対パス) にしておく。同じ画像を ./a.png と a.png のように別の書き方で指しても、
 	// 図解の表で 1 つにまとまり、埋め込みが重複しない。ファイルはここでは読まない (synth / kana を画像の欠けで止めないため)
-	return &showData{Type: "image", Src: imageRealPath(path, src), Alt: alt, srcWritten: src}, nil
-}
-
-// imageRealPath は台本に書いた src を、立ち絵の cast.*.faces (facesDir) と同じく台本の場所から解いた実際のパスにする。
-func imageRealPath(scriptPath, src string) string {
-	p := expandUser(src)
-	if !filepath.IsAbs(p) {
-		p = filepath.Join(filepath.Dir(scriptPath), p)
-	}
-	return resolvePath(p)
+	return &showData{Type: "image", Src: resolveScriptRelative(path, src), Alt: alt, srcWritten: src}, nil
 }
 
 func imageMIME(src string) string {
