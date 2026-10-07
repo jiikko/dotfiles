@@ -461,6 +461,10 @@ func TestBuildChecksOutputDirFirst(t *testing.T) {
 			must(t, os.Mkdir(filepath.Join(dir, "out.mp4"), 0o755))
 			return filepath.Join(dir, "out")
 		}},
+		{"自分を指す symlink", func(dir string) string {
+			must(t, os.Symlink("out.mp4", filepath.Join(dir, "out.mp4")))
+			return filepath.Join(dir, "out")
+		}},
 		{"読み取り専用の既存のファイル", func(dir string) string {
 			must(t, os.WriteFile(filepath.Join(dir, "out.mp4"), []byte("old"), 0o444))
 			return filepath.Join(dir, "out")
