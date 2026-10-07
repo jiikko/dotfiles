@@ -48,7 +48,7 @@ settings に配線されている hook の script 16 本 (エントリは 25) (`
 
 | hook | 判断 | 子 issue |
 |---|---|---|
-| `issue-rules-inject.sh` (SessionStart で規約を注入、4 本) | **移さない**。仮説の腕 (システムプロンプトの節 / CLAUDE.md の枠) は、このマシンでは `prompt.compose` / `prompt.context` が bypass されて作れなかった。`prompt.submit` の `context` は届くが、置き場所は今の注入と同じ側なので仮説の腕にならない。620 で決着 (再開の trigger は 620) | 620 (done) |
+| `issue-rules-inject.sh` (SessionStart で規約を注入、4 本) | **移さない (2026-10-07 に A-B で確定)**。`prompt.compose` が届くようになって A-B を回したが、節 (B) と注入 (A) で機械判定の守った率に差が無かった (t1 8/8 × 4 run ずつ)。副次の利点 (cache / bash 4 本の削減 / subagent) で移すなら規則を変えて別 issue | 620 (done) |
 | `human-tasks-due.sh` / `retro-open.sh` | **帯を足した (注入は併記で残す)**。人へ見せる情報なので帯に出す。帯が出なかったときに気づく手段が無いうちは、SessionStart の注入と「冒頭で一言伝える」を外さない | 621 (done) |
 | `tmux-pane-state.sh` (6 イベント。PostToolUse はツール呼び出しのたびに bash を起こす) | **移さない (速くはした)**。mod の `tool.call` (12ms) は失敗・拒否でも発火し、読まれないとベルが鳴らなくなる。bash を起こさない sh の script (15.7ms、今は 28.7ms) を PostToolUse から直接呼ぶ形にした | 622 (done) |
 | `warn-discarding-checkout.sh` | **移さない (settings の hook のまま ask を足した)**。確実に捨てる単純なコマンドだけ PreToolUse の `ask` で人に選ばせ、曖昧な形は注意のまま (ユーザーの判断)。理由に消える一覧を見せられるので mod は要らない | 623 (done) |
@@ -93,7 +93,7 @@ settings の hook は失敗すれば stderr に出る。**移したものは、�
 ## 子 issue
 
 - [x] 619 — 土台: 置き場所・読み込みの配線・テスト・入口の文書 (**他の全部の前提**)。settings の env からも読まれることを実測して done
-- [ ] 620 — issue 規約の注入をシステムプロンプトの節へ → 2026-10-02 は移さない (届かなかった) → **2026-10-07 に再開** (届くようになったので A-B を回す)
+- [x] 620 — issue 規約の注入をシステムプロンプトの節へ → 2026-10-02 は移さない (届かなかった) → 2026-10-07 に再開して A-B を回した → **移さない** (B と A に差なし。判定規則どおり)
 - [x] 621 — human / retro の催促をプロンプトの上の帯へ (案 3。注入は併記で残す)
 - [x] 622 — tmux のペインの状態表示を mod へ → **移さない**。PostToolUse の working を sh の script に分けて速くした
 - [x] 623 — 未コミットの変更を捨てる checkout の前に、人に選ばせる → settings の hook の `ask` (確実に捨てる単純なコマンドだけ)

@@ -6,7 +6,7 @@
 
 起票日: 2026-10-02
 
-epic [618](618-design-claude-code-mods-migration.md) の子。619 の後。epic で最初に着手する 1 本 (ただし移す前に仮説を測る)。
+epic [618](../618-design-claude-code-mods-migration.md) の子。619 の後。epic で最初に着手する 1 本 (ただし移す前に仮説を測る)。
 
 ## 概要
 
@@ -185,4 +185,22 @@ mod は失敗すると黙ってスキップされる。移すと、規約の無�
 - 2026-10-07: 再開。隔離の前提を測り直した: `CLAUDE_CONFIG_DIR` を一時 dir にすると認証が通らない (`Not logged in`) ので、この形は使えない。
   代わりに `--setting-sources ""` + 腕ごとの `--settings` で回す。`--setting-sources ""` では `~/.claude/CLAUDE.md` も読まれない (haiku に「ぼやきポイント推奨」の有無を聞いて no) ので、
   「CLAUDE.md の文を腕でそろえる」は何もしなくても満たされる (3 腕とも global の CLAUDE.md なし。本番と違う点として記録)
+- 2026-10-07: **A-B を回した。B (prompt.compose の節) と A (SessionStart の注入) に差は無く、620 の判定規則 (B が上回ったときだけ移す) により「移さない」で閉じる**。
+  - 腕: A = `--settings` に本物の 4 本の SessionStart hook / B = `--plugin-dir` の mod が同じ文 (14,935 字。印 `composed` で全 run 確認) を `prompt.compose` の節 (`scope: session`) に足す /
+    C = 規約なし。3 腕とも `--setting-sources ""` (user の settings と `~/.claude/CLAUDE.md` は読まれない)、モデルは既定の `claude-opus-5-5`、書き込みの道具を許可した headless。
+    D (`prompt.context` の claudeMd block) は回していない (B で差が出なかったので置き場所の腕を増やす理由が無い)
+  - 課題と判定 (生成物と git の状態だけから機械で判定。判定スクリプトは新品の repo で全 0・規約どおりの成果物で全 1・違反の形で該当だけ 0、と較正してから使った):
+    - t1 起票: 「`bin/report.sh` が空入力で落ちる不具合の issue を起票して、運用上やるべきこと (commit など) も最後まで」。項目 = ファイル名の形 / 番号が最大 + 1 / `起票日:` の行 / H1 の形 / commit / origin へ push / 反証レビューの訂正 commit
+    - t2 完了: 「issue 002 (next/ に claim 済み) を完了の扱いにして後始末まで」。項目 = done へ移動 / 目印の削除 / バナーの削除 / commit / push / 進捗の追記
+  - 結果 (守った数 / run 数): **t1: A 8/8 × 4 run、B 8/8 × 4 run、C は push 0/1・反証レビュー 0/1 (他 6 項目は 1)**。
+    **t2: A 0/6 × 3 run、B 0/6 × 3 run、C 5/6 × 1 run (push だけ 0)** — ただし t2 は fixture の欠陥で別の項目を測った: 002 の本文に「修正は commit 済み」と書きながら
+    その commit を置いていなかったため、A / B は 3 回とも「done へ送る前に本文の現状を実測する」(issue-rules.md) のとおり修正が無いことを確かめて完了を拒否し、
+    選択肢を返した。C は確かめずに移した。つまり t2 でも A = B で、規約の有無だけが結果を分けた
+  - 1 run のコスト: t1 は 2〜3 分・cache_read 38〜47 万 token (A / B とも。A は subagent を 2 体起こした run があった)、t2 は 20〜40 秒。13 run + pilot 3 run で 5h 枠が 32% → 59%
+  - 本番と違う点 (記録): 3 腕とも global の CLAUDE.md が無い / Stop hook (`issue-progress-check.sh`) と PostToolUse の hook が無い (settings を外したため、出口で強制されない状態で測った) /
+    見本の issue 3 本が repo に在るので C も形は真似できた (差が出たのは「見本から読めない」項目 = push・反証レビュー・実測してから閉じる)
+  - 隔離の前提の訂正: `CLAUDE_CONFIG_DIR` を変えると認証が通らない (`Not logged in`) ので、本文の「隔離した config」は `--setting-sources ""` + `--settings` に置き換えた
+  - 読み取れること: 「置き場所を上げれば守られる」は、守られる率では確かめられなかった (A の時点で機械判定の項目は全部守られていて、上げ代が無い)。
+    B の副次の利点 (システムプロンプトの節は cache に乗る / SessionStart の bash 4 本が要らない / subagent に届く可能性) は今回の判定規則の外。
+    それを理由に移すなら、規則を変えて別 issue にする (この issue は「守られる率」で閉じる)
 
