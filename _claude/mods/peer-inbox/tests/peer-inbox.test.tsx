@@ -37,6 +37,24 @@ test('受信した peer message が帯に出て、既読で色が落ちる', asy
   await ui.unmount()
 })
 
+test('Claude が返信 (session.send) したら受信分は既読になり、status line の未読が消える', async ($, on) => {
+  const f = floor(on)
+  const status: Array<string | undefined> = []
+  on('ui.status', (_$, e) => {
+    status.push(e.text)
+    return { value: undefined }
+  })
+  await $.session.receive({ origin: { kind: 'peer' }, text: 'push を控えて' })
+  await $.session.receive({ origin: { kind: 'peer' }, text: '解除しました' })
+  expect(status.at(-1)).toBe('📨 未読 2')
+  await $.session.send({ to: 'macos-a1', text: '了解', origin: { kind: 'model' } as never })
+  expect(status.at(-1)).toBeUndefined()
+  const ui = await $.ui.mount({ plugin: 'peer-inbox', surface: 'terminal', ...BAND })
+  expect(await ui.find({ type: 'Text', text: /他セッション 3 件$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /未読/ })).toBeUndefined()
+  await ui.unmount()
+})
+
 test('relay の通知 (task-notification) は帯に出ない', async ($, on) => {
   floor(on)
   await $.session.receive({ origin: { kind: 'task-notification' }, text: 'CI finished' })

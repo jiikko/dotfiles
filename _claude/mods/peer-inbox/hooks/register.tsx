@@ -47,6 +47,9 @@ export const register: Register = on => {
 
   on('session.send', async ($, e, next) => {
     if (e.agentId === undefined) {
+      // Claude が返信した = 受信箱を読んで処理した、とみなして受信分を既読にする (人が「既読」を押す必要を無くす。
+      // 送り元の名前は受信側の origin から確実に取れないので、宛先で絞らず受信分をまとめて既読にする)
+      await update($, items, l => (l ?? []).map(i => (i.dir === 'in' ? { ...i, isRead: true } : i)))
       await push($, { dir: 'out', who: e.to, text: oneLine(e.text), at: await $.clock.now(), isRead: true })
     }
     return next(e)
