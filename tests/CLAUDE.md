@@ -122,6 +122,9 @@ PATH 先頭に置く)、時間はモック内の `grep` 連打による **fork �
   `make test-cd-rc` (scripts/check_cd_rc_in_tests.sh) が落とす。例外は行内 `cd-rc: allow` + 理由。
   🚨 **カウントを手で確かめるときは `/usr/bin/grep`** を使う (Claude Code の grep は ugrep 経由で
   `$` を行末アンカーと解釈し、`cd "$TEST_DIR"` を 0 件と返す)
+- **`$(cd …)` でパスを取るなら、ファイルの先頭 (`set` の直後) に `unset CDPATH`** (source される helper なら `$(CDPATH='' cd …)`)。
+  export された CDPATH の下では相対パスの cd が解決先を stdout に出し、取ったパスが 2 行になる (手元でだけ落ち、CI は緑)。
+  `make test-cdpath-capture` (scripts/check_cdpath_before_cd_capture.sh) が落とす。例外は行内 `cdpath: allow` + 理由。
 
 ## platform (macOS のみ)
 

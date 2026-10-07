@@ -20,6 +20,7 @@
 # 🚨 測っているのは「**一過性に遅い**ローカル FS」だけ。詰まり続けるマウントでは取り消し
 #    (ReleaseTimed = 同じマウントへ 4 回 I/O) ごと固まるので、ここの数字は上限側の見積もり。
 set -uo pipefail
+unset CDPATH  # export された CDPATH の下では、相対パスの cd が解決先を stdout に出し $(cd … && pwd) を壊す
 BEFORE_REV="${1:?使い方: ./ab_abandoned.sh <修正前の revision> [修正後の revision]}"
 AFTER_REV="${2:-HEAD}"
 N="${N:-150}"

@@ -53,7 +53,7 @@ JSON_FILES := mac/karabiner.json _claude/settings.json _claude/keybindings.json
 RUBY_SYNTAX_FILES := Brewfile _pryrc
 KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli
 
-.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-parallel test-discovered-serial test-discovered-heavy test-discovered-rest test-discovered-rest-parallel test-nvim test-tmux test-pro-con-slow test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-handrolled-timeout test-test-sleeps test-var-multibyte test-cd-rc test-trigger-log-writers test-skip-exit-code test-assert-reaches-exit test-workflow-action-pins test-go-project-lanes test-unused-excluding-tests test-go-lint test-go test-src test-fresh
+.PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-parallel test-discovered-serial test-discovered-heavy test-discovered-rest test-discovered-rest-parallel test-nvim test-tmux test-pro-con-slow test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-handrolled-timeout test-test-sleeps test-var-multibyte test-cd-rc test-cdpath-capture test-trigger-log-writers test-skip-exit-code test-assert-reaches-exit test-workflow-action-pins test-go-project-lanes test-unused-excluding-tests test-go-lint test-go test-src test-fresh
 
 # ./tmp のスクラッチを掃除する (既定は 30 日より古いトップレベルのエントリ)。
 #
@@ -364,6 +364,11 @@ test-var-multibyte:
 test-cd-rc:
 	@scripts/check_cd_rc_in_tests.sh
 
+# `$(cd …)` でパスを取る前に CDPATH を外していない行を落とす。export された CDPATH の下では相対パスの cd が
+# 解決先を stdout に出し、取ったパスが 2 行になる。意図的な例外は行内の `cdpath: allow`。
+test-cdpath-capture:
+	@scripts/check_cdpath_before_cd_capture.sh
+
 # 共有観測ログ (tt-restore-trigger.log) の書き手が guards.sh の tt_trigger_log 以外に増えるのを落とす。
 # 同じ GitHub Action が workflow 間で違う版に固定されるのを落とす (issue 073 §1)。
 # 版が割れていても workflow は動くので actionlint は緑のまま = 気づけない。
@@ -539,7 +544,7 @@ test-lint-tests:
 #   「並列腕 + 直列腕」を束ねており、直列腕は tmux サーバに触るので同時実行の安全性が未検証
 #   (59f9e48c の分割の前提)。ここが並列でよいのは、互いに独立した静的検査だけだから。
 test-lint:
-	@+scripts/run_make_targets_parallel.sh test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps test-pipefail-grep-q test-handrolled-timeout test-test-sleeps test-var-multibyte test-cd-rc test-trigger-log-writers test-skip-exit-code test-workflow-action-pins test-go-project-lanes
+	@+scripts/run_make_targets_parallel.sh test-shellcheck test-zsh-syntax test-lint-tests test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-ci-group-deps test-pipefail-grep-q test-handrolled-timeout test-test-sleeps test-var-multibyte test-cd-rc test-cdpath-capture test-trigger-log-writers test-skip-exit-code test-workflow-action-pins test-go-project-lanes
 
 # Go プロジェクトの静的解析とテスト。実体は各ディレクトリの Makefile の lint / test
 # ターゲットに閉じており、ここはそれへ委譲するだけ (ローカルのコミット前検証用。root の
