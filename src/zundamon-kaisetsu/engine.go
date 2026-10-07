@@ -17,7 +17,9 @@ import (
 
 const (
 	image = "voicevox/voicevox_engine:cpu-latest"
-	// ユーザーが自分で立てた同名のコンテナを up / down で巻き込まないよう、この skill 専用の名前にする
+	// ユーザーが自分で立てた同名のコンテナを up / down で巻き込まないよう、この skill 専用の名前にする。
+	// 実際の名前はポートを後ろに付けたもの (containerNameFor)。見張りが印のポートのコンテナだけを止められるように
+	// (名前が 1 つだと、別のポートに up したコンテナまで名前で止めてしまう。敵対的レビュー)
 	containerName = "zundamon-kaisetsu-voicevox"
 	startHint     = "  起動: zundamon-kaisetsu up   (container か docker でエンジンを立てる)"
 )
@@ -271,14 +273,38 @@ func startEngine(env *Env) error {
 	if running, hint := runtimeService(rt); !running {
 		return fail("%s のサービスが動いていない → %s", rt, hint)
 	}
-	args := []string{"run", "--rm", "-d", "-p", "127.0.0.1:" + port + ":50021", "--name", containerName, image}
-	fmt.Fprintf(env.Stderr, "up: %s %s   (初回はイメージの取得に数分かかる)\n", rt, strings.Join(args, " "))
-	cmd := exec.CommandContext(appCtx, rt, args...)
+	// イメージは手元に無いときだけ取得する (image pull は手元にあってもレジストリに問い合わせるので、オフラインや取得の回数制限で
+	// 起動できなくなり、上流のタグが更新されるたびに普段の synth で約 3.7GB を取り直すことになる)
+	if rc, _ := runQuiet(60*time.Second, rt, "image", "inspect", image); rc != 0 {
+		if e := interruptedErr(); e != nil {
+			return e
+		}
+		fmt.Fprintf(env.Stderr, "up: %s image pull %s   (初回は約 3.7GB の取得に数分かかる)\n", rt, image)
+		pull := exec.CommandContext(appCtx, rt, "image", "pull", image)
+		pull.Stdout, pull.Stderr = env.Stderr, env.Stderr
+		pull.WaitDelay = 5 * time.Second
+		if err := pull.Run(); err != nil {
+			if e := interruptedErr(); e != nil {
+				return e
+			}
+			return fail("%s image pull %s が失敗 (%v)。回線と %s のサービスを確かめて再実行する", rt, image, err, rt)
+		}
+	}
+	name := containerNameFor(env.Engine)
+	args := []string{"run", "--rm", "-d", "-p", "127.0.0.1:" + port + ":50021", "--name", name, image}
+	fmt.Fprintf(env.Stderr, "up: %s %s\n", rt, strings.Join(args, " "))
+	ctx, cancel := context.WithTimeout(appCtx, startRunTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, rt, args...)
 	cmd.Stdout, cmd.Stderr = env.Stderr, env.Stderr // 取得の進捗を見せるため出力は端末 (stderr) へ流す
 	cmd.WaitDelay = 5 * time.Second
 	if err := cmd.Run(); err != nil {
 		if e := interruptedErr(); e != nil {
 			return e
+		}
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return fail("%s run が %s たっても終わらない (取得は済んでいるので、ランタイムが止まっている)。%s のサービスを確かめて、down してから再実行する",
+				rt, startRunTimeout, rt)
 		}
 		return fail("%s run が失敗 (%v)。同名のコンテナが残っているなら down してから再実行する", rt, err)
 	}
@@ -293,8 +319,23 @@ func startEngine(env *Env) error {
 		}
 	}
 	return fail("180 秒待っても %s が応答しない。%s logs %s で原因を見て、やり直す前に down で止める (コンテナは起動したまま残っている)",
-		env.Engine, rt, containerName)
+		env.Engine, rt, name)
 }
+
+// containerNameFor は手元のエンジンの URL に対応するコンテナの名前。
+func containerNameFor(engine string) string {
+	port, err := localPort(engine)
+	if err != nil {
+		return containerName
+	}
+	return containerName + "-" + port
+}
+
+// startRunTimeout は container run の上限。起動用のロックの中で走るので、返らないと synth / down / 見張りが全部待ち続ける。
+// イメージの取得は (手元に無ければ) run の前に image pull で済ませ、こちらには含めない (約 3.7GB の取得は回線しだいで何十分もかかり、上限で
+// 打ち切ると毎回同じ所で切られて二度と起動できなくなる)。取得は上限なしで、進捗を出し、Ctrl-C で止められる。
+// テストで縮めるので変数にしている
+var startRunTimeout = 5 * time.Minute
 
 var notFoundRe = regexp.MustCompile(`(?i)not ?found|no such container`)
 
@@ -302,10 +343,16 @@ func cmdDown(env *Env) error {
 	var stopped []string
 	err := withStartLock(env, func() error {
 		var err error
-		stopped, err = stopContainers(appCtx, "")
+		// 旧版が起こした固定名のコンテナも止める (名前にポートを付ける前の版。残っていると同じポートで起動できない)。
+		// 印が別のポートの自動エンジンを指していれば、それも止める (止めずに印だけ消すと、見張りが終わってコンテナが残り続ける)
+		names := []string{containerNameFor(env.Engine), containerName}
+		if _, url, ok := readAutoMarker(env); ok && url != "" && !samePort(url, env.Engine) {
+			names = append(names, containerNameFor(url))
+		}
+		stopped, err = stopContainers(appCtx, "", names...)
 		if err == nil {
-			// 名前で全ランタイムのコンテナを止めたので、印 (どのポートのものでも) が守るものは残っていない。消さないと、
-			// 後で同じポートに応答したものを見て、見張りが別に up したコンテナを止めうる
+			// 印が指すコンテナも止めたので、印が守るものは残っていない。消さないと、後で同じポートに応答したものを見て、
+			// 見張りが別に up したコンテナを止めうる
 			removeAutoMarker(env)
 		}
 		return err
@@ -314,9 +361,9 @@ func cmdDown(env *Env) error {
 		return err
 	}
 	if len(stopped) > 0 {
-		fmt.Fprintf(env.Stderr, "down: %s を止めた (%s)\n", containerName, strings.Join(stopped, ", "))
+		fmt.Fprintf(env.Stderr, "down: %s を止めた (%s)\n", containerNameFor(env.Engine), strings.Join(stopped, ", "))
 	} else {
-		fmt.Fprintf(env.Stderr, "down: %s は動いていない\n", containerName)
+		fmt.Fprintf(env.Stderr, "down: %s は動いていない\n", containerNameFor(env.Engine))
 	}
 	if ver := engineVersion(env.Engine); ver != "" {
 		fmt.Fprintf(env.Stderr, "down: %s はまだ応答している (版 %s)。この skill 以外 (デスクトップアプリ等) のエンジン\n", env.Engine, ver)
@@ -327,7 +374,8 @@ func cmdDown(env *Env) error {
 // stopContainers はこの skill 専用の名前のコンテナだけを止め、止めたランタイムの名前を返す。
 // only を指定すると、そのランタイムだけを止める (自動で起動したものを止めるとき。別のランタイムで up したエンジンに触らない)。
 // only の指定があるときは、サービスの応答が無いのを「動いていない」と読まず失敗にする (止められていないのに止めたことにしない)。
-func stopContainers(ctx context.Context, only string) ([]string, error) {
+// names は止めるコンテナの名前 (ポートごとの名前。down は旧版の固定名も渡す)。
+func stopContainers(ctx context.Context, only string, names ...string) ([]string, error) {
 	// up 以降に container を入れた・消した場合でも取り残さないよう、優先順位ではなく両方のランタイムを見る
 	var rts []string
 	for _, rt := range []string{"container", "docker"} {
@@ -349,11 +397,13 @@ func stopContainers(ctx context.Context, only string) ([]string, error) {
 			}
 			continue // サービスが止まっていれば、そのランタイムのコンテナも動いていない
 		}
-		rc, out := runQuietCtx(ctx, 120*time.Second, rt, "stop", containerName)
-		if rc == 0 {
-			stopped = append(stopped, rt)
-		} else if !notFoundRe.MatchString(out) {
-			return stopped, fail("%s stop %s が失敗 (rc=%d): %s", rt, containerName, rc, firstRunes(out, 300))
+		for _, name := range names {
+			rc, out := runQuietCtx(ctx, 120*time.Second, rt, "stop", name)
+			if rc == 0 {
+				stopped = append(stopped, rt+" "+name)
+			} else if !notFoundRe.MatchString(out) {
+				return stopped, fail("%s stop %s が失敗 (rc=%d): %s", rt, name, rc, firstRunes(out, 300))
+			}
 		}
 	}
 	return stopped, nil

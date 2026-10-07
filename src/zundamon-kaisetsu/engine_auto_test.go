@@ -1,32 +1,38 @@
 package main
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
 
 // fakeEngine は起動・停止を切り替えられる偽のエンジン。止まっている間はポートで誰も待ち受けない (接続を拒否される)。
 type fakeEngine struct {
-	t      *testing.T
-	addr   string
-	mu     sync.Mutex
-	srv    *http.Server
-	alive  atomic.Bool
-	ups    atomic.Int32
-	downs  atomic.Int32
-	upErr  error
-	upGate chan struct{} // 閉じられるまで起動を終えない (nil なら待たない)
-	spawns atomic.Int32
-	downRT atomic.Value
+	t       *testing.T
+	addr    string
+	mu      sync.Mutex
+	srv     *http.Server
+	alive   atomic.Bool
+	ups     atomic.Int32
+	downs   atomic.Int32
+	upErr   error
+	upGate  chan struct{} // 閉じられるまで起動を終えない (nil なら待たない)
+	spawns  atomic.Int32
+	downRT  atomic.Value
+	downURL atomic.Value
 }
 
 func (fe *fakeEngine) start() {
@@ -89,9 +95,10 @@ func newFakeEngineEnv(t *testing.T, alive bool) (*Env, *fakeEngine) {
 		fe.start()
 		return nil
 	}
-	env.EngineDown = func(rt string) error {
+	env.EngineDown = func(rt, engine string) error {
 		fe.downs.Add(1)
 		fe.downRT.Store(rt)
+		fe.downURL.Store(engine)
 		fe.stop()
 		return nil
 	}
@@ -277,6 +284,9 @@ func TestReaperStopsAfterIdle(t *testing.T) {
 	if rt, _ := fe.downRT.Load().(string); rt != "docker" {
 		t.Errorf("印のランタイムで止めていない: %q (want docker)", rt)
 	}
+	if u, _ := fe.downURL.Load().(string); !samePort(u, "http://"+fe.addr) {
+		t.Errorf("印のエンジン (ポート) のコンテナを止めていない: %q", u)
+	}
 }
 
 // 見張り: 印が無い (up / down) なら止めずに終わる。応答しないなら、印を書いてから startGrace の間は起動途中とみなして待ち、
@@ -299,7 +309,7 @@ func TestReaperExitConditions(t *testing.T) {
 	fe.start()
 	writeMarker(t, env, "container", env.Engine, 0)
 	env.Now = func() time.Time { return time.Now().Add(24 * time.Hour) }
-	env.EngineDown = func(string) error { return errors.New("service down") }
+	env.EngineDown = func(string, string) error { return errors.New("service down") }
 	r := &reaper{}
 	for i := 1; i < reaperMaxFailed; i++ {
 		if r.once(env) {
@@ -325,12 +335,16 @@ func TestProductionEngineDownStopsOnlyMarkedRuntime(t *testing.T) {
 	t.Setenv("PATH", shims+":/bin:/usr/bin") // 本物のランタイムを見つけさせない
 	cancel := withAppCtx(t)
 	cancel()
-	if err := newEnv().EngineDown("container"); err != nil {
+	if err := newEnv().EngineDown("container", "http://127.0.0.1:50021"); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(log)
-	if !strings.Contains(string(b), "container stop "+containerName) {
-		t.Errorf("中断の後に container のコンテナを止めにいっていない。偽のランタイムへの呼び出し:\n%s", b)
+	if !strings.Contains(string(b), "container stop "+containerName+"-50021\n") {
+		t.Errorf("中断の後に、印のポートのコンテナを止めにいっていない。偽のランタイムへの呼び出し:\n%s", b)
+	}
+	// 名前は印のポートのものだけ: 別のポートに up したコンテナ・旧版の固定名には届かない (見張りが up のコンテナを止めた P1)
+	if strings.Count(string(b), " stop ") != 1 {
+		t.Errorf("印のポート以外のコンテナも止めにいった:\n%s", b)
 	}
 	if strings.Contains(string(b), "docker") {
 		t.Errorf("印に無いランタイム (docker) に触った:\n%s", b)
@@ -469,7 +483,8 @@ func TestCmdDownClearsAnyMarkerAfterStop(t *testing.T) {
 	_, auto := newFakeEngineEnv(t, false)
 	writeMarker(t, env, "container", "http://"+auto.addr, 0)
 	shims := t.TempDir()
-	if err := os.WriteFile(filepath.Join(shims, "container"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	log := filepath.Join(t.TempDir(), "calls")
+	if err := os.WriteFile(filepath.Join(shims, "container"), []byte("#!/bin/sh\necho \"$*\" >> "+log+"\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", shims+":/usr/bin:/bin") // 偽の container だけを見せる (本物のランタイムには触れない)
@@ -478,5 +493,228 @@ func TestCmdDownClearsAnyMarkerAfterStop(t *testing.T) {
 	}
 	if markerExists(env) {
 		t.Error("down で止めた後に、別のポートの印が残っている")
+	}
+	// down は自分のポートの名前と、旧版の固定名を止める
+	b, _ := os.ReadFile(log)
+	for _, name := range []string{containerNameFor(env.Engine), containerName, containerNameFor("http://" + auto.addr)} {
+		if !strings.Contains(string(b), "stop "+name+"\n") {
+			t.Errorf("down が %s を止めにいっていない:\n%s", name, b)
+		}
+	}
+}
+
+// up はポートごとの名前でコンテナを起こし、container run が返らなければ startRunTimeout で打ち切る
+// (起動用のロックの中で走るので、返らないと synth / down / 見張りが全部待ち続ける)。
+func TestStartEngineRunTimeoutAndPortName(t *testing.T) {
+	env, _ := newFakeEngineEnv(t, false)
+	shims := t.TempDir()
+	log := filepath.Join(t.TempDir(), "calls")
+	sleepBin, err := exec.LookPath("sleep")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 手元にイメージが無い (image inspect が失敗) ので取得する。
+	// sleep-ok: dummy: 時間のかかる取得 (startRunTimeout より長い 1 秒。上限に含まれていれば打ち切られる) と、返らない container run を演じる
+	// (run は startRunTimeout で kill される。kill されなくても 30 秒で終わる)
+	shim := "#!/bin/sh\necho \"$*\" >> " + log + "\ncase \"$1 $2\" in \"image inspect\") exit 1 ;; \"image pull\") " + sleepBin +
+		" 1 ;; run*) exec " + sleepBin + " 30 ;; esac\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(shims, "container"), []byte(shim), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", shims+":/usr/bin:/bin")
+	old := startRunTimeout
+	startRunTimeout = 500 * time.Millisecond
+	t.Cleanup(func() { startRunTimeout = old })
+	begin := time.Now()
+	err = startEngine(env)
+	if err == nil || !strings.Contains(err.Error(), "終わらない") {
+		t.Fatalf("返らない run を打ち切っていない: %v", err)
+	}
+	if time.Since(begin) > 20*time.Second {
+		t.Errorf("打ち切りまで %s かかった (上限が効いていない)", time.Since(begin))
+	}
+	b, _ := os.ReadFile(log)
+	if !strings.Contains(string(b), "--name "+containerNameFor(env.Engine)+" ") {
+		t.Errorf("ポートごとの名前で起動していない:\n%s", b)
+	}
+	// 取得は run の前に、上限の外で済ませる (取得が上限より長くても run まで進む)
+	if pi, ri := strings.Index(string(b), "image pull "+image), strings.Index(string(b), "run "); pi < 0 || ri < 0 || pi > ri {
+		t.Errorf("取得を run の前に上限の外で済ませていない:\n%s", b)
+	}
+}
+
+// 起動用のロックを待つときは、持っているプロセスを出す (詰まったときに何を止めればよいか分かるように)。
+func TestWithStartLockShowsHolder(t *testing.T) {
+	env, _ := newFakeEngineEnv(t, true)
+	held, release := make(chan struct{}), make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- withStartLock(env, func() error { close(held); <-release; return nil })
+	}()
+	<-held
+	var mu sync.Mutex
+	var errb bytes.Buffer
+	waiter := *env
+	waiter.Stderr = writerFunc(func(p []byte) (int, error) { mu.Lock(); defer mu.Unlock(); return errb.Write(p) })
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- withStartLock(&waiter, func() error { return nil }) }()
+	out := func() string { mu.Lock(); defer mu.Unlock(); return errb.String() }
+	waitUntil(t, "待つ側の表示", func() bool { return strings.Contains(out(), "持っているのは") })
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-waitDone; err != nil {
+		t.Fatal(err)
+	}
+	if want := fmt.Sprintf("pid %d", os.Getpid()); !strings.Contains(out(), want) {
+		t.Errorf("持っているプロセスを出していない (want %q): %s", want, out())
+	}
+}
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+// 本番の配線: synth / kana / speakers は dispatch から自動起動を通る (withEngine の包みが外れたら red)。
+func TestDispatchWrapsEngineCommands(t *testing.T) {
+	script := filepath.Join(t.TempDir(), "s.json")
+	if err := os.WriteFile(script, []byte(`{"lines":[{"who":"metan","text":"a"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"speakers"}, {"kana", "あ"}, {"synth", script}} {
+		t.Run(args[0], func(t *testing.T) {
+			env, fe := newFakeEngineEnv(t, false)
+			_ = dispatch(args, env) // 偽のエンジンは本物の応答を返さないので、本体の成否は見ない
+			if fe.ups.Load() != 1 {
+				t.Errorf("%s が止まっているエンジンを起動しなかった (起動 %d 回): 自動起動を通っていない", args[0], fe.ups.Load())
+			}
+		})
+	}
+}
+
+// 本番の配線: newEnv は自動起動・停止・見張りの手段と状態の置き場を入れる。起動の手段は本物の startEngine につながっている。
+func TestNewEnvWiresEngineAuto(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", "/usr/bin:/bin") // 本物のランタイムを見つけさせない (起動は「無い」で失敗する)
+	t.Setenv("VOICEVOX_URL", "http://127.0.0.1:1")
+	e := newEnv()
+	if e.EngineUp == nil || e.EngineDown == nil || e.SpawnReaper == nil {
+		t.Fatal("自動起動・停止・見張りの手段が入っていない")
+	}
+	if !strings.HasPrefix(e.StateDir, home) {
+		t.Errorf("状態の置き場がユーザーのキャッシュ (HOME の下) でない: %q", e.StateDir)
+	}
+	if err := e.EngineUp(); err == nil || !strings.Contains(err.Error(), "container も docker も無い") {
+		t.Errorf("EngineUp が startEngine につながっていない: %v", err)
+	}
+}
+
+// 本番の見張り: build したバイナリを __reap で起こすと、別のセッションに切り離され、見張りのロックを持って回る。
+// 印が古く (startGrace を過ぎ)、エンジンが応答しなければ、印を消して自分で終わる。本物のランタイムには触れない (PATH から外す)。
+func TestReaperProcessLifecycle(t *testing.T) {
+	bin := buildBinary(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("VOICEVOX_URL", "http://127.0.0.1:1") // 誰も待ち受けていない
+	old := reaperExe
+	reaperExe = func() (string, error) { return bin, nil }
+	t.Cleanup(func() { reaperExe = old })
+	env := newEnv()
+	if err := os.MkdirAll(env.StateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// 起動途中 (印が新しい) なら見張りは待ち続ける: ロックを持ち、自分の pid を書き、別のセッションにいる
+	// 見張りは途中で失敗しても必ず kill する (起動途中の印なら最大 30 分残るので)
+	lockFile := filepath.Join(env.StateDir, "reaper.lock")
+	t.Cleanup(func() {
+		b, _ := os.ReadFile(lockFile)
+		if p, _ := strconv.Atoi(strings.TrimSpace(string(b))); p > 0 && reaperAlive(env) {
+			_ = syscall.Kill(p, syscall.SIGKILL)
+		}
+	})
+	writeMarker(t, env, "container", env.Engine, 0)
+	if err := env.SpawnReaper(); err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, "見張りがロックを取る", func() bool { return reaperAlive(env) })
+	var pid int
+	waitUntil(t, "見張りの pid", func() bool {
+		b, _ := os.ReadFile(filepath.Join(env.StateDir, "reaper.lock"))
+		pid, _ = strconv.Atoi(strings.TrimSpace(string(b)))
+		return pid > 0
+	})
+	if sid, err := syscall.Getsid(pid); err != nil || sid != pid {
+		t.Errorf("見張りが別のセッションに切り離されていない (sid=%d pid=%d err=%v)", sid, pid, err)
+	}
+	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, "kill した見張りのロックが外れる", func() bool { return !reaperAlive(env) })
+
+	// 印が古く、エンジンが応答しなければ、見張りは印を消して終わる
+	writeMarker(t, env, "container", env.Engine, startGrace+time.Minute)
+	if err := env.SpawnReaper(); err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, "見張りが印を消して終わる", func() bool { return !markerExists(env) && !reaperAlive(env) })
+}
+
+// 見張りが止めた後もポートが応答しているなら (デスクトップアプリ・旧版の固定名のコンテナ)、失敗には数えずログに残す。
+func TestReaperWarnsWhenStillAnswering(t *testing.T) {
+	env, fe := newFakeEngineEnv(t, true)
+	writeMarker(t, env, "container", env.Engine, 0)
+	env.EngineDown = func(string, string) error { fe.downs.Add(1); return nil } // 「無い」で成功扱いになった停止を演じる (止まらない)
+	var errb bytes.Buffer
+	env.Stderr = &errb
+	env.Now = func() time.Time { return time.Now().Add(24 * time.Hour) }
+	if !(&reaper{}).once(env) || fe.downs.Load() != 1 {
+		t.Fatalf("止めにいって見張りを終えていない (停止 %d)", fe.downs.Load())
+	}
+	if !strings.Contains(errb.String(), "まだ応答している") {
+		t.Errorf("止めた後も応答しているのにログに残さない: %s", errb.String())
+	}
+}
+
+// 手元にイメージがあれば取得しない (取得はレジストリに問い合わせるので、オフラインや回数制限で起動できなくなる)。
+func TestStartEngineSkipsPullWhenImageIsLocal(t *testing.T) {
+	env, _ := newFakeEngineEnv(t, false)
+	shims := t.TempDir()
+	log := filepath.Join(t.TempDir(), "calls")
+	// image pull は失敗する (オフライン)。run は成功して返るが、偽のエンジンは立たないので応答待ちは時間切れになる
+	shim := "#!/bin/sh\necho \"$*\" >> " + log + "\ncase \"$1 $2\" in \"image pull\") exit 1 ;; esac\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(shims, "container"), []byte(shim), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", shims+":/usr/bin:/bin")
+	cancel := withAppCtx(t)
+	done := make(chan error, 1)
+	go func() { done <- startEngine(env) }()
+	waitUntil(t, "run まで進む", func() bool { b, _ := os.ReadFile(log); return strings.Contains(string(b), "run ") })
+	cancel() // 応答待ち (最大 180 秒) を打ち切る
+	<-done
+	b, _ := os.ReadFile(log)
+	if strings.Contains(string(b), "image pull") {
+		t.Errorf("手元にイメージがあるのに取得した (オフラインで起動できなくなる):\n%s", b)
+	}
+}
+
+// 起動 (初回の取得を含む) が長くても、起動した直後に見張りが止めないよう、使った時刻を起動の後で取り直す。
+func TestWithEngineTouchesLastUseAfterStart(t *testing.T) {
+	env, fe := newFakeEngineEnv(t, false)
+	up := env.EngineUp
+	env.EngineUp = func() error {
+		old := time.Now().Add(-time.Hour) // 起動に 1 時間かかった (長い取得) のを演じる
+		_ = os.Chtimes(lastUsePath(env), old, old)
+		return up()
+	}
+	if err := withEngine(env, func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	env.Now = time.Now
+	if (&reaper{}).once(env) || fe.downs.Load() != 0 {
+		t.Errorf("起動した直後に見張りが止めた (停止 %d)", fe.downs.Load())
 	}
 }

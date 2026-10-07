@@ -85,11 +85,17 @@ func withStartLock(env *Env, fn func() error) error {
 	}
 	defer func() { _ = f.Close() }() // ロックは close (とプロセスの終了) で外れる
 	if syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) != nil {
-		// 初回のイメージの取得は数分かかるので、黙って待たない
-		fmt.Fprintf(env.Stderr, "engine: 他のコマンドがエンジンを起動・停止している。終わるのを待つ (%s)\n", lockPath)
+		// 初回のイメージの取得は数分かかるので、黙って待たない。持っているプロセスを出す (詰まったら何を止めればよいか分かるように)
+		holder, _ := os.ReadFile(lockPath)
+		fmt.Fprintf(env.Stderr, "engine: 他のコマンドがエンジンを起動・停止している。終わるのを待つ (持っているのは %s)\n",
+			orStr(strings.TrimSpace(string(holder)), "不明 ("+lockPath+")"))
 		if err := flockWait(int(f.Fd()), syscall.LOCK_EX); err != nil {
 			return err
 		}
+	}
+	// 持ち主を書く (表示用。ロックの判定には使わない)
+	if err := f.Truncate(0); err == nil {
+		_, _ = f.WriteAt([]byte(fmt.Sprintf("pid %d (%s)\n", os.Getpid(), strings.Join(os.Args, " "))), 0)
 	}
 	return fn()
 }
@@ -131,7 +137,12 @@ func startAutoEngine(env *Env) error {
 	ensureReaper(env)
 	fmt.Fprintf(env.Stderr, "engine: %s が応答しないので起動する (最後に使ってから %.0f 分で自動で止まる)\n",
 		env.Engine, engineIdleStop.Minutes())
-	return env.EngineUp()
+	if err := env.EngineUp(); err != nil {
+		return err
+	}
+	// 起動 (初回の取得を含む) に 10 分以上かかっても、起動した直後に見張りが止めないように、使った時刻を起動の後で取り直す
+	touchLastUse(env)
+	return nil
 }
 
 // readAutoMarker は印を読む。url が空の印 (書きかけ・壊れた印) は持ち主が分からないので、起動側は上書きし、見張りは止めずに捨てる。
@@ -208,6 +219,9 @@ func cmdReap(env *Env) error {
 	if syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) != nil {
 		return nil // 別の見張りが既にいる
 	}
+	if err := f.Truncate(0); err == nil { // どのプロセスが見張りかを残す (表示用。生きているかの判定はロックで行う)
+		_, _ = f.WriteAt([]byte(fmt.Sprintf("%d\n", os.Getpid())), 0)
+	}
 	r := &reaper{}
 	for {
 		done := false
@@ -250,7 +264,7 @@ func (r *reaper) once(env *Env) bool {
 		r.failed = 0 // 使われている間の失敗は数えない (続けて失敗した回数だけを数える)
 		return false
 	}
-	if err := env.EngineDown(rt); err != nil {
+	if err := env.EngineDown(rt, url); err != nil {
 		r.failed++
 		if r.failed >= reaperMaxFailed {
 			fmt.Fprintf(env.Stderr, "reaper: %d 回続けて止められなかった (%v)。見張りを終える (zundamon-kaisetsu down で止める)\n", r.failed, err)
@@ -260,7 +274,13 @@ func (r *reaper) once(env *Env) bool {
 		return false
 	}
 	_ = os.Remove(autoMarkerPath(env))
-	fmt.Fprintf(env.Stderr, "reaper: %s 使われなかったので %s を止めた (%s)\n", env.Now().Sub(last).Round(time.Second), containerName, rt)
+	fmt.Fprintf(env.Stderr, "reaper: %s 使われなかったので %s を止めた (%s)\n", env.Now().Sub(last).Round(time.Second), containerNameFor(url), rt)
+	// 「そのコンテナは無い」も停止の成功に数えるので、止めた後もポートが応答していることがある。デスクトップアプリなど
+	// この skill 以外のエンジンなら正しい結果なので、失敗には数えず (数えると止められないものを止めにいき続ける)、ログに残すだけにする。
+	// 旧版が固定名で起こしたコンテナが残っていると、これに当たる (issue 646)
+	if ver, _ := probeEngine(url); ver != "" {
+		fmt.Fprintf(env.Stderr, "reaper: 止めた後も %s はまだ応答している (この skill 以外のエンジンか、旧版が起こしたコンテナ。後者なら zundamon-kaisetsu down で止める)\n", url)
+	}
 	return true
 }
 
@@ -274,9 +294,12 @@ func lastUseTime(env *Env) time.Time {
 	return env.Now()
 }
 
+// reaperExe は見張りとして起こすバイナリ。テストでは go test のバイナリではなく、build した zundamon-kaisetsu に差し替える
+var reaperExe = os.Executable
+
 // spawnReaper は見張りを、端末とプロセスグループから切り離して起こす (起こしたコマンドが終わっても、Ctrl-C を受けても残る)。
 func spawnReaper(env *Env) error {
-	exe, err := os.Executable()
+	exe, err := reaperExe()
 	if err != nil {
 		return err
 	}
