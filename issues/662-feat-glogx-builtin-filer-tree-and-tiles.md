@@ -147,7 +147,8 @@ MIT OR Apache-2.0) を写す**。依頼に無い部分も含めて全部写す�
 
 - [ ] タイルの中で「ファイルへ飛ぶ」方法 (推奨: issues viewer の本文の `Tab` ジャンプモードと同じ形)
 - [ ] タイルの 4 箇所の位置・大きさ・奥の沈め方 (README にも treebeard にも無い。spec §0.2 の提案を「タイル」の段の最初に実物で見せて決める)
-- [ ] 画像のデコードの依存: webp / bmp / tiff に `golang.org/x/image` を足すか、svg / heic などと PDF に外部コマンド (`convert` / `pdftoppm`) を使うか
+- [x] ~~画像のデコードの依存~~ → **画像・PDF のプレビューごと後回し (pending)** (2026-10-07 ユーザー回答)。後回しの間は開かず toast で断る。
+  依存 (`golang.org/x/image`) と外部コマンド (`convert` / `pdftoppm`) は再開するときに決める
 - [ ] ファイラーの中で glogx の `i` `R` `D` `U` `X` を効かせるか (推奨: 効かせる。`s` `C` は treebeard が使う)
 - [ ] Remember place の保存先 (推奨: `~/.config/glogx/` の下)
 
@@ -234,3 +235,4 @@ MIT OR Apache-2.0) を写す**。依頼に無い部分も含めて全部写す�
   `F` / `C` を全画面の dispatch より前で拾うとファイラーの検索欄・コマンド行の入力を横取りするので、ファイラーに `ownsKeys()` を実装し
   `updateKeyReachable` で `C` を常に譲る、を spec に足した。木の上の `Esc` の優先順 (explode 中断・検索取り消しが先) と、ばねは `dt` を受けるので
   フレーム周期に依存しないことも足した。§0.1・0.2・0.4・0.5 の決定の写しと treebeard の数値は反証されなかった
+- 2026-10-07 ユーザー回答: 画像・PDF のプレビューは後回し (pending)。それまでは開かず toast で断る扱いにした (spec §0.1・§0.4)

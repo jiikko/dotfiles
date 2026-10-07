@@ -24,7 +24,7 @@ issue 662 の実装前の正本。**§0 が glogx での決定 (treebeard から
 | マウス | クリック・ホイール・慣性 | **写さない** (設定の Mouse / Wheel speed / Momentum も外す) |
 | 音声 | 再生・波形 | **開かない**。toast で断る (§0.4) |
 | バイナリ | `file -b` の説明を出す | **開かない**。toast で断る (§0.4) |
-| 画像・PDF | ピクセル (kitty/sixel/iTerm2) かブロック | **ブロックだけ** (§9 の quadrants / sextants / half)。`i` の切替と設定の Image previews は外す |
+| 画像・PDF | ピクセル (kitty/sixel/iTerm2) かブロック | **後回し (pending。2026-10-07 ユーザー回答)**。入れるときはブロックだけ (§9 の quadrants / sextants / half) で、`i` の切替と設定の Image previews は外す。それまでは開かずに toast で断る (§0.4) |
 | テキストの描画 | `glow` / `bat` (外部コマンド) | **外部コマンドを呼ばず** bubbletea v2 と tuikit で描く: markdown = `tuikit/markdown`、コード = `tuikit/highlight` (chroma)。`docs/glogx-bubbletea-v2.md` の幅の前提に乗る |
 | 巨大なテキスト | 先頭 2 MiB だけ読む | **先頭だけ読み、ページ送りで下へ進むたびに続きを読む** (§0.4) |
 | 設定の保存先 | `~/.config/tb/config.toml` | **`~/.config/glogx/` の下** (§0.5) |
@@ -76,16 +76,16 @@ issue 662 の実装前の正本。**§0 が glogx での決定 (treebeard から
   glogx の status viewer (`worktree_status.go`) は `status --porcelain --branch -z` で、`--ignored` を取らず `--no-optional-locks` も付けないので、そのまま使い回せない
 - **ライブ更新**: treebeard は 1 秒のポーリング (§5.2)。glogx の issues viewer は fsnotify で起こして指紋 (mtime + サイズ) で判定する (`issues_watch.go`)。
   どちらで作るかは実装で決める (`fsnotify` は既に依存にある)
-- **画像のデコード**: Go の標準は png / jpeg / gif だけ。webp / bmp / tiff は `golang.org/x/image` (新しい依存)、svg / heic / avif / psd などは
-  treebeard と同じく ImageMagick の `convert`、PDF は poppler の `pdfinfo` / `pdftoppm` (外部コマンド)。🚨 ユーザー未確認
-  (「glow / bat を呼ばない」は決まったが、画像の外部コマンドと新しい依存は聞いていない)
+- **画像のデコード** (画像・PDF ごと後回し。入れるときの判断材料として残す): Go の標準は png / jpeg / gif だけ。webp / bmp / tiff は `golang.org/x/image` (新しい依存)、
+  svg / heic / avif / psd などは treebeard と同じく ImageMagick の `convert`、PDF は poppler の `pdfinfo` / `pdftoppm` (外部コマンド)。依存と外部コマンドを足すかは再開するときに決める
 - **キー一覧・README**: `src/glogx/README.md` のキー表・`--help` (`options.go`)・`docs/glogx-ui-guide.md` §2 の表を同じ変更で直す (ui-guide §10)
 
 ### 0.4 開けないもの・巨大なもの
 
 - **バイナリ** (先頭 8192 バイトに NUL。§5.5) と**音声** (拡張子で判定。treebeard の対応形式 mp3 / flac / wav / ogg / m4a / aac) は、
   タイルを開かず toast で「表示できない」旨を出す (✗ 赤)
-- 画像・PDF はバイナリでも開ける側 (§9 の拡張子を先に判定する)
+- **画像・PDF** (§9 の拡張子) も、後回しの間は開かず toast で断る。🚨 文言は「表示できない」ではなく「まだ対応していない」に分けるかを実装で決める
+  (再開したら開ける側へ移す)
 - **テキストは先頭だけ読む**。下へページ送りしてまだ読んでいない所に近づいたら続きを読む。1 回に読む量と「近づいた」の閾値は実装で決める。
   行数の表示 (`1/13` の総行数) は読み終えるまで確定しないので、未確定の間の見せ方 (`1/200+` など) も実装で決める
 
@@ -103,7 +103,7 @@ issue 662 の実装前の正本。**§0 が glogx での決定 (treebeard から
 3. タイル 1 枚 (§0.2、§8.3、§0.4)
 4. タイルを 4 箇所に重ねる・タイル内のジャンプ
 5. ばねの動きの残り (ビーズ・ripple) とライブ更新 (§4.3・4.4、§5.2)
-6. 残りの UI (検索・explode・シェル・設定の板・help・画像と PDF)
+6. 残りの UI (検索・explode・シェル・設定の板・help)。画像と PDF は後回し (§0.1)
 
 
 ---
@@ -508,7 +508,7 @@ help は閉じる専用 (上記)。内容 (`ui.rs: KEYS`, 24 行)。ここに載
 | Behavior | Wheel speed (`wheel_speed`) | 1 2 3 5 (端で止まる) | 1 | **×** |
 | Behavior | Momentum (`momentum`) | off short medium long (tau 0 / 0.12 / 0.25 / 0.5 s) | short | **×** |
 | Behavior | Image previews (`graphics`) | auto pixels blocks off | auto | **×** (ピクセル画像) |
-| Behavior | Block glyphs (`blocks`) | half quadrants sextants | quadrants | |
+| Behavior | Block glyphs (`blocks`) | half quadrants sextants | quadrants | 画像と一緒に後回し |
 | Behavior | Text preview (`preview`) | styled bat plain | styled | **×** (glow/bat。plain のみ) |
 | Behavior | Wrap lines (`wrap`) | on/off | on | |
 | Behavior | Remember place (`remember`) | on/off | off | |
