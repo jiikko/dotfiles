@@ -7,6 +7,7 @@
 # 色を変える手順: theme/colors.yml を編集 → scripts/gen_theme_colors.sh を実行 →
 # 本テストが指す _tmux.conf / palette.lua の該当行を追従 → make test
 set -euo pipefail
+unset CDPATH  # export された CDPATH の下では、相対パスの cd が解決先を stdout に出し $(cd … && pwd) を壊す
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LIB="$ROOT_DIR/scripts/lib/theme_colors.sh"

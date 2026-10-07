@@ -2,6 +2,7 @@
 # pro-con の画面の中継 (issue 443): e2e モードの画面が描くたびに置く最新の 1 枚を、pro-con screen が外から読める。
 # 2 つ目の画面 (見ているだけの --view) も中継し、画面を閉じたら中継も消える。共通部品は lib/e2e_helper.sh
 set -u
+unset CDPATH  # export された CDPATH の下では、相対パスの cd が解決先を stdout に出し $(cd … && pwd) を壊す
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=tests/pro-con/lib/e2e_helper.sh
 . "$ROOT_DIR/tests/pro-con/lib/e2e_helper.sh"

@@ -42,6 +42,7 @@
 #   1  rc≠0 の変異が 1 本以上ある (表を見る)
 #   2  使い方の誤り / LIST の書き損じ
 set -uo pipefail
+unset CDPATH  # export された CDPATH の下では、相対パスの cd が解決先を stdout に出し $(cd … && pwd) を壊す
 
 prog="${0##*/}"
 die() { echo "$prog: $*" >&2; exit 2; }

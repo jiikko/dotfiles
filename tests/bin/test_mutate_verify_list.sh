@@ -8,6 +8,7 @@
 #   - LIST の書き損じでは 1 本も当てない (途中まで当ててから止まると、どこまで当てたかが分からない)
 #   - 本物の mutate-verify と繋いで red / green が表に出る
 set -uo pipefail
+unset CDPATH  # export された CDPATH の下では、相対パスの cd が解決先を stdout に出し $(cd … && pwd) を壊す
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 MVL="$ROOT_DIR/bin/mutate-verify-list"

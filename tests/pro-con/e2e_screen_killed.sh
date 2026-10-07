@@ -3,6 +3,7 @@
 # 画面が居なくなったことに dispatcher が気づいて (約 60 秒) 偽の PG を止めて抜ける (stop-result=ok)。
 # 1 分以上かかるので make test の自動収集 (test_*.sh) からは外している。
 set -u
+unset CDPATH  # export された CDPATH の下では、相対パスの cd が解決先を stdout に出し $(cd … && pwd) を壊す
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=tests/pro-con/lib/e2e_helper.sh
 . "$ROOT_DIR/tests/pro-con/lib/e2e_helper.sh"

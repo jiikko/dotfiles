@@ -33,6 +33,7 @@
 # 破壊的な取消は UI では実行しない (schedkeys は id を返すだけ。確認 gum confirm --default=false と
 # 実行はここに残す)。
 set -uo pipefail
+unset CDPATH  # export された CDPATH の下では、相対パスの cd が解決先を stdout に出し $(cd … && pwd) を壊す
 
 # 予約の置き場は **tmux サーバ (socket) ごとに分ける**。pane id はサーバごとに振り直されるので、
 # 全サーバで 1 つのディレクトリを共有すると、一覧・取消・失効件数が別サーバの予約を混ぜる

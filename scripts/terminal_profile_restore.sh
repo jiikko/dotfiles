@@ -19,6 +19,7 @@
 #   が blob をデコードして AppleScript に渡す (ここに RGB やフォント名をハードコードすると repo と
 #   drift する)。フォントの実体は Brewfile の `cask "font-hack-nerd-font"` で入る。
 set -eu
+unset CDPATH  # export された CDPATH の下では、相対パスの cd が解決先を stdout に出し $(cd … && pwd) を壊す
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 FILE="${1:-$SCRIPT_DIR/../mac/ClaudeWarm.terminal}"

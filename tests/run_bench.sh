@@ -18,6 +18,7 @@
 # 使い方: tests/run_bench.sh <name> <bench-script> <budget-file>
 # 例:     tests/run_bench.sh nvim tests/nvim/bench_nvim.sh tests/nvim/bench_budgets.ci
 set -o pipefail
+unset CDPATH  # export された CDPATH の下では、相対パスの cd が解決先を stdout に出し $(cd … && pwd) を壊す
 
 if [ "$#" -ne 3 ]; then
   echo "usage: $0 <name> <bench-script> <budget-file>" >&2

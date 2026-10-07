@@ -19,6 +19,7 @@
 #       効いたかどうか分からなくなるもの (例: C-v のペースト通知。@tmux_toast_last_epoch の
 #       記録自体は force でも行うので、この toast pane 生成が呼ぶ hook 側は従来どおり黙る)
 set -euo pipefail
+unset CDPATH  # export された CDPATH の下では、相対パスの cd が解決先を stdout に出し $(cd … && pwd) を壊す
 
 duration=2
 fg=15

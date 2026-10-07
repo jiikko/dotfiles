@@ -27,6 +27,7 @@
 #   concat_movies --thumbnail thumb.png --fadeout 0.5 clip1.mp4 clip2.mp4
 
 set -euo pipefail
+unset CDPATH  # export された CDPATH の下では、相対パスの cd が解決先を stdout に出し $(cd … && pwd) を壊す
 
 # 依存コマンドチェック
 for cmd in ffmpeg ffprobe; do

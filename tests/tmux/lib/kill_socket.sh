@@ -77,7 +77,7 @@ tt__run_bounded() { # tt__run_bounded <出力変数名> <秒> <コマンド...>
 # 条件待ちの正本 (呼び出し側が source していなくても使えるよう、この lib 自身が読む)。
 # 🚨 BASH_SOURCE で置き場所を引くので、この lib は bash からだけ source する (zsh では空になり /wait_until.sh を読む)
 # shellcheck source=tests/lib/wait_until.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/wait_until.sh"
+. "$(CDPATH='' cd "$(dirname "${BASH_SOURCE[0]}")/../../lib" && pwd)/wait_until.sh"
 
 # tt__wait_gone は pid が消えるまで最大 <回> x 0.05s 待つ。消えたら 0、残っていたら 1。
 tt__pid_gone() { ! kill -0 "$1" 2>/dev/null; }
@@ -96,7 +96,7 @@ tt__pid_of_socket() { # tt__pid_of_socket <socket パス>
   # tmux は bind の前に tmpdir を実パスへ解決するので、こちらも `pwd -P` で揃える必要がある。
   # 副作用として**別名 (symlink / hard link) 経由では当たらない**ことも実測済みで、
   # 「socket dir に本番への別名を置いて撃たせる」経路はここで成立しない。
-  dir=$(cd -- "$(dirname -- "$1")" 2>/dev/null && pwd -P) || return 0
+  dir=$(CDPATH='' cd -- "$(dirname -- "$1")" 2>/dev/null && pwd -P) || return 0
   out=$(lsof -t -- "$dir/$(basename -- "$1")" 2>/dev/null | head -2)
   case "$out" in ''|*[!0123456789]*) return 0 ;; esac   # 複数行は改行を含むのでここで落ちる
   printf '%s' "$out"

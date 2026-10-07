@@ -9,6 +9,7 @@
 # fixture は隔離した git repo。本物の dotfiles を対象にすると遅いうえ、worktree を
 # 作る対象が実 repo になる (テストが本番の worktree 一覧を汚す)。
 set -uo pipefail
+unset CDPATH  # export された CDPATH の下では、相対パスの cd が解決先を stdout に出し $(cd … && pwd) を壊す
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=tests/lib/wait_until.sh

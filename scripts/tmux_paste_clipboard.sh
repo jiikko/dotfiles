@@ -15,6 +15,7 @@
 # トーストにバイト数を出すのは、⌘V と数字を比べて「落ちたか」を人が判定できるようにするため
 # (issue 248 の確認 1)。tmpfile を挟むのは pbpaste を 2 回呼ぶと 2 回目に別の内容を掴みうるため。
 set -uo pipefail
+unset CDPATH  # export された CDPATH の下では、相対パスの cd が解決先を stdout に出し $(cd … && pwd) を壊す
 
 pane="${1:?usage: tmux_paste_clipboard.sh <pane_id> [client_name]}"
 client="${2-}"

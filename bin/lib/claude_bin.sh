@@ -20,7 +20,7 @@
 
 # shellcheck source=bin/lib/runtimeout.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/runtimeout.sh"
-_CLAUDE_BIN_ROOT="$(cd "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+_CLAUDE_BIN_ROOT="$(CDPATH='' cd "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # _claude_bin_version_ok <候補>: 0 = 上限内に --version が成功 / 1 = 失敗 / 124 = 上限を超えたので止めた
 _claude_bin_version_ok() {

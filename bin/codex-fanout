@@ -56,6 +56,7 @@
 # 安全域: 起動するのは read-only / review のみ。workspace-write の並列は worktree 分離が必要で
 # この driver の守備範囲外 (codex-drive [2p] の手順に従う)。
 set -u
+unset CDPATH  # export された CDPATH の下では、相対パスの cd が解決先を stdout に出し $(cd … && pwd) を壊す
 
 usage() {
   # 2 行目から最初の非コメント行 (set -u) の手前まで = ヘッダ全文。行数を固定しない

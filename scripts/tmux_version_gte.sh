@@ -11,6 +11,7 @@
 # window-status-separator #{} 展開が素通し表示される表示崩れが起きた。
 # 機能の有無を決めるのはサーバ側なので、サーバに #{version} を聞いて判定する。
 set -eu
+unset CDPATH  # export された CDPATH の下では、相対パスの cd が解決先を stdout に出し $(cd … && pwd) を壊す
 
 if [ $# -ge 2 ]; then
   req_maj="$1"

@@ -123,6 +123,7 @@
 #      **または並行セッションが編集した**。他の rc より優先する (壊れた木の上の結果は信用しない)
 #  10  時間切れ — どれかの run が --timeout を超えた (どの段かを出す)。red でも green でもない (判定不能)
 set -uo pipefail
+unset CDPATH  # export された CDPATH の下では、相対パスの cd が解決先を stdout に出し $(cd … && pwd) を壊す
 
 prog="${0##*/}"
 die() { echo "$prog: $*" >&2; exit 2; }

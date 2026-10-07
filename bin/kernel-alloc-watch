@@ -12,6 +12,7 @@
 # テスト用: KERNEL_ALLOC_WATCH_ZPRINT / KERNEL_ALLOC_WATCH_PS / KERNEL_ALLOC_WATCH_TMUX / KERNEL_ALLOC_WATCH_SYSCTL (それぞれの代わりに呼ぶコマンド)
 #   / KERNEL_ALLOC_WATCH_NOW (現在の epoch)
 set -euo pipefail
+unset CDPATH  # export された CDPATH の下では、相対パスの cd が解決先を stdout に出し $(cd … && pwd) を壊す
 
 ZONE=data.kalloc.1024
 KEEP_SECONDS=$((7 * 24 * 60 * 60))

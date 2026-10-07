@@ -9,6 +9,7 @@
 # yml のパースは「role: / 2 スペース indent の cterm:/hex:」という本 repo の固定書式にのみ
 # 対応する意図的に薄い awk (yq 等の依存を増やさない)。書式を崩すとテストが落ちて気づける。
 set -eu
+unset CDPATH  # export された CDPATH の下では、相対パスの cd が解決先を stdout に出し $(cd … && pwd) を壊す
 
 root_dir=$(cd "$(dirname "$0")/.." && pwd)
 yml="$root_dir/theme/colors.yml"

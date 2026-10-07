@@ -7,6 +7,7 @@
 #   - normalize-settings.sh は再実行しても同じ正規化結果に収束する
 #   - git pull --rebase は既に最新なら何もしない
 set -eu
+unset CDPATH  # export された CDPATH の下では、相対パスの cd が解決先を stdout に出し $(cd … && pwd) を壊す
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 

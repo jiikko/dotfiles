@@ -46,6 +46,7 @@
 # kill の target socket が確定できないときは **exec せず block** する。
 # 「判定不能だから通す」は今回の事故の再生産なので選ばない。
 set -uo pipefail
+unset CDPATH  # export された CDPATH の下では、相対パスの cd が解決先を stdout に出し $(cd … && pwd) を壊す
 
 # ── 実体 tmux は絶対パスで固定する (PATH 探索は自分自身に解決して無限再帰する) ──
 # 🚨 command -v / PATH 探索を使わない。~/dotfiles/bin は PATH 先頭なので自分に当たる

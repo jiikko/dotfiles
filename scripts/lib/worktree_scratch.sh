@@ -21,7 +21,7 @@ wts_init() { # $1=repo root $2=prefix
   # そのまま繋ぐと `//` を含む未正規化パスになり、`git worktree list` が返す正規化済みパス
   # (`/private/var/…`) と**文字列が一致しない**。sweep が pkill へ渡すのは後者なので、
   # 前者の形で argv を持つ残存プロセスに当たらなくなる (red team P2-9 が実測)
-  local tmpdir; tmpdir="$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)" || tmpdir="/tmp"
+  local tmpdir; tmpdir="$(CDPATH='' cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)" || tmpdir="/tmp"
   WTS_PATH="$tmpdir/$WTS_PREFIX.$WTS_ME"
   # 🚨 EXIT trap は 1 本しか持てない。呼び出し側が別の後始末を足すなら、この handler から
   # 呼ぶ形にすること (後から書いた trap ... EXIT が前を黙って上書きする)
