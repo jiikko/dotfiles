@@ -59,8 +59,8 @@ func TestRejectBadShow(t *testing.T) {
 		want string
 	}{
 		{"排他ロック", "オブジェクトか null"},
-		{map[string]any{"type": "chart", "text": "x"}, "show.type は code/compare/image/keyword"},
-		{map[string]any{"text": "x"}, "show.type は code/compare/image/keyword"},
+		{map[string]any{"type": "chart", "text": "x"}, "show.type は code/compare/image/keyword/mermaid のどれか"},
+		{map[string]any{"text": "x"}, "show.type は code/compare/image/keyword/mermaid のどれか"},
 		{map[string]any{"type": "keyword", "text": "x", "color": "red"}, "に書けるのは type/text/sub だけ"},
 		{map[string]any{"type": "keyword", "text": " "}, "show.text は空でない文字列"},
 		{map[string]any{"type": "keyword"}, "show.text は空でない文字列"},

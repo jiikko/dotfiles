@@ -22,6 +22,7 @@ type showData struct {
 	Marks []int        `json:"highlight,omitempty"`
 	Src   string       `json:"src,omitempty"` // 画像の実際のパス。assemble (embedShowImages) が data URI に置き換える
 	Alt   string       `json:"alt,omitempty"`
+	Code  []string     `json:"code,omitempty"` // mermaid の記法。assemble (embedMermaid) が PNG にして image に置き換えるので、player には届かない
 	// srcWritten は台本に書いたままの src (エラーの表示用)。JSON に出さないので、重複除去の鍵にも入らない
 	srcWritten string
 }
@@ -60,6 +61,7 @@ var showParsers = map[string]func(path, at string, m map[string]any) (*showData,
 	"compare": parseCompare,
 	"code":    parseCode,
 	"image":   parseImage,
+	"mermaid": parseMermaid,
 }
 
 func showTypes() []string {

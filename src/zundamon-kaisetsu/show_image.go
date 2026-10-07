@@ -74,10 +74,17 @@ func imageMIME(src string) string {
 	return ""
 }
 
-// embedShowImages は図の画像を読み、検査して data URI に置き換える。立ち絵 (loadFaces) と同じく assemble の頭で呼ぶ。
+// embedShowImages は図の画像を読み、検査して data URI に置き換える (mermaid の図は PNG にしてから同じ検査に通す)。
+// 立ち絵 (loadFaces) と同じく assemble の頭で呼ぶ。
 func embedShowImages(s *Script, shows []showData) error {
 	for i := range shows {
 		sd := &shows[i]
+		if sd.Type == "mermaid" {
+			if err := embedMermaid(s.Path, sd); err != nil {
+				return err
+			}
+			continue
+		}
 		if sd.Type != "image" {
 			continue
 		}
@@ -129,23 +136,49 @@ func loadShowImage(scriptPath, written, p string) (string, error) {
 	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(b), nil
 }
 
-// checkImageScale は w x h の画像を箱に収めたときの縮尺と、表示したときに箱を占める割合を見る。
-func checkImageScale(scriptPath, src string, w, h int) error {
-	name := pyStrRepr(src)
+// imageProblem は w x h の画像を図の箱に出したときの問題 (無ければ "")。画像の図と mermaid の図で案内の文面が違うので、
+// 判定はここに寄せ、文面は呼び出し側が決める。
+type imageProblem string
+
+const (
+	imageInvalid imageProblem = "invalid" // 大きさが 0 以下
+	imageSmall   imageProblem = "small"   // どちらの辺も箱に届かない
+	imageLarge   imageProblem = "large"   // 箱の 2 倍を超える
+	imageThin    imageProblem = "thin"    // 表示すると箱の縦横どちらかの半分に届かない
+)
+
+func imageScaleProblem(w, h int) (imageProblem, float64, float64) {
 	if w <= 0 || h <= 0 {
-		return fail("%s: 図の画像 %s の大きさが不正 (%dx%d)", scriptPath, name, w, h)
+		return imageInvalid, 0, 0
 	}
 	scale := min(float64(imageBoxW)/float64(w), float64(imageBoxH)/float64(h))
 	shownW, shownH := scale*float64(w), scale*float64(h)
 	switch {
 	case scale > imageScaleMax:
+		return imageSmall, shownW, shownH
+	case scale < imageScaleMin:
+		return imageLarge, shownW, shownH
+	case shownW < imageBoxW*imageFillMin || shownH < imageBoxH*imageFillMin:
+		return imageThin, shownW, shownH
+	}
+	return "", shownW, shownH
+}
+
+// checkImageScale は w x h の画像を箱に収めたときの縮尺と、表示したときに箱を占める割合を見る。
+func checkImageScale(scriptPath, src string, w, h int) error {
+	name := pyStrRepr(src)
+	problem, shownW, shownH := imageScaleProblem(w, h)
+	switch problem {
+	case imageInvalid:
+		return fail("%s: 図の画像 %s の大きさが不正 (%dx%d)", scriptPath, name, w, h)
+	case imageSmall:
 		return fail("%s: 図の画像 %s (%dx%d) が小さすぎる。小さく表示されて読みにくいので、幅 %d か高さ %d 以上で書き出す",
 			scriptPath, name, w, h, imageBoxW, imageBoxH)
-	case scale < imageScaleMin:
+	case imageLarge:
 		return fail("%s: 図の画像 %s (%dx%d) が大きすぎる。半分より小さく縮められて文字が読めなくなるので、幅 %d・高さ %d 以下に収める"+
 			" (中身が多すぎるなら図を分けるか、図を使わずにセリフで説明する)",
 			scriptPath, name, w, h, int(imageBoxW/imageScaleMin), int(imageBoxH/imageScaleMin))
-	case shownW < imageBoxW*imageFillMin || shownH < imageBoxH*imageFillMin:
+	case imageThin:
 		return fail("%s: 図の画像 %s (%dx%d) が細長すぎる。表示すると %.0fx%.0f px で、図の箱 (%dx%d) の縦横それぞれ半分に届かない",
 			scriptPath, name, w, h, shownW, shownH, imageBoxW, imageBoxH)
 	}
