@@ -37,7 +37,7 @@ bench_rc=0
 # 集約結果 (min 行) はジョブログにも出す: Step Summary は API 非公開 (check-runs の
 # output.summary は空) のため、過去 run との数値比較を CLI
 # (`gh run view <id> --log | grep 'metric='`) で機械的に行う経路がログになる
-# (rules/bench-watch-after-push.md が使う)
+# (.claude/rules/bench-watch-after-push.md が使う)
 out="$(for _ in $(seq 1 "$runs"); do "$bench" || exit 1; done \
   | "$here/bench_stats.sh" "$name" "$budget" "$prev_tsv" "$cur_tsv")" || bench_rc=$?
 printf '%s\n' "$out"

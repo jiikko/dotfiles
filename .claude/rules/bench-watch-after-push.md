@@ -1,3 +1,22 @@
+---
+paths:
+  - "_nviminit.lua"
+  - "nvim/**"
+  - "_tmux.conf"
+  - "scripts/tmux_*"
+  - "scripts/lib/tmux_*"
+  - "zshlib/**"
+  - "_zshrc"
+  - "bin/tmux-toast"
+  - "src/glogx/**"
+  - "vendor/nvim-plugins/**"
+  - "vendor/tmux-plugins/**"
+  - "tests/run_bench.sh"
+  - "tests/bench_stats.sh"
+  - "tests/check_bench_budgets.sh"
+  - "tests/*/bench_*"
+---
+
 # nvim / tmux / zsh / glogx 系の変更を push したら、Bench をウォッチしてデグレ確認までがタスク
 
 ## ルール

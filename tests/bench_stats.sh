@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 複数回実行した bench の "metric=<name> ms=<value>" 行を統計集約し、
 #   (a) stdout: per-metric min の "metric=<name> ms=<min>" 行 (check_bench_budgets.sh の入力 +
-#       ジョブログでの機械取得用。rules/bench-watch-after-push.md が使う)
+#       ジョブログでの機械取得用。.claude/rules/bench-watch-after-push.md が使う)
 #   (b) $GITHUB_STEP_SUMMARY: 直近 run 群との比較つき markdown テーブル
 #   (c) $4 (cur_tsv): 今回 + 直近 run のサンプル台帳 (次回 run が baseline として読む。
 #       Actions cache で持ち越す。詳細は下の「rolling baseline」)
@@ -32,7 +32,7 @@
 # +88% (換算後も +25% 残る) となり、コードに機構が無いのに 🔺 悪化 と表示された (同じコミットの
 # 再実行で 0.940 に戻り flake と確定)。🚨 この状況で 悪化/改善/誤差圏 のどれを出しても嘘になる
 # ため、環境差が CALIB_TRUST_BAND を超えたら rel metric の判定を出さず「保留」にする。
-# 切り分けは同じコミットで Bench を再実行する (rules/bench-watch-after-push.md)。
+# 切り分けは同じコミットで Bench を再実行する (.claude/rules/bench-watch-after-push.md)。
 # 予算ゲート側は独自の CALIB_MAX_SCALE を持つので触らない (桁級の回帰は保留中も捕まえる)。
 #
 # python3 不在時は (b)(c) を落として (a) だけ出す (予算ゲートは常に生きる縮退)。
@@ -181,7 +181,7 @@ for b in blocks:
 env_shift = statistics.median([s for s in block_scales if s > 0]) if any(s > 0 for s in block_scales) else 0.0
 calib_trusted = env_shift <= 0 or abs(env_shift - 1) <= CALIB_TRUST_BAND
 # 🚨 ジョブログにも出す: Step Summary は API 非公開なので、CLI で数値を追う経路
-# (rules/bench-watch-after-push.md) からは stdout しか見えない。check_bench_budgets.sh は
+# (.claude/rules/bench-watch-after-push.md) からは stdout しか見えない。check_bench_budgets.sh は
 # metric= 以外の行を素通しするので、この行を足しても予算ゲートには影響しない。
 if env_shift > 0:
     print(f"bench_env_shift={env_shift:.2f} trusted={'yes' if calib_trusted else 'no'}")

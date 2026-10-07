@@ -77,7 +77,7 @@
 - God クラスを避ける。肥大化しそうなら責務ごとに分割できないか検討する
 - 変更したファイルに God クラス / God ファイルの予兆 (責務の混在など) を見つけたらリファクタを提案する。ただし**目的は複雑性を下げること**で、行数だけを理由にファイルを分けるのはリファクタではない (分割は複雑性を移動するだけ)。判断基準は [`verify-design-intent-before-refactor.md`](rules/verify-design-intent-before-refactor.md)
 - バグフィックス後、その project の linter のカスタムルール / preset で再発防止できないか検討し、提案する
-- 設計・検証の rule (`rules/*.md`) は毎セッション全文読まれ、各 rule の冒頭に発動点がある。ここで索引し直さない。例外は `paths:` で条件ロードされるもの: zsh の precmd / preexec から関数を呼ぶなら `~/dotfiles/.claude/rules/zsh-hook-return-via-reply.md` (`REPLY` で返す。dotfiles では zsh のファイルを Read すると読み込まれる。dotfiles 固有の規範の索引は `~/dotfiles/rules/README.md`)
+- 設計・検証の rule (`rules/*.md`) は毎セッション全文読まれ、各 rule の冒頭に発動点がある。ここで索引し直さない。例外は `paths:` で条件ロードされるもの: zsh の precmd / preexec から関数を呼ぶなら `~/dotfiles/.claude/rules/zsh-hook-return-via-reply.md` (`REPLY` で返す。dotfiles では zsh のファイルを Read すると読み込まれる。dotfiles 固有の規範の置き場は `~/dotfiles/docs/README.md` の「ここに置かないもの」)
 
 ## コード変更時の自律改善
 
