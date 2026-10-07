@@ -12,6 +12,25 @@
 # - 🚨 既知の穴: ビルド済みのバイナリが無い初回 (新しいマシン / git clean の後) は、bin/ratelimit が
 #   --async でも同期でビルドし、失敗しても backoff が無い (bin/lib/go_autobuild.zsh の初回分岐)。
 #   src/ratelimit (と replace 先) がビルドできない間は、毎プロンプト最大 timeout (15 秒) 待つ。直すなら初回分岐に失敗記録を持たせる
+# - mod `_claude/mods/ratelimit-warn` (issue 658) が同じ注入をする。mod はこのプロンプトを判定できたときだけ、
+#   env DOTFILES_MOD_RATELIMIT_WARN に `<session_id>:<epoch ms>` の印を打つ (settings の hook は mod の後に走る)。
+#   印が「この session で、10 秒以内」のときだけ黙る。永続の印にしないのは、mod が後で落ちた・classic.* が
+#   素通しになった・子の claude -p に継承された、のどれでもこの fallback まで黙らないため。
+#   印が読めない (jq が無い・形が違う) ときは黙らず、今までどおり判定する
+if [ -n "${DOTFILES_MOD_RATELIMIT_WARN:-}" ] && command -v jq >/dev/null 2>&1; then
+  mark_sid=${DOTFILES_MOD_RATELIMIT_WARN%%:*}
+  mark_ms=${DOTFILES_MOD_RATELIMIT_WARN##*:}
+  sid=$(jq -r '.session_id // empty' 2>/dev/null || true)
+  # 形は `<session_id>:<epoch ms>` の 2 要素だけ。それ以外 (要素が多い・時刻が数字でない) は印として読まない
+  case "$DOTFILES_MOD_RATELIMIT_WARN" in *:*:*) mark_ms= ;; esac
+  case "$mark_ms" in ''|*[!0-9]*) mark_ms= ;; esac
+  if [ -n "$sid" ] && [ -n "$mark_ms" ] && [ "$sid" = "$mark_sid" ]; then
+    delta=$(( $(date +%s) * 1000 - mark_ms ))
+    if [ "$delta" -ge -10000 ] && [ "$delta" -le 10000 ]; then
+      exit 0
+    fi
+  fi
+fi
 bin="$HOME/dotfiles/bin/ratelimit"
 [ -x "$bin" ] || exit 0
 out=$("$bin" -source claude -check -cached)

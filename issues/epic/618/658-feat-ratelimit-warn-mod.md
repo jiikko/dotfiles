@@ -68,15 +68,15 @@ epic 618 の子。618 の表で「今は移さない」とした `ratelimit-warn
 
 ## 受け入れ条件
 
-- [ ] `_claude/mods/ratelimit-warn/` (manifest / hooks / types / tests)。`claude plugin validate` と `claude plugin test` が緑で、
+- [x] `_claude/mods/ratelimit-warn/` (manifest / hooks / types / tests)。`claude plugin validate` と `claude plugin test` が緑で、
       テストは 超過 / 未満 / リセット済み / file が超過 / file が古い / live と file の新しい方を採る / 判定できたときだけ印 (`env.set`) を打つ / 判定できないときは打たない、を持つ。
       閾値の比較を外す変異で red を確認
-- [ ] `ratelimit-warn.sh` に印の分岐 (session_id 一致 + 10 秒以内) を足し、`tests/claude/test_ratelimit_warn.sh` で 印なし → 注入 / 一致する新しい印 → 無言 / 別 session の印 → 注入 / 古い印 → 注入 を固定。分岐を外す変異で red
-- [ ] A-B (headless。`XDG_CACHE_HOME` を一時 dir にして 90% の `claude-rate-limits.json` と `ratelimit-claude.json` の両方を置く。codex P2-7):
+- [x] `ratelimit-warn.sh` に印の分岐 (session_id 一致 + 10 秒以内) を足し、`tests/claude/test_ratelimit_warn.sh` で 印なし → 注入 / 一致する新しい印 → 無言 / 別 session の印 → 注入 / 古い印 → 注入 を固定。分岐を外す変異で red
+- [x] A-B (headless。`XDG_CACHE_HOME` を一時 dir にして 90% の `claude-rate-limits.json` と `ratelimit-claude.json` の両方を置く。codex P2-7):
       mod あり → 注入が 1 回 / mod なし → hook が注入する。「mod なし」の腕は `env -u CLAUDE_CODE_PLUGIN_DIRS` では足りない (user の settings の `env` から再び載る) ので、
       user の settings を外し (`--setting-sources`) hook だけの settings を `--settings` で渡す形にし、印の env も落とす。順序 (mod → hook) も debug log で確かめて書き戻す
-- [ ] 入口の文書: `docs/claude-mods-guide.md` の表 / `docs/claude-mods.md` の分担 / 618 の表の行 / `subagent-model-tiering.md` の hook の名指し (mod + hook と書く)
-- [ ] 敵対的レビュー (codex) を通し、指摘の採否を進捗に書く
+- [x] 入口の文書: `docs/claude-mods-guide.md` の表 / `docs/claude-mods.md` の分担 / 618 の表の行 / `subagent-model-tiering.md` の hook の名指し (mod + hook と書く)
+- [x] 敵対的レビュー (codex) を通し、指摘の採否を進捗に書く (2 周)
 
 ## 関連ファイル
 
@@ -92,3 +92,20 @@ epic 618 の子。618 の表で「今は移さない」とした `ratelimit-warn
   P2 判定できないときの無言 → 印を打たず hook に任せる / P2 status の更新契機 → measure と 60 秒 timer / P2 A-B の腕の作り方と順序 (型定義: managed → modules → settings) /
   P3 「子プロセス無し」「読み手は無い」「overLimit と同じ」の文面を訂正。記録して採らない: P2-3 measure の発火時刻を観測時刻にする近似 (限界を本文に書いた) /
   P2-5 file の observedAt が窓別でない (既存 reader と同じ限界)。反証されなかった: 閾値 80 `>=`・maxStale 30 分・statuslineMaxAge 15 分・`-cached` の明示呼び出しが hook だけ
+- 2026-10-07: 実装 — mod (`hooks/limit.ts` 判定 / `hooks/register.ts` 配線)、hook の印の分岐、テスト (plugin test 21 件 / `tests/claude/test_ratelimit_warn.sh` 11 件)、入口の文書 4 箇所。
+  **A-B (headless、haiku)**: 偽の `XDG_CACHE_HOME` に 90% の `claude-rate-limits.json` + `ratelimit-claude.json`、user の settings を外し (`--setting-sources ""`) hook だけの settings を `--settings` で渡し、
+  mod は `--plugin-dir`。mod なし → hook が注入 (debug log に hook の出力)。mod あり → model の答えは「1」(注入 1 回)。hook を wrapper で包んで実走を記録すると
+  `ran rc=0 mark=[<session_id>:<epoch ms>] out_len=0` = hook は走り、印を見て黙った。**順序は mod → hook** (同じプロンプトの hook が mod の印を見た)。
+  `$.clock.now()` は epoch ms (hook の `date +%s` と比べられた)。mod ありの腕では応答後の `session.measure` が本物の 29% (live) を新しい方として採り status を消した (file の 90% より新しい = 設計どおり)
+- 2026-10-07: 敵対的レビュー 1 周目 (codex gpt-6.1-sol high、read-only)。P1 なし / P2 6 / P3 2。採用 7: 丸めを切り捨てに (statusline と同じ。79.6 を 80 にしない) /
+  空の `rateLimits` で live の控えを消す / timer の `refreshStatus` を try-catch (未処理 reject) / 印は `<sid>:<ms>` の 2 要素だけ (3 要素は印でない) /
+  テストの false green 3 件 (底の hook の呼び出し回数・status の配列・11 秒 / 20 秒 / 3 要素の印・formatReset の固定文字列)。
+  受容 1: 同じプロンプト内で hook 到達が印の 10 秒後になる二重注入 (沈黙側でなく二重側。同一プロンプトで 10 秒空く経路は実機に無い。起きても害は重複 1 行)。
+  変異 7 本 (null で `{}` を返す / status を出さない / live を消さない / formatReset を 00:00 / round に戻す / 窓を 30 秒 / 3 要素の検査を外す) でそれぞれ狙ったテストだけ red、復元で green。
+  修正後に A-B を再実行 (A3): 注入 1 回・hook は印を見て無言
+- 2026-10-07: 敵対的レビュー 2 周目 (修正差分に限定)。**本番の修正は壊せなかった** (P1 / P2 なし)。切り捨ての境界 (80.0 → 超過 / 79.99 → 未満)・context だけの measure で控えが残ること・
+  3 要素の印の扱いは codex 側の harness で確認済み。P3 のテストの穴 2 件を採用: 空の measure の直後に status も消えることを assert / 60 秒 timer の経路を走らせ、
+  `$.ui.status` が拒否された周の次も動くことを assert。変異: status を消さない形は red。**try-catch の撤去は green のまま** (`claude plugin test` は timer の callback の未処理 reject を失敗にしないので、
+  この修正の撤去はテストでは検出できない。timer の経路を実行することまでが射程)。
+  未確認 (記録): try-catch が実機で診断情報を失わせる影響 (拒否を無言で吸収する。警告が欠ける経路は見つかっていない)
+

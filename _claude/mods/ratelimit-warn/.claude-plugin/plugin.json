@@ -1,0 +1,9 @@
+{
+  "name": "ratelimit-warn",
+  "version": "0.1.0",
+  "description": "Claude の 5h 枠が閾値を超えていたらプロンプトに 1 行注入し、status line にも出す (settings の hook ratelimit-warn.sh の mod 版。issue 658)",
+  "author": {
+    "name": "jiikko"
+  },
+  "types": "./types/index.d.ts"
+}

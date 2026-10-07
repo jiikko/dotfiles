@@ -93,5 +93,9 @@ dispatcher が claude を起こす環境から `CLAUDE_CODE_PLUGIN_DIRS` を落�
 ## settings の hook との分担
 
 - 守りの hook (deny / block) は移さない。**mod の hook は失敗すると黙ってスキップされ、chain が続く**。知らせは debug log か、見張っているフォルダなら transcript の 1 行だけ
+- **注入の hook を mod へ移すときは、settings の hook を消さず fallback として残し、mod が「このプロンプトを判定できた」ときだけ黙らせる** (`ratelimit-warn`、issue 658):
+  mod が `classic.UserPromptSubmit` の中で env に `<session_id>:<epoch ms>` の印を打ち、hook は同じ session で 10 秒以内の印のときだけ `exit 0`。
+  順序は型定義 (ClassicEventOf の doc) のとおり managed の hook → modules → その他の settings の hook。永続の印 (`1`) にすると、mod が後で落ちた・`classic.*` が素通しになった・
+  子の `claude -p` に継承された、のどれでも fallback まで黙る (658 の codex 反証 P1)
 - 移す mod は「読み込まれなかったとき何が起きるか」と、それを検出する手段を持つ (epic issue 618「mod が黙って止まったときの扱い」)
 - どれを移すかの表は epic issue 618 にある。ここには写さない

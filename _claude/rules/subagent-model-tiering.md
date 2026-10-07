@@ -21,7 +21,7 @@
     (モデルを呼ばずに返る)。**本物の session を起こす計測や上位モデルのレビューを重ねる前に見る**
   - 🚨 **weekly 枠はユーザーが自分で把握しているので、判断材料にしない** (提案も控えもしない)。
     `-check` と hook が見るのは 5h 枠だけで、表示 (`ratelimit` 素の実行) には weekly も出るが、それを理由に作業を止めない
-  - **UserPromptSubmit hook (`ratelimit-warn.sh`) が「Claude の 5h 枠が閾値を超えている」と注入したら、大きな作業に
+  - **UserPromptSubmit (mod `ratelimit-warn`、または その fallback の hook `ratelimit-warn.sh`) が「Claude の 5h 枠が閾値を超えている」と注入したら、大きな作業に
     入る前にユーザーへ提案して判断を仰ぐ**: 控える / 縮小する (体数・周回・モデルを下げる) / リセット後に回す。
     大きな作業 = 複数のサブエージェント・workflow・forge / cross-review・本物の session を起こす計測・長い実装。
     小さな作業と、ユーザーが既に続行を指示した作業は止めない
