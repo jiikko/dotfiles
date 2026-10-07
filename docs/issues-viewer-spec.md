@@ -60,8 +60,8 @@ NNN-<カテゴリ>-<スラッグ>.md        例: 028-refactor-glogx-box-and-toas
 「存在しない状態」がタブに並ぶ。
 
 🚨 **`waiting/` は global (`issues/waiting/`) だけで、group 内 (`epic/<name>/waiting/`) は受けない**
-(2026-09-08 時点)。受けない名前の配下は**走査対象外 = 一覧に出ない**ので、group に waiting を
-置きたくなったら先に `EpicChildStatus` / `scanEpicDir` / `hasEpicMarkdown` / `issuesWatchDirs` の
+(2026-09-08 時点)。受けない名前の配下は**状態にならず、中の md は迷子 (`?`) として出る** (下の段落) ので、
+group に waiting を置きたくなったら先に `EpicChildStatus` / `scanEpicDir` / `hasEpicMarkdown` / `issuesWatchDirs` の
 4 者を揃えること (`TestEpicChildStatusReachedByAllThreeConsumers` が 3 経路の一致を守っている)。
 
 group 内の状態ディレクトリは `next/` `done/` `pending/` の 3 つだけを予約する
@@ -132,8 +132,11 @@ grep する) ので、書き換えると別物になるため (termsafe の `IsP
 
 ```
 open のみ (既定)  →  open + pending  →  open + pending + done  →  (先頭へ戻る)
-     ○                    ○⏸                   ○⏸✓
+     ○                    ○⏸◌                  ○⏸◌✓
 ```
+
+pending の段は waiting (◌) も一緒に見せる (`issues.StatusFilter.shows`)。バッジ・hint の「a で増えるもの」は
+`shows` から導出するので、段に状態を足すとバッジも自動で追従する (issue 665: 手で並べていたバッジから ◌ が欠けていた)。
 
 🚨 **終わった epic (open な子が 1 件も無い) はこの例外から外れる**。例外の目的は「進行中の器の
 進捗を読ませる」ことなので、終わった器には効かせる理由が無い。外さないと、終わった epic が既定の
@@ -187,8 +190,9 @@ bool 2 本 (done / pending) でなく累積の段階にしたのは、操作を 
 ```
 ○        段階は open のみ、迂回も無い
 ○(✓)     段階は open のみ。だが done が見えている (epic の子 / 番号フィルタ)
-○⏸(✓)   a を 1 段進めた。pending は段階の側へ移り、done は括弧のまま
-○⏸✓     全部見せる段階 (括弧は出ない)
+○(◌)     段階は open のみ。だが waiting が見えている (epic の子 / 番号フィルタ)
+○⏸◌(✓)  a を 1 段進めた。pending と waiting は段階の側へ移り、done は括弧のまま
+○⏸◌✓    全部見せる段階 (括弧は出ない)
 ```
 
 🚨 括弧の外と中を分けるのは **`a` の手応えを残すため**。全部を混ぜて 1 列にすると、epic の子が
@@ -736,8 +740,10 @@ viewer は「確信を持って嘘をつく」ことを最も嫌うので、次�
 イベントを取りこぼしても追いつけるよう低頻度 (30s) のポーリングも回し、watcher を作れない環境では
 それが唯一の経路になるので周期を上げる。実装は `src/glogx/issues_watch.go`。
 
-fsnotify の対象は issue dir と、ファイルのある状態ディレクトリに加えて `issues/epic/` と全ての
-`epic/<name>/`（空でも）にする。`epic` の綴りは大文字小文字を問わず、実在する entry 名を使う。
+fsnotify の対象は issue dir と、予約名の状態ディレクトリ (`done/` `pending/` `waiting/` `next/` と
+`closed/` `hold/` 等の別綴り。**空でも**。名前は走査と同じ `issues.IsStatusDir`) に加えて `issues/epic/` と全ての
+`epic/<name>/`（空でも）にする (global の状態ディレクトリを空のうちから見張るのは issue 665: 以前は md の居る
+ものだけで、空の `waiting/` へ新規作成した最初の md を `r` まで拾わなかった)。`epic` の綴りは大文字小文字を問わず、実在する entry 名を使う。
 これで新しい group、空 group への最初の md、group 内 `next/` `done/` `pending/` の作成を
 取り直しへつなげる (**予約された名前だけが空のうちから見張られる**)。
 

@@ -799,7 +799,11 @@ func (v *issuesView) rebindOpenIssue(path string) {
 		}
 	}
 	base := filepath.Base(path)
-	moved, ambiguous := v.matchByBase(base)
+	dir := ""
+	if v.open != nil {
+		dir = v.open.Dir
+	}
+	moved, ambiguous := v.matchByBase(dir, base)
 	switch {
 	case moved != nil:
 		// 🚨 basename 一致だけで本人と決めない (issue 277)。basename は「番号 + スラッグ」なので
@@ -829,12 +833,16 @@ func (v *issuesView) rebindOpenIssue(path string) {
 	}
 }
 
-// matchByBase は同じファイル名の issue を探す。ちょうど 1 件なら (それ, false)、複数なら
-// (nil, true)、無ければ (nil, false)。🚨 「複数」と「無い」を呼び出し側で分ける必要がある
-// (複数は実体があるので畳んではいけない)。
-func (v *issuesView) matchByBase(base string) (found *issues.Issue, ambiguous bool) {
+// matchByBase は同じ issue dir (dir、"" なら全 dir) の中で同じファイル名の issue を探す。
+// ちょうど 1 件なら (それ, false)、複数なら (nil, true)、無ければ (nil, false)。🚨 「複数」と
+// 「無い」を呼び出し側で分ける必要がある (複数は実体があるので畳んではいけない)。
+//
+// 🚨 issue dir を跨いで照合しない。移動 (`n` / done へ送る / git mv) はどれも同じ issue dir の
+// 中で起き、同一性の範囲も issues.conflicts と同じ (Dir, basename)。跨ぐと、root の issues/ と
+// macOS/issues/ を両方持つ repo で、見出しまで同じ別 dir の issue へ黙って繋ぎ直す (issue 665)。
+func (v *issuesView) matchByBase(dir, base string) (found *issues.Issue, ambiguous bool) {
 	for _, iss := range v.all {
-		if filepath.Base(iss.Path) != base {
+		if filepath.Base(iss.Path) != base || (dir != "" && iss.Dir != dir) {
 			continue
 		}
 		if found != nil {
@@ -897,7 +905,7 @@ func (v *issuesView) rebuildDisplayRows() {
 	units := make([]displayUnit, 0, len(v.rows))
 	for _, iss := range v.rows {
 		if iss.GroupKind != issues.GroupEpic {
-			n, ok := issueNumberOK(iss)
+			n, ok := issues.Number(iss)
 			units = append(units, displayUnit{
 				row:       displayRow{kind: displayRowIssue, issue: iss},
 				maxNumber: n, hasNumber: ok,
@@ -923,7 +931,7 @@ func (v *issuesView) rebuildDisplayRows() {
 		default:
 			g.children = append(g.children, iss)
 		}
-		n, ok := issueNumberOK(iss)
+		n, ok := issues.Number(iss)
 		if ok && (!g.hasNumber || n > g.maxNumber) {
 			g.maxNumber, g.hasNumber = n, true
 		}
@@ -980,27 +988,8 @@ func (v *issuesView) setRows(rows []*issues.Issue) {
 func sortDisplayUnits(units []displayUnit) {
 	sort.SliceStable(units, func(i, j int) bool {
 		a, b := units[i], units[j]
-		switch {
-		case a.hasNumber != b.hasNumber:
-			return a.hasNumber
-		case a.hasNumber && a.maxNumber != b.maxNumber:
-			return a.maxNumber > b.maxNumber
-		case a.row.kind == displayRowGroup && b.row.kind == displayRowGroup:
-			return a.key < b.key
-		case a.row.kind != b.row.kind:
-			return a.key < b.key
-		default:
-			return a.key < b.key
-		}
+		return issues.OrderLess(a.maxNumber, a.hasNumber, a.key, b.maxNumber, b.hasNumber, b.key)
 	})
-}
-
-func issueNumberOK(iss *issues.Issue) (int, bool) {
-	if iss.Number == "" {
-		return 0, false
-	}
-	n, err := strconv.Atoi(iss.Number)
-	return n, err == nil
 }
 
 func (v *issuesView) groupExpanded(key string) bool {
@@ -2693,13 +2682,11 @@ func (v *issuesView) hint(width int) string {
 	// 🚨 ここが出すのは**段階**の話で、epic group の子には効かない (子は状態フィルタの対象外。
 	// issue 291)。バッジ側は迂回して見えているものを括弧で足して区別する (issues.VisibleBadges)
 	// が、hint は 1 行しかないので段階だけを言う (issue 296)。
-	next := "a: +" + issues.StatusPending.Badge()
-	switch v.filter {
-	case issues.FilterPending:
-		next = "a: +" + issues.StatusDone.Badge()
-	case issues.FilterAll:
-		next = "a: " + issues.StatusOpen.Badge() + "のみ"
-	case issues.FilterOpen:
+	// 増える状態は issues.StatusFilter.AddedBadges が段階の正本 (shows) から導出する。ここで
+	// 段階ごとに書き分けると waiting を足したときに置き去りになる (issue 665)
+	next := "a: +" + v.filter.AddedBadges()
+	if v.filter.Next() == issues.FilterOpen {
+		next = "a: " + issues.FilterOpen.Badges() + "のみ"
 	}
 	// 🚨 "q: 終了" であって "閉じる" ではない。q/esc は **glogx ごと終了**する
 	// (ユーザー要望 2026-08-06)。一覧へ戻るのは i (toggle)。README も 2 語を使い分けており、
@@ -2841,7 +2828,7 @@ func (v *issuesView) clearPendingMoveAnchors() {
 func unmarkDestLabel(targets []*issues.Issue) string {
 	hasGroup, hasGlobal := false, false
 	for _, iss := range targets {
-		if iss.GroupKey != "" {
+		if iss.ContainerDir() != iss.Dir {
 			hasGroup = true
 		} else {
 			hasGlobal = true

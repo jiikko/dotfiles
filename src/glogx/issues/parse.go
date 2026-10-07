@@ -145,6 +145,14 @@ var statusDirs = map[string]Status{
 	"next": StatusNext,
 }
 
+// IsStatusDir は issue dir 直下のサブディレクトリ名が状態ディレクトリ (statusDirs) か。
+// 走査 (scanDir) と監視 (glogx の issuesWatchDirs) が同じ表を見るための口。監視側に名前を
+// 写すと、空の状態ディレクトリへの最初の md を取りこぼす (issue 665)。
+func IsStatusDir(name string) bool {
+	_, ok := statusDirs[strings.ToLower(name)]
+	return ok
+}
+
 // NextDirName は「次にやる」の目印を置くサブディレクトリ名 (viewer の n が作る)。
 const NextDirName = "next"
 
@@ -164,7 +172,8 @@ const EpicDirName = "epic"
 //
 // 🚨 綴りの揺れ (closed / completed / hold …) は受けない。global の statusDirs と違って
 // group 内の状態ディレクトリは viewer の運用が作るものなので、綴りを増やすと「同じ状態が
-// 2 つの名前で並ぶ」形になる。受けない名前の配下は走査対象外 (= 一覧に出ない)。
+// 2 つの名前で並ぶ」形になる。受けない名前の配下は状態にせず、中の md は迷子 (StatusUnknown) として出す
+// (scanEpicDir。黙って捨てると置き場所の間違いに誰も気づけない)。
 // 🚨 走査 (scanEpicDir)・発見 (hasEpicMarkdown)・監視 (issuesWatchDirs) の 3 者が同じ集合を
 // 見る必要があるので、ここ以外にこの名前の列挙を書かない (片方だけ増やすと、監視されない
 // ディレクトリや発見されない issue ができる)。tests/... ではなく
@@ -384,6 +393,19 @@ func scanEpicDir(dir, epic string) ([]*Issue, []string) {
 }
 
 // newIssue はファイル名から番号・カテゴリ・スラッグを取り出す。
+// ContainerDir は iss が物理的に属する器のディレクトリ (epic の group に居るなら GroupKey、
+// それ以外は issue dir)。移動の宛先・目印の置き場・「どこへ戻るか」の表示はこれだけで決める。
+//
+// 🚨 判定を GroupKind で書かない。group 内の予約外ディレクトリの子 (迷子、GroupUnknown) も
+// GroupKey を持っており、GroupKind で見ると宛先が issue ルートに落ちて epic の外へ運び出される
+// (2026-09-06 に実害。以前は述語が 3 通りに書かれていた: issue 665)。
+func (iss *Issue) ContainerDir() string {
+	if iss.GroupKey != "" {
+		return iss.GroupKey
+	}
+	return iss.Dir
+}
+
 func newIssue(dir, rel string) *Issue {
 	iss := &Issue{Path: filepath.Join(dir, rel), Dir: dir, Rel: rel, Status: StatusOpen}
 	// 🚨 無害化するのは表示に使う派生 (Number/Category/Slug) だけ。Path/Dir/Rel はファイルを
@@ -442,20 +464,28 @@ func isAllDigits(s string) bool {
 func sortIssues(issues []*Issue) {
 	sort.SliceStable(issues, func(i, j int) bool {
 		a, b := issues[i], issues[j]
-		an, aok := numOf(a)
-		bn, bok := numOf(b)
-		switch {
-		case aok && bok && an != bn:
-			return an > bn
-		case aok != bok:
-			return aok // 番号ありを先に
-		default:
-			return a.Rel < b.Rel
-		}
+		an, aok := Number(a)
+		bn, bok := Number(b)
+		return OrderLess(an, aok, a.Rel, bn, bok, b.Rel)
 	})
 }
 
-func numOf(iss *Issue) (int, bool) {
+// OrderLess は一覧の並び順の唯一の規則: 番号の大きい順、番号ありが先、同順位はキーの昇順。
+// viewer が group の親行を混ぜて並べ直すときもこれを使う (規則を写すと、group の有無で
+// タブごとに並びが変わる。issue 665)。
+func OrderLess(an int, aok bool, akey string, bn int, bok bool, bkey string) bool {
+	switch {
+	case aok && bok && an != bn:
+		return an > bn
+	case aok != bok:
+		return aok // 番号ありを先に
+	default:
+		return akey < bkey
+	}
+}
+
+// Number は issue 番号を数値で返す。番号が無い・数値でないときは ok=false。
+func Number(iss *Issue) (int, bool) {
 	if iss.Number == "" {
 		return 0, false
 	}
@@ -637,7 +667,7 @@ func (iss *Issue) ReadBody() (*Body, error) {
 func NextNumber(list []*Issue) string {
 	maxNum, width := 0, 3
 	for _, iss := range list {
-		n, ok := numOf(iss)
+		n, ok := Number(iss)
 		if !ok {
 			continue
 		}
@@ -970,7 +1000,7 @@ func (f StatusFilter) shows(s Status) bool {
 // バッジが変わらず、「効かなかった」と読める。
 func VisibleBadges(f StatusFilter, rows []*Issue) string {
 	extra := ""
-	for _, s := range []Status{StatusPending, StatusDone} {
+	for _, s := range badgeOrder {
 		if f.shows(s) {
 			continue // 段階が見せているものは括弧の外に出ている
 		}
@@ -987,19 +1017,40 @@ func VisibleBadges(f StatusFilter, rows []*Issue) string {
 	return f.Badges() + "(" + extra + ")"
 }
 
-// Badges は段階が見せている状態のバッジ列 (○ / ○⏸ / ○⏸✓)。
+// badgeOrder はバッジに並べる状態とその順。どれを並べるかは段階ごとに shows で決め、ここに
+// 段階の知識を写さない (写すと waiting を足したときに shows だけ直り、バッジが黙って欠けた。issue 665)。
+// unknown (?) と next (▶) は段階で伏せない状態なので並べない (spec「unknown はバッジにも出さない」)。
+var badgeOrder = []Status{StatusOpen, StatusPending, StatusWaiting, StatusDone}
+
+// Badges は段階が見せている状態のバッジ列 (○ / ○⏸◌ / ○⏸◌✓)。
 func (f StatusFilter) Badges() string {
-	out := StatusOpen.Badge()
-	if f >= FilterPending {
-		out += StatusPending.Badge()
+	out := ""
+	for _, s := range badgeOrder {
+		if f.shows(s) {
+			out += s.Badge()
+		}
 	}
-	if f >= FilterAll {
-		out += StatusDone.Badge()
+	return out
+}
+
+// AddedBadges は次の段階 (Next) へ進めたときに増える状態のバッジ列。巡回で先頭へ戻るときは
+// 何も増えないので "" を返す (hint の「a を押すと何が増えるか」の出典)。
+func (f StatusFilter) AddedBadges() string {
+	next := f.Next()
+	out := ""
+	for _, s := range badgeOrder {
+		if next.shows(s) && !f.shows(s) {
+			out += s.Badge()
+		}
 	}
 	return out
 }
 
 // Filter はタブと状態フィルタで絞り込む。tab が "" なら全カテゴリ。
+//
+// 🚨 issues は**絞り込む前の全件**を渡すこと。other タブの所属 (Tabs) と、閉じた epic の判定
+// (closedGroupKeys / retiredGroupKeys) をこの集合から作るので、絞った集合を渡すと別カテゴリの
+// open な子が見えず、進行中の epic を終わったものと黙って誤判定する。
 func Filter(issues []*Issue, tab string, filter StatusFilter) []*Issue {
 	// OtherTab は「自前のタブを持たないカテゴリ」の寄せ先。タブ集合を 1 回だけ作って
 	// 判定に使う (要素ごとに Tabs を呼ぶと件数の 2 乗になる)

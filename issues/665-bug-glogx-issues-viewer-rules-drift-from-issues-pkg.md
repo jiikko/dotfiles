@@ -81,8 +81,19 @@
 
 ## 進捗
 
-- [ ] A: バッジを `shows` から導出し、waiting の回帰テスト
-- [ ] B: 見張る集合を `issues/` の走査表から導出し、空の `waiting/` への新規作成の回帰テスト
-- [ ] C: `ContainerDir()` に寄せる
-- [ ] G / H / I
-- [ ] 文書の乖離 2 件
+- [x] A: バッジと hint の「a で増えるもの」を `shows` から導出 (`badgeOrder` / `Badges` / `VisibleBadges` / `AddedBadges`)。
+  hint の `a: +⏸` も waiting を言わない 3 本目の写しだったので一緒に寄せた。段階のバッジは `○⏸◌` / `○⏸◌✓` になる (spec も更新)。
+  回帰: `TestStatusFilterBadgesFollowShows` (全段階 × 全状態)・`TestVisibleBadgesMarksFilterBypass` に waiting 3 件。
+  変異: `Badges` を旧来の手書き (open / pending / done) に戻す → 両テストが red
+- [x] B: `issues.IsStatusDir` (走査と同じ `statusDirs`) で baseDir 直下の状態ディレクトリを空でも見張る。next/ の特別扱いはこれに吸収。
+  spec §5 と `startWatch` のコメントを直した。回帰: `TestIssuesWatchDirsIncludeEmptyGlobalStatusDirs` (予約外の notes/ は見張らないことも固定)。
+  変異: `issues_watch.go` を旧版に戻す → red
+- [x] C: `Issue.ContainerDir()` に `MoveToSubdir` / `NextLinkPath` / `isOpenPlacement` / `unmarkDestLabel` を寄せた。
+  Scan を通っていない Epic の Issue を拒む守りは `MoveToSubdir` に残した。迷子では `NextLinkPath` の結果が変わるが、`isOpenPlacement` が
+  どちらの基準でも偽 (Rel に区切りが入る) なので目印を置く経路には届かない。変異: `ContainerDir` を GroupKind で判定する形 → `TestMoveKeepsStrayGroupChildInsideEpic` が red
+- [x] G: `issues.OrderLess` / `issues.Number` を公開し、`sortIssues` と `sortDisplayUnits` の両方がこれを使う。画面側の `issueNumberOK` と同じ値を返す 3 分岐を削除
+- [x] H: `issues.Filter` の doc に「全件を渡す」事前条件を書いた
+- [x] I: `matchByBase(dir, base)` で開いていた issue と同じ issue dir に絞った。回帰: `TestIssuesViewRebindOpenStaysInsideIssueDir`。変異: Dir の条件を外す → red
+- [x] 文書の乖離 2 件 (`issues/issues.go` の package doc / spec §3 と `EpicChildStatus` の doc)
+- `make -C src/glogx lint` 0 issues / `make -C src/glogx test` rc=0 (2026-10-08)
+- [ ] 敵対的レビュー (663〜667 の修正をまとめて通す)

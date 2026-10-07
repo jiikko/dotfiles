@@ -136,8 +136,9 @@ func (v *issuesView) watchCmd() tea.Cmd { return tea.Batch(v.eventCmd(), v.pollC
 // startWatch は監視対象のディレクトリを fsnotify へ登録する (スキャン結果が届くたびに呼ぶ)。
 //
 // fsnotify は再帰しないので、issue ディレクトリと「issue ファイルが実際に居るサブディレクトリ」
-// (done/ pending/ とサブグループ) を個別に Add する。epic/ と全 group dir は空でも登録する。
-// 新しいサブディレクトリの作成は親のイベントとして飛び、取り直し → ここで Add されて追従する。
+// (done/ pending/ とサブグループ) を個別に Add する。予約名の状態ディレクトリ・epic/・全 group dir は
+// 空でも登録する。新しいサブディレクトリの作成は親のイベントとして飛び、取り直し → ここで Add されて
+// 追従する (予約外の名前は md が入ってからの取り直しで初めて Add される。spec §5)。
 // watcher を作れない環境 (fd 上限・未対応 platform) では黙ってポーリングだけに縮退する。
 func (v *issuesView) startWatch() {
 	if !v.shown {
@@ -271,18 +272,20 @@ func issuesWatchDirs(baseDirs []string, all []*issues.Issue) []string {
 		if err != nil {
 			continue
 		}
-		// next/ は目印 (symlink) だけが置かれる場所で、issue の Path を持つものが無いので下の
-		// filepath.Dir(iss.Path) では拾えない。他セッション・git pull による目印の付け外しを
-		// 反映するために明示的に見張る (epic 側は EpicChildStatus 経由で入る。issue 263)
-		if fi, statErr := os.Lstat(filepath.Join(dir, issues.NextDirName)); statErr == nil &&
-			fi.IsDir() && fi.Mode()&os.ModeSymlink == 0 {
-			add(filepath.Join(dir, issues.NextDirName))
-		}
+		// 状態ディレクトリ (done/ pending/ waiting/ next/ …) は空でも見張る。issue のパスからしか
+		// 足さないと、空の waiting/ へ新規作成した最初の md を取りこぼす (issue 665)。next/ は目印
+		// (symlink) だけが置かれる場所で issue の Path を持たないので、なおさらここで足す (issue 263)。
+		// 名前は走査と同じ表 (issues.IsStatusDir) で決める。symlink のディレクトリは IsDir が偽なので入らない
 		epicName := ""
 		for _, e := range entries {
-			if e.IsDir() && strings.EqualFold(e.Name(), issues.EpicDirName) {
+			if !e.IsDir() {
+				continue
+			}
+			if issues.IsStatusDir(e.Name()) {
+				add(filepath.Join(dir, e.Name()))
+			}
+			if epicName == "" && strings.EqualFold(e.Name(), issues.EpicDirName) {
 				epicName = e.Name()
-				break
 			}
 		}
 		if epicName == "" {

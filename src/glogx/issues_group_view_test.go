@@ -889,7 +889,7 @@ func TestIssuesViewTabLineShowsBypassBadge(t *testing.T) {
 	}
 	// a を 1 段進めても ✓ は括弧の中のまま (段階は pending までしか見せていない)
 	v.handleKey("a", vp(10))
-	if line = v.tabLine(renderOpts(10)); !strings.Contains(line, "○⏸(✓)") {
+	if line = v.tabLine(renderOpts(10)); !strings.Contains(line, "○⏸◌(✓)") {
 		t.Fatalf("a を進めた後のバッジが違う: %q", line)
 	}
 }

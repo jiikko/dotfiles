@@ -71,24 +71,14 @@ func MoveToSubdir(iss *Issue, subdir string) (string, error) {
 		}
 	}
 	base := filepath.Base(iss.Rel)
-	destDir := iss.Dir
-	if iss.GroupKind == GroupEpic || iss.GroupKey != "" {
-		// group issue は epic の外へ出さない。subdir="" は group 直下へ戻すので、
-		// claim の解除 (next -> open) も group 内で完結する。
-		//
-		// 🚨 判定を GroupKind だけにしない。group 内の予約外ディレクトリ (`epic/<name>/closed/` 等) の
-		// 子は迷子 (GroupUnknown) だが GroupKey は持っており、GroupKind だけで見ると宛先が
-		// issue ルート (iss.Dir) に落ちて **epic の外へ運び出される** (2026-09-06 の敵対レビューで実測。
-		// issue 291 で迷子を一覧に出すようにしたことで初めて到達可能になった経路)。
-		// GroupKey を持つ = group の中に居る、が唯一の判定材料。
-		// このブロックへ入る条件から、GroupKey が空なら必ず GroupEpic (手組みの Issue か、
-		// Scan を通っていないもの)。空のまま進むと destDir が "" になり、glogx の CWD 配下へ
-		// issue を rename する (相対パスの dest)。冗長な GroupKind の再確認は書かない
-		if iss.GroupKey == "" {
-			return "", errors.New("group issue に GroupKey が無い (Scan を通っていない Issue)")
-		}
-		destDir = iss.GroupKey
+	// group issue は epic の外へ出さない。subdir="" は group 直下へ戻すので、claim の解除
+	// (next -> open) も group 内で完結する。宛先の器は ContainerDir が唯一の判定 (迷子も含む)
+	if iss.GroupKind == GroupEpic && iss.GroupKey == "" {
+		// Scan を通っていない手組みの Issue。進むと ContainerDir が issue ルートを返し、group の
+		// issue を epic の外へ運び出す
+		return "", errors.New("group issue に GroupKey が無い (Scan を通っていない Issue)")
 	}
+	destDir := iss.ContainerDir()
 	if subdir != "" {
 		destDir = filepath.Join(destDir, subdir)
 	}

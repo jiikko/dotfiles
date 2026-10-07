@@ -628,3 +628,36 @@ func TestIssuesWatchDirsIncludeGlobalNextDir(t *testing.T) {
 		t.Fatalf("global next/ が watch 対象に無い: %v", got)
 	}
 }
+
+// 空の global 状態ディレクトリ (waiting/ pending/ done/ と別綴りの hold/ …) も見張る。issue の
+// パスからしか足さないと、空の waiting/ へ新規作成した最初の md が watch にも指紋にも入らず、
+// `r` を押すまで一覧に出なかった (issue 665)。予約外の名前 (notes/) は従来どおり見張らない
+// (spec の「予約された名前だけが空のうちから見張られる」)。
+func TestIssuesWatchDirsIncludeEmptyGlobalStatusDirs(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "001-feat-a.md"), []byte("# 001\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, sub := range []string{"waiting", "pending", "done", "hold", "notes"} {
+		if err := os.MkdirAll(filepath.Join(dir, sub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	all, _ := issues.Scan([]string{dir})
+	got := issuesWatchDirs([]string{dir}, all)
+	for _, sub := range []string{"waiting", "pending", "done", "hold"} {
+		if !slices.Contains(got, filepath.Join(dir, sub)) {
+			t.Errorf("空の %s/ が watch 対象に無い: %v", sub, got)
+		}
+	}
+	if slices.Contains(got, filepath.Join(dir, "notes")) {
+		t.Errorf("予約外の notes/ を空のうちから見張っている: %v", got)
+	}
+	fp := issuesFingerprint(got, issuesWatchPaths(all))
+	if err := os.WriteFile(filepath.Join(dir, "waiting", "002-feat-b.md"), []byte("# 002\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if issuesFingerprint(got, issuesWatchPaths(all)) == fp {
+		t.Fatal("空の waiting/ への最初の md 作成で指紋が変わらない")
+	}
+}

@@ -99,25 +99,17 @@ func nextLinkProblem(parent, base string) string {
 }
 
 // NextLinkPath は iss に目印を置くときの symlink の絶対パス (`<parent>/next/<base>`)。
-// parent は global issue なら Dir、Epic の子なら GroupKey。
+// 置き場は ContainerDir (global issue なら Dir、group に居るなら GroupKey)。
 func NextLinkPath(iss *Issue) string {
-	parent := iss.Dir
-	if iss.GroupKind == GroupEpic && iss.GroupKey != "" {
-		parent = iss.GroupKey
-	}
-	return filepath.Join(parent, NextDirName, filepath.Base(iss.Rel))
+	return filepath.Join(iss.ContainerDir(), NextDirName, filepath.Base(iss.Rel))
 }
 
 // isOpenPlacement は iss が「直下」(global は Dir 直下、Epic の子は group 直下) にあるか。
 // 目印を symlink で置けるのはこの配置だけ (../<base> が成立する)。
 func isOpenPlacement(iss *Issue) bool {
-	rel := iss.Rel
-	if iss.GroupKind == GroupEpic && iss.GroupKey != "" {
-		r, err := filepath.Rel(iss.GroupKey, iss.Path)
-		if err != nil {
-			return false
-		}
-		rel = r
+	rel, err := filepath.Rel(iss.ContainerDir(), iss.Path)
+	if err != nil {
+		return false
 	}
 	return !strings.Contains(rel, string(filepath.Separator))
 }

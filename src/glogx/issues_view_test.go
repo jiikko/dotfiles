@@ -1462,8 +1462,8 @@ func TestIssuesStatusFilterCycle(t *testing.T) {
 		badges string
 	}{
 		{issues.FilterOpen, 2, "○"},
-		{issues.FilterPending, 3, "○⏸"},
-		{issues.FilterAll, 5, "○⏸✓"},
+		{issues.FilterPending, 3, "○⏸◌"},
+		{issues.FilterAll, 5, "○⏸◌✓"},
 		{issues.FilterOpen, 2, "○"}, // 巡回して既定へ戻る
 	}
 	for i, w := range want {
@@ -1886,6 +1886,36 @@ func TestIssuesScanMsgDeliversRebindNotice(t *testing.T) {
 
 // 同名が複数ある異常 (spec 3 節が警告する状態) では、どれが本人か決められないので繋ぎ直さない。
 // 🚨 畳むのは「どこにも無い」ときだけなので、ここでは本文モードを維持する。
+// 移動を追う照合は同じ issue dir の中だけ (issue 665)。root の issues/ と macOS/issues/ を両方持つ
+// repo で、開いていた issue が消え、もう一方の dir に見出しまで同じ basename が 1 件あっても、
+// そちらへ黙って繋ぎ直さない (どこにも無い = 畳んで知らせる)。
+func TestIssuesViewRebindOpenStaysInsideIssueDir(t *testing.T) {
+	root := t.TempDir()
+	dirA, dirB := filepath.Join(root, "issues"), filepath.Join(root, "macOS", "issues")
+	rel := "001-feat-x.md"
+	for _, d := range []string{dirA, dirB} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, rel), []byte("# 001 feat: x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a := &issues.Issue{Path: filepath.Join(dirA, rel), Dir: dirA, Rel: rel, Number: "001", Category: "feat", Title: "x"}
+	b := &issues.Issue{Path: filepath.Join(dirB, rel), Dir: dirB, Rel: rel, Number: "001", Category: "feat", Title: "x"}
+	v := loadedView(a)
+	v.handleKey("enter", vp(10))
+	if v.open == nil || v.open.Path != a.Path {
+		t.Fatal("本文モードに入れていない")
+	}
+
+	v.receive(issuesScanMsg{dirs: []string{dirA, dirB}, issues: []*issues.Issue{b}}) // a は消え、b だけが残る
+
+	if v.open != nil {
+		t.Errorf("別の issue dir の同名 issue へ繋ぎ直した: open=%q", v.open.Path)
+	}
+}
+
 func TestIssuesViewRebindOpenKeepsOpenOnAmbiguousBase(t *testing.T) {
 	dir := t.TempDir()
 	rel := "001-feat-x.md"

@@ -688,7 +688,7 @@ func TestFilterExemptsEpicChildrenFromStatusFilter(t *testing.T) {
 }
 
 // TestVisibleBadgesMarksFilterBypass はタブ行右端のバッジが「実際に見えている状態」を出すことを
-// 固定する。段階 (○/○⏸/○⏸✓) を迂回して見えるもの (epic の子 / 番号フィルタ) は括弧で足す。
+// 固定する。段階 (○/○⏸◌/○⏸◌✓) を迂回して見えるもの (epic の子 / 番号フィルタ) は括弧で足す。
 // 括弧の外と中を分けるのは `a` の手応えを残すため (issue 296)。
 func TestVisibleBadgesMarksFilterBypass(t *testing.T) {
 	epicChild := func(status Status) *Issue {
@@ -704,16 +704,44 @@ func TestVisibleBadgesMarksFilterBypass(t *testing.T) {
 		{"迂回なし", FilterOpen, []*Issue{global(StatusOpen)}, "○"},
 		{"epic の done が見えている", FilterOpen, []*Issue{global(StatusOpen), epicChild(StatusDone)}, "○(✓)"},
 		{"epic の done と pending", FilterOpen, []*Issue{epicChild(StatusPending), epicChild(StatusDone)}, "○(⏸✓)"},
-		{"a を 1 段進めた (pending は括弧の外へ)", FilterPending, []*Issue{epicChild(StatusPending), epicChild(StatusDone)}, "○⏸(✓)"},
-		{"全部見せる段階なら括弧は出ない", FilterAll, []*Issue{epicChild(StatusPending), epicChild(StatusDone)}, "○⏸✓"},
+		{"a を 1 段進めた (pending は括弧の外へ)", FilterPending, []*Issue{epicChild(StatusPending), epicChild(StatusDone)}, "○⏸◌(✓)"},
+		{"全部見せる段階なら括弧は出ない", FilterAll, []*Issue{epicChild(StatusPending), epicChild(StatusDone)}, "○⏸◌✓"},
 		// 番号フィルタは状態を問わず拾うので、global の done でも括弧が付く
 		{"番号フィルタで global の done が出ている", FilterOpen, []*Issue{global(StatusDone)}, "○(✓)"},
+		// waiting は pending と同じ段で見せる (shows)。段階の外で見えていれば括弧に ◌ が付き、
+		// 段階が見せていれば括弧の外に出る (issue 665: 以前は ◌ がどちらにも出なかった)
+		{"番号フィルタで global の waiting が出ている", FilterOpen, []*Issue{global(StatusWaiting)}, "○(◌)"},
+		{"epic の waiting が見えている", FilterOpen, []*Issue{epicChild(StatusWaiting)}, "○(◌)"},
+		{"pending の段階は waiting も見せる", FilterPending, []*Issue{global(StatusWaiting)}, "○⏸◌"},
 		{"next は段階に関わらず見えるのでバッジには出さない", FilterOpen, []*Issue{epicChild(StatusNext)}, "○"},
 		{"unknown も出さない (状態へ写像しない契約)", FilterOpen, []*Issue{epicChild(StatusUnknown)}, "○"},
 	} {
 		if got := VisibleBadges(tc.filter, tc.rows); got != tc.want {
 			t.Errorf("%s: got %q want %q", tc.name, got, tc.want)
 		}
+	}
+}
+
+// TestStatusFilterBadgesFollowShows は段階のバッジ (Badges) と hint の「a で増えるもの」
+// (AddedBadges) が shows と一致することを、全段階 × 全状態で固定する (issue 665: Badges が
+// 状態を手で並べていて、waiting を足したときに shows だけが直った)。
+func TestStatusFilterBadgesFollowShows(t *testing.T) {
+	for _, f := range []StatusFilter{FilterOpen, FilterPending, FilterAll} {
+		for _, s := range badgeOrder {
+			if got := strings.Contains(f.Badges(), s.Badge()); got != f.shows(s) {
+				t.Errorf("%v: Badges=%q が %v (%s) を含むか=%v, shows=%v", f, f.Badges(), s, s.Badge(), got, f.shows(s))
+			}
+			added := f.Next().shows(s) && !f.shows(s)
+			if got := strings.Contains(f.AddedBadges(), s.Badge()); got != added {
+				t.Errorf("%v: AddedBadges=%q が %v を含むか=%v, want %v", f, f.AddedBadges(), s, got, added)
+			}
+		}
+	}
+	if got := FilterOpen.AddedBadges(); got != "⏸◌" {
+		t.Errorf("open → pending で増えるもの=%q want %q", got, "⏸◌")
+	}
+	if got := FilterAll.AddedBadges(); got != "" {
+		t.Errorf("全部 → open (先頭へ戻る) で増えるもの=%q want 空", got)
 	}
 }
 
