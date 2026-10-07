@@ -253,9 +253,12 @@ func cmdSynth(env *Env, scriptArg string, force bool) error {
 	if err != nil {
 		return fail("%s: 読めない (%v)", wd, err)
 	}
+	// 数えるのは合成のキャッシュ (通常ファイルの *.wav / *.query.json) だけ。build が置く mermaid/ (図のキャッシュ) などを
+	// 「古いファイル」に数えると、案内に従って work/ ごと消し、図を描き直すことになる (issue 652)
 	unused := 0
 	for _, e := range entries {
-		if !keep[e.Name()] {
+		n := e.Name()
+		if e.Type().IsRegular() && (strings.HasSuffix(n, ".wav") || strings.HasSuffix(n, ".query.json")) && !keep[n] {
 			unused++
 		}
 	}

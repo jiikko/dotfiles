@@ -25,4 +25,11 @@
 
 ## 進捗
 
-- [ ] 1 / [ ] 2 / [ ] 3
+- [x] 1 / [x] 2 / [x] 3 — fix(zundamon-kaisetsu) の commit
+
+## 結果 (2026-10-07)
+
+1. synth は通常ファイルの `*.wav` / `*.query.json` だけを「古いファイル」に数える (`TestSynthCountsOnlyStaleCache`)
+2. `startEngine` の `runtimeService` の失敗と `stopContainers` の stop の失敗で、`interruptedErr()` を先に見る (`TestEngineInterruptIsNotReportedAsFailure` の up / down)
+3. `cmdBuild` の頭で、各出力先に一時ファイルを作れるかを確かめる (`TestBuildChecksOutputDirFirst`: 書けない出力先で ffmpeg / chrome を起こさずに止まる)
+- 変異: 3 つのファイルをそれぞれ修正前に戻すと、対応するテストが red

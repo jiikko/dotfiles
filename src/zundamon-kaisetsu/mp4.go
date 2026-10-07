@@ -430,6 +430,15 @@ func cmdBuild(env *Env, scriptArg, output, format string, jobs, kbps int) error 
 	if format == "both" {
 		formats = []string{"html", "mp4"}
 	}
+	// 出力先に書けるかを最初に確かめる (確かめないと、音声の圧縮と Chrome の撮影 (CPU の空き待ちで最大 20 分) を
+	// 全部終えてから「一時ファイルを作れない」で止まる。issue 652)
+	for _, f := range formats {
+		p, err := partPath(resolvePath(base + "." + f))
+		if err != nil {
+			return fail("%s: 書けない (%v)", base+"."+f, err)
+		}
+		_ = os.Remove(p)
+	}
 	td, err := os.MkdirTemp("", "zundamon-kaisetsu-")
 	if err != nil {
 		return fail("一時ディレクトリを作れない (%v)", err)

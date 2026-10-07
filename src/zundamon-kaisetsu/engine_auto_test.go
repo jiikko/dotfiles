@@ -868,3 +868,37 @@ func TestWithEngineHoldsInUseBeforeStart(t *testing.T) {
 		t.Error("起動する時点で使用中のロックを持っていない")
 	}
 }
+
+// 中断でランタイムの確認や stop が 130 で返ったとき、「サービスが動いていない」「stop が失敗」ではなく中断として返す (issue 652)
+func TestEngineInterruptIsNotReportedAsFailure(t *testing.T) {
+	sleepBin, err := exec.LookPath("sleep")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, stuck string // stuck: 止まり続けるサブコマンド ("system status" / "stop")
+		run         func(env *Env) error
+	}{
+		{"up", "system status", startEngine},
+		{"down", "stop", cmdDown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cancel := withAppCtx(t)
+			env, _ := newFakeEngineEnv(t, false)
+			shims := t.TempDir()
+			marker := filepath.Join(t.TempDir(), "stuck")
+			// sleep-ok: dummy: 中断されるまで止まり続けるランタイムの呼び出し (中断で kill される。されなくても 30 秒で終わる)
+			shim := "#!/bin/sh\ncase \"$1 $2\" in \"" + tc.stuck + "\"*) echo x > " + marker + "; exec " + sleepBin + " 30 ;; esac\n" +
+				"case \"$1\" in \"" + tc.stuck + "\") echo x > " + marker + "; exec " + sleepBin + " 30 ;; esac\nexit 0\n"
+			must(t, os.WriteFile(filepath.Join(shims, "container"), []byte(shim), 0o755))
+			t.Setenv("PATH", shims)
+			done := make(chan error, 1)
+			go func() { done <- tc.run(env) }()
+			waitUntil(t, "ランタイムの呼び出しが止まる", func() bool { return isFile(marker) })
+			cancel()
+			if err := <-done; !errors.Is(err, errInterrupted) {
+				t.Fatalf("中断として返っていない: %v", err)
+			}
+		})
+	}
+}

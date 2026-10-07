@@ -271,6 +271,9 @@ func startEngine(env *Env) error {
 		return fail("container も docker も無い。VOICEVOX のデスクトップアプリを起動するか、どちらかを入れる")
 	}
 	if running, hint := runtimeService(rt); !running {
+		if e := interruptedErr(); e != nil {
+			return e // 中断で確認が失敗したのを「サービスが動いていない」と言わない (issue 652)
+		}
 		return fail("%s のサービスが動いていない → %s", rt, hint)
 	}
 	// イメージは手元に無いときだけ取得する (image pull は手元にあってもレジストリに問い合わせるので、オフラインや取得の回数制限で
@@ -406,6 +409,8 @@ func stopContainers(ctx context.Context, only string, names ...string) ([]string
 			rc, out := runQuietCtx(ctx, 120*time.Second, rt, "stop", name)
 			if rc == 0 {
 				stopped = append(stopped, rt+" "+name)
+			} else if e := interruptedErr(); e != nil {
+				return stopped, e // 中断で stop が 130 で返ったのを「失敗」と言わない (issue 652)
 			} else if !notFoundRe.MatchString(out) {
 				return stopped, fail("%s stop %s が失敗 (rc=%d): %s", rt, name, rc, firstRunes(out, 300))
 			}

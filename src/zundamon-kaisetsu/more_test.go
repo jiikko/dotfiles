@@ -410,3 +410,53 @@ func TestCreatedDateRenderedByPlayer(t *testing.T) {
 		t.Error("作成日の代入がまとめ撮りの分岐より後ろにある (mp4 に写らない)")
 	}
 }
+
+// synth の「台本から外れた古いファイル」は合成のキャッシュだけを数える (build が置く mermaid/ を数えて、
+// work/ ごと消すよう案内しない。issue 652)
+func TestSynthCountsOnlyStaleCache(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/speakers":
+			_, _ = io.WriteString(w, `[{"name":"四国めたん","styles":[{"name":"ノーマル","id":2}]},{"name":"ずんだもん","styles":[{"name":"ノーマル","id":3}]}]`)
+		case "/audio_query":
+			_, _ = io.WriteString(w, `{"accent_phrases":[],"speedScale":1.0}`)
+		case "/synthesis":
+			_, _ = w.Write(wavBytes(fmtChunk(1, 24000, 16), chunk("data", make([]byte, 480))))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "s.json")
+	must(t, os.WriteFile(path, []byte(`{"lines":[{"who":"metan","text":"あ"}]}`), 0o644))
+	env := testEnv(t)
+	env.Engine = srv.URL
+	must(t, cmdSynth(env, path, false))
+	wd := filepath.Join(dir, "s.work")
+	must(t, os.MkdirAll(filepath.Join(wd, "mermaid"), 0o755))
+	must(t, os.WriteFile(filepath.Join(wd, "mermaid", "x.png"), []byte("png"), 0o644))
+	must(t, os.WriteFile(filepath.Join(wd, "old.wav"), []byte("RIFF"), 0o644))
+	var errb strings.Builder
+	env.Stderr = &errb
+	must(t, cmdSynth(env, path, false))
+	if !strings.Contains(errb.String(), "古いファイル 1 件") {
+		t.Errorf("古いファイルは old.wav の 1 件のはず (mermaid/ を数えない): %s", errb.String())
+	}
+}
+
+// 出力先に書けないなら、音声の圧縮や撮影より前に止まる (issue 652)
+func TestBuildChecksOutputDirFirst(t *testing.T) {
+	log := fakeMP4Tools(t)
+	env := testEnv(t)
+	out := filepath.Join(t.TempDir(), "no-such-dir", "out")
+	err := cmdBuild(env, filepath.Join("testdata", "build", "script.json"), out, "mp4", 1, 64)
+	if err == nil || !strings.Contains(err.Error(), "書けない") {
+		t.Fatalf("書けない出力先で止まるはず: %v", err)
+	}
+	for _, l := range calls(t, log) {
+		if strings.HasPrefix(l, "ffmpeg ") || strings.HasPrefix(l, "chrome ") {
+			t.Errorf("出力先を確かめる前に外部コマンドを起こした: %s", l)
+		}
+	}
+}
