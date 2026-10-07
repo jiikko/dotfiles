@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -326,23 +327,19 @@ func sortedStates(frames [][4]int) [][3]int {
 	for st := range set {
 		out = append(out, st)
 	}
-	slicesSortStates(out)
+	slices.SortFunc(out, cmpState) // 状態は重複しないので安定でなくてよい
 	return out
 }
 
-func slicesSortStates(xs [][3]int) {
-	for i := 1; i < len(xs); i++ {
-		for j := i; j > 0 && lessState(xs[j], xs[j-1]); j-- {
-			xs[j], xs[j-1] = xs[j-1], xs[j]
-		}
-	}
-}
-
-func lessState(a, b [3]int) bool {
+// cmpState は状態を (行, 話し中, 口) の辞書順で比べる (Python の sorted と同じ順)
+func cmpState(a, b [3]int) int {
 	for i := range 3 {
 		if a[i] != b[i] {
-			return a[i] < b[i]
+			if a[i] < b[i] {
+				return -1
+			}
+			return 1
 		}
 	}
-	return false
+	return 0
 }

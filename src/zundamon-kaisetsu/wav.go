@@ -99,5 +99,18 @@ func writeWav(path string, pcm []byte) error {
 	binary.LittleEndian.PutUint16(h[34:36], 16)
 	copy(h[36:40], "data")
 	binary.LittleEndian.PutUint32(h[40:44], uint32(len(pcm)))
-	return os.WriteFile(path, append(h, pcm...), 0o644)
+	// ヘッダと PCM をつないだ写しを作らずに 2 回書く (20 分の音声で 57MB の写しになっていた。issue 655)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(h); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if _, err := f.Write(pcm); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }

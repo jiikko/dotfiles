@@ -141,6 +141,14 @@ func pySum(xs []float64) float64 {
 	return f
 }
 
+// appendSilence は pcm の後ろに n バイトの無音 (0) を足す (無音の一時的な領域を作らない)
+func appendSilence(pcm []byte, n int) []byte {
+	l := len(pcm)
+	pcm = slices.Grow(pcm, n)[:l+n]
+	clear(pcm[l:])
+	return pcm
+}
+
 // --- 表示の状態 ---
 
 // timelineLine はプレイヤーに渡す 1 行 (Python 版の timeline の要素)。mouth はデータに入れない。
@@ -334,6 +342,20 @@ func assemble(s *Script, env *Env) (*PlayerData, []byte, error) {
 	}
 
 	pcm := make([]byte, 2*pyRound(leadIn*sampleRate))
+	// 連結後の大きさを wav のファイルの大きさと間の無音から見積もって先に確保する (行ごとに伸ばすと、20 分の台本で
+	// 400MB を超える確保になっていた。issue 655)。見積もりは確保の量だけに効き、外れても結果は変わらない
+	est := len(pcm)
+	for _, line := range s.Lines {
+		if p, err := lineParams(s, line); err == nil {
+			if w, _ := cachePaths(wd, p); w != "" {
+				if st, err := os.Stat(w); err == nil {
+					est += int(st.Size())
+				}
+			}
+		}
+		est += 2 * pyRound(numOr(lineGet(line, "pause_after", nil), defaultGap)*sampleRate)
+	}
+	pcm = slices.Grow(pcm, est-len(pcm))
 	timeline := []timelineLine{}
 	chapters := []chapterData{}
 	var missing []int
@@ -374,7 +396,7 @@ func assemble(s *Script, env *Env) (*PlayerData, []byte, error) {
 			mouth: mouthTrack(query, dur),
 		})
 		pause := numOr(lineGet(line, "pause_after", nil), defaultGap)
-		pcm = append(pcm, make([]byte, 2*pyRound(pause*sampleRate))...)
+		pcm = appendSilence(pcm, 2*pyRound(pause*sampleRate))
 	}
 	if len(missing) > 0 {
 		return nil, nil, fail("合成済みの wav が無い行がある (台本を変えた後に synth していない?): lines %s", pyIntList(missing[:min(10, len(missing))]))

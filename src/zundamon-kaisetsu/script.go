@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"unicode/utf8"
 )
 
@@ -62,6 +63,9 @@ type Script struct {
 	Raw   map[string]any            // 台本全体
 	Cast  map[string]map[string]any // キャラごとに、固定の設定へ台本の上書きを重ねたもの (style_id は既定を入れる)
 	Lines []map[string]any
+
+	readingsOnce sync.Once      // readings の正規表現は台本ごとに 1 回だけ作る (行ごとに作っていた。issue 655)
+	readingsRe   *regexp.Regexp // readings が空なら nil
 }
 
 // errExit は利用者に見せる失敗 (main が "error: " を付けて rc=1 で終える)。
@@ -396,14 +400,17 @@ func spokenText(s *Script, line map[string]any) string {
 	if len(rd) == 0 {
 		return text
 	}
-	keys := sortedKeys(rd)
-	sort.SliceStable(keys, func(i, j int) bool { return len([]rune(keys[i])) > len([]rune(keys[j])) })
-	quoted := make([]string, len(keys))
-	for i, k := range keys {
-		quoted[i] = regexp.QuoteMeta(k)
-	}
-	re := regexp.MustCompile(strings.Join(quoted, "|"))
-	return re.ReplaceAllStringFunc(text, func(m string) string { return pyStr(rd[m]) })
+	// 🚨 台本の Raw["readings"] を読み込んだ後に書き換える呼び出し元は無い前提 (書き換えるなら readingsRe も作り直す)
+	s.readingsOnce.Do(func() {
+		keys := sortedKeys(rd)
+		sort.SliceStable(keys, func(i, j int) bool { return len([]rune(keys[i])) > len([]rune(keys[j])) })
+		quoted := make([]string, len(keys))
+		for i, k := range keys {
+			quoted[i] = regexp.QuoteMeta(k)
+		}
+		s.readingsRe = regexp.MustCompile(strings.Join(quoted, "|"))
+	})
+	return s.readingsRe.ReplaceAllStringFunc(text, func(m string) string { return pyStr(rd[m]) })
 }
 
 // cacheSerialize は Python 版の json.dumps(params, sort_keys=True, ensure_ascii=False)。
