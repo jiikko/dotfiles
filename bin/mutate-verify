@@ -96,6 +96,8 @@
 #   `go test -vet=off -count=1 -run '^$' ./...` はテストもコンパイルし、テストも analyzer も走らせない。
 #   --file は **repo root からの相対パス** (今いるディレクトリからではない。絶対パスは受けない)。
 #   --apply / --syntax / --verify は **worktree の中**で実行される。
+#   --syntax / --verify の出力先ディレクトリは素の worktree に無いことがある (ignore されたディレクトリは checkout されない)。
+#   各コマンドの中で `mkdir -p` してから書く (例: `cd macOS && mkdir -p tmp && … > tmp/build.log`。obaket 1083)
 #   $MUTATE_FILE に --file の絶対パス (worktree 側) が入る。
 #   終了時に「全体のログ」の置き場を出す (baseline / 変異 / 構文検査の出力と、差の全体 diff.txt)。
 #   worktree と一緒に消えないよう外へ写したもので、**この道具は消さない**。置き場の親は
