@@ -59,8 +59,8 @@ func TestRejectBadShow(t *testing.T) {
 		want string
 	}{
 		{"排他ロック", "オブジェクトか null"},
-		{map[string]any{"type": "chart", "text": "x"}, "show.type は code/compare/keyword"},
-		{map[string]any{"text": "x"}, "show.type は code/compare/keyword"},
+		{map[string]any{"type": "chart", "text": "x"}, "show.type は code/compare/image/keyword"},
+		{map[string]any{"text": "x"}, "show.type は code/compare/image/keyword"},
 		{map[string]any{"type": "keyword", "text": "x", "color": "red"}, "に書けるのは type/text/sub だけ"},
 		{map[string]any{"type": "keyword", "text": " "}, "show.text は空でない文字列"},
 		{map[string]any{"type": "keyword"}, "show.text は空でない文字列"},
@@ -182,35 +182,43 @@ func TestLineShowsPersistClearAndDedupe(t *testing.T) {
 	}
 }
 
+// buildWithShows は testdata/build の台本を一時ディレクトリに写し、edit で行を書き換えてから assemble する。
+// edit は写した先のディレクトリも受け取る (図の画像を台本の隣に置くため)。
+func buildWithShows(t *testing.T, edit func(dir string, lines []any)) (*PlayerData, error) {
+	t.Helper()
+	env := testEnv(t)
+	dir := t.TempDir()
+	copyTree(t, filepath.Join("testdata", "build"), dir)
+	path := filepath.Join(dir, "script.json")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := decodeJSON(b, &raw); err != nil {
+		t.Fatal(err)
+	}
+	edit(dir, raw["lines"].([]any))
+	if b, err = json.Marshal(raw); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := loadScript(resolvePath(path), env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _, err := assemble(s, env)
+	return data, err
+}
+
 // TestShowDoesNotChangeAudioOrFrames は、図解を足しても各行の時刻と撮影の状態の列が変わらないことを確かめる。
 // 図解は行の関数なので、mp4 が撮る状態の種類は増えない。キャッシュの鍵に show が入ると、testdata の合成済み wav が
 // 引けずに assemble が落ちる。
 func TestShowDoesNotChangeAudioOrFrames(t *testing.T) {
-	env := testEnv(t)
 	build := func(edit func(lines []any)) *PlayerData {
-		dir := t.TempDir()
-		copyTree(t, filepath.Join("testdata", "build"), dir)
-		path := filepath.Join(dir, "script.json")
-		b, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var raw map[string]any
-		if err := decodeJSON(b, &raw); err != nil {
-			t.Fatal(err)
-		}
-		edit(raw["lines"].([]any))
-		if b, err = json.Marshal(raw); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, b, 0o644); err != nil {
-			t.Fatal(err)
-		}
-		s, err := loadScript(resolvePath(path), env)
-		if err != nil {
-			t.Fatal(err)
-		}
-		data, _, err := assemble(s, env)
+		data, err := buildWithShows(t, func(_ string, lines []any) { edit(lines) })
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -278,6 +286,7 @@ func TestShowKeysReadByPlayer(t *testing.T) {
 		{Type: "keyword", Text: "a", Sub: "b"},
 		{Type: "compare", Left: &compareSide{Title: "a", Items: []string{"b"}}, Right: &compareSide{Title: "c", Items: []string{"d"}}},
 		{Type: "code", Lang: "go", Lines: []string{"a"}, Marks: []int{1}},
+		{Type: "image", Src: "data:image/png;base64,", Alt: "b"},
 	}
 	for _, sd := range samples {
 		b, err := json.Marshal(sd)

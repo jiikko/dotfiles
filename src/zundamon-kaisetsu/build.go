@@ -427,6 +427,9 @@ func assemble(s *Script, env *Env) (*PlayerData, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := embedShowImages(s, shows); err != nil {
+		return nil, nil, err
+	}
 
 	pcm := make([]byte, 2*pyRound(leadIn*sampleRate))
 	timeline := []timelineLine{}

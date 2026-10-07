@@ -49,6 +49,10 @@ html.render .char { transition: none; } /* まとめ撮りは舞台を複製し�
 .show-code pre { margin: 0; padding: 2.4cqw 1.8cqw 1.4cqw; font: 600 1.5cqw/1.5 Menlo, ui-monospace, monospace; white-space: pre; overflow: hidden; }
 .show-code .ln { display: block; min-height: 1.5em; }
 .show-code .ln.hl { background: rgba(255, 220, 0, .22); margin: 0 -1.8cqw; padding: 0 1.8cqw; }
+/* 図は白地で出す (図は白地を前提に書き出されることが多く、ダークモードでも読めるように)。大きさの範囲は build が検査する
+   (show_image.go の imageBoxW / imageBoxH は、この padding を引いた箱の大きさ) */
+.show-image { background: #fff; padding: .8cqw; line-height: 0; }
+.show-image img { display: block; max-width: calc(46cqw - 1.6cqw); max-height: calc(29.25cqw - 1.6cqw); object-fit: contain; }
 .show-compare ul { margin: 0; padding-left: 1.1em; font-size: 1.7cqw; font-weight: 700; line-height: 1.5; }
 .avatar { width: 62%; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center;
           justify-content: center; gap: 8%; color: #fff; font-weight: 700; margin-bottom: 18%; }
@@ -171,6 +175,9 @@ html.render * { transition: none !important; }
       sd.lines.forEach((t, i) => pre.append(el('span', marks.has(i + 1) ? 'ln hl' : 'ln', t)));
       if (sd.lang) card.append(el('span', 'lang', sd.lang));
       card.append(pre); box.append(card);
+    } else if (sd.type === 'image') {
+      const card = el('div', 'show-card show-image'); const img = el('img');
+      img.src = sd.src; img.alt = sd.alt; card.append(img); box.append(card);
     } else if (sd.type === 'compare') {
       const card = el('div', 'show-card show-compare');
       for (const side of [sd.left, sd.right]) {

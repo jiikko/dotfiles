@@ -20,6 +20,10 @@ type showData struct {
 	Lang  string       `json:"lang,omitempty"`
 	Lines []string     `json:"lines,omitempty"`
 	Marks []int        `json:"highlight,omitempty"`
+	Src   string       `json:"src,omitempty"` // 画像の実際のパス。assemble (embedShowImages) が data URI に置き換える
+	Alt   string       `json:"alt,omitempty"`
+	// srcWritten は台本に書いたままの src (エラーの表示用)。JSON に出さないので、重複除去の鍵にも入らない
+	srcWritten string
 }
 
 // compareSide は比較カードの片側 (見出しと箇条書き)。
@@ -55,6 +59,7 @@ var showParsers = map[string]func(path, at string, m map[string]any) (*showData,
 	"keyword": parseKeyword,
 	"compare": parseCompare,
 	"code":    parseCode,
+	"image":   parseImage,
 }
 
 func showTypes() []string {
