@@ -1,5 +1,7 @@
 # 649 (bug): zundamon-kaisetsu の mermaid の描画を中断・時間切れで止めると、puppeteer が起こした Chrome が残る
 
+> 🚨 **担当中: dotfiles-4d**（2026-10-07〜）
+
 起票日: 2026-10-07
 
 ## 概要

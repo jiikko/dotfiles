@@ -1,5 +1,7 @@
 # 651 (test): zundamon-kaisetsu の mp4 の組み立て (writeMP4) にテストが無い
 
+> 🚨 **担当中: dotfiles-4d**（2026-10-07〜）
+
 起票日: 2026-10-07
 
 ## 概要

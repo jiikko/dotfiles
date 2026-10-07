@@ -1,5 +1,7 @@
 # 650 (test): zundamon-kaisetsu の Go と player.html の間の契約が、検査で守られていない
 
+> 🚨 **担当中: dotfiles-4d**（2026-10-07〜）
+
 起票日: 2026-10-07
 
 ## 概要
