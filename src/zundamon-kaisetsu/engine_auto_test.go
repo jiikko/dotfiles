@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -881,6 +882,7 @@ func TestEngineInterruptIsNotReportedAsFailure(t *testing.T) {
 	}{
 		{"up", "system status", startEngine},
 		{"down", "stop", cmdDown},
+		{"down の確認", "system status", cmdDown}, // 確認の途中の中断を「動いていない」と読むと、rc=0 で印を消していた
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cancel := withAppCtx(t)
@@ -900,5 +902,17 @@ func TestEngineInterruptIsNotReportedAsFailure(t *testing.T) {
 				t.Fatalf("中断として返っていない: %v", err)
 			}
 		})
+	}
+}
+
+// 見張りは appCtx と別の ctx で止めるので、appCtx が取り消されていても、その ctx の結果 (not found は成功) で判定する (issue 652)
+func TestStopContainersJudgesByGivenCtx(t *testing.T) {
+	cancel := withAppCtx(t)
+	shims := t.TempDir()
+	must(t, os.WriteFile(filepath.Join(shims, "container"), []byte("#!/bin/sh\ncase \"$1\" in stop) echo \"Error: not found\" >&2; exit 1 ;; esac\nexit 0\n"), 0o755))
+	t.Setenv("PATH", shims)
+	cancel()
+	if _, err := stopContainers(context.Background(), "container", "x"); err != nil {
+		t.Fatalf("appCtx の取り消しを、別の ctx での停止の失敗 (中断) と読んだ: %v", err)
 	}
 }

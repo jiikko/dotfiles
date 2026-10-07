@@ -264,7 +264,8 @@ func cmdSynth(env *Env, scriptArg string, force bool) error {
 	}
 	msg := fmt.Sprintf("synth: 合成 %d / キャッシュ %d / 計 %d → %s", made, cached, len(s.Lines), wd)
 	if unused > 0 {
-		msg += fmt.Sprintf(" (台本から外れた古いファイル %d 件。%s/ ごと消して synth し直してもよい)", unused, filepath.Base(wd))
+		// work/ ごと消すよう案内しない (build が置く mermaid/ の図のキャッシュも消えて、描き直すことになる。issue 652)
+		msg += fmt.Sprintf(" (台本から外れた古いキャッシュ %d 件。%s/ の中の使われていない *.wav / *.query.json は消してよい)", unused, filepath.Base(wd))
 	}
 	fmt.Fprintln(env.Stderr, msg)
 	return nil

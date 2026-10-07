@@ -342,13 +342,29 @@ var fileUmask = os.FileMode(0o022)
 // 引いたもの (Python の write_text と同じ)。読み取り専用の既存のファイルは置き換えない (Python は PermissionError で止まる)。
 // dst は呼び出し側で symlink を解決しておく (rename はリンクそのものを置き換えるので、リンク先に書く Python 版と違ってしまう)。
 // 既存のファイルのハードリンクは切れる (rename は別の inode にする。出力物にハードリンクを張る運用は想定しない)。
+// checkReplaceable は dst を一時ファイルからの rename で置き換えられるか (既存ならディレクトリでなく、書き込める) を見る。
+// replaceKeepingMode と、build の最初の確認 (cmdBuild) が同じ判定を使う
+func checkReplaceable(dst string) error {
+	st, err := os.Stat(dst)
+	if err != nil {
+		return nil // まだ無い (置き換えではなく作る)
+	}
+	if st.IsDir() {
+		return fmt.Errorf("ディレクトリがある")
+	}
+	if err := syscall.Access(dst, 2 /* W_OK */); err != nil {
+		return fmt.Errorf("書き込めない既存のファイル: %w", err)
+	}
+	return nil
+}
+
 func replaceKeepingMode(tmp, dst string) error {
 	mode := 0o666 &^ fileUmask
+	if err := checkReplaceable(dst); err != nil {
+		return err
+	}
 	if st, err := os.Stat(dst); err == nil {
 		mode = st.Mode().Perm()
-		if err := syscall.Access(dst, 2 /* W_OK */); err != nil {
-			return fmt.Errorf("書き込めない既存のファイル: %w", err)
-		}
 	}
 	if err := os.Chmod(tmp, mode); err != nil {
 		return err
@@ -433,7 +449,11 @@ func cmdBuild(env *Env, scriptArg, output, format string, jobs, kbps int) error 
 	// 出力先に書けるかを最初に確かめる (確かめないと、音声の圧縮と Chrome の撮影 (CPU の空き待ちで最大 20 分) を
 	// 全部終えてから「一時ファイルを作れない」で止まる。issue 652)
 	for _, f := range formats {
-		p, err := partPath(resolvePath(base + "." + f))
+		dst := resolvePath(base + "." + f)
+		if err := checkReplaceable(dst); err != nil {
+			return fail("%s: 書けない (%v)", base+"."+f, err)
+		}
+		p, err := partPath(dst)
 		if err != nil {
 			return fail("%s: 書けない (%v)", base+"."+f, err)
 		}

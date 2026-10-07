@@ -379,6 +379,16 @@ func cmdDown(env *Env) error {
 	return nil
 }
 
+// ctxInterrupted は ctx が取り消された (中断された) なら errInterrupted を返す。🚨 全体の appCtx ではなく渡された ctx で見る:
+// 見張りは appCtx と別の ctx (cleanupContext) で stopContainers を呼ぶので、appCtx で判定すると、見張りが SIGTERM を受けている
+// 間の成功 (not found) や本物の失敗まで「中断した」になる (issue 652 の敵対的レビュー)。時間切れ (DeadlineExceeded) は中断ではない
+func ctxInterrupted(ctx context.Context) error {
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return errInterrupted
+	}
+	return nil
+}
+
 // stopContainers はこの skill 専用の名前のコンテナだけを止め、止めたランタイムの名前を返す。
 // only を指定すると、そのランタイムだけを止める (自動で起動したものを止めるとき。別のランタイムで up したエンジンに触らない)。
 // only の指定があるときは、サービスの応答が無いのを「動いていない」と読まず失敗にする (止められていないのに止めたことにしない)。
@@ -400,6 +410,9 @@ func stopContainers(ctx context.Context, only string, names ...string) ([]string
 	var stopped []string
 	for _, rt := range rts {
 		if running, _ := runtimeServiceCtx(ctx, rt); !running {
+			if e := ctxInterrupted(ctx); e != nil {
+				return stopped, e // 中断で確認が 130 で返ったのを「動いていない」と読まない (読むと down が rc=0 で印を消す)
+			}
 			if only != "" {
 				return stopped, fail("%s のサービスが応答しない (コンテナを止められたか分からない)", rt)
 			}
@@ -409,7 +422,7 @@ func stopContainers(ctx context.Context, only string, names ...string) ([]string
 			rc, out := runQuietCtx(ctx, 120*time.Second, rt, "stop", name)
 			if rc == 0 {
 				stopped = append(stopped, rt+" "+name)
-			} else if e := interruptedErr(); e != nil {
+			} else if e := ctxInterrupted(ctx); e != nil {
 				return stopped, e // 中断で stop が 130 で返ったのを「失敗」と言わない (issue 652)
 			} else if !notFoundRe.MatchString(out) {
 				return stopped, fail("%s stop %s が失敗 (rc=%d): %s", rt, name, rc, firstRunes(out, 300))
