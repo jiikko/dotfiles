@@ -149,28 +149,42 @@ func TestDefaultFaceAlwaysEmbedded(t *testing.T) {
 	}
 }
 
-func TestFFConcatListing(t *testing.T) {
+// frameStates はフレームごとの状態を、frameRuns の区間どおりに総フレーム数 ceil(尺 × fps) まで並べる (issue 660)
+func TestFrameStates(t *testing.T) {
 	runs := [][4]int{{0, -1, 0, 0}, {12, 0, 1, 2}, {15, 0, 0, 0}}
-	shot := func(st [3]int) string {
-		return "/t/" + strings.Trim(strings.Join(strings.Fields(strings.Trim(jsonOf(st), "[]")), ""), " ") + ".png"
+	got := frameStates(runs, 0.7) // 0.7 秒 = 21 フレーム
+	var want [][3]int
+	for range 12 {
+		want = append(want, [3]int{-1, 0, 0})
 	}
-	got := ffconcatListing(runs, 0.7, shot) // 0.7 秒 = 21 フレーム
-	want := []string{
-		"ffconcat version 1.0",
-		"file '/t/-1,0,0.png'", "duration 0.400000",
-		"file '/t/0,1,2.png'", "duration 0.100000",
-		"file '/t/0,0,0.png'", "duration 0.200000",
-		"file '/t/0,0,0.png'",
+	for range 3 {
+		want = append(want, [3]int{0, 1, 2})
+	}
+	for range 6 {
+		want = append(want, [3]int{0, 0, 0})
 	}
 	if !slices.Equal(got, want) {
-		t.Errorf("got  %q\nwant %q", got, want)
+		t.Errorf("got  %v\nwant %v", got, want)
 	}
-	if q := ffq("/a/it's.png"); q != `'/a/it'\''s.png'` {
-		t.Errorf("ffq: %s", q)
+	// frameRuns と組み合わせると、フレーム k は時刻 (k+0.5)/fps の状態になる (プレイヤーの規則)
+	tl := []timelineLine{{Start: 0.412, End: 0.6, mouth: "2"}, {Start: 0.938, End: 1.1, mouth: "1"}}
+	fs := frameStates(frameRuns(tl, 1.2), 1.2)
+	if len(fs) != 36 {
+		t.Fatalf("総フレーム数: got %d want 36", len(fs))
+	}
+	for k, st := range fs {
+		tm := (float64(k) + 0.5) / mouthFPS
+		li := -1
+		for i, l := range tl {
+			if l.Start <= tm {
+				li = i
+			}
+		}
+		if st[0] != li {
+			t.Errorf("フレーム %d (時刻 %.4f) の行: got %d want %d", k, tm, st[0], li)
+		}
 	}
 }
-
-func jsonOf(v any) string { b, _ := json.Marshal(v); return string(b) }
 
 // synth は合成の入力 (話速などの scale) をエンジンへ渡し、キャッシュの鍵どおりの名前で保存し、壊れた wav は残さない。
 func TestSynthWithFakeEngine(t *testing.T) {

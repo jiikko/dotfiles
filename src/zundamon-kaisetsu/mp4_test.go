@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -124,39 +126,44 @@ func fakeMP4Tool(tool string, args []string) int {
 
 var stateNameRe = regexp.MustCompile(`state_(-?\d+)_(\d+)_(\d+)\.png$`)
 
-// checkFrames は mux に渡された concat の一覧の各絵が、ファイル名の状態の色かを確かめ、結果を記録に書く
-// (build の一時 dir は終わると消えるので、絵は mux の時点で見る)
+// checkFrames は mux に渡された連番 (-framerate 30 -i <dir>/f%06d.png) の各フレームが、symlink の先の状態の色かを確かめ、
+// 結果を記録に書く (build の一時 dir は終わると消えるので、絵は mux の時点で見る)。concat の一覧で渡されたら失敗にする (issue 660)
 func checkFrames(args []string) {
-	var lst string
+	var pattern string
 	for i := 0; i < len(args)-1; i++ {
-		if args[i] == "-f" && args[i+1] == "concat" {
-			for j := i; j < len(args)-1; j++ {
-				if args[j] == "-i" {
-					lst = args[j+1]
-					break
-				}
-			}
-		}
-	}
-	b, err := os.ReadFile(lst)
-	result := "frames-ok"
-	files := map[string]bool{}
-	if err != nil {
-		result = "frames-bad 一覧を読めない"
-	}
-	for _, l := range strings.Split(string(b), "\n") {
-		if !strings.HasPrefix(l, "file ") {
-			continue
-		}
-		p := strings.Trim(strings.TrimPrefix(l, "file "), "'")
-		files[p] = true
-	}
-	for p := range files {
-		m := stateNameRe.FindStringSubmatch(p)
-		if m == nil {
-			result = "frames-bad 名前が状態でない " + p
+		if args[i] == "-i" {
+			pattern = args[i+1]
 			break
 		}
+	}
+	result := ""
+	files := []string{}
+	if !strings.HasSuffix(pattern, "/f%06d.png") || !slices.Contains(args, "-framerate") {
+		result = "frames-bad 連番で渡されていない: " + pattern
+	} else {
+		dir := strings.ReplaceAll(strings.TrimSuffix(pattern, "/f%06d.png"), "%%", "%")
+		files, _ = filepath.Glob(filepath.Join(dir, "f*.png"))
+		sort.Strings(files)
+		if len(files) == 0 {
+			result = "frames-bad 連番が空 " + dir
+		}
+	}
+	states := map[string]bool{}
+	for k, p := range files {
+		if result != "" {
+			break
+		}
+		if filepath.Base(p) != fmt.Sprintf("f%06d.png", k) {
+			result = "frames-bad 番号が飛んでいる " + filepath.Base(p)
+			break
+		}
+		target, err := os.Readlink(p)
+		m := stateNameRe.FindStringSubmatch(target)
+		if err != nil || m == nil {
+			result = "frames-bad symlink の先が状態の絵でない " + p
+			break
+		}
+		states[filepath.Base(target)] = true
 		li, _ := strconv.Atoi(m[1])
 		sp, _ := strconv.Atoi(m[2])
 		lv, _ := strconv.Atoi(m[3])
@@ -172,28 +179,26 @@ func checkFrames(args []string) {
 			result = "frames-bad 読めない " + p
 			break
 		}
-		// 全画素が状態の色で一様 (中央の 1 点だけだと、帯の半分未満のずれを見逃す)
-		bad := ""
-		for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y && bad == ""; y++ {
-			for x := img.Bounds().Min.X; x < img.Bounds().Max.X; x++ {
-				if got := color.RGBAModel.Convert(img.At(x, y)).(color.RGBA); got != want {
-					bad = fmt.Sprintf("frames-bad %s の (%d,%d) の色が %v (期待 %v)", filepath.Base(p), x, y, got, want)
-					break
-				}
-			}
-		}
-		if bad != "" {
-			result = bad
-			break
-		}
 		if fmt.Sprintf("%dx%d", img.Bounds().Dx(), img.Bounds().Dy()) != os.Getenv("FAKE_MP4_SIZE") {
 			result = "frames-bad 大きさ " + p
 			break
 		}
+		// 全画素が状態の色で一様 (中央の 1 点だけだと、帯の半分未満のずれを見逃す)
+		for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y && result == ""; y++ {
+			for x := img.Bounds().Min.X; x < img.Bounds().Max.X; x++ {
+				if got := color.RGBAModel.Convert(img.At(x, y)).(color.RGBA); got != want {
+					result = fmt.Sprintf("frames-bad %s の (%d,%d) の色が %v (期待 %v)", filepath.Base(target), x, y, got, want)
+					break
+				}
+			}
+		}
+	}
+	if result == "" {
+		result = fmt.Sprintf("frames-ok %d %d", len(states), len(files))
 	}
 	if log := os.Getenv("FAKE_MP4_LOG"); log != "" {
 		if f, err := os.OpenFile(log, os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
-			fmt.Fprintf(f, "%s %d\n", result, len(files))
+			fmt.Fprintln(f, result)
 			_ = f.Close()
 		}
 	}
@@ -352,8 +357,13 @@ func TestWriteMP4CropsEachState(t *testing.T) {
 	for _, st := range states {
 		distinct[st] = true
 	}
-	if res != fmt.Sprintf("frames-ok %d", len(distinct)) {
-		t.Errorf("mux の一覧の絵の種類が撮った状態の数 %d と合わない: %q", len(distinct), res)
+	var nStates, nFrames int
+	if _, err := fmt.Sscanf(res, "frames-ok %d %d", &nStates, &nFrames); err != nil || nStates != len(distinct) {
+		t.Errorf("mux の連番の絵の種類が撮った状態の数 %d と合わない: %q", len(distinct), res)
+	}
+	// 総フレーム数は ceil(尺 × fps) (testdata/build の台本は 3.5835 秒 = 108 フレーム。issue 660 で実物の尺を ffprobe で確かめた)
+	if nFrames != 108 {
+		t.Errorf("連番のフレーム数: got %d want 108 (ceil(3.5835 × 30))", nFrames)
 	}
 }
 

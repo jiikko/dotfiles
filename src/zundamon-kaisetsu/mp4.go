@@ -77,11 +77,6 @@ func h264Encoder() []string {
 	return nil
 }
 
-// ffq は ffconcat の引用。パスに ' があっても壊れないよう '\” で閉じて開き直す。
-func ffq(path string) string {
-	return "'" + strings.ReplaceAll(path, "'", `'\''`) + "'"
-}
-
 // loadAvg1 は 1 分平均の load。Go の標準に os.getloadavg は無いので、macOS は sysctl、Linux は /proc/loadavg を読む。
 func loadAvg1() (float64, bool) {
 	if b, err := os.ReadFile("/proc/loadavg"); err == nil {
@@ -259,12 +254,21 @@ func writeMP4(env *Env, data *PlayerData, m4a, out, td string, jobs int) error {
 		}
 	}
 
-	listing := ffconcatListing(data.Frames, data.Duration, func(st [3]int) string { return shots[st] })
-	lst := filepath.Join(td, "frames.ffconcat")
-	if err := os.WriteFile(lst, []byte(strings.Join(listing, "\n")+"\n"), 0o644); err != nil {
-		return fail("%s: 書けない (%v)", lst, err)
+	// フレームごとに状態の絵への symlink を連番で並べ、30fps の連番として読ませる (issue 660)。
+	// 🚨 concat の一覧 (各絵の表示秒数) を -r 30 -fps_mode cfr で 30fps にする形には戻さない: 変換のタイムスタンプの丸めで、
+	//    字幕と口の切り替わりが音声と ±1 フレーム前後し、-shortest と合わせて終わりの映像が欠けた (実測は issue 660)
+	seq := filepath.Join(td, "seq")
+	if err := os.MkdirAll(seq, 0o755); err != nil {
+		return fail("%s: 作れない (%v)", seq, err)
 	}
-	args := []string{"-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", lst, "-i", m4a, "-map", "0:v", "-map", "1:a"}
+	for k, st := range frameStates(data.Frames, data.Duration) {
+		if err := os.Symlink(shots[st], filepath.Join(seq, fmt.Sprintf("f%06d.png", k))); err != nil {
+			return fail("%s: 書けない (%v)", seq, err)
+		}
+	}
+	// 連番の書式 (%06d) の外にある % は、ffmpeg が書式として読まないよう %% にする
+	pattern := strings.ReplaceAll(seq, "%", "%%") + "/f%06d.png"
+	args := []string{"-v", "error", "-y", "-framerate", strconv.Itoa(mouthFPS), "-i", pattern, "-i", m4a, "-map", "0:v", "-map", "1:a"}
 	args = append(args, enc...)
 	// 出力先の隣の一時ファイルに書いてから置き換える (中断・失敗で前回の正常な出力を壊さない)
 	part, err := partPath(out)
@@ -272,8 +276,8 @@ func writeMP4(env *Env, data *PlayerData, m4a, out, td string, jobs int) error {
 		return fail("%s: 一時ファイルを作れない (%v)", out, err)
 	}
 	defer func() { _ = os.Remove(part) }()
-	args = append(args, "-pix_fmt", "yuv420p", "-r", strconv.Itoa(mouthFPS), "-fps_mode", "cfr", "-c:a", "copy", "-shortest",
-		"-movflags", "+faststart", "-f", "mp4", part)
+	// -shortest は付けない: 音声の終わりの手前のフレームの境で切られる。映像は ceil(尺 × fps) フレームで音声を覆う (差は 1 フレーム未満)
+	args = append(args, "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", "-f", "mp4", part)
 	var stderr bytes.Buffer
 	cmd := exec.CommandContext(appCtx, "ffmpeg", args...)
 	cmd.Stderr = &stderr
@@ -291,22 +295,21 @@ func writeMP4(env *Env, data *PlayerData, m4a, out, td string, jobs int) error {
 	return nil
 }
 
-// ffconcatListing は状態の列から ffconcat の一覧を作る。各絵の表示秒数は「次の状態の開始フレーム - 自分の開始フレーム」で、
-// 最後の状態は丸めた duration から作った総フレーム数までを使う (Python 版と同じ。frameRuns は丸める前の duration で
-// 数えるので、両者が 1 フレーム食い違うと最後の行の秒数が 0 になりうる)。
-func ffconcatListing(runs [][4]int, duration float64, shot func([3]int) string) []string {
+// frameStates はフレームごとの状態 (字幕の行, 話し中か, 口の開き) を並べる。総フレーム数は ceil(duration × fps) で、
+// runs (frameRuns の出力。各状態の開始フレーム) の各区間を、次の区間の開始まで繰り返す。最後の状態は総フレーム数まで続ける
+func frameStates(runs [][4]int, duration float64) [][3]int {
 	total := max(1, int(math.Ceil(duration*mouthFPS)))
-	listing := []string{"ffconcat version 1.0"}
+	out := make([][3]int, 0, total)
 	for i, r := range runs {
 		end := total
 		if i+1 < len(runs) {
-			end = runs[i+1][0]
+			end = min(runs[i+1][0], total)
 		}
-		listing = append(listing, "file "+ffq(shot([3]int{r[1], r[2], r[3]})), fmt.Sprintf("duration %.6f", float64(end-r[0])/mouthFPS))
+		for range max(0, end-r[0]) {
+			out = append(out, [3]int{r[1], r[2], r[3]})
+		}
 	}
-	last := runs[len(runs)-1]
-	listing = append(listing, "file "+ffq(shot([3]int{last[1], last[2], last[3]}))) // concat demuxer は最後の duration を使わないので 1 枚足す
-	return listing
+	return out
 }
 
 func lastRunes(s string, n int) string {
