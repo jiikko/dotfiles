@@ -29,4 +29,11 @@
 
 ## 進捗
 
-- [ ] 偽の chrome / ffmpeg で writeMP4 のテスト
+- [x] 偽の chrome / ffmpeg で writeMP4 のテスト — test(zundamon-kaisetsu) の commit
+
+## 結果 (2026-10-07)
+
+- `mp4_test.go`: 偽の chrome / ffmpeg はテストのバイナリ自身を `FAKE_MP4_TOOL` つきで起こす。偽の chrome は `#sheet=` の状態ごとに状態を表す色の帯を
+  塗った縦長の PNG を書き、偽の ffmpeg は本当に crop する。最後の mux で、concat の一覧の各絵の色がファイル名の状態と合うかを確かめて記録する
+- テスト 4 本: 全状態を撮って正しく切り出し mp4 を書く / 全部同じ絵なら止める / Chrome の失敗を rc つきで報告 / mux の失敗で前回の出力を壊さない
+- 変異で red: crop の位置を 0 に / 「全部同じ」の検査を外す / 切り出した絵の割り当てをずらす
