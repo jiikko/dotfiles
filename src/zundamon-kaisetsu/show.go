@@ -17,6 +17,9 @@ type showData struct {
 	Sub   string       `json:"sub,omitempty"`
 	Left  *compareSide `json:"left,omitempty"`
 	Right *compareSide `json:"right,omitempty"`
+	Lang  string       `json:"lang,omitempty"`
+	Lines []string     `json:"lines,omitempty"`
+	Marks []int        `json:"highlight,omitempty"`
 }
 
 // compareSide は比較カードの片側 (見出しと箇条書き)。
@@ -30,21 +33,28 @@ type compareSide struct {
 //   - 重要語: 語は全角 8 字・補足は全角 20 字ほどで折り返し、語 2 行と補足 2 行までがカードに収まった
 //   - 比較: 1 列は全角 8 字ほどで折り返す。見出しは 1 行 (8 字)、項目は 2 行 (16 字) を 3 個までがカードに収まった
 //     (W を 16 字並べた項目も 2 行に収まる)
+//   - コード: 折り返さない。1 行に半角 49 桁ほどが収まり、幅は余白を取って 44 まで。1 行目の上に言語名の分の余白を取って
+//     11 行まで (.show-code pre の padding)。言語名は幅 12 (全角 6 字) までなら 1 行目に重ならない。
+//     全角は半角約 1.7 字分の幅で出るので、codeWidth が 2 と数えるのは上限の側に倒れる
 //
-// 数えるのは文字数で表示幅ではないので、守れるのは普通の全角・半角の文字まで。1 字で何字分も幅を取る文字 (U+FDFD・U+2E3B 等) や
-// 結合文字を重ねた語は、上限内でも切れる (2 周目の反証レビューの実測)。台本に出ない文字なので幅の検査は足していない。
+// 重要語と比較は文字数で数え、コードと言語名は幅 (codeWidth) で数える。どちらも、1 字で何字分も幅を取る文字 (U+FDFD・U+2E3B 等) や
+// 結合文字を重ねた語は上限内でも切れる (2 周目の反証レビューの実測)。台本に出ない文字なので、それ以上の幅の検査は足していない。
 const (
 	keywordTextMax  = 16
 	keywordSubMax   = 40
 	compareTitleMax = 8
 	compareItemMax  = 16
 	compareItemsMax = 3
+	codeLangMax     = 12
+	codeColsMax     = 44
+	codeLinesMax    = 11
 )
 
 // showParsers は図解の種類ごとの検査。m は show のオブジェクト、at は「lines[i].show」までの位置。
 var showParsers = map[string]func(path, at string, m map[string]any) (*showData, error){
 	"keyword": parseKeyword,
 	"compare": parseCompare,
+	"code":    parseCode,
 }
 
 func showTypes() []string {
@@ -124,6 +134,75 @@ func parseCompare(path, at string, m map[string]any) (*showData, error) {
 		*side.dst = &compareSide{Title: title, Items: items}
 	}
 	return sd, nil
+}
+
+func parseCode(path, at string, m map[string]any) (*showData, error) {
+	if err := onlyKeys(path, at+" (code)", m, "type", "lang", "lines", "highlight"); err != nil {
+		return nil, err
+	}
+	lang, err := showField(path, at, m, "lang", false, 1<<30)
+	if err != nil {
+		return nil, err
+	}
+	if w := codeWidth(lang); w > codeLangMax {
+		return nil, fail("%s: %s.lang は幅 %d まで (半角 1・全角 2 で数える。実際: %d。長いと 1 行目に重なる)", path, at, codeLangMax, w)
+	}
+	raw, ok := m["lines"].([]any)
+	if !ok || len(raw) == 0 || len(raw) > codeLinesMax {
+		return nil, fail("%s: %s.lines は 1〜%d 個の文字列のリストで書く (実際: %s)", path, at, codeLinesMax, pyRepr(m["lines"]))
+	}
+	lines := make([]string, len(raw))
+	blank := true
+	for j, v := range raw {
+		lat := fmt.Sprintf("%s.lines[%d]", at, j)
+		line, ok := v.(string)
+		switch {
+		case !ok:
+			return nil, fail("%s: %s は文字列で書く (実際: %s)", path, lat, pyRepr(v))
+		case strings.ContainsAny(line, "\t\n\r"):
+			return nil, fail("%s: %s にタブ・改行を入れない (タブはスペースで書き、改行は行を分ける)", path, lat)
+		case codeWidth(line) > codeColsMax:
+			return nil, fail("%s: %s は幅 %d まで (半角 1・全角 2 で数える。実際: %d。長いと画面で切れる)", path, lat, codeColsMax, codeWidth(line))
+		}
+		lines[j] = line
+		blank = blank && pyStrip(line) == ""
+	}
+	if blank {
+		return nil, fail("%s: %s.lines が空行だけ", path, at)
+	}
+	var marks []int
+	if hv, ok := m["highlight"]; ok {
+		list, ok := hv.([]any)
+		if !ok {
+			return nil, fail("%s: %s.highlight は行番号 (1 始まり) のリストで書く (実際: %s)", path, at, pyRepr(hv))
+		}
+		for _, v := range list {
+			n, ok := v.(json.Number)
+			k, err := n.Int64()
+			if !ok || err != nil || k < 1 || int(k) > len(lines) {
+				return nil, fail("%s: %s.highlight は 1〜%d の行番号のリストで書く (実際: %s)", path, at, len(lines), pyRepr(hv))
+			}
+			if !slices.Contains(marks, int(k)) {
+				marks = append(marks, int(k))
+			}
+		}
+		sort.Ints(marks)
+	}
+	return &showData{Type: "code", Lang: lang, Lines: lines, Marks: marks}, nil
+}
+
+// codeWidth はコードの 1 行の表示の幅 (半角 1・それ以外 2)。コードは折り返さずに出すので、文字数ではなく幅で上限を見る。
+// 全角・半角の判定は ASCII かどうかだけの近似 (半角カナ・幅 0 の結合文字・全角も 2 と数えるので、上限の側に倒れる)。
+func codeWidth(s string) int {
+	w := 0
+	for _, r := range s {
+		if r < 0x80 {
+			w++
+		} else {
+			w += 2
+		}
+	}
+	return w
 }
 
 // onlyKeys は図解のオブジェクトに書けないキーがあれば止める。

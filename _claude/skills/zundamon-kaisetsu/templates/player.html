@@ -43,6 +43,12 @@ html.render .char { transition: none; } /* まとめ撮りは舞台を複製し�
 .show-compare { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 1.2cqw; }
 .show-compare .side { border: 2px solid var(--line); border-radius: 12px; padding: 1cqw 1.2cqw; min-width: 0; }
 .show-compare h3 { margin: 0 0 .5cqw; font-size: 2cqw; color: var(--accent); }
+/* コードはテーマによらず暗い背景にする (エディタの見た目に寄せる)。折り返さないので、幅は build の検査 (codeWidth) で抑える */
+.show-code { width: 100%; padding: 0; background: #1f2430; color: #e6e6e6; position: relative; }
+.show-code .lang { position: absolute; top: .5cqw; right: 1cqw; font-size: 1.1cqw; color: #9aa3b5; font-weight: 700; }
+.show-code pre { margin: 0; padding: 2.4cqw 1.8cqw 1.4cqw; font: 600 1.5cqw/1.5 Menlo, ui-monospace, monospace; white-space: pre; overflow: hidden; }
+.show-code .ln { display: block; min-height: 1.5em; }
+.show-code .ln.hl { background: rgba(255, 220, 0, .22); margin: 0 -1.8cqw; padding: 0 1.8cqw; }
 .show-compare ul { margin: 0; padding-left: 1.1em; font-size: 1.7cqw; font-weight: 700; line-height: 1.5; }
 .avatar { width: 62%; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center;
           justify-content: center; gap: 8%; color: #fff; font-weight: 700; margin-bottom: 18%; }
@@ -159,6 +165,12 @@ html.render * { transition: none !important; }
       const card = el('div', 'show-card show-keyword', sd.text);
       if (sd.sub) card.append(el('span', 'sub', sd.sub));
       box.append(card);
+    } else if (sd.type === 'code') {
+      const card = el('div', 'show-card show-code'); const pre = el('pre');
+      const marks = new Set(sd.highlight || []);
+      sd.lines.forEach((t, i) => pre.append(el('span', marks.has(i + 1) ? 'ln hl' : 'ln', t)));
+      if (sd.lang) card.append(el('span', 'lang', sd.lang));
+      card.append(pre); box.append(card);
     } else if (sd.type === 'compare') {
       const card = el('div', 'show-card show-compare');
       for (const side of [sd.left, sd.right]) {

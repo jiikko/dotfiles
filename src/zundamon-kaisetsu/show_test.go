@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -43,14 +44,23 @@ func withKey(m map[string]any, k string, v any) map[string]any {
 	return m
 }
 
+// code は比較カードの cmp と同じく、コードの図解を組む。lines を省くと lines キーの無い図解になる。
+func code(lang string, lines ...any) map[string]any {
+	m := map[string]any{"type": "code", "lang": lang}
+	if len(lines) > 0 {
+		m["lines"] = lines[0]
+	}
+	return m
+}
+
 func TestRejectBadShow(t *testing.T) {
 	for _, tc := range []struct {
 		show any
 		want string
 	}{
 		{"排他ロック", "オブジェクトか null"},
-		{map[string]any{"type": "chart", "text": "x"}, "show.type は compare/keyword"},
-		{map[string]any{"text": "x"}, "show.type は compare/keyword"},
+		{map[string]any{"type": "chart", "text": "x"}, "show.type は code/compare/keyword"},
+		{map[string]any{"text": "x"}, "show.type は code/compare/keyword"},
 		{map[string]any{"type": "keyword", "text": "x", "color": "red"}, "に書けるのは type/text/sub だけ"},
 		{map[string]any{"type": "keyword", "text": " "}, "show.text は空でない文字列"},
 		{map[string]any{"type": "keyword"}, "show.text は空でない文字列"},
@@ -71,6 +81,26 @@ func TestRejectBadShow(t *testing.T) {
 		{cmp(side("前", "a"), map[string]any{"title": "後", "items": "b"}), "show.right.items は 1〜3 個"},
 		{cmp(side("前", "a"), map[string]any{"title": "後", "items": []any{"b", 1}}), "show.right.items[1] は空でない文字列"},
 		{cmp(side("前", "a", strings.Repeat("項", 17)), side("後", "b")), "show.left.items[1] は 16 字まで"},
+		{code("a"), "show.lines は 1〜11 個"},
+		{code("a", []any{}), "show.lines は 1〜11 個"},
+		{code("a", "x"), "show.lines は 1〜11 個"},
+		{code("a", make([]any, 12)), "show.lines は 1〜11 個"},
+		{code("a", []any{"x", 1}), "show.lines[1] は文字列"},
+		{code("a", []any{"\tx"}), "show.lines[0] にタブ・改行を入れない"},
+		{code("a", []any{"x\ny"}), "show.lines[0] にタブ・改行を入れない"},
+		{code("a", []any{strings.Repeat("x", 45)}), "show.lines[0] は幅 44 まで"},
+		{code("a", []any{"x", strings.Repeat("漢", 23)}), "show.lines[1] は幅 44 まで"},
+		{code("a", []any{"", "  "}), "show.lines が空行だけ"},
+		{withKey(code("a", []any{"x"}), "highlight", json.Number("1")), "show.highlight は行番号 (1 始まり) のリスト"},
+		{withKey(code("a", []any{"x"}), "highlight", []any{json.Number("0")}), "show.highlight は 1〜1 の行番号"},
+		{withKey(code("a", []any{"x"}), "highlight", []any{json.Number("2")}), "show.highlight は 1〜1 の行番号"},
+		{withKey(code("a", []any{"x"}), "highlight", []any{json.Number("1.5")}), "show.highlight は 1〜1 の行番号"},
+		{withKey(code("a", []any{"x"}), "highlight", []any{"1"}), "show.highlight は 1〜1 の行番号"},
+		{code(strings.Repeat("l", 13), []any{"x"}), "show.lang は幅 12 まで"},
+		{code(strings.Repeat("言", 7), []any{"x"}), "show.lang は幅 12 まで"},
+		{code("a", []any{"x\ry"}), "show.lines[0] にタブ・改行を入れない"},
+		{withKey(code("a", []any{"x"}), "lang", 1), "show.lang は文字列"},
+		{withKey(code("a", []any{"x"}), "caption", "x"), "show (code) に書けるのは type/lang/lines/highlight だけ"},
 	} {
 		path := writeScript(t, map[string]any{"lines": []any{
 			map[string]any{"who": "metan", "text": "a"},
@@ -81,6 +111,15 @@ func TestRejectBadShow(t *testing.T) {
 			t.Errorf("%v: %q を含む拒否にならなかった (%v)", tc.show, tc.want, err)
 		}
 	}
+}
+
+// fillCodeLines はコードの行を、先に置いた n 行と合わせて上限 (codeLinesMax) まで埋める残りの行。
+func fillCodeLines(n int) []any {
+	var rest []any
+	for i := n; i < codeLinesMax; i++ {
+		rest = append(rest, "x")
+	}
+	return rest
 }
 
 // TestAcceptShowAtLimit は、上限ちょうどの長さの日本語が通ることを確かめる (長さは文字数で数える。バイト数で数えると、
@@ -94,6 +133,12 @@ func TestAcceptShowAtLimit(t *testing.T) {
 			side(strings.Repeat("見", compareTitleMax), strings.Repeat("項", compareItemMax), "x", "y"),
 			side("後", "z"),
 		)},
+		map[string]any{"who": "metan", "text": "c", "show": withKey(code(strings.Repeat("言", codeLangMax/2),
+			append([]any{strings.Repeat("x", codeColsMax), strings.Repeat("漢", codeColsMax/2), ""}, fillCodeLines(3)...)),
+			"highlight", []any{json.Number("1"), json.Number(fmt.Sprint(codeLinesMax))})},
+		// 言語名と強調は省略でき、先頭・末尾の空行も書ける (空行だけのコードは止まる)
+		map[string]any{"who": "metan", "text": "d", "show": map[string]any{"type": "code", "lines": []any{"", "x", ""}}},
+		map[string]any{"who": "metan", "text": "e", "show": withKey(code("go", []any{"x"}), "highlight", []any{})},
 	}})
 	if _, err := loadScript(path, testEnv(t)); err != nil {
 		t.Errorf("上限ちょうどの長さを拒否した: %v", err)
@@ -189,6 +234,74 @@ func TestShowDoesNotChangeAudioOrFrames(t *testing.T) {
 		}
 		if l.Start != plain.Lines[i].Start || l.End != plain.Lines[i].End {
 			t.Errorf("lines[%d] の時刻が変わった", i)
+		}
+	}
+}
+
+// TestCodeHighlightNormalized は、強調する行番号を重複なしの昇順にそろえ、強調・行・言語名のどれか 1 つだけが違うコードを
+// 別の図解にすることを確かめる。
+func TestCodeHighlightNormalized(t *testing.T) {
+	hl := func(ns ...string) map[string]any {
+		list := make([]any, len(ns))
+		for i, n := range ns {
+			list[i] = json.Number(n)
+		}
+		return withKey(code("go", []any{"a", "b", "c"}), "highlight", list)
+	}
+	idx, table, err := lineShows("s.json", []map[string]any{
+		{"who": "metan", "text": "0", "show": hl("3", "1", "3")},
+		{"who": "metan", "text": "1", "show": hl("1", "3")}, // そろえた後は同じ中身
+		{"who": "metan", "text": "2", "show": hl("2")},      // 強調だけが違う
+		{"who": "metan", "text": "3", "show": withKey(code("go", []any{"a", "b", "X"}), "highlight", []any{json.Number("1"), json.Number("3")})},  // 行だけが違う
+		{"who": "metan", "text": "4", "show": withKey(code("sql", []any{"a", "b", "c"}), "highlight", []any{json.Number("1"), json.Number("3")})}, // 言語名だけが違う
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *idx[0] != 0 || *idx[1] != 0 || *idx[2] != 1 || *idx[3] != 2 || *idx[4] != 3 {
+		t.Errorf("図解の番号: got %d %d %d %d %d want 0 0 1 2 3", *idx[0], *idx[1], *idx[2], *idx[3], *idx[4])
+	}
+	if !reflect.DeepEqual(table[0].Marks, []int{1, 3}) {
+		t.Errorf("強調する行: got %v want [1 3]", table[0].Marks)
+	}
+}
+
+// TestShowKeysReadByPlayer は、build が出す図解の JSON のキーを player.html が同じ名前で読んでいることを確かめる。
+// キーの名前は Go の構造体タグと player.html の 2 か所に書くので、片方だけを変えるとテストは緑のまま画面から図解の一部が消える。
+func TestShowKeysReadByPlayer(t *testing.T) {
+	tb, err := os.ReadFile(testEnv(t).Template())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tpl := string(tb)
+	samples := []showData{
+		{Type: "keyword", Text: "a", Sub: "b"},
+		{Type: "compare", Left: &compareSide{Title: "a", Items: []string{"b"}}, Right: &compareSide{Title: "c", Items: []string{"d"}}},
+		{Type: "code", Lang: "go", Lines: []string{"a"}, Marks: []int{1}},
+	}
+	for _, sd := range samples {
+		b, err := json.Marshal(sd)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(tpl, "sd.type === '"+sd.Type+"'") {
+			t.Errorf("player.html に図解の種類 %s の描画が無い", sd.Type)
+		}
+		for k, v := range m {
+			if !strings.Contains(tpl, "sd."+k) {
+				t.Errorf("%s の %s を player.html が読んでいない (sd.%s が無い)", sd.Type, k, k)
+			}
+			if side, ok := v.(map[string]any); ok {
+				for sk := range side {
+					if !strings.Contains(tpl, "side."+sk) {
+						t.Errorf("%s.%s の %s を player.html が読んでいない (side.%s が無い)", sd.Type, k, sk, sk)
+					}
+				}
+			}
 		}
 	}
 }
