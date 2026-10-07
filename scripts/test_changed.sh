@@ -144,6 +144,15 @@ add_test_dirs_referencing() {  # $1=変更されたパス
       *) add_test_dir "$_ref_d"; ref_found=1 ;;   # 検査できなかった = 回す方へ倒す
     esac
   done
+  # tests/ 直下の .bats は make test-dir ではなく test-bats が回す (tests/lib の helper を source する .bats がある)
+  for _ref_b in tests/*.bats; do
+    [ -f "$_ref_b" ] || continue
+    grep -qF -- "$_ref_base" "$_ref_b" 2>/dev/null
+    case $? in
+      1) : ;;
+      *) add_target test-bats; ref_found=1 ;;   # 0 = 参照あり / >=2 = 検査できなかった = 回す方へ倒す
+    esac
+  done
 }
 
 fail=0
@@ -179,7 +188,10 @@ for p in "$@"; do
     # 参照がどこにも無ければ従来どおりそのディレクトリを渡し、runner の「0 件」で気づかせる (issue 063)
     tests/*/*)
       _td="tests/$(echo "$p" | cut -d/ -f2)"
-      if dir_has_tests "$_td"; then
+      # テストそのもの (test_*.sh) の変更・削除は名前を逆引きせず元のディレクトリへ送る。最後のテストを消したときは
+      # runner の「0 件」で気づかせる (名前が README などに出てくるだけで別のディレクトリへ振らない)
+      case "${p##*/}" in test_*.sh) _td_is_test=1 ;; *) _td_is_test=0 ;; esac
+      if [ "$_td_is_test" -eq 1 ] || dir_has_tests "$_td"; then
         add_test_dir "$_td"
       else
         ref_found=0

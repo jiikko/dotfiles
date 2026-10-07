@@ -92,6 +92,17 @@ expect_no "他のパスと一緒に渡しても tests/lib は渡さない" 'test
 # 名前は実行時に組み立てる (このファイルに完全な名前を書くと、逆引きが tests/scripts に当たってしまう)
 unref_name="__synth""_unref_$$.sh"
 expect "どこからも参照されない tests/lib のファイルは tests/lib を渡す" 'tests: .*tests/lib' "tests/lib/$unref_name"
+# tests/ 直下の .bats は test-dir ではなく test-bats が回す (tests/codex_fanout.bats が tests/lib/wait_until.sh を source する)
+expect "helper を source する .bats へも届く (test-bats)" 'test-bats' tests/lib/wait_until.sh
+# テストそのものの変更は逆引きせず元のディレクトリへ (名前が README 等に出るだけで別のディレクトリへ振らない)
+# 他のディレクトリから名前で参照される test_*.sh を使う (参照されない名前だとフォールバックと区別できない)
+if grep -rqF test_e2e_multi_screen.sh tests/pro-con; then
+  printf '✓ 前提: tests/pro-con が test_e2e_multi_screen.sh を名前で含む\n'
+else
+  printf '✗ 前提が崩れた: tests/pro-con が test_e2e_multi_screen.sh を含まない (下のケースが何も検査しない)\n'; fail=1
+fi
+expect "tests/<dir>/test_*.sh は元のディレクトリへ送る" 'tests: .*tests/lib' tests/lib/test_e2e_multi_screen.sh
+expect_no "tests/<dir>/test_*.sh は名前の一致で別のディレクトリへ振らない" 'tests/pro-con' tests/lib/test_e2e_multi_screen.sh
 # issue ファイルは「ドキュメント = テスト対象なし」に落ちていた (2026-08-28 に修正)。
 # 追加・改番が NNN 一意性検査のトリガーそのものなので、*.md の腕へ戻ると無言で検査されなくなる。
 # パスは合成 (写像はパス文字列だけを見る)。実在の issue 名を書くと done/ への移動で腐る。
