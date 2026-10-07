@@ -33,13 +33,17 @@ h1 { font-size: 1.25rem; margin: 0 0 12px; }
 html.render .char { transition: none; } /* まとめ撮りは舞台を複製して撮るので、縮む途中を撮らない */
 .stage.showing .char { width: 26%; height: 72%; }
 .stage.showing .char.left { left: 0; } .stage.showing .char.right { right: 0; }
-.stage-show { position: absolute; left: 27%; top: 27%; width: 46%; height: 50%; display: flex; align-items: center;
+.stage-show { position: absolute; left: 27%; top: 30%; width: 46%; height: 52%; display: flex; align-items: center;
               justify-content: center; z-index: 1; }
 .stage-show:empty { display: none; }
 .show-card { background: var(--panel); border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,.12); padding: 2.2cqw 2.6cqw;
              max-width: 100%; max-height: 100%; box-sizing: border-box; overflow: hidden; overflow-wrap: anywhere; }
 .show-keyword { text-align: center; font-size: 5cqw; font-weight: 900; line-height: 1.2; color: var(--accent); }
 .show-keyword .sub { display: block; margin-top: .6cqw; font-size: 1.9cqw; font-weight: 700; color: var(--muted); }
+.show-compare { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 1.2cqw; }
+.show-compare .side { border: 2px solid var(--line); border-radius: 12px; padding: 1cqw 1.2cqw; min-width: 0; }
+.show-compare h3 { margin: 0 0 .5cqw; font-size: 2cqw; color: var(--accent); }
+.show-compare ul { margin: 0; padding-left: 1.1em; font-size: 1.7cqw; font-weight: 700; line-height: 1.5; }
 .avatar { width: 62%; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center;
           justify-content: center; gap: 8%; color: #fff; font-weight: 700; margin-bottom: 18%; }
 .avatar .mouth { width: 30%; background: rgba(0,0,0,.55); border-radius: 999px; transition: height .03s; }
@@ -154,6 +158,14 @@ html.render * { transition: none !important; }
     if (sd.type === 'keyword') {
       const card = el('div', 'show-card show-keyword', sd.text);
       if (sd.sub) card.append(el('span', 'sub', sd.sub));
+      box.append(card);
+    } else if (sd.type === 'compare') {
+      const card = el('div', 'show-card show-compare');
+      for (const side of [sd.left, sd.right]) {
+        const col = el('div', 'side'); const ul = el('ul');
+        side.items.forEach((t) => ul.append(el('li', null, t)));
+        col.append(el('h3', null, side.title), ul); card.append(col);
+      }
       box.append(card);
     }
   }
