@@ -298,13 +298,25 @@ func TestShowKeysReadByPlayer(t *testing.T) {
 	if !strings.Contains(tpl, "未知の図解") {
 		t.Error("player.html の showAt に、未知の種類を見えるようにする分岐が無い")
 	}
-	// branch は種類 typ の描画の分岐 (`sd.type === 'typ'` から次の `} else` まで)。キーはその種類の分岐の中で読まれている必要がある
+	// branch は種類 typ の描画の分岐 (showAt の本体の中の `sd.type === 'typ'` から次の `} else` まで)。キーはその種類の分岐の中で読まれている必要がある。
+	// 検出しない形 (字句の検査の限界。脅威モデルはうっかりした編集): 分岐の中の入れ子の `} else` (誤った red になる) /
+	// showAt の外の helper に読む処理を移す (分岐から読まれなくなるので red になる)
+	body := tpl
+	if i := strings.Index(tpl, "function showAt("); i >= 0 {
+		body = tpl[i:]
+		if j := strings.Index(body, "\n  function "); j >= 0 {
+			body = body[:j]
+		}
+	} else {
+		t.Fatal("player.html に showAt が無い")
+	}
 	branch := func(typ string) string {
-		i := strings.Index(tpl, "sd.type === '"+typ+"'")
-		if i < 0 {
+		if n := strings.Count(body, "sd.type === '"+typ+"'"); n != 1 {
+			t.Errorf("showAt の中の種類 %s の分岐が %d 個 (1 個のはず)", typ, n)
 			return ""
 		}
-		rest := tpl[i:]
+		i := strings.Index(body, "sd.type === '"+typ+"'")
+		rest := body[i:]
 		if j := strings.Index(rest, "} else"); j >= 0 {
 			rest = rest[:j]
 		}
@@ -371,7 +383,9 @@ func TestPlayerPlacesCharsForShowsFromStart(t *testing.T) {
 func TestSheetFragmentMatchesPlayer(t *testing.T) {
 	re := playerSheetRegexp(t)
 	tpl := playerTemplate(t)
-	// 欄の意味の対応 (行, 話し中, 口) も Go と同じ順に分解している (正規表現が合っても、順が違うと話し中と口が入れ替わる)
+	// 欄の意味の対応 (行, 話し中, 口) も Go と同じ順に分解している (正規表現が合っても、順が違うと話し中と口が入れ替わる)。
+	// 検出しない形: 字面を残したまま意味だけ変える書き換え (map の中で並べ替える・paint の引数の順を変える)。
+	// 確実に見るには JS を node で評価する形が要る (issue 650 の敵対的レビュー 2 周目 P3-a。今はうっかりした編集だけを止める)
 	for _, want := range []string{"for (const [li, sp, lv] of states)", "paint(li, sp, lv, false)"} {
 		if !strings.Contains(tpl, want) {
 			t.Errorf("player.html のまとめ撮りの分解が Go の順 (行, 話し中, 口) でない (%s が無い)", want)
@@ -411,11 +425,11 @@ func playerTemplate(t *testing.T) string {
 // この正規表現は JS と RE2 で同じ意味に読める書き方 (^ $ \d 文字クラス) に限っている
 func playerSheetRegexp(t *testing.T) *regexp.Regexp {
 	t.Helper()
-	m := regexp.MustCompile(`location\.hash\.match\(/(.+?)/\)`).FindStringSubmatch(playerTemplate(t))
-	if m == nil {
-		t.Fatal("player.html にまとめ撮りの正規表現 (location.hash.match(/^#sheet=…/)) が無い")
+	ms := regexp.MustCompile(`location\.hash\.match\(/(\^#sheet=.+?\$)/\)`).FindAllStringSubmatch(playerTemplate(t), -1)
+	if len(ms) != 1 {
+		t.Fatalf("player.html のまとめ撮りの正規表現 (location.hash.match(/^#sheet=…$/)) が 1 つでない (%d 個)", len(ms))
 	}
-	re, err := regexp.Compile(m[1])
+	re, err := regexp.Compile(ms[0][1])
 	must(t, err)
 	return re
 }

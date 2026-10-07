@@ -74,8 +74,8 @@ func fakeMP4Tool(tool string, args []string) int {
 			return 3
 		}
 		// 本物のプレイヤーが受け取る書式か (player.html から抜き出した正規表現で見る。偽物の Sscanf は空白などを許すので頼らない)
-		if re, err := regexp.Compile(os.Getenv("FAKE_SHEET_RE")); err != nil || os.Getenv("FAKE_SHEET_RE") == "" || !re.MatchString("#"+u.Fragment) {
-			fmt.Fprintf(os.Stderr, "偽の Chrome: player.html が受け取らない断片 %q\n", u.Fragment)
+		if re, err := regexp.Compile(os.Getenv("FAKE_SHEET_RE")); err != nil || os.Getenv("FAKE_SHEET_RE") == "" || !re.MatchString("#"+u.EscapedFragment()) { // Chrome の location.hash はデコードしない
+			fmt.Fprintf(os.Stderr, "偽の Chrome: player.html が受け取らない断片 %q\n", u.EscapedFragment())
 			return 11
 		}
 		var states [][3]int
