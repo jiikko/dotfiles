@@ -59,4 +59,13 @@ silent に壊れる (compile も test も通る)。
   43 分後に `showWarning` の doc が 3 分類を定めた時点で取り残されていた) / `TestIssuesViewerRefusalKeepsLastWarning` を新設
 - 変異: `deliverNotice` を旧来の形 (`noticeRefused` も `showWarning`) に戻す → 上の 2 本が red、059 のテストは緑のまま (意図どおり)
 - `make -C src/glogx lint` 0 issues / `make -C src/glogx test` rc=0 (2026-10-08)
-- [ ] 敵対的レビュー (663〜667 をまとめて)
+- [x] 敵対的レビュー (2026-10-08、663〜667 をまとめて 2 体を直列。①壊す・回帰 ②素通り)。①は P1/P2 の退行 0 件
+  (横断キーの 3 打鍵 64 通りで全画面の 2 枚同時は 0 件 / setNotice 38 件で旧来 lastWarning に残ったエラー詳細の消失 0 件 /
+  watchChain・groupExpansion・ContainerDir・OrderLess・IsStatusDir・URL ピッカーの窓はどれも旧実装と等価)。②は新しい検査を 3 つ壊した (下記)。
+  直した差分は判定ロジックを新設せず、各修正を変異で直接確かめたので、3 周目は回さずに閉じた (adversarial-review §7 の例外)
+  - ②P2: 通知の種類の検査が 30 件中 2 経路しか無く、「本文を読めませんでした」を noticeRefused にしても緑だった →
+    `TestSetNoticeKindsFollowWarningClassification` (setNotice の全呼び出しを構文木で読み、エラー詳細を含む = noticeError / クリップボード失敗 = noticeRefused /
+    それ以外 = noticeRefused (Msg 経路の 2 件だけ例外) を検査。3 種類の件数の canary 付き)。🚨 ソースを読む検査なので overlay の変異は効かない —
+    作業ツリーに実際に当てて、レビューの変異 5 本 (末尾の J / 複数コピーの失敗 / 本文読み / 移動 / 破棄) が全部 red になることを確かめた
+  - ①P3 (据え置き): パスを含むがエラー文を含まない 3 件 (「実体が見つかりません」「ファイルが見つかりません」「確認中に … が変わったため中止」) は
+    noticeRefused のまま。`w` でコピーする価値のあるエラー詳細を持たないため

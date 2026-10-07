@@ -408,10 +408,8 @@ func path2issue(dir, rel string) *issues.Issue {
 		iss.Slug = parts[2]
 	}
 	if sub, _, ok := strings.Cut(filepath.ToSlash(rel), "/"); ok {
-		for _, st := range []issues.Status{issues.StatusDone, issues.StatusPending, issues.StatusWaiting} {
-			if sub == st.String() {
-				iss.Status = st
-			}
+		if st, known := issues.StatusOfDir(sub); known {
+			iss.Status = st // 走査と同じ表 (別綴り・大文字小文字も同じに扱う)
 		}
 	}
 	return iss

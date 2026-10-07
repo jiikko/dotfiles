@@ -644,14 +644,15 @@ func TestIssuesWatchDirsIncludeEmptyGlobalStatusDirs(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "001-feat-a.md"), []byte("# 001\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, sub := range []string{"waiting", "pending", "done", "hold", "notes"} {
+	// Done は大文字: 走査 (scanDir) は大文字小文字を問わずに状態と読むので、見張りも同じに扱う
+	for _, sub := range []string{"waiting", "pending", "Done", "hold", "notes"} {
 		if err := os.MkdirAll(filepath.Join(dir, sub), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
 	all, _ := issues.Scan([]string{dir})
 	got := issuesWatchDirs([]string{dir}, all)
-	for _, sub := range []string{"waiting", "pending", "done", "hold"} {
+	for _, sub := range []string{"waiting", "pending", "Done", "hold"} {
 		if !slices.Contains(got, filepath.Join(dir, sub)) {
 			t.Errorf("空の %s/ が watch 対象に無い: %v", sub, got)
 		}

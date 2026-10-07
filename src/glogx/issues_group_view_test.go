@@ -915,3 +915,29 @@ func TestIssuesViewHidesClosedEpicFromListAndCounts(t *testing.T) {
 		t.Fatalf("a を全開にしても終わった epic が出ない:\n%s", out)
 	}
 }
+
+// 番号フィルタ中に畳んだ group は、viewer を i で閉じてフィルタごと畳んだ後に開き直しても畳んだまま
+// 残らない (finishClose もフィルタを解く経路なので endFilter を通す。issue 666 の敵対的レビューで
+// 未検査だった経路。再現は red team の probe)。
+func TestIssuesViewCloseDuringFilterDropsCollapse(t *testing.T) {
+	child := fakeEpicIssue("/repo/issues", "cloud", "415", "first", issues.StatusOpen)
+	v := loadedView(child)
+	for _, k := range []string{"/", "4", "1", "5", "enter", " "} {
+		v.handleKey(k, vp(10))
+	}
+	if !v.groups.collapsed[child.GroupKey] {
+		t.Fatal("前提: フィルタ中に group を畳めていない")
+	}
+	v.handleKey("i", vp(10))
+	v.finishAnim()
+	if v.shown {
+		t.Fatal("前提: i で閉じていない")
+	}
+	v.shown = true // 開き直す (スキャン結果は保持される)
+	for _, k := range []string{"/", "4", "1", "5"} {
+		v.handleKey(k, vp(10))
+	}
+	if !v.groupExpanded(child.GroupKey) {
+		t.Fatalf("閉じて開き直した後の同じ番号フィルタで group が自動展開されない: collapsed=%v", v.groups.collapsed)
+	}
+}

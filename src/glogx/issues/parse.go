@@ -149,8 +149,15 @@ var statusDirs = map[string]Status{
 // 走査 (scanDir) と監視 (glogx の issuesWatchDirs) が同じ表を見るための口。監視側に名前を
 // 写すと、空の状態ディレクトリへの最初の md を取りこぼす (issue 665)。
 func IsStatusDir(name string) bool {
-	_, ok := statusDirs[strings.ToLower(name)]
+	_, ok := StatusOfDir(name)
 	return ok
+}
+
+// StatusOfDir は issue dir 直下のサブディレクトリ名が表す状態 (大文字小文字を問わない)。状態ディレクトリで
+// なければ ok=false。走査 (scanDir)・監視 (IsStatusDir)・テストの Issue の組み立てが同じ表を引く口。
+func StatusOfDir(name string) (Status, bool) {
+	s, ok := statusDirs[strings.ToLower(name)]
+	return s, ok
 }
 
 // NextDirName は「次にやる」の目印を置くサブディレクトリ名 (viewer の n が作る)。
@@ -287,7 +294,7 @@ func scanDir(dir string) ([]*Issue, []string) {
 			if err != nil {
 				continue
 			}
-			status, known := statusDirs[strings.ToLower(e.Name())]
+			status, known := StatusOfDir(e.Name())
 			for _, se := range subEntries {
 				if !isIssueFile(se) || metaFiles[strings.ToLower(se.Name())] {
 					continue

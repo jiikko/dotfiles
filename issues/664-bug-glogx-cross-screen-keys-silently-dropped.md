@@ -60,4 +60,10 @@ silent。
 - [x] 回帰: `TestCrossKeysReachEveryFullScreen` (全画面 4 × 横断キー 4、自分のキーは閉じる)。全画面の ID が増えたら開くキーの追加を促して落ちる
   - 変異: 表から `D` を消す → issues / status / ratelimit の 3 件が red / doctor の表引きを外す → doctor の i / s / R の 3 件が red
 - `make -C src/glogx test` rc=0 (2026-10-08)
-- [ ] 敵対的レビュー (663〜667 をまとめて)
+- [x] 敵対的レビュー (2026-10-08、663〜667 をまとめて 2 体を直列。①壊す・回帰 ②素通り)。①は P1/P2 の退行 0 件
+  (横断キーの 3 打鍵 64 通りで全画面の 2 枚同時は 0 件 / setNotice 38 件で旧来 lastWarning に残ったエラー詳細の消失 0 件 /
+  watchChain・groupExpansion・ContainerDir・OrderLess・IsStatusDir・URL ピッカーの窓はどれも旧実装と等価)。②は新しい検査を 3 つ壊した (下記)。
+  直した差分は判定ロジックを新設せず、各修正を変異で直接確かめたので、3 周目は回さずに閉じた (adversarial-review §7 の例外)
+  - ②P3: `TestCrossKeysReachEveryFullScreen` は activeFullScreen (登録順で最初の 1 枚) しか見ず、横断元が閉じずに残る形が見えなかった →
+    開いている全画面の枚数を直接数える (`visibleFullScreens`)。変異 (issues の横断で close しない) → 3 件 red
+  - ①P3: ui-guide に書いた「pager では効かない」は不正確 (issues の本文 pager では効く) → 「status の全画面 diff」に直した

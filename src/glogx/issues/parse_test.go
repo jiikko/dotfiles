@@ -715,8 +715,20 @@ func TestVisibleBadgesMarksFilterBypass(t *testing.T) {
 // (AddedBadges) が shows と一致することを、全段階 × 全状態で固定する (issue 665: Badges が
 // 状態を手で並べていて、waiting を足したときに shows だけが直った)。
 func TestStatusFilterBadgesFollowShows(t *testing.T) {
+	// 🚨 状態は badgeOrder から取らず、定義されている全状態を回す。badgeOrder を回すと、そこへ足し忘れた
+	// 状態が検査に現れない (敵対的レビュー: badgeOrder から waiting を消してもこのループは黙っていた)。
+	// バッジに並べないのは unknown (と未定義の値。Badge が "?") と next (段階で伏せない目印) だけ
+	var all []Status
+	for s := range Status(255) {
+		if s.Badge() != "?" && s != StatusNext {
+			all = append(all, s)
+		}
+	}
+	if len(all) < 4 {
+		t.Fatalf("状態の列挙が壊れている: %v", all)
+	}
 	for _, f := range []StatusFilter{FilterOpen, FilterPending, FilterAll} {
-		for _, s := range badgeOrder {
+		for _, s := range all {
 			if got := strings.Contains(f.Badges(), s.Badge()); got != f.shows(s) {
 				t.Errorf("%v: Badges=%q が %v (%s) を含むか=%v, shows=%v", f, f.Badges(), s, s.Badge(), got, f.shows(s))
 			}

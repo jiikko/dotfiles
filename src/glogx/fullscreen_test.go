@@ -315,6 +315,22 @@ func TestCrossKeysReachEveryFullScreen(t *testing.T) {
 			if got := m.activeFullScreen(); got != want {
 				t.Errorf("%v で %s を押した: active=%v, want %v", from, toKey, got, want)
 			}
+			// 🚨 activeFullScreen は登録順で最初の 1 枚しか返さないので、横断元が閉じずに裏に残る形
+			// (2 枚同時) は上では見えない。開いている枚数を直接数える
+			if n := visibleFullScreens(m); n > 1 {
+				t.Errorf("%v で %s を押した: 全画面が %d 枚同時に開いている", from, toKey, n)
+			}
 		}
 	}
+}
+
+// visibleFullScreens は開いている全画面の枚数 (同時に 1 枚の前提が守られているかを見る)。
+func visibleFullScreens(m *browseModel) int {
+	n := 0
+	for _, v := range []bool{m.issuesOv.visible(), m.statusOv.visible(), m.rlDash.visible(), m.doctorOv.visible()} {
+		if v {
+			n++
+		}
+	}
+	return n
 }
