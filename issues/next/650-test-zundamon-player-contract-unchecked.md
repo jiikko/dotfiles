@@ -1,1 +1,0 @@
-../650-test-zundamon-player-contract-unchecked.md
