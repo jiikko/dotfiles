@@ -328,7 +328,7 @@ func TestDefaultPutsChildInOwnGroup(t *testing.T) {
 	pid := readPid(t, pidf)
 	defer killIfAlive(pid)
 	pgid, err := syscall.Getpgid(pid)
-	_ = syscall.Kill(pid, syscall.SIGKILL)
+	_ = syscall.Kill(-pid, syscall.SIGKILL) // グループごと (sh だけを撃つと子の sleep が孤児で残る)
 	_ = cmd.Wait()
 	if err != nil || pgid != pid {
 		t.Fatalf("子が専用グループに居ない: pgid=%d pid=%d err=%v", pgid, pid, err)
@@ -341,28 +341,6 @@ func TestIgnoredHUPStaysIgnored(t *testing.T) {
 	out, err := cmd.Output()
 	if err != nil || string(out) != "survived\n" {
 		t.Fatalf("nohup の HUP 無視が子に渡っていない: err=%v out=%q", err, out)
-	}
-}
-
-// -f で ps が使えなくても、TERM を無視する子を猶予の後に KILL で止める
-func TestForegroundStopWithoutPS(t *testing.T) {
-	old := psPath
-	psPath = "/nonexistent/ps"
-	defer func() { psPath = old }()
-	pidf := filepath.Join(t.TempDir(), "pid")
-	cmd := exec.Command("perl", "-e", `$SIG{TERM} = "IGNORE"; open(my $f, ">", $ARGV[0]); print $f "$$\n"; close $f; sleep 300`, pidf) // sleep-ok: dummy: TERM を無視して居座る子
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	pid := readPid(t, pidf)
-	defer killIfAlive(pid)
-	done := make(chan struct{})
-	go func() { _ = cmd.Wait(); close(done) }()
-	target{root: pid, group: false}.stop(200 * time.Millisecond)
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second): // hang の安全網 (判定ではない)
-		t.Fatal("ps が使えない -f の stop で、TERM を無視する子が止まらない")
 	}
 }
 

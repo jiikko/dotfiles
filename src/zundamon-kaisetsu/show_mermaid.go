@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"proctree"
 	"strings"
 	"syscall"
 	"time"
@@ -124,15 +125,23 @@ func renderMermaid(scriptPath, name string, code []string, out string) error {
 	cmd := exec.CommandContext(ctx, "npx", args...)
 	// puppeteer に Chrome を別に取らせない (手元の Chrome を executablePath で渡す)
 	cmd.Env = append(os.Environ(), "PUPPETEER_SKIP_DOWNLOAD=1")
-	// npx → node (mmdc) → Chrome と孫まで起こすので、プロセスグループを分けて、止めるときはグループごと止める
-	// (CommandContext の既定は直接の子だけを殺し、孫が親を失って残る。issue 645 のレビューの実測)
+	// npx → node (mmdc) → Chrome と孫まで起こすので、プロセスグループを分けて、止めるときは子孫ごと止める
+	// (CommandContext の既定は直接の子だけを殺し、孫が親を失って残る。issue 645 のレビューの実測)。
+	// 🚨 グループ宛ての kill だけでは足りない: puppeteer は Chrome を detached (別のグループ) で起こすので届かない (issue 649)。
+	// proctree は ppid の木もたどって凍らせてから TERM を送る (puppeteer の handleSIGTERM が Chrome を閉じる機会がある)。
+	// 猶予の後も残るものは KILL
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.Cancel = func() error {
+		proctree.Target{Root: cmd.Process.Pid, Group: true}.Stop(3 * time.Second)
+		return nil
+	}
 	cmd.WaitDelay = 5 * time.Second
 	var outb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &outb, &outb
-	// Cancel は npx がまだ回収されていない (番号が他に使われていない) ときにだけ走る。描き終えた後にグループを止める処理は
-	// 置かない: npx の回収後は同じ番号が別のプロセスグループに使われうる (mmdc は描き終えると Chrome を自分で閉じる)
+	// Cancel は ctx の終わりで走り、npx の回収と並行しうる (回収された後も最長で猶予の 3 秒は同じ番号に撃つ。番号の再利用が
+	// その間に起きる必要があり、macOS の pid は順に割り当てられるので受ける。runtimeout と同じ扱い。issue 649)。
+	// 描き終えた後にグループを止める処理は置かない: npx の回収後は同じ番号が別のプロセスグループに使われうる
+	// (mmdc は描き終えると Chrome を自分で閉じる)
 	err = cmd.Run()
 	if e := interruptedErr(); e != nil {
 		return e

@@ -13,7 +13,9 @@ import (
 
 // fakeMermaid は PATH の先頭に偽の npx を置く。偽物は引数と PUPPETEER_SKIP_DOWNLOAD を log に 1 行ずつ書き、mode に従って動く:
 // ok なら -o の先へ pngPath を写す / fail なら Parse error で落ちる / hang なら孫 (sleep) を起こして待ち続ける (孫の pid を
-// log と同じ場所の grandchild.pid に書く)。CHROME も偽の実行ファイルにする (本物の Chrome は起こさない)。返り値は log のパス。
+// log と同じ場所の grandchild.pid に書く)。🚨 孫は setsid で別のセッション (= 別のプロセスグループ) に置く: 本物の puppeteer は
+// Chrome を detached で起こす (@puppeteer/browsers の launch.js: `detached ??= platform !== 'win32'`)。同じグループの孫では、
+// グループ宛ての kill だけで止まって見えてしまう (issue 649)。CHROME も偽の実行ファイルにする (本物の Chrome は起こさない)。返り値は log のパス。
 func fakeMermaid(t *testing.T, pngPath, mode string) string {
 	t.Helper()
 	bin := t.TempDir()
@@ -22,7 +24,7 @@ func fakeMermaid(t *testing.T, pngPath, mode string) string {
 echo "$* skip=$PUPPETEER_SKIP_DOWNLOAD" >> "` + log + `"
 case "` + mode + `" in
 fail) echo "Parse error on line 2" >&2; exit 1 ;;
-hang) sleep 300 & echo $! > "` + filepath.Join(bin, "grandchild.pid") + `"; wait; exit 0 ;;
+hang) perl -e 'use POSIX; POSIX::setsid(); open(my $f, ">", $ARGV[0]); print $f "$$\n"; close $f; exec "sleep", "300"' "` + filepath.Join(bin, "grandchild.pid") + `" & wait; exit 0 ;;
 esac
 while [ $# -gt 0 ]; do
   if [ "$1" = "-o" ]; then cp "` + pngPath + `" "$2"; exit $?; fi
@@ -221,16 +223,33 @@ func TestMermaidCancelKillsGrandchild(t *testing.T) {
 
 // TestMermaidTimeoutMessage は、描くのが時間切れになったら、その旨で止まることを確かめる。
 func TestMermaidTimeoutMessage(t *testing.T) {
-	fakeMermaid(t, "", "hang")
+	log := fakeMermaid(t, "", "hang")
 	old := mermaidTimeout
-	mermaidTimeout = 300 * time.Millisecond
+	mermaidTimeout = 2 * time.Second // 偽物が孫の pid を書き終えるまでの余裕 (書く前に止まると、残らないことを確かめられない)
 	t.Cleanup(func() { mermaidTimeout = old })
-	_, err := buildWithShows(t, func(_ string, lines []any) {
-		lines[1].(map[string]any)["show"] = mermaidShow("flowchart LR", "  A --> B")
+	done := make(chan error, 1)
+	go func() {
+		_, err := buildWithShows(t, func(_ string, lines []any) {
+			lines[1].(map[string]any)["show"] = mermaidShow("flowchart LR", "  A --> B")
+		})
+		done <- err
+	}()
+	// 時間切れの前に孫が起きたことを確かめる (起きる前に止まると、残らないことを確かめられない)
+	pidFile := filepath.Join(filepath.Dir(log), "grandchild.pid")
+	waitUntil(t, "偽物が孫を起こす", func() bool {
+		b, err := os.ReadFile(pidFile)
+		return err == nil && strings.HasSuffix(string(b), "\n")
 	})
-	if err == nil || !strings.Contains(err.Error(), "終わらない") {
+	if err := <-done; err == nil || !strings.Contains(err.Error(), "終わらない") {
 		t.Fatalf("時間切れで止まるはず (%v)", err)
 	}
+	// 時間切れでも、別のグループに居る孫 (本物では puppeteer の Chrome) が残らない (issue 649)
+	b, err := os.ReadFile(pidFile)
+	must(t, err)
+	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	must(t, err)
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	waitUntil(t, "時間切れの後に孫のプロセスが居なくなる", func() bool { return syscall.Kill(pid, 0) != nil })
 }
 
 // TestMermaidBrokenCacheHint は、キャッシュに壊れた PNG があるとき、そのパスと描き直し方を案内することを確かめる。

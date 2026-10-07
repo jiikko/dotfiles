@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"proctree"
 	"strconv"
 	"syscall"
 	"time"
@@ -84,7 +85,7 @@ func run(args []string, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "runtimeout: %v\n", err)
 		return startErrorRC(err)
 	}
-	tgt := target{root: cmd.Process.Pid, group: !opt.foreground}
+	tgt := proctree.Target{Root: cmd.Process.Pid, Group: !opt.foreground}
 
 	done := make(chan int, 1)
 	go func() { done <- waitStatus(cmd.Wait()) }()
@@ -109,7 +110,7 @@ func run(args []string, stderr io.Writer) int {
 				return exitAs(rc, got)
 			default:
 			}
-			tgt.stop(opt.grace)
+			tgt.Stop(opt.grace)
 			<-done
 			return rcTimeout
 		case s := <-sigs:
@@ -119,19 +120,19 @@ func run(args []string, stderr io.Writer) int {
 				// 止める指示: 転送より先に凍らせて集める (転送してから待つと、途中の親が先に死んで
 				// setsid した孫が init へ付け替わり、木から外れる)。止め終わるまで返らない
 				// (この窓は数 ms で外から決定論的に作れないので、テストでは固定していない。mutate-verify の stop_tree と同じ)
-				tgt.stop(opt.grace)
+				tgt.Stop(opt.grace)
 				return exitAs(<-done, got)
 			case opt.foreground:
 				// -f の INT / QUIT は端末から子にも直接届いている。伝え直すと 2 回届くので伝えない
 			default:
-				tgt.forward(got)
+				tgt.Forward(got)
 			}
 			if graceUp == nil {
 				graceUp = time.After(opt.grace)
 			}
 		case <-graceUp:
 			// シグナルを伝えても猶予の間に終わらなかった: 時間切れと同じ止め方で止める
-			tgt.stop(opt.grace)
+			tgt.Stop(opt.grace)
 			return exitAs(<-done, got)
 		}
 	}

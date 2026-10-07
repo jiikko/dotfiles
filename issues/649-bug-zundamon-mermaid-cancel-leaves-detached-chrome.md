@@ -32,5 +32,16 @@
 
 ## 進捗
 
-- [ ] 偽物を detached の孫にして red を確認
-- [ ] 止め方の修正
+- [x] 偽物を detached の孫にして red を確認 (`TestMermaidCancelKillsGrandchild` が「孫が 10 秒たっても残る」で落ちた)
+- [x] 止め方の修正 — fix(zundamon-kaisetsu) の commit
+
+## 結果 (2026-10-07)
+
+- issue 640 の runtimeout の止め方 (グループ ∪ ppid の木を凍らせて集め、TERM → 猶予 → KILL) を共有 module `src/proctree` へ切り出し、
+  runtimeout と zundamon-kaisetsu の両方がそれを使う。`renderMermaid` の `cmd.Cancel` は `proctree.Target{Root: npx, Group: true}.Stop(3s)`
+- テスト: 偽の npx の孫を setsid で別のセッションに置く (本物の puppeteer の detached と同じ)。`TestMermaidTimeoutMessage` も時間切れの後に孫が残らないことを見る
+- 変異: Cancel を元のグループへの SIGKILL に戻すと、中断と時間切れの 2 本が red。proctree の ppid の木を外すと proctree と runtimeout のテストが red
+- 敵対的レビュー (opus 1 周): P1 / P2 なし。採用した P3: Cancel と回収が並行しうることをコメントで正しく書く / 時間切れのテストは孫の起動を待ってから判定 /
+  runtimeout の `TestDefaultPutsChildInOwnGroup` が `sleep 300` の孤児を残していた (グループごと撃つ)。記録のみ: 回収後も最長 3 秒同じ番号へ撃つ窓
+  (runtimeout と同じ。pid の再利用が要る) / 中断で最長 3 秒待つ / CONT の後に Chrome が新しく起こす子は集めていない (実機は未確認)
+- 実機 (本物の npx + Chrome) で中断したときに Chrome が残らないかは未確認 (偽物での確認)
