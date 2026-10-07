@@ -45,6 +45,9 @@ pipefail 検査の抽出の前後比較で、旧実装を `./tmp` にコピー�
 
 ## 残課題
 
-- A〜D の切り出し (上の提案先。実行はユーザーの判断を待つ)
+- なし (2026-10-07、ユーザーの「続けて」で提案どおり切り出した)
+  - A → `_claude/rules/survey-receiver-guards-before-passing-new-values.md` の「逆向きも同じ」の下に追記
+  - B → `_claude/rules/verify-execution-not-just-exit-code.md` の「確認の仕方」の表に 1 行
+  - C・D → `_claude/rules/adversarial-review-own-safeguards.md` の 0-B (旧実装を正解役) の下に追記
 
 反証レビュー: 省略 (振り返りの提案で、事実の主張は 640 / 643 の本文と commit に記録したものだけ。反証されていない提案として扱う)
