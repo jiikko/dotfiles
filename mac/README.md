@@ -1,45 +1,29 @@
 # Mac
 
-- 動作確認しているバージョン
-  - Sierra
-  - Mojave
+新しい Mac を用意する手順と、macOS 用の設定ファイル。いま使っているのは macOS 27.0。
 
-## Install Command Line Tools
+| ファイル | 中身 |
+|---|---|
+| `setup_system.sh` | `defaults write` で入れるシステム設定 (キーリピート・トラックパッド・Finder・時計の表示) |
+| `ClaudeWarm.terminal` | Terminal.app のプロファイル。`setup.sh` が `scripts/terminal_profile_restore.sh` で既定にする |
+| `karabiner.json` | Karabiner-Elements の設定の正本。扱いは [`docs/tools/macos.md`](../docs/tools/macos.md) |
+| [`finder-actions/`](finder-actions/README.md) | Finder の右クリックから動画を結合するクイックアクション |
+
+## 手順
+
+### 1. Command Line Tools
 
 ```shell
 xcode-select --install
 ```
 
-## Install homebrew
+### 2. Homebrew
 
 ```shell
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-brew update
-brew upgrade
 ```
 
-## Install packages
-
-```
-brew bundle
-```
-
-## Setup system config
-
-キーリポートなど
-
-```shell
-curl https://raw.githubusercontent.com/jiikko/dotfiles/master/mac/setup_system.sh | sh
-```
-
-## Textlint
-```shell
-npm i -g textlint textlint-rule-preset-ja-technical-writing
-```
-
-* `textlint --preset ja-technical-writing [校正対象ファイル]`
-
-## Setup Terminal
+### 3. dotfiles を取って張る
 
 ```shell
 cd ~
@@ -48,40 +32,54 @@ cd dotfiles
 ./setup.sh
 ```
 
-`setup.sh` は Terminal.app のプロファイル (`mac/ClaudeWarm.terminal`) も既定にする (`scripts/terminal_profile_restore.sh`)。
+`setup.sh` は設定ファイルの link のほか、Terminal.app のプロファイル (`mac/ClaudeWarm.terminal`) も既定にする。
+nvim は `_nviminit.lua` が `~/.config/nvim/init.lua` に張られ、初回の起動で lazy.nvim が `_lazy-lock.json` の版でプラグインを入れる。
 
-### Setup Neovim
+### 4. パッケージ
 
-`setup.sh` が `_nviminit.lua` を `~/.config/nvim/init.lua` に張る。初回の起動で lazy.nvim が自分を取得し、
-プラグインは repo の `_lazy-lock.json` の版で入る。
+`Brewfile` は repo の root にあるので、dotfiles の中で打つ:
 
-### Setup Karabiner
+```shell
+cd ~/dotfiles && brew bundle
+```
 
-`mac/karabiner.json` は symlink ではなくコピーで置く。編集したら復元し直す:
+### 5. システム設定
+
+```shell
+sh ~/dotfiles/mac/setup_system.sh
+```
+
+### 6. ログインシェルを Homebrew の zsh にする
+
+zsh は `Brewfile` で入る。
+
+```shell
+echo /opt/homebrew/bin/zsh | sudo tee -a /etc/shells
+chsh -s /opt/homebrew/bin/zsh
+```
+
+### 7. Karabiner-Elements
+
+`mac/karabiner.json` は symlink ではなくコピーで置く (キーボードの種類に合わせて書き換えるため)。入れるのも、編集した後も:
 
 ```shell
 bin/restore_karabiner_config.sh
 ```
 
-## Change login shell
+### 8. ssh の鍵
 
-```
-# if Catalina
-chsh -s /bin/zsh
-# else
-echo "/opt/homebrew/bin/zsh" | sudo tee -a /etc/shells
-chsh -s "/opt/homebrew/bin/zsh"
-```
-
-## Generate ssh key
-
-```
+```shell
 ssh-keygen -t rsa -b 4096 -C "jiikko"
 ```
 
-## Other
+### textlint (任意)
 
-### Manual
+```shell
+npm i -g textlint textlint-rule-preset-ja-technical-writing
+textlint --preset ja-technical-writing <校正対象ファイル>
+```
+
+## 手で設定するもの
 
 - 壁紙変更
 - 音量変更音を有効
