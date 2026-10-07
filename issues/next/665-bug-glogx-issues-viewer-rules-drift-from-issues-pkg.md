@@ -1,1 +1,0 @@
-../665-bug-glogx-issues-viewer-rules-drift-from-issues-pkg.md

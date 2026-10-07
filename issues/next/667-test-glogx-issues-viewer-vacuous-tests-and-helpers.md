@@ -1,1 +1,0 @@
-../667-test-glogx-issues-viewer-vacuous-tests-and-helpers.md
