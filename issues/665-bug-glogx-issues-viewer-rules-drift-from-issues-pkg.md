@@ -96,4 +96,11 @@
 - [x] I: `matchByBase(dir, base)` で開いていた issue と同じ issue dir に絞った。回帰: `TestIssuesViewRebindOpenStaysInsideIssueDir`。変異: Dir の条件を外す → red
 - [x] 文書の乖離 2 件 (`issues/issues.go` の package doc / spec §3 と `EpicChildStatus` の doc)
 - `make -C src/glogx lint` 0 issues / `make -C src/glogx test` rc=0 (2026-10-08)
-- [ ] 敵対的レビュー (663〜667 の修正をまとめて通す)
+- [x] 敵対的レビュー (2026-10-08、663〜667 をまとめて 2 体を直列。①壊す・回帰 ②素通り)。①は P1/P2 の退行 0 件
+  (横断キーの 3 打鍵 64 通りで全画面の 2 枚同時は 0 件 / setNotice 38 件で旧来 lastWarning に残ったエラー詳細の消失 0 件 /
+  watchChain・groupExpansion・ContainerDir・OrderLess・IsStatusDir・URL ピッカーの窓はどれも旧実装と等価)。②は新しい検査を 3 つ壊した (下記)。
+  直した差分は判定ロジックを新設せず、各修正を変異で直接確かめたので、3 周目は回さずに閉じた (adversarial-review §7 の例外)
+  - ②P2: `TestStatusFilterBadgesFollowShows` が badgeOrder 自体を回していて、badgeOrder から状態が漏れても黙っていた → 定義されている全状態を回す形に。
+    変異 (badgeOrder から waiting を消す) → ループの assert が red
+  - ②P3: IsStatusDir と走査が別々に小文字化していた → `issues.StatusOfDir` を 1 本置き、走査・監視・テストの Issue の組み立て (path2issue) がそれを引く。
+    `TestIssuesWatchDirsIncludeEmptyGlobalStatusDirs` は大文字の `Done/` も見る

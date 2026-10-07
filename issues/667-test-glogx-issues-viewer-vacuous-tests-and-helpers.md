@@ -104,4 +104,11 @@ fixture が 6 つのヘルパーと 26 箇所の手組みに散り、手組み�
 - [x] #5: `numStr` を消し `manyIssuesOf(n, category)` を置いた。同形のループ 2 か所を寄せた (他の 3 か所はカテゴリや状態が混ざるので据え置き)
 - [x] #6: issues パッケージの `writeFile` / `writeIssue` / `mkFiles` を `writeFileContent` の上に載せ、`contains` / `indexOf` を `strings.Contains` に置き換えた
 - `make -C src/glogx lint` 0 issues / `make -C src/glogx test` rc=0 (2026-10-08)
-- [ ] 敵対的レビュー (663〜667 をまとめて)
+- [x] 敵対的レビュー (2026-10-08、663〜667 をまとめて 2 体を直列。①壊す・回帰 ②素通り)。①は P1/P2 の退行 0 件
+  (横断キーの 3 打鍵 64 通りで全画面の 2 枚同時は 0 件 / setNotice 38 件で旧来 lastWarning に残ったエラー詳細の消失 0 件 /
+  watchChain・groupExpansion・ContainerDir・OrderLess・IsStatusDir・URL ピッカーの窓はどれも旧実装と等価)。②は新しい検査を 3 つ壊した (下記)。
+  直した差分は判定ロジックを新設せず、各修正を変異で直接確かめたので、3 周目は回さずに閉じた (adversarial-review §7 の例外)
+  - ②: #1 の等価変異の判定は正しいと確認された (numFilter.start / clear が active と typing を対で動かす)。ヘルパーの導入で既存テストの前提が変わったものは無し
+  - ②P3: `path2issue` が状態ディレクトリの表を一部だけ写していた → `issues.StatusOfDir` を引く
+  - ②P3 (範囲外・未起票): git の書き込み (runGitAdd / runGitRestoreWorktree / runGitCleanUntracked / runGitPush / runGitPullRebase) には
+    「差し替えずに呼ばれたら落ちる」既定が無い。本物の git を使うサンドボックスのテストがあるので、既定を panic にするには opt-in が要る
