@@ -56,7 +56,7 @@ zundamon-kaisetsu check  # container か docker が使えれば、エンジン�
 - イメージは `voicevox/voicevox_engine:cpu-latest` (約 3.7GB。初回の取得に数分かかる)
 - `container` は初回に `container system start` が要る (Linux カーネルを入れるか聞かれる)
 - 声の利用規約: キャラクターごとに VOICEVOX 公式サイトで確認する。動画には `VOICEVOX:四国めたん` `VOICEVOX:ずんだもん` の
-  クレジットが必須 (build が自動で入れる)
+  クレジットが必須 (HTML はクレジット欄に build が自動で入れる。mp4 の映像には入らないので、概要欄などに自分で書く)
 
 ### 3. 立ち絵
 
@@ -69,7 +69,7 @@ zundamon-kaisetsu check  # container か docker が使えれば、エンジン�
 
 1. 各ページの案内に従って素材の zip を入手して展開する
 2. 同梱の `readme.txt` と公式ガイドライン (https://zunko.jp/guideline.html) を読む。動画への利用・改変は可、
-   クレジットは任意 (build は「立ち絵: 坂本アヒル」を自動で入れる)。**素材を公開リポジトリに置かない** (再配布になる)
+   クレジットは任意 (build は HTML のクレジット欄に「立ち絵: 坂本アヒル」を自動で入れる。mp4 には入らない)。**素材を公開リポジトリに置かない** (再配布になる)
 3. 展開したフォルダを `assets/zundamon-kaisetsu/psd/` に置く
 
    ```

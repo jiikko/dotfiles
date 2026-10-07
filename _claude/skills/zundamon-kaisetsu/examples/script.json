@@ -1,6 +1,6 @@
 {
   "title": "サンプル: 掛け合いのテスト",
-  "description": "dialogue_video.py の動作確認用の短い台本。",
+  "description": "zundamon-kaisetsu の動作確認用の短い台本。",
   "lead_in": 0.4,
   "gap": 0.35,
   "lines": [

@@ -7,7 +7,7 @@
 ## 起動の経路
 
 `bin/zundamon-kaisetsu` (go_autobuild のラッパー) が、skill のディレクトリを環境変数 `ZUNDAMON_KAISETSU_SKILL_DIR` で渡して起動する。
-テンプレート (`templates/player.html`)・立ち絵の既定の置き場・読み替えの辞書はそこから読む。バイナリを直接起動するときも、この環境変数が要る。
+テンプレート (`templates/player.html`) と立ち絵の既定の置き場はそこから読む (読み替えの辞書 `readings.json` は Go が読まない。台本の `readings` へ合流させる手順は SKILL.md)。バイナリを直接起動するときも、この環境変数が要る。
 
 ```sh
 zundamon-kaisetsu check | up | down | speakers | kana … | synth script.json | build script.json -o out --format html|mp4|both
