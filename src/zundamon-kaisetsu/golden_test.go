@@ -10,7 +10,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -32,17 +31,6 @@ func readGolden(t *testing.T, name string, v any) {
 }
 
 // testEnv は skill の実素材 (非公開) を見ない Env。テンプレートは repo の skill から読む。
-func testEnv(t *testing.T) *Env {
-	t.Helper()
-	skill, err := filepath.Abs("../../_claude/skills/zundamon-kaisetsu")
-	if err != nil {
-		t.Fatal(err)
-	}
-	e := &Env{Stdout: io.Discard, Stderr: io.Discard}
-	e.setSkillDir(skill)
-	e.AssetsFaces = filepath.Join(t.TempDir(), "no-assets")
-	return e
-}
 
 func TestCacheKeyMatchesPython(t *testing.T) {
 	var cases []struct {

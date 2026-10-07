@@ -32,10 +32,10 @@ while [ $# -gt 0 ]; do
 done
 exit 2
 `
-	must(t, os.WriteFile(filepath.Join(bin, "npx"), []byte(script), 0o755))
+	writeShim(t, bin, "npx", script)
 	chrome := filepath.Join(bin, "chrome")
 	must(t, os.WriteFile(chrome, []byte("#!/bin/sh\nexit 0\n"), 0o755))
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	prependPath(t, bin)
 	t.Setenv("CHROME", chrome)
 	return log
 }

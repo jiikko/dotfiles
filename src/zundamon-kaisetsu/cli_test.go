@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -105,12 +104,7 @@ func TestRejectNonStringTextAndRead(t *testing.T) {
 		{"who": "metan", "text": "x", "read": nil},
 		{"who": "metan", "text": "x", "read": true},
 	} {
-		dir := t.TempDir()
-		b, _ := json.Marshal(map[string]any{"lines": []any{line}})
-		path := filepath.Join(dir, "s.json")
-		if err := os.WriteFile(path, b, 0o644); err != nil {
-			t.Fatal(err)
-		}
+		path := writeScript(t, map[string]any{"lines": []any{line}})
 		_, err := loadScript(path, testEnv(t))
 		if err == nil || !strings.Contains(err.Error(), "は文字列で書く") {
 			t.Errorf("%v: 拒否しなかった (%v)", line, err)

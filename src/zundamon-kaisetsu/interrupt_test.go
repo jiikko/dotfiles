@@ -52,10 +52,8 @@ func TestInterruptStopsChildThenRemovesTemp(t *testing.T) {
 	// 止められない退行でも 30 秒で自分から終わり、孤児として残り続けない
 	// sleep-ok: dummy: 止められる前提の偽の ffmpeg (実時間を待つのではなく、中断で kill される)
 	shim := "#!/bin/sh\nfor a; do out=\"$a\"; done\necho x > \"$out\"\necho $$ > " + marker + "\nexec " + sleepBin + " 30\n"
-	if err := os.WriteFile(filepath.Join(shims, "ffmpeg"), []byte(shim), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", shims+":"+os.Getenv("PATH"))
+	writeShim(t, shims, "ffmpeg", shim)
+	prependPath(t, shims)
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
 

@@ -78,9 +78,7 @@ func newFakeEngineEnv(t *testing.T, alive bool) (*Env, *fakeEngine) {
 	// 自動起動はランタイム (container / docker) の有無を PATH で見る。手元と CI (ランタイムが無い) で結果が変わらないよう、
 	// 実行されても何もせず失敗するだけの偽の container を置く (本物のランタイムには触れない。起動・停止は上の fake が担う)
 	shims := t.TempDir()
-	if err := os.WriteFile(filepath.Join(shims, "container"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeShim(t, shims, "container", "#!/bin/sh\nexit 1\n")
 	t.Setenv("PATH", shims)
 	env := testEnv(t)
 	env.Engine = "http://" + fe.addr
@@ -330,9 +328,7 @@ func TestProductionEngineDownStopsOnlyMarkedRuntime(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "calls")
 	for _, rt := range []string{"container", "docker"} {
 		shim := "#!/bin/sh\necho \"" + rt + " $*\" >> " + log + "\nexit 0\n"
-		if err := os.WriteFile(filepath.Join(shims, rt), []byte(shim), 0o755); err != nil {
-			t.Fatal(err)
-		}
+		writeShim(t, shims, rt, shim)
 	}
 	t.Setenv("PATH", shims) // 本物のランタイムを見つけさせない
 	cancel := withAppCtx(t)
@@ -486,9 +482,7 @@ func TestCmdDownClearsAnyMarkerAfterStop(t *testing.T) {
 	writeMarker(t, env, "container", "http://"+auto.addr, 0)
 	shims := t.TempDir()
 	log := filepath.Join(t.TempDir(), "calls")
-	if err := os.WriteFile(filepath.Join(shims, "container"), []byte("#!/bin/sh\necho \"$*\" >> "+log+"\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeShim(t, shims, "container", "#!/bin/sh\necho \"$*\" >> "+log+"\nexit 0\n")
 	t.Setenv("PATH", shims) // 偽の container だけを見せる (本物のランタイムには触れない)
 	if err := cmdDown(env); err != nil {
 		t.Fatal(err)
@@ -521,9 +515,7 @@ func TestStartEngineRunTimeoutAndPortName(t *testing.T) {
 	// (run は startRunTimeout で kill される。kill されなくても 30 秒で終わる)
 	shim := "#!/bin/sh\necho \"$*\" >> " + log + "\ncase \"$1 $2\" in \"image inspect\") exit 1 ;; \"image pull\") " + sleepBin +
 		" 1 ;; run*) exec " + sleepBin + " 30 ;; esac\nexit 0\n"
-	if err := os.WriteFile(filepath.Join(shims, "container"), []byte(shim), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeShim(t, shims, "container", shim)
 	t.Setenv("PATH", shims)
 	old := startRunTimeout
 	startRunTimeout = 500 * time.Millisecond
@@ -691,9 +683,7 @@ func TestStartEngineSkipsPullWhenImageIsLocal(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "calls")
 	// image pull は失敗する (オフライン)。run は成功して返るが、偽のエンジンは立たないので応答待ちは時間切れになる
 	shim := "#!/bin/sh\necho \"$*\" >> " + log + "\ncase \"$1 $2\" in \"image pull\") exit 1 ;; esac\nexit 0\n"
-	if err := os.WriteFile(filepath.Join(shims, "container"), []byte(shim), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeShim(t, shims, "container", shim)
 	t.Setenv("PATH", shims)
 	cancel := withAppCtx(t)
 	done := make(chan error, 1)
@@ -892,7 +882,7 @@ func TestEngineInterruptIsNotReportedAsFailure(t *testing.T) {
 			// sleep-ok: dummy: 中断されるまで止まり続けるランタイムの呼び出し (中断で kill される。されなくても 30 秒で終わる)
 			shim := "#!/bin/sh\ncase \"$1 $2\" in \"" + tc.stuck + "\"*) echo x > " + marker + "; exec " + sleepBin + " 30 ;; esac\n" +
 				"case \"$1\" in \"" + tc.stuck + "\") echo x > " + marker + "; exec " + sleepBin + " 30 ;; esac\nexit 0\n"
-			must(t, os.WriteFile(filepath.Join(shims, "container"), []byte(shim), 0o755))
+			writeShim(t, shims, "container", shim)
 			t.Setenv("PATH", shims)
 			done := make(chan error, 1)
 			go func() { done <- tc.run(env) }()
@@ -909,7 +899,7 @@ func TestEngineInterruptIsNotReportedAsFailure(t *testing.T) {
 func TestStopContainersJudgesByGivenCtx(t *testing.T) {
 	cancel := withAppCtx(t)
 	shims := t.TempDir()
-	must(t, os.WriteFile(filepath.Join(shims, "container"), []byte("#!/bin/sh\ncase \"$1\" in stop) echo \"Error: not found\" >&2; exit 1 ;; esac\nexit 0\n"), 0o755))
+	writeShim(t, shims, "container", "#!/bin/sh\ncase \"$1\" in stop) echo \"Error: not found\" >&2; exit 1 ;; esac\nexit 0\n")
 	t.Setenv("PATH", shims)
 	cancel()
 	if _, err := stopContainers(context.Background(), "container", "x"); err != nil {

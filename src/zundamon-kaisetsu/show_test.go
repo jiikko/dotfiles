@@ -11,19 +11,6 @@ import (
 	"testing"
 )
 
-func writeScript(t *testing.T, raw map[string]any) string {
-	t.Helper()
-	b, err := json.Marshal(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(t.TempDir(), "s.json")
-	if err := os.WriteFile(path, b, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 func side(title string, items ...string) map[string]any {
 	list := make([]any, len(items))
 	for i, it := range items {

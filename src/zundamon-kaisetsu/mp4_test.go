@@ -271,9 +271,9 @@ func fakeMP4Tools(t *testing.T) string {
 	must(t, err)
 	for _, tool := range []string{"chrome", "ffmpeg"} {
 		body := fmt.Sprintf("#!/bin/sh\nFAKE_MP4_TOOL=%s FAKE_MP4_LOG=%q exec %q -test.run='^TestFakeMP4Tool$' -- \"$@\"\n", tool, log, self)
-		must(t, os.WriteFile(filepath.Join(bin, tool), []byte(body), 0o755))
+		writeShim(t, bin, tool, body)
 	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	prependPath(t, bin)
 	t.Setenv("CHROME", filepath.Join(bin, "chrome"))
 	// 絵を小さくする (1280x720 のままだと -race の下で PNG の処理に 1 本 25 秒かかる。大きさは判定に関係しない)。
 	// 🚨 この package のテストは t.Parallel を使わない前提 (videoSize はパッケージ変数)

@@ -133,11 +133,8 @@ func TestDefaultFaceAlwaysEmbedded(t *testing.T) {
 		"cast":  map[string]any{"metan": map[string]any{"faces": facesAbs}},
 		"lines": []any{map[string]any{"who": "zundamon", "text": "ぼくだけが話すのだ"}},
 	}
-	b, _ := json.Marshal(script)
 	path := filepath.Join(dir, "solo.json")
-	if err := os.WriteFile(path, b, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeScriptFile(t, path, script)
 	env := testEnv(t)
 	s, err := loadScript(path, env)
 	if err != nil {
@@ -206,10 +203,7 @@ func TestSynthWithFakeEngine(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "s.json")
-	script := `{"lines":[{"who":"metan","text":"あ","speed":1.25,"pitch":0.03,"intonation":1.1,"volume":0.8}]}`
-	if err := os.WriteFile(path, []byte(script), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeScriptFile(t, path, map[string]any{"lines": []any{map[string]any{"who": "metan", "text": "あ", "speed": 1.25, "pitch": 0.03, "intonation": 1.1, "volume": 0.8}}})
 	env := testEnv(t)
 	env.Engine = srv.URL
 	if err := cmdSynth(env, path, false); err != nil {
@@ -381,11 +375,7 @@ func TestCreatedDate(t *testing.T) {
 		t.Errorf("台本の date を使っていない: %q", got)
 	}
 	for name, d := range map[string]any{"空": " ", "数": 20261006} {
-		path := filepath.Join(t.TempDir(), "s.json")
-		b, _ := json.Marshal(map[string]any{"date": d, "lines": []any{map[string]any{"who": "metan", "text": "a"}}})
-		if err := os.WriteFile(path, b, 0o644); err != nil {
-			t.Fatal(err)
-		}
+		path := writeScript(t, map[string]any{"date": d, "lines": []any{map[string]any{"who": "metan", "text": "a"}}})
 		if _, err := loadScript(path, env); err == nil || !strings.Contains(err.Error(), "date") {
 			t.Errorf("%s の date を受け入れた (%v)", name, err)
 		}

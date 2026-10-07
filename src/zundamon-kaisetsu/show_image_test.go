@@ -61,13 +61,6 @@ func withOrientation(t *testing.T, path string, o uint16) {
 	}
 }
 
-func must(t *testing.T, err error) {
-	t.Helper()
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
 func imageShow(src string) map[string]any {
 	return map[string]any{"type": "image", "src": src, "alt": "ロックの流れ"}
 }
