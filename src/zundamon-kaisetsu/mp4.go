@@ -3,10 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/binary"
-	"errors"
 	"fmt"
-	"io/fs"
 	"math"
 	"net/url"
 	"os"
@@ -17,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -61,26 +57,6 @@ func encodeAudio(wavPath, outPath string, kbps int) error {
 	return nil
 }
 
-func findChrome() string {
-	cands := []string{os.Getenv("CHROME"),
-		"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-		"/Applications/Chromium.app/Contents/MacOS/Chromium"}
-	for _, n := range []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser"} {
-		if p, err := exec.LookPath(n); err == nil {
-			cands = append(cands, p)
-		}
-	}
-	for _, c := range cands {
-		if c == "" {
-			continue
-		}
-		if st, err := os.Stat(c); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
-			return c
-		}
-	}
-	return ""
-}
-
 var (
 	libx264Re      = regexp.MustCompile(`(?m)^\s*V\S*\s+libx264\s`)
 	videotoolboxRe = regexp.MustCompile(`(?m)^\s*V\S*\s+h264_videotoolbox\s`)
@@ -103,19 +79,6 @@ func h264Encoder() []string {
 // ffq は ffconcat の引用。パスに ' があっても壊れないよう '\” で閉じて開き直す。
 func ffq(path string) string {
 	return "'" + strings.ReplaceAll(path, "'", `'\''`) + "'"
-}
-
-func pngSize(path string) (int, int) {
-	f, err := os.Open(path)
-	if err != nil {
-		return 0, 0
-	}
-	defer func() { _ = f.Close() }()
-	head := make([]byte, 24)
-	if n, _ := f.Read(head); n < 24 || string(head[:8]) != "\x89PNG\r\n\x1a\n" {
-		return 0, 0
-	}
-	return int(binary.BigEndian.Uint32(head[16:20])), int(binary.BigEndian.Uint32(head[20:24]))
 }
 
 // loadAvg1 は 1 分平均の load。Go の標準に os.getloadavg は無いので、macOS は sysctl、Linux は /proc/loadavg を読む。
@@ -327,56 +290,6 @@ func writeMP4(env *Env, data *PlayerData, m4a, out, td string, jobs int) error {
 	return nil
 }
 
-// partPath は出力先の隣に一意な一時ファイルを作って名前を返す (同じ dir なので rename で置き換えられる。
-// 同じ出力先へ同時に build しても取り合わない)。
-func partPath(out string) (string, error) {
-	f, err := os.CreateTemp(filepath.Dir(out), "."+filepath.Base(out)+".*.part")
-	if err != nil {
-		return "", err
-	}
-	return f.Name(), f.Close()
-}
-
-// fileUmask は起動時の umask (main が読む。テストでは 022 とみなす)。
-var fileUmask = os.FileMode(0o022)
-
-// checkReplaceable は dst を一時ファイルからの rename で置き換えられるか (既存ならディレクトリでなく、書き込める) を見る。
-// replaceKeepingMode と、build の最初の確認 (cmdBuild) が同じ判定を使う
-func checkReplaceable(dst string) error {
-	st, err := os.Stat(dst)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil // まだ無い (置き換えではなく作る)
-	}
-	if err != nil {
-		return err // 自分を指す symlink (ELOOP)・途中が dir でない・読めない、を「まだ無い」と読まない
-	}
-	if st.IsDir() {
-		return fmt.Errorf("ディレクトリがある")
-	}
-	if err := syscall.Access(dst, 2 /* W_OK */); err != nil {
-		return fmt.Errorf("書き込めない既存のファイル: %w", err)
-	}
-	return nil
-}
-
-// replaceKeepingMode は tmp を dst へ rename する。dst が既にあればそのパーミッションを引き継ぎ、無ければ 0666 から umask を
-// 引いたもの (Python の write_text と同じ)。読み取り専用の既存のファイルは置き換えない (Python は PermissionError で止まる)。
-// dst は呼び出し側で symlink を解決しておく (rename はリンクそのものを置き換えるので、リンク先に書く Python 版と違ってしまう)。
-// 既存のファイルのハードリンクは切れる (rename は別の inode にする。出力物にハードリンクを張る運用は想定しない)。
-func replaceKeepingMode(tmp, dst string) error {
-	mode := 0o666 &^ fileUmask
-	if err := checkReplaceable(dst); err != nil {
-		return err
-	}
-	if st, err := os.Stat(dst); err == nil {
-		mode = st.Mode().Perm()
-	}
-	if err := os.Chmod(tmp, mode); err != nil {
-		return err
-	}
-	return os.Rename(tmp, dst)
-}
-
 // ffconcatListing は状態の列から ffconcat の一覧を作る。各絵の表示秒数は「次の状態の開始フレーム - 自分の開始フレーム」で、
 // 最後の状態は丸めた duration から作った総フレーム数までを使う (Python 版と同じ。frameRuns は丸める前の duration で
 // 数えるので、両者が 1 フレーム食い違うと最後の行の秒数が 0 になりうる)。
@@ -432,83 +345,4 @@ func lessState(a, b [3]int) bool {
 		}
 	}
 	return false
-}
-
-// cmdBuild は合成済みの wav を連結し、HTML プレイヤーか mp4 (か両方) を書き出す。
-func cmdBuild(env *Env, scriptArg, output, format string, jobs, kbps int) error {
-	s, err := loadScript(resolvePath(scriptArg), env)
-	if err != nil {
-		return err
-	}
-	// filepath.Abs を通さない (論理パスの $PWD で ".." を字面で畳んでしまう。敵対的レビュー 2 周目 P2-3)
-	base := resolvePath(output)
-	for _, ext := range []string{".html", ".mp4"} { // 付いていれば外す。v1.2 の ".2" のような拡張子でない部分は残す
-		if strings.HasSuffix(strings.ToLower(base), ext) {
-			base = base[:len(base)-len(ext)]
-		}
-	}
-	formats := []string{format}
-	if format == "both" {
-		formats = []string{"html", "mp4"}
-	}
-	// 出力先に書けるかを最初に確かめる (確かめないと、音声の圧縮と Chrome の撮影 (CPU の空き待ちで最大 20 分) を
-	// 全部終えてから「一時ファイルを作れない」で止まる。issue 652)
-	for _, f := range formats {
-		dst := resolvePath(base + "." + f)
-		if err := checkReplaceable(dst); err != nil {
-			return fail("%s: 書けない (%v)", base+"."+f, err)
-		}
-		p, err := partPath(dst)
-		if err != nil {
-			return fail("%s: 書けない (%v)", base+"."+f, err)
-		}
-		_ = os.Remove(p)
-	}
-	td, err := os.MkdirTemp("", "zundamon-kaisetsu-")
-	if err != nil {
-		return fail("一時ディレクトリを作れない (%v)", err)
-	}
-	defer func() { _ = os.RemoveAll(td) }() // Ctrl-C でも appCtx の取り消しで子が止まってから走る
-
-	data, pcm, err := assemble(s, env)
-	if err != nil {
-		return err
-	}
-	joined := filepath.Join(td, "joined.wav")
-	if err := writeWav(joined, pcm); err != nil {
-		return fail("%s: 書けない (%v)", joined, err)
-	}
-	m4a := filepath.Join(td, "audio.m4a")
-	if err := encodeAudio(joined, m4a, kbps); err != nil {
-		return err
-	}
-	for _, f := range formats {
-		out := base + "." + f
-		dst := resolvePath(out) // 出力先が symlink ならリンク先に書く (Python 版の write_text と同じ)
-		if f == "html" {
-			// mime は容器の型を明示する (推定に任せると audio/mp4a-latm 等になり、ブラウザが再生できない)
-			audio, err := dataURI(m4a, "audio/mp4")
-			if err != nil {
-				return fail("%s: 読めない (%v)", m4a, err)
-			}
-			d := *data
-			d.Audio = audio
-			html, err := renderHTML(&d, env)
-			if err != nil {
-				return err
-			}
-			// 出力先の隣の一時ファイルに書いてから置き換える (中断で前回の正常な出力を壊さない)
-			if err := writeOutput(dst, []byte(html)); err != nil {
-				return fail("%s: 書けない (%v)", out, err)
-			}
-		} else if err := writeMP4(env, data, m4a, dst, td, jobs); err != nil {
-			return err
-		}
-		st, err := os.Stat(dst)
-		if err != nil {
-			return fail("%s: 書き出されていない (%v)", out, err)
-		}
-		fmt.Fprintf(env.Stderr, "build: %s / %d 行 / %.1f 秒 / %.1f MB → %s\n", f, len(data.Lines), data.Duration, float64(st.Size())/1e6, out)
-	}
-	return nil
 }
