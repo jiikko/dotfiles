@@ -21,6 +21,11 @@ const (
 	mouthFPS   = 30
 )
 
+// mouthLevels は口の開きの段階の数 (立ち絵は表情ごとに <表情>_0〜_<mouthLevels-1>.webp)。
+// 🚨 player.html のまとめ撮りの正規表現 (#sheet= の口の欄 [012]) と setMouth の段階も同じ数で書いている。
+// 変えたら両方を直す (TestSheetFragmentMatchesPlayer が食い違いを落とす。issue 650)
+const mouthLevels = 3
+
 // 母音ごとの口の開き (0 閉じ / 1 半開き / 2 開き)。大文字 (無声化母音) は表に無いので 0 = ほぼ音が出ない
 var vowelMouth = map[string]int{"a": 2, "o": 2, "i": 1, "u": 1, "e": 1, "N": 0, "cl": 0, "pau": 0}
 
@@ -324,7 +329,7 @@ func loadFaces(s *Script, env *Env) (map[string]map[string][]string, error) {
 		if d, ok := facesDir(s, key, env); ok {
 			for _, face := range sortedKeys(used[key]) {
 				var files, missing []string
-				for lv := range 3 {
+				for lv := range mouthLevels {
 					f := filepath.Join(d, fmt.Sprintf("%s_%d.webp", face, lv))
 					files = append(files, f)
 					if st, err := os.Stat(f); err != nil || !st.Mode().IsRegular() {

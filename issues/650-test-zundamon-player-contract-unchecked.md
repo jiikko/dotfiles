@@ -37,5 +37,14 @@ Go (`src/zundamon-kaisetsu`) とプレイヤー (`_claude/skills/zundamon-kaiset
 
 ## 進捗
 
-- [ ] A の固定
-- [ ] B の固定
+- [x] A の固定 — test(zundamon-kaisetsu) の commit
+- [x] B の固定 — 同じ commit
+
+## 結果 (2026-10-07)
+
+- A: 口の段階の数を `build.go` の定数 `mouthLevels` に寄せ (`loadFaces` も使う)、`#sheet=` の断片は `mp4.go:sheetFragment` 1 つで作る。
+  `TestSheetFragmentMatchesPlayer` が player.html の正規表現を抜き出し、行 -1 / 0 / 12・話し中 0/1・口の全段階の断片を当てる。`vowelMouth` の値が段階の範囲内かも見る
+- B: `TestShowKeysReadByPlayer` のサンプルが `showTypes()` (mermaid を除く) を網羅しているかを見る。キーの照合は語の境目つき。
+  player.html の `showAt` に未知の種類を「(未知の図解: …)」と見せる else を足し、テストでその分岐があることも見る
+- 変異で red: 口の段階を 4 に (golden のテスト 2 本も落ちる) / `sd.sub` を `sd.subx` に / 図解の種類を足す / 未知の種類の else を外す / `#sheet=` の区切りを変える
+- 未実測のまま: 正規表現が合わないときに writeMP4 の「全部同じ絵」の検査で捕まるか (Chrome が要る)。食い違いはこのテストで先に落とすので、捕まるかどうかに頼らない

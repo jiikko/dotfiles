@@ -185,6 +185,9 @@ html.render * { transition: none !important; }
         col.append(el('h3', null, side.title), ul); card.append(col);
       }
       box.append(card);
+    } else {
+      // build が知っていてプレイヤーが知らない種類 (片方だけ足した): 空の箱にせず、見えるようにする (issue 650)
+      box.append(el('div', 'show-card show-keyword', `(未知の図解: ${sd.type})`));
     }
   }
   function paint(li, speaking, lv, follow) {

@@ -173,6 +173,17 @@ func waitForIdleCPU(env *Env) {
 //
 // 見た目を HTML 版と同じにするため、絵は自前で描かずプレイヤーに描かせる。撮るのは見た目の状態の
 // 種類の数 (行数 × 口の段階 程度) だけで、フレームの数ではない。Chrome の起動 (1 回 1 秒強) が律速なので、
+// sheetFragment は、まとめ撮りの状態 (字幕の行, 話し中か, 口の開き) の並びを player.html が読む URL の断片にする。
+// 🚨 書式は player.html の `location.hash.match(/^#sheet=…/)` と 1 対 1。片方だけ変えると、プレイヤーは通常の画面のまま撮られる
+// (TestSheetFragmentMatchesPlayer が両者を突き合わせる。issue 650)
+func sheetFragment(group [][3]int) string {
+	parts := make([]string, len(group))
+	for i, st := range group {
+		parts[i] = fmt.Sprintf("%d,%d,%d", st[0], st[1], st[2])
+	}
+	return "#sheet=" + strings.Join(parts, ";")
+}
+
 // プレイヤーのまとめ撮りモード (#sheet=) で sheetStates 枚を縦に並べて 1 回で撮り、ffmpeg で切り分ける。
 func writeMP4(env *Env, data *PlayerData, m4a, out, td string, jobs int) error {
 	chrome := findChrome()
@@ -212,15 +223,11 @@ func writeMP4(env *Env, data *PlayerData, m4a, out, td string, jobs int) error {
 
 	shoot := func(gi int) string {
 		group, sheet := groups[gi], filepath.Join(td, fmt.Sprintf("sheet_%d.png", gi))
-		parts := make([]string, len(group))
-		for i, st := range group {
-			parts[i] = fmt.Sprintf("%d,%d,%d", st[0], st[1], st[2])
-		}
 		// --user-data-dir は付けない: 付けると撮影後も Chrome の更新プロセスが残って終了しない (実測)。
 		// 付けなければ並列に起動しても衝突しない
 		rc, msg := runQuiet(120*time.Second, chrome, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=1",
 			fmt.Sprintf("--window-size=%d,%d", w, h*len(group)), "--virtual-time-budget=3000", "--screenshot="+sheet,
-			pageURI+"#sheet="+strings.Join(parts, ";"))
+			pageURI+sheetFragment(group))
 		if rc != 0 || !isFile(sheet) {
 			return fmt.Sprintf("Chrome が失敗 (rc=%d): %s", rc, lastRunes(msg, 300))
 		}

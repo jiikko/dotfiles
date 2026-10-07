@@ -289,6 +289,22 @@ func TestShowKeysReadByPlayer(t *testing.T) {
 		{Type: "code", Lang: "go", Lines: []string{"a"}, Marks: []int{1}},
 		{Type: "image", Src: "data:image/png;base64,", Alt: "b"},
 	}
+	// サンプルは build が出しうる全種類を覆う (mermaid は build で image に置き換わるので player には届かない)
+	have := map[string]bool{}
+	for _, sd := range samples {
+		have[sd.Type] = true
+	}
+	for _, typ := range showTypes() {
+		if typ != "mermaid" && !have[typ] {
+			t.Errorf("図解の種類 %s のサンプルが無い (showParsers に足したらここにも足す)", typ)
+		}
+	}
+	if !strings.Contains(tpl, "未知の図解") {
+		t.Error("player.html の showAt に、未知の種類を見えるようにする分岐が無い")
+	}
+	reads := func(prefix, key string) bool {
+		return regexp.MustCompile(`\b` + regexp.QuoteMeta(prefix+key) + `\b`).MatchString(tpl)
+	}
 	for _, sd := range samples {
 		b, err := json.Marshal(sd)
 		if err != nil {
@@ -302,12 +318,12 @@ func TestShowKeysReadByPlayer(t *testing.T) {
 			t.Errorf("player.html に図解の種類 %s の描画が無い", sd.Type)
 		}
 		for k, v := range m {
-			if !strings.Contains(tpl, "sd."+k) {
+			if !reads("sd.", k) {
 				t.Errorf("%s の %s を player.html が読んでいない (sd.%s が無い)", sd.Type, k, k)
 			}
 			if side, ok := v.(map[string]any); ok {
 				for sk := range side {
-					if !strings.Contains(tpl, "side."+sk) {
+					if !reads("side.", sk) {
 						t.Errorf("%s.%s の %s を player.html が読んでいない (side.%s が無い)", sd.Type, k, sk, sk)
 					}
 				}
@@ -337,5 +353,36 @@ func TestPlayerPlacesCharsForShowsFromStart(t *testing.T) {
 		t.Error("まとめ撮りの分岐が見つからない (テストの前提が変わった)")
 	case toggle[0] > sheet:
 		t.Error("has-shows を付けるのがまとめ撮りの分岐より後ろにある (mp4 では図解が出るまで立ち絵が大きい)")
+	}
+}
+
+// TestSheetFragmentMatchesPlayer は、mp4 のまとめ撮りで Go が作る #sheet= の断片を、player.html の正規表現が受け取ることを確かめる。
+// 合わないとプレイヤーは通常の画面のまま撮られ、動画が黙って壊れる (口の段階を増やす・状態に要素を足す、で起きる。issue 650)
+func TestSheetFragmentMatchesPlayer(t *testing.T) {
+	tb, err := os.ReadFile(testEnv(t).Template())
+	must(t, err)
+	m := regexp.MustCompile(`location\.hash\.match\(/(.+?)/\)`).FindStringSubmatch(string(tb))
+	if m == nil {
+		t.Fatal("player.html にまとめ撮りの正規表現 (location.hash.match(/^#sheet=…/)) が無い")
+	}
+	re, err := regexp.Compile(m[1]) // この正規表現は JS と RE2 で同じ意味に読める書き方に限っている
+	must(t, err)
+	var group [][3]int
+	for _, li := range []int{-1, 0, 12} {
+		for sp := range 2 {
+			for lv := range mouthLevels {
+				group = append(group, [3]int{li, sp, lv})
+			}
+		}
+	}
+	for _, g := range [][][3]int{group, group[:1]} {
+		if f := sheetFragment(g); !re.MatchString(f) {
+			t.Errorf("player.html の正規表現 %s が Go の断片を受け取らない: %s", m[1], f)
+		}
+	}
+	for v, lv := range vowelMouth {
+		if lv < 0 || lv >= mouthLevels {
+			t.Errorf("母音 %s の口の開き %d が段階の数 %d の外", v, lv, mouthLevels)
+		}
 	}
 }
