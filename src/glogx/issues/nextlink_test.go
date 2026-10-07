@@ -11,12 +11,7 @@ import (
 
 func writeIssue(t *testing.T, path string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte("# "+filepath.Base(path)+"\n\nsecret-free body\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeFileContent(t, path, "# "+filepath.Base(path)+"\n\nsecret-free body\n")
 }
 
 func symlink(t *testing.T, target, link string) {

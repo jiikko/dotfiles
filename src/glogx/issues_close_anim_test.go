@@ -205,10 +205,7 @@ func TestIssuesClosingIsNotRemembered(t *testing.T) {
 func TestIssuesCloseLandsOnKeyWithoutSwallowing(t *testing.T) {
 	stubClock(t)
 
-	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-	m.issuesOv.closeAnimOff = false
-	m.issuesOv.toggle(t.TempDir())
-	m.issuesOv.finishAnim()
+	m := openAnimBrowse(t)
 	if !m.issuesOv.visible() {
 		t.Fatal("前提が崩れた: viewer が開いていない")
 	}
@@ -239,10 +236,7 @@ func TestIssuesCloseLandsBeforeKeyReachesViewer(t *testing.T) {
 	advance := stubClock(t)
 
 	for _, key := range []string{"/", "n"} {
-		m := newTestBrowse(t, 1, map[string]CIState{}, nil)
-		m.issuesOv.closeAnimOff = false
-		m.issuesOv.toggle(t.TempDir())
-		m.issuesOv.finishAnim()
+		m := openAnimBrowse(t)
 		m.issuesOv.close()
 		advance(issuesCloseDuration / 4) // まだ演出の途中
 
@@ -320,4 +314,14 @@ func TestBrowseCloseAnimStillPassesQuitKey(t *testing.T) {
 	if _, cmd := m.handleKey("q"); cmd == nil {
 		t.Error("閉じる演出中の q が素通しされず終了しない (飲む対象を広げすぎている)")
 	}
+}
+
+// openAnimBrowse は閉じる演出を有効にした issues viewer を開いた browseModel を返す (開く演出は着地済み)。
+func openAnimBrowse(t *testing.T) *browseModel {
+	t.Helper()
+	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+	m.issuesOv.closeAnimOff = false
+	m.issuesOv.toggle(t.TempDir())
+	m.issuesOv.finishAnim()
+	return m
 }

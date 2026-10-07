@@ -73,7 +73,35 @@ fixture が 6 つのヘルパーと 26 箇所の手組みに散り、手組み�
 
 ## 進捗
 
-- [ ] ヘルパー #1 `openRealBody` / #2 既定 stub
-- [ ] test-cleanup #1〜#6 (各変異で red 確認)
-- [ ] #7 / #8 の統合判断
-- [ ] ヘルパー #3〜#6
+### test-cleanup
+
+- [x] **#1 は誤りだった (訂正)**: 入力中の `a` / `tab` を一覧へ素通しさせても、一覧側の `a` / `tab` は番号フィルタが有効な間は
+  自分で何もしない (`case "a": if v.numFilter.active { break }` / `case "tab", …: 同`)。`v.filter` / `v.tabIdx` は変わらず、観測できる差が無い
+  = 変異 m6 は**等価変異**で、「Esc で解いた後に別の一覧へ戻る実害」は無い。監査体と反証レビューの両方がこの二段目の守りを読んでいなかった。
+  `v.filter` / `v.tabIdx` の assert を足して変異を当て直し、緑のままなのを確かめて取り下げた (テストは変更なし)
+- [x] #2: 本文ヘッダー (`bodyHeadLines`) から状態を読む形にした。変異 `status := ""` → red
+- [x] #3: 再スキャンで錨より前に issue を 1 件足す。変異 (錨を index で保つ) → 新テストは red、旧テストは緑のまま (を overlay で確認)
+- [x] #4: クリップボードとブラウザを差し替え、「何もコピー・起動しない」と通知の種類 (`noticeRefused`) を assert。変異 (親行のガードから N を外す) → red。
+  親行で N を禁じる挙動は変えていない (採番は対象行に依存しないが、親行で効かせるかは別の判断)
+- [x] #5: 基準 (`seen`) が変わらないことと安定待ち (`pending`) に留まることを assert。変異 (安定待ちの分岐を消す) → red
+- [x] #6: カーソル行だけでカテゴリとタイトルを見る。変異 (行からカテゴリ列を消す) → red
+- [x] #7 / #8: 残す。#7 は案内文 `e: 編集` の固定、#8 は故障箇所の絞り込みという固有の価値がある (削除で失うものの方が大きい)
+- [x] 軽微: `TestIssuesViewMultiSelectYank` の効いていない `shift+up` を削除。`TestIssuesViewRescanReturnsCmd` は toggle 側と重なるので据え置き
+
+### test-helpers
+
+- [x] #1 (一部): 土台 `writeRealIssue` / `path2issue` (Status を状態ディレクトリから付ける) / `landBody` (Enter + 着地) を tui_helpers_test.go に置き、
+  `realIssue` / `realDoneIssue` / `realIssuesView` / `newBodyKeyEnv` / `newJumpEnv` / #2 のテストをその上に載せ替えた。
+  「Enter の後に着地させずに描画を検査する」形を機械で洗い (Enter + `lines()`/`View()` があり `drawer.finish` / `finishAnim` が無い関数 10 本)、
+  どれも本文にしか無い文字列か offset を検査していて #2 と同じ空振りは無いことを確かめた。
+  **残り**: 手組みの `&issues.Issue{Path: …}` は issues 系テストに 30 か所残る (実ファイルを作らない合成の Issue が大半で、空振りの原因になっていないので一括置換はしない。
+  触るテストから順に `writeRealIssue` / `path2issue` へ寄せる)
+- [x] #2: 外部作用の既定をパッケージの `TestMain` で「呼ばれたら panic」にした (`copyToClipboard` / `openInBrowser`)。166 か所の呼び出し側を書き換えずに全テストに効く。
+  既存テストで実際に呼んでいたものは 0 件。変異 (N のガードを外す) を旧版の #4 のテスト (差し替え無し) に当てると panic で red になることを確認。
+  エディタは `tea.ExecProcess` の Cmd を返すだけでテストでは実行されないので対象外
+- [x] #3: 時計の手組み 5 か所を `stubClockFrom(t, &now)` (新設。`stubClock` もこれを使う) に寄せた。片付けは `t.Cleanup` に統一
+- [x] #4: 閉じる演出つき browse の手組み (実数 2 か所。監査時の「4 回」は数え違い) を `openAnimBrowse` に寄せた
+- [x] #5: `numStr` を消し `manyIssuesOf(n, category)` を置いた。同形のループ 2 か所を寄せた (他の 3 か所はカテゴリや状態が混ざるので据え置き)
+- [x] #6: issues パッケージの `writeFile` / `writeIssue` / `mkFiles` を `writeFileContent` の上に載せ、`contains` / `indexOf` を `strings.Contains` に置き換えた
+- `make -C src/glogx lint` 0 issues / `make -C src/glogx test` rc=0 (2026-10-08)
+- [ ] 敵対的レビュー (663〜667 をまとめて)

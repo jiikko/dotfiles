@@ -45,18 +45,10 @@ func newJumpEnv(t *testing.T, body string) *jumpEnv {
 		t.Fatal(err)
 	}
 	rel := "001-feat-jump.md"
-	path := filepath.Join(dir, rel)
 	body = strings.ReplaceAll(body, "{filler}", strings.Repeat("埋め草の行。\n\n", 30))
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: rel, Number: "001", Category: "feat"})
+	v := loadedView(writeRealIssue(t, dir, rel, body))
 	v.root = root
-	v.handleKey("enter", vp(10))
-	if v.open == nil || v.body == nil {
-		t.Fatal("本文モードに入れていない")
-	}
-	v.drawer.finish()
+	landBody(t, v, 10)
 	v.lines(renderOpts(20))
 	return &jumpEnv{v: v, root: root}
 }

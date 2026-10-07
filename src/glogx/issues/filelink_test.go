@@ -11,15 +11,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/markdown"
 )
 
-func writeFile(t *testing.T, p string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(p, []byte("x\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
+func writeFile(t *testing.T, p string) { t.Helper(); writeFileContent(t, p, "x\n") }
 
 // realTempDir は実体のパスで持つ一時ディレクトリ (macOS の /var は /private/var への symlink。
 // ResolveLink は解いた実体を返すので、期待値も実体で作る)。

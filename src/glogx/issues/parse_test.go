@@ -259,20 +259,9 @@ func TestConflictsDetectsSameNameInTwoStatusDirs(t *testing.T) {
 	if len(warns) != 1 {
 		t.Fatalf("二重化を検出できていない: %q", warns)
 	}
-	if !contains(warns[0], "028-refactor-box.md") {
+	if !strings.Contains(warns[0], "028-refactor-box.md") {
 		t.Fatalf("警告に対象ファイル名が入っていない: %q", warns[0])
 	}
-}
-
-func contains(s, sub string) bool { return len(s) >= len(sub) && (indexOf(s, sub) >= 0) }
-
-func indexOf(s, sub string) int {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
 }
 
 func TestLoadMetaReadsTitleAndFrontMatter(t *testing.T) {
@@ -383,7 +372,7 @@ func TestLoadMetaWithoutH1StillReadsFrontMatter(t *testing.T) {
 func TestStatusLabelShowsContradictionInsteadOfMerging(t *testing.T) {
 	iss := &Issue{Status: StatusDone, Declared: "ongoing"}
 	label := iss.StatusLabel()
-	if !contains(label, "done") || !contains(label, "ongoing") {
+	if !strings.Contains(label, "done") || !strings.Contains(label, "ongoing") {
 		t.Fatalf("矛盾が両方表示されていない: %q", label)
 	}
 	// 宣言とパスが一致していれば 1 つだけ

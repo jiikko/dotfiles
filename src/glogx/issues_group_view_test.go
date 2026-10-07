@@ -83,6 +83,12 @@ func TestIssuesViewGroupsUseSeparateDisplayRowsAndToggle(t *testing.T) {
 }
 
 func TestIssuesViewGroupParentActionsAreNoopWithNotice(t *testing.T) {
+	// 🚨 外部作用を差し替える: 退行すると実クリップボード・ブラウザを書き換える (issue 667)。
+	// 「何もコピー・起動しなかった」も assert する。notice の有無だけだと、退行した操作自身が出す
+	// 成功の notice (N の採番コピー等) で緑になった
+	copied := stubClipboard(t)
+	var opened []string
+	stubBrowserFunc(t, func(url string) error { opened = append(opened, url); return nil })
 	group := fakeEpicIssue("/repo/issues", "cloud", "710", "drive", issues.StatusOpen)
 	v := loadedView(group)
 	if !v.currentIsGroup() {
@@ -96,10 +102,12 @@ func TestIssuesViewGroupParentActionsAreNoopWithNotice(t *testing.T) {
 		if v.cursor != before || v.open != nil || v.markNext.active {
 			t.Fatalf("親行で %q が issue 操作として効いた: cursor=%d open=%v mark=%v", key, v.cursor, v.open != nil, v.markNext.active)
 		}
-		if v.notice == "" {
-			t.Fatalf("親行で %q が no-op notice を出していない", key)
+		if *copied != "" || len(opened) > 0 {
+			t.Fatalf("親行で %q がコピー・起動した: copied=%q opened=%v", key, *copied, opened)
 		}
-		v.notice = ""
+		if text, kind := v.takeNotice(); text == "" || kind != noticeRefused {
+			t.Fatalf("親行で %q が断りの notice を出していない: %q (kind=%v)", key, text, kind)
+		}
 	}
 }
 
@@ -499,16 +507,7 @@ func TestIssuesViewClearNumberFilterOnGroupRowReanchorsGroup(t *testing.T) {
 // realDoneIssue は done/ に実ファイルを持つ issue (claim が rename になる側の配置)。
 func realDoneIssue(t *testing.T) *issues.Issue {
 	t.Helper()
-	dir := t.TempDir()
-	rel := filepath.Join("done", "001-feat-real.md")
-	path := filepath.Join(dir, rel)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte("# 001 feat: real\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return &issues.Issue{Path: path, Dir: dir, Rel: rel, Number: "001", Category: "feat", Status: issues.StatusDone}
+	return writeRealIssue(t, t.TempDir(), filepath.Join("done", "001-feat-real.md"), "# 001 feat: real\n")
 }
 
 // group を展開したとき、子 issue の行は親行より右 (groupChildIndent ぶん) に寄り、単独 issue と

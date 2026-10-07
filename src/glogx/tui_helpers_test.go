@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"doctor/svc"
 	"doctor/testtmp"
 	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
+	"glogx/issues"
 )
 
 // installInertDoctor は doctor の走査口を**何も触らない fake** に差し替える。
@@ -101,6 +103,16 @@ func TestMain(m *testing.M) {
 	if err := os.Setenv("GOTMPDIR", dir); err != nil {
 		panic(err)
 	}
+	// 🚨 外部作用 (クリップボード・ブラウザ) の既定は「呼ばれたら落ちる」。差し替えを書き忘れた
+	// テストは実クリップボードを書き換え・ブラウザを開き、しかも「何も起きなかった」を検査できない
+	// (issue 667: 親行の N のテストが退行すると実際に pbcopy を走らせる形だった)。stubClipboard /
+	// stubBrowser は終了時にこの既定へ戻す
+	copyToClipboard = func(text string) error {
+		panic("テストが copyToClipboard を差し替えずに呼んだ (stubClipboard を使う): " + text)
+	}
+	openInBrowser = func(url string) error {
+		panic("テストが openInBrowser を差し替えずに呼んだ (stubBrowser を使う): " + url)
+	}
 	code := m.Run() // 🚨 os.Exit は defer を走らせないので、片付けは Run の後に手で書く
 	cleanup()
 	os.Exit(code)
@@ -150,11 +162,18 @@ func newTestBrowse(t *testing.T, n int, statuses map[string]CIState, toFetch []s
 // Unix(880/910/940) 等) が「Unix(1000) から見た相対時間」で組まれている。
 func stubClock(t *testing.T) (advance func(time.Duration)) {
 	t.Helper()
+	now := time.Unix(1000, 0)
+	stubClockFrom(t, &now)
+	return func(d time.Duration) { now = now.Add(d) }
+}
+
+// stubClockFrom は timeNow を *now を返す時計に差し替え、テスト終了時に戻す。呼び出し側は *now を
+// 書き換えて時刻を進める (絶対時刻や実時刻を起点にしたいとき用。起点を固定でよいなら stubClock)。
+func stubClockFrom(t *testing.T, now *time.Time) {
+	t.Helper()
 	orig := timeNow
 	t.Cleanup(func() { timeNow = orig })
-	now := time.Unix(1000, 0)
-	timeNow = func() time.Time { return now }
-	return func(d time.Duration) { now = now.Add(d) }
+	timeNow = func() time.Time { return *now }
 }
 
 // releaseKey は「指を離した」ことにする (キーリピート判定をリセットする。swallowKeyRepeat)。
@@ -358,4 +377,54 @@ func uniformWidth(t *testing.T, box []string) int {
 // 失敗の種類 (noticeRefused / noticeError) を見るテストは takeNotice を直接読む。
 func noticeOKOf(text string, kind noticeKind) (string, bool) {
 	return text, kind == noticeOK
+}
+
+// writeRealIssue は dir/rel に本文 body の issue ファイルを実際に置き、対応する Issue を返す
+// (番号・カテゴリ・slug はファイル名から取る。状態ディレクトリの下なら Status もそこから)。
+// 実ファイルが要るテスト (editCmd の実体確認・本文の読み込み・移動) の唯一の土台。手組みすると
+// 状態や Dir の付け忘れが黙ってずれる (issue 667)。
+func writeRealIssue(t *testing.T, dir, rel, body string) *issues.Issue {
+	t.Helper()
+	path := filepath.Join(dir, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path2issue(dir, rel)
+}
+
+// path2issue は dir/rel の Issue を組む (ファイルは作らない)。番号・カテゴリ・slug はファイル名、
+// Status は rel の先頭ディレクトリ (done/ pending/ …) から取る。
+func path2issue(dir, rel string) *issues.Issue {
+	base := filepath.Base(rel)
+	parts := strings.SplitN(strings.TrimSuffix(base, ".md"), "-", 3)
+	iss := &issues.Issue{Path: filepath.Join(dir, rel), Dir: dir, Rel: rel, Number: parts[0]}
+	if len(parts) > 1 {
+		iss.Category = parts[1]
+	}
+	if len(parts) > 2 {
+		iss.Slug = parts[2]
+	}
+	if sub, _, ok := strings.Cut(filepath.ToSlash(rel), "/"); ok {
+		for _, st := range []issues.Status{issues.StatusDone, issues.StatusPending, issues.StatusWaiting} {
+			if sub == st.String() {
+				iss.Status = st
+			}
+		}
+	}
+	return iss
+}
+
+// landBody は一覧のカーソル行を Enter で開き、引き出しの着地まで済ませる。
+// 🚨 着地させずに描画を検査すると、引き出しの幅が 0 のままで本文が描かれず、一覧側の文字列に
+// 一致して緑になる (issue 667: 本文ヘッダーの状態の assert が一覧の空表示の案内に一致していた)。
+func landBody(t *testing.T, v *issuesView, page int) {
+	t.Helper()
+	v.handleKey("enter", vp(page))
+	if v.open == nil || v.body == nil {
+		t.Fatal("本文モードに入れていない")
+	}
+	v.drawer.finish()
 }

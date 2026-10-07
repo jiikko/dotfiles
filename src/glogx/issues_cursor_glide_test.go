@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -8,20 +9,15 @@ import (
 )
 
 // manyIssues は滑走が観測できるだけの行数を持つ一覧を作る (窓より十分多い件数)。
-func manyIssues(n int) []*issues.Issue {
+func manyIssues(n int) []*issues.Issue { return manyIssuesOf(n, "bug") }
+
+// manyIssuesOf は番号 n..1 (3 桁) の open な issue を降順に並べる (スクロール・窓の検査用)。
+func manyIssuesOf(n int, category string) []*issues.Issue {
 	out := make([]*issues.Issue, 0, n)
 	for i := n; i > 0; i-- {
-		out = append(out, fakeIssue(numStr(i), "bug", "x", issues.StatusOpen))
+		out = append(out, fakeIssue(fmt.Sprintf("%03d", i), category, "x", issues.StatusOpen))
 	}
 	return out
-}
-
-func numStr(i int) string {
-	s := ""
-	for _, d := range []int{100, 10, 1} {
-		s += string(rune('0' + (i/d)%10))
-	}
-	return s
 }
 
 // cursorRow は描画されたリストのうち、カーソル記号が付いた行の「表示上の位置」を返す

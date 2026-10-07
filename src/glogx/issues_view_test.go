@@ -178,8 +178,8 @@ func TestIssuesViewRescanRebindsOpenBody(t *testing.T) {
 	if err := os.WriteFile(path, []byte("# 001 feat: x\n\n本文。\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat"})
-	v.handleKey("enter", vp(10))
+	v := loadedView(path2issue(dir, "001-feat-x.md"))
+	landBody(t, v, 10)
 
 	fresh := &issues.Issue{
 		Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat",
@@ -189,8 +189,11 @@ func TestIssuesViewRescanRebindsOpenBody(t *testing.T) {
 	if v.open != fresh {
 		t.Fatal("再スキャン後も破棄済みの Issue ポインタを掴んでいる")
 	}
-	if out := strings.Join(v.lines(renderOpts(10)), "\n"); !strings.Contains(out, "pending") {
-		t.Fatalf("本文ヘッダーの状態が古いまま:\n%s", out)
+	// 🚨 本文ヘッダーそのもの (bodyHeadLines) を見る。画面全体 (lines) で "pending" を探すと、
+	// 引き出しが着地前 (幅 0) で本文が描かれていなくても、一覧の空表示の案内
+	// 「(a: pending も表示)」に一致して緑になった (issue 667)
+	if head := strings.Join(v.bodyHeadLines(80, false), "\n"); !strings.Contains(head, "pending") {
+		t.Fatalf("本文ヘッダーの状態が古いまま:\n%s", head)
 	}
 }
 
@@ -306,9 +309,6 @@ func TestIssuesViewMultiSelectYank(t *testing.T) {
 	v := loadedView(sampleIssues()...)
 	v.filter = issues.FilterAll
 	v.refresh() // 5 件すべてを対象にする
-	v.handleKey("shift+up", vp(10))
-	// 1 回で「元の行 + 隣の行」= 2 行 (エディタ・Finder と同じ)。先頭行では動けないので
-	// 錨と同じ行に留まり 1 行選択のまま
 	v.cursor = 2
 	v.marked, v.markAt = true, 0 // 0..2 の 3 行を選んだ状態にする
 
@@ -499,9 +499,8 @@ func TestIssuesViewEnterTogglesBody(t *testing.T) {
 	if v.bodyPager.Offset != 1 {
 		t.Fatalf("本文の Enter が行送りとして効いた: bodyOff=%d", v.bodyPager.Offset)
 	}
-	origNow := timeNow
-	timeNow = func() time.Time { return origNow().Add(issuesDrawerDuration + time.Millisecond) }
-	defer func() { timeNow = origNow }()
+	landed := timeNow().Add(issuesDrawerDuration + time.Millisecond) // 演出の起点は実時刻なので、そこから進める
+	stubClockFrom(t, &landed)
 	v.lines(renderOpts(20)) // 閉じる演出を着地させる
 	if v.open != nil {
 		t.Fatal("本文の Enter で一覧へ戻らない")
@@ -824,7 +823,9 @@ func TestIssuesViewLinesAlwaysExactlyPageRows(t *testing.T) {
 }
 
 func TestIssuesViewRowShowsNumberBadgeCategoryTitle(t *testing.T) {
-	v := loadedView(sampleIssues()...)
+	list := sampleIssues()
+	list[0].Title = "先頭のタイトル" // 030 (カーソル行)
+	v := loadedView(list...)
 	v.filter = issues.FilterPending // pending のバッジ ⏸ も見たいので 1 段進める
 	v.refresh()
 	lines := v.lines(renderOpts(20))
@@ -844,13 +845,17 @@ func TestIssuesViewRowShowsNumberBadgeCategoryTitle(t *testing.T) {
 	if len(marked) != 1 || !strings.Contains(marked[0], "030") {
 		t.Fatalf("カーソル行の矢印が想定と違う: %q", marked)
 	}
+	// 🚨 行の中身はその行 (カーソル行) で見る。画面全体で探すと、カテゴリ名はタブ行のチップ、
+	// ○ / ⏸ はタブ行のバッジでも満たされ、行からカテゴリ列を消しても緑だった (issue 667)
+	for _, want := range []string{"030", "○", "feat", "先頭のタイトル"} {
+		if !strings.Contains(marked[0], want) {
+			t.Fatalf("カーソル行に %q が出ない: %q", want, marked[0])
+		}
+	}
 }
 
 func TestIssuesViewCursorScrollsWithinWindow(t *testing.T) {
-	many := make([]*issues.Issue, 0, 40)
-	for i := 40; i > 0; i-- {
-		many = append(many, fakeIssue(fmt.Sprintf("%03d", i), "feat", "x", issues.StatusOpen))
-	}
+	many := manyIssuesOf(40, "feat")
 	v := loadedView(many...)
 	const rows = 10
 	for range 20 {
@@ -907,9 +912,8 @@ func TestIssuesViewBodyModeOpensAndCloses(t *testing.T) {
 	if v.open == nil {
 		t.Fatal("h の直後に本文が消えた (閉じる演出に何も映らない)")
 	}
-	origNow := timeNow
-	timeNow = func() time.Time { return origNow().Add(issuesDrawerDuration + time.Millisecond) }
-	defer func() { timeNow = origNow }()
+	landed := timeNow().Add(issuesDrawerDuration + time.Millisecond) // 演出の起点は実時刻なので、そこから進める
+	stubClockFrom(t, &landed)
 	v.lines(renderOpts(20)) // 演出の着地を反映させる
 	if v.open != nil {
 		t.Fatal("h で一覧へ戻らない")
@@ -1025,10 +1029,7 @@ func TestIssuesViewBodyScrollRecoversAfterWidthGrows(t *testing.T) {
 func TestIssuesViewGReachesLastLine(t *testing.T) {
 	// キー操作側と描画側で使う行数が一致していることの担保 (ずれると G が末尾に届かない)。
 	// 一覧と本文の両方で「G を押したら最後の行が実際に描かれる」ことを見る。
-	many := make([]*issues.Issue, 0, 40)
-	for i := 40; i > 0; i-- {
-		many = append(many, fakeIssue(fmt.Sprintf("%03d", i), "feat", "x", issues.StatusOpen))
-	}
+	many := manyIssuesOf(40, "feat")
 	v := loadedView(many...)
 	const page = 12
 	v.handleKey("G", vp(page))
@@ -1059,13 +1060,7 @@ func TestIssuesViewGReachesLastLine(t *testing.T) {
 // エディタ起動が絡むテストは合成パスの Issue では「起動しない」側に倒れてしまう。
 func realIssue(t *testing.T) *issues.Issue {
 	t.Helper()
-	dir := t.TempDir()
-	rel := "001-feat-real.md"
-	path := filepath.Join(dir, rel)
-	if err := os.WriteFile(path, []byte("# 001 feat: real\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return &issues.Issue{Path: path, Dir: dir, Rel: rel, Number: "001", Category: "feat"}
+	return writeRealIssue(t, t.TempDir(), "001-feat-real.md", "# 001 feat: real\n")
 }
 
 func TestIssuesViewCopyPathAndEditor(t *testing.T) {
@@ -2211,7 +2206,10 @@ func TestIssuesViewKeepsSelectionAcrossRescan(t *testing.T) {
 	}
 	anchor, head := v.rows[lo].Path, v.rows[hi].Path
 
-	v.receive(issuesScanMsg{dirs: []string{"/repo/issues"}, issues: sampleIssues()})
+	// 🚨 再スキャンでは錨より前に issue を 1 件足す。同じ並びのまま返すと、選択を位置 (index) で
+	// 保つ実装と区別できない (issue 667: 錨を index で保つ変異でも緑だった)
+	rescanned := append([]*issues.Issue{fakeIssue("031", "feat", "new", issues.StatusOpen)}, sampleIssues()...)
+	v.receive(issuesScanMsg{dirs: []string{"/repo/issues"}, issues: rescanned})
 
 	lo2, hi2, ok2 := v.selection()
 	if !ok2 {
@@ -2439,16 +2437,9 @@ func newBodyKeyEnv(t *testing.T) *bodyKeyEnv {
 	// j / Space / G の効果が観測できない (実測: 80 行が 1 段落になり bodyOff が 0 のまま)
 	// 自分自身の絶対パスを 1 つ入れるのは Tab (ジャンプモード) の観測のため (実在するファイルしかリンクにしない)
 	body := "# 001 feat: hint keys\n\nhttps://example.com/x `" + path + "`\n\n" + strings.Repeat("本文の行。\n\n", 60)
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: rel, Number: "001", Category: "feat"})
-	v.root = dir                 // Tab (ジャンプモード) は「repo の中」の範囲が決まらないとパスを開かない (fail-closed)
-	v.handleKey("enter", vp(10)) // 本文モードへ
-	if v.open == nil {
-		t.Fatal("本文モードに入れていない")
-	}
-	v.drawer.finish()
+	v := loadedView(writeRealIssue(t, dir, rel, body))
+	v.root = dir // Tab (ジャンプモード) は「repo の中」の範囲が決まらないとパスを開かない (fail-closed)
+	landBody(t, v, 10)
 	// 🚨 行数は描画で確定する (未描画だと body.Len() = 0 でスクロール上限が 0 になり、
 	// j / Space / G が「動かない」ので効果を観測できない)
 	v.lines(renderOpts(20))
@@ -2751,12 +2742,6 @@ func TestIssuesViewBodyNeighborKeysSwapIssueWithoutReopening(t *testing.T) {
 }
 
 // path2issue は dir 配下の rel を単独 issue として組む (ファイル名から番号・カテゴリを読む)。
-func path2issue(dir, rel string) *issues.Issue {
-	base := filepath.Base(rel)
-	parts := strings.SplitN(strings.TrimSuffix(base, ".md"), "-", 3)
-	return &issues.Issue{Path: filepath.Join(dir, rel), Dir: dir, Rel: rel, Number: parts[0], Category: parts[1], Slug: parts[2]}
-}
-
 // 同じ basename でも見出しが違うなら本人とみなさない (issue 277)。
 //
 // basename は「番号 + スラッグ」なので、番号の一意性が守られている限り basename 一致 = 本人。

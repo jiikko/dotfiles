@@ -213,13 +213,19 @@ func TestIssuesWatchIgnoresUnstableFile(t *testing.T) {
 	// 書きかけ (周期ごとに指紋が変わる) の間は読まない。
 	root, path := watchTree(t, "# 001 feat: x\n")
 	v := openedWatchView(t, root, path)
+	seen := v.watch.seen
 	for i := range 3 {
 		writeIssue(t, path, strings.Repeat("a", i+1), time.Now().Add(time.Duration(i)*time.Second))
 		if cmd := v.handleWatch(v.observe()); cmd == nil {
 			t.Fatal("次の観測が予約されない")
 		}
-		if v.watch.seen == "" {
-			t.Fatal("基準が失われた (取り直しが走っている)")
+		// 🚨 「読まなかった」を直接見る: 基準 (seen) が変わらず、変化は安定待ち (pending) に留まる。
+		// seen が空でないことだけを見ていた頃は、安定待ちを外して毎回すぐ読む変異でも緑だった (issue 667)
+		if v.watch.seen != seen {
+			t.Fatalf("%d 回目: 書きかけの指紋を基準に採った (取り直しが走った)", i+1)
+		}
+		if v.watch.pending == "" || v.scanning {
+			t.Fatalf("%d 回目: 安定待ちに入っていない (pending=%q scanning=%v)", i+1, v.watch.pending, v.scanning)
 		}
 	}
 }

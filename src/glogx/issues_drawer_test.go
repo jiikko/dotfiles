@@ -3,8 +3,6 @@ package main
 import (
 	"github.com/jiikko/dotfiles/src/tuikit/anim"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -20,14 +18,7 @@ func realIssuesView(t *testing.T) *issuesView {
 	names := []string{"030", "029"}
 	list := make([]*issues.Issue, 0, len(names))
 	for _, n := range names {
-		path := filepath.Join(dir, n+"-feat-x.md")
-		body := "# " + n + " feat: x\n\n本文の段落。\n\n- 箇条書き\n"
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		list = append(list, &issues.Issue{
-			Path: path, Dir: dir, Rel: n + "-feat-x.md", Number: n, Category: "feat",
-		})
+		list = append(list, writeRealIssue(t, dir, n+"-feat-x.md", "# "+n+" feat: x\n\n本文の段落。\n\n- 箇条書き\n"))
 	}
 	return loadedView(list...)
 }
@@ -213,11 +204,9 @@ func TestComposeDrawer(t *testing.T) {
 
 // 統合: 本文を開くと一覧が右に残り、閉じる演出のあいだ本文は生きている。
 func TestIssuesViewDrawerIntegration(t *testing.T) {
-	orig := timeNow
 	base := time.Date(2026, 7, 31, 12, 0, 0, 0, time.Local)
 	now := base
-	timeNow = func() time.Time { return now }
-	t.Cleanup(func() { timeNow = orig })
+	stubClockFrom(t, &now)
 
 	v := realIssuesView(t)
 	o := issuesRenderOpts{width: 80, page: 12}
@@ -261,11 +250,9 @@ func TestIssuesViewDrawerIntegration(t *testing.T) {
 
 // 演出中は tick が回り続ける (止まると開きかけで固まる)。
 func TestIssuesViewDrawerKeepsTickAlive(t *testing.T) {
-	orig := timeNow
 	base := time.Date(2026, 7, 31, 12, 0, 0, 0, time.Local)
 	now := base
-	timeNow = func() time.Time { return now }
-	t.Cleanup(func() { timeNow = orig })
+	stubClockFrom(t, &now)
 
 	v := realIssuesView(t)
 	v.lines(issuesRenderOpts{width: 80, page: 12})
@@ -285,11 +272,9 @@ func TestIssuesViewDrawerKeepsTickAlive(t *testing.T) {
 // 型単体のテストは「幅の計算」しか見ておらず、tick が届かなければ画面は開きかけで固まる。
 // ここは View の実出力で境界 (▏) の位置が tick ごとに右へ動き、着地することを見る。
 func TestIssuesDrawerAnimatesThroughModelTicks(t *testing.T) {
-	origNow := timeNow
 	base := time.Date(2026, 7, 31, 12, 0, 0, 0, time.Local)
 	now := base
-	timeNow = func() time.Time { return now }
-	t.Cleanup(func() { timeNow = origNow })
+	stubClockFrom(t, &now)
 
 	m := newTestBrowse(t, 1, map[string]CIState{}, nil)
 	m.width, m.height = 100, 20

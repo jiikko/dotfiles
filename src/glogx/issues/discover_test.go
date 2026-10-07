@@ -14,9 +14,7 @@ func mkFiles(t *testing.T, dir string, names ...string) {
 		t.Fatal(err)
 	}
 	for _, n := range names {
-		if err := os.WriteFile(filepath.Join(dir, n), []byte("# x\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		writeFileContent(t, filepath.Join(dir, n), "# x\n")
 	}
 }
 
