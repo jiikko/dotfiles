@@ -5,6 +5,16 @@
 
 読む順は「触る対象」で決める。下の表から 1 本選べば足りるように書いてあるので、全部開かない。
 
+## ツールの使い方 (`tools/`)
+
+dotfiles が入れる道具の使い方。root の README からはここへ案内している。
+
+| 文書 | 内容 |
+|---|---|
+| [`tools/tmux.md`](tools/tmux.md) | tmux のキー (prefix `C-t`)・ペインの見え方・ウィンドウ名の自動反映・Claude Code の作業状態表示。設定の正本は `_tmux.conf` |
+| [`tools/video-functions.md`](tools/video-functions.md) | 動画のシェル関数 `repair` / `av1ify` (`av1c`) / `concat` (`zshlib/`) |
+| [`tools/macos.md`](tools/macos.md) | Karabiner-Elements の設定の扱い / `kernel-alloc-watch` / Finder Quick Actions |
+
 ## 触る前に読むもの (制約が書かれている)
 
 これらは「知らずに触ると壊す」類。該当領域を変更する前に読む。
@@ -73,7 +83,7 @@ glogx の画面のうち、**複数 repo をこの規約に寄せる** / **書�
 | 全プロジェクト共通の作業規範 (毎セッション読まれる) | [`_claude/rules/`](../_claude/rules/) — 本文は規範だけ。根拠は `_claude/rules-rationale/` |
 | dotfiles 固有で、必要なときだけ読む規範 | [`rules/`](../rules/README.md) — bench の見方 (索引つき。zsh の hook / trap は `.claude/rules/` へ移した) |
 | ディレクトリ固有の規約 | そのディレクトリの `CLAUDE.md` (`scripts/` / `tests/` / `_claude/` / `src/<name>/` の各 module など) |
-| 各ツールの使い方 | `src/<name>/README.md` と `<tool> --help` |
+| Go で書いた各ツールの使い方 | `src/<name>/README.md` と `<tool> --help` (tmux・シェル関数・macOS 連携は上の `tools/`) |
 | 作業の記録・残課題・振り返り | [`issues/`](../issues/) (共通規約は [`_claude/issue-rules.md`](../_claude/issue-rules.md)、dotfiles 固有は `issues/README.md`) |
 | 検証レポートの中間生成物 | `./tmp` (gitignore。**結論は issue かコードへ移す**。掃除は `make clean-tmp`) |
 
