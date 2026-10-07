@@ -21,17 +21,31 @@ body { margin: 0; background: var(--bg); color: var(--text);
        font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; line-height: 1.6; }
 main { max-width: 960px; margin: 0 auto; padding: 16px; }
 h1 { font-size: 1.25rem; margin: 0 0 12px; }
-.stage { position: relative; aspect-ratio: 16 / 9; background: var(--stage); border-radius: 12px; overflow: hidden; }
+.stage { position: relative; aspect-ratio: 16 / 9; background: var(--stage); border-radius: 12px; overflow: hidden;
+         container-type: inline-size; }
 .char { position: absolute; bottom: 0; width: 40%; height: 96%; display: flex; flex-direction: column;
         align-items: center; justify-content: flex-end; }
 .char.left { left: 1%; } .char.right { right: 1%; }
 .char img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .char.mirror img { transform: scaleX(-1); }
+/* 図解 (行の show) を出している間だけ、立ち絵を縮めて左右の端に寄せ、中央を空ける (issue 645 で配置を決めた) */
+.char { transition: width .25s, height .25s, left .25s, right .25s; }
+html.render .char { transition: none; } /* まとめ撮りは舞台を複製して撮るので、縮む途中を撮らない */
+.stage.showing .char { width: 26%; height: 72%; }
+.stage.showing .char.left { left: 0; } .stage.showing .char.right { right: 0; }
+.stage-show { position: absolute; left: 27%; top: 27%; width: 46%; height: 50%; display: flex; align-items: center;
+              justify-content: center; z-index: 1; }
+.stage-show:empty { display: none; }
+.show-card { background: var(--panel); border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,.12); padding: 2.2cqw 2.6cqw;
+             max-width: 100%; max-height: 100%; box-sizing: border-box; overflow: hidden; overflow-wrap: anywhere; }
+.show-keyword { text-align: center; font-size: 5cqw; font-weight: 900; line-height: 1.2; color: var(--accent); }
+.show-keyword .sub { display: block; margin-top: .6cqw; font-size: 1.9cqw; font-weight: 700; color: var(--muted); }
 .avatar { width: 62%; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center;
           justify-content: center; gap: 8%; color: #fff; font-weight: 700; margin-bottom: 18%; }
 .avatar .mouth { width: 30%; background: rgba(0,0,0,.55); border-radius: 999px; transition: height .03s; }
 .caption { position: absolute; left: 3%; right: 3%; bottom: 3%; background: var(--caption-bg); border-radius: 10px;
-           padding: 10px 14px; min-height: 3.4em; font-size: clamp(14px, 2.4vw, 20px); font-weight: 700; }
+           padding: 10px 14px; min-height: 3.4em; font-size: clamp(14px, 2.4vw, 20px); font-weight: 700;
+           z-index: 2; } /* 狭い画面で字幕が 2〜3 行になっても、図解 (.stage-show) より手前に出す */
 .caption .who { display: block; font-size: .7em; }
 .stage-title { position: absolute; left: 3%; top: 3%; max-width: 70%; background: var(--caption-bg); border-radius: 12px;
                padding: 8px 20px; font-size: clamp(16px, 3vw, 28px); font-weight: 700; z-index: 1; }
@@ -68,7 +82,7 @@ html.render * { transition: none !important; }
 <body>
 <main>
   <h1 id="title"></h1>
-  <div class="stage" id="stage"><div class="stage-title" id="stage-title"></div><div class="stage-date" id="stage-date"></div><div class="stage-topic" id="stage-topic"></div><div class="caption" id="caption"></div></div>
+  <div class="stage" id="stage"><div class="stage-title" id="stage-title"></div><div class="stage-date" id="stage-date"></div><div class="stage-topic" id="stage-topic"></div><div class="stage-show" id="stage-show"></div><div class="caption" id="caption"></div></div>
   <div class="controls">
     <button id="play" type="button">▶</button>
     <input id="seek" type="range" min="0" step="0.01" value="0" aria-label="再生位置">
@@ -129,6 +143,20 @@ html.render * { transition: none !important; }
     return ans < 0 ? [-1, 0, 0] : D.frames[ans].slice(1);
   };
   let cur = -2;
+  // 図解は行の show (build が決めた D.shows の番号) から描く。同じ図解が続く行では DOM を触らない (描き直すと一瞬消える)
+  let curShow = -2;
+  function showAt(n) {
+    if (n === curShow) return;
+    curShow = n; const box = $('stage-show'); box.textContent = '';
+    const sd = n >= 0 ? D.shows[n] : null;
+    $('stage').classList.toggle('showing', !!sd);
+    if (!sd) return;
+    if (sd.type === 'keyword') {
+      const card = el('div', 'show-card show-keyword', sd.text);
+      if (sd.sub) card.append(el('span', 'sub', sd.sub));
+      box.append(card);
+    }
+  }
   function paint(li, speaking, lv, follow) {
     const line = li >= 0 ? D.lines[li] : null;
     for (const [k, a] of Object.entries(actors)) {
@@ -140,6 +168,7 @@ html.render * { transition: none !important; }
     // トピック名は行の chapter (build が決めた番号) から引く。行が変わるたびに必ず書き直す
     const ch = line && D.chapters.length >= 2 ? D.chapters[line.chapter] : null;
     $('stage-topic').textContent = ch ? ch.title : '';
+    showAt(line && line.show !== undefined ? line.show : -1);
     const cap = $('caption'); cap.textContent = '';
     if (!line) return;
     const who = el('span', 'who', actors[line.who].c.name); who.style.color = actors[line.who].color;

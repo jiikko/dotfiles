@@ -246,6 +246,7 @@ type timelineLine struct {
 	Text    string            `json:"text"`
 	Faces   map[string]string `json:"faces"`
 	Chapter int               `json:"chapter"`
+	Show    *int              `json:"show,omitempty"`
 	Start   float64           `json:"start"`
 	End     float64           `json:"end"`
 	mouth   string
@@ -392,6 +393,7 @@ type PlayerData struct {
 	Cast        map[string]castData `json:"cast"`
 	DefaultFace string              `json:"defaultFace"`
 	Chapters    []chapterData       `json:"chapters"`
+	Shows       []showData          `json:"shows,omitempty"`
 	Lines       []timelineLine      `json:"lines"`
 	Frames      [][4]int            `json:"frames"`
 	Duration    float64             `json:"duration"`
@@ -421,6 +423,10 @@ func assemble(s *Script, env *Env) (*PlayerData, []byte, error) {
 		return nil, nil, err
 	}
 	faces := lineFaces(s.Lines)
+	showIdx, shows, err := lineShows(s.Path, s.Lines)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	pcm := make([]byte, 2*pyRound(leadIn*sampleRate))
 	timeline := []timelineLine{}
@@ -458,6 +464,7 @@ func assemble(s *Script, env *Env) (*PlayerData, []byte, error) {
 			// 行が属するチャプターの番号 (最初のチャプターより前の行は -1)。画面の上部中央のトピック名はこれで決める。
 			// mp4 は行ごとに絵を撮るので、ここで決めておけば、チャプターが変わる行で HTML と同じく表示が切り替わる
 			Chapter: len(chapters) - 1,
+			Show:    showIdx[i],
 			Start:   pyRound3(start), End: pyRound3(start + dur),
 			mouth: mouthTrack(query, dur),
 		})
@@ -509,6 +516,7 @@ func assemble(s *Script, env *Env) (*PlayerData, []byte, error) {
 		Cast:        cast,
 		DefaultFace: defaultFace,
 		Chapters:    chapters,
+		Shows:       shows,
 		Lines:       timeline,
 		Frames:      frameRuns(timeline, duration),
 		Duration:    pyRound3(duration),
