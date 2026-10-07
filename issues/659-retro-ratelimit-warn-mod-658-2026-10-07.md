@@ -10,7 +10,8 @@
 2. **`make test-dir DIR=tests/claude` が 21 本中 3 本で止まる**: 直列の `run_tests` (Makefile) は `printf | while read t; do "$t"; done` で回すので、
    stdin を読むテスト (3 本目の `test_claude_links_sync.sh` の後、残りが消えた) が一覧の残りを食い、rc=0 のまま 18 本を走らせない。`make test` が tests/claude に使うのは
    並列版 (xargs) なのでそちらは無事。直列版を使う `SERIAL_TEST_DIRS` (tests/tmux / tests/nvim / tests/zshrc/tmux-session) でも同じ形で起きうる。
-   - 切り出し先: **新規 issue (bug)** — `run_tests` のループで各テストの stdin を `</dev/null` にする (並列版と同じ隔離)。ユーザーの判断待ち
+   - 切り出し先: ~~新規 issue (bug)~~ → **別のセッションで直っていた**。commit「fix(make): 直列 runner と test-bats でテストの stdin を /dev/null にし、一覧を食べさせない」(954b5c02) が
+     `run_tests` の各テストを `</dev/null` で起動する (Makefile の `define run_tests` の直前に 🚨 の注記あり)。issue は立てない
 3. **pending → 直下へ戻すと相対リンクが 8 本切れた**: 状態ディレクトリの移動はリンクの張り直しを伴う。`scripts/issue_done.sh` は done 向けにそれをやるが、pending から戻す向きの道具が無い。
    - 切り出し先: **却下** (pre-push の `test_issue_links_valid` が止めるので実害なし。戻す頻度が低く、道具を足すほどではない)
 
@@ -21,3 +22,4 @@
 ## 進捗
 
 - 2026-10-07: 起票。残課題は 2 (新規 issue 化の判断)
+- 2026-10-07: 2 は 954b5c02 で解消済みと確認 (`run_tests` の起動行に `</dev/null`)。残課題は 0 なので done へ
