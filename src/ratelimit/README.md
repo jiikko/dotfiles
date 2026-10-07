@@ -8,7 +8,7 @@ Claude Code (`/usage`) と codex (app-server の rateLimits) の利用枠 (5h / 
 - `main.go` — `bin/ratelimit`。表示・閾値判定 (`-check`。5h 枠だけを見る)・JSON。使い方はファイル冒頭
   - Claude Code の UserPromptSubmit hook (`_claude/hooks/ratelimit-warn.sh`) が Claude の枠を、
     codex 系 skill (codex-drive / codex-lead / codex-review / cross-review) が起動時に codex の枠を見る。
-    注入を受けたときの判断基準は `_claude/rules/subagent-model-tiering.md` の「枠の残量」
+    注入を受けたときの判断基準は `_claude/rules/subagent-model-tiering.md` の「そもそも委譲するかの判断」節にある「5h 枠の残量が少ないときは並列数を絞る」の項
 
 ## 境界と制約
 

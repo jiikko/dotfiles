@@ -1,6 +1,6 @@
 # scripts/
 
-tmux バインド (_tmux.conf) から display-popup / run-shell 経由で呼ばれるヘルパー群。
+tmux バインド (_tmux.conf) から display-popup / run-shell 経由で呼ばれるヘルパー (`tmux_*.sh`) と、`make test-lint` の検査 (`check_*.sh`)・issue の運用 (`issue_done.sh` など)・CI と make の補助の置き場。
 新しい .sh は登録不要で自動的に shellcheck 対象になる (discover_shell_scripts.sh が発見)。
 
 ## popup ヘルパーの罠
@@ -68,12 +68,14 @@ tmux バインド (_tmux.conf) から display-popup / run-shell 経由で呼ば�
 
 | スクリプト | 落とすもの | 例外マーカー |
 |---|---|---|
+| `check_handrolled_timeout.sh` | 時間の上限付き実行を `bin/runtimeout` 以外で手で組む (`timeout` / `gtimeout` / `( sleep; kill ) &`。issue 643) | `handrolled-timeout: allow` |
+| `check_test_sleeps.sh` | テストに、理由の印の無い `sleep` / `time.Sleep` を足す (issue 615) | `sleep-ok: <分類>: <理由>` |
 | `check_pipefail_grep_q.sh` | pipefail 下の `… \| grep -q` (一致しても非 0 になる。issue 096) | `pipefail-grep-q: allow` |
 | `check_trigger_log_writers.sh` | 共有観測ログの書き手が `tt_trigger_log` 以外に増える (issue 079) | `trigger-log-writer: allow` |
 | `check_ci_group_deps.sh` | CI の heavy/rest 分割と Makefile の値の食い違い (issue 073 §3) | — |
 | `check_skip_exit_code.sh` | 丸ごと skip なのに `exit 0` (runner が `[ok]` と数える。issue 139) | `partial-skip: allow` |
 | `check_workflow_action_pins.sh` | 同じ Action が workflow 間で違う版 (issue 073 §1) | `action-pin: allow` |
-| `check_go_project_lanes.sh` | 新しい Go プロジェクトが CI レーン無しで入る (`src/*/go.mod` があるのに lint/test target・`src_<name>.yml`・paths filter・`go.sum` (依存が無ければ空。無いと CI のキャッシュが毎回効かない) が欠ける / caller が `_go-project.yml` に渡す `dir` が `src/<name>` でない。issue 203 / 出典 080・087) | — |
+| `check_go_project_lanes.sh` | 新しい Go プロジェクトが CI レーン無しで入る (`src/*/go.mod` があるのに lint/test target・`src_<name>.yml`・paths filter (replace で取り込む共有 module の `src/<dir>/` も含めて)・`go.sum` (依存が無ければ空。無いと CI のキャッシュが毎回効かない) が欠ける / caller が `_go-project.yml` に渡す `dir` が `src/<name>` でない。issue 203 / 出典 080・087) | — |
 | `check_cd_rc_in_tests.sh` | `cd` の rc を見ていない行 (失敗すると別の場所で続行し、テストを 0 件発見したまま緑になる。tests/ だけでなく scripts/ と bin/ も見る) | `cd-rc: allow` |
 | `check_cdpath_before_cd_capture.sh` | `$(cd …)` でパスを取る前に CDPATH を外していない (`unset CDPATH` か lib なら `$(CDPATH='' cd …)`。export された CDPATH の下で相対パスの cd が解決先を stdout に出し、取ったパスが 2 行になる。zsh も対象) | `cdpath: allow` |
 | `check_var_before_multibyte.sh` | bash / sh で `$var` の直後に ASCII 以外の文字 (bash 3.2 が UTF-8 で全角の先頭バイトまで変数名に読む。`set -u` で死ぬか値が消える。zsh のファイルは除く。末尾で字句の状態が閉じないファイルも落とす。issue 633) | `var-multibyte: allow` |

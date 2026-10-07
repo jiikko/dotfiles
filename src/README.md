@@ -2,6 +2,30 @@
 
 各サブディレクトリが 1 つの独立したプロジェクト（現在はすべて Go）。使い方・設計は各プロジェクトの README を参照。シェルからの入口は `bin/` のラッパが担う。
 
+## プロジェクトの一覧
+
+各プロジェクトの使い方はそれぞれの README。`src/*/go.mod` を持つディレクトリが 1 プロジェクトで、足したらこの表にも 1 行足す。
+
+| プロジェクト | 何か |
+|---|---|
+| [`glogx`](glogx/README.md) | git log の TUI (tmux の `C-g` の popup)。stage / push・CI・issues viewer・ratelimit・doctor の画面 |
+| [`pro-con`](pro-con/README.md) | PM と PG を分けて Claude Code を並列に回すカンバンの TUI |
+| [`schedkeys`](schedkeys/README.md) | 「いつ・何を pane へ打つか」を決める予約入力の popup の UI |
+| [`ratelimit`](ratelimit/README.md) | Claude / codex の利用枠 (5h / weekly) を取って整形する module と `bin/ratelimit` |
+| [`doctor`](doctor/README.md) | 消してよさそうなもの・壊れて残っている常駐を見つけるライブラリと `diskdoctor` / `svcdoctor` |
+| [`lockman`](lockman/README.md) | ディレクトリ単位の排他を取る CLI (SMB 越しも) |
+| [`runtimeout`](runtimeout/README.md) | 時間の上限付きで実行し、子孫ごと止める CLI (`timeout` の代わり) |
+| [`restartable`](restartable/README.md) | コマンドを前面で起動し、キーか socket から再起動できる runner |
+| [`process_supervisor`](process_supervisor/README.md) | 呼んだプロセスが生きている間だけ子を見張って起こし直す module |
+| [`zundamon-kaisetsu`](zundamon-kaisetsu/README.md) | VOICEVOX の掛け合い解説動画 (HTML / mp4) を作る CLI (skill `zundamon-kaisetsu` の本体) |
+| [`disassemble_excel`](disassemble_excel/README.md) | Excel (`.xlsx` / `.xlsm` / `.xlsb`) を diff できるテキスト群に分解する CLI |
+| [`chromecookie`](chromecookie/README.md) | Chrome のプロファイルから Cookie を復号して読むライブラリ |
+| [`tuikit`](tuikit/README.md) | TUI の部品 (画面遷移・演出・幅計算・確認・入力欄)。glogx / pro-con / schedkeys / ratelimit / restartable が使う |
+| [`termsafe`](termsafe/README.md) | 外から来た文字列を端末へ安全に出す無害化 |
+| [`subproc`](subproc/README.md) | 外部プロセス実行の安全弁 (WaitDelay と git の timeout) |
+| [`atomicfile`](atomicfile/README.md) | 途中の状態を残さないファイル書き込み (temp + rename) |
+| [`proctree`](proctree/README.md) | プロセスの子孫を集めて止める (runtimeout と zundamon-kaisetsu が使う) |
+
 ## 新規プロジェクトのガイドライン
 
 プロジェクトを追加するときは、以下の **3 点セット**を必ず揃える。どれか欠けると lint / test がローカルまたは CI から漏れる（disassemble_excel はこれが無かったためテスト 6 ファイルが死蔵していた実例あり）。

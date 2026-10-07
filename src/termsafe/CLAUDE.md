@@ -11,7 +11,7 @@
 ## 入口
 
 - 表の形で使い分けが決まっている (README.md「使い分け」表を見る)。迷ったら `PlainLine` が既定
-- 消費者は glogx・doctor・pro-con・ratelimit・tuikit。doctor の CLI (`bin/diskdoctor` / `bin/svcdoctor`) は stdout へ直接書くので、描画層の後段の落としが無い
+- 消費者は glogx・doctor・pro-con・ratelimit・tuikit (`replace` で取り込む) と restartable (`go install` で配る module なので `replace` を使わず、疑似バージョンで require する。`grep -l 'src/termsafe =>'` には出ない)。doctor の CLI (`bin/diskdoctor` / `bin/svcdoctor`) は stdout へ直接書くので、描画層の後段の落としが無い
 
 ## ビルド・テスト
 

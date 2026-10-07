@@ -86,7 +86,7 @@ root の `make test` にも含まれる (`GO_PROJECT_DIRS`)。
 実バイナリの A-B は手動で回す (`make test` からは走らない):
 
 ```sh
-./ab_abandoned.sh <修正前の revision> [修正後の revision]   # N=300 で試行数を変えられる
+N=300 ./ab_abandoned.sh <修正前の revision> [修正後の revision]   # 試行数は環境変数 N (既定 150)
 ```
 
 有効な `--io-timeout` の窓は**マシン依存**なのでスクリプトが毎回スイープで探す。

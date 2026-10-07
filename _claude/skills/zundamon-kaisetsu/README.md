@@ -17,6 +17,7 @@
 | `faces/<キャラ>.json` | 表情ごとに使う PSD のレイヤーの定義 |
 | `templates/player.html` | HTML プレイヤー (mp4 の絵もこれで描く。zundamon-kaisetsu が実行時に読む) |
 | `examples/script.json` | 台本の見本 |
+| `readings.json` | 読み間違えやすい語の辞書 (SKILL.md の手順で台本の `readings` に合流させる) |
 | `assets/zundamon-kaisetsu/` | 立ち絵の置き場 (`psd/` に元の素材、`faces/<キャラ>/` に書き出した表情)。**同梱しない** (下の Setup で用意する) |
 
 合成・組み立ての本体は Go 製のコマンド `zundamon-kaisetsu` (`check` / `up` / `down` / `speakers` / `kana` (文か台本の全行の読み) /

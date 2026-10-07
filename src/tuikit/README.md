@@ -21,7 +21,7 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 | `sgr` | 基本の ANSI 色・装飾 (`Reset` / `Bold` / `Dim` / `Cyan` …) | 色を付けるときの値の単一の出典 |
 | `anim` | `Transition` (開く / 閉じる / 途中で逆再生) / `Elapsed` (一方向の演出の進捗) / `ScrollGlide` / `CursorGlide` / easing | 開閉演出と「数行ぶんの移動を滑らせる」演出 |
 | `layout` | `ComposeDrawer` (一覧の上に詳細を右から重ねる) / `DrawerGeometry` / `SlideIn` / `Scrollbar` / `Panel` (落ち影つきの板) と `PanelContentWidth` (Panel に渡す幅から中身の幅を出す) / `Overlay` / `OverlayCentered` / `OverlayRight` (右端に寄せて重ねる) / `PadTo` | 画面の合成 |
-| `confirm` | y/N 確認ダイアログ: `Dialog` (本文 + 空行 + 案内の板) / `Box` (幅 44 で頭打ちの中央の板) / `IsYes` (y・Y・Enter) / `IsYesStrict` (y・Enter) / 案内の定型 `HintYesNo` / `HintYesOther` | 破壊的操作の確認を毎回組まない。語彙の正本は `docs/glogx-ui-guide.md` §4 |
+| `confirm` | y/N 確認ダイアログ: `Dialog` (本文 + 空行 + 案内の板) / `Box` (幅 44 で頭打ちの中央の板) / `WideDialog` (幅の上限を `WideMaxWidth` = 64 にした `Dialog`。揃えた行が 44 では切れる確認用) / `IsYes` (y・Y・Enter) / `IsYesStrict` (y・Enter) / 案内の定型 `HintYesNo` / `HintYesOther` | 破壊的操作の確認を毎回組まない。語彙の正本は `docs/glogx-ui-guide.md` §4 |
 | `lineedit` | 1 行の入力欄 (カーソル + readline の編集キー: `ctrl+h` / `ctrl+w` / `ctrl+u` / `ctrl+k` / `ctrl+a` / `ctrl+e` …)。移動と削除は書記素単位 (肌色・ZWJ・国旗・結合文字を割らない)。`Window(幅)` は欄に出す文字列とキャレットの桁 (長ければキャレットが欄に収まるよう前を切る。全角は 2)。保存したカーソルは `SetCursor` で戻す | 入力欄を毎回書かない。キーの語彙の正本は `docs/glogx-ui-guide.md` §7 |
 | `caret` | `At(x, y, 幅, 高さ)`: 入力欄のキャレットに置く棒の端末のカーソル (bubbletea v2 の `tea.Cursor`。幅の外の桁は最終列へ寄せ、画面の外の行なら nil) | IME の変換中の文字を入力欄に出す (IME は端末のカーソルの位置に出す)。桁は `lineedit.Line.Window` の「欄の左端 + 桁」。**tuikit で唯一 bubbletea を import する** (置く先が `tea.Cursor` そのもの)。pro-con の入力欄・回答フォームと schedkeys が使う (issue 517) |
 | `editor` | 実ファイルを 1 つエディタで開くコマンド ($VISUAL → $EDITOR → nvim、空白で語分割、quote は解釈しない) | glogx と pro-con の共通。tea.ExecProcess で待つ前提 (GUI エディタは -w) |
@@ -234,4 +234,8 @@ make demo                             # vhs で 2 つの gif を撮り直す (vh
 // go.mod
 require github.com/jiikko/dotfiles/src/tuikit v0.0.0
 replace github.com/jiikko/dotfiles/src/tuikit => ../tuikit
+replace github.com/jiikko/dotfiles/src/termsafe => ../termsafe
 ```
+
+tuikit は `src/termsafe` を require している (`markdown` / `toast` が使う)。replace は推移しないので、手元の termsafe を使うには取り込む側にも termsafe の replace を書く
+(glogx・pro-con・ratelimit はそうしている)。

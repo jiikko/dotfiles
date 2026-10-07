@@ -204,7 +204,7 @@ glogx --help              # ヘルプ (キー操作・記号・終了コード�
 | `w` | **直近の警告/エラーをクリップボードへコピー** (トーストが消えた後も可。LLM に貼る用) |
 | `Ctrl-D` / `Ctrl-U` / `PgDn` / `PgUp` | ページスクロール |
 | `g` / `G` | 先頭 / 末尾のコミットへ |
-| `q` / `Esc` / `Ctrl-C` | 終了 (git log の pager と同じく表示は消える) |
+| `q` / `Esc` / `Ctrl-C` / `Ctrl-G` | 終了 (git log の pager と同じく表示は消える。`Ctrl-G` は tmux の popup を開いたキーと同じなので、もう一度押せば閉じる) |
 
 CI job ポップアップ表示中 (開いた直後のフォーカスはタイトル行):
 
@@ -383,7 +383,7 @@ bare 記号なら全層で 1 に一致するため。割れる文字を出すと
 ## 開発
 
 ```bash
-make test   # go test -race ./... (unit + 一時 git リポジトリでの integration。外部通信なし)
+make test   # go test -race ./... (unit + 一時 git リポジトリでの integration。外部通信なし) + 確保回数の予算 (TestFrameAllocBudget) だけ -race なしでもう 1 回
 make lint   # golangci-lint (scripts/golangci_lint.sh 経由・バージョン固定、設定は .golangci.yml)
 
 # 幅ズレ調査用 (要 TTY。tmux の内と外で走らせて比べる)

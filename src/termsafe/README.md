@@ -1,6 +1,6 @@
 # termsafe — 外部由来の文字列を端末へ出す前に無害化する単一の関門
 
-各 module (glogx / doctor / pro-con / ratelimit / tuikit) が go.mod の `replace github.com/jiikko/dotfiles/src/termsafe => ../termsafe` で取り込む共有 module。
+各 module (glogx / doctor / pro-con / ratelimit / tuikit) が go.mod の `replace github.com/jiikko/dotfiles/src/termsafe => ../termsafe` で取り込む共有 module (restartable だけは `go install` で配るので replace を使わず、疑似バージョンで require する)。
 依存はゼロ (標準ライブラリのみ)。仕様・トレードオフの一次情報は `termsafe.go` の doc コメント。
 
 ## なぜ独立 module か
@@ -26,6 +26,8 @@
 | `PlainLineKeepTabs` | 落とす | 残す | 落とす | 自前でタブストップ揃えをする整形層の入口 |
 | `PlainBlock` | 落とす | スペース 4 | **残す** | 1 件が複数行の塊 (brew doctor の警告本文) |
 | `IsPlain` | — | — | — | **書き換えず落とす**判定 (同一性を持つ値: パス / ラベル) |
+
+上の表とは別に、`DropEmojiVS16` は絵文字の異体字セレクタ (U+FE0F) を除いて `⚠️` を `⚠` に倒す (層ごとに幅の解釈が割れる字を表示の入口で出さない。glogx の表示の入口が使う)。
 
 🚨 **`PlainBlock` を「1 件 = 1 行」の場所に使わない**。偽の行を差し込まれて固定高パネルの
 行数が狂う (幅を数えるテストは改行を検出しないので素通りする)。

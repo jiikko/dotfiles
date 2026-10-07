@@ -8,7 +8,8 @@ prefix は `C-t`。設定の正本は [_tmux.conf](../../_tmux.conf)（コメン
 |---|---|
 | `C-t v` / `C-t \|` | 左右に分割（カレントパス引き継ぎ） |
 | `C-t s` / `C-t -` | 上下に分割（同上） |
-| `C-t h/j/k/l` | ペイン移動（repeat 対応で連打可。`C-h/j/k/l` でも可） |
+| `C-t h/j/k/l` | ペイン移動（`C-h/j/k/l` でも可。**repeat は付けていない** — 付けると repeat-time 内にシェルへ打った h/j/k/l が移動に化ける） |
+| `C-t o` / `C-t C-o` | 次のペインを選ぶ |
 | `M-h/j/k/l` | prefix なしでペイン移動（端でループしない） |
 | `C-t H/J/K/L` | リサイズ（連打可） |
 | `C-t z` | ズーム（ズーム中はペイン境界に 🔍 ZOOM と解除ヒントが出る） |
@@ -33,6 +34,9 @@ prefix は `C-t`。設定の正本は [_tmux.conf](../../_tmux.conf)（コメン
 | `C-t f` | **fzf popup** で全セッションの window を曖昧検索してジャンプ（プレビュー付き） |
 | `C-t w` | choose-tree（標準のツリー画面） |
 | `C-t <` / `C-t >` | window メニュー / pane メニュー（Swap・Kill・Rename 等） |
+| `C-t u` | 最後に作業した window へジャンプ |
+| `C-t a` / `C-t A` | エージェント常駐パネルの表示トグル / エージェントのペインへ fzf でジャンプ |
+| `C-t &` | 今の window を kill（確認あり） |
 
 ## popup・その他
 
@@ -42,8 +46,11 @@ prefix は `C-t`。設定の正本は [_tmux.conf](../../_tmux.conf)（コメン
 | `C-t m` / `C-t Enter` | **予約入力**: N 時間 M 分後にこのペインへ文字列を送る (一覧・取消も)。[src/schedkeys](../../src/schedkeys/README.md) の popup |
 | `C-t t` | **スクラッチターミナルのトグル**。専用セッション scratch をフローティング表示し、popup 内でもう一度押すと閉じる（セッションは生きるので作業状態は保持） |
 | `M-[` | prefix なしでコピーモードへ。vi キーバインド、`v`/`Space` で選択開始、`y`/`Enter` で pbcopy にコピーして抜ける |
+| `C-t y` / `C-t C-y` | 画面から URL・パス・単語を fzf で選んで吸い出す |
+| `C-v` | prefix なしでクリップボードを直接ペースト（zsh のペインだけ） |
+| `C-t M-c` | 全ペインのスクロールバックを解放（確認あり） |
 | `C-t R` | 設定リロード |
-| `C-t C-s` | レイアウトの手動保存（tmux-resurrect。自動保存・復元は continuum + 独自 hook で常時動作） |
+| `C-t C-s` / `C-t C-r` | レイアウトの手動保存 / 手動復元（確認あり）（tmux-resurrect。自動保存・復元は continuum + 独自 hook で常時動作） |
 
 ## 視認性まわり
 

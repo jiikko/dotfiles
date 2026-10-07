@@ -47,7 +47,7 @@
 (`_claude/rules/perf-claims-need-measurement.md`)。この repo では過去に合計 414 秒 / 通し 433 秒と
 19 秒ずれた実績があり、**before の通しは 490 秒より大きい**と見るのが妥当 = 改善幅は 300 秒より
 大きい側にぶれる。正確に比べたいなら並列化前の commit で通しを 1 回測ること。
-`test-src` の go test も 7 プロジェクトを並列に回す (`run_go_projects`。lint は golangci-lint の file lock のため直列のまま)。
+`test-src` の go test も `src/*/go.mod` の全プロジェクトを並列に回す (`run_go_projects`。lint は golangci-lint の file lock のため直列のまま)。
 
 🚨 **待ちの実体はエンコードではない**。av1ify / concat のテストは ffmpeg / ffprobe を
 **shell script のモック**に差し替えており (`tests/zshrc/*/test_helper.sh` が `$TEST_TMP/mock_bin` を
@@ -66,13 +66,12 @@ PATH 先頭に置く)、時間はモック内の `grep` 連打による **fork �
 - **`make test-changed PATHS="<触ったファイル>"` で代替してよいのは、時間が取れないときだけ**。
   その場合は**全体を回していない事実を報告に書く** (「docs だけだから省いた」を前例として
   積まない。issue 185 項目 4 / issue 188)
-- 🚨 **`test-lint` の発見式ゲート 7 本 (`check_*.sh`) は `test-changed` からは一度も入らない**
+- 🚨 **`test-lint` の発見式ゲート (`check_*.sh`。一覧は `scripts/CLAUDE.md`) は `test-changed` からは一度も入らない**
   (写像に無い。実測 2026-09-03: `.github/workflows/tests.yml` を渡しても
   `test-workflow-action-pins` は入らず、`scripts/check_skip_exit_code.sh` を渡してもそれ自身は
   走らない)。**shell / テストスクリプト / workflow / Makefile / CI の構造を触ったら
   `make test-lint` を明示的に回す**
-- 🚨 写像の穴として既知: `_claude/settings.json` は `*.json` に先勝ちして `test-json` だけになり
-  `tests/claude` へ落ちない / `_claude/rules-rationale/*.md` と `_claude/rules-checklists/*.md` は「テスト対象なし」になる
+- 🚨 写像の穴として既知: `_claude/rules-rationale/*.md` と `_claude/rules-checklists/*.md` は「テスト対象なし」になる
   (issue 188 の発火元がまさに rules-rationale の新設だった)
 
 ## 「0 件」「skip」「沈黙」の扱い
