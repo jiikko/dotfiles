@@ -149,6 +149,7 @@ func checkFrames(args []string) {
 		}
 	}
 	states := map[string]bool{}
+	var order []string // フレームごとの状態の絵の名前 (テストが frameStates の期待と突き合わせる)
 	for k, p := range files {
 		if result != "" {
 			break
@@ -164,6 +165,7 @@ func checkFrames(args []string) {
 			break
 		}
 		states[filepath.Base(target)] = true
+		order = append(order, filepath.Base(target))
 		li, _ := strconv.Atoi(m[1])
 		sp, _ := strconv.Atoi(m[2])
 		lv, _ := strconv.Atoi(m[3])
@@ -201,6 +203,7 @@ func checkFrames(args []string) {
 			fmt.Fprintln(f, result)
 			_ = f.Close()
 		}
+		_ = os.WriteFile(log+".order", []byte(strings.Join(order, "\n")), 0o644)
 	}
 }
 
@@ -364,6 +367,47 @@ func TestWriteMP4CropsEachState(t *testing.T) {
 	// 総フレーム数は ceil(尺 × fps) (testdata/build の台本は 3.5835 秒 = 108 フレーム。issue 660 で実物の尺を ffprobe で確かめた)
 	if nFrames != 108 {
 		t.Errorf("連番のフレーム数: got %d want 108 (ceil(3.5835 × 30))", nFrames)
+	}
+	// フレームごとの状態の並びが frameStates (プレイヤーの規則: フレーム k は時刻 (k+0.5)/fps の状態) と一致する (issue 660)
+	env := testEnv(t)
+	sc, err := loadScript(resolvePath(filepath.Join("testdata", "build", "script.json")), env)
+	must(t, err)
+	data, _, err := assemble(sc, env)
+	must(t, err)
+	var want []string
+	for _, st := range frameStates(data.Frames, data.Duration) {
+		want = append(want, fmt.Sprintf("state_%d_%d_%d.png", st[0]+1, st[1], st[2]))
+	}
+	gotOrder, err := os.ReadFile(log + ".order")
+	must(t, err)
+	if got := strings.Split(string(gotOrder), "\n"); !slices.Equal(got, want) {
+		for k := range min(len(got), len(want)) {
+			if got[k] != want[k] {
+				t.Errorf("フレーム %d の状態: got %s want %s (全 %d / %d フレーム)", k, got[k], want[k], len(got), len(want))
+				break
+			}
+		}
+		if len(got) != len(want) {
+			t.Errorf("フレーム数: got %d want %d", len(got), len(want))
+		}
+	}
+	listing := ""
+	for _, l := range calls(t, log) {
+		if strings.HasPrefix(l, "ffmpeg ") && strings.Contains(l, "-f mp4") {
+			listing = l + " "
+		}
+	}
+	if listing == "" {
+		t.Fatal("最後の mux が呼ばれていない")
+	}
+	// 30fps の連番として読ませ、映像を変換・切り詰めるオプションを付けない (-shortest は終わりを欠かせ、-r / -fps_mode は切り替わりをずらした)
+	for _, a := range []string{" -shortest", " -fps_mode ", " -r "} {
+		if strings.Contains(listing, a) {
+			t.Errorf("mux の引数に %q がある: %s", strings.TrimSpace(a), listing)
+		}
+	}
+	if !strings.Contains(listing, fmt.Sprintf(" -framerate %d ", mouthFPS)) {
+		t.Errorf("mux の引数に -framerate %d が無い: %s", mouthFPS, listing)
 	}
 }
 
