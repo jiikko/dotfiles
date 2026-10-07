@@ -278,11 +278,7 @@ func TestCodeHighlightNormalized(t *testing.T) {
 // TestShowKeysReadByPlayer は、build が出す図解の JSON のキーを player.html が同じ名前で読んでいることを確かめる。
 // キーの名前は Go の構造体タグと player.html の 2 か所に書くので、片方だけを変えるとテストは緑のまま画面から図解の一部が消える。
 func TestShowKeysReadByPlayer(t *testing.T) {
-	tb, err := os.ReadFile(testEnv(t).Template())
-	if err != nil {
-		t.Fatal(err)
-	}
-	tpl := string(tb)
+	tpl := playerTemplate(t)
 	samples := []showData{
 		{Type: "keyword", Text: "a", Sub: "b"},
 		{Type: "compare", Left: &compareSide{Title: "a", Items: []string{"b"}}, Right: &compareSide{Title: "c", Items: []string{"d"}}},
@@ -302,10 +298,24 @@ func TestShowKeysReadByPlayer(t *testing.T) {
 	if !strings.Contains(tpl, "未知の図解") {
 		t.Error("player.html の showAt に、未知の種類を見えるようにする分岐が無い")
 	}
+	// branch は種類 typ の描画の分岐 (`sd.type === 'typ'` から次の `} else` まで)。キーはその種類の分岐の中で読まれている必要がある
+	branch := func(typ string) string {
+		i := strings.Index(tpl, "sd.type === '"+typ+"'")
+		if i < 0 {
+			return ""
+		}
+		rest := tpl[i:]
+		if j := strings.Index(rest, "} else"); j >= 0 {
+			rest = rest[:j]
+		}
+		return rest
+	}
+	var sdType string
 	reads := func(prefix, key string) bool {
-		return regexp.MustCompile(`\b` + regexp.QuoteMeta(prefix+key) + `\b`).MatchString(tpl)
+		return regexp.MustCompile(`\b` + regexp.QuoteMeta(prefix+key) + `\b`).MatchString(branch(sdType))
 	}
 	for _, sd := range samples {
+		sdType = sd.Type
 		b, err := json.Marshal(sd)
 		if err != nil {
 			t.Fatal(err)
@@ -359,14 +369,14 @@ func TestPlayerPlacesCharsForShowsFromStart(t *testing.T) {
 // TestSheetFragmentMatchesPlayer は、mp4 のまとめ撮りで Go が作る #sheet= の断片を、player.html の正規表現が受け取ることを確かめる。
 // 合わないとプレイヤーは通常の画面のまま撮られ、動画が黙って壊れる (口の段階を増やす・状態に要素を足す、で起きる。issue 650)
 func TestSheetFragmentMatchesPlayer(t *testing.T) {
-	tb, err := os.ReadFile(testEnv(t).Template())
-	must(t, err)
-	m := regexp.MustCompile(`location\.hash\.match\(/(.+?)/\)`).FindStringSubmatch(string(tb))
-	if m == nil {
-		t.Fatal("player.html にまとめ撮りの正規表現 (location.hash.match(/^#sheet=…/)) が無い")
+	re := playerSheetRegexp(t)
+	tpl := playerTemplate(t)
+	// 欄の意味の対応 (行, 話し中, 口) も Go と同じ順に分解している (正規表現が合っても、順が違うと話し中と口が入れ替わる)
+	for _, want := range []string{"for (const [li, sp, lv] of states)", "paint(li, sp, lv, false)"} {
+		if !strings.Contains(tpl, want) {
+			t.Errorf("player.html のまとめ撮りの分解が Go の順 (行, 話し中, 口) でない (%s が無い)", want)
+		}
 	}
-	re, err := regexp.Compile(m[1]) // この正規表現は JS と RE2 で同じ意味に読める書き方に限っている
-	must(t, err)
 	var group [][3]int
 	for _, li := range []int{-1, 0, 12} {
 		for sp := range 2 {
@@ -377,7 +387,7 @@ func TestSheetFragmentMatchesPlayer(t *testing.T) {
 	}
 	for _, g := range [][][3]int{group, group[:1]} {
 		if f := sheetFragment(g); !re.MatchString(f) {
-			t.Errorf("player.html の正規表現 %s が Go の断片を受け取らない: %s", m[1], f)
+			t.Errorf("player.html の正規表現 %s が Go の断片を受け取らない: %s", re, f)
 		}
 	}
 	for v, lv := range vowelMouth {
@@ -385,4 +395,27 @@ func TestSheetFragmentMatchesPlayer(t *testing.T) {
 			t.Errorf("母音 %s の口の開き %d が段階の数 %d の外", v, lv, mouthLevels)
 		}
 	}
+}
+
+// playerTemplate は player.html を、JS のコメント (// から行末・/* */) を除いて返す
+// (コメントに残った旧名や説明文を「読んでいる」と数えないため。文字列の中の // は player.html には無い前提)
+func playerTemplate(t *testing.T) string {
+	t.Helper()
+	tb, err := os.ReadFile(testEnv(t).Template())
+	must(t, err)
+	s := regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(string(tb), "")
+	return regexp.MustCompile(`(?m)(^|[^:'"])//[^\n]*`).ReplaceAllString(s, "$1")
+}
+
+// playerSheetRegexp は player.html のまとめ撮りの正規表現 (location.hash.match(/^#sheet=…/)) を抜き出して RE2 にする。
+// この正規表現は JS と RE2 で同じ意味に読める書き方 (^ $ \d 文字クラス) に限っている
+func playerSheetRegexp(t *testing.T) *regexp.Regexp {
+	t.Helper()
+	m := regexp.MustCompile(`location\.hash\.match\(/(.+?)/\)`).FindStringSubmatch(playerTemplate(t))
+	if m == nil {
+		t.Fatal("player.html にまとめ撮りの正規表現 (location.hash.match(/^#sheet=…/)) が無い")
+	}
+	re, err := regexp.Compile(m[1])
+	must(t, err)
+	return re
 }

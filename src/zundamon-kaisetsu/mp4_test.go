@@ -73,6 +73,11 @@ func fakeMP4Tool(tool string, args []string) int {
 		if err != nil {
 			return 3
 		}
+		// 本物のプレイヤーが受け取る書式か (player.html から抜き出した正規表現で見る。偽物の Sscanf は空白などを許すので頼らない)
+		if re, err := regexp.Compile(os.Getenv("FAKE_SHEET_RE")); err != nil || os.Getenv("FAKE_SHEET_RE") == "" || !re.MatchString("#"+u.Fragment) {
+			fmt.Fprintf(os.Stderr, "偽の Chrome: player.html が受け取らない断片 %q\n", u.Fragment)
+			return 11
+		}
 		var states [][3]int
 		for _, part := range strings.Split(strings.TrimPrefix(u.Fragment, "sheet="), ";") {
 			var st [3]int
@@ -167,8 +172,18 @@ func checkFrames(args []string) {
 			result = "frames-bad 読めない " + p
 			break
 		}
-		if got := color.RGBAModel.Convert(img.At(img.Bounds().Dx()/2, img.Bounds().Dy()/2)).(color.RGBA); got != want {
-			result = fmt.Sprintf("frames-bad %s の色が %v (期待 %v)", filepath.Base(p), got, want)
+		// 全画素が状態の色で一様 (中央の 1 点だけだと、帯の半分未満のずれを見逃す)
+		bad := ""
+		for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y && bad == ""; y++ {
+			for x := img.Bounds().Min.X; x < img.Bounds().Max.X; x++ {
+				if got := color.RGBAModel.Convert(img.At(x, y)).(color.RGBA); got != want {
+					bad = fmt.Sprintf("frames-bad %s の (%d,%d) の色が %v (期待 %v)", filepath.Base(p), x, y, got, want)
+					break
+				}
+			}
+		}
+		if bad != "" {
+			result = bad
 			break
 		}
 		if fmt.Sprintf("%dx%d", img.Bounds().Dx(), img.Bounds().Dy()) != os.Getenv("FAKE_MP4_SIZE") {
@@ -266,6 +281,7 @@ func fakeMP4Tools(t *testing.T) string {
 	videoSize = [2]int{64, 36}
 	t.Cleanup(func() { videoSize = old })
 	t.Setenv("FAKE_MP4_SIZE", fmt.Sprintf("%dx%d", videoSize[0], videoSize[1]))
+	t.Setenv("FAKE_SHEET_RE", playerSheetRegexp(t).String())
 	return log
 }
 
