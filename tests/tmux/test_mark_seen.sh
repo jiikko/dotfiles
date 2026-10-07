@@ -9,7 +9,7 @@
 #     `;` 区切りで 1 回の起動にまとめられる)
 #
 # 🚨 socket 隔離: $TMUX は TMUX_TMPDIR より優先されるため必ず unset する。隔離できたことを
-# 「本番セッションが見えない」で実証してからサーバを作る (rules/tmux-probe-requires-socket-isolation.md)。
+# 「本番セッションが見えない」で実証してからサーバを作る (_claude/rules/tmux-probe-requires-socket-isolation.md)。
 set -uo pipefail
 unset CDPATH
 unset TMUX TMUX_PANE

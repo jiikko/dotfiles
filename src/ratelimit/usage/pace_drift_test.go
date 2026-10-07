@@ -12,7 +12,7 @@ package usage
 // **整数 delta の全域で状態語が一致するか**を見る (両実装の判定を突き合わせる差分テスト)。
 //
 // 🚨 抽出に失敗したら FAIL する (skip しない)。「検査できなかった」を緑にすると、shell の
-// 書き方が変わった日から乖離検出が黙って止まる (rules/adversarial-review-own-safeguards)。
+// 書き方が変わった日から乖離検出が黙って止まる (_claude/rules/adversarial-review-own-safeguards.md)。
 //
 // 🚨 **状態語の一致まで要求する**のは、同じ枠を 2 画面が違う語で呼ぶと読み替えが要るため
 // (issue 144 の目視確認に「statusline のペース行と同じ見え方になっているか」が入っていたのは

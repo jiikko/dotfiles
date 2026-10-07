@@ -14,7 +14,7 @@
 
 set -euo pipefail
 unset CDPATH  # CDPATH が export されていると `cd foo` が解決先を stdout に出し、
-              # SCRIPT_DIR=$(cd ... && pwd) が 2 行に化ける (rules/shell-script-cdpath.md)
+              # SCRIPT_DIR=$(cd ... && pwd) が 2 行に化ける (tests/CLAUDE.md の CDPATH の項)
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)

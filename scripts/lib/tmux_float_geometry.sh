@@ -23,7 +23,7 @@
 tt_float_geom() {
   local win_w="$1" win_h="$2" w="$3" h="$4" anchor="$5" x y v
   # 🚨 文字種の判定は範囲式 [0-9] でなく明示列挙で書く (ja_JP.UTF-8 では全角数字が
-  #    [0-9] を通り、後段の算術が落ちる。rules/shell-numeric-gate-explicit-digits.md)
+  #    [0-9] を通り、後段の算術が落ちる。_claude/rules/shell-numeric-gate-explicit-digits.md)
   for v in "$win_w" "$win_h" "$w" "$h"; do
     case "$v" in ''|*[!0123456789]*) return 1 ;; esac
   done

@@ -289,7 +289,7 @@ printf '\n## install 成功後に新バイナリを 1 回起こす (署名検証
 # 実測 230ms で、tmux popup の起動の律速がここだった。裏ビルドの中で 1 回起こしておくと
 # 次の起動は 0.02s 側から始まる (_go_autobuild_warm_signature)。
 # ここで pin するのは「install 成功後に、差し替えたバイナリが実際に exec される」ことだけ
-# (署名検証キャッシュ自体は偽 go の shim では再現できないので、実測は rules/docs 側に残す)。
+# (署名検証キャッシュ自体は偽 go の shim では再現できないので、実測は bin/lib/go_autobuild.zsh の _go_autobuild_warm_signature のコメントに残す)。
 ROOT="$(new_project warmup)"
 WARM_LOG="$ROOT/warm.log"
 FAKE_BIN_CALLS="$WARM_LOG" FAKE_GO_MARK=w1 run_tool "$ROOT" >/dev/null   # バイナリ不在 = 同期ビルド
