@@ -51,5 +51,11 @@
 | 全部を工場出荷に戻す (Hard Reset) | Hotkey 4 を押したまま USB を挿す |
 | ファームウェアを更新する (`.upd` を v-Drive の `firmware/` に置いて閉じてから) | 右 Ctrl + U (45 秒かかる。終わるまで抜かない・打たない) |
 
-出典: Kinesis の [Advantage360 SmartSet User's Manual](https://kinesis-ergo.com/wp-content/uploads/Advantage360-SmartSet-KB360-Users-Manual-v10-12-22.pdf)
-(6.3〜6.9 節と 7 章)。ファイルの書き方は [Direct Programming Guide](https://kinesis-ergo.com/wp-content/uploads/Adv360-SmartSet-Direct-Programming-Guide-Version-8-8-25.pdf)。
+出典は `manuals/` に置いた Kinesis 公式の PDF (2026-10-07 に取得。元の URL は各行の括弧):
+
+- [`manuals/users-manual.pdf`](manuals/users-manual.pdf) — User's Manual v10-12-22。キー操作は 6.3〜6.9 節、ファームウェアは 7 章
+  ([元](https://kinesis-ergo.com/wp-content/uploads/Advantage360-SmartSet-KB360-Users-Manual-v10-12-22.pdf))
+- [`manuals/direct-programming-guide.pdf`](manuals/direct-programming-guide.pdf) — Direct Programming Guide 8-8-25。`layoutN.txt` / `ledN.txt` の書き方
+  ([元](https://kinesis-ergo.com/wp-content/uploads/Adv360-SmartSet-Direct-Programming-Guide-Version-8-8-25.pdf))
+- [`manuals/quick-start-guide.pdf`](manuals/quick-start-guide.pdf) — Quick Start Guide v5-19-22。キーの位置の図
+  ([元](https://ik.imagekit.io/vhucnsp9j1u/pdfs/kinesis-KB360-Quick-Start-Guide-v5-19-22.pdf))
