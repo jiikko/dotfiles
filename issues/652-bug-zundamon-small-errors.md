@@ -1,7 +1,5 @@
 # 652 (bug): zundamon-kaisetsu の小さな不具合とエラー処理の不揃い
 
-> 🚨 **担当中: dotfiles-4d**（2026-10-07〜）
-
 起票日: 2026-10-07
 
 ## 詳細
@@ -33,3 +31,11 @@
 2. `startEngine` の `runtimeService` の失敗と `stopContainers` の stop の失敗で、`interruptedErr()` を先に見る (`TestEngineInterruptIsNotReportedAsFailure` の up / down)
 3. `cmdBuild` の頭で、各出力先に一時ファイルを作れるかを確かめる (`TestBuildChecksOutputDirFirst`: 書けない出力先で ffmpeg / chrome を起こさずに止まる)
 - 変異: 3 つのファイルをそれぞれ修正前に戻すと、対応するテストが red
+
+## 敵対的レビュー (2026-10-07、opus、2 周)
+
+- 1 周目 P2 2 / P3 2 (全部採用): down の確認 (system status) の途中の中断で rc=0 のまま印を消していた / synth の案内が「work/ ごと消してよい」のまま /
+  中断の判定を appCtx で見ると、見張り (別の ctx) の成功や失敗まで「中断」になる (今回の修正で入った退行。渡された ctx で見る ctxInterrupted に) /
+  build の最初の確認が「dir に一時ファイルを作れるか」だけ (置き換えの前提も checkReplaceable で見る)
+- 2 周目 P3 3: 自分を指す symlink を「まだ無い」と読む (ErrNotExist のときだけ通す) / doc コメントのずれ (直した) /
+  **記録のみ**: sticky bit の dir にある他人の 0666 のファイルは access(W_OK) を通るが rename で EPERM (他人のファイルが要り未再現。前からある挙動)

@@ -1,7 +1,5 @@
 # 653 (chore): zundamon-kaisetsu の掃除 (死んだコード・古いコメント) と、空でも通るテスト
 
-> 🚨 **担当中: dotfiles-4d**（2026-10-07〜）
-
 起票日: 2026-10-07
 
 ## 詳細
@@ -31,3 +29,8 @@
 - `TestSpokenTextMatchesPython` / `TestRoundMatchesPython` に件数の下限、`TestBuildWithDefaultAssetsMatchesPython` に golden の script の有無の検査
 - `TestWriteWavHeaderFields`: ヘッダの 9 欄とチャンク名を直接見る
 - 変異で red: byte rate を壊す / spoken.json と round.json を空にする / build_data.json から script を消す
+
+## 敵対的レビュー (2026-10-07、opus。652 と合わせて)
+
+- 653 の分は壊せなかった (lookupOr / parseWav の変更は挙動が同じ、golden の下限は正当な更新の余地を残す、wav ヘッダの各欄は仕様どおり、
+  engine_auto のコメントは containerNameFor の実装と合う)
