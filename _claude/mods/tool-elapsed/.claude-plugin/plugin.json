@@ -1,0 +1,7 @@
+{
+  "name": "tool-elapsed",
+  "version": "0.1.0",
+  "description": "長く走っている tool 呼び出し (codex exec / swift test / make test …) の経過時間をプロンプトの上の帯に出し、5 分ごとに toast で知らせる",
+  "author": { "name": "jiikko" },
+  "types": "./types/index.d.ts"
+}

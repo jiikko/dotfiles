@@ -55,6 +55,7 @@ _claude/mods/<name>/                 1 つの mod = 1 ディレクトリ
 | `issue-band` | 期限切れ / 期限間近の human と未決着の retro があるときだけ、プロンプトの上の帯に出す | `hooks/register.tsx` (配線) / `hooks/band.ts` (出力の読み取りと文言) |
 | `desktop-statusline` | Claude desktop の Code タブに、CLI と同じステータスバーを色つきで出す。CLI には描かない | 下の節 |
 | `peer-inbox` | 他セッション / teammate との SendMessage の送受信を、プロンプトの上の帯 (直近 3 件・既読 / 隠す)・toast・status line の未読数に残す。transcript に流れる本文は止めない (流れない写し) | `hooks/register.tsx` |
+| `tool-elapsed` | 20 秒以上走っている tool 呼び出し (codex exec / swift test / make test …) をプロンプトの上の帯に経過時間つきで出し、5 分ごとに toast で知らせる。何も止めない (待ちの上限を人が判断する材料) | `hooks/register.tsx` (配線) / `hooks/elapsed.ts` (判定・文面) |
 | `ratelimit-warn` | Claude の 5h 枠が 80% 以上なら、プロンプトに hook と同じ 1 行を注入し (`classic.UserPromptSubmit`)、status line に `🚨 5h NN%` を出す。settings の hook `ratelimit-warn.sh` は fallback として残り、mod が判定できたプロンプトでは env の印で黙る (issue 658) | `hooks/register.ts` (配線) / `hooks/limit.ts` (判定・文面) |
 
 ## desktop-statusline の仕組み
