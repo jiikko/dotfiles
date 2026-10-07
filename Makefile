@@ -201,6 +201,10 @@ test-runtime:
 # 🚨 **スイート全体で 1 つの親 dir を作り、EXIT/INT/TERM/HUP の trap で丸ごと消す**。
 # テストごとの `rm -rf` だけだと **Ctrl-C / CI のキャンセル / xargs がシグナルで殺されたとき**に
 # 各テストのツリーが残り、**変更前 (漏れるのは `out=$(mktemp)` のファイル 1 個) より悪化する**。
+# 🚨 **各テストの stdin は /dev/null にする**。while の stdin はテストの一覧のパイプなので、そのまま起動すると
+# stdin を読むテストが**残りの一覧を食べ、後ろのテストが黙って走らない** (実測 2026-10-07: make test-dir DIR=tests で
+# test_claude_links_sync.sh の後の 129 本が走らず、名前の途中で切れた `_sequence.sh` の失敗だけが出た)。
+# 並列版は xargs が子の stdin を /dev/null にするので同じことは起きない。
 # 🚨 `mktemp -d` の失敗は**止める**。空の `td` で走らせると `${TMPDIR:-/tmp}` が未設定扱いになり、
 # 隔離が消えたまま緑が続く (fail-open)。
 define run_tests
@@ -212,7 +216,7 @@ trap 'rm -rf "$$suite_td"' EXIT INT TERM HUP; \
 i=0; \
 printf '%s\n' "$$tests" | while IFS= read -r t; do echo "[run] $$t"; \
 	i=$$((i+1)); td="$$suite_td/$$i"; mkdir -p "$$td"; \
-	if TMPDIR="$$td" "$$t"; then :; else rc=$$?; if [ "$$rc" -eq 77 ]; then echo "$$t" >> "$$skips"; else echo "$$t" >> "$$fails"; fi; fi; \
+	if TMPDIR="$$td" "$$t" </dev/null; then :; else rc=$$?; if [ "$$rc" -eq 77 ]; then echo "$$t" >> "$$skips"; else echo "$$t" >> "$$fails"; fi; fi; \
 	rm -rf "$$td"; done; \
 $(call append_test_summary,$$fails,$$skips); \
 if [ -s "$$skips" ]; then { echo ""; echo "[skip] 丸ごと skip したテスト $$(wc -l < "$$skips" | tr -d ' ') 件 (失敗ではない。増えていたら理由を確かめる):"; sed 's/^/  /' "$$skips"; }; fi; \
@@ -428,11 +432,12 @@ test-zshrc:
 	@$(MAKE) test-dir DIR=tests/zshrc
 
 # .bats も同じ規約で自動発見する (発見 0 件なら何もせず成功)。bats 未インストール環境では skip。
+# 🚨 bats の stdin は /dev/null にする (while の stdin はテストの一覧。読むと後ろの .bats が黙って走らない。run_tests の注記と同じ)
 test-bats:
 	@if command -v bats >/dev/null 2>&1; then \
 		fails=$$(mktemp); \
 		find tests -type f -name '*.bats' ! -name '*helper*' | sort | \
-			while IFS= read -r t; do echo "[run] $$t"; bats "$$t" || echo "$$t" >> "$$fails"; done; \
+			while IFS= read -r t; do echo "[run] $$t"; bats "$$t" </dev/null || echo "$$t" >> "$$fails"; done; \
 		if [ -s "$$fails" ]; then { echo ""; echo "✗ 失敗した bats:"; sed 's/^/  /' "$$fails"; } >&2; rm -f "$$fails"; exit 1; fi; \
 		rm -f "$$fails"; \
 	else \
