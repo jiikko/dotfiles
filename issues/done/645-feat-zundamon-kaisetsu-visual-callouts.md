@@ -1,6 +1,5 @@
 # 645 (feat): zundamon-kaisetsu の画面に、字幕以外の図解の要素 (重要語の大写し・比較カード・コード・図) を出す
 
-> 🚨 **担当中: pj-energy-matching-d6**（2026-10-07〜）
 
 起票日: 2026-10-07
 
@@ -116,7 +115,7 @@ zundamon-kaisetsu の動画は、映像が「字幕・2 人の立ち絵・表情
     変異 7 本 (行・言語名を重複除去の鍵から外す / `\r` を通す / 空行の判定を最後の行だけにする / 言語名を必須にする /
     JSON のキー名を変える / 言語名を文字数で数える) が想定のテストで red。
     記録のみ: ASCII 以外の半角幅の記号 (`→` 等) も 2 と数えるので、少し早めに止まる (安全側) / `highlight: null` は止まる
-- [ ] 4 (図)
+- [x] 4 (図)
   - [x] 画像ファイル — commit「feat(zundamon-kaisetsu): 台本の show で図 (画像ファイル) を出す (issue 645 の 4)」
     - `show: {"type": "image", "src": "パス", "alt": "1 文"}`。src は台本からの相対か ~ 始まりで、PNG / JPEG だけ。loadScript では形だけを
       見て、画像は assemble の頭で読み (synth / kana を止めない)、data URI にして埋め込む (手元のパスは HTML に残さない)。MIME は中身から決める

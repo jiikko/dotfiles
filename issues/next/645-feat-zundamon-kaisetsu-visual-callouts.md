@@ -1,1 +1,0 @@
-../645-feat-zundamon-kaisetsu-visual-callouts.md
