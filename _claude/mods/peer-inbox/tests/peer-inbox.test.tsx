@@ -2,10 +2,11 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 // テストの $ の下には engine の実装が無いので、配送の最下段と時計を自分で敷く。
-const floor = (on: On) => {
+const floor = (on: On, deliver = true) => {
   mock.clock(on, { now: Date.UTC(2026, 9, 7, 3, 4) })
   on('session.receive', (_$, e) => ({ text: e.text }))
-  on('session.send', () => ({ isDelivered: true as const }))
+  // 配送の底: deliver=false で「宛先が無い」失敗を演じる (底は最初の $ の呼び出しより前に登録する必要がある)
+  on('session.send', () => (deliver ? { isDelivered: true as const } : { isDelivered: false as const, reason: 'nobody by that name' }))
   // 帯に出すものが無いとき mod は next(e) で engine に譲る。その engine の答え (何も描かない)。
   on('ui.render', () => ({ type: 'engine' as const, ref: 0 }))
 }
@@ -28,12 +29,28 @@ test('受信した peer message が帯に出て、既読で色が落ちる', asy
   await $.session.send({ to: 'obaket-2', text: 'どうぞ', origin: { kind: 'model' } as never })
 
   const ui = await $.ui.mount({ plugin: 'peer-inbox', surface: 'terminal', ...BAND })
-  expect(await ui.find({ type: 'Text', text: /他セッション 2 件 \(未読 1\)/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /他セッション 2 件$/ })).toBeDefined() // 返信が完了したので未読は残らない
   expect(await ui.find({ type: 'Text', text: /issue 803 は私が持っています 進めてよいですか/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /⇨ obaket-2/ })).toBeDefined()
+  await ui.unmount()
+})
 
+test('返信なしなら未読が残り、「既読」ボタンで消える', async ($, on) => {
+  floor(on)
+  await $.session.receive({ origin: { kind: 'peer' }, text: 'まだ返していない' })
+  const ui = await $.ui.mount({ plugin: 'peer-inbox', surface: 'terminal', ...BAND })
+  expect(await ui.find({ type: 'Text', text: /他セッション 1 件 \(未読 1\)/ })).toBeDefined()
   await ui.press({ key: 'read' })
   expect(await ui.find({ type: 'Text', text: /未読/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('返信の配送に失敗したら未読のまま', async ($, on) => {
+  floor(on, false)
+  await $.session.receive({ origin: { kind: 'peer' }, text: 'ping' })
+  await $.session.send({ to: 'ghost', text: '返信', origin: { kind: 'model' } as never })
+  const ui = await $.ui.mount({ plugin: 'peer-inbox', surface: 'terminal', ...BAND })
+  expect(await ui.find({ type: 'Text', text: /\(未読 1\)/ })).toBeDefined()
   await ui.unmount()
 })
 

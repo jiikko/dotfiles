@@ -46,13 +46,15 @@ export const register: Register = on => {
   }).catch(($, e, next) => (next.called ? next(e) : next(e)))
 
   on('session.send', async ($, e, next) => {
-    if (e.agentId === undefined) {
-      // Claude が返信した = 受信箱を読んで処理した、とみなして受信分を既読にする (人が「既読」を押す必要を無くす。
-      // 送り元の名前は受信側の origin から確実に取れないので、宛先で絞らず受信分をまとめて既読にする)
+    if (e.agentId !== undefined) return next(e)
+    const r = await next(e)
+    if (r.isDelivered) {
+      // Claude が受信して返信を完了した (配送が成功した) 時点で、受信分を既読にする (人が「既読」を押す必要を無くす。
+      // 送り元の名前は受信側の origin から確実に取れないので、宛先で絞らず受信分をまとめて既読にする)。配送に失敗したら未読のまま
       await update($, items, l => (l ?? []).map(i => (i.dir === 'in' ? { ...i, isRead: true } : i)))
-      await push($, { dir: 'out', who: e.to, text: oneLine(e.text), at: await $.clock.now(), isRead: true })
     }
-    return next(e)
+    await push($, { dir: 'out', who: e.to, text: oneLine(e.text), at: await $.clock.now(), isRead: true })
+    return r
   }).catch(($, e, next) => (next.called ? next(e) : next(e)))
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
