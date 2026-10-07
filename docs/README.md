@@ -38,6 +38,7 @@ glogx の画面のうち、**複数 repo をこの規約に寄せる** / **書�
 |---|---|---|
 | [`issues-viewer-spec.md`](issues-viewer-spec.md) | glogx の issues viewer (`i` キー) が `issues/` をどう解釈するか | repo を寄せるための契約。読み方だけでなく、なぜその読み方かを実測つきで |
 | [`glogx-ui-guide.md`](glogx-ui-guide.md) | tuikit を使う TUI (glogx 全画面と pro-con) に共通する操作感とキー語彙 (vim 層 / emacs 別名層 / 動作層、開閉・破壊的操作・案内の規律、`J`/`K` 項目送り、入力欄の編集キー、pro-con の例外、tuikit の部品の地図と通知の語彙) | 新しいキーを足す / 画面を足す / tuikit の部品を足す前に読む。個別キーの一覧は `src/glogx/README.md` |
+| [`glogx-filer-spec.md`](glogx-filer-spec.md) | glogx の内蔵ファイラー (`F` キー。**未実装**、issue 662)。treebeard を写す | §0 が glogx での決定 (変える所・組み込み先・未決)、§1〜10 が treebeard のソースから抜いた配色・線・レイアウト・ばねの定数・キー・設定 |
 | [`status-viewer-spec.md`](status-viewer-spec.md) | glogx の status viewer (`s` キー) の stage / unstage | **write する画面**なので「何を絶対にしないか」が本体 |
 | [`macos-health-check.md`](macos-health-check.md) | glogx に足す予定のヘルスチェック画面 (`H` キー。**未実装**) が見る項目 | 画面の前段の情報源。項目・取得コマンド・判定と、コマンドごとの stdout / stderr / rc の実測 (macOS 27.0)。壊れていないかに加えて、推奨の設定 (CIS 由来のログイン・共有、Homebrew・Brewfile・CLT などの開発環境) になっているかも。点数を付ける方針 (健康と設定で分ける・判定不能は数えない) と `D` の doctor との境界も |
 
