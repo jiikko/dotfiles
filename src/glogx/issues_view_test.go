@@ -2622,7 +2622,7 @@ func TestIssuesViewerBodyModeIClosesViewer(t *testing.T) {
 
 // R は一覧モードでも本文モードでも ratelimit ダッシュボードへ横断する (ユーザー要望 2026-09-01)。
 // s (status への横断) と同じ扱いで、viewer は閉じてから browseModel が開く (全画面は同時に 1 枚)。
-// 🚨 本文モードも見る: case が無いと default の pagerScrollKey へ落ちて無音になる (issue 122 と同型)。
+// 🚨 本文モードも見る: 横断の表引きが一覧の switch の中にあると、本文は pagerScrollKey へ落ちて無音になる (issue 122 と同型)。
 func TestIssuesViewerRSwitchesToRatelimitDash(t *testing.T) {
 	t.Run("一覧モード", func(t *testing.T) {
 		v := loadedView(realIssue(t))
@@ -2630,7 +2630,7 @@ func TestIssuesViewerRSwitchesToRatelimitDash(t *testing.T) {
 			t.Fatal("前提が崩れた: 一覧モードでない")
 		}
 		v.handleKey("R", vp(20))
-		if !v.takeWantRatelimit() {
+		if v.takeWantCross() != fullScreenRatelimit {
 			t.Error("一覧モードの R でダッシュボードへの横断を要求しない")
 		}
 		if !v.closing && v.shown {
@@ -2643,8 +2643,8 @@ func TestIssuesViewerRSwitchesToRatelimitDash(t *testing.T) {
 		if v.body == nil {
 			t.Fatal("前提が崩れた: 本文が開いていない")
 		}
-		v.handleBodyKey("R", issuesViewport{width: 80, page: 20}, 20)
-		if !v.takeWantRatelimit() {
+		v.handleKey("R", vp(20))
+		if v.takeWantCross() != fullScreenRatelimit {
 			t.Error("本文モードの R でダッシュボードへの横断を要求しない (--help の案内が嘘になる)")
 		}
 		if !v.closing && v.shown {
@@ -2654,9 +2654,9 @@ func TestIssuesViewerRSwitchesToRatelimitDash(t *testing.T) {
 	// 一度きりの信号 (takeNotice と同じ語彙。取り出した後は落ちている)
 	v := loadedView(realIssue(t))
 	v.handleKey("R", vp(20))
-	v.takeWantRatelimit()
-	if v.takeWantRatelimit() {
-		t.Error("takeWantRatelimit が 2 回 true を返す (横断が二重に起きる)")
+	v.takeWantCross()
+	if v.takeWantCross() != fullScreenNone {
+		t.Error("takeWantCross が 2 回横断先を返す (横断が二重に起きる)")
 	}
 }
 

@@ -50,6 +50,14 @@ silent。
 
 ## 進捗
 
-- [ ] `D` を横断の対象に入れるかを決める
-- [ ] 横断キーの表と `crossTo` に寄せる
-- [ ] 全モード × 横断キーの表駆動テストを置き、1 か所の列挙を外す変異で red を確認
+- [x] `D` を横断の対象に入れる (ui-guide §2 の「どの画面からも」に合わせた)
+- [x] 横断キーの表 `crossTarget` と開く側 `openFullScreen` (exhaustive な switch) を fullscreen.go に置き、issues / status / ratelimit / doctor の
+  4 画面が同じ表を引く。各画面の `want*` の bool は `wantCross fullScreenID` 1 本に、ratelimit の `rlDashIssues` / `rlDashStatus` は `rlDashCross` に、
+  doctor には `doctorCross` を足した。一覧からの `i` / `s` / `R` / `D` も `openFullScreen` を通す
+  - 表を引くのは各画面が自分でキーを解釈し切るモード (確認・pager・入力・削除の実行中) を抜けた後だけ (反証レビューで確かめた既存の設計判断を保つ)
+  - issues は一覧・本文の両方から効くよう、表引きをモード分岐の手前 (`actionKey` の前) に置いた。以前の本文側の `s` / `R` の case は削除
+- [x] ui-guide §2 に表の在り処と「解釈し切るモードでは効かない」を書いた
+- [x] 回帰: `TestCrossKeysReachEveryFullScreen` (全画面 4 × 横断キー 4、自分のキーは閉じる)。全画面の ID が増えたら開くキーの追加を促して落ちる
+  - 変異: 表から `D` を消す → issues / status / ratelimit の 3 件が red / doctor の表引きを外す → doctor の i / s / R の 3 件が red
+- `make -C src/glogx test` rc=0 (2026-10-08)
+- [ ] 敵対的レビュー (663〜667 をまとめて)

@@ -1610,13 +1610,12 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// R = 全画面 ratelimit ダッシュボード。U と同じ判定位置に置く (モーダル・prefix・実行中
 	// ガードの後) — 先頭に置くと push/pull 確認を素通りする footgun が同じ形で起きる。
 	if key == "R" {
-		return m, m.toggleRatelimitDash()
+		return m, m.openFullScreen(fullScreenRatelimit)
 	}
 	// D = 全画面 doctor (issue 148)。R と同じ判定位置 (モーダル・prefix・実行中ガードの後)。
 	// 開いた時にスキャンが始まる (起動時には走査しない)。
 	if key == "D" {
-		m.usageOv.dismiss()
-		return m, tea.Batch(m.doctorOv.toggle(), m.maybeTick())
+		return m, m.openFullScreen(fullScreenDoctor)
 	}
 	m.usageOv.dismiss()
 	// diff ポップアップ表示中はスクロール/閉じる操作だけを受ける (最前面のモーダル)
@@ -1631,12 +1630,12 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// だけ受ける: job パネル/詳細を開いているときはそちらの語彙を優先する。初回だけ非同期で
 	// スキャンし、以降は結果を保持したまま開閉する (再スキャンは viewer 内の r)。
 	if key == "i" && m.panelSHA == "" {
-		return m, tea.Batch(m.issuesOv.toggle(currentDir()), m.maybeTick())
+		return m, m.openFullScreen(fullScreenIssues)
 	}
 	// s = status viewer を開く (全画面。規約は docs/status-viewer-spec.md)。i と同じく一覧表示中
 	// だけ受ける: job パネル/詳細を開いているときはそちらの語彙を優先する。
 	if key == "s" && m.panelSHA == "" {
-		return m, tea.Batch(m.statusOv.toggle(), m.maybeTick())
+		return m, m.openFullScreen(fullScreenStatus)
 	}
 	// b = push / u = pull --rebase (どちらも y/N 確認へ)。glogx の独自機能。
 	// diff 表示中は b = 半ページ戻るなので、diff のディスパッチより後で拾う
@@ -1783,6 +1782,9 @@ func (m *browseModel) routeKeyToDoctor(key string) (tea.Model, tea.Cmd) {
 	case doctorRunDelete:
 		// 削除 (と、その下見) は doctorView が組んだ Cmd をそのまま走らせる
 		return m, tea.Batch(m.doctorOv.takeDeleteCmd(), m.maybeTick())
+	case doctorCross:
+		// 横断 (i / s / R)。doctor は handleKey が閉じ済み (演出なし) なので、そのまま開いてよい
+		return m, m.openFullScreen(m.doctorOv.takeWantCross())
 	case doctorSwallow:
 	}
 	return m, m.maybeTick()
@@ -1799,7 +1801,7 @@ func (m *browseModel) routeKeyToRatelimitDash(key string) (tea.Model, tea.Cmd) {
 		return m, m.maybeTick()
 	case rlDashRefresh:
 		return m, tea.Batch(m.usageOv.fetchNowCmd(), m.maybeTick())
-	// i / s = viewer へ横断 (viewer 側の R と対。ユーザー要望 2026-09-01)。handleKey が
+	// i / s / D = 他の全画面へ横断 (viewer 側の R と対。ユーザー要望 2026-09-01)。handleKey が
 	// 既に閉じているので、issues ↔ status の横断と同じく閉じ演出は待たずに即着地する。
 	// 🚨 toggle を呼ぶので、ここへ来る時点で相手の viewer が開いていないこと (全画面は
 	// 同時に 1 枚) が前提。開いていると toggle が「開く」でなく「閉じる」に化ける。起動時
@@ -1812,10 +1814,8 @@ func (m *browseModel) routeKeyToRatelimitDash(key string) (tea.Model, tea.Cmd) {
 	// した状態で、閉じれば元のパネルがそのまま描き直される。🚨 逆にガードを付けると、
 	// パネルを開いたまま R → i が無音の no-op になる (issue 122 が禁じた形)。
 	// パネル側の状態を viewer が読むようになったら、この判断を再評価すること。
-	case rlDashIssues:
-		return m, tea.Batch(m.issuesOv.toggle(currentDir()), m.maybeTick())
-	case rlDashStatus:
-		return m, tea.Batch(m.statusOv.toggle(), m.maybeTick())
+	case rlDashCross:
+		return m, m.openFullScreen(m.rlDash.takeWantCross())
 	case rlDashSwallow:
 		// 閉じる / 更新 / 横断以外は握り潰す (下の return へ落ちる)
 	}
@@ -1850,18 +1850,11 @@ func (m *browseModel) routeKeyToIssues(key string) (tea.Model, tea.Cmd) {
 	if m.issuesOv.takeWantQuit() {
 		return m.quit()
 	}
-	// s = status viewer へ横断 (ユーザー要望 2026-08-06)。閉じる演出は待たず即着地させる:
+	// 横断 (s / R / D。表は crossTarget。ユーザー要望 2026-08-06 / 2026-09-01)。閉じる演出は待たず即着地させる:
 	// 全画面 viewer は同時に 1 枚の前提で、閉じ演出と次の開き演出を重ねない
-	if m.issuesOv.takeWantStatus() {
+	if target := m.issuesOv.takeWantCross(); target != fullScreenNone {
 		m.issuesOv.finishClose()
-		return m, tea.Batch(cmd, m.statusOv.toggle(), m.maybeTick())
-	}
-	// R = ratelimit ダッシュボードへ横断 (ユーザー要望 2026-09-01)。s と同じ経路で、
-	// 閉じ演出を待たず即着地させる (全画面は同時に 1 枚)。取得の起こし方は一覧の R と
-	// 同じ toggleRatelimitDash に委ねる (single-flight ガードを 1 か所に保つ)。
-	if m.issuesOv.takeWantRatelimit() {
-		m.issuesOv.finishClose()
-		return m, tea.Batch(cmd, m.toggleRatelimitDash())
+		return m, tea.Batch(cmd, m.openFullScreen(target))
 	}
 	return m, tea.Batch(cmd, m.maybeTick())
 }
@@ -1905,15 +1898,10 @@ func (m *browseModel) routeKeyToStatus(key string) (tea.Model, tea.Cmd) {
 	if m.statusOv.takeWantQuit() {
 		return m.quit()
 	}
-	// i = issues viewer へ横断 (ユーザー要望 2026-08-06)。issues 側の s と対 (即着地も同じ理由)
-	if m.statusOv.takeWantIssues() {
+	// 横断 (i / R / D。issues 側と同じ経路で、即着地も同じ理由)
+	if target := m.statusOv.takeWantCross(); target != fullScreenNone {
 		m.statusOv.finishClose()
-		return m, tea.Batch(cmd, m.issuesOv.toggle(currentDir()), m.maybeTick())
-	}
-	// R = ratelimit ダッシュボードへ横断 (issues 側の R と同じ。ユーザー要望 2026-09-01)
-	if m.statusOv.takeWantRatelimit() {
-		m.statusOv.finishClose()
-		return m, tea.Batch(cmd, m.toggleRatelimitDash())
+		return m, tea.Batch(cmd, m.openFullScreen(target))
 	}
 	return m, tea.Batch(cmd, m.maybeTick())
 }

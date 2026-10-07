@@ -284,3 +284,37 @@ func TestFullScreenDrawingGoesThroughTheRegistry(t *testing.T) {
 			outside, outsideAt)
 	}
 }
+
+// 横断キー (crossTarget の表) は、どの全画面からも同じ板へ飛ぶ (docs/glogx-ui-guide.md §2)。
+// 全画面 4 枚 × 横断キー 4 本を、一覧から開いた状態で押して確かめる。自分自身のキーは閉じる (toggle)。
+// 🚨 issue 664: 以前は画面ごとの手書きの列挙で、D はどの viewer からも、i / s / R は doctor から
+// 無言で捨てられていた。
+func TestCrossKeysReachEveryFullScreen(t *testing.T) {
+	openKey := map[fullScreenID]string{
+		fullScreenIssues: "i", fullScreenStatus: "s", fullScreenRatelimit: "R", fullScreenDoctor: "D",
+	}
+	if len(openKey) != int(fullScreenCount)-1 {
+		t.Fatalf("全画面の ID が増えた (%d 枚): openKey に開くキーを足すこと", int(fullScreenCount)-1)
+	}
+	for from, fromKey := range openKey {
+		for to, toKey := range openKey {
+			m := newTestBrowse(t, 1, map[string]CIState{}, nil)
+			m.width, m.height = 100, 30
+			m.doctorOv = *doctorTestView(t) // 実ディスクを走査しない
+			m.handleKey(fromKey)
+			m.issuesOv.finishAnim()
+			if got := m.activeFullScreen(); got != from {
+				t.Fatalf("前提が崩れた: %s で %v が開かない (active=%v)", fromKey, from, got)
+			}
+			releaseKey(m)
+			m.handleKey(toKey)
+			want := to
+			if to == from {
+				want = fullScreenNone // 自分のキーは閉じる
+			}
+			if got := m.activeFullScreen(); got != want {
+				t.Errorf("%v で %s を押した: active=%v, want %v", from, toKey, got, want)
+			}
+		}
+	}
+}

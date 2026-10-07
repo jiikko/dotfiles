@@ -1372,7 +1372,7 @@ func TestStatusHintWordsMatchBehavior(t *testing.T) {
 }
 
 // R は ratelimit ダッシュボードへ横断する (i と対。ユーザー要望 2026-09-01)。viewer は閉じ、
-// 実際に開くのは browseModel (takeWantRatelimit)。
+// 実際に開くのは browseModel (takeWantCross)。
 // 🚨 hint の案内は**広い端末でだけ**出る (issue 155 で幅に応じて落とすようにしたため。popup の
 // 実幅では優先度の低い R は落ちる)。狭い幅での正本は --help / README。
 func TestStatusRSwitchesToRatelimitDash(t *testing.T) {
@@ -1380,11 +1380,11 @@ func TestStatusRSwitchesToRatelimitDash(t *testing.T) {
 
 	v.handleKey("R", statusViewport{page: 20})
 
-	if !v.takeWantRatelimit() {
+	if v.takeWantCross() != fullScreenRatelimit {
 		t.Error("R でダッシュボードへの横断を要求しない")
 	}
-	if v.takeWantRatelimit() {
-		t.Error("takeWantRatelimit が 2 回 true を返す (横断が二重に起きる)")
+	if v.takeWantCross() != fullScreenNone {
+		t.Error("takeWantCross が 2 回横断先を返す (横断が二重に起きる)")
 	}
 	if !v.closing && v.shown {
 		t.Error("R で viewer が閉じない (全画面は同時に 1 枚)")

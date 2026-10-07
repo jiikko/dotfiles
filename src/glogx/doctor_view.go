@@ -61,6 +61,8 @@ const numDoctorTabs = 5
 
 type doctorView struct {
 	shown bool
+	// wantCross は横断先 (doctorCross を返したときだけ意味を持つ。takeWantCross で取り出す)
+	wantCross fullScreenID
 	// tab は表示中のタブ。tabCur はタブごとのカーソル (切り替えても位置が戻る)
 	tab    doctorTab
 	tabCur [numDoctorTabs]rowCursor
@@ -459,6 +461,7 @@ const (
 	doctorToast     // 削除の導線が理由を出したい (pendingToast)
 	doctorCopyLog   // 削除の実行記録をコピー (y。トーストの文言が「解説」ではないので分ける)
 	doctorRunDelete // 削除を開始する (pendingDeleteCmd を browseModel が実行する)
+	doctorCross     // 別の全画面へ横断 (doctor は閉じ済み。行き先は takeWantCross)
 )
 
 // jumpIntoDetail は Enter で開いた直後に、カーソルを**その中の最初の対象パス**へ移す。
@@ -569,6 +572,13 @@ func (v *doctorView) takeToast() string {
 	return t
 }
 
+// takeWantCross は横断先 (無ければ fullScreenNone) を一度だけ取り出す (viewer と同じ語彙)。
+func (v *doctorView) takeWantCross() fullScreenID {
+	want := v.wantCross
+	v.wantCross = fullScreenNone
+	return want
+}
+
 // copyPayload は直近の y / Y でコピーする文字列 (handleKey がセットし、browseModel が取り出す)。
 func (v *doctorView) copyPayload() string { return v.pendingCopy }
 
@@ -577,6 +587,13 @@ func (v *doctorView) handleKey(key string, page int) doctorAction {
 	// (確認中の y が「コピー」に化けない / 実行中に別の行へ移動できない)
 	if act, taken := v.handleDeleteKey(key); taken {
 		return act
+	}
+	// 横断キー (i / s / R。表は crossTarget)。D は自分自身なので下の「閉じる」に任せる。
+	// 削除の確認・実行中は上で飲まれるのでここまで届かない
+	if target, ok := crossTarget(key); ok && target != fullScreenDoctor {
+		v.close()
+		v.wantCross = target
+		return doctorCross
 	}
 	switch key {
 	case " ":

@@ -21,6 +21,8 @@ import (
 // ratelimitDash は全画面ダッシュボードの表示状態。
 type ratelimitDash struct {
 	shown bool
+	// wantCross は横断先 (rlDashCross を返したときだけ意味を持つ。takeWantCross で取り出す)
+	wantCross fullScreenID
 	// 盤の描画結果のメモ (issue 275)。viewLines は毎 View で lines を呼び、
 	// usage.RenderDashboard はセル数 (幅 x 高) に比例して braille のスライスを確保し直すので、
 	// 12.5fps で回ると 1 フレーム 1065 allocs / 239KB (120x40 実測) がそのまま乗る。
@@ -153,13 +155,12 @@ const (
 	rlDashSwallow rlDashAction = iota
 	rlDashClosed               // 閉じた (裏の画面へ戻る)
 	rlDashRefresh              // 今すぐ取り直す (取得は browseModel が起こす)
-	rlDashIssues               // issues viewer へ横断 (このダッシュボードは閉じ済み)
-	rlDashStatus               // status viewer へ横断 (同上)
+	rlDashCross                // 別の全画面へ横断 (このダッシュボードは閉じ済み。行き先は takeWantCross)
 )
 
 // handleKey はダッシュボードが飲むキー。
 //
-// i / s は issues / status viewer への横断 (ユーザー要望 2026-09-01)。viewer 側の R と対で、
+// i / s / D は他の全画面への横断 (ユーザー要望 2026-09-01。表は crossTarget)。viewer 側の R と対で、
 // 全画面どうしを往復できる。🚨 横断でも自分は必ず閉じる: 全画面は同時に 1 枚の前提で、
 // 重ねると「見えている画面」と「キーを受ける画面」が食い違う (issues ↔ status と同じ作法)。
 func (d *ratelimitDash) handleKey(key string) rlDashAction {
@@ -169,14 +170,21 @@ func (d *ratelimitDash) handleKey(key string) rlDashAction {
 		return rlDashClosed
 	case "r":
 		return rlDashRefresh
-	case "i":
+	}
+	// 横断キー (i / s / D。表は crossTarget)。R は自分自身なので上の「閉じる」に任せる
+	if target, ok := crossTarget(key); ok && target != fullScreenRatelimit {
 		d.close()
-		return rlDashIssues
-	case "s":
-		d.close()
-		return rlDashStatus
+		d.wantCross = target
+		return rlDashCross
 	}
 	return rlDashSwallow
+}
+
+// takeWantCross は横断先 (無ければ fullScreenNone) を一度だけ取り出す (viewer と同じ語彙)。
+func (d *ratelimitDash) takeWantCross() fullScreenID {
+	want := d.wantCross
+	d.wantCross = fullScreenNone
+	return want
 }
 
 // centerLine は幅 w の中で s を中央寄せする (左余白のみ)。

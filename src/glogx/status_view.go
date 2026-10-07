@@ -81,11 +81,9 @@ type statusView struct {
 	notice     string
 	noticeKind noticeKind
 
-	// wantIssues は「i で issues viewer へ切り替えたい」の一度きりの信号 (browseModel が
-	// takeWantIssues で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。
-	wantIssues bool
-	// wantRatelimit は「R で ratelimit ダッシュボードへ切り替えたい」の一度きりの信号 (同上)。
-	wantRatelimit bool
+	// wantCross は横断キー (crossTarget) で「別の全画面へ切り替えたい」の一度きりの信号 (browseModel が
+	// takeWantCross で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。fullScreenNone = 無し
+	wantCross fullScreenID
 	// wantQuit は「q/esc で glogx ごと終了したい」の一度きりの信号 (同上。quit は browseModel の
 	// 仕事で、viewer は tea.Quit を出さない)。
 	wantQuit bool
@@ -701,6 +699,13 @@ func (v *statusView) pagerKeyPress(key string, vp statusViewport) tea.Cmd {
 // listKey は一覧のキー。
 func (v *statusView) listKey(key string, vp statusViewport) tea.Cmd {
 	rows := max(vp.page-1, 1)
+	// 横断キー (i / R / D。表は crossTarget)。s は自分自身なので下の toggle (閉じる) に任せる。
+	// 確認中 (X) や pager 中はこの関数まで届かないので誤爆しない (handleKey の判定順)
+	if target, ok := crossTarget(key); ok && target != fullScreenStatus {
+		v.close()
+		v.wantCross = target
+		return nil
+	}
 	switch key {
 	case "tab":
 		return v.jumpSection()
@@ -736,18 +741,6 @@ func (v *statusView) listKey(key string, vp statusViewport) tea.Cmd {
 		// s が閉じるのは toggle の語彙 (i = issues viewer と同じ)。
 		v.close()
 		return nil
-	case "i":
-		// issues viewer への横断 (ユーザー要望 2026-08-06)。閉じてから開くのは browseModel の
-		// 仕事 (takeWantIssues)。確認中 (X) や pager 中はこの switch まで届かないので誤爆しない
-		v.close()
-		v.wantIssues = true
-		return nil
-	case "R":
-		// ratelimit ダッシュボードへの横断 (ユーザー要望 2026-09-01)。i と同じ扱い
-		// (全画面どうしの入れ替えなので閉じてから開く)。ダッシュボード側の s と対で往復できる
-		v.close()
-		v.wantRatelimit = true
-		return nil
 	}
 	return v.applyMotion(listnav.MotionOf(key), rows) // 移動の語彙 (j/k/g/G/半ページ) は listnav が持つ
 }
@@ -772,17 +765,10 @@ func (v *statusView) applyMotion(m listnav.Motion, rows int) tea.Cmd {
 	return nil
 }
 
-// takeWantIssues は「i で issues viewer へ切り替えたい」を一度だけ取り出す (takeNotice と同じ語彙)。
-func (v *statusView) takeWantIssues() bool {
-	want := v.wantIssues
-	v.wantIssues = false
-	return want
-}
-
-// takeWantRatelimit は「R で ratelimit ダッシュボードへ切り替えたい」を一度だけ取り出す。
-func (v *statusView) takeWantRatelimit() bool {
-	want := v.wantRatelimit
-	v.wantRatelimit = false
+// takeWantCross は横断先 (無ければ fullScreenNone) を一度だけ取り出す (takeNotice と同じ語彙)。
+func (v *statusView) takeWantCross() fullScreenID {
+	want := v.wantCross
+	v.wantCross = fullScreenNone
 	return want
 }
 

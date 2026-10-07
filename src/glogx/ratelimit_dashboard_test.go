@@ -148,16 +148,19 @@ func TestRatelimitDashHandleKey(t *testing.T) {
 	if !d.visible() {
 		t.Error("r で閉じてしまった")
 	}
-	// i / s は viewer への横断 (ユーザー要望 2026-09-01)。🚨 横断でも自分は閉じる:
+	// i / s / D は他の全画面への横断 (ユーザー要望 2026-09-01)。🚨 横断でも自分は閉じる:
 	// 開いたまま viewer を開くと「見えている画面」と「キーを受ける画面」が食い違う。
 	for _, tc := range []struct {
 		key  string
-		want rlDashAction
-	}{{"i", rlDashIssues}, {"s", rlDashStatus}} {
+		want fullScreenID
+	}{{"i", fullScreenIssues}, {"s", fullScreenStatus}, {"D", fullScreenDoctor}} {
 		var d ratelimitDash
 		d.toggle()
-		if got := d.handleKey(tc.key); got != tc.want {
-			t.Errorf("%q: action=%v, want %v", tc.key, got, tc.want)
+		if got := d.handleKey(tc.key); got != rlDashCross {
+			t.Errorf("%q: action=%v, want rlDashCross", tc.key, got)
+		}
+		if got := d.takeWantCross(); got != tc.want {
+			t.Errorf("%q: 横断先=%v, want %v", tc.key, got, tc.want)
 		}
 		if d.visible() {
 			t.Errorf("%q の横断でダッシュボードが閉じていない", tc.key)

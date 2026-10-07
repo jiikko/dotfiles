@@ -186,11 +186,9 @@ type issuesView struct {
 	// pushSlides と同じ方式)。演出中の tick 周期は tickInterval が上げる (slideAnimating)。
 	// 閉じる演出 (closing) でも同じ時計を使う — 開く演出の逆再生なので所要も同じ。
 	animStart time.Time
-	// wantStatus は「s で status viewer へ切り替えたい」の一度きりの信号 (browseModel が
-	// takeWantStatus で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。
-	wantStatus bool
-	// wantRatelimit は「R で ratelimit ダッシュボードへ切り替えたい」の一度きりの信号 (同上)。
-	wantRatelimit bool
+	// wantCross は横断キー (crossTarget) で「別の全画面へ切り替えたい」の一度きりの信号 (browseModel が
+	// takeWantCross で取り出す。閉じ→開きの連携は viewer 単体では完結しないため)。fullScreenNone = 無し
+	wantCross fullScreenID
 	// wantQuit は「q/esc で glogx ごと終了したい」の一度きりの信号 (同上。quit は browseModel の
 	// 仕事で、viewer は tea.Quit を出さない)。
 	wantQuit bool
@@ -459,17 +457,10 @@ func (v *issuesView) animating() bool {
 	return v.slideAnimating()
 }
 
-// takeWantStatus は「s で status viewer へ切り替えたい」を一度だけ取り出す (takeNotice と同じ語彙)。
-func (v *issuesView) takeWantStatus() bool {
-	want := v.wantStatus
-	v.wantStatus = false
-	return want
-}
-
-// takeWantRatelimit は「R で ratelimit ダッシュボードへ切り替えたい」を一度だけ取り出す。
-func (v *issuesView) takeWantRatelimit() bool {
-	want := v.wantRatelimit
-	v.wantRatelimit = false
+// takeWantCross は横断先 (無ければ fullScreenNone) を一度だけ取り出す (takeNotice と同じ語彙)。
+func (v *issuesView) takeWantCross() fullScreenID {
+	want := v.wantCross
+	v.wantCross = fullScreenNone
 	return want
 }
 
@@ -1443,6 +1434,14 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 			return cmd
 		}
 	}
+	// 横断キー (s / R / D) は一覧・本文のどちらからも効く (表は crossTarget)。選択・絞り込みの 1 段戻りは
+	// しない (別の画面を見たい意図が明確なため)。i は自分自身なので下の toggle (閉じる) に任せる。
+	// 確認モーダル・URL ピッカー・番号入力中はここまで届かないので誤爆しない
+	if target, ok := crossTarget(key); ok && target != fullScreenIssues {
+		v.close()
+		v.wantCross = target
+		return nil
+	}
 	// モードに依らないアクションキーは先に飲む (対象は target() が一覧/本文で切り替える)
 	if cmd, ok := v.actionKey(key); ok {
 		return cmd
@@ -1470,19 +1469,6 @@ func (v *issuesView) handleKey(key string, vp issuesViewport) tea.Cmd {
 	case "i":
 		// i は toggle で一覧へ戻る (閉じる意図が明確なので 1 段戻りはしない)
 		v.close()
-	case "s":
-		// status viewer への横断 (ユーザー要望 2026-08-06)。q/esc と違い選択・絞り込みの
-		// 1 段戻りはしない (「status を見たい」意図が明確なため)。確認モーダル・URL ピッカー・
-		// 番号入力中はここまで届かないので誤爆しない。閉じ→開きは browseModel (takeWantStatus)
-		v.close()
-		v.wantStatus = true
-	case "R":
-		// ratelimit ダッシュボードへの横断 (ユーザー要望 2026-09-01)。s と同じ扱い
-		// (全画面どうしの入れ替えなので閉じてから開く)。ダッシュボード側の i と対で往復できる。
-		// 🚨 hint には入れない (1 行が popup 実幅に詰まっている。i と同じ理由で --help と
-		// README が正本。issues_view.go:hint の注記)
-		v.close()
-		v.wantRatelimit = true
 	case "u":
 		// 🚨 黙って無視しない。u は git log 一覧では pull、本文では URL ピッカー、status viewer では
 		// 「pull は p です」を返す — 一覧だけ無音だと「押したのに何も起きない」= 壊れて見える
@@ -1684,15 +1670,6 @@ func (v *issuesView) handleBodyKey(key string, vp issuesViewport, rows int) tea.
 		// 🚨 本文だけ畳む 1 段戻りにはしない: それは Enter / q / h が既に持っている語彙で、
 		//   README の「i で閉じて一覧へ戻る」とも食い違う。
 		v.close()
-	case "s":
-		// status viewer への横断は本文からも効く (一覧の s と同じ。--help が「viewer 内のキー」
-		// として案内しており、本文だけ沈黙すると案内が嘘になる)
-		v.close()
-		v.wantStatus = true
-	case "R":
-		// ratelimit ダッシュボードへの横断も本文から効く (s と同じ理由)
-		v.close()
-		v.wantRatelimit = true
 	case "u":
 		v.openURLPicker()
 	case "tab":

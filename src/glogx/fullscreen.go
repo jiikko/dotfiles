@@ -1,5 +1,7 @@
 package main
 
+import tea "charm.land/bubbletea/v2"
+
 // 「今どの全画面ビューアが出ているか」の単一の出典。
 //
 // 全画面ビューア = 開いている間コミット一覧の窓ごと画面を差し替え、キーを全部飲むもの
@@ -107,3 +109,41 @@ func (m *browseModel) activeFullScreen() fullScreenID {
 
 // fullScreenActive は全画面ビューアが 1 枚でも出ているか。
 func (m *browseModel) fullScreenActive() bool { return m.activeFullScreen() != fullScreenNone }
+
+// crossTarget は横断キー (どの全画面からも同じ板へ飛ぶキー。docs/glogx-ui-guide.md §2) の表。
+// 🚨 横断キーの割当はここだけに書く。以前は画面・モードごとに手で列挙していて、列挙から漏れた
+// 場所 (全 viewer の D / doctor の i s R) では押しても無言で捨てられた (issue 664)。
+// 各画面は「自分でキーを解釈し切るモード (ownsKeys / 確認 / 入力)」を抜けた後にこれを引き、
+// 行き先が自分なら従来どおり自分の閉じる語彙 (toggle) に任せる。
+func crossTarget(key string) (fullScreenID, bool) {
+	switch key {
+	case "i":
+		return fullScreenIssues, true
+	case "s":
+		return fullScreenStatus, true
+	case "R":
+		return fullScreenRatelimit, true
+	case "D":
+		return fullScreenDoctor, true
+	}
+	return fullScreenNone, false
+}
+
+// openFullScreen は全画面ビューア id を開く (一覧からの起動と、横断の着地の両方の唯一の口)。
+// 🚨 呼ぶ時点で他の全画面が閉じていること (全画面は同時に 1 枚。toggle が「開く」でなく
+// 「閉じる」に化ける)。横断元は閉じてから (演出のあるものは finishClose まで済ませてから) 呼ぶ。
+func (m *browseModel) openFullScreen(id fullScreenID) tea.Cmd {
+	switch id {
+	case fullScreenIssues:
+		return tea.Batch(m.issuesOv.toggle(currentDir()), m.maybeTick())
+	case fullScreenStatus:
+		return tea.Batch(m.statusOv.toggle(), m.maybeTick())
+	case fullScreenRatelimit:
+		return m.toggleRatelimitDash()
+	case fullScreenDoctor:
+		m.usageOv.dismiss()
+		return tea.Batch(m.doctorOv.toggle(), m.maybeTick())
+	case fullScreenNone, fullScreenCount:
+	}
+	return nil
+}
