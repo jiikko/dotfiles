@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -312,5 +313,29 @@ func TestShowKeysReadByPlayer(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// TestPlayerPlacesCharsForShowsFromStart は、図解を使う台本では最初から立ち絵を縮めた位置に置くことを確かめる (issue 645)。
+// 図解を出すときだけ縮めると、mp4 は場面ごとの静止画をつなぐので立ち絵が瞬間移動する。印はまとめ撮りの分岐より前に付ける
+// (後ろだと、mp4 の絵では図解が出るまで立ち絵が大きいまま)。
+func TestPlayerPlacesCharsForShowsFromStart(t *testing.T) {
+	tb, err := os.ReadFile(testEnv(t).Template())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tpl := string(tb)
+	if !regexp.MustCompile(`(?m)^\.stage\.has-shows \.char \{[^}]*width: 26%; height: 72%;`).MatchString(tpl) {
+		t.Error("図解を使う台本で立ち絵を縮める CSS (.stage.has-shows .char) が無い")
+	}
+	toggle := regexp.MustCompile(`\$\('stage'\)\.classList\.toggle\('has-shows', !!\(D\.shows && D\.shows\.length\)\)`).FindStringIndex(tpl)
+	sheet := strings.Index(tpl, "location.hash.match(/^#sheet=")
+	switch {
+	case toggle == nil:
+		t.Error("図解の有無で舞台に has-shows を付けていない")
+	case sheet < 0:
+		t.Error("まとめ撮りの分岐が見つからない (テストの前提が変わった)")
+	case toggle[0] > sheet:
+		t.Error("has-shows を付けるのがまとめ撮りの分岐より後ろにある (mp4 では図解が出るまで立ち絵が大きい)")
 	}
 }

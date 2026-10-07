@@ -28,11 +28,10 @@ h1 { font-size: 1.25rem; margin: 0 0 12px; }
 .char.left { left: 1%; } .char.right { right: 1%; }
 .char img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .char.mirror img { transform: scaleX(-1); }
-/* 図解 (行の show) を出している間だけ、立ち絵を縮めて左右の端に寄せ、中央を空ける (issue 645 で配置を決めた) */
-.char { transition: width .25s, height .25s, left .25s, right .25s; }
-html.render .char { transition: none; } /* まとめ撮りは舞台を複製して撮るので、縮む途中を撮らない */
-.stage.showing .char { width: 26%; height: 72%; }
-.stage.showing .char.left { left: 0; } .stage.showing .char.right { right: 0; }
+/* 図解 (行の show) を 1 つでも使う台本では、最初から最後まで立ち絵を縮めて左右の端に寄せ、中央を空けておく (issue 645)。
+   図解を出すときだけ縮めると、mp4 では立ち絵が瞬間移動する (場面ごとの静止画をつなぐので、動きの途中を撮れない) */
+.stage.has-shows .char { width: 26%; height: 72%; }
+.stage.has-shows .char.left { left: 0; } .stage.has-shows .char.right { right: 0; }
 .stage-show { position: absolute; left: 27%; top: 30%; width: 46%; height: 52%; display: flex; align-items: center;
               justify-content: center; z-index: 1; }
 .stage-show:empty { display: none; }
@@ -115,6 +114,7 @@ html.render * { transition: none !important; }
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
+  $('stage').classList.toggle('has-shows', !!(D.shows && D.shows.length)); // まとめ撮りの分岐より前 (複製した舞台にも効く)
   $('title').textContent = D.title; $('stage-title').textContent = D.title; $('stage-date').textContent = D.date ? `作成日 ${D.date}` : ''; $('desc').textContent = D.description;
   for (const c of D.credits) $('credits').append(el('li', null, c));
   for (const ch of D.chapters) {
@@ -163,7 +163,6 @@ html.render * { transition: none !important; }
     if (n === curShow) return;
     curShow = n; const box = $('stage-show'); box.textContent = '';
     const sd = n >= 0 ? D.shows[n] : null;
-    $('stage').classList.toggle('showing', !!sd);
     if (!sd) return;
     if (sd.type === 'keyword') {
       const card = el('div', 'show-card show-keyword', sd.text);
