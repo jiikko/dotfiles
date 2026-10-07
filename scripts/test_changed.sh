@@ -109,22 +109,39 @@ add_shell_targets() {
 # 🚨 grep の rc は 3 分岐する: 0 = 参照あり / 1 = 参照なし / >=2 = 検査できなかった。
 # 「検査できなかった」を「参照なし」に畳むと、テストを回さない方向へ倒れる (= 未検証なのに
 # green)。ここでは安全側 = **回す方**へ倒す (余分なテストが走るだけで害がない)。
-# 🚨 POSIX sh なので local は使えない (SC3043)。変数名を _ref_ 接頭辞で衝突回避する。
+# 🚨 POSIX sh なので local は使えない (SC3043)。変数名を関数ごとの接頭辞で衝突回避する。
+#
+# テストを持たないディレクトリ (tests/lib の helper 置き場) は回す対象にしない。make test-dir は
+# 0 件を失敗にするので、当たった瞬間に test-changed が赤くなる (bin/mp・bin/tmux の変更で実際に起きた)。
+# helper が参照しているスクリプトを、その helper を使うテストへ辿ることはしない: 2026-10-07 時点で
+# 「tests/lib だけが名前で参照し、テストのディレクトリからは参照されない」スクリプトは 0 本で、辿る経路に届く入力が無い。
+# そういうスクリプトが現れたら (helper がスクリプトを呼ぶようになったら)、ここで helper の名前を辿るよう見直す。
+
+# テストを持つか。条件は Makefile の run_tests / run_tests_parallel の find と同じにする
+# (🚨 変えるなら同時に変える。片方だけだと「写像はテスト有りと読むが runner は 0 件で落とす」が戻る)。
+# find が失敗したら「有る」(回す方) に倒す。
+dir_has_tests() {  # $1=ディレクトリ
+  _dht_out=$(find "$1" -type f -name 'test_*.sh' ! -name '*helper*' -print 2>/dev/null) || return 0
+  [ -n "$_dht_out" ]
+}
+
+# テストを持つディレクトリのうち、変更されたパスの名前を含むものを回す。1 つでも足したら ref_found=1 にする
 add_test_dirs_referencing() {  # $1=変更されたパス
   _ref_base="${1##*/}"
   [ -n "$_ref_base" ] || return 0
   for _ref_d in tests/*/; do
     _ref_d="${_ref_d%/}"
     [ -d "$_ref_d" ] || continue
+    dir_has_tests "$_ref_d" || continue
     grep -rqlF -- "$_ref_base" "$_ref_d" 2>/dev/null
     _ref_rc=$?
     case "$_ref_rc" in
-      0) add_test_dir "$_ref_d" ;;
+      0) add_test_dir "$_ref_d"; ref_found=1 ;;
       1) : ;;
       # 🚨 この分岐はテストで pin できていない (grep を確実に rc>=2 にする状況を写像テストの
       # 中で作れないため。変異させても緑のまま = 守られていない)。消すと「検査できなかった」が
       # 「参照なし」に畳まれ、未検証なのにテストを回さない方向へ倒れるので、意図をここに残す。
-      *) add_test_dir "$_ref_d" ;;   # 検査できなかった = 回す方へ倒す
+      *) add_test_dir "$_ref_d"; ref_found=1 ;;   # 検査できなかった = 回す方へ倒す
     esac
   done
 }
@@ -158,8 +175,18 @@ for p in "$@"; do
     # tests/<dir>/ 配下はそのディレクトリのテストを直接回す (make test-dir)。
     # 名前付きターゲット (test-nvim 等) が無い tests/claude, tests/bin 等も
     # 取りこぼさない。tests/ 直下のファイルは tests 全体
+    # テストを持たないディレクトリ (tests/lib の helper) の変更は、その helper を参照しているテストへ振る。
+    # 参照がどこにも無ければ従来どおりそのディレクトリを渡し、runner の「0 件」で気づかせる (issue 063)
     tests/*/*)
-      add_test_dir "tests/$(echo "$p" | cut -d/ -f2)"; add_target test-lint-tests ;;
+      _td="tests/$(echo "$p" | cut -d/ -f2)"
+      if dir_has_tests "$_td"; then
+        add_test_dir "$_td"
+      else
+        ref_found=0
+        add_test_dirs_referencing "$p"
+        [ "$ref_found" -eq 1 ] || add_test_dir "$_td"
+      fi
+      add_target test-lint-tests ;;
     tests/*)
       add_test_dir "tests"; add_target test-lint-tests ;;
     # theme/colors.yml は色の単一ソースで、消費者が 4 つに分かれている:

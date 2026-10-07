@@ -59,6 +59,39 @@ expect "参照の無い新規スクリプトは lint だけ" 'test-shellcheck' s
 expect "tests/<dir> -> test-dir + lint-tests" 'test-lint-tests.*tests: .*tests/claude' tests/claude/test_statusline.sh
 expect "zshlib -> shell 系" 'test-zshrc' zshlib/_concat.zsh
 expect "json -> test-json" 'test-json' _claude/keybindings.json
+
+# テストを持たない tests/lib を回す対象に入れない (make test-dir は 0 件を失敗にする)。
+# 以前は bin/mp・bin/tmux の逆引きが tests/lib に当たり、test-changed が「0 件」で赤くなっていた。
+# expect_no <説明> <出てはいけない語> <パス>...
+expect_no() {
+  local desc="$1" word="$2"; shift 2
+  local out
+  if ! out=$("$TC" --dry-run "$@" 2>&1); then
+    printf '✗ %s: exit 非 0\n%s\n' "$desc" "$out"; fail=1; return
+  fi
+  if grep -qE "tests: (.* )?${word}( |\$)" <<<"$out"; then
+    printf '✗ %s: %s が対象に入っている\n%s\n' "$desc" "$word" "$out"; fail=1; return
+  fi
+  printf '✓ %s\n' "$desc"
+}
+# 前提: tests/lib の中に wait_until.sh の名前がある (無いと、下の bin/ のケースは修正を戻しても緑になる)
+if grep -rqF wait_until.sh tests/lib; then
+  printf '✓ 前提: tests/lib が wait_until.sh を名前で含む\n'
+else
+  printf '✗ 前提が崩れた: tests/lib が wait_until.sh を含まない (下の bin/ のケースが何も検査しない)\n'; fail=1
+fi
+# パスは合成 (写像は basename で逆引きするので、bin/ の下に実在しなくてよい)
+expect_no "bin/ の逆引きは tests/lib を渡さない" 'tests/lib' bin/__synthetic__/wait_until.sh
+expect "tests/lib の helper の変更は、helper を使うテストへ振る" 'tests: .*tests/tmux' tests/lib/wait_until.sh
+expect_no "tests/lib の helper の変更で tests/lib 自体は渡さない" 'tests/lib' tests/lib/wait_until.sh
+# 逆引きで当たるディレクトリを先に全部渡しておく (「対象が増えたか」で当たりを判定する実装だと、ここで tests/lib を渡してしまう)
+expect_no "他のパスと一緒に渡しても tests/lib は渡さない" 'tests/lib' \
+  tests/bin/x.sh tests/pro-con/x.sh tests/scripts/x.sh tests/tmux/x.sh tests/zshrc/x.sh tests/lib/wait_until.sh
+# 逆引きがどこにも当たらないテスト無しのディレクトリは従来どおり渡し、runner の「0 件」で気づかせる (issue 063)。
+# 実在するディレクトリで試す (実在しないと find が失敗し「テスト有り」に倒れて、この分岐を通らない)。
+# 名前は実行時に組み立てる (このファイルに完全な名前を書くと、逆引きが tests/scripts に当たってしまう)
+unref_name="__synth""_unref_$$.sh"
+expect "どこからも参照されない tests/lib のファイルは tests/lib を渡す" 'tests: .*tests/lib' "tests/lib/$unref_name"
 # issue ファイルは「ドキュメント = テスト対象なし」に落ちていた (2026-08-28 に修正)。
 # 追加・改番が NNN 一意性検査のトリガーそのものなので、*.md の腕へ戻ると無言で検査されなくなる。
 # パスは合成 (写像はパス文字列だけを見る)。実在の issue 名を書くと done/ への移動で腐る。
