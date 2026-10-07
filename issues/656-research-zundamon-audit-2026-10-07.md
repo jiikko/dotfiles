@@ -9,7 +9,7 @@ security / resource-leaks / broken-code / dead-code / error-handling / false-gre
 直接実行。read-only のサブエージェント (opus) 3 本を直列に走らせ、発見は main が実コードで裏を取ってから issue にした。
 
 - 母集合: テスト以外の .go 11 本 (3,950〜4,210 行。数え方で幅がある)・関数 170 個、`_claude/skills/zundamon-kaisetsu/templates/player.html` (264 行)、
-  テスト 128 本 (`go test -race -v` で RUN 128 / PASS 128 / SKIP 0)
+  テスト 97 本 (`^func Test`。サブテスト込みで `go test -race -v` の RUN 128 / PASS 128 / SKIP 0)
 - 道具: `go vet` rc=0 / `make lint` 0 件 / golangci-lint に gosec・gocritic 等を足した走査 (製品コードで gosec 36・gocritic 3・errorlint 1。下の所見以外は意図どおりか該当なし)
 
 ## 全数勘定
@@ -42,6 +42,11 @@ security / resource-leaks / broken-code / dead-code / error-handling / false-gre
 - wav の chunk の読み方・mouthTrack / frameRuns の境界・ffconcat の最後の長さ・readings の置き換え・JPEG の EXIF の境界
 - 製品コードで、製品コードから参照されない関数は 0 個 (lint の unused も 0 件)
 - engine_auto のロックの判定不能を「使用中」に倒す作り、signal / interrupt の結合テストに skip が無いこと
+
+## 反証レビュー (2026-10-07、read-only のサブエージェント 1 本)
+
+P1 / P2 なし。P3 2 件を訂正した (655 の手書きの台本 3 → 4 か所・testdata を写す処理 3 → 2 か所 / 656 のテストの本数はサブテスト込み)。
+650 A の「全部同じ絵の検査で捕まらない」は Chrome が要るので、反証も裏付けもできないまま (未実測のまま扱う)。
 
 ## 進捗
 

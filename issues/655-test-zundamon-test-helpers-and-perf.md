@@ -8,8 +8,8 @@
 
 - 偽のコマンド (shim) の書き出し 9 か所 (engine_auto_test 5 / show_mermaid_test 3 / interrupt_test 1) と `t.Setenv("PATH")` 13 か所。
   `writeShim(t, dir, name, body)` と、PATH を「前に足す / 置き換える」を選べる helper にまとめる (場所ごとに意図して使い分けているので引数で選ぶ)
-- 台本の JSON を書く `writeScript` (show_test.go) があるのに手で書いている箇所 3 つ (cli_test.go / more_test.go 2)
-- testdata/build を写して読み込む処理が `buildWithShows` の外に 3 つ
+- 台本の JSON を書く `writeScript` (show_test.go) があるのに手で書いている箇所 4 つ (cli_test.go 1 / more_test.go 3。不正な JSON を意図的に書く箇所と testdata を加工する箇所は除く)
+- testdata/build を写す処理が `buildWithShows` の外に 2 つ (show_mermaid_test.go。more_test.go / golden_test.go は一部の dir だけを写すので別物)
 
 ## 性能 (監査で実測。Apple M3 Max, go1.26.0, 300 行 × 4 秒 = 21.8 分の台本)
 
