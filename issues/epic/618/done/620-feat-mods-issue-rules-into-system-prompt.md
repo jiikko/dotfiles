@@ -2,7 +2,7 @@
 
 起票日: 2026-10-02
 
-epic [618](../pending/618-design-claude-code-mods-migration.md) の子。619 の後。epic で最初に着手する 1 本 (ただし移す前に仮説を測る)。
+epic [618](../618-design-claude-code-mods-migration.md) の子。619 の後。epic で最初に着手する 1 本 (ただし移す前に仮説を測る)。
 
 ## 概要
 

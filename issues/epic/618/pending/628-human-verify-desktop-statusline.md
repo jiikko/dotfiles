@@ -5,7 +5,7 @@
 > 保留 (2026-10-02、ユーザーの判断): mods 系の open issue をまとめて凍結した。再開するかどうかはユーザーが決める。
 期限: 2026-10-09
 
-epic [618](618-design-claude-code-mods-migration.md) の子。[625](625-feat-mods-statusline-on-desktop.md) の受け入れ条件の確認。
+epic [618](../618-design-claude-code-mods-migration.md) の子。[625](625-feat-mods-statusline-on-desktop.md) の受け入れ条件の確認。
 
 ## なぜ人が要るか
 

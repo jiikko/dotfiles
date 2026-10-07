@@ -2,7 +2,7 @@
 
 起票日: 2026-10-03
 
-epic [618](pending/618-design-claude-code-mods-migration.md) の子。[625](pending/625-feat-mods-statusline-on-desktop.md) (desktop にステータスバーを出す) の続き。
+epic [618](618-design-claude-code-mods-migration.md) の子。[625](pending/625-feat-mods-statusline-on-desktop.md) (desktop にステータスバーを出す) の続き。
 
 ## 概要
 

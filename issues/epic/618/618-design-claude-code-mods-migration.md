@@ -2,7 +2,7 @@
 
 起票日: 2026-10-02
 
-> 保留 (2026-10-02、ユーザーの判断): mods 系の open issue をまとめて凍結した。再開するかどうかはユーザーが決める。
+> 2026-10-02 に保留 (mods 系をまとめて凍結) → **2026-10-07 に再開 (ユーザーの判断)**: managed settings が無くなり、`classic.*` / `prompt.compose` が user の mod に届くようになった (進捗の 2026-10-07)。再評価の子 issue は「子 issue」節。
 
 > epic 618 の親 issue。判断の正本 (どれを移す / 移さない、前提、未確認の点) はここに置き、作業は同じディレクトリの子 issue で進める。
 
@@ -97,6 +97,7 @@ settings の hook は失敗すれば stderr に出る。**移したものは、�
 - [x] 622 — tmux のペインの状態表示を mod へ → **移さない**。PostToolUse の working を sh の script に分けて速くした
 - [x] 623 — 未コミットの変更を捨てる checkout の前に、人に選ばせる → settings の hook の `ask` (確実に捨てる単純なコマンドだけ)
 - [ ] 625 — Claude desktop (Code タブ) にも CLI と同じステータスバーを出す → mod を入れた。desktop の画面での確認 (628、human) 待ち
+- [ ] 658 — `ratelimit-warn.sh` (5h 枠の警告) を mod へ。2026-10-07 の測り直しを受けた再評価の 1 本目 (`classic.UserPromptSubmit` で注入 + status line)
 
 順番は 619 → 620 → 621 (620 と 621 はどちらも `_claude/issue-rules.md` と `_claude/CLAUDE.md` の文面を直すので直列)。622 / 623 は 619 の後なら独立。
 620 は文面を変えずに閉じたので、621 は 619 の後なら独立になった。
