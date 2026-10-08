@@ -3,7 +3,7 @@
 --   1. git common dir が dotfiles と同じ、かつ対象ファイルが src/*/go.mod 配下の時だけ採用する。
 --   2. root は各 checkout/worktree の toplevel、folders はその root の src modules だけ。
 --   3. root 判定 / git / module 列挙の失敗は既定 root に戻り、例外を呼び出し元へ出さない。
---   4. before_init は client config にも folders と GOWORK=off を保存し、再起動後も維持する。
+--   4. before_init は dotfiles client に印を付け、再起動時に module を再列挙する。列挙失敗時は保存済み folders を使う。
 --   5. dotfiles の module 外には gopls client を流用せず、それ以外は nvim 0.12 の既定判定に従う。
 --   6. gopls の起動・有無判定は Mason の絶対パスを使う。
 local function fail(message)
@@ -55,11 +55,13 @@ expect(lsp.gopls_workspace_decision(root, module_a .. "/pkg/file.go", common, co
 -- wiring は filesystem / git を stub して固定する。実際の外部 repo と Mason は起動しない。
 local saved_default = lsp.gopls_default_root_dir
 local saved_discover = lsp.gopls_workspace_for_buffer
+local saved_list_modules = lsp.gopls_workspace_modules_for_root
 local saved_requests = lsp.gopls_workspace_requests
 local saved_settings = vim.deepcopy(lsp.servers.gopls.settings)
 local function restore()
   lsp.gopls_default_root_dir = saved_default
   lsp.gopls_workspace_for_buffer = saved_discover
+  lsp.gopls_workspace_modules_for_root = saved_list_modules
   lsp.gopls_workspace_requests = saved_requests
 end
 local function fail_restoring(message)
@@ -73,12 +75,14 @@ local decisions_by_buf = {}
 lsp.gopls_workspace_for_buffer = function(bufnr)
   return decisions_by_buf[bufnr]
 end
-
-local init_paths = { module_a, module_b }
-for index = 3, 17 do
-  table.insert(init_paths, root .. ("/src/module%02d"):format(index))
+local restart_module_dirs = { module_a }
+lsp.gopls_workspace_modules_for_root = function(scan_root)
+  expect(scan_root == root, "再起動時は client の toplevel を再走査する")
+  if restart_module_dirs == "error" then error("fixture enumeration failure") end
+  return restart_module_dirs
 end
-table.sort(init_paths)
+
+local init_paths = { module_a }
 local init_decision = { root_dir = root, folders = init_paths }
 
 local buf_a = vim.api.nvim_create_buf(false, true)
@@ -94,19 +98,34 @@ local params_a = { workspaceFolders = initial_folders }
 lsp.gopls_before_init(params_a, config_a)
 expect(config_a.settings.gopls.env.GOWORK == "off", "dotfiles client だけ GOWORK=off を持つ")
 same_list(vim.tbl_map(function(folder) return vim.uri_to_fname(folder.uri) end, params_a.workspaceFolders),
-  init_paths, "before_init が 17 module folders に差し替える")
+  init_paths, "before_init が初回 module folders に差し替える")
 expect(params_a.workspaceFolders == initial_folders, "workspaceFolders 配列は client 内部と共有したまま更新する")
 expect(config_a.workspace_folders == params_a.workspaceFolders, "再起動用に config.workspace_folders も同じ配列を保持する")
+expect(config_a._dotfiles_gopls_workspace == true, "dotfiles 判定は client 固有の config に印を残す")
+expect(lsp.servers.gopls._dotfiles_gopls_workspace == nil, "dotfiles 判定の印が共有 server config に漏れない")
 expect(lsp.servers.gopls.settings.gopls.env == nil, "client settings 変更が M.servers.gopls に漏れない")
 
 -- Client:_restart() は lsp.start(self.config, { attach = false }) を呼び、root_dir callback を通らない。
--- client.lua の初期化と同様に config.workspace_folders から params を作り、request 無しで再初期化する。
-local restart_folders = vim.lsp._get_workspace_folders(config_a.workspace_folders or config_a.root_dir)
-local restart_params = { workspaceFolders = restart_folders }
+-- config の印だけで新しい src/*/go.mod 一覧を取り込み、列挙失敗時は保存済み一覧に戻す。
+restart_module_dirs = { module_a, module_b }
+local restart_params = { workspaceFolders = vim.deepcopy(config_a.workspace_folders) }
 lsp.gopls_before_init(restart_params, config_a)
 same_list(vim.tbl_map(function(folder) return vim.uri_to_fname(folder.uri) end, restart_params.workspaceFolders),
-  init_paths, "request 無しの再起動でも 17 module folders を保つ")
+  { module_a, module_b }, "再起動時に追加 module を再列挙する")
 expect(config_a.settings.gopls.env.GOWORK == "off", "request 無しの再起動でも config の GOWORK=off を保つ")
+expect(config_a.workspace_folders == restart_params.workspaceFolders, "再起動後の folders を client config に保存する")
+
+restart_module_dirs = "error"
+restart_params = { workspaceFolders = vim.deepcopy(config_a.workspace_folders) }
+lsp.gopls_before_init(restart_params, config_a)
+same_list(vim.tbl_map(function(folder) return vim.uri_to_fname(folder.uri) end, restart_params.workspaceFolders),
+  { module_a, module_b }, "再列挙失敗時は保存済み folders に戻す")
+
+restart_module_dirs = { module_a }
+restart_params = { workspaceFolders = vim.deepcopy(config_a.workspace_folders) }
+lsp.gopls_before_init(restart_params, config_a)
+same_list(vim.tbl_map(function(folder) return vim.uri_to_fname(folder.uri) end, restart_params.workspaceFolders),
+  { module_a }, "再起動時に削除済み module を folders から除く")
 
 local worktree_b = "/fixture/dotfiles-wt-two"
 local decision_b = {
@@ -194,6 +213,7 @@ local expected_mason_gopls = lsp.mason_bin() .. "/gopls"
 expect(lsp.servers.gopls.cmd[1] == expected_mason_gopls, "nvim gopls cmd は Mason の絶対パス")
 lsp.setup(nil)
 expect(vim.lsp.config.gopls.cmd[1] == expected_mason_gopls, "setup 後の実効 gopls cmd も Mason の絶対パス")
+expect(vim.lsp.config.gopls._dotfiles_gopls_workspace == nil, "dotfiles 判定の印が vim.lsp.config に漏れない")
 local executable_checked
 local available = lsp.server_binary_available("gopls", {
   executable = function(path)

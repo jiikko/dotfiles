@@ -414,7 +414,7 @@ local function read_git_common_dir(root)
   return real
 end
 
-local function list_gopls_modules(root)
+function M.gopls_workspace_modules_for_root(root)
   local src = root .. "/src"
   local src_stat = vim.uv.fs_stat(src)
   if not src_stat then return {} end
@@ -447,7 +447,7 @@ function M.gopls_workspace_for_buffer(bufnr)
   if not git_root then return nil end
   git_root = canonical_existing_dir(git_root)
   if not git_root then error("git root could not be resolved") end
-  local modules = list_gopls_modules(git_root)
+  local modules = M.gopls_workspace_modules_for_root(git_root)
   local candidate = false
   for _, dir in ipairs(modules) do
     if path_is_within(file, dir) then candidate = true; break end
@@ -534,35 +534,58 @@ end
 -- init params と config は client ごとの複製。workspaceFolders の配列は client.workspace_folders
 -- と共有されるため、配列自体を置き換えず中身を差し替える。
 function M.gopls_before_init(params, config)
+  if type(config) ~= "table" then return end
   local root = config and config.root_dir
   local request = peek_gopls_request(root)
-  if not request then return end
-  consume_gopls_request(root, request)
-  local decision = request.decision
-  if not decision then return end
+  local folders
+  if request then
+    consume_gopls_request(root, request)
+    local decision = request.decision
+    if not decision then return end
+    local ok
+    ok, folders = pcall(lsp_workspace_folders, decision.folders)
+    if not ok or type(params) ~= "table" or type(config.settings) ~= "table" then return end
+    config._dotfiles_gopls_workspace = true
+  elseif config._dotfiles_gopls_workspace then
+    if type(params) ~= "table" then return end
+    local ok, discovered = pcall(function()
+      local modules = M.gopls_workspace_modules_for_root(root)
+      local paths = M.gopls_module_folders(root, modules)
+      if #paths == 0 then error("dotfiles workspace has no module folders") end
+      return lsp_workspace_folders(paths)
+    end)
+    if ok then
+      folders = discovered
+    else
+      folders = type(config.workspace_folders) == "table" and vim.deepcopy(config.workspace_folders) or {}
+    end
+  else
+    return
+  end
+  if type(folders) ~= "table" then return end
 
-  local ok, folders = pcall(lsp_workspace_folders, decision.folders)
-  if not ok or type(params) ~= "table" or type(config.settings) ~= "table" then return end
   local current = params.workspaceFolders
   if type(current) ~= "table" then current = {} end
 
-  local gopls_settings = config.settings.gopls
-  if type(gopls_settings) ~= "table" then
-    gopls_settings = {}
-    config.settings.gopls = gopls_settings
+  if request then
+    local gopls_settings = config.settings.gopls
+    if type(gopls_settings) ~= "table" then
+      gopls_settings = {}
+      config.settings.gopls = gopls_settings
+    end
+    local env = gopls_settings.env
+    if type(env) ~= "table" then
+      env = {}
+      gopls_settings.env = env
+    end
+    env.GOWORK = "off"
   end
-  local env = gopls_settings.env
-  if type(env) ~= "table" then
-    env = {}
-    gopls_settings.env = env
-  end
-  env.GOWORK = "off"
 
   for index = #current, 1, -1 do current[index] = nil end
   for index, folder in ipairs(folders) do current[index] = folder end
   params.workspaceFolders = current
-  -- Client:_restart() は root_dir を通らずに lsp.start(self.config) を呼ぶ。実効の folders を
-  -- client の config にも残し、再起動した client が同じ workspace を受け取るようにする。
+  -- Client:_restart() は root_dir を通らずに lsp.start(self.config) を呼ぶ。client 固有の印で
+  -- dotfiles workspace と判定して module を再列挙し、実効 folders を次回の再起動にも残す。
   config.workspace_folders = current
 end
 
