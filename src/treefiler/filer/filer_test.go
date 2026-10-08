@@ -483,3 +483,19 @@ func TestRefreshPicksUpChangesAndKeepsState(t *testing.T) {
 
 func writeFile(p string) error  { return os.WriteFile(p, []byte("x\n"), 0o644) }
 func removeFile(p string) error { return os.Remove(p) }
+
+// plain (テストの補助) は格子の文字だけを返す (テストと撮影の照合用)。
+func (c *canvas) plain() []string {
+	out := make([]string, c.h)
+	for y := range c.h {
+		var b strings.Builder
+		for x := range c.w {
+			p := c.cells[y*c.w+x]
+			if !p.cont {
+				b.WriteString(p.s)
+			}
+		}
+		out[y] = b.String()
+	}
+	return out
+}

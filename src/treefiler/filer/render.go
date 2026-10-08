@@ -2,7 +2,6 @@ package filer
 
 import (
 	"strconv"
-	"strings"
 
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
@@ -260,22 +259,6 @@ func (c *canvas) lines() []string {
 		}
 		b = append(b, "\x1b[0m"...)
 		out[y] = string(b)
-	}
-	return out
-}
-
-// plain は格子の文字だけを返す (テストと撮影の照合用)。
-func (c *canvas) plain() []string {
-	out := make([]string, c.h)
-	for y := range c.h {
-		var b strings.Builder
-		for x := range c.w {
-			p := c.cells[y*c.w+x]
-			if !p.cont {
-				b.WriteString(p.s)
-			}
-		}
-		out[y] = b.String()
 	}
 	return out
 }
