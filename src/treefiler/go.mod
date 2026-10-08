@@ -3,6 +3,7 @@ module treefiler
 go 1.25.0
 
 require (
+	atomicfile v0.0.0
 	charm.land/bubbletea/v2 v2.0.8
 	github.com/jiikko/dotfiles/src/termsafe v0.0.0
 	github.com/jiikko/dotfiles/src/tuikit v0.0.0
@@ -33,3 +34,5 @@ replace github.com/jiikko/dotfiles/src/termsafe => ../termsafe
 replace github.com/jiikko/dotfiles/src/tuikit => ../tuikit
 
 replace subproc => ../subproc
+
+replace atomicfile => ../atomicfile

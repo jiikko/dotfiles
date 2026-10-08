@@ -35,6 +35,7 @@ type watcher struct {
 	ch      chan struct{}
 	stop    chan struct{}
 	running bool
+	paused  bool // 設定の Live が off (読み比べを休む。基準は残すので、on に戻すと休んでいた間の変化も届く)
 }
 
 func newWatcher() *watcher { return &watcher{seen: map[string]map[string]entrySig{}} }
@@ -62,6 +63,12 @@ func (w *watcher) close() {
 	}
 	w.running = false
 	close(w.stop)
+}
+
+func (w *watcher) pause(p bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.paused = p
 }
 
 // setDirs は見るフォルダを差し替える (開いているフォルダ)。base は初めて見るフォルダの基準 (木が読み込んだときの中身)。
@@ -107,7 +114,11 @@ func (w *watcher) loop(stop chan struct{}, ch chan struct{}) {
 		}
 		w.mu.Lock()
 		dirs := append([]string(nil), w.want...)
+		paused := w.paused
 		w.mu.Unlock()
+		if paused {
+			continue
+		}
 		var found []dirChange
 		next := make(map[string]map[string]entrySig, len(dirs))
 		for _, d := range dirs {

@@ -97,6 +97,11 @@ func TestMain(m *testing.M) {
 	if err := os.Setenv("XDG_CACHE_HOME", dir); err != nil {
 		panic(err)
 	}
+	// treefiler (F) の設定と前回の場所は ~/.config/glogx に書く。テストは本物を読み書きしない
+	// (読むと利用者の設定でテストの結果が変わり、書くと利用者の設定を書き換える。2026-10-09 に実際に書いた)
+	if err := os.Setenv("TREEFILER_CONFIG_DIR", filepath.Join(dir, "treefiler-config")); err != nil {
+		panic(err)
+	}
 	// Go 1.26 の testing.T.TempDir は GOTMPDIR を優先する。呼び出し側が sandbox 用に
 	// repo 内のパスを指定しても、そこを TempDir の起点にすると「repo 外」を検査するテストが
 	// glogx の git root を誤って拾うため、テスト用の一時領域へ隔離する。

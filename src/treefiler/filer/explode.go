@@ -96,13 +96,13 @@ func (m *Model) explode() {
 	if target == nil {
 		return
 	}
-	showHidden := m.showHidden
+	showHidden, intoIgnored := m.showHidden, m.set.ExplodeIgnore
 	snap := m.gitSnap
 	m.exploding = startExplode(target.path(), func(path, name string) bool {
 		if !showHidden && strings.HasPrefix(name, ".") {
 			return true
 		}
-		return snap.state(path, true) == gitIgn
+		return !intoIgnored && snap.state(path, true) == gitIgn
 	})
 }
 

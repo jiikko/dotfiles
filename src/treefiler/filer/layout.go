@@ -74,12 +74,15 @@ func (m *Model) layout() map[*node]place {
 		var parents []*node
 		w := 0
 		for _, n := range cols[depth] {
-			if lw := labelWidth(n); lw > w {
+			if lw := m.labelWidth(n); lw > w {
 				w = lw
 			}
 			if n.dir && n.expanded && len(m.kids(n)) > 0 {
 				parents = append(parents, n)
 			}
+		}
+		if m.set.Columns == "equal" {
+			w = max(w, labelMax+m.detailsWidth()) // equal = どの列も Column width (spec §3.2)
 		}
 		if len(parents) == 0 {
 			break
@@ -121,12 +124,12 @@ func (m *Model) layout() map[*node]place {
 			}
 		}
 		lanes := max(1, min(max(w/3, 2), max(ups, downs)))
-		// 次の列の x = 列の x + 列の幅 + lanes + gap (3) + branch (1) (spec §3.2)
-		nx := colX[depth] + w + lanes + 3 + 1
+		// 次の列の x = 列の x + 列の幅 + lanes + gap (3 以上) + branch (spec §3.2)
+		nx := colX[depth] + w + lanes + max(m.set.ColumnGap, 3) + m.set.BranchOffset
 		colX[depth+1] = nx
 		for j, p := range parents {
 			for i, k := range m.kids(p) {
-				pos[k] = place{nx, y0[j] + i, sp[p]}
+				pos[k] = place{nx, (y0[j] + i) * (1 + m.set.RowSpacing), sp[p]} // 行の間隔は空行を足す (spec §3.1。線は空行を貫く)
 				cols[depth+1] = append(cols[depth+1], k)
 			}
 		}
@@ -134,7 +137,14 @@ func (m *Model) layout() map[*node]place {
 	return pos
 }
 
-func labelWidth(n *node) int { return widthOf(n.label()) }
+// labelWidth は項目の表示幅 (名前と、出していれば後ろの詳細)。
+func (m *Model) labelWidth(n *node) int {
+	w := widthOf(n.label())
+	if d := m.details(n); d != "" {
+		w += 2 + widthOf(d)
+	}
+	return w
+}
 
 // ---------- 線 (spec §2.1 の double) ----------
 
@@ -145,8 +155,40 @@ const (
 	dirRight = 8
 )
 
-// doubleGlyph は mask (上下左右のビット) から二重線の文字 (spec §2.1 の表の double)。
-var doubleGlyph = []string{"·", "║", "║", "║", "═", "╝", "╗", "╣", "═", "╚", "╔", "╠", "═", "╩", "╦", "╬"}
+// lineGlyphs は線の形ごとの、mask (上下左右のビット) から文字の表 (spec §2.1)。
+var lineGlyphs = map[string][]string{
+	"rounded": {"·", "│", "│", "│", "─", "╯", "╮", "┤", "─", "╰", "╭", "├", "─", "┴", "┬", "┼"},
+	"square":  {"·", "│", "│", "│", "─", "┘", "┐", "┤", "─", "└", "┌", "├", "─", "┴", "┬", "┼"},
+	"heavy":   {"·", "┃", "┃", "┃", "━", "┛", "┓", "┫", "━", "┗", "┏", "┣", "━", "┻", "┳", "╋"},
+	"double":  {"·", "║", "║", "║", "═", "╝", "╗", "╣", "═", "╚", "╔", "╠", "═", "╩", "╦", "╬"},
+	"ascii":   {".", "|", "|", "|", "-", "+", "+", "+", "-", "+", "+", "+", "-", "+", "+", "+"},
+}
+
+// tubeGlyph は rounded / square で経路の横線を二重の「管」にした文字 (spec §2.1)。
+var tubeGlyph = map[int]string{15: "╪", 13: "╧", 14: "╤", 11: "╞", 9: "╘", 10: "╒", 7: "╡", 5: "╛", 6: "╕"}
+
+// glyph は線の 1 セルの文字。
+func glyph(style string, lc *lineCell) string {
+	m := lc.mask & 15
+	tube := lc.emph == emRoute && m&(dirLeft|dirRight) != 0
+	switch {
+	case tube && (style == "rounded" || style == "square"):
+		if g, ok := tubeGlyph[m]; ok {
+			return g
+		}
+		return "═"
+	case tube && style == "ascii":
+		if m&(dirUp|dirDown) == 0 {
+			return "="
+		}
+		return "+"
+	}
+	gs, ok := lineGlyphs[style]
+	if !ok {
+		gs = lineGlyphs["double"]
+	}
+	return gs[m]
+}
 
 type emphasis int
 
@@ -243,8 +285,8 @@ func (m *Model) lines(now map[*node][2]int) lineGrid {
 		for _, q := range kp {
 			minX, y0, y1 = min(minX, q[0]), min(y0, q[1]), max(y1, q[1])
 		}
-		start := pp[0] + labelWidth(pn) + 1
-		bar := minX - 2
+		start := pp[0] + m.labelWidth(pn) + 1
+		bar := minX - 1 - m.set.BranchOffset
 		if bar < start {
 			continue // まだ展開の途中
 		}
@@ -258,7 +300,11 @@ func (m *Model) lines(now map[*node][2]int) lineGrid {
 			if k == routeKid {
 				e = emRoute
 			}
-			g.hseg(bar, q[0]-1, q[1], e, pn)
+			if q[0]-1 > bar {
+				g.hseg(bar, q[0]-1, q[1], e, pn)
+			} else {
+				g.add(bar, q[1], dirRight, e, pn) // 枝の長さ 0 は分かれ目が名前に接する
+			}
 		}
 		py := pp[1]
 		je := emph

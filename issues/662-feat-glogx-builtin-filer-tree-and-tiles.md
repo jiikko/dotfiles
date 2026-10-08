@@ -344,5 +344,25 @@ MIT OR Apache-2.0) を写す**。依頼に無い部分も含めて全部写す�
     却下: 入力中の ctrl+c で glogx ごと終わる — spec §0.1 で ctrl+c は glogx の即終了と決めており、issues viewer の入力欄も同じ。
     記録のみ: 履歴の ↑ で下書きが消える / ペーストは filer では捨てる (キーとしては走らない) / explode の 1 フォルダの件数に上限が無い
   - 変異 5 本 ($f を渡さない / 戻っても読み直さない / 入力中も F で閉じる / 連打の免除を外す / 戻ったときの区別を外す) が red
-- [ ] 設定の板 (`,`) と前回の場所を覚える
+- [x] **設定の板 (`,`) と前回の場所を覚える** (2026-10-09。commit「feat(treefiler): 設定の板 (,) と前回の場所を覚える」)。
+  板は右端に出し、spec §7 の項目 (LAYOUT / ORDER / LOOK / BEHAVIOR) を `h` `l` で変える・`r` で既定へ。値はその場で効き、
+  `~/.config/glogx/treefiler.toml` のその 1 行だけを書き換える (他の行・コメント・行末のコメントは残す。atomicfile)。読めない行は既定のまま使い、
+  板の足元に何行目かを出す。配色 (ground / accent / heat colors / heat range) は theme.go の表からパッケージの色の変数へ書き込む。
+  Remember place は `~/.config/glogx/treefiler-places` に起動フォルダごとの開いたフォルダとカーソルを覚える (既定 off)。
+  `TREEFILER_CONFIG_DIR` で置き場所を差し替える。🚨 テストが本物の `~/.config/glogx/treefiler.toml` に `show_hidden = true` を書いていた
+  (fixture の `.`) のを見つけて消し、treefiler / glogx の TestMain と fixture で隔離した
+  - 反証レビュー 1 周目 (sonnet 1 体): 採用 — explode_ignored がどこからも読まれていない (P2) / Live を off で始めると Changed が閉じたチャネルを返し、
+    on に戻しても glogx が待たない (P2。watcher は止めずに読み比べを休む形にした) / palette の行が ground より前にあると拒否され、ground を変えても
+    直した palette を保存しない (P2。項目の表の順に当て、直した palette も保存) / git を off にしても取得を始め、off の前の結果を取り込む (P2。
+    取得の開始を startGit の 1 か所に寄せた。版は進めて中身を捨てる — 進めないと Busy が続き tick が止まらないのを修正の途中でテストが捕まえた) /
+    places が読み切れないとき書き戻しで残りを消す (P3)。
+  - 反証レビュー 2 周目 (sonnet 1 体。修正の差分): Live の切り替え・Busy・読み込みの順・Close は壊せなかった。記録のみ (採らない理由つき):
+    Git を off にすると explode が git の無視するフォルダにも降りる (off では無視の情報が無いので、無視されていると判定できない。起動直後で git が
+    まだ取れていない間も同じ) / Live を休んでいる間に閉じて開き直したフォルダは、on に戻した最初の読み比べで偽の光が出る (基準を捨てると休んでいた間の
+    変化を取りこぼすので、光る方を選ぶ) / places が読み切れないと以後は書かない (消すよりよい。知らせは無い) / 読み込み時の悪い行の警告は、板でその項目を
+    直しても次に開くまで残る
+    記録のみ (1 周目): symlink 違いのパス (/tmp と /private/tmp) で開くと別の記録になる (戻らないだけ) / glogx を 2 つ同時に閉じると後の方が先の設定・場所を上書きする
+  - 変異 10 本が red (行末コメントを捨てる / 起点の照合を外す / ground 変更で palette を直さない / explode_ignored を読まない / Live off で閉じたチャネル /
+    off の前の git の結果を取り込む / off でも git を取りに行く / 捨てた結果の版を進めない / 項目の表の順に当てない / 直した palette を保存しない)
+  - 未対応 (spec §7 の項目のうち): Wrap lines (タイルの長い行は切る)。ソートの項目は後回しの決定どおり無い
 

@@ -60,10 +60,15 @@ type Model struct {
 	notices    []Notice
 	linkCache  map[string]string
 	cv         *canvas // 使い回す格子 (大きさが変わったら作り直す)
+	startDir   string  // 起動したフォルダ (前回の場所を覚える鍵)
 	walker     *walker
 	recs       map[string]walkResult // walker の結果の写し (Advance で取り込む)
 	recsVer    int
 	git        gitWatch
+	set        Settings
+	setErrs    []string
+	saveErr    string
+	panel      panelState
 	gitSnap    gitSnapshot
 	gitVer     int
 	watch      *watcher
@@ -99,7 +104,7 @@ func New(dir string, opts Options) (*Model, error) {
 	}
 	// moving は最初から true: 起動時のフェードインがある。false で始めると、呼び出し側が「動いていないので tick を回さない」と
 	// 判断し、透明のまま次のキーまで何も見えない (glogx の TestFilerAnimationAdvancesOnTickAndStops が捕まえた)
-	m := &Model{root: root, cur: root, now: opts.Now, anims: map[*node]*anim{}, linkCache: map[string]string{}, moving: true,
+	m := &Model{root: root, cur: root, startDir: root.abs, now: opts.Now, anims: map[*node]*anim{}, linkCache: map[string]string{}, moving: true,
 		walker: newWalker(), recs: map[string]walkResult{}, watch: newWatcher(), ripples: map[*node]ripple{}}
 	if m.now == nil {
 		m.now = time.Now
@@ -111,7 +116,17 @@ func New(dir string, opts Options) (*Model, error) {
 		m.cur = ks[0]
 		root.last = ks[0]
 	}
-	m.git.start(root.path(), m.now(), true)
+	m.set, m.setErrs = loadSettings(configPath())
+	m.watch.pause(!m.set.Live)
+	applyTheme(&m.set)
+	labelMax, sortFoldersFirst, sortNatural = m.set.MaxName, m.set.FoldersFirst, m.set.NaturalSort
+	m.showHidden = m.set.ShowHidden
+	m.resort(root)
+	if ks := m.kids(root); len(ks) > 0 && m.cur == root {
+		m.cur, root.last = ks[0], ks[0]
+	}
+	m.restorePlace()
+	m.startGit(true)
 	return m, nil
 }
 
@@ -119,7 +134,7 @@ func New(dir string, opts Options) (*Model, error) {
 // カーソルの項目が消えていたら、残っているいちばん近い祖先へ移る。
 func (m *Model) Refresh() {
 	m.walker.forget(m.root.path())
-	m.git.start(m.root.path(), m.now(), true)
+	m.startGit(true)
 	m.root.reload()
 	for !m.inTree(m.cur) {
 		m.cur = m.cur.parent
@@ -139,10 +154,15 @@ func (m *Model) inTree(n *node) bool {
 
 // Changed はライブ更新の合図のチャネル (開いているフォルダが変わると 1 つ届く)。呼ぶとポーリングが始まる。
 // 呼び出し側は合図を受けたら Advance を呼んで取り込み、また Changed を待つ。Close で閉じられる (待っている側が終わる)。
-func (m *Model) Changed() <-chan struct{} { return m.watch.start() }
+func (m *Model) Changed() <-chan struct{} {
+	return m.watch.start() // Live が off でもチャネルは返す (止めると、on に戻したときに待つ者がいない。watcher が読み比べを休むだけ)
+}
 
 // Close はライブ更新のポーリングを止める (glogx でファイラーを閉じたとき)。
-func (m *Model) Close() { m.watch.close() }
+func (m *Model) Close() {
+	m.watch.close()
+	m.savePlace()
+}
 
 // Resize は画面の大きさを伝える (最下行はステータスバー)。
 func (m *Model) Resize(w, h int) {
@@ -162,7 +182,7 @@ func (m *Model) Busy() bool {
 func (m *Model) Animating() bool { return m.moving }
 
 // OwnsKeys は入力モード中か (glogx の横断キーを譲る判定に使う。spec §0.3)。今は入力欄を持たない。
-func (m *Model) OwnsKeys() bool { return m.search.active || m.prompt.active }
+func (m *Model) OwnsKeys() bool { return m.search.active || m.prompt.active || m.panel.open }
 
 // SearchQuery は検索欄の今の入力 (検索していなければ "")。
 func (m *Model) SearchQuery() string {
@@ -216,7 +236,7 @@ func (m *Model) canvasH() int { return max(m.h-1, 1) }
 func (m *Model) Advance(now time.Time) bool {
 	dt := 0.0
 	if !m.lastAdv.IsZero() {
-		dt = math.Min(now.Sub(m.lastAdv).Seconds(), 0.05)
+		dt = math.Min(now.Sub(m.lastAdv).Seconds(), 0.05) * speedFactor[m.set.Speed] // 動きの速さは dt に掛ける (spec §4.1)
 	}
 	m.lastAdv = now
 	m.takeBackground()
@@ -225,13 +245,23 @@ func (m *Model) Advance(now time.Time) bool {
 	return m.moving
 }
 
+// startGit は git の取得を頼む (設定の Git が off なら何もしない。取得を始める場所はここだけにする)。
+func (m *Model) startGit(force bool) {
+	if m.set.Git {
+		m.git.start(m.root.path(), m.now(), force)
+	}
+}
+
 // takeBackground は裏の走査と git の結果を取り込み、見えているフォルダの走査を頼む。
 func (m *Model) takeBackground() {
 	if recs, v, ok := m.walker.snapshot(m.recsVer); ok {
 		m.recs, m.recsVer = recs, v
 	}
 	if s, v, ok := m.git.take(m.gitVer); ok {
-		m.gitSnap, m.gitVer = s, v
+		m.gitVer = v   // off でも版は進める (取り込まずに残すと Busy が続き、呼び出し側の tick が止まらない)
+		if m.set.Git { // off にする前に始めた取得の結果は捨てる
+			m.gitSnap = s
+		}
 	}
 	var open []string
 	for _, n := range m.order {
@@ -274,7 +304,7 @@ func (m *Model) applyChange(c dirChange) {
 	n.reload()
 	m.walker.forget(c.dir)
 	// 強制にしない: 書き込みの続くフォルダ (ログ) で毎秒 git status が走るのを、3 秒の間隔制限で止める
-	m.git.start(m.root.path(), m.now(), false)
+	m.startGit(false)
 	visible := func(name string) bool { return m.showHidden || !strings.HasPrefix(name, ".") }
 	lit := false
 	for _, name := range c.changed {
@@ -324,8 +354,13 @@ func (m *Model) findNode(abs string) *node {
 	return walk(m.root)
 }
 
+var speedFactor = map[string]float64{"slow": 0.5, "normal": 1, "fast": 2, "instant": 1000}
+
 // lightUp は n から root へ、1 段ごとに rippleStep 遅れて光を昇らせる (spec §4.4)。
 func (m *Model) lightUp(n *node) {
+	if !m.set.Ripples {
+		return
+	}
 	now := m.now()
 	k := 0
 	for p := n; p != nil; p = p.parent {
@@ -377,7 +412,7 @@ func (m *Model) sync(pos map[*node]place) {
 	for n := range pos {
 		if a, ok := m.anims[n]; ok {
 			a.ghost = false
-			a.w = labelWidth(n)
+			a.w = m.labelWidth(n)
 		}
 	}
 	// 生まれる順は親が先 (列順) になるよう、深さの浅い順に足す
@@ -390,7 +425,7 @@ func (m *Model) sync(pos map[*node]place) {
 	sortByDepth(born)
 	for _, n := range born {
 		p := pos[n]
-		a := &anim{w: labelWidth(n)}
+		a := &anim{w: m.labelWidth(n)}
 		a.x.v, a.y.v = float64(p.x), float64(p.y)
 		// 新しい項目は、いちばん近いアニメ中の祖先の右端から湧く (spec §4.2)
 		for anc := n.parent; anc != nil; anc = anc.parent {
@@ -566,13 +601,17 @@ func (m *Model) HandleKey(k string) Result {
 // HandleInput は 1 打鍵を処理する。text はその打鍵が入力する文字 (KeyPressMsg.Text)。
 func (m *Model) HandleInput(k, text string) Result {
 	m.snapAll()
-	defer func() { m.moving = true }()         // 目標が変わったので次の Advance で動き出す
-	m.git.start(m.root.path(), m.now(), false) // 前回から 3 秒以上たっていれば取り直す (周期のタイマーは張らない)
+	defer func() { m.moving = true }() // 目標が変わったので次の Advance で動き出す
+	m.startGit(false)                  // 前回から 3 秒以上たっていれば取り直す (周期のタイマーは張らない)
 	if k == "ctrl+c" && !m.search.active && !m.prompt.active {
 		return Quit // どこからでも即終了 (glogx-ui-guide §1)。検索中は検索の取り消し (spec §6.2)
 	}
 	if m.help {
 		m.help = false // キー一覧は ? 以外のキーで閉じるだけ (spec §6.6)。閉じたキーは他の意味を持たない
+		return None
+	}
+	if m.panel.open {
+		m.panelKey(k)
 		return None
 	}
 	if m.search.active {
@@ -678,7 +717,10 @@ func (m *Model) treeKey(k string) Result {
 		m.requestShell()
 		return Exec
 	case ".":
-		m.showHidden = !m.showHidden
+		m.set.ShowHidden = !m.set.ShowHidden // 設定の Dotfiles と同じ (保存もする)
+		m.applySettings("show_hidden")
+	case ",":
+		m.panel.open, m.help = true, false
 	default:
 		switch listnav.MotionOf(k) {
 		case listnav.Down:
@@ -1017,7 +1059,7 @@ func (m *Model) draw() *canvas {
 	}
 	// カーソル: 名前の背景を glogx のカーソル色で塗るだけ (spec §0.1)
 	if p, ok := now[m.cur]; ok && p[1]-oy < ch {
-		c.fillBg(p[0]-1-ox, p[1]-oy, p[0]+labelWidth(m.cur)-ox, p[1]-oy, cCursorBg)
+		c.fillBg(p[0]-1-ox, p[1]-oy, p[0]+widthOf(m.cur.label())-ox, p[1]-oy, cCursorBg)
 	}
 	m.drawLines(c, now, ox, oy, ch)
 	m.drawNames(c, pos, ox, oy, ch)
@@ -1040,6 +1082,9 @@ func (m *Model) draw() *canvas {
 	}
 	if m.help {
 		m.drawHelp(c)
+	}
+	if m.panel.open {
+		m.drawPanel(c)
 	}
 	return c
 }
@@ -1092,7 +1137,7 @@ func (m *Model) drawLines(c *canvas, now map[*node][2]int, ox, oy, ch int) {
 		case emDim:
 			col = mix(cAccDim, mix(sap, cBg, 0.55), 0.35)
 		}
-		p.s, p.fg = doubleGlyph[lc.mask&15], col
+		p.s, p.fg = glyph(m.set.Lines, lc), col
 	}
 }
 
@@ -1116,12 +1161,12 @@ func (m *Model) drawNames(c *canvas, pos map[*node]place, ox, oy, ch int) {
 			switch {
 			case m.onPath(n):
 				base = cRouteTxt
-			case st == gitIgn:
-				// ignored は灰色に沈める (spec §1.4 の ignored_shade。dim_floor 既定 5)
-				base = mix(mix(cBg, cIgnored, 0.1+0.08*5), base, 0.12)
+			case st == gitIgn && m.set.DimIgnored:
+				// ignored は灰色に沈める (spec §1.4 の ignored_shade)
+				base = mix(mix(cBg, cIgnored, 0.1+0.08*float64(m.set.DimFloor)), base, 0.12)
 			case pos[n].active:
 			default:
-				base = mix(base, cBg, 0.32) // 選択線から外れた枝 (spec §1.4 の off_line。focus_dim 既定 6)
+				base = mix(base, cBg, 0.08*float64(10-m.set.FocusDim)) // 選択線から外れた枝 (spec §1.4 の off_line)
 			}
 			fg := mix(cBg, base, a.alpha.v)
 			if g := m.glow(n); g > 0.02 {
@@ -1130,7 +1175,10 @@ func (m *Model) drawNames(c *canvas, pos map[*node]place, ox, oy, ch int) {
 					c.fillBg(x, y, x+a.w-1, y, mix(cBg, cRippleBg, g*a.alpha.v))
 				}
 			}
-			c.put(x, y, n.label(), fg, n.dir || m.onPath(n))
+			nx := c.put(x, y, n.label(), fg, n.dir || m.onPath(n))
+			if d := m.details(n); d != "" {
+				c.put(nx+2, y, d, mix(cBg, base, a.alpha.v*0.5), false) // 名前の後ろの詳細は薄く (spec §3.2)
+			}
 			if q != "" {
 				if r, spans := fuzzy(n.name, q); r < rankNone {
 					lw := widthOf(n.label())
@@ -1330,6 +1378,9 @@ func (m *Model) statusBar(c *canvas) {
 		right = append([]seg{{spinnerFrame(m.now()) + " ", cAccRoute, false}, {"exploding · " + itoa(m.exploding.count()) + " folders · ", cText, false},
 			{"esc", cAccRoute, true}, {" stops · ", cMuted, false}}, right...)
 	}
+	if !m.set.Legend {
+		legend = nil
+	}
 	all := append(append(append([]seg{}, right...), legend...), hints...)
 	if crumbW+2+segW(all) > m.w {
 		all = append(append([]seg{}, right...), hints...)
@@ -1404,6 +1455,7 @@ var helpKeys = [][2]string{
 	{"/ n N", "列の中を検索 · 次 · 前"},
 	{"- backspace", "root を 1 段上へ"},
 	{".", "dotfile の表示を切り替え"},
+	{",", "設定"},
 	{"タイルの中", "j k ^D ^U g G · tab でパスを選ぶ · J K で隣"},
 	{"q esc", "終了 (タイルの上では 1 枚閉じる)"},
 	{"!", "ここでコマンドを 1 行 ($f = 選んだパス)"},
@@ -1446,4 +1498,74 @@ func (m *Model) promptBar(c *canvas) {
 	text, _ := m.prompt.line.Window(max(m.w-widthOf(pre)-1, 1))
 	x = c.put(x, y, text, cText, false)
 	c.put(x+1, y, "  enter 実行 · esc 取り消し · $f = 選んだパス", cMuted, false)
+}
+
+// details は名前の後ろに出す詳細 (設定の Name details。spec §3.2)。出さないなら ""。
+func (m *Model) details(n *node) string {
+	if m.set.Details == "off" || m.set.Details == "" {
+		return ""
+	}
+	age := shortAge(m.now().Sub(n.mtime).Seconds())
+	size := ""
+	if n.dir {
+		if r, ok := m.recs[n.path()]; ok {
+			size = shortSize(r.bytes)
+		}
+	} else {
+		size = shortSize(n.size)
+	}
+	switch m.set.Details {
+	case "age":
+		return age
+	case "size":
+		return size
+	}
+	if size == "" {
+		return age
+	}
+	return age + " · " + size
+}
+
+func (m *Model) detailsWidth() int {
+	switch m.set.Details {
+	case "age", "size":
+		return 2 + 4
+	case "both":
+		return 2 + 11
+	}
+	return 0
+}
+
+// shortAge は now 5m 3h 2d 4w 8mo 3y (spec §3.2)。
+func shortAge(s float64) string {
+	switch {
+	case s < 60:
+		return "now"
+	case s < 3600:
+		return itoa(int(s/60)) + "m"
+	case s < 86400:
+		return itoa(int(s/3600)) + "h"
+	case s < 7*86400:
+		return itoa(int(s/86400)) + "d"
+	case s < 30*86400:
+		return itoa(int(s/(7*86400))) + "w"
+	case s < 365*86400:
+		return itoa(int(s/(30*86400))) + "mo"
+	}
+	return itoa(int(s/(365*86400))) + "y"
+}
+
+// shortSize は 980B 4.2K 12M 1.3G (4 桁以内。spec §3.2)。
+func shortSize(n int64) string {
+	units := []string{"B", "K", "M", "G", "T"}
+	v := float64(n)
+	i := 0
+	for v >= 1000 && i < len(units)-1 {
+		v /= 1024
+		i++
+	}
+	if i == 0 || v >= 10 {
+		return itoa(int(v+0.5)) + units[i]
+	}
+	return strconv.FormatFloat(v, 'f', 1, 64) + units[i]
 }

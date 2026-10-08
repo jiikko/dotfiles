@@ -42,14 +42,19 @@ func (n *node) depth() int {
 
 func (n *node) hidden() bool { return strings.HasPrefix(n.raw, ".") }
 
-// maxName は列の最大幅 (spec §3.2 の max_name 既定 28)。
-const maxName = 28
+// 表示と並びの設定 (設定の板の Column width / Folders first / Natural sort)。applySettings が書き込む。
+// 🚨 配色 (theme.go) と同じく UI の 1 本の goroutine だけが読み書きする。
+var (
+	labelMax         = 28 // 列の最大幅 (spec §3.2 の max_name 既定 28)
+	sortFoldersFirst = false
+	sortNatural      = true
+)
 
 func (n *node) label() string {
-	if termwidth.Of(n.name) <= maxName {
+	if termwidth.Of(n.name) <= labelMax {
 		return n.name
 	}
-	return termwidth.Truncate(n.name, maxName, "…")
+	return termwidth.Truncate(n.name, labelMax, "…")
 }
 
 func newNode(raw string, info os.FileInfo, parent *node) *node {
@@ -104,7 +109,7 @@ func (n *node) load() {
 		}
 		kids = append(kids, newNode(e.Name(), info, n))
 	}
-	sort.SliceStable(kids, func(i, j int) bool { return lessName(kids[i].raw, kids[j].raw) })
+	sortKids(kids, sortFoldersFirst, sortNatural)
 	n.kids = kids
 }
 
@@ -131,9 +136,24 @@ func (n *node) reload() {
 	}
 }
 
-// lessName は名前順 (大文字小文字を無視した自然順。同じなら元の名前。spec §5.6)。
-func lessName(a, b string) bool {
-	if c := naturalCmp(strings.ToLower(a), strings.ToLower(b)); c != 0 {
+// sortKids は名前順に並べる (spec §5.6)。foldersFirst ならフォルダを上に。
+func sortKids(kids []*node, foldersFirst, natural bool) {
+	sort.SliceStable(kids, func(i, j int) bool {
+		if foldersFirst && kids[i].dir != kids[j].dir {
+			return kids[i].dir
+		}
+		return lessName(kids[i].raw, kids[j].raw, natural)
+	})
+}
+
+// lessName は名前順 (大文字小文字を無視し、natural なら数字の連なりを数として比べる。同じなら元の名前。spec §5.6)。
+func lessName(a, b string, natural bool) bool {
+	la, lb := strings.ToLower(a), strings.ToLower(b)
+	c := strings.Compare(la, lb)
+	if natural {
+		c = naturalCmp(la, lb)
+	}
+	if c != 0 {
 		return c < 0
 	}
 	return a < b

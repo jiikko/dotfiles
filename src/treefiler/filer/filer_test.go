@@ -15,6 +15,7 @@ var fixedNow = time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
 // fixture は決め打ちの木を一時ディレクトリに作る。mtime は fixedNow からの経過で固定する。
 func fixture(t *testing.T) string {
 	t.Helper()
+	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir()) // 設定はテストごとに別 (前のテストが . で書いた設定を読まない)
 	root := t.TempDir()
 	files := map[string]string{
 		"a/one.txt":       "1\n2\n3\n",
