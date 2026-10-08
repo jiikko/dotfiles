@@ -1,5 +1,7 @@
 # 662 (feat): treefiler — glogx の `F` と単体で開くファイラー (treebeard の見た目 + 重なっていくウィンドウタイル)
 
+> 🚨 **担当中: Claude Code (treefiler 実装のセッション)**（2026-10-08〜）
+
 起票日: 2026-10-07
 
 ## 概要
