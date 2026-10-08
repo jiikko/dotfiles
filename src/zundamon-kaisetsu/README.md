@@ -22,6 +22,7 @@ zundamon-kaisetsu check | up | down | speakers | kana … | lint script.json | s
 | `script.go` | 台本の読み込みと検証・キャラの設定・合成のキャッシュの鍵 (`Params` / `cacheSerialize`)・読み替え |
 | `synth.go` | エンジンへの要求 (audio_query / synthesis)・キャッシュ (`<台本>.work/`)・`kana` |
 | `lint.go` | `lint`: 台本の校正のうち文字列と構造だけで決まるもの (60 字超・「のだ」2 回・漢数字・図を指す言い方 等。issue 675)。試験用の台本は skill の `examples/review-bench/` |
+| `source_check.go` | `lint --source 資料`: 台本と資料の突き合わせの候補 (資料に無い数字・英字の語、導入の区切りの言葉が無い。すべて目安。issue 685) |
 | `reading_check.go` | `kana --script --check`: 英字の語を 1 文字ずつ読んだ行の警告と、英字の語の一覧 (略語の一覧は skill の `acronyms.json`。issue 673) |
 | `engine.go` / `engine_auto.go` | エンジンのコンテナの起動・停止 / 自動起動と、使われなくなったら止める見張り |
 | `build.go` | 組み立て (`assemble`: wav の連結・口の開き・プレイヤーのデータ)・`cmdBuild`・HTML への埋め込み |

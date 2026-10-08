@@ -402,7 +402,8 @@ const usageText = `usage: zundamon-kaisetsu [--engine URL] {check,up,down,speake
   kana      文ごとの読み (audio_query の kana) を出す。read の候補を合成せずに比べる
               kana "文" … [--who metan|zundamon] [--style-id ID]  /  kana --script 台本.json [--check]
               --check: 英字の語を 1 文字ずつ読んだ行を警告し (あれば rc=1)、英字の語の一覧を出す
-  lint      台本の校正のうち機械で決まるもの (60 字超・「のだ」2 回・漢数字・図を指す言い方 等) を警告する (あれば rc=1)。lint 台本.json
+  lint      台本の校正のうち機械で決まるもの (60 字超・「のだ」2 回・漢数字・図を指す言い方 等) を警告する (あれば rc=1)。lint 台本.json [--source 資料]
+              --source: 資料に無い数字・英字の語、導入の区切りの言葉が無いことを目安として出す
   synth     セリフごとに wav を合成する (<台本名>.work/ にキャッシュ)。synth 台本.json [--force]
   build     合成済みの wav を連結し、HTML プレイヤーか mp4 (か両方) を書き出す
               build 台本.json -o 出力 [--format html|mp4|both] [--jobs N] [--bitrate 64k] [--allow-fast-captions]
@@ -469,7 +470,7 @@ func dispatch(args []string, env *Env) error {
 			{names: []string{"--check"}, dest: "check"},
 		},
 		"synth": {{names: []string{"--force"}, dest: "force"}},
-		"lint":  nil,
+		"lint":  {{names: []string{"--source"}, dest: "source", takes: true}},
 		"build": {
 			{names: []string{"-o", "--output"}, dest: "output", takes: true},
 			{names: []string{"--format"}, dest: "format", takes: true, choices: []string{"html", "mp4", "both"}},
@@ -530,7 +531,7 @@ func dispatch(args []string, env *Env) error {
 		if err := env.requireSkillDir(); err != nil {
 			return err
 		}
-		return cmdLint(env, p.pos[0])
+		return cmdLint(env, p.pos[0], p.opts["source"])
 	case "synth":
 		if err := env.requireSkillDir(); err != nil {
 			return err

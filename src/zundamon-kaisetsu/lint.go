@@ -256,8 +256,8 @@ func withoutIdioms(text string) string {
 	return text
 }
 
-// cmdLint は台本を規則で見て、警告を出す。警告が 1 つでもあれば rc=1。
-func cmdLint(env *Env, scriptArg string) error {
+// cmdLint は台本を規則で見て、警告を出す。警告が 1 つでもあれば rc=1。sourceArg (lint --source) があれば資料との突き合わせの候補も出す (目安)。
+func cmdLint(env *Env, scriptArg, sourceArg string) error {
 	s, err := loadScript(resolvePath(scriptArg), env)
 	if err != nil {
 		return err
@@ -266,8 +266,17 @@ func cmdLint(env *Env, scriptArg string) error {
 	if err != nil {
 		return err
 	}
+	issues := lintScript(s, dict)
+	if sourceArg != "" {
+		src, err := readSource(sourceArg)
+		if err != nil {
+			return err
+		}
+		issues = append(issues, sourceCandidates(s, src)...)
+		sort.SliceStable(issues, func(a, b int) bool { return issues[a].Line < issues[b].Line })
+	}
 	warned := 0
-	for _, is := range lintScript(s, dict) {
+	for _, is := range issues {
 		kind := "警告"
 		if is.Hint {
 			kind = "目安"
