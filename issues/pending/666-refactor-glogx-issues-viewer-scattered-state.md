@@ -34,6 +34,7 @@ issues viewer (`issuesView`) と周辺で、対で更新すべき状態の更新
 - `openDoc` は issue でない `.md` を `issues.Issue` に包むので Status がゼロ値 = Open になる (今は `docStack` の分岐で無害)
 - 方針: `docPager` 型 (open / push / pop / replaceBody / discard)。文書は Issue ではなくパス・表示名・Dir で持つ。
   issue 662 (内蔵ファイラー) が本文 pager を流用候補に挙げているので、第二の利用者が出るそのときに切り出す。今は先回りしない
+  - 662 で継続 (2026-10-09): treefiler はタイルの表示を自前で持ち (`src/treefiler/filer/tileview.go`)、本文 pager を流用しなかった。D の trigger は発火していない
 
 ### F. tui.go の resize が viewer 内部の滑走を直接 Stop
 

@@ -1,7 +1,5 @@
 # 662 (feat): treefiler — glogx の `F` と単体で開くファイラー (treebeard の見た目 + 重なっていくウィンドウタイル)
 
-> 🚨 **担当中: Claude Code (treefiler 実装のセッション)**（2026-10-08〜）
-
 起票日: 2026-10-07
 
 ## 概要
@@ -141,7 +139,7 @@ MIT OR Apache-2.0) を写す**。依頼に無い部分も含めて全部写す�
 
 ## 実装前に集めた情報 (2026-10-07)
 
-**仕様の正本は [`docs/treefiler-spec.md`](../docs/treefiler-spec.md)**。§0 に glogx での決定と組み込み先、§1〜10 に treebeard のソース
+**仕様の正本は [`docs/treefiler-spec.md`](../../docs/treefiler-spec.md)**。§0 に glogx での決定と組み込み先、§1〜10 に treebeard のソース
 (commit `691788d`) から抜いた配色の RGB・線の文字表・列の配置と肘の引き方・ばねの定数・走査や git の取り方・全キー・全設定がある。
 抜き出しは read-only のサブエージェント (sonnet) が書き、配色・`MOVE`・`POPUP_T`・`WALK_CAP`・バイナリ判定・テキストの上限・既定の線を原文で照合した。
 
@@ -184,16 +182,16 @@ MIT OR Apache-2.0) を写す**。依頼に無い部分も含めて全部写す�
 3. 本体へ入れる順: 横に育つ木と選択線 → 熱の色と git の印 → タイル 1 枚 → タイルの重ね → ばねの動き・ライブ更新 → C の残り
 4. 入れるときに同じ変更で直すもの (`docs/glogx-ui-guide.md` §10): `src/glogx/README.md` のキー表・`--help`・ui-guide §2 の表
 
-## 受け入れ条件 (未決事項が決まったら書き直す)
+## 受け入れ条件
 
-- [ ] glogx のどの画面からでも `F` で開く (入力中の viewer を除く)
-- [ ] 木が treebeard と同じ形で描かれる (横に育つ列・二重線の管・固定の選択線・熱の色・`›` の芽・git の印・ステータスバー)
-- [ ] `→` でフォルダを開いて右へ列が増え、`←` で親へ戻る
-- [ ] ファイルで `→` / `Enter` を押すとタイルが開き、中身はテキストのプレビュー
-- [ ] タイルの中から別のファイルへ飛ぶと、新しいタイルが手前に重なり、閉じると 1 枚下へ戻る
-- [ ] C 節の UI (未決 7 で写さないと決めたものを除く)
-- [ ] 表示するファイル名は termsafe を通っている
-- [ ] README のキー表・`--help`・ui-guide §2 を更新した
+- [x] glogx のどの画面からでも `F` で開く (入力中の viewer を除く) — `TestCrossKeysReachEveryFullScreen` / `TestFilerOpensWithFAndClosesWithF`
+- [x] 木が treebeard と同じ形で描かれる (横に育つ列・二重線の管・固定の選択線・熱の色・`›` の芽・git の印・ステータスバー) — `TestSpineIsOnRowZeroAndBlocksDoNotOverlap` / `TestHeatStops` / `TestGitMarksFromRealRepo`、隔離した tmux で撮って確認
+- [x] `→` でフォルダを開いて右へ列が増え、`←` で親へ戻る — `TestSiblingMovesAndAliases`
+- [x] ファイルで `→` / `Enter` を押すとタイルが開き、中身はテキストのプレビュー (Markdown の整形・コードの色付け・diff・折り返しつき) — `TestLazyTextReadsHeadThenMore` / `TestViewHighlightsCode`
+- [x] タイルの中から別のファイルへ飛ぶと、新しいタイルが手前に重なり、閉じると 1 枚下へ戻る — `TestTileSlotsRotateAndCloseKeys` / `TestLinksResolveOnlyExistingFiles`
+- [x] C 節の UI (未決 7 で写さないと決めたものを除く)。後回しの決定どおり画像・PDF のプレビューとソートは入れていない (688 へ切り出し)
+- [x] 表示するファイル名は termsafe を通っている — `TestNameIsSanitized` / `TestLongLineIsSplitAndContentSanitized`
+- [x] README のキー表・`--help`・ui-guide §2 を更新した (`src/glogx/README.md` / `options.go` / `docs/glogx-ui-guide.md` §2 / `src/treefiler/README.md` / `treefiler --help`)
 
 ## 関連ファイル
 
@@ -369,7 +367,7 @@ MIT OR Apache-2.0) を写す**。依頼に無い部分も含めて全部写す�
   - 名前の後ろの詳細を列の中で右揃え (spec §3.4。layout が列ごとの最長の名前の幅を数え、詳細は幅 4 の右揃え)
   - git が無視する枝の細線 (spec §2.1 の thin。heavy / double で、無視される子だけが通る軸を MIXED の表の細線に落とす)
   - 波紋が肘を伝う (spec §4.4。名前より半段先の明るさで、親の行・子の行・縦の成分のセルを光らせる)
-  - 入れ子の repo (spec §5.4): root と開いているフォルダが属する repo ごとに `git status` を取り、パスはいちばん深い repo で引く。
+  - 入れ子の repo (spec §5.3。commit message の「§5.4」は誤り): root と開いているフォルダが属する repo ごとに `git status` を取り、パスはいちばん深い repo で引く。
     ブランチはカーソルの repo。変更の無い入れ子の repo の根は外側の repo から見た状態 (未追跡・無視)。`.git` が現れた・消えたら数え直す
   - 入力欄 (`/` `!`) への貼り付け (glogx の PasteMsg と単体の両方。入力していないときは捨てる)
   - 隔離した tmux で撮った: 詳細 both の右揃え (名前の長さの違う 3 行で `now ·   2B` / `25m · 168B` の桁が揃う)
@@ -399,7 +397,7 @@ MIT OR Apache-2.0) を写す**。依頼に無い部分も含めて全部写す�
     `--literal-pathspecs`) / 幅を広げると折り返しの行が減り、末尾のタイルが空白になる (P2。Resize で詰める) / 巨大な diff を全部読む (P2。8 MiB で
     読むのをやめ、途中の行を落として打ち切りを知らせる) / 外部 diff (`diff.external`) の出力 (P3。`--no-ext-diff`) / 開いている間の変更が diff に出ない (P3) /
     Markdown を G で上限を超えて読む (P3。上限は中身を決めたときに付ける)。
-    🚨 Markdown の整形は UI の goroutine で同期に走り、2 MiB で 1.8 秒止まった (テストで実測)。上限を spec の 2 MiB から 256 KiB に下げた (0.06 秒)。
+    🚨 Markdown の整形は UI の goroutine で同期に走る。TestMarkdownReadsUpToCap (上限 + 1 MiB のファイルを開いて G。ファイルの書き出しを含む) の所要が、上限 2 MiB で 1.83 秒だったので、上限を spec の 2 MiB から 256 KiB に下げた (同じテストで 0.06 秒。ファイルの大きさも違い、整形だけの時間は未分離)。
     記録のみ: SGR の dim・italic・reverse は捨てる / 折り返しをまたぐパスはリンクとして割れる / diff を出している間も Tab のリンク候補を探す
     (実在しなければ出ない) / コードの色付けは行単位 (複数行のコメントは色が続かない。tuikit/highlight の割り切り)
   - glogx の TestFrameAllocBudget (filer): パッケージ全体の実行で 1 回だけ 159 (上限 158) が出た。単独では変更の前後とも 156、全体の実行を 3 回回して全部緑。
@@ -410,4 +408,14 @@ MIT OR Apache-2.0) を写す**。依頼に無い部分も含めて全部写す�
     取りに行き、汎用の文言になる / Markdown が 256 KiB を超えると位置表示が「N+」のまま (G で先へは進まない)
   - 変異 17 本が red (切り替えで表示のキャッシュを捨てない / o / r を外す・open と diff の Busy を外す・HEAD が無いときの倒れ先・追記の取り込み位置・SGR の背景色・Wrap を読まない・
     diffable の判定・Markdown の整形・literal pathspec・Resize の詰め・取り直し・Markdown の上限・バイトの上限の判定と読み方)
+
+### 決着 (2026-10-09)
+
+- 受け入れ条件 8 項目はすべて満たした (各項目に、守っているテストの名前を添えた)。ユーザーの判断で後回しにした画像・PDF のプレビューとソートは 688 へ切り出した
+- 実測 (2026-10-09、最後の commit の時点): `src/treefiler` の `go test ./...` と `make lint` (0 issues)・`src/glogx` の `go test ./...`・`make test-lint`・
+  `make test-unused-excluding-tests` がいずれも緑。CI は 48b1ac71 で src/treefiler・src/glogx・unused・Bench ほか全部 success (Tests と Lint は後の push で
+  取り消されたので、done へ送る commit の run で確かめる)
+- 未確認のまま残るもの: 画面の見た目は隔離した tmux で撮った範囲だけ (実際の端末での色・truecolor の出方は人が使って確かめる)。repo の数に上限が無い
+  (段階 7 の記録のみ)。glogx の TestFrameAllocBudget の揺れ (段階 6)
+- 振り返りは 689
 
