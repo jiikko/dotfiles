@@ -38,18 +38,26 @@ codex の run の後に 1 回呼ばれるだけ)。それでも寄せる理由�
 | `zshlib/_concat_helpers.zsh:397` (`__concat_mp4_effective_size` の `python3 -c`) | heredoc 1 本 | 同ファイル | **実行時に呼ばれる本体コード**。mp4 のトップレベル box を読む |
 | `bin/tmux-toast` の `python3 -c` (`:94` 表示セル幅、`:185` tick 数) | 2 か所 | 同ファイル | 置き換えではなく**挙動の変更**になる (下の「tmux-toast」) |
 | `bin/repair_avi_vorbis_audio.sh:91` の `python3 -` (Ogg の組み直し) | heredoc 1 本 | 同ファイル | |
-| `bin/repair-avcc-avi` | 706 | Finder メニュー (`@DotfilesSyncer`) | 拡張子なしの Python。一番大きいので後回し |
-| `tests/setup/lib/make_terminal_fixtures.py` | 96 | `tests/setup/test_terminal_profile_{appearance,restore}.sh` | テストの fixture を生成する |
-| `src/chromecookie/mutation_check.py` | 208 | 手動で実行 (参照 0 件) | `bin/mutate-verify` / `mutate-verify-list` (issue 408 / 580) に寄せられないかを先に見る。寄せられるなら Go にせず消す |
 | `src/lockman/ab_abandoned.sh:37` の `python3 -` (A-B 用に main.go を書き換える) | heredoc 1 本 | 手動の計測ハーネス (`src/lockman/README.md`) | 優先度は低い |
 
-### 対象外 (理由つき)
+### Go にしない .py (特定のツールのためだけにあり、単体で完結するもの)
 
-- `src/pro-con/samples/*/` の Python 9 本と `gen.sh` — 見た目を決めるための**使い捨てのサンプルレンダラ** (`decide-layout-in-sample-renderer-first.md`)。
-  道具として呼ばれるものではない
-- `_claude/skills/zundamon-kaisetsu/scripts/psd_faces.py` (109 行) — `psd-tools` (`uv run --with psd-tools`) に依存している。
-  PSD を読む Go のライブラリで同じ層の合成ができると確かめられるまでは移さない。
-  再評価の trigger: PSD の読み込みで不具合が出たとき / Go 側 (`src/zundamon-kaisetsu`) が PSD を直接読みたくなったとき
+2026-10-08 のユーザーの方針: 「特定のツールのために使っていて、単発で完結している py はそのままでいい」。
+線引き: **単体で起動して仕事が終わるもの**はそのまま残す。**別の道具の処理の一部として毎回呼ばれ、その出力で呼び出し元が判定するもの**
+(`bin/lib/codex-events.py` は `bin/codex-fanout` の run ごとに呼ばれ、complete / incomplete の判定を返す) は移す対象に残す。
+
+| ファイル | 行数 | 何のためか |
+|---|---|---|
+| `bin/repair-avcc-avi` | 706 | 再生できない AVI (AVCC 形式の H.264) の修復。Finder メニュー (`@DotfilesSyncer`) から単体で起動する |
+| `src/chromecookie/mutation_check.py` | 208 | chromecookie の安全装置の変異検証。手動で単体実行する (参照 0 件)。`bin/mutate-verify` へ寄せるかは別の判断で、この issue では扱わない |
+| `tests/setup/lib/make_terminal_fixtures.py` | 96 | Terminal のプロファイルのテスト (`tests/setup/test_terminal_profile_{appearance,restore}.sh`) 用の fixture を生成する |
+| `_claude/skills/zundamon-kaisetsu/scripts/psd_faces.py` | 109 | zundamon-kaisetsu の立ち絵を PSD から書き出す。`psd-tools` (`uv run --with psd-tools`) に依存する |
+| `src/pro-con/samples/*/` の 9 本 (`485-dependency-view/pro-con-485-sample.py` / `509-upgrade-transition/sample.py` / `515-help-flow/sample.py` / `531-question-card/sample.py` / `532-card-search/sample.py` / `537-picker-cards/sample.py` / `543-join-no-owner/sample.py` / `556-card-color/sample.py` / `556-card-color/palette.py`) | 43〜414 | pro-con の見た目を決めるための使い捨てのサンプルレンダラ (`decide-layout-in-sample-renderer-first.md`) |
+
+再評価の trigger: その .py が 2 つ目の道具から呼ばれるようになったとき / 別の道具の処理の一部として組み込まれたとき。
+
+### その他の対象外 (理由つき)
+
 - `bin/mutate-verify:213,221` の `python3 -m py_compile` — 変異させる**相手が** Python のときの構文検査。Python が残る限り必要
 - `.github/workflows/doctor.yml:126,129` の `python3 -c` / `python3 -` (出力 JSON の検査) — CI の step の中だけで使っている。
   `jq` で見る形にできるなら一緒に直してよい (優先度は低い)
@@ -120,7 +128,7 @@ codex の run の後に 1 回呼ばれるだけ)。それでも寄せる理由�
    判定を担うので、上の突き合わせを省かない
 2. `zshlib/_concat_helpers.zsh` の mp4 のサイズ計算 — 実行時の本体コード
 3. `tmux-toast` の幅計算 — `termwidth` があるので、自前で持つ必要がなくなる
-4. 残り (repair 系 / fixture 生成 / mutation_check / lockman の A-B) は触る機会が来たときに
+4. 残り (`repair_avi_vorbis_audio.sh` / lockman の A-B) は触る機会が来たときに
 
 ## 受け入れ条件
 
@@ -131,7 +139,7 @@ codex の run の後に 1 回呼ばれるだけ)。それでも寄せる理由�
 - [ ] `bin/codex-fanout` から `python3` の呼び出しがなくなり (`grep -n python3 bin/codex-fanout` が 0 件)、Go のバイナリは起動時に解決される
 - [ ] `zshlib/_concat_helpers.zsh` の mp4 のサイズ計算を置き換える
 - [ ] `tmux-toast` の幅計算を `termwidth` に寄せ、旧との幅の差を確認し、go が無いときも exit 0 で縮退することをテストで固定する
-- [ ] 残りの対象は、それぞれ移したか、移さない理由を本 issue に書いた
+- [ ] 残りの対象 (`repair_avi_vorbis_audio.sh` / `ab_abandoned.sh` の heredoc) は、それぞれ移したか、移さない理由を本 issue に書いた
 
 ## 関連ファイル
 
@@ -150,3 +158,4 @@ codex の run の後に 1 回呼ばれるだけ)。それでも寄せる理由�
   codex-events の commit が origin に未 push である前提。
   反証できなかった主張: 各ファイルの行数、`mutation_check.py` の参照 0 件、Python の lint の配線が無いこと、
   ルール名と issue 408 / 580 の実在、`--pkg` の前例、psd_faces.py / サンプル / `py_compile` を対象外にした判断
+- 2026-10-08: ユーザーの方針で「特定のツールのためだけにあり、単体で完結する .py」を Go にしない側へ移した (`repair-avcc-avi` / `mutation_check.py` / `make_terminal_fixtures.py` を対象から外し、psd_faces.py とサンプル 9 本と合わせて表にした)
