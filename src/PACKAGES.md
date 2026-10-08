@@ -70,6 +70,7 @@
 - `src/treefiler/gorules` (`treefiler/gorules`) — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.yml から参照)。 (build tags: ruleguard)
 - `src/tuikit/anim` (`github.com/jiikko/dotfiles/src/tuikit/anim`) — Package anim は端末 UI の演出に使う状態機械と緩急カーブ。
 - `src/tuikit/caret` (`github.com/jiikko/dotfiles/src/tuikit/caret`) — Package caret は入力欄のキャレットを端末のカーソルにする (bubbletea v2 の View.Cursor)。
+- `src/tuikit/cmd/termwidth` (`github.com/jiikko/dotfiles/src/tuikit/cmd/termwidth`) — Command termwidth は、引数の文字列の端末での表示幅 (セル数) を出す。 (main)
 - `src/tuikit/confirm` (`github.com/jiikko/dotfiles/src/tuikit/confirm`) — Package confirm は y/N 確認ダイアログの部品: 中央に浮かべる小さな板と、実行キーの判定。
 - `src/tuikit/editor` (`github.com/jiikko/dotfiles/src/tuikit/editor`) — Package editor は実ファイルを 1 つエディタで開くコマンドを組む。
 - `src/tuikit/examples/listdetail` (`github.com/jiikko/dotfiles/src/tuikit/examples/listdetail`) — listdetail は tuikit の「一覧 → 詳細」の遷移パターンを 1 画面で見せるデモ。 (main)

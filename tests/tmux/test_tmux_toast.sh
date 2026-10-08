@@ -58,7 +58,7 @@ case "$1" in
       *@tmux_toast_last_epoch*) echo "${STUB_LAST:-}" ;;
       # -ag での追記を再現する (追記後の値を読み直す경路がある)
       *@tmux_toast_pane*)
-        # read/echo は builtin。PATH を空にする python3 不在テストでも動く必要がある
+        # read/echo は builtin。PATH を絞る「幅を測れない」テストでも動く必要がある
         if [ -f "$APPENDED" ]; then read -r _v < "$APPENDED"; echo "$_v"
         else echo "${STUB_TOAST_PANE:-}"; fi ;;
       *@agent_panel_busy*) echo "${STUB_PANEL:-}" ;;
@@ -301,18 +301,31 @@ else
   ng "fallback: refresh-client が呼ばれない (toast が残留する)"
 fi
 
-# --- python3 不在: 幅を上界概算して表示は続行 (exit 127 で hook を汚さない) --
-# 実ツール (grep/date) だけ symlink した PATH で python3 を不在にする
+# --- 幅を測れない: 上界概算して表示は続行 (非 0 で hook を汚さない) ---------------
+# 幅は bin/termwidth (Go。zsh のラッパー) で測る。実ツール (grep/date) だけ symlink した PATH では zsh も go も無く、
+# termwidth を起動できない (issue 670 で python3 から置き換えた。縮退の形は同じ)
 # (docs/feedback-nvim-tmux-2026-07-29.md パターン5: fallback は再現テストで固定する)
 reset_calls
 NOPY="$TMP_DIR/nopy"; mkdir -p "$NOPY"
 for _t in grep date; do ln -sf "$(command -v "$_t")" "$NOPY/$_t"; done
 rc=0
-out=$(PATH="$TMP_DIR/bin:$NOPY" TMUX=stub STUB_FLOATING=1 "$SCRIPT" "no python msg" 2>&1) || rc=$?
-if [ "$rc" -eq 0 ] && [ -z "$out" ] && grep -q '^tmux new-pane' "$CALLS"; then
-  ok "python3 不在でも無音 exit 0 + 表示続行 (幅は全角=2 セルの上界概算)"
+out=$(PATH="$TMP_DIR/bin:$NOPY" TMUX=stub STUB_FLOATING=1 "$SCRIPT" "no width msg" 2>&1) || rc=$?
+# 「no width msg」12 文字 × 2 = 24 セル → box_w = 24 + 4 = 28 (測れていれば 12 + 4 = 16)
+if [ "$rc" -eq 0 ] && [ -z "$out" ] && grep -q -- '^tmux new-pane .* -x 28 ' "$CALLS"; then
+  ok "幅を測れなくても無音 exit 0 + 表示続行 (幅は全文字 2 セルの上界概算)"
 else
-  ng "python3 不在で rc=$rc 出力='$out' new-pane=$(grep -c '^tmux new-pane' "$CALLS" || true)"
+  ng "幅を測れないとき rc=$rc 出力='$out' new-pane=$(grep '^tmux new-pane' "$CALLS" || true)"
+fi
+
+# --- 幅のバイナリがまだ無い: ビルドを待たずに上界で出す (issue 670) ---------------
+# 初回のビルドは同期なので、待つと前景で呼ぶペーストの通知が止まる。上界で即座に出し、ビルドは裏で起こす
+reset_calls
+rc=0
+out=$(TMUX_TOAST_TERMWIDTH_BIN="$TMP_DIR/no-such-termwidth" STUB_FLOATING=1 run_toast "no width msg" 2>&1) || rc=$?
+if [ "$rc" -eq 0 ] && [ -z "$out" ] && grep -q -- '^tmux new-pane .* -x 28 ' "$CALLS"; then
+  ok "幅のバイナリが無ければ待たずに上界で出す"
+else
+  ng "幅のバイナリが無いとき rc=$rc 出力='$out' new-pane=$(grep '^tmux new-pane' "$CALLS" || true)"
 fi
 
 # --- fallback 経路: クライアント不在 (headless) は無音で exit 0 -------------

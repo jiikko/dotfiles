@@ -78,6 +78,8 @@ linters:
             - "**/toast/**"
             - "**/lineedit/**"
             - "!**/tuikit/examples/**"
+            # cmd/ はシェルから部品を呼ぶ入口のコマンド (引数と標準出力が仕事)。cmd/termwidth が **/termwidth/** に当たるので外す
+            - "!**/tuikit/cmd/**"
             - "!**/*_test.go"
           deny:
             - pkg: os

@@ -1,0 +1,10 @@
+#!/usr/bin/env zsh
+# termwidth — 文字列の端末での表示幅 (セル数) を出す。bin/tmux-toast が通知の枠の大きさを決めるのに使う。
+# Go implementation at:
+#   ~/dotfiles/src/tuikit/cmd/termwidth/   (幅は tuikit の termwidth.Of)
+#     termwidth <文字列>
+# --async: 通知は tmux の hook から呼ばれるので、2 回目以降は既存のバイナリで即答し、再ビルドは裏で走らせる
+# (初回だけは走らせるものが無いので同期でビルドする。hook は run-shell -b なので tmux は止まらない)。
+set -u
+source "${0:A:h}/lib/go_autobuild.zsh"
+go_autobuild_exec --async --pkg cmd/termwidth "${0:A:h}/../src/tuikit" termwidth -- "$@"

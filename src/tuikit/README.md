@@ -30,6 +30,7 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 | `highlight` | `Diff(lines)` (git の `--color=never` の diff に構造色 + chroma のシンタックスハイライト。行数は変えない) / `Lang(言語名, 1 行)`。入力の無害化は使う側 (termsafe) | glogx の diff の板・pro-con の差分の板・markdown のフェンスコードで同じ色付けを使う |
 | `listnav` | `MotionOf` (キー → 移動の語彙) / `List` (一覧のカーソル + 窓 + 半ページの滑走) / `Pager` (本文のスクロール) / `Scroll` / `WindowOffset` / `ClampOffset` (窓の計算) | 一覧・本文の移動を毎回書かない |
 | `framebench` | `NewRenderer(幅, 高さ)` / `Frame(content, 属性)` / `Written()`: 画面の文字列を bubbletea v2 のレンダラと同じ手順 (前のコマと同じなら描かない → セルへ書き直す → 端末への差分) で通す計測の道具。部品ではない (ultraviolet を import する。bubbletea は import しない) | フレームのベンチをレンダラ込みで測る。下の「フレームの重さを測る」 |
+| `cmd/termwidth` | シェルから `termwidth.Of` で表示幅を測るコマンド (`bin/termwidth <文字列>`)。部品ではない | `bin/tmux-toast` が通知の枠の幅を決める (issue 670 で python3 の east_asian_width を置き換えた) |
 
 ## 遷移のパターン
 

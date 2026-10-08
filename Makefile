@@ -24,6 +24,7 @@ ZSH_SYNTAX_FILES := \
   bin/repair-mp4-timebase \
   bin/runtimeout \
   bin/svcdoctor \
+  bin/termwidth \
   bin/schedkeys \
   bin/treefiler \
   bin/validate-mp4 \

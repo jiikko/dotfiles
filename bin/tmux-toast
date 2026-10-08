@@ -85,20 +85,25 @@ if [ "$force" = 0 ]; then
 fi
 tmux set-option -g @tmux_toast_last_epoch "$now"
 
-# 表示セル幅 (東アジア文字=2セル)。bash の ${#msg} は文字数でありセル幅ではない。
-# python3 不在の環境では「全文字 2 セル」の安全側上界で代用する (box が広めに出るだけで
-# 壊れない。幅は後段で window/client 幅に clamp される)。exit 127 で死なせないこと:
-# hook の run-shell はエラーをアクティブ pane の view-mode として積む (下の fallback 冒頭
-# コメント参照)
-if command -v python3 >/dev/null 2>&1; then
-  width=$(python3 -c '
-import sys, unicodedata
-s = sys.argv[1]
-print(sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in s))
-' "$msg")
+# 表示セル幅。bash の ${#msg} は文字数でありセル幅ではない。幅は bin/termwidth (tuikit の termwidth.Of。Go) で測る。
+# 測れない環境 (go が無い・ビルドの失敗・PATH を絞った呼び出しで zsh が無い) では「全文字 2 セル」の安全側上界で
+# 代用する (box が広めに出るだけで壊れない。幅は後段で window/client 幅に clamp される)。非 0 で死なせないこと:
+# hook の run-shell はエラーをアクティブ pane の view-mode として積む (下の fallback 冒頭コメント参照)。
+# 自己位置は外部コマンド (dirname) を使わずに解く (下の floating の節と同じ理由)
+# 🚨 ビルド済みのバイナリが無い (新しい checkout・成果物を消した直後) ときは待たない。ラッパーは初回だけ同期でビルドするので、
+# 前景で呼ぶ scripts/tmux_paste_clipboard.sh の通知がビルドの間 (数秒〜) 止まる。上界で出し、ビルドは裏で起こして次から測る。
+# TMUX_TOAST_TERMWIDTH_BIN はテストがバイナリの有無を差し替える口
+_tw_wrapper="${BASH_SOURCE[0]%/*}/termwidth"
+_tw_bin="${TMUX_TOAST_TERMWIDTH_BIN:-${BASH_SOURCE[0]%/*}/../src/tuikit/cmd/termwidth/termwidth}"
+width=""
+if [ -x "$_tw_bin" ]; then
+  width=$("$_tw_wrapper" "$msg" 2>/dev/null) || width=""
 else
-  width=$((${#msg} * 2))
+  ( "$_tw_wrapper" x </dev/null >/dev/null 2>&1 & ) 2>/dev/null || true
 fi
+case "$width" in
+  ''|*[!0123456789]*) width=$((${#msg} * 2)) ;;
+esac
 
 # --- 本命: floating pane (tmux 3.7+) ---------------------------------------
 # new-pane の -X/-Y は floating panes 対応ビルドにのみ存在する
@@ -109,7 +114,7 @@ if grep -q -- '-X x-position' <<< "$(tmux list-commands new-pane 2>/dev/null)"; 
   # (docs/feedback-nvim-tmux-2026-07-29.md 節 1)。読めなければ通知を諦めて exit 0 する。
   # source を floating 経路の中に置くのは、下の tty 直描画 fallback を lib 不在でも生かすため。
   # 🚨 自己位置の解決に外部コマンド (dirname) を使わないこと。このスクリプトは PATH を
-  # 絞った環境からも呼ばれ (tests/tmux/test_tmux_toast.sh の「python3 不在」ケース)、
+  # 絞った環境からも呼ばれ (tests/tmux/test_tmux_toast.sh の「幅を測れない」ケース)、
   # `set -e` 下ではコマンド置換の失敗がそのまま非 0 終了になる = hook 汚染に直結する。
   _geom_dir="$(cd "${BASH_SOURCE[0]%/*}/../scripts/lib" 2>/dev/null && pwd)" || _geom_dir=""
   [ -n "$_geom_dir" ] && [ -r "$_geom_dir/tmux_float_geometry.sh" ] || exit 0
@@ -182,7 +187,9 @@ draw() {
 # 期間終了後に refresh-client で tmux に再描画させて消す。呼び出し元はブロックしない。
 # tmux の再描画を止める手段は無いため「消される→描き直す」の点滅は原理的に残る
 (
-  ticks=$(python3 -c "print(max(1, round($duration / 0.05)))")
+  # 0.05 秒ごとに描くので、回数は duration / 0.05 を四捨五入して 1 以上 (awk は macOS に標準。python3 の round は偶数丸めだが、
+  # ちょうど .5 になる duration は 0.025 の奇数倍だけで、差は 1 回 = 0.05 秒)
+  ticks=$(awk -v d="$duration" 'BEGIN { t = int(d / 0.05 + 0.5); if (t < 1) t = 1; print t }')
   i=0
   while [ "$i" -lt "$ticks" ]; do
     draw

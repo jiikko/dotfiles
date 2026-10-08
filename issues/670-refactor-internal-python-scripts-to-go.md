@@ -144,8 +144,8 @@ codex の run の後に 1 回呼ばれるだけ)。それでも寄せる理由�
       driver のテストまで走ったことは所要時間 (判定だけなら 0.3 秒) と、手元の `-v` で 13 本の PASS を見て確かめた
 - [x] `bin/codex-fanout` から `python3` の呼び出しがなくなり (`grep -n python3 bin/codex-fanout` が 0 件)、Go のバイナリは起動時に解決される
 - [x] `zshlib/_concat_helpers.zsh` の mp4 のサイズ計算を置き換える
-- [ ] `tmux-toast` の幅計算を `termwidth` に寄せ、旧との幅の差を確認し、go が無いときも exit 0 で縮退することをテストで固定する
-- [ ] 残りの対象 (`repair_avi_vorbis_audio.sh` / `ab_abandoned.sh` の heredoc) は、それぞれ移したか、移さない理由を本 issue に書いた
+- [x] `tmux-toast` の幅計算を `termwidth` に寄せ、旧との幅の差を確認し、go が無いときも exit 0 で縮退することをテストで固定する
+- [x] 残りの対象 (`repair_avi_vorbis_audio.sh` / `ab_abandoned.sh` の heredoc) は、それぞれ移したか、移さない理由を本 issue に書いた
 
 ## 関連ファイル
 
@@ -260,3 +260,33 @@ C は寄せる先 (ratelimit) と責務が違う。glogx 等から判定を impo
   記録のみ: 初回のビルドは stderr を捨てて走る (診断の頻度は低い) / 数でない出力を 0 にする検査は外しても緑 (ビルドの出力は stderr にしか出ないので、
   stdout に混ざる経路は再現できなかった。予防として残す)
 - `make test-dir DIR=tests/zshrc/concat` 緑・`make -C src/mp4box test lint` 緑・`make test-lint` 緑
+- 2026-10-09: 3 本目 (tmux-toast) を置き換え、残り 2 件は移さないと決めた (commit: tmux-toast の幅を termwidth (Go) で測り、python3 をなくす (issue 670))
+
+### 3 本目: tmux-toast
+
+- 幅: `src/tuikit/cmd/termwidth` (`termwidth.Of` を出すコマンド) と `bin/termwidth` (go_autobuild の `--async`) を足し、tmux-toast から呼ぶ。
+  測れない (go / zsh が無い・ビルドの失敗・数でない出力) ときは従来どおり「全文字 2 セル」の上界。
+  🚨 ビルド済みのバイナリが無いときは待たずに上界で出し、ビルドは裏で起こす (初回のビルドは同期なので、前景で呼ぶ
+  `scripts/tmux_paste_clipboard.sh` の通知が止まる。反証レビューの P2)
+- tick (描き直しの回数): Go のバイナリにはせず awk の四捨五入にした (ただの算術で、0.05 秒の刻み。python の偶数丸めと違うのは、ちょうど .5 になる
+  duration だけで差は 1 回)。旧は duration を python のコードに埋め込んでいた (`-v` で渡すので注入の余地も消えた)
+- 幅の差 (全コードポイント 151,963 個を旧と新で比べた): 違うのは 1,892 個。結合・書式の文字 1,831 個 (旧 1 / 新 0。新が正しい)・制御 33 個・
+  国旗の部品 26 個 (旧 1 / 新 2)。実際に流れている toast の文言 4 つは同じ幅。ZWJ でつないだ絵文字は旧 12 / 新 9 (新が実際の表示に近い)
+- tuikit の depguard の「部品は純粋な層」の `**/termwidth/**` が `cmd/termwidth` にも当たったので、`!**/tuikit/cmd/**` で外した (cmd は部品でない入口)
+- 検証: `tests/tmux/test_tmux_toast.sh` 28 件緑 (「あ b」= 4 セルの座標は本物の bin/termwidth を通る)・`make -C src/tuikit lint test` 緑・
+  tuikit の消費者の版の検査緑・`make test-lint` 緑。変異 4 本 red (termwidth を使わない・数でない幅の縮退・tick を 0・バイナリの有無の分岐)
+- 反証レビュー (sonnet 1 体): P1 なし。採用 P2 (上記の初回ビルド)。記録のみ: タブは旧 1 / 新 0 (実際は最大 8 セルで、どちらも足りない) /
+  ZWJ の家族の絵文字を tmux が 1 グリフにしないと新の幅ではみ出しうる (tmux 3.7 の挙動は未確認。流れている文言には無い) / tick の回数そのものは
+  テストが固定していない (0 にする変異は red) / tuikit を触るたびに次の toast が裏で再ビルドを起こす (async なので害は無い) /
+  cmd/termwidth の usage の rc を固定するテストは無い
+
+### 残り 2 件 (移さない)
+
+- `bin/repair_avi_vorbis_audio.sh` の Ogg の組み直し: 壊れた AVI の音声を直す道具で、利用者が単体で起動して完結する (`bin/repair-avcc-avi` の案内から
+  呼び分ける)。ユーザーの方針「特定のツールのためにあり、単発で完結している .py はそのまま」に当たる。再評価の trigger: 別の道具の処理の一部として呼ばれるようになったとき
+- `src/lockman/ab_abandoned.sh` の main.go の書き換え: issue 362 の手動の A-B 計測ハーネスで、`make test` からは走らない。同じ方針で残す
+
+### 閉じる時点の残り
+
+- **実際の codex の events.jsonl での突き合わせ (未実測)**: 上の「残り」の trigger のまま (次に codex-fanout を `-J` で回したとき)
+- 対象外として挙げた `.github/workflows/doctor.yml` の `python3 -c` と tests のインラインの python3 は、この issue では扱っていない (上の「その他の対象外」)
