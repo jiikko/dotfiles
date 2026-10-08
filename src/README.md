@@ -20,7 +20,8 @@
 | [`zundamon-kaisetsu`](zundamon-kaisetsu/README.md) | VOICEVOX の掛け合い解説動画 (HTML / mp4) を作る CLI (skill `zundamon-kaisetsu` の本体) |
 | [`disassemble_excel`](disassemble_excel/README.md) | Excel (`.xlsx` / `.xlsm` / `.xlsb`) を diff できるテキスト群に分解する CLI |
 | [`chromecookie`](chromecookie/README.md) | Chrome のプロファイルから Cookie を復号して読むライブラリ |
-| [`tuikit`](tuikit/README.md) | TUI の部品 (画面遷移・演出・幅計算・確認・入力欄)。glogx / pro-con / schedkeys / ratelimit / restartable が使う |
+| [`treefiler`](treefiler/README.md) | 横に育つ木のファイラー `bin/treefiler`。glogx の `F` も同じ画面 (filer パッケージ) を取り込む |
+| [`tuikit`](tuikit/README.md) | TUI の部品 (画面遷移・演出・幅計算・確認・入力欄)。glogx / pro-con / schedkeys / ratelimit / restartable / treefiler が使う |
 | [`termsafe`](termsafe/README.md) | 外から来た文字列を端末へ安全に出す無害化 |
 | [`subproc`](subproc/README.md) | 外部プロセス実行の安全弁 (WaitDelay と git の timeout) |
 | [`atomicfile`](atomicfile/README.md) | 途中の状態を残さないファイル書き込み (temp + rename) |

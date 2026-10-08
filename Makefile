@@ -23,6 +23,7 @@ ZSH_SYNTAX_FILES := \
   bin/runtimeout \
   bin/svcdoctor \
   bin/schedkeys \
+  bin/treefiler \
   bin/validate-mp4 \
   bin/video_health \
   bin/zundamon-kaisetsu \

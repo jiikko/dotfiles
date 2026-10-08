@@ -1,0 +1,8 @@
+#!/usr/bin/env zsh
+# treefiler — 横に育つ木のファイラー (glogx の F と同じ画面を単体で開く)。
+# Go implementation at: ~/dotfiles/src/treefiler/ (main.go。画面の部品は同じ module の filer/)
+# 使い方は main.go 冒頭、仕様は docs/treefiler-spec.md。
+# 再ビルドは --async: 対話で使う画面なので、旧版で即起動し新版は次回から (bin/glogx と同じ)。
+set -u
+source "${0:A:h}/lib/go_autobuild.zsh"
+go_autobuild_exec --async "${0:A:h}/../src/treefiler" treefiler -- "$@"

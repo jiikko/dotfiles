@@ -63,6 +63,9 @@
 - `src/subproc` (`subproc`) — Package subproc は外部プロセス実行の安全弁を 1 箇所に集める。
 - `src/termsafe` (`github.com/jiikko/dotfiles/src/termsafe`) — Package termsafe は「外部由来の文字列を端末へ出す前に無害化する」単一の関門。
 - `src/termsafe/ctlprobe` (`github.com/jiikko/dotfiles/src/termsafe/ctlprobe`) — Package ctlprobe は「端末が制御として解釈しうる文字が残っているか」を判定する、 **テスト専用**のオラクル。
+- `src/treefiler` (`treefiler`) — treefiler は横に育つ木のファイラー (bin/treefiler)。 (main)
+- `src/treefiler/filer` (`treefiler/filer`) — Package filer は treefiler の画面の部品 (木・タイル・キー・描画)。
+- `src/treefiler/gorules` (`treefiler/gorules`) — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.yml から参照)。 (build tags: ruleguard)
 - `src/tuikit/anim` (`github.com/jiikko/dotfiles/src/tuikit/anim`) — Package anim は端末 UI の演出に使う状態機械と緩急カーブ。
 - `src/tuikit/caret` (`github.com/jiikko/dotfiles/src/tuikit/caret`) — Package caret は入力欄のキャレットを端末のカーソルにする (bubbletea v2 の View.Cursor)。
 - `src/tuikit/confirm` (`github.com/jiikko/dotfiles/src/tuikit/confirm`) — Package confirm は y/N 確認ダイアログの部品: 中央に浮かべる小さな板と、実行キーの判定。

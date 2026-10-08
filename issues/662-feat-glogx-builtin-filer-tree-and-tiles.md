@@ -264,3 +264,28 @@ MIT OR Apache-2.0) を写す**。依頼に無い部分も含めて全部写す�
 
 1. `git fetch` して `issues/next/` に 662 が無いことを確かめ、目印 (symlink) と担当者バナーだけを commit して push する (claim)
 2. worktree を作り、spec §0.7 の 0 段目から 1 段ずつ。各段: テスト → 変異で red を確認 → 反証レビュー → commit → push → `~/dotfiles` へ pull → この節の下に進捗
+
+### 実装の進捗
+
+- [x] **1 段目 (+ タイルの段) — `src/treefiler` の module と単体の `bin/treefiler`** (2026-10-08)。
+  commit「feat(treefiler): 横に育つ木のファイラーを独立 module と bin/treefiler で入れる」。
+  中身: 実際のディレクトリを読む木 (開いたときに 1 段ずつ・自然順・dotfile を隠す・symlink は辿らない、root だけは辿る)、
+  列と線の配置 (spec §3 の capped)、時間で進む ease-out の補間とキーで終点へ飛ばす snap、カーソルは glogx のカーソル色の背景、
+  タイル (中央から右下へ 4 箇所を巡回・上限なし・`Tab` のジャンプで実在するファイルだけを選ぶ・`J` `K` で隣へ)、
+  先頭だけ読んで続きはページ送りで読むテキスト (1 行 16KB で割る・fd は開いたままにしない)、
+  音声・画像・PDF・バイナリ・通常のファイルでないものは開かずに知らせる、ステータスバー。
+  CI のレーン (`src_treefiler.yml`) と `src/README.md`・`src/PACKAGES.md`、zsh のスクリプトの一覧 (Makefile) へ載せた。
+  - 検証: `make -C src/treefiler test` (20 本) / `lint` 0 件 / `make test-lint` / `make test-changed` / `scripts/check_go_project_lanes.sh` /
+    `tests/scripts/test_tuikit_consumers_aligned.sh`。隔離した tmux で本物の repo を root にして直接起動し、移動・潜る・タイル・ジャンプを確かめた
+  - 変異 (`bin/mutate-verify`。すべて想定のテストで red): 置き場所の巡回をやめる / リンクの実在の確認を外す / `j` が開いたフォルダへ潜る /
+    キーで終点へ飛ばさない / FIFO を弾かない / タイルで ctrl+c を受けない / 長い行を割らない
+  - 反証レビュー (sonnet 1 体、観点 3 つ): 再現つきで採用 P1 1 件 (FIFO を開くと永久に固まる) と P2 4 件 (symlink の root で木が空 /
+    改行の無い巨大なファイルで固まる / タイルで ctrl+c が効かない / 木の外のファイルの J の誤った知らせ)、P3 4 件 (付け替えの孤児 /
+    root が読めないときに黙る / タイルの上の「q quit」/ 生まれる順が非決定) を直し、テストの抜け (畳む・付け替え・4 枚目の位置・本文の ESC) を足した。
+    未対応: 毎フレーム `layout()` を作り直す性能 (未計測。glogx に組み込むときに `TestFrameAllocBudget` で測る)。
+    🚨 直した差分へのもう 1 周のレビューは、トークンを抑える指示 (2026-10-08) により省いた。代わりに各修正を再現テストと変異で確かめた
+- [ ] glogx の `F` への組み込み (spec §0.3)
+- [ ] 熱の色の再帰 mtime の走査と git の印 (spec §5.1・§5.3) — 今は各項目自身の mtime で色を付けている
+- [ ] ライブ更新・ビーズ・ripple (spec §4.3・4.4・§5.2)
+- [ ] 残りの UI (検索・explode・シェル・設定の板・help)
+
