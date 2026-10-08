@@ -45,6 +45,7 @@ zundamon-kaisetsu check
 | VOICEVOX エンジン | Apple の `container` か `docker` (どちらも無ければ VOICEVOX のデスクトップアプリ) |
 | mp4 | ffmpeg (H.264) と Google Chrome か Chromium (`CHROME` 環境変数で場所を指定できる) |
 | 立ち絵の書き出し | `uv` (psd-tools を一時的に入れて動かす。`scripts/psd_faces.py` は Python のまま) |
+| mermaid の図 (台本の `show` の `mermaid`) | Node の `npx` と Chrome (初回に版を固定した mermaid-cli を取りに行く)。`check` は `npx` を見ないので、使うときに `npx --version` で確かめる |
 
 ### 2. VOICEVOX エンジン
 
@@ -103,7 +104,7 @@ zundamon-kaisetsu check  # container か docker が使えれば、エンジン�
 ### 4. 動作確認
 
 ```sh
-mkdir -p /tmp/zk && cp examples/script.json /tmp/zk/
-zundamon-kaisetsu synth /tmp/zk/script.json   # エンジンを自動で起動する (使わなくなって 10 分で止まる)
-zundamon-kaisetsu build /tmp/zk/script.json -o /tmp/zk/out --format both   # out.html と out.mp4 (エンジンは使わない)
+mkdir -p ./tmp/zk && cp examples/script.json ./tmp/zk/
+zundamon-kaisetsu synth ./tmp/zk/script.json   # エンジンを自動で起動する (使わなくなって 10 分で止まる)
+zundamon-kaisetsu build ./tmp/zk/script.json -o ./tmp/zk/out --format both   # out.html と out.mp4 (エンジンは使わない)
 ```
