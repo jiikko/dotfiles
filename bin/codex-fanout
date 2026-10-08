@@ -6,9 +6,11 @@
 # merger 起動) を 1 往復に畳み、orchestrator 側のトークン消費を抑える。
 #
 # 使い方:
-#   codex-fanout [-m merger_prompt_file] [-M] <manifest.tsv> <outdir>
+#   codex-fanout [-J] [-S schema.json] [-m merger_prompt_file] [-M] <manifest.tsv> <outdir>
 #     -m FILE   merger プロンプトの指示部を差し替える (既定: skill の templates/merger.md)
 #     -M        merger を回さない (2 本以下で呼び出し側が直接読むとき)
+#     -J        JSONL events + meta.json を保存。完了イベント・本文が無い rc=0 を失敗扱いにする
+#     -S FILE   全 ro run に --output-schema FILE を渡す (review 行との併用不可)。merger には渡さない
 #   実行行が 1 本の manifest では、-m 指定が無い限り merger を自動スキップする
 #   (1 出力の digest は原文の言い換えにしかならず、merger 1 run 分がまるごと無駄になる。
 #   -m 明示は「1 出力の後処理」という別意図なので尊重して回す)
@@ -37,6 +39,9 @@
 #                   (本文が -o に出ないことがあるのは review 固有 — codex-review スキル手順 4)。
 #                   ro run は out.md だけ渡し、out が空のときに限り log を渡す
 #                   (ro の log は思考ストリーム込みで、merger 入力を倍加させるが情報は増えない)
+#   <label>.events.jsonl  -J のときの生イベント (stdout)。stderr と最終応答は従来の .log に残す
+#   <label>.meta.json     -J のときの thread ID / 完了・失敗 / usage / command_execution
+#   <label>.cli.rc        -J のときの CLI の終了コード (.rc はイベント検査後。検査失敗は 65)
 #   runs.tsv        label / rc / started_at / elapsed_s / out / log の台帳 (TSV・ヘッダ行つき)。
 #                   started_at はローカル時刻 (ISO 8601)、elapsed_s は起動から終了までの整数秒。
 #                   merger を回したときは末尾に label=merger の行を追記する (-o は digest.md)。
@@ -72,10 +77,14 @@ die() {
 merge_prompt_file=""
 merge_prompt_file_explicit=""
 do_merge=1
-while getopts 'm:Mh' opt; do
+json_events=0
+output_schema=""
+while getopts 'm:MJS:h' opt; do
   case "$opt" in
     m) merge_prompt_file="$OPTARG"; merge_prompt_file_explicit=1 ;;
     M) do_merge=0 ;;
+    J) json_events=1 ;;
+    S) output_schema="$OPTARG" ;;
     h) usage; exit 0 ;;
     *) usage >&2; exit 1 ;;
   esac
@@ -87,6 +96,13 @@ outdir="$2"
 
 [ -f "$manifest" ] || die "manifest が無い: $manifest"
 command -v codex >/dev/null 2>&1 || die "codex が PATH に無い"
+if [ "$json_events" -eq 1 ] || [ -n "$output_schema" ]; then
+  command -v python3 >/dev/null 2>&1 || die "-J / -S には python3 が必要"
+fi
+if [ -n "$output_schema" ]; then
+  [ -f "$output_schema" ] || die "schema が無い: $output_schema"
+  python3 -c 'import json,sys; v=json.load(open(sys.argv[1])); sys.exit(0 if isinstance(v,dict) else 1)' "$output_schema" || die "schema が JSON object でない"
+fi
 mkdir -p "$outdir" || die "outdir を作れない: $outdir"
 [ -z "$(ls -A "$outdir")" ] || die "outdir が空でない (使い回し禁止 — 前回世代の残骸が結果に混ざる): $outdir"
 # timeout の検証 (env と manifest 行で共用)。2 つの罠がどちらも「watchdog の無音無効化」になる:
@@ -133,6 +149,9 @@ while IFS=$'\t' read -r label mode model effort part_list row_timeout || [ -n "$
   { [ -n "${mode:-}" ] && [ -n "${model:-}" ] && [ -n "${effort:-}" ] && [ -n "${part_list:-}" ]; } ||
     die "manifest ${lineno} 行目: 列が足りない (label/mode/model/effort/prompt_parts[/timeout_s] の TSV)"
   case "$mode" in ro | review) ;; *) die "manifest ${lineno} 行目: mode は ro|review (got: $mode)" ;; esac
+  if [ -n "$output_schema" ] && [ "$mode" != ro ]; then
+    die "-S は ro 行のみ (構造化出力には codex exec -s read-only を使う)"
+  fi
   # label は出力ファイル名になるためパス区切り等を弾く
   case "$label" in *[!A-Za-z0-9._-]*) die "manifest ${lineno} 行目: label は英数と ._- のみ (got: $label)" ;; esac
   # merger の成果物 (merger.rc / .pid / .log / .time / .prompt.md、runs.tsv の merger 行) と衝突する
@@ -172,6 +191,10 @@ while [ -L "$src" ]; do
   case "$src" in /*) ;; *) src="$src_dir/$src" ;; esac
 done
 script_dir="$(cd "$(dirname "$src")" && pwd)"
+event_inspector="$script_dir/lib/codex-events.py"
+if [ "$json_events" -eq 1 ]; then
+  [ -f "$event_inspector" ] || die "event inspector が無い: $event_inspector"
+fi
 
 # merger プロンプトの既定は skill 側テンプレート。解決はスキップ判定の後 (スキップ時にテンプレート不在で die しない)
 if [ "$do_merge" -eq 1 ]; then
@@ -207,6 +230,30 @@ launch_with_watchdog() {
   return "$rc"
 }
 
+# Preserve CLI rc separately; rc=0 is insufficient when a JSONL run is incomplete.
+run_captured() { # timeout / label / last-message path / command...
+  local limit="$1" label="$2" out="$3"
+  shift 3
+  local log="$outdir/$label.log" rc inspect_rc
+  if [ "$json_events" -eq 1 ]; then
+    launch_with_watchdog "$limit" "$outdir/$label.rc" "$outdir/$label.pid" \
+      "$@" --json </dev/null >"$outdir/$label.events.jsonl" 2>"$log"
+    rc=$?
+    printf '%s\n' "$rc" >"$outdir/$label.cli.rc"
+    python3 "$event_inspector" "$outdir/$label.events.jsonl" "$out" "$outdir/$label.meta.json" "$log"
+    inspect_rc=$?
+    if [ "$rc" -eq 0 ] && [ "$inspect_rc" -ne 0 ]; then
+      rc=65
+      printf '%s\n' "$rc" >"$outdir/$label.rc"
+    fi
+  else
+    launch_with_watchdog "$limit" "$outdir/$label.rc" "$outdir/$label.pid" \
+      "$@" </dev/null >"$log" 2>&1
+    rc=$?
+  fi
+  return "$rc"
+}
+
 run_one() { # $1=label $2=mode $3=model $4=effort $5=part_list $6=timeout_s
   local label="$1" mode="$2" model="$3" effort="$4" part_list="$5" run_timeout="$6"
   local out="$outdir/$label.out.md" log="$outdir/$label.log"
@@ -218,9 +265,12 @@ run_one() { # $1=label $2=mode $3=model $4=effort $5=part_list $6=timeout_s
     ro) cmd=(codex exec -s read-only) ;;
     review) cmd=(codex exec review) ;;
   esac
-  launch_with_watchdog "$run_timeout" "$outdir/$label.rc" "$outdir/$label.pid" \
+  if [ -n "$output_schema" ]; then
+    cmd+=(--output-schema "$output_schema")
+  fi
+  run_captured "$run_timeout" "$label" "$out" \
     "${cmd[@]}" -m "$model" -c model_reasoning_effort="$effort" \
-    --ephemeral -o "$out" "$prompt" </dev/null >"$log" 2>&1
+    --ephemeral -o "$out" "$prompt"
 }
 
 for i in "${!labels[@]}"; do
@@ -287,11 +337,10 @@ if [ "$do_merge" -eq 1 ]; then
       printf -- '- %s\n' "${failed[@]}"
     fi
   } >"$merger_prompt"
-  launch_with_watchdog "$timeout_s" "$outdir/merger.rc" "$outdir/merger.pid" \
+  run_captured "$timeout_s" merger "$outdir/digest.md" \
     codex exec -s read-only -m "${CODEX_FANOUT_MERGER_MODEL:-gpt-6-luna}" \
     -c model_reasoning_effort="${CODEX_FANOUT_MERGER_EFFORT:-max}" \
-    --ephemeral -o "$outdir/digest.md" "$(cat "$merger_prompt")" \
-    </dev/null >"$outdir/merger.log" 2>&1
+    --ephemeral -o "$outdir/digest.md" "$(cat "$merger_prompt")"
   merger_rc=$?
   # 成否に関係なく台帳へ (失敗した merger の所要時間も「どこで時間を食ったか」の材料)
   ledger_row merger "$merger_rc" "$outdir/digest.md" "$outdir/merger.log" >>"$outdir/runs.tsv"

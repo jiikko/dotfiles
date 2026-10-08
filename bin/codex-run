@@ -10,13 +10,15 @@
 # その差分は呼び出し側から見えなくなる。
 #
 # 使い方:
-#   codex-run [-C dir] [-o outdir] [-l label] [-m model] [-e effort] [-t sec] <mode> <prompt-file>
+#   codex-run [-J] [-S schema.json] [-C dir] [-o outdir] [-l label] [-m model] [-e effort] [-t sec] <mode> <prompt-file>
 #     mode         ro | review   (それぞれ codex exec -s read-only / codex exec review)
 #                  workspace-write は扱わない (codex-fanout と同じ安全域。実装は codex-drive [2] の直接起動)
 #     prompt-file  プロンプトのファイル。- で stdin から読む
 #                  **selector (--uncommitted / --base / --commit) は扱わない** — codex exec review は
 #                  selector と PROMPT を併用できず (codex-review スキル手順 1)、本スクリプトは
 #                  PROMPT 側だけを担当する。selector を使うレビューは codex-review スキルの直接起動
+#     -J           JSONL events + meta.json を保存し、未完了の rc=0 を失敗扱いにする
+#     -S FILE      ro の構造化応答に --output-schema FILE を使う (review は不可)
 #     -C dir       このディレクトリへ cd してから起動する (worktree / 別 checkout のレビュー用)
 #     -o outdir    出力先 (既定: ./tmp/codex-run/<stamp>-<label>)。既存ディレクトリは codex-fanout が拒否する
 #     -l label     出力ファイル名に使うラベル (既定: mode 名)
@@ -42,8 +44,16 @@ usage() {
 }
 
 work_dir=""; outdir=""; label=""; model="gpt-6.1-sol"; effort="high"; timeout_s=""
-while getopts ":C:o:l:m:e:t:h" opt; do
+driver_options=(-M)
+while getopts ":JC:o:l:m:e:t:S:h" opt; do
   case "$opt" in
+    J) driver_options+=(-J) ;;
+    S)
+      case "$OPTARG" in
+        /*) driver_options+=(-S "$OPTARG") ;;
+        *) driver_options+=(-S "$PWD/$OPTARG") ;;
+      esac
+      ;;
     C) work_dir="$OPTARG" ;;
     o) outdir="$OPTARG" ;;
     l) label="$OPTARG" ;;
@@ -110,7 +120,7 @@ if [ -n "$work_dir" ]; then
 fi
 
 # errexit は使っていない (set -u のみ)。rc を握って最後に伝播させる。
-"$driver" -M "$manifest" "$outdir"
+"$driver" "${driver_options[@]}" "$manifest" "$outdir"
 rc=$?
 
 out="$outdir/$label.out.md"
