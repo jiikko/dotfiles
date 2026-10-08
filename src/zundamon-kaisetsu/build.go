@@ -218,10 +218,30 @@ func dataURI(path, mime string) (string, error) {
 	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(b), nil
 }
 
-// loadFaces は台本で使う表情の立ち絵を {キャラ: {表情: [閉じ, 半開き, 開き] の data URI}} にする。
+// faceSet は台本で使う表情の立ち絵 ({キャラ: {表情: [閉じ, 半開き, 開き] の data URI}})。blinks は同じ形の閉じ目の版で、
+// faces.json の blink に載る表情だけが入る (まばたきできる表情の一覧を兼ねる)。
+type faceSet struct {
+	images map[string]map[string][]string
+	blinks map[string]map[string][]string
+}
+
+// blinkable は blinks を {キャラ: {表情: true}} にする (blinkRuns が引く形)。
+func (fs faceSet) blinkable() map[string]map[string]bool {
+	out := map[string]map[string]bool{}
+	for key, faces := range fs.blinks {
+		out[key] = map[string]bool{}
+		for face := range faces {
+			out[key][face] = true
+		}
+	}
+	return out
+}
+
+// loadFaces は台本で使う表情の立ち絵 (と閉じ目の版) を data URI で読む。
 //
 // 音声の圧縮より前に呼び、ファイルの欠けで長い処理を無駄にしない。使わない表情は埋め込まない (HTML が太るため)。
-func loadFaces(s *Script, env *Env) (map[string]map[string][]string, error) {
+// 閉じ目の版は faces.json の blink に載る表情だけを読む。載っていなければまばたかない (blink の無い古い書き出しもそのまま使える)。
+func loadFaces(s *Script, env *Env) (faceSet, error) {
 	used := map[string]map[string]bool{}
 	for _, k := range castKeys() {
 		used[k] = map[string]bool{defaultFace: true}
@@ -229,36 +249,76 @@ func loadFaces(s *Script, env *Env) (map[string]map[string][]string, error) {
 	for _, line := range s.Lines {
 		used[pyStr(line["who"])][pyStr(lineFace(line))] = true
 	}
-	out := map[string]map[string][]string{}
+	fs := faceSet{images: map[string]map[string][]string{}, blinks: map[string]map[string][]string{}}
 	for _, key := range castKeys() {
-		imgs := map[string][]string{}
+		imgs, blinks := map[string][]string{}, map[string][]string{}
 		if d, ok := facesDir(s, key, env); ok {
+			canBlink, err := blinkFaces(d)
+			if err != nil {
+				return faceSet{}, fail("cast.%s.faces: %s/faces.json の blink が読めない (%v)", key, d, err)
+			}
 			for _, face := range sortedKeys(used[key]) {
-				var files, missing []string
-				for lv := range mouthLevels {
-					f := filepath.Join(d, fmt.Sprintf("%s_%d.webp", face, lv))
-					files = append(files, f)
-					if st, err := os.Stat(f); err != nil || !st.Mode().IsRegular() {
-						missing = append(missing, filepath.Base(f))
+				if imgs[face], err = loadMouthImages(key, d, face+"_"); err != nil {
+					return faceSet{}, err
+				}
+				if canBlink[face] {
+					if blinks[face], err = loadMouthImages(key, d, face+"_blink_"); err != nil {
+						return faceSet{}, err
 					}
 				}
-				if len(missing) > 0 {
-					return nil, fail("cast.%s.faces: %s に %s が無い (psd_faces.py で書き出し直す)", key, d, strings.Join(missing, ", "))
-				}
-				uris := make([]string, 0, 3)
-				for _, f := range files {
-					u, err := dataURI(f, "image/webp")
-					if err != nil {
-						return nil, fail("cast.%s.faces: %s が読めない (%v)", key, f, err)
-					}
-					uris = append(uris, u)
-				}
-				imgs[face] = uris
 			}
 		}
-		out[key] = imgs
+		fs.images[key] = imgs
+		if len(blinks) > 0 {
+			fs.blinks[key] = blinks
+		}
+	}
+	return fs, nil
+}
+
+// blinkFaces は faces.json の blink (閉じ目の版を書き出した表情の一覧。psd_faces.py が書く) を読む。キーが無ければ空。
+func blinkFaces(dir string) (map[string]bool, error) {
+	meta, err := readFacesMeta(dir)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	v, ok := meta["blink"]
+	if !ok {
+		return out, nil
+	}
+	list, ok := v.([]any)
+	if !ok {
+		return nil, fmt.Errorf("表情の名前のリストでない: %s", pyRepr(v))
+	}
+	for _, f := range list {
+		out[pyStr(f)] = true
 	}
 	return out, nil
+}
+
+// loadMouthImages は <prefix>0〜<prefix>2.webp (口の 閉じ / 半開き / 開き) を data URI で読む。欠けていれば全部を挙げて止まる。
+func loadMouthImages(key, dir, prefix string) ([]string, error) {
+	var files, missing []string
+	for lv := range mouthLevels {
+		f := filepath.Join(dir, fmt.Sprintf("%s%d.webp", prefix, lv))
+		files = append(files, f)
+		if st, err := os.Stat(f); err != nil || !st.Mode().IsRegular() {
+			missing = append(missing, filepath.Base(f))
+		}
+	}
+	if len(missing) > 0 {
+		return nil, fail("cast.%s.faces: %s に %s が無い (psd_faces.py で書き出し直す)", key, dir, strings.Join(missing, ", "))
+	}
+	uris := make([]string, 0, mouthLevels)
+	for _, f := range files {
+		u, err := dataURI(f, "image/webp")
+		if err != nil {
+			return nil, fail("cast.%s.faces: %s が読めない (%v)", key, f, err)
+		}
+		uris = append(uris, u)
+	}
+	return uris, nil
 }
 
 func faceCredits(s *Script, env *Env) []string {
@@ -292,6 +352,10 @@ type castData struct {
 	Side   string              `json:"side"`
 	Mirror bool                `json:"mirror"`
 	Images map[string][]string `json:"images"`
+	// まばたき (Python 版の後で足した)。Blink は images と同じ形の閉じ目の版、BlinkBit は PlayerData.Blinks のビットで、
+	// 閉じ目の版が 1 つも無いキャラでは両方とも載せない
+	Blink    map[string][]string `json:"blink,omitempty"`
+	BlinkBit int                 `json:"blinkBit,omitempty"`
 }
 
 // PlayerData はプレイヤー (player.html) に埋め込むデータ。HTML の再生と mp4 の撮影が同じものを使う。
@@ -306,6 +370,7 @@ type PlayerData struct {
 	Shows       []showData          `json:"shows,omitempty"`
 	Lines       []timelineLine      `json:"lines"`
 	Frames      [][4]int            `json:"frames"`
+	Blinks      [][2]int            `json:"blinks,omitempty"` // [開始フレーム, 目を閉じているキャラのビット] (blinkRuns)。誰もまばたかなければ載せない
 	Duration    float64             `json:"duration"`
 	FPS         int                 `json:"fps"`
 	Audio       string              `json:"audio"`
@@ -328,7 +393,7 @@ func assemble(s *Script, env *Env) (*PlayerData, []byte, error) {
 	wd := workDir(s.Path)
 	leadIn := numOr(lineGet(s.Raw, "lead_in", nil), 0.4)
 	defaultGap := numOr(lineGet(s.Raw, "gap", nil), 0.35)
-	images, err := loadFaces(s, env)
+	fs, err := loadFaces(s, env)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -433,8 +498,13 @@ func assemble(s *Script, env *Env) (*PlayerData, []byte, error) {
 	}
 	cast := map[string]castData{}
 	for _, def := range castOrder {
-		cast[def.Key] = castData{Name: def.Name, Color: def.Color, Side: def.Side, Mirror: def.Mirror, Images: images[def.Key]}
+		c := castData{Name: def.Name, Color: def.Color, Side: def.Side, Mirror: def.Mirror, Images: fs.images[def.Key]}
+		if b := fs.blinks[def.Key]; len(b) > 0 {
+			c.Blink, c.BlinkBit = b, blinkBit(def.Key)
+		}
+		cast[def.Key] = c
 	}
+	frames := frameRuns(timeline, duration)
 	data := &PlayerData{
 		Title:       title,
 		Date:        createdDate(s, env),
@@ -445,7 +515,8 @@ func assemble(s *Script, env *Env) (*PlayerData, []byte, error) {
 		Chapters:    chapters,
 		Shows:       shows,
 		Lines:       timeline,
-		Frames:      frameRuns(timeline, duration),
+		Frames:      frames,
+		Blinks:      blinkRuns(frames, timeline, fs.blinkable(), duration),
 		Duration:    pyRound3(duration),
 		FPS:         mouthFPS,
 		Audio:       "",

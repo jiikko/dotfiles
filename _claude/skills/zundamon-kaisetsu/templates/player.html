@@ -135,9 +135,11 @@ html.render * { transition: none !important; }
     $('stage').insertBefore(box, $('caption'));
     actors[k] = { c, color, box, img, mouth, level: -1 };
   });
-  const setMouth = (a, lv, face) => { // images は {表情: [閉じ, 半開き, 開き]}。build が使う表情だけを入れている
-    const key = `${face}/${lv}`; if (a.level === key) return; a.level = key;
-    if (a.img) a.img.src = (a.c.images[face] || a.c.images[D.defaultFace])[lv];
+  // images は {表情: [閉じ, 半開き, 開き]}。build が使う表情だけを入れている。blink は同じ形の閉じ目の版で、閉じ目の版のある表情だけが載る
+  const setMouth = (a, lv, face, closed) => {
+    const shut = closed && !!a.c.blink && !!a.c.blink[face];
+    const key = `${face}/${lv}/${shut}`; if (a.level === key) return; a.level = key;
+    if (a.img) a.img.src = (shut ? a.c.blink[face] : (a.c.images[face] || a.c.images[D.defaultFace]))[lv];
     else a.mouth.style.height = ['6%', '14%', '24%'][lv];
   };
 
@@ -152,12 +154,17 @@ html.render * { transition: none !important; }
   });
 
   // ---------- render ----------
-  // 各フレームの状態 [開始フレーム, 字幕の行, 話し中か, 口の開き] は build が計算して D.frames に入れている。
-  // mp4 の書き出しも同じ D.frames から画像を作るので、ここで状態を計算し直さない (2 実装にすると食い違う)
+  // 各フレームの状態 [開始フレーム, 字幕の行, 話し中か, 口の開き] は build が計算して D.frames に、目を閉じているキャラの
+  // ビット [開始フレーム, ビット] は D.blinks に入れている (誰もまばたかない台本では無い)。mp4 の書き出しも同じ列から画像を
+  // 作るので、ここで状態を計算し直さない (2 実装にすると食い違う)
+  const runAt = (runs, k) => {
+    let lo = 0, hi = runs.length - 1, ans = -1;
+    while (lo <= hi) { const m = (lo + hi) >> 1; if (runs[m][0] <= k) { ans = m; lo = m + 1; } else hi = m - 1; }
+    return ans < 0 ? null : runs[ans];
+  };
   const stateAt = (t) => {
-    const k = Math.floor(t * D.fps); let lo = 0, hi = D.frames.length - 1, ans = -1;
-    while (lo <= hi) { const m = (lo + hi) >> 1; if (D.frames[m][0] <= k) { ans = m; lo = m + 1; } else hi = m - 1; }
-    return ans < 0 ? [-1, 0, 0] : D.frames[ans].slice(1);
+    const k = Math.floor(t * D.fps); const r = runAt(D.frames, k); const b = runAt(D.blinks || [], k);
+    return [...(r ? r.slice(1) : [-1, 0, 0]), b ? b[1] : 0];
   };
   let cur = -2;
   // 図解は行の show (build が決めた D.shows の番号) から描く。同じ図解が続く行では DOM を触らない (描き直すと一瞬消える)
@@ -193,11 +200,11 @@ html.render * { transition: none !important; }
       box.append(el('div', 'show-card show-keyword', `(未知の図解: ${sd.type})`));
     }
   }
-  function paint(li, speaking, lv, follow) {
+  function paint(li, speaking, lv, blinks, follow) {
     const line = li >= 0 ? D.lines[li] : null;
     for (const [k, a] of Object.entries(actors)) {
       const on = !!speaking && !!line && line.who === k;
-      setMouth(a, on ? lv : 0, line ? line.faces[k] : D.defaultFace);
+      setMouth(a, on ? lv : 0, line ? line.faces[k] : D.defaultFace, !!(blinks & (a.c.blinkBit || 0)));
     }
     if (li === cur) return;
     cur = li; items.forEach((e, i) => e.classList.toggle('current', i === li));
@@ -212,21 +219,21 @@ html.render * { transition: none !important; }
     if (follow) items[li].scrollIntoView({ block: 'nearest' });
   }
   function render(t) {
-    const [li, speaking, lv] = stateAt(t); paint(li, speaking, lv, !audio.paused);
+    const [li, speaking, lv, blinks] = stateAt(t); paint(li, speaking, lv, blinks, !audio.paused);
     $('seek').value = t; $('time').textContent = `${fmt(t)} / ${fmt(D.duration)}`;
   }
 
-  // mp4 の書き出し用: #sheet=行,話し中,口;行,話し中,口;... の各状態を 1 枚ずつ舞台に描いて複製し、縦に並べて止まる。
+  // mp4 の書き出し用: #sheet=行,話し中,口,まばたき;... の各状態を 1 枚ずつ舞台に描いて複製し、縦に並べて止まる。
   // Chrome を 1 回起動するだけで複数の状態を撮れるようにするため (音声は読まない)。1 枚の高さは幅の 9/16
-  const S = location.hash.match(/^#sheet=((?:-?\d+,[01],[012];?)+)$/);
+  const S = location.hash.match(/^#sheet=((?:-?\d+,[01],[012],\d+;?)+)$/);
   if (S) {
     const root = document.documentElement;
     root.classList.add('render');
     root.dataset.theme = 'light'; // 撮る環境のダークモードで動画の配色が変わらないようにする
     const stage = $('stage'); const sheet = el('div', 'sheet');
     const states = S[1].split(';').filter(Boolean).map((x) => x.split(',').map(Number));
-    for (const [li, sp, lv] of states) {
-      paint(li, sp, lv, false);
+    for (const [li, sp, lv, bl] of states) {
+      paint(li, sp, lv, bl, false);
       const shot = stage.cloneNode(true); shot.removeAttribute('id');
       shot.querySelectorAll('[id]').forEach((e) => e.removeAttribute('id'));
       sheet.append(shot);

@@ -25,8 +25,8 @@ import (
 // プレイヤーの描画そのものは見ない (人が見る。issue 645)。
 
 // stateColor は状態を色にする (帯ごとに違う色 = 切り出し位置がずれたら別の状態の色になる)
-func stateColor(st [3]int) color.RGBA {
-	return color.RGBA{R: uint8(st[0] + 1), G: uint8(st[1]*128 + st[2]), B: 200, A: 255}
+func stateColor(st visualState) color.RGBA {
+	return color.RGBA{R: uint8(st[0] + 1), G: uint8(st[1]*128 + st[2]), B: uint8(200 + st[3]), A: 255}
 }
 
 // TestFakeMP4Tool は偽物の本体。FAKE_MP4_TOOL が無いときは何もしない (通常のテストとしては空で通る)
@@ -80,10 +80,10 @@ func fakeMP4Tool(tool string, args []string) int {
 			fmt.Fprintf(os.Stderr, "偽の Chrome: player.html が受け取らない断片 %q\n", u.EscapedFragment())
 			return 11
 		}
-		var states [][3]int
+		var states []visualState
 		for _, part := range strings.Split(strings.TrimPrefix(u.Fragment, "sheet="), ";") {
-			var st [3]int
-			if _, err := fmt.Sscanf(part, "%d,%d,%d", &st[0], &st[1], &st[2]); err != nil {
+			var st visualState
+			if _, err := fmt.Sscanf(part, "%d,%d,%d,%d", &st[0], &st[1], &st[2], &st[3]); err != nil {
 				return 4
 			}
 			states = append(states, st)
@@ -124,7 +124,7 @@ func fakeMP4Tool(tool string, args []string) int {
 	return 2
 }
 
-var stateNameRe = regexp.MustCompile(`state_(-?\d+)_(\d+)_(\d+)\.png$`)
+var stateNameRe = regexp.MustCompile(`state_(-?\d+)_(\d+)_(\d+)_(\d+)\.png$`)
 
 // checkFrames は mux に渡された連番 (-framerate 30 -i <dir>/f%06d.png) の各フレームが、symlink の先の状態の色かを確かめ、
 // 結果を記録に書く (build の一時 dir は終わると消えるので、絵は mux の時点で見る)。concat の一覧で渡されたら失敗にする (issue 660)
@@ -169,7 +169,8 @@ func checkFrames(args []string) {
 		li, _ := strconv.Atoi(m[1])
 		sp, _ := strconv.Atoi(m[2])
 		lv, _ := strconv.Atoi(m[3])
-		want := stateColor([3]int{li - 1, sp, lv})
+		bl, _ := strconv.Atoi(m[4])
+		want := stateColor(visualState{li - 1, sp, lv, bl})
 		f, err := os.Open(p)
 		if err != nil {
 			result = "frames-bad 開けない " + p
@@ -296,12 +297,17 @@ func fakeMP4Tools(t *testing.T) string {
 // buildMP4 は testdata/build の台本を mp4 で build する (CPU の負荷は空いていることにする)
 func buildMP4(t *testing.T) (out string, log string, err error) {
 	t.Helper()
+	return buildMP4From(t, filepath.Join("testdata", "build", "script.json"))
+}
+
+func buildMP4From(t *testing.T, script string) (out string, log string, err error) {
+	t.Helper()
 	log = fakeMP4Tools(t)
 	env := testEnv(t)
 	env.LoadAvg = func() (float64, bool) { return 0, true }
 	env.Now, env.Sleep = time.Now, func(time.Duration) {}
 	out = filepath.Join(t.TempDir(), "out")
-	err = cmdBuild(env, filepath.Join("testdata", "build", "script.json"), out, "mp4", 2, 64)
+	err = cmdBuild(env, script, out, "mp4", 2, 64)
 	return out + ".mp4", log, err
 }
 
@@ -318,19 +324,24 @@ func chromeCalls(t *testing.T, log string) []string {
 
 // TestWriteMP4CropsEachState は、まとめ撮りの帯を状態ごとに正しく切り出し、全状態を撮り、mp4 を書くことを確かめる
 func TestWriteMP4CropsEachState(t *testing.T) {
-	out, log, err := buildMP4(t)
+	checkMP4CropsEachState(t, filepath.Join("testdata", "build", "script.json"))
+}
+
+func checkMP4CropsEachState(t *testing.T, script string) {
+	t.Helper()
+	out, log, err := buildMP4From(t, script)
 	must(t, err)
 	if b, err := os.ReadFile(out); err != nil || string(b) != "fake mp4" {
 		t.Fatalf("mp4 が書かれていない: %v %q", err, b)
 	}
 	// 呼び出しの記録から、撮った状態を全部集める (1 回のまとめ撮りは sheetStates 枚まで)
-	var states [][3]int
+	var states []visualState
 	for _, c := range chromeCalls(t, log) {
 		frag := c[strings.Index(c, "#sheet=")+len("#sheet="):]
 		n := 0
 		for part := range strings.SplitSeq(frag, ";") {
-			var st [3]int
-			if _, err := fmt.Sscanf(part, "%d,%d,%d", &st[0], &st[1], &st[2]); err != nil {
+			var st visualState
+			if _, err := fmt.Sscanf(part, "%d,%d,%d,%d", &st[0], &st[1], &st[2], &st[3]); err != nil {
 				t.Fatalf("撮った状態を読めない: %q", part)
 			}
 			states = append(states, st)
@@ -356,7 +367,7 @@ func TestWriteMP4CropsEachState(t *testing.T) {
 	if !strings.HasPrefix(res, "frames-ok ") {
 		t.Fatalf("mux に渡った絵が状態と合わない: %q", res)
 	}
-	distinct := map[[3]int]bool{}
+	distinct := map[visualState]bool{}
 	for _, st := range states {
 		distinct[st] = true
 	}
@@ -370,13 +381,13 @@ func TestWriteMP4CropsEachState(t *testing.T) {
 	}
 	// フレームごとの状態の並びが frameStates (プレイヤーの規則: フレーム k は時刻 (k+0.5)/fps の状態) と一致する (issue 660)
 	env := testEnv(t)
-	sc, err := loadScript(resolvePath(filepath.Join("testdata", "build", "script.json")), env)
+	sc, err := loadScript(resolvePath(script), env)
 	must(t, err)
 	data, _, err := assemble(sc, env)
 	must(t, err)
 	var want []string
-	for _, st := range frameStates(data.Frames, data.Duration) {
-		want = append(want, fmt.Sprintf("state_%d_%d_%d.png", st[0]+1, st[1], st[2]))
+	for _, st := range frameStates(data.Frames, data.Blinks, data.Duration) {
+		want = append(want, fmt.Sprintf("state_%d_%d_%d_%d.png", st[0]+1, st[1], st[2], st[3]))
 	}
 	gotOrder, err := os.ReadFile(log + ".order")
 	must(t, err)

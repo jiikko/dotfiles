@@ -370,23 +370,26 @@ func TestPlayerPlacesCharsForShowsFromStart(t *testing.T) {
 func TestSheetFragmentMatchesPlayer(t *testing.T) {
 	re := playerSheetRegexp(t)
 	tpl := playerTemplate(t)
-	// 欄の意味の対応 (行, 話し中, 口) も Go と同じ順に分解している (正規表現が合っても、順が違うと話し中と口が入れ替わる)。
+	// 欄の意味の対応 (行, 話し中, 口, まばたき) も Go と同じ順に分解している (正規表現が合っても、順が違うと話し中と口が入れ替わる)。
 	// 検出しない形: 字面を残したまま意味だけ変える書き換え (map の中で並べ替える・paint の引数の順を変える)。
 	// 確実に見るには JS を node で評価する形が要る (issue 650 の敵対的レビュー 2 周目 P3-a。今はうっかりした編集だけを止める)
-	for _, want := range []string{"for (const [li, sp, lv] of states)", "paint(li, sp, lv, false)"} {
+	for _, want := range []string{"for (const [li, sp, lv, bl] of states)", "paint(li, sp, lv, bl, false)"} {
 		if !strings.Contains(tpl, want) {
-			t.Errorf("player.html のまとめ撮りの分解が Go の順 (行, 話し中, 口) でない (%s が無い)", want)
+			t.Errorf("player.html のまとめ撮りの分解が Go の順 (行, 話し中, 口, まばたき) でない (%s が無い)", want)
 		}
 	}
-	var group [][3]int
+	allBlinks := 1<<len(castOrder) - 1 // 全員が目を閉じている (ビットの最大値)
+	var group []visualState
 	for _, li := range []int{-1, 0, 12} {
 		for sp := range 2 {
 			for lv := range mouthLevels {
-				group = append(group, [3]int{li, sp, lv})
+				for _, bl := range []int{0, allBlinks} {
+					group = append(group, visualState{li, sp, lv, bl})
+				}
 			}
 		}
 	}
-	for _, g := range [][][3]int{group, group[:1]} {
+	for _, g := range [][]visualState{group, group[:1]} {
 		if f := sheetFragment(g); !re.MatchString(f) {
 			t.Errorf("player.html の正規表現 %s が Go の断片を受け取らない: %s", re, f)
 		}

@@ -77,16 +77,16 @@ func BenchmarkWriteWav(b *testing.B) {
 
 // 見た目の状態 (1200 種類程度) の並べ替え
 func BenchmarkSortedStates(b *testing.B) {
-	var frames [][4]int
+	var states []visualState
 	for li := range 300 {
 		for sp := range 2 {
 			for lv := range mouthLevels {
-				frames = append(frames, [4]int{len(frames), li, sp, lv})
+				states = append(states, visualState{li, sp, lv, 0})
 			}
 		}
 	}
 	for b.Loop() {
-		_ = sortedStates(frames)
+		_ = sortedStates(states)
 	}
 }
 

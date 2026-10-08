@@ -4,6 +4,7 @@
   uv run --with psd-tools python psd_faces.py <立ち絵.psd> <表情定義.json> <出力dir> [--preview sheet.png]
 
 出力は <出力dir>/<表情>_0.webp (閉じ) / _1 (半開き) / _2 (開き) と、使った定義の写し faces.json。
+定義に blink (閉じ目のレイヤー) があれば、目だけを閉じた版 <表情>_blink_0〜2.webp も書き出す (まばたきに使う)。
 zundamon-kaisetsu (dotfiles の bin/zundamon-kaisetsu) は台本の cast.<キャラ>.faces にこの出力 dir を書くと読む。
 
 表情定義 (faces/*.json):
@@ -11,7 +12,9 @@ zundamon-kaisetsu (dotfiles の bin/zundamon-kaisetsu) は台本の cast.<キャ
    "height": 900,                    # 書き出す高さ px (幅は比で決まる)
    "credit": "立ち絵: 作者名",          # 動画のクレジットに出す表記 (素材の規約に従う)
    "base": ["!眉/*普通眉", ...],      # 全表情に共通で当てる選択
-   "faces": {"通常": {"layers": ["!目/*目セット", ...], "mouth": ["!口/*むふ", "!口/*ほあ", "!口/*ほあー"]}}}
+   "blink": "!目/*なごみ目",           # まばたきで目を閉じるレイヤー (省略可。省くとまばたきしない)
+   "faces": {"通常": {"layers": ["!目/*目セット", ...], "mouth": ["!口/*むふ", "!口/*ほあ", "!口/*ほあー"]},
+             "笑顔": {..., "blink": false}}}   # もともと目を閉じている表情は blink: false でまばたきしない
 
 レイヤーの指定は PSD のグループ名を / でつないだパス。PSDTool の作法どおり、名前が * で始まる
 レイヤーは同じ親の中の * の付いた兄弟と排他 (1 つだけ表示) で、それ以外は指定すると表示になる。
@@ -57,7 +60,7 @@ def main() -> None:
     ap.add_argument("psd")
     ap.add_argument("spec")
     ap.add_argument("out")
-    ap.add_argument("--preview", help="全表情 × 口 3 段階を並べた確認用の画像を書く")
+    ap.add_argument("--preview", help="全表情 × 口 3 段階 (閉じ目の版を含む) を並べた確認用の画像を書く")
     args = ap.parse_args()
 
     spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
@@ -67,6 +70,15 @@ def main() -> None:
     for name, f in faces.items():
         if len(f.get("mouth", [])) != 3:
             die(f"{args.spec}: faces.{name}.mouth は 閉じ / 半開き / 開き の 3 つ")
+    blink = spec.get("blink")
+    if blink is not None and not (isinstance(blink, str) and blink):
+        die(f"{args.spec}: blink は閉じ目のレイヤーのパス (文字列) で書く")
+    for name, f in faces.items():
+        if not isinstance(f.get("blink", True), bool):
+            die(f"{args.spec}: faces.{name}.blink は false (まばたきしない) だけを書く")
+        if blink and name.endswith("_blink"):  # 表情 X の閉じ目の版 X_blink_<口> と、表情 X_blink の絵が同じ名前になる
+            die(f"{args.spec}: 表情の名前 {name!r} は閉じ目の版の名前 (<表情>_blink_<口>.webp) とぶつかる。名前を変える")
+    blinking = [name for name, f in faces.items() if blink and f.get("blink", True) is not False]
     crop = tuple(spec["crop"])
     height = int(spec.get("height", 900))
 
@@ -76,21 +88,27 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     tiles = []
     for name, f in faces.items():
-        for lv, mouth in enumerate(f["mouth"]):
-            for l in psd.descendants():  # 表情ごとに PSD の既定の表示状態から始める (前の表情の選択を持ち越さない)
-                l.visible = initial[id(l)]
-            for path in [*spec.get("base", []), *f.get("layers", []), mouth]:
-                select(psd, path)
-            im = psd.composite(force=True).crop(crop)
-            im = im.resize((round(im.width * height / im.height), height), Image.LANCZOS)
-            im.save(out / f"{name}_{lv}.webp", "WEBP", quality=90)
-            tiles.append((f"{name} {lv}", im))
-        print(f"{name}: 3 枚", file=sys.stderr)
-    (out / "faces.json").write_text(json.dumps({"faces": list(faces), "credit": spec.get("credit")}, ensure_ascii=False), encoding="utf-8")
+        # 閉じ目はその表情の選択の後に当てる (表情の眉・腕・口はそのままで、目だけを閉じる)
+        variants = [("", [])] + ([("blink_", [blink])] if name in blinking else [])
+        for suffix, extra in variants:
+            for lv, mouth in enumerate(f["mouth"]):
+                for l in psd.descendants():  # 表情ごとに PSD の既定の表示状態から始める (前の表情の選択を持ち越さない)
+                    l.visible = initial[id(l)]
+                for path in [*spec.get("base", []), *f.get("layers", []), mouth, *extra]:
+                    select(psd, path)
+                im = psd.composite(force=True).crop(crop)
+                im = im.resize((round(im.width * height / im.height), height), Image.LANCZOS)
+                im.save(out / f"{name}_{suffix}{lv}.webp", "WEBP", quality=90)
+                tiles.append((f"{name} {suffix}{lv}", im))
+        print(f"{name}: {3 * len(variants)} 枚", file=sys.stderr)
+    meta = {"faces": list(faces), "credit": spec.get("credit")}
+    if blinking:
+        meta["blink"] = blinking  # zundamon-kaisetsu はここに載る表情だけをまばたきさせる (載っていて画像が欠けていれば止まる)
+    (out / "faces.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
 
     if args.preview:
         tw, th = tiles[0][1].width // 3, tiles[0][1].height // 3
-        sheet = Image.new("RGB", (tw * 3, (th + 24) * len(faces)), "white")
+        sheet = Image.new("RGB", (tw * 3, (th + 24) * ((len(tiles) + 2) // 3)), "white")
         draw = ImageDraw.Draw(sheet)
         try:  # 表情名は日本語なので、あれば日本語フォントで書く
             font = ImageFont.truetype("/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc", 18)
@@ -102,7 +120,7 @@ def main() -> None:
             sheet.paste(small, (x, y + 24), small)
             draw.text((x + 4, y + 2), label, fill="black", font=font)
         sheet.save(args.preview)
-    print(f"psd_faces: {len(faces)} 表情 x 3 → {out}", file=sys.stderr)
+    print(f"psd_faces: {len(faces)} 表情 x 3 (うち閉じ目の版 {len(blinking)} 表情) → {out}", file=sys.stderr)
 
 
 if __name__ == "__main__":

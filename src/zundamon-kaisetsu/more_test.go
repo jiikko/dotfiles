@@ -140,11 +140,11 @@ func TestDefaultFaceAlwaysEmbedded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	imgs, err := loadFaces(s, env)
+	fs, err := loadFaces(s, env)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := sortedKeys(imgs["metan"]); !slices.Equal(got, []string{"通常"}) || len(imgs["metan"]["通常"]) != 3 {
+	if got := sortedKeys(fs.images["metan"]); !slices.Equal(got, []string{"通常"}) || len(fs.images["metan"]["通常"]) != 3 {
 		t.Errorf("話さないキャラの立ち絵: %v (want [通常] の 3 段階)", got)
 	}
 }
@@ -152,23 +152,23 @@ func TestDefaultFaceAlwaysEmbedded(t *testing.T) {
 // frameStates はフレームごとの状態を、frameRuns の区間どおりに総フレーム数 ceil(尺 × fps) まで並べる (issue 660)
 func TestFrameStates(t *testing.T) {
 	runs := [][4]int{{0, -1, 0, 0}, {12, 0, 1, 2}, {15, 0, 0, 0}}
-	got := frameStates(runs, 0.7) // 0.7 秒 = 21 フレーム
-	var want [][3]int
+	got := frameStates(runs, nil, 0.7) // 0.7 秒 = 21 フレーム
+	var want []visualState
 	for range 12 {
-		want = append(want, [3]int{-1, 0, 0})
+		want = append(want, visualState{-1, 0, 0, 0})
 	}
 	for range 3 {
-		want = append(want, [3]int{0, 1, 2})
+		want = append(want, visualState{0, 1, 2, 0})
 	}
 	for range 6 {
-		want = append(want, [3]int{0, 0, 0})
+		want = append(want, visualState{0, 0, 0, 0})
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("got  %v\nwant %v", got, want)
 	}
 	// frameRuns と組み合わせると、フレーム k は時刻 (k+0.5)/fps の状態になる (プレイヤーの規則)
 	tl := []timelineLine{{Start: 0.412, End: 0.6, mouth: "2"}, {Start: 0.938, End: 1.1, mouth: "1"}}
-	fs := frameStates(frameRuns(tl, 1.2), 1.2)
+	fs := frameStates(frameRuns(tl, 1.2), nil, 1.2)
 	if len(fs) != 36 {
 		t.Fatalf("総フレーム数: got %d want 36", len(fs))
 	}

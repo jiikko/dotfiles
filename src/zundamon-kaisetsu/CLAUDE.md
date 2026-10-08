@@ -8,11 +8,13 @@
   `json.dumps` / `round()` / `str()` の振る舞いを再現するためのもので、Go らしい書き方に「直す」と鍵が変わり、利用者の
   `<台本>.work/` のキャッシュが全部作り直しになる。golden (`testdata/*.json`) との一致を落とす変更は、互換を捨てる判断として扱う
 - 台本の行が `map[string]any` のまま渡るのも、Python 版と同じ順に値を引くための選択 (型付きの行に替えない。issue 654 で判断)
+- まばたき (プレイヤーのデータの `blinks` と、キャラの `blink` / `blinkBit`) は Python 版の後で足したもので、golden の `frames` を
+  変えないよう別の列に持つ。閉じ目の版の無い立ち絵ではどれも載せない (載せると golden の `cast` が食い違う)
 - Python 版と意図的に変えた点 (文字列でない text を拒否する等) は issue 641 の「Python 版と意図的に変えたこと」
 
 ## Go と player.html の契約 (issue 650)
 
-- `#sheet=` の書式 (`sheetFragment` / `mouthLevels`) と、図解の種類と読むキー (`showParsers` と `showAt`) は、Go と
+- `#sheet=` の書式 (`sheetFragment` / `mouthLevels`。欄は 行・話し中・口・まばたきのビット) と、図解の種類と読むキー (`showParsers` と `showAt`) は、Go と
   `_claude/skills/zundamon-kaisetsu/templates/player.html` の 2 か所にある。テストが突き合わせるのは字句まで:
   **字面を残したまま意味だけ変える書き換え** (まとめ撮りの分解で欄を並べ替える・`paint` の引数の順を変える) は検出しない
 - プレイヤーの描画そのものに自動テストは無い (issue 645)。見た目を変えたら、HTML を作って Chrome で開いて確かめる

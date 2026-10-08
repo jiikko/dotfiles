@@ -130,13 +130,13 @@ func waitForIdleCPU(env *Env) {
 	}
 }
 
-// sheetFragment は、まとめ撮りの状態 (字幕の行, 話し中か, 口の開き) の並びを player.html が読む URL の断片にする。
+// sheetFragment は、まとめ撮りの状態 (字幕の行, 話し中か, 口の開き, 目を閉じているキャラのビット) の並びを player.html が読む URL の断片にする。
 // 🚨 書式は player.html の `location.hash.match(/^#sheet=…/)` と 1 対 1。片方だけ変えると、プレイヤーは通常の画面のまま撮られる
 // (TestSheetFragmentMatchesPlayer が両者を突き合わせる。issue 650)
-func sheetFragment(group [][3]int) string {
+func sheetFragment(group []visualState) string {
 	parts := make([]string, len(group))
 	for i, st := range group {
-		parts[i] = fmt.Sprintf("%d,%d,%d", st[0], st[1], st[2])
+		parts[i] = fmt.Sprintf("%d,%d,%d,%d", st[0], st[1], st[2], st[3])
 	}
 	return "#sheet=" + strings.Join(parts, ";")
 }
@@ -170,12 +170,13 @@ func writeMP4(env *Env, data *PlayerData, m4a, out, td string, jobs int) error {
 	if e := interruptedErr(); e != nil {
 		return e
 	}
-	states := sortedStates(data.Frames)
-	shots := map[[3]int]string{}
+	perFrame := frameStates(data.Frames, data.Blinks, data.Duration)
+	states := sortedStates(perFrame)
+	shots := map[visualState]string{}
 	for _, st := range states {
-		shots[st] = filepath.Join(td, fmt.Sprintf("state_%d_%d_%d.png", st[0]+1, st[1], st[2]))
+		shots[st] = filepath.Join(td, fmt.Sprintf("state_%d_%d_%d_%d.png", st[0]+1, st[1], st[2], st[3]))
 	}
-	var groups [][][3]int
+	var groups [][]visualState
 	for i := 0; i < len(states); i += sheetStates {
 		groups = append(groups, states[i:min(i+sheetStates, len(states))])
 	}
@@ -261,7 +262,7 @@ func writeMP4(env *Env, data *PlayerData, m4a, out, td string, jobs int) error {
 	if err := os.MkdirAll(seq, 0o755); err != nil {
 		return fail("%s: 作れない (%v)", seq, err)
 	}
-	for k, st := range frameStates(data.Frames, data.Duration) {
+	for k, st := range perFrame {
 		if err := os.Symlink(shots[st], filepath.Join(seq, fmt.Sprintf("f%06d.png", k))); err != nil {
 			return fail("%s: 書けない (%v)", seq, err)
 		}
@@ -295,19 +296,30 @@ func writeMP4(env *Env, data *PlayerData, m4a, out, td string, jobs int) error {
 	return nil
 }
 
-// frameStates はフレームごとの状態 (字幕の行, 話し中か, 口の開き) を並べる。総フレーム数は ceil(duration × fps) で、
-// runs (frameRuns の出力。各状態の開始フレーム) の各区間を、次の区間の開始まで繰り返す。最後の状態は総フレーム数まで続ける
-func frameStates(runs [][4]int, duration float64) [][3]int {
+// visualState は 1 フレームの見た目の状態 (字幕の行, 話し中か, 口の開き, 目を閉じているキャラのビット)。mp4 はこの種類ごとに 1 枚撮る。
+type visualState [4]int
+
+// frameStates はフレームごとの状態を並べる。総フレーム数は ceil(duration × fps) で、runs (frameRuns の出力) と
+// blinks (blinkRuns の出力。nil なら誰もまばたかない) の各区間を、次の区間の開始まで繰り返す。最後の状態は総フレーム数まで続ける
+func frameStates(runs [][4]int, blinks [][2]int, duration float64) []visualState {
 	total := max(1, int(math.Ceil(duration*mouthFPS)))
-	out := make([][3]int, 0, total)
-	for i, r := range runs {
-		end := total
-		if i+1 < len(runs) {
-			end = min(runs[i+1][0], total)
+	out := make([]visualState, 0, total)
+	ri, bi := 0, 0
+	for k := range total {
+		for ri+1 < len(runs) && runs[ri+1][0] <= k {
+			ri++
 		}
-		for range max(0, end-r[0]) {
-			out = append(out, [3]int{r[1], r[2], r[3]})
+		for bi+1 < len(blinks) && blinks[bi+1][0] <= k {
+			bi++
 		}
+		st := visualState{-1, 0, 0, 0}
+		if len(runs) > 0 && runs[ri][0] <= k {
+			st = visualState{runs[ri][1], runs[ri][2], runs[ri][3], 0}
+		}
+		if len(blinks) > 0 && blinks[bi][0] <= k {
+			st[3] = blinks[bi][1]
+		}
+		out = append(out, st)
 	}
 	return out
 }
@@ -320,13 +332,13 @@ func lastRunes(s string, n int) string {
 	return s
 }
 
-// sortedStates はフレームの状態 (字幕の行, 話し中か, 口の開き) の種類を Python の sorted と同じ順に並べる。
-func sortedStates(frames [][4]int) [][3]int {
-	set := map[[3]int]bool{}
-	for _, r := range frames {
-		set[[3]int{r[1], r[2], r[3]}] = true
+// sortedStates はフレームごとの状態の種類を (行, 話し中, 口, まばたき) の辞書順に並べる。
+func sortedStates(states []visualState) []visualState {
+	set := map[visualState]bool{}
+	for _, st := range states {
+		set[st] = true
 	}
-	out := make([][3]int, 0, len(set))
+	out := make([]visualState, 0, len(set))
 	for st := range set {
 		out = append(out, st)
 	}
@@ -334,9 +346,9 @@ func sortedStates(frames [][4]int) [][3]int {
 	return out
 }
 
-// cmpState は状態を (行, 話し中, 口) の辞書順で比べる (Python の sorted と同じ順)
-func cmpState(a, b [3]int) int {
-	for i := range 3 {
+// cmpState は状態を (行, 話し中, 口, まばたき) の辞書順で比べる
+func cmpState(a, b visualState) int {
+	for i := range a {
 		if a[i] != b[i] {
 			if a[i] < b[i] {
 				return -1
