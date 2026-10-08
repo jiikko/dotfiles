@@ -1,1 +1,0 @@
-../685-feat-zundamon-kaisetsu-source-diff-candidates.md
