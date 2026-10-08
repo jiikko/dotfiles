@@ -15,7 +15,7 @@
 | `SKILL.md` | skill の本体 (手順・台本の書き方・表情の語彙) |
 | `scripts/psd_faces.py` | 立ち絵の PSD から表情 × 口 3 段階の画像を書き出す (psd-tools を使う) |
 | `faces/<キャラ>.json` | 表情ごとに使う PSD のレイヤーの定義 |
-| `templates/player.html` | HTML プレイヤー (mp4 の絵もこれで描く。zundamon-kaisetsu が実行時に読む) |
+| `templates/player.html` | HTML プレイヤー (mp4 の絵もこれで描く。`zundamon-kaisetsu` コマンドが実行時に読む) |
 | `examples/script.json` | 台本の見本 |
 | `readings.json` | 読み間違えやすい語の辞書 (SKILL.md の手順で台本の `readings` に合流させる) |
 | `improving.md` | 改善点を挙げるときの観点と測り方 (適宜更新する。今動いている改善は issue の epic 674) |
@@ -28,43 +28,73 @@
 
 ## Setup
 
-コマンドは**このディレクトリで**実行する (パスはここからの相対)。`zundamon-kaisetsu` は dotfiles の `bin/` を PATH に入れて使う
-(初回の起動で Go のツールチェーンがビルドする)。
+macOS で動作を確かめている (Linux は対象外)。Homebrew が入っている前提で書く。
 
-### 1. コマンド
+### 0. 入手と配置
+
+この skill は [jiikko/dotfiles](https://github.com/jiikko/dotfiles) (公開リポジトリ) の一部で、skill のディレクトリだけでは動かない。
+コマンド `zundamon-kaisetsu` は Go 製で、clone した中の `bin/zundamon-kaisetsu` (入口。zsh)・`bin/lib/`・`src/zundamon-kaisetsu/`・
+`src/proctree/` と、この skill のディレクトリを使う。次を同じシェルで続けて打つ:
+
+```sh
+brew install go ffmpeg uv node        # uv は立ち絵の書き出し、node は mermaid の図にだけ要る。mp4 を作るなら Google Chrome も入れる
+mkdir -p ~/src && git clone https://github.com/jiikko/dotfiles.git ~/src/dotfiles   # 置き場所は任意
+D=~/src/dotfiles
+mkdir -p ~/.claude/skills && ln -s "$D/_claude/skills/zundamon-kaisetsu" ~/.claude/skills/zundamon-kaisetsu   # Claude Code から skill が見える
+mkdir -p ~/.local/bin && ln -s "$D/bin/zundamon-kaisetsu" ~/.local/bin/                                      # 入口だけを PATH の dir に置く
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc   # ~/.local/bin が PATH に無ければ。新しいシェルを開く
+```
+
+- 新しいシェルで `command -v zundamon-kaisetsu` がパスを返せばよい
+- 🚨 **dotfiles の `bin/` を丸ごと PATH に入れない**。`tmux` などの同名のラッパーまで入り、ほかのコマンドの挙動が変わる。入口 1 つだけを symlink する
+  (ラッパーは symlink の先の実体の場所から skill と src を探すので、symlink で動く)
+- 初回の起動で Go がビルドする (数十秒〜数分。`zundamon-kaisetsu: building...` と出る)。要る Go は 1.25 以上 (`src/zundamon-kaisetsu/go.mod`) で、
+  手元の Go が古くても、要る版 (約 90MB) を初回に自動で取りに行く (ネットワークが要る)
+- clone の中の `assets/` (立ち絵) は非公開のサブモジュールで、取れなくてよい (手順 3 で用意する。`git submodule` は打たない)
+
+以下のコマンドは**この skill のディレクトリで**実行する (パスはここからの相対):
+
+```sh
+cd ~/src/dotfiles/_claude/skills/zundamon-kaisetsu
+```
+
+### 1. コマンドの確認
 
 ```sh
 zundamon-kaisetsu check
 ```
 
-足りないものを `NG` で示す。目安:
+行ごとに `OK` / `NG` と、`NG` なら次の手を出す (足りないものがあれば rc=1)。目安:
 
-| 用途 | 必要なもの |
-|---|---|
-| 合成・HTML | Go (`zundamon-kaisetsu` のビルド)、ffmpeg (無ければ macOS の afconvert) |
-| VOICEVOX エンジン | Apple の `container` か `docker` (どちらも無ければ VOICEVOX のデスクトップアプリ) |
-| mp4 | ffmpeg (H.264) と Google Chrome か Chromium (`CHROME` 環境変数で場所を指定できる) |
-| 立ち絵の書き出し | `uv` (psd-tools を一時的に入れて動かす。`scripts/psd_faces.py` は Python のまま) |
-| mermaid の図 (台本の `show` の `mermaid`) | Node の `npx` と Chrome (初回に版を固定した mermaid-cli を取りに行く)。`check` は `npx` を見ないので、使うときに `npx --version` で確かめる |
+| 用途 | 必要なもの | 無いとき |
+|---|---|---|
+| 合成・HTML | Go (`zundamon-kaisetsu` のビルド)、ffmpeg (無ければ macOS の afconvert) | 必須 |
+| VOICEVOX エンジン | Apple の `container` か `docker` (どちらも無ければ VOICEVOX のデスクトップアプリ) | 必須 (手順 2) |
+| mp4 | ffmpeg (H.264) と Google Chrome か Chromium (`CHROME` 環境変数で場所を指定できる) | HTML だけ作るなら `NG` のままでよい |
+| 立ち絵の書き出し | `uv` | 立ち絵を用意しないなら不要 |
+| mermaid の図 (台本の `show` の `mermaid`) | Node の `npx` と Chrome (初回に版を固定した mermaid-cli を取りに行く) | 使わないなら不要。`check` は `npx` を見ないので、使うときに `npx --version` で確かめる |
 
 ### 2. VOICEVOX エンジン
 
-```sh
-zundamon-kaisetsu check  # container か docker が使えれば、エンジンが止まっていても OK
-```
+エンジンは `synth` / `kana` / `speakers` が自分で起動する (container を優先し、無ければ docker)。使えるようにしておくのは次のどれか 1 つ:
 
-- `synth` / `kana` / `speakers` は、エンジンが止まっていれば自分で起動し (container を優先し、無ければ docker)、見張りのプロセスを残す。
-  見張りは最後にエンジンを使ってから 10 分で止めて終わる (印・最後に使った時刻・見張りのログは `~/Library/Caches/zundamon-kaisetsu/`)
-- 起動したままにしたいときだけ `zundamon-kaisetsu up` で起動し、`zundamon-kaisetsu down` で止める (`up` で起動したものは自動では止めない)
+- **Apple の `container`**: Apple シリコンの新しい macOS 向け (要件は公式で確かめる)。入れた後、初回に 1 回 `container system start` を打つ
+  (Linux カーネルを入れるか聞かれる。非対話なら `--enable-kernel-install`)
+- **docker**: Docker Desktop などを起動しておく
+- **VOICEVOX のデスクトップアプリ**: どちらも無いとき。起動している間、エンジンが 127.0.0.1:50021 で待ち受ける
 
-- イメージは `voicevox/voicevox_engine:cpu-latest` (約 3.7GB。初回の取得に数分かかる)
-- `container` は初回に `container system start` が要る (Linux カーネルを入れるか聞かれる)
+その後 `zundamon-kaisetsu check` のエンジンの行が `OK` (止まっていても「使うときに起動する」と出ればよい) になればよい。
+
+- イメージは `voicevox/voicevox_engine:cpu-latest` (約 3.7GB)。初回の `synth` で取得するので数分止まる。先に取るなら
+  `container image pull voicevox/voicevox_engine:cpu-latest` (docker なら `docker pull …`)
+- 自動で起動したエンジンは、最後に使ってから 10 分で止まる (印・最後に使った時刻・見張りのログは `~/Library/Caches/zundamon-kaisetsu/`)。
+  起動したままにしたいときだけ `zundamon-kaisetsu up` / `down`
 - 声の利用規約: キャラクターごとに VOICEVOX 公式サイトで確認する。動画には `VOICEVOX:四国めたん` `VOICEVOX:ずんだもん` の
   クレジットが必須 (HTML はクレジット欄に build が自動で入れる。mp4 の映像には入らないので、概要欄などに自分で書く)
 
-### 3. 立ち絵
+### 3. 立ち絵 (任意。後回しにするなら手順 4 へ)
 
-立ち絵は坂本アヒルさんが pixiv で配布している素材を使う。
+立ち絵を用意しなくても動く (名前入りの丸アバターで出る)。用意するなら、坂本アヒルさんが pixiv で配布している素材を使う。
 
 | キャラ | 配布ページ | 動作を確かめた版 |
 |---|---|---|
@@ -73,8 +103,9 @@ zundamon-kaisetsu check  # container か docker が使えれば、エンジン�
 
 1. 各ページの案内に従って素材の zip を入手して展開する
 2. 同梱の `readme.txt` と公式ガイドライン (https://zunko.jp/guideline.html) を読む。動画への利用・改変は可、
-   クレジットは任意 (build は HTML のクレジット欄に「立ち絵: 坂本アヒル」を自動で入れる。mp4 には入らない)。**素材を公開リポジトリに置かない** (再配布になる)
-3. 展開したフォルダを `assets/zundamon-kaisetsu/psd/` に置く
+   クレジットは任意 (build は HTML のクレジット欄に「立ち絵: 坂本アヒル」を自動で入れる。mp4 には入らない)。**素材を公開リポジトリに置かない** (再配布になる。
+   下の置き場は clone の中のサブモジュールの場所で、commit・push しなければ公開されない)
+3. 展開したフォルダを `assets/zundamon-kaisetsu/psd/` に置く (版が違うとフォルダ名・ファイル名が変わるので、4 のコマンドのパスを実物に合わせる)
 
    ```
    assets/zundamon-kaisetsu/psd/
@@ -82,7 +113,7 @@ zundamon-kaisetsu check  # container か docker が使えれば、エンジン�
    └── 四国めたん立ち絵素材2.1/四国めたん立ち絵素材2.1.psd (+ readme.txt)
    ```
 
-4. 表情を書き出す (1 キャラ 1〜2 分)
+4. 表情を書き出す (`uv` が要る。1 キャラ 1〜2 分)
 
    ```sh
    A=assets/zundamon-kaisetsu
@@ -96,15 +127,21 @@ zundamon-kaisetsu check  # container か docker が使えれば、エンジン�
    上の表と違う版の素材ではレイヤー名が変わっていることがあり、そのときは無いレイヤーを名指しして止まる。
    `faces/<キャラ>.json` のレイヤー名を素材に合わせて直す。
 
-立ち絵を用意しなくても動く (名前入りの丸アバターで出る)。
-
-**dotfiles で使う場合**: `assets/` は非公開リポジトリ `jiikko/assets` のサブモジュールで、上の素材と書き出した表情が入っている。
-権限のあるアカウントなら `git submodule update --init` で取得すれば 3. は要らない。
+(dotfiles の持ち主の環境だけ: `assets/` は非公開リポジトリ `jiikko/assets` のサブモジュールで、素材と書き出した表情が入っている。
+権限のあるアカウントなら `git submodule update --init` で取得すれば 3 は要らない。別のユーザーは読み飛ばしてよい)
 
 ### 4. 動作確認
 
+見本の台本 (4 行) を合成して書き出す。作業ディレクトリは clone の外に作る (clone の中に作ると未追跡のファイルとして残る):
+
 ```sh
-mkdir -p ./tmp/zk && cp examples/script.json ./tmp/zk/
-zundamon-kaisetsu synth ./tmp/zk/script.json   # エンジンを自動で起動する (使わなくなって 10 分で止まる)
-zundamon-kaisetsu build ./tmp/zk/script.json -o ./tmp/zk/out --format both   # out.html と out.mp4 (エンジンは使わない)
+W=~/zundamon-test && mkdir -p "$W" && cp examples/script.json "$W/"
+zundamon-kaisetsu synth "$W/script.json"   # エンジンを自動で起動する (初回はイメージの取得で数分)
+zundamon-kaisetsu build "$W/script.json" -o "$W/out" --format both   # Chrome が無ければ --format html
+open "$W/out.html" "$W/out.mp4"
 ```
+
+数秒の掛け合いが、音声・字幕・立ち絵 (用意していなければ丸アバター) つきで再生されれば準備は終わり。
+Claude Code からは「ずんだもん解説を作って」で skill が呼ばれる。
+
+止まったら: `zundamon-kaisetsu check` を見直す。エンジンが起動しないときは見張りのログ (`~/Library/Caches/zundamon-kaisetsu/`) を見る。
