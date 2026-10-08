@@ -43,13 +43,25 @@ issue 662 の実装前の正本。**§0 が glogx での決定 (treebeard から
   一番手前のタイルを閉じると、その場所の下に隠れていたタイル (4 枚前) が見える
 - 枠の中の飾りは treebeard のプレビューから写す (§8.3: 題 `名前 · サイズ`、右下の `d diff · 1/13`、右端のスクロールバー、読込中のスピナー)。
   中のキーは §6.4 (テキスト) から、閉じるキーだけ §0.1 に置き換える
-- **提案 (実物を見て直す前提)**: 枠は treebeard と同じ Rounded・背景 `pop`・枠色 `mix(pop, route, p)`。開く動きは treebeard と同じく
-  元の行 (1 枚目は木のカーソル行、2 枚目以降は飛んだリンクの行) から `POPUP_T` のばねで育つ。手前のタイル以外と木は `dim_backdrop` の 0.55 で沈める。
-  4 箇所は画面を斜めにずらした階段 (1 枚目 = 左上寄り → 4 枚目 = 右下寄り)、各タイルは画面の約 6 割の幅 × 7 割の高さ。
-  🚨 4 箇所の位置・大きさ・沈め方は README にも treebeard にも無い (glogx だけの UI)。実装の「タイル」の段の最初に実物を見せて決める
-- **未決**: タイルの中で「ファイルへ飛ぶ」方法。推奨は issues viewer の本文の `Tab` ジャンプモードと同じ形
-  (`Tab` で入り、本文中の実在するパスだけを選べて、`Enter` で新しいタイルを重ねる。パスの解決は `src/glogx/issues/filelink.go`、
-  位置は `tuikit/markdown` の `RenderLinks`)。treebeard のプレビューは `Tab` を使わないので衝突しない
+- **見た目はモックで決まった** (2026-10-08。ユーザーが `./tmp/treefiler-mock` を動かして「ui や肌触りはかなりいい」)。モックの式をここへ写す
+  (モックは `./tmp` にあり消えうるので、式と値はこの節を正本にする):
+  - 置き場所 i (0〜3): キャンバス (ステータスバーを除く) を W × H として、タイルは幅 `tw = W*60/100`・高さ `th = H*70/100`。
+    **1 枚目は中央** (2026-10-08 ユーザー回答「preview のタイルはセンタリングして。最初はセンターで」): `cx = (W-tw)/2`、`cy = (H-th)/2`。
+    2〜4 枚目は中央から右下へ同じ幅ずつずらす: `dx = (W-tw-2-cx)/3`、`dy = (H-th-1-cy)/3`、位置 `(cx + i*dx, cy + i*dy)` (整数除算)。
+    200×55 のキャンバスで 1 枚目は (40, 8)、4 枚目は (76, 14)。奥のタイルは手前の右下にのぞく (モックを tmux で撮って確かめた)
+  - 何番目の場所に置くか = 開く時点のタイルの枚数 mod 4 (閉じれば番号も戻る)
+  - 枠は Rounded、背景 `pop`。**手前のタイル**: 枠 `mix(pop, accent.route, p)`・題は太字 `text`。**奥のタイル**: 枠 `mix(pop, accent.active, p)`・題は `muted`
+  - 手前のタイルの外 (木と奥のタイル) は `dim_backdrop` の `0.55*p` で沈める
+  - 開く動き: 元の矩形 (1 枚目 = 木のカーソル行の pill、2 枚目以降 = ジャンプで選んだリンクの文字列) から置き場所へ、`popupT` のばね (§0.1 の値) で `lerp_rect`。
+    中身は `p > 0.9` から描く。閉じるときは逆に縮み、`p < 0.03` で捨てる
+  - 🚨 **ばねが止まったら値を目標へ合わせる** (§4.1 の treebeard の `Damped` は合わせない)。合わせないと `|v-1| < 0.02` で止まった `p` が
+    `lerp_rect` で増幅され、遠くから飛んできたタイルが置き場所から 1 桁以上ずれたまま止まる (モックで実測: 角が `╭╭` と二重になった)
+  - 右下の位置表示 `1/243`、右端のスクロールバー (track `│` accent.dim / thumb `┃` accent.route)、題 ` 名前 · サイズ ` (§8.3)
+- **タイルの中で「ファイルへ飛ぶ」= `Tab` のジャンプモード** (モックで採用。issues viewer の本文と同じ形): `Tab` で入り、本文中の
+  **実在するファイルに解決できるパスだけ**を下線で示し、`Tab` / `j` `k` (と別名) で選択を移し、`Enter` で新しいタイルを手前に重ねる。
+  `Esc` `q` `h` `←` でモードだけ抜け、捌かないキーはモードを抜けてからタイルのキーとして効く。パスの解決は
+  `src/glogx/issues/filelink.go`、位置は `tuikit/markdown` の `RenderLinks` を流用できないか実装で確かめる
+  (モックは「長いパスから先に照合し、重なる短いパス (`src/tuikit/README.md` の中の `README.md`) を別に拾わない」を手で書いた)
 
 ### 0.3 glogx への組み込み (2026-10-07 にコードで確かめた事実)
 
@@ -122,12 +134,67 @@ issue 662 の実装前の正本。**§0 が glogx での決定 (treebeard から
 
 ### 0.7 本体へ入れる順
 
+0. **見た目を自分で確かめる道具** (§0.8.4)。これが無いと各段の「撮る → treebeard と比べる → 直す」を人の目に頼ることになる
 1. 独立 module (`src/treefiler`) と単体の起動 (`bin/treefiler`)、横に育つ木と固定の選択線 (§1〜3、§4.2・4.5)。glogx の `F` への配線は 1 段目の最後に
 2. 熱の色と git の印 (§1.3、§5.1、§5.3)
 3. タイル 1 枚 (§0.2、§8.3、§0.4)
 4. タイルを 4 箇所に重ねる・タイル内のジャンプ
 5. ばねの動きの残り (ビーズ・ripple) とライブ更新 (§4.3・4.4、§5.2)
 6. 残りの UI (検索・explode・シェル・設定の板・help)。画像と PDF は後回し (§0.1)
+
+### 0.8 実装の設計 (2026-10-08。着手前の計画。実装で変えたらここを直す)
+
+#### 0.8.1 置き場所と依存
+
+- `src/treefiler/` を独立 module にする。前例の `src/ratelimit` に倣って揃えるもの: `Makefile` (`lint` = `vet-gorules` + 版固定の golangci-lint、
+  `test` = `go test -race ./...`)・`.golangci.yml`・`gorules/` (規則の正本は `src/glogx/gorules/rules.go`)・`.gitignore` (autobuild の成果物)・
+  `CLAUDE.md` (ファイルの地図と入口)・`README.md`・`.github/workflows/src_treefiler.yml` (`_go-project.yml` を呼ぶ薄い caller。paths に
+  replace で取り込む `src/termsafe/**` `src/tuikit/**` `src/subproc/**` などを並べる)・`bin/treefiler` (`go_autobuild_exec`)
+- 🚨 配線の漏れは `scripts/check_go_project_lanes.sh` が止める (Makefile の lint/test・workflow の存在・paths・replace 先の paths・go.sum・
+  workflow の `dir`)。glogx が treefiler を取り込んだら **`src_glogx.yml` の paths に `src/treefiler/**` を足す** (足さないと同じ検査が落ちる)
+- `make test` は `src/*/go.mod` の存在で Go プロジェクトを見つけるので、Makefile への手での登録は要らない
+- 依存: bubbletea v2 (glogx と同じ版 `charm.land/bubbletea/v2 v2.0.8`)・`termsafe`・`tuikit` (termwidth / markdown / highlight / toast / listnav)・
+  `subproc` (外部プロセス = git の起動。ratelimit の `exec_boundary_test.go` と同じく `os/exec` の直接 import を止める)・`atomicfile` (設定の書き込み)。
+  lipgloss / bubbles は使わない (glogx が使っていない)
+
+#### 0.8.2 パッケージの形
+
+- `src/treefiler/main.go` — 単体の入口 (`bin/treefiler`)。pwd を root にして部品を `tea.NewProgram` で回す
+- `src/treefiler/filer/` — 画面の部品 (glogx と単体の両方が使う)。glogx に依存しない。ファイルは責務で分ける:
+  木の状態とディレクトリの読み込み (`tree.go`) / 列と線の配置の純関数 (`layout.go`、§3) / ばねとシーン (`anim.go`、§4) /
+  セルの格子から文字列への描画 (`render.go`。I/O をしない純関数) / 配色と熱 (`palette.go`、§1) / タイル (`tile.go`、§0.2) /
+  テキストの遅延読み込みとバイナリ・音声の判定 (`preview.go`、§0.4) / 再帰 mtime の走査 (`walk.go`、§5.1) / git (`git.go`、§5.3) /
+  ライブ更新 (`watch.go`、§5.2) / 設定 (`settings.go`、§0.5) / キー (`keys.go`)
+- 外へ出す面 (案): `New(root string, opts) *Model` / `Update(tea.Msg) (Result, tea.Cmd)` (Result = 何もしない / 閉じたい / 終了したい) /
+  `View(w, h int) string` / `OwnsKeys() bool` (入力モード中。§0.3) / `Animating() bool` (glogx の `tickInterval` が周期を上げるのに使う)。
+  時刻は `opts.Now` で注入する (熱の色が「今」に依存するので、テストと撮影で固定するため)
+- glogx 側: `fullscreen.go` に ID、`handleKey` の `C`/`X` の位置に `F` (§0.3)、`overlayOwnershipTable`、`tickInterval`、`TestFrameAllocBudget` の行
+
+#### 0.8.3 テスト (段ごとに書き、変異を当てて red を確かめてから commit する)
+
+- 配置: 決め打ちの木で `layout` の結果 (各ノードの x, y と線の格子) を固定する。spine の y=0、ブロック間の空白 1 行、肘の track、列の x の式 (§3.1〜3.3)
+- 線: mask から文字 (§2.1)、管の継ぎ目、強調の優先 (DIM < ACTIVE < ROUTE)
+- 熱: 停止点ちょうどの色と、区間の途中が smoothstep であること (§1.3)
+- キー: 兄弟の中だけを動く `j` `k` と別名 (`↓` `↑` `Ctrl-N` `Ctrl-P`)・`l` `→` `Ctrl-F` `Enter` で潜る / 開く・`h` `←` `Ctrl-B` で親・`Space` `Tab` の開閉・`c` `C`・`g` `G` (§0.1、§6.1)
+- タイル: 置き場所の巡回 (5 枚目が 0 番)・閉じると番号が戻る・`Enter` / `q` で 1 枚閉じる・`J` `K` の差し替えと端の toast・ジャンプモードの選択と抜け方
+- 読み込み: 先頭だけ読む・ページ送りで続きを読む境界・バイナリ (先頭 8192 バイトの NUL) と音声の拡張子で toast・タブの展開・termsafe を通すこと
+- git: `--porcelain=v1 -z --branch --ignored` の出力の fixture から印と branch 表記 (§5.3)
+- 時間: アニメは `opts.Now` と dt の注入で進める (壁時計を待たない。`avoid-wall-clock-assertions`)
+- glogx: `F` がどの全画面からも開くこと・入力中は譲ること・`C` を譲ること (`overlay_ownership_test.go` と `motion_vocabulary_test.go` の流儀)
+
+#### 0.8.4 見た目を自分で確かめる道具 (0 段目)
+
+- 目的: 実装を頼まれたら、人が見なくても「撮る → treebeard / モックと比べる → 直す」を回せるようにする (2026-10-08 ユーザー要望)
+- 方式 (vhs は使わない。中の xterm.js が罫線と幅の曖昧な字を本物の端末と違えて描くため。`src/tuikit/README.md` の「デモ」):
+  1. 隔離した tmux (`unset TMUX TMUX_PANE` + 一意の `-L`、`TMUX_TMPDIR` を使い捨ての dir に。`tmux-probe-requires-socket-isolation`) で
+     `bin/treefiler` を決まった大きさ (例 200×56) で起動し、キーの台本を送る
+  2. `capture-pane -p` で文字の格子、`capture-pane -p -e` で色を取る。**位置・桁・文字の確認は格子を機械で照合する** (安くて正確)
+  3. 色・継ぎ目・全体の印象の確認だけ、格子と色を PNG に描いて読む (手元のフォント Menlo / Hiragino)
+  4. 撮る木は決め打ちの fixture (更新時刻をずらしたディレクトリを生成する) と、注入した「今」で固定し、毎回同じ絵にする
+- 置き場所: `src/treefiler/tools/shot/`。🚨 PNG を描くには Go の `golang.org/x/image` (フォントの読み込み) か Python の Pillow (今は入っていない) が要る。
+  推奨は `tools/shot` を**別 module** にして `x/image` をそこに閉じ込める (本体の go.mod に依存を足さない)。別 module は `src/*/go.mod` の
+  1 段下なので CI のレーンを持たない (手で使う道具として扱う)
+- 撮ったものは `./tmp` に出す (commit しない)。比べる相手は treebeard のデモ動画のフレーム (`docs/demo.mp4`) とモック
 
 
 ---
