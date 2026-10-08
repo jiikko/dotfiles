@@ -45,7 +45,7 @@ func parseImage(path, at string, m map[string]any) (*showData, error) {
 	if imageMIME(src) == "" {
 		return nil, fail("%s: %s.src は .png / .jpg / .jpeg の画像 (実際: %s)", path, at, pyStrRepr(src))
 	}
-	// alt は HTML の代替テキストで、手順 3 の整合チェックが図の中身を資料と突き合わせるときの手がかりにもなる
+	// alt は HTML の代替テキストで、手順 3-3 の統合確認が図の中身を資料と突き合わせるときの手がかりにもなる
 	alt, err := showField(path, at, m, "alt", true, keywordSubMax)
 	if err != nil {
 		return nil, err

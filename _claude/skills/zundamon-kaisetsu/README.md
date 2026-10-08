@@ -21,7 +21,7 @@
 | `acronyms.json` | 1 文字ずつ読むのが正しい略語 (CPU・OS 等)。`kana --script --check` がこの語を「1 文字ずつ読んだ誤読」として警告しない |
 | `assets/zundamon-kaisetsu/` | 立ち絵の置き場 (`psd/` に元の素材、`faces/<キャラ>/` に書き出した表情)。**同梱しない** (下の Setup で用意する) |
 
-合成・組み立ての本体は Go 製のコマンド `zundamon-kaisetsu` (`check` / `up` / `down` / `speakers` / `kana` (文か台本の全行の読み) /
+合成・組み立ての本体は Go 製のコマンド `zundamon-kaisetsu` (`check` / `up` / `down` / `speakers` / `kana` (文か台本の全行の読み。`--check` で読みの機械検査) /
 `synth` / `build`)。ソースは dotfiles の `src/zundamon-kaisetsu/`、入口は dotfiles の `bin/zundamon-kaisetsu` で、
 このディレクトリ (テンプレートと立ち絵の既定の置き場) を環境変数 `ZUNDAMON_KAISETSU_SKILL_DIR` で渡す。
 
