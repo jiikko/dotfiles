@@ -1,0 +1,1 @@
+../684-feat-zundamon-kaisetsu-lint-more-rules.md
