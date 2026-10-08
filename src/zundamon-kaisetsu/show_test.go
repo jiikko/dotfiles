@@ -428,12 +428,14 @@ func TestPlayerPlacesCharsForShowsFromStart(t *testing.T) {
 func TestSheetFragmentMatchesPlayer(t *testing.T) {
 	re := playerSheetRegexp(t)
 	tpl := playerTemplate(t)
-	// 欄の意味の対応 (行, 話し中, 口, まばたき) も Go と同じ順に分解している (正規表現が合っても、順が違うと話し中と口が入れ替わる)。
+	// 欄の意味の対応 (行, 話し中, 口, まばたき, 区切りのカード) も Go と同じ順に分解している (正規表現が合っても、順が違うと話し中と口が入れ替わる)。
 	// 検出しない形: 字面を残したまま意味だけ変える書き換え (map の中で並べ替える・paint の引数の順を変える)。
 	// 確実に見るには JS を node で評価する形が要る (issue 650 の敵対的レビュー 2 周目 P3-a。今はうっかりした編集だけを止める)
-	for _, want := range []string{"for (const [li, sp, lv, bl] of states)", "paint(li, sp, lv, bl, false)"} {
+	// 区切りのカード (issue 681): データの cards を読み、カードの間は図解とトピック名を隠す配線
+	for _, want := range []string{"for (const [li, sp, lv, bl, cd] of states)", "paint(li, sp, lv, bl, cd, false)",
+		"runAt(D.cards || [], k)", "setCard(card, line);", ".stage.carding .stage-topic, .stage.carding .stage-show { visibility: hidden; }"} {
 		if !strings.Contains(tpl, want) {
-			t.Errorf("player.html のまとめ撮りの分解が Go の順 (行, 話し中, 口, まばたき) でない (%s が無い)", want)
+			t.Errorf("player.html のまとめ撮りの分解が Go の順 (行, 話し中, 口, まばたき, カード) でない (%s が無い)", want)
 		}
 	}
 	allBlinks := 1<<len(castOrder) - 1 // 全員が目を閉じている (ビットの最大値)
@@ -442,7 +444,9 @@ func TestSheetFragmentMatchesPlayer(t *testing.T) {
 		for sp := range 2 {
 			for lv := range mouthLevels {
 				for _, bl := range []int{0, allBlinks} {
-					group = append(group, visualState{li, sp, lv, bl})
+					for cd := range 2 {
+						group = append(group, visualState{li, sp, lv, bl, cd})
+					}
 				}
 			}
 		}

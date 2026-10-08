@@ -130,13 +130,13 @@ func waitForIdleCPU(env *Env) {
 	}
 }
 
-// sheetFragment は、まとめ撮りの状態 (字幕の行, 話し中か, 口の開き, 目を閉じているキャラのビット) の並びを player.html が読む URL の断片にする。
+// sheetFragment は、まとめ撮りの状態 (字幕の行, 話し中か, 口の開き, 目を閉じているキャラのビット, 区切りのカード) の並びを player.html が読む URL の断片にする。
 // 🚨 書式は player.html の `location.hash.match(/^#sheet=…/)` と 1 対 1。片方だけ変えると、プレイヤーは通常の画面のまま撮られる
 // (TestSheetFragmentMatchesPlayer が両者を突き合わせる。issue 650)
 func sheetFragment(group []visualState) string {
 	parts := make([]string, len(group))
 	for i, st := range group {
-		parts[i] = fmt.Sprintf("%d,%d,%d,%d", st[0], st[1], st[2], st[3])
+		parts[i] = fmt.Sprintf("%d,%d,%d,%d,%d", st[0], st[1], st[2], st[3], st[4])
 	}
 	return "#sheet=" + strings.Join(parts, ";")
 }
@@ -170,11 +170,11 @@ func writeMP4(env *Env, data *PlayerData, m4a, out, td string, jobs int) error {
 	if e := interruptedErr(); e != nil {
 		return e
 	}
-	perFrame := frameStates(data.Frames, data.Blinks, data.Duration)
+	perFrame := frameStates(data.Frames, data.Blinks, data.Cards, data.Duration)
 	states := sortedStates(perFrame)
 	shots := map[visualState]string{}
 	for _, st := range states {
-		shots[st] = filepath.Join(td, fmt.Sprintf("state_%d_%d_%d_%d.png", st[0]+1, st[1], st[2], st[3]))
+		shots[st] = filepath.Join(td, fmt.Sprintf("state_%d_%d_%d_%d_%d.png", st[0]+1, st[1], st[2], st[3], st[4]))
 	}
 	var groups [][]visualState
 	for i := 0; i < len(states); i += sheetStates {
@@ -296,32 +296,44 @@ func writeMP4(env *Env, data *PlayerData, m4a, out, td string, jobs int) error {
 	return nil
 }
 
-// visualState は 1 フレームの見た目の状態 (字幕の行, 話し中か, 口の開き, 目を閉じているキャラのビット)。mp4 はこの種類ごとに 1 枚撮る。
-type visualState [4]int
+// visualState は 1 フレームの見た目の状態 (字幕の行, 話し中か, 口の開き, 目を閉じているキャラのビット, 区切りのカード)。
+// mp4 はこの種類ごとに 1 枚撮る。
+type visualState [5]int
 
 // frameStates はフレームごとの状態を並べる。総フレーム数は ceil(duration × fps) で、runs (frameRuns の出力) と
-// blinks (blinkRuns の出力。nil なら誰もまばたかない) の各区間を、次の区間の開始まで繰り返す。最後の状態は総フレーム数まで続ける
-func frameStates(runs [][4]int, blinks [][2]int, duration float64) []visualState {
+// blinks (blinkRuns の出力)・cards (chapterCardRuns の出力) の各区間を、次の区間の開始まで繰り返す (nil なら 0 のまま)。
+// 最後の状態は総フレーム数まで続ける
+func frameStates(runs [][4]int, blinks, cards [][2]int, duration float64) []visualState {
 	total := max(1, int(math.Ceil(duration*mouthFPS)))
 	out := make([]visualState, 0, total)
-	ri, bi := 0, 0
+	ri := 0
+	blinkAt, cardAt := runCursor(blinks), runCursor(cards)
 	for k := range total {
 		for ri+1 < len(runs) && runs[ri+1][0] <= k {
 			ri++
 		}
-		for bi+1 < len(blinks) && blinks[bi+1][0] <= k {
-			bi++
-		}
-		st := visualState{-1, 0, 0, 0}
+		st := visualState{-1, 0, 0, 0, 0}
 		if len(runs) > 0 && runs[ri][0] <= k {
-			st = visualState{runs[ri][1], runs[ri][2], runs[ri][3], 0}
+			st = visualState{runs[ri][1], runs[ri][2], runs[ri][3], 0, 0}
 		}
-		if len(blinks) > 0 && blinks[bi][0] <= k {
-			st[3] = blinks[bi][1]
-		}
+		st[3], st[4] = blinkAt(k), cardAt(k)
 		out = append(out, st)
 	}
 	return out
+}
+
+// runCursor は [開始フレーム, 値] の変わり目の列を、フレームの昇順に引く関数にする (最初の区間より前と nil は 0)。
+func runCursor(runs [][2]int) func(k int) int {
+	i := 0
+	return func(k int) int {
+		for i+1 < len(runs) && runs[i+1][0] <= k {
+			i++
+		}
+		if len(runs) > 0 && runs[i][0] <= k {
+			return runs[i][1]
+		}
+		return 0
+	}
 }
 
 func lastRunes(s string, n int) string {
@@ -332,7 +344,7 @@ func lastRunes(s string, n int) string {
 	return s
 }
 
-// sortedStates はフレームごとの状態の種類を (行, 話し中, 口, まばたき) の辞書順に並べる。
+// sortedStates はフレームごとの状態の種類を (行, 話し中, 口, まばたき, カード) の辞書順に並べる。
 func sortedStates(states []visualState) []visualState {
 	set := map[visualState]bool{}
 	for _, st := range states {
@@ -346,7 +358,7 @@ func sortedStates(states []visualState) []visualState {
 	return out
 }
 
-// cmpState は状態を (行, 話し中, 口, まばたき) の辞書順で比べる
+// cmpState は状態を (行, 話し中, 口, まばたき, カード) の辞書順で比べる
 func cmpState(a, b visualState) int {
 	for i := range a {
 		if a[i] != b[i] {

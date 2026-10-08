@@ -68,7 +68,7 @@ func TestBlinkRunsFollowsShownFace(t *testing.T) {
 	if runs == nil {
 		t.Fatal("まばたきの列が空")
 	}
-	states := frameStates(frames, runs, dur)
+	states := frameStates(frames, runs, nil, dur)
 	seen := map[string]bool{}
 	for k, st := range states {
 		tm := (float64(k) + 0.5) / mouthFPS
@@ -296,7 +296,7 @@ func TestWriteMP4CropsBlinkStates(t *testing.T) {
 	data, err := assembleFixture(t, script)
 	must(t, err)
 	blinkFrames := 0
-	for _, st := range frameStates(data.Frames, data.Blinks, data.Duration) {
+	for _, st := range frameStates(data.Frames, data.Blinks, data.Cards, data.Duration) {
 		if st[3] != 0 {
 			blinkFrames++
 		}
@@ -310,4 +310,34 @@ func TestWriteMP4CropsBlinkStates(t *testing.T) {
 // 2 人ともまばたく台本でも (ビット 2 の状態を撮る)、mp4 の撮影・切り出しが状態と合う
 func TestWriteMP4CropsBothCastBlinkStates(t *testing.T) {
 	checkMP4CropsEachState(t, withZundamonFaces(t, blinkFixture(t, []any{"通常", "説明"}, true)))
+}
+
+// 区切りのカード (issue 681): チャプターの頭から chapterCardSeconds だけ出し、次のチャプターが始まったら数え直す。
+// トピック名と同じ条件 (チャプター 2 つ以上・overlays に topic) でだけ出す
+func TestChapterCardRuns(t *testing.T) {
+	chs := []chapterData{{Title: "a", Start: 0.4}, {Title: "b", Start: 3}, {Title: "c", Start: 3.5}}
+	got := chapterCardRuns(chs, overlayKeys, 6)
+	on := func(sec float64) int {
+		k := int(sec * mouthFPS)
+		return runCursor(got)(k)
+	}
+	for _, tc := range []struct {
+		sec  float64
+		want int
+	}{{0.2, 0}, {0.5, 1}, {1.8, 1}, {2.0, 0}, {3.1, 1}, {3.6, 1}, {4.9, 1}, {5.1, 0}} {
+		if g := on(tc.sec); g != tc.want {
+			t.Errorf("%.1f 秒: カード %d, want %d (runs %v)", tc.sec, g, tc.want, got)
+		}
+	}
+	if r := chapterCardRuns(chs[:1], overlayKeys, 6); r != nil {
+		t.Errorf("チャプターが 1 つでカードを出した: %v", r)
+	}
+	if r := chapterCardRuns(chs, []string{"title", "date"}, 6); r != nil {
+		t.Errorf("overlays に topic が無いのにカードを出した: %v", r)
+	}
+	// frameStates の 5 欄目に載る
+	st := frameStates([][4]int{{0, 0, 0, 0}}, nil, got, 6)
+	if st[int(0.5*mouthFPS)][4] != 1 || st[int(2.5*mouthFPS)][4] != 0 {
+		t.Errorf("frameStates の 5 欄目がカードの列と違う")
+	}
 }

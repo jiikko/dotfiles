@@ -26,7 +26,7 @@ import (
 
 // stateColor は状態を色にする (帯ごとに違う色 = 切り出し位置がずれたら別の状態の色になる)
 func stateColor(st visualState) color.RGBA {
-	return color.RGBA{R: uint8(st[0] + 1), G: uint8(st[1]*128 + st[2]), B: uint8(200 + st[3]), A: 255}
+	return color.RGBA{R: uint8(st[0] + 1), G: uint8(st[1]*128 + st[2]), B: uint8(200 + st[3] + 40*st[4]), A: 255}
 }
 
 // TestFakeMP4Tool は偽物の本体。FAKE_MP4_TOOL が無いときは何もしない (通常のテストとしては空で通る)
@@ -83,7 +83,7 @@ func fakeMP4Tool(tool string, args []string) int {
 		var states []visualState
 		for _, part := range strings.Split(strings.TrimPrefix(u.Fragment, "sheet="), ";") {
 			var st visualState
-			if _, err := fmt.Sscanf(part, "%d,%d,%d,%d", &st[0], &st[1], &st[2], &st[3]); err != nil {
+			if _, err := fmt.Sscanf(part, "%d,%d,%d,%d,%d", &st[0], &st[1], &st[2], &st[3], &st[4]); err != nil {
 				return 4
 			}
 			states = append(states, st)
@@ -124,7 +124,7 @@ func fakeMP4Tool(tool string, args []string) int {
 	return 2
 }
 
-var stateNameRe = regexp.MustCompile(`state_(-?\d+)_(\d+)_(\d+)_(\d+)\.png$`)
+var stateNameRe = regexp.MustCompile(`state_(-?\d+)_(\d+)_(\d+)_(\d+)_(\d+)\.png$`)
 
 // checkFrames は mux に渡された連番 (-framerate 30 -i <dir>/f%06d.png) の各フレームが、symlink の先の状態の色かを確かめ、
 // 結果を記録に書く (build の一時 dir は終わると消えるので、絵は mux の時点で見る)。concat の一覧で渡されたら失敗にする (issue 660)
@@ -170,7 +170,8 @@ func checkFrames(args []string) {
 		sp, _ := strconv.Atoi(m[2])
 		lv, _ := strconv.Atoi(m[3])
 		bl, _ := strconv.Atoi(m[4])
-		want := stateColor(visualState{li - 1, sp, lv, bl})
+		cd, _ := strconv.Atoi(m[5])
+		want := stateColor(visualState{li - 1, sp, lv, bl, cd})
 		f, err := os.Open(p)
 		if err != nil {
 			result = "frames-bad 開けない " + p
@@ -341,7 +342,7 @@ func checkMP4CropsEachState(t *testing.T, script string) {
 		n := 0
 		for part := range strings.SplitSeq(frag, ";") {
 			var st visualState
-			if _, err := fmt.Sscanf(part, "%d,%d,%d,%d", &st[0], &st[1], &st[2], &st[3]); err != nil {
+			if _, err := fmt.Sscanf(part, "%d,%d,%d,%d,%d", &st[0], &st[1], &st[2], &st[3], &st[4]); err != nil {
 				t.Fatalf("撮った状態を読めない: %q", part)
 			}
 			states = append(states, st)
@@ -386,8 +387,8 @@ func checkMP4CropsEachState(t *testing.T, script string) {
 	data, _, err := assemble(sc, env)
 	must(t, err)
 	var want []string
-	for _, st := range frameStates(data.Frames, data.Blinks, data.Duration) {
-		want = append(want, fmt.Sprintf("state_%d_%d_%d_%d.png", st[0]+1, st[1], st[2], st[3]))
+	for _, st := range frameStates(data.Frames, data.Blinks, data.Cards, data.Duration) {
+		want = append(want, fmt.Sprintf("state_%d_%d_%d_%d_%d.png", st[0]+1, st[1], st[2], st[3], st[4]))
 	}
 	gotOrder, err := os.ReadFile(log + ".order")
 	must(t, err)

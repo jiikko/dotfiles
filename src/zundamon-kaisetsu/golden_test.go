@@ -212,6 +212,10 @@ func TestBuildDataMatchesPython(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			// 区切りのカード (issue 681) は golden の後で足した列なので、ここで別に見る: チャプターが 2 つ以上なら載る
+			if wantCards := len(data.Chapters) >= 2; (data.Cards != nil) != wantCards {
+				t.Errorf("チャプター %d 個で cards が %v (want 載る=%v)", len(data.Chapters), data.Cards, wantCards)
+			}
 			sum := sha256.Sum256(pcm)
 			if got := hex.EncodeToString(sum[:]); got != g.PCMSha {
 				t.Errorf("連結した音声が違う: got %s want %s", got, g.PCMSha)
@@ -247,7 +251,7 @@ func TestBuildDataMatchesPython(t *testing.T) {
 }
 
 // keysAddedAfterPort はプレイヤーのデータのうち、Python 版 (golden) の後で足したキー。中身は TestCreatedDate などが見る。
-var keysAddedAfterPort = []string{"date", "overlays"}
+var keysAddedAfterPort = []string{"date", "overlays", "cards"}
 
 func firstBytes(b []byte, n int) []byte {
 	if len(b) > n {

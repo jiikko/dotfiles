@@ -373,6 +373,7 @@ type PlayerData struct {
 	Lines       []timelineLine      `json:"lines"`
 	Frames      [][4]int            `json:"frames"`
 	Blinks      [][2]int            `json:"blinks,omitempty"` // [開始フレーム, 目を閉じているキャラのビット] (blinkRuns)。誰もまばたかなければ載せない
+	Cards       [][2]int            `json:"cards,omitempty"`  // [開始フレーム, 区切りのカードを出しているか] (chapterCardRuns)。出さない台本では載せない
 	Duration    float64             `json:"duration"`
 	FPS         int                 `json:"fps"`
 	Audio       string              `json:"audio"`
@@ -535,10 +536,11 @@ func assemble(s *Script, env *Env) (*PlayerData, []byte, error) {
 		cast[def.Key] = c
 	}
 	frames := frameRuns(timeline, duration)
+	overlays := screenOverlays(s)
 	data := &PlayerData{
 		Title:       title,
 		Date:        createdDate(s, env),
-		Overlays:    screenOverlays(s),
+		Overlays:    overlays,
 		Description: pyStr(lineGet(s.Raw, "description", "")),
 		Credits:     credits,
 		Cast:        cast,
@@ -548,6 +550,7 @@ func assemble(s *Script, env *Env) (*PlayerData, []byte, error) {
 		Lines:       timeline,
 		Frames:      frames,
 		Blinks:      blinkRuns(frames, timeline, fs.blinkable(), duration),
+		Cards:       chapterCardRuns(chapters, overlays, duration),
 		Duration:    pyRound3(duration),
 		FPS:         mouthFPS,
 		Audio:       "",

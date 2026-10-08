@@ -152,7 +152,7 @@ func TestDefaultFaceAlwaysEmbedded(t *testing.T) {
 // frameStates はフレームごとの状態を、frameRuns の区間どおりに総フレーム数 ceil(尺 × fps) まで並べる (issue 660)
 func TestFrameStates(t *testing.T) {
 	runs := [][4]int{{0, -1, 0, 0}, {12, 0, 1, 2}, {15, 0, 0, 0}}
-	got := frameStates(runs, nil, 0.7) // 0.7 秒 = 21 フレーム
+	got := frameStates(runs, nil, nil, 0.7) // 0.7 秒 = 21 フレーム
 	var want []visualState
 	for range 12 {
 		want = append(want, visualState{-1, 0, 0, 0})
@@ -168,7 +168,7 @@ func TestFrameStates(t *testing.T) {
 	}
 	// frameRuns と組み合わせると、フレーム k は時刻 (k+0.5)/fps の状態になる (プレイヤーの規則)
 	tl := []timelineLine{{Start: 0.412, End: 0.6, mouth: "2"}, {Start: 0.938, End: 1.1, mouth: "1"}}
-	fs := frameStates(frameRuns(tl, 1.2), nil, 1.2)
+	fs := frameStates(frameRuns(tl, 1.2), nil, nil, 1.2)
 	if len(fs) != 36 {
 		t.Fatalf("総フレーム数: got %d want 36", len(fs))
 	}
