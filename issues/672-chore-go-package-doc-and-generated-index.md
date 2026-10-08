@@ -24,6 +24,13 @@ package の doc コメント (`// Package termwidth は …`) を正本にして
   `bin/` か `scripts/` に置き、出力先を決める:
   - 案 1: `src/PACKAGES.md` に書き出して commit し、「生成し直すと差分が出ない」ことを検査する (ずれは CI が止める)
   - 案 2: commit せず、必要なときに道具を叩いて見る (ずれは原理的に起きないが、入口が道具の存在を知っている人に限られる)
+- 検査が素通りする形を設計で潰す (2026-10-08 のレビュー):
+  - `go list` が module 単位で失敗すると出力が 0 行になり、「doc 無し 0 件」で緑になる → rc を見て、見た package の総数を出し、下限 (76) と突き合わせる
+  - `.Doc` が空白だけのもの / `// Package <名前>` で始まらない doc コメントを通さない
+  - build tag や `GOOS` で除外されるファイルは `./...` に出ない (例: `glogx/gorules/rules.go` / `ratelimit/gorules/rules.go` /
+    `chromecookie/keychain_other.go` / `restartable/internal/runner/process_unix.go`)。そのファイルにしか doc が無い・そのファイルだけの package が母集合から黙って外れる
+  - `go list` は `GOWORK=off` で回す (issue 671 で go.work を置いても結果が変わらないように)
+  - 一覧に `.Dir` を出すなら repo 相対にする (絶対パスは commit できない)
 - 検査: doc コメントの無い package を落とす。`main` package (`cmd/*`) も対象に含めるかを決める (含めるなら「何のコマンドか」を 1 行書く)
 - `internal/` も一覧に載せるかを決める (import できる範囲は module の中に限られる。載せるなら印を付ける)
 - 入口: `src/README.md` からこの一覧 (か道具) へ 1 行で案内する (`new-tool-requires-entrypoint-docs.md`)
@@ -44,3 +51,4 @@ package の doc コメント (`// Package termwidth は …`) を正本にして
 ## 進捗
 
 - 2026-10-08: 起票
+- 2026-10-08: 反証レビューを反映 (検査が素通りする形: go list の失敗で 0 件の緑・空白の Doc・build tag で除外される package・GOWORK・`.Dir` の絶対パス)。反証できなかった主張: 76 package / doc の無い 5 個
