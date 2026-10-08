@@ -634,6 +634,7 @@ func cmdBuild(env *Env, scriptArg, output, format string, jobs, kbps int) error 
 	if err != nil {
 		return err
 	}
+	warnFastCaptions(env.Stderr, data.Lines, data.Duration)
 	joined := filepath.Join(td, "joined.wav")
 	if err := writeWav(joined, pcm); err != nil {
 		return fail("%s: 書けない (%v)", joined, err)
