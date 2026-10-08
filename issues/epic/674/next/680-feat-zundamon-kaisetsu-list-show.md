@@ -1,0 +1,1 @@
+../680-feat-zundamon-kaisetsu-list-show.md
