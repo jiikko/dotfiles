@@ -37,7 +37,10 @@ h1 { font-size: 1.25rem; margin: 0 0 12px; }
 .stage-show:empty { display: none; }
 .show-card { background: var(--panel); border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,.12); padding: 2.2cqw 2.6cqw;
              max-width: 100%; max-height: 100%; box-sizing: border-box; overflow: hidden; overflow-wrap: anywhere; }
-.show-keyword { text-align: center; font-size: 5cqw; font-weight: 900; line-height: 1.2; color: var(--accent); }
+/* 重要語は図解の箱 (46%) より広く、立ち絵の手前 (舞台の 52%) まで出す。9 字で 1 行に収まる (46% では 8 字で、9 字目だけが
+   2 行目に落ちた)。flex-shrink: 0 が無いと箱の幅に縮められる。折り返すときは文節の切れ目で (auto-phrase は Chrome 119 以降) */
+.show-keyword { text-align: center; font-size: 5cqw; font-weight: 900; line-height: 1.2; color: var(--accent);
+                max-width: 52cqw; flex-shrink: 0; word-break: auto-phrase; }
 .show-keyword .sub { display: block; margin-top: .6cqw; font-size: 1.9cqw; font-weight: 700; color: var(--muted); }
 .show-compare { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 1.2cqw; }
 .show-compare .side { border: 2px solid var(--line); border-radius: 12px; padding: 1cqw 1.2cqw; min-width: 0; }
