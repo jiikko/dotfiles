@@ -20,6 +20,7 @@ zundamon-kaisetsu check | up | down | speakers | kana … | synth script.json | 
 | `main.go` | 引数の解析 (Python の argparse の再現)・シグナルと中断 (`appCtx`)・`Env` (テストで差し替える口) |
 | `script.go` | 台本の読み込みと検証・キャラの設定・合成のキャッシュの鍵 (`Params` / `cacheSerialize`)・読み替え |
 | `synth.go` | エンジンへの要求 (audio_query / synthesis)・キャッシュ (`<台本>.work/`)・`kana` |
+| `reading_check.go` | `kana --script --check`: 英字の語を 1 文字ずつ読んだ行の警告と、英字の語の一覧 (略語の一覧は skill の `acronyms.json`。issue 673) |
 | `engine.go` / `engine_auto.go` | エンジンのコンテナの起動・停止 / 自動起動と、使われなくなったら止める見張り |
 | `build.go` | 組み立て (`assemble`: wav の連結・口の開き・プレイヤーのデータ)・`cmdBuild`・HTML への埋め込み |
 | `mp4.go` | mp4 の書き出し (プレイヤーのまとめ撮りを Chrome で撮り、ffmpeg で切り分けてつなぐ) |

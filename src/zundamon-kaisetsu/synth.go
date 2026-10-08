@@ -67,11 +67,51 @@ func queryKana(q map[string]any) string {
 	return ""
 }
 
+// lineKana は台本の 1 行の読み。Spoken は音声にする文 (read か readings を当てた後)、Kana はエンジンの読み。
+type lineKana struct {
+	Who, Text, Spoken, Kana string
+	StyleID                 int64
+}
+
+// scriptKana は台本の行の読みを 1 行ずつ each に渡す。synth 済みの行はキャッシュの読みを使い、無い行だけエンジンに問い合わせる
+// (合成はしない)。1 行ずつ渡すのは、途中でエンジンが落ちても、それまでの行を出せるように
+func scriptKana(env *Env, s *Script, each func(i int, l lineKana) error) error {
+	wd := workDir(s.Path)
+	for i, line := range s.Lines {
+		p, err := lineParams(s, line)
+		if err != nil {
+			return err
+		}
+		_, qp := cachePaths(wd, p)
+		var kana string
+		if b, err := os.ReadFile(qp); err == nil {
+			var q map[string]any
+			if err := decodeJSON(b, &q); err != nil {
+				return fail("%s: 読めない (%v)", qp, err)
+			}
+			kana = queryKana(q)
+		} else {
+			q, err := audioQuery(env.Engine, p.Text, p.StyleID)
+			if err != nil {
+				return err
+			}
+			kana = queryKana(q)
+		}
+		if err := each(i, lineKana{Who: pyStr(line["who"]), Text: pyStr(line["text"]), Spoken: p.Text, Kana: kana, StyleID: p.StyleID}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // cmdKana は文ごとに audio_query の読み (kana) を出す。read の候補 (カタカナ・ひらがな・英字のまま) を合成せずに比べる用。
 //
-// --script を付けると、台本の全行について 行番号 / 話者 / 字幕 / 読み を出す。synth 済みの行はキャッシュの読みを使い、
-// 無い行だけエンジンに問い合わせる (合成はしない)。音声を差し替えた行 (read か readings) には * を付ける。
-func cmdKana(env *Env, texts []string, scriptArg, who string, styleID *int64) error {
+// --script を付けると、台本の全行について 行番号 / 話者 / 字幕 / 読み を出す。音声を差し替えた行 (read か readings) には * を付ける。
+// --check を付けると、代わりに読みの検査 (reading_check.go) の結果を出す。
+func cmdKana(env *Env, texts []string, scriptArg, who string, styleID *int64, check bool) error {
+	if check && scriptArg == "" {
+		return fail("kana の --check は --script と一緒に使う")
+	}
 	if scriptArg != "" {
 		if len(texts) > 0 {
 			return fail("kana は --script か文のどちらか一方を渡す")
@@ -80,34 +120,21 @@ func cmdKana(env *Env, texts []string, scriptArg, who string, styleID *int64) er
 		if err != nil {
 			return err
 		}
-		wd := workDir(s.Path)
-		for i, line := range s.Lines {
-			p, err := lineParams(s, line)
-			if err != nil {
+		if check {
+			var lines []lineKana
+			if err := scriptKana(env, s, func(_ int, l lineKana) error { lines = append(lines, l); return nil }); err != nil {
 				return err
 			}
-			_, qp := cachePaths(wd, p)
-			var kana string
-			if b, err := os.ReadFile(qp); err == nil {
-				var q map[string]any
-				if err := decodeJSON(b, &q); err != nil {
-					return fail("%s: 読めない (%v)", qp, err)
-				}
-				kana = queryKana(q)
-			} else {
-				q, err := audioQuery(env.Engine, p.Text, p.StyleID)
-				if err != nil {
-					return err
-				}
-				kana = queryKana(q)
-			}
+			return checkReadings(env, lines)
+		}
+		return scriptKana(env, s, func(i int, l lineKana) error {
 			mark := " "
-			if p.Text != pyStr(line["text"]) {
+			if l.Spoken != l.Text {
 				mark = "*"
 			}
-			fmt.Fprintf(env.Stdout, "%d\t%s\t%s%s\t%s\n", i, pyStr(line["who"]), mark, pyStr(line["text"]), kana)
-		}
-		return nil
+			_, err := fmt.Fprintf(env.Stdout, "%d\t%s\t%s%s\t%s\n", i, l.Who, mark, l.Text, l.Kana)
+			return err
+		})
 	}
 	if len(texts) == 0 {
 		return fail("kana には読みを見たい文か --script <台本> を渡す")

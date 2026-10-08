@@ -400,7 +400,8 @@ const usageText = `usage: zundamon-kaisetsu [--engine URL] {check,up,down,speake
             (synth / kana / speakers は止まっているエンジンを自動で起動し、最後に使ってから 10 分で自動で止める。up は要らない)
   speakers  話者とスタイル ID を一覧する
   kana      文ごとの読み (audio_query の kana) を出す。read の候補を合成せずに比べる
-              kana "文" … [--who metan|zundamon] [--style-id ID]  /  kana --script 台本.json
+              kana "文" … [--who metan|zundamon] [--style-id ID]  /  kana --script 台本.json [--check]
+              --check: 英字の語を 1 文字ずつ読んだ行を警告し (あれば rc=1)、英字の語の一覧を出す
   synth     セリフごとに wav を合成する (<台本名>.work/ にキャッシュ)。synth 台本.json [--force]
   build     合成済みの wav を連結し、HTML プレイヤーか mp4 (か両方) を書き出す
               build 台本.json -o 出力 [--format html|mp4|both] [--jobs N] [--bitrate 64k]
@@ -463,6 +464,7 @@ func dispatch(args []string, env *Env) error {
 			{names: []string{"--script"}, dest: "script", takes: true},
 			{names: []string{"--who"}, dest: "who", takes: true, choices: castKeys()},
 			{names: []string{"--style-id"}, dest: "style_id", takes: true, check: styleIDArg},
+			{names: []string{"--check"}, dest: "check"},
 		},
 		"synth": {{names: []string{"--force"}, dest: "force"}},
 		"build": {
@@ -519,7 +521,7 @@ func dispatch(args []string, env *Env) error {
 				return err
 			}
 		}
-		return withEngine(env, func() error { return cmdKana(env, p.pos, p.opts["script"], who, sid) })
+		return withEngine(env, func() error { return cmdKana(env, p.pos, p.opts["script"], who, sid, p.opts["check"] == "true") })
 	case "synth":
 		if err := env.requireSkillDir(); err != nil {
 			return err
