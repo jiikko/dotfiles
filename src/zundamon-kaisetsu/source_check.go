@@ -122,9 +122,12 @@ func readSource(path string) (string, error) {
 	return string(b), nil
 }
 
-// showAllTexts は図解の中の文字 (重要語の語・補足、比較の見出し・項目)。
+// showAllTexts は図解の中の文字 (重要語の語・補足、比較の見出し・項目、箇条書きの見出し・項目)。
 func showAllTexts(sh map[string]any) []string {
 	out := showTexts(sh)
+	if v, ok := sh["title"].(string); ok && pyStr(sh["type"]) == "list" {
+		out = append(out, v)
+	}
 	if v, ok := sh["text"].(string); ok && pyStr(sh["type"]) == "keyword" {
 		out = append(out, v)
 	}

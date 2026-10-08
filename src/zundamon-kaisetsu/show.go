@@ -19,8 +19,11 @@ type showData struct {
 	Right *compareSide `json:"right,omitempty"`
 	Lang  string       `json:"lang,omitempty"`
 	Lines []string     `json:"lines,omitempty"`
+	Title string       `json:"title,omitempty"` // 箇条書きの見出し (省略可)
+	Items []string     `json:"items,omitempty"` // 箇条書きの項目
 	Marks []int        `json:"highlight,omitempty"`
 	// 段: 後の行の "show": "next" で 1 段ずつ見せる。比較は Build で、左右の同じ番号の項目を 1 行ずつ出す。
+	// 箇条書きは Build で、項目を 1 つずつ強調する (前の項目は濃く、後の項目は薄く出しておく)。
 	// コードは Steps で、段ごとに強調する行 (1 始まり) を変える (Marks とは同時に書けない)
 	Build bool     `json:"build,omitempty"`
 	Steps [][]int  `json:"steps,omitempty"`
@@ -46,6 +49,8 @@ type compareSide struct {
 //   - コード: 折り返さない。1 行に半角 49 桁ほどが収まり、幅は余白を取って 44 まで。1 行目の上に言語名の分の余白を取って
 //     11 行まで (.show-code pre の padding)。言語名は幅 12 (全角 6 字) までなら 1 行目に重ならない。
 //     全角は半角約 1.7 字分の幅で出るので、codeWidth が 2 と数えるのは上限の側に倒れる
+//   - 箇条書き: 折り返さない。項目は全角 14 字を 5 個、見出しは 16 字で、カードの右端と字幕の上に余白を残して収まった
+//     (2026-10-08。issue 680)
 //
 // 重要語と比較は文字数で数え、コードと言語名は幅 (codeWidth) で数える。どちらも、1 字で何字分も幅を取る文字 (U+FDFD・U+2E3B 等) や
 // 結合文字を重ねた語は上限内でも切れる (2 周目の反証レビューの実測)。台本に出ない文字なので、それ以上の幅の検査は足していない。
@@ -58,6 +63,9 @@ const (
 	codeLangMax     = 12
 	codeColsMax     = 44
 	codeLinesMax    = 11
+	listTitleMax    = 16
+	listItemMax     = 14
+	listItemsMax    = 5
 )
 
 // showNext は行の show に書く「今の図解を 1 段進める」の印。
@@ -66,6 +74,8 @@ const showNext = "next"
 // stepCount は図解の段の数 (段の無い図解は 0)。
 func (sd *showData) stepCount() int {
 	switch {
+	case sd.Build && sd.Type == "list":
+		return len(sd.Items)
 	case sd.Build:
 		return len(sd.Left.Items) // 左右の数が同じことは parseCompare が止めている (対を 1 段ずつ出す)
 	case len(sd.Steps) > 0:
@@ -81,6 +91,7 @@ var showParsers = map[string]func(path, at string, m map[string]any) (*showData,
 	"code":    parseCode,
 	"image":   parseImage,
 	"mermaid": parseMermaid,
+	"list":    parseList,
 }
 
 func showTypes() []string {
@@ -174,6 +185,38 @@ func parseCompare(path, at string, m map[string]any) (*showData, error) {
 		if sd.stepCount() < 2 {
 			return nil, fail("%s: %s.build は項目が 2 個以上あるときだけ書ける (1 段では見せていけない)", path, at)
 		}
+	}
+	return sd, nil
+}
+
+// parseList は箇条書きの図解 (issue 680)。項目は大きめの文字で 1 行ずつ出す (折り返さない長さに抑える)。
+func parseList(path, at string, m map[string]any) (*showData, error) {
+	if err := onlyKeys(path, at+" (list)", m, "type", "title", "items", "build"); err != nil {
+		return nil, err
+	}
+	title, err := showField(path, at, m, "title", false, listTitleMax)
+	if err != nil {
+		return nil, err
+	}
+	if _, present := m["title"]; present && pyStrip(title) == "" { // 空白だけだと、見出しの無いカードに空の見出しの余白が出る
+		return nil, fail("%s: %s.title は空白だけにしない (見出しが要らないなら title を書かない)", path, at)
+	}
+	raw, ok := m["items"].([]any)
+	if !ok || len(raw) < 2 || len(raw) > listItemsMax {
+		return nil, fail("%s: %s.items は 2〜%d 個の文字列のリストで書く (1 個なら重要語 keyword にする。実際: %s)", path, at, listItemsMax, pyRepr(m["items"]))
+	}
+	sd := &showData{Type: "list", Title: title, Items: make([]string, len(raw))}
+	for j, it := range raw {
+		if sd.Items[j], err = showString(path, fmt.Sprintf("%s.items[%d]", at, j), it, true, true, listItemMax); err != nil {
+			return nil, err
+		}
+	}
+	if bv, ok := m["build"]; ok {
+		b, isBool := bv.(bool)
+		if !isBool {
+			return nil, fail("%s: %s.build は true か false で書く (実際: %s)", path, at, pyRepr(bv))
+		}
+		sd.Build = b
 	}
 	return sd, nil
 }
@@ -329,7 +372,7 @@ func lineShows(path string, lines []map[string]any) ([]*int, []*int, []showData,
 				case cur == nil:
 					return nil, nil, nil, fail("%s: %s の \"next\" は、図解を出している間にだけ書ける (前の行に図解が無いか、null で消している)", path, at)
 				case step == nil:
-					return nil, nil, nil, fail("%s: %s の \"next\" は、段のある図解 (比較の build・コードの steps) にだけ書ける", path, at)
+					return nil, nil, nil, fail("%s: %s の \"next\" は、段のある図解 (比較の build・コードの steps・箇条書きの build) にだけ書ける", path, at)
 				case *step+1 >= table[*cur].stepCount():
 					return nil, nil, nil, fail("%s: %s の \"next\" が多い (この図解は %d 段で、もう最後の段を出している)", path, at, table[*cur].stepCount())
 				}

@@ -68,6 +68,17 @@ func TestSourceCandidatesShow(t *testing.T) {
 	if !slices.Equal(got, []string{"source-number:8割", "source-number:3倍"}) {
 		t.Errorf("比較の項目・重要語の補足の数字を見ていない: %v", got)
 	}
+	// 箇条書きの見出し・項目も見る (issue 680)
+	s, err = loadScript(writeScript(t, map[string]any{"lines": []any{map[string]any{"who": "metan", "text": "理由は 2 つよ",
+		"show": map[string]any{"type": "list", "title": "2018年の調査", "items": []any{"6割", "8割"}}}}}), env)
+	must(t, err)
+	got = nil
+	for _, is := range sourceCandidates(s, "6割") {
+		got = append(got, is.Rule+":"+between(is.Msg, "「", "」"))
+	}
+	if !slices.Equal(got, []string{"source-number:8割", "source-number:2018年"}) {
+		t.Errorf("箇条書きの見出し・項目の数字を見ていない: %v", got)
+	}
 	if _, err := readSource(writeEmpty(t)); err == nil {
 		t.Error("空の資料を黙って読んだ")
 	}

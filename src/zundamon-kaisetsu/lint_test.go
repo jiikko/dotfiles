@@ -192,6 +192,8 @@ func TestLintMoreRules(t *testing.T) {
 		"図解の補足が文":       {nil, lines(l("metan", "a", "show", map[string]any{"type": "keyword", "text": "語", "sub": "これは文です。"})), []string{"0:show-sentence:false"}},
 		"比較の項目が文": {nil, lines(l("metan", "a", "show", map[string]any{"type": "compare",
 			"left": map[string]any{"title": "左", "items": []any{"速い。"}}, "right": map[string]any{"title": "右", "items": []any{"遅い"}}})), []string{"0:show-sentence:false"}},
+		"箇条書きの項目が文": {nil, lines(l("metan", "a", "show", map[string]any{"type": "list", "items": []any{"慣れ", "宣伝が違う。"}})),
+			[]string{"0:show-sentence:false"}},
 		"1 チャプターの図解が 3 回": {nil, lines(
 			l("metan", "a", "chapter", "1", "show", kw), l("metan", "b", "show", kw), l("zundamon", "c", "show", kw)),
 			[]string{"0:shows-per-chapter:true"}},

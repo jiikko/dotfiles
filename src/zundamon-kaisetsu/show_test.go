@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -47,8 +48,8 @@ func TestRejectBadShow(t *testing.T) {
 		want string
 	}{
 		{"排他ロック", "オブジェクトか null"},
-		{map[string]any{"type": "chart", "text": "x"}, "show.type は code/compare/image/keyword/mermaid のどれか"},
-		{map[string]any{"text": "x"}, "show.type は code/compare/image/keyword/mermaid のどれか"},
+		{map[string]any{"type": "chart", "text": "x"}, "show.type は code/compare/image/keyword/list/mermaid のどれか"},
+		{map[string]any{"text": "x"}, "show.type は code/compare/image/keyword/list/mermaid のどれか"},
 		{map[string]any{"type": "keyword", "text": "x", "color": "red"}, "に書けるのは type/text/sub だけ"},
 		{map[string]any{"type": "keyword", "text": " "}, "show.text は空でない文字列"},
 		{map[string]any{"type": "keyword"}, "show.text は空でない文字列"},
@@ -89,6 +90,17 @@ func TestRejectBadShow(t *testing.T) {
 		{code("a", []any{"x\ry"}), "show.lines[0] にタブ・改行を入れない"},
 		{withKey(code("a", []any{"x"}), "lang", 1), "show.lang は文字列"},
 		{withKey(code("a", []any{"x"}), "caption", "x"), "show (code) に書けるのは type/lang/lines/highlight/steps だけ"},
+		// 箇条書き (issue 680)
+		{map[string]any{"type": "list", "items": []any{"a"}}, "show.items は 2〜5 個"},
+		{map[string]any{"type": "list", "items": []any{"a", "b", "c", "d", "e", "f"}}, "show.items は 2〜5 個"},
+		{map[string]any{"type": "list"}, "show.items は 2〜5 個"},
+		{map[string]any{"type": "list", "items": []any{"a", " "}}, "show.items[1] は空でない文字列"},
+		{map[string]any{"type": "list", "items": []any{strings.Repeat("項", 15), "b"}}, "show.items[0] は 14 字まで"},
+		{map[string]any{"type": "list", "title": strings.Repeat("見", 17), "items": []any{"a", "b"}}, "show.title は 16 字まで"},
+		{map[string]any{"type": "list", "items": []any{"a", "b"}, "build": "yes"}, "show.build は true か false"},
+		{map[string]any{"type": "list", "title": " ", "items": []any{"a", "b"}}, "show.title は空白だけにしない"},
+		{map[string]any{"type": "list", "title": "", "items": []any{"a", "b"}}, "show.title は空白だけにしない"},
+		{map[string]any{"type": "list", "items": []any{"a", "b"}, "sub": "x"}, "show (list) に書けるのは type/title/items/build だけ"},
 	} {
 		path := writeScript(t, map[string]any{"lines": []any{
 			map[string]any{"who": "metan", "text": "a"},
@@ -272,6 +284,7 @@ func TestShowKeysReadByPlayer(t *testing.T) {
 		// highlight と steps は台本では同時に書けないが、どちらのキーも読まれていることを 1 つのサンプルで見る
 		{Type: "code", Lang: "go", Lines: []string{"a"}, Marks: []int{1}, Steps: [][]int{{1}}},
 		{Type: "image", Src: "data:image/png;base64,", Alt: "b"},
+		{Type: "list", Title: "a", Items: []string{"b", "c"}, Build: true},
 	}
 	// サンプルは build が出しうる全種類を覆う (mermaid は build で image に置き換わるので player には届かない)
 	have := map[string]bool{}
@@ -484,4 +497,40 @@ func playerSheetRegexp(t *testing.T) *regexp.Regexp {
 	re, err := regexp.Compile(ms[0][1])
 	must(t, err)
 	return re
+}
+
+// 箇条書きの段 (issue 680): build なら項目の数だけ "next" で強調を進められ、build でなければ "next" は止まる
+func TestListShowSteps(t *testing.T) {
+	list := func(build bool) map[string]any {
+		return map[string]any{"type": "list", "title": "理由", "items": []any{"a", "b", "c"}, "build": build}
+	}
+	lines := func(show any, nexts int) []any {
+		out := []any{map[string]any{"who": "metan", "text": "a", "show": show}}
+		for range nexts {
+			out = append(out, map[string]any{"who": "metan", "text": "b", "show": "next"})
+		}
+		return out
+	}
+	s, err := loadScript(writeScript(t, map[string]any{"lines": lines(list(true), 2)}), testEnv(t))
+	must(t, err)
+	_, steps, shows, err := lineShows(s.Path, s.Lines)
+	must(t, err)
+	if len(shows) != 1 || shows[0].stepCount() != 3 {
+		t.Fatalf("箇条書きの段の数が違う: %+v", shows)
+	}
+	var got []int
+	for _, st := range steps {
+		got = append(got, *st)
+	}
+	if !slices.Equal(got, []int{0, 1, 2}) {
+		t.Errorf("行の段が違う: %v (want [0 1 2])", got)
+	}
+	for _, tc := range []struct {
+		show  map[string]any
+		nexts int
+	}{{list(true), 3}, {list(false), 1}} {
+		if _, err := loadScript(writeScript(t, map[string]any{"lines": lines(tc.show, tc.nexts)}), testEnv(t)); err == nil || (tc.nexts == 1 && !strings.Contains(err.Error(), "箇条書きの build")) {
+			t.Errorf("build=%v で next を %d 回書けた (段を超える / 段の無い図解)", tc.show["build"], tc.nexts)
+		}
+	}
 }

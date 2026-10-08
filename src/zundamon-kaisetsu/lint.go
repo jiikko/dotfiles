@@ -320,9 +320,16 @@ func nonEmpty(xs []string) []string {
 	return out
 }
 
-// showTexts は図解の中の文字 (重要語の補足・比較の項目) を返す (文になっていないかを見る用)。
+// showTexts は図解の中の文字 (重要語の補足・比較の項目・箇条書きの項目) を返す (文になっていないかを見る用)。
 func showTexts(sh map[string]any) []string {
 	var out []string
+	if items, ok := sh["items"].([]any); ok && pyStr(sh["type"]) == "list" {
+		for _, it := range items {
+			if v, ok := it.(string); ok {
+				out = append(out, v)
+			}
+		}
+	}
 	if v, ok := sh["sub"].(string); ok {
 		out = append(out, v)
 	}

@@ -29,7 +29,7 @@ zundamon-kaisetsu check | up | down | speakers | kana … | lint script.json | s
 | `mp4.go` | mp4 の書き出し (プレイヤーのまとめ撮りを Chrome で撮り、ffmpeg で切り分けてつなぐ) |
 | `caption_speed.go` | 字幕が速くて読み切れないおそれのある行の警告 (build が出す。1 秒 7.5 字を超える行。止めない) |
 | `blink.go` | まばたきの時刻表 (`blinkAt`) と、目を閉じているキャラのビットの列 (`blinkRuns`) |
-| `show*.go` | 台本の `show` (図解: keyword / compare / code / image / mermaid) |
+| `show*.go` | 台本の `show` (図解: keyword / compare / list / code / image / mermaid) |
 | `wav.go` / `outfile.go` / `chrome.go` | wav の入出力 / 出力ファイルの置き換え / Chrome の探索と PNG の大きさ |
 | `pyjson.go` | Python 版と同じ値を作るための JSON・丸め・文字列化 (`py*`) |
 

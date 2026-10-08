@@ -58,6 +58,16 @@ h1 { font-size: 1.25rem; margin: 0 0 12px; }
 .show-compare ul { margin: 0; padding-left: 1.1em; font-size: 1.7cqw; font-weight: 700; line-height: 1.5; }
 /* 段 (行の step) でまだ見せていない項目。場所は取ったまま隠し、段が進んでもカードの大きさが変わらないようにする */
 .show-card .pending { visibility: hidden; }
+/* 箇条書き (issue 680)。段 (build) があれば今の項目を強調し、前の項目は濃く、後の項目は薄く出す */
+.show-list { width: 100%; }
+.show-list h3 { margin: 0 0 1cqw; font-size: 2.2cqw; color: var(--accent); }
+.show-list ol { margin: 0; padding: 0; list-style: none; font-size: 2.5cqw; font-weight: 800; line-height: 1.55; }
+.show-list li { display: flex; gap: 1cqw; align-items: center; padding: .15cqw .8cqw; border-radius: 10px; white-space: nowrap; }
+.show-list li b { display: inline-grid; place-items: center; flex: none; width: 2.6cqw; height: 2.6cqw; border-radius: 50%;
+                  background: var(--line); color: var(--muted); font-size: 1.6cqw; }
+.show-list li.later { color: var(--muted); opacity: .7; }
+.show-list li.now { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.show-list li.now b { background: var(--accent); color: #fff; }
 .avatar { width: 62%; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center;
           justify-content: center; gap: 8%; color: #fff; font-weight: 700; margin-bottom: 18%; }
 .avatar .mouth { width: 30%; background: rgba(0,0,0,.55); border-radius: 999px; transition: height .03s; }
@@ -192,6 +202,10 @@ html.render * { transition: none !important; }
     const box = $('stage-show');
     if (sd.type === 'compare' && sd.build) {
       box.querySelectorAll('li[data-row]').forEach((e) => e.classList.toggle('pending', Number(e.dataset.row) > step));
+    } else if (sd.type === 'list' && sd.build) {
+      box.querySelectorAll('li[data-row]').forEach((e) => {
+        const r = Number(e.dataset.row); e.classList.toggle('now', r === step); e.classList.toggle('later', r > step);
+      });
     } else if (sd.type === 'code') {
       const marks = new Set((sd.steps ? sd.steps[step] : sd.highlight) || []);
       box.querySelectorAll('.ln').forEach((e, i) => e.classList.toggle('hl', marks.has(i + 1)));
@@ -213,6 +227,11 @@ html.render * { transition: none !important; }
     } else if (sd.type === 'image') {
       const card = el('div', 'show-card show-image'); const img = el('img');
       img.src = sd.src; img.alt = sd.alt; card.append(img); box.append(card);
+    } else if (sd.type === 'list') {
+      const card = el('div', 'show-card show-list'); const ol = el('ol');
+      if (sd.title) card.append(el('h3', null, sd.title));
+      sd.items.forEach((t, j) => { const li = el('li'); li.dataset.row = j; li.append(el('b', null, String(j + 1)), t); ol.append(li); });
+      card.append(ol); box.append(card);
     } else if (sd.type === 'compare') {
       const card = el('div', 'show-card show-compare');
       for (const side of [sd.left, sd.right]) {
