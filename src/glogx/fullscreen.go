@@ -156,7 +156,7 @@ func (m *browseModel) openFullScreen(id fullScreenID) tea.Cmd {
 		if e := m.filerV.takeOpenErr(); e != "" {
 			m.showWarning(e)
 		}
-		return m.maybeTick()
+		return tea.Batch(m.filerV.watchCmd(), m.maybeTick())
 	case fullScreenNone, fullScreenCount:
 	}
 	return nil

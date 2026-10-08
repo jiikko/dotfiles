@@ -64,7 +64,24 @@ type Model struct {
 	git        gitWatch
 	gitSnap    gitSnapshot
 	gitVer     int
+	watch      *watcher
+	ripples    map[*node]ripple
+	bead       tween
+	beadFor    *node // ビーズが走っている先 (カーソルが変わったら走り直す)
+	beadVel    float64
+	beadOn     bool
 }
+
+// ripple はライブ更新で光った項目 (spec §4.4)。start から pulse で光り、rippleLife で消える。
+type ripple struct {
+	start    time.Time
+	strength float64
+}
+
+const (
+	rippleStep = 90 * time.Millisecond   // 1 段上の祖先へ光が昇る間隔
+	rippleLife = 2200 * time.Millisecond // 光が消えるまで
+)
 
 // New は dir を root にした Model を作る。カーソルは root の最初の子 (無ければ root)。
 func New(dir string, opts Options) (*Model, error) {
@@ -75,7 +92,7 @@ func New(dir string, opts Options) (*Model, error) {
 	// moving は最初から true: 起動時のフェードインがある。false で始めると、呼び出し側が「動いていないので tick を回さない」と
 	// 判断し、透明のまま次のキーまで何も見えない (glogx の TestFilerAnimationAdvancesOnTickAndStops が捕まえた)
 	m := &Model{root: root, cur: root, now: opts.Now, anims: map[*node]*anim{}, linkCache: map[string]string{}, moving: true,
-		walker: newWalker(), recs: map[string]walkResult{}}
+		walker: newWalker(), recs: map[string]walkResult{}, watch: newWatcher(), ripples: map[*node]ripple{}}
 	if m.now == nil {
 		m.now = time.Now
 	}
@@ -111,6 +128,13 @@ func (m *Model) inTree(n *node) bool {
 	}
 	return n == m.root
 }
+
+// Changed はライブ更新の合図のチャネル (開いているフォルダが変わると 1 つ届く)。呼ぶとポーリングが始まる。
+// 呼び出し側は合図を受けたら Advance を呼んで取り込み、また Changed を待つ。Close で閉じられる (待っている側が終わる)。
+func (m *Model) Changed() <-chan struct{} { return m.watch.start() }
+
+// Close はライブ更新のポーリングを止める (glogx でファイラーを閉じたとき)。
+func (m *Model) Close() { m.watch.close() }
 
 // Resize は画面の大きさを伝える (最下行はステータスバー)。
 func (m *Model) Resize(w, h int) {
@@ -166,11 +190,125 @@ func (m *Model) takeBackground() {
 	if s, v, ok := m.git.take(m.gitVer); ok {
 		m.gitSnap, m.gitVer = s, v
 	}
+	var open []string
 	for _, n := range m.order {
 		if n.dir {
 			m.walker.request(n.path())
+			if n.expanded && n.loaded {
+				open = append(open, n.path())
+			}
 		}
 	}
+	m.watch.setDirs(open, m.loadedSig)
+	for _, c := range m.watch.take() {
+		m.applyChange(c)
+	}
+}
+
+// loadedSig は木が読み込んだときのフォルダの中身 (ライブ更新の基準)。
+func (m *Model) loadedSig(dir string) map[string]entrySig {
+	n := m.findNode(dir)
+	if n == nil {
+		return nil
+	}
+	sig := make(map[string]entrySig, len(n.kids))
+	for _, k := range n.kids {
+		sig[k.raw] = entrySig{k.mtime, k.size, k.dir}
+	}
+	return sig
+}
+
+// WatchingChan は今のライブ更新の合図のチャネル (止まっていれば nil。始めはしない)。
+// 届いた合図が今のチャネルからのものかを見分けるのに使う (閉じる直前の合図で待ちが 2 本に増えないように)。
+func (m *Model) WatchingChan() <-chan struct{} { return m.watch.current() }
+
+// applyChange はライブ更新の 1 件を取り込む: そのフォルダを読み直し、変わった項目から root へ光を昇らせる。
+func (m *Model) applyChange(c dirChange) {
+	n := m.findNode(c.dir)
+	if n == nil {
+		return
+	}
+	n.reload()
+	m.walker.forget(c.dir)
+	// 強制にしない: 書き込みの続くフォルダ (ログ) で毎秒 git status が走るのを、3 秒の間隔制限で止める
+	m.git.start(m.root.path(), m.now(), false)
+	visible := func(name string) bool { return m.showHidden || !strings.HasPrefix(name, ".") }
+	lit := false
+	for _, name := range c.changed {
+		for _, k := range n.kids {
+			if k.raw == name && visible(name) {
+				m.lightUp(k)
+				lit = true
+			}
+		}
+	}
+	if !lit && c.listing && m.removedVisible(c) {
+		m.lightUp(n) // 見える項目が消えたときはフォルダ自身を光らせる
+	}
+	for !m.inTree(m.cur) {
+		m.cur = m.cur.parent
+	}
+	m.moving = true
+}
+
+// removedVisible は変化に「見える項目が消えた」が含まれるか (隠した dotfile の出入りでフォルダを光らせない)。
+func (m *Model) removedVisible(c dirChange) bool {
+	for _, name := range c.removed {
+		if m.showHidden || !strings.HasPrefix(name, ".") {
+			return true
+		}
+	}
+	return false
+}
+
+// findNode は絶対パスの項目 (木に読み込まれていれば)。
+func (m *Model) findNode(abs string) *node {
+	var walk func(n *node) *node
+	walk = func(n *node) *node {
+		if n.abs == abs {
+			return n
+		}
+		if !strings.HasPrefix(abs, n.abs+string(os.PathSeparator)) {
+			return nil
+		}
+		for _, k := range n.kids {
+			if f := walk(k); f != nil {
+				return f
+			}
+		}
+		return nil
+	}
+	return walk(m.root)
+}
+
+// lightUp は n から root へ、1 段ごとに rippleStep 遅れて光を昇らせる (spec §4.4)。
+func (m *Model) lightUp(n *node) {
+	now := m.now()
+	k := 0
+	for p := n; p != nil; p = p.parent {
+		start := now.Add(time.Duration(k) * rippleStep)
+		strength := math.Max(math.Pow(0.8, float64(k)), 0.35)
+		if old, ok := m.ripples[p]; !ok || old.start.Add(4*rippleStep).Before(now) || start.Before(old.start) {
+			m.ripples[p] = ripple{start, math.Max(strength, old.strength)}
+		}
+		k++
+	}
+}
+
+// glow は n の今の光り方 (0〜1)。立ち上がり 0.07 秒は線形、その後 0.45 秒の指数で消える (spec §4.4 の pulse)。
+func (m *Model) glow(n *node) float64 {
+	r, ok := m.ripples[n]
+	if !ok {
+		return 0
+	}
+	t := m.now().Sub(r.start).Seconds()
+	switch {
+	case t < 0:
+		return 0
+	case t < 0.07:
+		return t / 0.07 * r.strength
+	}
+	return math.Exp(-(t-0.07)/0.45) * r.strength
 }
 
 // heatAge は n の色を決める経過秒 (spec §5.1 の Tree::heat)。フォルダは配下の最新、dotfile を隠している間は
@@ -279,6 +417,14 @@ func (m *Model) step(dt float64) bool {
 		kept = append(kept, n)
 	}
 	m.order = kept
+	now := m.now()
+	for n, r := range m.ripples {
+		if now.Sub(r.start) > rippleLife {
+			delete(m.ripples, n)
+		}
+	}
+	moving = moving || len(m.ripples) > 0
+	moving = m.stepBead(pos, dt) || moving
 	// カメラ: カーソルの名前の左端を画面の 38% に、選択線を画面の縦の中央に (spec §4.5)
 	cp := pos[m.cur]
 	moving = m.camX.step(float64(cp.x)-float64(m.w)*0.38, camDur, dt) || moving
@@ -297,6 +443,31 @@ func (m *Model) step(dt float64) bool {
 		kt = append(kt, t)
 	}
 	m.tiles = kt
+	return moving
+}
+
+// stepBead はカーソルが変わったら、線に沿って光の粒 (ビーズ) を前のカーソルの位置から走らせる (spec §4.3)。
+func (m *Model) stepBead(pos map[*node]place, dt float64) bool {
+	cx := float64(pos[m.cur].x - 2)
+	if m.beadFor != m.cur {
+		start := cx - 10
+		if a := m.anims[m.beadFor]; a != nil && m.beadFor != nil && math.Round(a.x.v)-2 != cx {
+			start = a.x.v - 2
+		}
+		m.beadFor, m.beadOn = m.cur, true
+		m.bead = tween{v: start}
+	}
+	if !m.beadOn {
+		return false
+	}
+	prev := m.bead.v
+	moving := m.bead.step(cx, beadDur, dt)
+	if dt > 0 {
+		m.beadVel = (m.bead.v - prev) / dt
+	}
+	if !moving {
+		m.beadOn = false
+	}
 	return moving
 }
 
@@ -321,6 +492,7 @@ func (m *Model) snapAll() {
 	m.order = kept
 	m.camX.snap()
 	m.camY.snap()
+	m.beadOn = false
 	kt := m.tiles[:0]
 	for _, t := range m.tiles {
 		if t.closing {
@@ -758,6 +930,7 @@ func (m *Model) draw() *canvas {
 	}
 	m.drawLines(c, now, ox, oy, ch)
 	m.drawNames(c, pos, ox, oy, ch)
+	m.drawBead(c, ox, oy, ch)
 	for i, t := range m.tiles {
 		front := i == len(m.tiles)-1
 		p := math.Max(0, math.Min(1, t.open.v))
@@ -769,6 +942,34 @@ func (m *Model) draw() *canvas {
 	}
 	m.statusBar(c)
 	return c
+}
+
+// drawBead はカーソルの行を走る光の粒。頭が明るく、尾は速さに応じて伸びる。文字の上だけを光らせる (spec §4.3)。
+func (m *Model) drawBead(c *canvas, ox, oy, ch int) {
+	a := m.anims[m.cur]
+	if !m.beadOn || a == nil {
+		return
+	}
+	y := int(math.Round(a.y.v)) - oy
+	if y < 0 || y >= ch {
+		return
+	}
+	head := int(math.Round(m.bead.v)) - ox
+	dir := 1
+	if m.beadVel >= 0 {
+		dir = -1 // 尾は進む向きの後ろ
+	}
+	tail := int(math.Max(1, math.Min(12, math.Abs(m.beadVel)*0.05)))
+	for i := 0; i <= tail; i++ {
+		p := c.at(head+dir*i, y)
+		if p == nil || p.s == " " || p.cont {
+			continue
+		}
+		p.fg = mix(cAccRoute, cFlash, 1-float64(i)/float64(tail+1))
+		if i == 0 {
+			p.bg = mix(cBg, cAccRoute, 0.35)
+		}
+	}
 }
 
 func (m *Model) drawLines(c *canvas, now map[*node][2]int, ox, oy, ch int) {
@@ -818,7 +1019,14 @@ func (m *Model) drawNames(c *canvas, pos map[*node]place, ox, oy, ch int) {
 			default:
 				base = mix(base, cBg, 0.32) // 選択線から外れた枝 (spec §1.4 の off_line。focus_dim 既定 6)
 			}
-			c.put(x, y, n.label(), mix(cBg, base, a.alpha.v), n.dir || m.onPath(n))
+			fg := mix(cBg, base, a.alpha.v)
+			if g := m.glow(n); g > 0.02 {
+				fg = mix(fg, cRipple, g)
+				if n != m.cur {
+					c.fillBg(x, y, x+a.w-1, y, mix(cBg, cRippleBg, g*a.alpha.v))
+				}
+			}
+			c.put(x, y, n.label(), fg, n.dir || m.onPath(n))
 			if a.ghost {
 				continue
 			}

@@ -33,6 +33,13 @@ var (
 	cCursorBg = rgb{0, 95, 135}
 )
 
+// ライブ更新の光 (spec §1.1 の ripple / ripple_bg) とビーズの頭 (flash)。
+var (
+	cRipple   = rgb{255, 200, 150}
+	cRippleBg = rgb{110, 38, 28}
+	cFlash    = rgb{235, 242, 255}
+)
+
 // cIgnored は git が無視するものの灰の元 (spec §1.1 の ignored、dim_floor 10 の灰)。
 var cIgnored = rgb{214, 216, 224}
 

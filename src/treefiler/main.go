@@ -27,6 +27,16 @@ const busyInterval = 80 * time.Millisecond
 
 type tickMsg struct{}
 
+// changedMsg はライブ更新の合図 (ok=false はチャネルが閉じた = もう待たない)。
+type changedMsg struct{ ok bool }
+
+func waitChange(ch <-chan struct{}) tea.Cmd {
+	return func() tea.Msg {
+		_, ok := <-ch
+		return changedMsg{ok}
+	}
+}
+
 type app struct {
 	f       *filer.Model
 	toast   toast.Stack
@@ -34,7 +44,7 @@ type app struct {
 	ticking bool
 }
 
-func (a *app) Init() tea.Cmd { return nil }
+func (a *app) Init() tea.Cmd { return waitChange(a.f.Changed()) }
 
 func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmds := make([]tea.Cmd, 0, 4)
@@ -51,6 +61,10 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case toast.Msg:
 		a.toast.StartLeaving(msg)
+	case changedMsg:
+		if msg.ok {
+			cmds = append(cmds, waitChange(a.f.Changed())) // 取り込みは下の Advance。また次の合図を待つ
+		}
 	case tickMsg:
 		a.ticking = false
 	}

@@ -155,3 +155,36 @@ func settleFiler(m *browseModel) {
 		m.filerV.advance(at.Add(time.Duration(i) * 20 * time.Millisecond))
 	}
 }
+
+// 閉じるとライブ更新のポーリングが止まる (閉じた後も 1 秒ごとにディスクを読み続けない)。
+func TestFilerCloseStopsWatching(t *testing.T) {
+	m := newFilerBrowse(t)
+	m.handleKey("F")
+	if m.filerV.watchCmd() == nil {
+		t.Fatal("開いているのにライブ更新を待たない")
+	}
+	ch := m.filerV.f.Changed()
+	m.handleKey("F")
+	select {
+	case _, ok := <-ch:
+		if ok {
+			t.Fatal("閉じた後にチャネルが閉じていない (合図が来た)")
+		}
+	case <-time.After(5 * time.Second): // hang guard
+		t.Fatal("閉じてもポーリングが止まらない (チャネルが閉じない)")
+	}
+}
+
+// 古いチャネルからの合図では待ち直さない (閉じる直前の合図で待ちが 2 本に増えて戻らない形を止める)。
+func TestFilerRearmsOnlyForCurrentChannel(t *testing.T) {
+	m := newFilerBrowse(t)
+	m.handleKey("F")
+	cur := m.filerV.f.WatchingChan()
+	if m.filerV.rearm(filerChangedMsg{ch: cur, ok: true}) == nil {
+		t.Fatal("今のチャネルの合図で待ち直さない")
+	}
+	old := make(chan struct{})
+	if m.filerV.rearm(filerChangedMsg{ch: old, ok: true}) != nil {
+		t.Fatal("古いチャネルの合図で待ち直した (待ちが 2 本になる)")
+	}
+}

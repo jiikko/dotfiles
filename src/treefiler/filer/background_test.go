@@ -198,3 +198,88 @@ func TestPorcelainWorktreeRenameAndRootSlash(t *testing.T) {
 		t.Fatalf("repo の根が / のとき状態が引けない: %q", got)
 	}
 }
+
+// ライブ更新: 開いているフォルダにファイルが増えたら合図が届き、取り込むと木に出て、その項目から root へ光が昇る。
+func TestWatchPicksUpNewFileAndLightsUp(t *testing.T) {
+	m := newTest(t)
+	ch := m.Changed()
+	defer m.Close()
+	m.Advance(fixedNow) // 見るフォルダ (開いている root) を渡す。基準は木が読み込んだ中身なので、最初の観測を待たずに作ってよい
+	if err := os.WriteFile(filepath.Join(m.root.path(), "fresh.txt"), []byte("f\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ch:
+	case <-time.After(5 * time.Second): // hang guard
+		t.Fatal("ファイルを作っても合図が届かない")
+	}
+	m.Advance(fixedNow.Add(time.Second))
+	var fresh *node
+	for _, k := range m.kids(m.root) {
+		if k.raw == "fresh.txt" {
+			fresh = k
+		}
+	}
+	if fresh == nil {
+		t.Fatal("新しいファイルが木に出ない")
+	}
+	if _, ok := m.ripples[fresh]; !ok {
+		t.Fatal("新しいファイルが光らない")
+	}
+	if r, ok := m.ripples[m.root]; !ok || r.strength >= 1 {
+		t.Fatalf("root へ光が昇らない / 弱まらない: %+v", r)
+	}
+	m.Close()
+	select {
+	case _, ok := <-ch:
+		if ok {
+			// 溜まっていた合図を読んだ。次は閉じている
+			if _, ok := <-ch; ok {
+				t.Fatal("Close の後もチャネルが閉じない")
+			}
+		}
+	case <-time.After(5 * time.Second): // hang guard
+		t.Fatal("Close の後もチャネルが閉じない (待っている呼び出し側が残る)")
+	}
+}
+
+func TestDiffSig(t *testing.T) {
+	t0 := fixedNow
+	old := map[string]entrySig{"a": {t0, 1, false}, "b": {t0, 1, false}}
+	cur := map[string]entrySig{"a": {t0.Add(time.Second), 1, false}, "c": {t0, 1, false}}
+	c, ok := diffSig("/d", old, cur)
+	if !ok || !c.listing || len(c.changed) != 2 {
+		t.Fatalf("diffSig = %+v (a が変わり c が増え b が消えた)", c)
+	}
+	if _, ok := diffSig("/d", old, old); ok {
+		t.Fatal("変わっていないのに変化と言う")
+	}
+}
+
+// カーソルが動くとビーズが走り、次のキーで終点へ飛ぶ (打ち切られる)。
+func TestBeadRunsOnMoveAndSnapsOnKey(t *testing.T) {
+	m := newTest(t)
+	m.HandleKey("j")
+	m.Advance(fixedNow.Add(16 * time.Millisecond))
+	m.Advance(fixedNow.Add(32 * time.Millisecond))
+	if !m.beadOn {
+		t.Fatal("カーソルが動いてもビーズが走らない")
+	}
+	m.HandleKey("k")
+	if m.beadOn {
+		t.Fatal("次のキーでビーズが打ち切られない")
+	}
+}
+
+// 隠している dotfile の出入り・変化ではフォルダを光らせない (見えない変化で毎秒光るのを止める)。
+func TestHiddenDotfileChangeDoesNotLightUp(t *testing.T) {
+	m := newTest(t)
+	m.applyChange(dirChange{dir: m.root.path(), changed: []string{".hidden"}, removed: []string{".gone"}, listing: true})
+	if len(m.ripples) != 0 {
+		t.Fatalf("隠している dotfile の変化で光った: %d 件", len(m.ripples))
+	}
+	m.applyChange(dirChange{dir: m.root.path(), removed: []string{"gone.txt"}, listing: true})
+	if _, ok := m.ripples[m.root]; !ok {
+		t.Fatal("見える項目が消えてもフォルダが光らない")
+	}
+}

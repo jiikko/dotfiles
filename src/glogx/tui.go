@@ -828,6 +828,13 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.maybeTick()
 		}
 		return m, nil
+	case filerChangedMsg:
+		// treefiler のライブ更新の合図。取り込んで、今のチャネルからの合図なら次の合図を待ち直す
+		if !msg.ok {
+			return m, nil
+		}
+		m.filerV.advance(timeNow())
+		return m, tea.Batch(m.filerV.rearm(msg), m.maybeTick())
 	case tickMsg:
 		m.ticking = false // このチェーンが 1 拍消費した。継続は下の maybeTick で単一に保つ
 		// 閉じる演出が着地したらここで初めて終了する (演出の間はまだ描き続ける)

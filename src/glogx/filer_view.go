@@ -22,6 +22,28 @@ const (
 	filerQuit                       // q / Esc = glogx ごと終える (issues viewer と同じ。spec §0.1)
 )
 
+// filerChangedMsg は treefiler のライブ更新の合図。ch はどのチャネルからか (ok=false はそのチャネルが閉じた)。
+type filerChangedMsg struct {
+	ch <-chan struct{}
+	ok bool
+}
+
+func waitFilerChange(ch <-chan struct{}) tea.Cmd {
+	return func() tea.Msg {
+		_, ok := <-ch
+		return filerChangedMsg{ch: ch, ok: ok}
+	}
+}
+
+// rearm は合図を受けた後の待ち直し。今のチャネルからの合図のときだけ待ち直す
+// (閉じる直前の合図が古い待ちを ok=true で返すと、新しいチャネルに待ちが 2 本張られて戻らない。レビューの指摘 2026-10-08)。
+func (v *filerView) rearm(msg filerChangedMsg) tea.Cmd {
+	if !msg.ok || !v.shown || v.f == nil || v.f.WatchingChan() != msg.ch {
+		return nil
+	}
+	return waitFilerChange(msg.ch)
+}
+
 type filerView struct {
 	shown     bool
 	f         *filer.Model
@@ -35,7 +57,7 @@ func (v *filerView) visible() bool { return v.shown }
 // toggle は開く / 閉じる。開くときは pwd を root にする (spec §0.1)。同じ dir なら前の状態 (カーソル・開いたフォルダ) を使う。
 func (v *filerView) toggle(dir string) {
 	if v.shown {
-		v.shown = false
+		v.hide()
 		return
 	}
 	if v.f == nil || v.dir != dir {
@@ -50,6 +72,22 @@ func (v *filerView) toggle(dir string) {
 		v.f.Refresh() // 閉じている間に増えた・消えたファイルを出す (開閉とカーソルは保つ)
 	}
 	v.shown = true
+}
+
+// hide は閉じる。ライブ更新のポーリングも止める (閉じた後も 1 秒ごとにディスクを読み続けない)。
+func (v *filerView) hide() {
+	v.shown = false
+	if v.f != nil {
+		v.f.Close()
+	}
+}
+
+// watchCmd は開いている間のライブ更新の待ち (開いた直後と、合図を受けるたびに張り直す)。
+func (v *filerView) watchCmd() tea.Cmd {
+	if !v.shown || v.f == nil {
+		return nil
+	}
+	return waitFilerChange(v.f.Changed())
 }
 
 func (v *filerView) takeOpenErr() string {
@@ -84,12 +122,12 @@ func (v *filerView) advance(now time.Time) {
 // 🚨 s は横断しない: filer では treebeard の「シェルを開く」に上書きした (spec §0.1。ユーザー回答 2026-10-07)
 func (v *filerView) handleKey(key string) filerAction {
 	if key == "F" {
-		v.shown = false
+		v.hide()
 		return filerClosed
 	}
 	if !v.f.OwnsKeys() {
 		if target, ok := crossTarget(key); ok && target != fullScreenFiler && key != "s" {
-			v.shown = false
+			v.hide()
 			v.wantCross = target
 			return filerCross
 		}
@@ -139,6 +177,7 @@ func (m *browseModel) routeKeyToFiler(key string) (tea.Model, tea.Cmd) {
 	}
 	switch act {
 	case filerQuit:
+		m.filerV.hide()
 		return m.quit()
 	case filerCross:
 		return m, m.openFullScreen(m.filerV.takeWantCross())
