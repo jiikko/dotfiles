@@ -152,27 +152,27 @@ if [ "$RC" -eq 0 ] && grep -Fq '2 modules / 5 packages' <<< "$OUT"; then
 else
 	bad "fixture の生成が失敗した (rc=$RC): $OUT"
 fi
-if grep -Fq -- "- \`src/demo\` — Package demo is a fixture package." "$BASE/src/PACKAGES.md"; then
-	ok '通常 package の synopsis を生成する'
+if grep -Fq -- "- \`src/demo\` (\`fixture.test/demo\`) — Package demo is a fixture package." "$BASE/src/PACKAGES.md"; then
+	ok '通常 package の import path と synopsis を生成する'
 else
-	bad '通常 package の synopsis が無い'
+	bad '通常 package の import path または synopsis が無い'
 fi
-if grep -Fq -- "- \`src/demo/internal/helper\` — Package helper contains an internal fixture helper. (internal)" "$BASE/src/PACKAGES.md"; then
+if grep -Fq -- "- \`src/demo/internal/helper\` (\`fixture.test/demo/internal/helper\`) — Package helper contains an internal fixture helper. (internal)" "$BASE/src/PACKAGES.md"; then
 	ok 'internal package に印を付ける'
 else
 	bad 'internal package の印が無い'
 fi
-if grep -Fq -- "- \`src/second\` — Package second is a second fixture module." "$BASE/src/PACKAGES.md"; then
+if grep -Fq -- "- \`src/second\` (\`fixture.test/second\`) — Package second is a second fixture module." "$BASE/src/PACKAGES.md"; then
 	ok '2 つ目の module の package を出力する'
 else
 	bad '2 つ目の module の package 行が無い'
 fi
-if grep -Fq -- "- \`src/demo/cmd/hello\` — Command hello prints a greeting. (main)" "$BASE/src/PACKAGES.md"; then
+if grep -Fq -- "- \`src/demo/cmd/hello\` (\`fixture.test/demo/cmd/hello\`) — Command hello prints a greeting. (main)" "$BASE/src/PACKAGES.md"; then
 	ok 'main package に印を付ける'
 else
 	bad 'main package の印が無い'
 fi
-if grep -Fq -- "- \`src/demo/tagonly\` — Package tagonly is available when the feature build tag is set. (build tags: feature)" "$BASE/src/PACKAGES.md"; then
+if grep -Fq -- "- \`src/demo/tagonly\` (\`fixture.test/demo/tagonly\`) — Package tagonly is available when the feature build tag is set. (build tags: feature)" "$BASE/src/PACKAGES.md"; then
 	ok 'tag 専用 package を再取得して印を付ける'
 else
 	bad 'tag 専用 package の行が無いか tag 印が無い'

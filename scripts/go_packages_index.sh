@@ -201,9 +201,9 @@ package_count=0
 			if [ -n "$marks" ]; then marks="$marks, build tags: $tags"; else marks="build tags: $tags"; fi
 		fi
 		if [ -n "$marks" ]; then
-			printf -- "- \`%s\` — %s (%s)\n" "$package_rel" "$package_doc" "$marks"
+			printf -- "- \`%s\` (\`%s\`) — %s (%s)\n" "$package_rel" "$import_path" "$package_doc" "$marks"
 		else
-			printf -- "- \`%s\` — %s\n" "$package_rel" "$package_doc"
+			printf -- "- \`%s\` (\`%s\`) — %s\n" "$package_rel" "$import_path" "$package_doc"
 		fi
 		package_count=$((package_count + 1))
 	done < "$sorted_package_dirs"

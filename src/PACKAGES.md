@@ -2,81 +2,81 @@
 
 # Go packages
 
-- `src/atomicfile` — Package atomicfile は「途中の状態を残さない」ファイル書き込みを 1 箇所に置く。
-- `src/chromecookie` — Package chromecookie は macOS の Google Chrome のプロファイルから Cookie を復号して取り出す。
-- `src/chromecookie/chromecookietest` — Package chromecookietest は chromecookie を使う側のテストが、Chrome と同じ形の Cookie DB と 暗号文を作るための道具（本物の Chrome・Keychain には触れない）。
-- `src/disassemble_excel` — Command disassemble_excel takes one .xlsx/.xlsm file and writes its sheets (one cell per line, formula + cached value), defined names and VBA macro source into a directory, so the result can be diffed and read without Excel. (main)
-- `src/disassemble_excel/ovba` — Package ovba implements the minimal subset of [MS-OVBA] needed to extract VBA macro source code from a vbaProject.bin (OLE2/CFB) stream — without any external tool such as olevba.
-- `src/doctor/brewledger` — Package brewledger は Homebrew の台帳 (installed formula の名前・旧名・別名)。
-- `src/doctor/cachedir` — Package cachedir は glogx 系ツールのキャッシュ置き場 ($XDG_CACHE_HOME/glog、未設定時は ~/.cache/glog)。
-- `src/doctor/cmd/diskdoctor` — Command diskdoctor は既知のディスク掃除候補を検出して表示する CLI。 (main)
-- `src/doctor/cmd/svcdoctor` — Command svcdoctor は壊れた launchd 登録を検出して表示する CLI。 (main)
-- `src/doctor/disk` — Package disk は diskdoctor: 既知の掃除候補をリスク付きで一覧する (issue 148 の 1〜2 章)。
-- `src/doctor/docker` — Package docker は Docker Desktop が抱えている「使っていない資源」を数える。
-- `src/doctor/exitcode` — Package exitcode は 2 本の CLI (diskdoctor / svcdoctor) で共通の終了コード語彙。
-- `src/doctor/internal/displaycheck` — Package displaycheck は「表示用の構造体へ新しい文字列フィールドを足したのに `Sanitize*ForDisplay` へ通し忘れる」を止める検査の本体 (issue 251 / 252)。 (internal)
-- `src/doctor/runner` — Package runner は外部コマンドの実行口。
-- `src/doctor/ssd` — Package ssd は内蔵 SSD の健康状態を読む (issue 578)。
-- `src/doctor/svc` — Package svc は svcdoctor: 壊れた launchd 登録の検出 (issue 148 の 4 章)。
-- `src/doctor/testtmp` — Package testtmp は「テストが起こした一時ディレクトリを、中断されても回収する」ための 共通ヘルパー (issue 305)。
-- `src/glogx` — 対話ブラウズ中はキー操作 (j/k/q/b 等) が主なので、起動時に IME を英数 (ABC) へ 切り替え、終了時に元へ戻す。 (main)
-- `src/glogx/gorules` — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.yml の settings.gocritic.settings.ruleguard.rules から参照)。 (build tags: ruleguard)
-- `src/glogx/issues` — Package issues は repo 内の issue markdown ファイルの探索・分類と、端末表示用の整形を担う。
-- `src/glogx/tools/dial-preview` — dial-preview は全画面 ratelimit ダッシュボード (usage.RenderDashboard) の見た目プレビュー。 (main)
-- `src/glogx/tools/width-probe` — width-probe は「端末が各文字に実際に何セル割り当てるか」を端末自身に問い合わせて表示する。 (main)
-- `src/lockman` — lockman — ディレクトリ単位の排他を取る CLI (SMB 越しの複数マシン + 公開ホストの ローカル経路が混在する前提)。 (main)
-- `src/pro-con` — pro-con — PM (producer) と PG (consumer) を分けて Claude Code を並列に回すための TUI。 (main)
-- `src/pro-con/agents` — Package agents は `claude agents --json` で、今動いている Claude Code の session を一覧する。
-- `src/pro-con/backend` — Package backend は UI と「状態を持つ側」の境界。
-- `src/pro-con/card` — Package card は pro-con のドメイン (依頼カード・状態・不変条件) を持つ。
-- `src/pro-con/config` — Package config は pro-con の設定ファイル (~/.config/pro-con/config.toml) と、そこから repo を列挙する処理。
-- `src/pro-con/diskuse` — Package diskuse は pro-con が作った物のディスクの使用量と内訳を測る (issue 456。
-- `src/pro-con/dispatcher` — Package dispatcher は本物のモードの dispatcher (issue 427 の段階 3c-1)。
-- `src/pro-con/eventlog` — Package eventlog は dispatcher の出来事の記録 (状態の置き場の events.jsonl。
-- `src/pro-con/fake` — Package fake は claude を起動せずに pro-con の画面とつなぎ込みを動かすための模擬 backend。
-- `src/pro-con/foreground` — Package foreground は、画面が端末の前面 (前面のプロセスグループ) を持っているかを確かめ、外れていたら取り戻す (issue 518)。
-- `src/pro-con/foreground/ptytest` — Package ptytest は、テストのバイナリを script(1) の擬似端末の上で helper として走らせる (検査のための部品。
-- `src/pro-con/gitx` — Package gitx は pro-con が git を呼ぶときの共通の口 (見張りの読み取り = package monitor と、worktree の片付け = package wtclean)。
-- `src/pro-con/live` — Package live は本物の backend (issue 424 / 427 の段階 3d)。
-- `src/pro-con/metrics` — Package metrics はカードごとの所要の記録 (issue 516)。
-- `src/pro-con/monitor` — Package monitor は見張り (pro-con monitor。
-- `src/pro-con/presence` — Package presence は開いている画面を数える (同じ状態の置き場で複数の画面を開いてよい。
-- `src/pro-con/relay` — Package relay は画面の中継 (issue 443): 画面は描くたびに最新の 1 枚を状態の置き場の relay/<id>.frame に置き、 外の Claude が `pro-con screen` で読む。
-- `src/pro-con/schedule` — Package schedule は dispatcher が決まった時刻に回す予定の表 (issue 550)。
-- `src/pro-con/store` — Package store は本物のモードのカードの記録 (issue 427 の段階 3a)。
-- `src/pro-con/store/storetest` — Package storetest は、store / dispatcher / 画面の bench が同じ記録で測るための組み立て (issue 528)。
-- `src/pro-con/ui` — Package ui は pro-con の TUI。
-- `src/pro-con/upgrade` — Package upgrade は pro-con のライブアップグレード: 動いている間にソースが変わったら裏でビルドし、 人間の合図 (ctrl+r) で自分自身を新しいバイナリへ入れ替える (syscall.Exec。
-- `src/pro-con/wake` — Package wake は dispatcher を即時に起こす口 (Unix domain socket)。
-- `src/pro-con/wtclean` — Package wtclean は閉じたカードの PG の worktree を片付ける (issue 492)。
-- `src/process_supervisor` — Package supervisor は子プロセスを 1 つ起こして見張る (foreman / supervisord の 1 本ぶん。
-- `src/proctree` — Package proctree はプロセスの子孫を集めて止める。
-- `src/ratelimit` — ratelimit — Claude Code / codex の利用枠 (5h / weekly) を表示・判定する単独コマンド。 (main)
-- `src/ratelimit/gorules` — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.yml から参照)。 (build tags: ruleguard)
-- `src/ratelimit/usage` — Package usage は Claude Code の `/usage` 出力と codex の rateLimits を取得・整形する。
-- `src/restartable` — Command restartable はコマンドを前面で実行し、キーまたは制御 socket から再起動できる CLI。 (main)
-- `src/restartable/internal/control` — Package control implements the private Unix socket used to inspect and restart a runner. (internal)
-- `src/restartable/internal/runner` — Package runner は子プロセスの起動・停止・再起動と、その実行状態や入出力を管理する。 (internal)
-- `src/restartable/internal/ui` — Package ui は runner の状態とキー入力を Bubble Tea のインライン端末画面へ接続する。 (internal)
-- `src/runtimeout` — runtimeout — コマンドを時間の上限付きで実行し、時間が来たら子孫ごと止める (coreutils の timeout 相当)。 (main)
-- `src/schedkeys` — 1 行のテキスト編集状態。 (main)
-- `src/subproc` — Package subproc は外部プロセス実行の安全弁を 1 箇所に集める。
-- `src/termsafe` — Package termsafe は「外部由来の文字列を端末へ出す前に無害化する」単一の関門。
-- `src/termsafe/ctlprobe` — Package ctlprobe は「端末が制御として解釈しうる文字が残っているか」を判定する、 **テスト専用**のオラクル。
-- `src/tuikit/anim` — Package anim は端末 UI の演出に使う状態機械と緩急カーブ。
-- `src/tuikit/caret` — Package caret は入力欄のキャレットを端末のカーソルにする (bubbletea v2 の View.Cursor)。
-- `src/tuikit/confirm` — Package confirm は y/N 確認ダイアログの部品: 中央に浮かべる小さな板と、実行キーの判定。
-- `src/tuikit/editor` — Package editor は実ファイルを 1 つエディタで開くコマンドを組む。
-- `src/tuikit/examples/listdetail` — listdetail は tuikit の「一覧 → 詳細」の遷移パターンを 1 画面で見せるデモ。 (main)
-- `src/tuikit/examples/toast` — toast は tuikit の toast (右下に数秒だけ出る通知のスタック) を 1 画面で見せるデモ。 (main)
-- `src/tuikit/framebench` — Package framebench は、描いた画面の文字列を bubbletea v2 のレンダラと同じ手順でセルへ書き直し、端末への差分まで通す 計測の道具 (issue 607)。
-- `src/tuikit/highlight` — Package highlight は diff とコードの行へシンタックスハイライト (chroma) を付ける。
-- `src/tuikit/layout` — Package layout は端末 UI の画面合成 (行の配列 → 行の配列)。
-- `src/tuikit/lineedit` — Package lineedit は 1 行の入力欄の編集 (カーソルと readline の編集キー)。
-- `src/tuikit/listnav` — Package listnav は一覧と pager の移動 (キーの語彙・カーソル・スクロール) の部品。
-- `src/tuikit/markdown` — Package markdown は markdown の本文を width 桁の端末行へ整形する (見出し・箇条書き・表・ フェンスコードの chroma ハイライト)。
-- `src/tuikit/sgr` — Package sgr は端末の基本 SGR (Select Graphic Rendition) シーケンスを 1 箇所に置く。
-- `src/tuikit/termwidth` — Package termwidth は端末表示幅の単一情報源。
-- `src/tuikit/toast` — Package toast は右下に数秒だけ出す通知 (トースト) のスタック。
-- `src/tuikit/widthenv` — Package widthenv は「tuikit の幅モデルが支持しない env」の検出とその文言を 1 箇所に集める。
-- `src/zundamon-kaisetsu` — zundamon-kaisetsu は VOICEVOX で台本を合成し、四国めたんとずんだもんの掛け合い動画 (HTML プレイヤー / mp4) を作る。 (main)
+- `src/atomicfile` (`atomicfile`) — Package atomicfile は「途中の状態を残さない」ファイル書き込みを 1 箇所に置く。
+- `src/chromecookie` (`github.com/jiikko/dotfiles/src/chromecookie`) — Package chromecookie は macOS の Google Chrome のプロファイルから Cookie を復号して取り出す。
+- `src/chromecookie/chromecookietest` (`github.com/jiikko/dotfiles/src/chromecookie/chromecookietest`) — Package chromecookietest は chromecookie を使う側のテストが、Chrome と同じ形の Cookie DB と 暗号文を作るための道具（本物の Chrome・Keychain には触れない）。
+- `src/disassemble_excel` (`github.com/jiikko/disassemble_excel`) — Command disassemble_excel takes one .xlsx/.xlsm file and writes its sheets (one cell per line, formula + cached value), defined names and VBA macro source into a directory, so the result can be diffed and read without Excel. (main)
+- `src/disassemble_excel/ovba` (`github.com/jiikko/disassemble_excel/ovba`) — Package ovba implements the minimal subset of [MS-OVBA] needed to extract VBA macro source code from a vbaProject.bin (OLE2/CFB) stream — without any external tool such as olevba.
+- `src/doctor/brewledger` (`doctor/brewledger`) — Package brewledger は Homebrew の台帳 (installed formula の名前・旧名・別名)。
+- `src/doctor/cachedir` (`doctor/cachedir`) — Package cachedir は glogx 系ツールのキャッシュ置き場 ($XDG_CACHE_HOME/glog、未設定時は ~/.cache/glog)。
+- `src/doctor/cmd/diskdoctor` (`doctor/cmd/diskdoctor`) — Command diskdoctor は既知のディスク掃除候補を検出して表示する CLI。 (main)
+- `src/doctor/cmd/svcdoctor` (`doctor/cmd/svcdoctor`) — Command svcdoctor は壊れた launchd 登録を検出して表示する CLI。 (main)
+- `src/doctor/disk` (`doctor/disk`) — Package disk は diskdoctor: 既知の掃除候補をリスク付きで一覧する (issue 148 の 1〜2 章)。
+- `src/doctor/docker` (`doctor/docker`) — Package docker は Docker Desktop が抱えている「使っていない資源」を数える。
+- `src/doctor/exitcode` (`doctor/exitcode`) — Package exitcode は 2 本の CLI (diskdoctor / svcdoctor) で共通の終了コード語彙。
+- `src/doctor/internal/displaycheck` (`doctor/internal/displaycheck`) — Package displaycheck は「表示用の構造体へ新しい文字列フィールドを足したのに `Sanitize*ForDisplay` へ通し忘れる」を止める検査の本体 (issue 251 / 252)。 (internal)
+- `src/doctor/runner` (`doctor/runner`) — Package runner は外部コマンドの実行口。
+- `src/doctor/ssd` (`doctor/ssd`) — Package ssd は内蔵 SSD の健康状態を読む (issue 578)。
+- `src/doctor/svc` (`doctor/svc`) — Package svc は svcdoctor: 壊れた launchd 登録の検出 (issue 148 の 4 章)。
+- `src/doctor/testtmp` (`doctor/testtmp`) — Package testtmp は「テストが起こした一時ディレクトリを、中断されても回収する」ための 共通ヘルパー (issue 305)。
+- `src/glogx` (`glogx`) — 対話ブラウズ中はキー操作 (j/k/q/b 等) が主なので、起動時に IME を英数 (ABC) へ 切り替え、終了時に元へ戻す。 (main)
+- `src/glogx/gorules` (`glogx/gorules`) — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.yml の settings.gocritic.settings.ruleguard.rules から参照)。 (build tags: ruleguard)
+- `src/glogx/issues` (`glogx/issues`) — Package issues は repo 内の issue markdown ファイルの探索・分類と、端末表示用の整形を担う。
+- `src/glogx/tools/dial-preview` (`glogx/tools/dial-preview`) — dial-preview は全画面 ratelimit ダッシュボード (usage.RenderDashboard) の見た目プレビュー。 (main)
+- `src/glogx/tools/width-probe` (`glogx/tools/width-probe`) — width-probe は「端末が各文字に実際に何セル割り当てるか」を端末自身に問い合わせて表示する。 (main)
+- `src/lockman` (`lockman`) — lockman — ディレクトリ単位の排他を取る CLI (SMB 越しの複数マシン + 公開ホストの ローカル経路が混在する前提)。 (main)
+- `src/pro-con` (`pro-con`) — pro-con — PM (producer) と PG (consumer) を分けて Claude Code を並列に回すための TUI。 (main)
+- `src/pro-con/agents` (`pro-con/agents`) — Package agents は `claude agents --json` で、今動いている Claude Code の session を一覧する。
+- `src/pro-con/backend` (`pro-con/backend`) — Package backend は UI と「状態を持つ側」の境界。
+- `src/pro-con/card` (`pro-con/card`) — Package card は pro-con のドメイン (依頼カード・状態・不変条件) を持つ。
+- `src/pro-con/config` (`pro-con/config`) — Package config は pro-con の設定ファイル (~/.config/pro-con/config.toml) と、そこから repo を列挙する処理。
+- `src/pro-con/diskuse` (`pro-con/diskuse`) — Package diskuse は pro-con が作った物のディスクの使用量と内訳を測る (issue 456。
+- `src/pro-con/dispatcher` (`pro-con/dispatcher`) — Package dispatcher は本物のモードの dispatcher (issue 427 の段階 3c-1)。
+- `src/pro-con/eventlog` (`pro-con/eventlog`) — Package eventlog は dispatcher の出来事の記録 (状態の置き場の events.jsonl。
+- `src/pro-con/fake` (`pro-con/fake`) — Package fake は claude を起動せずに pro-con の画面とつなぎ込みを動かすための模擬 backend。
+- `src/pro-con/foreground` (`pro-con/foreground`) — Package foreground は、画面が端末の前面 (前面のプロセスグループ) を持っているかを確かめ、外れていたら取り戻す (issue 518)。
+- `src/pro-con/foreground/ptytest` (`pro-con/foreground/ptytest`) — Package ptytest は、テストのバイナリを script(1) の擬似端末の上で helper として走らせる (検査のための部品。
+- `src/pro-con/gitx` (`pro-con/gitx`) — Package gitx は pro-con が git を呼ぶときの共通の口 (見張りの読み取り = package monitor と、worktree の片付け = package wtclean)。
+- `src/pro-con/live` (`pro-con/live`) — Package live は本物の backend (issue 424 / 427 の段階 3d)。
+- `src/pro-con/metrics` (`pro-con/metrics`) — Package metrics はカードごとの所要の記録 (issue 516)。
+- `src/pro-con/monitor` (`pro-con/monitor`) — Package monitor は見張り (pro-con monitor。
+- `src/pro-con/presence` (`pro-con/presence`) — Package presence は開いている画面を数える (同じ状態の置き場で複数の画面を開いてよい。
+- `src/pro-con/relay` (`pro-con/relay`) — Package relay は画面の中継 (issue 443): 画面は描くたびに最新の 1 枚を状態の置き場の relay/<id>.frame に置き、 外の Claude が `pro-con screen` で読む。
+- `src/pro-con/schedule` (`pro-con/schedule`) — Package schedule は dispatcher が決まった時刻に回す予定の表 (issue 550)。
+- `src/pro-con/store` (`pro-con/store`) — Package store は本物のモードのカードの記録 (issue 427 の段階 3a)。
+- `src/pro-con/store/storetest` (`pro-con/store/storetest`) — Package storetest は、store / dispatcher / 画面の bench が同じ記録で測るための組み立て (issue 528)。
+- `src/pro-con/ui` (`pro-con/ui`) — Package ui は pro-con の TUI。
+- `src/pro-con/upgrade` (`pro-con/upgrade`) — Package upgrade は pro-con のライブアップグレード: 動いている間にソースが変わったら裏でビルドし、 人間の合図 (ctrl+r) で自分自身を新しいバイナリへ入れ替える (syscall.Exec。
+- `src/pro-con/wake` (`pro-con/wake`) — Package wake は dispatcher を即時に起こす口 (Unix domain socket)。
+- `src/pro-con/wtclean` (`pro-con/wtclean`) — Package wtclean は閉じたカードの PG の worktree を片付ける (issue 492)。
+- `src/process_supervisor` (`process_supervisor`) — Package supervisor は子プロセスを 1 つ起こして見張る (foreman / supervisord の 1 本ぶん。
+- `src/proctree` (`proctree`) — Package proctree はプロセスの子孫を集めて止める。
+- `src/ratelimit` (`ratelimit`) — ratelimit — Claude Code / codex の利用枠 (5h / weekly) を表示・判定する単独コマンド。 (main)
+- `src/ratelimit/gorules` (`ratelimit/gorules`) — Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.yml から参照)。 (build tags: ruleguard)
+- `src/ratelimit/usage` (`ratelimit/usage`) — Package usage は Claude Code の `/usage` 出力と codex の rateLimits を取得・整形する。
+- `src/restartable` (`github.com/jiikko/dotfiles/src/restartable`) — Command restartable はコマンドを前面で実行し、キーまたは制御 socket から再起動できる CLI。 (main)
+- `src/restartable/internal/control` (`github.com/jiikko/dotfiles/src/restartable/internal/control`) — Package control implements the private Unix socket used to inspect and restart a runner. (internal)
+- `src/restartable/internal/runner` (`github.com/jiikko/dotfiles/src/restartable/internal/runner`) — Package runner は子プロセスの起動・停止・再起動と、その実行状態や入出力を管理する。 (internal)
+- `src/restartable/internal/ui` (`github.com/jiikko/dotfiles/src/restartable/internal/ui`) — Package ui は runner の状態とキー入力を Bubble Tea のインライン端末画面へ接続する。 (internal)
+- `src/runtimeout` (`runtimeout`) — runtimeout — コマンドを時間の上限付きで実行し、時間が来たら子孫ごと止める (coreutils の timeout 相当)。 (main)
+- `src/schedkeys` (`schedkeys`) — 1 行のテキスト編集状態。 (main)
+- `src/subproc` (`subproc`) — Package subproc は外部プロセス実行の安全弁を 1 箇所に集める。
+- `src/termsafe` (`github.com/jiikko/dotfiles/src/termsafe`) — Package termsafe は「外部由来の文字列を端末へ出す前に無害化する」単一の関門。
+- `src/termsafe/ctlprobe` (`github.com/jiikko/dotfiles/src/termsafe/ctlprobe`) — Package ctlprobe は「端末が制御として解釈しうる文字が残っているか」を判定する、 **テスト専用**のオラクル。
+- `src/tuikit/anim` (`github.com/jiikko/dotfiles/src/tuikit/anim`) — Package anim は端末 UI の演出に使う状態機械と緩急カーブ。
+- `src/tuikit/caret` (`github.com/jiikko/dotfiles/src/tuikit/caret`) — Package caret は入力欄のキャレットを端末のカーソルにする (bubbletea v2 の View.Cursor)。
+- `src/tuikit/confirm` (`github.com/jiikko/dotfiles/src/tuikit/confirm`) — Package confirm は y/N 確認ダイアログの部品: 中央に浮かべる小さな板と、実行キーの判定。
+- `src/tuikit/editor` (`github.com/jiikko/dotfiles/src/tuikit/editor`) — Package editor は実ファイルを 1 つエディタで開くコマンドを組む。
+- `src/tuikit/examples/listdetail` (`github.com/jiikko/dotfiles/src/tuikit/examples/listdetail`) — listdetail は tuikit の「一覧 → 詳細」の遷移パターンを 1 画面で見せるデモ。 (main)
+- `src/tuikit/examples/toast` (`github.com/jiikko/dotfiles/src/tuikit/examples/toast`) — toast は tuikit の toast (右下に数秒だけ出る通知のスタック) を 1 画面で見せるデモ。 (main)
+- `src/tuikit/framebench` (`github.com/jiikko/dotfiles/src/tuikit/framebench`) — Package framebench は、描いた画面の文字列を bubbletea v2 のレンダラと同じ手順でセルへ書き直し、端末への差分まで通す 計測の道具 (issue 607)。
+- `src/tuikit/highlight` (`github.com/jiikko/dotfiles/src/tuikit/highlight`) — Package highlight は diff とコードの行へシンタックスハイライト (chroma) を付ける。
+- `src/tuikit/layout` (`github.com/jiikko/dotfiles/src/tuikit/layout`) — Package layout は端末 UI の画面合成 (行の配列 → 行の配列)。
+- `src/tuikit/lineedit` (`github.com/jiikko/dotfiles/src/tuikit/lineedit`) — Package lineedit は 1 行の入力欄の編集 (カーソルと readline の編集キー)。
+- `src/tuikit/listnav` (`github.com/jiikko/dotfiles/src/tuikit/listnav`) — Package listnav は一覧と pager の移動 (キーの語彙・カーソル・スクロール) の部品。
+- `src/tuikit/markdown` (`github.com/jiikko/dotfiles/src/tuikit/markdown`) — Package markdown は markdown の本文を width 桁の端末行へ整形する (見出し・箇条書き・表・ フェンスコードの chroma ハイライト)。
+- `src/tuikit/sgr` (`github.com/jiikko/dotfiles/src/tuikit/sgr`) — Package sgr は端末の基本 SGR (Select Graphic Rendition) シーケンスを 1 箇所に置く。
+- `src/tuikit/termwidth` (`github.com/jiikko/dotfiles/src/tuikit/termwidth`) — Package termwidth は端末表示幅の単一情報源。
+- `src/tuikit/toast` (`github.com/jiikko/dotfiles/src/tuikit/toast`) — Package toast は右下に数秒だけ出す通知 (トースト) のスタック。
+- `src/tuikit/widthenv` (`github.com/jiikko/dotfiles/src/tuikit/widthenv`) — Package widthenv は「tuikit の幅モデルが支持しない env」の検出とその文言を 1 箇所に集める。
+- `src/zundamon-kaisetsu` (`zundamon-kaisetsu`) — zundamon-kaisetsu は VOICEVOX で台本を合成し、四国めたんとずんだもんの掛け合い動画 (HTML プレイヤー / mp4) を作る。 (main)
