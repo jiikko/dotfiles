@@ -33,6 +33,9 @@ var (
 	cCursorBg = rgb{0, 95, 135}
 )
 
+// cIgnored は git が無視するものの灰の元 (spec §1.1 の ignored、dim_floor 10 の灰)。
+var cIgnored = rgb{214, 216, 224}
+
 // git の印の色 (spec §1.1 の dark)。
 var gitColor = map[byte]rgb{'?': {110, 200, 225}, '+': {120, 215, 130}, 'M': {240, 200, 90}, '!': {255, 90, 120}}
 

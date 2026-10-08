@@ -18,6 +18,7 @@ import (
 type node struct {
 	name     string // 表示に使う前に termsafe を通した名前
 	raw      string // ディスク上の名前 (パスの組み立てに使う)
+	abs      string // 絶対パス。作るときに 1 回だけ組み立てる (毎フレーム熱と git を引くので、親をたどって連結すると確保が増える)
 	dir      bool
 	parent   *node
 	kids     []*node
@@ -27,15 +28,9 @@ type node struct {
 	last     *node // 最後にカーソルがあった子 (潜ったときに戻る先)
 	mtime    time.Time
 	size     int64
-	git      byte // 0 / '?' / '+' / 'M' / '!' (spec §5.3)
 }
 
-func (n *node) path() string {
-	if n.parent == nil {
-		return n.raw
-	}
-	return filepath.Join(n.parent.path(), n.raw)
-}
+func (n *node) path() string { return n.abs }
 
 func (n *node) depth() int {
 	d := 0
@@ -58,7 +53,10 @@ func (n *node) label() string {
 }
 
 func newNode(raw string, info os.FileInfo, parent *node) *node {
-	n := &node{raw: raw, name: termsafe.PlainLine(raw), parent: parent}
+	n := &node{raw: raw, abs: raw, name: termsafe.PlainLine(raw), parent: parent}
+	if parent != nil {
+		n.abs = filepath.Join(parent.abs, raw)
+	}
 	if info != nil {
 		n.dir = info.IsDir()
 		n.mtime = info.ModTime()

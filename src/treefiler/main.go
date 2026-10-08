@@ -22,6 +22,9 @@ import (
 // frameInterval は動いている間の描き直しの周期 (~60fps)。止まっている間は描かない。
 const frameInterval = 16 * time.Millisecond
 
+// busyInterval は裏の処理を待つ間の周期 (glogx の spinnerInterval と同じ)。
+const busyInterval = 80 * time.Millisecond
+
 type tickMsg struct{}
 
 type app struct {
@@ -55,9 +58,16 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	for _, t := range a.toast.Advance() {
 		cmds = append(cmds, tea.Tick(t.After, func(time.Time) tea.Msg { return t.Msg }))
 	}
-	if (a.f.Animating() || a.toast.Animating()) && !a.ticking {
-		a.ticking = true
-		cmds = append(cmds, tea.Tick(frameInterval, func(time.Time) tea.Msg { return tickMsg{} }))
+	if !a.ticking {
+		switch {
+		case a.f.Animating() || a.toast.Animating():
+			a.ticking = true
+			cmds = append(cmds, tea.Tick(frameInterval, func(time.Time) tea.Msg { return tickMsg{} }))
+		case a.f.Busy():
+			// 裏の走査・git の取得の結果を取り込むための遅い周期 (動いていなければ描き直しも少ない)
+			a.ticking = true
+			cmds = append(cmds, tea.Tick(busyInterval, func(time.Time) tea.Msg { return tickMsg{} }))
+		}
 	}
 	return a, tea.Batch(cmds...)
 }

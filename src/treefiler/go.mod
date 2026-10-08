@@ -7,6 +7,7 @@ require (
 	github.com/jiikko/dotfiles/src/termsafe v0.0.0
 	github.com/jiikko/dotfiles/src/tuikit v0.0.0
 	github.com/quasilyte/go-ruleguard/dsl v0.3.23
+	subproc v0.0.0
 )
 
 require (
@@ -30,3 +31,5 @@ require (
 replace github.com/jiikko/dotfiles/src/termsafe => ../termsafe
 
 replace github.com/jiikko/dotfiles/src/tuikit => ../tuikit
+
+replace subproc => ../subproc

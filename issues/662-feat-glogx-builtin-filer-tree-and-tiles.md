@@ -302,7 +302,21 @@ MIT OR Apache-2.0) を写す**。依頼に無い部分も含めて全部写す�
     `X` で codex update が走るのは spec §0.3 の決定どおりなので直さない。変異 3 本 (Refresh を外す / resize を外す / U を外す) が red
   - 未解決: 隔離 tmux での最初の 1 回だけ、`F` → `G` → `Enter` の後に tmux のサーバが消えた。同じ手順の再現 3 回と、キーの列を 3 周送った
     試験では落ちず、stderr は空で、観測できた終わり方は木の上の `q` による正常終了 (rc=0) だけ。panic の痕跡は無い
-- [ ] 熱の色の再帰 mtime の走査と git の印 (spec §5.1・§5.3) — 今は各項目自身の mtime で色を付けている
+- [x] **熱の色の再帰 mtime の走査と git の印** (2026-10-08。commit「feat(treefiler): フォルダの色を配下の最新から取り、git の印とブランチを出す」)。
+  walk.go: 裏の goroutine 1 本で配下を深さ優先に数える (上限 5 万件・symlink は辿らない・dotfile を隠している間は dotfile でないファイルの最新)。
+  git.go: root を含む repo 1 つの `status --porcelain=v1 -z --branch --ignored` を subproc で起こし、ファイルの印・閉じたフォルダの芽の色・
+  ignored の灰色・ステータスバーのブランチと状態語を出す。周期のタイマーは張らず、開いた・読み直した・キーを押した (前回から 3 秒以上) ときに取り直す。
+  結果は Advance で取り込み、裏で動いている間は `Busy()` が true (glogx の spinnerActive と単体の起動側が 80ms で tick を回す)。
+  - 🚨 TestFrameAllocBudget が +6KB/frame の退行を捕まえた (毎フレーム項目ごとに path() を連結していた)。絶対パスを作るときに 1 回だけ組み立てて上限内 (155 回 / 43,355 B) に戻した
+  - 検証: test (-race) / lint / make test-lint / make test-changed / レーンの検査。exec_boundary_test を写した (os/exec の直接 import を止める)。
+    変異 3 本 (dotfile を数える / ignored・未追跡のフォルダの中へ状態を引き継がない / 見えているフォルダの走査を頼まない) が red。
+    実物 (隔離 tmux・worktree) で、変更した README.md に M、ステータスバーに `⎇ detached` (worktree は detached HEAD) が出た
+  - 反証レビュー (sonnet 1 体。data race・deadlock・止まらない tick は壊せなかった): 採用 8 件 — 走査の依頼が O(n²) で UI が固まる (2 万件で 0.66 秒) /
+    最後の結果を取り込む前に tick が止まる窓 (取り込んでいない結果がある間も Busy) / 読み直しの git が走行中の取得に捨てられる (終わったらもう 1 回) /
+    見えているフォルダを数え直す (完了済みなら頼まない) / 結果を毎 tick 写す (公開後に書き換えない map を渡す) / worktree 側の rename (` R`) /
+    git の一時的な失敗で印が消える (前の結果を残す) / root が `/` のとき印が付かない。変異 3 本が red。
+    却下 1 件: 打ち切った走査の途中の値で色を付ける — treebeard も同じで、代わりにステータスバーに `(partial)` と `+` を出す (spec §3.4)
+  - 未対応 (spec との差): 入れ子の repo の中は印が出ない (treebeard は開いたフォルダごとの repo を見る) / ignored の枝の細い線 (spec §2.1 の thin)
 - [ ] ライブ更新・ビーズ・ripple (spec §4.3・4.4・§5.2)
 - [ ] 残りの UI (検索・explode・シェル・設定の板・help)
 

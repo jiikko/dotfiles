@@ -63,6 +63,9 @@ func (v *filerView) ownsKeys() bool { return v.shown && v.f != nil && v.f.OwnsKe
 
 func (v *filerView) animating() bool { return v.shown && v.f != nil && v.f.Animating() }
 
+// busy は filer の裏の走査・git の取得が走っているか (その間は spinnerActive が tick を回し、結果を取り込む)。
+func (v *filerView) busy() bool { return v.shown && v.f != nil && v.f.Busy() }
+
 // resize は画面の大きさを伝える。描くときではなく大きさが変わったときに伝えないと、カメラの目標が変わっても
 // tick が回らず、次のキーまで古い位置のまま残る (レビューの指摘 2026-10-08)。
 func (v *filerView) resize(width, page int) {

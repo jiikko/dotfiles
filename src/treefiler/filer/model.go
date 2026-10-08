@@ -58,6 +58,12 @@ type Model struct {
 	notices    []Notice
 	linkCache  map[string]string
 	cv         *canvas // 使い回す格子 (大きさが変わったら作り直す)
+	walker     *walker
+	recs       map[string]walkResult // walker の結果の写し (Advance で取り込む)
+	recsVer    int
+	git        gitWatch
+	gitSnap    gitSnapshot
+	gitVer     int
 }
 
 // New は dir を root にした Model を作る。カーソルは root の最初の子 (無ければ root)。
@@ -68,7 +74,8 @@ func New(dir string, opts Options) (*Model, error) {
 	}
 	// moving は最初から true: 起動時のフェードインがある。false で始めると、呼び出し側が「動いていないので tick を回さない」と
 	// 判断し、透明のまま次のキーまで何も見えない (glogx の TestFilerAnimationAdvancesOnTickAndStops が捕まえた)
-	m := &Model{root: root, cur: root, now: opts.Now, anims: map[*node]*anim{}, linkCache: map[string]string{}, moving: true}
+	m := &Model{root: root, cur: root, now: opts.Now, anims: map[*node]*anim{}, linkCache: map[string]string{}, moving: true,
+		walker: newWalker(), recs: map[string]walkResult{}}
 	if m.now == nil {
 		m.now = time.Now
 	}
@@ -79,12 +86,15 @@ func New(dir string, opts Options) (*Model, error) {
 		m.cur = ks[0]
 		root.last = ks[0]
 	}
+	m.git.start(root.path(), m.now(), true)
 	return m, nil
 }
 
 // Refresh はディスクを読み直す (開いていたフォルダの中身。開閉とカーソルの位置は保つ)。
 // カーソルの項目が消えていたら、残っているいちばん近い祖先へ移る。
 func (m *Model) Refresh() {
+	m.walker.forget(m.root.path())
+	m.git.start(m.root.path(), m.now(), true)
 	m.root.reload()
 	for !m.inTree(m.cur) {
 		m.cur = m.cur.parent
@@ -108,6 +118,12 @@ func (m *Model) Resize(w, h int) {
 		m.moving = true // カメラの目標 (画面の 38% と縦の中央) が変わる
 	}
 	m.w, m.h = w, h
+}
+
+// Busy は裏で走査・git の取得が走っているか (呼び出し側はこの間、遅い周期で Advance を呼んで結果を取り込む)。
+// 取り込んでいない結果がある間も true (最後の結果を取り込む前に呼び出し側が tick を止める窓を塞ぐ。レビューの指摘 2026-10-08)。
+func (m *Model) Busy() bool {
+	return m.walker.busy() || m.git.busy() || m.walker.pending(m.recsVer) || m.git.pending(m.gitVer)
 }
 
 // Animating は動いている途中か (呼び出し側はこの間だけ高い周期で Advance を呼ぶ)。
@@ -137,9 +153,44 @@ func (m *Model) Advance(now time.Time) bool {
 		dt = math.Min(now.Sub(m.lastAdv).Seconds(), 0.05)
 	}
 	m.lastAdv = now
+	m.takeBackground()
 	m.moving = m.step(dt)
 	return m.moving
 }
+
+// takeBackground は裏の走査と git の結果を取り込み、見えているフォルダの走査を頼む。
+func (m *Model) takeBackground() {
+	if recs, v, ok := m.walker.snapshot(m.recsVer); ok {
+		m.recs, m.recsVer = recs, v
+	}
+	if s, v, ok := m.git.take(m.gitVer); ok {
+		m.gitSnap, m.gitVer = s, v
+	}
+	for _, n := range m.order {
+		if n.dir {
+			m.walker.request(n.path())
+		}
+	}
+}
+
+// heatAge は n の色を決める経過秒 (spec §5.1 の Tree::heat)。フォルダは配下の最新、dotfile を隠している間は
+// dotfile でないファイルだけの最新。まだ数えていなければ自分の mtime。
+func (m *Model) heatAge(n *node) float64 {
+	t := n.mtime
+	if n.dir {
+		if r, ok := m.recs[n.path()]; ok {
+			switch {
+			case m.showHidden && r.newest.After(t):
+				t = r.newest
+			case !m.showHidden && !r.vis.IsZero():
+				t = r.vis
+			}
+		}
+	}
+	return m.now().Sub(t).Seconds()
+}
+
+func (m *Model) gitState(n *node) byte { return m.gitSnap.state(n.path(), n.dir) }
 
 func (m *Model) sync(pos map[*node]place) {
 	for n := range pos {
@@ -287,7 +338,8 @@ func (m *Model) snapAll() {
 // HandleKey は 1 打鍵を処理する (キーの表記は bubbletea の KeyPressMsg.String())。
 func (m *Model) HandleKey(k string) Result {
 	m.snapAll()
-	defer func() { m.moving = true }() // 目標が変わったので次の Advance で動き出す
+	defer func() { m.moving = true }()         // 目標が変わったので次の Advance で動き出す
+	m.git.start(m.root.path(), m.now(), false) // 前回から 3 秒以上たっていれば取り直す (周期のタイマーは張らない)
 	if k == "ctrl+c" {
 		return Quit // どこからでも即終了 (glogx-ui-guide §1)
 	}
@@ -446,7 +498,7 @@ func (m *Model) rerootUp() {
 	found := false
 	for i, k := range nr.kids {
 		if k.raw == baseName(old.raw) {
-			old.raw, old.parent = k.raw, nr
+			old.raw, old.parent = k.raw, nr // abs は変わらない (同じフォルダ)
 			nr.kids[i] = old
 			found = true
 		}
@@ -643,7 +695,7 @@ func (m *Model) nodeFor(path string) *node {
 	}
 	info, _ := os.Lstat(path) // 消えていても項目は作る (開くときに「開けません」になる)
 	n := newNode(baseName(path), info, nil)
-	n.raw = path // root の外のファイル。parent が無いので path() は raw をそのまま返す
+	n.raw, n.abs = path, path // root の外のファイル (parent が無い)
 	return n
 }
 
@@ -720,7 +772,6 @@ func (m *Model) draw() *canvas {
 }
 
 func (m *Model) drawLines(c *canvas, now map[*node][2]int, ox, oy, ch int) {
-	ageNow := m.now()
 	for k, lc := range m.lines(now) {
 		x, y := k[0]-ox, k[1]-oy
 		if y >= ch {
@@ -730,7 +781,7 @@ func (m *Model) drawLines(c *canvas, now map[*node][2]int, ox, oy, ch int) {
 		if p == nil {
 			continue
 		}
-		sap := heat(ageNow.Sub(lc.owner.mtime).Seconds())
+		sap := heat(m.heatAge(lc.owner))
 		var col rgb
 		switch lc.emph {
 		case emRoute:
@@ -745,7 +796,6 @@ func (m *Model) drawLines(c *canvas, now map[*node][2]int, ox, oy, ch int) {
 }
 
 func (m *Model) drawNames(c *canvas, pos map[*node]place, ox, oy, ch int) {
-	ageNow := m.now()
 	for pass := range 2 { // 消えかけの項目を先に、生きている項目を後に描く
 		for _, n := range m.order {
 			a := m.anims[n]
@@ -756,10 +806,14 @@ func (m *Model) drawNames(c *canvas, pos map[*node]place, ox, oy, ch int) {
 			if y < 0 || y >= ch {
 				continue
 			}
-			base := heat(ageNow.Sub(n.mtime).Seconds())
+			base := heat(m.heatAge(n))
+			st := m.gitState(n)
 			switch {
 			case m.onPath(n):
 				base = cRouteTxt
+			case st == gitIgn:
+				// ignored は灰色に沈める (spec §1.4 の ignored_shade。dim_floor 既定 5)
+				base = mix(mix(cBg, cIgnored, 0.1+0.08*5), base, 0.12)
 			case pos[n].active:
 			default:
 				base = mix(base, cBg, 0.32) // 選択線から外れた枝 (spec §1.4 の off_line。focus_dim 既定 6)
@@ -771,9 +825,14 @@ func (m *Model) drawNames(c *canvas, pos map[*node]place, ox, oy, ch int) {
 			bx := x + a.w + 1
 			switch {
 			case n.dir && !n.expanded && (!n.loaded || len(m.kids(n)) > 0):
-				c.put(bx, y, "›", mix(cBg, base, a.alpha.v*0.55), false)
-			case !n.dir && n.git != 0:
-				c.put(bx, y, string(n.git), mix(cBg, gitColor[n.git], a.alpha.v), true)
+				// 閉じたフォルダの芽は、配下にいちばん重い git の変更があればその色 (spec §2.2)
+				bud := mix(cBg, base, a.alpha.v*0.55)
+				if gitRank(st) > 0 {
+					bud = mix(cBg, gitColor[st], a.alpha.v)
+				}
+				c.put(bx, y, "›", bud, false)
+			case !n.dir && gitRank(st) > 0:
+				c.put(bx, y, string(st), mix(cBg, gitColor[st], a.alpha.v), true)
 			}
 		}
 	}
@@ -890,15 +949,34 @@ func (m *Model) statusBar(c *canvas) {
 	for n := m.cur; n != nil; n = n.parent {
 		chain = append([]*node{n}, chain...)
 	}
-	age := m.now().Sub(m.cur.mtime).Seconds()
+	age := m.heatAge(m.cur)
 	meta := human(m.cur.size)
+	partial := ""
 	if m.cur.dir {
 		meta = "folder"
 		if m.cur.loaded {
 			meta = fmt.Sprintf("%d items", len(m.kids(m.cur)))
 		}
+		if r, ok := m.recs[m.cur.path()]; ok {
+			meta += " · " + human(r.bytes)
+			if !r.complete {
+				meta += "+" // 走査の上限で打ち切った (spec §3.4)
+				partial = " (partial)"
+			}
+		}
 	}
-	right := []seg{{meta + " · ", cMuted, false}, {"● ", heat(age), false}, {ago(age), cText, false}, {"   ", cMuted, false}}
+	var right []seg
+	if m.gitSnap.top != "" && m.gitSnap.branch != "" {
+		right = append(right, seg{"⎇ ", cAccRoute, false}, seg{m.gitSnap.branch + " · ", cText, false})
+		if st := m.gitState(m.cur); st != gitNone {
+			col := cMuted
+			if c, ok := gitColor[st]; ok {
+				col = c
+			}
+			right = append(right, seg{gitWord(st) + " · ", col, false})
+		}
+	}
+	right = append(right, seg{meta + " · ", cMuted, false}, seg{"● ", heat(age), false}, seg{ago(age) + partial, cText, false}, seg{"   ", cMuted, false})
 	legend := []seg{{"now ", cMuted, false}}
 	for _, st := range ember {
 		legend = append(legend, seg{"▮", st.c, false})

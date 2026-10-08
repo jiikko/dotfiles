@@ -11,6 +11,7 @@ on:
     paths:
       - 'src/treefiler/**'
       - 'src/termsafe/**'    # replace で取り込む共有 module (無害化の関門)
+      - 'src/subproc/**'     # replace で取り込む共有 module (git の起動)
       - 'src/tuikit/**'      # replace で取り込む共有 module (幅の単一情報源)
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
       - .github/workflows/src_treefiler.yml
@@ -19,6 +20,7 @@ on:
     paths:
       - 'src/treefiler/**'
       - 'src/termsafe/**'    # replace で取り込む共有 module (無害化の関門)
+      - 'src/subproc/**'     # replace で取り込む共有 module (git の起動)
       - 'src/tuikit/**'      # replace で取り込む共有 module (幅の単一情報源)
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
       - .github/workflows/src_treefiler.yml
