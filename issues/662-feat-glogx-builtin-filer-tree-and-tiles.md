@@ -1,4 +1,4 @@
-# 662 (feat): glogx の `F` で開く内蔵ファイラー (treebeard の見た目 + 重なっていくウィンドウタイル)
+# 662 (feat): treefiler — glogx の `F` と単体で開くファイラー (treebeard の見た目 + 重なっていくウィンドウタイル)
 
 起票日: 2026-10-07
 
@@ -139,7 +139,7 @@ MIT OR Apache-2.0) を写す**。依頼に無い部分も含めて全部写す�
 
 ## 実装前に集めた情報 (2026-10-07)
 
-**仕様の正本は [`docs/glogx-filer-spec.md`](../docs/glogx-filer-spec.md)**。§0 に glogx での決定と組み込み先、§1〜10 に treebeard のソース
+**仕様の正本は [`docs/treefiler-spec.md`](../docs/treefiler-spec.md)**。§0 に glogx での決定と組み込み先、§1〜10 に treebeard のソース
 (commit `691788d`) から抜いた配色の RGB・線の文字表・列の配置と肘の引き方・ばねの定数・走査や git の取り方・全キー・全設定がある。
 抜き出しは read-only のサブエージェント (sonnet) が書き、配色・`MOVE`・`POPUP_T`・`WALK_CAP`・バイナリ判定・テキストの上限・既定の線を原文で照合した。
 
@@ -151,7 +151,7 @@ MIT OR Apache-2.0) を写す**。依頼に無い部分も含めて全部写す�
   依存 (`golang.org/x/image`) と外部コマンド (`convert` / `pdftoppm`) は再開するときに決める
 - [ ] ファイラーの中で glogx の `i` `R` `D` `U` `X` を効かせるか (推奨: 効かせる。`s` `C` は treebeard が使う)
 - [ ] Remember place の保存先 (推奨: `~/.config/glogx/` の下)
-- [ ] 単体で起動するコマンドと module の名前 (spec §0.6。例 `bin/filer` と `src/filer`)
+- [x] ~~単体で起動するコマンドと module の名前~~ → **`treefiler`** (`src/treefiler` / `bin/treefiler`。2026-10-08 ユーザー回答)
 
 ## 既存の資産と制約 (2026-10-07 に調べた事実)
 
@@ -231,7 +231,7 @@ MIT OR Apache-2.0) を写す**。依頼に無い部分も含めて全部写す�
   閉じたときの戻り先も issues viewer と揃える (`F` で閉じると git log 一覧へ)。未決 2・6 を決めた
 - 2026-10-07 実装前の情報を集めた: treebeard のソースから見た目と挙動を抜き出し、glogx への組み込み先 (`fullscreen.go` の ID・
   `handleKey` の `C`/`X` と同じ位置・`overlayOwnershipTable`・`tickInterval`・`TestFrameAllocBudget`・termsafe・toast) を調べて
-  `docs/glogx-filer-spec.md` にまとめた。残る判断 5 件を「実装前に集めた情報」節に挙げた
+  `docs/treefiler-spec.md` にまとめた。残る判断 5 件を「実装前に集めた情報」節に挙げた
 - 2026-10-07 spec §0 の反証レビュー (read-only のサブエージェント): status viewer は `--branch` を取っている (取らないのは `--ignored` だけ) に直した。
   `F` / `C` を全画面の dispatch より前で拾うとファイラーの検索欄・コマンド行の入力を横取りするので、ファイラーに `ownsKeys()` を実装し
   `updateKeyReachable` で `C` を常に譲る、を spec に足した。木の上の `Esc` の優先順 (explode 中断・検索取り消しが先) と、ばねは `dt` を受けるので
@@ -239,3 +239,4 @@ MIT OR Apache-2.0) を写す**。依頼に無い部分も含めて全部写す�
 - 2026-10-07 ユーザー回答: 画像・PDF のプレビューは後回し (pending)。それまでは開かず toast で断る扱いにした (spec §0.1・§0.4)
 - 2026-10-08 ユーザー回答: ファイラーは glogx からだけでなく単体でも起動できるようにする。`ratelimit` と同じ形 (独立 module + glogx が replace で取り込む + `bin/` の入口) で
   spec §0.6 に書いた。名前は未決
+- 2026-10-08 ユーザー回答: 名前は `treefiler`。spec を `docs/treefiler-spec.md` へ改名した
