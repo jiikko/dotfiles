@@ -1,1 +1,0 @@
-../676-feat-zundamon-kaisetsu-caption-speed-at-synth.md
