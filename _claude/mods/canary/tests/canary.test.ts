@@ -8,6 +8,7 @@ const engineBeneath = (on: On, writes: string[]) => {
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('fs.write', ($, e) => {
     writes.push(e.path)
+    return { value: undefined }
   })
 }
 
