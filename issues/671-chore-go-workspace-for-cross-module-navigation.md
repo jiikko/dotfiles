@@ -50,11 +50,12 @@ go.work を置き、エディタ (nvim の gopls) と LLM の LSP ツールか�
 
 ## 受け入れ条件
 
-- [ ] 案を決め、理由を本 issue に書く
-- [ ] go.work の有無で、全 module の第三者の依存の版とローカル module の実体 (`.Module.Dir`) が一致することを、較正した式で確認した (コマンドと出力の要約を本 issue に書く)
+- [x] 案を決め、理由を本 issue に書く (go.work を置かない。下の進捗)
+- [x] ~~go.work の有無で解決が一致することを確認した~~ → 測ったら一致しなかった (18 行の差。下の進捗) ので go.work を置かない方針に変えた。代わりに「repo に go.work / go.work.sum が無い・ビルド経路を変えていない」を確認
 - [ ] `make test-go` と CI の `src_*.yml` が今までどおり通る
-- [ ] gopls で module をまたいだシンボル検索が効くことを確認した
-- [ ] 使い方 (go.work がどこにあり、何に効き、ビルドには効かないこと) を `src/README.md` に書く
+- [x] gopls で module をまたいだシンボル検索が効くことを確認した (nvim。下の進捗の実機)
+- [ ] Claude Code の gopls プラグインが `bin/gopls` 経由で起動する (push と `~/dotfiles` の pull の後に確認)
+- [x] 使い方 (go.work を置かない理由・nvim と Claude の経路) を `src/README.md` に書く
 
 ## 関連ファイル
 
@@ -67,3 +68,17 @@ go.work を置き、エディタ (nvim の gopls) と LLM の LSP ツールか�
 
 - 2026-10-08: 起票
 - 2026-10-08: 反証レビュー (Claude のサブエージェント 1 本。codex は 5h 枠切れ) を反映。比較の式がそのままでは必ず差を出す (P1)、GOWORK の既存使用と版ずれの検出が弱まる点・go.work.sum・go_autobuild の指紋の外・gopls の設定 3 か所 (P2)。反証できなかった主張: module 17 / replace 8 / go が親へ go.work を探すこと。gopls の `build.env` で GOWORK が効くかは未確認
+- 2026-10-08: codex-drive で着手。D1 (独立 2 案) と Claude の実測で、**go.work を置くと依存の解決が実際に変わる**ことが分かった
+  (一時コピーに全 17 module を use した go.work を置き、`go list -deps` の module / version / dir を比べて 160 行中 18 行の差:
+  chromecookie の golang.org/x/sys v0.9.0 → v0.47.0 / restartable が GitHub の pseudo-version で取っている termsafe・tuikit がローカルの実体に /
+  go-colorful・go-runewidth が 3 module で上がる)。案 A (ビルドから見える go.work) も、エディタだけの go.work (案 B/C) も、gopls の解析がビルドと違う版になる
+- ユーザー判断 (2026-10-08): **go.work は置かない**。nvim の gopls に dotfiles の全 module を workspace folder として渡し (`GOWORK=off`)、
+  Claude Code の gopls は `bin/gopls` (mason の実体を絶対パスで起動する shim) で PATH に通す。Claude からの module 横断の検索は issue 672 の `src/PACKAGES.md` で代替する
+- 受け入れ条件の読み替え: R2 は「Claude Code の gopls が起動できる」に、R3 は「go.work を導入しない・ビルド経路を変えない」に縮めた (ユーザー承認済み)
+- 設計の敵対レビュー (codex 1 本): 6 件すべて採用 (別 repo の誤認 → git common dir で判定 / root_dir の中で共有設定を書き換えない → before_init で client ごと /
+  module 外は丸めない / 失敗は既定に戻す / shim が他の gopls を奪う → mason → 自分を除いた PATH の順 / 受け入れに実 nvim と Claude の経路を入れる)
+- 実装の敵対レビュー (codex 2 本、状態と shim): 採用 5 件 (再起動で folder が消える / root の無い Go ファイルの再利用の退行 / ハードリンクの相互 exec /
+  shim が nvim の有無判定を通す → nvim は mason の絶対パス / stdio の透過のテスト)。
+  **却下 1 件**: `PATH=""` のときの cwd 探索 (LSP のプラグインが空の PATH で起動する経路が無い。再提起するなら、空の PATH で gopls を起動する実際の経路を示すこと)
+- 変異検証 (Claude、bin/mutate-verify-list): lsp.lua の dotfiles 判定・module 配下の判定・GOWORK=off の付与を外す 3 本は red。
+  bin/gopls の自分のディレクトリの除外を外すのは red。mason の優先を外すのは**緑のままだった** (偽の実体が呼び出し側の環境から名前を取っていて、どちらが呼ばれても同じ名前を記録していた) → テストを直した

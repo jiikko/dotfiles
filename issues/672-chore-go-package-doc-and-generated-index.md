@@ -39,11 +39,11 @@ package の doc コメント (`// Package termwidth は …`) を正本にして
 
 ## 受け入れ条件
 
-- [ ] 上の 5 個に doc コメントを書く
-- [ ] 一覧を生成する道具を置き、出力の形 (案 1 / 案 2) を決めて理由を本 issue に書く
-- [ ] doc コメントの無い package を落とす検査を `make test-lint` (か Go の lane) に入れ、変異 (doc コメントを 1 つ消す) で red になることを確かめる
+- [x] 上の 5 個に doc コメントを書く (gorules 2 個も `Package gorules` で始めた)
+- [x] 一覧を生成する道具を置き、出力の形 (案 1 / 案 2) を決めて理由を本 issue に書く (案 1。道具を知らなくても grep で引けることが目的のため)
+- [x] doc コメントの無い package を落とす検査を `make test-lint` に入れ、変異で red になることを確かめる (11 本。下の進捗)
 - [ ] 検査が CI で走っていることを、ログの検査名で確かめる
-- [ ] `src/README.md` から一覧へ案内する
+- [x] `src/README.md` から一覧へ案内する
 
 ## 関連ファイル
 
@@ -54,3 +54,12 @@ package の doc コメント (`// Package termwidth は …`) を正本にして
 
 - 2026-10-08: 起票
 - 2026-10-08: 反証レビューを反映 (検査が素通りする形: go list の失敗で 0 件の緑・空白の Doc・build tag で除外される package・GOWORK・`.Dir` の絶対パス)。反証できなかった主張: 76 package / doc の無い 5 個
+- 2026-10-08: codex-drive で着手。設計は軽量パス (契約は Claude 起草) + 敵対 1 本。指摘 8 件を反映した改訂版の契約で実装 (ユーザー承認済み)
+  - 母集合は `go list ./...` ではなく、非テストの .go を持つディレクトリ (tag だけの `gorules` 2 個が `./...` に出ないことを実測: 78 ディレクトリ / 76 package)
+  - `go list -find` で依存を解決しない (ネットワーク不要)。lint の CI ジョブに setup-go を足した
+  - 出力は表ではなく箇条書き (`|` のエスケープを要らなくする)。非 main は `Package <名前>` 必須、main は空でないこと
+- 実装の敵対レビュー (codex 2 本、素通りと CI): 採用 7 件 (GOTOOLCHAIN=local / vendor の除外 / .go の symlink / 否定を含む tag は未対応として失敗 /
+  手編集の同じ長さの書き換え / 2 module の fixture / tag 付き取り直しの失敗の再現)。記録のみ 1 件: actionlint 1.7.12 は setup-go の入力名を検証しない (CI の run で setup-go が効いたことを確かめる)
+- Claude の検閲で直した点: 一時ディレクトリを repo の中に作っていた (本体とテストの両方) → OS の一時領域へ。README の誤記 (「PACKAGES.md が検査する」)。doc の文体
+- 変異検証 (Claude、bin/mutate-verify-list): 11 本すべて想定どおり red (prefix の検査 / tag の取り直し / --check の比較 / nested module / go list の rc /
+  symlink / 否定 tag / tag 付きの rc / tag 付きの directory 照合 / 2 つ目の module の列挙 / 行数だけの比較)
