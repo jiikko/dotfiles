@@ -16,11 +16,13 @@ func TestLintReviewBench(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	dict, err := loadReadingsDict(env)
+	must(t, err)
 	var got []string
-	for _, is := range lintScript(s) {
+	for _, is := range lintScript(s, dict) {
 		got = append(got, fmt.Sprintf("%d:%s:%v", is.Line, is.Rule, is.Hint))
 	}
-	want := []string{"3:noda:false", "4:show-across-chapter:false", "5:metan-run:true", "6:kanji-number:true", "7:long:false", "9:pointing:false", "10:pronoun:false"}
+	want := []string{"0:chapters:true", "3:noda:false", "4:show-across-chapter:false", "5:metan-run:true", "6:kanji-number:true", "7:long:false", "9:pointing:false", "10:pronoun:false", "15:readings-missing:true"}
 	if !slices.Equal(got, want) {
 		t.Errorf("lint の結果が正解表と違う:\n got %v\nwant %v", got, want)
 	}
@@ -39,7 +41,10 @@ func TestLintRules(t *testing.T) {
 			t.Fatal(err)
 		}
 		var out []string
-		for _, is := range lintScript(s) {
+		for _, is := range lintScript(s, nil) {
+			if is.Rule == "chapters" { // チャプターの数の目安は TestLintMoreRules が見る (ここの小さな台本では毎回出る)
+				continue
+			}
 			out = append(out, fmt.Sprintf("%d:%s", is.Line, is.Rule))
 		}
 		return out
@@ -55,14 +60,14 @@ func TestLintRules(t *testing.T) {
 		lines []map[string]any
 		want  []string
 	}{
-		"60 字ちょうどは通す":   {[]map[string]any{m("metan", strings.Repeat("あ", 60))}, nil},
-		"61 字は警告":       {[]map[string]any{m("metan", strings.Repeat("あ", 61))}, []string{"0:long"}},
-		"なのだ 1 回は通す":    {[]map[string]any{m("zundamon", "そうなのだ。")}, nil},
-		"めたんの のだ は見ない":  {[]map[string]any{m("metan", "そうなのだ、なのだ")}, nil},
-		"めたんの ぼく":       {[]map[string]any{m("metan", "ぼくはね")}, []string{"0:pronoun"}},
-		"慣用語の漢数字は通す":    {[]map[string]any{m("metan", "十分に一緒で一般的で統一された一番の話よ")}, nil},
-		"助数詞つきの漢数字":     {[]map[string]any{m("metan", "三人と十二個")}, []string{"0:kanji-number", "0:kanji-number"}},
-		"上の方 は図を指していない": {[]map[string]any{m("zundamon", "ずっと上の方だね")}, nil},
+		"60 字ちょうどは通す":              {[]map[string]any{m("metan", strings.Repeat("あ", 60))}, nil},
+		"61 字は警告":                  {[]map[string]any{m("metan", strings.Repeat("あ", 61))}, []string{"0:long"}},
+		"なのだ 1 回は通す":               {[]map[string]any{m("zundamon", "そうなのだ。")}, nil},
+		"めたんの のだ は noda ではなく口調の目安": {[]map[string]any{m("metan", "そうなのだ、なのだ")}, []string{"0:tone"}},
+		"めたんの ぼく":                  {[]map[string]any{m("metan", "ぼくはね")}, []string{"0:pronoun"}},
+		"慣用語の漢数字は通す":               {[]map[string]any{m("metan", "十分に一緒で一般的で統一された一番の話よ")}, nil},
+		"助数詞つきの漢数字":                {[]map[string]any{m("metan", "三人と十二個")}, []string{"0:kanji-number", "0:kanji-number"}},
+		"上の方 は図を指していない":            {[]map[string]any{m("zundamon", "ずっと上の方だね")}, nil},
 		"チャプターで null を書けば通す": {[]map[string]any{
 			m("metan", "a", "show", map[string]any{"type": "keyword", "text": "語"}),
 			m("zundamon", "b", "chapter", "次", "show", nil)}, nil},
@@ -122,5 +127,102 @@ func TestLintCommandExitCode(t *testing.T) {
 	}
 	if out, err := run(l("metan", "a")); err != nil || !strings.Contains(out, "(警告なし)") {
 		t.Errorf("警告の無い台本: %v\n%s", err, out)
+	}
+}
+
+// issue 684 で足した規則 (警告: duplicate・readings-missing・show-sentence / 目安: sentences・tone・style-long・chapters・shows-per-chapter・chapter-question)
+func TestLintMoreRules(t *testing.T) {
+	runAll := func(dict map[string]string, raw map[string]any) []string {
+		env := testEnv(t)
+		s, err := loadScript(writeScript(t, raw), env)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, is := range lintScript(s, dict) {
+			out = append(out, fmt.Sprintf("%d:%s:%v", is.Line, is.Rule, is.Hint))
+		}
+		return out
+	}
+	// run はチャプターの数の目安を除く (小さな台本では毎回出る)。チャプターの規則を見るケースは runAll
+	run := func(dict map[string]string, raw map[string]any) []string {
+		var out []string
+		for _, x := range runAll(dict, raw) {
+			if !strings.Contains(x, ":chapters:") {
+				out = append(out, x)
+			}
+		}
+		return out
+	}
+	l := func(who, text string, kv ...any) map[string]any {
+		m := map[string]any{"who": who, "text": text}
+		for i := 0; i+1 < len(kv); i += 2 {
+			m[kv[i].(string)] = kv[i+1]
+		}
+		return m
+	}
+	lines := func(ls ...map[string]any) map[string]any {
+		var raw []any
+		for _, x := range ls {
+			raw = append(raw, x)
+		}
+		return map[string]any{"lines": raw}
+	}
+	kw := map[string]any{"type": "keyword", "text": "語"}
+	for name, tc := range map[string]struct {
+		dict map[string]string
+		raw  map[string]any
+		want []string
+	}{
+		"同じ話者の同じ字幕が続く":  {nil, lines(l("metan", "同じ"), l("metan", "同じ")), []string{"1:duplicate:false"}},
+		"別の話者の同じ相づちは通す": {nil, lines(l("metan", "うん。"), l("zundamon", "うん。")), nil},
+		// 敵対的レビュー: 部分一致で別の英単語の中に当てていた (STORAGE の中の RAG)。合流すると音声まで壊れる
+		"英字の語は語全体だけ":         {map[string]string{"RAG": "ラグ", "REST": "レスト"}, lines(l("metan", "STORAGEとRESTfulとRESTOREの話")), nil},
+		"記号だけの語は見ない":         {map[string]string{"〜": "から"}, lines(l("zundamon", "すごいのだ〜")), nil},
+		"辞書の語が readings に無い": {map[string]string{"SOLIDWORKS": "ソリッドワークス"}, lines(l("metan", "SOLIDWORKSの話")), []string{"0:readings-missing:true"}},
+		"辞書の語が readings にあれば通す": {map[string]string{"SOLIDWORKS": "ソリッドワークス"},
+			map[string]any{"readings": map[string]any{"SOLIDWORKS": "ソリッドワークス"}, "lines": []any{l("metan", "SOLIDWORKSの話")}}, nil},
+		"read のある行は見ない": {map[string]string{"SOLIDWORKS": "ソリッドワークス"}, lines(l("metan", "SOLIDWORKSの話", "read", "ソリッドワークスの話")), nil},
+		"3 文は目安":        {nil, lines(l("metan", "そう。違うの。本当よ。")), []string{"0:sentences:true"}},
+		"2 文は通す":        {nil, lines(l("metan", "そう。違うの。")), nil},
+		"ずんだもんの わ":      {nil, lines(l("zundamon", "知らなかったわ")), []string{"0:tone:true"}},
+		"長い行の声のスタイル":    {nil, lines(l("zundamon", "ここはとても長い説明の行なので普通の声で話すべきなのだ", "style_id", 76)), []string{"0:style-long:true"}},
+		"図解の補足が文":       {nil, lines(l("metan", "a", "show", map[string]any{"type": "keyword", "text": "語", "sub": "これは文です。"})), []string{"0:show-sentence:false"}},
+		"比較の項目が文": {nil, lines(l("metan", "a", "show", map[string]any{"type": "compare",
+			"left": map[string]any{"title": "左", "items": []any{"速い。"}}, "right": map[string]any{"title": "右", "items": []any{"遅い"}}})), []string{"0:show-sentence:false"}},
+		"1 チャプターの図解が 3 回": {nil, lines(
+			l("metan", "a", "chapter", "1", "show", kw), l("metan", "b", "show", kw), l("zundamon", "c", "show", kw)),
+			[]string{"0:shows-per-chapter:true"}},
+		"2 つ目のチャプターがずんだもんの質問でない": {nil, lines(l("metan", "a", "chapter", "1"), l("metan", "b", "chapter", "2")),
+			[]string{"1:chapter-question:true"}},
+		"2 つ目のチャプターがずんだもんでも質問でなければ目安": {nil, lines(l("metan", "a", "chapter", "1"), l("zundamon", "やっぱりそうなのだ！", "chapter", "2")),
+			[]string{"1:chapter-question:true"}},
+		"2 つ目のチャプターがずんだもんの質問なら通す": {nil, lines(l("metan", "a", "chapter", "1"), l("zundamon", "b？", "chapter", "2")),
+			nil},
+	} {
+		if got := run(tc.dict, tc.raw); !slices.Equal(got, tc.want) {
+			t.Errorf("%s: %v (want %v)", name, got, tc.want)
+		}
+	}
+	// チャプターの数: 4〜6 は通す。長い台本 (87 行超) は 7 個以上でも通す
+	ch := func(n, total int) map[string]any {
+		var raw []any
+		for i := 0; i < total; i++ {
+			x := l("zundamon", fmt.Sprintf("行%d？", i))
+			if i < n {
+				x["chapter"] = fmt.Sprint(i)
+			}
+			raw = append(raw, x)
+		}
+		return map[string]any{"lines": raw}
+	}
+	for _, tc := range []struct {
+		n, total int
+		hint     bool
+	}{{0, 10, true}, {4, 10, false}, {6, 10, false}, {7, 10, true}, {7, 90, false}, {3, 90, true}} {
+		got := runAll(nil, ch(tc.n, tc.total))
+		if has := slices.Contains(got, "0:chapters:true"); has != tc.hint {
+			t.Errorf("チャプター %d 個・%d 行: 目安=%v (want %v) %v", tc.n, tc.total, has, tc.hint, got)
+		}
 	}
 }

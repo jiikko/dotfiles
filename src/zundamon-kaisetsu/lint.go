@@ -1,7 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -14,6 +17,7 @@ import (
 // 検出しない形 (確認役が見る): 口調の語尾の取り違え・推論の断定・図解とセリフの対応・図を指す言い方のうち下の一覧に無いもの
 // (「これ」「ここ」「左の」「上の」は図以外を指すことが多く、単独では拾わない)・全角の数字 (１２個)・めたんの「僕」「ボク」
 // (「ボクシング」「公僕」で止まるので、ひらがなの「ぼく」だけを見る)。
+// 目安の誤検出として受ける形: ずんだもんの感嘆の「うわ！」「こわ」(口調)、図解の「！」「？」で終わる文 (show-sentence は「。」だけを見る)。
 // 漢数字 (目安) が取りこぼす形: 数の途中にかかる慣用語 (三十分・十一人で → 「十分」「一人で」として除かれる)・
 // 続けて並ぶ数の 2 つ目 (三人四人)。字句の近似の手直しを 2 周続けて破られたので、これ以上は直さない (issue 675 の敵対的レビュー)。
 // 警告は誤りでない行もありうる (引用で「ぼく」と言う等)。漢数字は「目安」(rc に効かない): 慣用語 (一段と・一人で・三日月 …) と
@@ -39,19 +43,73 @@ var (
 	// 図解を画面の位置や指示語で指す言い方 (図を名指しする形だけ。「左側の」は「左側の車線」のように図以外にも使うので外した)
 	// 「図」の直後が助詞・句読点・行末のときだけ当たる (「その図書館」「以上の図表」で止めない)
 	pointingRe = regexp.MustCompile(`(?:この|その|あの|上の|下の|左の|右の)図(?:[をはがでにのもと、。！？!?]|$)|図を見て|これを見て|ここを見て`)
+	// ずんだもんの文末の「〜わ」「〜のよ」(めたんの語尾)
+	zundamonFeminineEndRe = regexp.MustCompile(`(?:わ|のよ)[。！？!?]*$`)
+	sentenceSplitRe       = regexp.MustCompile(`[。！？!?]+`)
+	questionEndRe         = regexp.MustCompile(`[？?][」』）)]*$`)
 )
 
-// lintScript は台本の行を規則で見て、警告を行の順に返す。
-func lintScript(s *Script) []lintIssue {
+// チャプターの数の目安 (SKILL.md の「チャプターは 4〜6 個。尺が長い (8 分を超える程度) なら増やしてよい」)。
+// 行数で尺を見積もる (1 行あたり約 5.5 秒なので、8 分は約 87 行)
+const (
+	lintChaptersMin  = 4
+	lintChaptersMax  = 6
+	lintLongScript   = 87
+	lintShowsPerChap = 2
+	lintStyleLongMax = 20 // 声のスタイル (ノーマル以外) は 1 行の反応や一言にだけ使う。これより長い行は説明の行とみなす
+)
+
+// lintScript は台本の行を規則で見て、警告を行の順に返す。dict は skill の読み辞書 (readings.json。合流漏れを見る。nil なら見ない)。
+func lintScript(s *Script, dict map[string]string) []lintIssue {
 	var out []lintIssue
 	add := func(i int, rule, format string, a ...any) {
 		out = append(out, lintIssue{Line: i, Rule: rule, Msg: fmt.Sprintf(format, a...)})
 	}
+	hint := func(i int, rule, format string, a ...any) {
+		out = append(out, lintIssue{Line: i, Rule: rule, Msg: fmt.Sprintf(format, a...), Hint: true})
+	}
+	scriptReadings, _ := s.Raw["readings"].(map[string]any)
 	showActive := false // 図解が出ている間 (show が付いた行から、null で消すまで。"next" は段を進めるだけ)
 	metanRun, metanRunStart := 0, 0
+	var chapterStarts []int
 	for i, line := range s.Lines {
 		who := pyStr(line["who"])
 		text := pyStr(line["text"])
+		// 同じ話者の同じ字幕 (別の話者の「うん。」「うん。」は普通の会話)
+		if i > 0 && text == pyStr(s.Lines[i-1]["text"]) && who == pyStr(s.Lines[i-1]["who"]) {
+			add(i, "duplicate", "前の行と同じ話者・同じ字幕 (行番号で直したときの取り違えのことがある)")
+		}
+		// 目安: 辞書は部分一致で置き換えるので、合流すると別の語の中まで書き換わることがある (STORAGE の中の RAG)。止めずに知らせるだけにし、
+		// 英字の語は語全体が一致したときだけ、記号だけの語 (〜) は見ない。英字の 1 文字読みで困る分は kana --check が止める
+		if _, hasRead := line["read"]; !hasRead {
+			for _, w := range sortedKeys(dict) {
+				if _, ok := scriptReadings[w]; !ok && dictWordIn(text, w) {
+					hint(i, "readings-missing", "読み辞書の語「%s」が台本の readings に無い (手順 3-2 の辞書の合流を忘れていないか)", w)
+				}
+			}
+		}
+		if n := len(nonEmpty(sentenceSplitRe.Split(text, -1))); n >= 3 {
+			hint(i, "sentences", "1 セリフが %d 文 (1〜2 文まで。短い相づちも 1 文と数える)", n)
+		}
+		if who == "metan" && nodaRe.MatchString(text) {
+			hint(i, "tone", "めたんの文末に「のだ」(ずんだもんの語尾。引用なら無視してよい)")
+		}
+		if who == "zundamon" && zundamonFeminineEndRe.MatchString(text) {
+			hint(i, "tone", "ずんだもんの文末が「〜わ」「〜のよ」(めたんの語尾)")
+		}
+		if _, ok := line["style_id"]; ok && utf8.RuneCountInString(text) > lintStyleLongMax {
+			hint(i, "style-long", "声のスタイルを %d 字の行に付けている (ノーマル以外は 1 行の反応や一言にだけ使う)", utf8.RuneCountInString(text))
+		}
+		if sh, ok := line["show"].(map[string]any); ok {
+			for _, f := range showTexts(sh) {
+				if strings.HasSuffix(f, "。") {
+					add(i, "show-sentence", "図解の「%s」が文になっている (図解は語・短い句だけ。文はセリフで言う)", f)
+				}
+			}
+		}
+		if pyTruthy(line["chapter"]) {
+			chapterStarts = append(chapterStarts, i)
+		}
 		if n := utf8.RuneCountInString(text); n > lintCaptionMax {
 			add(i, "long", "字幕が %d 字 (%d 字まで。字幕 2 行に収まらない)", n, lintCaptionMax)
 		}
@@ -99,8 +157,95 @@ func lintScript(s *Script) []lintIssue {
 			metanRun = 0
 		}
 	}
+	// チャプター単位の目安
+	if n := len(chapterStarts); n < lintChaptersMin || (n > lintChaptersMax && len(s.Lines) < lintLongScript) {
+		at := 0
+		if n > 0 {
+			at = chapterStarts[0]
+		}
+		hint(at, "chapters", "チャプターが %d 個 (%d〜%d 個。%d 行を超える長い台本なら増やしてよい)", n, lintChaptersMin, lintChaptersMax, lintLongScript)
+	}
+	for k, c := range chapterStarts {
+		end := len(s.Lines)
+		if k+1 < len(chapterStarts) {
+			end = chapterStarts[k+1]
+		}
+		shows := 0
+		for _, l := range s.Lines[c:end] {
+			if _, ok := l["show"].(map[string]any); ok {
+				shows++
+			}
+		}
+		if shows > lintShowsPerChap {
+			hint(c, "shows-per-chapter", "このチャプターの図解が %d 回 (1〜2 回まで)", shows)
+		}
+		// 最初のチャプター (導入) は、めたんが話題を言って始める決まりなので見ない
+		if k > 0 && (pyStr(s.Lines[c]["who"]) != "zundamon" || !questionEndRe.MatchString(pyStr(s.Lines[c]["text"]))) {
+			hint(c, "chapter-question", "チャプターの最初の行がずんだもんの質問でない (質問で始めると区切りが伝わる)")
+		}
+	}
 	sort.SliceStable(out, func(a, b int) bool { return out[a].Line < out[b].Line })
 	return out
+}
+
+var (
+	asciiWordRe  = regexp.MustCompile(`^[A-Za-z0-9.+_-]+$`)
+	symbolOnlyRe = regexp.MustCompile(`^[\p{P}\p{S}]+$`)
+)
+
+// dictWordIn は辞書の語 w が字幕 text に現れるか。英字の語は前後が英数字でないときだけ (語の一部に当てない)、記号だけの語は見ない。
+func dictWordIn(text, w string) bool {
+	if symbolOnlyRe.MatchString(w) {
+		return false
+	}
+	if !asciiWordRe.MatchString(w) {
+		return strings.Contains(text, w)
+	}
+	return regexp.MustCompile(`(?:^|[^A-Za-z0-9])` + regexp.QuoteMeta(w) + `(?:[^A-Za-z0-9]|$)`).MatchString(text)
+}
+
+func nonEmpty(xs []string) []string {
+	var out []string
+	for _, x := range xs {
+		if strings.TrimSpace(x) != "" {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
+// showTexts は図解の中の文字 (重要語の補足・比較の項目) を返す (文になっていないかを見る用)。
+func showTexts(sh map[string]any) []string {
+	var out []string
+	if v, ok := sh["sub"].(string); ok {
+		out = append(out, v)
+	}
+	for _, side := range []string{"left", "right"} {
+		if m, ok := sh[side].(map[string]any); ok {
+			if items, ok := m["items"].([]any); ok {
+				for _, it := range items {
+					if v, ok := it.(string); ok {
+						out = append(out, v)
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
+// loadReadingsDict は skill の読み辞書 (readings.json)。読めなければ止める (黙って合流漏れを見なくなるのを防ぐ)。
+func loadReadingsDict(env *Env) (map[string]string, error) {
+	p := filepath.Join(env.SkillDir, "readings.json")
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return nil, fail("%s: 読めない (%v)", p, err)
+	}
+	var m map[string]string
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, fail("%s: {\"語\": \"読み\"} の形で書く (%v)", p, err)
+	}
+	return m, nil
 }
 
 // withoutIdioms は、行から数を表さない慣用語を取り除いた文 (取り除いた所は「・」にして、前後がつながらないようにする)。
@@ -117,8 +262,12 @@ func cmdLint(env *Env, scriptArg string) error {
 	if err != nil {
 		return err
 	}
+	dict, err := loadReadingsDict(env)
+	if err != nil {
+		return err
+	}
 	warned := 0
-	for _, is := range lintScript(s) {
+	for _, is := range lintScript(s, dict) {
 		kind := "警告"
 		if is.Hint {
 			kind = "目安"

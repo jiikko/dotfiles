@@ -4,7 +4,7 @@
 行番号は `lines` の添字 (0 始まり)。資料は `source.md` (試験用の架空の資料)、読みは `kana.tsv` (VOICEVOX 0.25.2 で
 `kana --script` を取ったもの。台本に `readings` は無い)。
 
-## lint が拾う欠陥 (7 個)
+## lint が拾う欠陥 (7 個。ほかに lint は 0 行目にチャプターの数 (3 個) の目安と、15 行目に読み辞書の合流漏れ (SOLIDWORKS) の目安を出す)
 
 | 行 | 欠陥 | lint の規則 |
 |---|---|---|
@@ -16,7 +16,7 @@
 | 9 | 「この図を見て」で図解を指す | `pointing` (警告) |
 | 10 | ずんだもんの一人称が「わたくし」 | `pronoun` (警告) |
 
-- lint は上の 7 個をすべて出し、ほかは出さない (`src/zundamon-kaisetsu/lint_test.go` が固定する)
+- lint は上の 7 個と、見出しに書いた 2 個を出し、ほかは出さない (`src/zundamon-kaisetsu/lint_test.go` が固定する)
 
 ## 確認役 (手順 3-3) が拾う欠陥 (5 個。lint は出さない)
 
