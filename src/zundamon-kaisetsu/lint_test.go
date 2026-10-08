@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -224,5 +226,114 @@ func TestLintMoreRules(t *testing.T) {
 		if has := slices.Contains(got, "0:chapters:true"); has != tc.hint {
 			t.Errorf("チャプター %d 個・%d 行: 目安=%v (want %v) %v", tc.n, tc.total, has, tc.hint, got)
 		}
+	}
+}
+
+// 独自調査のモード (source_mode: public) で、元の資料の存在が分かる語を出す (issue 686)
+func TestLintSourceLeak(t *testing.T) {
+	leaks := func(t *testing.T, name string, raw map[string]any) ([]string, error) {
+		t.Helper()
+		env := testEnv(t)
+		dir := t.TempDir()
+		b, _ := json.Marshal(raw)
+		path := filepath.Join(dir, name)
+		must(t, os.WriteFile(path, b, 0o644))
+		s, err := loadScript(path, env)
+		if err != nil {
+			return nil, err
+		}
+		var out []string
+		for _, is := range lintScript(s, nil) {
+			if is.Rule == "source-leak" {
+				out = append(out, fmt.Sprintf("%d:%v:%s", is.Line, is.Hint, is.Msg))
+			}
+		}
+		return out, nil
+	}
+	line := func(extra map[string]any) []any {
+		l := map[string]any{"who": "metan", "text": "わたくしが調べたところでは"}
+		for k, v := range extra {
+			l[k] = v
+		}
+		return []any{l}
+	}
+	kw := func(sh map[string]any) map[string]any {
+		return map[string]any{"title": "x", "lines": line(map[string]any{"show": sh})}
+	}
+	// 欄ごと・語ごとに 1 件。want はメッセージの頭 (「行 欄に「語」」)
+	cases := []struct {
+		name, file string
+		raw        map[string]any
+		want       string
+	}{
+		{"字幕の資料", "", map[string]any{"title": "x", "lines": line(map[string]any{"text": "資料によると"})}, "0 字幕に「資料」"},
+		{"レポート", "", map[string]any{"title": "x", "lines": line(map[string]any{"text": "レポートでは"})}, "0 字幕に「レポート」"},
+		{"回答", "", map[string]any{"title": "x", "lines": line(map[string]any{"text": "回答率は高いの"})}, "0 字幕に「回答」"},
+		{"文書", "", map[string]any{"title": "x", "lines": line(map[string]any{"text": "この文書では"})}, "0 字幕に「文書」"},
+		{"記事", "", map[string]any{"title": "x", "lines": line(map[string]any{"text": "新聞記事で"})}, "0 字幕に「記事」"},
+		{"ドキュメント", "", map[string]any{"title": "x", "lines": line(map[string]any{"text": "ドキュメントに"})}, "0 字幕に「ドキュメント」"},
+		{"AI の分析", "", map[string]any{"title": "x", "lines": line(map[string]any{"text": "AI の分析では"})}, "0 字幕に「AI の分析」"},
+		{"全角と全角空白", "", map[string]any{"title": "x", "lines": line(map[string]any{"text": "ＡＩ　の分析では"})}, "0 字幕に「ＡＩ　の分析」"},
+		{"AI分析", "", map[string]any{"title": "x", "lines": line(map[string]any{"text": "AI分析では"})}, "0 字幕に「AI分析」"},
+		{"AIの回答", "", map[string]any{"title": "x", "lines": line(map[string]any{"text": "AIの回答では"})}, "0 字幕に「AIの回答」"},
+		{"同じ語は 1 回", "", map[string]any{"title": "x", "lines": line(map[string]any{"text": "資料と資料とレポート"})}, "0 字幕に「資料」「レポート」("},
+		{"title", "", map[string]any{"title": "レポートの解説", "lines": line(nil)}, "-1 タイトルに「レポート」"},
+		{"title を省いたらファイル名", "レポート解説.json", map[string]any{"lines": line(nil)}, "-1 タイトルに「レポート」"},
+		{"description", "", map[string]any{"title": "x", "description": "資料の要約", "lines": line(nil)}, "-1 descriptionに「資料」"},
+		{"credits", "", map[string]any{"title": "x", "credits": []any{"出典: 白書レポート"}, "lines": line(nil)}, "-1 creditsに「レポート」"},
+		{"map の credits", "", map[string]any{"title": "x", "credits": map[string]any{"資料提供": 1}, "lines": line(nil)}, "-1 creditsに「資料」"},
+		{"図解 mermaid の改行を含む要素", "", kw(map[string]any{"type": "mermaid", "code": []any{"%% 図\nflowchart LR\nA[資料] --> B"}, "alt": "a"}), "0 図解の show.codeに「資料」"},
+		{"文字列の credits", "", map[string]any{"title": "x", "credits": "資料提供", "lines": line(nil)}, "-1 creditsに「資料」"},
+		{"チャプター名", "", map[string]any{"title": "x", "lines": line(map[string]any{"chapter": "資料の要点"})}, "0 チャプター名に「資料」"},
+		{"読み上げ (read)", "", map[string]any{"title": "x", "lines": line(map[string]any{"read": "しりょうでは"})}, "0 読み上げに「しりょう」"},
+		{"読み上げ (readings)", "", map[string]any{"title": "x", "readings": map[string]any{"調べた": "資料で見た"}, "lines": line(nil)}, "0 読み上げに「資料」"},
+		{"読み上げは字幕で出した語を除く", "", map[string]any{"title": "x", "readings": map[string]any{"調べ": "しらべ"}, "lines": line(map[string]any{"text": "資料を調べた"})}, "0 字幕に「資料」"},
+		{"図解 keyword", "", kw(map[string]any{"type": "keyword", "text": "資料の結論"}), "0 図解の show.textに「資料」"},
+		{"図解 compare の見出し", "", kw(map[string]any{"type": "compare",
+			"left": map[string]any{"title": "資料A", "items": []any{"a"}}, "right": map[string]any{"title": "B", "items": []any{"b"}}}), "0 図解の show.left.titleに「資料」"},
+		{"図解 code の %% の行は見る", "", kw(map[string]any{"type": "code", "lang": "matlab", "lines": []any{"%% 資料より", "x = 1"}}), "0 図解の show.linesに「資料」"},
+		{"図解 mermaid のラベル", "", kw(map[string]any{"type": "mermaid", "code": []any{"flowchart LR", "%% レポートより", "A[資料] --> B"}, "alt": "a"}), "0 図解の show.codeに「資料」"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.raw["source_mode"] = "public"
+			file := tc.file
+			if file == "" {
+				file = "x.json"
+			}
+			got, err := leaks(t, file, tc.raw)
+			must(t, err)
+			if len(got) != 1 || !strings.HasPrefix(strings.Replace(got[0], ":true:", " ", 1), tc.want) {
+				t.Errorf("got %q, want 1 件の目安 %q", got, tc.want)
+			}
+		})
+	}
+	// 出さないもの: 回答者・画像のパスと alt・資料を明かすモード
+	quiet := []map[string]any{
+		{"source_mode": "public", "title": "x", "lines": line(map[string]any{"text": "アンケートの回答者は多いの"})},
+		{"source_mode": "public", "title": "x", "lines": line(map[string]any{"show": map[string]any{"type": "mermaid", "code": []any{"flowchart LR", "A --> B"}, "alt": "資料の流れ"}})},
+		{"source_mode": "internal", "title": "資料", "lines": line(map[string]any{"text": "資料によると"})},
+		{"title": "資料", "lines": line(map[string]any{"text": "資料によると"})},
+	}
+	for _, raw := range quiet {
+		if got, err := leaks(t, "x.json", raw); err != nil || len(got) != 0 {
+			t.Errorf("出さないはずの台本で出した: %q %v (%v)", got, err, raw)
+		}
+	}
+	if got := showVisibleStrings(map[string]any{"type": "image", "src": "資料/fig.png", "alt": "資料"}, "show", false); len(got) != 0 {
+		t.Errorf("画像のパスと alt を画面に出る文字に数えた: %v", got)
+	}
+	if _, err := leaks(t, "x.json", map[string]any{"source_mode": "open", "lines": line(nil)}); err == nil || !strings.Contains(err.Error(), "source_mode") {
+		t.Errorf("知らない source_mode を受け入れた: %v", err)
+	}
+	// 入口: 目安なので rc=0 (公開された文献を名前で引く行と字面で区別できない。lint.go の sourceLeakRe)
+	env := testEnv(t)
+	out := &strings.Builder{}
+	env.Stdout = out
+	if err := dispatch([]string{"lint", writeScript(t, map[string]any{"source_mode": "public", "title": "x", "lines": line(map[string]any{"text": "資料によると"})})}, env); err != nil {
+		t.Errorf("目安だけなのに rc=1: %v", err)
+	}
+	if !strings.Contains(out.String(), "source-leak") {
+		t.Errorf("入口の出力に source-leak が無い: %q", out.String())
 	}
 }

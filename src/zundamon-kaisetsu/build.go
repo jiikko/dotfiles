@@ -525,10 +525,7 @@ func assemble(s *Script, env *Env) (*PlayerData, []byte, error) {
 	for _, c := range pyIter(creditsRaw) {
 		add(pyStr(c))
 	}
-	title := pyStem(filepath.Base(s.Path))
-	if v, ok := s.Raw["title"]; ok {
-		title = pyStr(v)
-	}
+	title := displayTitle(s)
 	cast := map[string]castData{}
 	for _, def := range castOrder {
 		c := castData{Name: def.Name, Color: def.Color, Side: def.Side, Mirror: def.Mirror, Images: fs.images[def.Key]}

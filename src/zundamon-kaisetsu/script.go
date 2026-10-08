@@ -128,6 +128,10 @@ func loadScript(path string, env *Env) (*Script, error) {
 			return nil, fail("%s: date は空でない文字列で書く (実際: %s)", path, pyRepr(d))
 		}
 	}
+	// 資料の語り方のモード (SKILL.md の「資料の語り方」)。プレイヤーのデータには載せない (見た目は変わらない。lint が見る)
+	if m, ok := raw["source_mode"]; ok && m != "public" && m != "internal" {
+		return nil, fail(`%s: source_mode は "public" (独自調査。不特定多数に公開) か "internal" (資料を明かす。社内向け。省略時) (実際: %s)`, path, pyRepr(m))
+	}
 	if ov, ok := raw["overlays"]; ok {
 		if _, err := parseOverlays(ov); err != nil {
 			return nil, fail("%s: %v", path, err)
@@ -439,6 +443,14 @@ func workDir(scriptPath string) string {
 func cachePaths(wd string, p Params) (wav, query string) {
 	k := cacheKey(p)
 	return filepath.Join(wd, k+".wav"), filepath.Join(wd, k+".query.json")
+}
+
+// displayTitle は舞台の左上と HTML の見出しに出るタイトル (title を省くと台本のファイル名)。
+func displayTitle(s *Script) string {
+	if v, ok := s.Raw["title"]; ok {
+		return pyStr(v)
+	}
+	return pyStem(filepath.Base(s.Path))
 }
 
 // pyStem は Python 3.14 の PurePath.stem (最後の . より前。ただしそれが . だけか空なら名前全体)。

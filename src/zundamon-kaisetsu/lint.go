@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -184,7 +185,112 @@ func lintScript(s *Script, dict map[string]string) []lintIssue {
 			hint(c, "chapter-question", "チャプターの最初の行がずんだもんの質問でない (質問で始めると区切りが伝わる)")
 		}
 	}
+	out = append(out, sourceLeaks(s)...)
 	sort.SliceStable(out, func(a, b int) bool { return out[a].Line < out[b].Line })
+	return out
+}
+
+var (
+	// 独自調査のモードで、元の資料の存在が分かる語 (issue 686)。作者のうっかりを見つけるためのもので、言い換え (「元のまとめ」等) は検出しない。
+	// 🚨 全部を目安 (rc に効かない) にしている: 公開された文献を名前で引く行 (「経産省の DX レポートでは」「総務省が公開している資料では」)
+	// は SKILL.md が求める言い方で、字面では元の資料の漏れと区別できない (実測: 公開文献を引いた台本で、警告にした「レポート」2 件が
+	// どちらも正当な引用だった)。漏れかどうかは手順 3-3 の確認役がこの一覧を見て決める。行ごとに抑止できる口ができたら警告へ戻せる
+	sourceLeakRe = regexp.MustCompile(`資料|レポート|回答|文書|記事|ドキュメント|しりょう|れぽーと|[AＡ][IＩ][\s　]*の?(分析|回答)`)
+	// 普通に使う語は先に取り除いてから見る (「アンケートの回答者」は資料の存在を言っていない)
+	sourceLeakAllowed = []string{"回答者"}
+)
+
+// sourceLeaks は、source_mode が "public" (独自調査) の台本で、画面・概要欄・音声に出る文字に元の資料の存在が分かる語があれば目安を出す。
+// 台本全体の欄 (タイトル・概要・クレジット) は行番号 -1 で出す。画像の中身・alt (画面に出ない)・mermaid のノード ID は見ない。
+func sourceLeaks(s *Script) []lintIssue {
+	if s.Raw["source_mode"] != "public" {
+		return nil
+	}
+	var out []lintIssue
+	find := func(text string) []string {
+		for _, a := range sourceLeakAllowed {
+			text = strings.ReplaceAll(text, a, "・")
+		}
+		return uniq(sourceLeakRe.FindAllString(text, -1))
+	}
+	report := func(i int, where string, ms []string) {
+		if len(ms) > 0 {
+			out = append(out, lintIssue{Line: i, Rule: "source-leak", Hint: true,
+				Msg: where + "に「" + strings.Join(ms, "」「") + "」(独自調査のモードでは元の資料の存在を出さない。公開された文献を名前で引いているならそのままでよい。SKILL.md の「資料の語り方」)"})
+		}
+	}
+	report(-1, "タイトル", find(displayTitle(s)))
+	report(-1, "description", find(pyStr(lineGet(s.Raw, "description", ""))))
+	if c, ok := s.Raw["credits"].(string); ok { // build は 1 文字ずつのクレジットにするが、画面には続けて並ぶので全体で見る
+		report(-1, "credits", find(c))
+	} else if c, ok := s.Raw["credits"]; ok {
+		for _, v := range pyIter(c) { // build と同じ回し方 (リストは要素、map はキー)
+			report(-1, "credits", find(pyStr(v)))
+		}
+	}
+	for i, line := range s.Lines {
+		text := pyStr(lineGet(line, "text", ""))
+		inText := find(text)
+		report(i, "字幕", inText)
+		// 読み上げは、字幕で出した語を除いて出す (同じ語を 2 回出さない)
+		var spoken []string
+		for _, m := range find(spokenText(s, line)) {
+			if !slices.Contains(inText, m) {
+				spoken = append(spoken, m)
+			}
+		}
+		report(i, "読み上げ", spoken)
+		if c, ok := line["chapter"]; ok {
+			report(i, "チャプター名", find(pyStr(c)))
+		}
+		if sh, ok := line["show"].(map[string]any); ok {
+			for _, f := range showVisibleStrings(sh, "show", sh["type"] == "mermaid") {
+				report(i, "図解の "+f.key, find(f.text))
+			}
+		}
+	}
+	return out
+}
+
+type keyedText struct{ key, text string }
+
+// showVisibleStrings は図解のうち画面に出る文字を、欄の名前 (show.left.title 等) つきで返す。画像のパスと alt は画面に出ないので除く。
+// mermaid の code はラベルとして描かれるが、%% のコメント行は描かれないので除く (コードの図解の %% の行は画面に出るので見る)。
+// 種類ごとの欄を列挙せずに全部の文字列を辿るのは、図解の種類や欄が増えても見落とさないため
+// (lint の showTexts (文になりうる欄だけ) と source_check の showAllTexts (資料と突き合わせる語) とは見る範囲が違う)。
+func showVisibleStrings(v any, key string, mermaid bool) []keyedText {
+	var out []keyedText
+	switch x := v.(type) {
+	case string:
+		for _, l := range strings.Split(x, "\n") { // mermaid の code は 1 つの要素に改行を含められる (行ごとに見る)
+			if !mermaid || !strings.HasPrefix(strings.TrimSpace(l), "%%") {
+				out = append(out, keyedText{key, l})
+			}
+		}
+	case []any:
+		for _, e := range x {
+			out = append(out, showVisibleStrings(e, key, mermaid)...)
+		}
+	case map[string]any:
+		for _, k := range sortedKeys(x) {
+			if k == "type" || k == "src" || k == "alt" {
+				continue
+			}
+			out = append(out, showVisibleStrings(x[k], key+"."+k, mermaid)...)
+		}
+	}
+	return out
+}
+
+func uniq(xs []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, x := range xs {
+		if !seen[x] {
+			seen[x] = true
+			out = append(out, x)
+		}
+	}
 	return out
 }
 
