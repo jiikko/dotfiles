@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/toast"
 
+	"subproc"
 	"treefiler/filer"
 )
 
@@ -27,6 +29,9 @@ const frameInterval = 16 * time.Millisecond
 const busyInterval = 80 * time.Millisecond
 
 type tickMsg struct{}
+
+// execDoneMsg は ! / s で起こしたプロセスから戻った合図。
+type execDoneMsg struct{}
 
 // changedMsg はライブ更新の合図 (ok=false はチャネルが閉じた = もう待たない)。
 type changedMsg struct{ ok bool }
@@ -54,14 +59,26 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.w, a.h = msg.Width, msg.Height
 		a.f.Resize(a.w, a.h)
 	case tea.KeyPressMsg:
-		if a.f.HandleInput(msg.String(), msg.Text) == filer.Quit {
+		switch a.f.HandleInput(msg.String(), msg.Text) {
+		case filer.Quit:
 			return a, tea.Quit
+		case filer.Exec:
+			if r, ok := a.f.TakeExec(); ok && len(r.Argv) > 0 {
+				// 前景で端末を明け渡す。ctx は持たない (ユーザーのシェルが終わるまで待つのが仕様)。パイプは張らない
+				cmd := subproc.CommandContext(context.Background(), r.Argv[0], r.Argv[1:]...)
+				cmd.Dir = r.Dir
+				cmd.Env = append(os.Environ(), r.Env...)
+				cmds = append(cmds, tea.ExecProcess(cmd, func(error) tea.Msg { return execDoneMsg{} }))
+			}
+		case filer.None:
 		}
 		for _, n := range a.f.TakeNotices() {
 			a.toast.Show(n.Text, n.OK)
 		}
 	case toast.Msg:
 		a.toast.StartLeaving(msg)
+	case execDoneMsg:
+		a.f.Refresh() // シェルで作った・消したファイルを出す
 	case changedMsg:
 		if msg.ok {
 			cmds = append(cmds, waitChange(a.f.Changed())) // 取り込みは下の Advance。また次の合図を待つ

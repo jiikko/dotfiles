@@ -479,3 +479,6 @@ func TestRefreshPicksUpChangesAndKeepsState(t *testing.T) {
 		t.Fatal("読み直しで開閉の状態が失われた")
 	}
 }
+
+func writeFile(p string) error  { return os.WriteFile(p, []byte("x\n"), 0o644) }
+func removeFile(p string) error { return os.Remove(p) }

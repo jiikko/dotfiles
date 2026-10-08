@@ -202,8 +202,8 @@ func TestFrameAllocBudget(t *testing.T) {
 		{"doctor-docker", budgetDoctorDockerModel, 489, 57900},
 		// treefiler (F。issue 662)。格子を毎フレーム作り直していたときは 330KB/frame だった。使い回して 154 / 43167 B (-race)。
 		// 最下行に検索とキー一覧の案内 (/ find  ? keys) を足して 156 / 45601 B。案内を戻すと 43556 B に下がるのを実測した
-		// (増えたのは描く文字列そのもので、確保の無駄ではない)
-		{"filer", budgetFilerModel, 158, 45900},
+		// (増えたのは描く文字列そのもので、確保の無駄ではない)。! cmd / s shell の案内を足して 45861 B
+		{"filer", budgetFilerModel, 158, 46200},
 	}
 	for _, c := range cases {
 		m := c.build(t)

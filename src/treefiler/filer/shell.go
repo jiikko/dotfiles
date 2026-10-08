@@ -1,0 +1,115 @@
+package filer
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
+)
+
+// shell.go は `!` (選んだフォルダで 1 行のコマンドを実行) と `s` (そこでシェルを開く)。spec §5.7。
+// 端末を明け渡すのは呼び出し側 (bubbletea の ExecProcess)。filer は何をどこで起こすかを ExecRequest で返すだけ
+// (filer は os/exec を import しない。exec_boundary_test)。
+
+// ExecRequest は呼び出し側に起こしてほしいプロセス。終わったら Refresh を呼ぶこと。
+type ExecRequest struct {
+	Dir  string   // 作業ディレクトリ (カーソルがフォルダならそれ、ファイルなら親)
+	Argv []string // 起こすコマンド
+	Env  []string // 足す環境変数 (f=選んだパス)
+}
+
+// waitIfQuick は `!` のコマンドを包む sh のスクリプト。3 秒未満で終わったら、出力を読めるようキーを待ってから戻る (spec §5.7)。
+// $1 = ユーザーのシェル、$2 = コマンド行。
+const waitIfQuick = `start=$(date +%s); "$1" -ic "$2"; rc=$?; end=$(date +%s)
+if [ $((end - start)) -lt 3 ]; then
+  if [ "$rc" -eq 0 ]; then printf '\n[done] 何かキーを押すと treefiler に戻ります'; else printf '\n[exit %d] 何かキーを押すと treefiler に戻ります' "$rc"; fi
+  stty -icanon -echo 2>/dev/null; dd bs=1 count=1 >/dev/null 2>&1; stty icanon echo 2>/dev/null
+fi
+:` // 終了コードは最後の stty に左右させない (端末が無いと stty が失敗する)
+
+type promptState struct {
+	active  bool
+	line    lineedit.Line
+	history []string
+	hist    int // 履歴を辿っている位置 (len(history) = 今の入力)
+}
+
+func userShell() string {
+	if s := os.Getenv("SHELL"); s != "" {
+		return s
+	}
+	return "/bin/zsh"
+}
+
+// workDir はシェルを起こすフォルダ (カーソルがフォルダならそれ、ファイルなら親)。
+func (m *Model) workDir() string {
+	if m.cur.dir {
+		return m.cur.path()
+	}
+	return filepath.Dir(m.cur.path())
+}
+
+func (m *Model) execEnv() []string { return []string{"f=" + m.cur.path()} }
+
+// requestShell は `s` (そのフォルダで対話のシェル)。
+func (m *Model) requestShell() {
+	m.exec = &ExecRequest{Dir: m.workDir(), Argv: []string{userShell(), "-i"}, Env: m.execEnv()}
+}
+
+// promptKey は `!` の入力中のキー。lineedit の編集キーを先に渡し、Enter / Esc / 履歴だけを自分で捌く。
+func (m *Model) promptKey(key, text string) {
+	p := &m.prompt
+	switch key {
+	case "enter":
+		cmd := p.line.String()
+		p.active = false
+		if strings.TrimSpace(cmd) == "" { // 空白だけでは走らせない
+			return
+		}
+		if n := len(p.history); n == 0 || p.history[n-1] != cmd {
+			p.history = append(p.history, cmd)
+		}
+		m.exec = &ExecRequest{Dir: m.workDir(), Argv: []string{"/bin/sh", "-c", waitIfQuick, "treefiler", userShell(), cmd}, Env: m.execEnv()}
+	case "esc", "ctrl+c":
+		p.active = false
+	case "up":
+		if p.hist > 0 {
+			p.hist--
+			p.line.Reset()
+			p.line.Insert(p.history[p.hist])
+		}
+	case "down":
+		if p.hist < len(p.history) {
+			p.hist++
+			p.line.Reset()
+			if p.hist < len(p.history) {
+				p.line.Insert(p.history[p.hist])
+			}
+		}
+	case "backspace":
+		if p.line.Empty() {
+			p.active = false // 空欄の backspace で閉じる
+			return
+		}
+		p.line.Key(key, text)
+	default:
+		p.line.Key(key, text)
+	}
+}
+
+func (m *Model) startPrompt() {
+	m.prompt.active = true
+	m.prompt.line.Reset()
+	m.prompt.hist = len(m.prompt.history)
+}
+
+// TakeExec は起こしてほしいプロセスを取り出す (無ければ ok=false)。
+func (m *Model) TakeExec() (ExecRequest, bool) {
+	if m.exec == nil {
+		return ExecRequest{}, false
+	}
+	r := *m.exec
+	m.exec = nil
+	return r, true
+}

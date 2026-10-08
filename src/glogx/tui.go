@@ -1357,6 +1357,18 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.maybeTick()
 	case editorClosedMsg:
+		// treefiler の ! / s から戻ったとき: 読み直す (シェルで作った・消したファイルを出す)。エディタ向けの文言
+		// (「エディタが異常終了しました」) は出さない: シェルは最後のコマンドの終了コードで抜けるのが普通
+		if m.filerV.execPending {
+			m.filerV.execPending = false
+			if m.filerV.visible() && m.filerV.f != nil {
+				m.filerV.f.Refresh()
+			}
+			if msg.err != nil && !errors.As(msg.err, new(*exec.ExitError)) {
+				m.showWarning("シェルを起動できませんでした: " + firstLine(msg.err.Error()))
+			}
+			return m, m.maybeTick()
+		}
 		// エディタを閉じて復帰。job ログは stdin 渡しなのでファイルは残らず、バッファも破棄済み。
 		// 🚨 issues viewer の e (別名 v) だけは実ファイルを編集可能で開く (メモを足せるように
 		// readonly にしていない) ので、復帰の境界で取り直す。取り直さないと編集結果 (H1・front matter の
@@ -2522,6 +2534,9 @@ func (m *browseModel) swallowKeyRepeat(key string) bool {
 	// 2 字目が飲まれていた。y/N の確認 (n の目印) は入力欄ではないので抑止を残す (n のリピートが確認を取り消すため)
 	if m.activeFullScreen() == fullScreenIssues && m.issuesOv.typingInput() {
 		return false
+	}
+	if m.activeFullScreen() == fullScreenFiler && m.filerV.ownsKeys() {
+		return false // treefiler の検索・! の入力中も同じ (ss / dd の 2 字目が飲まれていた。レビューの指摘 2026-10-09)
 	}
 	if !repeatGuardedKeys[key] {
 		m.lastKey, m.lastKeyAt = "", time.Time{} // 別のキーが来たら押しっぱなしは切れている

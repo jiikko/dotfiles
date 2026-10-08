@@ -3,6 +3,7 @@ package filer
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
 )
@@ -26,47 +27,78 @@ const (
 	rankNone
 )
 
-// fuzzy は name の中の query の一致の段と、一致した位置 (バイトの範囲) を返す。query に大文字があれば大文字小文字を区別する。
+// fuzzy は name の中の query の一致の段と、一致した位置 (元の name のバイトの範囲) を返す。query に大文字があれば
+// 大文字小文字を区別する。
+// 🚨 比べるのは文字 (rune) 単位で、位置は元の name のバイトで返す。strings.ToLower した文字列の上で数えると、
+// 小文字にすると長さが変わる文字 (Ⱥ は 2 → 3 バイト) で位置がずれ、元の name を切ると panic した (レビューで再現 2026-10-09)。
 func fuzzy(name, query string) (int, [][2]int) {
 	if query == "" {
 		return rankNone, nil
 	}
-	n, q := name, query
-	if strings.ToLower(query) == query {
-		n = strings.ToLower(name)
+	fold := strings.ToLower(query) == query
+	type ch struct {
+		r          rune
+		start, end int
 	}
-	if strings.HasPrefix(n, q) {
-		return rankPrefix, [][2]int{{0, len(q)}}
-	}
-	for i := strings.Index(n, q); i >= 0; {
-		if isWordStart(name, i) {
-			return rankWordStart, [][2]int{{i, i + len(q)}}
+	n := make([]ch, 0, len(name))
+	for i, r := range name {
+		if fold {
+			r = unicode.ToLower(r)
 		}
-		j := strings.Index(n[i+1:], q)
-		if j < 0 {
-			break
-		}
-		i += 1 + j
+		n = append(n, ch{r: r, start: i, end: i + utf8.RuneLen(r)})
 	}
-	if i := strings.Index(n, q); i >= 0 {
-		return rankSubstring, [][2]int{{i, i + len(q)}}
+	for k := range n { // end は元の name の次の文字の頭 (小文字にした rune の長さではなく)
+		if k+1 < len(n) {
+			n[k].end = n[k+1].start
+		} else {
+			n[k].end = len(name)
+		}
+	}
+	q := []rune(query)
+	at := func(i int) bool { // n[i:] が q で始まるか
+		if i+len(q) > len(n) {
+			return false
+		}
+		for k, r := range q {
+			if n[i+k].r != r {
+				return false
+			}
+		}
+		return true
+	}
+	span := func(i int) [][2]int { return [][2]int{{n[i].start, n[i+len(q)-1].end}} }
+	if at(0) {
+		return rankPrefix, span(0)
+	}
+	first := -1
+	for i := 1; i < len(n); i++ {
+		if !at(i) {
+			continue
+		}
+		if first < 0 {
+			first = i
+		}
+		if isWordStart(name, n[i].start) {
+			return rankWordStart, span(i)
+		}
+	}
+	if first >= 0 {
+		return rankSubstring, span(first)
 	}
 	// 文字が順に含まれる (連続した一致は 1 つの範囲にまとめる)
 	var spans [][2]int
 	qi := 0
-	qr := []rune(q)
-	for bi, r := range n {
-		if qi < len(qr) && r == qr[qi] {
-			end := bi + len(string(r))
-			if len(spans) > 0 && spans[len(spans)-1][1] == bi {
-				spans[len(spans)-1][1] = end
+	for _, c := range n {
+		if qi < len(q) && c.r == q[qi] {
+			if len(spans) > 0 && spans[len(spans)-1][1] == c.start {
+				spans[len(spans)-1][1] = c.end
 			} else {
-				spans = append(spans, [2]int{bi, end})
+				spans = append(spans, [2]int{c.start, c.end})
 			}
 			qi++
 		}
 	}
-	if qi == len(qr) {
+	if qi == len(q) {
 		return rankLoose, spans
 	}
 	return rankNone, nil
@@ -77,21 +109,12 @@ func isWordStart(name string, i int) bool {
 	if i == 0 {
 		return true
 	}
-	prev, _ := lastRune(name[:i])
-	cur, _ := decodeRune(name[i:])
+	prev, _ := utf8.DecodeLastRuneInString(name[:i])
+	cur, _ := utf8.DecodeRuneInString(name[i:])
 	if !unicode.IsLetter(prev) && !unicode.IsDigit(prev) {
 		return true
 	}
 	return unicode.IsLower(prev) && unicode.IsUpper(cur)
-}
-
-func lastRune(s string) (rune, int) {
-	for i := len(s) - 1; i >= 0; i-- {
-		if r, size := decodeRune(s[i:]); size == len(s)-i {
-			return r, size
-		}
-	}
-	return 0, 0
 }
 
 // column はカーソルの列 (同じ深さの見えている項目を上から)。
@@ -151,7 +174,9 @@ func (m *Model) searchKey(key, text string) {
 		return
 	case key == "esc" || key == "ctrl+c":
 		s.active = false
-		m.setCur(s.origin)
+		if m.inTree(s.origin) { // 検索中のライブ更新で消えていたら、今の位置に留まる
+			m.setCur(s.origin)
+		}
 		return
 	case key == "tab" || key == "down" || key == "ctrl+n":
 		m.stepMatch(1)
@@ -181,6 +206,14 @@ func (m *Model) searchKey(key, text string) {
 
 func (m *Model) stepMatch(d int) {
 	s := &m.search
+	live := s.matches[:0]
+	for _, n := range s.matches {
+		if m.inTree(n) { // 検索中のライブ更新で消えた一致は外す (木の外へカーソルを出さない)
+			live = append(live, n)
+		}
+	}
+	s.matches = live
+	s.at = min(s.at, max(len(live)-1, 0))
 	if len(s.matches) == 0 {
 		return
 	}

@@ -105,3 +105,45 @@ func TestExplodeOpensDescendantsButNotHidden(t *testing.T) {
 		t.Fatalf("explode の結果の知らせが無い: %+v", ns)
 	}
 }
+
+// 小文字にすると長さが変わる文字を含む名前でも落ちず、一致の範囲は元の名前のバイトを指す (レビューで panic を再現 2026-10-09)。
+func TestFuzzyKeepsOriginalOffsets(t *testing.T) {
+	r, spans := fuzzy("Ⱥab", "ab")
+	if r == rankNone || len(spans) != 1 || "Ⱥab"[spans[0][0]:spans[0][1]] != "ab" {
+		t.Fatalf("fuzzy(Ⱥab, ab) = %d %v", r, spans)
+	}
+	m := newTest(t)
+	p := m.root.path() + "/Ⱥab.txt"
+	if err := writeFile(p); err != nil {
+		t.Fatal(err)
+	}
+	m.root.reload()
+	m.HandleKey("/")
+	typeText(m, "ab")
+	m.draw() // 一致を色付けする描画で落ちない
+}
+
+// 検索中に元の項目が消えても、Esc でカーソルが木の外へ出ない。
+func TestSearchOriginRemovedStaysInTree(t *testing.T) {
+	m := newTest(t)
+	cdTo(t, m, "c.txt")
+	m.HandleKey("/")
+	typeText(m, "file")
+	if err := removeFile(m.root.path() + "/c.txt"); err != nil {
+		t.Fatal(err)
+	}
+	m.Refresh()
+	m.HandleKey("esc")
+	if !m.inTree(m.cur) {
+		t.Fatal("消えた元の項目へ戻り、カーソルが木の外へ出た")
+	}
+}
+
+func TestBlankCommandDoesNotRun(t *testing.T) {
+	m := newTest(t)
+	m.HandleKey("!")
+	typeText(m, "   ")
+	if m.HandleKey("enter") == Exec {
+		t.Fatal("空白だけのコマンドを走らせた")
+	}
+}

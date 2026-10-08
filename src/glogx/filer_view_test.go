@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -203,5 +204,66 @@ func TestFilerSearchPlacesCaret(t *testing.T) {
 	}
 	if m.updateKeyReachable("X") {
 		t.Fatal("検索欄の入力中に X が codex update に取られる")
+	}
+}
+
+// s で端末を明け渡すコマンドを組み (作業ディレクトリと $f)、戻ると読み直す (シェルで作ったファイルが出る)。
+func TestFilerShellExecAndRefresh(t *testing.T) {
+	m := newFilerBrowse(t)
+	cmds := stubEditorCapture(t)
+	m.handleKey("F")
+	_, cmd := m.handleKey("s")
+	if len(*cmds) != 1 {
+		t.Fatalf("s で端末を明け渡すコマンドを組まない (%d 本)", len(*cmds))
+	}
+	c := (*cmds)[0]
+	wd, _ := os.Getwd()
+	if realPath(t, c.Dir) != realPath(t, wd) || !strings.HasSuffix(c.Args[len(c.Args)-1], "-i") {
+		t.Fatalf("シェルの作業ディレクトリ / 引数 = %q %v", c.Dir, c.Args)
+	}
+	found := false
+	for _, e := range c.Env {
+		if strings.HasPrefix(e, "f=") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("$f を渡していない")
+	}
+	if err := os.WriteFile("made-in-shell.txt", []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m.Update(cmd()) // editorClosedMsg (シェルから戻った)
+	settleFiler(m)
+	if !strings.Contains(strings.Join(m.filerV.lines(100, 29), "\n"), "made-in-shell.txt") {
+		t.Fatal("シェルから戻っても読み直さない")
+	}
+}
+
+// 検索の入力中は F / U もそのまま文字として入り、同じ字の連打 (ss) も飲まれない (レビューの指摘 2026-10-09)。
+func TestFilerSearchTakesFUAndRepeats(t *testing.T) {
+	m := newFilerBrowse(t)
+	m.handleKey("F")
+	m.handleKey("/")
+	for _, k := range []string{"F", "U", "s", "s"} {
+		m.handleKey(k)
+	}
+	if m.activeFullScreen() != fullScreenFiler || m.usageOv.visible {
+		t.Fatal("入力中の F / U で閉じた / 利用枠が開いた")
+	}
+	if got := m.filerV.f.SearchQuery(); got != "FUss" {
+		t.Fatalf("検索語 = %q (F U と連打の s s がそのまま入るはず)", got)
+	}
+}
+
+// シェルが 0 以外で終わっても「エディタが異常終了しました」を出さない (シェルは最後のコマンドの終了コードで抜けるのが普通)。
+func TestFilerShellNonZeroExitIsQuiet(t *testing.T) {
+	m := newFilerBrowse(t)
+	stubEditorCapture(t)
+	m.handleKey("F")
+	m.handleKey("s")
+	m.Update(editorClosedMsg{err: &exec.ExitError{}})
+	if strings.Contains(m.toast.Text(), "エディタ") {
+		t.Fatalf("シェルから戻ったのにエディタの文言: %q", m.toast.Text())
 	}
 }

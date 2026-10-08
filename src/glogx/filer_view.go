@@ -20,7 +20,10 @@ const (
 	filerClosed                     // F で閉じた (git log 一覧へ戻る)
 	filerCross                      // 別の全画面へ横断 (閉じ済み。行き先は takeWantCross)
 	filerQuit                       // q / Esc = glogx ごと終える (issues viewer と同じ。spec §0.1)
+	filerExec                       // ! / s = プロセスを起こす (中身は f.TakeExec)
 )
+
+// execPending は ! / s で起こしたプロセスから戻るのを待っているか (戻ったときにエディタ向けの文言を出さないため)。
 
 // filerChangedMsg は treefiler のライブ更新の合図。ch はどのチャネルからか (ok=false はそのチャネルが閉じた)。
 type filerChangedMsg struct {
@@ -45,11 +48,12 @@ func (v *filerView) rearm(msg filerChangedMsg) tea.Cmd {
 }
 
 type filerView struct {
-	shown     bool
-	f         *filer.Model
-	dir       string
-	wantCross fullScreenID
-	openErr   string
+	execPending bool
+	shown       bool
+	f           *filer.Model
+	dir         string
+	wantCross   fullScreenID
+	openErr     string
 }
 
 func (v *filerView) visible() bool { return v.shown }
@@ -129,7 +133,9 @@ func (v *filerView) advance(now time.Time) {
 // handleKey は filer が飲むキー。F で閉じ、横断キー (i / R / D。表は crossTarget) で他の全画面へ移る。
 // 🚨 s は横断しない: filer では treebeard の「シェルを開く」に上書きした (spec §0.1。ユーザー回答 2026-10-07)
 func (v *filerView) handleKey(key string) filerAction {
-	if key == "F" {
+	// 🚨 入力中 (検索・! のコマンド行) はキーを全部 filer へ渡す。F で閉じたり横断したりすると、打っている文字が消える
+	// (レビューの指摘 2026-10-09: 検索語に大文字 F を打つと閉じた)
+	if key == "F" && !v.f.OwnsKeys() {
 		v.hide()
 		return filerClosed
 	}
@@ -140,8 +146,12 @@ func (v *filerView) handleKey(key string) filerAction {
 			return filerCross
 		}
 	}
-	if v.f.HandleKey(key) == filer.Quit {
+	switch v.f.HandleKey(key) {
+	case filer.Quit:
 		return filerQuit
+	case filer.Exec:
+		return filerExec
+	case filer.None:
 	}
 	return filerSwallow
 }
@@ -170,7 +180,7 @@ func (v *filerView) hint(width int) string {
 // routeKeyToFiler は filer 表示中のキー処理 (全画面なのでキーは全部 filer が飲む)。
 func (m *browseModel) routeKeyToFiler(key string) (tea.Model, tea.Cmd) {
 	// U は他の viewer と同じく利用枠を重ねる (spec §0.3: R D U X は filer の中でも効かせる)
-	if key == "U" {
+	if key == "U" && !m.filerV.ownsKeys() {
 		return m, m.toggleUsage()
 	}
 	act := m.filerV.handleKey(key)
@@ -189,6 +199,11 @@ func (m *browseModel) routeKeyToFiler(key string) (tea.Model, tea.Cmd) {
 		return m.quit()
 	case filerCross:
 		return m, m.openFullScreen(m.filerV.takeWantCross())
+	case filerExec:
+		if r, ok := m.filerV.f.TakeExec(); ok && len(r.Argv) > 0 {
+			m.filerV.execPending = true
+			return m, runEditorCmd(filerExecCommand(r)) // 戻ると editorClosedMsg で読み直す
+		}
 	case filerClosed, filerSwallow:
 	}
 	return m, m.maybeTick()

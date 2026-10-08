@@ -29,6 +29,8 @@ const (
 	None Result = iota
 	// Quit は終わりたい (単体ならプログラムを、glogx なら glogx ごと終える。spec §0.1)。
 	Quit
+	// Exec はプロセスを起こしてほしい (中身は TakeExec。`!` と `s`)。終わったら Refresh を呼ぶ。
+	Exec
 )
 
 // Notice は呼び出し側に toast で出してほしい知らせ。OK=false は失敗 (✗ 赤。glogx-ui-guide §9)。
@@ -74,6 +76,8 @@ type Model struct {
 	lastSearch string
 	exploding  *explodeJob
 	help       bool
+	prompt     promptState
+	exec       *ExecRequest
 }
 
 // ripple はライブ更新で光った項目 (spec §4.4)。start から pulse で光り、rippleLife で消える。
@@ -158,16 +162,36 @@ func (m *Model) Busy() bool {
 func (m *Model) Animating() bool { return m.moving }
 
 // OwnsKeys は入力モード中か (glogx の横断キーを譲る判定に使う。spec §0.3)。今は入力欄を持たない。
-func (m *Model) OwnsKeys() bool { return m.search.active }
+func (m *Model) OwnsKeys() bool { return m.search.active || m.prompt.active }
+
+// SearchQuery は検索欄の今の入力 (検索していなければ "")。
+func (m *Model) SearchQuery() string {
+	if !m.search.active {
+		return ""
+	}
+	return m.search.line.String()
+}
 
 // CaretPos は入力欄のキャレットの位置 (画面の桁と行)。入力欄が無ければ ok=false。
 // 呼び出し側は端末のカーソルをここに置く (IME の変換中の文字が入力欄に出るように。glogx-ui-guide §7 の caret)。
 func (m *Model) CaretPos() (x, y int, ok bool) {
-	if !m.search.active || m.h <= 0 {
+	switch {
+	case m.h <= 0:
 		return 0, 0, false
+	case m.search.active:
+		_, col := m.search.line.Window(max(m.w-searchPrefixW-1, 1))
+		return searchPrefixW + col, m.h - 1, true
+	case m.prompt.active:
+		pw := widthOf(m.promptPrefix())
+		_, col := m.prompt.line.Window(max(m.w-pw-1, 1))
+		return pw + col, m.h - 1, true
 	}
-	_, col := m.search.line.Window(max(m.w-searchPrefixW-1, 1))
-	return searchPrefixW + col, m.h - 1, true
+	return 0, 0, false
+}
+
+// promptPrefix は `!` の入力欄の頭 (どのフォルダで走るか)。
+func (m *Model) promptPrefix() string {
+	return " " + termwidth.Truncate(baseName(m.workDir()), 24, "…") + " $ "
 }
 
 const searchPrefix = " / "
@@ -544,7 +568,7 @@ func (m *Model) HandleInput(k, text string) Result {
 	m.snapAll()
 	defer func() { m.moving = true }()         // 目標が変わったので次の Advance で動き出す
 	m.git.start(m.root.path(), m.now(), false) // 前回から 3 秒以上たっていれば取り直す (周期のタイマーは張らない)
-	if k == "ctrl+c" && !m.search.active {
+	if k == "ctrl+c" && !m.search.active && !m.prompt.active {
 		return Quit // どこからでも即終了 (glogx-ui-guide §1)。検索中は検索の取り消し (spec §6.2)
 	}
 	if m.help {
@@ -553,6 +577,13 @@ func (m *Model) HandleInput(k, text string) Result {
 	}
 	if m.search.active {
 		m.searchKey(k, text)
+		return None
+	}
+	if m.prompt.active {
+		m.promptKey(k, text)
+		if m.exec != nil {
+			return Exec
+		}
 		return None
 	}
 	if m.exploding != nil && k == "esc" {
@@ -641,6 +672,11 @@ func (m *Model) treeKey(k string) Result {
 		m.explode()
 	case "?":
 		m.help = true
+	case "!":
+		m.startPrompt()
+	case "s":
+		m.requestShell()
+		return Exec
 	case ".":
 		m.showHidden = !m.showHidden
 	default:
@@ -999,6 +1035,9 @@ func (m *Model) draw() *canvas {
 	if m.search.active {
 		m.searchBar(c)
 	}
+	if m.prompt.active {
+		m.promptBar(c)
+	}
 	if m.help {
 		m.drawHelp(c)
 	}
@@ -1267,7 +1306,8 @@ func (m *Model) statusBar(c *canvas) {
 		legend = append(legend, seg{"▮", st.c, false})
 	}
 	legend = append(legend, seg{" old   ", cMuted, false})
-	hints := []seg{{"/", cAccRoute, true}, {" find  ", cMuted, false}, {"?", cAccRoute, true}, {" keys  ", cMuted, false}, {"q", cAccRoute, true}, {" quit ", cMuted, false}}
+	hints := []seg{{"!", cAccRoute, true}, {" cmd  ", cMuted, false}, {"s", cAccRoute, true}, {" shell  ", cMuted, false},
+		{"/", cAccRoute, true}, {" find  ", cMuted, false}, {"?", cAccRoute, true}, {" keys  ", cMuted, false}, {"q", cAccRoute, true}, {" quit ", cMuted, false}}
 	if m.frontTile() != nil {
 		hints = []seg{{"tab", cAccRoute, true}, {" link  ", cMuted, false}, {"q", cAccRoute, true}, {" close ", cMuted, false}}
 	}
@@ -1366,6 +1406,8 @@ var helpKeys = [][2]string{
 	{".", "dotfile の表示を切り替え"},
 	{"タイルの中", "j k ^D ^U g G · tab でパスを選ぶ · J K で隣"},
 	{"q esc", "終了 (タイルの上では 1 枚閉じる)"},
+	{"!", "ここでコマンドを 1 行 ($f = 選んだパス)"},
+	{"s", "ここでシェルを開く (抜けると戻る)"},
 	{"?", "このキー一覧"},
 }
 
@@ -1393,4 +1435,15 @@ func (m *Model) drawHelp(c *canvas) {
 		kx := c.put(x0+2, y, termwidth.FillLeft(kv[0], 16), cAccRoute, true)
 		c.put(kx+2, y, termwidth.Truncate(kv[1], max(w-22, 1), "…"), cText, false)
 	}
+}
+
+// promptBar は `!` の入力中の最下行 (spec §3.4 の ! プロンプト行)。
+func (m *Model) promptBar(c *canvas) {
+	y := m.h - 1
+	c.clear(0, y, m.w-1, y, cBar)
+	pre := m.promptPrefix()
+	x := c.put(0, y, pre, cAccRoute, true)
+	text, _ := m.prompt.line.Window(max(m.w-widthOf(pre)-1, 1))
+	x = c.put(x, y, text, cText, false)
+	c.put(x+1, y, "  enter 実行 · esc 取り消し · $f = 選んだパス", cMuted, false)
 }
