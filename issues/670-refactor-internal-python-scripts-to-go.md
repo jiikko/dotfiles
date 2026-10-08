@@ -135,11 +135,12 @@ codex の run の後に 1 回呼ばれるだけ)。それでも寄せる理由�
 
 ## 受け入れ条件
 
-- [ ] 置き場所 (A / B / C) を決め、その理由を本 issue に書く
-- [ ] `codex-events.py` を Go に置き換え、上のコーパスと実際の `events.jsonl` で旧版と突き合わせて、合格条件を満たす
+- [x] 置き場所 (A / B / C) を決め、その理由を本 issue に書く (B。下の進捗)
+- [x] `codex-events.py` を Go に置き換え、上のコーパスで旧版と突き合わせて、合格条件を満たす。
+      **実際の `events.jsonl` との突き合わせは未実測** (手元に 0 件。codex は自発的に起動しない方針のため取れない。下の進捗の trigger)
 - [ ] `tests/test_codex_events.py` の全ケース (`EventTests` / `DriverTests`) を Go のテストへ移し、`make test-go` と CI の lane のログにテスト名が出ることを確認する。
-      `DriverTests` が偽の codex を python3 の shebang で書いている点も置き換える
-- [ ] `bin/codex-fanout` から `python3` の呼び出しがなくなり (`grep -n python3 bin/codex-fanout` が 0 件)、Go のバイナリは起動時に解決される
+      `DriverTests` が偽の codex を python3 の shebang で書いている点も置き換える (移植と bash の偽の codex は済み。CI のログの確認は push 後)
+- [x] `bin/codex-fanout` から `python3` の呼び出しがなくなり (`grep -n python3 bin/codex-fanout` が 0 件)、Go のバイナリは起動時に解決される
 - [ ] `zshlib/_concat_helpers.zsh` の mp4 のサイズ計算を置き換える
 - [ ] `tmux-toast` の幅計算を `termwidth` に寄せ、旧との幅の差を確認し、go が無いときも exit 0 で縮退することをテストで固定する
 - [ ] 残りの対象 (`repair_avi_vorbis_audio.sh` / `ab_abandoned.sh` の heredoc) は、それぞれ移したか、移さない理由を本 issue に書いた
@@ -163,3 +164,66 @@ codex の run の後に 1 回呼ばれるだけ)。それでも寄せる理由�
   ルール名と issue 408 / 580 の実在、`--pkg` の前例、psd_faces.py / サンプル / `py_compile` を対象外にした判断
 - 2026-10-08: ユーザーの方針で「特定のツールのためだけにあり、単体で完結する .py」を Go にしない側へ移した (`repair-avcc-avi` / `mutation_check.py` / `make_terminal_fixtures.py` を対象から外し、psd_faces.py とサンプル 9 本と合わせて表にした)
 - 2026-10-08: issue 672 (package の doc コメント必須と src/PACKAGES.md) / 671 (gopls で module 横断) が完了。移植した道具もこの 2 つに乗る
+- 2026-10-09: 1 本目 (codex-events) を Go に置き換えた (commit: codex-events を Go に置き換え、codex-fanout から python3 をなくす (issue 670))
+
+### 置き場所: B (道具ごとに `src/codexevents`)
+
+次に移す 2 本 (mp4 のサイズ計算・toast の幅) は codex と責務が違うので、A (1 module に集める) だと無関係な編集で再ビルドが走り、
+CI も全部走る。runtimeout が同じ形 (小さい CLI を 1 module) の前例。3 点セットは定型で、1 組の手間は小さかった。
+C は寄せる先 (ratelimit) と責務が違う。glogx 等から判定を import したくなったら、そのとき package に切り出す (trigger)。
+
+### やったこと
+
+- `src/codexevents` (`codex-events inspect` / `is-object`)・`bin/codex-events` (go_autobuild のラッパー)・`src_codexevents.yml`
+- codex-fanout: `-J` / `-S` のときだけ起動時に `codex_events_resolve` で解決し、`"$CODEX_EVENTS" inspect` / `is-object` を呼ぶ。python3 の事前確認を消した
+- 解決の共通化: `runtimeout_resolve` と同じ処理になるので `bin/lib/go_tool.sh` の `go_tool_resolve` に寄せ、両方がそれを使う。
+  🚨 書いている途中で、zsh では関数の中の `local path` が PATH を空にする (zsh の `path` は PATH と結び付いた配列) のを踏んだ。
+  bash では動くので、`tests/bin/test_go_tool_resolve.sh` が bash と zsh の両方で解決できることを見る
+- テスト: `EventTests` 3 本と `DriverTests` 8 本を Go へ移した (偽の codex は bash。Python の calls.jsonl は 1 行 1 引数の calls.txt に)。
+  旧の 3 ファイル (`bin/lib/codex-events.py` / `tests/test_codex_events.py` / `tests/claude/test_codex_events.sh`) を消した
+
+### 旧版との突き合わせ (正解役は Python 版)
+
+- 入力 43 種類 × meta.json のパスの書き方 3 通り (`meta.json` / `./sub//meta.json` / `sub/./meta.json`) = 129 回で **差 0 件**。
+  rc とログの追記はバイト一致、meta.json は値の一致 (Python の例外の文面 `parse_errors[].error` / `read_error` だけ除く)
+- 入力: 既存テストの形 9・行の区切り (\r\n・\r・\v \f \x1c-\x1e・\x85・U+2028 / U+2029・末尾の改行・空白だけの行) 7・
+  JSON の言語差 (大きな整数・1.0・-0・1E2・重複キー・キーの順・HTML の記号・エスケープ・深さ 200・オブジェクトでない行・余分なデータ・BOM・末尾のカンマ) 13・
+  item / type / usage / thread_id の型の揺れ 4・応答 (空白だけ・CRLF・ファイル無し・2 つのメッセージ・メッセージの CRLF) 4・読めない入力 (events 無し・UTF-8 でない・応答がディレクトリ) 4
+- ハーネスが差を見分けることの確認: 新版のログの文言を変えると差 69 件、行の区切りから \v を外すと差 3 件
+- ハーネスは使い捨て (`./tmp`)。移した後は Go のテストが正解を持つ
+
+### Python 版と変えたこと (仕様の変更として受ける)
+
+- `NaN` / `Infinity` を含む行: 旧は値として受けて meta.json に規格外の `NaN` を書いた。新は読めない行 (parse_errors) にする (未完了の側に倒れる)
+- 孤立したサロゲート (`"\ud800"`) を含む agent_message: 旧は meta.json を書いた後、ログへ書くところで例外になりログが残らない (rc=1)。新は U+FFFD にして書く
+- `parse_errors[].error` と `read_error` の文面 (Python の例外の文面は再現しない)
+- `-S` の schema がオブジェクトでないとき、止まるのが出力先のディレクトリを作った後になった (空の出力先が残る。空なので次の実行は拒否されない)
+
+### 敵対レビュー (opus 1 体)
+
+- 採用 P2: `"text": null` の agent_message が最後に来ると、旧は 1 つ前の本文で補って完了、新は未完了 (Go は null を string へ読んでもエラーにしない) →
+  文字列の値だけを採るよう直し、テストとコーパス (`msg-text-null`) に足した。変異で red
+- 採用 P3: `is-object` が UTF-8 でない schema を通す (Go の JSON は文字列の中の不正なバイトを U+FFFD にする) → UTF-8 を確かめてから読む。変異で red
+- 記録のみ (どれも誤って「完了」にはならない):
+  - JSON の上限の差: 5000 桁の整数 (旧は Python の桁数の上限で未完了、新は完了)・深さ 20000 の入れ子 (旧は完了、新は Go の上限で未完了)。実際の codex の出力では起きにくい
+  - codex-fanout の中での本物の解決の経路は、テストでは偽物に差し替えている (runtimeout と同じ形)。起動の時点で止まるので気づける。レビュワーが手で 1 回通して complete を確認
+  - 既にある `CODEX_EVENTS` がこの checkout のバイナリを指していれば、src が新しくても再ビルドしない (RUNTIMEOUT と同じ設計)
+  - 文字列の中の生の U+0085 / U+2028 で行が割れるのは旧も新も同じ (既存の欠陥。codex はエスケープしない)
+- 壊せなかったもの: 空白と行の区切りを全コードポイントで Python と比べて差 0 件・パスの表記 15 通り・50MB の行・応答のファイルの種類 9 種 (FIFO・権限なし・symlink の
+  ループ等)・go_tool.sh を /bin/bash 3.2・brew の bash・zsh から `set -eu` の下で
+
+### 検証
+
+- `make -C src/codexevents test lint` 緑 (13 本)・`make test-lint` 緑・`tests/bin/test_go_tool_resolve.sh` 5 件
+- 変異: Go 側 14 本すべて red (レビュー後の 2 本を含む) (parse_errors を見ない・本文の補い・error イベント・turn.started の巻き戻し・\r の統一・\v の区切り・
+  \x1c の空白・パスの . ・usage の既定値 (最初 green → テストを足した)・UTF-8・codex-fanout の rc=65・schema の確認)。
+  シェル側 3 本すべて red (`local path`・既にある値を無条件に採る・export しない)
+- `make test` は 2 件落ちた。どちらもこの変更と無関係: `tests/claude/test_claude_mods.sh` の tool-elapsed の 5 秒の時間切れ
+  (負荷の高い間。`make test-dir DIR=tests/claude` では通った) / `test-unused-excluding-tests` の `src/treefiler/filer/render.go:(*canvas).plain`
+  (別のセッションが作業中の module)
+
+### 残り
+
+- **実際の codex の events.jsonl での突き合わせ (未実測)**。trigger: 次に codex-fanout を `-J` で回したとき、出力先の `*.events.jsonl` と応答を
+  旧版 (`git show <この commit の親>:bin/lib/codex-events.py`) と新版の両方に通して、rc・ログ・meta.json を比べる
+- 2 本目以降 (`zshlib/_concat_helpers.zsh` の mp4 のサイズ計算 / tmux-toast の幅 / 残り) は未着手

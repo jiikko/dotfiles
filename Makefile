@@ -12,6 +12,7 @@ ZSH_SYNTAX_FILES := \
   bin/av1ify \
   bin/binav1c \
   bin/concat \
+  bin/codex-events \
   bin/disassemble_excel \
   bin/diskdoctor \
   bin/glogx \

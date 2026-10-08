@@ -15,6 +15,7 @@
 | [`doctor`](doctor/README.md) | 消してよさそうなもの・壊れて残っている常駐を見つけるライブラリと `diskdoctor` / `svcdoctor` |
 | [`lockman`](lockman/README.md) | ディレクトリ単位の排他を取る CLI (SMB 越しも) |
 | [`runtimeout`](runtimeout/README.md) | 時間の上限付きで実行し、子孫ごと止める CLI (`timeout` の代わり) |
+| [`codexevents`](codexevents/README.md) | codex exec --json の run が最後まで終わったかを判定して記録する CLI (`bin/codex-fanout` の `-J` / `-S`) |
 | [`restartable`](restartable/README.md) | コマンドを前面で起動し、キーか socket から再起動できる runner |
 | [`process_supervisor`](process_supervisor/README.md) | 呼んだプロセスが生きている間だけ子を見張って起こし直す module |
 | [`zundamon-kaisetsu`](zundamon-kaisetsu/README.md) | VOICEVOX の掛け合い解説動画 (HTML / mp4) を作る CLI (skill `zundamon-kaisetsu` の本体) |

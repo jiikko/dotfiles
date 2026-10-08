@@ -96,12 +96,8 @@ outdir="$2"
 
 [ -f "$manifest" ] || die "manifest が無い: $manifest"
 command -v codex >/dev/null 2>&1 || die "codex が PATH に無い"
-if [ "$json_events" -eq 1 ] || [ -n "$output_schema" ]; then
-  command -v python3 >/dev/null 2>&1 || die "-J / -S には python3 が必要"
-fi
 if [ -n "$output_schema" ]; then
   [ -f "$output_schema" ] || die "schema が無い: $output_schema"
-  python3 -c 'import json,sys; v=json.load(open(sys.argv[1])); sys.exit(0 if isinstance(v,dict) else 1)' "$output_schema" || die "schema が JSON object でない"
 fi
 mkdir -p "$outdir" || die "outdir を作れない: $outdir"
 [ -z "$(ls -A "$outdir")" ] || die "outdir が空でない (使い回し禁止 — 前回世代の残骸が結果に混ざる): $outdir"
@@ -191,9 +187,15 @@ while [ -L "$src" ]; do
   case "$src" in /*) ;; *) src="$src_dir/$src" ;; esac
 done
 script_dir="$(cd "$(dirname "$src")" && pwd)"
-event_inspector="$script_dir/lib/codex-events.py"
-if [ "$json_events" -eq 1 ]; then
-  [ -f "$event_inspector" ] || die "event inspector が無い: $event_inspector"
+# -J の結果の判定と -S の schema の事前確認は codex-events (src/codexevents)。起動前に 1 回だけ解決する (bin/lib/codex_events.sh。
+# run が終わった後にビルドすると、go が無い・ビルドの失敗・lock の競合で長い run の判定が失敗に落ちる)
+if [ "$json_events" -eq 1 ] || [ -n "$output_schema" ]; then
+  # shellcheck source=bin/lib/codex_events.sh
+  . "$script_dir/lib/codex_events.sh" || die "$script_dir/lib/codex_events.sh を読めない"
+  codex_events_resolve "$script_dir/.." || die "codex-events を用意できない (-J / -S の判定ができない)"
+fi
+if [ -n "$output_schema" ]; then
+  "$CODEX_EVENTS" is-object "$output_schema" || die "schema が JSON object でない"
 fi
 
 # merger プロンプトの既定は skill 側テンプレート。解決はスキップ判定の後 (スキップ時にテンプレート不在で die しない)
@@ -240,7 +242,7 @@ run_captured() { # timeout / label / last-message path / command...
       "$@" --json </dev/null >"$outdir/$label.events.jsonl" 2>"$log"
     rc=$?
     printf '%s\n' "$rc" >"$outdir/$label.cli.rc"
-    python3 "$event_inspector" "$outdir/$label.events.jsonl" "$out" "$outdir/$label.meta.json" "$log"
+    "$CODEX_EVENTS" inspect "$outdir/$label.events.jsonl" "$out" "$outdir/$label.meta.json" "$log"
     inspect_rc=$?
     if [ "$rc" -eq 0 ] && [ "$inspect_rc" -ne 0 ]; then
       rc=65

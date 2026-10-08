@@ -5,6 +5,7 @@
 - `src/atomicfile` (`atomicfile`) — Package atomicfile は「途中の状態を残さない」ファイル書き込みを 1 箇所に置く。
 - `src/chromecookie` (`github.com/jiikko/dotfiles/src/chromecookie`) — Package chromecookie は macOS の Google Chrome のプロファイルから Cookie を復号して取り出す。
 - `src/chromecookie/chromecookietest` (`github.com/jiikko/dotfiles/src/chromecookie/chromecookietest`) — Package chromecookietest は chromecookie を使う側のテストが、Chrome と同じ形の Cookie DB と 暗号文を作るための道具（本物の Chrome・Keychain には触れない）。
+- `src/codexevents` (`codexevents`) — Command codex-events は、codex exec --json の出力 (events.jsonl) を読み、run が最後まで終わったかを判定して記録する。 (main)
 - `src/disassemble_excel` (`github.com/jiikko/disassemble_excel`) — Command disassemble_excel takes one .xlsx/.xlsm file and writes its sheets (one cell per line, formula + cached value), defined names and VBA macro source into a directory, so the result can be diffed and read without Excel. (main)
 - `src/disassemble_excel/ovba` (`github.com/jiikko/disassemble_excel/ovba`) — Package ovba implements the minimal subset of [MS-OVBA] needed to extract VBA macro source code from a vbaProject.bin (OLE2/CFB) stream — without any external tool such as olevba.
 - `src/doctor/brewledger` (`doctor/brewledger`) — Package brewledger は Homebrew の台帳 (installed formula の名前・旧名・別名)。

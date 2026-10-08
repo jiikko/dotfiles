@@ -1,0 +1,10 @@
+#!/usr/bin/env zsh
+# codex-events — codex exec --json の出力 (events.jsonl) を読み、run が最後まで終わったかを判定して記録する (bin/codex-fanout の -J)。
+# Go implementation at:
+#   ~/dotfiles/src/codexevents/
+#     codex-events inspect <events.jsonl> <response> <meta.json> <log> / codex-events is-object <file> / codex-events help
+# 再ビルドは同期 (--async にしない): 呼び出し側は rc で判定するので、旧版が返す rc を新版の結果と誤認させない。
+# スクリプトからは bin/lib/codex_events.sh の codex_events_resolve で解決したバイナリの絶対パス ($CODEX_EVENTS) で呼ぶ。
+set -u
+source "${0:A:h}/lib/go_autobuild.zsh"
+go_autobuild_exec "${0:A:h}/../src/codexevents" codex-events -- "$@"
