@@ -1,1 +1,0 @@
-../681-feat-zundamon-kaisetsu-chapter-title-card.md
