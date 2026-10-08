@@ -56,4 +56,7 @@
 - HTML を経由せずに動画を描く作りにはしない (トークンは変わらず、描画の実装が 2 つになる。同上)
 - mermaid の図は `npx` の mermaid-cli で描くまま (2026-10-08 にユーザー判断)。Node の依存を外す案は、版を固定した mermaid.js を同梱して
   build の Chrome で描く形が最も素直 (見た目は変わらない)。Node が問題になったら再評価する
+- 入口のコマンド (`bin/zundamon-kaisetsu`) と Go のソース (`src/`) は dotfiles の並びのまま置く (2026-10-08 にユーザー判断)。別の環境へは
+  README の Setup の sparse checkout で必要なファイルだけを取り出す。入口を skill の中へ移しても、Go のソースは skill の外に残るので、
+  得られるのは Setup の PATH の 2 行の短縮だけ
 - 確認のサブエージェントは 2 体 (書く前の裏取り・書いた後の統合確認)。haiku に替えてもトークンは減らない (issue 673 の進捗)
