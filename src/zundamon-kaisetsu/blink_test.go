@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -339,5 +341,36 @@ func TestChapterCardRuns(t *testing.T) {
 	st := frameStates([][4]int{{0, 0, 0, 0}}, nil, got, 6)
 	if st[int(0.5*mouthFPS)][4] != 1 || st[int(2.5*mouthFPS)][4] != 0 {
 		t.Errorf("frameStates の 5 欄目がカードの列と違う")
+	}
+}
+
+// 感情の演出 (issue 682) は player.html だけにあり、立ち絵の表情の名前 (data-fx) で出し分ける。
+// 表情の名前は faceVocab が正本なので、演出が指す名前が語彙にあること・表情を data-fx に渡していることを字句で見る
+// (演出の見た目そのものは人が見る。issue 645)
+func TestEmotionEffectsWired(t *testing.T) {
+	tpl := playerTemplate(t)
+	for _, want := range []string{"a.box.dataset.fx = face;", "fig.insertAdjacentHTML('beforeend', FX);",
+		"box.insertAdjacentHTML('beforeend', FX);",       // 丸アバター
+		".char .fx { position: absolute; display: none;", // 表情に合わないものは隠す (消すと全員に全部の演出が出る)
+		// 立ち絵の箱と画像の上限 (演出の位置の基準) を同じ変数から決める (片方だけ直すと演出がずれる)
+		"width: calc(var(--char-w) * 1%); height: calc(var(--char-h) * 1%);",
+		"max-width: calc(var(--char-w) * 1cqw); max-height: calc(var(--char-h) * .5625cqw);"} {
+		if !strings.Contains(tpl, want) {
+			t.Errorf("player.html に %q が無い (表情を演出へ渡していない)", want)
+		}
+	}
+	re := regexp.MustCompile(`\.char\[data-fx="([^"]+)"\] \.fx-([a-z]+)`)
+	got := map[string]string{}
+	for _, m := range re.FindAllStringSubmatch(tpl, -1) {
+		got[m[1]] = m[2]
+		if !slices.Contains(faceVocab, m[1]) {
+			t.Errorf("演出が指す表情 %s が faceVocab に無い (表情の名前を変えたら演出の CSS も直す)", m[1])
+		}
+		if !strings.Contains(tpl, `class="fx fx-`+m[2]+`"`) {
+			t.Errorf("演出 fx-%s の絵が FX に無い", m[2])
+		}
+	}
+	if want := map[string]string{"驚き": "surprise", "怒り": "anger", "悲しみ": "gloom"}; !maps.Equal(got, want) {
+		t.Errorf("演出と表情の対応が違う: %v (want %v)", got, want)
 	}
 }

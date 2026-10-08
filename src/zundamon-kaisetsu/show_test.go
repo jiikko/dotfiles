@@ -421,7 +421,7 @@ func TestPlayerPlacesCharsForShowsFromStart(t *testing.T) {
 		t.Fatal(err)
 	}
 	tpl := string(tb)
-	if !regexp.MustCompile(`(?m)^\.stage\.has-shows \.char \{[^}]*width: 26%; height: 72%;`).MatchString(tpl) {
+	if !regexp.MustCompile(`(?m)^\.stage\.has-shows \{ --char-w: 26; --char-h: 72; \}`).MatchString(tpl) {
 		t.Error("図解を使う台本で立ち絵を縮める CSS (.stage.has-shows .char) が無い")
 	}
 	toggle := regexp.MustCompile(`\$\('stage'\)\.classList\.toggle\('has-shows', !!\(D\.shows && D\.shows\.length\)\)`).FindStringIndex(tpl)

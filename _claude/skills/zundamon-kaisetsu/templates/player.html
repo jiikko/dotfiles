@@ -23,14 +23,28 @@ main { max-width: 960px; margin: 0 auto; padding: 16px; }
 h1 { font-size: 1.25rem; margin: 0 0 12px; }
 .stage { position: relative; aspect-ratio: 16 / 9; background: var(--stage); border-radius: 12px; overflow: hidden;
          container-type: inline-size; }
-.char { position: absolute; bottom: 0; width: 40%; height: 96%; display: flex; flex-direction: column;
+/* 立ち絵の箱の大きさは --char-w / --char-h (舞台の幅・高さに対する %) の 1 か所で決め、画像の上限 (cqw) も同じ値から計算する */
+.stage { --char-w: 40; --char-h: 96; }
+.stage.has-shows { --char-w: 26; --char-h: 72; }
+.char { position: absolute; bottom: 0; width: calc(var(--char-w) * 1%); height: calc(var(--char-h) * 1%); display: flex; flex-direction: column;
         align-items: center; justify-content: flex-end; }
 .char.left { left: 1%; } .char.right { right: 1%; }
-.char img { max-width: 100%; max-height: 100%; object-fit: contain; }
+/* 立ち絵は .fig (演出の位置の基準) で包む。.fig の大きさを画像に合わせるため、画像の上限は箱の % でなく舞台の幅 (cqw) で書く
+   (舞台は 16:9 なので、高さの 1% は 0.5625cqw) */
+.char .fig { position: relative; line-height: 0; }
+.char img { max-width: calc(var(--char-w) * 1cqw); max-height: calc(var(--char-h) * .5625cqw); object-fit: contain; }
 .char.mirror img { transform: scaleX(-1); }
+/* 感情の演出 (issue 682)。立ち絵の今の表情に合わせて、驚き = 後ろに集中線、怒り = 頭の上に怒りマーク、悲しみ = 顔に縦線。止まった絵だけにする
+   (表情は見た目の状態の行に含まれるので、mp4 の撮る枚数が増えない。揺れ・跳ねのような動きは状態が増えるので入れない) */
+.char { isolation: isolate; }
+.char .fx { position: absolute; display: none; pointer-events: none; }
+.char[data-fx="驚き"] .fx-surprise, .char[data-fx="怒り"] .fx-anger, .char[data-fx="悲しみ"] .fx-gloom { display: block; }
+.char .fx-surprise { z-index: -1; left: -25%; top: -22%; width: 150%; }
+.char .fx-anger { z-index: 1; top: 4%; width: 18%; }
+.char.right .fx-anger { left: 10%; } .char.left .fx-anger { right: 10%; } /* 内側 (画面の中央寄り) に置く。外側は舞台の端で切れる */
+.char .fx-gloom { z-index: 1; left: 30%; top: 9%; width: 40%; }
 /* 図解 (行の show) を 1 つでも使う台本では、最初から最後まで立ち絵を縮めて左右の端に寄せ、中央を空けておく (issue 645)。
    図解を出すときだけ縮めると、mp4 では立ち絵が瞬間移動する (場面ごとの静止画をつなぐので、動きの途中を撮れない) */
-.stage.has-shows .char { width: 26%; height: 72%; }
 .stage.has-shows .char.left { left: 0; } .stage.has-shows .char.right { right: 0; }
 .stage-show { position: absolute; left: 27%; top: 30%; width: 46%; height: 52%; display: flex; align-items: center;
               justify-content: center; z-index: 1; }
@@ -149,12 +163,18 @@ html.render * { transition: none !important; }
   // ---------- cast ----------
   const keys = Object.keys(D.cast);
   const actors = {};
+  // 感情の演出の絵 (CSS の .fx。表情に合わせて data-fx で 1 つだけ見せる)。自前で描いた SVG で、素材の規約は無い
+  const FX = '<svg class="fx fx-surprise" viewBox="-100 -100 200 200" aria-hidden="true"><g stroke="#2f6fd0" stroke-opacity=".35" stroke-linecap="round"><line x1="60" y1="0" x2="100" y2="0" stroke-width="2"/><line x1="65" y1="15" x2="97" y2="22" stroke-width="4"/><line x1="67" y1="32" x2="90" y2="43" stroke-width="2"/><line x1="47" y1="37" x2="78" y2="62" stroke-width="4"/><line x1="42" y1="52" x2="62" y2="78" stroke-width="2"/><line x1="32" y1="67" x2="43" y2="90" stroke-width="4"/><line x1="13" y1="58" x2="22" y2="97" stroke-width="2"/><line x1="0" y1="67" x2="0" y2="100" stroke-width="4"/><line x1="-16" y1="72" x2="-22" y2="97" stroke-width="2"/><line x1="-26" y1="54" x2="-43" y2="90" stroke-width="4"/><line x1="-42" y1="52" x2="-62" y2="78" stroke-width="2"/><line x1="-58" y1="46" x2="-78" y2="62" stroke-width="4"/><line x1="-54" y1="26" x2="-90" y2="43" stroke-width="2"/><line x1="-65" y1="15" x2="-97" y2="22" stroke-width="4"/><line x1="-74" y1="0" x2="-100" y2="0" stroke-width="2"/><line x1="-58" y1="-13" x2="-97" y2="-22" stroke-width="4"/><line x1="-60" y1="-29" x2="-90" y2="-43" stroke-width="2"/><line x1="-58" y1="-46" x2="-78" y2="-62" stroke-width="4"/><line x1="-37" y1="-47" x2="-62" y2="-78" stroke-width="2"/><line x1="-29" y1="-60" x2="-43" y2="-90" stroke-width="4"/><line x1="-16" y1="-72" x2="-22" y2="-97" stroke-width="2"/><line x1="-0" y1="-60" x2="-0" y2="-100" stroke-width="4"/><line x1="15" y1="-65" x2="22" y2="-97" stroke-width="2"/><line x1="32" y1="-67" x2="43" y2="-90" stroke-width="4"/><line x1="37" y1="-47" x2="62" y2="-78" stroke-width="2"/><line x1="52" y1="-42" x2="78" y2="-62" stroke-width="4"/><line x1="67" y1="-32" x2="90" y2="-43" stroke-width="2"/><line x1="58" y1="-13" x2="97" y2="-22" stroke-width="4"/></g></svg><svg class="fx fx-anger" viewBox="0 0 70 70" aria-hidden="true"><g fill="none" stroke="#e5484d" stroke-width="7" stroke-linecap="round"><path d="M10 28 Q24 26 26 10"/><path d="M42 10 Q44 26 60 28"/><path d="M60 42 Q44 44 42 60"/><path d="M26 60 Q24 44 10 42"/></g></svg><svg class="fx fx-gloom" viewBox="0 0 130 90" aria-hidden="true"><g stroke="#4a6fd6" stroke-opacity=".7" stroke-width="4" stroke-linecap="round"><line x1="10" y1="0" x2="10" y2="60"/><line x1="30" y1="0" x2="30" y2="80"/><line x1="50" y1="0" x2="50" y2="50"/><line x1="70" y1="0" x2="70" y2="75"/><line x1="90" y1="0" x2="90" y2="55"/><line x1="110" y1="0" x2="110" y2="70"/></g></svg>';
   keys.forEach((k) => {
     const c = D.cast[k]; const color = c.color;
     const box = el('div', `char ${c.side}${c.mirror ? ' mirror' : ''}`);
     let img = null, mouth = null;
-    if (Object.keys(c.images).length) { img = el('img'); img.alt = c.name; box.append(img); }
-    else { const av = el('div', 'avatar', c.name); av.style.background = color; mouth = el('div', 'mouth'); av.append(mouth); box.append(av); }
+    if (Object.keys(c.images).length) {
+      img = el('img'); img.alt = c.name; const fig = el('div', 'fig'); fig.append(img); fig.insertAdjacentHTML('beforeend', FX); box.append(fig);
+    } else {
+      const av = el('div', 'avatar', c.name); av.style.background = color; mouth = el('div', 'mouth'); av.append(mouth); box.append(av);
+      box.insertAdjacentHTML('beforeend', FX); // 丸アバターは箱を基準に置く (位置は大まか)
+    }
     $('stage').insertBefore(box, $('caption'));
     actors[k] = { c, color, box, img, mouth, level: -1 };
   });
@@ -162,6 +182,7 @@ html.render * { transition: none !important; }
   const setMouth = (a, lv, face, closed) => {
     const shut = closed && !!a.c.blink && !!a.c.blink[face];
     const key = `${face}/${lv}/${shut}`; if (a.level === key) return; a.level = key;
+    a.box.dataset.fx = face;
     if (a.img) a.img.src = (shut ? a.c.blink[face] : (a.c.images[face] || a.c.images[D.defaultFace]))[lv];
     else a.mouth.style.height = ['6%', '14%', '24%'][lv];
   };
