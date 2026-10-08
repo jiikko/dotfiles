@@ -33,29 +33,33 @@ macOS で動作を確かめている (Linux は対象外)。Homebrew が入っ�
 ### 0. 入手と配置
 
 この skill は [jiikko/dotfiles](https://github.com/jiikko/dotfiles) (公開リポジトリ) の一部で、skill のディレクトリだけでは動かない。
-コマンド `zundamon-kaisetsu` は Go 製で、clone した中の `bin/zundamon-kaisetsu` (入口。zsh)・`bin/lib/`・`src/zundamon-kaisetsu/`・
-`src/proctree/` と、この skill のディレクトリを使う。次を同じシェルで続けて打つ:
+コマンド `zundamon-kaisetsu` (Go 製) の入口・ビルドの仕組み・ソースと、この skill のディレクトリが要る。dotfiles 全体は要らないので、
+git の sparse checkout で**必要なファイルだけ**を取り出す (約 100 ファイル・`.git` を含めて 10MB ほど)。次を同じシェルで続けて打つ:
 
 ```sh
 brew install go ffmpeg uv node        # uv は立ち絵の書き出し、node は mermaid の図にだけ要る。mp4 を作るなら Google Chrome も入れる
-mkdir -p ~/src && git clone https://github.com/jiikko/dotfiles.git ~/src/dotfiles   # 置き場所は任意
-D=~/src/dotfiles
+D=~/src/zundamon-kaisetsu             # 置き場所は任意
+mkdir -p "$(dirname "$D")" && git clone --filter=blob:none --no-checkout https://github.com/jiikko/dotfiles.git "$D"
+git -C "$D" sparse-checkout set --no-cone \
+  /bin/zundamon-kaisetsu /bin/lib/go_autobuild.zsh /src/zundamon-kaisetsu/ /src/proctree/ /_claude/skills/zundamon-kaisetsu/
+git -C "$D" checkout master
 mkdir -p ~/.claude/skills && ln -s "$D/_claude/skills/zundamon-kaisetsu" ~/.claude/skills/zundamon-kaisetsu   # Claude Code から skill が見える
 mkdir -p ~/.local/bin && ln -s "$D/bin/zundamon-kaisetsu" ~/.local/bin/                                      # 入口だけを PATH の dir に置く
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc   # ~/.local/bin が PATH に無ければ。新しいシェルを開く
 ```
 
+- 取り出すのは、入口 (`bin/zundamon-kaisetsu`。zsh)・ビルドの仕組み (`bin/lib/go_autobuild.zsh`)・本体 (`src/zundamon-kaisetsu/`)・
+  依存する module (`src/proctree/`)・この skill の 5 つ。入口は symlink の先の実体の場所から skill と src を探すので、この並びのまま置く
 - 新しいシェルで `command -v zundamon-kaisetsu` がパスを返せばよい
-- 🚨 **dotfiles の `bin/` を丸ごと PATH に入れない**。`tmux` などの同名のラッパーまで入り、ほかのコマンドの挙動が変わる。入口 1 つだけを symlink する
-  (ラッパーは symlink の先の実体の場所から skill と src を探すので、symlink で動く)
-- 初回の起動で Go がビルドする (数十秒〜数分。`zundamon-kaisetsu: building...` と出る)。要る Go は 1.25 以上 (`src/zundamon-kaisetsu/go.mod`) で、
-  手元の Go が古くても、要る版 (約 90MB) を初回に自動で取りに行く (ネットワークが要る)
-- clone の中の `assets/` (立ち絵) は非公開のサブモジュールで、取れなくてよい (手順 3 で用意する。`git submodule` は打たない)
+- 更新は `git -C "$D" pull` (取り出す範囲はそのまま)
+- 初回の起動で Go がビルドする (数十秒〜数分。`zundamon-kaisetsu: building...` と出る。バイナリは `$D/src/zundamon-kaisetsu/` の中にできる)。
+  要る Go は 1.25 以上 (`src/zundamon-kaisetsu/go.mod`) で、手元の Go が古くても、要る版 (約 90MB) を初回に自動で取りに行く (ネットワークが要る)
+- `assets/` (立ち絵) は非公開のサブモジュールで、取れなくてよい (手順 3 で用意する。`git submodule` は打たない)
 
 以下のコマンドは**この skill のディレクトリで**実行する (パスはここからの相対):
 
 ```sh
-cd ~/src/dotfiles/_claude/skills/zundamon-kaisetsu
+cd "$D/_claude/skills/zundamon-kaisetsu"
 ```
 
 ### 1. コマンドの確認
@@ -132,7 +136,7 @@ zundamon-kaisetsu check
 
 ### 4. 動作確認
 
-見本の台本 (4 行) を合成して書き出す。作業ディレクトリは clone の外に作る (clone の中に作ると未追跡のファイルとして残る):
+見本の台本 (4 行) を合成して書き出す。作業ディレクトリは `$D` の外に作る (中に作ると、git の未追跡のファイルとして残る):
 
 ```sh
 W=~/zundamon-test && mkdir -p "$W" && cp examples/script.json "$W/"
