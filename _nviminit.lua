@@ -393,6 +393,8 @@ require("lazy").setup({
           -- 🚨 判定の実体は lsp.server_binary_available (issue 341)。lsp.lua の
           -- ruby_lsp_failed も同じ述語でフォールバック先を見るので、ここに式を書き直さない
           -- (2 実装になると片方だけ変わり、通知が黙って嘘になる)。
+          -- gopls の config.cmd は Mason の絶対パスなので、PATH 先頭の bin/gopls shim では
+          -- Neovim の起動可能判定を通らない。
           if lsp.server_binary_available(name) then
             table.insert(ready, name)
           end

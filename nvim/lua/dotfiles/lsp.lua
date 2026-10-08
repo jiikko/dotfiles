@@ -335,6 +335,284 @@ function M.ruby_reset(deps)
   return gone
 end
 
+-- gopls は通常 nvim-lspconfig の root_dir をそのまま使う。dotfiles の module 内だけは
+-- git common dir が ~/dotfiles と同じ場合に限り checkout / worktree の toplevel へ丸め、
+-- before_init で client ごとの workspace folders と GOWORK を渡す。
+local gopls_root_markers = { "go.work", "go.mod", ".git" }
+M.gopls_default_root_dir = nil
+M.gopls_workspace_requests = {}
+
+local function path_is_within(path, dir)
+  if type(path) ~= "string" or type(dir) ~= "string" or path == "" or dir == "" then return false end
+  if path == dir then return true end
+  local prefix = dir:sub(-1) == "/" and dir or dir .. "/"
+  return path:sub(1, #prefix) == prefix
+end
+
+local function is_direct_child(path, parent)
+  if not path_is_within(path, parent) or path == parent then return false end
+  local relative = path:sub(#parent + 2)
+  return relative ~= "" and not relative:find("/", 1, true)
+end
+
+-- 純関数: src 直下の module directory だけを重複なし・安定順で返す。
+-- module_dirs はファイルシステム層が go.mod を確認した候補を渡す。
+function M.gopls_module_folders(root, module_dirs)
+  if type(root) ~= "string" or root == "" or type(module_dirs) ~= "table" then return {} end
+  local src = root:gsub("/+$", "") .. "/src"
+  local seen, folders = {}, {}
+  for _, dir in ipairs(module_dirs) do
+    if type(dir) == "string" and is_direct_child(dir, src) and not seen[dir] then
+      seen[dir] = true
+      table.insert(folders, dir)
+    end
+  end
+  table.sort(folders)
+  return folders
+end
+
+-- 純関数: 同じ git common dir の dotfiles module 内でだけ workspace を有効にする。
+-- root / file / common dir / module_dirs はすべて実パス化済みの入力。
+function M.gopls_workspace_decision(root, file, common_dir, dotfiles_common_dir, module_dirs)
+  if type(common_dir) ~= "string" or common_dir == "" or common_dir ~= dotfiles_common_dir then return nil end
+  local folders = M.gopls_module_folders(root, module_dirs)
+  if #folders == 0 then return nil end
+  local in_module = false
+  for _, folder in ipairs(folders) do
+    if path_is_within(file, folder) then
+      in_module = true
+      break
+    end
+  end
+  if not in_module then return nil end
+  return { root_dir = root, folders = folders }
+end
+
+local function canonical_existing_dir(path)
+  if type(path) ~= "string" or path == "" then return nil end
+  return vim.uv.fs_realpath(path)
+end
+
+local function canonical_file_path(path)
+  if type(path) ~= "string" or path == "" then return nil end
+  local absolute = vim.fn.fnamemodify(path, ":p")
+  local real = vim.uv.fs_realpath(absolute)
+  if real then return real end
+  local parent = canonical_existing_dir(vim.fs.dirname(absolute))
+  if parent then return vim.fs.normalize(parent .. "/" .. vim.fs.basename(absolute)) end
+  return vim.fs.normalize(absolute)
+end
+
+local function read_git_common_dir(root)
+  local result = vim.system({ "git", "rev-parse", "--git-common-dir" }, { cwd = root, text = true }):wait(250)
+  if not result or result.code ~= 0 then error("git rev-parse --git-common-dir failed") end
+  local path = (result.stdout or ""):gsub("%s+$", "")
+  if path == "" then error("git rev-parse --git-common-dir returned no path") end
+  if path:sub(1, 1) ~= "/" then path = root .. "/" .. path end
+  local real = canonical_existing_dir(path)
+  if not real then error("git common dir could not be resolved") end
+  return real
+end
+
+local function list_gopls_modules(root)
+  local src = root .. "/src"
+  local src_stat = vim.uv.fs_stat(src)
+  if not src_stat then return {} end
+  if src_stat.type ~= "directory" then error("src is not a directory") end
+  local scan, scan_err = vim.uv.fs_scandir(src)
+  if not scan then error(scan_err or "could not enumerate src") end
+  local modules = {}
+  while true do
+    local name, kind = vim.uv.fs_scandir_next(scan)
+    if not name then break end
+    if kind == "directory" and name:sub(1, 1) ~= "." then
+      local dir = src .. "/" .. name
+      local go_mod = vim.uv.fs_stat(dir .. "/go.mod")
+      if go_mod and go_mod.type == "file" then
+        local real = canonical_existing_dir(dir)
+        if not real then error("module directory could not be resolved") end
+        table.insert(modules, real)
+      end
+    end
+  end
+  table.sort(modules)
+  return modules
+end
+
+-- ファイルシステム / subprocess 層。root_dir callback から pcall され、失敗時は既定 root に戻る。
+function M.gopls_workspace_for_buffer(bufnr)
+  local file = canonical_file_path(vim.api.nvim_buf_get_name(bufnr))
+  if not file then return nil end
+  local git_root = vim.fs.root(file, ".git")
+  if not git_root then return nil end
+  git_root = canonical_existing_dir(git_root)
+  if not git_root then error("git root could not be resolved") end
+  local modules = list_gopls_modules(git_root)
+  local candidate = false
+  for _, dir in ipairs(modules) do
+    if path_is_within(file, dir) then candidate = true; break end
+  end
+  if not candidate then return nil end
+
+  local dotfiles = canonical_existing_dir(vim.fn.expand("~/dotfiles"))
+  if not dotfiles then return nil end
+  local common_dir = read_git_common_dir(git_root)
+  local dotfiles_common_dir = read_git_common_dir(dotfiles)
+  return M.gopls_workspace_decision(git_root, file, common_dir, dotfiles_common_dir, modules)
+end
+
+local function queue_gopls_request(root, decision)
+  local request = { decision = decision }
+  local queue = M.gopls_workspace_requests[root]
+  if not queue then
+    queue = {}
+    M.gopls_workspace_requests[root] = queue
+  end
+  table.insert(queue, request)
+  return request
+end
+
+local function peek_gopls_request(root)
+  local queue = root and M.gopls_workspace_requests[root]
+  return queue and queue[1] or nil
+end
+
+local function consume_gopls_request(root, request)
+  local queue = root and M.gopls_workspace_requests[root]
+  if not queue then return end
+  if request then
+    for index, queued in ipairs(queue) do
+      if queued == request then table.remove(queue, index); break end
+    end
+  else
+    table.remove(queue, 1)
+  end
+  if #queue == 0 then M.gopls_workspace_requests[root] = nil end
+end
+
+-- root_dir callback は nvim が config を複製する前に呼ばれる。ここでは root だけを返し、
+-- M.servers.gopls / vim.lsp.config.gopls の共有 settings は書き換えない。
+function M.gopls_root_dir(bufnr, on_dir)
+  local fallback
+  local default_root = M.gopls_default_root_dir
+  local fallback_ok = pcall(function()
+    if type(default_root) == "function" then
+      default_root(bufnr, function(root) fallback = root end)
+    else
+      fallback = vim.fs.root(bufnr, gopls_root_markers)
+    end
+  end)
+  if not fallback_ok or not fallback then
+    local marker_ok, marker_root = pcall(vim.fs.root, bufnr, gopls_root_markers)
+    fallback = marker_ok and marker_root or nil
+  end
+
+  local decision
+  local decision_ok, found = pcall(M.gopls_workspace_for_buffer, bufnr)
+  if decision_ok and type(found) == "table" and type(found.root_dir) == "string"
+    and type(found.folders) == "table" and #found.folders > 0 then
+    decision = found
+  end
+  local root = decision and decision.root_dir or fallback
+  if not root then on_dir(nil); return end
+
+  local request = queue_gopls_request(root, decision)
+  on_dir(root)
+  -- on_dir は先に start_config を予約する。再利用された client で使われなかった request が、後の
+  -- バッファの before_init に漏れないよう後片付けする (起動する client は同期的に消費する)。
+  vim.schedule(function() consume_gopls_request(root, request) end)
+end
+
+local function lsp_workspace_folders(paths)
+  local folders = {}
+  for _, path in ipairs(paths) do
+    table.insert(folders, { uri = vim.uri_from_fname(path), name = vim.fs.basename(path) })
+  end
+  return folders
+end
+
+-- init params と config は client ごとの複製。workspaceFolders の配列は client.workspace_folders
+-- と共有されるため、配列自体を置き換えず中身を差し替える。
+function M.gopls_before_init(params, config)
+  local root = config and config.root_dir
+  local request = peek_gopls_request(root)
+  if not request then return end
+  consume_gopls_request(root, request)
+  local decision = request.decision
+  if not decision then return end
+
+  local ok, folders = pcall(lsp_workspace_folders, decision.folders)
+  if not ok or type(params) ~= "table" or type(config.settings) ~= "table" then return end
+  local current = params.workspaceFolders
+  if type(current) ~= "table" then current = {} end
+
+  local gopls_settings = config.settings.gopls
+  if type(gopls_settings) ~= "table" then
+    gopls_settings = {}
+    config.settings.gopls = gopls_settings
+  end
+  local env = gopls_settings.env
+  if type(env) ~= "table" then
+    env = {}
+    gopls_settings.env = env
+  end
+  env.GOWORK = "off"
+
+  for index = #current, 1, -1 do current[index] = nil end
+  for index, folder in ipairs(folders) do current[index] = folder end
+  params.workspaceFolders = current
+  -- Client:_restart() は root_dir を通らずに lsp.start(self.config) を呼ぶ。実効の folders を
+  -- client の config にも残し、再起動した client が同じ workspace を受け取るようにする。
+  config.workspace_folders = current
+end
+
+local function workspace_folders_contain(config_folders, client_folders)
+  for _, config_folder in ipairs(config_folders) do
+    local found = false
+    for _, client_folder in ipairs(client_folders or {}) do
+      if config_folder.uri == client_folder.uri then
+        found = true
+        break
+      end
+    end
+    if not found then return false end
+  end
+  return true
+end
+
+-- nvim 0.12.0 の reuse_client_default は vim/lsp.lua の local で呼べないので、dotfiles の判定が無い
+-- バッファ用に同じ条件 (workspace folder の包含) をここに写す。内部 API (_get_workspace_folders) が
+-- 版の更新で消えたら、呼び出し元の pcall で「再利用しない」に倒れる (client が増えるだけで壊れない)。
+local function gopls_reuse_client_default(client, config)
+  local get_folders = vim.lsp._get_workspace_folders
+  local config_folders = get_folders(config.workspace_folders or config.root_dir)
+  if not config_folders or not next(config_folders) then
+    local client_config_folders = get_folders(client.config.workspace_folders or client.config.root_dir)
+    return not client_config_folders or not next(client_config_folders)
+  end
+  return workspace_folders_contain(config_folders, client.workspace_folders)
+end
+
+-- dotfiles の workspace folders は src/<module> 群で root_dir (toplevel) を含まないので、判定がある
+-- バッファはその folders の包含で比べる。それ以外の Go ファイルは nvim の既定と同じ判定に従う。
+function M.gopls_reuse_client(client, config)
+  local ok, reusable = pcall(function()
+    if client.name ~= config.name or (client.is_stopped and client:is_stopped()) then return false end
+    local request = peek_gopls_request(config.root_dir)
+    local decision = request and request.decision
+    local can_reuse
+    if decision then
+      local expected = lsp_workspace_folders(decision.folders)
+      can_reuse = #expected > 0 and workspace_folders_contain(expected, client.workspace_folders)
+    else
+      can_reuse = gopls_reuse_client_default(client, config)
+    end
+    if can_reuse and request then consume_gopls_request(config.root_dir, request) end
+    return can_reuse
+  end)
+  return ok and reusable or false
+end
+
 M.servers = {
   -- ruby-lsp / solargraph とも rbenv に gem install したものを PATH 経由で使う。
   -- 整形は ruby-lsp 内蔵の formatter (lspconfig 既定 init_options.formatter = "auto" が bundle の
@@ -423,6 +701,12 @@ M.servers = {
     },
   },
   gopls = {
+    -- PATH 先頭の bin/gopls は Claude Code 用。nvim は mason の実体を絶対パスで起動し、
+    -- server_binary_available() も同じパスで有無を見る (shim が未導入を隠さないように)。
+    cmd = { M.mason_bin() .. "/gopls" },
+    root_dir = M.gopls_root_dir,
+    before_init = M.gopls_before_init,
+    reuse_client = M.gopls_reuse_client,
     settings = { gopls = { hints = {
       parameterNames = true,
       assignVariableTypes = true,
@@ -502,6 +786,8 @@ function M.server_binary_available(name, deps)
   local executable = deps.executable or vim.fn.executable
   local cmd = configs and configs[name] and configs[name].cmd
   if type(cmd) ~= "table" then return true end
+  -- gopls の config.cmd[1] は M.mason_bin() .. "/gopls"。PATH 上の Claude shim だけでは
+  -- Mason の gopls が未導入という判定を通さない。
   return executable(cmd[1]) == 1
 end
 
@@ -826,6 +1112,15 @@ end
 function M.setup(capabilities)
   setup_diagnostics()
   require("dotfiles.refs_usage").setup()
+
+  -- lspconfig の root_dir を保存してから gopls の callback を上書きする。root_dir は dotfiles
+  -- 外で lspconfig と同じ検出 (module cache / stdlib の共有 client を含む) へ戻す。
+  if not M.gopls_default_root_dir then
+    local default = vim.lsp.config.gopls and vim.lsp.config.gopls.root_dir
+    if type(default) == "function" and default ~= M.gopls_root_dir then
+      M.gopls_default_root_dir = default
+    end
+  end
 
   -- 全サーバ共通の capabilities (blink.cmp)。nil なら素の capability。
   vim.lsp.config("*", { capabilities = capabilities or vim.lsp.protocol.make_client_capabilities() })

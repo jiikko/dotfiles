@@ -28,6 +28,14 @@
 
 package 単位の一覧は [PACKAGES.md](PACKAGES.md) (生成物)。道具を知らなくても grep で見つけられるよう commit しておき、`scripts/go_packages_index.sh --check` (`make test-lint`) が生成し直した結果との差分を検査する。
 
+## module をまたぐ Go の検索
+
+`src/go.work` は置かない。2026-10-08 の実測では、全 module を workspace にすると第三者依存などの解決に 18 行の差が出た。たとえば chromecookie の `golang.org/x/sys` が v0.9.0 から v0.47.0 に上がり、restartable の termsafe / tuikit が GitHub の pseudo-version からローカル module に変わる。go.work はビルドと解析の依存解決を変えるため、module ごとのビルドを保つ。
+
+nvim は dotfiles の git common dir に属する checkout / worktree で `src/*/go.mod` を持つ module 内の Go ファイルを開いたとき、同じ checkout の全 module を gopls の workspace folders にする。gopls の `GOWORK=off` を client ごとに設定するので、各 module は自身の go.mod で解析される。別 repo や module 外のファイルは既定の root 検出を使う。
+
+Claude Code で package を探すときは [PACKAGES.md](PACKAGES.md) を引く。gopls を起動する plugin は PATH 上の `gopls` を使い、`bin/gopls` が Mason の実体を優先して起動する。Mason に無ければ shim 自身を除いた PATH から実体を探し、見つからなければ案内を出して失敗する。
+
 ## 新規プロジェクトのガイドライン
 
 プロジェクトを追加するときは、以下の **3 点セット**を必ず揃える。どれか欠けると lint / test がローカルまたは CI から漏れる（disassemble_excel はこれが無かったためテスト 6 ファイルが死蔵していた実例あり）。

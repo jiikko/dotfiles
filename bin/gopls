@@ -1,0 +1,113 @@
+#!/bin/sh
+# gopls の固定 shim。nvim は mason の実体を直接使い、Claude Code は ~/dotfiles/bin からここへ来る。
+# Mason を優先し、無ければ shim 自身の bin を除いた PATH から実体を探す。
+set -u
+unset CDPATH
+
+fail() {
+  printf 'gopls shim: %s\n' "$1" >&2
+  exit "$2"
+}
+
+# 絶対パス化し、ファイル symlink と親ディレクトリ symlink を解決する。
+canonicalize_file() {
+  resolve_path=$1
+  case "$resolve_path" in
+    /*) ;;
+    *) resolve_path=$PWD/$resolve_path ;;
+  esac
+  resolve_hops=0
+  while [ -L "$resolve_path" ]; do
+    resolve_hops=$((resolve_hops + 1))
+    [ "$resolve_hops" -le 40 ] || return 1
+    resolve_link=$(/usr/bin/readlink "$resolve_path") || return 1
+    case "$resolve_link" in
+      /*) resolve_path=$resolve_link ;;
+      *) resolve_path=${resolve_path%/*}/$resolve_link ;;
+    esac
+  done
+  resolve_dir=${resolve_path%/*}
+  resolve_name=${resolve_path##*/}
+  [ -n "$resolve_dir" ] || resolve_dir=/
+  resolve_dir=$(CDPATH='' cd -P "$resolve_dir" 2>/dev/null && pwd -P) || return 1
+  CANONICAL_FILE=$resolve_dir/$resolve_name
+}
+
+canonicalize_dir() {
+  resolve_dir=$1
+  case "$resolve_dir" in
+    /*) ;;
+    *) resolve_dir=$PWD/$resolve_dir ;;
+  esac
+  CANONICAL_DIR=$(CDPATH='' cd -P "$resolve_dir" 2>/dev/null && pwd -P) || return 1
+}
+
+# Canonical path comparison catches symlinks. -ef also catches hard links, whose canonical
+# path strings remain different even though they name the same executable.
+same_file() {
+  [ "$1" = "$2" ] || [ "$1" -ef "$2" ]
+}
+
+case "$0" in
+  /*) self_path=$0 ;;
+  *) self_path=$PWD/$0 ;;
+esac
+canonicalize_file "$self_path" || fail "shim の実パスを解決できません: $self_path" 70
+self_path=$CANONICAL_FILE
+self_dir=${self_path%/*}
+
+if [ -n "${HOME-}" ]; then
+  mason_gopls=$HOME/.local/share/nvim/mason/bin/gopls
+  if [ -x "$mason_gopls" ]; then
+    canonicalize_file "$mason_gopls" || fail "Mason の gopls を実パスに解決できません: $mason_gopls" 70
+    real_gopls=$CANONICAL_FILE
+    same_file "$real_gopls" "$self_path" && fail "Mason の gopls が shim 自身を指しています: $real_gopls" 70
+    exec "$real_gopls" "$@"
+  fi
+fi
+
+# PATH の各要素を物理パスで比べ、shim 自身の bin を除外する。
+# 空要素は cwd を意味するため、cwd が shim dir でない場合は "." として残す。
+source_path=${PATH-}
+search_path=
+has_search_entry=0
+if [ -n "$source_path" ]; then
+  while :; do
+    case "$source_path" in
+      *:*) path_entry=${source_path%%:*}; source_path=${source_path#*:}; more_entries=1 ;;
+      *) path_entry=$source_path; more_entries=0 ;;
+    esac
+    path_dir=$path_entry
+    [ -n "$path_dir" ] || path_dir=.
+    if canonicalize_dir "$path_dir" && [ "$CANONICAL_DIR" = "$self_dir" ]; then
+      : # shim 自身の bin は PATH 探索から外す
+    else
+      [ -n "$path_entry" ] || path_entry=.
+      if [ "$has_search_entry" -eq 0 ]; then
+        search_path=$path_entry
+        has_search_entry=1
+      else
+        search_path=$search_path:$path_entry
+      fi
+    fi
+    [ "$more_entries" -eq 1 ] || break
+  done
+fi
+
+if [ "$has_search_entry" -eq 1 ]; then
+  found_gopls=$(PATH="$search_path" command -v gopls 2>/dev/null || true)
+else
+  found_gopls=
+fi
+if [ -n "$found_gopls" ]; then
+  case "$found_gopls" in
+    /*) ;;
+    *) found_gopls=$PWD/$found_gopls ;;
+  esac
+  canonicalize_file "$found_gopls" || fail "PATH 上の gopls を実パスに解決できません: $found_gopls" 70
+  real_gopls=$CANONICAL_FILE
+  same_file "$real_gopls" "$self_path" && fail "PATH 上の gopls が shim 自身を指しています: $real_gopls" 70
+  exec "$real_gopls" "$@"
+fi
+
+fail "gopls が見つかりません。Neovim の Mason で gopls を入れるか、実体を PATH に追加してください。" 127
