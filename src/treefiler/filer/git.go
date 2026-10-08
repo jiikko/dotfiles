@@ -19,7 +19,7 @@ import (
 //
 // 🚨 周期のタイマーは張らない (glogx の「止まっている間は tick を回さない」を崩さないため)。取り直すのは
 // 開いたとき・読み直したとき・キーを押したときで、前回から gitMinInterval 以上たっていれば。treebeard は 3 秒周期。
-// 見るのは root と開いているフォルダが属する repo のすべて (入れ子の repo・root が repo の外で配下に repo が並ぶ場合も。spec §5.4)。
+// 見るのは root と開いているフォルダが属する repo のすべて (入れ子の repo・root が repo の外で配下に repo が並ぶ場合も。spec §5.3)。
 
 const gitMinInterval = 3 * time.Second
 

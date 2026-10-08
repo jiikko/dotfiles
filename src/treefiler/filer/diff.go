@@ -11,7 +11,7 @@ import (
 )
 
 // diff.go はタイルの `d` (git の diff と本体の切り替え。spec §8.3)。diff を出せるのは git の状態が
-// staged / modified / conflict のファイルだけ (spec §5.4 の「>= Staged」)。取得は裏の goroutine で行い、終わるまで読み込み中を出す。
+// staged / modified / conflict のファイルだけ (spec §5.3 の「>= Staged」)。取得は裏の goroutine で行い、終わるまで読み込み中を出す。
 
 // gitDiffCommand は repo の根 top で rel の diff を取る (テストで差し替える)。
 // --color=never で受けて、色は tuikit/highlight.Diff が付ける。

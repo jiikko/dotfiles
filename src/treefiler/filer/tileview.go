@@ -36,7 +36,9 @@ type viewKey struct {
 }
 
 // markdownCap は Markdown を整形するために読む上限 (整形は全体を見るので、先頭からここまでを読む)。
-// 🚨 spec §5.5 の head (2 MiB) より小さくしている: 整形は UI の goroutine で同期に走り、2 MiB で 1.8 秒止まった (実測 2026-10-09)。
+// 🚨 spec §5.5 の head (2 MiB) より小さくしている: 整形は UI の goroutine で同期に走る。上限 + 1 MiB のファイルを開いて G を押す
+// テスト (TestMarkdownReadsUpToCap。ファイルの書き出しを含む) の所要が、上限 2 MiB で 1.83 秒、256 KiB で 0.06 秒
+// (2026-10-09。ファイルの大きさも違い、整形だけの時間は分けて測っていない)。
 const markdownCap = 256 << 10
 
 func isMarkdown(name string) bool {

@@ -325,7 +325,7 @@ func setGit(m *Model, porcelain string) {
 	m.gitSnap = gitSet{repos: []gitSnapshot{s}}
 }
 
-// root が repo の外で、配下に repo が並ぶ (~/src のような) とき、開いたフォルダの repo ごとに印とブランチが出る (spec §5.4)。
+// root が repo の外で、配下に repo が並ぶ (~/src のような) とき、開いたフォルダの repo ごとに印とブランチが出る (spec §5.3)。
 func TestGitNestedRepos(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git が無い")
