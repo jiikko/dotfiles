@@ -151,6 +151,7 @@ MIT OR Apache-2.0) を写す**。依頼に無い部分も含めて全部写す�
   依存 (`golang.org/x/image`) と外部コマンド (`convert` / `pdftoppm`) は再開するときに決める
 - [ ] ファイラーの中で glogx の `i` `R` `D` `U` `X` を効かせるか (推奨: 効かせる。`s` `C` は treebeard が使う)
 - [ ] Remember place の保存先 (推奨: `~/.config/glogx/` の下)
+- [ ] 単体で起動するコマンドと module の名前 (spec §0.6。例 `bin/filer` と `src/filer`)
 
 ## 既存の資産と制約 (2026-10-07 に調べた事実)
 
@@ -236,3 +237,5 @@ MIT OR Apache-2.0) を写す**。依頼に無い部分も含めて全部写す�
   `updateKeyReachable` で `C` を常に譲る、を spec に足した。木の上の `Esc` の優先順 (explode 中断・検索取り消しが先) と、ばねは `dt` を受けるので
   フレーム周期に依存しないことも足した。§0.1・0.2・0.4・0.5 の決定の写しと treebeard の数値は反証されなかった
 - 2026-10-07 ユーザー回答: 画像・PDF のプレビューは後回し (pending)。それまでは開かず toast で断る扱いにした (spec §0.1・§0.4)
+- 2026-10-08 ユーザー回答: ファイラーは glogx からだけでなく単体でも起動できるようにする。`ratelimit` と同じ形 (独立 module + glogx が replace で取り込む + `bin/` の入口) で
+  spec §0.6 に書いた。名前は未決

@@ -96,9 +96,28 @@ issue 662 の実装前の正本。**§0 が glogx での決定 (treebeard から
 - 写す項目は §7 の表から × を除いたもの。ソート (Sort by / Reverse) も後回しなので外す
 - Remember place (§7 の places) の保存先も `~/.config/glogx/` の下にする (treebeard は `~/.local/state/tb/places`)。🚨 推奨で、ユーザー未確認
 
-### 0.6 本体へ入れる順
+### 0.6 単体でも起動する (2026-10-08 ユーザー回答「このファイラー単体でも起動できるようにして」)
 
-1. 横に育つ木と固定の選択線 (§1〜3、§4.2・4.5)
+- glogx の `F` から開くのに加えて、**ファイラーだけを端末で起動するコマンド**も持つ
+- そのため**ファイラーは glogx の `package main` に置かず、独立した module** にする。glogx の構造の判断
+  (`src/glogx/CLAUDE.md`「サブパッケージを切る基準は実在する第二消費者か明示的な分離要望」) の両方に当たる
+- 形は `ratelimit` と同じ: `src/ratelimit` が独立 module で、取得と整形の `usage/` パッケージを glogx が `replace ratelimit => ../ratelimit` で取り込み、
+  単体の入口は `bin/ratelimit` (`bin/lib/go_autobuild.zsh` で自動ビルドして exec する zsh)。ファイラーも
+  - `src/<名前>/` の module に、画面の部品のパッケージ (状態・キー・描画。glogx からも単体からも使う) と、単体用の `main.go` を置く
+  - glogx は `replace` で取り込み、全画面の 1 枚として部品を埋め込む (§0.3 の配線はそのまま)
+  - `bin/<名前>` を `go_autobuild_exec` で書く
+- 部品は glogx に依存しない: termsafe・tuikit (toast・markdown・highlight・termwidth・layout) は既に独立 module なので両方から使える
+- 単体のときの違い:
+  - `q` `Esc` (木の上) は単体のプログラムを終了する。`F` で閉じる・git log 一覧へ戻るは glogx に埋め込んだときだけ
+  - glogx の横断キー (`R` `D` `U` `X` `i`) は単体では無い
+  - 起点は単体でも pwd (引数でディレクトリを渡せるようにするかは実装で決める。treebeard は `tb [DIR]`)
+  - 設定は単体でも glogx でも同じ `~/.config/glogx/` の下を読む (§0.5)
+- 🚨 **未決: module とコマンドの名前** (例 `src/filer` と `bin/filer`)。`bin/` に同名は無い (2026-10-08 確認)
+- 単体で起動できると、見た目の確認 (撮影) も glogx を経由せずに回せる
+
+### 0.7 本体へ入れる順
+
+1. 独立 module と単体の起動 (`bin/<名前>`)、横に育つ木と固定の選択線 (§1〜3、§4.2・4.5)。glogx の `F` への配線は 1 段目の最後に
 2. 熱の色と git の印 (§1.3、§5.1、§5.3)
 3. タイル 1 枚 (§0.2、§8.3、§0.4)
 4. タイルを 4 箇所に重ねる・タイル内のジャンプ
