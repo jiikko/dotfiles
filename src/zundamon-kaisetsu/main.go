@@ -392,7 +392,7 @@ func styleIDArg(v string) error {
 	return nil
 }
 
-const usageText = `usage: zundamon-kaisetsu [--engine URL] {check,up,down,speakers,kana,synth,build} ...
+const usageText = `usage: zundamon-kaisetsu [--engine URL] {check,up,down,speakers,kana,lint,synth,build} ...
 
   check     必要なコマンド・コンテナ・エンジンの状態を確かめる (足りなければ rc=1)
   up        エンジンをコンテナ ` + containerName + `-<ポート> で起動し、応答するまで待つ (down まで動き続ける)
@@ -402,6 +402,7 @@ const usageText = `usage: zundamon-kaisetsu [--engine URL] {check,up,down,speake
   kana      文ごとの読み (audio_query の kana) を出す。read の候補を合成せずに比べる
               kana "文" … [--who metan|zundamon] [--style-id ID]  /  kana --script 台本.json [--check]
               --check: 英字の語を 1 文字ずつ読んだ行を警告し (あれば rc=1)、英字の語の一覧を出す
+  lint      台本の校正のうち機械で決まるもの (60 字超・「のだ」2 回・漢数字・図を指す言い方 等) を警告する (あれば rc=1)。lint 台本.json
   synth     セリフごとに wav を合成する (<台本名>.work/ にキャッシュ)。synth 台本.json [--force]
   build     合成済みの wav を連結し、HTML プレイヤーか mp4 (か両方) を書き出す
               build 台本.json -o 出力 [--format html|mp4|both] [--jobs N] [--bitrate 64k]
@@ -467,6 +468,7 @@ func dispatch(args []string, env *Env) error {
 			{names: []string{"--check"}, dest: "check"},
 		},
 		"synth": {{names: []string{"--force"}, dest: "force"}},
+		"lint":  nil,
 		"build": {
 			{names: []string{"-o", "--output"}, dest: "output", takes: true},
 			{names: []string{"--format"}, dest: "format", takes: true, choices: []string{"html", "mp4", "both"}},
@@ -476,7 +478,7 @@ func dispatch(args []string, env *Env) error {
 	}
 	spec, ok := specs[sub]
 	if !ok {
-		return &usageError{msg: fmt.Sprintf("argument cmd: invalid choice: '%s' (choose from check, up, down, speakers, kana, synth, build)", sub)}
+		return &usageError{msg: fmt.Sprintf("argument cmd: invalid choice: '%s' (choose from check, up, down, speakers, kana, lint, synth, build)", sub)}
 	}
 	p, _, err := parseArgs(subArgs, spec, false)
 	if err != nil {
@@ -490,7 +492,7 @@ func dispatch(args []string, env *Env) error {
 		// argparse の nargs='*' は、最初のまとまりだけを取り、オプションの後ろの位置引数は余りとして拒否する
 		return &usageError{msg: "unrecognized arguments: " + strings.Join(p.pos[p.firstGroup:], " ")}
 	}
-	nPos := map[string]int{"check": 0, "up": 0, "down": 0, "speakers": 0, "synth": 1, "build": 1, "kana": -1}[sub]
+	nPos := map[string]int{"check": 0, "up": 0, "down": 0, "speakers": 0, "synth": 1, "build": 1, "kana": -1, "lint": 1}[sub]
 	if nPos >= 0 && len(p.pos) > nPos {
 		return &usageError{msg: "unrecognized arguments: " + strings.Join(p.pos[nPos:], " ")}
 	}
@@ -522,6 +524,11 @@ func dispatch(args []string, env *Env) error {
 			}
 		}
 		return withEngine(env, func() error { return cmdKana(env, p.pos, p.opts["script"], who, sid, p.opts["check"] == "true") })
+	case "lint":
+		if err := env.requireSkillDir(); err != nil {
+			return err
+		}
+		return cmdLint(env, p.pos[0])
 	case "synth":
 		if err := env.requireSkillDir(); err != nil {
 			return err

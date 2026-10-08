@@ -11,7 +11,7 @@
 (読み替えの辞書 `readings.json` は Go が読まない。台本の `readings` へ合流させる手順は SKILL.md)。バイナリを直接起動するときも、この環境変数が要る。
 
 ```sh
-zundamon-kaisetsu check | up | down | speakers | kana … | synth script.json | build script.json -o out --format html|mp4|both
+zundamon-kaisetsu check | up | down | speakers | kana … | lint script.json | synth script.json | build script.json -o out --format html|mp4|both
 ```
 
 ## ファイルの地図
@@ -21,6 +21,7 @@ zundamon-kaisetsu check | up | down | speakers | kana … | synth script.json | 
 | `main.go` | 引数の解析 (Python の argparse の再現)・シグナルと中断 (`appCtx`)・`Env` (テストで差し替える口) |
 | `script.go` | 台本の読み込みと検証・キャラの設定・合成のキャッシュの鍵 (`Params` / `cacheSerialize`)・読み替え |
 | `synth.go` | エンジンへの要求 (audio_query / synthesis)・キャッシュ (`<台本>.work/`)・`kana` |
+| `lint.go` | `lint`: 台本の校正のうち文字列と構造だけで決まるもの (60 字超・「のだ」2 回・漢数字・図を指す言い方 等。issue 675)。試験用の台本は skill の `examples/review-bench/` |
 | `reading_check.go` | `kana --script --check`: 英字の語を 1 文字ずつ読んだ行の警告と、英字の語の一覧 (略語の一覧は skill の `acronyms.json`。issue 673) |
 | `engine.go` / `engine_auto.go` | エンジンのコンテナの起動・停止 / 自動起動と、使われなくなったら止める見張り |
 | `build.go` | 組み立て (`assemble`: wav の連結・口の開き・プレイヤーのデータ)・`cmdBuild`・HTML への埋め込み |
