@@ -30,7 +30,7 @@ issue 662 の実装前の正本。**§0 が glogx での決定 (treebeard から
 | マウス | クリック・ホイール・慣性 | **写さない** (設定の Mouse / Wheel speed / Momentum も外す) |
 | 音声 | 再生・波形 | **開かない**。toast で断る (§0.4) |
 | バイナリ | `file -b` の説明を出す | **開かない**。toast で断る (§0.4) |
-| 画像・PDF | ピクセル (kitty/sixel/iTerm2) かブロック | **後回し (pending。2026-10-07 ユーザー回答)**。入れるときはブロックだけ (§9 の quadrants / sextants / half) で、`i` の切替と設定の Image previews は外す。それまでは開かずに toast で断る (§0.4) |
+| 画像・PDF | ピクセル (kitty/sixel/iTerm2) かブロック | **画像は後回し (pending。2026-10-07 ユーザー回答。issue 688)。PDF は写さない (2026-10-09 ユーザー回答「pdf のプレビューはやらんでええよ」)**。入れるときはブロックだけ (§9 の quadrants / sextants / half) で、`i` の切替と設定の Image previews は外す。それまでは開かずに toast で断る (§0.4) |
 | テキストの描画 | `glow` / `bat` (外部コマンド) | **外部コマンドを呼ばず** bubbletea v2 と tuikit で描く: markdown = `tuikit/markdown`、コード = `tuikit/highlight` (chroma)。`docs/glogx-bubbletea-v2.md` の幅の前提に乗る |
 | 巨大なテキスト | 先頭 2 MiB だけ読む | **先頭だけ読み、ページ送りで下へ進むたびに続きを読む** (§0.4) |
 | 設定の保存先 | `~/.config/tb/config.toml` | **`~/.config/glogx/` の下** (§0.5) |

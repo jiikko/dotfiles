@@ -52,7 +52,7 @@ git の印とブランチは、root と開いているフォルダが属する r
 
 Markdown は整形して、コードは言語ごとに色を付けて出す (外部コマンドは呼ばない。`tuikit/markdown` と `tuikit/highlight`)。
 長い行は折り返す (設定の Wrap lines で切り替え)。
-音声・画像・PDF・バイナリは開かず、toast で知らせる (画像と PDF は後で対応する)。
+音声・画像・PDF・バイナリは開かず、toast で知らせる (画像は後で対応する。issue 688。PDF は写さない)。
 
 ## 設定
 

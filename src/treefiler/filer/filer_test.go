@@ -212,6 +212,21 @@ func TestRefusedFilesShowNoticeNotTile(t *testing.T) {
 	}
 }
 
+// PDF は写さない (2026-10-09 ユーザー回答)。先頭に NUL の無い PDF でも、テキストとして開かない。
+func TestPDFIsRefusedEvenWithoutNUL(t *testing.T) {
+	m := newTest(t)
+	if err := os.WriteFile(filepath.Join(m.root.abs, "doc.pdf"), []byte("%PDF-1.4\n1 0 obj\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m.root.reload()
+	cdTo(t, m, "doc.pdf")
+	m.HandleKey("enter")
+	ns := m.TakeNotices()
+	if len(m.tiles) != 0 || len(ns) != 1 || !strings.Contains(ns[0].Text, "PDF は表示できません") {
+		t.Fatalf("PDF: tiles=%d 知らせ=%+v", len(m.tiles), ns)
+	}
+}
+
 func TestTileSlotsRotateAndCloseKeys(t *testing.T) {
 	m := newTest(t)
 	cdTo(t, m, "c.txt")

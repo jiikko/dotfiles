@@ -22,10 +22,10 @@ const (
 // audioExt は開かずに断る音声 (spec §0.4。treebeard の対応形式)。
 var audioExt = map[string]bool{".mp3": true, ".flac": true, ".wav": true, ".ogg": true, ".m4a": true, ".aac": true}
 
-// imageExt は画像・PDF。プレビューは後回し (spec §0.1。2026-10-07 ユーザー回答) なので、今は開かずに断る。
+// imageExt は画像。プレビューは後回し (spec §0.1。2026-10-07 ユーザー回答。issue 688) なので、今は開かずに断る。
 var imageExt = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true, ".bmp": true, ".tif": true, ".tiff": true,
-	".ico": true, ".svg": true, ".svgz": true, ".avif": true, ".heic": true, ".tga": true, ".psd": true, ".pdf": true,
+	".ico": true, ".svg": true, ".svgz": true, ".avif": true, ".heic": true, ".tga": true, ".psd": true,
 }
 
 // refuse は開けない理由を返す (開けるなら "")。toast で出す文 (spec §0.4)。
@@ -34,8 +34,10 @@ func refuse(n *node) string {
 	switch {
 	case audioExt[ext]:
 		return "音声は表示できません: " + n.name
+	case ext == ".pdf": // PDF は写さない (2026-10-09 ユーザー回答)。先頭に NUL が無い PDF もあるので、テキストとして開かせない
+		return "PDF は表示できません: " + n.name
 	case imageExt[ext]:
-		return "画像と PDF はまだ表示できません: " + n.name
+		return "画像はまだ表示できません: " + n.name
 	}
 	return ""
 }
