@@ -1,6 +1,6 @@
 //go:build ruleguard
 
-// gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.yml から参照)。
+// Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.yml から参照)。
 // 規則と理由の正本は src/glogx/gorules/rules.go。usage の描画 (glogx のダッシュボードで毎フレーム走る) に
 // 同じ規則を掛けるため、module を分けたときに写した (別 module の規則ファイルは ruleguard が dsl を
 // 解決できず読めない)。

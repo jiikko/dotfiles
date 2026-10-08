@@ -32,6 +32,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # package doc index は go list -find で生成・検査する (依存 cache は使わない)。
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: src/glogx/go.mod
+          cache: false
+
       # ruby は test-ruby-syntax (Brewfile/_pryrc の ruby -c と _gemrc の YAML パース) 用。
       # 導入と検証は共有 action に集約 (issue 141)
       - uses: ./.github/actions/ensure-toolchain

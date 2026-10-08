@@ -26,6 +26,8 @@
 | [`atomicfile`](atomicfile/README.md) | 途中の状態を残さないファイル書き込み (temp + rename) |
 | [`proctree`](proctree/README.md) | プロセスの子孫を集めて止める (runtimeout と zundamon-kaisetsu が使う) |
 
+package 単位の一覧は [PACKAGES.md](PACKAGES.md) (生成物)。道具を知らなくても grep で見つけられるよう commit しておき、`scripts/go_packages_index.sh --check` (`make test-lint`) が生成し直した結果との差分を検査する。
+
 ## 新規プロジェクトのガイドライン
 
 プロジェクトを追加するときは、以下の **3 点セット**を必ず揃える。どれか欠けると lint / test がローカルまたは CI から漏れる（disassemble_excel はこれが無かったためテスト 6 ファイルが死蔵していた実例あり）。
@@ -39,6 +41,9 @@
 3. **`.github/workflows/src_<name>.yml` を作成**
    paths filter 付きの専用 workflow で lint / test を回す（プロジェクトに触れた push だけで起動）。
    🚨 paths filter 付き check を branch protection の **required check に登録しないこと**（非接触 PR では run が生成されず、check が永遠に pending になる）
+4. **すべての Go package に doc comment を置く**。非 `main` package は `Package <package 名> ...` で始め、先頭段落を 1 文にする。`main` package もコマンドの説明を 1 文で書く。`scripts/go_packages_index.sh` が doc comment を検査し、`src/PACKAGES.md` を生成する (package を足したら生成し直す)。
+
+この一覧は `GOOS` / `GOARCH` を実行機の既定値 (macOS arm64) にして列挙する。
 
 揃えたら、プロジェクトの `make lint` / `make test` だけでなく **root の `make test-lint`** も回す (CI の Lint と同じ集約 target。
 3 点セットと go.sum・CI レーンの有無は `test-go-project-lanes` が検査する)。

@@ -1,6 +1,6 @@
 //go:build ruleguard
 
-// gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.yml の
+// Package gorules は gocritic の ruleguard checker が読むカスタム lint ルール (.golangci.yml の
 // settings.gocritic.settings.ruleguard.rules から参照)。
 //
 // 🚨 **独立したディレクトリに置くこと** (issue 202)。glogx 直下に置くと `package gorules` が
