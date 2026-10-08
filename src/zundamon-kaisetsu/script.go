@@ -128,6 +128,11 @@ func loadScript(path string, env *Env) (*Script, error) {
 			return nil, fail("%s: date は空でない文字列で書く (実際: %s)", path, pyRepr(d))
 		}
 	}
+	if ov, ok := raw["overlays"]; ok {
+		if _, err := parseOverlays(ov); err != nil {
+			return nil, fail("%s: %v", path, err)
+		}
+	}
 	if rd, ok := raw["readings"]; ok && !validReadings(rd) {
 		return nil, fail(`%s: readings は {"字幕の語": "読ませたい語"} の形 (キーも値も空でない文字列)`, path)
 	}

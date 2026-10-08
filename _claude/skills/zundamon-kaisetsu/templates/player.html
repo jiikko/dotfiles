@@ -67,7 +67,7 @@ h1 { font-size: 1.25rem; margin: 0 0 12px; }
 /* 作成日。タイトルと同じ高さの右端に出す (タイトルは max-width 70% なので重ならない) */
 .stage-date { position: absolute; right: 3%; top: 3%; background: var(--caption-bg); border-radius: 12px;
               padding: 8px 16px; font-size: clamp(12px, 2vw, 18px); font-weight: 700; z-index: 1; }
-.stage-date:empty { display: none; }
+.stage-title:empty, .stage-date:empty { display: none; }
 .caption:empty { display: none; }
 /* トピック (チャプター) 名。チャプターが 2 つ以上あるときだけ、上端のタイトルと立ち絵の頭の間に出す */
 .stage-topic { position: absolute; left: 50%; top: 17%; transform: translateX(-50%); max-width: 70%; text-align: center;
@@ -116,8 +116,9 @@ html.render * { transition: none !important; }
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
+  const OV = new Set(D.overlays || ['title', 'date', 'topic']); // 舞台に重ねて出すメタデータ (台本の overlays)
   $('stage').classList.toggle('has-shows', !!(D.shows && D.shows.length)); // まとめ撮りの分岐より前 (複製した舞台にも効く)
-  $('title').textContent = D.title; $('stage-title').textContent = D.title; $('stage-date').textContent = D.date ? `作成日 ${D.date}` : ''; $('desc').textContent = D.description;
+  $('title').textContent = D.title; $('stage-title').textContent = OV.has('title') ? D.title : ''; $('stage-date').textContent = OV.has('date') && D.date ? `作成日 ${D.date}` : ''; $('desc').textContent = D.description;
   for (const c of D.credits) $('credits').append(el('li', null, c));
   for (const ch of D.chapters) {
     const a = el('a', null, `${fmt(ch.start)} ${ch.title}`); a.onclick = () => { seek(ch.start); play(); };
@@ -224,7 +225,7 @@ html.render * { transition: none !important; }
     if (li === cur) return;
     cur = li; items.forEach((e, i) => e.classList.toggle('current', i === li));
     // トピック名は行の chapter (build が決めた番号) から引く。行が変わるたびに必ず書き直す
-    const ch = line && D.chapters.length >= 2 ? D.chapters[line.chapter] : null;
+    const ch = OV.has('topic') && line && D.chapters.length >= 2 ? D.chapters[line.chapter] : null;
     $('stage-topic').textContent = ch ? ch.title : '';
     showAt(line && line.show !== undefined ? line.show : -1, line && line.step !== undefined ? line.step : -1);
     const cap = $('caption'); cap.textContent = '';

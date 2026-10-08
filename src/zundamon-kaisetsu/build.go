@@ -363,6 +363,7 @@ type castData struct {
 type PlayerData struct {
 	Title       string              `json:"title"`
 	Date        string              `json:"date"`
+	Overlays    []string            `json:"overlays"` // 舞台に重ねて出すメタデータ (overlayKeys のうち台本が選んだもの)
 	Description string              `json:"description"`
 	Credits     []string            `json:"credits"`
 	Cast        map[string]castData `json:"cast"`
@@ -387,6 +388,36 @@ func createdDate(s *Script, env *Env) string {
 		now = env.Now
 	}
 	return now().Format("2006-01-02")
+}
+
+// overlayKeys は舞台に重ねて出せるメタデータ: 左上のタイトル・右上の作成日・上部中央のトピック (チャプター) 名。
+var overlayKeys = []string{"title", "date", "topic"}
+
+// parseOverlays は台本の overlays (出すものの名前の配列。空なら何も出さない) を読む。
+func parseOverlays(v any) ([]string, error) {
+	items, ok := v.([]any)
+	if !ok {
+		return nil, fmt.Errorf("overlays は %s から出すものを選んだ配列で書く (実際: %s)", strings.Join(overlayKeys, "/"), pyRepr(v))
+	}
+	out := []string{}
+	for _, it := range items {
+		k, ok := it.(string)
+		if !ok || !slices.Contains(overlayKeys, k) || slices.Contains(out, k) {
+			return nil, fmt.Errorf("overlays に書けるのは %s (重複なし) だけ (実際: %s)", strings.Join(overlayKeys, "/"), pyRepr(v))
+		}
+		out = append(out, k)
+	}
+	return out, nil
+}
+
+// screenOverlays は舞台に出すメタデータ。台本に overlays が無ければ全部出す。
+func screenOverlays(s *Script) []string {
+	if v, ok := s.Raw["overlays"]; ok {
+		if out, err := parseOverlays(v); err == nil {
+			return out
+		}
+	}
+	return slices.Clone(overlayKeys)
 }
 
 // assemble は合成済みの wav を連結し、プレイヤーに渡すデータ (音声以外) と連結した PCM を返す。
@@ -510,6 +541,7 @@ func assemble(s *Script, env *Env) (*PlayerData, []byte, error) {
 	data := &PlayerData{
 		Title:       title,
 		Date:        createdDate(s, env),
+		Overlays:    screenOverlays(s),
 		Description: pyStr(lineGet(s.Raw, "description", "")),
 		Credits:     credits,
 		Cast:        cast,

@@ -408,7 +408,7 @@ func TestCreatedDateRenderedByPlayer(t *testing.T) {
 	if !regexp.MustCompile(`<div class="stage-date" id="stage-date"></div>`).MatchString(tpl) {
 		t.Error("舞台に作成日の要素 (#stage-date) が無い")
 	}
-	assign := regexp.MustCompile(`\$\('stage-date'\)\.textContent = D\.date \?`).FindStringIndex(tpl)
+	assign := regexp.MustCompile(`\$\('stage-date'\)\.textContent = OV\.has\('date'\) && D\.date \?`).FindStringIndex(tpl)
 	sheet := strings.Index(tpl, "location.hash.match(/^#sheet=")
 	switch {
 	case assign == nil:
@@ -523,5 +523,85 @@ func TestWriteWavHeaderFields(t *testing.T) {
 	}
 	if string(b[0:4]) != "RIFF" || string(b[8:16]) != "WAVEfmt " || string(b[36:40]) != "data" {
 		t.Errorf("チャンクの名前が違う: %q", b[:44])
+	}
+}
+
+// 舞台に重ねて出すメタデータ (overlays): 省くと全部、書けば選んだものだけ (空なら何も出さない)。不正な値は読み込みで止める。
+func TestOverlays(t *testing.T) {
+	env := testEnv(t)
+	s, err := loadScript(resolvePath(filepath.Join("testdata", "build", "script.json")), env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _, err := assemble(s, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(data.Overlays, []string{"title", "date", "topic"}) {
+		t.Errorf("overlays の無い台本: %v (want 全部)", data.Overlays)
+	}
+	for name, tc := range map[string]struct {
+		v    any
+		want []string
+	}{
+		"日付だけ外す": {[]any{"title", "topic"}, []string{"title", "topic"}},
+		"何も出さない": {[]any{}, []string{}},
+	} {
+		path := writeScript(t, map[string]any{"overlays": tc.v, "lines": []any{map[string]any{"who": "metan", "text": "a"}}})
+		got, err := loadScript(path, env)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if o := screenOverlays(got); !slices.Equal(o, tc.want) {
+			t.Errorf("%s: %v (want %v)", name, o, tc.want)
+		}
+	}
+	for name, v := range map[string]any{"文字列": "title", "知らない名前": []any{"subtitle"}, "重複": []any{"date", "date"}, "数": []any{1}} {
+		path := writeScript(t, map[string]any{"overlays": v, "lines": []any{map[string]any{"who": "metan", "text": "a"}}})
+		if _, err := loadScript(path, env); err == nil || !strings.Contains(err.Error(), "overlays") {
+			t.Errorf("%s の overlays を受け入れた (%v)", name, err)
+		}
+	}
+}
+
+// TestOverlaysRenderedByPlayer は、player.html が 3 つの要素を overlays (OV) で出し分けていることを字句で確かめる。
+// 出し分けを消すと、台本で外したタイトル・日付・トピックが mp4 に写る。
+func TestOverlaysRenderedByPlayer(t *testing.T) {
+	tb, err := os.ReadFile(testEnv(t).Template())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tpl := string(tb)
+	// 既定 (overlays の無い台本・古い HTML) は Go の overlayKeys と同じ全部入り。宣言はまとめ撮りの分岐より前 (後ろだと mp4 で未定義になる)
+	decl := regexp.MustCompile(`const OV = new Set\(D\.overlays \|\| \[([^\]]*)\]\)`).FindStringSubmatchIndex(tpl)
+	sheet := strings.Index(tpl, "location.hash.match(/^#sheet=")
+	switch {
+	case decl == nil:
+		t.Fatal("player.html に OV の宣言が無い")
+	case sheet < 0:
+		t.Fatal("まとめ撮りの分岐が見つからない (テストの前提が変わった)")
+	case decl[0] > sheet:
+		t.Error("OV の宣言がまとめ撮りの分岐より後ろにある")
+	}
+	var defaults []string
+	for _, q := range regexp.MustCompile(`'([a-z]+)'`).FindAllStringSubmatch(tpl[decl[2]:decl[3]], -1) {
+		defaults = append(defaults, q[1])
+	}
+	if !slices.Equal(defaults, overlayKeys) {
+		t.Errorf("player.html の既定 %v が overlayKeys %v と違う", defaults, overlayKeys)
+	}
+	for _, re := range []string{
+		`\$\('stage-title'\)\.textContent = OV\.has\('title'\) \?`,
+		`\$\('stage-date'\)\.textContent = OV\.has\('date'\) &&`,
+		`const ch = OV\.has\('topic'\) &&`,
+	} {
+		if !regexp.MustCompile(re).MatchString(tpl) {
+			t.Errorf("player.html に %s が無い", re)
+		}
+	}
+	for _, k := range overlayKeys {
+		if !strings.Contains(tpl, "OV.has('"+k+"')") {
+			t.Errorf("player.html が %s を出し分けていない", k)
+		}
 	}
 }

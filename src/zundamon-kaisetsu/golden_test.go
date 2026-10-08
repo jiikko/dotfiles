@@ -247,7 +247,7 @@ func TestBuildDataMatchesPython(t *testing.T) {
 }
 
 // keysAddedAfterPort はプレイヤーのデータのうち、Python 版 (golden) の後で足したキー。中身は TestCreatedDate などが見る。
-var keysAddedAfterPort = []string{"date"}
+var keysAddedAfterPort = []string{"date", "overlays"}
 
 func firstBytes(b []byte, n int) []byte {
 	if len(b) > n {
