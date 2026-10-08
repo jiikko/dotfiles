@@ -7,7 +7,8 @@
 ## 起動の経路
 
 `bin/zundamon-kaisetsu` (go_autobuild のラッパー) が、skill のディレクトリを環境変数 `ZUNDAMON_KAISETSU_SKILL_DIR` で渡して起動する。
-テンプレート (`templates/player.html`) と立ち絵の既定の置き場はそこから読む (読み替えの辞書 `readings.json` は Go が読まない。台本の `readings` へ合流させる手順は SKILL.md)。バイナリを直接起動するときも、この環境変数が要る。
+テンプレート (`templates/player.html`)・立ち絵の既定の置き場・略語の一覧 (`acronyms.json`。`kana --check` が読む) はそこから読む
+(読み替えの辞書 `readings.json` は Go が読まない。台本の `readings` へ合流させる手順は SKILL.md)。バイナリを直接起動するときも、この環境変数が要る。
 
 ```sh
 zundamon-kaisetsu check | up | down | speakers | kana … | synth script.json | build script.json -o out --format html|mp4|both
@@ -24,6 +25,7 @@ zundamon-kaisetsu check | up | down | speakers | kana … | synth script.json | 
 | `engine.go` / `engine_auto.go` | エンジンのコンテナの起動・停止 / 自動起動と、使われなくなったら止める見張り |
 | `build.go` | 組み立て (`assemble`: wav の連結・口の開き・プレイヤーのデータ)・`cmdBuild`・HTML への埋め込み |
 | `mp4.go` | mp4 の書き出し (プレイヤーのまとめ撮りを Chrome で撮り、ffmpeg で切り分けてつなぐ) |
+| `caption_speed.go` | 字幕が速くて読み切れないおそれのある行の警告 (build が出す。1 秒 7.5 字を超える行。止めない) |
 | `blink.go` | まばたきの時刻表 (`blinkAt`) と、目を閉じているキャラのビットの列 (`blinkRuns`) |
 | `show*.go` | 台本の `show` (図解: keyword / compare / code / image / mermaid) |
 | `wav.go` / `outfile.go` / `chrome.go` | wav の入出力 / 出力ファイルの置き換え / Chrome の探索と PNG の大きさ |

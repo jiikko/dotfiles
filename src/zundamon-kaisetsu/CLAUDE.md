@@ -14,7 +14,8 @@
 
 ## Go と player.html の契約 (issue 650)
 
-- `#sheet=` の書式 (`sheetFragment` / `mouthLevels`。欄は 行・話し中・口・まばたきのビット) と、図解の種類と読むキー (`showParsers` と、player の `drawShow` (描画)・`showAt` (段の切り替え)) は、Go と
+- `#sheet=` の書式 (`sheetFragment` / `mouthLevels`。欄は 行・話し中・口・まばたきのビット) と、図解の種類と読むキー (`showParsers` と、player の `drawShow` (描画)・`showAt` (段の切り替え))、
+  舞台に重ねるメタデータの名前 (`overlayKeys` と、player の `OV` の既定と出し分け) は、Go と
   `_claude/skills/zundamon-kaisetsu/templates/player.html` の 2 か所にある。テストが突き合わせるのは字句まで:
   **字面を残したまま意味だけ変える書き換え** (まとめ撮りの分解で欄を並べ替える・`paint` の引数の順を変える) は検出しない
 - プレイヤーの描画そのものに自動テストは無い (issue 645)。見た目を変えたら、HTML を作って Chrome で開いて確かめる
