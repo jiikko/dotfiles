@@ -40,3 +40,11 @@
 ## 反証レビュー
 
 起票時の反証レビューは行っていない (retro。起票者の自己確認のみ)。
+
+## 決着 (2026-10-08。ユーザー:「有意義なら取り込んでいい」)
+
+- 提案 1 → 採用: `_claude/rules/measure-external-cli-streams-separately.md` の「自分が書いた fake も仮説」の項に追記
+- 提案 2 → 却下: 発動点が広すぎ (同じファイルを 2 回以上直すとき全部)、毎セッション読まれる rules を増やす割に、今回の再発防止は
+  台本の編集の道具 (issue 678) で足りる。別の対象で同じ取り違えが起きたら再評価する
+- 提案 3 → 採用: `_claude/rules/instrument-before-second-fix.md` の観測の表「前提の再検証」に追記
+- 提案 4 → 採用: `_claude/rules-rationale/subagent-model-tiering.md` に実測を追記 (rules 本文は変えない)
