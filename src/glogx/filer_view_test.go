@@ -188,3 +188,20 @@ func TestFilerRearmsOnlyForCurrentChannel(t *testing.T) {
 		t.Fatal("古いチャネルの合図で待ち直した (待ちが 2 本になる)")
 	}
 }
+
+// treefiler の検索欄の入力中は、端末のカーソルを入力欄に置く (IME の変換中の文字が欄に出るように)。
+func TestFilerSearchPlacesCaret(t *testing.T) {
+	m := newFilerBrowse(t)
+	m.handleKey("F")
+	m.zoom = appZoom{} // 起動の拡大の演出の途中はカーソルを置かない仕様なので、演出の無い状態で見る
+	if m.View().Cursor != nil {
+		t.Fatal("入力していないのにカーソルを置いた")
+	}
+	m.handleKey("/")
+	if m.View().Cursor == nil { // View の中で描いて大きさを伝えてからカーソルを決める (実際のアプリと同じ順)
+		t.Fatal("検索欄の入力中なのにカーソルを置かない")
+	}
+	if m.updateKeyReachable("X") {
+		t.Fatal("検索欄の入力中に X が codex update に取られる")
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/jiikko/dotfiles/src/tuikit/caret"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/toast"
 
@@ -53,7 +54,7 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.w, a.h = msg.Width, msg.Height
 		a.f.Resize(a.w, a.h)
 	case tea.KeyPressMsg:
-		if a.f.HandleKey(msg.String()) == filer.Quit {
+		if a.f.HandleInput(msg.String(), msg.Text) == filer.Quit {
 			return a, tea.Quit
 		}
 		for _, n := range a.f.TakeNotices() {
@@ -94,6 +95,9 @@ func (a *app) View() tea.View {
 	}
 	v := tea.NewView(strings.Join(lines, "\n"))
 	v.AltScreen = true
+	if x, y, ok := a.f.CaretPos(); ok {
+		v.Cursor = caret.At(x, y, a.w, a.h) // 入力欄に端末のカーソルを置く (IME の変換中の文字が欄に出るように)
+	}
 	return v
 }
 

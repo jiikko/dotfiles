@@ -200,8 +200,10 @@ func TestFrameAllocBudget(t *testing.T) {
 		{"doctor-svc", budgetDoctorSvcModel, 383, 67500},
 		{"doctor-brew", budgetDoctorBrewModel, 182, 38700},
 		{"doctor-docker", budgetDoctorDockerModel, 489, 57900},
-		// treefiler (F。issue 662)。格子を毎フレーム作り直していたときは 330KB/frame だった。使い回して 154 / 43167 B (-race)
-		{"filer", budgetFilerModel, 157, 43800},
+		// treefiler (F。issue 662)。格子を毎フレーム作り直していたときは 330KB/frame だった。使い回して 154 / 43167 B (-race)。
+		// 最下行に検索とキー一覧の案内 (/ find  ? keys) を足して 156 / 45601 B。案内を戻すと 43556 B に下がるのを実測した
+		// (増えたのは描く文字列そのもので、確保の無駄ではない)
+		{"filer", budgetFilerModel, 158, 45900},
 	}
 	for _, c := range cases {
 		m := c.build(t)

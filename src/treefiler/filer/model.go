@@ -70,6 +70,10 @@ type Model struct {
 	beadFor    *node // ビーズが走っている先 (カーソルが変わったら走り直す)
 	beadVel    float64
 	beadOn     bool
+	search     searchState
+	lastSearch string
+	exploding  *explodeJob
+	help       bool
 }
 
 // ripple はライブ更新で光った項目 (spec §4.4)。start から pulse で光り、rippleLife で消える。
@@ -147,14 +151,28 @@ func (m *Model) Resize(w, h int) {
 // Busy は裏で走査・git の取得が走っているか (呼び出し側はこの間、遅い周期で Advance を呼んで結果を取り込む)。
 // 取り込んでいない結果がある間も true (最後の結果を取り込む前に呼び出し側が tick を止める窓を塞ぐ。レビューの指摘 2026-10-08)。
 func (m *Model) Busy() bool {
-	return m.walker.busy() || m.git.busy() || m.walker.pending(m.recsVer) || m.git.pending(m.gitVer)
+	return m.walker.busy() || m.git.busy() || m.walker.pending(m.recsVer) || m.git.pending(m.gitVer) || m.exploding != nil
 }
 
 // Animating は動いている途中か (呼び出し側はこの間だけ高い周期で Advance を呼ぶ)。
 func (m *Model) Animating() bool { return m.moving }
 
 // OwnsKeys は入力モード中か (glogx の横断キーを譲る判定に使う。spec §0.3)。今は入力欄を持たない。
-func (m *Model) OwnsKeys() bool { return false }
+func (m *Model) OwnsKeys() bool { return m.search.active }
+
+// CaretPos は入力欄のキャレットの位置 (画面の桁と行)。入力欄が無ければ ok=false。
+// 呼び出し側は端末のカーソルをここに置く (IME の変換中の文字が入力欄に出るように。glogx-ui-guide §7 の caret)。
+func (m *Model) CaretPos() (x, y int, ok bool) {
+	if !m.search.active || m.h <= 0 {
+		return 0, 0, false
+	}
+	_, col := m.search.line.Window(max(m.w-searchPrefixW-1, 1))
+	return searchPrefixW + col, m.h - 1, true
+}
+
+const searchPrefix = " / "
+
+var searchPrefixW = len(searchPrefix)
 
 // TakeNotices は溜まった知らせを取り出す。
 func (m *Model) TakeNotices() []Notice {
@@ -178,6 +196,7 @@ func (m *Model) Advance(now time.Time) bool {
 	}
 	m.lastAdv = now
 	m.takeBackground()
+	m.takeExplode()
 	m.moving = m.step(dt)
 	return m.moving
 }
@@ -507,13 +526,39 @@ func (m *Model) snapAll() {
 
 // ---------- キー ----------
 
-// HandleKey は 1 打鍵を処理する (キーの表記は bubbletea の KeyPressMsg.String())。
+// HandleKey は 1 打鍵を処理する (キーの表記は bubbletea の KeyPressMsg.String())。入力する文字はキーから推す
+// (1 文字のキーはその文字、space は空白)。入力欄に文字を入れる呼び出し側は HandleInput で KeyPressMsg.Text を渡す。
 func (m *Model) HandleKey(k string) Result {
+	text := ""
+	switch {
+	case k == "space":
+		text = " "
+	case len([]rune(k)) == 1:
+		text = k
+	}
+	return m.HandleInput(k, text)
+}
+
+// HandleInput は 1 打鍵を処理する。text はその打鍵が入力する文字 (KeyPressMsg.Text)。
+func (m *Model) HandleInput(k, text string) Result {
 	m.snapAll()
 	defer func() { m.moving = true }()         // 目標が変わったので次の Advance で動き出す
 	m.git.start(m.root.path(), m.now(), false) // 前回から 3 秒以上たっていれば取り直す (周期のタイマーは張らない)
-	if k == "ctrl+c" {
-		return Quit // どこからでも即終了 (glogx-ui-guide §1)
+	if k == "ctrl+c" && !m.search.active {
+		return Quit // どこからでも即終了 (glogx-ui-guide §1)。検索中は検索の取り消し (spec §6.2)
+	}
+	if m.help {
+		m.help = false // キー一覧は ? 以外のキーで閉じるだけ (spec §6.6)。閉じたキーは他の意味を持たない
+		return None
+	}
+	if m.search.active {
+		m.searchKey(k, text)
+		return None
+	}
+	if m.exploding != nil && k == "esc" {
+		m.exploding.cancel()
+		m.fail("explode を中断しました")
+		return None
 	}
 	if m.frontTile() != nil {
 		m.tileKey(k)
@@ -586,6 +631,16 @@ func (m *Model) treeKey(k string) Result {
 		m.moveSibling(-10)
 	case "-", "backspace":
 		m.rerootUp()
+	case "/":
+		m.startSearch()
+	case "n":
+		m.repeatSearch(1)
+	case "N":
+		m.repeatSearch(-1)
+	case "e":
+		m.explode()
+	case "?":
+		m.help = true
 	case ".":
 		m.showHidden = !m.showHidden
 	default:
@@ -941,6 +996,12 @@ func (m *Model) draw() *canvas {
 		m.drawTile(c, t, r, front, p)
 	}
 	m.statusBar(c)
+	if m.search.active {
+		m.searchBar(c)
+	}
+	if m.help {
+		m.drawHelp(c)
+	}
 	return c
 }
 
@@ -997,6 +1058,10 @@ func (m *Model) drawLines(c *canvas, now map[*node][2]int, ox, oy, ch int) {
 }
 
 func (m *Model) drawNames(c *canvas, pos map[*node]place, ox, oy, ch int) {
+	q := "" // 検索の一致を色付けする語。検索中だけ (String は毎回確保するので、項目ごとに呼ばない)
+	if m.search.active {
+		q = m.search.line.String()
+	}
 	for pass := range 2 { // 消えかけの項目を先に、生きている項目を後に描く
 		for _, n := range m.order {
 			a := m.anims[n]
@@ -1027,6 +1092,18 @@ func (m *Model) drawNames(c *canvas, pos map[*node]place, ox, oy, ch int) {
 				}
 			}
 			c.put(x, y, n.label(), fg, n.dir || m.onPath(n))
+			if q != "" {
+				if r, spans := fuzzy(n.name, q); r < rankNone {
+					lw := widthOf(n.label())
+					for _, sp := range spans {
+						for k := widthOf(n.name[:sp[0]]); k < widthOf(n.name[:sp[1]]) && k < lw; k++ {
+							if p := c.at(x+k, y); p != nil {
+								p.fg, p.bg, p.bold = cFlash, cMatchBg, true
+							}
+						}
+					}
+				}
+			}
 			if a.ghost {
 				continue
 			}
@@ -1190,7 +1267,7 @@ func (m *Model) statusBar(c *canvas) {
 		legend = append(legend, seg{"▮", st.c, false})
 	}
 	legend = append(legend, seg{" old   ", cMuted, false})
-	hints := []seg{{"q", cAccRoute, true}, {" quit ", cMuted, false}}
+	hints := []seg{{"/", cAccRoute, true}, {" find  ", cMuted, false}, {"?", cAccRoute, true}, {" keys  ", cMuted, false}, {"q", cAccRoute, true}, {" quit ", cMuted, false}}
 	if m.frontTile() != nil {
 		hints = []seg{{"tab", cAccRoute, true}, {" link  ", cMuted, false}, {"q", cAccRoute, true}, {" close ", cMuted, false}}
 	}
@@ -1209,6 +1286,10 @@ func (m *Model) statusBar(c *canvas) {
 		crumbW += widthOf(n.name)
 	}
 	// 幅が足りなければ凡例から落とす。抜ける手段 (q) は残す (glogx-ui-guide §5)
+	if m.exploding != nil {
+		right = append([]seg{{spinnerFrame(m.now()) + " ", cAccRoute, false}, {"exploding · " + itoa(m.exploding.count()) + " folders · ", cText, false},
+			{"esc", cAccRoute, true}, {" stops · ", cMuted, false}}, right...)
+	}
 	all := append(append(append([]seg{}, right...), legend...), hints...)
 	if crumbW+2+segW(all) > m.w {
 		all = append(append([]seg{}, right...), hints...)
@@ -1240,3 +1321,76 @@ func (m *Model) statusBar(c *canvas) {
 func widthOf(s string) int { return termwidth.Of(s) }
 
 func decodeRune(s string) (rune, int) { return utf8.DecodeRuneInString(s) }
+
+func itoa(n int) string { return strconv.Itoa(n) }
+
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+// spinnerFrame は 80ms ごとに進む点字のスピナー (spec §2.2)。
+func spinnerFrame(now time.Time) string {
+	return spinnerFrames[int(now.UnixMilli()/80)%len(spinnerFrames)]
+}
+
+// searchBar は検索中の最下行 (spec §3.4 の / 検索行)。
+func (m *Model) searchBar(c *canvas) {
+	y := m.h - 1
+	c.clear(0, y, m.w-1, y, cBar)
+	x := c.put(0, y, searchPrefix, cAccRoute, true)
+	text, _ := m.search.line.Window(max(m.w-searchPrefixW-1, 1))
+	x = c.put(x, y, text, cText, false)
+	q := m.search.line.String()
+	switch {
+	case q == "":
+		c.put(x+1, y, "  tab ↑↓ 移動 · enter 留まる · esc 戻る", cMuted, false)
+	case len(m.search.matches) == 0:
+		x = c.put(x+1, y, "  no match", cDot, false)
+		c.put(x, y, "  esc 戻る", cMuted, false)
+	default:
+		x = c.put(x+1, y, "  "+itoa(m.search.at+1)+"/"+itoa(len(m.search.matches)), cAccRoute, false)
+		c.put(x, y, "  tab ↑↓ 移動 · enter 留まる · esc 戻る", cMuted, false)
+	}
+}
+
+// helpKeys はキー一覧 (? の板。treebeard の KEYS から、写さないもの (マウス・音声・ソート・画像) を除いて日本語にした)。
+var helpKeys = [][2]string{
+	{"j k ↓ ↑ ^N ^P", "同じ階層の中で移動"},
+	{"J K / ^D ^U", "10 件 / 半ページ"},
+	{"g G", "兄弟の先頭 / 末尾"},
+	{"l → ^F enter", "フォルダへ潜る · ファイルを開く"},
+	{"h ← ^B", "親へ"},
+	{"space tab", "フォルダの開閉"},
+	{"c C", "このフォルダを畳む · 経路以外を畳む"},
+	{"e", "配下を全部開く (esc で中断)"},
+	{"/ n N", "列の中を検索 · 次 · 前"},
+	{"- backspace", "root を 1 段上へ"},
+	{".", "dotfile の表示を切り替え"},
+	{"タイルの中", "j k ^D ^U g G · tab でパスを選ぶ · J K で隣"},
+	{"q esc", "終了 (タイルの上では 1 枚閉じる)"},
+	{"?", "このキー一覧"},
+}
+
+// drawHelp はキー一覧の板 (中央。spec §8.1 の幅 64)。
+func (m *Model) drawHelp(c *canvas) {
+	w := min(64, m.w-2)
+	h := min(len(helpKeys)+4, m.h-1)
+	if w < 20 || h < 4 {
+		return
+	}
+	x0, y0 := (m.w-w)/2, max((m.h-1-h)/2, 0)
+	c.clear(x0, y0, x0+w-1, y0+h-1, cPop)
+	c.put(x0, y0, "╭"+strings.Repeat("─", w-2)+"╮", cAccRoute, false)
+	for y := y0 + 1; y < y0+h-1; y++ {
+		c.put(x0, y, "│", cAccRoute, false)
+		c.put(x0+w-1, y, "│", cAccRoute, false)
+	}
+	c.put(x0, y0+h-1, "╰"+strings.Repeat("─", w-2)+"╯", cAccRoute, false)
+	c.put(x0+2, y0, " treefiler ", cText, true)
+	for i, kv := range helpKeys {
+		y := y0 + 2 + i
+		if y >= y0+h-1 {
+			break
+		}
+		kx := c.put(x0+2, y, termwidth.FillLeft(kv[0], 16), cAccRoute, true)
+		c.put(kx+2, y, termwidth.Truncate(kv[1], max(w-22, 1), "…"), cText, false)
+	}
+}

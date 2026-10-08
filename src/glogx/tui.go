@@ -3696,7 +3696,8 @@ func (m *browseModel) View() tea.View {
 // (窓の 0 行目の桁) にフレームの原点を足したもの。窓を変形する演出 (開閉の zoom) の最中と、窓の上に板が重なっている間
 // (action モーダル・再起動・usage は左上の入力欄に重なりうる) は置かない。
 func (m *browseModel) caret() *tea.Cursor {
-	if m.done || m.activeFullScreen() != fullScreenIssues || m.zoom.scale(timeNow()) < appZoomSnap {
+	active := m.activeFullScreen()
+	if m.done || (active != fullScreenIssues && active != fullScreenFiler) || m.zoom.scale(timeNow()) < appZoomSnap {
 		return nil
 	}
 	// toast は見ない: 右下に積む板で、入力欄のある 0 行目に届くのは窓が 4 行以下 (端末の高さ 5 以下) のときだけ
@@ -3704,11 +3705,16 @@ func (m *browseModel) caret() *tea.Cursor {
 	if len(m.centerModalLines()) > 0 || len(m.restartPromptLines()) > 0 || len(m.usageOv.boxLines(m.contentWidth(), m.colored, m.spinner())) > 0 {
 		return nil
 	}
-	x, ok := m.issuesOv.caretCol(m.issuesOpts())
+	var x, y int
+	var ok bool
+	if active == fullScreenFiler {
+		x, y, ok = m.filerV.caretPos() // treefiler の検索欄 (最下行)
+	} else {
+		x, ok = m.issuesOv.caretCol(m.issuesOpts())
+	}
 	if !ok {
 		return nil
 	}
-	y := 0
 	if m.frameActive() {
 		x, y = x+frameContentLeft, y+frameContentTop
 	}

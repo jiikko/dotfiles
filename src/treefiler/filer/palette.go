@@ -40,6 +40,12 @@ var (
 	cFlash    = rgb{235, 242, 255}
 )
 
+// cMatchBg は検索の一致の背景、cDot は「一致なし」(spec §1.1 の match_bg / dot)。
+var (
+	cMatchBg = rgb{92, 70, 22}
+	cDot     = rgb{255, 58, 58}
+)
+
 // cIgnored は git が無視するものの灰の元 (spec §1.1 の ignored、dim_floor 10 の灰)。
 var cIgnored = rgb{214, 216, 224}
 

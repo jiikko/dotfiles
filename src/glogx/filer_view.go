@@ -99,6 +99,14 @@ func (v *filerView) takeOpenErr() string {
 // ownsKeys は filer が入力モード中か (C / X の update を譲る判定。overlayOwnershipTable)。
 func (v *filerView) ownsKeys() bool { return v.shown && v.f != nil && v.f.OwnsKeys() }
 
+// caretPos は filer の入力欄のキャレット (filer の画面の座標)。
+func (v *filerView) caretPos() (x, y int, ok bool) {
+	if !v.shown || v.f == nil {
+		return 0, 0, false
+	}
+	return v.f.CaretPos()
+}
+
 func (v *filerView) animating() bool { return v.shown && v.f != nil && v.f.Animating() }
 
 // busy は filer の裏の走査・git の取得が走っているか (その間は spinnerActive が tick を回し、結果を取り込む)。

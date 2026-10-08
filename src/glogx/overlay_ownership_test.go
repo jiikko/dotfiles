@@ -54,9 +54,8 @@ var overlayOwnershipTable = []overlayParticipant{
 		stoppedByCancelAll:    true,
 	},
 	{
-		// treefiler は今は入力欄を持たない (filer.Model.OwnsKeys が常に false)。検索欄・コマンド行を足したら owns を true にし、
-		// showOverlayOwning に開き方を足す (docs/treefiler-spec.md §0.3)
-		name: "filerV", owns: false, uninterruptible: false,
+		// treefiler は検索欄 (/) の入力中に語彙を持つ (docs/treefiler-spec.md §0.3)
+		name: "filerV", owns: true, uninterruptible: false,
 		whyNotUninterruptible: "非同期の処理を持たない (ディレクトリとファイルの読み込みは Update の中で同期に終わる)",
 		stoppedByCancelAll:    false,
 	},
@@ -178,6 +177,9 @@ func showOverlayOwning(t *testing.T, m *browseModel, name string) {
 	case "statusOv":
 		m.statusOv.shown = true
 		m.statusOv.discarding = true // 破棄の y/N 確認中
+	case "filerV":
+		m.filerV.toggle(t.TempDir())
+		m.filerV.f.HandleKey("/") // 検索欄の入力中
 	default:
 		t.Fatalf("showOverlayOwning: 未知の参加者 %s (表に足したらここも足す)", name)
 	}
@@ -209,6 +211,8 @@ func overlayOwnsKeys(m *browseModel, name string) bool {
 		return m.issuesOv.ownsKeys()
 	case "statusOv":
 		return m.statusOv.ownsKeys()
+	case "filerV":
+		return m.filerV.ownsKeys()
 	}
 	return false
 }
