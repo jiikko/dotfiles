@@ -62,3 +62,24 @@ func TestWaitIfQuickRunsCommand(t *testing.T) {
 		t.Fatalf("すぐ終わったのにキー待ちの案内が出ない: %q", out)
 	}
 }
+
+// 貼り付けは入力欄にだけ入る。入力していないときは捨てる (キーとして走らない)。
+func TestPasteGoesToInputOnly(t *testing.T) {
+	m := newTest(t)
+	cur := m.cur
+	m.Paste("jjjq")
+	if m.cur != cur {
+		t.Fatal("入力していないときの貼り付けがキーとして走った")
+	}
+	m.HandleKey("/")
+	m.Paste("file10")
+	if m.search.line.String() != "file10" || m.cur.name != "file10.txt" {
+		t.Fatalf("検索への貼り付け: %q → %s", m.search.line.String(), m.cur.name)
+	}
+	m.HandleKey("esc")
+	m.HandleKey("!")
+	m.Paste("echo a\nb\x1b[31m")
+	if got := m.prompt.line.String(); got != "echo a b[31m" {
+		t.Fatalf("コマンドへの貼り付け = %q (改行は空白、制御文字は落とす)", got)
+	}
+}

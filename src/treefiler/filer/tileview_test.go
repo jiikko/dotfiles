@@ -177,8 +177,7 @@ func markModified(t *testing.T, m *Model, rel string) {
 		t.Fatal(err)
 	}
 	m.set.Git = false
-	m.gitSnap = parsePorcelain([]byte(" M " + rel + "\x00"))
-	m.gitSnap.top = m.root.abs
+	setGit(m, " M "+rel+"\x00")
 }
 
 func waitDiff(t *testing.T, m *Model) {

@@ -238,8 +238,7 @@ func TestExplodeIgnoredSetting(t *testing.T) {
 		m := newTest(t)
 		m.set.Git = false // 裏の git の結果で下の決め打ちを上書きさせない
 		m.set.ExplodeIgnore = into
-		m.gitSnap = parsePorcelain([]byte("!! b/deep/\x00"))
-		m.gitSnap.top = m.root.abs
+		setGit(m, "!! b/deep/\x00")
 		b := m.findNode(m.root.path() + "/b")
 		m.setCur(b)
 		m.HandleKey("e")
@@ -288,11 +287,67 @@ func TestGitOffDropsInflightAndStopsFetching(t *testing.T) {
 		t.Fatal("git が off にならない")
 	}
 	settleBackground(t, m)
-	if m.gitSnap.top != "" {
+	if len(m.gitSnap.repos) != 0 {
 		t.Fatal("off の後に取得の結果を取り込んだ")
 	}
 	m.Refresh()
 	if m.git.busy() {
 		t.Fatal("off なのに読み直しで git を取りに行った")
+	}
+}
+
+// 名前の後ろの詳細は、列の中で右揃え (名前の長さによらず同じ桁で終わる。spec §3.4)。
+func TestDetailsRightAlignedInColumn(t *testing.T) {
+	m := newTest(t)
+	m.set.Details = "age"
+	m.Advance(fixedNow)
+	m.snapAll()
+	ends := map[string]int{}
+	for _, l := range m.draw().plain() {
+		for _, name := range []string{"c.txt ", "file10.txt "} {
+			i := strings.Index(l, name)
+			if i < 0 {
+				continue
+			}
+			rest := l[i:]
+			j := strings.Index(rest, "1h")
+			if j < 0 {
+				t.Fatalf("%q の行に詳細が無い: %q", name, l)
+			}
+			ends[name] = widthOf(l[:i+j+2])
+		}
+	}
+	if len(ends) != 2 || ends["c.txt "] != ends["file10.txt "] {
+		t.Fatalf("詳細の終わりの桁が揃わない: %v", ends)
+	}
+}
+
+// git が無視する枝は細線になる (double: 縦は二重のまま、その枝の横だけ細い。spec §2.1 の thin)。
+func TestIgnoredBranchIsThin(t *testing.T) {
+	m := newTest(t)
+	m.set.Git = false // 裏の git の結果で下の決め打ちを上書きさせない
+	setGit(m, "!! b/\x00")
+	m.Advance(fixedNow)
+	m.snapAll()
+	var bRow, cRow string
+	for _, l := range m.draw().plain() {
+		if strings.Contains(l, "═b ") || strings.Contains(l, "─b ") {
+			bRow = l
+		}
+		if strings.Contains(l, "c.txt") {
+			cRow = l
+		}
+	}
+	if !strings.Contains(bRow, "╟─b") {
+		t.Fatalf("無視される b の枝が細くない: %q", bRow)
+	}
+	if !strings.Contains(cRow, "╠═") {
+		t.Fatalf("ふつうの枝まで細くなった: %q", cRow)
+	}
+	m.set.DimIgnored = false
+	for _, l := range m.draw().plain() {
+		if strings.Contains(l, "─b ") {
+			t.Fatalf("Dim ignored が off でも細い: %q", l)
+		}
 	}
 }

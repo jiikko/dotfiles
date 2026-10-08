@@ -324,7 +324,7 @@ func (m *Model) applySettings(key string) {
 		m.resort(m.root)
 	}
 	if key == "git" {
-		m.gitSnap = gitSnapshot{}
+		m.gitSnap = gitSet{}
 		m.startGit(true)
 	}
 	if key == "live" {

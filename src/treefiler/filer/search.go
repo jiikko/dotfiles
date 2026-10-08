@@ -195,6 +195,12 @@ func (m *Model) searchKey(key, text string) {
 			return
 		}
 	}
+	m.refreshMatches()
+}
+
+// refreshMatches は検索語が変わった後に一致を引き直し、いちばん良い一致へ移る (無ければ始めた位置へ)。
+func (m *Model) refreshMatches() {
+	s := &m.search
 	s.matches = findMatches(m.column(s.origin), s.line.String())
 	s.at = 0
 	if len(s.matches) > 0 {

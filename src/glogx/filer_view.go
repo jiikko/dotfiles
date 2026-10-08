@@ -103,6 +103,13 @@ func (v *filerView) takeOpenErr() string {
 // ownsKeys は filer が入力モード中か (C / X の update を譲る判定。overlayOwnershipTable)。
 func (v *filerView) ownsKeys() bool { return v.shown && v.f != nil && v.f.OwnsKeys() }
 
+// paste は貼り付けを filer へ渡す (入力中だけ入る。そうでなければ filer が捨てる)。
+func (v *filerView) paste(text string) {
+	if v.shown && v.f != nil {
+		v.f.Paste(text)
+	}
+}
+
 // caretPos は filer の入力欄のキャレット (filer の画面の座標)。
 func (v *filerView) caretPos() (x, y int, ok bool) {
 	if !v.shown || v.f == nil {

@@ -5,6 +5,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -17,7 +19,7 @@ import (
 //
 // 🚨 周期のタイマーは張らない (glogx の「止まっている間は tick を回さない」を崩さないため)。取り直すのは
 // 開いたとき・読み直したとき・キーを押したときで、前回から gitMinInterval 以上たっていれば。treebeard は 3 秒周期。
-// 見るのは root を含む repo 1 つだけ (treebeard は開いたフォルダごとの repo を見る。入れ子の repo の中は印が出ない)。
+// 見るのは root と開いているフォルダが属する repo のすべて (入れ子の repo・root が repo の外で配下に repo が並ぶ場合も。spec §5.4)。
 
 const gitMinInterval = 3 * time.Second
 
@@ -47,11 +49,80 @@ type gitSnapshot struct {
 	files   map[string]byte // repo の根からの相対パス → 状態
 	whole   map[string]byte // 末尾 / のパス (未追跡・ignored のフォルダ一括) → 状態
 	folders map[string]byte // 変更を含むフォルダ → 配下のいちばん重い状態
+	overall byte            // repo 全体のいちばん重い状態 (repo の根のフォルダの芽の色)
+	prefix  string          // top + 区切り (取ったときに 1 度だけ作る。state は毎フレーム項目ごとに呼ばれる)
+}
+
+// gitSet は repo ごとの状態 (深い repo が先)。パスの状態は、そのパスを含むいちばん深い repo で引く。
+type gitSet struct {
+	repos []gitSnapshot
+}
+
+func (g gitSet) find(abs string) *gitSnapshot {
+	if i := g.findFrom(abs, 0); i >= 0 {
+		return &g.repos[i]
+	}
+	return nil
+}
+
+// findFrom は repos[from:] から abs を含むいちばん深い repo の位置を返す (無ければ -1)。
+func (g gitSet) findFrom(abs string, from int) int {
+	for i := from; i < len(g.repos); i++ {
+		r := &g.repos[i]
+		if abs == r.top || strings.HasPrefix(abs, r.sep()) {
+			return i
+		}
+	}
+	return -1
+}
+
+// sep は top + 区切り。🚨 ここで prefix を書き込まない: gitSet は git の goroutine (前の結果の引き継ぎ) と UI の goroutine が
+// 同じ配列を読むので、遅延で書くと競合する。作るのは取ったとき (fetchRepo)。
+func (s *gitSnapshot) sep() string {
+	if s.prefix != "" {
+		return s.prefix
+	}
+	return withSep(s.top)
+}
+
+func withSep(p string) string {
+	if strings.HasSuffix(p, string(filepath.Separator)) {
+		return p // root が / のとき // にしない
+	}
+	return p + string(filepath.Separator)
+}
+
+func (g gitSet) state(abs string, dir bool) byte {
+	for from := 0; ; {
+		i := g.findFrom(abs, from)
+		if i < 0 {
+			return gitNone
+		}
+		r := &g.repos[i]
+		switch {
+		case abs != r.top:
+			return r.state(abs, dir)
+		case r.overall != gitNone:
+			return r.overall // 入れ子の repo の根: 中の変更の色
+		}
+		// 中に変更の無い入れ子の repo の根は、外側の repo から見た状態 (未追跡・無視) にする
+		// (開いて repo の数に入った途端に、無視の灰色・細線が消えないように)
+		from = i + 1
+	}
+}
+
+// branchFor は abs を含む repo のブランチ (repo の外なら "")。
+func (g gitSet) branchFor(abs string) string {
+	if r := g.find(abs); r != nil {
+		return r.branch
+	}
+	return ""
 }
 
 type gitWatch struct {
 	mu      sync.Mutex
-	snap    gitSnapshot
+	snap    gitSet
+	tops    []string // 次に取る repo の根 (start で差し替える)
 	version int
 	running bool
 	again   bool // 走っている間に force で頼まれた (終わったらもう 1 回取る。読み直しの直前の変更を落とさない)
@@ -70,9 +141,13 @@ func findRepoTop(dir string) string {
 	}
 }
 
-// start は前回から gitMinInterval 以上たっていて走っていなければ取り直す。force は間隔を見ない。
-func (g *gitWatch) start(root string, now time.Time, force bool) {
+// start は前回から gitMinInterval 以上たっていて走っていなければ、tops の repo を取り直す。force は間隔を見ない。
+// 取る repo の集まりが前回と違えば force と同じ (開いたフォルダが別の repo なら待たずに印を出す)。
+func (g *gitWatch) start(tops []string, now time.Time, force bool) {
 	g.mu.Lock()
+	if !slices.Equal(tops, g.tops) {
+		g.tops, force = tops, true
+	}
 	if g.running {
 		g.again = g.again || force
 		g.mu.Unlock()
@@ -86,12 +161,20 @@ func (g *gitWatch) start(root string, now time.Time, force bool) {
 	g.mu.Unlock()
 	go func() {
 		for {
-			snap, ok := fetchGit(root)
 			g.mu.Lock()
-			if ok {
-				g.snap = snap // 取れなかったときは前の結果を残す (一時的な失敗で印が全部消えてちらつかないように)
-				g.version++
+			tops, prev := g.tops, g.snap
+			g.mu.Unlock()
+			set := gitSet{repos: make([]gitSnapshot, 0, len(tops))}
+			for _, top := range tops {
+				if snap, ok := fetchRepo(top); ok {
+					set.repos = append(set.repos, snap)
+				} else if old := prev.find(top); old != nil && old.top == top {
+					set.repos = append(set.repos, *old) // 取れなかった repo は前の結果を残す (一時的な失敗で印が全部消えてちらつかないように)
+				}
 			}
+			g.mu.Lock()
+			g.snap = set
+			g.version++
 			if !g.again {
 				g.running = false
 				g.mu.Unlock()
@@ -115,21 +198,41 @@ func (g *gitWatch) busy() bool {
 	return g.running
 }
 
-func (g *gitWatch) take(have int) (gitSnapshot, int, bool) {
+func (g *gitWatch) take(have int) (gitSet, int, bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if have == g.version {
-		return gitSnapshot{}, have, false
+		return gitSet{}, have, false
 	}
 	return g.snap, g.version, true
 }
 
-// fetchGit は root を含む repo の状態を取る。ok=false は取れなかった (前の結果を残す)。repo の外なら空で ok。
-func fetchGit(root string) (gitSnapshot, bool) {
-	top := findRepoTop(root)
-	if top == "" {
-		return gitSnapshot{}, true
+// repoTops は dirs が属する repo の根を、深いものから重複なく返す (find が深い repo を先に引けるように)。
+func repoTops(dirs []string, cache map[string]string) []string {
+	seen := map[string]bool{}
+	var tops []string
+	for _, d := range dirs {
+		top, ok := cache[d]
+		if !ok {
+			top = findRepoTop(d)
+			cache[d] = top
+		}
+		if top != "" && !seen[top] {
+			seen[top] = true
+			tops = append(tops, top)
+		}
 	}
+	sort.Slice(tops, func(i, j int) bool {
+		if len(tops[i]) != len(tops[j]) {
+			return len(tops[i]) > len(tops[j])
+		}
+		return tops[i] < tops[j]
+	})
+	return tops
+}
+
+// fetchRepo は repo の根 top の状態を取る。ok=false は取れなかった (前の結果を残す)。
+func fetchRepo(top string) (gitSnapshot, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), subproc.GitOpTimeout)
 	defer cancel()
 	cmd := subproc.CommandContext(ctx, "git", "--no-optional-locks", "-C", top,
@@ -140,7 +243,7 @@ func fetchGit(root string) (gitSnapshot, bool) {
 		return gitSnapshot{}, false
 	}
 	s := parsePorcelain(out)
-	s.top = top
+	s.top, s.prefix = top, withSep(top)
 	return s, true
 }
 
@@ -172,6 +275,9 @@ func parsePorcelain(out []byte) gitSnapshot {
 		}
 		if st == gitIgn {
 			continue // ignored は祖先へ昇らない
+		}
+		if gitRank(st) > gitRank(s.overall) {
+			s.overall = st
 		}
 		for d := filepath.Dir(strings.TrimSuffix(path, "/")); d != "." && d != "/"; d = filepath.Dir(d) {
 			if gitRank(st) > gitRank(s.folders[d]) {
@@ -238,15 +344,11 @@ func branchLabel(b string) string {
 
 // state は abs (絶対パス) の状態。ファイルはそれ自身、フォルダは配下のいちばん重い状態。
 // 未追跡・ignored のフォルダ一括 (末尾 /) の中は、その状態を引き継ぐ。
-func (s gitSnapshot) state(abs string, dir bool) byte {
+func (s *gitSnapshot) state(abs string, dir bool) byte {
 	if s.top == "" {
 		return gitNone
 	}
-	prefix := s.top
-	if !strings.HasSuffix(prefix, string(filepath.Separator)) {
-		prefix += string(filepath.Separator) // root が / のとき // にしない
-	}
-	rel, ok := strings.CutPrefix(abs, prefix)
+	rel, ok := strings.CutPrefix(abs, s.sep())
 	if !ok {
 		return gitNone
 	}

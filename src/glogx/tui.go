@@ -1404,6 +1404,9 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.activeFullScreen() == fullScreenIssues && m.issuesOv.typingInput() && !m.actModal.active() && !m.restartPromptVisible() {
 			m.issuesOv.paste(msg.Content)
 		}
+		if m.activeFullScreen() == fullScreenFiler && !m.actModal.active() && !m.restartPromptVisible() {
+			m.filerV.paste(msg.Content) // 入力中 (検索・! のコマンド) だけ入る。filer が捨てる
+		}
 		return m, m.maybeTick()
 	case tea.KeyPressMsg:
 		// 高速連打やパイプ入力で複数の文字キーが 1 つのキーイベント (Text 長 > 1) に

@@ -267,3 +267,18 @@ func TestFilerShellNonZeroExitIsQuiet(t *testing.T) {
 		t.Fatalf("シェルから戻ったのにエディタの文言: %q", m.toast.Text())
 	}
 }
+
+// 貼り付けは filer の入力欄に入る (入力していないときは filer が捨て、一覧のキーとしても走らない)。
+func TestFilerPasteGoesToSearch(t *testing.T) {
+	m := newFilerBrowse(t)
+	m.handleKey("F")
+	m.Update(tea.PasteMsg{Content: "q"})
+	if m.done || m.activeFullScreen() != fullScreenFiler {
+		t.Fatal("入力していないときの貼り付けがキーとして走った")
+	}
+	m.handleKey("/")
+	m.Update(tea.PasteMsg{Content: "sub"})
+	if got := m.filerV.f.SearchQuery(); got != "sub" {
+		t.Fatalf("検索語 = %q", got)
+	}
+}

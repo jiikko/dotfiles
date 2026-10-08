@@ -58,6 +58,8 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		a.w, a.h = msg.Width, msg.Height
 		a.f.Resize(a.w, a.h)
+	case tea.PasteMsg:
+		a.f.Paste(msg.Content) // 入力中だけ入る (filer が捨てる)
 	case tea.KeyPressMsg:
 		switch a.f.HandleInput(msg.String(), msg.Text) {
 		case filer.Quit:

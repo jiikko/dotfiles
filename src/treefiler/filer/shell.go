@@ -113,3 +113,15 @@ func (m *Model) TakeExec() (ExecRequest, bool) {
 	m.exec = nil
 	return r, true
 }
+
+// Paste は貼り付け (bracketed paste) を入力欄に入れる。入力欄が無いときは捨てる: キーとして解釈すると、
+// 貼った文字列が 1 字ずつ木のキーとして走る (glogx-ui-guide §7)。改行・タブは空白に、制御文字は落とす (lineedit.Insert)。
+func (m *Model) Paste(text string) {
+	switch {
+	case m.search.active:
+		m.search.line.Insert(text)
+		m.refreshMatches()
+	case m.prompt.active:
+		m.prompt.line.Insert(text)
+	}
+}

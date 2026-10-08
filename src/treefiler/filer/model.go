@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -57,6 +58,7 @@ type Model struct {
 	moving     bool
 	lastAdv    time.Time
 	notices    []Notice
+	nameW      []int  // 列ごとの最長の名前の幅 (layout が数える。詳細の右揃えに使う)
 	opener     opener // `o` の起動 (open.go)
 	linkCache  map[string]string
 	cv         *canvas // 使い回す格子 (大きさが変わったら作り直す)
@@ -69,7 +71,8 @@ type Model struct {
 	setErrs    []string
 	saveErr    string
 	panel      panelState
-	gitSnap    gitSnapshot
+	gitSnap    gitSet
+	repoTop    map[string]string // フォルダ → 属する repo の根 ("" = repo の外)。読み直しで捨てる
 	gitVer     int
 	watch      *watcher
 	ripples    map[*node]ripple
@@ -134,11 +137,12 @@ func New(dir string, opts Options) (*Model, error) {
 // カーソルの項目が消えていたら、残っているいちばん近い祖先へ移る。
 func (m *Model) Refresh() {
 	m.walker.forget(m.root.path())
-	m.startGit(true)
 	m.root.reload()
 	for !m.inTree(m.cur) {
 		m.cur = m.cur.parent
 	}
+	m.repoTop = nil  // .git を足した・消したフォルダを数え直す
+	m.startGit(true) // 読み直した木の開いているフォルダで取る (読み直す前の木だと、消えたフォルダを含み、現れたものを落とす)
 	m.moving = true
 }
 
@@ -248,10 +252,29 @@ func (m *Model) Advance(now time.Time) bool {
 	return m.moving
 }
 
+// openDirs は root と、開いているフォルダ (git を取る repo を決める)。
+func (m *Model) openDirs() []string {
+	dirs := []string{m.root.path()}
+	var walk func(n *node)
+	walk = func(n *node) {
+		for _, k := range n.kids {
+			if k.dir && k.expanded && k.loaded {
+				dirs = append(dirs, k.path())
+				walk(k)
+			}
+		}
+	}
+	walk(m.root)
+	return dirs
+}
+
 // startGit は git の取得を頼む (設定の Git が off なら何もしない。取得を始める場所はここだけにする)。
 func (m *Model) startGit(force bool) {
 	if m.set.Git {
-		m.git.start(m.root.path(), m.now(), force)
+		if m.repoTop == nil {
+			m.repoTop = map[string]string{}
+		}
+		m.git.start(repoTops(m.openDirs(), m.repoTop), m.now(), force)
 	}
 }
 
@@ -309,6 +332,9 @@ func (m *Model) applyChange(c dirChange) {
 	}
 	n.reload()
 	m.walker.forget(c.dir)
+	if slices.Contains(c.changed, ".git") || slices.Contains(c.removed, ".git") {
+		m.repoTop = nil // このフォルダで git init した・repo を消した (repo の根の数え直し)
+	}
 	// 強制にしない: 書き込みの続くフォルダ (ログ) で毎秒 git status が走るのを、3 秒の間隔制限で止める
 	m.startGit(false)
 	visible := func(name string) bool { return m.showHidden || !strings.HasPrefix(name, ".") }
@@ -380,12 +406,15 @@ func (m *Model) lightUp(n *node) {
 }
 
 // glow は n の今の光り方 (0〜1)。立ち上がり 0.07 秒は線形、その後 0.45 秒の指数で消える (spec §4.4 の pulse)。
-func (m *Model) glow(n *node) float64 {
+func (m *Model) glow(n *node) float64 { return m.glowAt(n, 0) }
+
+// glowAt は n の光の明るさを、時刻を ahead だけ進めて測る (肘は名前より半段先に光る。spec §4.4)。
+func (m *Model) glowAt(n *node, ahead time.Duration) float64 {
 	r, ok := m.ripples[n]
 	if !ok {
 		return 0
 	}
-	t := m.now().Sub(r.start).Seconds()
+	t := (m.now().Sub(r.start) + ahead).Seconds()
 	switch {
 	case t < 0:
 		return 0
@@ -917,7 +946,8 @@ func (m *Model) drawBead(c *canvas, ox, oy, ch int) {
 }
 
 func (m *Model) drawLines(c *canvas, now map[*node][2]int, ox, oy, ch int) {
-	for k, lc := range m.lines(now) {
+	grid := m.lines(now)
+	for k, lc := range grid {
 		x, y := k[0]-ox, k[1]-oy
 		if y >= ch {
 			continue
@@ -937,6 +967,36 @@ func (m *Model) drawLines(c *canvas, now map[*node][2]int, ox, oy, ch int) {
 			col = mix(cAccDim, mix(sap, cBg, 0.55), 0.35)
 		}
 		p.s, p.fg = glyph(m.set.Lines, lc), col
+	}
+	m.drawRippleElbows(c, grid, now, ox, oy, ch)
+}
+
+// drawRippleElbows は光っている項目から親への肘を、名前より半段先の明るさで光らせる (spec §4.4 の肘)。
+// 範囲は親のラベルの右端から子の手前まで・親の行から子の行までで、その中の親の行・子の行・縦の成分を持つ線のセル。
+func (m *Model) drawRippleElbows(c *canvas, grid lineGrid, now map[*node][2]int, ox, oy, ch int) {
+	for n := range m.ripples {
+		g := m.glowAt(n, rippleStep/2)
+		np, ok := now[n]
+		if g <= 0.02 || !ok || n.parent == nil {
+			continue
+		}
+		pp, ok := now[n.parent]
+		if !ok {
+			continue
+		}
+		x0, x1 := pp[0]+m.labelWidth(n.parent), np[0]-1
+		y0, y1 := min(pp[1], np[1]), max(pp[1], np[1])
+		for y := y0; y <= y1; y++ {
+			for x := x0; x <= x1; x++ {
+				lc := grid[[2]int{x, y}]
+				if lc == nil || (y != pp[1] && y != np[1] && lc.mask&(dirUp|dirDown) == 0) {
+					continue
+				}
+				if p := c.at(x-ox, y-oy); p != nil && y-oy < ch {
+					p.fg = mix(p.fg, cRipple, 0.9*g)
+				}
+			}
+		}
 	}
 }
 
@@ -974,9 +1034,9 @@ func (m *Model) drawNames(c *canvas, pos map[*node]place, ox, oy, ch int) {
 					c.fillBg(x, y, x+a.w-1, y, mix(cBg, cRippleBg, g*a.alpha.v))
 				}
 			}
-			nx := c.put(x, y, n.label(), fg, n.dir || m.onPath(n))
+			c.put(x, y, n.label(), fg, n.dir || m.onPath(n))
 			if d := m.details(n); d != "" {
-				c.put(nx+2, y, d, mix(cBg, base, a.alpha.v*0.5), false) // 名前の後ろの詳細は薄く (spec §3.2)
+				c.put(x+m.nameWidth(n)+2, y, d, mix(cBg, base, a.alpha.v*0.5), false) // 列の中で右揃え・薄く (spec §3.4)
 			}
 			if q != "" {
 				if r, spans := fuzzy(n.name, q); r < rankNone {
@@ -1066,8 +1126,8 @@ func (m *Model) statusBar(c *canvas) {
 		}
 	}
 	var right []seg
-	if m.gitSnap.top != "" && m.gitSnap.branch != "" {
-		right = append(right, seg{"⎇ ", cAccRoute, false}, seg{m.gitSnap.branch + " · ", cText, false})
+	if b := m.gitSnap.branchFor(m.cur.path()); b != "" { // カーソルの属する repo のブランチ
+		right = append(right, seg{"⎇ ", cAccRoute, false}, seg{b + " · ", cText, false})
 		if st := m.gitState(m.cur); st != gitNone {
 			col := cMuted
 			if c, ok := gitColor[st]; ok {
@@ -1246,22 +1306,22 @@ func (m *Model) details(n *node) string {
 	}
 	switch m.set.Details {
 	case "age":
-		return age
+		return pad4(age)
 	case "size":
-		return size
+		return pad4(size)
 	}
-	if size == "" {
-		return age
-	}
-	return age + " · " + size
+	return pad4(age) + " · " + pad4(size) // 幅を揃える (フォルダの大きさは数え終わるまで空)
 }
+
+// pad4 は詳細の 1 つを幅 4 の右揃えにする (spec §3.4 の `{age:>4}`)。
+func pad4(s string) string { return termwidth.PadSpaces(max(0, 4-widthOf(s))) + s }
 
 func (m *Model) detailsWidth() int {
 	switch m.set.Details {
 	case "age", "size":
-		return 2 + 4
+		return 4
 	case "both":
-		return 2 + 11
+		return 11
 	}
 	return 0
 }
@@ -1288,14 +1348,17 @@ func shortAge(s float64) string {
 // shortSize は 980B 4.2K 12M 1.3G (4 桁以内。spec §3.2)。
 func shortSize(n int64) string {
 	units := []string{"B", "K", "M", "G", "T"}
-	v := float64(n)
-	i := 0
-	for v >= 1000 && i < len(units)-1 {
+	v := float64(max(n, 0))
+	for i := range units {
+		s := strconv.FormatFloat(v, 'f', 1, 64) + units[i]
+		if i == 0 || v >= 9.95 {
+			s = itoa(int(v+0.5)) + units[i]
+		}
+		// 丸めた結果が幅 4 を超えたら次の単位へ (境目を数で決めると 1000K・10.0K の取りこぼしが出た。レビューで再現 2026-10-09)
+		if len(s) <= 4 || i == len(units)-1 {
+			return s
+		}
 		v /= 1024
-		i++
 	}
-	if i == 0 || v >= 10 {
-		return itoa(int(v+0.5)) + units[i]
-	}
-	return strconv.FormatFloat(v, 'f', 1, 64) + units[i]
+	return ""
 }

@@ -283,3 +283,242 @@ func TestHiddenDotfileChangeDoesNotLightUp(t *testing.T) {
 		t.Fatal("見える項目が消えてもフォルダが光らない")
 	}
 }
+
+// 変化した項目から親への肘の線も、波紋の色に光る (spec §4.4 の肘)。名前だけ光るのではない。
+func TestRippleLightsElbow(t *testing.T) {
+	m := newTest(t)
+	cdTo(t, m, "a/one.txt")
+	m.Advance(fixedNow)
+	m.snapAll()
+	one := m.cur
+	before := m.draw()
+	base := make([]rgb, len(before.cells))
+	for i := range before.cells {
+		base[i] = before.cells[i].fg
+	}
+	m.lightUp(one)
+	m.now = func() time.Time { return fixedNow.Add(100 * time.Millisecond) }
+	after := m.draw()
+	lit := 0
+	for i, cl := range after.cells {
+		if strings.ContainsAny(cl.s, "═║╔╗╚╝╠╣╦╩╬─│") && dist(cl.fg, cRipple) < dist(base[i], cRipple)-1 {
+			lit++
+		}
+	}
+	if lit == 0 {
+		t.Fatal("肘の線が光らない")
+	}
+}
+
+func dist(a, b rgb) float64 {
+	d := 0.0
+	for i := range a {
+		d += (a[i] - b[i]) * (a[i] - b[i])
+	}
+	return d
+}
+
+// setGit は root を根とする repo の状態を porcelain の出力から決め打ちする。
+func setGit(m *Model, porcelain string) {
+	s := parsePorcelain([]byte(porcelain))
+	s.top, s.prefix = m.root.abs, withSep(m.root.abs)
+	m.gitSnap = gitSet{repos: []gitSnapshot{s}}
+}
+
+// root が repo の外で、配下に repo が並ぶ (~/src のような) とき、開いたフォルダの repo ごとに印とブランチが出る (spec §5.4)。
+func TestGitNestedRepos(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git が無い")
+	}
+	root := t.TempDir()
+	mkRepo := func(name, branch string) string {
+		dir := filepath.Join(root, name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		git := func(args ...string) {
+			cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+			cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("git %v: %v\n%s", args, err, out)
+			}
+		}
+		git("init", "-q", "-b", branch)
+		if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte("1\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		git("add", ".")
+		git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "x")
+		return dir
+	}
+	p1 := mkRepo("p1", "one")
+	mkRepo("p2", "two")
+	if err := os.WriteFile(filepath.Join(p1, "f.txt"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := New(root, Options{Now: func() time.Time { return fixedNow }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Resize(120, 40)
+	for _, name := range []string{"p1", "p2"} {
+		n := m.findNode(filepath.Join(root, name))
+		m.ensureLoaded(n)
+		n.expanded = true
+	}
+	m.startGit(false) // 開いたフォルダの repo が増えたので、間隔を待たずに取る
+	settleBackground(t, m)
+	f := m.findNode(filepath.Join(p1, "f.txt"))
+	if m.gitState(f) != 'M' {
+		t.Fatalf("p1/f.txt の状態 = %q", m.gitState(f))
+	}
+	if m.gitState(f.parent) != 'M' {
+		t.Fatalf("repo の根のフォルダ p1 の芽 = %q", m.gitState(f.parent))
+	}
+	if st := m.gitState(m.findNode(filepath.Join(root, "p2", "f.txt"))); st != gitNone {
+		t.Fatalf("変更の無い p2/f.txt の状態 = %q", st)
+	}
+	m.setCur(m.findNode(filepath.Join(root, "p2", "f.txt")))
+	m.snapAll()
+	if bar := m.draw().plain()[m.h-1]; !strings.Contains(bar, "two") || strings.Contains(bar, "one") {
+		t.Fatalf("カーソルの repo のブランチが出ない: %q", bar)
+	}
+}
+
+func gitIn(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+func commitAll(t *testing.T, dir string) {
+	t.Helper()
+	gitIn(t, dir, "add", ".")
+	gitIn(t, dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "x")
+}
+
+// 外側の repo の中の入れ子の repo: 中のファイルは内側の repo で引き (深い repo が先)、変更の無い入れ子の repo の根は
+// 外側から見た状態 (未追跡) のまま (開いた途端に印が消えない)。
+func TestGitRepoInsideRepo(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git が無い")
+	}
+	root := t.TempDir()
+	mk := func(rel, body string) {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("top.txt", "t\n")
+	gitIn(t, root, "init", "-q", "-b", "outer")
+	commitAll(t, root)
+	for _, in := range []string{"dirty", "clean"} {
+		mk(in+"/f.txt", "1\n")
+		gitIn(t, filepath.Join(root, in), "init", "-q", "-b", in)
+		commitAll(t, filepath.Join(root, in))
+	}
+	mk("dirty/f.txt", "changed\n")
+	m, err := New(root, Options{Now: func() time.Time { return fixedNow }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Resize(120, 40)
+	for _, in := range []string{"dirty", "clean"} {
+		n := m.findNode(filepath.Join(root, in))
+		m.ensureLoaded(n)
+		n.expanded = true
+	}
+	m.startGit(false)
+	settleBackground(t, m)
+	if st := m.gitState(m.findNode(filepath.Join(root, "dirty", "f.txt"))); st != 'M' {
+		t.Fatalf("入れ子の repo の中の変更 = %q (外側の未追跡で引いていないか)", st)
+	}
+	if st := m.gitState(m.findNode(filepath.Join(root, "clean"))); st != '?' {
+		t.Fatalf("変更の無い入れ子の repo の根 = %q (外側から見た未追跡のはず)", st)
+	}
+}
+
+func TestGitSetPrefixBoundary(t *testing.T) {
+	s := parsePorcelain([]byte(" M x\x00"))
+	s.top = "/a/b"
+	g := gitSet{repos: []gitSnapshot{s}}
+	if g.state("/a/b/x", false) != 'M' {
+		t.Fatal("前提: /a/b/x が引けない")
+	}
+	if st := g.state("/a/bc/x", false); st != gitNone {
+		t.Fatalf("/a/bc/x を /a/b の repo で引いた: %q", st)
+	}
+	g.repos[0].branch = "b"
+	if b := g.branchFor("/a/bc/x"); b != "" {
+		t.Fatalf("/a/bc/x に /a/b のブランチを出した: %q", b)
+	}
+}
+
+// フォルダで git init した後、読み直し (r) でも、ライブ更新で .git が現れたときでも、repo の根を数え直す。
+func TestGitRepoTopRecountedAfterInit(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git が無い")
+	}
+	for _, via := range []string{"refresh", "live"} {
+		m := newTest(t)
+		a := m.findNode(filepath.Join(m.root.abs, "a"))
+		m.ensureLoaded(a)
+		a.expanded = true
+		m.startGit(true)
+		settleBackground(t, m)
+		gitIn(t, a.path(), "init", "-q", "-b", "x")
+		if via == "refresh" {
+			m.Refresh()
+		} else {
+			m.applyChange(dirChange{dir: a.path(), changed: []string{".git"}, listing: true})
+			m.startGit(true)
+		}
+		settleBackground(t, m)
+		if st := m.gitState(m.findNode(filepath.Join(a.path(), "one.txt"))); st != '?' {
+			t.Fatalf("%s: git init した後の a/one.txt = %q (repo の根を数え直していない)", via, st)
+		}
+	}
+}
+
+func TestShortSizeStaysFourWide(t *testing.T) {
+	cases := map[int64]string{0: "0B", -5: "0B", 999: "999B", 1000: "1.0K", 10188: "9.9K", 10199: "10K", 10239: "10K",
+		1023 * 1000: "999K", 1023500: "1.0M", 1048575: "1.0M", 9_990_000: "9.5M", 10_430_000: "9.9M", 10_440_000: "10M"}
+	for n, want := range cases {
+		if got := shortSize(n); got != want || widthOf(got) > 4 {
+			t.Fatalf("shortSize(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
+// 肘の光は親の行・子の行・縦の成分を持つセルだけ。途中の行の兄弟の枝 (横線だけのセル) は光らない。
+func TestRippleElbowSkipsSiblingRows(t *testing.T) {
+	m := newTest(t)
+	m.Advance(fixedNow)
+	m.snapAll()
+	ks := m.kids(m.root)
+	last := ks[len(ks)-1]
+	before := m.draw()
+	base := make([]rgb, len(before.cells))
+	for i := range before.cells {
+		base[i] = before.cells[i].fg
+	}
+	m.lightUp(last)
+	m.now = func() time.Time { return fixedNow.Add(100 * time.Millisecond) }
+	after := m.draw()
+	for i, cl := range after.cells {
+		if cl.s == "═" && after.cells[i].fg != base[i] {
+			y := i / after.w
+			if strings.Contains(after.plain()[y], last.name) || y == m.canvasH()/2 {
+				continue // 光らせた子の行・親 (root) の行
+			}
+			t.Fatalf("%d 行目の兄弟の枝まで光った: %q", y, after.plain()[y])
+		}
+	}
+}
