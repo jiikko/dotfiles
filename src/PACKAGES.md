@@ -26,6 +26,7 @@
 - `src/glogx/tools/dial-preview` (`glogx/tools/dial-preview`) — dial-preview は全画面 ratelimit ダッシュボード (usage.RenderDashboard) の見た目プレビュー。 (main)
 - `src/glogx/tools/width-probe` (`glogx/tools/width-probe`) — width-probe は「端末が各文字に実際に何セル割り当てるか」を端末自身に問い合わせて表示する。 (main)
 - `src/lockman` (`lockman`) — lockman — ディレクトリ単位の排他を取る CLI (SMB 越しの複数マシン + 公開ホストの ローカル経路が混在する前提)。 (main)
+- `src/mp4box` (`mp4box`) — Command mp4-effective-size は、MP4 のトップレベルの box を先頭から辿り、壊れていない box の大きさの合計 (実効サイズ) をバイト数で出す。 (main)
 - `src/pro-con` (`pro-con`) — pro-con — PM (producer) と PG (consumer) を分けて Claude Code を並列に回すための TUI。 (main)
 - `src/pro-con/agents` (`pro-con/agents`) — Package agents は `claude agents --json` で、今動いている Claude Code の session を一覧する。
 - `src/pro-con/backend` (`pro-con/backend`) — Package backend は UI と「状態を持つ側」の境界。

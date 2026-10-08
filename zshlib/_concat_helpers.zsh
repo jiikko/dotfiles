@@ -11,6 +11,10 @@ source "${${(%):-%x}:A:h}/_fs_helpers.zsh"
 # shellcheck disable=SC1091,SC2296,SC2298
 source "${${(%):-%x}:A:h}/_ffprobe_helpers.zsh"
 
+# Go の道具 (bin/mp4-effective-size) の置き場所。読み込まれたときの自分の場所から決める (関数の中では %x が呼び出し元を指すため)
+# shellcheck disable=SC2296,SC2298
+typeset -g __CONCAT_DOTFILES_BIN="${${(%):-%x}:A:h:h}/bin"
+
 __concat_allowed_extensions=(mp4 avi mov mkv webm flv wmv m4v mpg mpeg 3gp ts m2ts)
 
 __concat_is_allowed_ext() {
@@ -394,38 +398,14 @@ __concat_escape_path() {
 # $1: ファイルパス
 # 標準出力: 実効サイズ（バイト）
 __concat_mp4_effective_size() {
-  python3 -c "
-import struct, sys
-try:
-    with open(sys.argv[1], 'rb') as f:
-        f.seek(0, 2)
-        fsize = f.tell()
-        f.seek(0)
-        total = 0
-        while f.tell() < fsize:
-            pos = f.tell()
-            hdr = f.read(8)
-            if len(hdr) < 8:
-                break
-            raw_size, = struct.unpack('>I', hdr[:4])
-            btype = hdr[4:8]
-            if raw_size == 1:
-                ext = f.read(8)
-                if len(ext) < 8:
-                    break
-                raw_size, = struct.unpack('>Q', ext)
-            elif raw_size == 0:
-                raw_size = fsize - pos
-            if not all(0x20 <= b < 0x7f for b in btype):
-                break
-            if raw_size < 8 or pos + raw_size > fsize:
-                break
-            total += raw_size
-            f.seek(pos + raw_size)
-        print(total)
-except Exception:
-    print(0)
-" "$1" 2>/dev/null || echo "0"
+  # 実体は Go (src/mp4box)。読めない・壊れているときは 0 (診断を飛ばす合図)。道具を起動できない (go が無い・ビルドの失敗) ときは
+  # 0 を出して rc=1 (呼び出し側が「測れなかった」と言えるように。旧の python3 は macOS に標準であった)
+  local n rc=0
+  # || rc=$? は err_exit の下で呼ばれても止まらないため (テストは err_exit)。数でない出力も 0 にする
+  n=$("$__CONCAT_DOTFILES_BIN/mp4-effective-size" "$1" 2>/dev/null) || rc=$?
+  [[ "$n" == <-> ]] || n=0
+  print -r -- "$n"
+  return $(( rc != 0 ))
 }
 
 # 内部補助: 出力ファイルの診断
@@ -514,10 +494,10 @@ __concat_diagnose_output() {
 
         # 入力ファイルの実効サイズを調べて原因候補を特定
         if (( ${#input_files[@]} > 0 )); then
-          local _eff _stat _orphaned _orphaned_mb _suspect=""
+          local _eff _stat _orphaned _orphaned_mb _suspect="" _eff_unmeasured=0
           local _effective_total=0
           for _infile in "${input_files[@]}"; do
-            _eff=$(__concat_mp4_effective_size "$_infile")
+            _eff=$(__concat_mp4_effective_size "$_infile") || _eff_unmeasured=1
             _stat=$(stat -f%z -- "$_infile" 2>/dev/null || stat -c%s -- "$_infile" 2>/dev/null)
             (( _effective_total += _eff ))
             if [[ -n "$_eff" ]] && [[ -n "$_stat" ]] && (( _stat > 0 && _eff > 0 )); then
@@ -540,6 +520,9 @@ __concat_diagnose_output() {
           fi
         fi
 
+        if (( ${_eff_unmeasured:-0} )); then
+          _msg="${_msg}"$'\n'"  (入力の実効サイズを測れなかった: ${__CONCAT_DOTFILES_BIN}/mp4-effective-size を起動できない。go が無いか、ビルドが落ちた)"
+        fi
         REPLY="$_msg"
         return 1
       fi

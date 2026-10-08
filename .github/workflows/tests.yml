@@ -40,7 +40,7 @@ jobs:
           - group: heavy
             make-target: test-discovered-heavy
             needs-nvim: false
-            needs-go: false
+            needs-go: true   # concat の診断のテストが bin/mp4-effective-size (Go) をビルドする (issue 670)
           - group: rest
             make-target: test-runtime-rest
             needs-nvim: true

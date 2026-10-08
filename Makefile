@@ -18,6 +18,7 @@ ZSH_SYNTAX_FILES := \
   bin/glogx \
   bin/lib/go_autobuild.zsh \
   bin/lockman \
+  bin/mp4-effective-size \
   bin/pro-con \
   bin/ratelimit \
   bin/repair-mp4-timebase \

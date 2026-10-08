@@ -138,10 +138,12 @@ codex の run の後に 1 回呼ばれるだけ)。それでも寄せる理由�
 - [x] 置き場所 (A / B / C) を決め、その理由を本 issue に書く (B。下の進捗)
 - [x] `codex-events.py` を Go に置き換え、上のコーパスで旧版と突き合わせて、合格条件を満たす。
       **実際の `events.jsonl` との突き合わせは未実測** (手元に 0 件。codex は自発的に起動しない方針のため取れない。下の進捗の trigger)
-- [ ] `tests/test_codex_events.py` の全ケース (`EventTests` / `DriverTests`) を Go のテストへ移し、`make test-go` と CI の lane のログにテスト名が出ることを確認する。
-      `DriverTests` が偽の codex を python3 の shebang で書いている点も置き換える (移植と bash の偽の codex は済み。CI のログの確認は push 後)
+- [x] `tests/test_codex_events.py` の全ケース (`EventTests` / `DriverTests`) を Go のテストへ移し、`make test-go` と CI の lane のログにテスト名が出ることを確認する。
+      `DriverTests` が偽の codex を python3 の shebang で書いている点も置き換える。
+      CI (run 37804372152、headSha 108c5823) は `go test -race ./...` → `ok codexevents 6.470s`。CI は `-v` なしなのでテスト名は出ない。
+      driver のテストまで走ったことは所要時間 (判定だけなら 0.3 秒) と、手元の `-v` で 13 本の PASS を見て確かめた
 - [x] `bin/codex-fanout` から `python3` の呼び出しがなくなり (`grep -n python3 bin/codex-fanout` が 0 件)、Go のバイナリは起動時に解決される
-- [ ] `zshlib/_concat_helpers.zsh` の mp4 のサイズ計算を置き換える
+- [x] `zshlib/_concat_helpers.zsh` の mp4 のサイズ計算を置き換える
 - [ ] `tmux-toast` の幅計算を `termwidth` に寄せ、旧との幅の差を確認し、go が無いときも exit 0 で縮退することをテストで固定する
 - [ ] 残りの対象 (`repair_avi_vorbis_audio.sh` / `ab_abandoned.sh` の heredoc) は、それぞれ移したか、移さない理由を本 issue に書いた
 
@@ -227,3 +229,34 @@ C は寄せる先 (ratelimit) と責務が違う。glogx 等から判定を impo
 - **実際の codex の events.jsonl での突き合わせ (未実測)**。trigger: 次に codex-fanout を `-J` で回したとき、出力先の `*.events.jsonl` と応答を
   旧版 (`git show <この commit の親>:bin/lib/codex-events.py`) と新版の両方に通して、rc・ログ・meta.json を比べる
 - 2 本目以降 (`zshlib/_concat_helpers.zsh` の mp4 のサイズ計算 / tmux-toast の幅 / 残り) は未着手
+- 2026-10-09: 2 本目 (concat の mp4 の実効サイズ) を Go に置き換えた (commit: concat の mp4 の実効サイズを Go に置き換える (issue 670))
+
+### 2 本目: `__concat_mp4_effective_size`
+
+- 着手前の裏取り: この値は concat の出力が入力の合計より 5% 以上小さいときの診断 (`__concat_diagnose_output`) だけが使う。
+  入力の末尾の「どの box からも参照されないデータ」を見分けて、出力が実効サイズどおりなら失敗 (rc=1) ではなく警告 (rc=2) にする。
+  **この経路にはテストが 1 本も無かった**ので、Go に移してテストで固定する価値があった
+- 置き場所: B (`src/mp4box`、`bin/mp4-effective-size`)。codex と責務が違う。glogx 等に mp4 の box を読む既存のコードは無かった
+- zsh 側: `_concat_helpers.zsh` が読み込まれたときに `${${(%):-%x}:A:h:h}/bin` を控え、絶対パスで呼ぶ (関数の中の `%x` は呼び出し元を指す)。
+  zshlib から Go の道具を呼ぶ最初の例
+- 旧版との突き合わせ: 合成した壊れ方 17 種 (正常・末尾のごみ・64 bit の大きさ・途中で切れる・大きさ 0・型の検査・大きさ 8 未満・ファイルの外・空 等) +
+  実物の mp4 2 本 + 実物の末尾に 20MB のごみ 2 本 + ディレクトリ・無いファイルの 23 件で差 0 件。型の検査を外した変異版で差 1 件 (ハーネスの空振りでない)。
+  レビュワーが別に 1500 件のファズで差 0 件
+- テスト: `src/mp4box/main_test.go` (13 の形) と `tests/zshrc/concat/test_concat_orphaned_data.sh` (診断の経路: 警告 rc=2 / ごみの無い入力は rc=1 /
+  道具を起動できないときは警告にせず rc=1 と「測れなかった」を添える)。go が無い環境では skip (77)
+- 🚨 CI: concat のテストが走る heavy のジョブは Go を入れていなかった (`needs-go: false`) → `true` にした (レビュワーが未確認とした点を確かめて見つけた)
+
+### 2 本目の Python 版と変えたこと
+
+- 道具を起動できない (go が無い・ビルドの失敗) とき、旧は python3 (macOS に標準) で測れていた。新は 0 を出して rc=1 にし、診断に
+  「入力の実効サイズを測れなかった」を添える (警告に落とさず、失敗のまま理由を残す)
+- ブロックデバイスを渡すと旧はデバイスの大きさを測るが、新は 0 (Stat の大きさが 0)。concat の入力は動画ファイルなので受ける
+
+### 2 本目の検証
+
+- 変異: Go 側 4 本 red (型の検査・大きさ 8 未満・64 bit の大きさ・大きさ 0)。「ディレクトリなら 0」は外しても緑 → Go では読む時点でエラーになる冗長な分岐だったので消した。
+  zsh 側 3 本 red (道具の場所を 1 段ずらす・「測れなかった」の印を立てない・rc を返さない)
+- 反証レビュー (sonnet 1 体): P1 なし。採用: go が無いと警告が黙って失敗に落ちる (P2) → 上の「測れなかった」。CI の Go の不足 (確かめて見つけた)。
+  記録のみ: 初回のビルドは stderr を捨てて走る (診断の頻度は低い) / 数でない出力を 0 にする検査は外しても緑 (ビルドの出力は stderr にしか出ないので、
+  stdout に混ざる経路は再現できなかった。予防として残す)
+- `make test-dir DIR=tests/zshrc/concat` 緑・`make -C src/mp4box test lint` 緑・`make test-lint` 緑

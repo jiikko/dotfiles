@@ -1,0 +1,10 @@
+#!/usr/bin/env zsh
+# mp4-effective-size — MP4 のトップレベルの box のうち壊れていないものの大きさの合計 (実効サイズ) をバイト数で出す。
+# Go implementation at:
+#   ~/dotfiles/src/mp4box/
+#     mp4-effective-size <file>   (読めない・壊れているなら 0。常に数を 1 行)
+# 呼び出し元は zshlib/_concat_helpers.zsh の __concat_mp4_effective_size (concat の出力サイズの診断)。
+# 再ビルドは同期 (--async にしない): 呼び出し側は出力の数で判定するので、旧版の結果を新版の結果と誤認させない。
+set -u
+source "${0:A:h}/lib/go_autobuild.zsh"
+go_autobuild_exec "${0:A:h}/../src/mp4box" mp4-effective-size -- "$@"
