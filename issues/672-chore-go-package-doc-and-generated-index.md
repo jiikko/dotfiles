@@ -1,7 +1,5 @@
 # 672 (chore): Go の package に doc コメントを必須にし、「再利用できる package の一覧」を生成する
 
-> 🚨 **担当中: codex-drive セッション (Claude Opus 5.5)**（2026-10-08〜）
-
 起票日: 2026-10-08
 
 ## 概要
@@ -42,7 +40,7 @@ package の doc コメント (`// Package termwidth は …`) を正本にして
 - [x] 上の 5 個に doc コメントを書く (gorules 2 個も `Package gorules` で始めた)
 - [x] 一覧を生成する道具を置き、出力の形 (案 1 / 案 2) を決めて理由を本 issue に書く (案 1。道具を知らなくても grep で引けることが目的のため)
 - [x] doc コメントの無い package を落とす検査を `make test-lint` に入れ、変異で red になることを確かめる (11 本。下の進捗)
-- [ ] 検査が CI で走っていることを、ログの検査名で確かめる
+- [x] 検査が CI で走っていることを、ログの検査名で確かめる (commit 1b2c0a2e の Lint: `OK: Go package index を検査しました (17 modules / 78 packages)` と fixture の全項目。setup-go で Go 1.25.0、手元の 1.26 と生成結果が一致)
 - [x] `src/README.md` から一覧へ案内する
 
 ## 関連ファイル
@@ -63,3 +61,5 @@ package の doc コメント (`// Package termwidth は …`) を正本にして
 - Claude の検閲で直した点: 一時ディレクトリを repo の中に作っていた (本体とテストの両方) → OS の一時領域へ。README の誤記 (「PACKAGES.md が検査する」)。doc の文体
 - 変異検証 (Claude、bin/mutate-verify-list): 11 本すべて想定どおり red (prefix の検査 / tag の取り直し / --check の比較 / nested module / go list の rc /
   symlink / 否定 tag / tag 付きの rc / tag 付きの directory 照合 / 2 つ目の module の列挙 / 行数だけの比較)
+- 2026-10-08: 要件照合の敵対レビュー (codex 1 本) の未充足を直した: 要件 R6 の import path を改訂版の契約で落としていた
+  → 各行に import path を足した (commit「feat(go): src/PACKAGES.md の各行に import path を足す」)。陽性 fixture の期待行で固定

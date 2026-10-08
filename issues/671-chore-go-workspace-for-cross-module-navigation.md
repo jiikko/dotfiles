@@ -1,7 +1,5 @@
 # 671 (chore): `src/` の Go module を go.work で 1 つの workspace にし、module をまたいで探せるようにする
 
-> 🚨 **担当中: codex-drive セッション (Claude Opus 5.5)**（2026-10-08〜）
-
 起票日: 2026-10-08
 
 ## 概要
@@ -52,9 +50,9 @@ go.work を置き、エディタ (nvim の gopls) と LLM の LSP ツールか�
 
 - [x] 案を決め、理由を本 issue に書く (go.work を置かない。下の進捗)
 - [x] ~~go.work の有無で解決が一致することを確認した~~ → 測ったら一致しなかった (18 行の差。下の進捗) ので go.work を置かない方針に変えた。代わりに「repo に go.work / go.work.sum が無い・ビルド経路を変えていない」を確認
-- [ ] `make test-go` と CI の `src_*.yml` が今までどおり通る
+- [x] `make test-go` と CI の `src_*.yml` が今までどおり通る (make test-go: 17 module すべて rc=0。CI: commit 1b2c0a2e の src/doctor・glogx・ratelimit・restartable・pro-con すべて success)
 - [x] gopls で module をまたいだシンボル検索が効くことを確認した (nvim。下の進捗の実機)
-- [ ] Claude Code の gopls プラグインが `bin/gopls` 経由で起動する (push と `~/dotfiles` の pull の後に確認)
+- [x] Claude Code の gopls プラグインが `bin/gopls` 経由で起動する (下の進捗)
 - [x] 使い方 (go.work を置かない理由・nvim と Claude の経路) を `src/README.md` に書く
 
 ## 関連ファイル
@@ -82,3 +80,12 @@ go.work を置き、エディタ (nvim の gopls) と LLM の LSP ツールか�
   **却下 1 件**: `PATH=""` のときの cwd 探索 (LSP のプラグインが空の PATH で起動する経路が無い。再提起するなら、空の PATH で gopls を起動する実際の経路を示すこと)
 - 変異検証 (Claude、bin/mutate-verify-list): lsp.lua の dotfiles 判定・module 配下の判定・GOWORK=off の付与を外す 3 本は red。
   bin/gopls の自分のディレクトリの除外を外すのは red。mason の優先を外すのは**緑のままだった** (偽の実体が呼び出し側の環境から名前を取っていて、どちらが呼ばれても同じ名前を記録していた) → テストを直した
+- 2026-10-08: push (1b2c0a2e) と `~/dotfiles` の pull の後の確認
+  - R2: 新しい headless の Claude (haiku) の LSP ツールで workspaceSymbol が gopls から結果を返した。PATH 上の gopls は `bin/gopls` だけ (`which -a gopls`) なので、必ず shim を経由している。
+    Claude の検索範囲は開いた module とその依存まで (lockman の NewLocker は出ない)。承認済みの方針どおりで、横断の発見は `src/PACKAGES.md` で補う
+  - R1 (実機、glogx のファイルだけを開いた状態): folder は src の 17 module ちょうど。lockman の NewLocker / ローカルの tuikit の TruncateMeasure が返る。
+    dotfiles の外の Go プロジェクト (一時ディレクトリの git repo + go.mod) は別 client・folder 1・GOWORK 無し
+- 2026-10-08: 要件照合の敵対レビュー (codex 1 本) の未充足を直した: `:lsp restart` が保存済みの folder を使い回し、module を足しても反映されなかった
+  → 再起動のとき列挙し直す (commit「fix(nvim): gopls の再起動で dotfiles の module を列挙し直す」)。実機の `:lsp restart gopls` の後も folder 17・GOWORK=off。変異で red を確認
+- 未確認として残すもの: git が無い・時間切れ・rc≠0・列挙失敗の**個別の**注入テスト (今は「例外は既定の root に戻す」の一般の経路だけをテストしている)。
+  trigger: gopls が開かない・既定の root に戻らないという報告が出たとき
