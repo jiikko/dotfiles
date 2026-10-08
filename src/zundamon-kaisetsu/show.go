@@ -20,9 +20,13 @@ type showData struct {
 	Lang  string       `json:"lang,omitempty"`
 	Lines []string     `json:"lines,omitempty"`
 	Marks []int        `json:"highlight,omitempty"`
-	Src   string       `json:"src,omitempty"` // 画像の実際のパス。assemble (embedShowImages) が data URI に置き換える
-	Alt   string       `json:"alt,omitempty"`
-	Code  []string     `json:"code,omitempty"` // mermaid の記法。assemble (embedMermaid) が PNG にして image に置き換えるので、player には届かない
+	// 段: 後の行の "show": "next" で 1 段ずつ見せる。比較は Build で、左右の同じ番号の項目を 1 行ずつ出す。
+	// コードは Steps で、段ごとに強調する行 (1 始まり) を変える (Marks とは同時に書けない)
+	Build bool     `json:"build,omitempty"`
+	Steps [][]int  `json:"steps,omitempty"`
+	Src   string   `json:"src,omitempty"` // 画像の実際のパス。assemble (embedShowImages) が data URI に置き換える
+	Alt   string   `json:"alt,omitempty"`
+	Code  []string `json:"code,omitempty"` // mermaid の記法。assemble (embedMermaid) が PNG にして image に置き換えるので、player には届かない
 	// srcWritten は台本に書いたままの src (エラーの表示用)。JSON に出さないので、重複除去の鍵にも入らない
 	srcWritten string
 }
@@ -55,6 +59,20 @@ const (
 	codeLinesMax    = 11
 )
 
+// showNext は行の show に書く「今の図解を 1 段進める」の印。
+const showNext = "next"
+
+// stepCount は図解の段の数 (段の無い図解は 0)。
+func (sd *showData) stepCount() int {
+	switch {
+	case sd.Build:
+		return len(sd.Left.Items) // 左右の数が同じことは parseCompare が止めている (対を 1 段ずつ出す)
+	case len(sd.Steps) > 0:
+		return len(sd.Steps)
+	}
+	return 0
+}
+
 // showParsers は図解の種類ごとの検査。m は show のオブジェクト、at は「lines[i].show」までの位置。
 var showParsers = map[string]func(path, at string, m map[string]any) (*showData, error){
 	"keyword": parseKeyword,
@@ -82,7 +100,7 @@ func parseShow(path string, i int, v any) (*showData, error) {
 	at := fmt.Sprintf("lines[%d].show", i)
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, fail("%s: %s はオブジェクトか null で書く (実際: %s)", path, at, pyRepr(v))
+		return nil, fail("%s: %s はオブジェクトか null か \"next\" (段を進める) で書く (実際: %s)", path, at, pyRepr(v))
 	}
 	typ, _ := m["type"].(string)
 	parse, ok := showParsers[typ]
@@ -108,10 +126,17 @@ func parseKeyword(path, at string, m map[string]any) (*showData, error) {
 }
 
 func parseCompare(path, at string, m map[string]any) (*showData, error) {
-	if err := onlyKeys(path, at+" (compare)", m, "type", "left", "right"); err != nil {
+	if err := onlyKeys(path, at+" (compare)", m, "type", "left", "right", "build"); err != nil {
 		return nil, err
 	}
 	sd := &showData{Type: "compare"}
+	if bv, ok := m["build"]; ok {
+		b, isBool := bv.(bool)
+		if !isBool {
+			return nil, fail("%s: %s.build は true か false で書く (実際: %s)", path, at, pyRepr(bv))
+		}
+		sd.Build = b
+	}
 	for _, side := range []struct {
 		key string
 		dst **compareSide
@@ -140,11 +165,20 @@ func parseCompare(path, at string, m map[string]any) (*showData, error) {
 		}
 		*side.dst = &compareSide{Title: title, Items: items}
 	}
+	if sd.Build {
+		// 段は左右の同じ番号の項目を対にして 1 つずつ出すので、数が違うと片方だけが増える段ができる
+		if len(sd.Left.Items) != len(sd.Right.Items) {
+			return nil, fail("%s: %s.build は左右の項目の数を揃えて書く (同じ番号の項目を対にして 1 段ずつ出す。実際: %d 個と %d 個)", path, at, len(sd.Left.Items), len(sd.Right.Items))
+		}
+		if sd.stepCount() < 2 {
+			return nil, fail("%s: %s.build は項目が 2 個以上あるときだけ書ける (1 段では見せていけない)", path, at)
+		}
+	}
 	return sd, nil
 }
 
 func parseCode(path, at string, m map[string]any) (*showData, error) {
-	if err := onlyKeys(path, at+" (code)", m, "type", "lang", "lines", "highlight"); err != nil {
+	if err := onlyKeys(path, at+" (code)", m, "type", "lang", "lines", "highlight", "steps"); err != nil {
 		return nil, err
 	}
 	lang, err := showField(path, at, m, "lang", false, 1<<30)
@@ -177,25 +211,54 @@ func parseCode(path, at string, m map[string]any) (*showData, error) {
 	if blank {
 		return nil, fail("%s: %s.lines が空行だけ", path, at)
 	}
-	var marks []int
-	if hv, ok := m["highlight"]; ok {
-		list, ok := hv.([]any)
-		if !ok {
-			return nil, fail("%s: %s.highlight は行番号 (1 始まり) のリストで書く (実際: %s)", path, at, pyRepr(hv))
+	sd := &showData{Type: "code", Lang: lang, Lines: lines}
+	hv, hasMarks := m["highlight"]
+	sv, hasSteps := m["steps"]
+	switch {
+	case hasMarks && hasSteps:
+		return nil, fail("%s: %s に highlight と steps を両方は書けない (段ごとに強調するなら steps だけにする)", path, at)
+	case hasMarks:
+		if sd.Marks, err = lineMarks(path, at+".highlight", hv, len(lines)); err != nil {
+			return nil, err
 		}
-		for _, v := range list {
-			n, ok := v.(json.Number)
-			k, err := n.Int64()
-			if !ok || err != nil || k < 1 || int(k) > len(lines) {
-				return nil, fail("%s: %s.highlight は 1〜%d の行番号のリストで書く (実際: %s)", path, at, len(lines), pyRepr(hv))
-			}
-			if !slices.Contains(marks, int(k)) {
-				marks = append(marks, int(k))
-			}
+	case hasSteps:
+		list, ok := sv.([]any)
+		if !ok || len(list) < 2 {
+			return nil, fail("%s: %s.steps は段ごとの行番号のリストを 2 段以上並べて書く (例: [[2], [4, 5]]。実際: %s)", path, at, pyRepr(sv))
 		}
-		sort.Ints(marks)
+		for j, v := range list {
+			marks, err := lineMarks(path, fmt.Sprintf("%s.steps[%d]", at, j), v, len(lines))
+			if err != nil {
+				return nil, err
+			}
+			if j > 0 && slices.Equal(marks, sd.Steps[j-1]) { // "next" を書いても画面が変わらない段になる
+				return nil, fail("%s: %s.steps[%d] が 1 つ前の段と同じ強調 (段を進めても画面が変わらない)", path, at, j)
+			}
+			sd.Steps = append(sd.Steps, marks)
+		}
 	}
-	return &showData{Type: "code", Lang: lang, Lines: lines, Marks: marks}, nil
+	return sd, nil
+}
+
+// lineMarks はコードの強調する行番号 (1 始まり) のリストを検査し、重複を除いて昇順に並べる。空のリストは強調しない。
+func lineMarks(path, at string, v any, nLines int) ([]int, error) {
+	list, ok := v.([]any)
+	if !ok {
+		return nil, fail("%s: %s は行番号 (1 始まり) のリストで書く (実際: %s)", path, at, pyRepr(v))
+	}
+	marks := []int{}
+	for _, x := range list {
+		n, ok := x.(json.Number)
+		k, err := n.Int64()
+		if !ok || err != nil || k < 1 || int(k) > nLines {
+			return nil, fail("%s: %s は 1〜%d の行番号のリストで書く (実際: %s)", path, at, nLines, pyRepr(v))
+		}
+		if !slices.Contains(marks, int(k)) {
+			marks = append(marks, int(k))
+		}
+	}
+	sort.Ints(marks)
+	return marks, nil
 }
 
 // codeWidth はコードの 1 行の表示の幅 (半角 1・それ以外 2)。コードは折り返さずに出すので、文字数ではなく幅で上限を見る。
@@ -248,35 +311,54 @@ func showString(path, at string, v any, present, required bool, max int) (string
 	return s, nil
 }
 
-// lineShows は各行に出す図解の番号 (無ければ nil) と、図解の表を返す。show を持つ行から、次に show を持つ行
-// (null なら消す) の手前まで同じ図解を出し続ける。同じ中身の図解は表に 1 回だけ入れる (中身は JSON にして比べる)。
-func lineShows(path string, lines []map[string]any) ([]*int, []showData, error) {
+// lineShows は各行に出す図解の番号 (無ければ nil)・段 (段の無い図解なら nil) と、図解の表を返す。show を持つ行から、
+// 次に show を持つ行 (null なら消す) の手前まで同じ図解を出し続ける。"show": "next" の行は図解を変えずに段を 1 つ進める。
+// 同じ中身の図解は表に 1 回だけ入れる (中身は JSON にして比べる)。
+func lineShows(path string, lines []map[string]any) ([]*int, []*int, []showData, error) {
 	idx := make([]*int, len(lines))
+	steps := make([]*int, len(lines))
 	var table []showData
 	seen := map[string]int{}
-	var cur *int
+	var cur, step *int
 	for i, line := range lines {
 		if v, ok := line["show"]; ok {
-			sd, err := parseShow(path, i, v)
-			if err != nil {
-				return nil, nil, err
-			}
-			cur = nil
-			if sd != nil {
-				b, err := json.Marshal(sd)
+			if v == showNext {
+				at := fmt.Sprintf("lines[%d].show", i)
+				switch {
+				case cur == nil:
+					return nil, nil, nil, fail("%s: %s の \"next\" は、図解を出している間にだけ書ける (前の行に図解が無いか、null で消している)", path, at)
+				case step == nil:
+					return nil, nil, nil, fail("%s: %s の \"next\" は、段のある図解 (比較の build・コードの steps) にだけ書ける", path, at)
+				case *step+1 >= table[*cur].stepCount():
+					return nil, nil, nil, fail("%s: %s の \"next\" が多い (この図解は %d 段で、もう最後の段を出している)", path, at, table[*cur].stepCount())
+				}
+				next := *step + 1
+				step = &next
+			} else {
+				sd, err := parseShow(path, i, v)
 				if err != nil {
-					return nil, nil, err
+					return nil, nil, nil, err
 				}
-				n, ok := seen[string(b)]
-				if !ok {
-					n = len(table)
-					seen[string(b)] = n
-					table = append(table, *sd)
+				cur, step = nil, nil
+				if sd != nil {
+					b, err := json.Marshal(sd)
+					if err != nil {
+						return nil, nil, nil, err
+					}
+					n, ok := seen[string(b)]
+					if !ok {
+						n = len(table)
+						seen[string(b)] = n
+						table = append(table, *sd)
+					}
+					cur = &n
+					if sd.stepCount() > 0 {
+						step = new(int)
+					}
 				}
-				cur = &n
 			}
 		}
-		idx[i] = cur
+		idx[i], steps[i] = cur, step
 	}
-	return idx, table, nil
+	return idx, steps, table, nil
 }

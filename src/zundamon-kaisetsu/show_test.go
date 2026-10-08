@@ -57,7 +57,7 @@ func TestRejectBadShow(t *testing.T) {
 		{map[string]any{"type": "keyword", "text": "x", "sub": strings.Repeat("補", 41)}, "show.sub は 40 字まで"},
 		{cmp(side("前", "a"), nil), "show.right は {"},
 		{cmp("前", side("後", "b")), "show.left は {"},
-		{withKey(cmp(side("前", "a"), side("後", "b")), "title", "x"), "show (compare) に書けるのは type/left/right だけ"},
+		{withKey(cmp(side("前", "a"), side("後", "b")), "title", "x"), "show (compare) に書けるのは type/left/right/build だけ"},
 		{cmp(withKey(side("前", "a"), "note", "x"), side("後", "b")), "show.left に書けるのは title/items だけ"},
 		{cmp(side("", "a"), side("後", "b")), "show.left.title は空でない文字列"},
 		{cmp(map[string]any{"items": []any{"a"}}, side("後", "b")), "show.left.title は空でない文字列"},
@@ -88,7 +88,7 @@ func TestRejectBadShow(t *testing.T) {
 		{code(strings.Repeat("言", 7), []any{"x"}), "show.lang は幅 12 まで"},
 		{code("a", []any{"x\ry"}), "show.lines[0] にタブ・改行を入れない"},
 		{withKey(code("a", []any{"x"}), "lang", 1), "show.lang は文字列"},
-		{withKey(code("a", []any{"x"}), "caption", "x"), "show (code) に書けるのは type/lang/lines/highlight だけ"},
+		{withKey(code("a", []any{"x"}), "caption", "x"), "show (code) に書けるのは type/lang/lines/highlight/steps だけ"},
 	} {
 		path := writeScript(t, map[string]any{"lines": []any{
 			map[string]any{"who": "metan", "text": "a"},
@@ -150,7 +150,7 @@ func TestLineShowsPersistClearAndDedupe(t *testing.T) {
 		{"who": "metan", "text": "11", "show": cmp(side("前X", "a"), side("後", "b"))}, // 左の見出しだけが違う
 		{"who": "metan", "text": "12", "show": cmp(side("前", "a"), side("後X", "b"))}, // 右の見出しだけが違う
 	}
-	idx, table, err := lineShows("s.json", lines)
+	idx, _, table, err := lineShows("s.json", lines)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestCodeHighlightNormalized(t *testing.T) {
 		}
 		return withKey(code("go", []any{"a", "b", "c"}), "highlight", list)
 	}
-	idx, table, err := lineShows("s.json", []map[string]any{
+	idx, _, table, err := lineShows("s.json", []map[string]any{
 		{"who": "metan", "text": "0", "show": hl("3", "1", "3")},
 		{"who": "metan", "text": "1", "show": hl("1", "3")}, // そろえた後は同じ中身
 		{"who": "metan", "text": "2", "show": hl("2")},      // 強調だけが違う
@@ -268,8 +268,9 @@ func TestShowKeysReadByPlayer(t *testing.T) {
 	tpl := playerTemplate(t)
 	samples := []showData{
 		{Type: "keyword", Text: "a", Sub: "b"},
-		{Type: "compare", Left: &compareSide{Title: "a", Items: []string{"b"}}, Right: &compareSide{Title: "c", Items: []string{"d"}}},
-		{Type: "code", Lang: "go", Lines: []string{"a"}, Marks: []int{1}},
+		{Type: "compare", Left: &compareSide{Title: "a", Items: []string{"b"}}, Right: &compareSide{Title: "c", Items: []string{"d"}}, Build: true},
+		// highlight と steps は台本では同時に書けないが、どちらのキーも読まれていることを 1 つのサンプルで見る
+		{Type: "code", Lang: "go", Lines: []string{"a"}, Marks: []int{1}, Steps: [][]int{{1}}},
 		{Type: "image", Src: "data:image/png;base64,", Alt: "b"},
 	}
 	// サンプルは build が出しうる全種類を覆う (mermaid は build で image に置き換わるので player には届かない)
@@ -282,32 +283,89 @@ func TestShowKeysReadByPlayer(t *testing.T) {
 			t.Errorf("図解の種類 %s のサンプルが無い (showParsers に足したらここにも足す)", typ)
 		}
 	}
+	// 行の段 (timelineLine の step) を、図解の番号 (show) と一緒に showAt へ渡している (字句の検査。渡し方の誤りは実 Chrome で見る)
+	if !regexp.MustCompile(`showAt\([^;]*line\.show[^;]*line\.step`).MatchString(tpl) {
+		t.Error("player.html が行の step を showAt へ渡していない (段のある図解が最初の段のまま動かない)")
+	}
 	if !strings.Contains(tpl, "未知の図解") {
 		t.Error("player.html の showAt に、未知の種類を見えるようにする分岐が無い")
 	}
-	// branch は種類 typ の描画の分岐 (showAt の本体の中の `sd.type === 'typ'` から次の `} else` まで)。キーはその種類の分岐の中で読まれている必要がある。
+	// branch は種類 typ の分岐 (図解の関数 showAt / drawShow の中の `sd.type === 'typ'` から次の `} else` まで) をつないだもの。
+	// 描画は drawShow、段の切り替えは showAt にあり、同じ種類の分岐が両方にある (どちらかで読まれていればよい)。
+	// キーはその種類の分岐の中で読まれている必要がある。
 	// 検出しない形 (字句の検査の限界。脅威モデルはうっかりした編集): 分岐の中の入れ子の `} else` (誤った red になる) /
-	// showAt の外の helper に読む処理を移す (分岐から読まれなくなるので red になる)
-	body := tpl
-	if i := strings.Index(tpl, "function showAt("); i >= 0 {
-		body = tpl[i:]
-		if j := strings.Index(body, "\n  function "); j >= 0 {
-			body = body[:j]
+	// 2 つの関数の外の helper に読む処理を移す (分岐から読まれなくなるので red になる)
+	// 2 つの関数の本体を別々に切り出す (分岐の終わりを探すときに、関数の境を越えて次の関数の分岐まで取らないため)
+	var bodies []string
+	for _, fn := range []string{"function showAt(", "function drawShow("} {
+		i := strings.Index(tpl, fn)
+		if i < 0 {
+			t.Fatalf("player.html に %s が無い", fn)
 		}
-	} else {
-		t.Fatal("player.html に showAt が無い")
+		part := tpl[i:]
+		if j := strings.Index(part[1:], "\n  function "); j >= 0 {
+			part = part[:j+1]
+		}
+		bodies = append(bodies, part)
 	}
 	branch := func(typ string) string {
-		if n := strings.Count(body, "sd.type === '"+typ+"'"); n != 1 {
-			t.Errorf("showAt の中の種類 %s の分岐が %d 個 (1 個のはず)", typ, n)
-			return ""
+		var out string
+		for _, rest := range bodies {
+			for {
+				i := strings.Index(rest, "sd.type === '"+typ+"'")
+				if i < 0 {
+					break
+				}
+				seg := rest[i:]
+				if j := strings.Index(seg, "} else"); j >= 0 {
+					seg = seg[:j]
+				}
+				out += seg
+				rest = rest[i+1:]
+			}
 		}
-		i := strings.Index(body, "sd.type === '"+typ+"'")
-		rest := body[i:]
-		if j := strings.Index(rest, "} else"); j >= 0 {
-			rest = rest[:j]
+		if out == "" {
+			t.Errorf("図解の関数の中に種類 %s の分岐が無い", typ)
 		}
-		return rest
+		return out
+	}
+	// 逆向き: プレイヤーが読む sd.<キー> は、どれかのサンプルの JSON に出ている (Go 側で JSON に出なくなった欄を見つける)。
+	// 検出しない形: 2 つの関数の中のコメントに書いた sd.<語> も拾う (誤った red になる。コメントでは sd. と書かない) /
+	// 全種類のキーの和集合と比べるので、ある種類の分岐が別の種類のキー (code の分岐が sd.text を読む等) を読んでも通る
+	written := map[string]bool{}
+	for _, sd := range samples {
+		b, err := json.Marshal(sd)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatal(err)
+		}
+		for k := range m {
+			written[k] = true
+		}
+	}
+	for _, body := range bodies {
+		for _, m := range regexp.MustCompile(`\bsd\.(\w+)`).FindAllStringSubmatch(body, -1) {
+			if !written[m[1]] {
+				t.Errorf("player.html が sd.%s を読むが、build の図解の JSON に %s が出ない", m[1], m[1])
+			}
+		}
+	}
+	// 段: 見せていない項目を隠す CSS と付ける JS、強調の CSS と付ける JS、項目に付ける印 (data-row) と選ぶ側の印がそれぞれ揃っている
+	for _, pin := range []struct{ re, what string }{
+		{`\.show-card \.pending \{[^}]*visibility: hidden`, "段で隠す項目の CSS (.show-card .pending)"},
+		{`classList\.toggle\('pending',`, "段で隠す項目に pending を付ける JS"},
+		{`\.show-code \.ln\.hl \{`, "強調する行の CSS (.show-code .ln.hl)"},
+		{`classList\.toggle\('hl',`, "強調する行に hl を付ける JS"},
+	} {
+		if !regexp.MustCompile(pin.re).MatchString(tpl) {
+			t.Errorf("player.html に %s が無い", pin.what)
+		}
+	}
+	if !strings.Contains(tpl, "li.dataset.row = j") || !strings.Contains(tpl, "li[data-row]") {
+		t.Error("比較の項目に付ける印 (dataset.row) と、段で選ぶ側 (li[data-row]) が揃っていない")
 	}
 	var sdType string
 	reads := func(prefix, key string) bool {

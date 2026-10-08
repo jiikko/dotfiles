@@ -53,6 +53,8 @@ h1 { font-size: 1.25rem; margin: 0 0 12px; }
 .show-image { background: #fff; padding: .8cqw; line-height: 0; }
 .show-image img { display: block; max-width: calc(46cqw - 1.6cqw); max-height: calc(29.25cqw - 1.6cqw); object-fit: contain; }
 .show-compare ul { margin: 0; padding-left: 1.1em; font-size: 1.7cqw; font-weight: 700; line-height: 1.5; }
+/* 段 (行の step) でまだ見せていない項目。場所は取ったまま隠し、段が進んでもカードの大きさが変わらないようにする */
+.show-card .pending { visibility: hidden; }
 .avatar { width: 62%; aspect-ratio: 1; border-radius: 50%; display: flex; flex-direction: column; align-items: center;
           justify-content: center; gap: 8%; color: #fff; font-weight: 700; margin-bottom: 18%; }
 .avatar .mouth { width: 30%; background: rgba(0,0,0,.55); border-radius: 999px; transition: height .03s; }
@@ -167,11 +169,25 @@ html.render * { transition: none !important; }
     return [...(r ? r.slice(1) : [-1, 0, 0]), b ? b[1] : 0];
   };
   let cur = -2;
-  // 図解は行の show (build が決めた D.shows の番号) から描く。同じ図解が続く行では DOM を触らない (描き直すと一瞬消える)
-  let curShow = -2;
-  function showAt(n) {
-    if (n === curShow) return;
-    curShow = n; const box = $('stage-show'); box.textContent = '';
+  // 図解は行の show (build が決めた D.shows の番号) から描く。同じ図解が続く行では DOM を作り直さない (描き直すと一瞬消える)。
+  // 段のある図解 (比較の build・コードの steps) は、行の step (build が決めた段) に合わせて見せる項目・強調する行だけを切り替える
+  let curShow = -2, curStep = -2;
+  function showAt(n, step) {
+    if (n !== curShow) { curShow = n; curStep = -2; drawShow(n); }
+    if (step === curStep) return;
+    curStep = step;
+    const sd = n >= 0 ? D.shows[n] : null;
+    if (!sd) return;
+    const box = $('stage-show');
+    if (sd.type === 'compare' && sd.build) {
+      box.querySelectorAll('li[data-row]').forEach((e) => e.classList.toggle('pending', Number(e.dataset.row) > step));
+    } else if (sd.type === 'code') {
+      const marks = new Set((sd.steps ? sd.steps[step] : sd.highlight) || []);
+      box.querySelectorAll('.ln').forEach((e, i) => e.classList.toggle('hl', marks.has(i + 1)));
+    }
+  }
+  function drawShow(n) {
+    const box = $('stage-show'); box.textContent = '';
     const sd = n >= 0 ? D.shows[n] : null;
     if (!sd) return;
     if (sd.type === 'keyword') {
@@ -180,8 +196,7 @@ html.render * { transition: none !important; }
       box.append(card);
     } else if (sd.type === 'code') {
       const card = el('div', 'show-card show-code'); const pre = el('pre');
-      const marks = new Set(sd.highlight || []);
-      sd.lines.forEach((t, i) => pre.append(el('span', marks.has(i + 1) ? 'ln hl' : 'ln', t)));
+      sd.lines.forEach((t) => pre.append(el('span', 'ln', t))); // 強調は showAt が段に合わせて付ける
       if (sd.lang) card.append(el('span', 'lang', sd.lang));
       card.append(pre); box.append(card);
     } else if (sd.type === 'image') {
@@ -191,7 +206,7 @@ html.render * { transition: none !important; }
       const card = el('div', 'show-card show-compare');
       for (const side of [sd.left, sd.right]) {
         const col = el('div', 'side'); const ul = el('ul');
-        side.items.forEach((t) => ul.append(el('li', null, t)));
+        side.items.forEach((t, j) => { const li = el('li', null, t); li.dataset.row = j; ul.append(li); });
         col.append(el('h3', null, side.title), ul); card.append(col);
       }
       box.append(card);
@@ -211,7 +226,7 @@ html.render * { transition: none !important; }
     // トピック名は行の chapter (build が決めた番号) から引く。行が変わるたびに必ず書き直す
     const ch = line && D.chapters.length >= 2 ? D.chapters[line.chapter] : null;
     $('stage-topic').textContent = ch ? ch.title : '';
-    showAt(line && line.show !== undefined ? line.show : -1);
+    showAt(line && line.show !== undefined ? line.show : -1, line && line.step !== undefined ? line.step : -1);
     const cap = $('caption'); cap.textContent = '';
     if (!line) return;
     const who = whoLabel(line.who);

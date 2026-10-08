@@ -158,6 +158,7 @@ type timelineLine struct {
 	Faces   map[string]string `json:"faces"`
 	Chapter int               `json:"chapter"`
 	Show    *int              `json:"show,omitempty"`
+	Step    *int              `json:"step,omitempty"` // 段のある図解の何段目まで見せるか (0 始まり)。段の無い図解・図解の無い行では載せない
 	Start   float64           `json:"start"`
 	End     float64           `json:"end"`
 	mouth   string
@@ -398,7 +399,7 @@ func assemble(s *Script, env *Env) (*PlayerData, []byte, error) {
 		return nil, nil, err
 	}
 	faces := lineFaces(s.Lines)
-	showIdx, shows, err := lineShows(s.Path, s.Lines)
+	showIdx, showSteps, shows, err := lineShows(s.Path, s.Lines)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -457,6 +458,7 @@ func assemble(s *Script, env *Env) (*PlayerData, []byte, error) {
 			// mp4 は行ごとに絵を撮るので、ここで決めておけば、チャプターが変わる行で HTML と同じく表示が切り替わる
 			Chapter: len(chapters) - 1,
 			Show:    showIdx[i],
+			Step:    showSteps[i],
 			Start:   pyRound3(start), End: pyRound3(start + dur),
 			mouth: mouthTrack(query, dur),
 		})

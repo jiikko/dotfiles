@@ -210,7 +210,7 @@ func loadScript(path string, env *Env) (*Script, error) {
 		}
 	}
 	// 図解の中身は形だけを見る (画像を足すときも、ファイルの有無は assemble で見る。synth / kana を止めないため)
-	if _, _, err := lineShows(path, s.Lines); err != nil {
+	if _, _, _, err := lineShows(path, s.Lines); err != nil {
 		return nil, err
 	}
 	return s, nil
