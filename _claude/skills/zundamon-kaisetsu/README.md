@@ -15,6 +15,7 @@
 | `SKILL.md` | skill の本体 (手順・台本の書き方・表情の語彙) |
 | `scripts/psd_faces.py` | 立ち絵の PSD から表情 × 口 3 段階の画像を書き出す (psd-tools を使う) |
 | `faces/<キャラ>.json` | 表情ごとに使う PSD のレイヤーの定義 |
+| `templates/review-3-1.md` / `review-3-3.md` | 手順 3-1 (書く前の裏取り) / 3-3 (書いた後の統合確認) のサブエージェントへの指示のテンプレート (`{…}` を埋めて渡す) |
 | `templates/player.html` | HTML プレイヤー (mp4 の絵もこれで描く。`zundamon-kaisetsu` コマンドが実行時に読む) |
 | `examples/script.json` | 台本の見本 |
 | `examples/review-bench/` | 欠陥を仕込んだ試験用の台本と正解表 (`lint` のテストと、確認役の試験に使う) |

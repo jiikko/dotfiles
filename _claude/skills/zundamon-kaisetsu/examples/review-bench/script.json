@@ -1,6 +1,6 @@
 {
   "title": "試験用: パスワードの使い回し",
-  "description": "zundamon-kaisetsu の校正 (lint) と確認役の試験用の台本。欠陥を仕込んである (answer_key.md)。",
+  "description": "zundamon-kaisetsu の校正 (lint) と確認役の試験用の台本。欠陥を仕込んである (answer_key.md)。資料は source.md (架空)。",
   "lines": [
     {
       "who": "metan",
@@ -79,6 +79,54 @@
       "who": "zundamon",
       "face": "笑顔",
       "text": "わたくしも、今日から設定するのだ。",
+      "show": null
+    },
+    {
+      "who": "zundamon",
+      "face": "考え中",
+      "chapter": "よくある誤解",
+      "text": "使い回している人って、どれくらいいるのだ？"
+    },
+    {
+      "who": "metan",
+      "face": "説明",
+      "text": "ある調査では、回答者の8割がパスワードを使い回していたの。"
+    },
+    {
+      "who": "zundamon",
+      "face": "驚き",
+      "text": "そんなに多いのだ！"
+    },
+    {
+      "who": "metan",
+      "face": "説明",
+      "text": "でも、2段階認証を入れれば、不正ログインは必ず防げるわ。",
+      "show": {
+        "type": "compare",
+        "left": {
+          "title": "対策なし",
+          "items": [
+            "1か所の漏洩で全部"
+          ]
+        },
+        "right": {
+          "title": "対策あり",
+          "items": [
+            "別々のパスワード",
+            "スマホなら無料で使える"
+          ]
+        }
+      }
+    },
+    {
+      "who": "zundamon",
+      "face": "考え中",
+      "text": "SOLIDWORKSみたいな仕事のソフトでも同じなのだ？"
+    },
+    {
+      "who": "metan",
+      "face": "説明",
+      "text": "ええ。Boot Campの上でも、仕事のソフトでも、考え方は同じよ。",
       "show": null
     },
     {
