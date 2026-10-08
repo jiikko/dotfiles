@@ -57,6 +57,7 @@ type Model struct {
 	moving     bool
 	lastAdv    time.Time
 	notices    []Notice
+	opener     opener // `o` の起動 (open.go)
 	linkCache  map[string]string
 	cv         *canvas // 使い回す格子 (大きさが変わったら作り直す)
 	startDir   string  // 起動したフォルダ (前回の場所を覚える鍵)
@@ -169,12 +170,15 @@ func (m *Model) Resize(w, h int) {
 		m.moving = true // カメラの目標 (画面の 38% と縦の中央) が変わる
 	}
 	m.w, m.h = w, h
+	for _, t := range m.tiles {
+		t.scroll = min(t.scroll, m.maxScroll(t)) // 折り返しは幅で行の数が変わる (広げると末尾の先を指したまま空白になる)
+	}
 }
 
 // Busy は裏で走査・git の取得が走っているか (呼び出し側はこの間、遅い周期で Advance を呼んで結果を取り込む)。
 // 取り込んでいない結果がある間も true (最後の結果を取り込む前に呼び出し側が tick を止める窓を塞ぐ。レビューの指摘 2026-10-08)。
 func (m *Model) Busy() bool {
-	return m.walker.busy() || m.git.busy() || m.walker.pending(m.recsVer) || m.git.pending(m.gitVer) || m.exploding != nil
+	return m.walker.busy() || m.git.busy() || m.walker.pending(m.recsVer) || m.git.pending(m.gitVer) || m.exploding != nil || m.opener.busy() || m.diffBusy()
 }
 
 // Animating は動いている途中か (呼び出し側はこの間だけ高い周期で Advance を呼ぶ)。
@@ -253,6 +257,9 @@ func (m *Model) startGit(force bool) {
 
 // takeBackground は裏の走査と git の結果を取り込み、見えているフォルダの走査を頼む。
 func (m *Model) takeBackground() {
+	for _, e := range m.opener.take() {
+		m.fail(e)
+	}
 	if recs, v, ok := m.walker.snapshot(m.recsVer); ok {
 		m.recs, m.recsVer = recs, v
 	}
@@ -713,6 +720,10 @@ func (m *Model) treeKey(k string) Result {
 		m.applySettings("show_hidden")
 	case ",":
 		m.panel.open, m.help = true, false
+	case "o":
+		m.opener.start(m.cur.path(), m.cur.name)
+	case "r":
+		m.Refresh() // 開いていたフォルダは保つ (treebeard は配下の展開を失う。spec §5.7 との差)
 	default:
 		switch listnav.MotionOf(k) {
 		case listnav.Down:
@@ -1173,6 +1184,8 @@ var helpKeys = [][2]string{
 	{"- backspace", "root を 1 段上へ"},
 	{".", "dotfile の表示を切り替え"},
 	{",", "設定"},
+	{"o", "外のアプリで開く (open)"},
+	{"r", "読み直す"},
 	{"タイルの中", "j k ^D ^U g G · tab でパスを選ぶ · J K で隣"},
 	{"q esc", "終了 (タイルの上では 1 枚閉じる)"},
 	{"!", "ここでコマンドを 1 行 ($f = 選んだパス)"},

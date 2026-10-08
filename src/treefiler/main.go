@@ -118,14 +118,24 @@ func (a *app) View() tea.View {
 	return v
 }
 
+const usage = `usage: treefiler [DIR]
+
+DIR (既定はカレントディレクトリ) を root にして、横に育つ木のファイラーを開く。
+キーの一覧は中で ? を押す。設定は , (~/.config/glogx/treefiler.toml)。
+`
+
 func main() {
 	dir := "."
 	switch len(os.Args) {
 	case 1:
 	case 2:
+		if os.Args[1] == "-h" || os.Args[1] == "--help" {
+			fmt.Print(usage)
+			return
+		}
 		dir = os.Args[1]
 	default:
-		fmt.Fprintln(os.Stderr, "usage: treefiler [DIR]")
+		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)
 	}
 	f, err := filer.New(dir, filer.Options{})

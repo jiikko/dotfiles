@@ -34,7 +34,14 @@ type tile struct {
 	sy      tween
 	jump    bool
 	sel     int
-	links   map[int][]link // 行ごとのリンク (計算済みの行だけ)
+	links   map[int][]link // 表示の行ごとのリンク (計算済みの行だけ)
+
+	mode   tileMode            // 本体か diff か (d で切り替え)
+	diff   *diffJob            // diff の取得 (一度取ったら使い回す)
+	hl     func(string) string // コードの色付け (言語が分からなければ nil)
+	vlines []viewLine          // 表示の行 (tileview.go)
+	vkey   viewKey
+	vsrc   int // vlines に取り込んだ元の行の数
 }
 
 // slotRect は i 番目の置き場所 (spec §0.2)。1 枚目は中央、2〜4 枚目は中央から右下へ同じ幅ずつずらす。
@@ -132,15 +139,16 @@ func resolveLink(tok, root, base string, cache map[string]string) string {
 
 // tileLinks は読めている行のうち lines 番目までのリンク (計算済みは使い回す)。
 func (m *Model) tileLinks(t *tile, upto int) []link {
+	vl := m.view(t) // 先に作る (作り直すと t.links を捨てる)
 	if t.links == nil {
 		t.links = map[int][]link{}
 	}
 	var out []link
 	base := filepath.Dir(t.n.path())
-	for ln := 0; ln < upto && ln < len(t.src.lines); ln++ {
+	for ln := 0; ln < upto && ln < len(vl); ln++ {
 		ls, ok := t.links[ln]
 		if !ok {
-			ls = linksOf(t.src.lines[ln], ln, m.root.path(), base, m.linkCache)
+			ls = linksOf(vl[ln].plain, ln, m.root.path(), base, m.linkCache)
 			t.links[ln] = ls
 		}
 		out = append(out, ls...)
@@ -180,7 +188,8 @@ func (m *Model) openTile(n *node, from rect) {
 		}
 		return
 	}
-	t := &tile{n: n, src: src, slot: len(m.tiles) % 4, from: from}
+	t := &tile{slot: len(m.tiles) % 4, from: from}
+	t.setSource(n, src)
 	src.ensure(2 * m.tileRows(t))
 	m.tiles = append(m.tiles, t)
 }
@@ -188,7 +197,7 @@ func (m *Model) openTile(n *node, from rect) {
 func (m *Model) tileRows(t *tile) int { return max(slotRect(t.slot, m.w, m.canvasH()).h-2, 1) }
 
 // maxScroll はタイルのスクロールの上限 (末尾まで読めていなければ、読めている所まで)。
-func (m *Model) maxScroll(t *tile) int { return max(0, len(t.src.lines)-m.tileRows(t)) }
+func (m *Model) maxScroll(t *tile) int { return max(0, len(m.view(t))-m.tileRows(t)) }
 
 // nextFile は n と同じフォルダの、開けるファイルを delta 方向に探す (タイルの J / K。glogx-ui-guide §6)。
 func (m *Model) nextFile(n *node, delta int) *node {
@@ -234,6 +243,12 @@ func (m *Model) tileKey(k string) {
 		}
 		m.fail("この範囲に開けるパスがありません")
 		return
+	case "o":
+		m.opener.start(t.n.path(), t.n.name)
+		return
+	case "d":
+		m.toggleDiff(t)
+		return
 	case "J", "K", "shift+down", "shift+up":
 		delta := 1
 		if k == "K" || k == "shift+up" {
@@ -266,7 +281,7 @@ func (m *Model) tileKey(k string) {
 
 // jumpKey はジャンプモードのキー。捌いたら true (捌かないキーはモードを抜けてからタイルのキーとして効く。glogx-ui-guide §6)。
 func (m *Model) jumpKey(t *tile, k string, rows int) bool {
-	ls := m.tileLinks(t, len(t.src.lines))
+	ls := m.tileLinks(t, len(m.view(t)))
 	if len(ls) == 0 {
 		t.jump = false
 		return false
@@ -346,7 +361,7 @@ func (m *Model) replaceTile(t *tile, delta int) {
 			if m.cur == t.n {
 				m.setCur(n)
 			}
-			t.n, t.src, t.links, t.scroll, t.sy, t.jump = n, src, nil, 0, tween{}, false
+			t.setSource(n, src)
 			src.ensure(2 * m.tileRows(t))
 			return
 		}
@@ -375,7 +390,11 @@ func (m *Model) drawTile(c *canvas, t *tile, r rect, front bool, p float64) {
 		c.put(r.x+r.w-1, y, "│", bc, false)
 	}
 	c.put(r.x, r.y+r.h-1, "╰"+strings.Repeat("─", inner)+"╯", bc, false)
-	title := termwidth.Truncate(fmt.Sprintf(" %s · %s ", t.n.name, human(t.n.size)), max(inner-2, 1), "…")
+	title := fmt.Sprintf(" %s · %s ", t.n.name, human(t.n.size))
+	if t.mode == modeDiff {
+		title += "· diff "
+	}
+	title = termwidth.Truncate(title, max(inner-2, 1), "…")
 	c.put(r.x+2, r.y, title, tc, true)
 	if p < 0.9 {
 		return // 開き切る前は枠だけ (spec §4.6)
@@ -387,12 +406,16 @@ func (m *Model) drawTile(c *canvas, t *tile, r rect, front bool, p float64) {
 	if t.jump && front {
 		links = m.tileLinks(t, sy+rows)
 	}
-	if len(t.src.lines) == 0 {
+	vl := m.view(t)
+	switch {
+	case t.mode == modeDiff && m.diffLoading(t):
+		c.put(r.x+2, r.y+1, spinnerFrame(m.now())+" diff を取得中", cMuted, false)
+	case len(vl) == 0:
 		c.put(r.x+2, r.y+1, "(空のファイル)", cMuted, false)
 	}
-	for i := 0; i < rows && sy+i < len(t.src.lines); i++ {
+	for i := 0; i < rows && sy+i < len(vl); i++ {
 		ln := sy + i
-		c.put(r.x+2, r.y+1+i, termwidth.Truncate(t.src.lines[ln], lw, ""), cText, false)
+		c.putSGR(r.x+2, r.y+1+i, vl[ln].styled, lw, cText)
 		for li, l := range links {
 			if l.line != ln {
 				continue
@@ -408,17 +431,24 @@ func (m *Model) drawTile(c *canvas, t *tile, r rect, front bool, p float64) {
 			}
 		}
 	}
-	total := strconv.Itoa(len(t.src.lines))
-	if !t.src.eof {
+	total := strconv.Itoa(len(vl))
+	if t.mode == modeFile && !t.src.eof {
 		total += "+" // まだ末尾まで読んでいない
 	}
-	posLabel := fmt.Sprintf(" %d/%s ", sy+1, total)
+	dl := ""
+	if m.diffable(t.n) {
+		dl = "d diff · "
+		if t.mode == modeDiff {
+			dl = "d file · "
+		}
+	}
+	posLabel := fmt.Sprintf(" %s%d/%s ", dl, sy+1, total)
 	if t.jump && front {
 		posLabel = " tab: パスを選ぶ · enter: 重ねて開く · esc: 戻る " + posLabel
 	}
 	c.put(r.x+r.w-2-widthOf(posLabel), r.y+r.h-1, posLabel, cMuted, false)
-	if maxS := m.maxScroll(t); maxS > 0 && len(t.src.lines) > 0 {
-		th := max(1, rows*rows/len(t.src.lines))
+	if maxS := m.maxScroll(t); maxS > 0 && len(vl) > 0 {
+		th := max(1, rows*rows/len(vl))
 		ty := int(float64(rows-th) * float64(min(sy, maxS)) / float64(maxS))
 		for y := range rows {
 			g, col := "│", cAccDim
@@ -428,4 +458,28 @@ func (m *Model) drawTile(c *canvas, t *tile, r rect, front bool, p float64) {
 			c.put(r.x+r.w-1, r.y+1+y, g, col, false)
 		}
 	}
+}
+
+// toggleDiff は d (git の diff と本体の切り替え。spec §8.3)。diff を出せないファイルでは理由を知らせる。
+func (m *Model) toggleDiff(t *tile) {
+	if t.mode == modeDiff {
+		t.mode = modeFile
+	} else {
+		if !m.diffable(t.n) {
+			m.fail("diff はありません (git の変更が無いファイル)")
+			return
+		}
+		t.mode = modeDiff
+		t.diff = startDiff(t.n.path()) // 切り替えるたびに取り直す (開いている間に書き換えた・git add した分を出す)
+	}
+	t.scroll, t.sy, t.jump, t.links = 0, tween{}, false, nil
+	t.vlines, t.vkey, t.vsrc = nil, viewKey{}, 0 // 取り直した diff が前と同じ行の数でも、前の表示を使い回さない
+}
+
+func (m *Model) diffLoading(t *tile) bool {
+	if t.diff == nil {
+		return false
+	}
+	_, done := t.diff.result()
+	return !done
 }

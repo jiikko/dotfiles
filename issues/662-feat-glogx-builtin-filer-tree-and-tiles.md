@@ -364,5 +364,31 @@ MIT OR Apache-2.0) を写す**。依頼に無い部分も含めて全部写す�
     記録のみ (1 周目): symlink 違いのパス (/tmp と /private/tmp) で開くと別の記録になる (戻らないだけ) / glogx を 2 つ同時に閉じると後の方が先の設定・場所を上書きする
   - 変異 10 本が red (行末コメントを捨てる / 起点の照合を外す / ground 変更で palette を直さない / explode_ignored を読まない / Live off で閉じたチャネル /
     off の前の git の結果を取り込む / off でも git を取りに行く / 捨てた結果の版を進めない / 項目の表の順に当てない / 直した palette を保存しない)
-  - 未対応 (spec §7 の項目のうち): Wrap lines (タイルの長い行は切る)。ソートの項目は後回しの決定どおり無い
+  - 未対応 (spec §7 の項目のうち): ソートの項目は後回しの決定どおり無い (Wrap lines は次の段で入れた)
+- [x] **タイルの責務を tile.go へ** (2026-10-09。commit「refactor(treefiler): タイルのキー処理と描画を tile.go へ移す」)。
+  model.go (1571 行) から 11 関数を移しただけ (本体は 1 行も変えていない。削除 283 行と追加の差は import 5 行)
+- [x] **外で開く・読み直し・タイルの色付けと diff と折り返し** (2026-10-09。commit「feat(treefiler): o で外のアプリで開く・r で読み直す・タイルの色付け・d で diff・折り返し」)。
+  - `o` (木とタイル): `open <path>` を subproc で裏の goroutine から起こし、失敗は toast。起動中は Busy。`r`: 読み直す (開いていたフォルダは保つ。
+    treebeard は配下の展開を失う — spec §5.7 との意図した差)。`PgDn` `PgUp` は glogx-ui-guide のとおり listnav の半ページのまま (spec の「列の中を 10」は採らない)
+  - タイルの表示の行の層 (tileview.go): Markdown は tuikit/markdown で整形、コードは tuikit/highlight.ForPath (新設。lexer をファイルに 1 回だけ選ぶ) で色付け、
+    Wrap lines (既定 on) で折り返す。スクロール・位置表示・スクロールバー・Tab のリンクはこの行の上で数える。読み進めたときは増えた行だけを足す。
+    canvas に SGR を解析して書く口 (putSGR。前景色・太字・下線だけ、背景色は捨てる)
+  - `d`: git の変更のあるファイル (staged / modified / conflict) で diff と本体を切り替える。題に `· diff`、右下に `d diff ·` / `d file ·`。
+    取得は裏の goroutine (取得中は表示と Busy)。HEAD が無い repo は index との差。切り替えるたびに取り直す
+  - 隔離した tmux で単体を起こして撮った: Markdown の見出し・箇条書き・コードの枠、Go のトークンごとの色 (Println 橙・文字列 緑)、全角の折り返し、diff の題と位置表示
+  - 反証レビュー (sonnet 1 体): 採用 — diff の pathspec が glob になり `a[1].txt` に `a1.txt` が混ざる・`*` で repo 全体 (P2。本物の git で再現。
+    `--literal-pathspecs`) / 幅を広げると折り返しの行が減り、末尾のタイルが空白になる (P2。Resize で詰める) / 巨大な diff を全部読む (P2。8 MiB で
+    読むのをやめ、途中の行を落として打ち切りを知らせる) / 外部 diff (`diff.external`) の出力 (P3。`--no-ext-diff`) / 開いている間の変更が diff に出ない (P3) /
+    Markdown を G で上限を超えて読む (P3。上限は中身を決めたときに付ける)。
+    🚨 Markdown の整形は UI の goroutine で同期に走り、2 MiB で 1.8 秒止まった (テストで実測)。上限を spec の 2 MiB から 256 KiB に下げた (0.06 秒)。
+    記録のみ: SGR の dim・italic・reverse は捨てる / 折り返しをまたぐパスはリンクとして割れる / diff を出している間も Tab のリンク候補を探す
+    (実在しなければ出ない) / コードの色付けは行単位 (複数行のコメントは色が続かない。tuikit/highlight の割り切り)
+  - glogx の TestFrameAllocBudget (filer): パッケージ全体の実行で 1 回だけ 159 (上限 158) が出た。単独では変更の前後とも 156、全体の実行を 3 回回して全部緑。
+    AllocsPerRun はプロセス全体の確保を数えるので、他のテストの裏の goroutine が混ざる揺れと見て、上限は緩めていない
+  - 反証レビュー 2 周目 (sonnet 1 体。修正の差分): 打ち切り後の git の後始末・HEAD が無いときの倒れ先・Markdown の上限と ensure の組・Resize は壊せなかった。
+    採用 — 描かずに `d` `d` と押すと、取り直した diff が前と同じ行の数なら前の表示を使い回しうる (P3。切り替えで表示のキャッシュを捨てる)。
+    記録のみ: ちょうど 8 MiB で終わる diff も打ち切りと出る / 8 MiB に改行が無い diff は巨大な 1 行のまま通す (重いだけ) / timeout でも index との差を
+    取りに行き、汎用の文言になる / Markdown が 256 KiB を超えると位置表示が「N+」のまま (G で先へは進まない)
+  - 変異 17 本が red (切り替えで表示のキャッシュを捨てない / o / r を外す・open と diff の Busy を外す・HEAD が無いときの倒れ先・追記の取り込み位置・SGR の背景色・Wrap を読まない・
+    diffable の判定・Markdown の整形・literal pathspec・Resize の詰め・取り直し・Markdown の上限・バイトの上限の判定と読み方)
 

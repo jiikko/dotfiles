@@ -11,6 +11,7 @@
 package highlight
 
 import (
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -93,6 +94,16 @@ func Lang(lang, code string) string {
 		return code
 	}
 	return codeLine(lexers.Get(lang), code)
+}
+
+// ForPath はファイル名 (拡張子・名前) で言語を選び、コード 1 行を色付けする関数を返す。言語が分からなければ nil。
+// 🚨 lexer の選択 (lexers.Match は全 lexer の名前の型と照合する) は行ごとに呼ぶと重いので、1 つのファイルで 1 回だけ選ぶ形にしている。
+func ForPath(path string) func(code string) string {
+	lex := lexers.Match(filepath.Base(path))
+	if lex == nil {
+		return nil
+	}
+	return func(code string) string { return codeLine(lex, code) }
 }
 
 // hlEscCache はトークン種別 → ANSI エスケープ列 ("" = 装飾なし) のメモ。

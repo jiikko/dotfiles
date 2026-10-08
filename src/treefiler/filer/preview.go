@@ -62,6 +62,7 @@ type textSource struct {
 	partial []byte // まだ改行が来ていない行の頭
 	eof     bool
 	size    int64
+	limit   int64 // 0 でなければ、先頭からここまでで読むのを止める (Markdown は整形のため全体を持つので上限を付ける)
 }
 
 func openText(path string) (*textSource, error) {
@@ -153,7 +154,7 @@ func (s *textSource) ensure(want int) {
 		return
 	}
 	buf := make([]byte, chunkBytes)
-	for !s.eof && len(s.lines) < want {
+	for !s.eof && len(s.lines) < want && (s.limit == 0 || s.off < s.limit) {
 		n, err := f.Read(buf)
 		s.off += int64(n)
 		s.feed(buf[:n])

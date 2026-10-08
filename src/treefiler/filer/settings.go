@@ -49,12 +49,13 @@ type Settings struct {
 	DimFloor      int
 	ExplodeIgnore bool
 	Remember      bool
+	Wrap          bool
 }
 
 func defaultSettings() Settings {
 	return Settings{RowSpacing: 0, ColumnGap: 3, MaxName: 28, Columns: "fit", Details: "off", NaturalSort: true,
 		Ground: "dark", Accent: "indigo", Palette: "ember", HeatRange: "5y", FocusDim: 6, Lines: "double", BranchOffset: 1,
-		Legend: true, Speed: "normal", Live: true, Ripples: true, Git: true, DimIgnored: true, DimFloor: 5}
+		Legend: true, Speed: "normal", Live: true, Ripples: true, Git: true, DimIgnored: true, DimFloor: 5, Wrap: true}
 }
 
 type itemKind int
@@ -138,6 +139,7 @@ var items = []item{
 	boolItem("BEHAVIOR", "Dim ignored", "dim_ignored", "git が無視するものを灰色に沈める", func(s *Settings) *bool { return &s.DimIgnored }),
 	intItem("BEHAVIOR", "Dim floor", "dim_floor", "無視するものの見えやすさ (0 = ほぼ背景 / 10 = 灰色)", 0, 10, 1, func(s *Settings) *int { return &s.DimFloor }),
 	boolItem("BEHAVIOR", "Explode ignored", "explode_ignored", "e で git が無視するフォルダも開く", func(s *Settings) *bool { return &s.ExplodeIgnore }),
+	boolItem("BEHAVIOR", "Wrap lines", "wrap", "タイルの長い行を折り返す (off なら右端で切る)", func(s *Settings) *bool { return &s.Wrap }),
 	boolItem("BEHAVIOR", "Remember place", "remember", "閉じたときの開いたフォルダとカーソルを、次に同じ場所で開いたときに戻す", func(s *Settings) *bool { return &s.Remember }),
 }
 
