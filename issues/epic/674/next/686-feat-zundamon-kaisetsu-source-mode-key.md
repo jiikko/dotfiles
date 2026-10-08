@@ -1,1 +1,0 @@
-../686-feat-zundamon-kaisetsu-source-mode-key.md
