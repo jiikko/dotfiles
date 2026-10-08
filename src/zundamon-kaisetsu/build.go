@@ -627,7 +627,7 @@ func renderHTML(data *PlayerData, env *Env) (string, error) {
 }
 
 // cmdBuild は合成済みの wav を連結し、HTML プレイヤーか mp4 (か両方) を書き出す。
-func cmdBuild(env *Env, scriptArg, output, format string, jobs, kbps int) error {
+func cmdBuild(env *Env, scriptArg, output, format string, jobs, kbps int, allowFastCaptions bool) error {
 	s, err := loadScript(resolvePath(scriptArg), env)
 	if err != nil {
 		return err
@@ -666,7 +666,10 @@ func cmdBuild(env *Env, scriptArg, output, format string, jobs, kbps int) error 
 	if err != nil {
 		return err
 	}
-	warnFastCaptions(env.Stderr, data.Lines, data.Duration)
+	// 字幕が速すぎる行があれば、音声の圧縮と書き出し (mp4 の撮影) の前に止める。pause_after は合成の鍵に入らないので、直して build し直すだけで済む
+	if n := warnFastCaptions(env.Stderr, data.Lines, data.Duration); n > 0 && !allowFastCaptions {
+		return fail("字幕が速すぎる行が %d 行あるので、書き出す前に止めた (行を分けるか pause_after で間を足す。このまま書き出すなら --allow-fast-captions)", n)
+	}
 	joined := filepath.Join(td, "joined.wav")
 	if err := writeWav(joined, pcm); err != nil {
 		return fail("%s: 書けない (%v)", joined, err)

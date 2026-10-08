@@ -405,7 +405,8 @@ const usageText = `usage: zundamon-kaisetsu [--engine URL] {check,up,down,speake
   lint      台本の校正のうち機械で決まるもの (60 字超・「のだ」2 回・漢数字・図を指す言い方 等) を警告する (あれば rc=1)。lint 台本.json
   synth     セリフごとに wav を合成する (<台本名>.work/ にキャッシュ)。synth 台本.json [--force]
   build     合成済みの wav を連結し、HTML プレイヤーか mp4 (か両方) を書き出す
-              build 台本.json -o 出力 [--format html|mp4|both] [--jobs N] [--bitrate 64k]
+              build 台本.json -o 出力 [--format html|mp4|both] [--jobs N] [--bitrate 64k] [--allow-fast-captions]
+              (字幕が速すぎる行があれば書き出す前に止まる。--allow-fast-captions で続ける)
 
   --engine URL  VOICEVOX エンジンの URL (既定 http://127.0.0.1:50021、環境変数 VOICEVOX_URL)
 `
@@ -474,6 +475,7 @@ func dispatch(args []string, env *Env) error {
 			{names: []string{"--format"}, dest: "format", takes: true, choices: []string{"html", "mp4", "both"}},
 			{names: []string{"--jobs"}, dest: "jobs", takes: true, check: jobsArg},
 			{names: []string{"--bitrate"}, dest: "bitrate", takes: true, check: kbpsArg},
+			{names: []string{"--allow-fast-captions"}, dest: "allow_fast_captions"},
 		},
 	}
 	spec, ok := specs[sub]
@@ -554,7 +556,7 @@ func dispatch(args []string, env *Env) error {
 		if v, ok := p.opts["bitrate"]; ok {
 			kbps, _ = kbpsValue(v)
 		}
-		return cmdBuild(env, p.pos[0], output, format, jobs, kbps)
+		return cmdBuild(env, p.pos[0], output, format, jobs, kbps, p.opts["allow_fast_captions"] == "true")
 	}
 	return nil
 }

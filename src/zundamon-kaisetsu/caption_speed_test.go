@@ -45,9 +45,10 @@ func equalInts(a, b []int) bool {
 	return true
 }
 
-// build は字幕の速い行を行番号つきで警告し、書き出しは止めない。速い行が無ければ何も言わない
-func TestBuildWarnsFastCaptions(t *testing.T) {
-	build := func(t *testing.T, edit func(lines []any)) string {
+// build は字幕の速い行を行番号つきで警告し、音声の圧縮と書き出しの前に止まる (--allow-fast-captions なら続ける)。速い行が無ければ何も言わない
+func TestBuildStopsOnFastCaptions(t *testing.T) {
+	var calls string // 偽の ffmpeg / Chrome が呼ばれた記録 (止まったときは ffmpeg (音声の圧縮) まで進んでいないことを見る)
+	build := func(t *testing.T, edit func(lines []any), allow bool) (string, error) {
 		t.Helper()
 		dir := t.TempDir()
 		copyTree(t, filepath.Join("testdata", "build", "script.work"), filepath.Join(dir, "script.work"))
@@ -72,25 +73,45 @@ func TestBuildWarnsFastCaptions(t *testing.T) {
 			}
 			writeScriptFile(t, path, raw)
 		}
-		fakeMP4Tools(t)
+		log := fakeMP4Tools(t)
 		env := testEnv(t)
 		var stderr bytes.Buffer
 		env.Stderr = &stderr
 		env.Now = time.Now
 		out := filepath.Join(t.TempDir(), "out")
-		must(t, cmdBuild(env, path, out, "html", 1, 64))
-		if _, err := os.Stat(out + ".html"); err != nil {
-			t.Fatalf("警告があっても HTML は書き出すはず: %v", err)
+		args := []string{"build", path, "-o", out, "--format", "html"} // dispatch を通す (--allow-fast-captions の配線も見る)
+		if allow {
+			args = append(args, "--allow-fast-captions")
 		}
-		return stderr.String()
+		err = dispatch(args, env)
+		logb, _ := os.ReadFile(log)
+		calls = string(logb)
+		_, statErr := os.Stat(out + ".html")
+		if (err == nil) != (statErr == nil) {
+			t.Fatalf("rc と書き出しが食い違う: err=%v / 出力=%v", err, statErr)
+		}
+		return stderr.String(), err
 	}
-	if got := build(t, nil); strings.Contains(got, "字幕が速くて") {
-		t.Fatalf("前提: 字幕を 1 字にした台本には速い行が無いはず:\n%s", got)
+	if got, err := build(t, nil, false); err != nil || strings.Contains(got, "字幕が速くて") {
+		t.Fatalf("前提: 字幕を 1 字にした台本には速い行が無く、止まらないはず: %v\n%s", err, got)
 	}
 	// 速い行を最後の行に置く (最後の行の区間は動画の終わりまでなので、build が動画の長さを渡していないと見逃す)
-	got := build(t, func(lines []any) {
+	fast := func(lines []any) {
 		lines[len(lines)-1].(map[string]any)["text"] = strings.Repeat("字幕だけ長い", 10) // 60 字を約 1 秒で
-	})
+	}
+	// 既定では、書き出す前に止まる (警告だけで続けると、mp4 を撮り終えてから気づいて撮り直していた。issue 676)
+	if _, err := build(t, fast, false); err == nil || !strings.Contains(err.Error(), "--allow-fast-captions") {
+		t.Errorf("速い行があるのに止まらない: %v", err)
+	} else if strings.Contains(calls, "ffmpeg ") {
+		t.Errorf("止まる前に音声の圧縮 (ffmpeg) まで進んでいる:\n%s", calls)
+	}
+	got, err := build(t, fast, true)
+	if err != nil {
+		t.Fatalf("--allow-fast-captions なら書き出すはず: %v", err)
+	}
+	if !strings.Contains(calls, "ffmpeg ") {
+		t.Fatalf("前提: 続けたときは ffmpeg (音声の圧縮) が呼ばれ、記録に残るはず:\n%s", calls)
+	}
 	if !strings.Contains(got, "字幕が速くて読み切れないおそれのある行が 1 行") || !strings.Contains(got, "lines[4] ") {
 		t.Errorf("速い行の警告が無い:\n%s", got)
 	}

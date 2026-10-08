@@ -307,7 +307,7 @@ func buildMP4From(t *testing.T, script string) (out string, log string, err erro
 	env.LoadAvg = func() (float64, bool) { return 0, true }
 	env.Now, env.Sleep = time.Now, func(time.Duration) {}
 	out = filepath.Join(t.TempDir(), "out")
-	err = cmdBuild(env, script, out, "mp4", 2, 64)
+	err = cmdBuild(env, script, out, "mp4", 2, 64, true)
 	return out + ".mp4", log, err
 }
 
@@ -456,7 +456,7 @@ func TestWriteMP4KeepsOutputOnMuxFailure(t *testing.T) {
 	env.Now, env.Sleep = time.Now, func(time.Duration) {}
 	out := filepath.Join(t.TempDir(), "out")
 	must(t, os.WriteFile(out+".mp4", []byte("previous"), 0o644))
-	err := cmdBuild(env, filepath.Join("testdata", "build", "script.json"), out, "mp4", 2, 64)
+	err := cmdBuild(env, filepath.Join("testdata", "build", "script.json"), out, "mp4", 2, 64, true)
 	if err == nil || !strings.Contains(err.Error(), "mp4 の書き出しに失敗") {
 		t.Fatalf("mux の失敗で止まるはず: %v", err)
 	}

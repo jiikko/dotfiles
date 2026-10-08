@@ -8,7 +8,8 @@ import (
 )
 
 // captionCPSMax は字幕を読み切れる速さの上限 (1 秒あたりの字数)。YES (yuya-takeyama/agent-plugins) の video の
-// CPS_WARN と同じ値。音声を聞きながら読む前提の目安で、超えても build は止めない (警告だけ)。
+// CPS_WARN と同じ値。音声を聞きながら読む前提の目安。build は、超えた行があれば書き出しの前に止まる
+// (--allow-fast-captions で続ける)。警告だけで続けていたころは、mp4 を撮り終えてから気づいて撮り直していた (issue 676)。
 const captionCPSMax = 7.5
 
 // fastCaption は字幕を読み切れないおそれのある行。
@@ -44,11 +45,11 @@ func fastCaptions(lines []timelineLine, duration float64) []fastCaption {
 	return out
 }
 
-// warnFastCaptions は字幕の速すぎる行を、行番号と先頭の文字つきで warn に書く (無ければ何も書かない)。
-func warnFastCaptions(w io.Writer, lines []timelineLine, duration float64) {
+// warnFastCaptions は字幕の速すぎる行を、行番号と先頭の文字つきで warn に書き (無ければ何も書かない)、その行数を返す。
+func warnFastCaptions(w io.Writer, lines []timelineLine, duration float64) int {
 	fast := fastCaptions(lines, duration)
 	if len(fast) == 0 {
-		return
+		return 0
 	}
 	fmt.Fprintf(w, "build: 字幕が速くて読み切れないおそれのある行が %d 行 (1 秒 %.1f 字を超える。行を分けるか、その行の pause_after で間を足す):\n",
 		len(fast), captionCPSMax)
@@ -59,4 +60,5 @@ func warnFastCaptions(w io.Writer, lines []timelineLine, duration float64) {
 		}
 		fmt.Fprintf(w, "  lines[%d] %.1f 字/秒 「%s」\n", f.Line, f.CPS, text)
 	}
+	return len(fast)
 }
