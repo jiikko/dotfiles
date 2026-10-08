@@ -1,0 +1,1 @@
+../673-feat-zundamon-kaisetsu-machine-reading-check.md
