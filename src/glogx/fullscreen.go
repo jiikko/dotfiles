@@ -65,6 +65,7 @@ const (
 	fullScreenDoctor
 	fullScreenStatus
 	fullScreenIssues
+	fullScreenFiler
 	// fullScreenCount は番兵 (テストが ID を全部走査するのに使う)。新しいビューアはこの上へ足す。
 	fullScreenCount
 )
@@ -82,6 +83,8 @@ func (id fullScreenID) String() string {
 		return "status"
 	case fullScreenIssues:
 		return "issues"
+	case fullScreenFiler:
+		return "filer"
 	case fullScreenCount:
 		return "count(番兵)"
 	}
@@ -103,6 +106,8 @@ func (m *browseModel) activeFullScreen() fullScreenID {
 		return fullScreenStatus
 	case m.issuesOv.visible():
 		return fullScreenIssues
+	case m.filerV.visible():
+		return fullScreenFiler
 	}
 	return fullScreenNone
 }
@@ -125,6 +130,8 @@ func crossTarget(key string) (fullScreenID, bool) {
 		return fullScreenRatelimit, true
 	case "D":
 		return fullScreenDoctor, true
+	case "F":
+		return fullScreenFiler, true // treefiler (filer_view.go。docs/treefiler-spec.md §0.3)
 	}
 	return fullScreenNone, false
 }
@@ -143,6 +150,13 @@ func (m *browseModel) openFullScreen(id fullScreenID) tea.Cmd {
 	case fullScreenDoctor:
 		m.usageOv.dismiss()
 		return tea.Batch(m.doctorOv.toggle(), m.maybeTick())
+	case fullScreenFiler:
+		m.usageOv.dismiss()
+		m.filerV.toggle(currentDir())
+		if e := m.filerV.takeOpenErr(); e != "" {
+			m.showWarning(e)
+		}
+		return m.maybeTick()
 	case fullScreenNone, fullScreenCount:
 	}
 	return nil

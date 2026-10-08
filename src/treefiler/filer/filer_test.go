@@ -456,3 +456,26 @@ func TestJKOnTileOutsideTreeSaysSo(t *testing.T) {
 		t.Fatalf("木の外のファイルの J の知らせ = %+v", ns)
 	}
 }
+
+// Refresh は開いていたフォルダを読み直す。開閉は保ち、消えた項目にいたカーソルは祖先へ移る。
+func TestRefreshPicksUpChangesAndKeepsState(t *testing.T) {
+	m := newTest(t)
+	cdTo(t, m, "b/deep/x.txt")
+	if err := os.WriteFile(filepath.Join(m.root.path(), "new.txt"), []byte("n\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(m.root.path(), "b", "deep")); err != nil {
+		t.Fatal(err)
+	}
+	b := m.cur.parent.parent
+	m.Refresh()
+	if !strings.Contains(names(m.kids(m.root)), "new.txt") {
+		t.Fatal("新しいファイルが出ない")
+	}
+	if m.cur != b {
+		t.Fatalf("消えた項目にいたカーソルが祖先へ移らない: %q", m.cur.raw)
+	}
+	if !b.expanded {
+		t.Fatal("読み直しで開閉の状態が失われた")
+	}
+}

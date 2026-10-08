@@ -16,7 +16,7 @@ import (
 //
 // 🚨 表示の不変条件を走査で守る検査 (VS16 リテラル / 2 本目の幅エンジン) はここを回すこと。
 // "." だけを回すと、tuikit へ移した部品が黙って検査対象から外れる。
-var ownSourceRoots = []string{".", filepath.Join("..", "tuikit"), filepath.Join("..", "doctor"), filepath.Join("..", "ratelimit")}
+var ownSourceRoots = []string{".", filepath.Join("..", "tuikit"), filepath.Join("..", "doctor"), filepath.Join("..", "ratelimit"), filepath.Join("..", "treefiler")}
 
 // walkOwnSources は ownSourceRoots を順に filepath.WalkDir し、各エントリで fn を呼ぶ。
 // どれかの根で .go を 1 つも見なかったら落とす (根が移動・改名されると、その根の検査が

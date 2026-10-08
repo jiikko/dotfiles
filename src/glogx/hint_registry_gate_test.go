@@ -91,7 +91,7 @@ func scanHintLineAssigns(f *ast.File) (assigns, viaFit, returns, prefixAssigns, 
 //
 // 🚨 全画面ビューアを増減させたときだけ更新する。そちらは
 // TestFullScreenCasesCoverEveryID が ID の追加を強制するので、更新漏れには気づける。
-const hintLineHintLineTextCalls = 5
+const hintLineHintLineTextCalls = 6
 
 func TestHintLineHasNoInlineHintText(t *testing.T) {
 	fset := token.NewFileSet()
@@ -136,7 +136,7 @@ func (m *browseModel) hintLine() string {
 			assigns, viaFit)
 	}
 	if returns != hintLineHintLineTextCalls {
-		t.Errorf("hintLine の hintLineText 呼び出しが %d 件 (期待 %d = 全画面 4 + 末尾 1)。"+
+		t.Errorf("hintLine の hintLineText 呼び出しが %d 件 (期待 %d = 全画面 5 + 末尾 1)。"+
 			"代入を経ずに `return m.hintLineText(...)` で返す形は、レジストリも幅ゲートも通らない",
 			returns, hintLineHintLineTextCalls)
 	}

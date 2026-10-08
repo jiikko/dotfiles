@@ -54,6 +54,13 @@ var overlayOwnershipTable = []overlayParticipant{
 		stoppedByCancelAll:    true,
 	},
 	{
+		// treefiler は今は入力欄を持たない (filer.Model.OwnsKeys が常に false)。検索欄・コマンド行を足したら owns を true にし、
+		// showOverlayOwning に開き方を足す (docs/treefiler-spec.md §0.3)
+		name: "filerV", owns: false, uninterruptible: false,
+		whyNotUninterruptible: "非同期の処理を持たない (ディレクトリとファイルの読み込みは Update の中で同期に終わる)",
+		stoppedByCancelAll:    false,
+	},
+	{
 		name: "statusOv", owns: true, uninterruptible: false,
 		// 🚨 破壊的操作 (runGitRestoreWorktree / runGitCleanUntracked) は **Update の中で同期に**
 		// 走るので相を跨がない。非同期は fetchDiff (読み取り専用) だけ。

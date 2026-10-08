@@ -343,6 +343,8 @@ type browseModel struct {
 	// Snapshot を枠ごとのアナログ盤にして描く (取得経路は usageOv のものを共用。
 	// ratelimit_dashboard.go 冒頭)。
 	rlDash ratelimitDash
+	// filerV は F の全画面 treefiler (filer_view.go)。画面の部品は src/treefiler の filer パッケージ
+	filerV filerView
 	// doctorOv は D の全画面 doctor (doctor_view.go)。rlDash と同じ薄い器で、開くと走査を始める
 	doctorOv doctorView
 	// status viewer (s キーで開く全画面の作業ツリービュー)。stage / unstage / 変更を捨てる を
@@ -633,7 +635,7 @@ func (m *browseModel) tickInterval() time.Duration {
 	if m.zoom.animating(timeNow()) || m.issuesOv.slideAnimating() || m.statusOv.slideAnimating() {
 		return zoomInterval // 短い演出なので周期がそのままフレーム数になる (60fps)
 	}
-	if m.glide.Active() || m.diffOv.animating() || m.toast.Animating() || m.issuesOv.animating() || m.statusOv.animating() {
+	if m.glide.Active() || m.diffOv.animating() || m.toast.Animating() || m.issuesOv.animating() || m.statusOv.animating() || m.filerV.animating() {
 		return scrollInterval // スライドを滑らかに (30fps)
 	}
 	return spinnerInterval
@@ -821,6 +823,10 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.issuesOv.stopGlides()
 		m.statusOv.stopGlides()
 		m.ensureCursorVisible()
+		m.filerV.resize(m.contentWidth(), m.pageSize())
+		if m.filerV.animating() {
+			return m, m.maybeTick()
+		}
 		return m, nil
 	case tickMsg:
 		m.ticking = false // このチェーンが 1 拍消費した。継続は下の maybeTick で単一に保つ
@@ -834,6 +840,8 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 下ろして初めて false になる。後ろに置くと最後の 1 拍が届かず閉じかけの姿で固まる。
 		m.issuesOv.settleClose()
 		m.statusOv.settleClose() // status viewer も同じ理由で spinnerActive の判定より前に畳む
+		// treefiler の動きも spinnerActive の判定より前に進める (後ろだと、動き終わる最後の 1 拍が届かず途中の姿で止まる)
+		m.filerV.advance(timeNow())
 		if !m.spinnerActive() {
 			return m, nil // アニメ対象なし: 再アームせずチェーンを終わらせる
 		}
@@ -1432,6 +1440,10 @@ func (m *browseModel) updateKeyReachable(key string) bool {
 	if m.statusOv.visible() && (m.statusOv.ownsKeys() || key == "X") {
 		return false
 	}
+	// treefiler は C を「経路以外を全部畳む」に使う (spec §0.1)。入力モード中は X も譲る
+	if m.filerV.visible() && (m.filerV.ownsKeys() || key == "C") {
+		return false
+	}
 	return true
 }
 
@@ -1595,6 +1607,8 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m.routeKeyToIssues(key)
 	case fullScreenStatus:
 		return m.routeKeyToStatus(key)
+	case fullScreenFiler:
+		return m.routeKeyToFiler(key)
 	case fullScreenNone, fullScreenCount:
 		// 一覧を見ている (fullScreenCount は番兵で activeFullScreen は返さない)。下へ落とす
 	}
@@ -1615,6 +1629,10 @@ func (m *browseModel) handleKey(key string) (tea.Model, tea.Cmd) {
 	// 開いた時にスキャンが始まる (起動時には走査しない)。
 	if key == "D" {
 		return m, m.openFullScreen(fullScreenDoctor)
+	}
+	// F = 全画面 treefiler (issue 662)。R / D と同じ判定位置なので、diff・PR status・job パネルの上からも開く
+	if key == "F" {
+		return m, m.openFullScreen(fullScreenFiler)
 	}
 	m.usageOv.dismiss()
 	// diff ポップアップ表示中はスクロール/閉じる操作だけを受ける (最前面のモーダル)
@@ -3771,6 +3789,8 @@ func (m *browseModel) viewLines() string {
 		return m.finishWithGlobalChrome(m.statusOv.lines(m.statusOpts()), page)
 	case fullScreenIssues:
 		return m.finishWithGlobalChrome(m.issuesOv.lines(m.issuesOpts()), page)
+	case fullScreenFiler:
+		return m.finishWithGlobalChrome(m.filerV.lines(m.contentWidth(), page), page)
 	case fullScreenNone, fullScreenCount:
 		// 全画面ビューアが出ていない = 下でコミット一覧を組む
 	}
@@ -4047,6 +4067,8 @@ func (m *browseModel) hintLine() string {
 		return m.hintLineText(m.statusOv.hint(m.hintWidth()))
 	case fullScreenIssues:
 		return m.hintLineText(m.issuesOv.hint(m.hintWidth()))
+	case fullScreenFiler:
+		return m.hintLineText(m.filerV.hint(m.hintWidth()))
 	case fullScreenNone, fullScreenCount:
 		// 全画面ビューアが出ていない = 下の一覧の hint
 	}

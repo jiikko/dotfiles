@@ -88,7 +88,7 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 | `a` | all / 巡回 | status で全部 stage、issues で状態フィルタ巡回 |
 | `n` | next (次にやる目印) | issues の claim |
 | `N` | 次の番号 | issues の採番コピー |
-| `i` `s` `R` `D` `U` | 板の toggle (横断キー) | どの画面からも同じ板へ飛べる。割当の表は `crossTarget` (fullscreen.go) の 1 本で、各画面はそれを引く (`U` は重ねる箱なので別経路)。**画面が自分でキーを解釈し切るモード (確認の y/N・status の全画面 diff・URL ピッカー・番号入力・doctor の削除の確認と実行) では効かない** (issues の本文 pager では効く) (誤爆防止。issue 664) |
+| `i` `s` `R` `D` `F` `U` | 板の toggle (横断キー) | どの画面からも同じ板へ飛べる (`F` = treefiler。treefiler の中では `s` がシェルなので status へは飛ばない。docs/treefiler-spec.md §0.1)。割当の表は `crossTarget` (fullscreen.go) の 1 本で、各画面はそれを引く (`U` は重ねる箱なので別経路)。**画面が自分でキーを解釈し切るモード (確認の y/N・status の全画面 diff・URL ピッカー・番号入力・doctor の削除の確認と実行) では効かない** (issues の本文 pager では効く) (誤爆防止。issue 664) |
 | `C` `X` | update (claude / codex) | どの画面からも。**status では `X` = 変更を捨てる**なので例外 |
 | `Space` | 選択 / stage | 「対象に印を付ける」。一覧では半ページ (less) |
 

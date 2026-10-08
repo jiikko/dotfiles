@@ -23,10 +23,16 @@ type canvas struct {
 
 func newCanvas(w, h int) *canvas {
 	c := &canvas{w: w, h: h, cells: make([]cell, w*h)}
+	c.reset()
+	return c
+}
+
+// reset は格子を地の色の空白に戻す (毎フレーム作り直さず使い回すため。glogx の TestFrameAllocBudget で
+// 作り直しは 1 フレーム 330KB だった)。
+func (c *canvas) reset() {
 	for i := range c.cells {
 		c.cells[i] = cell{s: " ", bg: cBg, fg: cText}
 	}
-	return c
 }
 
 func (c *canvas) at(x, y int) *cell {

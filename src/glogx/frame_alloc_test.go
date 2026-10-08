@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -198,6 +200,8 @@ func TestFrameAllocBudget(t *testing.T) {
 		{"doctor-svc", budgetDoctorSvcModel, 383, 67500},
 		{"doctor-brew", budgetDoctorBrewModel, 182, 38700},
 		{"doctor-docker", budgetDoctorDockerModel, 489, 57900},
+		// treefiler (F。issue 662)。格子を毎フレーム作り直していたときは 330KB/frame だった。使い回して 154 / 43167 B (-race)
+		{"filer", budgetFilerModel, 157, 43800},
 	}
 	for _, c := range cases {
 		m := c.build(t)
@@ -273,6 +277,33 @@ func budgetToastModel(tb testing.TB) *browseModel {
 	m.toast.Show("3 件の警告をコピーしました: ほか", true)
 	for m.toast.Animating() {
 		m.toast.Advance()
+	}
+	return m
+}
+
+// budgetFilerModel は treefiler を開いた画面。木は 20 件のファイルと 3 つのフォルダ (1 つは開いて 10 件)。
+func budgetFilerModel(tb testing.TB) *browseModel {
+	m := benchBrowseSubjects(tb, 20, 120, 40, false)
+	dir := tb.TempDir()
+	for i := range 20 {
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("file%02d.go", i)), []byte("x\n"), 0o644); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	for _, d := range []string{"alpha", "beta", "gamma"} {
+		if err := os.MkdirAll(filepath.Join(dir, d), 0o755); err != nil {
+			tb.Fatal(err)
+		}
+		for i := range 10 {
+			if err := os.WriteFile(filepath.Join(dir, d, fmt.Sprintf("n%02d.md", i)), []byte("y\n"), 0o644); err != nil {
+				tb.Fatal(err)
+			}
+		}
+	}
+	m.filerV.toggle(dir)
+	m.filerV.handleKey("l") // alpha を開いて中へ
+	for range 30 {
+		m.filerV.advance(timeNow().Add(time.Second)) // 動きを止まるまで進める (止まった画面を測る)
 	}
 	return m
 }

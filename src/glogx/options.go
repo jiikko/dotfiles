@@ -254,6 +254,9 @@ func Usage() string {
                             D・q・esc で閉じる。
                             同じ検査の一部は CLI からも叩ける (bin/diskdoctor / bin/svcdoctor。
                             どちらも走査だけで削除しない)
+  F                         treefiler (ファイラー) を全画面で表示 (toggle)。pwd を root にした横に育つ木。
+                            ファイルを開くと中央にタイルが重なる。q/Esc は glogx ごと終了、F で閉じる。
+                            キーは src/treefiler/README.md (単体では bin/treefiler)
   C                         claude update を実行する (確認なし即実行。結果は下部に表示)
   X                         codex update を実行する (C の codex 版。起動時に新バージョンを
                             検出するとトーストで X を案内する)

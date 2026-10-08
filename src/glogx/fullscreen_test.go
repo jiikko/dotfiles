@@ -56,6 +56,12 @@ var fullScreenCases = []fullScreenCase{
 		hint:  func(m *browseModel) string { return m.issuesOv.hint(m.hintWidth()) },
 		lines: func(m *browseModel) []string { return m.issuesOv.lines(m.issuesOpts()) },
 	},
+	{
+		id: fullScreenFiler, name: "treefiler",
+		show:  func(m *browseModel) { m.filerV.toggle(currentDir()) },
+		hint:  func(m *browseModel) string { return m.filerV.hint(m.hintWidth()) },
+		lines: func(m *browseModel) []string { return m.filerV.lines(m.contentWidth(), m.pageSize()) },
+	},
 }
 
 // 表が ID を全部覆っていること。fullScreenCount の直前に ID を足した人は、ここが red になって
@@ -292,6 +298,7 @@ func TestFullScreenDrawingGoesThroughTheRegistry(t *testing.T) {
 func TestCrossKeysReachEveryFullScreen(t *testing.T) {
 	openKey := map[fullScreenID]string{
 		fullScreenIssues: "i", fullScreenStatus: "s", fullScreenRatelimit: "R", fullScreenDoctor: "D",
+		fullScreenFiler: "F",
 	}
 	if len(openKey) != int(fullScreenCount)-1 {
 		t.Fatalf("全画面の ID が増えた (%d 枚): openKey に開くキーを足すこと", int(fullScreenCount)-1)
@@ -312,6 +319,11 @@ func TestCrossKeysReachEveryFullScreen(t *testing.T) {
 			if to == from {
 				want = fullScreenNone // 自分のキーは閉じる
 			}
+			if from == fullScreenFiler && toKey == "s" {
+				// treefiler の s は treebeard の「シェルを開く」に上書きした (docs/treefiler-spec.md §0.1。ユーザー回答 2026-10-07)。
+				// status viewer へは F で閉じてから移る
+				want = fullScreenFiler
+			}
 			if got := m.activeFullScreen(); got != want {
 				t.Errorf("%v で %s を押した: active=%v, want %v", from, toKey, got, want)
 			}
@@ -327,7 +339,7 @@ func TestCrossKeysReachEveryFullScreen(t *testing.T) {
 // visibleFullScreens は開いている全画面の枚数 (同時に 1 枚の前提が守られているかを見る)。
 func visibleFullScreens(m *browseModel) int {
 	n := 0
-	for _, v := range []bool{m.issuesOv.visible(), m.statusOv.visible(), m.rlDash.visible(), m.doctorOv.visible()} {
+	for _, v := range []bool{m.issuesOv.visible(), m.statusOv.visible(), m.rlDash.visible(), m.doctorOv.visible(), m.filerV.visible()} {
 		if v {
 			n++
 		}

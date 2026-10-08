@@ -284,7 +284,24 @@ MIT OR Apache-2.0) を写す**。依頼に無い部分も含めて全部写す�
     root が読めないときに黙る / タイルの上の「q quit」/ 生まれる順が非決定) を直し、テストの抜け (畳む・付け替え・4 枚目の位置・本文の ESC) を足した。
     未対応: 毎フレーム `layout()` を作り直す性能 (未計測。glogx に組み込むときに `TestFrameAllocBudget` で測る)。
     🚨 直した差分へのもう 1 周のレビューは、トークンを抑える指示 (2026-10-08) により省いた。代わりに各修正を再現テストと変異で確かめた
-- [ ] glogx の `F` への組み込み (spec §0.3)
+- [x] **glogx の `F` への組み込み** (2026-10-08。commit「feat(glogx): F で treefiler を全画面で開く」)。
+  `fullscreen.go` に ID と横断キー `F`、`tui.go` の一覧 (R / D と同じ判定位置なので diff・PR status・job パネルの上からも開く)・
+  全画面の振り分け・描画・案内の行・tickInterval・tick の中の advance (spinnerActive の判定より前)。`C` はファイラーへ譲る。
+  ファイラーの中の `s` はシェルなので status へは横断しない。glogx の go.mod に replace、`src_glogx.yml` の paths に `src/treefiler/**`。
+  - ガードのテストが配線の漏れを 6 件捕まえた (全画面の表・横断キーの表・案内の行の数・overlay の所有の表・走査の根・同時に開く枚数の数え方)。
+    どれも表へ足した。`overlayOwnershipTable` は owns=false (入力欄を足したら true にする)
+  - 🚨 テストで見つけた不具合: ファイラーを開いた直後に `Animating()` が false で、glogx の tick が始まらず、画面が透明のまま
+    次のキーまで何も見えなかった。作った直後と大きさが変わったときは動いている扱いにした
+  - `TestFrameAllocBudget` に filer の行。格子を毎フレーム作り直していて 330KB/frame だったので使い回し、154 回 / 43KB に締めた
+  - 検証: glogx と treefiler の test / lint、`make test-lint`、`make test-changed`、レーンと tuikit の版の検査。変異 3 本 (tick の advance を外す /
+    C を譲らない / 起動時の moving を false) が想定のテストで red。隔離 tmux で実物の glogx を起動し、F で開く・G・Enter・タイル・F で閉じる・
+    i への横断を確かめた
+  - 反証レビュー (sonnet 1 体。F の横取り・2 枚同時・tick の食い違いは壊せなかった): 採用 3 件を直した — 開き直すと古い木のまま (P2。
+    開き直しで `Refresh` して開いていたフォルダを読み直す。開閉とカーソルは保ち、消えた項目にいたカーソルは祖先へ) /
+    画面の大きさが変わっても tick が回らない (P2。WindowSizeMsg で filer へ伝えて tick を回す) / filer の上で `U` が効かない (P3)。
+    `X` で codex update が走るのは spec §0.3 の決定どおりなので直さない。変異 3 本 (Refresh を外す / resize を外す / U を外す) が red
+  - 未解決: 隔離 tmux での最初の 1 回だけ、`F` → `G` → `Enter` の後に tmux のサーバが消えた。同じ手順の再現 3 回と、キーの列を 3 周送った
+    試験では落ちず、stderr は空で、観測できた終わり方は木の上の `q` による正常終了 (rc=0) だけ。panic の痕跡は無い
 - [ ] 熱の色の再帰 mtime の走査と git の印 (spec §5.1・§5.3) — 今は各項目自身の mtime で色を付けている
 - [ ] ライブ更新・ビーズ・ripple (spec §4.3・4.4・§5.2)
 - [ ] 残りの UI (検索・explode・シェル・設定の板・help)

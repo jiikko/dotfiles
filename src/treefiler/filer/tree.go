@@ -110,6 +110,29 @@ func (n *node) load() {
 	n.kids = kids
 }
 
+// reload は読み込み済みのフォルダを読み直す。名前が同じ項目は古いノードをそのまま使う (開閉・last・アニメを保つ)。
+// 開いていた子のフォルダも順に読み直す。
+func (n *node) reload() {
+	if !n.dir || !n.loaded {
+		return
+	}
+	old := make(map[string]*node, len(n.kids))
+	for _, k := range n.kids {
+		old[k.raw] = k
+	}
+	n.load()
+	for i, k := range n.kids {
+		if o, ok := old[k.raw]; ok && o.dir == k.dir {
+			o.mtime, o.size = k.mtime, k.size
+			n.kids[i] = o
+			o.reload()
+		}
+	}
+	if n.last != nil && !contains(n.kids, n.last) {
+		n.last = nil
+	}
+}
+
 // lessName は名前順 (大文字小文字を無視した自然順。同じなら元の名前。spec §5.6)。
 func lessName(a, b string) bool {
 	if c := naturalCmp(strings.ToLower(a), strings.ToLower(b)); c != 0 {

@@ -57,6 +57,7 @@ type Model struct {
 	lastAdv    time.Time
 	notices    []Notice
 	linkCache  map[string]string
+	cv         *canvas // 使い回す格子 (大きさが変わったら作り直す)
 }
 
 // New は dir を root にした Model を作る。カーソルは root の最初の子 (無ければ root)。
@@ -65,7 +66,9 @@ func New(dir string, opts Options) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	m := &Model{root: root, cur: root, now: opts.Now, anims: map[*node]*anim{}, linkCache: map[string]string{}}
+	// moving は最初から true: 起動時のフェードインがある。false で始めると、呼び出し側が「動いていないので tick を回さない」と
+	// 判断し、透明のまま次のキーまで何も見えない (glogx の TestFilerAnimationAdvancesOnTickAndStops が捕まえた)
+	m := &Model{root: root, cur: root, now: opts.Now, anims: map[*node]*anim{}, linkCache: map[string]string{}, moving: true}
 	if m.now == nil {
 		m.now = time.Now
 	}
@@ -79,8 +82,33 @@ func New(dir string, opts Options) (*Model, error) {
 	return m, nil
 }
 
+// Refresh はディスクを読み直す (開いていたフォルダの中身。開閉とカーソルの位置は保つ)。
+// カーソルの項目が消えていたら、残っているいちばん近い祖先へ移る。
+func (m *Model) Refresh() {
+	m.root.reload()
+	for !m.inTree(m.cur) {
+		m.cur = m.cur.parent
+	}
+	m.moving = true
+}
+
+// inTree は n が今の木に繋がっているか (読み直しで消えた項目は親の kids から外れる)。
+func (m *Model) inTree(n *node) bool {
+	for ; n.parent != nil; n = n.parent {
+		if !contains(n.parent.kids, n) {
+			return false
+		}
+	}
+	return n == m.root
+}
+
 // Resize は画面の大きさを伝える (最下行はステータスバー)。
-func (m *Model) Resize(w, h int) { m.w, m.h = w, h }
+func (m *Model) Resize(w, h int) {
+	if w != m.w || h != m.h {
+		m.moving = true // カメラの目標 (画面の 38% と縦の中央) が変わる
+	}
+	m.w, m.h = w, h
+}
 
 // Animating は動いている途中か (呼び出し側はこの間だけ高い周期で Advance を呼ぶ)。
 func (m *Model) Animating() bool { return m.moving }
@@ -657,7 +685,12 @@ func (m *Model) View() []string {
 }
 
 func (m *Model) draw() *canvas {
-	c := newCanvas(m.w, m.h)
+	if m.cv == nil || m.cv.w != m.w || m.cv.h != m.h {
+		m.cv = newCanvas(m.w, m.h)
+	} else {
+		m.cv.reset()
+	}
+	c := m.cv
 	ch := m.canvasH()
 	ox, oy := int(math.Round(m.camX.v)), int(math.Round(m.camY.v))
 	pos := m.layout()
