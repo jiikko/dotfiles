@@ -1,1 +1,0 @@
-../671-chore-go-workspace-for-cross-module-navigation.md

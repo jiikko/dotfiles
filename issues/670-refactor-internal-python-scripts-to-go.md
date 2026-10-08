@@ -100,6 +100,7 @@ codex の run の後に 1 回呼ばれるだけ)。それでも寄せる理由�
 3. 呼び出し元を Go 版へ切り替え、テストを Go (`go test`) に移す
 4. 旧の Python を消す。`src/README.md` の一覧と、その道具の入口のドキュメント (skill / README) を同じ変更で直す
    (`new-tool-requires-entrypoint-docs.md`)
+   Go の package には doc コメントが必須で、`scripts/go_packages_index.sh` で `src/PACKAGES.md` を生成し直す (issue 672 で入った。`make test-lint` が検査する)
 
 **codex-events で Python と Go の差が出る点** (コーパスに入れる。2026-10-08 のレビューで洗い出した):
 
@@ -159,3 +160,4 @@ codex の run の後に 1 回呼ばれるだけ)。それでも寄せる理由�
   反証できなかった主張: 各ファイルの行数、`mutation_check.py` の参照 0 件、Python の lint の配線が無いこと、
   ルール名と issue 408 / 580 の実在、`--pkg` の前例、psd_faces.py / サンプル / `py_compile` を対象外にした判断
 - 2026-10-08: ユーザーの方針で「特定のツールのためだけにあり、単体で完結する .py」を Go にしない側へ移した (`repair-avcc-avi` / `mutation_check.py` / `make_terminal_fixtures.py` を対象から外し、psd_faces.py とサンプル 9 本と合わせて表にした)
+- 2026-10-08: issue 672 (package の doc コメント必須と src/PACKAGES.md) / 671 (gopls で module 横断) が完了。移植した道具もこの 2 つに乗る

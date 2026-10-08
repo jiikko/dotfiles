@@ -1,1 +1,0 @@
-../672-chore-go-package-doc-and-generated-index.md
