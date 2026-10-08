@@ -435,3 +435,8 @@ dotfiles の `src/zundamon-kaisetsu/script.go` の `castOrder` が正本で、�
   撮影後も Chrome が終わらないので付けていない
 - CPU が混んでいるときに、撮影中の Chrome が `own watchdog expired` (rc=2) で落ちたことがある (同じ条件の再実行で通った)。
   負荷との関係は仮説で、撮影前の待機 (`waitForIdleCPU`) はそのために入れている。待った後でも落ちたら、`--jobs` を下げて build し直す
+
+## 改善点を挙げるとき
+
+動画を作り終えたときや「改善点を挙げて」と言われたときは、[`improving.md`](improving.md) の観点 (生成コスト・台本の精度・見た目・保守) と
+測り方で振り返る。新しい観点が見つかったら、その文書を更新する。

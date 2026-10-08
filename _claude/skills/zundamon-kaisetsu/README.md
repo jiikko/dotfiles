@@ -18,6 +18,7 @@
 | `templates/player.html` | HTML プレイヤー (mp4 の絵もこれで描く。zundamon-kaisetsu が実行時に読む) |
 | `examples/script.json` | 台本の見本 |
 | `readings.json` | 読み間違えやすい語の辞書 (SKILL.md の手順で台本の `readings` に合流させる) |
+| `improving.md` | 改善点を挙げるときの観点と測り方 (適宜更新する。今動いている改善は issue の epic 674) |
 | `acronyms.json` | 1 文字ずつ読むのが正しい略語 (CPU・OS 等)。`kana --script --check` がこの語を「1 文字ずつ読んだ誤読」として警告しない |
 | `assets/zundamon-kaisetsu/` | 立ち絵の置き場 (`psd/` に元の素材、`faces/<キャラ>/` に書き出した表情)。**同梱しない** (下の Setup で用意する) |
 
