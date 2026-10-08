@@ -1,1 +1,0 @@
-../677-chore-zundamon-kaisetsu-review-prompt-template.md
