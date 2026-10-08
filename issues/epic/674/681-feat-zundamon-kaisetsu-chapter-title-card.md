@@ -19,6 +19,12 @@
 - `overlays` のように、出すかを選べるようにするかも決める
 - 見た目はサンプルを撮ってユーザーに見せてから決める
 
+## 制約
+
+- Go と player.html の 2 か所にある契約 (src/zundamon-kaisetsu/CLAUDE.md) に触れる。状態の列を足すなら `#sheet=` の欄
+  (`sheetFragment`) と player の両方を変える。golden の `frames` を変えないよう、まばたきと同じく別の列に持つ
+- 出すかを `overlays` で選べるようにするなら、`overlayKeys` と player の `OV` の契約に足す
+
 ## 受け入れ条件
 
 - [ ] 見た目の案を撮って見せ、決めてから本体に入れる

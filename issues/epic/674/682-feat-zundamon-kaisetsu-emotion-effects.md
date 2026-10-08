@@ -14,6 +14,12 @@
 - 重ねる絵の素材の出どころと規約を決める (立ち絵とは別の素材になる)
 - 見た目はサンプルを撮ってユーザーに見せてから決める
 
+## 制約
+
+- Go と player.html の 2 か所にある契約 (src/zundamon-kaisetsu/CLAUDE.md) に触れる。状態の列を足すなら `#sheet=` の欄
+  (`sheetFragment`) と player の両方を変える。golden の `frames` を変えないよう、まばたきと同じく別の列に持つ
+- 重ねる絵を HTML に埋め込むので、プレイヤーのデータ (golden と比べるキー) に足すキーは `keysAddedAfterPort` に挙げる
+
 ## 受け入れ条件
 
 - [ ] 見た目の案を撮って見せ、決めてから本体に入れる

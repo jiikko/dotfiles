@@ -4,8 +4,10 @@
 
 ## 概要
 
-`_claude/skills/zundamon-kaisetsu/README.md` の動作確認の例 (Setup の後の「動作確認」の 3 行) が `/tmp/zk` を使っている。
-一時ファイルは `./tmp` に置くという規約 (`~/.claude/CLAUDE.md` の「一時ファイルの配置」) からずれている。
+`_claude/skills/zundamon-kaisetsu/README.md` の動作確認の例 (105〜107 行目の 3 行) が `/tmp/zk` を使っている。
+SKILL.md の手順 3 は作業ディレクトリを `./tmp/<名前>/` としていて、README の例だけが違う。
+(`~/.claude/CLAUDE.md` の「一時ファイルの配置」は Claude がセッション中に作る成果物の規約で、利用者向けの例には直接かからない。
+揃える理由は、同じ skill の中で置き場の例が 2 通りあること)
 
 ## 対応方針
 
