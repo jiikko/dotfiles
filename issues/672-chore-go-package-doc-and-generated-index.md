@@ -1,5 +1,7 @@
 # 672 (chore): Go の package に doc コメントを必須にし、「再利用できる package の一覧」を生成する
 
+> 🚨 **担当中: codex-drive セッション (Claude Opus 5.5)**（2026-10-08〜）
+
 起票日: 2026-10-08
 
 ## 概要

@@ -1,5 +1,7 @@
 # 671 (chore): `src/` の Go module を go.work で 1 つの workspace にし、module をまたいで探せるようにする
 
+> 🚨 **担当中: codex-drive セッション (Claude Opus 5.5)**（2026-10-08〜）
+
 起票日: 2026-10-08
 
 ## 概要
