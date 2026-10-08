@@ -1,1 +1,0 @@
-../670-refactor-internal-python-scripts-to-go.md
