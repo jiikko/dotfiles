@@ -1,112 +1,122 @@
 ---
 name: review-loop
-version: 1.2.0
-description: make review で Codex レビュー PR を作成し、指摘がなくなるまで修正→再レビューを繰り返し、最後に make review-close する。「レビューループ」「review-loop」「make review で回して」「指摘がなくなるまでレビュー」で発火。make review / make review-close が定義されたプロジェクト専用（無いプロジェクトでは codex-review / cross-review を使う）。
+version: 1.3.0
+description: make review / make review-close があるプロジェクトで、Codex の PR レビューと修正を最大5周回す。「レビューループ」「review-loop」「make review で回して」で発火。各レビューを対象 commit と対応付け、根拠を確認して修正し、完了後にクローズする。
 ---
 
 # Review Loop
 
-`make review` → Codex レビュー → 修正 → 再レビュー → `make review-close` の自動ループ。
+`make review` → Codex レビュー → 指摘の検閲・修正 → 再レビュー → `make review-close`。
 
 ## 前提条件
 
-- プロジェクトに `make review` / `make review-close` が定義されていること
-- GitHub に Codex（chatgpt-codex-connector）が設定されていること
-- origin/master に push していない差分コミットがあること
+- `make review` / `make review-close` が定義され、GitHub に Codex が設定されている。
+- origin/master に未 push の対象コミットがある。
+- 設定された Codex bot の login を確認する (通常 `chatgpt-codex-connector[bot]`)。
+  他の投稿者や自分の返信を Codex の結果として数えない。
 
-## 手順
+## 1. 初回レビューの記録
 
-### 1. レビュー PR を作成
+`make review` の直前に UTC の開始時刻を控え、実行後に PR URL・番号・head SHA を記録する。
+既存 PR を再利用する target なら、開始前に既存コメント・レビュー ID も控える。
+記録は `./tmp/review-loop.<一意な stamp>.json` に保存し、呼び出し間はその絶対パスを使う。
 
-```
-make review
-```
-
-PR URL を控える。
-
-### 2. Codex のレビューを待つ
-
-10分間隔で PR のコメントをポーリングして監視する（定期ジョブ機能（CronCreate 等）が使える環境ではそれを使い、無ければ Bash のバックグラウンド実行 + sleep で代替する）。
-
-**確認方法:**
 ```bash
-# レビューコメント（コード上の指摘）
-gh api repos/{owner}/{repo}/pulls/{number}/comments --jq '.[] | select(.created_at > "{前回確認時刻}") | {id, path, line, body}'
-
-# issue コメント（全体レビュー結果）
-gh api repos/{owner}/{repo}/issues/{number}/comments --jq '.[] | select(.user.login != "{owner}") | {id, body}'
+date -u +%Y-%m-%dT%H:%M:%SZ
+make review
+gh api repos/{owner}/{repo}/pulls/{number} --jq '{head_sha: .head.sha, head_ref: .head.ref, base_ref: .base.ref}'
 ```
 
-### 3. 指摘への対応（コメントがある場合）
+この組を **今回のレビュー要求** とする: PR / target SHA / requested_at / 既存の review・comment ID / bot login。
+初回の自動レビューが起動しない場合は、記録を作ってから手順4の明示依頼を行う。
 
-各コメントについて以下を判断:
+## 2. 対象 SHA のレビューを待つ
 
-- **P1/P2（要修正）**: コードを修正 → テスト実行 → コミット → レビューブランチに push → PR に返信
-- **P3（認識のみ）**: issue として起票するか、PR に「認識済み」と返信
-- **スコープ外**: 「別 issue で対応」と返信
+10分間隔で確認する。CronCreate 等が使えれば使い、無ければ待機機能で代替する。
+以下は候補の取得例。複数ページを取りこぼさない。
 
-**修正後の push:**
+```bash
+# SHA にひも付く review 記録 (完了判定の第一候補)
+gh api --paginate repos/{owner}/{repo}/pulls/{number}/reviews \
+  --jq '.[] | {id, author: .user.login, commit_id, submitted_at, state, body}'
+
+# コード上の指摘 (対象 commit_id と今回の要求時刻・既存 ID で絞る)
+gh api --paginate repos/{owner}/{repo}/pulls/{number}/comments \
+  --jq '.[] | {id, author: .user.login, commit_id, original_commit_id, created_at, path, line, body}'
+
+# 全体コメント (commit_id が無いので、これ単独では完了を判定しない)
+gh api --paginate repos/{owner}/{repo}/issues/{number}/comments \
+  --jq '.[] | {id, author: .user.login, created_at, body}'
+```
+
+採用する結果は **bot の一致 + 要求以降の時刻 + 既存 ID ではない + 対象 SHA の一致** を満たすもの。
+秒単位の時刻だけで同じ秒の新規結果を落とさず、ID の記録も使う。
+完了前に PR の現在の head SHA を再取得する。対象 SHA と違えば、旧レビューを現行差分の合格根拠にせず新しい要求を作る。
+
+全体コメントの「Didn't find any major issues」だけを拾って閉じない。
+SHA 付き review 記録が無い場合は、その環境で Codex が使う完了通知と target SHA の対応を確認する。
+通知に対応付けの根拠が無い場合は **完了未確認** として報告する。別 bot の check 成功や単なるコメント不在で代用しない。
+
+## 3. 指摘を検閲して対応する
+
+各指摘は `codex-review` の「敵対的レビューの作法」に従い、コード・契約・再現で裏取りする。
+
+- **採用した P1/P2**: 修正 → プロジェクトの必要なテスト → コミット → レビューブランチに push → 同じスレッドへ返信。
+- **誤検出**: 到達不能・契約との不一致など、却下根拠を返信する。重大度だけで修正しない。
+- **確定できない指摘**: 未確認として観測・issue 化する。再現しないことだけを却下根拠にしない。
+- **P3 / スコープ外**: 採用、認識のみ、別 issue のいずれかを判断し理由を書く。
+
 ```bash
 git push origin HEAD:review/{branch-name}
+# コードコメントへの返信。body は一時ファイルから渡す。
+gh api repos/{owner}/{repo}/pulls/{number}/comments -X POST \
+  -F body=@{reply_body_file} -F in_reply_to={comment_id}
 ```
 
-**返信:**
-```bash
-gh api repos/{owner}/{repo}/pulls/{number}/comments -X POST -f body="..." -F in_reply_to={comment_id}
-```
+返信には変更内容と検証結果 (テスト名・実行結果・未確認範囲) を含める。
+推測に合わせた防御コードや、誤った期待値に合わせた修正を足さない。
 
-### 4. 再レビュー依頼
+## 4. 再レビューを依頼する
 
-修正の**追認を求めない**。「直っているか確認して」と肯定形で聞くと肯定が返ってくるので、**反証を依頼する**形にする。
+修正 push 後、PR の head SHA が修正コミットと一致することを確認する。
+新しい target SHA・既存 review/comment ID を控え、依頼直前の UTC 時刻を記録する。
+新しい要求レコードを保存してからコメントする。修正 push だけで再レビューが走るとは仮定しない。
 
-```bash
-gh pr comment {number} --body "@codex review for 前回指摘への修正が不十分だという前提で見てください。修正が効いていないケース（別経路・境界値・並行・部分失敗・リトライ）を具体的に構築して、発火条件つきで指摘してください。修正が生んだ新しい退行も探してください。壊せなかった場合は「どこまで攻めて壊せなかったか」を書いてください。"
-```
-
-### 5. ループ判定
-
-- 新しい指摘コメントがある → 手順3に戻る
-- 「Didn't find any major issues」等、指摘ゼロの完了コメント → 手順6へ。
-  ただし **指摘ゼロは「安全」ではなく「その探し方では壊せなかった」**。手順3で修正した P1/P2 のうち、
-  再発を検知するテストが無いものが残っていないかを閉じる前に自分で確認する（無ければテストを足すか、issue 化する）
-- 再レビュー依頼から30分待っても Codex の応答がない → ユーザーに状況を報告して指示を仰ぐ（黙って待ち続けない）
-- **ループ上限は5周**。5周しても指摘が収束しない場合は中断し、残指摘の一覧と収束しない理由の仮説をユーザーに報告する（修正が場当たり的になっている兆候）
-
-### 6. クローズ
+依頼文はファイルに書き、次の形で投稿する:
 
 ```bash
-git push origin master
-make review-close
+gh pr comment {number} --body-file {request_body_file}
 ```
 
-レビューブランチが自動マージされてクローズ失敗する場合は、手動でブランチを掃除:
+依頼文の例:
+
+> @codex review for 対象 head は {target_sha}。前回の修正が効いていない別経路・境界・並行・部分失敗を探してください。
+> 根拠と発火条件を示し、修正が生んだ回帰も確認してください。確定できない懸念は未確認として分けてください。
+
+head が実行中に変われば、旧 SHA の結果を今回の要求の完了として数えない。
+
+## 5. ループ判定
+
+- 今回の要求に対応する新しい指摘がある → 手順3。
+- **今回の target SHA に対応するレビューが完了し、採用した重要指摘が解消済み** → 手順6。
+  その際、再発を検知するテスト・型・設計上の根拠と未確認範囲を確認する。「指摘ゼロ」だけを安全の証明にしない。
+- 依頼から30分たっても対応する完了結果が無い → 状況と未確認の SHA を報告して判断を仰ぐ。
+- 最大5周。収束しなければ残指摘・確認済みの根拠・未確認範囲を報告する。完了未確認のまま master に push しない。
+
+## 6. クローズと後始末
+
 ```bash
-git remote prune origin
-git branch --list 'review/*' | grep -v 'review/base' | xargs -r git branch -D
+git push origin master && make review-close
 ```
 
-定期ジョブがあればキャンセルする（CronDelete）。
+失敗時は PR 状態・ブランチ・残差分を確認してから復旧する。掃除のために `review/*` 全体を削除しない。
+削除するのは今回作成したブランチだけで、未移送のコミットが無いことを先に確認する。
+監視ジョブを停止し、今回の一意な一時ファイルだけを削除する。
 
 ## ルール
 
-- **レビュー中は master に push しない。** 修正コミットはレビューブランチにのみ push する（`git push origin HEAD:review/{branch-name}`）。master に push するとPRの差分が消え、未レビューの変更が本番に入ってしまう。master への push はレビュー完了後（手順6）のみ。手順6の master push と review-close は本スキルの規定動作であり、ユーザーが review-loop を依頼した時点で含意される（それ以外の push はしない）。
-- 修正コミットには対応する issue 番号を含める
-- `make lint` と `npm test`（または該当プロジェクトのテストコマンド）が通ることを確認してから push
-- Codex の P1/P2 指摘は必ず修正する
-- P3 以下で issue 化する場合は issues/ ディレクトリにファイルを作成する
-- **セルフレビューコメントは敵対視点で書く**（Codex との相互レビュー）。「ここは問題ない」ではなく「ここはこう壊せる／この主張の根拠はここ」を書く。自分の変更の弱点・未検証な前提・テストで固定できていない不変条件を先に自分で晒す（Codex に見つけさせるより速く、指摘の質も上がる）
-- **修正を「対応しました」で閉じない**: 返信には「どう直したか」に加えて「その修正が効いていることを何で確認したか（テスト名・実行結果）」を書く。確認手段が無い修正は未検証として明示する
-- **構造的修正優先**: 指摘への修正は場当たり的なパッチワークではなく、中長期的に改修を続けることを前提とした構造的な修正を行う。「この if を足せば直る」は設計前提を疑うトリガーとする
-
-## 落とし穴 (Gotchas)
-
-実際にこのループでハマった失敗パターン。手順を始める前に必ず確認すること。
-
-- **レビュー中に master へ push してしまう**（最重要）: PR の差分が消え、未レビューの変更が本番に入る。詳細はルール先頭を参照。
-- **返信が誤ったスレッドに付く**: コードコメントへの返信は `in_reply_to={comment_id}` を必ず付ける。これを忘れると issue コメントとして投稿され、指摘との対応が追えなくなる。
-- **自分のコメントを「新しい指摘」と誤検出してループが終わらない**: issue コメント取得時は `select(.user.login != "{owner}")` で自分の投稿を除外する。除外しないと自分の返信を拾って無限ループになる。
-- **レビューブランチが自動マージされてクローズに失敗する**: `make review-close` が失敗したら `git remote prune origin` → 残った `review/*` ブランチを手動削除する（手順6参照）。
-- **再レビュー依頼を忘れて待ち続ける**: 修正を push しただけでは Codex は再レビューしない。`@codex review for ...` のコメントを明示的に投稿する（手順4）。
-- **定期ジョブの消し忘れ**: ループ完了後に監視用の定期ジョブ（CronDelete）をキャンセルしないと、不要なポーリングが残り続ける。
-- **テスト未実行のまま push**: `make lint` / テストが通ることを確認せずに push すると、次のレビューでそれ自体が指摘として返ってくる。push 前に必ず実行する。
-- **「指摘ゼロ」を安全の証明として扱う**: Codex が沈黙したのは壊し方を思いつかなかっただけかもしれない。特に、修正に対応するテストを足していない P1/P2 が残っているまま閉じると、次の改修で同じバグが戻る。閉じる前に「この修正が壊れたら赤くなるテストはどれか」を各修正について 1 つ答えられるか確認する。
+- レビュー中の修正はレビューブランチにだけ push する。master push と review-close は手順5の完了条件を満たした後。
+  review-loop を依頼した時点でこの規定の push・返信・再レビュー依頼は含意される。無関係な外部投稿は行わない。
+- 修正コミットに対応する issue 番号を含める。issue はリポジトリの規約に従う markdown ファイルで管理する。
+- 必要な lint / テストが実際に完了したことを確認してから push する。
+- bot の主張や重要度を無検閲で採用しない。合意数や繰り返し回数を正しさの証明にしない。

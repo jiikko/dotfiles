@@ -1,0 +1,27 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "target": {"type": "string"},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string"},
+          "severity": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]},
+          "location": {"type": "string"},
+          "claim": {"type": "string"},
+          "trigger": {"type": "string"},
+          "evidence": {"type": "array", "items": {"type": "string"}},
+          "verification": {"type": "string", "enum": ["confirmed", "unverified"]},
+          "suggested_fix": {"type": "string"}
+        },
+        "required": ["id", "severity", "location", "claim", "trigger", "evidence", "verification", "suggested_fix"]
+      }
+    },
+    "unverified_scope": {"type": "array", "items": {"type": "string"}}
+  },
+  "required": ["target", "findings", "unverified_scope"]
+}
