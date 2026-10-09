@@ -57,7 +57,8 @@
   （repo に完了コマンドがあればそれを使う）
 - `issues/epic/<name>/` — 親テーマでまとめる group issue。**固定 2 段**（これより深く掘らない。`epic/` 直下の md は迷子）。
   group 内の claim / 完了 / 保留は `epic/<name>/next/` `done/` `pending/` へ（global の `done/` へ出さない）。
-  epic を新設するときは group 名と同じ番号の親 issue を同時に起票する
+  epic を新設するときは group 名と同じ番号の親 issue を同時に起票する。**親 issue は数行（目的・状態・本文を持つ子 issue へのリンク）に留め、
+  背景・事実・計画などの本文は子 issue に書く**（glogx の viewer では親行の `Enter` が子リストの開閉になる。ユーザー要望 2026-10-09）
 
 ## 本文
 
