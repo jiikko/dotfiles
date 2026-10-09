@@ -55,7 +55,7 @@ func ResolveRepoRoot(cwd string) (string, bool) {
 	// 🚨 subproc.CommandContext を使うこと (素の exec.CommandContext だと WaitDelay が抜ける)。
 	// 下の Output() は os.Pipe と copy goroutine を作るので、ctx の deadline だけでは
 	// 「子が残した孫がパイプを握って Wait が戻らない」形を防げない (issue 105)。
-	cmd := subproc.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
+	cmd := subproc.GitCommand(ctx, "rev-parse", "--show-toplevel")
 	cmd.Dir = cwd
 	out, err := cmd.Output()
 	if err != nil {
@@ -73,7 +73,7 @@ func ResolveRepoRoot(cwd string) (string, bool) {
 func WorktreeRoots(root string) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), subproc.GitOpTimeout)
 	defer cancel()
-	cmd := subproc.CommandContext(ctx, "git", "worktree", "list", "--porcelain")
+	cmd := subproc.GitCommand(ctx, "worktree", "list", "--porcelain")
 	cmd.Dir = root
 	out, err := cmd.Output()
 	roots := []string{root}

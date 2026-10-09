@@ -235,7 +235,7 @@ func repoTops(dirs []string, cache map[string]string) []string {
 func fetchRepo(top string) (gitSnapshot, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), subproc.GitOpTimeout)
 	defer cancel()
-	cmd := subproc.CommandContext(ctx, "git", "--no-optional-locks", "-C", top,
+	cmd := subproc.GitCommand(ctx, "--no-optional-locks", "-C", top,
 		"status", "--porcelain=v1", "-z", "--branch", "--ignored", "--untracked-files=normal")
 	cmd.Stdin = nil
 	out, err := cmd.Output()

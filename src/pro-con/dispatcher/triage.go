@@ -16,6 +16,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"subproc"
 )
 
 // SummaryInput は失敗の要約の材料。
@@ -118,7 +120,7 @@ func gitOut(ctx context.Context, dir string, args ...string) (string, error) {
 func gitRaw(ctx context.Context, dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, diffTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir, "--no-optional-locks"}, args...)...) // status が index を書き直さない
+	cmd := exec.CommandContext(ctx, "git", subproc.GitArgs(append([]string{"-C", dir, "--no-optional-locks"}, args...)...)...) // status が index を書き直さない
 	cmd.WaitDelay = time.Second
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	var out bytes.Buffer

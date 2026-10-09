@@ -18,7 +18,7 @@ import (
 var gitDiffCommand = func(ctx context.Context, top, rel string, cached bool) ([]byte, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	cmd := subproc.CommandContext(ctx, "git", gitDiffArgs(top, rel, cached)...)
+	cmd := subproc.GitCommand(ctx, gitDiffArgs(top, rel, cached)...)
 	cmd.Stdin = nil
 	out, err := cmd.StdoutPipe()
 	if err != nil {
@@ -44,7 +44,7 @@ var gitDiffCommand = func(ctx context.Context, top, rel string, cached bool) ([]
 // (`*` という名前で repo 全体が出た。レビューで再現 2026-10-09)。--no-ext-diff: diff.external (difftastic 等) の出力は
 // unified でなく、tuikit/highlight.Diff が読めない。
 func gitDiffArgs(top, rel string, cached bool) []string {
-	args := []string{"--no-optional-locks", "--literal-pathspecs", "-C", top, "diff", "--no-ext-diff", "--color=never"}
+	args := []string{"--no-optional-locks", "--literal-pathspecs", "-C", top, "diff", "--no-ext-diff", "--no-textconv", "--color=never"}
 	if cached {
 		args = append(args, "--cached")
 	} else {

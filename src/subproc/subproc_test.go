@@ -28,3 +28,13 @@ func TestCommandContextPassesArgs(t *testing.T) {
 		t.Fatalf("引数が渡っていない: %v", cmd.Args)
 	}
 }
+
+func TestGitArgsDisablesFsmonitor(t *testing.T) {
+	got := GitArgs("-C", "/x", "status")
+	if n := len(gitHarden); len(got) != n+3 || got[0] != "-c" || got[1] != "core.fsmonitor=false" || got[n] != "-C" || got[n+2] != "status" {
+		t.Fatalf("GitArgs = %q", got)
+	}
+	if c := GitCommand(context.Background(), "status"); c.WaitDelay != WaitDelay || c.Args[1] != "-c" {
+		t.Fatalf("GitCommand: WaitDelay=%v args=%q", c.WaitDelay, c.Args)
+	}
+}

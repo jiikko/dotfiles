@@ -9,8 +9,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/jiikko/dotfiles/src/tuikit/highlight"
 	"subproc"
+
+	"github.com/jiikko/dotfiles/src/tuikit/highlight"
 )
 
 // コミット境界の識別は人間向け出力の正規表現ではなく制御文字レコードで行う (issue の設計)。
@@ -69,7 +70,7 @@ func colorArg(colored bool) string {
 func runGit(args ...string) (string, error) {
 	// waitdelay-in: WaitDelay は runGitCmd が張る (ctx 有無の両経路が通るので 1 箇所に寄せてある)。
 	// 🚨 no-waitdelay ではない。ここで「不要」と書くと嘘になる。
-	return runGitCmd(exec.Command("git", args...)) // subproc: waitdelay-in runGitCmd
+	return runGitCmd(exec.Command("git", subproc.GitArgs(args...)...)) // subproc: waitdelay-in runGitCmd
 }
 
 // gitOpTimeout は subproc.GitOpTimeout の別名 (値と理由の正本はそちら)。issues パッケージも
@@ -81,7 +82,7 @@ const gitOpTimeout = subproc.GitOpTimeout
 func runGitTimeout(args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitOpTimeout)
 	defer cancel()
-	return runGitCmd(exec.CommandContext(ctx, "git", args...))
+	return runGitCmd(exec.CommandContext(ctx, "git", subproc.GitArgs(args...)...))
 }
 
 func runGitCmd(cmd *exec.Cmd) (string, error) {
@@ -137,7 +138,8 @@ func buildLogArgsWith(format string, opts *Options, colored, withBody bool) []st
 			args = append(args, "--stat")
 		}
 		if opts.Patch {
-			args = append(args, "--patch")
+			// --no-textconv --no-ext-diff: 開いた repo の設定のコマンドを差分の表示で走らせない (issue 692。subproc.GitArgs の doc)
+			args = append(args, "--patch", "--no-textconv", "--no-ext-diff")
 		}
 	}
 	args = append(args, opts.Revs...)
@@ -402,7 +404,7 @@ const maxDiffLines = 5000
 // chroma のシンタックスハイライト。方式は github.com/jiikko/dotfiles/src/tuikit/highlight の冒頭)。
 func LoadCommitDiff(sha string, colored bool) ([]string, error) {
 	// TUI 対話中の非同期経路 (d キー) なので timeout 付き (runGitTimeout の doc 参照)
-	out, err := runGitTimeout("show", "--stat", "--patch", "--color=never", sha)
+	out, err := runGitTimeout("show", "--stat", "--patch", "--no-textconv", "--no-ext-diff", "--color=never", sha)
 	if err != nil {
 		return nil, err
 	}
@@ -423,7 +425,7 @@ func LoadCommitDiff(sha string, colored bool) ([]string, error) {
 // LoadStagedDiff は --cached モードの本文 (git diff --cached) を取得する。
 // フラグ未指定時は --stat 相当を出す (staged 変更の一覧が目的で、既定でフル patch は過剰なため)。
 func LoadStagedDiff(opts *Options, colored bool) (string, error) {
-	args := []string{"diff", "--cached"}
+	args := []string{"diff", "--cached", "--no-textconv", "--no-ext-diff"}
 	args = append(args, colorArg(colored))
 	if opts.Patch {
 		// -p: フル patch (git diff --cached の既定出力)

@@ -1,7 +1,5 @@
 # 692 (bug): 開いたフォルダの `.git/config` に仕込まれたコマンドが、git の呼び出しで走る (treefiler・glogx・pro-con)
 
-> 🚨 **担当中: Claude Code (dotfiles-53。監査の issue を順に直すセッション)**（2026-10-09〜）
-
 起票日: 2026-10-09
 
 ## 概要
@@ -47,4 +45,25 @@
 
 ## 進捗
 
-- [ ] 未着手
+- [x] **対応** (2026-10-09。commit「fix(git): 開いた repo の設定のコマンドを git の呼び出しで走らせない (glogx・treefiler・pro-con)」)
+  - `src/subproc` に `GitArgs` / `GitCommand` を足し、git の起動を全部通した (glogx 4・treefiler 2・pro-con 6。洗い出しから漏れた pro-con の triage は新しい検査が見つけた)。
+    付ける設定: `-c core.fsmonitor=false`・`-c log.showSignature=false`・`-c diff.submodule=short`・`--no-optional-locks`。差分を出す呼び出し (glogx の show --patch・
+    log --patch・diff --cached・状態ビューのプレビューの diff、treefiler の diff) に `--no-textconv --no-ext-diff`
+  - 検査 `tests/scripts/test_git_calls_hardened.sh`: git をコマンド名にした起動が `GitArgs(` を通っていなければ落とす (脅威モデルと検出しない形は冒頭)
+  - テスト: 本物の git で罠 (fsmonitor・textconv・外部 diff・gpg.program・post-index-change の hook) を仕込んだ repo を作り、glogx (show・diff --cached・log -p・
+    状態の取得・状態ビューのプレビュー)・treefiler (status・diff)・pro-con (gitx.Run) で走らないことを見る。変異 16 本が red (設定・引数を 1 つずつ外す・検査)。
+    🚨 gpg.program と diff.external は git がシェルを通さずに起動するので、`touch x;false` の文字列の罠は作動していなかった (修正を外しても緑だった)。
+    実行できるスクリプトにして変異で red を確かめた。show と log -p の `--no-ext-diff` を外しても緑なのは等価な変異 (この 2 つは `--ext-diff` が無いと外部 diff を使わない)
+  - 脅威の範囲 (止めないもの。subproc.GitArgs の doc にも書いた): `filter.<名前>.clean` / smudge は内容が変わったファイルがあると status でも走るが、git-lfs など
+    正当な用途があり、シェルで git status を打っても同じ (実測)。`merge.<名前>.driver` は pro-con の見張りの merge-tree で走る (自分の管理する repo だけ)。
+    push / pull / commit の hook・credential・sshCommand はキーを押す操作で、シェルの git と同じ。埋め込んだ bare repo (`.git` の中身を普通のディレクトリとして
+    置いた形) の設定は拾われる — `safe.bareRepository=explicit` で止まるが、-c が hook へ引き継がれて pre-push hook の `git -C <bare>` と bare repo の中での
+    起動を壊したので付けない
+  - 敵対的レビュー (opus) 1 周目: 採用 — `log.showSignature` と `gpg.program` で glogx を開いただけで走る (P1。`.git` を普通のディレクトリとして置けば clone でも
+    届く) / `diff.submodule=diff` で submodule の textconv (P2) / status が index を書き直すと post-index-change の hook (P2) / 検査の素通り (`)` を挟む形・コメントの
+    `GitArgs(`・raw string・絶対パス) / `diff.external` のテストが無い。記録のみ: merge driver (上)
+  - 2 周目 (opus): 採用 — 状態ビューのプレビューの diff に `--no-textconv --no-ext-diff` が無く、開くと自動で走った (P1。洗い出しが `show` と `--cached` の形しか
+    探していなかった) / `safe.bareRepository=explicit` の回帰 (P2。外した) / 検査の偽陽性 (`which git`・文字列の URL の `//`)。記録のみ: `diff.submodule=short` が
+    ユーザーの global の `diff.submodule=log` を上書きする (glogx の d の submodule の表示が短くなる) / submodule と bare の罠のテストは無い (設定の中身はテストで固定)
+  - 4 module (subproc・treefiler・glogx・pro-con) のテストと lint・`make test-lint` が緑。pro-con の `TestRequestStop/止め終えた` が全体の実行で 1 回落ちたが、
+    変更の前後で dispatcher を 3 回ずつ回してどちらも緑 (揺れとして記録)

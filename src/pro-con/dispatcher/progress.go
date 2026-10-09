@@ -30,6 +30,8 @@ import (
 	"pro-con/card"
 	"pro-con/monitor"
 	"pro-con/store"
+
+	"subproc"
 )
 
 // progressEvery は集め直す間隔 (カードごとに git を数回走らせるので、Doing の 10 秒より長くする)。
@@ -110,7 +112,7 @@ func (ExecProgressGit) Diff(ctx context.Context, wt, base string, limit int) ([]
 	defer cancel()
 	// 🚨 --no-ext-diff / --no-textconv: repo の設定の外の道具を走らせない (読むだけ)。-M: 名前を変えたファイルを消して足したと出さない
 	// core.quotePath=false: 日本語の名前を "\346…" と引用させない (板の見出しに名前のまま出す)
-	cmd := exec.CommandContext(ctx, "git", "-C", wt, "--no-optional-locks", "-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", "--merge-base", base)
+	cmd := exec.CommandContext(ctx, "git", subproc.GitArgs("-C", wt, "--no-optional-locks", "-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", "--merge-base", base)...)
 	cmd.WaitDelay = time.Second
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	out, err := cmd.StdoutPipe()

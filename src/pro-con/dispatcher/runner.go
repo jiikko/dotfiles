@@ -33,6 +33,8 @@ import (
 	"pro-con/foreground"
 	"pro-con/live"
 	"pro-con/store"
+
+	"subproc"
 )
 
 // Runner はコマンドを dir で実行し、出力 (stdout と stderr) を logPath へ書いて終了コードを返す。runID は実行ごとの印 (残った実行を後で見つけるため)。
@@ -605,7 +607,7 @@ const (
 //
 //	lockman with "$(git rev-parse --path-format=absolute --git-common-dir)/pro-con-locks/test" -- make test
 func runLockDir(ctx context.Context, dir string) (string, error) {
-	out, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	out, err := exec.CommandContext(ctx, "git", subproc.GitArgs("-C", dir, "rev-parse", "--path-format=absolute", "--git-common-dir")...).Output()
 	if err != nil {
 		return "", fmt.Errorf("repo の lock の置き場を決められない (%s で git rev-parse --git-common-dir: %w)", dir, err)
 	}

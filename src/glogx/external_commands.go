@@ -36,7 +36,7 @@ import (
 func noPromptGitCmd(ctx context.Context, args ...string) *exec.Cmd {
 	// quit の cancel が kill するのは直接の子だけで、hook の孫が pipe を握ると Wait が
 	// 戻らない (理由は subproc.WaitDelay の doc。subproc.CommandContext が張る)
-	cmd := subproc.CommandContext(ctx, "git", args...)
+	cmd := subproc.GitCommand(ctx, args...)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	return cmd
 }

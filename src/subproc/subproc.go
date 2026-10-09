@@ -44,3 +44,41 @@ func CommandContext(ctx context.Context, name string, args ...string) *exec.Cmd 
 	cmd.WaitDelay = WaitDelay
 	return cmd
 }
+
+// GitArgs は git の引数の前に、開いた repo の設定からコマンドを走らせないための設定を付ける。git を起動するときは
+// 必ずこれを通す (tests/scripts/test_git_calls_hardened.sh が素の起動を止める)。
+//
+// 🚨 `.git/config` の `core.fsmonitor=<cmd>` は status (と diff・blame) のたびにそのコマンドを走らせる。tarball・zip で
+// 配られた「repo」を glogx / treefiler で開くだけで、キー操作なしに走った (issue 692。git 2.55.0 で実測)。
+// 差分を出す呼び出し (diff・show・log -p) は呼び出し側で --no-textconv --no-ext-diff も付ける (textconv と外部 diff は
+// 設定では一律に止められない)。
+//
+// 止めないもの (脅威の範囲の外): filter.<名前>.clean / smudge は、内容が変わったファイルがあると status でも走るが、
+// git-lfs など正当な用途があり、ユーザーがシェルで git status を打っても同じように走る。
+//
+// 足したもの (どれも開いた repo の設定から走る。敵対的レビューで再現 2026-10-09):
+//   - log.showSignature=false: `log.showSignature=true` と `gpg.program=<cmd>` で、署名つきの commit を出す log / show が gpg.program を走らせた
+//     (glogx は repo を開いただけで走った。`.git` を普通のディレクトリとして置けば git clone でも届く)。署名の表示は glogx も pro-con も使っていない
+//   - diff.submodule=short: `diff.submodule=diff` だと submodule の中の diff は --no-textconv / --no-ext-diff を受け継がず、submodule の textconv が走った
+//   - --no-optional-locks: status・diff が index を書き直すと、`core.hooksPath` の post-index-change hook が走った
+//
+// 止めないもの (続き): merge.<名前>.driver は merge-tree で走る (pro-con の見張りが自分の管理する repo に打つだけ)。
+// 🚨 safe.bareRepository=explicit は付けない: 埋め込んだ bare repo (`.git` の中身を普通のディレクトリとして置いた形) の設定を拾わなくなるが、
+// -c は GIT_CONFIG_PARAMETERS で hook にも引き継がれ、`git -C <bare>` を打つ pre-push hook と、bare repo の中で起動した glogx・
+// bare + worktree の repo を指す pro-con が rc=128 で壊れた (レビューで再現 2026-10-09)。埋め込みの形は記録に留める (issue 692)
+// push / pull / commit の hook・credential helper・sshCommand はキーを押す操作で、シェルの git と同じ。
+var gitHarden = []string{
+	"-c", "core.fsmonitor=false",
+	"-c", "log.showSignature=false",
+	"-c", "diff.submodule=short",
+	"--no-optional-locks",
+}
+
+func GitArgs(args ...string) []string {
+	return append(append(make([]string, 0, len(gitHarden)+len(args)), gitHarden...), args...)
+}
+
+// GitCommand は WaitDelay を張り、GitArgs を通した git を返す。
+func GitCommand(ctx context.Context, args ...string) *exec.Cmd {
+	return CommandContext(ctx, "git", GitArgs(args...)...)
+}

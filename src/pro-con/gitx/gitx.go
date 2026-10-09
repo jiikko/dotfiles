@@ -15,6 +15,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"subproc"
 )
 
 // Timeout は git 1 回の上限 (大きな repo の merge-tree でも数秒の見込み。固まった git で呼び出し側を止めない)。
@@ -47,7 +49,7 @@ func isScrubbed(k string) bool {
 func Run(ctx context.Context, dir string, args ...string) (string, int, error) {
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	cmd := exec.CommandContext(ctx, "git", subproc.GitArgs(append([]string{"-C", dir}, args...)...)...)
 	cmd.Env = Env()
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut

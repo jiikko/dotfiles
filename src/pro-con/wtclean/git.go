@@ -17,6 +17,8 @@ import (
 	"strings"
 
 	"pro-con/gitx"
+
+	"subproc"
 )
 
 // worktree は `git worktree list --porcelain` の 1 個。
@@ -201,9 +203,9 @@ func verbatimMissing(ctx context.Context, repo, base, head string) (int, error) 
 func patchIDs(ctx context.Context, repo, rng string) (map[string]bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, gitx.Timeout)
 	defer cancel()
-	log := exec.CommandContext(ctx, "git", "-C", repo, "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "log", "--no-merges", "-p",
-		"--no-renames", "--no-color", "--no-ext-diff", "--no-textconv", "--full-index", "--format=commit %H", rng, "--")
-	pid := exec.CommandContext(ctx, "git", "-C", repo, "patch-id", "--verbatim")
+	log := exec.CommandContext(ctx, "git", subproc.GitArgs("-C", repo, "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "log", "--no-merges", "-p",
+		"--no-renames", "--no-color", "--no-ext-diff", "--no-textconv", "--full-index", "--format=commit %H", rng, "--")...)
+	pid := exec.CommandContext(ctx, "git", subproc.GitArgs("-C", repo, "patch-id", "--verbatim")...)
 	log.Env, pid.Env = gitx.Env(), gitx.Env()
 	pipe, err := log.StdoutPipe()
 	if err != nil {

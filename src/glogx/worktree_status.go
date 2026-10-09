@@ -190,7 +190,7 @@ var loadWorktreeStatus = func() (worktreeStatus, error) {
 // (--cached)、それ以外は作業ツリーとの差分。untracked は git diff の対象外なのでファイルの
 // 中身をそのまま出す (呼び出し側で分岐)。
 var loadWorktreeDiff = func(paths []string, staged, colored bool) ([]string, error) {
-	args := []string{"diff"}
+	args := []string{"diff", "--no-textconv", "--no-ext-diff"} // repo の設定のコマンドを差分の表示で走らせない (issue 692。subproc.GitArgs の doc)
 	if staged {
 		args = append(args, "--cached")
 	}
