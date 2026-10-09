@@ -1,1 +1,0 @@
-../698-bug-glogx-issues-viewer-audit-quality.md
