@@ -7,7 +7,10 @@
 //	tests/tmux/test_schedule_keys.sh がこの規律を静的に検査する。
 package main
 
-import "strings"
+import (
+	sgrcode "github.com/jiikko/dotfiles/src/tuikit/sgr"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
+)
 
 // 色は基本 8 色 + 既定色に限る (端末のテーマに従わせる。256 色を決め打ちすると
 // 明るい背景のテーマで読めなくなる)。
@@ -25,21 +28,8 @@ func sgr(style, s string) string {
 	if s == "" {
 		return ""
 	}
-	return "\x1b[" + style + "m" + s + "\x1b[0m"
+	return "\x1b[" + style + "m" + s + sgrcode.Reset
 }
 
-// stripSGR は幅を測るために装飾を落とす (termwidth.Of は装飾を無視するが、
-// 自前で桁を数える箇所では素の文字列が要る)。
-func stripSGR(s string) string {
-	var b strings.Builder
-	for i := 0; i < len(s); i++ {
-		if s[i] == 0x1b {
-			for i < len(s) && s[i] != 'm' {
-				i++
-			}
-			continue
-		}
-		b.WriteByte(s[i])
-	}
-	return b.String()
-}
+// stripSGR は ESC のシーケンスを外す (読み方は termwidth.StripSGR = x/ansi のパーサ)。
+func stripSGR(s string) string { return termwidth.StripSGR(s) }

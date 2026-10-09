@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"slices"
 	"strings"
 	"testing"
@@ -145,5 +146,25 @@ func TestLegendShowsEveryRole(t *testing.T) {
 	out := ansi.Strip(tall.render())
 	if strings.Contains(out, "j / k で送る") || !strings.Contains(out, roleMeanings[len(roleMeanings)-1][0]) {
 		t.Fatalf("背の高い画面で全部を出さない / 送りの案内を出す:\n%s", out)
+	}
+}
+
+// 凡例の送りは listnav.MotionOf の語彙 (ctrl+n / end / ctrl+d も効く。issue 700 の 3)。
+func TestLegendScrollUsesMotionVocabulary(t *testing.T) {
+	m := New(newSpy(), nil)
+	m.width, m.height = 120, 12 // 送りが要るほど低い画面
+	press(m, "?")
+	_ = m.render()
+	press(m, "ctrl+n")
+	if m.legendOff != 1 {
+		t.Fatalf("ctrl+n で 1 行送らない: %d", m.legendOff)
+	}
+	press(m, "ctrl+d")
+	if m.legendOff != 1+listnav.Half(m.height) {
+		t.Fatalf("ctrl+d で半ページ送らない: %d", m.legendOff)
+	}
+	press(m, "home")
+	if m.legendOff != 0 {
+		t.Fatalf("home で先頭へ戻らない: %d", m.legendOff)
 	}
 }

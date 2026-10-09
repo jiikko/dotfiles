@@ -11,6 +11,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
@@ -59,17 +60,27 @@ func (m *Model) handleLegendKey(key string) tea.Cmd {
 			step = n - 1
 		}
 		m.legendTab, m.legendOff = legendTabs[(slices.Index(legendTabs, m.legendTab)+step)%n], 0
-	case "j", "down":
-		m.legendOff++ // 下限・上限は描くとき (overlayLegend) に幅と高さから決める
-	case "k", "up":
-		m.legendOff = max(m.legendOff-1, 0)
-	case "g":
-		m.legendOff = 0
-	case "G":
-		m.legendOff = 1 << 20
 	case "ctrl+c":
 		m.legend = false
 		return m.requestQuit()
+	default:
+		// 移動の語彙は listnav.MotionOf (glogx-ui-guide §2: 矢印・emacs・ページ送りも効く)。下限・上限は描くとき
+		// (overlayLegend) に幅と高さから決める
+		switch listnav.MotionOf(key) {
+		case listnav.Down:
+			m.legendOff++
+		case listnav.Up:
+			m.legendOff = max(m.legendOff-1, 0)
+		case listnav.HalfDown:
+			m.legendOff += listnav.Half(m.height)
+		case listnav.HalfUp:
+			m.legendOff = max(m.legendOff-listnav.Half(m.height), 0)
+		case listnav.Top:
+			m.legendOff = 0
+		case listnav.Bottom:
+			m.legendOff = 1 << 20
+		case listnav.None:
+		}
 	}
 	return nil
 }

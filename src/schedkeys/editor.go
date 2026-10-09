@@ -11,6 +11,7 @@ package main
 import (
 	"unicode"
 
+	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"github.com/rivo/uniseg"
 )
@@ -89,11 +90,6 @@ func (e *editor) viewport(width int, focused bool) (string, int) {
 // Truncate が 1、幅の計算が 2 と答える)、切ったつもりで倍の幅が残る。この UI は termwidth.Of で
 // 測った幅で桁を組むので、そちらで width 以内を保証する termwidth.Cut に任せる。
 func truncate(s string, width int) string { return termwidth.Cut(s, width) }
-
-// isVariationSelector は U+FE00..FE0F と補助 (U+E0100..E01EF)。
-func isVariationSelector(r rune) bool {
-	return (r >= 0xFE00 && r <= 0xFE0F) || (r >= 0xE0100 && r <= 0xE01EF)
-}
 
 // prevBoundary / nextBoundary はカーソルの前後にある書記素クラスタの境界を返す。
 // 🚨 移動と削除は「見た目の 1 文字」= 書記素クラスタ単位で行う。rune 単位だと肌色や結合文字の
@@ -181,6 +177,11 @@ func (e *editor) handle(key string, text string) bool {
 	return true
 }
 
+// isVariationSelector は U+FE00..FE0F と補助 (U+E0100..E01EF)。
+func isVariationSelector(r rune) bool {
+	return (r >= 0xFE00 && r <= 0xFE0F) || (r >= 0xE0100 && r <= 0xE01EF)
+}
+
 // acceptable は入力として受ける文字列か。制御文字と書式文字 (Cf) を弾く:
 //   - 見えないのに送信される (RLO/RLM のような表示順の反転はコマンドを偽装できる)
 //   - 幅 0 なので、幅で位置を決める描画とカーソル計算をずらす
@@ -191,15 +192,10 @@ func acceptable(text string) bool {
 		return false
 	}
 	for _, r := range text {
-		// Cc/Cf に加えて Zl/Zp (U+2028/2029) も弾く: 行区切りとして解釈される端末があり、
-		// 打った本人には見えないまま送信される
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r) {
-			return false
-		}
-		// 異体字セレクタ (U+FE0F 等) も弾く。幅の数え方が描画側 (ultraviolet) と食い違い、
-		// 本物のカーソルが絵文字 1 個につき 1 列ずつ右へずれる = IME の未確定文字が別の場所に出る
-		// (敵対的レビュー 2026-08-28 に実測: ❤️ 5 個で 5 列ずれる)。基底文字 (❤ 🚨) は通る
-		if isVariationSelector(r) {
+		// lineedit.Acceptable (制御文字・向きを変える制御文字・行と段落の区切り) に加えて、書式文字全般と異体字セレクタも弾く。
+		// 異体字セレクタは幅の数え方が描画側 (ultraviolet) と食い違い、本物のカーソルが絵文字 1 個につき 1 列ずつ右へずれる
+		// (敵対的レビュー 2026-08-28 に実測: ❤️ 5 個で 5 列ずれる)。1 字でも入っていれば打鍵ごと捨てる (一部だけ入れない)
+		if !lineedit.Acceptable(r) || unicode.Is(unicode.Cf, r) || isVariationSelector(r) {
 			return false
 		}
 	}

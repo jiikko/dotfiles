@@ -13,6 +13,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/jiikko/dotfiles/src/tuikit/caret"
+	sgrcode "github.com/jiikko/dotfiles/src/tuikit/sgr"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
@@ -89,7 +90,7 @@ func truncateSGR(s string, width int) string {
 	if termwidth.Of(s) <= width {
 		return s
 	}
-	return truncate(s, width) + "\x1b[0m"
+	return truncate(s, width) + sgrcode.Reset
 }
 
 // help はキー説明を幅に収める (入らないものから落とす。折り返して行数を増やさない)。

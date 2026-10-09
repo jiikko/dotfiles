@@ -217,3 +217,17 @@ func TestGitKindsComplete(t *testing.T) {
 		}
 	}
 }
+
+// 設定の板の移動は listnav.MotionOf の語彙 (ctrl+d / end も効く。issue 700 の 3)。
+func TestPanelUsesMotionVocabulary(t *testing.T) {
+	m := newTest(t)
+	m.HandleKey(",")
+	m.HandleKey("end")
+	if m.panel.row != len(items)-1 {
+		t.Fatalf("end で末尾へ: %d", m.panel.row)
+	}
+	m.HandleKey("ctrl+d")
+	if m.panel.row != 0 {
+		t.Fatalf("ctrl+d で 1 行巡らない: %d", m.panel.row)
+	}
+}

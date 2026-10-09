@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"github.com/jiikko/dotfiles/src/tuikit/markdown"
 	"glogx/issues"
 )
@@ -116,15 +117,27 @@ func (v *issuesView) linkJumpKey(key string, vp issuesViewport, rows int) (cmd t
 		v.linkJump = linkJump{}
 		return nil, false
 	}
-	switch key {
-	case "j", "down", "ctrl+n", "tab":
+	// 移動の語彙は listnav.MotionOf (glogx-ui-guide §2)。半ページ送り (space・ctrl+d など) はジャンプを抜けて本文の pager へ渡す
+	switch listnav.MotionOf(key) {
+	case listnav.Down:
 		v.selectLink(fl, (cur+1)%len(fl), rows)
-	case "k", "up", "ctrl+p", "shift+tab":
+		return nil, true
+	case listnav.Up:
 		v.selectLink(fl, (cur-1+len(fl))%len(fl), rows)
-	case "g", "home":
+		return nil, true
+	case listnav.Top:
 		v.selectLink(fl, 0, rows)
-	case "G", "end":
+		return nil, true
+	case listnav.Bottom:
 		v.selectLink(fl, len(fl)-1, rows)
+		return nil, true
+	case listnav.HalfDown, listnav.HalfUp, listnav.None:
+	}
+	switch key {
+	case "tab":
+		v.selectLink(fl, (cur+1)%len(fl), rows)
+	case "shift+tab":
+		v.selectLink(fl, (cur-1+len(fl))%len(fl), rows)
 	case "enter":
 		return v.openLink(fl[cur], true), true
 	case "e", "v":

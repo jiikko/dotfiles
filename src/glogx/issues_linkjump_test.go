@@ -464,3 +464,25 @@ func TestLinkJumpRepeatedDestStopsTwice(t *testing.T) {
 		t.Fatal("2 個目の出現まで本文が送られていない")
 	}
 }
+
+// 移動の語彙は listnav.MotionOf (ctrl+n / ctrl+p / home / end も効く)。半ページ送り (space) はジャンプを抜けて本文へ渡す (issue 700 の 3)。
+func TestLinkJumpUsesMotionVocabulary(t *testing.T) {
+	e := newJumpEnv(t, jumpBody)
+	e.press("tab")
+	e.press("ctrl+n")
+	if l, _ := e.selected(t); l.Path != e.path("docs/spec.md") {
+		t.Fatalf("ctrl+n で次へ: %q", l.Path)
+	}
+	e.press("end")
+	if l, _ := e.selected(t); l.Path != e.path("src/b.go") {
+		t.Fatalf("end で末尾へ: %q", l.Path)
+	}
+	e.press("home")
+	if l, _ := e.selected(t); l.Path != e.path("src/a.go") {
+		t.Fatalf("home で先頭へ: %q", l.Path)
+	}
+	e.press("space")
+	if _, ok := e.selected(t); ok {
+		t.Fatal("space でジャンプを抜けない (半ページ送りは本文の pager のキー)")
+	}
+}

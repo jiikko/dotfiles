@@ -97,7 +97,7 @@ func (m *Model) view(t *tile) []viewLine {
 	if md {
 		out, _ := markdown.Render(strings.Join(t.src.lines, "\n"), w, true)
 		for _, o := range out {
-			t.vlines = append(t.vlines, viewLine{o, stripSGR(o)})
+			t.vlines = append(t.vlines, viewLine{o, termwidth.StripSGR(o)})
 		}
 	} else {
 		for _, l := range t.src.lines[t.vsrc:] {
@@ -139,27 +139,6 @@ func wrapCells(s string, w int) []string {
 		i += len(cl)
 	}
 	return append(out, s[start:])
-}
-
-// stripSGR は SGR (ESC [ ... m) とその他の CSI を外す。
-func stripSGR(s string) string {
-	if !strings.Contains(s, "\x1b") {
-		return s
-	}
-	var b strings.Builder
-	for i := 0; i < len(s); i++ {
-		if s[i] != 0x1b {
-			b.WriteByte(s[i])
-			continue
-		}
-		if i+1 < len(s) && s[i+1] == '[' {
-			i += 2
-			for i < len(s) && (s[i] < 0x40 || s[i] > 0x7e) {
-				i++
-			}
-		}
-	}
-	return b.String()
 }
 
 // ensureBytes は末尾か、先頭から max バイトまで読み進める。

@@ -3,6 +3,7 @@ package filer
 import (
 	"context"
 	"errors"
+	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,7 +89,7 @@ func TestViewHighlightsCode(t *testing.T) {
 	if len(vl) != 1 || vl[0].plain != "package two" || !strings.Contains(vl[0].styled, "\x1b[") {
 		t.Fatalf("Go の行に色が付かない: %+v", vl)
 	}
-	if stripSGR(vl[0].styled) != vl[0].plain {
+	if termwidth.StripSGR(vl[0].styled) != vl[0].plain {
 		t.Fatalf("色を外すと元の行に戻らない: %q", vl[0].styled)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jiikko/dotfiles/src/termsafe"
+	"github.com/jiikko/dotfiles/src/tuikit/anim"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
@@ -39,10 +40,7 @@ func easedShown(frame, w int) int {
 	if frame >= SlideFrames {
 		return w
 	}
-	p := float64(frame) / float64(SlideFrames)
-	q := 1 - p
-	eased := 1 - q*q*q // easeOutCubic
-	return int(math.Round(eased * float64(w)))
+	return int(math.Round(anim.EaseOutCubic(float64(frame)/float64(SlideFrames)) * float64(w)))
 }
 
 // Timer は「After 経ったら Msg をアプリへ戻して」という頼み (Advance が、入場を終えて静止に入った枚ごとに返す)。
@@ -467,6 +465,8 @@ func (s *Stack) Animating() bool {
 
 // Advance は全ての枚を 1 フレーム進め、静止に入った枚の退場タイマーをまとめて返す。
 // 抜け切った (hidden) 枚はここで取り除く = 下から抜けていく。
+// 🚨 返した Timer は、使う側が After の後に Msg を StartLeaving へ戻す (bubbletea なら tea.Tick)。捨てると静止したまま
+// 永久に残る (部品は枠組みを import しないので、変換は使う側に置く。glogx・pro-con・treefiler の 3 か所。issue 700 の 4)。
 func (s *Stack) Advance() []Timer {
 	var timers []Timer
 	if t := s.advance(); t != nil {

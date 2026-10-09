@@ -11,6 +11,7 @@ import (
 	"atomicfile"
 
 	"github.com/jiikko/dotfiles/src/termsafe"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
@@ -376,20 +377,29 @@ func (m *Model) panelKey(k string) {
 	switch k {
 	case "esc", ",", "q":
 		m.panel.open = false
-	case "j", "down", "tab", "ctrl+n":
+	case "tab":
 		m.panel.row = (m.panel.row + 1) % len(items)
-	case "k", "up", "shift+tab", "ctrl+p":
+	case "shift+tab":
 		m.panel.row = (m.panel.row - 1 + len(items)) % len(items)
-	case "g", "home":
-		m.panel.row = 0
-	case "G", "end":
-		m.panel.row = len(items) - 1
 	case "l", "right", "enter", "space", " ":
 		m.adjust(1)
 	case "h", "left":
 		m.adjust(-1)
 	case "r":
 		m.resetItem()
+	default:
+		// 移動の語彙は listnav.MotionOf (glogx-ui-guide §2)。項目は 1 画面に収まる数なので、半ページ送りも 1 行ずつ巡る
+		switch listnav.MotionOf(k) {
+		case listnav.Down, listnav.HalfDown:
+			m.panel.row = (m.panel.row + 1) % len(items)
+		case listnav.Up, listnav.HalfUp:
+			m.panel.row = (m.panel.row - 1 + len(items)) % len(items)
+		case listnav.Top:
+			m.panel.row = 0
+		case listnav.Bottom:
+			m.panel.row = len(items) - 1
+		case listnav.None:
+		}
 	}
 }
 

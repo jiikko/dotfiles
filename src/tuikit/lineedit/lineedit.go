@@ -112,14 +112,22 @@ func (l *Line) snap(i int) int {
 	return l.nextBoundary(i - 1)
 }
 
+// Acceptable は入力欄に入れてよい文字か。弾くもの: 制御文字 (Cc)・文字の向きを変える制御文字 (U+202A-202E / U+2066-2069。
+// 見えている文字列と中身の並びが食い違う。`!` のコマンド行では見えているものと実行されるものが別になる)・行と段落の区切り
+// (U+2028 / 2029。行区切りとして解釈する端末がある。Insert は改行と同じく空白にする)。ZWJ と異体字セレクタは通す (絵文字の 1 文字として扱う。
+// TestEditKeysKeepGraphemeClusters)。schedkeys はこれに加えて書式文字全般と異体字セレクタも弾く (issue 700 の 2)。
+func Acceptable(r rune) bool {
+	return !unicode.IsControl(r) && (r < 0x202a || r > 0x202e) && (r < 0x2066 || r > 0x2069) && r != 0x2028 && r != 0x2029
+}
+
 // Insert はカーソルの位置に s を入れる (打鍵とペースト)。1 行なので改行とタブは空白にし、他の制御文字は落とす。
 func (l *Line) Insert(s string) {
 	var add []rune
 	for _, c := range s {
 		switch {
-		case c == '\n' || c == '\r' || c == '\t':
+		case c == '\n' || c == '\r' || c == '\t' || c == 0x2028 || c == 0x2029: // 行・段落の区切りも空白に (落とすと単語がくっつく)
 			add = append(add, ' ')
-		case unicode.IsControl(c):
+		case !Acceptable(c):
 		default:
 			add = append(add, c)
 		}

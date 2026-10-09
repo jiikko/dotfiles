@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
 
@@ -269,7 +270,7 @@ func (c *canvas) lines() []string {
 			}
 			b = append(b, p.s...)
 		}
-		b = append(b, "\x1b[0m"...)
+		b = append(b, sgr.Reset...)
 		out[y] = string(b)
 	}
 	return out

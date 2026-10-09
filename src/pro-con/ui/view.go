@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/jiikko/dotfiles/src/tuikit/caret"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"pro-con/backend"
@@ -19,9 +20,9 @@ import (
 // 見た目は style.go の冒頭の合意 (B「枠」) に従う。表示の文言と配置にはテストを書いていない (つなぎ込みだけを検査する)。
 
 const (
-	sgrReset = "\x1b[0m"
-	sgrBold  = "\x1b[1m"
-	sgrDim   = "\x1b[2m"
+	sgrReset = sgr.Reset // 値の正本は tuikit/sgr (別名は呼び出し 160 か所のために残す)
+	sgrBold  = sgr.Bold
+	sgrDim   = sgr.Dim
 	// 下線の開始と終了 (終了だけを戻すので、帯の背景色や太字を消さない)
 	sgrUnderline   = "\x1b[4m"
 	sgrNoUnderline = "\x1b[24m"

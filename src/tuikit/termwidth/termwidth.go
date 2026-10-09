@@ -521,10 +521,11 @@ func Cut(s string, width int) string {
 	return Truncate(s, width, "")
 }
 
-// isSGRTerminator は ESC シーケンス中の r がシーケンスを終端する最終バイトか (CSI の最終バイトは英字)。
-// DropColumns / StripSGR が同じ終端判定を共有し、OSC 等へ広げるときに 1 箇所だけ直せばよいようにする。
-func isSGRTerminator(r rune) bool {
-	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
+// escLen は s の先頭の ESC から始まるシーケンスのバイト長。読み方は Of / Wrap / Slice と同じ x/ansi のパーサ
+// (OSC 8 のリンクのように英字で終わらないシーケンスを、自前の「英字まで」の走査で読むと URL の途中で切れる。issue 700 の 1)。
+func escLen(s string) int {
+	_, _, n, _ := ansi.DecodeSequence(s, ansi.NormalState, nil)
+	return max(n, 1)
 }
 
 // DropColumns は s のうち表示列 n (0-based) 以降の suffix を返す。n より前に現れた SGR は結果の
@@ -541,14 +542,8 @@ func DropColumns(s string, n int) string {
 	w := 0
 	i := 0 // s へのバイト index
 	for i < len(s) && w < n {
-		if s[i] == '\x1b' { // SGR (幅 0): 後で replay するため蓄積
-			j := i + 1
-			for j < len(s) && !isSGRTerminator(rune(s[j])) {
-				j++
-			}
-			if j < len(s) {
-				j++ // 終端バイトも含める
-			}
+		if s[i] == '\x1b' { // ESC のシーケンス (幅 0): 後で replay するため蓄積
+			j := i + escLen(s[i:])
 			sgr.WriteString(s[i:j])
 			i = j
 			continue
@@ -572,21 +567,7 @@ func DropColumns(s string, n int) string {
 // StripSGR は s から ESC シーケンスを取り除く。
 func StripSGR(s string) string {
 	if strings.IndexByte(s, '\x1b') < 0 {
-		return s // ESC 無しは Builder の確保も rune の走査も不要
+		return s // ESC 無しは Builder の確保も走査も不要
 	}
-	var b strings.Builder
-	inEscape := false
-	for _, r := range s {
-		switch {
-		case inEscape:
-			if isSGRTerminator(r) {
-				inEscape = false
-			}
-		case r == '\x1b':
-			inEscape = true
-		default:
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
+	return ansi.Strip(s)
 }
