@@ -84,6 +84,8 @@ wait_for "builder が終わらない" builder_gone "$pid"
   桁差が 1 桁未満なら、その指標は判別に使えていない
 - **その閾値が本当に判別するかは変異で確かめる** (成立させている機構を外して、
   桁が変わって red になるか)。[`mutation-verify-new-tests.md`](mutation-verify-new-tests.md) の適用
+  - **hang guard で 2 乗の退行を見るなら、退行を戻した変異の所要を測り、guard の数倍になる大きさの入力にする**
+    (上限 10 秒に対して変異が 9.8 秒で緑のまま通った。retro 704)
 
 ## 例外 (時間で測ってよい場面)
 
