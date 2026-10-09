@@ -25,6 +25,13 @@ trap cleanup EXIT
 
 [[ -x "$SCRIPT" ]] || { printf '✗ スクリプトが存在しない/実行不可: %s\n' "$SCRIPT"; exit 1; }
 
+# 🚨 幅を測る bin/termwidth (Go) のバイナリを、PATH を差し替える前に同期でビルドしておく。toast はバイナリが無いと
+#    待たずに上限の幅 (全文字 2 桁) で出して裏でビルドするので、CI の新品の checkout ではこのテストの時点でビルドが
+#    済んでいるかで幅が変わり、「floating: new-pane の引数」が揺れた (run 37864408046 で -x 10、その前の run では -x 8)。
+#    バイナリが無いときの経路は「termwidth 不在」のケースが TMUX_TOAST_TERMWIDTH_BIN で明示的に見る
+"$ROOT_DIR/bin/termwidth" x >/dev/null || { printf '✗ bin/termwidth をビルドできない\n'; exit 1; }
+[[ -x "$ROOT_DIR/src/tuikit/cmd/termwidth/termwidth" ]] || { printf '✗ termwidth のバイナリが無い\n'; exit 1; }
+
 CALLS="$TMP_DIR/calls.log"
 export CALLS
 APPENDED="$TMP_DIR/appended"
