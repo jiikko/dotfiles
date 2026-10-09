@@ -1,5 +1,7 @@
 # 692 (bug): 開いたフォルダの `.git/config` に仕込まれたコマンドが、git の呼び出しで走る (treefiler・glogx・pro-con)
 
+> 🚨 **担当中: Claude Code (dotfiles-53。監査の issue を順に直すセッション)**（2026-10-09〜）
+
 起票日: 2026-10-09
 
 ## 概要

@@ -1,5 +1,7 @@
 # 699 (perf): tuikit の highlight と markdown が、1 行・1 段落が長いと 2 乗で遅くなり UI が固まる
 
+> 🚨 **担当中: Claude Code (dotfiles-53。監査の issue を順に直すセッション)**（2026-10-09〜）
+
 起票日: 2026-10-09
 
 ## 概要

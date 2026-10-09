@@ -1,0 +1,1 @@
+../692-bug-git-config-commands-run-on-open.md
