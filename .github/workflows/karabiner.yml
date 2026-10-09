@@ -15,11 +15,13 @@ on:
     paths:
       - mac/karabiner.json
       - .github/workflows/karabiner.yml
+      - .github/go-version
       - Makefile
   pull_request:
     paths:
       - mac/karabiner.json
       - .github/workflows/karabiner.yml
+      - .github/go-version
       - Makefile
   # paths filter でスキップされた後に単発で回したい時の手動トリガ
   workflow_dispatch:

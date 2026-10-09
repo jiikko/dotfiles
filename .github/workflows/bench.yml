@@ -97,10 +97,9 @@ jobs:
 
       # runtimeout (src/runtimeout。上限付き実行の道具) を go_autobuild でビルドするのに Go が要る (issue 640)。
       # 使うのは tests/zshrc/bench_zsh.sh の startup の上限。
-      # 版は全 module で同じなので glogx の go.mod を代表にする (tests.yml と同じ)
       - uses: actions/setup-go@v7
         with:
-          go-version-file: src/glogx/go.mod
+          go-version-file: .github/go-version # CI の Go の版の正本 (go.mod の go 行は最小の版で、別に持つ)
           cache-dependency-path: src/*/go.sum
 
       # 🚨 以下は ubuntu runner の事情への対処で、macOS では compaudit が何も返さないため
@@ -158,7 +157,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version-file: src/glogx/go.mod
+          go-version-file: .github/go-version # CI の Go の版の正本 (go.mod の go 行は最小の版で、別に持つ)
           cache-dependency-path: src/glogx/go.sum
 
       # 描画ホットパス (View 1 フレーム / job パネル込み View / 大 patch の一括整形) の

@@ -18,6 +18,7 @@ on:
       - 'src/tuikit/**'  # replace で取り込む共有 module (入力欄のキャレットを端末のカーソルにする caret)
       - .github/workflows/src_schedkeys.yml
       - .github/workflows/_go-project.yml
+      - .github/go-version
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
   pull_request:
     paths:
@@ -25,6 +26,7 @@ on:
       - 'src/tuikit/**'  # replace で取り込む共有 module (入力欄のキャレットを端末のカーソルにする caret)
       - .github/workflows/src_schedkeys.yml
       - .github/workflows/_go-project.yml
+      - .github/go-version
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
   workflow_dispatch:  # GitHub UI からの手動再実行用
 

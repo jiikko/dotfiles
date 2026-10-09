@@ -24,6 +24,7 @@ on:
       - .github/actions/ensure-toolchain/**  # 下の e2e job が使う共有の action
       - .github/workflows/src_pro-con.yml
       - .github/workflows/_go-project.yml
+      - .github/go-version
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
   pull_request:
     paths:
@@ -42,6 +43,7 @@ on:
       - .github/actions/ensure-toolchain/**  # 下の e2e job が使う共有の action
       - .github/workflows/src_pro-con.yml
       - .github/workflows/_go-project.yml
+      - .github/go-version
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
   workflow_dispatch:  # GitHub UI からの手動再実行用
 
@@ -71,7 +73,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version-file: src/pro-con/go.mod
+          go-version-file: .github/go-version # CI の Go の版の正本 (go.mod の go 行は最小の版で、別に持つ)
           cache-dependency-path: src/pro-con/go.sum
 
       - uses: ./.github/actions/ensure-toolchain

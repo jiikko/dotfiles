@@ -97,7 +97,8 @@ toolchain の自動取得への依存**: 手元 go が 1.25.4 の環境では `G
 失敗記録の backoff と噛み合いビルドが止まった。1.25.0 なら手元の go でそのままビルドされる。
 1.26 固有の機能は元々使っていない（上げた commit も依存更新の chore で、機能上の必要ではなかった）。
 
-CI は `go-version-file: go.mod` なので go.mod の値に追随する（workflow 側の変更は不要）。
+CI の Go は go.mod ではなく `.github/go-version` (2026-10-09 から `1.26.x`。stdlib の脆弱性の修正版を CI で使うため) が決める。
+go.mod の `go` 行は手元で必要な最小の版で、上げると上の toolchain の自動取得に戻る。
 
 **再評価の trigger**: 1.26 固有の機能が実際に要るようになったとき。候補として挙がっていたのは
 goroutine リーク検出器（`GOEXPERIMENT=goroutineleakprofile` + pprof の `goroutineleak`。fetch

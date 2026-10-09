@@ -8,11 +8,13 @@ on:
       - 'src/restartable/**'
       - .github/workflows/src_restartable.yml
       - .github/workflows/_go-project.yml
+      - .github/go-version
   pull_request:
     paths:
       - 'src/restartable/**'
       - .github/workflows/src_restartable.yml
       - .github/workflows/_go-project.yml
+      - .github/go-version
   workflow_dispatch:
 
 permissions:

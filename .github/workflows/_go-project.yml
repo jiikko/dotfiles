@@ -60,7 +60,7 @@ jobs:
         id: go
         uses: actions/setup-go@v7
         with:
-          go-version-file: ${{ inputs.dir }}/go.mod
+          go-version-file: .github/go-version # CI の Go の版の正本 (go.mod の go 行は最小の版で、別に持つ)
           cache-dependency-path: ${{ inputs.dir }}/go.sum
 
       # scripts/golangci_lint.sh がビルドした golangci-lint を run をまたいで残す。残さないと lint の job は毎回
@@ -99,7 +99,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version-file: ${{ inputs.dir }}/go.mod
+          go-version-file: .github/go-version # CI の Go の版の正本 (go.mod の go 行は最小の版で、別に持つ)
           cache-dependency-path: ${{ inputs.dir }}/go.sum
 
       - name: Test

@@ -14,12 +14,14 @@ on:
       - 'src/**'
       - scripts/check_unused_excluding_tests.sh
       - .github/workflows/unused.yml
+      - .github/go-version
       - Makefile
   pull_request:
     paths:
       - 'src/**'
       - scripts/check_unused_excluding_tests.sh
       - .github/workflows/unused.yml
+      - .github/go-version
       - Makefile
   workflow_dispatch:
 
@@ -40,7 +42,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version-file: src/glogx/go.mod
+          go-version-file: .github/go-version # CI の Go の版の正本 (go.mod の go 行は最小の版で、別に持つ)
           cache: false
 
       # 🚨 版を固定する。latest 追従だと上流が検査を追加した日に「手元は緑なのに CI だけ赤」が出る

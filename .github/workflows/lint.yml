@@ -35,7 +35,7 @@ jobs:
       # package doc index は go list -find で生成・検査する (依存 cache は使わない)。
       - uses: actions/setup-go@v7
         with:
-          go-version-file: src/glogx/go.mod
+          go-version-file: .github/go-version # CI の Go の版の正本 (go.mod の go 行は最小の版で、別に持つ)
           cache: false
 
       # ruby は test-ruby-syntax (Brewfile/_pryrc の ruby -c と _gemrc の YAML パース) 用。

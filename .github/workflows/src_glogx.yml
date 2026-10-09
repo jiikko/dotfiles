@@ -27,6 +27,7 @@ on:
       - theme/colors.yml
       - .github/workflows/src_glogx.yml
       - .github/workflows/_go-project.yml
+      - .github/go-version
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
   pull_request:
     paths:
@@ -47,6 +48,7 @@ on:
       - theme/colors.yml
       - .github/workflows/src_glogx.yml
       - .github/workflows/_go-project.yml
+      - .github/go-version
       - scripts/golangci_lint.sh   # 全プロジェクトの make lint が通る共有の入口
   workflow_dispatch:  # GitHub UI からの手動再実行用
 
@@ -79,7 +81,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version-file: src/glogx/go.mod
+          go-version-file: .github/go-version # CI の Go の版の正本 (go.mod の go 行は最小の版で、別に持つ)
           cache-dependency-path: src/glogx/go.sum
       - name: テストが実マシンのコマンドを叩かないか (scope=all)
         run: GLOGX_SHIM_SCOPE=all tests/glogx/test_no_real_commands_in_tests.sh
