@@ -9,6 +9,10 @@ const KEPT = 50
 
 const items = atom({ plugin: 'peer-inbox', key: 'items' } as const, [] as InboxItem[])
 const isHidden = atom({ plugin: 'peer-inbox', key: 'isHidden' } as const, false)
+// 回数は帯の履歴 (上限 KEPT) と別に持つ (履歴から数えると上限を超えたところでずれる)。
+// 既読・未読は持たない: 目的は他セッションとの往来を本文 (メインの会話) の外に出すことで、読んだかどうかの管理は要らない
+const received = atom({ plugin: 'peer-inbox', key: 'received' } as const, 0)
+const sent = atom({ plugin: 'peer-inbox', key: 'sent' } as const, 0)
 
 // 他セッション / teammate との往来だけを対象にする (relay の通知・cron・Remote Control は除く)。
 const PEER_KINDS = new Set(['peer', 'coordinator', 'peer-send-message'])
@@ -24,22 +28,43 @@ const hhmm = (at: number) => {
   return `${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
-async function push($: EngineInterface, item: InboxItem) {
+const countsText = (r: number, s: number) => `📨 受信 ${r}・送信 ${s}`
+
+// status line に回数を常に出す (往来が 1 回も無いうちは出さない)
+async function showCounts($: EngineInterface) {
+  const r = (await read($, received)) ?? 0
+  const s = (await read($, sent)) ?? 0
+  $.ui.status(r + s > 0 ? countsText(r, s) : undefined)
+}
+
+async function push($: EngineInterface, item: InboxItem, counted: boolean) {
   await update($, items, list => [...(list ?? []), item].slice(-KEPT))
   if (item.dir === 'in') {
     await update($, isHidden, () => false)
   }
-  const unread = (await read($, items)).filter(i => i.dir === 'in' && !i.isRead).length
-  $.ui.status(unread > 0 ? `📨 未読 ${unread}` : undefined)
+  // update の第 2 引数は atom をそのまま渡す (三項演算子で選ぶと、state の検査が読めず読み込みで止まる)
+  if (counted && item.dir === 'in') {
+    await update($, received, n => (n ?? 0) + 1)
+  } else if (counted) {
+    await update($, sent, n => (n ?? 0) + 1)
+  }
+  await showCounts($)
 }
 
 export const register: Register = on => {
+  // 読み直し (hot reload・再起動) の後も、数えた回数を status line に出し直す
+  on('session.start', async ($, e, next) => {
+    const r = await next(e)
+    await showCounts($)
+    return r
+  })
+
   on('session.receive', async ($, e, next) => {
     // subagent 宛 (e.agentId あり) は main の会話ではないので帯に出さない。
     if (e.agentId === undefined && PEER_KINDS.has(e.origin.kind)) {
       const who = 'teammate' in e.origin ? e.origin.teammate : e.origin.kind
       const text = oneLine(e.text)
-      await push($, { dir: 'in', who, text, at: await $.clock.now(), isRead: false })
+      await push($, { dir: 'in', who, text, at: await $.clock.now() }, true)
       $.ui.toast(`📨 ${who}: ${clip(text, 80)}`, { timeoutMs: 8000 })
     }
     return next(e)
@@ -48,12 +73,8 @@ export const register: Register = on => {
   on('session.send', async ($, e, next) => {
     if (e.agentId !== undefined) return next(e)
     const r = await next(e)
-    if (r.isDelivered) {
-      // Claude が受信して返信を完了した (配送が成功した) 時点で、受信分を既読にする (人が「既読」を押す必要を無くす。
-      // 送り元の名前は受信側の origin から確実に取れないので、宛先で絞らず受信分をまとめて既読にする)。配送に失敗したら未読のまま
-      await update($, items, l => (l ?? []).map(i => (i.dir === 'in' ? { ...i, isRead: true } : i)))
-    }
-    await push($, { dir: 'out', who: e.to, text: oneLine(e.text), at: await $.clock.now(), isRead: true })
+    // 送信の回数は届いたものだけを数える (帯には届かなかったものも残す)
+    await push($, { dir: 'out', who: e.to, text: oneLine(e.text), at: await $.clock.now() }, r.isDelivered)
     return r
   }).catch(($, e, next) => (next.called ? next(e) : next(e)))
 
@@ -65,25 +86,18 @@ export const register: Register = on => {
 
     const { Box, Button, Text } = $.ui.resolve(e)
     const width = e.props.bodyColumns
-    const unread = list.filter(i => i.dir === 'in' && !i.isRead).length
+    const r = (await read($, received)) ?? 0
+    const s = (await read($, sent)) ?? 0
     const shown = list.slice(-SHOWN)
     const prefixWidth = 'HH:MM ⇦ '.length
 
     return (
       <Box flexDirection="column" width={width}>
         <Box flexDirection="row" justifyContent="space-between">
-          <Text bold color={unread > 0 ? 'warning' : 'subtle'}>
-            📨 他セッション {list.length} 件{unread > 0 ? ` (未読 ${unread})` : ''}
+          <Text bold color="subtle">
+            📨 他セッション 受信 {r}・送信 {s}
           </Text>
-          <Box flexDirection="row" gap={1}>
-            <Button
-              key="read"
-              label="既読"
-              hotkey="r"
-              onPress={() => update($, items, l => (l ?? []).map(i => ({ ...i, isRead: true })))}
-            />
-            <Button key="hide" label="隠す" hotkey="h" onPress={() => update($, isHidden, () => true)} />
-          </Box>
+          <Button key="hide" label="隠す" hotkey="h" onPress={() => update($, isHidden, () => true)} />
         </Box>
         {shown.map((i, n) => {
           const arrow = i.dir === 'in' ? '⇦' : '⇨'
@@ -92,7 +106,7 @@ export const register: Register = on => {
           return (
             <Box key={`${i.at}-${n}`} flexDirection="row">
               <Text dimColor>{hhmm(i.at)} </Text>
-              <Text color={i.dir === 'in' ? (i.isRead ? 'success' : 'warning') : 'claude'} bold={i.dir === 'in' && !i.isRead}>
+              <Text color={i.dir === 'in' ? 'success' : 'claude'}>
                 {arrow} {clip(i.who, 16)}{' '}
               </Text>
               <Text wrap="truncate-end" dimColor={i.dir === 'out'}>

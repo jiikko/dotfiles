@@ -3,11 +3,10 @@ export type InboxItem = {
   who: string
   text: string
   at: number
-  isRead: boolean
 }
 
 declare module 'claude-code' {
   interface PluginState {
-    'peer-inbox': { items: InboxItem[]; isHidden: boolean }
+    'peer-inbox': { items: InboxItem[]; isHidden: boolean; received: number; sent: number }
   }
 }
