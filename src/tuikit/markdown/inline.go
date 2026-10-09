@@ -19,71 +19,91 @@ import (
 // parseInline はインライン記法を解析してスパン列を返す。
 func parseInline(s string) []span {
 	s = expandTabs(s)
-	out := make([]span, 0, 8)
+	sc := newInlineScan(s)
+	sc.parse(0, len(s), styleText, nil)
+	return mergeSpans(sc.out)
+}
+
+// parse は sc.s[a:b] を読み、span を sc.out に足す。強調・リンクの中身は同じ表のまま区間を狭めて読み直す (中身は元の
+// 文字列の部分文字列なので、表を作り直すと入れ子の深さぶん段落の長さの 2 乗になる。issue 699 の反証レビュー)。
+// base は地の文字の style、ref は属するリンク (外側のリンクが中の全部を持つ)。どちらも外から渡して、読み終えた span を
+// 入れ子のたびに歩き直さない (歩き直すと深さ × span の数になる。2 周目の反証レビュー)。内側の強調の style は外側より勝つ。
+func (sc *inlineScan) parse(a, b int, base style, ref *linkRef) {
+	s := sc.s[:b] // 区間の外 (b 以降) を見ない。a より前は canOpenEm で区間の頭として扱う
 	var lit strings.Builder
+	emit := func(sp span) {
+		if ref != nil {
+			sp.link = ref
+		}
+		sc.out = append(sc.out, sp)
+	}
 	flush := func() {
 		if lit.Len() > 0 {
-			out = append(out, span{Text: lit.String(), Style: styleText})
+			emit(span{Text: lit.String(), Style: base})
 			lit.Reset()
 		}
 	}
-	for i := 0; i < len(s); {
+	for i := a; i < b; {
 		rest := s[i:]
 		switch {
-		case s[i] == '\\' && i+1 < len(s) && s[i+1] < 0x80 && isASCIIPunct(s[i+1]):
+		case s[i] == '\\' && i+1 < b && s[i+1] < 0x80 && isASCIIPunct(s[i+1]):
 			lit.WriteByte(s[i+1])
 			i += 2
 		case s[i] == '`':
 			if content, next, ok := matchCode(s, i); ok {
 				flush()
-				out = append(out, span{Text: content, Style: styleCodeSpan, link: &linkRef{kind: LinkCode, dest: content}})
+				emit(span{Text: content, Style: styleCodeSpan, link: &linkRef{kind: LinkCode, dest: content}})
 				i = next
 				continue
 			}
 			lit.WriteByte(s[i])
 			i++
 		case strings.HasPrefix(rest, "!["):
-			if label, dest, next, ok := matchLink(s, i+1); ok {
+			if l, ok := sc.matchLink(i+1, b); ok {
 				flush()
-				out = append(out, span{Text: "[画像] " + linkText(label, dest), Style: styleDim})
-				i = next
+				emit(span{Text: "[画像] " + linkText(l.label(s), l.dest(s)), Style: styleDim})
+				i = l.next
 				continue
 			}
 			lit.WriteByte(s[i])
 			i++
 		case s[i] == '[':
-			if label, dest, next, ok := matchLink(s, i); ok {
+			if l, ok := sc.matchLink(i, b); ok {
 				flush()
-				out = append(out, withLink(restyleText(parseInline(linkText(label, dest)), styleLink),
-					&linkRef{kind: LinkDest, dest: dest})...)
-				i = next
+				ta, tb := l.textRange(s)
+				inner := ref // 外側のリンクの中なら、外側のリンクが開く先 (ラベルの文字列ではなく外側の dest)
+				if inner == nil {
+					inner = &linkRef{kind: LinkDest, dest: l.dest(s)}
+				}
+				sc.parse(ta, tb, styleLink, inner)
+				i = l.next
 				continue
 			}
 			lit.WriteByte(s[i])
 			i++
 		case strings.HasPrefix(rest, "**"):
-			if content, next, ok := matchDelim(s, i, "**"); ok {
+			if start, end, ok := sc.matchDelim(i, b, "**"); ok {
 				flush()
-				out = append(out, restyleText(parseInline(content), styleStrong)...)
-				i = next
+				sc.parse(start, end, styleStrong, ref)
+				i = end + 2
 				continue
 			}
 			lit.WriteString("**")
 			i += 2
 		case strings.HasPrefix(rest, "~~"):
-			if content, next, ok := matchDelim(s, i, "~~"); ok {
+			if start, end, ok := sc.matchDelim(i, b, "~~"); ok {
 				flush()
-				out = append(out, restyleText(parseInline(content), styleStrike)...)
-				i = next
+				sc.parse(start, end, styleStrike, ref)
+				i = end + 2
 				continue
 			}
 			lit.WriteString("~~")
 			i += 2
-		case s[i] == '*' && canOpenEm(s, i):
-			if content, next, ok := matchDelim(s, i, "*"); ok {
+		case s[i] == '*' && canOpenEm(s[a:], i-a):
+			if start, end, ok := sc.matchDelim(i, b, "*"); ok {
 				flush()
-				out = append(out, restyleText(parseInline(content), styleEm)...)
-				i = next
+				sc.parse(start, end, styleEm, ref)
+				i = end + 1
 				continue
 			}
 			lit.WriteByte(s[i])
@@ -91,7 +111,7 @@ func parseInline(s string) []span {
 		case strings.HasPrefix(rest, "http://"), strings.HasPrefix(rest, "https://"):
 			url, next := matchURL(s, i)
 			flush()
-			out = append(out, span{Text: url, Style: styleLink})
+			emit(span{Text: url, Style: styleLink})
 			i = next
 		default:
 			r, size := utf8.DecodeRuneInString(rest)
@@ -100,17 +120,6 @@ func parseInline(s string) []span {
 		}
 	}
 	flush()
-	return mergeSpans(out)
-}
-
-// withLink は spans 全部を 1 つのリンク ref に属させる。ラベル内のコードスパン
-// (`[`foo.md`](../foo.md)`) が持っていた自前の ref は外側のリンクで上書きする — 開く先は dest で、
-// ラベルの文字列ではない。
-func withLink(spans []span, ref *linkRef) []span {
-	for i := range spans {
-		spans[i].link = ref
-	}
-	return spans
 }
 
 // isASCIIPunct はバックスラッシュエスケープの対象 (ASCII 記号) か。
@@ -159,50 +168,102 @@ func matchCode(s string, i int) (content string, next int, ok bool) {
 	return "", 0, false
 }
 
-// matchLink は [label](dest) を読む。label / dest の括弧の入れ子は深さで数える。
-func matchLink(s string, i int) (label, dest string, next int, ok bool) {
-	if i >= len(s) || s[i] != '[' {
-		return "", "", 0, false
-	}
-	depth, labelEnd := 0, -1
-	for j := i; j < len(s); j++ {
-		switch s[j] {
+// inlineScan は 1 段落の括弧の対応と強調の閉じの位置を前もって 1 回の走査で求めておく。開きのたびに段落の末尾まで探すと、
+// 閉じない `*` `~~` `[` が多い段落で長さの 2 乗になる (12 万字で 7〜9 秒。issue 699 の 2)。
+type inlineScan struct {
+	s      string
+	pair   []int                 // pair[i] = s[i] が '[' / '(' のとき対応する ']' / ')' の位置 (無ければ -1)
+	closer map[string]delimTable // 区切りごとの表 (closers が作る)
+	out    []span                // parse が読んだ span (まとめる前)
+}
+
+func newInlineScan(s string) *inlineScan {
+	sc := &inlineScan{s: s, pair: make([]int, len(s)), closer: map[string]delimTable{}}
+	var sq, rd []int
+	for i := range len(s) {
+		sc.pair[i] = -1
+		switch s[i] {
 		case '[':
-			depth++
-		case ']':
-			depth--
-			if depth == 0 {
-				labelEnd = j
-			}
-		default:
-		}
-		if labelEnd >= 0 {
-			break
-		}
-	}
-	if labelEnd < 0 || labelEnd+1 >= len(s) || s[labelEnd+1] != '(' {
-		return "", "", 0, false
-	}
-	depth, end := 0, -1
-	for j := labelEnd + 1; j < len(s); j++ {
-		switch s[j] {
+			sq = append(sq, i)
 		case '(':
-			depth++
-		case ')':
-			depth--
-			if depth == 0 {
-				end = j
+			rd = append(rd, i)
+		case ']':
+			if n := len(sq); n > 0 {
+				sc.pair[sq[n-1]], sq = i, sq[:n-1]
 			}
-		default:
-		}
-		if end >= 0 {
-			break
+		case ')':
+			if n := len(rd); n > 0 {
+				sc.pair[rd[n-1]], rd = i, rd[:n-1]
+			}
 		}
 	}
-	if end < 0 {
-		return "", "", 0, false
+	return sc
+}
+
+// closers は delim の閉じの表 (初めて使うときに作る)。c[p] = p から旧来の走査 (次の出現を探し、直前が空白なら区切りの
+// 長さだけ飛ばして続ける) で最初に見つかる閉じの位置 (無ければ -1)。飛ばし方まで同じにして、連続する区切り (`****`) の
+// 読み方を変えない。
+// delimTable は 1 つの区切りの表。occ[p] = p 以降で最初の出現、close[p] = p から走査して見つかる閉じ。
+type delimTable struct{ occ, close []int }
+
+func (sc *inlineScan) closers(delim string) delimTable {
+	if t, ok := sc.closer[delim]; ok {
+		return t
 	}
-	return s[i+1 : labelEnd], s[labelEnd+2 : end], end + 1, true
+	n, w := len(sc.s), len(delim)
+	occ := make([]int, n+w+1)
+	c := make([]int, n+w+1)
+	for p := n + w; p >= 0; p-- {
+		occ[p], c[p] = -1, -1
+		if p < n {
+			occ[p] = occ[p+1]
+			if strings.HasPrefix(sc.s[p:], delim) {
+				occ[p] = p
+			}
+		}
+		if j := occ[p]; j >= 0 {
+			if j > 0 && sc.s[j-1] != ' ' {
+				c[p] = j
+			} else {
+				c[p] = c[j+w]
+			}
+		}
+	}
+	t := delimTable{occ: occ, close: c}
+	sc.closer[delim] = t
+	return t
+}
+
+// link は matchLink が読んだ [label](dest) の位置 (sc.s の中の添字)。
+type link struct{ la, lb, da, db, next int }
+
+func (l link) label(s string) string { return s[l.la:l.lb] }
+func (l link) dest(s string) string  { return s[l.da:l.db] }
+
+// textRange は表示する文字列 (linkText と同じ選び方: label が空白だけなら dest) の区間。
+func (l link) textRange(s string) (int, int) {
+	if strings.TrimSpace(l.label(s)) == "" {
+		return l.da, l.db
+	}
+	return l.la, l.lb
+}
+
+// matchLink は sc.s[:b] の i から [label](dest) を読む。label / dest の括弧の入れ子は深さで数える (対応は newInlineScan が求めた。
+// 対応の相手は後ろの文字だけで決まるので、区間の外 (b 以降) に出た相手は「無い」と読めば区間で数え直したのと同じ)。
+func (sc *inlineScan) matchLink(i, b int) (link, bool) {
+	s := sc.s
+	if i >= b || s[i] != '[' {
+		return link{}, false
+	}
+	labelEnd := sc.pair[i]
+	if labelEnd < 0 || labelEnd+1 >= b || s[labelEnd+1] != '(' {
+		return link{}, false
+	}
+	end := sc.pair[labelEnd+1]
+	if end < 0 || end >= b {
+		return link{}, false
+	}
+	return link{la: i + 1, lb: labelEnd, da: labelEnd + 2, db: end, next: end + 1}, true
 }
 
 // canOpenEm は `*` を斜体の開きとして扱ってよいか (直前が英数字なら中置の * = 文字扱い)。
@@ -214,26 +275,22 @@ func canOpenEm(s string, i int) bool {
 	return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 }
 
-// matchDelim は delim で囲まれた区間を読む。開き直後と閉じ直前が空白の場合は記法にしない
-// (箇条書きの "* " や掛け算の "a * b" を強調と誤読しないため)。
-func matchDelim(s string, i int, delim string) (content string, next int, ok bool) {
-	start := i + len(delim)
-	if start >= len(s) || s[start] == ' ' {
-		return "", 0, false
+// matchDelim は sc.s[:b] の i から delim で囲まれた区間 [start, end) を読む。開き直後と閉じ直前が空白の場合は記法にしない
+// (箇条書きの "* " や掛け算の "a * b" を強調と誤読しないため)。閉じが区間の外にはみ出すなら無い (closers の注)。
+func (sc *inlineScan) matchDelim(i, b int, delim string) (start, end int, ok bool) {
+	start = i + len(delim)
+	if start >= b || sc.s[start] == ' ' {
+		return 0, 0, false
 	}
-	for j := start; j < len(s); {
-		k := strings.Index(s[j:], delim)
-		if k < 0 {
-			return "", 0, false
-		}
-		j += k
-		if j == start || s[j-1] == ' ' {
-			j += len(delim)
-			continue
-		}
-		return s[start:j], j + len(delim), true
+	t := sc.closers(delim)
+	j := t.close[start]
+	if t.occ[start] == start { // 開きの直後の出現は閉じにしない (空の強調)
+		j = t.close[start+len(delim)]
 	}
-	return "", 0, false
+	if j < 0 || j+len(delim) > b {
+		return 0, 0, false
+	}
+	return start, j, true
 }
 
 // matchURL は生 URL を読む。末尾の句読点・閉じ括弧は URL に含めない (文末の URL が
@@ -258,15 +315,24 @@ func matchURL(s string, i int) (url string, next int) {
 // link が違えば割る (mergeCells と同じ理由)。
 func mergeSpans(spans []span) []span {
 	out := make([]span, 0, len(spans))
+	var text strings.Builder // 続く同じ style の span の文字を足していく (span ごとに += すると 2 乗)
 	for _, sp := range spans {
 		if sp.Text == "" {
 			continue
 		}
 		if n := len(out); n > 0 && out[n-1].Style == sp.Style && out[n-1].link == sp.link {
-			out[n-1].Text += sp.Text
+			text.WriteString(sp.Text)
 			continue
 		}
+		if n := len(out); n > 0 {
+			out[n-1].Text = text.String()
+		}
+		text.Reset()
+		text.WriteString(sp.Text)
 		out = append(out, sp)
+	}
+	if n := len(out); n > 0 {
+		out[n-1].Text = text.String()
 	}
 	return out
 }

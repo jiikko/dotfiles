@@ -206,7 +206,7 @@ func TestUnterminatedFenceStillRenders(t *testing.T) {
 
 func TestIndentedFenceInsideListIsCode(t *testing.T) {
 	// 🚨 回帰防止: 箇条書きの中のコードブロックは 4 桁以上インデントされる。フェンスを 0-3 桁に
-	// 縛ると、中身が項目の継続行として散文に連結され (reflowJoin) コードが壊れて出る。
+	// 縛ると、中身が項目の継続行として散文に連結され (reflower) コードが壊れて出る。
 	src := "1. 設定内容:\n" +
 		"     ```yaml\n" +
 		"     Token name: updater\n" +

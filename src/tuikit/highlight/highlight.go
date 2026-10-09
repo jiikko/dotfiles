@@ -140,8 +140,15 @@ func hlEscapeFor(t chroma.TokenType) string {
 // (terminal256) と同一: 装飾ありトークンは esc + 本文 + リセット、なしは素のまま。
 // 入力は 1 行 (改行を含まない) なので、chroma が補う改行はトークン末尾にしか現れない。
 // Format は改行の手前でリセットするため、末尾で改行を落としてから閉じれば等価になる。
+// maxLineBytes を超える 1 行は色を付けずに素通しする。chroma の lexer は言語によって行の長さの 2 乗で伸びる
+// (TypeScript の日本語 16,000 字で 5〜9 秒・80,000 字で 2 分。issue 699 の 1)。呼び出し側 (treefiler のタイル) は UI の
+// goroutine で呼ぶので、上限が無いと画面が固まる。上限ちょうどの 1 行の所要の実測 (M 系 Mac): makefile 57 ms (2 KiB で 166 ms・
+// 4 KiB で 650 ms。いちばん遅い)・TypeScript / Python 10 ms 前後・ほかは数 ms。人が書く行は 1 KiB を超えないので、超える行
+// (生成物・minify) は色を諦める。
+const maxLineBytes = 1024
+
 func codeLine(lex chroma.Lexer, code string) string {
-	if lex == nil || code == "" {
+	if lex == nil || code == "" || len(code) > maxLineBytes {
 		return code
 	}
 	it, err := lex.Tokenise(nil, code)

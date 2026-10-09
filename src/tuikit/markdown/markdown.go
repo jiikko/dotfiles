@@ -196,16 +196,16 @@ func parseTable(lines []string, i int) (block, int) {
 
 // parseQuote は連続する引用行を 1 段落へまとめる。
 func parseQuote(lines []string, i int) (block, int) {
-	text := ""
+	var text reflower
 	j := i
 	for ; j < len(lines); j++ {
 		s := strings.TrimSpace(lines[j])
 		if !strings.HasPrefix(s, ">") {
 			break
 		}
-		text = reflowJoin(text, strings.TrimPrefix(strings.TrimPrefix(s, ">"), " "))
+		text.add(strings.TrimPrefix(strings.TrimPrefix(s, ">"), " "))
 	}
-	return block{kind: blkQuote, text: text}, j
+	return block{kind: blkQuote, text: text.String()}, j
 }
 
 // parseListItem は箇条書き 1 項目を読む。以降の行のうち「新しい項目でも他ブロックでもない
@@ -224,15 +224,17 @@ func parseListItem(lines []string, i int) (block, int) {
 	default:
 		b.marker = marker // 番号付きは原文の番号をそのまま出す
 	}
-	b.text = content
+	var text reflower
+	text.add(content)
 	j := i + 1
 	for ; j < len(lines); j++ {
 		ln := lines[j]
 		if startsNewBlock(ln) {
 			break
 		}
-		b.text = reflowJoin(b.text, strings.TrimSpace(ln))
+		text.add(strings.TrimSpace(ln))
 	}
+	b.text = text.String()
 	return b, j
 }
 
@@ -261,19 +263,19 @@ func bulletFor(level int) string {
 
 // parseParagraph は連続する通常行を 1 段落へ連結する。
 func parseParagraph(lines []string, i int) (block, int) {
-	text := ""
+	var text reflower
 	j := i
 	for ; j < len(lines); j++ {
 		ln := lines[j]
 		if startsNewBlock(ln) {
 			break
 		}
-		text = reflowJoin(text, strings.TrimSpace(ln))
+		text.add(strings.TrimSpace(ln))
 	}
-	return block{kind: blkParagraph, text: text}, j
+	return block{kind: blkParagraph, text: text.String()}, j
 }
 
-// reflowJoin は「ソース側で折り返された段落」を 1 本に戻す。
+// reflowSep / reflower は「ソース側で折り返された段落」を 1 本に戻す。
 //
 // この repo の issue 本文は 100 桁前後で手折り返しされているので、popup 幅で折り返す前に
 // 段落を 1 本に戻す。連結時の空白の入れ方は「両側が日本語のときだけ空白を入れない」:
@@ -283,23 +285,35 @@ func parseParagraph(lines []string, i int) (block, int) {
 //   - それ以外 (英字どうし / 日本語とラテン語の境界) → 空白を 1 つ。この repo の文章は
 //     "popup は pane ではなく" のようにラテン語の前後へ空白を置く書き方なので、境界で
 //     詰めると "popup はpane" になって元の文と食い違う
-func reflowJoin(prev, next string) string {
-	if prev == "" {
-		return next
-	}
-	if next == "" {
-		return prev
-	}
+//
+// reflowSep は prev と next (どちらも空でない) の間に入れる区切り ("" か " ")。
+func reflowSep(prev, next string) string {
 	last, _ := utf8.DecodeLastRuneInString(prev)
 	first, _ := utf8.DecodeRuneInString(next)
 	if isJapanesePunct(last) || isJapanesePunct(first) {
-		return prev + next // "。tmux" のように和文の句読点・括弧には空白を付けない
+		return "" // "。tmux" のように和文の句読点・括弧には空白を付けない
 	}
 	if isJapanese(last) && isJapanese(first) {
-		return prev + next
+		return ""
 	}
-	return prev + " " + next
+	return " "
 }
+
+// reflower は段落の行を reflowSep の規則でつなぐ。行ごとに prev + next を作り直すと段落の長さの 2 乗になる
+// (1 段落 20 万行で 4.2 秒。issue 699 の 2) ので、Builder に足していく。
+type reflower struct{ b strings.Builder }
+
+func (r *reflower) add(next string) {
+	if next == "" {
+		return
+	}
+	if r.b.Len() > 0 {
+		r.b.WriteString(reflowSep(r.b.String(), next)) // Builder.String は複写しない
+	}
+	r.b.WriteString(next)
+}
+
+func (r *reflower) String() string { return r.b.String() }
 
 // isJapanese は「連結時に空白を挟まない字」か (仮名・漢字・和文の記号と全角形)。
 //
