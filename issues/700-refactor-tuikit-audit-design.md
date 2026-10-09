@@ -18,12 +18,12 @@
    入れ、schedkeys を lineedit へ移す (glogx・pro-con が Cf・VS を通したい場面があるかは未確認)
 3. **j/k/g/G の語彙を `listnav.MotionOf` を通さずに書き直した画面が 3 つ** (P2・duplication) — `pro-con/ui/legend.go`・`treefiler/filer/settings.go` の
    panelKey・`glogx/issues_linkjump.go` の linkJumpKey。pro-con の凡例は ctrl+n / ctrl+p / home / end / pgup / pgdown / ctrl+d / ctrl+u が効かない
-   (母集合: `listnav.` を使うファイル 18)。直し方: MotionOf の結果で分岐する (循環する選択の 2 つは Top / Bottom の扱いを決める)
+   (母集合: `listnav.` を使う非テストのファイル 18、うち MotionOf を使うもの 17)。linkJumpKey は ctrl+n / ctrl+p / tab を既に扱っていて、全くの重複ではない。直し方: MotionOf の結果で分岐する (循環する選択の 2 つは Top / Bottom の扱いを決める)
 4. **toast の退場の tick を使う側が守る** (P3・E2 / L5) — `toast.Stack.Advance` が返す `[]Timer` を使う側が tick にして `StartLeaving` へ戻す約束。捨てると
    通知が永久に残る (実測)。変換は glogx・pro-con・treefiler に 3 実装。直し方: tea を import しない helper を 1 つ置く / Holding が長すぎたら自分で退場する
 5. **使う側の別実装** (P3・duplication) — `toast.easedShown` が `anim.EaseOutCubic` を直書き・treefiler の `stripSGR` と `wrapCells` (`termwidth.Wrap(s, w, false)` と
    ほぼ同じ)・schedkeys の `stripSGR`・pro-con の `sgrReset` などの別名 (glogx は `sgr` に寄せ済み)・treefiler と schedkeys の `\x1b[0m` の直書き。1 を直してから寄せる
-6. **影なしの角丸の枠が tuikit に無い** (P3・ui-components) — pro-con の `boxTop` / `boxLine` / `boxBottom` (72 箇所)。`layout.Panel` は影付き固定。`layout` に影なしの
+6. **影なしの角丸の枠が tuikit に無い** (P3・ui-components) — pro-con の `boxTop` / `boxLine` / `boxBottom` (呼び出し 75 箇所)。`layout.Panel` は影付き固定。`layout` に影なしの
    `Box` を足す。treefiler (セルの canvas) と schedkeys (frame 型) は層が違い寄せられない
 
 ## 関連
