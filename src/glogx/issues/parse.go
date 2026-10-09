@@ -2,8 +2,10 @@ package issues
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -265,7 +267,21 @@ func Scan(dirs []string) (issues []*Issue, warnings []string) {
 		warnings = append(warnings, warns...)
 	}
 	sortIssues(issues)
-	return issues, append(warnings, conflicts(issues)...)
+	// 重い順: 同名の二重化 (静かな内容の喪失に気づく唯一の手段。spec) を先に置く。viewer のヘッダーは先頭の 1 本と件数を出す
+	return issues, append(conflicts(issues), warnings...)
+}
+
+// readDirWarn は dir の中身を読む。読めなかったとき (無い場合を除く) は warnings に積む: 黙って空にすると
+// 「そのフォルダの issue が全部消えた」と「空」が見分けられず、前回の一覧を置き換える (issue 698 の 2)。
+func readDirWarn(dir string, warnings *[]string) ([]os.DirEntry, bool) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			*warnings = append(*warnings, "読めないフォルダがあります (中の issue を出していません): "+termsafe.PlainLine(dir))
+		}
+		return nil, false
+	}
+	return entries, true
 }
 
 // scanDir は 1 つの issue ディレクトリを走査する (直下 + サブディレクトリ 1 段 +
@@ -273,9 +289,10 @@ func Scan(dirs []string) (issues []*Issue, warnings []string) {
 // 「直下 + 状態ディレクトリ 1 段」しか使っておらず、2 段は epic だけだから。
 func scanDir(dir string) ([]*Issue, []string) {
 	out := make([]*Issue, 0, 32)
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return out, nil
+	var readWarns []string
+	entries, ok := readDirWarn(dir, &readWarns)
+	if !ok {
+		return out, readWarns
 	}
 	// 目印 symlink (next/<base> -> ../<base>) を先に読み、直下の同名 issue へ Status=Next を付ける
 	marked, warnings := nextLinks(dir)
@@ -290,8 +307,8 @@ func scanDir(dir string) ([]*Issue, []string) {
 				warnings = append(warnings, warns...)
 				continue
 			}
-			subEntries, err := os.ReadDir(filepath.Join(dir, e.Name()))
-			if err != nil {
+			subEntries, ok := readDirWarn(filepath.Join(dir, e.Name()), &warnings)
+			if !ok {
 				continue
 			}
 			status, known := StatusOfDir(e.Name())
@@ -329,9 +346,9 @@ func scanDir(dir string) ([]*Issue, []string) {
 func scanEpicDir(dir, epic string) ([]*Issue, []string) {
 	out := make([]*Issue, 0, 8)
 	var warnings []string
-	entries, err := os.ReadDir(filepath.Join(dir, epic))
-	if err != nil {
-		return out, nil
+	entries, ok := readDirWarn(filepath.Join(dir, epic), &warnings)
+	if !ok {
+		return out, warnings
 	}
 	for _, e := range entries {
 		if !e.IsDir() {
@@ -345,8 +362,8 @@ func scanEpicDir(dir, epic string) ([]*Issue, []string) {
 		// GroupKey は group の絶対パスそのもの。Scan を通った GroupEpic の Issue は必ずこれを持つ
 		// (viewer の親行の同一性・展開状態の保存・move の宛先がここに依存する)。
 		groupKey := filepath.Join(dir, epic, e.Name())
-		files, err := os.ReadDir(groupKey)
-		if err != nil {
+		files, ok := readDirWarn(groupKey, &warnings)
+		if !ok {
 			continue
 		}
 		marked, warns := nextLinks(groupKey)
@@ -370,8 +387,8 @@ func scanEpicDir(dir, epic string) ([]*Issue, []string) {
 			// issue が viewer から消えて誰も気づけない。global の statusDirs は closed 等の
 			// 綴りを受けるので、group 内でも同じ綴りを使う人が必ず出る (issue 291)
 			status, known := EpicChildStatus(f.Name())
-			childFiles, err := os.ReadDir(filepath.Join(groupKey, f.Name()))
-			if err != nil {
+			childFiles, ok := readDirWarn(filepath.Join(groupKey, f.Name()), &warnings)
+			if !ok {
 				continue
 			}
 			for _, child := range childFiles {
@@ -662,6 +679,9 @@ func (iss *Issue) ReadBody() (*Body, error) {
 	return body, nil
 }
 
+// maxNumberDigits を超える桁の先頭の数字は採番の番号と見なさない (実測では 3 桁。6 桁あれば 100 万件まで足りる)。
+const maxNumberDigits = 6
+
 // NextNumber は次に採番すべき番号 (最大番号 + 1) をゼロ埋めで返す。
 //
 // なぜ viewer がこれを持つか: issues/README.md の採番コマンドは対象ディレクトリを固定列挙
@@ -675,8 +695,8 @@ func NextNumber(list []*Issue) string {
 	maxNum, width := 0, 3
 	for _, iss := range list {
 		n, ok := Number(iss)
-		if !ok {
-			continue
+		if !ok || len(iss.Number) > maxNumberDigits {
+			continue // 日付 (20260101-notes.md) を番号と読むと次が 20260102 になる・桁あふれ (issue 698 の 7)
 		}
 		maxNum = max(maxNum, n)
 		width = max(width, len(iss.Number))

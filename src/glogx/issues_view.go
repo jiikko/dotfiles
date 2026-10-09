@@ -2142,7 +2142,11 @@ func (v *issuesView) listHeadLines(width int, colored bool) []string {
 		head = append(head, v.tabLine(issuesRenderOpts{width: width, colored: colored}))
 	}
 	if len(v.warnings) > 0 {
-		head = append(head, paint(clipToWidth("🚨 "+v.warnings[0], width), ansiYellow, colored))
+		w := "🚨 " + v.warnings[0] // 先頭がいちばん重い (issues.Scan が並べる)
+		if n := len(v.warnings) - 1; n > 0 {
+			w = "🚨 (ほか " + strconv.Itoa(n) + " 件) " + v.warnings[0] // 件数を先に置く (幅で切られても残る)
+		}
+		head = append(head, paint(clipToWidth(w, width), ansiYellow, colored))
 	}
 	return append(head, "")
 }

@@ -240,5 +240,6 @@ func isMarkdown(name string) bool {
 // ブランチを checkout した人の画面にリンク先の中身が出る (実機で再現確認済み)。
 // symlink 先を追う正当な用途は今のところ無いので、静かに無視する。
 func isIssueFile(e os.DirEntry) bool {
-	return !e.IsDir() && e.Type()&os.ModeSymlink == 0 && isMarkdown(e.Name())
+	// 通常のファイルだけ (symlink・FIFO・デバイスは読まない。FIFO の .md を読むと LoadMeta が戻らず一覧が loading のまま。issue 698 の 4)
+	return e.Type().IsRegular() && isMarkdown(e.Name())
 }

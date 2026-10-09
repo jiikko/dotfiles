@@ -66,20 +66,39 @@ func ClaimBanner(now time.Time) string {
 // addBanner は本文冒頭にバナーを差し込んだ内容を返す。既にあれば変更なし (changed=false)。
 // 形は常に「H1・空行・バナー・空行・本文」(H1 が無ければ「バナー・空行・本文」)。H1 と本文の間の
 // 空行は 1 つにまとめる。removeBanner と対で、標準形 (H1 の後に空行 1 つ) は往復で元に戻る。
+// front matter (`---` で始まり `---` で閉じる) があれば、その後ろ (と続く H1 の後ろ) に入れる: 前に入れると LoadMeta が
+// front matter と見なくなる。CRLF の本文には CRLF の行を足す (issue 698 の 5・6)。
 func addBanner(src, banner string) (string, bool) {
 	lines := strings.Split(src, "\n")
 	if bannerIndex(lines) >= 0 {
 		return src, false
 	}
+	eol := ""
+	if strings.Contains(src, "\r\n") {
+		eol = "\r"
+	}
+	blank := func(l string) bool { return strings.TrimSpace(l) == "" }
 	var head []string
 	rest := lines
-	if len(lines) > 0 && strings.HasPrefix(lines[0], "# ") {
-		head, rest = []string{lines[0], ""}, lines[1:]
+	if len(rest) > 0 && strings.TrimSuffix(rest[0], "\r") == "---" {
+		for j := 1; j < len(rest); j++ {
+			if strings.TrimSuffix(rest[j], "\r") == "---" {
+				head, rest = append([]string{}, rest[:j+1]...), rest[j+1:]
+				for len(rest) > 0 && blank(rest[0]) {
+					rest = rest[1:]
+				}
+				head = append(head, eol)
+				break
+			}
+		}
 	}
-	for len(rest) > 0 && strings.TrimSpace(rest[0]) == "" {
+	if len(rest) > 0 && strings.HasPrefix(rest[0], "# ") {
+		head, rest = append(head, rest[0], eol), rest[1:]
+	}
+	for len(rest) > 0 && blank(rest[0]) {
 		rest = rest[1:]
 	}
-	out := append(append(head, banner, ""), rest...)
+	out := append(append(head, banner+eol, eol), rest...)
 	return strings.Join(out, "\n"), true
 }
 

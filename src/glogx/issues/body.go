@@ -226,7 +226,9 @@ func (b *Body) Len() int { return len(b.lines) }
 // C1 を落とすのは hasTerminalControl (同パッケージ) が C1 を制御文字と定義しているのと揃えるため。
 // U+009B (CSI) / U+009D (OSC) は端末によっては ESC[ / ESC] と同義に解釈されるので、負クラスから
 // 漏れると URL ピッカーの行 (url_picker.go) まで到達する。
-var urlRe = regexp.MustCompile(`https?://[^\s)\]>"'` + "`" + `\x00-\x1f\x7f\x{80}-\x{9f}]+`)
+// 文字の向きを変える制御文字 (U+202A-202E / U+2066-2069) と行・段落の区切り (U+2028 / 2029) でも切る: URL に混ざると
+// 一覧の見た目が並べ替わり、開く先 (実際の URL) と食い違う (issue 698 の 3。termsafe の isBidiControl と同じ範囲)。
+var urlRe = regexp.MustCompile(`https?://[^\s)\]>"'` + "`" + `\x00-\x1f\x7f\x{80}-\x{9f}\x{202a}-\x{202e}\x{2066}-\x{2069}\x{2028}\x{2029}]+`)
 
 // URLs は本文に現れる http(s) URL を出現順で返す (重複は最初の 1 つだけ)。
 //

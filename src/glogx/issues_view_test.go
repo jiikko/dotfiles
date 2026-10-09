@@ -1180,6 +1180,15 @@ func TestIssuesViewShowsScanWarning(t *testing.T) {
 	if !strings.Contains(strings.Join(v.lines(renderOpts(10)), "\n"), "同じファイル名") {
 		t.Fatal("スキャンの警告が表示されない")
 	}
+	// 警告が複数あるときは件数も出す (2 本目以降が出ていることを知らせる。issue 698 の 1)
+	v.receive(issuesScanMsg{
+		dirs:     []string{"/repo/issues"},
+		issues:   sampleIssues(),
+		warnings: []string{"同じファイル名が複数の状態ディレクトリにあります: 028-x.md / done/028-x.md", "next/x.md: 指す先が無い", "読めないフォルダ"},
+	})
+	if got := strings.Join(v.lines(renderOpts(10)), "\n"); !strings.Contains(got, "ほか 2 件") {
+		t.Fatalf("警告の件数が出ない:\n%s", got)
+	}
 }
 
 func TestIssuesViewNoticeIsTransientAndDoesNotHideWarning(t *testing.T) {
