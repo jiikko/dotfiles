@@ -705,6 +705,9 @@ func (m *Model) HandleInput(k, text string) Result {
 	}
 	if m.frontTile() != nil {
 		m.tileKey(k)
+		if m.exec != nil {
+			return Exec
+		}
 		return None
 	}
 	return m.treeKey(k)
@@ -775,7 +778,15 @@ func init() {
 	bind(do((*Model).startSearch), "/")
 	bind(do(func(m *Model) { m.repeatSearch(1) }), "n")
 	bind(do(func(m *Model) { m.repeatSearch(-1) }), "N")
-	bind(do((*Model).explode), "e")
+	// e はフォルダなら explode (spec §5.4)、ファイルならエディタ (spec §0.1。treebeard ではファイルの親を explode する)
+	bind(func(m *Model) Result {
+		if m.cur.dir {
+			m.explode()
+			return None
+		}
+		m.requestEdit(m.cur.path())
+		return Exec
+	}, "e")
 	bind(do(func(m *Model) { m.help = true }), "?")
 	bind(do((*Model).startPrompt), "!")
 	bind(func(m *Model) Result { m.requestShell(); return Exec }, "s")
@@ -1197,7 +1208,7 @@ func (m *Model) statusBar(c *canvas) {
 	hints := []seg{{"!", cAccRoute, true}, {" cmd  ", cMuted, false}, {"s", cAccRoute, true}, {" shell  ", cMuted, false},
 		{"/", cAccRoute, true}, {" find  ", cMuted, false}, {"?", cAccRoute, true}, {" keys  ", cMuted, false}, {"q", cAccRoute, true}, {" quit ", cMuted, false}}
 	if m.frontTile() != nil {
-		hints = []seg{{"tab", cAccRoute, true}, {" link  ", cMuted, false}, {"q", cAccRoute, true}, {" close ", cMuted, false}}
+		hints = []seg{{"tab", cAccRoute, true}, {" link  ", cMuted, false}, {"e", cAccRoute, true}, {" edit  ", cMuted, false}, {"q", cAccRoute, true}, {" close ", cMuted, false}}
 	}
 	segW := func(ss []seg) int {
 		w := 0
@@ -1288,14 +1299,14 @@ var helpKeys = [][2]string{
 	{"h ← ^B", "親へ"},
 	{"space tab", "フォルダの開閉"},
 	{"c C", "このフォルダを畳む · 経路以外を畳む"},
-	{"e", "配下を全部開く (esc で中断)"},
+	{"e", "フォルダ: 配下を全部開く (esc で中断) · ファイル: エディタで開く"},
 	{"/ n N", "列の中を検索 · 次 · 前"},
 	{"- backspace", "root を 1 段上へ"},
 	{".", "dotfile の表示を切り替え"},
 	{",", "設定"},
 	{"o", "外のアプリで開く (open)"},
 	{"r", "読み直す"},
-	{"タイルの中", "j k ^D ^U space g G · tab でパスを選ぶ · J K で隣 · d で diff · o で外のアプリ"},
+	{"タイルの中", "j k ^D ^U space g G · tab でパスを選ぶ (e で選んだ先を編集) · J K で隣 · d で diff · e でエディタ · o で外のアプリ"},
 	{"q esc", "終了 (タイルの上では 1 枚閉じる)"},
 	{"!", "ここでコマンドを 1 行 ($f = 選んだパス)"},
 	{"s", "ここでシェルを開く (抜けると戻る)"},

@@ -46,7 +46,7 @@ type tile struct {
 
 // slotRect は i 番目の置き場所 (spec §0.2)。1 枚目は中央、2〜4 枚目は中央から右下へ同じ幅ずつずらす。
 func slotRect(i, w, h int) rect {
-	tw, th := w*60/100, h*70/100
+	tw, th := w*80/100, h*85/100
 	cx, cy := (w-tw)/2, (h-th)/2
 	dx := (w - tw - 2 - cx) / 3
 	dy := (h - th - 1 - cy) / 3
@@ -249,6 +249,9 @@ func (m *Model) tileKey(k string) {
 	case "o":
 		m.opener.start(t.n.path(), t.n.name)
 		return
+	case "e":
+		m.requestEdit(t.n.path())
+		return
 	case "d":
 		m.toggleDiff(t)
 		return
@@ -305,6 +308,10 @@ func (m *Model) jumpKey(t *tile, k string, rows int) bool {
 		r := slotRect(t.slot, m.w, m.canvasH())
 		from := rect{r.x + 2 + l.col, r.y + 1 + l.line - t.scroll, widthOf(l.text), 1}
 		m.openTile(m.nodeFor(l.path), from)
+		return true
+	case k == "e": // 選んだパスをエディタで (issues viewer のジャンプモードの e と同じ)
+		t.jump = false
+		m.requestEdit(ls[t.sel].path)
 		return true
 	case k == "esc" || k == "q" || k == "h" || k == "left":
 		t.jump = false

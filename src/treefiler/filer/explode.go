@@ -88,13 +88,7 @@ func (m *Model) explode() {
 	if m.exploding != nil {
 		return
 	}
-	target := m.cur
-	if !target.dir {
-		target = target.parent
-	}
-	if target == nil {
-		return
-	}
+	target := m.cur // フォルダの上でだけ呼ばれる (ファイルの e はエディタ。model.go の treeKeys)
 	showHidden, intoIgnored := m.set.ShowHidden, m.set.ExplodeIgnore
 	snap := m.gitSnap
 	m.exploding = startExplode(target.path(), func(path, name string) bool {

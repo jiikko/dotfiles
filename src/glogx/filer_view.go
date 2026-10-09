@@ -20,10 +20,10 @@ const (
 	filerClosed                     // F で閉じた (git log 一覧へ戻る)
 	filerCross                      // 別の全画面へ横断 (閉じ済み。行き先は takeWantCross)
 	filerQuit                       // q / Esc = glogx ごと終える (issues viewer と同じ。spec §0.1)
-	filerExec                       // ! / s = プロセスを起こす (中身は f.TakeExec)
+	filerExec                       // ! / s / e = プロセスを起こす (中身は f.TakeExec)
 )
 
-// execPending は ! / s で起こしたプロセスから戻るのを待っているか (戻ったときにエディタ向けの文言を出さないため)。
+// execPending は ! / s / e で起こしたプロセスから戻るのを待っているか (戻ったときにエディタ向けの文言を出さないため)。
 
 // filerChangedMsg は treefiler のライブ更新の合図。ch はどのチャネルからか (ok=false はそのチャネルが閉じた)。
 type filerChangedMsg struct {

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jiikko/dotfiles/src/tuikit/editor"
 	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
 )
 
@@ -55,7 +56,7 @@ func (m *Model) workDir() string {
 func (m *Model) execEnv() []string { return append(os.Environ(), "f="+m.cur.path()) }
 
 // ExecDone は Exec で頼んだプロセスから戻った合図。シェルで作った・消したファイルを出し、起動できなかったとき
-// (作業フォルダが消えた・$SHELL が実行できない) だけ知らせの文言を返す。終了コードは失敗と言わない
+// (作業フォルダが消えた・$SHELL やエディタが実行できない) だけ知らせの文言を返す。終了コードは失敗と言わない
 // (シェルは最後のコマンドの終了コードで抜けるのが普通。glogx の editorClosedMsg と同じ判断)。
 func (m *Model) ExecDone(err error) (warning string) {
 	m.Refresh()
@@ -63,7 +64,14 @@ func (m *Model) ExecDone(err error) (warning string) {
 	if err == nil || errors.As(err, &exitErr) {
 		return ""
 	}
-	return "シェルを起動できませんでした: " + termsafeLine(err.Error())
+	return "起動できませんでした: " + termsafeLine(err.Error())
+}
+
+// requestEdit は path をエディタで開く (木の `e` がファイルの上のとき・タイルの `e`)。エディタの選び方は tuikit/editor
+// ($VISUAL → $EDITOR → nvim)。起こすフォルダはファイルの親 (エディタの中の相対パスと :e がそこを起点にする)。
+// $f は開くファイル (タイル・ジャンプの e ではカーソルと違う)。
+func (m *Model) requestEdit(path string) {
+	m.exec = &ExecRequest{Dir: filepath.Dir(path), Argv: editor.Argv(path, nil), Env: append(os.Environ(), "f="+path)}
 }
 
 // requestShell は `s` (そのフォルダで対話のシェル)。

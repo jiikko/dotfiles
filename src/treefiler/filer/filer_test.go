@@ -244,8 +244,8 @@ func TestTileSlotsRotateAndCloseKeys(t *testing.T) {
 			t.Fatalf("%s でタイルが 1 枚閉じない (%d → %d)", k, before, len(m.tiles))
 		}
 	}
-	if r := slotRect(0, 200, 55); r.x != 40 || r.y != 8 {
-		t.Fatalf("1 枚目が中央でない: %+v (spec §0.2 の 200×55 で (40, 8))", r)
+	if r := slotRect(0, 200, 55); r != (rect{20, 4, 160, 46}) {
+		t.Fatalf("1 枚目が中央でない: %+v (spec §0.2 の 200×55 で (20, 4) に 160×46)", r)
 	}
 }
 
@@ -416,8 +416,8 @@ func TestLongLineIsSplitAndContentSanitized(t *testing.T) {
 }
 
 func TestFourthSlotPosition(t *testing.T) {
-	if r := slotRect(3, 200, 55); r.x != 76 || r.y != 14 {
-		t.Fatalf("4 枚目の置き場所 = %+v (spec §0.2 の 200×55 で (76, 14))", r)
+	if r := slotRect(3, 200, 55); r.x != 38 || r.y != 7 {
+		t.Fatalf("4 枚目の置き場所 = %+v (spec §0.2 の 200×55 で (38, 7))", r)
 	}
 }
 

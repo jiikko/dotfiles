@@ -427,7 +427,7 @@ func readonlyCommand(path string, line int) *exec.Cmd {
 	return exec.Command("nvim", args...) // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し
 }
 
-// filerExecCommand は treefiler の ! / s が頼んだプロセス (選んだフォルダで、$f に選んだパスを入れて起こす)。
+// filerExecCommand は treefiler の ! / s / e が頼んだプロセス (選んだフォルダで、$f に選んだパスを入れて起こす)。
 // 返した Cmd は runEditorCmd (tea.ExecProcess) が前景で起動する。免除の理由は editorCommand と同じ
 // (前景の対話プロセスで ctx が無く、端末を継承するのでパイプも copy goroutine も作らない)。
 func filerExecCommand(r filer.ExecRequest) *exec.Cmd {

@@ -1357,8 +1357,8 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.maybeTick()
 	case editorClosedMsg:
-		// treefiler の ! / s から戻ったとき: 読み直す (シェルで作った・消したファイルを出す)。エディタ向けの文言
-		// (「エディタが異常終了しました」) は出さない: シェルは最後のコマンドの終了コードで抜けるのが普通
+		// treefiler の ! / s / e から戻ったとき: 読み直す (シェルやエディタで作った・消したファイルを出す)。「エディタが異常終了しました」
+		// は出さない: シェルは最後のコマンドの終了コードで抜けるのが普通 (e のエディタも filer.ExecDone の判断に揃える)
 		if m.filerV.execPending {
 			m.filerV.execPending = false
 			if m.filerV.visible() && m.filerV.f != nil { // 前景で起こしている間は閉じられないので、ここで見えていないことは無い
