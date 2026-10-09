@@ -1058,7 +1058,7 @@ func (m *Model) drawNames(c *canvas, pos map[*node]place, ox, oy, ch int) {
 			}
 			bx := x + a.w + 1
 			switch {
-			case n.dir && (!n.expanded || len(m.kids(n)) == 0):
+			case n.dir && (!n.expanded || !m.hasKids(n)):
 				// 右へ線が出ていないフォルダ (閉じている・空・中身が全部隠れている) には常に芽を付ける (ファイルと見分けるため。
 				// ユーザー回答 2026-10-09。treebeard は中身のある閉じたフォルダだけ)。開いて線が出ていれば、その線が印になる。
 				// 芽は、配下にいちばん重い git の変更があればその色 (spec §2.2)

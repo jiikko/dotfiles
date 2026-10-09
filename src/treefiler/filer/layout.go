@@ -10,6 +10,16 @@ type place struct {
 }
 
 // kids は表示する子 (dotfile は隠す。ただしカーソルへの経路にあるものは見せる。spec §5.5)。
+// hasKids は n に見える子がいるか (kids と同じ判定。描画で毎フレーム呼ぶので、スライスを作らずに数える)。
+func (m *Model) hasKids(n *node) bool {
+	for _, k := range n.kids {
+		if m.showHidden || !k.hidden() || m.onPath(k) {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Model) kids(n *node) []*node {
 	if m.showHidden {
 		return n.kids
