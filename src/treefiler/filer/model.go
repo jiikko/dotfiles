@@ -108,7 +108,7 @@ func New(dir string, opts Options) (*Model, error) {
 	m := &Model{root: root, cur: root, startDir: root.abs, now: opts.Now, anims: map[*node]*anim{}, linkCache: map[string]string{}, moving: true,
 		walker: newWalker(), recs: map[string]walkResult{}, watch: newWatcher(), ripples: map[*node]ripple{}}
 	if m.now == nil {
-		m.now = time.Now
+		m.now = time.Now //nolint:forbidigo // 注入の既定値
 	}
 	if root.readErr != nil {
 		m.fail("読めません: " + root.name)
@@ -1295,7 +1295,7 @@ var helpKeys = [][2]string{
 	{",", "設定"},
 	{"o", "外のアプリで開く (open)"},
 	{"r", "読み直す"},
-	{"タイルの中", "j k ^D ^U g G · tab でパスを選ぶ · J K で隣"},
+	{"タイルの中", "j k ^D ^U space g G · tab でパスを選ぶ · J K で隣 · d で diff · o で外のアプリ"},
 	{"q esc", "終了 (タイルの上では 1 枚閉じる)"},
 	{"!", "ここでコマンドを 1 行 ($f = 選んだパス)"},
 	{"s", "ここでシェルを開く (抜けると戻る)"},

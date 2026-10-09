@@ -56,7 +56,7 @@ const deferGrace = time.Second
 
 func newWalker() *walker {
 	return &walker{results: map[string]walkResult{}, delta: map[string]walkResult{}, asked: map[string]bool{},
-		last: map[string]time.Time{}, deferred: map[string]time.Time{}, now: time.Now}
+		last: map[string]time.Time{}, deferred: map[string]time.Time{}, now: time.Now} //nolint:forbidigo // 注入の既定値
 }
 
 // request は dir の走査を頼む (頼んだことがあれば何もしない)。最後まで数えた新しい結果があれば数えない。

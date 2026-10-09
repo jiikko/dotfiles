@@ -30,6 +30,10 @@ type savedPlace struct {
 	cursor string
 }
 
+// oneLine は 1 行に書いて同じ値で読み戻せるか。\r も外す: bufio.Scanner は行末の \r を落とすので、\r で終わるパスは
+// 別のパスとして読み戻される (issue 696 の 14)。
+func oneLine(s string) bool { return !strings.ContainsAny(s, "\r\n") }
+
 // readPlaces は記録を読む。ok=false は読み切れなかった (書き戻すと読めなかった残りを消すので、呼び出し側は書かない)。
 func readPlaces(path string) ([]savedPlace, bool) {
 	f, err := os.Open(path)
@@ -96,12 +100,12 @@ func (m *Model) savePlace() {
 	}
 	var b strings.Builder
 	for _, p := range ps {
-		if strings.ContainsAny(p.start+p.cursor, "\n") {
+		if !oneLine(p.start + p.cursor) {
 			continue // 改行を含むパスは保存しない (行の形式が壊れる)
 		}
 		b.WriteString("= " + p.start + "\n")
 		for _, o := range p.opened {
-			if !strings.Contains(o, "\n") {
+			if oneLine(o) {
 				b.WriteString("+ " + o + "\n")
 			}
 		}

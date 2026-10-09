@@ -1,6 +1,6 @@
 # treefiler — 仕様 (glogx の `F` / 単体の `bin/treefiler`)
 
-issue 662 の実装前の正本。**§0 が glogx での決定 (treebeard から変える所と glogx への組み込み)、§1〜9 は treebeard のソースから抜き出した見た目と挙動**。
+見た目と挙動の正本 (issue 662 で実装した。以後の変更もここを先に直す)。**§0 が glogx での決定 (treebeard から変える所と glogx への組み込み)、§1〜9 は treebeard のソースから抜き出した見た目と挙動**。
 §0 と §1〜9 が食い違うときは §0 が勝つ。
 
 - 写す元: [treebeard](https://github.com/freakinfrick/treebeard) (`tb`、Rust/ratatui、**MIT OR Apache-2.0**)。抜き出しは commit `691788d` (2026-10-07 取得)。

@@ -67,6 +67,10 @@ linters:
         # 設定の書き込みは atomicfile.Write を通す (途中まで書けたファイルを残さない)。
         - pattern: ^os\.WriteFile$
           msg: ファイルの書き込みは atomicfile.Write を通す (temp + rename)
+        # 「今」は注入する (熱の色・経過時間がテストと撮影で固定できるように)。直に呼ぶのは注入の既定値と main.go の Advance だけ (issue 696)
+        # time.Since / Until も中で「今」を読む。import の別名 (tm.Now) は検出しない (意図的な迂回は脅威モデルの外)
+        - pattern: ^time\.(Now|Since|Until)$
+          msg: 「今」は Model.now / walker.now (注入) から取る。time.Now / Since / Until を直に呼ばない
     depguard:
       rules:
         width-single-source:
@@ -143,8 +147,8 @@ linters:
           - gocritic
       # main.go は静的出力の出口なので stdout 書き込みを許可。🚨 text で絞る: path だけで forbidigo ごと
       # 外すと、キャッシュを書く本人 (main.go) に os.WriteFile の禁止が効かない
-      - path: main\.go
-        text: stdout への直接出力
+      - path: ^main\.go$ # module の根の main.go だけ (main\.go だと domain.go なども外れる)
+        text: (stdout への直接出力|「今」は)
         linters:
           - forbidigo
       # テストのテーブル/フローの相似は仕様 (dupl の対象にしない)

@@ -18,8 +18,11 @@ cd "$ROOT_DIR" || exit 1
 ansi=github.com/charmbracelet/x/ansi
 tea=charm.land/bubbletea/v2
 uv=github.com/charmbracelet/ultraviolet
+# 色と幅の間接依存も揃える (lipgloss・ultraviolet が色の変換と幅に使う。treefiler・tuikit だけ古い版だった。issue 696 の 9)
+colorful=github.com/lucasb-eyer/go-colorful
+runewidth=github.com/mattn/go-runewidth
 wrap_forbid_re='^ +- pattern: \^ansi\\\.\(Hardwrap\|Wrap\|Wordwrap\)\$$'
-fail=0; n=0; want=""; want_tea=""; want_uv=""
+fail=0; n=0; want=""; want_tea=""; want_uv=""; want_c=""; want_r=""
 for mod in src/*/go.mod; do
   [ -f "$mod" ] || continue
   dir=${mod%/go.mod}
@@ -28,11 +31,15 @@ for mod in src/*/go.mod; do
   fi
   n=$((n + 1))
   # 🚨 判定できない (go list が失敗した) を「揃っている」にしない
-  if ! vers=$(cd "$dir" && GOWORK=off go list -m -f '{{.Version}}' "$ansi" "$tea" "$uv" 2>&1) || [ "$(printf '%s\n' "$vers" | grep -c .)" -ne 3 ]; then
-    printf '  ✗ %s: x/ansi / bubbletea / ultraviolet の版を解決できない: %s\n' "$dir" "$vers"; fail=1; continue
+  if ! vers=$(cd "$dir" && GOWORK=off go list -m -f '{{.Version}}' "$ansi" "$tea" "$uv" "$colorful" "$runewidth" 2>&1) || [ "$(printf '%s\n' "$vers" | grep -c .)" -ne 5 ]; then
+    printf '  ✗ %s: x/ansi / bubbletea / ultraviolet / go-colorful / go-runewidth の版を解決できない: %s\n' "$dir" "$vers"; fail=1; continue
   fi
   ver=$(printf '%s\n' "$vers" | sed -n 1p); tver=$(printf '%s\n' "$vers" | sed -n 2p); uver=$(printf '%s\n' "$vers" | sed -n 3p)
-  want=${want:-$ver}; want_tea=${want_tea:-$tver}; want_uv=${want_uv:-$uver}
+  cver=$(printf '%s\n' "$vers" | sed -n 4p); rver=$(printf '%s\n' "$vers" | sed -n 5p)
+  want=${want:-$ver}; want_tea=${want_tea:-$tver}; want_uv=${want_uv:-$uver}; want_c=${want_c:-$cver}; want_r=${want_r:-$rver}
+  if [ "$cver" != "$want_c" ] || [ "$rver" != "$want_r" ]; then
+    printf '  ✗ %s: go-colorful %s / go-runewidth %s (ほかは %s / %s)\n' "$dir" "$cver" "$rver" "$want_c" "$want_r"; fail=1
+  fi
   if [ "$ver" != "$want" ] || [ "$tver" != "$want_tea" ] || [ "$uver" != "$want_uv" ]; then
     printf '  ✗ %s: x/ansi %s / bubbletea %s / ultraviolet %s (ほかは %s / %s / %s。tuikit がテストした版と揃える)\n' "$dir" "$ver" "$tver" "$uver" "$want" "$want_tea" "$want_uv"; fail=1
   fi
@@ -49,9 +56,9 @@ for mod in src/*/go.mod; do
       printf '  ✗ %s: exclusions が issue 590 (折り返しの禁止) を外している (直前の行: %s)\n' "$dir" "$prev"; fail=1
     fi
   done < <(awk '/^ +text: .*issue 590/ { print prev } { prev = $0 }' "$yml")
-  printf '  · %s: x/ansi %s / bubbletea %s / ultraviolet %s\n' "$dir" "$ver" "$tver" "$uver"
+  printf '  · %s: x/ansi %s / bubbletea %s / ultraviolet %s / go-colorful %s / go-runewidth %s\n' "$dir" "$ver" "$tver" "$uver" "$cver" "$rver"
 done
 # 発見 0 件は失敗 (tuikit の配置や require の書き方が変わって対象を見失っても緑にしない)。tuikit 自身と消費者 1 つ以上
 [ "$n" -ge 2 ] || { printf '✗ tuikit とその消費者が %d module しか見つからない (発見が壊れている)\n' "$n"; exit 1; }
-[ "$fail" -eq 0 ] || { printf '✗ tuikit の消費者の x/ansi の版か折り返しの禁止がずれている (%d module 検査)\n' "$n"; exit 1; }
-printf '✓ tuikit と消費者 %d module が x/ansi %s / bubbletea %s / ultraviolet %s で揃い、折り返しの直呼びを禁止している\n' "$n" "$want" "$want_tea" "$want_uv"
+[ "$fail" -eq 0 ] || { printf '✗ tuikit の消費者の依存の版 (x/ansi・bubbletea・ultraviolet・go-colorful・go-runewidth) か折り返しの禁止がずれている (%d module 検査)\n' "$n"; exit 1; }
+printf '✓ tuikit と消費者 %d module が x/ansi %s / bubbletea %s / ultraviolet %s / go-colorful %s / go-runewidth %s で揃い、折り返しの直呼びを禁止している\n' "$n" "$want" "$want_tea" "$want_uv" "$want_c" "$want_r"

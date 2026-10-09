@@ -1,7 +1,5 @@
 # 696 (chore): treefiler の文書の食い違い・lint 案・依存のずれ・CI の時間
 
-> 🚨 **担当中: Claude Code (dotfiles-53。監査の issue を順に直すセッション)**（2026-10-09〜）
-
 起票日: 2026-10-09
 
 ## 概要
@@ -57,3 +55,25 @@ CI (run のログと API で確かめた):
 ## 進捗
 
 - [ ] 未着手
+- [x] 1 docs/README.md の索引と spec の冒頭を「実装済み」に直した
+- [x] 2 キー一覧 (`?`) のタイルの行に space・d・o を足した。README のタイルの表に Shift-↓ / Shift-↑ を足した
+- [x] 3 src/treefiler/CLAUDE.md: 「タイマーを張らない」を「描画の tick を張らない (裏の goroutine と watch の ticker は filer の中)」に言い直し、
+  地図に 12 ファイルと外へ出す面 (Binds・Busy・ExecDone など) を足した
+- [x] 4 ruleguard `pathPrefixViaWithSep`: `x + string(filepath.Separator)` / `os.PathSeparator` (git.go の withSep 以外) と、
+  `strings.HasPrefix/CutPrefix/TrimPrefix(y, x + "/")` を落とす。検出しない形 (変数・Sprintf・+=・括弧・string('/')・Contains) は gorules に書いた
+- [x] 5 depguard への置き換えは採らない (695 の 2 で走査の件数を go list と突き合わせる形にし、下限の問題は消えた。同じ判定を 2 実装にしない)
+- [x] 6 692 で解消済み (git の起動は subproc.GitCommand 1 本。repo 全体の gate `tests/scripts/test_git_calls_hardened.sh` が見る)
+- [x] 7 forbidigo `^time\.(Now|Since|Until)$`。根の main.go は exclusions (`path: ^main\.go$`)、注入の既定値 2 か所は nolint。import の別名は検出しない
+- 8 は記録のまま (lint で止められないもの)
+- [x] 9 go-colorful v1.4.1 / go-runewidth v0.0.30 に揃えた (tuikit・treefiler・schedkeys・restartable)。`test_tuikit_consumers_aligned.sh` が 2 つの版も突き合わせる
+- 10 未対応 (ユーザーの環境): 手元の go1.26.0 で GO-2026-6088 (1.26.6 で修正)・GO-2026-4602 (1.26.1 で修正)。CI の go1.25.0 でも同じ 2 件
+  (1.25.13 / 1.25.8 で修正。govulncheck を GOTOOLCHAIN=go1.25.0 で実測)。bin/treefiler は手元の Go でビルドするので、手元の Go を上げれば消える
+- 11・13 未対応 (repo 全体の CI の決定): setup-go の版の決め方は全 module に共通で、treefiler の issue では変えない
+- 12 不採用: Bench の glogx のベンチは treefiler を取り込む (replace) ので、treefiler だけの push でも走るのが正しい。nvim / zsh / tmux の job も
+  走るのは workflow を分けないと避けられない (repo 全体の判断)
+- [x] 14 places: `\r` を含むパスも保存しない (`oneLine`。bufio.Scanner が行末の \r を落とし別のパスとして読み戻すため)。排他が無いことは記録のまま
+- 変異: time.Now / time.Since を足す → lint 赤、filer/ の下の *main.go に time.Now → 赤 (除外の正規表現を固定した後)、区切りの手組みと
+  HasPrefix(y, x+"/") → 赤、tuikit の go-colorful を v1.4.0 に戻す → 版の検査が赤、oneLine から \r を外す・opened の判定を戻す → テストが赤
+- 敵対レビュー (opus、2 周): 1 周目の P2 3 件 (除外の `main\.go` が domain.go なども外す・time.Since / Until が素通り・HasPrefix(y, x+"/") が
+  素通り) と P3 (opened の \r をテストが守っていない・✓ 行に版が出ない) を直した。2 周目は P1 / P2 なし、P3 は検出しない形の宣言と ✗ 行の文言を直した
+- `make test` / `make lint` (src/treefiler) rc=0
