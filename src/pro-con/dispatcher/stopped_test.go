@@ -36,10 +36,19 @@ func stopFromOutside(t *testing.T, r ExecRunner, dir, runID string) (rc, child i
 	if err := syscall.Kill(-bash, syscall.SIGSTOP); err != nil {
 		t.Fatal(err)
 	}
+	// 前提: グループの全部が止まっている。fork したばかりの子は、グループへの SIGSTOP を取りこぼすことがある (CI の ps で実測:
+	// bash は T・sleep は S。issue 541)。全部止まるまで送り直す (前提が欠けたまま待つと、見張りは「全部 T」を見ないので止め直さず 20 秒で落ちる)
+	if !pollUntil(t, 5*time.Second, func() bool {
+		_ = syscall.Kill(-bash, syscall.SIGSTOP)
+		return groupStopped([]int{bash})
+	}) {
+		_ = syscall.Kill(-bash, syscall.SIGKILL)
+		t.Fatalf("前提: 5 秒送り直してもグループの全部が止まらない:\n%s", psOf(bash, child))
+	}
 	select {
 	case <-done:
 	case <-time.After(20 * time.Second):
-		// CI でだけ 10 回に 1 回ほど落ちる (手元では 55 回で 0 回)。原因が見えるまで、諦める時点のグループの様子を残す
+		// 前提 (全部止まった) を確かめた後なので、ここで返らないのは見張りの不具合。諦める時点のグループの様子を残す
 		t.Logf("20 秒たっても返らない。bash=%d child=%d・見張りの判定 groupStopped=%v。bash のグループと child の ps:\n%s",
 			bash, child, groupStopped([]int{bash}), psOf(bash, child))
 		_ = syscall.Kill(-bash, syscall.SIGKILL)
