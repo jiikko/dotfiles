@@ -73,13 +73,7 @@ func (j *diffJob) result() ([]string, bool) {
 }
 
 // diffable は n の diff を出せるか。
-func (m *Model) diffable(n *node) bool {
-	switch m.gitState(n) {
-	case '+', 'M', '!':
-		return true
-	}
-	return false
-}
+func (m *Model) diffable(n *node) bool { return gitKinds[m.gitState(n)].diffable }
 
 func startDiff(path string) *diffJob {
 	ctx, cancel := context.WithCancel(context.Background())

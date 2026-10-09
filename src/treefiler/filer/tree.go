@@ -40,7 +40,10 @@ func (n *node) depth() int {
 	return d
 }
 
-func (n *node) hidden() bool { return strings.HasPrefix(n.raw, ".") }
+func (n *node) hidden() bool { return hiddenName(n.raw) }
+
+// hiddenName は dotfile の名前か (隠す設定の対象)。名前で判定する所 (裏の走査・explode・消えた項目) はここを通す。
+func hiddenName(name string) bool { return strings.HasPrefix(name, ".") }
 
 // 表示と並びの設定 (設定の板の Column width / Folders first / Natural sort)。applySettings が書き込む。
 // 🚨 配色 (theme.go) と同じく UI の 1 本の goroutine だけが読み書きする。

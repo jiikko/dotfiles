@@ -68,7 +68,7 @@ func TestFolderHeatUsesNewestInsideAndHidesDotfiles(t *testing.T) {
 	if got := m.heatAge(b); got < 119 || got > 121 {
 		t.Fatalf("b の年齢 = %.0f 秒 (配下の x.txt の 120 秒になるはず。dotfile の 0 秒は数えない)", got)
 	}
-	m.showHidden = true
+	m.set.ShowHidden = true
 	if got := m.heatAge(b); got > 1 {
 		t.Fatalf("dotfile を見せているのに dotfile の更新を数えない: %.0f 秒", got)
 	}
@@ -170,12 +170,34 @@ func TestGitMarksFromRealRepo(t *testing.T) {
 func TestBusyUntilResultsAreTaken(t *testing.T) {
 	m := newTest(t)
 	m.walker.request(m.root.path())
+	// 走り終わるのを待つ (busy は取り込んでいない結果でも true なので、走っているかを直接見る)
+	running := func() bool {
+		m.walker.mu.Lock()
+		w := m.walker.running || len(m.walker.deferred) > 0
+		m.walker.mu.Unlock()
+		m.git.mu.Lock()
+		defer m.git.mu.Unlock()
+		return w || m.git.running
+	}
 	deadline := time.Now().Add(10 * time.Second)
-	for m.walker.busy() || m.git.busy() {
+	for running() {
 		if time.Now().After(deadline) {
 			t.Fatal("走査が終わらない")
 		}
 		time.Sleep(5 * time.Millisecond) // sleep-ok: tick: 裏の goroutine の完了を条件で待つループの刻み
+	}
+	// 源ごとに見る (Model.Busy だけだと、片方の未取り込みがもう片方に隠れる)
+	if !m.walker.busy() {
+		t.Fatal("走査の結果を取り込んでいないのに walker.busy が false")
+	}
+	m.git.mu.Lock()
+	gitPending := m.git.version != m.git.taken
+	m.git.mu.Unlock()
+	if !gitPending {
+		t.Fatal("前提: git の結果がまだ取り込まれていない状態にならない")
+	}
+	if !m.git.busy() {
+		t.Fatal("git の結果を取り込んでいないのに git.busy が false")
 	}
 	if !m.Busy() {
 		t.Fatal("取り込んでいない結果があるのに Busy が false")
@@ -184,7 +206,7 @@ func TestBusyUntilResultsAreTaken(t *testing.T) {
 	m.walker.mu.Lock()
 	m.walker.queue = nil // 見えているフォルダの依頼は今回の主張と無関係なので捨てる
 	m.walker.mu.Unlock()
-	for m.walker.busy() {
+	for running() {
 		time.Sleep(5 * time.Millisecond) // sleep-ok: tick: 走りかけの 1 本の終わりを待つループの刻み
 	}
 	m.takeBackground()

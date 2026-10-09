@@ -43,6 +43,7 @@ type walker struct {
 	now      func() time.Time // 時計 (テストが進める。数え直しの間隔を実時間で待たない)
 	running  bool
 	version  int // 結果が増える・古くなるたびに進める (取り込み側が変化を知るため)
+	taken    int // take で手渡した版 (取り込み側は 1 つなので、手渡した版をここで持つ)
 }
 
 type forgotten struct {
@@ -114,7 +115,7 @@ func (w *walker) forget(dir string, force bool) {
 	w.version++
 }
 
-// busy は走査中か、間を空けて数え直すのを待っているか。期限を猶予だけ過ぎても頼み直されない待ちは捨てる。
+// busy は走査中か、間を空けて数え直すのを待っているか、取り込んでいない結果があるか。期限を猶予だけ過ぎても頼み直されない待ちは捨てる。
 func (w *walker) busy() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -124,26 +125,20 @@ func (w *walker) busy() bool {
 			delete(w.deferred, d)
 		}
 	}
-	return w.running || len(w.deferred) > 0
+	return w.running || len(w.deferred) > 0 || w.version != w.taken
 }
 
-// take は取り込んでいない結果と版を返す (版が同じなら何もしない)。返した map は walker から手放す。
-func (w *walker) take(have int) (map[string]walkResult, int, bool) {
+// take は取り込んでいない結果を返す (前の take から変わっていなければ ok = false)。返した map は walker から手放す。
+func (w *walker) take() (map[string]walkResult, bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if have == w.version {
-		return nil, have, false
+	if w.taken == w.version {
+		return nil, false
 	}
 	d := w.delta
 	w.delta = map[string]walkResult{}
-	return d, w.version, true
-}
-
-// pending は取り込んでいない結果があるか。
-func (w *walker) pending(have int) bool {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return have != w.version
+	w.taken = w.version
+	return d, true
 }
 
 func (w *walker) loop() {
@@ -220,7 +215,7 @@ func walkDir(dir string, budget *int, found map[string]walkResult) walkResult {
 		if err != nil {
 			continue
 		}
-		hidden := strings.HasPrefix(e.Name(), ".")
+		hidden := hiddenName(e.Name())
 		if info.ModTime().After(r.newest) {
 			r.newest = info.ModTime()
 		}

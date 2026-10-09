@@ -1,6 +1,7 @@
 package filer
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,11 +13,12 @@ import (
 // 端末を明け渡すのは呼び出し側 (bubbletea の ExecProcess)。filer は何をどこで起こすかを ExecRequest で返すだけ
 // (filer は os/exec を import しない。exec_boundary_test)。
 
-// ExecRequest は呼び出し側に起こしてほしいプロセス。終わったら Refresh を呼ぶこと。
+// ExecRequest は呼び出し側に起こしてほしいプロセス。呼び出し側は Dir・Argv・Env をそのまま exec.Cmd に入れて前景で起こし、
+// 戻ったら ExecDone を呼ぶ。
 type ExecRequest struct {
 	Dir  string   // 作業ディレクトリ (カーソルがフォルダならそれ、ファイルなら親)
 	Argv []string // 起こすコマンド
-	Env  []string // 足す環境変数 (f=選んだパス)
+	Env  []string // 環境の全部 (今の環境に f=選んだパスを足した完成形)
 }
 
 // waitIfQuick は `!` のコマンドを包む sh のスクリプト。3 秒未満で終わったら、出力を読めるようキーを待ってから戻る (spec §5.7)。
@@ -50,7 +52,19 @@ func (m *Model) workDir() string {
 	return filepath.Dir(m.cur.path())
 }
 
-func (m *Model) execEnv() []string { return []string{"f=" + m.cur.path()} }
+func (m *Model) execEnv() []string { return append(os.Environ(), "f="+m.cur.path()) }
+
+// ExecDone は Exec で頼んだプロセスから戻った合図。シェルで作った・消したファイルを出し、起動できなかったとき
+// (作業フォルダが消えた・$SHELL が実行できない) だけ知らせの文言を返す。終了コードは失敗と言わない
+// (シェルは最後のコマンドの終了コードで抜けるのが普通。glogx の editorClosedMsg と同じ判断)。
+func (m *Model) ExecDone(err error) (warning string) {
+	m.Refresh()
+	var exitErr interface{ ExitCode() int } // *exec.ExitError (os/exec は import しない。exec_boundary_test)
+	if err == nil || errors.As(err, &exitErr) {
+		return ""
+	}
+	return "シェルを起動できませんでした: " + termsafeLine(err.Error())
+}
 
 // requestShell は `s` (そのフォルダで対話のシェル)。
 func (m *Model) requestShell() {

@@ -256,6 +256,20 @@ func TestFilerSearchTakesFUAndRepeats(t *testing.T) {
 	}
 }
 
+// キー一覧 (?) を開いている間の F / i / U は一覧を閉じるだけ (glogx が閉じる・横断する・利用枠を開くと、一覧が開いたまま残る。issue 694 の 6)。
+func TestFilerHelpSwallowsCrossKeys(t *testing.T) {
+	for _, k := range []string{"F", "i", "U"} { // C は一覧が閉じていても filer の木のキーなので、ここでは判別にならない
+		m := newFilerBrowse(t)
+		m.handleKey("F")
+		m.handleKey("?")
+		m.handleKey(k)
+		if m.activeFullScreen() != fullScreenFiler || m.usageOv.visible || m.filerV.f.OwnsKeys() {
+			t.Fatalf("キー一覧の中の %s: filer に留まって一覧だけ閉じるはず (全画面 %v・利用枠 %v・入力中 %v)",
+				k, m.activeFullScreen(), m.usageOv.visible, m.filerV.f.OwnsKeys())
+		}
+	}
+}
+
 // シェルが 0 以外で終わっても「エディタが異常終了しました」を出さない (シェルは最後のコマンドの終了コードで抜けるのが普通)。
 func TestFilerShellNonZeroExitIsQuiet(t *testing.T) {
 	m := newFilerBrowse(t)

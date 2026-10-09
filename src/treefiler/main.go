@@ -8,7 +8,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -71,7 +70,7 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// 前景で端末を明け渡す。ctx は持たない (ユーザーのシェルが終わるまで待つのが仕様)。パイプは張らない
 				cmd := subproc.CommandContext(context.Background(), r.Argv[0], r.Argv[1:]...)
 				cmd.Dir = r.Dir
-				cmd.Env = append(os.Environ(), r.Env...)
+				cmd.Env = r.Env
 				cmds = append(cmds, tea.ExecProcess(cmd, func(err error) tea.Msg { return execDoneMsg{err} }))
 			}
 		case filer.None:
@@ -82,12 +81,8 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case toast.Msg:
 		a.toast.StartLeaving(msg)
 	case execDoneMsg:
-		a.f.Refresh() // シェルで作った・消したファイルを出す
-		// 起動できなかったときだけ知らせる (作業フォルダが消えた・$SHELL が実行できない)。シェルは最後のコマンドの
-		// 終了コードで抜けるのが普通なので、終了コードは失敗と言わない (glogx の editorClosedMsg と同じ判断)
-		var exitErr interface{ ExitCode() int } // *exec.ExitError (os/exec は import しない。exec_boundary_test)
-		if msg.err != nil && !errors.As(msg.err, &exitErr) {
-			a.toast.Show("シェルを起動できませんでした: "+msg.err.Error(), false)
+		if w := a.f.ExecDone(msg.err); w != "" {
+			a.toast.Show(w, false)
 		}
 	case changedMsg:
 		if msg.ok {

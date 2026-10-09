@@ -23,7 +23,7 @@ func TestShellPromptBuildsExecWithHistory(t *testing.T) {
 	if !ok || r.Dir != filepath.Dir(m.cur.path()) || r.Argv[len(r.Argv)-1] != "echo hi" {
 		t.Fatalf("頼むプロセス = %+v (ファイルなら親のフォルダで、最後の引数がコマンド行)", r)
 	}
-	if len(r.Env) != 1 || r.Env[0] != "f="+m.cur.path() {
+	if len(r.Env) == 0 || r.Env[len(r.Env)-1] != "f="+m.cur.path() || len(r.Env) != len(os.Environ())+1 {
 		t.Fatalf("$f が選んだパスでない: %v", r.Env)
 	}
 	m.HandleKey("!")

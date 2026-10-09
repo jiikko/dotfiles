@@ -3,7 +3,6 @@ package filer
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 )
 
@@ -96,10 +95,10 @@ func (m *Model) explode() {
 	if target == nil {
 		return
 	}
-	showHidden, intoIgnored := m.showHidden, m.set.ExplodeIgnore
+	showHidden, intoIgnored := m.set.ShowHidden, m.set.ExplodeIgnore
 	snap := m.gitSnap
 	m.exploding = startExplode(target.path(), func(path, name string) bool {
-		if !showHidden && strings.HasPrefix(name, ".") {
+		if !showHidden && hiddenName(name) {
 			return true
 		}
 		return !intoIgnored && snap.state(path, true) == gitIgn
@@ -130,33 +129,11 @@ func (m *Model) takeExplode() {
 	m.moving = true
 }
 
-// loadPath は root の中の絶対パスの項目を、途中のフォルダを読み込みながら探す。
+// loadPath は root の中の絶対パスの項目を、途中のフォルダを (読めなくても黙って) 読み込みながら探す。フォルダなら中も読む。
 func (m *Model) loadPath(abs string) *node {
-	if abs == m.root.abs {
-		return m.root
+	n := m.lookup(abs, (*node).load)
+	if n != nil && n.dir && !n.loaded {
+		n.load()
 	}
-	rel, ok := strings.CutPrefix(abs, withSep(m.root.abs)) // root が / のとき // にしない
-	if !ok {
-		return nil
-	}
-	cur := m.root
-	for part := range strings.SplitSeq(rel, string(os.PathSeparator)) {
-		if !cur.loaded {
-			cur.load()
-		}
-		var next *node
-		for _, k := range cur.kids {
-			if k.raw == part {
-				next = k
-			}
-		}
-		if next == nil {
-			return nil
-		}
-		cur = next
-	}
-	if cur.dir && !cur.loaded {
-		cur.load()
-	}
-	return cur
+	return n
 }

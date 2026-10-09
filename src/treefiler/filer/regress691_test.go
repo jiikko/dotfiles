@@ -54,6 +54,9 @@ func TestRootSlashFindsNodes(t *testing.T) {
 	if n := m.loadPath("/usr/bin"); n == nil || !n.dir {
 		t.Fatal("root が / のとき loadPath(/usr/bin) が nil")
 	}
+	if n := m.nodeFor("/usr/bin"); n == nil || n.parent == nil {
+		t.Fatal("root が / のとき nodeFor(/usr/bin) が木の外の単独の項目になった (リンクから開いたタイルが木と繋がらない)")
+	}
 	if !related("/", "/usr/bin") {
 		t.Fatal("/ が /usr/bin の祖先と見なされない (walker の forget)")
 	}
@@ -148,7 +151,7 @@ func TestWalkerForgetKeepsValuesAndMarksStale(t *testing.T) {
 	if w.results["/other"].stale {
 		t.Fatal("関係の無い /other まで古い印")
 	}
-	d, _, ok := w.take(0)
+	d, ok := w.take()
 	if !ok || !d["/r"].stale || d["/r"].bytes != 5 {
 		t.Fatalf("取り込み側に古い印と値が渡らない: %+v", d)
 	}

@@ -433,6 +433,6 @@ func readonlyCommand(path string, line int) *exec.Cmd {
 func filerExecCommand(r filer.ExecRequest) *exec.Cmd {
 	cmd := exec.Command(r.Argv[0], r.Argv[1:]...) // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し
 	cmd.Dir = r.Dir
-	cmd.Env = append(os.Environ(), r.Env...)
+	cmd.Env = r.Env
 	return cmd
 }

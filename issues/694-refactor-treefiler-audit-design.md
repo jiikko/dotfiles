@@ -1,7 +1,5 @@
 # 694 (refactor): treefiler の設計の課題 (697 の監査の P3 群)
 
-> 🚨 **担当中: Claude Code (dotfiles-53。監査の issue を順に直すセッション)**（2026-10-09〜）
-
 起票日: 2026-10-09
 
 ## 概要
@@ -45,4 +43,31 @@
 
 ## 進捗
 
-- [ ] 未着手
+- [x] 1 設定の適用を `applyGlobals` 1 本に (New と applySettings の両方が通る)。`Model.showHidden` のコピーをやめ `m.set.ShowHidden` を読む
+- [x] 2 選択肢つきの設定と写しの表を突き合わせるテスト `TestChoiceSettingsHaveTables` (型と表にはしなかった: 表は配色・線の文字・速さで
+  中身の型が違い、1 つの型にまとめても突き合わせが要ることは変わらない)。選択肢の設定を足して表にも exempt にも載せないと赤くなる
+- [x] 3 見える判定を `Model.visible(k)` (kids / hasKids / applyChange) と `hiddenName(name)` (node.hidden・walker・explode・消えた項目) に寄せた。
+  隠した dotfile の中にカーソルがあるとき、その dotfile の変化も光る (`TestChangeOnHiddenCursorPathLights`)
+- [x] 4 path → node の解決を `Model.lookup(abs, load)` 1 本に (findNode は読み込まない、loadPath は途中と最後のフォルダを読む、nodeFor は途中を
+  ensureLoaded で読み、木に無ければ単独の項目)。nodeFor の "/" 決め打ち (root が / のとき木と繋がらない) が消えた
+- [x] 5 入力欄の幾何を `inputField` / `putField` に寄せた (検索・`!` の描画と CaretPos が同じ値を使う)。画面の文字列から測る `TestCaretFollowsDrawnInput`
+- [x] 6 OwnsKeys にキー一覧 (help) を含めた。木のキーを `treeKeys` の表にし、`Model.Binds(key)` で公開。glogx は `s` / `C` / `F` / `U` の決め打ちをやめ
+  Binds を読む (`TestBindsMatchesTreeKeys`・glogx の `TestFilerHelpSwallowsCrossKeys`)
+- [x] 7 `ExecRequest.Env` を環境の完成形にし、戻ったときの読み直しと知らせを `Model.ExecDone(err)` に寄せた (glogx・treefiler の main が呼ぶ)。
+  ExecRequest → exec.Cmd の 3 行は 2 か所に残る (filer は os/exec を import しない境界。exec_boundary_test)
+- [x] 8 Busy: 分割案 (Model の recs などを型へ移す) は採らず、取り込み済みの版を walker / gitWatch が自分で持つ形にした (`taken`)。
+  busy() が未取り込みを含むので、Model.Busy から「版の突き合わせ」の 2 項が消え、版を渡し忘れる形が無くなった。源は 5 つ (walker・git・
+  explode・opener・diff) で、源を足したときの入れ忘れは残る (構造では消えていない)
+- [x] 9 git の状態の性質を `gitKinds` の表に (rank・語・diff できるか)。色は地ごとの `gitColor` に残し、`TestGitKindsComplete` で全部の地に色があるかを見る
+- [x] 10 枠の描画を `canvas.frame` に寄せた (キー一覧・設定の板・タイル)。寄せる前後でキー一覧と設定の板の描画が一致することを画面のダンプで確かめた
+  (タイルは同じコードを通るが、ダンプでは開けていない)
+- [x] 11 死んだ ctrl+c の分岐 (treeKey・panelKey) を削除。`SearchQuery` は glogx のテスト (検索語の観測) が使うので残した。板の Ctrl-C の spec との食い違いは未確認のまま
+- 変異 (bin/mutate-verify。10 本 red): applyChange を名前の判定へ戻す / lookup の区切りを "/" 決め打ちへ戻す / speedFactor から instant を消す /
+  キャレットを検索の頭の幅で計算する / OwnsKeys から help を外す / Binds が s を false にする / ExecDone の Refresh を外す /
+  walker.busy・git.busy から未取り込みを外す (2 本) / theme の gitColor から conflict を消す。最初の walker.busy の変異は緑だった
+  (git の未取り込みが Model.Busy を true に保って隠した) → テストを源ごとに見る形に直して red。枠の角を変える変異はどのテストでも緑
+  (枠の形を固定するテストは置かない。見た目の判断で、寄せた前後の一致はダンプで確かめた)
+- 敵対レビュー (sonnet、1 周、`go test -race` 緑): P1 / P2 なし。採った P3: glogx の `TestFilerHelpSwallowsCrossKeys` の C は一覧が閉じていても
+  filer のキーなので判別にならない → 外した。Binds を検索・`!`・設定の板でも見るように足した。記録のみ: `nodeFor(root と同じパス)` が
+  単独の項目でなく root を返すようになった (リンク先が root そのものの場合。どちらもフォルダのタイルになり、差の実害は未確認)
+- `make test` / `make lint` (src/treefiler・src/glogx) rc=0

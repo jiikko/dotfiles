@@ -312,14 +312,18 @@ func indexOfStr(ss []string, s string) int {
 }
 
 // applySettings は変えた設定を効かせて保存する。
+// applyGlobals は設定をパッケージ変数 (配色・名前の幅・並び) へ写す。New と applySettings の両方が通る。
+func (m *Model) applyGlobals() {
+	applyTheme(&m.set)
+	labelMax, sortFoldersFirst, sortNatural = m.set.MaxName, m.set.FoldersFirst, m.set.NaturalSort
+}
+
 func (m *Model) applySettings(key string) {
 	errs := []error{}
 	if fitPalette(&m.set) { // ground を変えたら、その ground で選べる組の先頭へ。直した palette も保存する (残すと次に読んだとき拒否される)
 		errs = append(errs, m.save("palette"))
 	}
-	applyTheme(&m.set)
-	labelMax, sortFoldersFirst, sortNatural = m.set.MaxName, m.set.FoldersFirst, m.set.NaturalSort
-	m.showHidden = m.set.ShowHidden
+	m.applyGlobals()
 	if key == "folders_first" || key == "natural_sort" {
 		m.resort(m.root)
 	}
@@ -370,7 +374,7 @@ func (m *Model) resort(n *node) {
 
 func (m *Model) panelKey(k string) {
 	switch k {
-	case "esc", ",", "q", "ctrl+c":
+	case "esc", ",", "q":
 		m.panel.open = false
 	case "j", "down", "tab", "ctrl+n":
 		m.panel.row = (m.panel.row + 1) % len(items)
@@ -397,13 +401,7 @@ func (m *Model) drawPanel(c *canvas) {
 		return
 	}
 	x0 := m.w - w
-	c.clear(x0, 0, m.w-1, h-1, cPop)
-	c.put(x0, 0, "╭"+strings.Repeat("─", w-2)+"╮", cAccRoute, false)
-	for y := 1; y < h-1; y++ {
-		c.put(x0, y, "│", cAccRoute, false)
-		c.put(m.w-1, y, "│", cAccRoute, false)
-	}
-	c.put(x0, h-1, "╰"+strings.Repeat("─", w-2)+"╯", cAccRoute, false)
+	c.frame(rect{x0, 0, w, h}, cAccRoute)
 	c.put(x0+2, 0, " settings ", cText, true)
 	inner := w - 4
 	// 足元: 選んだ項目の説明・保存のエラー・設定ファイルの場所・キー

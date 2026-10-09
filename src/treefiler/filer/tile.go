@@ -322,27 +322,10 @@ func (m *Model) jumpKey(t *tile, k string, rows int) bool {
 	return true
 }
 
-// nodeFor はリンク先のパスの項目。木の中にあればそれを、無ければ単独の項目を作る (木は変えない)。
+// nodeFor はリンク先のパスの項目。木の中にあればそれを (途中のフォルダは読み込む)、無ければ木に繋がない単独の項目を作る。
 func (m *Model) nodeFor(path string) *node {
-	rootPath := m.root.path()
-	if rel, ok := strings.CutPrefix(path, rootPath+"/"); ok {
-		cur := m.root
-		for part := range strings.SplitSeq(rel, "/") {
-			m.ensureLoaded(cur)
-			var next *node
-			for _, k := range cur.kids {
-				if k.raw == part {
-					next = k
-				}
-			}
-			if next == nil {
-				break
-			}
-			cur = next
-		}
-		if cur.path() == path {
-			return cur
-		}
+	if n := m.lookup(path, m.ensureLoaded); n != nil {
+		return n
 	}
 	info, _ := os.Lstat(path) // 消えていても項目は作る (開くときに「開けません」になる)
 	n := newNode(baseName(path), info, nil)
@@ -381,18 +364,12 @@ func (m *Model) drawTile(c *canvas, t *tile, r rect, front bool, p float64) {
 	if r.w < 4 || r.h < 2 {
 		return
 	}
-	c.clear(r.x, r.y, r.x+r.w-1, r.y+r.h-1, cPop)
 	bc, tc := mix(cPop, cAccRoute, p), cText
 	if !front {
 		bc, tc = mix(cPop, cAccAct, p), cMuted
 	}
 	inner := r.w - 2
-	c.put(r.x, r.y, "╭"+strings.Repeat("─", inner)+"╮", bc, false)
-	for y := r.y + 1; y < r.y+r.h-1; y++ {
-		c.put(r.x, y, "│", bc, false)
-		c.put(r.x+r.w-1, y, "│", bc, false)
-	}
-	c.put(r.x, r.y+r.h-1, "╰"+strings.Repeat("─", inner)+"╯", bc, false)
+	c.frame(r, bc)
 	title := fmt.Sprintf(" %s · %s ", t.n.name, human(t.n.size))
 	if t.mode == modeDiff {
 		title += "· diff "

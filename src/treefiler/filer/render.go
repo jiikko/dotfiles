@@ -2,6 +2,7 @@ package filer
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
@@ -199,6 +200,17 @@ func (c *canvas) clear(x0, y0, x1, y1 int, bg rgb) {
 }
 
 type rect struct{ x, y, w, h int }
+
+// frame は r を浮かぶ板の地 (cPop) で塗り、丸い角の枠を col で描く (キー一覧・設定の板・タイルの共通の外形)。題は呼び出し側が載せる。
+func (c *canvas) frame(r rect, col rgb) {
+	c.clear(r.x, r.y, r.x+r.w-1, r.y+r.h-1, cPop)
+	c.put(r.x, r.y, "╭"+strings.Repeat("─", r.w-2)+"╮", col, false)
+	for y := r.y + 1; y < r.y+r.h-1; y++ {
+		c.put(r.x, y, "│", col, false)
+		c.put(r.x+r.w-1, y, "│", col, false)
+	}
+	c.put(r.x, r.y+r.h-1, "╰"+strings.Repeat("─", r.w-2)+"╯", col, false)
+}
 
 func (r rect) has(x, y int) bool { return x >= r.x && x < r.x+r.w && y >= r.y && y < r.y+r.h }
 

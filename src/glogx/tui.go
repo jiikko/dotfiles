@@ -1361,11 +1361,10 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// (「エディタが異常終了しました」) は出さない: シェルは最後のコマンドの終了コードで抜けるのが普通
 		if m.filerV.execPending {
 			m.filerV.execPending = false
-			if m.filerV.visible() && m.filerV.f != nil {
-				m.filerV.f.Refresh()
-			}
-			if msg.err != nil && !errors.As(msg.err, new(*exec.ExitError)) {
-				m.showWarning("シェルを起動できませんでした: " + firstLine(msg.err.Error()))
+			if m.filerV.visible() && m.filerV.f != nil { // 前景で起こしている間は閉じられないので、ここで見えていないことは無い
+				if w := m.filerV.f.ExecDone(msg.err); w != "" {
+					m.showWarning(firstLine(w))
+				}
 			}
 			return m, m.maybeTick()
 		}
@@ -1462,8 +1461,8 @@ func (m *browseModel) updateKeyReachable(key string) bool {
 	if m.statusOv.visible() && (m.statusOv.ownsKeys() || key == "X") {
 		return false
 	}
-	// treefiler は C を「経路以外を全部畳む」に使う (spec §0.1)。入力モード中は X も譲る
-	if m.filerV.visible() && (m.filerV.ownsKeys() || key == "C") {
+	// treefiler は C を「経路以外を全部畳む」に使う (spec §0.1)。入力モード中は X も譲る (どちらも filer の Binds が決める)
+	if m.filerV.visible() && m.filerV.binds(key) {
 		return false
 	}
 	return true

@@ -29,19 +29,22 @@ const (
 	gitIgn  byte = 'i'
 )
 
-func gitRank(s byte) int {
-	switch s {
-	case '?':
-		return 1
-	case '+':
-		return 2
-	case 'M':
-		return 3
-	case '!':
-		return 4
-	}
-	return 0
+// gitKind は git の状態 1 つの性質。状態を足すときはこの表に 1 行と、色 (gitColor) を足す。
+type gitKind struct {
+	rank     int    // フォルダへ集めるときの重さ (重いものが勝つ。0 = 集めない)
+	word     string // ステータスバーの語
+	diffable bool   // d で差分を出せるか
 }
+
+var gitKinds = map[byte]gitKind{
+	'?':    {rank: 1, word: "untracked"},
+	'+':    {rank: 2, word: "staged", diffable: true},
+	'M':    {rank: 3, word: "modified", diffable: true},
+	'!':    {rank: 4, word: "conflict", diffable: true},
+	gitIgn: {word: "ignored"},
+}
+
+func gitRank(s byte) int { return gitKinds[s].rank }
 
 type gitSnapshot struct {
 	top     string          // repo の根 (無ければ "")
@@ -124,6 +127,7 @@ type gitWatch struct {
 	snap    gitSet
 	tops    []string // 次に取る repo の根 (start で差し替える)
 	version int
+	taken   int // take で手渡した版
 	running bool
 	again   bool // 走っている間に force で頼まれた (終わったらもう 1 回取る。読み直しの直前の変更を落とさない)
 	last    time.Time
@@ -186,25 +190,22 @@ func (g *gitWatch) start(tops []string, now time.Time, force bool) {
 	}()
 }
 
-func (g *gitWatch) pending(have int) bool {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	return have != g.version
-}
-
+// busy は取得中か、取り込んでいない結果があるか。
 func (g *gitWatch) busy() bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.running
+	return g.running || g.version != g.taken
 }
 
-func (g *gitWatch) take(have int) (gitSet, int, bool) {
+// take は取り込んでいない結果を返す (前の take から変わっていなければ ok = false)。
+func (g *gitWatch) take() (gitSet, bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if have == g.version {
-		return gitSet{}, have, false
+	if g.taken == g.version {
+		return gitSet{}, false
 	}
-	return g.snap, g.version, true
+	g.taken = g.version
+	return g.snap, true
 }
 
 // repoTops は dirs が属する repo の根を、深いものから重複なく返す (find が深い repo を先に引けるように)。
@@ -289,21 +290,7 @@ func parsePorcelain(out []byte) gitSnapshot {
 }
 
 // gitWord はステータスバーの状態語 (spec §5.3 の St::describe)。
-func gitWord(s byte) string {
-	switch s {
-	case '?':
-		return "untracked"
-	case '+':
-		return "staged"
-	case 'M':
-		return "modified"
-	case '!':
-		return "conflict"
-	case gitIgn:
-		return "ignored"
-	}
-	return ""
-}
+func gitWord(s byte) string { return gitKinds[s].word }
 
 func classifyXY(xy string) byte {
 	switch {

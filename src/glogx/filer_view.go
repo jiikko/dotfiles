@@ -100,8 +100,11 @@ func (v *filerView) takeOpenErr() string {
 	return e
 }
 
-// ownsKeys は filer が入力モード中か (C / X の update を譲る判定。overlayOwnershipTable)。
+// ownsKeys は filer が入力モード中か (overlayOwnershipTable)。
 func (v *filerView) ownsKeys() bool { return v.shown && v.f != nil && v.f.OwnsKeys() }
+
+// binds は key が filer の意味を持つか (持つキーは glogx の横断キー・C の update・U に取らない。filer.Model.Binds が正本)。
+func (v *filerView) binds(key string) bool { return v.shown && v.f != nil && v.f.Binds(key) }
 
 // paste は貼り付けを filer へ渡す (入力中だけ入る。そうでなければ filer が捨てる)。
 func (v *filerView) paste(text string) {
@@ -138,16 +141,15 @@ func (v *filerView) advance(now time.Time) {
 }
 
 // handleKey は filer が飲むキー。F で閉じ、横断キー (i / R / D。表は crossTarget) で他の全画面へ移る。
-// 🚨 s は横断しない: filer では treebeard の「シェルを開く」に上書きした (spec §0.1。ユーザー回答 2026-10-07)
+// filer が意味を持つキー (Binds) は横断しない: s は treebeard の「シェルを開く」(spec §0.1。ユーザー回答 2026-10-07)、
+// 入力中 (検索・! のコマンド行・設定の板・キー一覧) は全部のキー (F で閉じると打っている文字が消える。レビューの指摘 2026-10-09)
 func (v *filerView) handleKey(key string) filerAction {
-	// 🚨 入力中 (検索・! のコマンド行) はキーを全部 filer へ渡す。F で閉じたり横断したりすると、打っている文字が消える
-	// (レビューの指摘 2026-10-09: 検索語に大文字 F を打つと閉じた)
-	if key == "F" && !v.f.OwnsKeys() {
-		v.hide()
-		return filerClosed
-	}
-	if !v.f.OwnsKeys() {
-		if target, ok := crossTarget(key); ok && target != fullScreenFiler && key != "s" {
+	if !v.f.Binds(key) {
+		if key == "F" {
+			v.hide()
+			return filerClosed
+		}
+		if target, ok := crossTarget(key); ok && target != fullScreenFiler {
 			v.hide()
 			v.wantCross = target
 			return filerCross
@@ -187,7 +189,7 @@ func (v *filerView) hint(width int) string {
 // routeKeyToFiler は filer 表示中のキー処理 (全画面なのでキーは全部 filer が飲む)。
 func (m *browseModel) routeKeyToFiler(key string) (tea.Model, tea.Cmd) {
 	// U は他の viewer と同じく利用枠を重ねる (spec §0.3: R D U X は filer の中でも効かせる)
-	if key == "U" && !m.filerV.ownsKeys() {
+	if key == "U" && !m.filerV.binds(key) {
 		return m, m.toggleUsage()
 	}
 	act := m.filerV.handleKey(key)

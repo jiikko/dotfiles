@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
@@ -54,7 +55,6 @@ type Model struct {
 	order      []*node // 描画順 (生まれた順)
 	camX, camY tween
 	tiles      []*tile
-	showHidden bool
 	moving     bool
 	lastAdv    time.Time
 	notices    []Notice
@@ -65,7 +65,6 @@ type Model struct {
 	startDir   string  // 起動したフォルダ (前回の場所を覚える鍵)
 	walker     *walker
 	recs       map[string]walkResult // walker の結果の写し (Advance で取り込む)
-	recsVer    int
 	git        gitWatch
 	set        Settings
 	setErrs    []string
@@ -73,7 +72,6 @@ type Model struct {
 	panel      panelState
 	gitSnap    gitSet
 	repoTop    map[string]string // フォルダ → 属する repo の根 ("" = repo の外)。読み直しで捨てる
-	gitVer     int
 	watch      *watcher
 	ripples    map[*node]ripple
 	bead       tween
@@ -124,9 +122,7 @@ func New(dir string, opts Options) (*Model, error) {
 		m.fail("設定ファイルに読めない行があります (" + itoa(len(m.setErrs)) + " 件。, の板の足元に出ています)")
 	}
 	m.watch.pause(!m.set.Live)
-	applyTheme(&m.set)
-	labelMax, sortFoldersFirst, sortNatural = m.set.MaxName, m.set.FoldersFirst, m.set.NaturalSort
-	m.showHidden = m.set.ShowHidden
+	m.applyGlobals()
 	m.resort(root)
 	if ks := m.kids(root); len(ks) > 0 && m.cur == root {
 		m.cur, root.last = ks[0], ks[0]
@@ -186,14 +182,15 @@ func (m *Model) Resize(w, h int) {
 // Busy は裏で走査・git の取得が走っているか (呼び出し側はこの間、遅い周期で Advance を呼んで結果を取り込む)。
 // 取り込んでいない結果がある間も true (最後の結果を取り込む前に呼び出し側が tick を止める窓を塞ぐ。レビューの指摘 2026-10-08)。
 func (m *Model) Busy() bool {
-	return m.walker.busy() || m.git.busy() || m.walker.pending(m.recsVer) || m.git.pending(m.gitVer) || m.exploding != nil || m.opener.busy() || m.diffBusy()
+	return m.walker.busy() || m.git.busy() || m.exploding != nil || m.opener.busy() || m.diffBusy()
 }
 
 // Animating は動いている途中か (呼び出し側はこの間だけ高い周期で Advance を呼ぶ)。
 func (m *Model) Animating() bool { return m.moving }
 
-// OwnsKeys は入力モード中か (glogx の横断キーを譲る判定に使う。spec §0.3)。今は入力欄を持たない。
-func (m *Model) OwnsKeys() bool { return m.search.active || m.prompt.active || m.panel.open }
+// OwnsKeys は入力欄 (検索・!)・設定の板・キー一覧のどれかを開いているか。その間は全部のキーを filer が持つ
+// (glogx は横断キーも F も渡す。spec §0.3。キー一覧は ? 以外のキーで閉じるだけなので、閉じたキーで glogx が動くと食い違う)。
+func (m *Model) OwnsKeys() bool { return m.search.active || m.prompt.active || m.panel.open || m.help }
 
 // SearchQuery は検索欄の今の入力 (検索していなければ "")。
 func (m *Model) SearchQuery() string {
@@ -206,18 +203,42 @@ func (m *Model) SearchQuery() string {
 // CaretPos は入力欄のキャレットの位置 (画面の桁と行)。入力欄が無ければ ok=false。
 // 呼び出し側は端末のカーソルをここに置く (IME の変換中の文字が入力欄に出るように。glogx-ui-guide §7 の caret)。
 func (m *Model) CaretPos() (x, y int, ok bool) {
-	switch {
-	case m.h <= 0:
-		return 0, 0, false
-	case m.search.active:
-		_, col := m.search.line.Window(max(m.w-searchPrefixW-1, 1))
-		return searchPrefixW + col, m.h - 1, true
-	case m.prompt.active:
-		pw := widthOf(m.promptPrefix())
-		_, col := m.prompt.line.Window(max(m.w-pw-1, 1))
-		return pw + col, m.h - 1, true
+	if f, ok := m.inputField(); ok && m.h > 0 {
+		return f.caretX, m.h - 1, true
 	}
 	return 0, 0, false
+}
+
+// field は足元の入力欄 1 本の幾何 (描画と IME のキャレットが同じ値を使う)。
+type field struct {
+	prefix string // 欄の頭 (" / " / " dir $ ")
+	text   string // 窓に収まる分の入力
+	caretX int    // キャレットの画面の x
+}
+
+// inputField は開いている入力欄 (検索か `!`) の幾何。どちらも開いていなければ ok = false。
+func (m *Model) inputField() (field, bool) {
+	var pre string
+	var line *lineedit.Line
+	switch {
+	case m.search.active:
+		pre, line = searchPrefix, &m.search.line
+	case m.prompt.active:
+		pre, line = m.promptPrefix(), &m.prompt.line
+	default:
+		return field{}, false
+	}
+	pw := widthOf(pre)
+	text, col := line.Window(max(m.w-pw-1, 1))
+	return field{prefix: pre, text: text, caretX: pw + col}, true
+}
+
+// putField は入力欄の頭と入力を足元の行に描き、続きを描く x を返す。
+func (m *Model) putField(c *canvas, f field) int {
+	y := m.h - 1
+	c.clear(0, y, m.w-1, y, cBar)
+	x := c.put(0, y, f.prefix, cAccRoute, true)
+	return c.put(x, y, f.text, cText, false)
 }
 
 // promptPrefix は `!` の入力欄の頭 (どのフォルダで走るか)。
@@ -226,8 +247,6 @@ func (m *Model) promptPrefix() string {
 }
 
 const searchPrefix = " / "
-
-var searchPrefixW = len(searchPrefix)
 
 // TakeNotices は溜まった知らせを取り出す。
 func (m *Model) TakeNotices() []Notice {
@@ -287,14 +306,12 @@ func (m *Model) takeBackground() {
 	for _, e := range m.opener.take() {
 		m.fail(e)
 	}
-	if d, v, ok := m.walker.take(m.recsVer); ok {
+	if d, ok := m.walker.take(); ok {
 		for k, r := range d {
 			m.recs[k] = r
 		}
-		m.recsVer = v
 	}
-	if s, v, ok := m.git.take(m.gitVer); ok {
-		m.gitVer = v   // off でも版は進める (取り込まずに残すと Busy が続き、呼び出し側の tick が止まらない)
+	if s, ok := m.git.take(); ok { // off でも取り込む (取り込まずに残すと Busy が続き、呼び出し側の tick が止まらない)
 		if m.set.Git { // off にする前に始めた取得の結果は捨てる
 			m.gitSnap = s
 		}
@@ -345,11 +362,10 @@ func (m *Model) applyChange(c dirChange) {
 	}
 	// 強制にしない: 書き込みの続くフォルダ (ログ) で毎秒 git status が走るのを、3 秒の間隔制限で止める
 	m.startGit(false)
-	visible := func(name string) bool { return m.showHidden || !strings.HasPrefix(name, ".") }
 	lit := false
 	for _, name := range c.changed {
 		for _, k := range n.kids {
-			if k.raw == name && visible(name) {
+			if k.raw == name && m.visible(k) {
 				m.lightUp(k)
 				lit = true
 			}
@@ -367,31 +383,43 @@ func (m *Model) applyChange(c dirChange) {
 // removedVisible は変化に「見える項目が消えた」が含まれるか (隠した dotfile の出入りでフォルダを光らせない)。
 func (m *Model) removedVisible(c dirChange) bool {
 	for _, name := range c.removed {
-		if m.showHidden || !strings.HasPrefix(name, ".") {
+		if m.set.ShowHidden || !hiddenName(name) { // 消えた項目は木に無いので経路の例外 (visible) は当たらない
 			return true
 		}
 	}
 	return false
 }
 
-// findNode は絶対パスの項目 (木に読み込まれていれば)。
-func (m *Model) findNode(abs string) *node {
-	var walk func(n *node) *node
-	walk = func(n *node) *node {
-		if n.abs == abs {
-			return n
-		}
-		if !strings.HasPrefix(abs, withSep(n.abs)) { // root が / のとき // にしない
-			return nil
-		}
-		for _, k := range n.kids {
-			if f := walk(k); f != nil {
-				return f
-			}
-		}
+// findNode は絶対パスの項目 (木に読み込まれていれば。読み込みはしない)。
+func (m *Model) findNode(abs string) *node { return m.lookup(abs, nil) }
+
+// lookup は root の中の絶対パスの項目を、名前を 1 段ずつ辿って探す。load が nil でなければ、まだ読んでいないフォルダを
+// それで読んでから中を探す。path → node の解決はここだけに置く (root が / のときの区切りを withSep 1 か所で扱う)。
+func (m *Model) lookup(abs string, load func(*node)) *node {
+	if abs == m.root.abs {
+		return m.root
+	}
+	rel, ok := strings.CutPrefix(abs, withSep(m.root.abs))
+	if !ok || rel == "" {
 		return nil
 	}
-	return walk(m.root)
+	cur := m.root
+	for part := range strings.SplitSeq(rel, string(filepath.Separator)) {
+		if load != nil && cur.dir && !cur.loaded {
+			load(cur)
+		}
+		var next *node
+		for _, k := range cur.kids {
+			if k.raw == part {
+				next = k
+			}
+		}
+		if next == nil {
+			return nil
+		}
+		cur = next
+	}
+	return cur
 }
 
 var speedFactor = map[string]float64{"slow": 0.5, "normal": 1, "fast": 2, "instant": 1000}
@@ -439,9 +467,9 @@ func (m *Model) heatAge(n *node) float64 {
 	if n.dir {
 		if r, ok := m.recs[n.path()]; ok {
 			switch {
-			case m.showHidden && r.newest.After(t):
+			case m.set.ShowHidden && r.newest.After(t):
 				t = r.newest
-			case !m.showHidden && !r.vis.IsZero():
+			case !m.set.ShowHidden && !r.vis.IsZero():
 				t = r.vis
 			}
 		}
@@ -709,77 +737,86 @@ func (m *Model) setCur(n *node) {
 
 func (m *Model) halfPage() int { return max(1, m.canvasH()/4) }
 
-func (m *Model) treeKey(k string) Result {
-	// 画面固有の動作キーを先に捌き、残りを listnav.MotionOf へ渡す (glogx-ui-guide §2)。
-	// Space / Tab は treebeard の開閉 (spec §0.1 の「o 以外は treebeard で上書き」)
-	switch k {
-	case "q", "esc", "ctrl+c":
-		return Quit
-	case "l", "right", "ctrl+f", "enter":
-		m.descend()
-	case "h", "left", "ctrl+b":
-		// ctrl+b を ← の別名にするのは glogx-ui-guide §2 の例外 (pro-con のボードと同じ「← が左の列へ動くだけ」の画面)
+// treeKeys は木の画面の動作キー (glogx-ui-guide §2: 画面固有のキーを先に捌き、残りを listnav.MotionOf へ渡す)。
+// Space / Tab は treebeard の開閉 (spec §0.1 の「o 以外は treebeard で上書き」)。ctrl+c は HandleInput が先に Quit にする。
+// 表にしているのは、Binds (呼び出し側の横断キーに取らせないキー) が同じ表を読むため。
+var treeKeys = map[string]func(m *Model) Result{}
+
+func init() {
+	bind := func(f func(m *Model) Result, keys ...string) {
+		for _, k := range keys {
+			treeKeys[k] = f
+		}
+	}
+	do := func(f func(m *Model)) func(m *Model) Result { return func(m *Model) Result { f(m); return None } }
+	bind(func(*Model) Result { return Quit }, "q", "esc")
+	bind(do((*Model).descend), "l", "right", "ctrl+f", "enter")
+	// ctrl+b を ← の別名にするのは glogx-ui-guide §2 の例外 (pro-con のボードと同じ「← が左の列へ動くだけ」の画面)
+	bind(do(func(m *Model) {
 		if m.cur.parent != nil {
 			m.setCur(m.cur.parent)
 		}
-	case "space", " ", "tab":
+	}), "h", "left", "ctrl+b")
+	bind(do(func(m *Model) {
 		if m.cur.dir {
 			m.ensureLoaded(m.cur)
 			m.cur.expanded = !m.cur.expanded
 		}
-	case "c":
+	}), "space", " ", "tab")
+	bind(do(func(m *Model) {
 		if m.cur.dir {
 			m.cur.expanded = false
 		}
-	case "C":
-		m.collapseOthers()
-	case "J":
-		m.moveSibling(10)
-	case "K":
-		m.moveSibling(-10)
-	case "-", "backspace":
-		m.rerootUp()
-	case "/":
-		m.startSearch()
-	case "n":
-		m.repeatSearch(1)
-	case "N":
-		m.repeatSearch(-1)
-	case "e":
-		m.explode()
-	case "?":
-		m.help = true
-	case "!":
-		m.startPrompt()
-	case "s":
-		m.requestShell()
-		return Exec
-	case ".":
+	}), "c")
+	bind(do((*Model).collapseOthers), "C")
+	bind(do(func(m *Model) { m.moveSibling(10) }), "J")
+	bind(do(func(m *Model) { m.moveSibling(-10) }), "K")
+	bind(do((*Model).rerootUp), "-", "backspace")
+	bind(do((*Model).startSearch), "/")
+	bind(do(func(m *Model) { m.repeatSearch(1) }), "n")
+	bind(do(func(m *Model) { m.repeatSearch(-1) }), "N")
+	bind(do((*Model).explode), "e")
+	bind(do(func(m *Model) { m.help = true }), "?")
+	bind(do((*Model).startPrompt), "!")
+	bind(func(m *Model) Result { m.requestShell(); return Exec }, "s")
+	bind(do(func(m *Model) {
 		m.set.ShowHidden = !m.set.ShowHidden // 設定の Dotfiles と同じ (保存もする)
 		m.applySettings("show_hidden")
-	case ",":
-		m.panel.open, m.help = true, false
-	case "o":
-		m.opener.start(m.cur.path(), m.cur.name)
-	case "r":
-		m.Refresh() // 開いていたフォルダは保つ (treebeard は配下の展開を失う。spec §5.7 との差)
-	default:
-		switch listnav.MotionOf(k) {
-		case listnav.Down:
-			m.moveSibling(1)
-		case listnav.Up:
-			m.moveSibling(-1)
-		case listnav.HalfDown:
-			m.moveSibling(m.halfPage())
-		case listnav.HalfUp:
-			m.moveSibling(-m.halfPage())
-		case listnav.Top:
-			m.setCur(m.siblings()[0])
-		case listnav.Bottom:
-			s := m.siblings()
-			m.setCur(s[len(s)-1])
-		case listnav.None:
-		}
+	}), ".")
+	bind(do(func(m *Model) { m.panel.open, m.help = true, false }), ",")
+	bind(do(func(m *Model) { m.opener.start(m.cur.path(), m.cur.name) }), "o")
+	bind(do((*Model).Refresh), "r") // 開いていたフォルダは保つ (treebeard は配下の展開を失う。spec §5.7 との差)
+}
+
+// Binds は key が今の画面で filer の意味を持つか。持つキーは、呼び出し側 (glogx) が自分の横断キーとして取らずに渡す (spec §0.3)。
+// 入力欄・設定の板・キー一覧の間は全部のキーを filer が持つ。
+func (m *Model) Binds(key string) bool {
+	if m.OwnsKeys() || key == "ctrl+c" {
+		return true
+	}
+	_, ok := treeKeys[key]
+	return ok || listnav.MotionOf(key) != listnav.None
+}
+
+func (m *Model) treeKey(k string) Result {
+	if f, ok := treeKeys[k]; ok {
+		return f(m)
+	}
+	switch listnav.MotionOf(k) {
+	case listnav.Down:
+		m.moveSibling(1)
+	case listnav.Up:
+		m.moveSibling(-1)
+	case listnav.HalfDown:
+		m.moveSibling(m.halfPage())
+	case listnav.HalfUp:
+		m.moveSibling(-m.halfPage())
+	case listnav.Top:
+		m.setCur(m.siblings()[0])
+	case listnav.Bottom:
+		s := m.siblings()
+		m.setCur(s[len(s)-1])
+	case listnav.None:
 	}
 	return None
 }
@@ -1227,11 +1264,8 @@ func spinnerFrame(now time.Time) string {
 
 // searchBar は検索中の最下行 (spec §3.4 の / 検索行)。
 func (m *Model) searchBar(c *canvas) {
-	y := m.h - 1
-	c.clear(0, y, m.w-1, y, cBar)
-	x := c.put(0, y, searchPrefix, cAccRoute, true)
-	text, _ := m.search.line.Window(max(m.w-searchPrefixW-1, 1))
-	x = c.put(x, y, text, cText, false)
+	f, _ := m.inputField()
+	y, x := m.h-1, m.putField(c, f)
 	q := m.search.line.String()
 	switch {
 	case q == "":
@@ -1276,13 +1310,7 @@ func (m *Model) drawHelp(c *canvas) {
 		return
 	}
 	x0, y0 := (m.w-w)/2, max((m.h-1-h)/2, 0)
-	c.clear(x0, y0, x0+w-1, y0+h-1, cPop)
-	c.put(x0, y0, "╭"+strings.Repeat("─", w-2)+"╮", cAccRoute, false)
-	for y := y0 + 1; y < y0+h-1; y++ {
-		c.put(x0, y, "│", cAccRoute, false)
-		c.put(x0+w-1, y, "│", cAccRoute, false)
-	}
-	c.put(x0, y0+h-1, "╰"+strings.Repeat("─", w-2)+"╯", cAccRoute, false)
+	c.frame(rect{x0, y0, w, h}, cAccRoute)
 	c.put(x0+2, y0, " treefiler ", cText, true)
 	for i, kv := range helpKeys {
 		y := y0 + 2 + i
@@ -1296,12 +1324,8 @@ func (m *Model) drawHelp(c *canvas) {
 
 // promptBar は `!` の入力中の最下行 (spec §3.4 の ! プロンプト行)。
 func (m *Model) promptBar(c *canvas) {
-	y := m.h - 1
-	c.clear(0, y, m.w-1, y, cBar)
-	pre := m.promptPrefix()
-	x := c.put(0, y, pre, cAccRoute, true)
-	text, _ := m.prompt.line.Window(max(m.w-widthOf(pre)-1, 1))
-	x = c.put(x, y, text, cText, false)
+	f, _ := m.inputField()
+	y, x := m.h-1, m.putField(c, f)
 	c.put(x+1, y, "  enter 実行 · esc 取り消し · $f = 選んだパス", cMuted, false)
 }
 
