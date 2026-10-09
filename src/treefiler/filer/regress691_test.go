@@ -1,8 +1,11 @@
 package filer
 
 import (
+	"fmt"
+	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -304,5 +307,89 @@ func TestSearchSkipsVanishedMatch(t *testing.T) {
 	m.HandleInput("tab", "")
 	if m.cur == gone || !m.inTree(m.cur) {
 		t.Fatalf("消えた一致へ移った: %s", m.cur.name)
+	}
+}
+
+// 大きいフォルダは mtime が同じなら毎周は読まない。mtime が変われば (項目の増減) すぐ読む。小さいフォルダは毎周読む (issue 693)。
+func TestBigDirPollThrottle(t *testing.T) {
+	t0 := time.Unix(1000, 0)
+	small := dirMeta{mtime: t0, entries: 10}
+	if _, read := small.next(t0); !read {
+		t.Fatal("小さいフォルダを読まなかった")
+	}
+	big := dirMeta{mtime: t0, entries: bigDirEntries + 1}
+	reads := 0
+	for range bigDirEvery * 3 {
+		var read bool
+		big, read = big.next(t0)
+		if read {
+			reads++
+			big = dirMeta{mtime: t0, entries: bigDirEntries + 1}
+		}
+	}
+	if reads != 3 {
+		t.Fatalf("mtime が同じ大きいフォルダを %d 周で %d 回読んだ (%d 周に 1 回のはず)", bigDirEvery*3, reads, bigDirEvery)
+	}
+	if _, read := big.next(t0.Add(time.Second)); !read {
+		t.Fatal("mtime が変わった (項目が増減した) のに読まなかった")
+	}
+}
+
+// 線の格子は画面に出る行の分だけ作る (5 万件のフォルダで 1 フレームの描画が 25ms → 13.8ms。issue 693)。
+func TestLinesClippedToViewport(t *testing.T) {
+	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())
+	dir := t.TempDir()
+	for i := range 500 {
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%03d.txt", i)), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, d := range []string{"f100.d", "f300.d"} { // 縦線のブロックを途中に置く (窓の端がブロックを横切る所を作る)
+		if err := os.MkdirAll(filepath.Join(dir, d, "inner"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for i := range 30 {
+			if err := os.WriteFile(filepath.Join(dir, d, fmt.Sprintf("k%02d", i)), nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	m, err := New(dir, Options{Now: func() time.Time { return fixedNow }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []string{"f100.d", "f300.d"} {
+		m.loadPath(filepath.Join(dir, d)).expanded = true
+	}
+	m.Resize(100, 20)
+	m.Advance(fixedNow)
+	m.snapAll()
+	now := map[*node][2]int{}
+	for n, p := range m.layout() {
+		now[n] = [2]int{p.x, p.y}
+	}
+	oy, ch := int(math.Round(m.camY.v)), m.canvasH()
+	if g := m.lines(now, oy, oy+ch-1); len(g) > 4*ch {
+		t.Fatalf("画面 %d 行に対して線のセルを %d 個作った (画面の外まで作っている)", ch, len(g))
+	}
+	// 切り詰めても画面の中のセルは切り詰めない格子と同じ (窓をずらして、端がブロックの途中・親の行・子の行に来る所を全部通す)
+	full := m.lines(now, -1<<30, 1<<30)
+	maxY := 0
+	for k := range full {
+		maxY = max(maxY, k[1])
+	}
+	for ylo := -3; ylo <= maxY; ylo += 3 {
+		yhi := ylo + ch - 1
+		g := m.lines(now, ylo, yhi)
+		for k, c := range full {
+			if k[1] >= ylo && k[1] <= yhi && !reflect.DeepEqual(g[k], c) {
+				t.Fatalf("窓 [%d, %d] のセル %v: 切り詰めると %+v、全体では %+v", ylo, yhi, k, g[k], c)
+			}
+		}
+		for k := range g {
+			if k[1] >= ylo && k[1] <= yhi && full[k] == nil {
+				t.Fatalf("窓 [%d, %d] のセル %v: 全体の格子に無い線を作った", ylo, yhi, k)
+			}
+		}
 	}
 }

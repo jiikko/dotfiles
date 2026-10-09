@@ -559,6 +559,7 @@ func (m *Model) step(dt float64) bool {
 		moving = t.open.step(target, popupDur, dt) || moving
 		moving = t.sy.step(float64(t.scroll), scrollDur, dt) || moving
 		if t.closing && t.open.v <= 0.001 {
+			t.stopDiff()
 			continue
 		}
 		kt = append(kt, t)
@@ -617,6 +618,7 @@ func (m *Model) snapAll() {
 	kt := m.tiles[:0]
 	for _, t := range m.tiles {
 		if t.closing {
+			t.stopDiff()
 			continue
 		}
 		t.open.snap()
@@ -954,7 +956,7 @@ func (m *Model) drawBead(c *canvas, ox, oy, ch int) {
 }
 
 func (m *Model) drawLines(c *canvas, now map[*node][2]int, ox, oy, ch int) {
-	grid := m.lines(now)
+	grid := m.lines(now, oy, oy+ch-1)
 	for k, lc := range grid {
 		x, y := k[0]-ox, k[1]-oy
 		if y >= ch {

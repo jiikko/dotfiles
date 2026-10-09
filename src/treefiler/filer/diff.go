@@ -60,9 +60,10 @@ const diffMaxLines = 20000
 const diffMaxBytes = 8 << 20
 
 type diffJob struct {
-	mu    sync.Mutex
-	done  bool
-	lines []string
+	mu     sync.Mutex
+	done   bool
+	lines  []string
+	cancel context.CancelFunc // 本体へ戻る・取り直す・隣へ送るときに git を止める (d の連打で git を重ねない。issue 693)
 }
 
 func (j *diffJob) result() ([]string, bool) {
@@ -81,9 +82,11 @@ func (m *Model) diffable(n *node) bool {
 }
 
 func startDiff(path string) *diffJob {
-	j := &diffJob{}
+	ctx, cancel := context.WithCancel(context.Background())
+	j := &diffJob{cancel: cancel}
 	go func() {
-		lines := fetchDiff(path)
+		defer cancel()
+		lines := fetchDiff(ctx, path)
 		j.mu.Lock()
 		defer j.mu.Unlock()
 		j.lines, j.done = lines, true
@@ -91,13 +94,13 @@ func startDiff(path string) *diffJob {
 	return j
 }
 
-func fetchDiff(path string) []string {
+func fetchDiff(parent context.Context, path string) []string {
 	top := findRepoTop(filepath.Dir(path))
 	rel, err := filepath.Rel(top, path)
 	if top == "" || err != nil {
 		return []string{"(git の repo の外です)"}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), subproc.GitOpTimeout)
+	ctx, cancel := context.WithTimeout(parent, subproc.GitOpTimeout)
 	defer cancel()
 	out, err := gitDiffCommand(ctx, top, rel, false)
 	if err != nil { // HEAD がまだ無い repo (最初の commit の前) は index との差を見る

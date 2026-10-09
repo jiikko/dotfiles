@@ -281,7 +281,7 @@ func TestFetchDiffLiteralPathspec(t *testing.T) {
 	git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "x")
 	write("a1.txt", "one changed\n")
 	write("a[1].txt", "bracket changed\n")
-	got := strings.Join(fetchDiff(filepath.Join(dir, "a[1].txt")), "\n")
+	got := strings.Join(fetchDiff(context.Background(), filepath.Join(dir, "a[1].txt")), "\n")
 	if !strings.Contains(got, "+bracket changed") || strings.Contains(got, "one changed") {
 		t.Fatalf("a[1].txt の diff:\n%s", got)
 	}
@@ -360,7 +360,7 @@ func TestFetchDiffStopsAtByteCap(t *testing.T) {
 	if err := os.WriteFile(p, []byte(strings.Repeat(line, n)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	lines := fetchDiff(p)
+	lines := fetchDiff(context.Background(), p)
 	if len(lines) < 2 || len(lines) > n {
 		t.Fatalf("行の数 = %d (書いた行 %d)", len(lines), n)
 	}
@@ -427,4 +427,30 @@ func TestScrollbarIsInsideBorder(t *testing.T) {
 	if widthOf("█") != 1 || widthOf("░") != 1 {
 		t.Fatal("スクロールバーの文字が 1 桁でない (枠がずれる)")
 	}
+}
+
+// d を連打しても git を重ねない: 本体へ戻すと取得中の diff の git を止める (issue 693)。
+func TestDiffToggleCancelsInflightFetch(t *testing.T) {
+	started := make(chan struct{}, 4)
+	canceled := make(chan struct{}, 4)
+	orig := gitDiffCommand
+	gitDiffCommand = func(ctx context.Context, _, _ string, _ bool) ([]byte, error) {
+		started <- struct{}{}
+		<-ctx.Done()
+		canceled <- struct{}{}
+		return nil, ctx.Err()
+	}
+	t.Cleanup(func() { gitDiffCommand = orig })
+	m := newTest(t)
+	markModified(t, m, "c.txt")
+	openTileAt(t, m, "c.txt")
+	m.HandleKey("d") // diff へ (取得は止まったまま)
+	<-started
+	m.HandleKey("d") // 本体へ: 取得を止める
+	select {
+	case <-canceled:
+	case <-time.After(10 * time.Second): // hang guard (止めなかったときだけ落とす)
+		t.Fatal("本体へ戻しても取得中の git を止めない")
+	}
+	waitDiff(t, m) // 取得の goroutine が終わってから抜ける (差し替え点を戻す後始末と、--cached の 2 回目の呼び出しを重ねない)
 }

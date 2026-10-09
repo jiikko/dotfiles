@@ -111,6 +111,7 @@ func (w *watcher) loop(stop chan struct{}, ch chan struct{}) {
 	defer close(ch)
 	t := time.NewTicker(watchEvery)
 	defer t.Stop()
+	metas := map[string]dirMeta{} // この loop だけが使う (開き直すと作り直す)
 	for {
 		select {
 		case <-stop:
@@ -127,7 +128,17 @@ func (w *watcher) loop(stop chan struct{}, ch chan struct{}) {
 		var found []dirChange
 		next := make(map[string]map[string]entrySig, len(dirs))
 		for _, d := range dirs {
+			var mtime time.Time
+			if info, err := os.Lstat(d); err == nil {
+				mtime = info.ModTime()
+			}
+			meta, read := metas[d].next(mtime)
+			metas[d] = meta
+			if !read {
+				continue // 基準はそのまま (commit は今の want に在る基準を消さない)
+			}
 			sig := readSig(d)
+			metas[d] = dirMeta{mtime: mtime, entries: len(sig)}
 			next[d] = sig
 			w.mu.Lock()
 			old, ok := w.seen[d]
@@ -154,6 +165,29 @@ func (w *watcher) loop(stop chan struct{}, ch chan struct{}) {
 			}
 		}
 	}
+}
+
+// bigDirEntries を超えるフォルダは、フォルダ自身の mtime が変わらない限り bigDirEvery 周に 1 回だけ全部を読む。
+// 🚨 5 万件のフォルダは 1 回の readSig が 154ms で、毎秒読むと裏の CPU を 16% 前後使い続けた (監査で実測 2026-10-09。issue 693)。
+// 項目の追加・削除・名前の変更はフォルダの mtime に出るので次の周で読む。既存のファイルの書き換えは mtime に出ないので、最大 bigDirEvery 秒遅れて映る
+const (
+	bigDirEntries = 5000
+	bigDirEvery   = 5
+)
+
+type dirMeta struct {
+	mtime   time.Time
+	entries int
+	skipped int
+}
+
+// next は今の周に全部を読むか (read) と、更新した記録を返す。
+func (d dirMeta) next(mtime time.Time) (dirMeta, bool) {
+	if d.entries <= bigDirEntries || !mtime.Equal(d.mtime) || d.skipped+1 >= bigDirEvery {
+		return dirMeta{mtime: d.mtime, entries: d.entries}, true
+	}
+	d.skipped++
+	return d, false
 }
 
 func readSig(dir string) map[string]entrySig {

@@ -1,6 +1,7 @@
 package filer
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,7 +37,7 @@ func TestGitDoesNotRunRepoConfigCommands(t *testing.T) {
 	if _, ok := fetchRepo(dir); !ok {
 		t.Fatal("前提: status を取れない")
 	}
-	fetchDiff(filepath.Join(dir, "f.txt"))
+	fetchDiff(context.Background(), filepath.Join(dir, "f.txt"))
 	for _, p := range []string{fsmon, textconv, extdiff} {
 		if _, err := os.Stat(p); err == nil {
 			t.Fatalf("repo の設定のコマンドが走った: %s", filepath.Base(p))

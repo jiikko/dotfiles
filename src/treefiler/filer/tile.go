@@ -470,6 +470,7 @@ func (m *Model) drawTile(c *canvas, t *tile, r rect, front bool, p float64) {
 
 // toggleDiff は d (git の diff と本体の切り替え。spec §8.3)。diff を出せないファイルでは理由を知らせる。
 func (m *Model) toggleDiff(t *tile) {
+	t.stopDiff()
 	if t.mode == modeDiff {
 		t.mode = modeFile
 	} else {
@@ -490,4 +491,11 @@ func (m *Model) diffLoading(t *tile) bool {
 	}
 	_, done := t.diff.result()
 	return !done
+}
+
+// stopDiff は取得中の diff の git を止める (結果は使わない)。
+func (t *tile) stopDiff() {
+	if t.diff != nil && t.diff.cancel != nil {
+		t.diff.cancel()
+	}
 }

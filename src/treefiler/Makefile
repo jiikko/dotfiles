@@ -15,3 +15,5 @@ vet-gorules:
 
 test:
 	go test -race ./...
+	# 確保の回数の予算 (filer/alloc_budget_test.go) は -race の計装で揺れるので、-race なしでも回す
+	go test -count=1 -run '^TestFrameAllocBudget$$' ./filer/

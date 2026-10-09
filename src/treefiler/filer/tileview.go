@@ -50,6 +50,7 @@ func isMarkdown(name string) bool {
 func (t *tile) setSource(n *node, src *textSource) {
 	t.n, t.src = n, src
 	t.links, t.scroll, t.sy, t.jump, t.sel = nil, 0, tween{}, false, 0
+	t.stopDiff()
 	t.mode, t.diff = modeFile, nil
 	t.vlines, t.vkey, t.vsrc = nil, viewKey{}, 0
 	t.hl = nil

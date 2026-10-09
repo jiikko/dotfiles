@@ -332,7 +332,9 @@ func (m *Model) thinBranch(n *node) bool {
 }
 
 // lines は「今描いている位置」(アニメ中の位置) から線を引く (spec §4.2: 線はアニメ中の位置から毎フレーム引く)。
-func (m *Model) lines(now map[*node][2]int) lineGrid {
+// ylo..yhi は画面に出る行 (木の座標)。その外の線は作らない: 5 万件のフォルダで 1 フレーム 25ms かかり、線の格子が半分を占めた
+// (監査で実測 2026-10-09。issue 693)。縦線は 1 行外まで残す (端のセルの継ぎ目の形は隣のセルのビットで決まる)。
+func (m *Model) lines(now map[*node][2]int, ylo, yhi int) lineGrid {
 	sp := m.spine()
 	g := lineGrid{}
 	for _, pn := range m.order {
@@ -361,6 +363,16 @@ func (m *Model) lines(now map[*node][2]int) lineGrid {
 		for _, q := range kp {
 			minX, y0, y1 = min(minX, q[0]), min(y0, q[1]), max(y1, q[1])
 		}
+		if max(y1, pp[1]) < ylo-1 || min(y0, pp[1]) > yhi+1 {
+			continue // ブロックごと画面の外
+		}
+		clip := func(a, b int) (int, int, bool) {
+			if a > b {
+				a, b = b, a
+			}
+			a, b = max(a, ylo-1), min(b, yhi+1)
+			return a, b, a <= b
+		}
 		start := pp[0] + m.labelWidth(pn) + 1
 		bar := minX - 1 - m.set.BranchOffset
 		if bar < start {
@@ -370,12 +382,15 @@ func (m *Model) lines(now map[*node][2]int) lineGrid {
 		for _, k := range m.kids(pn) {
 			if _, ok := now[k]; ok && !m.thinBranch(k) {
 				blockThick = true
+				break
 			}
 		}
-		g.vseg(bar, y0, y1, emph, pn, blockThick)
+		if a, b, ok := clip(y0, y1); ok {
+			g.vseg(bar, a, b, emph, pn, blockThick)
+		}
 		for _, k := range m.kids(pn) {
 			q, ok := now[k]
-			if !ok {
+			if !ok || q[1] < ylo || q[1] > yhi {
 				continue
 			}
 			e := emph
@@ -400,7 +415,9 @@ func (m *Model) lines(now map[*node][2]int) lineGrid {
 		} else {
 			tx := max(bar-1, start)
 			g.hseg(start, tx, py, je, pn, blockThick)
-			g.vseg(tx, py, y0, je, pn, blockThick)
+			if a, b, ok := clip(py, y0); ok {
+				g.vseg(tx, a, b, je, pn, blockThick)
+			}
 			g.hseg(tx, bar, y0, je, pn, blockThick)
 		}
 		if routeKid != nil {
@@ -408,7 +425,9 @@ func (m *Model) lines(now map[*node][2]int) lineGrid {
 			if level {
 				ty = py
 			}
-			g.vseg(bar, ty, now[routeKid][1], emRoute, pn, !m.thinBranch(routeKid))
+			if a, b, ok := clip(ty, now[routeKid][1]); ok {
+				g.vseg(bar, a, b, emRoute, pn, !m.thinBranch(routeKid))
+			}
 		}
 	}
 	return g
