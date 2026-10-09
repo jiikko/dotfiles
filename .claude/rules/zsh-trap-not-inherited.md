@@ -91,6 +91,14 @@ SIG_IGN は上書きされる**。Go がまさにこれで、継承した SIG_IG
 pty を閉じる経路 (tmux の popup / pane 破棄、端末を閉じる) がカーネルに送らせるのは SIGHUP で、
 TERM ではない。
 
+## 同族: 関数の中の `local path` は PATH を空にする
+
+- **zsh の関数で、特別な名前を local の変数名に使わない** (`path` `fpath` `cdpath` `manpath` `module_path` `status` `pipestatus` 等)。
+  zsh の `path` は PATH と結び付いた配列で、`local path` と書いた瞬間に関数の中の PATH が空になる。bash では同じコードが動く
+- **bash と zsh の両方から source される lib は、両方から呼ぶテストで固定する** (bash だけで確かめると見えない)
+- 起源: issue 670 の `bin/lib/go_tool.sh` (2026-10-09)。zsh から呼んだときだけ、ラッパーの `env zsh` が見つからず「ビルドできない」で落ちた。
+  回帰の検査は `tests/bin/test_go_tool_resolve.sh`
+
 ## 例外
 
 - `nohup` は exec の境界で HUP を SIG_IGN に立て直すので、どの層で ignore を失っても効く。ただし

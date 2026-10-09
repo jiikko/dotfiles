@@ -34,3 +34,8 @@ epic 674 の残りの子 issue と、670 の 3 本 (codex-events / concat の mp
 ## 進捗
 
 - 2026-10-09: 起票。提案の切り出しはユーザーの判断を待つ。反証レビューは行っていない (retro。起票者の自己確認のみ)
+- 2026-10-09: ユーザーの判断で提案 3 件を既存のルールへ追記した (commit: rules: retro 690 の 3 件を既存のルールへ追記する)。残課題は無いので done へ
+  - 1 → `.claude/rules/zsh-trap-not-inherited.md` の「同族: 関数の中の `local path` は PATH を空にする」節 (paths: に `bin/**` があるので `bin/lib/*.sh` を読んだときも読み込まれる)
+  - 2 → `_claude/rules/adversarial-review-own-safeguards.md` §8 の末尾に 1 項
+  - 3 → `_claude/rules/verify-execution-not-just-exit-code.md` の「CI のジョブに足す依存」の行に、テストを足すときの逆向きの確認を足した
+  - 常時読み込む `_claude/rules/` の合計は 112,430 字 (上限の目安 150k 字の内)
