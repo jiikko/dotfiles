@@ -51,7 +51,7 @@
     log --patch・diff --cached・状態ビューのプレビューの diff、treefiler の diff) に `--no-textconv --no-ext-diff`
   - 検査 `tests/scripts/test_git_calls_hardened.sh`: git をコマンド名にした起動が `GitArgs(` を通っていなければ落とす (脅威モデルと検出しない形は冒頭)
   - テスト: 本物の git で罠 (fsmonitor・textconv・外部 diff・gpg.program・post-index-change の hook) を仕込んだ repo を作り、glogx (show・diff --cached・log -p・
-    状態の取得・状態ビューのプレビュー)・treefiler (status・diff)・pro-con (gitx.Run) で走らないことを見る。変異 16 本が red (設定・引数を 1 つずつ外す・検査)。
+    状態の取得・状態ビューのプレビュー)・treefiler (status・diff)・pro-con (gitx.Run) で走らないことを見る。変異 13 本が red (設定・引数を 1 つずつ外す・検査。等価だった show の --no-ext-diff は数えない)。
     🚨 gpg.program と diff.external は git がシェルを通さずに起動するので、`touch x;false` の文字列の罠は作動していなかった (修正を外しても緑だった)。
     実行できるスクリプトにして変異で red を確かめた。show と log -p の `--no-ext-diff` を外しても緑なのは等価な変異 (この 2 つは `--ext-diff` が無いと外部 diff を使わない)
   - 脅威の範囲 (止めないもの。subproc.GitArgs の doc にも書いた): `filter.<名前>.clean` / smudge は内容が変わったファイルがあると status でも走るが、git-lfs など
