@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -27,6 +28,7 @@ func TestMain(m *testing.M) {
 			os.Exit(runFakeDispatcher(p))
 		}
 	}
+	widthenv.ExitIfUnsupported() // 幅を数える env (RUNEWIDTH_EASTASIAN=1) では幅の検査が環境のせいで大量に落ちる。理由を出して止める
 	// worktree clean のテストの fixture はこの下に作る。wtclean はテストの二進ではこの外を消す前に拒否する (issue 492)
 	root, err := os.MkdirTemp("", "pro-con-wtclean")
 	if err != nil {

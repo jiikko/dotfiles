@@ -22,6 +22,11 @@ func Command(path string, env func(string) string) *exec.Cmd {
 	if env == nil {
 		env = os.Getenv
 	}
+	// `-` / `+` で始まる相対パスはエディタがオプション (vim の +cmd) と読む。`--` は受けないエディタがあるので、./ を前置して
+	// ファイル名として渡す (issue 701 の 11)
+	if strings.HasPrefix(path, "-") || strings.HasPrefix(path, "+") {
+		path = "./" + path
+	}
 	var fields []string
 	for _, name := range []string{"VISUAL", "EDITOR"} {
 		if f := strings.Fields(env(name)); len(f) > 0 {

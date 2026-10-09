@@ -28,3 +28,13 @@ func TestCommandPicksEditor(t *testing.T) {
 		})
 	}
 }
+
+// `-` / `+` で始まる相対パスはオプションと読まれないよう ./ を前置する (vim の +cmd。issue 701 の 11)。
+func TestCommandPrefixesOptionLikePath(t *testing.T) {
+	for path, want := range map[string]string{"+q": "./+q", "-c": "./-c", "a.md": "a.md", "/abs/+x": "/abs/+x"} {
+		cmd := Command(path, func(string) string { return "" })
+		if got := cmd.Args[len(cmd.Args)-1]; got != want {
+			t.Errorf("Command(%q) の最後の引数 = %q (want %q)", path, got, want)
+		}
+	}
+}

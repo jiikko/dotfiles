@@ -18,7 +18,7 @@ var truncPieces = []string{
 
 var truncTails = []string{"", "…", "..", "\x1b[0m…", "あ"}
 
-// 部品を最大 5 個並べた全列 × 幅 -1〜9 × tail で、x/ansi 本体と 1 byte 違わず一致することを総当たりで確かめる
+// 部品を最大 4 個 (-race では 3 個) 並べた全列 × 幅 -1〜9 × tail で、x/ansi 本体と 1 byte 違わず一致することを総当たりで確かめる
 // (速い道は x/ansi の規則の写しなので、本物を正解役にして突き合わせる)
 func TestAnsiTruncateMatchesAnsi(t *testing.T) {
 	t.Parallel()
@@ -46,7 +46,13 @@ func TestAnsiTruncateMatchesAnsi(t *testing.T) {
 			walk(prefix+p, depth-1)
 		}
 	}
-	walk("", 4)
+	// 深さ 4 は約 19 万列で -race だと 70 秒 (CI では 2 分強)。-race の run は深さ 3 (変異 6 本は深さ 2 でも全部 red)、深さ 4 は
+	// Makefile の test が -race なしで回す (issue 701 の 1)
+	depth := 4
+	if raceEnabled {
+		depth = 3
+	}
+	walk("", depth)
 	// 速い道を通った列が十分にあること (受理集合が変わって全部 x/ansi へ回ると、この検査は何も比べなくなる)
 	if fast < total/10 {
 		t.Fatalf("速い道を通った列が %d / %d しかない (受理集合が変わった?)", fast, total)

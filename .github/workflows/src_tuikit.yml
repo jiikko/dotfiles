@@ -4,8 +4,8 @@
 # (触れた変更のときだけ起動) と対象 dir の指定だけを持つ薄い caller。
 # 🚨 paths filter 付きの check を required check に登録しない (理由は _go-project.yml 参照)。
 #
-# 🚨 ここを変えたら src_glogx.yml も走る (paths に src/tuikit/** を足してある)。幅計算と演出は
-#   glogx の画面の土台なので、取り込む側のテストまで通す。
+# 🚨 ここを変えたら、replace で取り込む側 (glogx・pro-con・treefiler・schedkeys・ratelimit) の workflow も走る
+#   (それぞれの paths に src/tuikit/** を足してある)。各 workflow は自分の module のテストを走らせ、取り込む側の画面まで通す。
 name: src/tuikit
 
 on:

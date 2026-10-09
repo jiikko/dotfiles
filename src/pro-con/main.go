@@ -23,6 +23,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 	"io"
 	"os"
 	"os/exec"
@@ -484,6 +485,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	openRelay()
 	defer closeRelay()
+	if widthenv.EastAsianAmbiguous() { // 支持しない幅の env は黙って枠を崩さず、画面の中で一度知らせる (glogx の main と同じ判断。issue 701 の 2)
+		m.Notify("🚨 " + widthenv.Message)
+	}
 	stops := m.WatchStops() // 裏に回されても壊れない (ctrl+z・SIGTSTP・SIGTTIN の後の fg。issue 518)
 	for {
 		prog := tea.NewProgram(m, tea.WithOutput(scr))

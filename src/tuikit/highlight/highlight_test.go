@@ -1,6 +1,7 @@
 package highlight
 
 import (
+	"github.com/charmbracelet/x/ansi"
 	"strings"
 	"testing"
 
@@ -131,24 +132,10 @@ func TestForPath(t *testing.T) {
 	if hl == nil {
 		t.Fatal("main.go の lexer が選ばれない")
 	}
-	if got := hl("func f() {}"); !strings.Contains(got, "\x1b[") || stripForTest(got) != "func f() {}" {
+	if got := hl("func f() {}"); !strings.Contains(got, "\x1b[") || ansi.Strip(got) != "func f() {}" {
 		t.Fatalf("色付け = %q", got)
 	}
 	if ForPath("/x/no-such-kind.zzzq") != nil {
 		t.Fatal("知らない拡張子で lexer が選ばれた")
 	}
-}
-
-func stripForTest(s string) string {
-	var b strings.Builder
-	for i := 0; i < len(s); i++ {
-		if s[i] == 0x1b {
-			for i < len(s) && s[i] != 'm' {
-				i++
-			}
-			continue
-		}
-		b.WriteByte(s[i])
-	}
-	return b.String()
 }

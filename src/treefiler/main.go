@@ -9,6 +9,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 	"os"
 	"strings"
 	"time"
@@ -147,6 +148,9 @@ func main() {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "treefiler:", err)
 		os.Exit(1)
+	}
+	if widthenv.EastAsianAmbiguous() { // 支持しない幅の env は黙って枠を崩さず一度知らせる (glogx の main と同じ。alt screen の後に見える)
+		fmt.Fprintln(os.Stderr, "🚨 "+widthenv.Message)
 	}
 	if _, err := tea.NewProgram(&app{f: f}).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "treefiler:", err)

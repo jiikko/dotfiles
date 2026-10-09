@@ -1,7 +1,5 @@
 # 701 (chore): tuikit のテスト・CI・依存・文書 (遅いテスト・版のずれ・幅の検査の抜け)
 
-> 🚨 **担当中: Claude Code (dotfiles-53。監査の issue を順に直すセッション)**（2026-10-09〜）
-
 起票日: 2026-10-09
 
 ## 概要
@@ -58,3 +56,21 @@
 ## 進捗
 
 - [ ] 未着手
+- [x] 1 `TestAnsiTruncateMatchesAnsi`: -race では深さ 3 (3.6 秒)、深さ 4 は Makefile の test が -race なしで 1 本回す (4.9 秒)。コメントの「最大 5 個」を 4 に直した
+- [x] 2 tuikit を import するテストのあるパッケージ 9 個 (うち 6 個が未対応だった: pro-con・pro-con/ui・schedkeys・restartable/internal/ui・treefiler・
+  treefiler/filer) の TestMain で `widthenv.ExitIfUnsupported()` を呼ぶ。`RUNEWIDTH_EASTASIAN=1 go test ./ui/` (pro-con) は大量の失敗でなく理由を出して止まる。
+  漏れは `tests/scripts/test_widthenv_guarded.sh` が止める (Makefile の自動発見で Tests の rest に入る)。pro-con の TUI と treefiler の main も起動時に知らせる
+- 3 消さない: どれも数ミリ秒で、消して失うものの評価 (`refuse-low-value-coverage.md` の削除の手順) まで要る。test-cleanup の監査で扱う
+- 4 `stripForTest` を `ansi.Strip` に。`assertRowsWidth` は作らない: 形が揃っているのは 3 パッケージに 1 か所ずつで (ほかは <= や条件付き)、
+  パッケージをまたぐ補助には internal のパッケージが要る
+- 5 696 で解消 (go-colorful v1.4.1 / go-runewidth v0.0.30 に揃え、`test_tuikit_consumers_aligned.sh` が見る)
+- 6 未対応 (696 の 10 と同じ件: CI の go1.25.0 にも GO-2026-6088 / 4602。1.25.13 / 1.25.8 で修正。setup-go の版の決め方は repo 全体の判断)
+- [x] 7 tuikit/CLAUDE.md の消費者に treefiler を足し、widthenv の規律を書いた。src_tuikit.yml のコメントを 5 本の workflow が走る形に直した
+  (paths に src/tuikit/** を持つのは glogx・pro-con・ratelimit・schedkeys・treefiler・tuikit の 6 本)
+- 8・9・10・12・13 記録のまま
+- [x] 11 `editor.Command` は `-` / `+` で始まるパスに ./ を前置する (`--` を受けないエディタがあるため)
+- 変異: 検査から pro-con/ui の呼び出しを消す → 検査が赤 / ./ の前置を消す → テストが赤
+- 敵対レビュー (opus、1 周): P1 / P2 なし。直した P3: コメントに path を書いただけで import と数える (引用符付きの形で探す)・読めない .go を黙って
+  飛ばす (rc=2 を判定不能で落とす。chmod 000 の偽の tree で実測)・検出しない形の宣言に「TestMain 以外の関数」と「build tag で外れる _test.go」を足した。
+  記録のみ: src を変えたときの `make test-changed` からはこの検査が走らない (CI の Tests は毎回走る)
+- `make test` / `make lint` (tuikit・pro-con・treefiler・schedkeys・restartable・glogx・ratelimit) rc=0
