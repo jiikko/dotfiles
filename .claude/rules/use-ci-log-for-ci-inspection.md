@@ -10,6 +10,9 @@
   (`gh run watch "$(ci-log -i Tests)"` と引数の中で展開すると rc が捨てられる。`--exit-status` が無いと run が失敗しても rc=0 で終わる)。
   `gh run list --limit 1` のように「最新」で選ぶと、別の commit の run を拾うことがある (2026-10-02 に 2026-09-04 の run の success を拾いかけた。issue 634)。
   rc=4 は「run がまだ無い」(push 直後 / paths filter で起動しない) なので上限つきで再試行する。rc=5 は GitHub に無い (push していない) commit で、待っても来ない
+  - 🚨 **名指しで待った run が緑でも、報告の前に引数なしの `ci-log` を 1 回打ち、その commit の全 run の失敗を見る**。名指しは
+    「待つ対象」を決めるためのもので、名指ししなかった workflow (paths 付きの検査など) については何も言わない (retro 689: 3 本を名指しで
+    待って緑を見続け、`unused` の赤を 10 本見逃した)
 - 🚨 **HEAD が緑でも「直前までが緑」ではない**。paths filter 付きの workflow は、その paths に触らない
   commit では起動しないので、赤いまま残った 1 つ前の commit が HEAD の緑に隠れる。`ci-log` は
   引数なしのとき「HEAD から辿れる commit における各 workflow の最新 run」も見て、まだ緑になって

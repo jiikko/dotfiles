@@ -38,5 +38,5 @@ spec (treebeard) の「Markdown は先頭 2 MiB まで」(spec §5.5) をその�
 
 ## 残課題
 
-- [ ] 1 の追記 (ユーザーの判断待ち)
-- [ ] 2 の追記 (ユーザーの判断待ち)
+- [x] 1 の追記 (2026-10-09 ユーザー回答「両方書いていいよ」。`.claude/rules/use-ci-log-for-ci-inspection.md` の待ち方の項)
+- [x] 2 の追記 (同。`_claude/rules/measure-external-cli-streams-separately.md` の「外部ソースは仮説」の項)
