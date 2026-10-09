@@ -450,12 +450,14 @@ func (m *Model) drawTile(c *canvas, t *tile, r rect, front bool, p float64) {
 	if maxS := m.maxScroll(t); maxS > 0 && len(vl) > 0 {
 		th := max(1, rows*rows/len(vl))
 		ty := int(float64(rows-th) * float64(min(sy, maxS)) / float64(maxS))
+		// 枠の縦線の上には描かない (枠と見分けが付かない。ユーザー回答 2026-10-09「四隅と見た目を区別して」)。
+		// 枠の 1 桁内側 (本文の右の空き列) に、つまみは塗りつぶし・溝は薄い網で描く
 		for y := range rows {
-			g, col := "│", cAccDim
+			g, col := "░", mix(cPop, cAccDim, 0.8)
 			if y >= ty && y < ty+th {
-				g, col = "┃", cAccRoute
+				g, col = "█", cAccRoute
 			}
-			c.put(r.x+r.w-1, r.y+1+y, g, col, false)
+			c.put(r.x+r.w-2, r.y+1+y, g, col, false)
 		}
 	}
 }

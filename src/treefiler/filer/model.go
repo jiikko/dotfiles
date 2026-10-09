@@ -1034,7 +1034,10 @@ func (m *Model) drawNames(c *canvas, pos map[*node]place, ox, oy, ch int) {
 					c.fillBg(x, y, x+a.w-1, y, mix(cBg, cRippleBg, g*a.alpha.v))
 				}
 			}
-			c.put(x, y, n.label(), fg, n.dir || m.onPath(n))
+			nx := c.put(x, y, n.label(), fg, n.dir || m.onPath(n))
+			if n.dir {
+				c.put(nx, y, "/", mix(cBg, fg, 0.55), false) // フォルダの印 (ls -F と同じ。名前より薄く)
+			}
 			if d := m.details(n); d != "" {
 				c.put(x+m.nameWidth(n)+2, y, d, mix(cBg, base, a.alpha.v*0.5), false) // 列の中で右揃え・薄く (spec §3.4)
 			}
@@ -1055,8 +1058,10 @@ func (m *Model) drawNames(c *canvas, pos map[*node]place, ox, oy, ch int) {
 			}
 			bx := x + a.w + 1
 			switch {
-			case n.dir && !n.expanded && (!n.loaded || len(m.kids(n)) > 0):
-				// 閉じたフォルダの芽は、配下にいちばん重い git の変更があればその色 (spec §2.2)
+			case n.dir && (!n.expanded || len(m.kids(n)) == 0):
+				// 右へ線が出ていないフォルダ (閉じている・空・中身が全部隠れている) には常に芽を付ける (ファイルと見分けるため。
+				// ユーザー回答 2026-10-09。treebeard は中身のある閉じたフォルダだけ)。開いて線が出ていれば、その線が印になる。
+				// 芽は、配下にいちばん重い git の変更があればその色 (spec §2.2)
 				bud := mix(cBg, base, a.alpha.v*0.55)
 				if gitRank(st) > 0 {
 					bud = mix(cBg, gitColor[st], a.alpha.v)

@@ -514,3 +514,42 @@ func (c *canvas) plain() []string {
 	}
 	return out
 }
+
+// フォルダは名前の後ろに / が付き、右へ線が出ていなければ (閉じている・空) 芽 › が付く。ファイルには付かない (ユーザー回答 2026-10-09)。
+func TestDirsAreMarked(t *testing.T) {
+	m := newTest(t)
+	if err := os.Mkdir(filepath.Join(m.root.abs, "empty"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m.root.reload()
+	empty := m.findNode(filepath.Join(m.root.abs, "empty"))
+	m.ensureLoaded(empty)
+	empty.expanded = true   // 開いていても中身が無いので右へ線が出ない (未読のフォルダは元から芽が付く)
+	cdTo(t, m, "a/one.txt") // a は開いて右へ線が出る
+	m.Advance(fixedNow)
+	m.snapAll()
+	rows := map[string]string{}
+	for _, l := range m.draw().plain() {
+		for _, name := range []string{"a/", "b/", "empty/", "c.txt", "one.txt"} {
+			if strings.Contains(l, "═"+name) || strings.Contains(l, "─"+name) {
+				rows[name] = l
+			}
+		}
+	}
+	if len(rows) != 5 {
+		t.Fatalf("行が見つからない: %v", rows)
+	}
+	for _, name := range []string{"b/", "empty/"} {
+		if !strings.Contains(rows[name], name+" ›") {
+			t.Fatalf("閉じた・空のフォルダに芽が無い: %q", rows[name])
+		}
+	}
+	if strings.Contains(rows["a/"], "a/ ›") {
+		t.Fatalf("開いて線が出ているフォルダに芽: %q", rows["a/"])
+	}
+	for _, name := range []string{"c.txt", "one.txt"} {
+		if strings.Contains(rows[name], name+"/") || strings.Contains(rows[name], name+" ›") {
+			t.Fatalf("ファイルに印が付いた: %q", rows[name])
+		}
+	}
+}

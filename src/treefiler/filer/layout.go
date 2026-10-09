@@ -74,7 +74,7 @@ func (m *Model) layout() map[*node]place {
 		var parents []*node
 		namew := 0
 		for _, n := range cols[depth] {
-			namew = max(namew, widthOf(n.label()))
+			namew = max(namew, nameCells(n))
 			if n.dir && n.expanded && len(m.kids(n)) > 0 {
 				parents = append(parents, n)
 			}
@@ -145,14 +145,23 @@ func (m *Model) layout() map[*node]place {
 func (m *Model) labelWidth(n *node) int {
 	dw := m.detailsWidth()
 	if dw == 0 {
-		return widthOf(n.label())
+		return nameCells(n)
 	}
 	return m.nameWidth(n) + 2 + dw
 }
 
+// nameCells は名前の表示幅。フォルダは後ろの `/` の 1 桁を含む (ファイルと見分けるため。ユーザー回答 2026-10-09)。
+func nameCells(n *node) int {
+	w := widthOf(n.label())
+	if n.dir {
+		w++
+	}
+	return w
+}
+
 // nameWidth は n の列の名前の幅 (layout が数えた最長。数えていない列 (消えていく途中など) なら自分の名前の幅)。
 func (m *Model) nameWidth(n *node) int {
-	own := widthOf(n.label())
+	own := nameCells(n)
 	if d := n.depth(); d < len(m.nameW) {
 		return max(m.nameW[d], own)
 	}

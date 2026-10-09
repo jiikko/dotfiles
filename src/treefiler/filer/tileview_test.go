@@ -399,3 +399,32 @@ func TestDiffToggleShowsRefetchedContent(t *testing.T) {
 		t.Fatalf("取り直した diff が出ない: %q", got)
 	}
 }
+
+// スクロールバーは枠の縦線の上でなく、その 1 桁内側に描く (枠・四隅と見分けるため。ユーザー回答 2026-10-09)。
+func TestScrollbarIsInsideBorder(t *testing.T) {
+	m := newTest(t)
+	writeRel(t, m, "a/long.txt", strings.Repeat("x\n", 200))
+	tl := openTileAt(t, m, "a/long.txt")
+	m.Advance(fixedNow)
+	m.snapAll()
+	c := m.draw()
+	r := slotRect(tl.slot, m.w, m.canvasH())
+	thumb, track := 0, 0
+	for y := r.y + 1; y < r.y+r.h-1; y++ {
+		if s := c.at(r.x+r.w-1, y).s; s != "│" {
+			t.Fatalf("%d 行目の枠の縦線が %q (スクロールバーが枠に重なった)", y, s)
+		}
+		switch c.at(r.x+r.w-2, y).s {
+		case "█":
+			thumb++
+		case "░":
+			track++
+		}
+	}
+	if thumb == 0 || track == 0 {
+		t.Fatalf("内側の列のつまみ %d・溝 %d", thumb, track)
+	}
+	if widthOf("█") != 1 || widthOf("░") != 1 {
+		t.Fatal("スクロールバーの文字が 1 桁でない (枠がずれる)")
+	}
+}

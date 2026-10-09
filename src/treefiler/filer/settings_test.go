@@ -331,7 +331,7 @@ func TestIgnoredBranchIsThin(t *testing.T) {
 	m.snapAll()
 	var bRow, cRow string
 	for _, l := range m.draw().plain() {
-		if strings.Contains(l, "═b ") || strings.Contains(l, "─b ") {
+		if strings.Contains(l, "═b/") || strings.Contains(l, "─b/") {
 			bRow = l
 		}
 		if strings.Contains(l, "c.txt") {
@@ -346,7 +346,7 @@ func TestIgnoredBranchIsThin(t *testing.T) {
 	}
 	m.set.DimIgnored = false
 	for _, l := range m.draw().plain() {
-		if strings.Contains(l, "─b ") {
+		if strings.Contains(l, "─b/") {
 			t.Fatalf("Dim ignored が off でも細い: %q", l)
 		}
 	}
