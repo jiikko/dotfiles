@@ -96,6 +96,8 @@
 #   `go test -vet=off -count=1 -run '^$' ./...` はテストもコンパイルし、テストも analyzer も走らせない。
 #   --file は **repo root からの相対パス** (今いるディレクトリからではない。絶対パスは受けない)。
 #   --apply / --syntax / --verify は **worktree の中**で実行される。
+#   その worktree は新しい checkout なので、gitignore されたディレクトリ (`tmp/` 等) は無い。そこへ出力を書くなら
+#   コマンドに `mkdir -p tmp &&` を含める (無いと「No such file」で構文検査が落ち、全部が判定不能になる。obaket retro 1083)
 #   --syntax / --verify の出力先ディレクトリは素の worktree に無いことがある (ignore されたディレクトリは checkout されない)。
 #   各コマンドの中で `mkdir -p` してから書く (例: `cd macOS && mkdir -p tmp && … > tmp/build.log`。obaket 1083)
 #   $MUTATE_FILE に --file の絶対パス (worktree 側) が入る。
