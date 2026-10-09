@@ -3,12 +3,10 @@ package filer
 import (
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 )
 
 // fakeOpen は openCommand を差し替え、開こうとしたパスを記録する。
@@ -33,14 +31,13 @@ func fakeOpen(t *testing.T, err error) func() []string {
 
 func settleOpen(t *testing.T, m *Model) []Notice {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for m.opener.busy() {
-		m.Advance(fixedNow)
-		if time.Now().After(deadline) {
-			t.Fatal("open が終わらない")
+	waitFor(t, "open", func() bool {
+		if !m.opener.busy() {
+			return true
 		}
-		time.Sleep(5 * time.Millisecond) // sleep-ok: tick: 裏の goroutine の完了を条件で待つループの刻み
-	}
+		m.Advance(fixedNow)
+		return false
+	})
 	return m.TakeNotices()
 }
 
@@ -114,9 +111,7 @@ func TestOpenKeyInTileOpensTileFile(t *testing.T) {
 func TestReloadKey(t *testing.T) {
 	m := newTest(t)
 	cdTo(t, m, "a/one.txt")
-	if err := os.WriteFile(filepath.Join(m.root.abs, "a", "new.txt"), []byte("n\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, filepath.Join(m.root.abs, "a", "new.txt"), "n\n")
 	m.HandleKey("r")
 	a := m.findNode(filepath.Join(m.root.abs, "a"))
 	if a == nil || !a.expanded {

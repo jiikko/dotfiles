@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 // frameAllocBudget は止まった画面 1 フレーム (View) の確保の回数の上限 (issue 693)。
@@ -20,24 +19,17 @@ func TestFrameAllocBudget(t *testing.T) {
 	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())
 	dir := t.TempDir()
 	for i := range 20 {
-		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("file%02d.go", i)), []byte("x\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		mustWrite(t, filepath.Join(dir, fmt.Sprintf("file%02d.go", i)), "x\n")
 	}
 	for _, d := range []string{"alpha", "beta", "gamma"} {
 		if err := os.MkdirAll(filepath.Join(dir, d), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		for i := range 10 {
-			if err := os.WriteFile(filepath.Join(dir, d, fmt.Sprintf("%s%02d.md", d[:1], i)), []byte("y\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
+			mustWrite(t, filepath.Join(dir, d, fmt.Sprintf("%s%02d.md", d[:1], i)), "y\n")
 		}
 	}
-	m, err := New(dir, Options{Now: func() time.Time { return fixedNow }})
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := newAt(t, dir)
 	m.Resize(120, 70)
 	m.HandleKey("l") // alpha を開いて中へ
 	// 残りのフォルダも開く (開いたフォルダの数だけ効く退行 = 芽の判定でスライスを作る形を、数回の余裕で見逃さないため)

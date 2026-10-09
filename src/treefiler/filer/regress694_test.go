@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 // 隠した dotfile のフォルダの中にカーソルがあるとき、そのフォルダの変化も光る (見える判定は kids と同じ visible を通す。issue 694 の 3)。
@@ -17,14 +16,9 @@ func TestChangeOnHiddenCursorPathLights(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, p := range []string{"a.txt", ".cfg/in.txt", ".other"} {
-		if err := os.WriteFile(filepath.Join(dir, p), nil, 0o644); err != nil {
-			t.Fatal(err)
-		}
+		mustWrite(t, filepath.Join(dir, p), "")
 	}
-	m, err := New(dir, Options{Now: func() time.Time { return fixedNow }})
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := newAt(t, dir)
 	m.set.ShowHidden, m.set.Ripples = false, true
 	in := m.loadPath(filepath.Join(dir, ".cfg", "in.txt"))
 	if in == nil {
@@ -155,8 +149,7 @@ func TestBindsMatchesTreeKeys(t *testing.T) {
 		if r := m.HandleKey(k); r != None {
 			t.Errorf("Binds(%q) = false なのに HandleKey が %v を返した", k, r)
 		}
-		m.Advance(fixedNow)
-		m.snapAll()
+		settle(m)
 		if m.cur != cur || m.root != root || m.OwnsKeys() || len(m.tiles) > 0 || len(m.TakeNotices()) > 0 ||
 			strings.Join(m.draw().plain(), "\n") != strings.Join(before, "\n") {
 			t.Errorf("Binds(%q) = false なのに木の画面が変わった", k)
@@ -185,9 +178,7 @@ func (exitCodeError) ExitCode() int { return 1 }
 func TestExecDoneRefreshesAndWarnsOnlyOnStartFailure(t *testing.T) {
 	m := newTest(t)
 	dir := m.root.path()
-	if err := os.WriteFile(filepath.Join(dir, "made-in-shell.txt"), nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, filepath.Join(dir, "made-in-shell.txt"), "")
 	if w := m.ExecDone(nil); w != "" {
 		t.Fatalf("正常に戻ったのに知らせ %q", w)
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -75,9 +74,7 @@ func openTileAt(t *testing.T, m *Model, rel string) *tile {
 func writeRel(t *testing.T, m *Model, rel, body string) {
 	t.Helper()
 	p := filepath.Join(m.root.abs, rel)
-	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, p, body)
 	m.root.reload()
 	if n := m.findNode(filepath.Join(m.root.abs, "a")); n != nil {
 		n.reload()
@@ -176,19 +173,12 @@ func markModified(t *testing.T, m *Model, rel string) {
 	if err := os.Mkdir(filepath.Join(m.root.abs, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	m.set.Git = false
 	setGit(m, " M "+rel+"\x00")
 }
 
 func waitDiff(t *testing.T, m *Model) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for m.diffBusy() {
-		if time.Now().After(deadline) {
-			t.Fatal("diff の取得が終わらない")
-		}
-		time.Sleep(5 * time.Millisecond) // sleep-ok: tick: 裏の goroutine の完了を条件で待つループの刻み
-	}
+	waitFor(t, "diff の取得", func() bool { return !m.diffBusy() })
 }
 
 func TestDiffToggle(t *testing.T) {
@@ -258,27 +248,15 @@ func TestDiffKeepsBusyWhileFetching(t *testing.T) {
 
 // 名前に glob の文字を含むファイルの diff に、他のファイルが混ざらない (レビューで再現 2026-10-09)。
 func TestFetchDiffLiteralPathspec(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git が無い")
-	}
+	needGit(t)
 	dir := t.TempDir()
-	git := func(args ...string) {
-		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
 	write := func(name, body string) {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		mustWrite(t, filepath.Join(dir, name), body)
 	}
-	git("init", "-q", "-b", "main")
+	initRepo(t, dir, "main")
 	write("a1.txt", "one\n")
 	write("a[1].txt", "bracket\n")
-	git("add", ".")
-	git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "x")
+	commitAll(t, dir)
 	write("a1.txt", "one changed\n")
 	write("a[1].txt", "bracket changed\n")
 	got := strings.Join(fetchDiff(context.Background(), filepath.Join(dir, "a[1].txt")), "\n")
@@ -337,29 +315,15 @@ func TestMarkdownReadsUpToCap(t *testing.T) {
 
 // 巨大な diff は上限で読むのをやめて返る (全部を読んでから切らない。止めた git を待って詰まらない)。
 func TestFetchDiffStopsAtByteCap(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git が無い")
-	}
+	needGit(t)
 	dir := t.TempDir()
-	git := func(args ...string) {
-		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
 	p := filepath.Join(dir, "big.txt")
 	line := strings.Repeat("v", 999) + "\n" // 長い行で、行の数の上限より先にバイトの上限に当てる
 	n := diffMaxBytes/len(line) + 100
-	if err := os.WriteFile(p, []byte("x\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	git("init", "-q", "-b", "main")
-	git("add", ".")
-	git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "x")
-	if err := os.WriteFile(p, []byte(strings.Repeat(line, n)), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, p, "x\n")
+	initRepo(t, dir, "main")
+	commitAll(t, dir)
+	mustWrite(t, p, strings.Repeat(line, n))
 	lines := fetchDiff(context.Background(), p)
 	if len(lines) < 2 || len(lines) > n {
 		t.Fatalf("行の数 = %d (書いた行 %d)", len(lines), n)
@@ -405,8 +369,7 @@ func TestScrollbarIsInsideBorder(t *testing.T) {
 	m := newTest(t)
 	writeRel(t, m, "a/long.txt", strings.Repeat("x\n", 200))
 	tl := openTileAt(t, m, "a/long.txt")
-	m.Advance(fixedNow)
-	m.snapAll()
+	settle(m)
 	c := m.draw()
 	r := slotRect(tl.slot, m.w, m.canvasH())
 	thumb, track := 0, 0

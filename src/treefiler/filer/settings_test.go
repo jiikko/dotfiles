@@ -2,19 +2,15 @@ package filer
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestSaveSettingKeepsOtherLines(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "treefiler.toml")
 	orig := "# 手で書いたコメント\nground = \"vellum\" # 紙\n# row_spacing = 9\nrow_spacing = 1 # 手のメモ\n"
-	if err := os.WriteFile(p, []byte(orig), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, p, orig)
 	if err := saveSetting(p, "row_spacing", "2", false); err != nil {
 		t.Fatal(err)
 	}
@@ -35,9 +31,7 @@ func TestSaveSettingKeepsOtherLines(t *testing.T) {
 func TestLoadSettingsReportsBadLines(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "treefiler.toml")
 	body := "row_spacing = 99\nnope = 1\ncolumns = \"fit\"\nground\n"
-	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, p, body)
 	s, bad := loadSettings(p)
 	if len(bad) != 3 || !strings.HasPrefix(bad[0], "line 1:") || !strings.HasPrefix(bad[1], "line 2:") || !strings.HasPrefix(bad[2], "line 4:") {
 		t.Fatalf("悪い行の報告: %q", bad)
@@ -186,9 +180,7 @@ func TestPaperGroundsShareColors(t *testing.T) {
 // palette の選択肢は ground で決まる。ファイルで palette が ground より前にあっても拒否しない (レビューの指摘 2026-10-09)。
 func TestLoadSettingsAppliesGroundBeforePalette(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "treefiler.toml")
-	if err := os.WriteFile(p, []byte("palette = \"growth\"\nground = \"parchment\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, p, "palette = \"growth\"\nground = \"parchment\"\n")
 	s, bad := loadSettings(p)
 	if len(bad) != 0 || s.Palette != "growth" {
 		t.Fatalf("palette = %s bad = %v", s.Palette, bad)
@@ -236,7 +228,6 @@ func TestLiveToggleKeepsChannel(t *testing.T) {
 func TestExplodeIgnoredSetting(t *testing.T) {
 	for _, into := range []bool{false, true} {
 		m := newTest(t)
-		m.set.Git = false // 裏の git の結果で下の決め打ちを上書きさせない
 		m.set.ExplodeIgnore = into
 		setGit(m, "!! b/deep/\x00")
 		b := m.findNode(m.root.path() + "/b")
@@ -252,34 +243,21 @@ func TestExplodeIgnoredSetting(t *testing.T) {
 
 func waitExplode(t *testing.T, m *Model) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for m.exploding != nil {
-		m.Advance(fixedNow)
-		if time.Now().After(deadline) {
-			t.Fatal("explode が終わらない")
+	waitFor(t, "explode", func() bool {
+		if m.exploding == nil {
+			return true
 		}
-		time.Sleep(5 * time.Millisecond) // sleep-ok: tick: 裏の goroutine の完了を条件で待つループの刻み
-	}
+		m.Advance(fixedNow)
+		return false
+	})
 }
 
 // Git を off にしたら、off にする前に始めた取得の結果も取り込まず、読み直しでも取りに行かない。
 func TestGitOffDropsInflightAndStopsFetching(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git が無い")
-	}
+	needGit(t)
 	dir := fixture(t)
-	git := func(args ...string) {
-		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
-	git("init", "-q", "-b", "trunk")
-	m, err := New(dir, Options{Now: func() time.Time { return fixedNow }}) // New が git の取得を始める
-	if err != nil {
-		t.Fatal(err)
-	}
+	initRepo(t, dir, "trunk")
+	m := newAt(t, dir) // New が git の取得を始める
 	m.Resize(120, 40)
 	panelTo(t, m, "git")
 	m.HandleKey("l") // off (取得はまだ走っているか、結果が取り込まれずに残っている)
@@ -300,8 +278,7 @@ func TestGitOffDropsInflightAndStopsFetching(t *testing.T) {
 func TestDetailsRightAlignedInColumn(t *testing.T) {
 	m := newTest(t)
 	m.set.Details = "age"
-	m.Advance(fixedNow)
-	m.snapAll()
+	settle(m)
 	ends := map[string]int{}
 	for _, l := range m.draw().plain() {
 		for _, name := range []string{"c.txt ", "file10.txt "} {
@@ -325,10 +302,8 @@ func TestDetailsRightAlignedInColumn(t *testing.T) {
 // git が無視する枝は細線になる (double: 縦は二重のまま、その枝の横だけ細い。spec §2.1 の thin)。
 func TestIgnoredBranchIsThin(t *testing.T) {
 	m := newTest(t)
-	m.set.Git = false // 裏の git の結果で下の決め打ちを上書きさせない
 	setGit(m, "!! b/\x00")
-	m.Advance(fixedNow)
-	m.snapAll()
+	settle(m)
 	var bRow, cRow string
 	for _, l := range m.draw().plain() {
 		if strings.Contains(l, "═b/") || strings.Contains(l, "─b/") {

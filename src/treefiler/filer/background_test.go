@@ -2,7 +2,6 @@ package filer
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -19,23 +18,17 @@ func settleBackground(t *testing.T, m *Model) {
 	m.walker.mu.Lock()
 	m.walker.now = func() time.Time { return time.Unix(0, clock.Load()) }
 	m.walker.mu.Unlock()
-	deadline := time.Now().Add(10 * time.Second)
 	at := fixedNow
-	for {
+	waitFor(t, "裏の処理", func() bool {
 		at = at.Add(20 * time.Millisecond)
 		clock.Add(int64(time.Second))
 		m.Advance(at)
-		if !m.Busy() {
-			m.Advance(at.Add(20 * time.Millisecond)) // 最後の結果を取り込む
-			if !m.Busy() {
-				return
-			}
+		if m.Busy() {
+			return false
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("裏の処理が 10 秒で終わらない")
-		}
-		time.Sleep(5 * time.Millisecond) // sleep-ok: tick: 裏の goroutine の完了を条件で待つループの刻み
-	}
+		m.Advance(at.Add(20 * time.Millisecond)) // 最後の結果を取り込む
+		return !m.Busy()
+	})
 }
 
 // フォルダの色は配下でいちばん新しい更新で決まる。dotfile を隠している間は dotfile を数えない (spec §5.1)。
@@ -51,9 +44,7 @@ func TestFolderHeatUsesNewestInsideAndHidesDotfiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	dot := filepath.Join(b.path(), ".newer")
-	if err := os.WriteFile(dot, []byte("."), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, dot, ".")
 	if err := os.Chtimes(dot, fixedNow, fixedNow); err != nil {
 		t.Fatal(err)
 	}
@@ -130,27 +121,13 @@ func TestBranchLabel(t *testing.T) {
 
 // 本物の git で: 変更したファイルに印が付き、ステータスバーにブランチが出る。
 func TestGitMarksFromRealRepo(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git が無い")
-	}
+	needGit(t)
 	dir := fixture(t)
-	git := func(args ...string) {
-		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
-	git("init", "-q", "-b", "trunk")
-	git("add", "a")
-	git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "x")
-	if err := os.WriteFile(filepath.Join(dir, "a", "one.txt"), []byte("changed\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	m, err := New(dir, Options{Now: func() time.Time { return fixedNow }})
-	if err != nil {
-		t.Fatal(err)
-	}
+	initRepo(t, dir, "trunk")
+	gitIn(t, dir, "add", "a")
+	gitCommit(t, dir)
+	mustWrite(t, filepath.Join(dir, "a", "one.txt"), "changed\n")
+	m := newAt(t, dir)
 	m.Resize(120, 40)
 	settleBackground(t, m)
 	m.snapAll()
@@ -179,13 +156,8 @@ func TestBusyUntilResultsAreTaken(t *testing.T) {
 		defer m.git.mu.Unlock()
 		return w || m.git.running
 	}
-	deadline := time.Now().Add(10 * time.Second)
-	for running() {
-		if time.Now().After(deadline) {
-			t.Fatal("走査が終わらない")
-		}
-		time.Sleep(5 * time.Millisecond) // sleep-ok: tick: 裏の goroutine の完了を条件で待つループの刻み
-	}
+	idle := func() bool { return !running() }
+	waitFor(t, "走査", idle)
 	// 源ごとに見る (Model.Busy だけだと、片方の未取り込みがもう片方に隠れる)
 	if !m.walker.busy() {
 		t.Fatal("走査の結果を取り込んでいないのに walker.busy が false")
@@ -206,9 +178,7 @@ func TestBusyUntilResultsAreTaken(t *testing.T) {
 	m.walker.mu.Lock()
 	m.walker.queue = nil // 見えているフォルダの依頼は今回の主張と無関係なので捨てる
 	m.walker.mu.Unlock()
-	for running() {
-		time.Sleep(5 * time.Millisecond) // sleep-ok: tick: 走りかけの 1 本の終わりを待つループの刻み
-	}
+	waitFor(t, "走りかけの 1 本", idle)
 	m.takeBackground()
 	if m.Busy() {
 		t.Fatal("取り込んだ後も Busy のまま (tick が止まらない)")
@@ -235,9 +205,7 @@ func TestWatchPicksUpNewFileAndLightsUp(t *testing.T) {
 	ch := m.Changed()
 	defer m.Close()
 	m.Advance(fixedNow) // 見るフォルダ (開いている root) を渡す。基準は木が読み込んだ中身なので、最初の観測を待たずに作ってよい
-	if err := os.WriteFile(filepath.Join(m.root.path(), "fresh.txt"), []byte("f\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, filepath.Join(m.root.path(), "fresh.txt"), "f\n")
 	select {
 	case <-ch:
 	case <-time.After(5 * time.Second): // hang guard
@@ -318,8 +286,7 @@ func TestHiddenDotfileChangeDoesNotLightUp(t *testing.T) {
 func TestRippleLightsElbow(t *testing.T) {
 	m := newTest(t)
 	cdTo(t, m, "a/one.txt")
-	m.Advance(fixedNow)
-	m.snapAll()
+	settle(m)
 	one := m.cur
 	before := m.draw()
 	base := make([]rgb, len(before.cells))
@@ -349,7 +316,9 @@ func dist(a, b rgb) float64 {
 }
 
 // setGit は root を根とする repo の状態を porcelain の出力から決め打ちする。
+// 設定の Git は off にする (裏の git の結果で決め打ちを上書きさせない)。
 func setGit(m *Model, porcelain string) {
+	m.set.Git = false
 	s := parsePorcelain([]byte(porcelain))
 	s.top, s.prefix = m.root.abs, withSep(m.root.abs)
 	m.gitSnap = gitSet{repos: []gitSnapshot{s}}
@@ -357,39 +326,22 @@ func setGit(m *Model, porcelain string) {
 
 // root が repo の外で、配下に repo が並ぶ (~/src のような) とき、開いたフォルダの repo ごとに印とブランチが出る (spec §5.3)。
 func TestGitNestedRepos(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git が無い")
-	}
+	needGit(t)
 	root := t.TempDir()
 	mkRepo := func(name, branch string) string {
 		dir := filepath.Join(root, name)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		git := func(args ...string) {
-			cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-			cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
-			if out, err := cmd.CombinedOutput(); err != nil {
-				t.Fatalf("git %v: %v\n%s", args, err, out)
-			}
-		}
-		git("init", "-q", "-b", branch)
-		if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte("1\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		git("add", ".")
-		git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "x")
+		initRepo(t, dir, branch)
+		mustWrite(t, filepath.Join(dir, "f.txt"), "1\n")
+		commitAll(t, dir)
 		return dir
 	}
 	p1 := mkRepo("p1", "one")
 	mkRepo("p2", "two")
-	if err := os.WriteFile(filepath.Join(p1, "f.txt"), []byte("changed\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	m, err := New(root, Options{Now: func() time.Time { return fixedNow }})
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, filepath.Join(p1, "f.txt"), "changed\n")
+	m := newAt(t, root)
 	m.Resize(120, 40)
 	for _, name := range []string{"p1", "p2"} {
 		n := m.findNode(filepath.Join(root, name))
@@ -415,39 +367,20 @@ func TestGitNestedRepos(t *testing.T) {
 	}
 }
 
-func gitIn(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
-}
-
-func commitAll(t *testing.T, dir string) {
-	t.Helper()
-	gitIn(t, dir, "add", ".")
-	gitIn(t, dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "x")
-}
-
 // 外側の repo の中の入れ子の repo: 中のファイルは内側の repo で引き (深い repo が先)、変更の無い入れ子の repo の根は
 // 外側から見た状態 (未追跡) のまま (開いた途端に印が消えない)。
 func TestGitRepoInsideRepo(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git が無い")
-	}
+	needGit(t)
 	root := t.TempDir()
 	mk := func(rel, body string) {
 		p := filepath.Join(root, rel)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		mustWrite(t, p, body)
 	}
 	mk("top.txt", "t\n")
-	gitIn(t, root, "init", "-q", "-b", "outer")
+	initRepo(t, root, "outer")
 	commitAll(t, root)
 	for _, in := range []string{"dirty", "clean"} {
 		mk(in+"/f.txt", "1\n")
@@ -455,10 +388,7 @@ func TestGitRepoInsideRepo(t *testing.T) {
 		commitAll(t, filepath.Join(root, in))
 	}
 	mk("dirty/f.txt", "changed\n")
-	m, err := New(root, Options{Now: func() time.Time { return fixedNow }})
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := newAt(t, root)
 	m.Resize(120, 40)
 	for _, in := range []string{"dirty", "clean"} {
 		n := m.findNode(filepath.Join(root, in))
@@ -493,9 +423,7 @@ func TestGitSetPrefixBoundary(t *testing.T) {
 
 // フォルダで git init した後、読み直し (r) でも、ライブ更新で .git が現れたときでも、repo の根を数え直す。
 func TestGitRepoTopRecountedAfterInit(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git が無い")
-	}
+	needGit(t)
 	for _, via := range []string{"refresh", "live"} {
 		m := newTest(t)
 		a := m.findNode(filepath.Join(m.root.abs, "a"))
@@ -503,7 +431,7 @@ func TestGitRepoTopRecountedAfterInit(t *testing.T) {
 		a.expanded = true
 		m.startGit(true)
 		settleBackground(t, m)
-		gitIn(t, a.path(), "init", "-q", "-b", "x")
+		initRepo(t, a.path(), "x")
 		if via == "refresh" {
 			m.Refresh()
 		} else {
@@ -530,8 +458,7 @@ func TestShortSizeStaysFourWide(t *testing.T) {
 // 肘の光は親の行・子の行・縦の成分を持つセルだけ。途中の行の兄弟の枝 (横線だけのセル) は光らない。
 func TestRippleElbowSkipsSiblingRows(t *testing.T) {
 	m := newTest(t)
-	m.Advance(fixedNow)
-	m.snapAll()
+	settle(m)
 	ks := m.kids(m.root)
 	last := ks[len(ks)-1]
 	before := m.draw()

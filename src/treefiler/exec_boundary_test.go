@@ -4,6 +4,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -54,9 +55,9 @@ func TestNoOsExecImport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 2026-10-08 実測: 非テストの .go は 12 件 (main.go + filer/ の 10 件 + gorules/)。根がずれると 0 件 = 緑に化ける
-	if scanned < 12 {
-		t.Fatalf("走査した .go が %d 件しかない (下限 12)。走査の根が壊れている", scanned)
+	// 走査の根がずれると 0 件 = 緑に化ける。数は go list (別の方法の列挙) と突き合わせる (下限の定数は古くなる。issue 695 の 2)
+	if want := listedGoFiles(t); scanned != want || scanned == 0 {
+		t.Fatalf("走査した非テストの .go が %d 件、go list では %d 件 (走査の根か除外が壊れている)", scanned, want)
 	}
 	if len(offenders) > 0 {
 		t.Fatalf("os/exec を import している (外部プロセスは subproc.CommandContext で起動する):\n  %s",
@@ -76,4 +77,22 @@ func importsOsExec(t *testing.T, path string, src any) bool {
 		}
 	}
 	return false
+}
+
+// listedGoFiles は go list が数える、この module の非テストの .go の数 (build tag で外れたものも含む)。
+func listedGoFiles(t *testing.T) int {
+	t.Helper()
+	out, err := exec.Command("go", "list", "-f", "{{len .GoFiles}} {{len .CgoFiles}} {{len .IgnoredGoFiles}}", "./...").Output()
+	if err != nil {
+		t.Fatalf("go list が失敗した: %v", err)
+	}
+	n := 0
+	for _, f := range strings.Fields(string(out)) {
+		v, err := strconv.Atoi(f)
+		if err != nil {
+			t.Fatalf("go list の出力を読めない: %q", out)
+		}
+		n += v
+	}
+	return n
 }

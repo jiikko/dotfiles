@@ -2,7 +2,6 @@ package filer
 
 import (
 	"testing"
-	"time"
 )
 
 func TestFuzzyRanks(t *testing.T) {
@@ -88,14 +87,7 @@ func TestExplodeOpensDescendantsButNotHidden(t *testing.T) {
 	b := m.kids(m.root)[1]
 	m.setCur(b)
 	m.HandleKey("e")
-	deadline := time.Now().Add(10 * time.Second)
-	for m.exploding != nil {
-		m.Advance(fixedNow)
-		if time.Now().After(deadline) {
-			t.Fatal("explode が終わらない")
-		}
-		time.Sleep(5 * time.Millisecond) // sleep-ok: tick: 裏の goroutine の完了を条件で待つループの刻み
-	}
+	waitExplode(t, m)
 	deep := m.findNode(b.path() + "/deep")
 	if deep == nil || !deep.expanded || !b.expanded {
 		t.Fatal("explode で配下のフォルダが開かない")

@@ -1,7 +1,5 @@
 # 695 (test): treefiler のテストの補助の共通化と、検知力の弱い検査
 
-> 🚨 **担当中: Claude Code (dotfiles-53。監査の issue を順に直すセッション)**（2026-10-09〜）
-
 起票日: 2026-10-09
 
 ## 概要
@@ -38,3 +36,15 @@
 ## 進捗
 
 - [ ] 未着手
+- [x] 1 `TestHeatStops`: 各区間の 1/4 (対数の時間) の色を、spec の smoothstep の式 (0.15625) で固定した。線形・t*t・smootherstep の変異で赤
+  (ember の色そのものは表の値なので固定しない)
+- [x] 2 `TestNoOsExecImport`: 下限の定数をやめ、走査した件数を `go list` (GoFiles + CgoFiles + IgnoredGoFiles) と突き合わせる。走査の根から filer を外す変異で赤。
+  depguard への置き換え (696 の 5) は採らない: 件数の問題はこれで消え、同じ判定を 2 実装にしない
+- [x] 3・5 git の Skip 8 箇所を `needGit(t)` に。CI (`CI` が空でない) で git が無ければ Fatal、それ以外は Skip。PATH を空にした run で
+  CI=1 なら FAIL・無しなら SKIP を確かめた (GitHub Actions が CI=true を付けることは実 run では未確認)
+- [x] 4・6〜10 補助を `filer/helpers_test.go` に集めた: gitIn / commitAll / gitCommit / initRepo / needGit / waitFor (6 つの待ちのループ) /
+  settle (10 箇所) / newAt (12 箇所) / mustWrite (33 箇所) と、setGit が Git を off にする形。テストの一覧は前後で同じ (117 件、`go test -list`)
+- 敵対レビュー (sonnet、1 周): P1 / P2 なし。待ちのループの条件・Advance の順序・hang guard が旧と同じこと、置き換えで中身・権限・dir が
+  変わっていないことを突き合わせてもらった。直した P3: setGit のコメントの重複。記録のみ: TestNoOsExecImport は WalkDir が拾って go list が
+  拾わない所 (`_x/`・`.x/`・入れ子の module) に .go を置くと赤くなる (安全側)
+- `make test` / `make lint` (src/treefiler) rc=0

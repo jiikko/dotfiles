@@ -1,6 +1,7 @@
 package filer
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,9 +37,7 @@ func fixture(t *testing.T) string {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		mustWrite(t, p, body)
 		if err := os.Chtimes(p, fixedNow.Add(-time.Hour), fixedNow.Add(-time.Hour)); err != nil {
 			t.Fatal(err)
 		}
@@ -48,13 +47,9 @@ func fixture(t *testing.T) string {
 
 func newTest(t *testing.T) *Model {
 	t.Helper()
-	m, err := New(fixture(t), Options{Now: func() time.Time { return fixedNow }})
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := newAt(t, fixture(t))
 	m.Resize(120, 40)
-	m.Advance(fixedNow)
-	m.snapAll() // 起動時のフェードインを終点まで進める
+	settle(m) // 起動時のフェードインを終点まで進める
 	return m
 }
 
@@ -159,9 +154,16 @@ func TestHeatStops(t *testing.T) {
 			t.Fatalf("heat(%v) = %v, want %v", s.age, got, s.c)
 		}
 	}
-	mid := heat(1800) // 1 分と 1 時間の間
-	if mid == ember[0].c || mid == ember[1].c {
-		t.Fatal("区間の途中が補間されていない")
+	// 区間の 1/4 (対数の時間で) は smoothstep で 0.15625 (線形なら 0.25)。補間の形を仕様 (docs/treefiler-spec.md の「補間」) の式で固定する
+	for i := 0; i+1 < len(ember); i++ {
+		l0, l1 := math.Log(ember[i].age), math.Log(ember[i+1].age)
+		age := math.Exp(l0 + 0.25*(l1-l0))
+		got, want := heat(age), mix(ember[i].c, ember[i+1].c, 0.15625)
+		for ch := range got {
+			if math.Abs(got[ch]-want[ch]) > 1e-6 {
+				t.Fatalf("区間 %d の 1/4 の色 = %v、smoothstep なら %v", i, got, want)
+			}
+		}
 	}
 }
 
@@ -215,9 +217,7 @@ func TestRefusedFilesShowNoticeNotTile(t *testing.T) {
 // PDF は写さない (2026-10-09 ユーザー回答)。先頭に NUL の無い PDF でも、テキストとして開かない。
 func TestPDFIsRefusedEvenWithoutNUL(t *testing.T) {
 	m := newTest(t)
-	if err := os.WriteFile(filepath.Join(m.root.abs, "doc.pdf"), []byte("%PDF-1.4\n1 0 obj\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, filepath.Join(m.root.abs, "doc.pdf"), "%PDF-1.4\n1 0 obj\n")
 	m.root.reload()
 	cdTo(t, m, "doc.pdf")
 	m.HandleKey("enter")
@@ -298,9 +298,7 @@ func TestLazyTextReadsHeadThenMore(t *testing.T) {
 		b.WriteRune(rune('a' + i%26))
 		b.WriteString("\n")
 	}
-	if err := os.WriteFile(p, []byte(b.String()), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, p, b.String())
 	s, err := openText(p)
 	if err != nil {
 		t.Fatal(err)
@@ -388,10 +386,7 @@ func TestSymlinkRootIsFollowed(t *testing.T) {
 	if err := os.Symlink(real, link); err != nil {
 		t.Fatal(err)
 	}
-	m, err := New(link, Options{Now: func() time.Time { return fixedNow }})
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := newAt(t, link)
 	if len(m.kids(m.root)) == 0 {
 		t.Fatal("symlink の root で木が空")
 	}
@@ -401,9 +396,7 @@ func TestLongLineIsSplitAndContentSanitized(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "one-line.txt")
 	body := "\x1b[31mred\x1b[0m" + strings.Repeat("あ", maxLineBytes) // 改行なし。1 文字 3 バイト
-	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, p, body)
 	s, err := openText(p)
 	if err != nil {
 		t.Fatal(err)
@@ -462,9 +455,7 @@ func TestFoldKeysAndReroot(t *testing.T) {
 func TestJKOnTileOutsideTreeSaysSo(t *testing.T) {
 	m := newTest(t)
 	outside := filepath.Join(t.TempDir(), "out.txt")
-	if err := os.WriteFile(outside, []byte("x\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, outside, "x\n")
 	m.openTile(m.nodeFor(outside), rect{})
 	m.HandleKey("J")
 	ns := m.TakeNotices()
@@ -477,9 +468,7 @@ func TestJKOnTileOutsideTreeSaysSo(t *testing.T) {
 func TestRefreshPicksUpChangesAndKeepsState(t *testing.T) {
 	m := newTest(t)
 	cdTo(t, m, "b/deep/x.txt")
-	if err := os.WriteFile(filepath.Join(m.root.path(), "new.txt"), []byte("n\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, filepath.Join(m.root.path(), "new.txt"), "n\n")
 	if err := os.RemoveAll(filepath.Join(m.root.path(), "b", "deep")); err != nil {
 		t.Fatal(err)
 	}
@@ -526,8 +515,7 @@ func TestDirsAreMarked(t *testing.T) {
 	m.ensureLoaded(empty)
 	empty.expanded = true   // 開いていても中身が無いので右へ線が出ない (未読のフォルダは元から芽が付く)
 	cdTo(t, m, "a/one.txt") // a は開いて右へ線が出る
-	m.Advance(fixedNow)
-	m.snapAll()
+	settle(m)
 	rows := map[string]string{}
 	for _, l := range m.draw().plain() {
 		for _, name := range []string{"a/", "b/", "empty/", "c.txt", "one.txt"} {

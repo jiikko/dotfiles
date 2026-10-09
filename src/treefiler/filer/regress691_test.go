@@ -44,10 +44,7 @@ func TestFeedInvalidContinuationDoesNotHang(t *testing.T) {
 
 // root が / でも、パスから node を引ける (root.abs + "/" が // にならない)。
 func TestRootSlashFindsNodes(t *testing.T) {
-	m, err := New("/", Options{Now: func() time.Time { return fixedNow }})
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := newAt(t, "/")
 	if n := m.findNode("/usr"); n == nil {
 		t.Fatal("root が / のとき findNode(/usr) が nil")
 	}
@@ -64,10 +61,7 @@ func TestRootSlashFindsNodes(t *testing.T) {
 
 // /usr のように親が / のフォルダから、- で / へ上がれる。/ ではそれ以上上がらず知らせる。
 func TestRerootUpToSlash(t *testing.T) {
-	m, err := New("/usr", Options{Now: func() time.Time { return fixedNow }})
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := newAt(t, "/usr")
 	m.HandleKey("-")
 	if m.root.path() != "/" {
 		t.Fatalf("/usr から上がった root = %q", m.root.path())
@@ -83,9 +77,7 @@ func TestRerootUpToSlash(t *testing.T) {
 func TestLinkCacheKeyedByBase(t *testing.T) {
 	m := newTest(t)
 	for _, rel := range []string{"a/util.go", "b/util.go"} {
-		if err := os.WriteFile(filepath.Join(m.root.abs, rel), []byte("x\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		mustWrite(t, filepath.Join(m.root.abs, rel), "x\n")
 	}
 	a := resolveLink("util.go", m.root.abs, filepath.Join(m.root.abs, "a"), m.linkCache)
 	b := resolveLink("util.go", m.root.abs, filepath.Join(m.root.abs, "b"), m.linkCache)
@@ -96,9 +88,7 @@ func TestLinkCacheKeyedByBase(t *testing.T) {
 	if p := resolveLink("later.txt", m.root.abs, m.root.abs, m.linkCache); p != "" {
 		t.Fatalf("前提: まだ無い later.txt = %q", p)
 	}
-	if err := os.WriteFile(filepath.Join(m.root.abs, "later.txt"), []byte("x\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, filepath.Join(m.root.abs, "later.txt"), "x\n")
 	m.Refresh()
 	if p := resolveLink("later.txt", m.root.abs, m.root.abs, m.linkCache); p == "" {
 		t.Fatal("読み直した後も、無かった頃の解決を使った")
@@ -190,9 +180,7 @@ func TestWalkerResultScannedDuringForgetStaysStale(t *testing.T) {
 func TestSettingsErrorsAreNotified(t *testing.T) {
 	m := newTest(t)
 	bad := filepath.Join(t.TempDir(), "file")
-	if err := os.WriteFile(bad, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, bad, "")
 	t.Setenv("TREEFILER_CONFIG_DIR", filepath.Join(bad, "sub")) // ファイルの下には作れない
 	m.TakeNotices()
 	m.HandleKey(".")
@@ -201,13 +189,8 @@ func TestSettingsErrorsAreNotified(t *testing.T) {
 	}
 	cfg := t.TempDir()
 	t.Setenv("TREEFILER_CONFIG_DIR", cfg)
-	if err := os.WriteFile(filepath.Join(cfg, "treefiler.toml"), []byte("nope = 1\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	m2, err := New(m.root.abs, Options{Now: func() time.Time { return fixedNow }})
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustWrite(t, filepath.Join(cfg, "treefiler.toml"), "nope = 1\n")
+	m2 := newAt(t, m.root.abs)
 	if ns := m2.TakeNotices(); len(ns) == 0 || !strings.Contains(ns[0].Text, "読めない行") {
 		t.Fatalf("設定の悪い行が出ない: %+v", ns)
 	}
@@ -225,8 +208,7 @@ func TestTileReadErrorIsShown(t *testing.T) {
 	if !tl.src.readErr {
 		t.Fatal("消えたファイルの続きを読めなかったのに、末尾と同じ扱い")
 	}
-	m.Advance(fixedNow)
-	m.snapAll()
+	settle(m)
 	if !strings.Contains(strings.Join(m.draw().plain(), "\n"), "途中で読めなくなりました") {
 		t.Fatal("タイルに出ない")
 	}
@@ -343,30 +325,22 @@ func TestLinesClippedToViewport(t *testing.T) {
 	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())
 	dir := t.TempDir()
 	for i := range 500 {
-		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%03d.txt", i)), nil, 0o644); err != nil {
-			t.Fatal(err)
-		}
+		mustWrite(t, filepath.Join(dir, fmt.Sprintf("f%03d.txt", i)), "")
 	}
 	for _, d := range []string{"f100.d", "f300.d"} { // 縦線のブロックを途中に置く (窓の端がブロックを横切る所を作る)
 		if err := os.MkdirAll(filepath.Join(dir, d, "inner"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		for i := range 30 {
-			if err := os.WriteFile(filepath.Join(dir, d, fmt.Sprintf("k%02d", i)), nil, 0o644); err != nil {
-				t.Fatal(err)
-			}
+			mustWrite(t, filepath.Join(dir, d, fmt.Sprintf("k%02d", i)), "")
 		}
 	}
-	m, err := New(dir, Options{Now: func() time.Time { return fixedNow }})
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := newAt(t, dir)
 	for _, d := range []string{"f100.d", "f300.d"} {
 		m.loadPath(filepath.Join(dir, d)).expanded = true
 	}
 	m.Resize(100, 20)
-	m.Advance(fixedNow)
-	m.snapAll()
+	settle(m)
 	now := map[*node][2]int{}
 	for n, p := range m.layout() {
 		now[n] = [2]int{p.x, p.y}
