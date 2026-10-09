@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -12,10 +13,17 @@ import (
 // settleBackground は裏の走査と git の取得が終わるまで Advance を回す (hang guard 10 秒)。
 func settleBackground(t *testing.T, m *Model) {
 	t.Helper()
+	// walker の時計を 1 周ごとに 1 秒進める (古い結果の数え直しの間隔を実時間で待たない)
+	var clock atomic.Int64
+	clock.Store(time.Now().UnixNano())
+	m.walker.mu.Lock()
+	m.walker.now = func() time.Time { return time.Unix(0, clock.Load()) }
+	m.walker.mu.Unlock()
 	deadline := time.Now().Add(10 * time.Second)
 	at := fixedNow
 	for {
 		at = at.Add(20 * time.Millisecond)
+		clock.Add(int64(time.Second))
 		m.Advance(at)
 		if !m.Busy() {
 			m.Advance(at.Add(20 * time.Millisecond)) // 最後の結果を取り込む

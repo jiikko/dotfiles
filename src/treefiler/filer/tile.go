@@ -119,7 +119,10 @@ func resolveLink(tok, root, base string, cache map[string]string) string {
 	if t == "" || t == "." || t == ".." || !strings.ContainsAny(t, "/.") {
 		return ""
 	}
-	if p, ok := cache[t]; ok {
+	// 🚨 鍵に root と base を含める: 同じ文字列 (util.go) でも、どのフォルダのファイルから読んだかで指す先が違う。
+	// 文字列だけを鍵にすると、b/note.txt のリンクが先に開いた a/note.txt の解決 (a/util.go) を使った (監査で再現 2026-10-09。issue 691)
+	key := root + "\x00" + base + "\x00" + t
+	if p, ok := cache[key]; ok {
 		return p
 	}
 	found := ""
@@ -133,7 +136,7 @@ func resolveLink(tok, root, base string, cache map[string]string) string {
 			break
 		}
 	}
-	cache[t] = found
+	cache[key] = found
 	return found
 }
 
@@ -441,6 +444,9 @@ func (m *Model) drawTile(c *canvas, t *tile, r rect, front bool, p float64) {
 		if t.mode == modeDiff {
 			dl = "d file · "
 		}
+	}
+	if t.mode == modeFile && t.src.readErr {
+		dl = "途中で読めなくなりました · " + dl
 	}
 	posLabel := fmt.Sprintf(" %s%d/%s ", dl, sy+1, total)
 	if t.jump && front {

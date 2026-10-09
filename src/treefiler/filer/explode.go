@@ -135,7 +135,7 @@ func (m *Model) loadPath(abs string) *node {
 	if abs == m.root.abs {
 		return m.root
 	}
-	rel, ok := strings.CutPrefix(abs, m.root.abs+string(os.PathSeparator))
+	rel, ok := strings.CutPrefix(abs, withSep(m.root.abs)) // root が / のとき // にしない
 	if !ok {
 		return nil
 	}

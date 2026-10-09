@@ -65,6 +65,7 @@ type textSource struct {
 	eof     bool
 	size    int64
 	limit   int64 // 0 でなければ、先頭からここまでで読むのを止める (Markdown は整形のため全体を持つので上限を付ける)
+	readErr bool  // 末尾の前で読めなくなった (タイルに「途中で読めなくなりました」と出す。末尾と見分ける)
 }
 
 func openText(path string) (*textSource, error) {
@@ -110,6 +111,11 @@ func (s *textSource) feed(b []byte) {
 				break
 			}
 			cut := utf8Boundary(s.partial, maxLineBytes)
+			if cut == 0 {
+				// 🚨 文字の途中にならない切れ目が無い (続きのバイト 0x80〜0xBF だけが続く不正な UTF-8)。切らずに戻すと
+				// partial が減らず空の行を足し続け、タイルを開くと固まった (監査で再現 2026-10-09。issue 691)
+				cut = maxLineBytes
+			}
 			s.lines = append(s.lines, cleanLine(string(s.partial[:cut])))
 			s.partial = s.partial[cut:]
 			continue
@@ -147,11 +153,13 @@ func (s *textSource) ensure(want int) {
 	}
 	f, err := os.Open(s.path)
 	if err != nil {
+		s.readErr = true
 		s.finish()
 		return
 	}
 	defer f.Close()
 	if _, err := f.Seek(s.off, io.SeekStart); err != nil {
+		s.readErr = true
 		s.finish()
 		return
 	}
@@ -161,6 +169,7 @@ func (s *textSource) ensure(want int) {
 		s.off += int64(n)
 		s.feed(buf[:n])
 		if err != nil {
+			s.readErr = !errors.Is(err, io.EOF)
 			s.finish()
 		}
 	}

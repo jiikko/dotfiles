@@ -3,7 +3,7 @@ package filer
 import (
 	"fmt"
 	"math"
-	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -120,6 +120,9 @@ func New(dir string, opts Options) (*Model, error) {
 		root.last = ks[0]
 	}
 	m.set, m.setErrs = loadSettings(configPath())
+	if len(m.setErrs) > 0 {
+		m.fail("設定ファイルに読めない行があります (" + itoa(len(m.setErrs)) + " 件。, の板の足元に出ています)")
+	}
 	m.watch.pause(!m.set.Live)
 	applyTheme(&m.set)
 	labelMax, sortFoldersFirst, sortNatural = m.set.MaxName, m.set.FoldersFirst, m.set.NaturalSort
@@ -136,13 +139,14 @@ func New(dir string, opts Options) (*Model, error) {
 // Refresh はディスクを読み直す (開いていたフォルダの中身。開閉とカーソルの位置は保つ)。
 // カーソルの項目が消えていたら、残っているいちばん近い祖先へ移る。
 func (m *Model) Refresh() {
-	m.walker.forget(m.root.path())
+	m.walker.forget(m.root.path(), true)
 	m.root.reload()
 	for !m.inTree(m.cur) {
 		m.cur = m.cur.parent
 	}
-	m.repoTop = nil  // .git を足した・消したフォルダを数え直す
-	m.startGit(true) // 読み直した木の開いているフォルダで取る (読み直す前の木だと、消えたフォルダを含み、現れたものを落とす)
+	m.repoTop = nil    // .git を足した・消したフォルダを数え直す
+	clear(m.linkCache) // 無かったファイル (負のキャッシュ) が作られているかもしれない
+	m.startGit(true)   // 読み直した木の開いているフォルダで取る (読み直す前の木だと、消えたフォルダを含み、現れたものを落とす)
 	m.moving = true
 }
 
@@ -283,8 +287,11 @@ func (m *Model) takeBackground() {
 	for _, e := range m.opener.take() {
 		m.fail(e)
 	}
-	if recs, v, ok := m.walker.snapshot(m.recsVer); ok {
-		m.recs, m.recsVer = recs, v
+	if d, v, ok := m.walker.take(m.recsVer); ok {
+		for k, r := range d {
+			m.recs[k] = r
+		}
+		m.recsVer = v
 	}
 	if s, v, ok := m.git.take(m.gitVer); ok {
 		m.gitVer = v   // off でも版は進める (取り込まずに残すと Busy が続き、呼び出し側の tick が止まらない)
@@ -331,7 +338,8 @@ func (m *Model) applyChange(c dirChange) {
 		return
 	}
 	n.reload()
-	m.walker.forget(c.dir)
+	m.walker.forget(c.dir, false)
+	clear(m.linkCache) // 増えた・消えたファイルでリンクの解決が変わる
 	if slices.Contains(c.changed, ".git") || slices.Contains(c.removed, ".git") {
 		m.repoTop = nil // このフォルダで git init した・repo を消した (repo の根の数え直し)
 	}
@@ -373,7 +381,7 @@ func (m *Model) findNode(abs string) *node {
 		if n.abs == abs {
 			return n
 		}
-		if !strings.HasPrefix(abs, n.abs+string(os.PathSeparator)) {
+		if !strings.HasPrefix(abs, withSep(n.abs)) { // root が / のとき // にしない
 			return nil
 		}
 		for _, k := range n.kids {
@@ -820,15 +828,15 @@ func (m *Model) collapseOthers() {
 // rerootUp は root の親を新しい root にする (- / Backspace。spec §5.7)。
 func (m *Model) rerootUp() {
 	old := m.root
-	parentPath := old.path()
-	if i := strings.LastIndexByte(parentPath, '/'); i > 0 {
-		parentPath = parentPath[:i]
-	} else {
-		return // もう / まで来ている
+	parentPath := filepath.Dir(old.path())
+	if parentPath == old.path() {
+		m.fail("これ以上 上はありません (/ です)")
+		return
 	}
+	// 🚨 区切りの位置で切らない (`/Users` の区切りは 0 文字目で、> 0 の判定だと / へ上がれず黙った。監査で再現 2026-10-09。issue 691)
 	nr, err := newRoot(parentPath)
 	if err != nil {
-		m.fail("1 段上へ行けません: " + err.Error())
+		m.fail("1 段上へ行けません: " + termsafeLine(err.Error())) // エラーに祖先のパスが入る
 		return
 	}
 	// 新しい root の子のうち旧 root と同じ名前の項目を旧 root で置き換える (開いた状態とアニメを保つ)

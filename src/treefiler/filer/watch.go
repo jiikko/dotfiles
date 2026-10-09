@@ -2,6 +2,7 @@ package filer
 
 import (
 	"os"
+	"slices"
 	"sync"
 	"time"
 )
@@ -63,6 +64,10 @@ func (w *watcher) close() {
 	}
 	w.running = false
 	close(w.stop)
+	// 基準と溜まった変化を捨てる: 開き直すと木は読み直される (Refresh) ので、閉じる前の基準と比べると閉じていた間の変化が
+	// 偽の光で出た (監査で再現 2026-10-09。issue 691)。開き直した後の setDirs が木の中身から基準を取り直す
+	w.seen = map[string]map[string]entrySig{}
+	w.pending = nil
 }
 
 func (w *watcher) pause(p bool) {
@@ -139,19 +144,9 @@ func (w *watcher) loop(stop chan struct{}, ch chan struct{}) {
 			return // 止めた後の周は書き込まない (遅い ReadDir の間に開き直すと、新しいポーリングと混ざる)
 		default:
 		}
-		w.mu.Lock()
-		for d, sig := range next {
-			if sig != nil {
-				w.seen[d] = sig
-			}
+		if !w.commit(stop, next, found) {
+			return
 		}
-		for d := range w.seen {
-			if _, ok := next[d]; !ok {
-				delete(w.seen, d) // 閉じたフォルダは忘れる (開き直したら木の中身を基準にし直す)
-			}
-		}
-		w.pending = append(w.pending, found...)
-		w.mu.Unlock()
 		if len(found) > 0 {
 			select {
 			case ch <- struct{}{}:
@@ -196,4 +191,30 @@ func diffSig(dir string, old, cur map[string]entrySig) (dirChange, bool) {
 		}
 	}
 	return c, c.listing || len(c.changed) > 0
+}
+
+// commit は 1 周の観測を基準へ書き、変化を溜める。止められていたら書かずに false (lock の中で確かめる: close は lock を
+// 持って基準を空にするので、その後に古い周が書き戻さない)。
+func (w *watcher) commit(stop chan struct{}, next map[string]map[string]entrySig, found []dirChange) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	select {
+	case <-stop:
+		return false
+	default:
+	}
+	for d, sig := range next {
+		if sig != nil {
+			w.seen[d] = sig
+		}
+	}
+	for d := range w.seen {
+		// 閉じたフォルダは忘れる (開き直したら木の中身を基準にし直す)。🚨 今の want に在るものは消さない:
+		// この周の途中に setDirs が足した基準を、周の始めの一覧に無いからと消すと、開いた直後の変化を取りこぼした (issue 691)
+		if _, ok := next[d]; !ok && !slices.Contains(w.want, d) {
+			delete(w.seen, d)
+		}
+	}
+	w.pending = append(w.pending, found...)
+	return true
 }

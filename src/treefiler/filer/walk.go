@@ -20,33 +20,62 @@ type walkResult struct {
 	vis      time.Time // dotfile でないファイルだけの最新 (dotfile を隠している間の色に使う)
 	bytes    int64
 	complete bool
+	stale    bool // 数えた後に中が変わった (値は新しい結果が来るまで残す。熱の色と大きさを一時的に消さない)
 }
+
+// restaleInterval は古くなったフォルダを数え直す最短の間隔。毎秒書き込まれるフォルダ (ログ) があると、そのたびに
+// root から 5 万件を数え直すことになるので間を空ける (読み直しの r は待たない)。数え直すまでの間は古い値で描く。
+const restaleInterval = 5 * time.Second
 
 type walker struct {
-	mu sync.Mutex
-	// results は公開した後に書き換えない (取り込み側へ写さずに渡すため)。更新は新しい map を作って差し替える
-	results map[string]walkResult
-	queue   []string // 末尾が新しい依頼。末尾から取る (新しく頼んだものから先に処理する)
-	asked   map[string]bool
-	running bool
-	version int // 結果が増えるたびに進める (取り込み側が変化を知るため)
+	mu      sync.Mutex
+	results map[string]walkResult // walker の中だけで持つ (公開しない)
+	// delta は取り込み側がまだ取っていない結果。取り込み側は自分の map へ足す
+	// 🚨 全体の map を結果ごとに写して公開しない: 子フォルダが多いと 2 乗で伸び、直下 8000 フォルダで 1.87 秒かかった (issue 693)
+	delta     map[string]walkResult
+	queue     []string // 末尾が新しい依頼。末尾から取る (新しく頼んだものから先に処理する)
+	asked     map[string]bool
+	last      map[string]time.Time // 最後に数え終えた時刻 (古くなったものを数え直す間隔に使う)
+	forgotLog []forgotten          // 走査の途中に古くなったフォルダ (走っている走査の結果を古い印のまま書くため)
+	// deferred は間を空けて数え直すのを待っているフォルダと、その期限。待っている間は busy にする
+	// 🚨 busy にしないと呼び出し側の tick が止まり、次のキーまで誰も頼み直さず、古い値のまま残った (レビューで再現 2026-10-09)
+	deferred map[string]time.Time
+	now      func() time.Time // 時計 (テストが進める。数え直しの間隔を実時間で待たない)
+	running  bool
+	version  int // 結果が増える・古くなるたびに進める (取り込み側が変化を知るため)
 }
+
+type forgotten struct {
+	dir   string
+	force bool // 読み直し (r)。その走査の結果は「数えた時刻」を書かない (数え直しの間隔を待たせない)
+}
+
+// deferGrace は期限を過ぎても誰も頼み直さない待ちを捨てるまでの猶予 (見えなくなったフォルダの待ちで tick を回し続けない)。
+const deferGrace = time.Second
 
 func newWalker() *walker {
-	return &walker{results: map[string]walkResult{}, asked: map[string]bool{}}
+	return &walker{results: map[string]walkResult{}, delta: map[string]walkResult{}, asked: map[string]bool{},
+		last: map[string]time.Time{}, deferred: map[string]time.Time{}, now: time.Now}
 }
 
-// request は dir の走査を頼む (頼んだことがあれば何もしない)。
+// request は dir の走査を頼む (頼んだことがあれば何もしない)。最後まで数えた新しい結果があれば数えない。
 func (w *walker) request(dir string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.asked[dir] {
 		return
 	}
-	w.asked[dir] = true
-	if r, ok := w.results[dir]; ok && r.complete {
+	r, ok := w.results[dir]
+	if ok && r.complete && !r.stale {
+		w.asked[dir] = true
 		return // 親の走査で、もう最後まで数えてある (見えている子ごとに 5 万件の予算で数え直さない)
 	}
+	if ok && r.stale && w.now().Sub(w.last[dir]) < restaleInterval {
+		w.deferred[dir] = w.last[dir].Add(restaleInterval) // 間を空けて、次に頼まれたときに数え直す (asked にしない)
+		return
+	}
+	delete(w.deferred, dir)
+	w.asked[dir] = true
 	// 🚨 先頭へ差し込む形 (append([]string{dir}, queue...)) にしない: 毎回全体を写して O(n²) になり、
 	// 子フォルダ 2 万個で 0.66 秒 UI が固まった (レビューで実測 2026-10-08)
 	w.queue = append(w.queue, dir)
@@ -56,42 +85,58 @@ func (w *walker) request(dir string) {
 	}
 }
 
-// forget は dir とその祖先・子孫の結果を捨て、次に頼まれたら走査し直す (読み直しのとき)。
-func (w *walker) forget(dir string) {
+func related(p, dir string) bool {
+	return p == dir || strings.HasPrefix(dir, withSep(p)) || strings.HasPrefix(p, withSep(dir))
+}
+
+// forget は dir とその祖先・子孫の結果に古い印を付け、次に頼まれたら数え直す (ライブ更新・読み直し)。
+// 値は消さない (新しい結果が来るまで古い値で描く)。force (読み直しの r) は数え直しの間隔を待たない。
+func (w *walker) forget(dir string, force bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	related := func(p string) bool {
-		return p == dir || strings.HasPrefix(dir, p+string(filepath.Separator)) || strings.HasPrefix(p, dir+string(filepath.Separator))
-	}
 	for p := range w.asked {
-		if related(p) {
+		if related(p, dir) {
 			delete(w.asked, p)
 		}
 	}
-	next := make(map[string]walkResult, len(w.results))
 	for p, r := range w.results {
-		if !related(p) {
-			next[p] = r
+		if related(p, dir) {
+			r.stale = true
+			w.results[p], w.delta[p] = r, r
+			if force {
+				delete(w.last, p)
+			}
 		}
 	}
-	w.results = next
+	if w.running {
+		w.forgotLog = append(w.forgotLog, forgotten{dir, force})
+	}
 	w.version++
 }
 
+// busy は走査中か、間を空けて数え直すのを待っているか。期限を猶予だけ過ぎても頼み直されない待ちは捨てる。
 func (w *walker) busy() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.running
+	now := w.now()
+	for d, due := range w.deferred {
+		if now.After(due.Add(deferGrace)) {
+			delete(w.deferred, d)
+		}
+	}
+	return w.running || len(w.deferred) > 0
 }
 
-// snapshot は結果と版を返す (版が同じなら何もしない)。返す map は公開後に書き換えないので写さない。
-func (w *walker) snapshot(have int) (map[string]walkResult, int, bool) {
+// take は取り込んでいない結果と版を返す (版が同じなら何もしない)。返した map は walker から手放す。
+func (w *walker) take(have int) (map[string]walkResult, int, bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if have == w.version {
 		return nil, have, false
 	}
-	return w.results, w.version, true
+	d := w.delta
+	w.delta = map[string]walkResult{}
+	return d, w.version, true
 }
 
 // pending は取り込んでいない結果があるか。
@@ -106,31 +151,50 @@ func (w *walker) loop() {
 		w.mu.Lock()
 		if len(w.queue) == 0 {
 			w.running = false
+			w.forgotLog = nil
 			w.mu.Unlock()
 			return
 		}
 		dir := w.queue[len(w.queue)-1]
 		w.queue = w.queue[:len(w.queue)-1]
+		if r, ok := w.results[dir]; ok && r.complete && !r.stale {
+			w.mu.Unlock()
+			continue // 頼んだ後に親の走査で数え終わった
+		}
+		mark := len(w.forgotLog)
 		w.mu.Unlock()
 		budget := walkCap
 		found := map[string]walkResult{}
 		walkDir(dir, &budget, found)
 		w.mu.Lock()
-		next := make(map[string]walkResult, len(w.results)+len(found))
-		for k, v := range w.results {
-			next[k] = v
-		}
-		for k, v := range found {
-			// 完了した結果を、途中で打ち切った結果で上書きしない
-			if old, ok := next[k]; ok && old.complete && !v.complete {
-				continue
-			}
-			next[k] = v
-		}
-		w.results = next
-		w.version++
+		w.store(found, w.forgotLog[mark:], w.now())
 		w.mu.Unlock()
 	}
+}
+
+// store は 1 回の走査の結果を書く (w.mu を持って呼ぶ)。forgot は走査の途中に古くなったフォルダ。
+func (w *walker) store(found map[string]walkResult, forgot []forgotten, now time.Time) {
+	for k, v := range found {
+		// 完了した新しい結果を、途中で打ち切った結果で上書きしない
+		if old, ok := w.results[k]; ok && old.complete && !old.stale && !v.complete {
+			continue
+		}
+		forced := false
+		for _, f := range forgot {
+			if related(k, f.dir) {
+				v.stale = true // 数えている間に中が変わった (この結果は古いかもしれない)
+				forced = forced || f.force
+			}
+		}
+		w.results[k], w.delta[k] = v, v
+		delete(w.deferred, k)
+		if forced {
+			delete(w.last, k) // 走査中に r が来た: 数え直しの間隔を待たせない
+		} else {
+			w.last[k] = now
+		}
+	}
+	w.version++
 }
 
 // walkDir は dir の配下を深さ優先で数え、通ったフォルダごとの結果を found に入れる。

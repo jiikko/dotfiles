@@ -333,7 +333,10 @@ func (m *Model) applySettings(key string) {
 	m.moving = true
 	m.saveErr = ""
 	if err := errors.Join(append(errs, m.save(key))...); err != nil {
-		m.saveErr = "保存できません: " + err.Error()
+		m.saveErr = "保存できません: " + termsafeLine(err.Error())
+		if !m.panel.open {
+			m.fail("設定を" + m.saveErr) // 板の外の変更 (. キー) は板の足元に出しても見えない
+		}
 	}
 }
 

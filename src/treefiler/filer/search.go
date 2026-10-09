@@ -1,6 +1,7 @@
 package filer
 
 import (
+	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -131,12 +132,10 @@ func (m *Model) column(of *node) []*node {
 	return col
 }
 
+// sortByY は上から並べる。🚨 挿入ソートにしない: map の順に集めた列は整列していないので O(n²) になり、
+// 5 万件のフォルダで検索の 1 打鍵が 9.66 秒固まった (監査で実測 2026-10-09。issue 691)
 func sortByY(ns []*node, pos map[*node]place) {
-	for i := 1; i < len(ns); i++ {
-		for j := i; j > 0 && pos[ns[j]].y < pos[ns[j-1]].y; j-- {
-			ns[j], ns[j-1] = ns[j-1], ns[j]
-		}
-	}
+	sort.Slice(ns, func(i, j int) bool { return pos[ns[i]].y < pos[ns[j]].y })
 }
 
 // findMatches は列の中で query に一致する項目を、良い段から (同じ段は上から) 並べる。
@@ -212,9 +211,15 @@ func (m *Model) refreshMatches() {
 
 func (m *Model) stepMatch(d int) {
 	s := &m.search
+	// 検索中のライブ更新で消えた一致は外す (木の外へカーソルを出さない)。今の列の集合で引く
+	// (一致ごとに inTree で兄弟を線形に探すと、5 万件の列で一致の数 × 5 万になる)
+	inCol := map[*node]bool{}
+	for _, n := range m.column(s.origin) {
+		inCol[n] = true
+	}
 	live := s.matches[:0]
 	for _, n := range s.matches {
-		if m.inTree(n) { // 検索中のライブ更新で消えた一致は外す (木の外へカーソルを出さない)
+		if inCol[n] {
 			live = append(live, n)
 		}
 	}
@@ -233,26 +238,26 @@ func (m *Model) repeatSearch(d int) {
 		m.fail("前回の検索がありません (/ で検索する)")
 		return
 	}
-	ms := findMatches(m.column(m.cur), m.lastSearch)
+	col := m.column(m.cur) // 列の中の並び (上から)。1 回だけ作る
+	ms := findMatches(col, m.lastSearch)
 	if len(ms) == 0 {
 		m.fail("一致がありません: " + m.lastSearch)
 		return
 	}
-	// 列の中の並び (上から) で、今のカーソルの次 / 前の一致へ
-	col := m.column(m.cur)
+	// 今のカーソルの次 / 前の一致へ
 	idx := map[*node]int{}
 	for i, n := range col {
 		idx[n] = i
 	}
 	cur := idx[m.cur]
 	best := -1
-	for _, n := range ms {
+	for j, n := range ms { // 🚨 添字で回す (中で indexOf を呼ぶと一致の数の 2 乗)
 		i := idx[n]
 		switch {
 		case d > 0 && i > cur && (best < 0 || i < idx[ms[best]]):
-			best = indexOf(ms, n)
+			best = j
 		case d < 0 && i < cur && (best < 0 || i > idx[ms[best]]):
-			best = indexOf(ms, n)
+			best = j
 		}
 	}
 	if best < 0 { // 端を越えたら反対側から (巡回)
@@ -264,13 +269,4 @@ func (m *Model) repeatSearch(d int) {
 		}
 	}
 	m.setCur(ms[best])
-}
-
-func indexOf(ns []*node, n *node) int {
-	for i, k := range ns {
-		if k == n {
-			return i
-		}
-	}
-	return -1
 }

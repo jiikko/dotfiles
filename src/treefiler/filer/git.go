@@ -328,7 +328,11 @@ func branchLabel(b string) string {
 		return "detached"
 	}
 	name, track, _ := strings.Cut(b, "...")
-	label := strings.Fields(name + " ")[0]
+	fs := strings.Fields(name)
+	if len(fs) == 0 {
+		return "" // 空の名前で [0] を引かない (git の goroutine で panic するとプロセスごと落ちる)
+	}
+	label := fs[0]
 	if i := strings.Index(track, "["); i >= 0 {
 		for part := range strings.SplitSeq(strings.Trim(track[i:], "[]"), ", ") {
 			if n, ok := strings.CutPrefix(part, "ahead "); ok {
