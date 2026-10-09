@@ -18,7 +18,8 @@
    (アニメ中は約 30fps)。直し方: カメラの矩形で切る
 4. **treefiler に確保の予算のテストが無い** — 描画の確保の退行は glogx の `TestFrameAllocBudget` (filer の行) でしか赤くならない。56c93c8f では
    src/treefiler の CI (run 37863501923) が success、src/glogx (run 37863501927) が `filer: 1 フレームの確保が 164 回 (上限 158)` で failure だった。
-   直し方: `src/treefiler/filer` にも AllocsPerRun の予算を置く (glogx の値は組み込み後の上限として残す)
+   直し方: `src/treefiler/filer` にも AllocsPerRun の予算を置く (glogx の値は組み込み後の上限として残す)。
+   きっかけの 164 / 158 の退行そのものは f612c696 (芽の判定で子のスライスを作らない) で直した。予算が treefiler に無いことは残っている
 5. `d` を連打すると git diff を重ねて起こす (前の job を取り消さない。各々 `GitOpTimeout` で有界。起動数は未実測)
 
 ## 関連
