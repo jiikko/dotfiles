@@ -3,7 +3,7 @@
 起票日: 2026-10-10
 カテゴリ: design / priority: low
 出典: ユーザー構想 (2026-10-10 のセッション)。「Slack のチャンネルの中身を LLM が整理して掲示板風に見せる」案のうち、**読む側だけ**を切り出した
-反証レビュー: 下の「反証レビュー」節
+反証レビュー: 済 (2026-10-10。下の「反証レビュー」節)
 
 ## 概要
 
@@ -56,9 +56,21 @@ slack-cli (既存。読み取り専用)          新しく作る道具 (仮称 t
 1. **取得は既存の [jiikko/slack-cli](https://github.com/jiikko/slack-cli) に任せる**。Chrome のセッションを流用するので、
    Slack アプリの作成・管理者の承認・アプリ向けの rate limit の段階 (Tier) の話を避けられる。429 は slack-cli が
    `Retry-After` で待つ (1 回 60 秒・合計 180 秒まで)。
-   - `slack history <channel> -oldest <ts> -n <件数> -json` で期間を切る (`-oldest` / `-latest` は ts で受ける。既定 50 件)
-   - 親の発言 (`thread_ts == ts`) ごとに `slack thread <channel> <ts> -json` (既定 200 件)
-   - `slack users -json` で user ID を表示名に引く (history の JSON の `user` は ID)
+   - 🚨 **フラグは引数より前に置く**。slack-cli は引数の後ろのフラグを使い方の誤り (rc=2) として止める
+     (`cmd/slack/main.go` の `checkNoTrailingFlags`)
+   - `slack history -json -oldest <ts> -n <件数> <channel>` で期間を切る (`-oldest` / `-latest` は ts で受ける。既定 50 件)
+   - 親の発言 (`thread_ts == ts`) ごとに `slack thread -json -n <件数> <channel> <ts>` (既定 200 件)。
+     🚨 `-n` に達すると**警告なしで切る** (`internal/slack/api.go` の `collectMessages` は `-n` に達すると `out[:limit]` を返すだけ)。
+     返ってきた件数が `-n` と同じなら、欠けている可能性を出力に書く
+   - `slack users -json -bots -deleted` で user ID を表示名に引く (history の JSON の `user` は ID)。
+     既定はボットと無効化済みのユーザーを除くので、フラグを付けないと退職者やボットの発言が ID のまま残る
+   - 🚨 **同じ ts の重複を除く**。スレッドの返信をチャンネルにも送ったもの (「チャンネルにも投稿する」) は history と
+     thread の両方に同じ ts で出る。slack-cli の `Message` は `subtype` を持たないので見分けられない。
+     ts で重複を除き、スレッド側に寄せる (「全件ちょうど 1 回」の検査の前提)
+   - `Message` は `text` だけを持ち、`files` / `attachments` / `blocks` / `reply_count` は捨てる
+     (`internal/slack/types.go`)。ファイルだけの発言は本文が空になるので「(添付のみ)」と出す
+   - チャンネルは `#name` でなく ID で渡す。`#name` だとチャンネル一覧を `~/.config/slack-cli/cache/` に保存する
+     (チャンネル名とトピックだけで本文は入らないが、「保存しない」の範囲をはっきりさせるため)
    - permalink は `search` の結果にしか入らない (`Message.Perma` を埋めるのは search だけ)。history / thread の発言は
      `https://<workspace>.slack.com/archives/<channel>/p<ts から . を除いた値>` で組み立てる
 2. **新しい道具は slack-cli に入れず、別コマンドにする**。slack-cli は「読み取り専用で、取得したものを外へ出さない」という
@@ -66,8 +78,11 @@ slack-cli (既存。読み取り専用)          新しく作る道具 (仮称 t
    混ぜない。パイプでつなぐ形 (`slack history ... -json | topicfold`) にしておけば、入力を差し替えて Slack 以外のログ
    (会議の書き起こし・他人の Claude セッションのログ) にも使える
 3. **LLM は `claude -p --output-format json --json-schema <上の形>` で呼ぶ**。API キーを別に持たなくてよい。
-   書き込む道具は外す (`--disallowedTools "Edit,Write,NotebookEdit,Bash"` を prompt の後ろに置く。
-   `worktree-per-session.md` の headless 実行の注意と同じ)
+   付けるフラグ:
+   - `--no-session-persistence`: 付けないと、送った会話の本文がセッションとして `~/.claude` に残る (「保存しない」に反する)
+   - `--bare` (hooks を飛ばす): Stop hook が最後の返答を差し替えることがある (`.claude/rules/worktree-per-session.md` の
+     headless 実行の注意。issue 573)。JSON を最終応答から読むので、hooks を通さない
+   - 書き込む道具を外す (`--disallowedTools "Edit,Write,NotebookEdit,Bash"`。prompt の後ろに置く)
 4. **出力は Markdown を stdout へ**。表示は既存の pager / glow 等に任せる。TUI (glogx の部品で 2 ペイン) は後回し
 
 ### 出力例 (Markdown)
@@ -92,7 +107,7 @@ slack-cli (既存。読み取り専用)          新しく作る道具 (仮称 t
 
 - ✓ 範囲は**読む側だけ**。投稿・リアクション・既読の更新はしない
 - ✓ **自動では走らせない** (常駐・定期実行をしない)。追いつきたいときに人が打つ。費用と、外部へ送る量を人が見える形にする
-- ✓ **結果を保存しない**。stdout に出して終わり。下の「Slack の規約」の永続化の制限に触れないため。
+- ✓ **結果を保存しない**。stdout に出して終わり (取得と LLM 呼び出しの側で残るものは「最小構成」の 1 と 3 で潰す)。下の「Slack の規約」の永続化の制限に触れないため。
   再実行のたびに LLM を呼び直す費用は受け入れる (追いつき用途なので頻度は低い想定)
 - 未決: 道具の名前と置き場所 (`src/<name>/` の Go か、まず数十行のスクリプトで試すか)。
   **まずスクリプトで 1 チャンネル試して、分類が役に立つかをユーザーが判断してから** Go にする
@@ -127,6 +142,19 @@ slack-cli (既存。読み取り専用)          新しく作る道具 (仮称 t
 - 前回の分類を引き継いで、新しい発言だけを既存のトピックへ足す増分更新 (分類の揺れを抑えられるが、保存が要る = 規約の論点が増える)
 - 自分宛て (メンション・自分が書いた発言への返信) を最上段へ出す
 - 書き込み側 (返信の下書きを LLM が整え、人が差分を見て確定する)。範囲外として別に起票する
+
+## 反証レビュー (2026-10-10、read-only のサブエージェント 1 体。codex の無い環境のため)
+
+slack-cli のコードと突き合わせて、次を訂正した (訂正は別 commit):
+
+- P1: コマンド例のフラグの位置 (引数の後ろだと rc=2) / `claude -p` が既定でセッションを保存する点 /
+  Stop hook が最終応答を差し替える点 (`--bare` を足した)
+- P2: 「チャンネルにも投稿する」返信の ts 重複 / `users` の既定がボットと無効化済みを除く点 /
+  `thread -n` の黙った打ち切り
+- P3: `Message` が添付を捨てる点
+- 反証できなかった主張: history / thread の既定件数と引数、`-json` が共通フラグであること、429 の待ちの上限、
+  permalink が search にしか入らないこと、既読位置を取るメソッドが allowlist に無いこと、`claude -p` のフラグ、
+  slack-cli が `src/chromecookie` を使うこと
 
 ## 関連
 
