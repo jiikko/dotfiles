@@ -1,6 +1,8 @@
 package filer
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -137,5 +139,77 @@ func TestBlankCommandDoesNotRun(t *testing.T) {
 	typeText(m, "   ")
 	if m.HandleKey("enter") == Exec {
 		t.Fatal("空白だけのコマンドを走らせた")
+	}
+}
+
+// searchFromRemoved は rel にカーソルを置いて検索を始め (before があれば打ってから)、rel を含む gone (dir からの相対) を
+// ディスクから消してライブ更新を当てる (検索中に origin が消える。issue 717)。
+func searchFromRemoved(t *testing.T, rel, dir, gone string, before func(m *Model)) *Model {
+	t.Helper()
+	m := newTest(t)
+	origin := m.loadPath(filepath.Join(m.root.path(), rel))
+	if origin == nil {
+		t.Fatalf("前提: %s を引けない", rel)
+	}
+	m.setCur(origin)
+	m.HandleKey("/")
+	if before != nil {
+		before(m)
+	}
+	abs := filepath.Join(m.root.path(), dir)
+	if err := os.RemoveAll(filepath.Join(abs, gone)); err != nil {
+		t.Fatal(err)
+	}
+	m.applyChange(dirChange{dir: abs, listing: true, removed: []string{gone}})
+	if m.inTree(m.search.origin) {
+		t.Fatal("前提: origin が木から外れていない")
+	}
+	return m
+}
+
+// 検索中に origin が消えたら、戻る経路 (一致なし・空欄の backspace・Esc) はどれも生きているいちばん近い祖先へ戻す
+// (消えた origin へ戻すと、カーソルが木の外を指し、カメラが原点へ寄る。issue 717)
+func TestSearchRestoresToLiveAncestorWhenOriginRemoved(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		keys func(m *Model)
+	}{
+		{"一致なし", func(m *Model) { typeText(m, "zzzq") }},
+		{"一致なしの後に Esc", func(m *Model) { typeText(m, "zzzq"); m.HandleInput("esc", "") }},
+		{"空欄の backspace", func(m *Model) { m.HandleInput("backspace", "") }},
+		{"Esc", func(m *Model) { m.HandleInput("esc", "") }},
+	} {
+		t.Run(c.name+"/ファイルが消える", func(t *testing.T) {
+			m := searchFromRemoved(t, "c.txt", ".", "c.txt", nil)
+			c.keys(m)
+			if m.cur != m.root {
+				t.Errorf("カーソルが %q (木の中=%v)。root へ戻るはず", m.cur.raw, m.inTree(m.cur))
+			}
+		})
+		t.Run(c.name+"/親のフォルダごと消える", func(t *testing.T) {
+			m := searchFromRemoved(t, "b/deep/x.txt", "b", "deep", nil)
+			c.keys(m)
+			if want := m.findNode(filepath.Join(m.root.path(), "b")); m.cur != want {
+				t.Errorf("カーソルが %q (木の中=%v)。生きている祖先の b へ戻るはず", m.cur.raw, m.inTree(m.cur))
+			}
+		})
+	}
+}
+
+// 一致へ移った後に origin が消えても、一致が無くなれば「始めた位置」の側 (生きている祖先) へ戻る。一致に留まらない
+// (「消えていれば今の位置に留まる」と書くと、この場面で一致していた項目に残る。issue 717 の反証レビュー)
+func TestSearchNoMatchAfterJumpGoesToOriginAncestor(t *testing.T) {
+	m := searchFromRemoved(t, "c.txt", ".", "c.txt", func(m *Model) {
+		typeText(m, "file")
+		if m.cur.raw != "file2.txt" {
+			t.Fatalf("前提: 一致へ移っていない (%q)", m.cur.raw)
+		}
+	})
+	typeText(m, "zzq")
+	if len(m.search.matches) != 0 {
+		t.Fatalf("前提: まだ一致がある (%d 件)", len(m.search.matches))
+	}
+	if m.cur != m.root {
+		t.Errorf("カーソルが %q。消えた origin の生きている祖先 (root) へ戻るはず", m.cur.raw)
 	}
 }

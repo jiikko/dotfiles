@@ -173,9 +173,7 @@ func (m *Model) searchKey(key, text string) {
 		return
 	case key == "esc" || key == "ctrl+c":
 		s.active = false
-		if m.inTree(s.origin) { // 検索中のライブ更新で消えていたら、今の位置に留まる
-			m.setCur(s.origin)
-		}
+		m.restoreOrigin()
 		return
 	case key == "tab" || key == "down" || key == "ctrl+n":
 		m.stepMatch(1)
@@ -187,7 +185,7 @@ func (m *Model) searchKey(key, text string) {
 		s.line.Insert(m.lastSearch) // 空欄の ↑ は前回の検索を呼び戻す
 	case key == "backspace" && s.line.Empty():
 		s.active = false // 空欄の backspace で閉じる
-		m.setCur(s.origin)
+		m.restoreOrigin()
 		return
 	default:
 		if !s.line.Key(key, text) {
@@ -205,8 +203,19 @@ func (m *Model) refreshMatches() {
 	if len(s.matches) > 0 {
 		m.setCur(s.matches[0])
 	} else {
-		m.setCur(s.origin)
+		m.restoreOrigin()
 	}
+}
+
+// restoreOrigin は検索を始めた位置へ戻す。検索中のライブ更新で消えていたら、生きているいちばん近い祖先へ
+// (Refresh / applyChange がカーソルに使う規則と同じ)。「今の位置に留まる」にしない: 一致なしで一度戻った後は、
+// 今の位置そのものが消えた origin を指している (issue 717)。
+func (m *Model) restoreOrigin() {
+	n := m.search.origin
+	for !m.inTree(n) {
+		n = n.parent
+	}
+	m.setCur(n)
 }
 
 func (m *Model) stepMatch(d int) {
