@@ -17,7 +17,7 @@
 | 起動 | `tb [DIR]` | glogx の**どの画面からでも** `F` (§0.3) |
 | 起点 | 起動 dir の**親**を root、起動 dir にカーソル (§5.5) | **pwd を root** にして始める。`-` `Backspace` で 1 段上へ (§5.7 の reroot_up はそのまま) |
 | プレビュー | 中央 90% のポップアップ 1 枚 (§4.6) | **ドラクエの対戦画面のように重なるタイル** (§0.2)。枠の中の飾り (§8.3) は写す |
-| `q` `Esc` | 終了 (`q` は cd 連携) | glogx 流・issues viewer に揃える: タイルの上は 1 枚閉じる / 木の上は **glogx ごと終了** / `F` で閉じて **git log 一覧へ戻る**。`Ctrl-C` は glogx の即終了 |
+| `q` `Esc` | 終了 (`q` は cd 連携) | glogx 流・issues viewer に揃える: タイルの上は 1 枚閉じる / 木の上は **glogx ごと終了** / `F` で閉じて **git log 一覧へ戻る**。`Ctrl-C` は glogx の即終了。F を出したまま終えたら (`q` `Esc` `Ctrl-G` `Ctrl-C`)、30 分以内に同じ dir で開いた glogx は同じ場所の F から始まる (issue 710) |
 | `q` の cd 連携 (`--cwd-file`) | あり | **写さない** |
 | `o` `O` / ソート | 巡回・逆順 | **ソートは後回し** (名前順だけ)。`o` は glogx の「外のアプリで開く」のまま (`open <path>`) |
 | `e` | explode (§5.4。ファイルの上では親のフォルダが対象) | **フォルダの上は explode、ファイルの上とタイルの中はエディタで開く** (2026-10-09 ユーザー依頼「ツリービューでファイルに e を押したら neovim を開いて欲しい」「プレビューを開いて e」)。エディタは `tuikit/editor` ($VISUAL → $EDITOR → nvim。glogx の issues viewer の `e` と同じ)。タイルのジャンプモードの `e` は選んだパスを開く (issues viewer と同じ)。戻ったら読み直す (`ExecDone`) |

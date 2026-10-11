@@ -532,6 +532,13 @@ func (m *browseModel) Init() tea.Cmd {
 		doctorRestore = m.doctorOv.toggle()
 		m.doctorOv.tab = tb
 	}
+	// F を出したまま終了していたら、同じ dir で開いたときに同じ場所の F を開き直す (filer_resume.go。issue 710)。
+	// 優先は最下位: 他の全画面の記憶が当たったら開かない (全画面は同時に 1 枚。issues は repo の照合が非同期なので、
+	// 記憶が在るだけで譲る)
+	var filerRestore tea.Cmd
+	if restore == nil && rlRestore == nil && doctorRestore == nil {
+		filerRestore = m.restoreFilerScreen()
+	}
 	// 🚨 起動時にも追従チェーンを張る: ディスクキャッシュに pending が残っていると初回 fetch が
 	// 走らず (m.fetching() == false)、ciResultMsg 起点の開始点をどれも踏まないまま
 	// 「pending なのに追わない」状態になる (キャッシュの pending TTL 内に再起動した場合)。
@@ -541,9 +548,9 @@ func (m *browseModel) Init() tea.Cmd {
 	logWatch := tea.Batch(gitLogWatchDirsCmd(), m.gitLogPollCmd())
 	if m.fetching() {
 		m.deferredStartup = tea.Batch(u, ver, cliHealth)
-		return tea.Batch(m.fetch, prefix, ab, restore, rlRestore, doctorRestore, poll, logWatch, m.maybeTick(), usageRefreshTick())
+		return tea.Batch(m.fetch, prefix, ab, restore, rlRestore, doctorRestore, filerRestore, poll, logWatch, m.maybeTick(), usageRefreshTick())
 	}
-	return tea.Batch(u, ver, cliHealth, prefix, ab, restore, rlRestore, doctorRestore, poll, logWatch, m.maybeTick(), usageRefreshTick())
+	return tea.Batch(u, ver, cliHealth, prefix, ab, restore, rlRestore, doctorRestore, filerRestore, poll, logWatch, m.maybeTick(), usageRefreshTick())
 }
 
 // releaseStartupChecks は、起動時の CI 取得が終わっていれば預けた検査を 1 回だけ放す (issue 570)。
@@ -2423,6 +2430,7 @@ func (m *browseModel) quitWith(animate bool) (tea.Model, tea.Cmd) {
 	m.rememberIssuesScreen()
 	m.rememberDoctorScreen()
 	m.rememberRatelimitScreen()
+	m.rememberFilerScreen()
 	m.cancelAll()
 	// 預けた起動時の検査は捨てる: 閉じる演出の間は done が立たないので、取り消された CI 取得の結果が届くと
 	// releaseStartupChecks を通り、終了直前に claude / codex を起こして孤児にする (issue 570 の敵対的レビュー)

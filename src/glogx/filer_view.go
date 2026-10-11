@@ -58,6 +58,14 @@ type filerView struct {
 
 func (v *filerView) visible() bool { return v.shown }
 
+// place は開いている F の場所 (開いていなければ ok=false)。終了時の記憶 (filer_resume.go) が使う。
+func (v *filerView) place() (filer.Place, bool) {
+	if !v.shown || v.f == nil {
+		return filer.Place{}, false
+	}
+	return v.f.Place(), true
+}
+
 // toggle は開く / 閉じる。開くときは pwd を root にする (spec §0.1)。同じ dir なら前の状態 (カーソル・開いたフォルダ) を使う。
 func (v *filerView) toggle(dir string) {
 	if v.shown {
@@ -204,8 +212,10 @@ func (m *browseModel) routeKeyToFiler(key string) (tea.Model, tea.Cmd) {
 	}
 	switch act {
 	case filerQuit:
+		// quit (記憶の保存) を hide より先に: hide の後だと「F を出していない」と判定されて記憶が消える (issue 710)
+		mm, cmd := m.quit()
 		m.filerV.hide()
-		return m.quit()
+		return mm, cmd
 	case filerCross:
 		return m, m.openFullScreen(m.filerV.takeWantCross())
 	case filerExec:

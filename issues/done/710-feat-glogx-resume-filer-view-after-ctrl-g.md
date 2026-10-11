@@ -1,7 +1,5 @@
 # 710 (feat): glogx の F (filetree) を出したまま C-g で閉じたら、次の C-g で最後の位置の filetree から開く
 
-> 🚨 **担当中: dotfiles-4e**（2026-10-11〜）
-
 起票日: 2026-10-11
 
 ## 概要
@@ -47,12 +45,12 @@
 
 ## 受け入れ条件
 
-- [ ] F を出したまま C-g で閉じ、30 分以内に同じ dir で C-g で開くと、F が開いた状態で、閉じる前の開いたフォルダとカーソルが戻る
-- [ ] F の `q` / `Esc` で終えたときも同じく戻る
-- [ ] F を閉じてから終了したら、次の起動は git log の一覧から始まる
-- [ ] TTL を過ぎた・別の dir で開いた・保存先が壊れている・他の画面の復元が当たったときは、通常の起動に落ちる (起動を妨げない)
-- [ ] 保存したパスが消えていても落ちない (飛ばす)
-- [ ] テストは issues / doctor の復元のテストと同じ形 (保存 → 起動 → 復元) で、保存の呼び出しを外す変異で red になる
+- [x] F を出したまま C-g で閉じ、30 分以内に同じ dir で C-g で開くと、F が開いた状態で、閉じる前の開いたフォルダとカーソルが戻る
+- [x] F の `q` / `Esc` で終えたときも同じく戻る
+- [x] F を閉じてから終了したら、次の起動は git log の一覧から始まる
+- [x] TTL を過ぎた・別の dir で開いた・保存先が壊れている・他の画面の復元が当たったときは、通常の起動に落ちる (起動を妨げない)
+- [x] 保存したパスが消えていても落ちない (飛ばす)
+- [x] テストは issues / doctor の復元のテストと同じ形 (保存 → 起動 → 復元) で、保存の呼び出しを外す変異で red になる
 
 ## 関連ファイル
 
@@ -69,3 +67,17 @@
   無い (P2) / 起動時の 3 画面の復元との優先順位 (P2) / 消えたカーソルは親へ落ちるのでなく動かない (P3) / writeAtomic・未来の時刻 (P3)。
   反証できなかった主張: TTL 30 分・3 画面の remember と remove・Remember place の既定 off・`savePlace` が `Close` の中・C-g の bind。
   判断: `q` / `Esc` も記憶を残す (issues viewer に揃えた)。TTL は他の 3 画面と同じ 30 分
+- 2026-10-11: 実装 (commit「feat(glogx): F を出したまま閉じたら、次の C-g で同じ場所の F から開く」)
+  - treefiler: 非公開の `savedPlace` を公開の `Place` にし、`(*Model).Place()` / `RestorePlace(Place)` を足した。Remember place
+    (`savePlace` / `restorePlace`) はその上に載せた (Remember を見るのは入口だけ)
+  - glogx `filer_resume.go`: `quitWith` で F を出していれば `filer-screen.json` に保存し、出していなければ消す。F の `q` / `Esc` は `quit()` を
+    `hide()` より先にした。Init で他の全画面の記憶が当たっていなければ、同じ dir の記憶から F を開いて `RestorePlace` する
+  - テスト: `filer_resume_test.go` (悪い記憶を弾く / C-g と q で覚え、閉じて終えたら消す / 起動で開いたフォルダとカーソルが戻る / 他の画面に譲る)、
+    treefiler `places_test.go` (カーソルの経路の外で開いたフォルダも往復する)
+  - 変異 (bin/mutate-verify。8 本すべて red): quitWith の保存を外す / q の順序を戻す / RestorePlace を外す / 閉じたときの削除を外す /
+    dir の照合を外す / 他の画面に譲る条件を外す / `Place()` が Opened を記録しない / q の経路から hide を外す
+  - 敵対レビュー (opus 1 本、壊す・回帰・素通りの 3 観点): P1・P2 なし。採った P3: q の経路の hide をどのテストも見ていない (前からの穴) /
+    `Place()` の Opened の欠落が見えない (前からの穴) → テストを足した。記録した P3: 記憶はファイル 1 本で、別の dir の glogx を F を出さずに
+    閉じても消える (他の 3 画面と同じ作法) / F の中で root を親へ上げてから閉じると、復元の root は起動 dir に戻る → `filer_resume.go` の冒頭に書いた。
+    直した周はテストとコメントだけで、変異で確かめたので周回を閉じた
+  - `make -C src/treefiler lint test`・`make -C src/glogx lint test` rc=0。仕様 (`docs/treefiler-spec.md` の q の行) と `src/glogx/CLAUDE.md` に書いた

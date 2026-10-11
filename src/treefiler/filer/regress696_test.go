@@ -34,7 +34,7 @@ func TestPlacesSkipCarriageReturn(t *testing.T) {
 			t.Fatalf("%s: 記録を読めない / 場所が無い (%v, %d)", tc, ok, len(ps))
 		}
 		for _, p := range ps {
-			if p.cursor == filepath.Join(m.root.abs, "cr") || slices.Contains(p.opened, filepath.Join(m.root.abs, "dcr")) {
+			if p.Cursor == filepath.Join(m.root.abs, "cr") || slices.Contains(p.Opened, filepath.Join(m.root.abs, "dcr")) {
 				t.Fatalf("%s: \\r を落とした別のパスとして読み戻された: %+v", tc, p)
 			}
 		}
