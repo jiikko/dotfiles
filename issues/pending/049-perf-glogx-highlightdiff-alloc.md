@@ -86,6 +86,7 @@ soak (実バイナリ) の実測では、diff popup を 20 回開閉 (= 20 コ�
 ## 測定ログ
 
 測ったマシンの `./tmp` にだけあり、消える前提 (他のマシンには無い)。数値の結論は上の本文が正本。
+2026-10-11 に `tmp/glogx-perf` を削除した (下の 3 つはもう無い。取り直すなら同じ bench / profile を回す)。
 
 - `tmp/glogx-perf/baseline_bench.txt` (count=6)
 - `tmp/glogx-perf/hl_cpu.prof` / `hl_mem.prof` (+ `glogx.test` でシンボル化)
