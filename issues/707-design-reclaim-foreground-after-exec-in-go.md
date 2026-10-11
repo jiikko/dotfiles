@@ -13,18 +13,26 @@
 頼っている**。zsh 5.9 と bash 3.2 でしか実測していない。シェルによらず「`!` `s` `e` から戻ったら前面は treefiler / glogx に在る」を
 保証するには、起こした側 (Go) で戻った直後に前面を取り返す層が要る。
 
-## trap で守れていない形 (2026-10-11 の敵対レビューで実測)
+## trap で守れていない形 (2026-10-11 の敵対レビューと codex の反証レビューで実測)
 
-| 形 | 修正前 | 修正後 | 備考 |
-|---|---|---|---|
-| `$SHELL` が fish・dash など | 未測定 | 未測定 | trap の構文・exec を省く振る舞いがシェルごとに違いうる |
-| zsh で、コマンドの中に `trap - EXIT; …` / `trap '' EXIT; …` | 固まる | 固まる | 包みの trap を外すので、最後のコマンドが exec される。bash 3.2 では戻った |
-| コマンドの中の `kill -KILL $$` | 固まる | 固まる | シェルが自分の終了処理を通らずに死ぬ |
-| ユーザーの rc の EXIT の trap・zsh の `TRAPEXIT` | 走った | 走らない | 包みの trap で上書きする代償 (`zshexit` フックは走る) |
+| 形 | 修正前 | 修正後 (leader の形) | 修正後 (job の形) | 備考 |
+|---|---|---|---|---|
+| `$SHELL` が fish・dash など | 未測定 | 未測定 | 未測定 | trap の構文・exec を省く振る舞いがシェルごとに違いうる |
+| zsh で、コマンドの中に `trap - EXIT; …` / `trap '' EXIT; …` | 固まる | 前面を失ったまま戻る | 包みの stty が SIGTTOU で止まる | 包みの trap を外すので、最後のコマンドが exec される。bash 3.2 では戻った |
+| コマンドの中の `kill -KILL $$` | 固まる | (未記録) | 包みの stty が SIGTTOU で止まる | シェルが自分の終了処理を通らずに死ぬ |
+| ユーザーの rc の EXIT の trap・zsh の `TRAPEXIT` | 走った | 走らない | 走らない | 包みの trap で上書きする代償 (`zshexit` フックは走る) |
 
-`kill -KILL $$` は、Go 側で取り返すだけでは直らない (レビュアーの指摘・未検証)。包みの sh 自身がキー待ちの `stty` で SIGTTOU により
-止まり、ExecProcess から戻ってこないため。シェルによらず保証するなら「包みの sh で TTOU / TTIN を無視する + Go で取り返す」の
-組が要る。ただし包みで無視すると、前面でないまま `stty`・`dd` が通る (dd は EIO で即座に抜け、キー待ちが消える) ので、その扱いも決める。
+leader = glogx が tmux のペインで直に動く形 (session の先頭)、job = 外のシェルから起こした treefiler の形 (前景ジョブ)。
+`src/treefiler/filer/shell_pty_test.go` の冒頭に同じ区別がある。
+
+🚨 **Go 側で ExecProcess から戻った後に取り返すだけでは、上のどの形も直らない** (codex の反証レビューの P1)。`waitIfQuick` は
+内側のシェルが終わった後、Go に戻る前にキー待ちの `stty`・`dd` を走らせるので、job の形ではそこで SIGTTOU により止まり、
+Go まで戻ってこない。包みの側にも「前面でないなら端末に触らずに戻る」処理が要る。
+
+- 包みで TTOU / TTIN を無視する試作 (レビュアーと codex の 2 者が試した) では戻ったが、前面は戻らず、キー待ちも消えた
+  (dd が EIO で即座に抜ける)。前面の取り返しは Go に任せ、キー待ちは失う形になる
+- 未測定の案: 包みの sh が `ps -o tpgid= -p $$` と `ps -o pgid= -p $$` を比べ、前面でなければ stty・dd を飛ばして戻る
+  (perl も TTOU の無視も要らない)。Go が戻った後に取り返す。キー待ちは前面が奪われた場合だけ失う
 
 ## 対応方針 (案)
 
@@ -34,15 +42,26 @@
     バイナリ (treefiler・glogx) でも、この `init` が走ることを確かめる
 - pro-con の `ui/terminal.go` の `termExec` (`tea.ExecCommand` を包み、`Run` の中で子が終わった後、bubbletea が端末を入れ直す前に
   取り返す) と同じ形を、treefiler の `main.go` (`tea.ExecProcess`) と glogx の `runEditorCmd` (`tui.go`。`F` の `!` `s` `e` と
-  issues viewer の `e` などがここを通る) に入れる
+  issues viewer の `e` などがここを通る) に入れる。あわせて、上の「包みの側で前面でないなら端末に触らずに戻る」を `waitIfQuick` に入れる
 - 入れた後も `trap 'exit $?' EXIT` は外さない。実行中の Ctrl-Z で永久に固まる形 (止まったジョブを待つ者が居ない) は trap が
   直しているため
 - 持ち上げる前に、pro-con で並行して進んでいる作業 (issue 415 の epic) と触るファイルが重ならないかを確かめる
 
+## テストの組み方の注意 (codex の反証レビューの P2)
+
+- 今の `shell_pty_test.go` の helper (`TestBangHelperOnPTY`) は、自前の `exec.Cmd.Run()` の直後に前面を見る。treefiler の `main.go` も
+  glogx の `runEditorCmd` も通らないので、**アプリ側に取り返しを入れてもこのテストの結果は変わらない**。helper にだけ取り返しを
+  足すと、アプリ側の呼び出しを外す変異を検出できない
+- 取り返しを持つ実行の包み (`tea.ExecCommand` の実装) を 1 つにし、helper もアプリ (treefiler・glogx) もそれを使う形にする。
+  加えて、両アプリがその包みを通っていることを別に固定する (配線の検査)
+- pro-con の `ui/terminal_test.go` の取り返しのテストは `reclaim` を差し替えた stub で、実際の ioctl は `foreground_test.go` が見ている
+
 ## 受け入れ条件
 
 - [ ] treefiler・glogx の ExecProcess から戻った直後に、前面が自分のグループでなければ取り返す
-- [ ] `src/treefiler/filer/shell_pty_test.go` に、trap では戻らない形 (zsh の `trap - EXIT; /bin/echo x`) を足し、取り返しを外す変異で red になる
+- [ ] `waitIfQuick` は、前面でないときに stty・dd で止まらずに戻る
+- [ ] pty のテストに、trap では戻らない形 (zsh の `trap - EXIT; /bin/echo x`) を leader・job の両方の形で足し、アプリと同じ実行の包みを
+  通す。取り返しを外す変異・包みの「前面でないなら戻る」を外す変異・アプリ側の配線を外す変異で、それぞれ red になる
 - [ ] pro-con の既存のテスト (`foreground_test.go` と `ui/terminal_test.go` の取り返しのテスト) が、持ち上げた後も同じ実装を通る
 
 ## 関連ファイル
@@ -56,3 +75,6 @@
 ## 進捗
 
 - 2026-10-11: 起票。trap による修正は push 済み (上の commit)
+- 2026-10-11: codex の反証レビュー。採用: Go 側の取り返しだけでは job の形で包みの stty が先に止まる (P1。表と方針に反映) /
+  今の pty テストはアプリの実行経路を通らない (P2。テストの組み方に反映)。反証できなかった主張: ファイル名・シンボル名・
+  runEditorCmd を通る経路の範囲・Reclaim の自己バイナリ再起動と init・518 / 415 の参照
