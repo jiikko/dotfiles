@@ -78,9 +78,22 @@ func contains(ns []*node, n *node) bool {
 }
 
 // layout は表示する全ノードの目標位置を返す (列ごとに、親ごとの子のブロックを縦に詰める。spec §3.1・§3.3 の capped)。
+// 🚨 返す map は使い回しの入れ物で、次の layout の呼び出しで中身が変わる。呼び出し側は受け取った関数の中だけで使い、
+// 持ち越さない (5 万件のフォルダで、毎 tick の作り直しが確保の大半だった)。
 func (m *Model) layout() map[*node]place {
 	sp := m.spine()
-	pos := map[*node]place{m.root: {0, 0, true}}
+	pos := m.posBuf.take(len(m.anims) + 1)
+	pos[m.root] = place{0, 0, true}
+	// kids は隠しファイルを除くたびにスライスを作るので、1 回の配置の中では親ごとに 1 回だけ作る
+	kidsMemo := map[*node][]*node{}
+	kids := func(n *node) []*node {
+		ks, ok := kidsMemo[n]
+		if !ok {
+			ks = m.kids(n)
+			kidsMemo[n] = ks
+		}
+		return ks
+	}
 	colX := map[int]int{0: 0}
 	cols := map[int][]*node{0: {m.root}}
 	for depth := 0; ; depth++ {
@@ -88,7 +101,7 @@ func (m *Model) layout() map[*node]place {
 		namew := 0
 		for _, n := range cols[depth] {
 			namew = max(namew, nameCells(n))
-			if n.dir && n.expanded && len(m.kids(n)) > 0 {
+			if n.dir && n.expanded && len(kids(n)) > 0 {
 				parents = append(parents, n)
 			}
 		}
@@ -107,7 +120,7 @@ func (m *Model) layout() map[*node]place {
 		y0 := make([]int, len(parents))
 		pin := -1
 		for j, p := range parents {
-			ks := m.kids(p)
+			ks := kids(p)
 			y0[j] = pos[p].y - (len(ks)-1)/2
 			if sp[p] {
 				for i, k := range ks {
@@ -117,7 +130,7 @@ func (m *Model) layout() map[*node]place {
 				}
 			}
 		}
-		blen := func(j int) int { return len(m.kids(parents[j])) }
+		blen := func(j int) int { return len(kids(parents[j])) }
 		if pin >= 0 {
 			for j := pin - 1; j >= 0; j-- {
 				y0[j] = min(y0[j], y0[j+1]-1-blen(j))
@@ -143,8 +156,13 @@ func (m *Model) layout() map[*node]place {
 		// 次の列の x = 列の x + 列の幅 + lanes + gap (3 以上) + branch (spec §3.2)
 		nx := colX[depth] + w + lanes + max(m.set.ColumnGap, 3) + m.set.BranchOffset
 		colX[depth+1] = nx
+		total := 0
+		for j := range parents {
+			total += blen(j)
+		}
+		cols[depth+1] = make([]*node, 0, total)
 		for j, p := range parents {
-			for i, k := range m.kids(p) {
+			for i, k := range kids(p) {
 				pos[k] = place{nx, (y0[j] + i) * (1 + m.set.RowSpacing), sp[p]} // 行の間隔は空行を足す (spec §3.1。線は空行を貫く)
 				cols[depth+1] = append(cols[depth+1], k)
 			}
@@ -165,7 +183,7 @@ func (m *Model) labelWidth(n *node) int {
 
 // nameCells は名前の表示幅。フォルダは後ろの `/` の 1 桁を含む (ファイルと見分けるため。ユーザー回答 2026-10-09)。
 func nameCells(n *node) int {
-	w := widthOf(n.label())
+	w := n.labelCells()
 	if n.dir {
 		w++
 	}
@@ -345,7 +363,7 @@ func (m *Model) lines(now map[*node][2]int, ylo, yhi int) lineGrid {
 		if !ok || !pn.dir || !pn.expanded {
 			continue
 		}
-		var kp [][2]int
+		kp := m.kpBuf[:0]
 		var routeKid *node
 		for _, k := range m.kids(pn) {
 			if q, ok := now[k]; ok {
@@ -355,6 +373,7 @@ func (m *Model) lines(now map[*node][2]int, ylo, yhi int) lineGrid {
 				}
 			}
 		}
+		m.kpBuf = kp // 伸ばした分を次の親・次のフレームで使い回す
 		if len(kp) == 0 {
 			continue
 		}
@@ -434,4 +453,22 @@ func (m *Model) lines(now map[*node][2]int, ylo, yhi int) lineGrid {
 		}
 	}
 	return g
+}
+
+// reusedMap は毎 tick 作り直さない map の入れ物。take は中身を空にして返す。🚨 Go の map は clear しても容量が残り、反復は
+// 容量に比例するので、要る数が容量の 1/4 を切ったら作り直す (巨大なフォルダを見た後に小さなフォルダへ移ると、毎 tick 空の大きな
+// map を舐めることになる)。
+type reusedMap[K comparable, V any] struct {
+	m   map[K]V
+	cap int
+}
+
+func (r *reusedMap[K, V]) take(n int) map[K]V {
+	if r.m == nil || n > r.cap || n*4 < r.cap {
+		r.cap = max(n, 16)
+		r.m = make(map[K]V, r.cap)
+		return r.m
+	}
+	clear(r.m)
+	return r.m
 }

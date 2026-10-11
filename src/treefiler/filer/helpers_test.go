@@ -43,7 +43,7 @@ func gitCommit(t *testing.T, dir string) {
 
 // waitFor は cond が true になるまで刻んで待つ。10 秒は hang guard (実時間の合否ではない。止まらないときだけ落とす)。
 // cond の中で Advance を呼んでよい (裏の結果の取り込みと待ちを 1 つの条件にする)。
-func waitFor(t *testing.T, what string, cond func() bool) {
+func waitFor(t testing.TB, what string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for !cond() {

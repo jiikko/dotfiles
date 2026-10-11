@@ -61,8 +61,11 @@ type Model struct {
 	nameW      []int  // 列ごとの最長の名前の幅 (layout が数える。詳細の右揃えに使う)
 	opener     opener // `o` の起動 (open.go)
 	linkCache  map[string]string
-	cv         *canvas // 使い回す格子 (大きさが変わったら作り直す)
-	startDir   string  // 起動したフォルダ (前回の場所を覚える鍵)
+	cv         *canvas                  // 使い回す格子 (大きさが変わったら作り直す)
+	posBuf     reusedMap[*node, place]  // layout の結果の入れ物 (毎 tick 作り直さない。layout の doc)
+	nowBuf     reusedMap[*node, [2]int] // draw の「今の位置」の入れ物
+	kpBuf      [][2]int                 // lines の子の位置の入れ物
+	startDir   string                   // 起動したフォルダ (前回の場所を覚える鍵)
 	walker     *walker
 	recs       map[string]walkResult // walker の結果の写し (Advance で取り込む)
 	git        gitWatch
@@ -937,7 +940,7 @@ func (m *Model) draw() *canvas {
 	ch := m.canvasH()
 	ox, oy := int(math.Round(m.camX.v)), int(math.Round(m.camY.v))
 	pos := m.layout()
-	now := map[*node][2]int{}
+	now := m.nowBuf.take(len(m.order))
 	for _, n := range m.order {
 		if a := m.anims[n]; a != nil && !a.ghost && a.alpha.v > 0.05 {
 			now[n] = [2]int{int(math.Round(a.x.v)), int(math.Round(a.y.v))}
@@ -945,7 +948,7 @@ func (m *Model) draw() *canvas {
 	}
 	// カーソル: 名前の背景を glogx のカーソル色で塗るだけ (spec §0.1)
 	if p, ok := now[m.cur]; ok && p[1]-oy < ch {
-		c.fillBg(p[0]-1-ox, p[1]-oy, p[0]+widthOf(m.cur.label())-ox, p[1]-oy, cCursorBg)
+		c.fillBg(p[0]-1-ox, p[1]-oy, p[0]+m.cur.labelCells()-ox, p[1]-oy, cCursorBg)
 	}
 	m.drawLines(c, now, ox, oy, ch)
 	m.drawNames(c, pos, ox, oy, ch)
@@ -1101,7 +1104,7 @@ func (m *Model) drawNames(c *canvas, pos map[*node]place, ox, oy, ch int) {
 			}
 			if q != "" {
 				if r, spans := fuzzy(n.name, q); r < rankNone {
-					lw := widthOf(n.label())
+					lw := n.labelCells()
 					for _, sp := range spans {
 						for k := widthOf(n.name[:sp[0]]); k < widthOf(n.name[:sp[1]]) && k < lw; k++ {
 							if p := c.at(x+k, y); p != nil {

@@ -11,9 +11,10 @@ import (
 // frameAllocBudget は止まった画面 1 フレーム (View) の確保の回数の上限 (issue 693)。
 // 退行は今まで glogx の TestFrameAllocBudget (filer の行) でしか赤くならず、treefiler だけの変更の CI では見えなかった
 // (56c93c8f: src/treefiler の CI が success、src/glogx が 164 / 158 で failure)。
-// 上限は実測 (go1.25・-race なし) に数回の余裕を足した値。描く文字列そのものを増やす変更 (案内・凡例) で上げるときは、
+// 上限は実測 (-race なし。go1.25.0 と go1.26.0 で同じ値) に数回の余裕を足した値。描く文字列そのものを増やす変更 (案内・凡例) で上げるときは、
 // 増えた分が描く文字列の増加だと A/B で確かめてから上げる。
-const frameAllocBudget = 335
+// 実測 333 回 (上限 335) → 274 回 (上限 276): 配置・描画の map とスライスを使い回した (issue 711)。
+const frameAllocBudget = 276
 
 func TestFrameAllocBudget(t *testing.T) {
 	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())

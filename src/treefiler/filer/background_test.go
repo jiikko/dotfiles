@@ -10,7 +10,7 @@ import (
 )
 
 // settleBackground は裏の走査と git の取得が終わるまで Advance を回す (hang guard 10 秒)。
-func settleBackground(t *testing.T, m *Model) {
+func settleBackground(t testing.TB, m *Model) {
 	t.Helper()
 	// walker の時計を 1 周ごとに 1 秒進める (古い結果の数え直しの間隔を実時間で待たない)
 	var clock atomic.Int64

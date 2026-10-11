@@ -203,7 +203,9 @@ func TestFrameAllocBudget(t *testing.T) {
 		// treefiler (F。issue 662)。格子を毎フレーム作り直していたときは 330KB/frame だった。使い回して 154 / 43167 B (-race)。
 		// 最下行に検索とキー一覧の案内 (/ find  ? keys) を足して 156 / 45601 B。案内を戻すと 43556 B に下がるのを実測した
 		// (増えたのは描く文字列そのもので、確保の無駄ではない)。! cmd / s shell の案内を足して 45861 B
-		{"filer", budgetFilerModel, 158, 46200},
+		// 158 / 46200 は動きの途中の画面の値だった (fixture が実時計で進めていて止まりきらない。budgetFilerModel の注記)。
+		// 止まった画面で 220 / 50799 B (-race)
+		{"filer", budgetFilerModel, 222, 51500},
 	}
 	for _, c := range cases {
 		m := c.build(t)
@@ -304,8 +306,17 @@ func budgetFilerModel(tb testing.TB) *browseModel {
 	}
 	m.filerV.toggle(dir)
 	m.filerV.handleKey("l") // alpha を開いて中へ
-	for range 30 {
-		m.filerV.advance(timeNow().Add(time.Second)) // 動きを止まるまで進める (止まった画面を測る)
+	// 止まった画面を測る: 固定の時計を 50ms ずつ進め、動きと裏の処理 (走査・git) が止まるまで回す。
+	// 🚨 実時計 (timeNow) を渡さない: Advance は 1 回の経過を 0.05 秒で頭打ちにするので、毎回「今 + 1 秒」を渡すと 2 回目以降は
+	// 呼び出しの間の実時間しか進まず、途中の画面を測る。CI の遅さで進み方が変わり、確保が 156 → 164 回と揺れた (2745215c の CI)
+	at := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	for deadline := time.Now().Add(10 * time.Second); m.filerV.animating() || m.filerV.busy(); {
+		if time.Now().After(deadline) {
+			tb.Fatal("treefiler の動き・裏の処理が 10 秒で止まらない")
+		}
+		at = at.Add(50 * time.Millisecond)
+		m.filerV.advance(at)
+		time.Sleep(time.Millisecond) // sleep-ok: tick: 裏の goroutine (走査・git) の完了を条件で待つループの刻み
 	}
 	return m
 }

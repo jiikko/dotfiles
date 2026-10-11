@@ -28,6 +28,11 @@ type node struct {
 	last     *node // 最後にカーソルがあった子 (潜ったときに戻る先)
 	mtime    time.Time
 	size     int64
+	// 表示の名前と幅の覚え (label / labelCells)。名前は作ったときに決まり、変わるのは列の最大幅 (labelMax。設定) だけなので、
+	// 覚えたときの labelMax と組で持つ。配置と描画は全ノードの幅を毎 tick 引く (5 万件のフォルダの layout で 3.6 → 3.1 ms。issue 711)
+	labMax int
+	lab    string
+	labW   int
 }
 
 func (n *node) path() string { return n.abs }
@@ -54,10 +59,25 @@ var (
 )
 
 func (n *node) label() string {
-	if termwidth.Of(n.name) <= labelMax {
-		return n.name
+	n.cacheLabel()
+	return n.lab
+}
+
+// labelCells は label の表示幅。
+func (n *node) labelCells() int {
+	n.cacheLabel()
+	return n.labW
+}
+
+func (n *node) cacheLabel() {
+	if n.labMax == labelMax && n.lab != "" {
+		return
 	}
-	return termwidth.Truncate(n.name, labelMax, "…")
+	n.labMax, n.lab = labelMax, n.name
+	if n.labW = termwidth.Of(n.name); n.labW > labelMax {
+		n.lab = termwidth.Truncate(n.name, labelMax, "…")
+		n.labW = termwidth.Of(n.lab)
+	}
 }
 
 func newNode(raw string, info os.FileInfo, parent *node) *node {
