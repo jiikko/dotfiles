@@ -7,20 +7,25 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/creack/pty"
+	"github.com/jiikko/dotfiles/src/tuikit/foreground"
 	"golang.org/x/sys/unix"
 )
 
 // `!` で起こしたプロセスが終わった後、端末の前面が起こした側 (treefiler / glogx) へ戻っていること。
 //
 // 擬似端末の上で、テストのバイナリを helper (TestBangHelperOnPTY) として起こす。helper は `!` が作る本物の Argv を、
-// bubbletea の ExecProcess と同じく自分のグループのまま起こし、戻ったら前面が自分かを READY の行で返す。起こし方 (shape):
+// treefiler・glogx と同じ包み (foreground.NewExec。戻った後に前面を取り戻す) で自分のグループのまま起こし、戻ったら前面が自分かを
+// READY の行で返す。アプリがこの包みを通ることは gorules の execViaForeground が止める (tea.ExecProcess を書けない)。起こし方 (shape):
 //   - leader: helper が擬似端末の session の先頭 (glogx が tmux のペインで直に動く形)。孤児のグループなので、前面を失うと
 //     stty・dd は止まらず EIO で即座に抜ける
 //   - job: session の先頭の下の前景ジョブ (外のシェルから起こした treefiler の形)。前面を失うと stty・dd が SIGTTOU で止まる
@@ -37,7 +42,7 @@ func TestBangGivesTerminalBackOnPTY(t *testing.T) {
 	}
 	// コマンドは外部コマンドにする: 前面を持ち去るのは、シェルが自分のグループで前面を取ったまま最後の外部コマンドを exec したとき。
 	// ビルトイン (echo・true) は exec されないので、trap を外しても前面は動かず緑のまま通る (変異で実測)
-	cases := make([]bangCase, 0, 20)
+	cases := make([]bangCase, 0, 36)
 	for _, shape := range []string{"leader", "job"} {
 		for _, sh := range shells {
 			cases = append(cases,
@@ -52,10 +57,23 @@ func TestBangGivesTerminalBackOnPTY(t *testing.T) {
 		}
 	}
 	for _, sh := range shells {
+		for _, shape := range []string{"leader", "job"} {
+			cases = append(cases,
+				// trap で戻らない形 (シェルが自分の終了処理を通らずに死ぬ)。包みの sh は前面でないのでキーを待たずに戻り、
+				// 前面は Go の取り戻し (foreground.Exec) で戻る
+				bangCase{name: "kill-self", shape: shape, shell: sh, cmd: "/bin/echo ran-bang; kill -KILL $$", wantBack: true},
+				// 包まない `-ic` (前面を持ち去る) も、Go の取り戻しで戻る (trap に頼らない層の証拠)
+				bangCase{name: "unwrapped-reclaim", shape: shape, shell: sh, argv: []string{sh, "-ic", "/bin/echo ran-bang"}, wantBack: true},
+			)
+			if filepath.Base(sh) == "zsh" { // bash 3.2 は trap を外しても戻る (実測)
+				// コマンドの中で包みの trap を外す: zsh は最後のコマンドを exec して前面を持ち去る
+				cases = append(cases, bangCase{name: "trap-removed", shape: shape, shell: sh, cmd: "trap - EXIT; /bin/echo ran-bang", wantBack: true})
+			}
+		}
 		cases = append(cases,
-			// 負の対照: 包まずに `-ic` で起こすと前面が戻らないこと (このテストが見ている現象が今の環境で起きている証拠。
-			// bash 5 は自分で戻すので、macOS の /bin/sh = bash 3.2 と zsh で見る)
-			bangCase{name: "unwrapped", shape: "leader", shell: sh, argv: []string{sh, "-ic", "/bin/echo ran-bang"}},
+			// 負の対照: 取り戻さずに (素の Run で) 包まない `-ic` を起こすと前面が戻らないこと (このテストが見ている現象が今の環境で
+			// 起きている証拠。bash 5 は自分で戻すので、macOS の /bin/sh = bash 3.2 と zsh で見る)
+			bangCase{name: "unwrapped", shape: "leader", shell: sh, argv: []string{sh, "-ic", "/bin/echo ran-bang"}, raw: true},
 			// 実行中の Ctrl-Z。シェルが最後のコマンドを exec すると、止まったジョブを待つ者が居なくなって永久に固まる
 			bangCase{name: "ctrl-z", shape: "job", shell: sh, cmd: "/bin/sh -c 'echo ran-bang; exec /bin/sleep 30'",
 				trigger: "ran-bang", send: "\x1a", wantKeyWait: true, wantBack: true},
@@ -65,6 +83,13 @@ func TestBangGivesTerminalBackOnPTY(t *testing.T) {
 		// 3 秒以上かかる経路 (キーを待たない) でも前面が戻ること (戻った bubbletea が前面で端末を戻すため)。
 		// コマンドは 1 つの外部コマンドにする (`a; b` だと bash は途中のジョブの後で前面を取り戻し、trap を外しても緑のまま通る。変異で実測)
 		bangCase{name: "slow", shape: "job", shell: "/bin/sh", cmd: "/bin/sh -c '/bin/sleep 3; /bin/echo ran-bang'", wantBack: true},
+		// 子の実行中に外のシェルが前面を取り戻した (Ctrl-Z → bg の後の形): 戻った treefiler はシェルから前面を奪わない
+		// (奪うと孤児になったシェルのグループの読みが EIO になる)。session の先頭の helper がシェル役で、子が印のファイルを
+		// 作った後に前面を自分へ戻し、子が終わった後も前面が自分にあることを LEADER の行で返す
+		// 子は `e` の GUI エディタと同じく、シェルを挟まず端末に触らないもの (`!` の包みの対話のシェルは、終わるときに自分で
+		// 前面を treefiler のグループへ戻すので、この形にならない。実測)
+		bangCase{name: "shell-took-back", shape: "job", shell: "/bin/sh",
+			argv: []string{"/bin/sh", "-c", `: > "$TREEFILER_BANG_PTY_TAKEBACK"; exec /bin/sleep 1`}, takeBack: true, want: "LEADER kept=true"},
 		// キー待ちの Ctrl-\ はただのキー (前面が戻った後の SIGQUIT は treefiler 自身を落とす)
 		bangCase{name: "ctrl-backslash", shape: "job", shell: shells[len(shells)-1], cmd: "/bin/echo ran-bang", key: "\x1c", wantKeyWait: true, wantBack: true},
 	)
@@ -76,7 +101,9 @@ func TestBangGivesTerminalBackOnPTY(t *testing.T) {
 type bangCase struct {
 	name, shape, shell string
 	cmd                string   // `!` に打つコマンド行
-	argv               []string // 包まずに起こす (負の対照)
+	argv               []string // 包まずに起こす
+	raw                bool     // 前面を取り戻さずに起こす (負の対照)
+	takeBack           bool     // job の形で、子の実行中に session の先頭 (シェル役) が前面を取り戻す
 	trigger, send      string   // trigger が出力に出たら send を送る (実行中のキー)
 	key                string   // キー待ちに送るキー (既定 "x")
 	want               string   // 出力に出るはずの文字列 (既定 "ran-bang")
@@ -94,6 +121,9 @@ func runBangOnPTY(t *testing.T, c bangCase) {
 	t.Setenv("ZDOTDIR", home)
 	t.Setenv("ENV", "")
 	t.Setenv("BASH_ENV", "")
+	if c.takeBack {
+		t.Setenv(bangTakeBackEnv, home+"/took-back") // ExecRequest の Env (newTest の後に作る) と helper の両方へ届く
+	}
 
 	m := newTest(t)
 	var r ExecRequest
@@ -116,7 +146,8 @@ func runBangOnPTY(t *testing.T, c bangCase) {
 	cmd := exec.Command(os.Args[0], "-test.run=^TestBangHelperOnPTY$")
 	// GORACE: -race のバイナリは終わる前に既定で 1 秒待ち、helper は 1 ケースで 1〜2 回終わる (42 秒 → 7 秒。issue 708)。
 	// helper の終了コードは見ていないので、helper の中の race は待っても待たなくても出力にしか出ない
-	cmd.Env = append(os.Environ(), bangHelperEnv+"="+string(req), bangShapeEnv+"="+c.shape, "GORACE=atexit_sleep_ms=0")
+	cmd.Env = append(os.Environ(), bangHelperEnv+"="+string(req), bangShapeEnv+"="+c.shape, bangRawEnv+"="+strconv.FormatBool(c.raw),
+		"GORACE=atexit_sleep_ms=0")
 	master, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 24, Cols: 100})
 	if err != nil {
 		t.Fatal(err)
@@ -215,6 +246,9 @@ func readyLine(s string) string {
 const (
 	bangHelperEnv = "TREEFILER_BANG_PTY_HELPER"
 	bangShapeEnv  = "TREEFILER_BANG_PTY_SHAPE"
+	bangRawEnv    = "TREEFILER_BANG_PTY_RAW"
+	// bangTakeBackEnv は子が作る印のファイル。session の先頭の helper はそれを見てから前面を自分へ戻す
+	bangTakeBackEnv = "TREEFILER_BANG_PTY_TAKEBACK"
 )
 
 // TestBangHelperOnPTY は TestBangGivesTerminalBackOnPTY が擬似端末の上で起こす helper (直接走らせたときは何もしない)。
@@ -228,8 +262,29 @@ func TestBangHelperOnPTY(t *testing.T) {
 		c.Env = append(os.Environ(), bangShapeEnv+"=leaf")
 		c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 		c.SysProcAttr = &syscall.SysProcAttr{Foreground: true, Ctty: 0}
-		if err := c.Run(); err != nil {
+		mark := os.Getenv(bangTakeBackEnv)
+		if err := c.Start(); err != nil {
 			fmt.Printf("\nHELPER %v\n", err)
+			os.Exit(0)
+		}
+		if mark != "" { // シェルが bg の後に前面を取り戻すのと同じ: 前面でないので SIGTTOU を無視して移す
+			for deadline := time.Now().Add(10 * time.Second); ; {
+				if _, err := os.Stat(mark); err == nil || time.Now().After(deadline) {
+					break
+				}
+				time.Sleep(5 * time.Millisecond) // sleep-ok: tick: 子が印のファイルを作るのを条件で待つループの刻み
+			}
+			signal.Ignore(syscall.SIGTTOU)
+			if err := unix.IoctlSetPointerInt(0, unix.TIOCSPGRP, syscall.Getpgrp()); err != nil {
+				fmt.Printf("\nHELPER take-back %v\n", err)
+			}
+		}
+		if err := c.Wait(); err != nil {
+			fmt.Printf("\nHELPER %v\n", err)
+		}
+		if mark != "" {
+			fg, err := unix.IoctlGetInt(0, unix.TIOCGPGRP)
+			fmt.Printf("\nLEADER kept=%v\n", err == nil && fg == syscall.Getpgrp())
 		}
 		os.Exit(0)
 	}
@@ -242,8 +297,16 @@ func TestBangHelperOnPTY(t *testing.T) {
 	fg, fgErr := unix.IoctlGetInt(0, unix.TIOCGPGRP)
 	c := exec.Command(r.Argv[0], r.Argv[1:]...)
 	c.Dir, c.Env = r.Dir, r.Env
-	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr // 端末をそのまま渡す (ExecProcess と同じ。グループは分けない)
-	err := c.Run()
+	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr // 端末をそのまま渡す (tea.Exec と同じ。グループは分けない)
+	var err error
+	if os.Getenv(bangRawEnv) == "true" {
+		err = c.Run()
+	} else {
+		x := foreground.NewExec(c)
+		if err = x.Run(); x.Err != nil {
+			fmt.Printf("\nHELPER reclaim %v\n", x.Err)
+		}
+	}
 	after, afterErr := unix.IoctlGetInt(0, unix.TIOCGPGRP)
 	back := afterErr == nil && after == mine
 	fmt.Printf("\nREADY start-fg=%v err=%v back=%v\n", fgErr == nil && fg == mine, err, back)

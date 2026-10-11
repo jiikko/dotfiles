@@ -16,6 +16,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/jiikko/dotfiles/src/tuikit/caret"
+	"github.com/jiikko/dotfiles/src/tuikit/foreground"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/toast"
 
@@ -32,7 +33,8 @@ const busyInterval = 80 * time.Millisecond
 type tickMsg struct{}
 
 // execDoneMsg は ! / s で起こしたプロセスから戻った合図。err は起動できなかったとき (終了コードは含めない)。
-type execDoneMsg struct{ err error }
+// reclaimErr は戻ったときに外れていた端末の前面を取り戻せなかった理由。
+type execDoneMsg struct{ err, reclaimErr error }
 
 // changedMsg はライブ更新の合図 (ok=false はチャネルが閉じた = もう待たない)。
 type changedMsg struct{ ok bool }
@@ -68,11 +70,13 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, tea.Quit
 		case filer.Exec:
 			if r, ok := a.f.TakeExec(); ok && len(r.Argv) > 0 {
-				// 前景で端末を明け渡す。ctx は持たない (ユーザーのシェルが終わるまで待つのが仕様)。パイプは張らない
+				// 前景で端末を明け渡す。ctx は持たない (ユーザーのシェルが終わるまで待つのが仕様)。パイプは張らない。
+				// 戻った後に前面が外れていたら取り戻す (foreground.Exec。シェルによらず treefiler が端末を読めるように。issue 707)
 				cmd := subproc.CommandContext(context.Background(), r.Argv[0], r.Argv[1:]...)
 				cmd.Dir = r.Dir
 				cmd.Env = r.Env
-				cmds = append(cmds, tea.ExecProcess(cmd, func(err error) tea.Msg { return execDoneMsg{err} }))
+				x := foreground.NewExec(cmd)
+				cmds = append(cmds, tea.Exec(x, func(err error) tea.Msg { return execDoneMsg{err: err, reclaimErr: x.Err} }))
 			}
 		case filer.None:
 		}
@@ -84,6 +88,9 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case execDoneMsg:
 		if w := a.f.ExecDone(msg.err); w != "" {
 			a.toast.Show(w, false)
+		}
+		if msg.reclaimErr != nil {
+			a.toast.Show("端末の前面を取り戻せませんでした。止まったら fg で戻してください", false)
 		}
 	case changedMsg:
 		if msg.ok {

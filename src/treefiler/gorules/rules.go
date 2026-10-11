@@ -27,3 +27,16 @@ func pathPrefixViaWithSep(m dsl.Matcher) {
 	m.Match(`strings.HasPrefix($y, $x + "/")`, `strings.CutPrefix($y, $x + "/")`, `strings.TrimPrefix($y, $x + "/")`).
 		Report(`前方一致の区切りは withSep($x) を通す (root が / のとき // にしない)`)
 }
+
+// execViaForeground: 端末を外のコマンドへ渡す実行は tea.Exec(foreground.NewExec(cmd), fn) を通す (issue 707)。
+// tea.ExecProcess は戻った後に前面を確かめないので、子 (treefiler の `!` の `$SHELL -ic` 等) が前面を持ち去ったまま終わると、
+// 入れ直しで SIGTTOU に止まるか、EIO で何も読めず固まる。treefiler の pty テスト (filer/shell_pty_test.go) が見ているのは
+// foreground.Exec の振る舞いで、アプリがそれを通っていることはこの規則が止める。
+// 検出しない形: bubbletea を tea 以外の名前で import する・ExecProcess を関数値として変数へ入れてから呼ぶ (敵対レビューで実測。
+// import は全部 tea なので、うっかりでは起きない)・tea.Exec に別の ExecCommand (自作の型) を渡す・bubbletea を経ずに
+// exec.Cmd.Run で端末を渡す (review で見る)
+func execViaForeground(m dsl.Matcher) {
+	m.Import("charm.land/bubbletea/v2")
+	m.Match(`tea.ExecProcess($*_)`).
+		Report(`端末を渡す実行は tea.Exec(foreground.NewExec(cmd), fn) を通す (戻った後に端末の前面を取り戻す。issue 707)`)
+}

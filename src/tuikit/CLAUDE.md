@@ -15,6 +15,7 @@ README.md の「パッケージ」表が正本 (各パッケージの中身と�
 - `lineedit` — 1 行入力欄 (readline 風編集キー)
 - `caret` — 入力欄キャレットの端末カーソル (**tuikit で唯一 bubbletea を import する**)
 - `editor` — 実ファイルを $VISUAL/$EDITOR/nvim で開くコマンド
+- `foreground` — 端末の前面の確かめ・取り戻しと、端末を子へ渡す `Exec` (`tea.ExecProcess` の代わり)
 - `toast` — 右下に数秒出る通知スタック
 - `markdown` — markdown 本文を幅で整形するレンダラ
 - `highlight` — diff / コードのシンタックスハイライト

@@ -4,7 +4,8 @@ import (
 	"os"
 	"testing"
 
-	"pro-con/foreground/ptytest"
+	"github.com/jiikko/dotfiles/src/tuikit/foreground/ptytest"
+	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 	"pro-con/wake"
 )
 
@@ -12,5 +13,6 @@ import (
 // 擬似端末の上の helper (ptytest) として起こされたときは、その結果だけを書いて抜ける (execrunner_test.go の runOnTerminal)。
 func TestMain(m *testing.M) {
 	ptytest.Helper(runOnTerminal)
+	widthenv.ExitIfUnsupported()
 	os.Exit(wake.RunIsolated(m.Run))
 }

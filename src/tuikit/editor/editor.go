@@ -4,7 +4,7 @@
 // glogx (external_commands.go)・pro-con (ui/issues.go)・treefiler (filer/shell.go の requestEdit) がこの package で開く。契約:
 //   - 値は空白で語分割する (EDITOR="code -w" のような引数つきの指定のため)。quote は解釈しない
 //     (シェルの解釈をエディタ起動に持ち込まない)。空白を含むパスの指定は非対応で、起動に失敗する
-//   - 呼び出し側は tea.ExecProcess で TUI を中断して待つ。**起動したプロセスの終了 = 編集の完了**が前提なので、
+//   - 呼び出し側は tea.Exec (foreground.NewExec) で TUI を中断して待つ。**起動したプロセスの終了 = 編集の完了**が前提なので、
 //     GUI エディタは -w / --wait 付きで指定する必要がある (git の GIT_EDITOR と同じ要求)
 package editor
 

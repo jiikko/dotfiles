@@ -13,26 +13,48 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/jiikko/dotfiles/src/tuikit/foreground"
 )
 
 // 外のコマンドへ渡す前に前面を持っていたときだけ、戻った後に取り戻す (持っていなかった前面を奪わない)。
 func TestTermExecReclaimsOnlyWhenItHeldForeground(t *testing.T) {
 	for _, held := range []bool{true, false} {
 		called := false
-		x := &termExec{
-			cmd:     exec.Command("true"),
-			owned:   func() bool { return held },
-			reclaim: func() (int, error) { called = true; return 4242, nil },
-		}
+		x := &termExec{Exec: foreground.Exec{
+			Cmd:     exec.Command("true"),
+			Owned:   func() bool { return held },
+			Reclaim: func() (int, error) { called = true; return 4242, nil },
+		}}
 		if err := x.Run(); err != nil {
 			t.Fatal(err)
 		}
 		if called != held {
 			t.Errorf("held=%v: 取り戻しを呼んだか = %v", held, called)
 		}
-		if held && x.was != 4242 {
-			t.Errorf("取り戻す前の前面を覚えていない: %d", x.was)
+		if held && x.Was != 4242 {
+			t.Errorf("取り戻す前の前面を覚えていない: %d", x.Was)
 		}
+	}
+}
+
+// 子を走らせている間だけ handedOver を立てる (見張りが SIGTSTP を画面の手順へ回さず、その場で止まるため)。
+// 取り戻し (子が終わった直後、Run の中) の時点ではまだ立っていて、Run から戻ったら下りている。
+func TestTermExecHandsOverWhileChildRuns(t *testing.T) {
+	stops := &stopState{}
+	var before, reclaiming bool
+	x := &termExec{Exec: foreground.Exec{
+		Cmd:     exec.Command("true"),
+		Owned:   func() bool { before = stops.handedOver.Load(); return true },
+		Reclaim: func() (int, error) { reclaiming = stops.handedOver.Load(); return 0, nil },
+	}, stops: stops}
+	if err := x.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if !before || !reclaiming {
+		t.Errorf("handedOver: 子を走らせる前 = %v、取り戻しの時点 = %v (どちらも立っているはず)", before, reclaiming)
+	}
+	if stops.handedOver.Load() {
+		t.Error("Run から戻っても handedOver が立ったまま")
 	}
 }
 
@@ -73,7 +95,7 @@ func TestTermReturnRecordsLostForegroundAndPassesInner(t *testing.T) {
 
 // 戻りの知らせは、外のコマンドの名前と、戻ったときに取り戻した前面を載せ、元の知らせを包む。
 func TestTermReturnCarriesReclaimResult(t *testing.T) {
-	x := &termExec{cmd: exec.Command("/usr/bin/true"), was: 4242, err: errors.New("x")}
+	x := &termExec{Exec: foreground.Exec{Cmd: exec.Command("/usr/bin/true"), Was: 4242, Err: errors.New("x")}}
 	msg, ok := termReturn(x, func(error) tea.Msg { return editorDoneMsg{path: "p"} })(nil).(termReturnMsg)
 	if !ok || msg.name != "true" || msg.was != 4242 || msg.err == nil || msg.inner != (editorDoneMsg{path: "p"}) {
 		t.Fatalf("戻りの知らせが足りない: %+v", msg)

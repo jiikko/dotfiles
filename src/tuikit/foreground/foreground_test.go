@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"testing"
 
-	"pro-con/foreground"
-	"pro-con/foreground/ptytest"
+	"github.com/jiikko/dotfiles/src/tuikit/foreground"
+	"github.com/jiikko/dotfiles/src/tuikit/foreground/ptytest"
 )
 
 func TestMain(m *testing.M) {

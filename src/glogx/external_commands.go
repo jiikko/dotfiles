@@ -385,7 +385,7 @@ var copyToClipboard = func(text string) error {
 // (tui.go の job ログ = 標準入力 + -c の scratch バッファ / open_workspace.go の `nvim .` =
 // ディレクトリを開く) は nvim 固有の機能に依存しており、任意の $EDITOR では成立しない。
 //
-// 🚨 **前提: 起動したプロセスの終了 = 編集の完了**。glogx は tea.ExecProcess で TUI を中断して
+// 🚨 **前提: 起動したプロセスの終了 = 編集の完了**。glogx は tea.Exec (foreground.Exec) で TUI を中断して
 // 子プロセスを待ち、戻った境界で一覧と本文を取り直す (tui.go の editorClosedMsg)。GUI エディタを
 // `-w` / `--wait` なしで指定すると即座に戻るので、この前提が破れる。git の GIT_EDITOR と同じ要求で、
 // 直し方も同じ (EDITOR="code -w" のように待たせる)。
@@ -408,7 +408,7 @@ var copyToClipboard = func(text string) error {
 // 🚨 検出して警告する案は採らない。「子プロセスが早く終わった」の閾値がマジックナンバーになり、
 // 正当に速いケース (既に開いているウィンドウへ渡すだけ) を誤検知する。
 func editorCommand(path string) *exec.Cmd {
-	// 返した Cmd は runEditorCmd (tea.ExecProcess) が前景で起動する。ctx が無く、端末を継承する
+	// 返した Cmd は runEditorCmd (tea.Exec + foreground.Exec) が前景で起動する。ctx が無く、端末を継承する
 	// ので os/exec はパイプも copy goroutine も作らない (Wait が孫に握られる形が起きない)。
 	return editor.Command(path, nil) // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し
 }
@@ -428,7 +428,7 @@ func readonlyCommand(path string, line int) *exec.Cmd {
 }
 
 // filerExecCommand は treefiler の ! / s / e が頼んだプロセス (選んだフォルダで、$f に選んだパスを入れて起こす)。
-// 返した Cmd は runEditorCmd (tea.ExecProcess) が前景で起動する。免除の理由は editorCommand と同じ
+// 返した Cmd は runEditorCmd (tea.Exec + foreground.Exec) が前景で起動する。免除の理由は editorCommand と同じ
 // (前景の対話プロセスで ctx が無く、端末を継承するのでパイプも copy goroutine も作らない)。
 func filerExecCommand(r filer.ExecRequest) *exec.Cmd {
 	cmd := exec.Command(r.Argv[0], r.Argv[1:]...) // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し

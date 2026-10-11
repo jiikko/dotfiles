@@ -7,6 +7,7 @@ import (
 	"github.com/jiikko/dotfiles/src/tuikit/anim"
 	"github.com/jiikko/dotfiles/src/tuikit/caret"
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
+	"github.com/jiikko/dotfiles/src/tuikit/foreground"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
@@ -113,14 +114,16 @@ type openURLMsg struct{ err error }
 // repo の照合まで済んでいるので、受け取り側は開くだけ。
 type issuesRestoreMsg struct{ screen issuesScreen }
 
-// editorClosedMsg は job ログを開いた nvim を閉じた結果 (e キー)。
-type editorClosedMsg struct{ err error }
+// editorClosedMsg は job ログを開いた nvim を閉じた結果 (e キー)。reclaimErr は戻ったときに外れていた端末の前面を
+// 取り戻せなかった理由。
+type editorClosedMsg struct{ err, reclaimErr error }
 
-// runEditorCmd はテストで実 nvim を起動しないための差し替え点。tea.ExecProcess は
-// bubbletea の描画を一旦止め、端末を nvim へ明け渡し、終了後に復帰する (エディタ起動用途の
-// 標準経路)。
+// runEditorCmd はテストで実 nvim を起動しないための差し替え点。tea.Exec は bubbletea の描画を一旦止め、端末を nvim へ
+// 明け渡し、終了後に復帰する (エディタ起動用途の標準経路)。foreground.Exec は、戻った後に前面が外れていたら
+// 入れ直しの前に取り戻す (treefiler の ! の `$SHELL -ic` が前面を持ち去ったまま終わる形。issue 707)。
 var runEditorCmd = func(cmd *exec.Cmd) tea.Cmd {
-	return tea.ExecProcess(cmd, func(err error) tea.Msg { return editorClosedMsg{err} })
+	x := foreground.NewExec(cmd)
+	return tea.Exec(x, func(err error) tea.Msg { return editorClosedMsg{err: err, reclaimErr: x.Err} })
 }
 
 // jobDetailMsg は job 詳細 (annotations / ログ tail) のオンデマンド取得の結果。
@@ -1357,6 +1360,9 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.maybeTick()
 	case editorClosedMsg:
+		if msg.reclaimErr != nil {
+			m.showWarning("端末の前面を取り戻せませんでした (" + firstLine(msg.reclaimErr.Error()) + ")。止まったら fg で戻してください")
+		}
 		// treefiler の ! / s / e から戻ったとき: 読み直す (シェルやエディタで作った・消したファイルを出す)。「エディタが異常終了しました」
 		// は出さない: シェルは最後のコマンドの終了コードで抜けるのが普通 (e のエディタも filer.ExecDone の判断に揃える)
 		if m.filerV.execPending {

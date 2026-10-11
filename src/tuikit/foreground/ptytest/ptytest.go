@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"pro-con/foreground"
+	"github.com/jiikko/dotfiles/src/tuikit/foreground"
 )
 
 const env = "PTYTEST_HELPER"

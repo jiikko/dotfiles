@@ -1,7 +1,7 @@
 package main
 
 // git log 一覧から nvim を repo root で起動する (e キー)。
-// 起動は runEditorCmd (tea.ExecProcess) 経由: TUI を suspend して端末を明け渡し、
+// 起動は runEditorCmd (tea.Exec + foreground.Exec) 経由: TUI を suspend して端末を明け渡し、
 // 終了で glogx へ復帰する。C-g の tmux popup 内でもそのまま popup 内で開く (実 pty)。
 // 復帰後の取り直しはしない: 編集で履歴が変わる操作 (commit 等) は status viewer /
 // pull 系の既存導線が担い、ここは「ちょっとファイルを見る・直す」用の脇道のため。
@@ -32,7 +32,7 @@ func repoRoot() string {
 // 「ディレクトリを開くとファイラーになる」のは nvim/vim 固有の機能 (nano . 等は失敗する)。
 // 実ファイルを開く経路の $EDITOR 対応は editorCommand の doc を参照。
 func (m *browseModel) openEditorAtRoot() tea.Cmd {
-	// 前景の対話エディタで ctx が無い (tea.ExecProcess が端末を明け渡し、終了まで待つのが仕様)。
+	// 前景の対話エディタで ctx が無い (tea.Exec が端末を明け渡し、終了まで待つのが仕様)。
 	// stdin/stdout は端末を継承するので os/exec はパイプも copy goroutine も作らず、
 	// Wait が孫に握られる形が起きない。
 	cmd := exec.Command("nvim", ".") // subproc: no-waitdelay — 前景・ctx 無し・パイプ無し

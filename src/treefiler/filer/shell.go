@@ -11,7 +11,7 @@ import (
 )
 
 // shell.go は `!` (選んだフォルダで 1 行のコマンドを実行) と `s` (そこでシェルを開く)。spec §5.7。
-// 端末を明け渡すのは呼び出し側 (bubbletea の ExecProcess)。filer は何をどこで起こすかを ExecRequest で返すだけ
+// 端末を明け渡すのは呼び出し側 (tea.Exec + tuikit/foreground の Exec。戻った後に前面を取り戻す)。filer は何をどこで起こすかを ExecRequest で返すだけ
 // (filer は os/exec を import しない。exec_boundary_test)。
 
 // ExecRequest は呼び出し側に起こしてほしいプロセス。呼び出し側は Dir・Argv・Env をそのまま exec.Cmd に入れて前景で起こし、
@@ -36,20 +36,26 @@ type ExecRequest struct {
 // 通らず、trap の中で exit したときだけ通るため (実測。rc はそのまま)。`$` は外の sh に展開させない (`\$?`。展開されると
 // trap が `exit 0` になり、失敗が [done] に化ける)。fish・dash は未測定。
 // 代償: ユーザーの rc が張った EXIT の trap (zsh の TRAPEXIT も) は上書きされる。コマンドの中で `trap - EXIT` すると zsh では
-// 元の固まり方に戻る。
+// 前面を持ち去る形に戻る (下の受け皿で戻る)。
 // 採らなかった案: シェルの job control を切る (zsh は引数の `+m`、bash 3.2 は `-c` の先頭の `set +m` だけが効き、コマンドの中の
 // `sh -ic` には効かない)、包みの中で perl に前面を取り返させる (依存が増え、trap の後は bash・zsh で差を作れない)。
-// シェルによらず保証するなら、呼び出し側の Go で ExecProcess から戻った直後に取り返す (src/pro-con/foreground の Reclaim を共有の
-// module へ持ち上げる)。
+//
+// trap で戻らない形 (コマンドの中の `trap - EXIT`・`kill -KILL $$`・未測定のシェル) の受け皿は 2 段: キー待ちの前に前面が自分の
+// グループ (= treefiler のグループ) かを ps で見て、違えば stty・dd を飛ばして戻る (前景ジョブの形では stty が SIGTTOU で止まり、
+// Go まで戻れない)。前面は戻った Go が取り戻す (tuikit/foreground の Exec。issue 707)。キー待ちはその場合だけ失う。
+// 制御端末が無い (tpgid が 0 以下) ときと、ps が失敗して何も出さない (両方が空で一致する) ときは従来どおり待つ (止まる相手が居ない)。
 //
 // キー待ちは `-isig` にする: 前面が treefiler のグループに戻った後の Ctrl-\ (SIGQUIT) は treefiler 自身を落とすので、ただのキーとして読む。
 // 端末の設定は案内を出す前に済ませる (案内を見てすぐ押したキーが、設定の前に届いてシグナルにならないように)。
 const waitIfQuick = `start=$(date +%s); "$1" -ic "trap 'exit \$?' EXIT
 $2"; rc=$?; end=$(date +%s)
 if [ $((end - start)) -lt 3 ]; then
-  saved=$(stty -g 2>/dev/null); stty -icanon -echo -isig 2>/dev/null
-  if [ "$rc" -eq 0 ]; then printf '\n[done] 何かキーを押すと treefiler に戻ります'; else printf '\n[exit %d] 何かキーを押すと treefiler に戻ります' "$rc"; fi
-  dd bs=1 count=1 >/dev/null 2>&1; stty "$saved" 2>/dev/null
+  set -- $(ps -o tpgid=,pgid= -p $$ 2>/dev/null)
+  if [ "$1" = "$2" ] || [ "${1:-0}" -le 0 ]; then
+    saved=$(stty -g 2>/dev/null); stty -icanon -echo -isig 2>/dev/null
+    if [ "$rc" -eq 0 ]; then printf '\n[done] 何かキーを押すと treefiler に戻ります'; else printf '\n[exit %d] 何かキーを押すと treefiler に戻ります' "$rc"; fi
+    dd bs=1 count=1 >/dev/null 2>&1; stty "$saved" 2>/dev/null
+  fi
 fi
 :` // 終了コードは最後の stty に左右させない (端末が無いと stty が失敗する)
 

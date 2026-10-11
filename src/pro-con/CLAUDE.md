@@ -21,7 +21,7 @@ PM (producer) と PG (consumer) を分けて Claude Code を並列に回すた�
 - `wake/` — dispatcher を即時に起こす Unix socket
 - `schedule/` — dispatcher が決まった時刻に回す予定表 (`Jobs`)
 - `upgrade/` — 画面側のライブアップグレード (ctrl+r で syscall.Exec)。dispatcher 側は直下の `dispupgrade.go`
-- `foreground/` — 画面が端末前面のプロセスグループを持っているかの確認・取り戻し
+- 端末の前面の確認・取り戻しは `src/tuikit/foreground` (treefiler・glogx と共有するため移した。issue 707)。`ui/terminal.go` の `termExec` はその `Exec` を埋め込む
 - `gitx/` — monitor と wtclean が git を呼ぶ口 (`-C` の落とし穴・GIT_DIR 等の継承に注意)。dispatcher は `exec.CommandContext(ctx, "git", …)` を直接呼んでいて、gitx を通らない
 - `config/` — `~/.config/pro-con/config.toml` の読み込みと repo 列挙
 - `ui/` — TUI 本体。状態は backend が持ち、ここは描画と Command 送信のみ

@@ -35,13 +35,13 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/jiikko/dotfiles/src/tuikit/foreground"
 
 	"pro-con/backend"
 	"pro-con/config"
 	"pro-con/diskuse"
 	"pro-con/dispatcher"
 	"pro-con/fake"
-	"pro-con/foreground"
 	"pro-con/live"
 	"pro-con/relay"
 	"pro-con/store"

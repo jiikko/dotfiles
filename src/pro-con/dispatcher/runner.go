@@ -27,10 +27,10 @@ import (
 	"time"
 
 	"github.com/jiikko/dotfiles/src/termsafe"
+	"github.com/jiikko/dotfiles/src/tuikit/foreground"
 
 	"pro-con/card"
 	"pro-con/eventlog"
-	"pro-con/foreground"
 	"pro-con/live"
 	"pro-con/store"
 

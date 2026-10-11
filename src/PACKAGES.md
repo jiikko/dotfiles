@@ -36,8 +36,6 @@
 - `src/pro-con/dispatcher` (`pro-con/dispatcher`) — Package dispatcher は本物のモードの dispatcher (issue 427 の段階 3c-1)。
 - `src/pro-con/eventlog` (`pro-con/eventlog`) — Package eventlog は dispatcher の出来事の記録 (状態の置き場の events.jsonl。
 - `src/pro-con/fake` (`pro-con/fake`) — Package fake は claude を起動せずに pro-con の画面とつなぎ込みを動かすための模擬 backend。
-- `src/pro-con/foreground` (`pro-con/foreground`) — Package foreground は、画面が端末の前面 (前面のプロセスグループ) を持っているかを確かめ、外れていたら取り戻す (issue 518)。
-- `src/pro-con/foreground/ptytest` (`pro-con/foreground/ptytest`) — Package ptytest は、テストのバイナリを script(1) の擬似端末の上で helper として走らせる (検査のための部品。
 - `src/pro-con/gitx` (`pro-con/gitx`) — Package gitx は pro-con が git を呼ぶときの共通の口 (見張りの読み取り = package monitor と、worktree の片付け = package wtclean)。
 - `src/pro-con/live` (`pro-con/live`) — Package live は本物の backend (issue 424 / 427 の段階 3d)。
 - `src/pro-con/metrics` (`pro-con/metrics`) — Package metrics はカードごとの所要の記録 (issue 516)。
@@ -75,6 +73,8 @@
 - `src/tuikit/editor` (`github.com/jiikko/dotfiles/src/tuikit/editor`) — Package editor は実ファイルを 1 つエディタで開くコマンドを組む。
 - `src/tuikit/examples/listdetail` (`github.com/jiikko/dotfiles/src/tuikit/examples/listdetail`) — listdetail は tuikit の「一覧 → 詳細」の遷移パターンを 1 画面で見せるデモ。 (main)
 - `src/tuikit/examples/toast` (`github.com/jiikko/dotfiles/src/tuikit/examples/toast`) — toast は tuikit の toast (右下に数秒だけ出る通知のスタック) を 1 画面で見せるデモ。 (main)
+- `src/tuikit/foreground` (`github.com/jiikko/dotfiles/src/tuikit/foreground`) — Package foreground は、画面が端末の前面 (前面のプロセスグループ) を持っているかを確かめ、外れていたら取り戻す (pro-con の issue 518 で作り、issue 707 で treefiler・glogx と共有するため tuikit へ移した)。
+- `src/tuikit/foreground/ptytest` (`github.com/jiikko/dotfiles/src/tuikit/foreground/ptytest`) — Package ptytest は、テストのバイナリを script(1) の擬似端末の上で helper として走らせる (検査のための部品。
 - `src/tuikit/framebench` (`github.com/jiikko/dotfiles/src/tuikit/framebench`) — Package framebench は、描いた画面の文字列を bubbletea v2 のレンダラと同じ手順でセルへ書き直し、端末への差分まで通す 計測の道具 (issue 607)。
 - `src/tuikit/highlight` (`github.com/jiikko/dotfiles/src/tuikit/highlight`) — Package highlight は diff とコードの行へシンタックスハイライト (chroma) を付ける。
 - `src/tuikit/layout` (`github.com/jiikko/dotfiles/src/tuikit/layout`) — Package layout は端末 UI の画面合成 (行の配列 → 行の配列)。

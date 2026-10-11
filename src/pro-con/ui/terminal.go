@@ -14,7 +14,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"pro-con/foreground"
+	"github.com/jiikko/dotfiles/src/tuikit/foreground"
 )
 
 // 端末を外のコマンドへ渡して戻る処理と、裏に回されても (止められても) 壊れないための処理 (issue 518)。
@@ -205,63 +205,22 @@ func (m *Model) suspend() tea.Cmd {
 	return tea.Exec(&suspendExec{stops: m.stops, out: os.Stderr}, func(err error) tea.Msg { return termResumedMsg{suspended: true, err: err} })
 }
 
-// termExec は端末を外のコマンドへ渡す tea.ExecCommand。
+// termExec は端末を外のコマンドへ渡す tea.ExecCommand。戻った後の前面の取り戻しは foreground.Exec が持つ
+// (bubbletea が端末を入れ直す前に取り戻す。treefiler・glogx と同じ包み)。ここで足すのは、子を走らせている間の handedOver だけ。
 type termExec struct {
-	cmd     *exec.Cmd           // nil = 何も走らせない (止められた後の入れ直し)
-	stops   *stopState          // 子を走らせている間 handedOver を立てる (nil なら立てない)
-	owned   func() bool         // 今、端末の前面を持っているか
-	reclaim func() (int, error) // 前面が外れていたら取り戻す。取り戻す前の前面のグループを返す (0 = 外れていなかった)
-	was     int                 // 戻ったときに前面を持っていたグループ (0 = 外れていなかった)
-	err     error               // 取り戻せなかった理由
+	foreground.Exec
+	stops *stopState // 子を走らせている間 handedOver を立てる (nil なら立てない)
 }
 
 // newTermExec は画面の端末 (stdin) で前面を確かめる termExec を作る。stdin が端末でなければ確かめない。
-func newTermExec(c *exec.Cmd) *termExec {
-	fd := int(os.Stdin.Fd())
-	return &termExec{
-		cmd: c,
-		owned: func() bool {
-			fg, mine, err := foreground.Owner(fd)
-			return err == nil && fg == mine
-		},
-		reclaim: func() (int, error) { return foreground.Reclaim(fd) },
-	}
-}
+func newTermExec(c *exec.Cmd) *termExec { return &termExec{Exec: *foreground.NewExec(c)} }
 
-// Run は bubbletea が端末を手放した後に呼ぶ。戻った後、bubbletea が端末を入れ直す (RestoreTerminal) より前に前面を取り戻す
-// (前面でないまま入れ直すと、端末の設定を書くところで SIGTTOU で止まる)。
 func (x *termExec) Run() error {
-	if x.cmd == nil {
-		return nil
-	}
-	held := x.owned()
-	if x.stops != nil {
+	if x.stops != nil && x.Cmd != nil {
 		x.stops.handedOver.Store(true)
 		defer x.stops.handedOver.Store(false)
 	}
-	err := x.cmd.Run()
-	if held {
-		x.was, x.err = x.reclaim()
-	}
-	return err
-}
-
-func (x *termExec) SetStdin(r io.Reader) {
-	if x.cmd != nil && x.cmd.Stdin == nil {
-		x.cmd.Stdin = r
-	}
-}
-
-func (x *termExec) SetStdout(w io.Writer) {
-	if x.cmd != nil && x.cmd.Stdout == nil {
-		x.cmd.Stdout = w
-	}
-}
-
-func (x *termExec) SetStderr(w io.Writer) {
-	if x.cmd != nil && x.cmd.Stderr == nil {
-		x.cmd.Stderr = w
-	}
+	return x.Exec.Run()
 }
 
 // termReturnMsg は外のコマンドから戻った知らせ。前面が外れていたら、その様子を出来事に残してから inner を届ける。
@@ -299,7 +258,7 @@ func termReturn(x *termExec, fn tea.ExecCallback) tea.ExecCallback {
 		if fn != nil {
 			inner = fn(err)
 		}
-		return termReturnMsg{inner: inner, name: filepath.Base(x.cmd.Path), was: x.was, err: x.err}
+		return termReturnMsg{inner: inner, name: filepath.Base(x.Cmd.Path), was: x.Was, err: x.Err}
 	}
 }
 
