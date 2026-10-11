@@ -24,10 +24,32 @@ type ExecRequest struct {
 
 // waitIfQuick は `!` のコマンドを包む sh のスクリプト。3 秒未満で終わったら、出力を読めるようキーを待ってから戻る (spec §5.7)。
 // $1 = ユーザーのシェル、$2 = コマンド行。
-const waitIfQuick = `start=$(date +%s); "$1" -ic "$2"; rc=$?; end=$(date +%s)
+//
+// 🚨 `trap 'exit $?' EXIT` を先頭に置き、シェルに最後のコマンドを exec させない。`-i` (alias・関数を使えるように) のシェルは job control の
+// ために自分のグループを作って端末の前面を取り、`-c` の最後のコマンドを exec する。exec されたコマンドが終わると前面を戻す者が
+// 居なくなり、後の stty・dd と戻った treefiler / glogx が前面でないまま端末を触って固まる (外のシェルの下では SIGTTOU で止まり、
+// tmux のペインで直に動く glogx では EIO で何も読めない。2026-10-11)。exec しなければ、シェルはジョブの後と自分が抜けるときに
+// 前面を戻す。あわせて、実行中の Ctrl-Z で止まったジョブを待つ者が居なくなって永久に固まる形と、bash 3.2 がコマンドに
+// SIGTSTP 等を無視させたまま exec する形も消える。
+// 前提: シェルが EXIT の trap を持つときは最後のコマンドを exec しないこと (zsh 5.9・bash 3.2 で実測。bash 5.3 は trap が無くても
+// 前面を戻す)。trap の中身を `exit $?` にするのは、zsh が errexit (`set -e` / ERR_EXIT) で抜ける経路では前面を戻す終了処理を
+// 通らず、trap の中で exit したときだけ通るため (実測。rc はそのまま)。`$` は外の sh に展開させない (`\$?`。展開されると
+// trap が `exit 0` になり、失敗が [done] に化ける)。fish・dash は未測定。
+// 代償: ユーザーの rc が張った EXIT の trap (zsh の TRAPEXIT も) は上書きされる。コマンドの中で `trap - EXIT` すると zsh では
+// 元の固まり方に戻る。
+// 採らなかった案: シェルの job control を切る (zsh は引数の `+m`、bash 3.2 は `-c` の先頭の `set +m` だけが効き、コマンドの中の
+// `sh -ic` には効かない)、包みの中で perl に前面を取り返させる (依存が増え、trap の後は bash・zsh で差を作れない)。
+// シェルによらず保証するなら、呼び出し側の Go で ExecProcess から戻った直後に取り返す (src/pro-con/foreground の Reclaim を共有の
+// module へ持ち上げる)。
+//
+// キー待ちは `-isig` にする: 前面が treefiler のグループに戻った後の Ctrl-\ (SIGQUIT) は treefiler 自身を落とすので、ただのキーとして読む。
+// 端末の設定は案内を出す前に済ませる (案内を見てすぐ押したキーが、設定の前に届いてシグナルにならないように)。
+const waitIfQuick = `start=$(date +%s); "$1" -ic "trap 'exit \$?' EXIT
+$2"; rc=$?; end=$(date +%s)
 if [ $((end - start)) -lt 3 ]; then
+  saved=$(stty -g 2>/dev/null); stty -icanon -echo -isig 2>/dev/null
   if [ "$rc" -eq 0 ]; then printf '\n[done] 何かキーを押すと treefiler に戻ります'; else printf '\n[exit %d] 何かキーを押すと treefiler に戻ります' "$rc"; fi
-  stty -icanon -echo 2>/dev/null; dd bs=1 count=1 >/dev/null 2>&1; stty icanon echo 2>/dev/null
+  dd bs=1 count=1 >/dev/null 2>&1; stty "$saved" 2>/dev/null
 fi
 :` // 終了コードは最後の stty に左右させない (端末が無いと stty が失敗する)
 

@@ -5,9 +5,11 @@ go 1.25.0
 require (
 	atomicfile v0.0.0
 	charm.land/bubbletea/v2 v2.0.8
+	github.com/creack/pty v1.1.24
 	github.com/jiikko/dotfiles/src/termsafe v0.0.0
 	github.com/jiikko/dotfiles/src/tuikit v0.0.0
 	github.com/quasilyte/go-ruleguard/dsl v0.3.23
+	golang.org/x/sys v0.47.0
 	subproc v0.0.0
 )
 
@@ -28,7 +30,6 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
 )
 
 replace github.com/jiikko/dotfiles/src/termsafe => ../termsafe
