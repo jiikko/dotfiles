@@ -1,1 +1,0 @@
-../717-bug-treefiler-search-restores-cursor-to-removed-node.md
