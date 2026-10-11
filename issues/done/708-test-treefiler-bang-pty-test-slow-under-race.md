@@ -1,7 +1,5 @@
 # 708 (test): treefiler の `!` の pty テストが -race で約 42 秒かかる
 
-> 🚨 **担当中: dotfiles-4e**（2026-10-11〜）
-
 起票日: 2026-10-11
 
 ## 概要
@@ -64,3 +62,12 @@ race detector は、計装したバイナリが終わる前に既定で 1 秒待
 - 2026-10-11: codex の反証レビュー。採用: 遅さの原因は race の終了時の待ち (P2。`GORACE=atexit_sleep_ms=0` で 41.55 → 6.79 秒を実測) /
   並列化には fixture の `t.Setenv` も障害になる (P2) / `userShell()` を読む時点は Enter (P3) / hang guard の余裕の比較は区間が違う (P3)。
   反証できなかった主張: 42 秒の測定値・22 ケース・`t.Setenv` による並列化の制限・stty の順序の変異が緑になる記録
+- 2026-10-11: 対応 (commit「test(treefiler): ! の pty テストの helper に GORACE=atexit_sleep_ms=0 を渡し、-race の所要を 42 秒から 7 秒にする」)。
+  `runBangOnPTY` の `cmd.Env` に足した 1 か所だけ (job の形の 2 段目は `os.Environ()` を受け継ぐので届く)。
+  race の報告が消えないかの確認: helper の終了コードはもともと見ていない (`cmd.Wait()` の結果を捨てる) ので、helper の中の race は
+  待ちの有無に関係なく出力にしか出ない。待ちを外して失うものは無い
+  - [x] 実測 (同じマシン、`-race -count=1`): `-v -run TestBangGivesTerminalBackOnPTY` で 22 本が PASS、合計 6.64 秒
+    (leader/sh/external 0.12 秒、job/sh/slow 3.21 秒)。`make -C src/treefiler test` で `treefiler/filer` が 11.6 秒 (起票時 45.63 秒)
+  - 並列化・ケースを減らす案は採らない (足りたため)
+  - 「守れていない不変条件」(stty を案内の後へ戻す変異が緑) は未対応のまま。上の節と、commit「fix(treefiler): ! の後に端末の前面が戻らず…」の message に記録がある。
+    守るには包みに観測用の印を足す必要があり、利用者の画面に出る出力を増やすことになるので採らない
