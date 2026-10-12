@@ -15,6 +15,7 @@ import (
 
 	"github.com/jiikko/dotfiles/src/tuikit/editor"
 	"subproc"
+	"subproc/clipboard"
 
 	"treefiler/filer"
 )
@@ -286,10 +287,10 @@ func jobRerun(ctx context.Context, run CommandRunner, repo Repo, jobID int64) er
 	return nil
 }
 
-// localCmdTimeout は tmux / クリップボードなどローカルの補助コマンドの実行上限。
-// ハングしても機能が 1 つ欠ける (prefix ガード無効・コピー失敗) だけで済む操作なので、
+// localCmdTimeout は tmux などローカルの補助コマンドの実行上限 (クリップボードは subproc/clipboard の Timeout)。
+// ハングしても機能が 1 つ欠ける (prefix ガード無効など) だけで済む操作なので、
 // gitOpTimeout (30s) より短く切る。tea.Cmd の goroutine や Update の同期経路から呼ばれる
-// ため、上限が無いと応答しないサーバ (tmux デッドロック・X 無応答) で goroutine と
+// ため、上限が無いと応答しないサーバ (tmux デッドロック) で goroutine と
 // 子プロセスが glogx 終了まで残る (issue 029 P2/P3 と同じ規律)。
 const localCmdTimeout = 5 * time.Second
 
@@ -344,38 +345,9 @@ var openInBrowser = func(url string) error {
 	}
 }
 
-// copyToClipboard はテストで実クリップボードを触らないための差し替え点。
-// OS のクリップボードコマンド (pbcopy/xclip) を真実とし、tmux 内では tmux バッファへも
-// 積む (tmux paste 用のおまけ・best effort)。本家 glog は load-buffer -w の成功 (exit 0)
-// を「システム側にも届いた」とみなすが、-w の実体は OSC52 転送で、外側端末が OSC52 を
-// 解釈しなければ exit 0 のままクリップボードに入らない (glogx で実測 2026-07-19)。
-// Update ハンドラから同期で呼ばれるため localCmdTimeout で区切る: xclip は X サーバ無応答で
-// 戻らないことがある既知挙動で、上限が無いと TUI ごと固まったうえ強制終了後に子プロセスが残る
-// (xdg-open へ issue 029 P3 で入れたのと同じ手当て)。
-var copyToClipboard = func(text string) error {
-	if os.Getenv("TMUX") != "" {
-		// おまけ側は timeout を本命と分ける (tmux のハングが OS クリップボードを巻き添えにしない)
-		tmuxCtx, tmuxCancel := context.WithTimeout(context.Background(), localCmdTimeout)
-		// WaitDelay (subproc.CommandContext が張る) が無いと ctx の kill 後も stdin の copy goroutine
-		// の write ブロックを Wait が待ち続け、timeout が効かない (tmux は stdin fd をサーバへ渡すため、
-		// payload がパイプバッファを超えるとハング中のサーバが read 側を握ったままになる)
-		cmd := subproc.CommandContext(tmuxCtx, "tmux", "load-buffer", "-w", "-")
-		cmd.Stdin = strings.NewReader(text)
-		_ = cmd.Run() // 失敗しても OS クリップボードが本命なので無視
-		tmuxCancel()
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), localCmdTimeout)
-	defer cancel()
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = subproc.CommandContext(ctx, "pbcopy")
-	default:
-		cmd = subproc.CommandContext(ctx, "xclip", "-selection", "clipboard")
-	}
-	cmd.Stdin = strings.NewReader(text)
-	return cmd.Run()
-}
+// copyToClipboard はテストで実クリップボードを触らないための差し替え点。本体と失敗モード (OSC52 の exit 0・xclip のハング・
+// timeout の分け方) は subproc/clipboard の doc。
+var copyToClipboard = clipboard.Copy
 
 // editorCommand は実ファイルを開くエディタのコマンドを組む。**解決の規則 ($VISUAL → $EDITOR → nvim、
 // 値は空白で語分割、quote は解釈しない) は github.com/jiikko/dotfiles/src/tuikit/editor が持つ** (pro-con と共有。2 実装にしない)。

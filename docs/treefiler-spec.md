@@ -20,6 +20,7 @@
 | `q` `Esc` | 終了 (`q` は cd 連携) | glogx 流・issues viewer に揃える: タイルの上は 1 枚閉じる / 木の上は **glogx ごと終了** / `F` で閉じて **git log 一覧へ戻る**。`Ctrl-C` は glogx の即終了。F を出したまま終えたら (`q` `Esc` `Ctrl-G` `Ctrl-C`)、30 分以内に同じ dir で開いた glogx は同じ場所の F から始まる (issue 710) |
 | `q` の cd 連携 (`--cwd-file`) | あり | **写さない** |
 | `o` `O` / ソート | 巡回・逆順 | **ソートは後回し** (名前順だけ)。`o` は glogx の「外のアプリで開く」のまま (`open <path>`)。`O` は「Finder で表示」(`open -R <path>`。issue 719) |
+| `y` `Y` | なし | **パスをコピー** (`y` = 絶対パス・`Y` = root からの相対パス。glogx の `y` と同じ「素の値をコピー」。クリップボードは `subproc/clipboard`。issue 718) |
 | `e` | explode (§5.4。ファイルの上では親のフォルダが対象) | **フォルダの上は explode、ファイルの上とタイルの中はエディタで開く** (2026-10-09 ユーザー依頼「ツリービューでファイルに e を押したら neovim を開いて欲しい」「プレビューを開いて e」)。エディタは `tuikit/editor` ($VISUAL → $EDITOR → nvim。glogx の issues viewer の `e` と同じ)。タイルのジャンプモードの `e` は選んだパスを開く (issues viewer と同じ)。戻ったら読み直す (`ExecDone`) |
 | 他の衝突するキー | `s` シェル / `C` 経路以外を畳む / `J` `K` / `Space` `Tab` / `n` `N` / `Enter` | **treebeard のまま** (`o` 以外は上書き)。ファイラーの中では glogx の `s` (status viewer)・`C` (claude update) は効かない |
 | `j` `k` の歩き方 | 既定 Step through = tree (開いたフォルダへ潜る) | **同じ階層 (兄弟) の中だけを動く** (2026-10-08 ユーザー回答。押しっぱなしで潜らない)。`J` `K` も兄弟を 10 |
@@ -539,6 +540,7 @@ POPUP_T のばね `open` (0=カーソル行の 1 行 pill、1=全開)。矩形 =
 | `q` | 終了 (cd 連携は写さないので単に終了) |
 | `Esc` / `Ctrl-C` | 終了 (explode 中の Esc は explode 中断のみ) |
 | `o` `O` | ソート切替 — **写さない** (treefiler では `o` = 外のアプリで開く・`O` = Finder で表示。§0.1) |
+| `y` `Y` | (treebeard に無い) treefiler ではパスをコピー (絶対 / root からの相対。§0.1) |
 
 help が開いているとき: `?` 以外のキーは help を閉じるだけで他は何もしない (`q` でも終了しない)。
 

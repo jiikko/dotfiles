@@ -5,6 +5,7 @@
 ## 入口
 
 - `CommandContext(ctx, name, args...) *exec.Cmd` — glogx / ratelimit では外部コマンドをこれで起こす (素の `exec.CommandContext` は使わない)。WaitDelay を張る
+- `clipboard.Copy(text)` (`subproc/clipboard`) — 文字列を OS のクリップボードへ (pbcopy / xclip が本命、tmux 内は tmux バッファへもおまけ)。glogx と treefiler が使う。失敗モードはパッケージの doc
 - `WaitDelay` — 上記が張る値。`GitOpTimeout` — 呼び出し側が git の timeout に使う値 (glogx の `gitOpTimeout`)
 
 ## ビルド・テスト
