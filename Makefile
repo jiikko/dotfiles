@@ -59,7 +59,7 @@ KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/ka
 
 .PHONY: ci-commands-heavy ci-commands-rest pull test test-changed clean-tmp test-runtime test-runtime-rest test-discovered test-discovered-parallel test-discovered-serial test-discovered-heavy test-discovered-rest test-discovered-rest-parallel test-nvim test-tmux test-pro-con-slow test-setup test-zshrc test-bats test-syntax test-shellcheck test-zsh-syntax test-yaml test-json test-karabiner test-actionlint test-gitconfig test-ruby-syntax test-lint test-lint-tests test-ci-group-deps test-pipefail-grep-q test-handrolled-timeout test-test-sleeps test-var-multibyte test-cd-rc test-cdpath-capture test-trigger-log-writers test-skip-exit-code test-assert-reaches-exit test-workflow-action-pins test-go-project-lanes test-go-packages-index test-unused-excluding-tests test-go-lint test-go test-src test-fresh
 
-# ./tmp のスクラッチを掃除する (既定は 30 日より古いトップレベルのエントリ)。
+# ./tmp のスクラッチを掃除する (既定は 30 日より古いトップレベルのエントリ。中に新しい更新があるフォルダは残す)。
 #
 # ./tmp は「Claude がセッション中に作る成果物 (レポート・中間生成物)」の置き場
 # (~/.claude/CLAUDE.md「一時ファイルの配置」)。gitignore なので放っておくと溜まる一方で、
@@ -77,20 +77,10 @@ KARABINER_CLI := /Library/Application Support/org.pqrs/Karabiner-Elements/bin/ka
 #   make clean-tmp              # 30 日より古いものを消す
 #   make clean-tmp DRY_RUN=1    # 消さずに一覧と合計サイズだけ出す
 #   make clean-tmp DAYS=7       # 7 日より古いものを消す
+# 判定 (中に新しい更新があるフォルダ・登録済みの worktree・読めないものは残す) は scripts/clean_tmp.sh の冒頭 (issue 729)。
 clean-tmp: DAYS ?= 30
 clean-tmp:
-	@[ -d tmp ] || { echo "tmp/ が無い (掃除するものなし)"; exit 0; }
-	@list="$$(find tmp -maxdepth 1 -mindepth 1 -mtime +$(DAYS) | sort)"; \
-	if [ -z "$$list" ]; then echo "✓ $(DAYS) 日より古い tmp のエントリは 0 件"; exit 0; fi; \
-	n="$$(printf '%s\n' "$$list" | wc -l | tr -d ' ')"; \
-	size="$$(printf '%s\n' "$$list" | tr '\n' '\0' | xargs -0 du -sk 2>/dev/null | awk '{s+=$$1} END {printf "%.0f", s/1024}')"; \
-	printf '%s\n' "$$list" | sed 's/^/  /'; \
-	if [ "$(DRY_RUN)" = "1" ]; then \
-		echo "(DRY_RUN) $${n} 件 / $${size}MB が対象。消すには DRY_RUN を外す"; \
-	else \
-		printf '%s\n' "$$list" | tr '\n' '\0' | xargs -0 rm -rf; \
-		echo "✓ $${n} 件 / $${size}MB を削除した (残り $$(ls tmp | wc -l | tr -d ' ') エントリ)"; \
-	fi
+	@DAYS=$(DAYS) DRY_RUN=$(DRY_RUN) scripts/clean_tmp.sh
 
 # settings.json の揮発キー (model/effort 等) を settings.local.json へ退避し、
 # 残りのキーをソートしてから pull する。追跡対象の settings.json に混ざるマシン
