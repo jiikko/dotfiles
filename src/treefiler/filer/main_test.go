@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"safefs/sandbox"
+	"subproc"
 )
 
 // sb はファイル操作 (fileops.go) の検査点。🚨 テストは本物の作成・rename・ゴミ箱への移動を呼ぶので、登録した一時ディレクトリの外は
@@ -18,6 +19,9 @@ var sb sandbox.Sandbox
 // TestMain は設定と前回の場所の置き場所を一時ディレクトリへ向ける。
 // 🚨 向けないと、テストが本物の ~/.config/glogx/treefiler.toml を書き換える (2026-10-09 に . のテストが実際に書いた)。
 func TestMain(m *testing.M) {
+	if err := subproc.UnsetGitLocationEnv(); err != nil { // 継承した GIT_DIR などで、一時 dir に作る repo の git が別の repo を書かない (issue 740)
+		panic(err)
+	}
 	widthenv.ExitIfUnsupported() // 幅を数える env (RUNEWIDTH_EASTASIAN=1) では枠の検査が環境のせいで落ちる。理由を出して止める
 	dir, err := os.MkdirTemp("", "treefiler-config-")
 	if err != nil {

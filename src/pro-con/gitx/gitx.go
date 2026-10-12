@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"slices"
 	"strings"
 	"time"
 
@@ -22,26 +21,16 @@ import (
 // Timeout は git 1 回の上限 (大きな repo の merge-tree でも数秒の見込み。固まった git で呼び出し側を止めない)。
 const Timeout = 2 * time.Minute
 
-// scrubbed は外す環境変数 (`git rev-parse --local-env-vars` の repo の場所を決めるもの。2.43 で確認)。
-var scrubbed = []string{
-	"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
-	"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE", "GIT_PREFIX", "GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT",
-}
-
-// Env は git に渡す環境 (今の環境から scrubbed を外したもの)。
+// Env は git に渡す環境 (今の環境から、repo の場所・設定を変える環境変数 = subproc.IsGitLocationEnv を外したもの)。
 func Env() []string {
 	var out []string
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
-		if !isScrubbed(k) {
+		if !subproc.IsGitLocationEnv(k) {
 			out = append(out, kv)
 		}
 	}
 	return out
-}
-
-func isScrubbed(k string) bool {
-	return slices.Contains(scrubbed, k) || strings.HasPrefix(k, "GIT_CONFIG_KEY_") || strings.HasPrefix(k, "GIT_CONFIG_VALUE_")
 }
 
 // Run は git を dir で走らせ、stdout と rc を返す。起動できない・時間切れは err (rc で表せる失敗は err にしない)。

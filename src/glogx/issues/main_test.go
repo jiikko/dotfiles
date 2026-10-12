@@ -8,6 +8,7 @@ import (
 	"doctor/testtmp"
 
 	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
+	"subproc"
 )
 
 // TestMain は「glogx が支持しない幅 env」でテストを走らせない (issue 054)。
@@ -17,6 +18,9 @@ import (
 // 落ちる。これは期待値の焼き付けではなく、glogx がこの env での描画を支持していないという
 // 設計判断の帰結なので、理由を 1 度だけ言って止める (main パッケージの TestMain と同じ扱い)。
 func TestMain(m *testing.M) {
+	if err := subproc.UnsetGitLocationEnv(); err != nil { // 継承した GIT_DIR などで、一時 dir に作る repo の git が別の repo を書かない (issue 740)
+		panic(err)
+	}
 	widthenv.ExitIfUnsupported()
 	// 後始末を下の RemoveAll だけに預けない理由は tui_helpers_test.go の TestMain と同じ (issue 305)。
 	dir, swept, cleanup, err := testtmp.Setup("glogx-issues")

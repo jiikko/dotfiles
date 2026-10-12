@@ -13,6 +13,7 @@ import (
 	"pro-con/agents"
 	"pro-con/card"
 	"pro-con/gitx"
+	"subproc"
 )
 
 // 🚨 本物の git worktree remove / update-ref -d を呼ぶ。fixture は全部 sandbox の下に作り、allow は testing.Testing の間
@@ -20,6 +21,9 @@ import (
 var sandbox string
 
 func TestMain(m *testing.M) {
+	if err := subproc.UnsetGitLocationEnv(); err != nil { // 継承した GIT_DIR などで、一時 dir に作る repo の git が別の repo を書かない (issue 740)
+		panic(err)
+	}
 	root, err := os.MkdirTemp("", "wtclean")
 	if err != nil {
 		panic(err)

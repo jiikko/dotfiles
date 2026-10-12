@@ -10,6 +10,7 @@ import (
 
 	"pro-con/wake"
 	"pro-con/wtclean"
+	"subproc"
 )
 
 // fakeDispatcherPidEnv が付いていると、テストの二進は dispatcher として起こされたときに偽物になる: 自分の pid をこのパスへ書き、
@@ -27,6 +28,9 @@ func TestMain(m *testing.M) {
 		case os.Args[1] == "dispatcher" && p != "":
 			os.Exit(runFakeDispatcher(p))
 		}
+	}
+	if err := subproc.UnsetGitLocationEnv(); err != nil { // 継承した GIT_DIR などで、一時 dir に作る repo の git が別の repo を書かない (issue 740)
+		panic(err)
 	}
 	widthenv.ExitIfUnsupported() // 幅を数える env (RUNEWIDTH_EASTASIAN=1) では幅の検査が環境のせいで大量に落ちる。理由を出して止める
 	// worktree clean のテストの fixture はこの下に作る。wtclean はテストの二進ではこの外を消す前に拒否する (issue 492)

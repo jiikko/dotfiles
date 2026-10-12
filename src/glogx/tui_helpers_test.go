@@ -17,6 +17,7 @@ import (
 	"doctor/testtmp"
 	"github.com/jiikko/dotfiles/src/tuikit/widthenv"
 	"glogx/issues"
+	"subproc"
 )
 
 // installInertDoctor は doctor の走査口を**何も触らない fake** に差し替える。
@@ -83,6 +84,9 @@ func joinDoctorCleanup(t *testing.T) {
 // 意味の分からない赤を量産する代わりに、理由を 1 度だけ言って止める (env をわざと立てる
 // TestDispWidthAgreesUnderEastAsianEnv は termwidth パッケージ側にあり、そちらの TestMain が除外する)。
 func TestMain(m *testing.M) {
+	if err := subproc.UnsetGitLocationEnv(); err != nil { // 継承した GIT_DIR などで、一時 dir に作る repo の git が別の repo を書かない (issue 740)
+		panic(err)
+	}
 	widthenv.ExitIfUnsupported()
 	// 🚨 **後始末は下の RemoveAll だけに預けない** (issue 305)。`m.Run()` から戻らない終了
 	// (SIGKILL / -timeout の SIGQUIT / panic) では末尾に到達せず、残骸が永久に残る
