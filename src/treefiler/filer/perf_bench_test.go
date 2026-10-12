@@ -131,3 +131,40 @@ func BenchmarkSearchStepHugeFolder(b *testing.B) {
 		}
 	})
 }
+
+// BenchmarkReadHugeFolder はフォルダを読む 1 回 (木の load とライブ更新の readSig)。ファイル 9 割・フォルダ 1 割 (issue 714 の測り方)。
+func BenchmarkReadHugeFolder(b *testing.B) {
+	for _, n := range hugeSizes {
+		dir := b.TempDir()
+		for i := range n {
+			p := filepath.Join(dir, fmt.Sprintf("e%06d", i))
+			var err error
+			if i%10 == 0 {
+				err = os.Mkdir(p, 0o755)
+			} else {
+				err = os.WriteFile(p, nil, 0o644)
+			}
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+		b.Run(fmt.Sprintf("load/n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for range b.N {
+				nd := &node{abs: dir, dir: true}
+				nd.load()
+				if len(nd.kids) != n {
+					b.Fatalf("読めた %d 件", len(nd.kids))
+				}
+			}
+		})
+		b.Run(fmt.Sprintf("readSig/n=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for range b.N {
+				if len(readSig(dir)) != n {
+					b.Fatal("件数が違う")
+				}
+			}
+		})
+	}
+}

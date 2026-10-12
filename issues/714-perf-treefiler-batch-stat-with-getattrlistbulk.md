@@ -69,9 +69,9 @@ N+1 ではないもの:
 
 ## 受け入れ条件 (案)
 
-- [ ] 5 万件のフォルダで `readSig` / `load` の時間を前後で測り、issue に書く (同じ条件で)
-- [ ] symlink・読めない項目・途中で消えた項目を含むフォルダで、今の形と結果が一致する検査がある (両方の側の名前の集合を突き合わせる)
-- [ ] 失敗 (戻り値が負) と部分的な結果を区別し、返った属性を `returned` で確かめている
+- [x] 5 万件のフォルダで `readSig` / `load` の時間を前後で測り、issue に書く (同じ条件で)
+- [x] symlink・読めない項目・途中で消えた項目を含むフォルダで、今の形と結果が一致する検査がある (両方の側の名前の集合を突き合わせる)
+- [x] 失敗 (戻り値が負) と部分的な結果を区別し、返った属性を `returned` で確かめている
 
 ## 別件 (この issue の範囲の外。未確認)
 
@@ -91,3 +91,30 @@ N+1 ではないもの:
   計測コードの穴・doctor の size.go (別件) を足した。反証できなかった主張: 定数 (5000 / 5)・3 か所の N+1・explode.go が Info を打たない・
   cgo の有無・load が lstat・x/sys にラッパーが無い
 - 2026-10-12: issue 712 (描く側の仮想化) は done。この issue (読む側の N+1) は継続
+- 2026-10-12 (dotfiles-4e): 実装した。commit「perf(treefiler): フォルダを getattrlistbulk でまとめて読む (issue 714)」
+  - **呼び出し方は ② (cgo なし)**: `unix.Syscall6(unix.SYS_GETATTRLISTBULK, …)`。darwin の Syscall6 は libc の syscall(2) を通る。cgo を足さないので
+    CGO_ENABLED=0 の stub と CI の確認の問題が出ない (他の OS は `direntries_other.go` が今の形へ回す)
+  - `filer/direntries.go` の `readEntries` に寄せ、`load`・`readSig`・`walkDir` が使う。まとめて読めない (errno・壊れた記録) ときはフォルダごと今の形
+    (`readEntriesSlow` = ReadDir + lstat) へ戻る。属性が返らない項目・ATTR_CMN_ERROR の立った項目・**フォルダの項目**はその項目だけ lstat で読み直す。
+    walkDir は名前順に並べ直す (budget で打ち切る位置を os.ReadDir の頃と変えない)
+  - 記録の並び (実測): 返った属性 (5 語) → ERROR → 名前の参照 → 種類 → mtime → 大きさ 1 つ (フォルダは ATTR_DIR_DATALENGTH・それ以外は
+    ATTR_FILE_DATALENGTH の片方だけ。両方は詰まらない)。issue の「計測コードの穴」(負の戻り値・returned を見ない・PACK_INVAL 無し・片側の名前しか回さない) は全部塞いだ
+  - **実測** (Apple M3 Max・go1.26.0・APFS・キャッシュに載った状態。`perf_bench_test.go` の `BenchmarkReadHugeFolder` (ファイル 9 割・フォルダ 1 割)。
+    before は origin/master に同じベンチを置いて同じ実行で測った。`-benchtime 21x`):
+
+    | | before | after |
+    |---|---|---|
+    | `readSig` n=50,000 | 154ms | 59ms |
+    | `load` n=50,000 | 174ms | 129ms (残りは node を作る・名前の自然順の sort。この issue の外) |
+    | `readSig` n=5,000 | 41ms (冷えていた可能性) | 3.8ms |
+
+  - 一致の検査: `TestBulkMatchesReadDirLstat` (symlink 3 種・fifo・読めないフォルダ・NFC / NFD・255 バイトの名前・dotfile。**macOS で bulk が失敗したら落ちる** =
+    今の形へ戻る経路だけが試される素通りを止める)・`TestBulkReadsAcrossBuffers` (64KB を超える 1500 件)・`TestBulkMatchesAtFirmlinksAndMountPoints` (`/`・`/System/Volumes`・`/Volumes`)・
+    `TestReadEntriesFallsBack`・`TestParseBulkRecordRejectsMalformed`・`TestParseBulkRecordFallsBackPerEntry`・`TestWalkDirCountsInNameOrderUnderBudget`
+  - 変異 9 本 (mtime の ns・フォルダの判定・項目ごとの lstat・名前の境界・今の形へ戻る経路・walk の並べ直し・大きさ・フォルダを bulk の値で読む) を当て、全部想定の検査で red
+  - 敵対レビュー (opus・読み取りのみ): **P2 を実測で再現** — マウントポイント・ファームリンク (`/` の Users・Applications 等 9 件・/Volumes・自分で mount した HFS+ / ExFAT / FAT)
+    では bulk が覆われた側の mtime・大きさを返した → フォルダの項目は lstat で読み直す形で直し、`/` の実物で固定 (bulk の値を使う変異で red)。直しは今の形 (正解役) へ回すだけで
+    新しい判定を足さず、実物と変異で確かめたので周回はここで打ち切った。
+    壊せなかった: APFS / HFS+ / FAT32 で一致 (圧縮・hardlink・symlink・NFC/NFD・400 件 × 150 文字・/dev・iCloud)・r-- / --x のフォルダは前と同じ結果・境界の読み・fd・Pool・unsafe の渡し方・無限ループ
+  - 記録 (直していない): FSKit の exFAT で AppleDouble (`._*`) の mtime が bulk と lstat で 10ms ずれる (818 件中 10 件。表示はほぼ無害。bulk と今の形が交互に使われると
+    readSig が偽の変化を出しうるが、途中で bulk が失敗する条件は見つかっていない)。SMB / NFS は未実測 (属性が返らない項目は 1 件ずつ lstat なので往復は前と同じはず)

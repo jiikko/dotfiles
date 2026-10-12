@@ -3,6 +3,7 @@ package filer
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -233,29 +234,26 @@ func walkDir(dir string, budget *int, found map[string]walkResult) walkResult {
 	if info, err := os.Lstat(dir); err == nil {
 		r.newest = info.ModTime()
 	}
-	ents, err := os.ReadDir(dir)
+	ents, err := readEntries(dir)
 	if err != nil {
 		r.complete = true // 読めないフォルダは自分の mtime だけ (待っても変わらない)
 		found[dir] = r
 		return r
 	}
 	r.complete = true
+	slices.SortFunc(ents, func(a, b dirEntry) int { return strings.Compare(a.name, b.name) }) // os.ReadDir と同じ名前順 (budget で打ち切る位置を変えない)
 	for _, e := range ents {
 		if *budget <= 0 {
 			r.complete = false
 			break
 		}
 		*budget--
-		info, err := e.Info()
-		if err != nil {
-			continue
+		hidden := hiddenName(e.name)
+		if e.mtime.After(r.newest) {
+			r.newest = e.mtime
 		}
-		hidden := hiddenName(e.Name())
-		if info.ModTime().After(r.newest) {
-			r.newest = info.ModTime()
-		}
-		if e.IsDir() {
-			sub := walkDir(filepath.Join(dir, e.Name()), budget, found)
+		if e.dir {
+			sub := walkDir(filepath.Join(dir, e.name), budget, found)
 			if sub.newest.After(r.newest) {
 				r.newest = sub.newest
 			}
@@ -268,9 +266,9 @@ func walkDir(dir string, budget *int, found map[string]walkResult) walkResult {
 			}
 			continue
 		}
-		r.bytes += info.Size()
-		if !hidden && info.ModTime().After(r.vis) {
-			r.vis = info.ModTime()
+		r.bytes += e.size
+		if !hidden && e.mtime.After(r.vis) {
+			r.vis = e.mtime
 		}
 	}
 	found[dir] = r

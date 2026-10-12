@@ -133,14 +133,18 @@ func (n *node) cacheLabel() {
 }
 
 func newNode(raw string, info os.FileInfo, parent *node) *node {
-	n := &node{raw: raw, abs: raw, name: termsafe.PlainLine(raw), parent: parent}
+	var a entryAttr
+	if info != nil {
+		a = attrOf(info)
+	}
+	return newNodeAttr(raw, a, parent)
+}
+
+// newNodeAttr は属性 (項目そのものの lstat の値) から作る。
+func newNodeAttr(raw string, a entryAttr, parent *node) *node {
+	n := &node{raw: raw, abs: raw, name: termsafe.PlainLine(raw), parent: parent, dir: a.dir, mtime: a.mtime, size: a.size}
 	if parent != nil {
 		n.abs = filepath.Join(parent.abs, raw)
-	}
-	if info != nil {
-		n.dir = info.IsDir()
-		n.mtime = info.ModTime()
-		n.size = info.Size()
 	}
 	return n
 }
@@ -169,7 +173,7 @@ func (n *node) load() {
 		return
 	}
 	n.loaded = true
-	ents, err := os.ReadDir(n.path())
+	ents, err := readEntries(n.path()) // 属性は項目そのもの (lstat。symlink を辿らない)
 	if err != nil {
 		n.readErr = err
 		n.kids = nil
@@ -177,12 +181,7 @@ func (n *node) load() {
 	}
 	kids := make([]*node, 0, len(ents))
 	for _, e := range ents {
-		// DirEntry.Info は symlink そのものを返す (lstat)
-		info, err := e.Info()
-		if err != nil {
-			continue // 読む間に消えた
-		}
-		kids = append(kids, newNode(e.Name(), info, n))
+		kids = append(kids, newNodeAttr(e.name, e.entryAttr, n))
 	}
 	sortKids(kids, order)
 	n.kids = kids

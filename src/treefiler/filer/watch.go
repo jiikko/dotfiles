@@ -201,17 +201,13 @@ func (d dirMeta) next(mtime time.Time) (dirMeta, bool) {
 }
 
 func readSig(dir string) map[string]entrySig {
-	ents, err := os.ReadDir(dir)
+	ents, err := readEntries(dir)
 	if err != nil {
 		return nil
 	}
 	sig := make(map[string]entrySig, len(ents))
 	for _, e := range ents {
-		info, err := e.Info()
-		if err != nil {
-			continue
-		}
-		sig[e.Name()] = entrySig{info.ModTime(), info.Size(), e.IsDir()}
+		sig[e.name] = entrySig{e.mtime, e.size, e.dir}
 	}
 	return sig
 }
