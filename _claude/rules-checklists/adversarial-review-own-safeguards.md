@@ -71,6 +71,7 @@
 | **違反 0 件 / ヒット 0 件の正常系** | 検査自身が落ちないか (`grep \| while read` の無マッチが `set -e` 下で無言で死ぬ) |
 | **端末から対話で使われる** (子を背景で起こす・プロセスグループを分ける変更) | pty の上で、前景のグループ・SIGTTOU / SIGTTIN (`stty tostop`)・Ctrl-C / Ctrl-Z が旧実装と同じに働くか。非対話の bash は背景の子に INT / QUIT を無視させる (issue 617) |
 | **複数の候補を順に試す処理で、1 個体だけ壊れている** (1 プロファイルだけ chmod 000 / 壊れた DB) | 失敗を「即停止」に分類したとき全体が止まらないか。止めるのは候補を変えても直らないもの (鍵・ネットワーク・レート制限・共有の作業領域) だけにし、個体固有の失敗は記録して次へ、全滅時に理由を添える |
+| **locale が UTF-8 (en_US と ja_JP) と C** (入力の検証・照合を持つ shell の機構) | 同じ入力で判定が変わらないか。macOS の `/bin/bash` 3.2 では bracket の範囲が非 ASCII を含む (`[A-Za-z]` は en_US.UTF-8 でも `é`・全角の `Ａ` を、`[0-9]` は ja_JP.UTF-8 で全角数字を通す。3.2.57 で実測)。許す文字は列挙するか `LC_ALL=C` で判定する (数字は [`shell-numeric-gate-explicit-digits.md`](../rules/shell-numeric-gate-explicit-digits.md)。obaket retro 1105) |
 
 偽の `HOME` や一時ディレクトリでハーネスを組めば、実データを触らずに全部試せる。
 
