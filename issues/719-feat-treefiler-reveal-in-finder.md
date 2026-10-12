@@ -29,7 +29,7 @@
 ## 受け入れ条件
 
 - [x] `O` で `open -R <abs>` が起動する (起動するコマンドを fake で確かめるテスト + 変異)
-- [ ] 実端末で Finder の窓が出ることを 1 回目で見る (未確認。ユーザーに依頼した。出なければこの issue を open に戻す)
+- [x] 実端末で Finder の窓が出ることを 1 回目で見る (ユーザーが確認 2026-10-12)
 
 ## 進捗
 
@@ -42,4 +42,4 @@
   - テスト: `TestRevealKeyRevealsCursorInFinder` / `TestRevealKeyInTileRevealsTileFile` / `TestRevealFailureBecomesToast`。変異 3 本で red (`-R` を渡さない / タイルの case を消す / 失敗の文言を戻す)
   - `make -C src/treefiler test` / `lint` rc=0、`make -C src/glogx test` rc=0 (文書だけ触ったが ui-guide を検査しうるので回した)
   - 敵対レビューは省いた (キーの追加と起動の引数だけで、判断ロジック・破壊的な操作を含まない)
-  - 残り: 実端末で Finder の窓が出ることの目視 (未確認)
+  - 実端末で Finder の窓が出ることをユーザーが確認した (2026-10-12)
