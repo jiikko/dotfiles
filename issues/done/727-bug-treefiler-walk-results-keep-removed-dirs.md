@@ -1,7 +1,5 @@
 # 727 (bug): treefiler の Model.recs と walker.results に消えたフォルダのキーが残り続ける
 
-> 🚨 **担当中: dotfiles-5f**（2026-10-12〜）
-
 起票日: 2026-10-12
 
 ## 概要

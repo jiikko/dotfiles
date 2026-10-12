@@ -1,1 +1,0 @@
-../727-bug-treefiler-walk-results-keep-removed-dirs.md
