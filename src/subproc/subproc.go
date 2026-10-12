@@ -53,8 +53,8 @@ func CommandContext(ctx context.Context, name string, args ...string) *exec.Cmd 
 // 差分を出す呼び出し (diff・show・log -p) は呼び出し側で --no-textconv --no-ext-diff も付ける (textconv と外部 diff は
 // 設定では一律に止められない)。
 //
-// 止めないもの (脅威の範囲の外): filter.<名前>.clean / smudge は、内容が変わったファイルがあると status でも走るが、
-// git-lfs など正当な用途があり、ユーザーがシェルで git status を打っても同じように走る。
+// filter.<名前>.clean / process は内容が変わったファイルがあると status・作業ツリーとの diff でも走る。名前ごとに上書きするしかないので
+// ここでは止めず、表示のために作業ツリーを読む呼び出しは GitRepoArgs / GitRepoCommand を通す (repo のローカルの設定の filter を止める。issue 732)。
 //
 // 足したもの (どれも開いた repo の設定から走る。敵対的レビューで再現 2026-10-09):
 //   - log.showSignature=false: `log.showSignature=true` と `gpg.program=<cmd>` で、署名つきの commit を出す log / show が gpg.program を走らせた

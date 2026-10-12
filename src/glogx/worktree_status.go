@@ -168,7 +168,8 @@ func rowsFor(x, y byte, path, orig string) []worktreeRow {
 // loadWorktreeStatus はテストで実 git を叩かないための差し替え点。
 var loadWorktreeStatus = func() (worktreeStatus, error) {
 	// TUI の tea.Cmd (goroutine) から呼ぶので timeout 付き (runGitTimeout の doc 参照)。
-	out, err := runGitTimeout("status", "--porcelain", "--branch", "-z")
+	// --ignore-submodules=dirty: submodule の中の変更を見に子の git を起こさない (子は submodule 自身の設定の filter を読む。issue 732)
+	out, err := runGitReadTimeout("status", "--porcelain", "--branch", "-z", "--ignore-submodules=dirty")
 	if err != nil {
 		return worktreeStatus{}, err
 	}
@@ -190,13 +191,14 @@ var loadWorktreeStatus = func() (worktreeStatus, error) {
 // (--cached)、それ以外は作業ツリーとの差分。untracked は git diff の対象外なのでファイルの
 // 中身をそのまま出す (呼び出し側で分岐)。
 var loadWorktreeDiff = func(paths []string, staged, colored bool) ([]string, error) {
-	args := []string{"diff", "--no-textconv", "--no-ext-diff"} // repo の設定のコマンドを差分の表示で走らせない (issue 692。subproc.GitArgs の doc)
+	// repo の設定のコマンドを差分の表示で走らせない (issue 692・732。subproc.GitArgs / GitRepoArgs の doc)
+	args := []string{"diff", "--no-textconv", "--no-ext-diff", "--ignore-submodules=dirty"}
 	if staged {
 		args = append(args, "--cached")
 	}
 	args = append(args, "--color=never", "--")
 	args = append(args, paths...)
-	out, err := runGitTimeout(args...)
+	out, err := runGitReadTimeout(args...)
 	if err != nil {
 		return nil, err
 	}

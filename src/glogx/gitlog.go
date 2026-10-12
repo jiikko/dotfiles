@@ -104,6 +104,18 @@ func runGitCmd(cmd *exec.Cmd) (string, error) {
 	return stdout.String(), nil
 }
 
+// runGitReadTimeout は runGitTimeout と同じだが、表示のために作業ツリーを読む呼び出し (status・作業ツリーとの diff) 用。
+// cwd の repo のローカルの設定の filter (clean / process) を止める (issue 732。subproc.GitRepoArgs の doc)。add など書き込む操作には使わない。
+func runGitReadTimeout(args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitOpTimeout)
+	defer cancel()
+	a, err := subproc.GitRepoArgs(ctx, "", args...)
+	if err != nil {
+		return "", err
+	}
+	return runGitCmd(exec.CommandContext(ctx, "git", a...)) // subproc: waitdelay-in runGitCmd
+}
+
 // BuildLogArgs は allowlist 済みオプションから git log の引数列を組み立てる (データ解析用。
 // prettyFormat の制御文字レコードで機械 parse する)。colored は --stat / -p の本文にのみ効く。
 func BuildLogArgs(opts *Options, colored bool) []string {

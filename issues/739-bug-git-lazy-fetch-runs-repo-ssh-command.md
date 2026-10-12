@@ -20,6 +20,7 @@ git -c core.fsmonitor=false -c log.showSignature=false -c diff.submodule=short -
 GIT_NO_LAZY_FETCH=1 git ... status ...   # rc=128 のまま PWNED はできない ("lazy fetching disabled")
 ```
 
+- 732 の 2 周目のレビューの仮説 (未実測): `remote.<x>.url` をローカルのパスにして `remote.<x>.uploadpack=<cmd>` を置く形でも、ssh 無しで走るはず
 - レビューの報告では glogx / treefiler の `diff HEAD` も blob が無ければ同じく走った (main は status だけ再現)。log -p / show も同じ経路のはず (未検証)
 - 期待: 他人の repo を開くだけで、その repo の設定のコマンドが走らない (692・732 と同じ不変条件)
 

@@ -236,8 +236,13 @@ func repoTops(dirs []string, cache map[string]string) []string {
 func fetchRepo(top string) (gitSnapshot, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), subproc.GitOpTimeout)
 	defer cancel()
-	cmd := subproc.GitCommand(ctx, "--no-optional-locks", "-C", top,
-		"status", "--porcelain=v1", "-z", "--branch", "--ignored", "--untracked-files=normal")
+	// GitRepoCommand: 開いた repo のローカルの設定の filter (clean / process) を status で走らせない。--ignore-submodules=dirty: submodule の中の
+	// 変更を見に子の git を起こさない (子は submodule 自身の設定の filter を読み、上書きが届かない。issue 732)
+	cmd, err := subproc.GitRepoCommand(ctx, top, "--no-optional-locks",
+		"status", "--porcelain=v1", "-z", "--branch", "--ignored", "--untracked-files=normal", "--ignore-submodules=dirty")
+	if err != nil {
+		return gitSnapshot{}, false
+	}
 	cmd.Stdin = nil
 	out, err := cmd.Output()
 	if err != nil {

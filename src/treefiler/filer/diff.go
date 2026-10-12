@@ -18,7 +18,11 @@ import (
 var gitDiffCommand = func(ctx context.Context, top, rel string, cached bool) ([]byte, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	cmd := subproc.GitCommand(ctx, gitDiffArgs(top, rel, cached)...)
+	// GitRepoCommand: 作業ツリーとの diff (HEAD) は clean filter を通すので、repo のローカルの設定の filter を止める (issue 732)
+	cmd, err := subproc.GitRepoCommand(ctx, top, gitDiffArgs(rel, cached)...)
+	if err != nil {
+		return nil, err
+	}
 	cmd.Stdin = nil
 	out, err := cmd.StdoutPipe()
 	if err != nil {
@@ -42,9 +46,9 @@ var gitDiffCommand = func(ctx context.Context, top, rel string, cached bool) ([]
 // gitDiffArgs は diff の引数。
 // 🚨 --literal-pathspecs: `--` の後ろも pathspec なので、名前の * ? [ が glob になり、他のファイルの diff が混ざる
 // (`*` という名前で repo 全体が出た。レビューで再現 2026-10-09)。--no-ext-diff: diff.external (difftastic 等) の出力は
-// unified でなく、tuikit/highlight.Diff が読めない。
-func gitDiffArgs(top, rel string, cached bool) []string {
-	args := []string{"--no-optional-locks", "--literal-pathspecs", "-C", top, "diff", "--no-ext-diff", "--no-textconv", "--color=never"}
+// unified でなく、tuikit/highlight.Diff が読めない。--ignore-submodules=dirty: submodule の中の filter を走らせない (fetchRepo の status と同じ。issue 732)
+func gitDiffArgs(rel string, cached bool) []string {
+	args := []string{"--no-optional-locks", "--literal-pathspecs", "diff", "--no-ext-diff", "--no-textconv", "--color=never", "--ignore-submodules=dirty"}
 	if cached {
 		args = append(args, "--cached")
 	} else {
