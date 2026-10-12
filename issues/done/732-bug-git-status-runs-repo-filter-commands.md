@@ -1,7 +1,5 @@
 # 732 (bug): git status が開いた repo の `.git/config` の filter (clean) のコマンドを実行する
 
-> 🚨 **担当中: dotfiles-5f**（2026-10-12〜）
-
 起票日: 2026-10-12
 
 ## 概要
