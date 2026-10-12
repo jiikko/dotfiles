@@ -1,1 +1,0 @@
-../744-bug-make-test-inherits-git-dir.md
