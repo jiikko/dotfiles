@@ -19,6 +19,10 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"zundamon-kaisetsu/internal/app"
+	"zundamon-kaisetsu/internal/engine"
+	"zundamon-kaisetsu/internal/paths"
 )
 
 // fakeEngine は起動・停止を切り替えられる偽のエンジン。止まっている間はポートで誰も待ち受けない (接続を拒否される)。
@@ -63,7 +67,7 @@ func (fe *fakeEngine) stop() {
 	fe.alive.Store(false)
 }
 
-func newFakeEngineEnv(t *testing.T, alive bool) (*Env, *fakeEngine) {
+func newFakeEngineEnv(t *testing.T, alive bool) (*app.Env, *fakeEngine) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0") // 空いているポートを決めるためだけに開いて閉じる
 	if err != nil {
@@ -95,10 +99,10 @@ func newFakeEngineEnv(t *testing.T, alive bool) (*Env, *fakeEngine) {
 		fe.start()
 		return nil
 	}
-	env.EngineDown = func(rt, engine string) error {
+	env.EngineDown = func(rt, eng string) error {
 		fe.downs.Add(1)
 		fe.downRT.Store(rt)
-		fe.downURL.Store(engine)
+		fe.downURL.Store(eng)
 		fe.stop()
 		return nil
 	}
@@ -106,15 +110,15 @@ func newFakeEngineEnv(t *testing.T, alive bool) (*Env, *fakeEngine) {
 	return env, fe
 }
 
-func markerExists(env *Env) bool { return isFile(autoMarkerPath(env)) }
+func markerExists(env *app.Env) bool { return paths.IsFile(engine.AutoMarkerPath(env)) }
 
-func writeMarker(t *testing.T, env *Env, rt, url string, age time.Duration) {
+func writeMarker(t *testing.T, env *app.Env, rt, url string, age time.Duration) {
 	t.Helper()
-	if err := os.WriteFile(autoMarkerPath(env), []byte(rt+"\n"+url+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(engine.AutoMarkerPath(env), []byte(rt+"\n"+url+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	at := time.Now().Add(-age)
-	if err := os.Chtimes(autoMarkerPath(env), at, at); err != nil {
+	if err := os.Chtimes(engine.AutoMarkerPath(env), at, at); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -123,13 +127,13 @@ func writeMarker(t *testing.T, env *Env, rt, url string, age time.Duration) {
 func TestWithEngineStartsAndSpawnsReaper(t *testing.T) {
 	env, fe := newFakeEngineEnv(t, false)
 	ran := false
-	if err := withEngine(env, func() error { ran = fe.alive.Load(); return nil }); err != nil {
+	if err := engine.WithEngine(env, func() error { ran = fe.alive.Load(); return nil }); err != nil {
 		t.Fatal(err)
 	}
 	if !ran || fe.ups.Load() != 1 || fe.spawns.Load() != 1 || fe.downs.Load() != 0 {
 		t.Errorf("本体の実行中に応答=%v / 起動 %d / 見張り %d / 停止 %d (want true / 1 / 1 / 0)", ran, fe.ups.Load(), fe.spawns.Load(), fe.downs.Load())
 	}
-	if _, url, ok := readAutoMarker(env); !ok || url != env.Engine {
+	if _, url, ok := engine.ReadAutoMarker(env); !ok || url != env.Engine {
 		t.Errorf("印にエンジンの URL が無い: ok=%v url=%q", ok, url)
 	}
 }
@@ -137,7 +141,7 @@ func TestWithEngineStartsAndSpawnsReaper(t *testing.T) {
 // 既に応答しているエンジン (up で起動した・デスクトップアプリ) は起動もせず、見張りも起こさない。
 func TestWithEngineLeavesForeignEngine(t *testing.T) {
 	env, fe := newFakeEngineEnv(t, true)
-	if err := withEngine(env, func() error { return nil }); err != nil {
+	if err := engine.WithEngine(env, func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	if fe.ups.Load() != 0 || fe.spawns.Load() != 0 || markerExists(env) {
@@ -150,7 +154,7 @@ func TestWithEngineUpFailureKeepsMarkerForReaper(t *testing.T) {
 	env, fe := newFakeEngineEnv(t, false)
 	fe.upErr = errors.New("180 秒待っても応答しない")
 	ran := false
-	err := withEngine(env, func() error { ran = true; return nil })
+	err := engine.WithEngine(env, func() error { ran = true; return nil })
 	if err == nil || ran {
 		t.Fatalf("起動の失敗で本体を走らせた / エラーを返さない: ran=%v err=%v", ran, err)
 	}
@@ -164,9 +168,9 @@ func TestWithEngineConcurrentStartOnce(t *testing.T) {
 	env, fe := newFakeEngineEnv(t, false)
 	fe.upGate = make(chan struct{})
 	doneA, doneB := make(chan error, 1), make(chan error, 1)
-	go func() { doneA <- withEngine(env, func() error { return nil }) }()
+	go func() { doneA <- engine.WithEngine(env, func() error { return nil }) }()
 	waitUntil(t, "A の起動開始", func() bool { return fe.ups.Load() == 1 })
-	go func() { doneB <- withEngine(env, func() error { return nil }) }() // A の起動中に来る: まだ接続を拒否される
+	go func() { doneB <- engine.WithEngine(env, func() error { return nil }) }() // A の起動中に来る: まだ接続を拒否される
 	// B が確かめる (手元のポートなら 1ms 未満) のに十分な窓を A の起動中に作る。ロックが無ければ B はここで「止まっている」を見て
 	// 二重に起動する。ロックがあれば B は待つので、窓の長さは結果を変えない
 	// sleep-ok: window: 待ちではなく、競合の窓を作る入力
@@ -189,19 +193,19 @@ func TestWithEngineOtherPortAutoEngine(t *testing.T) {
 	_, other := newFakeEngineEnv(t, true)
 	otherURL := "http://" + other.addr
 	writeMarker(t, env, "container", otherURL, 0)
-	err := withEngine(env, func() error { return nil })
+	err := engine.WithEngine(env, func() error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "別のポート") {
 		t.Fatalf("別のポートの自動エンジンがあるのに起動しようとした: %v", err)
 	}
-	if _, url, _ := readAutoMarker(env); url != otherURL || fe.ups.Load() != 0 {
+	if _, url, _ := engine.ReadAutoMarker(env); url != otherURL || fe.ups.Load() != 0 {
 		t.Errorf("動いている自動エンジンの印を書き換えた / 起動した: url=%q 起動 %d", url, fe.ups.Load())
 	}
 
 	other.stop()
-	if err := withEngine(env, func() error { return nil }); err != nil {
+	if err := engine.WithEngine(env, func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if _, url, _ := readAutoMarker(env); url != env.Engine || fe.ups.Load() != 1 {
+	if _, url, _ := engine.ReadAutoMarker(env); url != env.Engine || fe.ups.Load() != 1 {
 		t.Errorf("止まっている古い印を上書きして起動しない: url=%q 起動 %d", url, fe.ups.Load())
 	}
 }
@@ -210,7 +214,7 @@ func TestWithEngineOtherPortAutoEngine(t *testing.T) {
 func TestWithEngineRespawnsDeadReaper(t *testing.T) {
 	env, fe := newFakeEngineEnv(t, true)
 	writeMarker(t, env, "container", env.Engine, 0)
-	if err := withEngine(env, func() error { return nil }); err != nil {
+	if err := engine.WithEngine(env, func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	if fe.spawns.Load() != 1 {
@@ -222,15 +226,15 @@ func TestWithEngineRespawnsDeadReaper(t *testing.T) {
 func TestWithEngineTouchesLastUseOnEachRequest(t *testing.T) {
 	env, _ := newFakeEngineEnv(t, true)
 	old := time.Now().Add(-time.Hour)
-	err := withEngine(env, func() error {
-		_ = os.Chtimes(lastUsePath(env), old, old)
-		_, _ = engineRequest(env.Engine, "/version", nil, nil)
+	err := engine.WithEngine(env, func() error {
+		_ = os.Chtimes(engine.LastUsePath(env), old, old)
+		_, _ = engine.Request(env.Engine, "/version", nil, nil)
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st, err := os.Stat(lastUsePath(env)); err != nil || time.Since(st.ModTime()) > time.Minute {
+	if st, err := os.Stat(engine.LastUsePath(env)); err != nil || time.Since(st.ModTime()) > time.Minute {
 		t.Errorf("要求の後に最後に使った時刻が更新されていない (%v)", err)
 	}
 }
@@ -244,7 +248,7 @@ func TestWithEngineIgnoresNonEngineListener(t *testing.T) {
 	t.Cleanup(other.Close)
 	env.Engine = other.URL
 	ran := false
-	if err := withEngine(env, func() error { ran = true; return nil }); err != nil || !ran {
+	if err := engine.WithEngine(env, func() error { ran = true; return nil }); err != nil || !ran {
 		t.Fatalf("本体を走らせない: ran=%v err=%v", ran, err)
 	}
 	if fe.ups.Load() != 0 || markerExists(env) {
@@ -257,7 +261,7 @@ func TestWithEngineRemoteIsUntouched(t *testing.T) {
 	env, fe := newFakeEngineEnv(t, false)
 	env.Engine = "http://192.0.2.1:50021"
 	ran := false
-	if err := withEngine(env, func() error { ran = true; return nil }); err != nil || !ran {
+	if err := engine.WithEngine(env, func() error { ran = true; return nil }); err != nil || !ran {
 		t.Fatalf("別ホストで本体を走らせない: ran=%v err=%v", ran, err)
 	}
 	if fe.ups.Load() != 0 || fe.spawns.Load() != 0 {
@@ -265,44 +269,44 @@ func TestWithEngineRemoteIsUntouched(t *testing.T) {
 	}
 }
 
-// 見張り: 印に書かれたエンジンを見て、最後に使ってから engineIdleStop たつまでは止めず、たったら印のランタイムで止めて終わる。
+// 見張り: 印に書かれたエンジンを見て、最後に使ってから IdleStop たつまでは止めず、たったら印のランタイムで止めて終わる。
 func TestReaperStopsAfterIdle(t *testing.T) {
 	env, fe := newFakeEngineEnv(t, true)
 	writeMarker(t, env, "docker", env.Engine, 0)
 	env.Engine = "http://127.0.0.1:1" // 見張りの起動引数ではなく、印の URL を見る
-	touchLastUse(env)
+	engine.TouchLastUse(env)
 	now := time.Now()
-	r := &reaper{}
-	env.Now = func() time.Time { return now.Add(engineIdleStop - time.Second) }
-	if r.once(env) || fe.downs.Load() != 0 {
-		t.Fatalf("まだ使われてから %s なのに止めた / 見張りを終えた", engineIdleStop-time.Second)
+	r := &engine.Reaper{}
+	env.Now = func() time.Time { return now.Add(engine.IdleStop - time.Second) }
+	if r.Once(env) || fe.downs.Load() != 0 {
+		t.Fatalf("まだ使われてから %s なのに止めた / 見張りを終えた", engine.IdleStop-time.Second)
 	}
-	env.Now = func() time.Time { return now.Add(engineIdleStop + time.Second) }
-	if !r.once(env) || fe.downs.Load() != 1 || markerExists(env) {
+	env.Now = func() time.Time { return now.Add(engine.IdleStop + time.Second) }
+	if !r.Once(env) || fe.downs.Load() != 1 || markerExists(env) {
 		t.Fatalf("使われなくなったのに止めない: 停止 %d / 印=%v", fe.downs.Load(), markerExists(env))
 	}
 	if rt, _ := fe.downRT.Load().(string); rt != "docker" {
 		t.Errorf("印のランタイムで止めていない: %q (want docker)", rt)
 	}
-	if u, _ := fe.downURL.Load().(string); !samePort(u, "http://"+fe.addr) {
+	if u, _ := fe.downURL.Load().(string); !engine.SamePort(u, "http://"+fe.addr) {
 		t.Errorf("印のエンジン (ポート) のコンテナを止めていない: %q", u)
 	}
 }
 
-// 見張り: 印が無い (up / down) なら止めずに終わる。応答しないなら、印を書いてから startGrace の間は起動途中とみなして待ち、
-// その後は印を消して終わる。止めるのに失敗したら続け、reaperMaxFailed 回続けて失敗したら印を残して終わる。
+// 見張り: 印が無い (up / down) なら止めずに終わる。応答しないなら、印を書いてから StartGrace の間は起動途中とみなして待ち、
+// その後は印を消して終わる。止めるのに失敗したら続け、ReaperMaxFailed 回続けて失敗したら印を残して終わる。
 func TestReaperExitConditions(t *testing.T) {
 	env, fe := newFakeEngineEnv(t, false)
-	if !(&reaper{}).once(env) || fe.downs.Load() != 0 {
+	if !(&engine.Reaper{}).Once(env) || fe.downs.Load() != 0 {
 		t.Errorf("印が無いのに止めた / 終えない (停止 %d)", fe.downs.Load())
 	}
 
 	writeMarker(t, env, "container", env.Engine, time.Minute)
-	if (&reaper{}).once(env) || !markerExists(env) {
+	if (&engine.Reaper{}).Once(env) || !markerExists(env) {
 		t.Errorf("起動途中かもしれない間に見張りを終えた / 印を消した")
 	}
-	writeMarker(t, env, "container", env.Engine, startGrace+time.Minute)
-	if !(&reaper{}).once(env) || markerExists(env) {
+	writeMarker(t, env, "container", env.Engine, engine.StartGrace+time.Minute)
+	if !(&engine.Reaper{}).Once(env) || markerExists(env) {
 		t.Errorf("応答しないまま startGrace たったのに見張りを終えない / 印を残した")
 	}
 
@@ -310,18 +314,18 @@ func TestReaperExitConditions(t *testing.T) {
 	writeMarker(t, env, "container", env.Engine, 0)
 	env.Now = func() time.Time { return time.Now().Add(24 * time.Hour) }
 	env.EngineDown = func(string, string) error { return errors.New("service down") }
-	r := &reaper{}
-	for i := 1; i < reaperMaxFailed; i++ {
-		if r.once(env) {
+	r := &engine.Reaper{}
+	for i := 1; i < engine.ReaperMaxFailed; i++ {
+		if r.Once(env) {
 			t.Fatalf("%d 回目の失敗で見張りを終えた", i)
 		}
 	}
-	if !r.once(env) || !markerExists(env) {
-		t.Errorf("%d 回続けて失敗しても見張りを終えない / 印を消した", reaperMaxFailed)
+	if !r.Once(env) || !markerExists(env) {
+		t.Errorf("%d 回続けて失敗しても見張りを終えない / 印を消した", engine.ReaperMaxFailed)
 	}
 }
 
-// 本番の停止 (newEnv の EngineDown) は、印のランタイムのコンテナだけを止め、中断 (appCtx の取り消し) の後でも止めにいく。
+// 本番の停止 (newEnv の EngineDown) は、印のランタイムのコンテナだけを止め、中断 (Ctx の取り消し) の後でも止めにいく。
 // PATH を偽の container / docker だけにして、本物のランタイムには触れない。
 func TestProductionEngineDownStopsOnlyMarkedRuntime(t *testing.T) {
 	shims := t.TempDir()
@@ -337,7 +341,7 @@ func TestProductionEngineDownStopsOnlyMarkedRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(log)
-	if !strings.Contains(string(b), "container stop "+containerName+"-50021\n") {
+	if !strings.Contains(string(b), "container stop "+engine.ContainerName+"-50021\n") {
 		t.Errorf("中断の後に、印のポートのコンテナを止めにいっていない。偽のランタイムへの呼び出し:\n%s", b)
 	}
 	// 名前は印のポートのものだけ: 別のポートに up したコンテナ・旧版の固定名には届かない (見張りが up のコンテナを止めた P1)
@@ -354,7 +358,7 @@ func TestCmdUpClearsMarkerEvenOnFailure(t *testing.T) {
 	env, _ := newFakeEngineEnv(t, false)
 	writeMarker(t, env, "docker", env.Engine, 0)
 	t.Setenv("PATH", noRuntimePath(t)) // ランタイムが見つからず起動は失敗する (本物のランタイムには触れない)
-	if err := cmdUp(env); err == nil {
+	if err := engine.CmdUp(env); err == nil {
 		t.Fatal("ランタイムが無いのに up が成功した")
 	}
 	if markerExists(env) {
@@ -365,13 +369,13 @@ func TestCmdUpClearsMarkerEvenOnFailure(t *testing.T) {
 // URL の無い印 (書きかけ・壊れた印) は持ち主が分からないので、上書きして起動する (「別のポートで動いている」と誤って断らない)。
 func TestWithEngineOldOneLineMarker(t *testing.T) {
 	env, fe := newFakeEngineEnv(t, false)
-	if err := os.WriteFile(autoMarkerPath(env), []byte("docker\n"), 0o644); err != nil {
+	if err := os.WriteFile(engine.AutoMarkerPath(env), []byte("docker\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := withEngine(env, func() error { return nil }); err != nil {
+	if err := engine.WithEngine(env, func() error { return nil }); err != nil {
 		t.Fatalf("古い印で起動できない: %v", err)
 	}
-	if _, url, _ := readAutoMarker(env); fe.ups.Load() != 1 || url != env.Engine {
+	if _, url, _ := engine.ReadAutoMarker(env); fe.ups.Load() != 1 || url != env.Engine {
 		t.Errorf("起動 %d / 印の URL %q (want 1 / %s)", fe.ups.Load(), url, env.Engine)
 	}
 }
@@ -381,7 +385,7 @@ func TestWithEngineNoRuntimeWritesNoMarker(t *testing.T) {
 	env, fe := newFakeEngineEnv(t, false)
 	fe.upErr = errors.New("container も docker も無い")
 	t.Setenv("PATH", noRuntimePath(t))
-	if err := withEngine(env, func() error { return nil }); err == nil {
+	if err := engine.WithEngine(env, func() error { return nil }); err == nil {
 		t.Fatal("起動できないのにエラーを返さない")
 	}
 	if markerExists(env) || fe.spawns.Load() != 0 {
@@ -394,7 +398,7 @@ func TestReaperUnknownRuntimeDoesNotStop(t *testing.T) {
 	env, fe := newFakeEngineEnv(t, true)
 	writeMarker(t, env, "", env.Engine, 0)
 	env.Now = func() time.Time { return time.Now().Add(24 * time.Hour) }
-	if !(&reaper{}).once(env) || fe.downs.Load() != 0 || markerExists(env) {
+	if !(&engine.Reaper{}).Once(env) || fe.downs.Load() != 0 || markerExists(env) {
 		t.Errorf("ランタイムの分からない印で止めた / 見張りを終えない / 印を残した: 停止 %d", fe.downs.Load())
 	}
 }
@@ -405,18 +409,18 @@ func TestWithEngineOtherEngineDoesNotExtendAutoEngine(t *testing.T) {
 	_, auto := newFakeEngineEnv(t, true)
 	writeMarker(t, env, "container", "http://"+auto.addr, 0)
 	old := time.Now().Add(-time.Hour)
-	if err := os.WriteFile(lastUsePath(env), nil, 0o644); err != nil {
+	if err := os.WriteFile(engine.LastUsePath(env), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_ = os.Chtimes(lastUsePath(env), old, old)
-	err := withEngine(env, func() error {
-		_, _ = engineRequest(env.Engine, "/version", nil, nil)
+	_ = os.Chtimes(engine.LastUsePath(env), old, old)
+	err := engine.WithEngine(env, func() error {
+		_, _ = engine.Request(env.Engine, "/version", nil, nil)
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st, _ := os.Stat(lastUsePath(env)); time.Since(st.ModTime()) < 30*time.Minute {
+	if st, _ := os.Stat(engine.LastUsePath(env)); time.Since(st.ModTime()) < 30*time.Minute {
 		t.Error("別のエンジンを使っただけで、自動のエンジンの最後に使った時刻を更新した")
 	}
 }
@@ -424,23 +428,23 @@ func TestWithEngineOtherEngineDoesNotExtendAutoEngine(t *testing.T) {
 // 同じエンジンを別の書き方 (localhost・末尾の /) で指しても、自動のエンジンとして最後に使った時刻を更新する (使用中に止めない)。
 func TestWithEngineSamePortDifferentSpelling(t *testing.T) {
 	env, fe := newFakeEngineEnv(t, false)
-	if err := withEngine(env, func() error { return nil }); err != nil {
+	if err := engine.WithEngine(env, func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	_, port, _ := strings.Cut(fe.addr, ":")
 	for _, spelling := range []string{"http://localhost:" + port, env.Engine + "/"} {
 		old := time.Now().Add(-time.Hour)
-		_ = os.Chtimes(lastUsePath(env), old, old)
+		_ = os.Chtimes(engine.LastUsePath(env), old, old)
 		other := *env
 		other.Engine = spelling
-		err := withEngine(&other, func() error {
-			_, _ = engineRequest(other.Engine, "/version", nil, nil)
+		err := engine.WithEngine(&other, func() error {
+			_, _ = engine.Request(other.Engine, "/version", nil, nil)
 			return nil
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if st, _ := os.Stat(lastUsePath(env)); time.Since(st.ModTime()) > time.Minute {
+		if st, _ := os.Stat(engine.LastUsePath(env)); time.Since(st.ModTime()) > time.Minute {
 			t.Errorf("%s で使ったのに最後に使った時刻を更新しない (見張りが使用中に止める)", spelling)
 		}
 	}
@@ -455,7 +459,7 @@ func TestCmdUpKeepsOtherPortMarker(t *testing.T) {
 	_, auto := newFakeEngineEnv(t, true)
 	writeMarker(t, env, "container", "http://"+auto.addr, 0)
 	t.Setenv("PATH", noRuntimePath(t)) // 起動は失敗する (本物のランタイムには触れない)
-	if err := cmdUp(env); err == nil {
+	if err := engine.CmdUp(env); err == nil {
 		t.Fatal("ランタイムが無いのに up が成功した")
 	}
 	if !markerExists(env) {
@@ -466,11 +470,11 @@ func TestCmdUpKeepsOtherPortMarker(t *testing.T) {
 // 見張り: どのポートに起動したか分からない印 (URL の無い・壊れた印) では止めない。
 func TestReaperMarkerWithoutURLDoesNotStop(t *testing.T) {
 	env, fe := newFakeEngineEnv(t, true)
-	if err := os.WriteFile(autoMarkerPath(env), []byte("container\n"), 0o644); err != nil {
+	if err := os.WriteFile(engine.AutoMarkerPath(env), []byte("container\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	env.Now = func() time.Time { return time.Now().Add(24 * time.Hour) }
-	if !(&reaper{}).once(env) || fe.downs.Load() != 0 || markerExists(env) {
+	if !(&engine.Reaper{}).Once(env) || fe.downs.Load() != 0 || markerExists(env) {
 		t.Errorf("URL の無い印で止めた / 見張りを終えない / 印を残した: 停止 %d", fe.downs.Load())
 	}
 }
@@ -484,7 +488,7 @@ func TestCmdDownClearsAnyMarkerAfterStop(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "calls")
 	writeShim(t, shims, "container", "#!/bin/sh\necho \"$*\" >> "+log+"\nexit 0\n")
 	t.Setenv("PATH", shims) // 偽の container だけを見せる (本物のランタイムには触れない)
-	if err := cmdDown(env); err != nil {
+	if err := engine.CmdDown(env); err != nil {
 		t.Fatal(err)
 	}
 	if markerExists(env) {
@@ -492,14 +496,14 @@ func TestCmdDownClearsAnyMarkerAfterStop(t *testing.T) {
 	}
 	// down は自分のポートの名前と、旧版の固定名を止める
 	b, _ := os.ReadFile(log)
-	for _, name := range []string{containerNameFor(env.Engine), containerName, containerNameFor("http://" + auto.addr)} {
+	for _, name := range []string{engine.ContainerNameFor(env.Engine), engine.ContainerName, engine.ContainerNameFor("http://" + auto.addr)} {
 		if !strings.Contains(string(b), "stop "+name+"\n") {
 			t.Errorf("down が %s を止めにいっていない:\n%s", name, b)
 		}
 	}
 }
 
-// up はポートごとの名前でコンテナを起こし、container run が返らなければ startRunTimeout で打ち切る
+// up はポートごとの名前でコンテナを起こし、container run が返らなければ StartRunTimeout で打ち切る
 // (起動用のロックの中で走るので、返らないと synth / down / 見張りが全部待ち続ける)。
 func TestStartEngineRunTimeoutAndPortName(t *testing.T) {
 	// sleep の場所は PATH を差し替える (newFakeEngineEnv) 前に決める (差し替えた後の PATH にはランタイムも sleep も無い)
@@ -511,17 +515,17 @@ func TestStartEngineRunTimeoutAndPortName(t *testing.T) {
 	shims := t.TempDir()
 	log := filepath.Join(t.TempDir(), "calls")
 	// 手元にイメージが無い (image inspect が失敗) ので取得する。
-	// sleep-ok: dummy: 時間のかかる取得 (startRunTimeout より長い 1 秒。上限に含まれていれば打ち切られる) と、返らない container run を演じる
-	// (run は startRunTimeout で kill される。kill されなくても 30 秒で終わる)
+	// sleep-ok: dummy: 時間のかかる取得 (StartRunTimeout より長い 1 秒。上限に含まれていれば打ち切られる) と、返らない container run を演じる
+	// (run は StartRunTimeout で kill される。kill されなくても 30 秒で終わる)
 	shim := "#!/bin/sh\necho \"$*\" >> " + log + "\ncase \"$1 $2\" in \"image inspect\") exit 1 ;; \"image pull\") " + sleepBin +
 		" 1 ;; run*) exec " + sleepBin + " 30 ;; esac\nexit 0\n"
 	writeShim(t, shims, "container", shim)
 	t.Setenv("PATH", shims)
-	old := startRunTimeout
-	startRunTimeout = 500 * time.Millisecond
-	t.Cleanup(func() { startRunTimeout = old })
+	old := engine.StartRunTimeout
+	engine.StartRunTimeout = 500 * time.Millisecond
+	t.Cleanup(func() { engine.StartRunTimeout = old })
 	begin := time.Now()
-	err = startEngine(env)
+	err = engine.StartEngine(env)
 	if err == nil || !strings.Contains(err.Error(), "終わらない") {
 		t.Fatalf("返らない run を打ち切っていない: %v", err)
 	}
@@ -529,11 +533,11 @@ func TestStartEngineRunTimeoutAndPortName(t *testing.T) {
 		t.Errorf("打ち切りまで %s かかった (上限が効いていない)", time.Since(begin))
 	}
 	b, _ := os.ReadFile(log)
-	if !strings.Contains(string(b), "--name "+containerNameFor(env.Engine)+" ") {
+	if !strings.Contains(string(b), "--name "+engine.ContainerNameFor(env.Engine)+" ") {
 		t.Errorf("ポートごとの名前で起動していない:\n%s", b)
 	}
 	// 取得は run の前に、上限の外で済ませる (取得が上限より長くても run まで進む)
-	if pi, ri := strings.Index(string(b), "image pull "+image), strings.Index(string(b), "run "); pi < 0 || ri < 0 || pi > ri {
+	if pi, ri := strings.Index(string(b), "image pull "+engine.Image), strings.Index(string(b), "run "); pi < 0 || ri < 0 || pi > ri {
 		t.Errorf("取得を run の前に上限の外で済ませていない:\n%s", b)
 	}
 }
@@ -544,7 +548,7 @@ func TestWithStartLockShowsHolder(t *testing.T) {
 	held, release := make(chan struct{}), make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
-		done <- withStartLock(env, func() error { close(held); <-release; return nil })
+		done <- engine.WithStartLock(env, func() error { close(held); <-release; return nil })
 	}()
 	<-held
 	var mu sync.Mutex
@@ -552,7 +556,7 @@ func TestWithStartLockShowsHolder(t *testing.T) {
 	waiter := *env
 	waiter.Stderr = writerFunc(func(p []byte) (int, error) { mu.Lock(); defer mu.Unlock(); return errb.Write(p) })
 	waitDone := make(chan error, 1)
-	go func() { waitDone <- withStartLock(&waiter, func() error { return nil }) }()
+	go func() { waitDone <- engine.WithStartLock(&waiter, func() error { return nil }) }()
 	out := func() string { mu.Lock(); defer mu.Unlock(); return errb.String() }
 	waitUntil(t, "待つ側の表示", func() bool { return strings.Contains(out(), "持っているのは") })
 	close(release)
@@ -571,7 +575,7 @@ type writerFunc func([]byte) (int, error)
 
 func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
 
-// 本番の配線: synth / kana / speakers は dispatch から自動起動を通る (withEngine の包みが外れたら red)。
+// 本番の配線: synth / kana / speakers は dispatch から自動起動を通る (WithEngine の包みが外れたら red)。
 func TestDispatchWrapsEngineCommands(t *testing.T) {
 	script := filepath.Join(t.TempDir(), "s.json")
 	if err := os.WriteFile(script, []byte(`{"lines":[{"who":"metan","text":"a"}]}`), 0o644); err != nil {
@@ -588,7 +592,7 @@ func TestDispatchWrapsEngineCommands(t *testing.T) {
 	}
 }
 
-// 本番の配線: newEnv は自動起動・停止・見張りの手段と状態の置き場を入れる。起動の手段は本物の startEngine につながっている。
+// 本番の配線: newEnv は自動起動・停止・見張りの手段と状態の置き場を入れる。起動の手段は本物の StartEngine につながっている。
 func TestNewEnvWiresEngineAuto(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -609,16 +613,16 @@ func TestNewEnvWiresEngineAuto(t *testing.T) {
 }
 
 // 本番の見張り: build したバイナリを __reap で起こすと、別のセッションに切り離され、見張りのロックを持って回る。
-// 印が古く (startGrace を過ぎ)、エンジンが応答しなければ、印を消して自分で終わる。本物のランタイムには触れない (PATH から外す)。
+// 印が古く (StartGrace を過ぎ)、エンジンが応答しなければ、印を消して自分で終わる。本物のランタイムには触れない (PATH から外す)。
 func TestReaperProcessLifecycle(t *testing.T) {
 	bin := buildBinary(t)
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", t.TempDir()) // Linux で本物の印と見張りに届かないように (issue 646 の 5)
 	t.Setenv("PATH", noRuntimePath(t))
 	t.Setenv("VOICEVOX_URL", "http://127.0.0.1:1") // 誰も待ち受けていない
-	old := reaperExe
-	reaperExe = func() (string, error) { return bin, nil }
-	t.Cleanup(func() { reaperExe = old })
+	old := engine.ReaperExe
+	engine.ReaperExe = func() (string, error) { return bin, nil }
+	t.Cleanup(func() { engine.ReaperExe = old })
 	env := newEnv()
 	if err := os.MkdirAll(env.StateDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -629,7 +633,7 @@ func TestReaperProcessLifecycle(t *testing.T) {
 	lockFile := filepath.Join(env.StateDir, "reaper.lock")
 	t.Cleanup(func() {
 		b, _ := os.ReadFile(lockFile)
-		if p, _ := strconv.Atoi(strings.TrimSpace(string(b))); p > 0 && reaperAlive(env) {
+		if p, _ := strconv.Atoi(strings.TrimSpace(string(b))); p > 0 && engine.ReaperAlive(env) {
 			_ = syscall.Kill(p, syscall.SIGKILL)
 		}
 	})
@@ -637,7 +641,7 @@ func TestReaperProcessLifecycle(t *testing.T) {
 	if err := env.SpawnReaper(); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, "見張りがロックを取る", func() bool { return reaperAlive(env) })
+	waitUntil(t, "見張りがロックを取る", func() bool { return engine.ReaperAlive(env) })
 	var pid int
 	waitUntil(t, "見張りの pid", func() bool {
 		b, _ := os.ReadFile(filepath.Join(env.StateDir, "reaper.lock"))
@@ -650,14 +654,14 @@ func TestReaperProcessLifecycle(t *testing.T) {
 	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, "kill した見張りのロックが外れる", func() bool { return !reaperAlive(env) })
+	waitUntil(t, "kill した見張りのロックが外れる", func() bool { return !engine.ReaperAlive(env) })
 
 	// 印が古く、エンジンが応答しなければ、見張りは印を消して終わる
-	writeMarker(t, env, "container", env.Engine, startGrace+time.Minute)
+	writeMarker(t, env, "container", env.Engine, engine.StartGrace+time.Minute)
 	if err := env.SpawnReaper(); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, "見張りが印を消して終わる", func() bool { return !markerExists(env) && !reaperAlive(env) })
+	waitUntil(t, "見張りが印を消して終わる", func() bool { return !markerExists(env) && !engine.ReaperAlive(env) })
 }
 
 // 見張りが止めた後もポートが応答しているなら (デスクトップアプリ・旧版の固定名のコンテナ)、失敗には数えずログに残す。
@@ -668,7 +672,7 @@ func TestReaperWarnsWhenStillAnswering(t *testing.T) {
 	var errb bytes.Buffer
 	env.Stderr = &errb
 	env.Now = func() time.Time { return time.Now().Add(24 * time.Hour) }
-	if !(&reaper{}).once(env) || fe.downs.Load() != 1 {
+	if !(&engine.Reaper{}).Once(env) || fe.downs.Load() != 1 {
 		t.Fatalf("止めにいって見張りを終えていない (停止 %d)", fe.downs.Load())
 	}
 	if !strings.Contains(errb.String(), "まだ応答している") {
@@ -687,7 +691,7 @@ func TestStartEngineSkipsPullWhenImageIsLocal(t *testing.T) {
 	t.Setenv("PATH", shims)
 	cancel := withAppCtx(t)
 	done := make(chan error, 1)
-	go func() { done <- startEngine(env) }()
+	go func() { done <- engine.StartEngine(env) }()
 	waitUntil(t, "run まで進む", func() bool { b, _ := os.ReadFile(log); return strings.Contains(string(b), "run ") })
 	cancel() // 応答待ち (最大 180 秒) を打ち切る
 	<-done
@@ -703,14 +707,14 @@ func TestWithEngineTouchesLastUseAfterStart(t *testing.T) {
 	up := env.EngineUp
 	env.EngineUp = func() error {
 		old := time.Now().Add(-time.Hour) // 起動に 1 時間かかった (長い取得) のを演じる
-		_ = os.Chtimes(lastUsePath(env), old, old)
+		_ = os.Chtimes(engine.LastUsePath(env), old, old)
 		return up()
 	}
-	if err := withEngine(env, func() error { return nil }); err != nil {
+	if err := engine.WithEngine(env, func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	env.Now = time.Now
-	if (&reaper{}).once(env) || fe.downs.Load() != 0 {
+	if (&engine.Reaper{}).Once(env) || fe.downs.Load() != 0 {
 		t.Errorf("起動した直後に見張りが止めた (停止 %d)", fe.downs.Load())
 	}
 }
@@ -718,15 +722,15 @@ func TestWithEngineTouchesLastUseAfterStart(t *testing.T) {
 // TestReaperCommandRunsFromRoot は、見張りを作業ディレクトリ "/" で、端末から切り離して起こすことを確かめる (issue 646 の 3)。
 // 呼び出し側の cwd のまま起こすと、外付けディスクから実行したときに見張りが生きている間ディスクを取り出せない。
 func TestReaperCommandRunsFromRoot(t *testing.T) {
-	env := &Env{Engine: "http://127.0.0.1:50077"}
-	cmd := reaperCommand("/path/to/zundamon-kaisetsu", env)
+	env := &app.Env{Engine: "http://127.0.0.1:50077"}
+	cmd := engine.ReaperCommand("/path/to/zundamon-kaisetsu", env)
 	if cmd.Dir != "/" {
 		t.Errorf("見張りの作業ディレクトリ: got %q want /", cmd.Dir)
 	}
 	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setsid {
 		t.Error("見張りを新しいセッションで起こしていない (端末を閉じると一緒に止まる)")
 	}
-	if want := []string{"/path/to/zundamon-kaisetsu", "--engine", env.Engine, reapCmd}; !slices.Equal(cmd.Args, want) {
+	if want := []string{"/path/to/zundamon-kaisetsu", "--engine", env.Engine, engine.ReapCmd}; !slices.Equal(cmd.Args, want) {
 		t.Errorf("見張りの引数: got %v want %v", cmd.Args, want)
 	}
 	if cmd.Env != nil {
@@ -741,39 +745,39 @@ func noRuntimePath(t *testing.T) string {
 	return t.TempDir()
 }
 
-// TestReaperKeepsEngineInUse は、エンジンを使っているコマンドがいる間は、最後に使った時刻から engineIdleStop を過ぎても
+// TestReaperKeepsEngineInUse は、エンジンを使っているコマンドがいる間は、最後に使った時刻から IdleStop を過ぎても
 // 止めないことを確かめる (長い合成の途中でスリープし、復帰直後に見張りが先に動く形。issue 646 の 1)。
 func TestReaperKeepsEngineInUse(t *testing.T) {
 	env, fe := newFakeEngineEnv(t, true)
 	writeMarker(t, env, "docker", env.Engine, 0)
-	touchLastUse(env)
-	release, err := holdEngineInUse(env)
+	engine.TouchLastUse(env)
+	release, err := engine.HoldInUse(env)
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	env.Now = func() time.Time { return now.Add(engineIdleStop + time.Hour) } // スリープから復帰した
-	r := &reaper{}
-	if r.once(env) || fe.downs.Load() != 0 {
+	env.Now = func() time.Time { return now.Add(engine.IdleStop + time.Hour) } // スリープから復帰した
+	r := &engine.Reaper{}
+	if r.Once(env) || fe.downs.Load() != 0 {
 		t.Fatalf("使っているコマンドがいるのに止めた (停止 %d)", fe.downs.Load())
 	}
 	release()
-	if !r.once(env) || fe.downs.Load() != 1 {
+	if !r.Once(env) || fe.downs.Load() != 1 {
 		t.Fatalf("使い終わった後も止めない (停止 %d)", fe.downs.Load())
 	}
 }
 
-// TestWithEngineHoldsInUse は、withEngine が本体を実行している間だけ使用中のロックを持つことを確かめる。
+// TestWithEngineHoldsInUse は、WithEngine が本体を実行している間だけ使用中のロックを持つことを確かめる。
 func TestWithEngineHoldsInUse(t *testing.T) {
 	env, _ := newFakeEngineEnv(t, true)
 	var during bool
-	if err := withEngine(env, func() error { during = engineInUse(env); return nil }); err != nil {
+	if err := engine.WithEngine(env, func() error { during = engine.InUse(env); return nil }); err != nil {
 		t.Fatal(err)
 	}
 	if !during {
 		t.Error("本体の実行中に使用中のロックを持っていない")
 	}
-	if engineInUse(env) {
+	if engine.InUse(env) {
 		t.Error("本体が終わった後も使用中のロックが残っている")
 	}
 }
@@ -781,11 +785,11 @@ func TestWithEngineHoldsInUse(t *testing.T) {
 // TestEngineInUseUnknownMeansInUse は、使用中のロックを確かめられないとき (ファイルを開けない) は「使っている」に倒す
 // (止めない) ことを確かめる。
 func TestEngineInUseUnknownMeansInUse(t *testing.T) {
-	env := &Env{StateDir: t.TempDir()}
+	env := &app.Env{StateDir: t.TempDir()}
 	if err := os.Mkdir(filepath.Join(env.StateDir, "engine.inuse"), 0o755); err != nil { // ディレクトリは O_RDWR で開けない
 		t.Fatal(err)
 	}
-	if !engineInUse(env) {
+	if !engine.InUse(env) {
 		t.Error("確かめられないのに「使っていない」と判定した (使用中のエンジンを止めうる)")
 	}
 }
@@ -795,9 +799,9 @@ func TestEngineInUseUnknownMeansInUse(t *testing.T) {
 func TestWithEngineOtherPortReleasesInUse(t *testing.T) {
 	envA, feA := newFakeEngineEnv(t, true) // 自動で起動したエンジン
 	writeMarker(t, envA, "docker", envA.Engine, 0)
-	touchLastUse(envA)
+	engine.TouchLastUse(envA)
 	now := time.Now()
-	envA.Now = func() time.Time { return now.Add(engineIdleStop + time.Hour) }
+	envA.Now = func() time.Time { return now.Add(engine.IdleStop + time.Hour) }
 	other := &fakeEngine{t: t, addr: "127.0.0.1:0"}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -810,7 +814,7 @@ func TestWithEngineOtherPortReleasesInUse(t *testing.T) {
 	envB := *envA
 	envB.Engine = "http://" + other.addr // 別のポートで応答しているエンジン
 	var stopped bool
-	if err := withEngine(&envB, func() error { stopped = (&reaper{}).once(envA); return nil }); err != nil {
+	if err := engine.WithEngine(&envB, func() error { stopped = (&engine.Reaper{}).Once(envA); return nil }); err != nil {
 		t.Fatal(err)
 	}
 	if !stopped || feA.downs.Load() != 1 {
@@ -821,15 +825,15 @@ func TestWithEngineOtherPortReleasesInUse(t *testing.T) {
 // TestEngineInUseIsShared は、使用中のロックを複数のコマンドが同時に持てることを確かめる (排他にすると、合成の途中で打った
 // kana / speakers が合成の終わりまで待たされる)。
 func TestEngineInUseIsShared(t *testing.T) {
-	env := &Env{StateDir: t.TempDir()}
-	r1, err := holdEngineInUse(env)
+	env := &app.Env{StateDir: t.TempDir()}
+	r1, err := engine.HoldInUse(env)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer r1()
 	done := make(chan error, 1)
 	go func() {
-		r2, err := holdEngineInUse(env)
+		r2, err := engine.HoldInUse(env)
 		if err == nil {
 			r2()
 		}
@@ -851,8 +855,8 @@ func TestWithEngineHoldsInUseBeforeStart(t *testing.T) {
 	env, _ := newFakeEngineEnv(t, false) // 応答しないので起動する
 	up := env.EngineUp
 	var heldAtStart bool
-	env.EngineUp = func() error { heldAtStart = engineInUse(env); return up() }
-	if err := withEngine(env, func() error { return nil }); err != nil {
+	env.EngineUp = func() error { heldAtStart = engine.InUse(env); return up() }
+	if err := engine.WithEngine(env, func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	if !heldAtStart {
@@ -868,11 +872,11 @@ func TestEngineInterruptIsNotReportedAsFailure(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		name, stuck string // stuck: 止まり続けるサブコマンド ("system status" / "stop")
-		run         func(env *Env) error
+		run         func(env *app.Env) error
 	}{
-		{"up", "system status", startEngine},
-		{"down", "stop", cmdDown},
-		{"down の確認", "system status", cmdDown}, // 確認の途中の中断を「動いていない」と読むと、rc=0 で印を消していた
+		{"up", "system status", engine.StartEngine},
+		{"down", "stop", engine.CmdDown},
+		{"down の確認", "system status", engine.CmdDown}, // 確認の途中の中断を「動いていない」と読むと、rc=0 で印を消していた
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cancel := withAppCtx(t)
@@ -886,23 +890,23 @@ func TestEngineInterruptIsNotReportedAsFailure(t *testing.T) {
 			t.Setenv("PATH", shims)
 			done := make(chan error, 1)
 			go func() { done <- tc.run(env) }()
-			waitUntil(t, "ランタイムの呼び出しが止まる", func() bool { return isFile(marker) })
+			waitUntil(t, "ランタイムの呼び出しが止まる", func() bool { return paths.IsFile(marker) })
 			cancel()
-			if err := <-done; !errors.Is(err, errInterrupted) {
+			if err := <-done; !errors.Is(err, app.ErrInterrupted) {
 				t.Fatalf("中断として返っていない: %v", err)
 			}
 		})
 	}
 }
 
-// 見張りは appCtx と別の ctx で止めるので、appCtx が取り消されていても、その ctx の結果 (not found は成功) で判定する (issue 652)
+// 見張りは Ctx と別の ctx で止めるので、Ctx が取り消されていても、その ctx の結果 (not found は成功) で判定する (issue 652)
 func TestStopContainersJudgesByGivenCtx(t *testing.T) {
 	cancel := withAppCtx(t)
 	shims := t.TempDir()
 	writeShim(t, shims, "container", "#!/bin/sh\ncase \"$1\" in stop) echo \"Error: not found\" >&2; exit 1 ;; esac\nexit 0\n")
 	t.Setenv("PATH", shims)
 	cancel()
-	if _, err := stopContainers(context.Background(), "container", "x"); err != nil {
+	if _, err := engine.StopContainers(context.Background(), "container", "x"); err != nil {
 		t.Fatalf("appCtx の取り消しを、別の ctx での停止の失敗 (中断) と読んだ: %v", err)
 	}
 }

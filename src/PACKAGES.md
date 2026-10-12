@@ -90,3 +90,16 @@
 - `src/tuikit/toast` (`github.com/jiikko/dotfiles/src/tuikit/toast`) — Package toast は右下に数秒だけ出す通知 (トースト) のスタック。
 - `src/tuikit/widthenv` (`github.com/jiikko/dotfiles/src/tuikit/widthenv`) — Package widthenv は「tuikit の幅モデルが支持しない env」の検出とその文言を 1 箇所に集める。
 - `src/zundamon-kaisetsu` (`zundamon-kaisetsu`) — zundamon-kaisetsu は VOICEVOX で台本を合成し、四国めたんとずんだもんの掛け合い動画 (HTML プレイヤー / mp4) を作る。 (main)
+- `src/zundamon-kaisetsu/internal/app` (`zundamon-kaisetsu/internal/app`) — Package app は CLI の実行の文脈: 環境 (Env。 (internal)
+- `src/zundamon-kaisetsu/internal/build` (`zundamon-kaisetsu/internal/build`) — Package build は組み立て (Assemble: wav の連結・口の開き・まばたき・プレイヤーのデータ) と、HTML / mp4 への書き出し。 (internal)
+- `src/zundamon-kaisetsu/internal/engine` (`zundamon-kaisetsu/internal/engine`) — Package engine は VOICEVOX のエンジンのコンテナの起動・停止 (check / up / down) と、自動起動・使われなくなったら止める見張り。 (internal)
+- `src/zundamon-kaisetsu/internal/extcmd` (`zundamon-kaisetsu/internal/extcmd`) — Package extcmd は外部コマンドの探索と、時間の上限付きの実行 (Chrome・ffmpeg のエンコーダ・RunQuiet)。 (internal)
+- `src/zundamon-kaisetsu/internal/lint` (`zundamon-kaisetsu/internal/lint`) — Package lint は lint: 台本の校正のうち文字列と構造だけで決まるものと、資料との突き合わせの候補 (--source)。 (internal)
+- `src/zundamon-kaisetsu/internal/outfile` (`zundamon-kaisetsu/internal/outfile`) — Package outfile は出力ファイルの書き出し (途中の状態を残さない置き換え)。 (internal)
+- `src/zundamon-kaisetsu/internal/paths` (`zundamon-kaisetsu/internal/paths`) — Package paths はパスの解決 (Python の posixpath.realpath と同じ手順)・台本からの相対パス・作業 dir (<台本>.work)。 (internal)
+- `src/zundamon-kaisetsu/internal/pyjson` (`zundamon-kaisetsu/internal/pyjson`) — Package pyjson は Python 版と同じ値を作るための JSON・丸め・文字列化 (Python の json.dumps / round() / str() の再現)。 (internal)
+- `src/zundamon-kaisetsu/internal/script` (`zundamon-kaisetsu/internal/script`) — Package script は台本の読み込みと検証・キャラの設定・合成のキャッシュの鍵 (Params)・読み替え。 (internal)
+- `src/zundamon-kaisetsu/internal/show` (`zundamon-kaisetsu/internal/show`) — Package show は台本の show (図解: keyword / compare / list / code / image / mermaid) の解釈と、画像・mermaid の準備。 (internal)
+- `src/zundamon-kaisetsu/internal/synth` (`zundamon-kaisetsu/internal/synth`) — Package synth はエンジンへの要求 (audio_query / synthesis)・合成のキャッシュ・kana (読みの確認と英字の語の警告)。 (internal)
+- `src/zundamon-kaisetsu/internal/textx` (`zundamon-kaisetsu/internal/textx`) — Package textx は文字列の小さな道具 (表示用の切り詰め・全角英数字の半角化・英字の語の切り出し)。 (internal)
+- `src/zundamon-kaisetsu/internal/wav` (`zundamon-kaisetsu/internal/wav`) — Package wav は wav (PCM 16bit mono) の入出力。 (internal)

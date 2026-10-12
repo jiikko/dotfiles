@@ -201,7 +201,7 @@ DV=zundamon-kaisetsu    # dotfiles の bin/ のコマンド (Go 製。ソース�
 ## 立ち絵と表情
 
 キャラクターは **四国めたん (`metan`、左) とずんだもん (`zundamon`、右) に固定**。2 人が向き合うよう、めたんの立ち絵は左右反転して表示する (素材は画面の左向きに描かれているため。`castOrder` の `Mirror`)。名前・既定の声 (めたん 2 / ずんだもん 3)・色は
-dotfiles の `src/zundamon-kaisetsu/script.go` の `castOrder` が正本で、台本では変えない。立ち絵が無いキャラは名前入りの丸アバターで出る。
+dotfiles の `src/zundamon-kaisetsu/internal/script/script.go` の `CastOrder` が正本で、台本では変えない。立ち絵が無いキャラは名前入りの丸アバターで出る。
 
 立ち絵は、PSDTool 形式の PSD (`!口` `!目` のような排他グループを持つもの) から表情ごとに書き出して使う。
 
@@ -447,7 +447,7 @@ dotfiles の `src/zundamon-kaisetsu/script.go` の `castOrder` が正本で、�
 
 - 出力は **mono / 16bit / 24kHz** に揃える (`build` が違う wav を拒否する)。`synth --force` で作り直せる
 - 口パクのタイミングはモーラ長から作った推定で、wav の実際の長さに合わせて全体を伸縮している。音とのずれが目立つなら、
-  wav の音量から作る方式に差し替える (dotfiles の `src/zundamon-kaisetsu/build.go` の `mouthTrack`)
+  wav の音量から作る方式に差し替える (dotfiles の `src/zundamon-kaisetsu/internal/build/build.go` の `MouthTrack`)
 - mp4 の絵は Chrome の描画なので、HTML と同じフォントになる。配色は OS の設定によらず明るい方に固定している
 - mp4 の映像は H.264 (libx264 の `-tune stillimage`。libx264 の無い ffmpeg では `h264_videotoolbox`)。AV1 は採らない: Apple シリコンに AV1 のハードウェアエンコーダは無く
   (再生だけ)、libsvtav1 で書き出すと静止画中心のこの動画ではむしろ大きく (実測: 194 秒の動画で H.264 5.78MB / AV1 6.51〜7.01MB)、

@@ -1,4 +1,5 @@
-package main
+// Package lint は lint: 台本の校正のうち文字列と構造だけで決まるものと、資料との突き合わせの候補 (--source)。
+package lint
 
 import (
 	"encoding/json"
@@ -10,6 +11,11 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"zundamon-kaisetsu/internal/app"
+	"zundamon-kaisetsu/internal/paths"
+	"zundamon-kaisetsu/internal/pyjson"
+	"zundamon-kaisetsu/internal/script"
 )
 
 // 台本の校正のうち、文字列と台本の構造だけで決まるもの (zundamon-kaisetsu lint。issue 675)。
@@ -60,8 +66,8 @@ const (
 	lintStyleLongMax = 20 // 声のスタイル (ノーマル以外) は 1 行の反応や一言にだけ使う。これより長い行は説明の行とみなす
 )
 
-// lintScript は台本の行を規則で見て、警告を行の順に返す。dict は skill の読み辞書 (readings.json。合流漏れを見る。nil なら見ない)。
-func lintScript(s *Script, dict map[string]string) []lintIssue {
+// LintScript は台本の行を規則で見て、警告を行の順に返す。dict は skill の読み辞書 (readings.json。合流漏れを見る。nil なら見ない)。
+func LintScript(s *script.Script, dict map[string]string) []lintIssue {
 	var out []lintIssue
 	add := func(i int, rule, format string, a ...any) {
 		out = append(out, lintIssue{Line: i, Rule: rule, Msg: fmt.Sprintf(format, a...)})
@@ -74,16 +80,16 @@ func lintScript(s *Script, dict map[string]string) []lintIssue {
 	metanRun, metanRunStart := 0, 0
 	var chapterStarts []int
 	for i, line := range s.Lines {
-		who := pyStr(line["who"])
-		text := pyStr(line["text"])
+		who := pyjson.Str(line["who"])
+		text := pyjson.Str(line["text"])
 		// 同じ話者の同じ字幕 (別の話者の「うん。」「うん。」は普通の会話)
-		if i > 0 && text == pyStr(s.Lines[i-1]["text"]) && who == pyStr(s.Lines[i-1]["who"]) {
+		if i > 0 && text == pyjson.Str(s.Lines[i-1]["text"]) && who == pyjson.Str(s.Lines[i-1]["who"]) {
 			add(i, "duplicate", "前の行と同じ話者・同じ字幕 (行番号で直したときの取り違えのことがある)")
 		}
 		// 目安: 辞書は部分一致で置き換えるので、合流すると別の語の中まで書き換わることがある (STORAGE の中の RAG)。止めずに知らせるだけにし、
 		// 英字の語は語全体が一致したときだけ、記号だけの語 (〜) は見ない。英字の 1 文字読みで困る分は kana --check が止める
 		if _, hasRead := line["read"]; !hasRead {
-			for _, w := range sortedKeys(dict) {
+			for _, w := range pyjson.SortedKeys(dict) {
 				if _, ok := scriptReadings[w]; !ok && dictWordIn(text, w) {
 					hint(i, "readings-missing", "読み辞書の語「%s」が台本の readings に無い (手順 3-2 の辞書の合流を忘れていないか)", w)
 				}
@@ -108,7 +114,7 @@ func lintScript(s *Script, dict map[string]string) []lintIssue {
 				}
 			}
 		}
-		if pyTruthy(line["chapter"]) {
+		if pyjson.Truthy(line["chapter"]) {
 			chapterStarts = append(chapterStarts, i)
 		}
 		if n := utf8.RuneCountInString(text); n > lintCaptionMax {
@@ -130,8 +136,8 @@ func lintScript(s *Script, dict map[string]string) []lintIssue {
 			add(i, "pointing", "「%s」で図解を指している (ものは名前で呼ぶ。音だけで聞く人に通じない)", strings.TrimRight(m, "をはがでにのもと、。！？!?"))
 		}
 		show, hasShow := line["show"]
-		// チャプターは build と同じく、中身のある chapter だけ数える (pyTruthy)。"next" は図解を変えないので、消したことにならない
-		if pyTruthy(line["chapter"]) && i > 0 && showActive && (!hasShow || show == "next") {
+		// チャプターは build と同じく、中身のある chapter だけ数える (Truthy)。"next" は図解を変えないので、消したことにならない
+		if pyjson.Truthy(line["chapter"]) && i > 0 && showActive && (!hasShow || show == "next") {
 			add(i, "show-across-chapter", "チャプターが変わっても前の図解が出たまま (この行に \"show\": null を書く)")
 		}
 		if hasShow {
@@ -181,7 +187,7 @@ func lintScript(s *Script, dict map[string]string) []lintIssue {
 			hint(c, "shows-per-chapter", "このチャプターの図解が %d 回 (1〜2 回まで)", shows)
 		}
 		// 最初のチャプター (導入) は、めたんが話題を言って始める決まりなので見ない
-		if k > 0 && (pyStr(s.Lines[c]["who"]) != "zundamon" || !questionEndRe.MatchString(pyStr(s.Lines[c]["text"]))) {
+		if k > 0 && (pyjson.Str(s.Lines[c]["who"]) != "zundamon" || !questionEndRe.MatchString(pyjson.Str(s.Lines[c]["text"]))) {
 			hint(c, "chapter-question", "チャプターの最初の行がずんだもんの質問でない (質問で始めると区切りが伝わる)")
 		}
 	}
@@ -202,7 +208,7 @@ var (
 
 // sourceLeaks は、source_mode が "public" (独自調査) の台本で、画面・概要欄・音声に出る文字に元の資料の存在が分かる語があれば目安を出す。
 // 台本全体の欄 (タイトル・概要・クレジット) は行番号 -1 で出す。画像の中身・alt (画面に出ない)・mermaid のノード ID は見ない。
-func sourceLeaks(s *Script) []lintIssue {
+func sourceLeaks(s *script.Script) []lintIssue {
 	if s.Raw["source_mode"] != "public" {
 		return nil
 	}
@@ -219,32 +225,32 @@ func sourceLeaks(s *Script) []lintIssue {
 				Msg: where + "に「" + strings.Join(ms, "」「") + "」(独自調査のモードでは元の資料の存在を出さない。公開された文献を名前で引いているならそのままでよい。SKILL.md の「資料の語り方」)"})
 		}
 	}
-	report(-1, "タイトル", find(displayTitle(s)))
-	report(-1, "description", find(pyStr(lineGet(s.Raw, "description", ""))))
+	report(-1, "タイトル", find(script.DisplayTitle(s)))
+	report(-1, "description", find(pyjson.Str(script.LineGet(s.Raw, "description", ""))))
 	if c, ok := s.Raw["credits"].(string); ok { // build は 1 文字ずつのクレジットにするが、画面には続けて並ぶので全体で見る
 		report(-1, "credits", find(c))
 	} else if c, ok := s.Raw["credits"]; ok {
-		for _, v := range pyIter(c) { // build と同じ回し方 (リストは要素、map はキー)
-			report(-1, "credits", find(pyStr(v)))
+		for _, v := range pyjson.Iter(c) { // build と同じ回し方 (リストは要素、map はキー)
+			report(-1, "credits", find(pyjson.Str(v)))
 		}
 	}
 	for i, line := range s.Lines {
-		text := pyStr(lineGet(line, "text", ""))
+		text := pyjson.Str(script.LineGet(line, "text", ""))
 		inText := find(text)
 		report(i, "字幕", inText)
 		// 読み上げは、字幕で出した語を除いて出す (同じ語を 2 回出さない)
 		var spoken []string
-		for _, m := range find(spokenText(s, line)) {
+		for _, m := range find(script.SpokenText(s, line)) {
 			if !slices.Contains(inText, m) {
 				spoken = append(spoken, m)
 			}
 		}
 		report(i, "読み上げ", spoken)
 		if c, ok := line["chapter"]; ok {
-			report(i, "チャプター名", find(pyStr(c)))
+			report(i, "チャプター名", find(pyjson.Str(c)))
 		}
 		if sh, ok := line["show"].(map[string]any); ok {
-			for _, f := range showVisibleStrings(sh, "show", sh["type"] == "mermaid") {
+			for _, f := range ShowVisibleStrings(sh, "show", sh["type"] == "mermaid") {
 				report(i, "図解の "+f.key, find(f.text))
 			}
 		}
@@ -254,11 +260,11 @@ func sourceLeaks(s *Script) []lintIssue {
 
 type keyedText struct{ key, text string }
 
-// showVisibleStrings は図解のうち画面に出る文字を、欄の名前 (show.left.title 等) つきで返す。画像のパスと alt は画面に出ないので除く。
+// ShowVisibleStrings は図解のうち画面に出る文字を、欄の名前 (show.left.title 等) つきで返す。画像のパスと alt は画面に出ないので除く。
 // mermaid の code はラベルとして描かれるが、%% のコメント行は描かれないので除く (コードの図解の %% の行は画面に出るので見る)。
 // 種類ごとの欄を列挙せずに全部の文字列を辿るのは、図解の種類や欄が増えても見落とさないため
 // (lint の showTexts (文になりうる欄だけ) と source_check の showAllTexts (資料と突き合わせる語) とは見る範囲が違う)。
-func showVisibleStrings(v any, key string, mermaid bool) []keyedText {
+func ShowVisibleStrings(v any, key string, mermaid bool) []keyedText {
 	var out []keyedText
 	switch x := v.(type) {
 	case string:
@@ -269,14 +275,14 @@ func showVisibleStrings(v any, key string, mermaid bool) []keyedText {
 		}
 	case []any:
 		for _, e := range x {
-			out = append(out, showVisibleStrings(e, key, mermaid)...)
+			out = append(out, ShowVisibleStrings(e, key, mermaid)...)
 		}
 	case map[string]any:
-		for _, k := range sortedKeys(x) {
+		for _, k := range pyjson.SortedKeys(x) {
 			if k == "type" || k == "src" || k == "alt" {
 				continue
 			}
-			out = append(out, showVisibleStrings(x[k], key+"."+k, mermaid)...)
+			out = append(out, ShowVisibleStrings(x[k], key+"."+k, mermaid)...)
 		}
 	}
 	return out
@@ -323,7 +329,7 @@ func nonEmpty(xs []string) []string {
 // showTexts は図解の中の文字 (重要語の補足・比較の項目・箇条書きの項目) を返す (文になっていないかを見る用)。
 func showTexts(sh map[string]any) []string {
 	var out []string
-	if items, ok := sh["items"].([]any); ok && pyStr(sh["type"]) == "list" {
+	if items, ok := sh["items"].([]any); ok && pyjson.Str(sh["type"]) == "list" {
 		for _, it := range items {
 			if v, ok := it.(string); ok {
 				out = append(out, v)
@@ -347,16 +353,16 @@ func showTexts(sh map[string]any) []string {
 	return out
 }
 
-// loadReadingsDict は skill の読み辞書 (readings.json)。読めなければ止める (黙って合流漏れを見なくなるのを防ぐ)。
-func loadReadingsDict(env *Env) (map[string]string, error) {
+// LoadReadingsDict は skill の読み辞書 (readings.json)。読めなければ止める (黙って合流漏れを見なくなるのを防ぐ)。
+func LoadReadingsDict(env *app.Env) (map[string]string, error) {
 	p := filepath.Join(env.SkillDir, "readings.json")
 	b, err := os.ReadFile(p)
 	if err != nil {
-		return nil, fail("%s: 読めない (%v)", p, err)
+		return nil, app.Fail("%s: 読めない (%v)", p, err)
 	}
 	var m map[string]string
 	if err := json.Unmarshal(b, &m); err != nil {
-		return nil, fail("%s: {\"語\": \"読み\"} の形で書く (%v)", p, err)
+		return nil, app.Fail("%s: {\"語\": \"読み\"} の形で書く (%v)", p, err)
 	}
 	return m, nil
 }
@@ -369,23 +375,23 @@ func withoutIdioms(text string) string {
 	return text
 }
 
-// cmdLint は台本を規則で見て、警告を出す。警告が 1 つでもあれば rc=1。sourceArg (lint --source) があれば資料との突き合わせの候補も出す (目安)。
-func cmdLint(env *Env, scriptArg, sourceArg string) error {
-	s, err := loadScript(resolvePath(scriptArg), env)
+// CmdLint は台本を規則で見て、警告を出す。警告が 1 つでもあれば rc=1。sourceArg (lint --source) があれば資料との突き合わせの候補も出す (目安)。
+func CmdLint(env *app.Env, scriptArg, sourceArg string) error {
+	s, err := script.LoadScript(paths.ResolvePath(scriptArg), env)
 	if err != nil {
 		return err
 	}
-	dict, err := loadReadingsDict(env)
+	dict, err := LoadReadingsDict(env)
 	if err != nil {
 		return err
 	}
-	issues := lintScript(s, dict)
+	issues := LintScript(s, dict)
 	if sourceArg != "" {
-		src, err := readSource(sourceArg)
+		src, err := ReadSource(sourceArg)
 		if err != nil {
 			return err
 		}
-		issues = append(issues, sourceCandidates(s, src)...)
+		issues = append(issues, SourceCandidates(s, src)...)
 		sort.SliceStable(issues, func(a, b int) bool { return issues[a].Line < issues[b].Line })
 	}
 	warned := 0
@@ -399,7 +405,7 @@ func cmdLint(env *Env, scriptArg, sourceArg string) error {
 		fmt.Fprintf(env.Stdout, "%d\t%s\t%s\t%s\n", is.Line, kind, is.Rule, is.Msg)
 	}
 	if warned > 0 {
-		return fail("台本の校正の警告が %d 件ある (上の一覧。行番号は lines の添字。目安は rc に効かない)", warned)
+		return app.Fail("台本の校正の警告が %d 件ある (上の一覧。行番号は lines の添字。目安は rc に効かない)", warned)
 	}
 	fmt.Fprintln(env.Stdout, "(警告なし)")
 	return nil

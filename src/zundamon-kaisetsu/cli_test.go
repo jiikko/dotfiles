@@ -8,6 +8,11 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"zundamon-kaisetsu/internal/app"
+	"zundamon-kaisetsu/internal/build"
+	"zundamon-kaisetsu/internal/script"
+	"zundamon-kaisetsu/internal/wav"
 )
 
 // 引数の解析は Python 版の argparse と同じ意味にする (issue 641 の設計レビュー P1-3)。
@@ -77,7 +82,7 @@ func TestRunExitCodes(t *testing.T) {
 	}
 	for _, c := range cases {
 		var out, errb bytes.Buffer
-		env := &Env{Stdout: &out, Stderr: &errb}
+		env := &app.Env{Stdout: &out, Stderr: &errb}
 		if rc := run(c.args, env); rc != c.rc {
 			t.Errorf("%v: rc=%d want %d (stderr: %s)", c.args, rc, c.rc, errb.String())
 		}
@@ -87,11 +92,11 @@ func TestRunExitCodes(t *testing.T) {
 // skill のディレクトリが渡されていなければ、立ち絵の既定の置き場を見ずに進めず止める (設計レビュー P2-10)。
 func TestRequireSkillDir(t *testing.T) {
 	var errb bytes.Buffer
-	env := &Env{Stdout: &errb, Stderr: &errb}
+	env := &app.Env{Stdout: &errb, Stderr: &errb}
 	if rc := run([]string{"build", "testdata/build/script.json", "-o", filepath.Join(t.TempDir(), "x")}, env); rc != 1 {
 		t.Fatalf("rc=%d want 1: %s", rc, errb.String())
 	}
-	if !strings.Contains(errb.String(), skillDirEnv+" が無い。bin/zundamon-kaisetsu から起動する") {
+	if !strings.Contains(errb.String(), app.SkillDirEnv+" が無い。bin/zundamon-kaisetsu から起動する") {
 		t.Errorf("起動の仕方の案内が無い: %s", errb.String())
 	}
 }
@@ -105,7 +110,7 @@ func TestRejectNonStringTextAndRead(t *testing.T) {
 		{"who": "metan", "text": "x", "read": true},
 	} {
 		path := writeScript(t, map[string]any{"lines": []any{line}})
-		_, err := loadScript(path, testEnv(t))
+		_, err := script.LoadScript(path, testEnv(t))
 		if err == nil || !strings.Contains(err.Error(), "は文字列で書く") {
 			t.Errorf("%v: 拒否しなかった (%v)", line, err)
 		}
@@ -145,27 +150,27 @@ func fmtChunk(ch, rate, bits int) []byte {
 func TestCheckWavBytes(t *testing.T) {
 	pcm := make([]byte, 200)
 	good := wavBytes(chunk("LIST", []byte("INFOxyz")), fmtChunk(1, 24000, 16), chunk("data", pcm))
-	got, n, err := checkWavBytes(good, "t")
+	got, n, err := wav.CheckBytes(good, "t")
 	if err != nil || n != 100 || len(got) != 200 {
 		t.Fatalf("LIST チャンク付きを読めない: n=%d len=%d err=%v", n, len(got), err)
 	}
 	truncated := good[:len(good)-10]
-	if _, _, err := checkWavBytes(truncated, "t"); err == nil || !strings.Contains(err.Error(), "途中で切れている") {
+	if _, _, err := wav.CheckBytes(truncated, "t"); err == nil || !strings.Contains(err.Error(), "途中で切れている") {
 		t.Errorf("途中で切れた wav を通した: %v", err)
 	}
 	stereo := wavBytes(fmtChunk(2, 24000, 16), chunk("data", pcm))
-	if _, _, err := checkWavBytes(stereo, "t"); err == nil || !strings.Contains(err.Error(), "mono / 16bit / 24000Hz ではない") {
+	if _, _, err := wav.CheckBytes(stereo, "t"); err == nil || !strings.Contains(err.Error(), "mono / 16bit / 24000Hz ではない") {
 		t.Errorf("stereo を通した: %v", err)
 	}
-	if _, _, err := checkWavBytes([]byte("nope"), "t"); err == nil || !strings.Contains(err.Error(), "wav として読めない") {
+	if _, _, err := wav.CheckBytes([]byte("nope"), "t"); err == nil || !strings.Contains(err.Error(), "wav として読めない") {
 		t.Errorf("wav でないものを通した: %v", err)
 	}
 	// 書いた wav を読み直せる (build の連結に使う)
 	p := filepath.Join(t.TempDir(), "j.wav")
-	if err := writeWav(p, pcm); err != nil {
+	if err := wav.Write(p, pcm); err != nil {
 		t.Fatal(err)
 	}
-	if b, _, err := readWav(p); err != nil || !bytes.Equal(b, pcm) {
+	if b, _, err := wav.Read(p); err != nil || !bytes.Equal(b, pcm) {
 		t.Errorf("writeWav → readWav が戻らない: %v", err)
 	}
 }
@@ -173,8 +178,8 @@ func TestCheckWavBytes(t *testing.T) {
 // HTML への差し込みは、</script> で JSON が途切れず、タイトルは & < > だけエスケープし、印を 1 回の走査で置き換える。
 func TestRenderHTML(t *testing.T) {
 	env := testEnv(t)
-	data := &PlayerData{Title: "A&B <__DATA_JSON__>", Lines: []timelineLine{{Text: "</script><b>"}}, Frames: [][4]int{{0, -1, 0, 0}}}
-	html, err := renderHTML(data, env)
+	data := &build.PlayerData{Title: "A&B <__DATA_JSON__>", Lines: []build.TimelineLine{{Text: "</script><b>"}}, Frames: [][4]int{{0, -1, 0, 0}}}
+	html, err := build.RenderHTML(data, env)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +195,7 @@ func TestRenderHTML(t *testing.T) {
 		t.Fatal("データの script が見つからない")
 	}
 	payload := html[start+len(`<script type="application/json" id="data">`) : start+end]
-	var back PlayerData
+	var back build.PlayerData
 	if err := json.Unmarshal([]byte(payload), &back); err != nil || back.Lines[0].Text != "</script><b>" {
 		t.Errorf("埋め込んだデータが元に戻らない: %v", err)
 	}
@@ -205,15 +210,15 @@ func TestWaitForIdleCPU(t *testing.T) {
 		want  time.Duration
 	}{
 		{"空いている", []float64{0}, true, 0},
-		{"途中で空く", []float64{1e9, 1e9, 1e9, 0}, true, 3 * loadPoll},
-		{"空かない", []float64{1e9}, true, loadWaitMax},
+		{"途中で空く", []float64{1e9, 1e9, 1e9, 0}, true, 3 * build.LoadPoll},
+		{"空かない", []float64{1e9}, true, build.LoadWaitMax},
 		{"読めない", []float64{1e9}, false, 0},
 	}
 	for _, c := range cases {
 		now := time.Unix(0, 0)
 		i := 0
 		var errb bytes.Buffer
-		env := &Env{Stderr: &errb,
+		env := &app.Env{Stderr: &errb,
 			Now:   func() time.Time { return now },
 			Sleep: func(d time.Duration) { now = now.Add(d) },
 			LoadAvg: func() (float64, bool) {
@@ -221,7 +226,7 @@ func TestWaitForIdleCPU(t *testing.T) {
 				i++
 				return v, c.ok
 			}}
-		waitForIdleCPU(env)
+		build.WaitForIdleCPU(env)
 		if got := now.Sub(time.Unix(0, 0)); got != c.want {
 			t.Errorf("%s: %v 待った (want %v)。出力: %s", c.name, got, c.want, errb.String())
 		}

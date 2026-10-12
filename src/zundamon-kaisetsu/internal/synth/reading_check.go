@@ -1,15 +1,17 @@
-package main
+package synth
 
 import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"zundamon-kaisetsu/internal/app"
+	"zundamon-kaisetsu/internal/textx"
 )
 
 // 読みの検査 (kana --script --check。issue 673)。
@@ -19,22 +21,19 @@ import (
 //
 // 検出しない形 (人が英字の語の一覧と kana.tsv で見る。SKILL.md の手順 5):
 //   - 崩れた読み (SIer を エスイアー)、漢字の読み分け (内製を うちせい)、数字・助数詞の読み
-//   - 同じ並びの語が 1 行に 2 つあり、両方とも 1 文字ずつ読まれた形の数え分け (語と読みの位置の対応は取れない。spelledWords)
+//   - 同じ並びの語が 1 行に 2 つあり、両方とも 1 文字ずつ読まれた形の数え分け (語と読みの位置の対応は取れない。SpelledWords)
 //   - 略語の一覧にある語が、本当は誤読だった場合 (一覧に足した時点で、その語は 1 文字ずつ読むのが正しいと決めたことになる)
 // 一覧の「行の中では別の読み」の印は、目で見る行を挙げるためのもので、付いても誤読とは限らない (Wi-Fi は Wi と Fi に分かれて付く)。
 // 検査が通っても、誤読が無いことにはならない。
 
-// acronymsFile は 1 文字ずつ読むのが正しい略語 (CPU・OS など) の一覧。skill の dir に読み辞書と並べて置く。
-func (e *Env) acronymsFile() string { return filepath.Join(e.SkillDir, "acronyms.json") }
-
-func loadAcronyms(env *Env) (map[string]bool, error) {
-	b, err := os.ReadFile(env.acronymsFile())
+func LoadAcronyms(env *app.Env) (map[string]bool, error) {
+	b, err := os.ReadFile(env.AcronymsFile())
 	if err != nil {
-		return nil, fail("%s: 読めない (%v)", env.acronymsFile(), err)
+		return nil, app.Fail("%s: 読めない (%v)", env.AcronymsFile(), err)
 	}
 	var list []string
 	if err := json.Unmarshal(b, &list); err != nil {
-		return nil, fail("%s: 文字列の配列で書く (%v)", env.acronymsFile(), err)
+		return nil, app.Fail("%s: 文字列の配列で書く (%v)", env.AcronymsFile(), err)
 	}
 	m := map[string]bool{}
 	for _, w := range list {
@@ -44,25 +43,13 @@ func loadAcronyms(env *Env) (map[string]bool, error) {
 }
 
 var (
-	englishWordRe = regexp.MustCompile(`[A-Za-z]+`)
 	// 読みの記号: ' はアクセント、/ と 、 は区切り、_ は無声化。? や ！ は文末の印
 	kanaMarksRe = regexp.MustCompile(`['/_、？！?!。]`)
 	eRowI       = regexp.MustCompile(`([エケセテネヘメレゲゼデベペェ])イ`)
 	oRowU       = regexp.MustCompile(`([オコソトノホモヨロゴゾドボポョォ])ウ`)
 )
 
-// foldWidth は全角の英数字・記号を半角にする (全角英字もエンジンが 1 文字ずつ読むことがあるので、検査も同じ語として見る。
-// 読みそのものは全角と半角で違うことがある: Ｗｉ－Ｆｉ は ウィエフアイ、Wi-Fi は ワイファイ)。
-func foldWidth(s string) string {
-	return strings.Map(func(r rune) rune {
-		if r >= '！' && r <= '～' {
-			return r - '！' + '!'
-		}
-		return r
-	}, s)
-}
-
-func stripKanaMarks(k string) string { return kanaMarksRe.ReplaceAllString(k, "") }
+func StripKanaMarks(k string) string { return kanaMarksRe.ReplaceAllString(k, "") }
 
 // longVowelForm は長音の書き方を揃えた形。エンジンは同じ文字名を、単独では「エイ」、文の中では「エエ」と書くことがある (A・K 等)。
 //
@@ -72,24 +59,24 @@ func longVowelForm(k string) string {
 	return oRowU.ReplaceAllString(eRowI.ReplaceAllString(k, "${1}エ"), "${1}オ")
 }
 
-// flexibleKana は読み (記号を除いた形) に、長音の 2 通りの書き方 (エイ / エエ、オウ / オオ) のどちらでも当たる正規表現。
+// FlexibleKana は読み (記号を除いた形) に、長音の 2 通りの書き方 (エイ / エエ、オウ / オオ) のどちらでも当たる正規表現。
 // 相手の読みは揃えずにそのまま照合する (揃えると境目をまたいで置き換わる。longVowelForm の注記)。
-func flexibleKana(k string) *regexp.Regexp {
-	q := regexp.QuoteMeta(stripKanaMarks(k))
+func FlexibleKana(k string) *regexp.Regexp {
+	q := regexp.QuoteMeta(StripKanaMarks(k))
 	q = eRowI.ReplaceAllString(q, "${1}(?:イ|エ)")
 	q = regexp.MustCompile(`([オコソトノホモヨロゴゾドボポョォ])[ウオ]`).ReplaceAllString(q, "${1}(?:ウ|オ)")
 	q = regexp.MustCompile(`([エケセテネヘメレゲゼデベペェ])エ`).ReplaceAllString(q, "${1}(?:イ|エ)")
 	return regexp.MustCompile(q)
 }
 
-// letterAliases はエンジンが文の中で使うことがある、単独の読みとは別の文字名。
-var letterAliases = map[byte][]string{'Z': {"ゼット"}, 'H': {"エッチ"}, 'V': {"ヴイ"}}
+// LetterAliases はエンジンが文の中で使うことがある、単独の読みとは別の文字名。
+var LetterAliases = map[byte][]string{'Z': {"ゼット"}, 'H': {"エッチ"}, 'V': {"ヴイ"}}
 
-// letterForms は文字名を、照合に使う書き方の候補 (記号を除いた形と、長音を揃えた形。重複なし) にする。
-func letterForms(standalone string, aliases []string) []string {
+// LetterForms は文字名を、照合に使う書き方の候補 (記号を除いた形と、長音を揃えた形。重複なし) にする。
+func LetterForms(standalone string, aliases []string) []string {
 	var out []string
 	for _, n := range append([]string{standalone}, aliases...) {
-		n = stripKanaMarks(n)
+		n = StripKanaMarks(n)
 		for _, f := range []string{n, longVowelForm(n)} {
 			if f != "" && !slices.Contains(out, f) {
 				out = append(out, f)
@@ -100,7 +87,7 @@ func letterForms(standalone string, aliases []string) []string {
 }
 
 // letterNames は A〜Z をエンジンに読ませた文字名の書き方の候補。文字名は話者で変わらない前提で、最初の行の声で 1 回だけ問い合わせる。
-func letterNames(env *Env, styleID int64) (map[byte][]string, error) {
+func letterNames(env *app.Env, styleID int64) (map[byte][]string, error) {
 	names := map[byte][]string{}
 	for c := byte('A'); c <= 'Z'; c++ {
 		q, err := audioQuery(env.Engine, string(c), styleID)
@@ -108,10 +95,10 @@ func letterNames(env *Env, styleID int64) (map[byte][]string, error) {
 			return nil, err
 		}
 		k := queryKana(q)
-		if stripKanaMarks(k) == "" {
-			return nil, fail("文字 %c の読みがエンジンから取れない", c)
+		if StripKanaMarks(k) == "" {
+			return nil, app.Fail("文字 %c の読みがエンジンから取れない", c)
 		}
-		names[c] = letterForms(k, letterAliases[c])
+		names[c] = LetterForms(k, LetterAliases[c])
 	}
 	return names, nil
 }
@@ -130,18 +117,7 @@ func spelledPattern(word string, names map[byte][]string) *regexp.Regexp {
 	return regexp.MustCompile(b.String())
 }
 
-// lineWords は音声にする文の英字の語 (2 文字以上。全角は半角にして) を、文の中の順に返す。
-func lineWords(spoken string) []string {
-	var out []string
-	for _, w := range englishWordRe.FindAllString(foldWidth(spoken), -1) {
-		if len(w) >= 2 {
-			out = append(out, w)
-		}
-	}
-	return out
-}
-
-// spelledWords は、音声にする文の英字の語のうち、読みの中で 1 文字ずつ読まれているもの。
+// SpelledWords は、音声にする文の英字の語のうち、読みの中で 1 文字ずつ読まれているもの。
 //
 // 語と読みの位置は対応が取れない (kana は文単位) ので、語ごとに「1 文字ずつ読んだ並び」が読みに現れるかで決める。
 // 短い語の並びは長い語の 1 文字読みの途中にも現れる (No の エヌオオ が NOC の エヌオオシイ の中に。IT と it も同じ並び) ので、
@@ -150,9 +126,9 @@ func lineWords(spoken string) []string {
 //
 // 🚨 文の順に、読みの前から照合位置を進める形にしない。短い語が後ろの語の読みの途中に当たると位置が進みすぎ、
 // 後ろの本物の 1 文字読み (NOC・SNOWDEN) を黙って取りこぼした (issue 673 の敵対的レビュー 2 周目)。
-func spelledWords(spoken, kana string, names map[byte][]string, acronyms map[string]bool) []string {
-	k := stripKanaMarks(kana)
-	words := lineWords(spoken)
+func SpelledWords(spoken, kana string, names map[byte][]string, acronyms map[string]bool) []string {
+	k := StripKanaMarks(kana)
+	words := textx.LineWords(spoken)
 	sort.SliceStable(words, func(a, b int) bool {
 		if len(words[a]) != len(words[b]) {
 			return len(words[a]) > len(words[b])
@@ -195,7 +171,7 @@ func spelledWords(spoken, kana string, names map[byte][]string, acronyms map[str
 }
 
 // checkReadings は 1 文字ずつ読まれた英字の語の警告と、英字の語の一覧を出す。警告が 1 つでもあれば rc=1。
-func checkReadings(env *Env, lines []lineKana) error {
+func checkReadings(env *app.Env, lines []lineKana) error {
 	type wordInfo struct {
 		lines   []int
 		styleID int64
@@ -203,7 +179,7 @@ func checkReadings(env *Env, lines []lineKana) error {
 	words := map[string]*wordInfo{}
 	var order []string
 	for i, l := range lines {
-		for _, w := range lineWords(l.Spoken) {
+		for _, w := range textx.LineWords(l.Spoken) {
 			wi, ok := words[w]
 			if !ok {
 				wi = &wordInfo{styleID: l.StyleID}
@@ -219,7 +195,7 @@ func checkReadings(env *Env, lines []lineKana) error {
 		fmt.Fprintln(env.Stdout, "# 英字の語は無い (読みの検査の対象なし)")
 		return nil
 	}
-	acronyms, err := loadAcronyms(env)
+	acronyms, err := LoadAcronyms(env)
 	if err != nil {
 		return err
 	}
@@ -230,7 +206,7 @@ func checkReadings(env *Env, lines []lineKana) error {
 	fmt.Fprintln(env.Stdout, "# 英字の語を 1 文字ずつ読んだ行 (直す: 台本の readings か行の read)")
 	warned := 0
 	for i, l := range lines {
-		for _, w := range spelledWords(l.Spoken, l.Kana, names, acronyms) {
+		for _, w := range SpelledWords(l.Spoken, l.Kana, names, acronyms) {
 			fmt.Fprintf(env.Stdout, "%d\t%s\t%s\n", i, w, l.Kana)
 			warned++
 		}
@@ -247,10 +223,10 @@ func checkReadings(env *Env, lines []lineKana) error {
 		}
 		alone := queryKana(q)
 		// 語だけの読みが行の読みに現れない行は、行の中では別の読みになっている (Next.js の js、1 文字ずつ読んだ IDOR)
-		re := flexibleKana(alone)
+		re := FlexibleKana(alone)
 		var differ []string
 		for _, i := range words[w].lines {
-			if !re.MatchString(stripKanaMarks(lines[i].Kana)) {
+			if !re.MatchString(StripKanaMarks(lines[i].Kana)) {
 				differ = append(differ, fmt.Sprint(i))
 			}
 		}
@@ -264,7 +240,7 @@ func checkReadings(env *Env, lines []lineKana) error {
 		fmt.Fprintf(env.Stdout, "%s\t%d 行\t%s%s\n", w, len(words[w].lines), alone, note)
 	}
 	if warned > 0 {
-		return fail("英字の語を 1 文字ずつ読んだ行が %d 件ある (上の一覧)。誤読でなければ %s に足す", warned, env.acronymsFile())
+		return app.Fail("英字の語を 1 文字ずつ読んだ行が %d 件ある (上の一覧)。誤読でなければ %s に足す", warned, env.AcronymsFile())
 	}
 	return nil
 }

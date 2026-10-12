@@ -12,17 +12,22 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"zundamon-kaisetsu/internal/build"
+	"zundamon-kaisetsu/internal/paths"
+	"zundamon-kaisetsu/internal/pyjson"
+	"zundamon-kaisetsu/internal/script"
 )
 
-// まばたきの時刻表: 閉じている長さ・間隔・キャラごとのずれ (blinkAt)
+// まばたきの時刻表: 閉じている長さ・間隔・キャラごとのずれ (BlinkAt)
 func TestBlinkAtSchedule(t *testing.T) {
 	const span = 600.0 // 10 分
 	starts := map[string][]float64{}
-	for _, key := range castKeys() {
+	for _, key := range script.CastKeys() {
 		closedFrames, prev := 0, false
-		for k := range int(span * mouthFPS) {
-			tm := (float64(k) + 0.5) / mouthFPS
-			c := blinkAt(key, tm)
+		for k := range int(span * build.MouthFPS) {
+			tm := (float64(k) + 0.5) / build.MouthFPS
+			c := build.BlinkAt(key, tm)
 			if c {
 				closedFrames++
 			}
@@ -37,7 +42,7 @@ func TestBlinkAtSchedule(t *testing.T) {
 			}
 			prev = c
 		}
-		if got, want := len(starts[key]), int(span/blinkCell); got != want {
+		if got, want := len(starts[key]), int(span/build.BlinkCell); got != want {
 			t.Errorf("%s: %v 秒でまばたき %d 回 (区間ごとに 1 回なら %d 回)", key, span, got, want)
 		}
 		for i := 1; i < len(starts[key]); i++ {
@@ -46,37 +51,37 @@ func TestBlinkAtSchedule(t *testing.T) {
 			}
 		}
 	}
-	if keys := castKeys(); slices.Equal(starts[keys[0]], starts[keys[1]]) {
+	if keys := script.CastKeys(); slices.Equal(starts[keys[0]], starts[keys[1]]) {
 		t.Error("2 人のまばたきの時刻が全部同じ (キャラごとにずらしていない)")
 	}
-	if blinkAt(castKeys()[0], -1) {
+	if build.BlinkAt(script.CastKeys()[0], -1) {
 		t.Error("負の時刻でまばたいた")
 	}
 }
 
-// 閉じ目の版がある表情を見せているフレームだけで、そのキャラのビットが立つ (blinkRuns)
+// 閉じ目の版がある表情を見せているフレームだけで、そのキャラのビットが立つ (BlinkRuns)
 func TestBlinkRunsFollowsShownFace(t *testing.T) {
-	metan, zunda := castKeys()[0], castKeys()[1]
+	metan, zunda := script.CastKeys()[0], script.CastKeys()[1]
 	bit := map[string]int{metan: 1, zunda: 2}
 	const dur = 24.0
 	// 行 0 (0〜12 秒): めたんは説明・ずんだもんは笑顔。行 1 (12 秒〜): ずんだもんが通常に戻す
-	tl := []timelineLine{
-		{Start: 0, End: 11, Faces: map[string]string{metan: "説明", zunda: "笑顔"}, mouth: "0"},
-		{Start: 12, End: 23, Faces: map[string]string{metan: "説明", zunda: "通常"}, mouth: "0"},
+	tl := []build.TimelineLine{
+		{Start: 0, End: 11, Faces: map[string]string{metan: "説明", zunda: "笑顔"}, Mouth: "0"},
+		{Start: 12, End: 23, Faces: map[string]string{metan: "説明", zunda: "通常"}, Mouth: "0"},
 	}
-	frames := frameRuns(tl, dur)
+	frames := build.FrameRuns(tl, dur)
 	blinkable := map[string]map[string]bool{metan: {"説明": true}, zunda: {"通常": true}} // 笑顔には閉じ目の版が無い
-	runs := blinkRuns(frames, tl, blinkable, dur)
+	runs := build.BlinkRuns(frames, tl, blinkable, dur)
 	if runs == nil {
 		t.Fatal("まばたきの列が空")
 	}
-	states := frameStates(frames, runs, nil, dur)
+	states := build.FrameStates(frames, runs, nil, dur)
 	seen := map[string]bool{}
 	for k, st := range states {
-		tm := (float64(k) + 0.5) / mouthFPS
+		tm := (float64(k) + 0.5) / build.MouthFPS
 		for _, key := range []string{metan, zunda} {
 			face := tl[st[0]].Faces[key]
-			want := blinkable[key][face] && blinkAt(key, tm)
+			want := blinkable[key][face] && build.BlinkAt(key, tm)
 			if got := st[3]&bit[key] != 0; got != want {
 				t.Fatalf("フレーム %d (%.2f 秒) の %s (表情 %s): 閉じ目 %v want %v", k, tm, key, face, got, want)
 			}
@@ -91,18 +96,18 @@ func TestBlinkRunsFollowsShownFace(t *testing.T) {
 			t.Errorf("%s で一度もまばたいていない (テストの尺が足りない)", w)
 		}
 	}
-	if blinkRuns(frames, tl, map[string]map[string]bool{}, dur) != nil {
+	if build.BlinkRuns(frames, tl, map[string]map[string]bool{}, dur) != nil {
 		t.Error("閉じ目の版が無いのに、まばたきの列を作った (データに載せないはず)")
 	}
 }
 
-// まばたきの mask は castOrder の i 番目が 1<<i (castData.BlinkBit と blinkRuns が同じ割り当てを使う)
+// まばたきの mask は CastOrder の i 番目が 1<<i (CastData.BlinkBit と BlinkRuns が同じ割り当てを使う)
 func TestBlinkBitMatchesCastOrder(t *testing.T) {
-	keys := castKeys()
-	tl := []timelineLine{{Start: 0, End: 100, Faces: map[string]string{keys[0]: "通常", keys[1]: "通常"}, mouth: "0"}}
-	frames := frameRuns(tl, 100)
+	keys := script.CastKeys()
+	tl := []build.TimelineLine{{Start: 0, End: 100, Faces: map[string]string{keys[0]: "通常", keys[1]: "通常"}, Mouth: "0"}}
+	frames := build.FrameRuns(tl, 100)
 	for i, key := range keys {
-		runs := blinkRuns(frames, tl, map[string]map[string]bool{key: {"通常": true}}, 100)
+		runs := build.BlinkRuns(frames, tl, map[string]map[string]bool{key: {"通常": true}}, 100)
 		for _, r := range runs {
 			if r[1] != 0 && r[1] != 1<<i {
 				t.Fatalf("%s だけがまばたく台本で mask %d (want 0 か %d)", key, r[1], 1<<i)
@@ -134,7 +139,7 @@ func blinkFixture(t *testing.T, blinkList any, withFiles bool) string {
 	must(t, os.WriteFile(filepath.Join(faces, "faces.json"), mb, 0o644))
 	if withFiles {
 		for _, face := range []string{"通常", "説明"} {
-			for lv := range mouthLevels {
+			for lv := range build.MouthLevels {
 				src, err := os.ReadFile(filepath.Join(faces, face+"_"+string(rune('0'+lv))+".webp"))
 				must(t, err)
 				// 閉じ目の版と元の絵を見分けられるよう、末尾に 1 バイト足す (webp の中身は見ない)
@@ -147,13 +152,13 @@ func blinkFixture(t *testing.T, blinkList any, withFiles bool) string {
 
 // withZundamonFaces は blinkFixture の台本で、ずんだもんにも閉じ目の版つきの立ち絵を持たせる (2 人目のビットを確かめるため)。
 // 絵はめたんの fixture の通常に表情の名前を足したもの (webp の中身は見ないので、バイト列の差だけで見分ける)。台本で使う 驚き・笑顔 も置く。
-func withZundamonFaces(t *testing.T, script string) string {
+func withZundamonFaces(t *testing.T, scr string) string {
 	t.Helper()
-	dir := filepath.Dir(script)
+	dir := filepath.Dir(scr)
 	zf := filepath.Join(dir, "faces", "zundamon")
 	must(t, os.MkdirAll(zf, 0o755))
 	for _, face := range []string{"通常", "驚き", "笑顔"} {
-		for lv := range mouthLevels {
+		for lv := range build.MouthLevels {
 			src, err := os.ReadFile(filepath.Join(dir, "faces", "metan", "通常_"+string(rune('0'+lv))+".webp"))
 			must(t, err)
 			src = append(src, []byte(face)...) // 表情ごとに違う絵にする
@@ -167,12 +172,12 @@ func withZundamonFaces(t *testing.T, script string) string {
 	must(t, err)
 	must(t, os.WriteFile(filepath.Join(zf, "faces.json"), mb, 0o644))
 	var raw map[string]any
-	b, err := os.ReadFile(script)
+	b, err := os.ReadFile(scr)
 	must(t, err)
 	must(t, json.Unmarshal(b, &raw))
 	raw["cast"].(map[string]any)["zundamon"] = map[string]any{"faces": "faces/zundamon"}
-	writeScriptFile(t, script, raw)
-	return script
+	writeScriptFile(t, scr, raw)
+	return scr
 }
 
 // decodeURI は data URI の中身 (base64) をバイト列に戻す。
@@ -188,11 +193,11 @@ func decodeURI(t *testing.T, uri string) []byte {
 }
 
 // 閉じ目の版は、同じ表情・同じ口の段階の元の絵 + 'B' (fixture の作り方) と全部一致する (表情や口の段階の取り違えを見分ける)
-func checkBlinkImages(t *testing.T, who string, c castData) {
+func checkBlinkImages(t *testing.T, who string, c build.CastData) {
 	t.Helper()
 	for face, uris := range c.Blink {
-		if len(uris) != mouthLevels {
-			t.Fatalf("%s/%s の閉じ目の版が %d 枚 (口の段階は %d)", who, face, len(uris), mouthLevels)
+		if len(uris) != build.MouthLevels {
+			t.Fatalf("%s/%s の閉じ目の版が %d 枚 (口の段階は %d)", who, face, len(uris), build.MouthLevels)
 		}
 		for lv, u := range uris {
 			want := append(decodeURI(t, c.Images[face][lv]), 'B')
@@ -203,14 +208,14 @@ func checkBlinkImages(t *testing.T, who string, c castData) {
 	}
 }
 
-func assembleFixture(t *testing.T, script string) (*PlayerData, error) {
+func assembleFixture(t *testing.T, scr string) (*build.PlayerData, error) {
 	t.Helper()
 	env := testEnv(t)
-	s, err := loadScript(resolvePath(script), env)
+	s, err := script.LoadScript(paths.ResolvePath(scr), env)
 	if err != nil {
 		return nil, err
 	}
-	data, _, err := assemble(s, env)
+	data, _, err := build.Assemble(s, env)
 	return data, err
 }
 
@@ -218,15 +223,15 @@ func assembleFixture(t *testing.T, script string) (*PlayerData, error) {
 func TestBuildEmbedsBlinkImages(t *testing.T) {
 	data, err := assembleFixture(t, blinkFixture(t, []any{"通常", "説明"}, true))
 	must(t, err)
-	metan := data.Cast[castKeys()[0]]
-	if got := sortedKeys(metan.Blink); !slices.Equal(got, []string{"説明", "通常"}) {
+	metan := data.Cast[script.CastKeys()[0]]
+	if got := pyjson.SortedKeys(metan.Blink); !slices.Equal(got, []string{"説明", "通常"}) {
 		t.Errorf("閉じ目を埋め込んだ表情: %v (want 台本で使う 説明・通常。faces.json に無い 笑顔 は入れない)", got)
 	}
 	checkBlinkImages(t, "metan", metan)
 	if metan.BlinkBit != 1 {
 		t.Errorf("めたんの blinkBit: %d (castOrder の 0 番目なので 1)", metan.BlinkBit)
 	}
-	if z := data.Cast[castKeys()[1]]; z.Blink != nil || z.BlinkBit != 0 {
+	if z := data.Cast[script.CastKeys()[1]]; z.Blink != nil || z.BlinkBit != 0 {
 		t.Error("立ち絵の無いずんだもんに閉じ目のデータがある")
 	}
 	if data.Blinks == nil {
@@ -271,11 +276,11 @@ func TestBuildFailsOnMissingBlinkImages(t *testing.T) {
 	}
 }
 
-// 2 人とも閉じ目の版を持つと、ずんだもんは castOrder の 1 番目なのでビット 2 で、2 人のビットが列に現れる
+// 2 人とも閉じ目の版を持つと、ずんだもんは CastOrder の 1 番目なのでビット 2 で、2 人のビットが列に現れる
 func TestBuildBlinkBitsForBothCast(t *testing.T) {
 	data, err := assembleFixture(t, withZundamonFaces(t, blinkFixture(t, []any{"通常", "説明"}, true)))
 	must(t, err)
-	keys := castKeys()
+	keys := script.CastKeys()
 	for i, key := range keys {
 		c := data.Cast[key]
 		if c.BlinkBit != 1<<i {
@@ -294,19 +299,19 @@ func TestBuildBlinkBitsForBothCast(t *testing.T) {
 
 // まばたきのある台本でも、mp4 の撮影・切り出し・フレームの並びが状態 (まばたきを含む) と合う
 func TestWriteMP4CropsBlinkStates(t *testing.T) {
-	script := blinkFixture(t, []any{"通常", "説明"}, true)
-	data, err := assembleFixture(t, script)
+	scr := blinkFixture(t, []any{"通常", "説明"}, true)
+	data, err := assembleFixture(t, scr)
 	must(t, err)
 	blinkFrames := 0
-	for _, st := range frameStates(data.Frames, data.Blinks, data.Cards, data.Duration) {
+	for _, st := range build.FrameStates(data.Frames, data.Blinks, data.Cards, data.Duration) {
 		if st[3] != 0 {
 			blinkFrames++
 		}
 	}
-	if blinkFrames == 0 || blinkFrames > int(math.Ceil(blinkClosed*mouthFPS))+1 {
+	if blinkFrames == 0 || blinkFrames > int(math.Ceil(build.BlinkClosed*build.MouthFPS))+1 {
 		t.Fatalf("前提: 3.58 秒の台本で目を閉じるフレームは 1 回分 (3〜4) のはず: %d", blinkFrames)
 	}
-	checkMP4CropsEachState(t, script)
+	checkMP4CropsEachState(t, scr)
 }
 
 // 2 人ともまばたく台本でも (ビット 2 の状態を撮る)、mp4 の撮影・切り出しが状態と合う
@@ -317,11 +322,11 @@ func TestWriteMP4CropsBothCastBlinkStates(t *testing.T) {
 // 区切りのカード (issue 681): チャプターの頭から chapterCardSeconds だけ出し、次のチャプターが始まったら数え直す。
 // トピック名と同じ条件 (チャプター 2 つ以上・overlays に topic) でだけ出す
 func TestChapterCardRuns(t *testing.T) {
-	chs := []chapterData{{Title: "a", Start: 0.4}, {Title: "b", Start: 3}, {Title: "c", Start: 3.5}}
-	got := chapterCardRuns(chs, overlayKeys, 6)
+	chs := []build.ChapterData{{Title: "a", Start: 0.4}, {Title: "b", Start: 3}, {Title: "c", Start: 3.5}}
+	got := build.ChapterCardRuns(chs, script.OverlayKeys, 6)
 	on := func(sec float64) int {
-		k := int(sec * mouthFPS)
-		return runCursor(got)(k)
+		k := int(sec * build.MouthFPS)
+		return build.RunCursor(got)(k)
 	}
 	for _, tc := range []struct {
 		sec  float64
@@ -331,21 +336,21 @@ func TestChapterCardRuns(t *testing.T) {
 			t.Errorf("%.1f 秒: カード %d, want %d (runs %v)", tc.sec, g, tc.want, got)
 		}
 	}
-	if r := chapterCardRuns(chs[:1], overlayKeys, 6); r != nil {
+	if r := build.ChapterCardRuns(chs[:1], script.OverlayKeys, 6); r != nil {
 		t.Errorf("チャプターが 1 つでカードを出した: %v", r)
 	}
-	if r := chapterCardRuns(chs, []string{"title", "date"}, 6); r != nil {
+	if r := build.ChapterCardRuns(chs, []string{"title", "date"}, 6); r != nil {
 		t.Errorf("overlays に topic が無いのにカードを出した: %v", r)
 	}
-	// frameStates の 5 欄目に載る
-	st := frameStates([][4]int{{0, 0, 0, 0}}, nil, got, 6)
-	if st[int(0.5*mouthFPS)][4] != 1 || st[int(2.5*mouthFPS)][4] != 0 {
+	// FrameStates の 5 欄目に載る
+	st := build.FrameStates([][4]int{{0, 0, 0, 0}}, nil, got, 6)
+	if st[int(0.5*build.MouthFPS)][4] != 1 || st[int(2.5*build.MouthFPS)][4] != 0 {
 		t.Errorf("frameStates の 5 欄目がカードの列と違う")
 	}
 }
 
 // 感情の演出 (issue 682) は player.html だけにあり、立ち絵の表情の名前 (data-fx) で出し分ける。
-// 表情の名前は faceVocab が正本なので、演出が指す名前が語彙にあること・表情を data-fx に渡していることを字句で見る
+// 表情の名前は FaceVocab が正本なので、演出が指す名前が語彙にあること・表情を data-fx に渡していることを字句で見る
 // (演出の見た目そのものは人が見る。issue 645)
 func TestEmotionEffectsWired(t *testing.T) {
 	tpl := playerTemplate(t)
@@ -363,7 +368,7 @@ func TestEmotionEffectsWired(t *testing.T) {
 	got := map[string]string{}
 	for _, m := range re.FindAllStringSubmatch(tpl, -1) {
 		got[m[1]] = m[2]
-		if !slices.Contains(faceVocab, m[1]) {
+		if !slices.Contains(script.FaceVocab, m[1]) {
 			t.Errorf("演出が指す表情 %s が faceVocab に無い (表情の名前を変えたら演出の CSS も直す)", m[1])
 		}
 		if !strings.Contains(tpl, `class="fx fx-`+m[2]+`"`) {

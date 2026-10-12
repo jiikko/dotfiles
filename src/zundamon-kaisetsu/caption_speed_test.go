@@ -7,17 +7,21 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"zundamon-kaisetsu/internal/build"
+	"zundamon-kaisetsu/internal/paths"
+	"zundamon-kaisetsu/internal/script"
 )
 
 // 字幕が出ている間 (次の行の開始まで。最後の行は動画の終わりまで) に読む字数で判定する。空白は数えず、ちょうど上限は通す
 func TestFastCaptions(t *testing.T) {
-	lines := []timelineLine{
+	lines := []build.TimelineLine{
 		{Text: strings.Repeat("あ", 15), Start: 0},              // 0〜2 秒 → 7.5 字/秒 (上限ちょうどは通す)
 		{Text: strings.Repeat("い", 16), Start: 2},              // 2〜4 秒 → 8 字/秒
 		{Text: "う　え　お く " + strings.Repeat("か", 10), Start: 4}, // 半角・全角の空白を除いて 14 字 / 2 秒 → 7 字/秒で通す (全角の空白 2 つを数えると 8 字/秒)
 		{Text: strings.Repeat("き", 8), Start: 6},               // 最後の行は動画の終わり (7 秒) まで → 8 字/秒
 	}
-	got := fastCaptions(lines, 7)
+	got := build.FastCaptions(lines, 7)
 	var idx []int
 	for _, f := range got {
 		idx = append(idx, f.Line)
@@ -27,8 +31,8 @@ func TestFastCaptions(t *testing.T) {
 	}
 	// 次の行までの間 (gap・pause_after) も読める時間に数える: 同じ 16 字でも次の行が 3 秒後なら通る
 	// (話している長さ (End - Start = 1 秒) で測ると 16 字/秒で速いと出るが、字幕は次の行まで 3 秒出ているので通す)
-	slow := []timelineLine{{Text: strings.Repeat("い", 16), Start: 0, End: 1}, {Text: "え", Start: 3, End: 3.5}}
-	if f := fastCaptions(slow, 10); len(f) != 0 {
+	slow := []build.TimelineLine{{Text: strings.Repeat("い", 16), Start: 0, End: 1}, {Text: "え", Start: 3, End: 3.5}}
+	if f := build.FastCaptions(slow, 10); len(f) != 0 {
 		t.Errorf("間を足した行も速いと判定した: %+v", f)
 	}
 }
@@ -48,7 +52,7 @@ func equalInts(a, b []int) bool {
 // build は字幕の速い行を行番号つきで警告し、音声の圧縮と書き出しの前に止まる (--allow-fast-captions なら続ける)。速い行が無ければ何も言わない
 func TestBuildStopsOnFastCaptions(t *testing.T) {
 	var calls string // 偽の ffmpeg / Chrome が呼ばれた記録 (止まったときは ffmpeg (音声の圧縮) まで進んでいないことを見る)
-	build := func(t *testing.T, edit func(lines []any), allow bool) (string, error) {
+	bld := func(t *testing.T, edit func(lines []any), allow bool) (string, error) {
 		t.Helper()
 		dir := t.TempDir()
 		copyTree(t, filepath.Join("testdata", "build", "script.work"), filepath.Join(dir, "script.work"))
@@ -56,16 +60,16 @@ func TestBuildStopsOnFastCaptions(t *testing.T) {
 		b, err := os.ReadFile(filepath.Join("testdata", "build", "script.json"))
 		must(t, err)
 		var raw map[string]any
-		must(t, decodeJSON(b, &raw))
+		must(t, script.DecodeJSON(b, &raw))
 		path := filepath.Join(dir, "script.json")
 		writeScriptFile(t, path, raw)
 		{ // testdata の音声は 1 行 1 秒未満の短いものなので、字幕は全行を 1 字にして「速い行が無い」状態から始める
 			env := testEnv(t)
-			s, err := loadScript(resolvePath(path), env)
+			s, err := script.LoadScript(paths.ResolvePath(path), env)
 			must(t, err)
 			lines := raw["lines"].([]any)
 			for i, l := range lines { // 音声を据え置くため、今の読み (合成の鍵) を read に固定してから字幕を変える
-				l.(map[string]any)["read"] = spokenText(s, s.Lines[i])
+				l.(map[string]any)["read"] = script.SpokenText(s, s.Lines[i])
 				l.(map[string]any)["text"] = "あ"
 			}
 			if edit != nil {
@@ -92,7 +96,7 @@ func TestBuildStopsOnFastCaptions(t *testing.T) {
 		}
 		return stderr.String(), err
 	}
-	if got, err := build(t, nil, false); err != nil || strings.Contains(got, "字幕が速くて") {
+	if got, err := bld(t, nil, false); err != nil || strings.Contains(got, "字幕が速くて") {
 		t.Fatalf("前提: 字幕を 1 字にした台本には速い行が無く、止まらないはず: %v\n%s", err, got)
 	}
 	// 速い行を最後の行に置く (最後の行の区間は動画の終わりまでなので、build が動画の長さを渡していないと見逃す)
@@ -100,12 +104,12 @@ func TestBuildStopsOnFastCaptions(t *testing.T) {
 		lines[len(lines)-1].(map[string]any)["text"] = strings.Repeat("字幕だけ長い", 10) // 60 字を約 1 秒で
 	}
 	// 既定では、書き出す前に止まる (警告だけで続けると、mp4 を撮り終えてから気づいて撮り直していた。issue 676)
-	if _, err := build(t, fast, false); err == nil || !strings.Contains(err.Error(), "--allow-fast-captions") {
+	if _, err := bld(t, fast, false); err == nil || !strings.Contains(err.Error(), "--allow-fast-captions") {
 		t.Errorf("速い行があるのに止まらない: %v", err)
 	} else if strings.Contains(calls, "ffmpeg ") {
 		t.Errorf("止まる前に音声の圧縮 (ffmpeg) まで進んでいる:\n%s", calls)
 	}
-	got, err := build(t, fast, true)
+	got, err := bld(t, fast, true)
 	if err != nil {
 		t.Fatalf("--allow-fast-captions なら書き出すはず: %v", err)
 	}
@@ -123,7 +127,7 @@ func TestBuildStopsOnFastCaptions(t *testing.T) {
 // 警告の文: 件数・行ごとの字/秒・長い文の切り詰め
 func TestWarnFastCaptionsText(t *testing.T) {
 	var buf bytes.Buffer
-	warnFastCaptions(&buf, []timelineLine{
+	build.WarnFastCaptions(&buf, []build.TimelineLine{
 		{Text: strings.Repeat("い", 16), Start: 0}, // 8.0 字/秒
 		{Text: "あ", Start: 2},                     // 0.5 字/秒
 		{Text: strings.Repeat("う", 30), Start: 4}, // 10.0 字/秒 (24 字で切る)
@@ -135,7 +139,7 @@ func TestWarnFastCaptionsText(t *testing.T) {
 		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}
 	buf.Reset()
-	warnFastCaptions(&buf, []timelineLine{{Text: "あ", Start: 0}}, 1)
+	build.WarnFastCaptions(&buf, []build.TimelineLine{{Text: "あ", Start: 0}}, 1)
 	if buf.Len() != 0 {
 		t.Errorf("速い行が無いのに書いた: %q", buf.String())
 	}

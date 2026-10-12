@@ -15,6 +15,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"zundamon-kaisetsu/internal/build"
+	"zundamon-kaisetsu/internal/paths"
+	"zundamon-kaisetsu/internal/script"
 )
 
 // mp4 の組み立て (writeMP4) を、偽の Chrome と偽の ffmpeg で通す (issue 651)。
@@ -25,7 +29,7 @@ import (
 // プレイヤーの描画そのものは見ない (人が見る。issue 645)。
 
 // stateColor は状態を色にする (帯ごとに違う色 = 切り出し位置がずれたら別の状態の色になる)
-func stateColor(st visualState) color.RGBA {
+func stateColor(st build.VisualState) color.RGBA {
 	return color.RGBA{R: uint8(st[0] + 1), G: uint8(st[1]*128 + st[2]), B: uint8(200 + st[3] + 40*st[4]), A: 255}
 }
 
@@ -80,15 +84,15 @@ func fakeMP4Tool(tool string, args []string) int {
 			fmt.Fprintf(os.Stderr, "偽の Chrome: player.html が受け取らない断片 %q\n", u.EscapedFragment())
 			return 11
 		}
-		var states []visualState
+		var states []build.VisualState
 		for _, part := range strings.Split(strings.TrimPrefix(u.Fragment, "sheet="), ";") {
-			var st visualState
+			var st build.VisualState
 			if _, err := fmt.Sscanf(part, "%d,%d,%d,%d,%d", &st[0], &st[1], &st[2], &st[3], &st[4]); err != nil {
 				return 4
 			}
 			states = append(states, st)
 		}
-		band := h / max(len(states), 1) // 1 枚分の高さ (テストは videoSize を縮めるので、窓の大きさから割り出す)
+		band := h / max(len(states), 1) // 1 枚分の高さ (テストは VideoSize を縮めるので、窓の大きさから割り出す)
 		img := goimage.NewRGBA(goimage.Rect(0, 0, w, h))
 		for k, st := range states {
 			c := stateColor(st)
@@ -149,7 +153,7 @@ func checkFrames(args []string) {
 		}
 	}
 	states := map[string]bool{}
-	var order []string // フレームごとの状態の絵の名前 (テストが frameStates の期待と突き合わせる)
+	var order []string // フレームごとの状態の絵の名前 (テストが FrameStates の期待と突き合わせる)
 	for k, p := range files {
 		if result != "" {
 			break
@@ -171,7 +175,7 @@ func checkFrames(args []string) {
 		lv, _ := strconv.Atoi(m[3])
 		bl, _ := strconv.Atoi(m[4])
 		cd, _ := strconv.Atoi(m[5])
-		want := stateColor(visualState{li - 1, sp, lv, bl, cd})
+		want := stateColor(build.VisualState{li - 1, sp, lv, bl, cd})
 		f, err := os.Open(p)
 		if err != nil {
 			result = "frames-bad 開けない " + p
@@ -286,11 +290,11 @@ func fakeMP4Tools(t *testing.T) string {
 	prependPath(t, bin)
 	t.Setenv("CHROME", filepath.Join(bin, "chrome"))
 	// 絵を小さくする (1280x720 のままだと -race の下で PNG の処理に 1 本 25 秒かかる。大きさは判定に関係しない)。
-	// 🚨 この package のテストは t.Parallel を使わない前提 (videoSize はパッケージ変数)
-	old := videoSize
-	videoSize = [2]int{64, 36}
-	t.Cleanup(func() { videoSize = old })
-	t.Setenv("FAKE_MP4_SIZE", fmt.Sprintf("%dx%d", videoSize[0], videoSize[1]))
+	// 🚨 この package のテストは t.Parallel を使わない前提 (VideoSize はパッケージ変数)
+	old := build.VideoSize
+	build.VideoSize = [2]int{64, 36}
+	t.Cleanup(func() { build.VideoSize = old })
+	t.Setenv("FAKE_MP4_SIZE", fmt.Sprintf("%dx%d", build.VideoSize[0], build.VideoSize[1]))
 	t.Setenv("FAKE_SHEET_RE", playerSheetRegexp(t).String())
 	return log
 }
@@ -301,14 +305,14 @@ func buildMP4(t *testing.T) (out string, log string, err error) {
 	return buildMP4From(t, filepath.Join("testdata", "build", "script.json"))
 }
 
-func buildMP4From(t *testing.T, script string) (out string, log string, err error) {
+func buildMP4From(t *testing.T, scr string) (out string, log string, err error) {
 	t.Helper()
 	log = fakeMP4Tools(t)
 	env := testEnv(t)
 	env.LoadAvg = func() (float64, bool) { return 0, true }
 	env.Now, env.Sleep = time.Now, func(time.Duration) {}
 	out = filepath.Join(t.TempDir(), "out")
-	err = cmdBuild(env, script, out, "mp4", 2, 64, true)
+	err = build.CmdBuild(env, scr, out, "mp4", 2, 64, true)
 	return out + ".mp4", log, err
 }
 
@@ -328,30 +332,30 @@ func TestWriteMP4CropsEachState(t *testing.T) {
 	checkMP4CropsEachState(t, filepath.Join("testdata", "build", "script.json"))
 }
 
-func checkMP4CropsEachState(t *testing.T, script string) {
+func checkMP4CropsEachState(t *testing.T, scr string) {
 	t.Helper()
-	out, log, err := buildMP4From(t, script)
+	out, log, err := buildMP4From(t, scr)
 	must(t, err)
 	if b, err := os.ReadFile(out); err != nil || string(b) != "fake mp4" {
 		t.Fatalf("mp4 が書かれていない: %v %q", err, b)
 	}
-	// 呼び出しの記録から、撮った状態を全部集める (1 回のまとめ撮りは sheetStates 枚まで)
-	var states []visualState
+	// 呼び出しの記録から、撮った状態を全部集める (1 回のまとめ撮りは SheetStates 枚まで)
+	var states []build.VisualState
 	for _, c := range chromeCalls(t, log) {
 		frag := c[strings.Index(c, "#sheet=")+len("#sheet="):]
 		n := 0
 		for part := range strings.SplitSeq(frag, ";") {
-			var st visualState
+			var st build.VisualState
 			if _, err := fmt.Sscanf(part, "%d,%d,%d,%d,%d", &st[0], &st[1], &st[2], &st[3], &st[4]); err != nil {
 				t.Fatalf("撮った状態を読めない: %q", part)
 			}
 			states = append(states, st)
 			n++
 		}
-		if n > sheetStates {
-			t.Errorf("1 回のまとめ撮りが %d 枚 (上限 %d)", n, sheetStates)
+		if n > build.SheetStates {
+			t.Errorf("1 回のまとめ撮りが %d 枚 (上限 %d)", n, build.SheetStates)
 		}
-		if want := fmt.Sprintf("--window-size=%d,%d", videoSize[0], videoSize[1]*n); !strings.Contains(c, want) {
+		if want := fmt.Sprintf("--window-size=%d,%d", build.VideoSize[0], build.VideoSize[1]*n); !strings.Contains(c, want) {
 			t.Errorf("窓の大きさが状態の数と合わない (%s が無い): %s", want, c)
 		}
 	}
@@ -368,7 +372,7 @@ func checkMP4CropsEachState(t *testing.T, script string) {
 	if !strings.HasPrefix(res, "frames-ok ") {
 		t.Fatalf("mux に渡った絵が状態と合わない: %q", res)
 	}
-	distinct := map[visualState]bool{}
+	distinct := map[build.VisualState]bool{}
 	for _, st := range states {
 		distinct[st] = true
 	}
@@ -380,14 +384,14 @@ func checkMP4CropsEachState(t *testing.T, script string) {
 	if nFrames != 108 {
 		t.Errorf("連番のフレーム数: got %d want 108 (ceil(3.5835 × 30))", nFrames)
 	}
-	// フレームごとの状態の並びが frameStates (プレイヤーの規則: フレーム k は時刻 (k+0.5)/fps の状態) と一致する (issue 660)
+	// フレームごとの状態の並びが FrameStates (プレイヤーの規則: フレーム k は時刻 (k+0.5)/fps の状態) と一致する (issue 660)
 	env := testEnv(t)
-	sc, err := loadScript(resolvePath(script), env)
+	sc, err := script.LoadScript(paths.ResolvePath(scr), env)
 	must(t, err)
-	data, _, err := assemble(sc, env)
+	data, _, err := build.Assemble(sc, env)
 	must(t, err)
 	var want []string
-	for _, st := range frameStates(data.Frames, data.Blinks, data.Cards, data.Duration) {
+	for _, st := range build.FrameStates(data.Frames, data.Blinks, data.Cards, data.Duration) {
 		want = append(want, fmt.Sprintf("state_%d_%d_%d_%d_%d.png", st[0]+1, st[1], st[2], st[3], st[4]))
 	}
 	gotOrder, err := os.ReadFile(log + ".order")
@@ -418,8 +422,8 @@ func checkMP4CropsEachState(t *testing.T, script string) {
 			t.Errorf("mux の引数に %q がある: %s", strings.TrimSpace(a), listing)
 		}
 	}
-	if !strings.Contains(listing, fmt.Sprintf(" -framerate %d ", mouthFPS)) {
-		t.Errorf("mux の引数に -framerate %d が無い: %s", mouthFPS, listing)
+	if !strings.Contains(listing, fmt.Sprintf(" -framerate %d ", build.MouthFPS)) {
+		t.Errorf("mux の引数に -framerate %d が無い: %s", build.MouthFPS, listing)
 	}
 }
 
@@ -430,7 +434,7 @@ func TestWriteMP4RejectsIdenticalShots(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "すべて同じ") {
 		t.Fatalf("全部同じ絵で止まるはず: %v", err)
 	}
-	if isFile(out) {
+	if paths.IsFile(out) {
 		t.Error("止めたのに mp4 が書かれた")
 	}
 }
@@ -442,7 +446,7 @@ func TestWriteMP4ReportsChromeFailure(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "Chrome が失敗 (rc=3)") {
 		t.Fatalf("Chrome の失敗で止まるはず: %v", err)
 	}
-	if isFile(out) {
+	if paths.IsFile(out) {
 		t.Error("止めたのに mp4 が書かれた")
 	}
 }
@@ -457,7 +461,7 @@ func TestWriteMP4KeepsOutputOnMuxFailure(t *testing.T) {
 	env.Now, env.Sleep = time.Now, func(time.Duration) {}
 	out := filepath.Join(t.TempDir(), "out")
 	must(t, os.WriteFile(out+".mp4", []byte("previous"), 0o644))
-	err := cmdBuild(env, filepath.Join("testdata", "build", "script.json"), out, "mp4", 2, 64, true)
+	err := build.CmdBuild(env, filepath.Join("testdata", "build", "script.json"), out, "mp4", 2, 64, true)
 	if err == nil || !strings.Contains(err.Error(), "mp4 の書き出しに失敗") {
 		t.Fatalf("mux の失敗で止まるはず: %v", err)
 	}

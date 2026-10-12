@@ -1,4 +1,5 @@
-package main
+// Package pyjson は Python 版と同じ値を作るための JSON・丸め・文字列化 (Python の json.dumps / round() / str() の再現)。
+package pyjson
 
 // Python 版 (dialogue_video.py) と値・文字列を 1 バイトも違えずに作るための部品。
 //
@@ -17,9 +18,9 @@ import (
 	"unicode"
 )
 
-// pyFloatRepr は Python の repr(float) と同じ文字列を返す (最短の往復表記。指数は 10 進の小数点位置が
+// FloatRepr は Python の repr(float) と同じ文字列を返す (最短の往復表記。指数は 10 進の小数点位置が
 // -4 以下か 16 を超えるときだけ使い、整数値には ".0" を付ける)。
-func pyFloatRepr(f float64) string {
+func FloatRepr(f float64) string {
 	switch {
 	case math.IsNaN(f):
 		return "NaN" // json.dumps の allow_nan=True の表記
@@ -42,9 +43,9 @@ func pyFloatRepr(f float64) string {
 	return mant + "e" + exp
 }
 
-// pyJSONString は json.dumps(s, ensure_ascii=False) と同じ表記を返す。エスケープするのは " \ と
+// JSONString は json.dumps(s, ensure_ascii=False) と同じ表記を返す。エスケープするのは " \ と
 // U+0020 未満の制御文字だけ (U+007F・U+2028・非 BMP はそのまま)。
-func pyJSONString(s string) string {
+func JSONString(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')
 	for _, r := range s {
@@ -75,15 +76,15 @@ func pyJSONString(s string) string {
 	return b.String()
 }
 
-// pyRound3 は Python の round(x, 3)。どちらも正確な 2 進値からの正しい丸め (ちょうど半分は偶数側) なので、
+// Round3 は Python の round(x, 3)。どちらも正確な 2 進値からの正しい丸め (ちょうど半分は偶数側) なので、
 // 小数 3 桁へ整形して読み直すと同じ値になる。
-func pyRound3(x float64) float64 {
+func Round3(x float64) float64 {
 	v, _ := strconv.ParseFloat(strconv.FormatFloat(x, 'f', 3, 64), 64)
 	return v
 }
 
-// pyRound は Python の round(x) (引数 1 つ。ちょうど半分は偶数側)。
-func pyRound(x float64) int {
+// Round は Python の round(x) (引数 1 つ。ちょうど半分は偶数側)。
+func Round(x float64) int {
 	return int(math.RoundToEven(x))
 }
 
@@ -92,16 +93,16 @@ func pyIsSpace(r rune) bool {
 	return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f)
 }
 
-func pyStrip(s string) string { return strings.TrimFunc(s, pyIsSpace) }
+func Strip(s string) string { return strings.TrimFunc(s, pyIsSpace) }
 
 // --- JSON の値 (json.Decoder.UseNumber で読んだ any) を Python と同じに扱う ---
 
 // isPyInt は JSON の数が Python で int になるか (小数点も指数も無い)。
 func isPyInt(n json.Number) bool { return !strings.ContainsAny(string(n), ".eE") }
 
-// pyRepr は Python の repr(v) (JSON から読んだ値)。エラー文の「実際: ...」に使う。
+// Repr は Python の repr(v) (JSON から読んだ値)。エラー文の「実際: ...」に使う。
 // dict は Python では元の順序だが、Go の map は順序を持たないのでキーの順に並べる (エラー文の見た目だけの差)。
-func pyRepr(v any) string {
+func Repr(v any) string {
 	switch x := v.(type) {
 	case nil:
 		return "None"
@@ -118,26 +119,26 @@ func pyRepr(v any) string {
 		if err != nil && !math.IsInf(f, 0) {
 			return string(x)
 		}
-		return pyFloatRepr(f)
+		return FloatRepr(f)
 	case string:
-		return pyStrRepr(x)
+		return StrRepr(x)
 	case []any:
 		parts := make([]string, len(x))
 		for i, e := range x {
-			parts[i] = pyRepr(e)
+			parts[i] = Repr(e)
 		}
 		return "[" + strings.Join(parts, ", ") + "]"
 	case []string:
 		parts := make([]string, len(x))
 		for i, e := range x {
-			parts[i] = pyStrRepr(e)
+			parts[i] = StrRepr(e)
 		}
 		return "[" + strings.Join(parts, ", ") + "]"
 	case map[string]any:
-		keys := sortedKeys(x)
+		keys := SortedKeys(x)
 		parts := make([]string, len(keys))
 		for i, k := range keys {
-			parts[i] = pyStrRepr(k) + ": " + pyRepr(x[k])
+			parts[i] = StrRepr(k) + ": " + Repr(x[k])
 		}
 		return "{" + strings.Join(parts, ", ") + "}"
 	default:
@@ -153,8 +154,8 @@ func trimIntLiteral(s string) string {
 	return s
 }
 
-// pyStrRepr は Python の repr(str)。' を含み " を含まないときだけ " で囲む。
-func pyStrRepr(s string) string {
+// StrRepr は Python の repr(str)。' を含み " を含まないときだけ " で囲む。
+func StrRepr(s string) string {
 	q := byte('\'')
 	if strings.ContainsRune(s, '\'') && !strings.ContainsRune(s, '"') {
 		q = '"'
@@ -190,16 +191,16 @@ func pyStrRepr(s string) string {
 	return b.String()
 }
 
-// pyStr は Python の str(v) (文字列はそのまま、それ以外は repr)。
-func pyStr(v any) string {
+// Str は Python の str(v) (文字列はそのまま、それ以外は repr)。
+func Str(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyRepr(v)
+	return Repr(v)
 }
 
-// pyTruthy は Python の bool(v)。
-func pyTruthy(v any) bool {
+// Truthy は Python の bool(v)。
+func Truthy(v any) bool {
 	switch x := v.(type) {
 	case nil:
 		return false
@@ -219,8 +220,8 @@ func pyTruthy(v any) bool {
 	}
 }
 
-// pyFloat は Python の float(v)。失敗は Python の例外に相当する error。
-func pyFloat(v any) (float64, error) {
+// Float は Python の float(v)。失敗は Python の例外に相当する error。
+func Float(v any) (float64, error) {
 	switch x := v.(type) {
 	case json.Number:
 		if x == "-0" {
@@ -228,7 +229,7 @@ func pyFloat(v any) (float64, error) {
 		}
 		f, err := x.Float64()
 		if err != nil && !math.IsInf(f, 0) {
-			return 0, fmt.Errorf("could not convert string to float: %s", pyStrRepr(string(x)))
+			return 0, fmt.Errorf("could not convert string to float: %s", StrRepr(string(x)))
 		}
 		return f, nil
 	case float64:
@@ -239,13 +240,13 @@ func pyFloat(v any) (float64, error) {
 		}
 		return 0, nil
 	case string:
-		s := pyStrip(x)
+		s := Strip(x)
 		if t := strings.TrimLeft(strings.ToLower(s), "+-"); strings.HasPrefix(t, "0x") || strings.Contains(s, "_") {
-			return 0, fmt.Errorf("could not convert string to float: %s", pyStrRepr(x))
+			return 0, fmt.Errorf("could not convert string to float: %s", StrRepr(x))
 		}
 		f, err := strconv.ParseFloat(s, 64)
 		if err != nil && !math.IsInf(f, 0) {
-			return 0, fmt.Errorf("could not convert string to float: %s", pyStrRepr(x))
+			return 0, fmt.Errorf("could not convert string to float: %s", StrRepr(x))
 		}
 		return f, nil
 	case nil:
@@ -255,8 +256,8 @@ func pyFloat(v any) (float64, error) {
 	}
 }
 
-// pyInt は Python の int(v) (float は 0 方向へ切り捨て、文字列は 10 進の整数だけ)。
-func pyInt(v any) (int64, error) {
+// Int は Python の int(v) (float は 0 方向へ切り捨て、文字列は 10 進の整数だけ)。
+func Int(v any) (int64, error) {
 	switch x := v.(type) {
 	case json.Number:
 		if isPyInt(x) {
@@ -277,9 +278,9 @@ func pyInt(v any) (int64, error) {
 		}
 		return 0, nil
 	case string:
-		n, err := strconv.ParseInt(pyStrip(x), 10, 64)
+		n, err := strconv.ParseInt(Strip(x), 10, 64)
 		if err != nil {
-			return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyStrRepr(x))
+			return 0, fmt.Errorf("invalid literal for int() with base 10: %s", StrRepr(x))
 		}
 		return n, nil
 	case nil:
@@ -289,11 +290,46 @@ func pyInt(v any) (int64, error) {
 	}
 }
 
-func sortedKeys[V any](m map[string]V) []string {
+func SortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// Iter は Python で for c in v と回したときの要素 (文字列は 1 文字ずつ)。
+func Iter(v any) []any {
+	switch x := v.(type) {
+	case []any:
+		return x
+	case string:
+		out := make([]any, 0, len(x))
+		for _, r := range x {
+			out = append(out, string(r))
+		}
+		return out
+	case map[string]any:
+		out := make([]any, 0, len(x))
+		for _, k := range SortedKeys(x) {
+			out = append(out, k)
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+// Stem は Python 3.14 の PurePath.stem (最後の . より前。ただしそれが . だけか空なら名前全体)。
+// 例: "foo." → "foo"、"..json" → "..json"、".json" → ".json"。golden は testdata/stem.json
+func Stem(name string) string {
+	i := strings.LastIndex(name, ".")
+	if i == -1 {
+		return name
+	}
+	if stem := name[:i]; strings.TrimLeft(stem, ".") != "" {
+		return stem
+	}
+	return name
 }

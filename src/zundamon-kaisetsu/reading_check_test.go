@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"zundamon-kaisetsu/internal/synth"
 )
 
 // 読みの fixture は VOICEVOX 0.25.2 が実際に返した kana (2026-10-08 に Mac vs Windows と IT 構造の台本で取った。issue 673)。
@@ -53,7 +55,7 @@ var engineLines = []struct {
 func fixtureNames() map[byte][]string {
 	names := map[byte][]string{}
 	for c, k := range engineLetters {
-		names[c[0]] = letterForms(k, letterAliases[c[0]])
+		names[c[0]] = synth.LetterForms(k, synth.LetterAliases[c[0]])
 	}
 	return names
 }
@@ -62,12 +64,12 @@ func TestSpelledWordsOnEngineReadings(t *testing.T) {
 	names := fixtureNames()
 	acronyms := map[string]bool{"CPU": true, "GPU": true, "ID": true, "IT": true, "PC": true}
 	for _, tc := range engineLines {
-		if got := spelledWords(tc.spoken, tc.kana, names, acronyms); !slices.Equal(got, tc.want) {
+		if got := synth.SpelledWords(tc.spoken, tc.kana, names, acronyms); !slices.Equal(got, tc.want) {
 			t.Errorf("%s: %v (want %v)", tc.spoken, got, tc.want)
 		}
 	}
 	// 略語の一覧が無ければ、CPU・GPU も 1 文字ずつ読んだ語として鳴る (一覧が効いていることの確かめ)
-	if got := spelledWords("CPUやGPU、冷却、メモリ", "シイピイユ'ウヤ/ジイピイユ'ウ、レエキャク'、メモリ'", names, nil); !slices.Equal(got, []string{"CPU", "GPU"}) {
+	if got := synth.SpelledWords("CPUやGPU、冷却、メモリ", "シイピイユ'ウヤ/ジイピイユ'ウ、レエキャク'、メモリ'", names, nil); !slices.Equal(got, []string{"CPU", "GPU"}) {
 		t.Errorf("略語の一覧が無いとき: %v (want [CPU GPU])", got)
 	}
 }
@@ -75,7 +77,7 @@ func TestSpelledWordsOnEngineReadings(t *testing.T) {
 // 単独の文字名 (K = ケイ) と文の中の読み (ケエ) は書き方が違う。文字名の側に両方を持たせないと SOLIDWORKS を取りこぼす
 func TestLetterFormsHasBothLongVowels(t *testing.T) {
 	for in, want := range map[string][]string{"ケ'イ": {"ケイ", "ケエ"}, "オ'オ": {"オオ"}, "エ'ッ_クス": {"エックス"}, "ア'イ": {"アイ"}} {
-		if got := letterForms(in, nil); !slices.Equal(got, want) {
+		if got := synth.LetterForms(in, nil); !slices.Equal(got, want) {
 			t.Errorf("letterForms(%q) = %v (want %v)", in, got, want)
 		}
 	}
@@ -121,7 +123,7 @@ func TestKanaCheckCommand(t *testing.T) {
 		env.Engine = srv.URL
 		var out strings.Builder
 		env.Stdout = &out
-		err := cmdKana(env, nil, path, "metan", nil, true)
+		err := synth.CmdKana(env, nil, path, "metan", nil, true)
 		return out.String(), err
 	}
 	out, err := run(engineLines[0].spoken, engineLines[4].spoken)
@@ -141,7 +143,7 @@ func TestKanaCheckCommand(t *testing.T) {
 	if !strings.Contains(out, "Windows\t1 行\tウィ'ンドオズ\n") || !strings.Contains(out, "IDOR\t1 行\tイドオ'/ア'アル\t(行の中では別の読み: 1 行目)") {
 		t.Errorf("一覧の「行の中では別の読み」の付け方が違う:\n%s", out)
 	}
-	if err := cmdKana(testEnv(t), nil, "", "metan", nil, true); err == nil {
+	if err := synth.CmdKana(testEnv(t), nil, "", "metan", nil, true); err == nil {
 		t.Error("--script 無しの --check を受け入れた")
 	}
 }
@@ -149,16 +151,16 @@ func TestKanaCheckCommand(t *testing.T) {
 // 略語の一覧は skill の dir に置き、読めなければ止める (黙って空の一覧で検査しない)
 func TestAcronymsFile(t *testing.T) {
 	env := testEnv(t)
-	m, err := loadAcronyms(env)
+	m, err := synth.LoadAcronyms(env)
 	if err != nil || !m["CPU"] || m["IDOR"] {
 		t.Errorf("skill の acronyms.json: CPU=%v IDOR=%v err=%v (IDOR は 1 文字ずつ読むと誤読なので載せない)", m["CPU"], m["IDOR"], err)
 	}
-	env.setSkillDir(t.TempDir())
-	if _, err := loadAcronyms(env); err == nil {
+	env.SetSkillDir(t.TempDir())
+	if _, err := synth.LoadAcronyms(env); err == nil {
 		t.Error("acronyms.json が無いのに止まらない")
 	}
 	must(t, os.WriteFile(filepath.Join(env.SkillDir, "acronyms.json"), []byte(`{"CPU":1}`), 0o644))
-	if _, err := loadAcronyms(env); err == nil {
+	if _, err := synth.LoadAcronyms(env); err == nil {
 		t.Error("配列でない acronyms.json を受け入れた")
 	}
 }
@@ -208,7 +210,7 @@ func TestFlexibleKanaInLine(t *testing.T) {
 		// 単独の K は ケイ、SOLIDWORKS の行の中では ケエ (どちらも実エンジンの読み)
 		{"ケ'イ", "エ'スオオエルアイディイダブリュウオオアアルケエエスト/イウ'", true},
 	} {
-		if got := flexibleKana(tc.alone).MatchString(stripKanaMarks(tc.line)); got != tc.want {
+		if got := synth.FlexibleKana(tc.alone).MatchString(synth.StripKanaMarks(tc.line)); got != tc.want {
 			t.Errorf("%s in %s = %v (want %v)", tc.alone, tc.line, got, tc.want)
 		}
 	}

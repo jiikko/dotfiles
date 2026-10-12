@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"zundamon-kaisetsu/internal/app"
 )
 
 // テストとベンチマークが共有する helper (issue 655 で各ファイルからまとめた)。
@@ -18,14 +20,14 @@ func must(t testing.TB, err error) {
 }
 
 // testEnv は本物のエンジン・コンテナ・既定の立ち絵に触れない Env (skill の dir はこの repo のもの)
-func testEnv(t testing.TB) *Env {
+func testEnv(t testing.TB) *app.Env {
 	t.Helper()
 	skill, err := filepath.Abs("../../_claude/skills/zundamon-kaisetsu")
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := &Env{Stdout: io.Discard, Stderr: io.Discard}
-	e.setSkillDir(skill)
+	e := &app.Env{Stdout: io.Discard, Stderr: io.Discard}
+	e.SetSkillDir(skill)
 	e.AssetsFaces = filepath.Join(t.TempDir(), "no-assets")
 	return e
 }

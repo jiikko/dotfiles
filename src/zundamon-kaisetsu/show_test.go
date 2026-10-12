@@ -10,6 +10,11 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"zundamon-kaisetsu/internal/build"
+	"zundamon-kaisetsu/internal/paths"
+	"zundamon-kaisetsu/internal/script"
+	"zundamon-kaisetsu/internal/show"
 )
 
 func side(title string, items ...string) map[string]any {
@@ -106,17 +111,17 @@ func TestRejectBadShow(t *testing.T) {
 			map[string]any{"who": "metan", "text": "a"},
 			map[string]any{"who": "metan", "text": "b", "show": tc.show},
 		}})
-		_, err := loadScript(path, testEnv(t))
+		_, err := script.LoadScript(path, testEnv(t))
 		if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "lines[1].show") {
 			t.Errorf("%v: %q を含む拒否にならなかった (%v)", tc.show, tc.want, err)
 		}
 	}
 }
 
-// fillCodeLines はコードの行を、先に置いた n 行と合わせて上限 (codeLinesMax) まで埋める残りの行。
+// fillCodeLines はコードの行を、先に置いた n 行と合わせて上限 (CodeLinesMax) まで埋める残りの行。
 func fillCodeLines(n int) []any {
 	var rest []any
-	for i := n; i < codeLinesMax; i++ {
+	for i := n; i < show.CodeLinesMax; i++ {
 		rest = append(rest, "x")
 	}
 	return rest
@@ -127,20 +132,20 @@ func fillCodeLines(n int) []any {
 func TestAcceptShowAtLimit(t *testing.T) {
 	path := writeScript(t, map[string]any{"lines": []any{
 		map[string]any{"who": "metan", "text": "a", "show": map[string]any{
-			"type": "keyword", "text": strings.Repeat("語", keywordTextMax), "sub": strings.Repeat("補", keywordSubMax),
+			"type": "keyword", "text": strings.Repeat("語", show.KeywordTextMax), "sub": strings.Repeat("補", show.KeywordSubMax),
 		}},
 		map[string]any{"who": "metan", "text": "b", "show": cmp(
-			side(strings.Repeat("見", compareTitleMax), strings.Repeat("項", compareItemMax), "x", "y"),
+			side(strings.Repeat("見", show.CompareTitleMax), strings.Repeat("項", show.CompareItemMax), "x", "y"),
 			side("後", "z"),
 		)},
-		map[string]any{"who": "metan", "text": "c", "show": withKey(code(strings.Repeat("言", codeLangMax/2),
-			append([]any{strings.Repeat("x", codeColsMax), strings.Repeat("漢", codeColsMax/2), ""}, fillCodeLines(3)...)),
-			"highlight", []any{json.Number("1"), json.Number(fmt.Sprint(codeLinesMax))})},
+		map[string]any{"who": "metan", "text": "c", "show": withKey(code(strings.Repeat("言", show.CodeLangMax/2),
+			append([]any{strings.Repeat("x", show.CodeColsMax), strings.Repeat("漢", show.CodeColsMax/2), ""}, fillCodeLines(3)...)),
+			"highlight", []any{json.Number("1"), json.Number(fmt.Sprint(show.CodeLinesMax))})},
 		// 言語名と強調は省略でき、先頭・末尾の空行も書ける (空行だけのコードは止まる)
 		map[string]any{"who": "metan", "text": "d", "show": map[string]any{"type": "code", "lines": []any{"", "x", ""}}},
 		map[string]any{"who": "metan", "text": "e", "show": withKey(code("go", []any{"x"}), "highlight", []any{})},
 	}})
-	if _, err := loadScript(path, testEnv(t)); err != nil {
+	if _, err := script.LoadScript(path, testEnv(t)); err != nil {
 		t.Errorf("上限ちょうどの長さを拒否した: %v", err)
 	}
 }
@@ -162,7 +167,7 @@ func TestLineShowsPersistClearAndDedupe(t *testing.T) {
 		{"who": "metan", "text": "11", "show": cmp(side("前X", "a"), side("後", "b"))}, // 左の見出しだけが違う
 		{"who": "metan", "text": "12", "show": cmp(side("前", "a"), side("後X", "b"))}, // 右の見出しだけが違う
 	}
-	idx, _, table, err := lineShows("s.json", lines)
+	idx, _, table, err := show.LineShows("s.json", lines)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +181,7 @@ func TestLineShowsPersistClearAndDedupe(t *testing.T) {
 	if want := []int{-1, 0, 0, 1, -1, -1, 0, 2, 3, 2, 4, 5, 6}; !reflect.DeepEqual(got, want) {
 		t.Errorf("行ごとの図解の番号: got %v want %v", got, want)
 	}
-	if len(table) != 7 || !reflect.DeepEqual(table[:2], []showData{{Type: "keyword", Text: "A"}, {Type: "keyword", Text: "B"}}) ||
+	if len(table) != 7 || !reflect.DeepEqual(table[:2], []show.Data{{Type: "keyword", Text: "A"}, {Type: "keyword", Text: "B"}}) ||
 		table[3].Right.Items[0] != "c" {
 		t.Errorf("図解の表: got %+v (want 重要語 A, B と比較 5 つ。4 つ目の右の項目は c)", table)
 	}
@@ -184,7 +189,7 @@ func TestLineShowsPersistClearAndDedupe(t *testing.T) {
 
 // buildWithShows は testdata/build の台本を一時ディレクトリに写し、edit で行を書き換えてから assemble する。
 // edit は写した先のディレクトリも受け取る (図の画像を台本の隣に置くため)。
-func buildWithShows(t *testing.T, edit func(dir string, lines []any)) (*PlayerData, error) {
+func buildWithShows(t *testing.T, edit func(dir string, lines []any)) (*build.PlayerData, error) {
 	t.Helper()
 	env := testEnv(t)
 	dir := t.TempDir()
@@ -195,7 +200,7 @@ func buildWithShows(t *testing.T, edit func(dir string, lines []any)) (*PlayerDa
 		t.Fatal(err)
 	}
 	var raw map[string]any
-	if err := decodeJSON(b, &raw); err != nil {
+	if err := script.DecodeJSON(b, &raw); err != nil {
 		t.Fatal(err)
 	}
 	edit(dir, raw["lines"].([]any))
@@ -205,27 +210,27 @@ func buildWithShows(t *testing.T, edit func(dir string, lines []any)) (*PlayerDa
 	if err := os.WriteFile(path, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s, err := loadScript(resolvePath(path), env)
+	s, err := script.LoadScript(paths.ResolvePath(path), env)
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, _, err := assemble(s, env)
+	data, _, err := build.Assemble(s, env)
 	return data, err
 }
 
 // TestShowDoesNotChangeAudioOrFrames は、図解を足しても各行の時刻と撮影の状態の列が変わらないことを確かめる。
 // 図解は行の関数なので、mp4 が撮る状態の種類は増えない。キャッシュの鍵に show が入ると、testdata の合成済み wav が
-// 引けずに assemble が落ちる。
+// 引けずに build.Assemble が落ちる。
 func TestShowDoesNotChangeAudioOrFrames(t *testing.T) {
-	build := func(edit func(lines []any)) *PlayerData {
+	bld := func(edit func(lines []any)) *build.PlayerData {
 		data, err := buildWithShows(t, func(_ string, lines []any) { edit(lines) })
 		if err != nil {
 			t.Fatal(err)
 		}
 		return data
 	}
-	plain := build(func([]any) {})
-	shown := build(func(lines []any) {
+	plain := bld(func([]any) {})
+	shown := bld(func(lines []any) {
 		lines[1].(map[string]any)["show"] = map[string]any{"type": "keyword", "text": "排他ロック"}
 		lines[3].(map[string]any)["show"] = nil
 	})
@@ -256,7 +261,7 @@ func TestCodeHighlightNormalized(t *testing.T) {
 		}
 		return withKey(code("go", []any{"a", "b", "c"}), "highlight", list)
 	}
-	idx, _, table, err := lineShows("s.json", []map[string]any{
+	idx, _, table, err := show.LineShows("s.json", []map[string]any{
 		{"who": "metan", "text": "0", "show": hl("3", "1", "3")},
 		{"who": "metan", "text": "1", "show": hl("1", "3")}, // そろえた後は同じ中身
 		{"who": "metan", "text": "2", "show": hl("2")},      // 強調だけが違う
@@ -278,9 +283,9 @@ func TestCodeHighlightNormalized(t *testing.T) {
 // キーの名前は Go の構造体タグと player.html の 2 か所に書くので、片方だけを変えるとテストは緑のまま画面から図解の一部が消える。
 func TestShowKeysReadByPlayer(t *testing.T) {
 	tpl := playerTemplate(t)
-	samples := []showData{
+	samples := []show.Data{
 		{Type: "keyword", Text: "a", Sub: "b"},
-		{Type: "compare", Left: &compareSide{Title: "a", Items: []string{"b"}}, Right: &compareSide{Title: "c", Items: []string{"d"}}, Build: true},
+		{Type: "compare", Left: &show.CompareSide{Title: "a", Items: []string{"b"}}, Right: &show.CompareSide{Title: "c", Items: []string{"d"}}, Build: true},
 		// highlight と steps は台本では同時に書けないが、どちらのキーも読まれていることを 1 つのサンプルで見る
 		{Type: "code", Lang: "go", Lines: []string{"a"}, Marks: []int{1}, Steps: [][]int{{1}}},
 		{Type: "image", Src: "data:image/png;base64,", Alt: "b"},
@@ -291,12 +296,12 @@ func TestShowKeysReadByPlayer(t *testing.T) {
 	for _, sd := range samples {
 		have[sd.Type] = true
 	}
-	for _, typ := range showTypes() {
+	for _, typ := range show.Types() {
 		if typ != "mermaid" && !have[typ] {
 			t.Errorf("図解の種類 %s のサンプルが無い (showParsers に足したらここにも足す)", typ)
 		}
 	}
-	// 行の段 (timelineLine の step) を、図解の番号 (show) と一緒に showAt へ渡している (字句の検査。渡し方の誤りは実 Chrome で見る)
+	// 行の段 (TimelineLine の step) を、図解の番号 (show) と一緒に showAt へ渡している (字句の検査。渡し方の誤りは実 Chrome で見る)
 	if !regexp.MustCompile(`showAt\([^;]*line\.show[^;]*line\.step`).MatchString(tpl) {
 		t.Error("player.html が行の step を showAt へ渡していない (段のある図解が最初の段のまま動かない)")
 	}
@@ -451,27 +456,27 @@ func TestSheetFragmentMatchesPlayer(t *testing.T) {
 			t.Errorf("player.html のまとめ撮りの分解が Go の順 (行, 話し中, 口, まばたき, カード) でない (%s が無い)", want)
 		}
 	}
-	allBlinks := 1<<len(castOrder) - 1 // 全員が目を閉じている (ビットの最大値)
-	var group []visualState
+	allBlinks := 1<<len(script.CastOrder) - 1 // 全員が目を閉じている (ビットの最大値)
+	var group []build.VisualState
 	for _, li := range []int{-1, 0, 12} {
 		for sp := range 2 {
-			for lv := range mouthLevels {
+			for lv := range build.MouthLevels {
 				for _, bl := range []int{0, allBlinks} {
 					for cd := range 2 {
-						group = append(group, visualState{li, sp, lv, bl, cd})
+						group = append(group, build.VisualState{li, sp, lv, bl, cd})
 					}
 				}
 			}
 		}
 	}
-	for _, g := range [][]visualState{group, group[:1]} {
-		if f := sheetFragment(g); !re.MatchString(f) {
+	for _, g := range [][]build.VisualState{group, group[:1]} {
+		if f := build.SheetFragment(g); !re.MatchString(f) {
 			t.Errorf("player.html の正規表現 %s が Go の断片を受け取らない: %s", re, f)
 		}
 	}
-	for v, lv := range vowelMouth {
-		if lv < 0 || lv >= mouthLevels {
-			t.Errorf("母音 %s の口の開き %d が段階の数 %d の外", v, lv, mouthLevels)
+	for v, lv := range build.VowelMouth {
+		if lv < 0 || lv >= build.MouthLevels {
+			t.Errorf("母音 %s の口の開き %d が段階の数 %d の外", v, lv, build.MouthLevels)
 		}
 	}
 }
@@ -501,21 +506,21 @@ func playerSheetRegexp(t *testing.T) *regexp.Regexp {
 
 // 箇条書きの段 (issue 680): build なら項目の数だけ "next" で強調を進められ、build でなければ "next" は止まる
 func TestListShowSteps(t *testing.T) {
-	list := func(build bool) map[string]any {
-		return map[string]any{"type": "list", "title": "理由", "items": []any{"a", "b", "c"}, "build": build}
+	list := func(bld bool) map[string]any {
+		return map[string]any{"type": "list", "title": "理由", "items": []any{"a", "b", "c"}, "build": bld}
 	}
-	lines := func(show any, nexts int) []any {
-		out := []any{map[string]any{"who": "metan", "text": "a", "show": show}}
+	lines := func(shw any, nexts int) []any {
+		out := []any{map[string]any{"who": "metan", "text": "a", "show": shw}}
 		for range nexts {
 			out = append(out, map[string]any{"who": "metan", "text": "b", "show": "next"})
 		}
 		return out
 	}
-	s, err := loadScript(writeScript(t, map[string]any{"lines": lines(list(true), 2)}), testEnv(t))
+	s, err := script.LoadScript(writeScript(t, map[string]any{"lines": lines(list(true), 2)}), testEnv(t))
 	must(t, err)
-	_, steps, shows, err := lineShows(s.Path, s.Lines)
+	_, steps, shows, err := show.LineShows(s.Path, s.Lines)
 	must(t, err)
-	if len(shows) != 1 || shows[0].stepCount() != 3 {
+	if len(shows) != 1 || shows[0].StepCount() != 3 {
 		t.Fatalf("箇条書きの段の数が違う: %+v", shows)
 	}
 	var got []int
@@ -529,7 +534,7 @@ func TestListShowSteps(t *testing.T) {
 		show  map[string]any
 		nexts int
 	}{{list(true), 3}, {list(false), 1}} {
-		if _, err := loadScript(writeScript(t, map[string]any{"lines": lines(tc.show, tc.nexts)}), testEnv(t)); err == nil || (tc.nexts == 1 && !strings.Contains(err.Error(), "箇条書きの build")) {
+		if _, err := script.LoadScript(writeScript(t, map[string]any{"lines": lines(tc.show, tc.nexts)}), testEnv(t)); err == nil || (tc.nexts == 1 && !strings.Contains(err.Error(), "箇条書きの build")) {
 			t.Errorf("build=%v で next を %d 回書けた (段を超える / 段の無い図解)", tc.show["build"], tc.nexts)
 		}
 	}

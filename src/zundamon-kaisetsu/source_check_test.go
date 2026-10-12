@@ -7,18 +7,21 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"zundamon-kaisetsu/internal/lint"
+	"zundamon-kaisetsu/internal/script"
 )
 
 // 試験用の台本と架空の資料 (skill の examples/review-bench) を突き合わせた候補を固定する (正解表 answer_key.md の「8割」を含む)
 func TestSourceCandidatesReviewBench(t *testing.T) {
 	env := testEnv(t)
 	dir := filepath.Join(env.SkillDir, "examples", "review-bench")
-	s, err := loadScript(filepath.Join(dir, "script.json"), env)
+	s, err := script.LoadScript(filepath.Join(dir, "script.json"), env)
 	must(t, err)
 	src, err := os.ReadFile(filepath.Join(dir, "source.md"))
 	must(t, err)
 	var got []string
-	for _, is := range sourceCandidates(s, string(src)) {
+	for _, is := range lint.SourceCandidates(s, string(src)) {
 		if !is.Hint {
 			t.Errorf("突き合わせの候補は目安のはず: %+v", is)
 		}
@@ -45,41 +48,41 @@ func between(s, a, b string) string {
 // 図解の中の数字も見る (字幕だけでは、図解の誤った数字が素通りする)
 func TestSourceCandidatesShow(t *testing.T) {
 	env := testEnv(t)
-	s, err := loadScript(writeScript(t, map[string]any{"lines": []any{map[string]any{"who": "metan", "text": "調査の結果よ",
+	s, err := script.LoadScript(writeScript(t, map[string]any{"lines": []any{map[string]any{"who": "metan", "text": "調査の結果よ",
 		"show": map[string]any{"type": "keyword", "text": "Windows 85.03%", "sub": "Steam 調査"}}}}), env)
 	must(t, err)
 	var got []string
-	for _, is := range sourceCandidates(s, "Windows 95.03% Steam") {
+	for _, is := range lint.SourceCandidates(s, "Windows 95.03% Steam") {
 		got = append(got, is.Rule+":"+between(is.Msg, "「", "」"))
 	}
 	if !slices.Equal(got, []string{"source-number:85.03%"}) {
 		t.Errorf("図解の中の数字を見ていない: %v", got)
 	}
 	// 比較の見出し・項目と重要語の補足も見る
-	s, err = loadScript(writeScript(t, map[string]any{"lines": []any{map[string]any{"who": "metan", "text": "比べるわ",
+	s, err = script.LoadScript(writeScript(t, map[string]any{"lines": []any{map[string]any{"who": "metan", "text": "比べるわ",
 		"show": map[string]any{"type": "compare", "left": map[string]any{"title": "2018年", "items": []any{"6割"}},
 			"right": map[string]any{"title": "今", "items": []any{"8割"}}}},
 		map[string]any{"who": "metan", "text": "要点よ", "show": map[string]any{"type": "keyword", "text": "語", "sub": "3倍に増えた"}}}}), env)
 	must(t, err)
 	got = nil
-	for _, is := range sourceCandidates(s, "2018年と6割") {
+	for _, is := range lint.SourceCandidates(s, "2018年と6割") {
 		got = append(got, is.Rule+":"+between(is.Msg, "「", "」"))
 	}
 	if !slices.Equal(got, []string{"source-number:8割", "source-number:3倍"}) {
 		t.Errorf("比較の項目・重要語の補足の数字を見ていない: %v", got)
 	}
 	// 箇条書きの見出し・項目も見る (issue 680)
-	s, err = loadScript(writeScript(t, map[string]any{"lines": []any{map[string]any{"who": "metan", "text": "理由は 2 つよ",
+	s, err = script.LoadScript(writeScript(t, map[string]any{"lines": []any{map[string]any{"who": "metan", "text": "理由は 2 つよ",
 		"show": map[string]any{"type": "list", "title": "2018年の調査", "items": []any{"6割", "8割"}}}}}), env)
 	must(t, err)
 	got = nil
-	for _, is := range sourceCandidates(s, "6割") {
+	for _, is := range lint.SourceCandidates(s, "6割") {
 		got = append(got, is.Rule+":"+between(is.Msg, "「", "」"))
 	}
 	if !slices.Equal(got, []string{"source-number:8割", "source-number:2018年"}) {
 		t.Errorf("箇条書きの見出し・項目の数字を見ていない: %v", got)
 	}
-	if _, err := readSource(writeEmpty(t)); err == nil {
+	if _, err := lint.ReadSource(writeEmpty(t)); err == nil {
 		t.Error("空の資料を黙って読んだ")
 	}
 }
@@ -97,10 +100,10 @@ func TestSourceCandidatesRules(t *testing.T) {
 			raw = append(raw, map[string]any{"who": "metan", "text": x})
 		}
 		env := testEnv(t)
-		s, err := loadScript(writeScript(t, map[string]any{"lines": raw}), env)
+		s, err := script.LoadScript(writeScript(t, map[string]any{"lines": raw}), env)
 		must(t, err)
 		var out []string
-		for _, is := range sourceCandidates(s, source) {
+		for _, is := range lint.SourceCandidates(s, source) {
 			out = append(out, is.Rule+":"+between(is.Msg, "「", "」"))
 		}
 		return out
@@ -139,14 +142,14 @@ func TestSourceCandidatesRules(t *testing.T) {
 	// 導入の区切り: 2 つ目のチャプターの行か手前 3 行に「本題」があれば通す
 	chap := func(boundary string) []string {
 		env := testEnv(t)
-		s, err := loadScript(writeScript(t, map[string]any{"lines": []any{
+		s, err := script.LoadScript(writeScript(t, map[string]any{"lines": []any{
 			map[string]any{"who": "metan", "text": "a", "chapter": "はじめに"},
 			map[string]any{"who": "metan", "text": boundary},
 			map[string]any{"who": "zundamon", "text": "b？", "chapter": "本"},
 		}}), env)
 		must(t, err)
 		var out []string
-		for _, is := range sourceCandidates(s, "") {
+		for _, is := range lint.SourceCandidates(s, "") {
 			out = append(out, is.Rule)
 		}
 		return out

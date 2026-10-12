@@ -14,24 +14,28 @@
 zundamon-kaisetsu check | up | down | speakers | kana … | lint script.json | synth script.json | build script.json -o out --format html|mp4|both
 ```
 
-## ファイルの地図
+## パッケージの地図
 
-| ファイル | 持つもの |
-|---|---|
-| `main.go` | 引数の解析 (Python の argparse の再現)・シグナルと中断 (`appCtx`)・`Env` (テストで差し替える口) |
-| `script.go` | 台本の読み込みと検証・キャラの設定・合成のキャッシュの鍵 (`Params` / `cacheSerialize`)・読み替え |
-| `synth.go` | エンジンへの要求 (audio_query / synthesis)・キャッシュ (`<台本>.work/`)・`kana` |
-| `lint.go` | `lint`: 台本の校正のうち文字列と構造だけで決まるもの (60 字超・「のだ」2 回・漢数字・図を指す言い方・独自調査のモードで資料の存在が分かる語 (目安) 等。issue 675 / 686)。試験用の台本は skill の `examples/review-bench/` |
-| `source_check.go` | `lint --source 資料`: 台本と資料の突き合わせの候補 (資料に無い数字・英字の語、導入の区切りの言葉が無い。すべて目安。issue 685) |
-| `reading_check.go` | `kana --script --check`: 英字の語を 1 文字ずつ読んだ行の警告と、英字の語の一覧 (略語の一覧は skill の `acronyms.json`。issue 673) |
-| `engine.go` / `engine_auto.go` | エンジンのコンテナの起動・停止 / 自動起動と、使われなくなったら止める見張り |
-| `build.go` | 組み立て (`assemble`: wav の連結・口の開き・プレイヤーのデータ)・`cmdBuild`・HTML への埋め込み |
-| `mp4.go` | mp4 の書き出し (プレイヤーのまとめ撮りを Chrome で撮り、ffmpeg で切り分けてつなぐ) |
-| `caption_speed.go` | 字幕が速くて読み切れないおそれのある行の警告 (build が出す。1 秒 7.5 字を超える行。止めない) |
-| `blink.go` | まばたきの時刻表 (`blinkAt`) と、目を閉じているキャラのビットの列 (`blinkRuns`) |
-| `show*.go` | 台本の `show` (図解: keyword / compare / list / code / image / mermaid) |
-| `wav.go` / `outfile.go` / `chrome.go` | wav の入出力 / 出力ファイルの置き換え / Chrome の探索と PNG の大きさ |
-| `pyjson.go` | Python 版と同じ値を作るための JSON・丸め・文字列化 (`py*`) |
+`main.go` (引数の解析 = Python の argparse の再現・シグナル・コマンドの振り分け) のほかは `internal/` のパッケージに分けている
+(issue 741)。上の層は下の層だけを import する (循環はコンパイラが止める)。
+
+| 層 | パッケージ | 持つもの |
+|---|---|---|
+| 0 | `pyjson` | Python 版と同じ値を作るための JSON・丸め・文字列化 (`Str` / `Repr` / `Round` …) |
+| 0 | `textx` | 表示用の切り詰め (`FirstRunes` / `LastRunes`)・全角英数字の半角化・英字の語の切り出し |
+| 0 | `app` | `Env` (テストで差し替える口)・利用者に見せる失敗 (`Fail` / `ErrExit`)・中断 (`Ctx` / `InterruptedErr`) |
+| 0 | `paths` | パスの解決 (`ResolvePath`)・台本からの相対パス・作業 dir (`WorkDir` = `<台本>.work/`) |
+| 0 | `wav` / `outfile` / `extcmd` | wav の入出力 / 出力ファイルの置き換え / 外部コマンドの探索 (Chrome・ffmpeg のエンコーダ) と時間の上限付きの実行 (`RunQuiet`) |
+| 1 | `show` | 台本の `show` (図解: keyword / compare / list / code / image / mermaid) |
+| 2 | `script` | 台本の読み込みと検証・キャラの設定 (`CastOrder`)・合成のキャッシュの鍵 (`Params` / `CacheSerialize`)・読み替え・`overlays` |
+| 3 | `build` | 組み立て (`Assemble`: wav の連結・口の開き・プレイヤーのデータ)・`CmdBuild`・HTML への埋め込み・mp4 の書き出し (`mp4.go`: まとめ撮りを Chrome で撮り ffmpeg で切り分けてつなぐ)・字幕の速さの警告 (`caption_speed.go`)・まばたき (`blink.go`)・区切りのカード (`chapter_card.go`) |
+| 3 | `engine` | エンジンのコンテナの起動・停止 (`engine.go`) / 自動起動と、使われなくなったら止める見張り (`engine_auto.go`) |
+| 3 | `lint` | `lint`: 台本の校正のうち文字列と構造だけで決まるもの (`lint.go`。issue 675 / 686。試験用の台本は skill の `examples/review-bench/`)・`lint --source 資料` の突き合わせの候補 (`source_check.go`。issue 685) |
+| 4 | `synth` | エンジンへの要求 (audio_query / synthesis)・キャッシュ・`kana` (`synth.go`)・`kana --script --check` の英字の語の警告 (`reading_check.go`。略語の一覧は skill の `acronyms.json`。issue 673) |
+
+テストは全部 main に置いている (各パッケージへは移していない): `testdata/` と skill のディレクトリを cwd からの相対パスで読み、
+mp4 の偽の Chrome / ffmpeg はテストのバイナリ自身を起こし直し (`mp4_test.go` の `TestFakeMP4Tool`)、共有の偽物 (`helpers_test.go`) を
+ほぼ全部のテストが使うため。テストから触る名前は公開名になっている。
 
 プロセスの子孫を止める処理は共有 module の [`src/proctree`](../proctree/) (mermaid の描画の中断・時間切れ)。
 

@@ -1,4 +1,4 @@
-package main
+package build
 
 import (
 	"fmt"
@@ -19,9 +19,9 @@ type fastCaption struct {
 	Text string
 }
 
-// fastCaptions は、字幕が出ている間 (その行の開始から次の行の開始まで。最後の行は動画の終わりまで) に読む字数が
+// FastCaptions は、字幕が出ている間 (その行の開始から次の行の開始まで。最後の行は動画の終わりまで) に読む字数が
 // captionCPSMax を超える行を返す。字数は空白を除いた文字の数。
-func fastCaptions(lines []timelineLine, duration float64) []fastCaption {
+func FastCaptions(lines []TimelineLine, duration float64) []fastCaption {
 	var out []fastCaption
 	for i, l := range lines {
 		end := duration
@@ -45,9 +45,9 @@ func fastCaptions(lines []timelineLine, duration float64) []fastCaption {
 	return out
 }
 
-// warnFastCaptions は字幕の速すぎる行を、行番号と先頭の文字つきで warn に書き (無ければ何も書かない)、その行数を返す。
-func warnFastCaptions(w io.Writer, lines []timelineLine, duration float64) int {
-	fast := fastCaptions(lines, duration)
+// WarnFastCaptions は字幕の速すぎる行を、行番号と先頭の文字つきで warn に書き (無ければ何も書かない)、その行数を返す。
+func WarnFastCaptions(w io.Writer, lines []TimelineLine, duration float64) int {
+	fast := FastCaptions(lines, duration)
 	if len(fast) == 0 {
 		return 0
 	}

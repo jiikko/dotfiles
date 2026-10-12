@@ -15,6 +15,12 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"zundamon-kaisetsu/internal/app"
+	"zundamon-kaisetsu/internal/build"
+	"zundamon-kaisetsu/internal/extcmd"
+	"zundamon-kaisetsu/internal/outfile"
+	"zundamon-kaisetsu/internal/paths"
 )
 
 // waitUntil は条件が成り立つまで刻んで待つ。10 秒で成り立たなければ落とす (ハングの安全網。合否は条件で決める)。
@@ -29,20 +35,20 @@ func waitUntil(t *testing.T, what string, cond func() bool) {
 	t.Fatalf("%s が 10 秒たっても成り立たない", what)
 }
 
-// withAppCtx は appCtx を取り消せるものに差し替える (テストの後に戻す)。
+// withAppCtx は Ctx を取り消せるものに差し替える (テストの後に戻す)。
 func withAppCtx(t *testing.T) context.CancelFunc {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	old := appCtx
-	appCtx = ctx
-	t.Cleanup(func() { cancel(); appCtx = old })
+	old := app.Ctx
+	app.Ctx = ctx
+	t.Cleanup(func() { cancel(); app.Ctx = old })
 	return cancel
 }
 
 // 中断すると、子 (ffmpeg) を止めてから一時ディレクトリを消す (子を止める前に消すと、書き続ける子に消し残される。2 周目 P2-1)。
 func TestInterruptStopsChildThenRemovesTemp(t *testing.T) {
 	sleepBin := "/bin/sleep"
-	if !isFile(sleepBin) {
+	if !paths.IsFile(sleepBin) {
 		t.Fatal("/bin/sleep が無い") // macOS / Linux には必ずある (skip すると検査が黙って消える)
 	}
 	cancel := withAppCtx(t)
@@ -60,9 +66,9 @@ func TestInterruptStopsChildThenRemovesTemp(t *testing.T) {
 	env := testEnv(t)
 	done := make(chan error, 1)
 	go func() {
-		done <- cmdBuild(env, filepath.Join("testdata", "build", "script.json"), filepath.Join(t.TempDir(), "out"), "html", 1, 64, true)
+		done <- build.CmdBuild(env, filepath.Join("testdata", "build", "script.json"), filepath.Join(t.TempDir(), "out"), "html", 1, 64, true)
 	}()
-	waitUntil(t, "偽の ffmpeg の起動", func() bool { return isFile(marker) })
+	waitUntil(t, "偽の ffmpeg の起動", func() bool { return paths.IsFile(marker) })
 	cancel()
 	var err error
 	waitUntil(t, "cmdBuild の終了", func() bool {
@@ -73,10 +79,10 @@ func TestInterruptStopsChildThenRemovesTemp(t *testing.T) {
 			return false
 		}
 	})
-	if !errors.Is(err, errInterrupted) {
+	if !errors.Is(err, app.ErrInterrupted) {
 		t.Errorf("中断の誤りが返らない: %v", err)
 	}
-	// cmdBuild が戻った時点 (= 一時ディレクトリを消した後) で、子は止まっている (exec したので印の pid が子そのもの)
+	// CmdBuild が戻った時点 (= 一時ディレクトリを消した後) で、子は止まっている (exec したので印の pid が子そのもの)
 	b, _ := os.ReadFile(marker)
 	pid, perr := strconv.Atoi(strings.TrimSpace(string(b)))
 	if perr != nil {
@@ -99,10 +105,10 @@ func TestRunQuietStopsOnInterrupt(t *testing.T) {
 	go func() {
 		// 子が起動したことを印に残してから眠る (起動前に取り消すと、走っている子を止める経路を通らない)
 		// sleep-ok: dummy: 中断で kill される子 (止められない退行でも 30 秒で終わる)
-		rc, _ := runQuiet(time.Minute, "/bin/sh", "-c", "touch "+marker+"; exec /bin/sleep 30")
+		rc, _ := extcmd.RunQuiet(time.Minute, "/bin/sh", "-c", "touch "+marker+"; exec /bin/sleep 30")
 		got <- rc
 	}()
-	waitUntil(t, "子の起動", func() bool { return isFile(marker) })
+	waitUntil(t, "子の起動", func() bool { return paths.IsFile(marker) })
 	cancel()
 	var rc int
 	waitUntil(t, "runQuiet の終了", func() bool {
@@ -129,7 +135,7 @@ func TestWriteOutputFollowsSymlinkAndKeepsMode(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeOutput(resolvePath(link), []byte("new")); err != nil {
+	if err := outfile.WriteOutput(paths.ResolvePath(link), []byte("new")); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(target); string(b) != "new" {
@@ -147,8 +153,8 @@ func TestWriteOutputFollowsSymlinkAndKeepsMode(t *testing.T) {
 			t.Errorf("一時ファイルが残った: %s", e.Name())
 		}
 	}
-	a, _ := partPath(target)
-	b, _ := partPath(target)
+	a, _ := outfile.PartPath(target)
+	b, _ := outfile.PartPath(target)
 	if a == b {
 		t.Error("同じ出力先の一時ファイルの名前が重なる (同時の build で取り合う)")
 	}
@@ -156,7 +162,7 @@ func TestWriteOutputFollowsSymlinkAndKeepsMode(t *testing.T) {
 
 // リンク先が存在しない (dangling) symlink も、Python の Path.resolve() と同じくリンク先へ進む。
 func TestResolvePathDanglingSymlink(t *testing.T) {
-	root := resolvePath(t.TempDir())
+	root := paths.ResolvePath(t.TempDir())
 	if err := os.MkdirAll(filepath.Join(root, "real", "b"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +179,7 @@ func TestResolvePathDanglingSymlink(t *testing.T) {
 		root + "/nope/../real": root + "/real",
 	}
 	for in, want := range cases {
-		if got := resolvePath(in); got != want {
+		if got := paths.ResolvePath(in); got != want {
 			t.Errorf("%s: got %s want %s", in, got, want)
 		}
 	}
@@ -233,12 +239,12 @@ func TestArgparseRound3(t *testing.T) {
 	}
 	for _, c := range cases {
 		var out, errb bytes.Buffer
-		if rc := run(c.args, &Env{Stdout: &out, Stderr: &errb}); rc != c.rc {
+		if rc := run(c.args, &app.Env{Stdout: &out, Stderr: &errb}); rc != c.rc {
 			t.Errorf("%q: rc=%d want %d (%s)", c.args, rc, c.rc, errb.String())
 		}
 	}
 	var errb bytes.Buffer
-	run([]string{"--", "nope"}, &Env{Stdout: &errb, Stderr: &errb})
+	run([]string{"--", "nope"}, &app.Env{Stdout: &errb, Stderr: &errb})
 	if !strings.Contains(errb.String(), "invalid choice: 'nope'") {
 		t.Errorf("-- の後ろをサブコマンドとして読んでいない: %s", errb.String())
 	}
@@ -252,7 +258,7 @@ func TestArgparseRound3(t *testing.T) {
 
 // symlink のループと長い連鎖も Python の realpath と同じ結果にし、指数的に時間を食わない (3 周目 P3)。
 func TestResolvePathLoopsAndChains(t *testing.T) {
-	root := resolvePath(t.TempDir())
+	root := paths.ResolvePath(t.TempDir())
 	mk := func(name, target string) {
 		if err := os.Symlink(target, filepath.Join(root, name)); err != nil {
 			t.Fatal(err)
@@ -269,7 +275,7 @@ func TestResolvePathLoopsAndChains(t *testing.T) {
 		root + "/chain0": root + "/chain45",
 	}
 	for in, want := range cases {
-		if got := resolvePath(in); got != want {
+		if got := paths.ResolvePath(in); got != want {
 			t.Errorf("%s: got %s want %s", in, got, want)
 		}
 	}
@@ -277,12 +283,12 @@ func TestResolvePathLoopsAndChains(t *testing.T) {
 
 // 新しい出力は 0666 から umask を引いたもの。読み取り専用の既存の出力は置き換えない (3 周目 P3)。
 func TestWriteOutputUmaskAndReadOnly(t *testing.T) {
-	old := fileUmask
-	fileUmask = 0o077
-	t.Cleanup(func() { fileUmask = old })
+	old := outfile.FileUmask
+	outfile.FileUmask = 0o077
+	t.Cleanup(func() { outfile.FileUmask = old })
 	dir := t.TempDir()
 	fresh := filepath.Join(dir, "new.html")
-	if err := writeOutput(fresh, []byte("x")); err != nil {
+	if err := outfile.WriteOutput(fresh, []byte("x")); err != nil {
 		t.Fatal(err)
 	}
 	if fi, _ := os.Stat(fresh); fi.Mode().Perm() != 0o600 {
@@ -292,7 +298,7 @@ func TestWriteOutputUmaskAndReadOnly(t *testing.T) {
 	if err := os.WriteFile(ro, []byte("old"), 0o444); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeOutput(ro, []byte("new")); err == nil {
+	if err := outfile.WriteOutput(ro, []byte("new")); err == nil {
 		t.Error("読み取り専用の既存の出力を置き換えた")
 	}
 	if b, _ := os.ReadFile(ro); string(b) != "old" {
@@ -307,21 +313,21 @@ func TestCacheWriteReplacesReadOnly(t *testing.T) {
 	if err := os.WriteFile(path, []byte("old"), 0o444); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeAtomic(path, []byte("new")); err != nil {
+	if err := outfile.WriteAtomic(path, []byte("new")); err != nil {
 		t.Fatalf("読み取り専用の既存のキャッシュを置き換えられない: %v", err)
 	}
 	if b, _ := os.ReadFile(path); string(b) != "new" {
 		t.Errorf("置き換わっていない: %q", b)
 	}
-	if fi, _ := os.Stat(path); fi.Mode().Perm() != 0o666&^fileUmask {
-		t.Errorf("パーミッション: %v (want %v)", fi.Mode().Perm(), 0o666&^fileUmask)
+	if fi, _ := os.Stat(path); fi.Mode().Perm() != 0o666&^outfile.FileUmask {
+		t.Errorf("パーミッション: %v (want %v)", fi.Mode().Perm(), 0o666&^outfile.FileUmask)
 	}
 }
 
 func TestKanaDashDashAfterOptionIsExtra(t *testing.T) {
 	for _, args := range [][]string{{"kana", "a", "--who", "zundamon", "--", "b"}, {"kana", "a", "b", "--who", "zundamon", "--", "c"}} {
 		var errb bytes.Buffer
-		if rc := run(args, &Env{Stdout: &errb, Stderr: &errb}); rc != 2 {
+		if rc := run(args, &app.Env{Stdout: &errb, Stderr: &errb}); rc != 2 {
 			t.Errorf("%q: rc=%d want 2 (%s)", args, rc, errb.String())
 		}
 	}

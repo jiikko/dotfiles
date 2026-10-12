@@ -8,20 +8,23 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"zundamon-kaisetsu/internal/lint"
+	"zundamon-kaisetsu/internal/script"
 )
 
 // 試験用の台本 (skill の examples/review-bench) に仕込んだ 7 個を、lint がちょうど出す (ほかは出さない)。
 // 正解表は同じディレクトリの answer_key.md。
 func TestLintReviewBench(t *testing.T) {
 	env := testEnv(t)
-	s, err := loadScript(filepath.Join(env.SkillDir, "examples", "review-bench", "script.json"), env)
+	s, err := script.LoadScript(filepath.Join(env.SkillDir, "examples", "review-bench", "script.json"), env)
 	if err != nil {
 		t.Fatal(err)
 	}
-	dict, err := loadReadingsDict(env)
+	dict, err := lint.LoadReadingsDict(env)
 	must(t, err)
 	var got []string
-	for _, is := range lintScript(s, dict) {
+	for _, is := range lint.LintScript(s, dict) {
 		got = append(got, fmt.Sprintf("%d:%s:%v", is.Line, is.Rule, is.Hint))
 	}
 	want := []string{"0:chapters:true", "3:noda:false", "4:show-across-chapter:false", "5:metan-run:true", "6:kanji-number:true", "7:long:false", "9:pointing:false", "10:pronoun:false", "15:readings-missing:true"}
@@ -38,12 +41,12 @@ func TestLintRules(t *testing.T) {
 			raw = append(raw, l)
 		}
 		env := testEnv(t)
-		s, err := loadScript(writeScript(t, map[string]any{"lines": raw}), env)
+		s, err := script.LoadScript(writeScript(t, map[string]any{"lines": raw}), env)
 		if err != nil {
 			t.Fatal(err)
 		}
 		var out []string
-		for _, is := range lintScript(s, nil) {
+		for _, is := range lint.LintScript(s, nil) {
 			if is.Rule == "chapters" { // チャプターの数の目安は TestLintMoreRules が見る (ここの小さな台本では毎回出る)
 				continue
 			}
@@ -136,12 +139,12 @@ func TestLintCommandExitCode(t *testing.T) {
 func TestLintMoreRules(t *testing.T) {
 	runAll := func(dict map[string]string, raw map[string]any) []string {
 		env := testEnv(t)
-		s, err := loadScript(writeScript(t, raw), env)
+		s, err := script.LoadScript(writeScript(t, raw), env)
 		if err != nil {
 			t.Fatal(err)
 		}
 		var out []string
-		for _, is := range lintScript(s, dict) {
+		for _, is := range lint.LintScript(s, dict) {
 			out = append(out, fmt.Sprintf("%d:%s:%v", is.Line, is.Rule, is.Hint))
 		}
 		return out
@@ -240,12 +243,12 @@ func TestLintSourceLeak(t *testing.T) {
 		b, _ := json.Marshal(raw)
 		path := filepath.Join(dir, name)
 		must(t, os.WriteFile(path, b, 0o644))
-		s, err := loadScript(path, env)
+		s, err := script.LoadScript(path, env)
 		if err != nil {
 			return nil, err
 		}
 		var out []string
-		for _, is := range lintScript(s, nil) {
+		for _, is := range lint.LintScript(s, nil) {
 			if is.Rule == "source-leak" {
 				out = append(out, fmt.Sprintf("%d:%v:%s", is.Line, is.Hint, is.Msg))
 			}
@@ -322,7 +325,7 @@ func TestLintSourceLeak(t *testing.T) {
 			t.Errorf("出さないはずの台本で出した: %q %v (%v)", got, err, raw)
 		}
 	}
-	if got := showVisibleStrings(map[string]any{"type": "image", "src": "資料/fig.png", "alt": "資料"}, "show", false); len(got) != 0 {
+	if got := lint.ShowVisibleStrings(map[string]any{"type": "image", "src": "資料/fig.png", "alt": "資料"}, "show", false); len(got) != 0 {
 		t.Errorf("画像のパスと alt を画面に出る文字に数えた: %v", got)
 	}
 	if _, err := leaks(t, "x.json", map[string]any{"source_mode": "open", "lines": line(nil)}); err == nil || !strings.Contains(err.Error(), "source_mode") {

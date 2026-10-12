@@ -1,4 +1,4 @@
-package main
+package build
 
 import (
 	"bytes"
@@ -9,27 +9,32 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"zundamon-kaisetsu/internal/app"
+	"zundamon-kaisetsu/internal/extcmd"
+	"zundamon-kaisetsu/internal/outfile"
+	"zundamon-kaisetsu/internal/paths"
+	"zundamon-kaisetsu/internal/textx"
 )
 
-var videoSize = [2]int{1280, 720} // mp4 は 720p 固定 (字幕・アバターの大きさはこの解像度で合わせている)
+var VideoSize = [2]int{1280, 720} // mp4 は 720p 固定 (字幕・アバターの大きさはこの解像度で合わせている)
 
-// sheetStates はまとめ撮り 1 回の枚数。縦 720 x 20 = 14400px (Chrome が 1 枚で撮れる高さに収める)
-const sheetStates = 20
+// SheetStates はまとめ撮り 1 回の枚数。縦 720 x 20 = 14400px (Chrome が 1 枚で撮れる高さに収める)
+const SheetStates = 20
 
 // mp4 の撮影前に、CPU が混んでいたら空くまで待つ。負荷が高いときに headless Chrome が watchdog で落ちた
 // (rc=2 "own watchdog expired"。同じ条件の再実行で通った) ので、負荷との関係を仮説として入れている。
-// 1 分平均の load がコア数 × loadBusyRatio 以上を「混んでいる」とし、loadWaitMax 待っても空かなければそのまま撮る
+// 1 分平均の load がコア数 × loadBusyRatio 以上を「混んでいる」とし、LoadWaitMax 待っても空かなければそのまま撮る
 const (
 	loadBusyRatio = 0.8
-	loadWaitMax   = 20 * time.Minute
-	loadPoll      = 15 * time.Second
+	LoadWaitMax   = 20 * time.Minute
+	LoadPoll      = 15 * time.Second
 )
 
 func encodeAudio(wavPath, outPath string, kbps int) error {
@@ -42,49 +47,30 @@ func encodeAudio(wavPath, outPath string, kbps int) error {
 		name = "afconvert"
 		args = []string{"-f", "m4af", "-d", "aac", "-b", strconv.Itoa(kbps * 1000), wavPath, outPath}
 	} else {
-		return fail("ffmpeg も afconvert も無い (brew install ffmpeg)")
+		return app.Fail("ffmpeg も afconvert も無い (brew install ffmpeg)")
 	}
 	var stderr bytes.Buffer
-	cmd := exec.CommandContext(appCtx, name, args...)
+	cmd := exec.CommandContext(app.Ctx, name, args...)
 	cmd.Stderr = &stderr
 	cmd.WaitDelay = 5 * time.Second
 	err := cmd.Run()
-	if e := interruptedErr(); e != nil {
+	if e := app.InterruptedErr(); e != nil {
 		return e
 	}
 	if st, serr := os.Stat(outPath); err != nil || serr != nil || st.Size() == 0 {
-		return fail("音声の圧縮に失敗 (%s, %v): %s", name, err, firstRunes(strings.TrimSpace(stderr.String()), 300))
+		return app.Fail("音声の圧縮に失敗 (%s, %v): %s", name, err, textx.FirstRunes(strings.TrimSpace(stderr.String()), 300))
 	}
 	return nil
 }
 
-var (
-	libx264Re      = regexp.MustCompile(`(?m)^\s*V\S*\s+libx264\s`)
-	videotoolboxRe = regexp.MustCompile(`(?m)^\s*V\S*\s+h264_videotoolbox\s`)
-)
-
-func h264Encoder() []string {
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		return nil
-	}
-	rc, out := runQuiet(60*time.Second, "ffmpeg", "-hide_banner", "-encoders")
-	switch {
-	case rc == 0 && libx264Re.MatchString(out):
-		return []string{"-c:v", "libx264", "-preset", "medium", "-crf", "20", "-tune", "stillimage"}
-	case rc == 0 && videotoolboxRe.MatchString(out):
-		return []string{"-c:v", "h264_videotoolbox", "-b:v", "3M"}
-	}
-	return nil
-}
-
-// loadAvg1 は 1 分平均の load。Go の標準に os.getloadavg は無いので、macOS は sysctl、Linux は /proc/loadavg を読む。
-func loadAvg1() (float64, bool) {
+// LoadAvg1 は 1 分平均の load。Go の標準に os.getloadavg は無いので、macOS は sysctl、Linux は /proc/loadavg を読む。
+func LoadAvg1() (float64, bool) {
 	if b, err := os.ReadFile("/proc/loadavg"); err == nil {
 		if f, err := strconv.ParseFloat(strings.Fields(string(b))[0], 64); err == nil {
 			return f, true
 		}
 	}
-	rc, out := runQuiet(5*time.Second, "sysctl", "-n", "vm.loadavg") // 例: "{ 3.26 3.65 3.34 }"
+	rc, out := extcmd.RunQuiet(5*time.Second, "sysctl", "-n", "vm.loadavg") // 例: "{ 3.26 3.65 3.34 }"
 	if rc == 0 {
 		fields := strings.Fields(strings.Trim(out, "{} "))
 		if len(fields) > 0 {
@@ -96,13 +82,13 @@ func loadAvg1() (float64, bool) {
 	return 0, false
 }
 
-// waitForIdleCPU は CPU が混んでいる間、最大 loadWaitMax 待つ。待っている間も 1 分ごとに状況を出す (黙って止まって見えないように)。
-func waitForIdleCPU(env *Env) {
+// WaitForIdleCPU は CPU が混んでいる間、最大 LoadWaitMax 待つ。待っている間も 1 分ごとに状況を出す (黙って止まって見えないように)。
+func WaitForIdleCPU(env *app.Env) {
 	cores := runtime.NumCPU()
 	limit := float64(cores) * loadBusyRatio
 	start := env.Now()
 	var lastNote *time.Duration
-	for appCtx.Err() == nil {
+	for app.Ctx.Err() == nil {
 		load, ok := env.LoadAvg()
 		if !ok {
 			fmt.Fprintln(env.Stderr, "build: CPU の負荷を読めないので、空くのを待たずに撮る")
@@ -115,25 +101,25 @@ func waitForIdleCPU(env *Env) {
 			}
 			return
 		}
-		if waited >= loadWaitMax {
+		if waited >= LoadWaitMax {
 			fmt.Fprintf(env.Stderr, "build: %d 分待っても CPU が空かない (load %.1f / %d コア)。そのまま撮る (Chrome が落ちたら空いてから build し直す)\n",
-				int(loadWaitMax.Minutes()), load, cores)
+				int(LoadWaitMax.Minutes()), load, cores)
 			return
 		}
 		if lastNote == nil || waited-*lastNote >= time.Minute {
 			fmt.Fprintf(env.Stderr, "build: CPU が混んでいる (load %.1f / %d コア、閾値 %.1f)。空くまで最大 %d 分待つ (経過 %.0f 分)\n",
-				load, cores, limit, int(loadWaitMax.Minutes()), waited.Minutes())
+				load, cores, limit, int(LoadWaitMax.Minutes()), waited.Minutes())
 			w := waited
 			lastNote = &w
 		}
-		env.Sleep(loadPoll)
+		env.Sleep(LoadPoll)
 	}
 }
 
-// sheetFragment は、まとめ撮りの状態 (字幕の行, 話し中か, 口の開き, 目を閉じているキャラのビット, 区切りのカード) の並びを player.html が読む URL の断片にする。
+// SheetFragment は、まとめ撮りの状態 (字幕の行, 話し中か, 口の開き, 目を閉じているキャラのビット, 区切りのカード) の並びを player.html が読む URL の断片にする。
 // 🚨 書式は player.html の `location.hash.match(/^#sheet=…/)` と 1 対 1。片方だけ変えると、プレイヤーは通常の画面のまま撮られる
 // (TestSheetFragmentMatchesPlayer が両者を突き合わせる。issue 650)
-func sheetFragment(group []visualState) string {
+func SheetFragment(group []VisualState) string {
 	parts := make([]string, len(group))
 	for i, st := range group {
 		parts[i] = fmt.Sprintf("%d,%d,%d,%d,%d", st[0], st[1], st[2], st[3], st[4])
@@ -145,55 +131,55 @@ func sheetFragment(group []visualState) string {
 //
 // 見た目を HTML 版と同じにするため、絵は自前で描かずプレイヤーに描かせる。撮るのは見た目の状態の
 // 種類の数 (行数 × 口の段階 程度) だけで、フレームの数ではない。Chrome の起動 (1 回 1 秒強) が律速なので、
-// プレイヤーのまとめ撮りモード (#sheet=) で sheetStates 枚を縦に並べて 1 回で撮り、ffmpeg で切り分ける。
-func writeMP4(env *Env, data *PlayerData, m4a, out, td string, jobs int) error {
-	chrome := findChrome()
-	enc := h264Encoder()
-	if e := interruptedErr(); e != nil {
+// プレイヤーのまとめ撮りモード (#sheet=) で SheetStates 枚を縦に並べて 1 回で撮り、ffmpeg で切り分ける。
+func writeMP4(env *app.Env, data *PlayerData, m4a, out, td string, jobs int) error {
+	chrome := extcmd.FindChrome()
+	enc := extcmd.H264Encoder()
+	if e := app.InterruptedErr(); e != nil {
 		return e // 中断で ffmpeg の確認が失敗したのを「H.264 を書ける ffmpeg が要る」と言わない
 	}
 	if chrome == "" {
-		return fail("mp4 には Chrome か Chromium が要る (環境変数 CHROME で実行ファイルを指定できる)")
+		return app.Fail("mp4 には Chrome か Chromium が要る (環境変数 CHROME で実行ファイルを指定できる)")
 	}
 	if enc == nil {
-		return fail("mp4 には H.264 を書ける ffmpeg が要る (brew install ffmpeg)")
+		return app.Fail("mp4 には H.264 を書ける ffmpeg が要る (brew install ffmpeg)")
 	}
-	html, err := renderHTML(data, env)
+	html, err := RenderHTML(data, env)
 	if err != nil {
 		return err
 	}
 	page := filepath.Join(td, "render.html")
 	if err := os.WriteFile(page, []byte(html), 0o644); err != nil {
-		return fail("%s: 書けない (%v)", page, err)
+		return app.Fail("%s: 書けない (%v)", page, err)
 	}
-	waitForIdleCPU(env)
-	if e := interruptedErr(); e != nil {
+	WaitForIdleCPU(env)
+	if e := app.InterruptedErr(); e != nil {
 		return e
 	}
-	perFrame := frameStates(data.Frames, data.Blinks, data.Cards, data.Duration)
-	states := sortedStates(perFrame)
-	shots := map[visualState]string{}
+	perFrame := FrameStates(data.Frames, data.Blinks, data.Cards, data.Duration)
+	states := SortedStates(perFrame)
+	shots := map[VisualState]string{}
 	for _, st := range states {
 		shots[st] = filepath.Join(td, fmt.Sprintf("state_%d_%d_%d_%d_%d.png", st[0]+1, st[1], st[2], st[3], st[4]))
 	}
-	var groups [][]visualState
-	for i := 0; i < len(states); i += sheetStates {
-		groups = append(groups, states[i:min(i+sheetStates, len(states))])
+	var groups [][]VisualState
+	for i := 0; i < len(states); i += SheetStates {
+		groups = append(groups, states[i:min(i+SheetStates, len(states))])
 	}
-	w, h := videoSize[0], videoSize[1]
+	w, h := VideoSize[0], VideoSize[1]
 	pageURI := (&url.URL{Scheme: "file", Path: page}).String()
 
 	shoot := func(gi int) string {
 		group, sheet := groups[gi], filepath.Join(td, fmt.Sprintf("sheet_%d.png", gi))
 		// --user-data-dir は付けない: 付けると撮影後も Chrome の更新プロセスが残って終了しない (実測)。
 		// 付けなければ並列に起動しても衝突しない
-		rc, msg := runQuiet(120*time.Second, chrome, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=1",
+		rc, msg := extcmd.RunQuiet(120*time.Second, chrome, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=1",
 			fmt.Sprintf("--window-size=%d,%d", w, h*len(group)), "--virtual-time-budget=3000", "--screenshot="+sheet,
-			pageURI+sheetFragment(group))
-		if rc != 0 || !isFile(sheet) {
-			return fmt.Sprintf("Chrome が失敗 (rc=%d): %s", rc, lastRunes(msg, 300))
+			pageURI+SheetFragment(group))
+		if rc != 0 || !paths.IsFile(sheet) {
+			return fmt.Sprintf("Chrome が失敗 (rc=%d): %s", rc, textx.LastRunes(msg, 300))
 		}
-		if gw, gh := pngSize(sheet); gw != w || gh != h*len(group) { // 縦に長すぎて切られた・倍率が違う、を切り分け前に止める
+		if gw, gh := extcmd.PngSize(sheet); gw != w || gh != h*len(group) { // 縦に長すぎて切られた・倍率が違う、を切り分け前に止める
 			return fmt.Sprintf("撮った絵の大きさが (%d, %d) で、期待した (%d, %d) と違う", gw, gh, w, h*len(group))
 		}
 		var fc strings.Builder
@@ -208,15 +194,15 @@ func writeMP4(env *Env, data *PlayerData, m4a, out, td string, jobs int) error {
 		for k, st := range group {
 			args = append(args, "-map", fmt.Sprintf("[o%d]", k), shots[st])
 		}
-		rc, msg = runQuiet(60*time.Second, "ffmpeg", args...)
+		rc, msg = extcmd.RunQuiet(60*time.Second, "ffmpeg", args...)
 		allOK := rc == 0
 		for _, st := range group {
-			if gw, gh := pngSize(shots[st]); gw != w || gh != h {
+			if gw, gh := extcmd.PngSize(shots[st]); gw != w || gh != h {
 				allOK = false
 			}
 		}
 		if !allOK {
-			return fmt.Sprintf("切り分けに失敗 (rc=%d): %s", rc, lastRunes(msg, 300))
+			return fmt.Sprintf("切り分けに失敗 (rc=%d): %s", rc, textx.LastRunes(msg, 300))
 		}
 		return ""
 	}
@@ -235,12 +221,12 @@ func writeMP4(env *Env, data *PlayerData, m4a, out, td string, jobs int) error {
 		}()
 	}
 	wg.Wait()
-	if e := interruptedErr(); e != nil {
+	if e := app.InterruptedErr(); e != nil {
 		return e
 	}
 	for gi, e := range errs { // 失敗はグループの順に最初のものを報告する (Python 版と同じ)
 		if e != "" {
-			return fail("%d 枚目のまとめ撮り: %s", gi+1, e)
+			return app.Fail("%d 枚目のまとめ撮り: %s", gi+1, e)
 		}
 	}
 	// 全部が同じ絵なら、まとめ撮りモードが効かずに同じ画面を撮っている (字幕も口も変わらない動画になる)
@@ -251,7 +237,7 @@ func writeMP4(env *Env, data *PlayerData, m4a, out, td string, jobs int) error {
 			seen[sha256.Sum256(b)] = true
 		}
 		if len(seen) == 1 {
-			return fail("Chrome が撮った絵がすべて同じ。templates/player.html のまとめ撮りモード (#sheet=) が効いていない")
+			return app.Fail("Chrome が撮った絵がすべて同じ。templates/player.html のまとめ撮りモード (#sheet=) が効いていない")
 		}
 	}
 
@@ -260,61 +246,61 @@ func writeMP4(env *Env, data *PlayerData, m4a, out, td string, jobs int) error {
 	//    字幕と口の切り替わりが音声と ±1 フレーム前後し、-shortest と合わせて終わりの映像が欠けた (実測は issue 660)
 	seq := filepath.Join(td, "seq")
 	if err := os.MkdirAll(seq, 0o755); err != nil {
-		return fail("%s: 作れない (%v)", seq, err)
+		return app.Fail("%s: 作れない (%v)", seq, err)
 	}
 	for k, st := range perFrame {
 		if err := os.Symlink(shots[st], filepath.Join(seq, fmt.Sprintf("f%06d.png", k))); err != nil {
-			return fail("%s: 書けない (%v)", seq, err)
+			return app.Fail("%s: 書けない (%v)", seq, err)
 		}
 	}
 	// 連番の書式 (%06d) の外にある % は、ffmpeg が書式として読まないよう %% にする
 	pattern := strings.ReplaceAll(seq, "%", "%%") + "/f%06d.png"
-	args := []string{"-v", "error", "-y", "-framerate", strconv.Itoa(mouthFPS), "-i", pattern, "-i", m4a, "-map", "0:v", "-map", "1:a"}
+	args := []string{"-v", "error", "-y", "-framerate", strconv.Itoa(MouthFPS), "-i", pattern, "-i", m4a, "-map", "0:v", "-map", "1:a"}
 	args = append(args, enc...)
 	// 出力先の隣の一時ファイルに書いてから置き換える (中断・失敗で前回の正常な出力を壊さない)
-	part, err := partPath(out)
+	part, err := outfile.PartPath(out)
 	if err != nil {
-		return fail("%s: 一時ファイルを作れない (%v)", out, err)
+		return app.Fail("%s: 一時ファイルを作れない (%v)", out, err)
 	}
 	defer func() { _ = os.Remove(part) }()
 	// -shortest は付けない: 音声の終わりの手前のフレームの境で切られる。映像は ceil(尺 × fps) フレームで音声を覆う (差は 1 フレーム未満)
 	args = append(args, "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", "-f", "mp4", part)
 	var stderr bytes.Buffer
-	cmd := exec.CommandContext(appCtx, "ffmpeg", args...)
+	cmd := exec.CommandContext(app.Ctx, "ffmpeg", args...)
 	cmd.Stderr = &stderr
 	cmd.WaitDelay = 5 * time.Second
 	err = cmd.Run()
-	if e := interruptedErr(); e != nil {
+	if e := app.InterruptedErr(); e != nil {
 		return e
 	}
 	if st, serr := os.Stat(part); err != nil || serr != nil || st.Size() == 0 {
-		return fail("mp4 の書き出しに失敗 (%v): %s", err, lastRunes(strings.TrimSpace(stderr.String()), 400))
+		return app.Fail("mp4 の書き出しに失敗 (%v): %s", err, textx.LastRunes(strings.TrimSpace(stderr.String()), 400))
 	}
-	if err := replaceKeepingMode(part, out); err != nil {
-		return fail("%s: 書けない (%v)", out, err)
+	if err := outfile.ReplaceKeepingMode(part, out); err != nil {
+		return app.Fail("%s: 書けない (%v)", out, err)
 	}
 	return nil
 }
 
-// visualState は 1 フレームの見た目の状態 (字幕の行, 話し中か, 口の開き, 目を閉じているキャラのビット, 区切りのカード)。
+// VisualState は 1 フレームの見た目の状態 (字幕の行, 話し中か, 口の開き, 目を閉じているキャラのビット, 区切りのカード)。
 // mp4 はこの種類ごとに 1 枚撮る。
-type visualState [5]int
+type VisualState [5]int
 
-// frameStates はフレームごとの状態を並べる。総フレーム数は ceil(duration × fps) で、runs (frameRuns の出力) と
-// blinks (blinkRuns の出力)・cards (chapterCardRuns の出力) の各区間を、次の区間の開始まで繰り返す (nil なら 0 のまま)。
+// FrameStates はフレームごとの状態を並べる。総フレーム数は ceil(duration × fps) で、runs (FrameRuns の出力) と
+// blinks (BlinkRuns の出力)・cards (ChapterCardRuns の出力) の各区間を、次の区間の開始まで繰り返す (nil なら 0 のまま)。
 // 最後の状態は総フレーム数まで続ける
-func frameStates(runs [][4]int, blinks, cards [][2]int, duration float64) []visualState {
-	total := max(1, int(math.Ceil(duration*mouthFPS)))
-	out := make([]visualState, 0, total)
+func FrameStates(runs [][4]int, blinks, cards [][2]int, duration float64) []VisualState {
+	total := max(1, int(math.Ceil(duration*MouthFPS)))
+	out := make([]VisualState, 0, total)
 	ri := 0
-	blinkAt, cardAt := runCursor(blinks), runCursor(cards)
+	blinkAt, cardAt := RunCursor(blinks), RunCursor(cards)
 	for k := range total {
 		for ri+1 < len(runs) && runs[ri+1][0] <= k {
 			ri++
 		}
-		st := visualState{-1, 0, 0, 0, 0}
+		st := VisualState{-1, 0, 0, 0, 0}
 		if len(runs) > 0 && runs[ri][0] <= k {
-			st = visualState{runs[ri][1], runs[ri][2], runs[ri][3], 0, 0}
+			st = VisualState{runs[ri][1], runs[ri][2], runs[ri][3], 0, 0}
 		}
 		st[3], st[4] = blinkAt(k), cardAt(k)
 		out = append(out, st)
@@ -322,8 +308,8 @@ func frameStates(runs [][4]int, blinks, cards [][2]int, duration float64) []visu
 	return out
 }
 
-// runCursor は [開始フレーム, 値] の変わり目の列を、フレームの昇順に引く関数にする (最初の区間より前と nil は 0)。
-func runCursor(runs [][2]int) func(k int) int {
+// RunCursor は [開始フレーム, 値] の変わり目の列を、フレームの昇順に引く関数にする (最初の区間より前と nil は 0)。
+func RunCursor(runs [][2]int) func(k int) int {
 	i := 0
 	return func(k int) int {
 		for i+1 < len(runs) && runs[i+1][0] <= k {
@@ -336,21 +322,13 @@ func runCursor(runs [][2]int) func(k int) int {
 	}
 }
 
-func lastRunes(s string, n int) string {
-	r := []rune(s)
-	if len(r) > n {
-		return string(r[len(r)-n:])
-	}
-	return s
-}
-
-// sortedStates はフレームごとの状態の種類を (行, 話し中, 口, まばたき, カード) の辞書順に並べる。
-func sortedStates(states []visualState) []visualState {
-	set := map[visualState]bool{}
+// SortedStates はフレームごとの状態の種類を (行, 話し中, 口, まばたき, カード) の辞書順に並べる。
+func SortedStates(states []VisualState) []VisualState {
+	set := map[VisualState]bool{}
 	for _, st := range states {
 		set[st] = true
 	}
-	out := make([]visualState, 0, len(set))
+	out := make([]VisualState, 0, len(set))
 	for st := range set {
 		out = append(out, st)
 	}
@@ -359,7 +337,7 @@ func sortedStates(states []visualState) []visualState {
 }
 
 // cmpState は状態を (行, 話し中, 口, まばたき, カード) の辞書順で比べる
-func cmpState(a, b visualState) int {
+func cmpState(a, b VisualState) int {
 	for i := range a {
 		if a[i] != b[i] {
 			if a[i] < b[i] {

@@ -9,6 +9,11 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"zundamon-kaisetsu/internal/build"
+	"zundamon-kaisetsu/internal/paths"
+	"zundamon-kaisetsu/internal/script"
+	"zundamon-kaisetsu/internal/show"
 )
 
 // fakeMermaid は PATH の先頭に偽の npx を置く。偽物は引数と PUPPETEER_SKIP_DOWNLOAD を log に 1 行ずつ書き、mode に従って動く:
@@ -20,7 +25,7 @@ func fakeMermaid(t *testing.T, pngPath, mode string) string {
 	t.Helper()
 	bin := t.TempDir()
 	log := filepath.Join(bin, "calls.log")
-	script := `#!/bin/sh
+	scr := `#!/bin/sh
 echo "$* skip=$PUPPETEER_SKIP_DOWNLOAD" >> "` + log + `"
 case "` + mode + `" in
 fail) echo "Parse error on line 2" >&2; exit 1 ;;
@@ -32,7 +37,7 @@ while [ $# -gt 0 ]; do
 done
 exit 2
 `
-	writeShim(t, bin, "npx", script)
+	writeShim(t, bin, "npx", scr)
 	chrome := filepath.Join(bin, "chrome")
 	must(t, os.WriteFile(chrome, []byte("#!/bin/sh\nexit 0\n"), 0o755))
 	prependPath(t, bin)
@@ -55,7 +60,7 @@ func calls(t *testing.T, log string) []string {
 }
 
 func TestRejectBadMermaidShow(t *testing.T) {
-	many := make([]any, mermaidLinesMax+1)
+	many := make([]any, show.MermaidLinesMax+1)
 	for i := range many {
 		many[i] = "A --> B"
 	}
@@ -76,7 +81,7 @@ func TestRejectBadMermaidShow(t *testing.T) {
 			map[string]any{"who": "metan", "text": "a"},
 			map[string]any{"who": "metan", "text": "b", "show": tc.show},
 		}})
-		_, err := loadScript(path, testEnv(t))
+		_, err := script.LoadScript(path, testEnv(t))
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%v: %q を含む拒否にならなかった (%v)", tc.show, tc.want, err)
 		}
@@ -88,13 +93,13 @@ func TestEmbedMermaid(t *testing.T) {
 	writeImage(t, src, "ok.png", 800, 500, false)
 	log := fakeMermaid(t, filepath.Join(src, "ok.png"), "ok")
 	var scriptDir string
-	build := func(code ...any) (*PlayerData, error) {
+	bld := func(code ...any) (*build.PlayerData, error) {
 		return buildWithShows(t, func(dir string, lines []any) {
 			scriptDir = dir
 			lines[1].(map[string]any)["show"] = mermaidShow(code...)
 		})
 	}
-	data, err := build("flowchart LR", "  A --> B")
+	data, err := bld("flowchart LR", "  A --> B")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,8 +112,8 @@ func TestEmbedMermaid(t *testing.T) {
 		!strings.Contains(c[0], "skip=1") || !strings.Contains(c[0], " -p ") || !strings.Contains(c[0], " -i ") {
 		t.Errorf("npx の呼び方が違う (版を固定した mermaid-cli・倍率 2・puppeteer の設定・入力・Chrome を取らせない): %v", c)
 	}
-	cache := mermaidCachePath(filepath.Join(scriptDir, "script.json"), []string{"flowchart LR", "  A --> B"})
-	if !isFile(cache) {
+	cache := show.MermaidCachePath(filepath.Join(scriptDir, "script.json"), []string{"flowchart LR", "  A --> B"})
+	if !paths.IsFile(cache) {
 		t.Errorf("描いた PNG がキャッシュに無い: %s", cache)
 	}
 	if ents, _ := os.ReadDir(filepath.Dir(cache)); len(ents) != 1 {
@@ -124,17 +129,17 @@ func TestMermaidCacheReused(t *testing.T) {
 	env := testEnv(t)
 	dir := t.TempDir()
 	copyTree(t, filepath.Join("testdata", "build"), dir)
-	path := resolvePath(filepath.Join(dir, "script.json"))
+	path := paths.ResolvePath(filepath.Join(dir, "script.json"))
 	assembleWith := func(code ...string) {
 		t.Helper()
-		s, err := loadScript(path, env)
+		s, err := script.LoadScript(path, env)
 		must(t, err)
 		list := make([]any, len(code))
 		for i, c := range code {
 			list[i] = c
 		}
 		s.Lines[1]["show"] = mermaidShow(list...)
-		_, _, err = assemble(s, env)
+		_, _, err = build.Assemble(s, env)
 		must(t, err)
 	}
 	assembleWith("flowchart LR", "  A --> B")
@@ -199,11 +204,11 @@ func TestMermaidCancelKillsGrandchild(t *testing.T) {
 	env := testEnv(t)
 	dir := t.TempDir()
 	copyTree(t, filepath.Join("testdata", "build"), dir)
-	s, err := loadScript(resolvePath(filepath.Join(dir, "script.json")), env)
+	s, err := script.LoadScript(paths.ResolvePath(filepath.Join(dir, "script.json")), env)
 	must(t, err)
 	s.Lines[1]["show"] = mermaidShow("flowchart LR", "  A --> B")
 	done := make(chan error, 1)
-	go func() { _, _, err := assemble(s, env); done <- err }()
+	go func() { _, _, err := build.Assemble(s, env); done <- err }()
 	pidFile := filepath.Join(filepath.Dir(log), "grandchild.pid")
 	waitUntil(t, "偽物が孫を起こす", func() bool {
 		b, err := os.ReadFile(pidFile)
@@ -224,9 +229,9 @@ func TestMermaidCancelKillsGrandchild(t *testing.T) {
 // TestMermaidTimeoutMessage は、描くのが時間切れになったら、その旨で止まることを確かめる。
 func TestMermaidTimeoutMessage(t *testing.T) {
 	log := fakeMermaid(t, "", "hang")
-	old := mermaidTimeout
-	mermaidTimeout = 2 * time.Second // 偽物が孫の pid を書き終えるまでの余裕 (書く前に止まると、残らないことを確かめられない)
-	t.Cleanup(func() { mermaidTimeout = old })
+	old := show.MermaidTimeout
+	show.MermaidTimeout = 2 * time.Second // 偽物が孫の pid を書き終えるまでの余裕 (書く前に止まると、残らないことを確かめられない)
+	t.Cleanup(func() { show.MermaidTimeout = old })
 	done := make(chan error, 1)
 	go func() {
 		_, err := buildWithShows(t, func(_ string, lines []any) {
@@ -257,7 +262,7 @@ func TestMermaidBrokenCacheHint(t *testing.T) {
 	fakeMermaid(t, "", "fail") // 描き直しには進まない (キャッシュがある) ので呼ばれない
 	_, err := buildWithShows(t, func(dir string, lines []any) {
 		code := []string{"flowchart LR", "  A --> B"}
-		cache := mermaidCachePath(filepath.Join(dir, "script.json"), code)
+		cache := show.MermaidCachePath(filepath.Join(dir, "script.json"), code)
 		must(t, os.MkdirAll(filepath.Dir(cache), 0o755))
 		must(t, os.WriteFile(cache, []byte("\x89PNG broken"), 0o644))
 		lines[1].(map[string]any)["show"] = mermaidShow(code[0], code[1])

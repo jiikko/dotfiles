@@ -17,6 +17,13 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"zundamon-kaisetsu/internal/build"
+	"zundamon-kaisetsu/internal/paths"
+	"zundamon-kaisetsu/internal/pyjson"
+	"zundamon-kaisetsu/internal/script"
+	"zundamon-kaisetsu/internal/synth"
+	"zundamon-kaisetsu/internal/wav"
 )
 
 func TestMouthTrackSyntheticMatchesPython(t *testing.T) {
@@ -31,7 +38,7 @@ func TestMouthTrackSyntheticMatchesPython(t *testing.T) {
 		t.Fatalf("golden の件数が少ない: %d", len(cases))
 	}
 	for _, c := range cases {
-		if got := mouthTrack(c.Query, c.Duration); got != c.Mouth {
+		if got := build.MouthTrack(c.Query, c.Duration); got != c.Mouth {
 			t.Errorf("%s (%.4f 秒): got %s want %s", c.Name, c.Duration, got, c.Mouth)
 		}
 	}
@@ -49,11 +56,11 @@ func TestFrameRunsBoundaryMatchesPython(t *testing.T) {
 		Frames   [][4]int `json:"frames"`
 	}
 	readGolden(t, "frames_boundary.json", &g)
-	var tl []timelineLine
+	var tl []build.TimelineLine
 	for _, x := range g.Timeline {
-		tl = append(tl, timelineLine{Start: x.Start, End: x.End, mouth: x.Mouth})
+		tl = append(tl, build.TimelineLine{Start: x.Start, End: x.End, Mouth: x.Mouth})
 	}
-	if got := frameRuns(tl, g.Duration); !reflect.DeepEqual(got, g.Frames) {
+	if got := build.FrameRuns(tl, g.Duration); !reflect.DeepEqual(got, g.Frames) {
 		t.Errorf("got  %v\nwant %v", got, g.Frames)
 	}
 }
@@ -65,7 +72,7 @@ func TestStemMatchesPython(t *testing.T) {
 		t.Fatal("golden が空")
 	}
 	for _, c := range cases {
-		if got := pyStem(c.Name); got != c.Stem {
+		if got := pyjson.Stem(c.Name); got != c.Stem {
 			t.Errorf("%q: got %q want %q", c.Name, got, c.Stem)
 		}
 	}
@@ -86,7 +93,7 @@ func TestBuildWithDefaultAssetsMatchesPython(t *testing.T) {
 		t.Fatal(err)
 	}
 	var raw map[string]any
-	if err := decodeJSON(b, &raw); err != nil {
+	if err := script.DecodeJSON(b, &raw); err != nil {
 		t.Fatal(err)
 	}
 	delete(raw["cast"].(map[string]any)["metan"].(map[string]any), "faces")
@@ -98,17 +105,17 @@ func TestBuildWithDefaultAssetsMatchesPython(t *testing.T) {
 	}
 	env := testEnv(t)
 	env.AssetsFaces = filepath.Join(dir, "assets")
-	s, err := loadScript(resolvePath(path), env)
+	s, err := script.LoadScript(paths.ResolvePath(path), env)
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, _, err := assemble(s, env)
+	data, _, err := build.Assemble(s, env)
 	if err != nil {
 		t.Fatal(err)
 	}
 	gb, _ := json.Marshal(data)
 	var got map[string]any
-	if err := decodeJSON(gb, &got); err != nil {
+	if err := script.DecodeJSON(gb, &got); err != nil {
 		t.Fatal(err)
 	}
 	g, ok := golden["script"]
@@ -118,7 +125,7 @@ func TestBuildWithDefaultAssetsMatchesPython(t *testing.T) {
 	want := g.Data
 	normalizeNumbers(got)
 	normalizeNumbers(want)
-	for _, k := range sortedKeys(want) {
+	for _, k := range pyjson.SortedKeys(want) {
 		if !reflect.DeepEqual(got[k], want[k]) {
 			t.Errorf("%s が golden と違う (既定の置き場の立ち絵を読んでいないか、空のチャプターを数えた)", k)
 		}
@@ -129,51 +136,51 @@ func TestBuildWithDefaultAssetsMatchesPython(t *testing.T) {
 func TestDefaultFaceAlwaysEmbedded(t *testing.T) {
 	dir := t.TempDir()
 	facesAbs, _ := filepath.Abs(filepath.Join("testdata", "build", "faces", "metan"))
-	script := map[string]any{
+	scr := map[string]any{
 		"cast":  map[string]any{"metan": map[string]any{"faces": facesAbs}},
 		"lines": []any{map[string]any{"who": "zundamon", "text": "ぼくだけが話すのだ"}},
 	}
 	path := filepath.Join(dir, "solo.json")
-	writeScriptFile(t, path, script)
+	writeScriptFile(t, path, scr)
 	env := testEnv(t)
-	s, err := loadScript(path, env)
+	s, err := script.LoadScript(path, env)
 	if err != nil {
 		t.Fatal(err)
 	}
-	fs, err := loadFaces(s, env)
+	fs, err := build.LoadFaces(s, env)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := sortedKeys(fs.images["metan"]); !slices.Equal(got, []string{"通常"}) || len(fs.images["metan"]["通常"]) != 3 {
+	if got := pyjson.SortedKeys(fs.Images["metan"]); !slices.Equal(got, []string{"通常"}) || len(fs.Images["metan"]["通常"]) != 3 {
 		t.Errorf("話さないキャラの立ち絵: %v (want [通常] の 3 段階)", got)
 	}
 }
 
-// frameStates はフレームごとの状態を、frameRuns の区間どおりに総フレーム数 ceil(尺 × fps) まで並べる (issue 660)
+// FrameStates はフレームごとの状態を、FrameRuns の区間どおりに総フレーム数 ceil(尺 × fps) まで並べる (issue 660)
 func TestFrameStates(t *testing.T) {
 	runs := [][4]int{{0, -1, 0, 0}, {12, 0, 1, 2}, {15, 0, 0, 0}}
-	got := frameStates(runs, nil, nil, 0.7) // 0.7 秒 = 21 フレーム
-	var want []visualState
+	got := build.FrameStates(runs, nil, nil, 0.7) // 0.7 秒 = 21 フレーム
+	var want []build.VisualState
 	for range 12 {
-		want = append(want, visualState{-1, 0, 0, 0})
+		want = append(want, build.VisualState{-1, 0, 0, 0})
 	}
 	for range 3 {
-		want = append(want, visualState{0, 1, 2, 0})
+		want = append(want, build.VisualState{0, 1, 2, 0})
 	}
 	for range 6 {
-		want = append(want, visualState{0, 0, 0, 0})
+		want = append(want, build.VisualState{0, 0, 0, 0})
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("got  %v\nwant %v", got, want)
 	}
-	// frameRuns と組み合わせると、フレーム k は時刻 (k+0.5)/fps の状態になる (プレイヤーの規則)
-	tl := []timelineLine{{Start: 0.412, End: 0.6, mouth: "2"}, {Start: 0.938, End: 1.1, mouth: "1"}}
-	fs := frameStates(frameRuns(tl, 1.2), nil, nil, 1.2)
+	// FrameRuns と組み合わせると、フレーム k は時刻 (k+0.5)/fps の状態になる (プレイヤーの規則)
+	tl := []build.TimelineLine{{Start: 0.412, End: 0.6, Mouth: "2"}, {Start: 0.938, End: 1.1, Mouth: "1"}}
+	fs := build.FrameStates(build.FrameRuns(tl, 1.2), nil, nil, 1.2)
 	if len(fs) != 36 {
 		t.Fatalf("総フレーム数: got %d want 36", len(fs))
 	}
 	for k, st := range fs {
-		tm := (float64(k) + 0.5) / mouthFPS
+		tm := (float64(k) + 0.5) / build.MouthFPS
 		li := -1
 		for i, l := range tl {
 			if l.Start <= tm {
@@ -220,7 +227,7 @@ func TestSynthWithFakeEngine(t *testing.T) {
 	writeScriptFile(t, path, map[string]any{"lines": []any{map[string]any{"who": "metan", "text": "あ", "speed": 1.25, "pitch": 0.03, "intonation": 1.1, "volume": 0.8}}})
 	env := testEnv(t)
 	env.Engine = srv.URL
-	if err := cmdSynth(env, path, false); err != nil {
+	if err := synth.CmdSynth(env, path, false); err != nil {
 		t.Fatal(err)
 	}
 	if len(bodies) != 1 {
@@ -235,27 +242,27 @@ func TestSynthWithFakeEngine(t *testing.T) {
 	if q["outputStereo"] != false || q["unknownField"] == nil {
 		t.Errorf("outputStereo か、エンジンの知らないフィールドが落ちた: %v", q)
 	}
-	s, err := loadScript(resolvePath(path), env)
+	s, err := script.LoadScript(paths.ResolvePath(path), env)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, _ := lineParams(s, s.Lines[0])
-	wav, query := cachePaths(workDir(s.Path), p)
-	if !isFile(wav) || !isFile(query) {
-		t.Fatalf("キャッシュの鍵どおりの名前で保存されていない: %s", workDir(s.Path))
+	p, _ := script.LineParams(s, s.Lines[0])
+	wavData, query := script.CachePaths(paths.WorkDir(s.Path), p)
+	if !paths.IsFile(wavData) || !paths.IsFile(query) {
+		t.Fatalf("キャッシュの鍵どおりの名前で保存されていない: %s", paths.WorkDir(s.Path))
 	}
 	// 2 回目はキャッシュを使う (エンジンを呼ばない)
-	if err := cmdSynth(env, path, false); err != nil || len(bodies) != 1 {
+	if err := synth.CmdSynth(env, path, false); err != nil || len(bodies) != 1 {
 		t.Errorf("キャッシュを使わずに合成し直した (呼び出し %d 回, %v)", len(bodies), err)
 	}
 	// 壊れた wav が返ったら、何も残さずに止まる
 	broken = true
-	_ = os.Remove(wav)
+	_ = os.Remove(wavData)
 	_ = os.Remove(query)
-	if err := cmdSynth(env, path, false); err == nil {
+	if err := synth.CmdSynth(env, path, false); err == nil {
 		t.Error("壊れた wav で成功した")
 	}
-	entries, _ := os.ReadDir(workDir(s.Path))
+	entries, _ := os.ReadDir(paths.WorkDir(s.Path))
 	if len(entries) != 0 {
 		t.Errorf("壊れた合成結果がキャッシュに残った: %v", entries)
 	}
@@ -291,7 +298,7 @@ func TestLoadScriptRejectsMalformedFiles(t *testing.T) {
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := loadScript(path, testEnv(t)); err == nil || !strings.Contains(err.Error(), "読めない") {
+		if _, err := script.LoadScript(path, testEnv(t)); err == nil || !strings.Contains(err.Error(), "読めない") {
 			t.Errorf("%s: 受け入れた (%v)", name, err)
 		}
 	}
@@ -299,37 +306,37 @@ func TestLoadScriptRejectsMalformedFiles(t *testing.T) {
 
 func TestWavOddLengthAndFloat(t *testing.T) {
 	odd := wavBytes(fmtChunk(1, 24000, 16), chunk("data", make([]byte, 201)))
-	if pcm, n, err := checkWavBytes(odd, "t"); err != nil || n != 100 || len(pcm) != 200 {
+	if pcm, n, err := wav.CheckBytes(odd, "t"); err != nil || n != 100 || len(pcm) != 200 {
 		t.Errorf("奇数長の data を読めない: n=%d len=%d err=%v", n, len(pcm), err)
 	}
 	ext := binaryFmtExtensible(3) // subformat = IEEE float
-	if _, _, err := checkWavBytes(wavBytes(ext, chunk("data", make([]byte, 200))), "t"); err == nil {
+	if _, _, err := wav.CheckBytes(wavBytes(ext, chunk("data", make([]byte, 200))), "t"); err == nil {
 		t.Error("拡張形式の float を PCM として受け入れた")
 	}
-	if _, _, err := checkWavBytes(wavBytes(binaryFmtExtensible(1), chunk("data", make([]byte, 200))), "t"); err != nil {
+	if _, _, err := wav.CheckBytes(wavBytes(binaryFmtExtensible(1), chunk("data", make([]byte, 200))), "t"); err != nil {
 		t.Errorf("拡張形式の PCM を読めない: %v", err)
 	}
 	// 先頭 2 バイトだけ PCM で、残りが違う GUID は拒否する (Python 3.14 は GUID 全体を比べる)
 	fake := binaryFmtExtensible(1)
 	fake[len(fake)-1] ^= 0xff
-	if _, _, err := checkWavBytes(wavBytes(fake, chunk("data", make([]byte, 200))), "t"); err == nil {
+	if _, _, err := wav.CheckBytes(wavBytes(fake, chunk("data", make([]byte, 200))), "t"); err == nil {
 		t.Error("PCM でない GUID を受け入れた")
 	}
 }
 
 func binaryFmtExtensible(sub uint16) []byte {
-	b := []byte{0xFE, 0xFF, 1, 0}                                                    // tag, channels
-	b = append(b, 0xC0, 0x5D, 0, 0)                                                  // 24000
-	b = append(b, 0x80, 0xBB, 0, 0, 2, 0, 16, 0)                                     // byte rate, block align, bits
-	b = append(b, 22, 0, 16, 0, 0, 0, 0, 0)                                          // cbSize, valid bits, channel mask
-	guid := append([]byte{byte(sub), byte(sub >> 8)}, ksdataformatSubtypePCM[2:]...) // subformat の GUID
+	b := []byte{0xFE, 0xFF, 1, 0}                                                        // tag, channels
+	b = append(b, 0xC0, 0x5D, 0, 0)                                                      // 24000
+	b = append(b, 0x80, 0xBB, 0, 0, 2, 0, 16, 0)                                         // byte rate, block align, bits
+	b = append(b, 22, 0, 16, 0, 0, 0, 0, 0)                                              // cbSize, valid bits, channel mask
+	guid := append([]byte{byte(sub), byte(sub >> 8)}, wav.KsdataformatSubtypePCM[2:]...) // subformat の GUID
 	b = append(b, guid...)
 	return chunk("fmt ", b)
 }
 
 // ".." の直前が symlink のとき、Python の Path.resolve() と同じく symlink を解決した後の親へ戻る。
 func TestResolvePathSymlinkThenParent(t *testing.T) {
-	root := resolvePath(t.TempDir())
+	root := paths.ResolvePath(t.TempDir())
 	real := filepath.Join(root, "real", "deep", "proj")
 	if err := os.MkdirAll(real, 0o755); err != nil {
 		t.Fatal(err)
@@ -341,11 +348,11 @@ func TestResolvePathSymlinkThenParent(t *testing.T) {
 	if err := os.Symlink(real, link); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := resolvePath(link+"/../s.json"), filepath.Join(root, "real", "deep", "s.json"); got != want {
+	if got, want := paths.ResolvePath(link+"/../s.json"), filepath.Join(root, "real", "deep", "s.json"); got != want {
 		t.Errorf("got %s want %s", got, want)
 	}
 	t.Chdir(link)
-	if got, want := resolvePath("../s.json"), filepath.Join(root, "real", "deep", "s.json"); got != want {
+	if got, want := paths.ResolvePath("../s.json"), filepath.Join(root, "real", "deep", "s.json"); got != want {
 		t.Errorf("相対パス: got %s want %s", got, want)
 	}
 }
@@ -359,13 +366,13 @@ func TestNegativeZeroIntLiteralKey(t *testing.T) {
 	readGolden(t, "cachekey.json", &cases)
 	want := cases[len(cases)-1].Key
 	line := map[string]any{"who": "metan", "text": "a", "pitch": json.Number("-0"), "volume": json.Number("-0"), "intonation": json.Number("-0")}
-	s := &Script{Raw: map[string]any{}, Cast: map[string]map[string]any{"metan": {"style_id": json.Number("2")}}}
-	p, err := lineParams(s, line)
+	s := &script.Script{Raw: map[string]any{}, Cast: map[string]map[string]any{"metan": {"style_id": json.Number("2")}}}
+	p, err := script.LineParams(s, line)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := cacheKey(p); got != want {
-		t.Errorf("整数の -0 の鍵が Python 版と違う: got %s want %s (%s)", got, want, cacheSerialize(p))
+	if got := script.CacheKey(p); got != want {
+		t.Errorf("整数の -0 の鍵が Python 版と違う: got %s want %s (%s)", got, want, script.CacheSerialize(p))
 	}
 }
 
@@ -373,11 +380,11 @@ func TestNegativeZeroIntLiteralKey(t *testing.T) {
 func TestCreatedDate(t *testing.T) {
 	env := testEnv(t)
 	env.Now = func() time.Time { return time.Date(2026, 10, 6, 23, 59, 0, 0, time.Local) }
-	s, err := loadScript(resolvePath(filepath.Join("testdata", "build", "script.json")), env)
+	s, err := script.LoadScript(paths.ResolvePath(filepath.Join("testdata", "build", "script.json")), env)
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, _, err := assemble(s, env)
+	data, _, err := build.Assemble(s, env)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,12 +392,12 @@ func TestCreatedDate(t *testing.T) {
 		t.Errorf("date の無い台本の作成日: %q (want build した日 2026-10-06)", data.Date)
 	}
 	s.Raw["date"] = "2026-09-30"
-	if got := createdDate(s, env); got != "2026-09-30" {
+	if got := build.CreatedDate(s, env); got != "2026-09-30" {
 		t.Errorf("台本の date を使っていない: %q", got)
 	}
 	for name, d := range map[string]any{"空": " ", "数": 20261006} {
 		path := writeScript(t, map[string]any{"date": d, "lines": []any{map[string]any{"who": "metan", "text": "a"}}})
-		if _, err := loadScript(path, env); err == nil || !strings.Contains(err.Error(), "date") {
+		if _, err := script.LoadScript(path, env); err == nil || !strings.Contains(err.Error(), "date") {
 			t.Errorf("%s の date を受け入れた (%v)", name, err)
 		}
 	}
@@ -441,14 +448,14 @@ func TestSynthCountsOnlyStaleCache(t *testing.T) {
 	must(t, os.WriteFile(path, []byte(`{"lines":[{"who":"metan","text":"あ"}]}`), 0o644))
 	env := testEnv(t)
 	env.Engine = srv.URL
-	must(t, cmdSynth(env, path, false))
+	must(t, synth.CmdSynth(env, path, false))
 	wd := filepath.Join(dir, "s.work")
 	must(t, os.MkdirAll(filepath.Join(wd, "mermaid"), 0o755))
 	must(t, os.WriteFile(filepath.Join(wd, "mermaid", "x.png"), []byte("png"), 0o644))
 	must(t, os.WriteFile(filepath.Join(wd, "old.wav"), []byte("RIFF"), 0o644))
 	var errb strings.Builder
 	env.Stderr = &errb
-	must(t, cmdSynth(env, path, false))
+	must(t, synth.CmdSynth(env, path, false))
 	if !strings.Contains(errb.String(), "古いキャッシュ 1 件") || strings.Contains(errb.String(), "ごと消して") {
 		t.Errorf("古いキャッシュは old.wav の 1 件のはずで、work/ ごと消すよう案内しない (mermaid/ を消させない): %s", errb.String())
 	}
@@ -481,7 +488,7 @@ func TestBuildChecksOutputDirFirst(t *testing.T) {
 			env.LoadAvg = func() (float64, bool) { return 0, true }
 			env.Now, env.Sleep = time.Now, func(time.Duration) {}
 			out := tc.setup(t.TempDir())
-			err := cmdBuild(env, filepath.Join("testdata", "build", "script.json"), out, "mp4", 1, 64, true)
+			err := build.CmdBuild(env, filepath.Join("testdata", "build", "script.json"), out, "mp4", 1, 64, true)
 			if err == nil || !strings.Contains(err.Error(), "書けない") {
 				t.Fatalf("書けない出力先で止まるはず: %v", err)
 			}
@@ -494,11 +501,11 @@ func TestBuildChecksOutputDirFirst(t *testing.T) {
 	}
 }
 
-// writeWav のヘッダの各欄を直接見る (自前の parser は byte rate / block align を読まないので、往復では検査されない。issue 653)
+// Write のヘッダの各欄を直接見る (自前の parser は byte rate / block align を読まないので、往復では検査されない。issue 653)
 func TestWriteWavHeaderFields(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "x.wav")
 	pcm := make([]byte, 480)
-	must(t, writeWav(p, pcm))
+	must(t, wav.Write(p, pcm))
 	b, err := os.ReadFile(p)
 	must(t, err)
 	le32 := func(i int) int { return int(binary.LittleEndian.Uint32(b[i : i+4])) }
@@ -511,8 +518,8 @@ func TestWriteWavHeaderFields(t *testing.T) {
 		{"fmt の長さ", le32(16), 16},
 		{"形式 (PCM)", le16(20), 1},
 		{"チャンネル", le16(22), 1},
-		{"サンプリング周波数", le32(24), sampleRate},
-		{"byte rate", le32(28), sampleRate * 2},
+		{"サンプリング周波数", le32(24), wav.SampleRate},
+		{"byte rate", le32(28), wav.SampleRate * 2},
 		{"block align", le16(32), 2},
 		{"ビット数", le16(34), 16},
 		{"data の大きさ", le32(40), len(pcm)},
@@ -529,11 +536,11 @@ func TestWriteWavHeaderFields(t *testing.T) {
 // 舞台に重ねて出すメタデータ (overlays): 省くと全部、書けば選んだものだけ (空なら何も出さない)。不正な値は読み込みで止める。
 func TestOverlays(t *testing.T) {
 	env := testEnv(t)
-	s, err := loadScript(resolvePath(filepath.Join("testdata", "build", "script.json")), env)
+	s, err := script.LoadScript(paths.ResolvePath(filepath.Join("testdata", "build", "script.json")), env)
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, _, err := assemble(s, env)
+	data, _, err := build.Assemble(s, env)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -548,17 +555,17 @@ func TestOverlays(t *testing.T) {
 		"何も出さない": {[]any{}, []string{}},
 	} {
 		path := writeScript(t, map[string]any{"overlays": tc.v, "lines": []any{map[string]any{"who": "metan", "text": "a"}}})
-		got, err := loadScript(path, env)
+		got, err := script.LoadScript(path, env)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		if o := screenOverlays(got); !slices.Equal(o, tc.want) {
+		if o := build.ScreenOverlays(got); !slices.Equal(o, tc.want) {
 			t.Errorf("%s: %v (want %v)", name, o, tc.want)
 		}
 	}
 	for name, v := range map[string]any{"文字列": "title", "知らない名前": []any{"subtitle"}, "重複": []any{"date", "date"}, "数": []any{1}} {
 		path := writeScript(t, map[string]any{"overlays": v, "lines": []any{map[string]any{"who": "metan", "text": "a"}}})
-		if _, err := loadScript(path, env); err == nil || !strings.Contains(err.Error(), "overlays") {
+		if _, err := script.LoadScript(path, env); err == nil || !strings.Contains(err.Error(), "overlays") {
 			t.Errorf("%s の overlays を受け入れた (%v)", name, err)
 		}
 	}
@@ -572,7 +579,7 @@ func TestOverlaysRenderedByPlayer(t *testing.T) {
 		t.Fatal(err)
 	}
 	tpl := string(tb)
-	// 既定 (overlays の無い台本・古い HTML) は Go の overlayKeys と同じ全部入り。宣言はまとめ撮りの分岐より前 (後ろだと mp4 で未定義になる)
+	// 既定 (overlays の無い台本・古い HTML) は Go の OverlayKeys と同じ全部入り。宣言はまとめ撮りの分岐より前 (後ろだと mp4 で未定義になる)
 	decl := regexp.MustCompile(`const OV = new Set\(D\.overlays \|\| \[([^\]]*)\]\)`).FindStringSubmatchIndex(tpl)
 	sheet := strings.Index(tpl, "location.hash.match(/^#sheet=")
 	switch {
@@ -587,8 +594,8 @@ func TestOverlaysRenderedByPlayer(t *testing.T) {
 	for _, q := range regexp.MustCompile(`'([a-z]+)'`).FindAllStringSubmatch(tpl[decl[2]:decl[3]], -1) {
 		defaults = append(defaults, q[1])
 	}
-	if !slices.Equal(defaults, overlayKeys) {
-		t.Errorf("player.html の既定 %v が overlayKeys %v と違う", defaults, overlayKeys)
+	if !slices.Equal(defaults, script.OverlayKeys) {
+		t.Errorf("player.html の既定 %v が overlayKeys %v と違う", defaults, script.OverlayKeys)
 	}
 	for _, re := range []string{
 		`\$\('stage-title'\)\.textContent = OV\.has\('title'\) \?`,
@@ -599,7 +606,7 @@ func TestOverlaysRenderedByPlayer(t *testing.T) {
 			t.Errorf("player.html に %s が無い", re)
 		}
 	}
-	for _, k := range overlayKeys {
+	for _, k := range script.OverlayKeys {
 		if !strings.Contains(tpl, "OV.has('"+k+"')") {
 			t.Errorf("player.html が %s を出し分けていない", k)
 		}

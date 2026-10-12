@@ -1,4 +1,5 @@
-package main
+// Package synth はエンジンへの要求 (audio_query / synthesis)・合成のキャッシュ・kana (読みの確認と英字の語の警告)。
+package synth
 
 import (
 	"bytes"
@@ -9,6 +10,15 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"zundamon-kaisetsu/internal/app"
+	"zundamon-kaisetsu/internal/engine"
+	"zundamon-kaisetsu/internal/outfile"
+	"zundamon-kaisetsu/internal/paths"
+	"zundamon-kaisetsu/internal/pyjson"
+	"zundamon-kaisetsu/internal/script"
+	"zundamon-kaisetsu/internal/textx"
+	"zundamon-kaisetsu/internal/wav"
 )
 
 type speaker struct {
@@ -19,19 +29,19 @@ type speaker struct {
 	} `json:"styles"`
 }
 
-func fetchSpeakers(engine string) ([]speaker, error) {
-	b, err := engineRequest(engine, "/speakers", nil, nil)
+func fetchSpeakers(eng string) ([]speaker, error) {
+	b, err := engine.Request(eng, "/speakers", nil, nil)
 	if err != nil {
 		return nil, err
 	}
 	var sp []speaker
 	if err := json.Unmarshal(b, &sp); err != nil {
-		return nil, fail("/speakers の応答を読めない (%v)", err)
+		return nil, app.Fail("/speakers の応答を読めない (%v)", err)
 	}
 	return sp, nil
 }
 
-func cmdSpeakers(env *Env) error {
+func CmdSpeakers(env *app.Env) error {
 	sp, err := fetchSpeakers(env.Engine)
 	if err != nil {
 		return err
@@ -48,21 +58,21 @@ func cmdSpeakers(env *Env) error {
 
 // audioQuery はエンジンの audio_query の結果。知らないフィールドも落とさず /synthesis と query.json へ運ぶため、
 // 構造体ではなく map のまま、数は json.Number のまま持つ。
-func audioQuery(engine, text string, styleID int64) (map[string]any, error) {
-	b, err := engineRequest(engine, "/audio_query", url.Values{"text": {text}, "speaker": {strconv.FormatInt(styleID, 10)}}, []byte{})
+func audioQuery(eng, text string, styleID int64) (map[string]any, error) {
+	b, err := engine.Request(eng, "/audio_query", url.Values{"text": {text}, "speaker": {strconv.FormatInt(styleID, 10)}}, []byte{})
 	if err != nil {
 		return nil, err
 	}
 	var q map[string]any
-	if err := decodeJSON(b, &q); err != nil {
-		return nil, fail("/audio_query の応答を読めない (%v)", err)
+	if err := script.DecodeJSON(b, &q); err != nil {
+		return nil, app.Fail("/audio_query の応答を読めない (%v)", err)
 	}
 	return q, nil
 }
 
 func queryKana(q map[string]any) string {
 	if k, ok := q["kana"]; ok {
-		return pyStr(k)
+		return pyjson.Str(k)
 	}
 	return ""
 }
@@ -75,19 +85,19 @@ type lineKana struct {
 
 // scriptKana は台本の行の読みを 1 行ずつ each に渡す。synth 済みの行はキャッシュの読みを使い、無い行だけエンジンに問い合わせる
 // (合成はしない)。1 行ずつ渡すのは、途中でエンジンが落ちても、それまでの行を出せるように
-func scriptKana(env *Env, s *Script, each func(i int, l lineKana) error) error {
-	wd := workDir(s.Path)
+func scriptKana(env *app.Env, s *script.Script, each func(i int, l lineKana) error) error {
+	wd := paths.WorkDir(s.Path)
 	for i, line := range s.Lines {
-		p, err := lineParams(s, line)
+		p, err := script.LineParams(s, line)
 		if err != nil {
 			return err
 		}
-		_, qp := cachePaths(wd, p)
+		_, qp := script.CachePaths(wd, p)
 		var kana string
 		if b, err := os.ReadFile(qp); err == nil {
 			var q map[string]any
-			if err := decodeJSON(b, &q); err != nil {
-				return fail("%s: 読めない (%v)", qp, err)
+			if err := script.DecodeJSON(b, &q); err != nil {
+				return app.Fail("%s: 読めない (%v)", qp, err)
 			}
 			kana = queryKana(q)
 		} else {
@@ -97,26 +107,26 @@ func scriptKana(env *Env, s *Script, each func(i int, l lineKana) error) error {
 			}
 			kana = queryKana(q)
 		}
-		if err := each(i, lineKana{Who: pyStr(line["who"]), Text: pyStr(line["text"]), Spoken: p.Text, Kana: kana, StyleID: p.StyleID}); err != nil {
+		if err := each(i, lineKana{Who: pyjson.Str(line["who"]), Text: pyjson.Str(line["text"]), Spoken: p.Text, Kana: kana, StyleID: p.StyleID}); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// cmdKana は文ごとに audio_query の読み (kana) を出す。read の候補 (カタカナ・ひらがな・英字のまま) を合成せずに比べる用。
+// CmdKana は文ごとに audio_query の読み (kana) を出す。read の候補 (カタカナ・ひらがな・英字のまま) を合成せずに比べる用。
 //
 // --script を付けると、台本の全行について 行番号 / 話者 / 字幕 / 読み を出す。音声を差し替えた行 (read か readings) には * を付ける。
 // --check を付けると、代わりに読みの検査 (reading_check.go) の結果を出す。
-func cmdKana(env *Env, texts []string, scriptArg, who string, styleID *int64, check bool) error {
+func CmdKana(env *app.Env, texts []string, scriptArg, who string, styleID *int64, check bool) error {
 	if check && scriptArg == "" {
-		return fail("kana の --check は --script と一緒に使う")
+		return app.Fail("kana の --check は --script と一緒に使う")
 	}
 	if scriptArg != "" {
 		if len(texts) > 0 {
-			return fail("kana は --script か文のどちらか一方を渡す")
+			return app.Fail("kana は --script か文のどちらか一方を渡す")
 		}
-		s, err := loadScript(resolvePath(scriptArg), env)
+		s, err := script.LoadScript(paths.ResolvePath(scriptArg), env)
 		if err != nil {
 			return err
 		}
@@ -137,9 +147,9 @@ func cmdKana(env *Env, texts []string, scriptArg, who string, styleID *int64, ch
 		})
 	}
 	if len(texts) == 0 {
-		return fail("kana には読みを見たい文か --script <台本> を渡す")
+		return app.Fail("kana には読みを見たい文か --script <台本> を渡す")
 	}
-	def, _ := castByKey(who)
+	def, _ := script.CastByKey(who)
 	sid := def.StyleID
 	if styleID != nil {
 		sid = *styleID
@@ -155,7 +165,7 @@ func cmdKana(env *Env, texts []string, scriptArg, who string, styleID *int64, ch
 }
 
 // pyFloatJSON は合成の入力に入れる浮動小数を Python の json.dumps と同じ表記の json.Number にする。
-func pyFloatJSON(f float64) json.Number { return json.Number(pyFloatRepr(f)) }
+func pyFloatJSON(f float64) json.Number { return json.Number(pyjson.FloatRepr(f)) }
 
 func marshalNoEscape(v any) ([]byte, error) {
 	var b bytes.Buffer
@@ -167,8 +177,8 @@ func marshalNoEscape(v any) ([]byte, error) {
 	return bytes.TrimSuffix(b.Bytes(), []byte("\n")), nil
 }
 
-func cmdSynth(env *Env, scriptArg string, force bool) error {
-	s, err := loadScript(resolvePath(scriptArg), env)
+func CmdSynth(env *app.Env, scriptArg string, force bool) error {
+	s, err := script.LoadScript(paths.ResolvePath(scriptArg), env)
 	if err != nil {
 		return err
 	}
@@ -182,32 +192,32 @@ func cmdSynth(env *Env, scriptArg string, force bool) error {
 			styles[st.ID] = x.Name
 		}
 	}
-	params := make([]Params, len(s.Lines))
+	params := make([]script.Params, len(s.Lines))
 	for i, line := range s.Lines {
-		p, err := lineParams(s, line)
+		p, err := script.LineParams(s, line)
 		if err != nil {
 			return err
 		}
 		params[i] = p
 		name, ok := styles[p.StyleID]
 		if !ok {
-			return fail("lines[%d]: style_id=%d がエンジンに無い (speakers サブコマンドで調べる)", i, p.StyleID)
+			return app.Fail("lines[%d]: style_id=%d がエンジンに無い (speakers サブコマンドで調べる)", i, p.StyleID)
 		}
-		want, _ := castByKey(pyStr(line["who"]))
+		want, _ := script.CastByKey(pyjson.Str(line["who"]))
 		if name != want.Name {
-			return fail("lines[%d]: style_id=%d は %s の声で、%s の声ではない", i, p.StyleID, name, want.Name)
+			return app.Fail("lines[%d]: style_id=%d は %s の声で、%s の声ではない", i, p.StyleID, name, want.Name)
 		}
 	}
 
-	wd := workDir(s.Path)
+	wd := paths.WorkDir(s.Path)
 	if err := os.MkdirAll(wd, 0o755); err != nil {
-		return fail("%s: 作れない (%v)", wd, err)
+		return app.Fail("%s: 作れない (%v)", wd, err)
 	}
 	made, cached := 0, 0
 	for i, line := range s.Lines {
 		p := params[i]
-		wavPath, queryPath := cachePaths(wd, p)
-		if isFile(wavPath) && isFile(queryPath) && !force {
+		wavPath, queryPath := script.CachePaths(wd, p)
+		if paths.IsFile(wavPath) && paths.IsFile(queryPath) && !force {
 			cached++
 			continue
 		}
@@ -217,35 +227,35 @@ func cmdSynth(env *Env, scriptArg string, force bool) error {
 		}
 		q["speedScale"], q["pitchScale"] = pyFloatJSON(p.Speed), pyFloatJSON(p.Pitch)
 		q["intonationScale"], q["volumeScale"] = pyFloatJSON(p.Intonation), pyFloatJSON(p.Volume)
-		q["outputSamplingRate"], q["outputStereo"] = json.Number(strconv.Itoa(sampleRate)), false
+		q["outputSamplingRate"], q["outputStereo"] = json.Number(strconv.Itoa(wav.SampleRate)), false
 		body, err := marshalNoEscape(q)
 		if err != nil {
-			return fail("audio_query の結果を書き出せない (%v)", err)
+			return app.Fail("audio_query の結果を書き出せない (%v)", err)
 		}
-		wav, err := engineRequest(env.Engine, "/synthesis", url.Values{"speaker": {strconv.FormatInt(p.StyleID, 10)}}, body)
+		wavData, err := engine.Request(env.Engine, "/synthesis", url.Values{"speaker": {strconv.FormatInt(p.StyleID, 10)}}, body)
 		if err != nil {
 			return err
 		}
-		if _, _, err := checkWavBytes(wav, fmt.Sprintf("lines[%d] の合成結果", i)); err != nil {
+		if _, _, err := wav.CheckBytes(wavData, fmt.Sprintf("lines[%d] の合成結果", i)); err != nil {
 			return err // 壊れた wav をキャッシュに残さない
 		}
-		if err := writeAtomic(queryPath, body); err != nil {
-			return fail("%s: 書けない (%v)", queryPath, err)
+		if err := outfile.WriteAtomic(queryPath, body); err != nil {
+			return app.Fail("%s: 書けない (%v)", queryPath, err)
 		}
-		if err := writeAtomic(wavPath, wav); err != nil {
-			return fail("%s: 書けない (%v)", wavPath, err)
+		if err := outfile.WriteAtomic(wavPath, wavData); err != nil {
+			return app.Fail("%s: 書けない (%v)", wavPath, err)
 		}
 		made++
-		fmt.Fprintf(env.Stderr, "[%d/%d] %s: %s\n", i+1, len(s.Lines), pyStr(line["who"]), firstRunes(p.Text, 30))
+		fmt.Fprintf(env.Stderr, "[%d/%d] %s: %s\n", i+1, len(s.Lines), pyjson.Str(line["who"]), textx.FirstRunes(p.Text, 30))
 	}
 	keep := map[string]bool{}
 	for _, p := range params {
-		w, q := cachePaths(wd, p)
+		w, q := script.CachePaths(wd, p)
 		keep[filepath.Base(w)], keep[filepath.Base(q)] = true, true
 	}
 	entries, err := os.ReadDir(wd)
 	if err != nil {
-		return fail("%s: 読めない (%v)", wd, err)
+		return app.Fail("%s: 読めない (%v)", wd, err)
 	}
 	// 数えるのは合成のキャッシュ (通常ファイルの *.wav / *.query.json) だけ。build が置く mermaid/ (図のキャッシュ) などを
 	// 「古いファイル」に数えると、案内に従って work/ ごと消し、図を描き直すことになる (issue 652)

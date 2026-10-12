@@ -21,10 +21,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -32,96 +30,33 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"zundamon-kaisetsu/internal/app"
+	"zundamon-kaisetsu/internal/build"
+	"zundamon-kaisetsu/internal/engine"
+	"zundamon-kaisetsu/internal/lint"
+	"zundamon-kaisetsu/internal/outfile"
+	"zundamon-kaisetsu/internal/script"
+	"zundamon-kaisetsu/internal/synth"
 )
 
-const skillDirEnv = "ZUNDAMON_KAISETSU_SKILL_DIR"
-
-// Env は外の世界 (出力先・エンジン・skill の置き場・時計) をまとめたもの。テストで差し替える。
-type Env struct {
-	Engine   string
-	SkillDir string
-	// AssetsFaces は立ち絵の既定の置き場 (skill のディレクトリからの相対)。素材の再配布になるので公開リポジトリには置かない。
-	// dotfiles では非公開リポジトリをここにサブモジュールとして置いている。それ以外の環境は README の Setup で用意する
-	AssetsFaces    string
-	Stdout, Stderr io.Writer
-	Now            func() time.Time
-	// EngineUp / EngineDown / SpawnReaper はエンジンの自動起動と、使われなくなったら止める見張り (engine_auto.go)。
-	// nil なら自動で管理しない (テストは本物のコンテナに触れない)。StateDir は印・最後に使った時刻・見張りのロックの置き場
-	EngineUp    func() error
-	EngineDown  func(runtime, engine string) error
-	SpawnReaper func() error
-	StateDir    string
-	Sleep       func(time.Duration)
-	LoadAvg     func() (float64, bool)
-}
-
-// Template はプレイヤーのテンプレート。
-func (e *Env) Template() string { return filepath.Join(e.SkillDir, "templates", "player.html") }
-
-func newEnv() *Env {
-	engine := "http://127.0.0.1:50021"
+func newEnv() *app.Env {
+	eng := "http://127.0.0.1:50021"
 	if v, ok := os.LookupEnv("VOICEVOX_URL"); ok {
-		engine = v // Python 版と同じく、空文字列でも上書きする
+		eng = v // Python 版と同じく、空文字列でも上書きする
 	}
-	e := &Env{Engine: engine, Stdout: os.Stdout, Stderr: os.Stderr, Now: time.Now, Sleep: sleepCtx, LoadAvg: loadAvg1}
-	e.setSkillDir(os.Getenv(skillDirEnv))
-	e.StateDir = defaultStateDir()
-	e.EngineUp = func() error { return startEngine(e) }
-	e.EngineDown = func(rt, engine string) error {
-		ctx, cancel := cleanupContext()
+	e := &app.Env{Engine: eng, Stdout: os.Stdout, Stderr: os.Stderr, Now: time.Now, Sleep: app.SleepCtx, LoadAvg: build.LoadAvg1}
+	e.SetSkillDir(os.Getenv(app.SkillDirEnv))
+	e.StateDir = engine.DefaultStateDir()
+	e.EngineUp = func() error { return engine.StartEngine(e) }
+	e.EngineDown = func(rt, eng string) error {
+		ctx, cancel := engine.CleanupContext()
 		defer cancel()
-		_, err := stopContainers(ctx, rt, containerNameFor(engine))
+		_, err := engine.StopContainers(ctx, rt, engine.ContainerNameFor(eng))
 		return err
 	}
-	e.SpawnReaper = func() error { return spawnReaper(e) }
+	e.SpawnReaper = func() error { return engine.SpawnReaper(e) }
 	return e
-}
-
-func (e *Env) setSkillDir(d string) {
-	e.SkillDir = d
-	e.AssetsFaces = ""
-	if d != "" {
-		e.AssetsFaces = filepath.Join(d, "assets", "zundamon-kaisetsu", "faces")
-	}
-}
-
-// requireSkillDir は skill のディレクトリが要るコマンドで、それが渡されていなければ止める。
-// 黙って続けると、立ち絵の既定の置き場を見ずに丸アバターの動画ができる (issue 641 の設計レビュー P2-10)。
-func (e *Env) requireSkillDir() error {
-	if e.SkillDir == "" {
-		return fail("%s が無い。bin/zundamon-kaisetsu から起動する (skill のディレクトリをこの環境変数で渡す)", skillDirEnv)
-	}
-	if !isFile(e.Template()) {
-		return fail("%s=%s に templates/player.html が無い (skill のディレクトリを指していない)", skillDirEnv, e.SkillDir)
-	}
-	return nil
-}
-
-// --- 中断 (Ctrl-C) ---
-//
-// appCtx は SIGINT / SIGTERM / SIGHUP で取り消される。外部コマンド・HTTP・待ちはすべてこれに結び付ける。取り消されると
-// Go が子プロセスを止め、Wait は子が終わってから戻るので、呼び出し側の defer (一時ディレクトリ・一時ファイルの削除) は
-// 子が止まった後に、後から登録したものから順に走る。Python 版の KeyboardInterrupt と同じ順序 (敵対的レビュー 2 周目 P2-1。
-// 自前の後始末の登録表は、子を止める前に一時ディレクトリを消しにいき、書き続ける子に消し残された)。
-// 後始末の後は同じ signal を受け直して死ぬ (rc=130 で普通に終えると、bash のループが Ctrl-C で止まらない。同 P2-2)。
-var appCtx = context.Background()
-
-// sleepCtx は appCtx が取り消されたら待つのをやめる time.Sleep。
-func sleepCtx(d time.Duration) {
-	select {
-	case <-appCtx.Done():
-	case <-time.After(d):
-	}
-}
-
-// errInterrupted は中断で処理を打ち切ったことを表す (main が同じ signal で死に直す)。
-var errInterrupted = errors.New("中断した")
-
-func interruptedErr() error {
-	if appCtx.Err() != nil {
-		return errInterrupted
-	}
-	return nil
 }
 
 func dieBySignal(s os.Signal) {
@@ -136,7 +71,7 @@ func dieBySignal(s os.Signal) {
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
-	appCtx = ctx
+	app.Ctx = ctx
 	var got atomic.Value
 	sigs := make(chan os.Signal, 2)
 	// 起動時に無視されていた signal (nohup の SIGHUP、背景のジョブの SIGINT) は受けない。Notify は無視を解いてしまう (3 周目 P2-2)
@@ -148,7 +83,7 @@ func main() {
 	// umask は起動時 (goroutine がファイルを作る前) に 1 度だけ読む。Umask は読むために書き換えるので、後で読むと競合する
 	um := syscall.Umask(0)
 	syscall.Umask(um)
-	fileUmask = os.FileMode(um)
+	outfile.FileUmask = os.FileMode(um)
 	go func() {
 		s := <-sigs
 		got.Store(s)
@@ -395,8 +330,8 @@ func styleIDArg(v string) error {
 const usageText = `usage: zundamon-kaisetsu [--engine URL] {check,up,down,speakers,kana,lint,synth,build} ...
 
   check     必要なコマンド・コンテナ・エンジンの状態を確かめる (足りなければ rc=1)
-  up        エンジンをコンテナ ` + containerName + `-<ポート> で起動し、応答するまで待つ (down まで動き続ける)
-  down      コンテナ ` + containerName + `-<ポート> を止める
+  up        エンジンをコンテナ ` + engine.ContainerName + `-<ポート> で起動し、応答するまで待つ (down まで動き続ける)
+  down      コンテナ ` + engine.ContainerName + `-<ポート> を止める
             (synth / kana / speakers は止まっているエンジンを自動で起動し、最後に使ってから 10 分で自動で止める。up は要らない)
   speakers  話者とスタイル ID を一覧する
   kana      文ごとの読み (audio_query の kana) を出す。read の候補を合成せずに比べる
@@ -413,10 +348,10 @@ const usageText = `usage: zundamon-kaisetsu [--engine URL] {check,up,down,speake
 `
 
 // run は CLI の本体。終了コードを返す (main 以外からも呼べるよう os.Exit しない)。
-func run(args []string, env *Env) int {
+func run(args []string, env *app.Env) int {
 	err := dispatch(args, env)
 	var ue *usageError
-	var ee *errExit
+	var ee *app.ErrExit
 	switch {
 	case err == nil:
 		return 0
@@ -428,11 +363,11 @@ func run(args []string, env *Env) int {
 		}
 		fmt.Fprintf(env.Stderr, "%s: error: %s\n", prog, ue.msg)
 		return 2
-	case errors.Is(err, errInterrupted):
+	case errors.Is(err, app.ErrInterrupted):
 		return 130 // main が同じ signal で死に直す (ここでは文言を出さない)
 	case errors.As(err, &ee):
-		if ee.msg != "" {
-			fmt.Fprintf(env.Stderr, "error: %s\n", ee.msg)
+		if ee.Msg != "" {
+			fmt.Fprintf(env.Stderr, "error: %s\n", ee.Msg)
 		}
 		return 1
 	default:
@@ -441,7 +376,7 @@ func run(args []string, env *Env) int {
 	}
 }
 
-func dispatch(args []string, env *Env) error {
+func dispatch(args []string, env *app.Env) error {
 	global := []optSpec{{names: []string{"--engine"}, dest: "engine", takes: true}}
 	gp, rest, err := parseArgs(args, global, true)
 	if err != nil {
@@ -458,14 +393,14 @@ func dispatch(args []string, env *Env) error {
 		return &usageError{msg: "the following arguments are required: cmd"}
 	}
 	sub, subArgs := rest[0], rest[1:]
-	if sub == reapCmd {
-		return cmdReap(env) // 見張り (engine_auto.go)。自動で起動したときに切り離して起こされる
+	if sub == engine.ReapCmd {
+		return engine.CmdReap(env) // 見張り (engine_auto.go)。自動で起動したときに切り離して起こされる
 	}
 	specs := map[string][]optSpec{
 		"check": nil, "up": nil, "down": nil, "speakers": nil,
 		"kana": {
 			{names: []string{"--script"}, dest: "script", takes: true},
-			{names: []string{"--who"}, dest: "who", takes: true, choices: castKeys()},
+			{names: []string{"--who"}, dest: "who", takes: true, choices: script.CastKeys()},
 			{names: []string{"--style-id"}, dest: "style_id", takes: true, check: styleIDArg},
 			{names: []string{"--check"}, dest: "check"},
 		},
@@ -504,13 +439,13 @@ func dispatch(args []string, env *Env) error {
 	}
 	switch sub {
 	case "check":
-		return cmdCheck(env)
+		return engine.CmdCheck(env)
 	case "up":
-		return cmdUp(env)
+		return engine.CmdUp(env)
 	case "down":
-		return cmdDown(env)
+		return engine.CmdDown(env)
 	case "speakers":
-		return withEngine(env, func() error { return cmdSpeakers(env) })
+		return engine.WithEngine(env, func() error { return synth.CmdSpeakers(env) })
 	case "kana":
 		who := p.opts["who"]
 		if who == "" {
@@ -522,27 +457,27 @@ func dispatch(args []string, env *Env) error {
 			sid = &n
 		}
 		if p.opts["script"] != "" {
-			if err := env.requireSkillDir(); err != nil {
+			if err := env.RequireSkillDir(); err != nil {
 				return err
 			}
 		}
-		return withEngine(env, func() error { return cmdKana(env, p.pos, p.opts["script"], who, sid, p.opts["check"] == "true") })
+		return engine.WithEngine(env, func() error { return synth.CmdKana(env, p.pos, p.opts["script"], who, sid, p.opts["check"] == "true") })
 	case "lint":
-		if err := env.requireSkillDir(); err != nil {
+		if err := env.RequireSkillDir(); err != nil {
 			return err
 		}
-		return cmdLint(env, p.pos[0], p.opts["source"])
+		return lint.CmdLint(env, p.pos[0], p.opts["source"])
 	case "synth":
-		if err := env.requireSkillDir(); err != nil {
+		if err := env.RequireSkillDir(); err != nil {
 			return err
 		}
-		return withEngine(env, func() error { return cmdSynth(env, p.pos[0], p.opts["force"] == "true") })
+		return engine.WithEngine(env, func() error { return synth.CmdSynth(env, p.pos[0], p.opts["force"] == "true") })
 	case "build":
 		output, ok := p.opts["output"]
 		if !ok {
 			return &usageError{msg: "the following arguments are required: -o/--output", prog: sub}
 		}
-		if err := env.requireSkillDir(); err != nil {
+		if err := env.RequireSkillDir(); err != nil {
 			return err
 		}
 		format := p.opts["format"]
@@ -557,7 +492,7 @@ func dispatch(args []string, env *Env) error {
 		if v, ok := p.opts["bitrate"]; ok {
 			kbps, _ = kbpsValue(v)
 		}
-		return cmdBuild(env, p.pos[0], output, format, jobs, kbps, p.opts["allow_fast_captions"] == "true")
+		return build.CmdBuild(env, p.pos[0], output, format, jobs, kbps, p.opts["allow_fast_captions"] == "true")
 	}
 	return nil
 }

@@ -17,6 +17,11 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"zundamon-kaisetsu/internal/build"
+	"zundamon-kaisetsu/internal/paths"
+	"zundamon-kaisetsu/internal/pyjson"
+	"zundamon-kaisetsu/internal/script"
 )
 
 func readGolden(t *testing.T, name string, v any) {
@@ -25,7 +30,7 @@ func readGolden(t *testing.T, name string, v any) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := decodeJSON(b, v); err != nil {
+	if err := script.DecodeJSON(b, v); err != nil {
 		t.Fatalf("%s: %v", name, err)
 	}
 }
@@ -45,25 +50,25 @@ func TestCacheKeyMatchesPython(t *testing.T) {
 		t.Fatalf("golden の件数が少ない: %d", len(cases))
 	}
 	for i, c := range cases {
-		s := &Script{Raw: map[string]any{}, Cast: map[string]map[string]any{}}
+		s := &script.Script{Raw: map[string]any{}, Cast: map[string]map[string]any{}}
 		if c.ScriptSpeed != nil {
 			s.Raw["speed"] = c.ScriptSpeed
 		}
-		for _, def := range castOrder {
+		for _, def := range script.CastOrder {
 			m := map[string]any{"style_id": json.Number(strconv.FormatInt(def.StyleID, 10))}
 			for k, v := range c.CastOverride[def.Key] {
 				m[k] = v
 			}
 			s.Cast[def.Key] = m
 		}
-		p, err := lineParams(s, c.Line)
+		p, err := script.LineParams(s, c.Line)
 		if err != nil {
 			t.Fatalf("case %d (%v): %v", i, c.Line, err)
 		}
-		if got := cacheSerialize(p); got != c.Serialized {
+		if got := script.CacheSerialize(p); got != c.Serialized {
 			t.Errorf("case %d: 直列化が違う\n got  %s\n want %s", i, got, c.Serialized)
 		}
-		if got := cacheKey(p); got != c.Key {
+		if got := script.CacheKey(p); got != c.Key {
 			t.Errorf("case %d: 鍵が違う got %s want %s", i, got, c.Key)
 		}
 	}
@@ -85,10 +90,10 @@ func TestMouthTrackMatchesPython(t *testing.T) {
 			t.Fatal(err)
 		}
 		var q map[string]any
-		if err := decodeJSON(b, &q); err != nil {
+		if err := script.DecodeJSON(b, &q); err != nil {
 			t.Fatal(err)
 		}
-		if got := mouthTrack(q, c.Duration); got != c.Mouth {
+		if got := build.MouthTrack(q, c.Duration); got != c.Mouth {
 			t.Errorf("%s (%.4f 秒): 口の開きが違う\n got  %s\n want %s", c.Query, c.Duration, got, c.Mouth)
 		}
 	}
@@ -110,8 +115,8 @@ func TestSpokenTextMatchesPython(t *testing.T) {
 		if c.Read != nil {
 			line["read"] = c.Read
 		}
-		s := &Script{Raw: map[string]any{"readings": c.Readings}}
-		if got := spokenText(s, line); got != c.Spoken {
+		s := &script.Script{Raw: map[string]any{"readings": c.Readings}}
+		if got := script.SpokenText(s, line); got != c.Spoken {
 			t.Errorf("%q: got %q want %q", c.Text, got, c.Spoken)
 		}
 	}
@@ -128,10 +133,10 @@ func TestRoundMatchesPython(t *testing.T) {
 		t.Fatalf("golden の件数が少ない: %d", len(cases))
 	}
 	for _, c := range cases {
-		if got := pyRound3(c.X); got != c.Round3 {
+		if got := pyjson.Round3(c.X); got != c.Round3 {
 			t.Errorf("round(%v, 3): got %v want %v", c.X, got, c.Round3)
 		}
-		if got := pyRound(c.X); got != c.Round {
+		if got := pyjson.Round(c.X); got != c.Round {
 			t.Errorf("round(%v): got %v want %v", c.X, got, c.Round)
 		}
 	}
@@ -165,8 +170,8 @@ func TestRejectMatchesPython(t *testing.T) {
 			if err := os.WriteFile(path, body, 0o644); err != nil {
 				t.Fatal(err)
 			}
-			real := resolvePath(path)
-			_, err := loadScript(real, testEnv(t))
+			real := paths.ResolvePath(path)
+			_, err := script.LoadScript(real, testEnv(t))
 			want, _ := c.Error.(string)
 			if want == "" {
 				if err != nil {
@@ -177,7 +182,7 @@ func TestRejectMatchesPython(t *testing.T) {
 			if err == nil {
 				t.Fatalf("Python は拒否したのに受け入れた (want %q)", want)
 			}
-			got := strings.ReplaceAll(strings.ReplaceAll(err.Error(), real, "<SCRIPT>"), resolvePath(dir), "<DIR>")
+			got := strings.ReplaceAll(strings.ReplaceAll(err.Error(), real, "<SCRIPT>"), paths.ResolvePath(dir), "<DIR>")
 			if !c.Exact {
 				got, _, _ = strings.Cut(got, " (")
 				want, _, _ = strings.Cut(want, " (")
@@ -204,11 +209,11 @@ func TestBuildDataMatchesPython(t *testing.T) {
 				t.Fatalf("golden に %s が無い", name)
 			}
 			env := testEnv(t)
-			s, err := loadScript(resolvePath(filepath.Join("testdata", "build", name+".json")), env)
+			s, err := script.LoadScript(paths.ResolvePath(filepath.Join("testdata", "build", name+".json")), env)
 			if err != nil {
 				t.Fatal(err)
 			}
-			data, pcm, err := assemble(s, env)
+			data, pcm, err := build.Assemble(s, env)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -225,19 +230,19 @@ func TestBuildDataMatchesPython(t *testing.T) {
 				t.Fatal(err)
 			}
 			var got map[string]any
-			if err := decodeJSON(b, &got); err != nil {
+			if err := script.DecodeJSON(b, &got); err != nil {
 				t.Fatal(err)
 			}
 			normalizeNumbers(got)
 			normalizeNumbers(g.Data)
-			for _, k := range sortedKeys(g.Data) {
+			for _, k := range pyjson.SortedKeys(g.Data) {
 				if !reflect.DeepEqual(got[k], g.Data[k]) {
 					gj, _ := json.Marshal(got[k])
 					wj, _ := json.Marshal(g.Data[k])
 					t.Errorf("%s が違う\n got  %s\n want %s", k, firstBytes(gj, 600), firstBytes(wj, 600))
 				}
 			}
-			for _, k := range sortedKeys(got) {
+			for _, k := range pyjson.SortedKeys(got) {
 				// Go に移した後で足したキーは Python 版に無い。名前で挙げて除き、それ以外の余分なキーは今までどおり落とす
 				if slices.Contains(keysAddedAfterPort, k) {
 					continue
@@ -303,7 +308,7 @@ func copyTree(t *testing.T, src, dst string) {
 	}
 }
 
-// TestSumMatchesPython は pySum が Python 3.12 以降の sum() (Neumaier の補正つき) と同じ値を返すことを確かめる。
+// TestSumMatchesPython は PySum が Python 3.12 以降の sum() (Neumaier の補正つき) と同じ値を返すことを確かめる。
 // 口の開きの伸縮率はこの合計から作るので、素直に足すと境目が 1 フレームずれることがある (設計レビュー P1-4)。
 func TestSumMatchesPython(t *testing.T) {
 	var cases []struct {
@@ -314,7 +319,7 @@ func TestSumMatchesPython(t *testing.T) {
 	readGolden(t, "sum.json", &cases)
 	differs := 0
 	for i, c := range cases {
-		if got := pySum(c.Xs); got != c.Sum {
+		if got := build.PySum(c.Xs); got != c.Sum {
 			t.Errorf("case %d: got %v want %v", i, got, c.Sum)
 		}
 		if c.NaiveDiffers {

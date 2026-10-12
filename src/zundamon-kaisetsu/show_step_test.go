@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"zundamon-kaisetsu/internal/script"
+	"zundamon-kaisetsu/internal/show"
 )
 
 // stepLines は show の並びから台本の行を作る (show の無い行は nil で表す)。
@@ -21,7 +24,7 @@ func stepLines(shows ...any) []map[string]any {
 func decodeShow(t *testing.T, s string) any {
 	t.Helper()
 	var v any
-	must(t, decodeJSON([]byte(s), &v))
+	must(t, script.DecodeJSON([]byte(s), &v))
 	return v
 }
 
@@ -47,7 +50,7 @@ func TestLineShowsSteps(t *testing.T) {
 		decodeShow(t, cmp), // 8: 同じ比較をもう一度出す (表は共有、段は 0 から)
 		nil,
 	)
-	idx, steps, table, err := lineShows("s.json", lines)
+	idx, steps, table, err := show.LineShows("s.json", lines)
 	must(t, err)
 	wantSteps := []any{0, 0, 1, 2, 2, nil, 0, 1, 0, 0}
 	if got := intsOrNil(steps); !equalAny(got, wantSteps) {
@@ -60,7 +63,7 @@ func TestLineShowsSteps(t *testing.T) {
 	if len(table) != 3 || !table[0].Build || len(table[2].Steps) != 2 {
 		t.Errorf("図解の表: %+v", table)
 	}
-	if n := table[0].stepCount(); n != 3 {
+	if n := table[0].StepCount(); n != 3 {
 		t.Errorf("比較の段の数: %d (項目の数 3 のはず)", n)
 	}
 }
@@ -97,7 +100,7 @@ func TestLineShowsRejectsBadNext(t *testing.T) {
 			if c.name == "null の後" {
 				lines = append(lines, stepLines("next")...)
 			}
-			_, _, _, err := lineShows("s.json", lines)
+			_, _, _, err := show.LineShows("s.json", lines)
 			if c.want == "" {
 				must(t, err)
 				return
@@ -122,19 +125,19 @@ func TestShowStepFieldsRejected(t *testing.T) {
 		{`{"type": "code", "lines": ["x", "y"], "steps": [[1], [2]], "highlight": [1]}`, "highlight と steps を両方は書けない"},
 	}
 	for _, c := range cases {
-		_, _, _, err := lineShows("s.json", stepLines(decodeShow(t, c.show)))
+		_, _, _, err := show.LineShows("s.json", stepLines(decodeShow(t, c.show)))
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: got %v want %q", c.show, err, c.want)
 		}
 	}
 	// build: false は段の無い比較 (書いても書かなくても同じ)
-	_, steps, _, err := lineShows("s.json", stepLines(decodeShow(t, `{"type": "compare", "build": false, "left": {"title": "a", "items": ["b"]}, "right": {"title": "d", "items": ["e"]}}`)))
+	_, steps, _, err := show.LineShows("s.json", stepLines(decodeShow(t, `{"type": "compare", "build": false, "left": {"title": "a", "items": ["b"]}, "right": {"title": "d", "items": ["e"]}}`)))
 	must(t, err)
 	if steps[0] != nil {
 		t.Errorf("build: false の比較に段がある: %d", *steps[0])
 	}
 	// 空の段 (何も強調しない段) は書ける
-	_, steps, table, err := lineShows("s.json", stepLines(decodeShow(t, `{"type": "code", "lines": ["x", "y"], "steps": [[], [2, 2, 1]]}`)))
+	_, steps, table, err := show.LineShows("s.json", stepLines(decodeShow(t, `{"type": "code", "lines": ["x", "y"], "steps": [[], [2, 2, 1]]}`)))
 	must(t, err)
 	if steps[0] == nil || len(table[0].Steps[0]) != 0 || len(table[0].Steps[1]) != 2 || table[0].Steps[1][0] != 1 {
 		t.Errorf("空の段・重複と並びの正規化: %+v", table[0].Steps)

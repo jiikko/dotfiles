@@ -66,7 +66,7 @@ h1 { font-size: 1.25rem; margin: 0 0 12px; }
 .show-code .ln { display: block; min-height: 1.5em; }
 .show-code .ln.hl { background: rgba(255, 220, 0, .22); margin: 0 -1.8cqw; padding: 0 1.8cqw; }
 /* 図は白地で出す (図は白地を前提に書き出されることが多く、ダークモードでも読めるように)。大きさの範囲は build が検査する
-   (show_image.go の imageBoxW / imageBoxH は、この padding を引いた箱の大きさ) */
+   (internal/show/show_image.go の ImageBoxW / ImageBoxH は、この padding を引いた箱の大きさ) */
 .show-image { background: #fff; padding: .8cqw; line-height: 0; }
 .show-image img { display: block; max-width: calc(46cqw - 1.6cqw); max-height: calc(29.25cqw - 1.6cqw); object-fit: contain; }
 .show-compare ul { margin: 0; padding-left: 1.1em; font-size: 1.7cqw; font-weight: 700; line-height: 1.5; }

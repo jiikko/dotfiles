@@ -1,4 +1,4 @@
-package main
+package engine
 
 import (
 	"context"
@@ -11,12 +11,15 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"zundamon-kaisetsu/internal/app"
+	"zundamon-kaisetsu/internal/paths"
 )
 
 // --- エンジンの自動起動と、使われなくなったら止める見張り ---
 //
 // synth / kana / speakers は、手元のエンジンのポートで誰も待ち受けていなければ自分で起動し、見張り (reaper) を 1 つ起こす。
-// 見張りは、最後にエンジンを使ってから engineIdleStop たったら、自動で起動したコンテナを止めて終わる。
+// 見張りは、最後にエンジンを使ってから IdleStop たったら、自動で起動したコンテナを止めて終わる。
 //
 // 各コマンドは止めない。止める責任を、コマンドとは別の 1 つのプロセスに置くことで、コマンドが正常に終わらない経路
 // (kill -9・出力先のパイプが閉じた SIGPIPE・2 回目の Ctrl-C) でもエンジンが残らない
@@ -36,27 +39,27 @@ import (
 //     過ぎたとき、復帰直後に使用中のエンジンを止めうる (issue 646 の 1)。ロックはプロセスが死ねば外れる (kill -9 でも)
 //
 // 印は消して取り消さない (起動に失敗しても、時間切れでも残す)。「何も起動していない」は起動側からは確かめられない
-// (時間切れの後もコンテナは起動したまま残りうる) ので、印を消すかは見張りが、エンジンが応答しないまま startGrace たったかで決める。
+// (時間切れの後もコンテナは起動したまま残りうる) ので、印を消すかは見張りが、エンジンが応答しないまま StartGrace たったかで決める。
 
 const (
-	engineIdleStop = 10 * time.Minute
-	// startGrace は印を書いてから、応答しなくても「起動途中」とみなす間。初回のイメージの取得 (約 3.7GB) が収まる長さにする。
+	IdleStop = 10 * time.Minute
+	// StartGrace は印を書いてから、応答しなくても「起動途中」とみなす間。初回のイメージの取得 (約 3.7GB) が収まる長さにする。
 	// 長くても、起動しなかったときに見張りが寝て待つだけで負担はほぼ無い
-	startGrace      = 30 * time.Minute
+	StartGrace      = 30 * time.Minute
 	reaperInterval  = 30 * time.Second
-	reaperMaxFailed = 20 // 止めるのに続けて失敗したら見張りを終える回数 (印は残し、次にエンジンを使うコマンドが見張りを起こし直す)
-	reapCmd         = "__reap"
+	ReaperMaxFailed = 20 // 止めるのに続けて失敗したら見張りを終える回数 (印は残し、次にエンジンを使うコマンドが見張りを起こし直す)
+	ReapCmd         = "__reap"
 )
 
-func autoMarkerPath(env *Env) string { return filepath.Join(env.StateDir, "engine.auto") }
-func lastUsePath(env *Env) string    { return filepath.Join(env.StateDir, "engine.last") }
+func AutoMarkerPath(env *app.Env) string { return filepath.Join(env.StateDir, "engine.auto") }
+func LastUsePath(env *app.Env) string    { return filepath.Join(env.StateDir, "engine.last") }
 
-// engineUseHook はエンジンへの要求のたびに呼ばれる (最後に使った時刻を更新する)。withEngine の間だけ設定される。
+// engineUseHook はエンジンへの要求のたびに呼ばれる (最後に使った時刻を更新する)。WithEngine の間だけ設定される。
 var engineUseHook atomic.Pointer[func()]
 
-// withEngine は、エンジンを使うコマンドの本体 fn を、エンジンの自動起動で包む。
+// WithEngine は、エンジンを使うコマンドの本体 fn を、エンジンの自動起動で包む。
 // 自動で管理しない (別ホストのエンジン、起動の手段が注入されていない) なら fn をそのまま呼ぶ。
-func withEngine(env *Env, fn func() error) error {
+func WithEngine(env *app.Env, fn func() error) error {
 	if env.EngineUp == nil || env.SpawnReaper == nil || env.StateDir == "" {
 		return fn()
 	}
@@ -64,7 +67,7 @@ func withEngine(env *Env, fn func() error) error {
 		return fn() // 別ホストのエンジンは起動できない
 	}
 	// 起動用のロックより先に取る (起動を確かめてから使い始めるまでの間にも、見張りが止めないように)
-	release, err := holdEngineInUse(env)
+	release, err := HoldInUse(env)
 	if err != nil {
 		return err
 	}
@@ -74,13 +77,13 @@ func withEngine(env *Env, fn func() error) error {
 			release()
 		}
 	}()
-	if err := withStartLock(env, func() error { return ensureEngine(env) }); err != nil {
+	if err := WithStartLock(env, func() error { return ensureEngine(env) }); err != nil {
 		return err
 	}
 	// 別のポートのエンジン (デスクトップアプリ等) を使っても、自動のエンジンの停止を延ばさない: 使った時刻を更新せず、
 	// 使用中のロックも手放す (持ったままだと、そのコマンドが動いている間ずっと自動のエンジンが止まらない)
 	if usesAutoEngine(env) {
-		hook := func() { touchLastUse(env) }
+		hook := func() { TouchLastUse(env) }
 		engineUseHook.Store(&hook)
 		defer engineUseHook.Store(nil)
 	} else {
@@ -90,18 +93,18 @@ func withEngine(env *Env, fn func() error) error {
 	return fn()
 }
 
-// withStartLock は engine.start.lock を持って fn を呼ぶ。
-func withStartLock(env *Env, fn func() error) error {
+// WithStartLock は engine.start.lock を持って fn を呼ぶ。
+func WithStartLock(env *app.Env, fn func() error) error {
 	if env.StateDir == "" {
 		return fn()
 	}
 	if err := os.MkdirAll(env.StateDir, 0o755); err != nil {
-		return fail("%s を作れない (%v)", env.StateDir, err)
+		return app.Fail("%s を作れない (%v)", env.StateDir, err)
 	}
 	lockPath := filepath.Join(env.StateDir, "engine.start.lock")
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
-		return fail("%s を開けない (%v)", lockPath, err)
+		return app.Fail("%s を開けない (%v)", lockPath, err)
 	}
 	defer func() { _ = f.Close() }() // ロックは close (とプロセスの終了) で外れる
 	if syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) != nil {
@@ -122,25 +125,25 @@ func withStartLock(env *Env, fn func() error) error {
 
 // ensureEngine は (起動用のロックの中で) 誰も待ち受けていなければエンジンを起動し、使った時刻を更新し、
 // 自動で起動したエンジンに見張りがいることを保証する。
-func ensureEngine(env *Env) error {
+func ensureEngine(env *app.Env) error {
 	ver, refused := probeEngine(env.Engine)
 	if ver == "" && refused {
 		return startAutoEngine(env) // 見張りは起動より先に起こしている
 	}
 	if usesAutoEngine(env) {
-		touchLastUse(env)
+		TouchLastUse(env)
 	}
 	ensureReaper(env) // 見張りが死んでいても (kill・再起動)、次にエンジンを使うときに起こし直す
 	return nil
 }
 
-func startAutoEngine(env *Env) error {
-	if e := interruptedErr(); e != nil {
+func startAutoEngine(env *app.Env) error {
+	if e := app.InterruptedErr(); e != nil {
 		return e // 中断の後の「応答しない」は判定に使わない
 	}
-	if _, url, ok := readAutoMarker(env); ok && url != "" && !samePort(url, env.Engine) {
+	if _, url, ok := ReadAutoMarker(env); ok && url != "" && !SamePort(url, env.Engine) {
 		if v, r := probeEngine(url); v != "" || !r {
-			return fail("別のポート (%s) で自動起動したエンジンが動いている。自動で起動するエンジンは同時に 1 つだけなので、"+
+			return app.Fail("別のポート (%s) で自動起動したエンジンが動いている。自動で起動するエンジンは同時に 1 つだけなので、"+
 				"そのポートを使うか、zundamon-kaisetsu down で止めてから使う", url)
 		}
 	}
@@ -148,26 +151,26 @@ func startAutoEngine(env *Env) error {
 	if rt == "" {
 		return env.EngineUp() // 起動の手段が無い (理由は EngineUp が返す)。何も起動しないので印も書かない
 	}
-	marker := autoMarkerPath(env)
+	marker := AutoMarkerPath(env)
 	// 印と見張りは起動より先に置く。起動の途中で死んでも (kill -9・中断)、見張りが止めるか、起動していなければ印を消す
 	if err := os.WriteFile(marker, []byte(rt+"\n"+env.Engine+"\n"), 0o644); err != nil {
-		return fail("%s を書けない (%v)", marker, err)
+		return app.Fail("%s を書けない (%v)", marker, err)
 	}
-	touchLastUse(env)
+	TouchLastUse(env)
 	ensureReaper(env)
 	fmt.Fprintf(env.Stderr, "engine: %s が応答しないので起動する (最後に使ってから %.0f 分で自動で止まる)\n",
-		env.Engine, engineIdleStop.Minutes())
+		env.Engine, IdleStop.Minutes())
 	if err := env.EngineUp(); err != nil {
 		return err
 	}
 	// 起動 (初回の取得を含む) に 10 分以上かかっても、起動した直後に見張りが止めないように、使った時刻を起動の後で取り直す
-	touchLastUse(env)
+	TouchLastUse(env)
 	return nil
 }
 
-// readAutoMarker は印を読む。url が空の印 (書きかけ・壊れた印) は持ち主が分からないので、起動側は上書きし、見張りは止めずに捨てる。
-func readAutoMarker(env *Env) (rt, url string, ok bool) {
-	b, err := os.ReadFile(autoMarkerPath(env))
+// ReadAutoMarker は印を読む。url が空の印 (書きかけ・壊れた印) は持ち主が分からないので、起動側は上書きし、見張りは止めずに捨てる。
+func ReadAutoMarker(env *app.Env) (rt, url string, ok bool) {
+	b, err := os.ReadFile(AutoMarkerPath(env))
 	if err != nil {
 		return "", "", false
 	}
@@ -180,16 +183,16 @@ func readAutoMarker(env *Env) (rt, url string, ok bool) {
 }
 
 // usesAutoEngine はこのコマンドが使うエンジンが、自動で起動したものか (印が無ければ、これから起動しうるので真)。
-func usesAutoEngine(env *Env) bool {
-	_, url, ok := readAutoMarker(env)
-	return !ok || url == "" || samePort(url, env.Engine)
+func usesAutoEngine(env *app.Env) bool {
+	_, url, ok := ReadAutoMarker(env)
+	return !ok || url == "" || SamePort(url, env.Engine)
 }
 
-// samePort は 2 つの手元のエンジンの URL が同じポートを指すか。コンテナの同一性はポートで決まる (名前はポートごと・待ち受けは
+// SamePort は 2 つの手元のエンジンの URL が同じポートを指すか。コンテナの同一性はポートで決まる (名前はポートごと・待ち受けは
 // 127.0.0.1)。URL の文字列で比べると、localhost と 127.0.0.1・末尾の / の違いで同じエンジンを別物と読む。
 // ポートは文字列のまま比べる (先頭に 0 を付けた "050021" は別物と読む)。手で打たない限り出ない書き方なので正規化していない
 // (敵対的レビュー 5 周目で記録のみ)。そう書く使い方が出てきたら、数に直して比べる。
-func samePort(a, b string) bool {
+func SamePort(a, b string) bool {
 	pa, ea := localPort(a)
 	pb, eb := localPort(b)
 	if ea != nil || eb != nil {
@@ -198,8 +201,8 @@ func samePort(a, b string) bool {
 	return pa == pb
 }
 
-func ensureReaper(env *Env) {
-	if !isFile(autoMarkerPath(env)) || reaperAlive(env) {
+func ensureReaper(env *app.Env) {
+	if !paths.IsFile(AutoMarkerPath(env)) || ReaperAlive(env) {
 		return
 	}
 	if err := env.SpawnReaper(); err != nil {
@@ -207,24 +210,24 @@ func ensureReaper(env *Env) {
 	}
 }
 
-func touchLastUse(env *Env) {
-	p := lastUsePath(env)
+func TouchLastUse(env *app.Env) {
+	p := LastUsePath(env)
 	now := time.Now()
 	if err := os.Chtimes(p, now, now); err != nil {
 		_ = os.WriteFile(p, nil, 0o644)
 	}
 }
 
-// holdEngineInUse は engine.inuse の共有ロックを取り、外す関数を返す。見張りが排他で持つのは「試して、すぐ外す」間だけなので
+// HoldInUse は engine.inuse の共有ロックを取り、外す関数を返す。見張りが排他で持つのは「試して、すぐ外す」間だけなので
 // 待ちは一瞬で済む。
-func holdEngineInUse(env *Env) (func(), error) {
+func HoldInUse(env *app.Env) (func(), error) {
 	if err := os.MkdirAll(env.StateDir, 0o755); err != nil {
-		return nil, fail("%s を作れない (%v)", env.StateDir, err)
+		return nil, app.Fail("%s を作れない (%v)", env.StateDir, err)
 	}
 	p := filepath.Join(env.StateDir, "engine.inuse")
 	f, err := os.OpenFile(p, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
-		return nil, fail("%s を開けない (%v)", p, err)
+		return nil, app.Fail("%s を開けない (%v)", p, err)
 	}
 	if err := flockWait(int(f.Fd()), syscall.LOCK_SH); err != nil {
 		_ = f.Close()
@@ -233,9 +236,9 @@ func holdEngineInUse(env *Env) (func(), error) {
 	return func() { _ = f.Close() }, nil // ロックは close で外れる
 }
 
-// engineInUse はエンジンを使っているコマンドがいるか (engine.inuse の排他ロックが取れないか)。開けないなど判定できないときは
+// InUse はエンジンを使っているコマンドがいるか (engine.inuse の排他ロックが取れないか)。開けないなど判定できないときは
 // 「使っている」に倒す (使用中のエンジンを止めるより、止め損ねる方が害が小さい。止め損ねたら down で止められる)。
-func engineInUse(env *Env) bool {
+func InUse(env *app.Env) bool {
 	f, err := os.OpenFile(filepath.Join(env.StateDir, "engine.inuse"), os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return true
@@ -248,8 +251,8 @@ func engineInUse(env *Env) bool {
 	return false
 }
 
-// reaperAlive は見張りのロックが他のプロセスに持たれているか。
-func reaperAlive(env *Env) bool {
+// ReaperAlive は見張りのロックが他のプロセスに持たれているか。
+func ReaperAlive(env *app.Env) bool {
 	f, err := os.OpenFile(filepath.Join(env.StateDir, "reaper.lock"), os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return false
@@ -262,8 +265,8 @@ func reaperAlive(env *Env) bool {
 	return false
 }
 
-// cmdReap は見張りの本体。見張りのロックを持ったまま、止めるか止める必要が無くなるまで回る。
-func cmdReap(env *Env) error {
+// CmdReap は見張りの本体。見張りのロックを持ったまま、止めるか止める必要が無くなるまで回る。
+func CmdReap(env *app.Env) error {
 	f, err := os.OpenFile(filepath.Join(env.StateDir, "reaper.lock"), os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return err
@@ -275,59 +278,59 @@ func cmdReap(env *Env) error {
 	if err := f.Truncate(0); err == nil { // どのプロセスが見張りかを残す (表示用。生きているかの判定はロックで行う)
 		_, _ = f.WriteAt([]byte(fmt.Sprintf("%d\n", os.Getpid())), 0)
 	}
-	r := &reaper{}
+	r := &Reaper{}
 	for {
 		done := false
-		if err := withStartLock(env, func() error { done = r.once(env); return nil }); err != nil {
+		if err := WithStartLock(env, func() error { done = r.Once(env); return nil }); err != nil {
 			return err
 		}
 		if done {
 			return nil
 		}
 		env.Sleep(reaperInterval)
-		if e := interruptedErr(); e != nil {
+		if e := app.InterruptedErr(); e != nil {
 			return e
 		}
 	}
 }
 
-type reaper struct{ failed int }
+type Reaper struct{ failed int }
 
-// once は (起動用のロックの中で) 1 回見て、見張りを終えてよければ true を返す。
-func (r *reaper) once(env *Env) bool {
-	rt, url, ok := readAutoMarker(env)
+// Once は (起動用のロックの中で) 1 回見て、見張りを終えてよければ true を返す。
+func (r *Reaper) Once(env *app.Env) bool {
+	rt, url, ok := ReadAutoMarker(env)
 	if !ok {
 		return true // 印が無い: up / down を明示的に打った (か、止め終わった)
 	}
 	if (rt != "container" && rt != "docker") || url == "" {
 		// どのランタイムで・どのポートに起動したか分からない印は止めない (空のランタイムで止めると全ランタイムの同名コンテナに届く)
-		_ = os.Remove(autoMarkerPath(env))
+		_ = os.Remove(AutoMarkerPath(env))
 		fmt.Fprintf(env.Stderr, "reaper: 印 (%q, %q) の持ち主が分からないので止めずに終える\n", rt, url)
 		return true
 	}
 	if ver, refused := probeEngine(url); ver == "" && refused {
-		if st, err := os.Stat(autoMarkerPath(env)); err == nil && env.Now().Sub(st.ModTime()) < startGrace {
+		if st, err := os.Stat(AutoMarkerPath(env)); err == nil && env.Now().Sub(st.ModTime()) < StartGrace {
 			return false // 起動途中かもしれない
 		}
-		_ = os.Remove(autoMarkerPath(env)) // 誰も待ち受けていない: 起動しなかったか、既に止まっている
+		_ = os.Remove(AutoMarkerPath(env)) // 誰も待ち受けていない: 起動しなかったか、既に止まっている
 		return true
 	}
 	last := lastUseTime(env)
-	if env.Now().Sub(last) < engineIdleStop || engineInUse(env) {
+	if env.Now().Sub(last) < IdleStop || InUse(env) {
 		r.failed = 0 // 使われている間の失敗は数えない (続けて失敗した回数だけを数える)
 		return false
 	}
 	if err := env.EngineDown(rt, url); err != nil {
 		r.failed++
-		if r.failed >= reaperMaxFailed {
+		if r.failed >= ReaperMaxFailed {
 			fmt.Fprintf(env.Stderr, "reaper: %d 回続けて止められなかった (%v)。見張りを終える (zundamon-kaisetsu down で止める)\n", r.failed, err)
 			return true
 		}
 		fmt.Fprintf(env.Stderr, "reaper: 止められなかった (%v)。%s 後にもう一度試す\n", err, reaperInterval)
 		return false
 	}
-	_ = os.Remove(autoMarkerPath(env))
-	fmt.Fprintf(env.Stderr, "reaper: %s 使われなかったので %s を止めた (%s)\n", env.Now().Sub(last).Round(time.Second), containerNameFor(url), rt)
+	_ = os.Remove(AutoMarkerPath(env))
+	fmt.Fprintf(env.Stderr, "reaper: %s 使われなかったので %s を止めた (%s)\n", env.Now().Sub(last).Round(time.Second), ContainerNameFor(url), rt)
 	// 「そのコンテナは無い」も停止の成功に数えるので、止めた後もポートが応答していることがある。デスクトップアプリなど
 	// この skill 以外のエンジンなら正しい結果なので、失敗には数えず (数えると止められないものを止めにいき続ける)、ログに残すだけにする。
 	// 旧版が固定名で起こしたコンテナが残っていると、これに当たる (issue 646)
@@ -338,8 +341,8 @@ func (r *reaper) once(env *Env) bool {
 }
 
 // lastUseTime は最後にエンジンを使った時刻。記録が無ければ印を書いた時刻にする。
-func lastUseTime(env *Env) time.Time {
-	for _, p := range []string{lastUsePath(env), autoMarkerPath(env)} {
+func lastUseTime(env *app.Env) time.Time {
+	for _, p := range []string{LastUsePath(env), AutoMarkerPath(env)} {
 		if st, err := os.Stat(p); err == nil {
 			return st.ModTime()
 		}
@@ -347,12 +350,12 @@ func lastUseTime(env *Env) time.Time {
 	return env.Now()
 }
 
-// reaperExe は見張りとして起こすバイナリ。テストでは go test のバイナリではなく、build した zundamon-kaisetsu に差し替える
-var reaperExe = os.Executable
+// ReaperExe は見張りとして起こすバイナリ。テストでは go test のバイナリではなく、build した zundamon-kaisetsu に差し替える
+var ReaperExe = os.Executable
 
-// spawnReaper は見張りを、端末とプロセスグループから切り離して起こす (起こしたコマンドが終わっても、Ctrl-C を受けても残る)。
-func spawnReaper(env *Env) error {
-	exe, err := reaperExe()
+// SpawnReaper は見張りを、端末とプロセスグループから切り離して起こす (起こしたコマンドが終わっても、Ctrl-C を受けても残る)。
+func SpawnReaper(env *app.Env) error {
+	exe, err := ReaperExe()
 	if err != nil {
 		return err
 	}
@@ -361,7 +364,7 @@ func spawnReaper(env *Env) error {
 		return err
 	}
 	defer func() { _ = logf.Close() }()
-	cmd := reaperCommand(exe, env)
+	cmd := ReaperCommand(exe, env)
 	cmd.Stdout, cmd.Stderr = logf, logf
 	if err := cmd.Start(); err != nil {
 		return err
@@ -369,12 +372,12 @@ func spawnReaper(env *Env) error {
 	return cmd.Process.Release()
 }
 
-// reaperCommand は見張りを起こすコマンド。見張りは呼び出し側より長く生きる (最後に使ってから 10 分) ので、作業ディレクトリは
+// ReaperCommand は見張りを起こすコマンド。見張りは呼び出し側より長く生きる (最後に使ってから 10 分) ので、作業ディレクトリは
 // "/" にする (呼び出し側の cwd を持ったままだと、外付けディスクから実行したときに取り出せなくなる。issue 646 の 3)。
 // 環境変数は絞らずに引き継ぐ: docker は DOCKER_HOST / DOCKER_CONTEXT で接続先が変わり、絞ると呼び出し側と別のコンテナを見る。
 // 見張りが読むパスは引数のエンジンの URL と、状態の置き場 (env.StateDir。os.UserCacheDir から決まり、HOME が相対パスでない限り絶対パス) だけ
-func reaperCommand(exe string, env *Env) *exec.Cmd {
-	cmd := exec.Command(exe, "--engine", env.Engine, reapCmd)
+func ReaperCommand(exe string, env *app.Env) *exec.Cmd {
+	cmd := exec.Command(exe, "--engine", env.Engine, ReapCmd)
 	cmd.Dir = "/"
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	return cmd
@@ -388,10 +391,10 @@ func flockWait(fd, how int) error {
 			return nil
 		}
 		if !errors.Is(err, syscall.EWOULDBLOCK) {
-			return fail("ロックを取れない (%v)", err)
+			return app.Fail("ロックを取れない (%v)", err)
 		}
-		sleepCtx(200 * time.Millisecond)
-		if e := interruptedErr(); e != nil {
+		app.SleepCtx(200 * time.Millisecond)
+		if e := app.InterruptedErr(); e != nil {
 			return e
 		}
 	}
@@ -400,24 +403,24 @@ func flockWait(fd, how int) error {
 // clearAutoMarkerForUp は up を明示的に打ったときに (起動用のロックの中で) 印を消す。up で起動したものは自動では止めない
 // (見張りは印が無いと何もせず終わる)。別のポートの印は消さない: その自動エンジンが動いていれば up は同名のコンテナで失敗し、
 // 印を消すと、その自動エンジンが見張りに止めてもらえないまま残る。
-func clearAutoMarkerForUp(env *Env) {
+func clearAutoMarkerForUp(env *app.Env) {
 	if env.StateDir == "" {
 		return
 	}
-	if _, url, ok := readAutoMarker(env); ok && url != "" && !samePort(url, env.Engine) {
+	if _, url, ok := ReadAutoMarker(env); ok && url != "" && !SamePort(url, env.Engine) {
 		return
 	}
 	removeAutoMarker(env)
 }
 
-func removeAutoMarker(env *Env) {
+func removeAutoMarker(env *app.Env) {
 	if env.StateDir != "" {
-		_ = os.Remove(autoMarkerPath(env))
+		_ = os.Remove(AutoMarkerPath(env))
 	}
 }
 
-// defaultStateDir は印・時刻・ロックの置き場。
-func defaultStateDir() string {
+// DefaultStateDir は印・時刻・ロックの置き場。
+func DefaultStateDir() string {
 	d, err := os.UserCacheDir()
 	if err != nil {
 		return ""
@@ -425,7 +428,7 @@ func defaultStateDir() string {
 	return filepath.Join(d, "zundamon-kaisetsu")
 }
 
-// cleanupContext は停止の上限。中断 (Ctrl-C) の後でも止めにいけるよう appCtx には結び付けない。
-func cleanupContext() (context.Context, context.CancelFunc) {
+// CleanupContext は停止の上限。中断 (Ctrl-C) の後でも止めにいけるよう Ctx には結び付けない。
+func CleanupContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), 60*time.Second)
 }

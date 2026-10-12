@@ -1,9 +1,15 @@
-package main
+package lint
 
 import (
 	"os"
 	"regexp"
 	"strings"
+
+	"zundamon-kaisetsu/internal/app"
+	"zundamon-kaisetsu/internal/paths"
+	"zundamon-kaisetsu/internal/pyjson"
+	"zundamon-kaisetsu/internal/script"
+	"zundamon-kaisetsu/internal/textx"
 )
 
 // 台本と資料の突き合わせ (lint --source 資料。issue 685)。候補を出すだけで、判断は人と確認役が行う (どれも目安で rc に効かない)。
@@ -34,7 +40,7 @@ func numberTokens(s string) []string {
 	num := func(n string) string { // 桁区切りのカンマ (後ろが 3 桁) だけを除き、全角のマイナスを揃える。小数のカンマ (10,5) は残す
 		return strings.ReplaceAll(thousandsRe.ReplaceAllString(n, "$1"), "−", "-")
 	}
-	for _, m := range sourceNumberRe.FindAllStringSubmatch(foldWidth(s), -1) {
+	for _, m := range sourceNumberRe.FindAllStringSubmatch(textx.FoldWidth(s), -1) {
 		unit := strings.ToUpper(strings.ReplaceAll(m[3], "パーセント", "%"))
 		if m[2] != "" {
 			out = append(out, num(m[1])+unit, num(m[2])+unit)
@@ -45,8 +51,8 @@ func numberTokens(s string) []string {
 	return out
 }
 
-// sourceCandidates は台本の行と資料の文を突き合わせた候補 (すべて目安)。
-func sourceCandidates(s *Script, source string) []lintIssue {
+// SourceCandidates は台本の行と資料の文を突き合わせた候補 (すべて目安)。
+func SourceCandidates(s *script.Script, source string) []lintIssue {
 	var out []lintIssue
 	hint := func(i int, rule, msg string) {
 		out = append(out, lintIssue{Line: i, Rule: rule, Msg: msg, Hint: true})
@@ -55,14 +61,14 @@ func sourceCandidates(s *Script, source string) []lintIssue {
 	for _, k := range numberTokens(source) {
 		srcNumbers[k] = true
 	}
-	srcFold := foldWidth(source)
+	srcFold := textx.FoldWidth(source)
 	for i, line := range s.Lines {
 		// 字幕と、図解の中の文字 (重要語・比較の見出しと項目) を見る (図解の中の誤った数字も素通りさせない)
-		parts := []string{pyStr(line["text"])}
+		parts := []string{pyjson.Str(line["text"])}
 		if sh, ok := line["show"].(map[string]any); ok {
 			parts = append(parts, showAllTexts(sh)...)
 		}
-		text := foldWidth(strings.Join(parts, " "))
+		text := textx.FoldWidth(strings.Join(parts, " "))
 		seenNum := map[string]bool{}
 		for _, key := range numberTokens(text) {
 			if seenNum[key] || countingRe.MatchString(key) || srcNumbers[key] {
@@ -72,7 +78,7 @@ func sourceCandidates(s *Script, source string) []lintIssue {
 			hint(i, "source-number", "数字「"+key+"」が資料に無い (資料の外から足した事実か、資料との食い違い)")
 		}
 		seen := map[string]bool{}
-		for _, w := range lineWords(text) {
+		for _, w := range textx.LineWords(text) {
 			if seen[w] || dictWordInFold(srcFold, w) {
 				continue
 			}
@@ -83,7 +89,7 @@ func sourceCandidates(s *Script, source string) []lintIssue {
 	// 導入 (最初のチャプター) の終わり: 2 つ目のチャプターの行とその手前 3 行に、本題へ移る区切りの語が無い
 	var chapters []int
 	for i, line := range s.Lines {
-		if pyTruthy(line["chapter"]) {
+		if pyjson.Truthy(line["chapter"]) {
 			chapters = append(chapters, i)
 		}
 	}
@@ -91,7 +97,7 @@ func sourceCandidates(s *Script, source string) []lintIssue {
 		c := chapters[1]
 		var tail strings.Builder
 		for j := max(chapters[0], c-3); j <= c; j++ {
-			tail.WriteString(pyStr(s.Lines[j]["text"]))
+			tail.WriteString(pyjson.Str(s.Lines[j]["text"]))
 		}
 		found := false
 		for _, w := range introBoundary {
@@ -111,13 +117,13 @@ func dictWordInFold(source, w string) bool {
 	return regexp.MustCompile(`(?i)(?:^|[^A-Za-z])` + regexp.QuoteMeta(w) + `(?:[^A-Za-z]|$)`).MatchString(source)
 }
 
-func readSource(path string) (string, error) {
-	b, err := os.ReadFile(resolvePath(path))
+func ReadSource(path string) (string, error) {
+	b, err := os.ReadFile(paths.ResolvePath(path))
 	if err != nil {
-		return "", fail("%s: 資料を読めない (%v。--source にはテキストの資料を渡す)", path, err)
+		return "", app.Fail("%s: 資料を読めない (%v。--source にはテキストの資料を渡す)", path, err)
 	}
 	if strings.TrimSpace(string(b)) == "" {
-		return "", fail("%s: 資料が空 (台本の数字と語がすべて候補になってしまう)", path)
+		return "", app.Fail("%s: 資料が空 (台本の数字と語がすべて候補になってしまう)", path)
 	}
 	return string(b), nil
 }
@@ -125,10 +131,10 @@ func readSource(path string) (string, error) {
 // showAllTexts は図解の中の文字 (重要語の語・補足、比較の見出し・項目、箇条書きの見出し・項目)。
 func showAllTexts(sh map[string]any) []string {
 	out := showTexts(sh)
-	if v, ok := sh["title"].(string); ok && pyStr(sh["type"]) == "list" {
+	if v, ok := sh["title"].(string); ok && pyjson.Str(sh["type"]) == "list" {
 		out = append(out, v)
 	}
-	if v, ok := sh["text"].(string); ok && pyStr(sh["type"]) == "keyword" {
+	if v, ok := sh["text"].(string); ok && pyjson.Str(sh["type"]) == "keyword" {
 		out = append(out, v)
 	}
 	for _, side := range []string{"left", "right"} {

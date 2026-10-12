@@ -1,4 +1,4 @@
-package main
+package show
 
 import (
 	"bytes"
@@ -11,14 +11,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"zundamon-kaisetsu/internal/app"
+	"zundamon-kaisetsu/internal/paths"
+	"zundamon-kaisetsu/internal/pyjson"
 )
 
 // 図 (show の image) を出す箱の大きさ (720p の舞台での px)。player.html の .stage-show (幅 46%・高さ 52%) から
 // .show-image の padding (0.8cqw ≒ 10px) を両側で引いた値 (約 568.3 x 353.9 を切り上げた)。CSS との対応は
 // TestImageBoxMatchesPlayerCSS が見る。
 const (
-	imageBoxW = 569
-	imageBoxH = 354
+	ImageBoxW = 569
+	ImageBoxH = 354
 	// imageMaxBytes は 1 枚の画像の上限。HTML に base64 で埋め込むので 1.33 倍になる (音声は 64kbps で 10 分あたり約 5MB)
 	imageMaxBytes = 2 << 20
 )
@@ -34,7 +38,7 @@ const (
 	imageFillMin  = 0.5
 )
 
-func parseImage(path, at string, m map[string]any) (*showData, error) {
+func parseImage(path, at string, m map[string]any) (*Data, error) {
 	if err := onlyKeys(path, at+" (image)", m, "type", "src", "alt"); err != nil {
 		return nil, err
 	}
@@ -43,16 +47,16 @@ func parseImage(path, at string, m map[string]any) (*showData, error) {
 		return nil, err
 	}
 	if imageMIME(src) == "" {
-		return nil, fail("%s: %s.src は .png / .jpg / .jpeg の画像 (実際: %s)", path, at, pyStrRepr(src))
+		return nil, app.Fail("%s: %s.src は .png / .jpg / .jpeg の画像 (実際: %s)", path, at, pyjson.StrRepr(src))
 	}
 	// alt は HTML の代替テキストで、手順 3-3 の統合確認が図の中身を資料と突き合わせるときの手がかりにもなる
-	alt, err := showField(path, at, m, "alt", true, keywordSubMax)
+	alt, err := showField(path, at, m, "alt", true, KeywordSubMax)
 	if err != nil {
 		return nil, err
 	}
 	// Src は実際の場所 (symlink を解決した絶対パス) にしておく。同じ画像を ./a.png と a.png のように別の書き方で指しても、
 	// 図解の表で 1 つにまとまり、埋め込みが重複しない。ファイルはここでは読まない (synth / kana を画像の欠けで止めないため)
-	return &showData{Type: "image", Src: resolveScriptRelative(path, src), Alt: alt, srcWritten: src}, nil
+	return &Data{Type: "image", Src: paths.ResolveScriptRelative(path, src), Alt: alt, SrcWritten: src}, nil
 }
 
 func imageMIME(src string) string {
@@ -65,63 +69,40 @@ func imageMIME(src string) string {
 	return ""
 }
 
-// embedShowImages は図の画像を読み、検査して data URI に置き換える (mermaid の図は PNG にしてから同じ検査に通す)。
-// 立ち絵 (loadFaces) と同じく assemble の頭で呼ぶ。
-func embedShowImages(s *Script, shows []showData) error {
-	for i := range shows {
-		sd := &shows[i]
-		if sd.Type == "mermaid" {
-			if err := embedMermaid(s.Path, sd); err != nil {
-				return err
-			}
-			continue
-		}
-		if sd.Type != "image" {
-			continue
-		}
-		uri, err := loadShowImage(s.Path, sd.srcWritten, sd.Src)
-		if err != nil {
-			return err
-		}
-		sd.Src = uri
-	}
-	return nil
-}
-
-func loadShowImage(scriptPath, written, p string) (string, error) {
-	name := pyStrRepr(written)
+func LoadShowImage(scriptPath, written, p string) (string, error) {
+	name := pyjson.StrRepr(written)
 	f, err := os.Open(p)
 	if err != nil {
-		return "", fail("%s: 図の画像 %s を読めない (%v)", scriptPath, name, err)
+		return "", app.Fail("%s: 図の画像 %s を読めない (%v)", scriptPath, name, err)
 	}
 	defer func() { _ = f.Close() }() // 読むだけなので close の失敗は結果に関係しない
 	// 大きさは読む前に見て、読むときも上限 + 1 バイトで打ち切る (stat が大きさを返さない特殊ファイルでも読み続けない)
 	if st, err := f.Stat(); err == nil && st.Size() > imageMaxBytes {
-		return "", fail("%s: 図の画像 %s が大きすぎる (%d バイト。上限 %d)", scriptPath, name, st.Size(), imageMaxBytes)
+		return "", app.Fail("%s: 図の画像 %s が大きすぎる (%d バイト。上限 %d)", scriptPath, name, st.Size(), imageMaxBytes)
 	}
 	b, err := io.ReadAll(io.LimitReader(f, imageMaxBytes+1))
 	if err != nil {
-		return "", fail("%s: 図の画像 %s を読めない (%v)", scriptPath, name, err)
+		return "", app.Fail("%s: 図の画像 %s を読めない (%v)", scriptPath, name, err)
 	}
 	if len(b) > imageMaxBytes {
-		return "", fail("%s: 図の画像 %s が大きすぎる (上限 %d バイト)", scriptPath, name, imageMaxBytes)
+		return "", app.Fail("%s: 図の画像 %s が大きすぎる (上限 %d バイト)", scriptPath, name, imageMaxBytes)
 	}
 	// 縦横はヘッダだけで読んで先に検査し、通った画像だけを本体まで読む。先に本体を読むと、ファイルは小さくても縦横の値が
 	// 巨大な画像 (圧縮で 2MB に収まる 20000x20000 など) で、検査より前にピクセル全体を確保してしまう (2 周目の反証レビューの実測)
 	cfg, format, err := stdimage.DecodeConfig(bytes.NewReader(b))
 	if err != nil {
-		return "", fail("%s: 図の画像 %s を画像として読めない (PNG か JPEG で書き出す。%v)", scriptPath, name, err)
+		return "", app.Fail("%s: 図の画像 %s を画像として読めない (PNG か JPEG で書き出す。%v)", scriptPath, name, err)
 	}
-	if o := jpegOrientation(b); format == "jpeg" && o != 1 {
+	if o := JpegOrientation(b); format == "jpeg" && o != 1 {
 		// ブラウザは EXIF の向きに従って回すが、Go は回さない。検査した縦横と画面の縦横が食い違うので止める
-		return "", fail("%s: 図の画像 %s が向きの情報 (EXIF の Orientation=%d) を持っている。向きを直して書き出し直す", scriptPath, name, o)
+		return "", app.Fail("%s: 図の画像 %s が向きの情報 (EXIF の Orientation=%d) を持っている。向きを直して書き出し直す", scriptPath, name, o)
 	}
-	if err := checkImageScale(scriptPath, written, cfg.Width, cfg.Height); err != nil {
+	if err := CheckImageScale(scriptPath, written, cfg.Width, cfg.Height); err != nil {
 		return "", err
 	}
 	// 本体まで読む (ヘッダだけ正しく中身が壊れた画像は、ブラウザで壊れた画像のアイコンになる)。縦横は上で抑えてある
 	if _, _, err := stdimage.Decode(bytes.NewReader(b)); err != nil {
-		return "", fail("%s: 図の画像 %s を画像として読めない (PNG か JPEG で書き出す。%v)", scriptPath, name, err)
+		return "", app.Fail("%s: 図の画像 %s を画像として読めない (PNG か JPEG で書き出す。%v)", scriptPath, name, err)
 	}
 	mime := map[string]string{"png": "image/png", "jpeg": "image/jpeg"}[format]
 	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(b), nil
@@ -142,43 +123,43 @@ func imageScaleProblem(w, h int) (imageProblem, float64, float64) {
 	if w <= 0 || h <= 0 {
 		return imageInvalid, 0, 0
 	}
-	scale := min(float64(imageBoxW)/float64(w), float64(imageBoxH)/float64(h))
+	scale := min(float64(ImageBoxW)/float64(w), float64(ImageBoxH)/float64(h))
 	shownW, shownH := scale*float64(w), scale*float64(h)
 	switch {
 	case scale > imageScaleMax:
 		return imageSmall, shownW, shownH
 	case scale < imageScaleMin:
 		return imageLarge, shownW, shownH
-	case shownW < imageBoxW*imageFillMin || shownH < imageBoxH*imageFillMin:
+	case shownW < ImageBoxW*imageFillMin || shownH < ImageBoxH*imageFillMin:
 		return imageThin, shownW, shownH
 	}
 	return "", shownW, shownH
 }
 
-// checkImageScale は w x h の画像を箱に収めたときの縮尺と、表示したときに箱を占める割合を見る。
-func checkImageScale(scriptPath, src string, w, h int) error {
-	name := pyStrRepr(src)
+// CheckImageScale は w x h の画像を箱に収めたときの縮尺と、表示したときに箱を占める割合を見る。
+func CheckImageScale(scriptPath, src string, w, h int) error {
+	name := pyjson.StrRepr(src)
 	problem, shownW, shownH := imageScaleProblem(w, h)
 	switch problem {
 	case imageInvalid:
-		return fail("%s: 図の画像 %s の大きさが不正 (%dx%d)", scriptPath, name, w, h)
+		return app.Fail("%s: 図の画像 %s の大きさが不正 (%dx%d)", scriptPath, name, w, h)
 	case imageSmall:
-		return fail("%s: 図の画像 %s (%dx%d) が小さすぎる。小さく表示されて読みにくいので、幅 %d か高さ %d 以上で書き出す",
-			scriptPath, name, w, h, imageBoxW, imageBoxH)
+		return app.Fail("%s: 図の画像 %s (%dx%d) が小さすぎる。小さく表示されて読みにくいので、幅 %d か高さ %d 以上で書き出す",
+			scriptPath, name, w, h, ImageBoxW, ImageBoxH)
 	case imageLarge:
-		return fail("%s: 図の画像 %s (%dx%d) が大きすぎる。半分より小さく縮められて文字が読めなくなるので、幅 %d・高さ %d 以下に収める"+
+		return app.Fail("%s: 図の画像 %s (%dx%d) が大きすぎる。半分より小さく縮められて文字が読めなくなるので、幅 %d・高さ %d 以下に収める"+
 			" (中身が多すぎるなら図を分けるか、図を使わずにセリフで説明する)",
-			scriptPath, name, w, h, int(imageBoxW/imageScaleMin), int(imageBoxH/imageScaleMin))
+			scriptPath, name, w, h, int(ImageBoxW/imageScaleMin), int(ImageBoxH/imageScaleMin))
 	case imageThin:
-		return fail("%s: 図の画像 %s (%dx%d) が細長すぎる。表示すると %.0fx%.0f px で、図の箱 (%dx%d) の縦横それぞれ半分に届かない",
-			scriptPath, name, w, h, shownW, shownH, imageBoxW, imageBoxH)
+		return app.Fail("%s: 図の画像 %s (%dx%d) が細長すぎる。表示すると %.0fx%.0f px で、図の箱 (%dx%d) の縦横それぞれ半分に届かない",
+			scriptPath, name, w, h, shownW, shownH, ImageBoxW, ImageBoxH)
 	}
 	return nil
 }
 
-// jpegOrientation は JPEG の EXIF (APP1) にある Orientation を返す。無い・読めない・1〜8 以外 (ブラウザも無視する) ときは
+// JpegOrientation は JPEG の EXIF (APP1) にある Orientation を返す。無い・読めない・1〜8 以外 (ブラウザも無視する) ときは
 // 1 (回さない) を返す。
-func jpegOrientation(b []byte) int {
+func JpegOrientation(b []byte) int {
 	if len(b) < 4 || b[0] != 0xFF || b[1] != 0xD8 {
 		return 1
 	}

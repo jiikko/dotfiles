@@ -1,4 +1,5 @@
-package main
+// Package wav は wav (PCM 16bit mono) の入出力。
+package wav
 
 import (
 	"bytes"
@@ -6,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+
+	"zundamon-kaisetsu/internal/app"
 )
 
 // parseWav は Python の wave モジュールが読める範囲の RIFF/WAVE を読み、(チャンネル数, 標本の幅, 標本化周波数,
@@ -28,7 +31,7 @@ func parseWav(b []byte) (ch, width, rate, nframes int, pcm []byte, err error) {
 			tag := binary.LittleEndian.Uint16(body[0:2])
 			if tag == 0xFFFE {
 				// 拡張形式は subformat (16 バイトの GUID) が本当の形式。Python 3.14 の wave と同じく GUID 全体を PCM と比べる
-				if size < 40 || len(body) < 40 || !bytes.Equal(body[24:40], ksdataformatSubtypePCM) {
+				if size < 40 || len(body) < 40 || !bytes.Equal(body[24:40], KsdataformatSubtypePCM) {
 					return 0, 0, 0, 0, nil, errors.New("unknown extended format")
 				}
 				tag = 1
@@ -57,35 +60,35 @@ func parseWav(b []byte) (ch, width, rate, nframes int, pcm []byte, err error) {
 	return 0, 0, 0, 0, nil, errors.New("fmt chunk and/or data chunk missing") // fmt が無い・data が無いのどちらも (Python の wave と同じ文言)
 }
 
-// checkWavBytes は mono / 16bit / sampleRate で、ヘッダの長さどおりに PCM が入っているかを確かめる。
-func checkWavBytes(b []byte, what string) ([]byte, int, error) {
+// CheckBytes は mono / 16bit / SampleRate で、ヘッダの長さどおりに PCM が入っているかを確かめる。
+func CheckBytes(b []byte, what string) ([]byte, int, error) {
 	ch, width, rate, n, pcm, err := parseWav(b)
 	if err != nil {
-		return nil, 0, fail("%s: wav として読めない (%v)", what, err)
+		return nil, 0, app.Fail("%s: wav として読めない (%v)", what, err)
 	}
-	if ch != 1 || width != 2 || rate != sampleRate {
-		return nil, 0, fail("%s: mono / 16bit / %dHz ではない (%dch, %dbit, %dHz)", what, sampleRate, ch, width*8, rate)
+	if ch != 1 || width != 2 || rate != SampleRate {
+		return nil, 0, app.Fail("%s: mono / 16bit / %dHz ではない (%dch, %dbit, %dHz)", what, SampleRate, ch, width*8, rate)
 	}
 	if n == 0 || len(pcm) != n*2 {
 		got := min(len(pcm), n*2)
-		return nil, 0, fail("%s: wav が空か途中で切れている (ヘッダ %d フレーム / 実データ %d フレーム)", what, n, got/2)
+		return nil, 0, app.Fail("%s: wav が空か途中で切れている (ヘッダ %d フレーム / 実データ %d フレーム)", what, n, got/2)
 	}
 	return pcm, n, nil
 }
 
-func readWav(path string) ([]byte, float64, error) {
+func Read(path string) ([]byte, float64, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return nil, 0, fail("%s: 読めない (%v)", path, err)
+		return nil, 0, app.Fail("%s: 読めない (%v)", path, err)
 	}
-	pcm, n, err := checkWavBytes(b, path+" (synth --force で作り直す)")
+	pcm, n, err := CheckBytes(b, path+" (synth --force で作り直す)")
 	if err != nil {
 		return nil, 0, err
 	}
-	return pcm, float64(n) / sampleRate, nil
+	return pcm, float64(n) / SampleRate, nil
 }
 
-func writeWav(path string, pcm []byte) error {
+func Write(path string, pcm []byte) error {
 	h := make([]byte, 44)
 	copy(h[0:4], "RIFF")
 	binary.LittleEndian.PutUint32(h[4:8], uint32(36+len(pcm)))
@@ -93,8 +96,8 @@ func writeWav(path string, pcm []byte) error {
 	binary.LittleEndian.PutUint32(h[16:20], 16)
 	binary.LittleEndian.PutUint16(h[20:22], 1)
 	binary.LittleEndian.PutUint16(h[22:24], 1)
-	binary.LittleEndian.PutUint32(h[24:28], sampleRate)
-	binary.LittleEndian.PutUint32(h[28:32], sampleRate*2)
+	binary.LittleEndian.PutUint32(h[24:28], SampleRate)
+	binary.LittleEndian.PutUint32(h[28:32], SampleRate*2)
 	binary.LittleEndian.PutUint16(h[32:34], 2)
 	binary.LittleEndian.PutUint16(h[34:36], 16)
 	copy(h[36:40], "data")
@@ -114,3 +117,8 @@ func writeWav(path string, pcm []byte) error {
 	}
 	return f.Close()
 }
+
+const SampleRate = 24000
+
+// KsdataformatSubtypePCM は拡張形式の wav の subformat で PCM を表す GUID (00000001-0000-0010-8000-00aa00389b71)。
+var KsdataformatSubtypePCM = []byte{0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}

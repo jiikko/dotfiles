@@ -19,6 +19,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"zundamon-kaisetsu/internal/build"
+	"zundamon-kaisetsu/internal/script"
+	"zundamon-kaisetsu/internal/show"
 )
 
 // writeImage は w x h の画像を dir/name に書く。noise なら乱数で埋めて圧縮が効かないようにする (ファイルの大きさの上限を試す)。
@@ -84,32 +88,32 @@ func TestRejectBadImageShow(t *testing.T) {
 			map[string]any{"who": "metan", "text": "a"},
 			map[string]any{"who": "metan", "text": "b", "show": tc.show},
 		}})
-		_, err := loadScript(path, testEnv(t))
+		_, err := script.LoadScript(path, testEnv(t))
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%v: %q を含む拒否にならなかった (%v)", tc.show, tc.want, err)
 		}
 	}
 }
 
-// TestImageScaleBounds は、箱 (imageBoxW x imageBoxH) に収めたときの縮尺が 0.5〜1 の画像だけを通すことを、境界の両側で確かめる。
+// TestImageScaleBounds は、箱 (ImageBoxW x ImageBoxH) に収めたときの縮尺が 0.5〜1 の画像だけを通すことを、境界の両側で確かめる。
 func TestImageScaleBounds(t *testing.T) {
 	for _, tc := range []struct {
 		w, h int
 		want string // 空なら通る
 	}{
-		{imageBoxW, imageBoxH, ""},              // 箱ちょうど (縮尺 1)
-		{imageBoxW * 2, imageBoxH * 2, ""},      // 縮尺 0.5 ちょうど
-		{imageBoxW - 1, imageBoxH - 1, "小さすぎる"}, // どちらの辺も箱に届かない
-		{imageBoxW*2 + 1, imageBoxH, "大きすぎる"},   // 幅が 2 倍を超える
-		{imageBoxW, imageBoxH*2 + 1, "大きすぎる"},   // 高さが 2 倍を超える
-		{imageBoxW, imageBoxH / 2, ""},          // 横長: 表示の高さが箱のちょうど半分
-		{imageBoxW, imageBoxH/2 - 1, "細長すぎる"},   // 横長: 半分に届かない
-		{(imageBoxW + 1) / 2, imageBoxH, ""},    // 縦長: 表示の幅が箱の半分以上
-		{imageBoxW/2 - 1, imageBoxH, "細長すぎる"},   // 縦長: 半分に届かない
-		{imageBoxW, 10, "細長すぎる"},                // 1 辺だけ箱に届く細い帯
+		{show.ImageBoxW, show.ImageBoxH, ""},              // 箱ちょうど (縮尺 1)
+		{show.ImageBoxW * 2, show.ImageBoxH * 2, ""},      // 縮尺 0.5 ちょうど
+		{show.ImageBoxW - 1, show.ImageBoxH - 1, "小さすぎる"}, // どちらの辺も箱に届かない
+		{show.ImageBoxW*2 + 1, show.ImageBoxH, "大きすぎる"},   // 幅が 2 倍を超える
+		{show.ImageBoxW, show.ImageBoxH*2 + 1, "大きすぎる"},   // 高さが 2 倍を超える
+		{show.ImageBoxW, show.ImageBoxH / 2, ""},          // 横長: 表示の高さが箱のちょうど半分
+		{show.ImageBoxW, show.ImageBoxH/2 - 1, "細長すぎる"},   // 横長: 半分に届かない
+		{(show.ImageBoxW + 1) / 2, show.ImageBoxH, ""},    // 縦長: 表示の幅が箱の半分以上
+		{show.ImageBoxW/2 - 1, show.ImageBoxH, "細長すぎる"},   // 縦長: 半分に届かない
+		{show.ImageBoxW, 10, "細長すぎる"},                     // 1 辺だけ箱に届く細い帯
 		{0, 10, "大きさが不正"},
 	} {
-		err := checkImageScale("s.json", "a.png", tc.w, tc.h)
+		err := show.CheckImageScale("s.json", "a.png", tc.w, tc.h)
 		switch {
 		case tc.want == "" && err != nil:
 			t.Errorf("%dx%d: 通るはずが止まった (%v)", tc.w, tc.h, err)
@@ -120,7 +124,7 @@ func TestImageScaleBounds(t *testing.T) {
 }
 
 func TestEmbedShowImages(t *testing.T) {
-	set := func(src string, gen func(dir string)) (*PlayerData, error) {
+	set := func(src string, gen func(dir string)) (*build.PlayerData, error) {
 		return buildWithShows(t, func(dir string, lines []any) {
 			gen(dir)
 			lines[1].(map[string]any)["show"] = imageShow(src)
@@ -221,7 +225,7 @@ func TestEmbedShowImagesPaths(t *testing.T) {
 	}
 }
 
-// TestImageBoxMatchesPlayerCSS は、図の箱の定数 (imageBoxW / imageBoxH) が player.html の .stage-show と .show-image から
+// TestImageBoxMatchesPlayerCSS は、図の箱の定数 (ImageBoxW / ImageBoxH) が player.html の .stage-show と .show-image から
 // 計算した 720p の箱の大きさと合っていることを確かめる。CSS だけを変えると、build の検査と画面の大きさが食い違う。
 func TestImageBoxMatchesPlayerCSS(t *testing.T) {
 	tb, err := os.ReadFile(testEnv(t).Template())
@@ -255,8 +259,8 @@ func TestImageBoxMatchesPlayerCSS(t *testing.T) {
 	}
 	w := 1280*boxW/100 - 2*1280*pad/100
 	h := 720*boxH/100 - 2*1280*pad/100
-	if math.Ceil(w) != imageBoxW || math.Ceil(h) != imageBoxH {
-		t.Errorf("CSS から計算した箱 %.1fx%.1f が定数 %dx%d と合わない", w, h, imageBoxW, imageBoxH)
+	if math.Ceil(w) != show.ImageBoxW || math.Ceil(h) != show.ImageBoxH {
+		t.Errorf("CSS から計算した箱 %.1fx%.1f が定数 %dx%d と合わない", w, h, show.ImageBoxW, show.ImageBoxH)
 	}
 }
 
@@ -271,7 +275,7 @@ func TestImageBombStopsBeforeDecode(t *testing.T) {
 	runtime.GC()
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
-	_, err := loadShowImage("s.json", "bomb.png", filepath.Join(dir, "bomb.png"))
+	_, err := show.LoadShowImage("s.json", "bomb.png", filepath.Join(dir, "bomb.png"))
 	runtime.ReadMemStats(&after)
 	if err == nil || !strings.Contains(err.Error(), "大きすぎる") {
 		t.Fatalf("巨大な画像を止めなかった: %v", err)
@@ -304,7 +308,7 @@ func TestJPEGOrientationVariants(t *testing.T) {
 		{"0", join(app1(0), eoi), 1},
 		{"EXIF 無し", join(app0, eoi), 1},
 	} {
-		if got := jpegOrientation(tc.b); got != tc.want {
+		if got := show.JpegOrientation(tc.b); got != tc.want {
 			t.Errorf("%s: got %d want %d", tc.name, got, tc.want)
 		}
 	}
