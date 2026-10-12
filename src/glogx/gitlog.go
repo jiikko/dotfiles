@@ -109,11 +109,11 @@ func runGitCmd(cmd *exec.Cmd) (string, error) {
 func runGitReadTimeout(args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitOpTimeout)
 	defer cancel()
-	a, err := subproc.GitRepoArgs(ctx, "", args...)
+	cmd, err := subproc.GitRepoCommand(ctx, "", args...)
 	if err != nil {
 		return "", err
 	}
-	return runGitCmd(exec.CommandContext(ctx, "git", a...)) // subproc: waitdelay-in runGitCmd
+	return runGitCmd(cmd)
 }
 
 // BuildLogArgs は allowlist 済みオプションから git log の引数列を組み立てる (データ解析用。
