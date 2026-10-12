@@ -159,6 +159,14 @@ for zoom_state in unzoomed zoomed; do
     "$("${TMUX_CMD[@]}" display-message -t dotfiles_test -p "$fmt_current")"
   assert_no_style_leak "other/$zoom_state" \
     "$("${TMUX_CMD[@]}" display-message -t dotfiles_test -p "$fmt_other")"
+  # current セルと非 current セルは同じ window で同じ表示幅であること。違うと window を移るたびに
+  # 後ろのセルが横へずれる (current の目印 ❯ は先頭空白の置き換えで、足していない)
+  w_current=$("${TMUX_CMD[@]}" display-message -t dotfiles_test -p '#{w:#{E:window-status-current-format}}')
+  w_other=$("${TMUX_CMD[@]}" display-message -t dotfiles_test -p '#{w:#{E:window-status-format}}')
+  if [[ -z "$w_current" || "$w_current" != "$w_other" ]]; then
+    print -u2 "[test-tmux:zsh] current/other window cell widths differ ($zoom_state): current=$w_current other=$w_other"
+    exit 1
+  fi
 done
 
 # status-left も同じ「条件分岐内 #[...] のカンマ未エスケープ」回帰の対象
