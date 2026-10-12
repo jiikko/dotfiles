@@ -48,13 +48,10 @@ type colEntry struct {
 }
 
 // layout は表示するノードの目標位置を返す (列ごとに、親ごとの子のブロックを縦に詰める。spec §3.1・§3.3 の capped)。
-// 巨大なブロックは画面の近くの子だけを入れる (virt.go)。全部が要る (検索の列) なら layoutAll。
+// 巨大なブロックは画面の近くの子だけを入れる (virt.go)。仮想化しない配置 (layoutWith(false)) は検査の正解役 (column_test.go・virt_test.go) が使う。
 // 🚨 返す map は使い回しの入れ物で、次の layout の呼び出しで中身が変わる。呼び出し側は受け取った関数の中だけで使い、
 // 持ち越さない (5 万件のフォルダで、毎 tick の作り直しが確保の大半だった)。
 func (m *Model) layout() map[*node]place { return m.layoutWith(true) }
-
-// layoutAll は仮想化せずに全ノードを配置する。
-func (m *Model) layoutAll() map[*node]place { return m.layoutWith(false) }
 
 func (m *Model) layoutWith(virt bool) map[*node]place {
 	m.layoutSeq++
@@ -131,7 +128,7 @@ func (m *Model) layoutWith(virt bool) map[*node]place {
 			m.noteGeo(p.n, v, y0[j], stride, nx)
 			big := m.virtualizes(p.n, len(v.kids))
 			if big {
-				p.n.virtSeq = m.layoutSeq // 配置の仕方 (検索の layoutAll・全部を動かす期間) に依らず履歴を続ける (敵対レビュー 2 周目)
+				p.n.virtSeq = m.layoutSeq // 配置の仕方 (仮想化しない配置・全部を動かす期間) に依らず履歴を続ける (敵対レビュー 2 周目)
 			}
 			if virt && big && !m.inHold(&p.n.openHold) {
 				next = m.placeVirtual(pos, p.n, v, y0[j], stride, nx, act, spKid[p.n], next)

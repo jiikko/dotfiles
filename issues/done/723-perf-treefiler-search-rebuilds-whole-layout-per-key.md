@@ -76,3 +76,4 @@
   - 敵対レビュー (opus・読み取りのみ): P1 / P2 なし。新旧の列を食い違わせる入力は見つからず (別の 60 種の乱数・RowSpacing・pin・`-` を混ぜても一致)。
     P3: ベンチが空欄の近道を通って before と数え方が違った → 空欄を通らない形に直して測り直した (上の表)。空欄の近道そのものは振る舞いが同じなのでテストでは区別できない (記録)。
     巨大なフォルダで遠くの一致へ飛んだとき、配置の履歴が前の検索の打鍵ぶん無いので新しく現れる扱いで動くことがある (G で飛ぶのと同じ。未実測)
+- 2026-10-12 (dotfiles-4e): 後始末。検索が使わなくなった `layoutAll` が production から到達不能になり、CI の `unused (production 到達不能)` が赤だった (root の make test の test-unused-excluding-tests も赤だったのを見落とした)。commit「fix(treefiler): 検査の正解役だけが使う layoutAll を test へ移す (issue 723)」で column_test.go へ移した
