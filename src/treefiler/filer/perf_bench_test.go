@@ -168,3 +168,22 @@ func BenchmarkReadHugeFolder(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkViewScreenSizes は止まった画面 1 フレーム (View) を画面の大きさごとに測る (木は小さい。描画は画面のセル数に比例する。issue 724)。
+func BenchmarkViewScreenSizes(b *testing.B) {
+	for _, sz := range [][2]int{{80, 24}, {200, 50}, {300, 80}} {
+		b.Run(fmt.Sprintf("%dx%d", sz[0], sz[1]), func(b *testing.B) {
+			m := hugeFolderModel(b, 20)
+			m.Resize(sz[0], sz[1])
+			for at, end := m.lastAdv, m.lastAdv.Add(time.Second); at.Before(end); {
+				at = at.Add(16 * time.Millisecond)
+				m.Advance(at)
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				_ = m.View()
+			}
+		})
+	}
+}

@@ -20,21 +20,21 @@ type cell struct {
 type canvas struct {
 	w, h  int
 	cells []cell
+	blank []cell // 地の色の空白で埋めた見本 (reset が 1 回の copy で戻す)
 }
 
 func newCanvas(w, h int) *canvas {
-	c := &canvas{w: w, h: h, cells: make([]cell, w*h)}
+	c := &canvas{w: w, h: h, cells: make([]cell, w*h), blank: make([]cell, w*h)}
+	for i := range c.blank {
+		c.blank[i] = cell{s: " ", bg: cBg, fg: cText}
+	}
 	c.reset()
 	return c
 }
 
 // reset は格子を地の色の空白に戻す (毎フレーム作り直さず使い回すため。glogx の TestFrameAllocBudget で
-// 作り直しは 1 フレーム 330KB だった)。
-func (c *canvas) reset() {
-	for i := range c.cells {
-		c.cells[i] = cell{s: " ", bg: cBg, fg: cText}
-	}
-}
+// 作り直しは 1 フレーム 330KB だった)。セルごとに代入せず見本からまとめて写す (issue 724)。
+func (c *canvas) reset() { copy(c.cells, c.blank) }
 
 func (c *canvas) at(x, y int) *cell {
 	if x < 0 || y < 0 || x >= c.w || y >= c.h {
@@ -234,10 +234,23 @@ func appendRGB(b []byte, sel string, c rgb) []byte {
 		if i > 0 {
 			b = append(b, ';')
 		}
-		b = strconv.AppendInt(b, int64(v+0.5), 10)
+		if n := int64(v + 0.5); n >= 0 && n < int64(len(decimals)) {
+			b = append(b, decimals[n]...)
+		} else {
+			b = strconv.AppendInt(b, n, 10) // 0..255 の外 (混ぜた色のはみ出し)。表を引かない
+		}
 	}
 	return b
 }
+
+// decimals は 0..255 の 10 進の文字列 (色の成分を毎回 strconv で組まない。issue 724)。
+var decimals = func() [256]string {
+	var t [256]string
+	for i := range t {
+		t[i] = strconv.Itoa(i)
+	}
+	return t
+}()
 
 // lines は格子を行ごとの文字列 (24bit の SGR つき) にする。
 func (c *canvas) lines() []string {
@@ -245,14 +258,13 @@ func (c *canvas) lines() []string {
 	var b []byte
 	for y := range c.h {
 		b = b[:0]
-		var last cell
-		first := true
+		var last *cell
 		for x := range c.w {
-			p := c.cells[y*c.w+x]
+			p := &c.cells[y*c.w+x] // 値で写さない (1 セル 72 バイト。issue 724)
 			if p.cont {
 				continue
 			}
-			if first || p.fg != last.fg || p.bg != last.bg || p.bold != last.bold || p.ul != last.ul || p.rev != last.rev {
+			if last == nil || p.fg != last.fg || p.bg != last.bg || p.bold != last.bold || p.ul != last.ul || p.rev != last.rev {
 				b = append(b, "\x1b[0"...)
 				if p.bold {
 					b = append(b, ";1"...)
@@ -266,7 +278,7 @@ func (c *canvas) lines() []string {
 				b = appendRGB(b, ";38;2;", p.fg)
 				b = appendRGB(b, ";48;2;", p.bg)
 				b = append(b, 'm')
-				last, first = p, false
+				last = p
 			}
 			b = append(b, p.s...)
 		}
