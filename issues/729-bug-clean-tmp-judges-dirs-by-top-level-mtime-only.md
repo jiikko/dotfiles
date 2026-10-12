@@ -32,6 +32,13 @@ find $d -maxdepth 1 -mindepth 1 -mtime +7
 
 - 候補のディレクトリごとに「中で一番新しいファイルの mtime」で判定する (`find <dir> -newermt` / `-mtime -$(DAYS)` が 1 件でも当たれば残す)
 - 残したものは DRY_RUN でも本実行でも「中に新しいファイルがあるので残した: <path>」と出す (黙って外さない)
+- 🚨 **find が失敗したら「新しいファイルは無い」と読まず、残して報告する**。今の target も `list="$$(find ...)"` の rc を見ておらず、
+  空の結果を「0 件」で exit 0 にする。中の判定を足すと、読めない子ディレクトリ (mode 000) で `find` が `Permission denied` / rc=1 を返し、
+  出力が空なら「新しいものは無い」= 削除に倒れる (2026-10-12 に `/usr/bin/find` で rc=1 を確認)。rc≠0 は「判定不能 → 消さない」にする
+- 判定に数えるのはファイルだけでなく子孫のディレクトリの mtime も含める (エントリの追加・削除はそこに出る)。`-L` は付けない
+  (symlink の先で判定することになる。今は link 自身だけを `rm -rf` している)
+- **`tmp/wt-*` の git worktree を対象から外す** (`git worktree list` に載っているパス)。worktree は `tmp/` の下に作る運用で、
+  直下の mtime が古いまま中で作業中のことがあり、`rm -rf` すると作業を消したうえ `.git/worktrees` に登録が残る
 - `_claude/CLAUDE.md` の「消す前に issue や doc が指しているパスでないかを確かめる」(`grep -rn 'tmp/' issues/ _claude/`) も手作業のまま。
   open な issue (`done/` 以外) が参照しているエントリを一覧で印付けする案もあるが、参照の形 (`tmp/x/y` / `~/dotfiles/tmp/x`) の取り方が
   字句の判定になるので、入れるなら印付け (目安) に留め、除外の判定には使わない
@@ -45,6 +52,11 @@ find $d -maxdepth 1 -mindepth 1 -mtime +7
 
 ## 進捗
 
+- 2026-10-12 反証レビュー (sonnet・read-only 1 体): 核の主張 (mtime の挙動・再現・テスト 0 件) は反証されず。採用 3 件 = find の失敗が削除に倒れる (P1、実測で確認) / worktree を消す / 子孫ディレクトリの扱い。却下 1 件 = `find` が bfs に解決される環境の差 (repo は macOS のみで、make の PATH の find は `/usr/bin/find`)。記録のみ 1 件 = DRY_RUN のサイズが `du 2>/dev/null` で過小になりうる (消す対象は変わらない)
+
+
 - [ ] 判定を「中で一番新しいファイル」に変える
 - [ ] 残した理由を出力に出す
+- [ ] find の失敗 (rc≠0) を判定不能として残す
+- [ ] 登録済みの worktree を対象から外す
 - [ ] テスト (古い dir + 新しい中身 / 空 dir / 0 件) と変異での red
