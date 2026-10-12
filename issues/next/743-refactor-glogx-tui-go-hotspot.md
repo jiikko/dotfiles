@@ -1,1 +1,0 @@
-../743-refactor-glogx-tui-go-hotspot.md
