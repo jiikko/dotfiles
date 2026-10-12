@@ -53,3 +53,4 @@ glogx `filer_view_test.go` `TestFilerHelpSwallowsCrossKeys`)。素通りする�
 - 2026-10-12: 反証レビュー (dotfiles-5f、sonnet) を当てた。「直し忘れはテストも通る」を「新しい層のテストを書かなかったとき」に絞り、
   enum で表せない情報・exhaustive の限界・網羅テストの案 A を足し、trigger 待ちとして pending へ。反証できなかった主張: 層は 4 つで漏れが無い・
   OwnsKeys と HandleInput は対であるべき・`m.w-pw-1` は 1 桁多い
+- 2026-10-12: issue 712 は done (model.go の draw の末尾も含めて push 済み。この issue の「712 が入った後に寄せる」の前提は満たした)

@@ -88,3 +88,4 @@ N+1 ではないもの:
 - 2026-10-12: 反証レビュー (dotfiles-5f、sonnet) を当てた。効く順を逆に (体感は load)・効果の大きさとやらない条件・cgo の stub と CI・
   計測コードの穴・doctor の size.go (別件) を足した。反証できなかった主張: 定数 (5000 / 5)・3 か所の N+1・explode.go が Info を打たない・
   cgo の有無・load が lstat・x/sys にラッパーが無い
+- 2026-10-12: issue 712 (描く側の仮想化) は done。この issue (読む側の N+1) は継続
