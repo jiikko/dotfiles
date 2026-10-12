@@ -1,7 +1,5 @@
 # 714 (perf): treefiler はフォルダを読むたびに項目ごとに lstat を打つ (getattrlistbulk でまとめる)
 
-> 🚨 **担当中: dotfiles-4e**（2026-10-12〜）
-
 起票日: 2026-10-12
 
 ## 概要
