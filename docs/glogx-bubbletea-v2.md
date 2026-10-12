@@ -71,8 +71,11 @@ v1 では pty スモークで実測した回帰 (`TestBrowseBatchedRunesKeyMsg`)
   glogx の描画コストは自前の行組み立て側で、エンジン差し替えでは動かない
 - **コード量**: `tui.go` は微増 (保険を残したため)
 - **ちらつき低減 (mode 2026 / synchronized output)**: v2 は端末を選んで有効化する (`shouldQuerySynchronizedOutput`。
-  `TERM_PROGRAM` が `Apple*` は除外)。この環境は `TERM_PROGRAM=tmux` なので照会自体は走るが、
-  **実際に有効かは未確認**。体感差も未観測
+  `TERM_PROGRAM` が `Apple*` は除外)。この環境は `TERM_PROGRAM=tmux` なので照会が走り、tmux 3.7c は `?2026;2$y` (対応・今は無効) を
+  返すので、アプリ → tmux の出力は 1 フレームずつまとまる (隔離した tmux で実測 2026-10-12)。🚨 ただし外側の端末が Terminal.app
+  (同期出力に非対応。tmux の `client_termfeatures` に `sync` が無い) なので、tmux → 外側の端末はまとまらない。全画面を毎フレーム
+  書き換える動き (treefiler の `G` `g`) で線や色が一瞬残ることがある。Terminal.app を使い続ける前提で、アプリの側の緩和 (遠くへ飛ぶときの
+  即着地) も試したが体感は変わらず、直さないことにした (ユーザー判断 2026-10-12)。同期出力に対応した端末へ移るなら `terminal-features` に `sync` を足す
 
 ## 採用していない v2 機能と理由
 
