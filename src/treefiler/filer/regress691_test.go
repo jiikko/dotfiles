@@ -44,6 +44,7 @@ func TestFeedInvalidContinuationDoesNotHang(t *testing.T) {
 
 // root が / でも、パスから node を引ける (root.abs + "/" が // にならない)。
 func TestRootSlashFindsNodes(t *testing.T) {
+	isolateConfig(t)
 	m := newAt(t, "/")
 	if n := m.findNode("/usr"); n == nil {
 		t.Fatal("root が / のとき findNode(/usr) が nil")
@@ -61,6 +62,7 @@ func TestRootSlashFindsNodes(t *testing.T) {
 
 // /usr のように親が / のフォルダから、- で / へ上がれる。/ ではそれ以上上がらず知らせる。
 func TestRerootUpToSlash(t *testing.T) {
+	isolateConfig(t)
 	m := newAt(t, "/usr")
 	m.HandleKey("-")
 	if m.root.path() != "/" {
@@ -322,7 +324,7 @@ func TestBigDirPollThrottle(t *testing.T) {
 
 // 線の格子は画面に出る行の分だけ作る (5 万件のフォルダで 1 フレームの描画が 25ms → 13.8ms。issue 693)。
 func TestLinesClippedToViewport(t *testing.T) {
-	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())
+	isolateConfig(t)
 	dir := t.TempDir()
 	for i := range 500 {
 		mustWrite(t, filepath.Join(dir, fmt.Sprintf("f%03d.txt", i)), "")

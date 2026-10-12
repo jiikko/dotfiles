@@ -77,7 +77,7 @@ func TestBangHistorySkipsLeadingSpaceAndIs0600(t *testing.T) {
 
 // 上限の 2 倍を超えたファイルは、読むときに末尾 historyKeep 件で書き直す。改行を含むコマンドも 1 行で往復する。
 func TestBangHistoryTrimsAndRoundTripsNewlines(t *testing.T) {
-	newTest(t) // TREEFILER_CONFIG_DIR を張る
+	isolateConfig(t)
 	path := historyPath()
 	for i := range 2*historyKeep + 50 {
 		appendHistory(path, "c"+strconv.Itoa(i))
@@ -224,5 +224,30 @@ func TestPromptHistoryInMemoryIsCapped(t *testing.T) {
 	h := m.prompt.history
 	if len(h) != historyKeep || h[0] != "echo 30" || h[len(h)-1] != "echo "+strconv.Itoa(historyKeep+29) {
 		t.Fatalf("履歴 %d 件 (先頭 %q・末尾 %q), want %d 件で古い方から捨てる", len(h), h[0], h[len(h)-1], historyKeep)
+	}
+}
+
+// 履歴の場所が symlink なら追記しない (先のファイルに書かず、mode も変えない。issue 731)。
+func TestAppendHistoryDoesNotFollowSymlink(t *testing.T) {
+	d := t.TempDir()
+	target := filepath.Join(d, "other")
+	if err := os.WriteFile(target, []byte("keep\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(d, "treefiler-history")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	appendHistory(link, "echo hi")
+	b, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != "keep\n" || fi.Mode().Perm() != 0o644 {
+		t.Fatalf("symlink の先へ書いた / mode を変えた: %q %v", b, fi.Mode().Perm())
 	}
 }

@@ -41,7 +41,8 @@ func fuzzy(name, query string) (int, [][2]int) {
 		r          rune
 		start, end int
 	}
-	n := make([]ch, 0, len(name))
+	var stack [64]ch // 64 文字までの名前は確保しない (検索の打鍵で名前ごとに確保していた。issue 733)
+	n := stack[:0]
 	for i, r := range name {
 		if fold {
 			r = unicode.ToLower(r)

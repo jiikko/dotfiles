@@ -844,6 +844,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.filerV.advance(timeNow())
+		m.drainFilerNotices()
 		return m, tea.Batch(m.filerV.rearm(msg), m.maybeTick())
 	case tickMsg:
 		m.ticking = false // このチェーンが 1 拍消費した。継続は下の maybeTick で単一に保つ
@@ -859,6 +860,7 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusOv.settleClose() // status viewer も同じ理由で spinnerActive の判定より前に畳む
 		// treefiler の動きも spinnerActive の判定より前に進める (後ろだと、動き終わる最後の 1 拍が届かず途中の姿で止まる)
 		m.filerV.advance(timeNow())
+		m.drainFilerNotices()
 		if !m.spinnerActive() {
 			return m, nil // アニメ対象なし: 再アームせずチェーンを終わらせる
 		}
@@ -1374,8 +1376,8 @@ func (m *browseModel) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// は出さない: シェルは最後のコマンドの終了コードで抜けるのが普通 (e のエディタも filer.ExecDone の判断に揃える)
 		if m.filerV.execPending {
 			m.filerV.execPending = false
-			if m.filerV.visible() && m.filerV.f != nil { // 前景で起こしている間は閉じられないので、ここで見えていないことは無い
-				if w := m.filerV.f.ExecDone(msg.err); w != "" {
+			if f := m.filerV.live(); m.filerV.visible() && f != nil { // 前景で起こしている間は閉じられないので、ここで見えていないことは無い
+				if w := f.ExecDone(msg.err); w != "" {
 					m.showWarning(firstLine(w))
 				}
 			}

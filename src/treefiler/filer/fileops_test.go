@@ -346,3 +346,16 @@ func TestOpsDoNotFollowSwappedSymlinkFolder(t *testing.T) {
 		}
 	}
 }
+
+// ファイル操作の検査点は砂場に差し替わっていて、登録していない場所を実行前に拒否して記録する (main_test.go の配線。差し替え忘れ・
+// 「何でも許す」への書き換えでは他のテストが緑のままだった。issue 735)。
+func TestFileOpGuardIsSandboxed(t *testing.T) {
+	outside := filepath.Join(t.TempDir(), "unregistered", "x") // 登録しない (一時ディレクトリの中なので、拒否されなくても本物は触らない)
+	if err := fsGuard("create", outside); err == nil {
+		t.Fatal("fsGuard が登録していない場所を通した (砂場に差し替わっていない)")
+	}
+	v := sb.Violations() // 記録を取り出して空にする (残すと TestMain がスイートを落とす)
+	if len(v) != 1 || !strings.Contains(v[0], "create") {
+		t.Fatalf("拒否が記録されていない: %v", v)
+	}
+}

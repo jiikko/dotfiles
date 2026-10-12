@@ -10,7 +10,7 @@ import (
 
 // 隠した dotfile のフォルダの中にカーソルがあるとき、そのフォルダの変化も光る (見える判定は kids と同じ visible を通す。issue 694 の 3)。
 func TestChangeOnHiddenCursorPathLights(t *testing.T) {
-	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())
+	isolateConfig(t)
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, ".cfg"), 0o755); err != nil {
 		t.Fatal(err)
@@ -72,11 +72,12 @@ func TestChoiceSettingsHaveTables(t *testing.T) {
 			}
 			return false
 		},
+		// 並びは tree.go の sortOrder.less の switch で読む (知らない値は名前順) が、S の知らせの文言は sortByLabel の表 (issue 735)
+		"sort_by": func(v string) bool { _, ok := sortByLabel[v]; return ok },
 	}
 	exempt := map[string]string{ // 表を持たず、描く所の switch / 比較で読む (知らない値は何も足さないだけで、動きは止まらない)
 		"columns": "layout.go の equal との比較",
 		"details": "model.go の Details の switch",
-		"sort_by": "tree.go の sortOrder.less の switch (知らない値は名前順)",
 	}
 	seen := 0
 	for _, it := range items {

@@ -187,3 +187,17 @@ func BenchmarkViewScreenSizes(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkLiveUpdateAllChangedHugeFolder は、開いた巨大なフォルダの全部の項目が 1 周で変わったライブ更新の取り込み 1 回 (issue 733)。
+func BenchmarkLiveUpdateAllChangedHugeFolder(b *testing.B) {
+	eachHugeSize(b, func(b *testing.B, m *Model) {
+		big := m.cur.parent
+		names := make([]string, 0, len(big.kids))
+		for _, k := range big.kids {
+			names = append(names, k.raw)
+		}
+		for range b.N {
+			m.applyChange(dirChange{dir: big.abs, changed: names})
+		}
+	})
+}

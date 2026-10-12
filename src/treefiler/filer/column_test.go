@@ -3,7 +3,6 @@ package filer
 import (
 	"fmt"
 	"math/rand/v2"
-	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -34,11 +33,7 @@ func TestColumnMatchesLayout(t *testing.T) {
 		t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) {
 			root := fixture(t)
 			for _, rel := range []string{"a/sub/x.txt", "a/sub/.dot/y.txt", "a/.h2/z.txt", "b/deep/more/w.txt", "b/e.txt", ".hd/q.txt", "c2/f.txt"} {
-				p := filepath.Join(root, rel)
-				if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-					t.Fatal(err)
-				}
-				mustWrite(t, p, "x")
+				mkfile(t, filepath.Join(root, rel), "x")
 			}
 			m := newAt(t, root)
 			m.Resize(120, 40)

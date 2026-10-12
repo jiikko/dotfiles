@@ -1016,7 +1016,7 @@ func validateRef(ref string) error {
 // trashMove は src を trashDir へ移す。本体 (上書きしない・経路を差し替えられない・半端なコピーを作らない) は
 // safefs.TrashMove (treefiler と共有。issue 722)。検査点は allowDestructive をそのまま渡す (op 名 trash-dest / trash は変わらない)。
 func trashMove(src, trashDir string, dev, ino uint64) (string, error) {
-	dst, err := safefs.TrashMove(src, trashDir, dev, ino, allowDestructive) // destructive-op: allow allowDestructive を検査点として渡す
+	dst, err := safefs.TrashMove(src, trashDir, safefs.ID{Dev: dev, Ino: ino}, allowDestructive) // destructive-op: allow allowDestructive を検査点として渡す
 	switch {
 	case errors.Is(err, safefs.ErrSwapped):
 		return "", errors.New("直前に別の実体へ差し替わりました (再スキャンしてください)")

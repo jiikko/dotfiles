@@ -157,7 +157,7 @@ func TestSortReverseResortsInPlace(t *testing.T) {
 
 // root を 1 段上げた後も、旧 root の項目は今の mtime で並ぶ (新しい親は読み直した値で並べ、旧 root の node へ差し替える。issue 720 の敵対レビュー)。
 func TestSortAfterRerootUsesFreshMtime(t *testing.T) {
-	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())
+	isolateConfig(t)
 	p := t.TempDir()
 	a, b := filepath.Join(p, "a"), filepath.Join(p, "b")
 	mustWriteAll(t, filepath.Join(a, "x.txt"))

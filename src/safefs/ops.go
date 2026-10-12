@@ -19,12 +19,12 @@ var (
 )
 
 // Rename は dir の中の from を to へ名前を変える (同じフォルダの中だけ。移動はしない)。既にある to は上書きしない。
-// dev, ino は呼び出し側が「この実体の名前を変える」と決めた時点の from の同一性 (Lstat の値)。
+// id は呼び出し側が「この実体の名前を変える」と決めた時点の from の同一性 (Identity の値)。
 //
 // 大文字小文字・Unicode の正規化だけが違う名前 (`readme` → `README`、NFC → NFD) は、大文字小文字を区別しない APFS でも
 // RENAME_EXCL がそのまま通る (EEXIST にならない。実測 2026-10-12、macOS の APFS の $TMPDIR)。別の名前の hardlink は
 // EEXIST で断る。区別する FS・別の FS で振る舞いが違えば、宛先が既にある扱い (ErrExists) に倒れる。
-func Rename(dir, from, to string, dev, ino uint64, guard Guard) error {
+func Rename(dir, from, to string, id ID, guard Guard) error {
 	if err := ValidName(from); err != nil {
 		return err
 	}
@@ -43,10 +43,10 @@ func Rename(dir, from, to string, dev, ino uint64, guard Guard) error {
 	if err != nil {
 		return fmt.Errorf("名前を変える項目を確認できません: %w", err)
 	}
-	if dev == 0 && ino == 0 {
+	if id == (ID{}) {
 		return ErrUnidentified
 	}
-	if d, i := identity(&src); d != dev || i != ino {
+	if identity(&src) != id {
 		return ErrSwapped
 	}
 	if err := check(guard, "rename", filepath.Join(dir, from)); err != nil {
@@ -98,14 +98,13 @@ func Create(dir, name string, isDir bool, guard Guard) error {
 	return err
 }
 
-// Identity は path の項目そのもの (symlink なら link 自身) の (dev, ino)。Rename / TrashMove に渡す値を取る。
-func Identity(path string) (dev, ino uint64, err error) {
+// Identity は path の項目そのもの (symlink なら link 自身) の実体。Rename / TrashMove に渡す値を取る。
+func Identity(path string) (ID, error) {
 	var st unix.Stat_t
 	if err := unix.Lstat(path, &st); err != nil {
-		return 0, 0, err
+		return ID{}, err
 	}
-	dev, ino = identity(&st)
-	return dev, ino, nil
+	return identity(&st), nil
 }
 
 func statAt(fd int, name string) (unix.Stat_t, error) {

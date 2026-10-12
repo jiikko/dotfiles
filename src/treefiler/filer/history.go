@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"unicode"
 	"unicode/utf8"
 
@@ -109,7 +110,8 @@ func appendHistory(path, cmd string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	// O_NOFOLLOW: 履歴の場所が symlink なら追記しない (先のファイルへ書き、chmod していた。読む側の loadHistory も symlink を辿らない。issue 731)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return
 	}

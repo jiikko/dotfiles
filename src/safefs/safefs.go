@@ -99,4 +99,37 @@ func ValidName(name string) error {
 	return nil
 }
 
-func identity(st *unix.Stat_t) (dev, ino uint64) { return uint64(st.Dev), st.Ino }
+// ID は項目そのもの (lstat) の実体 (dev, inode)。呼び出し側が「この実体を操作する」と決めた時点の値を Rename / TrashMove へ渡す
+// (2 つの uint64 で渡すと取り違えても型が通る。issue 734)。ゼロ値は「識別できない」で、操作は ErrUnidentified で断る。
+type ID struct{ Dev, Ino uint64 }
+
+func identity(st *unix.Stat_t) ID { return ID{Dev: uint64(st.Dev), Ino: st.Ino} }
+
+// ResolveUnder は root の中のフォルダ dir (root からの絶対パス) の実体のパス。root だけは symlink を辿り、root から dir までの途中は
+// 1 段ずつ Lstat して symlink とフォルダでないものを断る。🚨 dir を丸ごと EvalSymlinks しない: 呼び出し側が持っているパスを確かめた後で
+// 途中のフォルダが外を指す symlink に差し替わると、root の外を操作することになる (treefiler の issue 722 の敵対レビューで再現)。
+// 残る窓: ここで確かめてから Rename / Create / TrashMove が親を開くまでの間の差し替え (それらは最後の要素だけを O_NOFOLLOW で開く)。
+func ResolveUnder(root, dir string) (string, error) {
+	p, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
+		return "", errors.New("root の外です")
+	}
+	if rel == "." {
+		return p, nil
+	}
+	for part := range strings.SplitSeq(rel, "/") {
+		p = filepath.Join(p, part)
+		fi, err := os.Lstat(p)
+		if err != nil {
+			return "", err
+		}
+		if !fi.IsDir() { // symlink は Lstat で IsDir にならない
+			return "", fmt.Errorf("経路の途中がフォルダでなくなりました (読み直してください): %s", part)
+		}
+	}
+	return p, nil
+}

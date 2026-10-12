@@ -29,3 +29,8 @@
 ## 進捗
 
 - 2026-10-12: 起票 (監査 737)
+- 2026-10-12 (dotfiles-4e): 1〜3 を直した。commit「fix(treefiler): 監査の不具合 731 の 1〜6・性能 733・設計 734・テスト 735 を直す」
+  - 1: `safefs.ID{Dev, Ino}` (Identity / Rename / TrashMove)。filer の `trashAsk` と入力欄は `id` 1 つ・前段は `Model.pin`。doctor の `trashMove` は包みで ID を組む (引数は元のまま)
+  - 2: `safefs.ResolveUnder(root, dir)` へ移し、filer の `safeDir` は呼ぶだけ。safefs にもテスト (root が symlink・途中の symlink・ファイル・外・`..`)
+  - 3: glogx の `filerView.live()` に寄せた (filer_view.go の全メソッド・filer_resume.go・tui.go の ExecDone・drainFilerNotices)
+  - 振る舞いは変えていない (filer / glogx / doctor / safefs のテストが緑)。4 (記録) は直していない

@@ -35,3 +35,13 @@
 ## 進捗
 
 - 2026-10-12: 起票 (監査 737)。反証レビュー (sonnet) で 2 を false-green から test-helpers へ下げた (TestMain が既に隔離している)・3 にコメントの更新を足した
+- 2026-10-12 (dotfiles-4e): 直した。commit「fix(treefiler): 監査の不具合 731 の 1〜6・性能 733・設計 734・テスト 735 を直す」
+  - 1: `TestFileOpGuardIsSandboxed` (fsGuard が未登録の場所を拒否し記録する)
+  - 2: `isolateConfig(t)` を helpers に置き、手書き 17 か所と隔離していなかった 4 本 (+ history の newTest 1 か所) をそれに
+  - 3: 上限 276 → 258 (今 256)。コメントを更新
+  - 4: **738 (pending) に切り出した**。調べた事実: `windowMargin` は 1 倍でも `SEEDS=300` で全部緑 (doc を事実に合わせた。倍率は 4 倍のまま)・
+    `v.fresh` の put は coverage 0 回・`isFresh` と `spKid` の put は通るが外しても緑
+  - 5: 2 本を畳んだ (削除したテストと失ったもの): `TestPanelOwnsKeys` (設定の板の間の小文字 `j` が木へ届かない → `layers_test` が `j` と `J` の両方を押す形にした。失ったもの無し) /
+    `TestDiffRefetchesOnEachToggle` (diff を開くたびに取り直す回数 2 → `TestDiffToggleShowsRefetchedContent` に回数の assert を足した。失ったもの無し)
+  - 6: `mkfile` (4 か所)・`waitWalked` (3 か所)・`initRepo` (1 か所)
+  - 7: `TestChoiceSettingsHaveTables` の exempt から `sort_by` を外し、`sortByLabel` を検査する

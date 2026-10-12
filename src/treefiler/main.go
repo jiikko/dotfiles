@@ -80,9 +80,6 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case filer.None:
 		}
-		for _, n := range a.f.TakeNotices() {
-			a.toast.Show(n.Text, n.OK)
-		}
 	case toast.Msg:
 		a.toast.StartLeaving(msg)
 	case execDoneMsg:
@@ -100,6 +97,9 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.ticking = false
 	}
 	a.f.Advance(time.Now())
+	for _, n := range a.f.TakeNotices() { // キーの後とも Advance の中で積まれた知らせとも、ここで 1 回だけ取り出す (issue 731)
+		a.toast.Show(n.Text, n.OK)
+	}
 	for _, t := range a.toast.Advance() {
 		cmds = append(cmds, tea.Tick(t.After, func(time.Time) tea.Msg { return t.Msg }))
 	}

@@ -417,9 +417,13 @@ func (m *Model) applyChange(c dirChange) {
 	// 強制にしない: 書き込みの続くフォルダ (ログ) で毎秒 git status が走るのを、3 秒の間隔制限で止める
 	m.startGit(false)
 	lit := false
-	for _, name := range c.changed {
+	if len(c.changed) > 0 { // 名前を集合にして子を 1 回だけ回す (名前 × 子の 2 重ループは 5 万件が一度に変わると 11.6 秒固まった。issue 733)
+		changed := make(map[string]struct{}, len(c.changed))
+		for _, name := range c.changed {
+			changed[name] = struct{}{}
+		}
 		for _, k := range n.kids {
-			if k.raw == name && m.visible(k) {
+			if _, ok := changed[k.raw]; ok && m.visible(k) {
 				m.lightUp(k)
 				lit = true
 			}
@@ -1472,13 +1476,18 @@ func (m *Model) drawHelp(c *canvas) {
 	x0, y0 := (m.w-w)/2, max((m.h-1-h)/2, 0)
 	c.frame(rect{x0, y0, w, h}, cAccRoute)
 	c.put(x0+2, y0, " treefiler ", cText, true)
-	for i, kv := range helpKeys {
+	rows := h - 3 // 枠の上下と題の下の空行を除いた行
+	shown := helpKeys
+	if len(shown) > rows { // 収まらないなら最後の行に残りの数を出す (黙って切ると、切れたことが分からない。issue 731)
+		shown = shown[:max(rows-1, 0)]
+	}
+	for i, kv := range shown {
 		y := y0 + 2 + i
-		if y >= y0+h-1 {
-			break
-		}
 		kx := c.put(x0+2, y, termwidth.FillLeft(kv[0], 16), cAccRoute, true)
 		c.put(kx+2, y, termwidth.Truncate(kv[1], max(w-22, 1), "…"), cText, false)
+	}
+	if rest := len(helpKeys) - len(shown); rest > 0 {
+		c.put(x0+2, y0+2+len(shown), termwidth.Truncate("… 残り "+itoa(rest)+" 行 (端末を高くすると全部出る)", max(w-4, 1), "…"), cMuted, false)
 	}
 }
 

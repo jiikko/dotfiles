@@ -3,6 +3,7 @@ package filer
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -82,4 +83,31 @@ func mustWrite(t *testing.T, path, body string) {
 func initRepo(t *testing.T, dir, branch string) {
 	t.Helper()
 	gitIn(t, dir, "init", "-q", "-b", branch)
+}
+
+// isolateConfig はこのテストの設定の置き場を自分だけの一時ディレクトリにする (TestMain の置き場は全テストで共有なので、`.` などで保存する
+// テストの後に読むと結果が順序に依存する。issue 735)。
+func isolateConfig(t *testing.T) {
+	t.Helper()
+	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())
+}
+
+// mkfile は親のフォルダを作ってから p に body を書く。
+func mkfile(t *testing.T, p, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, p, body)
+}
+
+// waitWalked は裏の走査が dir の結果を出すまで、時計を 1 秒ずつ進めて待つ (now は呼び出し側の時計。進めた分が残る)。
+func waitWalked(t *testing.T, m *Model, now *time.Time, dir string) {
+	t.Helper()
+	waitFor(t, "走査の結果: "+dir, func() bool {
+		*now = now.Add(time.Second)
+		m.Advance(*now)
+		_, ok := m.recs[dir]
+		return ok
+	})
 }

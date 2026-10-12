@@ -101,8 +101,8 @@ func (m *browseModel) restoreFilerScreen() tea.Cmd {
 		return nil
 	}
 	cmd := m.openFullScreen(fullScreenFiler)
-	if m.filerV.shown && m.filerV.f != nil {
-		m.filerV.f.RestorePlace(p)
+	if f := m.filerV.live(); f != nil {
+		f.RestorePlace(p)
 	}
 	return cmd
 }

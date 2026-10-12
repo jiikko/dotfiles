@@ -13,11 +13,11 @@ import (
 // (56c93c8f: src/treefiler の CI が success、src/glogx が 164 / 158 で failure)。
 // 上限は実測 (-race なし。go1.25.0 と go1.26.0 で同じ値) に数回の余裕を足した値。描く文字列そのものを増やす変更 (案内・凡例) で上げるときは、
 // 増えた分が描く文字列の増加だと A/B で確かめてから上げる。
-// 実測 333 回 (上限 335) → 274 回 (上限 276): 配置・描画の map とスライスを使い回した (issue 711)。
-const frameAllocBudget = 276
+// 実測 333 回 (上限 335) → 274 回 (上限 276): 配置・描画の map とスライスを使い回した (issue 711) → 256 回 (上限 258): issue 724 の描画で減った分を締めた (issue 735)。
+const frameAllocBudget = 258
 
 func TestFrameAllocBudget(t *testing.T) {
-	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())
+	isolateConfig(t)
 	dir := t.TempDir()
 	for i := range 20 {
 		mustWrite(t, filepath.Join(dir, fmt.Sprintf("file%02d.go", i)), "x\n")

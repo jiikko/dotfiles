@@ -326,6 +326,7 @@ func setGit(m *Model, porcelain string) {
 
 // root が repo の外で、配下に repo が並ぶ (~/src のような) とき、開いたフォルダの repo ごとに印とブランチが出る (spec §5.3)。
 func TestGitNestedRepos(t *testing.T) {
+	isolateConfig(t)
 	needGit(t)
 	root := t.TempDir()
 	mkRepo := func(name, branch string) string {
@@ -370,21 +371,16 @@ func TestGitNestedRepos(t *testing.T) {
 // 外側の repo の中の入れ子の repo: 中のファイルは内側の repo で引き (深い repo が先)、変更の無い入れ子の repo の根は
 // 外側から見た状態 (未追跡) のまま (開いた途端に印が消えない)。
 func TestGitRepoInsideRepo(t *testing.T) {
+	isolateConfig(t)
 	needGit(t)
 	root := t.TempDir()
-	mk := func(rel, body string) {
-		p := filepath.Join(root, rel)
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		mustWrite(t, p, body)
-	}
+	mk := func(rel, body string) { mkfile(t, filepath.Join(root, rel), body) }
 	mk("top.txt", "t\n")
 	initRepo(t, root, "outer")
 	commitAll(t, root)
 	for _, in := range []string{"dirty", "clean"} {
 		mk(in+"/f.txt", "1\n")
-		gitIn(t, filepath.Join(root, in), "init", "-q", "-b", in)
+		initRepo(t, filepath.Join(root, in), in)
 		commitAll(t, filepath.Join(root, in))
 	}
 	mk("dirty/f.txt", "changed\n")

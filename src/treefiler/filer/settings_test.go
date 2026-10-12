@@ -101,19 +101,6 @@ func TestPanelIntClampsAndBoolToggles(t *testing.T) {
 	}
 }
 
-func TestPanelOwnsKeys(t *testing.T) {
-	m := newTest(t)
-	m.HandleKey(",")
-	if !m.OwnsKeys() {
-		t.Fatal("板が開いている間はキーを持つ (glogx の F などを横取りされないため)")
-	}
-	cur := m.cur
-	m.HandleKey("j")
-	if m.cur != cur {
-		t.Fatal("板の j が木を動かした")
-	}
-}
-
 func TestRememberPlace(t *testing.T) {
 	m := newTest(t)
 	panelTo(t, m, "remember")

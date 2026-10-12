@@ -88,6 +88,22 @@ func TestFilerNoticeGoesToToast(t *testing.T) {
 	}
 }
 
+// 裏で終わった処理の知らせ (explode の完了) は、次のキーを待たずに tick で toast に出る (issue 731。Advance の中で積まれる知らせ)。
+func TestFilerBackgroundNoticeShowsOnTick(t *testing.T) {
+	m := newFilerBrowse(t)
+	m.handleKey("F")
+	m.handleKey("G") // a.txt → b.mp3 → sub (末尾のフォルダ)
+	m.handleKey("e") // explode は裏で走り、完了の知らせは Advance の中で積まれる
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(m.toast.Text(), "開いた") {
+		if time.Now().After(deadline) {
+			t.Fatalf("explode の完了の知らせが tick で出ない (キーを押すまで出ない形): toast=%q", m.toast.Text())
+		}
+		m.Update(tickMsg{})
+		time.Sleep(time.Millisecond) // sleep-ok: tick: 裏の explode の完了を条件で待つループの刻み
+	}
+}
+
 // glogx の tick で動きが進み、止まったら tick のチェーンが終わる。開いた直後から tick が回ること
 // (回らないと透明のまま次のキーまで何も見えない) も、ここで固定する。
 func TestFilerAnimationAdvancesOnTickAndStops(t *testing.T) {

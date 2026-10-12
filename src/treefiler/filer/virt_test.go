@@ -30,7 +30,7 @@ type virtPair struct {
 
 func newVirtPair(t *testing.T) *virtPair {
 	t.Helper()
-	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())
+	isolateConfig(t)
 	// 木は 1 段深い所に作る: root を 1 段上げる (-) と親が見える。親に別のフォルダ (設定の一時フォルダ等) があると、その熱の色は
 	// 裏の走査の結果が届く時刻で決まり、2 つの Model で揃わない (仮想化と関係なく食い違う)
 	dir := filepath.Join(t.TempDir(), "up", "tree")
@@ -86,10 +86,7 @@ func (vp *virtPair) quiesce() {
 
 func mustWriteAll(t *testing.T, p string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	mustWrite(t, p, strings.Repeat("x", 1+int(virtHash(p)%40))+"\n") // 大きさを子ごとにずらす (size の並びを名前順と違えるため。issue 720)
+	mkfile(t, p, strings.Repeat("x", 1+int(virtHash(p)%40))+"\n") // 大きさを子ごとにずらす (size の並びを名前順と違えるため。issue 720)
 }
 
 func virtHash(p string) uint32 {

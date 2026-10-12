@@ -41,3 +41,16 @@ treefiler の監査 (737) で、実測で再現したか、コードで経路を
 ## 進捗
 
 - 2026-10-12: 起票 (監査 737)
+- 2026-10-12 (dotfiles-4e): 1〜6 を直した。commit「fix(treefiler): 監査の不具合 731 の 1〜6・性能 733・設計 734・テスト 735 を直す」
+  - 1: `render.go` の `unpair` (上書きする前に全角の相方を空白にする。putCluster と clear から。clear は範囲を画面の中に切り詰めてから端だけ)。
+    `widthrow_test.go` (片割れの上書き・範囲の外の clear・日本語の名前が並ぶ実際の画面を 19 幅 × 3 高さで全行の幅 == w)。変異 3 本で red
+  - 2: 知らせを Advance の後にも取り出す (treefiler/main.go は Update の最後の 1 か所・glogx は `drainFilerNotices` を tick と filerChangedMsg から)。
+    tick だけで知らせが出るテストを両方に。変異 2 本で red。🚨 glogx の filerChangedMsg の経路を固定するテストは無い (同じ関数を tick 側が守る)
+  - 3: `waitIfQuick` は 1 バイト読んだ後に `stty min 0 time 1; dd bs=64 count=1` で残りを捨てる。pty で ← を押して残りが 0 バイトのテスト (変異で red)。
+    0.1 秒以内の 2 つ目のキーと 64 バイトを超える貼り付けの残りは捨てきれない (記録)
+  - 4: safefs の `TrashMove`: ゴミ箱の直下の項目を断る (fd の Fstat の比較)・番号を拡張子の前に (`foo 2.txt`。空白を含む・点だけの前半は拡張子にしない)・
+    ENAMETOOLONG を理由つきで。doctor にも効く (doctor は `~/.Trash` を対象から外しているので直下の判定は届かない)。変異 5 本で red
+  - 5: キー一覧が収まらないとき最後の行に「… 残り N 行」。6: `appendHistory` を O_NOFOLLOW で。変異で red
+  - 敵対レビュー (opus) 2 周: 1 周目 P1 = 新しい pty テストが -race で落ちる (Buffer の競合) → lockedBuffer・P2 = clear の範囲が画面の外・空のとき範囲の外の全角を割る →
+    切り詰め。2 周目 P1 / P2 なし (clear を 20 万回 × 2 の乱数で幅・範囲の外の不変条件の違反 0)。P3 (全角空白・live の残り・待ちの上限) を直して打ち切った
+  - **7 は未着手**: diff.go を 5f が 732 で触っているので、その push の後に入れる

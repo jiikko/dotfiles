@@ -273,22 +273,6 @@ func TestResizeClampsTileScroll(t *testing.T) {
 	}
 }
 
-// d で diff へ切り替えるたびに取り直す (開いている間の変更を出す)。
-func TestDiffRefetchesOnEachToggle(t *testing.T) {
-	calls := fakeDiff(t, false, "+x\n")
-	m := newTest(t)
-	markModified(t, m, "c.txt")
-	openTileAt(t, m, "c.txt")
-	for range 2 {
-		m.HandleKey("d") // diff へ
-		waitDiff(t, m)
-		m.HandleKey("d") // 本体へ
-	}
-	if n := len(*calls); n != 2 {
-		t.Fatalf("取りに行った回数 = %d, want 2", n)
-	}
-}
-
 // Markdown は G で先へ進んでも上限を超えて読まない。
 func TestMarkdownReadsUpToCap(t *testing.T) {
 	m := newTest(t)
@@ -353,6 +337,11 @@ func TestDiffToggleShowsRefetchedContent(t *testing.T) {
 	waitDiff(t, m)
 	if got := m.view(tl)[0].plain; got != "+v2" {
 		t.Fatalf("取り直した diff が出ない: %q", got)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if n != 2 { // 開くたびに 1 回だけ取りに行く (TestDiffRefetchesOnEachToggle をここへ畳んだ。issue 735)
+		t.Fatalf("取りに行った回数 = %d, want 2", n)
 	}
 }
 

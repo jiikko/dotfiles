@@ -69,7 +69,7 @@ func openBig(t *testing.T, m *Model, dir string, i int) *node {
 // 小さな親 (仮想化しない) の下の、仮想化していた大きな子フォルダを消す: 親の覚えの removed・詰めた order の後ろ・使わなかった
 // 仮想化のブロックのどれも、消えた部分木を掴まない。
 func TestRemovedSubtreeUnderSmallParentIsCollected(t *testing.T) {
-	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())
+	isolateConfig(t)
 	root := t.TempDir()
 	x := filepath.Join(root, "X")
 	sub := filepath.Join(x, "sub")
@@ -98,7 +98,7 @@ func TestRemovedSubtreeUnderSmallParentIsCollected(t *testing.T) {
 
 // 仮想化していた巨大なフォルダそのものを消す (カーソルは遠くの子に居た)。
 func TestRemovedBigFolderIsCollected(t *testing.T) {
-	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())
+	isolateConfig(t)
 	root := t.TempDir()
 	big := filepath.Join(root, "big")
 	mkEmptyFiles(t, big, 400)
@@ -123,22 +123,16 @@ func TestRemovedBigFolderIsCollected(t *testing.T) {
 
 // 名前の違うフォルダを作っては消すのを繰り返しても、走査の結果 (recs と walker の記録) は木の中のフォルダの数を超えて伸びない (issue 727)。
 func TestWalkResultsDropRemovedDirs(t *testing.T) {
-	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())
+	isolateConfig(t)
 	root := t.TempDir()
 	m := newAt(t, root)
 	m.Resize(100, 30)
 	now := fixedNow
-	walked := func(dir string) bool {
-		now = now.Add(time.Second)
-		m.Advance(now)
-		_, ok := m.recs[dir]
-		return ok
-	}
 	for i := range 20 {
 		d := filepath.Join(root, "tmp"+strconv.Itoa(i))
 		mkEmptyFiles(t, d, 1)
 		m.Refresh()
-		waitFor(t, "走査の結果", func() bool { return walked(d) })
+		waitWalked(t, m, &now, d)
 		if err := os.RemoveAll(d); err != nil {
 			t.Fatal(err)
 		}
@@ -155,7 +149,7 @@ func TestWalkResultsDropRemovedDirs(t *testing.T) {
 
 // ライブ更新 (force なしの forget) で作っては消しても、walker の記録 (last を含む) は伸びない。
 func TestWalkResultsDropRemovedDirsOnLiveUpdate(t *testing.T) {
-	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())
+	isolateConfig(t)
 	root := t.TempDir()
 	m := newAt(t, root)
 	m.Resize(100, 30)
@@ -165,12 +159,7 @@ func TestWalkResultsDropRemovedDirsOnLiveUpdate(t *testing.T) {
 		d := filepath.Join(root, name)
 		mkEmptyFiles(t, d, 1)
 		m.applyChange(dirChange{dir: root, changed: []string{name}, listing: true})
-		waitFor(t, "走査の結果", func() bool {
-			now = now.Add(time.Second)
-			m.Advance(now)
-			_, ok := m.recs[d]
-			return ok
-		})
+		waitWalked(t, m, &now, d)
 		if err := os.RemoveAll(d); err != nil {
 			t.Fatal(err)
 		}
@@ -187,19 +176,14 @@ func TestWalkResultsDropRemovedDirsOnLiveUpdate(t *testing.T) {
 
 // 走査の結果は配下の全部のフォルダを持つ。node の無い未展開の子孫の結果は、読み直しでも捨てない (捨てると開くたびに数え直す)。
 func TestWalkResultsKeepUnexpandedDescendants(t *testing.T) {
-	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())
+	isolateConfig(t)
 	root := t.TempDir()
 	deep := filepath.Join(root, "a", "b", "c")
 	mkEmptyFiles(t, deep, 1)
 	m := newAt(t, root)
 	m.Resize(100, 30)
 	now := fixedNow
-	waitFor(t, "a の走査", func() bool {
-		now = now.Add(time.Second)
-		m.Advance(now)
-		_, ok := m.recs[deep]
-		return ok
-	})
+	waitWalked(t, m, &now, deep)
 	if n := m.findNode(filepath.Join(root, "a", "b")); n != nil && n.loaded {
 		t.Fatal("前提: b を読み込んでいる (未展開の子孫にならない)")
 	}
@@ -212,7 +196,7 @@ func TestWalkResultsKeepUnexpandedDescendants(t *testing.T) {
 
 // 検索で巨大なフォルダの中の一致へ移って閉じた後、そのフォルダを消しても、検索の一致と起点は部分木を掴まない (issue 726 / 728 の 3)。
 func TestRemovedFolderIsCollectedAfterSearch(t *testing.T) {
-	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())
+	isolateConfig(t)
 	root := t.TempDir()
 	big := filepath.Join(root, "big")
 	mkEmptyFiles(t, big, 400)
@@ -243,7 +227,7 @@ func TestRemovedFolderIsCollectedAfterSearch(t *testing.T) {
 
 // 巨大なフォルダの中のファイルをタイルで開いて閉じた後、そのフォルダを消しても、閉じたタイルは部分木を掴まない (issue 726)。
 func TestRemovedFolderIsCollectedAfterTileClosed(t *testing.T) {
-	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())
+	isolateConfig(t)
 	root := t.TempDir()
 	big := filepath.Join(root, "big")
 	mkEmptyFiles(t, big, 400)
@@ -278,7 +262,7 @@ func TestRemovedFolderIsCollectedAfterTileClosed(t *testing.T) {
 
 // 消えたかの判定は、1 回の中でフォルダごとに名前の表を 1 回だけ作る (キーごとに子を舐めると 2 乗になり、子 4 万件で UI が秒単位で固まった)。
 func TestGoneCheckBuildsIndexOncePerFolder(t *testing.T) {
-	t.Setenv("TREEFILER_CONFIG_DIR", t.TempDir())
+	isolateConfig(t)
 	root := t.TempDir()
 	m := newAt(t, root)
 	for i := range 2000 {

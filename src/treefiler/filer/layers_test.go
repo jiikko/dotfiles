@@ -48,11 +48,13 @@ func TestEveryInputLayerOwnsKeys(t *testing.T) {
 			t.Errorf("%s: 開いているのに OwnsKeys / Binds が偽 (glogx が横断キーを先に取る)", name)
 		}
 		cur := m.cur
-		if m.HandleKey("J"); m.cur != cur && name != "search" { // 検索は打った字で飛ぶ
-			t.Errorf("%s: 開いている間に木のキーが木へ届いた", name)
-		}
-		if !m.OwnsKeys() { // キー一覧と確認の板は他のキーで閉じる (J で閉じた)。ctrl+c を見るために開き直す
-			l.open(m)
+		for _, k := range []string{"j", "J"} { // 小文字の移動と大文字の 10 件 (settings_test の TestPanelOwnsKeys をここへ畳んだ。issue 735)
+			if m.HandleKey(k); m.cur != cur && name != "search" { // 検索は打った字で飛ぶ
+				t.Errorf("%s: 開いている間に木のキー %s が木へ届いた", name, k)
+			}
+			if !m.OwnsKeys() { // キー一覧と確認の板は他のキーで閉じる。次のキーと ctrl+c を見るために開き直す
+				l.open(m)
+			}
 		}
 		if got := m.HandleKey("ctrl+c") == Quit; got != l.quitOnCC {
 			t.Errorf("%s: ctrl+c で終わる = %v, want %v", name, got, l.quitOnCC)

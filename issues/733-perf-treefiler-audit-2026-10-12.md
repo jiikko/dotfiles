@@ -26,3 +26,9 @@
 ## 進捗
 
 - 2026-10-12: 起票 (監査 737)
+- 2026-10-12 (dotfiles-4e): 1・2 を直した。commit「fix(treefiler): 監査の不具合 731 の 1〜6・性能 733・設計 734・テスト 735 を直す」
+  - 1: `applyChange` は変わった名前を集合にして子を 1 回だけ回す。2: `fuzzy` はスタックの配列 (64 文字まで確保しない)
+  - **実測** (Apple M3 Max。`perf_bench_test.go`。before は origin/master に同じベンチを置いて同じ実行で):
+    `BenchmarkLiveUpdateAllChangedHugeFolder` n=50,000: **16.3 秒 → 0.125 秒**・n=5,000: 64ms → 10ms /
+    `BenchmarkSearchKeyHugeFolder` n=50,000: 16.1ms / 160k allocs → 11.7ms / 26.5k allocs
+  - 集合の引き方を逆にする変異で既存のライブ更新のテストが red。3 (記録) は直していない

@@ -38,48 +38,36 @@ const (
 	promptRename                   // m: target の新しい名前
 )
 
-// trashAsk は d の確認の板 (開いている間は全部のキーを取る)。dev, ino は板を開いたとき (= 人が対象を決めたとき) の実体。
+// trashAsk は d の確認の板 (開いている間は全部のキーを取る)。id は板を開いたとき (= 人が対象を決めたとき) の実体。
 type trashAsk struct {
-	n        *node
-	dev, ino uint64
+	n  *node
+	id safefs.ID
 }
 
-// safeDir はフォルダ n の実体のパス。root だけは symlink を辿り (newRoot と同じ)、root から n までの途中は 1 段ずつ Lstat して
-// symlink とフォルダでないものを断る。🚨 n.abs を丸ごと EvalSymlinks しない: 木を読んだ後で途中のフォルダが外を指す symlink に
-// 差し替わると、読み直す前の古い項目越しに root の外を作る・変える・捨てることになる (issue 722 の敵対レビューで再現)。
-// 残る窓: ここで確かめてから safefs が親を開くまでの間の差し替え (safefs は最後の要素だけを O_NOFOLLOW で開く)。
-func (m *Model) safeDir(n *node) (string, error) {
-	p, err := filepath.EvalSymlinks(m.root.abs)
-	if err != nil {
-		return "", err
-	}
-	rel, err := filepath.Rel(m.root.abs, n.abs)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
-		return "", errors.New("root の外です")
-	}
-	if rel == "." {
-		return p, nil
-	}
-	for part := range strings.SplitSeq(rel, "/") {
-		p = filepath.Join(p, part)
-		fi, err := os.Lstat(p)
-		if err != nil {
-			return "", err
-		}
-		if !fi.IsDir() { // symlink は Lstat で IsDir にならない
-			return "", errors.New("経路の途中がフォルダでなくなりました (読み直してください): " + termsafeLine(part))
-		}
-	}
-	return p, nil
-}
+// safeDir はフォルダ n の実体のパス (root だけ symlink を辿り、途中の symlink は断る。safefs.ResolveUnder の doc)。
+func (m *Model) safeDir(n *node) (string, error) { return safefs.ResolveUnder(m.root.abs, n.abs) }
 
-// identityOf は n の実体 (dev, ino)。親は safeDir で解決する (途中の symlink を辿らない)。
-func (m *Model) identityOf(n *node) (dev, ino uint64, err error) {
+// identityOf は n の実体。親は safeDir で解決する (途中の symlink を辿らない)。
+func (m *Model) identityOf(n *node) (safefs.ID, error) {
 	dir, err := m.safeDir(n.parent)
 	if err != nil {
-		return 0, 0, err
+		return safefs.ID{}, err
 	}
 	return safefs.Identity(filepath.Join(dir, n.raw))
+}
+
+// pin は「確かめてから実行する」操作 (名前の変更・ゴミ箱) の前段: root は断り、今の実体を取る。失敗は what を頭に知らせて ok=false。
+func (m *Model) pin(n *node, what, rootMsg string) (safefs.ID, bool) {
+	if n == m.root {
+		m.fail(rootMsg)
+		return safefs.ID{}, false
+	}
+	id, err := m.identityOf(n)
+	if err != nil {
+		m.fail(what + ": " + opErr(err))
+		return safefs.ID{}, false
+	}
+	return id, true
 }
 
 // startCreate は a: カーソルのフォルダ (ファイルならその親) に作る名前を聞く。
@@ -94,17 +82,12 @@ func (m *Model) startCreate() {
 // startRename は m: カーソルの項目の新しい名前を聞く (今の名前を入れて開く)。
 func (m *Model) startRename() {
 	n := m.cur
-	if n == m.root {
-		m.fail("root の名前は変えられません (- で 1 段上へ行ってから)")
-		return
-	}
-	dev, ino, err := m.identityOf(n)
-	if err != nil {
-		m.fail("名前を変えられません: " + opErr(err))
+	id, ok := m.pin(n, "名前を変えられません", "root の名前は変えられません (- で 1 段上へ行ってから)")
+	if !ok {
 		return
 	}
 	m.openPrompt(promptRename, n, n.raw)
-	m.prompt.dev, m.prompt.ino = dev, ino
+	m.prompt.id = id
 }
 
 func (m *Model) openPrompt(kind promptKind, target *node, text string) {
@@ -121,7 +104,7 @@ func (m *Model) fileOpEnter(text string) {
 		m.create(p.target, text)
 	case promptRename:
 		if text != p.prefill { // 開いたまま Enter (制御文字を落とした表示のまま) では変えない
-			m.rename(p.target, text, p.dev, p.ino)
+			m.rename(p.target, text, p.id)
 		}
 	case promptShell:
 	}
@@ -154,8 +137,8 @@ func (m *Model) create(dir *node, text string) {
 	}
 }
 
-// rename は n の名前を text へ変える (同じフォルダの中だけ)。dev, ino は入力欄を開いたときの n の実体。
-func (m *Model) rename(n *node, text string, dev, ino uint64) {
+// rename は n の名前を text へ変える (同じフォルダの中だけ)。id は入力欄を開いたときの n の実体。
+func (m *Model) rename(n *node, text string, id safefs.ID) {
 	if text == n.raw {
 		return
 	}
@@ -170,7 +153,7 @@ func (m *Model) rename(n *node, text string, dev, ino uint64) {
 	parent := n.parent
 	real, err := m.safeDir(parent)
 	if err == nil {
-		err = safefs.Rename(real, n.raw, text, dev, ino, fsGuard)
+		err = safefs.Rename(real, n.raw, text, id, fsGuard)
 	}
 	if err != nil {
 		m.fail("名前を変えられません: " + opErr(err))
@@ -187,16 +170,11 @@ func (m *Model) rename(n *node, text string, dev, ino uint64) {
 // startTrash は d: 確認の板を開く。
 func (m *Model) startTrash() {
 	n := m.cur
-	if n == m.root {
-		m.fail("root はゴミ箱へ移せません (- で 1 段上へ行ってから)")
+	id, ok := m.pin(n, "ゴミ箱へ移せません", "root はゴミ箱へ移せません (- で 1 段上へ行ってから)")
+	if !ok {
 		return
 	}
-	dev, ino, err := m.identityOf(n)
-	if err != nil {
-		m.fail("ゴミ箱へ移せません: " + opErr(err))
-		return
-	}
-	m.ask = &trashAsk{n: n, dev: dev, ino: ino}
+	m.ask = &trashAsk{n: n, id: id}
 }
 
 // askKey は確認の板のキー。y / Enter だけが実行で、それ以外 (ctrl+c も) は取り消し。
@@ -229,7 +207,7 @@ func (m *Model) trash(a *trashAsk) {
 	nextAbs := next.abs
 	real, err := m.safeDir(parent)
 	if err == nil {
-		_, err = safefs.TrashMove(filepath.Join(real, n.raw), trashDir(), a.dev, a.ino, fsGuard)
+		_, err = safefs.TrashMove(filepath.Join(real, n.raw), trashDir(), a.id, fsGuard)
 	}
 	if err != nil {
 		m.fail("ゴミ箱へ移せません: " + opErr(err))

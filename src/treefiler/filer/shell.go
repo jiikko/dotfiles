@@ -8,6 +8,8 @@ import (
 
 	"github.com/jiikko/dotfiles/src/tuikit/editor"
 	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
+
+	"safefs"
 )
 
 // shell.go は `!` (選んだフォルダで 1 行のコマンドを実行) と `s` (そこでシェルを開く)。spec §5.7。
@@ -45,6 +47,8 @@ type ExecRequest struct {
 // Go まで戻れない)。前面は戻った Go が取り戻す (tuikit/foreground の Exec。issue 707)。キー待ちはその場合だけ失う。
 // 制御端末が無い (tpgid が 0 以下) ときと、ps が失敗して何も出さない (両方が空で一致する) ときは従来どおり待つ (止まる相手が居ない)。
 //
+// キー待ちは 1 バイト読んだ後、続きのバイト (矢印などの ESC [ D の残り) を 0.1 秒だけ読んで捨てる: 残すと戻った treefiler / glogx が
+// `[` `D` をキーとして受け、glogx の F では D が doctor へ飛ぶ (issue 731)。
 // キー待ちは `-isig` にする: 前面が treefiler のグループに戻った後の Ctrl-\ (SIGQUIT) は treefiler 自身を落とすので、ただのキーとして読む。
 // 端末の設定は案内を出す前に済ませる (案内を見てすぐ押したキーが、設定の前に届いてシグナルにならないように)。
 const waitIfQuick = `start=$(date +%s); "$1" -ic "trap 'exit \$?' EXIT
@@ -54,20 +58,20 @@ if [ $((end - start)) -lt 3 ]; then
   if [ "$1" = "$2" ] || [ "${1:-0}" -le 0 ]; then
     saved=$(stty -g 2>/dev/null); stty -icanon -echo -isig 2>/dev/null
     if [ "$rc" -eq 0 ]; then printf '\n[done] 何かキーを押すと treefiler に戻ります'; else printf '\n[exit %d] 何かキーを押すと treefiler に戻ります' "$rc"; fi
-    dd bs=1 count=1 >/dev/null 2>&1; stty "$saved" 2>/dev/null
+    dd bs=1 count=1 >/dev/null 2>&1; stty min 0 time 1 2>/dev/null; dd bs=64 count=1 >/dev/null 2>&1; stty "$saved" 2>/dev/null
   fi
 fi
 :` // 終了コードは最後の stty に左右させない (端末が無いと stty が失敗する)
 
 type promptState struct {
-	active   bool
-	kind     promptKind // `!` か、名前の入力 (fileops.go)
-	target   *node      // 名前の入力の対象 (作るフォルダ・名前を変える項目)
-	dev, ino uint64     // 名前を変える項目の、欄を開いたときの実体
-	prefill  string     // 欄に入れて開いた文字 (名前に制御文字があると raw と違う。そのまま Enter なら変えない)
-	line     lineedit.Line
-	history  []string
-	hist     int // 履歴を辿っている位置 (len(history) = 今の入力)
+	active  bool
+	kind    promptKind // `!` か、名前の入力 (fileops.go)
+	target  *node      // 名前の入力の対象 (作るフォルダ・名前を変える項目)
+	id      safefs.ID  // 名前を変える項目の、欄を開いたときの実体
+	prefill string     // 欄に入れて開いた文字 (名前に制御文字があると raw と違う。そのまま Enter なら変えない)
+	line    lineedit.Line
+	history []string
+	hist    int // 履歴を辿っている位置 (len(history) = 今の入力)
 }
 
 func userShell() string {

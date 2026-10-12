@@ -47,20 +47,20 @@ func read(t *testing.T, p string) string {
 	return string(b)
 }
 
-func ident(t *testing.T, p string) (uint64, uint64) {
+func ident(t *testing.T, p string) safefs.ID {
 	t.Helper()
-	d, i, err := safefs.Identity(p)
+	id, err := safefs.Identity(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return d, i
+	return id
 }
 
 func TestRenameMovesWithinDir(t *testing.T) {
 	d := tempDir(t)
 	write(t, filepath.Join(d, "a"), "A")
-	dev, ino := ident(t, filepath.Join(d, "a"))
-	if err := safefs.Rename(d, "a", "b", dev, ino, sb.Guard); err != nil {
+	id := ident(t, filepath.Join(d, "a"))
+	if err := safefs.Rename(d, "a", "b", id, sb.Guard); err != nil {
 		t.Fatal(err)
 	}
 	if got := read(t, filepath.Join(d, "b")); got != "A" {
@@ -76,8 +76,8 @@ func TestRenameDoesNotOverwrite(t *testing.T) {
 	d := tempDir(t)
 	write(t, filepath.Join(d, "a"), "A")
 	write(t, filepath.Join(d, "b"), "B")
-	dev, ino := ident(t, filepath.Join(d, "a"))
-	err := safefs.Rename(d, "a", "b", dev, ino, sb.Guard)
+	id := ident(t, filepath.Join(d, "a"))
+	err := safefs.Rename(d, "a", "b", id, sb.Guard)
 	if !errors.Is(err, safefs.ErrExists) {
 		t.Fatalf("err = %v, want ErrExists", err)
 	}
@@ -95,8 +95,8 @@ func TestRenameDoesNotReplaceDir(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(d, "src"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	dev, ino := ident(t, filepath.Join(d, "src"))
-	if err := safefs.Rename(d, "src", "dst", dev, ino, sb.Guard); !errors.Is(err, safefs.ErrExists) {
+	id := ident(t, filepath.Join(d, "src"))
+	if err := safefs.Rename(d, "src", "dst", id, sb.Guard); !errors.Is(err, safefs.ErrExists) {
 		t.Fatalf("err = %v, want ErrExists", err)
 	}
 }
@@ -108,8 +108,8 @@ func TestRenameCaseOnly(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(d, "README")); err != nil {
 		t.Skip("大文字小文字を区別する FS (この検査は区別しない APFS の振る舞いを見る)")
 	}
-	dev, ino := ident(t, filepath.Join(d, "readme"))
-	if err := safefs.Rename(d, "readme", "README", dev, ino, sb.Guard); err != nil {
+	id := ident(t, filepath.Join(d, "readme"))
+	if err := safefs.Rename(d, "readme", "README", id, sb.Guard); err != nil {
 		t.Fatal(err)
 	}
 	ents, err := os.ReadDir(d)
@@ -128,16 +128,16 @@ func TestRenameCaseOnly(t *testing.T) {
 func TestRenameRefusesSwappedEntry(t *testing.T) {
 	d := tempDir(t)
 	write(t, filepath.Join(d, "a"), "A")
-	dev, ino := ident(t, filepath.Join(d, "a"))
+	id := ident(t, filepath.Join(d, "a"))
 	if err := os.Remove(filepath.Join(d, "a")); err != nil {
 		t.Fatal(err)
 	}
 	write(t, filepath.Join(d, "keep"), "K") // 消した a の inode が再利用されないよう、別の実体を挟む
 	write(t, filepath.Join(d, "a"), "X")
-	if d2, i2 := ident(t, filepath.Join(d, "a")); d2 == dev && i2 == ino {
+	if ident(t, filepath.Join(d, "a")) == id {
 		t.Skip("inode が再利用された")
 	}
-	if err := safefs.Rename(d, "a", "b", dev, ino, sb.Guard); err == nil {
+	if err := safefs.Rename(d, "a", "b", id, sb.Guard); err == nil {
 		t.Fatal("差し替わった実体の名前を変えた")
 	}
 	if _, err := os.Lstat(filepath.Join(d, "b")); !os.IsNotExist(err) {
@@ -151,9 +151,9 @@ func TestNamesStayInsideDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(t, filepath.Join(d, "sub", "a"), "A")
-	dev, ino := ident(t, filepath.Join(d, "sub", "a"))
+	id := ident(t, filepath.Join(d, "sub", "a"))
 	for _, bad := range []string{"", ".", "..", "../a", "x/y", "/abs", "nul\x00", strings.Repeat("n", 256)} {
-		if err := safefs.Rename(filepath.Join(d, "sub"), "a", bad, dev, ino, sb.Guard); err == nil {
+		if err := safefs.Rename(filepath.Join(d, "sub"), "a", bad, id, sb.Guard); err == nil {
 			t.Errorf("Rename to %q が通った", bad)
 		}
 		if err := safefs.Create(filepath.Join(d, "sub"), bad, false, sb.Guard); err == nil {
@@ -218,17 +218,17 @@ func TestCreateDoesNotOverwrite(t *testing.T) {
 func TestGuardRunsBeforeTheOperation(t *testing.T) {
 	d := tempDir(t)
 	write(t, filepath.Join(d, "a"), "A")
-	dev, ino := ident(t, filepath.Join(d, "a"))
+	id := ident(t, filepath.Join(d, "a"))
 	var ops []string
 	deny := func(op, path string) error { ops = append(ops, op); return errors.New("deny") }
 	for _, g := range []safefs.Guard{deny, nil} {
-		if err := safefs.Rename(d, "a", "b", dev, ino, g); err == nil {
+		if err := safefs.Rename(d, "a", "b", id, g); err == nil {
 			t.Error("Rename が拒否を無視した")
 		}
 		if err := safefs.Create(d, "c", false, g); err == nil {
 			t.Error("Create が拒否を無視した")
 		}
-		if _, err := safefs.TrashMove(filepath.Join(d, "a"), filepath.Join(d, "Trash"), dev, ino, g); err == nil {
+		if _, err := safefs.TrashMove(filepath.Join(d, "a"), filepath.Join(d, "Trash"), id, g); err == nil {
 			t.Error("TrashMove が拒否を無視した")
 		}
 	}
@@ -252,8 +252,8 @@ func TestTrashMoveNumbersDuplicates(t *testing.T) {
 	}
 	write(t, filepath.Join(trash, "x"), "OLD")
 	write(t, filepath.Join(d, "x"), "NEW")
-	dev, ino := ident(t, filepath.Join(d, "x"))
-	dst, err := safefs.TrashMove(filepath.Join(d, "x"), trash, dev, ino, sb.Guard)
+	id := ident(t, filepath.Join(d, "x"))
+	dst, err := safefs.TrashMove(filepath.Join(d, "x"), trash, id, sb.Guard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,8 +275,8 @@ func TestRenameRefusesHardlinkName(t *testing.T) {
 	if err := os.Link(filepath.Join(d, "a"), filepath.Join(d, "b")); err != nil {
 		t.Fatal(err)
 	}
-	dev, ino := ident(t, filepath.Join(d, "a"))
-	if err := safefs.Rename(d, "a", "b", dev, ino, sb.Guard); !errors.Is(err, safefs.ErrExists) {
+	id := ident(t, filepath.Join(d, "a"))
+	if err := safefs.Rename(d, "a", "b", id, sb.Guard); !errors.Is(err, safefs.ErrExists) {
 		t.Fatalf("err = %v, want ErrExists", err)
 	}
 	if ents, _ := os.ReadDir(d); len(ents) != 2 {
@@ -288,17 +288,86 @@ func TestRenameRefusesHardlinkName(t *testing.T) {
 func TestTrashMoveChecksSourceToo(t *testing.T) {
 	d := tempDir(t)
 	write(t, filepath.Join(d, "a"), "A")
-	dev, ino := ident(t, filepath.Join(d, "a"))
+	id := ident(t, filepath.Join(d, "a"))
 	onlyDest := func(op, path string) error {
 		if op == "trash-dest" {
 			return nil
 		}
 		return errors.New("deny " + op)
 	}
-	if _, err := safefs.TrashMove(filepath.Join(d, "a"), filepath.Join(d, "Trash"), dev, ino, onlyDest); err == nil {
+	if _, err := safefs.TrashMove(filepath.Join(d, "a"), filepath.Join(d, "Trash"), id, onlyDest); err == nil {
 		t.Fatal("移動元の検査を通らずに移した")
 	}
 	if read(t, filepath.Join(d, "a")) != "A" {
 		t.Error("a が動いた")
+	}
+}
+
+// 同名がゴミ箱にあれば Finder と同じく拡張子の前に番号を足す (dotfile・拡張子の無い名前は末尾)。ゴミ箱の中の項目は断る (issue 731)。
+func TestTrashMoveNamingAndInsideTrash(t *testing.T) {
+	d := tempDir(t)
+	trash := filepath.Join(d, "Trash")
+	if err := os.Mkdir(trash, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ name, want string }{{"foo.txt", "foo 2.txt"}, {".bashrc", ".bashrc 2"}, {"README", "README 2"}, {"2026.10.12 meeting", "2026.10.12 meeting 2"}, {"a.b　c", "a.b　c 2"}, {"foo.", "foo. 2"}, {"..foo", "..foo 2"}} {
+		write(t, filepath.Join(trash, c.name), "old")
+		write(t, filepath.Join(d, c.name), "new")
+		id := ident(t, filepath.Join(d, c.name))
+		dst, err := safefs.TrashMove(filepath.Join(d, c.name), trash, id, sb.Guard)
+		if err != nil || filepath.Base(dst) != c.want {
+			t.Errorf("%s → %q, %v (want %s)", c.name, filepath.Base(dst), err, c.want)
+		}
+	}
+	id := ident(t, filepath.Join(trash, "foo.txt"))
+	if _, err := safefs.TrashMove(filepath.Join(trash, "foo.txt"), trash, id, sb.Guard); err == nil {
+		t.Error("ゴミ箱の中の項目を「移した」")
+	}
+}
+
+// 番号を足すと名前の上限を超えるときは、素の ENAMETOOLONG ではなく理由の分かる失敗にする。
+func TestTrashMoveNameTooLongWithNumber(t *testing.T) {
+	d := tempDir(t)
+	trash := filepath.Join(d, "Trash")
+	if err := os.Mkdir(trash, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	long := strings.Repeat("n", 255)
+	write(t, filepath.Join(trash, long), "old")
+	write(t, filepath.Join(d, long), "new")
+	id := ident(t, filepath.Join(d, long))
+	_, err := safefs.TrashMove(filepath.Join(d, long), trash, id, sb.Guard)
+	if err == nil || !strings.Contains(err.Error(), "長すぎ") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// ResolveUnder は root だけ symlink を辿り、root の中の途中の symlink とフォルダでないものを断る (issue 734 で treefiler から移した)。
+func TestResolveUnder(t *testing.T) {
+	d := tempDir(t)
+	real := filepath.Join(d, "real")
+	if err := os.MkdirAll(filepath.Join(real, "a", "b"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(d, "root")
+	if err := os.Symlink(real, root); err != nil { // root 自身は symlink でよい
+		t.Fatal(err)
+	}
+	outside := filepath.Join(d, "outside")
+	if err := os.Mkdir(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(real, "esc")); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(real, "file"), "x")
+	got, err := safefs.ResolveUnder(root, filepath.Join(root, "a", "b"))
+	if wantReal, _ := filepath.EvalSymlinks(filepath.Join(real, "a", "b")); err != nil || got != wantReal {
+		t.Errorf("a/b = %q, %v (want %q)", got, err, wantReal)
+	}
+	for _, bad := range []string{filepath.Join(root, "esc"), filepath.Join(root, "esc", "x"), filepath.Join(root, "file"), filepath.Join(d, "outside"), filepath.Join(root, "..")} {
+		if p, err := safefs.ResolveUnder(root, bad); err == nil {
+			t.Errorf("%s を通した: %q", bad, p)
+		}
 	}
 }

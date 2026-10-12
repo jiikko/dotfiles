@@ -41,7 +41,7 @@ func waitFilerChange(ch <-chan struct{}) tea.Cmd {
 // rearm は合図を受けた後の待ち直し。今のチャネルからの合図のときだけ待ち直す
 // (閉じる直前の合図が古い待ちを ok=true で返すと、新しいチャネルに待ちが 2 本張られて戻らない。レビューの指摘 2026-10-08)。
 func (v *filerView) rearm(msg filerChangedMsg) tea.Cmd {
-	if !msg.ok || !v.shown || v.f == nil || v.f.WatchingChan() != msg.ch {
+	if f := v.live(); !msg.ok || f == nil || f.WatchingChan() != msg.ch {
 		return nil
 	}
 	return waitFilerChange(msg.ch)
@@ -60,10 +60,10 @@ func (v *filerView) visible() bool { return v.shown }
 
 // place は開いている F の場所 (開いていなければ ok=false)。終了時の記憶 (filer_resume.go) が使う。
 func (v *filerView) place() (filer.Place, bool) {
-	if !v.shown || v.f == nil {
-		return filer.Place{}, false
+	if f := v.live(); f != nil {
+		return f.Place(), true
 	}
-	return v.f.Place(), true
+	return filer.Place{}, false
 }
 
 // toggle は開く / 閉じる。開くときは pwd を root にする (spec §0.1)。同じ dir なら前の状態 (カーソル・開いたフォルダ) を使う。
@@ -94,12 +94,20 @@ func (v *filerView) hide() {
 	}
 }
 
-// watchCmd は開いている間のライブ更新の待ち (開いた直後と、合図を受けるたびに張り直す)。
-func (v *filerView) watchCmd() tea.Cmd {
-	if !v.shown || v.f == nil {
+// live は見えている間の filer (閉じていれば nil)。「見えているなら f がある」をメソッドごとに確かめ直さず、ここ 1 本で読む (issue 734)。
+func (v *filerView) live() *filer.Model {
+	if !v.shown {
 		return nil
 	}
-	return waitFilerChange(v.f.Changed())
+	return v.f
+}
+
+// watchCmd は開いている間のライブ更新の待ち (開いた直後と、合図を受けるたびに張り直す)。
+func (v *filerView) watchCmd() tea.Cmd {
+	if f := v.live(); f != nil {
+		return waitFilerChange(f.Changed())
+	}
+	return nil
 }
 
 func (v *filerView) takeOpenErr() string {
@@ -109,42 +117,42 @@ func (v *filerView) takeOpenErr() string {
 }
 
 // ownsKeys は filer が入力モード中か (overlayOwnershipTable)。
-func (v *filerView) ownsKeys() bool { return v.shown && v.f != nil && v.f.OwnsKeys() }
+func (v *filerView) ownsKeys() bool { f := v.live(); return f != nil && f.OwnsKeys() }
 
 // binds は key が filer の意味を持つか (持つキーは glogx の横断キー・C の update・U に取らない。filer.Model.Binds が正本)。
-func (v *filerView) binds(key string) bool { return v.shown && v.f != nil && v.f.Binds(key) }
+func (v *filerView) binds(key string) bool { f := v.live(); return f != nil && f.Binds(key) }
 
 // paste は貼り付けを filer へ渡す (入力中だけ入る。そうでなければ filer が捨てる)。
 func (v *filerView) paste(text string) {
-	if v.shown && v.f != nil {
-		v.f.Paste(text)
+	if f := v.live(); f != nil {
+		f.Paste(text)
 	}
 }
 
 // caretPos は filer の入力欄のキャレット (filer の画面の座標)。
 func (v *filerView) caretPos() (x, y int, ok bool) {
-	if !v.shown || v.f == nil {
-		return 0, 0, false
+	if f := v.live(); f != nil {
+		return f.CaretPos()
 	}
-	return v.f.CaretPos()
+	return 0, 0, false
 }
 
-func (v *filerView) animating() bool { return v.shown && v.f != nil && v.f.Animating() }
+func (v *filerView) animating() bool { f := v.live(); return f != nil && f.Animating() }
 
 // busy は filer の裏の走査・git の取得が走っているか (その間は spinnerActive が tick を回し、結果を取り込む)。
-func (v *filerView) busy() bool { return v.shown && v.f != nil && v.f.Busy() }
+func (v *filerView) busy() bool { f := v.live(); return f != nil && f.Busy() }
 
 // resize は画面の大きさを伝える。描くときではなく大きさが変わったときに伝えないと、カメラの目標が変わっても
 // tick が回らず、次のキーまで古い位置のまま残る (レビューの指摘 2026-10-08)。
 func (v *filerView) resize(width, page int) {
-	if v.shown && v.f != nil {
-		v.f.Resize(width, page)
+	if f := v.live(); f != nil {
+		f.Resize(width, page)
 	}
 }
 
 func (v *filerView) advance(now time.Time) {
-	if v.shown && v.f != nil {
-		v.f.Advance(now)
+	if f := v.live(); f != nil {
+		f.Advance(now)
 	}
 }
 
@@ -194,6 +202,22 @@ func (v *filerView) hint(width int) string {
 	})
 }
 
+// drainFilerNotices は filer に溜まった知らせを toast へ出す。🚨 キーの後だけでなく Advance の後にも呼ぶ: explode の完了や `o` の失敗は
+// Advance の中で積まれるので、キーの後だけだと次のキーまで出ない (issue 731)。
+func (m *browseModel) drainFilerNotices() {
+	f := m.filerV.live() // 閉じた filer の知らせは出さない
+	if f == nil {
+		return
+	}
+	for _, n := range f.TakeNotices() {
+		kind := noticeRefused // 押したキーが効かなかった理由 (lastWarning を汚さない)
+		if n.OK {
+			kind = noticeOK
+		}
+		m.deliverNotice(n.Text, kind)
+	}
+}
+
 // routeKeyToFiler は filer 表示中のキー処理 (全画面なのでキーは全部 filer が飲む)。
 func (m *browseModel) routeKeyToFiler(key string) (tea.Model, tea.Cmd) {
 	// U は他の viewer と同じく利用枠を重ねる (spec §0.3: R D U X は filer の中でも効かせる)
@@ -201,15 +225,7 @@ func (m *browseModel) routeKeyToFiler(key string) (tea.Model, tea.Cmd) {
 		return m, m.toggleUsage()
 	}
 	act := m.filerV.handleKey(key)
-	if m.filerV.f != nil {
-		for _, n := range m.filerV.f.TakeNotices() {
-			kind := noticeRefused // 押したキーが効かなかった理由 (lastWarning を汚さない)
-			if n.OK {
-				kind = noticeOK
-			}
-			m.deliverNotice(n.Text, kind)
-		}
-	}
+	m.drainFilerNotices()
 	switch act {
 	case filerQuit:
 		// quit (記憶の保存) を hide より先に: hide の後だと「F を出していない」と判定されて記憶が消える (issue 710)

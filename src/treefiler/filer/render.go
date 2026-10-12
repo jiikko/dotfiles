@@ -60,6 +60,10 @@ func (c *canvas) put(x, y int, s string, fg rgb, bold bool) int {
 
 func (c *canvas) putCluster(x, y int, cl string, w int, fg rgb, bold, ul bool) {
 	if p := c.at(x, y); p != nil && x+w <= c.w {
+		c.unpair(x, y)
+		if w == 2 {
+			c.unpair(x+1, y)
+		}
 		p.s, p.fg, p.bold, p.cont, p.ul, p.rev = cl, fg, bold, false, ul, false
 		if w == 2 {
 			if q := c.at(x+1, y); q != nil {
@@ -174,8 +178,31 @@ func (c *canvas) fillBg(x0, y0, x1, y1 int, bg rgb) {
 	}
 }
 
+// unpair は (x, y) にまたがる全角を割る: 上書きする前に、相方のセルを空白にする (左半分を上書きすると右半分の cont が残って
+// lines() がその行を 1 桁短く出し、右半分を上書きすると左の全角が残って 1 桁長く出る。issue 731)。
+func (c *canvas) unpair(x, y int) {
+	p := c.at(x, y)
+	if p == nil {
+		return
+	}
+	if p.cont {
+		if l := c.at(x-1, y); l != nil {
+			l.s = " "
+		}
+		p.s, p.cont = " ", false
+	} else if r := c.at(x+1, y); r != nil && r.cont {
+		r.s, r.cont = " ", false
+	}
+}
+
 func (c *canvas) clear(x0, y0, x1, y1 int, bg rgb) {
+	x0, x1 = max(x0, 0), min(x1, c.w-1) // 画面の中に切り詰めてから端の全角を割る (範囲が画面の外・空なら割らない: 範囲の外の全角を壊す)
+	if x0 > x1 {
+		return
+	}
 	for y := y0; y <= y1; y++ {
+		c.unpair(x0, y)
+		c.unpair(x1, y)
 		for x := x0; x <= x1; x++ {
 			if p := c.at(x, y); p != nil {
 				*p = cell{s: " ", bg: bg, fg: cText}
