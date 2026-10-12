@@ -330,6 +330,7 @@ func (m *Model) applySettings(key string) {
 	}
 	if key == "git" {
 		m.gitSnap = gitSet{}
+		m.gitGen++
 		m.startGit(true)
 	}
 	if key == "live" {
@@ -368,6 +369,7 @@ func (m *Model) resort(n *node) {
 		return
 	}
 	sortKids(n.kids, m.set.FoldersFirst, m.set.NaturalSort)
+	n.kidsVer++
 	for _, k := range n.kids {
 		m.resort(k)
 	}

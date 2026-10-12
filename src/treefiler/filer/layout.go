@@ -9,42 +9,6 @@ type place struct {
 	active bool // 親が spine 上 (spec §1.4 の Placed.active)
 }
 
-// kids は表示する子 (dotfile は隠す。ただしカーソルへの経路にあるものは見せる。spec §5.5)。
-// hasKids は n に見える子がいるか (kids と同じ判定。描画で毎フレーム呼ぶので、スライスを作らずに数える)。
-func (m *Model) hasKids(n *node) bool {
-	for _, k := range n.kids {
-		if m.visible(k) {
-			return true
-		}
-	}
-	return false
-}
-
-// visible は k を木に見せるか (dotfile は隠す設定でも、カーソルへの経路にあれば見せる。spec §5.5)。
-func (m *Model) visible(k *node) bool { return m.set.ShowHidden || !k.hidden() || m.onPath(k) }
-
-func (m *Model) kids(n *node) []*node {
-	if m.set.ShowHidden {
-		return n.kids
-	}
-	out := make([]*node, 0, len(n.kids))
-	for _, k := range n.kids {
-		if m.visible(k) {
-			out = append(out, k)
-		}
-	}
-	return out
-}
-
-func (m *Model) onPath(n *node) bool {
-	for p := m.cur; p != nil; p = p.parent {
-		if p == n {
-			return true
-		}
-	}
-	return false
-}
-
 // spine は root からカーソルまでと、カーソルが開いたフォルダなら「最後にいた子 / 先頭の子」を辿った続き。
 // spine は全部 y=0 に並ぶ (固定の選択線。spec §3.1)。
 func (m *Model) spine() map[*node]bool {
@@ -59,7 +23,7 @@ func (m *Model) spine() map[*node]bool {
 			break
 		}
 		next := n.last
-		if next == nil || !contains(ks, next) {
+		if !m.isKidOf(n, next) {
 			next = ks[0]
 		}
 		s[next] = true
@@ -77,34 +41,41 @@ func contains(ns []*node, n *node) bool {
 	return false
 }
 
-// layout は表示する全ノードの目標位置を返す (列ごとに、親ごとの子のブロックを縦に詰める。spec §3.1・§3.3 の capped)。
+// colEntry は次の列に子のブロックを置く親と、その目標の行。
+type colEntry struct {
+	n *node
+	y int
+}
+
+// layout は表示するノードの目標位置を返す (列ごとに、親ごとの子のブロックを縦に詰める。spec §3.1・§3.3 の capped)。
+// 巨大なブロックは画面の近くの子だけを入れる (virt.go)。全部が要る (検索の列) なら layoutAll。
 // 🚨 返す map は使い回しの入れ物で、次の layout の呼び出しで中身が変わる。呼び出し側は受け取った関数の中だけで使い、
 // 持ち越さない (5 万件のフォルダで、毎 tick の作り直しが確保の大半だった)。
-func (m *Model) layout() map[*node]place {
+func (m *Model) layout() map[*node]place { return m.layoutWith(true) }
+
+// layoutAll は仮想化せずに全ノードを配置する。
+func (m *Model) layoutAll() map[*node]place { return m.layoutWith(false) }
+
+func (m *Model) layoutWith(virt bool) map[*node]place {
+	m.layoutSeq++
+	m.resetVirt()
 	sp := m.spine()
+	spKid := map[*node]*node{} // spine 上の親 → spine 上の子
+	for n := range sp {
+		if n.parent != nil {
+			spKid[n.parent] = n
+		}
+	}
 	pos := m.posBuf.take(len(m.anims) + 1)
 	pos[m.root] = place{0, 0, true}
-	// kids は隠しファイルを除くたびにスライスを作るので、1 回の配置の中では親ごとに 1 回だけ作る
-	kidsMemo := map[*node][]*node{}
-	kids := func(n *node) []*node {
-		ks, ok := kidsMemo[n]
-		if !ok {
-			ks = m.kids(n)
-			kidsMemo[n] = ks
-		}
-		return ks
+	var parents []colEntry
+	if m.root.dir && m.root.expanded && len(m.kids(m.root)) > 0 {
+		parents = append(parents, colEntry{m.root, 0})
 	}
-	colX := map[int]int{0: 0}
-	cols := map[int][]*node{0: {m.root}}
+	namew := nameCells(m.root)
+	colX := 0
+	stride := 1 + m.set.RowSpacing // 行の間隔は空行を足す (spec §3.1。線は空行を貫く)
 	for depth := 0; ; depth++ {
-		var parents []*node
-		namew := 0
-		for _, n := range cols[depth] {
-			namew = max(namew, nameCells(n))
-			if n.dir && n.expanded && len(kids(n)) > 0 {
-				parents = append(parents, n)
-			}
-		}
 		if m.set.Columns == "equal" {
 			namew = labelMax // equal = どの列も Column width (spec §3.2)
 		}
@@ -116,21 +87,17 @@ func (m *Model) layout() map[*node]place {
 		if len(parents) == 0 {
 			break
 		}
-		sort.Slice(parents, func(i, j int) bool { return pos[parents[i]].y < pos[parents[j]].y })
+		sort.Slice(parents, func(i, j int) bool { return parents[i].y < parents[j].y })
 		y0 := make([]int, len(parents))
 		pin := -1
 		for j, p := range parents {
-			ks := kids(p)
-			y0[j] = pos[p].y - (len(ks)-1)/2
-			if sp[p] {
-				for i, k := range ks {
-					if sp[k] {
-						pin, y0[j] = j, -i
-					}
-				}
+			ks := m.kids(p.n)
+			y0[j] = p.y - (len(ks)-1)/2
+			if k := spKid[p.n]; sp[p.n] && m.isKidOf(p.n, k) {
+				pin, y0[j] = j, -k.vidx
 			}
 		}
-		blen := func(j int) int { return len(kids(parents[j])) }
+		blen := func(j int) int { return len(m.kids(parents[j].n)) }
 		if pin >= 0 {
 			for j := pin - 1; j >= 0; j-- {
 				y0[j] = min(y0[j], y0[j+1]-1-blen(j))
@@ -145,29 +112,42 @@ func (m *Model) layout() map[*node]place {
 		}
 		ups, downs := 0, 0
 		for j, p := range parents {
-			py := pos[p].y
-			if y0[j]+blen(j)-1 < py {
+			if y0[j]+blen(j)-1 < p.y {
 				ups++
-			} else if y0[j] > py {
+			} else if y0[j] > p.y {
 				downs++
 			}
 		}
 		lanes := max(1, min(max(w/3, 2), max(ups, downs)))
 		// 次の列の x = 列の x + 列の幅 + lanes + gap (3 以上) + branch (spec §3.2)
-		nx := colX[depth] + w + lanes + max(m.set.ColumnGap, 3) + m.set.BranchOffset
-		colX[depth+1] = nx
-		total := 0
-		for j := range parents {
-			total += blen(j)
-		}
-		cols[depth+1] = make([]*node, 0, total)
+		nx := colX + w + lanes + max(m.set.ColumnGap, 3) + m.set.BranchOffset
+		colX = nx
+		var next []colEntry
+		namew = 0
 		for j, p := range parents {
-			for i, k := range kids(p) {
-				pos[k] = place{nx, (y0[j] + i) * (1 + m.set.RowSpacing), sp[p]} // 行の間隔は空行を足す (spec §3.1。線は空行を貫く)
-				cols[depth+1] = append(cols[depth+1], k)
+			v := m.visOf(p.n)
+			namew = max(namew, v.maxName)
+			act := sp[p.n]
+			m.noteGeo(p.n, v, y0[j], stride, nx)
+			big := m.virtualizes(p.n, len(v.kids))
+			if big {
+				p.n.virtSeq = m.layoutSeq // 配置の仕方 (検索の layoutAll・全部を動かす期間) に依らず履歴を続ける (敵対レビュー 2 周目)
+			}
+			if virt && big && !m.inHold(&p.n.openHold) {
+				next = m.placeVirtual(pos, p.n, v, y0[j], stride, nx, act, spKid[p.n], next)
+				continue
+			}
+			for i, k := range v.kids {
+				y := (y0[j] + i) * stride
+				pos[k] = place{nx, y, act}
+				if k.dir && k.expanded && len(m.kids(k)) > 0 {
+					next = append(next, colEntry{k, y})
+				}
 			}
 		}
+		parents = next
 	}
+	m.posBuf.fit(len(pos))
 	return pos
 }
 
@@ -365,7 +345,8 @@ func (m *Model) lines(now map[*node][2]int, ylo, yhi int) lineGrid {
 		}
 		kp := m.kpBuf[:0]
 		var routeKid *node
-		for _, k := range m.kids(pn) {
+		lk := m.lineKids(pn)
+		for _, k := range lk {
 			if q, ok := now[k]; ok {
 				kp = append(kp, q)
 				if sp[k] && sp[pn] {
@@ -401,16 +382,20 @@ func (m *Model) lines(now map[*node][2]int, ylo, yhi int) lineGrid {
 			continue // まだ展開の途中
 		}
 		blockThick := false // 縦棒と肘は、ブロックに無視されていない子が 1 つでもあれば太い
-		for _, k := range m.kids(pn) {
-			if _, ok := now[k]; ok && !m.thinBranch(k) {
-				blockThick = true
-				break
+		if _, ok := m.virt[pn]; ok {
+			blockThick = m.blockThick(pn) // 仮想化したブロックは全部の子で数える (全部を動かしていれば全部が now に居る)
+		} else {
+			for _, k := range lk {
+				if _, ok := now[k]; ok && !m.thinBranch(k) {
+					blockThick = true
+					break
+				}
 			}
 		}
 		if a, b, ok := clip(y0, y1); ok {
 			g.vseg(bar, a, b, emph, pn, blockThick)
 		}
-		for _, k := range m.kids(pn) {
+		for _, k := range lk {
 			q, ok := now[k]
 			if !ok || q[1] < ylo || q[1] > yhi {
 				continue
@@ -455,6 +440,14 @@ func (m *Model) lines(now map[*node][2]int, ylo, yhi int) lineGrid {
 	return g
 }
 
+// lineKids は線を引く子 (仮想化したブロックはアニメを持つ子だけ。virt.go の collectDrawn)。
+func (m *Model) lineKids(pn *node) []*node {
+	if b, ok := m.virt[pn]; ok {
+		return b.drawn
+	}
+	return m.kids(pn)
+}
+
 // reusedMap は毎 tick 作り直さない map の入れ物。take は中身を空にして返す。🚨 Go の map は clear しても容量が残り、反復は
 // 容量に比例するので、要る数が容量の 1/4 を切ったら作り直す (巨大なフォルダを見た後に小さなフォルダへ移ると、毎 tick 空の大きな
 // map を舐めることになる)。
@@ -462,6 +455,10 @@ type reusedMap[K comparable, V any] struct {
 	m   map[K]V
 	cap int
 }
+
+// fit は入れ物に実際に入った数を覚える (take の見込みより多く入れると map は膨らむので、作り直しの判定をその数で行う。
+// 検索の layoutAll が 5 万件を入れた後、膨らんだ map を毎フレーム舐め続けた。敵対レビュー)。
+func (r *reusedMap[K, V]) fit(n int) { r.cap = max(r.cap, n) }
 
 func (r *reusedMap[K, V]) take(n int) map[K]V {
 	if r.m == nil || n > r.cap || n*4 < r.cap {

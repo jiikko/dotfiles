@@ -33,6 +33,22 @@ type node struct {
 	labMax int
 	lab    string
 	labW   int
+	// 見せる子の覚えと、親の覚えの中での自分の順位 (virt.go)。kidsVer は kids を並べ直した・読み直したら増やす
+	kidsVer  int
+	vis      *visKids
+	vidx     int
+	vgen     uint64
+	freshGen uint64 // 親の覚えを作り直したときに新しく現れた子なら、その gen
+	pvidx    int    // 親の覚えを作り直す前の順位 (pgen の覚えでの順位。前の目標の位置を出す)
+	pgen     uint64
+	// 子のブロックの配置の記録 (virt.go)。geo は今の layout、geoPrev はその前の layout のもの
+	geo, geoPrev blockGeo
+	// geoStep は step (アニメを進める) の layout の置き方、geoStepPrev はその前の step のもの。アニメの状態はこの置き方で進んでいる
+	geoStep, geoStepPrev blockGeo
+	openHold             holdClock // 子のブロックが現れた / 兄弟のずれ方がばらばらになる変化があった時 (全部を動かす期間の起点)
+	virtSeq              int       // 最後に仮想化した layout の通し番号
+	wasCulled            bool      // 画面から遠いのでアニメを捨てた (次に配置したとき、湧かせずに前の位置から動かす)
+	culledBatch          int       // 捨てたアニメの batch (戻すときに描く順を保つ)
 }
 
 func (n *node) path() string { return n.abs }
@@ -134,6 +150,7 @@ func (n *node) load() {
 	}
 	sortKids(kids, sortFoldersFirst, sortNatural)
 	n.kids = kids
+	n.kidsVer++
 }
 
 // reload は読み込み済みのフォルダを読み直す。名前が同じ項目は古いノードをそのまま使う (開閉・last・アニメを保つ)。
@@ -154,6 +171,7 @@ func (n *node) reload() {
 			o.reload()
 		}
 	}
+	n.kidsVer++ // 新しい並びへ古いノードを差し戻した
 	if n.last != nil && !contains(n.kids, n.last) {
 		n.last = nil
 	}

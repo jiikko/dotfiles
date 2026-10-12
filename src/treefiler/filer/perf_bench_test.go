@@ -46,6 +46,12 @@ func hugeFolderModel(b *testing.B, n int) *Model {
 	}
 	m.setCur(cur)
 	settleBackground(b, m)
+	// 開いた直後に全部の子を動かす期間 (spawnHold。virt.go) を過ぎた、止まった画面にする。🚨 期間は動きの時計 (1 回の Advance の進みは
+	// 0.05 秒で頭打ち) で測るので、1 秒先へ 1 回だけ進めても抜けない。60fps で 1 秒ぶん進める
+	for at, end := m.lastAdv, m.lastAdv.Add(time.Second); at.Before(end); {
+		at = at.Add(16 * time.Millisecond)
+		m.Advance(at)
+	}
 	m.snapAll()
 	if v := strings.Join(m.draw().plain(), "\n"); !strings.Contains(v, fmt.Sprintf("f%06d.txt", n/2)) {
 		b.Fatalf("前提: big の中を描いていない:\n%s", v)
@@ -53,38 +59,50 @@ func hugeFolderModel(b *testing.B, n int) *Model {
 	return m
 }
 
+// hugeSizes は巨大なフォルダの件数。2 つ並べるのは、1 フレームの時間が件数に比例しないこと (issue 712) を同じ実行の中で比べるため。
+var hugeSizes = []int{5000, 50000}
+
+// eachHugeSize は件数ごとの sub-benchmark を回す。
+func eachHugeSize(b *testing.B, run func(b *testing.B, m *Model)) {
+	for _, n := range hugeSizes {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			m := hugeFolderModel(b, n)
+			b.ReportAllocs()
+			b.ResetTimer()
+			run(b, m)
+		})
+	}
+}
+
 // BenchmarkViewHugeFolder は止まった画面 1 フレーム (View)。
 func BenchmarkViewHugeFolder(b *testing.B) {
-	m := hugeFolderModel(b, 50000)
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		_ = m.View()
-	}
+	eachHugeSize(b, func(b *testing.B, m *Model) {
+		for range b.N {
+			_ = m.View()
+		}
+	})
 }
 
 // BenchmarkLayoutHugeFolder は配置の計算 (動きの最中は Advance の step が毎 tick 呼ぶ。View の draw も呼ぶ)。
 func BenchmarkLayoutHugeFolder(b *testing.B) {
-	m := hugeFolderModel(b, 50000)
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		_ = m.layout()
-	}
+	eachHugeSize(b, func(b *testing.B, m *Model) {
+		for range b.N {
+			_ = m.layout()
+		}
+	})
 }
 
 // BenchmarkMoveHugeFolder は巨大なフォルダの中で j を 1 回押し、動きが止まるまで 60fps で進める (キー 1 回ぶんの重さ)。
 func BenchmarkMoveHugeFolder(b *testing.B) {
-	m := hugeFolderModel(b, 50000)
-	b.ReportAllocs()
-	b.ResetTimer()
-	at := fixedNow
-	for range b.N {
-		m.HandleKey("j")
-		for range 40 {
-			at = at.Add(16 * time.Millisecond)
-			m.Advance(at)
-			_ = m.View()
+	eachHugeSize(b, func(b *testing.B, m *Model) {
+		at := m.lastAdv // 準備の続きから進める (巻き戻すと、開いた直後の期間 spawnHold に戻って全部の子を動かす)
+		for range b.N {
+			m.HandleKey("j")
+			for range 40 {
+				at = at.Add(16 * time.Millisecond)
+				m.Advance(at)
+				_ = m.View()
+			}
 		}
-	}
+	})
 }

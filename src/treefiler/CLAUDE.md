@@ -10,6 +10,8 @@
   `Animating` / `Busy` / `OwnsKeys` / `Binds` / `CaretPos` / `Paste` / `TakeExec` / `ExecDone` / `TakeNotices` / `Refresh` / `Changed` / `WatchingChan` / `Close`
 - `filer/tree.go` — ディスクの木 (開いたときに 1 段ずつ読む・名前の自然順・symlink は辿らない)
 - `filer/layout.go` — 列と行の配置・線の格子 (spec §3・§2.1)
+- `filer/kids.go` — 木に見せる子 (dotfile を隠す・カーソルへの経路は見せる) とその覚え (`visKids`。並びが変わったときだけ作り直し、各子に順位を振る)
+- `filer/virt.go` — 巨大なフォルダの仮想化 (画面の近くの子だけを配置しアニメを持たせる。issue 712)。何が全部を動かす場合と違うかは冒頭の doc
 - `filer/anim.go` — 時間で進む補間 (ease-out quint・キーで終点へ飛ばす)
 - `filer/tile.go` / `filer/preview.go` — プレビューのタイル (置き場所・リンク) とテキストの遅延読み込み
 - `filer/palette.go` — 配色と熱の色
@@ -35,3 +37,6 @@
 ## ビルド・テスト
 
 - `make -C src/treefiler lint` / `test`。動かして見るなら `bin/treefiler [DIR]`
+- 🚨 配置・アニメ・描画 (`layout.go` / `model.go` の step・sync・draw / `virt.go` / `kids.go`) を変えたら、仮想化の等価性のテスト
+  (`filer/virt_test.go`。仮想化しない Model を正解役に毎フレームの画面を比べる) を乱数の種を広げて回す:
+  `TREEFILER_VIRT_SEEDS=300 go test -run TestVirtualizedRandomOps ./filer` (約 2 分。CI は 12 本だけ回す)

@@ -29,6 +29,9 @@ func (s *tween) step(target, dur, dt float64) bool {
 	return t < 1
 }
 
+// shift は動き全体 (今の値・始点・終点) を d だけずらす (仮想化で兄弟の動きを写すとき。virt.go)。
+func (s *tween) shift(d float64) { s.v, s.from, s.to = s.v+d, s.from+d, s.to+d }
+
 // snap は動きの途中を終点へ飛ばす。
 func (s *tween) snap() {
 	if s.init {

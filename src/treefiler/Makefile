@@ -15,5 +15,6 @@ vet-gorules:
 
 test:
 	go test -race ./...
-	# 確保の回数の予算 (filer/alloc_budget_test.go) は -race の計装で揺れるので、-race なしでも回す
-	go test -count=1 -run '^TestFrameAllocBudget$$' ./filer/
+	# 確保の回数の予算 (filer/alloc_budget_test.go) は -race の計装で揺れるので、-race なしでも回す。
+	# 仮想化の乱数の操作列のテスト (filer/virt_test.go) は -race で 7 倍遅く (4 秒 → 28 秒)、描画の計算を比べるだけなので -race なしで回す
+	go test -count=1 -run '^(TestFrameAllocBudget|TestVirtualizedRandomOpsMatchFull)$$' ./filer/

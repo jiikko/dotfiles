@@ -120,7 +120,7 @@ func isWordStart(name string, i int) bool {
 
 // column はカーソルの列 (同じ深さの見えている項目を上から)。
 func (m *Model) column(of *node) []*node {
-	pos := m.layout()
+	pos := m.layoutAll() // 画面の外の項目も検索の対象 (仮想化した配置は画面の近くしか持たない)
 	d := of.depth()
 	var col []*node
 	for n := range pos {
@@ -211,11 +211,7 @@ func (m *Model) refreshMatches() {
 // (Refresh / applyChange がカーソルに使う規則と同じ)。「今の位置に留まる」にしない: 一致なしで一度戻った後は、
 // 今の位置そのものが消えた origin を指している (issue 717)。
 func (m *Model) restoreOrigin() {
-	n := m.search.origin
-	for !m.inTree(n) {
-		n = n.parent
-	}
-	m.setCur(n)
+	m.setCur(m.liveAncestor(m.search.origin))
 }
 
 func (m *Model) stepMatch(d int) {

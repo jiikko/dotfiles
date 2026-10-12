@@ -44,6 +44,7 @@ type anim struct {
 	x, y, alpha tween
 	ghost       bool
 	w           int
+	batch       int // 生まれた sync の回 (描く順 = order は「回 → 深さ → パス」の順。仮想化で作り直した子もこの順に戻す。virt.go)
 }
 
 // Model は treefiler の画面 1 枚分の状態。
@@ -65,28 +66,47 @@ type Model struct {
 	posBuf     reusedMap[*node, place]  // layout の結果の入れ物 (毎 tick 作り直さない。layout の doc)
 	nowBuf     reusedMap[*node, [2]int] // draw の「今の位置」の入れ物
 	kpBuf      [][2]int                 // lines の子の位置の入れ物
-	startDir   string                   // 起動したフォルダ (前回の場所を覚える鍵)
-	walker     *walker
-	recs       map[string]walkResult // walker の結果の写し (Advance で取り込む)
-	git        gitWatch
-	set        Settings
-	setErrs    []string
-	saveErr    string
-	panel      panelState
-	gitSnap    gitSet
-	repoTop    map[string]string // フォルダ → 属する repo の根 ("" = repo の外)。読み直しで捨てる
-	watch      *watcher
-	ripples    map[*node]ripple
-	bead       tween
-	beadFor    *node // ビーズが走っている先 (カーソルが変わったら走り直す)
-	beadVel    float64
-	beadOn     bool
-	search     searchState
-	lastSearch string
-	exploding  *explodeJob
-	help       bool
-	prompt     promptState
-	exec       *ExecRequest
+	// 巨大なフォルダの仮想化 (virt.go)
+	visGen       uint64
+	gitGen       uint64 // gitSnap を差し替えた回数 (縦棒の太さの覚えの鍵)
+	layoutSeq    int
+	advN         int         // Advance の回数 (holdClock)
+	animClock    float64     // Advance の dt (速さを掛けた後) の和。動き (tween) と同じ時計 (holdClock)
+	advClock     [64]float64 // 直近の Advance の、dt を足す前の animClock (advN の剰余で引く。holdClock)
+	stepN        int         // step の回数 (blockGeo.step)
+	inStep       bool        // step の layout と sync の間 (reviveAnim が見る置き方を決める)
+	syncN        int         // sync の回数 (anim.batch)
+	virt         map[*node]*virtBlock
+	virtPool     []*virtBlock
+	virtN        int
+	realBuf      []*node
+	stepVirt     []*node         // 直前の step の layout で仮想化したブロックの親 (ghostCulled)
+	refs         map[*node]*node // anyRef の覚え (layout ごと)
+	refsSeq      int
+	virtOverride int    // 0 = 既定 (virtMin)。テストの差し替え
+	animsPeak    int    // anims が最近いちばん多かったときの数 (compactAnims)
+	startDir     string // 起動したフォルダ (前回の場所を覚える鍵)
+	walker       *walker
+	recs         map[string]walkResult // walker の結果の写し (Advance で取り込む)
+	git          gitWatch
+	set          Settings
+	setErrs      []string
+	saveErr      string
+	panel        panelState
+	gitSnap      gitSet
+	repoTop      map[string]string // フォルダ → 属する repo の根 ("" = repo の外)。読み直しで捨てる
+	watch        *watcher
+	ripples      map[*node]ripple
+	bead         tween
+	beadFor      *node // ビーズが走っている先 (カーソルが変わったら走り直す)
+	beadVel      float64
+	beadOn       bool
+	search       searchState
+	lastSearch   string
+	exploding    *explodeJob
+	help         bool
+	prompt       promptState
+	exec         *ExecRequest
 }
 
 // ripple はライブ更新で光った項目 (spec §4.4)。start から pulse で光り、rippleLife で消える。
@@ -140,13 +160,19 @@ func New(dir string, opts Options) (*Model, error) {
 func (m *Model) Refresh() {
 	m.walker.forget(m.root.path(), true)
 	m.root.reload()
-	for !m.inTree(m.cur) {
-		m.cur = m.cur.parent
-	}
+	m.cur = m.liveAncestor(m.cur)
 	m.repoTop = nil    // .git を足した・消したフォルダを数え直す
 	clear(m.linkCache) // 無かったファイル (負のキャッシュ) が作られているかもしれない
 	m.startGit(true)   // 読み直した木の開いているフォルダで取る (読み直す前の木だと、消えたフォルダを含み、現れたものを落とす)
 	m.moving = true
+}
+
+// liveAncestor は n が今の木に繋がっていれば n、消えていれば生きているいちばん近い祖先 (読み直し・ライブ更新・検索の戻り先)。
+func (m *Model) liveAncestor(n *node) *node {
+	for !m.inTree(n) {
+		n = n.parent
+	}
+	return n
 }
 
 // inTree は n が今の木に繋がっているか (読み直しで消えた項目は親の kids から外れる)。
@@ -272,6 +298,9 @@ func (m *Model) Advance(now time.Time) bool {
 		dt = math.Min(now.Sub(m.lastAdv).Seconds(), 0.05) * speedFactor[m.set.Speed] // 動きの速さは dt に掛ける (spec §4.1)
 	}
 	m.lastAdv = now
+	m.advN++
+	m.advClock[m.advN%len(m.advClock)] = m.animClock
+	m.animClock += dt
 	m.takeBackground()
 	m.takeExplode()
 	m.moving = m.step(dt)
@@ -317,6 +346,7 @@ func (m *Model) takeBackground() {
 	if s, ok := m.git.take(); ok { // off でも取り込む (取り込まずに残すと Busy が続き、呼び出し側の tick が止まらない)
 		if m.set.Git { // off にする前に始めた取得の結果は捨てる
 			m.gitSnap = s
+			m.gitGen++
 		}
 	}
 	var open []string
@@ -377,9 +407,7 @@ func (m *Model) applyChange(c dirChange) {
 	if !lit && c.listing && m.removedVisible(c) {
 		m.lightUp(n) // 見える項目が消えたときはフォルダ自身を光らせる
 	}
-	for !m.inTree(m.cur) {
-		m.cur = m.cur.parent
-	}
+	m.cur = m.liveAncestor(m.cur)
 	m.moving = true
 }
 
@@ -497,28 +525,46 @@ func (m *Model) sync(pos map[*node]place) {
 		}
 	}
 	sortByDepth(born)
+	m.syncN++
+	older := false
 	for _, n := range born {
 		p := pos[n]
-		a := &anim{w: m.labelWidth(n)}
-		a.x.v, a.y.v = float64(p.x), float64(p.y)
-		// 新しい項目は、いちばん近いアニメ中の祖先の右端から湧く (spec §4.2)
-		for anc := n.parent; anc != nil; anc = anc.parent {
-			if pa, ok := m.anims[anc]; ok && !pa.ghost {
-				a.x.v, a.y.v = pa.x.v+float64(pa.w), pa.y.v
-				break
-			}
+		a := m.reviveAnim(n) // 仮想化で捨てていた子 (virt.go)
+		if a == nil {
+			a = m.spawnAnim(n, p)
+			a.batch = m.syncN
 		}
-		if n.parent == nil {
-			a.alpha.v = 1
-		}
+		older = older || a.batch < m.syncN
+		n.wasCulled = false
 		m.anims[n] = a
 		m.order = append(m.order, n)
 	}
+	if older {
+		m.sortOrder()
+	}
+	m.ghostCulled()
 	for n, a := range m.anims {
-		if _, ok := pos[n]; !ok {
+		if _, ok := pos[n]; !ok && !m.culled(n) {
 			a.ghost = true
 		}
 	}
+	m.cullFar(pos)
+}
+
+// spawnAnim は新しい項目のアニメ: いちばん近いアニメ中の祖先の右端から湧く (spec §4.2)。
+func (m *Model) spawnAnim(n *node, p place) *anim {
+	a := &anim{w: m.labelWidth(n)}
+	a.x.v, a.y.v = float64(p.x), float64(p.y)
+	for anc := n.parent; anc != nil; anc = anc.parent {
+		if pa, ok := m.anims[anc]; ok && !pa.ghost {
+			a.x.v, a.y.v = pa.x.v+float64(pa.w), pa.y.v
+			break
+		}
+	}
+	if n.parent == nil {
+		a.alpha.v = 1
+	}
+	return a
 }
 
 // sortByDepth は浅い順、同じ深さはパス順 (map の反復順に依らず、描く順を毎回同じにする)。
@@ -542,8 +588,12 @@ func (m *Model) ghostTarget(n *node) (float64, float64) {
 }
 
 func (m *Model) step(dt float64) bool {
+	m.stepN++
+	m.inStep = true
 	pos := m.layout()
 	m.sync(pos)
+	m.noteStepVirt()
+	m.inStep = false
 	moving := false
 	kept := m.order[:0]
 	for _, n := range m.order {
@@ -569,6 +619,7 @@ func (m *Model) step(dt float64) bool {
 		kept = append(kept, n)
 	}
 	m.order = kept
+	m.compactAnims()
 	now := m.now()
 	for n, r := range m.ripples {
 		if now.Sub(r.start) > rippleLife {
@@ -725,12 +776,9 @@ func (m *Model) siblings() []*node {
 
 // moveSibling は同じ階層 (兄弟) の中で delta だけ動く。端では止まる (spec §0.1: j を押しっぱなしでも潜らない)。
 func (m *Model) moveSibling(delta int) {
-	s := m.siblings()
-	for i, n := range s {
-		if n == m.cur {
-			m.setCur(s[max(0, min(len(s)-1, i+delta))])
-			return
-		}
+	if p := m.cur.parent; p != nil && m.isKidOf(p, m.cur) {
+		s := m.kids(p)
+		m.setCur(s[max(0, min(len(s)-1, m.cur.vidx+delta))]) // 順位は覚え (virt.go) にある。5 万件の兄弟を毎打鍵探さない
 	}
 }
 
@@ -857,7 +905,7 @@ func (m *Model) descend() {
 	}
 	m.cur.expanded = true
 	next := m.cur.last
-	if next == nil || !contains(ks, next) {
+	if !m.isKidOf(m.cur, next) {
 		next = ks[0]
 	}
 	m.setCur(next)
@@ -940,12 +988,14 @@ func (m *Model) draw() *canvas {
 	ch := m.canvasH()
 	ox, oy := int(math.Round(m.camX.v)), int(math.Round(m.camY.v))
 	pos := m.layout()
+	m.realizeVirtual(pos)
 	now := m.nowBuf.take(len(m.order))
 	for _, n := range m.order {
 		if a := m.anims[n]; a != nil && !a.ghost && a.alpha.v > 0.05 {
 			now[n] = [2]int{int(math.Round(a.x.v)), int(math.Round(a.y.v))}
 		}
 	}
+	m.collectDrawn(now)
 	// カーソル: 名前の背景を glogx のカーソル色で塗るだけ (spec §0.1)
 	if p, ok := now[m.cur]; ok && p[1]-oy < ch {
 		c.fillBg(p[0]-1-ox, p[1]-oy, p[0]+m.cur.labelCells()-ox, p[1]-oy, cCursorBg)
