@@ -29,7 +29,7 @@ dotfiles-5f の調査 (2026-10-12、読むだけ) で、2 つ以上の module �
 | リンクのジャンプ (treefiler `tile.go` と glogx `issues/filelink.go`) | 解決の規則と見せ方が違い、共通なのは剰余算だけ |
 | 枠 (filer `canvas.frame` と `tuikit/layout.Panel`)・RGB の補間 (filer `palette.go` `mix` と pro-con `mixRGB`) | 描く仕組み・型が違い、寄せても良くならない |
 
-## 寄せてよい小さなもの (再開の trigger が来たら)
+## 寄せてよい小さなもの (2026-10-12 に寄せた)
 
 - 16 色の値の表: treefiler `render.go` の ansi16 と pro-con `switchfade.go` の basic16 は値が一致する (型は float64 / int、範囲外の扱いが違う)。
   寄せ先の候補は `tuikit/sgr` だが、README の責務 (基本の ANSI 色・装飾) の拡張になるので置き場から決める
@@ -48,3 +48,19 @@ dotfiles-5f の調査 (2026-10-12、読むだけ) で、2 つ以上の module �
 - 2026-10-12: 反証レビュー (dotfiles-5f、sonnet) を当てた。tileKey のスクロール (遅延読み込みとの順序)・入力欄 (キャレットの契約)・
   スクロールバー (丸めと出力)・ExecRequest (規約の向き) を「寄せない」へ移し、結論を「ほぼ寄せない」に書き直して pending へ。
   反証できなかった主張: tuikit の参照の仕方 (restartable 以外は replace)・入力欄の組み立てが 3 module 6 か所に実在・丸めの違い・666 の D の扱い
+- 2026-10-12: ユーザーの指示で「寄せてよい小さなもの」の 3 つを寄せた (commit「refactor(tuikit): 256 色の RGB と巡回の剰余算を tuikit に寄せる」)
+  - 16 色の表: 置き場は `tuikit/sgr` に決め、256 色の番号全体を RGB にする `sgr.XtermRGB` にした (treefiler の ansi16 / xterm256 と、
+    pro-con の basic16 / cubeLevels / rgb256 は同じ表の 2 実装だった)。sgr の doc と README の責務に「256 色の番号が表す RGB」を足した
+  - treefiler `jumpKey` の窓の追従を `listnav.WindowOffset` へ。旧来の式との違いは上限の clamp (`len(view)-rows`) が加わることだけ
+  - 巡回の剰余算: `listnav.Cycle(i, delta, n)` を足し、glogx 7・treefiler 9・pro-con 2 の計 18 か所を置き換えた
+    (`grep -c 'listnav.Cycle('` で数えた)。treefiler `virt.go` の `advClock` の剰余は輪のバッファで、選択の巡回ではないので残した
+  - 旧式との一致: 置き換えた式を i=-1..n-1 (-1 は indexOfStr の見つからない)・d=±1・n=1..50 で総当たりして食い違い 0。
+    256 色は 16〜255 で旧 2 実装と一致、16 色の表は旧 2 つのリテラルと同じ値 (pro-con の旧 rgb256 は 16 未満で配列の範囲外へ出たが、
+    呼び出し元は 16 以上しか渡していなかった)
+  - 変異 (mutate-verify で red): Cycle を `(i+delta)%n` / `(i+delta+n)%n` に戻す・灰の階調を 1 段ずらす・基本 16 色の 1 つを変える・範囲の外の上限を外す。
+    `(i+delta+n)%n` は最初の版の TestCycle では緑のまま通ったので、旧来の式なら負になる組に差し替えた
+  - make test / lint: tuikit・treefiler・pro-con・glogx の 4 module で rc=0。glogx は負荷の高い回 (load 7〜16) に doctor の待ちのテスト 2 本
+    (`TestRescanCancelsPreviousGeneration` / `TestCursorFallbackIsToldThroughBrowseModel`) が 2 回時間切れになった。単独でも、3 回目の全体でも緑で、
+    今回の変更の経路 (listnav / sgr) を通らない
+  - 敵対的レビューは省略した: 判断のロジックを足さない置き換えで、一致を総当たりで確かめたため
+
