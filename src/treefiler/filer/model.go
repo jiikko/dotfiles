@@ -851,6 +851,7 @@ func init() {
 	bind(do(func(m *Model) { m.opener.reveal(m.cur.path(), m.cur.name) }), "O")
 	bind(do(func(m *Model) { m.copyPath(false) }), "y")
 	bind(do(func(m *Model) { m.copyPath(true) }), "Y")
+	bind(do((*Model).cycleSortBy), "S")
 	bind(do((*Model).Refresh), "r") // 開いていたフォルダは保つ (treebeard は配下の展開を失う。spec §5.7 との差)
 }
 
@@ -948,7 +949,8 @@ func (m *Model) rerootUp() {
 	found := false
 	for i, k := range nr.kids {
 		if k.raw == baseName(old.raw) {
-			old.raw, old.parent = k.raw, nr // abs は変わらない (同じフォルダ)
+			old.raw, old.parent = k.raw, nr       // abs は変わらない (同じフォルダ)
+			old.mtime, old.size = k.mtime, k.size // 新しい親は k の値で並べた。旧 root の値は開いたときのままなので写す (reload と同じ。issue 720 の敵対レビュー)
 			nr.kids[i] = old
 			found = true
 		}
@@ -1347,7 +1349,7 @@ func (m *Model) searchBar(c *canvas) {
 	}
 }
 
-// helpKeys はキー一覧 (? の板。treebeard の KEYS から、写さないもの (マウス・音声・ソート・画像) を除いて日本語にした)。
+// helpKeys はキー一覧 (? の板。treebeard の KEYS から、写さないもの (マウス・音声・画像) を除いて日本語にした)。
 var helpKeys = [][2]string{
 	{"j k ↓ ↑ ^N ^P", "同じ階層の中で移動"},
 	{"J K / ^D ^U", "10 件 / 半ページ"},
@@ -1363,6 +1365,7 @@ var helpKeys = [][2]string{
 	{",", "設定"},
 	{"o O", "外のアプリで開く (open) · Finder で表示"},
 	{"y Y", "パスをコピー (絶対 · root からの相対)"},
+	{"S", "並びを巡回 (名前 → 更新の新しい順 → 大きい順)"},
 	{"r", "読み直す"},
 	{"タイルの中", "j k ^D ^U space g G · tab でパスを選ぶ (e で選んだ先を編集) · J K で隣 · d で diff · e でエディタ · o で外のアプリ · O で Finder"},
 	{"q esc", "終了 (タイルの上では 1 枚閉じる)"},

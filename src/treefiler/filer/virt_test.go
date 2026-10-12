@@ -2,6 +2,7 @@ package filer
 
 import (
 	"fmt"
+	"hash/fnv"
 	"math"
 	"math/rand/v2"
 	"os"
@@ -41,8 +42,7 @@ func newVirtPair(t *testing.T) *virtPair {
 	mustWriteAll(t, filepath.Join(big, "f0300sub", "inner.txt")) // 開いたままの子フォルダ (遠くても配置する)
 	mustWriteAll(t, filepath.Join(dir, "alpha", "x.txt"))
 	mustWriteAll(t, filepath.Join(dir, "zeta.txt"))
-	stamp := fixedNow.Add(-time.Hour)
-	_ = filepath.Walk(filepath.Dir(dir), func(p string, _ os.FileInfo, _ error) error { return os.Chtimes(p, stamp, stamp) })
+	_ = filepath.Walk(filepath.Dir(dir), func(p string, fi os.FileInfo, _ error) error { st := virtStamp(p, fi); return os.Chtimes(p, st, st) })
 	vp := &virtPair{t: t, dir: dir}
 	for i, ov := range []int{40, -1} {
 		m, err := New(dir, Options{Now: func() time.Time { return fixedNow }})
@@ -89,7 +89,25 @@ func mustWriteAll(t *testing.T, p string) {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	mustWrite(t, p, "x\n")
+	mustWrite(t, p, strings.Repeat("x", 1+int(virtHash(p)%40))+"\n") // 大きさを子ごとにずらす (size の並びを名前順と違えるため。issue 720)
+}
+
+func virtHash(p string) uint32 {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(filepath.Base(p)))
+	return h.Sum32()
+}
+
+// virtStamp は項目の mtime。fNNNN の名前のファイルは名前から決まる分だけ 1 時間前より古くする (modified の並びを名前順と違えるため。issue 720)。
+// 🚨 フォルダと、操作で消えないファイルはちょうど 1 時間前にそろえる: フォルダの熱の色は裏の走査が数えた「配下でいちばん新しい時刻」で決まり、
+// 走査の結果が届く時刻は 2 つの Model で揃わない。いちばん新しい時刻を消えない項目に持たせると、どの時点の走査でも同じ値になる
+// (fNNNN を消す・足すライブ更新の操作でも変わらない。ずらしたファイルにいちばん新しい時刻を持たせると、300 本の種で 4 本が色の値の差で落ちた)
+func virtStamp(p string, fi os.FileInfo) time.Time {
+	base := filepath.Base(p)
+	if (fi != nil && fi.IsDir()) || !strings.HasPrefix(base, "f") {
+		return fixedNow.Add(-time.Hour)
+	}
+	return fixedNow.Add(-time.Hour - time.Duration(1+virtHash(p)%3600)*time.Second)
 }
 
 // frames は両方を n フレーム (60fps) 進め、毎フレームの画面を比べる。
@@ -468,8 +486,7 @@ func TestVirtualizedSearchKeepsHistoryMatchFull(t *testing.T) {
 
 func restampTree(t *testing.T, dir string) {
 	t.Helper()
-	stamp := fixedNow.Add(-time.Hour)
-	_ = filepath.Walk(dir, func(p string, _ os.FileInfo, _ error) error { return os.Chtimes(p, stamp, stamp) })
+	_ = filepath.Walk(dir, func(p string, fi os.FileInfo, _ error) error { st := virtStamp(p, fi); return os.Chtimes(p, st, st) })
 }
 
 // 遠くで仮想化に捨てていた選択線の子 (big.last) が、覚えの作り直し (隠しファイルの表示) と同じ打鍵で選択線に乗る: 全部を動かす期間の
@@ -718,7 +735,20 @@ func TestVirtualizedRandomOpsMatchFull(t *testing.T) {
 			}
 			speeds := []string{"slow", "normal", "fast", "instant"}
 			for range 30 {
-				switch op := rng.IntN(11); {
+				switch op := rng.IntN(12); {
+				case op == 11: // 並びを変える (Sort by の巡回か Reverse。issue 720)
+					what := "並び Reverse"
+					if rng.IntN(3) > 0 {
+						vp.virt.HandleKey("S")
+						vp.ref.HandleKey("S")
+						what = "並び S → " + vp.ref.set.SortBy
+					} else {
+						for _, m := range []*Model{vp.virt, vp.ref} {
+							m.set.Reverse = !m.set.Reverse
+							m.applySettings("reverse")
+						}
+					}
+					step(what)
 				case op == 10:
 					sp := speeds[rng.IntN(len(speeds))]
 					for _, m := range []*Model{vp.virt, vp.ref} {

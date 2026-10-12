@@ -83,6 +83,7 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 | `e` (`v`) | エディタで開く | repo root / issue 本文 / job ログ |
 | `y` | コピー (素の値: URL / パス / group 名) | issues の**合成の** group 親行だけ group 名 (親 issue のある行はパス)。treefiler は項目の絶対パス (`Y` で root からの相対パス) |
 | `Y` | コピー (整形した参照: Markdown / 番号+タイトル+パス) | |
+| `S` | 並び (sort) の巡回 | treefiler (名前順 → 更新の新しい順 → 大きい順)。小文字の `s` (シェル) の強い版ではない例外 |
 | `p` | PR または番号 | 一覧では PR を開く、issues では番号コピー (「PR / number」の頭文字) |
 | `d` | diff | コミット / status のファイル |
 | `r` | 再読込 / 再実行 | issues の再読込、job の rerun |

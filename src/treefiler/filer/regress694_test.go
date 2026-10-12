@@ -76,6 +76,7 @@ func TestChoiceSettingsHaveTables(t *testing.T) {
 	exempt := map[string]string{ // 表を持たず、描く所の switch / 比較で読む (知らない値は何も足さないだけで、動きは止まらない)
 		"columns": "layout.go の equal との比較",
 		"details": "model.go の Details の switch",
+		"sort_by": "tree.go の sortOrder.less の switch (知らない値は名前順)",
 	}
 	seen := 0
 	for _, it := range items {

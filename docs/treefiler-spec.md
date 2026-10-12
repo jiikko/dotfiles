@@ -19,7 +19,7 @@
 | プレビュー | 中央 90% のポップアップ 1 枚 (§4.6) | **ドラクエの対戦画面のように重なるタイル** (§0.2)。枠の中の飾り (§8.3) は写す |
 | `q` `Esc` | 終了 (`q` は cd 連携) | glogx 流・issues viewer に揃える: タイルの上は 1 枚閉じる / 木の上は **glogx ごと終了** / `F` で閉じて **git log 一覧へ戻る**。`Ctrl-C` は glogx の即終了。F を出したまま終えたら (`q` `Esc` `Ctrl-G` `Ctrl-C`)、30 分以内に同じ dir で開いた glogx は同じ場所の F から始まる (issue 710) |
 | `q` の cd 連携 (`--cwd-file`) | あり | **写さない** |
-| `o` `O` / ソート | 巡回・逆順 | **ソートは後回し** (名前順だけ)。`o` は glogx の「外のアプリで開く」のまま (`open <path>`)。`O` は「Finder で表示」(`open -R <path>`。issue 719) |
+| `o` `O` / ソート | 巡回・逆順 | **ソートは `S` (Sort by の巡回: name → modified → size) と設定の板 (Sort by / Reverse)** (issue 720。フォルダは自身の値で比べ、裏の走査の結果は使わない)。`o` は glogx の「外のアプリで開く」のまま (`open <path>`)。`O` は「Finder で表示」(`open -R <path>`。issue 719) |
 | `y` `Y` | なし | **パスをコピー** (`y` = 絶対パス・`Y` = root からの相対パス。glogx の `y` と同じ「素の値をコピー」。クリップボードは `subproc/clipboard`。issue 718) |
 | `e` | explode (§5.4。ファイルの上では親のフォルダが対象) | **フォルダの上は explode、ファイルの上とタイルの中はエディタで開く** (2026-10-09 ユーザー依頼「ツリービューでファイルに e を押したら neovim を開いて欲しい」「プレビューを開いて e」)。エディタは `tuikit/editor` ($VISUAL → $EDITOR → nvim。glogx の issues viewer の `e` と同じ)。タイルのジャンプモードの `e` は選んだパスを開く (issues viewer と同じ)。戻ったら読み直す (`ExecDone`) |
 | 他の衝突するキー | `s` シェル / `C` 経路以外を畳む / `J` `K` / `Space` `Tab` / `n` `N` / `Enter` | **treebeard のまま** (`o` 以外は上書き)。ファイラーの中では glogx の `s` (status viewer)・`C` (claude update) は効かない |
@@ -121,7 +121,7 @@
 
 - `~/.config/glogx/` の下に置く (ファイル名は実装で決める。例 `filer.toml`)。形式は treebeard と同じフラットな `key = value` で、
   変えた 1 行だけ書き換える (§7)。依存を足さずに書ける
-- 写す項目は §7 の表から × を除いたもの。ソート (Sort by / Reverse) も後回しなので外す
+- 写す項目は §7 の表から × を除いたもの。Sort by は name / modified / size の 3 つ (type は写さない)、Reverse は写す (issue 720)
 - Remember place (§7 の places) の保存先も `~/.config/glogx/` の下にする (treebeard は `~/.local/state/tb/places`)。🚨 推奨で、ユーザー未確認
 
 ### 0.6 単体でも起動する (2026-10-08 ユーザー回答「このファイラー単体でも起動できるようにして」)
@@ -380,7 +380,7 @@ ground 切替で使える heat palette が変わる (settings.rs: `Ground::palet
 
 1. explode 中: `{spinner} ` (route) + `exploding · {n} folders · ` (n=0 なら `reading`、text 色) + `esc` (太字 route) + ` stops · ` (muted)。そうでなく note が 3 秒 (`NOTE`) 以内なら `{msg} · ` (text)。
 2. git repo 内: `⎇ ` (route) + `{branch} · ` (text)、状態があれば `{ignored|untracked|staged|modified|conflict} · ` (git 色)。branch は `main ↑1 ↓2` 形式 (§5)。
-3. ソートが既定でなければ `⇅ {説明} · ` — **ソートは名前順のみ移植なら不要**。
+3. ソートが既定でなければ `⇅ {説明} · ` — **写さない**。今の並びは `S` を押したときの toast と設定の板で見せる (issue 720)。
 4. `{meta} · ` (muted): フォルダ = 読込済みなら `{n} items` (kids の数、dot 除外)、未読なら `folder`。walk 結果があれば ` · {human}{+ (未完のとき)}` を足す。ファイル = `human(size)` (`{n} B` / `{v:.1} KB|MB|GB|TB`、1024 進)。
 5. `● ` (heat 色) + `{ago}` + 未完なら ` (partial)` (text)。`ago`: `{s}s ago` / `{m}m ago` / `{h}h ago` / `{d}d ago` (<365d) / `{y:.1}y ago`。
 6. 空白 3 個 (muted)。
@@ -499,9 +499,9 @@ POPUP_T のばね `open` (0=カーソル行の 1 行 pill、1=全開)。矩形 =
 - 外部コマンド (glow/bat/file/git diff) は写さない前提。plain 経路 (`TextPreview::Plain`) が写す対象: head + wrap_text、色なし。
 - diff の取得 (git diff を写すなら): `git --no-optional-locks -c color.diff=always diff HEAD -- <path>` を repo top で。HEAD が無ければ `--cached`。両方空は `  (no changes against HEAD)`。
 
-### 5.6 ソート・名前比較 (tree.rs: `Tree::cmp`、名前順のみ)
+### 5.6 ソート・名前比較 (tree.rs: `Tree::cmp`。treefiler は name / modified / size。issue 720)
 
-比較キー: `lowercase(name)` を `natural_cmp` (natural_sort on) か通常比較し、同じなら元の名前で比較。`folders_first` なら先に「ディレクトリが上」。`natural_cmp`: 数字連の比較は先頭 0 を除いた桁数→辞書順→元の桁数、非数字は文字比較。`file2 < file10`、`file2 < file02`。(他のソートキーと `o`/`O` は写さない。)
+比較キー: `lowercase(name)` を `natural_cmp` (natural_sort on) か通常比較し、同じなら元の名前で比較。`folders_first` なら先に「ディレクトリが上」。`natural_cmp`: 数字連の比較は先頭 0 を除いた桁数→辞書順→元の桁数、非数字は文字比較。`file2 < file10`、`file2 < file02`。treefiler は Sort by に modified (新しい順) と size (大きい順。フォルダは 0 で名前順) を足した。同じ値は上の名前の比べ方で決め、Reverse はそれ全体を逆にする (Folders first は逆にしない)。type と `o`/`O` は写さない。
 
 ### 5.7 reload / 他
 
@@ -539,7 +539,7 @@ POPUP_T のばね `open` (0=カーソル行の 1 行 pill、1=全開)。矩形 =
 | `s` | シェル |
 | `q` | 終了 (cd 連携は写さないので単に終了) |
 | `Esc` / `Ctrl-C` | 終了 (explode 中の Esc は explode 中断のみ) |
-| `o` `O` | ソート切替 — **写さない** (treefiler では `o` = 外のアプリで開く・`O` = Finder で表示。§0.1) |
+| `o` `O` | ソート切替 — **写さない** (treefiler では `o` = 外のアプリで開く・`O` = Finder で表示、ソートの巡回は `S`。§0.1) |
 | `y` `Y` | (treebeard に無い) treefiler ではパスをコピー (絶対 / root からの相対。§0.1) |
 
 help が開いているとき: `?` 以外のキーは help を閉じるだけで他は何もしない (`q` でも終了しない)。
@@ -574,7 +574,7 @@ help は閉じる専用 (上記)。内容 (`ui.rs: KEYS`, 24 行)。ここに載
 
 保存先: `$TB_CONFIG` > `$XDG_CONFIG_HOME/tb/config.toml` (絶対パスのとき) > `~/.config/tb/config.toml`。フラットな `key = value` TOML。
 読み込み: 行を ` #` 以降で切って trim、`#` 始まり・空行は無視、`=` で分割、値は trim して `"` を除去。範囲外/未知は**その行だけ**無視 (既定のまま) し `line N: ...` を板の足元 (最大 2 件) に出す。
-保存: 変更した 1 キーの行だけ書き換え (無ければ追記)。他の行・コメントは保つ。新規ファイルの先頭は `# tb settings. Press , in tb to change them, or edit this file.`。値の表記: 数値は素、bool は `true/false`、文字列は `"..."`。Heat colors は paper ground のとき `paper_palette` に保存 (dark の `palette` は残す)。`sort` を変えたら `sort_reverse` も保存。環境変数 `TB_SORT` `TB_LIVE=off` `TB_GIT=off` `TB_GRAPHICS` はその回だけ優先。
+保存: 変更した 1 キーの行だけ書き換え (無ければ追記)。他の行・コメントは保つ。新規ファイルの先頭は `# tb settings. Press , in tb to change them, or edit this file.`。値の表記: 数値は素、bool は `true/false`、文字列は `"..."`。Heat colors は paper ground のとき `paper_palette` に保存 (dark の `palette` は残す)。`sort` を変えたら `sort_reverse` も保存 (treefiler は `sort_by` と `reverse` を別の項目として 1 つずつ保存する)。環境変数 `TB_SORT` `TB_LIVE=off` `TB_GIT=off` `TB_GRAPHICS` はその回だけ優先。
 
 板の項目 (`ITEMS`、36 件、順序どおり)。「保存キー」= 板のキー名 (file_key の例外は上記)。印: **×** = 写さない。
 
@@ -587,8 +587,8 @@ help は閉じる専用 (上記)。内容 (`ui.rs: KEYS`, 24 行)。ここに載
 | Layout | Column width (`max_name`) | 12–60 (step 2) | 28 | |
 | Layout | Columns (`columns`) | fit equal | fit | |
 | Layout | Name details (`details`) | off age size both | off | |
-| Order | Sort by (`sort`) | name modified size type | name | **×** (name 以外) |
-| Order | Reverse (`sort_reverse`) | on/off | off | **×** |
+| Order | Sort by (`sort`) | name modified size type | name | treefiler は `sort_by` で name / modified / size (type は ×) |
+| Order | Reverse (`sort_reverse`) | on/off | off | treefiler は `reverse` |
 | Order | Folders first (`folders_first`) | on/off | off | |
 | Order | Natural sort (`natural_sort`) | on/off | on | |
 | Order | Dotfiles (`show_hidden`) | shown/hidden (保存は true/false) | hidden | |

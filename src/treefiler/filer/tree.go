@@ -1,6 +1,7 @@
 package filer
 
 import (
+	"cmp"
 	"os"
 	"path/filepath"
 	"sort"
@@ -66,13 +67,48 @@ func (n *node) hidden() bool { return hiddenName(n.raw) }
 // hiddenName は dotfile の名前か (隠す設定の対象)。名前で判定する所 (裏の走査・explode・消えた項目) はここを通す。
 func hiddenName(name string) bool { return strings.HasPrefix(name, ".") }
 
-// 表示と並びの設定 (設定の板の Column width / Folders first / Natural sort)。applySettings が書き込む。
+// 表示と並びの設定 (設定の板の Column width と ORDER)。applyGlobals が書き込む。
 // 🚨 配色 (theme.go) と同じく UI の 1 本の goroutine だけが読み書きする。
 var (
-	labelMax         = 28 // 列の最大幅 (spec §3.2 の max_name 既定 28)
-	sortFoldersFirst = false
-	sortNatural      = true
+	labelMax = 28 // 列の最大幅 (spec §3.2 の max_name 既定 28)
+	order    = sortOrder{natural: true, by: "name"}
 )
+
+// sortOrder は並べ方 (設定の板の ORDER: Folders first / Natural sort / Sort by / Reverse。issue 720)。
+type sortOrder struct {
+	foldersFirst, natural, reverse bool
+	by                             string // name / modified (新しい順) / size (大きい順)
+}
+
+// less は a を b より上に置くか。Folders first は Reverse の外 (フォルダは常に上)。modified / size で同じなら名前で決める。
+// フォルダは自身の値で比べる: modified はフォルダの mtime、size ではフォルダの大きさに意味が無いので 0 (フォルダどうしは名前順)。
+// 裏の走査 (walk.go) の結果は使わない: 走査は配置されたフォルダにしか頼まず、巨大なフォルダで並びが揺れる (issue 720 のユーザー確認)。
+func (o sortOrder) less(a, b *node) bool {
+	if o.foldersFirst && a.dir != b.dir {
+		return a.dir
+	}
+	c := 0
+	switch o.by {
+	case "modified":
+		c = b.mtime.Compare(a.mtime) // 新しい方が上
+	case "size":
+		c = cmp.Compare(sizeKey(b), sizeKey(a)) // 大きい方が上
+	}
+	if c == 0 {
+		c = cmpName(a.raw, b.raw, o.natural)
+	}
+	if o.reverse {
+		c = -c
+	}
+	return c < 0
+}
+
+func sizeKey(n *node) int64 {
+	if n.dir {
+		return 0
+	}
+	return n.size
+}
 
 func (n *node) label() string {
 	n.cacheLabel()
@@ -148,7 +184,7 @@ func (n *node) load() {
 		}
 		kids = append(kids, newNode(e.Name(), info, n))
 	}
-	sortKids(kids, sortFoldersFirst, sortNatural)
+	sortKids(kids, order)
 	n.kids = kids
 	n.kidsVer++
 }
@@ -177,27 +213,22 @@ func (n *node) reload() {
 	}
 }
 
-// sortKids は名前順に並べる (spec §5.6)。foldersFirst ならフォルダを上に。
-func sortKids(kids []*node, foldersFirst, natural bool) {
-	sort.SliceStable(kids, func(i, j int) bool {
-		if foldersFirst && kids[i].dir != kids[j].dir {
-			return kids[i].dir
-		}
-		return lessName(kids[i].raw, kids[j].raw, natural)
-	})
+// sortKids は o の並べ方で並べる (spec §5.6・issue 720)。
+func sortKids(kids []*node, o sortOrder) {
+	sort.SliceStable(kids, func(i, j int) bool { return o.less(kids[i], kids[j]) })
 }
 
-// lessName は名前順 (大文字小文字を無視し、natural なら数字の連なりを数として比べる。同じなら元の名前。spec §5.6)。
-func lessName(a, b string, natural bool) bool {
+// cmpName は名前順 (大文字小文字を無視し、natural なら数字の連なりを数として比べる。同じなら元の名前。spec §5.6)。
+func cmpName(a, b string, natural bool) int {
 	la, lb := strings.ToLower(a), strings.ToLower(b)
 	c := strings.Compare(la, lb)
 	if natural {
 		c = naturalCmp(la, lb)
 	}
 	if c != 0 {
-		return c < 0
+		return c
 	}
-	return a < b
+	return strings.Compare(a, b)
 }
 
 // naturalCmp は数字の連なりを数として比べる (file2 < file10、file2 < file02)。

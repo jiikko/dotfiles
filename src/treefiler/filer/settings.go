@@ -33,6 +33,8 @@ type Settings struct {
 	Details       string // off / age / size / both
 	FoldersFirst  bool
 	NaturalSort   bool
+	SortBy        string // name / modified / size (issue 720)
+	Reverse       bool
 	ShowHidden    bool
 	Ground        string
 	Accent        string
@@ -54,7 +56,7 @@ type Settings struct {
 }
 
 func defaultSettings() Settings {
-	return Settings{RowSpacing: 0, ColumnGap: 3, MaxName: 28, Columns: "fit", Details: "off", NaturalSort: true,
+	return Settings{RowSpacing: 0, ColumnGap: 3, MaxName: 28, Columns: "fit", Details: "off", NaturalSort: true, SortBy: "name",
 		Ground: "dark", Accent: "indigo", Palette: "ember", HeatRange: "5y", FocusDim: 6, Lines: "double", BranchOffset: 1,
 		Legend: true, Speed: "normal", Live: true, Ripples: true, Git: true, DimIgnored: true, DimFloor: 5, Wrap: true}
 }
@@ -124,6 +126,8 @@ var items = []item{
 	choiceItem("LAYOUT", "Name details", "details", "名前の後ろに更新からの時間・大きさを薄く出す", fixed("off", "age", "size", "both"), func(s *Settings) *string { return &s.Details }),
 	boolItem("ORDER", "Folders first", "folders_first", "フォルダをファイルより上に並べる", func(s *Settings) *bool { return &s.FoldersFirst }),
 	boolItem("ORDER", "Natural sort", "natural_sort", "file2 を file10 より前に並べる", func(s *Settings) *bool { return &s.NaturalSort }),
+	choiceItem("ORDER", "Sort by", "sort_by", "name = 名前順 / modified = 更新の新しい順 / size = 大きい順 (フォルダは名前順)。S キーでも巡回", fixed(sortByChoices...), func(s *Settings) *string { return &s.SortBy }),
+	boolItem("ORDER", "Reverse", "reverse", "Sort by の向きを逆にする (Folders first はそのまま)", func(s *Settings) *bool { return &s.Reverse }),
 	boolItem("ORDER", "Dotfiles", "show_hidden", ". で始まる項目を見せる (. キーと同じ)", func(s *Settings) *bool { return &s.ShowHidden }),
 	choiceItem("LOOK", "Ground", "ground", "地の色。dark か紙 (parchment / vellum)", fixed("dark", "parchment", "vellum"), func(s *Settings) *string { return &s.Ground }),
 	choiceItem("LOOK", "Accent", "accent", "線・選択・強調の色 (紙の地では固定)", fixed(accentOrder...), func(s *Settings) *string { return &s.Accent }),
@@ -316,8 +320,26 @@ func indexOfStr(ss []string, s string) int {
 // applyGlobals は設定をパッケージ変数 (配色・名前の幅・並び) へ写す。New と applySettings の両方が通る。
 func (m *Model) applyGlobals() {
 	applyTheme(&m.set)
-	labelMax, sortFoldersFirst, sortNatural = m.set.MaxName, m.set.FoldersFirst, m.set.NaturalSort
+	labelMax = m.set.MaxName
+	order = sortOrder{foldersFirst: m.set.FoldersFirst, natural: m.set.NaturalSort, reverse: m.set.Reverse, by: m.set.SortBy}
 }
+
+// sortByChoices は Sort by の値の巡回の順 (設定の板と S キー)。
+var sortByChoices = []string{"name", "modified", "size"}
+
+// orderKeys は並びに効く設定のキー。変えたら全部のフォルダを並べ直す (足し忘れると並びが変わらないので 1 か所で持つ)。
+var orderKeys = map[string]bool{"folders_first": true, "natural_sort": true, "sort_by": true, "reverse": true}
+
+// cycleSortBy は S キー (Sort by を name → modified → size → name と巡回し、保存する)。
+func (m *Model) cycleSortBy() {
+	m.set.SortBy = sortByChoices[(indexOfStr(sortByChoices, m.set.SortBy)+1)%len(sortByChoices)]
+	m.applySettings("sort_by")
+	if m.saveErr == "" { // 保存できなかったときは applySettings が ✗ の知らせを出している
+		m.notices = append(m.notices, Notice{Text: "並び: " + sortByLabel[m.set.SortBy], OK: true}) // ステータスバーに ⇅ は出さないので、押した後の並びをここで見せる
+	}
+}
+
+var sortByLabel = map[string]string{"name": "名前順", "modified": "更新の新しい順", "size": "大きい順"}
 
 func (m *Model) applySettings(key string) {
 	errs := []error{}
@@ -325,7 +347,7 @@ func (m *Model) applySettings(key string) {
 		errs = append(errs, m.save("palette"))
 	}
 	m.applyGlobals()
-	if key == "folders_first" || key == "natural_sort" {
+	if orderKeys[key] {
 		m.resort(m.root)
 	}
 	if key == "git" {
@@ -368,7 +390,7 @@ func (m *Model) resort(n *node) {
 	if !n.dir || !n.loaded {
 		return
 	}
-	sortKids(n.kids, m.set.FoldersFirst, m.set.NaturalSort)
+	sortKids(n.kids, order) // applyGlobals が先に order を写している
 	n.kidsVer++
 	for _, k := range n.kids {
 		m.resort(k)
