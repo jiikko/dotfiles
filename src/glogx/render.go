@@ -269,7 +269,7 @@ func decorateVerbatim(commits []Commit, statuses map[string]CIState, o RenderOpt
 	for _, l := range o.Verbatim {
 		if l.Header {
 			c := commits[l.CommitIdx]
-			text := StatusGlyph(stateFor(statuses, c.SHA), o.Colored, o.Spinner) + " " + l.Text + prBadge(c.SHA, o)
+			text := StatusGlyph(stateFor(statuses, c.SHA), o.Colored, o.Spinner) + " " + prBadgeLead(c.SHA, o) + l.Text
 			out = append(out, Line{Text: text, CommitIdx: l.CommitIdx, Header: true})
 			continue
 		}
@@ -303,14 +303,15 @@ func RenderStatic(commits []Commit, statuses map[string]CIState, o RenderOpts) s
 	return strings.Join(texts, "\n")
 }
 
-// commitHeaderPrefix は "記号 SHA (decorations)" を組み立てる。shaText は表記の違い
-// (short SHA / "commit <full>") を呼び出し側が渡す。PR バッジ・subject は含めない
-// (行末・列揃えの都合で呼び出し側が付ける)。3 つのレンダラ間で共通化し、SHA 表記や
+// commitHeaderPrefix は "記号 [lead]SHA (decorations)" を組み立てる。shaText は表記の違い
+// (short SHA / "commit <full>") を呼び出し側が渡す。lead は記号の直後に置く付加情報 (medium の PR バッジ。
+// prBadgeLead)。subject は含めない (列揃えの都合で呼び出し側が付ける)。3 つのレンダラ間で共通化し、SHA 表記や
 // decoration の表示条件を 1 箇所で変えられるようにする。
-func commitHeaderPrefix(shaText, decoration string, state CIState, o RenderOpts) string {
+func commitHeaderPrefix(lead, shaText, decoration string, state CIState, o RenderOpts) string {
 	var b strings.Builder
 	b.WriteString(StatusGlyph(state, o.Colored, o.Spinner))
 	b.WriteString(" ")
+	b.WriteString(lead)
 	b.WriteString(paint(shaText, ansiYellow, o.Colored))
 	if decoration != "" {
 		b.WriteString(" ")
@@ -322,7 +323,7 @@ func commitHeaderPrefix(shaText, decoration string, state CIState, o RenderOpts)
 // renderOnelineRow は --oneline の 1 行。列: 記号 / short SHA / (decorations) / subject / author / 相対日時。
 func renderOnelineRow(c Commit, state CIState, subjectWidth, authorWidth int, o RenderOpts) string {
 	var b strings.Builder
-	b.WriteString(commitHeaderPrefix(c.ShortSHA, c.Decoration, state, o))
+	b.WriteString(commitHeaderPrefix("", c.ShortSHA, c.Decoration, state, o))
 	b.WriteString(" ")
 	subject := truncateDisp(c.Subject, subjectWidthCap, "…")
 	b.WriteString(fillRight(subject, subjectWidth))
@@ -334,14 +335,31 @@ func renderOnelineRow(c Commit, state CIState, subjectWidth, authorWidth int, o 
 	return b.String()
 }
 
-// prBadge はコミットに紐づく PR のバッジ (" #123")。行末に置く (列揃えを崩さない)。
+// prBadge はコミットに紐づく PR のバッジ (" #123")。--oneline の行末に置く (列揃えを崩さない)。
 // 色は GitHub の慣例: OPEN=緑 / MERGED=マゼンタ / CLOSED=赤。
 func prBadge(sha string, o RenderOpts) string {
+	if t := prBadgeText(sha, o); t != "" {
+		return " " + t
+	}
+	return ""
+}
+
+// prBadgeLead は medium のヘッダーで記号の直後に置く PR バッジ ("#123 ")。行末に置くと、decoration で長くなった
+// ヘッダーが端末幅で切られてバッジから消える。git の出力 (commit <sha> (decorations)) の途中には差し込まない
+// (verbatim の行は git log の出力を改変しない契約。TestRenderLinesVerbatimDecoratesHeaderOnly)。
+func prBadgeLead(sha string, o RenderOpts) string {
+	if t := prBadgeText(sha, o); t != "" {
+		return t + " "
+	}
+	return ""
+}
+
+func prBadgeText(sha string, o RenderOpts) string {
 	pr := o.PRs[sha]
 	if pr == nil {
 		return ""
 	}
-	return " " + paint(fmt.Sprintf("#%d", pr.Number), prStateColor(pr.State), o.Colored)
+	return paint(fmt.Sprintf("#%d", pr.Number), prStateColor(pr.State), o.Colored)
 }
 
 // prStateColor は PR 状態の表示色 (GitHub の慣例: OPEN=緑 / MERGED=マゼンタ / CLOSED=赤)。
@@ -371,8 +389,7 @@ func prStateColor(state string) string {
 func mediumLines(c Commit, idx int, state CIState, o RenderOpts) []Line {
 	var lines []Line
 	var h strings.Builder
-	h.WriteString(commitHeaderPrefix("commit "+c.SHA, c.Decoration, state, o))
-	h.WriteString(prBadge(c.SHA, o))
+	h.WriteString(commitHeaderPrefix(prBadgeLead(c.SHA, o), "commit "+c.SHA, c.Decoration, state, o))
 	lines = append(lines, Line{Text: h.String(), CommitIdx: idx, Header: true})
 	lines = append(lines, Line{Text: "Author: " + c.Author + " <" + c.AuthorEmail + ">", CommitIdx: idx})
 	lines = append(lines, Line{Text: "Date:   " + c.Date, CommitIdx: idx})
@@ -412,7 +429,7 @@ func RenderCached(head *Commit, state CIState, diff string, colored bool, spinne
 	var b strings.Builder
 	b.WriteString("HEAD CI: ")
 	// staged 変更に decoration は無い。RenderOpts は表記共通化のための最小構築。
-	b.WriteString(commitHeaderPrefix(head.ShortSHA, "", state, RenderOpts{Colored: colored, Spinner: spinner}))
+	b.WriteString(commitHeaderPrefix("", head.ShortSHA, "", state, RenderOpts{Colored: colored, Spinner: spinner}))
 	b.WriteString(" ")
 	b.WriteString(head.Subject)
 	b.WriteString("\nStaged changes:\n")

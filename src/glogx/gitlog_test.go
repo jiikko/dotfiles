@@ -463,6 +463,9 @@ func TestLoadCommitDiffRealRepo(t *testing.T) {
 // verbatim 方式の統合: 実リポジトリで LoadLogDisplay + VerbatimLines の照合が成立し、
 // 本文行が git log 実出力と一致すること。
 func TestLoadLogDisplayVerbatimRealRepo(t *testing.T) {
+	// global / system の git 設定を読まない: log.decorate が設定された環境では --decorate を外す退行が見えなくなる
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	dir := t.TempDir()
 	t.Chdir(dir)
 	run := func(args ...string) {

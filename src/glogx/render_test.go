@@ -170,7 +170,7 @@ func TestRenderLinesHeaderMapping(t *testing.T) {
 }
 
 func TestPRBadge(t *testing.T) {
-	// コミット行末尾の PR バッジ (行末配置なので oneline の列揃えを崩さない)
+	// PR バッジ: medium は記号の直後 (decoration で長いヘッダーが幅で切られても残る)、oneline は行末 (列揃えを崩さない)
 	prs := map[string]*PRRef{
 		"a": {Number: 12, State: "OPEN"},
 		"b": nil, // 確認済みで PR なし
@@ -178,8 +178,8 @@ func TestPRBadge(t *testing.T) {
 	// medium: ヘッダー行に #12
 	lines := RenderLines(testCommits(), map[string]CIState{"a": StateSuccess, "b": StateSuccess},
 		RenderOpts{PRs: prs})
-	if !strings.Contains(lines[0].Text, "#12") {
-		t.Errorf("medium ヘッダーに PR バッジがない: %q", lines[0].Text)
+	if !strings.HasPrefix(lines[0].Text, "✅ #12 commit a (HEAD -> master)") {
+		t.Errorf("medium ヘッダーの PR バッジが記号の直後に無い: %q", lines[0].Text)
 	}
 	// PR なしコミットには出ない
 	for _, l := range lines {
@@ -572,10 +572,11 @@ func TestRenderLinesVerbatimDecoratesHeaderOnly(t *testing.T) {
 	if !strings.HasPrefix(lines[0].Text, "✅ ") {
 		t.Errorf("ヘッダーに CI 記号が前置されていない: %q", lines[0].Text)
 	}
-	if !strings.Contains(lines[0].Text, "#7") {
-		t.Errorf("PR バッジが付いていない: %q", lines[0].Text)
+	// PR バッジは git の出力より前 (行末だと decoration で長くなったヘッダーと一緒に幅で切られる)
+	if !strings.HasSuffix(stripANSI(lines[0].Text), "#7 "+stripANSI(raw[0])) {
+		t.Errorf("PR バッジが git 出力の直前に無い: %q", lines[0].Text)
 	}
-	if !strings.Contains(lines[0].Text, raw[0]) {
+	if !strings.HasSuffix(lines[0].Text, raw[0]) {
 		t.Errorf("ヘッダーの git 出力部分が改変された: %q", lines[0].Text)
 	}
 	if lines[1].Text != raw[1] {
