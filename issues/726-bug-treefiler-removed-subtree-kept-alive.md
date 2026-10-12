@@ -30,7 +30,9 @@ HeapInuse は 20.5 MB のまま。下の 4 つの経路を全部外すと 6.3 MB
 
 - 詰めた slice の後ろのポインタは nil で埋める (`clear(s[len(kept):])`)。`virtPool` は使わなかったブロックも中身を空にする (len を 0 にするだけでは cap の先の
   ポインタが残るので、残った分を nil で埋めるか作り直す)
-- `removed` は仮想化していない親でも、使い終わったら (次の配置で写し終えたら) 捨てる。`m.refs` は配置のたびに消えた親のキーを落とす
+- `removed` を読むのは次の step の `stepVirt` (直前の step で仮想化した親) だけ (`ghostCulled`・`realizeVirtual`。`reviveAnim` は `virtSeq==0` なら nil)。
+  🚨 「使い終わったら捨てる」を「配置を写した時点」と読むと危険 (View の layout で作った `removed` を、View の後の `realizeVirtual` と次の step の `ghostCulled` の両方が読む)。
+  捨ててよいのは、その step で仮想化しなかった親の分だけ。`m.refs` は layout ごとの覚えなので、次の layout の始め (今の `refsSeq` で消すのと同じ時点) に消す
 - 🚨 保持を外すと描画が変わる経路が無いことを、712 の等価性のテスト (`filer/virt_test.go`) と `TREEFILER_VIRT_SEEDS=300 go test -run TestVirtualizedRandomOps ./filer` で確かめる
 - 回帰テスト: weak pointer (`weak.Make`) で「消えた部分木の node が回収されること」を固定し、4 つの経路を 1 つずつ戻す変異で red を確かめる
   (監査の実験のテストを下敷きにする。4e の scratchpad にあったものを 5f の `tmp/` へ写した。回帰テストとして repo に入れる)
@@ -47,3 +49,6 @@ HeapInuse は 20.5 MB のまま。下の 4 つの経路を全部外すと 6.3 MB
 ## 進捗
 
 - 2026-10-12: 起票 (4e の監査の結果。5f が各経路のコードの実在を確かめた)
+- 2026-10-12: 反証レビュー (sonnet) で中核は反証できず。監査のテストで再現: 全部を外すと HeapInuse 20.2〜20.9 MB → 6.2〜6.4 MB、1 つずつ残すとどれも回収されない、
+  全部を外した後に到達経路は無い。追加の指摘: 検索を閉じた後も `matches` / `origin` が次の `/` まで node を掴む (issue 728 の 3 は「未確認」でなく同じ種類の保持。コードを読んだだけ) /
+  `removed` を捨てる時点の条件を方針に書いた
