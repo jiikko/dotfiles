@@ -128,6 +128,11 @@ func (m *Model) promptKey(key, text string) {
 		if n := len(p.history); n == 0 || p.history[n-1] != cmd {
 			p.history = append(p.history, cmd)
 		}
+		if n := len(p.history); n > historyKeep { // メモリの上も読み込みと同じ件数に切る (1 つの画面で打ち続けても伸びない。issue 728 の 4)
+			copy(p.history, p.history[n-historyKeep:])
+			clear(p.history[historyKeep:])
+			p.history = p.history[:historyKeep]
+		}
 		appendHistory(historyPath(), cmd) // 続けて同じでも足す (読むときに畳む。history.go)
 		m.exec = &ExecRequest{Dir: m.workDir(), Argv: []string{"/bin/sh", "-c", waitIfQuick, "treefiler", userShell(), cmd}, Env: m.execEnv()}
 	case "esc", "ctrl+c":

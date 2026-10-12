@@ -211,3 +211,18 @@ func TestBangHistoryDropsOverlongLastLine(t *testing.T) {
 		t.Fatalf("履歴 = %d 件 / 行数 = %d", len(got), lines)
 	}
 }
+
+// 1 つの画面で打ち続けた `!` の履歴も、読み込みと同じ件数 (historyKeep) で頭から捨てる (issue 728 の 4)。
+func TestPromptHistoryInMemoryIsCapped(t *testing.T) {
+	m := newTest(t)
+	for i := range historyKeep + 30 {
+		m.HandleKey("!")
+		typeText(m, "echo "+strconv.Itoa(i))
+		m.HandleKey("enter")
+		m.TakeExec()
+	}
+	h := m.prompt.history
+	if len(h) != historyKeep || h[0] != "echo 30" || h[len(h)-1] != "echo "+strconv.Itoa(historyKeep+29) {
+		t.Fatalf("履歴 %d 件 (先頭 %q・末尾 %q), want %d 件で古い方から捨てる", len(h), h[0], h[len(h)-1], historyKeep)
+	}
+}

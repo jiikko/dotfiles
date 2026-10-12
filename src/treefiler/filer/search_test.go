@@ -213,3 +213,20 @@ func TestSearchNoMatchAfterJumpGoesToOriginAncestor(t *testing.T) {
 		t.Errorf("カーソルが %q。消えた origin の生きている祖先 (root) へ戻るはず", m.cur.raw)
 	}
 }
+
+// 打った字を消して空欄に戻したら、始めた位置へ戻る (検索は開いたまま)。空欄は列を作らずに返す (issue 723)。
+func TestSearchBackToEmptyReturnsToOrigin(t *testing.T) {
+	m := newTest(t)
+	origin := m.cur
+	m.HandleKey("/")
+	typeText(m, "file")
+	if m.cur == origin {
+		t.Fatal("前提: 打つと一致へ飛ぶ")
+	}
+	for range 4 {
+		m.HandleKey("backspace")
+	}
+	if !m.search.active || m.cur != origin || len(m.search.matches) != 0 {
+		t.Fatalf("空欄に戻したのに 起点へ戻らない / 一致が残る (active=%v cur=%s)", m.search.active, m.cur.raw)
+	}
+}

@@ -106,3 +106,28 @@ func BenchmarkMoveHugeFolder(b *testing.B) {
 		}
 	})
 }
+
+// BenchmarkSearchKeyHugeFolder は巨大なフォルダの中の検索の打鍵 (`99` から backspace + 1 文字 = 空でない検索語での一致の引き直し 2 回。
+// issue 723。空欄へ戻す打鍵は列を作らないので、比べる前後で同じ数の引き直しになるよう空欄を通らない)。
+func BenchmarkSearchKeyHugeFolder(b *testing.B) {
+	eachHugeSize(b, func(b *testing.B, m *Model) {
+		m.HandleKey("/")
+		m.HandleKey("9")
+		m.HandleKey("9")
+		for range b.N {
+			m.HandleKey("backspace")
+			m.HandleKey("9")
+		}
+	})
+}
+
+// BenchmarkSearchStepHugeFolder は検索中の tab (次の一致へ)。
+func BenchmarkSearchStepHugeFolder(b *testing.B) {
+	eachHugeSize(b, func(b *testing.B, m *Model) {
+		m.HandleKey("/")
+		m.HandleKey("9")
+		for range b.N {
+			m.HandleKey("tab")
+		}
+	})
+}

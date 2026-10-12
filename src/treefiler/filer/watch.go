@@ -111,7 +111,7 @@ func (w *watcher) loop(stop chan struct{}, ch chan struct{}) {
 	defer close(ch)
 	t := time.NewTicker(watchEvery)
 	defer t.Stop()
-	metas := map[string]dirMeta{} // この loop だけが使う (開き直すと作り直す)
+	var metas map[string]dirMeta // この loop だけが使う (開き直すと作り直す)
 	for {
 		select {
 		case <-stop:
@@ -125,31 +125,9 @@ func (w *watcher) loop(stop chan struct{}, ch chan struct{}) {
 		if paused {
 			continue
 		}
+		var next map[string]map[string]entrySig
 		var found []dirChange
-		next := make(map[string]map[string]entrySig, len(dirs))
-		for _, d := range dirs {
-			var mtime time.Time
-			if info, err := os.Lstat(d); err == nil {
-				mtime = info.ModTime()
-			}
-			meta, read := metas[d].next(mtime)
-			metas[d] = meta
-			if !read {
-				continue // 基準はそのまま (commit は今の want に在る基準を消さない)
-			}
-			sig := readSig(d)
-			metas[d] = dirMeta{mtime: mtime, entries: len(sig)}
-			next[d] = sig
-			w.mu.Lock()
-			old, ok := w.seen[d]
-			w.mu.Unlock()
-			if !ok || sig == nil {
-				continue
-			}
-			if c, changed := diffSig(d, old, sig); changed {
-				found = append(found, c)
-			}
-		}
+		metas, next, found = w.poll(dirs, metas)
 		select {
 		case <-stop:
 			return // 止めた後の周は書き込まない (遅い ReadDir の間に開き直すと、新しいポーリングと混ざる)
@@ -165,6 +143,38 @@ func (w *watcher) loop(stop chan struct{}, ch chan struct{}) {
 			}
 		}
 	}
+}
+
+// poll は 1 周ぶん: dirs を読み (大きいフォルダは間引く)、基準と比べた変化を返す。metas は今の dirs のぶんだけを持つ新しい map で返す
+// (見なくなったフォルダの記録を捨てる。前の map を書き足していくと、開いて閉じたフォルダの数だけ伸び続けた。issue 728 の 1)。
+func (w *watcher) poll(dirs []string, prev map[string]dirMeta) (map[string]dirMeta, map[string]map[string]entrySig, []dirChange) {
+	metas := make(map[string]dirMeta, len(dirs))
+	next := make(map[string]map[string]entrySig, len(dirs))
+	var found []dirChange
+	for _, d := range dirs {
+		var mtime time.Time
+		if info, err := os.Lstat(d); err == nil {
+			mtime = info.ModTime()
+		}
+		meta, read := prev[d].next(mtime)
+		metas[d] = meta
+		if !read {
+			continue // 基準はそのまま (commit は今の want に在る基準を消さない)
+		}
+		sig := readSig(d)
+		metas[d] = dirMeta{mtime: mtime, entries: len(sig)}
+		next[d] = sig
+		w.mu.Lock()
+		old, ok := w.seen[d]
+		w.mu.Unlock()
+		if !ok || sig == nil {
+			continue
+		}
+		if c, changed := diffSig(d, old, sig); changed {
+			found = append(found, c)
+		}
+	}
+	return metas, next, found
 }
 
 // bigDirEntries を超えるフォルダは、フォルダ自身の mtime が変わらない限り bigDirEvery 周に 1 回だけ全部を読む。

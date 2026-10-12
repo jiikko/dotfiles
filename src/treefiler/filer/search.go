@@ -1,7 +1,6 @@
 package filer
 
 import (
-	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -118,24 +117,23 @@ func isWordStart(name string, i int) bool {
 	return unicode.IsLower(prev) && unicode.IsUpper(cur)
 }
 
-// column はカーソルの列 (同じ深さの見えている項目を上から)。
+// column はカーソルの列 (同じ深さの見えている項目を上から)。画面の外の項目も検索の対象 (仮想化した配置は画面の近くしか持たない)。
+// 配置 (layout.go の layoutWith) は、列ごとに上の列の開いたフォルダの順に、その見せる子のブロックを重ねずに並べるので、
+// 列の上からの並びは「上の列の開いたフォルダの見せる子 (visKids の順) を順に繋いだもの」と同じ。配置を作って y で並べ直さない
+// (5 万件の列で 1 打鍵 24ms かかっていた。issue 723)。🚨 layoutWith の「次の列に置く親」の条件を変えたら、ここも合わせる
+// (search_test.go の TestColumnMatchesLayout が配置を正解役に突き合わせる)。
 func (m *Model) column(of *node) []*node {
-	pos := m.layoutAll() // 画面の外の項目も検索の対象 (仮想化した配置は画面の近くしか持たない)
-	d := of.depth()
-	var col []*node
-	for n := range pos {
-		if n.depth() == d {
-			col = append(col, n)
+	col := []*node{m.root}
+	for range of.depth() {
+		var next []*node
+		for _, p := range col {
+			if p.dir && p.expanded {
+				next = append(next, m.kids(p)...)
+			}
 		}
+		col = next
 	}
-	sortByY(col, pos)
 	return col
-}
-
-// sortByY は上から並べる。🚨 挿入ソートにしない: map の順に集めた列は整列していないので O(n²) になり、
-// 5 万件のフォルダで検索の 1 打鍵が 9.66 秒固まった (監査で実測 2026-10-09。issue 691)
-func sortByY(ns []*node, pos map[*node]place) {
-	sort.Slice(ns, func(i, j int) bool { return pos[ns[i]].y < pos[ns[j]].y })
 }
 
 // findMatches は列の中で query に一致する項目を、良い段から (同じ段は上から) 並べる。
@@ -205,6 +203,11 @@ func (m *Model) endSearch(restore bool) {
 // refreshMatches は検索語が変わった後に一致を引き直し、いちばん良い一致へ移る (無ければ始めた位置へ)。
 func (m *Model) refreshMatches() {
 	s := &m.search
+	if s.line.Empty() { // 空欄は何にも一致しない (列を作らない)
+		s.matches, s.at = nil, 0
+		m.restoreOrigin()
+		return
+	}
 	s.matches = findMatches(m.column(s.origin), s.line.String())
 	s.at = 0
 	if len(s.matches) > 0 {

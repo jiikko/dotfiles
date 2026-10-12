@@ -24,3 +24,9 @@
 - 2026-10-12: 起票
 - 2026-10-12: 反証レビュー (sonnet) の結果を各項目に書いた (1 は本当で小さい・2 は再現せず・3 は本当で 726 で直す)
 - 2026-10-12: 3 を issue 726 で直した。残りは 1 (watch.go の metas。小さい)・2 (再現せず)・4 (メモリ上の `!` の履歴に上限が無い。1 件は 1 行で小さい)
+- 2026-10-12 (dotfiles-4e): 残りを片付けた。commit「perf(treefiler): 検索の列を配置を作らずに見せる子から作る (issue 723)」に同梱
+  - 1: watch.go の 1 周を `poll` に切り出し、`metas` を今見ているフォルダのぶんだけの新しい map で返す。`TestPollDropsMetasOfUnwatchedDirs` (前の map を使い回す変異で red)
+  - 4: `!` の履歴をメモリの上でも `historyKeep` (200) 件に切る (古い方から捨てる・後ろの参照は clear)。`TestPromptHistoryInMemoryIsCapped` (切らない変異で red)
+  - 2: 閉じる。反証レビューの実験 (親を畳んで 3000 件の子フォルダを消して読み直す) で `vis` を残したままでも回収された。`vis.kids` は次の配置で作り直され、
+    畳んだフォルダの覚えは親の kids から外れた時点で node ごと手放される (issue 726 の `TestRemovedFolderIsCollectedAfterSearch` と同じ回収の経路)
+  - 敵対レビュー (723 と一緒、opus): poll の切り出しで大きいフォルダの間引き・止まった周・開き直しの扱いは変わらない / 履歴の位置 (`p.hist`) は開くたびに取り直すので切っても範囲外にならない、で壊せず
