@@ -243,6 +243,12 @@ type diffMsg struct {
 // loadCommitDiff はテストで実 git を叩かないための差し替え点。
 var loadCommitDiff = LoadCommitDiff
 
+// browseModel のメソッドを塊ごと (CI の取得とポーリング / push・pull と演出 / パネルと重ねる板 / 全画面への振り分け / 描画) に
+// 別ファイルへ分けて tui.go への変更の集中を減らす案は、issue 743 で実測して見送った。直近 90 日に tui.go を触った 262 commit の
+// うち、移した後に tui.go へ触らずに済むのは 2〜3 割だけで、残りはフィールドの追加・handleKey・update の case を同時に触る
+// (並行セッションがぶつかるのも主にフィールドと handleKey)。CI の取得とパネルは panelSHA / mergeCIBatch / settleAwaitCI で
+// 絡んでいて、分けても往復が増える (issue 018 の却下理由と同じ)。再提起するなら、移した後に tui.go へ触らずに済む commit の
+// 割合を同じ方法 (git log -p -U0 の hunk の関数見出し) で数え直して添えること。
 type browseModel struct {
 	commits        []Commit
 	statuses       map[string]CIState // 表示用 (キャッシュ + 取得結果のマージ)

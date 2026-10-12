@@ -1,7 +1,5 @@
 # 743 (refactor): glogx の tui.go の変更の集中を減らす (update の case を機能ごとのメソッドへ・塊ごとのファイルへ)
 
-> 🚨 **担当中: treefiler の行番号のセッション**（2026-10-12〜）
-
 起票日: 2026-10-12
 
 ## 概要
@@ -48,9 +46,21 @@
 - `.github/workflows/doctor.yml` の paths filter が `src/glogx/tui.go` を見る (doctor への振り分けの配線)。移した先のファイルを足す
 - パッケージ変数は動かさない (ファイルをまたぐと初期化の順序が変わりうる)。動かすのは関数・メソッドだけ
 
-## 進捗
+## 結果: 見送り (2026-10-12 ユーザー判断)
 
-- [ ] 設計のレビュー
-- [ ] Extract Method と塊ごとのファイルへの移動 (テスト・lint・等価の確認)
-- [ ] tui.go に掛かる検査の張り替えと変異での確認
-- [ ] CLAUDE.md の地図の更新
+設計の反証レビュー (sonnet 1 本) と実測で、効果が小さいと分かったので実装しない。
+
+- **移しても tui.go への変更は大きくは減らない**: 直近 90 日に tui.go を触った 262 commit を、`git log -p -U0` の hunk の関数見出しで分類した。
+  移した後も tui.go に残る所 (`browseModel` のフィールド・`handleKey`・`Init`・`newBrowseModel`・`update` の振り分け・tick の駆動・import / const / var) に
+  1 つも触らない commit は 58 本 (22%。レビューの数え方では 39 本 = 15%)。`update` の case の本体を抜き出す分を足しても上限は 3 割ほど。
+  残りは「補助のメソッド + フィールドの追加 + handleKey + case」を同時に触る
+- **並行セッションのぶつかり先も残る**: 主なぶつかり先は `browseModel` のフィールド (63 hunk) と `handleKey` (194 hunk) で、どちらも移せない
+- **塊の境目が絡んでいる**: CI の取得とパネルは `panelSHA` / `panelCursor` (tui.go 内に 53 か所) / `mergeCIBatch` / `clearDetailsFlags` / `settleAwaitCI` で絡み、
+  tick の case は zoom・filer・glide・push の演出・toast・スピナーを同時に進める。分けると読むときに往復が増える。
+  issue 018 の却下理由 (抜き出しても結合を露出させるだけ) と `src/glogx/CLAUDE.md` の「責務の見た目で割らない」に当たる
+- 3 問の答えは「探すコスト」しか残らず、それも CLAUDE.md の地図で足りる
+- 縮小版 (`update` の case の本体だけを tui.go の中でメソッドにする) も、`update` が読みやすくなるだけで変更の集中は減らないので採らなかった
+
+却下の理由と再提起の条件 (同じ数え方で割合を数え直して添える) は、`src/glogx/tui.go` の `browseModel` の定義の直前にも書いた。
+
+使い捨ての道具 (case を抜き出す extractcase) は scratchpad に置いただけで、repo には入れていない。
