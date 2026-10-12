@@ -7,7 +7,7 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
 
 | 意味 | 色 | tmux 側 | nvim 側 |
 |---|---|---|---|
-| **現在地** (いまここ) | 蛍光オレンジ `#FF5F00`/202 (cterm 完全一致) | `@cur-accent` (current window 島) | `palette.accent.current_accent` (bufferline 選択タブの pill。両端キャップも同色) |
+| **現在地** (いまここ) | 蛍光オレンジ `#FF5F00`/202 (cterm 完全一致) | `@cur-accent` (current window 島。先頭の目印 ❯ だけは `@cur-mark-bg`/`@cur-mark-fg` = 赤 196 地に黄 226) | `palette.accent.current_accent` (bufferline 選択タブの pill。両端キャップも同色) |
 | 最近作業した (鮮度) | バイオレット ramp 201→164→127→90→53 (黄昏の残光) | `@fade-*` (放置フェード) | — (対応概念なし。持ち込まない) |
 | 選択中テキスト | dark2 `#504945`/239 | — | `palette.dark2` (Visual)。gruvbox 公式の選択地。🚨 **明るい地を選ばないこと** — 2026-07-16〜2026-09-03 は暖ベージュ Kraft `#D4A27F`/180 だったが、前景色が暗地向けに設計されているため選択すると文字が地に溶けた (実測 最悪 **1.10:1**。String 142 と Type 214 がほぼ不可視)。dark2 なら同じ実測で 2.40:1。地の輝度と最悪比は単調 (dark0 0.021→4.02:1 / dark1 0.041→3.16:1 / dark2 0.069→2.40:1 / dark3 0.111→1.77:1 / Kraft 0.414→1.10:1) なので、`tests/nvim/test_lsp_reference_hl.sh` は**輝度の上限 0.08** で原因側を止める。🚨 **Visual は他の group から link されている** (nvim 既定の `LspReferenceText` / `LspReferenceTarget` / `LspSignatureActiveParameter` / `SnippetTabstop`、blink の `BlinkCmpDocCursorLine`)。4 + 1 とも下行で link を切ってあるが、**dark2 になった今は link が残っていても実害は無い** (中立な暗地なので。MatchParen / lualine_c_* も同じ地を正当に使う) |
 | LSP 参照 / hover 範囲 | dark1 `#3c3836`/237 | — | `palette.dark1` (`LspReferenceText` = documentHighlight / `LspReferenceTarget` = hover の対象範囲)。**前景色を殺さない暗地であることが要件** — Kraft が漏れていた頃は Go で `func` にカーソルを置くと gopls が `func` + 全 `return` を返し、赤いキーワードが 1.5:1 で読めなかった。MatchParen (vim-matchup の対応ハイライト) は dark2 + bold + underline なので地色で区別できる。`tests/nvim/test_lsp_reference_hl.sh` が両 colorscheme 分岐で 3.0:1 を検査する |
@@ -31,7 +31,7 @@ tmux (ステータスバー / pane 装飾) と nvim (colorscheme / bufferline / 
 - **nvim**: [`nvim/lua/dotfiles/palette.lua`](../nvim/lua/dotfiles/palette.lua) — 全カスタム色の hex↔cterm 組。
   3 節構成 (gruvbox 基調 / accent=tmux 共有 / diag=coc 踏襲)。適用規律 (ColorScheme 再適用・
   cterm 併記) は [`hl.lua`](../nvim/lua/dotfiles/hl.lua) が一次情報
-- **tmux**: `_tmux.conf` の `@fade-*` (フェード) / `@cur-accent`・`@zoom-accent` (島と zoom) /
+- **tmux**: `_tmux.conf` の `@fade-*` (フェード) / `@cur-accent`・`@zoom-accent` (島と zoom)・`@cur-mark-bg`/`@cur-mark-fg` (島の先頭の目印) /
   `@claude-state-fg`・`@claude-state-glyph` (Claude 状態)。フェードの設計は
   [`tmux-window-fade.md`](tmux-window-fade.md)
 - **Terminal.app プロファイル (基調層)**: `mac/ClaudeWarm.terminal` — 地 #1F1E1D / 字 Manilla #EBDBBC /
