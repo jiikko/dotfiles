@@ -28,8 +28,8 @@
 
 ## 受け入れ条件
 
-- [ ] `O` で `open -R <abs>` が起動する (起動するコマンドを fake で確かめるテスト + 変異)
-- [ ] 実端末で Finder の窓が出ることを 1 回目で見る
+- [x] `O` で `open -R <abs>` が起動する (起動するコマンドを fake で確かめるテスト + 変異)
+- [ ] 実端末で Finder の窓が出ることを 1 回目で見る (未確認。ユーザーに依頼した。出なければこの issue を open に戻す)
 
 ## 進捗
 
@@ -37,3 +37,9 @@
 - 2026-10-12: 反証レビュー (sonnet・読み取りのみ) で訂正: `opener` に引数の口が無い (署名の変更が要る) / タイルの `o` にも足す /
   spec は §0.1 と §6.1 の 2 か所 / glogx の README は対象外 / ui-guide §10 の大文字の規則の例外。反証できなかったもの: `O` は木・タイル・
   glogx の F の横取り (`crossTarget`) のどこでも空いている / `o` は非同期で失敗を `take` で取る / spec §0.1 の「写さない」の記述
+- 2026-10-12: 実装「feat(treefiler): O でカーソルの項目を Finder で表示する (issue 719)」。木とタイルの `O`。`opener` は `open` / `reveal` の 2 つの入口から
+  同じ `start(args, 失敗の文言)` を通す (差し替え点 `openCommand` は open(1) の引数の列を受け取る形)。文書: `?` の一覧・README の木とタイルの表・ui-guide §2・spec §0.1 / §6.1
+  - テスト: `TestRevealKeyRevealsCursorInFinder` / `TestRevealKeyInTileRevealsTileFile` / `TestRevealFailureBecomesToast`。変異 3 本で red (`-R` を渡さない / タイルの case を消す / 失敗の文言を戻す)
+  - `make -C src/treefiler test` / `lint` rc=0、`make -C src/glogx test` rc=0 (文書だけ触ったが ui-guide を検査しうるので回した)
+  - 敵対レビューは省いた (キーの追加と起動の引数だけで、判断ロジック・破壊的な操作を含まない)
+  - 残り: 実端末で Finder の窓が出ることの目視 (未確認)
