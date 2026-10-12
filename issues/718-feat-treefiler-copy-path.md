@@ -38,9 +38,9 @@ treefiler (単体の `bin/treefiler` と glogx の `F`) で、カーソルの項
 
 ## 受け入れ条件
 
-- [ ] `y` / `Y` でコピーされ、toast が出る。失敗 (pbcopy が無い等) は ✗ の toast
-- [ ] glogx の既存のコピー (SHA 等) が切り出し後も同じに動く (既存のテストが緑)
-- [ ] 変異で守りを確かめたテスト (クリップボードは差し替え点で fake にする)
+- [x] `y` / `Y` でコピーされ、toast が出る。失敗 (pbcopy が無い等) は ✗ の toast
+- [x] glogx の既存のコピー (SHA 等) が切り出し後も同じに動く (既存のテストが緑)
+- [x] 変異で守りを確かめたテスト (クリップボードは差し替え点で fake にする)
 
 ## 関連
 
@@ -53,3 +53,12 @@ treefiler (単体の `bin/treefiler` と glogx の `F`) で、カーソルの項
   足すと schedkeys / restartable に波及する。main が go.mod で確かめた) / 守る失敗モードの全量 (OSC52 の exit 0) / glogx の差し替え点と呼び出し元 3 か所 /
   成功の toast の口が要る / 716 の表にクリップボードは無い / 直す文書の場所。反証できなかったもの: `y` `Y` は filer で空いている / `node.abs` `node.raw` は在る /
   `Notice` `TakeNotices` は在る / glogx の他の `y` とは画面が違う
+- 2026-10-12: 実装「feat(treefiler): y / Y でパスをクリップボードへコピーする (issue 718)」
+  - `src/subproc/clipboard` の `Copy` を新設。本体は glogx の `copyToClipboard` と字句どおり同じ (定数の名前だけ `localCmdTimeout` → `Timeout`。値は同じ 5 秒。main が
+    `awk` で切り出して `diff` した)。glogx の差し替え点 `copyToClipboard` は残して既定値を `clipboard.Copy` に (呼び出し元 3 か所は無変更)。入口: subproc の CLAUDE.md / README・
+    `src/PACKAGES.md` (索引の再生成)
+  - treefiler: `filer/copy.go` の `copyPath`。`y` = `node.path()`、`Y` = root からの相対 (`filepath.Rel`。root の上では `.`)。成功は `Notice{OK:true}`、失敗は glogx と同じ文言
+  - テスト: treefiler は差し替え点の fake (`TestCopyPathKeys` / `TestCopyFailureBecomesToast`)、clipboard は一時ディレクトリの偽の `pbcopy` / `tmux` を PATH の先頭に置く
+    (本物のクリップボードと tmux サーバに触らない)。変異 4 本で red (`Y` が相対パスを使わない / 成功の toast を消す / tmux の失敗を返す / 本命へ stdin を渡さない)
+  - `make -C src/{subproc,treefiler,glogx} test` / `lint` rc=0、root の `make test` rc=0 (1 回目は `src/PACKAGES.md` の索引が古くて落ち、再生成して通した)
+  - 敵対レビューは省いた: 移した守り (WaitDelay・timeout の分け方) は字句どおり同じで、新しく書いたのはキーと toast だけ (判断ロジック・破壊的な操作を含まない)
