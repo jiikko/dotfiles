@@ -39,8 +39,8 @@ HeapInuse は 20.5 MB のまま。下の 4 つの経路を全部外すと 6.3 MB
 
 ## 受け入れ条件
 
-- [ ] 消したフォルダの部分木が、読み直しの後に回収される (weak pointer のテスト + 4 つの経路それぞれの変異で red)
-- [ ] 等価性のテストが 300 本の種で通る
+- [x] 消したフォルダの部分木が、読み直しの後に回収される (weak pointer のテスト + 4 つの経路それぞれの変異で red)
+- [x] 等価性のテストが 300 本の種で通る
 
 ## 関連
 
@@ -52,3 +52,12 @@ HeapInuse は 20.5 MB のまま。下の 4 つの経路を全部外すと 6.3 MB
 - 2026-10-12: 反証レビュー (sonnet) で中核は反証できず。監査のテストで再現: 全部を外すと HeapInuse 20.2〜20.9 MB → 6.2〜6.4 MB、1 つずつ残すとどれも回収されない、
   全部を外した後に到達経路は無い。追加の指摘: 検索を閉じた後も `matches` / `origin` が次の `/` まで node を掴む (issue 728 の 3 は「未確認」でなく同じ種類の保持。コードを読んだだけ) /
   `removed` を捨てる時点の条件を方針に書いた
+- 2026-10-12: 修正「fix(treefiler): 消したフォルダの部分木と走査の結果を掴み続けない (issue 726 / 727)」(727 と同じ commit)
+  - 4 つの経路: 詰めた slice の後ろを nil で埋める `compactTail` (order・realBuf・stepVirt) / `resetVirt` で前の layout のブロックの中身を空に・`refs` を消す /
+    その step で仮想化しなかった親の `removed` を `noteStepVirt` で捨てる (`remHolders`)。あわせて同じ仕組みの保持を 2 つ: 検索を閉じたら一致と起点を手放す (`endSearch`。issue 728 の 3) /
+    閉じたタイルを残さない (tiles も `compactTail`)
+  - 回帰テスト `leak_test.go` (weak pointer)。🚨 最初の版は検査の後で Model を使っておらず、Model ごと回収されて直す前のコードでも緑だった。`runtime.KeepAlive(m)` で直し、
+    直す前のコードで red・直した後で緑を確かめた。経路ごとに 1 つずつ戻す変異 7 本でそれぞれ red
+  - 敵対レビュー (opus): 描画は壊せず (旧版と新版で全フレームの出力が一致する差分の実験)。P1 は 727 側の 2 乗 (727 に書いた)
+  - `TREEFILER_VIRT_SEEDS=300` 緑、`make -C src/treefiler test` / `lint` rc=0。root の `make test` は `_claude` の時間に関わる 2 本 (hook の大きな入力・tool-elapsed) が
+    並列の負荷で落ち、単独では通った (今回の変更とは無関係。hook の方は issue 422 の既知の不安定)
