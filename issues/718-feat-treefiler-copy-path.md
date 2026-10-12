@@ -9,7 +9,7 @@ treefiler (単体の `bin/treefiler` と glogx の `F`) で、カーソルの項
 
 ## 仕様 (案)
 
-- `y`: 絶対パスをコピー / `Y`: root からの相対パスをコピー (🚨 キーは推奨で、ユーザー未確認)。成功・失敗を toast で出す (`Notice`。glogx-ui-guide §9)
+- `y`: 絶対パスをコピー / `Y`: root からの相対パスをコピー (キーはユーザー確認済み 2026-10-12)。成功・失敗を toast で出す (`Notice`。glogx-ui-guide §9)
 - glogx の `F` の中では filer が `y` / `Y` を持つ (`Binds`)。glogx の他の画面の `y` (コミットの SHA のコピー等) とは画面が違うので衝突しない
 - 直す文書: `?` の一覧 (`model.go` の help の表)・`src/treefiler/README.md` のキー表・`docs/glogx-ui-guide.md` §2 (`y` の行に filer を足す)・spec
   (`docs/treefiler-spec.md` §0.1 の表と §6.1 のキー一覧) (ui-guide §10)。`src/glogx/README.md` には filer のキー表が無いので対象外
