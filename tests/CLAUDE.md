@@ -13,6 +13,8 @@
   `source "${0:A:h}/test_helper.sh"` が空パスに潰れて helper が 1 行も走らず、`cd` の失敗を
   見ていない経路が **repo root に fixture を書く** (実測 2026-09-03。残骸 3 件 / issue 204)。
   数字も無効になる (rc=127 で即落ちしたものを「速い」と読む)。ランナー経由なら shebang が尊重される
+  - make 経由ならもう 1 つ守られる: Makefile 先頭の `unexport` が継承した GIT_DIR / GIT_WORK_TREE などを外す (issue 744)。
+    直接実行ではこれが効かず、テストの `git -C <一時 dir>` が継承した repo の config やブランチを書き換える
 
 ## 所要時間 (実測 2026-09-03 / 開発機・macOS)
 

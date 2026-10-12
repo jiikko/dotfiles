@@ -6,9 +6,10 @@
 
 ## 概要
 
-issue 740 は Go のテストだけを直した (9 パッケージの TestMain で外す)。`tests/` の shell のテストのうち、本物の git で repo を作るもの
-22 本 (`git init` / `commit` / `clone` / `worktree` / `add` を grep。直接起こすものだけで、git を使うスクリプトを通す間接のものは数えていない) のうち、
-GIT_DIR を外しているのは 4 本 (test_skill_eval / test_ci_log / test_pull_main_checkout / test_pre_push) だけで、18 本は外していない。
+issue 740 は Go のテストだけを直した (9 パッケージの TestMain で外す)。`tests/` の shell のテストで `git init` / `commit` / `clone` /
+`worktree` / `add` の grep に当たったものは 22 本で、うち 3 本は文字列やコメントに当たっただけ (test_deny_bare_tmux_kill /
+test_deny_piped_push_then_destroy / test_git_tests_unset_location_env)。repo を作るのは 19 本で、GIT_DIR を外しているのは 4 本
+(test_skill_eval / test_ci_log / test_pull_main_checkout / test_pre_push) だけ、15 本は外していない。git を使うスクリプトを通す間接のものは数えていない。
 
 `-C <dir>` は GIT_DIR / GIT_WORK_TREE に負ける (`_claude/rules/sandbox-real-destructive-test-apis.md`)。hook から起動された
 `make test` のように、これらを継承した環境で走ると、テストの git は一時 dir ではなく継承した repo を向く。
@@ -35,12 +36,23 @@ hook から `make test` が起動されれば、`~/dotfiles/.git/config` の use
 ### 検出しない形
 
 - `bash tests/x.sh` の直接実行 (`tests/CLAUDE.md` で禁止済み)。既に unset している 4 本はそのまま残す (直接実行でも守られる)
-- make の `$(shell ...)` (lint の対象の発見など)。読むだけで、書く経路ではない
+- make の `$(shell ...)` (lint の対象の発見など)。読むだけで、書く経路ではない (3 つとも git を呼ばない。レビューで確認)
+- make のコマンドライン / MAKEFLAGS で渡した `GIT_DIR=…`。環境の継承ではなく、`run_go_projects` の `$(MAKE) -C src/<x>` の sub-make へ届く
+  (make 3.81 で再現)。行き先の go test は 740 の TestMain で外すので、外へ書く再現は無い
 
 ## 進捗
 
-- [ ] Makefile に unexport
-- [ ] 突き合わせのテスト・変異
-- [ ] 修正前後の E2E (上の 4 つで scratch の repo が変わらない)
-- [ ] 敵対的レビュー
-- [ ] make test
+- [x] Makefile の先頭に `unexport` (--local-env-vars の 15 個 + GIT_NAMESPACE)。make 3.81 で recipe と sub-make から外れ、`$(shell)` には残ることを実測
+- [x] 検査 `tests/scripts/test_make_unexports_git_location_env.sh`: 本物の Makefile を include した probe の recipe の env を、
+  本物の git の --local-env-vars (+ GIT_NAMESPACE) と突き合わせる。対照の変数が届くことも見る (make 3.81 には `--eval` が無いので include の形)
+- [x] 変異 (mutate-verify-list): unexport の行を消す / GIT_SHALLOW_FILE を消す / GIT_CONFIG_COUNT を消す → 3 本とも red。
+  レビュー後に GIT_NAMESPACE を消す → red
+- [x] E2E: 修正後に同じ 4 つを回すと 4 つとも rc=0、scratch の repo の .git の中身 (index 以外の全ファイルの shasum) は不変・ブランチは master のみ
+- [x] 敵対的レビュー (opus 1 本・反証も兼ねる): P1・P2 無し。P3 3 件を全部採った
+  - P3-1 make のコマンドライン / MAKEFLAGS の `GIT_DIR=…` は src/*/Makefile の sub-make へ届く (再現あり) → 「検出しない形」に書いた (行き先の go test は 740 で守られ、外へ書く再現は無い)
+  - P3-2 GIT_NAMESPACE が検査で固定されていなかった → 検査の集合に足し、変異で red を確認
+  - P3-3 本文の 22 本に文字列・コメントだけのものが 3 本 → 19 本 / 15 本に直した
+  - 壊せなかった攻め口: unexport が効かない make の形 (環境・`-e`・MAKEFLAGS の中・再帰)・`$(shell)` からの書き込み・GIT_CONFIG_KEY_<n>・
+    GIT_CONFIG_GLOBAL / HOME 系 (tests/ に `config --global` で書く箇所 0 件)・make の外からの起動 (pre-push は自分で unset)・検査の素通り・回帰
+  - 2 周目は回さない: 直しは一覧への 1 個の追加とコメントだけで判定ロジックを新設せず、変異で直接確かめた (adversarial-review-own-safeguards §7 の例外)
+- [x] make test rc=0 (新しい検査も並列腕で [ok])

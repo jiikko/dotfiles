@@ -1,5 +1,14 @@
 SHELL := /bin/sh
 
+# 🚨 継承した git の repo の場所を recipe から外す (issue 744)。hook から起動された make test は GIT_DIR などを
+# 持ったまま走り、テストの `git -C <一時 dir>` はそれに負けて継承した repo の config やブランチを書き換える。
+# 一覧は `git rev-parse --local-env-vars` と同じ集合 (src/subproc/gitenv.go の gitLocationEnv も同じ)。漏れは
+# tests/scripts/test_make_unexports_git_location_env.sh が本物の git と突き合わせて落とす。
+# GIT_CONFIG_KEY_<n> / VALUE_<n> は GIT_CONFIG_COUNT を外せば読まれない。$(shell ...) には効かない (make 3.81。読むだけなので受ける)。
+unexport GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES \
+  GIT_NAMESPACE GIT_PREFIX GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_IMPLICIT_WORK_TREE GIT_GRAFT_FILE \
+  GIT_NO_REPLACE_OBJECTS GIT_REPLACE_REF_BASE GIT_SHALLOW_FILE
+
 # lint 対象の shell script は scripts/discover_shell_scripts.sh が機械的に発見する
 # (拡張子 or shebang)。手動維持するのは下の ZSH_SYNTAX_FILES (zsh 例外) だけ。
 #
