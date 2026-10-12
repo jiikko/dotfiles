@@ -112,6 +112,9 @@ func (m *Model) visOf(n *node) *visKids {
 			}
 		}
 	}
+	if len(nv.removed) > 0 {
+		m.remHolders = append(m.remHolders, n)
+	}
 	n.vis = nv
 	return nv
 }

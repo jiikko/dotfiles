@@ -81,6 +81,7 @@ type Model struct {
 	virtN        int
 	realBuf      []*node
 	stepVirt     []*node         // 直前の step の layout で仮想化したブロックの親 (ghostCulled)
+	remHolders   []*node         // 覚えの removed を持っている親 (noteStepVirt が読まれなくなった removed を捨てる。issue 726)
 	refs         map[*node]*node // anyRef の覚え (layout ごと)
 	refsSeq      int
 	virtOverride int    // 0 = 既定 (virtMin)。テストの差し替え
@@ -161,6 +162,7 @@ func New(dir string, opts Options) (*Model, error) {
 func (m *Model) Refresh() {
 	m.walker.forget(m.root.path(), true)
 	m.root.reload()
+	m.dropGoneRecs(m.root.path())
 	m.cur = m.liveAncestor(m.cur)
 	m.repoTop = nil    // .git を足した・消したフォルダを数え直す
 	clear(m.linkCache) // 無かったファイル (負のキャッシュ) が作られているかもしれない
@@ -340,9 +342,16 @@ func (m *Model) takeBackground() {
 		m.fail(e)
 	}
 	if d, ok := m.walker.take(); ok {
+		var gone []string
+		idx := newTreeIndex(m)
 		for k, r := range d {
+			if idx.gone(m, k) { // 頼んだ後に消えたフォルダの結果 (取り込むと消えたまま残る。issue 727)
+				gone = append(gone, k)
+				continue
+			}
 			m.recs[k] = r
 		}
+		m.walker.drop(gone)
 	}
 	if s, ok := m.git.take(); ok { // off でも取り込む (取り込まずに残すと Busy が続き、呼び出し側の tick が止まらない)
 		if m.set.Git { // off にする前に始めた取得の結果は捨てる
@@ -352,11 +361,14 @@ func (m *Model) takeBackground() {
 	}
 	var open []string
 	for _, n := range m.order {
-		if n.dir {
+		if !n.dir {
+			continue
+		}
+		if a := m.anims[n]; a == nil || !a.ghost { // 消えて縮んでいる項目 (ghost) は頼まない (消えたフォルダを数え直し続ける。issue 727)
 			m.walker.request(n.path())
-			if n.expanded && n.loaded {
-				open = append(open, n.path())
-			}
+		}
+		if n.expanded && n.loaded { // ライブ更新の見張りは今までどおり (畳んで縮んでいる間も見張る)
+			open = append(open, n.path())
 		}
 	}
 	m.watch.setDirs(open, m.loadedSig)
@@ -390,6 +402,7 @@ func (m *Model) applyChange(c dirChange) {
 	}
 	n.reload()
 	m.walker.forget(c.dir, false)
+	m.dropGoneRecs(c.dir)
 	clear(m.linkCache) // 増えた・消えたファイルでリンクの解決が変わる
 	if slices.Contains(c.changed, ".git") || slices.Contains(c.removed, ".git") {
 		m.repoTop = nil // このフォルダで git init した・repo を消した (repo の根の数え直し)
@@ -410,6 +423,62 @@ func (m *Model) applyChange(c dirChange) {
 	}
 	m.cur = m.liveAncestor(m.cur)
 	m.moving = true
+}
+
+// dropGoneRecs は dir の配下 (dir 自身を除く) で、読み直した木から消えたフォルダの走査の結果を捨てる (issue 727)。
+func (m *Model) dropGoneRecs(dir string) {
+	var gone []string
+	idx := newTreeIndex(m)
+	under := withSep(dir)
+	for p := range m.recs {
+		if strings.HasPrefix(p, under) && idx.gone(m, p) {
+			gone = append(gone, p)
+			delete(m.recs, p)
+		}
+	}
+	m.walker.drop(gone)
+}
+
+// treeIndex は 1 回の判定の間だけ使う、フォルダごとの「名前 → 子」の表 (初めて要るときに作る)。
+// 🚨 キーごとに子を頭から舐めると、子の多いフォルダでキーの数 × 子の数になり、子 4 万件でライブ更新 1 回に約 3 秒 UI が固まった
+// (issue 691 / 693 と同じ形。issue 727 の敵対レビュー)。
+type treeIndex struct {
+	rootPrefix string // withSep(root) (キーごとに作り直さない)
+	byDir      map[*node]map[string]*node
+}
+
+func newTreeIndex(m *Model) *treeIndex {
+	return &treeIndex{rootPrefix: withSep(m.root.abs), byDir: map[*node]map[string]*node{}}
+}
+
+// gone は abs が消えたと木から分かるか: root から名前を辿り、読み込み済みのフォルダの子に次の名前が無ければ消えた。
+// 🚨 読み込んでいないフォルダに行き着いたら「分からない」(false)。走査の結果は配下の全部のフォルダ (node の無い未展開の子孫も) を持つので、
+// node が見つからないことを「消えた」とすると、その結果まで捨てて開くたびに数え直させる (issue 727 の反証レビュー)。
+func (ix *treeIndex) gone(m *Model, abs string) bool {
+	rel, ok := strings.CutPrefix(abs, ix.rootPrefix)
+	if !ok || rel == "" {
+		return false // root の外と root 自身は扱わない
+	}
+	cur := m.root
+	for part := range strings.SplitSeq(rel, string(filepath.Separator)) {
+		if !cur.dir || !cur.loaded {
+			return false
+		}
+		byName, ok := ix.byDir[cur]
+		if !ok {
+			byName = make(map[string]*node, len(cur.kids))
+			for _, k := range cur.kids {
+				byName[k.raw] = k
+			}
+			ix.byDir[cur] = byName
+		}
+		next := byName[part]
+		if next == nil {
+			return true
+		}
+		cur = next
+	}
+	return false
 }
 
 // removedVisible は変化に「見える項目が消えた」が含まれるか (隠した dotfile の出入りでフォルダを光らせない)。
@@ -619,7 +688,7 @@ func (m *Model) step(dt float64) bool {
 		}
 		kept = append(kept, n)
 	}
-	m.order = kept
+	m.order = compactTail(m.order, kept)
 	m.compactAnims()
 	now := m.now()
 	for n, r := range m.ripples {
@@ -647,7 +716,7 @@ func (m *Model) step(dt float64) bool {
 		}
 		kt = append(kt, t)
 	}
-	m.tiles = kt
+	m.tiles = compactTail(m.tiles, kt)
 	return moving
 }
 
@@ -694,7 +763,7 @@ func (m *Model) snapAll() {
 		a.alpha.snap()
 		kept = append(kept, n)
 	}
-	m.order = kept
+	m.order = compactTail(m.order, kept)
 	m.camX.snap()
 	m.camY.snap()
 	m.beadOn = false
@@ -708,7 +777,7 @@ func (m *Model) snapAll() {
 		t.sy.snap()
 		kt = append(kt, t)
 	}
-	m.tiles = kt
+	m.tiles = compactTail(m.tiles, kt)
 }
 
 // ---------- キー ----------

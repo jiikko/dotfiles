@@ -115,6 +115,41 @@ func (w *walker) forget(dir string, force bool) {
 	w.version++
 }
 
+// drop は消えたフォルダ (と配下) の結果と記録を捨てる (forget は古い印を付けるだけで消さないので、作っては消すフォルダで伸び続けた。issue 727)。
+// 走査中のものは終わったときに結果が 1 件戻りうる (次に消えたと分かったときにまた落ちる)。
+func (w *walker) drop(dirs []string) {
+	if len(dirs) == 0 {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	under := func(p string) bool {
+		for _, d := range dirs {
+			if p == d || strings.HasPrefix(p, withSep(d)) {
+				return true
+			}
+		}
+		return false
+	}
+	for p := range w.results {
+		if under(p) {
+			delete(w.results, p)
+			delete(w.delta, p)
+			delete(w.last, p)
+		}
+	}
+	for p := range w.asked {
+		if under(p) {
+			delete(w.asked, p)
+		}
+	}
+	for p := range w.deferred {
+		if under(p) {
+			delete(w.deferred, p)
+		}
+	}
+}
+
 // busy は走査中か、間を空けて数え直すのを待っているか、取り込んでいない結果があるか。期限を猶予だけ過ぎても頼み直されない待ちは捨てる。
 func (w *walker) busy() bool {
 	w.mu.Lock()

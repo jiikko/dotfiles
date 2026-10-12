@@ -166,14 +166,13 @@ func (m *Model) searchKey(key, text string) {
 	s := &m.search
 	switch {
 	case key == "enter":
-		s.active = false
 		if q := s.line.String(); q != "" && len(s.matches) > 0 {
 			m.lastSearch = q
 		}
+		m.endSearch(false)
 		return
 	case key == "esc" || key == "ctrl+c":
-		s.active = false
-		m.restoreOrigin()
+		m.endSearch(true)
 		return
 	case key == "tab" || key == "down" || key == "ctrl+n":
 		m.stepMatch(1)
@@ -183,9 +182,8 @@ func (m *Model) searchKey(key, text string) {
 		return
 	case key == "up" && s.line.Empty():
 		s.line.Insert(m.lastSearch) // 空欄の ↑ は前回の検索を呼び戻す
-	case key == "backspace" && s.line.Empty():
-		s.active = false // 空欄の backspace で閉じる
-		m.restoreOrigin()
+	case key == "backspace" && s.line.Empty(): // 空欄の backspace で閉じる
+		m.endSearch(true)
 		return
 	default:
 		if !s.line.Key(key, text) {
@@ -193,6 +191,15 @@ func (m *Model) searchKey(key, text string) {
 		}
 	}
 	m.refreshMatches()
+}
+
+// endSearch は検索を閉じる (restore なら始めた位置へ戻る)。一致と起点は手放す: 閉じた後は誰も読まず、残すと次の / まで消えた部分木を掴む (issue 726)。
+func (m *Model) endSearch(restore bool) {
+	if restore {
+		m.restoreOrigin()
+	}
+	s := &m.search
+	s.active, s.matches, s.origin = false, nil, nil
 }
 
 // refreshMatches は検索語が変わった後に一致を引き直し、いちばん良い一致へ移る (無ければ始めた位置へ)。
@@ -228,7 +235,7 @@ func (m *Model) stepMatch(d int) {
 			live = append(live, n)
 		}
 	}
-	s.matches = live
+	s.matches = compactTail(s.matches, live)
 	s.at = min(s.at, max(len(live)-1, 0))
 	if len(s.matches) == 0 {
 		return

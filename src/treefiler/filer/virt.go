@@ -217,7 +217,7 @@ func (m *Model) takeVirt(p *node) *virtBlock {
 	}
 	b := m.virtPool[m.virtN]
 	m.virtN++
-	b.real, b.placed, b.drawn = b.real[:0], b.placed[:0], b.drawn[:0]
+	b.real, b.placed, b.drawn = b.real[:0], b.placed[:0], b.drawn[:0] // 中身は resetVirt が空にしている
 	m.virt[p] = b
 	return b
 }
@@ -228,8 +228,12 @@ func (m *Model) resetVirt() {
 		m.virt = map[*node]*virtBlock{}
 	}
 	clear(m.virt)
+	for _, b := range m.virtPool[:m.virtN] { // 使わなかったブロックに前の子を残さない (消えた部分木を掴む。issue 726)
+		b.real, b.placed, b.drawn = compactTail(b.real, nil), compactTail(b.placed, nil), compactTail(b.drawn, nil)
+	}
 	m.virtN = 0
-	m.realBuf = m.realBuf[:0]
+	clear(m.refs) // 覚えは layout ごと (anyRef)。次に仮想化するまで消えた親のキーを残さない
+	m.realBuf = compactTail(m.realBuf, nil)
 	if m.virtMin() <= 0 {
 		return
 	}
@@ -390,10 +394,34 @@ func (m *Model) anyRef(p *node, g blockGeo) (*node, int) {
 
 // noteStepVirt は step の layout で仮想化したブロックの親を覚える (次の step で、そのブロックが消えたかを見る)。
 func (m *Model) noteStepVirt() {
-	m.stepVirt = m.stepVirt[:0]
+	m.stepVirt = compactTail(m.stepVirt, nil)
 	for p := range m.virt {
 		m.stepVirt = append(m.stepVirt, p)
 	}
+	// 外れた子 (覚えの removed) を読むのは、次の step で stepVirt に居る親だけ (ghostCulled・realizeVirtual)。この step で仮想化しなかった親の
+	// removed はもう誰も読まないので捨てる (残すと、消えた部分木をその親の覚えを次に作り直すまで掴む。issue 726)
+	held := m.remHolders[:0]
+	for _, p := range m.remHolders {
+		if p.vis == nil || len(p.vis.removed) == 0 {
+			continue
+		}
+		if _, ok := m.virt[p]; ok {
+			held = append(held, p)
+			continue
+		}
+		p.vis.removed = nil
+	}
+	m.remHolders = compactTail(m.remHolders, held)
+}
+
+// compactTail は s を詰めた結果 kept (s の先頭を使い回した slice。nil なら空) を返し、s の後ろに残った古いポインタを nil で埋める
+// (len を縮めるだけでは cap の先に消えた node・閉じたタイルが残り、GC に回収されない。issue 726)。
+func compactTail[T any](s, kept []T) []T {
+	clear(s[len(kept):])
+	if kept == nil {
+		return s[:0]
+	}
+	return kept
 }
 
 // ghostCulled は、直前の step で仮想化していたブロックの子が見せる子から外れた (ライブ更新で消えた・隠した) とき、またはブロックが
