@@ -1,1 +1,0 @@
-../740-bug-git-tests-inherit-git-dir.md
