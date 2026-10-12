@@ -31,7 +31,7 @@ linters:
     - exhaustive     # default なし switch の enum 網羅を強制 (settings 参照。網羅性の機械化)
     - exptostd       # x/exp で書いたものの stdlib 昇格済み検出
     - fatcontext     # ループ内で context を積み重ねるパターンの検出
-    - forbidigo      # stdout 直接出力の禁止 (下の forbid。main.go だけ除外)
+    - forbidigo      # stdout 直接出力・ファイル操作の直呼びなどの禁止 (下の forbid。main.go は stdout と「今」だけ除外)
     - gocritic       # unlambda / singleCaseSwitch 等の診断 (試走 2 件のみ = 低ノイズを確認済み)
     - intrange       # for i := 0; i < n; i++  ->  for i := range n
     - makezero       # make([]T, n) への append で先頭にゼロ値が残るバグ
@@ -71,6 +71,15 @@ linters:
         # time.Since / Until も中で「今」を読む。import の別名 (tm.Now) は検出しない (意図的な迂回は脅威モデルの外)
         - pattern: ^time\.(Now|Since|Until)$
           msg: 「今」は Model.now / walker.now (注入) から取る。time.Now / Since / Until を直に呼ばない
+        # ユーザーのファイルを動かす・消す・繋ぐ操作は safefs を通す (Guard を syscall の直前に通す規律。src/safefs/CLAUDE.md)。issue 736
+        # 脅威モデルはうっかりの直呼び。検出しない形: import の別名・関数値・os/exec で mv / rm を起こす形 (review の担当)。
+        # 自前の設定・履歴の置き場の MkdirAll / OpenFile は対象にしない。自前の一時ファイルを消すなら行に `//nolint:forbidigo // 理由` を書く
+        - pattern: ^os\.(Rename|Remove|RemoveAll|Symlink|Link)$
+          msg: ユーザーのファイルを動かす・消す操作は safefs を通す (src/safefs/CLAUDE.md)
+        - pattern: ^(unix|syscall)\.(Unlink|Unlinkat|Rmdir|Rename|Renameat|Renameat2|RenamexNp|RenameatxNp)$
+          msg: ユーザーのファイルを動かす・消す操作は safefs を通す (src/safefs/CLAUDE.md)
+        - pattern: ^(unix|syscall)\.(Mkdir|Mkdirat|Symlink|Symlinkat|Link|Linkat)$
+          msg: ユーザーのファイルを動かす・消す操作は safefs を通す (src/safefs/CLAUDE.md)
     depguard:
       rules:
         width-single-source:
