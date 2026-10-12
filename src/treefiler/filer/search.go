@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jiikko/dotfiles/src/tuikit/lineedit"
+	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 )
 
 // search.go はカーソルの列の中のあいまい検索 (`/`。spec §6.2)。入力は tuikit/lineedit (glogx-ui-guide §7 の編集キー)。
@@ -243,7 +244,7 @@ func (m *Model) stepMatch(d int) {
 	if len(s.matches) == 0 {
 		return
 	}
-	s.at = (s.at + d + len(s.matches)) % len(s.matches)
+	s.at = listnav.Cycle(s.at, d, len(s.matches))
 	m.setCur(s.matches[s.at])
 }
 

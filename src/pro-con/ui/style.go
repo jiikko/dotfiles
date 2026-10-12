@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"pro-con/card"
@@ -24,7 +25,7 @@ const waitDim = 0.7
 // 256 色のままでは色相を保って暗くできない。truecolor が通らない端末では近い 256 色に落ちる (ユーザー了承済み)。
 // k = 1 はカードの普段の地 (issue 556: 256 色の番号で塗ると端末の設定しだいで色が変わるので RGB で塗る。2026-09-27 のユーザーの決定)。
 func bgDim(n int, k float64) string {
-	r, g, b := rgb256(n)
+	r, g, b := sgr.XtermRGB(n)
 	scale := func(v int) string { return strconv.Itoa(int(float64(v)*k + 0.5)) }
 	return "\x1b[48;2;" + scale(r) + ";" + scale(g) + ";" + scale(b) + "m"
 }

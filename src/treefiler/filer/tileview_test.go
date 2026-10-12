@@ -42,15 +42,6 @@ func TestPutSGRDoesNotSplitWide(t *testing.T) {
 	}
 }
 
-func TestXterm256(t *testing.T) {
-	cases := map[int]rgb{1: {205, 0, 0}, 16: {0, 0, 0}, 196: {255, 0, 0}, 231: {255, 255, 255}, 232: {8, 8, 8}, 255: {238, 238, 238}}
-	for n, want := range cases {
-		if got := xterm256(n); got != want {
-			t.Fatalf("xterm256(%d) = %v, want %v", n, got, want)
-		}
-	}
-}
-
 func TestWrapCells(t *testing.T) {
 	got := wrapCells("abあいcd", 4)
 	if strings.Join(got, "|") != "abあ|いcd" {

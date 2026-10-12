@@ -158,26 +158,10 @@ func applySGR(params string, def, cur rgb, bold, ul bool) (rgb, bool, bool) {
 	return cur, bold, ul
 }
 
-// ansi16 は xterm の既定の 16 色。
-var ansi16 = [16]rgb{
-	{0, 0, 0}, {205, 0, 0}, {0, 205, 0}, {205, 205, 0}, {0, 0, 238}, {205, 0, 205}, {0, 205, 205}, {229, 229, 229},
-	{127, 127, 127}, {255, 0, 0}, {0, 255, 0}, {255, 255, 0}, {92, 92, 255}, {255, 0, 255}, {0, 255, 255}, {255, 255, 255},
-}
-
-// xterm256 は 256 色の番号を rgb にする (16〜231 は 6x6x6 の立方体、232〜255 は灰色の階調)。
+// xterm256 は 256 色の番号を rgb にする (範囲の外は黒)。
 func xterm256(n int) rgb {
-	switch {
-	case n < 0 || n > 255:
-		return rgb{}
-	case n < 16:
-		return ansi16[n]
-	case n < 232:
-		lv := [6]float64{0, 95, 135, 175, 215, 255}
-		n -= 16
-		return rgb{lv[n/36], lv[n/6%6], lv[n%6]}
-	}
-	g := float64(8 + 10*(n-232))
-	return rgb{g, g, g}
+	r, g, b := sgr.XtermRGB(n)
+	return rgb{float64(r), float64(g), float64(b)}
 }
 
 func (c *canvas) fillBg(x0, y0, x1, y1 int, bg rgb) {

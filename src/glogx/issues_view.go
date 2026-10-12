@@ -1783,7 +1783,7 @@ func (v *issuesView) moveTab(delta int) {
 	v.clearPendingMoveAnchors()
 	// [next] (-1) と All (0) を含めた巡回。-1 起点なので +1 して 0 起点へ寄せてから回す
 	n := len(v.tabs) + 2
-	v.tabIdx = ((v.tabIdx+1+delta)%n+n)%n - 1
+	v.tabIdx = listnav.Cycle(v.tabIdx+1, delta, n) - 1
 	v.refresh()
 }
 

@@ -18,7 +18,7 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 |---|---|---|
 | `termwidth` | 表示幅の単一情報源 (`Of` / `Truncate` / `Clip` / `PadSpaces` / `FillRight` …)。折り返しは `Wrap(s, 幅, 頭の空白を落とすか)` (書記素単位) / `WordWrap(s, 幅)` (単語の境目で折る) | 行を幅で切る・揃える・折るときは**必ずここを通す** (x/ansi の `Hardwrap` / `Wrap` はキーキャップで幅を超える。tuikit と、tuikit を使う全 module が lint で禁止) |
 | `widthenv` | 幅モデルが支持しない環境変数 (`RUNEWIDTH_EASTASIAN`) の検出 | 起動時の警告・テストのガード |
-| `sgr` | 基本の ANSI 色・装飾 (`Reset` / `Bold` / `Dim` / `Cyan` …) | 色を付けるときの値の単一の出典 |
+| `sgr` | 基本の ANSI 色・装飾 (`Reset` / `Bold` / `Dim` / `Cyan` …)・256 色の番号の RGB (`XtermRGB`。色を混ぜる・暗くする計算用) | 色を付けるときの値の単一の出典 |
 | `anim` | `Transition` (開く / 閉じる / 途中で逆再生) / `Elapsed` (一方向の演出の進捗) / `ScrollGlide` / `CursorGlide` / easing | 開閉演出と「数行ぶんの移動を滑らせる」演出 |
 | `layout` | `ComposeDrawer` (一覧の上に詳細を右から重ねる) / `DrawerGeometry` / `SlideIn` / `Scrollbar` / `Panel` (落ち影つきの板) と `PanelContentWidth` (Panel に渡す幅から中身の幅を出す) / `Overlay` / `OverlayCentered` / `OverlayRight` (右端に寄せて重ねる) / `PadTo` | 画面の合成 |
 | `confirm` | y/N 確認ダイアログ: `Dialog` (本文 + 空行 + 案内の板) / `Box` (幅 44 で頭打ちの中央の板) / `WideDialog` (幅の上限を `WideMaxWidth` = 64 にした `Dialog`。揃えた行が 44 では切れる確認用) / `IsYes` (y・Y・Enter) / `IsYesStrict` (y・Enter) / 案内の定型 `HintYesNo` / `HintYesOther` | 破壊的操作の確認を毎回組まない。語彙の正本は `docs/glogx-ui-guide.md` §4 |
@@ -29,7 +29,7 @@ glogx の issues viewer で作り込んだ「一覧 → 詳細」の画面遷移
 | `toast` | 右下に数秒だけ出る通知のスタック: `Stack` (`Show` 成功 ✓緑・失敗 ✗赤 / `ShowInfo` 進行中 …シアン / `Advance` / `StartLeaving` / `BoxLines`)。右外から滑り込み、`Hold` (3 秒) 止まって、右へ滑り出る。`BoxLines` には重ねる窓の幅を渡す: 収まらない文は箱の中で折り返し (最大 `MaxTextLines` 行。超えた分は末尾を … にする)、窓の右端で切れない。新しい通知は上に積み、古い通知は下から抜ける (最大 3 枚。溢れたら成功・進行中から捨て、警告は残す)。タイマーは張らず `Timer` として返す | 操作の結果を画面の邪魔をせずに知らせる (glogx の push / pull の結果など)。デモの gif は下の「デモ」 |
 | `markdown` | markdown の本文を幅で整形する `Render(src, width, colored)` (見出し・箇条書き・チェックボックス・引用・表・水平線・フェンスコードの chroma ハイライト。行ごとのソース行番号も返す)。出力は width 桁を超えず、`colored=false` なら ANSI を出さない。本文の制御文字は termsafe で落とす。第三者の本文を渡してよい: 1 段落の時間は長さに線形 (閉じない記法が多くても 2 乗にならない) | issue の本文 (glogx) と PG の応答の文 (pro-con の詳細) を同じ見た目で出す |
 | `highlight` | `Diff(lines)` (git の `--color=never` の diff に構造色 + chroma のシンタックスハイライト。行数は変えない) / `Lang(言語名, 1 行)` / `ForPath(パス)` (ファイル名で言語を 1 回だけ選び、1 行を色付けする関数を返す。分からなければ nil)。入力の無害化は使う側 (termsafe)。1 KiB を超える 1 行は色を付けずに返す (lexer が言語によって 2 乗で伸びるので、使う側は長さの上限を持たなくてよい) | glogx の diff の板・pro-con の差分の板・markdown のフェンスコード・treefiler のタイルで同じ色付けを使う |
-| `listnav` | `MotionOf` (キー → 移動の語彙) / `List` (一覧のカーソル + 窓 + 半ページの滑走) / `Pager` (本文のスクロール) / `Scroll` / `WindowOffset` / `ClampOffset` (窓の計算) | 一覧・本文の移動を毎回書かない |
+| `listnav` | `MotionOf` (キー → 移動の語彙) / `List` (一覧のカーソル + 窓 + 半ページの滑走) / `Pager` (本文のスクロール) / `Scroll` / `WindowOffset` / `ClampOffset` (窓の計算) / `Cycle` (端で回る選択の位置) | 一覧・本文の移動を毎回書かない |
 | `framebench` | `NewRenderer(幅, 高さ)` / `Frame(content, 属性)` / `Written()`: 画面の文字列を bubbletea v2 のレンダラと同じ手順 (前のコマと同じなら描かない → セルへ書き直す → 端末への差分) で通す計測の道具。部品ではない (ultraviolet を import する。bubbletea は import しない) | フレームのベンチをレンダラ込みで測る。下の「フレームの重さを測る」 |
 | `cmd/termwidth` | シェルから `termwidth.Of` で表示幅を測るコマンド (`bin/termwidth <文字列>`)。部品ではない | `bin/tmux-toast` が通知の枠の幅を決める (issue 670 で python3 の east_asian_width を置き換えた) |
 

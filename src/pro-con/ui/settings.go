@@ -371,7 +371,7 @@ func stepValue(key, v string, delta int) (string, error) {
 	if vals, ok := cycleValues[key]; ok {
 		i := max(slices.Index(vals, v), 0)
 		n := len(vals)
-		return vals[((i+delta)%n+n)%n], nil
+		return vals[listnav.Cycle(i, delta, n)], nil
 	}
 	n, _ := strconv.Atoi(v)
 	if key == backend.ConfigLimit && n+delta < 1 {

@@ -290,7 +290,8 @@ func (m *Model) tileKey(k string) {
 
 // jumpKey はジャンプモードのキー。捌いたら true (捌かないキーはモードを抜けてからタイルのキーとして効く。glogx-ui-guide §6)。
 func (m *Model) jumpKey(t *tile, k string, rows int) bool {
-	ls := m.tileLinks(t, len(m.view(t)))
+	total := len(m.view(t))
+	ls := m.tileLinks(t, total)
 	if len(ls) == 0 {
 		t.jump = false
 		return false
@@ -298,9 +299,9 @@ func (m *Model) jumpKey(t *tile, k string, rows int) bool {
 	t.sel = max(0, min(t.sel, len(ls)-1))
 	switch {
 	case k == "tab" || listnav.MotionOf(k) == listnav.Down:
-		t.sel = (t.sel + 1) % len(ls)
+		t.sel = listnav.Cycle(t.sel, 1, len(ls))
 	case k == "shift+tab" || listnav.MotionOf(k) == listnav.Up:
-		t.sel = (t.sel - 1 + len(ls)) % len(ls)
+		t.sel = listnav.Cycle(t.sel, -1, len(ls))
 	case listnav.MotionOf(k) == listnav.Top:
 		t.sel = 0
 	case listnav.MotionOf(k) == listnav.Bottom:
@@ -324,11 +325,7 @@ func (m *Model) jumpKey(t *tile, k string, rows int) bool {
 		return false
 	}
 	// 選んだリンクが見えるようにスクロールする
-	if l := ls[t.sel].line; l < t.scroll {
-		t.scroll = l
-	} else if l >= t.scroll+rows {
-		t.scroll = l - rows + 1
-	}
+	t.scroll = listnav.WindowOffset(t.scroll, ls[t.sel].line, total, rows)
 	return true
 }
 

@@ -120,10 +120,10 @@ func (v *issuesView) linkJumpKey(key string, vp issuesViewport, rows int) (cmd t
 	// 移動の語彙は listnav.MotionOf (glogx-ui-guide §2)。半ページ送り (space・ctrl+d など) はジャンプを抜けて本文の pager へ渡す
 	switch listnav.MotionOf(key) {
 	case listnav.Down:
-		v.selectLink(fl, (cur+1)%len(fl), rows)
+		v.selectLink(fl, listnav.Cycle(cur, 1, len(fl)), rows)
 		return nil, true
 	case listnav.Up:
-		v.selectLink(fl, (cur-1+len(fl))%len(fl), rows)
+		v.selectLink(fl, listnav.Cycle(cur, -1, len(fl)), rows)
 		return nil, true
 	case listnav.Top:
 		v.selectLink(fl, 0, rows)
@@ -135,9 +135,9 @@ func (v *issuesView) linkJumpKey(key string, vp issuesViewport, rows int) (cmd t
 	}
 	switch key {
 	case "tab":
-		v.selectLink(fl, (cur+1)%len(fl), rows)
+		v.selectLink(fl, listnav.Cycle(cur, 1, len(fl)), rows)
 	case "shift+tab":
-		v.selectLink(fl, (cur-1+len(fl))%len(fl), rows)
+		v.selectLink(fl, listnav.Cycle(cur, -1, len(fl)), rows)
 	case "enter":
 		return v.openLink(fl[cur], true), true
 	case "e", "v":

@@ -90,11 +90,11 @@ func (p *urlPicker) handleKey(key string) (open, closed bool) {
 		return true, false
 	case "down", "ctrl+n":
 		if len(p.match) > 0 {
-			p.cursor = (p.cursor + 1) % len(p.match)
+			p.cursor = listnav.Cycle(p.cursor, 1, len(p.match))
 		}
 	case "up", "ctrl+p":
 		if len(p.match) > 0 {
-			p.cursor = (p.cursor - 1 + len(p.match)) % len(p.match)
+			p.cursor = listnav.Cycle(p.cursor, -1, len(p.match))
 		}
 	case " ":
 		// Space は URL に現れないので絞り込みには不要。誤爆 (本文スクロールの癖) を無視する

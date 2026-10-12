@@ -292,7 +292,7 @@ func (m *Model) adjust(d int) {
 	case kindChoice:
 		cs := it.choices(s)
 		i := indexOfStr(cs, it.get(s))
-		it.set(s, cs[(i+d+len(cs))%len(cs)])
+		it.set(s, cs[listnav.Cycle(i, d, len(cs))])
 	case kindBool:
 		v, _ := strconv.ParseBool(it.get(s))
 		it.set(s, strconv.FormatBool(!v))
@@ -332,7 +332,7 @@ var orderKeys = map[string]bool{"folders_first": true, "natural_sort": true, "so
 
 // cycleSortBy は S キー (Sort by を name → modified → size → name と巡回し、保存する)。
 func (m *Model) cycleSortBy() {
-	m.set.SortBy = sortByChoices[(indexOfStr(sortByChoices, m.set.SortBy)+1)%len(sortByChoices)]
+	m.set.SortBy = sortByChoices[listnav.Cycle(indexOfStr(sortByChoices, m.set.SortBy), 1, len(sortByChoices))]
 	m.applySettings("sort_by")
 	if m.saveErr == "" { // 保存できなかったときは applySettings が ✗ の知らせを出している
 		m.notices = append(m.notices, Notice{Text: "並び: " + sortByLabel[m.set.SortBy], OK: true}) // ステータスバーに ⇅ は出さないので、押した後の並びをここで見せる
@@ -402,9 +402,9 @@ func (m *Model) panelKey(k string) {
 	case "esc", ",", "q":
 		m.panel.open = false
 	case "tab":
-		m.panel.row = (m.panel.row + 1) % len(items)
+		m.panel.row = listnav.Cycle(m.panel.row, 1, len(items))
 	case "shift+tab":
-		m.panel.row = (m.panel.row - 1 + len(items)) % len(items)
+		m.panel.row = listnav.Cycle(m.panel.row, -1, len(items))
 	case "l", "right", "enter", "space", " ":
 		m.adjust(1)
 	case "h", "left":
@@ -415,9 +415,9 @@ func (m *Model) panelKey(k string) {
 		// 移動の語彙は listnav.MotionOf (glogx-ui-guide §2)。項目は 1 画面に収まる数なので、半ページ送りも 1 行ずつ巡る
 		switch listnav.MotionOf(k) {
 		case listnav.Down, listnav.HalfDown:
-			m.panel.row = (m.panel.row + 1) % len(items)
+			m.panel.row = listnav.Cycle(m.panel.row, 1, len(items))
 		case listnav.Up, listnav.HalfUp:
-			m.panel.row = (m.panel.row - 1 + len(items)) % len(items)
+			m.panel.row = listnav.Cycle(m.panel.row, -1, len(items))
 		case listnav.Top:
 			m.panel.row = 0
 		case listnav.Bottom:

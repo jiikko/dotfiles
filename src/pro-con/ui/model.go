@@ -465,7 +465,7 @@ func (m *Model) moveTab(delta int) {
 			cur = i
 		}
 	}
-	m.tab = ts[(cur+delta+len(ts))%len(ts)]
+	m.tab = ts[listnav.Cycle(cur, delta, len(ts))]
 	m.focusFirst()
 	m.resetSlots() // タブの切り替えはカードが動いたのではない
 }

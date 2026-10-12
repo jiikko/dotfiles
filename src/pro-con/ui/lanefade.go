@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jiikko/dotfiles/src/tuikit/anim"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 
 	"pro-con/card"
 )
@@ -83,30 +84,17 @@ func mix256(a, b int, t float64) int { //nolint:unparam // 256 色の汎用の�
 	if t >= 1 {
 		return b
 	}
-	ra, ga, ba := rgb256(a)
-	rb, gb, bb := rgb256(b)
+	ra, ga, ba := sgr.XtermRGB(a)
+	rb, gb, bb := sgr.XtermRGB(b)
 	lerp := func(x, y int) int { return x + int(float64(y-x)*t+0.5) }
 	return nearest256(lerp(ra, rb), lerp(ga, gb), lerp(ba, bb))
-}
-
-// cubeLevels は xterm の 6×6×6 cube の各段の値。
-var cubeLevels = [6]int{0, 95, 135, 175, 215, 255}
-
-// rgb256 は 256 色の番号 (16 以上。基本 16 色は端末ごとに違うので扱わない) の RGB。
-func rgb256(n int) (int, int, int) {
-	if n >= 232 {
-		v := 8 + (n-232)*10
-		return v, v, v
-	}
-	n -= 16
-	return cubeLevels[n/36], cubeLevels[n/6%6], cubeLevels[n%6]
 }
 
 // nearest256 は RGB に一番近い 256 色 (cube と灰の段のうち、距離の小さい方)。
 func nearest256(r, g, b int) int {
 	best, bestD := 16, -1
 	consider := func(n int) {
-		cr, cg, cb := rgb256(n)
+		cr, cg, cb := sgr.XtermRGB(n)
 		d := (cr-r)*(cr-r) + (cg-g)*(cg-g) + (cb-b)*(cb-b)
 		if bestD < 0 || d < bestD {
 			best, bestD = n, d

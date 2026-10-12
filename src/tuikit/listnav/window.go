@@ -20,3 +20,9 @@ func WindowOffset(offset, cursor, total, rows int) int {
 	}
 	return ClampOffset(offset, total, rows)
 }
+
+// Cycle は 0..n-1 を輪として、i から delta 進めた位置を返す (末尾の次は先頭、先頭の前は末尾)。
+// n は 1 以上 (0 のときは整数の 0 除算で panic する。呼ぶ側が空を先に弾く)。
+func Cycle(i, delta, n int) int {
+	return ((i+delta)%n + n) % n
+}

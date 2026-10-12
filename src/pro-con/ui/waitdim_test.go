@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
+
 	"pro-con/card"
 )
 
@@ -31,7 +33,7 @@ func TestWaitingCardDimsOwnColor(t *testing.T) {
 			}
 			line := m.cardCell(tc.c, 30)[0]
 			n := cardColor(tc.c.ID)
-			r, g, b := rgb256(n)
+			r, g, b := sgr.XtermRGB(n)
 			dimmed := fmt.Sprintf("\x1b[48;2;%d;%d;%dm", int(float64(r)*waitDim+0.5), int(float64(g)*waitDim+0.5), int(float64(b)*waitDim+0.5))
 			own := fmt.Sprintf("\x1b[48;2;%d;%d;%dm", r, g, b) // 普段の地も RGB (issue 556)
 			if got := strings.HasPrefix(line, dimmed); got != tc.dim {

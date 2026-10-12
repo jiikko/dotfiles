@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/jiikko/dotfiles/src/tuikit/anim"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 
 	"pro-con/backend"
@@ -183,7 +184,7 @@ func (m *Model) overlaySwitchLabel(screen, label string, alpha float64, bg rgb) 
 	if alpha <= 0 {
 		return screen
 	}
-	r, g, b := rgb256(switchAccent)
+	r, g, b := sgr.XtermRGB(switchAccent)
 	c := mixRGB(bg, rgb{r, g, b}, alpha)
 	col := "\x1b[0;1;38;2;" + strconv.Itoa(c.r) + ";" + strconv.Itoa(c.g) + ";" + strconv.Itoa(c.b) + "m"
 	body := " " + label + " "
@@ -202,15 +203,9 @@ func mixRGB(a, b rgb, t float64) rgb {
 	return rgb{lerp(a.r, b.r), lerp(a.g, b.g), lerp(a.b, b.b)}
 }
 
-// basic16 は基本 16 色 (SGR 30〜37 / 90〜97) の RGB。端末ごとに違うので xterm の値で近似する。
-var basic16 = [16]rgb{{0, 0, 0}, {205, 0, 0}, {0, 205, 0}, {205, 205, 0}, {0, 0, 238}, {205, 0, 205}, {0, 205, 205}, {229, 229, 229},
-	{127, 127, 127}, {255, 0, 0}, {0, 255, 0}, {255, 255, 0}, {92, 92, 255}, {255, 0, 255}, {0, 255, 255}, {255, 255, 255}}
-
+// color256 は 256 色の番号の RGB (基本 16 色は端末ごとに違うので xterm の値で近似する)。
 func color256(n int) rgb {
-	if n < 16 {
-		return basic16[n]
-	}
-	r, g, b := rgb256(n)
+	r, g, b := sgr.XtermRGB(n)
 	return rgb{r, g, b}
 }
 
@@ -319,16 +314,16 @@ func (st *sgrState) read(params string) string {
 		case p == 49:
 			st.bg = nil
 		case p >= 30 && p <= 37:
-			c := basic16[p-30]
+			c := color256(p - 30)
 			st.fg = &c
 		case p >= 90 && p <= 97:
-			c := basic16[p-90+8]
+			c := color256(p - 90 + 8)
 			st.fg = &c
 		case p >= 40 && p <= 47:
-			c := basic16[p-40]
+			c := color256(p - 40)
 			st.bg = &c
 		case p >= 100 && p <= 107:
-			c := basic16[p-100+8]
+			c := color256(p - 100 + 8)
 			st.bg = &c
 		default:
 			keep = append(keep, ps[i])

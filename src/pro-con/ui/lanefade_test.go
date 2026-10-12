@@ -1,6 +1,10 @@
 package ui
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/jiikko/dotfiles/src/tuikit/sgr"
+)
 
 // 256 色の混ぜ合わせ: 端は元の色のまま、途中は両端と違う色 (丸めても中間色がある)。
 func TestMix256(t *testing.T) {
@@ -14,7 +18,7 @@ func TestMix256(t *testing.T) {
 		t.Fatalf("途中の色が端と同じ (段階が無い): %d", got)
 	}
 	for _, n := range []int{16, 202, 240, 231, 255} { // 256 色の番号は RGB を経ても自分に戻る
-		if got := nearest256(rgb256(n)); got != n {
+		if got := nearest256(sgr.XtermRGB(n)); got != n {
 			t.Fatalf("%d の RGB が %d に丸められた", n, got)
 		}
 	}
