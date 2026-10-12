@@ -3,8 +3,10 @@ package filer
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"subproc"
@@ -15,11 +17,18 @@ import (
 
 // gitDiffCommand は repo の根 top で rel の diff を取る (テストで差し替える)。
 // --color=never で受けて、色は tuikit/highlight.Diff が付ける。
-var gitDiffCommand = func(ctx context.Context, top, rel string, cached bool) ([]byte, error) {
+var gitDiffCommand = func(ctx context.Context, top, rel string, unborn bool) ([]byte, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	// GitRepoCommand: 作業ツリーとの diff (HEAD) は clean filter を通すので、repo のローカルの設定の filter を止める (issue 732)
-	cmd, err := subproc.GitRepoCommand(ctx, top, gitDiffArgs(rel, cached)...)
+	base := "HEAD"
+	if unborn {
+		var err error
+		if base, err = emptyTree(ctx, top); err != nil {
+			return nil, err
+		}
+	}
+	// GitRepoCommand: 作業ツリーとの diff は clean filter を通すので、repo のローカルの設定の filter を止める (issue 732)
+	cmd, err := subproc.GitRepoCommand(ctx, top, gitDiffArgs(rel, base)...)
 	if err != nil {
 		return nil, err
 	}
@@ -43,18 +52,39 @@ var gitDiffCommand = func(ctx context.Context, top, rel string, cached bool) ([]
 	return b, rerr
 }
 
+// gitHeadExists は top の repo に HEAD の commit があるか (差し替え口。テストが偽の diff と組で替える)。
+var gitHeadExists = func(ctx context.Context, top string) (bool, error) {
+	cmd := subproc.GitCommand(ctx, "-C", top, "rev-parse", "--verify", "-q", "HEAD")
+	cmd.Stdin = nil
+	err := cmd.Run()
+	var ee interface{ ExitCode() int } // *exec.ExitError (filer は os/exec を import しない。exec_boundary_test)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.As(err, &ee) && ee.ExitCode() == 1: // --verify -q: 無ければ rc=1 で何も出さない
+		return false, nil
+	}
+	return false, err
+}
+
 // gitDiffArgs は diff の引数。
 // 🚨 --literal-pathspecs: `--` の後ろも pathspec なので、名前の * ? [ が glob になり、他のファイルの diff が混ざる
 // (`*` という名前で repo 全体が出た。レビューで再現 2026-10-09)。--no-ext-diff: diff.external (difftastic 等) の出力は
 // unified でなく、tuikit/highlight.Diff が読めない。--ignore-submodules=dirty: submodule の中の filter を走らせない (fetchRepo の status と同じ。issue 732)
-func gitDiffArgs(rel string, cached bool) []string {
-	args := []string{"--no-optional-locks", "--literal-pathspecs", "diff", "--no-ext-diff", "--no-textconv", "--color=never", "--ignore-submodules=dirty"}
-	if cached {
-		args = append(args, "--cached")
-	} else {
-		args = append(args, "HEAD")
+// base は比べる先 (HEAD か、HEAD が無い repo では空の tree。どちらも作業ツリーと比べるので、未 stage の変更も出る)。
+func gitDiffArgs(rel, base string) []string {
+	return []string{"--no-optional-locks", "--literal-pathspecs", "diff", "--no-ext-diff", "--no-textconv", "--color=never", "--ignore-submodules=dirty", base, "--", rel}
+}
+
+// emptyTree は top の repo の空の tree の名前 (object の形式 (SHA-1 / SHA-256) で違うので git に出させる。書き込みはしない)。
+func emptyTree(ctx context.Context, top string) (string, error) {
+	cmd := subproc.GitCommand(ctx, "-C", top, "hash-object", "-t", "tree", "--stdin")
+	cmd.Stdin = nil // 空の入力
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
 	}
-	return append(args, "--", rel)
+	return strings.TrimSpace(string(out)), nil
 }
 
 // diffMaxLines は diff の行数の上限 (巨大な生成物の diff を全部抱えない)。
@@ -101,8 +131,13 @@ func fetchDiff(parent context.Context, path string) []string {
 	ctx, cancel := context.WithTimeout(parent, subproc.GitOpTimeout)
 	defer cancel()
 	out, err := gitDiffCommand(ctx, top, rel, false)
-	if err != nil { // HEAD がまだ無い repo (最初の commit の前) は index との差を見る
-		out, err = gitDiffCommand(ctx, top, rel, true)
+	// HEAD がまだ無い repo (最初の commit の前) だけ、空の tree と作業ツリーを比べる。🚨 失敗を全部「HEAD が無い」と読まない: HEAD が在るのに
+	// timeout で失敗したときに別の差を出すと、未 stage の変更が隠れる (issue 731)。index との差 (--cached) にも落とさない: HEAD が無い repo でも
+	// 未 stage の変更を隠す。空の tree との差は作業ツリーの中身を全部出すので、ref が壊れて「HEAD が無い」と見えた repo でも何も隠さない
+	if err != nil {
+		if exists, herr := gitHeadExists(ctx, top); herr == nil && !exists {
+			out, err = gitDiffCommand(ctx, top, rel, true)
+		}
 	}
 	if err != nil {
 		return []string{"(diff を取れません: " + cleanLine(err.Error()) + ")"}

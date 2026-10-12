@@ -140,23 +140,67 @@ func TestViewGrowsIncrementally(t *testing.T) {
 	}
 }
 
-// fakeDiff は gitDiffCommand を差し替える。HEAD 無し (cached=false が失敗) も模せる。
+// fakeDiff は gitDiffCommand を差し替える。HEAD 無し (unborn=false が失敗) も模せる。
 func fakeDiff(t *testing.T, noHead bool, out string) *[]bool {
 	t.Helper()
 	var mu sync.Mutex
 	calls := []bool{}
 	orig := gitDiffCommand
-	gitDiffCommand = func(_ context.Context, _, _ string, cached bool) ([]byte, error) {
+	gitDiffCommand = func(_ context.Context, _, _ string, unborn bool) ([]byte, error) {
 		mu.Lock()
-		calls = append(calls, cached)
+		calls = append(calls, unborn)
 		mu.Unlock()
-		if noHead && !cached {
+		if noHead && !unborn {
 			return nil, errors.New("bad revision 'HEAD'")
 		}
 		return []byte(out), nil
 	}
-	t.Cleanup(func() { gitDiffCommand = orig })
+	origHead := gitHeadExists
+	gitHeadExists = func(context.Context, string) (bool, error) { return !noHead, nil }
+	t.Cleanup(func() { gitDiffCommand, gitHeadExists = orig, origHead })
 	return &calls
+}
+
+// HEAD が在るのに HEAD との diff が失敗したら、index との差に落とさず失敗を出す (未 stage の変更を隠さない。issue 731)。
+func TestDiffHeadFailureIsNotTakenAsUnborn(t *testing.T) {
+	orig, origHead := gitDiffCommand, gitHeadExists
+	t.Cleanup(func() { gitDiffCommand, gitHeadExists = orig, origHead })
+	gitDiffCommand = func(_ context.Context, _, _ string, unborn bool) ([]byte, error) {
+		if !unborn {
+			return nil, errors.New("signal: killed")
+		}
+		return []byte("+index だけの差\n"), nil
+	}
+	gitHeadExists = func(context.Context, string) (bool, error) { return true, nil }
+	m := newTest(t)
+	markModified(t, m, "c.txt")
+	tl := openTileAt(t, m, "c.txt")
+	m.HandleKey("d")
+	waitDiff(t, m)
+	if got := m.view(tl)[0].plain; !strings.Contains(got, "diff を取れません") {
+		t.Fatalf("HEAD が在るのに index だけの差を出した: %q", got)
+	}
+	gitHeadExists = func(context.Context, string) (bool, error) { return false, errors.New("rev-parse: killed") } // 判定そのものが失敗しても落とさない
+	m.HandleKey("d")
+	m.HandleKey("d")
+	waitDiff(t, m)
+	if got := m.view(tl)[0].plain; !strings.Contains(got, "diff を取れません") {
+		t.Fatalf("HEAD の有無を判定できないのに別の差を出した: %q", got)
+	}
+}
+
+// HEAD が無い repo (最初の commit の前) でも、作業ツリーの未 stage の変更が出る (空の tree との差。index との差では出なかった。issue 731)。
+func TestUnbornDiffShowsUnstagedChanges(t *testing.T) {
+	needGit(t)
+	dir := t.TempDir()
+	initRepo(t, dir, "main")
+	mustWrite(t, filepath.Join(dir, "f"), "staged\n")
+	gitIn(t, dir, "add", "f")
+	mustWrite(t, filepath.Join(dir, "f"), "staged\nunstaged\n")
+	out := strings.Join(fetchDiff(context.Background(), filepath.Join(dir, "f")), "\n")
+	if !strings.Contains(out, "unstaged") {
+		t.Fatalf("HEAD が無い repo で未 stage の変更が出ない:\n%s", out)
+	}
 }
 
 // markModified は Git を止めて (裏の git の結果で上書きさせない)、rel を変更ありにする。
@@ -396,5 +440,20 @@ func TestDiffToggleCancelsInflightFetch(t *testing.T) {
 	case <-time.After(10 * time.Second): // hang guard (止めなかったときだけ落とす)
 		t.Fatal("本体へ戻しても取得中の git を止めない")
 	}
-	waitDiff(t, m) // 取得の goroutine が終わってから抜ける (差し替え点を戻す後始末と、--cached の 2 回目の呼び出しを重ねない)
+	waitDiff(t, m) // 取得の goroutine が終わってから抜ける (差し替え点を戻す後始末と、HEAD が無いときの 2 回目の呼び出しを重ねない)
+}
+
+// gitHeadExists は本物の git で、最初の commit の前は false・commit の後は true を返す。
+func TestGitHeadExistsOnRealRepo(t *testing.T) {
+	needGit(t)
+	dir := t.TempDir()
+	initRepo(t, dir, "main")
+	if ok, err := gitHeadExists(context.Background(), dir); err != nil || ok {
+		t.Fatalf("最初の commit の前: %v %v (false, nil のはず)", ok, err)
+	}
+	mustWrite(t, filepath.Join(dir, "f"), "x")
+	commitAll(t, dir)
+	if ok, err := gitHeadExists(context.Background(), dir); err != nil || !ok {
+		t.Fatalf("commit の後: %v %v (true, nil のはず)", ok, err)
+	}
 }

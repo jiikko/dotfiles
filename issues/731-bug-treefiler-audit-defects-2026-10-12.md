@@ -53,4 +53,9 @@ treefiler の監査 (737) で、実測で再現したか、コードで経路を
   - 5: キー一覧が収まらないとき最後の行に「… 残り N 行」。6: `appendHistory` を O_NOFOLLOW で。変異で red
   - 敵対レビュー (opus) 2 周: 1 周目 P1 = 新しい pty テストが -race で落ちる (Buffer の競合) → lockedBuffer・P2 = clear の範囲が画面の外・空のとき範囲の外の全角を割る →
     切り詰め。2 周目 P1 / P2 なし (clear を 20 万回 × 2 の乱数で幅・範囲の外の不変条件の違反 0)。P3 (全角空白・live の残り・待ちの上限) を直して打ち切った
-  - **7 は未着手**: diff.go を 5f が 732 で触っているので、その push の後に入れる
+- 2026-10-12 (dotfiles-4e): 7 を直した (5f の 732 の上に)。commit「fix(treefiler): diff の取得の失敗を「HEAD が無い」と読まず、HEAD が無い repo は空の tree と比べる (issue 731 の 7)」
+  - HEAD との diff が失敗したら `gitHeadExists` (`rev-parse --verify -q HEAD`。rc=1 だけを「無い」) で確かめ、無いときだけ **空の tree と作業ツリー** を比べる
+    (`hash-object -t tree --stdin` で空の tree を出す。SHA-256 の repo でも合う)。在る・判定できないときは失敗を出す
+  - 敵対レビュー (opus): P2 = ref が壊れても rc=1 で「無い」と見える・本物の unborn でも `--cached` は未 stage を隠す (どちらも実測) → 落ちる先を空の tree との差にして、
+    判定がどちらに転んでも未 stage を隠さない形にした。P3 = 判定が error を返す場合のテストが無い → 足した。直しは見せる量を増やす向きだけなので周回は打ち切った
+  - テスト: `TestDiffHeadFailureIsNotTakenAsUnborn` (HEAD が在る・判定が失敗する)・`TestUnbornDiffShowsUnstagedChanges` (本物の git)・`TestGitHeadExistsOnRealRepo`。変異 4 本で red
