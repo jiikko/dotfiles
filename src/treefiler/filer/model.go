@@ -141,6 +141,7 @@ func New(dir string, opts Options) (*Model, error) {
 		root.last = ks[0]
 	}
 	m.set, m.setErrs = loadSettings(configPath())
+	m.prompt.history = loadHistory()
 	if len(m.setErrs) > 0 {
 		m.fail("設定ファイルに読めない行があります (" + itoa(len(m.setErrs)) + " 件。, の板の足元に出ています)")
 	}

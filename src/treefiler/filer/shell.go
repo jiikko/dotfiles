@@ -120,6 +120,7 @@ func (m *Model) promptKey(key, text string) {
 		if n := len(p.history); n == 0 || p.history[n-1] != cmd {
 			p.history = append(p.history, cmd)
 		}
+		appendHistory(historyPath(), cmd) // 続けて同じでも足す (読むときに畳む。history.go)
 		m.exec = &ExecRequest{Dir: m.workDir(), Argv: []string{"/bin/sh", "-c", waitIfQuick, "treefiler", userShell(), cmd}, Env: m.execEnv()}
 	case "esc", "ctrl+c":
 		p.active = false
