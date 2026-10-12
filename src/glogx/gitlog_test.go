@@ -494,6 +494,10 @@ func TestLoadLogDisplayVerbatimRealRepo(t *testing.T) {
 	if v == nil {
 		t.Fatalf("実リポジトリで照合に失敗:\n%s", strings.Join(raw, "\n"))
 	}
+	// ヘッダー行は端末の git log と同じくブランチ名を持つ (パイプでは log.decorate=auto が消す)
+	if !strings.Contains(v[0].Text, "(HEAD -> ") {
+		t.Errorf("先頭コミットのヘッダーにブランチ名が無い: %q", v[0].Text)
+	}
 	// 本文 (非ヘッダー) 行は git log の出力とバイト一致 = 見た目の機械的一致の根拠
 	for i, l := range v {
 		if !l.Header && l.Text != raw[i] {

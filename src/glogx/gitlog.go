@@ -124,8 +124,10 @@ func BuildLogArgs(opts *Options, colored bool) []string {
 
 // BuildDisplayArgs は表示用 (verbatim) の git log 引数列。format を指定せず git の素の
 // 出力 (medium 形式) をそのまま得る = 見た目は git log と機械的に一致する。
+// --decorate=short は明示が要る: log.decorate の既定 (auto) は出力先が端末のときだけ
+// ブランチ名を付けるので、パイプで受けるここでは消える (端末の git log とずれる)。
 func BuildDisplayArgs(opts *Options, colored bool) []string {
-	return buildLogArgsWith("", opts, colored, true)
+	return buildLogArgsWith("--decorate=short", opts, colored, true)
 }
 
 // BuildFingerprintArgs は表示中の git log が変わったかを測る引数列 (gitlog_watch.go)。
@@ -137,12 +139,10 @@ func BuildFingerprintArgs(opts *Options) []string {
 }
 
 // buildLogArgsWith は 3 つの入口の共通部 (revs / max-count / paths の組み立ての単一の出典)。
-// withBody は --stat / -p を通すか (指紋は本文を読まないので false)。
-func buildLogArgsWith(format string, opts *Options, colored, withBody bool) []string {
-	args := []string{"log"}
-	if format != "" {
-		args = append(args, format)
-	}
+// shape は出力の形を決める引数 (--pretty か --decorate)。withBody は --stat / -p を通すか
+// (指紋は本文を読まないので false)。
+func buildLogArgsWith(shape string, opts *Options, colored, withBody bool) []string {
+	args := []string{"log", shape}
 	args = append(args, fmt.Sprintf("--max-count=%d", opts.MaxCount))
 	args = append(args, colorArg(colored))
 	if withBody {
