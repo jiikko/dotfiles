@@ -44,9 +44,9 @@
 
 ## 受け入れ条件
 
-- [ ] 4 つの並び (name / modified / size / reverse) が設定の板で、Sort by が `S` で切り替わり、保存される (保存の往復のテスト + 変異)
-- [ ] 巨大なフォルダで並び替えた後も、仮想化の等価性のテストが通る
-- [ ] spec の「ソートは後回し」の記述を直す
+- [x] 4 つの並び (name / modified / size / reverse) が設定の板で、Sort by が `S` で切り替わり、保存される (保存の往復のテスト + 変異)
+- [x] 巨大なフォルダで並び替えた後も、仮想化の等価性のテストが通る
+- [x] spec の「ソートは後回し」の記述を直す
 
 ## 進捗
 
@@ -56,3 +56,14 @@
   不正確 (順位が変わらなければ `sameKids` が世代を据え置く。本当の重さは modified でライブ更新のたびに順位が変わること) / `sortKids` は 3 引数で呼び出しは 3 か所・
   Model を持たない `node.load` からも呼ぶ / 等価性のテストの fixture は mtime が揃っていて modified の検査にならない / spec の記述は 8 か所 / 保存の往復のテストは新規。
   反証できなかったもの: 今は名前順だけ / 並びは `sortKids` / 既に実装済みではない
+- 2026-10-12: 実装「feat(treefiler): 並び替えを選べるようにする (Sort by: name / modified / size・Reverse・S キー) (issue 720)」
+  - 並べ方を `sortOrder` (tree.go) の 1 つの値と `less` に寄せ、並べ直しを起こす設定のキーを `orderKeys` (settings.go) の 1 か所にした。`S` は toast で今の並びを出す
+    (ステータスバーの `⇅` は写さない)。root を 1 段上げたとき旧 root の node へ今の mtime と大きさを写す (敵対レビューの P3)
+  - 等価性のテスト: 乱数の操作列に `S` と Reverse を足し、fixture の fNNNN のファイルの mtime と大きさをずらした。🚨 フォルダと消えないファイルは 1 時間前にそろえたまま
+    (フォルダの熱の色は裏の走査の結果が届く時刻で決まる。ずらしたファイルにいちばん新しい時刻を持たせると、並び替えを外した版でも 300 本の種で 4 本が色の値の差で落ちた)。
+    `TREEFILER_VIRT_SEEDS=300` で通る。fixture が名前順と違う並びを作ることを `TestVirtFixtureSortOrdersDiffer` で固定
+  - 変異 11 本で red (内容は commit message)。敵対レビュー 1 周 (opus) の 3 件を直し、直しは判定を足さず直接のテストと変異で確かめたので打ち切った
+  - 性能 (敵対レビューの実測): 2 万件の読み直し 1 回は name 61.6ms / modified 64.8ms / size 59.6ms。並べ直しの追加は約 5% で、大半は ReadDir と stat。
+    modified で書き込みの続くファイルが毎回動く見た目は仕様どおり (未計測の体感)
+  - `make -C src/treefiler test` / `lint` rc=0、root の `make test` rc=0 (1 回目は `_claude/mods/tool-elapsed` の時間に関わるテストが並列の負荷で 5 秒を超えて落ち、
+    単独で走らせ直すと通った。今回の変更とは無関係)
