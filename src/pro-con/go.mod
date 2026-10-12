@@ -44,5 +44,6 @@ replace (
 	glogx => ../glogx
 	process_supervisor => ../process_supervisor
 	ratelimit => ../ratelimit
+	safefs => ../safefs
 	subproc => ../subproc
 )

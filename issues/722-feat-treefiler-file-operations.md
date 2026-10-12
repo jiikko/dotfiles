@@ -65,10 +65,11 @@ treefiler から、カーソルの項目に対してファイルの操作をで�
 
 ## 受け入れ条件
 
-- [ ] 3 つの操作 (新規作成・名前の変更・ゴミ箱) がキーで動き、読み直しとカーソルの移動が正しい
-- [ ] 上書きしない・root の外を触らない・`/` や `..` を断る・別ボリュームのゴミ箱を断る、をテストで固定し、変異で red を確認
-- [ ] テストが一時ディレクトリの外を触らない仕掛け (実行前の拒否)
-- [ ] 敵対レビューを通した
+- [x] 3 つの操作 (新規作成・名前の変更・ゴミ箱) がキーで動き、読み直しとカーソルの移動が正しい
+- [x] 上書きしない・root の外を触らない・`/` や `..` を断る、をテストで固定し、変異で red を確認 (別ボリュームの EXDEV は手元で作れないので未テスト。
+  doctor から引き継いだ分岐のまま)
+- [x] テストが一時ディレクトリの外を触らない仕掛け (実行前の拒否)
+- [x] 敵対レビューを通した
 
 ## 関連
 
@@ -83,3 +84,35 @@ treefiler から、カーソルの項目に対してファイルの操作をで�
   `p` `a` が ui-guide §2 の語彙とぶつかる → ユーザーに聞き直し、複製を外して `a` は例外に / 入力を握る層は 2 つ (ctrl+c の扱い) / 大文字小文字だけの名前の変更 /
   新規作成の名前の規則の矛盾 / 操作後の読み直しとカーソル・タイル / 715 の層の判定の全数。反証できなかったもの: `a` `m` `d` が filer と F の横断で空いている /
   タイルの `d` は diff のまま / `node.raw` `node.abs` `m.root` / `tuikit/confirm` `tuikit/lineedit` / x/sys v0.47.0 に `RenamexNp` と `RENAME_EXCL` / 715 と 712 の記述
+- 2026-10-12 (dotfiles-4e): 実装した。commit「feat(treefiler): a / m / d でファイルを作る・名前を変える・ゴミ箱へ移す (issue 722)」
+  - **共有 module `src/safefs`** を新設: `TrashMove` (doctor の trashMove の本体をそのまま移した)・`Rename`・`Create`・`ValidName`・`Identity`。
+    どの操作も syscall の直前に呼び出し側の `Guard` を通し、nil は失敗。テスト用の砂場 `safefs/sandbox` (登録した一時ディレクトリの外を実行前に拒否・
+    親を実解決・拒否を記録)。doctor は `trashMove` を薄い包みにして `allowDestructive` を渡す (op 名 `trash-dest` / `trash`・順序・文言は元のまま。
+    文言は safefs の sentinel error を doctor 側で付け直す)。doctor の砂場 (4 段構え) は寄せていない (振る舞いを変えないため)
+  - treefiler: `filer/fileops.go`。名前の入力は `!` の欄を種類付き (`promptState.kind`) にして使い回し (層を増やさない)、確認の板 (`Model.ask`) だけが新しい層。
+    ctrl+c は入力欄と確認の板では取り消し。issue 715 の案 A (`layer` の札 + `filer/layers_test.go` の網羅テスト) を一緒に入れた
+  - 決めたこと: 大文字小文字・正規化だけの名前の変更は **RENAME_EXCL がそのまま通る** (実測: APFS の $TMPDIR で `readme`→`README`・NFC→NFD とも err=nil。
+    この issue の「EEXIST を返す」は外れ)。一時名を経由する経路を書いたが、届かないので消した。別の名前の hardlink へは EEXIST で断る (テストあり)
+  - 入力欄を開いたまま Enter (制御文字を落とした表示のまま) では名前を変えない (`prefill`)
+  - 最下行の案内には足さなかった (既存の `y` `S` `O` も載せておらず、幅が足りないと凡例から落とす作り)。`?` のキー一覧・README・spec §0.1・ui-guide §2 に載せた
+  - ライブ更新: 操作の後の次のポーリング (1 秒) が変化を拾って作った・変えた項目を光らせる (この issue の「光は二重に走らない」は外れ。害は無く、操作の合図になる)
+- 検証: 変異 23 本 (safefs の上書き・識別・名前の検査・検査点・砂場の symlink と登録範囲、filer のカーソル・ctrl+c・OwnsKeys・prefill・砂場の差し替え忘れ、
+  doctor の字句ゲートと文言、glogx の F の中の d) を `bin/mutate-verify-list` で当て、全部想定の検査で red。緑だった 1 本 (大文字小文字の一時名の経路) は上の実測で
+  届かない経路と分かり削除した
+- 敵対レビュー (opus・読み取りのみ、2 本を直列):
+  - 1 本目 (壊す・並行): **P2 を実測で再現** — 木を読んだ後で途中のフォルダが外への symlink に差し替わると、古い node 越しに d / m / a が root の外に効いた。
+    → `safeDir` (root だけ symlink を辿り、そこから 1 段ずつ Lstat してフォルダでないものを断る) で直し、`TestOpsDoNotFollowSwappedSymlinkFolder` で固定 (変異で red)。
+    P3 doctor の文言が変わった → sentinel error にして doctor 側で元の文言へ戻した
+  - 2 本目 (素通り・回帰・1 本目の修正の 2 周目): P1 なし・`safeDir` は壊せず。素通り 2 件 (doctor の文言の付け直し・safefs の移動元の検査点) をテストで固定 (変異で red)。
+    2 周目の修正は判定ロジックを足さない・変異で確認済みなので周回はここで打ち切った
+- 未確認リスク・記録 (直していない):
+  - safefs の照合 (Fstatat) から renameatx_np までの間に、同じフォルダで同じ名前が別の項目へ差し替わると、別の項目を移す・名前を変える (失うもの・上書きは無い)。
+    doctor の trash も切り出し前から同じ (removeItem だけが事後に照合して戻す)。`safeDir` の確認から safefs が親を開くまでの窓も残る (root の fd から openat で辿れば閉じられる)
+  - root が付け替えられる symlink (`current -> releases/N`) のとき、操作は付け替えた後の先に効く (root のパスの外には出ない)
+  - `~/.Trash` はフルディスクアクセスの無いプロセスから開けないことがある (レビューのセッションで EPERM。原因は未切り分け)。失敗は「ゴミ箱を開けません」で止まる。doctor も同じ
+  - 名前の前後の空白は落とさない (末尾が空白の名前は正当なので)。貼った改行は空白になる
+  - safefs の中には doctor の `TestDestructiveCallsGoThroughHook` に当たる字句ゲートが無い (検査点は実行時のテストだけが守る)。`sandbox.Allow` の範囲は $TMPDIR 次第
+- 最後の編集 (5f の 726 / 727 の後へ rebase。applyChange の `dropGoneRecs` を共有の `reloadDir` へ寄せた) の後に: `make -C src/treefiler lint test`・`make -C src/glogx lint`・
+  glogx の `go test -race`・`TREEFILER_VIRT_SEEDS=300 go test -run TestVirtualizedRandomOps ./filer`・root の `make test` が rc=0。
+  1 回目の root の `make test` では glogx の `TestOwnSourceRootsCoverLocalReplaces` (safefs の replace を走査の根に足し忘れ。直した) と、
+  無関係の 3 本 (`tests/tmux/test_reap_orphan_servers.sh` は master でも単独で rc=127・`test_restore_runner.sh` と `tests/claude/test_claude_mods.sh` は単独では緑) が赤だった。2 回目は全部緑

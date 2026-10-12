@@ -16,6 +16,7 @@ on:
     paths:
       - 'src/doctor/**'
       - 'src/termsafe/**'  # replace で取り込む共有 module (無害化の関門。issue 228)
+      - 'src/safefs/**'    # replace で取り込む共有 module (ゴミ箱への移動の本体。issue 722)
       # 🚨 disk/derived_fields_bypass_test.go は **glogx のソースも走査する**
       # (disk.Report/Result の導出フィールドを所有者の外から書いていないか。issue 372)。
       # ここに含めないと「glogx だけ変えた push」でその検査が 1 度も走らず、
@@ -30,6 +31,7 @@ on:
     paths:
       - 'src/doctor/**'
       - 'src/termsafe/**'  # replace で取り込む共有 module (無害化の関門。issue 228)
+      - 'src/safefs/**'    # replace で取り込む共有 module (ゴミ箱への移動の本体。issue 722)
       - 'src/glogx/**'     # 上と同じ理由 (導出フィールドの走査が glogx を見る)
       - .github/workflows/src_doctor.yml
       - .github/workflows/_go-project.yml

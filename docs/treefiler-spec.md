@@ -21,6 +21,7 @@
 | `q` の cd 連携 (`--cwd-file`) | あり | **写さない** |
 | `o` `O` / ソート | 巡回・逆順 | **ソートは `S` (Sort by の巡回: name → modified → size) と設定の板 (Sort by / Reverse)** (issue 720。フォルダは自身の値で比べ、裏の走査の結果は使わない)。`o` は glogx の「外のアプリで開く」のまま (`open <path>`)。`O` は「Finder で表示」(`open -R <path>`。issue 719) |
 | `y` `Y` | なし | **パスをコピー** (`y` = 絶対パス・`Y` = root からの相対パス。glogx の `y` と同じ「素の値をコピー」。クリップボードは `subproc/clipboard`。issue 718) |
+| ファイル操作 | 無い | **`a` 新規作成 (末尾 `/` でフォルダ)・`m` 名前の変更 (同じフォルダの中だけ)・`d` ゴミ箱へ移す (確認の板。`~/.Trash`)** (2026-10-12 ユーザー決定。issue 722)。上書きしない・別ボリュームは断る・root は対象外。本体は `src/safefs` (doctor の削除と共有)。名前の入力は `!` と同じ足元の欄、確認の板の中では `Ctrl-C` も取り消し。`d` はタイルの中では diff のまま。`R` `D` を避けたのは glogx の横断キー (ratelimit / doctor) を F の中で潰さないため |
 | `e` | explode (§5.4。ファイルの上では親のフォルダが対象) | **フォルダの上は explode、ファイルの上とタイルの中はエディタで開く** (2026-10-09 ユーザー依頼「ツリービューでファイルに e を押したら neovim を開いて欲しい」「プレビューを開いて e」)。エディタは `tuikit/editor` ($VISUAL → $EDITOR → nvim。glogx の issues viewer の `e` と同じ)。タイルのジャンプモードの `e` は選んだパスを開く (issues viewer と同じ)。戻ったら読み直す (`ExecDone`) |
 | 他の衝突するキー | `s` シェル / `C` 経路以外を畳む / `J` `K` / `Space` `Tab` / `n` `N` / `Enter` | **treebeard のまま** (`o` 以外は上書き)。ファイラーの中では glogx の `s` (status viewer)・`C` (claude update) は効かない |
 | `j` `k` の歩き方 | 既定 Step through = tree (開いたフォルダへ潜る) | **同じ階層 (兄弟) の中だけを動く** (2026-10-08 ユーザー回答。押しっぱなしで潜らない)。`J` `K` も兄弟を 10 |

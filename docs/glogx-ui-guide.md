@@ -85,9 +85,10 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 | `Y` | コピー (整形した参照: Markdown / 番号+タイトル+パス) | |
 | `S` | 並び (sort) の巡回 | treefiler (名前順 → 更新の新しい順 → 大きい順)。小文字の `s` (シェル) の強い版ではない例外 |
 | `p` | PR または番号 | 一覧では PR を開く、issues では番号コピー (「PR / number」の頭文字) |
-| `d` | diff | コミット / status のファイル |
+| `d` | diff | コミット / status のファイル / treefiler のタイル。**treefiler の木の上では「ゴミ箱へ移す」**(§4 の `d` 削除と同じ。y/N 確認) |
+| `m` | 名前の変更 (move / rename) | treefiler (同じフォルダの中だけ) |
 | `r` | 再読込 / 再実行 | issues の再読込、job の rerun |
-| `a` | all / 巡回 | status で全部 stage、issues で状態フィルタ巡回 |
+| `a` | all / 巡回 | status で全部 stage、issues で状態フィルタ巡回。**例外: treefiler では新規作成 (add)** (ファイラーの慣習。ユーザー確認 2026-10-12。issue 722) |
 | `n` | next (次にやる目印) | issues の claim |
 | `N` | 次の番号 | issues の採番コピー |
 | `i` `s` `R` `D` `F` `U` | 板の toggle (横断キー) | どの画面からも同じ板へ飛べる (`F` = treefiler。treefiler の中では `s` がシェルなので status へは飛ばない。docs/treefiler-spec.md §0.1)。割当の表は `crossTarget` (fullscreen.go) の 1 本で、各画面はそれを引く (`U` は重ねる箱なので別経路)。**画面が自分でキーを解釈し切るモード (確認の y/N・status の全画面 diff・URL ピッカー・番号入力・doctor の削除の確認と実行) では効かない** (issues の本文 pager では効く) (誤爆防止。issue 664) |

@@ -270,6 +270,31 @@ func TestFilerHelpSwallowsCrossKeys(t *testing.T) {
 	}
 }
 
+// ファイル操作の層 (a / m の名前の入力・d の確認の板) を開いている間、横断キー (R / D / i) は filer が取る (issue 722)。
+// 確認の板は y / Enter 以外で閉じるだけ、名前の入力欄は字として受ける。
+func TestFilerFileOpLayersTakeCrossKeys(t *testing.T) {
+	for _, k := range []string{"R", "D", "i"} {
+		m := newFilerBrowse(t)
+		m.handleKey("F")
+		m.handleKey("d")
+		if !m.filerV.f.OwnsKeys() {
+			t.Fatal("F の中の d で確認の板が開かない (glogx の d に取られた)")
+		}
+		m.handleKey(k)
+		if m.activeFullScreen() != fullScreenFiler || m.filerV.f.OwnsKeys() {
+			t.Fatalf("確認の板の中の %s: filer に留まって板だけ閉じるはず (全画面 %v)", k, m.activeFullScreen())
+		}
+		for _, open := range []string{"a", "m"} {
+			m.handleKey(open)
+			m.handleKey(k)
+			if m.activeFullScreen() != fullScreenFiler || !m.filerV.f.OwnsKeys() {
+				t.Fatalf("%s の入力欄の %s: 字として入るはず (全画面 %v)", open, k, m.activeFullScreen())
+			}
+			m.handleKey("esc")
+		}
+	}
+}
+
 // シェルが 0 以外で終わっても「エディタが異常終了しました」を出さない (シェルは最後のコマンドの終了コードで抜けるのが普通)。
 func TestFilerShellNonZeroExitIsQuiet(t *testing.T) {
 	m := newFilerBrowse(t)

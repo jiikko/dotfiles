@@ -25,6 +25,7 @@ on:
     branches: [master]
     paths:
       - 'src/doctor/**'
+      - 'src/safefs/**'  # ゴミ箱への移動の本体 (issue 722)
       - 'src/glogx/doctor_*.go'
       - 'src/glogx/tui.go'
       - .github/workflows/doctor.yml
@@ -32,6 +33,7 @@ on:
   pull_request:
     paths:
       - 'src/doctor/**'
+      - 'src/safefs/**'  # ゴミ箱への移動の本体 (issue 722)
       - 'src/glogx/doctor_*.go'
       - 'src/glogx/tui.go'
       - .github/workflows/doctor.yml

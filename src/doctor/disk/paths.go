@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"safefs"
 )
 
 // Env は展開に使う環境 (テストで偽 HOME / 偽 TMPDIR を差す)。
@@ -88,19 +90,10 @@ func expand(env Env, tmpl string) ([]string, error) {
 	return matches, nil
 }
 
-// systemLinkPrefixes は macOS がルート直下に置く symlink。/var → /private/var 等。
-// 「経路の途中に symlink があれば拒否」の規律にこれが引っかかると TMPDIR (/var/folders/...) が
-// 全部拒否されるので、この 3 つだけは先に実体へ書き換える (他の symlink は拒否のまま)。
-var systemLinkPrefixes = map[string]string{"/var": "/private/var", "/tmp": "/private/tmp", "/etc": "/private/etc"}
-
-func normalizeSystemLinks(p string) string {
-	for from, to := range systemLinkPrefixes {
-		if p == from || strings.HasPrefix(p, from+"/") {
-			return to + p[len(from):]
-		}
-	}
-	return p
-}
+// normalizeSystemLinks は macOS がルート直下に置く symlink (/var /tmp /etc) を実体へ書き換える (表は safefs が持つ。
+// 「経路の途中に symlink があれば拒否」の規律にこれが引っかかると TMPDIR (/var/folders/...) が全部拒否されるので、この 3 つだけは
+// 先に実体へ書き換える。他の symlink は拒否のまま)。
+func normalizeSystemLinks(p string) string { return safefs.NormalizeSystemLinks(p) }
 
 // minDepth は拒否する浅さ (/Users/<name> = 深さ 2 は拒否)。深さ 3 は HOME 直下で、ドットで始まる
 // ツールの root (~/.goenv / ~/.npm) だけを許す。~/Library / ~/Documents のような HOME 直下の

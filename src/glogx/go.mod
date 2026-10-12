@@ -38,6 +38,7 @@ require (
 	ratelimit v0.0.0
 	treefiler v0.0.0
 	subproc v0.0.0
+	safefs v0.0.0 // indirect
 )
 
 replace atomicfile => ../atomicfile
@@ -53,3 +54,5 @@ replace treefiler => ../treefiler
 replace github.com/jiikko/dotfiles/src/termsafe => ../termsafe
 
 replace github.com/jiikko/dotfiles/src/tuikit => ../tuikit
+
+replace safefs => ../safefs

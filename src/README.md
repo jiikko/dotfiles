@@ -27,6 +27,7 @@
 | [`termsafe`](termsafe/README.md) | 外から来た文字列を端末へ安全に出す無害化 |
 | [`subproc`](subproc/README.md) | 外部プロセス実行の安全弁 (WaitDelay と git の timeout) |
 | [`atomicfile`](atomicfile/README.md) | 途中の状態を残さないファイル書き込み (temp + rename) |
+| [`safefs`](safefs/README.md) | 上書きしない作成・名前の変更・ゴミ箱への移動 (doctor と treefiler が共有) |
 | [`proctree`](proctree/README.md) | プロセスの子孫を集めて止める (runtimeout と zundamon-kaisetsu が使う) |
 
 package 単位の一覧は [PACKAGES.md](PACKAGES.md) (生成物)。道具を知らなくても grep で見つけられるよう commit しておき、`scripts/go_packages_index.sh --check` (`make test-lint`) が生成し直した結果との差分を検査する。

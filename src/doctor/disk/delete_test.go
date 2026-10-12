@@ -1547,3 +1547,23 @@ func TestHistoryCreateGoesThroughHook(t *testing.T) {
 		t.Error("違反記録が 0 件 (ハーネスが見ていない)")
 	}
 }
+
+// 差し替わり・識別不能の文言は doctor の操作 (再スキャン) を案内する (本体は safefs。文言は trashMove が付け直す。issue 722)。
+func TestTrashMoveKeepsDoctorWording(t *testing.T) {
+	dir := t.TempDir()
+	sandboxAllow(t, dir)
+	src := filepath.Join(dir, "src", "victim")
+	mkfile(t, src, 1)
+	dev, ino := identityOf(t, src)
+	for _, c := range []struct {
+		dev, ino uint64
+		want     string
+	}{{dev, ino + 1, "直前に別の実体へ差し替わりました (再スキャンしてください)"}, {0, 0, "走査時の実体を識別できません (再スキャンしてください)"}} {
+		if _, err := trashMove(src, filepath.Join(dir, "Trash"), c.dev, c.ino); err == nil || err.Error() != c.want {
+			t.Errorf("err = %v, want %q", err, c.want)
+		}
+	}
+	if !exists(src) {
+		t.Fatal("移動元が動いた")
+	}
+}

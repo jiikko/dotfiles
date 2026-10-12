@@ -34,7 +34,7 @@ import (
 	"doctor/cachedir"
 	"doctor/runner"
 
-	"golang.org/x/sys/unix"
+	"safefs"
 )
 
 // DeletePhase は 1 エントリの処理段階 (進捗表示用。結末ではない)。
@@ -1013,117 +1013,21 @@ func validateRef(ref string) error {
 
 // ---- ゴミ箱 ----
 
-// trashMove は src を trashDir へ移す。
-//
-// 3 つのことを同時に守る:
-//   - **上書きしない**。macOS の renameatx_np(RENAME_EXCL) で「宛先が無いときだけ移す」を
-//     原子的に行う。素の os.Rename は宛先を黙って上書きし、以前ゴミ箱に入れた同名を破壊する。
-//     名前が埋まっていたら Finder と同じく連番を足す
-//   - **経路を差し替えられない**。src の親と移動先を fd で掴み、その fd 経由で同一性を確かめてから
-//     rename する (パスで再解決すると、検査と実行のあいだに親を差し替えられる)
-//   - **半端なコピーを作らない**。別ボリューム (EXDEV) や RENAME_EXCL の効かない FS では移さずに
-//     失敗する。再帰コピーは途中で失敗すると復元をかえって難しくする (ゴミ箱移動の目的は復元手段)
+// trashMove は src を trashDir へ移す。本体 (上書きしない・経路を差し替えられない・半端なコピーを作らない) は
+// safefs.TrashMove (treefiler と共有。issue 722)。検査点は allowDestructive をそのまま渡す (op 名 trash-dest / trash は変わらない)。
 func trashMove(src, trashDir string, dev, ino uint64) (string, error) {
-	if trashDir == "" {
-		return "", errors.New("ゴミ箱の場所が分かりません")
-	}
-	// 🚨 **宛先も検査点を通す** (issue 234 (b))。src だけを見ていたので、登録済みの src から
-	// 未登録のディレクトリへの移動が err == nil で成功し、違反記録も 0 件だった
-	// (TrashDir はテストが自由に渡せるので、1 行間違えると実データの場所へファイルが移る)。
-	// op 名を分けるのは、拒否の記録から「どちら側で止まったか」を読めるようにするため
-	if err := allowDestructive("trash-dest", trashDir); err != nil {
-		return "", err
-	}
-	if err := os.MkdirAll(trashDir, 0o700); err != nil {
-		return "", fmt.Errorf("ゴミ箱を用意できません: %w", err)
-	}
-	// ゴミ箱の**経路のどこか**に symlink があると、移動先は ~/.Trash の外に落ちる
-	// (最終要素だけを見る Lstat / O_NOFOLLOW では足りない。HOME 自体が symlink の構成で実測)
-	if err := noSymlinkInPath(trashDir); err != nil {
-		return "", fmt.Errorf("ゴミ箱を使えません: %w", err)
-	}
-	srcDir, err := openDirNoFollow(filepath.Dir(src))
-	if err != nil {
-		return "", fmt.Errorf("移動元の親を開けません: %w", err)
-	}
-	defer func() { _ = unix.Close(srcDir) }()
-	dstDir, err := openDirNoFollow(trashDir)
-	if err != nil {
-		return "", fmt.Errorf("ゴミ箱を開けません: %w", err)
-	}
-	defer func() { _ = unix.Close(dstDir) }()
-
-	base := filepath.Base(src)
-	var st unix.Stat_t
-	if err := unix.Fstatat(srcDir, base, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
-		return "", fmt.Errorf("移動元を確認できません: %w", err)
-	}
-	// 🚨 **production からは到達しない**が、意図して残している (issue 236 の P3-5)。
-	// planItem が先に statIdentity で同じ検査をして skip するので、ここへ (0,0) は来ない。
-	// それでも外さないのは、この関数が**破壊的操作の直前の最後の照合**だから:
-	// 外すと下の `uint64(st.Dev) != dev || st.Ino != ino` が (0,0) と実体を比較することになり、
-	// 「識別できないまま移動する」経路が開く。呼び出し元が 1 つ増えた瞬間に穴になる形なので、
-	// 冗長さと引き換えに残す (list-masked-failure-modes-before-removing-guard.md)。
-	// ⚠️ 到達しないのでテストで固定できていない = 「段」として数えないこと。
-	if dev == 0 && ino == 0 {
+	dst, err := safefs.TrashMove(src, trashDir, dev, ino, allowDestructive) // destructive-op: allow allowDestructive を検査点として渡す
+	switch {
+	case errors.Is(err, safefs.ErrSwapped):
+		return "", errors.New("直前に別の実体へ差し替わりました (再スキャンしてください)")
+	case errors.Is(err, safefs.ErrUnidentified):
 		return "", errors.New("走査時の実体を識別できません (再スキャンしてください)")
 	}
-	if uint64(st.Dev) != dev || st.Ino != ino {
-		return "", errors.New("直前に別の実体へ差し替わりました (再スキャンしてください)")
-	}
-	if err := allowDestructive("trash", src); err != nil {
-		return "", err
-	}
-	for i := 1; i <= 64; i++ {
-		name := base
-		if i > 1 {
-			name = fmt.Sprintf("%s %d", base, i)
-		}
-		// 🚨 RENAME_EXCL は宛先が非空ディレクトリでも EEXIST を返す (実測 2026-09-03)。
-		// ENOTEMPTY は来ないので見ない
-		err := renameExcl(srcDir, base, dstDir, name)
-		switch {
-		case err == nil:
-			return filepath.Join(trashDir, name), nil
-		case errors.Is(err, unix.EEXIST):
-			continue
-		case errors.Is(err, unix.EXDEV):
-			return "", errors.New("ゴミ箱と別ボリュームのため移動できません (手で移動してください)")
-		case errors.Is(err, unix.ENOTSUP), errors.Is(err, unix.EINVAL):
-			// RENAME_EXCL の効かない FS では、上書きの危険を冒すより移動しない
-			return "", errors.New("この場所ではゴミ箱への安全な移動ができません (手で移動してください)")
-		default:
-			return "", err
-		}
-	}
-	return "", fmt.Errorf("ゴミ箱に同名が多すぎます: %s", base)
+	return dst, err
 }
 
 // noSymlinkInPath は経路の全要素が symlink でないことを確かめる (validateTarget と同じ規律)。
-func noSymlinkInPath(p string) error {
-	// /var → /private/var 等は macOS の既定の link なので先に畳む (validateTarget と同じ)
-	for dir := normalizeSystemLinks(filepath.Clean(p)); dir != "/" && dir != "."; dir = filepath.Dir(dir) {
-		fi, err := os.Lstat(dir)
-		if err != nil {
-			return err
-		}
-		if fi.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("経路の途中に symlink がある: %s", dir)
-		}
-	}
-	return nil
-}
-
-// openDirNoFollow はディレクトリを fd で開く (最後の要素が symlink なら拒否する)。
-func openDirNoFollow(dir string) (int, error) {
-	return unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
-}
-
-// renameExcl は trashMove 専用の薄い包み。呼び出し側が allowDestructive を通してから呼ぶ
-// (ここで再度通すと、連番のリトライごとに検査が走って同じ src の記録が何度も積まれる)。
-func renameExcl(srcDir int, srcBase string, dstDir int, dstBase string) error {
-	return unix.RenameatxNp(srcDir, srcBase, dstDir, dstBase, unix.RENAME_EXCL) // destructive-op: allow trashMove が通す
-}
+func noSymlinkInPath(p string) error { return safefs.NoSymlinkInPath(p) }
 
 // allowDestructive は破壊的操作の直前に必ず通る検査点。production では素通りし、
 // **テストのハーネス** (main_test.go) がここを差してサンドボックス外への操作を拒否する。

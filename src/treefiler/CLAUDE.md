@@ -21,6 +21,7 @@
 - `filer/git.go` / `filer/diff.go` — git の状態 (印・芽・ブランチ) と、タイルの `d` の diff
 - `filer/watch.go` — ライブ更新 (開いているフォルダを読み比べる)
 - `filer/search.go` / `filer/shell.go` — `/` の検索と、`!` / `s` (呼び出し側に起こしてほしいプロセスを渡す)
+- `filer/fileops.go` — `a` 新規作成・`m` 名前の変更・`d` ゴミ箱へ移す (issue 722)。本体は `src/safefs`。名前の入力は `!` と同じ欄 (`promptState.kind`)、確認の板は `Model.ask`
 - `filer/settings.go` / `filer/places.go` — 設定の板と保存、前回の場所
 - `filer/open.go` / `filer/explode.go` — `o` (外のアプリで開く)・`e` (配下を全部開く)
 - `filer/tileview.go` — タイルに出す表示の行 (本体 / diff・Markdown の整形)
@@ -33,6 +34,10 @@
 - 🚨 キーの語彙は glogx-ui-guide に従う (`docs/glogx-ui-guide.md` §2: 矢印と emacs は vim の別名・移動は `tuikit/listnav.MotionOf`)。
   treebeard と食い違う所は spec §0.1 の表が正本
 - 表示する文字列 (ファイル名・ファイルの中身) は入口で termsafe を 1 回通す (`newNode` / `cleanLine`)
+- 🚨 全部のキーを取る層 (キー一覧・設定の板・検索・入力欄・確認の板) を足すときは Model の欄に `layer:"…"` の札を付け、`filer/layers_test.go` の表に
+  足す (`OwnsKeys` と `HandleInput` の対を確かめる。札の無い層は検出しない)
+- 🚨 ファイル操作のテストは本物の作成・rename・ゴミ箱への移動を呼ぶ。`filer/main_test.go` が `fsGuard` を sandbox へ差し替え、一時ディレクトリの外は
+  実行前に拒否してスイートを落とす。ゴミ箱の場所 (`trashDir`) はテストで差し替える (差し替え忘れは本物の `~/.Trash` を指して拒否される)
 
 ## ビルド・テスト
 

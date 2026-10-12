@@ -60,10 +60,14 @@ fi
 :` // 終了コードは最後の stty に左右させない (端末が無いと stty が失敗する)
 
 type promptState struct {
-	active  bool
-	line    lineedit.Line
-	history []string
-	hist    int // 履歴を辿っている位置 (len(history) = 今の入力)
+	active   bool
+	kind     promptKind // `!` か、名前の入力 (fileops.go)
+	target   *node      // 名前の入力の対象 (作るフォルダ・名前を変える項目)
+	dev, ino uint64     // 名前を変える項目の、欄を開いたときの実体
+	prefill  string     // 欄に入れて開いた文字 (名前に制御文字があると raw と違う。そのまま Enter なら変えない)
+	line     lineedit.Line
+	history  []string
+	hist     int // 履歴を辿っている位置 (len(history) = 今の入力)
 }
 
 func userShell() string {
@@ -114,6 +118,10 @@ func (m *Model) promptKey(key, text string) {
 	case "enter":
 		cmd := p.line.String()
 		p.active = false
+		if p.kind != promptShell {
+			m.fileOpEnter(cmd)
+			return
+		}
 		if strings.TrimSpace(cmd) == "" { // 空白だけでは走らせない
 			return
 		}
@@ -125,13 +133,13 @@ func (m *Model) promptKey(key, text string) {
 	case "esc", "ctrl+c":
 		p.active = false
 	case "up":
-		if p.hist > 0 {
+		if p.kind == promptShell && p.hist > 0 { // 履歴は `!` のコマンドだけ
 			p.hist--
 			p.line.Reset()
 			p.line.Insert(p.history[p.hist])
 		}
 	case "down":
-		if p.hist < len(p.history) {
+		if p.kind == promptShell && p.hist < len(p.history) {
 			p.hist++
 			p.line.Reset()
 			if p.hist < len(p.history) {
@@ -149,11 +157,7 @@ func (m *Model) promptKey(key, text string) {
 	}
 }
 
-func (m *Model) startPrompt() {
-	m.prompt.active = true
-	m.prompt.line.Reset()
-	m.prompt.hist = len(m.prompt.history)
-}
+func (m *Model) startPrompt() { m.openPrompt(promptShell, nil, "") }
 
 // TakeExec は起こしてほしいプロセスを取り出す (無ければ ok=false)。
 func (m *Model) TakeExec() (ExecRequest, bool) {

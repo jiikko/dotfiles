@@ -574,7 +574,10 @@ func TestDestructiveCallsGoThroughHook(t *testing.T) {
 	// (fixture の下ごしらえで正当に使われ、この package では実データを壊す経路にならない)
 	destructive := map[string]bool{
 		"RemoveAll": true, "Remove": true, "Rename": true,
-		"RenameatxNp": true, "Renameat": true, "Unlinkat": true, "renameExcl": true,
+		"RenameatxNp": true, "Renameat": true, "Unlinkat": true,
+		// ゴミ箱への移動の本体は safefs.TrashMove (issue 722 で切り出した)。検査点は引数で渡すので、呼ぶ行に
+		// `destructive-op: allow` を書いて「allowDestructive を渡している」ことを残す
+		"TrashMove": true,
 		// 🚨 unix.Unlink / unix.Rmdir が抜けていた (issue 234 (c))。`unix.Unlink(p)` と
 		// 書くだけでゲートが無音で素通りする形だった。
 		// 🚨 **この 2 語は誰にも pin されていない**: package 内に呼び出しが 1 件も無いので、

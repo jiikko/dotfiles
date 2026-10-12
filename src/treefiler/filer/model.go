@@ -93,7 +93,7 @@ type Model struct {
 	set          Settings
 	setErrs      []string
 	saveErr      string
-	panel        panelState
+	panel        panelState `layer:"panel"` // layer: 開いている間は全部のキーを取る層 (layers_test.go が数える)
 	gitSnap      gitSet
 	repoTop      map[string]string // フォルダ → 属する repo の根 ("" = repo の外)。読み直しで捨てる
 	watch        *watcher
@@ -102,11 +102,12 @@ type Model struct {
 	beadFor      *node // ビーズが走っている先 (カーソルが変わったら走り直す)
 	beadVel      float64
 	beadOn       bool
-	search       searchState
+	search       searchState `layer:"search"`
 	lastSearch   string
 	exploding    *explodeJob
-	help         bool
-	prompt       promptState
+	help         bool        `layer:"help"`
+	prompt       promptState `layer:"prompt"`
+	ask          *trashAsk   `layer:"ask"` // d の確認の板 (fileops.go)
 	exec         *ExecRequest
 }
 
@@ -222,7 +223,9 @@ func (m *Model) Animating() bool { return m.moving }
 
 // OwnsKeys は入力欄 (検索・!)・設定の板・キー一覧のどれかを開いているか。その間は全部のキーを filer が持つ
 // (glogx は横断キーも F も渡す。spec §0.3。キー一覧は ? 以外のキーで閉じるだけなので、閉じたキーで glogx が動くと食い違う)。
-func (m *Model) OwnsKeys() bool { return m.search.active || m.prompt.active || m.panel.open || m.help }
+func (m *Model) OwnsKeys() bool {
+	return m.search.active || m.prompt.active || m.panel.open || m.help || m.ask != nil
+}
 
 // SearchQuery は検索欄の今の入力 (検索していなければ "")。
 func (m *Model) SearchQuery() string {
@@ -273,8 +276,15 @@ func (m *Model) putField(c *canvas, f field) int {
 	return c.put(x, y, f.text, cText, false)
 }
 
-// promptPrefix は `!` の入力欄の頭 (どのフォルダで走るか)。
+// promptPrefix は足元の入力欄の頭 (`!` はどのフォルダで走るか・名前の入力はどこに作るか / 何の名前か)。
 func (m *Model) promptPrefix() string {
+	switch m.prompt.kind {
+	case promptCreate:
+		return " 新規 " + termwidth.Truncate(m.prompt.target.name, 24, "…") + "/ "
+	case promptRename:
+		return " 名前の変更 " + termwidth.Truncate(m.prompt.target.name, 24, "…") + " → "
+	case promptShell:
+	}
 	return " " + termwidth.Truncate(baseName(m.workDir()), 24, "…") + " $ "
 }
 
@@ -400,10 +410,7 @@ func (m *Model) applyChange(c dirChange) {
 	if n == nil {
 		return
 	}
-	n.reload()
-	m.walker.forget(c.dir, false)
-	m.dropGoneRecs(c.dir)
-	clear(m.linkCache) // 増えた・消えたファイルでリンクの解決が変わる
+	m.reloadDir(n)
 	if slices.Contains(c.changed, ".git") || slices.Contains(c.removed, ".git") {
 		m.repoTop = nil // このフォルダで git init した・repo を消した (repo の根の数え直し)
 	}
@@ -800,8 +807,8 @@ func (m *Model) HandleInput(k, text string) Result {
 	m.snapAll()
 	defer func() { m.moving = true }() // 目標が変わったので次の Advance で動き出す
 	m.startGit(false)                  // 前回から 3 秒以上たっていれば取り直す (周期のタイマーは張らない)
-	if k == "ctrl+c" && !m.search.active && !m.prompt.active {
-		return Quit // どこからでも即終了 (glogx-ui-guide §1)。検索中は検索の取り消し (spec §6.2)
+	if k == "ctrl+c" && !m.search.active && !m.prompt.active && m.ask == nil {
+		return Quit // どこからでも即終了 (glogx-ui-guide §1)。検索中は検索の取り消し (spec §6.2)・入力欄と確認の板は取り消し
 	}
 	if m.help {
 		m.help = false // キー一覧は ? 以外のキーで閉じるだけ (spec §6.6)。閉じたキーは他の意味を持たない
@@ -809,6 +816,10 @@ func (m *Model) HandleInput(k, text string) Result {
 	}
 	if m.panel.open {
 		m.panelKey(k)
+		return None
+	}
+	if m.ask != nil {
+		m.askKey(k)
 		return None
 	}
 	if m.search.active {
@@ -910,6 +921,10 @@ func init() {
 	}, "e")
 	bind(do(func(m *Model) { m.help = true }), "?")
 	bind(do((*Model).startPrompt), "!")
+	// a / m / d はファイルの操作 (fileops.go。issue 722)。a は glogx-ui-guide §2 の「all / 巡回」の例外 (ファイラーの慣習の add)
+	bind(do((*Model).startCreate), "a")
+	bind(do((*Model).startRename), "m")
+	bind(do((*Model).startTrash), "d")
 	bind(func(m *Model) Result { m.requestShell(); return Exec }, "s")
 	bind(do(func(m *Model) {
 		m.set.ShowHidden = !m.set.ShowHidden // 設定の Dotfiles と同じ (保存もする)
@@ -1099,6 +1114,9 @@ func (m *Model) draw() *canvas {
 	}
 	if m.panel.open {
 		m.drawPanel(c)
+	}
+	if m.ask != nil {
+		m.drawAsk(c)
 	}
 	return c
 }
@@ -1434,6 +1452,7 @@ var helpKeys = [][2]string{
 	{",", "設定"},
 	{"o O", "外のアプリで開く (open) · Finder で表示"},
 	{"y Y", "パスをコピー (絶対 · root からの相対)"},
+	{"a m d", "新規作成 (末尾 / でフォルダ) · 名前の変更 · ゴミ箱へ移す"},
 	{"S", "並びを巡回 (名前 → 更新の新しい順 → 大きい順)"},
 	{"r", "読み直す"},
 	{"タイルの中", "j k ^D ^U space g G · tab でパスを選ぶ (e で選んだ先を編集) · J K で隣 · d で diff · e でエディタ · o で外のアプリ · O で Finder"},
@@ -1463,11 +1482,19 @@ func (m *Model) drawHelp(c *canvas) {
 	}
 }
 
-// promptBar は `!` の入力中の最下行 (spec §3.4 の ! プロンプト行)。
+// promptBar は足元の入力欄の最下行 (`!` は spec §3.4 の ! プロンプト行。a / m の名前の入力も同じ欄)。
 func (m *Model) promptBar(c *canvas) {
 	f, _ := m.inputField()
 	y, x := m.h-1, m.putField(c, f)
-	c.put(x+1, y, "  enter 実行 · esc 取り消し · $f = 選んだパス", cMuted, false)
+	hint := "  enter 実行 · esc 取り消し · $f = 選んだパス"
+	switch m.prompt.kind {
+	case promptCreate:
+		hint = "  enter 作る (末尾 / でフォルダ) · esc 取り消し"
+	case promptRename:
+		hint = "  enter 変える · esc 取り消し"
+	case promptShell:
+	}
+	c.put(x+1, y, hint, cMuted, false)
 }
 
 // details は名前の後ろに出す詳細 (設定の Name details。spec §3.2)。出さないなら ""。

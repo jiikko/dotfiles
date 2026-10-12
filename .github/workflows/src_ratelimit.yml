@@ -15,6 +15,7 @@ on:
       - 'src/termsafe/**'    # replace で取り込む共有 module (無害化の関門)
       - 'src/tuikit/**'      # replace で取り込む共有 module (幅の単一情報源)
       - 'src/doctor/**'      # replace で取り込む共有 module (cachedir)
+      - 'src/safefs/**'      # doctor の依存 (replace は依存先から引き継がれないので ratelimit にも要る)
       # 🚨 statusline (shell) は usage と同じ pace ルールを二重実装しており、乖離を
       # usage/pace_drift_test.go が検出する。これを含めないと「shell だけ変えた push」で
       # 検査が 1 度も走らない (red team 指摘 2026-09-01)。tests.yml 側からも叩いている。
@@ -31,6 +32,7 @@ on:
       - 'src/termsafe/**'    # replace で取り込む共有 module (無害化の関門)
       - 'src/tuikit/**'      # replace で取り込む共有 module (幅の単一情報源)
       - 'src/doctor/**'      # replace で取り込む共有 module (cachedir)
+      - 'src/safefs/**'      # doctor の依存 (replace は依存先から引き継がれないので ratelimit にも要る)
       # 🚨 statusline (shell) は usage と同じ pace ルールを二重実装しており、乖離を
       # usage/pace_drift_test.go が検出する。これを含めないと「shell だけ変えた push」で
       # 検査が 1 度も走らない (red team 指摘 2026-09-01)。tests.yml 側からも叩いている。

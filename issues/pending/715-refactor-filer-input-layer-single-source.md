@@ -54,3 +54,7 @@ glogx `filer_view_test.go` `TestFilerHelpSwallowsCrossKeys`)。素通りする�
   enum で表せない情報・exhaustive の限界・網羅テストの案 A を足し、trigger 待ちとして pending へ。反証できなかった主張: 層は 4 つで漏れが無い・
   OwnsKeys と HandleInput は対であるべき・`m.w-pw-1` は 1 桁多い
 - 2026-10-12: issue 712 は done (model.go の draw の末尾も含めて push 済み。この issue の「712 が入った後に寄せる」の前提は満たした)
+- 2026-10-12 (dotfiles-4e): trigger が引かれた (issue 722 で確認の板 = 5 つ目の層を足した)。**案 A を入れた**: Model の層の欄に `layer:"…"` の札を付け、
+  `src/treefiler/filer/layers_test.go` が札の集合とテストの表を突き合わせ、各層で OwnsKeys / Binds / 木のキーが届かない / ctrl+c の扱いを確かめる
+  (OwnsKeys から層を外す変異で red)。札を付けずに足した層は検出しない (CLAUDE.md に書いた)。案 B (activeLayer) は採らなかった。名前の入力は `!` の欄を使い回したので
+  入力欄は増えていない。ついでの 1 桁 (`m.w-pw-1`) は見た目が変わるので触っていない

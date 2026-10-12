@@ -30,3 +30,5 @@ replace subproc => ../subproc
 replace github.com/jiikko/dotfiles/src/termsafe => ../termsafe
 
 replace github.com/jiikko/dotfiles/src/tuikit => ../tuikit
+
+replace safefs => ../safefs

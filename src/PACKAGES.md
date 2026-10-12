@@ -59,6 +59,8 @@
 - `src/restartable/internal/runner` (`github.com/jiikko/dotfiles/src/restartable/internal/runner`) — Package runner は子プロセスの起動・停止・再起動と、その実行状態や入出力を管理する。 (internal)
 - `src/restartable/internal/ui` (`github.com/jiikko/dotfiles/src/restartable/internal/ui`) — Package ui は runner の状態とキー入力を Bubble Tea のインライン端末画面へ接続する。 (internal)
 - `src/runtimeout` (`runtimeout`) — runtimeout — コマンドを時間の上限付きで実行し、時間が来たら子孫ごと止める (coreutils の timeout 相当)。 (main)
+- `src/safefs` (`safefs`) — Package safefs はファイルを動かす・作る操作のうち、「上書きしない」「経路を差し替えられない」を守る部品を 1 か所に置く (doctor の削除エンジンと treefiler のファイル操作が共有する。
+- `src/safefs/sandbox` (`safefs/sandbox`) — Package sandbox はテストのための safefs.Guard: 明示的に登録した一時ディレクトリの外への操作を**実行前に**拒否する (`~/.claude/rules/sandbox-real-destructive-test-apis.md`)。
 - `src/schedkeys` (`schedkeys`) — 1 行のテキスト編集状態。 (main)
 - `src/subproc` (`subproc`) — Package subproc は外部プロセス実行の安全弁を 1 箇所に集める。
 - `src/subproc/clipboard` (`subproc/clipboard`) — Package clipboard は文字列を OS のクリップボードへ書く (glogx と treefiler の両方が使う。

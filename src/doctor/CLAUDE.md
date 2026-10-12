@@ -4,7 +4,7 @@
 
 ## パッケージの地図
 
-- `disk/` — 掃除候補 (`diskdoctor`)。`catalog.go` (allowlist) / `scan.go` (走査) / `report.go` (整形) / `guard.go` (起動中プロセス等を見て「今は消してはいけない」を弾く。fail-closed) / `delete.go` (**削除経路を持つ唯一のファイル**) / `display.go` (`SanitizeForDisplay` 関門) / `size.go` (公開型 `Item` と du 互換のサイズ計算) / `paths.go` (glob の展開・escape)
+- `disk/` — 掃除候補 (`diskdoctor`)。`catalog.go` (allowlist) / `scan.go` (走査) / `report.go` (整形) / `guard.go` (起動中プロセス等を見て「今は消してはいけない」を弾く。fail-closed) / `delete.go` (**削除経路を持つ唯一のファイル**。ゴミ箱への移動の本体は共有 module `src/safefs` の `TrashMove` で、検査点 `allowDestructive` を渡して呼ぶ) / `display.go` (`SanitizeForDisplay` 関門) / `size.go` (公開型 `Item` と du 互換のサイズ計算) / `paths.go` (glob の展開・escape)
 - `svc/` — 壊れた常駐 (`svcdoctor`)。`scan.go` (`Scan` / `DefaultDirs`。走査の本体) / `plist.go` (plist 読み) / `launchctl.go` (状態取得) / `brew.go` (Homebrew 台帳との突き合わせ) / `report.go` (整形) / `display.go` (関門) / `restore.go` (保存した Report を読み戻すときの信頼境界)
 - `docker/` — Docker Desktop の未使用資源 (停止コンテナ・未参照イメージ・ビルドキャッシュ・参照無しボリューム)。削除経路は無く、提示するコマンドを組むだけ (`docker system df` の申告をそのまま使う)
 - `ssd/` — 内蔵 SSD の健康状態 (glogx の SSD タブ。issue 578)。diskutil と `smartctl -j` を読むだけで、修復・sudo・APFS の検査の経路は持たない。シリアル番号は読む構造体に欄を置かない
