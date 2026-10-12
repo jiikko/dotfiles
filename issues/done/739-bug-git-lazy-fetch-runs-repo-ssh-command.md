@@ -1,7 +1,5 @@
 # 739 (bug): partial clone の遅延 fetch が、開いた repo の core.sshCommand を status で走らせる
 
-> 🚨 **担当中: dotfiles-4e**（2026-10-12〜）
-
 起票日: 2026-10-12
 
 ## 概要

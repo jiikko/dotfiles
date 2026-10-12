@@ -1,1 +1,0 @@
-../739-bug-git-lazy-fetch-runs-repo-ssh-command.md
