@@ -48,8 +48,9 @@ func (ExecGit) IsAncestor(ctx context.Context, repo, a, b string) (bool, error) 
 
 // MergeTree は `git merge-tree --write-tree --name-only --no-messages` (git 2.38 から)。rc 0 = 衝突なし / 1 = 衝突。
 // 出力の 1 行目は合わせた tree で、続く行が衝突したファイル (空行で終わる)。
+// 合わせるのに両側の blob が要るので、partial clone の手元に無い blob は取りに行く (見張るのは自分が登録した repo。subproc.GitArgsLazyFetch の doc)。
 func (ExecGit) MergeTree(ctx context.Context, repo, a, b string) (bool, []string, error) {
-	out, rc, err := gitx.Run(ctx, repo, "merge-tree", "--write-tree", "--name-only", "--no-messages", a, b)
+	out, rc, err := gitx.RunLazyFetch(ctx, repo, "merge-tree", "--write-tree", "--name-only", "--no-messages", a, b)
 	if err != nil {
 		return false, nil, err
 	}

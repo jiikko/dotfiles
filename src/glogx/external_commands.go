@@ -34,10 +34,12 @@ import (
 // cancel できないと、ネットワーク stall 中に抜けたとき git 子プロセスが孤児化して事実上無期限に
 // 居残る (leak 監査 2026-07-23)。呼び出し側 (actionModal) が deadline 無しの cancel context を
 // 渡し、quit からのみ cancel する。
+//
+// キーを押した操作なので、partial clone の手元に無い blob は取りに行く (subproc.GitArgsLazyFetch の doc)。
 func noPromptGitCmd(ctx context.Context, args ...string) *exec.Cmd {
 	// quit の cancel が kill するのは直接の子だけで、hook の孫が pipe を握ると Wait が
 	// 戻らない (理由は subproc.WaitDelay の doc。subproc.CommandContext が張る)
-	cmd := subproc.GitCommand(ctx, args...)
+	cmd := subproc.GitCommandLazyFetch(ctx, args...)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	return cmd
 }

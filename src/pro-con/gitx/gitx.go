@@ -47,9 +47,23 @@ func isScrubbed(k string) bool {
 // Run は git を dir で走らせ、stdout と rc を返す。起動できない・時間切れは err (rc で表せる失敗は err にしない)。
 // rc が 2 以上は err にする (rev-parse だけは rc を呼ぶ側が見る)。
 func Run(ctx context.Context, dir string, args ...string) (string, int, error) {
+	return run(ctx, dir, false, args)
+}
+
+// RunLazyFetch は Run のうち、partial clone の手元に無い blob を取りに行く版 (merge-tree など。subproc.GitArgsLazyFetch の doc)。
+func RunLazyFetch(ctx context.Context, dir string, args ...string) (string, int, error) {
+	return run(ctx, dir, true, args)
+}
+
+func run(ctx context.Context, dir string, lazyFetch bool, args []string) (string, int, error) {
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", subproc.GitArgs(append([]string{"-C", dir}, args...)...)...)
+	var cmd *exec.Cmd
+	if lazyFetch {
+		cmd = exec.CommandContext(ctx, "git", subproc.GitArgsLazyFetch(append([]string{"-C", dir}, args...)...)...)
+	} else {
+		cmd = exec.CommandContext(ctx, "git", subproc.GitArgs(append([]string{"-C", dir}, args...)...)...)
+	}
 	cmd.Env = Env()
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut

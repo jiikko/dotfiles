@@ -2,6 +2,7 @@ package subproc
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -36,5 +37,25 @@ func TestGitArgsDisablesFsmonitor(t *testing.T) {
 	}
 	if c := GitCommand(context.Background(), "status"); c.WaitDelay != WaitDelay || c.Args[1] != "-c" {
 		t.Fatalf("GitCommand: WaitDelay=%v args=%q", c.WaitDelay, c.Args)
+	}
+}
+
+// GitArgsLazyFetch は --no-lazy-fetch だけを外し、他の守り (fsmonitor など) は GitArgs と同じに残す。
+func TestGitArgsLazyFetchDropsOnlyNoLazyFetch(t *testing.T) {
+	got := GitArgsLazyFetch("pull", "--rebase")
+	var want []string
+	for _, a := range GitArgs("pull", "--rebase") {
+		if a != "--no-lazy-fetch" {
+			want = append(want, a)
+		}
+	}
+	if len(want) == len(GitArgs("pull", "--rebase")) {
+		t.Fatal("前提: GitArgs に --no-lazy-fetch が無い")
+	}
+	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("GitArgsLazyFetch = %q, want %q", got, want)
+	}
+	if c := GitCommandLazyFetch(context.Background(), "pull"); c.WaitDelay != WaitDelay || strings.Join(c.Args[1:], "\x00") != strings.Join(GitArgsLazyFetch("pull"), "\x00") {
+		t.Fatalf("GitCommandLazyFetch: WaitDelay=%v args=%q", c.WaitDelay, c.Args)
 	}
 }

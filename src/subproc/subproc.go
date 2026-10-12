@@ -61,24 +61,50 @@ func CommandContext(ctx context.Context, name string, args ...string) *exec.Cmd 
 //     (glogx は repo を開いただけで走った。`.git` を普通のディレクトリとして置けば git clone でも届く)。署名の表示は glogx も pro-con も使っていない
 //   - diff.submodule=short: `diff.submodule=diff` だと submodule の中の diff は --no-textconv / --no-ext-diff を受け継がず、submodule の textconv が走った
 //   - --no-optional-locks: status・diff が index を書き直すと、`core.hooksPath` の post-index-change hook が走った
+//   - --no-lazy-fetch: partial clone を名乗る repo (extensions.partialClone) で消えた blob があると、status の rename の検出や diff が
+//     遅延 fetch を起こし、repo の core.sshCommand・remote.<名前>.uploadpack が走った (issue 739。git 2.55.0 で実測。2.44 から在る)。
+//     本物の partial clone では、手元に無い blob を読む表示が取りに行かずにエラーになる (glogx の --stat / -p の一覧は全体が出ない・d の diff も出ない。
+//     d もキー操作だが、開いた他人の repo の表示なので textconv と同じく走らせない側に置く)。
+//     この引数は GIT_NO_LAZY_FETCH=1 として子 (hook・submodule の git) にも引き継がれる。
+//     手元に無い blob を取りに行かないと成り立たない操作 (pull --rebase・merge-tree など) は GitArgsLazyFetch を通す
 //
 // 止めないもの (続き): merge.<名前>.driver は merge-tree で走る (pro-con の見張りが自分の管理する repo に打つだけ)。
 // 🚨 safe.bareRepository=explicit は付けない: 埋め込んだ bare repo (`.git` の中身を普通のディレクトリとして置いた形) の設定を拾わなくなるが、
 // -c は GIT_CONFIG_PARAMETERS で hook にも引き継がれ、`git -C <bare>` を打つ pre-push hook と、bare repo の中で起動した glogx・
 // bare + worktree の repo を指す pro-con が rc=128 で壊れた (レビューで再現 2026-10-09)。埋め込みの形は記録に留める (issue 692)
-// push / pull / commit の hook・credential helper・sshCommand はキーを押す操作で、シェルの git と同じ。
+// push / pull / commit の hook・credential helper・sshCommand はキーを押す操作で、シェルの git と同じ (sshCommand は遅延 fetch からは走らない。上の --no-lazy-fetch)。
 var gitHarden = []string{
 	"-c", "core.fsmonitor=false",
 	"-c", "log.showSignature=false",
 	"-c", "diff.submodule=short",
 	"--no-optional-locks",
+	"--no-lazy-fetch",
 }
 
 func GitArgs(args ...string) []string {
 	return append(append(make([]string, 0, len(gitHarden)+len(args)), gitHarden...), args...)
 }
 
+// GitArgsLazyFetch は GitArgs から --no-lazy-fetch だけを外す。本物の partial clone (clone --filter=blob:none) で、手元に無い blob を
+// 取りに行かないと失敗する操作に使う: pull --rebase・push・pro-con が見張る repo への merge-tree
+// (付けたままだと rc=128 で落ちる。issue 739 のレビューで再現)。🚨 キーを押す操作か、自分の管理する repo に打つ操作に限る:
+// 遅延 fetch は repo の core.sshCommand・remote.<名前>.uploadpack を走らせる (開いただけの他人の repo への表示には GitArgs)
+func GitArgsLazyFetch(args ...string) []string {
+	a := make([]string, 0, len(gitHarden)+len(args))
+	for _, h := range gitHarden {
+		if h != "--no-lazy-fetch" {
+			a = append(a, h)
+		}
+	}
+	return append(a, args...)
+}
+
 // GitCommand は WaitDelay を張り、GitArgs を通した git を返す。
 func GitCommand(ctx context.Context, args ...string) *exec.Cmd {
 	return CommandContext(ctx, "git", GitArgs(args...)...)
+}
+
+// GitCommandLazyFetch は WaitDelay を張り、GitArgsLazyFetch を通した git を返す (使ってよい操作は GitArgsLazyFetch の doc)。
+func GitCommandLazyFetch(ctx context.Context, args ...string) *exec.Cmd {
+	return CommandContext(ctx, "git", GitArgsLazyFetch(args...)...)
 }

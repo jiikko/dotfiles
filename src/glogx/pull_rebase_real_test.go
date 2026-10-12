@@ -181,3 +181,34 @@ func TestPullRebaseTellsMergeInProgressBeforeDirtyTree(t *testing.T) {
 		t.Fatalf("conflict で止まった merge で「merge の途中」と案内しなかった: %v", err)
 	}
 }
+
+// 本物の partial clone (clone --filter=blob:none) でも u の pull --rebase が通る。相手が変えたファイルの旧 blob は手元に無く、
+// rebase がそれを取りに行く (git に --no-lazy-fetch を付けたままだと rc=128 で落ちる。issue 739 の敵対的レビューで再現)。
+func TestPullRebaseWorksInPartialClone(t *testing.T) {
+	work := pullSandbox(t)
+	base := filepath.Dir(work)
+	origin := filepath.Join(base, "origin.git")
+	gitIn(t, origin, "config", "uploadpack.allowFilter", "true")
+	other := filepath.Join(base, "other")
+	gitIn(t, base, "clone", "-q", origin, other)
+	part := filepath.Join(base, "part")
+	gitIn(t, base, "clone", "-q", "--filter=blob:none", "file://"+origin, part)
+	gitIn(t, part, "config", "user.email", "t@example.com")
+	gitIn(t, part, "config", "user.name", "t")
+	gitIn(t, other, "config", "user.email", "t@example.com")
+	gitIn(t, other, "config", "user.name", "t")
+	writeFileIn(t, other, "a", "theirs\n")
+	gitIn(t, other, "commit", "-q", "-am", "theirs")
+	gitIn(t, other, "push", "-q", "origin", "master")
+	writeFileIn(t, part, "d", "ours\n")
+	gitIn(t, part, "add", "d")
+	gitIn(t, part, "commit", "-q", "-m", "ours")
+	t.Chdir(part)
+
+	if err := runGitPullRebase(context.Background()); err != nil {
+		t.Fatalf("partial clone で pull --rebase が失敗した: %v", err)
+	}
+	if got := strings.TrimSpace(gitIn(t, part, "show", "HEAD~1:a")); got != "theirs" {
+		t.Fatalf("pull 後の HEAD~1:a = %q (相手の commit の上に載っていない)", got)
+	}
+}

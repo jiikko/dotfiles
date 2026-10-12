@@ -24,7 +24,6 @@ import (
 // 🚨 上書きが届かないもの (呼び出し側の責任):
 //   - submodule: status / diff は submodule の中で子の git を起こし、子は submodule 自身の設定 (.git/modules/<名前>/config) の filter を読む。
 //     呼び出し側で --ignore-submodules=dirty を付けて子を起こさない (-c diff.ignoreSubmodules は repo の submodule.<名前>.ignore に負ける。レビューで再現)
-//   - partial clone の遅延 fetch: 消えた blob を取りに行く fetch が repo の core.sshCommand を走らせる (filter と別の経路。issue 739)
 //
 // 割り切り: ローカルで filter を設定した正当な repo (`git lfs install --local`・git-crypt) では、内容が変わっていないファイルが変更として出る
 // (pointer / 暗号文と平文を比べる。--no-optional-locks で index の stat が直らないので、シェルで git status を打つまで出続ける)。
