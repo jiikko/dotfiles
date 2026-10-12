@@ -227,3 +227,23 @@ obaket のセッションで `⚠ 42 instruction files add up to 152.9k chars` �
     検査で止められるのは参照先ファイルの存在までで、読んだかどうかは止められない。**再開の trigger**: チェックリストの項目に当たる見落としが、
     Read されなかったせいだと分かる実例が出たとき
   - 「`~/dotfiles/...` の絶対パスは clone の位置が違う環境では辿れない」: `rules-rationale` の参照と同じ前提 (`~/.claude/rules/` の link 先も `~/dotfiles`)
+
+### 追補 (2026-10-12): 再び上限を超えたので、checklist の切り出しを 2 本に広げて 10.4k 字を戻す
+
+obaket のセッション (`macOS/` で起動) で `⚠ 42 instruction files add up to 152.1k chars` が出た。
+
+- **`adversarial-review-own-safeguards.md`**: 「## やること」の §0〜§8 の本文を逐語のまま `_claude/rules-checklists/adversarial-review-own-safeguards.md` へ移した。
+  rule には発動点・ルール・やらないことと、「発動したら Read する」の指示と節の見出しの目次を残した。11.4k → 2.4k
+  - 節番号は振り直していない。hook・テスト・scripts・Makefile・他の rule のコメントが「§8」「0-A」のように番号で参照していて (約 20 箇所)、
+    rule の目次からたどれるので参照は書き換えていない
+- **`commit-with-pathspec.md`**: 「履歴操作 (reset / amend / rebase)」節の本文を `_claude/rules-checklists/commit-with-pathspec.md` へ移した。
+  rule には Read の指示、`reset HEAD~1` が並行セッションの commit を切り落としうること、確認用の `git log -N` の 1 文を残した。7.0k → 5.6k
+- 逐語の確認: 消した行と checklist の本文行を空行を除いて diff し、一致した (adversarial は相対リンク 1 本を `../rules/` 付きに直した差だけ)
+- **`paths:` は付けなかった**: 常時読み込みの 30 本はどれも発動点が行動 (commit・テスト・tmux・検証) で、上の C 却下と dotfiles の `CLAUDE.md` の規約のとおり。
+  ユーザーに確認した上で見送った (2026-10-12)
+- 結果 (`LC_ALL=en_US.UTF-8 wc -m`、`paths:` の無いファイルだけ): global 117.9k → **107.5k**。obaket のセッションの warning の値は 152.1k → 約 141.7k の見込み (起動し直しての実測は未確認)
+- 反証レビュー (sonnet 1 体、read-only): P1 なし。採用 1 件 = commit-with-pathspec の rule 側から「他人の commit を切り落とす」危険と確認コマンドが消えていたので 1 文で戻した。記録 2 件 (直さない):
+  - P3「trigger の動詞の列挙に `git pull --rebase` や `push ${SHA}:ref` の別名が入らない」: 列挙の rebase / refspec で拾える範囲で、やること節の「reset / amend / rebase の前に git log で確認する」も常時読み込みに残っている
+  - P3「他の rule の『§1.5』『0-B』の参照は rule の目次を経由して 1 段多くたどる」: 実害は小さく、約 20 箇所を書き換える差分の方が大きい
+- **再開の trigger**: obaket の起動で上限超えの warning が再び出たとき。次の候補は `verify-execution-not-just-exit-code.md` (7.9k) の参照資料の節 (「確認の仕方」の表など)。
+  検証のたびに発動する rule なので、手順の節は切り出さない
