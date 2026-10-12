@@ -846,7 +846,8 @@ func init() {
 		m.applySettings("show_hidden")
 	}), ".")
 	bind(do(func(m *Model) { m.panel.open, m.help = true, false }), ",")
-	bind(do(func(m *Model) { m.opener.start(m.cur.path(), m.cur.name) }), "o")
+	bind(do(func(m *Model) { m.opener.open(m.cur.path(), m.cur.name) }), "o")
+	bind(do(func(m *Model) { m.opener.reveal(m.cur.path(), m.cur.name) }), "O")
 	bind(do((*Model).Refresh), "r") // 開いていたフォルダは保つ (treebeard は配下の展開を失う。spec §5.7 との差)
 }
 
@@ -1357,9 +1358,9 @@ var helpKeys = [][2]string{
 	{"- backspace", "root を 1 段上へ"},
 	{".", "dotfile の表示を切り替え"},
 	{",", "設定"},
-	{"o", "外のアプリで開く (open)"},
+	{"o O", "外のアプリで開く (open) · Finder で表示"},
 	{"r", "読み直す"},
-	{"タイルの中", "j k ^D ^U space g G · tab でパスを選ぶ (e で選んだ先を編集) · J K で隣 · d で diff · e でエディタ · o で外のアプリ"},
+	{"タイルの中", "j k ^D ^U space g G · tab でパスを選ぶ (e で選んだ先を編集) · J K で隣 · d で diff · e でエディタ · o で外のアプリ · O で Finder"},
 	{"q esc", "終了 (タイルの上では 1 枚閉じる)"},
 	{"!", "ここでコマンドを 1 行 ($f = 選んだパス)"},
 	{"s", "ここでシェルを開く (抜けると戻る)"},

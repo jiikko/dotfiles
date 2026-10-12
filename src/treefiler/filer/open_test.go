@@ -9,16 +9,16 @@ import (
 	"testing"
 )
 
-// fakeOpen は openCommand を差し替え、開こうとしたパスを記録する。
+// fakeOpen は openCommand を差し替え、open(1) に渡そうとした引数を 1 回につき 1 つの文字列 (空白区切り) で記録する。
 func fakeOpen(t *testing.T, err error) func() []string {
 	t.Helper()
 	var mu sync.Mutex
 	var got []string
 	orig := openCommand
-	openCommand = func(_ context.Context, path string) error {
+	openCommand = func(_ context.Context, args []string) error {
 		mu.Lock()
 		defer mu.Unlock()
-		got = append(got, path)
+		got = append(got, strings.Join(args, " "))
 		return err
 	}
 	t.Cleanup(func() { openCommand = orig })
@@ -58,7 +58,7 @@ func TestOpenKeyOpensCursor(t *testing.T) {
 func TestOpenKeepsBusyWhileRunning(t *testing.T) {
 	release := make(chan struct{})
 	orig := openCommand
-	openCommand = func(context.Context, string) error { <-release; return errors.New("boom") }
+	openCommand = func(context.Context, []string) error { <-release; return errors.New("boom") }
 	t.Cleanup(func() { openCommand = orig })
 	m := newTest(t)
 	settleBackground(t, m)
@@ -99,11 +99,54 @@ func TestOpenKeyInTileOpensTileFile(t *testing.T) {
 	}
 	m.HandleKey("o")
 	settleOpen(t, m)
-	if g := got(); len(g) != 1 || !strings.HasSuffix(g[0], "c.txt") {
+	if g := got(); len(g) != 1 || g[0] != filepath.Join(m.root.abs, "c.txt") {
 		t.Fatalf("開いたパス = %v", g)
 	}
 	if m.frontTile() == nil || m.frontTile().closing {
 		t.Fatal("o でタイルが閉じた")
+	}
+}
+
+// O は Finder で選んだ状態で見せる (open -R)。フォルダでもファイルでも、その項目そのものを渡す (issue 719)。
+func TestRevealKeyRevealsCursorInFinder(t *testing.T) {
+	got := fakeOpen(t, nil)
+	m := newTest(t)
+	cdTo(t, m, "a")
+	m.HandleKey("O")
+	if ns := settleOpen(t, m); len(ns) != 0 {
+		t.Fatalf("成功なのに知らせ: %+v", ns)
+	}
+	if g := got(); len(g) != 1 || g[0] != "-R "+filepath.Join(m.root.abs, "a") {
+		t.Fatalf("open に渡した引数 = %v", g)
+	}
+}
+
+func TestRevealKeyInTileRevealsTileFile(t *testing.T) {
+	got := fakeOpen(t, nil)
+	m := newTest(t)
+	cdTo(t, m, "c.txt")
+	m.HandleKey("enter")
+	if m.frontTile() == nil {
+		t.Fatal("タイルが開かない")
+	}
+	m.HandleKey("O")
+	settleOpen(t, m)
+	if g := got(); len(g) != 1 || g[0] != "-R "+filepath.Join(m.root.abs, "c.txt") {
+		t.Fatalf("open に渡した引数 = %v", g)
+	}
+	if m.frontTile() == nil || m.frontTile().closing {
+		t.Fatal("O でタイルが閉じた")
+	}
+}
+
+func TestRevealFailureBecomesToast(t *testing.T) {
+	fakeOpen(t, errors.New("boom"))
+	m := newTest(t)
+	cdTo(t, m, "c.txt")
+	m.HandleKey("O")
+	ns := settleOpen(t, m)
+	if len(ns) != 1 || ns[0].OK || !strings.Contains(ns[0].Text, "Finder") || !strings.Contains(ns[0].Text, "c.txt") {
+		t.Fatalf("失敗の知らせ = %+v", ns)
 	}
 }
 

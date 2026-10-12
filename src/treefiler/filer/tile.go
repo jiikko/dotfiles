@@ -247,7 +247,10 @@ func (m *Model) tileKey(k string) {
 		m.fail("この範囲に開けるパスがありません")
 		return
 	case "o":
-		m.opener.start(t.n.path(), t.n.name)
+		m.opener.open(t.n.path(), t.n.name)
+		return
+	case "O":
+		m.opener.reveal(t.n.path(), t.n.name)
 		return
 	case "e":
 		m.requestEdit(t.n.path())

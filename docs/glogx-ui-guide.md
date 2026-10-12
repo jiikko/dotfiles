@@ -79,6 +79,7 @@ glogx は `git log` の pager を置き換えるものとして始まった。�
 |---|---|---|
 | `Enter` | **TUI 内の開閉 toggle** | job パネル / 本文の引き出し / doctor の内訳。開くのも閉じるのも Enter |
 | `o` | 外のアプリで開く (ブラウザ・Preview) | コミット / job / PR / pro-con のカードの添付 |
+| `O` | Finder で選んだ状態で見せる (`open -R`)。大文字が小文字の強い版ではない例外 (`o` の「開く」の代わりに「置き場所を見せる」) | treefiler (木・タイル) |
 | `e` (`v`) | エディタで開く | repo root / issue 本文 / job ログ |
 | `y` | コピー (素の値: URL / パス / group 名) | issues の**合成の** group 親行だけ group 名 (親 issue のある行はパス) |
 | `Y` | コピー (整形した参照: Markdown / 番号+タイトル+パス) | |
