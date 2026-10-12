@@ -79,6 +79,7 @@
 - `src/tuikit/foreground` (`github.com/jiikko/dotfiles/src/tuikit/foreground`) — Package foreground は、画面が端末の前面 (前面のプロセスグループ) を持っているかを確かめ、外れていたら取り戻す (pro-con の issue 518 で作り、issue 707 で treefiler・glogx と共有するため tuikit へ移した)。
 - `src/tuikit/foreground/ptytest` (`github.com/jiikko/dotfiles/src/tuikit/foreground/ptytest`) — Package ptytest は、テストのバイナリを script(1) の擬似端末の上で helper として走らせる (検査のための部品。
 - `src/tuikit/framebench` (`github.com/jiikko/dotfiles/src/tuikit/framebench`) — Package framebench は、描いた画面の文字列を bubbletea v2 のレンダラと同じ手順でセルへ書き直し、端末への差分まで通す 計測の道具 (issue 607)。
+- `src/tuikit/gutter` (`github.com/jiikko/dotfiles/src/tuikit/gutter`) — Package gutter は本文の左に出す行番号の溝 (nvim の number)。
 - `src/tuikit/highlight` (`github.com/jiikko/dotfiles/src/tuikit/highlight`) — Package highlight は diff とコードの行へシンタックスハイライト (chroma) を付ける。
 - `src/tuikit/layout` (`github.com/jiikko/dotfiles/src/tuikit/layout`) — Package layout は端末 UI の画面合成 (行の配列 → 行の配列)。
 - `src/tuikit/lineedit` (`github.com/jiikko/dotfiles/src/tuikit/lineedit`) — Package lineedit は 1 行の入力欄の編集 (カーソルと readline の編集キー)。

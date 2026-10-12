@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/jiikko/dotfiles/src/tuikit/gutter"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
 )
@@ -310,7 +311,7 @@ func (m *Model) jumpKey(t *tile, k string, rows int) bool {
 		l := ls[t.sel]
 		t.jump = false
 		r := slotRect(t.slot, m.w, m.canvasH())
-		from := rect{r.x + 2 + l.col, r.y + 1 + l.line - t.scroll, widthOf(l.text), 1}
+		from := rect{r.x + 2 + m.tileGutter(t) + l.col, r.y + 1 + l.line - t.scroll, widthOf(l.text), 1}
 		m.openTile(m.nodeFor(l.path), from)
 		return true
 	case k == "e": // 選んだパスをエディタで (issues viewer のジャンプモードの e と同じ)
@@ -388,12 +389,13 @@ func (m *Model) drawTile(c *canvas, t *tile, r rect, front bool, p float64) {
 	}
 	rows := r.h - 2
 	sy := int(math.Round(t.sy.v))
-	lw := r.w - 4
+	vl := m.view(t) // 溝の桁より先に作る (Markdown は作るときに読み進め、溝の桁がそこで変わりうる)
+	g := m.tileGutter(t)
+	tx, lw := r.x+2+g, r.w-4-g // 本文は行番号の溝の右から
 	var links []link
 	if t.jump && front {
 		links = m.tileLinks(t, sy+rows)
 	}
-	vl := m.view(t)
 	switch {
 	case t.mode == modeDiff && m.diffLoading(t):
 		c.put(r.x+2, r.y+1, spinnerFrame(m.now())+" diff を取得中", cMuted, false)
@@ -402,7 +404,10 @@ func (m *Model) drawTile(c *canvas, t *tile, r rect, front bool, p float64) {
 	}
 	for i := 0; i < rows && sy+i < len(vl); i++ {
 		ln := sy + i
-		c.putSGR(r.x+2, r.y+1+i, vl[ln].styled, lw, cText)
+		if g > 0 {
+			c.put(r.x+2, r.y+1+i, gutter.Format(vl[ln].src, g), cMuted, false)
+		}
+		c.putSGR(tx, r.y+1+i, vl[ln].styled, lw, cText)
 		for li, l := range links {
 			if l.line != ln {
 				continue
@@ -411,7 +416,7 @@ func (m *Model) drawTile(c *canvas, t *tile, r rect, front bool, p float64) {
 				if l.col+k >= lw {
 					break
 				}
-				if q := c.at(r.x+2+l.col+k, r.y+1+i); q != nil {
+				if q := c.at(tx+l.col+k, r.y+1+i); q != nil {
 					q.ul = true
 					q.rev = li == t.sel
 				}

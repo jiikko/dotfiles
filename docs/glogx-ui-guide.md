@@ -259,6 +259,7 @@ glogx の issues の一覧 (範囲選択) と本文 (隣へ送る) と同じ割�
 | 落ち影つきの板 (確認・ピッカーなど) | `layout.Panel` (中身の幅は `layout.PanelContentWidth`) / 重ねるのは `layout.OverlayCentered` / `OverlayRight` | glogx・pro-con・restartable |
 | y/N の確認 (§4) | `confirm.Dialog` (案内は定型の `HintYesNo` / `HintYesOther`) / 判定は `confirm.IsYes` / `IsYesStrict` | 板: glogx・restartable / 判定だけ: pro-con (§4 の下の項) |
 | 本文 (issue の md・PG の応答) | `markdown.Render` | glogx の issues・pro-con の詳細 |
+| 本文の左の行番号の溝 (nvim の number) | `gutter.Width` / `gutter.Format` (番号はソースの行番号。折り返しの続き行は空白) | glogx の issues の本文・treefiler のタイル |
 | diff・コードの色付け | `highlight.Diff` (本文のフェンスコードは `markdown.Render` が中で `highlight.Lang` を通す) | glogx の diff の板・pro-con の差分の板 |
 | 一覧・本文の移動 (§2) | `listnav.MotionOf` / `List` / `Pager` | glogx の全画面・pro-con |
 | 入力欄 (§7) | `lineedit` + `caret` | pro-con・schedkeys・glogx (issues の番号の絞り込み・URL ピッカー) |

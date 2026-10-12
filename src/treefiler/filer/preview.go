@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/jiikko/dotfiles/src/termsafe"
@@ -62,6 +63,7 @@ type textSource struct {
 	off     int64
 	lines   []string
 	partial []byte // まだ改行が来ていない行の頭
+	cont    []int  // maxLineBytes で切った続きの行の添字 (昇順)。行番号を数えない
 	eof     bool
 	size    int64
 	limit   int64 // 0 でなければ、先頭からここまでで読むのを止める (Markdown は整形のため全体を持つので上限を付ける)
@@ -118,11 +120,35 @@ func (s *textSource) feed(b []byte) {
 			}
 			s.lines = append(s.lines, cleanLine(string(s.partial[:cut])))
 			s.partial = s.partial[cut:]
+			s.cont = append(s.cont, len(s.lines)) // 次に足す行はこの行の続き
 			continue
 		}
 		s.lines = append(s.lines, cleanLine(string(s.partial[:i])))
 		s.partial = s.partial[i+1:]
 	}
+}
+
+// srcLine は i 番目 (0 起点) の行のファイルでの行番号 (1 起点)。maxLineBytes で切った続きの行は 0 (番号を出さない)。
+func (s *textSource) srcLine(i int) int {
+	k := sort.SearchInts(s.cont, i)
+	if k < len(s.cont) && s.cont[k] == i {
+		return 0
+	}
+	return i + 1 - k
+}
+
+// estLines は行番号の溝の幅を決めるための行数の見積もり。末尾まで読んでいなければ、読んだバイトあたりの行数から
+// 全体 (Markdown は読む上限まで) を見積もる (読み進めるたびに桁が増えて本文が横へずれるのを減らす。見積もりが外れれば増える)。
+func (s *textSource) estLines() int {
+	n := len(s.lines)
+	end := s.size
+	if s.limit > 0 {
+		end = min(end, s.limit)
+	}
+	if !s.eof && s.off > 0 && end > s.off {
+		n = max(n, int(int64(n)*end/s.off))
+	}
+	return n
 }
 
 func (s *textSource) finish() {

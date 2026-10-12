@@ -457,3 +457,125 @@ func TestGitHeadExistsOnRealRepo(t *testing.T) {
 		t.Fatalf("commit の後: %v %v (true, nil のはず)", ok, err)
 	}
 }
+
+// cellsAt は canvas の (x, y) から n 桁の文字を繋げたもの。
+func cellsAt(c *canvas, x, y, n int) string {
+	var b strings.Builder
+	for i := range n {
+		if q := c.at(x+i, y); q != nil {
+			b.WriteString(q.s)
+		}
+	}
+	return b.String()
+}
+
+// タイルの本文の左にファイルの行番号を出す (nvim の number)。折り返しの続き行には出さず、本文は溝の右から始まる。
+func TestTileShowsLineNumbers(t *testing.T) {
+	m := newTest(t)
+	writeRel(t, m, "a/nums.txt", "aaa\n"+strings.Repeat("x", 300)+"\nccc\n")
+	tl := openTileAt(t, m, "a/nums.txt")
+	settle(m)
+	g := m.tileGutter(tl)
+	if g != 3 {
+		t.Fatalf("溝の桁 = %d (3 行なので 2 桁 + 空白 = 3 のはず)", g)
+	}
+	c := m.draw()
+	r := slotRect(tl.slot, m.w, m.canvasH())
+	w := m.tileTextWidth(tl)
+	wrapped := (300 + w - 1) / w
+	want := map[int]string{0: " 1 ", 1: " 2 ", 2: "   ", 1 + wrapped: " 3 "}
+	for row, gw := range want {
+		if got := cellsAt(c, r.x+2, r.y+1+row, g); got != gw {
+			t.Errorf("%d 行目の溝 = %q, want %q", row, got, gw)
+		}
+	}
+	if got := cellsAt(c, r.x+2+g, r.y+1, 3); got != "aaa" {
+		t.Fatalf("本文が溝の右から始まらない: %q", got)
+	}
+	if got := cellsAt(c, r.x+2+g, r.y+1+1+wrapped, 3); got != "ccc" {
+		t.Fatalf("3 行目の本文 = %q", got)
+	}
+	tl.mode = modeDiff
+	if m.tileGutter(tl) != 0 {
+		t.Fatal("diff にも溝を出している (diff の行はファイルの行ではない)")
+	}
+}
+
+// 1 行の長さの上限 (maxLineBytes) で切った続きは、ファイルの行ではないので番号を数えない。
+// 🚨 切れるのは改行がまだ読めていないときだけ (読んだ塊に改行があれば長くても 1 行) なので、塊 (chunkBytes) より長い行にする。
+func TestSrcLineSkipsSplitContinuation(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "long.txt")
+	mustWrite(t, p, "a\n"+strings.Repeat("b", 4*chunkBytes)+"\nc\n")
+	s, err := openText(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ensure(1000)
+	n := len(s.lines)
+	if n < 4 || len(s.cont) != n-3 {
+		t.Fatalf("行の数 = %d・続き = %d (長い行が切れていない)", n, len(s.cont))
+	}
+	if s.srcLine(0) != 1 || s.srcLine(1) != 2 || s.srcLine(n-1) != 3 {
+		t.Fatalf("行番号 = %d %d … %d, want 1 2 … 3", s.srcLine(0), s.srcLine(1), s.srcLine(n-1))
+	}
+	for i := 2; i < n-1; i++ {
+		if s.srcLine(i) != 0 {
+			t.Fatalf("%d 番目 (続きの行) の番号 = %d (0 のはず)", i, s.srcLine(i))
+		}
+	}
+}
+
+// Markdown の行番号は整形後の表示行の連番ではなく、ソース (.md) の行番号。
+func TestMarkdownLineNumbersAreSourceLines(t *testing.T) {
+	m := newTest(t)
+	writeRel(t, m, "a/doc.md", "# 見出し\n\n- 項目\n")
+	tl := openTileAt(t, m, "a/doc.md")
+	srcOf := map[string]int{}
+	for _, l := range m.view(tl) {
+		srcOf[strings.TrimSpace(l.plain)] = l.src
+	}
+	found := 0
+	for k, v := range srcOf {
+		switch {
+		case strings.Contains(k, "見出し") && v != 1:
+			t.Fatalf("見出しの行番号 = %d (1 のはず)", v)
+		case strings.Contains(k, "項目") && v != 3:
+			t.Fatalf("項目の行番号 = %d (3 のはず)", v)
+		case strings.Contains(k, "見出し"), strings.Contains(k, "項目"):
+			found++
+		}
+	}
+	if found != 2 {
+		t.Fatalf("見出しと項目の行が見つからない: %v", srcOf)
+	}
+}
+
+// ジャンプモードの下線は溝のぶんずらした本文のリンクの上に引く。
+func TestJumpUnderlineShiftedByGutter(t *testing.T) {
+	m := newTest(t)
+	cdTo(t, m, "a/three.md")
+	m.HandleKey("enter")
+	tl := m.frontTile()
+	settle(m)
+	m.HandleKey("tab")
+	ls := m.tileLinks(tl, 10)
+	if len(ls) == 0 {
+		t.Fatal("リンクが無い")
+	}
+	c := m.draw()
+	r := slotRect(tl.slot, m.w, m.canvasH())
+	l := ls[0]
+	x, y := r.x+2+m.tileGutter(tl)+l.col, r.y+1+l.line-tl.scroll
+	if got := cellsAt(c, x, y, widthOf(l.text)); got != l.text {
+		t.Fatalf("リンクの位置の文字 = %q, want %q", got, l.text)
+	}
+	// 先頭・末尾に下線があり、1 桁手前 (溝ぶんずれた下線ならここに掛かる) には無い
+	for _, k := range []int{0, widthOf(l.text) - 1} {
+		if q := c.at(x+k, y); q == nil || !q.ul {
+			t.Fatalf("リンクの %d 桁目に下線が無い", k)
+		}
+	}
+	if q := c.at(x-1, y); q != nil && q.ul {
+		t.Fatal("リンクの手前に下線が掛かっている (溝のぶんずれている)")
+	}
+}

@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/jiikko/dotfiles/src/tuikit/anim"
 	"github.com/jiikko/dotfiles/src/tuikit/confirm"
+	"github.com/jiikko/dotfiles/src/tuikit/gutter"
 	"github.com/jiikko/dotfiles/src/tuikit/layout"
 	"github.com/jiikko/dotfiles/src/tuikit/listnav"
 	"os"
@@ -2519,25 +2520,16 @@ func (v *issuesView) bodyLines(o issuesRenderOpts) []string {
 	return append(header, out...)
 }
 
-// srcGutterWidth は行番号の溝の桁数 (番号 + 空白 1)。行数が増えても揃うよう桁数で決める。
-func srcGutterWidth(srcLines int) int {
-	digits := len(strconv.Itoa(max(srcLines, 1)))
-	return max(digits, 2) + 1 // 2 桁未満でも詰まって見えないよう最低 2 桁は取る
-}
+// srcGutterWidth は行番号の溝の桁数 (番号 + 空白 1)。
+func srcGutterWidth(srcLines int) int { return gutter.Width(srcLines) }
 
-// srcGutter は 1 行ぶんの行番号の溝。src=0 (折り返しの続き行・畳まれた 2 行目以降) は空白。
-//
-// 🚨 番号は「ソース (.md) の行番号」であって表示行の連番ではない。同じ番号を続き行にも並べると
-// 「その行がそこにある」と読めてしまい、外 (nvim / Claude Code) へ持ち出したとき指す先がずれる。
+// srcGutter は 1 行ぶんの行番号の溝。src=0 (折り返しの続き行・畳まれた 2 行目以降) は空白 (理由は tuikit/gutter の doc)。
 func srcGutter(src, width int, colored bool) string {
-	if width <= 0 {
-		return ""
+	s := gutter.Format(src, width)
+	if src <= 0 || s == "" {
+		return s
 	}
-	if src <= 0 {
-		return padSpaces(width)
-	}
-	num := strconv.Itoa(src)
-	return paint(fillLeft(num, width-1), ansiDim, colored) + " "
+	return paint(s[:len(s)-1], ansiDim, colored) + " " // 番号だけを薄くする (末尾の空白は塗らない)
 }
 
 // hint は viewer 表示中の操作案内 (最下行)。

@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jiikko/dotfiles/src/tuikit/gutter"
 	"github.com/jiikko/dotfiles/src/tuikit/highlight"
 	"github.com/jiikko/dotfiles/src/tuikit/markdown"
 	"github.com/jiikko/dotfiles/src/tuikit/termwidth"
@@ -16,6 +17,7 @@ import (
 type viewLine struct {
 	styled string // SGR つき (canvas.putSGR で描く)
 	plain  string // 同じ文字列から SGR を外したもの (リンクを探す・幅を数える)
+	src    int    // 左の溝に出すファイルの行番号 (0 = 出さない: 折り返しの続き行・diff)
 }
 
 type tileMode int
@@ -63,7 +65,25 @@ func (t *tile) setSource(n *node, src *textSource) {
 	}
 }
 
-func (m *Model) tileTextWidth(t *tile) int { return max(slotRect(t.slot, m.w, m.canvasH()).w-4, 1) }
+func (m *Model) tileTextWidth(t *tile) int {
+	return max(slotRect(t.slot, m.w, m.canvasH()).w-4-m.tileGutter(t), 1)
+}
+
+// gutterMinText は行番号の溝を出すのに要る本文の最低の幅 (これより狭いタイルでは溝を出さず本文に回す)。
+const gutterMinText = 8
+
+// tileGutter は本文の左の行番号の溝の桁数 (nvim の number。issues viewer の本文と同じ tuikit/gutter)。diff には出さない
+// (diff の行はファイルの行ではない)。
+func (m *Model) tileGutter(t *tile) int {
+	if t.mode == modeDiff {
+		return 0
+	}
+	g := gutter.Width(t.src.estLines())
+	if slotRect(t.slot, m.w, m.canvasH()).w-4-g < gutterMinText {
+		return 0
+	}
+	return g
+}
 
 // view はタイルの表示の行 (作ってあれば使い回す)。
 func (m *Model) view(t *tile) []viewLine {
@@ -75,7 +95,7 @@ func (m *Model) view(t *tile) []viewLine {
 			styled := highlight.Diff(lines)
 			t.vlines = make([]viewLine, len(lines))
 			for i, l := range lines {
-				t.vlines[i] = viewLine{styled[i], l}
+				t.vlines[i] = viewLine{styled: styled[i], plain: l}
 			}
 			t.vkey, t.links = k, nil
 		}
@@ -84,6 +104,7 @@ func (m *Model) view(t *tile) []viewLine {
 	md := isMarkdown(t.n.raw)
 	if md {
 		t.src.ensureBytes(markdownCap)
+		w = m.tileTextWidth(t) // 読んだぶんで溝の桁が変わりうる
 	}
 	k := viewKey{w: w, wrap: m.set.Wrap, n: len(t.src.lines), eof: t.src.eof}
 	if k == t.vkey && t.vlines != nil {
@@ -95,22 +116,30 @@ func (m *Model) view(t *tile) []viewLine {
 		t.vlines, t.vsrc, t.links = t.vlines[:0], 0, nil
 	}
 	if md {
-		out, _ := markdown.Render(strings.Join(t.src.lines, "\n"), w, true)
-		for _, o := range out {
-			t.vlines = append(t.vlines, viewLine{o, termwidth.StripSGR(o)})
+		out, nums := markdown.Render(strings.Join(t.src.lines, "\n"), w, true)
+		for i, o := range out {
+			src := 0
+			if i < len(nums) && nums[i] > 0 {
+				src = t.src.srcLine(nums[i] - 1)
+			}
+			t.vlines = append(t.vlines, viewLine{styled: o, plain: termwidth.StripSGR(o), src: src})
 		}
 	} else {
-		for _, l := range t.src.lines[t.vsrc:] {
+		for i, l := range t.src.lines[t.vsrc:] {
 			pieces := []string{l}
 			if k.wrap {
 				pieces = wrapCells(l, w)
 			}
-			for _, p := range pieces {
+			for j, p := range pieces {
 				st := p
 				if t.hl != nil {
 					st = t.hl(p)
 				}
-				t.vlines = append(t.vlines, viewLine{st, p})
+				src := 0
+				if j == 0 {
+					src = t.src.srcLine(t.vsrc + i)
+				}
+				t.vlines = append(t.vlines, viewLine{styled: st, plain: p, src: src})
 			}
 		}
 		t.vsrc = len(t.src.lines)

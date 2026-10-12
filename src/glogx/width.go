@@ -14,7 +14,6 @@ func truncateDispLeft(s string, width int, head string) string {
 }
 func padSpaces(n int) string               { return termwidth.PadSpaces(n) }
 func fillRight(s string, width int) string { return termwidth.FillRight(s, width) }
-func fillLeft(s string, width int) string  { return termwidth.FillLeft(s, width) }
 
 // 幅の層ごとの実測表と VS16 正規化のトレードオフは termsafe.DropEmojiVS16 のドキュメント
 // コメントにある (関数ごと termsafe へ移した。main からは dropEmojiVS16 の別名で呼べる)。

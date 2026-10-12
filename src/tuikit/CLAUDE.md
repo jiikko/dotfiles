@@ -19,6 +19,7 @@ README.md の「パッケージ」表が正本 (各パッケージの中身と�
 - `toast` — 右下に数秒出る通知スタック
 - `markdown` — markdown 本文を幅で整形するレンダラ
 - `highlight` — diff / コードのシンタックスハイライト
+- `gutter` — 本文の左の行番号の溝 (nvim の number)
 - `listnav` — 一覧・本文のカーソル移動・スクロール窓の計算
 - `framebench` — フレームをレンダラ込みで測る計測の道具 (部品ではない。ultraviolet を import する)
 
