@@ -522,19 +522,27 @@ func scanIssues(cwd string) issuesScanMsg {
 	root := issues.RepoRoot(cwd)
 	dirs := issues.FindDirs(root)
 	before := issuesFingerprint(issuesWatchDirs(dirs, nil), nil)
-	found, warnings := issues.Scan(dirs)
-	scanIssuesStage("scanned")
+	found, warnings := issuesScanDirs(dirs)
 	fp := issuesFingerprint(issuesWatchDirs(dirs, found), issuesWatchPaths(found))
 	if issuesFingerprint(issuesWatchDirs(dirs, nil), nil) != before {
 		fp = issuesStaleBaseline
 	}
+	loadAllMeta(found)
+	return issuesScanMsg{root: root, dirs: dirs, issues: found, warnings: warnings, fp: fp}
+}
+
+// loadAllMeta は全件のメタデータを読む。読み終えた時点の差し込み口を同じ関数に持つのは、読む位置を動かす
+// 変更 (指紋の後ろ → 前) で差し込み口も一緒に動き、テストが「読んだ後から指紋までの窓」を見続けるため。
+func loadAllMeta(found []*issues.Issue) {
 	for _, iss := range found {
 		// メタデータの読み取り失敗は無視する (タイトルがスラッグ表示に落ちるだけ)
 		_ = iss.LoadMeta()
 	}
 	scanIssuesStage("read")
-	return issuesScanMsg{root: root, dirs: dirs, issues: found, warnings: warnings, fp: fp}
 }
+
+// issuesScanDirs はテストの差し込み口 (走査の最中に入った追加・移動を作る)。
+var issuesScanDirs = issues.Scan
 
 // issuesStaleBaseline は「走査の途中でディレクトリが変わった」ときの基準。観測した指紋とは
 // 一致しないので、次の観測で取り直しになる ("" は「次の観測を基準にする」の意味なので使えない)。

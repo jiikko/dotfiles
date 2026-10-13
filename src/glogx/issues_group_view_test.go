@@ -941,3 +941,26 @@ func TestIssuesViewCloseDuringFilterDropsCollapse(t *testing.T) {
 		t.Fatalf("閉じて開き直した後の同じ番号フィルタで group が自動展開されない: collapsed=%v", v.groups.collapsed)
 	}
 }
+
+// 番号フィルタを「検索語を全部消して Enter」で解いたときも、フィルタ中に畳んだ状態が残らない
+// (confirmNumberFilter が解除の経路 endNumberFilter を通る。issue 752: 以前は空の確定が clear だけに
+// 落ちうる形で、group の後始末を飛ばす変異が緑のままだった。再現は敵対レビューの probe)。
+func TestIssuesViewEmptyConfirmDropsCollapse(t *testing.T) {
+	child := fakeEpicIssue("/repo/issues", "cloud", "415", "first", issues.StatusOpen)
+	v := loadedView(child)
+	for _, k := range []string{"/", "4", "1", "5", "enter", " "} {
+		v.handleKey(k, vp(10))
+	}
+	if !v.groups.collapsed[child.GroupKey] {
+		t.Fatal("前提: フィルタ中に group を畳めていない")
+	}
+	for _, k := range []string{"/", "backspace", "backspace", "backspace", "enter"} {
+		v.handleKey(k, vp(10))
+	}
+	if v.numFilter.active {
+		t.Fatal("前提: 空の確定で絞り込みが解けていない")
+	}
+	if len(v.groups.collapsed) != 0 {
+		t.Fatalf("空の確定で解いた後も畳んだ状態が残った: %v", v.groups.collapsed)
+	}
+}

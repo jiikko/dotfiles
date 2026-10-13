@@ -289,6 +289,21 @@ func TestAddBannerAfterFrontMatterOfEveryForm(t *testing.T) {
 		if iss.Declared != "pending" || iss.Title != "T" {
 			t.Errorf("%s: バナーを入れた後の Declared=%q Title=%q (本文 %q)", name, iss.Declared, iss.Title, got)
 		}
+		// バナーは front matter の外 (閉じの行より後ろ) に入る。Declared だけでは「front matter の中に入った」を
+		// 見分けられない形があるので、位置も見る (敵対レビュー 2 周目)
+		lines := strings.Split(got, "\n")
+		closeAt, bannerAt := -1, -1
+		for i, l := range lines {
+			if i > 0 && closeAt < 0 && isFrontMatterClose(l) {
+				closeAt = i
+			}
+			if strings.Contains(l, "担当中") {
+				bannerAt = i
+			}
+		}
+		if closeAt < 0 || bannerAt <= closeAt {
+			t.Errorf("%s: バナーが front matter の閉じ (%d 行目) より後ろにない (%d 行目): %q", name, closeAt, bannerAt, got)
+		}
 		if back, ok := removeBanner(got); !ok || strings.Contains(back, "担当中") {
 			t.Errorf("%s: バナーを外せない (ok=%v): %q", name, ok, back)
 		}

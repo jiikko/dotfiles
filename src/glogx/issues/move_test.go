@@ -255,6 +255,7 @@ func TestMoveOutOfNextChangesNothingOnFailure(t *testing.T) {
 		}
 		unchanged(t, iss)
 	})
+	// このケースのバナーの検査は常に真 (差し込み口が他人のバナーを書く)。守っているのはファイルと目印の戻し
 	t.Run("動かした後にバナーを外せない", func(t *testing.T) {
 		iss, _ := claimed(t)
 		old := beforeRewrite
@@ -344,5 +345,38 @@ func TestMoveOutOfNextDoesNotResurrectLinkRemovedByOthers(t *testing.T) {
 	}
 	if _, err := os.Lstat(iss.NextLink); !os.IsNotExist(err) {
 		t.Fatalf("外から外された目印を、失敗した移動の戻しが作り直した: %v", err)
+	}
+}
+
+// 宛先への rename だけが失敗したときも、外した目印を戻す (敵対レビュー 2 周目: MkdirAll・同名・バナーの
+// 失敗は注入していたが、rename の失敗を注入するテストが無く、戻しを消す変異が緑だった)。
+func TestMoveOutOfNextRestoresLinkWhenRenameFails(t *testing.T) {
+	fixedNow(t)
+	dir := t.TempDir()
+	p := filepath.Join(dir, "001-feat-x.md")
+	if err := os.WriteFile(p, []byte("# x\n\n## 概要\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	iss := &Issue{Path: p, Dir: dir, Rel: "001-feat-x.md"}
+	if _, err := MoveToSubdir(iss, NextDirName); err != nil {
+		t.Fatal(err)
+	}
+	iss.Status, iss.NextLink = StatusNext, NextLinkPath(iss)
+	if err := os.Mkdir(filepath.Join(dir, "done"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// 元のディレクトリだけ書き込み不可: 目印 (next/ の中) は外せるが、ファイルを外へ rename できない
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	if _, err := MoveToSubdir(iss, "done"); err == nil {
+		t.Fatal("rename できないのに成功した")
+	}
+	if target, err := os.Readlink(iss.NextLink); err != nil || target != "../001-feat-x.md" {
+		t.Fatalf("rename の失敗で目印が外れたまま: %q %v", target, err)
+	}
+	if b, _ := os.ReadFile(p); !strings.Contains(string(b), "**担当中: ") {
+		t.Fatalf("rename の失敗でバナーが外れた: %q", b)
 	}
 }
