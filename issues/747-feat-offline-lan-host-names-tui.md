@@ -85,8 +85,34 @@
 - P3 経路の手段 (scoped route・`ssh -b`・`BindInterface`) の見落とし → 経路の表を足した / P3 サービス名とデバイス名の対応 → 要件 1 に足した
 - 反証も確認もできなかった (相手機器・sudo が無い): `/etc/hosts` が ssh・Finder に効くか、`dns-sd` でインターフェースを見分けられるか、sudo の要否 → 表に「未実測」と書いた
 
+## 設計のための調査 (2026-10-13・読むだけ・設定は変えていない)
+
+相手: Mac mini (`m2macmini.local`。Wi-Fi 側 192.168.50.7・有線側 169.254.217.100)。この Mac は Wi-Fi = en0 (index 14)・有線 = en13 (index 27)。
+
+- **発見はインターフェースごとに見分けられる**: `dns-sd -B _ssh._tcp local` の `if` 列が 14 / 27 で出る。Mac mini は**両方に**見える
+  (`kojiのMac mini` が if 14 と 27)。`dns-sd -L "kojiのMac mini" _ssh._tcp local` は `m2macmini.local.:22 (interface 27)`、
+  `dns-sd -G v4 m2macmini.local` は if 14 → 192.168.50.7・if 27 → 169.254.217.100 を返す → **要件 2 は dns-sd の `if` 列で作れる**
+- **`.local` 名は有線を保証しない (実測)**: システムの resolver (`dscacheutil -q host -a name m2macmini.local`) は 192.168.50.7 と
+  169.254.217.100 の**両方**を返す。どちらへ繋ぐかは呼び出し側の順序次第 → `.local` 名をそのまま使う案は「有線を通る」を満たさない
+- **169.254 の経路は相手ごとに変わる (前提の訂正)**: 知らない 169.254 の IP (`route -n get 169.254.217.101`) は en0 (Wi-Fi) へ出るが、
+  有線で見えた相手 (169.254.217.100) は `interface: en13`・`flags: <UP,HOST,DONE,LLINFO,STATIC,b016,WASCLONED>` の host 経路が
+  クローンされていて、**スコープ無しの ping (0.4 ms) も `nc -z` の 22 番も有線で届いた**。
+  ただし host 経路がいつ作られ・いつ消えるか (mDNS で解決した時か・起動直後や ARP が切れた後の初回の通信はどうなるか) は**未確認**。
+  hosts / ssh config に 169.254 の IP を書いて頼る設計は、この未確認に乗る
+- **`/etc/hosts` はシステムの resolver に効く**: 既にある行 (`127.0.0.1 creativecdn.com`) を `dscacheutil -q host -a name creativecdn.com`
+  が 127.0.0.1 で返した。ssh・Finder がこの resolver を通るかは未実測 (getaddrinfo を使うなら通るはず)
+- **ssh は有線に縛れる**: OpenSSH 10.3p1 (`ssh -V`)。`ssh -G -o BindInterface=en13 x` が `bindinterface en13` を返す (オプションを受け付ける。実際の接続は未試行)
+- 未確認のまま: `networksetup -setmanual` でルーターを空にする書き方 (設定を変えるので試していない)
+
+### 調査から見えた設計の候補 (未決。ユーザーと決める)
+
+- 案 A: **全台を固定 IP** (`192.168.100.0/24`)。名前は `/etc/hosts` か ssh config に固定で書く。経路の未確認に乗らない。全台の設定が要る
+- 案 B: **169.254 のまま、名前の解決を TUI が持つ**。dns-sd で if = 有線の相手と IP を引き、別名 → 有線の IP を ssh config (`BindInterface` 付き) か
+  hosts に書き直す。全台の設定は要らないが、169.254 の host 経路の未確認と、IP が変わったときの書き直しに乗る
+
 ## 進捗
 
-- [ ] 未決の 3 点を決める
+- [x] 設計のための調査 (上節)
+- [ ] 未決の 3 点を決める (案 A / B)
 - [ ] 見た目のサンプル
 - [ ] 実装
