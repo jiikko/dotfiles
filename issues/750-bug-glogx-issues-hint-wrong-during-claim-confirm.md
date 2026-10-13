@@ -1,7 +1,5 @@
 # 750 (bug): glogx の issues viewer で n の確認を出している間も、hint 行が一覧の案内 (Enter: 本文 / q: 終了) のまま (P3)
 
-> 🚨 **担当中: Claude (issues viewer の監査の対応セッション)**（2026-10-14〜）
-
 起票日: 2026-10-13
 
 ## 概要
@@ -33,4 +31,8 @@
 
 ## 進捗
 
-- [ ] 未着手
+- [x] 確認中は hint 行を確認の語彙 (y/Enter: 実行 / その他: キャンセル) に切り替える。方針は status viewer の確認中 (`discarding`) と spec の URL ピッカーの節に揃えた
+  (`hintLine` の「中央のモーダルが案内するので二重に出さない」とは別に、確認中に効かない・逆の意味のキーを案内しないことを優先) — `fix(glogx): issues viewer の n の確認中は hint 行に確認の語彙を出す`
+- [x] spec に追記 — `docs(glogx): issues viewer の spec に ...`
+- 変異: hint の確認中分岐を消す → red (最初の変異は handleKey 側の同じ字面の行に当たって rc=6 の判定不能だったので当て直した)
+- `make test` / `make lint` rc=0。敵対レビュー 3 体 (壊す / 素通り / 回帰。read-only・直列) を通した。

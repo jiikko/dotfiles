@@ -1,7 +1,5 @@
 # 752 (refactor): glogx の issues viewer: 番号フィルタの終わらせ方が 2 つの型に分かれている / epic group の子の判定が写されている
 
-> 🚨 **担当中: Claude (issues viewer の監査の対応セッション)**（2026-10-14〜）
-
 起票日: 2026-10-13
 
 ## 概要
@@ -36,4 +34,12 @@
 
 ## 進捗
 
-- [ ] 未着手
+- [x] 1 `issuesView.endNumberFilter(keep)` を番号フィルタを終わらせる唯一の経路にし (clearNumberFilter と finishClose)、確定は `confirmNumberFilter` が空なら解除へ回す。
+  `issuesNumberFilter.confirm` の空の分岐は消し、`endFilter` が auto も捨てて呼ぶ順序の制約を無くした
+- [x] 2 `Issue.EpicGroupKey()` を足し、`GroupKind == GroupEpic` (+ GroupKey の有無) の手書き 9 か所 (parse 3・view 5・number_filter 1) を寄せた。
+  残したのは意味の違う 2 か所: `MoveToSubdir` の GroupKey 無しの拒否と `IsGroupParent` (Group 名を見る)
+  — いずれも `refactor(glogx): 番号フィルタの終わらせ方を endNumberFilter の 1 本に、epic の子の判定を EpicGroupKey に寄せる`
+- [x] 敵対レビュー (素通り): 空の確定の経路を clear だけに戻す変異が緑だった → 回帰テスト `TestIssuesViewEmptyConfirmDropsCollapse`
+- 変異 (すべて red): endFilter の auto=nil を消す / 空の確定を clear + refresh に戻す
+- 等価の確認: EpicGroupKey で分類が変わるのは GroupEpic で key が空の手組みの Issue だけで、本番の経路には無い (敵対レビュー (回帰) が確認)
+- `make test` / `make lint` rc=0。敵対レビュー 3 体 (壊す / 素通り / 回帰。read-only・直列) を通した。

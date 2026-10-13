@@ -1,7 +1,5 @@
 # 751 (test): glogx の issues viewer のテストで、変異を当てても緑のままのものと、寄せられる手組み
 
-> 🚨 **担当中: Claude (issues viewer の監査の対応セッション)**（2026-10-14〜）
-
 起票日: 2026-10-13
 
 ## 概要
@@ -49,4 +47,12 @@ main は 4 の境界の不足 (7 桁のケースが無い / BiDi のテストが
 
 ## 進捗
 
-- [ ] 1〜5 と test-helpers は未着手
+- [x] 1 空振りのサブテスト「本文 (引き出し)」を消し、headWidth の本文の分岐を残す理由をコメントに書いた
+- [x] 2 引き出しの寸法をリテラルの表 (16→16 / 20→16 / 40→32 / 84→76 / 100→90 / 200→182 / 312→294。Target の式から手計算) で固定
+- 3 見送り: tuikit の anim と性質が重なる 3 本は、glogx 側の所要時間の配線を見る価値があり、統合しても複雑さは下がらないので残す
+- [x] 4 BiDi は urlRe の全 11 文字、採番は 7 桁の境界を足した
+- [x] 5 next へ rename で運ぶ経路のバナー失敗の戻しを `beforeRewrite` で検査 (0o444 では起きないことはレビューで判明済み)
+- [x] test-helpers: `&issues.Issue{Path, Dir, Rel, Number, Category}` の手組みのうち、同じ関数に `filepath.Join(dir, "<同じ rel>")` があるもの 15 か所を `path2issue` に置換 (書き込みはそのまま。Slug が付くが表示のテストは全部通った)
+  — いずれも `test(glogx): 変異で緑のままだった issues viewer のテストを直し、Issue の手組みを path2issue に寄せる`
+- 変異 (すべて red): 引き出しの比率 0.8→0.7 / urlRe の範囲を 2066-2066 へ / 桁の上限を +1 / 入る向きの rename の戻しを消す
+- `make test` / `make lint` rc=0。敵対レビュー 3 体 (壊す / 素通り / 回帰。read-only・直列) を通した。

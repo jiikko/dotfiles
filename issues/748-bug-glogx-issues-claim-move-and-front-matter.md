@@ -1,7 +1,5 @@
 # 748 (bug): glogx の issues viewer の書き込み: next から出す移動の失敗で claim が半端に外れる / バナーの front matter の判定が LoadMeta と違う
 
-> 🚨 **担当中: Claude (issues viewer の監査の対応セッション)**（2026-10-14〜）
-
 起票日: 2026-10-13
 
 ## 概要
@@ -42,5 +40,13 @@
 
 ## 進捗
 
-- [ ] 1 宛先の確定と同名の確認を先に置く
-- [ ] 2 front matter の判定を 1 本に寄せる
+- [x] 1 宛先の確定・group の拒否・同名の確認を目印とバナーに触る前に置き、その後の失敗 (MkdirAll / Rename / バナーの解除) ではファイルと目印を戻す。
+  順序は「目印を外す → 動かす → 動かした先でバナーを外す」(バナーを外した後に戻すと元の文言を復元できないため) — `fix(glogx/issues): next から出す移動の失敗で claim を外さない・front matter の境界を 1 本の判定にする`
+- [x] 2 front matter の境界を `isFrontMatterOpen` / `isFrontMatterClose` に寄せ、LoadMeta と addBanner が共有する (同 commit)
+- [x] 敵対レビュー (壊す) の P2: 戻しが「走査の後に他のホストが外した目印」まで作り直していた → `removeNextLink` が実際に消したかを返し、消したものだけ戻す。
+  P3: BOM 付きの front matter で LoadMeta (無害化した行) と addBanner (生の行) の判定が割れた → 述語の中で無害化する — `fix(glogx): 敵対レビューの 3 件 (...)`
+- [x] 敵対レビュー (素通り): rename だけが失敗する経路の戻しと、バナーが front matter の閉じより後ろにあることを検査に足した — `test(glogx): 敵対レビュー (素通り) で緑のままだった変異 4 本を止める`
+- [x] spec (`docs/issues-viewer-spec.md` の n の節) を更新
+- 変異 (すべて red): MoveToSubdir を旧実装へ / 出る向きの rename の戻しを消す / banner.go を旧実装へ / removed の判定を消す / 述語の無害化を消す / 宛先への rename の戻しを消す / 閉じの探索を j=0 から
+- 残す既知の半端: 戻しの rename も失敗する二重失敗 (doc に記載)・戻しの rename が移動中に作られた同名を上書きする TOCTOU・宛先の壊れた symlink を os.Stat が「無い」と読む (どちらも以前からの挙動で未実行。敵対レビューの未確認)
+- `make -C src/glogx test` (-race) / `make lint` rc=0。敵対レビュー 3 体 (壊す / 素通り / 回帰。read-only・直列) を通した。

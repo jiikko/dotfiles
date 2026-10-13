@@ -1,7 +1,5 @@
 # 753 (risk): glogx の issues viewer: コピーするパスの制御文字 / NextNumber が数える番号の範囲
 
-> 🚨 **担当中: Claude (issues viewer の監査の対応セッション)**（2026-10-14〜）
-
 起票日: 2026-10-13
 
 ## 概要
@@ -30,5 +28,13 @@
 
 ## 進捗
 
-- [ ] 1 を確かめる (実行で再現するか)
-- [ ] 2 の仕様を決める
+- [x] 1 再現した (ESC[201~ を含むファイル名で y を押すと生のままクリップボードへ入り、通知だけ無害化されていた)。copyText と copyLines が `isCopySafe` で断る — `fix(glogx): issues viewer は制御文字を含むパス・名前をクリップボードへ入れない`
+  - 判定はタブだけ通す (group 名にタブを含む実例を生でコピーする既存の決定 `TestIssuesViewGroupParentCopiesRawGroupNameButSanitizesNotice` と両立) — `fix(glogx): コピーを断る判定はタブだけ通す`
+  - 敵対レビュー (壊す): 「無害化の結果と一致するか」で判定すると VS16 の絵文字まで断っていた → `IsPlain` に寄せてタブだけ許す — `fix(glogx): 敵対レビューの 3 件 (...)`
+- [x] 2 仕様の判断と根拠:
+  - 接頭辞付きの形式の番号は数えない (接頭辞ごとの別の列)。手元で接頭辞付きを持つ 3 repo (SnapTrim 21 件・baby-note 8 件・DualNote macOS 7 件) はどれも接頭辞ごとに 001 から振っており、番号のみの最大の方が大きいので、今の結果は変わらない (敵対レビュー (回帰) の数え)。
+    接頭辞付きしかない repo では N が 001 を返す (N は `NNN-` 形式の次番号なので意図どおり) — `fix(glogx/issues): NextNumber は接頭辞付きの形式の番号を数えない`
+  - issue ディレクトリをまたぐ最大値は意図どおりなので変えない: obaket は issues/README.md の「採番」節で issues と macOS/issues の 4 dir を 1 本の連番にしている (実測: 両 dir に同番号が 10 件あり、README が「クロス dir 衝突」として防いでいる)。FindDirs は深さ 1 までで、my-products の apps/<x>/issues のような独立の列は拾わない。根拠は NextNumber の doc に書いた
+- 変異 (すべて red): copyText の検査を消す / copyLines の検査を消す / isCopySafe を無害化との一致へ戻す / Prefix の除外を消す
+- 範囲外の記録: browse 側の copyWithToast は isCopySafe を通らない (外部由来の値が入るかは未確認。敵対レビュー (素通り) の未確認)
+- `make test` / `make lint` rc=0。敵対レビュー 3 体 (壊す / 素通り / 回帰。read-only・直列) を通した。
