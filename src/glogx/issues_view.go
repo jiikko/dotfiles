@@ -1624,6 +1624,8 @@ func (v *issuesView) visibleRows(vp issuesViewport) int {
 }
 
 // headWidth はヘッダーを組む幅。本文は引き出しの内側に描くので、そちらの幅で数える。
+// 本文のヘッダーの行数は今は幅によらない (bodyHeadLines は 3 行固定) が、linkJump の状態文は幅で
+// リンクを組み直すので、描画と同じ幅を渡す (行数がずれる形が足されたときに備える意味もある。issue 751)
 func (v *issuesView) headWidth(total int) int {
 	if v.open != nil {
 		return v.bodyWidth(total)

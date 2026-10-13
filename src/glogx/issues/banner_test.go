@@ -267,10 +267,10 @@ func TestUnclaimChangesNothingWhenBannerClearFails(t *testing.T) {
 // バナーを front matter の後ろに入れる。前に入れると LoadMeta が front matter と見なくなり、status が消える。
 func TestAddBannerAfterFrontMatterOfEveryForm(t *testing.T) {
 	cases := map[string]string{
-		"... で閉じる":           "---\nstatus: pending\n...\n\n# T\n\n## 概要\n",
-		"開きの末尾に空白":            "--- \nstatus: pending\n---\n\n# T\n\n## 概要\n",
-		"... で閉じ本文に水平線":       "---\nstatus: pending\n...\n\n# T\n\n## 概要\n\n---\n\n本文\n",
-		"CRLF と ... の閉じ":       "---\r\nstatus: pending\r\n...\r\n\r\n# T\r\n\r\n## 概要\r\n",
+		"... で閉じる":       "---\nstatus: pending\n...\n\n# T\n\n## 概要\n",
+		"開きの末尾に空白":       "--- \nstatus: pending\n---\n\n# T\n\n## 概要\n",
+		"... で閉じ本文に水平線":  "---\nstatus: pending\n...\n\n# T\n\n## 概要\n\n---\n\n本文\n",
+		"CRLF と ... の閉じ": "---\r\nstatus: pending\r\n...\r\n\r\n# T\r\n\r\n## 概要\r\n",
 	}
 	for name, src := range cases {
 		got, changed := addBanner(src, testBanner)

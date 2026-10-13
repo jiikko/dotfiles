@@ -292,3 +292,29 @@ func TestMoveLegacyNextFileKeepsBannerOnConflict(t *testing.T) {
 		t.Fatalf("失敗したのに本文が変わった: %q", b)
 	}
 }
+
+// done などから next へ rename で運ぶ経路で、バナーを書けなければファイルを元の場所へ戻す
+// (目印だけ・バナー無しの claim を残さない)。この戻しは検査されていなかった (issue 751 の 5)。
+func TestMoveIntoNextByRenameRollsBackWhenBannerFails(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "done"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, "done", "001-feat-x.md")
+	if err := os.WriteFile(p, []byte("# x\n\n## 概要\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := beforeRewrite
+	beforeRewrite = func(path string) { _ = os.WriteFile(path, []byte("# x\n\n## 概要\n追記\n"), 0o644) }
+	t.Cleanup(func() { beforeRewrite = old })
+	iss := &Issue{Path: p, Dir: dir, Rel: "done/001-feat-x.md", Status: StatusDone}
+	if _, err := MoveToSubdir(iss, NextDirName); err == nil {
+		t.Fatal("バナーを書けないのに成功した")
+	}
+	if _, err := os.Stat(p); err != nil {
+		t.Fatalf("バナーを書けなかったのにファイルが元の場所へ戻らない: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, NextDirName, "001-feat-x.md")); !os.IsNotExist(err) {
+		t.Fatalf("next/ に残骸がある: %v", err)
+	}
+}

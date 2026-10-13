@@ -53,6 +53,13 @@ func TestDrawerPhasesAndWidth(t *testing.T) {
 // 起きてはいけない (ユーザー要望で広げたのに狭くなる本末転倒)。
 func TestDrawerTargetWidth(t *testing.T) {
 	var d issuesDrawer
+	// 寸法はユーザー要望で決めた値 (80% + 10 桁・覗き見は 8〜18 桁・16 桁以下は全幅) をリテラルで固定する。
+	// 下のループは定数どうしの関係しか見ないので、定数を変えても緑のままだった (issue 751)
+	for total, want := range map[int]int{16: 16, 20: 16, 40: 32, 84: 76, 100: 90, 200: 182, 312: 294} {
+		if got := d.targetWidth(total); got != want {
+			t.Errorf("total=%d: 本文の幅 %d, want %d", total, got, want)
+		}
+	}
 	ratioOnly := func(total int) int { return int(float64(total)*issuesDrawerRatio + 0.5) }
 
 	// 広い端末では一覧の覗き見が上限で止まり、余りは全部本文へ回る (比率のままだと画面が

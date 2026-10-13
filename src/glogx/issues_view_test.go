@@ -454,7 +454,7 @@ func TestIssuesViewBodyShowsSrcLineNumbers(t *testing.T) {
 	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "042-feat-x.md", Number: "042", Category: "feat"})
+	v := loadedView(path2issue(dir, "042-feat-x.md"))
 	v.handleKey("enter", vp(20))
 	v.drawer.finish()
 	const width = 60
@@ -482,7 +482,7 @@ func TestIssuesViewEnterTogglesBody(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "028-refactor-x.md", Number: "028", Category: "refactor"})
+	v := loadedView(path2issue(dir, "028-refactor-x.md"))
 
 	v.handleKey("enter", vp(10)) // 一覧の Enter = 開く
 	if v.open == nil {
@@ -515,7 +515,7 @@ func TestIssuesViewMarkNextMovesAfterConfirm(t *testing.T) {
 	if err := os.WriteFile(path, []byte("# 001 feat: x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	iss := &issues.Issue{Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat"}
+	iss := path2issue(dir, "001-feat-x.md")
 	v := loadedView(iss)
 	v.cwd = dir
 
@@ -560,7 +560,7 @@ func TestIssuesViewMarkNextCancels(t *testing.T) {
 		if err := os.WriteFile(path, []byte("# 001 feat: x\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat"})
+		v := loadedView(path2issue(dir, "001-feat-x.md"))
 		v.cwd = dir
 		v.handleKey("n", vp(10))
 		if cmd := v.handleKey(key, vp(10)); cmd != nil {
@@ -930,7 +930,7 @@ func TestIssuesViewBodyScrollClampsToEnd(t *testing.T) {
 	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "001-feat-long.md", Number: "001", Category: "feat"})
+	v := loadedView(path2issue(dir, "001-feat-long.md"))
 	v.handleKey("enter", vp(10))
 	// 描画で行数が確定してからスクロールする (Body は幅ごとに整形結果をキャッシュする)
 	v.lines(renderOpts(20))
@@ -1003,7 +1003,7 @@ func TestIssuesViewBodyScrollRecoversAfterWidthGrows(t *testing.T) {
 	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "001-feat-long.md", Number: "001", Category: "feat"})
+	v := loadedView(path2issue(dir, "001-feat-long.md"))
 	const page = 12
 	v.handleKey("enter", vp(page))
 	v.drawer.finish() // 引き出しを開ききった状態で幅の検証をする
@@ -1047,7 +1047,7 @@ func TestIssuesViewGReachesLastLine(t *testing.T) {
 	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	v2 := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "001-feat-long.md", Number: "001", Category: "feat"})
+	v2 := loadedView(path2issue(dir, "001-feat-long.md"))
 	v2.handleKey("enter", vp(page))
 	v2.lines(renderOpts(page)) // 幅ごとの整形を確定させてから G
 	v2.handleKey("G", vp(page))
@@ -1101,7 +1101,7 @@ func TestIssuesViewActionKeysWorkInBothModes(t *testing.T) {
 	if err := os.WriteFile(path, []byte("# 028 refactor: x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	iss := &issues.Issue{Path: path, Dir: dir, Rel: "028-refactor-x.md", Number: "028", Category: "refactor"}
+	iss := path2issue(dir, "028-refactor-x.md")
 	for _, mode := range []string{"一覧", "本文"} {
 		v := loadedView(iss)
 		if mode == "本文" {
@@ -1229,7 +1229,7 @@ func TestIssuesViewBodyModeShowsCopyResult(t *testing.T) {
 	if err := os.WriteFile(path, []byte("# 028 refactor: タイトル\n\n本文。\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "028-refactor-x.md", Number: "028", Category: "refactor"})
+	v := loadedView(path2issue(dir, "028-refactor-x.md"))
 	v.handleKey("enter", vp(10))
 	v.handleKey("p", vp(10))
 	text, ok := noticeOKOf(v.takeNotice())
@@ -1695,7 +1695,7 @@ func TestIssuesViewBodyHintAdvertisedEditorKeyWorks(t *testing.T) {
 	if err := os.WriteFile(path, []byte("# 028 refactor: x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "028-refactor-x.md", Number: "028", Category: "refactor"})
+	v := loadedView(path2issue(dir, "028-refactor-x.md"))
 	v.handleKey("enter", vp(10)) // 本文モードへ
 	if v.open == nil {
 		t.Fatal("本文モードに入れていない")
@@ -1728,7 +1728,7 @@ func TestIssuesViewEditSkipsMissingFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("# 001 feat: x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	v := loadedView(&issues.Issue{Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat"})
+	v := loadedView(path2issue(dir, "001-feat-x.md"))
 
 	// 前提: 実体があるうちは開く
 	if cmd := v.handleKey("e", vp(10)); cmd == nil || len(*cmds) != 1 {
@@ -1871,7 +1871,7 @@ func TestIssuesScanMsgDeliversRebindNotice(t *testing.T) {
 	if err := os.WriteFile(path, []byte("# 001 feat: x\n\n本文の行\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	iss := &issues.Issue{Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat"}
+	iss := path2issue(dir, "001-feat-x.md")
 	if err := iss.LoadMeta(); err != nil {
 		t.Fatal(err)
 	}
@@ -2097,8 +2097,8 @@ func TestIssuesViewURLPickerResetsOnNewIssue(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := loadedView(
-		&issues.Issue{Path: p1, Dir: dir, Rel: "001-feat-a.md", Number: "001", Category: "feat"},
-		&issues.Issue{Path: p2, Dir: dir, Rel: "002-feat-b.md", Number: "002", Category: "feat"},
+		path2issue(dir, "001-feat-a.md"),
+		path2issue(dir, "002-feat-b.md"),
 	)
 	v.handleKey("enter", vp(20))
 	v.handleKey("u", vp(20))
@@ -2159,29 +2159,10 @@ func TestIssuesLayoutAgreesBetweenKeysAndRender(t *testing.T) {
 			}
 		})
 	}
-	// 本文は引き出しの内側幅で組む。全体幅で数えると引き出しを開いている間だけずれるので、
-	// 描画側が呼ぶ関数 (bodyHeadLines + bodyWidth) をそのまま並べて一致を見る。
-	t.Run("本文 (引き出し)", func(t *testing.T) {
-		dir := t.TempDir()
-		path := filepath.Join(dir, "001-feat-x.md")
-		if err := os.WriteFile(path, []byte("# 001 feat: x\n\n"+strings.Repeat("本文。\n", 60)), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		iss := &issues.Issue{Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat"}
-		for _, w := range []int{24, 40, 84, 200} {
-			v := loadedView(iss)
-			v.handleKey("enter", vp(20))
-			if v.open == nil {
-				t.Fatal("本文モードに入れていない")
-			}
-			o := issuesRenderOpts{width: w, page: 20}
-			want := max(o.page-len(v.bodyHeadLines(v.bodyWidth(w), false)), 1)
-			if got := v.visibleRows(o.viewport()); got != want {
-				t.Fatalf("幅 %d: キー側 %d 行 / 描画側 %d 行", w, got, want)
-			}
-		}
-	})
-	// 🚨 上の 2 つは期待値を production と同じ式で作っているので、**下限クランプを外す変異を
+	// 本文側の「キーと描画の一致」はここで見ない: bodyHeadLines は幅によらず 3 行で、期待値を
+	// production と同じ式で作るしかなく、headWidth の本文の分岐を消しても緑のままだった (issue 751)。
+	// 本文側で残す価値があるのは下の下限クランプだけ
+	// 🚨 上の一覧の比較は期待値を production と同じ式で作っているので、**下限クランプを外す変異を
 	// 検出できない** (issue 198 発見 2)。page がヘッダー行数以下のときに 1 を返すことを、
 	// 式ではなく**リテラルの 1** で固定する。0 や負を返すとキー処理 (bodyOff の計算・
 	// ページ送り) が空回りするか、末尾を超えてスクロールする。
@@ -2191,7 +2172,7 @@ func TestIssuesLayoutAgreesBetweenKeysAndRender(t *testing.T) {
 		if err := os.WriteFile(path, []byte("# 001 feat: x\n\n"+strings.Repeat("本文。\n", 60)), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		iss := &issues.Issue{Path: path, Dir: dir, Rel: "001-feat-x.md", Number: "001", Category: "feat"}
+		iss := path2issue(dir, "001-feat-x.md")
 		for _, page := range []int{0, 1, 2} {
 			// 一覧側 (ヘッダーは listHeadLines)
 			v := loadedView(iss)
