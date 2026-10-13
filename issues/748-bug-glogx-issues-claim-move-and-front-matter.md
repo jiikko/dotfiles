@@ -16,7 +16,9 @@
   - symlink の目印で claim した issue を、同名が既にある `done/` か `pending/` へ移す → 「同名のファイルが既にあります」のエラーなのに claim が黙って解除される
   - 旧運用 (next/ に実ファイル) の issue を同じく移す、または直下へ戻す (`subdir=""`) → バナーだけ外れて next/ に残り、`tests/issues/test_next_claims_have_banner.sh` が赤になる
 - 再現: 複製上の `TestReproMoveFromNextToDoneConflictLeavesHalfState` (`banner=false link=false`) と `TestReproLegacyNextToDoneConflict`
-- 直し方: 宛先の確定 (`ContainerDir` と group の判定) と同名の確認を、バナー・目印を外す処理より前へ動かす。同名の失敗で何も変わらないことを回帰テストにする
+- 同名以外でも同じ半端が残る (反証レビュー): バナーと目印を外した後に、`GroupKey == ""` の拒否・`os.MkdirAll`・`os.Rename` も失敗しうる。どれで返っても「バナーだけ外れる / claim が外れる」になる
+- 直し方: 宛先の確定 (`ContainerDir` と group の判定) と同名の確認を、バナー・目印を外す処理より前へ動かす。`MkdirAll` / `Rename` の失敗ではバナーと目印を戻す (戻せなければ両方をエラーに書く。next へ入る経路の戻しと同じ形)。
+  戻さない経路が残るなら doc の「この順なら失敗は何も変わっていない」を直す。同名・group の拒否・rename の失敗で何も変わらないことを回帰テストにする (失敗の注入は 751 の 5 と同じ手段)
 
 ### 2. `addBanner` の front matter の判定が `LoadMeta` と違い、698 の 5 と同じ症状が入力の形を変えると残る (P3)
 
@@ -25,7 +27,7 @@
 - 発火条件と結果:
   - (a) `...` で閉じた front matter (本文に `---` なし) → バナーが `---` の前に入り、`Declared` が空になって status 不一致の 🚨 が消える
   - (b) 先頭行が `--- ` (末尾に空白) → (a) と同じ
-  - (c) `...` で閉じ、`## 概要` より後ろに本文の `---` がある → バナーが `## ` の後ろに入る。`bannerIndex` が見つけられず、CI の検査が赤になり、`n` で外すこともできない (`changed=false still=true`)
+  - (c) `...` で閉じ、`## 概要` より後ろに本文の `---` がある → バナーが `## ` の後ろに入る。`bannerIndex` が見つけられず、`n` で外すことができない (`changed=false still=true`)。dotfiles の issues なら `tests/issues/test_next_claims_have_banner.sh` も赤になる (front matter を持つ issue は今 0 件)
 - 再現: 複製上の `TestReproBannerDotsCloseNoRule` / `TestReproBannerFrontMatterTrailingSpace` / `TestReproBannerDotsCloseRuleAfterH2`
 - 現状の影響: 潜在。dotfiles の issues に front matter を持つものは 0 件 (監査体の数え)。他の repo の issues を viewer で開けば当たる
 - 直し方: front matter の閉じの行番号を返す関数を `issues` に 1 本置き、`LoadMeta` と `addBanner` がそれを通す (閉じの探索は front matter の範囲に限る)。

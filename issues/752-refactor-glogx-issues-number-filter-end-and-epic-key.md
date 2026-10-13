@@ -23,7 +23,7 @@
 ### 2. 「epic group の子か」の判定を viewer の 6 か所が手で書いている (duplication)
 
 - `GroupKind == GroupEpic` (に `&& GroupKey != ""` が付く箇所もある) を、`issuesNumberFilter.groupKeys` / `applyScreen` / `pruneExpandedGroups` / `rebuildDisplayRows` / `rowsForTab` / `clearNumberFilter` が書いている
-  (ほかに `issues` 側の `retiredGroupKeys` / `closedGroupKeys` / `showsIssue`)。数えは監査体の grep
+  (ほかに `issues` 側の `retiredGroupKeys` / `closedGroupKeys` / `showsIssue` / `IsGroupParent` (こちらは `Group == ""` を見る))。数えは監査体の grep
 - 物理の配置は 665 C で `ContainerDir` に寄せたが、group として畳むかの判定は寄せていない。今は Scan の保証 (GroupEpic なら必ず GroupKey を持つ) により書き方が違っても結果は同じ
 - 直し方の案: `Issue.EpicGroupKey() (string, bool)`。発火を示せないので、1 を直すとき、または判定の条件が変わるときに寄せる (trigger)
 

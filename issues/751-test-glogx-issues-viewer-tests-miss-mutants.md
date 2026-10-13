@@ -21,10 +21,12 @@ main は 4 の境界の不足 (7 桁のケースが無い / BiDi のテストが
 4. **698 の回帰テストの境界の取りこぼし** (`src/glogx/issues/audit698_test.go`)
    - `TestURLsStopAtBidiControls` は 4 文字 (U+202E / 2066 / 2028 / 2029) だけを回す。`urlRe` の範囲を `\x{2066}-\x{2066}` に狭めても緑。範囲の端 (U+202A〜202D・2067〜2069) が空振り
    - `TestNextNumberIgnoresDateLikeNames` は 6 桁と 8 桁以上だけ。上限の比較を `maxNumberDigits+1` にずらしても緑 (7 桁のケースが無い)
-   - 直し方: BiDi は範囲の全 11 文字をループで回す (列挙の出典は termsafe の `isBidiControl` と揃える)。桁は 7 桁を 1 件足す
+   - 直し方: BiDi は `urlRe` が切る範囲の全 11 文字をループで回す (出典は `urlRe`。termsafe の `isBidiControl` は 9 文字で U+2028 / 2029 を含まないので、出典にはならない)。桁は 7 桁を 1 件足す
 5. **`issues/move.go` の `MoveToSubdir` で、バナーを書けなかったときの rename の戻しが検査されていない**
    - done などから next へ rename で運び、`writeClaimBanner` が失敗したときの `os.Rename(dest, iss.Path)` を消しても `issues` パッケージ全体が緑。同じファイルの他の戻し 2 本 (`os.Remove(NextLinkPath)` と `clearClaimBanner` の失敗) は変異で赤になる
-   - 直し方: 書き込めないファイル (chmod 0o444) でバナーの失敗を起こすテストを足す (この再現方法は未確認)。748 の 1 を直すときに一緒に書くとよい
+   - 直し方: バナーの失敗を起こすテストを足す。🚨 chmod 0o444 では起こせない (`rewriteIssue` は `atomicfile.Write` で一時ファイルを作って rename するので、元のファイルの権限で止まらない。
+     dir の権限で止めると next/ への rename も止まる)。使えるのは既存の差し込み口 `beforeRewrite` (読んだ後にファイルを書き換える。`issues/banner_test.go` に同じ使い方がある) か、
+     ハードリンク (`rewriteIssue` は `Nlink > 1` を拒否する)。748 の 1 を直すときに一緒に書くとよい
 
 ### test-helpers
 
