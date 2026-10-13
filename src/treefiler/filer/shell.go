@@ -122,9 +122,14 @@ func (m *Model) promptKey(key, text string) {
 	case "enter":
 		cmd := p.line.String()
 		p.active = false
-		if p.kind != promptShell {
+		switch p.kind {
+		case promptGoto:
+			m.gotoPath(cmd)
+			return
+		case promptCreate, promptRename:
 			m.fileOpEnter(cmd)
 			return
+		case promptShell:
 		}
 		if strings.TrimSpace(cmd) == "" { // 空白だけでは走らせない
 			return

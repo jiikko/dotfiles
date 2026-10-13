@@ -283,6 +283,8 @@ func (m *Model) promptPrefix() string {
 		return " 新規 " + termwidth.Truncate(m.prompt.target.name, 24, "…") + "/ "
 	case promptRename:
 		return " 名前の変更 " + termwidth.Truncate(m.prompt.target.name, 24, "…") + " → "
+	case promptGoto:
+		return " 移動 : "
 	case promptShell:
 	}
 	return " " + termwidth.Truncate(baseName(m.workDir()), 24, "…") + " $ "
@@ -929,6 +931,7 @@ func init() {
 	bind(do((*Model).startCreate), "a")
 	bind(do((*Model).startRename), "m")
 	bind(do((*Model).startTrash), "d")
+	bind(do((*Model).startGoto), ":") // goto.go (issue 746)
 	bind(func(m *Model) Result { m.requestShell(); return Exec }, "s")
 	bind(do(func(m *Model) {
 		m.set.ShowHidden = !m.set.ShowHidden // 設定の Dotfiles と同じ (保存もする)
@@ -1456,6 +1459,7 @@ var helpKeys = [][2]string{
 	{",", "設定"},
 	{"o O", "外のアプリで開く (open) · Finder で表示"},
 	{"y Y", "パスをコピー (絶対 · root からの相対)"},
+	{":", "入力したパスへ移動 (root の外なら root を上げる)"},
 	{"a m d", "新規作成 (末尾 / でフォルダ) · 名前の変更 · ゴミ箱へ移す"},
 	{"S", "並びを巡回 (名前 → 更新の新しい順 → 大きい順)"},
 	{"r", "読み直す"},
@@ -1491,7 +1495,7 @@ func (m *Model) drawHelp(c *canvas) {
 	}
 }
 
-// promptBar は足元の入力欄の最下行 (`!` は spec §3.4 の ! プロンプト行。a / m の名前の入力も同じ欄)。
+// promptBar は足元の入力欄の最下行 (`!` は spec §3.4 の ! プロンプト行。a / m の名前の入力と `:` のパスも同じ欄)。
 func (m *Model) promptBar(c *canvas) {
 	f, _ := m.inputField()
 	y, x := m.h-1, m.putField(c, f)
@@ -1501,6 +1505,8 @@ func (m *Model) promptBar(c *canvas) {
 		hint = "  enter 作る (末尾 / でフォルダ) · esc 取り消し"
 	case promptRename:
 		hint = "  enter 変える · esc 取り消し"
+	case promptGoto:
+		hint = "  enter 移動 (相対は root から · ~ 可) · esc 取り消し"
 	case promptShell:
 	}
 	c.put(x+1, y, hint, cMuted, false)

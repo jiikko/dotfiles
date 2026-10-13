@@ -94,12 +94,7 @@ func (m *Model) RestorePlace(p Place) {
 			n.expanded = true
 		}
 	}
-	if n := m.loadPath(p.Cursor); n != nil && m.inTree(n) {
-		for a := n.parent; a != nil; a = a.parent {
-			a.expanded = true
-		}
-		m.setCur(n)
-	}
+	m.reveal(p.Cursor)
 }
 
 // savePlace は今の開いたフォルダとカーソルを、起動したフォルダの記録として先頭に書く (設定が on のときだけ)。

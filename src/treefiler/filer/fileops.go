@@ -29,13 +29,14 @@ var trashDir = func() string {
 	return filepath.Join(home, ".Trash")
 }
 
-// promptKind は足元の入力欄の用途 (`!` のコマンドと、名前の入力を同じ欄で受ける。入力を握る層を増やさない)。
+// promptKind は足元の入力欄の用途 (`!` のコマンド・名前の入力・`:` のパスを同じ欄で受ける。入力を握る層を増やさない)。
 type promptKind int
 
 const (
 	promptShell  promptKind = iota // `!`
 	promptCreate                   // a: target (フォルダ) の中に作る名前
 	promptRename                   // m: target の新しい名前
+	promptGoto                     // `:`: カーソルを飛ばす先のパス (goto.go)
 )
 
 // trashAsk は d の確認の板 (開いている間は全部のキーを取る)。id は板を開いたとき (= 人が対象を決めたとき) の実体。
@@ -106,7 +107,7 @@ func (m *Model) fileOpEnter(text string) {
 		if text != p.prefill { // 開いたまま Enter (制御文字を落とした表示のまま) では変えない
 			m.rename(p.target, text, p.id)
 		}
-	case promptShell:
+	case promptShell, promptGoto:
 	}
 }
 

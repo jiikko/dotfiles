@@ -23,6 +23,7 @@
 - `filer/watch.go` — ライブ更新 (開いているフォルダを読み比べる)
 - `filer/search.go` / `filer/shell.go` — `/` の検索と、`!` / `s` (呼び出し側に起こしてほしいプロセスを渡す)
 - `filer/fileops.go` — `a` 新規作成・`m` 名前の変更・`d` ゴミ箱へ移す (issue 722)。本体は `src/safefs`。名前の入力は `!` と同じ欄 (`promptState.kind`)、確認の板は `Model.ask`
+- `filer/goto.go` — `:` 入力したパスへカーソルを飛ばす (root の外なら root を上げる。issue 746)。入力は `!` と同じ欄
 - `filer/settings.go` / `filer/places.go` — 設定の板と保存、前回の場所
 - `filer/open.go` / `filer/explode.go` — `o` (外のアプリで開く)・`e` (配下を全部開く)
 - `filer/tileview.go` — タイルに出す表示の行 (本体 / diff・Markdown の整形)
