@@ -234,6 +234,17 @@ type Issue struct {
 	loaded   bool
 }
 
+// EpicGroupKey は issue が epic group の子として親行へ畳まれるときの group の同一性キーを返す。
+// 「epic の group として扱うか」の判定の唯一の出典 (issue 752: viewer と issues の 9 か所が
+// `GroupKind == GroupEpic` (に `GroupKey != ""` が付いたり付かなかったり) を手で書いていた)。
+// Scan は GroupEpic の issue に必ず GroupKey を付けるので、空の key は手組みの Issue だけ。
+func (iss *Issue) EpicGroupKey() (string, bool) {
+	if iss.GroupKind != GroupEpic || iss.GroupKey == "" {
+		return "", false
+	}
+	return iss.GroupKey, true
+}
+
 // GroupKind は issue が属するグループの種類。
 //
 // GroupEpic だけが viewer の親行へ畳まれる。GroupUnknown は既存の未知サブディレクトリと
@@ -910,11 +921,11 @@ func (f StatusFilter) Next() StatusFilter {
 // 親行と子が並び続けると一覧が閉じた epic で埋まる。番号フィルタ (`/`) は Filter を通らないので、
 // 番号を知っていれば引き続き開ける。判定は retiredGroupKeys。
 func (f StatusFilter) showsIssue(iss *Issue, closedGroups, retiredGroups map[string]bool) bool {
-	if iss.GroupKind == GroupEpic {
-		if retiredGroups[iss.GroupKey] {
+	if key, ok := iss.EpicGroupKey(); ok {
+		if retiredGroups[key] {
 			return false
 		}
-		if !closedGroups[iss.GroupKey] {
+		if !closedGroups[key] {
 			return true
 		}
 	}
@@ -952,11 +963,12 @@ func retiredGroupKeys(list []*Issue) map[string]bool {
 	parentDone := make(map[string]bool, 4)
 	notDone := make(map[string]bool, 4)
 	for _, iss := range list {
-		if iss.GroupKind != GroupEpic || iss.GroupKey == "" {
+		key, ok := iss.EpicGroupKey()
+		if !ok {
 			continue
 		}
 		if iss.Status != StatusDone {
-			notDone[iss.GroupKey] = true
+			notDone[key] = true
 		} else if IsGroupParent(iss) {
 			parentDone[iss.GroupKey] = true
 		}
@@ -987,12 +999,13 @@ func closedGroupKeys(list []*Issue) map[string]bool {
 	seen := make(map[string]bool, 4) // その group に子が居たか
 	open := make(map[string]bool, 4) // 既定の一覧に出る (= open な) 子が居たか
 	for _, iss := range list {
-		if iss.GroupKind != GroupEpic || iss.GroupKey == "" {
+		key, ok := iss.EpicGroupKey()
+		if !ok {
 			continue
 		}
-		seen[iss.GroupKey] = true
+		seen[key] = true
 		if FilterOpen.shows(iss.Status) {
-			open[iss.GroupKey] = true
+			open[key] = true
 		}
 	}
 	out := make(map[string]bool, len(seen))

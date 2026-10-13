@@ -43,15 +43,11 @@ func (f *issuesNumberFilter) start() {
 	f.active, f.typing = true, true
 }
 
-// confirm は入力を終えて絞り込みを残す。検索語が空なら絞り込みごとやめる (空の絞り込みは
-// 「全部見えている」= 絞り込んでいないのと同じで、ヘッダーだけが残ると嘘になる)。
-func (f *issuesNumberFilter) confirm() {
-	if f.line.Empty() {
-		f.clear()
-		return
-	}
-	f.typing = false
-}
+// confirm は入力を終えて絞り込みを残す。🚨 空の検索語では呼ばない: 空の絞り込みは「全部見えている」=
+// 絞り込んでいないのと同じで、ヘッダーだけが残ると嘘になる。空なら絞り込みごとやめるが、その判断は
+// issuesView.confirmNumberFilter が持つ (やめるときは group の展開も一緒に戻す必要があり、それは
+// この型の外の状態なので。issue 752: 以前はここで clear に落ち、group の後始末を通らない経路があった)。
+func (f *issuesNumberFilter) confirm() { f.typing = false }
 
 // clear は絞り込みを捨てる。
 func (f *issuesNumberFilter) clear() { *f = issuesNumberFilter{} }
@@ -114,11 +110,8 @@ func (f *issuesNumberFilter) groupKeys(rows []*issues.Issue) map[string]bool {
 	}
 	out := make(map[string]bool)
 	for _, iss := range rows {
-		if iss.GroupKind != issues.GroupEpic {
-			continue
-		}
-		if iss.GroupKey != "" {
-			out[iss.GroupKey] = true
+		if key, ok := iss.EpicGroupKey(); ok {
+			out[key] = true
 		}
 	}
 	if len(out) == 0 {

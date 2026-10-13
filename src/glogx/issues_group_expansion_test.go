@@ -12,8 +12,7 @@ func TestGroupExpansionEndFilterDropsCollapse(t *testing.T) {
 	if g.expanded(a) || !g.collapsed[a] {
 		t.Fatalf("フィルタ中の畳みが効いていない: expanded=%v collapsed=%v", g.expanded(a), g.collapsed)
 	}
-	g.endFilter(b) // 現在行は b の子: b だけ手動の展開へ引き継ぐ
-	g.setAuto(nil)
+	g.endFilter(b) // 現在行は b の子: b だけ手動の展開へ引き継ぐ。auto も endFilter が捨てる (issue 752)
 	if len(g.collapsed) != 0 {
 		t.Fatalf("フィルタを解いても畳んだ状態が残った: %v", g.collapsed)
 	}

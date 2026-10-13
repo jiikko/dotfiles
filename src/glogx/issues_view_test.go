@@ -2530,8 +2530,8 @@ func TestIssuesViewerOwnsKeysWhileTypingNumberFilter(t *testing.T) {
 	}
 
 	// 確定後は通常のナビゲーションに戻る = U は外側で受ける
-	// 🚨 数字を打ってから確定すること。空入力の確定は clear() に落ちて active も false になり、
-	//   typing→active の変異を素通りさせる (敵対的レビューの再現手順は / → 0 → Enter だった)
+	// 🚨 数字を打ってから確定すること。空入力の確定は confirmNumberFilter が解除へ回すので active も
+	//   false になり、typing→active の変異を素通りさせる (敵対的レビューの再現手順は / → 0 → Enter だった)
 	if !m.issuesOv.numFilter.edit("0") {
 		t.Fatal("前提が崩れた: 番号フィルタが数字を受け付けない")
 	}

@@ -70,14 +70,15 @@ func (g *groupExpansion) toggle(key string) {
 	}
 }
 
-// endFilter は番号フィルタを解くときの後始末。collapsed を捨て、keep (解除前の現在行の group) が
-// auto だけで開いていたなら manual へ引き継ぐ (解除後もその子へ着地できるように。auto 自体は
-// 次の setAuto で捨てられる)。🚨 auto を読むので、setAuto(nil) より前に呼ぶこと。
+// endFilter は番号フィルタを解くときの後始末。collapsed と auto を捨て、keep (解除前の現在行の group) が
+// auto だけで開いていたなら manual へ引き継ぐ (解除後もその子へ着地できるように)。auto もここで捨てるので、
+// 呼ぶ順序の制約 (setAuto(nil) より前) は無い (issue 752)。
 func (g *groupExpansion) endFilter(keep string) {
 	g.collapsed = nil
 	if keep != "" && g.auto[keep] && !g.manual[keep] {
 		g.reveal(keep)
 	}
+	g.auto = nil
 }
 
 // prune は今の走査結果に無い GroupKey (alive に無いもの) を手動の展開から落とす。GroupKey は絶対

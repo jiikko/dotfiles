@@ -319,10 +319,11 @@ func (v *issuesView) screen(now time.Time) (issuesScreen, bool) {
 func (v *issuesView) applyScreen(s issuesScreen) {
 	v.groups.restore(s.Groups)
 	for _, iss := range v.all {
-		if (iss.Path != s.Cursor && iss.Path != s.Open) || iss.GroupKind != issues.GroupEpic {
+		key, ok := iss.EpicGroupKey()
+		if (iss.Path != s.Cursor && iss.Path != s.Open) || !ok {
 			continue
 		}
-		v.groups.reveal(iss.GroupKey) // カーソル・本文の居場所が畳んだ group の中に隠れないように
+		v.groups.reveal(key) // カーソル・本文の居場所が畳んだ group の中に隠れないように
 	}
 	v.filter, _ = issues.ParseStatusFilter(s.Filter) // 未知の名前は既定へ (loadIssuesScreen で正規化済み)
 	v.refresh()                                      // フィルタを反映してタブの並びと件数を作る (tabIdx を引くのに要る)
@@ -401,9 +402,7 @@ func (v *issuesView) finishClose() bool {
 	// から始まる。行集合も作り直す — rows は常に visibleIssues() と一致させる (残すと、開いた
 	// 直後の 1 フレームだけタブ行の下に絞り込まれた行が並ぶ)。
 	if v.numFilter.active {
-		v.numFilter.clear()
-		v.refresh()
-		v.groups.endFilter("")
+		v.endNumberFilter("")
 	}
 	return true
 }
@@ -698,10 +697,8 @@ func (v *issuesView) pruneExpandedGroups() {
 	}
 	alive := make(map[string]bool, len(v.groups.manual))
 	for _, iss := range v.all {
-		if iss.GroupKind == issues.GroupEpic {
-			if key := iss.GroupKey; key != "" {
-				alive[key] = true
-			}
+		if key, ok := iss.EpicGroupKey(); ok {
+			alive[key] = true
 		}
 	}
 	v.groups.prune(alive)
@@ -903,7 +900,8 @@ func (v *issuesView) rebuildDisplayRows() {
 	groupList := make([]*group, 0, 4)
 	units := make([]displayUnit, 0, len(v.rows))
 	for _, iss := range v.rows {
-		if iss.GroupKind != issues.GroupEpic {
+		key, epic := iss.EpicGroupKey()
+		if !epic {
 			n, ok := issues.Number(iss)
 			units = append(units, displayUnit{
 				row:       displayRow{kind: displayRowIssue, issue: iss},
@@ -912,7 +910,6 @@ func (v *issuesView) rebuildDisplayRows() {
 			})
 			continue
 		}
-		key := iss.GroupKey // Scan を通った GroupEpic は必ず持つ (issues.scanEpicDir)
 		g, ok := groups[key]
 		if !ok {
 			g = &group{key: key, name: iss.Group}
@@ -1069,7 +1066,7 @@ func (v *issuesView) rowsForTab(tab string) []*issues.Issue {
 	}
 	out := make([]*issues.Issue, 0, 8)
 	for _, iss := range v.all {
-		if iss.Status == issues.StatusNext && iss.GroupKind != issues.GroupEpic {
+		if _, epic := iss.EpicGroupKey(); iss.Status == issues.StatusNext && !epic {
 			out = append(out, iss)
 		}
 	}
@@ -1318,6 +1315,26 @@ func (v *issuesView) anchorGroupInternal(key string) {
 	}
 }
 
+// endNumberFilter は番号フィルタを終わらせる唯一の経路 (検索語・group の一時的な展開・行集合を 1 組で戻す)。
+// keep は解除前の現在行の group (その group の展開を手動へ引き継ぐ。"" なら引き継がない)。
+// 🚨 numFilter.clear と groups.endFilter を別々に呼ばない: 片方だけだと解除後も畳んだ状態が残り、
+// 展開しても開かない (issue 666 の E / 752)。
+func (v *issuesView) endNumberFilter(keep string) {
+	v.groups.endFilter(keep)
+	v.numFilter.clear()
+	v.refresh()
+}
+
+// confirmNumberFilter は Enter で入力を終える。検索語が空なら絞り込みごとやめる (issuesNumberFilter.confirm の doc)。
+func (v *issuesView) confirmNumberFilter() {
+	if v.numFilter.query() == "" {
+		v.clearNumberFilter()
+		return
+	}
+	v.numFilter.confirm()
+	v.refresh()
+}
+
 // clearNumberFilter は一時 autoExpanded を捨て、解除前に見ていた子 issue のパスへカーソルを
 // 張り直す。番号フィルタ中は親行を含む displayRows の添字が解除後に変わるため、添字を残しては
 // ならない。現在行が auto 展開された group の子なら、解除後もその子へ着地できるよう group の
@@ -1328,12 +1345,10 @@ func (v *issuesView) clearNumberFilter() {
 	path := issuePath(iss)
 	groupKey := v.currentGroupKey() // 親行で Esc したときは親行へ戻す (添字を残さない)
 	keep := ""
-	if iss != nil && iss.GroupKind == issues.GroupEpic {
-		keep = iss.GroupKey
+	if iss != nil {
+		keep, _ = iss.EpicGroupKey()
 	}
-	v.groups.endFilter(keep) // 🚨 auto を読むので refresh (setAuto(nil)) より前
-	v.numFilter.clear()
-	v.refresh()
+	v.endNumberFilter(keep)
 	// Esc は「1 段戻る」であってカーソル移動の意思表示ではないので、直前の move の再アンカー
 	// 予約 (pendingCursorPath) は捨てない。捨てるのは**カーソルを置く側**で、その責務は
 	// `setCursor` / `g`・`home` / `moveTab` が直接 `clearPendingMoveAnchors()` を呼ぶ形で
@@ -1545,12 +1560,7 @@ func (v *issuesView) numberFilterKey(key string, rows int) tea.Cmd {
 	case "esc", "ctrl+g":
 		v.clearNumberFilter()
 	case "enter":
-		if v.numFilter.query() == "" {
-			v.clearNumberFilter()
-			return nil
-		}
-		v.numFilter.confirm()
-		v.refresh()
+		v.confirmNumberFilter()
 	case "down", "ctrl+n":
 		v.moveCursor(1, rows)
 	case "up", "ctrl+p":
