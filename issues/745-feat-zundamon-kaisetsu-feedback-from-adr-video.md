@@ -46,12 +46,56 @@ ubiregi の esa 記事 (ADR。リンクの無い 8.5KB の記事) から mp4 を
 - `src/zundamon-kaisetsu/internal/script/script.go` (`LoadScript` のキー検査)
 - `_claude/skills/zundamon-kaisetsu/SKILL.md` / `readings.json` / `README.md`
 
+## 反証レビュー (issue) の結果 — 2026-10-13、sonnet 1 体
+
+採った指摘 (方針に反映した):
+- **P1** 時刻の計算を `Assemble` から「切り出す」と書いたが、`Assemble` の頭は立ち絵の読み込みと図の埋め込み (mermaid は Chrome で描く) をするので、
+  そのまま呼ぶと `times` が mermaid を描く → 時刻は wav の長さと間だけを読む別の関数 `LineTimes` にし、間の丸め (`leadInSamples` / `pauseSamples`) を
+  `Assemble` と共有して、両者が同じ値を出すことをテストで固定した
+- **P2** 1 の前提の訂正: 外す手段は `acronyms.json` だけではなく、台本の `readings` で語をカタカナにしても警告の対象から外れる (今回の台本もそうした)。
+  ADR・OIDC・JWKS・mTLS は一般の技術語なので `acronyms.json` に足し、台本の `acronyms` はその台本だけの語 (QRO のような社内の略語) 用と整理した
+- **P2** 3 の「1 行目に図解がある」は、行に `show` を書いたかではなく、その行で図解が出ているか (前の行から持ち越した図解を含む) で判定する
+- **P2** 5 の `JSON` は部分一致で `JSONL` などにも当たる → 派生語 (`JSONL` / `JSONB` / `JSON5`) を一緒に足した
+- **P2** SKILL.md の「区切りのカードで状態が増える」の実測と、台本キーの表の「1.5 秒」が古くなる → 直した (実測は「1.5 秒のときの計測、以後は未実測」と書いた)
+
+採らなかった指摘:
+- **P3** 2 と 4 は効果が限定的 (build の検査は撮影より前に走る / HTML の `D.lines` を jq で読めば時刻は取れる) → 優先度の指摘で、誤りの指摘ではない。
+  2 は往復が 1 回減り、4 は mp4 だけを作るときに HTML を作らずに済むので、そのまま入れた
+
+## 敵対的レビュー (実装) の結果 — 2026-10-13、sonnet 1 体
+
+壊せなかったもの: `LineTimes` と `Assemble` の食い違い (`pause_after` の負数・文字列は `LoadScript` が弾く)、`acronyms.json` の並べ替えでの欠落・重複 (なし)、
+台本の `acronyms` が共有の map に残ること、カードが次のチャプターに食い込む形。
+
+直したもの:
+- **P2** 合成済みの wav が壊れていると、新しく足した字幕の速さの検査が失敗し、synth が rc=1 になっていた (前は rc=0 で、build が止めていた) →
+  synth は「確かめられない」と知らせて rc=0 で返す。壊れた wav は今までどおり build が止める
+- **P2** `times` が字幕のタブ・改行をそのまま出し、TSV が崩れていた → 空白にした
+- **P3** `LineTimes` は wav だけを見て、`Assemble` は wav と query の両方を要る → 揃えた
+- **P3** synth は丸める前の長さで、build は丸めた後の長さで字幕の速さを測っていた (境界の行で判定が割れうる) → synth も丸める
+
+採らなかったもの:
+- **P3** 前のチャプターから持ち越した図解でもカードが 1.5 秒になる → 意図どおり (カードは出ている図解を隠すので、持ち越しでも同じ)。
+  持ち越し自体は lint が警告する
+- **P3** `GeoJSON` が「Geoジェイソン」、`JSONLines` が「ジェイソンエルines」になる → 部分一致の辞書の既知の性質 (SKILL.md 手順 5 の 7)。
+  これらの語が出る台本では `read` で直す。`SHA-256` が未登録という指摘は誤り (既にある)
+- **P3** `ChapterCardEnds` の単体テストが無い → 誤り。`TestChapterCardRuns` が最短・最長・図解の分岐を見ている (下の変異で確認)
+
+直した差分への 2 周目 (sonnet 1 体): 壊せなかった。指摘のうち、`times` のテストがチャプター名のタブの置き換えを見ていない点を塞いだ
+(話者は台本の検査で `metan` / `zundamon` に限られるので見ない。図解の欄は種類の語だけで、台本の自由な文字列は入らない)。
+
 ## 進捗
 
-- [ ] 1. 台本の `acronyms`
-- [ ] 2. synth の字幕の速さの警告
-- [ ] 3. 区切りのカードを 1 行目の終わりまで
-- [ ] 4. `times` サブコマンド
-- [ ] 5. 読み辞書に 4 語
-- [ ] 6〜9. SKILL.md
-- [ ] 反証レビュー (issue) / 敵対的レビュー (実装) / `bin/skill-eval zundamon-kaisetsu`
+- [x] 1. 台本の `acronyms` (`script.LoadScript` で形を検査・`script.Acronyms`・`checkReadings` で合流) と `acronyms.json` に ADR / JWKS / OIDC / mTLS
+- [x] 2. synth の字幕の速さの警告 (`build.LineTimes` / `build.CaptionLines`。rc は変えない)
+- [x] 3. 区切りのカードを 1 行目の終わりまで (`build.ChapterCardEnds`)
+- [x] 4. `times` サブコマンド (`build.CmdTimes`)
+- [x] 5. 読み辞書に HMAC-SHA256 / SHA256 / HMAC / JSON / JSONL / JSONB / JSON5 / Ed25519 (どれも語のままでは誤読し、読みにすると正しく読まれることを `kana` で確認)
+- [x] 6〜9. SKILL.md (3-1 を main で済ませてよい条件 / サブエージェントを起こせないとき / コードの図解の改行 / container のサービスの片付け)。
+  あわせて `times`・台本の `acronyms`・synth の警告・カードの長さを SKILL.md と README に書いた
+- [x] 反証レビュー (issue) / 敵対的レビュー (実装。指摘を直した差分にもう 1 周) / `bin/skill-eval zundamon-kaisetsu`
+  (`PASS zundamon-kaisetsu score=1 delta=1 cases=2/2 cost=$0.63`)
+- 変異で red を確認したもの (`bin/mutate-verify-list`、9 本すべて想定のテストが落ちた): `LineTimes` の間を落とす / カードの図解の分岐を外す /
+  カードの最長を外す / `Assemble` の配線を旧に戻す (`ChapterCardEnds(chapters, nil)`) / synth の警告を外す / 台本の acronyms を合流しない /
+  acronyms の形の検査を外す / `times` のタブの置き換えを外す / synth が壊れた wav で失敗に戻る
+- 未検証: カードを長くしたことによる mp4 のまとめ撮りの状態数の増え方 (実測していない。次に mp4 を作るときに `build` の「見た目の状態 N 種類」で見る)
