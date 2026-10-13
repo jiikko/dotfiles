@@ -2561,6 +2561,15 @@ func (v *issuesView) hint(width int) string {
 	// 落とした項目は --help と README が正本 (status viewer と同じ作法)。
 	// nvim を開くキーは e と v の 2 本あるが、案内するのは e だけ (v は打ち慣れのための別名で、
 	// 幅で絞ったのではなく意図的に出さない)。一覧モードはどちらも案内しない。
+	if v.markNext.active {
+		// n の確認中は handleKey が全キーを先に飲む (Enter も実行になる)。一覧の案内 (Enter: 本文 /
+		// q: 終了) を残すと、効かない・逆の意味のキーを案内することになる (issue 750。status viewer の
+		// 確認中と同じ扱い)。語彙は板の中の confirm.HintYesOther と揃える
+		return fitHintItems(width, []hintItem{
+			{"y/Enter: 実行", 2},
+			{"その他: キャンセル", 1},
+		})
+	}
 	if v.urlPick.active {
 		// 件数と 1 字消し (ctrl+h) はピッカー自身のヘッダーが出すので繰り返さない。ここは
 		// 「打った文字がそのまま絞り込みになる」= 本文 pager のキーが効かないことだけを伝える。

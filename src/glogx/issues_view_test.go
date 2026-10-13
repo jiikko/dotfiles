@@ -1253,6 +1253,16 @@ func TestIssuesViewHintChangesByMode(t *testing.T) {
 	if h := v.hint(testHintBudget(t)); !strings.Contains(h, "絞り込み") || strings.Contains(h, "隣へ") {
 		t.Fatalf("URL ピッカーの hint が想定と違う: %q", h)
 	}
+
+	// n の確認中は全キーを確認が飲む (Enter は実行)。一覧の案内 (Enter: 本文 / q: 終了) を残さない (issue 750)
+	l := loadedView(sampleIssues()...)
+	l.handleKey("n", vp(10))
+	if !l.markNext.active {
+		t.Fatal("前提が崩れた: n で確認が出ない")
+	}
+	if h := l.hint(testHintBudget(t)); !strings.Contains(h, "y/Enter: 実行") || strings.Contains(h, "本文") || strings.Contains(h, "終了") {
+		t.Fatalf("確認中の hint が想定と違う: %q", h)
+	}
 }
 
 func TestIssuesViewCopyActions(t *testing.T) {
