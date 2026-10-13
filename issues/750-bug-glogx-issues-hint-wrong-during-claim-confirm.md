@@ -1,5 +1,7 @@
 # 750 (bug): glogx の issues viewer で n の確認を出している間も、hint 行が一覧の案内 (Enter: 本文 / q: 終了) のまま (P3)
 
+> 🚨 **担当中: Claude (issues viewer の監査の対応セッション)**（2026-10-14〜）
+
 起票日: 2026-10-13
 
 ## 概要

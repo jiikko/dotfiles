@@ -1,5 +1,7 @@
 # 752 (refactor): glogx の issues viewer: 番号フィルタの終わらせ方が 2 つの型に分かれている / epic group の子の判定が写されている
 
+> 🚨 **担当中: Claude (issues viewer の監査の対応セッション)**（2026-10-14〜）
+
 起票日: 2026-10-13
 
 ## 概要

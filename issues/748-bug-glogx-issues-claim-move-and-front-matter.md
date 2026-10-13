@@ -1,5 +1,7 @@
 # 748 (bug): glogx の issues viewer の書き込み: next から出す移動の失敗で claim が半端に外れる / バナーの front matter の判定が LoadMeta と違う
 
+> 🚨 **担当中: Claude (issues viewer の監査の対応セッション)**（2026-10-14〜）
+
 起票日: 2026-10-13
 
 ## 概要

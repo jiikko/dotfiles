@@ -1,5 +1,7 @@
 # 753 (risk): glogx の issues viewer: コピーするパスの制御文字 / NextNumber が数える番号の範囲
 
+> 🚨 **担当中: Claude (issues viewer の監査の対応セッション)**（2026-10-14〜）
+
 起票日: 2026-10-13
 
 ## 概要
