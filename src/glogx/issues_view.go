@@ -512,21 +512,37 @@ func (v *issuesView) scanAfterChangeCmd() tea.Cmd {
 
 // scanIssues は探索・メタデータ読み込み・見張りの基準づくりを 1 回で行う (scanCmd の本体)。
 //
-// 指紋をここで取るのが要点: 「読んだ内容」と「基準」を同じ時点に揃えないと、その差の間に入った
-// 外部編集が基準に焼き込まれ、次の編集が来るまで永久に取りこぼす (issues_watch.go)。
+// 🚨 基準 (指紋) は「読んだ内容より古い」側に寄せる。新しい側に寄ると、その差の間に入った外部編集が
+// 基準に焼き込まれ、次の編集が来るまで一覧が古いまま残る (issue 749: 以前は全件の LoadMeta の後に
+// 指紋を取っていた)。古い側に寄れば、次の観測で差が出て取り直すだけで済む。
+//   - ファイルの編集: 指紋を LoadMeta の前に取る (後から入った編集は LoadMeta が読むか、次の観測で差になる)
+//   - ファイルの追加・削除: 見張る集合は Scan の結果から作るので、Scan の前に取ることはできない。
+//     代わりに構造のディレクトリの指紋を Scan の前と指紋を取った後で比べ、違えば基準を
+//     issuesStaleBaseline にして次の観測で必ず取り直させる
 func scanIssues(cwd string) issuesScanMsg {
 	root := issues.RepoRoot(cwd)
 	dirs := issues.FindDirs(root)
+	before := issuesFingerprint(issuesWatchDirs(dirs, nil), nil)
 	found, warnings := issues.Scan(dirs)
+	scanIssuesStage("scanned")
+	fp := issuesFingerprint(issuesWatchDirs(dirs, found), issuesWatchPaths(found))
+	if issuesFingerprint(issuesWatchDirs(dirs, nil), nil) != before {
+		fp = issuesStaleBaseline
+	}
 	for _, iss := range found {
 		// メタデータの読み取り失敗は無視する (タイトルがスラッグ表示に落ちるだけ)
 		_ = iss.LoadMeta()
 	}
-	return issuesScanMsg{
-		root: root, dirs: dirs, issues: found, warnings: warnings,
-		fp: issuesFingerprint(issuesWatchDirs(dirs, found), issuesWatchPaths(found)),
-	}
+	scanIssuesStage("read")
+	return issuesScanMsg{root: root, dirs: dirs, issues: found, warnings: warnings, fp: fp}
 }
+
+// issuesStaleBaseline は「走査の途中でディレクトリが変わった」ときの基準。観測した指紋とは
+// 一致しないので、次の観測で取り直しになる ("" は「次の観測を基準にする」の意味なので使えない)。
+const issuesStaleBaseline = "\x00stale"
+
+// scanIssuesStage はテストの差し込み口 (走査の途中で外部の編集を起こす)。
+var scanIssuesStage = func(string) {}
 
 // receive はスキャン結果を反映する。
 //

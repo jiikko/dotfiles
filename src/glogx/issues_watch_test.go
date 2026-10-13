@@ -668,3 +668,57 @@ func TestIssuesWatchDirsIncludeEmptyGlobalStatusDirs(t *testing.T) {
 		t.Fatal("空の waiting/ への最初の md 作成で指紋が変わらない")
 	}
 }
+
+// issue 749: 走査の途中 (scanIssues の中) に入った編集も取りこぼさない。基準 (指紋) が読んだ内容より
+// 新しい側に寄ると、以降の観測が「変化なし」になって一覧が古いまま残る。
+func TestIssuesWatchCatchesEditDuringScan(t *testing.T) {
+	cases := []struct {
+		name, stage string
+		edit        func(t *testing.T, path string)
+	}{
+		{"読み終えた後に本文を編集", "read", func(t *testing.T, path string) {
+			writeIssue(t, path, "# 001 feat: 編集後\n", time.Now())
+		}},
+		{"走査の後に issue を追加", "scanned", func(t *testing.T, path string) {
+			writeIssue(t, filepath.Join(filepath.Dir(path), "002-feat-y.md"), "# 002 feat: 新規\n", time.Now())
+		}},
+		{"走査の後に状態ディレクトリを作って移す", "scanned", func(t *testing.T, path string) {
+			done := filepath.Join(filepath.Dir(path), "done")
+			if err := os.Mkdir(done, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Rename(path, filepath.Join(done, filepath.Base(path))); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			root, path := watchTree(t, "# 001 feat: 編集前\n")
+			v := newTestIssuesView()
+			if cmd := v.toggle(root); cmd == nil {
+				t.Fatal("toggle が Cmd を返さない")
+			}
+			old := scanIssuesStage
+			fired := false
+			scanIssuesStage = func(stage string) {
+				if stage == c.stage && !fired {
+					fired = true
+					c.edit(t, path)
+				}
+			}
+			t.Cleanup(func() { scanIssuesStage = old })
+			v.receive(scanOf(t, root))
+			scanIssuesStage = old
+			if !fired {
+				t.Fatalf("差し込み口 %q が呼ばれない", c.stage)
+			}
+			for range 3 {
+				v.handleWatch(v.observe())
+			}
+			if !v.scanning {
+				t.Fatal("走査の途中に入った変化を取りこぼした (一覧が古いまま残る)")
+			}
+		})
+	}
+}
