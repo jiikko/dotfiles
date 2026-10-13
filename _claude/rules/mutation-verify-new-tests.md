@@ -31,7 +31,7 @@
 4. commit message に「どの変異で red を確認したか」を書く
 ```
 
-**手で組む前に `bin/mutate-verify` を見る** (issue 408。dotfiles の `bin/` は PATH 上にあり、どの repo でも `mutate-verify` で呼べる。issue 585)。下の「復元の作法」と手順 0〜3 の guard
+**手で組む前に、対象 repo の `bin/` に固有の変異の道具が無いか (`ls bin | grep -i mutat`。obaket の `bin/mutate` は今の木で当てて戻すので incremental build が効く) と `bin/mutate-verify` (issue 408。dotfiles の `bin/` は PATH 上にあり、どの repo でも `mutate-verify` で呼べる。issue 585) を見る**。自前の driver を書くと判定の実装が 1 つ増える (obaket retro 1109)。下の「復元の作法」と手順 0〜3 の guard
 (baseline green / 当たったか / 誤ファイル / 構文 = 第 3 の結果 / zero execution / red の帰属 /
 未コミット差分があれば拒否 / 各 run の時間の上限 = `--timeout`、超えたら rc=10) を機械で強制する。使い捨て worktree の中だけで変異させるので作業ツリーを触らず、
 未コミットの変更は持ち込むので「今書いたテスト」も検証できる。変異の当て方 (`--apply`) は呼び出し側の責任。
