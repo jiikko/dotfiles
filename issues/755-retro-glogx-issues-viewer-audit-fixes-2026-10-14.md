@@ -22,4 +22,7 @@
 
 ## 進捗
 
-- [ ] 1・2 の rule への追記はユーザーの判断待ち
+- [x] 1 を `_claude/rules/mutation-verify-new-tests.md` の「変異は production の機構を戻す形にする」節に 3 行追記 (経緯は rules-rationale の同名ファイルへ)
+- [x] 2 を `_claude/rules/survey-receiver-guards-before-passing-new-values.md` の「表示のための正規化」の項に 2 行追記 (同上)
+- 3・4 は却下 (上記の理由)。残課題なし
+- 常時読み込み (`_claude/rules/*.md` + `_claude/CLAUDE.md`) の合計は 117,460 → 117,790 字 (+330。上限 150k 字。issue 414)
