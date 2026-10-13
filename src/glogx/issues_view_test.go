@@ -2813,3 +2813,46 @@ func TestIssuesRebindOpenWarnsOnDifferentTitle(t *testing.T) {
 		t.Errorf("消えた issue は畳んで知らせるべき: notice=%q", v3.notice)
 	}
 }
+
+// issue 753: 制御文字を含む値 (PR で入りうるファイル名など) はクリップボードへ入れない。ESC や
+// bracketed paste の終わり (ESC[201~) を入れると、貼った先の端末が解釈する。画面は無害化されているので見えない。
+func TestIssuesViewRefusesToCopyControlChars(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "issues")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	name := "001-feat-a\x1b[201~b.md"
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("# x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	found, _ := issues.Scan([]string{dir})
+	if len(found) != 1 {
+		t.Fatalf("前提が崩れた: 制御文字を含む名前の issue が走査に乗らない (%d 件)", len(found))
+	}
+	for _, key := range []string{"y", "Y"} { // パス / 参照 (どちらも生のパスを含む)
+		copied := stubClipboard(t)
+		v := loadedView(found...)
+		v.root = filepath.Dir(dir)
+		v.handleKey(key, vp(10))
+		if *copied != "" {
+			t.Fatalf("%s: 制御文字を含む値をコピーした: %q", key, *copied)
+		}
+		if !strings.Contains(v.notice, "制御文字") {
+			t.Fatalf("%s: 断ったことを知らせていない: %q", key, v.notice)
+		}
+	}
+	// 複数件をまとめてコピーする経路も同じく断る
+	multi := stubClipboard(t)
+	mv := loadedView(found...)
+	mv.copyLines([]string{"/ok/002-feat-c.md", found[0].Path}, "パス")
+	if *multi != "" || !strings.Contains(mv.notice, "制御文字") {
+		t.Fatalf("複数件: 制御文字を含む値をコピーした: %q (通知 %q)", *multi, mv.notice)
+	}
+	// 普通の名前は今までどおりコピーする (断る判定が広すぎないこと)
+	copied := stubClipboard(t)
+	v := loadedView(path2issue(dir, "002-feat-c.md"))
+	v.handleKey("y", vp(10))
+	if *copied != filepath.Join(dir, "002-feat-c.md") {
+		t.Fatalf("普通のパスをコピーしない: %q", *copied)
+	}
+}

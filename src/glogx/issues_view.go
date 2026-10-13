@@ -1935,6 +1935,12 @@ func (v *issuesView) copyLines(lines []string, label string) {
 		v.copyText(lines[0], label+"をコピーしました: ")
 		return
 	}
+	for _, l := range lines { // 1 件は copyText が断る。まとめて入れる経路も同じく断る (issue 753)
+		if !isPlainText(l) {
+			v.refuseUnsafeCopy(label)
+			return
+		}
+	}
 	if err := copyToClipboard(strings.Join(lines, "\n")); err != nil {
 		v.setNotice(clipboardFailText(err), noticeRefused)
 		return
@@ -1949,9 +1955,8 @@ func (v *issuesView) copyLines(lines []string, label string) {
 // (`issues/epic/<name>/` を組む・grep する) ので、書き換えると別物になるため
 // (termsafe.IsPlain の doc「同一性を持つ値は書き換えず落とす」と同じ理由)。
 //
-// 🚨 したがって制御文字を含む名前では **一覧の表示 (無害化) とクリップボード (生) が
-// 意図的に食い違う**。これを「表示が間違っている」と読んで groupLine を生表示へ直さないこと
-// (termsafe が防いでいる端末破壊の再導入になる)。通知側は setNotice が無害化するので枠は壊れない。
+// 🚨 制御文字を含む名前は書き換えて入れるのではなく、コピー自体を断る (copyText。issue 753)。
+// 一覧の表示 (無害化) を生表示へ直さないこと (termsafe が防いでいる端末破壊の再導入になる)。
 func (v *issuesView) copyGroupName() {
 	row, ok := v.currentDisplayRow()
 	if !ok || row.kind != displayRowGroup {
@@ -1970,12 +1975,26 @@ func (v *issuesView) copyNextNumber() {
 }
 
 // copyText はクリップボードへ入れて結果を通知する (コピー系アクションの共通処理)。
+//
+// 🚨 制御文字を含む値はコピーしない (書き換えもしない)。ファイル名や group 名は PR で入りうる外部由来の値で、
+// ESC や bracketed paste の終わり (ESC[201~) をクリップボードへ入れると、貼った先の端末がそれを解釈する。
+// 画面側は無害化されているので、利用者には見えない (issue 753)。書き換えると実在の名前と食い違うので、
+// 落として断る側に倒す (termsafe.IsPlain の doc)。
 func (v *issuesView) copyText(text, okPrefix string) {
+	if !isPlainText(text) {
+		v.refuseUnsafeCopy(strings.TrimSuffix(okPrefix, "をコピーしました: "))
+		return
+	}
 	if err := copyToClipboard(text); err != nil {
 		v.setNotice(clipboardFailText(err), noticeRefused)
 		return
 	}
 	v.setNotice(okPrefix+text, noticeOK)
+}
+
+// refuseUnsafeCopy は制御文字を含む値のコピーを断ったことを知らせる (copyText の doc)。
+func (v *issuesView) refuseUnsafeCopy(label string) {
+	v.setNotice(label+"に制御文字が含まれるのでコピーしません (貼り付け先の端末が解釈するため)", noticeRefused)
 }
 
 // カテゴリの色。意味が広く共有されている語には固定色を割り、表に無い語は語のハッシュで

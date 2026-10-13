@@ -22,3 +22,4 @@ func sanitizeLineKeepTabs(s string) string  { return termsafe.LineKeepTabs(s) }
 func sanitizePlainLine(s string) string     { return termsafe.PlainLine(s) }
 func sanitizePlainKeepTabs(s string) string { return termsafe.PlainLineKeepTabs(s) }
 func dropEmojiVS16(s string) string         { return termsafe.DropEmojiVS16(s) }
+func isPlainText(s string) bool             { return termsafe.IsPlain(s) }
