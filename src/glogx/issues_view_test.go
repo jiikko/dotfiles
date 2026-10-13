@@ -2865,7 +2865,7 @@ func TestIsCopySafe(t *testing.T) {
 		"a\nrm -rf x":                false, // 貼った瞬間にコマンドが走る
 		"a\x1b[201~b":                false, // bracketed paste の終わり
 		"a\u0085b":                   false, // C1
-		"a‮b":                        false, // BiDi
+		"a\u202eb":                   false, // BiDi
 		"a\rb":                       false,
 	} {
 		if got := isCopySafe(s); got != want {
