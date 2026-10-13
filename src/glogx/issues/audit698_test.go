@@ -118,6 +118,10 @@ func TestNextNumberIgnoresDateLikeNames(t *testing.T) {
 	if got := NextNumber(list); got != "123457" {
 		t.Fatalf("次番号 = %q (6 桁までを番号と見て 123457 のはず)", got)
 	}
+	// 接頭辞付きの形式は別の列なので数えない (issue 753)
+	if got := NextNumber([]*Issue{{Number: "005"}, {Number: "120", Prefix: "UI"}}); got != "006" {
+		t.Fatalf("次番号 = %q (接頭辞付きの 120 に引きずられず 006 のはず)", got)
+	}
 	// 境界: 7 桁は番号と見なさない (上限の比較を 1 つずらしても緑だった。issue 751)
 	if got := NextNumber([]*Issue{{Number: "041"}, {Number: "1234567"}}); got != "042" {
 		t.Fatalf("次番号 = %q (7 桁は番号と見なさず 042 のはず)", got)

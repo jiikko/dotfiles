@@ -713,11 +713,18 @@ const maxNumberDigits = 6
 //
 // 桁数は観測した最大桁に合わせる (実測 405/405 が 3 桁ゼロ埋め)。番号付きが 1 つも無ければ
 // 3 桁の "001"。
+//
+// 数えるのは `NNN-*.md` 形式 (Prefix が空) の番号だけ。接頭辞付きの形式 (Ident が "<接頭辞>-NNN") は
+// 接頭辞ごとの別の列なので、混ぜると 005 の次が接頭辞付きの 120 に引きずられて 121 になる (issue 753)。
+// 🚨 issue ディレクトリをまたいで 1 つの最大値にするのは意図どおり: root/issues と root/<sub>/issues を
+// 1 本の連番で使う repo がある (obaket の issues/README.md「採番」節: issues と macOS/issues の 4 dir で
+// 1 本。片方だけ見て採番すると別 dir の同番号を踏む)。ディレクトリごとに独立の列を持つ repo の
+// 構成が出てきたら再評価する (FindDirs は深さ 1 までなので、apps/<x>/issues のようなモノレポの各 app は拾わない)。
 func NextNumber(list []*Issue) string {
 	maxNum, width := 0, 3
 	for _, iss := range list {
 		n, ok := Number(iss)
-		if !ok || len(iss.Number) > maxNumberDigits {
+		if !ok || iss.Prefix != "" || len(iss.Number) > maxNumberDigits {
 			continue // 日付 (20260101-notes.md) を番号と読むと次が 20260102 になる・桁あふれ (issue 698 の 7)
 		}
 		maxNum = max(maxNum, n)
