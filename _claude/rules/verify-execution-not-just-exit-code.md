@@ -23,7 +23,7 @@
 | 対象 | 「走った証拠」の取り方 |
 |---|---|
 | lint gate / 検査スクリプト | その gate 固有の出力行を `grep` する (件数を出す設計にしておく) |
-| 新規テスト | テスト名が実行一覧に出ることを確認する |
+| 新規テスト | 指定した検証経路で対象テストが pass したことを確認する。テスト名・started・suite passed だけで判断せず、skip を実行の証拠に数えない (環境や profile が合わないと XCTSkip するテストは、名前も suite passed も出たまま何も検査しない。swift-smbee retro 109) |
 | CI 上の検査 | ログに出力行があることを確認する。緑という結果だけで判断しない |
 | 集約 target への配線 | 集約 target 経由で実行して出力を確認する。個別に直接叩いた結果で代用しない |
 | CI のジョブに足す依存 | 足す前に、それを使う検査がそのジョブの target から呼ばれる鎖を Makefile / workflow で辿り、ログに検査名が出ることを見る (手動専用の検査のために Go を足しかけた。retro 644)。**依存を要するテストを足すときも逆向きに同じ鎖を辿り、そのテストが走るジョブに依存があるかを見る** (concat のテストに Go を要する検査を足したのに、heavy のジョブは Go を入れていなかった。retro 690) |
@@ -83,6 +83,8 @@ CI の runner / OS / 依存を差し替えたら、緑どうしの比較で終�
 - **`make test` に lint が入っていない repo では、Go / shell を触った commit ごとに lint を別に回す**
 - **concurrency で取り消された (cancelled) run は、失敗でも成功でもない**。続けて push すると前の commit の run は取り消される。
   その commit は、それを含む後の commit の run で確かめ、待ちもそちらに張り直す (`gh run list --commit` は完全な sha で渡す。retro 647)
+- **CI の起動経路を増やしたら (手動起動の入力など)、同じ SHA の複数 run を読み手 (verifier・集計) が区別できるか確かめ、必要な修正を同じ変更で行う** (event・ref・入力・run ID)。
+  起動の前に concurrency group と取消の条件も読み、必要な検証の run を取り消さない経路を選ぶ (swift-smbee retro 110)
 
 ## 集約テストが赤いまま、その上で検証を続けない
 
