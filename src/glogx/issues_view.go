@@ -1936,7 +1936,7 @@ func (v *issuesView) copyLines(lines []string, label string) {
 		return
 	}
 	for _, l := range lines { // 1 件は copyText が断る。まとめて入れる経路も同じく断る (issue 753)
-		if !isPlainText(l) {
+		if !isCopySafe(l) {
 			v.refuseUnsafeCopy(label)
 			return
 		}
@@ -1979,9 +1979,9 @@ func (v *issuesView) copyNextNumber() {
 // 🚨 制御文字を含む値はコピーしない (書き換えもしない)。ファイル名や group 名は PR で入りうる外部由来の値で、
 // ESC や bracketed paste の終わり (ESC[201~) をクリップボードへ入れると、貼った先の端末がそれを解釈する。
 // 画面側は無害化されているので、利用者には見えない (issue 753)。書き換えると実在の名前と食い違うので、
-// 落として断る側に倒す (termsafe.IsPlain の doc)。
+// 落として断る側に倒す (termsafe.IsPlain の doc。判定は isCopySafe でタブだけは通す)。
 func (v *issuesView) copyText(text, okPrefix string) {
-	if !isPlainText(text) {
+	if !isCopySafe(text) {
 		v.refuseUnsafeCopy(strings.TrimSuffix(okPrefix, "をコピーしました: "))
 		return
 	}

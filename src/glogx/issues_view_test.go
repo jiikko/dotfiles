@@ -2856,3 +2856,20 @@ func TestIssuesViewRefusesToCopyControlChars(t *testing.T) {
 		t.Fatalf("普通のパスをコピーしない: %q", *copied)
 	}
 }
+
+// isCopySafe の境界: タブだけ通し、貼ったときに端末やシェルが解釈するものは断る (issue 753)。
+func TestIsCopySafe(t *testing.T) {
+	for s, want := range map[string]bool{
+		"/repo/issues/001-feat-x.md": true,
+		"drive\tsync":                true,  // group 名の実例 (生でコピーする決定)
+		"a\nrm -rf x":                false, // 貼った瞬間にコマンドが走る
+		"a\x1b[201~b":                false, // bracketed paste の終わり
+		"a\u0085b":                   false, // C1
+		"a‮b":                        false, // BiDi
+		"a\rb":                       false,
+	} {
+		if got := isCopySafe(s); got != want {
+			t.Errorf("isCopySafe(%q) = %v, want %v", s, got, want)
+		}
+	}
+}

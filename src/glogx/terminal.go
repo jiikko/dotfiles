@@ -22,4 +22,8 @@ func sanitizeLineKeepTabs(s string) string  { return termsafe.LineKeepTabs(s) }
 func sanitizePlainLine(s string) string     { return termsafe.PlainLine(s) }
 func sanitizePlainKeepTabs(s string) string { return termsafe.PlainLineKeepTabs(s) }
 func dropEmojiVS16(s string) string         { return termsafe.DropEmojiVS16(s) }
-func isPlainText(s string) bool             { return termsafe.IsPlain(s) }
+
+// isCopySafe はクリップボードへ生のまま入れてよいか (issue 753)。タブだけは通す: group 名にタブを含む
+// 実例を生でコピーする決定があり (TestIssuesViewGroupParentCopiesRawGroupNameButSanitizesNotice)、
+// 貼っても補完が動く程度で端末の解釈を変えない。ESC・改行 (貼った瞬間にコマンドが走る)・C1・BiDi は断る。
+func isCopySafe(s string) bool { return termsafe.PlainLineKeepTabs(s) == s }
