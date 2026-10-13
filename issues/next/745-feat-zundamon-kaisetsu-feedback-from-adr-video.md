@@ -1,1 +1,0 @@
-../745-feat-zundamon-kaisetsu-feedback-from-adr-video.md
