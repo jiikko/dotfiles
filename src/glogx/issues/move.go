@@ -57,7 +57,8 @@ func MoveToSubdir(iss *Issue, subdir string) (string, error) {
 		if err := clearClaimBanner(iss.Path); err != nil {
 			return "", fmt.Errorf("担当者バナーを外せないため next の目印も外していません: %w", err)
 		}
-		return iss.Path, removeNextLink(iss)
+		_, err := removeNextLink(iss)
+		return iss.Path, err
 	}
 	base := filepath.Base(iss.Rel)
 	// group issue は epic の外へ出さない。subdir="" は group 直下へ戻すので、claim の解除
@@ -84,10 +85,13 @@ func MoveToSubdir(iss *Issue, subdir string) (string, error) {
 		// done/ pending/ へ運ぶときは目印を消す。残すと dangling になり、同じ base の issue が
 		// 直下へ戻った瞬間に古い目印が再び成立して「誰も claim していない issue が Next として
 		// 共有される」(敵対レビュー 2 周目 P3-2)。規律だけに任せず、この経路では構造で消す
-		if err := removeNextLink(iss); err != nil {
+		removed, err := removeNextLink(iss)
+		if err != nil {
 			return "", fmt.Errorf("%s へ移す前に next の目印を外せません: %w", subdir, err)
 		}
-		removedLink = iss.NextLink
+		if removed {
+			removedLink = iss.NextLink // 戻すのは自分が消したものだけ (removeNextLink の doc)
+		}
 	}
 	// undo は目印を戻す。移動の失敗で「目印だけ外れた」を残さない (issue 748)
 	undo := func(cause error) error {
@@ -143,20 +147,25 @@ func placeNextLink(iss *Issue) error {
 // 取り直す: NextLink は前回走査時の値で、その後 `git pull` で next/<base> が旧運用の実ファイルに
 // 差し替わっていると os.Remove は実ファイルを消す (敵対レビュー 2026-09-05 で実測。直下に同名が
 // 無ければ唯一のコピーが消える)。既に無ければ成功 (解除の意図は満たされている)。
-func removeNextLink(iss *Issue) error {
+// removed は実際に消したか: 既に無かったものを「消した」と数えると、失敗時の戻しが元から無かった目印を作る
+// (敵対レビュー 2026-10-14: 他のホストが外した claim を、失敗した移動の戻しが復活させた)。
+func removeNextLink(iss *Issue) (removed bool, err error) {
 	link := iss.NextLink
 	fi, err := os.Lstat(link)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil
+		return false, nil
 	}
 	if err != nil {
-		return err
+		return false, err
 	}
 	if fi.Mode()&os.ModeSymlink == 0 {
-		return fmt.Errorf("%s は目印 (symlink) ではなく実ファイルになっています。消しません", filepath.Join(NextDirName, filepath.Base(link)))
+		return false, fmt.Errorf("%s は目印 (symlink) ではなく実ファイルになっています。消しません", filepath.Join(NextDirName, filepath.Base(link)))
 	}
 	if target, err := os.Readlink(link); err != nil || target != "../"+filepath.Base(link) {
-		return fmt.Errorf("%s は目印の形 (../<同名>) ではありません。消しません", filepath.Join(NextDirName, filepath.Base(link)))
+		return false, fmt.Errorf("%s は目印の形 (../<同名>) ではありません。消しません", filepath.Join(NextDirName, filepath.Base(link)))
 	}
-	return os.Remove(link)
+	if err := os.Remove(link); err != nil {
+		return false, err
+	}
+	return true, nil
 }

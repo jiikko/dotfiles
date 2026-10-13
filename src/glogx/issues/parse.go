@@ -623,12 +623,16 @@ const loadMetaMaxLine = 1024 * 1024
 // addBanner が共有する。issue 748: addBanner だけが完全一致で比べ、`...` の閉じや末尾の空白で
 // バナーを front matter の前に入れていた)。開きはファイルの 1 行目だけ、閉じは開きの後の最初の行。
 // tuikit/markdown の skipFrontMatter とも同じ規則 (前後の空白を無視し、閉じは --- か ...)。
-func isFrontMatterOpen(line string) bool { return strings.TrimSpace(line) == "---" }
+// 🚨 行の無害化 (BOM・制御文字・BiDi を落とす) もここで行う: LoadMeta は無害化した行を、addBanner は生の行を
+// 持っており、呼び手側で揃えると BOM 付きの front matter で判定が割れた (敵対レビュー 2026-10-14)。
+func isFrontMatterOpen(line string) bool { return frontMatterToken(line) == "---" }
 
 func isFrontMatterClose(line string) bool {
-	t := strings.TrimSpace(line)
+	t := frontMatterToken(line)
 	return t == "---" || t == "..."
 }
+
+func frontMatterToken(line string) string { return strings.TrimSpace(termsafe.PlainLine(line)) }
 
 // LoadMeta は本文から H1 と front matter の status: を読む。二度目は何もしない。
 //

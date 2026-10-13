@@ -270,6 +270,7 @@ func TestAddBannerAfterFrontMatterOfEveryForm(t *testing.T) {
 		"... で閉じる":       "---\nstatus: pending\n...\n\n# T\n\n## 概要\n",
 		"開きの末尾に空白":       "--- \nstatus: pending\n---\n\n# T\n\n## 概要\n",
 		"... で閉じ本文に水平線":  "---\nstatus: pending\n...\n\n# T\n\n## 概要\n\n---\n\n本文\n",
+		"BOM 付き":         "\ufeff---\nstatus: pending\n---\n\n# T\n\n## 概要\n",
 		"CRLF と ... の閉じ": "---\r\nstatus: pending\r\n...\r\n\r\n# T\r\n\r\n## 概要\r\n",
 	}
 	for name, src := range cases {

@@ -1,6 +1,10 @@
 package main
 
-import "github.com/jiikko/dotfiles/src/termsafe"
+import (
+	"strings"
+
+	"github.com/jiikko/dotfiles/src/termsafe"
+)
 
 // 端末描画に対して外部由来の文字列を無害化する関数の、main パッケージ側の別名。
 //
@@ -26,4 +30,5 @@ func dropEmojiVS16(s string) string         { return termsafe.DropEmojiVS16(s) }
 // isCopySafe はクリップボードへ生のまま入れてよいか (issue 753)。タブだけは通す: group 名にタブを含む
 // 実例を生でコピーする決定があり (TestIssuesViewGroupParentCopiesRawGroupNameButSanitizesNotice)、
 // 貼っても補完が動く程度で端末の解釈を変えない。ESC・改行 (貼った瞬間にコマンドが走る)・C1・BiDi は断る。
-func isCopySafe(s string) bool { return termsafe.PlainLineKeepTabs(s) == s }
+// 🚨 「無害化の結果と一致するか」で判定しない: 無害化は絵文字の VS16 も落とすので、⚠️ を含む名前まで断る。
+func isCopySafe(s string) bool { return termsafe.IsPlain(strings.ReplaceAll(s, "\t", "")) }

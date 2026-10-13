@@ -2867,6 +2867,8 @@ func TestIsCopySafe(t *testing.T) {
 		"a\u0085b":                   false, // C1
 		"a\u202eb":                   false, // BiDi
 		"a\rb":                       false,
+		"\u26a0\ufe0f-notes":         true, // 絵文字の VS16 は制御文字ではない (無害化の結果との一致で判定すると断っていた)
+		"epic-\u2764\ufe0f":          true,
 	} {
 		if got := isCopySafe(s); got != want {
 			t.Errorf("isCopySafe(%q) = %v, want %v", s, got, want)

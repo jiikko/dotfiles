@@ -318,3 +318,31 @@ func TestMoveIntoNextByRenameRollsBackWhenBannerFails(t *testing.T) {
 		t.Fatalf("next/ に残骸がある: %v", err)
 	}
 }
+
+// 失敗した移動の戻しは、自分が外した目印だけを戻す。走査の後に他のホスト (git pull) が外した目印を
+// 作り直すと、誰も claim していない issue が Next として共有される (敵対レビュー 2026-10-14)。
+func TestMoveOutOfNextDoesNotResurrectLinkRemovedByOthers(t *testing.T) {
+	fixedNow(t)
+	dir := t.TempDir()
+	p := filepath.Join(dir, "001-feat-x.md")
+	if err := os.WriteFile(p, []byte("# x\n\n## 概要\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	iss := &Issue{Path: p, Dir: dir, Rel: "001-feat-x.md"}
+	if _, err := MoveToSubdir(iss, NextDirName); err != nil {
+		t.Fatal(err)
+	}
+	iss.Status, iss.NextLink = StatusNext, NextLinkPath(iss)
+	if err := os.Remove(iss.NextLink); err != nil { // 走査の後に外から外された
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "done"), []byte("dir ではない\n"), 0o644); err != nil {
+		t.Fatal(err) // 宛先の dir を作れない = 目印を外した後の失敗
+	}
+	if _, err := MoveToSubdir(iss, "done"); err == nil {
+		t.Fatal("宛先の dir を作れないのに成功した")
+	}
+	if _, err := os.Lstat(iss.NextLink); !os.IsNotExist(err) {
+		t.Fatalf("外から外された目印を、失敗した移動の戻しが作り直した: %v", err)
+	}
+}
