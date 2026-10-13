@@ -46,13 +46,14 @@ func FastCaptions(lines []TimelineLine, duration float64) []fastCaption {
 }
 
 // WarnFastCaptions は字幕の速すぎる行を、行番号と先頭の文字つきで warn に書き (無ければ何も書かない)、その行数を返す。
-func WarnFastCaptions(w io.Writer, lines []TimelineLine, duration float64) int {
+// cmd は文の頭に付けるコマンド名 (build / synth)。
+func WarnFastCaptions(w io.Writer, cmd string, lines []TimelineLine, duration float64) int {
 	fast := FastCaptions(lines, duration)
 	if len(fast) == 0 {
 		return 0
 	}
-	fmt.Fprintf(w, "build: 字幕が速くて読み切れないおそれのある行が %d 行 (1 秒 %.1f 字を超える。行を分けるか、その行の pause_after で間を足す):\n",
-		len(fast), captionCPSMax)
+	fmt.Fprintf(w, "%s: 字幕が速くて読み切れないおそれのある行が %d 行 (1 秒 %.1f 字を超える。行を分けるか、その行の pause_after で間を足す):\n",
+		cmd, len(fast), captionCPSMax)
 	for _, f := range fast {
 		text := f.Text
 		if utf8.RuneCountInString(text) > 24 {

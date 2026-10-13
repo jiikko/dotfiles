@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"zundamon-kaisetsu/internal/script"
 	"zundamon-kaisetsu/internal/synth"
 )
 
@@ -113,12 +114,17 @@ func TestKanaCheckCommand(t *testing.T) {
 		_, _ = w.Write(b)
 	}))
 	defer srv.Close()
+	var scriptAcronyms []any // 台本の acronyms (nil なら書かない)
 	run := func(lines ...string) (string, error) {
 		var raw []any
 		for _, l := range lines {
 			raw = append(raw, map[string]any{"who": "metan", "text": l})
 		}
-		path := writeScript(t, map[string]any{"lines": raw})
+		top := map[string]any{"lines": raw}
+		if scriptAcronyms != nil {
+			top["acronyms"] = scriptAcronyms
+		}
+		path := writeScript(t, top)
 		env := testEnv(t)
 		env.Engine = srv.URL
 		var out strings.Builder
@@ -137,6 +143,13 @@ func TestKanaCheckCommand(t *testing.T) {
 	if err != nil || !strings.Contains(out, "(なし)") {
 		t.Errorf("略語だけの台本で警告した: %v\n%s", err, out)
 	}
+	// 台本の acronyms に書いた語は警告しない (skill の acronyms.json に置けない社内の略語用。issue 745)。一覧には略語の印が付く
+	scriptAcronyms = []any{"SOLIDWORKS"}
+	out, err = run(engineLines[0].spoken)
+	if err != nil || !strings.Contains(out, "(なし)") || !strings.Contains(out, "SOLIDWORKS\t1 行\t") || !strings.Contains(out, "(略語)") {
+		t.Errorf("台本の acronyms の語を警告したか、一覧に略語の印が無い: %v\n%s", err, out)
+	}
+	scriptAcronyms = nil
 	// 一覧の「行の中では別の読み」: 単独では崩れた読み・行の中では 1 文字ずつ読まれる IDOR には付き、正しく読めている Windows
 	// (行の読みの長音を揃えると、マックトウィンドオズ の トウ が トオ になって印が付いていた) には付かない
 	out, _ = run("MacとWindows、どちらが上かという論争よ。", engineLines[1].spoken)
@@ -213,5 +226,22 @@ func TestFlexibleKanaInLine(t *testing.T) {
 		if got := synth.FlexibleKana(tc.alone).MatchString(synth.StripKanaMarks(tc.line)); got != tc.want {
 			t.Errorf("%s in %s = %v (want %v)", tc.alone, tc.line, got, tc.want)
 		}
+	}
+}
+
+// 台本の acronyms の形: 空でない文字列の配列だけを受け入れる (issue 745)
+func TestScriptAcronymsShape(t *testing.T) {
+	line := []any{map[string]any{"who": "metan", "text": "あ"}}
+	for _, bad := range []any{"QRO", []any{""}, []any{1}, map[string]any{"QRO": true}} {
+		path := writeScript(t, map[string]any{"lines": line, "acronyms": bad})
+		if _, err := script.LoadScript(path, testEnv(t)); err == nil || !strings.Contains(err.Error(), "acronyms") {
+			t.Errorf("acronyms=%v を受け入れた: %v", bad, err)
+		}
+	}
+	path := writeScript(t, map[string]any{"lines": line, "acronyms": []any{"QRO", "ADR"}})
+	s, err := script.LoadScript(path, testEnv(t))
+	must(t, err)
+	if got := script.Acronyms(s); !slices.Equal(got, []string{"QRO", "ADR"}) {
+		t.Errorf("acronyms の読み取りが違う: %v", got)
 	}
 }

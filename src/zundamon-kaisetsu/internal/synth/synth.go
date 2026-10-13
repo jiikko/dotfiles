@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"zundamon-kaisetsu/internal/app"
+	"zundamon-kaisetsu/internal/build"
 	"zundamon-kaisetsu/internal/engine"
 	"zundamon-kaisetsu/internal/outfile"
 	"zundamon-kaisetsu/internal/paths"
@@ -135,7 +136,7 @@ func CmdKana(env *app.Env, texts []string, scriptArg, who string, styleID *int64
 			if err := scriptKana(env, s, func(_ int, l lineKana) error { lines = append(lines, l); return nil }); err != nil {
 				return err
 			}
-			return checkReadings(env, lines)
+			return checkReadings(env, lines, script.Acronyms(s))
 		}
 		return scriptKana(env, s, func(i int, l lineKana) error {
 			mark := " "
@@ -272,5 +273,17 @@ func CmdSynth(env *app.Env, scriptArg string, force bool) error {
 		msg += fmt.Sprintf(" (台本から外れた古いキャッシュ %d 件。%s/ の中の使われていない *.wav / *.query.json は消してよい)", unused, filepath.Base(wd))
 	}
 	fmt.Fprintln(env.Stderr, msg)
+	// 字幕の速さは音声の長さで決まるので、build を待たずにここで知らせる (issue 745)。止めるのは build (書き出しの前) で、
+	// synth は警告だけ: 直し方の pause_after は合成の鍵に入らず、synth をやり直さなくても build で効く
+	// 時刻を出せない (キャッシュの wav が壊れている等) ときも synth は失敗にしない: 検査は案内で、壊れた wav は build が止める
+	spans, duration, err := build.LineTimes(s)
+	if err != nil {
+		fmt.Fprintf(env.Stderr, "synth: 字幕の速さを確かめられない (%v)\n", err)
+		return nil
+	}
+	// 丸めを build (Assemble の Duration) と揃える (境界の行で synth と build の判定が割れないように)
+	if build.WarnFastCaptions(env.Stderr, "synth", build.CaptionLines(s, spans), pyjson.Round3(duration)) > 0 {
+		fmt.Fprintln(env.Stderr, "synth: このままでは build が書き出す前に止まる (pause_after は synth し直さなくても build で効く)")
+	}
 	return nil
 }

@@ -127,7 +127,7 @@ func TestBuildStopsOnFastCaptions(t *testing.T) {
 // 警告の文: 件数・行ごとの字/秒・長い文の切り詰め
 func TestWarnFastCaptionsText(t *testing.T) {
 	var buf bytes.Buffer
-	build.WarnFastCaptions(&buf, []build.TimelineLine{
+	build.WarnFastCaptions(&buf, "build", []build.TimelineLine{
 		{Text: strings.Repeat("い", 16), Start: 0}, // 8.0 字/秒
 		{Text: "あ", Start: 2},                     // 0.5 字/秒
 		{Text: strings.Repeat("う", 30), Start: 4}, // 10.0 字/秒 (24 字で切る)
@@ -139,7 +139,7 @@ func TestWarnFastCaptionsText(t *testing.T) {
 		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}
 	buf.Reset()
-	build.WarnFastCaptions(&buf, []build.TimelineLine{{Text: "あ", Start: 0}}, 1)
+	build.WarnFastCaptions(&buf, "build", []build.TimelineLine{{Text: "あ", Start: 0}}, 1)
 	if buf.Len() != 0 {
 		t.Errorf("速い行が無いのに書いた: %q", buf.String())
 	}

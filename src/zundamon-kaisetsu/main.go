@@ -327,7 +327,7 @@ func styleIDArg(v string) error {
 	return nil
 }
 
-const usageText = `usage: zundamon-kaisetsu [--engine URL] {check,up,down,speakers,kana,lint,synth,build} ...
+const usageText = `usage: zundamon-kaisetsu [--engine URL] {check,up,down,speakers,kana,lint,synth,times,build} ...
 
   check     必要なコマンド・コンテナ・エンジンの状態を確かめる (足りなければ rc=1)
   up        エンジンをコンテナ ` + engine.ContainerName + `-<ポート> で起動し、応答するまで待つ (down まで動き続ける)
@@ -340,6 +340,8 @@ const usageText = `usage: zundamon-kaisetsu [--engine URL] {check,up,down,speake
   lint      台本の校正のうち機械で決まるもの (60 字超・「のだ」2 回・漢数字・図を指す言い方 等) を警告する (あれば rc=1)。lint 台本.json [--source 資料]
               --source: 資料に無い数字・英字の語、導入の区切りの言葉が無いことを目安として出す
   synth     セリフごとに wav を合成する (<台本名>.work/ にキャッシュ)。synth 台本.json [--force]
+  times     合成済みの wav から、行ごとの 行番号 / 開始秒 / 終了秒 / 話者 / チャプター / 図解 / 字幕 を TSV で出す。times 台本.json
+              (mp4 から図解の行を切り出して確かめるとき・HTML を #t=開始秒 で開くときに使う)
   build     合成済みの wav を連結し、HTML プレイヤーか mp4 (か両方) を書き出す
               build 台本.json -o 出力 [--format html|mp4|both] [--jobs N] [--bitrate 64k] [--allow-fast-captions]
               (字幕が速すぎる行があれば書き出す前に止まる。--allow-fast-captions で続ける)
@@ -405,6 +407,7 @@ func dispatch(args []string, env *app.Env) error {
 			{names: []string{"--check"}, dest: "check"},
 		},
 		"synth": {{names: []string{"--force"}, dest: "force"}},
+		"times": nil,
 		"lint":  {{names: []string{"--source"}, dest: "source", takes: true}},
 		"build": {
 			{names: []string{"-o", "--output"}, dest: "output", takes: true},
@@ -416,7 +419,7 @@ func dispatch(args []string, env *app.Env) error {
 	}
 	spec, ok := specs[sub]
 	if !ok {
-		return &usageError{msg: fmt.Sprintf("argument cmd: invalid choice: '%s' (choose from check, up, down, speakers, kana, lint, synth, build)", sub)}
+		return &usageError{msg: fmt.Sprintf("argument cmd: invalid choice: '%s' (choose from check, up, down, speakers, kana, lint, synth, times, build)", sub)}
 	}
 	p, _, err := parseArgs(subArgs, spec, false)
 	if err != nil {
@@ -430,7 +433,7 @@ func dispatch(args []string, env *app.Env) error {
 		// argparse の nargs='*' は、最初のまとまりだけを取り、オプションの後ろの位置引数は余りとして拒否する
 		return &usageError{msg: "unrecognized arguments: " + strings.Join(p.pos[p.firstGroup:], " ")}
 	}
-	nPos := map[string]int{"check": 0, "up": 0, "down": 0, "speakers": 0, "synth": 1, "build": 1, "kana": -1, "lint": 1}[sub]
+	nPos := map[string]int{"check": 0, "up": 0, "down": 0, "speakers": 0, "synth": 1, "times": 1, "build": 1, "kana": -1, "lint": 1}[sub]
 	if nPos >= 0 && len(p.pos) > nPos {
 		return &usageError{msg: "unrecognized arguments: " + strings.Join(p.pos[nPos:], " ")}
 	}
@@ -472,6 +475,8 @@ func dispatch(args []string, env *app.Env) error {
 			return err
 		}
 		return engine.WithEngine(env, func() error { return synth.CmdSynth(env, p.pos[0], p.opts["force"] == "true") })
+	case "times":
+		return build.CmdTimes(env, p.pos[0])
 	case "build":
 		output, ok := p.opts["output"]
 		if !ok {

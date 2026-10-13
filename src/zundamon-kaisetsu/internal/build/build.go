@@ -409,8 +409,6 @@ func ScreenOverlays(s *script.Script) []string {
 // Assemble は合成済みの wav を連結し、プレイヤーに渡すデータ (音声以外) と連結した PCM を返す。
 func Assemble(s *script.Script, env *app.Env) (*PlayerData, []byte, error) {
 	wd := paths.WorkDir(s.Path)
-	leadIn := numOr(script.LineGet(s.Raw, "lead_in", nil), 0.4)
-	defaultGap := numOr(script.LineGet(s.Raw, "gap", nil), 0.35)
 	fs, err := LoadFaces(s, env)
 	if err != nil {
 		return nil, nil, err
@@ -424,7 +422,7 @@ func Assemble(s *script.Script, env *app.Env) (*PlayerData, []byte, error) {
 		return nil, nil, err
 	}
 
-	pcm := make([]byte, 2*pyjson.Round(leadIn*wav.SampleRate))
+	pcm := make([]byte, 2*leadInSamples(s)) // 間の秒数の丸めは LineTimes と同じ式を使う (line_times.go)
 	// 連結後の大きさを wav のファイルの大きさと間の無音から見積もって先に確保する (行ごとに伸ばすと、20 分の台本で
 	// 400MB を超える確保になっていた。issue 655)。見積もりは確保の量だけに効き、外れても結果は変わらない
 	est := len(pcm)
@@ -436,7 +434,7 @@ func Assemble(s *script.Script, env *app.Env) (*PlayerData, []byte, error) {
 				}
 			}
 		}
-		est += 2 * pyjson.Round(numOr(script.LineGet(line, "pause_after", nil), defaultGap)*wav.SampleRate)
+		est += 2 * pauseSamples(s, line)
 	}
 	pcm = slices.Grow(pcm, est-len(pcm))
 	timeline := []TimelineLine{}
@@ -479,11 +477,10 @@ func Assemble(s *script.Script, env *app.Env) (*PlayerData, []byte, error) {
 			Start:   pyjson.Round3(start), End: pyjson.Round3(start + dur),
 			Mouth: MouthTrack(query, dur),
 		})
-		pause := numOr(script.LineGet(line, "pause_after", nil), defaultGap)
-		pcm = appendSilence(pcm, 2*pyjson.Round(pause*wav.SampleRate))
+		pcm = appendSilence(pcm, 2*pauseSamples(s, line))
 	}
 	if len(missing) > 0 {
-		return nil, nil, app.Fail("合成済みの wav が無い行がある (台本を変えた後に synth していない?): lines %s", pyIntList(missing[:min(10, len(missing))]))
+		return nil, nil, missingWavErr(missing)
 	}
 
 	duration := float64(len(pcm)) / 2 / wav.SampleRate
@@ -535,7 +532,7 @@ func Assemble(s *script.Script, env *app.Env) (*PlayerData, []byte, error) {
 		Lines:       timeline,
 		Frames:      frames,
 		Blinks:      BlinkRuns(frames, timeline, fs.blinkable(), duration),
-		Cards:       ChapterCardRuns(chapters, overlays, duration),
+		Cards:       ChapterCardRuns(chapters, ChapterCardEnds(chapters, timeline), overlays, duration),
 		Duration:    pyjson.Round3(duration),
 		FPS:         MouthFPS,
 		Audio:       "",
@@ -625,7 +622,7 @@ func CmdBuild(env *app.Env, scriptArg, output, format string, jobs, kbps int, al
 		return err
 	}
 	// 字幕が速すぎる行があれば、音声の圧縮と書き出し (mp4 の撮影) の前に止める。pause_after は合成の鍵に入らないので、直して build し直すだけで済む
-	if n := WarnFastCaptions(env.Stderr, data.Lines, data.Duration); n > 0 && !allowFastCaptions {
+	if n := WarnFastCaptions(env.Stderr, "build", data.Lines, data.Duration); n > 0 && !allowFastCaptions {
 		return app.Fail("字幕が速すぎる行が %d 行あるので、書き出す前に止めた (行を分けるか pause_after で間を足す。このまま書き出すなら --allow-fast-captions)", n)
 	}
 	joined := filepath.Join(td, "joined.wav")

@@ -72,8 +72,8 @@ const (
 	listItemsMax    = 5
 )
 
-// showNext は行の show に書く「今の図解を 1 段進める」の印。
-const showNext = "next"
+// Next は行の show に書く「今の図解を 1 段進める」の印。
+const Next = "next"
 
 // StepCount は図解の段の数 (段の無い図解は 0)。
 func (sd *Data) StepCount() int {
@@ -370,7 +370,7 @@ func LineShows(path string, lines []map[string]any) ([]*int, []*int, []Data, err
 	var cur, step *int
 	for i, line := range lines {
 		if v, ok := line["show"]; ok {
-			if v == showNext {
+			if v == Next {
 				at := fmt.Sprintf("lines[%d].show", i)
 				switch {
 				case cur == nil:

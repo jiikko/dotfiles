@@ -319,11 +319,23 @@ func TestWriteMP4CropsBothCastBlinkStates(t *testing.T) {
 	checkMP4CropsEachState(t, withZundamonFaces(t, blinkFixture(t, []any{"通常", "説明"}, true)))
 }
 
-// 区切りのカード (issue 681): チャプターの頭から chapterCardSeconds だけ出し、次のチャプターが始まったら数え直す。
-// トピック名と同じ条件 (チャプター 2 つ以上・overlays に topic) でだけ出す
+// 区切りのカード (issue 681 / 745): チャプターの 1 行目の音声が終わるまで出し (最短 1.5 秒・最長 4 秒)、1 行目に図解が出ていれば
+// 最短のまま。次のチャプターが始まったら数え直す。トピック名と同じ条件 (チャプター 2 つ以上・overlays に topic) でだけ出す
 func TestChapterCardRuns(t *testing.T) {
-	chs := []build.ChapterData{{Title: "a", Start: 0.4}, {Title: "b", Start: 3}, {Title: "c", Start: 3.5}}
-	got := build.ChapterCardRuns(chs, script.OverlayKeys, 6)
+	chs := []build.ChapterData{{Title: "a", Start: 0.4}, {Title: "b", Start: 3}, {Title: "c", Start: 3.5}, {Title: "d", Start: 9}, {Title: "e", Start: 16}}
+	one := 1
+	timeline := []build.TimelineLine{
+		{Chapter: 0, Start: 0.4, End: 2.8},          // a: 1 行目が 2.4 秒 → 行の終わり (2.8) まで
+		{Chapter: 1, Start: 3, End: 3.2},            // b: 1 行目が短い → 最短の 1.5 秒 (次の c が 3.5 で始まるので 3.5 で数え直す)
+		{Chapter: 2, Start: 3.5, End: 9},            // c: 1 行目が長い → 最長の 4 秒 (7.5 まで)
+		{Chapter: 3, Start: 9, End: 12, Show: &one}, // d: 1 行目に図解 → 最短 (10.5 まで)
+		{Chapter: 4, Start: 16, End: 17},            // e: 最後のチャプター
+	}
+	ends := build.ChapterCardEnds(chs, timeline)
+	if want := []float64{2.8, 4.5, 7.5, 10.5, 17.5}; !slices.Equal(ends, want) {
+		t.Fatalf("カードを消す時刻 %v, want %v", ends, want)
+	}
+	got := build.ChapterCardRuns(chs, ends, script.OverlayKeys, 20)
 	on := func(sec float64) int {
 		k := int(sec * build.MouthFPS)
 		return build.RunCursor(got)(k)
@@ -331,20 +343,20 @@ func TestChapterCardRuns(t *testing.T) {
 	for _, tc := range []struct {
 		sec  float64
 		want int
-	}{{0.2, 0}, {0.5, 1}, {1.8, 1}, {2.0, 0}, {3.1, 1}, {3.6, 1}, {4.9, 1}, {5.1, 0}} {
+	}{{0.2, 0}, {0.5, 1}, {2.7, 1}, {2.9, 0}, {3.1, 1}, {3.6, 1}, {7.4, 1}, {7.6, 0}, {9.1, 1}, {10.4, 1}, {10.6, 0}, {16.1, 1}, {17.4, 1}, {17.6, 0}} {
 		if g := on(tc.sec); g != tc.want {
 			t.Errorf("%.1f 秒: カード %d, want %d (runs %v)", tc.sec, g, tc.want, got)
 		}
 	}
-	if r := build.ChapterCardRuns(chs[:1], script.OverlayKeys, 6); r != nil {
+	if r := build.ChapterCardRuns(chs[:1], ends[:1], script.OverlayKeys, 6); r != nil {
 		t.Errorf("チャプターが 1 つでカードを出した: %v", r)
 	}
-	if r := build.ChapterCardRuns(chs, []string{"title", "date"}, 6); r != nil {
+	if r := build.ChapterCardRuns(chs, ends, []string{"title", "date"}, 6); r != nil {
 		t.Errorf("overlays に topic が無いのにカードを出した: %v", r)
 	}
 	// FrameStates の 5 欄目に載る
 	st := build.FrameStates([][4]int{{0, 0, 0, 0}}, nil, got, 6)
-	if st[int(0.5*build.MouthFPS)][4] != 1 || st[int(2.5*build.MouthFPS)][4] != 0 {
+	if st[int(0.5*build.MouthFPS)][4] != 1 || st[int(2.9*build.MouthFPS)][4] != 0 {
 		t.Errorf("frameStates の 5 欄目がカードの列と違う")
 	}
 }

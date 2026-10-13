@@ -1,6 +1,7 @@
 [
-  "AI", "API", "AR", "AWS", "CD", "CEO", "CFO", "CI", "CLI", "CPU", "CSS", "CSV", "CTO", "DB", "DM", "DNS", "DX",
-  "EC", "GCP", "GPU", "GUI", "HDD", "HTML", "HTTP", "HTTPS", "IAM", "ID", "IDE", "IP", "IPA", "IT", "LGTM", "LLM",
-  "MFA", "MSP", "OCR", "OK", "OS", "PC", "PDF", "PM", "PNG", "PR", "QA", "SDK", "SI", "SNS", "SQL", "SRE", "SSD",
-  "SSH", "SSO", "SVG", "TCP", "UDP", "UI", "URL", "USB", "UTF", "UX", "VM", "VPN", "VR", "XML", "iOS"
+  "ADR", "AI", "API", "AR", "AWS", "CD", "CEO", "CFO", "CI", "CLI", "CPU", "CSS", "CSV", "CTO", "DB", "DM",
+  "DNS", "DX", "EC", "GCP", "GPU", "GUI", "HDD", "HTML", "HTTP", "HTTPS", "IAM", "ID", "IDE", "iOS", "IP", "IPA",
+  "IT", "JWKS", "LGTM", "LLM", "MFA", "MSP", "mTLS", "OCR", "OIDC", "OK", "OS", "PC", "PDF", "PM", "PNG", "PR",
+  "QA", "SDK", "SI", "SNS", "SQL", "SRE", "SSD", "SSH", "SSO", "SVG", "TCP", "UDP", "UI", "URL", "USB", "UTF",
+  "UX", "VM", "VPN", "VR", "XML"
 ]

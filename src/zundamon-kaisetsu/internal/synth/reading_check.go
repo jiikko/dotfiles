@@ -171,7 +171,8 @@ func SpelledWords(spoken, kana string, names map[byte][]string, acronyms map[str
 }
 
 // checkReadings は 1 文字ずつ読まれた英字の語の警告と、英字の語の一覧を出す。警告が 1 つでもあれば rc=1。
-func checkReadings(env *app.Env, lines []lineKana) error {
+// 略語 (警告しない語) は skill の acronyms.json と、台本の acronyms (scriptAcronyms) を合わせたもの。
+func checkReadings(env *app.Env, lines []lineKana, scriptAcronyms []string) error {
 	type wordInfo struct {
 		lines   []int
 		styleID int64
@@ -198,6 +199,9 @@ func checkReadings(env *app.Env, lines []lineKana) error {
 	acronyms, err := LoadAcronyms(env)
 	if err != nil {
 		return err
+	}
+	for _, w := range scriptAcronyms {
+		acronyms[w] = true
 	}
 	names, err := letterNames(env, lines[0].StyleID)
 	if err != nil {
@@ -240,7 +244,7 @@ func checkReadings(env *app.Env, lines []lineKana) error {
 		fmt.Fprintf(env.Stdout, "%s\t%d 行\t%s%s\n", w, len(words[w].lines), alone, note)
 	}
 	if warned > 0 {
-		return app.Fail("英字の語を 1 文字ずつ読んだ行が %d 件ある (上の一覧)。誤読でなければ %s に足す", warned, env.AcronymsFile())
+		return app.Fail("英字の語を 1 文字ずつ読んだ行が %d 件ある (上の一覧)。誤読でなければ、一般の語は %s に、その台本だけの語 (社内の略語) は台本の acronyms に足す", warned, env.AcronymsFile())
 	}
 	return nil
 }

@@ -139,6 +139,9 @@ func LoadScript(path string, env *app.Env) (*Script, error) {
 	if rd, ok := raw["readings"]; ok && !validReadings(rd) {
 		return nil, app.Fail(`%s: readings は {"字幕の語": "読ませたい語"} の形 (キーも値も空でない文字列)`, path)
 	}
+	if ac, ok := raw["acronyms"]; ok && !validAcronyms(ac) {
+		return nil, app.Fail(`%s: acronyms は ["QRO", …] の形 (空でない文字列の配列)`, path)
+	}
 	for _, name := range sortedKeysInCastOrder(cast) {
 		c, ok := cast[name].(map[string]any)
 		if !ok {
@@ -273,6 +276,29 @@ func validReadings(v any) bool {
 		}
 	}
 	return true
+}
+
+func validAcronyms(v any) bool {
+	list, ok := v.([]any)
+	if !ok {
+		return false
+	}
+	for _, x := range list {
+		if s, ok := x.(string); !ok || pyjson.Strip(s) == "" {
+			return false
+		}
+	}
+	return true
+}
+
+// Acronyms は台本の acronyms (1 文字ずつ読むのが正しい英字の語。kana --check が警告しない)。skill の acronyms.json に置けない
+// 語 (社内の略語) を台本ごとに足すためのもの。形は LoadScript が検査済み。
+func Acronyms(s *Script) []string {
+	var out []string
+	for _, x := range pyjson.Iter(LineGet(s.Raw, "acronyms", []any{})) {
+		out = append(out, pyjson.Str(x))
+	}
+	return out
 }
 
 // nonneg は Python 版の nonneg (int か float で、bool でなく、0 以上)。
